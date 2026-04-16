@@ -1,0 +1,158 @@
+# Tacquito TACACS+ Server Configuration
+# Multi-vendor: Cisco IOS/IOS-XE + Juniper
+#
+# IMPORTANT: Before deploying, update the following:
+#   1. Password hashes — generate new ones with the install script or manually
+#   2. Shared secret (secret.key) — generate with: openssl rand -base64 24
+#   3. Prefixes — adjust to match your device management subnets
+#
+# This config hot-reloads on save — no service restart needed for changes.
+
+# --- Type constants ---
+authenticator_type_bcrypt: &authenticator_type_bcrypt 1
+action_deny:  &action_deny  1
+action_permit: &action_permit 2
+accounter_type_file: &accounter_type_file 3
+handler_type_start: &handler_type_start 1
+provider_type_prefix: &provider_type_prefix 1
+
+# --- Accounting ---
+file_accounter: &file_accounter
+  name: tacquito_accounter
+  type: *accounter_type_file
+
+# --- Per-user bcrypt authenticators ---
+# Generate hashes with:
+#   python3 -c "import bcrypt,binascii; print(binascii.hexlify(bcrypt.hashpw(input('Password: ').encode(), bcrypt.gensalt(10))).decode())"
+# Or use: /usr/local/bin/tacquito-hashgen -mode bcrypt
+
+bcrypt_user: &bcrypt_user
+  type: *authenticator_type_bcrypt
+  options:
+    hash: REPLACE_ME
+
+bcrypt_operations: &bcrypt_operations
+  type: *authenticator_type_bcrypt
+  options:
+    hash: REPLACE_ME
+
+bcrypt_engineering: &bcrypt_engineering
+  type: *authenticator_type_bcrypt
+  options:
+    hash: REPLACE_ME
+
+# --- Services ---
+# Cisco IOS/IOS-XE: requests service=exec, expects priv-lvl
+# Juniper: requests service=junos-exec, expects local-user-name
+# Each device type only requests its own service — the other is ignored.
+
+# Cisco exec - read-only (priv-lvl 1)
+exec_readonly: &exec_readonly
+  name: exec
+  set_values:
+    - name: priv-lvl
+      values: [1]
+
+# Cisco exec - operator (priv-lvl 7)
+exec_operator: &exec_operator
+  name: exec
+  set_values:
+    - name: priv-lvl
+      values: [7]
+
+# Cisco exec - super-user (priv-lvl 15)
+exec_superuser: &exec_superuser
+  name: exec
+  set_values:
+    - name: priv-lvl
+      values: [15]
+
+# Juniper junos-exec - read-only
+# "RO-CLASS" must match a local template user on Juniper devices
+junos_exec_readonly: &junos_exec_readonly
+  name: junos-exec
+  set_values:
+    - name: local-user-name
+      values: ["RO-CLASS"]
+
+# Juniper junos-exec - super-user
+# "RW-CLASS" must match a local template user on Juniper devices
+junos_exec_superuser: &junos_exec_superuser
+  name: junos-exec
+  set_values:
+    - name: local-user-name
+      values: ["RW-CLASS"]
+
+# Juniper junos-exec - operator
+# "OP-CLASS" must match a local template user on Juniper devices
+junos_exec_operator: &junos_exec_operator
+  name: junos-exec
+  set_values:
+    - name: local-user-name
+      values: ["OP-CLASS"]
+
+# --- Groups ---
+readonly: &readonly
+  name: readonly
+  services:
+    - *exec_readonly
+    - *junos_exec_readonly
+  authenticator: *bcrypt_user
+  accounter: *file_accounter
+
+operator: &operator
+  name: operator
+  services:
+    - *exec_operator
+    - *junos_exec_operator
+  authenticator: *bcrypt_operations
+  accounter: *file_accounter
+
+superuser: &superuser
+  name: superuser
+  services:
+    - *exec_superuser
+    - *junos_exec_superuser
+  authenticator: *bcrypt_engineering
+  accounter: *file_accounter
+
+# --- Users ---
+users:
+  # Read-only user
+  - name: user
+    scopes: ["network_devices"]
+    groups: [*readonly]
+    authenticator: *bcrypt_user
+    accounter: *file_accounter
+
+  # Operations team - operator
+  - name: operations
+    scopes: ["network_devices"]
+    groups: [*operator]
+    authenticator: *bcrypt_operations
+    accounter: *file_accounter
+
+  # Engineering - full admin
+  - name: engineering
+    scopes: ["network_devices"]
+    groups: [*superuser]
+    authenticator: *bcrypt_engineering
+    accounter: *file_accounter
+
+# --- Secret Providers ---
+secrets:
+  - name: network_devices
+    secret:
+      group: tacquito
+      # Use hex-only secrets (openssl rand -hex 16) to avoid quoting issues on devices
+      key: "REPLACE_WITH_SHARED_SECRET"
+    handler:
+      type: *handler_type_start
+    type: *provider_type_prefix
+    options:
+      prefixes: |
+        [
+          "10.0.0.0/8",
+          "172.16.0.0/12",
+          "192.168.0.0/16"
+        ]

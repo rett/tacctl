@@ -1,0 +1,12 @@
+/var/log/tacquito/accounting.log {
+    daily
+    rotate 90
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0640 tacquito tacquito
+    postrotate
+        systemctl restart tacquito > /dev/null 2>&1 || true
+    endscript
+}

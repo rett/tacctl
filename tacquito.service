@@ -1,0 +1,37 @@
+[Unit]
+Description=Tacquito TACACS+ Server
+Documentation=https://github.com/facebookincubator/tacquito
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tacquito
+Group=tacquito
+ExecStart=/usr/local/bin/tacquito \
+    -config /etc/tacquito/tacquito.yaml \
+    -network tcp -address :49 \
+    -acct-log-path /var/log/tacquito/accounting.log \
+    -level 20
+Restart=on-failure
+RestartSec=5
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/log/tacquito
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+
+# Port 49 requires CAP_NET_BIND_SERVICE since it is < 1024
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target
