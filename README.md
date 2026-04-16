@@ -339,14 +339,6 @@ aaa accounting exec default start-stop group TACACS-GROUP
 aaa accounting commands 15 default start-stop group TACACS-GROUP
 !
 ! Operator privilege level 7 — map operational commands
-privilege exec level 7 clear counters
-privilege exec level 7 clear ip bgp
-privilege exec level 7 clear ip ospf
-privilege exec level 7 clear ip route
-privilege exec level 7 clear logging
-privilege exec level 7 clear arp-cache
-privilege exec level 7 debug
-privilege exec level 7 undebug all
 privilege exec level 7 show running-config
 privilege exec level 7 show startup-config
 privilege exec level 7 ping
