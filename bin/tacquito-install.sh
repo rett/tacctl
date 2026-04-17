@@ -98,8 +98,8 @@ info "  Server:  ${TACQUITO_BIN}"
 info "  Hashgen: ${HASHGEN_BIN}"
 
 # Clone management repo for future upgrades
-DEPLOY_DEST="/opt/tacquito-manage"
-MANAGE_REPO="https://github.com/rett/tacquito-manage.git"
+DEPLOY_DEST="/opt/tacctl"
+MANAGE_REPO="https://github.com/rett/tacctl.git"
 if [[ -d "${DEPLOY_DEST}/.git" ]]; then
     info "Management repo already cloned at ${DEPLOY_DEST}, pulling latest..."
     cd "$DEPLOY_DEST" && git pull --quiet 2>/dev/null || true
@@ -113,7 +113,7 @@ else
 fi
 
 # Symlink management scripts
-ln -sf "${DEPLOY_DEST}/bin/tacquito-manage.sh" /usr/local/bin/tacquito-manage
+ln -sf "${DEPLOY_DEST}/bin/tacctl.sh" /usr/local/bin/tacctl
 ln -sf "${DEPLOY_DEST}/bin/tacquito-upgrade.sh" /usr/local/bin/tacquito-upgrade
 cp "${PROJECT_DIR}/README.md" "${CONFIG_DIR}/README.md" 2>/dev/null || true
 # Install logrotate config
@@ -123,7 +123,7 @@ if [[ -f "${PROJECT_DIR}/config/tacquito.logrotate" ]]; then
 fi
 
 info "Management scripts installed:"
-info "  tacquito-manage   — user & config management"
+info "  tacctl   — user & config management"
 info "  tacquito-upgrade  — pull latest source, rebuild & update scripts"
 info "  Deploy source:      ${DEPLOY_DEST}"
 

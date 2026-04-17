@@ -13,18 +13,18 @@ set -euo pipefail
 TACQUITO_SRC="/opt/tacquito-src"
 TACQUITO_BIN="/usr/local/bin/tacquito"
 HASHGEN_BIN="/usr/local/bin/tacquito-hashgen"
-MANAGE_BIN="/usr/local/bin/tacquito-manage"
+MANAGE_BIN="/usr/local/bin/tacctl"
 UPGRADE_BIN="/usr/local/bin/tacquito-upgrade"
 CONFIG_DIR="/etc/tacquito"
 SERVICE_FILE="/etc/systemd/system/tacquito.service"
 GO_BIN="/usr/local/go/bin/go"
-MANAGE_REPO="https://github.com/rett/tacquito-manage.git"
-MANAGE_DIR="/opt/tacquito-manage"
+MANAGE_REPO="https://github.com/rett/tacctl.git"
+MANAGE_DIR="/opt/tacctl"
 # Look for project root: first try parent of this script's directory (bin/),
 # then fall back to the canonical deploy location.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." 2>/dev/null && pwd)"
-if [[ -f "${SCRIPT_DIR}/tacquito-manage.sh" ]]; then
+if [[ -f "${SCRIPT_DIR}/tacctl.sh" ]]; then
     DEPLOY_DIR="$PROJECT_DIR"
 elif [[ -d "$MANAGE_DIR" ]]; then
     DEPLOY_DIR="$MANAGE_DIR"
@@ -147,7 +147,7 @@ fi
 
 # --- Ensure symlinks exist ---
 if [[ -d "$DEPLOY_DIR" ]]; then
-    ln -sf "${DEPLOY_DIR}/bin/tacquito-manage.sh" "$MANAGE_BIN"
+    ln -sf "${DEPLOY_DIR}/bin/tacctl.sh" "$MANAGE_BIN"
     ln -sf "${DEPLOY_DIR}/bin/tacquito-upgrade.sh" "$UPGRADE_BIN"
 fi
 
@@ -157,7 +157,7 @@ SCRIPTS_UPDATED=0
 
 if [[ -z "$DEPLOY_DIR" ]]; then
     warn "Deploy directory not found. Skipping updates."
-    warn "To fix: clone the repo to /opt/tacquito-manage"
+    warn "To fix: clone the repo to /opt/tacctl"
 fi
 
 update_if_changed() {

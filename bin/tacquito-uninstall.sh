@@ -34,13 +34,13 @@ echo "============================================"
 echo ""
 echo "This will remove:"
 echo "  - Tacquito service and binary"
-echo "  - Management scripts (tacquito-manage, tacquito-upgrade)"
+echo "  - Management scripts (tacctl, tacquito-upgrade)"
 echo "  - Password hash generator (tacquito-hashgen)"
 echo "  - Configuration directory (/etc/tacquito)"
 echo "  - Log directory (/var/log/tacquito)"
 echo "  - Logrotate config"
 echo "  - Service user (tacquito)"
-echo "  - Management repo (/opt/tacquito-manage)"
+echo "  - Management repo (/opt/tacctl)"
 echo ""
 echo -e "${YELLOW}The tacquito source (/opt/tacquito-src) and Go installation"
 echo -e "(/usr/local/go) will NOT be removed.${NC}"
@@ -82,7 +82,7 @@ echo ""
 
 # --- Remove symlinks and binaries ---
 info "Removing binaries and symlinks..."
-rm -f /usr/local/bin/tacquito-manage
+rm -f /usr/local/bin/tacctl
 rm -f /usr/local/bin/tacquito-upgrade
 rm -f /usr/local/bin/tacquito
 rm -f /usr/local/bin/tacquito.bak
@@ -125,7 +125,7 @@ rm -f /etc/tacquito/password-max-age
 
 # --- Remove management repo ---
 info "Removing management repo..."
-rm -rf /opt/tacquito-manage
+rm -rf /opt/tacctl
 
 # --- Remove service user ---
 if id tacquito &>/dev/null; then

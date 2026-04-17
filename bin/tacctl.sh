@@ -6,18 +6,18 @@
 # Changes are applied to /etc/tacquito/tacquito.yaml and hot-reloaded automatically.
 #
 # Usage:
-#   sudo ./tacquito-manage.sh list
-#   sudo ./tacquito-manage.sh add <username> <readonly|superuser>
-#   sudo ./tacquito-manage.sh remove <username>
-#   sudo ./tacquito-manage.sh passwd <username>
-#   sudo ./tacquito-manage.sh disable <username>
-#   sudo ./tacquito-manage.sh enable <username>
-#   sudo ./tacquito-manage.sh verify <username>
-#   sudo ./tacquito-manage.sh config show
-#   sudo ./tacquito-manage.sh config secret [new-secret]
-#   sudo ./tacquito-manage.sh config juniper-ro [class-name]
-#   sudo ./tacquito-manage.sh config juniper-rw [class-name]
-#   sudo ./tacquito-manage.sh config prefixes [cidr,cidr,...]
+#   sudo ./tacctl.sh list
+#   sudo ./tacctl.sh add <username> <readonly|superuser>
+#   sudo ./tacctl.sh remove <username>
+#   sudo ./tacctl.sh passwd <username>
+#   sudo ./tacctl.sh disable <username>
+#   sudo ./tacctl.sh enable <username>
+#   sudo ./tacctl.sh verify <username>
+#   sudo ./tacctl.sh config show
+#   sudo ./tacctl.sh config secret [new-secret]
+#   sudo ./tacctl.sh config juniper-ro [class-name]
+#   sudo ./tacctl.sh config juniper-rw [class-name]
+#   sudo ./tacctl.sh config prefixes [cidr,cidr,...]
 #
 set -euo pipefail
 
@@ -48,7 +48,7 @@ error() { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 # --- Pre-flight ---
 preflight() {
     if [[ $EUID -ne 0 ]]; then
-        error "This script must be run as root (sudo ./tacquito-manage.sh ...)"
+        error "This script must be run as root (sudo ./tacctl.sh ...)"
         exit 1
     fi
     if [[ ! -f "$CONFIG" ]]; then
@@ -250,7 +250,7 @@ cmd_add() {
     local group="${2:-}"
 
     if [[ -z "$username" ]]; then
-        error "Usage: tacquito-manage.sh add <username> <readonly|operator|superuser>"
+        error "Usage: tacctl.sh add <username> <readonly|operator|superuser>"
         exit 1
     fi
     # Validate group exists in config
@@ -258,7 +258,7 @@ cmd_add() {
         local available
         available=$(grep -oP '^\w+(?=: &\w)' "$CONFIG" | grep -v "^bcrypt_\|^exec_\|^junos_\|^file_\|^authenticator\|^action\|^accounter\|^handler\|^provider" | tr '\n' '|' | sed 's/|$//')
         error "Group '${group}' does not exist. Available: ${available}"
-        error "Usage: tacquito-manage.sh add <username> <group>"
+        error "Usage: tacctl.sh add <username> <group>"
         exit 1
     fi
     if user_exists "$username"; then
@@ -338,7 +338,7 @@ cmd_remove() {
     local username="${1:-}"
 
     if [[ -z "$username" ]]; then
-        error "Usage: tacquito-manage.sh remove <username>"
+        error "Usage: tacctl.sh remove <username>"
         exit 1
     fi
     if ! user_exists "$username"; then
@@ -395,7 +395,7 @@ cmd_passwd() {
     local username="${1:-}"
 
     if [[ -z "$username" ]]; then
-        error "Usage: tacquito-manage.sh passwd <username>"
+        error "Usage: tacctl.sh passwd <username>"
         exit 1
     fi
     if ! user_exists "$username"; then
@@ -431,7 +431,7 @@ cmd_disable() {
     local username="${1:-}"
 
     if [[ -z "$username" ]]; then
-        error "Usage: tacquito-manage.sh disable <username>"
+        error "Usage: tacctl.sh disable <username>"
         exit 1
     fi
     if ! user_exists "$username"; then
@@ -468,7 +468,7 @@ cmd_enable() {
     local username="${1:-}"
 
     if [[ -z "$username" ]]; then
-        error "Usage: tacquito-manage.sh enable <username>"
+        error "Usage: tacctl.sh enable <username>"
         exit 1
     fi
     if ! user_exists "$username"; then
@@ -486,7 +486,7 @@ cmd_enable() {
     local saved_hash_file="${BACKUP_DIR}/disabled/${username}.hash"
     if [[ ! -f "$saved_hash_file" ]]; then
         error "No saved hash found for '${username}'. Set a new password instead:"
-        error "  sudo ./tacquito-manage.sh passwd ${username}"
+        error "  sudo ./tacctl.sh passwd ${username}"
         exit 1
     fi
 
@@ -510,7 +510,7 @@ cmd_verify() {
     local username="${1:-}"
 
     if [[ -z "$username" ]]; then
-        error "Usage: tacquito-manage.sh verify <username>"
+        error "Usage: tacctl.sh verify <username>"
         exit 1
     fi
     if ! user_exists "$username"; then
@@ -561,7 +561,7 @@ cmd_rename() {
     local newname="${2:-}"
 
     if [[ -z "$oldname" || -z "$newname" ]]; then
-        error "Usage: tacquito-manage.sh rename <old-username> <new-username>"
+        error "Usage: tacctl.sh rename <old-username> <new-username>"
         exit 1
     fi
     if ! user_exists "$oldname"; then
@@ -616,7 +616,7 @@ cmd_move() {
     local newgroup="${2:-}"
 
     if [[ -z "$username" || -z "$newgroup" ]]; then
-        error "Usage: tacquito-manage move <username> <new-group>"
+        error "Usage: tacctl move <username> <new-group>"
         exit 1
     fi
     if ! user_exists "$username"; then
@@ -1160,7 +1160,7 @@ else:
             ;;
         add)
             if [[ -z "$cidr" ]]; then
-                error "Usage: tacquito-manage config ${label} add <cidr>"
+                error "Usage: tacctl config ${label} add <cidr>"
                 exit 1
             fi
             backup_config
@@ -1191,7 +1191,7 @@ open(sys.argv[1], 'w').write(config)
             ;;
         remove)
             if [[ -z "$cidr" ]]; then
-                error "Usage: tacquito-manage config ${label} remove <cidr>"
+                error "Usage: tacctl config ${label} remove <cidr>"
                 exit 1
             fi
             backup_config
@@ -1221,7 +1221,7 @@ open(sys.argv[1], 'w').write(config)
             ;;
         *)
             echo ""
-            echo "Usage: sudo tacquito-manage config ${label} <list|add|remove> [cidr]"
+            echo "Usage: sudo tacctl config ${label} <list|add|remove> [cidr]"
             echo ""
             exit 1
             ;;
@@ -1277,7 +1277,7 @@ cmd_config() {
             echo ""
             echo -e "${BOLD}Config Commands${NC}"
             echo ""
-            echo "Usage: sudo tacquito-manage config <subcommand> [value]"
+            echo "Usage: sudo tacctl config <subcommand> [value]"
             echo ""
             echo "Subcommands:"
             echo "  show                          Show current configuration"
@@ -1295,11 +1295,11 @@ cmd_config() {
             echo "  juniper                       Show working Juniper device configuration"
             echo ""
             echo "Examples:"
-            echo "  sudo tacquito-manage config show"
-            echo "  sudo tacquito-manage config validate"
-            echo "  sudo tacquito-manage config loglevel debug"
-            echo "  sudo tacquito-manage config cisco"
-            echo "  sudo tacquito-manage config prefixes 10.1.0.0/16,10.2.0.0/16"
+            echo "  sudo tacctl config show"
+            echo "  sudo tacctl config validate"
+            echo "  sudo tacctl config loglevel debug"
+            echo "  sudo tacctl config cisco"
+            echo "  sudo tacctl config prefixes 10.1.0.0/16,10.2.0.0/16"
             echo ""
             exit 1
             ;;
@@ -1374,8 +1374,8 @@ cmd_group_add() {
     local jclass="${3:-}"
 
     if [[ -z "$groupname" || -z "$privlvl" || -z "$jclass" ]]; then
-        error "Usage: tacquito-manage group add <name> <cisco-priv-lvl> <juniper-class>"
-        echo "  Example: tacquito-manage group add helpdesk 5 HELPDESK-CLASS" >&2
+        error "Usage: tacctl group add <name> <cisco-priv-lvl> <juniper-class>"
+        echo "  Example: tacctl group add helpdesk 5 HELPDESK-CLASS" >&2
         exit 1
     fi
 
@@ -1475,7 +1475,7 @@ cmd_group_remove() {
     local groupname="${1:-}"
 
     if [[ -z "$groupname" ]]; then
-        error "Usage: tacquito-manage group remove <name>"
+        error "Usage: tacctl group remove <name>"
         exit 1
     fi
 
@@ -1551,9 +1551,9 @@ cmd_group_edit() {
     local value="${3:-}"
 
     if [[ -z "$groupname" || -z "$field" || -z "$value" ]]; then
-        error "Usage: tacquito-manage group edit <name> <priv-lvl|juniper-class> <value>"
-        echo "  Example: tacquito-manage group edit operator priv-lvl 10" >&2
-        echo "  Example: tacquito-manage group edit operator juniper-class NEW-CLASS" >&2
+        error "Usage: tacctl group edit <name> <priv-lvl|juniper-class> <value>"
+        echo "  Example: tacctl group edit operator priv-lvl 10" >&2
+        echo "  Example: tacctl group edit operator juniper-class NEW-CLASS" >&2
         exit 1
     fi
 
@@ -1674,7 +1674,7 @@ cmd_group() {
             echo ""
             echo -e "${BOLD}Group Commands${NC}"
             echo ""
-            echo "Usage: sudo tacquito-manage group <subcommand> [arguments]"
+            echo "Usage: sudo tacctl group <subcommand> [arguments]"
             echo ""
             echo "Subcommands:"
             echo "  list                                       List all groups"
@@ -1684,11 +1684,11 @@ cmd_group() {
             echo "  remove <name>                              Remove a custom group"
             echo ""
             echo "Examples:"
-            echo "  sudo tacquito-manage group list"
-            echo "  sudo tacquito-manage group add helpdesk 5 HELPDESK-CLASS"
-            echo "  sudo tacquito-manage group edit operator priv-lvl 10"
-            echo "  sudo tacquito-manage group edit operator juniper-class NEW-CLASS"
-            echo "  sudo tacquito-manage group remove helpdesk"
+            echo "  sudo tacctl group list"
+            echo "  sudo tacctl group add helpdesk 5 HELPDESK-CLASS"
+            echo "  sudo tacctl group edit operator priv-lvl 10"
+            echo "  sudo tacctl group edit operator juniper-class NEW-CLASS"
+            echo "  sudo tacctl group remove helpdesk"
             echo ""
             exit 1
             ;;
@@ -1976,7 +1976,7 @@ cmd_config_loglevel() {
         echo ""
         echo "  Current log level: ${level_name} (${current})"
         echo ""
-        echo "  Usage: tacquito-manage config loglevel <debug|info|error>"
+        echo "  Usage: tacctl config loglevel <debug|info|error>"
         echo ""
         return
     fi
@@ -2015,7 +2015,7 @@ cmd_config_password_age() {
         echo ""
         echo "  Password age warning threshold: ${PASSWORD_MAX_AGE_DAYS} days"
         echo ""
-        echo "  Usage: tacquito-manage config password-age <days>"
+        echo "  Usage: tacctl config password-age <days>"
         echo ""
         return
     fi
@@ -2051,7 +2051,7 @@ cmd_log() {
         search)
             local term="${1:-}"
             if [[ -z "$term" ]]; then
-                error "Usage: tacquito-manage log search <username>"
+                error "Usage: tacctl log search <username>"
                 exit 1
             fi
             echo ""
@@ -2089,7 +2089,7 @@ cmd_log() {
             echo ""
             echo -e "${BOLD}Log Commands${NC}"
             echo ""
-            echo "Usage: sudo tacquito-manage log <subcommand> [arguments]"
+            echo "Usage: sudo tacctl log <subcommand> [arguments]"
             echo ""
             echo "Subcommands:"
             echo "  tail [n]              Show last N journal entries (default 20)"
@@ -2144,7 +2144,7 @@ cmd_backup() {
                 backup_file="${BACKUP_DIR}/tacquito.yaml.${timestamp}"
                 if [[ ! -f "$backup_file" ]]; then
                     error "Backup not found: ${timestamp}"
-                    error "Run 'tacquito-manage backup list' to see available backups."
+                    error "Run 'tacctl backup list' to see available backups."
                     exit 1
                 fi
             fi
@@ -2160,8 +2160,8 @@ cmd_backup() {
         restore)
             local timestamp="${1:-}"
             if [[ -z "$timestamp" ]]; then
-                error "Usage: tacquito-manage backup restore <timestamp>"
-                error "Run 'tacquito-manage backup list' to see available backups."
+                error "Usage: tacctl backup restore <timestamp>"
+                error "Run 'tacctl backup list' to see available backups."
                 exit 1
             fi
 
@@ -2198,7 +2198,7 @@ cmd_backup() {
             echo ""
             echo -e "${BOLD}Backup Commands${NC}"
             echo ""
-            echo "Usage: sudo tacquito-manage backup <subcommand> [arguments]"
+            echo "Usage: sudo tacctl backup <subcommand> [arguments]"
             echo ""
             echo "Subcommands:"
             echo "  list                  Show available backups"
@@ -2218,7 +2218,7 @@ usage() {
     echo ""
     echo -e "${BOLD}Tacquito Management${NC}"
     echo ""
-    echo "Usage: sudo tacquito-manage <command> [arguments]"
+    echo "Usage: sudo tacctl <command> [arguments]"
     echo ""
     echo "Commands:"
     echo "  status                        Show service health, stats, and recent errors"
@@ -2229,15 +2229,15 @@ usage() {
     echo "  backup <subcommand>           Backup management (list, diff, restore)"
     echo ""
     echo "Run any command without arguments for detailed help, e.g.:"
-    echo "  sudo tacquito-manage user"
-    echo "  sudo tacquito-manage config"
+    echo "  sudo tacctl user"
+    echo "  sudo tacctl config"
     echo ""
     echo "Examples:"
-    echo "  sudo tacquito-manage user add jsmith superuser"
-    echo "  sudo tacquito-manage user move jsmith operator"
-    echo "  sudo tacquito-manage log failures"
-    echo "  sudo tacquito-manage backup list"
-    echo "  sudo tacquito-manage config diff"
+    echo "  sudo tacctl user add jsmith superuser"
+    echo "  sudo tacctl user move jsmith operator"
+    echo "  sudo tacctl log failures"
+    echo "  sudo tacctl backup list"
+    echo "  sudo tacctl config diff"
     echo ""
 }
 
@@ -2263,7 +2263,7 @@ cmd_user() {
             echo ""
             echo -e "${BOLD}User Commands${NC}"
             echo ""
-            echo "Usage: sudo tacquito-manage user <subcommand> [arguments]"
+            echo "Usage: sudo tacctl user <subcommand> [arguments]"
             echo ""
             echo "Subcommands:"
             echo "  list                          List all users and their status"
@@ -2277,10 +2277,10 @@ cmd_user() {
             echo "  verify <username>             Verify password and show user details"
             echo ""
             echo "Examples:"
-            echo "  sudo tacquito-manage user list"
-            echo "  sudo tacquito-manage user add jsmith superuser"
-            echo "  sudo tacquito-manage user move jsmith operator"
-            echo "  sudo tacquito-manage user verify jsmith"
+            echo "  sudo tacctl user list"
+            echo "  sudo tacctl user add jsmith superuser"
+            echo "  sudo tacctl user move jsmith operator"
+            echo "  sudo tacctl user verify jsmith"
             echo ""
             exit 1
             ;;
