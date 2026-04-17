@@ -6,20 +6,23 @@
 # Changes are applied to /etc/tacquito/tacquito.yaml and hot-reloaded automatically.
 #
 # Usage:
-#   sudo ./tacctl.sh list
-#   sudo ./tacctl.sh add <username> <readonly|superuser>
-#   sudo ./tacctl.sh remove <username>
-#   sudo ./tacctl.sh passwd <username>
-#   sudo ./tacctl.sh disable <username>
-#   sudo ./tacctl.sh enable <username>
-#   sudo ./tacctl.sh verify <username>
-#   sudo ./tacctl.sh config show
-#   sudo ./tacctl.sh config secret [new-secret]
-#   sudo ./tacctl.sh config juniper-ro [class-name]
-#   sudo ./tacctl.sh config juniper-rw [class-name]
-#   sudo ./tacctl.sh config prefixes [cidr,cidr,...]
+#   ./tacctl.sh list
+#   ./tacctl.sh add <username> <readonly|superuser>
+#   ./tacctl.sh remove <username>
+#   ./tacctl.sh passwd <username>
+#   ./tacctl.sh disable <username>
+#   ./tacctl.sh enable <username>
+#   ./tacctl.sh verify <username>
+#   ./tacctl.sh config show
+#   ./tacctl.sh config secret [new-secret]
+#   ./tacctl.sh config juniper-ro [class-name]
+#   ./tacctl.sh config juniper-rw [class-name]
+#   ./tacctl.sh config prefixes [cidr,cidr,...]
 #
 set -euo pipefail
+if [[ $EUID -ne 0 ]]; then
+    exec sudo "$0" "$@"
+fi
 umask 077
 
 CONFIG="/etc/tacquito/tacquito.yaml"
@@ -61,10 +64,6 @@ error() { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 
 # --- Pre-flight ---
 preflight() {
-    if [[ $EUID -ne 0 ]]; then
-        error "This script must be run as root (sudo ./tacctl.sh ...)"
-        exit 1
-    fi
     if [[ ! -f "$CONFIG" ]]; then
         error "Config not found at ${CONFIG}. Is tacquito installed?"
         exit 1
@@ -1335,7 +1334,7 @@ os.rename(tmp.name, sys.argv[1])
             ;;
         *)
             echo ""
-            echo "Usage: sudo tacctl config ${label} <list|add|remove> [cidr]"
+            echo "Usage: tacctl config ${label} <list|add|remove> [cidr]"
             echo ""
             exit 1
             ;;
@@ -1391,7 +1390,7 @@ cmd_config() {
             echo ""
             echo -e "${BOLD}Config Commands${NC}"
             echo ""
-            echo "Usage: sudo tacctl config <subcommand> [value]"
+            echo "Usage: tacctl config <subcommand> [value]"
             echo ""
             echo "Subcommands:"
             echo "  show                          Show current configuration"
@@ -1409,11 +1408,11 @@ cmd_config() {
             echo "  juniper                       Show working Juniper device configuration"
             echo ""
             echo "Examples:"
-            echo "  sudo tacctl config show"
-            echo "  sudo tacctl config validate"
-            echo "  sudo tacctl config loglevel debug"
-            echo "  sudo tacctl config cisco"
-            echo "  sudo tacctl config prefixes 10.1.0.0/16,10.2.0.0/16"
+            echo "  tacctl config show"
+            echo "  tacctl config validate"
+            echo "  tacctl config loglevel debug"
+            echo "  tacctl config cisco"
+            echo "  tacctl config prefixes 10.1.0.0/16,10.2.0.0/16"
             echo ""
             exit 1
             ;;
@@ -1811,7 +1810,7 @@ cmd_group() {
             echo ""
             echo -e "${BOLD}Group Commands${NC}"
             echo ""
-            echo "Usage: sudo tacctl group <subcommand> [arguments]"
+            echo "Usage: tacctl group <subcommand> [arguments]"
             echo ""
             echo "Subcommands:"
             echo "  list                                       List all groups"
@@ -1821,11 +1820,11 @@ cmd_group() {
             echo "  remove <name>                              Remove a custom group"
             echo ""
             echo "Examples:"
-            echo "  sudo tacctl group list"
-            echo "  sudo tacctl group add helpdesk 5 HELPDESK-CLASS"
-            echo "  sudo tacctl group edit operator priv-lvl 10"
-            echo "  sudo tacctl group edit operator juniper-class NEW-CLASS"
-            echo "  sudo tacctl group remove helpdesk"
+            echo "  tacctl group list"
+            echo "  tacctl group add helpdesk 5 HELPDESK-CLASS"
+            echo "  tacctl group edit operator priv-lvl 10"
+            echo "  tacctl group edit operator juniper-class NEW-CLASS"
+            echo "  tacctl group remove helpdesk"
             echo ""
             exit 1
             ;;
@@ -2226,7 +2225,7 @@ cmd_log() {
             echo ""
             echo -e "${BOLD}Log Commands${NC}"
             echo ""
-            echo "Usage: sudo tacctl log <subcommand> [arguments]"
+            echo "Usage: tacctl log <subcommand> [arguments]"
             echo ""
             echo "Subcommands:"
             echo "  tail [n]              Show last N journal entries (default 20)"
@@ -2335,7 +2334,7 @@ cmd_backup() {
             echo ""
             echo -e "${BOLD}Backup Commands${NC}"
             echo ""
-            echo "Usage: sudo tacctl backup <subcommand> [arguments]"
+            echo "Usage: tacctl backup <subcommand> [arguments]"
             echo ""
             echo "Subcommands:"
             echo "  list                  Show available backups"
@@ -2353,10 +2352,6 @@ cmd_backup() {
 
 # --- INSTALL ---
 cmd_install() {
-    if [[ $EUID -ne 0 ]]; then
-        error "This script must be run as root (sudo tacctl install)"
-        exit 1
-    fi
 
     for cmd in git wget python3; do
         if ! command -v "$cmd" &>/dev/null; then
@@ -2449,7 +2444,8 @@ cmd_install() {
     git config --global --add safe.directory "$DEPLOY_DIR" 2>/dev/null || true
     git config --global --add safe.directory "$TACQUITO_SRC" 2>/dev/null || true
 
-    # Symlink management CLI
+    # Symlink management CLI (755 so non-root users can exec into sudo)
+    chmod 755 "${DEPLOY_DIR}/bin/tacctl.sh"
     ln -sf "${DEPLOY_DIR}/bin/tacctl.sh" /usr/local/bin/tacctl
     cp "${PROJECT_DIR}/README.md" "${CONFIG_DIR}/README.md" 2>/dev/null || true
     # Install default config templates
@@ -2631,10 +2627,6 @@ cmd_install() {
 
 # --- UPGRADE ---
 cmd_upgrade() {
-    if [[ $EUID -ne 0 ]]; then
-        error "This script must be run as root (sudo tacctl upgrade)"
-        exit 1
-    fi
 
     if [[ ! -d "$TACQUITO_SRC" ]]; then
         error "Tacquito source not found at ${TACQUITO_SRC}. Run 'tacctl install' first."
@@ -2740,8 +2732,9 @@ cmd_upgrade() {
         git clone --quiet "$MANAGE_REPO" "$DEPLOY_DIR" 2>/dev/null || warn "Failed to clone management repo."
     fi
 
-    # --- Ensure symlink exists ---
+    # --- Ensure symlink exists (755 so non-root users can exec into sudo) ---
     if [[ -d "$DEPLOY_DIR" ]]; then
+        chmod 755 "${DEPLOY_DIR}/bin/tacctl.sh"
         ln -sf "${DEPLOY_DIR}/bin/tacctl.sh" /usr/local/bin/tacctl
     fi
 
@@ -2859,10 +2852,6 @@ cmd_upgrade() {
 
 # --- UNINSTALL ---
 cmd_uninstall() {
-    if [[ $EUID -ne 0 ]]; then
-        error "This script must be run as root (sudo tacctl uninstall)"
-        exit 1
-    fi
 
     echo ""
     echo "============================================"
@@ -3002,7 +2991,7 @@ usage() {
     echo ""
     echo -e "${BOLD}Tacquito Management${NC}"
     echo ""
-    echo "Usage: sudo tacctl <command> [arguments]"
+    echo "Usage: tacctl <command> [arguments]"
     echo ""
     echo "Commands:"
     echo "  install                       Install tacquito server and configure from scratch"
@@ -3016,15 +3005,15 @@ usage() {
     echo "  backup <subcommand>           Backup management (list, diff, restore)"
     echo ""
     echo "Run any command without arguments for detailed help, e.g.:"
-    echo "  sudo tacctl user"
-    echo "  sudo tacctl config"
+    echo "  tacctl user"
+    echo "  tacctl config"
     echo ""
     echo "Examples:"
-    echo "  sudo tacctl install"
-    echo "  sudo tacctl upgrade"
-    echo "  sudo tacctl user add jsmith superuser"
-    echo "  sudo tacctl user move jsmith operator"
-    echo "  sudo tacctl config cisco"
+    echo "  tacctl install"
+    echo "  tacctl upgrade"
+    echo "  tacctl user add jsmith superuser"
+    echo "  tacctl user move jsmith operator"
+    echo "  tacctl config cisco"
     echo ""
 }
 
@@ -3050,7 +3039,7 @@ cmd_user() {
             echo ""
             echo -e "${BOLD}User Commands${NC}"
             echo ""
-            echo "Usage: sudo tacctl user <subcommand> [arguments]"
+            echo "Usage: tacctl user <subcommand> [arguments]"
             echo ""
             echo "Subcommands:"
             echo "  list                          List all users and their status"
@@ -3064,10 +3053,10 @@ cmd_user() {
             echo "  verify <username>             Verify password and show user details"
             echo ""
             echo "Examples:"
-            echo "  sudo tacctl user list"
-            echo "  sudo tacctl user add jsmith superuser"
-            echo "  sudo tacctl user move jsmith operator"
-            echo "  sudo tacctl user verify jsmith"
+            echo "  tacctl user list"
+            echo "  tacctl user add jsmith superuser"
+            echo "  tacctl user move jsmith operator"
+            echo "  tacctl user verify jsmith"
             echo ""
             exit 1
             ;;
