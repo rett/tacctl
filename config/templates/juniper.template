@@ -1,0 +1,8 @@
+# Step 1: Create template users (REQUIRED)
+${TEMPLATE_USERS}
+
+# Step 2: Configure TACACS+
+${TACPLUS_CONFIG}
+
+# Step 3: Commit
+commit

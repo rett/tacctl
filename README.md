@@ -33,6 +33,9 @@ tacctl/
     tacquito.yaml           # Template TACACS+ config (used by installer)
     tacquito.service        # Systemd unit file
     tacquito.logrotate      # Log rotation config (daily, 90-day retention)
+    templates/
+      cisco.template        # Default Cisco device config template
+      juniper.template      # Default Juniper device config template
   README.md
   LICENSE
 ```
@@ -49,6 +52,7 @@ tacctl/
 | `/usr/local/bin/tacctl` | Symlink to management CLI |
 | `/usr/local/bin/tacquito-upgrade` | Symlink to upgrade script |
 | `/usr/local/bin/tacquito-hashgen` | Password hash generator |
+| `/etc/tacquito/templates/` | Custom device config templates (override defaults) |
 | `/opt/tacctl/` | Git clone of this repo (used by upgrade) |
 | `/opt/tacquito-src/` | Tacquito server source code |
 
@@ -174,6 +178,41 @@ verification commands. All groups and their Juniper classes are included dynamic
 - Template users MUST exist before TACACS+ logins will work
 - If a login fails silently after successful TACACS+ auth, the template user is missing
 - Use `config juniper` to regenerate after adding groups
+
+### Custom Templates
+
+The generated Cisco and Juniper configs are rendered from template files using `${VAR}` placeholders (processed by `envsubst`). You can customize the output by editing the templates.
+
+**Template locations** (checked in order):
+1. `/etc/tacquito/templates/` — per-host overrides (takes precedence)
+2. `config/templates/` in the repo — version-controlled defaults
+
+**Template files:**
+- `cisco.template` — Cisco IOS/IOS-XE device config
+- `juniper.template` — Juniper Junos device config
+
+**Available variables:**
+
+| Variable | Used in | Description |
+|----------|---------|-------------|
+| `${SERVER_IP}` | Both | Auto-detected server IP address |
+| `${SECRET}` | Both | Shared TACACS+ secret |
+| `${PRIVILEGE_COMMANDS}` | Cisco | Pre-rendered privilege level command mappings |
+| `${TEMPLATE_USERS}` | Juniper | Pre-rendered `set system login user` lines |
+| `${TACPLUS_CONFIG}` | Juniper | Pre-rendered TACACS+ server setup commands |
+| `${VERIFY_COMMANDS}` | Juniper | Pre-rendered `show configuration` commands |
+| `${GROUP_SUMMARY}` | Both | Human-readable group mapping table |
+
+**To customize:** copy the default template to the override location and edit it:
+```bash
+sudo cp /opt/tacctl/config/templates/cisco.template /etc/tacquito/templates/cisco.template
+sudo vi /etc/tacquito/templates/cisco.template
+```
+
+**To reset to defaults:** remove the override file:
+```bash
+sudo rm /etc/tacquito/templates/cisco.template
+```
 
 ---
 

@@ -116,6 +116,12 @@ fi
 ln -sf "${DEPLOY_DEST}/bin/tacctl.sh" /usr/local/bin/tacctl
 ln -sf "${DEPLOY_DEST}/bin/tacquito-upgrade.sh" /usr/local/bin/tacquito-upgrade
 cp "${PROJECT_DIR}/README.md" "${CONFIG_DIR}/README.md" 2>/dev/null || true
+# Install default config templates
+if [[ -d "${PROJECT_DIR}/config/templates" ]]; then
+    mkdir -p "${CONFIG_DIR}/templates"
+    cp -n "${PROJECT_DIR}/config/templates/"*.template "${CONFIG_DIR}/templates/" 2>/dev/null || true
+    info "Config templates installed: ${CONFIG_DIR}/templates/"
+fi
 # Install logrotate config
 if [[ -f "${PROJECT_DIR}/config/tacquito.logrotate" ]]; then
     cp "${PROJECT_DIR}/config/tacquito.logrotate" /etc/logrotate.d/tacquito

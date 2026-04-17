@@ -61,6 +61,20 @@ preflight() {
     fi
 }
 
+# --- Resolve template file (user override → repo default) ---
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+TEMPLATE_DIR_LOCAL="/etc/tacquito/templates"
+TEMPLATE_DIR_REPO="$(cd "${SCRIPT_DIR}/../config/templates" 2>/dev/null && pwd)"
+
+resolve_template() {
+    local name="$1"
+    if [[ -f "${TEMPLATE_DIR_LOCAL}/${name}.template" ]]; then
+        echo "${TEMPLATE_DIR_LOCAL}/${name}.template"
+    elif [[ -n "$TEMPLATE_DIR_REPO" && -f "${TEMPLATE_DIR_REPO}/${name}.template" ]]; then
+        echo "${TEMPLATE_DIR_REPO}/${name}.template"
+    fi
+}
+
 # --- Restart service after config changes ---
 # sed -i and python rewrites change the file inode, breaking fsnotify hot-reload.
 restart_service() {
@@ -605,6 +619,11 @@ open(sys.argv[1], 'w').write(config)
 
     chown tacquito:tacquito "$CONFIG"
 
+    # Rename password date file
+    if [[ -f "${PASSWORD_DATES_DIR}/${oldname}.date" ]]; then
+        mv "${PASSWORD_DATES_DIR}/${oldname}.date" "${PASSWORD_DATES_DIR}/${newname}.date"
+    fi
+
     restart_service
     info "User renamed: ${oldname} -> ${newname}"
     echo ""
@@ -983,12 +1002,41 @@ for m in re.finditer(r'^(\w+): &\1\n  name: \1\n  services:\n(.*?)  accounter:',
             print(f'{name}|{sm.group(1)}')
 " "$CONFIG")
 
+    # Build dynamic sections
+    local PRIVILEGE_COMMANDS=""
+    while IFS='|' read -r gname privlvl; do
+        [[ -z "$gname" ]] && continue
+        [[ "$privlvl" == "1" || "$privlvl" == "15" ]] && continue
+        PRIVILEGE_COMMANDS+="! --- ${gname} — Privilege Level ${privlvl} Commands ---
+privilege exec level ${privlvl} show running-config
+privilege exec level ${privlvl} show startup-config
+privilege exec level ${privlvl} ping
+privilege exec level ${privlvl} traceroute
+privilege exec level ${privlvl} terminal monitor
+privilege exec level ${privlvl} terminal no monitor
+!
+"
+    done <<< "$group_info"
+
+    local GROUP_SUMMARY=""
+    while IFS='|' read -r gname privlvl; do
+        [[ -z "$gname" ]] && continue
+        GROUP_SUMMARY+="  ${gname}: priv-lvl ${privlvl}"$'\n'
+    done <<< "$group_info"
+
     echo ""
     echo -e "${BOLD}Cisco IOS / IOS-XE Configuration${NC}"
     echo -e "${YELLOW}Copy and paste into the device:${NC}"
     echo "--------------------------------------------"
     echo ""
-    cat <<EOF
+
+    local template_file
+    template_file=$(resolve_template "cisco")
+    if [[ -n "$template_file" ]]; then
+        export SERVER_IP="$server_ip" SECRET="$secret" PRIVILEGE_COMMANDS GROUP_SUMMARY
+        envsubst '${SERVER_IP} ${SECRET} ${PRIVILEGE_COMMANDS} ${GROUP_SUMMARY}' < "$template_file"
+    else
+        cat <<EOF
 ! --- TACACS+ Server & AAA ---
 aaa new-model
 !
@@ -1005,39 +1053,25 @@ aaa authorization exec default group TACACS-GROUP local if-authenticated
 aaa accounting exec default start-stop group TACACS-GROUP
 aaa accounting commands 15 default start-stop group TACACS-GROUP
 !
-EOF
-
-    # Generate privilege level command mappings for each non-standard group
-    echo "$group_info" | while IFS='|' read -r gname privlvl; do
-        [[ "$privlvl" == "1" || "$privlvl" == "15" ]] && continue
-        cat <<EOF
-! --- ${gname} — Privilege Level ${privlvl} Commands ---
-privilege exec level ${privlvl} show running-config
-privilege exec level ${privlvl} show startup-config
-privilege exec level ${privlvl} ping
-privilege exec level ${privlvl} traceroute
-privilege exec level ${privlvl} terminal monitor
-privilege exec level ${privlvl} terminal no monitor
-!
-EOF
-    done
-
-    cat <<EOF
+${PRIVILEGE_COMMANDS}
 line vty 0 15
   login authentication default
 EOF
+    fi
+
     echo ""
     echo "--------------------------------------------"
     echo -e "${YELLOW}Group → Privilege Level Mapping:${NC}"
-    echo "$group_info" | while IFS='|' read -r gname privlvl; do
-        echo "  ${gname}: priv-lvl ${privlvl}"
-    done
+    echo -n "$GROUP_SUMMARY"
     echo ""
     echo -e "${YELLOW}Notes:${NC}"
     echo "  - The 'local' fallback ensures access if TACACS+ is unreachable"
     echo "  - Ensure a local admin account exists as a backup"
     echo "  - Custom privilege levels (2-14) require the 'privilege exec level' mappings above"
     echo "  - Adjust mapped commands to suit your operational needs"
+    if [[ -n "$template_file" ]]; then
+        echo "  - Using template: ${template_file}"
+    fi
     echo ""
 }
 
@@ -1076,46 +1110,73 @@ for m in re.finditer(r'^(\w+): &\1\n  name: \1\n  services:\n(.*?)  accounter:',
             print(f'{name}|{jclass}|{junos_class}')
 " "$CONFIG")
 
+    # Build dynamic sections
+    local TEMPLATE_USERS=""
+    while IFS='|' read -r gname jclass junos_class; do
+        [[ -z "$gname" ]] && continue
+        TEMPLATE_USERS+="set system login user ${jclass} class ${junos_class}"$'\n'
+    done <<< "$group_juniper"
+    TEMPLATE_USERS="${TEMPLATE_USERS%$'\n'}"
+
+    local TACPLUS_CONFIG
+    TACPLUS_CONFIG="set system authentication-order [tacplus password]
+set system tacplus-server ${server_ip} secret ${secret}
+set system tacplus-server ${server_ip} single-connection
+set system accounting events [ login change-log interactive-commands ]
+set system accounting destination tacplus"
+
+    local VERIFY_COMMANDS
+    VERIFY_COMMANDS="  show configuration system tacplus-server
+  show configuration system authentication-order"
+    while IFS='|' read -r gname jclass junos_class; do
+        [[ -z "$gname" ]] && continue
+        VERIFY_COMMANDS+=$'\n'"  show configuration system login user ${jclass}"
+    done <<< "$group_juniper"
+
+    local GROUP_SUMMARY=""
+    while IFS='|' read -r gname jclass junos_class; do
+        [[ -z "$gname" ]] && continue
+        GROUP_SUMMARY+="  ${gname}: ${jclass} (${junos_class})"$'\n'
+    done <<< "$group_juniper"
+
     echo ""
     echo -e "${BOLD}Juniper Junos Configuration${NC}"
     echo -e "${YELLOW}Copy and paste into the device (configure mode):${NC}"
     echo "--------------------------------------------"
     echo ""
-    echo "# Step 1: Create template users (REQUIRED)"
-    echo "$group_juniper" | while IFS='|' read -r gname jclass junos_class; do
-        echo "set system login user ${jclass} class ${junos_class}"
-    done
-    echo ""
-    echo "# Step 2: Configure TACACS+"
-    cat <<EOF
-set system authentication-order [tacplus password]
-set system tacplus-server ${server_ip} secret ${secret}
-set system tacplus-server ${server_ip} single-connection
-set system accounting events [ login change-log interactive-commands ]
-set system accounting destination tacplus
-EOF
-    echo ""
-    echo "# Step 3: Commit"
-    echo "commit"
+
+    local template_file
+    template_file=$(resolve_template "juniper")
+    if [[ -n "$template_file" ]]; then
+        export SERVER_IP="$server_ip" SECRET="$secret" TEMPLATE_USERS TACPLUS_CONFIG VERIFY_COMMANDS GROUP_SUMMARY
+        envsubst '${SERVER_IP} ${SECRET} ${TEMPLATE_USERS} ${TACPLUS_CONFIG} ${VERIFY_COMMANDS} ${GROUP_SUMMARY}' < "$template_file"
+    else
+        echo "# Step 1: Create template users (REQUIRED)"
+        echo "$TEMPLATE_USERS"
+        echo ""
+        echo "# Step 2: Configure TACACS+"
+        echo "$TACPLUS_CONFIG"
+        echo ""
+        echo "# Step 3: Commit"
+        echo "commit"
+    fi
+
     echo ""
     echo "--------------------------------------------"
     echo -e "${YELLOW}Group → Juniper Class Mapping:${NC}"
-    echo "$group_juniper" | while IFS='|' read -r gname jclass junos_class; do
-        echo "  ${gname}: ${jclass} (${junos_class})"
-    done
+    echo -n "$GROUP_SUMMARY"
     echo ""
     echo -e "${YELLOW}Notes:${NC}"
     echo "  - Template users MUST exist before TACACS+ logins will work"
     echo "  - The 'password' fallback in authentication-order ensures local access"
     echo "  - If a login fails silently, the template user is likely missing"
     echo "  - Adjust the Junos class (read-only/operator/super-user) as needed"
+    if [[ -n "$template_file" ]]; then
+        echo "  - Using template: ${template_file}"
+    fi
     echo ""
     echo -e "${BOLD}Verify after commit:${NC}"
-    echo "  show configuration system tacplus-server"
-    echo "  show configuration system authentication-order"
-    echo "$group_juniper" | while IFS='|' read -r gname jclass junos_class; do
-        echo "  show configuration system login user ${jclass}"
-    done
+    echo "$VERIFY_COMMANDS"
     echo ""
 }
 

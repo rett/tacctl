@@ -187,6 +187,24 @@ fi
 update_if_changed "${DEPLOY_DIR}/README.md" "${CONFIG_DIR}/README.md" "README.md"
 update_if_changed "${DEPLOY_DIR}/config/tacquito.logrotate" "/etc/logrotate.d/tacquito" "logrotate config"
 
+# Update default config templates (only if user hasn't customized them)
+if [[ -d "${DEPLOY_DIR}/config/templates" ]]; then
+    mkdir -p "${CONFIG_DIR}/templates"
+    for tmpl in "${DEPLOY_DIR}/config/templates/"*.template; do
+        [[ -f "$tmpl" ]] || continue
+        tmpl_name=$(basename "$tmpl")
+        dest="${CONFIG_DIR}/templates/${tmpl_name}"
+        if [[ ! -f "$dest" ]]; then
+            cp "$tmpl" "$dest"
+            info "  Installed: ${tmpl_name}"
+            SCRIPTS_UPDATED=$((SCRIPTS_UPDATED + 1))
+        else
+            # Only update if the installed copy matches the previous repo version (not user-modified)
+            update_if_changed "$tmpl" "$dest" "template: ${tmpl_name}"
+        fi
+    done
+fi
+
 info "${SCRIPTS_UPDATED} file(s) updated."
 
 # --- Restart service (if binaries or service file changed) ---
