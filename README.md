@@ -6,18 +6,18 @@ Management toolkit for [tacquito](https://github.com/facebookincubator/tacquito)
 
 ```bash
 # Install on a new server
-sudo tacctl install
+sudo bash -c 'git clone https://github.com/rett/tacctl.git /opt/tacctl && ln -sf /opt/tacctl/bin/tacctl.sh /usr/local/bin/tacctl && tacctl install'
 
 # Or upgrade an existing server (pulls latest from GitHub)
-sudo tacctl upgrade
+tacctl upgrade
 
 # Manage users
-sudo tacctl user list
-sudo tacctl user add jsmith superuser
+tacctl user list
+tacctl user add jsmith superuser
 
 # Show device configs with your server's IP and secret pre-filled
-sudo tacctl config cisco
-sudo tacctl config juniper
+tacctl config cisco
+tacctl config juniper
 ```
 
 ## Project Structure
@@ -66,15 +66,15 @@ tacctl/
 ### Top-Level Commands
 
 ```
-sudo tacctl install                 # Install tacquito server from scratch
-sudo tacctl upgrade                 # Pull latest source, rebuild, update scripts
-sudo tacctl uninstall               # Remove tacquito and all associated files
-sudo tacctl status                  # Service health, stats, errors, password age warnings
-sudo tacctl user <subcommand>       # User management
-sudo tacctl group <subcommand>      # Group management
-sudo tacctl config <subcommand>     # Configuration
-sudo tacctl log <subcommand>        # Log viewer
-sudo tacctl backup <subcommand>     # Backup management
+tacctl install                 # Install tacquito server from scratch
+tacctl upgrade                 # Pull latest source, rebuild, update scripts
+tacctl uninstall               # Remove tacquito and all associated files
+tacctl status                  # Service health, stats, errors, password age warnings
+tacctl user <subcommand>       # User management
+tacctl group <subcommand>      # Group management
+tacctl config <subcommand>     # Configuration
+tacctl log <subcommand>        # Log viewer
+tacctl backup <subcommand>     # Backup management
 ```
 
 Run any command without arguments for detailed help.
@@ -218,7 +218,7 @@ sudo rm /etc/tacquito/templates/cisco.template
 ## Upgrading
 
 ```bash
-sudo tacctl upgrade
+tacctl upgrade
 ```
 
 The upgrade command:
@@ -238,34 +238,34 @@ The upgrade command:
 
 **`bad secret detected for ip [x.x.x.x]`**
 - Shared secret mismatch between server and device
-- Regenerate with hex-only: `sudo tacctl config secret`
+- Regenerate with hex-only: `tacctl config secret`
 - On Juniper: delete and re-set the secret to avoid hidden characters
 
 **`failed to validate the user [x] using a bcrypt password`**
 - Shared secret is correct but password doesn't match
-- Verify: `sudo tacctl user verify <username>`
-- Reset: `sudo tacctl user passwd <username>`
+- Verify: `tacctl user verify <username>`
+- Reset: `tacctl user passwd <username>`
 
 **TACACS+ auth succeeds but Juniper login fails**
 - Template user is missing on the device
-- Fix: create all template users shown by `sudo tacctl config juniper`
+- Fix: create all template users shown by `tacctl config juniper`
 
 **No connection attempts reaching the server**
 - Verify port 49 reachable: `telnet <server_ip> 49` from the device
-- Check service is running: `sudo tacctl status`
+- Check service is running: `tacctl status`
 - Check IPv4 mode: ensure `-network tcp` is in the systemd unit
 
 **Config change not taking effect**
 - Manual edits with `sed -i` require: `sudo systemctl restart tacquito`
-- Check for parse errors: `sudo tacctl config validate`
+- Check for parse errors: `tacctl config validate`
 
 ### Useful Commands
 
 ```bash
-sudo tacctl status          # Health check with auth stats
-sudo tacctl log failures    # Recent auth failures
-sudo tacctl config validate # Check config syntax
-sudo tacctl config diff     # What changed since last backup
+tacctl status          # Health check with auth stats
+tacctl log failures    # Recent auth failures
+tacctl config validate # Check config syntax
+tacctl config diff     # What changed since last backup
 ```
 
 ---
