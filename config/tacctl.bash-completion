@@ -14,7 +14,7 @@ _tacctl() {
     done
 
     local pos=$((cword - offset))
-    local commands="install upgrade uninstall status user group config log backup"
+    local commands="install upgrade uninstall status user group config log backup hash"
 
     # Top-level commands
     if [[ $pos -eq 1 ]]; then
@@ -28,6 +28,8 @@ _tacctl() {
         user)
             if [[ $pos -eq 2 ]]; then
                 COMPREPLY=($(compgen -W "list add remove passwd disable enable rename move verify" -- "$cur"))
+            elif [[ $pos -eq 4 && "${words[offset + 2]}" == "add" ]]; then
+                COMPREPLY=($(compgen -W "--hash" -- "$cur"))
             fi
             ;;
         group)

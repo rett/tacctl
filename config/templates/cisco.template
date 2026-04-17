@@ -15,5 +15,11 @@ aaa accounting exec default start-stop group TACACS-GROUP
 aaa accounting commands 15 default start-stop group TACACS-GROUP
 !
 ${PRIVILEGE_COMMANDS}
+! --- VTY ACL (recommended) ---
+! Restrict management access to trusted subnets:
+!   ip access-list standard VTY-ACL
+!     permit <mgmt-subnet>
+!
 line vty 0 15
   login authentication default
+!   access-class VTY-ACL in
