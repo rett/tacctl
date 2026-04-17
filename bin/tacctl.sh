@@ -15,12 +15,10 @@
 #   ./tacctl.sh verify <username>
 #   ./tacctl.sh config show
 #   ./tacctl.sh config secret [new-secret]
-#   ./tacctl.sh config juniper-ro [class-name]
-#   ./tacctl.sh config juniper-rw [class-name]
 #   ./tacctl.sh config prefixes [cidr,cidr,...]
 #
 set -euo pipefail
-if [[ $EUID -ne 0 ]]; then
+if [[ $EUID -ne 0 && "${1:-}" != "hash" ]]; then
     exec sudo "$0" "$@"
 fi
 umask 077
@@ -98,6 +96,8 @@ restart_service() {
 record_password_date() {
     local username="$1"
     mkdir -p "$PASSWORD_DATES_DIR"
+    chmod 750 "$PASSWORD_DATES_DIR"
+    chown tacquito:tacquito "$PASSWORD_DATES_DIR" 2>/dev/null || true
     date +%Y-%m-%d > "${PASSWORD_DATES_DIR}/${username}.date"
 }
 
@@ -116,6 +116,8 @@ BACKUP_RETENTION=30
 
 backup_config() {
     mkdir -p "$BACKUP_DIR"
+    chmod 750 "$BACKUP_DIR"
+    chown tacquito:tacquito "$BACKUP_DIR" 2>/dev/null || true
     local ts
     ts=$(date +%Y%m%d_%H%M%S)
     cp "$CONFIG" "${BACKUP_DIR}/tacquito.yaml.${ts}"
@@ -156,13 +158,63 @@ except ValueError:
 " "$password" "$hexhash" 2>/dev/null || echo "FAIL"
 }
 
-# --- Validate class/value names for safe use in sed ---
+# --- Validate class/value names ---
 validate_class_name() {
     local value="$1"
     if [[ ! "$value" =~ ^[A-Za-z0-9_-]+$ ]]; then
         error "Invalid name '${value}'. Only letters, numbers, underscores, and hyphens are allowed."
         exit 1
     fi
+}
+
+# --- Validate username ---
+validate_username() {
+    local value="$1"
+    if [[ ! "$value" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+        error "Username must contain only letters, numbers, underscores, and hyphens."
+        exit 1
+    fi
+}
+
+# --- Validate CIDR notation ---
+validate_cidr() {
+    local value="$1"
+    if ! python3 -c "import ipaddress,sys; ipaddress.ip_network(sys.argv[1],strict=False)" "$value" 2>/dev/null; then
+        error "Invalid CIDR: '${value}'"
+        exit 1
+    fi
+}
+
+# --- Replace a user's hash in config (safe from sed injection) ---
+replace_user_hash() {
+    local username="$1"
+    local new_hash="$2"
+    python3 -c "
+import re, sys, tempfile, os
+config_path, username, new_hash = sys.argv[1], sys.argv[2], sys.argv[3]
+config = open(config_path).read()
+pattern = r'(bcrypt_' + re.escape(username) + r':.*?hash:\s*)\S+'
+config = re.sub(pattern, r'\g<1>' + new_hash, config, count=1, flags=re.DOTALL)
+tmp = tempfile.NamedTemporaryFile('w', dir=os.path.dirname(config_path), delete=False)
+tmp.write(config)
+tmp.close()
+os.rename(tmp.name, config_path)
+" "$CONFIG" "$username" "$new_hash"
+}
+
+# --- Replace shared secret in config (safe from sed injection) ---
+replace_secret() {
+    local new_secret="$1"
+    python3 -c "
+import re, sys, tempfile, os
+config_path, new_secret = sys.argv[1], sys.argv[2]
+config = open(config_path).read()
+config = re.sub(r'(key:\s*\")[^\"]*(\")' , r'\g<1>' + re.escape(new_secret) + r'\2', config, count=1)
+tmp = tempfile.NamedTemporaryFile('w', dir=os.path.dirname(config_path), delete=False)
+tmp.write(config)
+tmp.close()
+os.rename(tmp.name, config_path)
+" "$CONFIG" "$new_secret"
 }
 
 # --- Check if user exists ---
@@ -291,6 +343,7 @@ cmd_add() {
         error "Usage: tacctl.sh add <username> <readonly|operator|superuser>"
         exit 1
     fi
+    validate_username "$username"
     # Validate group exists in config
     if ! grep -q "^${group}: &${group}$" "$CONFIG"; then
         local available
@@ -303,64 +356,76 @@ cmd_add() {
         error "User '${username}' already exists."
         exit 1
     fi
-    # Validate username (alphanumeric, underscore, hyphen)
-    if [[ ! "$username" =~ ^[a-zA-Z0-9_-]+$ ]]; then
-        error "Username must contain only letters, numbers, underscores, and hyphens."
-        exit 1
+
+    # Check for --hash flag (pre-generated bcrypt hash)
+    local hash=""
+    if [[ "${3:-}" == "--hash" ]]; then
+        hash="${4:-}"
+        if [[ -z "$hash" ]]; then
+            error "Usage: tacctl user add <username> <group> --hash <bcrypt-hash>"
+            exit 1
+        fi
+        if [[ ! "$hash" =~ ^\$2[aby]\$ ]]; then
+            error "Invalid bcrypt hash. Must start with \$2b\$, \$2a\$, or \$2y\$."
+            error "Generate one with: tacctl hash"
+            exit 1
+        fi
     fi
 
     echo ""
     echo -e "  Adding user: ${BOLD}${username}${NC} (${group})"
-    local password
-    password=$(prompt_password)
 
-    local hash
-    hash=$(generate_hash "$password")
+    if [[ -z "$hash" ]]; then
+        local password
+        password=$(prompt_password)
+        hash=$(generate_hash "$password")
+    else
+        info "Using pre-generated bcrypt hash."
+    fi
 
     backup_config
 
-    # Insert authenticator anchor before the "# --- Services ---" line
-    local auth_block
-    auth_block=$(cat <<EOF
+    # Insert authenticator anchor and user entry using Python (safe from injection)
+    python3 -c "
+import sys, tempfile, os
 
-bcrypt_${username}: &bcrypt_${username}
-  type: *authenticator_type_bcrypt
-  options:
-    hash: ${hash}
-EOF
+config_path = sys.argv[1]
+username = sys.argv[2]
+hash_val = sys.argv[3]
+group = sys.argv[4]
+config = open(config_path).read()
+
+# Insert authenticator block before '# --- Services ---'
+auth_block = (
+    '\n'
+    f'bcrypt_{username}: &bcrypt_{username}\n'
+    f'  type: *authenticator_type_bcrypt\n'
+    f'  options:\n'
+    f'    hash: {hash_val}\n'
 )
-    # Find the line number of "# --- Services ---" and insert before it
-    local insert_line
-    insert_line=$(grep -n "^# --- Services ---" "$CONFIG" | head -1 | cut -d: -f1)
-    if [[ -z "$insert_line" ]]; then
-        error "Cannot find insertion point in config. Is the config format correct?"
-        exit 1
-    fi
+marker = '# --- Services ---'
+idx = config.index(marker)
+config = config[:idx] + auth_block + '\n' + config[idx:]
 
-    # Insert the authenticator block
-    sed -i "$((insert_line - 1))a\\
-\\
-bcrypt_${username}: \&bcrypt_${username}\\
-  type: *authenticator_type_bcrypt\\
-  options:\\
-    hash: ${hash}" "$CONFIG"
+# Insert user entry before '# --- Secret Providers ---'
+user_block = (
+    '\n'
+    f'  # {username}\n'
+    f'  - name: {username}\n'
+    f'    scopes: [\"network_devices\"]\n'
+    f'    groups: [*{group}]\n'
+    f'    authenticator: *bcrypt_{username}\n'
+    f'    accounter: *file_accounter\n'
+)
+marker2 = '# --- Secret Providers ---'
+idx2 = config.index(marker2)
+config = config[:idx2] + user_block + '\n' + config[idx2:]
 
-    # Append user entry at the end of the users section (before "# --- Secret Providers ---")
-    local secrets_line
-    secrets_line=$(grep -n "^# --- Secret Providers ---" "$CONFIG" | head -1 | cut -d: -f1)
-    if [[ -z "$secrets_line" ]]; then
-        error "Cannot find secrets section in config."
-        exit 1
-    fi
-
-    sed -i "$((secrets_line - 1))i\\
-\\
-  # ${username}\\
-  - name: ${username}\\
-    scopes: [\"network_devices\"]\\
-    groups: [*${group}]\\
-    authenticator: *bcrypt_${username}\\
-    accounter: *file_accounter" "$CONFIG"
+tmp = tempfile.NamedTemporaryFile('w', dir=os.path.dirname(config_path), delete=False)
+tmp.write(config)
+tmp.close()
+os.rename(tmp.name, config_path)
+" "$CONFIG" "$username" "$hash" "$group"
 
     # Fix ownership
     chown tacquito:tacquito "$CONFIG"
@@ -379,6 +444,7 @@ cmd_remove() {
         error "Usage: tacctl.sh remove <username>"
         exit 1
     fi
+    validate_username "$username"
     if ! user_exists "$username"; then
         error "User '${username}' does not exist."
         exit 1
@@ -440,6 +506,7 @@ cmd_passwd() {
         error "Usage: tacctl.sh passwd <username>"
         exit 1
     fi
+    validate_username "$username"
     if ! user_exists "$username"; then
         error "User '${username}' does not exist."
         exit 1
@@ -455,10 +522,7 @@ cmd_passwd() {
 
     backup_config
 
-    # Replace the hash in the user's authenticator anchor
-    local old_hash
-    old_hash=$(get_user_hash "$username")
-    sed -i "s|hash: ${old_hash}|hash: ${hash}|" "$CONFIG"
+    replace_user_hash "$username" "$hash"
 
     chown tacquito:tacquito "$CONFIG"
 
@@ -476,6 +540,7 @@ cmd_disable() {
         error "Usage: tacctl.sh disable <username>"
         exit 1
     fi
+    validate_username "$username"
     if ! user_exists "$username"; then
         error "User '${username}' does not exist."
         exit 1
@@ -492,11 +557,11 @@ cmd_disable() {
 
     # Save the real hash to a sidecar file for re-enabling
     mkdir -p "${BACKUP_DIR}/disabled"
+    chmod 700 "${BACKUP_DIR}/disabled"
     echo "$current_hash" > "${BACKUP_DIR}/disabled/${username}.hash"
     chmod 600 "${BACKUP_DIR}/disabled/${username}.hash"
 
-    # Replace hash with DISABLED
-    sed -i "s|hash: ${current_hash}|hash: DISABLED|" "$CONFIG"
+    replace_user_hash "$username" "DISABLED"
 
     chown tacquito:tacquito "$CONFIG"
 
@@ -513,6 +578,7 @@ cmd_enable() {
         error "Usage: tacctl.sh enable <username>"
         exit 1
     fi
+    validate_username "$username"
     if ! user_exists "$username"; then
         error "User '${username}' does not exist."
         exit 1
@@ -537,7 +603,7 @@ cmd_enable() {
 
     backup_config
 
-    sed -i "s|hash: DISABLED|hash: ${saved_hash}|" "$CONFIG"
+    replace_user_hash "$username" "$saved_hash"
     rm -f "$saved_hash_file"
 
     chown tacquito:tacquito "$CONFIG"
@@ -555,6 +621,7 @@ cmd_verify() {
         error "Usage: tacctl.sh verify <username>"
         exit 1
     fi
+    validate_username "$username"
     if ! user_exists "$username"; then
         error "User '${username}' does not exist."
         exit 1
@@ -606,16 +673,14 @@ cmd_rename() {
         error "Usage: tacctl.sh rename <old-username> <new-username>"
         exit 1
     fi
+    validate_username "$oldname"
+    validate_username "$newname"
     if ! user_exists "$oldname"; then
         error "User '${oldname}' does not exist."
         exit 1
     fi
     if user_exists "$newname"; then
         error "User '${newname}' already exists."
-        exit 1
-    fi
-    if [[ ! "$newname" =~ ^[a-zA-Z0-9_-]+$ ]]; then
-        error "Username must contain only letters, numbers, underscores, and hyphens."
         exit 1
     fi
 
@@ -670,6 +735,8 @@ cmd_move() {
         error "Usage: tacctl move <username> <new-group>"
         exit 1
     fi
+    validate_username "$username"
+    validate_class_name "$newgroup"
     if ! user_exists "$username"; then
         error "User '${username}' does not exist."
         exit 1
@@ -861,87 +928,14 @@ cmd_config_secret() {
         fi
     fi
 
-    local old_secret
-    old_secret=$(get_config_value "secret")
-
     backup_config
 
-    sed -i "s|key: \"${old_secret}\"|key: \"${new_secret}\"|" "$CONFIG"
+    replace_secret "$new_secret"
     chown tacquito:tacquito "$CONFIG"
 
     restart_service
     info "Shared secret updated."
     warn "Update ALL network devices with the new secret: ${new_secret}"
-    echo ""
-}
-
-# --- CONFIG JUNIPER-RO ---
-cmd_config_juniper_ro() {
-    local new_class="${1:-}"
-
-    if [[ -z "$new_class" ]]; then
-        local current
-        current=$(get_config_value "juniper-ro")
-        read -rp "  Enter new Juniper read-only class name [current: ${current}]: " new_class
-        if [[ -z "$new_class" ]]; then
-            info "No change."
-            return
-        fi
-    fi
-
-    validate_class_name "$new_class"
-
-    local old_class
-    old_class=$(get_config_value "juniper-ro")
-
-    backup_config
-
-    # Update the junos_exec_readonly service value
-    sed -i "/junos_exec_readonly:/,/values:/{s|values: \[\"${old_class}\"\]|values: [\"${new_class}\"]|}" "$CONFIG"
-
-    # Update the comment above it
-    sed -i "s|\"${old_class}\" must match a local template user|\"${new_class}\" must match a local template user|" "$CONFIG"
-
-    chown tacquito:tacquito "$CONFIG"
-
-    restart_service
-    info "Juniper read-only class changed: ${old_class} -> ${new_class}"
-    warn "Update Juniper devices: set system login user ${new_class} class read-only"
-    echo ""
-}
-
-# --- CONFIG JUNIPER-RW ---
-cmd_config_juniper_rw() {
-    local new_class="${1:-}"
-
-    if [[ -z "$new_class" ]]; then
-        local current
-        current=$(get_config_value "juniper-rw")
-        read -rp "  Enter new Juniper super-user class name [current: ${current}]: " new_class
-        if [[ -z "$new_class" ]]; then
-            info "No change."
-            return
-        fi
-    fi
-
-    validate_class_name "$new_class"
-
-    local old_class
-    old_class=$(get_config_value "juniper-rw")
-
-    backup_config
-
-    # Update the junos_exec_superuser service value
-    sed -i "/junos_exec_superuser:/,/values:/{s|values: \[\"${old_class}\"\]|values: [\"${new_class}\"]|}" "$CONFIG"
-
-    # Update the comment above it
-    sed -i "s|\"${old_class}\" must match a local template user|\"${new_class}\" must match a local template user|" "$CONFIG"
-
-    chown tacquito:tacquito "$CONFIG"
-
-    restart_service
-    info "Juniper super-user class changed: ${old_class} -> ${new_class}"
-    warn "Update Juniper devices: set system login user ${new_class} class super-user"
     echo ""
 }
 
@@ -970,6 +964,8 @@ cmd_config_prefixes() {
     IFS=',' read -ra CIDRS <<< "$new_prefixes"
     for cidr in "${CIDRS[@]}"; do
         cidr=$(echo "$cidr" | xargs)  # trim whitespace
+        [[ -z "$cidr" ]] && continue
+        validate_cidr "$cidr"
         if [[ -n "$prefix_lines" ]]; then
             prefix_lines="${prefix_lines},"$'\n'"          \"${cidr}\""
         else
@@ -1225,6 +1221,58 @@ set system accounting destination tacplus"
 }
 
 # --- CONFIG ALLOW/DENY PREFIX FILTERS ---
+# --- CONFIG BRANCH ---
+cmd_config_branch() {
+    local new_branch="${1:-}"
+
+    if [[ ! -d "${DEPLOY_DIR}/.git" ]]; then
+        error "Deploy directory not found at ${DEPLOY_DIR}."
+        exit 1
+    fi
+
+    local current_branch
+    current_branch=$(git -C "$DEPLOY_DIR" branch --show-current 2>/dev/null)
+
+    if [[ -z "$new_branch" ]]; then
+        echo ""
+        echo -e "  ${BOLD}Current branch:${NC} ${current_branch}"
+        echo ""
+        echo "  Available remote branches:"
+        git -C "$DEPLOY_DIR" fetch --quiet 2>/dev/null || true
+        git -C "$DEPLOY_DIR" branch -r 2>/dev/null | grep -v HEAD | sed 's|origin/||' | while IFS= read -r b; do
+            b=$(echo "$b" | xargs)
+            if [[ "$b" == "$current_branch" ]]; then
+                echo -e "    ${GREEN}* ${b}${NC}"
+            else
+                echo "      ${b}"
+            fi
+        done
+        echo ""
+        return
+    fi
+
+    if [[ "$new_branch" == "$current_branch" ]]; then
+        info "Already on branch '${new_branch}'."
+        return
+    fi
+
+    # Fetch and switch
+    git -C "$DEPLOY_DIR" fetch --quiet 2>/dev/null || true
+    if ! git -C "$DEPLOY_DIR" rev-parse --verify "origin/${new_branch}" &>/dev/null; then
+        error "Branch '${new_branch}' does not exist on remote."
+        exit 1
+    fi
+
+    git -C "$DEPLOY_DIR" checkout -- . 2>/dev/null || true
+    git -C "$DEPLOY_DIR" checkout "$new_branch" 2>/dev/null || git -C "$DEPLOY_DIR" checkout -b "$new_branch" "origin/${new_branch}" 2>/dev/null
+    git -C "$DEPLOY_DIR" pull --quiet 2>/dev/null || true
+    chmod 755 "${DEPLOY_DIR}/bin/tacctl.sh"
+
+    info "Switched to branch '${new_branch}'."
+    info "Run 'tacctl upgrade' to apply any changes."
+    echo ""
+}
+
 cmd_config_prefix_filter() {
     local key="$1"
     local subcmd="${2:-list}"
@@ -1268,6 +1316,7 @@ else:
                 error "Usage: tacctl config ${label} add <cidr>"
                 exit 1
             fi
+            validate_cidr "$cidr"
             backup_config
             python3 -c "
 import re, sys
@@ -1303,6 +1352,7 @@ os.rename(tmp.name, sys.argv[1])
                 error "Usage: tacctl config ${label} remove <cidr>"
                 exit 1
             fi
+            validate_cidr "$cidr"
             backup_config
             python3 -c "
 import re, sys
@@ -1353,12 +1403,6 @@ cmd_config() {
         secret)
             cmd_config_secret "$@"
             ;;
-        juniper-ro)
-            cmd_config_juniper_ro "$@"
-            ;;
-        juniper-rw)
-            cmd_config_juniper_rw "$@"
-            ;;
         prefixes)
             cmd_config_prefixes "$@"
             ;;
@@ -1386,6 +1430,9 @@ cmd_config() {
         deny)
             cmd_config_prefix_filter "prefix_deny" "$@"
             ;;
+        branch)
+            cmd_config_branch "$@"
+            ;;
         *)
             echo ""
             echo -e "${BOLD}Config Commands${NC}"
@@ -1399,13 +1446,12 @@ cmd_config() {
             echo "  loglevel [debug|info|error]    Show or change log level"
             echo "  password-age [days]           Show or set password age warning threshold"
             echo "  secret [new-secret]           Change shared secret"
-            echo "  juniper-ro [class-name]       Change Juniper read-only class name"
-            echo "  juniper-rw [class-name]       Change Juniper super-user class name"
             echo "  prefixes [cidr,cidr,...]       Change allowed device subnets"
             echo "  allow list|add|remove          Manage connection allow list (IP ACL)"
             echo "  deny list|add|remove           Manage connection deny list (IP ACL)"
             echo "  cisco                         Show working Cisco device configuration"
             echo "  juniper                       Show working Juniper device configuration"
+            echo "  branch [name]                 Show or change the tacctl repo branch"
             echo ""
             echo "Examples:"
             echo "  tacctl config show"
@@ -2350,8 +2396,36 @@ cmd_backup() {
 #  SYSTEM LIFECYCLE COMMANDS
 # =====================================================================
 
+# --- HASH (generate bcrypt hash — does not require root) ---
+cmd_hash() {
+    if ! python3 -c "import bcrypt" 2>/dev/null; then
+        error "python3-bcrypt not installed."
+        exit 1
+    fi
+    local password
+    password=$(prompt_password)
+    local hash
+    hash=$(generate_hash "$password")
+    echo ""
+    echo "  Bcrypt hash (provide this to your admin):"
+    echo ""
+    echo "  ${hash}"
+    echo ""
+    echo "  Admin command:"
+    echo "    tacctl user add <username> <group> --hash '${hash}'"
+    echo ""
+}
+
 # --- INSTALL ---
 cmd_install() {
+    # Parse optional --branch flag
+    local INSTALL_BRANCH=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --branch) INSTALL_BRANCH="${2:-}"; shift 2 ;;
+            *) shift ;;
+        esac
+    done
 
     for cmd in git wget python3; do
         if ! command -v "$cmd" &>/dev/null; then
@@ -2400,6 +2474,23 @@ cmd_install() {
         info "Installing Go ${GO_VERSION}..."
         cd /tmp
         wget -q "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz"
+        # Verify checksum
+        local GO_SHA256
+        GO_SHA256=$(wget -qO- "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz.sha256" 2>/dev/null || true)
+        if [[ -n "$GO_SHA256" ]]; then
+            local ACTUAL_SHA256
+            ACTUAL_SHA256=$(sha256sum "go${GO_VERSION}.linux-amd64.tar.gz" | awk '{print $1}')
+            if [[ "$GO_SHA256" != "$ACTUAL_SHA256" ]]; then
+                error "Go tarball checksum mismatch!"
+                error "  Expected: ${GO_SHA256}"
+                error "  Got:      ${ACTUAL_SHA256}"
+                rm -f "go${GO_VERSION}.linux-amd64.tar.gz"
+                exit 1
+            fi
+            info "Go tarball checksum verified."
+        else
+            warn "Could not fetch Go checksum for verification."
+        fi
         tar -C /usr/local -xzf "go${GO_VERSION}.linux-amd64.tar.gz"
         rm -f "go${GO_VERSION}.linux-amd64.tar.gz"
         info "Go ${GO_VERSION} installed."
@@ -2429,15 +2520,19 @@ cmd_install() {
     info "  Hashgen: ${HASHGEN_BIN}"
 
     # Clone management repo for future upgrades
+    local branch_flag=""
+    [[ -n "$INSTALL_BRANCH" ]] && branch_flag="--branch $INSTALL_BRANCH"
     if [[ -d "${DEPLOY_DIR}/.git" ]]; then
         info "Management repo already cloned at ${DEPLOY_DIR}, pulling latest..."
-        cd "$DEPLOY_DIR" && git pull --quiet 2>/dev/null || true
+        cd "$DEPLOY_DIR"
+        [[ -n "$INSTALL_BRANCH" ]] && git checkout "$INSTALL_BRANCH" 2>/dev/null || true
+        git pull --quiet 2>/dev/null || true
     elif [[ -d "$DEPLOY_DIR" ]]; then
         rm -rf "$DEPLOY_DIR"
-        git clone --quiet "$MANAGE_REPO" "$DEPLOY_DIR"
+        git clone --quiet $branch_flag "$MANAGE_REPO" "$DEPLOY_DIR"
         info "Management repo cloned to ${DEPLOY_DIR}"
     else
-        git clone --quiet "$MANAGE_REPO" "$DEPLOY_DIR"
+        git clone --quiet $branch_flag "$MANAGE_REPO" "$DEPLOY_DIR"
         info "Management repo cloned to ${DEPLOY_DIR}"
     fi
     # Ensure git safe.directory is set for sudo operations
@@ -2498,76 +2593,34 @@ cmd_install() {
     chmod 750 "$CONFIG_DIR" "$LOG_DIR"
 
     # --- Step 5: Generate shared secret ---
-    echo ""
-    echo "--------------------------------------------"
-    echo "  Shared Secret Configuration"
-    echo "--------------------------------------------"
-    local SHARED_SECRET=""
-    SHARED_SECRET=$(read_password_masked "  Enter shared secret (leave blank to auto-generate): ")
-    if [[ -z "$SHARED_SECRET" ]]; then
-        SHARED_SECRET=$(openssl rand -hex 16)
-        info "Generated shared secret: ${SHARED_SECRET}"
-    else
-        info "Using provided shared secret."
-    fi
+    local SHARED_SECRET
+    SHARED_SECRET=$(openssl rand -hex 16)
 
-    # --- Step 6: Generate user passwords and hashes ---
-    echo ""
-    echo "--------------------------------------------"
-    echo "  User Password Configuration"
-    echo "--------------------------------------------"
-
-    local install_prompt_password
-    install_prompt_password() {
-        local username="$1"
-        local access="$2"
-        local password=""
-
-        echo ""
-        echo "  User: ${username} (${access})"
-        password=$(read_password_masked "  Enter password (leave blank to auto-generate): ")
-        if [[ -z "$password" ]]; then
-            password=$(openssl rand -base64 18)
-            echo -e "  Generated password: ${BOLD}${password}${NC}"
-        fi
-
-        local hash
-        hash=$(generate_hash "$password")
-
-        LAST_HASH="$hash"
-        LAST_PASSWORD="$password"
-    }
-
-    local LAST_HASH="" LAST_PASSWORD=""
-
-    install_prompt_password "user" "read-only"
-    local HASH_USER="$LAST_HASH" PW_USER="$LAST_PASSWORD"
-
-    install_prompt_password "operations" "operator, Operations"
-    local HASH_OPERATIONS="$LAST_HASH" PW_OPERATIONS="$LAST_PASSWORD"
-
-    install_prompt_password "engineering" "super-user"
-    local HASH_ENGINEERING="$LAST_HASH" PW_ENGINEERING="$LAST_PASSWORD"
-
-    # --- Step 7: Write configuration ---
+    # --- Step 6: Write configuration ---
     local CONFIG_FILE="${CONFIG_DIR}/tacquito.yaml"
     info "Writing configuration to ${CONFIG_FILE}..."
 
     cp "${PROJECT_DIR}/config/tacquito.yaml" "$CONFIG_FILE"
 
-    sed -i "s|hash: REPLACE_ME|hash: ${HASH_USER}|" "$CONFIG_FILE"
-    sed -i "0,/hash: REPLACE_ME/{s|hash: REPLACE_ME|hash: ${HASH_OPERATIONS}|}" "$CONFIG_FILE"
-    sed -i "0,/hash: REPLACE_ME/{s|hash: REPLACE_ME|hash: ${HASH_ENGINEERING}|}" "$CONFIG_FILE"
-    sed -i "s|REPLACE_WITH_SHARED_SECRET|${SHARED_SECRET}|" "$CONFIG_FILE"
+    # Replace shared secret placeholder using Python (safe from injection)
+    python3 -c "
+import sys, tempfile, os
+config_path, secret = sys.argv[1], sys.argv[2]
+config = open(config_path).read()
+config = config.replace('REPLACE_WITH_SHARED_SECRET', secret)
+tmp = tempfile.NamedTemporaryFile('w', dir=os.path.dirname(config_path), delete=False)
+tmp.write(config)
+tmp.close()
+os.rename(tmp.name, config_path)
+" "$CONFIG_FILE" "$SHARED_SECRET"
 
     chown tacquito:tacquito "$CONFIG_FILE"
     chmod 640 "$CONFIG_FILE"
 
-    mkdir -p "$PASSWORD_DATES_DIR"
-    for u in user operations engineering; do
-        date +%Y-%m-%d > "${PASSWORD_DATES_DIR}/${u}.date"
-    done
-    info "Password dates recorded."
+    mkdir -p "$BACKUP_DIR" "${BACKUP_DIR}/disabled" "$PASSWORD_DATES_DIR"
+    chmod 750 "$BACKUP_DIR" "$PASSWORD_DATES_DIR"
+    chmod 700 "${BACKUP_DIR}/disabled"
+    chown tacquito:tacquito "$BACKUP_DIR" "$PASSWORD_DATES_DIR"
 
     # --- Step 8: Install systemd service ---
     info "Installing systemd service..."
@@ -2605,28 +2658,40 @@ cmd_install() {
     echo "  Service:        tacquito.service (enabled, running)"
     echo "  Config:         ${CONFIG_FILE}"
     echo "  Accounting log: ${LOG_DIR}/accounting.log"
-    echo "  Metrics:        http://localhost:8080/metrics"
     echo ""
     echo "  Shared Secret:  ${SHARED_SECRET}"
     echo ""
-    echo "  Users:"
-    echo "    user         (read-only)   password: ${PW_USER}"
-    echo "    operations   (operator)    password: ${PW_OPERATIONS}"
-    echo "    engineering  (super-user)  password: ${PW_ENGINEERING}"
-    echo ""
-    echo -e "  ${RED}SAVE THESE CREDENTIALS — they are not stored in plaintext.${NC}"
+    echo -e "  ${RED}SAVE THE SHARED SECRET — it is not stored in plaintext.${NC}"
     echo -e "  ${YELLOW}Clear your terminal after recording: history -c && clear${NC}"
     echo ""
     echo "  Next steps:"
-    echo "    1. Configure your Cisco/Juniper devices (see README.md)"
-    echo "    2. Restrict prefixes in ${CONFIG_FILE} to your management subnets"
-    echo "    3. Open port 49/tcp in your firewall if needed"
-    echo "    4. See README.md for user management and troubleshooting"
+    echo "    1. Add your first user:    tacctl user add <username> superuser"
+    echo "    2. Configure devices:      tacctl config cisco / tacctl config juniper"
+    echo "    3. Restrict prefixes:      tacctl config prefixes <your-subnets>"
+    echo "    4. Open port 49/tcp in your firewall if needed"
+    echo ""
+    echo "  Security hardening:"
+    echo "    5. Bind to a specific IP:  edit ${SERVICE_FILE}"
+    echo "       Change '-address :49' to '-address <mgmt-ip>:49'"
+    echo "       Then: systemctl daemon-reload && systemctl restart tacquito"
+    echo "    6. Add connection ACL:     tacctl config allow add <cidr>"
+    echo "    7. Review config:          tacctl config show"
     echo ""
 }
 
 # --- UPGRADE ---
+# NOTE: Git pulls rely on HTTPS transport security. Commit signature verification
+# is not enforced. The self-update exec re-runs the script after a git pull — the
+# pulled code runs as root. Verify the repo's integrity in sensitive environments.
 cmd_upgrade() {
+    # Parse optional --branch flag
+    local UPGRADE_BRANCH=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --branch) UPGRADE_BRANCH="${2:-}"; shift 2 ;;
+            *) shift ;;
+        esac
+    done
 
     if [[ ! -d "$TACQUITO_SRC" ]]; then
         error "Tacquito source not found at ${TACQUITO_SRC}. Run 'tacctl install' first."
@@ -2705,6 +2770,11 @@ cmd_upgrade() {
         info "Pulling latest management scripts..."
         cd "$DEPLOY_DIR"
         git checkout -- . 2>/dev/null || true
+        if [[ -n "$UPGRADE_BRANCH" ]]; then
+            git fetch --quiet 2>/dev/null || true
+            git checkout "$UPGRADE_BRANCH" 2>/dev/null || git checkout -b "$UPGRADE_BRANCH" "origin/${UPGRADE_BRANCH}" 2>/dev/null
+            info "Switched to branch '${UPGRADE_BRANCH}'."
+        fi
         git fetch --quiet 2>/dev/null || true
         local LOCAL_MANAGE REMOTE_MANAGE
         LOCAL_MANAGE=$(git rev-parse HEAD 2>/dev/null)
@@ -2995,8 +3065,8 @@ usage() {
     echo "Usage: tacctl <command> [arguments]"
     echo ""
     echo "Commands:"
-    echo "  install                       Install tacquito server and configure from scratch"
-    echo "  upgrade                       Pull latest source, rebuild, and update scripts"
+    echo "  install [--branch <name>]     Install tacquito server and configure from scratch"
+    echo "  upgrade [--branch <name>]     Pull latest source, rebuild, and update scripts"
     echo "  uninstall                     Remove tacquito and all associated files"
     echo "  status                        Show service health, stats, and recent errors"
     echo "  user <subcommand>             User management (list, add, remove, passwd, ...)"
@@ -3004,6 +3074,7 @@ usage() {
     echo "  config <subcommand>           Configuration (show, cisco, juniper, secret, ...)"
     echo "  log <subcommand>              Log viewer (tail, search, failures, accounting)"
     echo "  backup <subcommand>           Backup management (list, diff, restore)"
+    echo "  hash                          Generate a bcrypt password hash"
     echo ""
     echo "Run any command without arguments for detailed help, e.g.:"
     echo "  tacctl user"
@@ -3044,7 +3115,8 @@ cmd_user() {
             echo ""
             echo "Subcommands:"
             echo "  list                          List all users and their status"
-            echo "  add <username> <group>        Add a new user"
+            echo "  add <username> <group>        Add a new user (prompts for password)"
+            echo "  add <username> <group> --hash <hash>  Add with pre-generated bcrypt hash"
             echo "  remove <username>             Remove a user"
             echo "  passwd <username>             Change a user's password"
             echo "  disable <username>            Disable a user (preserves hash)"
@@ -3097,6 +3169,9 @@ case "$COMMAND" in
     backup)
         preflight
         cmd_backup "$@"
+        ;;
+    hash)
+        cmd_hash
         ;;
     *)
         usage

@@ -22,24 +22,7 @@ file_accounter: &file_accounter
   type: *accounter_type_file
 
 # --- Per-user bcrypt authenticators ---
-# Generate hashes with:
-#   python3 -c "import bcrypt,binascii; print(binascii.hexlify(bcrypt.hashpw(input('Password: ').encode(), bcrypt.gensalt(10))).decode())"
-# Or use: /usr/local/bin/tacquito-hashgen -mode bcrypt
-
-bcrypt_user: &bcrypt_user
-  type: *authenticator_type_bcrypt
-  options:
-    hash: REPLACE_ME
-
-bcrypt_operations: &bcrypt_operations
-  type: *authenticator_type_bcrypt
-  options:
-    hash: REPLACE_ME
-
-bcrypt_engineering: &bcrypt_engineering
-  type: *authenticator_type_bcrypt
-  options:
-    hash: REPLACE_ME
+# Added automatically by: tacctl user add <name> <group>
 
 # --- Services ---
 # Cisco IOS/IOS-XE: requests service=exec, expects priv-lvl
@@ -97,7 +80,6 @@ readonly: &readonly
   services:
     - *exec_readonly
     - *junos_exec_readonly
-  authenticator: *bcrypt_user
   accounter: *file_accounter
 
 operator: &operator
@@ -105,7 +87,6 @@ operator: &operator
   services:
     - *exec_operator
     - *junos_exec_operator
-  authenticator: *bcrypt_operations
   accounter: *file_accounter
 
 superuser: &superuser
@@ -113,31 +94,11 @@ superuser: &superuser
   services:
     - *exec_superuser
     - *junos_exec_superuser
-  authenticator: *bcrypt_engineering
   accounter: *file_accounter
 
 # --- Users ---
+# Add users with: tacctl user add <name> <group>
 users:
-  # Read-only user
-  - name: user
-    scopes: ["network_devices"]
-    groups: [*readonly]
-    authenticator: *bcrypt_user
-    accounter: *file_accounter
-
-  # Operations team - operator
-  - name: operations
-    scopes: ["network_devices"]
-    groups: [*operator]
-    authenticator: *bcrypt_operations
-    accounter: *file_accounter
-
-  # Engineering - full admin
-  - name: engineering
-    scopes: ["network_devices"]
-    groups: [*superuser]
-    authenticator: *bcrypt_engineering
-    accounter: *file_accounter
 
 # --- Secret Providers ---
 secrets:

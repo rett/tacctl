@@ -11,9 +11,11 @@ sudo bash -c 'git clone https://github.com/rett/tacctl.git /opt/tacctl && ln -sf
 # Or upgrade an existing server (pulls latest from GitHub)
 tacctl upgrade
 
+# After install, add your first user
+tacctl user add jsmith superuser
+
 # Manage users
 tacctl user list
-tacctl user add jsmith superuser
 
 # Show device configs with your server's IP and secret pre-filled
 tacctl config cisco
@@ -54,10 +56,80 @@ tacctl/
 
 ## Important Notes
 
-- **IPv4 only:** The service runs with `-network tcp`. The default `tcp6` (dual-stack) breaks IPv4 prefix matching.
+- **IPv4 only:** The service runs with `-network tcp` (IPv4 only). The default `tcp6` (dual-stack) allows IPv6 clients to connect with mapped addresses (e.g., `::ffff:10.1.0.1`), which do not match IPv4 prefix rules — effectively bypassing prefix-based access control. Do not use `tcp6` unless you also add IPv6 prefix rules.
 - **Shared secrets:** Use hex-only secrets (`openssl rand -hex 16`) to avoid quoting issues on devices.
 - **Juniper template users are required:** Every `local-user-name` value (`RO-CLASS`, `OP-CLASS`, `RW-CLASS`) must have a matching local user on each Juniper device. Without this, TACACS+ auth succeeds but Junos rejects the login.
 - **Config edits:** The `tacctl` tool handles service restarts automatically. Manual edits with `sed -i` require a manual restart.
+
+## Security Best Practices
+
+### Bind to a specific interface
+The default `-address :49` listens on all interfaces. Change this to your management IP:
+1. Edit `/etc/systemd/system/tacquito.service`
+2. Change `-address :49` to `-address <mgmt-ip>:49`
+3. Run: `systemctl daemon-reload && systemctl restart tacquito`
+
+### Restrict allowed prefixes
+The default config allows all RFC 1918 space. After install, restrict to your actual management subnets:
+```
+tacctl config prefixes 10.1.0.0/24,172.16.5.0/24
+```
+
+### Configure connection filters
+Use allow/deny lists for additional IP-level filtering:
+```
+tacctl config allow add 10.1.0.0/24
+tacctl config deny add 10.99.0.0/24
+```
+Deny takes precedence over allow.
+
+### VTY ACLs on Cisco devices
+Apply an access-class to VTY lines to restrict which hosts can initiate SSH/Telnet sessions:
+```
+ip access-list standard VTY-ACL
+  permit <mgmt-subnet>
+line vty 0 15
+  access-class VTY-ACL in
+```
+
+### Log retention
+Accounting logs are rotated daily and retained for 90 days (see `/etc/logrotate.d/tacquito`). Adjust the `rotate` value if your compliance requirements differ.
+
+### Password age
+The default password age warning is 90 days. Adjust with:
+```
+tacctl config password-age <days>
+```
+
+## Self-Service Password Generation
+
+Users can generate their own bcrypt hash and provide it to an admin. The admin never sees the plaintext password.
+
+**On the server (if available):**
+```bash
+tacctl hash
+```
+
+**Linux / macOS:**
+```bash
+python3 -c "import bcrypt,getpass; print(bcrypt.hashpw(getpass.getpass().encode(), bcrypt.gensalt()).decode())"
+```
+
+**Windows (Python):**
+```powershell
+python -c "import bcrypt,getpass; print(bcrypt.hashpw(getpass.getpass().encode(), bcrypt.gensalt()).decode())"
+```
+
+**Windows (PowerShell, no Python):**
+```powershell
+Install-Module -Name BcryptNet -Scope CurrentUser
+[BCrypt.Net.BCrypt]::HashPassword((Read-Host -AsSecureString "Password" | ConvertFrom-SecureString -AsPlainText))
+```
+
+**Admin adds with pre-generated hash:**
+```bash
+tacctl user add jsmith superuser --hash '$2b$12$...'
+```
 
 ---
 
@@ -75,6 +147,7 @@ tacctl group <subcommand>      # Group management
 tacctl config <subcommand>     # Configuration
 tacctl log <subcommand>        # Log viewer
 tacctl backup <subcommand>     # Backup management
+tacctl hash                    # Generate a bcrypt password hash
 ```
 
 Run any command without arguments for detailed help.
@@ -84,6 +157,7 @@ Run any command without arguments for detailed help.
 ```
 user list                    List all users (name, group, status, password age)
 user add <name> <group>      Add a new user (password prompted with confirmation)
+user add <name> <group> --hash <hash>  Add user with pre-generated bcrypt hash
 user remove <name>           Remove a user (with confirmation)
 user passwd <name>           Change password (with confirmation)
 user disable <name>          Disable (preserves hash for re-enable)
@@ -122,8 +196,6 @@ config diff [timestamp]              Diff current config vs a backup
 config secret [value]                Change shared secret
 config loglevel [debug|info|error]   Show or change log level
 config password-age [days]           Show or set password age warning threshold (default 90)
-config juniper-ro [class]            Change Juniper read-only class name
-config juniper-rw [class]            Change Juniper super-user class name
 config prefixes [cidr,...]           Change allowed device subnets
 config allow list|add|remove         Manage connection allow list (IP ACL)
 config deny list|add|remove          Manage connection deny list (IP ACL)

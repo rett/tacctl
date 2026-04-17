@@ -14,7 +14,7 @@ _tacctl() {
     done
 
     local pos=$((cword - offset))
-    local commands="install upgrade uninstall status user group config log backup"
+    local commands="install upgrade uninstall status user group config log backup hash"
 
     # Top-level commands
     if [[ $pos -eq 1 ]]; then
@@ -25,9 +25,16 @@ _tacctl() {
     local cmd="${words[offset + 1]}"
 
     case "$cmd" in
+        install|upgrade)
+            if [[ "$cur" == -* ]]; then
+                COMPREPLY=($(compgen -W "--branch" -- "$cur"))
+            fi
+            ;;
         user)
             if [[ $pos -eq 2 ]]; then
                 COMPREPLY=($(compgen -W "list add remove passwd disable enable rename move verify" -- "$cur"))
+            elif [[ $pos -eq 4 && "${words[offset + 2]}" == "add" ]]; then
+                COMPREPLY=($(compgen -W "--hash" -- "$cur"))
             fi
             ;;
         group)
@@ -39,7 +46,7 @@ _tacctl() {
             ;;
         config)
             if [[ $pos -eq 2 ]]; then
-                COMPREPLY=($(compgen -W "show secret juniper-ro juniper-rw prefixes cisco juniper validate loglevel password-age diff allow deny" -- "$cur"))
+                COMPREPLY=($(compgen -W "show secret prefixes cisco juniper validate loglevel password-age diff allow deny branch" -- "$cur"))
             elif [[ $pos -eq 3 ]]; then
                 case "${words[offset + 2]}" in
                     loglevel)
