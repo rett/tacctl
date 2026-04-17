@@ -23,6 +23,7 @@ CONFIG_FILE="${CONFIG_DIR}/tacquito.yaml"
 LOG_DIR="/var/log/tacquito"
 SERVICE_FILE="/etc/systemd/system/tacquito.service"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 # --- Colors ---
 RED='\033[0;31m'
@@ -111,15 +112,13 @@ else
     info "Management repo cloned to ${DEPLOY_DEST}"
 fi
 
-# Install management scripts
-cp "${SCRIPT_DIR}/tacquito-manage.sh" /usr/local/bin/tacquito-manage
-chmod +x /usr/local/bin/tacquito-manage
-cp "${SCRIPT_DIR}/tacquito-upgrade.sh" /usr/local/bin/tacquito-upgrade
-chmod +x /usr/local/bin/tacquito-upgrade
-cp "${SCRIPT_DIR}/README.md" "${CONFIG_DIR}/README.md" 2>/dev/null || true
+# Symlink management scripts
+ln -sf "${DEPLOY_DEST}/bin/tacquito-manage.sh" /usr/local/bin/tacquito-manage
+ln -sf "${DEPLOY_DEST}/bin/tacquito-upgrade.sh" /usr/local/bin/tacquito-upgrade
+cp "${PROJECT_DIR}/README.md" "${CONFIG_DIR}/README.md" 2>/dev/null || true
 # Install logrotate config
-if [[ -f "${SCRIPT_DIR}/tacquito.logrotate" ]]; then
-    cp "${SCRIPT_DIR}/tacquito.logrotate" /etc/logrotate.d/tacquito
+if [[ -f "${PROJECT_DIR}/config/tacquito.logrotate" ]]; then
+    cp "${PROJECT_DIR}/config/tacquito.logrotate" /etc/logrotate.d/tacquito
     info "Log rotation installed: /etc/logrotate.d/tacquito"
 fi
 
@@ -226,7 +225,7 @@ PW_ENGINEERING="$LAST_PASSWORD"
 info "Writing configuration to ${CONFIG_FILE}..."
 
 # Use the template config and substitute placeholders
-cp "${SCRIPT_DIR}/tacquito.yaml" "$CONFIG_FILE"
+cp "${PROJECT_DIR}/config/tacquito.yaml" "$CONFIG_FILE"
 
 sed -i "s|hash: REPLACE_ME|hash: ${HASH_USER}|" "$CONFIG_FILE"
 # Second occurrence for operations
@@ -241,7 +240,7 @@ chmod 640 "$CONFIG_FILE"
 
 # --- Step 8: Install systemd service ---
 info "Installing systemd service..."
-cp "${SCRIPT_DIR}/tacquito.service" "$SERVICE_FILE"
+cp "${PROJECT_DIR}/config/tacquito.service" "$SERVICE_FILE"
 systemctl daemon-reload
 systemctl enable tacquito.service
 
