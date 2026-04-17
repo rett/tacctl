@@ -6,7 +6,7 @@ Management toolkit for [tacquito](https://github.com/facebookincubator/tacquito)
 
 ```bash
 # Install on a new server
-sudo tacctl install
+sudo bash -c 'git clone https://github.com/rett/tacctl.git /opt/tacctl && ln -sf /opt/tacctl/bin/tacctl.sh /usr/local/bin/tacctl && tacctl install'
 
 # Or upgrade an existing server (pulls latest from GitHub)
 sudo tacctl upgrade
