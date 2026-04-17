@@ -1,0 +1,363 @@
+.\" Manual page for tacctl, the tacquito management CLI.
+.\" Render locally with: groff -man -Tascii man/tacctl.1 | less
+.TH TACCTL 1 "2026-04-17" "tacctl" "Tacquito Control Manual"
+.SH NAME
+tacctl \- management CLI for the tacquito TACACS+ server
+.SH SYNOPSIS
+.B tacctl
+.I command
+.RI [ subcommand ]
+.RI [ arguments... ]
+.SH DESCRIPTION
+.B tacctl
+is a shell-based management CLI for
+.BR tacquito ,
+a TACACS+ server (RFC 8907).
+It installs and upgrades the server, manages users and groups, edits
+server configuration, inspects logs and backups, and generates ready-to-paste
+device configuration for Cisco IOS/IOS-XE and Juniper Junos.
+.PP
+Most commands require root.
+.B tacctl
+re-executes itself under
+.BR sudo (8)
+automatically when invoked by a non-root user.
+.B tacctl hash
+and
+.B tacctl version
+are deliberate exceptions: they run as the invoking user.
+.SH COMMANDS
+.SS System lifecycle
+.TP
+.BI "install [--branch " name "]"
+Install the tacquito server and supporting configuration. Installs the
+Go toolchain, builds the tacquito binary, creates the
+.B tacquito
+service user, seeds
+.IR /etc/tacquito/tacquito.yaml ,
+installs the systemd unit, and enables the service. The optional
+.BI --branch " name"
+flag selects a specific tacctl repository branch for the install.
+.TP
+.BI "upgrade [--branch " name "]"
+Pull the latest tacquito source and management scripts, rebuild the
+binary if changed, refresh system files, and restart the service.
+User-set flags for
+.BR -network ,
+.BR -address ,
+and
+.B -level
+are preserved via a systemd drop-in so they survive template updates.
+.TP
+.B uninstall
+Remove the tacquito service, binaries, configuration, logs, and
+management repository. Offers to preserve backups and accounting logs
+by archiving them to
+.IR /root/ .
+.TP
+.B status
+Show service health, authentication statistics, recent errors, and
+password-age warnings.
+.TP
+.BR "version" ", " "--version" ", " "-v"
+Print the tacctl version. The version is derived from
+.BR git-describe (1)
+against the installed repository, so it reflects the exact commit
+currently deployed.
+.SS User management \fB(tacctl user)\fR
+.TP
+.B user list
+List all users with name, group, status, and password age.
+.TP
+.BI "user add " "name group " [ "--hash " hash ]
+Add a user. Prompts for the password with confirmation. If
+.BI --hash " hash"
+is given, the bcrypt hash is used directly and no password is prompted
+(use this when users self-generate a hash; see
+.BR "tacctl hash help" ).
+.TP
+.BI "user remove " name
+Remove a user after confirmation.
+.TP
+.BI "user passwd " name
+Change a user's password.
+.TP
+.BI "user disable " name
+Disable a user while preserving the password hash for later re-enable.
+.TP
+.BI "user enable " name
+Re-enable a previously disabled user.
+.TP
+.BI "user rename " "old new"
+Rename a user.
+.TP
+.BI "user move " "name group"
+Move a user to a different group without changing the password.
+.TP
+.BI "user verify " name
+Show user details and verify the password interactively.
+.SS Group management \fB(tacctl group)\fR
+.TP
+.B group list
+List all groups with Cisco privilege level, Juniper class, and user count.
+.TP
+.BI "group add " "name priv-lvl juniper-class"
+Add a custom group.
+.I priv-lvl
+is an integer 0\(en15;
+.I juniper-class
+matches the Junos login class name.
+.TP
+.B "group edit " \fIname\fR " { priv-lvl \fIN\fR | juniper-class \fICLASS\fR }"
+Change a group's Cisco privilege level or Juniper class. The built-in
+groups
+.RB ( readonly ,
+.BR operator ,
+.BR superuser )
+can be edited but not removed.
+.TP
+.BI "group remove " name
+Remove a custom group. Built-in groups are protected.
+.SS Server configuration \fB(tacctl config)\fR
+.TP
+.B config show
+Show the current configuration summary.
+.TP
+.B config validate
+Validate config syntax and structure.
+.TP
+.BI "config diff " [ timestamp ]
+Diff the current config against a backup. Defaults to the most recent
+backup.
+.TP
+.BI "config secret " [ value ]
+Change the TACACS+ shared secret. If no value is given, a random
+hex-only secret is generated. Hex-only secrets avoid shell-quoting
+issues on devices.
+.TP
+.BI "config loglevel " [ debug | info | error ]
+Show or change the server log level. Written to a systemd drop-in so
+the change survives upgrades.
+.TP
+.B "config listen " "{ show | tcp | tcp6 | reset } " [ address ]
+Show, change, or reset the TCP listen address. Stored in the drop-in
+at
+.IR /etc/systemd/system/tacquito.service.d/tacctl-overrides.conf .
+.B reset
+clears the override and falls back to the template default.
+.B
+Switching to tcp6
+prompts for confirmation because dual-stack sockets accept IPv4
+clients via mapped addresses
+.RB ( ::ffff:x.x.x.x )
+that silently bypass IPv4 prefix ACLs; see
+.B NOTES.
+.TP
+.B "config sudoers " "{ show | install | remove } " [ group ]
+Manage the optional
+.I /etc/sudoers.d/tacctl
+drop-in that grants NOPASSWD sudo on
+.B tacctl
+to a group (default:
+.BR adm ).
+Installs are validated with
+.BR visudo (8)
+before taking effect. Not installed by default.
+.TP
+.BI "config password-age " [ days ]
+Show or set the password age warning threshold. Default 90 days.
+.TP
+.BI "config prefixes " [ "cidr,cidr,..." ]
+Change the allowed device subnets in a single atomic replacement.
+.TP
+.B "config allow " "{ list | add | remove } " [ cidr ]
+Manage the connection allow list (IP ACL).
+.TP
+.B "config deny " "{ list | add | remove } " [ cidr ]
+Manage the connection deny list.
+.B deny
+takes precedence over
+.BR allow ;
+with both empty, all connections are accepted.
+.TP
+.B config cisco
+Print a ready-to-paste Cisco IOS/IOS-XE configuration with the
+server IP, shared secret, and current group-to-privilege mappings
+pre-filled.
+.TP
+.B config juniper
+Print a ready-to-paste Juniper Junos configuration with template
+users, TACACS+ server setup, and verification commands pre-filled.
+.TP
+.BI "config branch " [ name ]
+Show or change the tacctl repository branch used by
+.B tacctl upgrade.
+.SS Log inspection \fB(tacctl log)\fR
+.TP
+.BI "log tail " [ n ]
+Show the last
+.I n
+journal entries for the tacquito service (default 20).
+.TP
+.BI "log search " term
+Search logs for a username or keyword over the last 7 days.
+.TP
+.B log failures
+Show authentication failures from the last 24 hours.
+.TP
+.BI "log accounting " [ n ]
+Show the last
+.I n
+entries from
+.IR /var/log/tacquito/accounting.log .
+.SS Backup management \fB(tacctl backup)\fR
+.TP
+.B backup list
+List available config backups with timestamps.
+.TP
+.BI "backup diff " [ timestamp ]
+Diff the current config against a backup (default: most recent).
+.TP
+.BI "backup restore " timestamp
+Restore a config backup after confirmation.
+.PP
+Backups are created automatically before every change. The last 30 are
+retained under
+.IR /etc/tacquito/backups/ .
+.SS Hash generation \fB(tacctl hash)\fR
+.TP
+.B hash
+Interactively generate a bcrypt password hash on the server. Does not
+require root. Needs
+.B python3-bcrypt
+installed.
+.TP
+.B hash help
+Print client-side bcrypt generation commands for users who cannot SSH
+to the server. Covers Linux/macOS, Windows with Python, and Windows
+with PowerShell/BcryptNet. Share the output with the user; the admin
+then runs
+.B tacctl user add <name> <group> --hash '<hash>'
+with the returned
+.B $2b$12$\&...
+string.
+.SH FILES
+.TP
+.I /etc/tacquito/tacquito.yaml
+TACACS+ server configuration. Mode 0640, owned by
+.BR tacquito : tacquito .
+.TP
+.I /etc/tacquito/backups/
+Automatic configuration backups. Last 30 retained.
+.TP
+.I /etc/tacquito/password-max-age
+Custom password age warning threshold, in days. Optional.
+.TP
+.I /etc/tacquito/templates/
+Host-specific overrides for the Cisco and Juniper device config
+templates.
+.TP
+.I /etc/systemd/system/tacquito.service
+Systemd unit file.
+.TP
+.I /etc/systemd/system/tacquito.service.d/tacctl-overrides.conf
+Systemd drop-in where
+.B "tacctl config listen"
+and
+.B "tacctl config loglevel"
+write their overrides. Preserved across upgrades.
+.TP
+.I /etc/sudoers.d/tacctl
+Optional NOPASSWD sudoers rule. Installed only via
+.BR "tacctl config sudoers install" .
+.TP
+.I /var/log/tacquito/accounting.log
+Per-session accounting records. Rotated daily, retained 90 days.
+.TP
+.I /usr/local/bin/tacquito
+The tacquito server binary.
+.TP
+.I /usr/local/bin/tacctl
+Symlink to
+.IR /opt/tacctl/bin/tacctl.sh .
+.TP
+.I /usr/local/bin/tacquito-hashgen
+Standalone bcrypt hash generator shipped with tacquito.
+.TP
+.I /opt/tacctl/
+Clone of the management (tacctl) repository. Source of the symlinked
+CLI and the source directory consulted by
+.BR "tacctl upgrade" .
+.TP
+.I /opt/tacquito-src/
+Clone of the tacquito server source code, used to rebuild the binary
+during
+.BR "tacctl upgrade" .
+.SH EXAMPLES
+.TP
+Install on a fresh host:
+.B sudo tacctl install
+.TP
+Add a superuser:
+.B sudo tacctl user add alice superuser
+.TP
+Restrict allowed device subnets:
+.B sudo tacctl config prefixes 10.1.0.0/24,172.16.5.0/24
+.TP
+Generate a Cisco-ready configuration to paste onto a switch:
+.B sudo tacctl config cisco
+.TP
+Bind the listener to a specific management IP:
+.B sudo tacctl config listen tcp 10.1.0.1:49
+.TP
+Enable passwordless invocation for members of the adm group:
+.B sudo tacctl config sudoers install adm
+.TP
+Print client-side bcrypt generation instructions to share with a user:
+.B tacctl hash help
+.SH NOTES
+.B IPv4 only by default.
+The service runs with
+.B -network tcp
+which binds IPv4 only. Switching to
+.B tcp6
+enables a dual-stack socket on most platforms; IPv4 clients then
+connect with IPv4-mapped addresses
+.RB ( ::ffff:10.1.0.1 )
+that do not match IPv4 prefix ACLs configured via
+.BR "tacctl config prefixes" ,
+.BR "config allow" ,
+or
+.BR "config deny" .
+Add equivalent IPv6 prefix rules before enabling
+.B tcp6.
+.PP
+.B Juniper template users are required.
+Every
+.B local-user-name
+referenced by a group class (for example
+.BR RO-CLASS ,
+.BR OP-CLASS ,
+.BR RW-CLASS )
+must have a matching local user on each Juniper device. Without this,
+TACACS+ authentication succeeds but Junos rejects the login silently.
+Run
+.B tacctl config juniper
+to regenerate the device-side configuration after adding or editing
+groups.
+.PP
+.B Config edits.
+.B tacctl
+automatically restarts the service and creates a backup before every
+change. Manual edits to
+.I /etc/tacquito/tacquito.yaml
+require
+.B sudo systemctl restart tacquito
+afterwards.
+.SH SEE ALSO
+.BR systemctl (1),
+.BR journalctl (1),
+.BR visudo (8),
+.BR tacquito (8)
+.SH PROJECT
+https://github.com/rett/tacctl

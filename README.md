@@ -151,6 +151,8 @@ tacctl user add jsmith superuser --hash '$2b$12$...'
 
 ## CLI Reference
 
+> For a single-page reference, run `man tacctl` after install.
+
 ### Top-Level Commands
 
 ```

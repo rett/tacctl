@@ -78,6 +78,19 @@ normalize_deploy_perms() {
     chmod -R a+rX "$DEPLOY_DIR" 2>/dev/null || true
 }
 
+# Install the man page from <src> to /usr/share/man/man1/tacctl.1.gz and
+# refresh mandb. Silent no-op if the source file is missing (keeps older
+# repo checkouts working) or if mandb is unavailable (`man tacctl` still
+# works directly without mandb).
+install_man_page() {
+    local src="$1"
+    [[ -f "$src" ]] || return 0
+    mkdir -p /usr/share/man/man1
+    gzip -c "$src" > /usr/share/man/man1/tacctl.1.gz
+    chmod 644 /usr/share/man/man1/tacctl.1.gz
+    mandb -q 2>/dev/null || true
+}
+
 # --- Pre-flight ---
 preflight() {
     if [[ ! -f "$CONFIG" ]]; then
@@ -2888,6 +2901,11 @@ cmd_install() {
         chmod 644 /etc/bash_completion.d/tacctl
         info "Bash completion installed: /etc/bash_completion.d/tacctl"
     fi
+    # Install man page
+    if [[ -f "${PROJECT_DIR}/man/tacctl.1" ]]; then
+        install_man_page "${PROJECT_DIR}/man/tacctl.1"
+        info "Man page installed: /usr/share/man/man1/tacctl.1.gz"
+    fi
 
     info "Management CLI installed:"
     info "  tacctl — user, config, and system management"
@@ -3209,6 +3227,8 @@ cmd_upgrade() {
     update_if_changed "${ACTIVE_DEPLOY_DIR}/config/tacquito.logrotate" "/etc/logrotate.d/tacquito" "logrotate config"
     update_if_changed "${ACTIVE_DEPLOY_DIR}/config/tacctl.bash-completion" "/etc/bash_completion.d/tacctl" "bash completion"
     chmod 644 /etc/bash_completion.d/tacctl 2>/dev/null || true
+    # Man page: unconditional re-gzip (cheap, <10 KB) also heals hosts where the file is missing.
+    install_man_page "${ACTIVE_DEPLOY_DIR}/man/tacctl.1"
     # Older installs left CONFIG_DIR at 0750, which blocks non-root reads of README.md; normalize to 0755 (sensitive files inside stay 0640).
     chmod 755 "$CONFIG_DIR" 2>/dev/null || true
 
@@ -3353,6 +3373,11 @@ cmd_uninstall() {
     # --- Remove logrotate config ---
     info "Removing logrotate config..."
     rm -f /etc/logrotate.d/tacquito
+
+    # --- Remove man page ---
+    info "Removing man page..."
+    rm -f /usr/share/man/man1/tacctl.1.gz
+    mandb -q 2>/dev/null || true
 
     # --- Remove configuration ---
     local BACKUP_ARCHIVE="" LOG_ARCHIVE=""
