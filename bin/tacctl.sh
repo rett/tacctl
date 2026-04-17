@@ -75,7 +75,7 @@ preflight() {
 }
 
 # --- Resolve template file (user override → repo default) ---
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 TEMPLATE_DIR_LOCAL="/etc/tacquito/templates"
 TEMPLATE_DIR_REPO="$(cd "${SCRIPT_DIR}/../config/templates" 2>/dev/null && pwd)"
 
