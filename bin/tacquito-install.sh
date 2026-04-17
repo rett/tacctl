@@ -238,6 +238,14 @@ sed -i "s|REPLACE_WITH_SHARED_SECRET|${SHARED_SECRET}|" "$CONFIG_FILE"
 chown tacquito:tacquito "$CONFIG_FILE"
 chmod 640 "$CONFIG_FILE"
 
+# Record password dates for all users
+PASSWORD_DATES_DIR="/etc/tacquito/backups/password-dates"
+mkdir -p "$PASSWORD_DATES_DIR"
+for u in user operations engineering; do
+    date +%Y-%m-%d > "${PASSWORD_DATES_DIR}/${u}.date"
+done
+info "Password dates recorded."
+
 # --- Step 8: Install systemd service ---
 info "Installing systemd service..."
 cp "${PROJECT_DIR}/config/tacquito.service" "$SERVICE_FILE"
