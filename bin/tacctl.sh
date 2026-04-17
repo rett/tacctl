@@ -2418,6 +2418,14 @@ cmd_hash() {
 
 # --- INSTALL ---
 cmd_install() {
+    # Parse optional --branch flag
+    local INSTALL_BRANCH=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --branch) INSTALL_BRANCH="${2:-}"; shift 2 ;;
+            *) shift ;;
+        esac
+    done
 
     for cmd in git wget python3; do
         if ! command -v "$cmd" &>/dev/null; then
@@ -2512,15 +2520,19 @@ cmd_install() {
     info "  Hashgen: ${HASHGEN_BIN}"
 
     # Clone management repo for future upgrades
+    local branch_flag=""
+    [[ -n "$INSTALL_BRANCH" ]] && branch_flag="--branch $INSTALL_BRANCH"
     if [[ -d "${DEPLOY_DIR}/.git" ]]; then
         info "Management repo already cloned at ${DEPLOY_DIR}, pulling latest..."
-        cd "$DEPLOY_DIR" && git pull --quiet 2>/dev/null || true
+        cd "$DEPLOY_DIR"
+        [[ -n "$INSTALL_BRANCH" ]] && git checkout "$INSTALL_BRANCH" 2>/dev/null || true
+        git pull --quiet 2>/dev/null || true
     elif [[ -d "$DEPLOY_DIR" ]]; then
         rm -rf "$DEPLOY_DIR"
-        git clone --quiet "$MANAGE_REPO" "$DEPLOY_DIR"
+        git clone --quiet $branch_flag "$MANAGE_REPO" "$DEPLOY_DIR"
         info "Management repo cloned to ${DEPLOY_DIR}"
     else
-        git clone --quiet "$MANAGE_REPO" "$DEPLOY_DIR"
+        git clone --quiet $branch_flag "$MANAGE_REPO" "$DEPLOY_DIR"
         info "Management repo cloned to ${DEPLOY_DIR}"
     fi
     # Ensure git safe.directory is set for sudo operations
@@ -2672,6 +2684,14 @@ os.rename(tmp.name, config_path)
 # is not enforced. The self-update exec re-runs the script after a git pull — the
 # pulled code runs as root. Verify the repo's integrity in sensitive environments.
 cmd_upgrade() {
+    # Parse optional --branch flag
+    local UPGRADE_BRANCH=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --branch) UPGRADE_BRANCH="${2:-}"; shift 2 ;;
+            *) shift ;;
+        esac
+    done
 
     if [[ ! -d "$TACQUITO_SRC" ]]; then
         error "Tacquito source not found at ${TACQUITO_SRC}. Run 'tacctl install' first."
@@ -2750,6 +2770,11 @@ cmd_upgrade() {
         info "Pulling latest management scripts..."
         cd "$DEPLOY_DIR"
         git checkout -- . 2>/dev/null || true
+        if [[ -n "$UPGRADE_BRANCH" ]]; then
+            git fetch --quiet 2>/dev/null || true
+            git checkout "$UPGRADE_BRANCH" 2>/dev/null || git checkout -b "$UPGRADE_BRANCH" "origin/${UPGRADE_BRANCH}" 2>/dev/null
+            info "Switched to branch '${UPGRADE_BRANCH}'."
+        fi
         git fetch --quiet 2>/dev/null || true
         local LOCAL_MANAGE REMOTE_MANAGE
         LOCAL_MANAGE=$(git rev-parse HEAD 2>/dev/null)
@@ -3040,8 +3065,8 @@ usage() {
     echo "Usage: tacctl <command> [arguments]"
     echo ""
     echo "Commands:"
-    echo "  install                       Install tacquito server and configure from scratch"
-    echo "  upgrade                       Pull latest source, rebuild, and update scripts"
+    echo "  install [--branch <name>]     Install tacquito server and configure from scratch"
+    echo "  upgrade [--branch <name>]     Pull latest source, rebuild, and update scripts"
     echo "  uninstall                     Remove tacquito and all associated files"
     echo "  status                        Show service health, stats, and recent errors"
     echo "  user <subcommand>             User management (list, add, remove, passwd, ...)"

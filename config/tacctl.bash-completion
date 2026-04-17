@@ -25,6 +25,11 @@ _tacctl() {
     local cmd="${words[offset + 1]}"
 
     case "$cmd" in
+        install|upgrade)
+            if [[ "$cur" == -* ]]; then
+                COMPREPLY=($(compgen -W "--branch" -- "$cur"))
+            fi
+            ;;
         user)
             if [[ $pos -eq 2 ]]; then
                 COMPREPLY=($(compgen -W "list add remove passwd disable enable rename move verify" -- "$cur"))
