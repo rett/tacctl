@@ -97,7 +97,7 @@ info "  Server:  ${TACQUITO_BIN}"
 info "  Hashgen: ${HASHGEN_BIN}"
 
 # Copy deploy package to canonical location for upgrades
-DEPLOY_DEST="/opt/tacquito-deploy"
+DEPLOY_DEST="/opt/tacquito-manage"
 mkdir -p "$DEPLOY_DEST"
 cp "${SCRIPT_DIR}/tacquito-manage.sh" "$DEPLOY_DEST/"
 cp "${SCRIPT_DIR}/tacquito-upgrade.sh" "$DEPLOY_DEST/"

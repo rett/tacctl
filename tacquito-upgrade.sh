@@ -23,8 +23,8 @@ GO_BIN="/usr/local/go/bin/go"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 if [[ -f "${SCRIPT_DIR}/tacquito-manage.sh" ]]; then
     DEPLOY_DIR="$SCRIPT_DIR"
-elif [[ -d "/opt/tacquito-deploy" ]]; then
-    DEPLOY_DIR="/opt/tacquito-deploy"
+elif [[ -d "/opt/tacquito-manage" ]]; then
+    DEPLOY_DIR="/opt/tacquito-manage"
 else
     DEPLOY_DIR=""
 fi
@@ -117,7 +117,7 @@ SCRIPTS_UPDATED=0
 
 if [[ -z "$DEPLOY_DIR" ]]; then
     warn "Deploy directory not found. Skipping script updates."
-    warn "To fix: copy the tacquito-deploy folder to /opt/tacquito-deploy"
+    warn "To fix: copy the tacquito-manage folder to /opt/tacquito-manage"
 fi
 
 update_if_changed() {
