@@ -3087,7 +3087,6 @@ cmd_upgrade() {
             cp "${DEPLOY_DIR}/bin/tacctl.sh" "$SELF_TMP"
 
             git pull --quiet 2>/dev/null
-            normalize_deploy_perms
             info "Management scripts updated: $(git rev-parse --short HEAD)"
 
             # If tacctl changed, re-run the new version
@@ -3103,8 +3102,10 @@ cmd_upgrade() {
     elif [[ ! -d "$DEPLOY_DIR" ]]; then
         info "Cloning management repo..."
         git clone --quiet "$MANAGE_REPO" "$DEPLOY_DIR" 2>/dev/null || warn "Failed to clone management repo."
-        normalize_deploy_perms
     fi
+    # Always normalize, even when nothing was pulled -- self-healing for
+    # prior installs whose files were left at 0600 by the script's umask.
+    normalize_deploy_perms
 
     # --- Ensure symlink exists (755 so non-root users can exec into sudo) ---
     if [[ -d "$DEPLOY_DIR" ]]; then
