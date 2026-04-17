@@ -8,11 +8,16 @@ Wants=network-online.target
 Type=simple
 User=tacquito
 Group=tacquito
+# Defaults; override via /etc/systemd/system/tacquito.service.d/tacctl-overrides.conf
+# (managed by `tacctl config listen` and `tacctl config loglevel`).
+Environment="TACQUITO_NETWORK=tcp"
+Environment="TACQUITO_ADDRESS=:49"
+Environment="TACQUITO_LEVEL=20"
 ExecStart=/usr/local/bin/tacquito \
     -config /etc/tacquito/tacquito.yaml \
-    -network tcp -address :49 \
+    -network ${TACQUITO_NETWORK} -address ${TACQUITO_ADDRESS} \
     -acct-log-path /var/log/tacquito/accounting.log \
-    -level 20
+    -level ${TACQUITO_LEVEL}
 Restart=on-failure
 RestartSec=5
 

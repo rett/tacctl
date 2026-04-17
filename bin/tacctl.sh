@@ -185,6 +185,74 @@ validate_cidr() {
     fi
 }
 
+# --- Validate listen address (host:port or [ipv6]:port) against network family ---
+validate_listen_address() {
+    local net="$1" addr="$2"
+    if ! python3 - "$net" "$addr" <<'PY' 2>/dev/null
+import ipaddress, re, sys
+net, addr = sys.argv[1], sys.argv[2]
+m = re.match(r'^\[([^\]]+)\]:(\d+)$', addr)
+if m:
+    host, port = m.group(1), int(m.group(2))
+else:
+    m = re.match(r'^([^:]*):(\d+)$', addr)
+    if not m:
+        sys.exit(1)
+    host, port = m.group(1), int(m.group(2))
+if not 1 <= port <= 65535:
+    sys.exit(1)
+if host:
+    ip = ipaddress.ip_address(host)
+    if net == "tcp" and ip.version != 4:
+        sys.exit(1)
+    if net == "tcp6" and ip.version != 6:
+        sys.exit(1)
+PY
+    then
+        error "Invalid ${net} address: '${addr}'"
+        return 1
+    fi
+}
+
+# --- Systemd service drop-in helpers ---
+# User-customized flags (-network, -address, -level) live as Environment=
+# entries in a drop-in so that `tacctl upgrade` can safely replace the main
+# service unit without clobbering them. Template defaults are in
+# config/tacquito.service; the drop-in only records overrides.
+OVERRIDE_DIR="/etc/systemd/system/tacquito.service.d"
+OVERRIDE_FILE="${OVERRIDE_DIR}/tacctl-overrides.conf"
+
+# Read an Environment= override; echo empty if not set.
+read_service_override() {
+    local key="$1"
+    grep -oP "^Environment=\"${key}=\K[^\"]*" "$OVERRIDE_FILE" 2>/dev/null | tail -1
+}
+
+# Write (or replace) an Environment= override for the given key.
+set_service_override() {
+    local key="$1" value="$2"
+    mkdir -p "$OVERRIDE_DIR"
+    if [[ ! -f "$OVERRIDE_FILE" ]] || ! grep -q "^\[Service\]" "$OVERRIDE_FILE"; then
+        local tmp; tmp=$(mktemp)
+        echo "[Service]" > "$tmp"
+        [[ -f "$OVERRIDE_FILE" ]] && cat "$OVERRIDE_FILE" >> "$tmp"
+        mv "$tmp" "$OVERRIDE_FILE"
+    fi
+    sed -i "/^Environment=\"${key}=/d" "$OVERRIDE_FILE"
+    echo "Environment=\"${key}=${value}\"" >> "$OVERRIDE_FILE"
+}
+
+# Remove a single override key; drop the file (and dir) if no overrides remain.
+clear_service_override() {
+    local key="$1"
+    [[ -f "$OVERRIDE_FILE" ]] || return 0
+    sed -i "/^Environment=\"${key}=/d" "$OVERRIDE_FILE"
+    if ! grep -q "^Environment=" "$OVERRIDE_FILE"; then
+        rm -f "$OVERRIDE_FILE"
+        rmdir "$OVERRIDE_DIR" 2>/dev/null || true
+    fi
+}
+
 # --- Replace a user's hash in config (safe from sed injection) ---
 replace_user_hash() {
     local username="$1"
@@ -1418,6 +1486,12 @@ cmd_config() {
         loglevel)
             cmd_config_loglevel "$@"
             ;;
+        listen)
+            cmd_config_listen "$@"
+            ;;
+        sudoers)
+            cmd_config_sudoers "$@"
+            ;;
         password-age)
             cmd_config_password_age "$@"
             ;;
@@ -1440,23 +1514,27 @@ cmd_config() {
             echo "Usage: tacctl config <subcommand> [value]"
             echo ""
             echo "Subcommands:"
-            echo "  show                          Show current configuration"
-            echo "  validate                      Validate config syntax and structure"
-            echo "  diff [timestamp]              Diff current config vs last backup"
-            echo "  loglevel [debug|info|error]    Show or change log level"
-            echo "  password-age [days]           Show or set password age warning threshold"
-            echo "  secret [new-secret]           Change shared secret"
-            echo "  prefixes [cidr,cidr,...]       Change allowed device subnets"
-            echo "  allow list|add|remove          Manage connection allow list (IP ACL)"
-            echo "  deny list|add|remove           Manage connection deny list (IP ACL)"
-            echo "  cisco                         Show working Cisco device configuration"
-            echo "  juniper                       Show working Juniper device configuration"
-            echo "  branch [name]                 Show or change the tacctl repo branch"
+            echo "  show                                 Show current configuration"
+            echo "  validate                             Validate config syntax and structure"
+            echo "  diff [timestamp]                     Diff current config vs last backup"
+            echo "  loglevel [debug|info|error]          Show or change log level"
+            echo "  listen [show|tcp|tcp6|reset] [addr]  Show, change, or reset TCP listen address"
+            echo "  sudoers [show|install|remove] [grp]  Manage NOPASSWD sudoers drop-in for tacctl"
+            echo "  password-age [days]                  Show or set password age warning threshold"
+            echo "  secret [new-secret]                  Change shared secret"
+            echo "  prefixes [cidr,cidr,...]             Change allowed device subnets"
+            echo "  allow list|add|remove                Manage connection allow list (IP ACL)"
+            echo "  deny list|add|remove                 Manage connection deny list (IP ACL)"
+            echo "  cisco                                Show working Cisco device configuration"
+            echo "  juniper                              Show working Juniper device configuration"
+            echo "  branch [name]                        Show or change the tacctl repo branch"
             echo ""
             echo "Examples:"
             echo "  tacctl config show"
             echo "  tacctl config validate"
             echo "  tacctl config loglevel debug"
+            echo "  tacctl config listen tcp6 [::]:49"
+            echo "  tacctl config sudoers install adm"
             echo "  tacctl config cisco"
             echo "  tacctl config prefixes 10.1.0.0/16,10.2.0.0/16"
             echo ""
@@ -1859,11 +1937,11 @@ cmd_group() {
             echo "Usage: tacctl group <subcommand> [arguments]"
             echo ""
             echo "Subcommands:"
-            echo "  list                                       List all groups"
-            echo "  add <name> <priv-lvl> <juniper-class>      Add a new group"
-            echo "  edit <name> priv-lvl <0-15>                Change Cisco privilege level"
-            echo "  edit <name> juniper-class <CLASS>           Change Juniper class name"
-            echo "  remove <name>                              Remove a custom group"
+            echo "  list                                   List all groups"
+            echo "  add <name> <priv-lvl> <juniper-class>  Add a new group"
+            echo "  edit <name> priv-lvl <0-15>            Change Cisco privilege level"
+            echo "  edit <name> juniper-class <CLASS>      Change Juniper class name"
+            echo "  remove <name>                          Remove a custom group"
             echo ""
             echo "Examples:"
             echo "  tacctl group list"
@@ -2143,20 +2221,20 @@ print(len(re.findall(r'- name:', m.group(1))) if m else 0)
 # --- CONFIG LOGLEVEL ---
 cmd_config_loglevel() {
     local new_level="${1:-}"
-    local SERVICE_FILE="/etc/systemd/system/tacquito.service"
+
+    local current_num
+    current_num=$(read_service_override TACQUITO_LEVEL)
+    current_num=${current_num:-20}
 
     if [[ -z "$new_level" ]]; then
-        # Show current level
-        local current
-        current=$(grep -oP '\-level \K\d+' "$SERVICE_FILE" 2>/dev/null)
         local level_name="unknown"
-        case "$current" in
+        case "$current_num" in
             10) level_name="error" ;;
             20) level_name="info" ;;
             30) level_name="debug" ;;
         esac
         echo ""
-        echo "  Current log level: ${level_name} (${current})"
+        echo "  Current log level: ${level_name} (${current_num})"
         echo ""
         echo "  Usage: tacctl config loglevel <debug|info|error>"
         echo ""
@@ -2174,18 +2252,223 @@ cmd_config_loglevel() {
             ;;
     esac
 
-    local current_num
-    current_num=$(grep -oP '\-level \K\d+' "$SERVICE_FILE" 2>/dev/null)
     if [[ "$current_num" == "$level_num" ]]; then
         info "Already at ${new_level} (${level_num})."
         return
     fi
 
-    sed -i "s/-level ${current_num}/-level ${level_num}/" "$SERVICE_FILE"
+    # Default level (20) uses the template default -- clear the override
+    # instead of pinning it, so future template bumps can move the default.
+    if [[ "$level_num" == "20" ]]; then
+        clear_service_override TACQUITO_LEVEL
+    else
+        set_service_override TACQUITO_LEVEL "$level_num"
+    fi
     systemctl daemon-reload
     systemctl restart tacquito
 
     info "Log level changed to ${new_level} (${level_num}). Service restarted."
+    echo ""
+}
+
+# --- CONFIG LISTEN ---
+cmd_config_listen() {
+    local sub="${1:-}"
+    local addr="${2:-}"
+
+    local current_net current_addr net_src addr_src
+    current_net=$(read_service_override TACQUITO_NETWORK)
+    if [[ -n "$current_net" ]]; then net_src="override"; else net_src="default"; fi
+    current_net=${current_net:-tcp}
+    current_addr=$(read_service_override TACQUITO_ADDRESS)
+    if [[ -n "$current_addr" ]]; then addr_src="override"; else addr_src="default"; fi
+    current_addr=${current_addr:-:49}
+
+    case "$sub" in
+        ""|show)
+            echo ""
+            echo "  Current listener: ${current_net} ${current_addr}"
+            if [[ "$net_src" == "override" || "$addr_src" == "override" ]]; then
+                echo "  (override in ${OVERRIDE_FILE})"
+            else
+                echo "  (template default)"
+            fi
+            echo ""
+            echo "  Usage: tacctl config listen <show|tcp|tcp6|reset> [address]"
+            echo "  Examples:"
+            echo "    tacctl config listen tcp :49"
+            echo "    tacctl config listen tcp 10.1.0.1:49"
+            echo "    tacctl config listen tcp6 [::]:49"
+            echo "    tacctl config listen reset       # drop override, use template default"
+            echo ""
+            return
+            ;;
+        reset)
+            if [[ "$net_src" == "default" && "$addr_src" == "default" ]]; then
+                info "No listener override set. Already on template default (${current_net} ${current_addr})."
+                return
+            fi
+            clear_service_override TACQUITO_NETWORK
+            clear_service_override TACQUITO_ADDRESS
+            systemctl daemon-reload
+            systemctl restart tacquito
+            if systemctl is-active --quiet tacquito; then
+                info "Listener override removed. Using template default. Service restarted."
+            else
+                error "tacquito failed to start after reset."
+                return 1
+            fi
+            echo ""
+            return
+            ;;
+        tcp|tcp6)
+            ;;
+        *)
+            error "Invalid subcommand: '${sub}'. Use: show, tcp, tcp6, or reset"
+            return 1
+            ;;
+    esac
+
+    if [[ -z "$addr" ]]; then
+        error "Missing address. Example: tacctl config listen ${sub} :49"
+        return 1
+    fi
+
+    validate_listen_address "$sub" "$addr" || return 1
+
+    if [[ "$current_net" == "$sub" && "$current_addr" == "$addr" ]]; then
+        info "Already listening on ${sub} ${addr}."
+        return
+    fi
+
+    if [[ "$sub" == "tcp6" && "$current_net" != "tcp6" ]]; then
+        echo ""
+        warn "tcp6 enables dual-stack sockets on most platforms."
+        warn "IPv4 clients connect with mapped addresses (::ffff:a.b.c.d)"
+        warn "which do NOT match IPv4 rules in 'tacctl config prefixes',"
+        warn "'config allow', or 'config deny' -- effectively bypassing them."
+        echo ""
+        read -rp "  Proceed with tcp6? [y/N]: " confirm
+        if [[ ! "$confirm" =~ ^[Yy] ]]; then
+            info "Aborted."
+            return
+        fi
+    fi
+
+    # Snapshot override file for rollback if restart fails.
+    local had_override="false"
+    if [[ -f "$OVERRIDE_FILE" ]]; then
+        cp "$OVERRIDE_FILE" "${OVERRIDE_FILE}.bak"
+        had_override="true"
+    fi
+
+    set_service_override TACQUITO_NETWORK "$sub"
+    set_service_override TACQUITO_ADDRESS "$addr"
+
+    systemctl daemon-reload
+    systemctl restart tacquito
+
+    if systemctl is-active --quiet tacquito; then
+        info "Listener changed to ${sub} ${addr}. Service restarted."
+        rm -f "${OVERRIDE_FILE}.bak"
+    else
+        error "tacquito failed to start. Restoring previous override."
+        if [[ "$had_override" == "true" ]]; then
+            mv "${OVERRIDE_FILE}.bak" "$OVERRIDE_FILE"
+        else
+            rm -f "$OVERRIDE_FILE"
+            rmdir "$OVERRIDE_DIR" 2>/dev/null || true
+        fi
+        systemctl daemon-reload
+        systemctl restart tacquito
+        return 1
+    fi
+    echo ""
+}
+
+# --- CONFIG SUDOERS ---
+# Manages an optional /etc/sudoers.d/tacctl drop-in that grants NOPASSWD
+# on /usr/local/bin/tacctl to a given group. Not installed by default --
+# operators opt in explicitly.
+SUDOERS_FILE="/etc/sudoers.d/tacctl"
+
+cmd_config_sudoers() {
+    local sub="${1:-}"
+    local group="${2:-adm}"
+
+    # Accept "%adm" or "adm" -- normalize to the bare group name.
+    group="${group#%}"
+
+    case "$sub" in
+        ""|show)
+            echo ""
+            if [[ -f "$SUDOERS_FILE" ]]; then
+                echo "  Status: installed at ${SUDOERS_FILE}"
+                echo ""
+                echo "  Contents:"
+                sed 's/^/    /' "$SUDOERS_FILE"
+            else
+                echo "  Status: not installed"
+            fi
+            echo ""
+            echo "  Usage: tacctl config sudoers <show|install|remove> [group]"
+            echo "  Examples:"
+            echo "    tacctl config sudoers install          # grant to group 'adm'"
+            echo "    tacctl config sudoers install wheel    # grant to group 'wheel'"
+            echo "    tacctl config sudoers remove"
+            echo ""
+            return
+            ;;
+        install) ;;
+        remove)
+            if [[ ! -f "$SUDOERS_FILE" ]]; then
+                info "Not installed. Nothing to remove."
+                return
+            fi
+            rm -f "$SUDOERS_FILE"
+            info "Removed ${SUDOERS_FILE}."
+            return
+            ;;
+        *)
+            error "Invalid subcommand: '${sub}'. Use: show, install, or remove"
+            return 1
+            ;;
+    esac
+
+    if ! [[ "$group" =~ ^[a-zA-Z_][a-zA-Z0-9_-]*$ ]]; then
+        error "Invalid group name: '${group}'"
+        return 1
+    fi
+
+    # Confirm -- this grants the group passwordless root via tacctl.
+    echo ""
+    warn "This grants members of group '%${group}' passwordless sudo on"
+    warn "/usr/local/bin/tacctl, which can modify system config and restart"
+    warn "services. Effectively passwordless root for that group."
+    echo ""
+    read -rp "  Install ${SUDOERS_FILE} for group '%${group}'? [y/N]: " confirm
+    if [[ ! "$confirm" =~ ^[Yy] ]]; then
+        info "Aborted."
+        return
+    fi
+
+    local tmp
+    tmp=$(mktemp)
+    cat > "$tmp" <<EOF
+# Managed by tacctl. Grants passwordless sudo on /usr/local/bin/tacctl
+# to members of group '${group}'. Remove with: tacctl config sudoers remove
+%${group} ALL=(ALL) NOPASSWD: /usr/local/bin/tacctl
+EOF
+
+    if ! visudo -cf "$tmp" >/dev/null; then
+        error "visudo validation failed. Not installed."
+        rm -f "$tmp"
+        return 1
+    fi
+
+    install -m 0440 -o root -g root "$tmp" "$SUDOERS_FILE"
+    rm -f "$tmp"
+    info "Installed ${SUDOERS_FILE} for group '%${group}'."
     echo ""
 }
 
@@ -2835,10 +3118,33 @@ cmd_upgrade() {
 
     if [[ -f "${ACTIVE_DEPLOY_DIR}/config/tacquito.service" ]]; then
         if ! diff -q "${ACTIVE_DEPLOY_DIR}/config/tacquito.service" "$SERVICE_FILE" &>/dev/null; then
+            # Before replacing the installed unit with the new template, rescue
+            # any hand-edited -network/-address/-level flags into the drop-in.
+            # Only the pre-drop-in schema hardcoded these in ExecStart; the
+            # new template references them via TACQUITO_* env vars. We only
+            # migrate values that (a) are present AND (b) differ from the
+            # template's defaults -- otherwise there's nothing to preserve.
+            local mig_net mig_addr mig_level migrated=0
+            mig_net=$(grep -oP '\-network \K\S+' "$SERVICE_FILE" 2>/dev/null | head -1)
+            mig_addr=$(grep -oP '\-address \K\S+' "$SERVICE_FILE" 2>/dev/null | head -1)
+            mig_level=$(grep -oP '\-level \K\d+' "$SERVICE_FILE" 2>/dev/null | head -1)
+            if [[ -n "$mig_net" && "$mig_net" != "tcp" && "$mig_net" != '${TACQUITO_NETWORK}' ]]; then
+                [[ -z "$(read_service_override TACQUITO_NETWORK)" ]] && { set_service_override TACQUITO_NETWORK "$mig_net"; migrated=1; }
+            fi
+            if [[ -n "$mig_addr" && "$mig_addr" != ":49" && "$mig_addr" != '${TACQUITO_ADDRESS}' ]]; then
+                [[ -z "$(read_service_override TACQUITO_ADDRESS)" ]] && { set_service_override TACQUITO_ADDRESS "$mig_addr"; migrated=1; }
+            fi
+            if [[ -n "$mig_level" && "$mig_level" != "20" ]]; then
+                [[ -z "$(read_service_override TACQUITO_LEVEL)" ]] && { set_service_override TACQUITO_LEVEL "$mig_level"; migrated=1; }
+            fi
+
             cp "$SERVICE_FILE" "${SERVICE_FILE}.bak"
             cp "${ACTIVE_DEPLOY_DIR}/config/tacquito.service" "$SERVICE_FILE"
             systemctl daemon-reload
             info "  Updated: tacquito.service (previous backed up to ${SERVICE_FILE}.bak)"
+            if [[ "$migrated" == "1" ]]; then
+                info "  Migrated custom -network/-address/-level flags to ${OVERRIDE_FILE}"
+            fi
             SCRIPTS_UPDATED=$((SCRIPTS_UPDATED + 1))
         else
             info "  Unchanged: tacquito.service"
@@ -2984,6 +3290,8 @@ cmd_uninstall() {
     info "Removing systemd unit..."
     rm -f /etc/systemd/system/tacquito.service
     rm -f /etc/systemd/system/tacquito.service.bak
+    rm -rf /etc/systemd/system/tacquito.service.d
+    rm -f /etc/sudoers.d/tacctl
     systemctl daemon-reload
 
     # --- Remove logrotate config ---
@@ -3111,16 +3419,16 @@ cmd_user() {
             echo "Usage: tacctl user <subcommand> [arguments]"
             echo ""
             echo "Subcommands:"
-            echo "  list                          List all users and their status"
-            echo "  add <username> <group>        Add a new user (prompts for password)"
+            echo "  list                                  List all users and their status"
+            echo "  add <username> <group>                Add a new user (prompts for password)"
             echo "  add <username> <group> --hash <hash>  Add with pre-generated bcrypt hash"
-            echo "  remove <username>             Remove a user"
-            echo "  passwd <username>             Change a user's password"
-            echo "  disable <username>            Disable a user (preserves hash)"
-            echo "  enable <username>             Re-enable a disabled user"
-            echo "  rename <old> <new>            Rename a user"
-            echo "  move <user> <group>           Move user to a different group"
-            echo "  verify <username>             Verify password and show user details"
+            echo "  remove <username>                     Remove a user"
+            echo "  passwd <username>                     Change a user's password"
+            echo "  disable <username>                    Disable a user (preserves hash)"
+            echo "  enable <username>                     Re-enable a disabled user"
+            echo "  rename <old> <new>                    Rename a user"
+            echo "  move <user> <group>                   Move user to a different group"
+            echo "  verify <username>                     Verify password and show user details"
             echo ""
             echo "Examples:"
             echo "  tacctl user list"

@@ -1,6 +1,24 @@
 # bash completion for tacctl (works with and without sudo)
 
+# Capture this file's path and mtime at source time so _tacctl can detect
+# when `tacctl upgrade` has replaced it and auto-reload without requiring
+# the user to open a new shell.
+_TACCTL_COMPLETION_FILE="${BASH_SOURCE[0]}"
+_TACCTL_COMPLETION_MTIME=$(stat -c %Y "$_TACCTL_COMPLETION_FILE" 2>/dev/null)
+
 _tacctl() {
+    # Auto-reload if the completion file has been updated on disk.
+    if [[ -n "$_TACCTL_COMPLETION_FILE" ]]; then
+        local _cur_mtime
+        _cur_mtime=$(stat -c %Y "$_TACCTL_COMPLETION_FILE" 2>/dev/null)
+        if [[ -n "$_cur_mtime" && "$_cur_mtime" != "$_TACCTL_COMPLETION_MTIME" ]]; then
+            # shellcheck disable=SC1090
+            source "$_TACCTL_COMPLETION_FILE"
+            _tacctl "$@"
+            return
+        fi
+    fi
+
     local cur prev words cword
     _init_completion || return
 
@@ -46,11 +64,17 @@ _tacctl() {
             ;;
         config)
             if [[ $pos -eq 2 ]]; then
-                COMPREPLY=($(compgen -W "show secret prefixes cisco juniper validate loglevel password-age diff allow deny branch" -- "$cur"))
+                COMPREPLY=($(compgen -W "show secret prefixes cisco juniper validate loglevel listen sudoers password-age diff allow deny branch" -- "$cur"))
             elif [[ $pos -eq 3 ]]; then
                 case "${words[offset + 2]}" in
                     loglevel)
                         COMPREPLY=($(compgen -W "debug info error" -- "$cur"))
+                        ;;
+                    listen)
+                        COMPREPLY=($(compgen -W "show tcp tcp6 reset" -- "$cur"))
+                        ;;
+                    sudoers)
+                        COMPREPLY=($(compgen -W "show install remove" -- "$cur"))
                         ;;
                     allow|deny)
                         COMPREPLY=($(compgen -W "list add remove" -- "$cur"))

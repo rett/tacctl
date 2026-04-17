@@ -45,6 +45,8 @@ tacctl/
 |------|---------|
 | `/etc/tacquito/tacquito.yaml` | Server configuration |
 | `/etc/systemd/system/tacquito.service` | Systemd unit file |
+| `/etc/systemd/system/tacquito.service.d/tacctl-overrides.conf` | Systemd drop-in for `-network`/`-address`/`-level` overrides (preserved across upgrades) |
+| `/etc/sudoers.d/tacctl` | Optional NOPASSWD rule (installed via `tacctl config sudoers install`) |
 | `/var/log/tacquito/accounting.log` | Accounting records |
 | `/etc/tacquito/backups/` | Config backups and password dates |
 | `/usr/local/bin/tacquito` | Server binary |
@@ -57,7 +59,7 @@ tacctl/
 
 ## Important Notes
 
-- **IPv4 only:** The service runs with `-network tcp` (IPv4 only). The default `tcp6` (dual-stack) allows IPv6 clients to connect with mapped addresses (e.g., `::ffff:10.1.0.1`), which do not match IPv4 prefix rules — effectively bypassing prefix-based access control. Do not use `tcp6` unless you also add IPv6 prefix rules.
+- **IPv4 by default:** The service listens on IPv4 only (`-network tcp`). Switching to `tcp6` enables dual-stack, so IPv6 clients connect with mapped addresses (e.g., `::ffff:10.1.0.1`) that do not match IPv4 prefix rules — effectively bypassing prefix-based access control. Use `tacctl config listen tcp6 [::]:49` only if you also add IPv6 prefix rules; the command prompts for confirmation first.
 - **Shared secrets:** Use hex-only secrets (`openssl rand -hex 16`) to avoid quoting issues on devices.
 - **Juniper template users are required:** Every `local-user-name` value (`RO-CLASS`, `OP-CLASS`, `RW-CLASS`) must have a matching local user on each Juniper device. Without this, TACACS+ auth succeeds but Junos rejects the login.
 - **Config edits:** The `tacctl` tool handles service restarts automatically. Manual edits with `sed -i` require a manual restart.
@@ -65,10 +67,11 @@ tacctl/
 ## Security Best Practices
 
 ### Bind to a specific interface
-The default `-address :49` listens on all interfaces. Change this to your management IP:
-1. Edit `/etc/systemd/system/tacquito.service`
-2. Change `-address :49` to `-address <mgmt-ip>:49`
-3. Run: `systemctl daemon-reload && systemctl restart tacquito`
+The default listener is `-address :49` (all interfaces). Change it to your management IP:
+```
+tacctl config listen tcp 10.1.0.1:49
+```
+The setting lives in a systemd drop-in (`/etc/systemd/system/tacquito.service.d/tacctl-overrides.conf`) so it survives `tacctl upgrade`. Use `tacctl config listen show` to inspect, or `tacctl config listen reset` to revert to the template default.
 
 ### Restrict allowed prefixes
 The default config allows all RFC 1918 space. After install, restrict to your actual management subnets:
@@ -101,6 +104,13 @@ The default password age warning is 90 days. Adjust with:
 ```
 tacctl config password-age <days>
 ```
+
+### Passwordless sudo for operators (opt-in)
+By default, `tacctl` requires `sudo` authentication. To let a group run it without a password prompt, install a sudoers drop-in:
+```
+tacctl config sudoers install adm     # or: wheel, ops, etc.
+```
+This writes `/etc/sudoers.d/tacctl` (validated with `visudo -cf`) granting `%adm ALL=(ALL) NOPASSWD: /usr/local/bin/tacctl`. Because `tacctl` can modify system config and restart services, this is effectively passwordless root for members of that group — the command prompts for confirmation before installing. Remove with `tacctl config sudoers remove`.
 
 ## Self-Service Password Generation
 
@@ -141,14 +151,14 @@ tacctl user add jsmith superuser --hash '$2b$12$...'
 ```
 tacctl install [--branch name]  # Install tacquito server from scratch
 tacctl upgrade [--branch name]  # Pull latest source, rebuild, update scripts
-tacctl uninstall               # Remove tacquito and all associated files
-tacctl status                  # Service health, stats, errors, password age warnings
-tacctl user <subcommand>       # User management
-tacctl group <subcommand>      # Group management
-tacctl config <subcommand>     # Configuration
-tacctl log <subcommand>        # Log viewer
-tacctl backup <subcommand>     # Backup management
-tacctl hash                    # Generate a bcrypt password hash
+tacctl uninstall                # Remove tacquito and all associated files
+tacctl status                   # Service health, stats, errors, password age warnings
+tacctl user <subcommand>        # User management
+tacctl group <subcommand>       # Group management
+tacctl config <subcommand>      # Configuration
+tacctl log <subcommand>         # Log viewer
+tacctl backup <subcommand>      # Backup management
+tacctl hash                     # Generate a bcrypt password hash
 ```
 
 Run any command without arguments for detailed help.
@@ -156,16 +166,16 @@ Run any command without arguments for detailed help.
 ### User Commands — `tacctl user`
 
 ```
-user list                    List all users (name, group, status, password age)
-user add <name> <group>      Add a new user (password prompted with confirmation)
+user list                              List all users (name, group, status, password age)
+user add <name> <group>                Add a new user (password prompted with confirmation)
 user add <name> <group> --hash <hash>  Add user with pre-generated bcrypt hash
-user remove <name>           Remove a user (with confirmation)
-user passwd <name>           Change password (with confirmation)
-user disable <name>          Disable (preserves hash for re-enable)
-user enable <name>           Re-enable a disabled user
-user rename <old> <new>      Rename a user
-user move <name> <group>     Move user to a different group (keeps password)
-user verify <name>           Show user details and verify password
+user remove <name>                     Remove a user (with confirmation)
+user passwd <name>                     Change password (with confirmation)
+user disable <name>                    Disable (preserves hash for re-enable)
+user enable <name>                     Re-enable a disabled user
+user rename <old> <new>                Rename a user
+user move <name> <group>               Move user to a different group (keeps password)
+user verify <name>                     Show user details and verify password
 ```
 
 ### Group Commands — `tacctl group`
@@ -189,18 +199,20 @@ group remove <name>                      Remove a custom group (built-ins protec
 ### Config Commands — `tacctl config`
 
 ```
-config show                          Show current configuration summary
-config cisco                         Generate working Cisco device config
-config juniper                       Generate working Juniper device config
-config validate                      Validate config syntax and structure
-config diff [timestamp]              Diff current config vs a backup
-config secret [value]                Change shared secret
-config loglevel [debug|info|error]   Show or change log level
-config password-age [days]           Show or set password age warning threshold (default 90)
-config prefixes [cidr,...]           Change allowed device subnets
-config allow list|add|remove         Manage connection allow list (IP ACL)
-config deny list|add|remove          Manage connection deny list (IP ACL)
-config branch [name]                 Show or change the tacctl repo branch
+config show                                 Show current configuration summary
+config cisco                                Generate working Cisco device config
+config juniper                              Generate working Juniper device config
+config validate                             Validate config syntax and structure
+config diff [timestamp]                     Diff current config vs a backup
+config secret [value]                       Change shared secret
+config loglevel [debug|info|error]          Show or change log level
+config listen [show|tcp|tcp6|reset] [addr]  Show, change, or reset TCP listen address
+config sudoers [show|install|remove] [grp]  Manage NOPASSWD sudoers drop-in for tacctl
+config password-age [days]                  Show or set password age warning threshold (default 90)
+config prefixes [cidr,...]                  Change allowed device subnets
+config allow list|add|remove                Manage connection allow list (IP ACL)
+config deny list|add|remove                 Manage connection deny list (IP ACL)
+config branch [name]                        Show or change the tacctl repo branch
 ```
 
 **Connection filters:** `deny` takes precedence over `allow`. Both empty = all connections accepted.
@@ -332,10 +344,10 @@ Use `--branch` to switch to a different branch (e.g., `develop` for pre-release 
 **No connection attempts reaching the server**
 - Verify port 49 reachable: `telnet <server_ip> 49` from the device
 - Check service is running: `tacctl status`
-- Check IPv4 mode: ensure `-network tcp` is in the systemd unit
+- Check listener network/address: `tacctl config listen show`
 
 **Config change not taking effect**
-- Manual edits with `sed -i` require: `sudo systemctl restart tacquito`
+- Manual edits to `tacquito.yaml` still require: `sudo systemctl restart tacquito` (tacquito hot-reloads only when written via the tool)
 - Check for parse errors: `tacctl config validate`
 
 ### Useful Commands
