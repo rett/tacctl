@@ -2460,6 +2460,11 @@ cmd_install() {
         cp "${PROJECT_DIR}/config/tacquito.logrotate" /etc/logrotate.d/tacquito
         info "Log rotation installed: /etc/logrotate.d/tacquito"
     fi
+    # Install bash completion
+    if [[ -f "${PROJECT_DIR}/config/tacctl.bash-completion" ]]; then
+        cp "${PROJECT_DIR}/config/tacctl.bash-completion" /etc/bash_completion.d/tacctl
+        info "Bash completion installed: /etc/bash_completion.d/tacctl"
+    fi
 
     info "Management CLI installed:"
     info "  tacctl — user, config, and system management"
@@ -2773,6 +2778,7 @@ cmd_upgrade() {
 
     update_if_changed "${ACTIVE_DEPLOY_DIR}/README.md" "${CONFIG_DIR}/README.md" "README.md"
     update_if_changed "${ACTIVE_DEPLOY_DIR}/config/tacquito.logrotate" "/etc/logrotate.d/tacquito" "logrotate config"
+    update_if_changed "${ACTIVE_DEPLOY_DIR}/config/tacctl.bash-completion" "/etc/bash_completion.d/tacctl" "bash completion"
 
     # Update default config templates (only if user hasn't customized them)
     if [[ -d "${ACTIVE_DEPLOY_DIR}/config/templates" ]]; then

@@ -1,0 +1,57 @@
+# bash completion for tacctl
+
+_tacctl() {
+    local cur prev words cword
+    _init_completion || return
+
+    local commands="install upgrade uninstall status user group config log backup"
+
+    # Top-level commands
+    if [[ $cword -eq 1 ]]; then
+        COMPREPLY=($(compgen -W "$commands" -- "$cur"))
+        return
+    fi
+
+    local cmd="${words[1]}"
+
+    case "$cmd" in
+        user)
+            if [[ $cword -eq 2 ]]; then
+                COMPREPLY=($(compgen -W "list add remove passwd disable enable rename move verify" -- "$cur"))
+            fi
+            ;;
+        group)
+            if [[ $cword -eq 2 ]]; then
+                COMPREPLY=($(compgen -W "list add edit remove" -- "$cur"))
+            elif [[ $cword -eq 4 && "${words[2]}" == "edit" ]]; then
+                COMPREPLY=($(compgen -W "priv-lvl juniper-class" -- "$cur"))
+            fi
+            ;;
+        config)
+            if [[ $cword -eq 2 ]]; then
+                COMPREPLY=($(compgen -W "show secret juniper-ro juniper-rw prefixes cisco juniper validate loglevel password-age diff allow deny" -- "$cur"))
+            elif [[ $cword -eq 3 ]]; then
+                case "${words[2]}" in
+                    loglevel)
+                        COMPREPLY=($(compgen -W "debug info error" -- "$cur"))
+                        ;;
+                    allow|deny)
+                        COMPREPLY=($(compgen -W "list add remove" -- "$cur"))
+                        ;;
+                esac
+            fi
+            ;;
+        log)
+            if [[ $cword -eq 2 ]]; then
+                COMPREPLY=($(compgen -W "tail search failures accounting" -- "$cur"))
+            fi
+            ;;
+        backup)
+            if [[ $cword -eq 2 ]]; then
+                COMPREPLY=($(compgen -W "list diff restore" -- "$cur"))
+            fi
+            ;;
+    esac
+}
+
+complete -F _tacctl tacctl
