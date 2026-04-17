@@ -67,12 +67,6 @@ echo ""
 CURRENT_COMMIT=$(cd "$TACQUITO_SRC" && git rev-parse --short HEAD)
 info "Current commit: ${CURRENT_COMMIT}"
 
-# --- Back up current binary ---
-if [[ -f "$TACQUITO_BIN" ]]; then
-    cp "$TACQUITO_BIN" "${TACQUITO_BIN}.bak"
-    info "Backed up current binary to ${TACQUITO_BIN}.bak"
-fi
-
 # --- Pull latest source ---
 info "Pulling latest source..."
 cd "$TACQUITO_SRC"
@@ -82,10 +76,14 @@ REMOTE=$(git rev-parse @{u})
 
 if [[ "$LOCAL" == "$REMOTE" ]]; then
     info "Tacquito source already up to date (${CURRENT_COMMIT})."
-    rm -f "${TACQUITO_BIN}.bak"
     SKIP_BUILD=true
 else
     SKIP_BUILD=false
+    # Back up current binary before rebuilding
+    if [[ -f "$TACQUITO_BIN" ]]; then
+        cp "$TACQUITO_BIN" "${TACQUITO_BIN}.bak"
+        info "Backed up current binary to ${TACQUITO_BIN}.bak"
+    fi
 fi
 
 if [[ "$SKIP_BUILD" == "false" ]]; then
@@ -122,19 +120,23 @@ if [[ -z "$DEPLOY_DIR" ]]; then
     warn "To fix: copy the tacquito-deploy folder to /opt/tacquito-deploy"
 fi
 
-if [[ -f "${DEPLOY_DIR}/tacquito-manage.sh" ]]; then
-    cp "${DEPLOY_DIR}/tacquito-manage.sh" "$MANAGE_BIN"
-    chmod +x "$MANAGE_BIN"
-    info "  Updated: tacquito-manage"
-    SCRIPTS_UPDATED=$((SCRIPTS_UPDATED + 1))
-fi
+update_if_changed() {
+    local src="$1" dest="$2" label="$3"
+    if [[ ! -f "$src" ]]; then return; fi
+    if diff -q "$src" "$dest" &>/dev/null; then
+        info "  Unchanged: ${label}"
+    else
+        cp "$src" "$dest"
+        info "  Updated: ${label}"
+        SCRIPTS_UPDATED=$((SCRIPTS_UPDATED + 1))
+    fi
+}
 
-if [[ -f "${DEPLOY_DIR}/tacquito-upgrade.sh" ]]; then
-    cp "${DEPLOY_DIR}/tacquito-upgrade.sh" "$UPGRADE_BIN"
-    chmod +x "$UPGRADE_BIN"
-    info "  Updated: tacquito-upgrade"
-    SCRIPTS_UPDATED=$((SCRIPTS_UPDATED + 1))
-fi
+update_if_changed "${DEPLOY_DIR}/tacquito-manage.sh" "$MANAGE_BIN" "tacquito-manage"
+chmod +x "$MANAGE_BIN" 2>/dev/null || true
+
+update_if_changed "${DEPLOY_DIR}/tacquito-upgrade.sh" "$UPGRADE_BIN" "tacquito-upgrade"
+chmod +x "$UPGRADE_BIN" 2>/dev/null || true
 
 if [[ -f "${DEPLOY_DIR}/tacquito.service" ]]; then
     if ! diff -q "${DEPLOY_DIR}/tacquito.service" "$SERVICE_FILE" &>/dev/null; then
@@ -148,17 +150,8 @@ if [[ -f "${DEPLOY_DIR}/tacquito.service" ]]; then
     fi
 fi
 
-if [[ -f "${DEPLOY_DIR}/README.md" ]]; then
-    cp "${DEPLOY_DIR}/README.md" "${CONFIG_DIR}/README.md"
-    info "  Updated: README.md"
-    SCRIPTS_UPDATED=$((SCRIPTS_UPDATED + 1))
-fi
-
-if [[ -f "${DEPLOY_DIR}/tacquito.logrotate" ]]; then
-    cp "${DEPLOY_DIR}/tacquito.logrotate" /etc/logrotate.d/tacquito
-    info "  Updated: logrotate config"
-    SCRIPTS_UPDATED=$((SCRIPTS_UPDATED + 1))
-fi
+update_if_changed "${DEPLOY_DIR}/README.md" "${CONFIG_DIR}/README.md" "README.md"
+update_if_changed "${DEPLOY_DIR}/tacquito.logrotate" "/etc/logrotate.d/tacquito" "logrotate config"
 
 info "${SCRIPTS_UPDATED} script(s) updated."
 

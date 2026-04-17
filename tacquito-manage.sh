@@ -25,6 +25,13 @@ CONFIG="/etc/tacquito/tacquito.yaml"
 BACKUP_DIR="/etc/tacquito/backups"
 PASSWORD_DATES_DIR="/etc/tacquito/backups/password-dates"
 ACCT_LOG="/var/log/tacquito/accounting.log"
+PASSWORD_MAX_AGE_DAYS=90
+PASSWORD_MAX_AGE_FILE="/etc/tacquito/password-max-age"
+
+# Load custom password max age if set
+if [[ -f "$PASSWORD_MAX_AGE_FILE" ]]; then
+    PASSWORD_MAX_AGE_DAYS=$(cat "$PASSWORD_MAX_AGE_FILE")
+fi
 
 # --- Colors ---
 RED='\033[0;31m'
@@ -176,6 +183,13 @@ prompt_password() {
     if [[ -z "$password" ]]; then
         password=$(openssl rand -base64 18)
         echo -e "  Generated password: ${BOLD}${password}${NC}" >&2
+    else
+        local confirm=""
+        confirm=$(read_password_masked "  Confirm password: ")
+        if [[ "$password" != "$confirm" ]]; then
+            echo -e "  ${RED}Passwords do not match.${NC}" >&2
+            exit 1
+        fi
     fi
     echo "$password"
 }
@@ -1220,7 +1234,7 @@ cmd_config() {
     shift || true
 
     case "$subcmd" in
-        show|"")
+        show)
             cmd_config_show
             ;;
         secret)
@@ -1247,6 +1261,9 @@ cmd_config() {
         loglevel)
             cmd_config_loglevel "$@"
             ;;
+        password-age)
+            cmd_config_password_age "$@"
+            ;;
         diff)
             cmd_backup diff "$@"
             ;;
@@ -1267,6 +1284,7 @@ cmd_config() {
             echo "  validate                      Validate config syntax and structure"
             echo "  diff [timestamp]              Diff current config vs last backup"
             echo "  loglevel [debug|info|error]    Show or change log level"
+            echo "  password-age [days]           Show or set password age warning threshold"
             echo "  secret [new-secret]           Change shared secret"
             echo "  juniper-ro [class-name]       Change Juniper read-only class name"
             echo "  juniper-rw [class-name]       Change Juniper super-user class name"
@@ -1640,7 +1658,7 @@ cmd_group() {
     shift || true
 
     case "$subcmd" in
-        list|"")
+        list)
             cmd_group_list
             ;;
         add)
@@ -1811,7 +1829,7 @@ else:
             pw_epoch=$(date -d "$pw_date" +%s 2>/dev/null || echo 0)
             if [[ "$pw_epoch" -gt 0 ]]; then
                 age_days=$(( (today - pw_epoch) / 86400 ))
-                if [[ "$age_days" -gt 90 ]]; then
+                if [[ "$age_days" -gt "$PASSWORD_MAX_AGE_DAYS" ]]; then
                     echo -e "    ${YELLOW}${uname}: password is ${age_days} days old (changed ${pw_date})${NC}"
                     pw_warnings=$((pw_warnings + 1))
                 fi
@@ -1819,7 +1837,7 @@ else:
         done
     fi
     if [[ "$pw_warnings" -eq 0 ]]; then
-        echo -e "    ${GREEN}No passwords older than 90 days${NC}"
+        echo -e "    ${GREEN}No passwords older than ${PASSWORD_MAX_AGE_DAYS} days${NC}"
     fi
 
     echo ""
@@ -1989,12 +2007,36 @@ cmd_config_loglevel() {
     echo ""
 }
 
+# --- CONFIG PASSWORD-AGE ---
+cmd_config_password_age() {
+    local new_days="${1:-}"
+
+    if [[ -z "$new_days" ]]; then
+        echo ""
+        echo "  Password age warning threshold: ${PASSWORD_MAX_AGE_DAYS} days"
+        echo ""
+        echo "  Usage: tacquito-manage config password-age <days>"
+        echo ""
+        return
+    fi
+
+    if ! [[ "$new_days" =~ ^[0-9]+$ ]] || [[ "$new_days" -lt 1 ]]; then
+        error "Days must be a positive number."
+        exit 1
+    fi
+
+    echo "$new_days" > "$PASSWORD_MAX_AGE_FILE"
+    PASSWORD_MAX_AGE_DAYS="$new_days"
+    info "Password age warning threshold set to ${new_days} days."
+    echo ""
+}
+
 # =====================================================================
 #  LOG COMMANDS
 # =====================================================================
 
 cmd_log() {
-    local subcmd="${1:-tail}"
+    local subcmd="${1:-}"
     shift || true
 
     case "$subcmd" in
@@ -2178,54 +2220,21 @@ usage() {
     echo ""
     echo "Usage: sudo tacquito-manage <command> [arguments]"
     echo ""
-    echo "General:"
+    echo "Commands:"
     echo "  status                        Show service health, stats, and recent errors"
+    echo "  user <subcommand>             User management (list, add, remove, passwd, ...)"
+    echo "  group <subcommand>            Group management (list, add, edit, remove)"
+    echo "  config <subcommand>           Configuration (show, cisco, juniper, secret, ...)"
+    echo "  log <subcommand>              Log viewer (tail, search, failures, accounting)"
+    echo "  backup <subcommand>           Backup management (list, diff, restore)"
     echo ""
-    echo "User Commands:"
-    echo "  list                          List all users and their status"
-    echo "  add <username> <group>        Add a new user (group: readonly|operator|superuser)"
-    echo "  remove <username>             Remove a user"
-    echo "  passwd <username>             Change a user's password"
-    echo "  disable <username>            Disable a user (preserves hash for re-enable)"
-    echo "  enable <username>             Re-enable a disabled user"
-    echo "  rename <old> <new>            Rename a user"
-    echo "  move <user> <group>           Move user to a different group"
-    echo "  verify <username>             Verify password and show user details"
-    echo ""
-    echo "Group Commands:"
-    echo "  group list                    List all groups with details"
-    echo "  group add <n> <pl> <jc>       Add group (name, priv-lvl, juniper-class)"
-    echo "  group edit <n> <field> <val>  Edit group (priv-lvl or juniper-class)"
-    echo "  group remove <name>           Remove a custom group"
-    echo ""
-    echo "Config Commands:"
-    echo "  config show                   Show current configuration"
-    echo "  config cisco                  Show working Cisco device configuration"
-    echo "  config juniper                Show working Juniper device configuration"
-    echo "  config secret [value]         Change shared secret"
-    echo "  config juniper-ro [class]     Change Juniper read-only class name"
-    echo "  config juniper-rw [class]     Change Juniper super-user class name"
-    echo "  config prefixes [cidr,...]    Change allowed device subnets"
-    echo "  config validate              Validate config syntax and structure"
-    echo "  config diff [timestamp]      Diff current config vs last backup"
-    echo "  config loglevel [level]      Show or change log level (debug|info|error)"
-    echo "  config allow list|add|remove Manage connection allow list"
-    echo "  config deny list|add|remove  Manage connection deny list"
-    echo ""
-    echo "Log Commands:"
-    echo "  log tail [n]                 Show last N journal entries"
-    echo "  log search <term>            Search logs for username or keyword"
-    echo "  log failures                 Show auth failures (last 24 hours)"
-    echo "  log accounting [n]           Show last N accounting entries"
-    echo ""
-    echo "Backup Commands:"
-    echo "  backup list                  Show available config backups"
-    echo "  backup diff [timestamp]      Diff current config vs a backup"
-    echo "  backup restore <timestamp>   Restore a config backup"
+    echo "Run any command without arguments for detailed help, e.g.:"
+    echo "  sudo tacquito-manage user"
+    echo "  sudo tacquito-manage config"
     echo ""
     echo "Examples:"
-    echo "  sudo tacquito-manage add jsmith superuser"
-    echo "  sudo tacquito-manage move jsmith operator"
+    echo "  sudo tacquito-manage user add jsmith superuser"
+    echo "  sudo tacquito-manage user move jsmith operator"
     echo "  sudo tacquito-manage log failures"
     echo "  sudo tacquito-manage backup list"
     echo "  sudo tacquito-manage config diff"
@@ -2235,50 +2244,65 @@ usage() {
 COMMAND="${1:-}"
 shift || true
 
+# --- USER dispatcher ---
+cmd_user() {
+    local subcmd="${1:-help}"
+    shift || true
+
+    case "$subcmd" in
+        list)       cmd_list ;;
+        add)        cmd_add "$@" ;;
+        remove)     cmd_remove "$@" ;;
+        passwd)     cmd_passwd "$@" ;;
+        disable)    cmd_disable "$@" ;;
+        enable)     cmd_enable "$@" ;;
+        rename)     cmd_rename "$@" ;;
+        move)       cmd_move "$@" ;;
+        verify)     cmd_verify "$@" ;;
+        *)
+            echo ""
+            echo -e "${BOLD}User Commands${NC}"
+            echo ""
+            echo "Usage: sudo tacquito-manage user <subcommand> [arguments]"
+            echo ""
+            echo "Subcommands:"
+            echo "  list                          List all users and their status"
+            echo "  add <username> <group>        Add a new user"
+            echo "  remove <username>             Remove a user"
+            echo "  passwd <username>             Change a user's password"
+            echo "  disable <username>            Disable a user (preserves hash)"
+            echo "  enable <username>             Re-enable a disabled user"
+            echo "  rename <old> <new>            Rename a user"
+            echo "  move <user> <group>           Move user to a different group"
+            echo "  verify <username>             Verify password and show user details"
+            echo ""
+            echo "Examples:"
+            echo "  sudo tacquito-manage user list"
+            echo "  sudo tacquito-manage user add jsmith superuser"
+            echo "  sudo tacquito-manage user move jsmith operator"
+            echo "  sudo tacquito-manage user verify jsmith"
+            echo ""
+            exit 1
+            ;;
+    esac
+}
+
 case "$COMMAND" in
     status)
         preflight
         cmd_status
         ;;
-    list)
+    user)
         preflight
-        cmd_list
-        ;;
-    add)
-        preflight
-        cmd_add "$@"
-        ;;
-    remove)
-        preflight
-        cmd_remove "$@"
-        ;;
-    passwd)
-        preflight
-        cmd_passwd "$@"
-        ;;
-    disable)
-        preflight
-        cmd_disable "$@"
-        ;;
-    enable)
-        preflight
-        cmd_enable "$@"
-        ;;
-    verify)
-        preflight
-        cmd_verify "$@"
-        ;;
-    rename)
-        preflight
-        cmd_rename "$@"
+        cmd_user "$@"
         ;;
     group)
         preflight
         cmd_group "$@"
         ;;
-    move)
+    config)
         preflight
-        cmd_move "$@"
+        cmd_config "$@"
         ;;
     log)
         preflight
@@ -2287,10 +2311,6 @@ case "$COMMAND" in
     backup)
         preflight
         cmd_backup "$@"
-        ;;
-    config)
-        preflight
-        cmd_config "$@"
         ;;
     *)
         usage
