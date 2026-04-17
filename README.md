@@ -6,10 +6,10 @@ Management toolkit for [tacquito](https://github.com/facebookincubator/tacquito)
 
 ```bash
 # Install on a new server
-sudo ./bin/tacquito-install.sh
+sudo tacctl install
 
 # Or upgrade an existing server (pulls latest from GitHub)
-sudo tacquito-upgrade
+sudo tacctl upgrade
 
 # Manage users
 sudo tacctl user list
@@ -25,10 +25,7 @@ sudo tacctl config juniper
 ```
 tacctl/
   bin/
-    tacquito-install.sh     # Automated installer (Go, build, configure, start)
-    tacctl.sh               # Management CLI (symlinked to /usr/local/bin/tacctl)
-    tacquito-uninstall.sh   # Uninstaller (removes server, scripts, config, and data)
-    tacquito-upgrade.sh     # Upgrade script (symlinked to /usr/local/bin/tacquito-upgrade)
+    tacctl.sh               # CLI (symlinked to /usr/local/bin/tacctl)
   config/
     tacquito.yaml           # Template TACACS+ config (used by installer)
     tacquito.service        # Systemd unit file
@@ -50,7 +47,6 @@ tacctl/
 | `/etc/tacquito/backups/` | Config backups and password dates |
 | `/usr/local/bin/tacquito` | Server binary |
 | `/usr/local/bin/tacctl` | Symlink to management CLI |
-| `/usr/local/bin/tacquito-upgrade` | Symlink to upgrade script |
 | `/usr/local/bin/tacquito-hashgen` | Password hash generator |
 | `/etc/tacquito/templates/` | Custom device config templates (override defaults) |
 | `/opt/tacctl/` | Git clone of this repo (used by upgrade) |
@@ -70,12 +66,15 @@ tacctl/
 ### Top-Level Commands
 
 ```
-sudo tacctl status              # Service health, stats, errors, password age warnings
-sudo tacctl user <subcommand>   # User management
-sudo tacctl group <subcommand>  # Group management
-sudo tacctl config <subcommand> # Configuration
-sudo tacctl log <subcommand>    # Log viewer
-sudo tacctl backup <subcommand> # Backup management
+sudo tacctl install                 # Install tacquito server from scratch
+sudo tacctl upgrade                 # Pull latest source, rebuild, update scripts
+sudo tacctl uninstall               # Remove tacquito and all associated files
+sudo tacctl status                  # Service health, stats, errors, password age warnings
+sudo tacctl user <subcommand>       # User management
+sudo tacctl group <subcommand>      # Group management
+sudo tacctl config <subcommand>     # Configuration
+sudo tacctl log <subcommand>        # Log viewer
+sudo tacctl backup <subcommand>     # Backup management
 ```
 
 Run any command without arguments for detailed help.
@@ -219,18 +218,17 @@ sudo rm /etc/tacquito/templates/cisco.template
 ## Upgrading
 
 ```bash
-sudo tacquito-upgrade
+sudo tacctl upgrade
 ```
 
-The upgrade script:
+The upgrade command:
 1. Pulls latest tacquito server source and rebuilds the binary (if changed)
 2. Pulls latest management scripts from `rett/tacctl` on GitHub
 3. Updates system config files (service unit, logrotate, README) if changed
 4. Restarts the service only if something changed
-5. Re-executes itself if the upgrade script was updated during the pull
+5. Re-executes itself if tacctl was updated during the pull
 
-Management scripts (`tacctl`, `tacquito-upgrade`) are symlinked from
-`/usr/local/bin/` to `/opt/tacctl/bin/`, so git pulls update them instantly.
+`/usr/local/bin/tacctl` is symlinked to `/opt/tacctl/bin/tacctl.sh`, so git pulls update it instantly.
 
 ---
 

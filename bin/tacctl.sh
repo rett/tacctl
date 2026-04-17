@@ -27,6 +27,19 @@ PASSWORD_DATES_DIR="/etc/tacquito/backups/password-dates"
 ACCT_LOG="/var/log/tacquito/accounting.log"
 PASSWORD_MAX_AGE_DAYS=90
 PASSWORD_MAX_AGE_FILE="/etc/tacquito/password-max-age"
+CONFIG_DIR="/etc/tacquito"
+LOG_DIR="/var/log/tacquito"
+SERVICE_FILE="/etc/systemd/system/tacquito.service"
+
+# --- System lifecycle constants ---
+GO_VERSION="1.26.2"
+TACQUITO_REPO="https://github.com/facebookincubator/tacquito.git"
+TACQUITO_SRC="/opt/tacquito-src"
+TACQUITO_BIN="/usr/local/bin/tacquito"
+HASHGEN_BIN="/usr/local/bin/tacquito-hashgen"
+DEPLOY_DIR="/opt/tacctl"
+MANAGE_REPO="https://github.com/rett/tacctl.git"
+GO_BIN="/usr/local/go/bin/go"
 
 # Load custom password max age if set
 if [[ -f "$PASSWORD_MAX_AGE_FILE" ]]; then
@@ -2272,6 +2285,622 @@ cmd_backup() {
 }
 
 # =====================================================================
+#  SYSTEM LIFECYCLE COMMANDS
+# =====================================================================
+
+# --- INSTALL ---
+cmd_install() {
+    if [[ $EUID -ne 0 ]]; then
+        error "This script must be run as root (sudo tacctl install)"
+        exit 1
+    fi
+
+    for cmd in git wget python3; do
+        if ! command -v "$cmd" &>/dev/null; then
+            error "Required command '$cmd' not found. Install it first."
+            exit 1
+        fi
+    done
+
+    local PROJECT_DIR
+    PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+    echo ""
+    echo "============================================"
+    echo "  Tacquito TACACS+ Server Installer"
+    echo "============================================"
+    echo ""
+
+    # --- Step 1: Install Go ---
+    if command -v /usr/local/go/bin/go &>/dev/null; then
+        local CURRENT_GO
+        CURRENT_GO=$(/usr/local/go/bin/go version | awk '{print $3}')
+        if [[ "$CURRENT_GO" == "go${GO_VERSION}" ]]; then
+            info "Go ${GO_VERSION} already installed, skipping."
+        else
+            warn "Go ${CURRENT_GO} found, upgrading to ${GO_VERSION}..."
+            rm -rf /usr/local/go
+        fi
+    fi
+
+    if ! command -v /usr/local/go/bin/go &>/dev/null; then
+        info "Installing Go ${GO_VERSION}..."
+        cd /tmp
+        wget -q "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz"
+        tar -C /usr/local -xzf "go${GO_VERSION}.linux-amd64.tar.gz"
+        rm -f "go${GO_VERSION}.linux-amd64.tar.gz"
+        info "Go ${GO_VERSION} installed."
+    fi
+
+    export PATH=$PATH:/usr/local/go/bin
+
+    # --- Step 2: Clone and build tacquito ---
+    if [[ -d "$TACQUITO_SRC" ]]; then
+        info "Tacquito source already exists at ${TACQUITO_SRC}, pulling latest..."
+        cd "$TACQUITO_SRC" && git pull --quiet
+    else
+        info "Cloning tacquito..."
+        git clone --quiet "$TACQUITO_REPO" "$TACQUITO_SRC"
+    fi
+
+    info "Building tacquito server..."
+    cd "${TACQUITO_SRC}/cmds/server"
+    go build -o "$TACQUITO_BIN" .
+
+    info "Building password hash generator..."
+    cd "${TACQUITO_SRC}/cmds/server/config/authenticators/bcrypt/generator"
+    go build -o "$HASHGEN_BIN" .
+
+    info "Binaries installed:"
+    info "  Server:  ${TACQUITO_BIN}"
+    info "  Hashgen: ${HASHGEN_BIN}"
+
+    # Clone management repo for future upgrades
+    if [[ -d "${DEPLOY_DIR}/.git" ]]; then
+        info "Management repo already cloned at ${DEPLOY_DIR}, pulling latest..."
+        cd "$DEPLOY_DIR" && git pull --quiet 2>/dev/null || true
+    elif [[ -d "$DEPLOY_DIR" ]]; then
+        rm -rf "$DEPLOY_DIR"
+        git clone --quiet "$MANAGE_REPO" "$DEPLOY_DIR"
+        info "Management repo cloned to ${DEPLOY_DIR}"
+    else
+        git clone --quiet "$MANAGE_REPO" "$DEPLOY_DIR"
+        info "Management repo cloned to ${DEPLOY_DIR}"
+    fi
+
+    # Symlink management CLI
+    ln -sf "${DEPLOY_DIR}/bin/tacctl.sh" /usr/local/bin/tacctl
+    cp "${PROJECT_DIR}/README.md" "${CONFIG_DIR}/README.md" 2>/dev/null || true
+    # Install default config templates
+    if [[ -d "${PROJECT_DIR}/config/templates" ]]; then
+        mkdir -p "${CONFIG_DIR}/templates"
+        cp -n "${PROJECT_DIR}/config/templates/"*.template "${CONFIG_DIR}/templates/" 2>/dev/null || true
+        info "Config templates installed: ${CONFIG_DIR}/templates/"
+    fi
+    # Install logrotate config
+    if [[ -f "${PROJECT_DIR}/config/tacquito.logrotate" ]]; then
+        cp "${PROJECT_DIR}/config/tacquito.logrotate" /etc/logrotate.d/tacquito
+        info "Log rotation installed: /etc/logrotate.d/tacquito"
+    fi
+
+    info "Management CLI installed:"
+    info "  tacctl — user, config, and system management"
+    info "  Deploy source: ${DEPLOY_DIR}"
+
+    # --- Step 3: Install python3-bcrypt ---
+    if ! python3 -c "import bcrypt" 2>/dev/null; then
+        info "Installing python3-bcrypt..."
+        if command -v apt-get &>/dev/null; then
+            apt-get install -y -qq python3-bcrypt
+        elif command -v dnf &>/dev/null; then
+            dnf install -y -q python3-bcrypt
+        elif command -v yum &>/dev/null; then
+            yum install -y -q python3-bcrypt
+        else
+            error "Cannot install python3-bcrypt automatically. Install it manually."
+            exit 1
+        fi
+    fi
+
+    # --- Step 4: Create service user and directories ---
+    if ! id tacquito &>/dev/null; then
+        info "Creating tacquito service user..."
+        useradd --system --no-create-home --shell /usr/sbin/nologin tacquito
+    else
+        info "Service user 'tacquito' already exists."
+    fi
+
+    mkdir -p "$CONFIG_DIR" "$LOG_DIR"
+    chown tacquito:tacquito "$CONFIG_DIR" "$LOG_DIR"
+    chmod 750 "$CONFIG_DIR" "$LOG_DIR"
+
+    # --- Step 5: Generate shared secret ---
+    echo ""
+    echo "--------------------------------------------"
+    echo "  Shared Secret Configuration"
+    echo "--------------------------------------------"
+    local SHARED_SECRET=""
+    read -rp "Enter shared secret (leave blank to auto-generate): " SHARED_SECRET
+    if [[ -z "$SHARED_SECRET" ]]; then
+        SHARED_SECRET=$(openssl rand -hex 16)
+        info "Generated shared secret: ${SHARED_SECRET}"
+    else
+        info "Using provided shared secret."
+    fi
+
+    # --- Step 6: Generate user passwords and hashes ---
+    echo ""
+    echo "--------------------------------------------"
+    echo "  User Password Configuration"
+    echo "--------------------------------------------"
+
+    local install_prompt_password
+    install_prompt_password() {
+        local username="$1"
+        local access="$2"
+        local password=""
+
+        echo ""
+        echo "  User: ${username} (${access})"
+        read -rp "  Enter password (leave blank to auto-generate): " password
+        if [[ -z "$password" ]]; then
+            password=$(openssl rand -base64 18)
+            echo "  Generated password: ${password}"
+        fi
+
+        local hash
+        hash=$(generate_hash "$password")
+
+        LAST_HASH="$hash"
+        LAST_PASSWORD="$password"
+    }
+
+    local LAST_HASH="" LAST_PASSWORD=""
+
+    install_prompt_password "user" "read-only"
+    local HASH_USER="$LAST_HASH" PW_USER="$LAST_PASSWORD"
+
+    install_prompt_password "operations" "operator, Operations"
+    local HASH_OPERATIONS="$LAST_HASH" PW_OPERATIONS="$LAST_PASSWORD"
+
+    install_prompt_password "engineering" "super-user"
+    local HASH_ENGINEERING="$LAST_HASH" PW_ENGINEERING="$LAST_PASSWORD"
+
+    # --- Step 7: Write configuration ---
+    local CONFIG_FILE="${CONFIG_DIR}/tacquito.yaml"
+    info "Writing configuration to ${CONFIG_FILE}..."
+
+    cp "${PROJECT_DIR}/config/tacquito.yaml" "$CONFIG_FILE"
+
+    sed -i "s|hash: REPLACE_ME|hash: ${HASH_USER}|" "$CONFIG_FILE"
+    sed -i "0,/hash: REPLACE_ME/{s|hash: REPLACE_ME|hash: ${HASH_OPERATIONS}|}" "$CONFIG_FILE"
+    sed -i "0,/hash: REPLACE_ME/{s|hash: REPLACE_ME|hash: ${HASH_ENGINEERING}|}" "$CONFIG_FILE"
+    sed -i "s|REPLACE_WITH_SHARED_SECRET|${SHARED_SECRET}|" "$CONFIG_FILE"
+
+    chown tacquito:tacquito "$CONFIG_FILE"
+    chmod 640 "$CONFIG_FILE"
+
+    mkdir -p "$PASSWORD_DATES_DIR"
+    for u in user operations engineering; do
+        date +%Y-%m-%d > "${PASSWORD_DATES_DIR}/${u}.date"
+    done
+    info "Password dates recorded."
+
+    # --- Step 8: Install systemd service ---
+    info "Installing systemd service..."
+    cp "${PROJECT_DIR}/config/tacquito.service" "$SERVICE_FILE"
+    systemctl daemon-reload
+    systemctl enable tacquito.service
+
+    # --- Step 9: Start the service ---
+    info "Starting tacquito..."
+    systemctl start tacquito.service
+    sleep 2
+
+    if systemctl is-active --quiet tacquito.service; then
+        info "Tacquito is running!"
+    else
+        error "Tacquito failed to start. Check: journalctl -u tacquito"
+        exit 1
+    fi
+
+    # --- Step 10: Verify ---
+    local LISTEN_CHECK
+    LISTEN_CHECK=$(ss -tlnp | grep ":49 " || true)
+    if [[ -n "$LISTEN_CHECK" ]]; then
+        info "Listening on port 49/tcp"
+    else
+        warn "Port 49 not detected — check logs."
+    fi
+
+    # --- Summary ---
+    echo ""
+    echo "============================================"
+    echo "  Installation Complete"
+    echo "============================================"
+    echo ""
+    echo "  Service:        tacquito.service (enabled, running)"
+    echo "  Config:         ${CONFIG_FILE}"
+    echo "  Accounting log: ${LOG_DIR}/accounting.log"
+    echo "  Metrics:        http://localhost:8080/metrics"
+    echo ""
+    echo "  Shared Secret:  ${SHARED_SECRET}"
+    echo ""
+    echo "  Users:"
+    echo "    user         (read-only)   password: ${PW_USER}"
+    echo "    operations   (operator)    password: ${PW_OPERATIONS}"
+    echo "    engineering  (super-user)  password: ${PW_ENGINEERING}"
+    echo ""
+    echo "  SAVE THESE CREDENTIALS — they are not stored in plaintext."
+    echo ""
+    echo "  Next steps:"
+    echo "    1. Configure your Cisco/Juniper devices (see README.md)"
+    echo "    2. Restrict prefixes in ${CONFIG_FILE} to your management subnets"
+    echo "    3. Open port 49/tcp in your firewall if needed"
+    echo "    4. See README.md for user management and troubleshooting"
+    echo ""
+}
+
+# --- UPGRADE ---
+cmd_upgrade() {
+    if [[ $EUID -ne 0 ]]; then
+        error "This script must be run as root (sudo tacctl upgrade)"
+        exit 1
+    fi
+
+    if [[ ! -d "$TACQUITO_SRC" ]]; then
+        error "Tacquito source not found at ${TACQUITO_SRC}. Run 'tacctl install' first."
+        exit 1
+    fi
+
+    if [[ ! -x "$GO_BIN" ]]; then
+        error "Go not found at ${GO_BIN}. Install Go first."
+        exit 1
+    fi
+
+    export PATH=$PATH:/usr/local/go/bin
+
+    local PROJECT_DIR
+    PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+    echo ""
+    echo "============================================"
+    echo "  Tacquito Upgrade"
+    echo "============================================"
+    echo ""
+
+    # --- Record current version ---
+    local CURRENT_COMMIT
+    CURRENT_COMMIT=$(cd "$TACQUITO_SRC" && git rev-parse --short HEAD)
+    info "Current commit: ${CURRENT_COMMIT}"
+
+    # --- Pull latest source ---
+    info "Pulling latest source..."
+    cd "$TACQUITO_SRC"
+    git fetch --quiet
+    local LOCAL REMOTE SKIP_BUILD NEW_COMMIT
+    LOCAL=$(git rev-parse HEAD)
+    REMOTE=$(git rev-parse @{u})
+
+    if [[ "$LOCAL" == "$REMOTE" ]]; then
+        info "Tacquito source already up to date (${CURRENT_COMMIT})."
+        SKIP_BUILD=true
+    else
+        SKIP_BUILD=false
+        if [[ -f "$TACQUITO_BIN" ]]; then
+            cp "$TACQUITO_BIN" "${TACQUITO_BIN}.bak"
+            info "Backed up current binary to ${TACQUITO_BIN}.bak"
+        fi
+    fi
+
+    if [[ "$SKIP_BUILD" == "false" ]]; then
+        git pull --quiet
+        NEW_COMMIT=$(git rev-parse --short HEAD)
+        info "Updated: ${CURRENT_COMMIT} -> ${NEW_COMMIT}"
+
+        echo ""
+        info "Changes:"
+        git log --oneline "${CURRENT_COMMIT}..${NEW_COMMIT}" | head -20
+        echo ""
+
+        info "Building tacquito server..."
+        cd "${TACQUITO_SRC}/cmds/server"
+        if ! go build -o "$TACQUITO_BIN" . ; then
+            error "Build failed. Restoring previous binary."
+            mv "${TACQUITO_BIN}.bak" "$TACQUITO_BIN"
+            exit 1
+        fi
+
+        info "Building password hash generator..."
+        cd "${TACQUITO_SRC}/cmds/server/config/authenticators/bcrypt/generator"
+        go build -o "$HASHGEN_BIN" . || warn "Hashgen build failed (non-critical)."
+    fi
+
+    # --- Update management repo ---
+    if [[ -d "${DEPLOY_DIR}/.git" ]]; then
+        info "Pulling latest management scripts..."
+        cd "$DEPLOY_DIR"
+        git fetch --quiet 2>/dev/null || true
+        local LOCAL_MANAGE REMOTE_MANAGE
+        LOCAL_MANAGE=$(git rev-parse HEAD 2>/dev/null)
+        REMOTE_MANAGE=$(git rev-parse @{u} 2>/dev/null || echo "")
+        if [[ -n "$REMOTE_MANAGE" && "$LOCAL_MANAGE" != "$REMOTE_MANAGE" ]]; then
+            # Copy self to temp before pull (git pull will overwrite the running script)
+            local SELF_TMP
+            SELF_TMP=$(mktemp)
+            cp "${DEPLOY_DIR}/bin/tacctl.sh" "$SELF_TMP"
+
+            git pull --quiet 2>/dev/null
+            info "Management scripts updated: $(git rev-parse --short HEAD)"
+
+            # If tacctl changed, re-run the new version
+            if ! diff -q "$SELF_TMP" "${DEPLOY_DIR}/bin/tacctl.sh" &>/dev/null; then
+                rm -f "$SELF_TMP"
+                info "tacctl updated — restarting upgrade with new version..."
+                exec "${DEPLOY_DIR}/bin/tacctl.sh" upgrade
+            fi
+            rm -f "$SELF_TMP"
+        else
+            info "Management scripts already up to date."
+        fi
+    elif [[ ! -d "$DEPLOY_DIR" ]]; then
+        info "Cloning management repo..."
+        git clone --quiet "$MANAGE_REPO" "$DEPLOY_DIR" 2>/dev/null || warn "Failed to clone management repo."
+    fi
+
+    # --- Ensure symlink exists ---
+    if [[ -d "$DEPLOY_DIR" ]]; then
+        ln -sf "${DEPLOY_DIR}/bin/tacctl.sh" /usr/local/bin/tacctl
+    fi
+
+    # --- Update system config files ---
+    info "Updating system files..."
+    local SCRIPTS_UPDATED=0
+    local ACTIVE_DEPLOY_DIR="$DEPLOY_DIR"
+
+    if [[ ! -d "$ACTIVE_DEPLOY_DIR" ]]; then
+        # Fall back to script's own project dir
+        ACTIVE_DEPLOY_DIR="$PROJECT_DIR"
+    fi
+
+    if [[ -z "$ACTIVE_DEPLOY_DIR" ]]; then
+        warn "Deploy directory not found. Skipping updates."
+        warn "To fix: clone the repo to ${DEPLOY_DIR}"
+    fi
+
+    update_if_changed() {
+        local src="$1" dest="$2" label="$3"
+        if [[ ! -f "$src" ]]; then return; fi
+        if diff -q "$src" "$dest" &>/dev/null; then
+            info "  Unchanged: ${label}"
+        else
+            cp "$src" "$dest"
+            info "  Updated: ${label}"
+            SCRIPTS_UPDATED=$((SCRIPTS_UPDATED + 1))
+        fi
+    }
+
+    if [[ -f "${ACTIVE_DEPLOY_DIR}/config/tacquito.service" ]]; then
+        if ! diff -q "${ACTIVE_DEPLOY_DIR}/config/tacquito.service" "$SERVICE_FILE" &>/dev/null; then
+            cp "$SERVICE_FILE" "${SERVICE_FILE}.bak"
+            cp "${ACTIVE_DEPLOY_DIR}/config/tacquito.service" "$SERVICE_FILE"
+            systemctl daemon-reload
+            info "  Updated: tacquito.service (previous backed up to ${SERVICE_FILE}.bak)"
+            SCRIPTS_UPDATED=$((SCRIPTS_UPDATED + 1))
+        else
+            info "  Unchanged: tacquito.service"
+        fi
+    fi
+
+    update_if_changed "${ACTIVE_DEPLOY_DIR}/README.md" "${CONFIG_DIR}/README.md" "README.md"
+    update_if_changed "${ACTIVE_DEPLOY_DIR}/config/tacquito.logrotate" "/etc/logrotate.d/tacquito" "logrotate config"
+
+    # Update default config templates (only if user hasn't customized them)
+    if [[ -d "${ACTIVE_DEPLOY_DIR}/config/templates" ]]; then
+        mkdir -p "${CONFIG_DIR}/templates"
+        for tmpl in "${ACTIVE_DEPLOY_DIR}/config/templates/"*.template; do
+            [[ -f "$tmpl" ]] || continue
+            local tmpl_name dest
+            tmpl_name=$(basename "$tmpl")
+            dest="${CONFIG_DIR}/templates/${tmpl_name}"
+            if [[ ! -f "$dest" ]]; then
+                cp "$tmpl" "$dest"
+                info "  Installed: ${tmpl_name}"
+                SCRIPTS_UPDATED=$((SCRIPTS_UPDATED + 1))
+            else
+                update_if_changed "$tmpl" "$dest" "template: ${tmpl_name}"
+            fi
+        done
+    fi
+
+    info "${SCRIPTS_UPDATED} file(s) updated."
+
+    # --- Restart service (if binaries or service file changed) ---
+    if [[ "$SKIP_BUILD" == "false" ]] || [[ "$SCRIPTS_UPDATED" -gt 0 ]]; then
+        info "Restarting tacquito service..."
+        systemctl restart tacquito.service
+        sleep 2
+
+        if systemctl is-active --quiet tacquito.service; then
+            info "Tacquito is running."
+            rm -f "${TACQUITO_BIN}.bak"
+        else
+            if [[ "$SKIP_BUILD" == "false" ]]; then
+                error "Tacquito failed to start after upgrade. Rolling back binary..."
+                mv "${TACQUITO_BIN}.bak" "$TACQUITO_BIN"
+                systemctl restart tacquito.service
+                sleep 2
+                if systemctl is-active --quiet tacquito.service; then
+                    warn "Rolled back to previous binary. Service is running."
+                else
+                    error "Rollback failed. Check: journalctl -u tacquito"
+                fi
+                exit 1
+            else
+                error "Tacquito failed to start. Check: journalctl -u tacquito"
+                exit 1
+            fi
+        fi
+
+        local LISTEN_CHECK
+        LISTEN_CHECK=$(ss -tlnp | grep ":49 " || true)
+        if [[ -n "$LISTEN_CHECK" ]]; then
+            info "Listening on port 49/tcp"
+        else
+            warn "Port 49 not detected — check logs."
+        fi
+    fi
+
+    echo ""
+    echo "============================================"
+    if [[ "$SKIP_BUILD" == "false" ]]; then
+        echo "  Upgrade Complete: ${CURRENT_COMMIT} -> ${NEW_COMMIT}"
+    else
+        echo "  Scripts Updated (source unchanged at ${CURRENT_COMMIT})"
+    fi
+    echo "  Managed scripts: ${SCRIPTS_UPDATED} updated"
+    echo "============================================"
+    echo ""
+}
+
+# --- UNINSTALL ---
+cmd_uninstall() {
+    if [[ $EUID -ne 0 ]]; then
+        error "This script must be run as root (sudo tacctl uninstall)"
+        exit 1
+    fi
+
+    echo ""
+    echo "============================================"
+    echo -e "  ${RED}Tacquito Uninstaller${NC}"
+    echo "============================================"
+    echo ""
+    echo "This will remove:"
+    echo "  - Tacquito service and binary"
+    echo "  - Management CLI (tacctl)"
+    echo "  - Password hash generator (tacquito-hashgen)"
+    echo "  - Configuration directory (/etc/tacquito)"
+    echo "  - Log directory (/var/log/tacquito)"
+    echo "  - Logrotate config"
+    echo "  - Service user (tacquito)"
+    echo "  - Management repo (${DEPLOY_DIR})"
+    echo ""
+    echo -e "${YELLOW}The tacquito source (/opt/tacquito-src) and Go installation"
+    echo -e "(/usr/local/go) will NOT be removed.${NC}"
+    echo ""
+
+    read -rp "Are you sure you want to uninstall tacquito? [y/N]: " confirm
+    if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+        info "Cancelled."
+        exit 0
+    fi
+
+    echo ""
+
+    # --- Stop and disable service ---
+    if systemctl is-active --quiet tacquito 2>/dev/null; then
+        info "Stopping tacquito service..."
+        systemctl stop tacquito
+    fi
+    if systemctl is-enabled --quiet tacquito 2>/dev/null; then
+        systemctl disable tacquito 2>/dev/null || true
+    fi
+
+    # --- Ask about preserving data ---
+    local PRESERVE_BACKUPS=false PRESERVE_LOGS=false
+
+    echo ""
+    read -rp "Preserve config backups (/etc/tacquito/backups)? [y/N]: " keep_backups
+    if [[ "$keep_backups" == "y" || "$keep_backups" == "Y" ]]; then
+        PRESERVE_BACKUPS=true
+    fi
+
+    read -rp "Preserve accounting logs (/var/log/tacquito)? [y/N]: " keep_logs
+    if [[ "$keep_logs" == "y" || "$keep_logs" == "Y" ]]; then
+        PRESERVE_LOGS=true
+    fi
+
+    echo ""
+
+    # --- Remove symlinks and binaries ---
+    info "Removing binaries and symlinks..."
+    rm -f /usr/local/bin/tacctl
+    rm -f /usr/local/bin/tacquito
+    rm -f /usr/local/bin/tacquito.bak
+    rm -f /usr/local/bin/tacquito-hashgen
+
+    # --- Remove systemd unit ---
+    info "Removing systemd unit..."
+    rm -f /etc/systemd/system/tacquito.service
+    rm -f /etc/systemd/system/tacquito.service.bak
+    systemctl daemon-reload
+
+    # --- Remove logrotate config ---
+    info "Removing logrotate config..."
+    rm -f /etc/logrotate.d/tacquito
+
+    # --- Remove configuration ---
+    local BACKUP_ARCHIVE="" LOG_ARCHIVE=""
+    if [[ "$PRESERVE_BACKUPS" == "true" ]]; then
+        if [[ -d /etc/tacquito/backups ]]; then
+            BACKUP_ARCHIVE="/root/tacquito-backups-$(date +%Y%m%d_%H%M%S).tar.gz"
+            tar czf "$BACKUP_ARCHIVE" -C /etc/tacquito backups/ 2>/dev/null || true
+            info "Config backups saved to ${BACKUP_ARCHIVE}"
+        fi
+    fi
+    info "Removing configuration directory..."
+    rm -rf /etc/tacquito
+
+    # --- Remove logs ---
+    if [[ "$PRESERVE_LOGS" == "true" ]]; then
+        if [[ -d /var/log/tacquito ]]; then
+            LOG_ARCHIVE="/root/tacquito-logs-$(date +%Y%m%d_%H%M%S).tar.gz"
+            tar czf "$LOG_ARCHIVE" -C /var/log tacquito/ 2>/dev/null || true
+            info "Accounting logs saved to ${LOG_ARCHIVE}"
+        fi
+    fi
+    info "Removing log directory..."
+    rm -rf /var/log/tacquito
+
+    # --- Remove password max age file ---
+    rm -f /etc/tacquito/password-max-age
+
+    # --- Remove management repo ---
+    info "Removing management repo..."
+    rm -rf "$DEPLOY_DIR"
+
+    # --- Remove service user ---
+    if id tacquito &>/dev/null; then
+        info "Removing tacquito service user..."
+        userdel tacquito 2>/dev/null || true
+    fi
+
+    echo ""
+    echo "============================================"
+    echo "  Uninstall Complete"
+    echo "============================================"
+    echo ""
+    echo "  Removed:"
+    echo "    - Tacquito service and binary"
+    echo "    - Management CLI and symlinks"
+    echo "    - Configuration and systemd unit"
+    echo "    - Logrotate config"
+    echo "    - Service user"
+    if [[ "$PRESERVE_BACKUPS" == "true" && -n "$BACKUP_ARCHIVE" ]]; then
+        echo "    - Config backups saved to: ${BACKUP_ARCHIVE}"
+    fi
+    if [[ "$PRESERVE_LOGS" == "true" && -n "$LOG_ARCHIVE" ]]; then
+        echo "    - Accounting logs saved to: ${LOG_ARCHIVE}"
+    fi
+    echo ""
+    echo "  Not removed:"
+    echo "    - Go installation (/usr/local/go)"
+    echo "    - Tacquito source (/opt/tacquito-src)"
+    echo "    - python3-bcrypt package"
+    echo ""
+}
+
+# =====================================================================
 #  MAIN
 # =====================================================================
 
@@ -2282,6 +2911,9 @@ usage() {
     echo "Usage: sudo tacctl <command> [arguments]"
     echo ""
     echo "Commands:"
+    echo "  install                       Install tacquito server and configure from scratch"
+    echo "  upgrade                       Pull latest source, rebuild, and update scripts"
+    echo "  uninstall                     Remove tacquito and all associated files"
     echo "  status                        Show service health, stats, and recent errors"
     echo "  user <subcommand>             User management (list, add, remove, passwd, ...)"
     echo "  group <subcommand>            Group management (list, add, edit, remove)"
@@ -2294,11 +2926,11 @@ usage() {
     echo "  sudo tacctl config"
     echo ""
     echo "Examples:"
+    echo "  sudo tacctl install"
+    echo "  sudo tacctl upgrade"
     echo "  sudo tacctl user add jsmith superuser"
     echo "  sudo tacctl user move jsmith operator"
-    echo "  sudo tacctl log failures"
-    echo "  sudo tacctl backup list"
-    echo "  sudo tacctl config diff"
+    echo "  sudo tacctl config cisco"
     echo ""
 }
 
@@ -2349,6 +2981,15 @@ cmd_user() {
 }
 
 case "$COMMAND" in
+    install)
+        cmd_install "$@"
+        ;;
+    upgrade)
+        cmd_upgrade "$@"
+        ;;
+    uninstall)
+        cmd_uninstall "$@"
+        ;;
     status)
         preflight
         cmd_status
