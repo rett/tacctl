@@ -60,6 +60,13 @@ info()  { echo -e "${GREEN}[INFO]${NC} $*"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
 error() { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 
+# --- Version (resolved from the git repo that holds this script) ---
+get_version() {
+    local script_dir
+    script_dir=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
+    git -C "${script_dir}/.." describe --tags --always --dirty 2>/dev/null || echo "unknown"
+}
+
 # --- Pre-flight ---
 preflight() {
     if [[ ! -f "$CONFIG" ]]; then
@@ -3365,7 +3372,7 @@ cmd_uninstall() {
 
 usage() {
     echo ""
-    echo -e "${BOLD}Tacquito Management${NC}"
+    echo -e "${BOLD}Tacquito Control${NC} ($(get_version))"
     echo ""
     echo "Usage: tacctl <command> [arguments]"
     echo ""
@@ -3380,6 +3387,7 @@ usage() {
     echo "  log <subcommand>              Log viewer (tail, search, failures, accounting)"
     echo "  backup <subcommand>           Backup management (list, diff, restore)"
     echo "  hash                          Generate a bcrypt password hash"
+    echo "  version                       Print tacctl version"
     echo ""
     echo "Run any command without arguments for detailed help, e.g.:"
     echo "  tacctl user"
@@ -3477,6 +3485,9 @@ case "$COMMAND" in
         ;;
     hash)
         cmd_hash
+        ;;
+    version|--version|-v)
+        echo "tacctl $(get_version)"
         ;;
     *)
         usage

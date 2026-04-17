@@ -32,7 +32,7 @@ _tacctl() {
     done
 
     local pos=$((cword - offset))
-    local commands="install upgrade uninstall status user group config log backup hash"
+    local commands="install upgrade uninstall status user group config log backup hash version"
 
     # Top-level commands
     if [[ $pos -eq 1 ]]; then
