@@ -2704,6 +2704,7 @@ cmd_upgrade() {
     if [[ -d "${DEPLOY_DIR}/.git" ]]; then
         info "Pulling latest management scripts..."
         cd "$DEPLOY_DIR"
+        git checkout -- . 2>/dev/null || true
         git fetch --quiet 2>/dev/null || true
         local LOCAL_MANAGE REMOTE_MANAGE
         LOCAL_MANAGE=$(git rev-parse HEAD 2>/dev/null)
