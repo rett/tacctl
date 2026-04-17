@@ -23,6 +23,15 @@ set -euo pipefail
 
 CONFIG="/etc/tacquito/tacquito.yaml"
 BACKUP_DIR="/etc/tacquito/backups"
+PASSWORD_DATES_DIR="/etc/tacquito/backups/password-dates"
+ACCT_LOG="/var/log/tacquito/accounting.log"
+PASSWORD_MAX_AGE_DAYS=90
+PASSWORD_MAX_AGE_FILE="/etc/tacquito/password-max-age"
+
+# Load custom password max age if set
+if [[ -f "$PASSWORD_MAX_AGE_FILE" ]]; then
+    PASSWORD_MAX_AGE_DAYS=$(cat "$PASSWORD_MAX_AGE_FILE")
+fi
 
 # --- Colors ---
 RED='\033[0;31m'
@@ -56,6 +65,23 @@ preflight() {
 # sed -i and python rewrites change the file inode, breaking fsnotify hot-reload.
 restart_service() {
     systemctl restart tacquito 2>/dev/null && info "Service restarted." || warn "Service restart failed — run: sudo systemctl restart tacquito"
+}
+
+# --- Track password change date ---
+record_password_date() {
+    local username="$1"
+    mkdir -p "$PASSWORD_DATES_DIR"
+    date +%Y-%m-%d > "${PASSWORD_DATES_DIR}/${username}.date"
+}
+
+get_password_date() {
+    local username="$1"
+    local datefile="${PASSWORD_DATES_DIR}/${username}.date"
+    if [[ -f "$datefile" ]]; then
+        cat "$datefile"
+    else
+        echo "unknown"
+    fi
 }
 
 # --- Backup config before changes ---
@@ -117,9 +143,12 @@ get_user_hash() {
 # --- Get user's group ---
 get_user_group() {
     local username="$1"
-    # Look at the user entry and find the group reference
-    awk "/^  - name: ${username}$/,/^  - name:/" "$CONFIG" | grep "groups:" | head -1 | \
-        sed 's/.*\[\*\(.*\)\]/\1/'
+    python3 -c "
+import re, sys
+config = open(sys.argv[1]).read()
+m = re.search(r'- name: ' + re.escape(sys.argv[2]) + r'\n.*?groups: \[\*(\w+)\]', config, re.DOTALL)
+print(m.group(1) if m else 'unknown')
+" "$CONFIG" "$username"
 }
 
 # --- Read password with asterisk masking ---
@@ -154,6 +183,13 @@ prompt_password() {
     if [[ -z "$password" ]]; then
         password=$(openssl rand -base64 18)
         echo -e "  Generated password: ${BOLD}${password}${NC}" >&2
+    else
+        local confirm=""
+        confirm=$(read_password_masked "  Confirm password: ")
+        if [[ "$password" != "$confirm" ]]; then
+            echo -e "  ${RED}Passwords do not match.${NC}" >&2
+            exit 1
+        fi
     fi
     echo "$password"
 }
@@ -167,8 +203,8 @@ cmd_list() {
     echo ""
     echo -e "${BOLD}Tacquito Users${NC}"
     echo "--------------------------------------------"
-    printf "  ${BOLD}%-20s %-15s %-10s${NC}\n" "USERNAME" "GROUP" "STATUS"
-    echo "  ---------------------------------------------------"
+    printf "  ${BOLD}%-20s %-15s %-10s %-12s${NC}\n" "USERNAME" "GROUP" "STATUS" "PW CHANGED"
+    echo "  -----------------------------------------------------------------"
 
     # Use Python for reliable YAML-ish parsing
     python3 -c "
@@ -200,7 +236,9 @@ for m in re.finditer(r'- name: (\S+)\n.*?groups: \[\*(\w+)\]', users_section, re
         local color="$GREEN"
         [[ "$status" == "disabled" ]] && color="$RED"
         [[ "$status" == "unknown" ]] && color="$YELLOW"
-        printf "  %-20s %-15s ${color}%-10s${NC}\n" "$username" "$group" "$status"
+        local pw_date
+        pw_date=$(get_password_date "$username")
+        printf "  %-20s %-15s ${color}%-10s${NC} %-12s\n" "$username" "$group" "$status" "$pw_date"
     done
 
     echo ""
@@ -290,6 +328,7 @@ bcrypt_${username}: \&bcrypt_${username}\\
     chown tacquito:tacquito "$CONFIG"
 
     restart_service
+    record_password_date "$username"
     info "User '${username}' added (${group})."
     echo ""
 }
@@ -382,6 +421,7 @@ cmd_passwd() {
     chown tacquito:tacquito "$CONFIG"
 
     restart_service
+    record_password_date "$username"
     info "Password changed for '${username}'."
     echo ""
 }
@@ -478,14 +518,30 @@ cmd_verify() {
         exit 1
     fi
 
+    # Show user details
+    local group
+    group=$(get_user_group "$username")
     local stored_hash
     stored_hash=$(get_user_hash "$username")
-    if [[ "$stored_hash" == "DISABLED" ]]; then
-        error "User '${username}' is disabled."
-        exit 1
-    fi
+    local status="active"
+    [[ "$stored_hash" == "DISABLED" ]] && status="disabled"
+    local pw_date
+    pw_date=$(get_password_date "$username")
 
     echo ""
+    echo -e "  ${BOLD}User:${NC}           ${username}"
+    echo -e "  ${BOLD}Group:${NC}          ${group}"
+    if [[ "$status" == "disabled" ]]; then
+        echo -e "  ${BOLD}Status:${NC}         ${RED}disabled${NC}"
+        echo -e "  ${BOLD}PW changed:${NC}     ${pw_date}"
+        echo ""
+        error "User is disabled — cannot verify password."
+        exit 1
+    fi
+    echo -e "  ${BOLD}Status:${NC}         ${GREEN}active${NC}"
+    echo -e "  ${BOLD}PW changed:${NC}     ${pw_date}"
+    echo ""
+
     local password
     password=$(read_password_masked "  Enter password to verify: ")
 
@@ -551,6 +607,56 @@ open(sys.argv[1], 'w').write(config)
 
     restart_service
     info "User renamed: ${oldname} -> ${newname}"
+    echo ""
+}
+
+# --- MOVE (change user's group) ---
+cmd_move() {
+    local username="${1:-}"
+    local newgroup="${2:-}"
+
+    if [[ -z "$username" || -z "$newgroup" ]]; then
+        error "Usage: tacquito-manage move <username> <new-group>"
+        exit 1
+    fi
+    if ! user_exists "$username"; then
+        error "User '${username}' does not exist."
+        exit 1
+    fi
+    if ! grep -q "^${newgroup}: &${newgroup}$" "$CONFIG"; then
+        local available
+        available=$(grep -oP '^\w+(?=: &\w)' "$CONFIG" | grep -v "^bcrypt_\|^exec_\|^junos_\|^file_\|^authenticator\|^action\|^accounter\|^handler\|^provider" | tr '\n' '|' | sed 's/|$//' || true)
+        error "Group '${newgroup}' does not exist. Available: ${available}"
+        exit 1
+    fi
+
+    local oldgroup
+    oldgroup=$(get_user_group "$username")
+    if [[ "$oldgroup" == "$newgroup" ]]; then
+        info "User '${username}' is already in group '${newgroup}'."
+        return
+    fi
+
+    backup_config
+
+    # Replace the group reference in the user entry
+    python3 -c "
+import re, sys
+config = open(sys.argv[1]).read()
+username = sys.argv[2]
+oldgroup = sys.argv[3]
+newgroup = sys.argv[4]
+
+# Find the user block and replace the group
+pattern = r'(- name: ' + re.escape(username) + r'\n.*?groups: \[\*)' + re.escape(oldgroup) + r'(\])'
+config = re.sub(pattern, r'\g<1>' + newgroup + r'\2', config, flags=re.DOTALL)
+
+open(sys.argv[1], 'w').write(config)
+" "$CONFIG" "$username" "$oldgroup" "$newgroup"
+
+    chown tacquito:tacquito "$CONFIG"
+    restart_service
+    info "User '${username}' moved: ${oldgroup} -> ${newgroup}"
     echo ""
 }
 
@@ -638,6 +744,40 @@ cmd_config_show() {
     for cidr in "${CIDRS[@]}"; do
         echo "    - ${cidr}"
     done
+
+    # Show allow/deny lists
+    local allow_list deny_list
+    allow_list=$(python3 -c "
+import re, sys
+config = open(sys.argv[1]).read()
+m = re.search(r'^prefix_allow:\s*\[(.*?)\]', config, re.MULTILINE)
+if m and m.group(1).strip():
+    print(', '.join(re.findall(r'\"([^\"]+)\"', m.group(1))))
+else:
+    print('')
+" "$CONFIG" || true)
+    deny_list=$(python3 -c "
+import re, sys
+config = open(sys.argv[1]).read()
+m = re.search(r'^prefix_deny:\s*\[(.*?)\]', config, re.MULTILINE)
+if m and m.group(1).strip():
+    print(', '.join(re.findall(r'\"([^\"]+)\"', m.group(1))))
+else:
+    print('')
+" "$CONFIG" || true)
+
+    echo ""
+    echo -e "  ${BOLD}Connection Filters:${NC} ${CYAN}(deny takes precedence over allow)${NC}"
+    if [[ -n "$allow_list" ]]; then
+        echo -e "    Allow:              ${allow_list}"
+    else
+        echo -e "    Allow:              ${CYAN}(all)${NC}"
+    fi
+    if [[ -n "$deny_list" ]]; then
+        echo -e "    Deny:               ${deny_list}"
+    else
+        echo -e "    Deny:               ${CYAN}(none)${NC}"
+    fi
 
     echo ""
     echo -e "  ${BOLD}Config file:${NC}          ${CONFIG}"
@@ -872,14 +1012,6 @@ EOF
         [[ "$privlvl" == "1" || "$privlvl" == "15" ]] && continue
         cat <<EOF
 ! --- ${gname} — Privilege Level ${privlvl} Commands ---
-privilege exec level ${privlvl} clear counters
-privilege exec level ${privlvl} clear ip bgp
-privilege exec level ${privlvl} clear ip ospf
-privilege exec level ${privlvl} clear ip route
-privilege exec level ${privlvl} clear logging
-privilege exec level ${privlvl} clear arp-cache
-privilege exec level ${privlvl} debug
-privilege exec level ${privlvl} undebug all
 privilege exec level ${privlvl} show running-config
 privilege exec level ${privlvl} show startup-config
 privilege exec level ${privlvl} ping
@@ -987,13 +1119,122 @@ EOF
     echo ""
 }
 
+# --- CONFIG ALLOW/DENY PREFIX FILTERS ---
+cmd_config_prefix_filter() {
+    local key="$1"
+    local subcmd="${2:-list}"
+    local cidr="${3:-}"
+    local label
+    [[ "$key" == "prefix_allow" ]] && label="allow" || label="deny"
+
+    case "$subcmd" in
+        list)
+            echo ""
+            echo -e "${BOLD}Connection ${label} list${NC}"
+            echo "--------------------------------------------"
+            local entries
+            entries=$(python3 -c "
+import re, sys
+config = open(sys.argv[1]).read()
+m = re.search(r'^' + sys.argv[2] + r':\s*\[(.*?)\]', config, re.MULTILINE)
+if m and m.group(1).strip():
+    for c in re.findall(r'\"([^\"]+)\"', m.group(1)):
+        print(c)
+else:
+    print('EMPTY')
+" "$CONFIG" "$key" || true)
+            if [[ "$entries" == "EMPTY" ]]; then
+                if [[ "$label" == "allow" ]]; then
+                    echo "  (empty — all connections allowed)"
+                else
+                    echo "  (empty — no connections denied)"
+                fi
+            else
+                echo "$entries" | while IFS= read -r entry; do
+                    echo "  - ${entry}"
+                done
+            fi
+            echo ""
+            echo -e "  ${CYAN}Note: deny takes precedence over allow.${NC}"
+            echo ""
+            ;;
+        add)
+            if [[ -z "$cidr" ]]; then
+                error "Usage: tacquito-manage config ${label} add <cidr>"
+                exit 1
+            fi
+            backup_config
+            python3 -c "
+import re, sys
+config = open(sys.argv[1]).read()
+key = sys.argv[2]
+cidr = sys.argv[3]
+
+m = re.search(r'^' + key + r':\s*\[(.*?)\]', config, re.MULTILINE)
+if m:
+    existing = m.group(1).strip()
+    if existing:
+        new_val = existing.rstrip() + ', \"' + cidr + '\"'
+    else:
+        new_val = '\"' + cidr + '\"'
+    config = config.replace(m.group(0), key + ': [' + new_val + ']')
+else:
+    # Key doesn't exist yet — add it at the end of the file
+    config = config.rstrip() + '\n\n' + key + ': [\"' + cidr + '\"]\n'
+
+open(sys.argv[1], 'w').write(config)
+" "$CONFIG" "$key" "$cidr"
+            chown tacquito:tacquito "$CONFIG"
+            restart_service
+            info "Added '${cidr}' to ${label} list."
+            echo ""
+            ;;
+        remove)
+            if [[ -z "$cidr" ]]; then
+                error "Usage: tacquito-manage config ${label} remove <cidr>"
+                exit 1
+            fi
+            backup_config
+            python3 -c "
+import re, sys
+config = open(sys.argv[1]).read()
+key = sys.argv[2]
+cidr = sys.argv[3]
+
+m = re.search(r'^' + key + r':\s*\[(.*?)\]', config, re.MULTILINE)
+if m:
+    entries = re.findall(r'\"([^\"]+)\"', m.group(1))
+    entries = [e for e in entries if e != cidr]
+    if entries:
+        new_val = ', '.join('\"' + e + '\"' for e in entries)
+        config = config.replace(m.group(0), key + ': [' + new_val + ']')
+    else:
+        # Remove the entire line if empty
+        config = config.replace(m.group(0) + '\n', '')
+
+open(sys.argv[1], 'w').write(config)
+" "$CONFIG" "$key" "$cidr"
+            chown tacquito:tacquito "$CONFIG"
+            restart_service
+            info "Removed '${cidr}' from ${label} list."
+            echo ""
+            ;;
+        *)
+            echo ""
+            echo "Usage: sudo tacquito-manage config ${label} <list|add|remove> [cidr]"
+            echo ""
+            exit 1
+            ;;
+    esac
+}
+
 # --- CONFIG dispatcher ---
 cmd_config() {
     local subcmd="${1:-}"
     shift || true
 
     case "$subcmd" in
-        show|"")
+        show)
             cmd_config_show
             ;;
         secret)
@@ -1020,6 +1261,18 @@ cmd_config() {
         loglevel)
             cmd_config_loglevel "$@"
             ;;
+        password-age)
+            cmd_config_password_age "$@"
+            ;;
+        diff)
+            cmd_backup diff "$@"
+            ;;
+        allow)
+            cmd_config_prefix_filter "prefix_allow" "$@"
+            ;;
+        deny)
+            cmd_config_prefix_filter "prefix_deny" "$@"
+            ;;
         *)
             echo ""
             echo -e "${BOLD}Config Commands${NC}"
@@ -1029,11 +1282,15 @@ cmd_config() {
             echo "Subcommands:"
             echo "  show                          Show current configuration"
             echo "  validate                      Validate config syntax and structure"
+            echo "  diff [timestamp]              Diff current config vs last backup"
             echo "  loglevel [debug|info|error]    Show or change log level"
+            echo "  password-age [days]           Show or set password age warning threshold"
             echo "  secret [new-secret]           Change shared secret"
             echo "  juniper-ro [class-name]       Change Juniper read-only class name"
             echo "  juniper-rw [class-name]       Change Juniper super-user class name"
             echo "  prefixes [cidr,cidr,...]       Change allowed device subnets"
+            echo "  allow list|add|remove          Manage connection allow list (IP ACL)"
+            echo "  deny list|add|remove           Manage connection deny list (IP ACL)"
             echo "  cisco                         Show working Cisco device configuration"
             echo "  juniper                       Show working Juniper device configuration"
             echo ""
@@ -1401,7 +1658,7 @@ cmd_group() {
     shift || true
 
     case "$subcmd" in
-        list|"")
+        list)
             cmd_group_list
             ;;
         add)
@@ -1555,6 +1812,32 @@ else:
         done
     else
         echo -e "    ${GREEN}No errors in the last 24 hours${NC}"
+    fi
+
+    # Password age warnings
+    echo ""
+    echo -e "  ${BOLD}Password Age Warnings:${NC}"
+    local pw_warnings=0
+    local today
+    today=$(date +%s)
+    if [[ -d "$PASSWORD_DATES_DIR" ]]; then
+        for datefile in "${PASSWORD_DATES_DIR}"/*.date; do
+            [[ -f "$datefile" ]] || continue
+            local uname pw_date pw_epoch age_days
+            uname=$(basename "$datefile" .date)
+            pw_date=$(cat "$datefile")
+            pw_epoch=$(date -d "$pw_date" +%s 2>/dev/null || echo 0)
+            if [[ "$pw_epoch" -gt 0 ]]; then
+                age_days=$(( (today - pw_epoch) / 86400 ))
+                if [[ "$age_days" -gt "$PASSWORD_MAX_AGE_DAYS" ]]; then
+                    echo -e "    ${YELLOW}${uname}: password is ${age_days} days old (changed ${pw_date})${NC}"
+                    pw_warnings=$((pw_warnings + 1))
+                fi
+            fi
+        done
+    fi
+    if [[ "$pw_warnings" -eq 0 ]]; then
+        echo -e "    ${GREEN}No passwords older than ${PASSWORD_MAX_AGE_DAYS} days${NC}"
     fi
 
     echo ""
@@ -1724,6 +2007,209 @@ cmd_config_loglevel() {
     echo ""
 }
 
+# --- CONFIG PASSWORD-AGE ---
+cmd_config_password_age() {
+    local new_days="${1:-}"
+
+    if [[ -z "$new_days" ]]; then
+        echo ""
+        echo "  Password age warning threshold: ${PASSWORD_MAX_AGE_DAYS} days"
+        echo ""
+        echo "  Usage: tacquito-manage config password-age <days>"
+        echo ""
+        return
+    fi
+
+    if ! [[ "$new_days" =~ ^[0-9]+$ ]] || [[ "$new_days" -lt 1 ]]; then
+        error "Days must be a positive number."
+        exit 1
+    fi
+
+    echo "$new_days" > "$PASSWORD_MAX_AGE_FILE"
+    PASSWORD_MAX_AGE_DAYS="$new_days"
+    info "Password age warning threshold set to ${new_days} days."
+    echo ""
+}
+
+# =====================================================================
+#  LOG COMMANDS
+# =====================================================================
+
+cmd_log() {
+    local subcmd="${1:-}"
+    shift || true
+
+    case "$subcmd" in
+        tail)
+            local count="${1:-20}"
+            echo ""
+            echo -e "${BOLD}Recent TACACS+ Log Entries${NC}"
+            echo "--------------------------------------------"
+            journalctl -u tacquito --no-pager -n "$count" 2>/dev/null || echo "  No log entries found."
+            echo ""
+            ;;
+        search)
+            local term="${1:-}"
+            if [[ -z "$term" ]]; then
+                error "Usage: tacquito-manage log search <username>"
+                exit 1
+            fi
+            echo ""
+            echo -e "${BOLD}Log entries matching '${term}'${NC}"
+            echo "--------------------------------------------"
+            journalctl -u tacquito --no-pager --since "7 days ago" 2>/dev/null | grep -i "$term" || echo "  No matches found."
+            echo ""
+            ;;
+        failures)
+            echo ""
+            echo -e "${BOLD}Authentication Failures (last 24 hours)${NC}"
+            echo "--------------------------------------------"
+            local failures
+            failures=$(journalctl -u tacquito --no-pager --since "24 hours ago" 2>/dev/null | grep -i "ERROR\|fail\|bad secret" || true)
+            if [[ -n "$failures" ]]; then
+                echo "$failures"
+            else
+                echo -e "  ${GREEN}No failures in the last 24 hours${NC}"
+            fi
+            echo ""
+            ;;
+        accounting)
+            local count="${1:-20}"
+            echo ""
+            echo -e "${BOLD}Recent Accounting Entries${NC}"
+            echo "--------------------------------------------"
+            if [[ -f "$ACCT_LOG" ]]; then
+                tail -n "$count" "$ACCT_LOG"
+            else
+                echo "  No accounting log found at ${ACCT_LOG}"
+            fi
+            echo ""
+            ;;
+        *)
+            echo ""
+            echo -e "${BOLD}Log Commands${NC}"
+            echo ""
+            echo "Usage: sudo tacquito-manage log <subcommand> [arguments]"
+            echo ""
+            echo "Subcommands:"
+            echo "  tail [n]              Show last N journal entries (default 20)"
+            echo "  search <term>         Search journal for a username or keyword"
+            echo "  failures              Show auth failures from the last 24 hours"
+            echo "  accounting [n]        Show last N accounting log entries"
+            echo ""
+            exit 1
+            ;;
+    esac
+}
+
+# =====================================================================
+#  BACKUP COMMANDS
+# =====================================================================
+
+cmd_backup() {
+    local subcmd="${1:-}"
+    shift || true
+
+    case "$subcmd" in
+        list)
+            echo ""
+            echo -e "${BOLD}Config Backups${NC}"
+            echo "--------------------------------------------"
+            if ls "${BACKUP_DIR}"/tacquito.yaml.* &>/dev/null; then
+                printf "  ${BOLD}%-25s %-10s${NC}\n" "TIMESTAMP" "SIZE"
+                echo "  -----------------------------------"
+                ls -1t "${BACKUP_DIR}"/tacquito.yaml.* | while IFS= read -r f; do
+                    local ts size
+                    ts=$(basename "$f" | sed 's/tacquito\.yaml\.//')
+                    size=$(du -sh "$f" 2>/dev/null | awk '{print $1}')
+                    printf "  %-25s %-10s\n" "$ts" "$size"
+                done
+            else
+                echo "  No backups found."
+            fi
+            echo ""
+            ;;
+        diff)
+            local timestamp="${1:-}"
+            local backup_file=""
+
+            if [[ -z "$timestamp" ]]; then
+                # Use most recent backup
+                backup_file=$(ls -1t "${BACKUP_DIR}"/tacquito.yaml.* 2>/dev/null | head -1)
+                if [[ -z "$backup_file" ]]; then
+                    error "No backups found."
+                    exit 1
+                fi
+            else
+                backup_file="${BACKUP_DIR}/tacquito.yaml.${timestamp}"
+                if [[ ! -f "$backup_file" ]]; then
+                    error "Backup not found: ${timestamp}"
+                    error "Run 'tacquito-manage backup list' to see available backups."
+                    exit 1
+                fi
+            fi
+
+            local ts
+            ts=$(basename "$backup_file" | sed 's/tacquito\.yaml\.//')
+            echo ""
+            echo -e "${BOLD}Diff: current config vs backup ${ts}${NC}"
+            echo "--------------------------------------------"
+            diff --color=always "$backup_file" "$CONFIG" || true
+            echo ""
+            ;;
+        restore)
+            local timestamp="${1:-}"
+            if [[ -z "$timestamp" ]]; then
+                error "Usage: tacquito-manage backup restore <timestamp>"
+                error "Run 'tacquito-manage backup list' to see available backups."
+                exit 1
+            fi
+
+            local backup_file="${BACKUP_DIR}/tacquito.yaml.${timestamp}"
+            if [[ ! -f "$backup_file" ]]; then
+                error "Backup not found: ${timestamp}"
+                exit 1
+            fi
+
+            echo ""
+            echo "  Restoring config from: ${timestamp}"
+            echo ""
+            echo -e "  ${BOLD}Changes that will be applied:${NC}"
+            diff --color=always "$CONFIG" "$backup_file" || true
+            echo ""
+
+            read -rp "  Restore this backup? [y/N]: " confirm
+            if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+                info "Cancelled."
+                exit 0
+            fi
+
+            # Back up current config before restoring (safety net)
+            backup_config
+
+            cp "$backup_file" "$CONFIG"
+            chown tacquito:tacquito "$CONFIG"
+            chmod 640 "$CONFIG"
+            restart_service
+            info "Config restored from backup ${timestamp}."
+            echo ""
+            ;;
+        *)
+            echo ""
+            echo -e "${BOLD}Backup Commands${NC}"
+            echo ""
+            echo "Usage: sudo tacquito-manage backup <subcommand> [arguments]"
+            echo ""
+            echo "Subcommands:"
+            echo "  list                  Show available backups"
+            echo "  diff [timestamp]      Diff current config vs a backup (default: most recent)"
+            echo "  restore <timestamp>   Restore a backup (with confirmation)"
+            echo ""
+            exit 1
+            ;;
+    esac
+}
+
 # =====================================================================
 #  MAIN
 # =====================================================================
@@ -1734,84 +2220,81 @@ usage() {
     echo ""
     echo "Usage: sudo tacquito-manage <command> [arguments]"
     echo ""
-    echo "General:"
+    echo "Commands:"
     echo "  status                        Show service health, stats, and recent errors"
+    echo "  user <subcommand>             User management (list, add, remove, passwd, ...)"
+    echo "  group <subcommand>            Group management (list, add, edit, remove)"
+    echo "  config <subcommand>           Configuration (show, cisco, juniper, secret, ...)"
+    echo "  log <subcommand>              Log viewer (tail, search, failures, accounting)"
+    echo "  backup <subcommand>           Backup management (list, diff, restore)"
     echo ""
-    echo "User Commands:"
-    echo "  list                          List all users and their status"
-    echo "  add <username> <group>        Add a new user (group: readonly|operator|superuser)"
-    echo "  remove <username>             Remove a user"
-    echo "  passwd <username>             Change a user's password"
-    echo "  disable <username>            Disable a user (preserves hash for re-enable)"
-    echo "  enable <username>             Re-enable a disabled user"
-    echo "  rename <old> <new>            Rename a user"
-    echo "  verify <username>             Test a password against stored hash"
-    echo ""
-    echo "Group Commands:"
-    echo "  group list                    List all groups with details"
-    echo "  group add <n> <pl> <jc>       Add group (name, priv-lvl, juniper-class)"
-    echo "  group edit <n> <field> <val>  Edit group (priv-lvl or juniper-class)"
-    echo "  group remove <name>           Remove a custom group"
-    echo ""
-    echo "Config Commands:"
-    echo "  config show                   Show current configuration"
-    echo "  config cisco                  Show working Cisco device configuration"
-    echo "  config juniper                Show working Juniper device configuration"
-    echo "  config secret [value]         Change shared secret"
-    echo "  config juniper-ro [class]     Change Juniper read-only class name"
-    echo "  config juniper-rw [class]     Change Juniper super-user class name"
-    echo "  config prefixes [cidr,...]    Change allowed device subnets"
-    echo "  config validate              Validate config syntax and structure"
-    echo "  config loglevel [level]      Show or change log level (debug|info|error)"
+    echo "Run any command without arguments for detailed help, e.g.:"
+    echo "  sudo tacquito-manage user"
+    echo "  sudo tacquito-manage config"
     echo ""
     echo "Examples:"
-    echo "  sudo tacquito-manage add jsmith superuser"
-    echo "  sudo tacquito-manage passwd user"
-    echo "  sudo tacquito-manage config show"
-    echo "  sudo tacquito-manage config juniper-ro RO-CLASS"
-    echo "  sudo tacquito-manage config prefixes 10.1.0.0/16,10.2.0.0/16"
+    echo "  sudo tacquito-manage user add jsmith superuser"
+    echo "  sudo tacquito-manage user move jsmith operator"
+    echo "  sudo tacquito-manage log failures"
+    echo "  sudo tacquito-manage backup list"
+    echo "  sudo tacquito-manage config diff"
     echo ""
 }
 
 COMMAND="${1:-}"
 shift || true
 
+# --- USER dispatcher ---
+cmd_user() {
+    local subcmd="${1:-help}"
+    shift || true
+
+    case "$subcmd" in
+        list)       cmd_list ;;
+        add)        cmd_add "$@" ;;
+        remove)     cmd_remove "$@" ;;
+        passwd)     cmd_passwd "$@" ;;
+        disable)    cmd_disable "$@" ;;
+        enable)     cmd_enable "$@" ;;
+        rename)     cmd_rename "$@" ;;
+        move)       cmd_move "$@" ;;
+        verify)     cmd_verify "$@" ;;
+        *)
+            echo ""
+            echo -e "${BOLD}User Commands${NC}"
+            echo ""
+            echo "Usage: sudo tacquito-manage user <subcommand> [arguments]"
+            echo ""
+            echo "Subcommands:"
+            echo "  list                          List all users and their status"
+            echo "  add <username> <group>        Add a new user"
+            echo "  remove <username>             Remove a user"
+            echo "  passwd <username>             Change a user's password"
+            echo "  disable <username>            Disable a user (preserves hash)"
+            echo "  enable <username>             Re-enable a disabled user"
+            echo "  rename <old> <new>            Rename a user"
+            echo "  move <user> <group>           Move user to a different group"
+            echo "  verify <username>             Verify password and show user details"
+            echo ""
+            echo "Examples:"
+            echo "  sudo tacquito-manage user list"
+            echo "  sudo tacquito-manage user add jsmith superuser"
+            echo "  sudo tacquito-manage user move jsmith operator"
+            echo "  sudo tacquito-manage user verify jsmith"
+            echo ""
+            exit 1
+            ;;
+    esac
+}
+
 case "$COMMAND" in
     status)
         preflight
         cmd_status
         ;;
-    list)
+    user)
         preflight
-        cmd_list
-        ;;
-    add)
-        preflight
-        cmd_add "$@"
-        ;;
-    remove)
-        preflight
-        cmd_remove "$@"
-        ;;
-    passwd)
-        preflight
-        cmd_passwd "$@"
-        ;;
-    disable)
-        preflight
-        cmd_disable "$@"
-        ;;
-    enable)
-        preflight
-        cmd_enable "$@"
-        ;;
-    verify)
-        preflight
-        cmd_verify "$@"
-        ;;
-    rename)
-        preflight
-        cmd_rename "$@"
+        cmd_user "$@"
         ;;
     group)
         preflight
@@ -1820,6 +2303,14 @@ case "$COMMAND" in
     config)
         preflight
         cmd_config "$@"
+        ;;
+    log)
+        preflight
+        cmd_log "$@"
+        ;;
+    backup)
+        preflight
+        cmd_backup "$@"
         ;;
     *)
         usage

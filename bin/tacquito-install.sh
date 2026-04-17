@@ -23,6 +23,7 @@ CONFIG_FILE="${CONFIG_DIR}/tacquito.yaml"
 LOG_DIR="/var/log/tacquito"
 SERVICE_FILE="/etc/systemd/system/tacquito.service"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 # --- Colors ---
 RED='\033[0;31m'
@@ -96,26 +97,28 @@ info "Binaries installed:"
 info "  Server:  ${TACQUITO_BIN}"
 info "  Hashgen: ${HASHGEN_BIN}"
 
-# Copy deploy package to canonical location for upgrades
-DEPLOY_DEST="/opt/tacquito-deploy"
-mkdir -p "$DEPLOY_DEST"
-cp "${SCRIPT_DIR}/tacquito-manage.sh" "$DEPLOY_DEST/"
-cp "${SCRIPT_DIR}/tacquito-upgrade.sh" "$DEPLOY_DEST/"
-cp "${SCRIPT_DIR}/tacquito.service" "$DEPLOY_DEST/"
-cp "${SCRIPT_DIR}/tacquito.yaml" "$DEPLOY_DEST/"
-cp "${SCRIPT_DIR}/tacquito-install.sh" "$DEPLOY_DEST/"
-cp "${SCRIPT_DIR}/README.md" "$DEPLOY_DEST/" 2>/dev/null || true
-cp "${SCRIPT_DIR}/tacquito.logrotate" "$DEPLOY_DEST/" 2>/dev/null || true
+# Clone management repo for future upgrades
+DEPLOY_DEST="/opt/tacquito-manage"
+MANAGE_REPO="https://github.com/rett/tacquito-manage.git"
+if [[ -d "${DEPLOY_DEST}/.git" ]]; then
+    info "Management repo already cloned at ${DEPLOY_DEST}, pulling latest..."
+    cd "$DEPLOY_DEST" && git pull --quiet 2>/dev/null || true
+elif [[ -d "$DEPLOY_DEST" ]]; then
+    rm -rf "$DEPLOY_DEST"
+    git clone --quiet "$MANAGE_REPO" "$DEPLOY_DEST"
+    info "Management repo cloned to ${DEPLOY_DEST}"
+else
+    git clone --quiet "$MANAGE_REPO" "$DEPLOY_DEST"
+    info "Management repo cloned to ${DEPLOY_DEST}"
+fi
 
-# Install management scripts
-cp "${SCRIPT_DIR}/tacquito-manage.sh" /usr/local/bin/tacquito-manage
-chmod +x /usr/local/bin/tacquito-manage
-cp "${SCRIPT_DIR}/tacquito-upgrade.sh" /usr/local/bin/tacquito-upgrade
-chmod +x /usr/local/bin/tacquito-upgrade
-cp "${SCRIPT_DIR}/README.md" "${CONFIG_DIR}/README.md" 2>/dev/null || true
+# Symlink management scripts
+ln -sf "${DEPLOY_DEST}/bin/tacquito-manage.sh" /usr/local/bin/tacquito-manage
+ln -sf "${DEPLOY_DEST}/bin/tacquito-upgrade.sh" /usr/local/bin/tacquito-upgrade
+cp "${PROJECT_DIR}/README.md" "${CONFIG_DIR}/README.md" 2>/dev/null || true
 # Install logrotate config
-if [[ -f "${SCRIPT_DIR}/tacquito.logrotate" ]]; then
-    cp "${SCRIPT_DIR}/tacquito.logrotate" /etc/logrotate.d/tacquito
+if [[ -f "${PROJECT_DIR}/config/tacquito.logrotate" ]]; then
+    cp "${PROJECT_DIR}/config/tacquito.logrotate" /etc/logrotate.d/tacquito
     info "Log rotation installed: /etc/logrotate.d/tacquito"
 fi
 
@@ -222,7 +225,7 @@ PW_ENGINEERING="$LAST_PASSWORD"
 info "Writing configuration to ${CONFIG_FILE}..."
 
 # Use the template config and substitute placeholders
-cp "${SCRIPT_DIR}/tacquito.yaml" "$CONFIG_FILE"
+cp "${PROJECT_DIR}/config/tacquito.yaml" "$CONFIG_FILE"
 
 sed -i "s|hash: REPLACE_ME|hash: ${HASH_USER}|" "$CONFIG_FILE"
 # Second occurrence for operations
@@ -235,9 +238,17 @@ sed -i "s|REPLACE_WITH_SHARED_SECRET|${SHARED_SECRET}|" "$CONFIG_FILE"
 chown tacquito:tacquito "$CONFIG_FILE"
 chmod 640 "$CONFIG_FILE"
 
+# Record password dates for all users
+PASSWORD_DATES_DIR="/etc/tacquito/backups/password-dates"
+mkdir -p "$PASSWORD_DATES_DIR"
+for u in user operations engineering; do
+    date +%Y-%m-%d > "${PASSWORD_DATES_DIR}/${u}.date"
+done
+info "Password dates recorded."
+
 # --- Step 8: Install systemd service ---
 info "Installing systemd service..."
-cp "${SCRIPT_DIR}/tacquito.service" "$SERVICE_FILE"
+cp "${PROJECT_DIR}/config/tacquito.service" "$SERVICE_FILE"
 systemctl daemon-reload
 systemctl enable tacquito.service
 

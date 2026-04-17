@@ -18,13 +18,16 @@ UPGRADE_BIN="/usr/local/bin/tacquito-upgrade"
 CONFIG_DIR="/etc/tacquito"
 SERVICE_FILE="/etc/systemd/system/tacquito.service"
 GO_BIN="/usr/local/go/bin/go"
-# Look for deploy files: first try the directory this script lives in,
+MANAGE_REPO="https://github.com/rett/tacquito-manage.git"
+MANAGE_DIR="/opt/tacquito-manage"
+# Look for project root: first try parent of this script's directory (bin/),
 # then fall back to the canonical deploy location.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." 2>/dev/null && pwd)"
 if [[ -f "${SCRIPT_DIR}/tacquito-manage.sh" ]]; then
-    DEPLOY_DIR="$SCRIPT_DIR"
-elif [[ -d "/opt/tacquito-deploy" ]]; then
-    DEPLOY_DIR="/opt/tacquito-deploy"
+    DEPLOY_DIR="$PROJECT_DIR"
+elif [[ -d "$MANAGE_DIR" ]]; then
+    DEPLOY_DIR="$MANAGE_DIR"
 else
     DEPLOY_DIR=""
 fi
@@ -67,12 +70,6 @@ echo ""
 CURRENT_COMMIT=$(cd "$TACQUITO_SRC" && git rev-parse --short HEAD)
 info "Current commit: ${CURRENT_COMMIT}"
 
-# --- Back up current binary ---
-if [[ -f "$TACQUITO_BIN" ]]; then
-    cp "$TACQUITO_BIN" "${TACQUITO_BIN}.bak"
-    info "Backed up current binary to ${TACQUITO_BIN}.bak"
-fi
-
 # --- Pull latest source ---
 info "Pulling latest source..."
 cd "$TACQUITO_SRC"
@@ -82,10 +79,14 @@ REMOTE=$(git rev-parse @{u})
 
 if [[ "$LOCAL" == "$REMOTE" ]]; then
     info "Tacquito source already up to date (${CURRENT_COMMIT})."
-    rm -f "${TACQUITO_BIN}.bak"
     SKIP_BUILD=true
 else
     SKIP_BUILD=false
+    # Back up current binary before rebuilding
+    if [[ -f "$TACQUITO_BIN" ]]; then
+        cp "$TACQUITO_BIN" "${TACQUITO_BIN}.bak"
+        info "Backed up current binary to ${TACQUITO_BIN}.bak"
+    fi
 fi
 
 if [[ "$SKIP_BUILD" == "false" ]]; then
@@ -113,33 +114,68 @@ if [[ "$SKIP_BUILD" == "false" ]]; then
     go build -o "$HASHGEN_BIN" . || warn "Hashgen build failed (non-critical)."
 fi
 
-# --- Update managed scripts ---
-info "Updating managed scripts..."
+# --- Update management repo ---
+if [[ -d "${MANAGE_DIR}/.git" ]]; then
+    info "Pulling latest management scripts..."
+    cd "$MANAGE_DIR"
+    git fetch --quiet 2>/dev/null || true
+    LOCAL_MANAGE=$(git rev-parse HEAD 2>/dev/null)
+    REMOTE_MANAGE=$(git rev-parse @{u} 2>/dev/null || echo "")
+    if [[ -n "$REMOTE_MANAGE" && "$LOCAL_MANAGE" != "$REMOTE_MANAGE" ]]; then
+        # Copy self to temp before pull (git pull will overwrite the running script)
+        SELF_TMP=$(mktemp)
+        cp "${MANAGE_DIR}/bin/tacquito-upgrade.sh" "$SELF_TMP"
+
+        git pull --quiet 2>/dev/null
+        info "Management scripts updated: $(git rev-parse --short HEAD)"
+
+        # If upgrade script changed, re-run the new version from the start
+        if ! diff -q "$SELF_TMP" "${MANAGE_DIR}/bin/tacquito-upgrade.sh" &>/dev/null; then
+            rm -f "$SELF_TMP"
+            info "Upgrade script changed — restarting with new version..."
+            exec "${MANAGE_DIR}/bin/tacquito-upgrade.sh"
+        fi
+        rm -f "$SELF_TMP"
+    else
+        info "Management scripts already up to date."
+    fi
+    DEPLOY_DIR="$MANAGE_DIR"
+elif [[ -z "$DEPLOY_DIR" ]]; then
+    info "Cloning management repo..."
+    git clone --quiet "$MANAGE_REPO" "$MANAGE_DIR" 2>/dev/null && DEPLOY_DIR="$MANAGE_DIR" || warn "Failed to clone management repo."
+fi
+
+# --- Ensure symlinks exist ---
+if [[ -d "$DEPLOY_DIR" ]]; then
+    ln -sf "${DEPLOY_DIR}/bin/tacquito-manage.sh" "$MANAGE_BIN"
+    ln -sf "${DEPLOY_DIR}/bin/tacquito-upgrade.sh" "$UPGRADE_BIN"
+fi
+
+# --- Update system config files ---
+info "Updating system files..."
 SCRIPTS_UPDATED=0
 
 if [[ -z "$DEPLOY_DIR" ]]; then
-    warn "Deploy directory not found. Skipping script updates."
-    warn "To fix: copy the tacquito-deploy folder to /opt/tacquito-deploy"
+    warn "Deploy directory not found. Skipping updates."
+    warn "To fix: clone the repo to /opt/tacquito-manage"
 fi
 
-if [[ -f "${DEPLOY_DIR}/tacquito-manage.sh" ]]; then
-    cp "${DEPLOY_DIR}/tacquito-manage.sh" "$MANAGE_BIN"
-    chmod +x "$MANAGE_BIN"
-    info "  Updated: tacquito-manage"
-    SCRIPTS_UPDATED=$((SCRIPTS_UPDATED + 1))
-fi
+update_if_changed() {
+    local src="$1" dest="$2" label="$3"
+    if [[ ! -f "$src" ]]; then return; fi
+    if diff -q "$src" "$dest" &>/dev/null; then
+        info "  Unchanged: ${label}"
+    else
+        cp "$src" "$dest"
+        info "  Updated: ${label}"
+        SCRIPTS_UPDATED=$((SCRIPTS_UPDATED + 1))
+    fi
+}
 
-if [[ -f "${DEPLOY_DIR}/tacquito-upgrade.sh" ]]; then
-    cp "${DEPLOY_DIR}/tacquito-upgrade.sh" "$UPGRADE_BIN"
-    chmod +x "$UPGRADE_BIN"
-    info "  Updated: tacquito-upgrade"
-    SCRIPTS_UPDATED=$((SCRIPTS_UPDATED + 1))
-fi
-
-if [[ -f "${DEPLOY_DIR}/tacquito.service" ]]; then
-    if ! diff -q "${DEPLOY_DIR}/tacquito.service" "$SERVICE_FILE" &>/dev/null; then
+if [[ -f "${DEPLOY_DIR}/config/tacquito.service" ]]; then
+    if ! diff -q "${DEPLOY_DIR}/config/tacquito.service" "$SERVICE_FILE" &>/dev/null; then
         cp "$SERVICE_FILE" "${SERVICE_FILE}.bak"
-        cp "${DEPLOY_DIR}/tacquito.service" "$SERVICE_FILE"
+        cp "${DEPLOY_DIR}/config/tacquito.service" "$SERVICE_FILE"
         systemctl daemon-reload
         info "  Updated: tacquito.service (previous backed up to ${SERVICE_FILE}.bak)"
         SCRIPTS_UPDATED=$((SCRIPTS_UPDATED + 1))
@@ -148,19 +184,10 @@ if [[ -f "${DEPLOY_DIR}/tacquito.service" ]]; then
     fi
 fi
 
-if [[ -f "${DEPLOY_DIR}/README.md" ]]; then
-    cp "${DEPLOY_DIR}/README.md" "${CONFIG_DIR}/README.md"
-    info "  Updated: README.md"
-    SCRIPTS_UPDATED=$((SCRIPTS_UPDATED + 1))
-fi
+update_if_changed "${DEPLOY_DIR}/README.md" "${CONFIG_DIR}/README.md" "README.md"
+update_if_changed "${DEPLOY_DIR}/config/tacquito.logrotate" "/etc/logrotate.d/tacquito" "logrotate config"
 
-if [[ -f "${DEPLOY_DIR}/tacquito.logrotate" ]]; then
-    cp "${DEPLOY_DIR}/tacquito.logrotate" /etc/logrotate.d/tacquito
-    info "  Updated: logrotate config"
-    SCRIPTS_UPDATED=$((SCRIPTS_UPDATED + 1))
-fi
-
-info "${SCRIPTS_UPDATED} script(s) updated."
+info "${SCRIPTS_UPDATED} file(s) updated."
 
 # --- Restart service (if binaries or service file changed) ---
 if [[ "$SKIP_BUILD" == "false" ]] || [[ "$SCRIPTS_UPDATED" -gt 0 ]]; then
