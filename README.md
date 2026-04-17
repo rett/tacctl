@@ -116,6 +116,11 @@ This writes `/etc/sudoers.d/tacctl` (validated with `visudo -cf`) granting `%adm
 
 Users can generate their own bcrypt hash and provide it to an admin. The admin never sees the plaintext password.
 
+Admins can print these same client-side commands on demand with:
+```bash
+tacctl hash help
+```
+
 **On the server (if available):**
 ```bash
 tacctl hash
@@ -158,7 +163,7 @@ tacctl group <subcommand>       # Group management
 tacctl config <subcommand>      # Configuration
 tacctl log <subcommand>         # Log viewer
 tacctl backup <subcommand>      # Backup management
-tacctl hash                     # Generate a bcrypt password hash
+tacctl hash [help]              # Generate a bcrypt password hash (or show client-side alternatives)
 tacctl version                  # Print tacctl version
 ```
 
