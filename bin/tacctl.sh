@@ -43,9 +43,11 @@ DEPLOY_DIR="/opt/tacctl"
 MANAGE_REPO="https://github.com/rett/tacctl.git"
 GO_BIN="/usr/local/go/bin/go"
 
-# Load custom password max age if set
-if [[ -f "$PASSWORD_MAX_AGE_FILE" ]]; then
-    PASSWORD_MAX_AGE_DAYS=$(cat "$PASSWORD_MAX_AGE_FILE")
+# Load custom password max age if set and readable. -r (not -f) so non-root
+# commands like `tacctl hash` don't fail when invoked by a user who can't
+# read the file; they just keep the default.
+if [[ -r "$PASSWORD_MAX_AGE_FILE" ]]; then
+    PASSWORD_MAX_AGE_DAYS=$(cat "$PASSWORD_MAX_AGE_FILE" 2>/dev/null || echo "$PASSWORD_MAX_AGE_DAYS")
 fi
 
 # --- Colors ---
@@ -2509,6 +2511,7 @@ cmd_config_password_age() {
     fi
 
     echo "$new_days" > "$PASSWORD_MAX_AGE_FILE"
+    chmod 644 "$PASSWORD_MAX_AGE_FILE"
     PASSWORD_MAX_AGE_DAYS="$new_days"
     info "Password age warning threshold set to ${new_days} days."
     echo ""
