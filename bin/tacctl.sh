@@ -1234,7 +1234,9 @@ for m in re.finditer(r'^(\w+): &\1\n  name: \1\n  services:\n(.*?)  accounter:',
     TEMPLATE_USERS="${TEMPLATE_USERS%$'\n'}"
 
     local TACPLUS_CONFIG
-    TACPLUS_CONFIG="set system authentication-order [tacplus password]
+    # `delete` first because Junos `set ... authentication-order` is additive against an existing ordered list.
+    TACPLUS_CONFIG="delete system authentication-order
+set system authentication-order [ tacplus password ]
 set system tacplus-server ${server_ip} secret ${secret}
 set system tacplus-server ${server_ip} single-connection
 set system accounting events [ login change-log interactive-commands ]
