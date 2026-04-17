@@ -159,6 +159,7 @@ tacctl config <subcommand>      # Configuration
 tacctl log <subcommand>         # Log viewer
 tacctl backup <subcommand>      # Backup management
 tacctl hash                     # Generate a bcrypt password hash
+tacctl version                  # Print tacctl version
 ```
 
 Run any command without arguments for detailed help.
