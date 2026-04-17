@@ -92,6 +92,11 @@ _tacctl() {
                 COMPREPLY=($(compgen -W "list diff restore" -- "$cur"))
             fi
             ;;
+        hash)
+            if [[ $pos -eq 2 ]]; then
+                COMPREPLY=($(compgen -W "help" -- "$cur"))
+            fi
+            ;;
     esac
 }
 

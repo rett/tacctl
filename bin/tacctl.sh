@@ -2702,8 +2702,12 @@ cmd_backup() {
 
 # --- HASH (generate bcrypt hash — does not require root) ---
 cmd_hash() {
+    if [[ "${1:-}" == "help" ]]; then
+        cmd_hash_help
+        return
+    fi
     if ! python3 -c "import bcrypt" 2>/dev/null; then
-        error "python3-bcrypt not installed."
+        error "python3-bcrypt not installed. Run 'tacctl hash help' for client-side alternatives."
         exit 1
     fi
     local password
@@ -2718,6 +2722,28 @@ cmd_hash() {
     echo "  Admin command:"
     echo "    tacctl user add <username> <group> --hash '${hash}'"
     echo ""
+}
+
+# Client-side bcrypt generation instructions for users without shell access.
+cmd_hash_help() {
+    cat <<'EOF'
+
+  Bcrypt hash generation (client-side, when the server is unreachable)
+
+  Linux / macOS:
+    python3 -c "import bcrypt,getpass; print(bcrypt.hashpw(getpass.getpass().encode(), bcrypt.gensalt()).decode())"
+
+  Windows (Python):
+    python -c "import bcrypt,getpass; print(bcrypt.hashpw(getpass.getpass().encode(), bcrypt.gensalt()).decode())"
+
+  Windows (PowerShell, no Python):
+    Install-Module -Name BcryptNet -Scope CurrentUser
+    [BCrypt.Net.BCrypt]::HashPassword((Read-Host -AsSecureString "Password" | ConvertFrom-SecureString -AsPlainText))
+
+  Send the resulting $2b$12$... string to your admin, who will run:
+    tacctl user add <username> <group> --hash '<hash>'
+
+EOF
 }
 
 # --- INSTALL ---
@@ -3409,7 +3435,7 @@ usage() {
     echo "  config <subcommand>           Configuration (show, cisco, juniper, secret, ...)"
     echo "  log <subcommand>              Log viewer (tail, search, failures, accounting)"
     echo "  backup <subcommand>           Backup management (list, diff, restore)"
-    echo "  hash                          Generate a bcrypt password hash"
+    echo "  hash [help]                   Generate a bcrypt password hash (or show client-side alternatives)"
     echo "  version                       Print tacctl version"
     echo ""
     echo "Run any command without arguments for detailed help, e.g.:"
@@ -3507,7 +3533,7 @@ case "$COMMAND" in
         cmd_backup "$@"
         ;;
     hash)
-        cmd_hash
+        cmd_hash "$@"
         ;;
     version|--version|-v)
         echo "tacctl $(get_version)"
