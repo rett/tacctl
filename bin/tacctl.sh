@@ -3072,11 +3072,12 @@ cmd_upgrade() {
         cd "$DEPLOY_DIR"
         git checkout -- . 2>/dev/null || true
         if [[ -n "$UPGRADE_BRANCH" ]]; then
-            git fetch --quiet 2>/dev/null || true
+            # --tags --force so force-pushed tags (e.g. after a history rewrite) update locally.
+            git fetch --quiet --tags --force 2>/dev/null || true
             git checkout "$UPGRADE_BRANCH" &>/dev/null || git checkout -b "$UPGRADE_BRANCH" "origin/${UPGRADE_BRANCH}" &>/dev/null
             info "Switched to branch '${UPGRADE_BRANCH}'."
         fi
-        git fetch --quiet 2>/dev/null || true
+        git fetch --quiet --tags --force 2>/dev/null || true
         local LOCAL_MANAGE REMOTE_MANAGE
         LOCAL_MANAGE=$(git rev-parse HEAD 2>/dev/null)
         REMOTE_MANAGE=$(git rev-parse @{u} 2>/dev/null || echo "")
