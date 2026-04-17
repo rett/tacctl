@@ -1264,7 +1264,7 @@ cmd_config_branch() {
     fi
 
     git -C "$DEPLOY_DIR" checkout -- . 2>/dev/null || true
-    git -C "$DEPLOY_DIR" checkout "$new_branch" 2>/dev/null || git -C "$DEPLOY_DIR" checkout -b "$new_branch" "origin/${new_branch}" 2>/dev/null
+    git -C "$DEPLOY_DIR" checkout "$new_branch" &>/dev/null || git -C "$DEPLOY_DIR" checkout -b "$new_branch" "origin/${new_branch}" &>/dev/null
     git -C "$DEPLOY_DIR" pull --quiet 2>/dev/null || true
     chmod 755 "${DEPLOY_DIR}/bin/tacctl.sh"
 
@@ -2525,7 +2525,7 @@ cmd_install() {
     if [[ -d "${DEPLOY_DIR}/.git" ]]; then
         info "Management repo already cloned at ${DEPLOY_DIR}, pulling latest..."
         cd "$DEPLOY_DIR"
-        [[ -n "$INSTALL_BRANCH" ]] && git checkout "$INSTALL_BRANCH" 2>/dev/null || true
+        [[ -n "$INSTALL_BRANCH" ]] && git checkout "$INSTALL_BRANCH" &>/dev/null || true
         git pull --quiet 2>/dev/null || true
     elif [[ -d "$DEPLOY_DIR" ]]; then
         rm -rf "$DEPLOY_DIR"
@@ -2772,7 +2772,7 @@ cmd_upgrade() {
         git checkout -- . 2>/dev/null || true
         if [[ -n "$UPGRADE_BRANCH" ]]; then
             git fetch --quiet 2>/dev/null || true
-            git checkout "$UPGRADE_BRANCH" 2>/dev/null || git checkout -b "$UPGRADE_BRANCH" "origin/${UPGRADE_BRANCH}" 2>/dev/null
+            git checkout "$UPGRADE_BRANCH" &>/dev/null || git checkout -b "$UPGRADE_BRANCH" "origin/${UPGRADE_BRANCH}" &>/dev/null
             info "Switched to branch '${UPGRADE_BRANCH}'."
         fi
         git fetch --quiet 2>/dev/null || true
