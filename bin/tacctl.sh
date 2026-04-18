@@ -1701,10 +1701,12 @@ set system accounting events [ login change-log interactive-commands ]
 set system accounting destination tacplus"
 
     # Build the Juniper mgmt-acl block from the shared permit list.
-    # Emitted as Junos '#' comments so the whole config pastes cleanly —
-    # source-based SSH/NETCONF restriction on Junos lives in a firewall
-    # filter on lo0, and a misapplied lo0 filter can blackhole routing
-    # protocols to the RE. Operators review and uncomment per site.
+    # When populated, emit live `set firewall …` commands so the filter
+    # gets created in the candidate config on paste. The `set interfaces
+    # lo0 … filter input` APPLY line stays commented, because that is
+    # where the blackhole risk lives — an unreviewed lo0 filter can drop
+    # BGP / OSPF / IS-IS to the RE. Defining the filter without applying
+    # it is safe; the operator uncomments the apply line after review.
     # IPv6 CIDRs are skipped for now (filter would need family inet6).
     local juniper_acl_name
     juniper_acl_name=$(read_mgmt_acl_name juniper)
@@ -1715,25 +1717,27 @@ set system accounting destination tacplus"
         # Skip v6 — family inet filter only accepts v4 source-addresses.
         [[ "$entry" == *:* ]] && continue
         mgmt_has_any="true"
-        mgmt_terms+="# set firewall family inet filter ${juniper_acl_name} term permit-mgmt from source-address ${entry}"$'\n'
+        mgmt_terms+="set firewall family inet filter ${juniper_acl_name} term permit-mgmt from source-address ${entry}"$'\n'
     done < <(read_mgmt_acl_cidrs)
     if [[ "$mgmt_has_any" == "true" ]]; then
-        MGMT_ACL_BLOCK="# Optional: restrict SSH / NETCONF to the configured mgmt subnets.
-# Integrate into your existing lo0 filter, or apply a new filter with:
-#   set interfaces lo0 unit 0 family inet filter input ${juniper_acl_name}
-# Review every line against your environment before uncommenting —
-# a misapplied lo0 filter can blackhole BGP / OSPF / IS-IS to the RE.
+        MGMT_ACL_BLOCK="# Restrict SSH / NETCONF to the configured mgmt subnets.
+# These 'set firewall' lines define the filter in the candidate config.
+# Activate it by uncommenting the 'set interfaces lo0 …' line below
+# after reviewing — a misapplied lo0 filter can blackhole BGP / OSPF /
+# IS-IS to the RE.
+${mgmt_terms}set firewall family inet filter ${juniper_acl_name} term permit-mgmt from protocol tcp
+set firewall family inet filter ${juniper_acl_name} term permit-mgmt from destination-port [ ssh 830 ]
+set firewall family inet filter ${juniper_acl_name} term permit-mgmt then accept
+set firewall family inet filter ${juniper_acl_name} term deny-mgmt from protocol tcp
+set firewall family inet filter ${juniper_acl_name} term deny-mgmt from destination-port [ ssh 830 ]
+set firewall family inet filter ${juniper_acl_name} term deny-mgmt then { log; discard; }
+set firewall family inet filter ${juniper_acl_name} term default-accept then accept
 #
-${mgmt_terms}# set firewall family inet filter ${juniper_acl_name} term permit-mgmt from protocol tcp
-# set firewall family inet filter ${juniper_acl_name} term permit-mgmt from destination-port [ ssh 830 ]
-# set firewall family inet filter ${juniper_acl_name} term permit-mgmt then accept
-# set firewall family inet filter ${juniper_acl_name} term deny-mgmt from protocol tcp
-# set firewall family inet filter ${juniper_acl_name} term deny-mgmt from destination-port [ ssh 830 ]
-# set firewall family inet filter ${juniper_acl_name} term deny-mgmt then { log; discard; }
-# set firewall family inet filter ${juniper_acl_name} term default-accept then accept"
+# Apply (review first):
+# set interfaces lo0 unit 0 family inet filter input ${juniper_acl_name}"
     else
         MGMT_ACL_BLOCK="# mgmt-acl empty — configure with 'tacctl config mgmt-acl add <cidr>' on the tacquito server
-# to emit a commented source-restricted lo0 firewall filter here."
+# to emit a source-restricted lo0 firewall filter here."
     fi
 
     local VERIFY_COMMANDS
