@@ -142,6 +142,25 @@ get_password_date() {
     fi
 }
 
+# Most recent login timestamp for a user, or "never". Parses the accounting
+# log for JSON lines that pair "User":"<name>" with cmd=login (Flags:2 START).
+# Session stops (cmd=logout / cmd=exit on Flags:4) are excluded.
+get_last_login() {
+    local username="$1"
+    [[ -r "$ACCT_LOG" ]] || { echo "never"; return; }
+    local ts
+    ts=$(grep -F "\"User\":\"${username}\"" "$ACCT_LOG" 2>/dev/null \
+        | grep -F 'cmd=login' \
+        | tail -1 \
+        | grep -oE '[0-9]{4}/[0-9]{2}/[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}' \
+        | head -1)
+    if [[ -z "$ts" ]]; then
+        echo "never"
+    else
+        echo "${ts//\//-}"
+    fi
+}
+
 # --- Backup config before changes ---
 BACKUP_RETENTION=30
 
@@ -727,6 +746,91 @@ cmd_enable() {
 
     restart_service
     info "User '${username}' re-enabled with previous password."
+    echo ""
+}
+
+# --- SHOW (read-only detail view; no password prompt) ---
+cmd_show() {
+    local username="${1:-}"
+
+    if [[ -z "$username" ]]; then
+        error "Usage: tacctl user show <username>"
+        exit 1
+    fi
+    validate_username "$username"
+    if ! user_exists "$username"; then
+        error "User '${username}' does not exist."
+        exit 1
+    fi
+
+    local group stored_hash status pw_date pw_age last_login
+    group=$(get_user_group "$username")
+    stored_hash=$(get_user_hash "$username")
+    if [[ "$stored_hash" == "DISABLED" ]]; then
+        status="disabled"
+    else
+        status="active"
+    fi
+    pw_date=$(get_password_date "$username")
+    if [[ "$pw_date" != "unknown" ]]; then
+        pw_age=$(( ( $(date +%s) - $(date -d "$pw_date" +%s) ) / 86400 ))
+    fi
+    last_login=$(get_last_login "$username")
+
+    # Resolve Cisco priv-lvl and Juniper class for the user's group by
+    # walking the YAML services chain. Falls back to empty on any error.
+    local yaml_info priv_lvl juniper_class
+    yaml_info=$(python3 - "$CONFIG" "$group" <<'PY' 2>/dev/null || echo '|'
+import yaml, sys
+try:
+    with open(sys.argv[1]) as f:
+        c = yaml.safe_load(f)
+    g = c.get(sys.argv[2], {}) or {}
+    priv = ''
+    jclass = ''
+    for s in g.get('services', []) or []:
+        if s.get('name') == 'exec':
+            for sv in s.get('set_values', []) or []:
+                if sv.get('name') == 'priv-lvl':
+                    v = sv.get('values') or []
+                    if v:
+                        priv = v[0]
+        elif s.get('name') == 'junos-exec':
+            for sv in s.get('set_values', []) or []:
+                if sv.get('name') == 'local-user-name':
+                    v = sv.get('values') or []
+                    if v:
+                        jclass = v[0]
+    print(f'{priv}|{jclass}')
+except Exception:
+    print('|')
+PY
+)
+    IFS='|' read -r priv_lvl juniper_class <<< "$yaml_info"
+
+    # Hash fingerprint: the hash is stored hex-encoded in the YAML ("24326224313024..." = "$2b$10$..."). Decode the first 7 bcrypt chars (14 hex chars) to surface algorithm + cost without disclosing salt or digest.
+    local hash_prefix=""
+    if [[ -n "$stored_hash" && "$stored_hash" != "DISABLED" ]]; then
+        hash_prefix=$(echo "${stored_hash:0:14}" | xxd -r -p 2>/dev/null)
+    fi
+
+    echo ""
+    echo -e "  ${BOLD}User:${NC}             ${username}"
+    echo -e "  ${BOLD}Group:${NC}            ${group}"
+    if [[ "$status" == "disabled" ]]; then
+        echo -e "  ${BOLD}Status:${NC}           ${RED}disabled${NC}"
+    else
+        echo -e "  ${BOLD}Status:${NC}           ${GREEN}active${NC}"
+    fi
+    if [[ -n "$pw_age" ]]; then
+        echo -e "  ${BOLD}Password changed:${NC} ${pw_date} (${pw_age} days ago)"
+    else
+        echo -e "  ${BOLD}Password changed:${NC} ${pw_date}"
+    fi
+    echo -e "  ${BOLD}Last login:${NC}       ${last_login}"
+    [[ -n "$priv_lvl" ]]      && echo -e "  ${BOLD}Cisco priv-lvl:${NC}   ${priv_lvl}"
+    [[ -n "$juniper_class" ]] && echo -e "  ${BOLD}Juniper class:${NC}    ${juniper_class}"
+    echo -e "  ${BOLD}Hash type:${NC}        ${hash_prefix}"
     echo ""
 }
 
@@ -3504,6 +3608,7 @@ cmd_user() {
 
     case "$subcmd" in
         list)       cmd_list ;;
+        show)       cmd_show "$@" ;;
         add)        cmd_add "$@" ;;
         remove)     cmd_remove "$@" ;;
         passwd)     cmd_passwd "$@" ;;
@@ -3520,6 +3625,7 @@ cmd_user() {
             echo ""
             echo "Subcommands:"
             echo "  list                                  List all users and their status"
+            echo "  show <username>                       Show user details (read-only; no password prompt)"
             echo "  add <username> <group>                Add a new user (prompts for password)"
             echo "  add <username> <group> --hash <hash>  Add with pre-generated bcrypt hash"
             echo "  remove <username>                     Remove a user"
