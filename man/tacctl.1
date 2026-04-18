@@ -69,6 +69,13 @@ currently deployed.
 .B user list
 List all users with name, group, status, and password age.
 .TP
+.BI "user show " name
+Show detailed user info: group, status, password change date and age,
+last login (from the accounting log), Cisco privilege level, Juniper
+class, and a hash fingerprint. Read-only -- does not prompt for the
+password (unlike
+.BR "user verify" ).
+.TP
 .BI "user add " "name group " [ "--hash " hash ]
 Add a user. Prompts for the password with confirmation. If
 .BI --hash " hash"

@@ -180,6 +180,7 @@ Run any command without arguments for detailed help.
 
 ```
 user list                              List all users (name, group, status, password age)
+user show <name>                       Show user details (read-only; no password prompt)
 user add <name> <group>                Add a new user (password prompted with confirmation)
 user add <name> <group> --hash <hash>  Add user with pre-generated bcrypt hash
 user remove <name>                     Remove a user (with confirmation)
