@@ -602,7 +602,7 @@ cmd_passwd() {
     local username="${1:-}"
 
     if [[ -z "$username" ]]; then
-        error "Usage: tacctl.sh passwd <username>"
+        error "Usage: tacctl.sh passwd <username> [--hash <bcrypt-hash>]"
         exit 1
     fi
     validate_username "$username"
@@ -611,13 +611,31 @@ cmd_passwd() {
         exit 1
     fi
 
+    # Check for --hash flag (pre-generated bcrypt hash)
+    local hash=""
+    if [[ "${2:-}" == "--hash" ]]; then
+        hash="${3:-}"
+        if [[ -z "$hash" ]]; then
+            error "Usage: tacctl user passwd <username> --hash <bcrypt-hash>"
+            exit 1
+        fi
+        if [[ ! "$hash" =~ ^\$2[aby]\$ ]]; then
+            error "Invalid bcrypt hash. Must start with \$2b\$, \$2a\$, or \$2y\$."
+            error "Generate one with: tacctl hash (or: tacctl hash help)"
+            exit 1
+        fi
+    fi
+
     echo ""
     echo -e "  Changing password for: ${BOLD}${username}${NC}"
-    local password
-    password=$(prompt_password)
 
-    local hash
-    hash=$(generate_hash "$password")
+    if [[ -z "$hash" ]]; then
+        local password
+        password=$(prompt_password)
+        hash=$(generate_hash "$password")
+    else
+        info "Using pre-generated bcrypt hash."
+    fi
 
     backup_config
 
@@ -3506,6 +3524,7 @@ cmd_user() {
             echo "  add <username> <group> --hash <hash>  Add with pre-generated bcrypt hash"
             echo "  remove <username>                     Remove a user"
             echo "  passwd <username>                     Change a user's password"
+            echo "  passwd <username> --hash <hash>       Change with pre-generated bcrypt hash"
             echo "  disable <username>                    Disable a user (preserves hash)"
             echo "  enable <username>                     Re-enable a disabled user"
             echo "  rename <old> <new>                    Rename a user"

@@ -79,8 +79,15 @@ is given, the bcrypt hash is used directly and no password is prompted
 .BI "user remove " name
 Remove a user after confirmation.
 .TP
-.BI "user passwd " name
-Change a user's password.
+.BI "user passwd " "name " [ "--hash " hash ]
+Change a user's password. Prompts for the new password with
+confirmation. If
+.BI --hash " hash"
+is given, the bcrypt hash is used directly and no password is prompted
+(mirrors
+.B user add --hash
+for users who self-generate via
+.BR "tacctl hash help" ).
 .TP
 .BI "user disable " name
 Disable a user while preserving the password hash for later re-enable.

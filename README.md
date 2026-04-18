@@ -147,6 +147,11 @@ Install-Module -Name BcryptNet -Scope CurrentUser
 tacctl user add jsmith superuser --hash '$2b$12$...'
 ```
 
+**Admin rotates an existing user's password with a pre-generated hash:**
+```bash
+tacctl user passwd jsmith --hash '$2b$12$...'
+```
+
 ---
 
 ## CLI Reference
@@ -179,6 +184,7 @@ user add <name> <group>                Add a new user (password prompted with co
 user add <name> <group> --hash <hash>  Add user with pre-generated bcrypt hash
 user remove <name>                     Remove a user (with confirmation)
 user passwd <name>                     Change password (with confirmation)
+user passwd <name> --hash <hash>       Change password with pre-generated bcrypt hash
 user disable <name>                    Disable (preserves hash for re-enable)
 user enable <name>                     Re-enable a disabled user
 user rename <old> <new>                Rename a user
