@@ -3536,14 +3536,31 @@ cmd_upgrade() {
     if [[ -d "${DEPLOY_DIR}/.git" ]]; then
         info "Pulling latest management scripts..."
         cd "$DEPLOY_DIR"
-        git checkout -- . 2>/dev/null || true
+        # Discard local tracked-file edits so the pull can fast-forward.
+        # Errors here are rare but not silenced — a failure would leave
+        # local mods that block the pull a few lines later.
+        git checkout -- . || {
+            error "Failed to discard local modifications in ${DEPLOY_DIR}."
+            error "Run 'sudo git -C ${DEPLOY_DIR} status' to investigate."
+            exit 1
+        }
+        # Remove tacctl-managed untracked backup files that would otherwise
+        # survive `git checkout -- .` and clutter the tree indefinitely.
+        rm -f "${DEPLOY_DIR}"/bin/tacctl.sh.*-bak \
+              "${DEPLOY_DIR}"/config/templates/*.template.*-bak 2>/dev/null || true
         if [[ -n "$UPGRADE_BRANCH" ]]; then
             # --tags --force so force-pushed tags (e.g. after a history rewrite) update locally.
-            git fetch --quiet --tags --force 2>/dev/null || true
+            git fetch --tags --force || {
+                error "git fetch failed. Check network / credentials."
+                exit 1
+            }
             git checkout "$UPGRADE_BRANCH" &>/dev/null || git checkout -b "$UPGRADE_BRANCH" "origin/${UPGRADE_BRANCH}" &>/dev/null
             info "Switched to branch '${UPGRADE_BRANCH}'."
         fi
-        git fetch --quiet --tags --force 2>/dev/null || true
+        git fetch --tags --force || {
+            error "git fetch failed. Check network / credentials."
+            exit 1
+        }
         local LOCAL_MANAGE REMOTE_MANAGE
         LOCAL_MANAGE=$(git rev-parse HEAD 2>/dev/null)
         REMOTE_MANAGE=$(git rev-parse @{u} 2>/dev/null || echo "")
@@ -3553,7 +3570,17 @@ cmd_upgrade() {
             SELF_TMP=$(mktemp)
             cp "${DEPLOY_DIR}/bin/tacctl.sh" "$SELF_TMP"
 
-            git pull --quiet 2>/dev/null
+            # Stderr NOT silenced so failures surface (conflicts, diverged
+            # branches, overwrite-would-happen, etc.). --ff-only refuses any
+            # merge scenario; upgrades should be fast-forward only.
+            if ! git pull --ff-only; then
+                error "git pull failed. Common causes:"
+                error "  - local commits on ${DEPLOY_DIR} diverging from origin"
+                error "  - untracked files that would be overwritten"
+                error "Run 'sudo git -C ${DEPLOY_DIR} status' to investigate."
+                rm -f "$SELF_TMP"
+                exit 1
+            fi
             info "Management scripts updated: $(git rev-parse --short HEAD)"
 
             # If tacctl changed, re-run the new version
@@ -3568,7 +3595,7 @@ cmd_upgrade() {
         fi
     elif [[ ! -d "$DEPLOY_DIR" ]]; then
         info "Cloning management repo..."
-        git clone --quiet "$MANAGE_REPO" "$DEPLOY_DIR" 2>/dev/null || warn "Failed to clone management repo."
+        git clone --quiet "$MANAGE_REPO" "$DEPLOY_DIR" || warn "Failed to clone management repo."
     fi
     # Always normalize, even when nothing was pulled -- self-healing for
     # prior installs whose files were left at 0600 by the script's umask.
