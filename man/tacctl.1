@@ -210,6 +210,29 @@ Preserved across
 .BR "tacctl upgrade" .
 With no arguments, prints usage and the current entry count.
 .TP
+.BI "config mgmt-acl cisco-name " [ name ]
+Show or set the name of the IOS access-list emitted by
+.BR "config cisco" .
+Default
+.BR VTY-ACL .
+Names must start with a letter and contain only letters, digits,
+.RB ` _ ` ,
+or
+.RB ` - `
+(max 63 chars).
+.TP
+.BI "config mgmt-acl juniper-name " [ name ]
+Show or set the name of the Junos firewall filter emitted by
+.BR "config juniper" .
+Default
+.BR MGMT-SSH-ACL .
+Same character rules as
+.BR cisco-name .
+Both overrides live at
+.I /etc/tacquito/mgmt-acl-names.conf
+and survive
+.BR "tacctl upgrade" .
+.TP
 .B config cisco
 Print a ready-to-paste Cisco IOS/IOS-XE configuration with the
 server IP, shared secret, current group-to-privilege mappings, and

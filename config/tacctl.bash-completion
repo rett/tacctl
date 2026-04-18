@@ -82,7 +82,7 @@ _tacctl() {
                         COMPREPLY=($(compgen -W "list add remove" -- "$cur"))
                         ;;
                     mgmt-acl)
-                        COMPREPLY=($(compgen -W "list add remove clear" -- "$cur"))
+                        COMPREPLY=($(compgen -W "list add remove clear cisco-name juniper-name" -- "$cur"))
                         ;;
                 esac
             fi

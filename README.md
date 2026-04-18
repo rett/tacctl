@@ -96,6 +96,13 @@ tacctl config mgmt-acl list
 ```
 `tacctl config cisco` then emits a populated `VTY-ACL` applied to `line vty 0 15` via `access-class VTY-ACL in`. `tacctl config juniper` emits a commented `set firewall family inet filter MGMT-SSH-ACL` block (including a trailing `default-accept` term to keep BGP/OSPF/IS-IS traffic to the RE working) — review and uncomment per device. The list lives at `/etc/tacquito/mgmt-acl.conf` and survives `tacctl upgrade`.
 
+Rename the emitted ACL / filter names to match your site conventions:
+```
+tacctl config mgmt-acl cisco-name MGMT-ACCESS
+tacctl config mgmt-acl juniper-name MGMT-SSH-FILTER
+```
+Overrides live at `/etc/tacquito/mgmt-acl-names.conf` and also survive `tacctl upgrade`.
+
 ### Log retention
 Accounting logs are rotated daily and retained for 90 days (see `/etc/logrotate.d/tacquito`). Adjust the `rotate` value if your compliance requirements differ.
 

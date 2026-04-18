@@ -34,6 +34,9 @@ BCRYPT_COST_FILE="/etc/tacquito/bcrypt-cost"
 PASSWORD_MIN_LENGTH=12
 SECRET_MIN_LENGTH=16
 MGMT_ACL_FILE="/etc/tacquito/mgmt-acl.conf"
+MGMT_ACL_NAMES_FILE="/etc/tacquito/mgmt-acl-names.conf"
+CISCO_ACL_NAME_DEFAULT="VTY-ACL"
+JUNIPER_ACL_NAME_DEFAULT="MGMT-SSH-ACL"
 CONFIG_DIR="/etc/tacquito"
 LOG_DIR="/var/log/tacquito"
 SERVICE_FILE="/etc/systemd/system/tacquito.service"
@@ -307,6 +310,81 @@ read_mgmt_acl_cidrs() {
         { gsub(/[[:space:]]+$/, "") }
         NF { print $1 }
     ' "$MGMT_ACL_FILE"
+}
+
+# --- Read an mgmt-ACL name override (cisco|juniper) with default fallback ---
+# Storage format at $MGMT_ACL_NAMES_FILE is simple `key=value` lines;
+# unknown keys and blank lines ignored.
+read_mgmt_acl_name() {
+    local which="$1" default=""
+    case "$which" in
+        cisco)   default="$CISCO_ACL_NAME_DEFAULT" ;;
+        juniper) default="$JUNIPER_ACL_NAME_DEFAULT" ;;
+        *)       echo ""; return 0 ;;
+    esac
+    local value=""
+    if [[ -r "$MGMT_ACL_NAMES_FILE" ]]; then
+        value=$(awk -F= -v k="$which" '
+            /^[[:space:]]*#/ { next }
+            /^[[:space:]]*$/ { next }
+            $1 == k { sub(/[[:space:]]+$/, "", $2); print $2; exit }
+        ' "$MGMT_ACL_NAMES_FILE")
+    fi
+    echo "${value:-$default}"
+}
+
+# --- Validate an ACL name for Cisco / Juniper use ---
+# Both vendors accept letters, digits, `_`, `-`; names must start with a
+# letter; keep length <= 63 to match common IOS / Junos limits.
+validate_acl_name() {
+    local name="$1"
+    if [[ -z "$name" ]]; then
+        error "ACL name must not be empty."
+        exit 1
+    fi
+    if [[ ${#name} -gt 63 ]]; then
+        error "ACL name too long (${#name} chars; max 63)."
+        exit 1
+    fi
+    if [[ ! "$name" =~ ^[A-Za-z][A-Za-z0-9_-]*$ ]]; then
+        error "Invalid ACL name '${name}'. Must start with a letter and contain only letters, digits, '_', '-'."
+        exit 1
+    fi
+}
+
+# --- Write an mgmt-ACL name override (cisco|juniper) ---
+write_mgmt_acl_name() {
+    local which="$1" name="$2"
+    mkdir -p "$(dirname "$MGMT_ACL_NAMES_FILE")"
+    local tmp
+    tmp=$(mktemp)
+    # Preserve other keys; overwrite/insert the target key.
+    local replaced="false"
+    if [[ -f "$MGMT_ACL_NAMES_FILE" ]]; then
+        awk -F= -v k="$which" -v v="$name" '
+            BEGIN { done = 0 }
+            /^[[:space:]]*#/ { print; next }
+            /^[[:space:]]*$/ { print; next }
+            $1 == k { print k "=" v; done = 1; next }
+            { print }
+            END { if (!done) print k "=" v }
+        ' "$MGMT_ACL_NAMES_FILE" > "$tmp"
+        replaced="true"
+    else
+        {
+            echo "# tacctl-managed mgmt-ACL names (used by 'tacctl config cisco' / 'juniper')."
+            echo "# Edit via: tacctl config mgmt-acl cisco-name <name>"
+            echo "#           tacctl config mgmt-acl juniper-name <name>"
+            echo "${which}=${name}"
+        } > "$tmp"
+    fi
+    mv "$tmp" "$MGMT_ACL_NAMES_FILE"
+    chmod 644 "$MGMT_ACL_NAMES_FILE"
+    if [[ "$replaced" == "true" ]]; then
+        info "Set ${which}-name = '${name}'."
+    else
+        info "Initialized ${MGMT_ACL_NAMES_FILE} with ${which}-name = '${name}'."
+    fi
 }
 
 # --- Validate listen address (host:port or [ipv6]:port) against network family ---
@@ -1464,6 +1542,8 @@ privilege exec level ${privlvl} terminal no monitor
     # didn't configure. Comments are no-ops on IOS, so the empty-state
     # output is still safe to paste — it simply leaves the vty lines
     # unchanged until mgmt-acl is populated.
+    local cisco_acl_name
+    cisco_acl_name=$(read_mgmt_acl_name cisco)
     local VTY_ACL_BLOCK VTY_ACCESS_CLASS mgmt_entries=""
     while IFS= read -r entry; do
         [[ -z "$entry" ]] && continue
@@ -1474,16 +1554,16 @@ privilege exec level ${privlvl} terminal no monitor
         fi
     done < <(read_mgmt_acl_cidrs)
     if [[ -n "$mgmt_entries" ]]; then
-        VTY_ACL_BLOCK="ip access-list standard VTY-ACL
+        VTY_ACL_BLOCK="ip access-list standard ${cisco_acl_name}
   remark Managed by tacctl — edit with 'tacctl config mgmt-acl'
 ${mgmt_entries}  deny   any log"
-        VTY_ACCESS_CLASS="  access-class VTY-ACL in"
+        VTY_ACCESS_CLASS="  access-class ${cisco_acl_name} in"
     else
-        VTY_ACL_BLOCK="! VTY-ACL not emitted — mgmt-acl list is empty.
+        VTY_ACL_BLOCK="! ${cisco_acl_name} not emitted — mgmt-acl list is empty.
 ! Populate it on the tacquito server with
 !   tacctl config mgmt-acl add <cidr>
 ! then re-run 'tacctl config cisco' to get the access-list block."
-        VTY_ACCESS_CLASS="! access-class VTY-ACL in   ! uncomment after populating mgmt-acl"
+        VTY_ACCESS_CLASS="! access-class ${cisco_acl_name} in   ! uncomment after populating mgmt-acl"
     fi
 
     echo ""
@@ -1547,7 +1627,7 @@ EOF
     echo "  - The 'local' fallback ensures access if TACACS+ is unreachable"
     echo "  - Ensure a local admin account exists as a backup"
     echo "  - Replace <MGMT_IF> with your management interface (e.g. Loopback0)"
-    echo "  - VTY-ACL permits are managed with 'tacctl config mgmt-acl add <cidr>'"
+    echo "  - ${cisco_acl_name} permits are managed with 'tacctl config mgmt-acl add <cidr>'"
     echo "  - For Type 6 (AES) key encryption, run on the device first:"
     echo "      conf t ; key config-key password-encrypt <master-key>"
     echo "      password encryption aes"
@@ -1626,6 +1706,8 @@ set system accounting destination tacplus"
     # filter on lo0, and a misapplied lo0 filter can blackhole routing
     # protocols to the RE. Operators review and uncomment per site.
     # IPv6 CIDRs are skipped for now (filter would need family inet6).
+    local juniper_acl_name
+    juniper_acl_name=$(read_mgmt_acl_name juniper)
     local MGMT_ACL_BLOCK mgmt_terms=""
     local mgmt_has_any="false"
     while IFS= read -r entry; do
@@ -1633,22 +1715,22 @@ set system accounting destination tacplus"
         # Skip v6 — family inet filter only accepts v4 source-addresses.
         [[ "$entry" == *:* ]] && continue
         mgmt_has_any="true"
-        mgmt_terms+="# set firewall family inet filter MGMT-SSH-ACL term permit-mgmt from source-address ${entry}"$'\n'
+        mgmt_terms+="# set firewall family inet filter ${juniper_acl_name} term permit-mgmt from source-address ${entry}"$'\n'
     done < <(read_mgmt_acl_cidrs)
     if [[ "$mgmt_has_any" == "true" ]]; then
         MGMT_ACL_BLOCK="# Optional: restrict SSH / NETCONF to the configured mgmt subnets.
 # Integrate into your existing lo0 filter, or apply a new filter with:
-#   set interfaces lo0 unit 0 family inet filter input MGMT-SSH-ACL
+#   set interfaces lo0 unit 0 family inet filter input ${juniper_acl_name}
 # Review every line against your environment before uncommenting —
 # a misapplied lo0 filter can blackhole BGP / OSPF / IS-IS to the RE.
 #
-${mgmt_terms}# set firewall family inet filter MGMT-SSH-ACL term permit-mgmt from protocol tcp
-# set firewall family inet filter MGMT-SSH-ACL term permit-mgmt from destination-port [ ssh 830 ]
-# set firewall family inet filter MGMT-SSH-ACL term permit-mgmt then accept
-# set firewall family inet filter MGMT-SSH-ACL term deny-mgmt from protocol tcp
-# set firewall family inet filter MGMT-SSH-ACL term deny-mgmt from destination-port [ ssh 830 ]
-# set firewall family inet filter MGMT-SSH-ACL term deny-mgmt then { log; discard; }
-# set firewall family inet filter MGMT-SSH-ACL term default-accept then accept"
+${mgmt_terms}# set firewall family inet filter ${juniper_acl_name} term permit-mgmt from protocol tcp
+# set firewall family inet filter ${juniper_acl_name} term permit-mgmt from destination-port [ ssh 830 ]
+# set firewall family inet filter ${juniper_acl_name} term permit-mgmt then accept
+# set firewall family inet filter ${juniper_acl_name} term deny-mgmt from protocol tcp
+# set firewall family inet filter ${juniper_acl_name} term deny-mgmt from destination-port [ ssh 830 ]
+# set firewall family inet filter ${juniper_acl_name} term deny-mgmt then { log; discard; }
+# set firewall family inet filter ${juniper_acl_name} term default-accept then accept"
     else
         MGMT_ACL_BLOCK="# mgmt-acl empty — configure with 'tacctl config mgmt-acl add <cidr>' on the tacquito server
 # to emit a commented source-restricted lo0 firewall filter here."
@@ -1895,12 +1977,17 @@ os.rename(tmp.name, sys.argv[1])
 # outside the template tree that `tacctl upgrade` rewrites.
 cmd_config_mgmt_acl() {
     local subcmd="${1:-}"
+    # $2 is either a CIDR (add/remove) or an ACL name (cisco-name/juniper-name).
+    # Keep the legacy name `cidr` since most branches use it that way.
     local cidr="${2:-}"
 
     case "$subcmd" in
         ""|-h|--help|help)
             local n=0
             [[ -r "$MGMT_ACL_FILE" ]] && n=$(read_mgmt_acl_cidrs | wc -l)
+            local cisco_name juniper_name
+            cisco_name=$(read_mgmt_acl_name cisco)
+            juniper_name=$(read_mgmt_acl_name juniper)
             echo ""
             echo -e "${BOLD}tacctl config mgmt-acl${NC} — shared Cisco VTY-ACL + Juniper lo0-filter permits"
             echo ""
@@ -1909,8 +1996,12 @@ cmd_config_mgmt_acl() {
             echo "  tacctl config mgmt-acl add <cidr>          Append a CIDR (dedup, validated)"
             echo "  tacctl config mgmt-acl remove <cidr>       Drop a CIDR"
             echo "  tacctl config mgmt-acl clear               Wipe all permits (confirms)"
+            echo "  tacctl config mgmt-acl cisco-name [name]   Show or set the Cisco ACL name (default ${CISCO_ACL_NAME_DEFAULT})"
+            echo "  tacctl config mgmt-acl juniper-name [name] Show or set the Juniper filter name (default ${JUNIPER_ACL_NAME_DEFAULT})"
             echo ""
             echo "Storage: ${MGMT_ACL_FILE} (survives 'tacctl upgrade')."
+            echo "Names:   ${MGMT_ACL_NAMES_FILE}"
+            echo "         cisco=${cisco_name}  juniper=${juniper_name}"
             echo "Current entries: ${n}"
             echo ""
             return
@@ -2006,6 +2097,38 @@ cmd_config_mgmt_acl() {
             fi
             rm -f "$MGMT_ACL_FILE"
             info "mgmt-acl cleared."
+            echo ""
+            ;;
+        cisco-name|juniper-name)
+            local which="${subcmd%-name}"
+            local default_val current_val
+            if [[ "$which" == "cisco" ]]; then
+                default_val="$CISCO_ACL_NAME_DEFAULT"
+            else
+                default_val="$JUNIPER_ACL_NAME_DEFAULT"
+            fi
+            current_val=$(read_mgmt_acl_name "$which")
+            if [[ -z "$cidr" ]]; then
+                echo ""
+                echo "  ${which}-name: ${current_val}"
+                if [[ "$current_val" == "$default_val" ]]; then
+                    echo "  (default — override with 'tacctl config mgmt-acl ${subcmd} <name>')"
+                else
+                    echo "  (override in ${MGMT_ACL_NAMES_FILE})"
+                fi
+                echo ""
+                return
+            fi
+            # Second positional arg = new name
+            local new_name="$cidr"
+            validate_acl_name "$new_name"
+            if [[ "$new_name" == "$current_val" ]]; then
+                info "${which}-name already '${new_name}'; no change."
+                echo ""
+                return
+            fi
+            write_mgmt_acl_name "$which" "$new_name"
+            info "Re-run 'tacctl config ${which}' to see the new name in the output."
             echo ""
             ;;
         *)
