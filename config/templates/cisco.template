@@ -29,13 +29,7 @@ aaa accounting commands 7 default start-stop group TACACS-GROUP
 aaa accounting commands 15 default start-stop group TACACS-GROUP
 !
 ${PRIVILEGE_COMMANDS}
-! --- VTY ACL ---
-! Restrict management access to trusted subnets. Edit permits to match
-! your operator networks, then apply with 'access-class VTY-ACL in'.
-ip access-list standard VTY-ACL
-  remark Edit these permits to match your mgmt subnets
-  permit 10.0.0.0 0.255.255.255
-  deny   any log
+${VTY_ACL_BLOCK}
 !
 line con 0
   login authentication default

@@ -4,5 +4,8 @@ ${TEMPLATE_USERS}
 # Step 2: Configure TACACS+
 ${TACPLUS_CONFIG}
 
-# Step 3: Commit
+# Step 3: (optional) Management ACL
+${MGMT_ACL_BLOCK}
+
+# Step 4: Commit
 commit
