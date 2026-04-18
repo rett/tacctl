@@ -51,7 +51,9 @@ _tacctl() {
         user)
             if [[ $pos -eq 2 ]]; then
                 COMPREPLY=($(compgen -W "list add remove passwd disable enable rename move verify" -- "$cur"))
-            elif [[ $pos -eq 4 && "${words[offset + 2]}" == "add" ]]; then
+            elif [[ $pos -eq 5 && "${words[offset + 2]}" == "add" ]]; then
+                COMPREPLY=($(compgen -W "--hash" -- "$cur"))
+            elif [[ $pos -eq 4 && "${words[offset + 2]}" == "passwd" ]]; then
                 COMPREPLY=($(compgen -W "--hash" -- "$cur"))
             fi
             ;;

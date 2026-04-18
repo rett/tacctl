@@ -78,6 +78,19 @@ normalize_deploy_perms() {
     chmod -R a+rX "$DEPLOY_DIR" 2>/dev/null || true
 }
 
+# Install the man page from <src> to /usr/share/man/man1/tacctl.1.gz and
+# refresh mandb. Silent no-op if the source file is missing (keeps older
+# repo checkouts working) or if mandb is unavailable (`man tacctl` still
+# works directly without mandb).
+install_man_page() {
+    local src="$1"
+    [[ -f "$src" ]] || return 0
+    mkdir -p /usr/share/man/man1
+    gzip -c "$src" > /usr/share/man/man1/tacctl.1.gz
+    chmod 644 /usr/share/man/man1/tacctl.1.gz
+    mandb -q 2>/dev/null || true
+}
+
 # --- Pre-flight ---
 preflight() {
     if [[ ! -f "$CONFIG" ]]; then
@@ -589,7 +602,7 @@ cmd_passwd() {
     local username="${1:-}"
 
     if [[ -z "$username" ]]; then
-        error "Usage: tacctl.sh passwd <username>"
+        error "Usage: tacctl.sh passwd <username> [--hash <bcrypt-hash>]"
         exit 1
     fi
     validate_username "$username"
@@ -598,13 +611,31 @@ cmd_passwd() {
         exit 1
     fi
 
+    # Check for --hash flag (pre-generated bcrypt hash)
+    local hash=""
+    if [[ "${2:-}" == "--hash" ]]; then
+        hash="${3:-}"
+        if [[ -z "$hash" ]]; then
+            error "Usage: tacctl user passwd <username> --hash <bcrypt-hash>"
+            exit 1
+        fi
+        if [[ ! "$hash" =~ ^\$2[aby]\$ ]]; then
+            error "Invalid bcrypt hash. Must start with \$2b\$, \$2a\$, or \$2y\$."
+            error "Generate one with: tacctl hash (or: tacctl hash help)"
+            exit 1
+        fi
+    fi
+
     echo ""
     echo -e "  Changing password for: ${BOLD}${username}${NC}"
-    local password
-    password=$(prompt_password)
 
-    local hash
-    hash=$(generate_hash "$password")
+    if [[ -z "$hash" ]]; then
+        local password
+        password=$(prompt_password)
+        hash=$(generate_hash "$password")
+    else
+        info "Using pre-generated bcrypt hash."
+    fi
 
     backup_config
 
@@ -2888,6 +2919,11 @@ cmd_install() {
         chmod 644 /etc/bash_completion.d/tacctl
         info "Bash completion installed: /etc/bash_completion.d/tacctl"
     fi
+    # Install man page
+    if [[ -f "${PROJECT_DIR}/man/tacctl.1" ]]; then
+        install_man_page "${PROJECT_DIR}/man/tacctl.1"
+        info "Man page installed: /usr/share/man/man1/tacctl.1.gz"
+    fi
 
     info "Management CLI installed:"
     info "  tacctl — user, config, and system management"
@@ -3209,6 +3245,8 @@ cmd_upgrade() {
     update_if_changed "${ACTIVE_DEPLOY_DIR}/config/tacquito.logrotate" "/etc/logrotate.d/tacquito" "logrotate config"
     update_if_changed "${ACTIVE_DEPLOY_DIR}/config/tacctl.bash-completion" "/etc/bash_completion.d/tacctl" "bash completion"
     chmod 644 /etc/bash_completion.d/tacctl 2>/dev/null || true
+    # Man page: unconditional re-gzip (cheap, <10 KB) also heals hosts where the file is missing.
+    install_man_page "${ACTIVE_DEPLOY_DIR}/man/tacctl.1"
     # Older installs left CONFIG_DIR at 0750, which blocks non-root reads of README.md; normalize to 0755 (sensitive files inside stay 0640).
     chmod 755 "$CONFIG_DIR" 2>/dev/null || true
 
@@ -3354,6 +3392,11 @@ cmd_uninstall() {
     info "Removing logrotate config..."
     rm -f /etc/logrotate.d/tacquito
 
+    # --- Remove man page ---
+    info "Removing man page..."
+    rm -f /usr/share/man/man1/tacctl.1.gz
+    mandb -q 2>/dev/null || true
+
     # --- Remove configuration ---
     local BACKUP_ARCHIVE="" LOG_ARCHIVE=""
     if [[ "$PRESERVE_BACKUPS" == "true" ]]; then
@@ -3481,6 +3524,7 @@ cmd_user() {
             echo "  add <username> <group> --hash <hash>  Add with pre-generated bcrypt hash"
             echo "  remove <username>                     Remove a user"
             echo "  passwd <username>                     Change a user's password"
+            echo "  passwd <username> --hash <hash>       Change with pre-generated bcrypt hash"
             echo "  disable <username>                    Disable a user (preserves hash)"
             echo "  enable <username>                     Re-enable a disabled user"
             echo "  rename <old> <new>                    Rename a user"
