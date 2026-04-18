@@ -1551,13 +1551,16 @@ for m in re.finditer(r'^(\w+): &\1\n  name: \1\n  services:\n(.*?)  accounter:',
     # `delete` first because Junos `set ... authentication-order` is
     # additive against an existing ordered list.
     # source-address pins the client source IP so prefix-based ACLs on
-    # tacquito have a stable match. <MGMT_IP> must be replaced with the
-    # device's management interface address (e.g. lo0 or fxp0).
+    # tacquito have a stable match. Emitted as a commented example —
+    # pasting <MGMT_IP> literally fails; the operator must substitute
+    # the device's management interface address (e.g. lo0 or fxp0).
     TACPLUS_CONFIG="delete system authentication-order
 set system authentication-order [ tacplus password ]
 set system tacplus-server ${server_ip} secret ${secret}
 set system tacplus-server ${server_ip} single-connection
-set system tacplus-server ${server_ip} source-address <MGMT_IP>
+# Optional: pin client source IP for prefix-ACL matching on tacquito.
+# Replace 10.0.0.1 with the device's management interface address, e.g.:
+#   set system tacplus-server ${server_ip} source-address 10.0.0.1
 set system accounting events [ login change-log interactive-commands ]
 set system accounting destination tacplus"
 
@@ -1607,7 +1610,8 @@ set system accounting destination tacplus"
     echo "  - The 'password' fallback in authentication-order ensures local access"
     echo "  - If a login fails silently, the template user is likely missing"
     echo "  - Adjust the Junos class (read-only/operator/super-user) as needed"
-    echo "  - Replace <MGMT_IP> with the device's management interface address"
+    echo "  - Uncomment and edit the source-address line to pin the client"
+    echo "    source IP for prefix-ACL matching on tacquito"
     echo "  - Junos replaces the plaintext 'secret' with '\$9\$...' on commit,"
     echo "    but it sits in the candidate config until then — commit promptly"
     echo "    and protect the commit archive (/config/rescue.conf, juniper.conf.*)."
