@@ -83,10 +83,13 @@ _tacctl() {
                         COMPREPLY=($(compgen -W "show install remove" -- "$cur"))
                         ;;
                     allow|deny)
-                        COMPREPLY=($(compgen -W "list add remove" -- "$cur"))
+                        COMPREPLY=($(compgen -W "list add remove clear" -- "$cur"))
                         ;;
                     prefixes)
                         COMPREPLY=($(compgen -W "list add remove clear" -- "$cur"))
+                        ;;
+                    secret)
+                        COMPREPLY=($(compgen -W "show set generate" -- "$cur"))
                         ;;
                     mgmt-acl)
                         COMPREPLY=($(compgen -W "list add remove clear cisco-name juniper-name" -- "$cur"))

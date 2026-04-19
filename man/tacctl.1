@@ -211,18 +211,22 @@ override (in
 .IR /etc/tacquito/cisco-privileges.conf )
 or the built-in default set (move-DOWN commands only).
 .TP
-.B "group privilege add " \fIgroup\fR " '\fIcommand\fR'"
-Move a Cisco command to the group's priv-lvl. Quote multi-word
-commands (e.g.
-.RB ' "show running-config" ' ).
-On first
+.B "group privilege add " \fIgroup\fR " '\fIcmd\fR'[,'\fIcmd\fR'...]"
+Move one or more Cisco commands to the group's priv-lvl. Quote
+multi-word commands (e.g.
+.RB ' "show running-config" ' );
+separate multiple commands with commas. On first
 .B add
 the group's defaults are inherited; subsequent adds extend that set.
+Every command is validated before anything is written — a bad command
+aborts the whole op.
 .TP
-.B "group privilege remove " \fIgroup\fR " '\fIcommand\fR'"
-Drop a previously-mapped command. If only defaults are in effect, the
-remove takes effect against the default set (suppressing it for that
-group).
+.B "group privilege remove " \fIgroup\fR " '\fIcmd\fR'[,'\fIcmd\fR'...]"
+Drop one or more previously-mapped commands. Accepts the same
+comma-separated list form as
+.BR add .
+If only defaults are in effect, the remove takes effect against the
+default set (suppressing those commands for that group).
 .TP
 .BI "group privilege clear " group
 Wipe explicit mappings for a group; the built-in default set takes
@@ -265,10 +269,21 @@ Validate config syntax and structure.
 Diff the current config against a backup. Defaults to the most recent
 backup.
 .TP
-.BI "config secret " [ value ]
-Change the TACACS+ shared secret. If no value is given, a random
-hex-only secret is generated. Hex-only secrets avoid shell-quoting
-issues on devices.
+.B "config secret " "{ show | set " \fIvalue\fR " | generate }"
+Manage the TACACS+ shared secret.
+.B show
+prints the current secret's length and posture (never the raw value).
+.B "set " \fIvalue\fR
+applies
+.I value
+after validation (minimum length from
+.BR "config secret-min-length" ,
+reject single-character-class inputs).
+.B generate
+auto-generates a strong secret with
+.B openssl rand -base64 24
+and applies it (validation bypass is safe — auto-gen always mixes
+classes). No subcommand prints usage.
 .TP
 .BI "config loglevel " [ debug | info | error ]
 Show or change the server log level. Written to a systemd drop-in so
@@ -320,35 +335,44 @@ custom shared secret via
 Default 16 (Cisco TACACS+ best practice). Auto-generated secrets
 bypass this check.
 .TP
-.B "config prefixes " "{ list | add | remove | clear } " [ cidr ]
+.B "config prefixes " "{ list | add | remove | clear } " [ cidr[,cidr...] ]
 Manage the secret-provider's client-prefix list. These are the CIDRs
 the shared secret is bound to — connections from outside any listed
-prefix can't authenticate. Adds and removes are dedup-aware and
-restart the service.
+prefix can't authenticate.
+.B add
+and
+.B remove
+accept a single CIDR or a comma-separated list; every CIDR is
+validated before anything is written (partial application is never
+left behind), and duplicates are dedup-aware.
 .B clear
-empties the list (and prompts for confirmation, since it makes the
-shared secret unreachable).
+empties the list (with confirmation) since that makes the shared
+secret unreachable.
+With no subcommand, prints usage, current entry count, and a warning
+about the empty-list state.
 .TP
-.BI "config prefixes " [ "cidr,cidr,..." ]
-(Legacy form.) With no arguments, prompts interactively for a
-comma-separated replacement list. With a comma-list, replaces the
-entire prefixes block in one atomic write. Equivalent to
-.B "config prefixes clear"
-followed by repeated
-.B "config prefixes add"
-calls.
-.TP
-.B "config allow " "{ list | add | remove } " [ cidr ]
+.B "config allow " "{ list | add | remove | clear } " [ cidr[,cidr...] ]
 Manage the connection allow list (IP ACL).
+.B add
+and
+.B remove
+accept a single CIDR or a comma-separated list.
+.B clear
+wipes the entire list (with confirmation) — the result fails open so
+any source IP becomes eligible to connect, subject to the deny list
+and the secret-provider prefixes.
 .TP
-.B "config deny " "{ list | add | remove } " [ cidr ]
-Manage the connection deny list.
+.B "config deny " "{ list | add | remove | clear } " [ cidr[,cidr...] ]
+Manage the connection deny list. Same comma-list and
+.B clear
+semantics as
+.BR "config allow" .
 .B deny
 takes precedence over
 .BR allow ;
 with both empty, all connections are accepted.
 .TP
-.B "config mgmt-acl " "{ list | add | remove | clear } " [ cidr ]
+.B "config mgmt-acl " "{ list | add | remove | clear | cisco-name | juniper-name } " [ arg ]
 Manage a shared CIDR permit list stored at
 .I /etc/tacquito/mgmt-acl.conf
 that drives both the Cisco VTY-ACL and a commented Juniper lo0
@@ -358,7 +382,23 @@ and
 .BR "config juniper" .
 Preserved across
 .BR "tacctl upgrade" .
-With no arguments, prints usage and the current entry count.
+.B list
+/
+.B add
+/
+.B remove
+/
+.B clear
+manage the permit list;
+.B add
+and
+.B remove
+accept a single CIDR or a comma-separated list.
+.B cisco-name
+and
+.B juniper-name
+configure the emitted ACL/filter names (see below). With no arguments,
+prints usage, the current entry count, and both ACL names.
 .TP
 .BI "config mgmt-acl cisco-name " [ name ]
 Show or set the name of the IOS access-list emitted by
@@ -460,6 +500,70 @@ and hex-encoded forms;
 /
 .B "user passwd --hash"
 accept either and normalize to hex on write.
+.SH CONVENTIONS
+The following patterns apply uniformly across subcommand families.
+.TP
+.B No arguments
+Dispatcher commands
+.RB ( user ,
+.BR group ,
+.BR config ,
+.BR log ,
+.BR backup ,
+.BR hash ,
+and every nested dispatcher such as
+.B config prefixes
+or
+.BR "group privilege" )
+print their own usage and return without side effects.
+Scalar getter/setters
+.RB ( "config loglevel" ,
+.BR "config listen" ,
+.BR "config password-age" ,
+.BR "config bcrypt-cost" ,
+.BR "config password-min-length" ,
+.BR "config secret-min-length" ,
+.BR "config branch" )
+print the current value when called with no arguments.
+.TP
+.B Multi-item input
+Every
+.B add
+/
+.B remove
+subcommand that takes a CIDR or a Cisco exec command accepts either a
+single value or a comma-separated list
+.RI ( "cidr1,cidr2,..." ).
+Every input is validated first; a bad entry aborts the entire
+operation without writing anything.
+.TP
+.B "clear"
+.B clear
+subcommands always prompt with
+.B [y/N]
+and print a warning about the resulting posture (for example, "no
+clients can connect" or "fails open").
+.TP
+.B Service restart
+Changes that mutate
+.I /etc/tacquito/tacquito.yaml
+(read by tacquito) restart the tacquito service automatically.
+Changes to tacctl-internal files
+.RI ( "/etc/tacquito/mgmt-acl.conf" ,
+.IR /etc/tacquito/cisco-privileges.conf ,
+.IR /etc/tacquito/mgmt-acl-names.conf ,
+.IR /etc/tacquito/password-min-length ,
+etc.) do not — tacquito itself never reads them.
+.TP
+.B Flags
+Long-form flags
+.RI ( --hash ,
+.IR --match ,
+.IR --action ,
+.IR --force ,
+.IR --branch )
+take a single argument. Required positional arguments come before
+flags.
 .SH FILES
 .TP
 .I /etc/tacquito/tacquito.yaml

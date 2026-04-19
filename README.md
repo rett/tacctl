@@ -194,6 +194,16 @@ tacctl user passwd jsmith --hash '$2b$12$...'
 
 > For a single-page reference, run `man tacctl` after install.
 
+### Command Conventions
+
+These patterns apply uniformly across every subcommand family:
+
+- **No arguments** — dispatcher commands (`user`, `group`, `config`, `log`, `backup`, `hash`, and nested dispatchers like `config prefixes` / `group privilege`) print their own usage and exit without side effects. Scalar getter/setters (`config loglevel`, `config listen`, `config password-age`, `config bcrypt-cost`, `config password-min-length`, `config secret-min-length`, `config branch`) print the current value when called with no arguments.
+- **Multi-item input** — every `add` / `remove` that takes a CIDR or a Cisco exec command accepts either a single value or a comma-separated list (`cidr1,cidr2,...`). Every input is validated first; a bad entry aborts the entire operation without writing anything.
+- **`clear`** — `clear` subcommands always prompt with `[y/N]` and print a warning describing the resulting posture (e.g. "no clients can connect" or "fails open").
+- **Service restart** — changes that mutate `/etc/tacquito/tacquito.yaml` restart the tacquito service automatically. Changes to tacctl-internal files (`mgmt-acl.conf`, `cisco-privileges.conf`, `mgmt-acl-names.conf`, `password-min-length`, etc.) do not — tacquito never reads them.
+- **Flags** — long-form flags (`--hash`, `--match`, `--action`, `--force`, `--branch`) take a single argument. Required positional args come before flags.
+
 ### Top-Level Commands
 
 ```
@@ -247,8 +257,8 @@ group commands remove <group> <name>                      Drop a rule
 group commands clear <group>                              Wipe rules for a group
 group commands seed [<group>] [--force]                   Populate built-ins with sensible defaults
 group privilege list <group>                              Show Cisco priv-exec mappings
-group privilege add <group> '<command>'                   Move a command to the group's priv-lvl
-group privilege remove <group> '<command>'                Remove a mapping
+group privilege add <group> '<cmd>'[,'<cmd>'...]          Move one or more commands to the group's priv-lvl
+group privilege remove <group> '<cmd>'[,'<cmd>'...]       Remove one or more mappings
 group privilege clear <group>                             Wipe explicit mappings (revert to defaults)
 group privilege seed [<group>] [--force]                  Populate built-ins with safe priv-exec defaults
 ```
@@ -269,7 +279,7 @@ config cisco                                Generate working Cisco device config
 config juniper                              Generate working Juniper device config
 config validate                             Validate config syntax and structure
 config diff [timestamp]                     Diff current config vs a backup
-config secret [value]                       Change shared secret
+config secret show|set <value>|generate     Manage TACACS+ shared secret
 config loglevel [debug|info|error]          Show or change log level
 config listen [show|tcp|tcp6|reset] [addr]  Show, change, or reset TCP listen address
 config sudoers [show|install|remove] [grp]  Manage NOPASSWD sudoers drop-in for tacctl
@@ -277,11 +287,12 @@ config password-age [days]                  Show or set password age warning thr
 config bcrypt-cost [10-14]                  Show or set bcrypt cost factor for new hashes (default 12)
 config password-min-length [8-64]           Show or set minimum interactive password length (default 12)
 config secret-min-length [16-128]           Show or set minimum shared-secret length (default 16)
-config prefixes list|add|remove|clear       Manage secret-provider client prefixes
-config prefixes [cidr,...]                  (legacy) replace the entire prefixes block
-config allow list|add|remove                Manage connection allow list (IP ACL)
-config deny list|add|remove                 Manage connection deny list (IP ACL)
-config mgmt-acl list|add|remove|clear       Manage Cisco VTY-ACL + Juniper lo0-filter permits
+config prefixes list|add|remove|clear       Manage secret-provider client prefixes (add/remove accept comma-lists)
+config allow list|add|remove|clear          Manage connection allow list (IP ACL; add/remove accept comma-lists)
+config deny list|add|remove|clear           Manage connection deny list (IP ACL; add/remove accept comma-lists)
+config mgmt-acl list|add|remove|clear       Manage Cisco VTY-ACL + Juniper lo0-filter permits (add/remove accept comma-lists)
+config mgmt-acl cisco-name [name]           Show or set the emitted Cisco ACL name (default VTY-ACL)
+config mgmt-acl juniper-name [name]         Show or set the emitted Juniper filter name (default MGMT-SSH-ACL)
 config branch [name]                        Show or change the tacctl repo branch
 ```
 

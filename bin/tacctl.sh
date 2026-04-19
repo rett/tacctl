@@ -14,7 +14,7 @@
 #   ./tacctl.sh enable <username>
 #   ./tacctl.sh verify <username>
 #   ./tacctl.sh config show
-#   ./tacctl.sh config secret [new-secret]
+#   ./tacctl.sh config secret show|set <value>|generate
 #   ./tacctl.sh config prefixes [cidr,cidr,...]
 #
 set -euo pipefail
@@ -1735,45 +1735,40 @@ else:
 }
 
 # --- CONFIG SECRET ---
-cmd_config_secret() {
-    local new_secret="${1:-}"
-    local auto_generated="false"
+# --- Read the current shared secret from the YAML (may be empty) ---
+read_current_secret() {
+    python3 -c "
+import re, sys
+m = re.search(r'^\s+key:\s+\"([^\"]*)\"', open(sys.argv[1]).read(), re.MULTILINE)
+print(m.group(1) if m else '')
+" "$CONFIG" 2>/dev/null || true
+}
 
-    if [[ -z "$new_secret" ]]; then
-        read -rp "  Enter new shared secret (leave blank to auto-generate): " new_secret
-        if [[ -z "$new_secret" ]]; then
-            new_secret=$(openssl rand -base64 24)
-            auto_generated="true"
-            echo -e "  Generated: ${BOLD}${new_secret}${NC}"
-        fi
-    fi
+# --- Validate + apply a new shared secret ---
+# auto_generated=true skips the entropy check (auto-gen always mixes
+# character classes via openssl rand -base64).
+apply_new_secret() {
+    local new_secret="$1"
+    local auto_generated="${2:-false}"
 
-    # Length floor per Cisco TACACS+ guidance (≥16 chars). Auto-generated
-    # secrets always exceed this, so the check only bites on user input.
     if [[ "${#new_secret}" -lt "$SECRET_MIN_LENGTH" ]]; then
         error "Shared secret is ${#new_secret} characters; minimum is ${SECRET_MIN_LENGTH}."
-        error "(Cisco/RFC 8907 guidance. Leave blank to auto-generate a strong secret.)"
+        error "(Cisco/RFC 8907 guidance. Use 'tacctl config secret generate' for a strong one.)"
         exit 1
     fi
-
-    # Cheap entropy sanity check: reject single-class (all-lower / all-digit)
-    # inputs. Auto-generated secrets from `openssl rand -base64` always mix
-    # classes, so this only fires on trivially weak user input.
     if [[ "$auto_generated" != "true" ]]; then
         if [[ "$new_secret" =~ ^[a-z]+$ ]] || \
            [[ "$new_secret" =~ ^[A-Z]+$ ]] || \
            [[ "$new_secret" =~ ^[0-9]+$ ]]; then
             error "Shared secret is single-character-class (low entropy). Reject."
-            error "Mix letters, digits, and punctuation, or leave blank to auto-generate."
+            error "Mix letters, digits, and punctuation, or use 'tacctl config secret generate'."
             exit 1
         fi
     fi
 
     backup_config
-
     replace_secret "$new_secret"
     chown tacquito:tacquito "$CONFIG"
-
     restart_service
     info "Shared secret updated."
     warn "Update ALL network devices with the new secret: ${new_secret}"
@@ -1781,6 +1776,78 @@ cmd_config_secret() {
     warn "second 'tacacs-server host' entry, (2) apply here, (3) remove the"
     warn "old entry on devices. Otherwise in-flight auth will fail."
     echo ""
+}
+
+cmd_config_secret() {
+    local subcmd="${1:-}"
+
+    case "$subcmd" in
+        ""|-h|--help|help)
+            local cur_secret cur_len=0
+            cur_secret=$(read_current_secret)
+            cur_len=${#cur_secret}
+            echo ""
+            echo -e "${BOLD}tacctl config secret${NC} — TACACS+ shared-secret key"
+            echo ""
+            echo "Usage:"
+            echo "  tacctl config secret show                  Show current secret's length + metadata"
+            echo "  tacctl config secret set <value>           Set to <value> (validated)"
+            echo "  tacctl config secret generate              Auto-generate a strong secret + apply"
+            echo ""
+            echo "Current secret: ${cur_len} characters (min ${SECRET_MIN_LENGTH}, Cisco/RFC 8907 guidance)"
+            echo "Validation on 'set': ≥${SECRET_MIN_LENGTH} chars, mixed character classes."
+            echo ""
+            echo "Rotation: stage the new secret on each device first (second"
+            echo "'tacacs-server host' entry), apply here, then drop the old entry."
+            echo "Otherwise in-flight auth will fail between steps."
+            echo ""
+            return
+            ;;
+        show)
+            local cur_secret cur_len=0
+            cur_secret=$(read_current_secret)
+            cur_len=${#cur_secret}
+            echo ""
+            echo -e "${BOLD}Shared secret${NC}"
+            echo "--------------------------------------------"
+            if [[ -z "$cur_secret" ]]; then
+                echo "  (unset — the shared secret is not configured)"
+            elif [[ "$cur_secret" == *REPLACE* ]]; then
+                echo -e "  Length:  ${#cur_secret} chars  ${RED}(PLACEHOLDER — run 'tacctl config secret generate')${NC}"
+            else
+                local posture="$GREEN" label="OK"
+                if [[ "$cur_len" -lt "$SECRET_MIN_LENGTH" ]]; then
+                    posture="$RED"
+                    label="below min ${SECRET_MIN_LENGTH}"
+                fi
+                echo -e "  Length:  ${posture}${cur_len} chars${NC}  (${label})"
+                echo "  Floor:   ${SECRET_MIN_LENGTH} chars (tacctl config secret-min-length)"
+            fi
+            echo ""
+            echo "  (Raw value not printed. Read /etc/tacquito/tacquito.yaml directly if needed.)"
+            echo ""
+            return
+            ;;
+        set)
+            local val="${2:-}"
+            if [[ -z "$val" ]]; then
+                error "Usage: tacctl config secret set <value>"
+                exit 1
+            fi
+            apply_new_secret "$val" "false"
+            ;;
+        generate)
+            local new_secret
+            new_secret=$(openssl rand -base64 24)
+            echo -e "  Generated: ${BOLD}${new_secret}${NC}"
+            apply_new_secret "$new_secret" "true"
+            ;;
+        *)
+            error "Unknown subcommand: '${subcmd}'"
+            error "Run 'tacctl config secret' with no arguments for usage."
+            exit 1
+            ;;
+    esac
 }
 
 # --- Read the secret-provider prefixes (one CIDR per stdout line) ---
@@ -1822,10 +1889,30 @@ os.rename(tmp.name, sys.argv[1])
 # Dispatcher: detects a known subcommand (list/add/remove/clear) and
 # routes to the per-op flow. Anything else falls through to the legacy
 # behavior (no-arg interactive prompt; CIDR list = atomic replace).
-cmd_config_prefixes() {
-    local arg1="${1:-}"
+# --- Parse a comma-separated CIDR list into newline-separated output ---
+# Validates every entry (aborts on invalid). Trims whitespace. Dedupes
+# within the input itself. Empty input → empty output.
+parse_cidr_list() {
+    local input="$1"
+    local seen=""
+    local cidr
+    IFS=',' read -ra CIDRS <<< "$input"
+    for cidr in "${CIDRS[@]}"; do
+        cidr=$(echo "$cidr" | xargs)
+        [[ -z "$cidr" ]] && continue
+        validate_cidr "$cidr"
+        # within-input dedupe
+        if ! printf '%s\n' "$seen" | grep -qxF "$cidr"; then
+            seen+="${seen:+$'\n'}${cidr}"
+        fi
+    done
+    echo "$seen"
+}
 
-    case "$arg1" in
+cmd_config_prefixes() {
+    local subcmd="${1:-}"
+
+    case "$subcmd" in
         ""|-h|--help|help)
             local entries n=0
             entries=$(read_secret_prefixes)
@@ -1834,11 +1921,15 @@ cmd_config_prefixes() {
             echo -e "${BOLD}tacctl config prefixes${NC} — secret-provider client prefix list"
             echo ""
             echo "Usage:"
-            echo "  tacctl config prefixes list                    Show current entries"
-            echo "  tacctl config prefixes add <cidr>              Add a CIDR"
-            echo "  tacctl config prefixes remove <cidr>           Remove a CIDR"
-            echo "  tacctl config prefixes clear                   Wipe all (confirms)"
-            echo "  tacctl config prefixes <cidr>[,<cidr>...]      Atomic replace (legacy form)"
+            echo "  tacctl config prefixes list                          Show current entries"
+            echo "  tacctl config prefixes add    <cidr>[,<cidr>...]     Add one or more CIDRs"
+            echo "  tacctl config prefixes remove <cidr>[,<cidr>...]     Remove one or more CIDRs"
+            echo "  tacctl config prefixes clear                         Wipe all (confirms)"
+            echo ""
+            echo "Examples:"
+            echo "  tacctl config prefixes add 10.1.0.0/16"
+            echo "  tacctl config prefixes add 10.1.0.0/16,10.2.0.0/16,192.168.5.0/24"
+            echo "  tacctl config prefixes remove 10.1.0.0/16,10.2.0.0/16"
             echo ""
             echo "Current entries: ${n}"
             echo "Note: empty prefixes = NO clients can authenticate against this secret."
@@ -1862,56 +1953,84 @@ cmd_config_prefixes() {
             return
             ;;
         add)
-            local new_cidr="${2:-}"
-            if [[ -z "$new_cidr" ]]; then
-                error "Usage: tacctl config prefixes add <cidr>"
+            local input="${2:-}"
+            if [[ -z "$input" ]]; then
+                error "Usage: tacctl config prefixes add <cidr>[,<cidr>...]"
                 exit 1
             fi
-            validate_cidr "$new_cidr"
-            local current
+            # Validate + dedupe input; aborts the whole op if any CIDR is bad.
+            local requested
+            requested=$(parse_cidr_list "$input")
+            [[ -z "$requested" ]] && { error "No valid CIDRs provided."; exit 1; }
+
+            local current added skipped=""
             current=$(read_secret_prefixes)
-            if printf '%s\n' "$current" | grep -qxF "$new_cidr"; then
-                info "'${new_cidr}' already in prefixes; no change."
+            added=""
+            while IFS= read -r cidr; do
+                [[ -z "$cidr" ]] && continue
+                if printf '%s\n' "$current" | grep -qxF "$cidr"; then
+                    skipped+="${skipped:+ }${cidr}"
+                else
+                    added+="${added:+$'\n'}${cidr}"
+                    current=$(printf '%s\n%s\n' "$current" "$cidr")
+                fi
+            done <<< "$requested"
+
+            if [[ -z "$added" ]]; then
+                info "No new CIDRs to add (already present: ${skipped})."
                 echo ""
                 return
             fi
-            local merged
-            if [[ -n "$current" ]]; then
-                merged=$(printf '%s\n%s\n' "$current" "$new_cidr" | paste -sd,)
-            else
-                merged="$new_cidr"
-            fi
+
             backup_config
-            set_secret_prefixes "$merged"
+            set_secret_prefixes "$(printf '%s\n' "$current" | awk 'NF' | paste -sd,)"
             chown tacquito:tacquito "$CONFIG"
             restart_service
-            info "Added '${new_cidr}' to secret prefixes."
+            local added_count
+            added_count=$(printf '%s\n' "$added" | wc -l)
+            info "Added ${added_count} prefix(es): $(printf '%s\n' "$added" | paste -sd' ')"
+            [[ -n "$skipped" ]] && info "(Already present, unchanged: ${skipped})"
             echo ""
             return
             ;;
         remove)
-            local drop_cidr="${2:-}"
-            if [[ -z "$drop_cidr" ]]; then
-                error "Usage: tacctl config prefixes remove <cidr>"
+            local input="${2:-}"
+            if [[ -z "$input" ]]; then
+                error "Usage: tacctl config prefixes remove <cidr>[,<cidr>...]"
                 exit 1
             fi
-            validate_cidr "$drop_cidr"
-            local current
+            local requested
+            requested=$(parse_cidr_list "$input")
+            [[ -z "$requested" ]] && { error "No valid CIDRs provided."; exit 1; }
+
+            local current removed="" missing=""
             current=$(read_secret_prefixes)
-            if ! printf '%s\n' "$current" | grep -qxF "$drop_cidr"; then
-                warn "'${drop_cidr}' not in prefixes; nothing to remove."
+            while IFS= read -r cidr; do
+                [[ -z "$cidr" ]] && continue
+                if printf '%s\n' "$current" | grep -qxF "$cidr"; then
+                    removed+="${removed:+$'\n'}${cidr}"
+                    current=$(printf '%s\n' "$current" | grep -vxF "$cidr" || true)
+                else
+                    missing+="${missing:+ }${cidr}"
+                fi
+            done <<< "$requested"
+
+            if [[ -z "$removed" ]]; then
+                warn "Nothing to remove (not present: ${missing})."
                 exit 0
             fi
-            local merged
-            merged=$(printf '%s\n' "$current" | grep -vxF "$drop_cidr" | paste -sd,)
+
             backup_config
+            local merged
+            merged=$(printf '%s\n' "$current" | awk 'NF' | paste -sd,)
             set_secret_prefixes "$merged"
             chown tacquito:tacquito "$CONFIG"
             restart_service
-            if [[ -z "$merged" ]]; then
-                warn "Last prefix removed — NO clients can connect until you add one."
-            fi
-            info "Removed '${drop_cidr}' from secret prefixes."
+            local removed_count
+            removed_count=$(printf '%s\n' "$removed" | wc -l)
+            info "Removed ${removed_count} prefix(es): $(printf '%s\n' "$removed" | paste -sd' ')"
+            [[ -n "$missing" ]] && info "(Not present, skipped: ${missing})"
+            [[ -z "$merged" ]] && warn "Last prefix removed — NO clients can connect until you add one."
             echo ""
             return
             ;;
@@ -1937,26 +2056,12 @@ cmd_config_prefixes() {
             echo ""
             return
             ;;
+        *)
+            error "Unknown subcommand: '${subcmd}'"
+            error "Run 'tacctl config prefixes' with no arguments for usage."
+            exit 1
+            ;;
     esac
-
-    # ----- Legacy batch-replace path -----
-    # Reached when $1 is a CIDR or comma-list (e.g. `tacctl config
-    # prefixes 10.0.0.0/8,10.99.0.0/16`). Empty/help is handled above.
-    local new_prefixes="$arg1"
-
-    # Validate every CIDR before touching the config.
-    local cidr
-    IFS=',' read -ra CIDRS <<< "$new_prefixes"
-    for cidr in "${CIDRS[@]}"; do
-        cidr=$(echo "$cidr" | xargs)
-        [[ -z "$cidr" ]] && continue
-        validate_cidr "$cidr"
-    done
-
-    backup_config
-    set_secret_prefixes "$new_prefixes"
-    chown tacquito:tacquito "$CONFIG"
-    restart_service
 
     info "Allowed prefixes updated."
     echo "  New prefixes:"
@@ -2457,9 +2562,10 @@ else:
             echo -e "${BOLD}tacctl config ${label}${NC} — connection IP ACL (${label} list)"
             echo ""
             echo "Usage:"
-            echo "  tacctl config ${label} list                    Show current ${label} list"
-            echo "  tacctl config ${label} add <cidr>              Add a CIDR"
-            echo "  tacctl config ${label} remove <cidr>           Remove a CIDR"
+            echo "  tacctl config ${label} list                          Show current ${label} list"
+            echo "  tacctl config ${label} add    <cidr>[,<cidr>...]     Add one or more CIDRs"
+            echo "  tacctl config ${label} remove <cidr>[,<cidr>...]     Remove one or more CIDRs"
+            echo "  tacctl config ${label} clear                         Wipe all (confirms)"
             echo ""
             echo "Current entries: ${entries}"
             echo "Note: 'deny' takes precedence over 'allow'. Both empty = all connections accepted."
@@ -2498,82 +2604,148 @@ else:
             ;;
         add)
             if [[ -z "$cidr" ]]; then
-                error "Usage: tacctl config ${label} add <cidr>"
+                error "Usage: tacctl config ${label} add <cidr>[,<cidr>...]"
                 exit 1
             fi
-            validate_cidr "$cidr"
+            local requested added="" skipped=""
+            requested=$(parse_cidr_list "$cidr")
+            [[ -z "$requested" ]] && { error "No valid CIDRs provided."; exit 1; }
+            local current
+            current=$(read_prefix_list "$key")
+            while IFS= read -r c; do
+                [[ -z "$c" ]] && continue
+                if printf '%s\n' "$current" | grep -qxF "$c"; then
+                    skipped+="${skipped:+ }${c}"
+                else
+                    added+="${added:+$'\n'}${c}"
+                    current=$(printf '%s\n%s\n' "$current" "$c")
+                fi
+            done <<< "$requested"
+            if [[ -z "$added" ]]; then
+                info "No new CIDRs to add to ${label} list (already present: ${skipped})."
+                echo ""
+                return
+            fi
             backup_config
-            python3 -c "
-import re, sys
-config = open(sys.argv[1]).read()
-key = sys.argv[2]
-cidr = sys.argv[3]
-
-m = re.search(r'^' + key + r':\s*\[(.*?)\]', config, re.MULTILINE)
-if m:
-    existing = m.group(1).strip()
-    if existing:
-        new_val = existing.rstrip() + ', \"' + cidr + '\"'
-    else:
-        new_val = '\"' + cidr + '\"'
-    config = config.replace(m.group(0), key + ': [' + new_val + ']')
-else:
-    # Key doesn't exist yet — add it at the end of the file
-    config = config.rstrip() + '\n\n' + key + ': [\"' + cidr + '\"]\n'
-
-import tempfile, os
-tmp = tempfile.NamedTemporaryFile('w', dir=os.path.dirname(sys.argv[1]), delete=False)
-tmp.write(config)
-tmp.close()
-os.rename(tmp.name, sys.argv[1])
-" "$CONFIG" "$key" "$cidr"
+            write_prefix_list "$key" "$(printf '%s\n' "$current" | awk 'NF' | paste -sd,)"
             chown tacquito:tacquito "$CONFIG"
             restart_service
-            info "Added '${cidr}' to ${label} list."
+            local n
+            n=$(printf '%s\n' "$added" | wc -l)
+            info "Added ${n} to ${label} list: $(printf '%s\n' "$added" | paste -sd' ')"
+            [[ -n "$skipped" ]] && info "(Already present, unchanged: ${skipped})"
             echo ""
             ;;
         remove)
             if [[ -z "$cidr" ]]; then
-                error "Usage: tacctl config ${label} remove <cidr>"
+                error "Usage: tacctl config ${label} remove <cidr>[,<cidr>...]"
                 exit 1
             fi
-            validate_cidr "$cidr"
+            local requested removed="" missing=""
+            requested=$(parse_cidr_list "$cidr")
+            [[ -z "$requested" ]] && { error "No valid CIDRs provided."; exit 1; }
+            local current
+            current=$(read_prefix_list "$key")
+            while IFS= read -r c; do
+                [[ -z "$c" ]] && continue
+                if printf '%s\n' "$current" | grep -qxF "$c"; then
+                    removed+="${removed:+$'\n'}${c}"
+                    current=$(printf '%s\n' "$current" | grep -vxF "$c" || true)
+                else
+                    missing+="${missing:+ }${c}"
+                fi
+            done <<< "$requested"
+            if [[ -z "$removed" ]]; then
+                warn "Nothing to remove from ${label} list (not present: ${missing})."
+                exit 0
+            fi
             backup_config
-            python3 -c "
-import re, sys
-config = open(sys.argv[1]).read()
-key = sys.argv[2]
-cidr = sys.argv[3]
-
-m = re.search(r'^' + key + r':\s*\[(.*?)\]', config, re.MULTILINE)
-if m:
-    entries = re.findall(r'\"([^\"]+)\"', m.group(1))
-    entries = [e for e in entries if e != cidr]
-    if entries:
-        new_val = ', '.join('\"' + e + '\"' for e in entries)
-        config = config.replace(m.group(0), key + ': [' + new_val + ']')
-    else:
-        # Remove the entire line if empty
-        config = config.replace(m.group(0) + '\n', '')
-
-import tempfile, os
-tmp = tempfile.NamedTemporaryFile('w', dir=os.path.dirname(sys.argv[1]), delete=False)
-tmp.write(config)
-tmp.close()
-os.rename(tmp.name, sys.argv[1])
-" "$CONFIG" "$key" "$cidr"
+            write_prefix_list "$key" "$(printf '%s\n' "$current" | awk 'NF' | paste -sd,)"
             chown tacquito:tacquito "$CONFIG"
             restart_service
-            info "Removed '${cidr}' from ${label} list."
+            local n
+            n=$(printf '%s\n' "$removed" | wc -l)
+            info "Removed ${n} from ${label} list: $(printf '%s\n' "$removed" | paste -sd' ')"
+            [[ -n "$missing" ]] && info "(Not present, skipped: ${missing})"
+            echo ""
+            ;;
+        clear)
+            local current n
+            current=$(read_prefix_list "$key")
+            if [[ -z "$current" ]]; then
+                info "${label} list is already empty."
+                return
+            fi
+            n=$(printf '%s\n' "$current" | wc -l)
+            # Clearing either list removes a restriction — be explicit
+            # about what the resulting posture is.
+            if [[ "$label" == "allow" ]]; then
+                warn "Clearing the allow list fails open: all source IPs become eligible"
+                warn "to connect (subject to 'deny' and the secret-provider prefixes)."
+            else
+                warn "Clearing the deny list removes all per-IP deny overrides;"
+                warn "any source matching 'allow' (or all, if allow is empty) can connect."
+            fi
+            read -rp "  Clear all ${n} ${label}-list entr$( [[ $n -eq 1 ]] && echo "y" || echo "ies" )? [y/N]: " confirm
+            if [[ ! "$confirm" =~ ^[Yy] ]]; then
+                info "Aborted."
+                return
+            fi
+            backup_config
+            write_prefix_list "$key" ""
+            chown tacquito:tacquito "$CONFIG"
+            restart_service
+            info "Cleared ${label} list (${n} entr$( [[ $n -eq 1 ]] && echo "y" || echo "ies" ) removed)."
             echo ""
             ;;
         *)
             echo ""
-            echo "Usage: tacctl config ${label} <list|add|remove> [cidr]"
+            echo "Usage: tacctl config ${label} <list|add|remove|clear> [cidr[,cidr...]]"
             echo ""
             exit 1
             ;;
     esac
+}
+
+# --- Read a prefix_allow / prefix_deny inline list (one CIDR per line) ---
+read_prefix_list() {
+    local key="$1"
+    python3 -c "
+import re, sys
+config = open(sys.argv[1]).read()
+m = re.search(r'^' + sys.argv[2] + r':\s*\[(.*?)\]', config, re.MULTILINE)
+if m and m.group(1).strip():
+    for c in re.findall(r'\"([^\"]+)\"', m.group(1)):
+        print(c)
+" "$CONFIG" "$key"
+}
+
+# --- Write/replace a prefix_allow / prefix_deny inline list ---
+# csv may be empty — in that case the key line is removed entirely.
+write_prefix_list() {
+    local key="$1"
+    local csv="$2"
+    python3 -c "
+import re, sys, tempfile, os
+config = open(sys.argv[1]).read()
+key = sys.argv[2]
+entries = [c.strip() for c in sys.argv[3].split(',') if c.strip()]
+m = re.search(r'^' + key + r':\s*\[(.*?)\]', config, re.MULTILINE)
+if entries:
+    new_val = ', '.join('\"' + e + '\"' for e in entries)
+    new_line = key + ': [' + new_val + ']'
+    if m:
+        config = config.replace(m.group(0), new_line)
+    else:
+        config = config.rstrip() + '\n\n' + new_line + '\n'
+else:
+    if m:
+        config = config.replace(m.group(0) + '\n', '')
+tmp = tempfile.NamedTemporaryFile('w', dir=os.path.dirname(sys.argv[1]), delete=False)
+tmp.write(config)
+tmp.close()
+os.rename(tmp.name, sys.argv[1])
+" "$CONFIG" "$key" "$csv"
 }
 
 # --- CONFIG MGMT-ACL (permit list for Cisco VTY-ACL + Juniper lo0 filter) ---
@@ -2598,12 +2770,12 @@ cmd_config_mgmt_acl() {
             echo -e "${BOLD}tacctl config mgmt-acl${NC} — shared Cisco VTY-ACL + Juniper lo0-filter permits"
             echo ""
             echo "Usage:"
-            echo "  tacctl config mgmt-acl list                Show current permits"
-            echo "  tacctl config mgmt-acl add <cidr>          Append a CIDR (dedup, validated)"
-            echo "  tacctl config mgmt-acl remove <cidr>       Drop a CIDR"
-            echo "  tacctl config mgmt-acl clear               Wipe all permits (confirms)"
-            echo "  tacctl config mgmt-acl cisco-name [name]   Show or set the Cisco ACL name (default ${CISCO_ACL_NAME_DEFAULT})"
-            echo "  tacctl config mgmt-acl juniper-name [name] Show or set the Juniper filter name (default ${JUNIPER_ACL_NAME_DEFAULT})"
+            echo "  tacctl config mgmt-acl list                          Show current permits"
+            echo "  tacctl config mgmt-acl add    <cidr>[,<cidr>...]     Add one or more CIDRs"
+            echo "  tacctl config mgmt-acl remove <cidr>[,<cidr>...]     Remove one or more CIDRs"
+            echo "  tacctl config mgmt-acl clear                         Wipe all permits (confirms)"
+            echo "  tacctl config mgmt-acl cisco-name [name]             Show or set the Cisco ACL name (default ${CISCO_ACL_NAME_DEFAULT})"
+            echo "  tacctl config mgmt-acl juniper-name [name]           Show or set the Juniper filter name (default ${JUNIPER_ACL_NAME_DEFAULT})"
             echo ""
             echo "Storage: ${MGMT_ACL_FILE} (survives 'tacctl upgrade')."
             echo "Names:   ${MGMT_ACL_NAMES_FILE}"
@@ -2632,13 +2804,22 @@ cmd_config_mgmt_acl() {
             ;;
         add)
             if [[ -z "$cidr" ]]; then
-                error "Usage: tacctl config mgmt-acl add <cidr>"
+                error "Usage: tacctl config mgmt-acl add <cidr>[,<cidr>...]"
                 exit 1
             fi
-            validate_cidr "$cidr"
-            # Dedup: silently no-op if the exact CIDR is already present.
-            if read_mgmt_acl_cidrs | grep -qxF "$cidr"; then
-                info "'${cidr}' already in mgmt-acl; no change."
+            local requested added="" skipped=""
+            requested=$(parse_cidr_list "$cidr")
+            [[ -z "$requested" ]] && { error "No valid CIDRs provided."; exit 1; }
+            while IFS= read -r c; do
+                [[ -z "$c" ]] && continue
+                if [[ -f "$MGMT_ACL_FILE" ]] && read_mgmt_acl_cidrs | grep -qxF "$c"; then
+                    skipped+="${skipped:+ }${c}"
+                else
+                    added+="${added:+$'\n'}${c}"
+                fi
+            done <<< "$requested"
+            if [[ -z "$added" ]]; then
+                info "No new CIDRs to add (already present: ${skipped})."
                 echo ""
                 return
             fi
@@ -2650,44 +2831,68 @@ cmd_config_mgmt_acl() {
                     echo "# tacctl-managed mgmt ACL permit list."
                     echo "# One CIDR per line. '#' comments allowed."
                     echo "# Edit via: tacctl config mgmt-acl <add|remove|list|clear>"
-                    echo "$cidr"
+                    printf '%s\n' "$added"
                 } > "$MGMT_ACL_FILE"
             else
-                echo "$cidr" >> "$MGMT_ACL_FILE"
+                printf '%s\n' "$added" >> "$MGMT_ACL_FILE"
             fi
             chmod 644 "$MGMT_ACL_FILE"
-            info "Added '${cidr}' to mgmt-acl."
+            local n
+            n=$(printf '%s\n' "$added" | wc -l)
+            info "Added ${n} to mgmt-acl: $(printf '%s\n' "$added" | paste -sd' ')"
+            [[ -n "$skipped" ]] && info "(Already present, unchanged: ${skipped})"
             info "Re-run 'tacctl config cisco' / 'tacctl config juniper' to see the new output."
             echo ""
             ;;
         remove)
             if [[ -z "$cidr" ]]; then
-                error "Usage: tacctl config mgmt-acl remove <cidr>"
+                error "Usage: tacctl config mgmt-acl remove <cidr>[,<cidr>...]"
                 exit 1
             fi
-            validate_cidr "$cidr"
-            if [[ ! -f "$MGMT_ACL_FILE" ]] || ! read_mgmt_acl_cidrs | grep -qxF "$cidr"; then
-                warn "'${cidr}' not in mgmt-acl; nothing to remove."
-                echo ""
-                return
+            local requested removed="" missing=""
+            requested=$(parse_cidr_list "$cidr")
+            [[ -z "$requested" ]] && { error "No valid CIDRs provided."; exit 1; }
+            if [[ ! -f "$MGMT_ACL_FILE" ]]; then
+                warn "Nothing to remove — mgmt-acl file does not exist."
+                exit 0
             fi
-            # Strip exact-match data lines; preserve comments and blank lines.
+            while IFS= read -r c; do
+                [[ -z "$c" ]] && continue
+                if read_mgmt_acl_cidrs | grep -qxF "$c"; then
+                    removed+="${removed:+$'\n'}${c}"
+                else
+                    missing+="${missing:+ }${c}"
+                fi
+            done <<< "$requested"
+            if [[ -z "$removed" ]]; then
+                warn "Nothing to remove (not present: ${missing})."
+                exit 0
+            fi
+            # Strip all exact-match data lines in one awk pass; preserve
+            # comments and blank lines.
             local tmp
             tmp=$(mktemp)
-            awk -v target="$cidr" '
+            awk -v targets="$removed" '
+                BEGIN {
+                    n = split(targets, arr, "\n")
+                    for (i = 1; i <= n; i++) drop[arr[i]] = 1
+                }
                 /^[[:space:]]*#/ { print; next }
                 /^[[:space:]]*$/ { print; next }
                 {
                     line = $0
                     sub(/#.*/, "", line)
                     gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
-                    if (line == target) next
+                    if (line in drop) next
                     print
                 }
             ' "$MGMT_ACL_FILE" > "$tmp"
             mv "$tmp" "$MGMT_ACL_FILE"
             chmod 644 "$MGMT_ACL_FILE"
-            info "Removed '${cidr}' from mgmt-acl."
+            local n
+            n=$(printf '%s\n' "$removed" | wc -l)
+            info "Removed ${n} from mgmt-acl: $(printf '%s\n' "$removed" | paste -sd' ')"
+            [[ -n "$missing" ]] && info "(Not present, skipped: ${missing})"
             echo ""
             ;;
         clear)
@@ -2822,11 +3027,10 @@ cmd_config() {
             echo "  bcrypt-cost [10-14]                  Show or set bcrypt cost factor (default 12)"
             echo "  password-min-length [8-64]           Show or set minimum interactive password length (default 12)"
             echo "  secret-min-length [16-128]           Show or set minimum shared-secret length (default 16)"
-            echo "  secret [new-secret]                  Change shared secret"
+            echo "  secret show|set|generate             Manage TACACS+ shared secret"
             echo "  prefixes list|add|remove|clear       Manage secret-provider client prefixes"
-            echo "  prefixes [cidr,cidr,...]             (legacy) replace the entire list"
-            echo "  allow list|add|remove                Manage connection allow list (IP ACL)"
-            echo "  deny list|add|remove                 Manage connection deny list (IP ACL)"
+            echo "  allow list|add|remove|clear          Manage connection allow list (IP ACL; add/remove accept comma-lists)"
+            echo "  deny list|add|remove|clear           Manage connection deny list (IP ACL; add/remove accept comma-lists)"
             echo "  mgmt-acl list|add|remove|clear       Manage Cisco VTY-ACL + Juniper lo0-filter permits"
             echo "  cisco                                Show working Cisco device configuration"
             echo "  juniper                              Show working Juniper device configuration"
@@ -3711,55 +3915,96 @@ cmd_group_privilege() {
             echo ""
             ;;
         add)
-            local cmd="${1:-}"
-            if [[ -z "$cmd" ]]; then
-                error "Usage: tacctl group privilege add <group> '<command>'"
+            local input="${1:-}"
+            if [[ -z "$input" ]]; then
+                error "Usage: tacctl group privilege add <group> '<command>'[,'<command>'...]"
                 exit 1
             fi
-            validate_priv_command_string "$cmd"
-            local current
+            # Parse comma-separated list, validating each; abort whole op
+            # if any are invalid. Cisco exec commands don't contain commas,
+            # so the separator is unambiguous.
+            local requested="" cmd
+            IFS=',' read -ra CMDS <<< "$input"
+            for cmd in "${CMDS[@]}"; do
+                cmd=$(echo "$cmd" | xargs)
+                [[ -z "$cmd" ]] && continue
+                validate_priv_command_string "$cmd"
+                requested+="${requested:+$'\n'}${cmd}"
+            done
+            [[ -z "$requested" ]] && { error "No commands provided."; exit 1; }
+
+            local current added="" skipped=""
             current=$(read_group_privileges "$group")
             # If empty, seed from defaults so the user's first add doesn't
             # silently drop the conservative defaults.
             if [[ -z "$current" ]]; then
                 current=$(default_privileges_for_group "$group")
             fi
-            if printf '%s\n' "$current" | grep -qxF "$cmd"; then
-                info "'${cmd}' already mapped for group '${group}'; no change."
+            while IFS= read -r cmd; do
+                [[ -z "$cmd" ]] && continue
+                if printf '%s\n' "$current" | grep -qxF "$cmd"; then
+                    skipped+="${skipped:+, }'${cmd}'"
+                else
+                    added+="${added:+$'\n'}${cmd}"
+                    current=$(printf '%s\n%s\n' "$current" "$cmd")
+                fi
+            done <<< "$requested"
+
+            if [[ -z "$added" ]]; then
+                info "No new mappings to add for group '${group}' (already present: ${skipped})."
                 echo ""
                 return
             fi
-            local new_list
-            if [[ -n "$current" ]]; then
-                new_list=$(printf '%s\n%s\n' "$current" "$cmd")
-            else
-                new_list="$cmd"
-            fi
-            write_group_privileges "$group" "$new_list"
-            info "Added priv-exec mapping for group '${group}': '${cmd}' (level ${privlvl})."
+            write_group_privileges "$group" "$current"
+            local n
+            n=$(printf '%s\n' "$added" | wc -l)
+            info "Added ${n} priv-exec mapping(s) for group '${group}' (level ${privlvl}):"
+            printf '%s\n' "$added" | sed "s/^/    - /"
+            [[ -n "$skipped" ]] && info "(Already present, unchanged: ${skipped})"
             echo ""
             ;;
         remove)
-            local cmd="${1:-}"
-            if [[ -z "$cmd" ]]; then
-                error "Usage: tacctl group privilege remove <group> '<command>'"
+            local input="${1:-}"
+            if [[ -z "$input" ]]; then
+                error "Usage: tacctl group privilege remove <group> '<command>'[,'<command>'...]"
                 exit 1
             fi
-            local current
+            local requested="" cmd
+            IFS=',' read -ra CMDS <<< "$input"
+            for cmd in "${CMDS[@]}"; do
+                cmd=$(echo "$cmd" | xargs)
+                [[ -z "$cmd" ]] && continue
+                requested+="${requested:+$'\n'}${cmd}"
+            done
+            [[ -z "$requested" ]] && { error "No commands provided."; exit 1; }
+
+            local current removed="" missing=""
             current=$(read_group_privileges "$group")
             # If no explicit mappings exist, seed from defaults so the
             # remove takes effect against a known set.
             if [[ -z "$current" ]]; then
                 current=$(default_privileges_for_group "$group")
             fi
-            if ! printf '%s\n' "$current" | grep -qxF "$cmd"; then
-                warn "'${cmd}' not mapped for group '${group}'; nothing to remove."
+            while IFS= read -r cmd; do
+                [[ -z "$cmd" ]] && continue
+                if printf '%s\n' "$current" | grep -qxF "$cmd"; then
+                    removed+="${removed:+$'\n'}${cmd}"
+                    current=$(printf '%s\n' "$current" | grep -vxF "$cmd" || true)
+                else
+                    missing+="${missing:+, }'${cmd}'"
+                fi
+            done <<< "$requested"
+
+            if [[ -z "$removed" ]]; then
+                warn "Nothing to remove for group '${group}' (not mapped: ${missing})."
                 exit 0
             fi
-            local new_list
-            new_list=$(printf '%s\n' "$current" | grep -vxF "$cmd" || true)
-            write_group_privileges "$group" "$new_list"
-            info "Removed priv-exec mapping for group '${group}': '${cmd}'."
+            write_group_privileges "$group" "$current"
+            local n
+            n=$(printf '%s\n' "$removed" | wc -l)
+            info "Removed ${n} priv-exec mapping(s) for group '${group}':"
+            printf '%s\n' "$removed" | sed "s/^/    - /"
+            [[ -n "$missing" ]] && info "(Not mapped, skipped: ${missing})"
             echo ""
             ;;
         clear)
@@ -3784,11 +4029,11 @@ cmd_group_privilege_usage() {
     echo -e "${BOLD}tacctl group privilege${NC} — per-group Cisco priv-exec command mappings"
     echo ""
     echo "Usage:"
-    echo "  tacctl group privilege list <group>                     Show mappings (explicit or default)"
-    echo "  tacctl group privilege add <group> '<command>'          Move a command to the group's priv-lvl"
-    echo "  tacctl group privilege remove <group> '<command>'       Remove a mapping"
-    echo "  tacctl group privilege clear <group>                    Wipe explicit mappings (revert to defaults)"
-    echo "  tacctl group privilege seed [<group>] [--force]         Populate built-ins with safe defaults"
+    echo "  tacctl group privilege list <group>                              Show mappings (explicit or default)"
+    echo "  tacctl group privilege add <group>    '<cmd>'[,'<cmd>'...]       Move one or more commands to the priv-lvl"
+    echo "  tacctl group privilege remove <group> '<cmd>'[,'<cmd>'...]       Remove mapping(s)"
+    echo "  tacctl group privilege clear <group>                             Wipe explicit mappings (revert to defaults)"
+    echo "  tacctl group privilege seed [<group>] [--force]                  Populate built-ins with safe defaults"
     echo ""
     echo "Drives 'privilege exec level <lvl> <cmd>' lines emitted by"
     echo "'tacctl config cisco'. Pure device-side; tacquito does not read"
