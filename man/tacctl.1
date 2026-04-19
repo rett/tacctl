@@ -320,8 +320,23 @@ custom shared secret via
 Default 16 (Cisco TACACS+ best practice). Auto-generated secrets
 bypass this check.
 .TP
+.B "config prefixes " "{ list | add | remove | clear } " [ cidr ]
+Manage the secret-provider's client-prefix list. These are the CIDRs
+the shared secret is bound to — connections from outside any listed
+prefix can't authenticate. Adds and removes are dedup-aware and
+restart the service.
+.B clear
+empties the list (and prompts for confirmation, since it makes the
+shared secret unreachable).
+.TP
 .BI "config prefixes " [ "cidr,cidr,..." ]
-Change the allowed device subnets in a single atomic replacement.
+(Legacy form.) With no arguments, prompts interactively for a
+comma-separated replacement list. With a comma-list, replaces the
+entire prefixes block in one atomic write. Equivalent to
+.B "config prefixes clear"
+followed by repeated
+.B "config prefixes add"
+calls.
 .TP
 .B "config allow " "{ list | add | remove } " [ cidr ]
 Manage the connection allow list (IP ACL).
