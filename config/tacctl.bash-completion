@@ -59,9 +59,13 @@ _tacctl() {
             ;;
         group)
             if [[ $pos -eq 2 ]]; then
-                COMPREPLY=($(compgen -W "list add edit remove" -- "$cur"))
+                COMPREPLY=($(compgen -W "list add edit remove commands privilege" -- "$cur"))
             elif [[ $pos -eq 4 && "${words[offset + 2]}" == "edit" ]]; then
                 COMPREPLY=($(compgen -W "priv-lvl juniper-class" -- "$cur"))
+            elif [[ $pos -eq 3 && "${words[offset + 2]}" == "commands" ]]; then
+                COMPREPLY=($(compgen -W "list default add remove clear seed" -- "$cur"))
+            elif [[ $pos -eq 3 && "${words[offset + 2]}" == "privilege" ]]; then
+                COMPREPLY=($(compgen -W "list add remove clear seed" -- "$cur"))
             fi
             ;;
         config)

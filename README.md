@@ -87,6 +87,35 @@ tacctl config deny add 10.99.0.0/24
 ```
 Deny takes precedence over allow.
 
+### Cisco priv-exec mappings
+Cisco IOS gates command **availability** by privilege level (`privilege exec level X <cmd>`) independently of TACACS+ command authorization. Both gates must say yes for a command to run. Manage the mappings per group:
+```
+tacctl group privilege seed                  # built-in defaults (only verified move-DOWNs)
+tacctl group privilege list operator         # show current mappings + source (explicit / default)
+tacctl group privilege add operator 'show ip route'
+tacctl group privilege remove operator 'show running-config'
+```
+Defaults move only verified priv-15 commands DOWN to lower groups (e.g. `show running-config` → priv 7 for `operator`); they never move commands UP from a lower default level (which would silently restrict them from `readonly` users). Mappings live in `/etc/tacquito/cisco-privileges.conf` and survive `tacctl upgrade`.
+
+### Per-command authorization
+Restrict which commands a group can run, enforced live by Cisco IOS via TACACS+. Quickest path is to seed the built-in groups with sensible defaults:
+```
+tacctl group commands seed                # all three built-ins
+tacctl group commands seed operator       # just operator (refuses to overwrite without --force)
+tacctl group commands list operator
+```
+Defaults: `readonly` permits show / ping / traceroute / terminal / navigation / `enable` and denies the rest; `operator` adds `clear test monitor` on top with default deny; `superuser` gets an unrestricted `*` catchall.
+
+Or build rules manually:
+```
+tacctl group commands default operator deny
+tacctl group commands add operator show --action permit
+tacctl group commands add operator ping --action permit
+```
+The trailing `*` catchall encodes the default action. Once any group has rules, `tacctl config cisco` emits `aaa authorization commands 1/7/15 default group TACACS-GROUP local` so IOS asks tacquito per command. Juniper enforcement is local via class `allow-commands`/`deny-commands` regex — `tacctl config juniper` emits the equivalent `set system login class …` lines, but you must push them to each device.
+
+When you add the first rule to a group, tacctl auto-seeds a `* permit` catchall onto sibling groups at the same Cisco priv-lvl so their users aren't accidentally locked out.
+
 ### Management ACL (Cisco VTY-ACL + Juniper lo0 filter)
 Restrict which source subnets can reach the device management plane. Build the permit list once on the tacquito server:
 ```
@@ -203,11 +232,23 @@ user verify <name>                     Show user details and verify password
 ### Group Commands — `tacctl group`
 
 ```
-group list                               List all groups with Cisco priv-lvl, Juniper class, user count
-group add <name> <priv-lvl> <class>      Add a custom group
-group edit <name> priv-lvl <0-15>        Change Cisco privilege level
-group edit <name> juniper-class <CLASS>  Change Juniper class name
-group remove <name>                      Remove a custom group (built-ins protected)
+group list                                                List all groups with Cisco priv-lvl, Juniper class, user count
+group add <name> <priv-lvl> <class>                       Add a custom group
+group edit <name> priv-lvl <0-15>                         Change Cisco privilege level
+group edit <name> juniper-class <CLASS>                   Change Juniper class name
+group remove <name>                                       Remove a custom group (built-ins protected)
+group commands list <group>                               Show per-command rules + default action
+group commands default <group> <permit|deny>              Set default action (catchall)
+group commands add <group> <name> [--match <regex>]...    Add a command rule
+                                  [--action permit|deny]
+group commands remove <group> <name>                      Drop a rule
+group commands clear <group>                              Wipe rules for a group
+group commands seed [<group>] [--force]                   Populate built-ins with sensible defaults
+group privilege list <group>                              Show Cisco priv-exec mappings
+group privilege add <group> '<command>'                   Move a command to the group's priv-lvl
+group privilege remove <group> '<command>'                Remove a mapping
+group privilege clear <group>                             Wipe explicit mappings (revert to defaults)
+group privilege seed [<group>] [--force]                  Populate built-ins with safe priv-exec defaults
 ```
 
 **Default Groups:**
