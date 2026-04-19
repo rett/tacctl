@@ -154,12 +154,12 @@ Users can generate their own bcrypt hash and provide it to an admin. The admin n
 
 Admins can print these same client-side commands on demand with:
 ```bash
-tacctl hash help
+tacctl hash commands
 ```
 
 **On the server (if available):**
 ```bash
-tacctl hash
+tacctl hash generate
 ```
 
 **Linux / macOS:**
@@ -206,7 +206,9 @@ tacctl group <subcommand>       # Group management
 tacctl config <subcommand>      # Configuration
 tacctl log <subcommand>         # Log viewer
 tacctl backup <subcommand>      # Backup management
-tacctl hash [help]              # Generate a bcrypt password hash (or show client-side alternatives)
+tacctl hash                     # Show usage
+tacctl hash generate            # Prompt + print a bcrypt hash
+tacctl hash commands            # Print OS-specific client-side recipes
 tacctl version                  # Print tacctl version
 ```
 

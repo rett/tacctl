@@ -81,7 +81,7 @@ Add a user. Prompts for the password with confirmation. If
 .BI --hash " hash"
 is given, the bcrypt hash is used directly and no password is prompted
 (use this when users self-generate a hash; see
-.BR "tacctl hash help" ).
+.BR "tacctl hash commands" ).
 .TP
 .BI "user remove " name
 Remove a user after confirmation.
@@ -94,7 +94,7 @@ is given, the bcrypt hash is used directly and no password is prompted
 (mirrors
 .B user add --hash
 for users who self-generate via
-.BR "tacctl hash help" ).
+.BR "tacctl hash commands" ).
 .TP
 .BI "user disable " name
 Disable a user while preserving the password hash for later re-enable.
@@ -435,20 +435,31 @@ retained under
 .SS Hash generation \fB(tacctl hash)\fR
 .TP
 .B hash
-Interactively generate a bcrypt password hash on the server. Does not
-require root. Needs
-.B python3-bcrypt
-installed.
+With no subcommand (or with
+.BR help ),
+prints a usage summary listing
+.B generate
+and
+.BR commands .
+Does not require root.
 .TP
-.B hash help
-Print client-side bcrypt generation commands for users who cannot SSH
-to the server. Covers Linux/macOS, Windows with Python, and Windows
-with PowerShell/BcryptNet. Share the output with the user; the admin
-then runs
-.B tacctl user add <name> <group> --hash '<hash>'
-with the returned
-.B $2b$12$\&...
-string.
+.B hash generate
+Interactively prompt for a password on the server and print its bcrypt
+hash. Needs
+.B python3-bcrypt
+installed. Intended for admins who can shell in to the tacquito host.
+.TP
+.B hash commands
+Print client-side bcrypt-generation recipes for operators who cannot
+SSH to the server. Covers Linux/macOS (Python + htpasswd), Windows
+(Python + PowerShell/BCrypt.Net), and any-OS Node.js. Each recipe
+prints both the raw
+.B $2b$\&...
+and hex-encoded forms;
+.B "user add --hash"
+/
+.B "user passwd --hash"
+accept either and normalize to hex on write.
 .SH FILES
 .TP
 .I /etc/tacquito/tacquito.yaml
@@ -522,7 +533,7 @@ Enable passwordless invocation for members of the adm group:
 .B sudo tacctl config sudoers install adm
 .TP
 Print client-side bcrypt generation instructions to share with a user:
-.B tacctl hash help
+.B tacctl hash commands
 .SH NOTES
 .B IPv4 only by default.
 The service runs with

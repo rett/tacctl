@@ -4823,14 +4823,50 @@ cmd_backup() {
 #  SYSTEM LIFECYCLE COMMANDS
 # =====================================================================
 
-# --- HASH (generate bcrypt hash — does not require root) ---
+# --- HASH (bcrypt hash helper — does not require root) ---
 cmd_hash() {
-    if [[ "${1:-}" == "help" ]]; then
-        cmd_hash_help
-        return
-    fi
+    local subcmd="${1:-}"
+    case "$subcmd" in
+        ""|-h|--help|help)
+            cmd_hash_usage
+            ;;
+        generate)
+            cmd_hash_generate
+            ;;
+        commands)
+            cmd_hash_commands
+            ;;
+        *)
+            error "Unknown subcommand: '$subcmd'"
+            cmd_hash_usage
+            exit 1
+            ;;
+    esac
+}
+
+cmd_hash_usage() {
+    echo ""
+    echo -e "${BOLD}tacctl hash${NC} — bcrypt hash helper (non-root)"
+    echo ""
+    echo "Usage:"
+    echo "  tacctl hash generate                Prompt for a password and print its bcrypt hash"
+    echo "  tacctl hash commands                Show OS-specific one-liners for offline generation"
+    echo ""
+    echo "Use 'generate' when you can shell in to this server."
+    echo "Use 'commands' to hand an operator a command they can run on their own machine,"
+    echo "so the plaintext password never leaves their laptop."
+    echo ""
+    echo "Either output plugs into:"
+    echo "  tacctl user add <username> <group> --hash '<hash>'"
+    echo "  tacctl user passwd <username> --hash '<hash>'"
+    echo ""
+    echo "Both accept either form — hex ('24326224...') or raw ('\$2b\$12\$...')."
+    echo ""
+}
+
+cmd_hash_generate() {
     if ! python3 -c "import bcrypt" 2>/dev/null; then
-        error "python3-bcrypt not installed. Run 'tacctl hash help' for client-side alternatives."
+        error "python3-bcrypt not installed. Run 'tacctl hash commands' for client-side alternatives."
         exit 1
     fi
     local password
@@ -4848,24 +4884,74 @@ cmd_hash() {
     echo ""
 }
 
-# Client-side bcrypt generation instructions for users without shell access.
-cmd_hash_help() {
+# Client-side bcrypt generation recipes. Intentionally verbose — this is
+# the page an operator will paste from when the server isn't reachable,
+# so brevity costs more than paper. Each recipe prints BOTH the raw
+# '$2b$...' form and the hex form; 'tacctl user add --hash' accepts either.
+cmd_hash_commands() {
     cat <<'EOF'
 
-  Bcrypt hash generation (client-side, when the server is unreachable)
+  Bcrypt hash generation — client-side recipes
+  (run these on the operator's machine; the plaintext password never
+  leaves their laptop; hand the resulting hash to the admin)
 
-  Linux / macOS:
-    python3 -c "import bcrypt,getpass; print(bcrypt.hashpw(getpass.getpass().encode(), bcrypt.gensalt()).decode())"
+  =================================================================
+  Linux / macOS / WSL — Python (with the 'bcrypt' module)
+  =================================================================
+    # one-time install:
+    #   python3 -m pip install --user bcrypt
+    # then:
+    python3 - <<'PY'
+import bcrypt, binascii, getpass
+pw = getpass.getpass('Password: ').encode()
+raw = bcrypt.hashpw(pw, bcrypt.gensalt(12))
+print('raw:', raw.decode())
+print('hex:', binascii.hexlify(raw).decode())
+PY
 
-  Windows (Python):
-    python -c "import bcrypt,getpass; print(bcrypt.hashpw(getpass.getpass().encode(), bcrypt.gensalt()).decode())"
+  =================================================================
+  Linux / macOS — htpasswd (Apache httpd tools, no Python needed)
+  =================================================================
+    # install once:  apt install apache2-utils  OR  brew install httpd
+    # 'htpasswd -nBC 12 ""' prompts, then prints ":$2y$12$..." (the
+    # leading colon is the empty username field; strip it).
+    htpasswd -nBC 12 "" | cut -d: -f2
 
-  Windows (PowerShell, no Python):
-    Install-Module -Name BcryptNet -Scope CurrentUser
-    [BCrypt.Net.BCrypt]::HashPassword((Read-Host -AsSecureString "Password" | ConvertFrom-SecureString -AsPlainText))
+  =================================================================
+  Windows — Python (CPython)
+  =================================================================
+    # one-time install:
+    #   py -m pip install --user bcrypt
+    # then:
+    py - <<PY
+import bcrypt, binascii, getpass
+pw = getpass.getpass('Password: ').encode()
+raw = bcrypt.hashpw(pw, bcrypt.gensalt(12))
+print('raw:', raw.decode())
+print('hex:', binascii.hexlify(raw).decode())
+PY
 
-  Send the resulting $2b$12$... string to your admin, who will run:
-    tacctl user add <username> <group> --hash '<hash>'
+  =================================================================
+  Windows — PowerShell with BCrypt.Net (no Python required)
+  =================================================================
+    Install-Module -Name BCrypt.Net-Next -Scope CurrentUser -Force
+    $pwSecure = Read-Host -AsSecureString "Password"
+    $BSTR = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($pwSecure)
+    $plain = [Runtime.InteropServices.Marshal]::PtrToStringAuto($BSTR)
+    [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($BSTR) | Out-Null
+    $raw = [BCrypt.Net.BCrypt]::HashPassword($plain, 12)
+    $hex = -join ($raw.ToCharArray() | ForEach-Object { '{0:x2}' -f [byte][char]$_ })
+    Remove-Variable plain
+    "raw: $raw"
+    "hex: $hex"
+
+  =================================================================
+  Handing the hash to your admin
+  =================================================================
+  'tacctl user passwd --hash' accepts either form; the server
+  normalizes to hex internally. So either line works:
+      tacctl user passwd <user> --hash '$2b$12$...'          # raw
+      tacctl user passwd <user> --hash '24326224313224...'   # hex
 
 EOF
 }
