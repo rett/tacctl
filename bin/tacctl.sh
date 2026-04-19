@@ -4892,56 +4892,28 @@ cmd_hash_commands() {
     cat <<'EOF'
 
   Bcrypt hash generation — client-side recipes
-  (run these on the operator's machine; the plaintext password never
-  leaves their laptop; hand the resulting hash to the admin)
+  (run on the operator's machine; plaintext password never leaves it)
 
   =================================================================
-  Linux / macOS / WSL — Python (with the 'bcrypt' module)
+  Any OS — Python 3 with the 'bcrypt' module
   =================================================================
-    # one-time install:
-    #   python3 -m pip install --user bcrypt
-    # then:
-    python3 - <<'PY'
-import bcrypt, binascii, getpass
-pw = getpass.getpass('Password: ').encode()
-raw = bcrypt.hashpw(pw, bcrypt.gensalt(12))
-print('raw:', raw.decode())
-print('hex:', binascii.hexlify(raw).decode())
-PY
+    # install once:  python3 -m pip install --user bcrypt
+    #                (use 'py' instead of 'python3' on Windows)
+    python3 -c "import bcrypt,binascii,getpass; p=getpass.getpass('Password: ').encode(); r=bcrypt.hashpw(p,bcrypt.gensalt(12)); print('raw:',r.decode()); print('hex:',binascii.hexlify(r).decode())"
 
   =================================================================
-  Linux / macOS — htpasswd (Apache httpd tools, no Python needed)
+  Linux / macOS — htpasswd (no Python needed)
   =================================================================
     # install once:  apt install apache2-utils  OR  brew install httpd
-    # 'htpasswd -nBC 12 ""' prompts, then prints ":$2y$12$..." (the
-    # leading colon is the empty username field; strip it).
     htpasswd -nBC 12 "" | cut -d: -f2
 
   =================================================================
-  Windows — Python (CPython)
+  Windows — PowerShell with BCrypt.Net (no Python needed)
   =================================================================
-    # one-time install:
-    #   py -m pip install --user bcrypt
-    # then:
-    py - <<PY
-import bcrypt, binascii, getpass
-pw = getpass.getpass('Password: ').encode()
-raw = bcrypt.hashpw(pw, bcrypt.gensalt(12))
-print('raw:', raw.decode())
-print('hex:', binascii.hexlify(raw).decode())
-PY
-
-  =================================================================
-  Windows — PowerShell with BCrypt.Net (no Python required)
-  =================================================================
-    Install-Module -Name BCrypt.Net-Next -Scope CurrentUser -Force
-    $pwSecure = Read-Host -AsSecureString "Password"
-    $BSTR = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($pwSecure)
-    $plain = [Runtime.InteropServices.Marshal]::PtrToStringAuto($BSTR)
-    [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($BSTR) | Out-Null
-    $raw = [BCrypt.Net.BCrypt]::HashPassword($plain, 12)
-    $hex = -join ($raw.ToCharArray() | ForEach-Object { '{0:x2}' -f [byte][char]$_ })
-    Remove-Variable plain
+    Install-Module BCrypt.Net-Next -Scope CurrentUser -Force
+    $pw  = (Get-Credential -UserName '_' -Message 'Password').GetNetworkCredential().Password
+    $raw = [BCrypt.Net.BCrypt]::HashPassword($pw, 12)
+    $hex = -join ($raw.ToCharArray() | % { '{0:x2}' -f [byte][char]$_ })
     "raw: $raw"
     "hex: $hex"
 
