@@ -1742,76 +1742,183 @@ cmd_config_secret() {
     echo ""
 }
 
-# --- CONFIG PREFIXES ---
-cmd_config_prefixes() {
-    local new_prefixes="${1:-}"
-
-    local current
-    current=$(get_config_value "prefixes")
-
-    if [[ -z "$new_prefixes" ]]; then
-        echo ""
-        echo "  Current prefixes: ${current}"
-        echo ""
-        read -rp "  Enter new prefixes (comma-separated CIDRs, e.g. 10.1.0.0/16,172.16.0.0/12): " new_prefixes
-        if [[ -z "$new_prefixes" ]]; then
-            info "No change."
-            return
-        fi
-    fi
-
-    backup_config
-
-    # Build the new prefixes YAML block
-    local prefix_lines=""
-    IFS=',' read -ra CIDRS <<< "$new_prefixes"
-    for cidr in "${CIDRS[@]}"; do
-        cidr=$(echo "$cidr" | xargs)  # trim whitespace
-        [[ -z "$cidr" ]] && continue
-        validate_cidr "$cidr"
-        if [[ -n "$prefix_lines" ]]; then
-            prefix_lines="${prefix_lines},"$'\n'"          \"${cidr}\""
-        else
-            prefix_lines="\"${cidr}\""
-        fi
-    done
-
-    # Use Python for reliable multi-line replacement
+# --- Read the secret-provider prefixes (one CIDR per stdout line) ---
+read_secret_prefixes() {
     python3 -c "
 import re, sys
+cfg = open(sys.argv[1]).read()
+m = re.search(r'prefixes:\s*\|\s*\n\s*\[(.*?)\]', cfg, re.DOTALL)
+if m:
+    for c in re.findall(r'\"([^\"]+)\"', m.group(1)):
+        print(c)
+" "$CONFIG"
+}
 
+# --- Atomically replace the prefixes: block with a comma-list of CIDRs ---
+# Caller is responsible for validating each CIDR first.
+set_secret_prefixes() {
+    local cidrs_csv="$1"
+    python3 -c "
+import re, sys, tempfile, os
 config = open(sys.argv[1]).read()
-new_cidrs = sys.argv[2].split(',')
-
-# Build new prefix block
-lines = []
-for c in new_cidrs:
-    c = c.strip()
-    if c:
-        lines.append(f'          \"{c}\"')
+new_cidrs = [c.strip() for c in sys.argv[2].split(',') if c.strip()]
+lines = [f'          \"{c}\"' for c in new_cidrs]
 new_block = 'prefixes: |\n        [\n' + ',\n'.join(lines) + '\n        ]'
-
-# Replace existing prefix block
 config = re.sub(
     r'prefixes:\s*\|\s*\n\s*\[.*?\]',
     new_block,
     config,
-    flags=re.DOTALL
+    flags=re.DOTALL,
 )
-
-import tempfile, os
 tmp = tempfile.NamedTemporaryFile('w', dir=os.path.dirname(sys.argv[1]), delete=False)
 tmp.write(config)
 tmp.close()
 os.rename(tmp.name, sys.argv[1])
-" "$CONFIG" "$new_prefixes"
+" "$CONFIG" "$cidrs_csv"
+}
 
+# --- CONFIG PREFIXES ---
+# Dispatcher: detects a known subcommand (list/add/remove/clear) and
+# routes to the per-op flow. Anything else falls through to the legacy
+# behavior (no-arg interactive prompt; CIDR list = atomic replace).
+cmd_config_prefixes() {
+    local arg1="${1:-}"
+
+    case "$arg1" in
+        ""|-h|--help|help)
+            local entries n=0
+            entries=$(read_secret_prefixes)
+            [[ -n "$entries" ]] && n=$(printf '%s\n' "$entries" | wc -l)
+            echo ""
+            echo -e "${BOLD}tacctl config prefixes${NC} — secret-provider client prefix list"
+            echo ""
+            echo "Usage:"
+            echo "  tacctl config prefixes list                    Show current entries"
+            echo "  tacctl config prefixes add <cidr>              Add a CIDR"
+            echo "  tacctl config prefixes remove <cidr>           Remove a CIDR"
+            echo "  tacctl config prefixes clear                   Wipe all (confirms)"
+            echo "  tacctl config prefixes <cidr>[,<cidr>...]      Atomic replace (legacy form)"
+            echo ""
+            echo "Current entries: ${n}"
+            echo "Note: empty prefixes = NO clients can authenticate against this secret."
+            echo ""
+            return
+            ;;
+        list)
+            local entries
+            entries=$(read_secret_prefixes)
+            echo ""
+            echo -e "${BOLD}Secret-provider prefixes${NC}"
+            echo "--------------------------------------------"
+            if [[ -z "$entries" ]]; then
+                echo "  (empty — NO clients can connect; the secret is unreachable)"
+            else
+                echo "$entries" | while IFS= read -r c; do
+                    echo "  - ${c}"
+                done
+            fi
+            echo ""
+            return
+            ;;
+        add)
+            local new_cidr="${2:-}"
+            if [[ -z "$new_cidr" ]]; then
+                error "Usage: tacctl config prefixes add <cidr>"
+                exit 1
+            fi
+            validate_cidr "$new_cidr"
+            local current
+            current=$(read_secret_prefixes)
+            if printf '%s\n' "$current" | grep -qxF "$new_cidr"; then
+                info "'${new_cidr}' already in prefixes; no change."
+                echo ""
+                return
+            fi
+            local merged
+            if [[ -n "$current" ]]; then
+                merged=$(printf '%s\n%s\n' "$current" "$new_cidr" | paste -sd,)
+            else
+                merged="$new_cidr"
+            fi
+            backup_config
+            set_secret_prefixes "$merged"
+            chown tacquito:tacquito "$CONFIG"
+            restart_service
+            info "Added '${new_cidr}' to secret prefixes."
+            echo ""
+            return
+            ;;
+        remove)
+            local drop_cidr="${2:-}"
+            if [[ -z "$drop_cidr" ]]; then
+                error "Usage: tacctl config prefixes remove <cidr>"
+                exit 1
+            fi
+            validate_cidr "$drop_cidr"
+            local current
+            current=$(read_secret_prefixes)
+            if ! printf '%s\n' "$current" | grep -qxF "$drop_cidr"; then
+                warn "'${drop_cidr}' not in prefixes; nothing to remove."
+                exit 0
+            fi
+            local merged
+            merged=$(printf '%s\n' "$current" | grep -vxF "$drop_cidr" | paste -sd,)
+            backup_config
+            set_secret_prefixes "$merged"
+            chown tacquito:tacquito "$CONFIG"
+            restart_service
+            if [[ -z "$merged" ]]; then
+                warn "Last prefix removed — NO clients can connect until you add one."
+            fi
+            info "Removed '${drop_cidr}' from secret prefixes."
+            echo ""
+            return
+            ;;
+        clear)
+            local current
+            current=$(read_secret_prefixes)
+            if [[ -z "$current" ]]; then
+                info "Already empty."
+                return
+            fi
+            warn "Clearing the prefixes block makes the shared secret unreachable;"
+            warn "NO clients can connect until you add at least one CIDR back."
+            read -rp "  Clear all $(echo "$current" | wc -l) prefix(es)? [y/N]: " confirm
+            if [[ ! "$confirm" =~ ^[Yy] ]]; then
+                info "Aborted."
+                return
+            fi
+            backup_config
+            set_secret_prefixes ""
+            chown tacquito:tacquito "$CONFIG"
+            restart_service
+            info "Secret prefixes cleared."
+            echo ""
+            return
+            ;;
+    esac
+
+    # ----- Legacy batch-replace path -----
+    # Reached when $1 is a CIDR or comma-list (e.g. `tacctl config
+    # prefixes 10.0.0.0/8,10.99.0.0/16`). Empty/help is handled above.
+    local new_prefixes="$arg1"
+
+    # Validate every CIDR before touching the config.
+    local cidr
+    IFS=',' read -ra CIDRS <<< "$new_prefixes"
+    for cidr in "${CIDRS[@]}"; do
+        cidr=$(echo "$cidr" | xargs)
+        [[ -z "$cidr" ]] && continue
+        validate_cidr "$cidr"
+    done
+
+    backup_config
+    set_secret_prefixes "$new_prefixes"
     chown tacquito:tacquito "$CONFIG"
-
     restart_service
+
     info "Allowed prefixes updated."
     echo "  New prefixes:"
-    IFS=',' read -ra CIDRS <<< "$new_prefixes"
     for cidr in "${CIDRS[@]}"; do
         echo "    - $(echo "$cidr" | xargs)"
     done
@@ -2675,7 +2782,8 @@ cmd_config() {
             echo "  password-min-length [8-64]           Show or set minimum interactive password length (default 12)"
             echo "  secret-min-length [16-128]           Show or set minimum shared-secret length (default 16)"
             echo "  secret [new-secret]                  Change shared secret"
-            echo "  prefixes [cidr,cidr,...]             Change allowed device subnets"
+            echo "  prefixes list|add|remove|clear       Manage secret-provider client prefixes"
+            echo "  prefixes [cidr,cidr,...]             (legacy) replace the entire list"
             echo "  allow list|add|remove                Manage connection allow list (IP ACL)"
             echo "  deny list|add|remove                 Manage connection deny list (IP ACL)"
             echo "  mgmt-acl list|add|remove|clear       Manage Cisco VTY-ACL + Juniper lo0-filter permits"

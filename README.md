@@ -275,7 +275,8 @@ config password-age [days]                  Show or set password age warning thr
 config bcrypt-cost [10-14]                  Show or set bcrypt cost factor for new hashes (default 12)
 config password-min-length [8-64]           Show or set minimum interactive password length (default 12)
 config secret-min-length [16-128]           Show or set minimum shared-secret length (default 16)
-config prefixes [cidr,...]                  Change allowed device subnets
+config prefixes list|add|remove|clear       Manage secret-provider client prefixes
+config prefixes [cidr,...]                  (legacy) replace the entire prefixes block
 config allow list|add|remove                Manage connection allow list (IP ACL)
 config deny list|add|remove                 Manage connection deny list (IP ACL)
 config mgmt-acl list|add|remove|clear       Manage Cisco VTY-ACL + Juniper lo0-filter permits
