@@ -568,6 +568,32 @@ print(binascii.hexlify(h).decode())
 ' "$BCRYPT_COST"
 }
 
+# --- Normalize a bcrypt hash to the hex-encoded form tacquito reads ---
+# Accepts either:
+#   - raw form ('$2b$...', '$2a$...', '$2y$...') — hex-encoded on emit
+#   - already hex-encoded (e.g. `tacctl hash` output) — lower-cased on emit
+# Prints the hex-encoded result on stdout, or nothing if the input is
+# not a recognizable bcrypt hash. Caller treats empty output as rejection.
+normalize_bcrypt_hash() {
+    local input="$1"
+    python3 -c '
+import binascii, re, sys
+s = sys.argv[1]
+# Raw form: "$2a$..", "$2b$..", "$2y$..". Hex-encode for storage.
+if re.match(r"^\$2[aby]\$", s):
+    print(binascii.hexlify(s.encode()).decode())
+    sys.exit(0)
+# Hex form must hex-decode to the raw prefix.
+try:
+    decoded = binascii.unhexlify(s).decode("ascii")
+    if re.match(r"^\$2[aby]\$", decoded):
+        print(s.lower())
+        sys.exit(0)
+except (binascii.Error, ValueError, UnicodeDecodeError):
+    pass
+' "$input"
+}
+
 # --- Verify a password against a stored hash ---
 # Password via stdin (see generate_hash rationale). Hash travels via argv
 # because it is already on-disk in the config; not additionally sensitive.
@@ -1023,11 +1049,16 @@ cmd_add() {
             error "Usage: tacctl user add <username> <group> --hash <bcrypt-hash>"
             exit 1
         fi
-        if [[ ! "$hash" =~ ^\$2[aby]\$ ]]; then
-            error "Invalid bcrypt hash. Must start with \$2b\$, \$2a\$, or \$2y\$."
-            error "Generate one with: tacctl hash"
+        local normalized
+        normalized=$(normalize_bcrypt_hash "$hash")
+        if [[ -z "$normalized" ]]; then
+            error "Invalid bcrypt hash."
+            error "Accepted forms:"
+            error "  - hex-encoded (from 'tacctl hash'): 24326224313224..."
+            error "  - raw (from bcrypt libs):           \$2b\$12\$..."
             exit 1
         fi
+        hash="$normalized"
     fi
 
     echo ""
@@ -1054,9 +1085,12 @@ hash_val = sys.argv[3]
 group = sys.argv[4]
 config = open(config_path).read()
 
-# Insert authenticator block before '# --- Services ---'
+# Insert authenticator block before '# --- Services ---'. Normalize the
+# whitespace at the seam: strip trailing newlines from what's already
+# there, then apply a deterministic '\n\n' (= one blank line) before
+# and after the new block so spacing stays consistent regardless of
+# whatever the prior insert (or original template) left behind.
 auth_block = (
-    '\n'
     f'bcrypt_{username}: &bcrypt_{username}\n'
     f'  type: *authenticator_type_bcrypt\n'
     f'  options:\n'
@@ -1064,11 +1098,12 @@ auth_block = (
 )
 marker = '# --- Services ---'
 idx = config.index(marker)
-config = config[:idx] + auth_block + '\n' + config[idx:]
+prefix = config[:idx].rstrip('\n')
+config = prefix + '\n\n' + auth_block.rstrip('\n') + '\n\n' + config[idx:]
 
-# Insert user entry before '# --- Secret Providers ---'
+# Insert user entry before '# --- Secret Providers ---'. Same
+# normalize-and-apply approach as auth_block above.
 user_block = (
-    '\n'
     f'  # {username}\n'
     f'  - name: {username}\n'
     f'    scopes: [\"network_devices\"]\n'
@@ -1078,7 +1113,8 @@ user_block = (
 )
 marker2 = '# --- Secret Providers ---'
 idx2 = config.index(marker2)
-config = config[:idx2] + user_block + '\n' + config[idx2:]
+prefix2 = config[:idx2].rstrip('\n')
+config = prefix2 + '\n\n' + user_block.rstrip('\n') + '\n\n' + config[idx2:]
 
 tmp = tempfile.NamedTemporaryFile('w', dir=os.path.dirname(config_path), delete=False)
 tmp.write(config)
@@ -1179,11 +1215,16 @@ cmd_passwd() {
             error "Usage: tacctl user passwd <username> --hash <bcrypt-hash>"
             exit 1
         fi
-        if [[ ! "$hash" =~ ^\$2[aby]\$ ]]; then
-            error "Invalid bcrypt hash. Must start with \$2b\$, \$2a\$, or \$2y\$."
-            error "Generate one with: tacctl hash (or: tacctl hash help)"
+        local normalized
+        normalized=$(normalize_bcrypt_hash "$hash")
+        if [[ -z "$normalized" ]]; then
+            error "Invalid bcrypt hash."
+            error "Accepted forms:"
+            error "  - hex-encoded (from 'tacctl hash'): 24326224313224..."
+            error "  - raw (from bcrypt libs):           \$2b\$12\$..."
             exit 1
         fi
+        hash="$normalized"
     fi
 
     echo ""
