@@ -37,6 +37,7 @@ MGMT_ACL_FILE="/etc/tacquito/mgmt-acl.conf"
 MGMT_ACL_NAMES_FILE="/etc/tacquito/mgmt-acl-names.conf"
 CISCO_ACL_NAME_DEFAULT="VTY-ACL"
 JUNIPER_ACL_NAME_DEFAULT="MGMT-SSH-ACL"
+PRIVILEGE_FILE="/etc/tacquito/cisco-privileges.conf"
 CONFIG_DIR="/etc/tacquito"
 LOG_DIR="/var/log/tacquito"
 SERVICE_FILE="/etc/systemd/system/tacquito.service"
@@ -84,6 +85,317 @@ DISABLED_MARKER_HEX+="2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e"
 # Return 0 if $1 is a disabled-user hash (legacy or new marker).
 is_disabled_hash() {
     [[ "$1" == "DISABLED" || "$1" == "$DISABLED_MARKER_HEX" ]]
+}
+
+# --- Validate a regex pattern ---
+# Used to gate user-supplied --match values for command rules.
+validate_regex() {
+    local pattern="$1"
+    if ! python3 -c "import re,sys; re.compile(sys.argv[1])" "$pattern" 2>/dev/null; then
+        error "Invalid regex: '${pattern}'"
+        exit 1
+    fi
+}
+
+# --- Validate a Cisco privilege-exec command string ---
+# Cisco command paths can contain spaces ("show running-config",
+# "terminal monitor"). Allow letters, digits, spaces, '-', '_'. Reject
+# leading/trailing whitespace, control chars, and shell metacharacters
+# that could break the emitted device config.
+validate_priv_command_string() {
+    local cmd="$1"
+    if [[ -z "$cmd" ]]; then
+        error "Privilege command must not be empty."
+        exit 1
+    fi
+    if [[ "$cmd" =~ ^[[:space:]] || "$cmd" =~ [[:space:]]$ ]]; then
+        error "Privilege command has leading/trailing whitespace: '${cmd}'"
+        exit 1
+    fi
+    if [[ ! "$cmd" =~ ^[a-zA-Z][a-zA-Z0-9\ _-]+$ ]]; then
+        error "Invalid privilege command '${cmd}'."
+        error "Use letters, digits, spaces, '-', '_' (e.g. 'show running-config', 'terminal monitor')."
+        exit 1
+    fi
+    if [[ ${#cmd} -gt 64 ]]; then
+        error "Privilege command too long (${#cmd} chars; max 64)."
+        exit 1
+    fi
+}
+
+# --- Read all `<group>|<cmd>` mappings ---
+# Strips comments and blanks. Missing file yields no output.
+read_all_privileges() {
+    [[ -r "$PRIVILEGE_FILE" ]] || return 0
+    awk '
+        { sub(/#.*/, "") }
+        { gsub(/^[[:space:]]+|[[:space:]]+$/, "") }
+        NF { print }
+    ' "$PRIVILEGE_FILE"
+}
+
+# --- Read the priv-exec command list for one group ---
+# Emits one cmd per line. Empty output = group has no explicit mappings
+# (caller decides whether to fall back to a default set or emit nothing).
+read_group_privileges() {
+    local group="$1"
+    read_all_privileges | awk -F'|' -v g="$group" '$1 == g { print substr($0, length(g) + 2) }'
+}
+
+# --- Default priv-exec command set per built-in group ---
+# Conservative: only the move-DOWN cases (priv-15 commands moved to a
+# lower level so operator-class users can run them). Move-UP cases
+# (e.g. ping at default priv 1 → priv 7) are deliberately omitted —
+# they would silently restrict commands from lower-priv groups.
+default_privileges_for_group() {
+    local group="$1"
+    case "$group" in
+        readonly)
+            # Priv 1 is the floor; nothing legitimately moves into it.
+            echo ""
+            ;;
+        operator)
+            # Move show-config family DOWN from priv 15 to priv 7 so
+            # operators can read state without superuser rights.
+            printf '%s\n' \
+                "show running-config" \
+                "show startup-config"
+            ;;
+        superuser)
+            # Priv 15 is the ceiling; all commands available by default.
+            echo ""
+            ;;
+        *)
+            echo ""
+            ;;
+    esac
+}
+
+# --- Append/replace a group's full priv-exec list ---
+# new_list is a newline-separated set of command strings (or empty to
+# wipe the group). Atomic replacement of just the lines for $group.
+write_group_privileges() {
+    local group="$1"
+    local new_list="$2"
+    mkdir -p "$(dirname "$PRIVILEGE_FILE")"
+    local tmp
+    tmp=$(mktemp)
+    # 1. Carry forward header + every line that is NOT for this group.
+    if [[ -f "$PRIVILEGE_FILE" ]]; then
+        awk -F'|' -v g="$group" '
+            /^[[:space:]]*#/ { print; next }
+            /^[[:space:]]*$/ { print; next }
+            $1 == g { next }
+            { print }
+        ' "$PRIVILEGE_FILE" > "$tmp"
+    else
+        {
+            echo "# tacctl-managed Cisco priv-exec command mappings."
+            echo "# Format: <group>|<command>   (one mapping per line)"
+            echo "# Edit via: tacctl group privilege <list|add|remove|clear|seed>"
+        } > "$tmp"
+    fi
+    # 2. Append the new lines (if any) for this group. `local line` so we
+    # don't clobber a caller's `cmd`, etc.
+    if [[ -n "$new_list" ]]; then
+        local line
+        while IFS= read -r line; do
+            [[ -z "$line" ]] && continue
+            echo "${group}|${line}" >> "$tmp"
+        done <<< "$new_list"
+    fi
+    mv "$tmp" "$PRIVILEGE_FILE"
+    chmod 644 "$PRIVILEGE_FILE"
+}
+
+# --- Validate a TACACS+ command name (the cmd= value sent by the device) ---
+# Allow * (wildcard / catchall) plus typical Cisco / Junos verb tokens.
+validate_command_name() {
+    local name="$1"
+    if [[ "$name" == "*" ]]; then
+        return 0
+    fi
+    if [[ ! "$name" =~ ^[A-Za-z][A-Za-z0-9_-]{0,31}$ ]]; then
+        error "Invalid command name '${name}'."
+        error "Use a literal cmd token (e.g. 'show', 'configure') or '*' for the catchall."
+        exit 1
+    fi
+}
+
+# --- Read a group's command rules from the YAML ---
+# Emits one rule per line as `name|action|match1,match2,...`. A trailing
+# `*` catchall (always present when commands: exists) is included.
+# Empty output = group has no commands: block (= unrestricted).
+read_group_commands() {
+    local group="$1"
+    python3 - "$CONFIG" "$group" <<'PY' 2>/dev/null
+import re, sys
+cfg = open(sys.argv[1]).read()
+group = sys.argv[2]
+# Bound the group block: from "<group>: &<group>\n" to the next blank
+# line or the next top-level YAML key.
+m = re.search(
+    r'^' + re.escape(group) + r': &' + re.escape(group) + r'\n((?:[ \t].*\n)+)',
+    cfg, re.MULTILINE,
+)
+if not m:
+    sys.exit(0)
+body = m.group(1)
+# Find the commands: block (indented under the group).
+cm = re.search(r'^  commands:\n((?:    -.*\n(?:      .*\n)*)+)', body, re.MULTILINE)
+if not cm:
+    sys.exit(0)
+rules_text = cm.group(1)
+# Split into per-rule chunks. Each rule starts with "    - name:" .
+chunks = re.findall(
+    r'    - name:\s*(?P<name>"[^"]*"|\S+)\s*\n'
+    r'(?:      match:\s*\[(?P<match>[^\]]*)\]\s*\n)?'
+    r'      action:\s*\*action_(?P<action>permit|deny)\s*\n',
+    rules_text,
+)
+for name, match, action in chunks:
+    name = name.strip().strip('"')
+    matches = []
+    if match.strip():
+        matches = [m.strip().strip('"') for m in re.findall(r'"([^"]+)"', match)]
+    print(f"{name}|{action}|{','.join(matches)}")
+PY
+}
+
+# --- Read a group's default action ---
+# Encoded as the action of the trailing `name: "*"` rule. If there's no
+# commands: block at all, the effective default is "permit" (= no
+# restriction = current behavior).
+read_group_default_action() {
+    local group="$1"
+    local last_rule
+    last_rule=$(read_group_commands "$group" | tail -1)
+    if [[ -z "$last_rule" ]]; then
+        echo "permit"
+        return
+    fi
+    local last_name="${last_rule%%|*}"
+    if [[ "$last_name" == "*" ]]; then
+        # action is the second |-separated field
+        echo "$last_rule" | awk -F'|' '{print $2}'
+    else
+        # Group has rules but no catchall — shouldn't happen if writes
+        # go through tacctl, but treat as "deny" since tacquito returns
+        # FAIL on no-match.
+        echo "deny"
+    fi
+}
+
+# --- Return 0 if any group in the YAML has a commands: block ---
+any_group_has_commands() {
+    grep -q "^  commands:" "$CONFIG" 2>/dev/null
+}
+
+# --- List all group names defined in the YAML ---
+list_all_groups() {
+    python3 -c "
+import re, sys
+cfg = open(sys.argv[1]).read()
+m = re.search(r'^# --- Groups ---\s*\n(.*?)(?=^# --- Users|\Z)', cfg, re.MULTILINE | re.DOTALL)
+if not m:
+    sys.exit(0)
+for g in re.findall(r'^(\w+): &\1\n', m.group(1), re.MULTILINE):
+    print(g)
+" "$CONFIG"
+}
+
+# --- Get a group's Cisco priv-lvl ---
+get_group_privlvl() {
+    local group="$1"
+    python3 -c "
+import re, sys
+cfg = open(sys.argv[1]).read()
+group = sys.argv[2]
+m = re.search(
+    r'^' + re.escape(group) + r': &' + re.escape(group) + r'\n((?:[ \t].*\n)+)',
+    cfg, re.MULTILINE,
+)
+if not m:
+    sys.exit(0)
+sm = re.search(r'\*exec_(\w+)', m.group(1))
+if not sm:
+    sys.exit(0)
+svc = sm.group(1)
+vm = re.search(r'exec_' + svc + r':.*?values:\s*\[(\d+)\]', cfg, re.DOTALL)
+if vm:
+    print(vm.group(1))
+" "$CONFIG" "$group"
+}
+
+# --- Write/replace a group's commands: block ---
+# rules_arg format: pipe-separated rules joined with newlines, each rule
+# `name|action|match1,match2,...`. An empty rules_arg removes the
+# commands: section entirely.
+write_group_commands() {
+    local group="$1"
+    local rules_arg="$2"
+    python3 - "$CONFIG" "$group" "$rules_arg" <<'PY'
+import re, sys, tempfile, os
+cfg_path, group, rules_arg = sys.argv[1], sys.argv[2], sys.argv[3]
+cfg = open(cfg_path).read()
+
+def render_rules(text):
+    if not text.strip():
+        return ""
+    out = ["  commands:\n"]
+    for line in text.split("\n"):
+        if not line.strip():
+            continue
+        parts = line.split("|", 2)
+        name = parts[0]
+        action = parts[1] if len(parts) > 1 else "permit"
+        matches = parts[2].split(",") if len(parts) > 2 and parts[2] else []
+        out.append(f'    - name: "{name}"\n')
+        if matches:
+            quoted = ", ".join(f'"{m}"' for m in matches if m)
+            out.append(f"      match: [{quoted}]\n")
+        out.append(f"      action: *action_{action}\n")
+    return "".join(out)
+
+new_block = render_rules(rules_arg)
+
+# Locate group body. Match "<group>: &<group>\n" followed by indented
+# lines until a non-indented line (or EOF).
+gpat = re.compile(
+    r'(^' + re.escape(group) + r': &' + re.escape(group) + r'\n)((?:[ \t].*\n)+)',
+    re.MULTILINE,
+)
+gm = gpat.search(cfg)
+if not gm:
+    sys.stderr.write(f"group '{group}' not found\n")
+    sys.exit(1)
+header, body = gm.group(1), gm.group(2)
+
+# Strip any existing commands: block (and its indented children).
+body_no_cmd = re.sub(
+    r'^  commands:\n(?:    -.*\n(?:      .*\n)*)+',
+    "", body, flags=re.MULTILINE,
+)
+
+# Insert new commands: block just before the accounter line, or at end
+# of body if no accounter.
+if new_block:
+    if re.search(r'^  accounter:', body_no_cmd, re.MULTILINE):
+        new_body = re.sub(
+            r'(^  accounter:.*\n)',
+            new_block + r'\1', body_no_cmd, count=1, flags=re.MULTILINE,
+        )
+    else:
+        new_body = body_no_cmd.rstrip("\n") + "\n" + new_block
+else:
+    new_body = body_no_cmd
+
+cfg_new = cfg[:gm.start()] + header + new_body + cfg[gm.end():]
+tmp = tempfile.NamedTemporaryFile("w", dir=os.path.dirname(cfg_path), delete=False)
+tmp.write(cfg_new)
+tmp.close()
+os.rename(tmp.name, cfg_path)
+PY
 }
 
 # --- Colors ---
@@ -1510,20 +1822,40 @@ for m in re.finditer(r'^(\w+): &\1\n  name: \1\n  services:\n(.*?)  accounter:',
             print(f'{name}|{sm.group(1)}')
 " "$CONFIG")
 
-    # Build dynamic sections
+    # Build the privilege-exec block from per-group mappings
+    # (managed via 'tacctl group privilege'). For each group with priv-lvl
+    # in 2-14, emit either its explicit mappings or a conservative built-in
+    # default (move-DOWN commands only). De-dupe across multiple groups
+    # sharing the same priv-lvl: IOS only needs one line per (level, cmd).
     local PRIVILEGE_COMMANDS=""
+    local seen_pairs=""
     while IFS='|' read -r gname privlvl; do
         [[ -z "$gname" ]] && continue
         [[ "$privlvl" == "1" || "$privlvl" == "15" ]] && continue
-        PRIVILEGE_COMMANDS+="! --- ${gname} — Privilege Level ${privlvl} Commands ---
-privilege exec level ${privlvl} show running-config
-privilege exec level ${privlvl} show startup-config
-privilege exec level ${privlvl} ping
-privilege exec level ${privlvl} traceroute
-privilege exec level ${privlvl} terminal monitor
-privilege exec level ${privlvl} terminal no monitor
-!
-"
+        local cmds explicit
+        explicit=$(read_group_privileges "$gname")
+        if [[ -n "$explicit" ]]; then
+            cmds="$explicit"
+        else
+            cmds=$(default_privileges_for_group "$gname")
+        fi
+        [[ -z "$cmds" ]] && continue
+        local block_for_group="! --- ${gname} — Privilege Level ${privlvl} Commands ---"$'\n'
+        local emitted_any="false"
+        while IFS= read -r cmd; do
+            [[ -z "$cmd" ]] && continue
+            local pair="${privlvl}|${cmd}"
+            # Dedup across groups sharing the same priv-lvl.
+            if printf '%s\n' "$seen_pairs" | grep -qxF "$pair"; then
+                continue
+            fi
+            seen_pairs+="${pair}"$'\n'
+            block_for_group+="privilege exec level ${privlvl} ${cmd}"$'\n'
+            emitted_any="true"
+        done <<< "$cmds"
+        if [[ "$emitted_any" == "true" ]]; then
+            PRIVILEGE_COMMANDS+="${block_for_group}!"$'\n'
+        fi
     done <<< "$group_info"
 
     local GROUP_SUMMARY=""
@@ -1544,6 +1876,22 @@ privilege exec level ${privlvl} terminal no monitor
     # unchanged until mgmt-acl is populated.
     local cisco_acl_name
     cisco_acl_name=$(read_mgmt_acl_name cisco)
+
+    # Per-command authorization: emit `aaa authorization commands N`
+    # only when at least one group has a commands: section in the YAML.
+    # Without that gate, devices would still log normally; with it, IOS
+    # asks tacquito for every command at each priv-lvl.
+    local AUTHZ_COMMANDS_BLOCK=""
+    if any_group_has_commands; then
+        AUTHZ_COMMANDS_BLOCK="! Per-command authorization (managed by 'tacctl group commands').
+aaa authorization commands 1 default group TACACS-GROUP local
+aaa authorization commands 7 default group TACACS-GROUP local
+aaa authorization commands 15 default group TACACS-GROUP local"
+    else
+        AUTHZ_COMMANDS_BLOCK="! Per-command authorization not enabled.
+! To restrict commands per group, use 'tacctl group commands'."
+    fi
+
     local VTY_ACL_BLOCK VTY_ACCESS_CLASS mgmt_entries=""
     while IFS= read -r entry; do
         [[ -z "$entry" ]] && continue
@@ -1574,18 +1922,23 @@ ${mgmt_entries}  deny   any log"
 
     local template_file
     template_file=$(resolve_template "cisco")
-    if [[ -n "$template_file" ]]; then
-        export SERVER_IP="$server_ip" SECRET="$secret" PRIVILEGE_COMMANDS GROUP_SUMMARY VTY_ACL_BLOCK VTY_ACCESS_CLASS
-        envsubst '${SERVER_IP} ${SECRET} ${PRIVILEGE_COMMANDS} ${GROUP_SUMMARY} ${VTY_ACL_BLOCK} ${VTY_ACCESS_CLASS}' < "$template_file"
-    else
-        cat <<EOF
+    # Filter the device-config emission through `awk 'NF'` so blank
+    # lines introduced by multi-line `${VAR}` substitution don't reach
+    # the operator. `!` separator lines have NF=1 so they survive.
+    {
+        if [[ -n "$template_file" ]]; then
+            export SERVER_IP="$server_ip" SECRET="$secret" PRIVILEGE_COMMANDS GROUP_SUMMARY VTY_ACL_BLOCK VTY_ACCESS_CLASS AUTHZ_COMMANDS_BLOCK
+            envsubst '${SERVER_IP} ${SECRET} ${PRIVILEGE_COMMANDS} ${GROUP_SUMMARY} ${VTY_ACL_BLOCK} ${VTY_ACCESS_CLASS} ${AUTHZ_COMMANDS_BLOCK}' < "$template_file"
+        else
+            cat <<EOF
 ! --- TACACS+ Server & AAA ---
 service password-encryption
 !
 aaa new-model
 !
-! Replace <MGMT_IF> with your management source interface.
-ip tacacs source-interface <MGMT_IF>
+! Optional: pin TACACS+ client to a known source interface.
+! Uncomment and replace with your management interface, e.g.:
+! ip tacacs source-interface Loopback0
 !
 tacacs server TACACS
   address ipv4 ${server_ip}
@@ -1603,6 +1956,8 @@ aaa accounting commands 1 default start-stop group TACACS-GROUP
 aaa accounting commands 7 default start-stop group TACACS-GROUP
 aaa accounting commands 15 default start-stop group TACACS-GROUP
 !
+${AUTHZ_COMMANDS_BLOCK}
+!
 ${PRIVILEGE_COMMANDS}
 ${VTY_ACL_BLOCK}
 !
@@ -1616,7 +1971,8 @@ line vty 0 15
 ${VTY_ACCESS_CLASS}
   exec-timeout 60 0
 EOF
-    fi
+        fi
+    } | awk 'NF'
 
     echo ""
     echo "--------------------------------------------"
@@ -1626,14 +1982,14 @@ EOF
     echo -e "${YELLOW}Notes:${NC}"
     echo "  - The 'local' fallback ensures access if TACACS+ is unreachable"
     echo "  - Ensure a local admin account exists as a backup"
-    echo "  - Replace <MGMT_IF> with your management interface (e.g. Loopback0)"
+    echo "  - Uncomment 'ip tacacs source-interface ...' to pin the TACACS+ client source"
     echo "  - ${cisco_acl_name} permits are managed with 'tacctl config mgmt-acl add <cidr>'"
     echo "  - For Type 6 (AES) key encryption, run on the device first:"
     echo "      conf t ; key config-key password-encrypt <master-key>"
     echo "      password encryption aes"
     echo "    then re-enter the tacacs key. (Type 7 is trivially reversible.)"
-    echo "  - Custom privilege levels (2-14) require the 'privilege exec level' mappings above"
-    echo "  - Adjust mapped commands to suit your operational needs"
+    echo "  - Manage 'privilege exec level' mappings with 'tacctl group privilege add ...'"
+    echo "    (defaults move only the verified priv-15 commands DOWN; nothing is moved UP)"
     if [[ -n "$template_file" ]]; then
         echo "  - Using template: ${template_file}"
     fi
@@ -1754,6 +2110,54 @@ set firewall family inet filter ${juniper_acl_name} term default-accept then acc
         GROUP_SUMMARY+="  ${gname}: ${jclass} (${junos_class})"$'\n'
     done <<< "$group_juniper"
 
+    # Build the per-class allow-commands / deny-commands block from
+    # group commands rules (managed via 'tacctl group commands').
+    # Junos enforces these patterns LOCALLY on each device, not via
+    # TACACS+ — a config push is required after every change.
+    #
+    # v1 simplification: per-rule `match` regexes are dropped. Each
+    # rule's `name` becomes part of an aggregated regex. Operators
+    # needing finer control should hand-edit the Junos class
+    # afterwards.
+    local CLASS_COMMAND_RULES=""
+    if any_group_has_commands; then
+        CLASS_COMMAND_RULES="# Per-command authorization (enforced LOCALLY by Junos, not via TACACS+).
+# Push these on every device after 'tacctl group commands' changes."$'\n'
+        while IFS='|' read -r gname jclass junos_class; do
+            [[ -z "$gname" ]] && continue
+            local rules
+            rules=$(read_group_commands "$gname")
+            [[ -z "$rules" ]] && continue
+            local permit_names="" deny_names="" rule_default
+            rule_default=$(read_group_default_action "$gname")
+            while IFS='|' read -r rname raction rmatch; do
+                [[ -z "$rname" || "$rname" == "*" ]] && continue
+                if [[ "$raction" == "permit" ]]; then
+                    permit_names+="${permit_names:+|}${rname}"
+                else
+                    deny_names+="${deny_names:+|}${rname}"
+                fi
+            done <<< "$rules"
+            CLASS_COMMAND_RULES+="# class '${jclass}' (group '${gname}', default ${rule_default})"$'\n'
+            if [[ -n "$permit_names" ]]; then
+                CLASS_COMMAND_RULES+="set system login class ${jclass} allow-commands \"^(${permit_names})( .*)?\$\""$'\n'
+            fi
+            if [[ -n "$deny_names" ]]; then
+                CLASS_COMMAND_RULES+="set system login class ${jclass} deny-commands \"^(${deny_names})( .*)?\$\""$'\n'
+            fi
+            if [[ "$rule_default" == "deny" && -z "$permit_names" ]]; then
+                CLASS_COMMAND_RULES+="# Default action is 'deny' but no allow-commands set —"$'\n'
+                CLASS_COMMAND_RULES+="# this class will be unable to run anything. Add explicit"$'\n'
+                CLASS_COMMAND_RULES+="# permits with 'tacctl group commands add ${gname} <name> --action permit'."$'\n'
+            fi
+        done <<< "$group_juniper"
+        # Trim trailing newline so envsubst doesn't double-blank.
+        CLASS_COMMAND_RULES="${CLASS_COMMAND_RULES%$'\n'}"
+    else
+        CLASS_COMMAND_RULES="# Per-command authorization not configured.
+# To restrict commands per group, use 'tacctl group commands' on the tacquito server."
+    fi
+
     echo ""
     echo -e "${BOLD}Juniper Junos Configuration${NC}"
     echo -e "${YELLOW}Copy and paste into the device (configure mode):${NC}"
@@ -1763,8 +2167,8 @@ set firewall family inet filter ${juniper_acl_name} term default-accept then acc
     local template_file
     template_file=$(resolve_template "juniper")
     if [[ -n "$template_file" ]]; then
-        export SERVER_IP="$server_ip" SECRET="$secret" TEMPLATE_USERS TACPLUS_CONFIG MGMT_ACL_BLOCK VERIFY_COMMANDS GROUP_SUMMARY
-        envsubst '${SERVER_IP} ${SECRET} ${TEMPLATE_USERS} ${TACPLUS_CONFIG} ${MGMT_ACL_BLOCK} ${VERIFY_COMMANDS} ${GROUP_SUMMARY}' < "$template_file"
+        export SERVER_IP="$server_ip" SECRET="$secret" TEMPLATE_USERS TACPLUS_CONFIG MGMT_ACL_BLOCK CLASS_COMMAND_RULES VERIFY_COMMANDS GROUP_SUMMARY
+        envsubst '${SERVER_IP} ${SECRET} ${TEMPLATE_USERS} ${TACPLUS_CONFIG} ${MGMT_ACL_BLOCK} ${CLASS_COMMAND_RULES} ${VERIFY_COMMANDS} ${GROUP_SUMMARY}' < "$template_file"
     else
         echo "# Step 1: Create template users (REQUIRED)"
         echo "$TEMPLATE_USERS"
@@ -1772,10 +2176,13 @@ set firewall family inet filter ${juniper_acl_name} term default-accept then acc
         echo "# Step 2: Configure TACACS+"
         echo "$TACPLUS_CONFIG"
         echo ""
-        echo "# Step 3: (optional) Management ACL"
+        echo "# Step 3: (optional) Per-class command rules"
+        echo "$CLASS_COMMAND_RULES"
+        echo ""
+        echo "# Step 4: (optional) Management ACL"
         echo "$MGMT_ACL_BLOCK"
         echo ""
-        echo "# Step 4: Commit"
+        echo "# Step 5: Commit"
         echo "commit"
     fi
 
@@ -1858,12 +2265,36 @@ cmd_config_branch() {
 # --- CONFIG ALLOW/DENY PREFIX FILTERS ---
 cmd_config_prefix_filter() {
     local key="$1"
-    local subcmd="${2:-list}"
+    local subcmd="${2:-}"
     local cidr="${3:-}"
     local label
     [[ "$key" == "prefix_allow" ]] && label="allow" || label="deny"
 
     case "$subcmd" in
+        ""|-h|--help|help)
+            local entries
+            entries=$(python3 -c "
+import re, sys
+config = open(sys.argv[1]).read()
+m = re.search(r'^' + sys.argv[2] + r':\s*\[(.*?)\]', config, re.MULTILINE)
+if m and m.group(1).strip():
+    print(len(re.findall(r'\"([^\"]+)\"', m.group(1))))
+else:
+    print(0)
+" "$CONFIG" "$key" 2>/dev/null || echo 0)
+            echo ""
+            echo -e "${BOLD}tacctl config ${label}${NC} — connection IP ACL (${label} list)"
+            echo ""
+            echo "Usage:"
+            echo "  tacctl config ${label} list                    Show current ${label} list"
+            echo "  tacctl config ${label} add <cidr>              Add a CIDR"
+            echo "  tacctl config ${label} remove <cidr>           Remove a CIDR"
+            echo ""
+            echo "Current entries: ${entries}"
+            echo "Note: 'deny' takes precedence over 'allow'. Both empty = all connections accepted."
+            echo ""
+            return
+            ;;
         list)
             echo ""
             echo -e "${BOLD}Connection ${label} list${NC}"
@@ -2604,6 +3035,652 @@ print('OK')
     echo ""
 }
 
+# --- GROUP COMMANDS (per-group authorized command rules) ---
+# Drives Cisco TACACS+ command authorization (live) and Juniper class
+# allow/deny-commands (local enforcement, requires per-device push).
+#
+# Storage convention: a trailing `name: "*"` rule whose action encodes
+# the group's default action. Tacquito returns FAIL for any rule that
+# doesn't match, so the catchall is the sole way to express "permit
+# everything not explicitly denied."
+#
+# Safety: when ANY group gains its first commands: section, every other
+# group at the same Cisco priv-lvl is auto-seeded with a catchall
+# permit. Without this, Cisco's `aaa authorization commands <level>`
+# would route ALL command authz at that level through tacquito and
+# users in the unconfigured group would be denied every command.
+cmd_group_commands() {
+    local subcmd="${1:-}"
+    shift 2>/dev/null || true
+
+    case "$subcmd" in
+        ""|-h|--help|help)
+            cmd_group_commands_usage
+            return
+            ;;
+        seed)
+            cmd_group_commands_seed "$@"
+            return
+            ;;
+        list|default|add|remove|clear)
+            ;;
+        *)
+            error "Unknown subcommand: '${subcmd}'"
+            cmd_group_commands_usage
+            exit 1
+            ;;
+    esac
+
+    local group="${1:-}"
+    shift 2>/dev/null || true
+
+    if [[ -z "$group" ]]; then
+        error "Usage: tacctl group commands ${subcmd} <group> ..."
+        exit 1
+    fi
+    if ! grep -q "^${group}: &${group}$" "$CONFIG"; then
+        error "Group '${group}' does not exist."
+        exit 1
+    fi
+
+    case "$subcmd" in
+        list)
+            local rules default_action
+            rules=$(read_group_commands "$group")
+            default_action=$(read_group_default_action "$group")
+            echo ""
+            echo -e "${BOLD}Command rules for group '${group}'${NC}"
+            echo "--------------------------------------------"
+            echo -e "  Default action: ${BOLD}${default_action}${NC}"
+            echo ""
+            if [[ -z "$rules" ]]; then
+                echo "  (no commands: section — all commands permitted)"
+                echo ""
+                return
+            fi
+            printf "  ${BOLD}%-20s %-8s %s${NC}\n" "NAME" "ACTION" "MATCH"
+            echo "  -------------------------------------------------"
+            local catchall_seen="false"
+            while IFS='|' read -r name action match; do
+                [[ -z "$name" ]] && continue
+                local color="$GREEN"
+                [[ "$action" == "deny" ]] && color="$RED"
+                if [[ "$name" == "*" ]]; then
+                    catchall_seen="true"
+                    printf "  %-20s ${color}%-8s${NC} %s\n" "$name (catchall)" "$action" "$match"
+                else
+                    printf "  %-20s ${color}%-8s${NC} %s\n" "$name" "$action" "$match"
+                fi
+            done <<< "$rules"
+            if [[ "$catchall_seen" == "false" ]]; then
+                warn "No '*' catchall — tacquito will FAIL any unmatched command."
+                warn "Set the default explicitly with 'tacctl group commands default ${group} permit|deny'."
+            fi
+            echo ""
+            ;;
+        default)
+            local new_default="${1:-}"
+            if [[ "$new_default" != "permit" && "$new_default" != "deny" ]]; then
+                error "Usage: tacctl group commands default <group> <permit|deny>"
+                exit 1
+            fi
+            backup_config
+            seed_command_rules_safely "$group"
+            update_group_catchall "$group" "$new_default"
+            chown tacquito:tacquito "$CONFIG"
+            restart_service
+            info "Group '${group}' default action set to ${new_default}."
+            echo ""
+            ;;
+        add)
+            local name="${1:-}"
+            shift 2>/dev/null || true
+            if [[ -z "$name" ]]; then
+                error "Usage: tacctl group commands add <group> <name> [--match <regex>]... [--action permit|deny]"
+                exit 1
+            fi
+            validate_command_name "$name"
+            if [[ "$name" == "*" ]]; then
+                error "Use 'tacctl group commands default ${group} permit|deny' to change the catchall."
+                exit 1
+            fi
+            local action="permit"
+            local matches=""
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --match)
+                        validate_regex "${2:-}"
+                        matches+="${matches:+,}${2}"
+                        shift 2
+                        ;;
+                    --action)
+                        action="${2:-}"
+                        if [[ "$action" != "permit" && "$action" != "deny" ]]; then
+                            error "--action must be 'permit' or 'deny'."
+                            exit 1
+                        fi
+                        shift 2
+                        ;;
+                    *)
+                        error "Unknown flag: '$1'"
+                        exit 1
+                        ;;
+                esac
+            done
+
+            backup_config
+            seed_command_rules_safely "$group"
+
+            # Reject duplicate (name, match) — same name with same match
+            # set is a no-op. Same name with different matches is fine.
+            local existing
+            existing=$(read_group_commands "$group" | grep "^${name}|" || true)
+            if [[ -n "$existing" ]]; then
+                while IFS='|' read -r en ea em; do
+                    [[ "$en" == "$name" && "$em" == "$matches" ]] && {
+                        info "Rule '${name}' (match='${matches}') already present; no change."
+                        echo ""
+                        return
+                    }
+                done <<< "$existing"
+            fi
+
+            insert_command_rule "$group" "$name" "$action" "$matches"
+            chown tacquito:tacquito "$CONFIG"
+            restart_service
+            info "Added rule '${name}' (action=${action}, match=[${matches}]) to group '${group}'."
+            echo ""
+            ;;
+        remove)
+            local name="${1:-}"
+            if [[ -z "$name" ]]; then
+                error "Usage: tacctl group commands remove <group> <name>"
+                exit 1
+            fi
+            if [[ "$name" == "*" ]]; then
+                error "Cannot remove the '*' catchall. Use 'tacctl group commands default' to change its action."
+                error "Or 'tacctl group commands clear ${group}' to remove the entire commands: block."
+                exit 1
+            fi
+            if ! read_group_commands "$group" | grep -q "^${name}|"; then
+                warn "No rule named '${name}' in group '${group}'."
+                exit 0
+            fi
+            backup_config
+            remove_command_rule "$group" "$name"
+            chown tacquito:tacquito "$CONFIG"
+            restart_service
+            info "Removed rule '${name}' from group '${group}'."
+            echo ""
+            ;;
+        clear)
+            if [[ -z "$(read_group_commands "$group")" ]]; then
+                info "Group '${group}' has no commands: block; nothing to clear."
+                exit 0
+            fi
+            read -rp "  Clear all command rules for group '${group}'? [y/N]: " confirm
+            if [[ ! "$confirm" =~ ^[Yy] ]]; then
+                info "Aborted."
+                return
+            fi
+            backup_config
+            write_group_commands "$group" ""
+            chown tacquito:tacquito "$CONFIG"
+            restart_service
+            info "Cleared command rules for group '${group}'."
+            warn "If other groups at the same Cisco priv-lvl still have rules,"
+            warn "Cisco will deny ALL commands to '${group}' users at that level."
+            warn "Either re-add a catchall ('tacctl group commands default ${group} permit')"
+            warn "or clear all groups at the same priv-lvl."
+            echo ""
+            ;;
+    esac
+}
+
+cmd_group_commands_usage() {
+    echo ""
+    echo -e "${BOLD}tacctl group commands${NC} — per-group authorized commands"
+    echo ""
+    echo "Usage:"
+    echo "  tacctl group commands list <group>                              Show rules + default action"
+    echo "  tacctl group commands default <group> <permit|deny>             Set default action (catchall)"
+    echo "  tacctl group commands add <group> <name> [--match <regex>]...   Add a rule"
+    echo "                                            [--action permit|deny]"
+    echo "  tacctl group commands remove <group> <name>                     Drop a rule"
+    echo "  tacctl group commands clear <group>                             Wipe rules (confirms)"
+    echo "  tacctl group commands seed [<group>] [--force]                  Populate built-ins with defaults"
+    echo ""
+    echo "Cisco devices ask tacquito per command (live enforcement) when"
+    echo "'aaa authorization commands <level>' is in the device config —"
+    echo "tacctl auto-emits these lines in 'tacctl config cisco' once any"
+    echo "group has rules. Juniper enforcement is LOCAL via class"
+    echo "allow/deny-commands and requires a per-device config push."
+    echo ""
+}
+
+# --- Default rule sets per built-in group ---
+# Returns "default_action|space-separated-permit-names" for the group.
+# Unknown groups return empty (the caller treats that as "no defaults").
+default_rules_for_group() {
+    local group="$1"
+    case "$group" in
+        readonly)
+            echo "deny|show ping traceroute terminal exit end quit logout who where enable"
+            ;;
+        operator)
+            echo "deny|show ping traceroute terminal exit end quit logout who where enable clear test monitor"
+            ;;
+        superuser)
+            # No specific rules; catchall permit gives unrestricted access.
+            echo "permit|"
+            ;;
+        *)
+            echo ""
+            ;;
+    esac
+}
+
+# --- Apply the default rule set to one group (unconditional write) ---
+apply_default_rules() {
+    local group="$1"
+    local spec
+    spec=$(default_rules_for_group "$group")
+    [[ -z "$spec" ]] && return 1
+    local default_action="${spec%%|*}"
+    local permit_list="${spec#*|}"
+    local payload=""
+    for cmd in $permit_list; do
+        payload+="${cmd}|permit|"$'\n'
+    done
+    payload+="*|${default_action}|"
+    write_group_commands "$group" "$payload"
+}
+
+# --- Seed built-in groups with reasonable default command rules ---
+# Usage: tacctl group commands seed [<group>] [--force]
+# - No group: seeds all three built-ins (readonly, operator, superuser).
+# - With group: seeds only that group (must be a built-in).
+# - Refuses to overwrite a group that already has rules unless --force.
+cmd_group_commands_seed() {
+    local force="false"
+    local target=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --force)
+                force="true"
+                shift
+                ;;
+            -*)
+                error "Unknown flag: '$1'"
+                cmd_group_commands_usage
+                exit 1
+                ;;
+            *)
+                if [[ -n "$target" ]]; then
+                    error "seed takes at most one group name; got extra '$1'"
+                    exit 1
+                fi
+                target="$1"
+                shift
+                ;;
+        esac
+    done
+
+    local candidates=""
+    if [[ -n "$target" ]]; then
+        if [[ -z "$(default_rules_for_group "$target")" ]]; then
+            error "seed only supports the built-in groups (readonly, operator, superuser)."
+            error "Got '${target}'. Custom groups must be configured with 'tacctl group commands add'."
+            exit 1
+        fi
+        candidates="$target"
+    else
+        candidates="readonly operator superuser"
+    fi
+
+    backup_config
+    local touched="" skipped=""
+    for grp in $candidates; do
+        if ! grep -q "^${grp}: &${grp}$" "$CONFIG"; then
+            warn "Group '${grp}' does not exist in config; skipping."
+            continue
+        fi
+        if [[ -n "$(read_group_commands "$grp")" ]] && [[ "$force" != "true" ]]; then
+            warn "Group '${grp}' already has command rules; skipping (pass --force to overwrite)."
+            skipped+=" ${grp}"
+            continue
+        fi
+        # Protect siblings before writing rules to this group — if any
+        # other priv-lvl sibling lacks a commands: block, seed it with
+        # the permit-* catchall to avoid lockout once Cisco emits
+        # 'aaa authorization commands <level>'.
+        seed_command_rules_safely "$grp"
+        apply_default_rules "$grp"
+        touched+=" ${grp}"
+    done
+
+    if [[ -n "$touched" ]]; then
+        chown tacquito:tacquito "$CONFIG"
+        restart_service
+        info "Seeded default command rules for:${touched}"
+        echo ""
+        echo "  Review with:"
+        for grp in $touched; do
+            echo "    tacctl group commands list ${grp}"
+        done
+        echo ""
+        echo "  Preview the device config with:"
+        echo "    tacctl config cisco"
+        echo "    tacctl config juniper"
+        echo ""
+    else
+        info "No groups seeded."
+        if [[ -n "$skipped" ]]; then
+            info "(Skipped:${skipped}. Pass --force to overwrite.)"
+        fi
+        echo ""
+    fi
+}
+
+# --- Compute and apply the group's catchall ('*' rule) action ---
+update_group_catchall() {
+    local group="$1"
+    local action="$2"
+    # Read current rules, strip any existing catchall, append the new one.
+    local current cleaned
+    current=$(read_group_commands "$group")
+    cleaned=$(printf '%s\n' "$current" | awk -F'|' '$1 != "*" { print }')
+    local payload
+    payload=$(printf '%s\n*|%s|' "$cleaned" "$action" | awk 'NF')
+    write_group_commands "$group" "$payload"
+}
+
+# --- Insert a new rule (before the catchall) ---
+insert_command_rule() {
+    local group="$1" name="$2" action="$3" matches="$4"
+    local current default catchall non_catchall payload
+    current=$(read_group_commands "$group")
+    default=$(read_group_default_action "$group")
+    catchall="*|${default}|"
+    non_catchall=$(printf '%s\n' "$current" | awk -F'|' '$1 != "*" { print }')
+    if [[ -n "$non_catchall" ]]; then
+        payload=$(printf '%s\n%s|%s|%s\n%s\n' "$non_catchall" "$name" "$action" "$matches" "$catchall" | awk 'NF')
+    else
+        payload=$(printf '%s|%s|%s\n%s\n' "$name" "$action" "$matches" "$catchall" | awk 'NF')
+    fi
+    write_group_commands "$group" "$payload"
+}
+
+# --- Remove a rule by name (preserves catchall) ---
+remove_command_rule() {
+    local group="$1" name="$2"
+    local current payload
+    current=$(read_group_commands "$group")
+    payload=$(printf '%s\n' "$current" | awk -F'|' -v n="$name" '$1 != n { print }')
+    write_group_commands "$group" "$payload"
+}
+
+# --- Seed catchall-permit rules on sibling groups at the same priv-lvl ---
+# When this group is about to gain its first commands: block, ensure
+# every other group at the same Cisco priv-lvl ALSO has a (permit *)
+# catchall — otherwise, the moment 'aaa authorization commands <level>'
+# is in the device config, those siblings' users get denied everything.
+#
+# Safe to call repeatedly: groups that already have a commands: block
+# are left alone.
+seed_command_rules_safely() {
+    local group="$1"
+    local privlvl
+    privlvl=$(get_group_privlvl "$group")
+    [[ -z "$privlvl" ]] && return 0
+    local seeded=""
+    while IFS= read -r other; do
+        [[ -z "$other" ]] && continue
+        [[ "$other" == "$group" ]] && continue
+        local other_priv
+        other_priv=$(get_group_privlvl "$other")
+        [[ "$other_priv" != "$privlvl" ]] && continue
+        # Already has a commands: block? Skip.
+        if [[ -n "$(read_group_commands "$other")" ]]; then
+            continue
+        fi
+        write_group_commands "$other" "*|permit|"
+        seeded+=" ${other}"
+    done < <(list_all_groups)
+    if [[ -n "$seeded" ]]; then
+        info "Auto-seeded permit-* catchall on sibling groups at priv-lvl ${privlvl}:${seeded}"
+        info "(prevents lockout once Cisco 'aaa authorization commands ${privlvl}' is applied.)"
+    fi
+}
+
+# --- GROUP PRIVILEGE (Cisco priv-exec command mappings) ---
+# Controls which IOS commands move to a group's priv-lvl via
+# 'privilege exec level <N> <command>' lines emitted by
+# 'tacctl config cisco'. Pure device-side config; tacquito itself does
+# not read this file. Backward-compatible: when the file is missing or
+# a group has no explicit mappings, falls back to a safe default set
+# (only the verified move-DOWN commands; nothing inadvertently
+# restricted from lower-priv groups).
+cmd_group_privilege() {
+    local subcmd="${1:-}"
+    shift 2>/dev/null || true
+
+    case "$subcmd" in
+        ""|-h|--help|help)
+            cmd_group_privilege_usage
+            return
+            ;;
+        seed)
+            cmd_group_privilege_seed "$@"
+            return
+            ;;
+        list|add|remove|clear)
+            ;;
+        *)
+            error "Unknown subcommand: '${subcmd}'"
+            cmd_group_privilege_usage
+            exit 1
+            ;;
+    esac
+
+    local group="${1:-}"
+    shift 2>/dev/null || true
+    if [[ -z "$group" ]]; then
+        error "Usage: tacctl group privilege ${subcmd} <group> ..."
+        exit 1
+    fi
+    if ! grep -q "^${group}: &${group}$" "$CONFIG"; then
+        error "Group '${group}' does not exist."
+        exit 1
+    fi
+
+    local privlvl
+    privlvl=$(get_group_privlvl "$group")
+    if [[ -z "$privlvl" ]]; then
+        error "Group '${group}' has no Cisco priv-lvl; nothing to map."
+        exit 1
+    fi
+
+    case "$subcmd" in
+        list)
+            local explicit defaults
+            explicit=$(read_group_privileges "$group")
+            defaults=$(default_privileges_for_group "$group")
+            echo ""
+            echo -e "${BOLD}Cisco priv-exec mappings for group '${group}' (priv-lvl ${privlvl})${NC}"
+            echo "--------------------------------------------"
+            if [[ -n "$explicit" ]]; then
+                echo -e "  Source: ${BOLD}explicit${NC} (${PRIVILEGE_FILE})"
+                echo ""
+                echo "$explicit" | while IFS= read -r c; do
+                    [[ -z "$c" ]] && continue
+                    echo "  - ${c}"
+                done
+            elif [[ -n "$defaults" ]]; then
+                echo -e "  Source: ${BOLD}default${NC} (no explicit mappings; using built-in safe defaults)"
+                echo ""
+                echo "$defaults" | while IFS= read -r c; do
+                    [[ -z "$c" ]] && continue
+                    echo "  - ${c}  (default)"
+                done
+                echo ""
+                echo "  Override with: tacctl group privilege add ${group} '<command>'"
+            else
+                echo "  (no mappings — group's priv-lvl uses Cisco defaults)"
+            fi
+            echo ""
+            ;;
+        add)
+            local cmd="${1:-}"
+            if [[ -z "$cmd" ]]; then
+                error "Usage: tacctl group privilege add <group> '<command>'"
+                exit 1
+            fi
+            validate_priv_command_string "$cmd"
+            local current
+            current=$(read_group_privileges "$group")
+            # If empty, seed from defaults so the user's first add doesn't
+            # silently drop the conservative defaults.
+            if [[ -z "$current" ]]; then
+                current=$(default_privileges_for_group "$group")
+            fi
+            if printf '%s\n' "$current" | grep -qxF "$cmd"; then
+                info "'${cmd}' already mapped for group '${group}'; no change."
+                echo ""
+                return
+            fi
+            local new_list
+            if [[ -n "$current" ]]; then
+                new_list=$(printf '%s\n%s\n' "$current" "$cmd")
+            else
+                new_list="$cmd"
+            fi
+            write_group_privileges "$group" "$new_list"
+            info "Added priv-exec mapping for group '${group}': '${cmd}' (level ${privlvl})."
+            echo ""
+            ;;
+        remove)
+            local cmd="${1:-}"
+            if [[ -z "$cmd" ]]; then
+                error "Usage: tacctl group privilege remove <group> '<command>'"
+                exit 1
+            fi
+            local current
+            current=$(read_group_privileges "$group")
+            # If no explicit mappings exist, seed from defaults so the
+            # remove takes effect against a known set.
+            if [[ -z "$current" ]]; then
+                current=$(default_privileges_for_group "$group")
+            fi
+            if ! printf '%s\n' "$current" | grep -qxF "$cmd"; then
+                warn "'${cmd}' not mapped for group '${group}'; nothing to remove."
+                exit 0
+            fi
+            local new_list
+            new_list=$(printf '%s\n' "$current" | grep -vxF "$cmd" || true)
+            write_group_privileges "$group" "$new_list"
+            info "Removed priv-exec mapping for group '${group}': '${cmd}'."
+            echo ""
+            ;;
+        clear)
+            if [[ -z "$(read_group_privileges "$group")" ]]; then
+                info "Group '${group}' has no explicit priv mappings; nothing to clear."
+                exit 0
+            fi
+            read -rp "  Clear all priv-exec mappings for group '${group}'? [y/N]: " confirm
+            if [[ ! "$confirm" =~ ^[Yy] ]]; then
+                info "Aborted."
+                return
+            fi
+            write_group_privileges "$group" ""
+            info "Cleared explicit priv-exec mappings for group '${group}' (defaults will be used)."
+            echo ""
+            ;;
+    esac
+}
+
+cmd_group_privilege_usage() {
+    echo ""
+    echo -e "${BOLD}tacctl group privilege${NC} — per-group Cisco priv-exec command mappings"
+    echo ""
+    echo "Usage:"
+    echo "  tacctl group privilege list <group>                     Show mappings (explicit or default)"
+    echo "  tacctl group privilege add <group> '<command>'          Move a command to the group's priv-lvl"
+    echo "  tacctl group privilege remove <group> '<command>'       Remove a mapping"
+    echo "  tacctl group privilege clear <group>                    Wipe explicit mappings (revert to defaults)"
+    echo "  tacctl group privilege seed [<group>] [--force]         Populate built-ins with safe defaults"
+    echo ""
+    echo "Drives 'privilege exec level <lvl> <cmd>' lines emitted by"
+    echo "'tacctl config cisco'. Pure device-side; tacquito does not read"
+    echo "these. When no explicit mappings exist for a group, a conservative"
+    echo "default set is used (only commands moved DOWN from priv 15)."
+    echo ""
+}
+
+cmd_group_privilege_seed() {
+    local force="false"
+    local target=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --force) force="true"; shift ;;
+            -*)
+                error "Unknown flag: '$1'"; cmd_group_privilege_usage; exit 1 ;;
+            *)
+                if [[ -n "$target" ]]; then
+                    error "seed takes at most one group name; got extra '$1'"; exit 1
+                fi
+                target="$1"; shift ;;
+        esac
+    done
+
+    local candidates=""
+    if [[ -n "$target" ]]; then
+        if [[ -z "$(default_privileges_for_group "$target")" && "$target" != "readonly" && "$target" != "operator" && "$target" != "superuser" ]]; then
+            error "seed only supports the built-in groups (readonly, operator, superuser)."
+            exit 1
+        fi
+        candidates="$target"
+    else
+        candidates="readonly operator superuser"
+    fi
+
+    local touched="" skipped=""
+    for grp in $candidates; do
+        if ! grep -q "^${grp}: &${grp}$" "$CONFIG"; then
+            warn "Group '${grp}' does not exist; skipping."
+            continue
+        fi
+        if [[ -n "$(read_group_privileges "$grp")" ]] && [[ "$force" != "true" ]]; then
+            warn "Group '${grp}' already has explicit priv mappings; skipping (pass --force to overwrite)."
+            skipped+=" ${grp}"
+            continue
+        fi
+        local defaults
+        defaults=$(default_privileges_for_group "$grp")
+        write_group_privileges "$grp" "$defaults"
+        touched+=" ${grp}"
+    done
+
+    if [[ -n "$touched" ]]; then
+        info "Seeded default priv-exec mappings for:${touched}"
+        echo ""
+        echo "  Review with:"
+        for grp in $touched; do
+            echo "    tacctl group privilege list ${grp}"
+        done
+        echo ""
+        echo "  Preview Cisco device config:"
+        echo "    tacctl config cisco"
+        echo ""
+    else
+        info "No groups seeded."
+        if [[ -n "$skipped" ]]; then
+            info "(Skipped:${skipped}. Pass --force to overwrite.)"
+        fi
+        echo ""
+    fi
+}
+
 # --- GROUP dispatcher ---
 cmd_group() {
     local subcmd="${1:-}"
@@ -2622,6 +3699,12 @@ cmd_group() {
         remove)
             cmd_group_remove "$@"
             ;;
+        commands)
+            cmd_group_commands "$@"
+            ;;
+        privilege)
+            cmd_group_privilege "$@"
+            ;;
         *)
             echo ""
             echo -e "${BOLD}Group Commands${NC}"
@@ -2629,11 +3712,13 @@ cmd_group() {
             echo "Usage: tacctl group <subcommand> [arguments]"
             echo ""
             echo "Subcommands:"
-            echo "  list                                   List all groups"
-            echo "  add <name> <priv-lvl> <juniper-class>  Add a new group"
-            echo "  edit <name> priv-lvl <0-15>            Change Cisco privilege level"
-            echo "  edit <name> juniper-class <CLASS>      Change Juniper class name"
-            echo "  remove <name>                          Remove a custom group"
+            echo "  list                                                List all groups"
+            echo "  add <name> <priv-lvl> <juniper-class>               Add a new group"
+            echo "  edit <name> priv-lvl <0-15>                         Change Cisco privilege level"
+            echo "  edit <name> juniper-class <CLASS>                   Change Juniper class name"
+            echo "  remove <name>                                       Remove a custom group"
+            echo "  commands list|default|add|remove|clear <group> ...  Per-group authorized commands"
+            echo "  privilege list|add|remove|clear|seed <group> ...    Per-group Cisco priv-exec mappings"
             echo ""
             echo "Examples:"
             echo "  tacctl group list"
@@ -2641,6 +3726,10 @@ cmd_group() {
             echo "  tacctl group edit operator priv-lvl 10"
             echo "  tacctl group edit operator juniper-class NEW-CLASS"
             echo "  tacctl group remove helpdesk"
+            echo "  tacctl group commands default operator deny"
+            echo "  tacctl group commands add operator show --action permit"
+            echo "  tacctl group privilege list operator"
+            echo "  tacctl group privilege add operator 'show running-config'"
             echo ""
             exit 1
             ;;

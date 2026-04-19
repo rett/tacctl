@@ -7,10 +7,10 @@ service password-encryption
 !
 aaa new-model
 !
-! Pin TACACS+ client to a known source interface so prefix-based ACLs on
-! the tacquito side have a stable source IP. Replace <MGMT_IF> with your
-! management interface (e.g. Loopback0, GigabitEthernet0/0).
-ip tacacs source-interface <MGMT_IF>
+! Optional: pin TACACS+ client to a known source interface so prefix-based
+! ACLs on the tacquito side have a stable source IP. Uncomment and replace
+! the interface token with your management interface (e.g. Loopback0).
+! ip tacacs source-interface Loopback0
 !
 tacacs server TACACS
   address ipv4 ${SERVER_IP}
@@ -27,6 +27,8 @@ aaa accounting exec default start-stop group TACACS-GROUP
 aaa accounting commands 1 default start-stop group TACACS-GROUP
 aaa accounting commands 7 default start-stop group TACACS-GROUP
 aaa accounting commands 15 default start-stop group TACACS-GROUP
+!
+${AUTHZ_COMMANDS_BLOCK}
 !
 ${PRIVILEGE_COMMANDS}
 ${VTY_ACL_BLOCK}

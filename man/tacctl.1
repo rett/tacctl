@@ -132,6 +132,127 @@ can be edited but not removed.
 .TP
 .BI "group remove " name
 Remove a custom group. Built-in groups are protected.
+.TP
+.B "group commands list " \fIgroup\fR
+Show the per-command authorization rules for a group, including the
+default action (the action of the trailing
+.RB ` * `
+catchall rule).
+.TP
+.B "group commands default " \fIgroup\fR " { permit | deny }"
+Set the default action for unmatched commands. Stored as the action
+of a trailing
+.RB ` * `
+rule that tacquito's
+.B CommandBasedAuthorizer
+matches as a wildcard.
+.TP
+.B "group commands add " \fIgroup\fR " " \fIname\fR " [ --match \fIregex\fR ]... [ --action permit | deny ]"
+Append a rule. Default action is
+.BR permit .
+The
+.I name
+is matched against the TACACS+
+.B cmd=
+field literally. Each
+.B --match
+adds an arg-list regex (auto-anchored with
+.RB ` ^…$ `).
+The first matching rule wins; tacquito returns FAIL if no rule
+matches and the
+.RB ` * `
+catchall is not
+.BR permit .
+.TP
+.B "group commands remove " \fIgroup\fR " " \fIname\fR
+Drop a rule by name. The
+.RB ` * `
+catchall is protected; change it via
+.B group commands default
+or remove the entire block via
+.B group commands clear .
+.TP
+.BI "group commands clear " group
+Wipe all command rules for a group (with confirmation). When other
+groups at the same Cisco privilege level still have rules, this
+group's users will be denied all commands at that level until you
+re-add a catchall (or clear those siblings too).
+.TP
+.B "group commands seed " [ \fIgroup\fR ] " " [ --force ]
+Populate the built-in groups
+.RB ( readonly ,
+.BR operator ,
+.BR superuser )
+with sensible default rule sets. Without an argument, seeds all three;
+with a group name, seeds only that one (custom groups are not seeded).
+Refuses to overwrite an existing
+.B commands:
+section unless
+.B --force
+is given. Defaults:
+.B readonly
+permits
+.IR "show ping traceroute terminal exit end quit logout who where enable"
+with default deny;
+.B operator
+adds
+.IR "clear test monitor"
+to the readonly set with default deny;
+.B superuser
+gets a
+.RB ` "* permit" `
+catchall (unrestricted).
+.TP
+.BI "group privilege list " group
+Show the Cisco
+.B "privilege exec level"
+mappings for a group. Reports whether the source is an explicit
+override (in
+.IR /etc/tacquito/cisco-privileges.conf )
+or the built-in default set (move-DOWN commands only).
+.TP
+.B "group privilege add " \fIgroup\fR " '\fIcommand\fR'"
+Move a Cisco command to the group's priv-lvl. Quote multi-word
+commands (e.g.
+.RB ' "show running-config" ' ).
+On first
+.B add
+the group's defaults are inherited; subsequent adds extend that set.
+.TP
+.B "group privilege remove " \fIgroup\fR " '\fIcommand\fR'"
+Drop a previously-mapped command. If only defaults are in effect, the
+remove takes effect against the default set (suppressing it for that
+group).
+.TP
+.BI "group privilege clear " group
+Wipe explicit mappings for a group; the built-in default set takes
+over again.
+.TP
+.B "group privilege seed " [ \fIgroup\fR ] " " [ --force ]
+Populate the built-in groups with their default mapping set. Same
+shape as
+.BR "group commands seed" .
+Default sets:
+.B readonly
+none (priv-1 is the floor);
+.B operator
+.RI ' "show running-config" '
+and
+.RI ' "show startup-config" '
+moved DOWN from priv-15;
+.B superuser
+none (priv-15 is the ceiling).
+.PP
+Cisco devices enforce these rules LIVE — once any group has rules,
+.B tacctl config cisco
+emits
+.B aaa authorization commands 1/7/15 default group TACACS-GROUP local
+and IOS asks tacquito for every command. Juniper enforces locally via
+class
+.B allow-commands
+/
+.B deny-commands
+regex; a per-device config push is required after every change.
 .SS Server configuration \fB(tacctl config)\fR
 .TP
 .B config show
