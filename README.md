@@ -87,14 +87,21 @@ tacctl config deny add 10.99.0.0/24
 ```
 Deny takes precedence over allow.
 
-### VTY ACLs on Cisco devices
-Apply an access-class to VTY lines to restrict which hosts can initiate SSH/Telnet sessions:
+### Management ACL (Cisco VTY-ACL + Juniper lo0 filter)
+Restrict which source subnets can reach the device management plane. Build the permit list once on the tacquito server:
 ```
-ip access-list standard VTY-ACL
-  permit <mgmt-subnet>
-line vty 0 15
-  access-class VTY-ACL in
+tacctl config mgmt-acl add 10.1.0.0/16
+tacctl config mgmt-acl add 192.168.5.0/24
+tacctl config mgmt-acl list
 ```
+`tacctl config cisco` then emits a populated `VTY-ACL` applied to `line vty 0 15` via `access-class VTY-ACL in`. `tacctl config juniper` emits a commented `set firewall family inet filter MGMT-SSH-ACL` block (including a trailing `default-accept` term to keep BGP/OSPF/IS-IS traffic to the RE working) — review and uncomment per device. The list lives at `/etc/tacquito/mgmt-acl.conf` and survives `tacctl upgrade`.
+
+Rename the emitted ACL / filter names to match your site conventions:
+```
+tacctl config mgmt-acl cisco-name MGMT-ACCESS
+tacctl config mgmt-acl juniper-name MGMT-SSH-FILTER
+```
+Overrides live at `/etc/tacquito/mgmt-acl-names.conf` and also survive `tacctl upgrade`.
 
 ### Log retention
 Accounting logs are rotated daily and retained for 90 days (see `/etc/logrotate.d/tacquito`). Adjust the `rotate` value if your compliance requirements differ.
@@ -224,9 +231,11 @@ config loglevel [debug|info|error]          Show or change log level
 config listen [show|tcp|tcp6|reset] [addr]  Show, change, or reset TCP listen address
 config sudoers [show|install|remove] [grp]  Manage NOPASSWD sudoers drop-in for tacctl
 config password-age [days]                  Show or set password age warning threshold (default 90)
+config bcrypt-cost [10-14]                  Show or set bcrypt cost factor for new hashes (default 12)
 config prefixes [cidr,...]                  Change allowed device subnets
 config allow list|add|remove                Manage connection allow list (IP ACL)
 config deny list|add|remove                 Manage connection deny list (IP ACL)
+config mgmt-acl list|add|remove|clear       Manage Cisco VTY-ACL + Juniper lo0-filter permits
 config branch [name]                        Show or change the tacctl repo branch
 ```
 

@@ -66,7 +66,7 @@ _tacctl() {
             ;;
         config)
             if [[ $pos -eq 2 ]]; then
-                COMPREPLY=($(compgen -W "show secret prefixes cisco juniper validate loglevel listen sudoers password-age diff allow deny branch" -- "$cur"))
+                COMPREPLY=($(compgen -W "show secret prefixes cisco juniper validate loglevel listen sudoers password-age bcrypt-cost diff allow deny mgmt-acl branch" -- "$cur"))
             elif [[ $pos -eq 3 ]]; then
                 case "${words[offset + 2]}" in
                     loglevel)
@@ -80,6 +80,9 @@ _tacctl() {
                         ;;
                     allow|deny)
                         COMPREPLY=($(compgen -W "list add remove" -- "$cur"))
+                        ;;
+                    mgmt-acl)
+                        COMPREPLY=($(compgen -W "list add remove clear cisco-name juniper-name" -- "$cur"))
                         ;;
                 esac
             fi

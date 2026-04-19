@@ -181,6 +181,10 @@ before taking effect. Not installed by default.
 .BI "config password-age " [ days ]
 Show or set the password age warning threshold. Default 90 days.
 .TP
+.BI "config bcrypt-cost " [ "10-14" ]
+Show or set the bcrypt cost factor used when hashing new or changed
+passwords. Default 12. Existing hashes keep their minted cost.
+.TP
 .BI "config prefixes " [ "cidr,cidr,..." ]
 Change the allowed device subnets in a single atomic replacement.
 .TP
@@ -194,14 +198,54 @@ takes precedence over
 .BR allow ;
 with both empty, all connections are accepted.
 .TP
+.B "config mgmt-acl " "{ list | add | remove | clear } " [ cidr ]
+Manage a shared CIDR permit list stored at
+.I /etc/tacquito/mgmt-acl.conf
+that drives both the Cisco VTY-ACL and a commented Juniper lo0
+firewall-filter example emitted by
+.B config cisco
+and
+.BR "config juniper" .
+Preserved across
+.BR "tacctl upgrade" .
+With no arguments, prints usage and the current entry count.
+.TP
+.BI "config mgmt-acl cisco-name " [ name ]
+Show or set the name of the IOS access-list emitted by
+.BR "config cisco" .
+Default
+.BR VTY-ACL .
+Names must start with a letter and contain only letters, digits,
+.RB ` _ ` ,
+or
+.RB ` - `
+(max 63 chars).
+.TP
+.BI "config mgmt-acl juniper-name " [ name ]
+Show or set the name of the Junos firewall filter emitted by
+.BR "config juniper" .
+Default
+.BR MGMT-SSH-ACL .
+Same character rules as
+.BR cisco-name .
+Both overrides live at
+.I /etc/tacquito/mgmt-acl-names.conf
+and survive
+.BR "tacctl upgrade" .
+.TP
 .B config cisco
 Print a ready-to-paste Cisco IOS/IOS-XE configuration with the
-server IP, shared secret, and current group-to-privilege mappings
+server IP, shared secret, current group-to-privilege mappings, and
+the VTY-ACL built from
+.B config mgmt-acl
 pre-filled.
 .TP
 .B config juniper
 Print a ready-to-paste Juniper Junos configuration with template
-users, TACACS+ server setup, and verification commands pre-filled.
+users, TACACS+ server setup, verification commands, and a commented
+lo0 firewall-filter example built from
+.B config mgmt-acl
+pre-filled.
 .TP
 .BI "config branch " [ name ]
 Show or change the tacctl repository branch used by

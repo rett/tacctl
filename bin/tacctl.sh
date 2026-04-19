@@ -33,6 +33,10 @@ BCRYPT_COST=12
 BCRYPT_COST_FILE="/etc/tacquito/bcrypt-cost"
 PASSWORD_MIN_LENGTH=12
 SECRET_MIN_LENGTH=16
+MGMT_ACL_FILE="/etc/tacquito/mgmt-acl.conf"
+MGMT_ACL_NAMES_FILE="/etc/tacquito/mgmt-acl-names.conf"
+CISCO_ACL_NAME_DEFAULT="VTY-ACL"
+JUNIPER_ACL_NAME_DEFAULT="MGMT-SSH-ACL"
 CONFIG_DIR="/etc/tacquito"
 LOG_DIR="/var/log/tacquito"
 SERVICE_FILE="/etc/systemd/system/tacquito.service"
@@ -279,6 +283,107 @@ validate_cidr() {
     if ! python3 -c "import ipaddress,sys; ipaddress.ip_network(sys.argv[1],strict=False)" "$value" 2>/dev/null; then
         error "Invalid CIDR: '${value}'"
         exit 1
+    fi
+}
+
+# --- Convert an IPv4 CIDR to Cisco wildcard-mask form (10.1.0.0/16 -> "10.1.0.0 0.0.255.255") ---
+# IPv6 inputs return empty — callers decide whether to skip or warn.
+cidr_to_cisco_wildcard() {
+    local value="$1"
+    python3 -c "
+import ipaddress, sys
+n = ipaddress.ip_network(sys.argv[1], strict=False)
+if n.version != 4:
+    sys.exit(0)
+print(f'{n.network_address} {n.hostmask}')
+" "$value" 2>/dev/null
+}
+
+# --- Read the mgmt-ACL permit list ---
+# Emits one CIDR per stdout line. Strips '# ...' comments, trailing
+# whitespace, and blank lines. Missing file yields no output.
+read_mgmt_acl_cidrs() {
+    [[ -r "$MGMT_ACL_FILE" ]] || return 0
+    # shellcheck disable=SC2016
+    awk '
+        { sub(/#.*/, "") }
+        { gsub(/[[:space:]]+$/, "") }
+        NF { print $1 }
+    ' "$MGMT_ACL_FILE"
+}
+
+# --- Read an mgmt-ACL name override (cisco|juniper) with default fallback ---
+# Storage format at $MGMT_ACL_NAMES_FILE is simple `key=value` lines;
+# unknown keys and blank lines ignored.
+read_mgmt_acl_name() {
+    local which="$1" default=""
+    case "$which" in
+        cisco)   default="$CISCO_ACL_NAME_DEFAULT" ;;
+        juniper) default="$JUNIPER_ACL_NAME_DEFAULT" ;;
+        *)       echo ""; return 0 ;;
+    esac
+    local value=""
+    if [[ -r "$MGMT_ACL_NAMES_FILE" ]]; then
+        value=$(awk -F= -v k="$which" '
+            /^[[:space:]]*#/ { next }
+            /^[[:space:]]*$/ { next }
+            $1 == k { sub(/[[:space:]]+$/, "", $2); print $2; exit }
+        ' "$MGMT_ACL_NAMES_FILE")
+    fi
+    echo "${value:-$default}"
+}
+
+# --- Validate an ACL name for Cisco / Juniper use ---
+# Both vendors accept letters, digits, `_`, `-`; names must start with a
+# letter; keep length <= 63 to match common IOS / Junos limits.
+validate_acl_name() {
+    local name="$1"
+    if [[ -z "$name" ]]; then
+        error "ACL name must not be empty."
+        exit 1
+    fi
+    if [[ ${#name} -gt 63 ]]; then
+        error "ACL name too long (${#name} chars; max 63)."
+        exit 1
+    fi
+    if [[ ! "$name" =~ ^[A-Za-z][A-Za-z0-9_-]*$ ]]; then
+        error "Invalid ACL name '${name}'. Must start with a letter and contain only letters, digits, '_', '-'."
+        exit 1
+    fi
+}
+
+# --- Write an mgmt-ACL name override (cisco|juniper) ---
+write_mgmt_acl_name() {
+    local which="$1" name="$2"
+    mkdir -p "$(dirname "$MGMT_ACL_NAMES_FILE")"
+    local tmp
+    tmp=$(mktemp)
+    # Preserve other keys; overwrite/insert the target key.
+    local replaced="false"
+    if [[ -f "$MGMT_ACL_NAMES_FILE" ]]; then
+        awk -F= -v k="$which" -v v="$name" '
+            BEGIN { done = 0 }
+            /^[[:space:]]*#/ { print; next }
+            /^[[:space:]]*$/ { print; next }
+            $1 == k { print k "=" v; done = 1; next }
+            { print }
+            END { if (!done) print k "=" v }
+        ' "$MGMT_ACL_NAMES_FILE" > "$tmp"
+        replaced="true"
+    else
+        {
+            echo "# tacctl-managed mgmt-ACL names (used by 'tacctl config cisco' / 'juniper')."
+            echo "# Edit via: tacctl config mgmt-acl cisco-name <name>"
+            echo "#           tacctl config mgmt-acl juniper-name <name>"
+            echo "${which}=${name}"
+        } > "$tmp"
+    fi
+    mv "$tmp" "$MGMT_ACL_NAMES_FILE"
+    chmod 644 "$MGMT_ACL_NAMES_FILE"
+    if [[ "$replaced" == "true" ]]; then
+        info "Set ${which}-name = '${name}'."
+    else
+        info "Initialized ${MGMT_ACL_NAMES_FILE} with ${which}-name = '${name}'."
     fi
 }
 
@@ -1427,6 +1532,40 @@ privilege exec level ${privlvl} terminal no monitor
         GROUP_SUMMARY+="  ${gname}: priv-lvl ${privlvl}"$'\n'
     done <<< "$group_info"
 
+    # Build the VTY-ACL block from the shared mgmt-acl list. IPv6 CIDRs
+    # (if any) are skipped here — v6 would need an `ipv6 access-list`
+    # and is not yet supported.
+    #
+    # Empty-list intentionally emits NO access-list (and a commented-out
+    # access-class below). Emitting a placeholder permit was misleading:
+    # pasting the output silently installed a bogus permit the operator
+    # didn't configure. Comments are no-ops on IOS, so the empty-state
+    # output is still safe to paste — it simply leaves the vty lines
+    # unchanged until mgmt-acl is populated.
+    local cisco_acl_name
+    cisco_acl_name=$(read_mgmt_acl_name cisco)
+    local VTY_ACL_BLOCK VTY_ACCESS_CLASS mgmt_entries=""
+    while IFS= read -r entry; do
+        [[ -z "$entry" ]] && continue
+        local wildcard
+        wildcard=$(cidr_to_cisco_wildcard "$entry")
+        if [[ -n "$wildcard" ]]; then
+            mgmt_entries+="  permit ${wildcard}"$'\n'
+        fi
+    done < <(read_mgmt_acl_cidrs)
+    if [[ -n "$mgmt_entries" ]]; then
+        VTY_ACL_BLOCK="ip access-list standard ${cisco_acl_name}
+  remark Managed by tacctl — edit with 'tacctl config mgmt-acl'
+${mgmt_entries}  deny   any log"
+        VTY_ACCESS_CLASS="  access-class ${cisco_acl_name} in"
+    else
+        VTY_ACL_BLOCK="! ${cisco_acl_name} not emitted — mgmt-acl list is empty.
+! Populate it on the tacquito server with
+!   tacctl config mgmt-acl add <cidr>
+! then re-run 'tacctl config cisco' to get the access-list block."
+        VTY_ACCESS_CLASS="! access-class ${cisco_acl_name} in   ! uncomment after populating mgmt-acl"
+    fi
+
     echo ""
     echo -e "${BOLD}Cisco IOS / IOS-XE Configuration${NC}"
     echo -e "${YELLOW}Copy and paste into the device:${NC}"
@@ -1436,8 +1575,8 @@ privilege exec level ${privlvl} terminal no monitor
     local template_file
     template_file=$(resolve_template "cisco")
     if [[ -n "$template_file" ]]; then
-        export SERVER_IP="$server_ip" SECRET="$secret" PRIVILEGE_COMMANDS GROUP_SUMMARY
-        envsubst '${SERVER_IP} ${SECRET} ${PRIVILEGE_COMMANDS} ${GROUP_SUMMARY}' < "$template_file"
+        export SERVER_IP="$server_ip" SECRET="$secret" PRIVILEGE_COMMANDS GROUP_SUMMARY VTY_ACL_BLOCK VTY_ACCESS_CLASS
+        envsubst '${SERVER_IP} ${SECRET} ${PRIVILEGE_COMMANDS} ${GROUP_SUMMARY} ${VTY_ACL_BLOCK} ${VTY_ACCESS_CLASS}' < "$template_file"
     else
         cat <<EOF
 ! --- TACACS+ Server & AAA ---
@@ -1465,10 +1604,7 @@ aaa accounting commands 7 default start-stop group TACACS-GROUP
 aaa accounting commands 15 default start-stop group TACACS-GROUP
 !
 ${PRIVILEGE_COMMANDS}
-! --- VTY ACL (edit permits to match mgmt subnets) ---
-ip access-list standard VTY-ACL
-  permit 10.0.0.0 0.255.255.255
-  deny   any log
+${VTY_ACL_BLOCK}
 !
 line con 0
   login authentication default
@@ -1477,7 +1613,7 @@ line con 0
 line vty 0 15
   login authentication default
   transport input ssh
-  access-class VTY-ACL in
+${VTY_ACCESS_CLASS}
   exec-timeout 60 0
 EOF
     fi
@@ -1491,7 +1627,7 @@ EOF
     echo "  - The 'local' fallback ensures access if TACACS+ is unreachable"
     echo "  - Ensure a local admin account exists as a backup"
     echo "  - Replace <MGMT_IF> with your management interface (e.g. Loopback0)"
-    echo "  - Edit VTY-ACL permits to match your operator subnets"
+    echo "  - ${cisco_acl_name} permits are managed with 'tacctl config mgmt-acl add <cidr>'"
     echo "  - For Type 6 (AES) key encryption, run on the device first:"
     echo "      conf t ; key config-key password-encrypt <master-key>"
     echo "      password encryption aes"
@@ -1551,15 +1687,58 @@ for m in re.finditer(r'^(\w+): &\1\n  name: \1\n  services:\n(.*?)  accounter:',
     # `delete` first because Junos `set ... authentication-order` is
     # additive against an existing ordered list.
     # source-address pins the client source IP so prefix-based ACLs on
-    # tacquito have a stable match. <MGMT_IP> must be replaced with the
-    # device's management interface address (e.g. lo0 or fxp0).
+    # tacquito have a stable match. Emitted as a commented example —
+    # pasting <MGMT_IP> literally fails; the operator must substitute
+    # the device's management interface address (e.g. lo0 or fxp0).
     TACPLUS_CONFIG="delete system authentication-order
 set system authentication-order [ tacplus password ]
 set system tacplus-server ${server_ip} secret ${secret}
 set system tacplus-server ${server_ip} single-connection
-set system tacplus-server ${server_ip} source-address <MGMT_IP>
+# Optional: pin client source IP for prefix-ACL matching on tacquito.
+# Replace 10.0.0.1 with the device's management interface address, e.g.:
+#   set system tacplus-server ${server_ip} source-address 10.0.0.1
 set system accounting events [ login change-log interactive-commands ]
 set system accounting destination tacplus"
+
+    # Build the Juniper mgmt-acl block from the shared permit list.
+    # When populated, emit live `set firewall …` commands so the filter
+    # gets created in the candidate config on paste. The `set interfaces
+    # lo0 … filter input` APPLY line stays commented, because that is
+    # where the blackhole risk lives — an unreviewed lo0 filter can drop
+    # BGP / OSPF / IS-IS to the RE. Defining the filter without applying
+    # it is safe; the operator uncomments the apply line after review.
+    # IPv6 CIDRs are skipped for now (filter would need family inet6).
+    local juniper_acl_name
+    juniper_acl_name=$(read_mgmt_acl_name juniper)
+    local MGMT_ACL_BLOCK mgmt_terms=""
+    local mgmt_has_any="false"
+    while IFS= read -r entry; do
+        [[ -z "$entry" ]] && continue
+        # Skip v6 — family inet filter only accepts v4 source-addresses.
+        [[ "$entry" == *:* ]] && continue
+        mgmt_has_any="true"
+        mgmt_terms+="set firewall family inet filter ${juniper_acl_name} term permit-mgmt from source-address ${entry}"$'\n'
+    done < <(read_mgmt_acl_cidrs)
+    if [[ "$mgmt_has_any" == "true" ]]; then
+        MGMT_ACL_BLOCK="# Restrict SSH / NETCONF to the configured mgmt subnets.
+# These 'set firewall' lines define the filter in the candidate config.
+# Activate it by uncommenting the 'set interfaces lo0 …' line below
+# after reviewing — a misapplied lo0 filter can blackhole BGP / OSPF /
+# IS-IS to the RE.
+${mgmt_terms}set firewall family inet filter ${juniper_acl_name} term permit-mgmt from protocol tcp
+set firewall family inet filter ${juniper_acl_name} term permit-mgmt from destination-port [ ssh 830 ]
+set firewall family inet filter ${juniper_acl_name} term permit-mgmt then accept
+set firewall family inet filter ${juniper_acl_name} term deny-mgmt from protocol tcp
+set firewall family inet filter ${juniper_acl_name} term deny-mgmt from destination-port [ ssh 830 ]
+set firewall family inet filter ${juniper_acl_name} term deny-mgmt then { log; discard; }
+set firewall family inet filter ${juniper_acl_name} term default-accept then accept
+#
+# Apply (review first):
+# set interfaces lo0 unit 0 family inet filter input ${juniper_acl_name}"
+    else
+        MGMT_ACL_BLOCK="# mgmt-acl empty — configure with 'tacctl config mgmt-acl add <cidr>' on the tacquito server
+# to emit a source-restricted lo0 firewall filter here."
+    fi
 
     local VERIFY_COMMANDS
     VERIFY_COMMANDS="  show configuration system tacplus-server
@@ -1584,8 +1763,8 @@ set system accounting destination tacplus"
     local template_file
     template_file=$(resolve_template "juniper")
     if [[ -n "$template_file" ]]; then
-        export SERVER_IP="$server_ip" SECRET="$secret" TEMPLATE_USERS TACPLUS_CONFIG VERIFY_COMMANDS GROUP_SUMMARY
-        envsubst '${SERVER_IP} ${SECRET} ${TEMPLATE_USERS} ${TACPLUS_CONFIG} ${VERIFY_COMMANDS} ${GROUP_SUMMARY}' < "$template_file"
+        export SERVER_IP="$server_ip" SECRET="$secret" TEMPLATE_USERS TACPLUS_CONFIG MGMT_ACL_BLOCK VERIFY_COMMANDS GROUP_SUMMARY
+        envsubst '${SERVER_IP} ${SECRET} ${TEMPLATE_USERS} ${TACPLUS_CONFIG} ${MGMT_ACL_BLOCK} ${VERIFY_COMMANDS} ${GROUP_SUMMARY}' < "$template_file"
     else
         echo "# Step 1: Create template users (REQUIRED)"
         echo "$TEMPLATE_USERS"
@@ -1593,7 +1772,10 @@ set system accounting destination tacplus"
         echo "# Step 2: Configure TACACS+"
         echo "$TACPLUS_CONFIG"
         echo ""
-        echo "# Step 3: Commit"
+        echo "# Step 3: (optional) Management ACL"
+        echo "$MGMT_ACL_BLOCK"
+        echo ""
+        echo "# Step 4: Commit"
         echo "commit"
     fi
 
@@ -1607,7 +1789,8 @@ set system accounting destination tacplus"
     echo "  - The 'password' fallback in authentication-order ensures local access"
     echo "  - If a login fails silently, the template user is likely missing"
     echo "  - Adjust the Junos class (read-only/operator/super-user) as needed"
-    echo "  - Replace <MGMT_IP> with the device's management interface address"
+    echo "  - Uncomment and edit the source-address line to pin the client"
+    echo "    source IP for prefix-ACL matching on tacquito"
     echo "  - Junos replaces the plaintext 'secret' with '\$9\$...' on commit,"
     echo "    but it sits in the candidate config until then — commit promptly"
     echo "    and protect the commit archive (/config/rescue.conf, juniper.conf.*)."
@@ -1791,6 +1974,175 @@ os.rename(tmp.name, sys.argv[1])
     esac
 }
 
+# --- CONFIG MGMT-ACL (permit list for Cisco VTY-ACL + Juniper lo0 filter) ---
+# Stored at $MGMT_ACL_FILE as a flat file (one CIDR per line). This is
+# tacctl-internal — never read by tacquito — so no service restart is
+# needed when the list changes. Survives upgrades because it lives
+# outside the template tree that `tacctl upgrade` rewrites.
+cmd_config_mgmt_acl() {
+    local subcmd="${1:-}"
+    # $2 is either a CIDR (add/remove) or an ACL name (cisco-name/juniper-name).
+    # Keep the legacy name `cidr` since most branches use it that way.
+    local cidr="${2:-}"
+
+    case "$subcmd" in
+        ""|-h|--help|help)
+            local n=0
+            [[ -r "$MGMT_ACL_FILE" ]] && n=$(read_mgmt_acl_cidrs | wc -l)
+            local cisco_name juniper_name
+            cisco_name=$(read_mgmt_acl_name cisco)
+            juniper_name=$(read_mgmt_acl_name juniper)
+            echo ""
+            echo -e "${BOLD}tacctl config mgmt-acl${NC} — shared Cisco VTY-ACL + Juniper lo0-filter permits"
+            echo ""
+            echo "Usage:"
+            echo "  tacctl config mgmt-acl list                Show current permits"
+            echo "  tacctl config mgmt-acl add <cidr>          Append a CIDR (dedup, validated)"
+            echo "  tacctl config mgmt-acl remove <cidr>       Drop a CIDR"
+            echo "  tacctl config mgmt-acl clear               Wipe all permits (confirms)"
+            echo "  tacctl config mgmt-acl cisco-name [name]   Show or set the Cisco ACL name (default ${CISCO_ACL_NAME_DEFAULT})"
+            echo "  tacctl config mgmt-acl juniper-name [name] Show or set the Juniper filter name (default ${JUNIPER_ACL_NAME_DEFAULT})"
+            echo ""
+            echo "Storage: ${MGMT_ACL_FILE} (survives 'tacctl upgrade')."
+            echo "Names:   ${MGMT_ACL_NAMES_FILE}"
+            echo "         cisco=${cisco_name}  juniper=${juniper_name}"
+            echo "Current entries: ${n}"
+            echo ""
+            return
+            ;;
+        list)
+            echo ""
+            echo -e "${BOLD}Management ACL (shared Cisco VTY-ACL + Juniper lo0 filter source)${NC}"
+            echo "--------------------------------------------"
+            local entries
+            entries=$(read_mgmt_acl_cidrs)
+            if [[ -z "$entries" ]]; then
+                echo "  (empty)"
+                echo ""
+                echo "  Add with: tacctl config mgmt-acl add <cidr>"
+                echo "  Cisco/Juniper output uses a scaffold/comment until populated."
+            else
+                echo "$entries" | while IFS= read -r entry; do
+                    echo "  - ${entry}"
+                done
+            fi
+            echo ""
+            ;;
+        add)
+            if [[ -z "$cidr" ]]; then
+                error "Usage: tacctl config mgmt-acl add <cidr>"
+                exit 1
+            fi
+            validate_cidr "$cidr"
+            # Dedup: silently no-op if the exact CIDR is already present.
+            if read_mgmt_acl_cidrs | grep -qxF "$cidr"; then
+                info "'${cidr}' already in mgmt-acl; no change."
+                echo ""
+                return
+            fi
+            mkdir -p "$(dirname "$MGMT_ACL_FILE")"
+            # Create with a header the first time so the file is
+            # self-documenting; append otherwise.
+            if [[ ! -s "$MGMT_ACL_FILE" ]]; then
+                {
+                    echo "# tacctl-managed mgmt ACL permit list."
+                    echo "# One CIDR per line. '#' comments allowed."
+                    echo "# Edit via: tacctl config mgmt-acl <add|remove|list|clear>"
+                    echo "$cidr"
+                } > "$MGMT_ACL_FILE"
+            else
+                echo "$cidr" >> "$MGMT_ACL_FILE"
+            fi
+            chmod 644 "$MGMT_ACL_FILE"
+            info "Added '${cidr}' to mgmt-acl."
+            info "Re-run 'tacctl config cisco' / 'tacctl config juniper' to see the new output."
+            echo ""
+            ;;
+        remove)
+            if [[ -z "$cidr" ]]; then
+                error "Usage: tacctl config mgmt-acl remove <cidr>"
+                exit 1
+            fi
+            validate_cidr "$cidr"
+            if [[ ! -f "$MGMT_ACL_FILE" ]] || ! read_mgmt_acl_cidrs | grep -qxF "$cidr"; then
+                warn "'${cidr}' not in mgmt-acl; nothing to remove."
+                echo ""
+                return
+            fi
+            # Strip exact-match data lines; preserve comments and blank lines.
+            local tmp
+            tmp=$(mktemp)
+            awk -v target="$cidr" '
+                /^[[:space:]]*#/ { print; next }
+                /^[[:space:]]*$/ { print; next }
+                {
+                    line = $0
+                    sub(/#.*/, "", line)
+                    gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
+                    if (line == target) next
+                    print
+                }
+            ' "$MGMT_ACL_FILE" > "$tmp"
+            mv "$tmp" "$MGMT_ACL_FILE"
+            chmod 644 "$MGMT_ACL_FILE"
+            info "Removed '${cidr}' from mgmt-acl."
+            echo ""
+            ;;
+        clear)
+            if [[ ! -f "$MGMT_ACL_FILE" ]]; then
+                info "Already empty."
+                echo ""
+                return
+            fi
+            read -rp "  Clear all mgmt-acl entries? [y/N]: " confirm
+            if [[ ! "$confirm" =~ ^[Yy] ]]; then
+                info "Aborted."
+                return
+            fi
+            rm -f "$MGMT_ACL_FILE"
+            info "mgmt-acl cleared."
+            echo ""
+            ;;
+        cisco-name|juniper-name)
+            local which="${subcmd%-name}"
+            local default_val current_val
+            if [[ "$which" == "cisco" ]]; then
+                default_val="$CISCO_ACL_NAME_DEFAULT"
+            else
+                default_val="$JUNIPER_ACL_NAME_DEFAULT"
+            fi
+            current_val=$(read_mgmt_acl_name "$which")
+            if [[ -z "$cidr" ]]; then
+                echo ""
+                echo "  ${which}-name: ${current_val}"
+                if [[ "$current_val" == "$default_val" ]]; then
+                    echo "  (default — override with 'tacctl config mgmt-acl ${subcmd} <name>')"
+                else
+                    echo "  (override in ${MGMT_ACL_NAMES_FILE})"
+                fi
+                echo ""
+                return
+            fi
+            # Second positional arg = new name
+            local new_name="$cidr"
+            validate_acl_name "$new_name"
+            if [[ "$new_name" == "$current_val" ]]; then
+                info "${which}-name already '${new_name}'; no change."
+                echo ""
+                return
+            fi
+            write_mgmt_acl_name "$which" "$new_name"
+            info "Re-run 'tacctl config ${which}' to see the new name in the output."
+            echo ""
+            ;;
+        *)
+            error "Unknown subcommand: '${subcmd}'"
+            error "Run 'tacctl config mgmt-acl' with no arguments for help."
+            exit 1
+            ;;
+    esac
+}
+
 # --- CONFIG dispatcher ---
 cmd_config() {
     local subcmd="${1:-}"
@@ -1839,6 +2191,9 @@ cmd_config() {
         deny)
             cmd_config_prefix_filter "prefix_deny" "$@"
             ;;
+        mgmt-acl)
+            cmd_config_mgmt_acl "$@"
+            ;;
         branch)
             cmd_config_branch "$@"
             ;;
@@ -1861,6 +2216,7 @@ cmd_config() {
             echo "  prefixes [cidr,cidr,...]             Change allowed device subnets"
             echo "  allow list|add|remove                Manage connection allow list (IP ACL)"
             echo "  deny list|add|remove                 Manage connection deny list (IP ACL)"
+            echo "  mgmt-acl list|add|remove|clear       Manage Cisco VTY-ACL + Juniper lo0-filter permits"
             echo "  cisco                                Show working Cisco device configuration"
             echo "  juniper                              Show working Juniper device configuration"
             echo "  branch [name]                        Show or change the tacctl repo branch"
@@ -2489,6 +2845,18 @@ print(m.group(1) if m else '')
         echo -e "    ${RED}Shared secret:      ${#cur_secret} chars (min recommended ${SECRET_MIN_LENGTH})${NC}"
     else
         echo -e "    ${GREEN}Shared secret:      ${#cur_secret} chars${NC}"
+    fi
+
+    # Management ACL: shared permit list used by Cisco VTY-ACL and the
+    # Juniper lo0-filter example. Empty means 'tacctl config cisco'
+    # emits a placeholder scaffold and 'tacctl config juniper' emits a
+    # comment.
+    local mgmt_acl_count
+    mgmt_acl_count=$(read_mgmt_acl_cidrs | wc -l)
+    if [[ "$mgmt_acl_count" -eq 0 ]]; then
+        echo -e "    ${RED}Management ACL:     EMPTY (configure via 'tacctl config mgmt-acl add <cidr>')${NC}"
+    else
+        echo -e "    ${GREEN}Management ACL:     configured (${mgmt_acl_count} entr$( [[ $mgmt_acl_count -eq 1 ]] && echo "y" || echo "ies" ))${NC}"
     fi
 
     # Password age warnings
@@ -3532,14 +3900,31 @@ cmd_upgrade() {
     if [[ -d "${DEPLOY_DIR}/.git" ]]; then
         info "Pulling latest management scripts..."
         cd "$DEPLOY_DIR"
-        git checkout -- . 2>/dev/null || true
+        # Discard local tracked-file edits so the pull can fast-forward.
+        # Errors here are rare but not silenced — a failure would leave
+        # local mods that block the pull a few lines later.
+        git checkout -- . || {
+            error "Failed to discard local modifications in ${DEPLOY_DIR}."
+            error "Run 'sudo git -C ${DEPLOY_DIR} status' to investigate."
+            exit 1
+        }
+        # Remove tacctl-managed untracked backup files that would otherwise
+        # survive `git checkout -- .` and clutter the tree indefinitely.
+        rm -f "${DEPLOY_DIR}"/bin/tacctl.sh.*-bak \
+              "${DEPLOY_DIR}"/config/templates/*.template.*-bak 2>/dev/null || true
         if [[ -n "$UPGRADE_BRANCH" ]]; then
             # --tags --force so force-pushed tags (e.g. after a history rewrite) update locally.
-            git fetch --quiet --tags --force 2>/dev/null || true
+            git fetch --tags --force || {
+                error "git fetch failed. Check network / credentials."
+                exit 1
+            }
             git checkout "$UPGRADE_BRANCH" &>/dev/null || git checkout -b "$UPGRADE_BRANCH" "origin/${UPGRADE_BRANCH}" &>/dev/null
             info "Switched to branch '${UPGRADE_BRANCH}'."
         fi
-        git fetch --quiet --tags --force 2>/dev/null || true
+        git fetch --tags --force || {
+            error "git fetch failed. Check network / credentials."
+            exit 1
+        }
         local LOCAL_MANAGE REMOTE_MANAGE
         LOCAL_MANAGE=$(git rev-parse HEAD 2>/dev/null)
         REMOTE_MANAGE=$(git rev-parse @{u} 2>/dev/null || echo "")
@@ -3549,7 +3934,17 @@ cmd_upgrade() {
             SELF_TMP=$(mktemp)
             cp "${DEPLOY_DIR}/bin/tacctl.sh" "$SELF_TMP"
 
-            git pull --quiet 2>/dev/null
+            # Stderr NOT silenced so failures surface (conflicts, diverged
+            # branches, overwrite-would-happen, etc.). --ff-only refuses any
+            # merge scenario; upgrades should be fast-forward only.
+            if ! git pull --ff-only; then
+                error "git pull failed. Common causes:"
+                error "  - local commits on ${DEPLOY_DIR} diverging from origin"
+                error "  - untracked files that would be overwritten"
+                error "Run 'sudo git -C ${DEPLOY_DIR} status' to investigate."
+                rm -f "$SELF_TMP"
+                exit 1
+            fi
             info "Management scripts updated: $(git rev-parse --short HEAD)"
 
             # If tacctl changed, re-run the new version
@@ -3564,7 +3959,7 @@ cmd_upgrade() {
         fi
     elif [[ ! -d "$DEPLOY_DIR" ]]; then
         info "Cloning management repo..."
-        git clone --quiet "$MANAGE_REPO" "$DEPLOY_DIR" 2>/dev/null || warn "Failed to clone management repo."
+        git clone --quiet "$MANAGE_REPO" "$DEPLOY_DIR" || warn "Failed to clone management repo."
     fi
     # Always normalize, even when nothing was pulled -- self-healing for
     # prior installs whose files were left at 0600 by the script's umask.
