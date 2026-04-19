@@ -306,6 +306,20 @@ Show or set the password age warning threshold. Default 90 days.
 Show or set the bcrypt cost factor used when hashing new or changed
 passwords. Default 12. Existing hashes keep their minted cost.
 .TP
+.BI "config password-min-length " [ "8-64" ]
+Show or set the minimum length enforced by
+.B validate_password_strength
+on interactively-entered passwords. Default 12 (OWASP 2025). Floor 8
+(NIST 800-63). Auto-generated passwords (operator accepts the blank
+prompt) bypass this check.
+.TP
+.BI "config secret-min-length " [ "16-128" ]
+Show or set the minimum length enforced when an operator types a
+custom shared secret via
+.BR "config secret" .
+Default 16 (Cisco TACACS+ best practice). Auto-generated secrets
+bypass this check.
+.TP
 .BI "config prefixes " [ "cidr,cidr,..." ]
 Change the allowed device subnets in a single atomic replacement.
 .TP

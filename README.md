@@ -273,6 +273,8 @@ config listen [show|tcp|tcp6|reset] [addr]  Show, change, or reset TCP listen ad
 config sudoers [show|install|remove] [grp]  Manage NOPASSWD sudoers drop-in for tacctl
 config password-age [days]                  Show or set password age warning threshold (default 90)
 config bcrypt-cost [10-14]                  Show or set bcrypt cost factor for new hashes (default 12)
+config password-min-length [8-64]           Show or set minimum interactive password length (default 12)
+config secret-min-length [16-128]           Show or set minimum shared-secret length (default 16)
 config prefixes [cidr,...]                  Change allowed device subnets
 config allow list|add|remove                Manage connection allow list (IP ACL)
 config deny list|add|remove                 Manage connection deny list (IP ACL)
