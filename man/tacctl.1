@@ -1,6 +1,6 @@
 .\" Manual page for tacctl, the tacquito management CLI.
 .\" Render locally with: groff -man -Tascii man/tacctl.1 | less
-.TH TACCTL 1 "2026-04-17" "tacctl" "Tacquito Control Manual"
+.TH TACCTL 1 "2026-04-18" "tacctl" "Tacquito Control Manual"
 .SH NAME
 tacctl \- management CLI for the tacquito TACACS+ server
 .SH SYNOPSIS
@@ -13,9 +13,10 @@ tacctl \- management CLI for the tacquito TACACS+ server
 is a shell-based management CLI for
 .BR tacquito ,
 a TACACS+ server (RFC 8907).
-It installs and upgrades the server, manages users and groups, edits
-server configuration, inspects logs and backups, and generates ready-to-paste
-device configuration for Cisco IOS/IOS-XE and Juniper Junos.
+It installs and upgrades the server, manages users, groups, and scopes
+(named CIDR + shared-secret bundles), edits server configuration,
+inspects logs and backups, and generates ready-to-paste device
+configuration for Cisco IOS/IOS-XE and Juniper Junos.
 .PP
 Most commands require root.
 .B tacctl
@@ -76,12 +77,23 @@ class, and a hash fingerprint. Read-only -- does not prompt for the
 password (unlike
 .BR "user verify" ).
 .TP
-.BI "user add " "name group " [ "--hash " hash ]
+.BI "user add " "name group " [ "--hash " hash ] [ "--scopes " name[,name...] ]
 Add a user. Prompts for the password with confirmation. If
 .BI --hash " hash"
 is given, the bcrypt hash is used directly and no password is prompted
 (use this when users self-generate a hash; see
 .BR "tacctl hash commands" ).
+.BI --scopes " name"[,name...]
+grants the user access to those scopes (see
+.B SCOPE MANAGEMENT ).
+Without
+.BR --scopes ,
+the user lands in the current default scope. On fresh installs the
+default scope is
+.B lab
+— least-privilege posture, so an operator who forgets
+.B --scopes
+does not accidentally grant production access.
 .TP
 .BI "user remove " name
 Remove a user after confirmation.
@@ -110,6 +122,29 @@ Move a user to a different group without changing the password.
 .TP
 .BI "user verify " name
 Show user details and verify the password interactively.
+.TP
+.B "user scopes " \fIname\fR " " [ "list " | " add " \fIs\fR[,s...] | " remove " \fIs\fR[,s...] | " set " \fIs\fR[,s...] | " clear " ]
+Manage which scopes
+.I name
+can authenticate from. With no subcommand (or
+.BR list ),
+prints the user's current scopes with orphan detection (any scope
+name that does not resolve to a
+.B secrets[].name
+is flagged red).
+.B add
+and
+.B remove
+accept one or a comma-separated list of existing scope names;
+.B set
+replaces the whole list;
+.B clear
+empties it (with confirmation).
+.B clear
+preserves the bcrypt hash — distinct from
+.B user disable
+in that intent is "temporarily revoke scope access" rather than
+"revoke the password".
 .SS Group management \fB(tacctl group)\fR
 .TP
 .B group list
@@ -269,21 +304,13 @@ Validate config syntax and structure.
 Diff the current config against a backup. Defaults to the most recent
 backup.
 .TP
-.B "config secret " "{ show | set " \fIvalue\fR " | generate }"
-Manage the TACACS+ shared secret.
-.B show
-prints the current secret's length and posture (never the raw value).
-.B "set " \fIvalue\fR
-applies
-.I value
-after validation (minimum length from
-.BR "config secret-min-length" ,
-reject single-character-class inputs).
-.B generate
-auto-generates a strong secret with
-.B openssl rand -base64 24
-and applies it (validation bypass is safe — auto-gen always mixes
-classes). No subcommand prints usage.
+.B "config secret"
+.B REMOVED.
+Shared secrets are now scope-owned. Use
+.B "scopes secret " \fIname\fR " show|set|generate"
+instead (see
+.B SCOPE MANAGEMENT ).
+The old invocation prints an explicit redirect and exits non-zero.
 .TP
 .BI "config loglevel " [ debug | info | error ]
 Show or change the server log level. Written to a systemd drop-in so
@@ -331,25 +358,17 @@ prompt) bypass this check.
 .BI "config secret-min-length " [ "16-128" ]
 Show or set the minimum length enforced when an operator types a
 custom shared secret via
-.BR "config secret" .
+.BR "scopes secret " \fIname\fR " set" .
 Default 16 (Cisco TACACS+ best practice). Auto-generated secrets
 bypass this check.
 .TP
-.B "config prefixes " "{ list | add | remove | clear } " [ cidr[,cidr...] ]
-Manage the secret-provider's client-prefix list. These are the CIDRs
-the shared secret is bound to — connections from outside any listed
-prefix can't authenticate.
-.B add
-and
-.B remove
-accept a single CIDR or a comma-separated list; every CIDR is
-validated before anything is written (partial application is never
-left behind), and duplicates are dedup-aware.
-.B clear
-empties the list (with confirmation) since that makes the shared
-secret unreachable.
-With no subcommand, prints usage, current entry count, and a warning
-about the empty-list state.
+.B "config prefixes"
+.B REMOVED.
+Client-prefix lists are now scope-owned. Use
+.B "scopes prefixes " \fIname\fR " list|add|remove|clear"
+instead (see
+.B SCOPE MANAGEMENT ).
+The old invocation prints an explicit redirect and exits non-zero.
 .TP
 .B "config allow " "{ list | add | remove | clear } " [ cidr[,cidr...] ]
 Manage the connection allow list (IP ACL).
@@ -423,19 +442,23 @@ Both overrides live at
 and survive
 .BR "tacctl upgrade" .
 .TP
-.B config cisco
+.BI "config cisco " [ "--scope " name ]
 Print a ready-to-paste Cisco IOS/IOS-XE configuration with the
 server IP, shared secret, current group-to-privilege mappings, and
 the VTY-ACL built from
 .B config mgmt-acl
-pre-filled.
+pre-filled. Without
+.BR --scope ,
+emits the default scope's secret (header names the scope and lists
+sibling scopes as a hint).
 .TP
-.B config juniper
+.BI "config juniper " [ "--scope " name ]
 Print a ready-to-paste Juniper Junos configuration with template
 users, TACACS+ server setup, verification commands, and a commented
 lo0 firewall-filter example built from
 .B config mgmt-acl
-pre-filled.
+pre-filled. Scope handling matches
+.BR "config cisco" .
 .TP
 .BI "config branch " [ name ]
 Show or change the tacctl repository branch used by
@@ -500,6 +523,142 @@ and hex-encoded forms;
 /
 .B "user passwd --hash"
 accept either and normalize to hex on write.
+.SH SCOPE MANAGEMENT
+A
+.I scope
+is a named bundle of (client CIDR prefixes, TACACS+ shared secret).
+It corresponds to one entry in the tacquito YAML
+.B secrets:
+list, and each user's
+.B scopes:
+field references one or more of these by name. tacquito selects a
+provider by first-CIDR-match; authentication succeeds only when the
+matched scope is in the user's
+.B scopes:
+list.
+.PP
+Fresh installs seed a single scope named
+.B lab
+(least-privilege default). Operators add additional scopes (for
+example
+.BR prod ,
+.BR edge ,
+.BR dmz )
+as needed, and place users into them explicitly.
+.SS Top-level \fB(tacctl scopes)\fR
+.TP
+.B scopes list
+Print every scope with its full prefix list (sorted by specificity),
+user count, and default-scope marker. Use
+.BR "scopes show " \fIname\fR
+for per-user detail and secret length.
+.TP
+.BI "scopes show " name
+Full detail for one scope: prefixes, users that reference it, raw
+shared-secret value with length/posture, and whether the scope is
+the default.
+.TP
+.B "scopes add " \fIname\fR " --prefixes " \fIcidr\fR[,cidr...] " [ --secret \fIvalue\fR | --secret generate ] [ --default ]
+Create a new scope. Prefixes are required; each must not already
+belong to another scope (overlap with a broader scope's supernet is
+fine — the new scope's narrower prefix will win first-match).
+.B --secret generate
+produces a strong key automatically.
+.B --default
+makes the new scope the default for
+.BR "user add" .
+.TP
+.BI "scopes remove " "name " [ --force ]
+Remove a scope. Drops every
+.B secrets[]
+entry whose name matches (flat emission spreads one logical scope across
+one entry per prefix). Refuses by default if any user references the
+scope; with
+.BR --force ,
+strips the name from all affected users AND removes the secrets
+entries, with a loud warning.
+.TP
+.BI "scopes rename " "old new"
+Rename a scope. Rewrites
+.B name:
+on every matching
+.B secrets[]
+entry, every user's
+.B scopes:
+reference, and the default-scope marker (if it pointed at
+.IR old ).
+.TP
+.BI "scopes default " [ name ]
+Show (no arg) or set (with arg) the default scope. Stored in
+.IR /etc/tacquito/default-scope .
+Used by
+.BR "user add"
+when
+.B --scopes
+is omitted, and by
+.BR "config cisco" " / " "config juniper"
+when
+.B --scope
+is omitted.
+.TP
+.BI "scopes lookup " ip\fR|\fIcidr
+Resolve an IPv4 / IPv6 address or CIDR to the scope that owns it,
+following the same slice-order walk tacquito's provider selector uses.
+Prints the matching prefix and, if multiple scopes' prefixes cover the
+query (e.g. a supernet/subnet overlap), lists the shadowed scopes
+below the winner for debugging.
+.SS Per-scope prefixes \fB(tacctl scopes prefixes)\fR
+.TP
+.BI "scopes prefixes " "scope " "list"
+Show the scope's current prefixes.
+.TP
+.B "scopes prefixes " \fIscope\fR " add " \fIcidr\fR[,cidr...]
+Add one or more CIDRs. Each CIDR is canonicalized
+.RB ( 10.1.5.5/24 " -> " 10.1.5.0/24 ),
+checked against the one-CIDR-per-scope invariant (rejected with the
+owning-scope name if already claimed elsewhere), and appended as its
+own
+.B secrets[]
+entry. After the write, tacctl re-sorts every entry globally by prefix
+specificity so tacquito's slice-ordered first-match walk routes each
+client to the narrowest scope that contains it.
+.TP
+.B "scopes prefixes " \fIscope\fR " remove " \fIcidr\fR[,cidr...]
+Remove one or more CIDRs. Drops the matching
+.B secrets[]
+entries and re-applies the global specificity sort.
+.TP
+.BI "scopes prefixes " "scope " "clear " [ --force ]
+Empty the entire prefix list for the scope (with confirmation). Under
+flat emission this removes every
+.B secrets[]
+entry whose name matches, so the scope vanishes from tacquito.yaml and
+any user still referencing it becomes an orphan — the command refuses
+to proceed when users reference the scope unless
+.B --force
+is given. With
+.BR --force ,
+orphan references are left in place for
+.B config validate
+to surface.
+.SS Per-scope secret \fB(tacctl scopes secret)\fR
+.TP
+.BI "scopes secret " "scope " "show"
+Print the scope's raw shared-secret value plus its length and posture.
+The command runs as root, the YAML is mode 0640, and operators need
+the raw value to paste into device configs — so
+.B show
+prints it rather than hiding it.
+.TP
+.BI "scopes secret " "scope " "set " value
+Set the scope's key after validation (≥
+.B config secret-min-length
+chars, mixed character classes).
+.TP
+.BI "scopes secret " "scope " "generate"
+Generate a strong key with
+.B openssl rand -base64 24
+and apply it.
 .SH CONVENTIONS
 The following patterns apply uniformly across subcommand families.
 .TP
@@ -512,7 +671,9 @@ Dispatcher commands
 .BR backup ,
 .BR hash ,
 and every nested dispatcher such as
-.B config prefixes
+.BR "scopes prefixes" ,
+.BR "scopes secret" ,
+.BR "user scopes" ,
 or
 .BR "group privilege" )
 print their own usage and return without side effects.
@@ -523,7 +684,8 @@ Scalar getter/setters
 .BR "config bcrypt-cost" ,
 .BR "config password-min-length" ,
 .BR "config secret-min-length" ,
-.BR "config branch" )
+.BR "config branch" ,
+.BR "scopes default" )
 print the current value when called with no arguments.
 .TP
 .B Multi-item input
@@ -536,6 +698,67 @@ single value or a comma-separated list
 .RI ( "cidr1,cidr2,..." ).
 Every input is validated first; a bad entry aborts the entire
 operation without writing anything.
+.TP
+.B CIDR semantics
+Every CIDR-list subcommand
+.RB ( "scopes prefixes" ,
+.BR "config allow" ,
+.BR "config deny" ,
+.BR "config mgmt-acl" )
+canonicalizes input before storage:
+.B 10.1.5.5/24
+becomes
+.BR 10.1.5.0/24 ;
+.B 2001:DB8::/32
+becomes
+.BR 2001:db8::/32 .
+Exact duplicates (after canonicalization) are rejected as no-ops on
+.BR add .
+Overlapping CIDRs of different prefix lengths coexist
+.RI ( "10.0.0.0/8 and 10.99.0.0/16 can both be present" ).
+Stored order is by broadcast-address ascending (IPv4 before IPv6):
+disjoint ranges sort by their end address, and an overlapping subnet
+falls immediately above its containing supernet (the subnet's range
+ends before the supernet's). This groups related CIDRs together and
+gives tacquito's provider selector the "most-specific first among
+overlaps" ordering it needs so that a narrower scope wins a first-
+match lookup over a broader scope that contains it.
+.TP
+.B Scope prefix invariants
+Every CIDR (after canonicalization) belongs to
+.B exactly one
+scope. Adding a prefix already owned by a different scope is rejected
+with a message naming the owning scope; the operator must remove it
+from the owning scope first with
+.B "scopes prefixes " \fIowner\fR " remove " \fIcidr\fR
+before re-adding it elsewhere. Overlapping prefixes
+.I across
+scopes are allowed and routed correctly — a scope with
+.B 10.5.0.0/16
+coexists with a scope holding the supernet
+.BR 10.0.0.0/8 .
+.PP
+To make first-match-wins honor cross-scope specificity, tacctl emits
+one
+.B secrets:
+entry per (scope, prefix) pair — a scope with N prefixes becomes N
+entries that share
+.BR name: " and " secret.key: .
+Entries are re-sorted globally by prefix specificity
+(v4 before v6; smaller broadcast first) after every mutation, so
+tacquito's slice-ordered provider walk routes each client IP to the
+narrowest scope that contains it. The CLI continues to present the
+logical one-scope-per-bundle view via
+.BR "scopes list" ", " "scopes show" ", and " "config show" .
+.PP
+Do not hand-edit the
+.B secrets:
+block under multi-prefix scopes — the same-name entries must carry
+identical
+.B secret.key
+values.
+.B config validate
+reports any divergence.
 .TP
 .B "clear"
 .B clear
@@ -558,12 +781,18 @@ etc.) do not — tacquito itself never reads them.
 .B Flags
 Long-form flags
 .RI ( --hash ,
+.IR --scopes ,
+.IR --scope ,
+.IR --prefixes ,
+.IR --secret ,
+.IR --default ,
 .IR --match ,
 .IR --action ,
 .IR --force ,
 .IR --branch )
-take a single argument. Required positional arguments come before
-flags.
+take a single argument (except
+.IR --default ,
+which is a boolean). Required positional arguments come before flags.
 .SH FILES
 .TP
 .I /etc/tacquito/tacquito.yaml
@@ -575,6 +804,22 @@ Automatic configuration backups. Last 30 retained.
 .TP
 .I /etc/tacquito/password-max-age
 Custom password age warning threshold, in days. Optional.
+.TP
+.I /etc/tacquito/default-scope
+Single-line text file naming the default scope. Read by
+.B "user add"
+when
+.B --scopes
+is omitted, and by
+.BR "config cisco" " / " "config juniper"
+when
+.B --scope
+is omitted. Written by
+.B "scopes default " \fIname\fR ,
+.B "scopes rename"
+(if it referenced the old name), and seeded at install time. Missing
+file + exactly one scope in the YAML: that scope is the implicit
+default.
 .TP
 .I /etc/tacquito/templates/
 Host-specific overrides for the Cisco and Juniper device config
@@ -624,11 +869,25 @@ Install on a fresh host:
 Add a superuser:
 .B sudo tacctl user add alice superuser
 .TP
-Restrict allowed device subnets:
-.B sudo tacctl config prefixes 10.1.0.0/24,172.16.5.0/24
+Restrict device subnets in the default scope:
+.B sudo tacctl scopes prefixes lab add 10.1.0.0/24,172.16.5.0/24
 .TP
-Generate a Cisco-ready configuration to paste onto a switch:
-.B sudo tacctl config cisco
+Build a multi-environment scope hierarchy (broader prod scopes with
+narrower lab scopes carved out — the /24 wins first-match for 10.10.99.x
+clients, the /16 catches the rest of 10.10.x):
+.nf
+.B "  sudo tacctl scopes add prod_dc_east --prefixes 10.10.0.0/16 --secret generate"
+.B "  sudo tacctl scopes add lab_east     --prefixes 10.10.99.0/24 --secret generate"
+.fi
+.TP
+Trace how tacquito would route a client IP through the scope list:
+.B sudo tacctl scopes lookup 10.10.99.7
+.TP
+Grant a user full production access across two datacenters:
+.B sudo tacctl user scopes alice add prod_dc_east,prod_dc_west
+.TP
+Generate a Cisco-ready configuration for the prod scope:
+.B sudo tacctl config cisco --scope prod_dc_east
 .TP
 Bind the listener to a specific management IP:
 .B sudo tacctl config listen tcp 10.1.0.1:49
@@ -648,7 +907,7 @@ enables a dual-stack socket on most platforms; IPv4 clients then
 connect with IPv4-mapped addresses
 .RB ( ::ffff:10.1.0.1 )
 that do not match IPv4 prefix ACLs configured via
-.BR "tacctl config prefixes" ,
+.BR "tacctl scopes prefixes" ,
 .BR "config allow" ,
 or
 .BR "config deny" .

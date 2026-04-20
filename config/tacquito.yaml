@@ -100,9 +100,17 @@ superuser: &superuser
 # Add users with: tacctl user add <name> <group>
 users:
 
-# --- Secret Providers ---
+# --- Secret Providers (Scopes) ---
+# Each entry is a "scope": a named bundle of (prefixes, shared-secret)
+# that clients within those prefixes authenticate against with that key.
+# Manage with 'tacctl scopes list|show|add|remove|rename|default' and the
+# per-scope 'tacctl scopes prefixes <name>' / 'tacctl scopes secret <name>'.
+# The default-scope marker (/etc/tacquito/default-scope) names which scope
+# new users land in when 'tacctl user add' is called without --scopes;
+# fresh installs ship with 'lab' so forgotten-about users are quarantined
+# to lab rather than production.
 secrets:
-  - name: network_devices
+  - name: lab
     secret:
       group: tacquito
       # Use hex-only secrets (openssl rand -hex 16) to avoid quoting issues on devices

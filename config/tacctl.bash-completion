@@ -32,7 +32,7 @@ _tacctl() {
     done
 
     local pos=$((cword - offset))
-    local commands="install upgrade uninstall status user group config log backup hash version"
+    local commands="install upgrade uninstall status user group config scopes log backup hash version"
 
     # Top-level commands
     if [[ $pos -eq 1 ]]; then
@@ -42,6 +42,52 @@ _tacctl() {
 
     local cmd="${words[offset + 1]}"
 
+    # Name lookup for completion. The config is mode 0600, so direct read
+    # only works as root or group tacquito. When run as an unprivileged user,
+    # fall back to `sudo -n tacctl _completion-names <kind>` — works if the
+    # operator has installed the NOPASSWD sudoers rule
+    # (`tacctl config sudoers install`). No rule → empty completion, which
+    # is harmless (operator still types names manually).
+    _tacctl_names() {
+        local kind="$1"
+        local out=""
+        if [[ -r /etc/tacquito/tacquito.yaml ]]; then
+            case "$kind" in
+                scopes) out=$(python3 -c "
+import yaml
+with open('/etc/tacquito/tacquito.yaml') as f:
+    d = yaml.safe_load(f) or {}
+seen=set()
+for s in (d.get('secrets') or []):
+    n=s.get('name')
+    if n and n not in seen:
+        seen.add(n); print(n)
+" 2>/dev/null) ;;
+                users)  out=$(python3 -c "
+import yaml
+with open('/etc/tacquito/tacquito.yaml') as f:
+    d = yaml.safe_load(f) or {}
+for u in (d.get('users') or []):
+    n=u.get('name')
+    if n: print(n)
+" 2>/dev/null) ;;
+                groups) out=$(awk '/^# --- Groups ---/,/^# --- Users ---/ {
+                    if (match($0, /^[a-z][a-zA-Z0-9_-]*: &/)) {
+                        sub(/:.*/, ""); print
+                    }
+                }' /etc/tacquito/tacquito.yaml 2>/dev/null) ;;
+            esac
+        fi
+        if [[ -z "$out" ]]; then
+            out=$(sudo -n tacctl _completion-names "$kind" 2>/dev/null)
+        fi
+        printf '%s\n' "$out"
+    }
+
+    _tacctl_scope_names() { _tacctl_names scopes; }
+    _tacctl_user_names()  { _tacctl_names users; }
+    _tacctl_group_names() { _tacctl_names groups; }
+
     case "$cmd" in
         install|upgrade)
             if [[ "$cur" == -* ]]; then
@@ -49,28 +95,84 @@ _tacctl() {
             fi
             ;;
         user)
+            local usub="${words[offset + 2]}"
             if [[ $pos -eq 2 ]]; then
-                COMPREPLY=($(compgen -W "list show add remove passwd disable enable rename move verify" -- "$cur"))
-            elif [[ $pos -eq 5 && "${words[offset + 2]}" == "add" ]]; then
-                COMPREPLY=($(compgen -W "--hash" -- "$cur"))
-            elif [[ $pos -eq 4 && "${words[offset + 2]}" == "passwd" ]]; then
-                COMPREPLY=($(compgen -W "--hash" -- "$cur"))
+                COMPREPLY=($(compgen -W "list show add remove passwd disable enable rename move verify scopes" -- "$cur"))
+            elif [[ $pos -eq 3 ]]; then
+                # <username> completion for every subcommand that targets an
+                # existing user. `add` takes a NEW username so no completion;
+                # `list` takes no args.
+                case "$usub" in
+                    show|remove|passwd|disable|enable|rename|move|verify|scopes)
+                        COMPREPLY=($(compgen -W "$(_tacctl_user_names)" -- "$cur"))
+                        ;;
+                esac
+            elif [[ $pos -eq 4 ]]; then
+                case "$usub" in
+                    add)
+                        # `user add <name> <group>` — offer group names
+                        COMPREPLY=($(compgen -W "$(_tacctl_group_names)" -- "$cur"))
+                        ;;
+                    move)
+                        # `user move <user> <newgroup>`
+                        COMPREPLY=($(compgen -W "$(_tacctl_group_names)" -- "$cur"))
+                        ;;
+                    passwd)
+                        COMPREPLY=($(compgen -W "--hash" -- "$cur"))
+                        ;;
+                    scopes)
+                        # `user scopes <user> {list|add|remove|set|clear}`
+                        COMPREPLY=($(compgen -W "list add remove set clear" -- "$cur"))
+                        ;;
+                esac
+            elif [[ $pos -eq 5 && "$usub" == "add" ]]; then
+                # `user add <name> <group> <flag>`
+                COMPREPLY=($(compgen -W "--hash --scopes" -- "$cur"))
+            elif [[ $pos -eq 7 && "$usub" == "add" ]]; then
+                # second flag after --hash <val> or --scopes <csv>
+                COMPREPLY=($(compgen -W "--hash --scopes" -- "$cur"))
+            elif [[ $pos -ge 5 && "$usub" == "scopes" ]]; then
+                # `user scopes <user> {add|remove|set} <scope>[,<scope>...]`
+                # Slot layout: [offset+2]=scopes [offset+3]=<user> [offset+4]=<sub>
+                case "${words[offset + 4]}" in
+                    add|remove|set)
+                        COMPREPLY=($(compgen -W "$(_tacctl_scope_names)" -- "$cur"))
+                        ;;
+                esac
             fi
             ;;
         group)
+            local gsub="${words[offset + 2]}"
             if [[ $pos -eq 2 ]]; then
                 COMPREPLY=($(compgen -W "list add edit remove commands privilege" -- "$cur"))
-            elif [[ $pos -eq 4 && "${words[offset + 2]}" == "edit" ]]; then
-                COMPREPLY=($(compgen -W "priv-lvl juniper-class" -- "$cur"))
-            elif [[ $pos -eq 3 && "${words[offset + 2]}" == "commands" ]]; then
-                COMPREPLY=($(compgen -W "list default add remove clear seed" -- "$cur"))
-            elif [[ $pos -eq 3 && "${words[offset + 2]}" == "privilege" ]]; then
-                COMPREPLY=($(compgen -W "list add remove clear seed" -- "$cur"))
+            elif [[ $pos -eq 3 ]]; then
+                case "$gsub" in
+                    edit|remove)
+                        COMPREPLY=($(compgen -W "$(_tacctl_group_names)" -- "$cur"))
+                        ;;
+                    commands)
+                        COMPREPLY=($(compgen -W "list default add remove clear seed" -- "$cur"))
+                        ;;
+                    privilege)
+                        COMPREPLY=($(compgen -W "list add remove clear seed" -- "$cur"))
+                        ;;
+                esac
+            elif [[ $pos -eq 4 ]]; then
+                case "$gsub" in
+                    edit)
+                        # `group edit <group> <priv-lvl|juniper-class>`
+                        COMPREPLY=($(compgen -W "priv-lvl juniper-class" -- "$cur"))
+                        ;;
+                    commands|privilege)
+                        # `group commands <sub> <group>` / `group privilege <sub> <group>`
+                        COMPREPLY=($(compgen -W "$(_tacctl_group_names)" -- "$cur"))
+                        ;;
+                esac
             fi
             ;;
         config)
             if [[ $pos -eq 2 ]]; then
-                COMPREPLY=($(compgen -W "show secret prefixes cisco juniper validate loglevel listen sudoers password-age bcrypt-cost password-min-length secret-min-length diff allow deny mgmt-acl branch" -- "$cur"))
+                COMPREPLY=($(compgen -W "show cisco juniper validate loglevel listen sudoers password-age bcrypt-cost password-min-length secret-min-length diff allow deny mgmt-acl branch" -- "$cur"))
             elif [[ $pos -eq 3 ]]; then
                 case "${words[offset + 2]}" in
                     loglevel)
@@ -85,15 +187,80 @@ _tacctl() {
                     allow|deny)
                         COMPREPLY=($(compgen -W "list add remove clear" -- "$cur"))
                         ;;
-                    prefixes)
-                        COMPREPLY=($(compgen -W "list add remove clear" -- "$cur"))
-                        ;;
-                    secret)
-                        COMPREPLY=($(compgen -W "show set generate" -- "$cur"))
-                        ;;
                     mgmt-acl)
                         COMPREPLY=($(compgen -W "list add remove clear cisco-name juniper-name" -- "$cur"))
                         ;;
+                    cisco|juniper)
+                        COMPREPLY=($(compgen -W "--scope" -- "$cur"))
+                        ;;
+                esac
+            elif [[ $pos -eq 4 && ( "${words[offset + 2]}" == "cisco" || "${words[offset + 2]}" == "juniper" ) && "${words[offset + 3]}" == "--scope" ]]; then
+                COMPREPLY=($(compgen -W "$(_tacctl_scope_names)" -- "$cur"))
+            fi
+            ;;
+        scopes)
+            local ssub="${words[offset + 2]}"
+            if [[ $pos -eq 2 ]]; then
+                COMPREPLY=($(compgen -W "list show add remove rename default lookup prefixes secret" -- "$cur"))
+            elif [[ $pos -eq 3 ]]; then
+                case "$ssub" in
+                    show|remove|rename|default|prefixes|secret)
+                        COMPREPLY=($(compgen -W "$(_tacctl_scope_names)" -- "$cur"))
+                        ;;
+                    lookup)
+                        # free-form IP or CIDR — no completion
+                        COMPREPLY=()
+                        ;;
+                esac
+            elif [[ $pos -eq 4 ]]; then
+                case "$ssub" in
+                    add)
+                        # `scopes add <name> <flag>`
+                        COMPREPLY=($(compgen -W "--prefixes --secret --default" -- "$cur"))
+                        ;;
+                    prefixes)
+                        # `scopes prefixes <scope> <list|add|remove|clear>`
+                        COMPREPLY=($(compgen -W "list add remove clear" -- "$cur"))
+                        ;;
+                    secret)
+                        # `scopes secret <scope> <show|set|generate>`
+                        COMPREPLY=($(compgen -W "show set generate" -- "$cur"))
+                        ;;
+                    rename)
+                        # `scopes rename <old> <new>` — no completion on new name
+                        COMPREPLY=()
+                        ;;
+                    remove)
+                        # `scopes remove <name> [--force]`
+                        COMPREPLY=($(compgen -W "--force" -- "$cur"))
+                        ;;
+                esac
+            elif [[ $pos -eq 5 && "$ssub" == "prefixes" ]]; then
+                # `scopes prefixes <scope> clear --force` — only clear takes --force
+                # Slot layout: [offset+2]=prefixes [offset+3]=<scope> [offset+4]=<sub>
+                if [[ "${words[offset + 4]}" == "clear" ]]; then
+                    COMPREPLY=($(compgen -W "--force" -- "$cur"))
+                fi
+            elif [[ $pos -ge 6 && "$ssub" == "add" ]]; then
+                # `scopes add <name> --flag <val> [--flag ...]` — offer remaining
+                # flags not already seen. Covers the second/third flag slots.
+                local seen_flags=""
+                local w
+                for ((w = offset + 3; w < cword; w++)); do
+                    case "${words[w]}" in
+                        --prefixes|--secret|--default) seen_flags+=" ${words[w]}" ;;
+                    esac
+                done
+                local choices=""
+                [[ "$seen_flags" != *--prefixes* ]] && choices+=" --prefixes"
+                [[ "$seen_flags" != *--secret*   ]] && choices+=" --secret"
+                [[ "$seen_flags" != *--default*  ]] && choices+=" --default"
+                # Flag position: only offer when the cursor is on a new token
+                # (i.e. the previous token is a value, not one of our flags
+                # that still needs a value).
+                case "${words[cword - 1]}" in
+                    --prefixes|--secret) COMPREPLY=() ;;  # value expected
+                    *) COMPREPLY=($(compgen -W "$choices" -- "$cur")) ;;
                 esac
             fi
             ;;
