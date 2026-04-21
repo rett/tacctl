@@ -9,15 +9,30 @@ Type=simple
 User=tacquito
 Group=tacquito
 # Defaults; override via /etc/systemd/system/tacquito.service.d/tacctl-overrides.conf
-# (managed by `tacctl config listen` and `tacctl config loglevel`).
+# (managed by `tacctl config listen`, `tacctl config loglevel`, and
+# `tacctl config metrics`).
 Environment="TACQUITO_NETWORK=tcp"
 Environment="TACQUITO_ADDRESS=:49"
 Environment="TACQUITO_LEVEL=20"
+# Prometheus exporter. Bind loopback-only by default — metrics are a
+# high-signal fingerprint of the service (auth counters, listener shape,
+# etc.) and should not ride the management interface without an explicit
+# operator choice. Manage via:
+#   tacctl config metrics address <host:port>   # custom bind
+#   tacctl config metrics disable               # route to 127.0.0.1:0 (no scraper can reach)
+#   tacctl config metrics enable                # revert to the default loopback:8080
+# tacquito's `-export-promhttp=false` is not used: upstream's handler
+# unconditionally cancels the server context when the exporter goroutine
+# returns, which would tear down the whole daemon. Binding to an
+# ephemeral-port loopback sink gives the same operator-visible result
+# without requiring a tacquito patch.
+Environment="TACQUITO_METRICS_ADDRESS=127.0.0.1:8080"
 ExecStart=/usr/local/bin/tacquito \
     -config /etc/tacquito/tacquito.yaml \
     -network ${TACQUITO_NETWORK} -address ${TACQUITO_ADDRESS} \
     -acct-log-path /var/log/tacquito/accounting.log \
-    -level ${TACQUITO_LEVEL}
+    -level ${TACQUITO_LEVEL} \
+    -metrics-address ${TACQUITO_METRICS_ADDRESS}
 Restart=on-failure
 RestartSec=5
 

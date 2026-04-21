@@ -2708,7 +2708,11 @@ cmd_config_cisco() {
 
     # Compute "other scopes" list for the header.
     local other_scopes
-    other_scopes=$(list_scopes | grep -vxF "$scope" | paste -sd,)
+    # `grep -vxF` exits 1 when no lines survive (e.g. only the one named scope
+    # exists). Under `set -o pipefail` that kills the subshell and, via
+    # `set -e`, the whole script. Append `|| true` to the grep so the pipeline
+    # stays zero-exit when the "other scopes" set is empty.
+    other_scopes=$(list_scopes | { grep -vxF "$scope" || true; } | paste -sd,)
 
     # Collect all groups with their priv-lvl
     local group_info
@@ -2943,7 +2947,11 @@ cmd_config_juniper() {
 
     # Compute "other scopes" list for the header.
     local other_scopes
-    other_scopes=$(list_scopes | grep -vxF "$scope" | paste -sd,)
+    # `grep -vxF` exits 1 when no lines survive (e.g. only the one named scope
+    # exists). Under `set -o pipefail` that kills the subshell and, via
+    # `set -e`, the whole script. Append `|| true` to the grep so the pipeline
+    # stays zero-exit when the "other scopes" set is empty.
+    other_scopes=$(list_scopes | { grep -vxF "$scope" || true; } | paste -sd,)
 
     # Collect all groups with their Juniper class and suggested Junos login class
     local group_juniper
@@ -3647,7 +3655,7 @@ cmd_scopes_usage() {
     echo -e "${BOLD}tacctl scopes${NC} — named (CIDR-prefixes, shared-secret) bundles"
     echo ""
     echo "Usage:"
-    echo "  tacctl scopes list                                        Summary of all scopes"
+    echo "  tacctl scopes list                                        One row per (scope, prefix) in routing order"
     echo "  tacctl scopes show <name>                                 Detailed view"
     echo "  tacctl scopes add <name> --prefixes <cidrs>               Create a new scope"
     echo "                       [--secret <value>|generate]"
@@ -3667,41 +3675,64 @@ cmd_scopes_usage() {
 
 cmd_scopes_list() {
     echo ""
-    echo -e "${BOLD}Scopes${NC}"
-    echo "--------------------------------------------"
+    echo -e "${BOLD}Scopes${NC} ${CYAN}(tacquito first-match order — narrower prefixes win)${NC}"
+    echo "--------------------------------------------------------------"
     local default_val
     default_val=$(read_default_scope)
-    local names
-    names=$(list_scopes)
-    if [[ -z "$names" ]]; then
+    # Walk secrets[] in YAML slice order (matches tacquito's provider-level
+    # first-match walk at loader.go:212-220). One row per (scope, prefix)
+    # entry — multi-prefix scopes intentionally repeat their name so the
+    # display literally mirrors how a connecting client gets routed. For
+    # the aggregated per-scope view (users, secret, is-default), use
+    # `tacctl scopes show <name>`.
+    #
+    # Pre-compute per-scope user counts in Python to avoid N forks of
+    # `count_users_in_scope` over N entries; the per-scope fact is the
+    # same on every row for a given name.
+    local rows
+    rows=$(python3 -c "
+import json, re, sys, yaml
+cfg_path = sys.argv[1]
+default_val = sys.argv[2]
+with open(cfg_path) as f:
+    d = yaml.safe_load(f) or {}
+# user count per scope
+ucount = {}
+for u in (d.get('users') or []):
+    for s in (u.get('scopes') or []):
+        ucount[s] = ucount.get(s, 0) + 1
+for s in (d.get('secrets') or []):
+    name = s.get('name') or '(unnamed)'
+    pfx = (s.get('options') or {}).get('prefixes') or ''
+    try:
+        arr = json.loads(pfx) if pfx else []
+    except Exception:
+        arr = re.findall(r'\"([^\"]+)\"', pfx)
+    if not arr:
+        # scope entry with no prefix (pathological); show one row to make
+        # the anomaly visible rather than swallowing it silently.
+        arr = ['(no prefix)']
+    for cidr in arr:
+        is_default = 'yes' if name == default_val else ''
+        print(f\"{name}\t{cidr}\t{ucount.get(name, 0)}\t{is_default}\")
+" "$CONFIG" "$default_val" 2>/dev/null)
+
+    if [[ -z "$rows" ]]; then
         echo "  (no scopes configured)"
         echo ""
         return
     fi
-    local first=1
-    while IFS= read -r name; do
+
+    printf "  ${BOLD}%3s  %-18s %-20s %5s  %s${NC}\n" "#" "NAME" "PREFIX" "USERS" "DEFAULT"
+    echo "  --------------------------------------------------------------"
+    local i=0
+    while IFS=$'\t' read -r name cidr users is_default; do
         [[ -z "$name" ]] && continue
-        local pfx_list user_count is_default_marker
-        pfx_list=$(read_scope_prefixes "$name")
-        user_count=$(count_users_in_scope "$name")
-        is_default_marker=""
-        [[ "$name" == "$default_val" ]] && is_default_marker="  ${CYAN}(default)${NC}"
-        (( first )) || echo ""
-        first=0
-        echo -e "  ${BOLD}${name}${NC}${is_default_marker}"
-        echo -e "    Users:    ${user_count}"
-        if [[ -z "$pfx_list" ]]; then
-            echo -e "    Prefixes: ${RED}(empty — no clients can auth)${NC}"
-        else
-            local pfx_count
-            pfx_count=$(printf '%s\n' "$pfx_list" | wc -l)
-            echo -e "    Prefixes: ${pfx_count}"
-            echo "$pfx_list" | while IFS= read -r c; do
-                [[ -z "$c" ]] && continue
-                echo "      - ${c}"
-            done
-        fi
-    done <<< "$names"
+        i=$((i + 1))
+        local dfl=""
+        [[ "$is_default" == "yes" ]] && dfl="${CYAN}yes${NC}"
+        printf "  %3d  ${BOLD}%-18s${NC} %-20s %5s  %b\n" "$i" "$name" "$cidr" "$users" "$dfl"
+    done <<< "$rows"
     echo ""
 }
 
@@ -4484,6 +4515,9 @@ cmd_config() {
         listen)
             cmd_config_listen "$@"
             ;;
+        metrics)
+            cmd_config_metrics "$@"
+            ;;
         sudoers)
             cmd_config_sudoers "$@"
             ;;
@@ -4526,6 +4560,7 @@ cmd_config() {
             echo "  diff [timestamp]                     Diff current config vs last backup"
             echo "  loglevel [debug|info|error]          Show or change log level"
             echo "  listen [show|tcp|tcp6|reset] [addr]  Show, change, or reset TCP listen address"
+            echo "  metrics <show|enable|disable|address <host:port>|reset>  Prometheus exporter control"
             echo "  sudoers [show|install|remove] [grp]  Manage NOPASSWD sudoers drop-in for tacctl"
             echo "  password-age [days]                  Show or set password age warning threshold"
             echo "  bcrypt-cost [10-14]                  Show or set bcrypt cost factor (default 12)"
@@ -5755,24 +5790,39 @@ else:
     backup_count=$(ls -1 "${BACKUP_DIR}"/tacquito.yaml.* 2>/dev/null | wc -l)
     echo -e "  ${BOLD}Config backups:${NC}       ${backup_count}"
 
-    # Prometheus metrics — auth stats
+    # Prometheus metrics — auth stats. Respects the tacctl config metrics
+    # address override: when the exporter is bound to 127.0.0.1:0 (our
+    # "disabled" sink) we skip scraping and report the disabled state
+    # explicitly rather than pretending the service is unreachable.
     echo ""
     echo -e "  ${BOLD}Authentication Stats (since last restart):${NC}"
-    local metrics
-    metrics=$(curl -s http://localhost:8080/metrics 2>/dev/null || true)
-    if [[ -n "$metrics" ]]; then
-        local auth_pass auth_fail authz_pass authz_fail
-        auth_pass=$(echo "$metrics" | grep -P '^tacquito_authenstart_handle_pap ' | awk '{print $2}' | head -1 || true)
-        auth_fail=$(echo "$metrics" | grep -P '^tacquito_authenpap_handle_error ' | awk '{print $2}' | head -1 || true)
-        authz_pass=$(echo "$metrics" | grep -P '^tacquito_stringy_handle_authorize_accept_pass_add ' | awk '{print $2}' | head -1 || true)
-        authz_fail=$(echo "$metrics" | grep -P '^tacquito_stringy_handle_authorize_fail ' | awk '{print $2}' | head -1 || true)
-
-        echo -e "    Auth attempts:      ${auth_pass:-0}"
-        echo -e "    Auth errors:        ${auth_fail:-0}"
-        echo -e "    Authz granted:      ${authz_pass:-0}"
-        echo -e "    Authz denied:       ${authz_fail:-0}"
+    local metrics_addr metrics_url
+    metrics_addr=$(read_service_override TACQUITO_METRICS_ADDRESS)
+    metrics_addr=${metrics_addr:-127.0.0.1:8080}
+    if [[ "$metrics_addr" == "127.0.0.1:0" ]]; then
+        echo -e "    ${YELLOW}Metrics exporter disabled (tacctl config metrics enable)${NC}"
     else
-        echo -e "    ${YELLOW}Metrics unavailable (http://localhost:8080/metrics)${NC}"
+        if [[ "$metrics_addr" == :* ]]; then
+            metrics_url="http://localhost${metrics_addr}/metrics"
+        else
+            metrics_url="http://${metrics_addr}/metrics"
+        fi
+        local metrics
+        metrics=$(curl -s "$metrics_url" 2>/dev/null || true)
+        if [[ -n "$metrics" ]]; then
+            local auth_pass auth_fail authz_pass authz_fail
+            auth_pass=$(echo "$metrics" | grep -P '^tacquito_authenstart_handle_pap ' | awk '{print $2}' | head -1 || true)
+            auth_fail=$(echo "$metrics" | grep -P '^tacquito_authenpap_handle_error ' | awk '{print $2}' | head -1 || true)
+            authz_pass=$(echo "$metrics" | grep -P '^tacquito_stringy_handle_authorize_accept_pass_add ' | awk '{print $2}' | head -1 || true)
+            authz_fail=$(echo "$metrics" | grep -P '^tacquito_stringy_handle_authorize_fail ' | awk '{print $2}' | head -1 || true)
+
+            echo -e "    Auth attempts:      ${auth_pass:-0}"
+            echo -e "    Auth errors:        ${auth_fail:-0}"
+            echo -e "    Authz granted:      ${authz_pass:-0}"
+            echo -e "    Authz denied:       ${authz_fail:-0}"
+        else
+            echo -e "    ${YELLOW}Metrics unavailable (${metrics_url})${NC}"
+        fi
     fi
 
     # Recent errors
@@ -6322,6 +6372,136 @@ cmd_config_listen() {
         return 1
     fi
     echo ""
+}
+
+# --- CONFIG METRICS ---
+# Control the prometheus exporter's listen address (tacquito's -metrics-address
+# flag). `disable` binds the exporter to 127.0.0.1:0 — a loopback address on
+# an ephemeral port that no scraper can discover, so from any reader's
+# perspective the exporter is gone even though the goroutine still runs.
+# We deliberately do NOT toggle tacquito's -export-promhttp flag: upstream's
+# goroutine unconditionally cancels the server context when the exporter
+# returns, so `-export-promhttp=false` would tear down the whole daemon.
+cmd_config_metrics() {
+    local sub="${1:-}"
+    local arg="${2:-}"
+
+    # Defaults must match config/tacquito.service Environment= lines.
+    # Loopback-only by default: local scrapers on the box can reach it, external
+    # ones can't without an explicit `tacctl config metrics address` change.
+    local default_addr="127.0.0.1:8080"
+    local disable_sink="127.0.0.1:0"
+
+    local cur_addr addr_src
+    cur_addr=$(read_service_override TACQUITO_METRICS_ADDRESS)
+    if [[ -n "$cur_addr" ]]; then addr_src="override"; else addr_src="default"; fi
+    cur_addr=${cur_addr:-$default_addr}
+
+    local state state_color
+    if [[ "$cur_addr" == "$disable_sink" ]]; then
+        state="disabled"; state_color="$RED"
+    elif [[ "$cur_addr" == 127.* || "$cur_addr" == "[::1]"* || "$cur_addr" == "localhost:"* ]]; then
+        state="enabled (loopback-only)"; state_color="$GREEN"
+    else
+        state="enabled (externally reachable)"; state_color="$YELLOW"
+    fi
+
+    case "$sub" in
+        ""|show|-h|--help|help)
+            echo ""
+            echo -e "${BOLD}Prometheus metrics exporter${NC}"
+            echo "--------------------------------------------"
+            echo -e "  State:    ${state_color}${state}${NC}"
+            echo -e "  Address:  ${cur_addr}  (${addr_src})"
+            if [[ "$state" != "disabled" ]]; then
+                echo ""
+                local scrape_url
+                if [[ "$cur_addr" == :* ]]; then
+                    scrape_url="http://localhost${cur_addr}/metrics"
+                else
+                    scrape_url="http://${cur_addr}/metrics"
+                fi
+                echo "  Scrape URL: ${scrape_url}"
+            fi
+            echo ""
+            echo "Usage:"
+            echo "  tacctl config metrics                      Show current state"
+            echo "  tacctl config metrics enable               Revert to default (${default_addr})"
+            echo "  tacctl config metrics disable              Sink to ${disable_sink} (no scraper can reach)"
+            echo "  tacctl config metrics address <host:port>  Explicit bind (e.g. 10.1.0.1:8080 for external)"
+            echo "  tacctl config metrics reset                Clear override (revert to unit default)"
+            echo ""
+            if [[ "$state" == "disabled" ]]; then
+                echo "  Note: tacquito still runs the exporter goroutine, bound to an"
+                echo "        ephemeral loopback port unknown to any scraper. This is the"
+                echo "        closest we can get without patching tacquito upstream."
+                echo ""
+            fi
+            return
+            ;;
+        enable)
+            if [[ "$state" != "disabled" && "$addr_src" == "default" ]]; then
+                info "Already enabled on default (${default_addr})."
+                return
+            fi
+            clear_service_override TACQUITO_METRICS_ADDRESS
+            systemctl daemon-reload
+            systemctl restart tacquito
+            info "Metrics exporter enabled on ${default_addr}/metrics."
+            echo ""
+            ;;
+        disable)
+            if [[ "$state" == "disabled" ]]; then
+                info "Already disabled (sunk to ${disable_sink})."
+                return
+            fi
+            set_service_override TACQUITO_METRICS_ADDRESS "$disable_sink"
+            systemctl daemon-reload
+            systemctl restart tacquito
+            info "Metrics exporter sunk to ${disable_sink} — no scraper can reach it."
+            warn "Note: the exporter goroutine still runs; bind-to-loopback-0 is the"
+            warn "closest 'off' state tacquito supports without an upstream patch."
+            echo ""
+            ;;
+        address)
+            if [[ -z "$arg" ]]; then
+                error "Usage: tacctl config metrics address <host:port>"
+                error "Examples:  127.0.0.1:8080  (loopback only — default)"
+                error "           :8080           (all interfaces — external scrapers can reach)"
+                error "           10.1.0.1:9090   (specific mgmt IP + custom port)"
+                exit 1
+            fi
+            if [[ "$arg" != *:* ]]; then
+                error "Address must include a port (e.g. '127.0.0.1:8080' or ':8080')."
+                exit 1
+            fi
+            if [[ "$arg" == "$default_addr" ]]; then
+                clear_service_override TACQUITO_METRICS_ADDRESS
+            else
+                set_service_override TACQUITO_METRICS_ADDRESS "$arg"
+            fi
+            systemctl daemon-reload
+            systemctl restart tacquito
+            info "Metrics listen address set to ${arg}. Service restarted."
+            if [[ "$arg" != 127.* && "$arg" != "[::1]"* && "$arg" != "$disable_sink" ]]; then
+                warn "Exporter is now externally reachable. Ensure downstream scrapers"
+                warn "have appropriate network-level access controls."
+            fi
+            echo ""
+            ;;
+        reset)
+            clear_service_override TACQUITO_METRICS_ADDRESS
+            systemctl daemon-reload
+            systemctl restart tacquito
+            info "Metrics override cleared. Using unit default (${default_addr})."
+            echo ""
+            ;;
+        *)
+            error "Unknown subcommand: '${sub}'"
+            error "Run 'tacctl config metrics' with no arguments for usage."
+            exit 1
+            ;;
+    esac
 }
 
 # --- CONFIG SUDOERS ---

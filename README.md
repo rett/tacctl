@@ -177,6 +177,16 @@ tacctl config mgmt-acl juniper-name MGMT-SSH-FILTER
 ```
 Overrides live at `/etc/tacquito/mgmt-acl-names.conf` and also survive `tacctl upgrade`.
 
+### Prometheus metrics exporter
+Tacquito ships a Prometheus HTTP exporter for auth-rate and error counters. By default it binds to **loopback only** (`127.0.0.1:8080`) — local scrapers on the box work out of the box, external scrapers are opt-in. Manage via:
+```
+tacctl config metrics                         # show current state + scrape URL
+tacctl config metrics address 10.1.0.1:8080   # expose to external scrapers on a specific mgmt IP
+tacctl config metrics disable                 # sink to 127.0.0.1:0 (unreachable ephemeral port)
+tacctl config metrics enable                  # revert to loopback:8080 default
+```
+`disable` does not use tacquito's own `-export-promhttp=false` flag — upstream's handler unconditionally cancels the server context when the exporter goroutine returns, which would tear down the whole daemon. Binding to a loopback ephemeral port gives the same operator-visible result (no scraper can reach it) without requiring a tacquito patch.
+
 ### Log retention
 Accounting logs are rotated daily and retained for 90 days (see `/etc/logrotate.d/tacquito`). Adjust the `rotate` value if your compliance requirements differ.
 
@@ -243,7 +253,7 @@ tacctl user passwd jsmith --hash '$2b$12$...'
 
 These patterns apply uniformly across every subcommand family:
 
-- **No arguments** — dispatcher commands (`user`, `group`, `config`, `scopes`, `log`, `backup`, `hash`, and nested dispatchers like `scopes prefixes` / `scopes secret` / `user scopes` / `group privilege`) print their own usage and exit without side effects. Scalar getter/setters (`config loglevel`, `config listen`, `config password-age`, `config bcrypt-cost`, `config password-min-length`, `config secret-min-length`, `config branch`, `scopes default`) print the current value when called with no arguments.
+- **No arguments** — dispatcher commands (`user`, `group`, `config`, `scopes`, `log`, `backup`, `hash`, and nested dispatchers like `scopes prefixes` / `scopes secret` / `user scopes` / `group privilege`) print their own usage and exit without side effects. Scalar getter/setters (`config loglevel`, `config listen`, `config metrics`, `config password-age`, `config bcrypt-cost`, `config password-min-length`, `config secret-min-length`, `config branch`, `scopes default`) print the current value when called with no arguments.
 - **Multi-item input** — every `add` / `remove` that takes a CIDR, a scope name, or a Cisco exec command accepts either a single value or a comma-separated list (`a,b,c`). Every input is validated first; a bad entry aborts the entire operation without writing anything.
 - **CIDR semantics** — every CIDR-list subcommand (`scopes prefixes`, `config allow`, `config deny`, `config mgmt-acl`) canonicalizes input before storage: `10.1.5.5/24` becomes `10.1.5.0/24`, `2001:DB8::/32` becomes `2001:db8::/32`. Exact duplicates (after canonicalization) are rejected as no-ops on `add`. Overlapping CIDRs of different prefix lengths coexist (`10.0.0.0/8` and `10.99.0.0/16` can both be present). Stored order is by broadcast-address ascending (IPv4 before IPv6): disjoint ranges sort by their end address, and an overlapping subnet falls immediately above its containing supernet (the subnet's range ends before the supernet's). This groups related CIDRs together and gives tacquito's provider selector the "most-specific first among overlaps" ordering it needs so a narrower scope wins a first-match lookup over a broader scope that contains it.
 - **Scope prefix invariants** — every CIDR belongs to **exactly one** scope after canonicalization. Adding a prefix already claimed by a different scope is rejected with a message naming the owner; you must `tacctl scopes prefixes <owner> remove <cidr>` before re-adding it elsewhere. Overlapping prefixes *across* scopes are allowed and routed correctly (e.g. `10.5.0.0/16` in `staging` coexists with `10.0.0.0/8` in `lab`). To make cross-scope first-match honor specificity, tacctl emits one `secrets:` entry per (scope, prefix) pair — a scope with N prefixes becomes N entries sharing the same `name:` and `secret.key`. Entries are re-sorted globally by prefix specificity (v4 before v6, smaller broadcast first) after every mutation, so tacquito's slice-ordered walk picks the narrowest scope. The CLI continues to show the logical one-bundle-per-scope view; do not hand-edit the `secrets:` block, and `tacctl config validate` flags any same-name key divergence.
@@ -335,6 +345,7 @@ config validate                             Validate config syntax + scope integ
 config diff [timestamp]                     Diff current config vs a backup
 config loglevel [debug|info|error]          Show or change log level
 config listen [show|tcp|tcp6|reset] [addr]  Show, change, or reset TCP listen address
+config metrics <show|enable|disable|address <host:port>|reset>   Prometheus exporter control. Default: loopback-only 127.0.0.1:8080. `disable` sinks to 127.0.0.1:0 (unreachable ephemeral port) since tacquito's own disable flag would crash the server.
 config sudoers [show|install|remove] [grp]  Manage NOPASSWD sudoers drop-in for tacctl
 config password-age [days]                  Show or set password age warning threshold (default 90)
 config bcrypt-cost [10-14]                  Show or set bcrypt cost factor for new hashes (default 12)
@@ -353,7 +364,7 @@ Removed in this release: `config secret` and `config prefixes`. Use `tacctl scop
 ### Scope Commands — `tacctl scopes`
 
 ```
-scopes list                                              List every scope with its full prefix list, user count, default marker
+scopes list                                              List every (scope, prefix) pair in tacquito first-match order (numbered by slice position)
 scopes show <name>                                       Full detail: prefixes, users, raw secret + posture, default-ness
 scopes add <name> --prefixes <cidrs>                     Create a new scope
            [--secret <value>|--secret generate] [--default]

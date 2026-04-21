@@ -172,7 +172,7 @@ for u in (d.get('users') or []):
             ;;
         config)
             if [[ $pos -eq 2 ]]; then
-                COMPREPLY=($(compgen -W "show cisco juniper validate loglevel listen sudoers password-age bcrypt-cost password-min-length secret-min-length diff allow deny mgmt-acl branch" -- "$cur"))
+                COMPREPLY=($(compgen -W "show cisco juniper validate loglevel listen metrics sudoers password-age bcrypt-cost password-min-length secret-min-length diff allow deny mgmt-acl branch" -- "$cur"))
             elif [[ $pos -eq 3 ]]; then
                 case "${words[offset + 2]}" in
                     loglevel)
@@ -180,6 +180,9 @@ for u in (d.get('users') or []):
                         ;;
                     listen)
                         COMPREPLY=($(compgen -W "show tcp tcp6 reset" -- "$cur"))
+                        ;;
+                    metrics)
+                        COMPREPLY=($(compgen -W "show enable disable address reset" -- "$cur"))
                         ;;
                     sudoers)
                         COMPREPLY=($(compgen -W "show install remove" -- "$cur"))

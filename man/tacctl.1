@@ -330,6 +330,31 @@ clients via mapped addresses
 that silently bypass IPv4 prefix ACLs; see
 .B NOTES.
 .TP
+.B "config metrics " "{ show | enable | disable | address " \fIhost:port\fR " | reset }"
+Control the prometheus HTTP exporter's listen address.
+.B show
+(no arg) prints current state and address.
+.B enable
+clears the override and reverts to the unit default
+.RB ( 127.0.0.1:8080 ,
+loopback-only).
+.B disable
+sinks the exporter to
+.B 127.0.0.1:0
+— an ephemeral loopback port that no scraper can discover, so the
+exporter is effectively off even though its goroutine still runs. This
+indirection is deliberate: tacquito's upstream
+.B -export-promhttp=false
+path unconditionally cancels the server context, which would tear the
+whole daemon down, so tacctl avoids the flag and uses an unreachable
+bind instead.
+.B "address " \fIhost:port\fR
+binds explicitly (e.g.
+.B 10.1.0.1:8080
+to expose to external scrapers); non-loopback binds print a warning.
+.B reset
+clears the override and falls back to the unit default.
+.TP
 .B "config sudoers " "{ show | install | remove } " [ group ]
 Manage the optional
 .I /etc/sudoers.d/tacctl
@@ -548,10 +573,15 @@ as needed, and place users into them explicitly.
 .SS Top-level \fB(tacctl scopes)\fR
 .TP
 .B scopes list
-Print every scope with its full prefix list (sorted by specificity),
-user count, and default-scope marker. Use
+Print every
+.B secrets[]
+entry in tacquito's first-match order (one row per scope-prefix pair,
+numbered by slice position). Multi-prefix scopes repeat their name on
+each prefix row so the display literally mirrors routing priority —
+reading top to bottom shows the order tacquito tries providers for a
+connecting client. Use
 .BR "scopes show " \fIname\fR
-for per-user detail and secret length.
+for the aggregated per-scope view (users, secret, default marker).
 .TP
 .BI "scopes show " name
 Full detail for one scope: prefixes, users that reference it, raw
@@ -680,6 +710,7 @@ print their own usage and return without side effects.
 Scalar getter/setters
 .RB ( "config loglevel" ,
 .BR "config listen" ,
+.BR "config metrics" ,
 .BR "config password-age" ,
 .BR "config bcrypt-cost" ,
 .BR "config password-min-length" ,
@@ -830,9 +861,10 @@ Systemd unit file.
 .TP
 .I /etc/systemd/system/tacquito.service.d/tacctl-overrides.conf
 Systemd drop-in where
-.B "tacctl config listen"
+.BR "tacctl config listen" ,
+.BR "tacctl config loglevel" ,
 and
-.B "tacctl config loglevel"
+.B "tacctl config metrics"
 write their overrides. Preserved across upgrades.
 .TP
 .I /etc/sudoers.d/tacctl
@@ -864,36 +896,39 @@ during
 .SH EXAMPLES
 .TP
 Install on a fresh host:
-.B sudo tacctl install
+.B tacctl install
 .TP
 Add a superuser:
-.B sudo tacctl user add alice superuser
+.B tacctl user add alice superuser
 .TP
 Restrict device subnets in the default scope:
-.B sudo tacctl scopes prefixes lab add 10.1.0.0/24,172.16.5.0/24
+.B tacctl scopes prefixes lab add 10.1.0.0/24,172.16.5.0/24
 .TP
 Build a multi-environment scope hierarchy (broader prod scopes with
 narrower lab scopes carved out — the /24 wins first-match for 10.10.99.x
 clients, the /16 catches the rest of 10.10.x):
 .nf
-.B "  sudo tacctl scopes add prod_dc_east --prefixes 10.10.0.0/16 --secret generate"
-.B "  sudo tacctl scopes add lab_east     --prefixes 10.10.99.0/24 --secret generate"
+.B "  tacctl scopes add prod_dc_east --prefixes 10.10.0.0/16 --secret generate"
+.B "  tacctl scopes add lab_east     --prefixes 10.10.99.0/24 --secret generate"
 .fi
 .TP
 Trace how tacquito would route a client IP through the scope list:
-.B sudo tacctl scopes lookup 10.10.99.7
+.B tacctl scopes lookup 10.10.99.7
 .TP
 Grant a user full production access across two datacenters:
-.B sudo tacctl user scopes alice add prod_dc_east,prod_dc_west
+.B tacctl user scopes alice add prod_dc_east,prod_dc_west
 .TP
 Generate a Cisco-ready configuration for the prod scope:
-.B sudo tacctl config cisco --scope prod_dc_east
+.B tacctl config cisco --scope prod_dc_east
 .TP
 Bind the listener to a specific management IP:
-.B sudo tacctl config listen tcp 10.1.0.1:49
+.B tacctl config listen tcp 10.1.0.1:49
+.TP
+Expose the Prometheus exporter to an external scraper (default is loopback-only):
+.B tacctl config metrics address 10.1.0.1:8080
 .TP
 Enable passwordless invocation for members of the adm group:
-.B sudo tacctl config sudoers install adm
+.B tacctl config sudoers install adm
 .TP
 Print client-side bcrypt generation instructions to share with a user:
 .B tacctl hash commands
