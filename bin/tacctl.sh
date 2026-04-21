@@ -1913,13 +1913,13 @@ else:
 # --- CONFIG SECRET ---
 # --- Read the current shared secret from the YAML (may be empty) ---
 # --- Legacy 'config secret' — REMOVED ---
-# Scope-owned properties now live under 'tacctl scopes secret <name>'.
-# This stub prints an explicit redirect so muscle-memory and scripted
-# callers learn where to go instead of hitting a generic dispatcher
-# error. It does not mutate state.
+# Shared secrets are scope-owned; the equivalent is 'tacctl scopes secret
+# <name>'. This stub prints an explicit redirect so muscle-memory and
+# scripted callers learn where to go instead of hitting a generic
+# dispatcher error. It does not mutate state.
 cmd_config_secret() {
-    error "'tacctl config secret' was removed in this release."
-    error "Scope-owned secrets now live under 'tacctl scopes':"
+    error "'tacctl config secret' has been removed."
+    error "Shared secrets are scope-owned; manage via 'tacctl scopes':"
     error "  tacctl scopes secret <name> show"
     error "  tacctl scopes secret <name> set <value>"
     error "  tacctl scopes secret <name> generate"
@@ -2583,9 +2583,6 @@ os.rename(tmp.name, path)
 PY
 }
 
-# --- Read the secret-provider prefixes (one canonical CIDR per line) ---
-# Canonicalizes each entry on read so dedup comparisons and display are
-# representation-agnostic regardless of how the YAML was last written.
 # --- Echo the canonical string form of a CIDR (or empty on invalid) ---
 # IPv4: `10.1.5.5/24` → `10.1.5.0/24` (host bits zeroed).
 # IPv6: `2001:DB8::/32` → `2001:db8::/32` (lower-cased, compressed).
@@ -2653,13 +2650,13 @@ parse_cidr_list() {
 }
 
 # --- Legacy 'config prefixes' — REMOVED ---
-# Scope-owned prefixes now live under 'tacctl scopes prefixes <name>'.
-# This stub prints an explicit redirect so muscle-memory and scripted
-# callers learn where to go instead of hitting a generic dispatcher
-# error. It does not mutate state.
+# Client-prefix lists are scope-owned; the equivalent is 'tacctl scopes
+# prefixes <name>'. This stub prints an explicit redirect so muscle-memory
+# and scripted callers learn where to go instead of hitting a generic
+# dispatcher error. It does not mutate state.
 cmd_config_prefixes() {
-    error "'tacctl config prefixes' was removed in this release."
-    error "Scope-owned prefixes now live under 'tacctl scopes':"
+    error "'tacctl config prefixes' has been removed."
+    error "Client-prefix lists are scope-owned; manage via 'tacctl scopes':"
     error "  tacctl scopes prefixes <name> list"
     error "  tacctl scopes prefixes <name> add    <cidr>[,<cidr>...]"
     error "  tacctl scopes prefixes <name> remove <cidr>[,<cidr>...]"
@@ -3402,7 +3399,7 @@ if m and m.group(1).strip():
 # csv may be empty — in that case the key line is removed entirely.
 # Entries are canonicalized and sorted by specificity (most-specific
 # prefix first) before being emitted, matching the storage convention
-# used by set_secret_prefixes.
+# used by set_scope_prefixes.
 write_prefix_list() {
     local key="$1"
     local csv="$2"
@@ -7538,11 +7535,12 @@ cmd_upgrade() {
 
     # --- Seed default-scope marker if missing (upgrade hook) ---
     # Pre-multi-scope installs don't have /etc/tacquito/default-scope.
-    # Seed it with the NAME of the existing sole scope so behavior is
-    # preserved (no forced rename of 'network_devices' to 'lab' — that
-    # remains an optional operator choice). If the install already has
-    # multiple scopes and no marker, fall back to the first scope and
-    # warn; operators should pick one explicitly.
+    # Seed it with the name of the existing sole scope so behavior is
+    # preserved — no forced rename (operators who want to align with the
+    # newer 'lab' convention can do so explicitly with 'tacctl scopes
+    # rename'). If the install already has multiple scopes and no marker,
+    # fall back to the first scope and warn; operators should pick one
+    # explicitly.
     if [[ ! -f "$DEFAULT_SCOPE_FILE" ]]; then
         local _existing_scopes _first_scope _scope_count
         _existing_scopes=$(list_scopes 2>/dev/null || true)

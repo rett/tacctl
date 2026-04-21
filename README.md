@@ -359,7 +359,7 @@ config mgmt-acl juniper-name [name]         Show or set the emitted Juniper filt
 config branch [name]                        Show or change the tacctl repo branch
 ```
 
-Removed in this release: `config secret` and `config prefixes`. Use `tacctl scopes secret <name>` / `tacctl scopes prefixes <name>` instead — see **Scope Commands** below.
+Both `config secret` and `config prefixes` have been removed — shared secrets and client-prefix lists are scope-owned. Use `tacctl scopes secret <name>` / `tacctl scopes prefixes <name>` instead (see **Scope Commands** below).
 
 ### Scope Commands — `tacctl scopes`
 
