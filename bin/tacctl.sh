@@ -1901,7 +1901,7 @@ else:
 
     # Show listening port (TACACS+ = port 49)
     local listen
-    listen=$(ss -tlnp 2>/dev/null | grep ":49 " | awk '{print $4}' | head -1)
+    listen=$(ss -tlnp 2>/dev/null | { grep ":49 " || true; } | awk '{print $4}' | head -1)
     if [[ -n "$listen" ]]; then
         echo -e "  ${BOLD}Listening on:${NC}         ${listen}"
     else
@@ -4687,7 +4687,7 @@ cmd_group_add() {
 
     # Insert the new exec service, junos-exec service, and group before "# --- Groups ---"
     local groups_line
-    groups_line=$(grep -n "^# --- Groups ---" "$CONFIG" | head -1 | cut -d: -f1)
+    groups_line=$({ grep -n "^# --- Groups ---" "$CONFIG" || true; } | head -1 | cut -d: -f1)
     if [[ -z "$groups_line" ]]; then
         error "Cannot find groups section in config."
         exit 1
@@ -4732,7 +4732,7 @@ os.rename(tmp.name, sys.argv[1])
 
     # Insert group definition after the last existing group (before "# --- Users ---")
     local users_line
-    users_line=$(grep -n "^# --- Users ---" "$CONFIG" | head -1 | cut -d: -f1)
+    users_line=$({ grep -n "^# --- Users ---" "$CONFIG" || true; } | head -1 | cut -d: -f1)
 
     python3 -c "
 import sys
@@ -5738,7 +5738,7 @@ cmd_status() {
 
     # Listening port
     local listen
-    listen=$(ss -tlnp 2>/dev/null | grep ":49 " | awk '{print $4}' | head -1)
+    listen=$(ss -tlnp 2>/dev/null | { grep ":49 " || true; } | awk '{print $4}' | head -1)
     if [[ -n "$listen" ]]; then
         echo -e "  ${BOLD}Listening:${NC}            ${GREEN}${listen}${NC}"
     else
@@ -7477,9 +7477,13 @@ cmd_upgrade() {
             # migrate values that (a) are present AND (b) differ from the
             # template's defaults -- otherwise there's nothing to preserve.
             local mig_net mig_addr mig_level migrated=0
-            mig_net=$(grep -oP '\-network \K\S+' "$SERVICE_FILE" 2>/dev/null | head -1)
-            mig_addr=$(grep -oP '\-address \K\S+' "$SERVICE_FILE" 2>/dev/null | head -1)
-            mig_level=$(grep -oP '\-level \K\d+' "$SERVICE_FILE" 2>/dev/null | head -1)
+            # `grep | head` under pipefail + set -e: when grep finds nothing
+            # it exits 1 and kills the subshell. `|| true` on each keeps the
+            # migration pass best-effort for installs whose unit file uses
+            # ${TACQUITO_*} env-var placeholders (no literal values to scrape).
+            mig_net=$(grep -oP '\-network \K\S+' "$SERVICE_FILE" 2>/dev/null | head -1 || true)
+            mig_addr=$(grep -oP '\-address \K\S+' "$SERVICE_FILE" 2>/dev/null | head -1 || true)
+            mig_level=$(grep -oP '\-level \K\d+' "$SERVICE_FILE" 2>/dev/null | head -1 || true)
             if [[ -n "$mig_net" && "$mig_net" != "tcp" && "$mig_net" != '${TACQUITO_NETWORK}' ]]; then
                 [[ -z "$(read_service_override TACQUITO_NETWORK)" ]] && { set_service_override TACQUITO_NETWORK "$mig_net"; migrated=1; }
             fi
