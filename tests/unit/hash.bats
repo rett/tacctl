@@ -15,32 +15,33 @@ setup() {
     [[ "$BCRYPT_COST" == "12" ]]
 }
 
-@test "BCRYPT_COST: accepts values in [10,14] from file" {
-    echo 11 > "$BCRYPT_COST_FILE"
+@test "BCRYPT_COST: accepts values in [10,14] from overrides" {
+    conf_set bcrypt.cost 11
     unset BCRYPT_COST
     tacctl_source_lib
     [[ "$BCRYPT_COST" == "11" ]]
 
-    echo 14 > "$BCRYPT_COST_FILE"
+    conf_set bcrypt.cost 14
     unset BCRYPT_COST
     tacctl_source_lib
     [[ "$BCRYPT_COST" == "14" ]]
 }
 
 @test "BCRYPT_COST: clamps out-of-range to default 12" {
-    echo 8 > "$BCRYPT_COST_FILE"
+    # Hand-edited out-of-range values in the overrides file trip the clamp.
+    printf 'bcrypt:\n  cost: 8\n' > "$TACCTL_OVERRIDES_FILE"
     unset BCRYPT_COST
     tacctl_source_lib
     [[ "$BCRYPT_COST" == "12" ]]
 
-    echo 99 > "$BCRYPT_COST_FILE"
+    printf 'bcrypt:\n  cost: 99\n' > "$TACCTL_OVERRIDES_FILE"
     unset BCRYPT_COST
     tacctl_source_lib
     [[ "$BCRYPT_COST" == "12" ]]
 }
 
 @test "BCRYPT_COST: non-numeric value clamps to default" {
-    echo "hello" > "$BCRYPT_COST_FILE"
+    printf 'bcrypt:\n  cost: hello\n' > "$TACCTL_OVERRIDES_FILE"
     unset BCRYPT_COST
     tacctl_source_lib
     [[ "$BCRYPT_COST" == "12" ]]
@@ -51,22 +52,22 @@ setup() {
 @test "PASSWORD_MIN_LENGTH: default 12, clamps to [8,64]" {
     [[ "$PASSWORD_MIN_LENGTH" == "12" ]]
 
-    echo 8 > "$PASSWORD_MIN_LENGTH_FILE"
+    conf_set password.min_length 8
     unset PASSWORD_MIN_LENGTH
     tacctl_source_lib
     [[ "$PASSWORD_MIN_LENGTH" == "8" ]]
 
-    echo 64 > "$PASSWORD_MIN_LENGTH_FILE"
+    conf_set password.min_length 64
     unset PASSWORD_MIN_LENGTH
     tacctl_source_lib
     [[ "$PASSWORD_MIN_LENGTH" == "64" ]]
 
-    echo 7 > "$PASSWORD_MIN_LENGTH_FILE"
+    printf 'password:\n  min_length: 7\n' > "$TACCTL_OVERRIDES_FILE"
     unset PASSWORD_MIN_LENGTH
     tacctl_source_lib
     [[ "$PASSWORD_MIN_LENGTH" == "12" ]]
 
-    echo 65 > "$PASSWORD_MIN_LENGTH_FILE"
+    printf 'password:\n  min_length: 65\n' > "$TACCTL_OVERRIDES_FILE"
     unset PASSWORD_MIN_LENGTH
     tacctl_source_lib
     [[ "$PASSWORD_MIN_LENGTH" == "12" ]]
@@ -77,22 +78,22 @@ setup() {
 @test "SECRET_MIN_LENGTH: default 16, clamps to [16,128]" {
     [[ "$SECRET_MIN_LENGTH" == "16" ]]
 
-    echo 16 > "$SECRET_MIN_LENGTH_FILE"
+    conf_set secret.min_length 16
     unset SECRET_MIN_LENGTH
     tacctl_source_lib
     [[ "$SECRET_MIN_LENGTH" == "16" ]]
 
-    echo 128 > "$SECRET_MIN_LENGTH_FILE"
+    conf_set secret.min_length 128
     unset SECRET_MIN_LENGTH
     tacctl_source_lib
     [[ "$SECRET_MIN_LENGTH" == "128" ]]
 
-    echo 15 > "$SECRET_MIN_LENGTH_FILE"
+    printf 'secret:\n  min_length: 15\n' > "$TACCTL_OVERRIDES_FILE"
     unset SECRET_MIN_LENGTH
     tacctl_source_lib
     [[ "$SECRET_MIN_LENGTH" == "16" ]]
 
-    echo 129 > "$SECRET_MIN_LENGTH_FILE"
+    printf 'secret:\n  min_length: 129\n' > "$TACCTL_OVERRIDES_FILE"
     unset SECRET_MIN_LENGTH
     tacctl_source_lib
     [[ "$SECRET_MIN_LENGTH" == "16" ]]
@@ -133,7 +134,7 @@ setup() {
 
 @test "generate_hash: produces hex-encoded bcrypt hash at configured cost" {
     # Speed up: use lowest cost (10) for this round-trip check.
-    echo 10 > "$BCRYPT_COST_FILE"
+    conf_set bcrypt.cost 10
     tacctl_source_lib
 
     run generate_hash "Correct-Horse-Battery-Staple-42"
@@ -162,7 +163,7 @@ print("MATCH" if bcrypt.checkpw(pw, h) else "NO_MATCH")
 # --- verify_hash -------------------------------------------------------------
 
 @test "verify_hash: round-trips with generate_hash" {
-    echo 10 > "$BCRYPT_COST_FILE"
+    conf_set bcrypt.cost 10
     tacctl_source_lib
     local pw="Correct-Horse-Battery-Staple-42"
     local hex
@@ -188,7 +189,7 @@ print("MATCH" if bcrypt.checkpw(pw, h) else "NO_MATCH")
 # `sys.stdin.buffer.read()` would silently return b'' and every verify would
 # match against the empty password. This test catches that recurrence.
 @test "verify_hash: does NOT treat every input as the empty password" {
-    echo 10 > "$BCRYPT_COST_FILE"
+    conf_set bcrypt.cost 10
     tacctl_source_lib
     local empty_hash
     empty_hash=$(generate_hash "")

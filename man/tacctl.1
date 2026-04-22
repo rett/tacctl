@@ -243,7 +243,9 @@ Show the Cisco
 .B "privilege exec level"
 mappings for a group. Reports whether the source is an explicit
 override (in
-.IR /etc/tacquito/cisco-privileges.conf )
+.I /etc/tacquito/tacctl.yaml
+under
+.BR privileges.\fIgroup\fR )
 or the built-in default set (move-DOWN commands only).
 .TP
 .B "group privilege add " \fIgroup\fR " '\fIcmd\fR'[,'\fIcmd\fR'...]"
@@ -297,8 +299,49 @@ regex; a per-device config push is required after every change.
 .B config show
 Show the current configuration summary.
 .TP
+.B config dump
+Print the tacctl tunable posture: canonical defaults
+.RB ( conf_emit_defaults
+in
+.IR bin/tacctl.sh ),
+operator overrides
+.RI ( tacctl.yaml ),
+and the effective merged view.
+.TP
+.B config defaults
+Print the canonical defaults YAML only (no overrides, no merge).
+Useful for seeding a new
+.I tacctl.yaml
+or piping into
+.B diff
+against an existing one.
+.TP
+.BI "config get " "path" " [fallback]"
+Read one dotted-path value (e.g.
+.BR bcrypt.cost )
+from the merged view. Emits empty + the fallback if the path is missing.
+Lists and maps produce no output; use
+.B "config get-list"
+or
+.B "config dump"
+instead.
+.TP
+.BI "config get-list " "path"
+Read a list value (e.g.
+.BR mgmt_acl.permits )
+from the merged view, one element per stdout line.
+.TP
 .B config validate
-Validate config syntax and structure.
+Validate YAML syntax for
+.I tacquito.yaml
+and
+.IR tacctl.yaml ,
+schema-walk every override key in
+.I tacctl.yaml
+against the write-time validator (catches hand-edits that bypass the
+setter commands), then check the server config for structural issues
+(missing sections, orphan scope refs, default-scope marker pointing at a
+nonexistent scope, per-scope key divergence).
 .TP
 .BI "config diff " [ timestamp ]
 Diff the current config against a backup. Defaults to the most recent
@@ -401,8 +444,10 @@ takes precedence over
 with both empty, all connections are accepted.
 .TP
 .B "config mgmt-acl " "{ list | add | remove | clear | cisco-name | juniper-name } " [ arg ]
-Manage a shared CIDR permit list stored at
-.I /etc/tacquito/mgmt-acl.conf
+Manage a shared CIDR permit list stored under
+.B mgmt_acl.permits
+in
+.I /etc/tacquito/tacctl.yaml
 that drives both the Cisco VTY-ACL and a commented Juniper lo0
 firewall-filter example emitted by
 .B config cisco
@@ -786,12 +831,11 @@ clients can connect" or "fails open").
 Changes that mutate
 .I /etc/tacquito/tacquito.yaml
 (read by tacquito) restart the tacquito service automatically.
-Changes to tacctl-internal files
-.RI ( "/etc/tacquito/mgmt-acl.conf" ,
-.IR /etc/tacquito/cisco-privileges.conf ,
-.IR /etc/tacquito/mgmt-acl-names.conf ,
-.IR /etc/tacquito/password-min-length ,
-etc.) do not — tacquito itself never reads them.
+Changes to
+.I /etc/tacquito/tacctl.yaml
+(tacctl-internal tunables: mgmt-ACL permits + names, bcrypt cost,
+password age, per-group priv-exec mappings, etc.) do not \(em tacquito
+itself never reads that file.
 .TP
 .B Flags
 Long-form flags
@@ -817,24 +861,22 @@ TACACS+ server configuration. Mode 0640, owned by
 .I /etc/tacquito/backups/
 Automatic configuration backups. Last 30 retained.
 .TP
-.I /etc/tacquito/password-max-age
-Custom password age warning threshold, in days. Optional.
-.TP
-.I /etc/tacquito/default-scope
-Single-line text file naming the default scope. Read by
-.B "user add"
-when
-.B --scopes
-is omitted, and by
-.BR "config cisco" " / " "config juniper"
-when
-.B --scope
-is omitted. Written by
-.B "scopes default " \fIname\fR ,
-.B "scopes rename"
-(if it referenced the old name), and seeded at install time. Missing
-file + exactly one scope in the YAML: that scope is the implicit
-default.
+.I /etc/tacquito/tacctl.yaml
+Operator overrides for tacctl tunables (bcrypt cost, password / secret
+minimum lengths, password age warning, default scope, mgmt-ACL permits +
+names, per-group Cisco priv-exec mappings). Canonical defaults are
+embedded in
+.I bin/tacctl.sh
+and emitted on demand by
+.BR "tacctl config defaults" .
+Only set keys you want to change \(em missing keys inherit from the
+defaults, and setting a key back to the default value removes it. An
+empty overrides file is deleted. Every write is schema-validated
+(out-of-range numbers, bad ACL names, malformed CIDRs, typo'd keys are
+rejected before anything is written). Inspect the merged view with
+.BR "tacctl config dump" ;
+re-check the file with
+.BR "tacctl config validate" .
 .TP
 .I /etc/tacquito/templates/
 Host-specific overrides for the Cisco and Juniper device config
@@ -917,6 +959,21 @@ Enable passwordless invocation for members of the adm group:
 Print client-side bcrypt generation instructions to share with a user:
 .B tacctl hash commands
 .SH NOTES
+.B Unified tacctl config.
+Every tacctl tunable \(em bcrypt cost, password / secret minimum lengths,
+password-age warning threshold, default scope, mgmt-ACL permits + ACL names,
+and per-group Cisco priv-exec mappings \(em is driven by two sources:
+the canonical defaults embedded in
+.I bin/tacctl.sh
+(printed by
+.BR "tacctl config defaults" )
+and operator overrides in
+.IR /etc/tacquito/tacctl.yaml .
+Missing keys inherit from the defaults; setting a key back to the default
+value removes it; an empty overrides file is pruned. Writes are
+schema-validated (bad ranges, typo'd keys, malformed CIDRs rejected
+before anything lands on disk).
+.PP
 .B IPv4 only by default.
 The service runs with
 .B -network tcp

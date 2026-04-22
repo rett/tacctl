@@ -147,11 +147,11 @@ setup() {
     assert_output --partial "show version"
 }
 
-@test "group privilege add: stores mapping in PRIVILEGE_FILE" {
+@test "group privilege add: stores mapping under privileges.<group>" {
     run "$TACCTL_BIN_SCRIPT" group privilege add operator "show version"
     assert_success
-    run grep -F 'operator|show version' "$TACCTL_ETC/cisco-privileges.conf"
-    assert_success
+    run conf_get_list privileges.operator
+    assert_line "show version"
 }
 
 @test "group privilege add: accepts comma-separated list" {
@@ -161,12 +161,12 @@ setup() {
     # two more commands yields 4 total.
     run "$TACCTL_BIN_SCRIPT" group privilege add operator "show version,show ip interface brief"
     assert_success
-    run grep -c '^operator|' "$TACCTL_ETC/cisco-privileges.conf"
-    assert_output "4"
-    run grep -F 'operator|show version' "$TACCTL_ETC/cisco-privileges.conf"
-    assert_success
-    run grep -F 'operator|show ip interface brief' "$TACCTL_ETC/cisco-privileges.conf"
-    assert_success
+    run conf_get_list privileges.operator
+    [[ "$(printf '%s\n' "$output" | wc -l)" == "4" ]]
+    assert_line "show running-config"
+    assert_line "show startup-config"
+    assert_line "show version"
+    assert_line "show ip interface brief"
 }
 
 @test "group privilege add: rejects invalid command strings" {
@@ -185,10 +185,9 @@ setup() {
 
     run "$TACCTL_BIN_SCRIPT" group privilege remove operator "show users"
     assert_success
-    run grep -F 'operator|show users' "$TACCTL_ETC/cisco-privileges.conf"
-    assert_failure
-    run grep -F 'operator|show version' "$TACCTL_ETC/cisco-privileges.conf"
-    assert_success
+    run conf_get_list privileges.operator
+    refute_line "show users"
+    assert_line "show version"
 }
 
 @test "group privilege clear: wipes all mappings for a group" {
@@ -196,8 +195,8 @@ setup() {
 
     run bash -c 'echo y | "'"$TACCTL_BIN_SCRIPT"'" group privilege clear operator'
     assert_success
-    run grep -c '^operator|' "$TACCTL_ETC/cisco-privileges.conf"
-    assert_output "0"
+    run conf_get_list privileges.operator
+    assert_output ""
 }
 
 @test "group privilege list: priv-lvl 1 (readonly) has no mappings to emit" {

@@ -89,10 +89,10 @@ setup() {
     assert_output --partial "Nothing to remove"
 }
 
-@test "config mgmt-acl remove: warns when file doesn't exist yet" {
+@test "config mgmt-acl remove: warns when permit list is empty" {
     run "$TACCTL_BIN_SCRIPT" config mgmt-acl remove 10.0.0.0/8
     assert_success
-    assert_output --partial "does not exist"
+    assert_output --partial "permit list is empty"
 }
 
 # --- clear -------------------------------------------------------------------

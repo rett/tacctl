@@ -58,8 +58,7 @@ tacctl/
 | `/usr/local/bin/tacctl` | Symlink to management CLI |
 | `/usr/local/bin/tacquito-hashgen` | Password hash generator |
 | `/etc/tacquito/templates/` | Custom device config templates (override defaults) |
-| `/etc/tacquito/password-max-age` | Password age warning threshold (days) |
-| `/etc/tacquito/default-scope` | Name of the default scope (used when `user add` / `config cisco` / `config juniper` are called without `--scopes` / `--scope`) |
+| `/etc/tacquito/tacctl.yaml` | Operator overrides — only keys you've changed. Absent keys inherit from the canonical defaults embedded in `bin/tacctl.sh`. Inspect with `tacctl config dump`; list canonical defaults with `tacctl config defaults`. |
 | `/opt/tacctl/` | Git clone of this repo (used by upgrade) |
 | `/opt/tacquito-src/` | Tacquito server source code |
 
@@ -138,7 +137,7 @@ tacctl group privilege list operator         # show current mappings + source (e
 tacctl group privilege add operator 'show ip route'
 tacctl group privilege remove operator 'show running-config'
 ```
-Defaults move only verified priv-15 commands DOWN to lower groups (e.g. `show running-config` → priv 7 for `operator`); they never move commands UP from a lower default level (which would silently restrict them from `readonly` users). Mappings live in `/etc/tacquito/cisco-privileges.conf` and survive `tacctl upgrade`.
+Defaults move only verified priv-15 commands DOWN to lower groups (e.g. `show running-config` → priv 7 for `operator`); they never move commands UP from a lower default level (which would silently restrict them from `readonly` users). Mappings live under `privileges.<group>` in `/etc/tacquito/tacctl.yaml` and survive `tacctl upgrade`.
 
 ### Per-command authorization
 Restrict which commands a group can run, enforced live by Cisco IOS via TACACS+. Quickest path is to seed the built-in groups with sensible defaults:
@@ -166,14 +165,14 @@ tacctl config mgmt-acl add 10.1.0.0/16
 tacctl config mgmt-acl add 192.168.5.0/24
 tacctl config mgmt-acl list
 ```
-`tacctl config cisco` then emits a populated `VTY-ACL` applied to `line vty 0 15` via `access-class VTY-ACL in`. `tacctl config juniper` emits a commented `set firewall family inet filter MGMT-SSH-ACL` block (including a trailing `default-accept` term to keep BGP/OSPF/IS-IS traffic to the RE working) — review and uncomment per device. The list lives at `/etc/tacquito/mgmt-acl.conf` and survives `tacctl upgrade`.
+`tacctl config cisco` then emits a populated `VTY-ACL` applied to `line vty 0 15` via `access-class VTY-ACL in`. `tacctl config juniper` emits a commented `set firewall family inet filter MGMT-SSH-ACL` block (including a trailing `default-accept` term to keep BGP/OSPF/IS-IS traffic to the RE working) — review and uncomment per device. The list lives under `mgmt_acl.permits` in `/etc/tacquito/tacctl.yaml` and survives `tacctl upgrade`.
 
 Rename the emitted ACL / filter names to match your site conventions:
 ```
 tacctl config mgmt-acl cisco-name MGMT-ACCESS
 tacctl config mgmt-acl juniper-name MGMT-SSH-FILTER
 ```
-Overrides live at `/etc/tacquito/mgmt-acl-names.conf` and also survive `tacctl upgrade`.
+Overrides live under `mgmt_acl.names.{cisco,juniper}` in `/etc/tacquito/tacctl.yaml` and also survive `tacctl upgrade`.
 
 ### Prometheus metrics exporter
 Tacquito ships a Prometheus HTTP exporter for auth-rate and error counters. By default it binds to **loopback only** (`127.0.0.1:8080`) — local scrapers on the box work out of the box, external scrapers are opt-in. Manage via:
@@ -256,7 +255,7 @@ These patterns apply uniformly across every subcommand family:
 - **CIDR semantics** — every CIDR-list subcommand (`scopes prefixes`, `config allow`, `config deny`, `config mgmt-acl`) canonicalizes input before storage: `10.1.5.5/24` becomes `10.1.5.0/24`, `2001:DB8::/32` becomes `2001:db8::/32`. Exact duplicates (after canonicalization) are rejected as no-ops on `add`. Overlapping CIDRs of different prefix lengths coexist (`10.0.0.0/8` and `10.99.0.0/16` can both be present). Stored order is by broadcast-address ascending (IPv4 before IPv6): disjoint ranges sort by their end address, and an overlapping subnet falls immediately above its containing supernet (the subnet's range ends before the supernet's). This groups related CIDRs together and gives tacquito's provider selector the "most-specific first among overlaps" ordering it needs so a narrower scope wins a first-match lookup over a broader scope that contains it.
 - **Scope prefix invariants** — every CIDR belongs to **exactly one** scope after canonicalization. Adding a prefix already claimed by a different scope is rejected with a message naming the owner; you must `tacctl scopes prefixes <owner> remove <cidr>` before re-adding it elsewhere. Overlapping prefixes *across* scopes are allowed and routed correctly (e.g. `10.5.0.0/16` in `staging` coexists with `10.0.0.0/8` in `lab`). To make cross-scope first-match honor specificity, tacctl emits one `secrets:` entry per (scope, prefix) pair — a scope with N prefixes becomes N entries sharing the same `name:` and `secret.key`. Entries are re-sorted globally by prefix specificity (v4 before v6, smaller broadcast first) after every mutation, so tacquito's slice-ordered walk picks the narrowest scope. The CLI continues to show the logical one-bundle-per-scope view; do not hand-edit the `secrets:` block, and `tacctl config validate` flags any same-name key divergence.
 - **`clear`** — `clear` subcommands always prompt with `[y/N]` and print a warning describing the resulting posture (e.g. "no clients can connect" or "fails open").
-- **Service restart** — changes that mutate `/etc/tacquito/tacquito.yaml` restart the tacquito service automatically. Changes to tacctl-internal files (`mgmt-acl.conf`, `cisco-privileges.conf`, `mgmt-acl-names.conf`, `password-min-length`, etc.) do not — tacquito never reads them.
+- **Service restart** — changes that mutate `/etc/tacquito/tacquito.yaml` restart the tacquito service automatically. Changes to `/etc/tacquito/tacctl.yaml` (mgmt-acl permits + names, bcrypt cost, password age, privileges, etc.) do not — tacquito never reads that file.
 - **Flags** — long-form flags (`--hash`, `--scopes`, `--scope`, `--prefixes`, `--secret`, `--default`, `--match`, `--action`, `--force`, `--branch`) take a single argument. Required positional args come before flags.
 
 ### Top-Level Commands
@@ -337,9 +336,13 @@ group privilege seed [<group>] [--force]                  Populate built-ins wit
 
 ```
 config show                                 Show current configuration summary incl. per-scope breakdown
+config dump                                 Show tacctl defaults + overrides + merged view
+config defaults                             Print canonical tacctl defaults (shipped, embedded in bin/tacctl.sh)
+config get <path> [fallback]                Read a dotted-path value from the merged config
+config get-list <path>                      Read a list value (one item per line)
 config cisco [--scope <name>]               Generate working Cisco device config for a scope (default if omitted)
 config juniper [--scope <name>]             Generate working Juniper device config for a scope (default if omitted)
-config validate                             Validate config syntax + scope integrity (orphan refs, default-scope marker)
+config validate                             Validate config syntax + scope integrity (orphan refs, default-scope marker, tacctl.yaml against schema)
 config diff [timestamp]                     Diff current config vs a backup
 config loglevel [debug|info|error]          Show or change log level
 config listen [show|tcp|tcp6|reset] [addr]  Show, change, or reset TCP listen address
@@ -356,6 +359,50 @@ config mgmt-acl cisco-name [name]           Show or set the emitted Cisco ACL na
 config mgmt-acl juniper-name [name]         Show or set the emitted Juniper filter name (default MGMT-SSH-ACL)
 config branch [name]                        Show or change the tacctl repo branch
 ```
+
+#### Configuration tunables — `tacctl.yaml`
+
+tacctl ships canonical tunable defaults embedded in `bin/tacctl.sh` (dumped on demand via `tacctl config defaults`). Operator overrides live in a single file: `/etc/tacquito/tacctl.yaml`. Only list keys you want to change; missing keys inherit from the defaults. Setting a key back to the default value removes it (revert-to-default) and an empty overrides file is pruned.
+
+Schema (what `tacctl config defaults` prints):
+
+```yaml
+password:
+  max_age_days: 90           # warning threshold in `tacctl status`  (int, >= 1)
+  min_length: 12             # floor for interactively-typed passwords  (int, 8..64)
+
+secret:
+  min_length: 16             # floor for operator-typed shared secrets  (int, 16..128)
+
+bcrypt:
+  cost: 12                   # applies only to new hashes  (int, 10..14)
+
+scope:
+  default: null              # seeded at install; set via `tacctl scopes default`
+
+mgmt_acl:
+  names:
+    cisco: VTY-ACL           # ACL name emitted by `tacctl config cisco`  (letter-start, [A-Za-z0-9_-], 1..63)
+    juniper: MGMT-SSH-ACL    # filter name emitted by `tacctl config juniper`  (same rules)
+  permits: []                # list of CIDRs; each element validated
+
+privileges: {}               # per-group lists of Cisco priv-exec commands:
+                             #   privileges:
+                             #     operator:
+                             #       - show running-config
+                             #       - show startup-config
+```
+
+Merge semantics:
+- Maps deep-merge (overriding `password.max_age_days` keeps the default `password.min_length`).
+- Lists replace wholesale (an override list does not concatenate with the default list).
+- Scalars replace.
+
+**Write-time validation.** Every `tacctl config <setter>` invocation (and direct `conf_set` / `conf_set_list` calls) check the value against a schema table defined next to the defaults. Out-of-range numbers, bad ACL names, malformed CIDRs, invalid Cisco command strings, and typo'd keys are rejected with a clear error before anything is written. `tacctl config validate` runs the same schema over `tacctl.yaml` to catch hand-edits.
+
+**Read path caching.** Every read merges defaults + overrides and walks the dotted path, but the merged view is cached per script invocation (`_TACCTL_CFG_CACHE`). Commands that touch many tunables (`config cisco`, `status`, `config show`) load the merged YAML once and then answer from memory. Writes invalidate the cache.
+
+View effective posture with `tacctl config dump`; read individual values with `tacctl config get <path>` / `tacctl config get-list <path>`.
 
 ### Scope Commands — `tacctl scopes`
 

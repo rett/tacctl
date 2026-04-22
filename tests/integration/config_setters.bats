@@ -27,7 +27,7 @@ setup() {
 @test "config password-age: sets a new value" {
     run "$TACCTL_BIN_SCRIPT" config password-age 180
     assert_success
-    [[ "$(cat "$TACCTL_ETC/password-max-age")" == "180" ]]
+    [[ "$(conf_get password.max_age_days)" == "180" ]]
 }
 
 @test "config password-age: rejects non-numeric + negative + zero" {
@@ -49,20 +49,21 @@ setup() {
 @test "config bcrypt-cost: accepts boundary values 10 and 14" {
     run "$TACCTL_BIN_SCRIPT" config bcrypt-cost 10
     assert_success
-    [[ "$(cat "$TACCTL_ETC/bcrypt-cost")" == "10" ]]
+    [[ "$(conf_get bcrypt.cost)" == "10" ]]
 
     run "$TACCTL_BIN_SCRIPT" config bcrypt-cost 14
     assert_success
-    [[ "$(cat "$TACCTL_ETC/bcrypt-cost")" == "14" ]]
+    [[ "$(conf_get bcrypt.cost)" == "14" ]]
 }
 
 @test "config bcrypt-cost: rejects below-range and above-range" {
     run "$TACCTL_BIN_SCRIPT" config bcrypt-cost 9
     assert_failure
-    assert_output --partial "between 10 and 14"
+    assert_output --partial "bcrypt.cost: must be >= 10"
 
     run "$TACCTL_BIN_SCRIPT" config bcrypt-cost 15
     assert_failure
+    assert_output --partial "bcrypt.cost: must be <= 14"
 }
 
 @test "config bcrypt-cost: rejects non-numeric input" {
@@ -75,7 +76,7 @@ setup() {
 @test "config password-min-length: accepts 8..64, rejects out-of-range" {
     run "$TACCTL_BIN_SCRIPT" config password-min-length 8
     assert_success
-    [[ "$(cat "$TACCTL_ETC/password-min-length")" == "8" ]]
+    [[ "$(conf_get password.min_length)" == "8" ]]
 
     run "$TACCTL_BIN_SCRIPT" config password-min-length 64
     assert_success
@@ -93,7 +94,7 @@ setup() {
 @test "config secret-min-length: accepts 16..128, rejects out-of-range" {
     run "$TACCTL_BIN_SCRIPT" config secret-min-length 16
     assert_success
-    [[ "$(cat "$TACCTL_ETC/secret-min-length")" == "16" ]]
+    [[ "$(conf_get secret.min_length)" == "16" ]]
 
     run "$TACCTL_BIN_SCRIPT" config secret-min-length 128
     assert_success

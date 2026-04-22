@@ -16,6 +16,8 @@ tacctl_tmpenv_init() {
     mkdir -p "${TACCTL_ETC}" "${TACCTL_LOG}" "${TACCTL_BIN}" \
              "${TACCTL_ETC}/backups" \
              "${TACCTL_ETC}/backups/password-dates"
+    # Canonical defaults ship embedded in bin/tacctl.sh (conf_emit_defaults);
+    # no fixture file to seed.
 }
 
 # Source tacctl.sh so unit tests can call its functions directly.

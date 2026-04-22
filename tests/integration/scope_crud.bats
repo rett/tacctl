@@ -84,7 +84,7 @@ setup() {
         --secret "prod-secret-1234567890abcdef" \
         --default
     assert_success
-    [[ "$(cat "$TACCTL_ETC/default-scope")" == "prod" ]]
+    [[ "$(conf_get scope.default)" == "prod" ]]
 }
 
 # --- scopes list / show / lookup --------------------------------------------
