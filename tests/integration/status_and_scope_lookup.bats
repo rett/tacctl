@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # Integration tests for `tacctl status`, `tacctl config show`,
-# `tacctl scopes default`, and `tacctl scopes lookup`.
+# `tacctl scope default`, and `tacctl scope lookup`.
 
 load ../helpers/setup
 load ../helpers/tmpenv
@@ -97,7 +97,7 @@ esac'
 @test "scopes default: prints current default when no arg" {
     # multiscope fixture doesn't pin a default; seed the override ourselves.
     printf 'scope:\n  default: lab\n' > "$TACCTL_ETC/tacctl.yaml"
-    run "$TACCTL_BIN_SCRIPT" scopes default
+    run "$TACCTL_BIN_SCRIPT" scope default
     assert_success
     assert_output --partial "Default scope: lab"
 }
@@ -105,20 +105,20 @@ esac'
 @test "scopes default: no override → falls back to shipped default 'lab'" {
     # multiscope fixture has a 'lab' scope, matching the canonical default.
     # Without any explicit override, read_default_scope returns 'lab'.
-    run "$TACCTL_BIN_SCRIPT" scopes default
+    run "$TACCTL_BIN_SCRIPT" scope default
     assert_success
     assert_output --partial "Default scope: lab"
 }
 
 @test "scopes default <name>: writes the default-scope override" {
-    run "$TACCTL_BIN_SCRIPT" scopes default prod
+    run "$TACCTL_BIN_SCRIPT" scope default prod
     assert_success
 
     [[ "$(conf_get scope.default)" == "prod" ]]
 }
 
 @test "scopes default: rejects unknown scope" {
-    run "$TACCTL_BIN_SCRIPT" scopes default nosuchscope
+    run "$TACCTL_BIN_SCRIPT" scope default nosuchscope
     assert_failure
     assert_output --partial "does not exist"
 }
@@ -128,7 +128,7 @@ esac'
 # =============================================================================
 
 @test "scopes lookup <ip>: returns the first-match scope for a covered IP" {
-    run "$TACCTL_BIN_SCRIPT" scopes lookup 10.10.99.42
+    run "$TACCTL_BIN_SCRIPT" scope lookup 10.10.99.42
     assert_success
     # 10.10.99.0/24 (prod-inner) is more specific than 10.0.0.0/8 (prod).
     # Order after reorder_secrets_by_prefix_specificity puts prod-inner first.
@@ -137,7 +137,7 @@ esac'
 }
 
 @test "scopes lookup <ip>: warns about shadowed scopes covering the same IP" {
-    run "$TACCTL_BIN_SCRIPT" scopes lookup 10.10.99.42
+    run "$TACCTL_BIN_SCRIPT" scope lookup 10.10.99.42
     assert_success
     # prod's 10.0.0.0/8 also covers 10.10.99.42 but is shadowed.
     assert_output --partial "shadowed"
@@ -145,7 +145,7 @@ esac'
 }
 
 @test "scopes lookup: exact-match IP in a non-overlapping scope" {
-    run "$TACCTL_BIN_SCRIPT" scopes lookup 192.168.1.1
+    run "$TACCTL_BIN_SCRIPT" scope lookup 192.168.1.1
     assert_success
     assert_output --partial "lab"
     # No shadow when only one scope covers the query.
@@ -153,26 +153,26 @@ esac'
 }
 
 @test "scopes lookup <cidr>: treats CIDR query as subset match" {
-    run "$TACCTL_BIN_SCRIPT" scopes lookup 192.168.0.0/24
+    run "$TACCTL_BIN_SCRIPT" scope lookup 192.168.0.0/24
     assert_success
     assert_output --partial "lab"
     assert_output --partial "192.168.0.0/24"
 }
 
 @test "scopes lookup: no match → exits non-zero with explanation" {
-    run "$TACCTL_BIN_SCRIPT" scopes lookup 8.8.8.8
+    run "$TACCTL_BIN_SCRIPT" scope lookup 8.8.8.8
     assert_failure
     assert_output --partial "No scope owns"
 }
 
 @test "scopes lookup: rejects missing argument" {
-    run "$TACCTL_BIN_SCRIPT" scopes lookup
+    run "$TACCTL_BIN_SCRIPT" scope lookup
     assert_failure
     assert_output --partial "Usage:"
 }
 
 @test "scopes lookup: rejects malformed IP/CIDR" {
-    run "$TACCTL_BIN_SCRIPT" scopes lookup "not-an-address"
+    run "$TACCTL_BIN_SCRIPT" scope lookup "not-an-address"
     # Python raises ValueError → exit 2, which bats sees as failure.
     assert_failure
     assert_output --partial "invalid address or CIDR"

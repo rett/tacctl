@@ -159,7 +159,7 @@ Move a user to a different group without changing the password.
 .BI "user verify " name
 Show user details and verify the password interactively.
 .TP
-.B "user scopes " \fIname\fR " " [ "list " | " add " \fIs\fR[,s...] | " remove " \fIs\fR[,s...] | " set " \fIs\fR[,s...] | " clear " ]
+.B "user scope " \fIname\fR " " [ "list " | " add " \fIs\fR[,s...] | " remove " \fIs\fR[,s...] | " set " \fIs\fR[,s...] | " clear " ]
 Manage which scopes
 .I name
 can authenticate from. With no subcommand (or
@@ -478,7 +478,7 @@ prompt) bypass this check.
 .BI "config secret-min-length " [ "16-128" ]
 Show or set the minimum length enforced when an operator types a
 custom shared secret via
-.BR "scopes secret " \fIname\fR " set" .
+.BR "scope secret " \fIname\fR " set" .
 Default 16 (Cisco TACACS+ best practice). Auto-generated secrets
 bypass this check.
 .TP
@@ -673,7 +673,7 @@ example
 .BR edge ,
 .BR dmz )
 as needed, and place users into them explicitly.
-.SS Top-level \fB(tacctl scopes)\fR
+.SS Top-level \fB(tacctl scope)\fR
 .TP
 .B scopes list
 Print every
@@ -683,15 +683,15 @@ numbered by slice position). Multi-prefix scopes repeat their name on
 each prefix row so the display literally mirrors routing priority —
 reading top to bottom shows the order tacquito tries providers for a
 connecting client. Use
-.BR "scopes show " \fIname\fR
+.BR "scope show " \fIname\fR
 for the aggregated per-scope view (users, secret, default marker).
 .TP
-.BI "scopes show " name
+.BI "scope show " name
 Full detail for one scope: prefixes, users that reference it, raw
 shared-secret value with length/posture, and whether the scope is
 the default.
 .TP
-.B "scopes add " \fIname\fR " --prefixes " \fIcidr\fR[,cidr...] " [ --secret \fIvalue\fR | --secret generate ] [ --default ]
+.B "scope add " \fIname\fR " --prefixes " \fIcidr\fR[,cidr...] " [ --secret \fIvalue\fR | --secret generate ] [ --default ]
 Create a new scope. Prefixes are required; each must not already
 belong to another scope (overlap with a broader scope's supernet is
 fine — the new scope's narrower prefix will win first-match).
@@ -701,7 +701,7 @@ produces a strong key automatically.
 makes the new scope the default for
 .BR "user add" .
 .TP
-.BI "scopes remove " "name " [ --force ]
+.BI "scope remove " "name " [ --force ]
 Remove a scope. Drops every
 .B secrets[]
 entry whose name matches (flat emission spreads one logical scope across
@@ -711,7 +711,7 @@ scope; with
 strips the name from all affected users AND removes the secrets
 entries, with a loud warning.
 .TP
-.BI "scopes rename " "old new"
+.BI "scope rename " "old new"
 Rename a scope. Rewrites
 .B name:
 on every matching
@@ -725,7 +725,7 @@ in
 (if it pointed at
 .IR old ).
 .TP
-.BI "scopes default " [ name ]
+.BI "scope default " [ name ]
 Show (no arg) or set (with arg) the default scope. Stored under
 .B scope.default
 in
@@ -740,18 +740,18 @@ when
 .B --scope
 is omitted.
 .TP
-.BI "scopes lookup " ip\fR|\fIcidr
+.BI "scope lookup " ip\fR|\fIcidr
 Resolve an IPv4 / IPv6 address or CIDR to the scope that owns it,
 following the same slice-order walk tacquito's provider selector uses.
 Prints the matching prefix and, if multiple scopes' prefixes cover the
 query (e.g. a supernet/subnet overlap), lists the shadowed scopes
 below the winner for debugging.
-.SS Per-scope prefixes \fB(tacctl scopes prefixes)\fR
+.SS Per-scope prefixes \fB(tacctl scope prefixes)\fR
 .TP
-.BI "scopes prefixes " "scope " "list"
+.BI "scope prefixes " "scope " "list"
 Show the scope's current prefixes.
 .TP
-.B "scopes prefixes " \fIscope\fR " add " \fIcidr\fR[,cidr...]
+.B "scope prefixes " \fIscope\fR " add " \fIcidr\fR[,cidr...]
 Add one or more CIDRs. Each CIDR is canonicalized
 .RB ( 10.1.5.5/24 " -> " 10.1.5.0/24 ),
 checked against the one-CIDR-per-scope invariant (rejected with the
@@ -762,12 +762,12 @@ entry. After the write, tacctl re-sorts every entry globally by prefix
 specificity so tacquito's slice-ordered first-match walk routes each
 client to the narrowest scope that contains it.
 .TP
-.B "scopes prefixes " \fIscope\fR " remove " \fIcidr\fR[,cidr...]
+.B "scope prefixes " \fIscope\fR " remove " \fIcidr\fR[,cidr...]
 Remove one or more CIDRs. Drops the matching
 .B secrets[]
 entries and re-applies the global specificity sort.
 .TP
-.BI "scopes prefixes " "scope " "clear " [ --force ]
+.BI "scope prefixes " "scope " "clear " [ --force ]
 Empty the entire prefix list for the scope (with confirmation). Under
 flat emission this removes every
 .B secrets[]
@@ -780,21 +780,21 @@ is given. With
 orphan references are left in place for
 .B config validate
 to surface.
-.SS Per-scope secret \fB(tacctl scopes secret)\fR
+.SS Per-scope secret \fB(tacctl scope secret)\fR
 .TP
-.BI "scopes secret " "scope " "show"
+.BI "scope secret " "scope " "show"
 Print the scope's raw shared-secret value plus its length and posture.
 The command runs as root, the YAML is mode 0640, and operators need
 the raw value to paste into device configs — so
 .B show
 prints it rather than hiding it.
 .TP
-.BI "scopes secret " "scope " "set " value
+.BI "scope secret " "scope " "set " value
 Set the scope's key after validation (≥
 .B config secret-min-length
 chars, mixed character classes).
 .TP
-.BI "scopes secret " "scope " "generate"
+.BI "scope secret " "scope " "generate"
 Generate a strong key with
 .B openssl rand -base64 24
 and apply it.
@@ -810,8 +810,8 @@ Dispatcher commands
 .BR backup ,
 .BR hash ,
 and every nested dispatcher such as
-.BR "scopes prefixes" ,
-.BR "scopes secret" ,
+.BR "scope prefixes" ,
+.BR "scope secret" ,
 .BR "user scopes" ,
 or
 .BR "group privilege" )
@@ -825,7 +825,7 @@ Scalar getter/setters
 .BR "config password-min-length" ,
 .BR "config secret-min-length" ,
 .BR "config branch" ,
-.BR "scopes default" )
+.BR "scope default" )
 print the current value when called with no arguments.
 .TP
 .B Multi-item input
@@ -870,7 +870,7 @@ Every CIDR (after canonicalization) belongs to
 scope. Adding a prefix already owned by a different scope is rejected
 with a message naming the owning scope; the operator must remove it
 from the owning scope first with
-.B "scopes prefixes " \fIowner\fR " remove " \fIcidr\fR
+.B "scope prefixes " \fIowner\fR " remove " \fIcidr\fR
 before re-adding it elsewhere. Overlapping prefixes
 .I across
 scopes are allowed and routed correctly — a scope with
@@ -889,7 +889,7 @@ Entries are re-sorted globally by prefix specificity
 tacquito's slice-ordered provider walk routes each client IP to the
 narrowest scope that contains it. The CLI continues to present the
 logical one-scope-per-bundle view via
-.BR "scopes list" ", " "scopes show" ", and " "config show" .
+.BR "scope list" ", " "scopes show" ", and " "config show" .
 .PP
 Do not hand-edit the
 .B secrets:
@@ -1008,21 +1008,21 @@ Add a superuser:
 .B tacctl user add alice superuser
 .TP
 Restrict device subnets in the default scope:
-.B tacctl scopes prefixes lab add 10.1.0.0/24,172.16.5.0/24
+.B tacctl scope prefixes lab add 10.1.0.0/24,172.16.5.0/24
 .TP
 Build a multi-environment scope hierarchy (broader prod scopes with
 narrower lab scopes carved out — the /24 wins first-match for 10.10.99.x
 clients, the /16 catches the rest of 10.10.x):
 .nf
-.B "  tacctl scopes add prod_dc_east --prefixes 10.10.0.0/16 --secret generate"
-.B "  tacctl scopes add lab_east     --prefixes 10.10.99.0/24 --secret generate"
+.B "  tacctl scope add prod_dc_east --prefixes 10.10.0.0/16 --secret generate"
+.B "  tacctl scope add lab_east     --prefixes 10.10.99.0/24 --secret generate"
 .fi
 .TP
 Trace how tacquito would route a client IP through the scope list:
-.B tacctl scopes lookup 10.10.99.7
+.B tacctl scope lookup 10.10.99.7
 .TP
 Grant a user full production access across two datacenters:
-.B tacctl user scopes alice add prod_dc_east,prod_dc_west
+.B tacctl user scope alice add prod_dc_east,prod_dc_west
 .TP
 Generate a Cisco-ready configuration for the prod scope:
 .B tacctl config cisco --scope prod_dc_east
@@ -1063,7 +1063,7 @@ enables a dual-stack socket on most platforms; IPv4 clients then
 connect with IPv4-mapped addresses
 .RB ( ::ffff:10.1.0.1 )
 that do not match IPv4 prefix ACLs configured via
-.BR "tacctl scopes prefixes" ,
+.BR "tacctl scope prefixes" ,
 .BR "config allow" ,
 or
 .BR "config deny" .

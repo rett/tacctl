@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Integration tests for `tacctl scopes`: add, remove, rename, lookup.
+# Integration tests for `tacctl scope`: add, remove, rename, lookup.
 
 load ../helpers/setup
 load ../helpers/tmpenv
@@ -21,7 +21,7 @@ setup() {
 # --- scopes add --------------------------------------------------------------
 
 @test "scopes add: creates a new scope with prefixes + explicit secret" {
-    run "$TACCTL_BIN_SCRIPT" scopes add prod \
+    run "$TACCTL_BIN_SCRIPT" scope add prod \
         --prefixes 10.0.0.0/8 \
         --secret "prod-secret-1234567890abcdef"
     assert_success
@@ -37,7 +37,7 @@ setup() {
 }
 
 @test "scopes add: rejects short secret (< SECRET_MIN_LENGTH)" {
-    run "$TACCTL_BIN_SCRIPT" scopes add prod \
+    run "$TACCTL_BIN_SCRIPT" scope add prod \
         --prefixes 10.0.0.0/8 \
         --secret "short"
     assert_failure
@@ -45,16 +45,16 @@ setup() {
 }
 
 @test "scopes add: rejects invalid scope name" {
-    run "$TACCTL_BIN_SCRIPT" scopes add "1bad" \
+    run "$TACCTL_BIN_SCRIPT" scope add "1bad" \
         --prefixes 10.0.0.0/8 \
         --secret "prod-secret-1234567890abcdef"
     assert_failure
 }
 
 @test "scopes add: rejects duplicate scope name" {
-    "$TACCTL_BIN_SCRIPT" scopes add prod \
+    "$TACCTL_BIN_SCRIPT" scope add prod \
         --prefixes 10.0.0.0/8 --secret "prod-secret-1234567890abcdef"
-    run "$TACCTL_BIN_SCRIPT" scopes add prod \
+    run "$TACCTL_BIN_SCRIPT" scope add prod \
         --prefixes 172.16.0.0/12 --secret "another-prod-1234567890abc"
     assert_failure
     assert_output --partial "already exists"
@@ -64,22 +64,22 @@ setup() {
     # The collision check enforces one-scope-per-exact-prefix, not containment.
     # Tacquito resolves overlaps by first-match walk; overlapping-but-distinct
     # prefixes are legal and useful (see tacquito.multiscope.yaml fixture).
-    "$TACCTL_BIN_SCRIPT" scopes add prod \
+    "$TACCTL_BIN_SCRIPT" scope add prod \
         --prefixes 10.0.0.0/8 --secret "prod-secret-1234567890abcdef"
-    run "$TACCTL_BIN_SCRIPT" scopes add prod-copy \
+    run "$TACCTL_BIN_SCRIPT" scope add prod-copy \
         --prefixes 10.0.0.0/8 --secret "another-secret-1234567890ab"
     assert_failure
     assert_output --partial "already claimed"
 }
 
 @test "scopes add: rejects invalid CIDR" {
-    run "$TACCTL_BIN_SCRIPT" scopes add prod \
+    run "$TACCTL_BIN_SCRIPT" scope add prod \
         --prefixes not-a-cidr --secret "prod-secret-1234567890abcdef"
     assert_failure
 }
 
 @test "scopes add: --default sets the new scope as default" {
-    run "$TACCTL_BIN_SCRIPT" scopes add prod \
+    run "$TACCTL_BIN_SCRIPT" scope add prod \
         --prefixes 10.0.0.0/8 \
         --secret "prod-secret-1234567890abcdef" \
         --default
@@ -90,9 +90,9 @@ setup() {
 # --- scopes list / show / lookup --------------------------------------------
 
 @test "scopes list: shows all scopes with prefix rows" {
-    "$TACCTL_BIN_SCRIPT" scopes add prod \
+    "$TACCTL_BIN_SCRIPT" scope add prod \
         --prefixes 10.0.0.0/8 --secret "prod-secret-1234567890abcdef"
-    run "$TACCTL_BIN_SCRIPT" scopes list
+    run "$TACCTL_BIN_SCRIPT" scope list
     assert_success
     assert_output --partial "lab"
     assert_output --partial "prod"
@@ -100,18 +100,18 @@ setup() {
 }
 
 @test "scopes show: prints a scope's prefixes, secret, and user count" {
-    "$TACCTL_BIN_SCRIPT" scopes add prod \
+    "$TACCTL_BIN_SCRIPT" scope add prod \
         --prefixes 10.0.0.0/8 --secret "prod-secret-1234567890abcdef"
-    run "$TACCTL_BIN_SCRIPT" scopes show prod
+    run "$TACCTL_BIN_SCRIPT" scope show prod
     assert_success
     assert_output --partial "10.0.0.0/8"
     assert_output --partial "prod-secret-1234567890abcdef"
 }
 
 @test "scopes lookup: returns owning scope for a covered IP" {
-    "$TACCTL_BIN_SCRIPT" scopes add prod \
+    "$TACCTL_BIN_SCRIPT" scope add prod \
         --prefixes 10.0.0.0/8 --secret "prod-secret-1234567890abcdef"
-    run "$TACCTL_BIN_SCRIPT" scopes lookup 10.1.2.3
+    run "$TACCTL_BIN_SCRIPT" scope lookup 10.1.2.3
     assert_success
     assert_output --partial "prod"
 }
@@ -119,31 +119,31 @@ setup() {
 # --- scopes remove -----------------------------------------------------------
 
 @test "scopes remove: deletes an unused scope after 'y' confirmation" {
-    "$TACCTL_BIN_SCRIPT" scopes add prod \
+    "$TACCTL_BIN_SCRIPT" scope add prod \
         --prefixes 10.0.0.0/8 --secret "prod-secret-1234567890abcdef"
 
-    run bash -c 'echo y | "'"$TACCTL_BIN_SCRIPT"'" scopes remove prod'
+    run bash -c 'echo y | "'"$TACCTL_BIN_SCRIPT"'" scope remove prod'
     assert_success
     run grep -c '^  - name: prod$' "$TACCTL_CONFIG"
     assert_output "0"
 }
 
 @test "scopes remove: refuses to delete a scope in use without --force" {
-    "$TACCTL_BIN_SCRIPT" scopes add prod \
+    "$TACCTL_BIN_SCRIPT" scope add prod \
         --prefixes 10.0.0.0/8 --secret "prod-secret-1234567890abcdef"
     "$TACCTL_BIN_SCRIPT" user add alice superuser --hash "$TEST_HASH" --scopes prod
 
-    run bash -c 'echo y | "'"$TACCTL_BIN_SCRIPT"'" scopes remove prod'
+    run bash -c 'echo y | "'"$TACCTL_BIN_SCRIPT"'" scope remove prod'
     assert_failure
     assert_output --partial "still reference"
 }
 
 @test "scopes remove: --force strips scope from users and deletes" {
-    "$TACCTL_BIN_SCRIPT" scopes add prod \
+    "$TACCTL_BIN_SCRIPT" scope add prod \
         --prefixes 10.0.0.0/8 --secret "prod-secret-1234567890abcdef"
     "$TACCTL_BIN_SCRIPT" user add alice superuser --hash "$TEST_HASH" --scopes lab,prod
 
-    run bash -c 'echo y | "'"$TACCTL_BIN_SCRIPT"'" scopes remove prod --force'
+    run bash -c 'echo y | "'"$TACCTL_BIN_SCRIPT"'" scope remove prod --force'
     assert_success
 
     # Scope is gone.
@@ -157,10 +157,10 @@ setup() {
 }
 
 @test "scopes remove: refuses to delete the default scope" {
-    "$TACCTL_BIN_SCRIPT" scopes add prod \
+    "$TACCTL_BIN_SCRIPT" scope add prod \
         --prefixes 10.0.0.0/8 --secret "prod-secret-1234567890abcdef" --default
 
-    run bash -c 'echo y | "'"$TACCTL_BIN_SCRIPT"'" scopes remove prod'
+    run bash -c 'echo y | "'"$TACCTL_BIN_SCRIPT"'" scope remove prod'
     assert_failure
     assert_output --partial "default scope"
 }
@@ -168,11 +168,11 @@ setup() {
 # --- scopes rename -----------------------------------------------------------
 
 @test "scopes rename: renames scope and rewrites user references" {
-    "$TACCTL_BIN_SCRIPT" scopes add prod \
+    "$TACCTL_BIN_SCRIPT" scope add prod \
         --prefixes 10.0.0.0/8 --secret "prod-secret-1234567890abcdef"
     "$TACCTL_BIN_SCRIPT" user add alice superuser --hash "$TEST_HASH" --scopes prod
 
-    run "$TACCTL_BIN_SCRIPT" scopes rename prod production
+    run "$TACCTL_BIN_SCRIPT" scope rename prod production
     assert_success
 
     run grep -c '^  - name: prod$' "$TACCTL_CONFIG"

@@ -13,10 +13,10 @@
 #   ./tacctl.sh user disable <username>
 #   ./tacctl.sh user enable <username>
 #   ./tacctl.sh user verify <username>
-#   ./tacctl.sh user scopes <username> {list|add|remove|set|clear}
-#   ./tacctl.sh scopes {list|show|add|remove|rename|default}
-#   ./tacctl.sh scopes prefixes <name> {list|add|remove|clear}
-#   ./tacctl.sh scopes secret   <name> {show|set|generate}
+#   ./tacctl.sh user scope <username> {list|add|remove|set|clear}
+#   ./tacctl.sh scope {list|show|add|remove|rename|default}
+#   ./tacctl.sh scope prefixes <name> {list|add|remove|clear}
+#   ./tacctl.sh scope secret   <name> {show|set|generate}
 #   ./tacctl.sh config show
 #   ./tacctl.sh config cisco   [--scope <name>]
 #   ./tacctl.sh config juniper [--scope <name>]
@@ -115,7 +115,7 @@ bcrypt:
   cost: 12                # applies to new hashes; range 10..14
 
 scope:
-  default: lab            # matches the fresh-install seed scope; override via `tacctl scopes default <name>`
+  default: lab            # matches the fresh-install seed scope; override via `tacctl scope default <name>`
 
 mgmt_acl:
   names:
@@ -1845,7 +1845,7 @@ cmd_add() {
         scope_names=$(read_default_scope)
         if [[ -z "$scope_names" ]]; then
             error "No scopes exist and no default scope is set."
-            error "Create one first: tacctl scopes add <name> --prefixes <cidrs>"
+            error "Create one first: tacctl scope add <name> --prefixes <cidrs>"
             exit 1
         fi
     fi
@@ -3318,7 +3318,7 @@ cmd_config_cisco() {
         scope=$(read_default_scope)
         if [[ -z "$scope" ]]; then
             error "No default scope set and no --scope provided."
-            error "Run 'tacctl scopes default <name>' or pass --scope <name>."
+            error "Run 'tacctl scope default <name>' or pass --scope <name>."
             exit 1
         fi
     elif ! scope_exists "$scope"; then
@@ -3557,7 +3557,7 @@ cmd_config_juniper() {
         scope=$(read_default_scope)
         if [[ -z "$scope" ]]; then
             error "No default scope set and no --scope provided."
-            error "Run 'tacctl scopes default <name>' or pass --scope <name>."
+            error "Run 'tacctl scope default <name>' or pass --scope <name>."
             exit 1
         fi
     elif ! scope_exists "$scope"; then
@@ -4254,10 +4254,10 @@ cmd_config_mgmt_acl() {
 }
 
 # =====================================================================
-#  SCOPE COMMANDS (tacctl scopes ...)
+#  SCOPE COMMANDS (tacctl scope ...)
 # =====================================================================
 
-cmd_scopes() {
+cmd_scope() {
     local subcmd="${1:-}"
     shift 2>/dev/null || true
     case "$subcmd" in
@@ -4284,21 +4284,21 @@ cmd_scopes_usage() {
     count=$(list_scopes | wc -l)
     default_val=$(read_default_scope)
     echo ""
-    echo -e "${BOLD}tacctl scopes${NC} — named (CIDR-prefixes, shared-secret) bundles"
+    echo -e "${BOLD}tacctl scope${NC} — named (CIDR-prefixes, shared-secret) bundles"
     echo ""
     echo "Usage:"
-    echo "  tacctl scopes list                                        One row per (scope, prefix) in routing order"
-    echo "  tacctl scopes show <name>                                 Detailed view"
-    echo "  tacctl scopes add <name> --prefixes <cidrs>               Create a new scope"
+    echo "  tacctl scope list                                        One row per (scope, prefix) in routing order"
+    echo "  tacctl scope show <name>                                 Detailed view"
+    echo "  tacctl scope add <name> --prefixes <cidrs>               Create a new scope"
     echo "                       [--secret <value>|--secret generate]"
     echo "                       [--default]"
-    echo "  tacctl scopes remove <name> [--force]                     Delete a scope (confirms)"
-    echo "  tacctl scopes rename <old> <new>                          Rename (updates user references)"
-    echo "  tacctl scopes default [<name>]                            Show or set the default scope"
-    echo "  tacctl scopes lookup <ip|cidr>                            Show which scope owns an address"
+    echo "  tacctl scope remove <name> [--force]                     Delete a scope (confirms)"
+    echo "  tacctl scope rename <old> <new>                          Rename (updates user references)"
+    echo "  tacctl scope default [<name>]                            Show or set the default scope"
+    echo "  tacctl scope lookup <ip|cidr>                            Show which scope owns an address"
     echo ""
-    echo "  tacctl scopes prefixes <scope> list|add|remove|clear      Manage a scope's CIDR list"
-    echo "  tacctl scopes secret   <scope> show|set|generate          Manage a scope's shared secret"
+    echo "  tacctl scope prefixes <scope> list|add|remove|clear      Manage a scope's CIDR list"
+    echo "  tacctl scope secret   <scope> show|set|generate          Manage a scope's shared secret"
     echo ""
     echo "Current scopes: ${count}"
     echo "Default scope:  ${default_val:-<unset>}"
@@ -4316,7 +4316,7 @@ cmd_scopes_list() {
     # entry — multi-prefix scopes intentionally repeat their name so the
     # display literally mirrors how a connecting client gets routed. For
     # the aggregated per-scope view (users, secret, is-default), use
-    # `tacctl scopes show <name>`.
+    # `tacctl scope show <name>`.
     #
     # Pre-compute per-scope user counts in Python to avoid N forks of
     # `count_users_in_scope` over N entries; the per-scope fact is the
@@ -4371,7 +4371,7 @@ for s in (d.get('secrets') or []):
 cmd_scopes_show() {
     local name="${1:-}"
     if [[ -z "$name" ]]; then
-        error "Usage: tacctl scopes show <name>"
+        error "Usage: tacctl scope show <name>"
         exit 1
     fi
     if ! scope_exists "$name"; then
@@ -4384,7 +4384,7 @@ cmd_scopes_show() {
     if [[ -z "$secret_val" ]]; then
         secret_line="${RED}(unset)${NC}"
     elif [[ "$secret_val" == *REPLACE* ]]; then
-        secret_line="${secret_val}  ${RED}(PLACEHOLDER — run 'tacctl scopes secret ${name} generate')${NC}"
+        secret_line="${secret_val}  ${RED}(PLACEHOLDER — run 'tacctl scope secret ${name} generate')${NC}"
     elif [[ "$secret_len" -lt "$SECRET_MIN_LENGTH" ]]; then
         secret_line="${secret_val}  ${RED}(${secret_len} chars, below min ${SECRET_MIN_LENGTH})${NC}"
     else
@@ -4426,7 +4426,7 @@ cmd_scopes_show() {
 cmd_scopes_add() {
     local name="${1:-}"
     if [[ -z "$name" ]]; then
-        error "Usage: tacctl scopes add <name> --prefixes <cidrs> [--secret <value>|generate] [--default]"
+        error "Usage: tacctl scope add <name> --prefixes <cidrs> [--secret <value>|generate] [--default]"
         exit 1
     fi
     shift
@@ -4474,7 +4474,7 @@ cmd_scopes_add() {
         error "Cannot create scope '${name}': prefix(es) already claimed:"
         while IFS= read -r line; do error "$line"; done <<< "$collisions"
         error "Each CIDR belongs to exactly one scope. Remove it from the owning"
-        error "scope first with 'tacctl scopes prefixes <owner> remove <cidr>'."
+        error "scope first with 'tacctl scope prefixes <owner> remove <cidr>'."
         exit 1
     fi
 
@@ -4511,7 +4511,7 @@ cmd_scopes_add() {
 cmd_scopes_remove() {
     local name="${1:-}" force="false"
     if [[ -z "$name" ]]; then
-        error "Usage: tacctl scopes remove <name> [--force]"
+        error "Usage: tacctl scope remove <name> [--force]"
         exit 1
     fi
     shift 2>/dev/null || true
@@ -4527,7 +4527,7 @@ cmd_scopes_remove() {
     if [[ "$user_count" -gt 0 && "$force" != "true" ]]; then
         error "Cannot remove '${name}': ${user_count} user(s) still reference it."
         error "Remove them first:"
-        list_users_in_scope "$name" | sed 's/^/    tacctl user scopes /' | sed 's/$/ remove '"${name}"'/'
+        list_users_in_scope "$name" | sed 's/^/    tacctl user scope /' | sed 's/$/ remove '"${name}"'/'
         error "Or pass --force to strip the scope from those users AND delete it."
         exit 1
     fi
@@ -4536,7 +4536,7 @@ cmd_scopes_remove() {
     default_val=$(read_default_scope)
     if [[ "$name" == "$default_val" ]]; then
         error "Cannot remove '${name}': it is the default scope."
-        error "Point the default at another scope first: tacctl scopes default <other>"
+        error "Point the default at another scope first: tacctl scope default <other>"
         exit 1
     fi
 
@@ -4571,7 +4571,7 @@ cmd_scopes_remove() {
 cmd_scopes_rename() {
     local old="${1:-}" new="${2:-}"
     if [[ -z "$old" || -z "$new" ]]; then
-        error "Usage: tacctl scopes rename <old> <new>"
+        error "Usage: tacctl scope rename <old> <new>"
         exit 1
     fi
     if ! scope_exists "$old"; then
@@ -4616,7 +4616,7 @@ cmd_scopes_default() {
             echo "  Default scope: ${current}"
         fi
         echo ""
-        echo "  Usage: tacctl scopes default <name>    # set default to <name>"
+        echo "  Usage: tacctl scope default <name>    # set default to <name>"
         echo "  The default scope is used when:"
         echo "    - 'tacctl user add <u> <g>' is run without --scopes"
         echo "    - 'tacctl config cisco/juniper' is run without --scope"
@@ -4642,10 +4642,10 @@ cmd_scopes_default() {
 cmd_scopes_lookup() {
     local query="${1:-}"
     if [[ -z "$query" ]]; then
-        error "Usage: tacctl scopes lookup <ip|cidr>"
+        error "Usage: tacctl scope lookup <ip|cidr>"
         error "Examples:"
-        error "  tacctl scopes lookup 10.5.1.2"
-        error "  tacctl scopes lookup 10.5.0.0/16"
+        error "  tacctl scope lookup 10.5.1.2"
+        error "  tacctl scope lookup 10.5.0.0/16"
         exit 1
     fi
     python3 - "$CONFIG" "$query" <<'PY'
@@ -4714,13 +4714,13 @@ if len(matches) > 1:
 PY
 }
 
-# --- Per-scope prefix management: tacctl scopes prefixes <scope> ... ---
+# --- Per-scope prefix management: tacctl scope prefixes <scope> ... ---
 cmd_scopes_prefixes_dispatch() {
     local scope="${1:-}"
     local sub="${2:-}"
     local arg="${3:-}"
     if [[ -z "$scope" ]]; then
-        error "Usage: tacctl scopes prefixes <scope> {list|add|remove|clear} [<cidrs>]"
+        error "Usage: tacctl scope prefixes <scope> {list|add|remove|clear} [<cidrs>]"
         exit 1
     fi
     if ! scope_exists "$scope"; then
@@ -4732,13 +4732,13 @@ cmd_scopes_prefixes_dispatch() {
             local count=0
             count=$(read_scope_prefixes "$scope" | wc -l)
             echo ""
-            echo -e "${BOLD}tacctl scopes prefixes ${scope}${NC} — CIDR prefix list for scope '${scope}'"
+            echo -e "${BOLD}tacctl scope prefixes ${scope}${NC} — CIDR prefix list for scope '${scope}'"
             echo ""
             echo "Usage:"
-            echo "  tacctl scopes prefixes ${scope} list                        Show entries"
-            echo "  tacctl scopes prefixes ${scope} add    <cidr>[,<cidr>...]   Add one or more"
-            echo "  tacctl scopes prefixes ${scope} remove <cidr>[,<cidr>...]   Remove one or more"
-            echo "  tacctl scopes prefixes ${scope} clear [--force]             Wipe all (confirms; --force proceeds when users still reference)"
+            echo "  tacctl scope prefixes ${scope} list                        Show entries"
+            echo "  tacctl scope prefixes ${scope} add    <cidr>[,<cidr>...]   Add one or more"
+            echo "  tacctl scope prefixes ${scope} remove <cidr>[,<cidr>...]   Remove one or more"
+            echo "  tacctl scope prefixes ${scope} clear [--force]             Wipe all (confirms; --force proceeds when users still reference)"
             echo ""
             echo "Current entries: ${count}"
             echo ""
@@ -4761,7 +4761,7 @@ cmd_scopes_prefixes_dispatch() {
             ;;
         add|remove)
             if [[ -z "$arg" ]]; then
-                error "Usage: tacctl scopes prefixes ${scope} ${sub} <cidr>[,<cidr>...]"
+                error "Usage: tacctl scope prefixes ${scope} ${sub} <cidr>[,<cidr>...]"
                 exit 1
             fi
             local requested
@@ -4787,7 +4787,7 @@ cmd_scopes_prefixes_dispatch() {
                     error "Cannot add prefix(es) to scope '${scope}':"
                     while IFS= read -r line; do error "$line"; done <<< "$collisions"
                     error "Remove them from the owning scope first:"
-                    error "  tacctl scopes prefixes <owner> remove <cidr>"
+                    error "  tacctl scope prefixes <owner> remove <cidr>"
                     exit 1
                 fi
                 while IFS= read -r c; do
@@ -4845,7 +4845,7 @@ cmd_scopes_prefixes_dispatch() {
                 error "Clearing every prefix removes the scope from the secrets list"
                 error "and leaves those users with orphan scope references."
                 error "Detach users first:"
-                list_users_in_scope "$scope" | sed 's/^/    tacctl user scopes /' | sed 's/$/ remove '"${scope}"'/'
+                list_users_in_scope "$scope" | sed 's/^/    tacctl user scope /' | sed 's/$/ remove '"${scope}"'/'
                 error "Or pass --force to proceed and leave orphan refs (use 'tacctl config validate' to find them)."
                 exit 1
             fi
@@ -4867,19 +4867,19 @@ cmd_scopes_prefixes_dispatch() {
             ;;
         *)
             error "Unknown subcommand: '${sub}'"
-            error "Run 'tacctl scopes prefixes ${scope}' for usage."
+            error "Run 'tacctl scope prefixes ${scope}' for usage."
             exit 1
             ;;
     esac
 }
 
-# --- Per-scope secret management: tacctl scopes secret <scope> ... ---
+# --- Per-scope secret management: tacctl scope secret <scope> ... ---
 cmd_scopes_secret_dispatch() {
     local scope="${1:-}"
     local sub="${2:-}"
     local arg="${3:-}"
     if [[ -z "$scope" ]]; then
-        error "Usage: tacctl scopes secret <scope> {show|set <value>|generate}"
+        error "Usage: tacctl scope secret <scope> {show|set <value>|generate}"
         exit 1
     fi
     if ! scope_exists "$scope"; then
@@ -4893,12 +4893,12 @@ cmd_scopes_secret_dispatch() {
             cur=$(read_scope_secret "$scope")
             s_len=${#cur}
             echo ""
-            echo -e "${BOLD}tacctl scopes secret ${scope}${NC} — shared secret for scope '${scope}'"
+            echo -e "${BOLD}tacctl scope secret ${scope}${NC} — shared secret for scope '${scope}'"
             echo ""
             echo "Usage:"
-            echo "  tacctl scopes secret ${scope} show                Print raw value + length/posture"
-            echo "  tacctl scopes secret ${scope} set <value>         Set to <value> (validated)"
-            echo "  tacctl scopes secret ${scope} generate            Auto-generate + apply"
+            echo "  tacctl scope secret ${scope} show                Print raw value + length/posture"
+            echo "  tacctl scope secret ${scope} set <value>         Set to <value> (validated)"
+            echo "  tacctl scope secret ${scope} generate            Auto-generate + apply"
             echo ""
             echo "Current length: ${s_len} chars (min ${SECRET_MIN_LENGTH})"
             echo ""
@@ -4914,7 +4914,7 @@ cmd_scopes_secret_dispatch() {
                 echo -e "  ${RED}(unset)${NC}"
             elif [[ "$cur" == *REPLACE* ]]; then
                 echo -e "  Value:  ${BOLD}${cur}${NC}"
-                echo -e "  ${RED}Length: ${s_len} chars — PLACEHOLDER (run 'tacctl scopes secret ${scope} generate')${NC}"
+                echo -e "  ${RED}Length: ${s_len} chars — PLACEHOLDER (run 'tacctl scope secret ${scope} generate')${NC}"
             elif [[ "$s_len" -lt "$SECRET_MIN_LENGTH" ]]; then
                 echo -e "  Value:  ${BOLD}${cur}${NC}"
                 echo -e "  ${RED}Length: ${s_len} chars (below min ${SECRET_MIN_LENGTH})${NC}"
@@ -4926,7 +4926,7 @@ cmd_scopes_secret_dispatch() {
             ;;
         set)
             if [[ -z "$arg" ]]; then
-                error "Usage: tacctl scopes secret ${scope} set <value>"
+                error "Usage: tacctl scope secret ${scope} set <value>"
                 exit 1
             fi
             if [[ "${#arg}" -lt "$SECRET_MIN_LENGTH" ]]; then
@@ -4959,20 +4959,20 @@ cmd_scopes_secret_dispatch() {
             ;;
         *)
             error "Unknown subcommand: '${sub}'"
-            error "Run 'tacctl scopes secret ${scope}' for usage."
+            error "Run 'tacctl scope secret ${scope}' for usage."
             exit 1
             ;;
     esac
 }
 
-# --- USER SCOPES: tacctl user scopes <user> list|add|remove|set|clear ---
-cmd_user_scopes() {
+# --- USER SCOPES: tacctl user scope <user> list|add|remove|set|clear ---
+cmd_user_scope() {
     local username="${1:-}"
     local sub="${2:-}"
     local arg="${3:-}"
 
     if [[ -z "$username" ]]; then
-        error "Usage: tacctl user scopes <user> {list|add|remove|set|clear} [<scope>[,<scope>...]]"
+        error "Usage: tacctl user scope <user> {list|add|remove|set|clear} [<scope>[,<scope>...]]"
         exit 1
     fi
     validate_username "$username"
@@ -5005,17 +5005,17 @@ cmd_user_scopes() {
                 return
             fi
             echo "Usage:"
-            echo "  tacctl user scopes ${username} list                              Show current (default)"
-            echo "  tacctl user scopes ${username} add    <scope>[,<scope>...]      Grant scope access"
-            echo "  tacctl user scopes ${username} remove <scope>[,<scope>...]      Revoke scope access"
-            echo "  tacctl user scopes ${username} set    <scope>[,<scope>...]      Replace full list"
-            echo "  tacctl user scopes ${username} clear                             Wipe all (confirms)"
+            echo "  tacctl user scope ${username} list                              Show current (default)"
+            echo "  tacctl user scope ${username} add    <scope>[,<scope>...]      Grant scope access"
+            echo "  tacctl user scope ${username} remove <scope>[,<scope>...]      Revoke scope access"
+            echo "  tacctl user scope ${username} set    <scope>[,<scope>...]      Replace full list"
+            echo "  tacctl user scope ${username} clear                             Wipe all (confirms)"
             echo ""
             return
             ;;
         add|remove|set)
             if [[ -z "$arg" ]]; then
-                error "Usage: tacctl user scopes ${username} ${sub} <scope>[,<scope>...]"
+                error "Usage: tacctl user scope ${username} ${sub} <scope>[,<scope>...]"
                 exit 1
             fi
             # Parse + validate scope names
@@ -5086,7 +5086,7 @@ cmd_user_scopes() {
             [[ -n "$noop" ]] && info "(Skipped: ${noop})"
             if [[ -z "$new_list" ]]; then
                 warn "User '${username}' now has NO scopes — they cannot auth on any device"
-                warn "until you run: tacctl user scopes ${username} add <scope>"
+                warn "until you run: tacctl user scope ${username} add <scope>"
             fi
             echo ""
             ;;
@@ -5098,7 +5098,7 @@ cmd_user_scopes() {
                 return
             fi
             warn "WARNING: ${username} will be unable to authenticate on any device"
-            warn "until you grant at least one scope with 'tacctl user scopes ${username} add <name>'"
+            warn "until you grant at least one scope with 'tacctl user scope ${username} add <name>'"
             warn "(Distinct from 'tacctl user disable' — the password hash is preserved.)"
             read -rp "  Clear all scopes for '${username}'? [y/N]: " confirm
             [[ ! "$confirm" =~ ^[Yy] ]] && { info "Aborted."; return; }
@@ -5111,7 +5111,7 @@ cmd_user_scopes() {
             ;;
         *)
             error "Unknown subcommand: '${sub}'"
-            error "Run 'tacctl user scopes ${username}' for usage."
+            error "Run 'tacctl user scope ${username}' for usage."
             exit 1
             ;;
     esac
@@ -6583,7 +6583,7 @@ PY
     fi
 
     if [[ "$prefix_unrestricted" == "1" ]]; then
-        echo -e "    ${RED}Prefix scope:       UNRESTRICTED (all RFC 1918 — harden with 'tacctl scopes prefixes <name>')${NC}"
+        echo -e "    ${RED}Prefix scope:       UNRESTRICTED (all RFC 1918 — harden with 'tacctl scope prefixes <name>')${NC}"
     elif [[ "$prefix_count" -eq 0 ]]; then
         echo -e "    ${RED}Prefix scope:       EMPTY (no clients can connect)${NC}"
     else
@@ -6608,7 +6608,7 @@ PY
 
     # Shared-secret sanity: flag any scope with a placeholder or short key.
     if [[ -n "$placeholder_scopes" ]]; then
-        echo -e "    ${RED}Shared secret:      PLACEHOLDER in scope(s): ${placeholder_scopes} (run 'tacctl scopes secret <name> generate')${NC}"
+        echo -e "    ${RED}Shared secret:      PLACEHOLDER in scope(s): ${placeholder_scopes} (run 'tacctl scope secret <name> generate')${NC}"
     elif [[ -n "$weak_scopes" ]]; then
         echo -e "    ${RED}Shared secret:      weak in scope(s): ${weak_scopes} (min ${SECRET_MIN_LENGTH})${NC}"
     else
@@ -7059,7 +7059,7 @@ cmd_config_listen() {
         echo ""
         warn "tcp6 enables dual-stack sockets on most platforms."
         warn "IPv4 clients connect with mapped addresses (::ffff:a.b.c.d)"
-        warn "which do NOT match IPv4 rules in 'tacctl scopes prefixes <name>',"
+        warn "which do NOT match IPv4 rules in 'tacctl scope prefixes <name>',"
         warn "'config allow', or 'config deny' -- effectively bypassing them."
         echo ""
         read -rp "  Proceed with tcp6? [y/N]: " confirm
@@ -7995,8 +7995,8 @@ PY
     # the info line to confirm intent to the operator. 'tacctl user add
     # <u> <g>' without --scopes lands new users in lab (least-privilege
     # by default). Operators who want a production scope create it:
-    #   tacctl scopes add prod --prefixes ... --secret generate
-    #   tacctl scopes default prod   (if they want prod-default posture)
+    #   tacctl scope add prod --prefixes ... --secret generate
+    #   tacctl scope default prod   (if they want prod-default posture)
     write_default_scope "$DEFAULT_SCOPE_FRESH"
     info "Default scope seeded: ${DEFAULT_SCOPE_FRESH} (new users land here unless --scopes given)"
 
@@ -8139,8 +8139,8 @@ PY
     echo "    1. Activate a built-in:    tacctl user passwd engineer"
     echo "       (or add your own:       tacctl user add <username> <group>)"
     echo "    2. Configure devices:      tacctl config cisco / tacctl config juniper"
-    echo "    3. Narrow scope prefixes:  tacctl scopes prefixes ${DEFAULT_SCOPE_FRESH} <your-subnets>"
-    echo "    4. Add a prod scope:       tacctl scopes add prod --prefixes <cidrs> --secret generate"
+    echo "    3. Narrow scope prefixes:  tacctl scope prefixes ${DEFAULT_SCOPE_FRESH} <your-subnets>"
+    echo "    4. Add a prod scope:       tacctl scope add prod --prefixes <cidrs> --secret generate"
     echo "    5. Open port 49/tcp in your firewall if needed"
     echo ""
     echo "  Security hardening:"
@@ -8646,8 +8646,8 @@ usage() {
     echo "  tacctl install"
     echo "  tacctl upgrade"
     echo "  tacctl user add jsmith superuser"
-    echo "  tacctl user scopes jsmith add prod"
-    echo "  tacctl scopes add prod --prefixes 10.10.0.0/16 --secret generate"
+    echo "  tacctl user scope jsmith add prod"
+    echo "  tacctl scope add prod --prefixes 10.10.0.0/16 --secret generate"
     echo "  tacctl config cisco --scope prod"
     echo ""
 }
@@ -8668,7 +8668,7 @@ cmd_user() {
         rename)     cmd_rename "$@" ;;
         move)       cmd_move "$@" ;;
         verify)     cmd_verify "$@" ;;
-        scopes)     cmd_user_scopes "$@" ;;
+        scope)      cmd_user_scope "$@" ;;
         *)
             echo ""
             echo -e "${BOLD}User Commands${NC}"
@@ -8689,13 +8689,13 @@ cmd_user() {
             echo "  rename <old> <new>                          Rename a user"
             echo "  move <user> <group>                         Move user to a different group"
             echo "  verify <username>                           Verify password and show user details"
-            echo "  scopes <user> list|add|remove|set|clear     Manage which scopes the user can auth from"
+            echo "  scope <user> list|add|remove|set|clear     Manage which scopes the user can auth from"
             echo ""
             echo "Examples:"
             echo "  tacctl user list"
             echo "  tacctl user add jsmith superuser"
             echo "  tacctl user add jsmith superuser --scopes prod,lab"
-            echo "  tacctl user scopes jsmith add prod"
+            echo "  tacctl user scope jsmith add prod"
             echo "  tacctl user verify jsmith"
             echo ""
             exit 1
@@ -8735,9 +8735,9 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
             preflight
             cmd_config "$@"
             ;;
-        scopes)
+        scope)
             preflight
-            cmd_scopes "$@"
+            cmd_scope "$@"
             ;;
         log)
             preflight

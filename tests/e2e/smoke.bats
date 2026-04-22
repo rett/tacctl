@@ -21,13 +21,13 @@ setup() {
 
 @test "smoke: fresh install → add scope → add user → render → remove → verify clean" {
     # 1. Starting state: only the 'lab' scope from the minimal fixture.
-    run "$TACCTL_BIN_SCRIPT" scopes list
+    run "$TACCTL_BIN_SCRIPT" scope list
     assert_success
     assert_output --partial "lab"
     refute_output --partial "prod"
 
     # 2. Add a 'prod' scope and mark it default.
-    run "$TACCTL_BIN_SCRIPT" scopes add prod \
+    run "$TACCTL_BIN_SCRIPT" scope add prod \
         --prefixes 10.0.0.0/8 \
         --secret "prod-secret-0123456789abcdef" \
         --default
@@ -44,7 +44,7 @@ setup() {
     assert_output --partial "alice"
 
     # 5. scopes show sees alice's membership.
-    run "$TACCTL_BIN_SCRIPT" scopes show prod
+    run "$TACCTL_BIN_SCRIPT" scope show prod
     assert_success
     assert_output --partial "10.0.0.0/8"
 
@@ -61,13 +61,13 @@ setup() {
     refute_output --partial "alice"
 
     # 8. Switch default back to lab so prod is deletable.
-    run "$TACCTL_BIN_SCRIPT" scopes default lab
+    run "$TACCTL_BIN_SCRIPT" scope default lab
     assert_success
 
     # 9. Remove prod.
-    run bash -c 'echo y | "'"$TACCTL_BIN_SCRIPT"'" scopes remove prod'
+    run bash -c 'echo y | "'"$TACCTL_BIN_SCRIPT"'" scope remove prod'
     assert_success
-    run "$TACCTL_BIN_SCRIPT" scopes list
+    run "$TACCTL_BIN_SCRIPT" scope list
     refute_output --partial "prod"
 
     # 10. All the expected stubs were called at least once.

@@ -21,7 +21,7 @@ setup() {
     load_fixture tacquito.minimal.yaml
 
     # Seed a prod scope + alice so every test starts from a clean known state.
-    "$TACCTL_BIN_SCRIPT" scopes add prod \
+    "$TACCTL_BIN_SCRIPT" scope add prod \
         --prefixes 10.0.0.0/8 --secret "prod-secret-1234567890abcdef" > /dev/null
     "$TACCTL_BIN_SCRIPT" user add alice superuser \
         --hash "$HASH_A" --scopes lab > /dev/null
@@ -182,14 +182,14 @@ _alice_hash() {
 # --- user scopes -------------------------------------------------------------
 
 @test "user scopes list: prints current scope memberships" {
-    run "$TACCTL_BIN_SCRIPT" user scopes alice list
+    run "$TACCTL_BIN_SCRIPT" user scope alice list
     assert_success
     assert_output --partial "lab"
     refute_output --partial "prod"
 }
 
 @test "user scopes add: appends a new scope to the list" {
-    run "$TACCTL_BIN_SCRIPT" user scopes alice add prod
+    run "$TACCTL_BIN_SCRIPT" user scope alice add prod
     assert_success
 
     run grep -A4 '^  - name: alice$' "$TACCTL_CONFIG"
@@ -198,14 +198,14 @@ _alice_hash() {
 }
 
 @test "user scopes add: rejects unknown scope" {
-    run "$TACCTL_BIN_SCRIPT" user scopes alice add nosuchscope
+    run "$TACCTL_BIN_SCRIPT" user scope alice add nosuchscope
     assert_failure
     assert_output --partial "does not exist"
 }
 
 @test "user scopes remove: drops a scope from the list" {
-    "$TACCTL_BIN_SCRIPT" user scopes alice add prod > /dev/null
-    run "$TACCTL_BIN_SCRIPT" user scopes alice remove lab
+    "$TACCTL_BIN_SCRIPT" user scope alice add prod > /dev/null
+    run "$TACCTL_BIN_SCRIPT" user scope alice remove lab
     assert_success
 
     run grep -A4 '^  - name: alice$' "$TACCTL_CONFIG"
@@ -214,7 +214,7 @@ _alice_hash() {
 }
 
 @test "user scopes set: replaces the list wholesale" {
-    run "$TACCTL_BIN_SCRIPT" user scopes alice set prod
+    run "$TACCTL_BIN_SCRIPT" user scope alice set prod
     assert_success
 
     run grep -A4 '^  - name: alice$' "$TACCTL_CONFIG"
@@ -223,7 +223,7 @@ _alice_hash() {
 }
 
 @test "user scopes clear: wipes all scopes after 'y' confirmation" {
-    run bash -c 'echo y | "'"$TACCTL_BIN_SCRIPT"'" user scopes alice clear'
+    run bash -c 'echo y | "'"$TACCTL_BIN_SCRIPT"'" user scope alice clear'
     assert_success
 
     run grep -A4 '^  - name: alice$' "$TACCTL_CONFIG"
@@ -231,7 +231,7 @@ _alice_hash() {
 }
 
 @test "user scopes: rejects unknown user" {
-    run "$TACCTL_BIN_SCRIPT" user scopes ghost list
+    run "$TACCTL_BIN_SCRIPT" user scope ghost list
     assert_failure
     assert_output --partial "does not exist"
 }

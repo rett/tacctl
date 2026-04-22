@@ -32,7 +32,7 @@ _tacctl() {
     done
 
     local pos=$((cword - offset))
-    local commands="install upgrade uninstall status user group config scopes log backup hash version"
+    local commands="install upgrade uninstall status user group config scope log backup hash version"
 
     # Top-level commands
     if [[ $pos -eq 1 ]]; then
@@ -120,7 +120,7 @@ for u in (d.get('users') or []):
                     passwd)
                         COMPREPLY=($(compgen -W "--hash" -- "$cur"))
                         ;;
-                    scopes)
+                    scope)
                         # `user scopes <user> {list|add|remove|set|clear}`
                         COMPREPLY=($(compgen -W "list add remove set clear" -- "$cur"))
                         ;;
@@ -221,7 +221,7 @@ for u in (d.get('users') or []):
                 COMPREPLY=($(compgen -W "$(_tacctl_scope_names)" -- "$cur"))
             fi
             ;;
-        scopes)
+        scope)
             local ssub="${words[offset + 2]}"
             if [[ $pos -eq 2 ]]; then
                 COMPREPLY=($(compgen -W "list show add remove rename default lookup prefixes secret" -- "$cur"))

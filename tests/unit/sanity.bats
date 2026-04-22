@@ -23,5 +23,5 @@ setup() {
     declare -f cmd_user > /dev/null
     declare -f cmd_list > /dev/null
     declare -f cmd_add > /dev/null
-    declare -f cmd_scopes > /dev/null
+    declare -f cmd_scope > /dev/null
 }

@@ -167,7 +167,7 @@ setup() {
 
 @test "user add: multi-scope comma list lands all scopes in YAML" {
     # Add another scope first so we have two to pick from.
-    run "$TACCTL_BIN_SCRIPT" scopes add prod --prefixes 10.0.0.0/8 --secret "prod-secret-1234567890abcdef"
+    run "$TACCTL_BIN_SCRIPT" scope add prod --prefixes 10.0.0.0/8 --secret "prod-secret-1234567890abcdef"
     assert_success
 
     run "$TACCTL_BIN_SCRIPT" user add alice superuser --hash "$TEST_HASH" --scopes lab,prod

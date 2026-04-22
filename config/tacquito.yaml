@@ -103,8 +103,8 @@ users:
 # --- Secret Providers (Scopes) ---
 # Each entry is a "scope": a named bundle of (prefixes, shared-secret)
 # that clients within those prefixes authenticate against with that key.
-# Manage with 'tacctl scopes list|show|add|remove|rename|default' and the
-# per-scope 'tacctl scopes prefixes <name>' / 'tacctl scopes secret <name>'.
+# Manage with 'tacctl scope list|show|add|remove|rename|default' and the
+# per-scope 'tacctl scope prefixes <name>' / 'tacctl scope secret <name>'.
 # The default scope (stored as scope.default in /etc/tacquito/tacctl.yaml)
 # names which scope new users land in when 'tacctl user add' is called
 # without --scopes; fresh installs ship with 'lab' so forgotten-about
