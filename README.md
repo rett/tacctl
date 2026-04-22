@@ -392,6 +392,10 @@ privileges:                  # per-group Cisco priv-exec lowering (move commands
   operator:
     - show running-config
     - show startup-config
+    - show tech-support
+    - show archive
+    - show access-list
+    - show ip route
 
 commands:                    # per-group command-authz rules. Rendered for both Cisco
                              # (tacquito enforces) and Juniper (class allow/deny-commands)

@@ -18,11 +18,15 @@ setup() {
     [[ -z "$output" ]]
 }
 
-@test "default_privileges_for_group: operator → show-config family" {
+@test "default_privileges_for_group: operator → priv-15 read/diag family" {
     run default_privileges_for_group "operator"
     assert_success
     local expected="show running-config
-show startup-config"
+show startup-config
+show tech-support
+show archive
+show access-list
+show ip route"
     [[ "$output" == "$expected" ]]
 }
 
@@ -47,14 +51,18 @@ show startup-config"
 
 @test "read_all_privileges: no overrides → only shipped defaults" {
     # No override file → read_all_privileges emits only the shipped
-    # defaults from conf_emit_defaults (operator's show-config family).
+    # defaults from conf_emit_defaults (operator's priv-15 read/diag family).
     [[ ! -f "$TACCTL_OVERRIDES_FILE" ]]
     run read_all_privileges
     assert_success
     assert_line "operator|show running-config"
     assert_line "operator|show startup-config"
-    # Exactly the two default lines, nothing else.
-    [[ "$(printf '%s\n' "$output" | awk 'NF' | wc -l)" == "2" ]]
+    assert_line "operator|show tech-support"
+    assert_line "operator|show archive"
+    assert_line "operator|show access-list"
+    assert_line "operator|show ip route"
+    # Exactly the six default lines, nothing else.
+    [[ "$(printf '%s\n' "$output" | awk 'NF' | wc -l)" == "6" ]]
 }
 
 @test "read_all_privileges: emits one group|cmd line per mapping" {

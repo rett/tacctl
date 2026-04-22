@@ -296,10 +296,13 @@ Default sets:
 .B readonly
 none (priv-1 is the floor);
 .B operator
-.RI ' "show running-config" '
-and
-.RI ' "show startup-config" '
-moved DOWN from priv-15;
+ships a priv-15 read/diagnostic family moved DOWN to priv-7
+.RI ( "show running-config" ,
+.IR "show startup-config" ,
+.IR "show tech-support" ,
+.IR "show archive" ,
+.IR "show access-list" ,
+.IR "show ip route" );
 .B superuser
 none (priv-15 is the ceiling).
 .PP

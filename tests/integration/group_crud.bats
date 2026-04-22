@@ -157,14 +157,18 @@ setup() {
 @test "group privilege add: accepts comma-separated list" {
     # First 'add' on a group with empty explicit mappings seeds from defaults
     # first (so the user's addition doesn't silently drop the conservative
-    # built-ins). Operator's defaults are the two show-config lines — adding
-    # two more commands yields 4 total.
+    # built-ins). Operator's defaults are the six priv-15 read/diag lines —
+    # adding two more commands yields 8 total.
     run "$TACCTL_BIN_SCRIPT" group privilege add operator "show version,show ip interface brief"
     assert_success
     run conf_get_list privileges.operator
-    [[ "$(printf '%s\n' "$output" | wc -l)" == "4" ]]
+    [[ "$(printf '%s\n' "$output" | wc -l)" == "8" ]]
     assert_line "show running-config"
     assert_line "show startup-config"
+    assert_line "show tech-support"
+    assert_line "show archive"
+    assert_line "show access-list"
+    assert_line "show ip route"
     assert_line "show version"
     assert_line "show ip interface brief"
 }
