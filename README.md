@@ -258,9 +258,9 @@ tacctl user passwd jsmith --hash '$2b$12$...'
 
 These patterns apply uniformly across every subcommand family:
 
-- **No arguments** — dispatcher commands (`user`, `group`, `config`, `scopes`, `log`, `backup`, `hash`, and nested dispatchers like `scopes prefixes` / `scopes secret` / `user scopes` / `group privilege`) print their own usage and exit without side effects. Scalar getter/setters (`config loglevel`, `config listen`, `config metrics`, `config password-age`, `config bcrypt-cost`, `config password-min-length`, `config secret-min-length`, `config branch`, `scopes default`) print the current value when called with no arguments.
+- **No arguments** — dispatcher commands (`user`, `group`, `config`, `scope`, `log`, `backup`, `hash`, and nested dispatchers like `scope prefixes` / `scope secret` / `user scope` / `group privilege`) print their own usage and exit without side effects. Scalar getter/setters (`config loglevel`, `config listen`, `config metrics`, `config password-age`, `config bcrypt-cost`, `config password-min-length`, `config secret-min-length`, `config branch`, `scope default`) print the current value when called with no arguments.
 - **Multi-item input** — every `add` / `remove` that takes a CIDR, a scope name, or a Cisco exec command accepts either a single value or a comma-separated list (`a,b,c`). Every input is validated first; a bad entry aborts the entire operation without writing anything.
-- **CIDR semantics** — every CIDR-list subcommand (`scopes prefixes`, `config allow`, `config deny`, `config mgmt-acl`) canonicalizes input before storage: `10.1.5.5/24` becomes `10.1.5.0/24`, `2001:DB8::/32` becomes `2001:db8::/32`. Exact duplicates (after canonicalization) are rejected as no-ops on `add`. Overlapping CIDRs of different prefix lengths coexist (`10.0.0.0/8` and `10.99.0.0/16` can both be present). Stored order is by broadcast-address ascending (IPv4 before IPv6): disjoint ranges sort by their end address, and an overlapping subnet falls immediately above its containing supernet (the subnet's range ends before the supernet's). This groups related CIDRs together and gives tacquito's provider selector the "most-specific first among overlaps" ordering it needs so a narrower scope wins a first-match lookup over a broader scope that contains it.
+- **CIDR semantics** — every CIDR-list subcommand (`scope prefixes`, `config allow`, `config deny`, `config mgmt-acl`) canonicalizes input before storage: `10.1.5.5/24` becomes `10.1.5.0/24`, `2001:DB8::/32` becomes `2001:db8::/32`. Exact duplicates (after canonicalization) are rejected as no-ops on `add`. Overlapping CIDRs of different prefix lengths coexist (`10.0.0.0/8` and `10.99.0.0/16` can both be present). Stored order is by broadcast-address ascending (IPv4 before IPv6): disjoint ranges sort by their end address, and an overlapping subnet falls immediately above its containing supernet (the subnet's range ends before the supernet's). This groups related CIDRs together and gives tacquito's provider selector the "most-specific first among overlaps" ordering it needs so a narrower scope wins a first-match lookup over a broader scope that contains it.
 - **Scope prefix invariants** — every CIDR belongs to **exactly one** scope after canonicalization. Adding a prefix already claimed by a different scope is rejected with a message naming the owner; you must `tacctl scope prefixes <owner> remove <cidr>` before re-adding it elsewhere. Overlapping prefixes *across* scopes are allowed and routed correctly (e.g. `10.5.0.0/16` in `staging` coexists with `10.0.0.0/8` in `lab`). To make cross-scope first-match honor specificity, tacctl emits one `secrets:` entry per (scope, prefix) pair — a scope with N prefixes becomes N entries sharing the same `name:` and `secret.key`. Entries are re-sorted globally by prefix specificity (v4 before v6, smaller broadcast first) after every mutation, so tacquito's slice-ordered walk picks the narrowest scope. The CLI continues to show the logical one-bundle-per-scope view; do not hand-edit the `secrets:` block, and `tacctl config validate` flags any same-name key divergence.
 - **`clear`** — `clear` subcommands always prompt with `[y/N]` and print a warning describing the resulting posture (e.g. "no clients can connect" or "fails open").
 - **Service restart** — changes that mutate `/etc/tacquito/tacquito.yaml` restart the tacquito service automatically. Changes to `/etc/tacquito/tacctl.yaml` (mgmt-acl permits + names, bcrypt cost, password age, privileges, etc.) do not — tacquito never reads that file.
@@ -303,11 +303,11 @@ user enable <name>                                Re-enable a disabled user
 user rename <old> <new>                           Rename a user
 user move <name> <group>                          Move user to a different group (keeps password)
 user verify <name>                                Show user details and verify password
-user scopes <name>                                List the user's scopes (orphan refs flagged red)
-user scopes <name> add <s>[,s...]                 Grant one or more scopes
-user scopes <name> remove <s>[,s...]              Revoke one or more scopes
-user scopes <name> set <s>[,s...]                 Replace the full scope list
-user scopes <name> clear                          Wipe all scopes (with confirmation)
+user scope <name>                                 List the user's scopes (orphan refs flagged red)
+user scope <name> add <s>[,s...]                  Grant one or more scopes
+user scope <name> remove <s>[,s...]               Revoke one or more scopes
+user scope <name> set <s>[,s...]                  Replace the full scope list
+user scope <name> clear                           Wipe all scopes (with confirmation)
 ```
 
 ### Group Commands — `tacctl group`
@@ -436,16 +436,16 @@ View effective posture with `tacctl config dump`; read individual values with `t
 ### Scope Commands — `tacctl scope`
 
 ```
-scopes list                                              List every (scope, prefix) pair in tacquito first-match order (numbered by slice position)
-scopes show <name>                                       Full detail: prefixes, users, raw secret + posture, default-ness
-scopes add <name> --prefixes <cidrs>                     Create a new scope
-           [--secret <value>|--secret generate] [--default]
-scopes remove <name> [--force]                           Delete. Refuses if users reference it unless --force
-scopes rename <old> <new>                                Rewrites secrets[].name + every user's scopes[] + default marker
-scopes default [<name>]                                  Show / set the default scope (tacctl-managed marker file)
-scopes lookup <ip|cidr>                                  Resolve an IP/CIDR to the owning scope (+ shadowed overlaps)
-scopes prefixes <name> list|add|remove|clear [--force]   Per-scope CIDR list (add/remove accept comma-lists; clear refuses if users reference unless --force)
-scopes secret   <name> show|set <value>|generate         Per-scope shared secret (show prints the raw value + length/posture)
+scope list                                               List every (scope, prefix) pair in tacquito first-match order (numbered by slice position)
+scope show <name>                                        Full detail: prefixes, users, raw secret + posture, default-ness
+scope add <name> --prefixes <cidrs>                      Create a new scope
+          [--secret <value>|--secret generate] [--default]
+scope remove <name> [--force]                            Delete. Refuses if users reference it unless --force
+scope rename <old> <new>                                 Rewrites secrets[].name + every user's scopes[] + default marker
+scope default [<name>]                                   Show / set the default scope (tacctl-managed marker file)
+scope lookup <ip|cidr>                                   Resolve an IP/CIDR to the owning scope (+ shadowed overlaps)
+scope prefixes <name> list|add|remove|clear [--force]    Per-scope CIDR list (add/remove accept comma-lists; clear refuses if users reference unless --force)
+scope secret   <name> show|set <value>|generate          Per-scope shared secret (show prints the raw value + length/posture)
 ```
 
 **Connection filters:** `deny` takes precedence over `allow`. Both empty = all connections accepted.

@@ -675,7 +675,7 @@ example
 as needed, and place users into them explicitly.
 .SS Top-level \fB(tacctl scope)\fR
 .TP
-.B scopes list
+.B scope list
 Print every
 .B secrets[]
 entry in tacquito's first-match order (one row per scope-prefix pair,
@@ -812,7 +812,7 @@ Dispatcher commands
 and every nested dispatcher such as
 .BR "scope prefixes" ,
 .BR "scope secret" ,
-.BR "user scopes" ,
+.BR "user scope" ,
 or
 .BR "group privilege" )
 print their own usage and return without side effects.
@@ -841,7 +841,7 @@ operation without writing anything.
 .TP
 .B CIDR semantics
 Every CIDR-list subcommand
-.RB ( "scopes prefixes" ,
+.RB ( "scope prefixes" ,
 .BR "config allow" ,
 .BR "config deny" ,
 .BR "config mgmt-acl" )
@@ -889,7 +889,7 @@ Entries are re-sorted globally by prefix specificity
 tacquito's slice-ordered provider walk routes each client IP to the
 narrowest scope that contains it. The CLI continues to present the
 logical one-scope-per-bundle view via
-.BR "scope list" ", " "scopes show" ", and " "config show" .
+.BR "scope list" ", " "scope show" ", and " "config show" .
 .PP
 Do not hand-edit the
 .B secrets:
