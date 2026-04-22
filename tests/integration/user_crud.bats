@@ -76,13 +76,27 @@ setup() {
 }
 
 @test "user add: rejects reserved usernames (root, tacquito)" {
-    # The OS root account and tacquito service user exist outside the YAML;
-    # tacctl-managing either produces acct.go errors at auth time.
+    # root is seeded by install as a permanent accounting-only sink (Junos
+    # internal daemons emit accounting as root). tacquito is the service
+    # user. Neither should be creatable as a TACACS+-authenticable account.
     run "$TACCTL_BIN_SCRIPT" user add root superuser --hash "$TEST_HASH" --scopes lab
     assert_failure
     assert_output --partial "reserved"
 
     run "$TACCTL_BIN_SCRIPT" user add tacquito superuser --hash "$TEST_HASH" --scopes lab
+    assert_failure
+    assert_output --partial "reserved"
+}
+
+@test "user passwd: rejects reserved usernames (root, tacquito)" {
+    # Even if a root entry exists as an accounting sink, setting a
+    # password on it would silently enable TACACS+ auth — must stay
+    # disabled forever.
+    run "$TACCTL_BIN_SCRIPT" user passwd root --hash "$TEST_HASH"
+    assert_failure
+    assert_output --partial "reserved"
+
+    run "$TACCTL_BIN_SCRIPT" user passwd tacquito --hash "$TEST_HASH"
     assert_failure
     assert_output --partial "reserved"
 }

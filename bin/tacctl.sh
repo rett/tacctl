@@ -1326,8 +1326,14 @@ validate_username() {
 reject_reserved_username() {
     local value="$1"
     case "$value" in
-        root|tacquito)
-            error "Username '${value}' is reserved. Create an operator-specific account instead (e.g. tacctl user add jsmith <group>)."
+        root)
+            error "Username 'root' is reserved as an accounting-only sink for Junos internal daemons (non-tty CLI as root)."
+            error "The hash stays disabled permanently — root must only be used for local/console login, never TACACS+."
+            error "Create an operator-specific account instead (e.g. tacctl user add jsmith <group>)."
+            exit 1
+            ;;
+        tacquito)
+            error "Username 'tacquito' is reserved (matches the service user). Pick a different name."
             exit 1
             ;;
     esac
@@ -1976,6 +1982,7 @@ cmd_passwd() {
         exit 1
     fi
     validate_username "$username"
+    reject_reserved_username "$username"
     if ! user_exists "$username"; then
         error "User '${username}' does not exist."
         exit 1
@@ -3594,7 +3601,13 @@ set system tacplus-server ${server_ip} single-connection
 # Optional: pin client source IP for prefix-ACL matching on tacquito.
 # Replace 10.0.0.1 with the device's management interface address, e.g.:
 #   set system tacplus-server ${server_ip} source-address 10.0.0.1
-set system accounting events [ login change-log interactive-commands ]
+# Accounting events: login + change-log only. 'interactive-commands' is
+# intentionally excluded because Junos internal daemons (mgd, jsd,
+# health-probe op scripts, etc.) run non-tty CLI commands as root and
+# generate a continuous stream of per-command accounting that is pure
+# noise on the tacquito side. The login + change-log events still
+# capture who logged in and who changed config.
+set system accounting events [ login change-log ]
 set system accounting destination tacplus"
 
     # Build the Juniper mgmt-acl block from the shared permit list.
@@ -7385,6 +7398,46 @@ print(yaml.safe_dump(json.loads(sys.argv[1]), default_flow_style=False, sort_key
 #  LOG COMMANDS
 # =====================================================================
 
+# Purge the tacquito journal and truncate the file-based accounting log.
+# Destructive — prompts for confirmation. Accepts `--force` / `-y` to skip
+# the prompt for scripted use (e.g. scheduled cleanups).
+cmd_log_clear() {
+    local force=false
+    case "${1:-}" in
+        -y|--force|--yes) force=true ;;
+    esac
+
+    echo ""
+    echo -e "${BOLD}Clear tacquito logs${NC}"
+    echo "--------------------------------------------"
+    warn "This permanently deletes tacquito journal entries and truncates ${ACCT_LOG}."
+    warn "Historical authentication and accounting records will be lost."
+
+    if [[ "$force" != "true" ]]; then
+        read -rp "  Continue? [y/N]: " confirm
+        if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+            info "Cancelled."
+            return 0
+        fi
+    fi
+
+    # Rotate closes the active journal file so the vacuum step can evict it;
+    # --vacuum-time=1s then drops everything older than one second. The
+    # per-unit filter keeps other services' journals intact.
+    journalctl --rotate 2>/dev/null || true
+    if ! journalctl --vacuum-time=1s -u tacquito >/dev/null 2>&1; then
+        warn "journalctl vacuum failed — run manually: sudo journalctl --vacuum-time=1s -u tacquito"
+    fi
+
+    # Truncate in place so logrotate's ownership/permissions stay intact.
+    if [[ -f "$ACCT_LOG" ]]; then
+        : > "$ACCT_LOG" 2>/dev/null || warn "Could not truncate ${ACCT_LOG} (check permissions)."
+    fi
+
+    info "Logs cleared (journal + accounting)."
+    echo ""
+}
+
 cmd_log() {
     local subcmd="${1:-}"
     shift || true
@@ -7435,6 +7488,9 @@ cmd_log() {
             fi
             echo ""
             ;;
+        clear)
+            cmd_log_clear "$@"
+            ;;
         *)
             echo ""
             echo -e "${BOLD}Log Commands${NC}"
@@ -7446,6 +7502,7 @@ cmd_log() {
             echo "  search <term>         Search journal for a username or keyword"
             echo "  failures              Show auth failures from the last 24 hours"
             echo "  accounting [n]        Show last N accounting log entries"
+            echo "  clear                 Purge tacquito journal + truncate accounting log (confirms)"
             echo ""
             exit 1
             ;;
@@ -7906,6 +7963,74 @@ PY
     chmod 700 "${BACKUP_DIR}/disabled"
     chown tacquito:tacquito "$BACKUP_DIR" "$PASSWORD_DATES_DIR"
 
+    # --- Seed built-in users (disabled placeholders + root accounting sink) ---
+    # engineer/operator/viewer: templated accounts covering the shipped
+    # privilege tiers so a fresh install has usable identities without ever
+    # writing an unknown credential. Each hash is DISABLED_MARKER_HEX, so
+    # auth denies until the operator runs `tacctl user passwd <name>` —
+    # which replaces the marker with a real bcrypt hash and implicitly
+    # enables the account (is_disabled_hash only matches the marker).
+    #
+    # root: permanently-disabled accounting sink. Junos devices emit
+    # accounting packets with User=root whenever internal daemons (mgd,
+    # jsd, op-script probes, etc.) run non-tty CLI commands; tacquito's
+    # acct handler errors when it can't find the user. Seeding root here
+    # with an accounter silences those errors and routes the packets to
+    # the file accounter. The hash stays at DISABLED_MARKER_HEX forever —
+    # root is a Junos built-in intended for local/console use, never
+    # TACACS+. `cmd_passwd` rejects the name to keep the sink
+    # unauthenticable across its lifetime.
+    info "Seeding built-in users (disabled — set a password to activate)..."
+    python3 - "$CONFIG_FILE" "$DISABLED_MARKER_HEX" "$DEFAULT_SCOPE_FRESH" <<'PY'
+import sys, tempfile, os
+config_path, marker, default_scope = sys.argv[1], sys.argv[2], sys.argv[3]
+builtins = [
+    ("engineer", "superuser"),
+    ("operator", "operator"),
+    ("viewer",   "readonly"),
+    ("root",     "readonly"),
+]
+config = open(config_path).read()
+
+# Insert all authenticator anchor blocks before '# --- Services ---'.
+auth_blocks = "".join(
+    f'bcrypt_{u}: &bcrypt_{u}\n'
+    f'  type: *authenticator_type_bcrypt\n'
+    f'  options:\n'
+    f'    hash: {marker}\n\n'
+    for u, _ in builtins
+)
+marker_auth = '# --- Services ---'
+idx = config.index(marker_auth)
+prefix = config[:idx].rstrip('\n')
+config = prefix + '\n\n' + auth_blocks.rstrip('\n') + '\n\n' + config[idx:]
+
+# Insert all user entries before '# --- Secret Providers ---'.
+user_blocks = "".join(
+    f'  # {u}\n'
+    f'  - name: {u}\n'
+    f'    scopes: ["{default_scope}"]\n'
+    f'    groups: [*{g}]\n'
+    f'    authenticator: *bcrypt_{u}\n'
+    f'    accounter: *file_accounter\n\n'
+    for u, g in builtins
+)
+marker_sp = '# --- Secret Providers ---'
+idx2 = config.index(marker_sp)
+prefix2 = config[:idx2].rstrip('\n')
+config = prefix2 + '\n\n' + user_blocks.rstrip('\n') + '\n\n' + config[idx2:]
+
+tmp = tempfile.NamedTemporaryFile('w', dir=os.path.dirname(config_path), delete=False)
+tmp.write(config)
+tmp.close()
+os.rename(tmp.name, config_path)
+PY
+    chown tacquito:tacquito "$CONFIG_FILE"
+    info "  engineer (superuser) — disabled"
+    info "  operator (operator)  — disabled"
+    info "  viewer   (readonly)  — disabled"
+    info "  root     (readonly)  — disabled (accounting sink for Junos internal daemons)"
+
     # --- Step 7: Install systemd service ---
     info "Installing systemd service..."
     cp "${PROJECT_DIR}/config/tacquito.service" "$SERVICE_FILE"
@@ -7948,9 +8073,15 @@ PY
     echo -e "  ${RED}SAVE THE SHARED SECRET — it is not stored in plaintext.${NC}"
     echo -e "  ${YELLOW}Clear your terminal after recording: history -c && clear${NC}"
     echo ""
+    echo "  Built-in users:"
+    echo "    engineer (superuser)   — disabled; tacctl user passwd engineer"
+    echo "    operator (operator)    — disabled; tacctl user passwd operator"
+    echo "    viewer   (readonly)    — disabled; tacctl user passwd viewer"
+    echo "    root     (readonly)    — permanent accounting-only sink (never authenticates)"
+    echo ""
     echo "  Next steps:"
-    echo "    1. Add your first user:    tacctl user add <username> superuser"
-    echo "       (lands in default scope '${DEFAULT_SCOPE_FRESH}')"
+    echo "    1. Activate a built-in:    tacctl user passwd engineer"
+    echo "       (or add your own:       tacctl user add <username> <group>)"
     echo "    2. Configure devices:      tacctl config cisco / tacctl config juniper"
     echo "    3. Narrow scope prefixes:  tacctl scopes prefixes ${DEFAULT_SCOPE_FRESH} <your-subnets>"
     echo "    4. Add a prod scope:       tacctl scopes add prod --prefixes <cidrs> --secret generate"

@@ -11,7 +11,13 @@ sudo bash -c 'git clone https://github.com/rett/tacctl.git /opt/tacctl && ln -sf
 # Or upgrade an existing server (pulls latest from GitHub)
 tacctl upgrade
 
-# After install, add your first user (lands in the default 'lab' scope)
+# Fresh installs seed four built-ins: engineer/superuser, operator/operator,
+# viewer/readonly (all disabled — set a password to activate), plus
+# root/readonly as a permanent accounting-only sink (Junos internal daemons
+# emit accounting packets as root; tacctl user passwd root is rejected).
+tacctl user passwd engineer
+
+# Or add your own (lands in the default 'lab' scope)
 tacctl user add jsmith superuser
 
 # Create a production scope and grant jsmith access to it
@@ -451,6 +457,7 @@ log tail [n]              Show last N journal entries (default 20)
 log search <term>         Search logs for a username or keyword (last 7 days)
 log failures              Show auth failures from the last 24 hours
 log accounting [n]        Show last N accounting log entries
+log clear [--force]       Purge tacquito journal + truncate accounting log (prompts)
 ```
 
 ### Backup Commands — `tacctl backup`

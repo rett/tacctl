@@ -289,7 +289,9 @@ for u in (d.get('users') or []):
             ;;
         log)
             if [[ $pos -eq 2 ]]; then
-                COMPREPLY=($(compgen -W "tail search failures accounting" -- "$cur"))
+                COMPREPLY=($(compgen -W "tail search failures accounting clear" -- "$cur"))
+            elif [[ $pos -eq 3 && "${words[offset + 2]}" == "clear" ]]; then
+                COMPREPLY=($(compgen -W "--force" -- "$cur"))
             fi
             ;;
         backup)

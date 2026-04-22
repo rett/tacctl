@@ -39,6 +39,34 @@ service user, seeds
 installs the systemd unit, and enables the service. The optional
 .BI --branch " name"
 flag selects a specific tacctl repository branch for the install.
+.IP
+Four built-in users are seeded so fresh installs ship with usable
+identities (without writing unknown credentials) and with a sink for
+Junos internal accounting:
+.B engineer
+.RB ( superuser ),
+.B operator
+.RB ( operator ),
+.B viewer
+.RB ( readonly ),
+and
+.B root
+.RB ( readonly ).
+.IP
+The first three carry a placeholder hash that never authenticates;
+activate one with
+.B "tacctl user passwd " <name>
+(setting a real password implicitly enables the account).
+.B root
+is different — a permanent accounting-only sink whose hash stays
+disabled for the lifetime of the install. It exists because Junos
+internal daemons (mgd, jsd, op-script probes) run non-tty CLI commands
+as root and generate accounting packets; without a
+.B root
+entry tacquito logs an error for every packet.
+.B "tacctl user passwd root"
+is rejected — root is a Junos built-in intended for local/console use
+only and must never authenticate via TACACS+.
 .TP
 .BI "upgrade [--branch " name "]"
 Pull the latest tacquito source and management scripts, rebuild the
@@ -569,6 +597,18 @@ Show the last
 .I n
 entries from
 .IR /var/log/tacquito/accounting.log .
+.TP
+.B "log clear " [ --force ]
+Purge tacquito journal entries
+.RB ( "journalctl --rotate && journalctl --vacuum-time=1s -u tacquito" )
+and truncate
+.IR /var/log/tacquito/accounting.log .
+Prompts for confirmation;
+.B --force
+(or
+.BR -y )
+skips the prompt for scripted use. Destructive — historical auth and
+accounting records are irrecoverable once cleared.
 .SS Backup management \fB(tacctl backup)\fR
 .TP
 .B backup list

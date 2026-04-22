@@ -80,3 +80,49 @@ EOF
     assert_success
     assert_output --partial "No accounting log found"
 }
+
+# --- log clear ---------------------------------------------------------------
+
+@test "log clear: cancels on empty/n response and leaves logs intact" {
+    # Seed an accounting file so we can verify it survives the cancel.
+    mkdir -p "$TACCTL_LOG"
+    echo "keepme" > "$TACCTL_LOG/accounting.log"
+
+    run bash -c 'echo | "'"$TACCTL_BIN_SCRIPT"'" log clear'
+    assert_success
+    assert_output --partial "Cancelled"
+    # journalctl should not have been invoked at all on cancel.
+    run stub_called '^journalctl --rotate'
+    assert_failure
+    [[ "$(cat "$TACCTL_LOG/accounting.log")" == "keepme" ]]
+}
+
+@test "log clear: with --force skips prompt and rotates+vacuums+truncates" {
+    mkdir -p "$TACCTL_LOG"
+    echo "old-accounting-entry" > "$TACCTL_LOG/accounting.log"
+
+    run "$TACCTL_BIN_SCRIPT" log clear --force
+    assert_success
+    assert_output --partial "Logs cleared"
+    stub_called '^journalctl --rotate'
+    stub_called '^journalctl --vacuum-time=1s -u tacquito'
+    # File still exists but is now empty (logrotate-safe truncate).
+    [[ -f "$TACCTL_LOG/accounting.log" ]]
+    [[ ! -s "$TACCTL_LOG/accounting.log" ]]
+}
+
+@test "log clear: with 'y' confirmation proceeds" {
+    mkdir -p "$TACCTL_LOG"
+    echo "old" > "$TACCTL_LOG/accounting.log"
+
+    run bash -c 'echo y | "'"$TACCTL_BIN_SCRIPT"'" log clear'
+    assert_success
+    assert_output --partial "Logs cleared"
+    [[ ! -s "$TACCTL_LOG/accounting.log" ]]
+}
+
+@test "log clear: usage listing mentions the new subcommand" {
+    run "$TACCTL_BIN_SCRIPT" log
+    assert_failure
+    assert_output --partial "clear"
+}
