@@ -1,0 +1,90 @@
+# Minimal test fixture: one group, no users, one scope.
+# Used as a starting point for CRUD integration tests.
+
+authenticator_type_bcrypt: &authenticator_type_bcrypt 1
+action_deny:  &action_deny  1
+action_permit: &action_permit 2
+accounter_type_file: &accounter_type_file 3
+handler_type_start: &handler_type_start 1
+provider_type_prefix: &provider_type_prefix 1
+
+file_accounter: &file_accounter
+  name: tacquito_accounter
+  type: *accounter_type_file
+
+# --- Services ---
+exec_readonly: &exec_readonly
+  name: exec
+  set_values:
+    - name: priv-lvl
+      values: [1]
+
+exec_operator: &exec_operator
+  name: exec
+  set_values:
+    - name: priv-lvl
+      values: [7]
+
+exec_superuser: &exec_superuser
+  name: exec
+  set_values:
+    - name: priv-lvl
+      values: [15]
+
+junos_exec_readonly: &junos_exec_readonly
+  name: junos-exec
+  set_values:
+    - name: local-user-name
+      values: ["RO-CLASS"]
+
+junos_exec_operator: &junos_exec_operator
+  name: junos-exec
+  set_values:
+    - name: local-user-name
+      values: ["OP-CLASS"]
+
+junos_exec_superuser: &junos_exec_superuser
+  name: junos-exec
+  set_values:
+    - name: local-user-name
+      values: ["RW-CLASS"]
+
+# --- Groups ---
+readonly: &readonly
+  name: readonly
+  services:
+    - *exec_readonly
+    - *junos_exec_readonly
+  accounter: *file_accounter
+
+operator: &operator
+  name: operator
+  services:
+    - *exec_operator
+    - *junos_exec_operator
+  accounter: *file_accounter
+
+superuser: &superuser
+  name: superuser
+  services:
+    - *exec_superuser
+    - *junos_exec_superuser
+  accounter: *file_accounter
+
+# --- Users ---
+users:
+
+# --- Secret Providers ---
+secrets:
+  - name: lab
+    secret:
+      group: tacquito
+      key: "lab-secret-placeholder-16chars"
+    handler:
+      type: *handler_type_start
+    type: *provider_type_prefix
+    options:
+      prefixes: |
+        [
+          "192.168.0.0/16"
+        ]
