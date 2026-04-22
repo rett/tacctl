@@ -22,40 +22,55 @@
 #   ./tacctl.sh config juniper [--scope <name>]
 #
 set -euo pipefail
-if [[ $EUID -ne 0 && "${1:-}" != "hash" ]]; then
+
+# Base paths: overridable via env for tests and non-standard deployments.
+# Production defaults are unchanged.
+: "${TACCTL_ETC:=/etc/tacquito}"
+: "${TACCTL_LOG:=/var/log/tacquito}"
+: "${TACCTL_BIN:=/usr/local/bin}"
+: "${TACCTL_CONFIG:=${TACCTL_ETC}/tacquito.yaml}"
+
+# Re-exec under sudo only when invoked as a script. When sourced (e.g. by bats
+# tests), skip re-exec so tests can call functions directly as any user.
+# TACCTL_SKIP_SUDO=1 is a test-only escape for subprocess invocations from
+# integration tests; prod never sets it.
+if [[ "${BASH_SOURCE[0]}" == "$0" \
+    && "${TACCTL_SKIP_SUDO:-0}" != "1" \
+    && $EUID -ne 0 \
+    && "${1:-}" != "hash" ]]; then
     exec sudo "$0" "$@"
 fi
 umask 077
 
-CONFIG="/etc/tacquito/tacquito.yaml"
-BACKUP_DIR="/etc/tacquito/backups"
-PASSWORD_DATES_DIR="/etc/tacquito/backups/password-dates"
-ACCT_LOG="/var/log/tacquito/accounting.log"
+CONFIG="${TACCTL_CONFIG}"
+BACKUP_DIR="${TACCTL_ETC}/backups"
+PASSWORD_DATES_DIR="${TACCTL_ETC}/backups/password-dates"
+ACCT_LOG="${TACCTL_LOG}/accounting.log"
 PASSWORD_MAX_AGE_DAYS=90
-PASSWORD_MAX_AGE_FILE="/etc/tacquito/password-max-age"
+PASSWORD_MAX_AGE_FILE="${TACCTL_ETC}/password-max-age"
 BCRYPT_COST=12
-BCRYPT_COST_FILE="/etc/tacquito/bcrypt-cost"
+BCRYPT_COST_FILE="${TACCTL_ETC}/bcrypt-cost"
 PASSWORD_MIN_LENGTH=12
-PASSWORD_MIN_LENGTH_FILE="/etc/tacquito/password-min-length"
+PASSWORD_MIN_LENGTH_FILE="${TACCTL_ETC}/password-min-length"
 SECRET_MIN_LENGTH=16
-SECRET_MIN_LENGTH_FILE="/etc/tacquito/secret-min-length"
-MGMT_ACL_FILE="/etc/tacquito/mgmt-acl.conf"
-MGMT_ACL_NAMES_FILE="/etc/tacquito/mgmt-acl-names.conf"
+SECRET_MIN_LENGTH_FILE="${TACCTL_ETC}/secret-min-length"
+MGMT_ACL_FILE="${TACCTL_ETC}/mgmt-acl.conf"
+MGMT_ACL_NAMES_FILE="${TACCTL_ETC}/mgmt-acl-names.conf"
 CISCO_ACL_NAME_DEFAULT="VTY-ACL"
 JUNIPER_ACL_NAME_DEFAULT="MGMT-SSH-ACL"
-PRIVILEGE_FILE="/etc/tacquito/cisco-privileges.conf"
-DEFAULT_SCOPE_FILE="/etc/tacquito/default-scope"
+PRIVILEGE_FILE="${TACCTL_ETC}/cisco-privileges.conf"
+DEFAULT_SCOPE_FILE="${TACCTL_ETC}/default-scope"
 DEFAULT_SCOPE_FRESH="lab"  # name used on fresh installs; upgrades keep existing scope name
-CONFIG_DIR="/etc/tacquito"
-LOG_DIR="/var/log/tacquito"
+CONFIG_DIR="${TACCTL_ETC}"
+LOG_DIR="${TACCTL_LOG}"
 SERVICE_FILE="/etc/systemd/system/tacquito.service"
 
 # --- System lifecycle constants ---
 GO_VERSION="1.26.2"
 TACQUITO_REPO="https://github.com/facebookincubator/tacquito.git"
 TACQUITO_SRC="/opt/tacquito-src"
-TACQUITO_BIN="/usr/local/bin/tacquito"
-HASHGEN_BIN="/usr/local/bin/tacquito-hashgen"
+TACQUITO_BIN="${TACCTL_BIN}/tacquito"
+HASHGEN_BIN="${TACCTL_BIN}/tacquito-hashgen"
 DEPLOY_DIR="/opt/tacctl"
 MANAGE_REPO="https://github.com/rett/tacctl.git"
 GO_BIN="/usr/local/go/bin/go"
@@ -100,20 +115,16 @@ if ! [[ "$SECRET_MIN_LENGTH" =~ ^[0-9]+$ ]] || [[ "$SECRET_MIN_LENGTH" -lt 16 ||
 fi
 
 # --- Disabled-user hash marker ---
-# For disabled users we write a well-formed but unverifiable bcrypt hash
-# rather than the legacy literal "DISABLED". The marker is '$2b$12$' +
-# 53 '.' chars (all-zero salt + all-zero digest) — valid bcrypt
-# structure that no real password can match. Stored hex-encoded.
-#
-# Legacy "DISABLED" values are still recognized on read (see is_disabled_hash).
+# Well-formed but unverifiable bcrypt hash: '$2b$12$' + 53 '.' chars
+# (all-zero salt + all-zero digest). Valid bcrypt structure so tacquito
+# parses it, but no real password can match. Stored hex-encoded.
 # Hex of "$2b$12$" + "." × 53:
 DISABLED_MARKER_HEX="24326224313224"
 DISABLED_MARKER_HEX+="2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e"
 DISABLED_MARKER_HEX+="2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e"
 
-# Return 0 if $1 is a disabled-user hash (legacy or new marker).
 is_disabled_hash() {
-    [[ "$1" == "DISABLED" || "$1" == "$DISABLED_MARKER_HEX" ]]
+    [[ "$1" == "$DISABLED_MARKER_HEX" ]]
 }
 
 # --- Validate a regex pattern ---
@@ -481,9 +492,11 @@ preflight() {
 }
 
 # --- Resolve template file (user override → repo default) ---
-SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
-TEMPLATE_DIR_LOCAL="/etc/tacquito/templates"
-TEMPLATE_DIR_REPO="$(cd "${SCRIPT_DIR}/../config/templates" 2>/dev/null && pwd)"
+# Use BASH_SOURCE so the path resolves to tacctl.sh itself even when sourced
+# (e.g. by bats tests), not to the sourcing binary.
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+TEMPLATE_DIR_LOCAL="${TACCTL_ETC}/templates"
+TEMPLATE_DIR_REPO="$(cd "${SCRIPT_DIR}/../config/templates" 2>/dev/null && pwd || true)"
 
 resolve_template() {
     local name="$1"
@@ -545,16 +558,23 @@ backup_config() {
     mkdir -p "$BACKUP_DIR"
     chmod 750 "$BACKUP_DIR"
     chown tacquito:tacquito "$BACKUP_DIR" 2>/dev/null || true
+    # Milliseconds (%3N) avoid collisions when two mutating commands land in
+    # the same wall-clock second — prior YYYYMMDD_HHMMSS format silently
+    # overwrote the first backup, losing the pre-mutation snapshot.
+    # 'backup list' / 'restore' parse the suffix verbatim, so old-format
+    # files are still recognized.
     local ts
-    ts=$(date +%Y%m%d_%H%M%S)
+    ts=$(date +%Y%m%d_%H%M%S_%3N)
     cp "$CONFIG" "${BACKUP_DIR}/tacquito.yaml.${ts}"
     chmod 640 "${BACKUP_DIR}/tacquito.yaml.${ts}"
     chown tacquito:tacquito "${BACKUP_DIR}/tacquito.yaml.${ts}" 2>/dev/null || true
     info "Config backed up to ${BACKUP_DIR}/tacquito.yaml.${ts}"
 
-    # Prune old backups, keep last $BACKUP_RETENTION
+    # Prune old backups, keep last $BACKUP_RETENTION. Same ls-no-match
+    # guard as cmd_status: avoid set -e tripping the caller when the
+    # backups directory is empty.
     local count
-    count=$(ls -1 "${BACKUP_DIR}"/tacquito.yaml.* 2>/dev/null | wc -l)
+    count=$(ls -1 "${BACKUP_DIR}"/tacquito.yaml.* 2>/dev/null | wc -l || echo 0)
     if [[ "$count" -gt "$BACKUP_RETENTION" ]]; then
         ls -1t "${BACKUP_DIR}"/tacquito.yaml.* | tail -n +$((BACKUP_RETENTION + 1)) | xargs rm -f
     fi
@@ -616,7 +636,11 @@ verify_hash() {
     # process substitution so neither shows up on argv. The hash already
     # lives in tacquito.yaml (mode 0640) so leaking to /proc/cmdline is a
     # low-severity issue, but the pattern is uniform across secret handling.
-    printf '%s' "$password" | python3 - <(printf '%s' "$hexhash") <<'PY' 2>/dev/null || echo "FAIL"
+    #
+    # Script is passed via `-c`: an earlier heredoc-on-stdin form (`python3 -`
+    # + `<<'PY'`) let the heredoc shadow the password pipe, so stdin.read()
+    # always returned b'' and every verify returned NO_MATCH.
+    printf '%s' "$password" | python3 -c '
 import bcrypt, binascii, sys
 pw = sys.stdin.buffer.read()
 with open(sys.argv[1]) as f:
@@ -633,7 +657,7 @@ try:
         print("NO_MATCH")
 except ValueError:
     print("INVALID_HASH")
-PY
+' <(printf '%s' "$hexhash") 2>/dev/null || echo "FAIL"
 }
 
 # --- Validate class/value names ---
@@ -853,7 +877,7 @@ PY
 # entries in a drop-in so that `tacctl upgrade` can safely replace the main
 # service unit without clobbering them. Template defaults are in
 # config/tacquito.service; the drop-in only records overrides.
-OVERRIDE_DIR="/etc/systemd/system/tacquito.service.d"
+OVERRIDE_DIR="${TACCTL_OVERRIDE_DIR:-/etc/systemd/system/tacquito.service.d}"
 OVERRIDE_FILE="${OVERRIDE_DIR}/tacctl-overrides.conf"
 
 # Read an Environment= override; echo empty if not set.
@@ -1912,23 +1936,6 @@ else:
 
 # --- CONFIG SECRET ---
 # --- Read the current shared secret from the YAML (may be empty) ---
-# --- Legacy 'config secret' — REMOVED ---
-# Shared secrets are scope-owned; the equivalent is 'tacctl scopes secret
-# <name>'. This stub prints an explicit redirect so muscle-memory and
-# scripted callers learn where to go instead of hitting a generic
-# dispatcher error. It does not mutate state.
-cmd_config_secret() {
-    error "'tacctl config secret' has been removed."
-    error "Shared secrets are scope-owned; manage via 'tacctl scopes':"
-    error "  tacctl scopes secret <name> show"
-    error "  tacctl scopes secret <name> set <value>"
-    error "  tacctl scopes secret <name> generate"
-    error ""
-    error "Default scope: $(read_default_scope || echo '(unset)')"
-    error "Available:     $(list_scopes | paste -sd' ')"
-    exit 2
-}
-
 # =====================================================================
 #  SCOPE HELPERS — multi-scope YAML access
 # =====================================================================
@@ -2647,24 +2654,6 @@ parse_cidr_list() {
         fi
     done
     echo "$seen"
-}
-
-# --- Legacy 'config prefixes' — REMOVED ---
-# Client-prefix lists are scope-owned; the equivalent is 'tacctl scopes
-# prefixes <name>'. This stub prints an explicit redirect so muscle-memory
-# and scripted callers learn where to go instead of hitting a generic
-# dispatcher error. It does not mutate state.
-cmd_config_prefixes() {
-    error "'tacctl config prefixes' has been removed."
-    error "Client-prefix lists are scope-owned; manage via 'tacctl scopes':"
-    error "  tacctl scopes prefixes <name> list"
-    error "  tacctl scopes prefixes <name> add    <cidr>[,<cidr>...]"
-    error "  tacctl scopes prefixes <name> remove <cidr>[,<cidr>...]"
-    error "  tacctl scopes prefixes <name> clear"
-    error ""
-    error "Default scope: $(read_default_scope || echo '(unset)')"
-    error "Available:     $(list_scopes | paste -sd' ')"
-    exit 2
 }
 
 # --- CONFIG CISCO (show working device config) ---
@@ -4491,12 +4480,6 @@ cmd_config() {
         show)
             cmd_config_show
             ;;
-        secret)
-            cmd_config_secret "$@"
-            ;;
-        prefixes)
-            cmd_config_prefixes "$@"
-            ;;
         cisco)
             cmd_config_cisco "$@"
             ;;
@@ -4742,9 +4725,12 @@ group_block = [
     '  services:\n',
     '    - *exec_' + sys.argv[3] + '\n',
     '    - *junos_exec_' + sys.argv[3] + '\n',
-    '  authenticator: *bcrypt_user\n',
     '  accounter: *file_accounter\n',
 ]
+# NB: intentionally no group-level 'authenticator:' key. Each user
+# references its own '*bcrypt_<username>' anchor; the prior code wrote
+# '*bcrypt_user' here, which is an undefined anchor and makes yaml.safe_load
+# fail on every downstream read (list_scopes, read_user_scopes, etc.).
 lines = lines[:insert_at] + group_block + lines[insert_at:]
 import tempfile, os
 tmp = tempfile.NamedTemporaryFile('w', dir=os.path.dirname(sys.argv[1]), delete=False)
@@ -5773,18 +5759,20 @@ else:
     echo -e "  ${BOLD}Config:${NC}               ${CONFIG}"
 
     # Accounting log size
-    local acct_log="/var/log/tacquito/accounting.log"
-    if [[ -f "$acct_log" ]]; then
+    if [[ -f "$ACCT_LOG" ]]; then
         local log_size
-        log_size=$(du -sh "$acct_log" 2>/dev/null | awk '{print $1}')
+        log_size=$(du -sh "$ACCT_LOG" 2>/dev/null | awk '{print $1}')
         local log_lines
-        log_lines=$(wc -l < "$acct_log" 2>/dev/null)
+        log_lines=$(wc -l < "$ACCT_LOG" 2>/dev/null)
         echo -e "  ${BOLD}Accounting log:${NC}       ${log_size} (${log_lines} entries)"
     fi
 
-    # Backup count
+    # Backup count. `ls` on a no-match glob exits 2; under `set -euo pipefail`
+    # that kills the pipeline *and* the script. `|| echo 0` absorbs the
+    # failure and keeps the count accurate (the matching-case output is the
+    # line count from `wc -l`).
     local backup_count
-    backup_count=$(ls -1 "${BACKUP_DIR}"/tacquito.yaml.* 2>/dev/null | wc -l)
+    backup_count=$(ls -1 "${BACKUP_DIR}"/tacquito.yaml.* 2>/dev/null | wc -l || echo 0)
     echo -e "  ${BOLD}Config backups:${NC}       ${backup_count}"
 
     # Prometheus metrics — auth stats. Respects the tacctl config metrics
@@ -6076,14 +6064,14 @@ if users_match:
             if not re.search(r'^bcrypt_' + re.escape(u) + r':', config, re.MULTILINE):
                 errors.append(f'User \"{u}\" has no bcrypt authenticator anchor')
 
-        # Check for DISABLED or empty hashes
+        # Check for disabled-marker or empty hashes
         for m in re.finditer(r'^bcrypt_(\w+):.*?hash:\s*(\S+)', config, re.MULTILINE | re.DOTALL):
             username = m.group(1)
             h = m.group(2)
             if h == 'REPLACE_ME':
                 errors.append(f'User \"{username}\" has placeholder hash (REPLACE_ME)')
-            elif h == 'DISABLED' or h == DISABLED_MARKER:
-                pass  # valid state (legacy or well-formed marker)
+            elif h == DISABLED_MARKER:
+                pass  # valid disabled-marker state
             elif len(h) < 20:
                 errors.append(f'User \"{username}\" has suspiciously short hash')
 
@@ -6505,7 +6493,7 @@ cmd_config_metrics() {
 # Manages an optional /etc/sudoers.d/tacctl drop-in that grants NOPASSWD
 # on /usr/local/bin/tacctl to a given group. Not installed by default --
 # operators opt in explicitly.
-SUDOERS_FILE="/etc/sudoers.d/tacctl"
+SUDOERS_FILE="${TACCTL_SUDOERS_FILE:-/etc/sudoers.d/tacctl}"
 
 cmd_config_sudoers() {
     local sub="${1:-}"
@@ -7533,48 +7521,6 @@ cmd_upgrade() {
 
     info "${SCRIPTS_UPDATED} file(s) updated."
 
-    # --- Seed default-scope marker if missing (upgrade hook) ---
-    # Pre-multi-scope installs don't have /etc/tacquito/default-scope.
-    # Seed it with the name of the existing sole scope so behavior is
-    # preserved — no forced rename (operators who want to align with the
-    # newer 'lab' convention can do so explicitly with 'tacctl scopes
-    # rename'). If the install already has multiple scopes and no marker,
-    # fall back to the first scope and warn; operators should pick one
-    # explicitly.
-    if [[ ! -f "$DEFAULT_SCOPE_FILE" ]]; then
-        local _existing_scopes _first_scope _scope_count
-        _existing_scopes=$(list_scopes 2>/dev/null || true)
-        _scope_count=$(printf '%s\n' "$_existing_scopes" | awk 'NF' | wc -l)
-        if [[ "$_scope_count" -eq 1 ]]; then
-            _first_scope=$(printf '%s\n' "$_existing_scopes" | awk 'NF' | head -1)
-            write_default_scope "$_first_scope"
-            info "Seeded default-scope marker: ${_first_scope}"
-        elif [[ "$_scope_count" -gt 1 ]]; then
-            _first_scope=$(printf '%s\n' "$_existing_scopes" | awk 'NF' | head -1)
-            write_default_scope "$_first_scope"
-            warn "Multiple scopes detected and no default-scope marker was set."
-            warn "Provisionally seeded default to '${_first_scope}'."
-            warn "Review with: tacctl scopes default     |   set with: tacctl scopes default <name>"
-        fi
-    fi
-
-    # --- Flatten multi-prefix secrets[] entries to one-entry-per-prefix ---
-    # Pre-flat installs have a single secrets[] entry per scope with a
-    # multi-line prefixes: block. Under the new emission, each prefix becomes
-    # its own entry so tacquito's slice-ordered first-match walk honors
-    # cross-scope specificity. Idempotent; no-op on already-flat files.
-    if [[ -r "$CONFIG" ]]; then
-        local _pre _post
-        _pre=$(sha256sum "$CONFIG" 2>/dev/null | awk '{print $1}')
-        flatten_secrets_if_needed
-        _post=$(sha256sum "$CONFIG" 2>/dev/null | awk '{print $1}')
-        if [[ "$_pre" != "$_post" ]]; then
-            chown tacquito:tacquito "$CONFIG"
-            info "Migrated tacquito.yaml to flat per-prefix secrets: entries."
-            SCRIPTS_UPDATED=$((SCRIPTS_UPDATED + 1))
-        fi
-    fi
-
     # --- Restart service (if binaries or service file changed) ---
     if [[ "$SKIP_BUILD" == "false" ]] || [[ "$SCRIPTS_UPDATED" -gt 0 ]]; then
         info "Restarting tacquito service..."
@@ -7801,9 +7747,6 @@ usage() {
     echo ""
 }
 
-COMMAND="${1:-}"
-shift || true
-
 # --- USER dispatcher ---
 cmd_user() {
     local subcmd="${1:-help}"
@@ -7855,58 +7798,64 @@ cmd_user() {
     esac
 }
 
-case "$COMMAND" in
-    install)
-        cmd_install "$@"
-        ;;
-    upgrade)
-        cmd_upgrade "$@"
-        ;;
-    uninstall)
-        cmd_uninstall "$@"
-        ;;
-    status)
-        preflight
-        cmd_status
-        ;;
-    user)
-        preflight
-        cmd_user "$@"
-        ;;
-    group)
-        preflight
-        cmd_group "$@"
-        ;;
-    config)
-        preflight
-        cmd_config "$@"
-        ;;
-    scopes)
-        preflight
-        cmd_scopes "$@"
-        ;;
-    log)
-        preflight
-        cmd_log "$@"
-        ;;
-    backup)
-        preflight
-        cmd_backup "$@"
-        ;;
-    hash)
-        cmd_hash "$@"
-        ;;
-    _completion-names)
-        # Hidden helper used by bash completion to enumerate scope, user, or
-        # group names. Completion runs in the user's shell where the config
-        # is unreadable (mode 0600); `sudo -n tacctl _completion-names <kind>`
-        # bridges that when a NOPASSWD sudoers rule for tacctl is installed.
-        # Not shown in `tacctl` help or the man page — deliberate low-surface
-        # interface, behavior subject to change.
-        preflight
-        case "${1:-}" in
-            scopes) list_scopes ;;
-            users)  python3 -c "
+# Dispatch runs only when invoked as a script. Sourced imports (tests) get
+# function definitions without triggering CLI dispatch.
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    COMMAND="${1:-}"
+    shift || true
+
+    case "$COMMAND" in
+        install)
+            cmd_install "$@"
+            ;;
+        upgrade)
+            cmd_upgrade "$@"
+            ;;
+        uninstall)
+            cmd_uninstall "$@"
+            ;;
+        status)
+            preflight
+            cmd_status
+            ;;
+        user)
+            preflight
+            cmd_user "$@"
+            ;;
+        group)
+            preflight
+            cmd_group "$@"
+            ;;
+        config)
+            preflight
+            cmd_config "$@"
+            ;;
+        scopes)
+            preflight
+            cmd_scopes "$@"
+            ;;
+        log)
+            preflight
+            cmd_log "$@"
+            ;;
+        backup)
+            preflight
+            cmd_backup "$@"
+            ;;
+        hash)
+            cmd_hash "$@"
+            ;;
+        _completion-names)
+            # Hidden helper used by bash completion to enumerate scope, user, or
+            # group names. Completion runs in the user's shell where the config
+            # is unreadable (mode 0600); `sudo -n tacctl _completion-names <kind>`
+            # bridges that when a NOPASSWD sudoers rule for tacctl is installed.
+            # Not shown in `tacctl` help or the man page — deliberate low-surface
+            # interface, behavior subject to change.
+            preflight
+            case "${1:-}" in
+                scopes) list_scopes ;;
+                users)  python3 -c "
 import yaml
 with open('$CONFIG') as f:
     d = yaml.safe_load(f) or {}
@@ -7914,18 +7863,19 @@ for u in (d.get('users') or []):
     n = u.get('name')
     if n: print(n)
 " 2>/dev/null ;;
-            groups) awk '/^# --- Groups ---/,/^# --- Users ---/ {
-                if (match($0, /^[a-z][a-zA-Z0-9_-]*: &/)) {
-                    sub(/:.*/, ""); print
-                }
-            }' "$CONFIG" 2>/dev/null ;;
-        esac
-        ;;
-    version|--version|-v)
-        echo "tacctl $(get_version)"
-        ;;
-    *)
-        usage
-        exit 1
-        ;;
-esac
+                groups) awk '/^# --- Groups ---/,/^# --- Users ---/ {
+                    if (match($0, /^[a-z][a-zA-Z0-9_-]*: &/)) {
+                        sub(/:.*/, ""); print
+                    }
+                }' "$CONFIG" 2>/dev/null ;;
+            esac
+            ;;
+        version|--version|-v)
+            echo "tacctl $(get_version)"
+            ;;
+        *)
+            usage
+            exit 1
+            ;;
+    esac
+fi
