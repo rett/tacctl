@@ -168,11 +168,24 @@ for u in (d.get('users') or []):
                         COMPREPLY=($(compgen -W "$(_tacctl_group_names)" -- "$cur"))
                         ;;
                 esac
+            elif [[ $pos -eq 5 && "$gsub" == "commands" ]]; then
+                # `group commands default <group> <permit|deny>`
+                # Slot layout: [offset+2]=commands [offset+3]=<sub> [offset+4]=<group>
+                if [[ "${words[offset + 3]}" == "default" ]]; then
+                    COMPREPLY=($(compgen -W "permit deny" -- "$cur"))
+                fi
+            elif [[ $pos -ge 6 && "$gsub" == "commands" && "${words[offset + 3]}" == "add" ]]; then
+                # `group commands add <group> <name> [--match <regex>]... [--action permit|deny]`
+                case "${words[cword - 1]}" in
+                    --action) COMPREPLY=($(compgen -W "permit deny" -- "$cur")) ;;
+                    --match)  COMPREPLY=() ;;  # free-form regex
+                    *)        COMPREPLY=($(compgen -W "--match --action" -- "$cur")) ;;
+                esac
             fi
             ;;
         config)
             if [[ $pos -eq 2 ]]; then
-                COMPREPLY=($(compgen -W "show cisco juniper validate loglevel listen metrics sudoers password-age bcrypt-cost password-min-length secret-min-length diff allow deny mgmt-acl branch" -- "$cur"))
+                COMPREPLY=($(compgen -W "show dump defaults get get-list cisco juniper validate loglevel listen metrics sudoers password-age bcrypt-cost password-min-length secret-min-length diff allow deny mgmt-acl branch" -- "$cur"))
             elif [[ $pos -eq 3 ]]; then
                 case "${words[offset + 2]}" in
                     loglevel)
@@ -195,6 +208,13 @@ for u in (d.get('users') or []):
                         ;;
                     cisco|juniper)
                         COMPREPLY=($(compgen -W "--scope" -- "$cur"))
+                        ;;
+                    get|get-list)
+                        # Dotted paths into the merged config. Offering the
+                        # shipped top-level keys covers the common case;
+                        # operators can still tab through nested paths by
+                        # typing the dot manually.
+                        COMPREPLY=($(compgen -W "bcrypt.cost password.max_age_days password.min_length secret.min_length scope.default mgmt_acl.names.cisco mgmt_acl.names.juniper mgmt_acl.permits privileges.operator commands.superuser commands.operator commands.readonly" -- "$cur"))
                         ;;
                 esac
             elif [[ $pos -eq 4 && ( "${words[offset + 2]}" == "cisco" || "${words[offset + 2]}" == "juniper" ) && "${words[offset + 3]}" == "--scope" ]]; then
