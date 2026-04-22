@@ -13,107 +13,699 @@
 #   ./tacctl.sh user disable <username>
 #   ./tacctl.sh user enable <username>
 #   ./tacctl.sh user verify <username>
-#   ./tacctl.sh user scopes <username> {list|add|remove|set|clear}
-#   ./tacctl.sh scopes {list|show|add|remove|rename|default}
-#   ./tacctl.sh scopes prefixes <name> {list|add|remove|clear}
-#   ./tacctl.sh scopes secret   <name> {show|set|generate}
+#   ./tacctl.sh user scope <username> {list|add|remove|set|clear}
+#   ./tacctl.sh scope {list|show|add|remove|rename|default}
+#   ./tacctl.sh scope prefixes <name> {list|add|remove|clear}
+#   ./tacctl.sh scope secret   <name> {show|set|generate}
 #   ./tacctl.sh config show
 #   ./tacctl.sh config cisco   [--scope <name>]
 #   ./tacctl.sh config juniper [--scope <name>]
 #
 set -euo pipefail
-if [[ $EUID -ne 0 && "${1:-}" != "hash" ]]; then
+
+# Base paths: overridable via env for tests and non-standard deployments.
+# Production defaults are unchanged.
+: "${TACCTL_ETC:=/etc/tacquito}"
+: "${TACCTL_LOG:=/var/log/tacquito}"
+: "${TACCTL_BIN:=/usr/local/bin}"
+: "${TACCTL_CONFIG:=${TACCTL_ETC}/tacquito.yaml}"
+
+# Re-exec under sudo only when invoked as a script. When sourced (e.g. by bats
+# tests), skip re-exec so tests can call functions directly as any user.
+# TACCTL_SKIP_SUDO=1 is a test-only escape for subprocess invocations from
+# integration tests; prod never sets it.
+if [[ "${BASH_SOURCE[0]}" == "$0" \
+    && "${TACCTL_SKIP_SUDO:-0}" != "1" \
+    && $EUID -ne 0 \
+    && "${1:-}" != "hash" ]]; then
     exec sudo "$0" "$@"
 fi
 umask 077
 
-CONFIG="/etc/tacquito/tacquito.yaml"
-BACKUP_DIR="/etc/tacquito/backups"
-PASSWORD_DATES_DIR="/etc/tacquito/backups/password-dates"
-ACCT_LOG="/var/log/tacquito/accounting.log"
+CONFIG="${TACCTL_CONFIG}"
+BACKUP_DIR="${TACCTL_ETC}/backups"
+PASSWORD_DATES_DIR="${TACCTL_ETC}/backups/password-dates"
+ACCT_LOG="${TACCTL_LOG}/accounting.log"
 PASSWORD_MAX_AGE_DAYS=90
-PASSWORD_MAX_AGE_FILE="/etc/tacquito/password-max-age"
 BCRYPT_COST=12
-BCRYPT_COST_FILE="/etc/tacquito/bcrypt-cost"
 PASSWORD_MIN_LENGTH=12
-PASSWORD_MIN_LENGTH_FILE="/etc/tacquito/password-min-length"
 SECRET_MIN_LENGTH=16
-SECRET_MIN_LENGTH_FILE="/etc/tacquito/secret-min-length"
-MGMT_ACL_FILE="/etc/tacquito/mgmt-acl.conf"
-MGMT_ACL_NAMES_FILE="/etc/tacquito/mgmt-acl-names.conf"
 CISCO_ACL_NAME_DEFAULT="VTY-ACL"
 JUNIPER_ACL_NAME_DEFAULT="MGMT-SSH-ACL"
-PRIVILEGE_FILE="/etc/tacquito/cisco-privileges.conf"
-DEFAULT_SCOPE_FILE="/etc/tacquito/default-scope"
 DEFAULT_SCOPE_FRESH="lab"  # name used on fresh installs; upgrades keep existing scope name
-CONFIG_DIR="/etc/tacquito"
-LOG_DIR="/var/log/tacquito"
+CONFIG_DIR="${TACCTL_ETC}"
+LOG_DIR="${TACCTL_LOG}"
 SERVICE_FILE="/etc/systemd/system/tacquito.service"
+
+# Unified tacctl config: canonical defaults live in conf_emit_defaults();
+# operator overrides live in this one on-disk file.
+TACCTL_OVERRIDES_FILE="${TACCTL_ETC}/tacctl.yaml"
 
 # --- System lifecycle constants ---
 GO_VERSION="1.26.2"
 TACQUITO_REPO="https://github.com/facebookincubator/tacquito.git"
 TACQUITO_SRC="/opt/tacquito-src"
-TACQUITO_BIN="/usr/local/bin/tacquito"
-HASHGEN_BIN="/usr/local/bin/tacquito-hashgen"
+TACQUITO_BIN="${TACCTL_BIN}/tacquito"
+HASHGEN_BIN="${TACCTL_BIN}/tacquito-hashgen"
 DEPLOY_DIR="/opt/tacctl"
 MANAGE_REPO="https://github.com/rett/tacctl.git"
 GO_BIN="/usr/local/go/bin/go"
 
-# Load custom password max age if set and readable. -r (not -f) so non-root
-# commands like `tacctl hash` don't fail when invoked by a user who can't
-# read the file; they just keep the default.
-if [[ -r "$PASSWORD_MAX_AGE_FILE" ]]; then
-    PASSWORD_MAX_AGE_DAYS=$(cat "$PASSWORD_MAX_AGE_FILE" 2>/dev/null || echo "$PASSWORD_MAX_AGE_DAYS")
+# =====================================================================
+#  Unified config (tacctl.yaml + in-script defaults)
+# =====================================================================
+#
+# Canonical defaults live in conf_emit_defaults() below — the single
+# source of truth for shipped tunables. Operator overrides live in
+# $TACCTL_OVERRIDES_FILE (default /etc/tacquito/tacctl.yaml); only keys
+# the operator has changed appear there.
+#
+# Reads deep-merge the two (scalars + lists override, maps union-merge),
+# cached once per invocation in $_TACCTL_CFG_CACHE (merged JSON string).
+# Writes mutate the overrides file and invalidate the cache. A write
+# equal to the default removes the key (revert-to-default); an overrides
+# file with no keys left is pruned.
+#
+#   conf_get <dotted.path> [fallback]           -> scalar, one line
+#   conf_get_list <dotted.path>                 -> newline-joined list
+#   conf_get_keys <dotted.path>                 -> keys of a map, one per line
+#   conf_set <dotted.path> <value>              -> scalar write
+#   conf_set_list <dotted.path> [newline-items] -> list write (items on stdin)
+#   conf_unset <dotted.path>                    -> delete key from overrides
+#   conf_emit_defaults                          -> canonical defaults as YAML
+#   conf_is_default <dotted.path> <value>       -> 0 if value equals default
+
+# --- Canonical defaults ---
+# The ONE source of truth for shipped tunables. Every entry here is also
+# validated by _CONF_SCHEMA below; add new tunables in both places.
+conf_emit_defaults() {
+    cat <<'YAML'
+# tacctl canonical defaults (emitted by `tacctl config defaults`).
+# DO NOT edit this output — it is generated by conf_emit_defaults() in
+# bin/tacctl.sh. Override any key in /etc/tacquito/tacctl.yaml.
+
+password:
+  max_age_days: 90        # warning threshold used by `tacctl status`
+  min_length: 12          # floor for interactively-typed passwords
+
+secret:
+  min_length: 16          # floor for operator-typed shared secrets
+
+bcrypt:
+  cost: 12                # applies to new hashes; range 10..14
+
+scope:
+  default: lab            # matches the fresh-install seed scope; override via `tacctl scope default <name>`
+
+mgmt_acl:
+  names:
+    cisco: VTY-ACL        # ACL name emitted by `tacctl config cisco`
+    juniper: MGMT-SSH-ACL # filter name emitted by `tacctl config juniper`
+  permits: []             # CIDRs for Cisco VTY-ACL + Juniper lo0 filter
+
+privileges:
+  # Per-group Cisco priv-exec lists. Shipped defaults move only
+  # verified priv-15 commands DOWN to lower-privilege groups; they
+  # never move commands UP from a lower default level (which would
+  # silently restrict readonly users). Override any list in tacctl.yaml.
+  operator:
+    # Shipped priv-15 read/diagnostic commands lowered to priv-7 so
+    # commands.operator's `^show .*$` permit is actually reachable for
+    # common read paths. No write/configure/debug included.
+    - show running-config
+    - show startup-config
+    - show tech-support
+    - show archive
+    - show access-list
+    - show ip route
+
+commands:
+  # Per-group per-command authorization rules. tacctl.yaml is the ONE
+  # source of truth; tacquito.yaml's per-group `commands:` block is
+  # regenerated from this section on every mutation, and
+  # `tacctl config juniper` renders the same rules as class-level
+  # allow-commands / deny-commands for Junos.
+  #
+  # Each rule: {name, action: permit|deny, match: [regex, ...]}
+  # A trailing name: "*" entry is the catch-all; its action is the
+  # group's default action.
+  #
+  # Ordered superuser → operator → readonly to match how a reader scans
+  # privilege from most-to-least permissive.
+  superuser:
+    # Priv 15 + RW-CLASS — unrestricted by policy.
+    - { name: "*", action: permit }
+  operator:
+    # Read-only + diagnostics; everything else (configure, write,
+    # debug, reload, etc.) hits the deny catch-all.
+    - { name: show,       action: permit, match: ["^show .*$"] }
+    - { name: ping,       action: permit, match: ["^ping( .*)?$"] }
+    - { name: traceroute, action: permit, match: ["^traceroute( .*)?$"] }
+    - { name: terminal,   action: permit, match: ["^terminal .*$"] }
+    - { name: "*",        action: deny }
+  readonly:
+    # Defense in depth on top of priv-1 / RO-CLASS. Permits are the
+    # read / diagnostic subset of operator's; `terminal` is omitted
+    # (terminal monitor can leak debug output across sessions).
+    - { name: show,       action: permit, match: ["^show .*$"] }
+    - { name: ping,       action: permit, match: ["^ping( .*)?$"] }
+    - { name: traceroute, action: permit, match: ["^traceroute( .*)?$"] }
+    - { name: "*",        action: deny }
+YAML
+}
+
+# --- Cache control ---------------------------------------------------------
+# _TACCTL_CFG_CACHE holds the merged defaults+overrides as a JSON string.
+# Empty = cold cache (next read re-merges). _conf_invalidate is called from
+# every write path so subsequent reads see the mutation.
+_TACCTL_CFG_CACHE=""
+_conf_invalidate() { _TACCTL_CFG_CACHE=""; }
+
+_conf_load_cache() {
+    [[ -n "$_TACCTL_CFG_CACHE" ]] && return 0
+    # One python invocation: load defaults (from conf_emit_defaults output
+    # on a throwaway fd) + overrides file, deep-merge, dump as JSON to
+    # stdout. The merged JSON stays small (<2 KB for typical installs).
+    _TACCTL_CFG_CACHE=$(python3 - <(conf_emit_defaults) "${TACCTL_OVERRIDES_FILE:-}" <<'PY'
+import json, os, sys, yaml
+defaults_path, overrides_path = sys.argv[1:3]
+def load(p):
+    if p and os.path.exists(p):
+        try:
+            with open(p) as f:
+                return yaml.safe_load(f) or {}
+        except Exception:
+            return {}
+    return {}
+def merge(a, b):
+    out = dict(a)
+    for k, v in (b or {}).items():
+        if isinstance(v, dict) and isinstance(out.get(k), dict):
+            out[k] = merge(out[k], v)
+        else:
+            out[k] = v
+    return out
+print(json.dumps(merge(load(defaults_path), load(overrides_path))))
+PY
+)
+}
+
+# Walk the cached merged view along a dotted path.
+# mode: get | get_list | get_keys.
+_conf_walk() {
+    local mode="$1" path="$2" fallback="${3:-}"
+    _conf_load_cache
+    python3 -c '
+import json, sys
+data = json.loads(sys.argv[1])
+mode, path, fallback = sys.argv[2], sys.argv[3], sys.argv[4]
+cur = data
+for part in (path.split(".") if path else []):
+    if isinstance(cur, dict) and part in cur:
+        cur = cur[part]
+    else:
+        cur = None
+        break
+if mode == "get":
+    if cur is None:
+        print(fallback)
+    elif isinstance(cur, bool):
+        print("true" if cur else "false")
+    elif isinstance(cur, (list, dict)):
+        pass  # caller should use get_list / get_keys
+    else:
+        print(cur)
+elif mode == "get_list":
+    if isinstance(cur, list):
+        for item in cur:
+            print(item)
+elif mode == "get_keys":
+    if isinstance(cur, dict):
+        for k in cur.keys():
+            print(k)
+' "$_TACCTL_CFG_CACHE" "$mode" "$path" "$fallback"
+}
+
+conf_get()      { _conf_walk get      "$1" "${2:-}"; }
+conf_get_list() { _conf_walk get_list "$1"; }
+conf_get_keys() { _conf_walk get_keys "$1"; }
+
+# --- Schema for write-time validation --------------------------------------
+# The ONE source of truth for what's legal in tacctl.yaml. Emitted as a
+# Python literal so both _conf_write (mutation-time) and
+# _conf_validate_overrides_file (scan-time) can import it unchanged.
+#
+# Types: int (with optional min/max), string (with optional regex pattern
+# + optional max_length), nullable_string (string or null), cidr_list,
+# cisco_cmd_list, string_scalar. The `pattern` is a Python regex.
+_conf_schema_py() {
+    cat <<'PY'
+SCHEMA = {
+    'password.max_age_days': {'type': 'int', 'min': 1},
+    'password.min_length':   {'type': 'int', 'min': 8,  'max': 64},
+    'secret.min_length':     {'type': 'int', 'min': 16, 'max': 128},
+    'bcrypt.cost':           {'type': 'int', 'min': 10, 'max': 14},
+    'scope.default':         {'type': 'nullable_string',
+                              'pattern': r'^[a-zA-Z][a-zA-Z0-9_-]{0,31}$'},
+    'mgmt_acl.names.cisco':  {'type': 'acl_name'},
+    'mgmt_acl.names.juniper':{'type': 'acl_name'},
+    'mgmt_acl.permits':      {'type': 'cidr_list'},
+}
+# Wildcard paths: each operator-created group gets its own entry under
+# privileges.<group>. The matcher below accepts any lowercase-start group
+# name and validates the value as a list of Cisco priv-exec commands.
+WILDCARDS = [
+    ('privileges.', {'type': 'cisco_cmd_list'}),
+    ('commands.',   {'type': 'command_rules'}),
+]
+
+import re
+
+CMD_RE = re.compile(r'^[a-zA-Z][a-zA-Z0-9 _-]+$')
+
+def schema_for(path):
+    if path in SCHEMA:
+        return SCHEMA[path]
+    for prefix, rule in WILDCARDS:
+        if path.startswith(prefix) and '.' not in path[len(prefix):]:
+            # Reject empty group names (just the prefix itself).
+            if path[len(prefix):]:
+                return rule
+    return None
+
+def validate(path, value, is_list):
+    """Return (ok: bool, msg: str). msg is empty on success."""
+    rule = schema_for(path)
+    if rule is None:
+        return False, f"unknown config key (typo? path must be one of the known tunables)"
+    t = rule['type']
+
+    if is_list and t not in ('cidr_list', 'cisco_cmd_list', 'command_rules'):
+        return False, f"{t} does not accept list input; drop 'set-list'"
+    if not is_list and t in ('cidr_list', 'cisco_cmd_list', 'command_rules'):
+        return False, f"{t} requires list input (use conf_set_list)"
+
+    if t == 'int':
+        if not isinstance(value, int) or isinstance(value, bool):
+            return False, f"must be an integer"
+        lo, hi = rule.get('min'), rule.get('max')
+        if lo is not None and value < lo:
+            return False, f"must be >= {lo}; got {value}"
+        if hi is not None and value > hi:
+            return False, f"must be <= {hi}; got {value}"
+        return True, ''
+    if t == 'nullable_string':
+        if value is None:
+            return True, ''
+        if not isinstance(value, str):
+            return False, f"must be a string or null"
+        p = rule.get('pattern')
+        if p and not re.match(p, value):
+            return False, f"does not match required pattern {p!r}"
+        return True, ''
+    if t == 'acl_name':
+        # Cisco/Juniper ACL name shape; mirrors validate_acl_name's rules.
+        if not isinstance(value, str):
+            return False, f"must be a string"
+        if not (1 <= len(value) <= 63):
+            return False, f"must be 1..63 chars; got {len(value)}"
+        if not re.match(r'^[A-Za-z][A-Za-z0-9_-]*$', value):
+            return False, f"must start with a letter and contain only [A-Za-z0-9_-]"
+        return True, ''
+    if t == 'cidr_list':
+        import ipaddress
+        if not isinstance(value, list):
+            return False, f"must be a list of CIDRs"
+        for i, item in enumerate(value):
+            if not isinstance(item, str):
+                return False, f"element {i}: must be a string"
+            try:
+                ipaddress.ip_network(item, strict=False)
+            except ValueError:
+                return False, f"element {i}: {item!r} is not a valid CIDR"
+        return True, ''
+    if t == 'cisco_cmd_list':
+        if not isinstance(value, list):
+            return False, f"must be a list of Cisco priv-exec command strings"
+        for i, item in enumerate(value):
+            if not isinstance(item, str):
+                return False, f"element {i}: must be a string"
+            if not CMD_RE.match(item):
+                return False, f"element {i}: {item!r} has invalid characters (letters/digits/spaces/_/- only)"
+            if len(item) > 64:
+                return False, f"element {i}: too long ({len(item)} chars; max 64)"
+        return True, ''
+    if t == 'command_rules':
+        # Per-group TACACS+ command authorization rules. Each entry is a
+        # dict {name, action, match?}; the tail must be a "*" catch-all
+        # whose action is the group's default. Regenerated into both
+        # tacquito.yaml (for tacquito's command-authz) and Junos class
+        # allow-commands / deny-commands.
+        if not isinstance(value, list):
+            return False, f"must be a list of rule dicts"
+        if not value:
+            return False, f"must not be empty (need at least a catch-all '*' rule)"
+        name_re = re.compile(r'^([A-Za-z][A-Za-z0-9_-]{0,31}|\*)$')
+        catchall_count = 0
+        for i, item in enumerate(value):
+            if not isinstance(item, dict):
+                return False, f"element {i}: must be a dict {{name, action, match?}}"
+            name = item.get('name')
+            action = item.get('action')
+            match = item.get('match', [])
+            if not isinstance(name, str) or not name_re.match(name):
+                return False, f"element {i}: name must be '*' or a letter-start token (got {name!r})"
+            if name == '*':
+                catchall_count += 1
+                if i != len(value) - 1:
+                    return False, f"element {i}: '*' catch-all must be the LAST rule"
+            if action not in ('permit', 'deny'):
+                return False, f"element {i}: action must be 'permit' or 'deny' (got {action!r})"
+            if match is None:
+                match = []
+            if not isinstance(match, list):
+                return False, f"element {i}: match must be a list of regex strings"
+            for j, m in enumerate(match):
+                if not isinstance(m, str):
+                    return False, f"element {i}: match[{j}]: must be a string"
+                try:
+                    re.compile(m)
+                except re.error as e:
+                    return False, f"element {i}: match[{j}]: invalid regex ({e})"
+            extra = set(item.keys()) - {'name', 'action', 'match'}
+            if extra:
+                return False, f"element {i}: unknown keys {sorted(extra)}"
+        if catchall_count != 1:
+            return False, f"must contain exactly one '*' catch-all rule (found {catchall_count})"
+        return True, ''
+    return False, f"unknown schema type {t!r}"
+PY
+}
+
+# --- Write path -----------------------------------------------------------
+# _conf_write: validate via schema, then load defaults (from
+# conf_emit_defaults) + overrides, mutate via mode/path + optional scalar
+# value or list-items-file, atomic-write. All value input arrives via argv
+# or a temp file path, never via stdin — stdin belongs to the heredoc.
+_conf_write() {
+    local mode="$1" path="$2" value="${3:-}" items_file="${4:-}"
+    mkdir -p "$(dirname "$TACCTL_OVERRIDES_FILE")"
+    # shellcheck disable=SC2016
+    python3 - <(conf_emit_defaults) "$TACCTL_OVERRIDES_FILE" "$mode" "$path" "$value" "$items_file" <<PY
+$(_conf_schema_py)
+
+import os, sys, tempfile, yaml
+defaults_path, overrides_path, mode, path, value, items_file = sys.argv[1:7]
+
+def load(p):
+    if p and os.path.exists(p):
+        try:
+            with open(p) as f:
+                return yaml.safe_load(f) or {}
+        except Exception:
+            return {}
+    return {}
+
+def get_nested(d, path):
+    cur = d
+    for part in path.split('.'):
+        if not isinstance(cur, dict) or part not in cur:
+            return None
+        cur = cur[part]
+    return cur
+
+def set_nested(d, path, val):
+    parts = path.split('.')
+    cur = d
+    for p in parts[:-1]:
+        if not isinstance(cur.get(p), dict):
+            cur[p] = {}
+        cur = cur[p]
+    cur[parts[-1]] = val
+
+def unset_nested(d, path):
+    parts = path.split('.')
+    chain = [d]
+    cur = d
+    for p in parts[:-1]:
+        if not isinstance(cur, dict) or p not in cur:
+            return
+        cur = cur[p]
+        chain.append(cur)
+    if isinstance(cur, dict) and parts[-1] in cur:
+        del cur[parts[-1]]
+    # Prune empty parent maps from the leaf upward.
+    for i in range(len(parts) - 2, -1, -1):
+        parent = chain[i]
+        key = parts[i]
+        if isinstance(parent.get(key), dict) and not parent[key]:
+            del parent[key]
+
+def coerce_scalar(s):
+    # value comes in as a string (argv). Parse as int/bool/null when it
+    # looks like one; else keep as-is. Empty string is preserved.
+    if s == '':
+        return ''
+    try:
+        return int(s)
+    except ValueError:
+        pass
+    if '.' in s:
+        try:
+            return float(s)
+        except ValueError:
+            pass
+    low = s.lower()
+    if low == 'true':
+        return True
+    if low == 'false':
+        return False
+    if low == 'null':
+        return None
+    return s
+
+# --- Validate BEFORE loading+mutating anything. ---
+if mode == 'set':
+    parsed = coerce_scalar(value)
+    ok, msg = validate(path, parsed, is_list=False)
+    if not ok:
+        print(f"tacctl config: {path}: {msg}", file=sys.stderr)
+        sys.exit(1)
+elif mode == 'set_list':
+    items = []
+    if items_file and os.path.isfile(items_file):
+        with open(items_file) as f:
+            items = [line.rstrip('\n') for line in f if line.strip()]
+    ok, msg = validate(path, items, is_list=True)
+    if not ok:
+        print(f"tacctl config: {path}: {msg}", file=sys.stderr)
+        sys.exit(1)
+elif mode == 'set_json':
+    # value is a JSON payload (scalar, list, or dict). Parse + validate
+    # as-is; the schema entry for <path> decides what's acceptable.
+    import json
+    try:
+        parsed = json.loads(value) if value else None
+    except json.JSONDecodeError as e:
+        print(f"tacctl config: {path}: invalid JSON payload ({e})", file=sys.stderr)
+        sys.exit(1)
+    ok, msg = validate(path, parsed, is_list=isinstance(parsed, list))
+    if not ok:
+        print(f"tacctl config: {path}: {msg}", file=sys.stderr)
+        sys.exit(1)
+elif mode == 'unset':
+    pass  # unsetting an unknown key is a no-op, not an error.
+else:
+    print(f"_conf_write: bad mode {mode!r}", file=sys.stderr)
+    sys.exit(2)
+
+defaults = load(defaults_path)
+overrides = load(overrides_path)
+
+if mode == 'set':
+    default_val = get_nested(defaults, path)
+    if default_val == parsed:
+        unset_nested(overrides, path)
+    else:
+        set_nested(overrides, path, parsed)
+elif mode == 'set_list':
+    default_val = get_nested(defaults, path)
+    if default_val == items:
+        unset_nested(overrides, path)
+    else:
+        set_nested(overrides, path, items)
+elif mode == 'set_json':
+    default_val = get_nested(defaults, path)
+    if default_val == parsed:
+        unset_nested(overrides, path)
+    else:
+        set_nested(overrides, path, parsed)
+elif mode == 'unset':
+    unset_nested(overrides, path)
+
+# Empty overrides dict -> remove the file entirely (no-overrides posture).
+if not overrides:
+    try:
+        os.unlink(overrides_path)
+    except FileNotFoundError:
+        pass
+    sys.exit(0)
+
+tmp = tempfile.NamedTemporaryFile('w', dir=os.path.dirname(overrides_path) or '.', delete=False)
+tmp.write("# tacctl overrides. Hand-edits are fine as long as the YAML stays\n")
+tmp.write("# valid. View effective posture: 'tacctl config dump'.\n\n")
+yaml.safe_dump(overrides, tmp, default_flow_style=False, sort_keys=False)
+tmp.close()
+os.chmod(tmp.name, 0o640)
+os.rename(tmp.name, overrides_path)
+PY
+    local rc=$?
+    # Ownership matches tacquito.yaml when we're installed; silent-fail in tests.
+    chown tacquito:tacquito "$TACCTL_OVERRIDES_FILE" 2>/dev/null || true
+    _conf_invalidate
+    return $rc
+}
+
+conf_set()      { _conf_write set      "$1" "${2:-}"; }
+conf_set_json() { _conf_write set_json "$1" "${2:-}"; }  # value is a JSON payload
+conf_unset()    { _conf_write unset    "$1"; }
+
+# Return 0 if the overrides file explicitly sets <path>; non-zero if the
+# path is entirely default. Useful for UIs that want to show "Source:
+# explicit" vs "Source: default" without comparing values.
+conf_has_override() {
+    local path="$1"
+    [[ -f "$TACCTL_OVERRIDES_FILE" ]] || return 1
+    python3 - "$TACCTL_OVERRIDES_FILE" "$path" <<'PY'
+import os, sys, yaml
+with open(sys.argv[1]) as f:
+    d = yaml.safe_load(f) or {}
+cur = d
+for part in sys.argv[2].split('.'):
+    if isinstance(cur, dict) and part in cur:
+        cur = cur[part]
+    else:
+        sys.exit(1)
+sys.exit(0)
+PY
+}
+
+# Emit the merged-view value at <path> as JSON. For structured paths
+# (e.g. commands.<group> is a list of rule dicts); callers feed the
+# result back through conf_set_json after editing.
+conf_get_json() {
+    local path="$1"
+    _conf_load_cache
+    python3 -c '
+import json, sys
+data = json.loads(sys.argv[1])
+cur = data
+for part in sys.argv[2].split("."):
+    if isinstance(cur, dict) and part in cur:
+        cur = cur[part]
+    else:
+        cur = None
+        break
+print(json.dumps(cur))
+' "$_TACCTL_CFG_CACHE" "$path"
+}
+
+# Schema-walk the on-disk overrides file (not the merged view). Emits one
+# "<path>: <reason>" line per problem to stdout; silent when clean. Uses
+# the shared schema emitted by _conf_schema_py so it stays lock-step with
+# the write-time validator.
+_conf_validate_overrides_file() {
+    [[ -f "$TACCTL_OVERRIDES_FILE" ]] || return 0
+    # shellcheck disable=SC2016
+    python3 - "$TACCTL_OVERRIDES_FILE" <<PY
+$(_conf_schema_py)
+
+import sys, yaml
+overrides_path = sys.argv[1]
+try:
+    with open(overrides_path) as f:
+        data = yaml.safe_load(f) or {}
+except Exception as e:
+    print(f"could not parse {overrides_path}: {e}")
+    sys.exit(0)
+
+# Walk every leaf (scalar or list) in the overrides and run it through
+# the schema. Maps aren't themselves validated — only their leaves.
+def walk(node, prefix=''):
+    if isinstance(node, dict):
+        for k, v in node.items():
+            child = f"{prefix}.{k}" if prefix else k
+            if isinstance(v, dict):
+                yield from walk(v, child)
+            else:
+                yield child, v
+    # Top-level non-dict shouldn't happen for tacctl.yaml; ignore.
+
+for path, value in walk(data):
+    # Lists come through as the raw value (not split into elements).
+    is_list = isinstance(value, list)
+    ok, msg = validate(path, value, is_list=is_list)
+    if not ok:
+        print(f"{path}: {msg}")
+PY
+}
+# Items arrive on stdin, one per line. Callers pass a list via `<<< "$list"`
+# or a heredoc. Whitespace-only lines are dropped. We funnel stdin into a
+# temp file and pass the path to python so the python script's own heredoc
+# doesn't contend with stdin.
+conf_set_list() {
+    local path="$1" tmp
+    tmp=$(mktemp)
+    cat > "$tmp"
+    _conf_write set_list "$path" "" "$tmp"
+    local rc=$?
+    rm -f "$tmp"
+    return $rc
+}
+
+# --- Resolve tunable scalars from the unified config ---
+# conf_get returns the merged (defaults + overrides) value, or the $2
+# fallback when either file is missing. The clamp-to-range checks below
+# handle garbage in the overrides file (hand-edited out of range, etc.).
+PASSWORD_MAX_AGE_DAYS=$(conf_get password.max_age_days 90)
+if ! [[ "$PASSWORD_MAX_AGE_DAYS" =~ ^[0-9]+$ ]] || [[ "$PASSWORD_MAX_AGE_DAYS" -lt 1 ]]; then
+    PASSWORD_MAX_AGE_DAYS=90
 fi
 
-# Load custom bcrypt cost. Default 12 follows OWASP 2025 guidance (≈300ms
-# on modern CPUs). Existing hashes at lower cost continue to verify —
-# bcrypt encodes cost in the hash itself. Clamp to the safe range [10,14]
-# to avoid accidental DoS or downgrade.
-if [[ -r "$BCRYPT_COST_FILE" ]]; then
-    BCRYPT_COST=$(cat "$BCRYPT_COST_FILE" 2>/dev/null || echo "$BCRYPT_COST")
-fi
+# Bcrypt cost: default 12 follows OWASP 2025 guidance (~300ms on modern CPUs).
+# Existing hashes at lower cost keep verifying — bcrypt encodes cost in the
+# hash itself. Clamp to [10,14] to avoid accidental DoS or downgrade.
+BCRYPT_COST=$(conf_get bcrypt.cost 12)
 if ! [[ "$BCRYPT_COST" =~ ^[0-9]+$ ]] || [[ "$BCRYPT_COST" -lt 10 || "$BCRYPT_COST" -gt 14 ]]; then
     BCRYPT_COST=12
 fi
 
-# Load custom password minimum length. Default 12 follows OWASP 2025
-# guidance. Clamp to [8, 64]: 8 is the NIST 800-63 floor, 64 is the
-# practical ceiling for memorable input.
-if [[ -r "$PASSWORD_MIN_LENGTH_FILE" ]]; then
-    PASSWORD_MIN_LENGTH=$(cat "$PASSWORD_MIN_LENGTH_FILE" 2>/dev/null || echo "$PASSWORD_MIN_LENGTH")
-fi
+# Interactive password floor: default 12 (OWASP 2025). Clamp to [8, 64] —
+# 8 is NIST 800-63's floor, 64 is a practical ceiling for typed input.
+PASSWORD_MIN_LENGTH=$(conf_get password.min_length 12)
 if ! [[ "$PASSWORD_MIN_LENGTH" =~ ^[0-9]+$ ]] || [[ "$PASSWORD_MIN_LENGTH" -lt 8 || "$PASSWORD_MIN_LENGTH" -gt 64 ]]; then
     PASSWORD_MIN_LENGTH=12
 fi
 
-# Load custom shared-secret minimum length. Default 16 follows Cisco's
-# TACACS+ best-practice guidance. Clamp to [16, 128]: shorter than 16
-# would silently downgrade Cisco's recommendation, longer than 128 is
-# impractical and risks shell-quoting issues on devices.
-if [[ -r "$SECRET_MIN_LENGTH_FILE" ]]; then
-    SECRET_MIN_LENGTH=$(cat "$SECRET_MIN_LENGTH_FILE" 2>/dev/null || echo "$SECRET_MIN_LENGTH")
-fi
+# Shared-secret floor: default 16 (Cisco TACACS+ best practice). Clamp
+# to [16, 128] — shorter silently downgrades Cisco's guidance, longer
+# risks shell-quoting issues on devices.
+SECRET_MIN_LENGTH=$(conf_get secret.min_length 16)
 if ! [[ "$SECRET_MIN_LENGTH" =~ ^[0-9]+$ ]] || [[ "$SECRET_MIN_LENGTH" -lt 16 || "$SECRET_MIN_LENGTH" -gt 128 ]]; then
     SECRET_MIN_LENGTH=16
 fi
 
 # --- Disabled-user hash marker ---
-# For disabled users we write a well-formed but unverifiable bcrypt hash
-# rather than the legacy literal "DISABLED". The marker is '$2b$12$' +
-# 53 '.' chars (all-zero salt + all-zero digest) — valid bcrypt
-# structure that no real password can match. Stored hex-encoded.
-#
-# Legacy "DISABLED" values are still recognized on read (see is_disabled_hash).
+# Well-formed but unverifiable bcrypt hash: '$2b$12$' + 53 '.' chars
+# (all-zero salt + all-zero digest). Valid bcrypt structure so tacquito
+# parses it, but no real password can match. Stored hex-encoded.
 # Hex of "$2b$12$" + "." × 53:
 DISABLED_MARKER_HEX="24326224313224"
 DISABLED_MARKER_HEX+="2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e"
 DISABLED_MARKER_HEX+="2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e"
 
-# Return 0 if $1 is a disabled-user hash (legacy or new marker).
 is_disabled_hash() {
-    [[ "$1" == "DISABLED" || "$1" == "$DISABLED_MARKER_HEX" ]]
+    [[ "$1" == "$DISABLED_MARKER_HEX" ]]
 }
 
 # --- Validate a regex pattern ---
@@ -153,88 +745,52 @@ validate_priv_command_string() {
 }
 
 # --- Read all `<group>|<cmd>` mappings ---
-# Strips comments and blanks. Missing file yields no output.
+# Emits one 'group|cmd' line per mapping. Backed by privileges.<group> lists
+# under the unified config. Missing key / empty map yields no output.
 read_all_privileges() {
-    [[ -r "$PRIVILEGE_FILE" ]] || return 0
-    awk '
-        { sub(/#.*/, "") }
-        { gsub(/^[[:space:]]+|[[:space:]]+$/, "") }
-        NF { print }
-    ' "$PRIVILEGE_FILE"
+    local groups group
+    groups=$(conf_get_keys privileges)
+    while IFS= read -r group; do
+        [[ -z "$group" ]] && continue
+        while IFS= read -r cmd; do
+            [[ -z "$cmd" ]] && continue
+            printf '%s|%s\n' "$group" "$cmd"
+        done < <(conf_get_list "privileges.${group}")
+    done <<< "$groups"
 }
 
 # --- Read the priv-exec command list for one group ---
 # Emits one cmd per line. Empty output = group has no explicit mappings
 # (caller decides whether to fall back to a default set or emit nothing).
 read_group_privileges() {
-    local group="$1"
-    read_all_privileges | awk -F'|' -v g="$group" '$1 == g { print substr($0, length(g) + 2) }'
+    conf_get_list "privileges.$1"
 }
 
 # --- Default priv-exec command set per built-in group ---
-# Conservative: only the move-DOWN cases (priv-15 commands moved to a
-# lower level so operator-class users can run them). Move-UP cases
-# (e.g. ping at default priv 1 → priv 7) are deliberately omitted —
-# they would silently restrict commands from lower-priv groups.
+# Pulled from conf_emit_defaults() (the single source of truth for shipped
+# defaults), not hardcoded here. Conservative: only move-DOWN cases
+# (priv-15 commands pushed to a lower level so operator-class users can
+# run them). Move-UP cases (e.g. ping at default priv 1 → priv 7) are
+# deliberately omitted — they would silently restrict commands from
+# lower-priv groups. Unknown / custom groups → empty list.
 default_privileges_for_group() {
     local group="$1"
-    case "$group" in
-        readonly)
-            # Priv 1 is the floor; nothing legitimately moves into it.
-            echo ""
-            ;;
-        operator)
-            # Move show-config family DOWN from priv 15 to priv 7 so
-            # operators can read state without superuser rights.
-            printf '%s\n' \
-                "show running-config" \
-                "show startup-config"
-            ;;
-        superuser)
-            # Priv 15 is the ceiling; all commands available by default.
-            echo ""
-            ;;
-        *)
-            echo ""
-            ;;
-    esac
+    python3 - <(conf_emit_defaults) "$group" <<'PY'
+import sys, yaml
+with open(sys.argv[1]) as f:
+    d = yaml.safe_load(f) or {}
+for item in ((d.get('privileges') or {}).get(sys.argv[2], []) or []):
+    print(item)
+PY
 }
 
-# --- Append/replace a group's full priv-exec list ---
+# --- Replace a group's full priv-exec list ---
 # new_list is a newline-separated set of command strings (or empty to
-# wipe the group). Atomic replacement of just the lines for $group.
+# wipe the group). Writes to privileges.<group> in tacctl.yaml.
 write_group_privileges() {
     local group="$1"
     local new_list="$2"
-    mkdir -p "$(dirname "$PRIVILEGE_FILE")"
-    local tmp
-    tmp=$(mktemp)
-    # 1. Carry forward header + every line that is NOT for this group.
-    if [[ -f "$PRIVILEGE_FILE" ]]; then
-        awk -F'|' -v g="$group" '
-            /^[[:space:]]*#/ { print; next }
-            /^[[:space:]]*$/ { print; next }
-            $1 == g { next }
-            { print }
-        ' "$PRIVILEGE_FILE" > "$tmp"
-    else
-        {
-            echo "# tacctl-managed Cisco priv-exec command mappings."
-            echo "# Format: <group>|<command>   (one mapping per line)"
-            echo "# Edit via: tacctl group privilege <list|add|remove|clear|seed>"
-        } > "$tmp"
-    fi
-    # 2. Append the new lines (if any) for this group. `local line` so we
-    # don't clobber a caller's `cmd`, etc.
-    if [[ -n "$new_list" ]]; then
-        local line
-        while IFS= read -r line; do
-            [[ -z "$line" ]] && continue
-            echo "${group}|${line}" >> "$tmp"
-        done <<< "$new_list"
-    fi
-    mv "$tmp" "$PRIVILEGE_FILE"
-    chmod 644 "$PRIVILEGE_FILE"
+    printf '%s\n' "$new_list" | conf_set_list "privileges.${group}"
 }
 
 # --- Validate a TACACS+ command name (the cmd= value sent by the device) ---
@@ -251,50 +807,37 @@ validate_command_name() {
     fi
 }
 
-# --- Read a group's command rules from the YAML ---
-# Emits one rule per line as `name|action|match1,match2,...`. A trailing
-# `*` catchall (always present when commands: exists) is included.
-# Empty output = group has no commands: block (= unrestricted).
+# --- Read a group's command rules from tacctl config ---
+# Source of truth is tacctl.yaml's commands.<group> (merged over
+# conf_emit_defaults). Emits one rule per line as
+# `name|action|match1,match2,...` so existing callers (cmd_config_cisco,
+# cmd_config_juniper, cmd_group_commands) don't need to change their
+# parsing. Empty output = group has no rules at all.
 read_group_commands() {
     local group="$1"
-    python3 - "$CONFIG" "$group" <<'PY' 2>/dev/null
-import re, sys
-cfg = open(sys.argv[1]).read()
-group = sys.argv[2]
-# Bound the group block: from "<group>: &<group>\n" to the next blank
-# line or the next top-level YAML key.
-m = re.search(
-    r'^' + re.escape(group) + r': &' + re.escape(group) + r'\n((?:[ \t].*\n)+)',
-    cfg, re.MULTILINE,
-)
-if not m:
+    local json
+    json=$(conf_get_json "commands.${group}")
+    [[ "$json" == "null" ]] && return 0
+    python3 -c '
+import json, sys
+rules = json.loads(sys.argv[1])
+if not isinstance(rules, list):
     sys.exit(0)
-body = m.group(1)
-# Find the commands: block (indented under the group).
-cm = re.search(r'^  commands:\n((?:    -.*\n(?:      .*\n)*)+)', body, re.MULTILINE)
-if not cm:
-    sys.exit(0)
-rules_text = cm.group(1)
-# Split into per-rule chunks. Each rule starts with "    - name:" .
-chunks = re.findall(
-    r'    - name:\s*(?P<name>"[^"]*"|\S+)\s*\n'
-    r'(?:      match:\s*\[(?P<match>[^\]]*)\]\s*\n)?'
-    r'      action:\s*\*action_(?P<action>permit|deny)\s*\n',
-    rules_text,
-)
-for name, match, action in chunks:
-    name = name.strip().strip('"')
-    matches = []
-    if match.strip():
-        matches = [m.strip().strip('"') for m in re.findall(r'"([^"]+)"', match)]
-    print(f"{name}|{action}|{','.join(matches)}")
-PY
+for r in rules:
+    if not isinstance(r, dict):
+        continue
+    name = r.get("name", "")
+    action = r.get("action", "permit")
+    matches = r.get("match") or []
+    joined = ",".join(matches)
+    print(f"{name}|{action}|{joined}")
+' "$json"
 }
 
 # --- Read a group's default action ---
-# Encoded as the action of the trailing `name: "*"` rule. If there's no
-# commands: block at all, the effective default is "permit" (= no
-# restriction = current behavior).
+# The action of the trailing `name: "*"` rule. With defaults shipping a
+# catch-all for every built-in group, this effectively always returns a
+# meaningful value. Custom groups without a commands entry → "permit".
 read_group_default_action() {
     local group="$1"
     local last_rule
@@ -305,19 +848,159 @@ read_group_default_action() {
     fi
     local last_name="${last_rule%%|*}"
     if [[ "$last_name" == "*" ]]; then
-        # action is the second |-separated field
         echo "$last_rule" | awk -F'|' '{print $2}'
     else
-        # Group has rules but no catchall — shouldn't happen if writes
-        # go through tacctl, but treat as "deny" since tacquito returns
+        # Group has rules but no catch-all — shouldn't happen under the
+        # schema validator, but treat as "deny" since tacquito returns
         # FAIL on no-match.
         echo "deny"
     fi
 }
 
-# --- Return 0 if any group in the YAML has a commands: block ---
+# --- Return 0 if any group has commands rules (always true under defaults) ---
+# Built-in groups all ship with defaults, so this is effectively always
+# true. Retained as a predicate for callers that want the explicit check.
 any_group_has_commands() {
-    grep -q "^  commands:" "$CONFIG" 2>/dev/null
+    local keys
+    keys=$(conf_get_keys commands)
+    [[ -n "$keys" ]]
+}
+
+# --- One-shot: ingest existing tacquito.yaml `commands:` blocks into tacctl.yaml ---
+# On upgrade from the pre-unified-commands model, tacquito.yaml is the
+# source of operator customizations. We scrape each group's commands: block,
+# compare to the shipped default, and write an override in tacctl.yaml when
+# the scraped rules diverge. Silent no-op when scrape matches the default
+# (no override is written — defaults already produce the right state).
+# Idempotent: a second run scrapes the same (now-regenerated) blocks and
+# sees no divergence.
+conf_migrate_command_rules() {
+    [[ -r "$CONFIG" ]] || return 0
+    _conf_load_cache
+    # One python invocation emits "<group>\t<rules-json>" per group whose
+    # scraped commands: block differs from the current merged view. Silent
+    # when everything already matches.
+    local line
+    while IFS=$'\t' read -r group rules_json; do
+        [[ -z "$group" ]] && continue
+        conf_set_json "commands.${group}" "$rules_json"
+        info "Migrated tacquito.yaml commands: block for group '${group}' → commands.${group}"
+    done < <(python3 - "$CONFIG" "$_TACCTL_CFG_CACHE" <<'PY'
+import json, re, sys
+cfg = open(sys.argv[1]).read()
+merged = json.loads(sys.argv[2])
+current_commands = (merged.get('commands') or {})
+for gm in re.finditer(
+    r'^(\w+): &\1\n(?:[ \t].*\n)+',
+    cfg, re.MULTILINE,
+):
+    block = gm.group(0)
+    group = gm.group(1)
+    cm = re.search(r'^  commands:\n((?:    -.*\n(?:      .*\n)*)+)', block, re.MULTILINE)
+    if not cm:
+        continue
+    rules_text = cm.group(1)
+    rules = []
+    for rm in re.finditer(
+        r'    - name:\s*(?P<name>"[^"]*"|\S+)\s*\n'
+        r'(?:      match:\s*\[(?P<match>[^\]]*)\]\s*\n)?'
+        r'      action:\s*\*action_(?P<action>permit|deny)\s*\n',
+        rules_text,
+    ):
+        name = rm.group('name').strip().strip('"')
+        matches_str = (rm.group('match') or '').strip()
+        matches = [m.strip().strip('"') for m in re.findall(r'"([^"]+)"', matches_str)] if matches_str else []
+        rule = {'name': name, 'action': rm.group('action')}
+        if matches:
+            rule['match'] = matches
+        rules.append(rule)
+    if rules and current_commands.get(group) != rules:
+        print(f"{group}\t{json.dumps(rules)}")
+PY
+)
+}
+
+# --- Regenerate tacquito.yaml's per-group `commands:` blocks from tacctl ---
+# tacctl.yaml (merged with defaults) is the single source of truth. This
+# function rewrites every group's commands: block in tacquito.yaml to match.
+# Called after every command-rule mutation and from install/upgrade.
+# Idempotent: a second call with the same tacctl state is a no-op.
+#
+# If `$1` is given, only that group's block is regenerated (cheaper).
+# With no argument, every group present in tacctl.yaml OR tacquito.yaml
+# is synced.
+regenerate_tacquito_commands() {
+    local only_group="${1:-}"
+    _conf_load_cache
+    python3 - "$CONFIG" "$_TACCTL_CFG_CACHE" "$only_group" <<'PY'
+import json, re, sys, tempfile, os
+cfg_path, merged_json, only_group = sys.argv[1], sys.argv[2], sys.argv[3]
+if not os.path.isfile(cfg_path):
+    sys.exit(0)
+cfg = open(cfg_path).read()
+merged = json.loads(merged_json)
+commands = merged.get('commands') or {}
+
+def render_block(rules):
+    """Emit a tacquito-shaped `  commands:` block for a rule list."""
+    if not rules:
+        return ""
+    lines = ["  commands:\n"]
+    for r in rules:
+        name = r.get("name", "")
+        action = r.get("action", "permit")
+        match = r.get("match") or []
+        lines.append(f'    - name: "{name}"\n')
+        if match:
+            quoted = ", ".join(f'"{m}"' for m in match)
+            lines.append(f"      match: [{quoted}]\n")
+        lines.append(f"      action: *action_{action}\n")
+    return "".join(lines)
+
+def splice_group(cfg, group, new_block):
+    """Replace (or insert/delete) the `commands:` section of <group>."""
+    # Match from "<group>: &<group>\n" to the line before "  accounter:"
+    # (every tacctl-managed group has exactly one accounter: line at the
+    # bottom — that's the block's terminal sentinel).
+    hdr = re.escape(group) + r': &' + re.escape(group)
+    m = re.search(
+        r'(^' + hdr + r'\n(?:[ \t].*\n)*?)'
+        r'(^  commands:\n(?:    -.*\n(?:      .*\n)*)+)?'
+        r'(^  accounter:.*\n)',
+        cfg, re.MULTILINE,
+    )
+    if not m:
+        return cfg  # group absent or shape unexpected; leave alone
+    pre, _old_commands, accounter = m.group(1), m.group(2) or "", m.group(3)
+    return cfg[:m.start()] + pre + new_block + accounter + cfg[m.end():]
+
+# Figure out which groups to sync. Under -g (only_group) mode, just that
+# one. Otherwise walk every group that either has a tacctl rule list OR
+# has a commands: block in tacquito.yaml today.
+if only_group:
+    groups_to_sync = [only_group]
+else:
+    tacquito_groups = set(re.findall(r'^(\w+): &\1\n  name: \1\n', cfg, re.MULTILINE))
+    groups_to_sync = sorted(set(commands.keys()) | tacquito_groups)
+
+new_cfg = cfg
+for g in groups_to_sync:
+    rules = commands.get(g) or []
+    new_cfg = splice_group(new_cfg, g, render_block(rules))
+
+# Normalize runs of blank lines the splicing might leave behind.
+new_cfg = re.sub(r'\n{3,}', '\n\n', new_cfg)
+
+if new_cfg == cfg:
+    sys.exit(0)
+
+tmp = tempfile.NamedTemporaryFile('w', dir=os.path.dirname(cfg_path) or '.', delete=False)
+tmp.write(new_cfg)
+tmp.close()
+os.chmod(tmp.name, 0o640)
+os.rename(tmp.name, cfg_path)
+PY
+    chown tacquito:tacquito "$CONFIG" 2>/dev/null || true
 }
 
 # --- List all group names defined in the YAML ---
@@ -356,75 +1039,40 @@ if vm:
 " "$CONFIG" "$group"
 }
 
-# --- Write/replace a group's commands: block ---
-# rules_arg format: pipe-separated rules joined with newlines, each rule
-# `name|action|match1,match2,...`. An empty rules_arg removes the
-# commands: section entirely.
+# --- Write/replace a group's command rules in tacctl.yaml ---
+# rules_arg format (kept for backward compat with callers): pipe-separated
+# rules joined with newlines, each rule `name|action|match1,match2,...`.
+# An empty rules_arg means "no overrides for this group" — if the group
+# has no defaults either, the commands: block disappears from tacquito.yaml
+# on the next regenerate.
 write_group_commands() {
     local group="$1"
     local rules_arg="$2"
-    python3 - "$CONFIG" "$group" "$rules_arg" <<'PY'
-import re, sys, tempfile, os
-cfg_path, group, rules_arg = sys.argv[1], sys.argv[2], sys.argv[3]
-cfg = open(cfg_path).read()
-
-def render_rules(text):
-    if not text.strip():
-        return ""
-    out = ["  commands:\n"]
-    for line in text.split("\n"):
-        if not line.strip():
-            continue
-        parts = line.split("|", 2)
-        name = parts[0]
-        action = parts[1] if len(parts) > 1 else "permit"
-        matches = parts[2].split(",") if len(parts) > 2 and parts[2] else []
-        out.append(f'    - name: "{name}"\n')
-        if matches:
-            quoted = ", ".join(f'"{m}"' for m in matches if m)
-            out.append(f"      match: [{quoted}]\n")
-        out.append(f"      action: *action_{action}\n")
-    return "".join(out)
-
-new_block = render_rules(rules_arg)
-
-# Locate group body. Match "<group>: &<group>\n" followed by indented
-# lines until a non-indented line (or EOF).
-gpat = re.compile(
-    r'(^' + re.escape(group) + r': &' + re.escape(group) + r'\n)((?:[ \t].*\n)+)',
-    re.MULTILINE,
-)
-gm = gpat.search(cfg)
-if not gm:
-    sys.stderr.write(f"group '{group}' not found\n")
-    sys.exit(1)
-header, body = gm.group(1), gm.group(2)
-
-# Strip any existing commands: block (and its indented children).
-body_no_cmd = re.sub(
-    r'^  commands:\n(?:    -.*\n(?:      .*\n)*)+',
-    "", body, flags=re.MULTILINE,
-)
-
-# Insert new commands: block just before the accounter line, or at end
-# of body if no accounter.
-if new_block:
-    if re.search(r'^  accounter:', body_no_cmd, re.MULTILINE):
-        new_body = re.sub(
-            r'(^  accounter:.*\n)',
-            new_block + r'\1', body_no_cmd, count=1, flags=re.MULTILINE,
-        )
-    else:
-        new_body = body_no_cmd.rstrip("\n") + "\n" + new_block
-else:
-    new_body = body_no_cmd
-
-cfg_new = cfg[:gm.start()] + header + new_body + cfg[gm.end():]
-tmp = tempfile.NamedTemporaryFile("w", dir=os.path.dirname(cfg_path), delete=False)
-tmp.write(cfg_new)
-tmp.close()
-os.rename(tmp.name, cfg_path)
-PY
+    if [[ -z "$(printf '%s' "$rules_arg" | awk 'NF')" ]]; then
+        conf_unset "commands.${group}"
+    else
+        # Parse pipe-format → JSON array of rule dicts, validate+write.
+        local json
+        json=$(printf '%s\n' "$rules_arg" | python3 -c '
+import json, sys
+rules = []
+for line in sys.stdin:
+    line = line.rstrip("\n")
+    if not line.strip():
+        continue
+    parts = line.split("|", 2)
+    name = parts[0]
+    action = parts[1] if len(parts) > 1 else "permit"
+    matches = [m for m in (parts[2].split(",") if len(parts) > 2 else []) if m]
+    rule = {"name": name, "action": action}
+    if matches:
+        rule["match"] = matches
+    rules.append(rule)
+print(json.dumps(rules))
+')
+        conf_set_json "commands.${group}" "$json" || return 1
+    fi
+    regenerate_tacquito_commands "$group"
 }
 
 # --- Colors ---
@@ -455,6 +1103,20 @@ normalize_deploy_perms() {
     chmod -R a+rX "$DEPLOY_DIR" 2>/dev/null || true
 }
 
+# Register root-owned git repos as safe for every user on the host via
+# /etc/gitconfig. Without this, an unprivileged operator running
+# `git -C /opt/tacctl log` gets "fatal: detected dubious ownership".
+# Idempotent: each path is only added if not already present.
+ensure_safe_directory() {
+    local path existing
+    existing=$(git config --system --get-all safe.directory 2>/dev/null || true)
+    for path in "$@"; do
+        if ! printf '%s\n' "$existing" | grep -qxF "$path"; then
+            git config --system --add safe.directory "$path" 2>/dev/null || true
+        fi
+    done
+}
+
 # Install the man page from <src> to /usr/share/man/man1/tacctl.1.gz and
 # refresh mandb. Silent no-op if the source file is missing (keeps older
 # repo checkouts working) or if mandb is unavailable (`man tacctl` still
@@ -481,9 +1143,11 @@ preflight() {
 }
 
 # --- Resolve template file (user override → repo default) ---
-SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
-TEMPLATE_DIR_LOCAL="/etc/tacquito/templates"
-TEMPLATE_DIR_REPO="$(cd "${SCRIPT_DIR}/../config/templates" 2>/dev/null && pwd)"
+# Use BASH_SOURCE so the path resolves to tacctl.sh itself even when sourced
+# (e.g. by bats tests), not to the sourcing binary.
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+TEMPLATE_DIR_LOCAL="${TACCTL_ETC}/templates"
+TEMPLATE_DIR_REPO="$(cd "${SCRIPT_DIR}/../config/templates" 2>/dev/null && pwd || true)"
 
 resolve_template() {
     local name="$1"
@@ -545,16 +1209,23 @@ backup_config() {
     mkdir -p "$BACKUP_DIR"
     chmod 750 "$BACKUP_DIR"
     chown tacquito:tacquito "$BACKUP_DIR" 2>/dev/null || true
+    # Milliseconds (%3N) avoid collisions when two mutating commands land in
+    # the same wall-clock second — prior YYYYMMDD_HHMMSS format silently
+    # overwrote the first backup, losing the pre-mutation snapshot.
+    # 'backup list' / 'restore' parse the suffix verbatim, so old-format
+    # files are still recognized.
     local ts
-    ts=$(date +%Y%m%d_%H%M%S)
+    ts=$(date +%Y%m%d_%H%M%S_%3N)
     cp "$CONFIG" "${BACKUP_DIR}/tacquito.yaml.${ts}"
     chmod 640 "${BACKUP_DIR}/tacquito.yaml.${ts}"
     chown tacquito:tacquito "${BACKUP_DIR}/tacquito.yaml.${ts}" 2>/dev/null || true
     info "Config backed up to ${BACKUP_DIR}/tacquito.yaml.${ts}"
 
-    # Prune old backups, keep last $BACKUP_RETENTION
+    # Prune old backups, keep last $BACKUP_RETENTION. Same ls-no-match
+    # guard as cmd_status: avoid set -e tripping the caller when the
+    # backups directory is empty.
     local count
-    count=$(ls -1 "${BACKUP_DIR}"/tacquito.yaml.* 2>/dev/null | wc -l)
+    count=$(ls -1 "${BACKUP_DIR}"/tacquito.yaml.* 2>/dev/null | wc -l || echo 0)
     if [[ "$count" -gt "$BACKUP_RETENTION" ]]; then
         ls -1t "${BACKUP_DIR}"/tacquito.yaml.* | tail -n +$((BACKUP_RETENTION + 1)) | xargs rm -f
     fi
@@ -616,7 +1287,11 @@ verify_hash() {
     # process substitution so neither shows up on argv. The hash already
     # lives in tacquito.yaml (mode 0640) so leaking to /proc/cmdline is a
     # low-severity issue, but the pattern is uniform across secret handling.
-    printf '%s' "$password" | python3 - <(printf '%s' "$hexhash") <<'PY' 2>/dev/null || echo "FAIL"
+    #
+    # Script is passed via `-c`: an earlier heredoc-on-stdin form (`python3 -`
+    # + `<<'PY'`) let the heredoc shadow the password pipe, so stdin.read()
+    # always returned b'' and every verify returned NO_MATCH.
+    printf '%s' "$password" | python3 -c '
 import bcrypt, binascii, sys
 pw = sys.stdin.buffer.read()
 with open(sys.argv[1]) as f:
@@ -633,7 +1308,7 @@ try:
         print("NO_MATCH")
 except ValueError:
     print("INVALID_HASH")
-PY
+' <(printf '%s' "$hexhash") 2>/dev/null || echo "FAIL"
 }
 
 # --- Validate class/value names ---
@@ -646,12 +1321,36 @@ validate_class_name() {
 }
 
 # --- Validate username ---
+# Shape only (letters/digits/_/-). See reject_reserved_username() for the
+# names-reserved check — that lives on the creation path only, so cleanup
+# operations like `tacctl user remove root` can still reach a legacy entry.
 validate_username() {
     local value="$1"
     if [[ ! "$value" =~ ^[a-zA-Z0-9_-]+$ ]]; then
         error "Username must contain only letters, numbers, underscores, and hyphens."
         exit 1
     fi
+}
+
+# Reserved OS / service names can't be tacctl-managed: 'root' is the OS
+# root account and 'tacquito' is the service's own user. Both exist outside
+# the YAML — letting tacctl manage either produces acct.go errors at auth
+# time ('user [X] does not have an accounter associated') because tacquito
+# resolves the username against the local account, not the tacctl entry.
+reject_reserved_username() {
+    local value="$1"
+    case "$value" in
+        root)
+            error "Username 'root' is reserved as an accounting-only sink for Junos internal daemons (non-tty CLI as root)."
+            error "The hash stays disabled permanently — root must only be used for local/console login, never TACACS+."
+            error "Create an operator-specific account instead (e.g. tacctl user add jsmith <group>)."
+            exit 1
+            ;;
+        tacquito)
+            error "Username 'tacquito' is reserved (matches the service user). Pick a different name."
+            exit 1
+            ;;
+    esac
 }
 
 # --- Validate CIDR notation ---
@@ -677,17 +1376,12 @@ print(f'{n.network_address} {n.hostmask}')
 }
 
 # --- Read the mgmt-ACL permit list ---
-# Emits one CIDR per stdout line. Strips '# ...' comments, trailing
-# whitespace, and blank lines. Missing file yields no output.
+# Returns the merged mgmt_acl.permits list: the shipped default from
+# conf_emit_defaults() (an empty list) plus any override in tacctl.yaml.
+# One CIDR per stdout line; input is expected to already be canonical
+# (writers canonicalize before storing). Empty list = no output.
 read_mgmt_acl_cidrs() {
-    [[ -r "$MGMT_ACL_FILE" ]] || return 0
-    # Strip comments + blank lines, then canonicalize each CIDR so
-    # dedup / display is representation-agnostic.
-    awk '
-        { sub(/#.*/, "") }
-        { gsub(/[[:space:]]+$/, "") }
-        NF { print $1 }
-    ' "$MGMT_ACL_FILE" | python3 -c "
+    conf_get_list mgmt_acl.permits | python3 -c "
 import ipaddress, sys
 for line in sys.stdin:
     s = line.strip()
@@ -700,24 +1394,14 @@ for line in sys.stdin:
 "
 }
 
-# --- Write the mgmt-ACL file from a newline-separated CIDR list ---
-# Replaces the entire file with a self-documenting header followed by
-# canonical CIDR entries sorted by specificity. An empty input deletes
-# the file entirely. Entries are deduped and sorted via Python.
+# --- Write the mgmt-ACL permit list ---
+# Replaces mgmt_acl.permits with the given newline-separated CIDR list
+# (canonicalized, deduped, specificity-sorted). Empty input unsets the
+# key (revert to default, which is an empty list). Writers are expected
+# to pass validated CIDRs; malformed entries are dropped silently.
 write_mgmt_acl_cidrs() {
     local list="$1"
-    if [[ -z "$(printf '%s\n' "$list" | awk 'NF')" ]]; then
-        rm -f "$MGMT_ACL_FILE"
-        return 0
-    fi
-    mkdir -p "$(dirname "$MGMT_ACL_FILE")"
-    local tmp
-    tmp=$(mktemp)
-    {
-        echo "# tacctl-managed mgmt ACL permit list."
-        echo "# One CIDR per line. '#' comments allowed."
-        echo "# Edit via: tacctl config mgmt-acl <add|remove|list|clear>"
-        printf '%s\n' "$list" | python3 -c "
+    printf '%s\n' "$list" | python3 -c "
 import ipaddress, sys
 def key_fn(c):
     n = ipaddress.ip_network(c, strict=False)
@@ -738,31 +1422,19 @@ for line in sys.stdin:
         continue
 for c in sorted(set(cidrs), key=key_fn):
     print(c)
-"
-    } > "$tmp"
-    mv "$tmp" "$MGMT_ACL_FILE"
-    chmod 644 "$MGMT_ACL_FILE"
+" | conf_set_list mgmt_acl.permits
 }
 
 # --- Read an mgmt-ACL name override (cisco|juniper) with default fallback ---
-# Storage format at $MGMT_ACL_NAMES_FILE is simple `key=value` lines;
-# unknown keys and blank lines ignored.
+# Backed by mgmt_acl.names.{cisco,juniper} in the unified config.
+# conf_emit_defaults() ships VTY-ACL / MGMT-SSH-ACL; overrides in
+# tacctl.yaml win.
 read_mgmt_acl_name() {
-    local which="$1" default=""
-    case "$which" in
-        cisco)   default="$CISCO_ACL_NAME_DEFAULT" ;;
-        juniper) default="$JUNIPER_ACL_NAME_DEFAULT" ;;
-        *)       echo ""; return 0 ;;
+    case "$1" in
+        cisco)   conf_get mgmt_acl.names.cisco "$CISCO_ACL_NAME_DEFAULT" ;;
+        juniper) conf_get mgmt_acl.names.juniper "$JUNIPER_ACL_NAME_DEFAULT" ;;
+        *)       echo "" ;;
     esac
-    local value=""
-    if [[ -r "$MGMT_ACL_NAMES_FILE" ]]; then
-        value=$(awk -F= -v k="$which" '
-            /^[[:space:]]*#/ { next }
-            /^[[:space:]]*$/ { next }
-            $1 == k { sub(/[[:space:]]+$/, "", $2); print $2; exit }
-        ' "$MGMT_ACL_NAMES_FILE")
-    fi
-    echo "${value:-$default}"
 }
 
 # --- Validate an ACL name for Cisco / Juniper use ---
@@ -785,38 +1457,16 @@ validate_acl_name() {
 }
 
 # --- Write an mgmt-ACL name override (cisco|juniper) ---
+# Sets mgmt_acl.names.<which> in tacctl.yaml. Setting to the default value
+# reverts (via the revert-to-default logic in conf_set).
 write_mgmt_acl_name() {
     local which="$1" name="$2"
-    mkdir -p "$(dirname "$MGMT_ACL_NAMES_FILE")"
-    local tmp
-    tmp=$(mktemp)
-    # Preserve other keys; overwrite/insert the target key.
-    local replaced="false"
-    if [[ -f "$MGMT_ACL_NAMES_FILE" ]]; then
-        awk -F= -v k="$which" -v v="$name" '
-            BEGIN { done = 0 }
-            /^[[:space:]]*#/ { print; next }
-            /^[[:space:]]*$/ { print; next }
-            $1 == k { print k "=" v; done = 1; next }
-            { print }
-            END { if (!done) print k "=" v }
-        ' "$MGMT_ACL_NAMES_FILE" > "$tmp"
-        replaced="true"
-    else
-        {
-            echo "# tacctl-managed mgmt-ACL names (used by 'tacctl config cisco' / 'juniper')."
-            echo "# Edit via: tacctl config mgmt-acl cisco-name <name>"
-            echo "#           tacctl config mgmt-acl juniper-name <name>"
-            echo "${which}=${name}"
-        } > "$tmp"
-    fi
-    mv "$tmp" "$MGMT_ACL_NAMES_FILE"
-    chmod 644 "$MGMT_ACL_NAMES_FILE"
-    if [[ "$replaced" == "true" ]]; then
-        info "Set ${which}-name = '${name}'."
-    else
-        info "Initialized ${MGMT_ACL_NAMES_FILE} with ${which}-name = '${name}'."
-    fi
+    case "$which" in
+        cisco|juniper) ;;
+        *) error "write_mgmt_acl_name: unknown target '${which}'"; return 1 ;;
+    esac
+    conf_set "mgmt_acl.names.${which}" "$name"
+    info "Set ${which}-name = '${name}'."
 }
 
 # --- Validate listen address (host:port or [ipv6]:port) against network family ---
@@ -853,7 +1503,7 @@ PY
 # entries in a drop-in so that `tacctl upgrade` can safely replace the main
 # service unit without clobbering them. Template defaults are in
 # config/tacquito.service; the drop-in only records overrides.
-OVERRIDE_DIR="/etc/systemd/system/tacquito.service.d"
+OVERRIDE_DIR="${TACCTL_OVERRIDE_DIR:-/etc/systemd/system/tacquito.service.d}"
 OVERRIDE_FILE="${OVERRIDE_DIR}/tacctl-overrides.conf"
 
 # Read an Environment= override; echo empty if not set.
@@ -1061,8 +1711,15 @@ except Exception:
     pass
 
 DISABLED_MARKER = sys.argv[2]
+# Built-in accounting sinks are hidden from the user-list output:
+# they are not manageable identities, they exist so tacquito does
+# not error on accounting packets generated by device-built-in
+# accounts like Junos root that run non-tty CLI as internal daemons.
+HIDDEN_SINKS = {'root'}
 for m in re.finditer(r'- name: (\S+)\n.*?groups: \[\*(\w+)\]', users_section, re.DOTALL):
     username = m.group(1)
+    if username in HIDDEN_SINKS:
+        continue
     group = m.group(2)
 
     auth_match = re.search(r'^bcrypt_' + re.escape(username) + r':.*?hash:\s*(\S+)', config, re.MULTILINE | re.DOTALL)
@@ -1110,6 +1767,7 @@ cmd_add() {
         exit 1
     fi
     validate_username "$username"
+    reject_reserved_username "$username"
     # Validate group exists in config
     if ! grep -q "^${group}: &${group}$" "$CONFIG"; then
         local available
@@ -1164,7 +1822,8 @@ cmd_add() {
     done
 
     # Determine scopes list. If --scopes given, validate each name exists; else
-    # fall back to default-scope marker (or sole-scope / hardcoded seed name).
+    # fall back to scope.default from tacctl.yaml (or the sole secrets[]
+    # entry if only one scope exists; or the shipped default 'lab').
     local scope_names=""
     if [[ -n "$scopes_csv" ]]; then
         local s
@@ -1186,7 +1845,7 @@ cmd_add() {
         scope_names=$(read_default_scope)
         if [[ -z "$scope_names" ]]; then
             error "No scopes exist and no default scope is set."
-            error "Create one first: tacctl scopes add <name> --prefixes <cidrs>"
+            error "Create one first: tacctl scope add <name> --prefixes <cidrs>"
             exit 1
         fi
     fi
@@ -1214,7 +1873,7 @@ cmd_add() {
     # /proc/<pid>/cmdline; the other args (username, group, scopes_json)
     # are non-secret and stay on argv for readability.
     python3 - "$CONFIG" "$username" <(printf '%s' "$hash") "$group" "$scopes_json" <<'PY'
-import sys, tempfile, os
+import sys, tempfile, os, re
 
 config_path = sys.argv[1]
 username = sys.argv[2]
@@ -1241,8 +1900,10 @@ idx = config.index(marker)
 prefix = config[:idx].rstrip('\n')
 config = prefix + '\n\n' + auth_block.rstrip('\n') + '\n\n' + config[idx:]
 
-# Insert user entry before '# --- Secret Providers ---'. Same
-# normalize-and-apply approach as auth_block above.
+# Insert user entry before the Secret Providers section. Prefix match
+# accommodates both header variants: '# --- Secret Providers ---' and
+# '# --- Secret Providers (Scopes) ---' (the template gained the suffix
+# at one point and old installs may carry either form).
 user_block = (
     f'  # {username}\n'
     f'  - name: {username}\n'
@@ -1251,8 +1912,10 @@ user_block = (
     f'    authenticator: *bcrypt_{username}\n'
     f'    accounter: *file_accounter\n'
 )
-marker2 = '# --- Secret Providers ---'
-idx2 = config.index(marker2)
+m2 = re.search(r'^# --- Secret Providers\b', config, re.M)
+if not m2:
+    raise SystemExit("could not locate '# --- Secret Providers' section header")
+idx2 = m2.start()
 prefix2 = config[:idx2].rstrip('\n')
 config = prefix2 + '\n\n' + user_block.rstrip('\n') + '\n\n' + config[idx2:]
 
@@ -1344,6 +2007,7 @@ cmd_passwd() {
         exit 1
     fi
     validate_username "$username"
+    reject_reserved_username "$username"
     if ! user_exists "$username"; then
         error "User '${username}' does not exist."
         exit 1
@@ -1488,7 +2152,8 @@ cmd_show() {
         exit 1
     fi
 
-    local group stored_hash status pw_date pw_age last_login
+    local group stored_hash status pw_date last_login
+    local pw_age=""
     group=$(get_user_group "$username")
     stored_hash=$(get_user_hash "$username")
     if is_disabled_hash "$stored_hash"; then
@@ -1912,23 +2577,6 @@ else:
 
 # --- CONFIG SECRET ---
 # --- Read the current shared secret from the YAML (may be empty) ---
-# --- Legacy 'config secret' — REMOVED ---
-# Shared secrets are scope-owned; the equivalent is 'tacctl scopes secret
-# <name>'. This stub prints an explicit redirect so muscle-memory and
-# scripted callers learn where to go instead of hitting a generic
-# dispatcher error. It does not mutate state.
-cmd_config_secret() {
-    error "'tacctl config secret' has been removed."
-    error "Shared secrets are scope-owned; manage via 'tacctl scopes':"
-    error "  tacctl scopes secret <name> show"
-    error "  tacctl scopes secret <name> set <value>"
-    error "  tacctl scopes secret <name> generate"
-    error ""
-    error "Default scope: $(read_default_scope || echo '(unset)')"
-    error "Available:     $(list_scopes | paste -sd' ')"
-    exit 2
-}
-
 # =====================================================================
 #  SCOPE HELPERS — multi-scope YAML access
 # =====================================================================
@@ -1944,18 +2592,18 @@ cmd_config_secret() {
 # writes (to preserve YAML anchors like *authenticator_type_bcrypt that
 # safe_dump would otherwise inline).
 
-# --- Read the default-scope marker ---
-# Returns the configured default scope name. Falls back to the name of
-# the sole secrets: entry if the marker file is missing and there's
-# exactly one scope. Empty output if no scopes exist yet.
+# --- Read scope.default from the merged tacctl config ---
+# Returns the configured default scope name (tacctl.yaml's scope.default,
+# layered over the shipped 'lab' default). Falls back to the name of the
+# sole secrets: entry if the merged value doesn't name an existing scope
+# and there's exactly one scope in tacquito.yaml. Empty output if no
+# scopes exist yet.
 read_default_scope() {
-    if [[ -r "$DEFAULT_SCOPE_FILE" ]]; then
-        local v
-        v=$(cat "$DEFAULT_SCOPE_FILE" 2>/dev/null | head -1 | xargs)
-        if [[ -n "$v" ]] && scope_exists "$v"; then
-            echo "$v"
-            return
-        fi
+    local v
+    v=$(conf_get scope.default)
+    if [[ -n "$v" ]] && scope_exists "$v"; then
+        echo "$v"
+        return
     fi
     # Fallback: if there's exactly one scope, it's the implicit default.
     local names
@@ -1965,13 +2613,12 @@ read_default_scope() {
     fi
 }
 
-# --- Write the default-scope marker ---
-# Caller is responsible for verifying the name exists as a scope first.
+# --- Write scope.default to tacctl.yaml ---
+# Sets the scope.default override; reverts to the shipped default when the
+# value equals 'lab' (conf_set's revert-to-default semantics). Caller is
+# responsible for verifying the name exists as a scope first.
 write_default_scope() {
-    local name="$1"
-    mkdir -p "$(dirname "$DEFAULT_SCOPE_FILE")"
-    printf '%s\n' "$name" > "$DEFAULT_SCOPE_FILE"
-    chmod 644 "$DEFAULT_SCOPE_FILE"
+    conf_set scope.default "$1"
 }
 
 # --- List all scope names (one per line) ---
@@ -2649,24 +3296,6 @@ parse_cidr_list() {
     echo "$seen"
 }
 
-# --- Legacy 'config prefixes' — REMOVED ---
-# Client-prefix lists are scope-owned; the equivalent is 'tacctl scopes
-# prefixes <name>'. This stub prints an explicit redirect so muscle-memory
-# and scripted callers learn where to go instead of hitting a generic
-# dispatcher error. It does not mutate state.
-cmd_config_prefixes() {
-    error "'tacctl config prefixes' has been removed."
-    error "Client-prefix lists are scope-owned; manage via 'tacctl scopes':"
-    error "  tacctl scopes prefixes <name> list"
-    error "  tacctl scopes prefixes <name> add    <cidr>[,<cidr>...]"
-    error "  tacctl scopes prefixes <name> remove <cidr>[,<cidr>...]"
-    error "  tacctl scopes prefixes <name> clear"
-    error ""
-    error "Default scope: $(read_default_scope || echo '(unset)')"
-    error "Available:     $(list_scopes | paste -sd' ')"
-    exit 2
-}
-
 # --- CONFIG CISCO (show working device config) ---
 cmd_config_cisco() {
     # Parse --scope <name>
@@ -2689,7 +3318,7 @@ cmd_config_cisco() {
         scope=$(read_default_scope)
         if [[ -z "$scope" ]]; then
             error "No default scope set and no --scope provided."
-            error "Run 'tacctl scopes default <name>' or pass --scope <name>."
+            error "Run 'tacctl scope default <name>' or pass --scope <name>."
             exit 1
         fi
     elif ! scope_exists "$scope"; then
@@ -2928,7 +3557,7 @@ cmd_config_juniper() {
         scope=$(read_default_scope)
         if [[ -z "$scope" ]]; then
             error "No default scope set and no --scope provided."
-            error "Run 'tacctl scopes default <name>' or pass --scope <name>."
+            error "Run 'tacctl scope default <name>' or pass --scope <name>."
             exit 1
         fi
     elif ! scope_exists "$scope"; then
@@ -2998,7 +3627,13 @@ set system tacplus-server ${server_ip} single-connection
 # Optional: pin client source IP for prefix-ACL matching on tacquito.
 # Replace 10.0.0.1 with the device's management interface address, e.g.:
 #   set system tacplus-server ${server_ip} source-address 10.0.0.1
-set system accounting events [ login change-log interactive-commands ]
+# Accounting events: login + change-log only. 'interactive-commands' is
+# intentionally excluded because Junos internal daemons (mgd, jsd,
+# health-probe op scripts, etc.) run non-tty CLI commands as root and
+# generate a continuous stream of per-command accounting that is pure
+# noise on the tacquito side. The login + change-log events still
+# capture who logged in and who changed config.
+set system accounting events [ login change-log ]
 set system accounting destination tacplus"
 
     # Build the Juniper mgmt-acl block from the shared permit list.
@@ -3443,10 +4078,9 @@ os.rename(tmp.name, sys.argv[1])
 }
 
 # --- CONFIG MGMT-ACL (permit list for Cisco VTY-ACL + Juniper lo0 filter) ---
-# Stored at $MGMT_ACL_FILE as a flat file (one CIDR per line). This is
-# tacctl-internal — never read by tacquito — so no service restart is
-# needed when the list changes. Survives upgrades because it lives
-# outside the template tree that `tacctl upgrade` rewrites.
+# Stored as mgmt_acl.permits (list) + mgmt_acl.names.{cisco,juniper} in
+# tacctl.yaml. Tacctl-internal — never read by tacquito — so no service
+# restart is needed when the list changes.
 cmd_config_mgmt_acl() {
     local subcmd="${1:-}"
     # $2 is either a CIDR (add/remove) or an ACL name (cisco-name/juniper-name).
@@ -3455,8 +4089,8 @@ cmd_config_mgmt_acl() {
 
     case "$subcmd" in
         ""|-h|--help|help)
-            local n=0
-            [[ -r "$MGMT_ACL_FILE" ]] && n=$(read_mgmt_acl_cidrs | wc -l)
+            local n
+            n=$(read_mgmt_acl_cidrs | awk 'NF' | wc -l)
             local cisco_name juniper_name
             cisco_name=$(read_mgmt_acl_name cisco)
             juniper_name=$(read_mgmt_acl_name juniper)
@@ -3471,8 +4105,7 @@ cmd_config_mgmt_acl() {
             echo "  tacctl config mgmt-acl cisco-name [name]             Show or set the Cisco ACL name (default ${CISCO_ACL_NAME_DEFAULT})"
             echo "  tacctl config mgmt-acl juniper-name [name]           Show or set the Juniper filter name (default ${JUNIPER_ACL_NAME_DEFAULT})"
             echo ""
-            echo "Storage: ${MGMT_ACL_FILE} (survives 'tacctl upgrade')."
-            echo "Names:   ${MGMT_ACL_NAMES_FILE}"
+            echo "Storage: tacctl.yaml (mgmt_acl.permits + mgmt_acl.names)."
             echo "         cisco=${cisco_name}  juniper=${juniper_name}"
             echo "Current entries: ${n}"
             echo ""
@@ -3537,12 +4170,12 @@ cmd_config_mgmt_acl() {
             local requested removed="" missing=""
             requested=$(parse_cidr_list "$cidr")
             [[ -z "$requested" ]] && { error "No valid CIDRs provided."; exit 1; }
-            if [[ ! -f "$MGMT_ACL_FILE" ]]; then
-                warn "Nothing to remove — mgmt-acl file does not exist."
-                exit 0
-            fi
             local current
             current=$(read_mgmt_acl_cidrs)
+            if [[ -z "$current" ]]; then
+                warn "Nothing to remove — mgmt-acl permit list is empty."
+                exit 0
+            fi
             while IFS= read -r c; do
                 [[ -z "$c" ]] && continue
                 if printf '%s\n' "$current" | grep -qxF "$c"; then
@@ -3564,7 +4197,9 @@ cmd_config_mgmt_acl() {
             echo ""
             ;;
         clear)
-            if [[ ! -f "$MGMT_ACL_FILE" ]]; then
+            local current
+            current=$(read_mgmt_acl_cidrs)
+            if [[ -z "$current" ]]; then
                 info "Already empty."
                 echo ""
                 return
@@ -3574,7 +4209,7 @@ cmd_config_mgmt_acl() {
                 info "Aborted."
                 return
             fi
-            rm -f "$MGMT_ACL_FILE"
+            conf_unset mgmt_acl.permits
             info "mgmt-acl cleared."
             echo ""
             ;;
@@ -3593,7 +4228,7 @@ cmd_config_mgmt_acl() {
                 if [[ "$current_val" == "$default_val" ]]; then
                     echo "  (default — override with 'tacctl config mgmt-acl ${subcmd} <name>')"
                 else
-                    echo "  (override in ${MGMT_ACL_NAMES_FILE})"
+                    echo "  (override in tacctl.yaml: mgmt_acl.names.${which})"
                 fi
                 echo ""
                 return
@@ -3619,10 +4254,10 @@ cmd_config_mgmt_acl() {
 }
 
 # =====================================================================
-#  SCOPE COMMANDS (tacctl scopes ...)
+#  SCOPE COMMANDS (tacctl scope ...)
 # =====================================================================
 
-cmd_scopes() {
+cmd_scope() {
     local subcmd="${1:-}"
     shift 2>/dev/null || true
     case "$subcmd" in
@@ -3649,21 +4284,21 @@ cmd_scopes_usage() {
     count=$(list_scopes | wc -l)
     default_val=$(read_default_scope)
     echo ""
-    echo -e "${BOLD}tacctl scopes${NC} — named (CIDR-prefixes, shared-secret) bundles"
+    echo -e "${BOLD}tacctl scope${NC} — named (CIDR-prefixes, shared-secret) bundles"
     echo ""
     echo "Usage:"
-    echo "  tacctl scopes list                                        One row per (scope, prefix) in routing order"
-    echo "  tacctl scopes show <name>                                 Detailed view"
-    echo "  tacctl scopes add <name> --prefixes <cidrs>               Create a new scope"
-    echo "                       [--secret <value>|generate]"
+    echo "  tacctl scope list                                        One row per (scope, prefix) in routing order"
+    echo "  tacctl scope show <name>                                 Detailed view"
+    echo "  tacctl scope add <name> --prefixes <cidrs>               Create a new scope"
+    echo "                       [--secret <value>|--secret generate]"
     echo "                       [--default]"
-    echo "  tacctl scopes remove <name> [--force]                     Delete a scope (confirms)"
-    echo "  tacctl scopes rename <old> <new>                          Rename (updates user references)"
-    echo "  tacctl scopes default [<name>]                            Show or set the default scope"
-    echo "  tacctl scopes lookup <ip|cidr>                            Show which scope owns an address"
+    echo "  tacctl scope remove <name> [--force]                     Delete a scope (confirms)"
+    echo "  tacctl scope rename <old> <new>                          Rename (updates user references)"
+    echo "  tacctl scope default [<name>]                            Show or set the default scope"
+    echo "  tacctl scope lookup <ip|cidr>                            Show which scope owns an address"
     echo ""
-    echo "  tacctl scopes prefixes <scope> list|add|remove|clear      Manage a scope's CIDR list"
-    echo "  tacctl scopes secret   <scope> show|set|generate          Manage a scope's shared secret"
+    echo "  tacctl scope prefixes <scope> list|add|remove|clear      Manage a scope's CIDR list"
+    echo "  tacctl scope secret   <scope> show|set|generate          Manage a scope's shared secret"
     echo ""
     echo "Current scopes: ${count}"
     echo "Default scope:  ${default_val:-<unset>}"
@@ -3681,7 +4316,7 @@ cmd_scopes_list() {
     # entry — multi-prefix scopes intentionally repeat their name so the
     # display literally mirrors how a connecting client gets routed. For
     # the aggregated per-scope view (users, secret, is-default), use
-    # `tacctl scopes show <name>`.
+    # `tacctl scope show <name>`.
     #
     # Pre-compute per-scope user counts in Python to avoid N forks of
     # `count_users_in_scope` over N entries; the per-scope fact is the
@@ -3736,7 +4371,7 @@ for s in (d.get('secrets') or []):
 cmd_scopes_show() {
     local name="${1:-}"
     if [[ -z "$name" ]]; then
-        error "Usage: tacctl scopes show <name>"
+        error "Usage: tacctl scope show <name>"
         exit 1
     fi
     if ! scope_exists "$name"; then
@@ -3749,7 +4384,7 @@ cmd_scopes_show() {
     if [[ -z "$secret_val" ]]; then
         secret_line="${RED}(unset)${NC}"
     elif [[ "$secret_val" == *REPLACE* ]]; then
-        secret_line="${secret_val}  ${RED}(PLACEHOLDER — run 'tacctl scopes secret ${name} generate')${NC}"
+        secret_line="${secret_val}  ${RED}(PLACEHOLDER — run 'tacctl scope secret ${name} generate')${NC}"
     elif [[ "$secret_len" -lt "$SECRET_MIN_LENGTH" ]]; then
         secret_line="${secret_val}  ${RED}(${secret_len} chars, below min ${SECRET_MIN_LENGTH})${NC}"
     else
@@ -3791,7 +4426,7 @@ cmd_scopes_show() {
 cmd_scopes_add() {
     local name="${1:-}"
     if [[ -z "$name" ]]; then
-        error "Usage: tacctl scopes add <name> --prefixes <cidrs> [--secret <value>|generate] [--default]"
+        error "Usage: tacctl scope add <name> --prefixes <cidrs> [--secret <value>|generate] [--default]"
         exit 1
     fi
     shift
@@ -3839,7 +4474,7 @@ cmd_scopes_add() {
         error "Cannot create scope '${name}': prefix(es) already claimed:"
         while IFS= read -r line; do error "$line"; done <<< "$collisions"
         error "Each CIDR belongs to exactly one scope. Remove it from the owning"
-        error "scope first with 'tacctl scopes prefixes <owner> remove <cidr>'."
+        error "scope first with 'tacctl scope prefixes <owner> remove <cidr>'."
         exit 1
     fi
 
@@ -3876,7 +4511,7 @@ cmd_scopes_add() {
 cmd_scopes_remove() {
     local name="${1:-}" force="false"
     if [[ -z "$name" ]]; then
-        error "Usage: tacctl scopes remove <name> [--force]"
+        error "Usage: tacctl scope remove <name> [--force]"
         exit 1
     fi
     shift 2>/dev/null || true
@@ -3892,7 +4527,7 @@ cmd_scopes_remove() {
     if [[ "$user_count" -gt 0 && "$force" != "true" ]]; then
         error "Cannot remove '${name}': ${user_count} user(s) still reference it."
         error "Remove them first:"
-        list_users_in_scope "$name" | sed 's/^/    tacctl user scopes /' | sed 's/$/ remove '"${name}"'/'
+        list_users_in_scope "$name" | sed 's/^/    tacctl user scope /' | sed 's/$/ remove '"${name}"'/'
         error "Or pass --force to strip the scope from those users AND delete it."
         exit 1
     fi
@@ -3901,7 +4536,7 @@ cmd_scopes_remove() {
     default_val=$(read_default_scope)
     if [[ "$name" == "$default_val" ]]; then
         error "Cannot remove '${name}': it is the default scope."
-        error "Point the default at another scope first: tacctl scopes default <other>"
+        error "Point the default at another scope first: tacctl scope default <other>"
         exit 1
     fi
 
@@ -3936,7 +4571,7 @@ cmd_scopes_remove() {
 cmd_scopes_rename() {
     local old="${1:-}" new="${2:-}"
     if [[ -z "$old" || -z "$new" ]]; then
-        error "Usage: tacctl scopes rename <old> <new>"
+        error "Usage: tacctl scope rename <old> <new>"
         exit 1
     fi
     if ! scope_exists "$old"; then
@@ -3954,9 +4589,9 @@ cmd_scopes_rename() {
     backup_config
     rename_scope "$old" "$new"
     reorder_secrets_by_prefix_specificity
-    # Update default-scope marker if it pointed at the old name.
+    # Update scope.default if it pointed at the old name.
     local default_val
-    default_val=$(cat "$DEFAULT_SCOPE_FILE" 2>/dev/null | head -1 | xargs || true)
+    default_val=$(conf_get scope.default)
     if [[ "$default_val" == "$old" ]]; then
         write_default_scope "$new"
         info "Default-scope marker updated: ${old} -> ${new}"
@@ -3981,7 +4616,7 @@ cmd_scopes_default() {
             echo "  Default scope: ${current}"
         fi
         echo ""
-        echo "  Usage: tacctl scopes default <name>    # set default to <name>"
+        echo "  Usage: tacctl scope default <name>    # set default to <name>"
         echo "  The default scope is used when:"
         echo "    - 'tacctl user add <u> <g>' is run without --scopes"
         echo "    - 'tacctl config cisco/juniper' is run without --scope"
@@ -4007,10 +4642,10 @@ cmd_scopes_default() {
 cmd_scopes_lookup() {
     local query="${1:-}"
     if [[ -z "$query" ]]; then
-        error "Usage: tacctl scopes lookup <ip|cidr>"
+        error "Usage: tacctl scope lookup <ip|cidr>"
         error "Examples:"
-        error "  tacctl scopes lookup 10.5.1.2"
-        error "  tacctl scopes lookup 10.5.0.0/16"
+        error "  tacctl scope lookup 10.5.1.2"
+        error "  tacctl scope lookup 10.5.0.0/16"
         exit 1
     fi
     python3 - "$CONFIG" "$query" <<'PY'
@@ -4079,13 +4714,13 @@ if len(matches) > 1:
 PY
 }
 
-# --- Per-scope prefix management: tacctl scopes prefixes <scope> ... ---
+# --- Per-scope prefix management: tacctl scope prefixes <scope> ... ---
 cmd_scopes_prefixes_dispatch() {
     local scope="${1:-}"
     local sub="${2:-}"
     local arg="${3:-}"
     if [[ -z "$scope" ]]; then
-        error "Usage: tacctl scopes prefixes <scope> {list|add|remove|clear} [<cidrs>]"
+        error "Usage: tacctl scope prefixes <scope> {list|add|remove|clear} [<cidrs>]"
         exit 1
     fi
     if ! scope_exists "$scope"; then
@@ -4097,13 +4732,13 @@ cmd_scopes_prefixes_dispatch() {
             local count=0
             count=$(read_scope_prefixes "$scope" | wc -l)
             echo ""
-            echo -e "${BOLD}tacctl scopes prefixes ${scope}${NC} — CIDR prefix list for scope '${scope}'"
+            echo -e "${BOLD}tacctl scope prefixes ${scope}${NC} — CIDR prefix list for scope '${scope}'"
             echo ""
             echo "Usage:"
-            echo "  tacctl scopes prefixes ${scope} list                        Show entries"
-            echo "  tacctl scopes prefixes ${scope} add    <cidr>[,<cidr>...]   Add one or more"
-            echo "  tacctl scopes prefixes ${scope} remove <cidr>[,<cidr>...]   Remove one or more"
-            echo "  tacctl scopes prefixes ${scope} clear                       Wipe all (confirms)"
+            echo "  tacctl scope prefixes ${scope} list                        Show entries"
+            echo "  tacctl scope prefixes ${scope} add    <cidr>[,<cidr>...]   Add one or more"
+            echo "  tacctl scope prefixes ${scope} remove <cidr>[,<cidr>...]   Remove one or more"
+            echo "  tacctl scope prefixes ${scope} clear [--force]             Wipe all (confirms; --force proceeds when users still reference)"
             echo ""
             echo "Current entries: ${count}"
             echo ""
@@ -4126,7 +4761,7 @@ cmd_scopes_prefixes_dispatch() {
             ;;
         add|remove)
             if [[ -z "$arg" ]]; then
-                error "Usage: tacctl scopes prefixes ${scope} ${sub} <cidr>[,<cidr>...]"
+                error "Usage: tacctl scope prefixes ${scope} ${sub} <cidr>[,<cidr>...]"
                 exit 1
             fi
             local requested
@@ -4152,7 +4787,7 @@ cmd_scopes_prefixes_dispatch() {
                     error "Cannot add prefix(es) to scope '${scope}':"
                     while IFS= read -r line; do error "$line"; done <<< "$collisions"
                     error "Remove them from the owning scope first:"
-                    error "  tacctl scopes prefixes <owner> remove <cidr>"
+                    error "  tacctl scope prefixes <owner> remove <cidr>"
                     exit 1
                 fi
                 while IFS= read -r c; do
@@ -4210,7 +4845,7 @@ cmd_scopes_prefixes_dispatch() {
                 error "Clearing every prefix removes the scope from the secrets list"
                 error "and leaves those users with orphan scope references."
                 error "Detach users first:"
-                list_users_in_scope "$scope" | sed 's/^/    tacctl user scopes /' | sed 's/$/ remove '"${scope}"'/'
+                list_users_in_scope "$scope" | sed 's/^/    tacctl user scope /' | sed 's/$/ remove '"${scope}"'/'
                 error "Or pass --force to proceed and leave orphan refs (use 'tacctl config validate' to find them)."
                 exit 1
             fi
@@ -4232,19 +4867,19 @@ cmd_scopes_prefixes_dispatch() {
             ;;
         *)
             error "Unknown subcommand: '${sub}'"
-            error "Run 'tacctl scopes prefixes ${scope}' for usage."
+            error "Run 'tacctl scope prefixes ${scope}' for usage."
             exit 1
             ;;
     esac
 }
 
-# --- Per-scope secret management: tacctl scopes secret <scope> ... ---
+# --- Per-scope secret management: tacctl scope secret <scope> ... ---
 cmd_scopes_secret_dispatch() {
     local scope="${1:-}"
     local sub="${2:-}"
     local arg="${3:-}"
     if [[ -z "$scope" ]]; then
-        error "Usage: tacctl scopes secret <scope> {show|set <value>|generate}"
+        error "Usage: tacctl scope secret <scope> {show|set <value>|generate}"
         exit 1
     fi
     if ! scope_exists "$scope"; then
@@ -4258,12 +4893,12 @@ cmd_scopes_secret_dispatch() {
             cur=$(read_scope_secret "$scope")
             s_len=${#cur}
             echo ""
-            echo -e "${BOLD}tacctl scopes secret ${scope}${NC} — shared secret for scope '${scope}'"
+            echo -e "${BOLD}tacctl scope secret ${scope}${NC} — shared secret for scope '${scope}'"
             echo ""
             echo "Usage:"
-            echo "  tacctl scopes secret ${scope} show                Print raw value + length/posture"
-            echo "  tacctl scopes secret ${scope} set <value>         Set to <value> (validated)"
-            echo "  tacctl scopes secret ${scope} generate            Auto-generate + apply"
+            echo "  tacctl scope secret ${scope} show                Print raw value + length/posture"
+            echo "  tacctl scope secret ${scope} set <value>         Set to <value> (validated)"
+            echo "  tacctl scope secret ${scope} generate            Auto-generate + apply"
             echo ""
             echo "Current length: ${s_len} chars (min ${SECRET_MIN_LENGTH})"
             echo ""
@@ -4279,7 +4914,7 @@ cmd_scopes_secret_dispatch() {
                 echo -e "  ${RED}(unset)${NC}"
             elif [[ "$cur" == *REPLACE* ]]; then
                 echo -e "  Value:  ${BOLD}${cur}${NC}"
-                echo -e "  ${RED}Length: ${s_len} chars — PLACEHOLDER (run 'tacctl scopes secret ${scope} generate')${NC}"
+                echo -e "  ${RED}Length: ${s_len} chars — PLACEHOLDER (run 'tacctl scope secret ${scope} generate')${NC}"
             elif [[ "$s_len" -lt "$SECRET_MIN_LENGTH" ]]; then
                 echo -e "  Value:  ${BOLD}${cur}${NC}"
                 echo -e "  ${RED}Length: ${s_len} chars (below min ${SECRET_MIN_LENGTH})${NC}"
@@ -4291,7 +4926,7 @@ cmd_scopes_secret_dispatch() {
             ;;
         set)
             if [[ -z "$arg" ]]; then
-                error "Usage: tacctl scopes secret ${scope} set <value>"
+                error "Usage: tacctl scope secret ${scope} set <value>"
                 exit 1
             fi
             if [[ "${#arg}" -lt "$SECRET_MIN_LENGTH" ]]; then
@@ -4324,20 +4959,20 @@ cmd_scopes_secret_dispatch() {
             ;;
         *)
             error "Unknown subcommand: '${sub}'"
-            error "Run 'tacctl scopes secret ${scope}' for usage."
+            error "Run 'tacctl scope secret ${scope}' for usage."
             exit 1
             ;;
     esac
 }
 
-# --- USER SCOPES: tacctl user scopes <user> list|add|remove|set|clear ---
-cmd_user_scopes() {
+# --- USER SCOPES: tacctl user scope <user> list|add|remove|set|clear ---
+cmd_user_scope() {
     local username="${1:-}"
     local sub="${2:-}"
     local arg="${3:-}"
 
     if [[ -z "$username" ]]; then
-        error "Usage: tacctl user scopes <user> {list|add|remove|set|clear} [<scope>[,<scope>...]]"
+        error "Usage: tacctl user scope <user> {list|add|remove|set|clear} [<scope>[,<scope>...]]"
         exit 1
     fi
     validate_username "$username"
@@ -4370,17 +5005,17 @@ cmd_user_scopes() {
                 return
             fi
             echo "Usage:"
-            echo "  tacctl user scopes ${username} list                              Show current (default)"
-            echo "  tacctl user scopes ${username} add    <scope>[,<scope>...]      Grant scope access"
-            echo "  tacctl user scopes ${username} remove <scope>[,<scope>...]      Revoke scope access"
-            echo "  tacctl user scopes ${username} set    <scope>[,<scope>...]      Replace full list"
-            echo "  tacctl user scopes ${username} clear                             Wipe all (confirms)"
+            echo "  tacctl user scope ${username} list                              Show current (default)"
+            echo "  tacctl user scope ${username} add    <scope>[,<scope>...]      Grant scope access"
+            echo "  tacctl user scope ${username} remove <scope>[,<scope>...]      Revoke scope access"
+            echo "  tacctl user scope ${username} set    <scope>[,<scope>...]      Replace full list"
+            echo "  tacctl user scope ${username} clear                             Wipe all (confirms)"
             echo ""
             return
             ;;
         add|remove|set)
             if [[ -z "$arg" ]]; then
-                error "Usage: tacctl user scopes ${username} ${sub} <scope>[,<scope>...]"
+                error "Usage: tacctl user scope ${username} ${sub} <scope>[,<scope>...]"
                 exit 1
             fi
             # Parse + validate scope names
@@ -4451,7 +5086,7 @@ cmd_user_scopes() {
             [[ -n "$noop" ]] && info "(Skipped: ${noop})"
             if [[ -z "$new_list" ]]; then
                 warn "User '${username}' now has NO scopes — they cannot auth on any device"
-                warn "until you run: tacctl user scopes ${username} add <scope>"
+                warn "until you run: tacctl user scope ${username} add <scope>"
             fi
             echo ""
             ;;
@@ -4463,7 +5098,7 @@ cmd_user_scopes() {
                 return
             fi
             warn "WARNING: ${username} will be unable to authenticate on any device"
-            warn "until you grant at least one scope with 'tacctl user scopes ${username} add <name>'"
+            warn "until you grant at least one scope with 'tacctl user scope ${username} add <name>'"
             warn "(Distinct from 'tacctl user disable' — the password hash is preserved.)"
             read -rp "  Clear all scopes for '${username}'? [y/N]: " confirm
             [[ ! "$confirm" =~ ^[Yy] ]] && { info "Aborted."; return; }
@@ -4476,7 +5111,7 @@ cmd_user_scopes() {
             ;;
         *)
             error "Unknown subcommand: '${sub}'"
-            error "Run 'tacctl user scopes ${username}' for usage."
+            error "Run 'tacctl user scope ${username}' for usage."
             exit 1
             ;;
     esac
@@ -4491,12 +5126,6 @@ cmd_config() {
         show)
             cmd_config_show
             ;;
-        secret)
-            cmd_config_secret "$@"
-            ;;
-        prefixes)
-            cmd_config_prefixes "$@"
-            ;;
         cisco)
             cmd_config_cisco "$@"
             ;;
@@ -4505,6 +5134,26 @@ cmd_config() {
             ;;
         validate)
             cmd_config_validate
+            ;;
+        dump)
+            cmd_config_dump
+            ;;
+        defaults)
+            conf_emit_defaults
+            ;;
+        get)
+            if [[ -z "${1:-}" ]]; then
+                error "Usage: tacctl config get <dotted.path> [fallback]"
+                exit 1
+            fi
+            conf_get "$@"
+            ;;
+        get-list)
+            if [[ -z "${1:-}" ]]; then
+                error "Usage: tacctl config get-list <dotted.path>"
+                exit 1
+            fi
+            conf_get_list "$@"
             ;;
         loglevel)
             cmd_config_loglevel "$@"
@@ -4553,6 +5202,10 @@ cmd_config() {
             echo ""
             echo "Subcommands:"
             echo "  show                                 Show current configuration"
+            echo "  dump                                 Show tacctl defaults + overrides + merged view"
+            echo "  defaults                             Print canonical tacctl defaults (shipped)"
+            echo "  get <path> [fallback]                Read a dotted-path value from the merged config"
+            echo "  get-list <path>                      Read a list value (one item per line)"
             echo "  validate                             Validate config syntax and structure"
             echo "  diff [timestamp]                     Diff current config vs last backup"
             echo "  loglevel [debug|info|error]          Show or change log level"
@@ -4569,10 +5222,6 @@ cmd_config() {
             echo "  cisco   [--scope <name>]             Show working Cisco device configuration for a scope"
             echo "  juniper [--scope <name>]             Show working Juniper device configuration for a scope"
             echo "  branch [name]                        Show or change the tacctl repo branch"
-            echo ""
-            echo "Removed (use 'tacctl scopes' instead):"
-            echo "  secret   — now:  tacctl scopes secret   <name> show|set|generate"
-            echo "  prefixes — now:  tacctl scopes prefixes <name> list|add|remove|clear"
             echo ""
             echo "Examples:"
             echo "  tacctl config show"
@@ -4634,11 +5283,18 @@ for m in re.finditer(r'^(\w+): &\1\n  name: \1\n  services:\n(.*?)  accounter:',
         if jcm:
             jclass = jcm.group(1)
 
-    # Count users in this group
+    # Count users in this group. Built-in accounting sinks (see
+    # HIDDEN_SINKS in cmd_list) are excluded so the count matches what
+    # 'tacctl user list' renders.
+    HIDDEN_SINKS = {'root'}
     users_match = re.search(r'^users:\s*\n(.*?)(?=^# ---|\Z)', config, re.MULTILINE | re.DOTALL)
     user_count = 0
     if users_match:
-        user_count = len(re.findall(r'groups: \[\*' + re.escape(name) + r'\]', users_match.group(1)))
+        for um in re.finditer(r'- name: (\S+)\n.*?groups: \[\*' + re.escape(name) + r'\]',
+                              users_match.group(1), re.DOTALL):
+            if um.group(1) in HIDDEN_SINKS:
+                continue
+            user_count += 1
 
     print(f'{name}|{priv}|{jclass}|{user_count}')
 " "$CONFIG" | while IFS='|' read -r name priv jclass user_count; do
@@ -4742,9 +5398,12 @@ group_block = [
     '  services:\n',
     '    - *exec_' + sys.argv[3] + '\n',
     '    - *junos_exec_' + sys.argv[3] + '\n',
-    '  authenticator: *bcrypt_user\n',
     '  accounter: *file_accounter\n',
 ]
+# NB: intentionally no group-level 'authenticator:' key. Each user
+# references its own '*bcrypt_<username>' anchor; the prior code wrote
+# '*bcrypt_user' here, which is an undefined anchor and makes yaml.safe_load
+# fail on every downstream read (list_scopes, read_user_scopes, etc.).
 lines = lines[:insert_at] + group_block + lines[insert_at:]
 import tempfile, os
 tmp = tempfile.NamedTemporaryFile('w', dir=os.path.dirname(sys.argv[1]), delete=False)
@@ -4957,19 +5616,26 @@ print('OK')
 }
 
 # --- GROUP COMMANDS (per-group authorized command rules) ---
-# Drives Cisco TACACS+ command authorization (live) and Juniper class
-# allow/deny-commands (local enforcement, requires per-device push).
+# Drives Cisco TACACS+ command authorization (live; enforced by tacquito)
+# and Juniper class allow/deny-commands (local enforcement on each device,
+# requires per-device push).
 #
-# Storage convention: a trailing `name: "*"` rule whose action encodes
-# the group's default action. Tacquito returns FAIL for any rule that
-# doesn't match, so the catchall is the sole way to express "permit
-# everything not explicitly denied."
+# Source of truth: commands.<group> in /etc/tacquito/tacctl.yaml, layered
+# over shipped defaults in conf_emit_defaults(). tacquito.yaml's per-group
+# commands: block is a regenerated artifact — do not hand-edit it;
+# regenerate_tacquito_commands() rewrites it from the tacctl source on
+# every mutation and on install / upgrade.
 #
-# Safety: when ANY group gains its first commands: section, every other
-# group at the same Cisco priv-lvl is auto-seeded with a catchall
-# permit. Without this, Cisco's `aaa authorization commands <level>`
-# would route ALL command authz at that level through tacquito and
-# users in the unconfigured group would be denied every command.
+# Rule shape: list of dicts {name, action: permit|deny, match?: [regex]}.
+# A trailing `name: "*"` rule's action is the group's default. Tacquito
+# returns FAIL for any rule that doesn't match, so the catchall is the
+# sole way to express "permit everything not explicitly denied."
+#
+# Safety: when ANY group has rules, every other group at the same Cisco
+# priv-lvl is auto-seeded with a catchall permit. Without this, Cisco's
+# `aaa authorization commands <level>` would route ALL command authz at
+# that level through tacquito and users in the unseeded group would be
+# denied every command.
 cmd_group_commands() {
     local subcmd="${1:-}"
     shift 2>/dev/null || true
@@ -5015,7 +5681,7 @@ cmd_group_commands() {
             echo -e "  Default action: ${BOLD}${default_action}${NC}"
             echo ""
             if [[ -z "$rules" ]]; then
-                echo "  (no commands: section — all commands permitted)"
+                echo "  (no commands — custom group with no rules; all commands permitted)"
                 echo ""
                 return
             fi
@@ -5119,8 +5785,8 @@ cmd_group_commands() {
                 exit 1
             fi
             if [[ "$name" == "*" ]]; then
-                error "Cannot remove the '*' catchall. Use 'tacctl group commands default' to change its action."
-                error "Or 'tacctl group commands clear ${group}' to remove the entire commands: block."
+                error "Cannot remove the '*' catchall. Use 'tacctl group commands default' to change its action,"
+                error "or 'tacctl group commands clear ${group}' to revert this group to shipped defaults."
                 exit 1
             fi
             if ! read_group_commands "$group" | grep -q "^${name}|"; then
@@ -5136,7 +5802,7 @@ cmd_group_commands() {
             ;;
         clear)
             if [[ -z "$(read_group_commands "$group")" ]]; then
-                info "Group '${group}' has no commands: block; nothing to clear."
+                info "Group '${group}' has no command rules; nothing to clear."
                 exit 0
             fi
             read -rp "  Clear all command rules for group '${group}'? [y/N]: " confirm
@@ -5148,11 +5814,11 @@ cmd_group_commands() {
             write_group_commands "$group" ""
             chown tacquito:tacquito "$CONFIG"
             restart_service
-            info "Cleared command rules for group '${group}'."
-            warn "If other groups at the same Cisco priv-lvl still have rules,"
-            warn "Cisco will deny ALL commands to '${group}' users at that level."
-            warn "Either re-add a catchall ('tacctl group commands default ${group} permit')"
-            warn "or clear all groups at the same priv-lvl."
+            info "Cleared command rules for group '${group}' (reverted to shipped defaults)."
+            warn "For a custom group, this leaves the group with no rules — if other groups"
+            warn "at the same Cisco priv-lvl still have rules, Cisco will deny ALL commands to"
+            warn "'${group}' users at that level until you re-add a catchall"
+            warn "('tacctl group commands default ${group} permit') or clear the siblings too."
             echo ""
             ;;
     esac
@@ -5168,14 +5834,21 @@ cmd_group_commands_usage() {
     echo "  tacctl group commands add <group> <name> [--match <regex>]...   Add a rule"
     echo "                                            [--action permit|deny]"
     echo "  tacctl group commands remove <group> <name>                     Drop a rule"
-    echo "  tacctl group commands clear <group>                             Wipe rules (confirms)"
-    echo "  tacctl group commands seed [<group>] [--force]                  Populate built-ins with defaults"
+    echo "  tacctl group commands clear <group>                             Drop overrides — revert to shipped defaults (confirms)"
+    echo "  tacctl group commands seed [<group>] [--force]                  Re-apply legacy seed set (recovery tool)"
+    echo ""
+    echo "Rules live under commands.<group> in /etc/tacquito/tacctl.yaml;"
+    echo "tacquito.yaml's per-group commands: block is a regenerated"
+    echo "artifact (do not hand-edit). Built-ins ship with defaults:"
+    echo "   superuser: permit *   |   operator: show/ping/traceroute/"
+    echo "                              terminal + deny *   |   readonly:"
+    echo "                              show/ping/traceroute + deny *"
     echo ""
     echo "Cisco devices ask tacquito per command (live enforcement) when"
     echo "'aaa authorization commands <level>' is in the device config —"
-    echo "tacctl auto-emits these lines in 'tacctl config cisco' once any"
-    echo "group has rules. Juniper enforcement is LOCAL via class"
-    echo "allow/deny-commands and requires a per-device config push."
+    echo "tacctl auto-emits these lines in 'tacctl config cisco'. Juniper"
+    echo "enforcement is LOCAL via class allow/deny-commands, rendered"
+    echo "from the same tacctl-authored rules by 'tacctl config juniper'."
     echo ""
 }
 
@@ -5377,11 +6050,14 @@ seed_command_rules_safely() {
 # --- GROUP PRIVILEGE (Cisco priv-exec command mappings) ---
 # Controls which IOS commands move to a group's priv-lvl via
 # 'privilege exec level <N> <command>' lines emitted by
-# 'tacctl config cisco'. Pure device-side config; tacquito itself does
-# not read this file. Backward-compatible: when the file is missing or
-# a group has no explicit mappings, falls back to a safe default set
-# (only the verified move-DOWN commands; nothing inadvertently
-# restricted from lower-priv groups).
+# 'tacctl config cisco'. Pure device-side config; tacquito itself
+# doesn't read this data.
+#
+# Source of truth: privileges.<group> in /etc/tacquito/tacctl.yaml,
+# layered over the shipped defaults in conf_emit_defaults() (only the
+# verified move-DOWN commands; nothing inadvertently restricted from
+# lower-priv groups). When no override exists, the merged view equals
+# the shipped defaults.
 cmd_group_privilege() {
     local subcmd="${1:-}"
     shift 2>/dev/null || true
@@ -5424,30 +6100,27 @@ cmd_group_privilege() {
 
     case "$subcmd" in
         list)
-            local explicit defaults
-            explicit=$(read_group_privileges "$group")
-            defaults=$(default_privileges_for_group "$group")
+            local merged
+            merged=$(read_group_privileges "$group")
             echo ""
             echo -e "${BOLD}Cisco priv-exec mappings for group '${group}' (priv-lvl ${privlvl})${NC}"
             echo "--------------------------------------------"
-            if [[ -n "$explicit" ]]; then
-                echo -e "  Source: ${BOLD}explicit${NC} (${PRIVILEGE_FILE})"
+            if [[ -z "$merged" ]]; then
+                echo "  (no mappings — group's priv-lvl uses Cisco defaults)"
+            elif conf_has_override "privileges.${group}"; then
+                echo -e "  Source: ${BOLD}explicit${NC} (tacctl.yaml: privileges.${group})"
                 echo ""
-                echo "$explicit" | while IFS= read -r c; do
+                echo "$merged" | while IFS= read -r c; do
                     [[ -z "$c" ]] && continue
                     echo "  - ${c}"
                 done
-            elif [[ -n "$defaults" ]]; then
-                echo -e "  Source: ${BOLD}default${NC} (no explicit mappings; using built-in safe defaults)"
+            else
+                echo -e "  Source: ${BOLD}default${NC} (built-in safe defaults; override via 'tacctl group privilege add')"
                 echo ""
-                echo "$defaults" | while IFS= read -r c; do
+                echo "$merged" | while IFS= read -r c; do
                     [[ -z "$c" ]] && continue
                     echo "  - ${c}  (default)"
                 done
-                echo ""
-                echo "  Override with: tacctl group privilege add ${group} '<command>'"
-            else
-                echo "  (no mappings — group's priv-lvl uses Cisco defaults)"
             fi
             echo ""
             ;;
@@ -5679,8 +6352,8 @@ cmd_group() {
             echo "  edit <name> priv-lvl <0-15>                         Change Cisco privilege level"
             echo "  edit <name> juniper-class <CLASS>                   Change Juniper class name"
             echo "  remove <name>                                       Remove a custom group"
-            echo "  commands list|default|add|remove|clear <group> ...  Per-group authorized commands"
-            echo "  privilege list|add|remove|clear|seed <group> ...    Per-group Cisco priv-exec mappings"
+            echo "  commands list|default|add|remove|clear|seed <group> ...  Per-group authorized commands"
+            echo "  privilege list|add|remove|clear|seed <group> ...         Per-group Cisco priv-exec mappings"
             echo ""
             echo "Examples:"
             echo "  tacctl group list"
@@ -5746,13 +6419,22 @@ cmd_status() {
     # Tolerate no-match: when tacquito is launched with ${TACQUITO_LEVEL}
     # rather than a literal -level flag, grep finds nothing and (under
     # pipefail + set -e) would abort status. `|| true` absorbs that.
+    # Log level resolution: drop-in override wins; fall back to scraping a
+    # literal -level N from ExecStart (older unit files); fall back to the
+    # template default of 20 (info). Units that use \${TACQUITO_LEVEL}
+    # placeholders would otherwise come back as "unknown".
     local loglevel
-    loglevel=$(systemctl show tacquito --property=ExecStart 2>/dev/null | grep -oP '\-level \K\d+' || true)
-    local level_name="unknown"
+    loglevel=$(read_service_override TACQUITO_LEVEL)
+    if [[ -z "$loglevel" ]]; then
+        loglevel=$(systemctl show tacquito --property=ExecStart 2>/dev/null | grep -oP '\-level \K\d+' || true)
+    fi
+    loglevel=${loglevel:-20}
+    local level_name
     case "$loglevel" in
         10) level_name="error" ;;
         20) level_name="info" ;;
         30) level_name="debug" ;;
+        *)  level_name="unknown" ;;
     esac
     echo -e "  ${BOLD}Log level:${NC}            ${level_name} (${loglevel})"
 
@@ -5773,18 +6455,20 @@ else:
     echo -e "  ${BOLD}Config:${NC}               ${CONFIG}"
 
     # Accounting log size
-    local acct_log="/var/log/tacquito/accounting.log"
-    if [[ -f "$acct_log" ]]; then
+    if [[ -f "$ACCT_LOG" ]]; then
         local log_size
-        log_size=$(du -sh "$acct_log" 2>/dev/null | awk '{print $1}')
+        log_size=$(du -sh "$ACCT_LOG" 2>/dev/null | awk '{print $1}')
         local log_lines
-        log_lines=$(wc -l < "$acct_log" 2>/dev/null)
+        log_lines=$(wc -l < "$ACCT_LOG" 2>/dev/null)
         echo -e "  ${BOLD}Accounting log:${NC}       ${log_size} (${log_lines} entries)"
     fi
 
-    # Backup count
+    # Backup count. `ls` on a no-match glob exits 2; under `set -euo pipefail`
+    # that kills the pipeline *and* the script. `|| echo 0` absorbs the
+    # failure and keeps the count accurate (the matching-case output is the
+    # line count from `wc -l`).
     local backup_count
-    backup_count=$(ls -1 "${BACKUP_DIR}"/tacquito.yaml.* 2>/dev/null | wc -l)
+    backup_count=$(ls -1 "${BACKUP_DIR}"/tacquito.yaml.* 2>/dev/null | wc -l || echo 0)
     echo -e "  ${BOLD}Config backups:${NC}       ${backup_count}"
 
     # Prometheus metrics — auth stats. Respects the tacctl config metrics
@@ -5899,7 +6583,7 @@ PY
     fi
 
     if [[ "$prefix_unrestricted" == "1" ]]; then
-        echo -e "    ${RED}Prefix scope:       UNRESTRICTED (all RFC 1918 — harden with 'tacctl scopes prefixes <name>')${NC}"
+        echo -e "    ${RED}Prefix scope:       UNRESTRICTED (all RFC 1918 — harden with 'tacctl scope prefixes <name>')${NC}"
     elif [[ "$prefix_count" -eq 0 ]]; then
         echo -e "    ${RED}Prefix scope:       EMPTY (no clients can connect)${NC}"
     else
@@ -5924,7 +6608,7 @@ PY
 
     # Shared-secret sanity: flag any scope with a placeholder or short key.
     if [[ -n "$placeholder_scopes" ]]; then
-        echo -e "    ${RED}Shared secret:      PLACEHOLDER in scope(s): ${placeholder_scopes} (run 'tacctl scopes secret <name> generate')${NC}"
+        echo -e "    ${RED}Shared secret:      PLACEHOLDER in scope(s): ${placeholder_scopes} (run 'tacctl scope secret <name> generate')${NC}"
     elif [[ -n "$weak_scopes" ]]; then
         echo -e "    ${RED}Shared secret:      weak in scope(s): ${weak_scopes} (min ${SECRET_MIN_LENGTH})${NC}"
     else
@@ -6047,6 +6731,31 @@ cmd_config_validate() {
         errors=$((errors + 1))
     fi
 
+    # Validate the tacctl overrides file. Malformed YAML would silently
+    # revert tunables to their defaults; surfacing the parse error here
+    # lets operators catch typos before they confuse 'tacctl status'.
+    # (Defaults are embedded in the script — no file to validate.)
+    if [[ ! -f "$TACCTL_OVERRIDES_FILE" ]]; then
+        echo -e "  ${GREEN}tacctl.yaml:${NC} no overrides"
+    elif python3 -c "import yaml; yaml.safe_load(open('$TACCTL_OVERRIDES_FILE'))" 2>/dev/null; then
+        echo -e "  ${GREEN}tacctl.yaml:${NC} valid"
+        # Schema-walk the overrides against _CONF_SCHEMA (write-time
+        # validation catches most issues; this catches hand-edits).
+        local schema_errors
+        schema_errors=$(_conf_validate_overrides_file 2>&1 || true)
+        if [[ -n "$schema_errors" ]]; then
+            while IFS= read -r line; do
+                [[ -z "$line" ]] && continue
+                echo -e "  ${RED}tacctl.yaml:${NC}          ${line}"
+                errors=$((errors + 1))
+            done <<< "$schema_errors"
+        fi
+    else
+        echo -e "  ${RED}tacctl.yaml:${NC} INVALID"
+        python3 -c "import yaml; yaml.safe_load(open('$TACCTL_OVERRIDES_FILE'))" 2>&1 | head -3
+        errors=$((errors + 1))
+    fi
+
     # Check required sections exist
     local result
     result=$(python3 -c "
@@ -6066,26 +6775,50 @@ if not re.search(r'^secrets:', config, re.MULTILINE):
 
 # Check for at least one user
 users_match = re.search(r'^users:\s*\n(.*?)(?=^# ---|\Z)', config, re.MULTILINE | re.DOTALL)
+# 'root' is allowed as an accounting-only sink (install-time seed); it
+# must carry the disabled-hash + accounter pattern, enforced below.
+# 'tacquito' collides with the service user and is never legitimate.
+RESERVED_AUTHABLE = {'tacquito'}
 if users_match:
     users = re.findall(r'- name: (\S+)', users_match.group(1))
     if len(users) == 0:
         errors.append('No users defined')
     else:
-        # Check each user has a bcrypt anchor
+        # Check each user has a bcrypt anchor + an accounter field, and
+        # isn't using a reserved OS/service name. Missing accounter triggers
+        # a stream of acct.go errors at auth time ('user [X] does not have
+        # an accounter associated'); reserved names collide with local OS
+        # accounts tacquito resolves outside the YAML.
         for u in users:
+            if u in RESERVED_AUTHABLE:
+                errors.append(f'User \"{u}\" uses a reserved name (remove with: tacctl user remove {u})')
             if not re.search(r'^bcrypt_' + re.escape(u) + r':', config, re.MULTILINE):
                 errors.append(f'User \"{u}\" has no bcrypt authenticator anchor')
+            # Every user entry must carry 'accounter: *file_accounter'
+            # within its block. Bound the block with a look-ahead for the
+            # next list item or the next top-level '# ---' heading.
+            user_block = re.search(
+                r'^  - name: ' + re.escape(u) + r'\s*\n((?:    .*\n|  #.*\n)+?)(?=^  - name:|^# ---|\Z)',
+                users_match.group(1), re.MULTILINE)
+            if user_block and 'accounter:' not in user_block.group(1):
+                errors.append(f'User \"{u}\" has no accounter: field (tacquito will error on every auth)')
 
-        # Check for DISABLED or empty hashes
+        # Check for disabled-marker or empty hashes
         for m in re.finditer(r'^bcrypt_(\w+):.*?hash:\s*(\S+)', config, re.MULTILINE | re.DOTALL):
             username = m.group(1)
             h = m.group(2)
             if h == 'REPLACE_ME':
                 errors.append(f'User \"{username}\" has placeholder hash (REPLACE_ME)')
-            elif h == 'DISABLED' or h == DISABLED_MARKER:
-                pass  # valid state (legacy or well-formed marker)
+            elif h == DISABLED_MARKER:
+                pass  # valid disabled-marker state
             elif len(h) < 20:
                 errors.append(f'User \"{username}\" has suspiciously short hash')
+            elif username == 'root':
+                # Root must stay a disabled accounting sink. A real bcrypt
+                # hash here means someone set a password for the sink,
+                # which would make Junos's built-in root account
+                # TACACS+-authable — a policy break.
+                errors.append('User \"root\" has a real password set — must remain a disabled accounting sink')
 
 # Check shared secret
 secret_match = re.search(r'key:\s*\"?([^\"\n]+)\"?', config)
@@ -6117,10 +6850,12 @@ else:
     fi
 
     # Scope integrity: every user's scopes[] must reference an existing
-    # secrets[].name; the default-scope marker must also name one.
+    # secrets[].name; scope.default in tacctl.yaml must also name one.
+    local default_scope_configured
+    default_scope_configured=$(conf_get scope.default)
     local scope_report
-    scope_report=$(python3 - "$CONFIG" "$DEFAULT_SCOPE_FILE" <<'PY' 2>/dev/null
-import yaml, os, sys
+    scope_report=$(python3 - "$CONFIG" "$default_scope_configured" <<'PY' 2>/dev/null
+import yaml, sys
 with open(sys.argv[1]) as f:
     d = yaml.safe_load(f) or {}
 names = [s.get('name') for s in (d.get('secrets') or []) if s.get('name')]
@@ -6146,16 +6881,10 @@ for u in (d.get('users') or []):
     for s in (u.get('scopes') or []):
         if s not in name_set:
             issues.append(f"User '{uname}' references nonexistent scope '{s}'")
-# Default-scope marker
-marker_path = sys.argv[2]
-if os.path.isfile(marker_path):
-    try:
-        val = open(marker_path).read().strip().splitlines()
-        val = val[0] if val else ''
-    except Exception:
-        val = ''
-    if val and val not in name_set:
-        issues.append(f"Default-scope marker points at '{val}' which is not a defined scope")
+# Default-scope override (read from tacctl.yaml before we were invoked).
+default_scope = sys.argv[2]
+if default_scope and default_scope not in name_set:
+    issues.append(f"Default scope override points at '{default_scope}' which is not a defined scope")
 for i in issues:
     print(f"ERROR:{i}")
 if not issues:
@@ -6330,7 +7059,7 @@ cmd_config_listen() {
         echo ""
         warn "tcp6 enables dual-stack sockets on most platforms."
         warn "IPv4 clients connect with mapped addresses (::ffff:a.b.c.d)"
-        warn "which do NOT match IPv4 rules in 'tacctl scopes prefixes <name>',"
+        warn "which do NOT match IPv4 rules in 'tacctl scope prefixes <name>',"
         warn "'config allow', or 'config deny' -- effectively bypassing them."
         echo ""
         read -rp "  Proceed with tcp6? [y/N]: " confirm
@@ -6505,7 +7234,7 @@ cmd_config_metrics() {
 # Manages an optional /etc/sudoers.d/tacctl drop-in that grants NOPASSWD
 # on /usr/local/bin/tacctl to a given group. Not installed by default --
 # operators opt in explicitly.
-SUDOERS_FILE="/etc/sudoers.d/tacctl"
+SUDOERS_FILE="${TACCTL_SUDOERS_FILE:-/etc/sudoers.d/tacctl}"
 
 cmd_config_sudoers() {
     local sub="${1:-}"
@@ -6600,13 +7329,7 @@ cmd_config_password_age() {
         return
     fi
 
-    if ! [[ "$new_days" =~ ^[0-9]+$ ]] || [[ "$new_days" -lt 1 ]]; then
-        error "Days must be a positive number."
-        exit 1
-    fi
-
-    echo "$new_days" > "$PASSWORD_MAX_AGE_FILE"
-    chmod 644 "$PASSWORD_MAX_AGE_FILE"
+    conf_set password.max_age_days "$new_days" || exit 1
     PASSWORD_MAX_AGE_DAYS="$new_days"
     info "Password age warning threshold set to ${new_days} days."
     echo ""
@@ -6629,13 +7352,7 @@ cmd_config_bcrypt_cost() {
         return
     fi
 
-    if ! [[ "$new_cost" =~ ^[0-9]+$ ]] || [[ "$new_cost" -lt 10 || "$new_cost" -gt 14 ]]; then
-        error "Cost must be an integer between 10 and 14."
-        exit 1
-    fi
-
-    echo "$new_cost" > "$BCRYPT_COST_FILE"
-    chmod 644 "$BCRYPT_COST_FILE"
+    conf_set bcrypt.cost "$new_cost" || exit 1
     BCRYPT_COST="$new_cost"
     info "Bcrypt cost set to ${new_cost}. Applies to new/changed passwords."
     echo ""
@@ -6659,13 +7376,7 @@ cmd_config_password_min_length() {
         return
     fi
 
-    if ! [[ "$new_len" =~ ^[0-9]+$ ]] || [[ "$new_len" -lt 8 || "$new_len" -gt 64 ]]; then
-        error "Length must be an integer between 8 and 64."
-        exit 1
-    fi
-
-    echo "$new_len" > "$PASSWORD_MIN_LENGTH_FILE"
-    chmod 644 "$PASSWORD_MIN_LENGTH_FILE"
+    conf_set password.min_length "$new_len" || exit 1
     PASSWORD_MIN_LENGTH="$new_len"
     info "Password minimum length set to ${new_len}. Applies to new/changed passwords."
     echo ""
@@ -6688,21 +7399,86 @@ cmd_config_secret_min_length() {
         return
     fi
 
-    if ! [[ "$new_len" =~ ^[0-9]+$ ]] || [[ "$new_len" -lt 16 || "$new_len" -gt 128 ]]; then
-        error "Length must be an integer between 16 and 128."
-        exit 1
-    fi
-
-    echo "$new_len" > "$SECRET_MIN_LENGTH_FILE"
-    chmod 644 "$SECRET_MIN_LENGTH_FILE"
+    conf_set secret.min_length "$new_len" || exit 1
     SECRET_MIN_LENGTH="$new_len"
     info "Shared-secret minimum length set to ${new_len}. Applies to new secrets."
+    echo ""
+}
+
+# --- CONFIG DUMP ---
+# Prints the tacctl configuration posture: defaults, overrides, and the
+# merged view. Diagnostic — no mutation.
+cmd_config_dump() {
+    echo ""
+    echo -e "${BOLD}tacctl configuration${NC}"
+    echo "--------------------------------------------"
+    echo -e "  Defaults:  embedded in bin/tacctl.sh (conf_emit_defaults)"
+    echo -e "  Overrides: ${TACCTL_OVERRIDES_FILE}"
+    echo ""
+
+    echo -e "${BOLD}--- Defaults (canonical) ---${NC}"
+    conf_emit_defaults
+    echo ""
+    echo -e "${BOLD}--- Overrides (operator-set) ---${NC}"
+    if [[ -r "$TACCTL_OVERRIDES_FILE" ]]; then
+        cat "$TACCTL_OVERRIDES_FILE"
+    else
+        echo "  (no overrides — running on defaults)"
+    fi
+    echo ""
+    echo -e "${BOLD}--- Effective (merged) ---${NC}"
+    # Print the cached merged view (JSON) as YAML. One python call.
+    _conf_load_cache
+    python3 -c '
+import json, sys, yaml
+print(yaml.safe_dump(json.loads(sys.argv[1]), default_flow_style=False, sort_keys=False).rstrip())
+' "$_TACCTL_CFG_CACHE"
     echo ""
 }
 
 # =====================================================================
 #  LOG COMMANDS
 # =====================================================================
+
+# Purge the tacquito journal and truncate the file-based accounting log.
+# Destructive — prompts for confirmation. Accepts `--force` / `-y` to skip
+# the prompt for scripted use (e.g. scheduled cleanups).
+cmd_log_clear() {
+    local force=false
+    case "${1:-}" in
+        -y|--force|--yes) force=true ;;
+    esac
+
+    echo ""
+    echo -e "${BOLD}Clear tacquito logs${NC}"
+    echo "--------------------------------------------"
+    warn "This permanently deletes tacquito journal entries and truncates ${ACCT_LOG}."
+    warn "Historical authentication and accounting records will be lost."
+
+    if [[ "$force" != "true" ]]; then
+        read -rp "  Continue? [y/N]: " confirm
+        if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+            info "Cancelled."
+            return 0
+        fi
+    fi
+
+    # Rotate closes the active journal file so the vacuum step can evict it;
+    # --vacuum-time=1s then drops everything older than one second. The
+    # per-unit filter keeps other services' journals intact.
+    journalctl --rotate 2>/dev/null || true
+    if ! journalctl --vacuum-time=1s -u tacquito >/dev/null 2>&1; then
+        warn "journalctl vacuum failed — run manually: sudo journalctl --vacuum-time=1s -u tacquito"
+    fi
+
+    # Truncate in place so logrotate's ownership/permissions stay intact.
+    if [[ -f "$ACCT_LOG" ]]; then
+        : > "$ACCT_LOG" 2>/dev/null || warn "Could not truncate ${ACCT_LOG} (check permissions)."
+    fi
+
+    info "Logs cleared (journal + accounting)."
+    echo ""
+}
 
 cmd_log() {
     local subcmd="${1:-}"
@@ -6754,6 +7530,9 @@ cmd_log() {
             fi
             echo ""
             ;;
+        clear)
+            cmd_log_clear "$@"
+            ;;
         *)
             echo ""
             echo -e "${BOLD}Log Commands${NC}"
@@ -6765,6 +7544,7 @@ cmd_log() {
             echo "  search <term>         Search journal for a username or keyword"
             echo "  failures              Show auth failures from the last 24 hours"
             echo "  accounting [n]        Show last N accounting log entries"
+            echo "  clear                 Purge tacquito journal + truncate accounting log (confirms)"
             echo ""
             exit 1
             ;;
@@ -7087,6 +7867,12 @@ cmd_install() {
     cd "${TACQUITO_SRC}/cmds/server/config/authenticators/bcrypt/generator"
     go build -o "$HASHGEN_BIN" .
 
+    # go build honors umask (often 022 → 755), but stricter umask settings
+    # (077) or existing 700 binaries from prior builds leave the tacquito
+    # binary unreadable/unexecutable by the service user. Pin 755 so
+    # systemd's User=tacquito can always exec.
+    chmod 755 "$TACQUITO_BIN" "$HASHGEN_BIN"
+
     info "Binaries installed:"
     info "  Server:  ${TACQUITO_BIN}"
     info "  Hashgen: ${HASHGEN_BIN}"
@@ -7105,9 +7891,13 @@ cmd_install() {
         info "Management repo cloned to ${DEPLOY_DIR}"
     fi
     normalize_deploy_perms
-    # Ensure git safe.directory is set for sudo operations
-    git config --global --add safe.directory "$DEPLOY_DIR" 2>/dev/null || true
-    git config --global --add safe.directory "$TACQUITO_SRC" 2>/dev/null || true
+    # Whitelist the two repos as safe for every user on the box (not just
+    # root). /opt/tacctl and /opt/tacquito-src are root-owned clones; without
+    # a --system entry, an unprivileged operator running `git -C /opt/tacctl
+    # log` hits "fatal: detected dubious ownership". --system writes to
+    # /etc/gitconfig so all users inherit the exception. Idempotent: skip if
+    # the entry is already present, since --add would otherwise duplicate.
+    ensure_safe_directory "$DEPLOY_DIR" "$TACQUITO_SRC"
 
     # Symlink management CLI (755 so non-root users can exec into sudo)
     chmod 755 "${DEPLOY_DIR}/bin/tacctl.sh"
@@ -7198,13 +7988,15 @@ PY
     chown tacquito:tacquito "$CONFIG_FILE"
     chmod 640 "$CONFIG_FILE"
 
-    # --- Seed default-scope marker ---
-    # Fresh installs ship with 'lab' as the sole scope, and the marker
-    # points at it so 'tacctl user add <u> <g>' without --scopes lands
-    # new users in lab (least-privilege by default). Operators who want
-    # a production scope create it explicitly:
-    #   tacctl scopes add prod --prefixes ... --secret generate
-    #   tacctl scopes default prod   (if they want prod-default posture)
+    # --- Seed scope.default ---
+    # Fresh installs ship with 'lab' as the sole scope, and tacctl's
+    # shipped default for scope.default is also 'lab' — so this write
+    # revert-to-defaults (no override persisted) while still printing
+    # the info line to confirm intent to the operator. 'tacctl user add
+    # <u> <g>' without --scopes lands new users in lab (least-privilege
+    # by default). Operators who want a production scope create it:
+    #   tacctl scope add prod --prefixes ... --secret generate
+    #   tacctl scope default prod   (if they want prod-default posture)
     write_default_scope "$DEFAULT_SCOPE_FRESH"
     info "Default scope seeded: ${DEFAULT_SCOPE_FRESH} (new users land here unless --scopes given)"
 
@@ -7213,10 +8005,87 @@ PY
     # matching entry. Idempotent.
     flatten_secrets_if_needed
 
+    # Sync tacquito.yaml's per-group commands: blocks from tacctl.yaml.
+    # Built-in groups pick up their shipped defaults; custom groups get
+    # any explicit overrides the operator has set.
+    regenerate_tacquito_commands
+
     mkdir -p "$BACKUP_DIR" "${BACKUP_DIR}/disabled" "$PASSWORD_DATES_DIR"
     chmod 750 "$BACKUP_DIR" "$PASSWORD_DATES_DIR"
     chmod 700 "${BACKUP_DIR}/disabled"
     chown tacquito:tacquito "$BACKUP_DIR" "$PASSWORD_DATES_DIR"
+
+    # --- Seed built-in users (disabled placeholders + root accounting sink) ---
+    # engineer/operator/viewer: templated accounts covering the shipped
+    # privilege tiers so a fresh install has usable identities without ever
+    # writing an unknown credential. Each hash is DISABLED_MARKER_HEX, so
+    # auth denies until the operator runs `tacctl user passwd <name>` —
+    # which replaces the marker with a real bcrypt hash and implicitly
+    # enables the account (is_disabled_hash only matches the marker).
+    #
+    # root: permanently-disabled accounting sink. Junos devices emit
+    # accounting packets with User=root whenever internal daemons (mgd,
+    # jsd, op-script probes, etc.) run non-tty CLI commands; tacquito's
+    # acct handler errors when it can't find the user. Seeding root here
+    # with an accounter silences those errors and routes the packets to
+    # the file accounter. The hash stays at DISABLED_MARKER_HEX forever —
+    # root is a Junos built-in intended for local/console use, never
+    # TACACS+. `cmd_passwd` rejects the name to keep the sink
+    # unauthenticable across its lifetime.
+    info "Seeding built-in users (disabled — set a password to activate)..."
+    python3 - "$CONFIG_FILE" "$DISABLED_MARKER_HEX" "$DEFAULT_SCOPE_FRESH" <<'PY'
+import sys, tempfile, os, re
+config_path, marker, default_scope = sys.argv[1], sys.argv[2], sys.argv[3]
+builtins = [
+    ("engineer", "superuser"),
+    ("operator", "operator"),
+    ("viewer",   "readonly"),
+    ("root",     "readonly"),
+]
+config = open(config_path).read()
+
+# Insert all authenticator anchor blocks before '# --- Services ---'.
+auth_blocks = "".join(
+    f'bcrypt_{u}: &bcrypt_{u}\n'
+    f'  type: *authenticator_type_bcrypt\n'
+    f'  options:\n'
+    f'    hash: {marker}\n\n'
+    for u, _ in builtins
+)
+marker_auth = '# --- Services ---'
+idx = config.index(marker_auth)
+prefix = config[:idx].rstrip('\n')
+config = prefix + '\n\n' + auth_blocks.rstrip('\n') + '\n\n' + config[idx:]
+
+# Insert all user entries before the Secret Providers section. Prefix
+# match tolerates both '# --- Secret Providers ---' and the newer
+# '# --- Secret Providers (Scopes) ---'.
+user_blocks = "".join(
+    f'  # {u}\n'
+    f'  - name: {u}\n'
+    f'    scopes: ["{default_scope}"]\n'
+    f'    groups: [*{g}]\n'
+    f'    authenticator: *bcrypt_{u}\n'
+    f'    accounter: *file_accounter\n\n'
+    for u, g in builtins
+)
+m_sp = re.search(r'^# --- Secret Providers\b', config, re.M)
+if not m_sp:
+    raise SystemExit("seed: could not locate '# --- Secret Providers' section")
+idx2 = m_sp.start()
+prefix2 = config[:idx2].rstrip('\n')
+config = prefix2 + '\n\n' + user_blocks.rstrip('\n') + '\n\n' + config[idx2:]
+
+tmp = tempfile.NamedTemporaryFile('w', dir=os.path.dirname(config_path), delete=False)
+tmp.write(config)
+tmp.close()
+os.rename(tmp.name, config_path)
+PY
+    chown tacquito:tacquito "$CONFIG_FILE"
+    info "  engineer (superuser) — disabled"
+    info "  operator (operator)  — disabled"
+    info "  viewer   (readonly)  — disabled"
+    info "  root     (readonly)  — disabled (accounting sink for Junos internal daemons)"
 
     # --- Step 7: Install systemd service ---
     info "Installing systemd service..."
@@ -7260,12 +8129,18 @@ PY
     echo -e "  ${RED}SAVE THE SHARED SECRET — it is not stored in plaintext.${NC}"
     echo -e "  ${YELLOW}Clear your terminal after recording: history -c && clear${NC}"
     echo ""
+    echo "  Built-in users:"
+    echo "    engineer (superuser)   — disabled; tacctl user passwd engineer"
+    echo "    operator (operator)    — disabled; tacctl user passwd operator"
+    echo "    viewer   (readonly)    — disabled; tacctl user passwd viewer"
+    echo "    root     (readonly)    — permanent accounting-only sink (never authenticates)"
+    echo ""
     echo "  Next steps:"
-    echo "    1. Add your first user:    tacctl user add <username> superuser"
-    echo "       (lands in default scope '${DEFAULT_SCOPE_FRESH}')"
+    echo "    1. Activate a built-in:    tacctl user passwd engineer"
+    echo "       (or add your own:       tacctl user add <username> <group>)"
     echo "    2. Configure devices:      tacctl config cisco / tacctl config juniper"
-    echo "    3. Narrow scope prefixes:  tacctl scopes prefixes ${DEFAULT_SCOPE_FRESH} <your-subnets>"
-    echo "    4. Add a prod scope:       tacctl scopes add prod --prefixes <cidrs> --secret generate"
+    echo "    3. Narrow scope prefixes:  tacctl scope prefixes ${DEFAULT_SCOPE_FRESH} <your-subnets>"
+    echo "    4. Add a prod scope:       tacctl scope add prod --prefixes <cidrs> --secret generate"
     echo "    5. Open port 49/tcp in your firewall if needed"
     echo ""
     echo "  Security hardening:"
@@ -7303,9 +8178,13 @@ cmd_upgrade() {
 
     export PATH=$PATH:/usr/local/go/bin
 
-    # Ensure git safe.directory is set for sudo operations
-    git config --global --add safe.directory "$DEPLOY_DIR" 2>/dev/null || true
-    git config --global --add safe.directory "$TACQUITO_SRC" 2>/dev/null || true
+    # Whitelist the two repos as safe for every user on the box (not just
+    # root). /opt/tacctl and /opt/tacquito-src are root-owned clones; without
+    # a --system entry, an unprivileged operator running `git -C /opt/tacctl
+    # log` hits "fatal: detected dubious ownership". --system writes to
+    # /etc/gitconfig so all users inherit the exception. Idempotent: skip if
+    # the entry is already present, since --add would otherwise duplicate.
+    ensure_safe_directory "$DEPLOY_DIR" "$TACQUITO_SRC"
 
     local PROJECT_DIR
     PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -7315,6 +8194,14 @@ cmd_upgrade() {
     echo "  Tacquito Upgrade"
     echo "============================================"
     echo ""
+
+    # --- Sync tacquito.yaml command blocks with tacctl config ---
+    # Pre-unified-commands installs kept operator-customized commands:
+    # blocks in tacquito.yaml; scrape those back into tacctl.yaml as
+    # overrides (idempotent: no-op once scraped), then regenerate so
+    # tacquito.yaml matches the tacctl-authored state.
+    conf_migrate_command_rules
+    regenerate_tacquito_commands
 
     # --- Record current version ---
     local CURRENT_COMMIT
@@ -7361,6 +8248,10 @@ cmd_upgrade() {
         info "Building password hash generator..."
         cd "${TACQUITO_SRC}/cmds/server/config/authenticators/bcrypt/generator"
         go build -o "$HASHGEN_BIN" . || warn "Hashgen build failed (non-critical)."
+
+        # Same rationale as install: pin 755 so the service user can exec.
+        chmod 755 "$TACQUITO_BIN"
+        [[ -x "$HASHGEN_BIN" ]] && chmod 755 "$HASHGEN_BIN"
     fi
 
     # --- Update management repo ---
@@ -7533,48 +8424,6 @@ cmd_upgrade() {
 
     info "${SCRIPTS_UPDATED} file(s) updated."
 
-    # --- Seed default-scope marker if missing (upgrade hook) ---
-    # Pre-multi-scope installs don't have /etc/tacquito/default-scope.
-    # Seed it with the name of the existing sole scope so behavior is
-    # preserved — no forced rename (operators who want to align with the
-    # newer 'lab' convention can do so explicitly with 'tacctl scopes
-    # rename'). If the install already has multiple scopes and no marker,
-    # fall back to the first scope and warn; operators should pick one
-    # explicitly.
-    if [[ ! -f "$DEFAULT_SCOPE_FILE" ]]; then
-        local _existing_scopes _first_scope _scope_count
-        _existing_scopes=$(list_scopes 2>/dev/null || true)
-        _scope_count=$(printf '%s\n' "$_existing_scopes" | awk 'NF' | wc -l)
-        if [[ "$_scope_count" -eq 1 ]]; then
-            _first_scope=$(printf '%s\n' "$_existing_scopes" | awk 'NF' | head -1)
-            write_default_scope "$_first_scope"
-            info "Seeded default-scope marker: ${_first_scope}"
-        elif [[ "$_scope_count" -gt 1 ]]; then
-            _first_scope=$(printf '%s\n' "$_existing_scopes" | awk 'NF' | head -1)
-            write_default_scope "$_first_scope"
-            warn "Multiple scopes detected and no default-scope marker was set."
-            warn "Provisionally seeded default to '${_first_scope}'."
-            warn "Review with: tacctl scopes default     |   set with: tacctl scopes default <name>"
-        fi
-    fi
-
-    # --- Flatten multi-prefix secrets[] entries to one-entry-per-prefix ---
-    # Pre-flat installs have a single secrets[] entry per scope with a
-    # multi-line prefixes: block. Under the new emission, each prefix becomes
-    # its own entry so tacquito's slice-ordered first-match walk honors
-    # cross-scope specificity. Idempotent; no-op on already-flat files.
-    if [[ -r "$CONFIG" ]]; then
-        local _pre _post
-        _pre=$(sha256sum "$CONFIG" 2>/dev/null | awk '{print $1}')
-        flatten_secrets_if_needed
-        _post=$(sha256sum "$CONFIG" 2>/dev/null | awk '{print $1}')
-        if [[ "$_pre" != "$_post" ]]; then
-            chown tacquito:tacquito "$CONFIG"
-            info "Migrated tacquito.yaml to flat per-prefix secrets: entries."
-            SCRIPTS_UPDATED=$((SCRIPTS_UPDATED + 1))
-        fi
-    fi
-
     # --- Restart service (if binaries or service file changed) ---
     if [[ "$SKIP_BUILD" == "false" ]] || [[ "$SCRIPTS_UPDATED" -gt 0 ]]; then
         info "Restarting tacquito service..."
@@ -7725,12 +8574,14 @@ cmd_uninstall() {
     info "Removing log directory..."
     rm -rf /var/log/tacquito
 
-    # --- Remove password max age file ---
-    rm -f /etc/tacquito/password-max-age
-
     # --- Remove management repo ---
     info "Removing management repo..."
     rm -rf "$DEPLOY_DIR"
+
+    # --- Drop system-wide git safe.directory entries for the removed repos ---
+    # Best-effort: git may complain if no entries exist; silent on failure.
+    git config --system --unset-all safe.directory "$(printf '^%s$' "$DEPLOY_DIR")" 2>/dev/null || true
+    git config --system --unset-all safe.directory "$(printf '^%s$' "$TACQUITO_SRC")" 2>/dev/null || true
 
     # --- Remove service user ---
     if id tacquito &>/dev/null; then
@@ -7778,13 +8629,13 @@ usage() {
     echo "  upgrade [--branch <name>]     Pull latest source, rebuild, and update scripts"
     echo "  uninstall                     Remove tacquito and all associated files"
     echo "  status                        Show service health, stats, and recent errors"
-    echo "  user <subcommand>             User management (list, add, remove, passwd, scopes, ...)"
+    echo "  user <subcommand>             User management (list, add, remove, passwd, scope, ...)"
     echo "  group <subcommand>            Group management (list, add, edit, remove)"
-    echo "  scopes <subcommand>           Scope management (named CIDR + shared-secret bundles)"
+    echo "  scope <subcommand>            Scope management (named CIDR + shared-secret bundles)"
     echo "  config <subcommand>           Configuration (show, cisco, juniper, validate, ...)"
     echo "  log <subcommand>              Log viewer (tail, search, failures, accounting)"
     echo "  backup <subcommand>           Backup management (list, diff, restore)"
-    echo "  hash [help]                   Generate a bcrypt password hash (or show client-side alternatives)"
+    echo "  hash <subcommand>             Bcrypt helper (generate, commands — runs as invoking user, no sudo)"
     echo "  version                       Print tacctl version"
     echo ""
     echo "Run any command without arguments for detailed help, e.g.:"
@@ -7795,14 +8646,11 @@ usage() {
     echo "  tacctl install"
     echo "  tacctl upgrade"
     echo "  tacctl user add jsmith superuser"
-    echo "  tacctl user scopes jsmith add prod"
-    echo "  tacctl scopes add prod --prefixes 10.10.0.0/16 --secret generate"
+    echo "  tacctl user scope jsmith add prod"
+    echo "  tacctl scope add prod --prefixes 10.10.0.0/16 --secret generate"
     echo "  tacctl config cisco --scope prod"
     echo ""
 }
-
-COMMAND="${1:-}"
-shift || true
 
 # --- USER dispatcher ---
 cmd_user() {
@@ -7820,7 +8668,7 @@ cmd_user() {
         rename)     cmd_rename "$@" ;;
         move)       cmd_move "$@" ;;
         verify)     cmd_verify "$@" ;;
-        scopes)     cmd_user_scopes "$@" ;;
+        scope)      cmd_user_scope "$@" ;;
         *)
             echo ""
             echo -e "${BOLD}User Commands${NC}"
@@ -7841,13 +8689,13 @@ cmd_user() {
             echo "  rename <old> <new>                          Rename a user"
             echo "  move <user> <group>                         Move user to a different group"
             echo "  verify <username>                           Verify password and show user details"
-            echo "  scopes <user> list|add|remove|set|clear     Manage which scopes the user can auth from"
+            echo "  scope <user> list|add|remove|set|clear     Manage which scopes the user can auth from"
             echo ""
             echo "Examples:"
             echo "  tacctl user list"
             echo "  tacctl user add jsmith superuser"
             echo "  tacctl user add jsmith superuser --scopes prod,lab"
-            echo "  tacctl user scopes jsmith add prod"
+            echo "  tacctl user scope jsmith add prod"
             echo "  tacctl user verify jsmith"
             echo ""
             exit 1
@@ -7855,58 +8703,64 @@ cmd_user() {
     esac
 }
 
-case "$COMMAND" in
-    install)
-        cmd_install "$@"
-        ;;
-    upgrade)
-        cmd_upgrade "$@"
-        ;;
-    uninstall)
-        cmd_uninstall "$@"
-        ;;
-    status)
-        preflight
-        cmd_status
-        ;;
-    user)
-        preflight
-        cmd_user "$@"
-        ;;
-    group)
-        preflight
-        cmd_group "$@"
-        ;;
-    config)
-        preflight
-        cmd_config "$@"
-        ;;
-    scopes)
-        preflight
-        cmd_scopes "$@"
-        ;;
-    log)
-        preflight
-        cmd_log "$@"
-        ;;
-    backup)
-        preflight
-        cmd_backup "$@"
-        ;;
-    hash)
-        cmd_hash "$@"
-        ;;
-    _completion-names)
-        # Hidden helper used by bash completion to enumerate scope, user, or
-        # group names. Completion runs in the user's shell where the config
-        # is unreadable (mode 0600); `sudo -n tacctl _completion-names <kind>`
-        # bridges that when a NOPASSWD sudoers rule for tacctl is installed.
-        # Not shown in `tacctl` help or the man page — deliberate low-surface
-        # interface, behavior subject to change.
-        preflight
-        case "${1:-}" in
-            scopes) list_scopes ;;
-            users)  python3 -c "
+# Dispatch runs only when invoked as a script. Sourced imports (tests) get
+# function definitions without triggering CLI dispatch.
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    COMMAND="${1:-}"
+    shift || true
+
+    case "$COMMAND" in
+        install)
+            cmd_install "$@"
+            ;;
+        upgrade)
+            cmd_upgrade "$@"
+            ;;
+        uninstall)
+            cmd_uninstall "$@"
+            ;;
+        status)
+            preflight
+            cmd_status
+            ;;
+        user)
+            preflight
+            cmd_user "$@"
+            ;;
+        group)
+            preflight
+            cmd_group "$@"
+            ;;
+        config)
+            preflight
+            cmd_config "$@"
+            ;;
+        scope)
+            preflight
+            cmd_scope "$@"
+            ;;
+        log)
+            preflight
+            cmd_log "$@"
+            ;;
+        backup)
+            preflight
+            cmd_backup "$@"
+            ;;
+        hash)
+            cmd_hash "$@"
+            ;;
+        _completion-names)
+            # Hidden helper used by bash completion to enumerate scope, user, or
+            # group names. Completion runs in the user's shell where the config
+            # is unreadable (mode 0600); `sudo -n tacctl _completion-names <kind>`
+            # bridges that when a NOPASSWD sudoers rule for tacctl is installed.
+            # Not shown in `tacctl` help or the man page — deliberate low-surface
+            # interface, behavior subject to change.
+            preflight
+            case "${1:-}" in
+                scopes) list_scopes ;;
+                users)  python3 -c "
 import yaml
 with open('$CONFIG') as f:
     d = yaml.safe_load(f) or {}
@@ -7914,18 +8768,19 @@ for u in (d.get('users') or []):
     n = u.get('name')
     if n: print(n)
 " 2>/dev/null ;;
-            groups) awk '/^# --- Groups ---/,/^# --- Users ---/ {
-                if (match($0, /^[a-z][a-zA-Z0-9_-]*: &/)) {
-                    sub(/:.*/, ""); print
-                }
-            }' "$CONFIG" 2>/dev/null ;;
-        esac
-        ;;
-    version|--version|-v)
-        echo "tacctl $(get_version)"
-        ;;
-    *)
-        usage
-        exit 1
-        ;;
-esac
+                groups) awk '/^# --- Groups ---/,/^# --- Users ---/ {
+                    if (match($0, /^[a-z][a-zA-Z0-9_-]*: &/)) {
+                        sub(/:.*/, ""); print
+                    }
+                }' "$CONFIG" 2>/dev/null ;;
+            esac
+            ;;
+        version|--version|-v)
+            echo "tacctl $(get_version)"
+            ;;
+        *)
+            usage
+            exit 1
+            ;;
+    esac
+fi

@@ -11,12 +11,18 @@ sudo bash -c 'git clone https://github.com/rett/tacctl.git /opt/tacctl && ln -sf
 # Or upgrade an existing server (pulls latest from GitHub)
 tacctl upgrade
 
-# After install, add your first user (lands in the default 'lab' scope)
+# Fresh installs seed four built-ins: engineer/superuser, operator/operator,
+# viewer/readonly (all disabled — set a password to activate), plus
+# root/readonly as a permanent accounting-only sink (Junos internal daemons
+# emit accounting packets as root; tacctl user passwd root is rejected).
+tacctl user passwd engineer
+
+# Or add your own (lands in the default 'lab' scope)
 tacctl user add jsmith superuser
 
 # Create a production scope and grant jsmith access to it
-tacctl scopes add prod --prefixes 10.10.0.0/16 --secret generate
-tacctl user scopes jsmith add prod
+tacctl scope add prod --prefixes 10.10.0.0/16 --secret generate
+tacctl user scope jsmith add prod
 
 # Manage users
 tacctl user list
@@ -58,8 +64,7 @@ tacctl/
 | `/usr/local/bin/tacctl` | Symlink to management CLI |
 | `/usr/local/bin/tacquito-hashgen` | Password hash generator |
 | `/etc/tacquito/templates/` | Custom device config templates (override defaults) |
-| `/etc/tacquito/password-max-age` | Password age warning threshold (days) |
-| `/etc/tacquito/default-scope` | Name of the default scope (used when `user add` / `config cisco` / `config juniper` are called without `--scopes` / `--scope`) |
+| `/etc/tacquito/tacctl.yaml` | Operator overrides — only keys you've changed. Absent keys inherit from the canonical defaults embedded in `bin/tacctl.sh`. Inspect with `tacctl config dump`; list canonical defaults with `tacctl config defaults`. |
 | `/opt/tacctl/` | Git clone of this repo (used by upgrade) |
 | `/opt/tacquito-src/` | Tacquito server source code |
 
@@ -88,18 +93,18 @@ Fresh installs ship with a single scope named **`lab`** (least-privilege default
 
 Example multi-environment setup (broader prod with narrower lab and sandbox carved out):
 ```
-tacctl scopes add prod_dc_east  --prefixes 10.10.0.0/16      --secret generate
-tacctl scopes add prod_dc_west  --prefixes 10.20.0.0/16      --secret generate
-tacctl scopes add corp_campus   --prefixes 172.20.0.0/16     --secret generate
-tacctl scopes add lab_east      --prefixes 10.10.99.0/24     --secret generate   # carved from prod_dc_east
-tacctl scopes add sandbox       --prefixes 10.10.200.0/23    --secret generate   # carved from prod_dc_east
+tacctl scope add prod_dc_east  --prefixes 10.10.0.0/16      --secret generate
+tacctl scope add prod_dc_west  --prefixes 10.20.0.0/16      --secret generate
+tacctl scope add corp_campus   --prefixes 172.20.0.0/16     --secret generate
+tacctl scope add lab_east      --prefixes 10.10.99.0/24     --secret generate   # carved from prod_dc_east
+tacctl scope add sandbox       --prefixes 10.10.200.0/23    --secret generate   # carved from prod_dc_east
 
-tacctl scopes default prod_dc_east                  # optional: new users land in prod by default
+tacctl scope default prod_dc_east                  # optional: new users land in prod by default
 tacctl user add alice superuser --scopes prod_dc_east,prod_dc_west
 tacctl user add dev1 superuser  --scopes sandbox,lab_east    # no prod access
 
-tacctl scopes lookup 10.10.99.7                     # -> lab_east (shadowed by prod_dc_east, lab)
-tacctl scopes lookup 10.10.1.5                      # -> prod_dc_east (shadowed by lab)
+tacctl scope lookup 10.10.99.7                     # -> lab_east (shadowed by prod_dc_east, lab)
+tacctl scope lookup 10.10.1.5                      # -> prod_dc_east (shadowed by lab)
 ```
 
 Emit per-scope device configs:
@@ -110,19 +115,17 @@ tacctl config juniper --scope lab_east
 
 Scope management commands:
 ```
-tacctl scopes list                              # name, prefix list, user count, default marker
-tacctl scopes show <name>                       # full detail + raw secret + users + default-ness
-tacctl scopes add <name> --prefixes <cidrs>     # --secret <v> | --secret generate | --default
-tacctl scopes remove <name> [--force]           # refuses if users reference it; --force strips them
-tacctl scopes rename <old> <new>                # rewrites every matching entry + user refs + default marker
-tacctl scopes default [<name>]                  # show / set the default
-tacctl scopes lookup <ip|cidr>                  # trace which scope owns an address (+ shadow overlaps)
-tacctl scopes prefixes <name> list|add|remove|clear [--force]
-tacctl scopes secret <name>   show|set <v>|generate
-tacctl user scopes <user>     list|add|remove|set|clear
+tacctl scope list                              # name, prefix list, user count, default marker
+tacctl scope show <name>                       # full detail + raw secret + users + default-ness
+tacctl scope add <name> --prefixes <cidrs>     # --secret <v> | --secret generate | --default
+tacctl scope remove <name> [--force]           # refuses if users reference it; --force strips them
+tacctl scope rename <old> <new>                # rewrites every matching entry + user refs + default marker
+tacctl scope default [<name>]                  # show / set the default
+tacctl scope lookup <ip|cidr>                  # trace which scope owns an address (+ shadow overlaps)
+tacctl scope prefixes <name> list|add|remove|clear [--force]
+tacctl scope secret <name>   show|set <v>|generate
+tacctl user scope <user>     list|add|remove|set|clear
 ```
-
-Removed: `tacctl config prefixes` and `tacctl config secret`. Both are now scope-owned. Old invocations print an explicit redirect to the new `scopes prefixes <name>` / `scopes secret <name>` forms.
 
 ### Configure connection filters
 Use allow/deny lists for additional IP-level filtering:
@@ -140,16 +143,18 @@ tacctl group privilege list operator         # show current mappings + source (e
 tacctl group privilege add operator 'show ip route'
 tacctl group privilege remove operator 'show running-config'
 ```
-Defaults move only verified priv-15 commands DOWN to lower groups (e.g. `show running-config` → priv 7 for `operator`); they never move commands UP from a lower default level (which would silently restrict them from `readonly` users). Mappings live in `/etc/tacquito/cisco-privileges.conf` and survive `tacctl upgrade`.
+Defaults move only verified priv-15 commands DOWN to lower groups (e.g. `show running-config` → priv 7 for `operator`); they never move commands UP from a lower default level (which would silently restrict them from `readonly` users). Mappings live under `privileges.<group>` in `/etc/tacquito/tacctl.yaml` and survive `tacctl upgrade`.
 
 ### Per-command authorization
-Restrict which commands a group can run, enforced live by Cisco IOS via TACACS+. Quickest path is to seed the built-in groups with sensible defaults:
-```
-tacctl group commands seed                # all three built-ins
-tacctl group commands seed operator       # just operator (refuses to overwrite without --force)
-tacctl group commands list operator
-```
-Defaults: `readonly` permits show / ping / traceroute / terminal / navigation / `enable` and denies the rest; `operator` adds `clear test monitor` on top with default deny; `superuser` gets an unrestricted `*` catchall.
+Restrict which commands a group can run, enforced live by Cisco IOS via TACACS+ and mirrored into Junos class `allow-commands`/`deny-commands` by `tacctl config juniper`. Tacctl ships sensible defaults embedded in the script — no seed step needed for fresh installs:
+
+- `superuser`: unrestricted `*` catch-all (permit).
+- `operator`: permits `show`, `ping`, `traceroute`, `terminal`; default **deny** catch-all.
+- `readonly`: permits `show`, `ping`, `traceroute`; default **deny** catch-all (`terminal` omitted — `terminal monitor` can leak debug across sessions).
+
+View the shipped defaults with `tacctl config defaults`; inspect a single group with `tacctl group commands list <group>`. Rules live under `commands.<group>` in `/etc/tacquito/tacctl.yaml`; tacquito.yaml's per-group `commands:` block is regenerated from that source on every mutation.
+
+The `tacctl group commands seed` command is retained as a recovery tool — it re-applies the legacy seed rule set (with `enable`, `clear`, `monitor`, etc.) and should only be needed if you've customized and want to start over. On a fresh install, the shipped defaults above are already in effect.
 
 Or build rules manually:
 ```
@@ -168,14 +173,14 @@ tacctl config mgmt-acl add 10.1.0.0/16
 tacctl config mgmt-acl add 192.168.5.0/24
 tacctl config mgmt-acl list
 ```
-`tacctl config cisco` then emits a populated `VTY-ACL` applied to `line vty 0 15` via `access-class VTY-ACL in`. `tacctl config juniper` emits a commented `set firewall family inet filter MGMT-SSH-ACL` block (including a trailing `default-accept` term to keep BGP/OSPF/IS-IS traffic to the RE working) — review and uncomment per device. The list lives at `/etc/tacquito/mgmt-acl.conf` and survives `tacctl upgrade`.
+`tacctl config cisco` then emits a populated `VTY-ACL` applied to `line vty 0 15` via `access-class VTY-ACL in`. `tacctl config juniper` emits a commented `set firewall family inet filter MGMT-SSH-ACL` block (including a trailing `default-accept` term to keep BGP/OSPF/IS-IS traffic to the RE working) — review and uncomment per device. The list lives under `mgmt_acl.permits` in `/etc/tacquito/tacctl.yaml` and survives `tacctl upgrade`.
 
 Rename the emitted ACL / filter names to match your site conventions:
 ```
 tacctl config mgmt-acl cisco-name MGMT-ACCESS
 tacctl config mgmt-acl juniper-name MGMT-SSH-FILTER
 ```
-Overrides live at `/etc/tacquito/mgmt-acl-names.conf` and also survive `tacctl upgrade`.
+Overrides live under `mgmt_acl.names.{cisco,juniper}` in `/etc/tacquito/tacctl.yaml` and also survive `tacctl upgrade`.
 
 ### Prometheus metrics exporter
 Tacquito ships a Prometheus HTTP exporter for auth-rate and error counters. By default it binds to **loopback only** (`127.0.0.1:8080`) — local scrapers on the box work out of the box, external scrapers are opt-in. Manage via:
@@ -253,12 +258,12 @@ tacctl user passwd jsmith --hash '$2b$12$...'
 
 These patterns apply uniformly across every subcommand family:
 
-- **No arguments** — dispatcher commands (`user`, `group`, `config`, `scopes`, `log`, `backup`, `hash`, and nested dispatchers like `scopes prefixes` / `scopes secret` / `user scopes` / `group privilege`) print their own usage and exit without side effects. Scalar getter/setters (`config loglevel`, `config listen`, `config metrics`, `config password-age`, `config bcrypt-cost`, `config password-min-length`, `config secret-min-length`, `config branch`, `scopes default`) print the current value when called with no arguments.
+- **No arguments** — dispatcher commands (`user`, `group`, `config`, `scope`, `log`, `backup`, `hash`, and nested dispatchers like `scope prefixes` / `scope secret` / `user scope` / `group privilege`) print their own usage and exit without side effects. Scalar getter/setters (`config loglevel`, `config listen`, `config metrics`, `config password-age`, `config bcrypt-cost`, `config password-min-length`, `config secret-min-length`, `config branch`, `scope default`) print the current value when called with no arguments.
 - **Multi-item input** — every `add` / `remove` that takes a CIDR, a scope name, or a Cisco exec command accepts either a single value or a comma-separated list (`a,b,c`). Every input is validated first; a bad entry aborts the entire operation without writing anything.
-- **CIDR semantics** — every CIDR-list subcommand (`scopes prefixes`, `config allow`, `config deny`, `config mgmt-acl`) canonicalizes input before storage: `10.1.5.5/24` becomes `10.1.5.0/24`, `2001:DB8::/32` becomes `2001:db8::/32`. Exact duplicates (after canonicalization) are rejected as no-ops on `add`. Overlapping CIDRs of different prefix lengths coexist (`10.0.0.0/8` and `10.99.0.0/16` can both be present). Stored order is by broadcast-address ascending (IPv4 before IPv6): disjoint ranges sort by their end address, and an overlapping subnet falls immediately above its containing supernet (the subnet's range ends before the supernet's). This groups related CIDRs together and gives tacquito's provider selector the "most-specific first among overlaps" ordering it needs so a narrower scope wins a first-match lookup over a broader scope that contains it.
-- **Scope prefix invariants** — every CIDR belongs to **exactly one** scope after canonicalization. Adding a prefix already claimed by a different scope is rejected with a message naming the owner; you must `tacctl scopes prefixes <owner> remove <cidr>` before re-adding it elsewhere. Overlapping prefixes *across* scopes are allowed and routed correctly (e.g. `10.5.0.0/16` in `staging` coexists with `10.0.0.0/8` in `lab`). To make cross-scope first-match honor specificity, tacctl emits one `secrets:` entry per (scope, prefix) pair — a scope with N prefixes becomes N entries sharing the same `name:` and `secret.key`. Entries are re-sorted globally by prefix specificity (v4 before v6, smaller broadcast first) after every mutation, so tacquito's slice-ordered walk picks the narrowest scope. The CLI continues to show the logical one-bundle-per-scope view; do not hand-edit the `secrets:` block, and `tacctl config validate` flags any same-name key divergence.
+- **CIDR semantics** — every CIDR-list subcommand (`scope prefixes`, `config allow`, `config deny`, `config mgmt-acl`) canonicalizes input before storage: `10.1.5.5/24` becomes `10.1.5.0/24`, `2001:DB8::/32` becomes `2001:db8::/32`. Exact duplicates (after canonicalization) are rejected as no-ops on `add`. Overlapping CIDRs of different prefix lengths coexist (`10.0.0.0/8` and `10.99.0.0/16` can both be present). Stored order is by broadcast-address ascending (IPv4 before IPv6): disjoint ranges sort by their end address, and an overlapping subnet falls immediately above its containing supernet (the subnet's range ends before the supernet's). This groups related CIDRs together and gives tacquito's provider selector the "most-specific first among overlaps" ordering it needs so a narrower scope wins a first-match lookup over a broader scope that contains it.
+- **Scope prefix invariants** — every CIDR belongs to **exactly one** scope after canonicalization. Adding a prefix already claimed by a different scope is rejected with a message naming the owner; you must `tacctl scope prefixes <owner> remove <cidr>` before re-adding it elsewhere. Overlapping prefixes *across* scopes are allowed and routed correctly (e.g. `10.5.0.0/16` in `staging` coexists with `10.0.0.0/8` in `lab`). To make cross-scope first-match honor specificity, tacctl emits one `secrets:` entry per (scope, prefix) pair — a scope with N prefixes becomes N entries sharing the same `name:` and `secret.key`. Entries are re-sorted globally by prefix specificity (v4 before v6, smaller broadcast first) after every mutation, so tacquito's slice-ordered walk picks the narrowest scope. The CLI continues to show the logical one-bundle-per-scope view; do not hand-edit the `secrets:` block, and `tacctl config validate` flags any same-name key divergence.
 - **`clear`** — `clear` subcommands always prompt with `[y/N]` and print a warning describing the resulting posture (e.g. "no clients can connect" or "fails open").
-- **Service restart** — changes that mutate `/etc/tacquito/tacquito.yaml` restart the tacquito service automatically. Changes to tacctl-internal files (`mgmt-acl.conf`, `cisco-privileges.conf`, `mgmt-acl-names.conf`, `password-min-length`, etc.) do not — tacquito never reads them.
+- **Service restart** — changes that mutate `/etc/tacquito/tacquito.yaml` restart the tacquito service automatically. Changes to `/etc/tacquito/tacctl.yaml` (mgmt-acl permits + names, bcrypt cost, password age, privileges, etc.) do not — tacquito never reads that file.
 - **Flags** — long-form flags (`--hash`, `--scopes`, `--scope`, `--prefixes`, `--secret`, `--default`, `--match`, `--action`, `--force`, `--branch`) take a single argument. Required positional args come before flags.
 
 ### Top-Level Commands
@@ -270,7 +275,7 @@ tacctl uninstall                # Remove tacquito and all associated files
 tacctl status                   # Service health, stats, errors, password age warnings
 tacctl user <subcommand>        # User management (incl. per-user scope membership)
 tacctl group <subcommand>       # Group management
-tacctl scopes <subcommand>      # Scope management (CIDR+secret bundles)
+tacctl scope <subcommand>      # Scope management (CIDR+secret bundles)
 tacctl config <subcommand>      # Configuration
 tacctl log <subcommand>         # Log viewer
 tacctl backup <subcommand>      # Backup management
@@ -287,7 +292,7 @@ Run any command without arguments for detailed help.
 ```
 user list                                         List all users (name, group, status, pw age, scopes)
 user show <name>                                  Show user details incl. scope membership (no password prompt)
-user add <name> <group>                           Add a new user; lands in default scope
+user add <name> <group>                           Add a new user; lands in default scope. Reserved names `root` and `tacquito` are rejected (they collide with OS accounts tacquito resolves locally).
 user add <name> <group> --scopes <name>[,name...] Grant specific scopes at creation
 user add <name> <group> --hash <hash>             Add user with pre-generated bcrypt hash
 user remove <name>                                Remove a user (with confirmation)
@@ -298,11 +303,11 @@ user enable <name>                                Re-enable a disabled user
 user rename <old> <new>                           Rename a user
 user move <name> <group>                          Move user to a different group (keeps password)
 user verify <name>                                Show user details and verify password
-user scopes <name>                                List the user's scopes (orphan refs flagged red)
-user scopes <name> add <s>[,s...]                 Grant one or more scopes
-user scopes <name> remove <s>[,s...]              Revoke one or more scopes
-user scopes <name> set <s>[,s...]                 Replace the full scope list
-user scopes <name> clear                          Wipe all scopes (with confirmation)
+user scope <name>                                 List the user's scopes (orphan refs flagged red)
+user scope <name> add <s>[,s...]                  Grant one or more scopes
+user scope <name> remove <s>[,s...]               Revoke one or more scopes
+user scope <name> set <s>[,s...]                  Replace the full scope list
+user scope <name> clear                           Wipe all scopes (with confirmation)
 ```
 
 ### Group Commands — `tacctl group`
@@ -339,9 +344,13 @@ group privilege seed [<group>] [--force]                  Populate built-ins wit
 
 ```
 config show                                 Show current configuration summary incl. per-scope breakdown
+config dump                                 Show tacctl defaults + overrides + merged view
+config defaults                             Print canonical tacctl defaults (shipped, embedded in bin/tacctl.sh)
+config get <path> [fallback]                Read a dotted-path value from the merged config
+config get-list <path>                      Read a list value (one item per line)
 config cisco [--scope <name>]               Generate working Cisco device config for a scope (default if omitted)
 config juniper [--scope <name>]             Generate working Juniper device config for a scope (default if omitted)
-config validate                             Validate config syntax + scope integrity (orphan refs, default-scope marker)
+config validate                             Validate YAML syntax + server-config structure (orphan scope refs, scope.default pointing at a nonexistent scope, reserved usernames, missing accounter:) + schema-walk tacctl.yaml (including commands.<group> / privileges.<group> / mgmt_acl.*)
 config diff [timestamp]                     Diff current config vs a backup
 config loglevel [debug|info|error]          Show or change log level
 config listen [show|tcp|tcp6|reset] [addr]  Show, change, or reset TCP listen address
@@ -359,21 +368,84 @@ config mgmt-acl juniper-name [name]         Show or set the emitted Juniper filt
 config branch [name]                        Show or change the tacctl repo branch
 ```
 
-Both `config secret` and `config prefixes` have been removed — shared secrets and client-prefix lists are scope-owned. Use `tacctl scopes secret <name>` / `tacctl scopes prefixes <name>` instead (see **Scope Commands** below).
+#### Configuration tunables — `tacctl.yaml`
 
-### Scope Commands — `tacctl scopes`
+tacctl ships canonical tunable defaults embedded in `bin/tacctl.sh` (dumped on demand via `tacctl config defaults`). Operator overrides live in a single file: `/etc/tacquito/tacctl.yaml`. Only list keys you want to change; missing keys inherit from the defaults. Setting a key back to the default value removes it (revert-to-default) and an empty overrides file is pruned.
+
+Schema (what `tacctl config defaults` prints):
+
+```yaml
+password:
+  max_age_days: 90           # warning threshold in `tacctl status`  (int, >= 1)
+  min_length: 12             # floor for interactively-typed passwords  (int, 8..64)
+
+secret:
+  min_length: 16             # floor for operator-typed shared secrets  (int, 16..128)
+
+bcrypt:
+  cost: 12                   # applies only to new hashes  (int, 10..14)
+
+scope:
+  default: lab               # matches the fresh-install seed scope; override via `tacctl scope default`
+
+mgmt_acl:
+  names:
+    cisco: VTY-ACL           # ACL name emitted by `tacctl config cisco`  (letter-start, [A-Za-z0-9_-], 1..63)
+    juniper: MGMT-SSH-ACL    # filter name emitted by `tacctl config juniper`  (same rules)
+  permits: []                # list of CIDRs; each element validated
+
+privileges:                  # per-group Cisco priv-exec lowering (move commands DOWN from priv 15)
+  operator:
+    - show running-config
+    - show startup-config
+    - show tech-support
+    - show archive
+    - show access-list
+    - show ip route
+
+commands:                    # per-group command-authz rules. Rendered for both Cisco
+                             # (tacquito enforces) and Juniper (class allow/deny-commands)
+                             # from this single tacctl-authored source. Ordered
+                             # superuser → operator → readonly.
+  superuser:
+    - { name: "*", action: permit }
+  operator:
+    - { name: show,       action: permit, match: ["^show .*$"] }
+    - { name: ping,       action: permit, match: ["^ping( .*)?$"] }
+    - { name: traceroute, action: permit, match: ["^traceroute( .*)?$"] }
+    - { name: terminal,   action: permit, match: ["^terminal .*$"] }
+    - { name: "*",        action: deny }
+  readonly:
+    - { name: show,       action: permit, match: ["^show .*$"] }
+    - { name: ping,       action: permit, match: ["^ping( .*)?$"] }
+    - { name: traceroute, action: permit, match: ["^traceroute( .*)?$"] }
+    - { name: "*",        action: deny }
+```
+
+Merge semantics:
+- Maps deep-merge (overriding `password.max_age_days` keeps the default `password.min_length`).
+- Lists replace wholesale (an override list does not concatenate with the default list).
+- Scalars replace.
+
+**Write-time validation.** Every `tacctl config <setter>` invocation (and direct `conf_set` / `conf_set_list` calls) check the value against a schema table defined next to the defaults. Out-of-range numbers, bad ACL names, malformed CIDRs, invalid Cisco command strings, and typo'd keys are rejected with a clear error before anything is written. `tacctl config validate` runs the same schema over `tacctl.yaml` to catch hand-edits.
+
+**Read path caching.** Every read merges defaults + overrides and walks the dotted path, but the merged view is cached per script invocation (`_TACCTL_CFG_CACHE`). Commands that touch many tunables (`config cisco`, `status`, `config show`) load the merged YAML once and then answer from memory. Writes invalidate the cache.
+
+View effective posture with `tacctl config dump`; read individual values with `tacctl config get <path>` / `tacctl config get-list <path>`.
+
+### Scope Commands — `tacctl scope`
 
 ```
-scopes list                                              List every (scope, prefix) pair in tacquito first-match order (numbered by slice position)
-scopes show <name>                                       Full detail: prefixes, users, raw secret + posture, default-ness
-scopes add <name> --prefixes <cidrs>                     Create a new scope
-           [--secret <value>|--secret generate] [--default]
-scopes remove <name> [--force]                           Delete. Refuses if users reference it unless --force
-scopes rename <old> <new>                                Rewrites secrets[].name + every user's scopes[] + default marker
-scopes default [<name>]                                  Show / set the default scope (tacctl-managed marker file)
-scopes lookup <ip|cidr>                                  Resolve an IP/CIDR to the owning scope (+ shadowed overlaps)
-scopes prefixes <name> list|add|remove|clear [--force]   Per-scope CIDR list (add/remove accept comma-lists; clear refuses if users reference unless --force)
-scopes secret   <name> show|set <value>|generate         Per-scope shared secret (show prints the raw value + length/posture)
+scope list                                               List every (scope, prefix) pair in tacquito first-match order (numbered by slice position)
+scope show <name>                                        Full detail: prefixes, users, raw secret + posture, default-ness
+scope add <name> --prefixes <cidrs>                      Create a new scope
+          [--secret <value>|--secret generate] [--default]
+scope remove <name> [--force]                            Delete. Refuses if users reference it unless --force
+scope rename <old> <new>                                 Rewrites secrets[].name + every user's scopes[] + default marker
+scope default [<name>]                                   Show / set the default scope (tacctl-managed marker file)
+scope lookup <ip|cidr>                                   Resolve an IP/CIDR to the owning scope (+ shadowed overlaps)
+scope prefixes <name> list|add|remove|clear [--force]    Per-scope CIDR list (add/remove accept comma-lists; clear refuses if users reference unless --force)
+scope secret   <name> show|set <value>|generate          Per-scope shared secret (show prints the raw value + length/posture)
 ```
 
 **Connection filters:** `deny` takes precedence over `allow`. Both empty = all connections accepted.
@@ -385,6 +457,7 @@ log tail [n]              Show last N journal entries (default 20)
 log search <term>         Search logs for a username or keyword (last 7 days)
 log failures              Show auth failures from the last 24 hours
 log accounting [n]        Show last N accounting log entries
+log clear [--force]       Purge tacquito journal + truncate accounting log (prompts)
 ```
 
 ### Backup Commands — `tacctl backup`
@@ -490,8 +563,8 @@ Use `--branch` to switch to a different branch (e.g., `develop` for pre-release 
 
 **`bad secret detected for ip [x.x.x.x]`**
 - Shared secret mismatch between server and device
-- Identify which scope the client falls into: `tacctl scopes list` / `tacctl scopes show <name>`
-- Regenerate that scope's key: `tacctl scopes secret <name> generate`
+- Identify which scope the client falls into: `tacctl scope list` / `tacctl scope show <name>`
+- Regenerate that scope's key: `tacctl scope secret <name> generate`
 - On Juniper: delete and re-set the secret to avoid hidden characters
 
 **`failed to validate the user [x] using a bcrypt password`**
