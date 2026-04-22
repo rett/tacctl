@@ -129,9 +129,15 @@ privileges:
   # never move commands UP from a lower default level (which would
   # silently restrict readonly users). Override any list in tacctl.yaml.
   operator:
-    # Let operator-class users read config state without superuser rights.
+    # Shipped priv-15 read/diagnostic commands lowered to priv-7 so
+    # commands.operator's `^show .*$` permit is actually reachable for
+    # common read paths. No write/configure/debug included.
     - show running-config
     - show startup-config
+    - show tech-support
+    - show archive
+    - show access-list
+    - show ip route
 
 commands:
   # Per-group per-command authorization rules. tacctl.yaml is the ONE
