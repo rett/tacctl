@@ -5283,11 +5283,18 @@ for m in re.finditer(r'^(\w+): &\1\n  name: \1\n  services:\n(.*?)  accounter:',
         if jcm:
             jclass = jcm.group(1)
 
-    # Count users in this group
+    # Count users in this group. Built-in accounting sinks (see
+    # HIDDEN_SINKS in cmd_list) are excluded so the count matches what
+    # 'tacctl user list' renders.
+    HIDDEN_SINKS = {'root'}
     users_match = re.search(r'^users:\s*\n(.*?)(?=^# ---|\Z)', config, re.MULTILINE | re.DOTALL)
     user_count = 0
     if users_match:
-        user_count = len(re.findall(r'groups: \[\*' + re.escape(name) + r'\]', users_match.group(1)))
+        for um in re.finditer(r'- name: (\S+)\n.*?groups: \[\*' + re.escape(name) + r'\]',
+                              users_match.group(1), re.DOTALL):
+            if um.group(1) in HIDDEN_SINKS:
+                continue
+            user_count += 1
 
     print(f'{name}|{priv}|{jclass}|{user_count}')
 " "$CONFIG" | while IFS='|' read -r name priv jclass user_count; do
