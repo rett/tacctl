@@ -97,13 +97,13 @@ for u in (d.get('users') or []):
         user)
             local usub="${words[offset + 2]}"
             if [[ $pos -eq 2 ]]; then
-                COMPREPLY=($(compgen -W "list show add remove passwd disable enable rename move verify scopes" -- "$cur"))
+                COMPREPLY=($(compgen -W "list show add remove passwd disable enable rename move verify scope" -- "$cur"))
             elif [[ $pos -eq 3 ]]; then
                 # <username> completion for every subcommand that targets an
                 # existing user. `add` takes a NEW username so no completion;
                 # `list` takes no args.
                 case "$usub" in
-                    show|remove|passwd|disable|enable|rename|move|verify|scopes)
+                    show|remove|passwd|disable|enable|rename|move|verify|scope)
                         COMPREPLY=($(compgen -W "$(_tacctl_user_names)" -- "$cur"))
                         ;;
                 esac
@@ -121,7 +121,7 @@ for u in (d.get('users') or []):
                         COMPREPLY=($(compgen -W "--hash" -- "$cur"))
                         ;;
                     scope)
-                        # `user scopes <user> {list|add|remove|set|clear}`
+                        # `user scope <user> {list|add|remove|set|clear}`
                         COMPREPLY=($(compgen -W "list add remove set clear" -- "$cur"))
                         ;;
                 esac
@@ -131,9 +131,9 @@ for u in (d.get('users') or []):
             elif [[ $pos -eq 7 && "$usub" == "add" ]]; then
                 # second flag after --hash <val> or --scopes <csv>
                 COMPREPLY=($(compgen -W "--hash --scopes" -- "$cur"))
-            elif [[ $pos -ge 5 && "$usub" == "scopes" ]]; then
-                # `user scopes <user> {add|remove|set} <scope>[,<scope>...]`
-                # Slot layout: [offset+2]=scopes [offset+3]=<user> [offset+4]=<sub>
+            elif [[ $pos -ge 5 && "$usub" == "scope" ]]; then
+                # `user scope <user> {add|remove|set} <scope>[,<scope>...]`
+                # Slot layout: [offset+2]=scope [offset+3]=<user> [offset+4]=<sub>
                 case "${words[offset + 4]}" in
                     add|remove|set)
                         COMPREPLY=($(compgen -W "$(_tacctl_scope_names)" -- "$cur"))
@@ -238,34 +238,34 @@ for u in (d.get('users') or []):
             elif [[ $pos -eq 4 ]]; then
                 case "$ssub" in
                     add)
-                        # `scopes add <name> <flag>`
+                        # `scope add <name> <flag>`
                         COMPREPLY=($(compgen -W "--prefixes --secret --default" -- "$cur"))
                         ;;
                     prefixes)
-                        # `scopes prefixes <scope> <list|add|remove|clear>`
+                        # `scope prefixes <scope> <list|add|remove|clear>`
                         COMPREPLY=($(compgen -W "list add remove clear" -- "$cur"))
                         ;;
                     secret)
-                        # `scopes secret <scope> <show|set|generate>`
+                        # `scope secret <scope> <show|set|generate>`
                         COMPREPLY=($(compgen -W "show set generate" -- "$cur"))
                         ;;
                     rename)
-                        # `scopes rename <old> <new>` — no completion on new name
+                        # `scope rename <old> <new>` — no completion on new name
                         COMPREPLY=()
                         ;;
                     remove)
-                        # `scopes remove <name> [--force]`
+                        # `scope remove <name> [--force]`
                         COMPREPLY=($(compgen -W "--force" -- "$cur"))
                         ;;
                 esac
             elif [[ $pos -eq 5 && "$ssub" == "prefixes" ]]; then
-                # `scopes prefixes <scope> clear --force` — only clear takes --force
+                # `scope prefixes <scope> clear --force` — only clear takes --force
                 # Slot layout: [offset+2]=prefixes [offset+3]=<scope> [offset+4]=<sub>
                 if [[ "${words[offset + 4]}" == "clear" ]]; then
                     COMPREPLY=($(compgen -W "--force" -- "$cur"))
                 fi
             elif [[ $pos -ge 6 && "$ssub" == "add" ]]; then
-                # `scopes add <name> --flag <val> [--flag ...]` — offer remaining
+                # `scope add <name> --flag <val> [--flag ...]` — offer remaining
                 # flags not already seen. Covers the second/third flag slots.
                 local seen_flags=""
                 local w
