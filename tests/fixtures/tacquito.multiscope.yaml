@@ -1,0 +1,162 @@
+# Test fixture: multi-scope, multi-user, overlapping prefixes.
+# Exercises scope_exists, read_scope_prefixes, read_scope_secret,
+# scope_owning_prefix, count_users_in_scope, list_users_in_scope,
+# read_user_scopes, list_scopes.
+
+# --- Type constants ---
+authenticator_type_bcrypt: &authenticator_type_bcrypt 1
+action_deny:  &action_deny  1
+action_permit: &action_permit 2
+accounter_type_file: &accounter_type_file 3
+handler_type_start: &handler_type_start 1
+provider_type_prefix: &provider_type_prefix 1
+
+# --- Accounting ---
+file_accounter: &file_accounter
+  name: tacquito_accounter
+  type: *accounter_type_file
+
+# --- Services ---
+exec_readonly: &exec_readonly
+  name: exec
+  set_values:
+    - name: priv-lvl
+      values: [1]
+
+exec_operator: &exec_operator
+  name: exec
+  set_values:
+    - name: priv-lvl
+      values: [7]
+
+exec_superuser: &exec_superuser
+  name: exec
+  set_values:
+    - name: priv-lvl
+      values: [15]
+
+junos_exec_readonly: &junos_exec_readonly
+  name: junos-exec
+  set_values:
+    - name: local-user-name
+      values: ["RO-CLASS"]
+
+junos_exec_operator: &junos_exec_operator
+  name: junos-exec
+  set_values:
+    - name: local-user-name
+      values: ["OP-CLASS"]
+
+junos_exec_superuser: &junos_exec_superuser
+  name: junos-exec
+  set_values:
+    - name: local-user-name
+      values: ["RW-CLASS"]
+
+# --- Groups ---
+readonly: &readonly
+  name: readonly
+  services:
+    - *exec_readonly
+    - *junos_exec_readonly
+  accounter: *file_accounter
+
+operator: &operator
+  name: operator
+  services:
+    - *exec_operator
+    - *junos_exec_operator
+  accounter: *file_accounter
+
+superuser: &superuser
+  name: superuser
+  services:
+    - *exec_superuser
+    - *junos_exec_superuser
+  accounter: *file_accounter
+
+# --- Users ---
+users:
+  - name: alice
+    authenticator:
+      type: *authenticator_type_bcrypt
+      options:
+        hash: "24326224313224646f6e74636172652e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e"
+    groups:
+      - *superuser
+    scopes:
+      - prod
+      - lab
+  - name: bob
+    authenticator:
+      type: *authenticator_type_bcrypt
+      options:
+        hash: "24326224313224646f6e74636172652e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e"
+    groups:
+      - *operator
+    scopes:
+      - lab
+  - name: carol
+    authenticator:
+      type: *authenticator_type_bcrypt
+      options:
+        hash: "24326224313224646f6e74636172652e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e"
+    groups:
+      - *readonly
+    scopes:
+      - lab
+      - dmz
+
+# --- Secret Providers (Scopes) ---
+# Three scopes. 'prod' and 'prod-inner' have overlapping prefixes to test
+# first-match ownership: 10.10.99.0/24 is inside 10.0.0.0/8.
+secrets:
+  - name: prod
+    secret:
+      group: tacquito
+      key: "prod-secret-0123456789abcdef"
+    handler:
+      type: *handler_type_start
+    type: *provider_type_prefix
+    options:
+      prefixes: |
+        [
+          "10.0.0.0/8"
+        ]
+  - name: prod-inner
+    secret:
+      group: tacquito
+      key: "inner-secret-0123456789abcdef"
+    handler:
+      type: *handler_type_start
+    type: *provider_type_prefix
+    options:
+      prefixes: |
+        [
+          "10.10.99.0/24"
+        ]
+  - name: lab
+    secret:
+      group: tacquito
+      key: "lab-secret-0123456789abcdef"
+    handler:
+      type: *handler_type_start
+    type: *provider_type_prefix
+    options:
+      prefixes: |
+        [
+          "192.168.0.0/16",
+          "172.16.0.0/12"
+        ]
+  - name: dmz
+    secret:
+      group: tacquito
+      key: "dmz-secret-0123456789abcdef"
+    handler:
+      type: *handler_type_start
+    type: *provider_type_prefix
+    options:
+      prefixes: |
+        [
+          "203.0.113.0/24"
+        ]

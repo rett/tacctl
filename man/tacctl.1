@@ -304,14 +304,6 @@ Validate config syntax and structure.
 Diff the current config against a backup. Defaults to the most recent
 backup.
 .TP
-.B "config secret"
-.B REMOVED.
-Shared secrets are now scope-owned. Use
-.B "scopes secret " \fIname\fR " show|set|generate"
-instead (see
-.B SCOPE MANAGEMENT ).
-The old invocation prints an explicit redirect and exits non-zero.
-.TP
 .BI "config loglevel " [ debug | info | error ]
 Show or change the server log level. Written to a systemd drop-in so
 the change survives upgrades.
@@ -386,14 +378,6 @@ custom shared secret via
 .BR "scopes secret " \fIname\fR " set" .
 Default 16 (Cisco TACACS+ best practice). Auto-generated secrets
 bypass this check.
-.TP
-.B "config prefixes"
-.B REMOVED.
-Client-prefix lists are now scope-owned. Use
-.B "scopes prefixes " \fIname\fR " list|add|remove|clear"
-instead (see
-.B SCOPE MANAGEMENT ).
-The old invocation prints an explicit redirect and exits non-zero.
 .TP
 .B "config allow " "{ list | add | remove | clear } " [ cidr[,cidr...] ]
 Manage the connection allow list (IP ACL).

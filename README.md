@@ -122,8 +122,6 @@ tacctl scopes secret <name>   show|set <v>|generate
 tacctl user scopes <user>     list|add|remove|set|clear
 ```
 
-Removed: `tacctl config prefixes` and `tacctl config secret`. Both are now scope-owned. Old invocations print an explicit redirect to the new `scopes prefixes <name>` / `scopes secret <name>` forms.
-
 ### Configure connection filters
 Use allow/deny lists for additional IP-level filtering:
 ```
@@ -358,8 +356,6 @@ config mgmt-acl cisco-name [name]           Show or set the emitted Cisco ACL na
 config mgmt-acl juniper-name [name]         Show or set the emitted Juniper filter name (default MGMT-SSH-ACL)
 config branch [name]                        Show or change the tacctl repo branch
 ```
-
-Both `config secret` and `config prefixes` have been removed — shared secrets and client-prefix lists are scope-owned. Use `tacctl scopes secret <name>` / `tacctl scopes prefixes <name>` instead (see **Scope Commands** below).
 
 ### Scope Commands — `tacctl scopes`
 
