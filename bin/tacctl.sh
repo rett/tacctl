@@ -7846,6 +7846,12 @@ cmd_install() {
     cd "${TACQUITO_SRC}/cmds/server/config/authenticators/bcrypt/generator"
     go build -o "$HASHGEN_BIN" .
 
+    # go build honors umask (often 022 → 755), but stricter umask settings
+    # (077) or existing 700 binaries from prior builds leave the tacquito
+    # binary unreadable/unexecutable by the service user. Pin 755 so
+    # systemd's User=tacquito can always exec.
+    chmod 755 "$TACQUITO_BIN" "$HASHGEN_BIN"
+
     info "Binaries installed:"
     info "  Server:  ${TACQUITO_BIN}"
     info "  Hashgen: ${HASHGEN_BIN}"
@@ -8213,6 +8219,10 @@ cmd_upgrade() {
         info "Building password hash generator..."
         cd "${TACQUITO_SRC}/cmds/server/config/authenticators/bcrypt/generator"
         go build -o "$HASHGEN_BIN" . || warn "Hashgen build failed (non-critical)."
+
+        # Same rationale as install: pin 755 so the service user can exec.
+        chmod 755 "$TACQUITO_BIN"
+        [[ -x "$HASHGEN_BIN" ]] && chmod 755 "$HASHGEN_BIN"
     fi
 
     # --- Update management repo ---
