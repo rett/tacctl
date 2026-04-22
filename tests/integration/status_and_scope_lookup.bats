@@ -95,8 +95,8 @@ esac'
 # =============================================================================
 
 @test "scopes default: prints current default when no arg" {
-    # multiscope fixture has no default-scope file; lab is the fallback.
-    echo "lab" > "$TACCTL_ETC/default-scope"
+    # multiscope fixture doesn't pin a default; seed the override ourselves.
+    printf 'scope:\n  default: lab\n' > "$TACCTL_ETC/tacctl.yaml"
     run "$TACCTL_BIN_SCRIPT" scopes default
     assert_success
     assert_output --partial "Default scope: lab"
@@ -108,11 +108,11 @@ esac'
     assert_output --partial "No default scope"
 }
 
-@test "scopes default <name>: writes the default-scope marker" {
+@test "scopes default <name>: writes the default-scope override" {
     run "$TACCTL_BIN_SCRIPT" scopes default prod
     assert_success
 
-    [[ "$(cat "$TACCTL_ETC/default-scope")" == "prod" ]]
+    [[ "$(conf_get scope.default)" == "prod" ]]
 }
 
 @test "scopes default: rejects unknown scope" {

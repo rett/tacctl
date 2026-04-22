@@ -105,13 +105,13 @@ git diff tests/fixtures/golden/   # review the delta
 
 ## Coverage baseline
 
-Measured via `make coverage` (kcov v42, full suite of 300 tests):
+Measured via `make coverage` (kcov v42, full suite of 335 tests):
 
 | Target | Coverage |
 |---|---|
-| `bin/tacctl.sh` | 51.44% (2219 / 4314 lines) |
-| `tests/helpers/*` | 92%+ |
-| Overall | 51.72% (2255 / 4360 lines) |
+| `bin/tacctl.sh` | 52.14% (2283 / 4379 lines) |
+| `tests/helpers/*` (tmpenv, setup, mocks) | 92%+ |
+| Overall | 52.41% (2319 / 4425 lines) |
 
 Uncovered territory is dominated by `cmd_install` / `cmd_upgrade` / `cmd_uninstall`
 (heavy shell-outs to git, apt, go, systemctl, useradd — deliberately deferred)
