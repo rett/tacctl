@@ -75,6 +75,18 @@ setup() {
     assert_failure
 }
 
+@test "user add: rejects reserved usernames (root, tacquito)" {
+    # The OS root account and tacquito service user exist outside the YAML;
+    # tacctl-managing either produces acct.go errors at auth time.
+    run "$TACCTL_BIN_SCRIPT" user add root superuser --hash "$TEST_HASH" --scopes lab
+    assert_failure
+    assert_output --partial "reserved"
+
+    run "$TACCTL_BIN_SCRIPT" user add tacquito superuser --hash "$TEST_HASH" --scopes lab
+    assert_failure
+    assert_output --partial "reserved"
+}
+
 @test "user add: writes a backup before mutating" {
     "$TACCTL_BIN_SCRIPT" user add alice superuser --hash "$TEST_HASH" --scopes lab
     # backup_config writes tacquito.yaml.<timestamp> into $BACKUP_DIR.

@@ -75,11 +75,28 @@ setup() {
 #  group commands
 # =============================================================================
 
-@test "group commands list: default-permit on a fresh group" {
+@test "group commands list: operator ships with default rules + deny catch-all" {
+    # Under the unified-config model, tacctl.yaml (merged with conf_emit_defaults)
+    # is the source of truth. Operator's shipped defaults: 4 explicit permits
+    # (show/ping/traceroute/terminal) + deny catch-all.
     run "$TACCTL_BIN_SCRIPT" group commands list operator
     assert_success
     assert_output --partial "Default action"
+    assert_output --partial "deny"
+    assert_output --partial "show"
+    assert_output --partial "ping"
+}
+
+@test "group commands list: superuser ships with a permit catch-all only" {
+    run "$TACCTL_BIN_SCRIPT" group commands list superuser
+    assert_success
     assert_output --partial "permit"
+}
+
+@test "group commands list: custom group without rules reports 'no commands'" {
+    "$TACCTL_BIN_SCRIPT" group add netops 10 NET-CLASS
+    run "$TACCTL_BIN_SCRIPT" group commands list netops
+    assert_success
     assert_output --partial "no commands"
 }
 
@@ -165,20 +182,29 @@ setup() {
     assert_output --partial "No rule named"
 }
 
-@test "group commands clear: wipes the commands block after confirmation" {
+@test "group commands clear: reverts overridden group back to shipped defaults" {
+    # Set a non-default override, then clear, then re-inspect — the merged
+    # view should show the shipped default rules again (not the override).
     "$TACCTL_BIN_SCRIPT" group commands default operator permit > /dev/null
+    run "$TACCTL_BIN_SCRIPT" group commands list operator
+    assert_output --partial "permit"
+    # Now clear the override.
     run bash -c 'echo y | "'"$TACCTL_BIN_SCRIPT"'" group commands clear operator'
     assert_success
     assert_output --partial "Cleared command rules"
 
+    # Back to shipped defaults: catch-all is deny, show rule present.
     run "$TACCTL_BIN_SCRIPT" group commands list operator
-    assert_output --partial "no commands"
+    assert_output --partial "deny"
+    assert_output --partial "show"
 }
 
-@test "group commands clear: no-op when no commands block exists" {
-    run "$TACCTL_BIN_SCRIPT" group commands clear operator
+@test "group commands clear: no-op on a group without rules" {
+    # Custom group never had rules → clear reports nothing to do.
+    "$TACCTL_BIN_SCRIPT" group add netops 10 NET-CLASS
+    run "$TACCTL_BIN_SCRIPT" group commands clear netops
     assert_success
-    assert_output --partial "no commands"
+    assert_output --partial "nothing to clear"
 }
 
 @test "group commands: errors on unknown group" {

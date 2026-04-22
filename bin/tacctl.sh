@@ -115,7 +115,7 @@ bcrypt:
   cost: 12                # applies to new hashes; range 10..14
 
 scope:
-  default: null           # seeded at install; set via `tacctl scopes default`
+  default: lab            # matches the fresh-install seed scope; override via `tacctl scopes default <name>`
 
 mgmt_acl:
   names:
@@ -123,9 +123,48 @@ mgmt_acl:
     juniper: MGMT-SSH-ACL # filter name emitted by `tacctl config juniper`
   permits: []             # CIDRs for Cisco VTY-ACL + Juniper lo0 filter
 
-privileges: {}            # per-group Cisco priv-exec lists:
-                          #   privileges:
-                          #     operator: [show running-config, show startup-config]
+privileges:
+  # Per-group Cisco priv-exec lists. Shipped defaults move only
+  # verified priv-15 commands DOWN to lower-privilege groups; they
+  # never move commands UP from a lower default level (which would
+  # silently restrict readonly users). Override any list in tacctl.yaml.
+  operator:
+    # Let operator-class users read config state without superuser rights.
+    - show running-config
+    - show startup-config
+
+commands:
+  # Per-group per-command authorization rules. tacctl.yaml is the ONE
+  # source of truth; tacquito.yaml's per-group `commands:` block is
+  # regenerated from this section on every mutation, and
+  # `tacctl config juniper` renders the same rules as class-level
+  # allow-commands / deny-commands for Junos.
+  #
+  # Each rule: {name, action: permit|deny, match: [regex, ...]}
+  # A trailing name: "*" entry is the catch-all; its action is the
+  # group's default action.
+  #
+  # Ordered superuser → operator → readonly to match how a reader scans
+  # privilege from most-to-least permissive.
+  superuser:
+    # Priv 15 + RW-CLASS — unrestricted by policy.
+    - { name: "*", action: permit }
+  operator:
+    # Read-only + diagnostics; everything else (configure, write,
+    # debug, reload, etc.) hits the deny catch-all.
+    - { name: show,       action: permit, match: ["^show .*$"] }
+    - { name: ping,       action: permit, match: ["^ping( .*)?$"] }
+    - { name: traceroute, action: permit, match: ["^traceroute( .*)?$"] }
+    - { name: terminal,   action: permit, match: ["^terminal .*$"] }
+    - { name: "*",        action: deny }
+  readonly:
+    # Defense in depth on top of priv-1 / RO-CLASS. Permits are the
+    # read / diagnostic subset of operator's; `terminal` is omitted
+    # (terminal monitor can leak debug output across sessions).
+    - { name: show,       action: permit, match: ["^show .*$"] }
+    - { name: ping,       action: permit, match: ["^ping( .*)?$"] }
+    - { name: traceroute, action: permit, match: ["^traceroute( .*)?$"] }
+    - { name: "*",        action: deny }
 YAML
 }
 
@@ -231,6 +270,7 @@ SCHEMA = {
 # name and validates the value as a list of Cisco priv-exec commands.
 WILDCARDS = [
     ('privileges.', {'type': 'cisco_cmd_list'}),
+    ('commands.',   {'type': 'command_rules'}),
 ]
 
 import re
@@ -254,9 +294,9 @@ def validate(path, value, is_list):
         return False, f"unknown config key (typo? path must be one of the known tunables)"
     t = rule['type']
 
-    if is_list and t not in ('cidr_list', 'cisco_cmd_list'):
+    if is_list and t not in ('cidr_list', 'cisco_cmd_list', 'command_rules'):
         return False, f"{t} does not accept list input; drop 'set-list'"
-    if not is_list and t in ('cidr_list', 'cisco_cmd_list'):
+    if not is_list and t in ('cidr_list', 'cisco_cmd_list', 'command_rules'):
         return False, f"{t} requires list input (use conf_set_list)"
 
     if t == 'int':
@@ -308,6 +348,49 @@ def validate(path, value, is_list):
                 return False, f"element {i}: {item!r} has invalid characters (letters/digits/spaces/_/- only)"
             if len(item) > 64:
                 return False, f"element {i}: too long ({len(item)} chars; max 64)"
+        return True, ''
+    if t == 'command_rules':
+        # Per-group TACACS+ command authorization rules. Each entry is a
+        # dict {name, action, match?}; the tail must be a "*" catch-all
+        # whose action is the group's default. Regenerated into both
+        # tacquito.yaml (for tacquito's command-authz) and Junos class
+        # allow-commands / deny-commands.
+        if not isinstance(value, list):
+            return False, f"must be a list of rule dicts"
+        if not value:
+            return False, f"must not be empty (need at least a catch-all '*' rule)"
+        name_re = re.compile(r'^([A-Za-z][A-Za-z0-9_-]{0,31}|\*)$')
+        catchall_count = 0
+        for i, item in enumerate(value):
+            if not isinstance(item, dict):
+                return False, f"element {i}: must be a dict {{name, action, match?}}"
+            name = item.get('name')
+            action = item.get('action')
+            match = item.get('match', [])
+            if not isinstance(name, str) or not name_re.match(name):
+                return False, f"element {i}: name must be '*' or a letter-start token (got {name!r})"
+            if name == '*':
+                catchall_count += 1
+                if i != len(value) - 1:
+                    return False, f"element {i}: '*' catch-all must be the LAST rule"
+            if action not in ('permit', 'deny'):
+                return False, f"element {i}: action must be 'permit' or 'deny' (got {action!r})"
+            if match is None:
+                match = []
+            if not isinstance(match, list):
+                return False, f"element {i}: match must be a list of regex strings"
+            for j, m in enumerate(match):
+                if not isinstance(m, str):
+                    return False, f"element {i}: match[{j}]: must be a string"
+                try:
+                    re.compile(m)
+                except re.error as e:
+                    return False, f"element {i}: match[{j}]: invalid regex ({e})"
+            extra = set(item.keys()) - {'name', 'action', 'match'}
+            if extra:
+                return False, f"element {i}: unknown keys {sorted(extra)}"
+        if catchall_count != 1:
+            return False, f"must contain exactly one '*' catch-all rule (found {catchall_count})"
         return True, ''
     return False, f"unknown schema type {t!r}"
 PY
@@ -411,6 +494,19 @@ elif mode == 'set_list':
     if not ok:
         print(f"tacctl config: {path}: {msg}", file=sys.stderr)
         sys.exit(1)
+elif mode == 'set_json':
+    # value is a JSON payload (scalar, list, or dict). Parse + validate
+    # as-is; the schema entry for <path> decides what's acceptable.
+    import json
+    try:
+        parsed = json.loads(value) if value else None
+    except json.JSONDecodeError as e:
+        print(f"tacctl config: {path}: invalid JSON payload ({e})", file=sys.stderr)
+        sys.exit(1)
+    ok, msg = validate(path, parsed, is_list=isinstance(parsed, list))
+    if not ok:
+        print(f"tacctl config: {path}: {msg}", file=sys.stderr)
+        sys.exit(1)
 elif mode == 'unset':
     pass  # unsetting an unknown key is a no-op, not an error.
 else:
@@ -432,6 +528,12 @@ elif mode == 'set_list':
         unset_nested(overrides, path)
     else:
         set_nested(overrides, path, items)
+elif mode == 'set_json':
+    default_val = get_nested(defaults, path)
+    if default_val == parsed:
+        unset_nested(overrides, path)
+    else:
+        set_nested(overrides, path, parsed)
 elif mode == 'unset':
     unset_nested(overrides, path)
 
@@ -458,8 +560,49 @@ PY
     return $rc
 }
 
-conf_set()   { _conf_write set   "$1" "${2:-}"; }
-conf_unset() { _conf_write unset "$1"; }
+conf_set()      { _conf_write set      "$1" "${2:-}"; }
+conf_set_json() { _conf_write set_json "$1" "${2:-}"; }  # value is a JSON payload
+conf_unset()    { _conf_write unset    "$1"; }
+
+# Return 0 if the overrides file explicitly sets <path>; non-zero if the
+# path is entirely default. Useful for UIs that want to show "Source:
+# explicit" vs "Source: default" without comparing values.
+conf_has_override() {
+    local path="$1"
+    [[ -f "$TACCTL_OVERRIDES_FILE" ]] || return 1
+    python3 - "$TACCTL_OVERRIDES_FILE" "$path" <<'PY'
+import os, sys, yaml
+with open(sys.argv[1]) as f:
+    d = yaml.safe_load(f) or {}
+cur = d
+for part in sys.argv[2].split('.'):
+    if isinstance(cur, dict) and part in cur:
+        cur = cur[part]
+    else:
+        sys.exit(1)
+sys.exit(0)
+PY
+}
+
+# Emit the merged-view value at <path> as JSON. For structured paths
+# (e.g. commands.<group> is a list of rule dicts); callers feed the
+# result back through conf_set_json after editing.
+conf_get_json() {
+    local path="$1"
+    _conf_load_cache
+    python3 -c '
+import json, sys
+data = json.loads(sys.argv[1])
+cur = data
+for part in sys.argv[2].split("."):
+    if isinstance(cur, dict) and part in cur:
+        cur = cur[part]
+    else:
+        cur = None
+        break
+print(json.dumps(cur))
+' "$_TACCTL_CFG_CACHE" "$path"
+}
 
 # Schema-walk the on-disk overrides file (not the merged view). Emits one
 # "<path>: <reason>" line per problem to stdout; silent when clean. Uses
@@ -618,32 +761,21 @@ read_group_privileges() {
 }
 
 # --- Default priv-exec command set per built-in group ---
-# Conservative: only the move-DOWN cases (priv-15 commands moved to a
-# lower level so operator-class users can run them). Move-UP cases
-# (e.g. ping at default priv 1 → priv 7) are deliberately omitted —
-# they would silently restrict commands from lower-priv groups.
+# Pulled from conf_emit_defaults() (the single source of truth for shipped
+# defaults), not hardcoded here. Conservative: only move-DOWN cases
+# (priv-15 commands pushed to a lower level so operator-class users can
+# run them). Move-UP cases (e.g. ping at default priv 1 → priv 7) are
+# deliberately omitted — they would silently restrict commands from
+# lower-priv groups. Unknown / custom groups → empty list.
 default_privileges_for_group() {
     local group="$1"
-    case "$group" in
-        readonly)
-            # Priv 1 is the floor; nothing legitimately moves into it.
-            echo ""
-            ;;
-        operator)
-            # Move show-config family DOWN from priv 15 to priv 7 so
-            # operators can read state without superuser rights.
-            printf '%s\n' \
-                "show running-config" \
-                "show startup-config"
-            ;;
-        superuser)
-            # Priv 15 is the ceiling; all commands available by default.
-            echo ""
-            ;;
-        *)
-            echo ""
-            ;;
-    esac
+    python3 - <(conf_emit_defaults) "$group" <<'PY'
+import sys, yaml
+with open(sys.argv[1]) as f:
+    d = yaml.safe_load(f) or {}
+for item in ((d.get('privileges') or {}).get(sys.argv[2], []) or []):
+    print(item)
+PY
 }
 
 # --- Replace a group's full priv-exec list ---
@@ -669,50 +801,37 @@ validate_command_name() {
     fi
 }
 
-# --- Read a group's command rules from the YAML ---
-# Emits one rule per line as `name|action|match1,match2,...`. A trailing
-# `*` catchall (always present when commands: exists) is included.
-# Empty output = group has no commands: block (= unrestricted).
+# --- Read a group's command rules from tacctl config ---
+# Source of truth is tacctl.yaml's commands.<group> (merged over
+# conf_emit_defaults). Emits one rule per line as
+# `name|action|match1,match2,...` so existing callers (cmd_config_cisco,
+# cmd_config_juniper, cmd_group_commands) don't need to change their
+# parsing. Empty output = group has no rules at all.
 read_group_commands() {
     local group="$1"
-    python3 - "$CONFIG" "$group" <<'PY' 2>/dev/null
-import re, sys
-cfg = open(sys.argv[1]).read()
-group = sys.argv[2]
-# Bound the group block: from "<group>: &<group>\n" to the next blank
-# line or the next top-level YAML key.
-m = re.search(
-    r'^' + re.escape(group) + r': &' + re.escape(group) + r'\n((?:[ \t].*\n)+)',
-    cfg, re.MULTILINE,
-)
-if not m:
+    local json
+    json=$(conf_get_json "commands.${group}")
+    [[ "$json" == "null" ]] && return 0
+    python3 -c '
+import json, sys
+rules = json.loads(sys.argv[1])
+if not isinstance(rules, list):
     sys.exit(0)
-body = m.group(1)
-# Find the commands: block (indented under the group).
-cm = re.search(r'^  commands:\n((?:    -.*\n(?:      .*\n)*)+)', body, re.MULTILINE)
-if not cm:
-    sys.exit(0)
-rules_text = cm.group(1)
-# Split into per-rule chunks. Each rule starts with "    - name:" .
-chunks = re.findall(
-    r'    - name:\s*(?P<name>"[^"]*"|\S+)\s*\n'
-    r'(?:      match:\s*\[(?P<match>[^\]]*)\]\s*\n)?'
-    r'      action:\s*\*action_(?P<action>permit|deny)\s*\n',
-    rules_text,
-)
-for name, match, action in chunks:
-    name = name.strip().strip('"')
-    matches = []
-    if match.strip():
-        matches = [m.strip().strip('"') for m in re.findall(r'"([^"]+)"', match)]
-    print(f"{name}|{action}|{','.join(matches)}")
-PY
+for r in rules:
+    if not isinstance(r, dict):
+        continue
+    name = r.get("name", "")
+    action = r.get("action", "permit")
+    matches = r.get("match") or []
+    joined = ",".join(matches)
+    print(f"{name}|{action}|{joined}")
+' "$json"
 }
 
 # --- Read a group's default action ---
-# Encoded as the action of the trailing `name: "*"` rule. If there's no
-# commands: block at all, the effective default is "permit" (= no
-# restriction = current behavior).
+# The action of the trailing `name: "*"` rule. With defaults shipping a
+# catch-all for every built-in group, this effectively always returns a
+# meaningful value. Custom groups without a commands entry → "permit".
 read_group_default_action() {
     local group="$1"
     local last_rule
@@ -723,19 +842,159 @@ read_group_default_action() {
     fi
     local last_name="${last_rule%%|*}"
     if [[ "$last_name" == "*" ]]; then
-        # action is the second |-separated field
         echo "$last_rule" | awk -F'|' '{print $2}'
     else
-        # Group has rules but no catchall — shouldn't happen if writes
-        # go through tacctl, but treat as "deny" since tacquito returns
+        # Group has rules but no catch-all — shouldn't happen under the
+        # schema validator, but treat as "deny" since tacquito returns
         # FAIL on no-match.
         echo "deny"
     fi
 }
 
-# --- Return 0 if any group in the YAML has a commands: block ---
+# --- Return 0 if any group has commands rules (always true under defaults) ---
+# Built-in groups all ship with defaults, so this is effectively always
+# true. Retained as a predicate for callers that want the explicit check.
 any_group_has_commands() {
-    grep -q "^  commands:" "$CONFIG" 2>/dev/null
+    local keys
+    keys=$(conf_get_keys commands)
+    [[ -n "$keys" ]]
+}
+
+# --- One-shot: ingest existing tacquito.yaml `commands:` blocks into tacctl.yaml ---
+# On upgrade from the pre-unified-commands model, tacquito.yaml is the
+# source of operator customizations. We scrape each group's commands: block,
+# compare to the shipped default, and write an override in tacctl.yaml when
+# the scraped rules diverge. Silent no-op when scrape matches the default
+# (no override is written — defaults already produce the right state).
+# Idempotent: a second run scrapes the same (now-regenerated) blocks and
+# sees no divergence.
+conf_migrate_command_rules() {
+    [[ -r "$CONFIG" ]] || return 0
+    _conf_load_cache
+    # One python invocation emits "<group>\t<rules-json>" per group whose
+    # scraped commands: block differs from the current merged view. Silent
+    # when everything already matches.
+    local line
+    while IFS=$'\t' read -r group rules_json; do
+        [[ -z "$group" ]] && continue
+        conf_set_json "commands.${group}" "$rules_json"
+        info "Migrated tacquito.yaml commands: block for group '${group}' → commands.${group}"
+    done < <(python3 - "$CONFIG" "$_TACCTL_CFG_CACHE" <<'PY'
+import json, re, sys
+cfg = open(sys.argv[1]).read()
+merged = json.loads(sys.argv[2])
+current_commands = (merged.get('commands') or {})
+for gm in re.finditer(
+    r'^(\w+): &\1\n(?:[ \t].*\n)+',
+    cfg, re.MULTILINE,
+):
+    block = gm.group(0)
+    group = gm.group(1)
+    cm = re.search(r'^  commands:\n((?:    -.*\n(?:      .*\n)*)+)', block, re.MULTILINE)
+    if not cm:
+        continue
+    rules_text = cm.group(1)
+    rules = []
+    for rm in re.finditer(
+        r'    - name:\s*(?P<name>"[^"]*"|\S+)\s*\n'
+        r'(?:      match:\s*\[(?P<match>[^\]]*)\]\s*\n)?'
+        r'      action:\s*\*action_(?P<action>permit|deny)\s*\n',
+        rules_text,
+    ):
+        name = rm.group('name').strip().strip('"')
+        matches_str = (rm.group('match') or '').strip()
+        matches = [m.strip().strip('"') for m in re.findall(r'"([^"]+)"', matches_str)] if matches_str else []
+        rule = {'name': name, 'action': rm.group('action')}
+        if matches:
+            rule['match'] = matches
+        rules.append(rule)
+    if rules and current_commands.get(group) != rules:
+        print(f"{group}\t{json.dumps(rules)}")
+PY
+)
+}
+
+# --- Regenerate tacquito.yaml's per-group `commands:` blocks from tacctl ---
+# tacctl.yaml (merged with defaults) is the single source of truth. This
+# function rewrites every group's commands: block in tacquito.yaml to match.
+# Called after every command-rule mutation and from install/upgrade.
+# Idempotent: a second call with the same tacctl state is a no-op.
+#
+# If `$1` is given, only that group's block is regenerated (cheaper).
+# With no argument, every group present in tacctl.yaml OR tacquito.yaml
+# is synced.
+regenerate_tacquito_commands() {
+    local only_group="${1:-}"
+    _conf_load_cache
+    python3 - "$CONFIG" "$_TACCTL_CFG_CACHE" "$only_group" <<'PY'
+import json, re, sys, tempfile, os
+cfg_path, merged_json, only_group = sys.argv[1], sys.argv[2], sys.argv[3]
+if not os.path.isfile(cfg_path):
+    sys.exit(0)
+cfg = open(cfg_path).read()
+merged = json.loads(merged_json)
+commands = merged.get('commands') or {}
+
+def render_block(rules):
+    """Emit a tacquito-shaped `  commands:` block for a rule list."""
+    if not rules:
+        return ""
+    lines = ["  commands:\n"]
+    for r in rules:
+        name = r.get("name", "")
+        action = r.get("action", "permit")
+        match = r.get("match") or []
+        lines.append(f'    - name: "{name}"\n')
+        if match:
+            quoted = ", ".join(f'"{m}"' for m in match)
+            lines.append(f"      match: [{quoted}]\n")
+        lines.append(f"      action: *action_{action}\n")
+    return "".join(lines)
+
+def splice_group(cfg, group, new_block):
+    """Replace (or insert/delete) the `commands:` section of <group>."""
+    # Match from "<group>: &<group>\n" to the line before "  accounter:"
+    # (every tacctl-managed group has exactly one accounter: line at the
+    # bottom — that's the block's terminal sentinel).
+    hdr = re.escape(group) + r': &' + re.escape(group)
+    m = re.search(
+        r'(^' + hdr + r'\n(?:[ \t].*\n)*?)'
+        r'(^  commands:\n(?:    -.*\n(?:      .*\n)*)+)?'
+        r'(^  accounter:.*\n)',
+        cfg, re.MULTILINE,
+    )
+    if not m:
+        return cfg  # group absent or shape unexpected; leave alone
+    pre, _old_commands, accounter = m.group(1), m.group(2) or "", m.group(3)
+    return cfg[:m.start()] + pre + new_block + accounter + cfg[m.end():]
+
+# Figure out which groups to sync. Under -g (only_group) mode, just that
+# one. Otherwise walk every group that either has a tacctl rule list OR
+# has a commands: block in tacquito.yaml today.
+if only_group:
+    groups_to_sync = [only_group]
+else:
+    tacquito_groups = set(re.findall(r'^(\w+): &\1\n  name: \1\n', cfg, re.MULTILINE))
+    groups_to_sync = sorted(set(commands.keys()) | tacquito_groups)
+
+new_cfg = cfg
+for g in groups_to_sync:
+    rules = commands.get(g) or []
+    new_cfg = splice_group(new_cfg, g, render_block(rules))
+
+# Normalize runs of blank lines the splicing might leave behind.
+new_cfg = re.sub(r'\n{3,}', '\n\n', new_cfg)
+
+if new_cfg == cfg:
+    sys.exit(0)
+
+tmp = tempfile.NamedTemporaryFile('w', dir=os.path.dirname(cfg_path) or '.', delete=False)
+tmp.write(new_cfg)
+tmp.close()
+os.chmod(tmp.name, 0o640)
+os.rename(tmp.name, cfg_path)
+PY
+    chown tacquito:tacquito "$CONFIG" 2>/dev/null || true
 }
 
 # --- List all group names defined in the YAML ---
@@ -774,75 +1033,40 @@ if vm:
 " "$CONFIG" "$group"
 }
 
-# --- Write/replace a group's commands: block ---
-# rules_arg format: pipe-separated rules joined with newlines, each rule
-# `name|action|match1,match2,...`. An empty rules_arg removes the
-# commands: section entirely.
+# --- Write/replace a group's command rules in tacctl.yaml ---
+# rules_arg format (kept for backward compat with callers): pipe-separated
+# rules joined with newlines, each rule `name|action|match1,match2,...`.
+# An empty rules_arg means "no overrides for this group" — if the group
+# has no defaults either, the commands: block disappears from tacquito.yaml
+# on the next regenerate.
 write_group_commands() {
     local group="$1"
     local rules_arg="$2"
-    python3 - "$CONFIG" "$group" "$rules_arg" <<'PY'
-import re, sys, tempfile, os
-cfg_path, group, rules_arg = sys.argv[1], sys.argv[2], sys.argv[3]
-cfg = open(cfg_path).read()
-
-def render_rules(text):
-    if not text.strip():
-        return ""
-    out = ["  commands:\n"]
-    for line in text.split("\n"):
-        if not line.strip():
-            continue
-        parts = line.split("|", 2)
-        name = parts[0]
-        action = parts[1] if len(parts) > 1 else "permit"
-        matches = parts[2].split(",") if len(parts) > 2 and parts[2] else []
-        out.append(f'    - name: "{name}"\n')
-        if matches:
-            quoted = ", ".join(f'"{m}"' for m in matches if m)
-            out.append(f"      match: [{quoted}]\n")
-        out.append(f"      action: *action_{action}\n")
-    return "".join(out)
-
-new_block = render_rules(rules_arg)
-
-# Locate group body. Match "<group>: &<group>\n" followed by indented
-# lines until a non-indented line (or EOF).
-gpat = re.compile(
-    r'(^' + re.escape(group) + r': &' + re.escape(group) + r'\n)((?:[ \t].*\n)+)',
-    re.MULTILINE,
-)
-gm = gpat.search(cfg)
-if not gm:
-    sys.stderr.write(f"group '{group}' not found\n")
-    sys.exit(1)
-header, body = gm.group(1), gm.group(2)
-
-# Strip any existing commands: block (and its indented children).
-body_no_cmd = re.sub(
-    r'^  commands:\n(?:    -.*\n(?:      .*\n)*)+',
-    "", body, flags=re.MULTILINE,
-)
-
-# Insert new commands: block just before the accounter line, or at end
-# of body if no accounter.
-if new_block:
-    if re.search(r'^  accounter:', body_no_cmd, re.MULTILINE):
-        new_body = re.sub(
-            r'(^  accounter:.*\n)',
-            new_block + r'\1', body_no_cmd, count=1, flags=re.MULTILINE,
-        )
-    else:
-        new_body = body_no_cmd.rstrip("\n") + "\n" + new_block
-else:
-    new_body = body_no_cmd
-
-cfg_new = cfg[:gm.start()] + header + new_body + cfg[gm.end():]
-tmp = tempfile.NamedTemporaryFile("w", dir=os.path.dirname(cfg_path), delete=False)
-tmp.write(cfg_new)
-tmp.close()
-os.rename(tmp.name, cfg_path)
-PY
+    if [[ -z "$(printf '%s' "$rules_arg" | awk 'NF')" ]]; then
+        conf_unset "commands.${group}"
+    else
+        # Parse pipe-format → JSON array of rule dicts, validate+write.
+        local json
+        json=$(printf '%s\n' "$rules_arg" | python3 -c '
+import json, sys
+rules = []
+for line in sys.stdin:
+    line = line.rstrip("\n")
+    if not line.strip():
+        continue
+    parts = line.split("|", 2)
+    name = parts[0]
+    action = parts[1] if len(parts) > 1 else "permit"
+    matches = [m for m in (parts[2].split(",") if len(parts) > 2 else []) if m]
+    rule = {"name": name, "action": action}
+    if matches:
+        rule["match"] = matches
+    rules.append(rule)
+print(json.dumps(rules))
+')
+        conf_set_json "commands.${group}" "$json" || return 1
+    fi
+    regenerate_tacquito_commands "$group"
 }
 
 # --- Colors ---
@@ -1077,12 +1301,30 @@ validate_class_name() {
 }
 
 # --- Validate username ---
+# Shape only (letters/digits/_/-). See reject_reserved_username() for the
+# names-reserved check — that lives on the creation path only, so cleanup
+# operations like `tacctl user remove root` can still reach a legacy entry.
 validate_username() {
     local value="$1"
     if [[ ! "$value" =~ ^[a-zA-Z0-9_-]+$ ]]; then
         error "Username must contain only letters, numbers, underscores, and hyphens."
         exit 1
     fi
+}
+
+# Reserved OS / service names can't be tacctl-managed: 'root' is the OS
+# root account and 'tacquito' is the service's own user. Both exist outside
+# the YAML — letting tacctl manage either produces acct.go errors at auth
+# time ('user [X] does not have an accounter associated') because tacquito
+# resolves the username against the local account, not the tacctl entry.
+reject_reserved_username() {
+    local value="$1"
+    case "$value" in
+        root|tacquito)
+            error "Username '${value}' is reserved. Create an operator-specific account instead (e.g. tacctl user add jsmith <group>)."
+            exit 1
+            ;;
+    esac
 }
 
 # --- Validate CIDR notation ---
@@ -1108,10 +1350,10 @@ print(f'{n.network_address} {n.hostmask}')
 }
 
 # --- Read the mgmt-ACL permit list ---
-# Returns the merged mgmt_acl.permits list from tacctl.yaml (overrides)
-# deep-merged with tacctl-defaults.yaml's default (an empty list). One
-# CIDR per stdout line; input is expected to already be canonical (writers
-# canonicalize before storing). Empty list = no output.
+# Returns the merged mgmt_acl.permits list: the shipped default from
+# conf_emit_defaults() (an empty list) plus any override in tacctl.yaml.
+# One CIDR per stdout line; input is expected to already be canonical
+# (writers canonicalize before storing). Empty list = no output.
 read_mgmt_acl_cidrs() {
     conf_get_list mgmt_acl.permits | python3 -c "
 import ipaddress, sys
@@ -1158,9 +1400,9 @@ for c in sorted(set(cidrs), key=key_fn):
 }
 
 # --- Read an mgmt-ACL name override (cisco|juniper) with default fallback ---
-# Backed by mgmt_acl.names.{cisco,juniper} in the unified config. The
-# defaults file supplies VTY-ACL / MGMT-SSH-ACL; overrides in tacctl.yaml
-# win.
+# Backed by mgmt_acl.names.{cisco,juniper} in the unified config.
+# conf_emit_defaults() ships VTY-ACL / MGMT-SSH-ACL; overrides in
+# tacctl.yaml win.
 read_mgmt_acl_name() {
     case "$1" in
         cisco)   conf_get mgmt_acl.names.cisco "$CISCO_ACL_NAME_DEFAULT" ;;
@@ -1492,6 +1734,7 @@ cmd_add() {
         exit 1
     fi
     validate_username "$username"
+    reject_reserved_username "$username"
     # Validate group exists in config
     if ! grep -q "^${group}: &${group}$" "$CONFIG"; then
         local available
@@ -1546,7 +1789,8 @@ cmd_add() {
     done
 
     # Determine scopes list. If --scopes given, validate each name exists; else
-    # fall back to default-scope marker (or sole-scope / hardcoded seed name).
+    # fall back to scope.default from tacctl.yaml (or the sole secrets[]
+    # entry if only one scope exists; or the shipped default 'lab').
     local scope_names=""
     if [[ -n "$scopes_csv" ]]; then
         local s
@@ -2309,10 +2553,12 @@ else:
 # writes (to preserve YAML anchors like *authenticator_type_bcrypt that
 # safe_dump would otherwise inline).
 
-# --- Read the default-scope marker ---
-# Returns the configured default scope name from tacctl.yaml's scope.default.
-# Falls back to the name of the sole secrets: entry if the override is missing
-# and there's exactly one scope. Empty output if no scopes exist yet.
+# --- Read scope.default from the merged tacctl config ---
+# Returns the configured default scope name (tacctl.yaml's scope.default,
+# layered over the shipped 'lab' default). Falls back to the name of the
+# sole secrets: entry if the merged value doesn't name an existing scope
+# and there's exactly one scope in tacquito.yaml. Empty output if no
+# scopes exist yet.
 read_default_scope() {
     local v
     v=$(conf_get scope.default)
@@ -2328,8 +2574,10 @@ read_default_scope() {
     fi
 }
 
-# --- Write the default-scope marker ---
-# Caller is responsible for verifying the name exists as a scope first.
+# --- Write scope.default to tacctl.yaml ---
+# Sets the scope.default override; reverts to the shipped default when the
+# value equals 'lab' (conf_set's revert-to-default semantics). Caller is
+# responsible for verifying the name exists as a scope first.
 write_default_scope() {
     conf_set scope.default "$1"
 }
@@ -4296,7 +4544,7 @@ cmd_scopes_rename() {
     backup_config
     rename_scope "$old" "$new"
     reorder_secrets_by_prefix_specificity
-    # Update default-scope marker if it pointed at the old name.
+    # Update scope.default if it pointed at the old name.
     local default_val
     default_val=$(conf_get scope.default)
     if [[ "$default_val" == "$old" ]]; then
@@ -5316,19 +5564,26 @@ print('OK')
 }
 
 # --- GROUP COMMANDS (per-group authorized command rules) ---
-# Drives Cisco TACACS+ command authorization (live) and Juniper class
-# allow/deny-commands (local enforcement, requires per-device push).
+# Drives Cisco TACACS+ command authorization (live; enforced by tacquito)
+# and Juniper class allow/deny-commands (local enforcement on each device,
+# requires per-device push).
 #
-# Storage convention: a trailing `name: "*"` rule whose action encodes
-# the group's default action. Tacquito returns FAIL for any rule that
-# doesn't match, so the catchall is the sole way to express "permit
-# everything not explicitly denied."
+# Source of truth: commands.<group> in /etc/tacquito/tacctl.yaml, layered
+# over shipped defaults in conf_emit_defaults(). tacquito.yaml's per-group
+# commands: block is a regenerated artifact — do not hand-edit it;
+# regenerate_tacquito_commands() rewrites it from the tacctl source on
+# every mutation and on install / upgrade.
 #
-# Safety: when ANY group gains its first commands: section, every other
-# group at the same Cisco priv-lvl is auto-seeded with a catchall
-# permit. Without this, Cisco's `aaa authorization commands <level>`
-# would route ALL command authz at that level through tacquito and
-# users in the unconfigured group would be denied every command.
+# Rule shape: list of dicts {name, action: permit|deny, match?: [regex]}.
+# A trailing `name: "*"` rule's action is the group's default. Tacquito
+# returns FAIL for any rule that doesn't match, so the catchall is the
+# sole way to express "permit everything not explicitly denied."
+#
+# Safety: when ANY group has rules, every other group at the same Cisco
+# priv-lvl is auto-seeded with a catchall permit. Without this, Cisco's
+# `aaa authorization commands <level>` would route ALL command authz at
+# that level through tacquito and users in the unseeded group would be
+# denied every command.
 cmd_group_commands() {
     local subcmd="${1:-}"
     shift 2>/dev/null || true
@@ -5374,7 +5629,7 @@ cmd_group_commands() {
             echo -e "  Default action: ${BOLD}${default_action}${NC}"
             echo ""
             if [[ -z "$rules" ]]; then
-                echo "  (no commands: section — all commands permitted)"
+                echo "  (no commands — custom group with no rules; all commands permitted)"
                 echo ""
                 return
             fi
@@ -5478,8 +5733,8 @@ cmd_group_commands() {
                 exit 1
             fi
             if [[ "$name" == "*" ]]; then
-                error "Cannot remove the '*' catchall. Use 'tacctl group commands default' to change its action."
-                error "Or 'tacctl group commands clear ${group}' to remove the entire commands: block."
+                error "Cannot remove the '*' catchall. Use 'tacctl group commands default' to change its action,"
+                error "or 'tacctl group commands clear ${group}' to revert this group to shipped defaults."
                 exit 1
             fi
             if ! read_group_commands "$group" | grep -q "^${name}|"; then
@@ -5495,7 +5750,7 @@ cmd_group_commands() {
             ;;
         clear)
             if [[ -z "$(read_group_commands "$group")" ]]; then
-                info "Group '${group}' has no commands: block; nothing to clear."
+                info "Group '${group}' has no command rules; nothing to clear."
                 exit 0
             fi
             read -rp "  Clear all command rules for group '${group}'? [y/N]: " confirm
@@ -5507,11 +5762,11 @@ cmd_group_commands() {
             write_group_commands "$group" ""
             chown tacquito:tacquito "$CONFIG"
             restart_service
-            info "Cleared command rules for group '${group}'."
-            warn "If other groups at the same Cisco priv-lvl still have rules,"
-            warn "Cisco will deny ALL commands to '${group}' users at that level."
-            warn "Either re-add a catchall ('tacctl group commands default ${group} permit')"
-            warn "or clear all groups at the same priv-lvl."
+            info "Cleared command rules for group '${group}' (reverted to shipped defaults)."
+            warn "For a custom group, this leaves the group with no rules — if other groups"
+            warn "at the same Cisco priv-lvl still have rules, Cisco will deny ALL commands to"
+            warn "'${group}' users at that level until you re-add a catchall"
+            warn "('tacctl group commands default ${group} permit') or clear the siblings too."
             echo ""
             ;;
     esac
@@ -5527,14 +5782,21 @@ cmd_group_commands_usage() {
     echo "  tacctl group commands add <group> <name> [--match <regex>]...   Add a rule"
     echo "                                            [--action permit|deny]"
     echo "  tacctl group commands remove <group> <name>                     Drop a rule"
-    echo "  tacctl group commands clear <group>                             Wipe rules (confirms)"
-    echo "  tacctl group commands seed [<group>] [--force]                  Populate built-ins with defaults"
+    echo "  tacctl group commands clear <group>                             Drop overrides — revert to shipped defaults (confirms)"
+    echo "  tacctl group commands seed [<group>] [--force]                  Re-apply legacy seed set (recovery tool)"
+    echo ""
+    echo "Rules live under commands.<group> in /etc/tacquito/tacctl.yaml;"
+    echo "tacquito.yaml's per-group commands: block is a regenerated"
+    echo "artifact (do not hand-edit). Built-ins ship with defaults:"
+    echo "   superuser: permit *   |   operator: show/ping/traceroute/"
+    echo "                              terminal + deny *   |   readonly:"
+    echo "                              show/ping/traceroute + deny *"
     echo ""
     echo "Cisco devices ask tacquito per command (live enforcement) when"
     echo "'aaa authorization commands <level>' is in the device config —"
-    echo "tacctl auto-emits these lines in 'tacctl config cisco' once any"
-    echo "group has rules. Juniper enforcement is LOCAL via class"
-    echo "allow/deny-commands and requires a per-device config push."
+    echo "tacctl auto-emits these lines in 'tacctl config cisco'. Juniper"
+    echo "enforcement is LOCAL via class allow/deny-commands, rendered"
+    echo "from the same tacctl-authored rules by 'tacctl config juniper'."
     echo ""
 }
 
@@ -5736,11 +5998,14 @@ seed_command_rules_safely() {
 # --- GROUP PRIVILEGE (Cisco priv-exec command mappings) ---
 # Controls which IOS commands move to a group's priv-lvl via
 # 'privilege exec level <N> <command>' lines emitted by
-# 'tacctl config cisco'. Pure device-side config; tacquito itself does
-# not read this file. Backward-compatible: when the file is missing or
-# a group has no explicit mappings, falls back to a safe default set
-# (only the verified move-DOWN commands; nothing inadvertently
-# restricted from lower-priv groups).
+# 'tacctl config cisco'. Pure device-side config; tacquito itself
+# doesn't read this data.
+#
+# Source of truth: privileges.<group> in /etc/tacquito/tacctl.yaml,
+# layered over the shipped defaults in conf_emit_defaults() (only the
+# verified move-DOWN commands; nothing inadvertently restricted from
+# lower-priv groups). When no override exists, the merged view equals
+# the shipped defaults.
 cmd_group_privilege() {
     local subcmd="${1:-}"
     shift 2>/dev/null || true
@@ -5783,30 +6048,27 @@ cmd_group_privilege() {
 
     case "$subcmd" in
         list)
-            local explicit defaults
-            explicit=$(read_group_privileges "$group")
-            defaults=$(default_privileges_for_group "$group")
+            local merged
+            merged=$(read_group_privileges "$group")
             echo ""
             echo -e "${BOLD}Cisco priv-exec mappings for group '${group}' (priv-lvl ${privlvl})${NC}"
             echo "--------------------------------------------"
-            if [[ -n "$explicit" ]]; then
+            if [[ -z "$merged" ]]; then
+                echo "  (no mappings — group's priv-lvl uses Cisco defaults)"
+            elif conf_has_override "privileges.${group}"; then
                 echo -e "  Source: ${BOLD}explicit${NC} (tacctl.yaml: privileges.${group})"
                 echo ""
-                echo "$explicit" | while IFS= read -r c; do
+                echo "$merged" | while IFS= read -r c; do
                     [[ -z "$c" ]] && continue
                     echo "  - ${c}"
                 done
-            elif [[ -n "$defaults" ]]; then
-                echo -e "  Source: ${BOLD}default${NC} (no explicit mappings; using built-in safe defaults)"
+            else
+                echo -e "  Source: ${BOLD}default${NC} (built-in safe defaults; override via 'tacctl group privilege add')"
                 echo ""
-                echo "$defaults" | while IFS= read -r c; do
+                echo "$merged" | while IFS= read -r c; do
                     [[ -z "$c" ]] && continue
                     echo "  - ${c}  (default)"
                 done
-                echo ""
-                echo "  Override with: tacctl group privilege add ${group} '<command>'"
-            else
-                echo "  (no mappings — group's priv-lvl uses Cisco defaults)"
             fi
             echo ""
             ;;
@@ -6105,13 +6367,22 @@ cmd_status() {
     # Tolerate no-match: when tacquito is launched with ${TACQUITO_LEVEL}
     # rather than a literal -level flag, grep finds nothing and (under
     # pipefail + set -e) would abort status. `|| true` absorbs that.
+    # Log level resolution: drop-in override wins; fall back to scraping a
+    # literal -level N from ExecStart (older unit files); fall back to the
+    # template default of 20 (info). Units that use \${TACQUITO_LEVEL}
+    # placeholders would otherwise come back as "unknown".
     local loglevel
-    loglevel=$(systemctl show tacquito --property=ExecStart 2>/dev/null | grep -oP '\-level \K\d+' || true)
-    local level_name="unknown"
+    loglevel=$(read_service_override TACQUITO_LEVEL)
+    if [[ -z "$loglevel" ]]; then
+        loglevel=$(systemctl show tacquito --property=ExecStart 2>/dev/null | grep -oP '\-level \K\d+' || true)
+    fi
+    loglevel=${loglevel:-20}
+    local level_name
     case "$loglevel" in
         10) level_name="error" ;;
         20) level_name="info" ;;
         30) level_name="debug" ;;
+        *)  level_name="unknown" ;;
     esac
     echo -e "  ${BOLD}Log level:${NC}            ${level_name} (${loglevel})"
 
@@ -6452,15 +6723,30 @@ if not re.search(r'^secrets:', config, re.MULTILINE):
 
 # Check for at least one user
 users_match = re.search(r'^users:\s*\n(.*?)(?=^# ---|\Z)', config, re.MULTILINE | re.DOTALL)
+RESERVED_USERNAMES = {'root', 'tacquito'}
 if users_match:
     users = re.findall(r'- name: (\S+)', users_match.group(1))
     if len(users) == 0:
         errors.append('No users defined')
     else:
-        # Check each user has a bcrypt anchor
+        # Check each user has a bcrypt anchor + an accounter field, and
+        # isn't using a reserved OS/service name. Missing accounter triggers
+        # a stream of acct.go errors at auth time ('user [X] does not have
+        # an accounter associated'); reserved names collide with local OS
+        # accounts tacquito resolves outside the YAML.
         for u in users:
+            if u in RESERVED_USERNAMES:
+                errors.append(f'User \"{u}\" uses a reserved name (remove with: tacctl user remove {u})')
             if not re.search(r'^bcrypt_' + re.escape(u) + r':', config, re.MULTILINE):
                 errors.append(f'User \"{u}\" has no bcrypt authenticator anchor')
+            # Every user entry must carry 'accounter: *file_accounter'
+            # within its block. Bound the block with a look-ahead for the
+            # next list item or the next top-level '# ---' heading.
+            user_block = re.search(
+                r'^  - name: ' + re.escape(u) + r'\s*\n((?:    .*\n|  #.*\n)+?)(?=^  - name:|^# ---|\Z)',
+                users_match.group(1), re.MULTILINE)
+            if user_block and 'accounter:' not in user_block.group(1):
+                errors.append(f'User \"{u}\" has no accounter: field (tacquito will error on every auth)')
 
         # Check for disabled-marker or empty hashes
         for m in re.finditer(r'^bcrypt_(\w+):.*?hash:\s*(\S+)', config, re.MULTILINE | re.DOTALL):
@@ -6503,7 +6789,7 @@ else:
     fi
 
     # Scope integrity: every user's scopes[] must reference an existing
-    # secrets[].name; the default-scope marker must also name one.
+    # secrets[].name; scope.default in tacctl.yaml must also name one.
     local default_scope_configured
     default_scope_configured=$(conf_get scope.default)
     local scope_report
@@ -7587,14 +7873,15 @@ PY
     chown tacquito:tacquito "$CONFIG_FILE"
     chmod 640 "$CONFIG_FILE"
 
-    # --- Seed default-scope marker ---
-    # Fresh installs ship with 'lab' as the sole scope, and the marker
-    # points at it so 'tacctl user add <u> <g>' without --scopes lands
-    # new users in lab (least-privilege by default). Operators who want
-    # a production scope create it explicitly:
+    # --- Seed scope.default ---
+    # Fresh installs ship with 'lab' as the sole scope, and tacctl's
+    # shipped default for scope.default is also 'lab' — so this write
+    # revert-to-defaults (no override persisted) while still printing
+    # the info line to confirm intent to the operator. 'tacctl user add
+    # <u> <g>' without --scopes lands new users in lab (least-privilege
+    # by default). Operators who want a production scope create it:
     #   tacctl scopes add prod --prefixes ... --secret generate
     #   tacctl scopes default prod   (if they want prod-default posture)
-    # Seed default-scope override; tacctl defaults ship embedded in the script.
     write_default_scope "$DEFAULT_SCOPE_FRESH"
     info "Default scope seeded: ${DEFAULT_SCOPE_FRESH} (new users land here unless --scopes given)"
 
@@ -7602,6 +7889,11 @@ PY
     # prefix so tacquito's first-match walk lands on the narrowest
     # matching entry. Idempotent.
     flatten_secrets_if_needed
+
+    # Sync tacquito.yaml's per-group commands: blocks from tacctl.yaml.
+    # Built-in groups pick up their shipped defaults; custom groups get
+    # any explicit overrides the operator has set.
+    regenerate_tacquito_commands
 
     mkdir -p "$BACKUP_DIR" "${BACKUP_DIR}/disabled" "$PASSWORD_DATES_DIR"
     chmod 750 "$BACKUP_DIR" "$PASSWORD_DATES_DIR"
@@ -7705,6 +7997,14 @@ cmd_upgrade() {
     echo "  Tacquito Upgrade"
     echo "============================================"
     echo ""
+
+    # --- Sync tacquito.yaml command blocks with tacctl config ---
+    # Pre-unified-commands installs kept operator-customized commands:
+    # blocks in tacquito.yaml; scrape those back into tacctl.yaml as
+    # overrides (idempotent: no-op once scraped), then regenerate so
+    # tacquito.yaml matches the tacctl-authored state.
+    conf_migrate_command_rules
+    regenerate_tacquito_commands
 
     # --- Record current version ---
     local CURRENT_COMMIT

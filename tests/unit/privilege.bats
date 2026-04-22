@@ -45,11 +45,16 @@ show startup-config"
 # emit `group|cmd` tuples on read and accept newline-separated command lists
 # on write, regardless of the on-disk YAML shape.
 
-@test "read_all_privileges: no overrides → empty" {
+@test "read_all_privileges: no overrides → only shipped defaults" {
+    # No override file → read_all_privileges emits only the shipped
+    # defaults from conf_emit_defaults (operator's show-config family).
     [[ ! -f "$TACCTL_OVERRIDES_FILE" ]]
     run read_all_privileges
     assert_success
-    assert_output ""
+    assert_line "operator|show running-config"
+    assert_line "operator|show startup-config"
+    # Exactly the two default lines, nothing else.
+    [[ "$(printf '%s\n' "$output" | awk 'NF' | wc -l)" == "2" ]]
 }
 
 @test "read_all_privileges: emits one group|cmd line per mapping" {

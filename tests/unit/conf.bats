@@ -11,7 +11,7 @@ setup() {
 
 # --- conf_get ---------------------------------------------------------------
 
-@test "conf_get: returns default from tacctl-defaults.yaml when no override" {
+@test "conf_get: returns default from conf_emit_defaults when no override" {
     run conf_get bcrypt.cost
     assert_success
     assert_output "12"

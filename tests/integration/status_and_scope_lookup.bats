@@ -102,10 +102,12 @@ esac'
     assert_output --partial "Default scope: lab"
 }
 
-@test "scopes default: empty-marker prints 'no default scope set'" {
+@test "scopes default: no override → falls back to shipped default 'lab'" {
+    # multiscope fixture has a 'lab' scope, matching the canonical default.
+    # Without any explicit override, read_default_scope returns 'lab'.
     run "$TACCTL_BIN_SCRIPT" scopes default
     assert_success
-    assert_output --partial "No default scope"
+    assert_output --partial "Default scope: lab"
 }
 
 @test "scopes default <name>: writes the default-scope override" {

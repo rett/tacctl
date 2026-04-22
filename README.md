@@ -140,13 +140,15 @@ tacctl group privilege remove operator 'show running-config'
 Defaults move only verified priv-15 commands DOWN to lower groups (e.g. `show running-config` → priv 7 for `operator`); they never move commands UP from a lower default level (which would silently restrict them from `readonly` users). Mappings live under `privileges.<group>` in `/etc/tacquito/tacctl.yaml` and survive `tacctl upgrade`.
 
 ### Per-command authorization
-Restrict which commands a group can run, enforced live by Cisco IOS via TACACS+. Quickest path is to seed the built-in groups with sensible defaults:
-```
-tacctl group commands seed                # all three built-ins
-tacctl group commands seed operator       # just operator (refuses to overwrite without --force)
-tacctl group commands list operator
-```
-Defaults: `readonly` permits show / ping / traceroute / terminal / navigation / `enable` and denies the rest; `operator` adds `clear test monitor` on top with default deny; `superuser` gets an unrestricted `*` catchall.
+Restrict which commands a group can run, enforced live by Cisco IOS via TACACS+ and mirrored into Junos class `allow-commands`/`deny-commands` by `tacctl config juniper`. Tacctl ships sensible defaults embedded in the script — no seed step needed for fresh installs:
+
+- `superuser`: unrestricted `*` catch-all (permit).
+- `operator`: permits `show`, `ping`, `traceroute`, `terminal`; default **deny** catch-all.
+- `readonly`: permits `show`, `ping`, `traceroute`; default **deny** catch-all (`terminal` omitted — `terminal monitor` can leak debug across sessions).
+
+View the shipped defaults with `tacctl config defaults`; inspect a single group with `tacctl group commands list <group>`. Rules live under `commands.<group>` in `/etc/tacquito/tacctl.yaml`; tacquito.yaml's per-group `commands:` block is regenerated from that source on every mutation.
+
+The `tacctl group commands seed` command is retained as a recovery tool — it re-applies the legacy seed rule set (with `enable`, `clear`, `monitor`, etc.) and should only be needed if you've customized and want to start over. On a fresh install, the shipped defaults above are already in effect.
 
 Or build rules manually:
 ```
@@ -284,7 +286,7 @@ Run any command without arguments for detailed help.
 ```
 user list                                         List all users (name, group, status, pw age, scopes)
 user show <name>                                  Show user details incl. scope membership (no password prompt)
-user add <name> <group>                           Add a new user; lands in default scope
+user add <name> <group>                           Add a new user; lands in default scope. Reserved names `root` and `tacquito` are rejected (they collide with OS accounts tacquito resolves locally).
 user add <name> <group> --scopes <name>[,name...] Grant specific scopes at creation
 user add <name> <group> --hash <hash>             Add user with pre-generated bcrypt hash
 user remove <name>                                Remove a user (with confirmation)
@@ -342,7 +344,7 @@ config get <path> [fallback]                Read a dotted-path value from the me
 config get-list <path>                      Read a list value (one item per line)
 config cisco [--scope <name>]               Generate working Cisco device config for a scope (default if omitted)
 config juniper [--scope <name>]             Generate working Juniper device config for a scope (default if omitted)
-config validate                             Validate config syntax + scope integrity (orphan refs, default-scope marker, tacctl.yaml against schema)
+config validate                             Validate YAML syntax + server-config structure (orphan scope refs, scope.default pointing at a nonexistent scope, reserved usernames, missing accounter:) + schema-walk tacctl.yaml (including commands.<group> / privileges.<group> / mgmt_acl.*)
 config diff [timestamp]                     Diff current config vs a backup
 config loglevel [debug|info|error]          Show or change log level
 config listen [show|tcp|tcp6|reset] [addr]  Show, change, or reset TCP listen address
@@ -378,7 +380,7 @@ bcrypt:
   cost: 12                   # applies only to new hashes  (int, 10..14)
 
 scope:
-  default: null              # seeded at install; set via `tacctl scopes default`
+  default: lab               # matches the fresh-install seed scope; override via `tacctl scopes default`
 
 mgmt_acl:
   names:
@@ -386,11 +388,28 @@ mgmt_acl:
     juniper: MGMT-SSH-ACL    # filter name emitted by `tacctl config juniper`  (same rules)
   permits: []                # list of CIDRs; each element validated
 
-privileges: {}               # per-group lists of Cisco priv-exec commands:
-                             #   privileges:
-                             #     operator:
-                             #       - show running-config
-                             #       - show startup-config
+privileges:                  # per-group Cisco priv-exec lowering (move commands DOWN from priv 15)
+  operator:
+    - show running-config
+    - show startup-config
+
+commands:                    # per-group command-authz rules. Rendered for both Cisco
+                             # (tacquito enforces) and Juniper (class allow/deny-commands)
+                             # from this single tacctl-authored source. Ordered
+                             # superuser → operator → readonly.
+  superuser:
+    - { name: "*", action: permit }
+  operator:
+    - { name: show,       action: permit, match: ["^show .*$"] }
+    - { name: ping,       action: permit, match: ["^ping( .*)?$"] }
+    - { name: traceroute, action: permit, match: ["^traceroute( .*)?$"] }
+    - { name: terminal,   action: permit, match: ["^terminal .*$"] }
+    - { name: "*",        action: deny }
+  readonly:
+    - { name: show,       action: permit, match: ["^show .*$"] }
+    - { name: ping,       action: permit, match: ["^ping( .*)?$"] }
+    - { name: traceroute, action: permit, match: ["^traceroute( .*)?$"] }
+    - { name: "*",        action: deny }
 ```
 
 Merge semantics:

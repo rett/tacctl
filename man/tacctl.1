@@ -94,6 +94,14 @@ default scope is
 — least-privilege posture, so an operator who forgets
 .B --scopes
 does not accidentally grant production access.
+.PP
+Reserved usernames
+.RB ( root
+and
+.BR tacquito )
+are rejected: both map to local OS accounts that tacquito resolves outside
+the YAML. Create an operator-specific account instead (for example,
+.BR "tacctl user add jsmith superuser" ).
 .TP
 .BI "user remove " name
 Remove a user after confirmation.
@@ -208,23 +216,34 @@ or remove the entire block via
 .B group commands clear .
 .TP
 .BI "group commands clear " group
-Wipe all command rules for a group (with confirmation). When other
-groups at the same Cisco privilege level still have rules, this
-group's users will be denied all commands at that level until you
-re-add a catchall (or clear those siblings too).
-.TP
-.B "group commands seed " [ \fIgroup\fR ] " " [ --force ]
-Populate the built-in groups
+Remove a group's command-rule override from
+.IR tacctl.yaml .
+The merged view falls back to the shipped defaults for built-in groups
 .RB ( readonly ,
 .BR operator ,
-.BR superuser )
-with sensible default rule sets. Without an argument, seeds all three;
-with a group name, seeds only that one (custom groups are not seeded).
-Refuses to overwrite an existing
-.B commands:
-section unless
-.B --force
-is given. Defaults:
+.BR superuser );
+for custom groups the group ends up with no rules at all. Tacquito.yaml
+is regenerated afterwards so device-side enforcement stays in sync.
+Confirmation required.
+.TP
+.B "group commands seed " [ \fIgroup\fR ] " " [ --force ]
+Recovery tool. Writes the legacy broader rule set (with
+.BR enable ,
+.BR clear ,
+.BR test ,
+.BR monitor ,
+etc.) as overrides in
+.IR tacctl.yaml .
+On fresh installs the smaller shipped defaults (viewable via
+.BR "tacctl config defaults" )
+are already in effect; you only need
+.B seed
+if you've customized and want to start from a known, broader baseline.
+Without an argument, seeds all three built-ins; with a group name, only
+that one (custom groups are not seeded). Refuses to overwrite existing
+rules without
+.BR --force .
+Legacy seed defaults:
 .B readonly
 permits
 .IR "show ping traceroute terminal exit end quit logout who where enable"
@@ -236,7 +255,7 @@ to the readonly set with default deny;
 .B superuser
 gets a
 .RB ` "* permit" `
-catchall (unrestricted).
+catchall.
 .TP
 .BI "group privilege list " group
 Show the Cisco
@@ -339,9 +358,19 @@ and
 schema-walk every override key in
 .I tacctl.yaml
 against the write-time validator (catches hand-edits that bypass the
-setter commands), then check the server config for structural issues
-(missing sections, orphan scope refs, default-scope marker pointing at a
-nonexistent scope, per-scope key divergence).
+setter commands — including malformed
+.BR commands.\fIgroup\fR
+rules,
+.BR privileges.\fIgroup\fR
+lists, out-of-range integers, unknown keys), then check the server config
+for structural issues: missing sections, orphan scope refs, default-scope
+marker pointing at a nonexistent scope, per-scope key divergence,
+reserved usernames
+.RB ( root ,
+.BR tacquito )
+present as tacctl-managed users, users missing the
+.B accounter:
+field, and per-scope key divergence.
 .TP
 .BI "config diff " [ timestamp ]
 Diff the current config against a backup. Defaults to the most recent
@@ -491,8 +520,10 @@ Default
 .BR MGMT-SSH-ACL .
 Same character rules as
 .BR cisco-name .
-Both overrides live at
-.I /etc/tacquito/mgmt-acl-names.conf
+Both overrides live under
+.B mgmt_acl.names.{cisco,juniper}
+in
+.I /etc/tacquito/tacctl.yaml
 and survive
 .BR "tacctl upgrade" .
 .TP
@@ -644,12 +675,18 @@ on every matching
 .B secrets[]
 entry, every user's
 .B scopes:
-reference, and the default-scope marker (if it pointed at
+reference, and
+.B scope.default
+in
+.I tacctl.yaml
+(if it pointed at
 .IR old ).
 .TP
 .BI "scopes default " [ name ]
-Show (no arg) or set (with arg) the default scope. Stored in
-.IR /etc/tacquito/default-scope .
+Show (no arg) or set (with arg) the default scope. Stored under
+.B scope.default
+in
+.IR /etc/tacquito/tacctl.yaml .
 Used by
 .BR "user add"
 when
