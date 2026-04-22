@@ -1103,6 +1103,20 @@ normalize_deploy_perms() {
     chmod -R a+rX "$DEPLOY_DIR" 2>/dev/null || true
 }
 
+# Register root-owned git repos as safe for every user on the host via
+# /etc/gitconfig. Without this, an unprivileged operator running
+# `git -C /opt/tacctl log` gets "fatal: detected dubious ownership".
+# Idempotent: each path is only added if not already present.
+ensure_safe_directory() {
+    local path existing
+    existing=$(git config --system --get-all safe.directory 2>/dev/null || true)
+    for path in "$@"; do
+        if ! printf '%s\n' "$existing" | grep -qxF "$path"; then
+            git config --system --add safe.directory "$path" 2>/dev/null || true
+        fi
+    done
+}
+
 # Install the man page from <src> to /usr/share/man/man1/tacctl.1.gz and
 # refresh mandb. Silent no-op if the source file is missing (keeps older
 # repo checkouts working) or if mandb is unavailable (`man tacctl` still
@@ -7870,9 +7884,13 @@ cmd_install() {
         info "Management repo cloned to ${DEPLOY_DIR}"
     fi
     normalize_deploy_perms
-    # Ensure git safe.directory is set for sudo operations
-    git config --global --add safe.directory "$DEPLOY_DIR" 2>/dev/null || true
-    git config --global --add safe.directory "$TACQUITO_SRC" 2>/dev/null || true
+    # Whitelist the two repos as safe for every user on the box (not just
+    # root). /opt/tacctl and /opt/tacquito-src are root-owned clones; without
+    # a --system entry, an unprivileged operator running `git -C /opt/tacctl
+    # log` hits "fatal: detected dubious ownership". --system writes to
+    # /etc/gitconfig so all users inherit the exception. Idempotent: skip if
+    # the entry is already present, since --add would otherwise duplicate.
+    ensure_safe_directory "$DEPLOY_DIR" "$TACQUITO_SRC"
 
     # Symlink management CLI (755 so non-root users can exec into sudo)
     chmod 755 "${DEPLOY_DIR}/bin/tacctl.sh"
@@ -8153,9 +8171,13 @@ cmd_upgrade() {
 
     export PATH=$PATH:/usr/local/go/bin
 
-    # Ensure git safe.directory is set for sudo operations
-    git config --global --add safe.directory "$DEPLOY_DIR" 2>/dev/null || true
-    git config --global --add safe.directory "$TACQUITO_SRC" 2>/dev/null || true
+    # Whitelist the two repos as safe for every user on the box (not just
+    # root). /opt/tacctl and /opt/tacquito-src are root-owned clones; without
+    # a --system entry, an unprivileged operator running `git -C /opt/tacctl
+    # log` hits "fatal: detected dubious ownership". --system writes to
+    # /etc/gitconfig so all users inherit the exception. Idempotent: skip if
+    # the entry is already present, since --add would otherwise duplicate.
+    ensure_safe_directory "$DEPLOY_DIR" "$TACQUITO_SRC"
 
     local PROJECT_DIR
     PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -8548,6 +8570,11 @@ cmd_uninstall() {
     # --- Remove management repo ---
     info "Removing management repo..."
     rm -rf "$DEPLOY_DIR"
+
+    # --- Drop system-wide git safe.directory entries for the removed repos ---
+    # Best-effort: git may complain if no entries exist; silent on failure.
+    git config --system --unset-all safe.directory "$(printf '^%s$' "$DEPLOY_DIR")" 2>/dev/null || true
+    git config --system --unset-all safe.directory "$(printf '^%s$' "$TACQUITO_SRC")" 2>/dev/null || true
 
     # --- Remove service user ---
     if id tacquito &>/dev/null; then
