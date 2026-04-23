@@ -2517,14 +2517,14 @@ cmd_config_show() {
     fi
     echo ""
     echo -e "  ${BOLD}Cisco (priv-lvl):${NC}"
-    echo -e "    Read-only:          ${cisco_ro}"
-    echo -e "    Operator:           ${cisco_op}"
     echo -e "    Super-user:         ${cisco_rw}"
+    echo -e "    Operator:           ${cisco_op}"
+    echo -e "    Read-only:          ${cisco_ro}"
     echo ""
     echo -e "  ${BOLD}Juniper (local-user-name):${NC}"
-    echo -e "    Read-only class:    ${juniper_ro}"
-    echo -e "    Operator class:     ${juniper_op}"
     echo -e "    Super-user class:   ${juniper_rw}"
+    echo -e "    Operator class:     ${juniper_op}"
+    echo -e "    Read-only class:    ${juniper_ro}"
 
     # Show allow/deny lists
     local allow_list deny_list
@@ -2549,15 +2549,15 @@ else:
 
     echo ""
     echo -e "  ${BOLD}Connection Filters:${NC} ${CYAN}(deny takes precedence over allow)${NC}"
-    if [[ -n "$allow_list" ]]; then
-        echo -e "    Allow:              ${allow_list}"
-    else
-        echo -e "    Allow:              ${CYAN}(all)${NC}"
-    fi
     if [[ -n "$deny_list" ]]; then
         echo -e "    Deny:               ${deny_list}"
     else
         echo -e "    Deny:               ${CYAN}(none)${NC}"
+    fi
+    if [[ -n "$allow_list" ]]; then
+        echo -e "    Allow:              ${allow_list}"
+    else
+        echo -e "    Allow:              ${CYAN}(all)${NC}"
     fi
 
     echo ""
@@ -4261,25 +4261,25 @@ cmd_scope() {
     local subcmd="${1:-}"
     shift 2>/dev/null || true
     case "$subcmd" in
-        ""|-h|--help|help) cmd_scopes_usage ;;
-        list)              cmd_scopes_list ;;
-        show)              cmd_scopes_show "$@" ;;
-        add)               cmd_scopes_add "$@" ;;
-        remove)            cmd_scopes_remove "$@" ;;
-        rename)            cmd_scopes_rename "$@" ;;
-        default)           cmd_scopes_default "$@" ;;
-        lookup)            cmd_scopes_lookup "$@" ;;
-        prefixes)          cmd_scopes_prefixes_dispatch "$@" ;;
-        secret)            cmd_scopes_secret_dispatch "$@" ;;
+        ""|-h|--help|help) cmd_scope_usage ;;
+        list)              cmd_scope_list ;;
+        show)              cmd_scope_show "$@" ;;
+        add)               cmd_scope_add "$@" ;;
+        remove)            cmd_scope_remove "$@" ;;
+        rename)            cmd_scope_rename "$@" ;;
+        default)           cmd_scope_default "$@" ;;
+        lookup)            cmd_scope_lookup "$@" ;;
+        prefixes)          cmd_scope_prefixes_dispatch "$@" ;;
+        secret)            cmd_scope_secret_dispatch "$@" ;;
         *)
             error "Unknown subcommand: '${subcmd}'"
-            cmd_scopes_usage
+            cmd_scope_usage
             exit 1
             ;;
     esac
 }
 
-cmd_scopes_usage() {
+cmd_scope_usage() {
     local count=0 default_val
     count=$(list_scopes | wc -l)
     default_val=$(read_default_scope)
@@ -4305,7 +4305,7 @@ cmd_scopes_usage() {
     echo ""
 }
 
-cmd_scopes_list() {
+cmd_scope_list() {
     echo ""
     echo -e "${BOLD}Scopes${NC} ${CYAN}(tacquito first-match order — narrower prefixes win)${NC}"
     echo "--------------------------------------------------------------"
@@ -4368,7 +4368,7 @@ for s in (d.get('secrets') or []):
     echo ""
 }
 
-cmd_scopes_show() {
+cmd_scope_show() {
     local name="${1:-}"
     if [[ -z "$name" ]]; then
         error "Usage: tacctl scope show <name>"
@@ -4423,7 +4423,7 @@ cmd_scopes_show() {
     echo ""
 }
 
-cmd_scopes_add() {
+cmd_scope_add() {
     local name="${1:-}"
     if [[ -z "$name" ]]; then
         error "Usage: tacctl scope add <name> --prefixes <cidrs> [--secret <value>|generate] [--default]"
@@ -4508,7 +4508,7 @@ cmd_scopes_add() {
     echo ""
 }
 
-cmd_scopes_remove() {
+cmd_scope_remove() {
     local name="${1:-}" force="false"
     if [[ -z "$name" ]]; then
         error "Usage: tacctl scope remove <name> [--force]"
@@ -4568,7 +4568,7 @@ cmd_scopes_remove() {
     echo ""
 }
 
-cmd_scopes_rename() {
+cmd_scope_rename() {
     local old="${1:-}" new="${2:-}"
     if [[ -z "$old" || -z "$new" ]]; then
         error "Usage: tacctl scope rename <old> <new>"
@@ -4604,7 +4604,7 @@ cmd_scopes_rename() {
     echo ""
 }
 
-cmd_scopes_default() {
+cmd_scope_default() {
     local name="${1:-}"
     if [[ -z "$name" ]]; then
         local current
@@ -4639,7 +4639,7 @@ cmd_scopes_default() {
 # prefix, and (when the query is an IP inside a broader covering supernet)
 # any additional scopes whose prefixes also contain the address — handy
 # when debugging unexpected auth routing.
-cmd_scopes_lookup() {
+cmd_scope_lookup() {
     local query="${1:-}"
     if [[ -z "$query" ]]; then
         error "Usage: tacctl scope lookup <ip|cidr>"
@@ -4715,7 +4715,7 @@ PY
 }
 
 # --- Per-scope prefix management: tacctl scope prefixes <scope> ... ---
-cmd_scopes_prefixes_dispatch() {
+cmd_scope_prefixes_dispatch() {
     local scope="${1:-}"
     local sub="${2:-}"
     local arg="${3:-}"
@@ -4874,7 +4874,7 @@ cmd_scopes_prefixes_dispatch() {
 }
 
 # --- Per-scope secret management: tacctl scope secret <scope> ... ---
-cmd_scopes_secret_dispatch() {
+cmd_scope_secret_dispatch() {
     local scope="${1:-}"
     local sub="${2:-}"
     local arg="${3:-}"
@@ -5297,7 +5297,7 @@ for m in re.finditer(r'^(\w+): &\1\n  name: \1\n  services:\n(.*?)  accounter:',
             user_count += 1
 
     print(f'{name}|{priv}|{jclass}|{user_count}')
-" "$CONFIG" | while IFS='|' read -r name priv jclass user_count; do
+" "$CONFIG" | sort -t'|' -k2 -nr | while IFS='|' read -r name priv jclass user_count; do
         printf "  %-20s %-15s %-20s %-10s\n" "$name" "$priv" "$jclass" "$user_count"
     done
 
@@ -6736,9 +6736,9 @@ cmd_config_validate() {
     # lets operators catch typos before they confuse 'tacctl status'.
     # (Defaults are embedded in the script — no file to validate.)
     if [[ ! -f "$TACCTL_OVERRIDES_FILE" ]]; then
-        echo -e "  ${GREEN}tacctl.yaml:${NC} no overrides"
+        echo -e "  ${GREEN}tacctl.yaml:${NC}          no overrides"
     elif python3 -c "import yaml; yaml.safe_load(open('$TACCTL_OVERRIDES_FILE'))" 2>/dev/null; then
-        echo -e "  ${GREEN}tacctl.yaml:${NC} valid"
+        echo -e "  ${GREEN}tacctl.yaml:${NC}          valid"
         # Schema-walk the overrides against _CONF_SCHEMA (write-time
         # validation catches most issues; this catches hand-edits).
         local schema_errors
@@ -6751,7 +6751,7 @@ cmd_config_validate() {
             done <<< "$schema_errors"
         fi
     else
-        echo -e "  ${RED}tacctl.yaml:${NC} INVALID"
+        echo -e "  ${RED}tacctl.yaml:${NC}          INVALID"
         python3 -c "import yaml; yaml.safe_load(open('$TACCTL_OVERRIDES_FILE'))" 2>&1 | head -3
         errors=$((errors + 1))
     fi
@@ -6840,7 +6840,7 @@ else:
 " "$CONFIG" "$DISABLED_MARKER_HEX")
 
     if [[ "$result" == "OK" ]]; then
-        echo -e "  ${GREEN}Config structure:${NC}      valid"
+        echo -e "  ${GREEN}Config structure:${NC}     valid"
     else
         echo "$result" | while IFS= read -r line; do
             local msg="${line#ERROR:}"
@@ -6892,7 +6892,7 @@ if not issues:
 PY
 )
     if [[ "$scope_report" == "OK" ]]; then
-        echo -e "  ${GREEN}Scopes integrity:${NC}      valid"
+        echo -e "  ${GREEN}Scopes integrity:${NC}     valid"
     else
         echo "$scope_report" | while IFS= read -r line; do
             [[ "$line" == ERROR:* ]] || continue
