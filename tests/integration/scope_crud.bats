@@ -89,14 +89,37 @@ setup() {
 
 # --- scopes list / show / lookup --------------------------------------------
 
-@test "scopes list: shows all scopes with prefix rows" {
+@test "scope list: one block per scope; prefixes rendered line-by-line" {
     "$TACCTL_BIN_SCRIPT" scope add prod \
-        --prefixes 10.0.0.0/8 --secret "prod-secret-1234567890abcdef"
+        --prefixes 10.0.0.0/8,10.10.0.0/16 \
+        --secret "prod-secret-1234567890abcdef"
     run "$TACCTL_BIN_SCRIPT" scope list
     assert_success
+    # Both scopes present, each prefix on its own line.
     assert_output --partial "lab"
     assert_output --partial "prod"
+    assert_output --partial "10.10.0.0/16"
     assert_output --partial "10.0.0.0/8"
+    # Each scope name appears exactly once (no per-prefix repeat).
+    local prod_rows
+    prod_rows=$(printf '%s\n' "$output" | sed -E 's/\x1b\[[0-9;]*m//g' | grep -cE '^  prod ')
+    [[ "$prod_rows" == "1" ]]
+}
+
+@test "scope routing: one row per (scope, prefix) in first-match order" {
+    "$TACCTL_BIN_SCRIPT" scope add prod \
+        --prefixes 10.0.0.0/8,10.10.0.0/16 \
+        --secret "prod-secret-1234567890abcdef"
+    run "$TACCTL_BIN_SCRIPT" scope routing
+    assert_success
+    assert_output --partial "first-match order"
+    # Each prefix gets its own numbered row.
+    assert_output --partial "10.0.0.0/8"
+    assert_output --partial "10.10.0.0/16"
+    # prod appears twice (once per prefix) in the routing view.
+    local prod_rows
+    prod_rows=$(printf '%s\n' "$output" | sed -E 's/\x1b\[[0-9;]*m//g' | grep -cE '^ +[0-9]+  prod ')
+    [[ "$prod_rows" == "2" ]]
 }
 
 @test "scopes show: prints a scope's prefixes, secret, and user count" {

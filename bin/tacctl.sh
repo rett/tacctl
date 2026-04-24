@@ -2599,6 +2599,18 @@ cmd_config_show() {
     echo -e "    Operator class:     ${juniper_op}"
     echo -e "    Read-only class:    ${juniper_ro}"
 
+    # Global mgmt-ACL names. Per-scope overrides land in the
+    # `tacctl scope show <name>` summary — surfacing both here would
+    # double up on every scope. The global values are what new
+    # scopes inherit by default.
+    local cisco_acl_name juniper_acl_name
+    cisco_acl_name=$(read_mgmt_acl_name cisco)
+    juniper_acl_name=$(read_mgmt_acl_name juniper)
+    echo ""
+    echo -e "  ${BOLD}Management ACL names (global defaults):${NC}"
+    echo -e "    Cisco ACL:          ${cisco_acl_name}"
+    echo -e "    Juniper filter:     ${juniper_acl_name}"
+
     # Show allow/deny lists
     local allow_list deny_list
     allow_list=$(python3 -c "
@@ -2754,7 +2766,12 @@ for n in collected:
     if n not in seen:
         seen.add(n)
         uniq.append(n)
-uniq.sort(key=lambda n: (n.version, int(n.broadcast_address), int(n.network_address)))
+# Sort specificity-first: prefix length DESC, then IPv4 before IPv6,
+# then network address ASC for a stable tie-break among prefixes of
+# the same length. Mirrors tacquito routing semantics — most-specific
+# prefix wins for any given client IP, so the display reads
+# top-to-bottom as 'most likely match first'.
+uniq.sort(key=lambda n: (-n.prefixlen, n.version, int(n.network_address)))
 for n in uniq:
     print(n)
 " "$CONFIG" "$name" 2>/dev/null
@@ -4388,6 +4405,7 @@ cmd_scope() {
     case "$subcmd" in
         ""|-h|--help|help) cmd_scope_usage ;;
         list)              cmd_scope_list ;;
+        routing)           cmd_scope_routing ;;
         show)              cmd_scope_show "$@" ;;
         add)               cmd_scope_add "$@" ;;
         remove)            cmd_scope_remove "$@" ;;
@@ -4416,7 +4434,8 @@ cmd_scope_usage() {
     echo -e "${BOLD}tacctl scope${NC} — named (CIDR-prefixes, shared-secret) bundles"
     echo ""
     echo "Usage:"
-    echo "  tacctl scope list                                        One row per (scope, prefix) in routing order"
+    echo "  tacctl scope list                                        One row per scope (aggregated prefix list)"
+    echo "  tacctl scope routing                                     One row per (scope, prefix) — first-match order"
     echo "  tacctl scope show <name>                                 Detailed view"
     echo "  tacctl scope add <name> --prefixes <cidrs>               Create a new scope"
     echo "                       [--secret <value>|--secret generate]"
@@ -4440,32 +4459,121 @@ cmd_scope_usage() {
 
 cmd_scope_list() {
     echo ""
-    echo -e "${BOLD}Scopes${NC} ${CYAN}(tacquito first-match order — narrower prefixes win)${NC}"
+    echo -e "${BOLD}Scopes${NC} ${CYAN}(one block per scope; see 'tacctl scope routing' for first-match prefix order)${NC}"
     echo "--------------------------------------------------------------"
     local default_val
     default_val=$(read_default_scope)
-    # Walk secrets[] in YAML slice order (matches tacquito's provider-level
-    # first-match walk at loader.go:212-220). One row per (scope, prefix)
-    # entry — multi-prefix scopes intentionally repeat their name so the
-    # display literally mirrors how a connecting client gets routed. For
-    # the aggregated per-scope view (users, secret, is-default), use
-    # `tacctl scope show <name>`.
-    #
-    # Pre-compute per-scope user counts in Python to avoid N forks of
-    # `count_users_in_scope` over N entries; the per-scope fact is the
-    # same on every row for a given name.
+    # One block per scope. First prefix sits on the scope's summary
+    # row (name / users / default marker); subsequent prefixes indent
+    # under the PREFIXES column so the list reads top-to-bottom as
+    # "this scope owns these CIDRs". Detailed first-match resolution
+    # order is `tacctl scope routing`; per-scope secret + knobs land
+    # in `tacctl scope show <name>`.
     local rows
     rows=$(python3 -c "
-import json, re, sys, yaml
+import ipaddress, json, re, sys, yaml
 cfg_path = sys.argv[1]
 default_val = sys.argv[2]
 with open(cfg_path) as f:
     d = yaml.safe_load(f) or {}
-# user count per scope
 ucount = {}
 for u in (d.get('users') or []):
     for s in (u.get('scopes') or []):
         ucount[s] = ucount.get(s, 0) + 1
+prefixes = {}
+order = []
+for s in (d.get('secrets') or []):
+    name = s.get('name') or '(unnamed)'
+    pfx = (s.get('options') or {}).get('prefixes') or ''
+    try:
+        arr = json.loads(pfx) if pfx else []
+    except Exception:
+        arr = re.findall(r'\"([^\"]+)\"', pfx)
+    if name not in prefixes:
+        prefixes[name] = []
+        order.append(name)
+    for cidr in arr:
+        if cidr not in prefixes[name]:
+            prefixes[name].append(cidr)
+
+def spec_key(cidr):
+    # Specificity-first sort: prefix length DESC (narrower = more
+    # specific first) with network-address ASC as tie-break among
+    # equal-length prefixes. Matches the most-specific-wins routing
+    # semantic tacquito applies to any given client IP.
+    try:
+        n = ipaddress.ip_network(cidr, strict=False)
+        return (-n.prefixlen, n.version, int(n.network_address))
+    except ValueError:
+        return (1, 0, 0)
+
+# Emit one line per (scope, prefix) pair, '|'-separated. First row
+# per scope carries users + default; continuation rows leave those
+# columns empty. Within each scope the prefixes are sorted by
+# specificity (narrower first) so the block mirrors how operators
+# think about overlap. Using '|' (not \t) because bash's read -r
+# with IFS=\t strips leading tabs when reassembling empty fields.
+for name in order:
+    pfx_list = sorted(prefixes[name] or ['(no prefix)'], key=spec_key)
+    is_default = 'yes' if name == default_val else ''
+    for idx, cidr in enumerate(pfx_list):
+        if idx == 0:
+            print(f'{name}|{cidr}|{ucount.get(name, 0)}|{is_default}')
+        else:
+            print(f'|{cidr}||')
+" "$CONFIG" "$default_val" 2>/dev/null)
+
+    if [[ -z "$rows" ]]; then
+        echo "  (no scopes configured)"
+        echo ""
+        return
+    fi
+
+    printf "  ${BOLD}%-18s %-20s %5s  %s${NC}\n" "NAME" "PREFIXES" "USERS" "DEFAULT"
+    echo "  --------------------------------------------------------------"
+    while IFS='|' read -r name cidr users is_default; do
+        if [[ -z "$name" ]]; then
+            # Continuation row — blank NAME column, prefix only.
+            [[ -z "$cidr" ]] && continue
+            printf "  %-18s %-20s\n" "" "$cidr"
+            continue
+        fi
+        local dfl=""
+        [[ "$is_default" == "yes" ]] && dfl="${CYAN}yes${NC}"
+        printf "  ${BOLD}%-18s${NC} %-20s %5s  %b\n" "$name" "$cidr" "$users" "$dfl"
+    done <<< "$rows"
+    echo ""
+}
+
+# --- tacctl scope routing — the old per-(scope, prefix) view ---
+# Surfaces the tacquito first-match walk order for operator debugging:
+# each row is one secrets[] slot as tacquito sees it. Multi-prefix
+# scopes repeat their name so the display literally mirrors how a
+# connecting client gets routed. `tacctl scope list` is the dedup'd
+# per-scope view for day-to-day work.
+cmd_scope_routing() {
+    echo ""
+    echo -e "${BOLD}Scope routing${NC} ${CYAN}(tacquito first-match order — narrower prefixes win)${NC}"
+    echo "--------------------------------------------------------------"
+    local default_val
+    default_val=$(read_default_scope)
+    local rows
+    rows=$(python3 -c "
+import ipaddress, json, re, sys, yaml
+cfg_path = sys.argv[1]
+default_val = sys.argv[2]
+with open(cfg_path) as f:
+    d = yaml.safe_load(f) or {}
+ucount = {}
+for u in (d.get('users') or []):
+    for s in (u.get('scopes') or []):
+        ucount[s] = ucount.get(s, 0) + 1
+# Collect every (scope, prefix) pair and sort specificity-first:
+# prefix length DESC so the most-specific row lands at the top
+# (matches tacquito's most-specific-wins routing), with
+# network-address ASC as tie-break. Entries with an unparseable
+# prefix (rare, malformed YAML) sort to the end.
+pairs = []
 for s in (d.get('secrets') or []):
     name = s.get('name') or '(unnamed)'
     pfx = (s.get('options') or {}).get('prefixes') or ''
@@ -4474,12 +4582,18 @@ for s in (d.get('secrets') or []):
     except Exception:
         arr = re.findall(r'\"([^\"]+)\"', pfx)
     if not arr:
-        # scope entry with no prefix (pathological); show one row to make
-        # the anomaly visible rather than swallowing it silently.
         arr = ['(no prefix)']
     for cidr in arr:
-        is_default = 'yes' if name == default_val else ''
-        print(f\"{name}\t{cidr}\t{ucount.get(name, 0)}\t{is_default}\")
+        try:
+            net = ipaddress.ip_network(cidr, strict=False)
+            sort_key = (-net.prefixlen, net.version, int(net.network_address))
+        except ValueError:
+            sort_key = (1, 0, 0)  # sink unparseable to the end
+        pairs.append((sort_key, name, cidr))
+pairs.sort(key=lambda x: x[0])
+for _, name, cidr in pairs:
+    is_default = 'yes' if name == default_val else ''
+    print(f'{name}|{cidr}|{ucount.get(name, 0)}|{is_default}')
 " "$CONFIG" "$default_val" 2>/dev/null)
 
     if [[ -z "$rows" ]]; then
@@ -4491,7 +4605,7 @@ for s in (d.get('secrets') or []):
     printf "  ${BOLD}%3s  %-18s %-20s %5s  %s${NC}\n" "#" "NAME" "PREFIX" "USERS" "DEFAULT"
     echo "  --------------------------------------------------------------"
     local i=0
-    while IFS=$'\t' read -r name cidr users is_default; do
+    while IFS='|' read -r name cidr users is_default; do
         [[ -z "$name" ]] && continue
         i=$((i + 1))
         local dfl=""

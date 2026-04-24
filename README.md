@@ -436,7 +436,8 @@ View effective posture with `tacctl config dump`; read individual values with `t
 ### Scope Commands — `tacctl scope`
 
 ```
-scope list                                               List every (scope, prefix) pair in tacquito first-match order (numbered by slice position)
+scope list                                               One row per scope (deduplicated; prefixes joined)
+scope routing                                            One row per (scope, prefix) — tacquito first-match order
 scope show <name>                                        Full detail: prefixes, users, raw secret + posture, default-ness
 scope add <name> --prefixes <cidrs>                      Create a new scope
           [--secret <value>|--secret generate] [--default]
