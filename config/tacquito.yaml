@@ -25,27 +25,32 @@ file_accounter: &file_accounter
 # Added automatically by: tacctl user add <name> <group>
 
 # --- Services ---
-# Cisco IOS/IOS-XE: requests service=exec, expects priv-lvl
-# Juniper: requests service=junos-exec, expects local-user-name
+# Cisco IOS/IOS-XE: sends service=shell cmd= for exec login authorization
+#   (the AAA/AUTHOR/EXEC path). The anchor names keep 'exec' as a
+#   semantic label for the tier (readonly/operator/superuser) so
+#   per-group references elsewhere stay readable, but the on-wire
+#   service value must be 'shell' to match what modern IOS/IOS-XE
+#   routers and switches send.
+# Juniper: requests service=junos-exec, expects local-user-name.
 # Each device type only requests its own service — the other is ignored.
 
 # Cisco exec - read-only (priv-lvl 1)
 exec_readonly: &exec_readonly
-  name: exec
+  name: shell
   set_values:
     - name: priv-lvl
       values: [1]
 
 # Cisco exec - operator (priv-lvl 7)
 exec_operator: &exec_operator
-  name: exec
+  name: shell
   set_values:
     - name: priv-lvl
       values: [7]
 
 # Cisco exec - super-user (priv-lvl 15)
 exec_superuser: &exec_superuser
-  name: exec
+  name: shell
   set_values:
     - name: priv-lvl
       values: [15]
