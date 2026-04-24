@@ -18,19 +18,19 @@ file_accounter: &file_accounter
 
 # --- Services ---
 exec_readonly: &exec_readonly
-  name: exec
+  name: shell
   set_values:
     - name: priv-lvl
       values: [1]
 
 exec_operator: &exec_operator
-  name: exec
+  name: shell
   set_values:
     - name: priv-lvl
       values: [7]
 
 exec_superuser: &exec_superuser
-  name: exec
+  name: shell
   set_values:
     - name: priv-lvl
       values: [15]
