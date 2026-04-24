@@ -5352,7 +5352,7 @@ cmd_group_add() {
 
 # Cisco exec - ${groupname} (priv-lvl ${privlvl})
 exec_${groupname}: &exec_${groupname}
-  name: exec
+  name: shell
   set_values:
     - name: priv-lvl
       values: [${privlvl}]
@@ -5544,8 +5544,11 @@ if not sm:
     sys.exit(1)
 svc = sm.group(1)
 
-# Find the exact service block and replace only its priv-lvl value
-pattern = r'(exec_' + re.escape(svc) + r': &exec_' + re.escape(svc) + r'\n  name: exec\n  set_values:\n    - name: priv-lvl\n      values: \[)\d+(\])'
+# Find the exact service block and replace only its priv-lvl value.
+# Match both `name: shell` (current) and `name: exec` (legacy installs
+# that pre-date the 0.1.2 template fix) so in-place edits still work
+# while we wait for operators to upgrade.
+pattern = r'(exec_' + re.escape(svc) + r': &exec_' + re.escape(svc) + r'\n  name: (?:shell|exec)\n  set_values:\n    - name: priv-lvl\n      values: \[)\d+(\])'
 config = re.sub(pattern, r'\g<1>' + new_val + r'\2', config)
 
 import tempfile, os
@@ -6904,7 +6907,10 @@ PY
 
     # Check services
     local svc_count
-    svc_count=$(grep -c "name: exec\|name: junos-exec" "$CONFIG" 2>/dev/null || echo 0)
+    # Match shell (current template), exec (pre-0.1.2 legacy installs),
+    # and junos-exec. Exec anchors can carry either service name
+    # depending on install vintage.
+    svc_count=$(grep -c "name: shell\|name: exec\|name: junos-exec" "$CONFIG" 2>/dev/null || echo 0)
     echo -e "  ${GREEN}Services defined:${NC}     ${svc_count}"
 
     # Check groups
