@@ -108,6 +108,33 @@ setup() {
     assert_output --partial "prod-secret-1234567890abcdef"
 }
 
+@test "scope show: includes per-scope AAA order and exec-timeout" {
+    # Output carries ANSI bold around the labels; --partial can't span
+    # both the label and value cleanly, so strip color first.
+    _show() { "$TACCTL_BIN_SCRIPT" scope show "$1" | sed -E 's/\x1b\[[0-9;]*m//g'; }
+
+    # Defaults should display when no per-scope overrides exist.
+    run _show lab
+    assert_success
+    assert_output --partial "AAA order:     local-first"
+    assert_output --partial "Exec timeout:  60 min"
+    refute_output --partial "never expire"
+
+    # After overrides, the new values appear.
+    "$TACCTL_BIN_SCRIPT" scope aaa-order    lab tacacs-first > /dev/null
+    "$TACCTL_BIN_SCRIPT" scope exec-timeout lab 15 > /dev/null
+    run _show lab
+    assert_success
+    assert_output --partial "AAA order:     tacacs-first"
+    assert_output --partial "Exec timeout:  15 min"
+
+    # Exec timeout 0 renders with a "never expire" annotation.
+    "$TACCTL_BIN_SCRIPT" scope exec-timeout lab 0 > /dev/null
+    run _show lab
+    assert_success
+    assert_output --partial "Exec timeout:  0 min (never expire)"
+}
+
 @test "scopes lookup: returns owning scope for a covered IP" {
     "$TACCTL_BIN_SCRIPT" scope add prod \
         --prefixes 10.0.0.0/8 --secret "prod-secret-1234567890abcdef"
@@ -183,4 +210,106 @@ setup() {
     # Alice's scope reference is rewritten.
     run grep -A4 '^  - name: alice$' "$TACCTL_CONFIG"
     assert_output --partial 'scopes: ["production"]'
+}
+
+# --- scope aaa-order (per-scope) --------------------------------------------
+
+@test "scope aaa-order: default is local-first with 'default' source" {
+    run "$TACCTL_BIN_SCRIPT" scope aaa-order lab
+    assert_success
+    assert_output --partial "order: local-first"
+    assert_output --partial "Source: default"
+}
+
+@test "scope aaa-order: rejects unknown scope" {
+    run "$TACCTL_BIN_SCRIPT" scope aaa-order nosuchscope
+    assert_failure
+    assert_output --partial "does not exist"
+}
+
+@test "scope aaa-order: set + read back per-scope override" {
+    run "$TACCTL_BIN_SCRIPT" scope aaa-order lab tacacs-first
+    assert_success
+    assert_output --partial "order set to tacacs-first"
+    [[ "$(conf_get aaa.order.lab)" == "tacacs-first" ]]
+
+    run "$TACCTL_BIN_SCRIPT" scope aaa-order lab
+    assert_success
+    assert_output --partial "order: tacacs-first"
+    assert_output --partial "Source: override"
+}
+
+@test "scope aaa-order: per-scope overrides are independent" {
+    "$TACCTL_BIN_SCRIPT" scope add prod \
+        --prefixes 10.0.0.0/8 --secret "prod-secret-1234567890abcdef" > /dev/null
+
+    "$TACCTL_BIN_SCRIPT" scope aaa-order lab  tacacs-first > /dev/null
+    # prod not explicitly set — should still report default local-first.
+
+    [[ "$(conf_get aaa.order.lab)"  == "tacacs-first" ]]
+    [[ "$(conf_get aaa.order.prod)" == "" ]]
+
+    run "$TACCTL_BIN_SCRIPT" scope aaa-order prod
+    assert_success
+    assert_output --partial "order: local-first"
+    assert_output --partial "Source: default"
+}
+
+@test "scope aaa-order: local-first set on a scope warns about collisions" {
+    # local-first is the implicit default, but setting it explicitly
+    # should still surface the collision caveat.
+    "$TACCTL_BIN_SCRIPT" scope aaa-order lab tacacs-first > /dev/null
+    run "$TACCTL_BIN_SCRIPT" scope aaa-order lab local-first
+    assert_success
+    assert_output --partial "collide with TACACS+"
+}
+
+@test "scope aaa-order: rejects invalid enum value" {
+    run "$TACCTL_BIN_SCRIPT" scope aaa-order lab sideways
+    assert_failure
+    assert_output --partial "must be one of: local-first, tacacs-first"
+}
+
+# --- scope exec-timeout (per-scope) -----------------------------------------
+
+@test "scope exec-timeout: default is 60 with 'default' source" {
+    run "$TACCTL_BIN_SCRIPT" scope exec-timeout lab
+    assert_success
+    assert_output --partial "exec-timeout: 60 minute"
+    assert_output --partial "Source: default"
+}
+
+@test "scope exec-timeout: rejects unknown scope" {
+    run "$TACCTL_BIN_SCRIPT" scope exec-timeout nosuchscope
+    assert_failure
+    assert_output --partial "does not exist"
+}
+
+@test "scope exec-timeout: set + read back per-scope override" {
+    run "$TACCTL_BIN_SCRIPT" scope exec-timeout lab 15
+    assert_success
+    assert_output --partial "exec-timeout set to 15"
+    [[ "$(conf_get exec_timeout.lab)" == "15" ]]
+
+    run "$TACCTL_BIN_SCRIPT" scope exec-timeout lab
+    assert_success
+    assert_output --partial "exec-timeout: 15 minute"
+    assert_output --partial "Source: override"
+}
+
+@test "scope exec-timeout: value 0 warns about disabling expiry" {
+    run "$TACCTL_BIN_SCRIPT" scope exec-timeout lab 0
+    assert_success
+    assert_output --partial "disables idle-session expiry"
+    assert_output --partial "security risk"
+}
+
+@test "scope exec-timeout: rejects out-of-range + non-numeric" {
+    run "$TACCTL_BIN_SCRIPT" scope exec-timeout lab 90
+    assert_failure
+    assert_output --partial "must be <= 60"
+
+    run "$TACCTL_BIN_SCRIPT" scope exec-timeout lab forever
+    assert_failure
+    assert_output --partial "must be an integer"
 }

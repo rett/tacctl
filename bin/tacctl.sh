@@ -271,12 +271,28 @@ SCHEMA = {
     'mgmt_acl.names.juniper':{'type': 'acl_name'},
     'mgmt_acl.permits':      {'type': 'cidr_list'},
 }
-# Wildcard paths: each operator-created group gets its own entry under
-# privileges.<group>. The matcher below accepts any lowercase-start group
-# name and validates the value as a list of Cisco priv-exec commands.
+# Wildcard paths: each operator-created group/scope gets its own entry
+# under privileges.<group>, commands.<group>, aaa.order.<scope>. The
+# matcher below accepts any lowercase-start name as the single trailing
+# path segment and validates the value against the rule type.
 WILDCARDS = [
-    ('privileges.', {'type': 'cisco_cmd_list'}),
-    ('commands.',   {'type': 'command_rules'}),
+    ('privileges.',   {'type': 'cisco_cmd_list'}),
+    ('commands.',     {'type': 'command_rules'}),
+    ('aaa.order.',    {'type': 'enum',
+                       'values': ['local-first', 'tacacs-first'],
+                       # Implicit per-instance default. _conf_write uses
+                       # this to prune the override when the set value
+                       # matches (scopes aren't pre-enumerated in
+                       # conf_emit_defaults, so we can't rely on
+                       # get_nested(defaults, ...) to tell us the default).
+                       'default': 'local-first'}),
+    ('exec_timeout.', {'type': 'int',
+                       # 0 = never expire (Cisco: `exec-timeout 0 0`).
+                       # Junos `idle-timeout` max is 60 minutes, so the
+                       # upper bound is set to what both vendors accept
+                       # cleanly with one knob.
+                       'min': 0, 'max': 60,
+                       'default': 60}),
 ]
 
 import re
@@ -292,6 +308,17 @@ def schema_for(path):
             if path[len(prefix):]:
                 return rule
     return None
+
+def implicit_default(path):
+    """Return the implicit per-instance default for a wildcard schema
+    entry (e.g. aaa.order.<scope> -> 'local-first'), or None if the path
+    has no implicit default. Used by _conf_write's revert-to-default
+    prune so operators can unset a wildcard override by re-setting it to
+    the default value."""
+    rule = schema_for(path)
+    if rule is None:
+        return None
+    return rule.get('default')
 
 def validate(path, value, is_list):
     """Return (ok: bool, msg: str). msg is empty on success."""
@@ -322,6 +349,13 @@ def validate(path, value, is_list):
         p = rule.get('pattern')
         if p and not re.match(p, value):
             return False, f"does not match required pattern {p!r}"
+        return True, ''
+    if t == 'enum':
+        vals = rule.get('values') or []
+        if not isinstance(value, str):
+            return False, f"must be a string (one of: {', '.join(vals)})"
+        if value not in vals:
+            return False, f"must be one of: {', '.join(vals)} (got {value!r})"
         return True, ''
     if t == 'acl_name':
         # Cisco/Juniper ACL name shape; mirrors validate_acl_name's rules.
@@ -522,21 +556,28 @@ else:
 defaults = load(defaults_path)
 overrides = load(overrides_path)
 
+# Revert-to-default prune: compare the new value against the YAML
+# defaults tree first, then fall back to the schema's implicit default
+# (for wildcard paths like aaa.order.<scope> that aren't pre-enumerated
+# in conf_emit_defaults).
+def _default_for(p):
+    v = get_nested(defaults, p)
+    if v is not None:
+        return v
+    return implicit_default(p)
+
 if mode == 'set':
-    default_val = get_nested(defaults, path)
-    if default_val == parsed:
+    if _default_for(path) == parsed:
         unset_nested(overrides, path)
     else:
         set_nested(overrides, path, parsed)
 elif mode == 'set_list':
-    default_val = get_nested(defaults, path)
-    if default_val == items:
+    if _default_for(path) == items:
         unset_nested(overrides, path)
     else:
         set_nested(overrides, path, items)
 elif mode == 'set_json':
-    default_val = get_nested(defaults, path)
-    if default_val == parsed:
+    if _default_for(path) == parsed:
         unset_nested(overrides, path)
     else:
         set_nested(overrides, path, parsed)
@@ -3413,6 +3454,30 @@ for m in re.finditer(r'^(\w+): &\1\n  name: \1\n  services:\n(.*?)  accounter:',
     local cisco_acl_name
     cisco_acl_name=$(read_mgmt_acl_name cisco)
 
+    # AAA method-list order is per-scope. tacctl.yaml's aaa.order.<scope>
+    # key flips every generated `aaa authentication login` /
+    # `aaa authorization` line between local-first (default — local
+    # break-glass credentials usable while TACACS+ is reachable) and
+    # tacacs-first (TACACS+ authoritative; local only kicks in on
+    # server outage). Accounting method-lists are unaffected — they
+    # always point at the TACACS group regardless of this setting.
+    local aaa_order AUTHN_METHODS AUTHZ_EXEC_METHODS AUTHZ_CMD_METHODS
+    aaa_order=$(conf_get "aaa.order.${scope}" local-first)
+    if [[ "$aaa_order" == "tacacs-first" ]]; then
+        AUTHN_METHODS="group TACACS-GROUP local"
+        AUTHZ_EXEC_METHODS="group TACACS-GROUP local if-authenticated"
+        AUTHZ_CMD_METHODS="group TACACS-GROUP local"
+    else
+        AUTHN_METHODS="local group TACACS-GROUP"
+        AUTHZ_EXEC_METHODS="local group TACACS-GROUP if-authenticated"
+        AUTHZ_CMD_METHODS="local group TACACS-GROUP"
+    fi
+
+    # Per-scope idle-session timeout. Default 60 minutes matches the
+    # historical template; 0 means never expire.
+    local EXEC_TIMEOUT
+    EXEC_TIMEOUT=$(conf_get "exec_timeout.${scope}" 60)
+
     # Per-command authorization: emit `aaa authorization commands N`
     # only when at least one group has a commands: section in the YAML.
     # Without that gate, devices would still log normally; with it, IOS
@@ -3420,9 +3485,9 @@ for m in re.finditer(r'^(\w+): &\1\n  name: \1\n  services:\n(.*?)  accounter:',
     local AUTHZ_COMMANDS_BLOCK=""
     if any_group_has_commands; then
         AUTHZ_COMMANDS_BLOCK="! Per-command authorization (managed by 'tacctl group commands').
-aaa authorization commands 1 default group TACACS-GROUP local
-aaa authorization commands 7 default group TACACS-GROUP local
-aaa authorization commands 15 default group TACACS-GROUP local"
+aaa authorization commands 1 default ${AUTHZ_CMD_METHODS}
+aaa authorization commands 7 default ${AUTHZ_CMD_METHODS}
+aaa authorization commands 15 default ${AUTHZ_CMD_METHODS}"
     else
         AUTHZ_COMMANDS_BLOCK="! Per-command authorization not enabled.
 ! To restrict commands per group, use 'tacctl group commands'."
@@ -3466,8 +3531,8 @@ ${mgmt_entries}  deny   any log"
     # the operator. `!` separator lines have NF=1 so they survive.
     {
         if [[ -n "$template_file" ]]; then
-            export SERVER_IP="$server_ip" SECRET="$secret" PRIVILEGE_COMMANDS GROUP_SUMMARY VTY_ACL_BLOCK VTY_ACCESS_CLASS AUTHZ_COMMANDS_BLOCK
-            envsubst '${SERVER_IP} ${SECRET} ${PRIVILEGE_COMMANDS} ${GROUP_SUMMARY} ${VTY_ACL_BLOCK} ${VTY_ACCESS_CLASS} ${AUTHZ_COMMANDS_BLOCK}' < "$template_file"
+            export SERVER_IP="$server_ip" SECRET="$secret" PRIVILEGE_COMMANDS GROUP_SUMMARY VTY_ACL_BLOCK VTY_ACCESS_CLASS AUTHZ_COMMANDS_BLOCK AUTHN_METHODS AUTHZ_EXEC_METHODS EXEC_TIMEOUT
+            envsubst '${SERVER_IP} ${SECRET} ${PRIVILEGE_COMMANDS} ${GROUP_SUMMARY} ${VTY_ACL_BLOCK} ${VTY_ACCESS_CLASS} ${AUTHZ_COMMANDS_BLOCK} ${AUTHN_METHODS} ${AUTHZ_EXEC_METHODS} ${EXEC_TIMEOUT}' < "$template_file"
         else
             cat <<EOF
 ! --- TACACS+ Server & AAA ---
@@ -3488,8 +3553,8 @@ tacacs server TACACS
 aaa group server tacacs+ TACACS-GROUP
   server name TACACS
 !
-aaa authentication login default group TACACS-GROUP local
-aaa authorization exec default group TACACS-GROUP local if-authenticated
+aaa authentication login default ${AUTHN_METHODS}
+aaa authorization exec default ${AUTHZ_EXEC_METHODS}
 aaa accounting exec default start-stop group TACACS-GROUP
 aaa accounting commands 1 default start-stop group TACACS-GROUP
 aaa accounting commands 7 default start-stop group TACACS-GROUP
@@ -3502,13 +3567,13 @@ ${VTY_ACL_BLOCK}
 !
 line con 0
   login authentication default
-  exec-timeout 60 0
+  exec-timeout ${EXEC_TIMEOUT} 0
 !
 line vty 0 15
   login authentication default
   transport input ssh
 ${VTY_ACCESS_CLASS}
-  exec-timeout 60 0
+  exec-timeout ${EXEC_TIMEOUT} 0
 EOF
         fi
     } | awk 'NF'
@@ -3613,6 +3678,25 @@ for m in re.finditer(r'^(\w+): &\1\n  name: \1\n  services:\n(.*?)  accounter:',
     done <<< "$group_juniper"
     TEMPLATE_USERS="${TEMPLATE_USERS%$'\n'}"
 
+    # AAA method-list order is per-scope (aaa.order.<scope>). Junos has
+    # a single authentication-order statement (no separate authz
+    # method-list — permissions come from the user's login class).
+    # Default local-first swaps to `[ password tacplus ]` so local
+    # breakglass users log in while tacplus is up. tacacs-first keeps
+    # Junos policy-centric.
+    local junos_authn_order
+    if [[ "$(conf_get "aaa.order.${scope}" local-first)" == "tacacs-first" ]]; then
+        junos_authn_order="[ tacplus password ]"
+    else
+        junos_authn_order="[ password tacplus ]"
+    fi
+
+    # Per-scope idle-session timeout (exec_timeout.<scope>). Junos
+    # `idle-timeout` max is 60 minutes — schema already caps. 0 means
+    # never expire (Junos and Cisco both honor it).
+    local junos_idle_timeout
+    junos_idle_timeout=$(conf_get "exec_timeout.${scope}" 60)
+
     local TACPLUS_CONFIG
     # `delete` first because Junos `set ... authentication-order` is
     # additive against an existing ordered list.
@@ -3621,7 +3705,8 @@ for m in re.finditer(r'^(\w+): &\1\n  name: \1\n  services:\n(.*?)  accounter:',
     # pasting <MGMT_IP> literally fails; the operator must substitute
     # the device's management interface address (e.g. lo0 or fxp0).
     TACPLUS_CONFIG="delete system authentication-order
-set system authentication-order [ tacplus password ]
+set system authentication-order ${junos_authn_order}
+set system login idle-timeout ${junos_idle_timeout}
 set system tacplus-server ${server_ip} secret ${secret}
 set system tacplus-server ${server_ip} single-connection
 # Optional: pin client source IP for prefix-ACL matching on tacquito.
@@ -4271,6 +4356,8 @@ cmd_scope() {
         lookup)            cmd_scope_lookup "$@" ;;
         prefixes)          cmd_scope_prefixes_dispatch "$@" ;;
         secret)            cmd_scope_secret_dispatch "$@" ;;
+        aaa-order)         cmd_scope_aaa_order "$@" ;;
+        exec-timeout)      cmd_scope_exec_timeout "$@" ;;
         *)
             error "Unknown subcommand: '${subcmd}'"
             cmd_scope_usage
@@ -4299,6 +4386,8 @@ cmd_scope_usage() {
     echo ""
     echo "  tacctl scope prefixes <scope> list|add|remove|clear      Manage a scope's CIDR list"
     echo "  tacctl scope secret   <scope> show|set|generate          Manage a scope's shared secret"
+    echo "  tacctl scope aaa-order <scope> [local-first|tacacs-first] AAA method-list order in this scope's rendered device configs (default local-first)"
+    echo "  tacctl scope exec-timeout <scope> [minutes]              Per-scope idle-session timeout in rendered device configs (0..60 min; default 60; 0 = never expire)"
     echo ""
     echo "Current scopes: ${count}"
     echo "Default scope:  ${default_val:-<unset>}"
@@ -4394,11 +4483,25 @@ cmd_scope_show() {
     default_val=$(read_default_scope)
     local is_default="no"
     [[ "$name" == "$default_val" ]] && is_default="yes"
+    # Per-scope device-render knobs. Absence of an override falls back
+    # to the shipped defaults (local-first / 60 min), matching what
+    # `tacctl config cisco|juniper --scope <name>` emits.
+    local aaa_order_val exec_timeout_val exec_timeout_display
+    aaa_order_val=$(conf_get "aaa.order.${name}" local-first)
+    exec_timeout_val=$(conf_get "exec_timeout.${name}" 60)
+    if [[ "$exec_timeout_val" == "0" ]]; then
+        exec_timeout_display="0 min (never expire)"
+    else
+        exec_timeout_display="${exec_timeout_val} min"
+    fi
+
     echo ""
     echo -e "${BOLD}Scope:${NC} ${name}"
     echo "--------------------------------------------"
     echo -e "  ${BOLD}Default:${NC}       ${is_default}"
     echo -e "  ${BOLD}Secret:${NC}        ${secret_line}"
+    echo -e "  ${BOLD}AAA order:${NC}     ${aaa_order_val}"
+    echo -e "  ${BOLD}Exec timeout:${NC}  ${exec_timeout_display}"
     echo -e "  ${BOLD}Prefixes:${NC}"
     local pfx
     pfx=$(read_scope_prefixes "$name")
@@ -4965,6 +5068,113 @@ cmd_scope_secret_dispatch() {
     esac
 }
 
+# --- Per-scope AAA method-list order: tacctl scope aaa-order <scope> [value] ---
+# Flips the order of methods in the Cisco `aaa authentication/authorization`
+# and Junos `system authentication-order` lines that `tacctl config
+# cisco --scope <name>` / `tacctl config juniper --scope <name>` emit.
+# Per-scope so a lab scope can favor local break-glass access while a
+# prod scope keeps TACACS+ authoritative. Absent an override, each
+# scope defaults to local-first.
+cmd_scope_aaa_order() {
+    local scope="${1:-}"
+    local new_order="${2:-}"
+
+    if [[ -z "$scope" ]]; then
+        error "Usage: tacctl scope aaa-order <scope> [local-first|tacacs-first]"
+        exit 1
+    fi
+    if ! scope_exists "$scope"; then
+        error "Scope '${scope}' does not exist. Available: $(list_scopes | paste -sd' ')"
+        exit 1
+    fi
+
+    local current source
+    current=$(conf_get "aaa.order.${scope}")
+    if [[ -z "$current" ]]; then
+        current="local-first"
+        source="default"
+    else
+        source="override (tacctl.yaml: aaa.order.${scope})"
+    fi
+
+    if [[ -z "$new_order" ]]; then
+        echo ""
+        echo "  Scope '${scope}' AAA method-list order: ${current}"
+        echo "  Source: ${source}"
+        echo ""
+        echo "    local-first   Local DB checked first; TACACS+ used for names not found locally."
+        echo "    tacacs-first  TACACS+ is authoritative; local used only on server outage."
+        echo ""
+        echo "  Usage: tacctl scope aaa-order ${scope} <local-first|tacacs-first>"
+        echo ""
+        return
+    fi
+
+    conf_set "aaa.order.${scope}" "$new_order" || exit 1
+    info "Scope '${scope}' AAA method-list order set to ${new_order}."
+    if [[ "$new_order" == "local-first" ]]; then
+        warn "Local usernames that collide with TACACS+ users will win locally on devices in this scope."
+        warn "Scope local accounts to break-glass / emergency use only."
+    fi
+    echo ""
+    echo "  Re-run 'tacctl config cisco --scope ${scope}' / 'tacctl config juniper --scope ${scope}'"
+    echo "  and push the updated method-lists to each device in this scope — the change is not"
+    echo "  applied until the device receives the new AAA stanzas."
+    echo ""
+}
+
+# --- Per-scope exec-timeout: tacctl scope exec-timeout <scope> [minutes] ---
+# Sets the idle-session timeout in minutes for devices in this scope.
+# Cisco substitutes into `line con 0 / line vty 0 15 ... exec-timeout
+# <n> 0`; Junos renders `set system login idle-timeout <n>`. 0 means
+# never expire (both vendors). Upper bound 60 matches Junos's max;
+# Cisco accepts higher but we cap for cross-vendor portability.
+cmd_scope_exec_timeout() {
+    local scope="${1:-}"
+    local new_mins="${2:-}"
+
+    if [[ -z "$scope" ]]; then
+        error "Usage: tacctl scope exec-timeout <scope> [minutes]"
+        exit 1
+    fi
+    if ! scope_exists "$scope"; then
+        error "Scope '${scope}' does not exist. Available: $(list_scopes | paste -sd' ')"
+        exit 1
+    fi
+
+    local current source
+    current=$(conf_get "exec_timeout.${scope}")
+    if [[ -z "$current" ]]; then
+        current="60"
+        source="default"
+    else
+        source="override (tacctl.yaml: exec_timeout.${scope})"
+    fi
+
+    if [[ -z "$new_mins" ]]; then
+        echo ""
+        echo "  Scope '${scope}' exec-timeout: ${current} minute(s)"
+        echo "  Source: ${source}"
+        echo ""
+        echo "    0..60 minutes. 0 = never expire (both Cisco and Junos)."
+        echo ""
+        echo "  Usage: tacctl scope exec-timeout ${scope} <minutes>"
+        echo ""
+        return
+    fi
+
+    conf_set "exec_timeout.${scope}" "$new_mins" || exit 1
+    info "Scope '${scope}' exec-timeout set to ${new_mins} minute(s)."
+    if [[ "$new_mins" == "0" ]]; then
+        warn "exec-timeout 0 disables idle-session expiry on devices in this scope."
+        warn "Long-lived sessions on unattended terminals become a security risk."
+    fi
+    echo ""
+    echo "  Re-run 'tacctl config cisco --scope ${scope}' / 'tacctl config juniper --scope ${scope}'"
+    echo "  and push the updated line-config / login stanzas to each device in this scope."
+    echo ""
+}
+
 # --- USER SCOPES: tacctl user scope <user> list|add|remove|set|clear ---
 cmd_user_scope() {
     local username="${1:-}"
@@ -5182,6 +5392,9 @@ cmd_config() {
         diff)
             cmd_backup diff "$@"
             ;;
+        restore)
+            cmd_backup restore "$@"
+            ;;
         allow)
             cmd_config_prefix_filter "prefix_allow" "$@"
             ;;
@@ -5207,7 +5420,8 @@ cmd_config() {
             echo "  get <path> [fallback]                Read a dotted-path value from the merged config"
             echo "  get-list <path>                      Read a list value (one item per line)"
             echo "  validate                             Validate config syntax and structure"
-            echo "  diff [timestamp]                     Diff current config vs last backup"
+            echo "  diff [timestamp]                     Diff current config vs last backup (or named one)"
+            echo "  restore <timestamp>                  Restore a prior backup (prompts for confirmation)"
             echo "  loglevel [debug|info|error]          Show or change log level"
             echo "  listen [show|tcp|tcp6|reset] [addr]  Show, change, or reset TCP listen address"
             echo "  metrics <show|enable|disable|address <host:port>|reset>  Prometheus exporter control"
@@ -7609,7 +7823,15 @@ cmd_backup() {
             echo ""
             echo -e "${BOLD}Diff: current config vs backup ${ts}${NC}"
             echo "--------------------------------------------"
-            diff --color=always "$backup_file" "$CONFIG" || true
+            # Unified format (-u) shows surrounding context and
+            # ---/+++ filename labels so changes land in their
+            # structural neighborhood instead of as a bare `30c30`.
+            # --label keeps the header short and stable (absolute
+            # paths would churn per-host).
+            diff -u \
+                --label "backup/${ts}" \
+                --label "current" \
+                --color=always "$backup_file" "$CONFIG" || true
             echo ""
             ;;
         restore)
@@ -8757,12 +8979,13 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
             cmd_hash "$@"
             ;;
         _completion-names)
-            # Hidden helper used by bash completion to enumerate scope, user, or
-            # group names. Completion runs in the user's shell where the config
-            # is unreadable (mode 0600); `sudo -n tacctl _completion-names <kind>`
-            # bridges that when a NOPASSWD sudoers rule for tacctl is installed.
-            # Not shown in `tacctl` help or the man page — deliberate low-surface
-            # interface, behavior subject to change.
+            # Hidden helper used by bash completion to enumerate scope, user,
+            # group, or backup-timestamp names. Completion runs in the user's
+            # shell where the config is unreadable (mode 0600); `sudo -n tacctl
+            # _completion-names <kind>` bridges that when a NOPASSWD sudoers
+            # rule for tacctl is installed. Not shown in `tacctl` help or the
+            # man page — deliberate low-surface interface, behavior subject to
+            # change.
             preflight
             case "${1:-}" in
                 scopes) list_scopes ;;
@@ -8779,6 +9002,12 @@ for u in (d.get('users') or []):
                         sub(/:.*/, ""); print
                     }
                 }' "$CONFIG" 2>/dev/null ;;
+                # Backup timestamps, newest first, capped at 50 so the
+                # completion menu stays usable on hosts with hundreds of
+                # backups. `config diff` / `backup diff|restore` take one.
+                backups) ls -1t "${BACKUP_DIR}" 2>/dev/null \
+                    | awk -F. '/^tacquito\.yaml\./ { sub(/^tacquito\.yaml\./,""); print }' \
+                    | head -50 ;;
             esac
             ;;
         version|--version|-v)

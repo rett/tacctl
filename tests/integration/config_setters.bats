@@ -37,6 +37,7 @@ setup() {
     assert_failure
 }
 
+
 # --- bcrypt-cost -------------------------------------------------------------
 
 @test "config bcrypt-cost: shows current value + wall-clock guidance" {
