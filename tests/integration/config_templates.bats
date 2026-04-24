@@ -64,3 +64,54 @@ _normalize() {
     run "$TACCTL_BIN_SCRIPT" config validate
     assert_success
 }
+
+# --- per-scope aaa-order: render flip ----------------------------------------
+# Goldens above cover the local-first default. These assert the
+# tacacs-first shape when a specific scope overrides via
+# `tacctl scope aaa-order <scope> tacacs-first`, and verify that
+# overrides stay scoped (other scopes keep the default).
+
+@test "config cisco: scope aaa-order tacacs-first puts TACACS group ahead of local" {
+    "$TACCTL_BIN_SCRIPT" scope aaa-order lab tacacs-first > /dev/null
+    run "$TACCTL_BIN_SCRIPT" config cisco --scope lab
+    assert_success
+    assert_output --partial "aaa authentication login default group TACACS-GROUP local"
+    assert_output --partial "aaa authorization exec default group TACACS-GROUP local if-authenticated"
+    assert_output --partial "aaa authorization commands 1 default group TACACS-GROUP local"
+    assert_output --partial "aaa authorization commands 15 default group TACACS-GROUP local"
+    refute_output --partial "aaa authentication login default local group TACACS-GROUP"
+}
+
+@test "config juniper: scope aaa-order tacacs-first flips authentication-order" {
+    "$TACCTL_BIN_SCRIPT" scope aaa-order lab tacacs-first > /dev/null
+    run "$TACCTL_BIN_SCRIPT" config juniper --scope lab
+    assert_success
+    assert_output --partial "set system authentication-order [ tacplus password ]"
+    refute_output --partial "set system authentication-order [ password tacplus ]"
+}
+
+@test "config cisco: scope aaa-order override is per-scope (prod unaffected)" {
+    # Flip lab to tacacs-first; prod (no override) should still render
+    # the default local-first shape.
+    "$TACCTL_BIN_SCRIPT" scope aaa-order lab tacacs-first > /dev/null
+    run "$TACCTL_BIN_SCRIPT" config cisco --scope prod
+    assert_success
+    assert_output --partial "aaa authentication login default local group TACACS-GROUP"
+    refute_output --partial "aaa authentication login default group TACACS-GROUP local"
+}
+
+@test "config cisco: scope exec-timeout applies to line con + line vty" {
+    "$TACCTL_BIN_SCRIPT" scope exec-timeout lab 15 > /dev/null
+    run "$TACCTL_BIN_SCRIPT" config cisco --scope lab
+    assert_success
+    # Both line con 0 and line vty 0 15 carry the override.
+    run bash -c '"'"$TACCTL_BIN_SCRIPT"'" config cisco --scope lab | grep -c "^  exec-timeout 15 0$"'
+    [[ "$output" == "2" ]]
+}
+
+@test "config juniper: scope exec-timeout emits idle-timeout line" {
+    "$TACCTL_BIN_SCRIPT" scope exec-timeout lab 15 > /dev/null
+    run "$TACCTL_BIN_SCRIPT" config juniper --scope lab
+    assert_success
+    assert_output --partial "set system login idle-timeout 15"
+}
