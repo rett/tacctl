@@ -267,8 +267,8 @@ for u in (d.get('users') or []):
                         COMPREPLY=($(compgen -W "tacacs-first local-first" -- "$cur"))
                         ;;
                     mgmt-acl)
-                        # `scope mgmt-acl <scope> <cisco-name|juniper-name>`
-                        COMPREPLY=($(compgen -W "cisco-name juniper-name" -- "$cur"))
+                        # `scope mgmt-acl <scope> <sub>` — name setters + permit-list ops.
+                        COMPREPLY=($(compgen -W "list add remove clear cisco-name juniper-name" -- "$cur"))
                         ;;
                     rename)
                         # `scope rename <old> <new>` — no completion on new name
