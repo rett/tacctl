@@ -188,6 +188,56 @@ setup() {
     assert_output --partial "must start with a letter"
 }
 
+@test "aaa.order.<scope>: unset reads empty (render falls back to local-first)" {
+    # The wildcard schema validates writes; reads of an unset scope
+    # return empty and the render code applies the local-first default.
+    run conf_get aaa.order.lab
+    assert_output ""
+}
+
+@test "aaa.order.<scope>: round-trip tacacs-first per scope" {
+    conf_set aaa.order.lab tacacs-first
+    run conf_get aaa.order.lab
+    assert_output "tacacs-first"
+}
+
+@test "aaa.order.<scope>: per-scope overrides are independent" {
+    # Use two non-default values to prove isolation — writing the
+    # implicit default (local-first) would prune the override.
+    conf_set aaa.order.lab  tacacs-first
+    conf_set aaa.order.prod tacacs-first
+    run conf_get aaa.order.lab
+    assert_output "tacacs-first"
+    run conf_get aaa.order.prod
+    assert_output "tacacs-first"
+    # Revert lab to the implicit default; prod should keep its override.
+    conf_set aaa.order.lab local-first
+    run conf_get aaa.order.lab
+    assert_output ""
+    run conf_get aaa.order.prod
+    assert_output "tacacs-first"
+}
+
+@test "aaa.order.<scope>: rejects unknown enum value with message naming allowed values" {
+    run conf_set aaa.order.lab garbage
+    assert_failure
+    assert_output --partial "must be one of: local-first, tacacs-first"
+    [[ ! -f "$TACCTL_OVERRIDES_FILE" ]]
+}
+
+@test "aaa.order.<scope>: rejects non-scope path (bare aaa.order)" {
+    run conf_set aaa.order local-first
+    assert_failure
+    assert_output --partial "unknown config key"
+}
+
+@test "aaa.order.<scope>: setting the implicit default (local-first) prunes override" {
+    conf_set aaa.order.lab tacacs-first
+    [[ -f "$TACCTL_OVERRIDES_FILE" ]]
+    conf_set aaa.order.lab local-first
+    [[ ! -f "$TACCTL_OVERRIDES_FILE" ]]
+}
+
 @test "conf_set_list: rejects malformed CIDRs" {
     run conf_set_list mgmt_acl.permits <<< "10.0.0.0/8
 garbage"
@@ -241,4 +291,40 @@ show; rm"
     run _conf_validate_overrides_file
     assert_output --partial "mgmt_acl.permits:"
     assert_output --partial "not a valid CIDR"
+}
+
+# --- exec_timeout.<scope> --------------------------------------------------
+
+@test "exec_timeout.<scope>: unset reads empty (render falls back to 60)" {
+    run conf_get exec_timeout.lab
+    assert_output ""
+}
+
+@test "exec_timeout.<scope>: round-trip an explicit override" {
+    conf_set exec_timeout.lab 15
+    run conf_get exec_timeout.lab
+    assert_output "15"
+}
+
+@test "exec_timeout.<scope>: setting the implicit default (60) prunes override" {
+    conf_set exec_timeout.lab 15
+    [[ -f "$TACCTL_OVERRIDES_FILE" ]]
+    conf_set exec_timeout.lab 60
+    [[ ! -f "$TACCTL_OVERRIDES_FILE" ]]
+}
+
+@test "exec_timeout.<scope>: rejects below 0 and above 60" {
+    run conf_set exec_timeout.lab -1
+    assert_failure
+    assert_output --partial "must be >= 0"
+
+    run conf_set exec_timeout.lab 61
+    assert_failure
+    assert_output --partial "must be <= 60"
+}
+
+@test "exec_timeout.<scope>: rejects non-numeric" {
+    run conf_set exec_timeout.lab forever
+    assert_failure
+    assert_output --partial "must be an integer"
 }

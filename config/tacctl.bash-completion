@@ -78,15 +78,24 @@ for u in (d.get('users') or []):
                 }' /etc/tacquito/tacquito.yaml 2>/dev/null) ;;
             esac
         fi
+        # Backup timestamps live in a separate dir. Group-readable if the
+        # operator is in `tacquito`; otherwise the sudo fallback below
+        # picks them up.
+        if [[ "$kind" == "backups" && -r /etc/tacquito/backups ]]; then
+            out=$(ls -1t /etc/tacquito/backups/ 2>/dev/null \
+                   | awk -F. '/^tacquito\.yaml\./ { sub(/^tacquito\.yaml\./,""); print }' \
+                   | head -50)
+        fi
         if [[ -z "$out" ]]; then
             out=$(sudo -n tacctl _completion-names "$kind" 2>/dev/null)
         fi
         printf '%s\n' "$out"
     }
 
-    _tacctl_scope_names() { _tacctl_names scopes; }
-    _tacctl_user_names()  { _tacctl_names users; }
-    _tacctl_group_names() { _tacctl_names groups; }
+    _tacctl_scope_names()   { _tacctl_names scopes; }
+    _tacctl_user_names()    { _tacctl_names users; }
+    _tacctl_group_names()   { _tacctl_names groups; }
+    _tacctl_backup_names()  { _tacctl_names backups; }
 
     case "$cmd" in
         install|upgrade)
@@ -185,7 +194,7 @@ for u in (d.get('users') or []):
             ;;
         config)
             if [[ $pos -eq 2 ]]; then
-                COMPREPLY=($(compgen -W "show dump defaults get get-list cisco juniper validate loglevel listen metrics sudoers password-age bcrypt-cost password-min-length secret-min-length diff allow deny mgmt-acl branch" -- "$cur"))
+                COMPREPLY=($(compgen -W "show dump defaults get get-list cisco juniper validate loglevel listen metrics sudoers password-age bcrypt-cost password-min-length secret-min-length diff restore allow deny mgmt-acl branch" -- "$cur"))
             elif [[ $pos -eq 3 ]]; then
                 case "${words[offset + 2]}" in
                     loglevel)
@@ -216,6 +225,10 @@ for u in (d.get('users') or []):
                         # typing the dot manually.
                         COMPREPLY=($(compgen -W "bcrypt.cost password.max_age_days password.min_length secret.min_length scope.default mgmt_acl.names.cisco mgmt_acl.names.juniper mgmt_acl.permits privileges.operator commands.superuser commands.operator commands.readonly" -- "$cur"))
                         ;;
+                    diff|restore)
+                        # `config diff|restore [timestamp]` — backup timestamps.
+                        COMPREPLY=($(compgen -W "$(_tacctl_backup_names)" -- "$cur"))
+                        ;;
                 esac
             elif [[ $pos -eq 4 && ( "${words[offset + 2]}" == "cisco" || "${words[offset + 2]}" == "juniper" ) && "${words[offset + 3]}" == "--scope" ]]; then
                 COMPREPLY=($(compgen -W "$(_tacctl_scope_names)" -- "$cur"))
@@ -224,10 +237,10 @@ for u in (d.get('users') or []):
         scope)
             local ssub="${words[offset + 2]}"
             if [[ $pos -eq 2 ]]; then
-                COMPREPLY=($(compgen -W "list show add remove rename default lookup prefixes secret" -- "$cur"))
+                COMPREPLY=($(compgen -W "list show add remove rename default lookup prefixes secret aaa-order exec-timeout" -- "$cur"))
             elif [[ $pos -eq 3 ]]; then
                 case "$ssub" in
-                    show|remove|rename|default|prefixes|secret)
+                    show|remove|rename|default|prefixes|secret|aaa-order|exec-timeout)
                         COMPREPLY=($(compgen -W "$(_tacctl_scope_names)" -- "$cur"))
                         ;;
                     lookup)
@@ -248,6 +261,10 @@ for u in (d.get('users') or []):
                     secret)
                         # `scope secret <scope> <show|set|generate>`
                         COMPREPLY=($(compgen -W "show set generate" -- "$cur"))
+                        ;;
+                    aaa-order)
+                        # `scope aaa-order <scope> <local-first|tacacs-first>`
+                        COMPREPLY=($(compgen -W "local-first tacacs-first" -- "$cur"))
                         ;;
                     rename)
                         # `scope rename <old> <new>` — no completion on new name
@@ -297,6 +314,12 @@ for u in (d.get('users') or []):
         backup)
             if [[ $pos -eq 2 ]]; then
                 COMPREPLY=($(compgen -W "list diff restore" -- "$cur"))
+            elif [[ $pos -eq 3 ]]; then
+                case "${words[offset + 2]}" in
+                    diff|restore)
+                        COMPREPLY=($(compgen -W "$(_tacctl_backup_names)" -- "$cur"))
+                        ;;
+                esac
             fi
             ;;
         hash)
