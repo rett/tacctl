@@ -376,12 +376,12 @@ setup() {
 @test "scope mgmt-acl: default shows shipped default with 'default' source" {
     run "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab cisco-name
     assert_success
-    assert_output --partial "cisco mgmt-ACL name: VTY-ACL"
+    assert_output --partial "cisco mgmt-acl name: VTY-ACL"
     assert_output --partial "Source: default"
 
     run "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab juniper-name
     assert_success
-    assert_output --partial "juniper mgmt-ACL name: MGMT-ACL"
+    assert_output --partial "juniper mgmt-acl name: MGMT-ACL"
     assert_output --partial "Source: default"
 }
 
@@ -390,7 +390,7 @@ setup() {
     "$TACCTL_BIN_SCRIPT" config mgmt-acl juniper-name SITE-MGMT  > /dev/null
     run "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab cisco-name
     assert_success
-    assert_output --partial "cisco mgmt-ACL name: SITE-VTY"
+    assert_output --partial "cisco mgmt-acl name: SITE-VTY"
     assert_output --partial "Source: global"
 }
 
@@ -399,9 +399,9 @@ setup() {
     "$TACCTL_BIN_SCRIPT" scope  mgmt-acl lab cisco-name LAB-VTY > /dev/null
     run "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab cisco-name
     assert_success
-    assert_output --partial "cisco mgmt-ACL name: LAB-VTY"
+    assert_output --partial "cisco mgmt-acl name: LAB-VTY"
     assert_output --partial "Source: override"
-    [[ "$(conf_get mgmt_acl.names.cisco.lab)" == "LAB-VTY" ]]
+    [[ "$(conf_get scope_mgmt_acl.names.cisco.lab)" == "LAB-VTY" ]]
 }
 
 @test "scope mgmt-acl: rejects unknown scope / subcommand / name" {
@@ -416,4 +416,72 @@ setup() {
     run "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab cisco-name "1bad"
     assert_failure
     assert_output --partial "must start with a letter"
+}
+
+# --- scope mgmt-acl (per-scope permit list) ---------------------------------
+
+@test "scope mgmt-acl list: shows 'empty' banner when both per-scope and global are unset" {
+    run "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab list
+    assert_success
+    assert_output --partial "both per-scope and global lists are unset"
+}
+
+@test "scope mgmt-acl add: populates per-scope list" {
+    run "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab add 10.1.0.0/16,10.2.0.0/16
+    assert_success
+    assert_output --partial "Added 2 to scope 'lab' mgmt-acl"
+    run "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab list
+    assert_output --partial "Source: per-scope override"
+    assert_output --partial "10.1.0.0/16"
+    assert_output --partial "10.2.0.0/16"
+}
+
+@test "scope mgmt-acl: per-scope list falls back to global when empty" {
+    "$TACCTL_BIN_SCRIPT" config mgmt-acl add 10.50.0.0/16 > /dev/null
+    run "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab list
+    assert_success
+    assert_output --partial "Source: global"
+    assert_output --partial "10.50.0.0/16"
+}
+
+@test "scope mgmt-acl: per-scope list wins over global when populated" {
+    "$TACCTL_BIN_SCRIPT" config mgmt-acl add 10.50.0.0/16 > /dev/null
+    "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab add 10.99.0.0/16 > /dev/null
+    run "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab list
+    assert_success
+    assert_output --partial "Source: per-scope"
+    assert_output --partial "10.99.0.0/16"
+    refute_output --partial "10.50.0.0/16"
+}
+
+@test "scope mgmt-acl remove: drops one entry but keeps others" {
+    "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab add 10.1.0.0/16,10.2.0.0/16 > /dev/null
+    run "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab remove 10.1.0.0/16
+    assert_success
+    run "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab list
+    refute_output --partial "10.1.0.0/16"
+    assert_output --partial "10.2.0.0/16"
+}
+
+@test "scope mgmt-acl clear: wipes per-scope, reverts to global fallback" {
+    "$TACCTL_BIN_SCRIPT" config mgmt-acl add 10.50.0.0/16 > /dev/null
+    "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab add 10.99.0.0/16 > /dev/null
+
+    run bash -c 'echo y | "'"$TACCTL_BIN_SCRIPT"'" scope mgmt-acl lab clear'
+    assert_success
+    assert_output --partial "cleared"
+
+    run "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab list
+    # Should fall back to the global list.
+    assert_output --partial "Source: global"
+    assert_output --partial "10.50.0.0/16"
+}
+
+@test "config cisco --scope: renders per-scope permits ahead of global" {
+    "$TACCTL_BIN_SCRIPT" config mgmt-acl add 10.50.0.0/16 > /dev/null
+    "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab add 10.99.0.0/16 > /dev/null
+    run "$TACCTL_BIN_SCRIPT" config cisco --scope lab
+    assert_success
+    assert_output --partial "10.99.0.0"
+    refute_output --partial "10.50.0.0"
 }

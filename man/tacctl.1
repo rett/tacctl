@@ -824,14 +824,36 @@ Junos emits
 Range 0..60 (Junos's max). A value of
 .B 0
 disables idle expiry on both vendors. Default 60.
-.SS Per-scope mgmt-ACL name \fB(tacctl scope mgmt-acl)\fR
+.SS Per-scope mgmt-acl \fB(tacctl scope mgmt-acl)\fR
 .TP
-.BI "scope mgmt-acl " scope " <cisco-name|juniper-name> [" name ]
-Show or set the mgmt-ACL / firewall-filter name this scope's device
-renders use. Subcommand shape mirrors the global
-.B "tacctl config mgmt-acl cisco-name|juniper-name"
-so operators who know one form immediately know the other. Cisco puts
-the value in
+.BI "scope mgmt-acl " scope " " \
+"<list|add|remove|clear|cisco-name|juniper-name>" " [" args "]"
+Per-scope management ACL. Subcommand shape mirrors the global
+.B "tacctl config mgmt-acl"
+so operators who know one form know the other.
+.RS
+.IP \(bu 2
+.BR list ,
+.BR "add " <cidr>[,...] ,
+.BR "remove " <cidr>[,...] ,
+.B clear
+— manage the per-scope permit list. Render fallback is per-scope
+-> global
+.RB ( mgmt_acl.permits )
+-> empty. Empty per-scope lists prune the override so the scope
+falls back to the global; `clear` is the explicit way to revert.
+.IP \(bu 2
+.BR "cisco-name " [ label ] ,
+.BR "juniper-name " [ label ]
+— per-scope ACL / filter name. Fallback is per-scope -> global
+.RB ( "config mgmt-acl cisco-name / juniper-name" )
+-> shipped default (\fBVTY-ACL\fR for Cisco, \fBMGMT-ACL\fR for
+Junos). Name must satisfy ACL-name rules (letter-start +
+[A-Za-z0-9_-], 1..63 chars).
+.RE
+.TP
+.IP
+Cisco puts the effective name in
 .B "ip access-list standard <NAME>"
 and the matching
 .B "access-class <NAME> in"
@@ -839,17 +861,8 @@ on
 .BR "line vty 0 15" ;
 Junos puts it in
 .B "set firewall family inet filter <NAME>"
-and the commented lo0 apply. Fallback resolution is:
-per-scope override \(->
-.B "config mgmt-acl cisco-name / juniper-name"
-global \(->
-shipped default
-.RB ( VTY-ACL
-for Cisco,
-.B MGMT-ACL
-for Junos). The per-scope knob lets one environment deviate without
-changing the house-wide default. Must satisfy ACL-name rules
-(letter-start + [A-Za-z0-9_-], 1..63 chars).
+and the commented lo0 apply. Per-scope permits let one environment
+deviate without changing the house-wide default.
 .SS Per-scope Cisco aaa-group-server label \fB(tacctl scope tacacs-group)\fR
 .TP
 .BI "scope tacacs-group " scope " [" name ]
@@ -1014,7 +1027,7 @@ Changes that mutate
 (read by tacquito) restart the tacquito service automatically.
 Changes to
 .I /etc/tacquito/tacctl.yaml
-(tacctl-internal tunables: mgmt-ACL permits + names, bcrypt cost,
+(tacctl-internal tunables: mgmt-acl permits + names, bcrypt cost,
 password age, per-group priv-exec mappings, etc.) do not \(em tacquito
 itself never reads that file.
 .TP
@@ -1044,7 +1057,7 @@ Automatic configuration backups. Last 30 retained.
 .TP
 .I /etc/tacquito/tacctl.yaml
 Operator overrides for tacctl tunables (bcrypt cost, password / secret
-minimum lengths, password age warning, default scope, mgmt-ACL permits +
+minimum lengths, password age warning, default scope, mgmt-acl permits +
 names, per-group Cisco priv-exec mappings). Canonical defaults are
 embedded in
 .I bin/tacctl.sh
@@ -1142,7 +1155,7 @@ Print client-side bcrypt generation instructions to share with a user:
 .SH NOTES
 .B Unified tacctl config.
 Every tacctl tunable \(em bcrypt cost, password / secret minimum lengths,
-password-age warning threshold, default scope, mgmt-ACL permits + ACL names,
+password-age warning threshold, default scope, mgmt-acl permits + ACL names,
 and per-group Cisco priv-exec mappings \(em is driven by two sources:
 the canonical defaults embedded in
 .I bin/tacctl.sh
