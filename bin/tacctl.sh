@@ -7809,7 +7809,15 @@ cmd_backup() {
             echo ""
             echo -e "${BOLD}Diff: current config vs backup ${ts}${NC}"
             echo "--------------------------------------------"
-            diff --color=always "$backup_file" "$CONFIG" || true
+            # Unified format (-u) shows surrounding context and
+            # ---/+++ filename labels so changes land in their
+            # structural neighborhood instead of as a bare `30c30`.
+            # --label keeps the header short and stable (absolute
+            # paths would churn per-host).
+            diff -u \
+                --label "backup/${ts}" \
+                --label "current" \
+                --color=always "$backup_file" "$CONFIG" || true
             echo ""
             ;;
         restore)
