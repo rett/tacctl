@@ -676,15 +676,23 @@ as needed, and place users into them explicitly.
 .SS Top-level \fB(tacctl scope)\fR
 .TP
 .B scope list
+One row per scope (deduplicated), with each scope's prefixes joined
+as a comma list. Handy for a high-level inventory — names, prefix
+counts, user counts, and default marker. For the first-match routing
+view (one row per scope-prefix pair, numbered by slice position,
+mirroring how tacquito routes a connecting client) use
+.BR "scope routing" .
+For full per-scope detail (secret, per-scope knobs, user list) use
+.BR "scope show " \fIname\fR .
+.TP
+.B scope routing
 Print every
 .B secrets[]
 entry in tacquito's first-match order (one row per scope-prefix pair,
 numbered by slice position). Multi-prefix scopes repeat their name on
 each prefix row so the display literally mirrors routing priority —
 reading top to bottom shows the order tacquito tries providers for a
-connecting client. Use
-.BR "scope show " \fIname\fR
-for the aggregated per-scope view (users, secret, default marker).
+connecting client.
 .TP
 .BI "scope show " name
 Full detail for one scope: prefixes, users that reference it, raw
