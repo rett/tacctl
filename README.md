@@ -173,7 +173,7 @@ tacctl config mgmt-acl add 10.1.0.0/16
 tacctl config mgmt-acl add 192.168.5.0/24
 tacctl config mgmt-acl list
 ```
-`tacctl config cisco` then emits a populated `VTY-ACL` applied to `line vty 0 15` via `access-class VTY-ACL in`. `tacctl config juniper` emits a commented `set firewall family inet filter MGMT-SSH-ACL` block (including a trailing `default-accept` term to keep BGP/OSPF/IS-IS traffic to the RE working) — review and uncomment per device. The list lives under `mgmt_acl.permits` in `/etc/tacquito/tacctl.yaml` and survives `tacctl upgrade`.
+`tacctl config cisco` then emits a populated `VTY-ACL` applied to `line vty 0 15` via `access-class VTY-ACL in`. `tacctl config juniper` emits a commented `set firewall family inet filter MGMT-ACL` block (including a trailing `default-accept` term to keep BGP/OSPF/IS-IS traffic to the RE working) — review and uncomment per device. The list lives under `mgmt_acl.permits` in `/etc/tacquito/tacctl.yaml` and survives `tacctl upgrade`.
 
 Rename the emitted ACL / filter names to match your site conventions:
 ```
@@ -258,7 +258,7 @@ tacctl user passwd jsmith --hash '$2b$12$...'
 
 These patterns apply uniformly across every subcommand family:
 
-- **No arguments** — dispatcher commands (`user`, `group`, `config`, `scope`, `log`, `backup`, `hash`, and nested dispatchers like `scope prefixes` / `scope secret` / `scope aaa-order` / `scope exec-timeout` / `user scope` / `group privilege`) print their own usage and exit without side effects. Scalar getter/setters (`config loglevel`, `config listen`, `config metrics`, `config password-age`, `config bcrypt-cost`, `config password-min-length`, `config secret-min-length`, `config branch`, `scope default`) print the current value when called with no arguments.
+- **No arguments** — dispatcher commands (`user`, `group`, `config`, `scope`, `log`, `backup`, `hash`, and nested dispatchers like `scope prefixes` / `scope secret` / `scope aaa-order` / `scope exec-timeout` / `scope tacacs-group` / `scope mgmt-acl` / `user scope` / `group privilege`) print their own usage and exit without side effects. Scalar getter/setters (`config loglevel`, `config listen`, `config metrics`, `config password-age`, `config bcrypt-cost`, `config password-min-length`, `config secret-min-length`, `config branch`, `scope default`) print the current value when called with no arguments.
 - **Multi-item input** — every `add` / `remove` that takes a CIDR, a scope name, or a Cisco exec command accepts either a single value or a comma-separated list (`a,b,c`). Every input is validated first; a bad entry aborts the entire operation without writing anything.
 - **CIDR semantics** — every CIDR-list subcommand (`scope prefixes`, `config allow`, `config deny`, `config mgmt-acl`) canonicalizes input before storage: `10.1.5.5/24` becomes `10.1.5.0/24`, `2001:DB8::/32` becomes `2001:db8::/32`. Exact duplicates (after canonicalization) are rejected as no-ops on `add`. Overlapping CIDRs of different prefix lengths coexist (`10.0.0.0/8` and `10.99.0.0/16` can both be present). Stored order is by broadcast-address ascending (IPv4 before IPv6): disjoint ranges sort by their end address, and an overlapping subnet falls immediately above its containing supernet (the subnet's range ends before the supernet's). This groups related CIDRs together and gives tacquito's provider selector the "most-specific first among overlaps" ordering it needs so a narrower scope wins a first-match lookup over a broader scope that contains it.
 - **Scope prefix invariants** — every CIDR belongs to **exactly one** scope after canonicalization. Adding a prefix already claimed by a different scope is rejected with a message naming the owner; you must `tacctl scope prefixes <owner> remove <cidr>` before re-adding it elsewhere. Overlapping prefixes *across* scopes are allowed and routed correctly (e.g. `10.5.0.0/16` in `staging` coexists with `10.0.0.0/8` in `lab`). To make cross-scope first-match honor specificity, tacctl emits one `secrets:` entry per (scope, prefix) pair — a scope with N prefixes becomes N entries sharing the same `name:` and `secret.key`. Entries are re-sorted globally by prefix specificity (v4 before v6, smaller broadcast first) after every mutation, so tacquito's slice-ordered walk picks the narrowest scope. The CLI continues to show the logical one-bundle-per-scope view; do not hand-edit the `secrets:` block, and `tacctl config validate` flags any same-name key divergence.
@@ -364,7 +364,7 @@ config allow list|add|remove|clear          Manage connection allow list (IP ACL
 config deny list|add|remove|clear           Manage connection deny list (IP ACL; add/remove accept comma-lists)
 config mgmt-acl list|add|remove|clear       Manage Cisco VTY-ACL + Juniper lo0-filter permits (add/remove accept comma-lists)
 config mgmt-acl cisco-name [name]           Show or set the emitted Cisco ACL name (default VTY-ACL)
-config mgmt-acl juniper-name [name]         Show or set the emitted Juniper filter name (default MGMT-SSH-ACL)
+config mgmt-acl juniper-name [name]         Show or set the emitted Juniper filter name (default MGMT-ACL)
 config branch [name]                        Show or change the tacctl repo branch
 ```
 
@@ -391,7 +391,7 @@ scope:
 mgmt_acl:
   names:
     cisco: VTY-ACL           # ACL name emitted by `tacctl config cisco`  (letter-start, [A-Za-z0-9_-], 1..63)
-    juniper: MGMT-SSH-ACL    # filter name emitted by `tacctl config juniper`  (same rules)
+    juniper: MGMT-ACL    # filter name emitted by `tacctl config juniper`  (same rules)
   permits: []                # list of CIDRs; each element validated
 
 privileges:                  # per-group Cisco priv-exec lowering (move commands DOWN from priv 15)
@@ -446,8 +446,10 @@ scope default [<name>]                                   Show / set the default 
 scope lookup <ip|cidr>                                   Resolve an IP/CIDR to the owning scope (+ shadowed overlaps)
 scope prefixes <name> list|add|remove|clear [--force]    Per-scope CIDR list (add/remove accept comma-lists; clear refuses if users reference unless --force)
 scope secret   <name> show|set <value>|generate          Per-scope shared secret (show prints the raw value + length/posture)
-scope aaa-order <name> [local-first|tacacs-first]        Order of local vs TACACS+ in this scope's generated Cisco / Junos AAA lines. Default `local-first` lets break-glass local users authenticate while tacquito is reachable (local names that collide with TACACS+ users win locally — keep local scoped to emergency credentials). Set `tacacs-first` per-scope when policy requires central AAA to see every login attempt.
+scope aaa-order <name> [tacacs-first|local-first]        Order of TACACS+ vs local in this scope's generated Cisco / Junos AAA lines. Default `tacacs-first` keeps TACACS+ authoritative (local only kicks in on server outage). Set `local-first` when a break-glass local account must authenticate while tacquito is still reachable — any local name that collides with a TACACS+ user wins locally, so scope local accounts to emergency credentials only.
 scope exec-timeout <name> [minutes]                      Per-scope idle-session timeout for this scope's generated device configs. Cisco renders `exec-timeout <n> 0` on `line con 0` / `line vty 0 15`; Junos renders `set system login idle-timeout <n>`. Range 0..60 (Junos's max); `0` disables idle expiry on both vendors. Default 60.
+scope tacacs-group <name> [label]                        Per-scope Cisco `aaa group server tacacs+ <LABEL>` name. Rendered into every AAA group + method-list line for that scope. Must conform to Cisco ACL naming rules (letter-start, letters/digits/_/-). Default `TACACS-GROUP`. Junos has no equivalent.
+scope mgmt-acl <name> cisco-name|juniper-name [label]    Per-scope mgmt-ACL / filter name. Mirrors the global `tacctl config mgmt-acl cisco-name|juniper-name`. Cisco renders `ip access-list standard <LABEL>` + `access-class <LABEL> in`; Junos renders `set firewall family inet filter <LABEL>` + lo0 filter apply. Fallback chain: per-scope override → global (`tacctl config mgmt-acl …`) → shipped default (`VTY-ACL` / `MGMT-ACL`).
 ```
 
 **Connection filters:** `deny` takes precedence over `allow`. Both empty = all connections accepted.

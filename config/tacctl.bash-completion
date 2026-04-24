@@ -237,10 +237,10 @@ for u in (d.get('users') or []):
         scope)
             local ssub="${words[offset + 2]}"
             if [[ $pos -eq 2 ]]; then
-                COMPREPLY=($(compgen -W "list show add remove rename default lookup prefixes secret aaa-order exec-timeout" -- "$cur"))
+                COMPREPLY=($(compgen -W "list show add remove rename default lookup prefixes secret aaa-order exec-timeout tacacs-group mgmt-acl" -- "$cur"))
             elif [[ $pos -eq 3 ]]; then
                 case "$ssub" in
-                    show|remove|rename|default|prefixes|secret|aaa-order|exec-timeout)
+                    show|remove|rename|default|prefixes|secret|aaa-order|exec-timeout|tacacs-group|mgmt-acl)
                         COMPREPLY=($(compgen -W "$(_tacctl_scope_names)" -- "$cur"))
                         ;;
                     lookup)
@@ -263,8 +263,12 @@ for u in (d.get('users') or []):
                         COMPREPLY=($(compgen -W "show set generate" -- "$cur"))
                         ;;
                     aaa-order)
-                        # `scope aaa-order <scope> <local-first|tacacs-first>`
-                        COMPREPLY=($(compgen -W "local-first tacacs-first" -- "$cur"))
+                        # `scope aaa-order <scope> <tacacs-first|local-first>`
+                        COMPREPLY=($(compgen -W "tacacs-first local-first" -- "$cur"))
+                        ;;
+                    mgmt-acl)
+                        # `scope mgmt-acl <scope> <cisco-name|juniper-name>`
+                        COMPREPLY=($(compgen -W "cisco-name juniper-name" -- "$cur"))
                         ;;
                     rename)
                         # `scope rename <old> <new>` — no completion on new name

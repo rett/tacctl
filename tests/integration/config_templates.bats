@@ -66,38 +66,38 @@ _normalize() {
 }
 
 # --- per-scope aaa-order: render flip ----------------------------------------
-# Goldens above cover the local-first default. These assert the
-# tacacs-first shape when a specific scope overrides via
-# `tacctl scope aaa-order <scope> tacacs-first`, and verify that
+# Goldens above cover the tacacs-first default. These assert the
+# local-first shape when a specific scope overrides via
+# `tacctl scope aaa-order <scope> local-first`, and verify that
 # overrides stay scoped (other scopes keep the default).
 
-@test "config cisco: scope aaa-order tacacs-first puts TACACS group ahead of local" {
-    "$TACCTL_BIN_SCRIPT" scope aaa-order lab tacacs-first > /dev/null
+@test "config cisco: scope aaa-order local-first puts local ahead of the TACACS group" {
+    "$TACCTL_BIN_SCRIPT" scope aaa-order lab local-first > /dev/null
     run "$TACCTL_BIN_SCRIPT" config cisco --scope lab
     assert_success
-    assert_output --partial "aaa authentication login default group TACACS-GROUP local"
-    assert_output --partial "aaa authorization exec default group TACACS-GROUP local if-authenticated"
-    assert_output --partial "aaa authorization commands 1 default group TACACS-GROUP local"
-    assert_output --partial "aaa authorization commands 15 default group TACACS-GROUP local"
-    refute_output --partial "aaa authentication login default local group TACACS-GROUP"
+    assert_output --partial "aaa authentication login default local group TACACS-GROUP"
+    assert_output --partial "aaa authorization exec default local group TACACS-GROUP if-authenticated"
+    assert_output --partial "aaa authorization commands 1 default local group TACACS-GROUP"
+    assert_output --partial "aaa authorization commands 15 default local group TACACS-GROUP"
+    refute_output --partial "aaa authentication login default group TACACS-GROUP local"
 }
 
-@test "config juniper: scope aaa-order tacacs-first flips authentication-order" {
-    "$TACCTL_BIN_SCRIPT" scope aaa-order lab tacacs-first > /dev/null
+@test "config juniper: scope aaa-order local-first flips authentication-order" {
+    "$TACCTL_BIN_SCRIPT" scope aaa-order lab local-first > /dev/null
     run "$TACCTL_BIN_SCRIPT" config juniper --scope lab
     assert_success
-    assert_output --partial "set system authentication-order [ tacplus password ]"
-    refute_output --partial "set system authentication-order [ password tacplus ]"
+    assert_output --partial "set system authentication-order [ password tacplus ]"
+    refute_output --partial "set system authentication-order [ tacplus password ]"
 }
 
 @test "config cisco: scope aaa-order override is per-scope (prod unaffected)" {
-    # Flip lab to tacacs-first; prod (no override) should still render
-    # the default local-first shape.
-    "$TACCTL_BIN_SCRIPT" scope aaa-order lab tacacs-first > /dev/null
+    # Flip lab to local-first; prod (no override) should still render
+    # the default tacacs-first shape.
+    "$TACCTL_BIN_SCRIPT" scope aaa-order lab local-first > /dev/null
     run "$TACCTL_BIN_SCRIPT" config cisco --scope prod
     assert_success
-    assert_output --partial "aaa authentication login default local group TACACS-GROUP"
-    refute_output --partial "aaa authentication login default group TACACS-GROUP local"
+    assert_output --partial "aaa authentication login default group TACACS-GROUP local"
+    refute_output --partial "aaa authentication login default local group TACACS-GROUP"
 }
 
 @test "config cisco: scope exec-timeout applies to line con + line vty" {
@@ -114,4 +114,36 @@ _normalize() {
     run "$TACCTL_BIN_SCRIPT" config juniper --scope lab
     assert_success
     assert_output --partial "set system login idle-timeout 15"
+}
+
+@test "config cisco: scope tacacs-group overrides the aaa-group-server label" {
+    "$TACCTL_BIN_SCRIPT" scope tacacs-group lab TACACS_PROD > /dev/null
+    run "$TACCTL_BIN_SCRIPT" config cisco --scope lab
+    assert_success
+    assert_output --partial "aaa group server tacacs+ TACACS_PROD"
+    assert_output --partial "aaa authentication login default group TACACS_PROD local"
+    assert_output --partial "aaa accounting exec default start-stop group TACACS_PROD"
+    refute_output --partial "TACACS-GROUP"
+}
+
+@test "config cisco: per-scope mgmt-acl wins over global" {
+    "$TACCTL_BIN_SCRIPT" config mgmt-acl cisco-name GLOBAL-VTY > /dev/null
+    "$TACCTL_BIN_SCRIPT" scope  mgmt-acl lab cisco-name LAB-VTY-ACL > /dev/null
+    # Populate at least one permit so the ACL block actually renders.
+    "$TACCTL_BIN_SCRIPT" config mgmt-acl add 10.0.0.0/8 > /dev/null
+    run "$TACCTL_BIN_SCRIPT" config cisco --scope lab
+    assert_success
+    assert_output --partial "ip access-list standard LAB-VTY-ACL"
+    assert_output --partial "access-class LAB-VTY-ACL in"
+    refute_output --partial "GLOBAL-VTY"
+}
+
+@test "config juniper: per-scope mgmt-acl wins over global" {
+    "$TACCTL_BIN_SCRIPT" config mgmt-acl juniper-name GLOBAL-MGMT > /dev/null
+    "$TACCTL_BIN_SCRIPT" scope  mgmt-acl lab juniper-name LAB-MGMT-FILTER > /dev/null
+    "$TACCTL_BIN_SCRIPT" config mgmt-acl add 10.0.0.0/8 > /dev/null
+    run "$TACCTL_BIN_SCRIPT" config juniper --scope lab
+    assert_success
+    assert_output --partial "filter LAB-MGMT-FILTER"
+    refute_output --partial "GLOBAL-MGMT"
 }

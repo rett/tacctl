@@ -51,7 +51,7 @@ BCRYPT_COST=12
 PASSWORD_MIN_LENGTH=12
 SECRET_MIN_LENGTH=16
 CISCO_ACL_NAME_DEFAULT="VTY-ACL"
-JUNIPER_ACL_NAME_DEFAULT="MGMT-SSH-ACL"
+JUNIPER_ACL_NAME_DEFAULT="MGMT-ACL"
 DEFAULT_SCOPE_FRESH="lab"  # name used on fresh installs; upgrades keep existing scope name
 CONFIG_DIR="${TACCTL_ETC}"
 LOG_DIR="${TACCTL_LOG}"
@@ -120,7 +120,7 @@ scope:
 mgmt_acl:
   names:
     cisco: VTY-ACL        # ACL name emitted by `tacctl config cisco`
-    juniper: MGMT-SSH-ACL # filter name emitted by `tacctl config juniper`
+    juniper: MGMT-ACL # filter name emitted by `tacctl config juniper`
   permits: []             # CIDRs for Cisco VTY-ACL + Juniper lo0 filter
 
 privileges:
@@ -279,13 +279,13 @@ WILDCARDS = [
     ('privileges.',   {'type': 'cisco_cmd_list'}),
     ('commands.',     {'type': 'command_rules'}),
     ('aaa.order.',    {'type': 'enum',
-                       'values': ['local-first', 'tacacs-first'],
+                       'values': ['tacacs-first', 'local-first'],
                        # Implicit per-instance default. _conf_write uses
                        # this to prune the override when the set value
                        # matches (scopes aren't pre-enumerated in
                        # conf_emit_defaults, so we can't rely on
                        # get_nested(defaults, ...) to tell us the default).
-                       'default': 'local-first'}),
+                       'default': 'tacacs-first'}),
     ('exec_timeout.', {'type': 'int',
                        # 0 = never expire (Cisco: `exec-timeout 0 0`).
                        # Junos `idle-timeout` max is 60 minutes, so the
@@ -293,6 +293,24 @@ WILDCARDS = [
                        # cleanly with one knob.
                        'min': 0, 'max': 60,
                        'default': 60}),
+    ('tacacs_group.', {'type': 'acl_name',
+                       # Cisco `aaa group server tacacs+ <name>` label.
+                       # Default 'TACACS-GROUP' is what the template
+                       # shipped before this knob existed. Per-scope
+                       # override lets operators match site naming
+                       # conventions (e.g. TACACS_PROD, ISE-GROUP).
+                       # acl_name type enforces letter-start +
+                       # [A-Za-z0-9_-] which is what IOS accepts.
+                       'default': 'TACACS-GROUP'}),
+    # Per-scope ACL/filter-name overrides. Fallback chain in the
+    # render code is: per-scope override -> global mgmt_acl.names.*
+    # -> shipped default. The `default` on the wildcard matches the
+    # shipped default so explicit per-scope writes of VTY-ACL /
+    # MGMT-ACL prune the per-scope override.
+    ('mgmt_acl.names.cisco.',
+                      {'type': 'acl_name', 'default': 'VTY-ACL'}),
+    ('mgmt_acl.names.juniper.',
+                      {'type': 'acl_name', 'default': 'MGMT-ACL'}),
 ]
 
 import re
@@ -311,7 +329,7 @@ def schema_for(path):
 
 def implicit_default(path):
     """Return the implicit per-instance default for a wildcard schema
-    entry (e.g. aaa.order.<scope> -> 'local-first'), or None if the path
+    entry (e.g. aaa.order.<scope> -> 'tacacs-first'), or None if the path
     has no implicit default. Used by _conf_write's revert-to-default
     prune so operators can unset a wildcard override by re-setting it to
     the default value."""
@@ -1468,14 +1486,28 @@ for c in sorted(set(cidrs), key=key_fn):
 
 # --- Read an mgmt-ACL name override (cisco|juniper) with default fallback ---
 # Backed by mgmt_acl.names.{cisco,juniper} in the unified config.
-# conf_emit_defaults() ships VTY-ACL / MGMT-SSH-ACL; overrides in
+# conf_emit_defaults() ships VTY-ACL / MGMT-ACL; overrides in
 # tacctl.yaml win.
+#
+# Optional second argument is the scope name. When supplied, the
+# resolution chain is:
+#   1. per-scope override  (mgmt_acl.names.<vendor>.<scope>)
+#   2. global override     (mgmt_acl.names.<vendor>)
+#   3. shipped default     (VTY-ACL / MGMT-ACL)
+# Callers that don't care about per-scope overrides (the global
+# setter/viewer under `tacctl config mgmt-acl`) omit the scope arg.
 read_mgmt_acl_name() {
-    case "$1" in
-        cisco)   conf_get mgmt_acl.names.cisco "$CISCO_ACL_NAME_DEFAULT" ;;
-        juniper) conf_get mgmt_acl.names.juniper "$JUNIPER_ACL_NAME_DEFAULT" ;;
-        *)       echo "" ;;
+    local vendor="$1" scope="${2:-}" global=""
+    case "$vendor" in
+        cisco)   global=$(conf_get mgmt_acl.names.cisco   "$CISCO_ACL_NAME_DEFAULT") ;;
+        juniper) global=$(conf_get mgmt_acl.names.juniper "$JUNIPER_ACL_NAME_DEFAULT") ;;
+        *)       echo ""; return ;;
     esac
+    if [[ -n "$scope" ]]; then
+        conf_get "mgmt_acl.names.${vendor}.${scope}" "$global"
+    else
+        echo "$global"
+    fi
 }
 
 # --- Validate an ACL name for Cisco / Juniper use ---
@@ -3452,25 +3484,33 @@ for m in re.finditer(r'^(\w+): &\1\n  name: \1\n  services:\n(.*?)  accounter:',
     # output is still safe to paste — it simply leaves the vty lines
     # unchanged until mgmt-acl is populated.
     local cisco_acl_name
-    cisco_acl_name=$(read_mgmt_acl_name cisco)
+    cisco_acl_name=$(read_mgmt_acl_name cisco "$scope")
+
+    # Per-scope aaa-group-server label. Every AAA line references this
+    # name — overriding per-scope lets operators match site naming
+    # conventions (e.g. TACACS_PROD, ISE-GROUP). Default matches the
+    # historical template value.
+    local TACACS_GROUP
+    TACACS_GROUP=$(conf_get "tacacs_group.${scope}" TACACS-GROUP)
 
     # AAA method-list order is per-scope. tacctl.yaml's aaa.order.<scope>
     # key flips every generated `aaa authentication login` /
-    # `aaa authorization` line between local-first (default — local
-    # break-glass credentials usable while TACACS+ is reachable) and
-    # tacacs-first (TACACS+ authoritative; local only kicks in on
-    # server outage). Accounting method-lists are unaffected — they
+    # `aaa authorization` line between tacacs-first (default — TACACS+
+    # authoritative; local only kicks in on server outage) and
+    # local-first (local break-glass credentials usable while TACACS+
+    # is reachable; any local name that collides with a TACACS+ user
+    # wins locally). Accounting method-lists are unaffected — they
     # always point at the TACACS group regardless of this setting.
     local aaa_order AUTHN_METHODS AUTHZ_EXEC_METHODS AUTHZ_CMD_METHODS
-    aaa_order=$(conf_get "aaa.order.${scope}" local-first)
-    if [[ "$aaa_order" == "tacacs-first" ]]; then
-        AUTHN_METHODS="group TACACS-GROUP local"
-        AUTHZ_EXEC_METHODS="group TACACS-GROUP local if-authenticated"
-        AUTHZ_CMD_METHODS="group TACACS-GROUP local"
+    aaa_order=$(conf_get "aaa.order.${scope}" tacacs-first)
+    if [[ "$aaa_order" == "local-first" ]]; then
+        AUTHN_METHODS="local group ${TACACS_GROUP}"
+        AUTHZ_EXEC_METHODS="local group ${TACACS_GROUP} if-authenticated"
+        AUTHZ_CMD_METHODS="local group ${TACACS_GROUP}"
     else
-        AUTHN_METHODS="local group TACACS-GROUP"
-        AUTHZ_EXEC_METHODS="local group TACACS-GROUP if-authenticated"
-        AUTHZ_CMD_METHODS="local group TACACS-GROUP"
+        AUTHN_METHODS="group ${TACACS_GROUP} local"
+        AUTHZ_EXEC_METHODS="group ${TACACS_GROUP} local if-authenticated"
+        AUTHZ_CMD_METHODS="group ${TACACS_GROUP} local"
     fi
 
     # Per-scope idle-session timeout. Default 60 minutes matches the
@@ -3531,8 +3571,8 @@ ${mgmt_entries}  deny   any log"
     # the operator. `!` separator lines have NF=1 so they survive.
     {
         if [[ -n "$template_file" ]]; then
-            export SERVER_IP="$server_ip" SECRET="$secret" PRIVILEGE_COMMANDS GROUP_SUMMARY VTY_ACL_BLOCK VTY_ACCESS_CLASS AUTHZ_COMMANDS_BLOCK AUTHN_METHODS AUTHZ_EXEC_METHODS EXEC_TIMEOUT
-            envsubst '${SERVER_IP} ${SECRET} ${PRIVILEGE_COMMANDS} ${GROUP_SUMMARY} ${VTY_ACL_BLOCK} ${VTY_ACCESS_CLASS} ${AUTHZ_COMMANDS_BLOCK} ${AUTHN_METHODS} ${AUTHZ_EXEC_METHODS} ${EXEC_TIMEOUT}' < "$template_file"
+            export SERVER_IP="$server_ip" SECRET="$secret" PRIVILEGE_COMMANDS GROUP_SUMMARY VTY_ACL_BLOCK VTY_ACCESS_CLASS AUTHZ_COMMANDS_BLOCK AUTHN_METHODS AUTHZ_EXEC_METHODS EXEC_TIMEOUT TACACS_GROUP
+            envsubst '${SERVER_IP} ${SECRET} ${PRIVILEGE_COMMANDS} ${GROUP_SUMMARY} ${VTY_ACL_BLOCK} ${VTY_ACCESS_CLASS} ${AUTHZ_COMMANDS_BLOCK} ${AUTHN_METHODS} ${AUTHZ_EXEC_METHODS} ${EXEC_TIMEOUT} ${TACACS_GROUP}' < "$template_file"
         else
             cat <<EOF
 ! --- TACACS+ Server & AAA ---
@@ -3550,15 +3590,15 @@ tacacs server TACACS
   single-connection
   timeout 5
 !
-aaa group server tacacs+ TACACS-GROUP
+aaa group server tacacs+ ${TACACS_GROUP}
   server name TACACS
 !
 aaa authentication login default ${AUTHN_METHODS}
 aaa authorization exec default ${AUTHZ_EXEC_METHODS}
-aaa accounting exec default start-stop group TACACS-GROUP
-aaa accounting commands 1 default start-stop group TACACS-GROUP
-aaa accounting commands 7 default start-stop group TACACS-GROUP
-aaa accounting commands 15 default start-stop group TACACS-GROUP
+aaa accounting exec default start-stop group ${TACACS_GROUP}
+aaa accounting commands 1 default start-stop group ${TACACS_GROUP}
+aaa accounting commands 7 default start-stop group ${TACACS_GROUP}
+aaa accounting commands 15 default start-stop group ${TACACS_GROUP}
 !
 ${AUTHZ_COMMANDS_BLOCK}
 !
@@ -3681,14 +3721,14 @@ for m in re.finditer(r'^(\w+): &\1\n  name: \1\n  services:\n(.*?)  accounter:',
     # AAA method-list order is per-scope (aaa.order.<scope>). Junos has
     # a single authentication-order statement (no separate authz
     # method-list — permissions come from the user's login class).
-    # Default local-first swaps to `[ password tacplus ]` so local
-    # breakglass users log in while tacplus is up. tacacs-first keeps
-    # Junos policy-centric.
+    # Default tacacs-first keeps Junos policy-centric; local-first
+    # swaps to `[ password tacplus ]` so local breakglass users log in
+    # while tacplus is up.
     local junos_authn_order
-    if [[ "$(conf_get "aaa.order.${scope}" local-first)" == "tacacs-first" ]]; then
-        junos_authn_order="[ tacplus password ]"
-    else
+    if [[ "$(conf_get "aaa.order.${scope}" tacacs-first)" == "local-first" ]]; then
         junos_authn_order="[ password tacplus ]"
+    else
+        junos_authn_order="[ tacplus password ]"
     fi
 
     # Per-scope idle-session timeout (exec_timeout.<scope>). Junos
@@ -3730,7 +3770,7 @@ set system accounting destination tacplus"
     # it is safe; the operator uncomments the apply line after review.
     # IPv6 CIDRs are skipped for now (filter would need family inet6).
     local juniper_acl_name
-    juniper_acl_name=$(read_mgmt_acl_name juniper)
+    juniper_acl_name=$(read_mgmt_acl_name juniper "$scope")
     local MGMT_ACL_BLOCK mgmt_terms=""
     local mgmt_has_any="false"
     while IFS= read -r entry; do
@@ -4358,6 +4398,8 @@ cmd_scope() {
         secret)            cmd_scope_secret_dispatch "$@" ;;
         aaa-order)         cmd_scope_aaa_order "$@" ;;
         exec-timeout)      cmd_scope_exec_timeout "$@" ;;
+        tacacs-group)      cmd_scope_tacacs_group "$@" ;;
+        mgmt-acl)          cmd_scope_mgmt_acl "$@" ;;
         *)
             error "Unknown subcommand: '${subcmd}'"
             cmd_scope_usage
@@ -4386,8 +4428,10 @@ cmd_scope_usage() {
     echo ""
     echo "  tacctl scope prefixes <scope> list|add|remove|clear      Manage a scope's CIDR list"
     echo "  tacctl scope secret   <scope> show|set|generate          Manage a scope's shared secret"
-    echo "  tacctl scope aaa-order <scope> [local-first|tacacs-first] AAA method-list order in this scope's rendered device configs (default local-first)"
+    echo "  tacctl scope aaa-order <scope> [tacacs-first|local-first] AAA method-list order in this scope's rendered device configs (default tacacs-first)"
     echo "  tacctl scope exec-timeout <scope> [minutes]              Per-scope idle-session timeout in rendered device configs (0..60 min; default 60; 0 = never expire)"
+    echo "  tacctl scope tacacs-group <scope> [name]                 Per-scope Cisco aaa-group-server label (default TACACS-GROUP)"
+    echo "  tacctl scope mgmt-acl <scope> cisco-name|juniper-name [name]  Per-scope mgmt-ACL / filter name (defaults VTY-ACL / MGMT-ACL)"
     echo ""
     echo "Current scopes: ${count}"
     echo "Default scope:  ${default_val:-<unset>}"
@@ -4484,11 +4528,14 @@ cmd_scope_show() {
     local is_default="no"
     [[ "$name" == "$default_val" ]] && is_default="yes"
     # Per-scope device-render knobs. Absence of an override falls back
-    # to the shipped defaults (local-first / 60 min), matching what
-    # `tacctl config cisco|juniper --scope <name>` emits.
-    local aaa_order_val exec_timeout_val exec_timeout_display
-    aaa_order_val=$(conf_get "aaa.order.${name}" local-first)
+    # through the per-scope -> global -> shipped-default chain,
+    # matching what `tacctl config cisco|juniper --scope <name>` emits.
+    local aaa_order_val exec_timeout_val exec_timeout_display tacacs_group_val cisco_acl_val juniper_acl_val
+    aaa_order_val=$(conf_get "aaa.order.${name}" tacacs-first)
     exec_timeout_val=$(conf_get "exec_timeout.${name}" 60)
+    tacacs_group_val=$(conf_get "tacacs_group.${name}" TACACS-GROUP)
+    cisco_acl_val=$(read_mgmt_acl_name cisco "$name")
+    juniper_acl_val=$(read_mgmt_acl_name juniper "$name")
     if [[ "$exec_timeout_val" == "0" ]]; then
         exec_timeout_display="0 min (never expire)"
     else
@@ -4502,6 +4549,9 @@ cmd_scope_show() {
     echo -e "  ${BOLD}Secret:${NC}        ${secret_line}"
     echo -e "  ${BOLD}AAA order:${NC}     ${aaa_order_val}"
     echo -e "  ${BOLD}Exec timeout:${NC}  ${exec_timeout_display}"
+    echo -e "  ${BOLD}TACACS group:${NC}  ${tacacs_group_val}"
+    echo -e "  ${BOLD}Cisco ACL:${NC}     ${cisco_acl_val}"
+    echo -e "  ${BOLD}Juniper ACL:${NC}   ${juniper_acl_val}"
     echo -e "  ${BOLD}Prefixes:${NC}"
     local pfx
     pfx=$(read_scope_prefixes "$name")
@@ -5074,13 +5124,13 @@ cmd_scope_secret_dispatch() {
 # cisco --scope <name>` / `tacctl config juniper --scope <name>` emit.
 # Per-scope so a lab scope can favor local break-glass access while a
 # prod scope keeps TACACS+ authoritative. Absent an override, each
-# scope defaults to local-first.
+# scope defaults to tacacs-first.
 cmd_scope_aaa_order() {
     local scope="${1:-}"
     local new_order="${2:-}"
 
     if [[ -z "$scope" ]]; then
-        error "Usage: tacctl scope aaa-order <scope> [local-first|tacacs-first]"
+        error "Usage: tacctl scope aaa-order <scope> [tacacs-first|local-first]"
         exit 1
     fi
     if ! scope_exists "$scope"; then
@@ -5091,7 +5141,7 @@ cmd_scope_aaa_order() {
     local current source
     current=$(conf_get "aaa.order.${scope}")
     if [[ -z "$current" ]]; then
-        current="local-first"
+        current="tacacs-first"
         source="default"
     else
         source="override (tacctl.yaml: aaa.order.${scope})"
@@ -5102,10 +5152,10 @@ cmd_scope_aaa_order() {
         echo "  Scope '${scope}' AAA method-list order: ${current}"
         echo "  Source: ${source}"
         echo ""
-        echo "    local-first   Local DB checked first; TACACS+ used for names not found locally."
         echo "    tacacs-first  TACACS+ is authoritative; local used only on server outage."
+        echo "    local-first   Local DB checked first; TACACS+ used for names not found locally."
         echo ""
-        echo "  Usage: tacctl scope aaa-order ${scope} <local-first|tacacs-first>"
+        echo "  Usage: tacctl scope aaa-order ${scope} <tacacs-first|local-first>"
         echo ""
         return
     fi
@@ -5172,6 +5222,143 @@ cmd_scope_exec_timeout() {
     echo ""
     echo "  Re-run 'tacctl config cisco --scope ${scope}' / 'tacctl config juniper --scope ${scope}'"
     echo "  and push the updated line-config / login stanzas to each device in this scope."
+    echo ""
+}
+
+# --- Per-scope Cisco aaa-group-server label: tacctl scope tacacs-group <scope> [name] ---
+# Rendered into every Cisco `aaa group server tacacs+ <NAME>` and the
+# method-lists/accounting lines that reference the group. Per-scope so
+# each environment can match site naming conventions. Junos has no
+# equivalent (its AAA doesn't group named servers this way).
+cmd_scope_tacacs_group() {
+    local scope="${1:-}"
+    local new_name="${2:-}"
+
+    if [[ -z "$scope" ]]; then
+        error "Usage: tacctl scope tacacs-group <scope> [name]"
+        exit 1
+    fi
+    if ! scope_exists "$scope"; then
+        error "Scope '${scope}' does not exist. Available: $(list_scopes | paste -sd' ')"
+        exit 1
+    fi
+
+    local current source
+    current=$(conf_get "tacacs_group.${scope}")
+    if [[ -z "$current" ]]; then
+        current="TACACS-GROUP"
+        source="default"
+    else
+        source="override (tacctl.yaml: tacacs_group.${scope})"
+    fi
+
+    if [[ -z "$new_name" ]]; then
+        echo ""
+        echo "  Scope '${scope}' Cisco aaa-group-server name: ${current}"
+        echo "  Source: ${source}"
+        echo ""
+        echo "    Rendered into every 'aaa group server tacacs+ <NAME>' and the method-list"
+        echo "    / accounting lines that reference the group (Cisco only; Junos has no"
+        echo "    equivalent)."
+        echo ""
+        echo "  Usage: tacctl scope tacacs-group ${scope} <name>"
+        echo ""
+        return
+    fi
+
+    conf_set "tacacs_group.${scope}" "$new_name" || exit 1
+    info "Scope '${scope}' aaa-group-server label set to ${new_name}."
+    echo ""
+    echo "  Re-run 'tacctl config cisco --scope ${scope}' and push the updated AAA"
+    echo "  stanzas to each device in this scope — the change is not applied until"
+    echo "  the device receives the new group name. Leaving a stale local group"
+    echo "  reference on the device will break authentication."
+    echo ""
+}
+
+# --- Per-scope mgmt-ACL name: tacctl scope mgmt-acl <scope> cisco-name|juniper-name [name] ---
+# Per-scope override for the mgmt-ACL name that
+# `tacctl config cisco|juniper --scope <scope>` emits:
+#   Cisco:   `ip access-list standard <NAME>` + `access-class <NAME> in`
+#   Junos:   `set firewall family inet filter <NAME>` + lo0 apply
+# Fallback chain: per-scope override -> global (mgmt_acl.names.*) ->
+# shipped default (VTY-ACL / MGMT-ACL). Subcommand shape mirrors the
+# global `tacctl config mgmt-acl cisco-name|juniper-name` so operators
+# who know one form immediately know the other.
+cmd_scope_mgmt_acl() {
+    local scope="${1:-}"
+    local sub="${2:-}"
+    local new_name="${3:-}"
+
+    if [[ -z "$scope" ]]; then
+        error "Usage: tacctl scope mgmt-acl <scope> <cisco-name|juniper-name> [name]"
+        exit 1
+    fi
+    if ! scope_exists "$scope"; then
+        error "Scope '${scope}' does not exist. Available: $(list_scopes | paste -sd' ')"
+        exit 1
+    fi
+
+    local vendor
+    case "$sub" in
+        cisco-name)   vendor="cisco" ;;
+        juniper-name) vendor="juniper" ;;
+        ""|-h|--help|help)
+            echo ""
+            echo "Usage:"
+            echo "  tacctl scope mgmt-acl ${scope} cisco-name   [label]   Per-scope Cisco VTY-ACL name"
+            echo "  tacctl scope mgmt-acl ${scope} juniper-name [label]   Per-scope Junos filter name"
+            echo ""
+            echo "  Fallback: per-scope override -> global (tacctl config mgmt-acl)"
+            echo "  -> shipped default (VTY-ACL / MGMT-ACL)."
+            echo ""
+            return
+            ;;
+        *)
+            error "Unknown subcommand '${sub}'. Use: cisco-name | juniper-name."
+            exit 1
+            ;;
+    esac
+
+    local current source effective
+    current=$(conf_get "mgmt_acl.names.${vendor}.${scope}")
+    effective=$(read_mgmt_acl_name "$vendor" "$scope")
+    if [[ -z "$current" ]]; then
+        # No per-scope override — report whether the answer came from
+        # the global override or the shipped default.
+        local global_val shipped
+        case "$vendor" in
+            cisco)   global_val=$(conf_get mgmt_acl.names.cisco   "$CISCO_ACL_NAME_DEFAULT");   shipped="$CISCO_ACL_NAME_DEFAULT" ;;
+            juniper) global_val=$(conf_get mgmt_acl.names.juniper "$JUNIPER_ACL_NAME_DEFAULT"); shipped="$JUNIPER_ACL_NAME_DEFAULT" ;;
+        esac
+        if [[ "$global_val" == "$shipped" ]]; then
+            source="default"
+        else
+            source="global (tacctl config mgmt-acl ${vendor}-name)"
+        fi
+    else
+        source="override (tacctl.yaml: mgmt_acl.names.${vendor}.${scope})"
+    fi
+
+    if [[ -z "$new_name" ]]; then
+        echo ""
+        echo "  Scope '${scope}' ${vendor} mgmt-ACL name: ${effective}"
+        echo "  Source: ${source}"
+        echo ""
+        echo "    Rendered into ${vendor} device configs for this scope only."
+        echo "    Clear the per-scope override by setting it to the global value."
+        echo ""
+        echo "  Usage: tacctl scope mgmt-acl ${scope} ${sub} <name>"
+        echo ""
+        return
+    fi
+
+    conf_set "mgmt_acl.names.${vendor}.${scope}" "$new_name" || exit 1
+    info "Scope '${scope}' ${vendor} mgmt-ACL name set to ${new_name}."
+    echo ""
+    echo "  Re-run 'tacctl config ${vendor} --scope ${scope}' and push the updated"
+    echo "  ACL / filter block to each device in this scope. A stale ACL name on"
+    echo "  the device will still reference the old filter until replaced."
     echo ""
 }
 

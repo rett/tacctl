@@ -188,53 +188,53 @@ setup() {
     assert_output --partial "must start with a letter"
 }
 
-@test "aaa.order.<scope>: unset reads empty (render falls back to local-first)" {
+@test "aaa.order.<scope>: unset reads empty (render falls back to tacacs-first)" {
     # The wildcard schema validates writes; reads of an unset scope
-    # return empty and the render code applies the local-first default.
+    # return empty and the render code applies the tacacs-first default.
     run conf_get aaa.order.lab
     assert_output ""
 }
 
-@test "aaa.order.<scope>: round-trip tacacs-first per scope" {
-    conf_set aaa.order.lab tacacs-first
+@test "aaa.order.<scope>: round-trip local-first per scope" {
+    conf_set aaa.order.lab local-first
     run conf_get aaa.order.lab
-    assert_output "tacacs-first"
+    assert_output "local-first"
 }
 
 @test "aaa.order.<scope>: per-scope overrides are independent" {
     # Use two non-default values to prove isolation — writing the
-    # implicit default (local-first) would prune the override.
-    conf_set aaa.order.lab  tacacs-first
-    conf_set aaa.order.prod tacacs-first
+    # implicit default (tacacs-first) would prune the override.
+    conf_set aaa.order.lab  local-first
+    conf_set aaa.order.prod local-first
     run conf_get aaa.order.lab
-    assert_output "tacacs-first"
+    assert_output "local-first"
     run conf_get aaa.order.prod
-    assert_output "tacacs-first"
+    assert_output "local-first"
     # Revert lab to the implicit default; prod should keep its override.
-    conf_set aaa.order.lab local-first
+    conf_set aaa.order.lab tacacs-first
     run conf_get aaa.order.lab
     assert_output ""
     run conf_get aaa.order.prod
-    assert_output "tacacs-first"
+    assert_output "local-first"
 }
 
 @test "aaa.order.<scope>: rejects unknown enum value with message naming allowed values" {
     run conf_set aaa.order.lab garbage
     assert_failure
-    assert_output --partial "must be one of: local-first, tacacs-first"
+    assert_output --partial "must be one of: tacacs-first, local-first"
     [[ ! -f "$TACCTL_OVERRIDES_FILE" ]]
 }
 
 @test "aaa.order.<scope>: rejects non-scope path (bare aaa.order)" {
-    run conf_set aaa.order local-first
+    run conf_set aaa.order tacacs-first
     assert_failure
     assert_output --partial "unknown config key"
 }
 
-@test "aaa.order.<scope>: setting the implicit default (local-first) prunes override" {
-    conf_set aaa.order.lab tacacs-first
-    [[ -f "$TACCTL_OVERRIDES_FILE" ]]
+@test "aaa.order.<scope>: setting the implicit default (tacacs-first) prunes override" {
     conf_set aaa.order.lab local-first
+    [[ -f "$TACCTL_OVERRIDES_FILE" ]]
+    conf_set aaa.order.lab tacacs-first
     [[ ! -f "$TACCTL_OVERRIDES_FILE" ]]
 }
 
@@ -327,4 +327,67 @@ show; rm"
     run conf_set exec_timeout.lab forever
     assert_failure
     assert_output --partial "must be an integer"
+}
+
+# --- tacacs_group.<scope> ---------------------------------------------------
+
+@test "tacacs_group.<scope>: unset reads empty (render falls back to TACACS-GROUP)" {
+    run conf_get tacacs_group.lab
+    assert_output ""
+}
+
+@test "tacacs_group.<scope>: round-trip an explicit override" {
+    conf_set tacacs_group.lab TACACS_PROD
+    run conf_get tacacs_group.lab
+    assert_output "TACACS_PROD"
+}
+
+@test "tacacs_group.<scope>: setting the implicit default prunes override" {
+    conf_set tacacs_group.lab TACACS_PROD
+    [[ -f "$TACCTL_OVERRIDES_FILE" ]]
+    conf_set tacacs_group.lab TACACS-GROUP
+    [[ ! -f "$TACCTL_OVERRIDES_FILE" ]]
+}
+
+@test "tacacs_group.<scope>: rejects invalid characters" {
+    run conf_set tacacs_group.lab "bad name with spaces"
+    assert_failure
+    assert_output --partial "must start with a letter"
+}
+
+@test "tacacs_group.<scope>: rejects empty / too-long" {
+    run conf_set tacacs_group.lab ""
+    assert_failure
+    run conf_set tacacs_group.lab "$(printf 'A%.0s' {1..64})"
+    assert_failure
+    assert_output --partial "1..63 chars"
+}
+
+# --- mgmt_acl.names.<vendor>.<scope> ----------------------------------------
+
+@test "mgmt_acl.names.cisco.<scope>: unset reads empty; global/default win" {
+    run conf_get mgmt_acl.names.cisco.lab
+    assert_output ""
+}
+
+@test "mgmt_acl.names.<vendor>.<scope>: round-trip override per vendor" {
+    conf_set mgmt_acl.names.cisco.lab   LAB-VTY
+    conf_set mgmt_acl.names.juniper.lab LAB-MGMT
+    run conf_get mgmt_acl.names.cisco.lab
+    assert_output "LAB-VTY"
+    run conf_get mgmt_acl.names.juniper.lab
+    assert_output "LAB-MGMT"
+}
+
+@test "mgmt_acl.names.<vendor>.<scope>: setting the shipped default prunes override" {
+    conf_set mgmt_acl.names.cisco.lab CUSTOM-ACL
+    [[ -f "$TACCTL_OVERRIDES_FILE" ]]
+    conf_set mgmt_acl.names.cisco.lab VTY-ACL
+    [[ ! -f "$TACCTL_OVERRIDES_FILE" ]]
+}
+
+@test "mgmt_acl.names.<vendor>.<scope>: rejects bad ACL name" {
+    run conf_set mgmt_acl.names.cisco.lab "1bad-start"
+    assert_failure
+    assert_output --partial "must start with a letter"
 }
