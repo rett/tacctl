@@ -48,10 +48,11 @@ setup() {
 
     run read_scope_prefixes "lab"
     assert_success
-    # Sorted by (version, broadcast_asc, network_asc) → 172.16.0.0/12 first
-    # (smaller broadcast than 192.168.0.0/16).
-    local expected="172.16.0.0/12
-192.168.0.0/16"
+    # Sorted specificity-first (length DESC, then address ASC), so
+    # /16 comes before /12. Matches tacquito's most-specific-wins
+    # routing and what `scope routing` / `scope list` display.
+    local expected="192.168.0.0/16
+172.16.0.0/12"
     [[ "$output" == "$expected" ]]
 }
 

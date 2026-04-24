@@ -548,7 +548,7 @@ or
 Show or set the name of the Junos firewall filter emitted by
 .BR "config juniper" .
 Default
-.BR MGMT-SSH-ACL .
+.BR MGMT-ACL .
 Same character rules as
 .BR cisco-name .
 Both overrides live under
@@ -676,15 +676,23 @@ as needed, and place users into them explicitly.
 .SS Top-level \fB(tacctl scope)\fR
 .TP
 .B scope list
+One row per scope (deduplicated), with each scope's prefixes joined
+as a comma list. Handy for a high-level inventory — names, prefix
+counts, user counts, and default marker. For the first-match routing
+view (one row per scope-prefix pair, numbered by slice position,
+mirroring how tacquito routes a connecting client) use
+.BR "scope routing" .
+For full per-scope detail (secret, per-scope knobs, user list) use
+.BR "scope show " \fIname\fR .
+.TP
+.B scope routing
 Print every
 .B secrets[]
 entry in tacquito's first-match order (one row per scope-prefix pair,
 numbered by slice position). Multi-prefix scopes repeat their name on
 each prefix row so the display literally mirrors routing priority —
 reading top to bottom shows the order tacquito tries providers for a
-connecting client. Use
-.BR "scope show " \fIname\fR
-for the aggregated per-scope view (users, secret, default marker).
+connecting client.
 .TP
 .BI "scope show " name
 Full detail for one scope: prefixes, users that reference it, raw
@@ -816,9 +824,52 @@ Junos emits
 Range 0..60 (Junos's max). A value of
 .B 0
 disables idle expiry on both vendors. Default 60.
+.SS Per-scope mgmt-ACL name \fB(tacctl scope mgmt-acl)\fR
+.TP
+.BI "scope mgmt-acl " scope " <cisco-name|juniper-name> [" name ]
+Show or set the mgmt-ACL / firewall-filter name this scope's device
+renders use. Subcommand shape mirrors the global
+.B "tacctl config mgmt-acl cisco-name|juniper-name"
+so operators who know one form immediately know the other. Cisco puts
+the value in
+.B "ip access-list standard <NAME>"
+and the matching
+.B "access-class <NAME> in"
+on
+.BR "line vty 0 15" ;
+Junos puts it in
+.B "set firewall family inet filter <NAME>"
+and the commented lo0 apply. Fallback resolution is:
+per-scope override \(->
+.B "config mgmt-acl cisco-name / juniper-name"
+global \(->
+shipped default
+.RB ( VTY-ACL
+for Cisco,
+.B MGMT-ACL
+for Junos). The per-scope knob lets one environment deviate without
+changing the house-wide default. Must satisfy ACL-name rules
+(letter-start + [A-Za-z0-9_-], 1..63 chars).
+.SS Per-scope Cisco aaa-group-server label \fB(tacctl scope tacacs-group)\fR
+.TP
+.BI "scope tacacs-group " scope " [" name ]
+Show or set the Cisco
+.B aaa group server tacacs+ <NAME>
+label for this scope. Rendered into every AAA group definition and
+the method-list / accounting lines that reference the group. Per-scope
+so each environment can match site naming conventions (e.g.
+.BR TACACS_PROD ,
+.BR ISE-GROUP ).
+Must conform to Cisco ACL naming rules: letter-start, letters, digits,
+and
+.BR [_-] ;
+1..63 chars. Default (unset)
+.BR TACACS-GROUP .
+Junos has no equivalent — its AAA configuration does not group named
+servers this way.
 .SS Per-scope AAA method-list order \fB(tacctl scope aaa-order)\fR
 .TP
-.BI "scope aaa-order " scope " [" local-first | tacacs-first ]
+.BI "scope aaa-order " scope " [" tacacs-first | local-first ]
 Show or set the order of methods in the Cisco
 .B aaa authentication login
 /
@@ -830,14 +881,14 @@ emitted by
 and
 .B "config juniper --scope " \fIscope\fR .
 Default (unset)
-.B local-first
-lets a local break-glass account authenticate even while TACACS+ is
-reachable — any local username that collides with a TACACS+ user
-will win locally on devices in this scope, so scope local accounts
-to emergency / break-glass credentials only. Set
 .B tacacs-first
-per-scope when policy requires central AAA to see every login
-attempt for that scope (local then only kicks in on server outage).
+keeps TACACS+ authoritative (local only kicks in on server outage).
+Set
+.B local-first
+per-scope when a local break-glass account must authenticate even
+while TACACS+ is reachable — any local username that collides with a
+TACACS+ user will win locally on devices in this scope, so scope
+local accounts to emergency / break-glass credentials only.
 The change takes effect for the next
 .B "config cisco"
 /
@@ -860,6 +911,8 @@ and every nested dispatcher such as
 .BR "scope secret" ,
 .BR "scope aaa-order" ,
 .BR "scope exec-timeout" ,
+.BR "scope tacacs-group" ,
+.BR "scope mgmt-acl" ,
 .BR "user scope" ,
 or
 .BR "group privilege" )

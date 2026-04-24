@@ -89,14 +89,37 @@ setup() {
 
 # --- scopes list / show / lookup --------------------------------------------
 
-@test "scopes list: shows all scopes with prefix rows" {
+@test "scope list: one block per scope; prefixes rendered line-by-line" {
     "$TACCTL_BIN_SCRIPT" scope add prod \
-        --prefixes 10.0.0.0/8 --secret "prod-secret-1234567890abcdef"
+        --prefixes 10.0.0.0/8,10.10.0.0/16 \
+        --secret "prod-secret-1234567890abcdef"
     run "$TACCTL_BIN_SCRIPT" scope list
     assert_success
+    # Both scopes present, each prefix on its own line.
     assert_output --partial "lab"
     assert_output --partial "prod"
+    assert_output --partial "10.10.0.0/16"
     assert_output --partial "10.0.0.0/8"
+    # Each scope name appears exactly once (no per-prefix repeat).
+    local prod_rows
+    prod_rows=$(printf '%s\n' "$output" | sed -E 's/\x1b\[[0-9;]*m//g' | grep -cE '^  prod ')
+    [[ "$prod_rows" == "1" ]]
+}
+
+@test "scope routing: one row per (scope, prefix) in first-match order" {
+    "$TACCTL_BIN_SCRIPT" scope add prod \
+        --prefixes 10.0.0.0/8,10.10.0.0/16 \
+        --secret "prod-secret-1234567890abcdef"
+    run "$TACCTL_BIN_SCRIPT" scope routing
+    assert_success
+    assert_output --partial "first-match order"
+    # Each prefix gets its own numbered row.
+    assert_output --partial "10.0.0.0/8"
+    assert_output --partial "10.10.0.0/16"
+    # prod appears twice (once per prefix) in the routing view.
+    local prod_rows
+    prod_rows=$(printf '%s\n' "$output" | sed -E 's/\x1b\[[0-9;]*m//g' | grep -cE '^ +[0-9]+  prod ')
+    [[ "$prod_rows" == "2" ]]
 }
 
 @test "scopes show: prints a scope's prefixes, secret, and user count" {
@@ -116,16 +139,16 @@ setup() {
     # Defaults should display when no per-scope overrides exist.
     run _show lab
     assert_success
-    assert_output --partial "AAA order:     local-first"
+    assert_output --partial "AAA order:     tacacs-first"
     assert_output --partial "Exec timeout:  60 min"
     refute_output --partial "never expire"
 
     # After overrides, the new values appear.
-    "$TACCTL_BIN_SCRIPT" scope aaa-order    lab tacacs-first > /dev/null
+    "$TACCTL_BIN_SCRIPT" scope aaa-order    lab local-first > /dev/null
     "$TACCTL_BIN_SCRIPT" scope exec-timeout lab 15 > /dev/null
     run _show lab
     assert_success
-    assert_output --partial "AAA order:     tacacs-first"
+    assert_output --partial "AAA order:     local-first"
     assert_output --partial "Exec timeout:  15 min"
 
     # Exec timeout 0 renders with a "never expire" annotation.
@@ -214,10 +237,10 @@ setup() {
 
 # --- scope aaa-order (per-scope) --------------------------------------------
 
-@test "scope aaa-order: default is local-first with 'default' source" {
+@test "scope aaa-order: default is tacacs-first with 'default' source" {
     run "$TACCTL_BIN_SCRIPT" scope aaa-order lab
     assert_success
-    assert_output --partial "order: local-first"
+    assert_output --partial "order: tacacs-first"
     assert_output --partial "Source: default"
 }
 
@@ -228,14 +251,14 @@ setup() {
 }
 
 @test "scope aaa-order: set + read back per-scope override" {
-    run "$TACCTL_BIN_SCRIPT" scope aaa-order lab tacacs-first
+    run "$TACCTL_BIN_SCRIPT" scope aaa-order lab local-first
     assert_success
-    assert_output --partial "order set to tacacs-first"
-    [[ "$(conf_get aaa.order.lab)" == "tacacs-first" ]]
+    assert_output --partial "order set to local-first"
+    [[ "$(conf_get aaa.order.lab)" == "local-first" ]]
 
     run "$TACCTL_BIN_SCRIPT" scope aaa-order lab
     assert_success
-    assert_output --partial "order: tacacs-first"
+    assert_output --partial "order: local-first"
     assert_output --partial "Source: override"
 }
 
@@ -243,22 +266,21 @@ setup() {
     "$TACCTL_BIN_SCRIPT" scope add prod \
         --prefixes 10.0.0.0/8 --secret "prod-secret-1234567890abcdef" > /dev/null
 
-    "$TACCTL_BIN_SCRIPT" scope aaa-order lab  tacacs-first > /dev/null
-    # prod not explicitly set — should still report default local-first.
+    "$TACCTL_BIN_SCRIPT" scope aaa-order lab  local-first > /dev/null
+    # prod not explicitly set — should still report default tacacs-first.
 
-    [[ "$(conf_get aaa.order.lab)"  == "tacacs-first" ]]
+    [[ "$(conf_get aaa.order.lab)"  == "local-first" ]]
     [[ "$(conf_get aaa.order.prod)" == "" ]]
 
     run "$TACCTL_BIN_SCRIPT" scope aaa-order prod
     assert_success
-    assert_output --partial "order: local-first"
+    assert_output --partial "order: tacacs-first"
     assert_output --partial "Source: default"
 }
 
 @test "scope aaa-order: local-first set on a scope warns about collisions" {
-    # local-first is the implicit default, but setting it explicitly
-    # should still surface the collision caveat.
-    "$TACCTL_BIN_SCRIPT" scope aaa-order lab tacacs-first > /dev/null
+    # Setting local-first (the non-default posture) should surface the
+    # collision caveat so operators understand the risk.
     run "$TACCTL_BIN_SCRIPT" scope aaa-order lab local-first
     assert_success
     assert_output --partial "collide with TACACS+"
@@ -267,7 +289,7 @@ setup() {
 @test "scope aaa-order: rejects invalid enum value" {
     run "$TACCTL_BIN_SCRIPT" scope aaa-order lab sideways
     assert_failure
-    assert_output --partial "must be one of: local-first, tacacs-first"
+    assert_output --partial "must be one of: tacacs-first, local-first"
 }
 
 # --- scope exec-timeout (per-scope) -----------------------------------------
@@ -312,4 +334,86 @@ setup() {
     run "$TACCTL_BIN_SCRIPT" scope exec-timeout lab forever
     assert_failure
     assert_output --partial "must be an integer"
+}
+
+# --- scope tacacs-group (per-scope) -----------------------------------------
+
+@test "scope tacacs-group: default is TACACS-GROUP with 'default' source" {
+    run "$TACCTL_BIN_SCRIPT" scope tacacs-group lab
+    assert_success
+    assert_output --partial "aaa-group-server name: TACACS-GROUP"
+    assert_output --partial "Source: default"
+}
+
+@test "scope tacacs-group: rejects unknown scope" {
+    run "$TACCTL_BIN_SCRIPT" scope tacacs-group nosuchscope
+    assert_failure
+    assert_output --partial "does not exist"
+}
+
+@test "scope tacacs-group: set + read back per-scope override" {
+    run "$TACCTL_BIN_SCRIPT" scope tacacs-group lab TACACS_PROD
+    assert_success
+    assert_output --partial "aaa-group-server label set to TACACS_PROD"
+    [[ "$(conf_get tacacs_group.lab)" == "TACACS_PROD" ]]
+
+    run "$TACCTL_BIN_SCRIPT" scope tacacs-group lab
+    assert_success
+    assert_output --partial "name: TACACS_PROD"
+    assert_output --partial "Source: override"
+}
+
+@test "scope tacacs-group: rejects invalid names" {
+    run "$TACCTL_BIN_SCRIPT" scope tacacs-group lab "has spaces"
+    assert_failure
+    run "$TACCTL_BIN_SCRIPT" scope tacacs-group lab "9-digit-start"
+    assert_failure
+    assert_output --partial "must start with a letter"
+}
+
+# --- scope mgmt-acl (per-scope) ---------------------------------------------
+
+@test "scope mgmt-acl: default shows shipped default with 'default' source" {
+    run "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab cisco-name
+    assert_success
+    assert_output --partial "cisco mgmt-ACL name: VTY-ACL"
+    assert_output --partial "Source: default"
+
+    run "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab juniper-name
+    assert_success
+    assert_output --partial "juniper mgmt-ACL name: MGMT-ACL"
+    assert_output --partial "Source: default"
+}
+
+@test "scope mgmt-acl: respects the global override when per-scope unset" {
+    "$TACCTL_BIN_SCRIPT" config mgmt-acl cisco-name   SITE-VTY   > /dev/null
+    "$TACCTL_BIN_SCRIPT" config mgmt-acl juniper-name SITE-MGMT  > /dev/null
+    run "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab cisco-name
+    assert_success
+    assert_output --partial "cisco mgmt-ACL name: SITE-VTY"
+    assert_output --partial "Source: global"
+}
+
+@test "scope mgmt-acl: per-scope override wins over global" {
+    "$TACCTL_BIN_SCRIPT" config mgmt-acl cisco-name SITE-VTY > /dev/null
+    "$TACCTL_BIN_SCRIPT" scope  mgmt-acl lab cisco-name LAB-VTY > /dev/null
+    run "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab cisco-name
+    assert_success
+    assert_output --partial "cisco mgmt-ACL name: LAB-VTY"
+    assert_output --partial "Source: override"
+    [[ "$(conf_get mgmt_acl.names.cisco.lab)" == "LAB-VTY" ]]
+}
+
+@test "scope mgmt-acl: rejects unknown scope / subcommand / name" {
+    run "$TACCTL_BIN_SCRIPT" scope mgmt-acl nosuchscope cisco-name
+    assert_failure
+    assert_output --partial "does not exist"
+
+    run "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab ios-name
+    assert_failure
+    assert_output --partial "cisco-name | juniper-name"
+
+    run "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab cisco-name "1bad"
+    assert_failure
+    assert_output --partial "must start with a letter"
 }
