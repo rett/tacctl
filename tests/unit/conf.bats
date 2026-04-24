@@ -365,29 +365,42 @@ show; rm"
 
 # --- mgmt_acl.names.<vendor>.<scope> ----------------------------------------
 
-@test "mgmt_acl.names.cisco.<scope>: unset reads empty; global/default win" {
-    run conf_get mgmt_acl.names.cisco.lab
+@test "scope_mgmt_acl.names.cisco.<scope>: unset reads empty; global/default win" {
+    run conf_get scope_mgmt_acl.names.cisco.lab
     assert_output ""
 }
 
-@test "mgmt_acl.names.<vendor>.<scope>: round-trip override per vendor" {
-    conf_set mgmt_acl.names.cisco.lab   LAB-VTY
-    conf_set mgmt_acl.names.juniper.lab LAB-MGMT
-    run conf_get mgmt_acl.names.cisco.lab
+@test "scope_mgmt_acl.names.<vendor>.<scope>: round-trip override per vendor" {
+    conf_set scope_mgmt_acl.names.cisco.lab   LAB-VTY
+    conf_set scope_mgmt_acl.names.juniper.lab LAB-MGMT
+    run conf_get scope_mgmt_acl.names.cisco.lab
     assert_output "LAB-VTY"
-    run conf_get mgmt_acl.names.juniper.lab
+    run conf_get scope_mgmt_acl.names.juniper.lab
     assert_output "LAB-MGMT"
 }
 
-@test "mgmt_acl.names.<vendor>.<scope>: setting the shipped default prunes override" {
-    conf_set mgmt_acl.names.cisco.lab CUSTOM-ACL
+@test "scope_mgmt_acl.names.<vendor>.<scope>: setting the shipped default prunes override" {
+    conf_set scope_mgmt_acl.names.cisco.lab CUSTOM-ACL
     [[ -f "$TACCTL_OVERRIDES_FILE" ]]
-    conf_set mgmt_acl.names.cisco.lab VTY-ACL
+    conf_set scope_mgmt_acl.names.cisco.lab VTY-ACL
     [[ ! -f "$TACCTL_OVERRIDES_FILE" ]]
 }
 
-@test "mgmt_acl.names.<vendor>.<scope>: rejects bad ACL name" {
-    run conf_set mgmt_acl.names.cisco.lab "1bad-start"
+@test "scope_mgmt_acl.names.<vendor>.<scope>: rejects bad ACL name" {
+    run conf_set scope_mgmt_acl.names.cisco.lab "1bad-start"
     assert_failure
     assert_output --partial "must start with a letter"
+}
+
+@test "scope_mgmt_acl + global mgmt_acl: per-scope write does NOT wipe the global list" {
+    # Regression test for the bug where writing mgmt_acl.permits.<scope>
+    # silently reshaped the global mgmt_acl.permits list into a dict
+    # and lost the operator's globally-configured CIDRs.
+    printf '%s\n' 10.0.0.0/8 | conf_set_list mgmt_acl.permits
+    conf_set_list scope_mgmt_acl.permits.lab <<< "10.99.0.0/16"
+
+    run conf_get_list mgmt_acl.permits
+    assert_line "10.0.0.0/8"
+    run conf_get_list scope_mgmt_acl.permits.lab
+    assert_line "10.99.0.0/16"
 }

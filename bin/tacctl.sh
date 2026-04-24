@@ -302,15 +302,22 @@ WILDCARDS = [
                        # acl_name type enforces letter-start +
                        # [A-Za-z0-9_-] which is what IOS accepts.
                        'default': 'TACACS-GROUP'}),
-    # Per-scope ACL/filter-name overrides. Fallback chain in the
-    # render code is: per-scope override -> global mgmt_acl.names.*
-    # -> shipped default. The `default` on the wildcard matches the
-    # shipped default so explicit per-scope writes of VTY-ACL /
-    # MGMT-ACL prune the per-scope override.
-    ('mgmt_acl.names.cisco.',
+    # Per-scope mgmt-ACL overrides. These live under a separate
+    # `scope_mgmt_acl.*` top-level namespace rather than extending
+    # `mgmt_acl.*`, because the global `mgmt_acl.permits` is a list
+    # and `mgmt_acl.names.{cisco,juniper}` are scalars — nesting
+    # `<scope>` under either would require set_nested to silently
+    # reshape list->dict / scalar->dict and wipe the global value.
+    # The render code walks: scope_mgmt_acl.permits.<scope> ->
+    # mgmt_acl.permits (global) -> shipped default, same for names.
+    ('scope_mgmt_acl.names.cisco.',
                       {'type': 'acl_name', 'default': 'VTY-ACL'}),
-    ('mgmt_acl.names.juniper.',
+    ('scope_mgmt_acl.names.juniper.',
                       {'type': 'acl_name', 'default': 'MGMT-ACL'}),
+    # Default [] so an explicit empty list prunes the override and
+    # renders fall through to the global `mgmt_acl.permits`.
+    ('scope_mgmt_acl.permits.',
+                      {'type': 'cidr_list', 'default': []}),
 ]
 
 import re
@@ -1435,12 +1442,22 @@ print(f'{n.network_address} {n.hostmask}')
 }
 
 # --- Read the mgmt-ACL permit list ---
-# Returns the merged mgmt_acl.permits list: the shipped default from
-# conf_emit_defaults() (an empty list) plus any override in tacctl.yaml.
+# Optional second argument is the scope name. When supplied, the
+# resolution chain is: per-scope override (mgmt_acl.permits.<scope>)
+# if non-empty -> global (mgmt_acl.permits) -> shipped default ([]).
+# Callers that don't care about per-scope overrides (the global
+# setter/viewer under `tacctl config mgmt-acl`) omit the scope arg.
 # One CIDR per stdout line; input is expected to already be canonical
 # (writers canonicalize before storing). Empty list = no output.
 read_mgmt_acl_cidrs() {
-    conf_get_list mgmt_acl.permits | python3 -c "
+    local scope="${1:-}" list=""
+    if [[ -n "$scope" ]]; then
+        list=$(conf_get_list "scope_mgmt_acl.permits.${scope}")
+    fi
+    if [[ -z "$list" ]]; then
+        list=$(conf_get_list mgmt_acl.permits)
+    fi
+    printf '%s\n' "$list" | python3 -c "
 import ipaddress, sys
 for line in sys.stdin:
     s = line.strip()
@@ -1454,12 +1471,15 @@ for line in sys.stdin:
 }
 
 # --- Write the mgmt-ACL permit list ---
-# Replaces mgmt_acl.permits with the given newline-separated CIDR list
-# (canonicalized, deduped, specificity-sorted). Empty input unsets the
-# key (revert to default, which is an empty list). Writers are expected
-# to pass validated CIDRs; malformed entries are dropped silently.
+# Replaces mgmt_acl.permits (or per-scope mgmt_acl.permits.<scope>
+# when the second arg is set) with the given newline-separated CIDR
+# list (canonicalized, deduped, specificity-sorted). Empty input
+# unsets the key (revert to default []). Writers are expected to pass
+# validated CIDRs; malformed entries are dropped silently.
 write_mgmt_acl_cidrs() {
-    local list="$1"
+    local list="$1" scope="${2:-}"
+    local path="mgmt_acl.permits"
+    [[ -n "$scope" ]] && path="scope_mgmt_acl.permits.${scope}"
     printf '%s\n' "$list" | python3 -c "
 import ipaddress, sys
 def key_fn(c):
@@ -1481,7 +1501,7 @@ for line in sys.stdin:
         continue
 for c in sorted(set(cidrs), key=key_fn):
     print(c)
-" | conf_set_list mgmt_acl.permits
+" | conf_set_list "$path"
 }
 
 # --- Read an mgmt-ACL name override (cisco|juniper) with default fallback ---
@@ -1504,7 +1524,7 @@ read_mgmt_acl_name() {
         *)       echo ""; return ;;
     esac
     if [[ -n "$scope" ]]; then
-        conf_get "mgmt_acl.names.${vendor}.${scope}" "$global"
+        conf_get "scope_mgmt_acl.names.${vendor}.${scope}" "$global"
     else
         echo "$global"
     fi
@@ -3558,7 +3578,7 @@ aaa authorization commands 15 default ${AUTHZ_CMD_METHODS}"
         if [[ -n "$wildcard" ]]; then
             mgmt_entries+="  permit ${wildcard}"$'\n'
         fi
-    done < <(read_mgmt_acl_cidrs)
+    done < <(read_mgmt_acl_cidrs "$scope")
     if [[ -n "$mgmt_entries" ]]; then
         VTY_ACL_BLOCK="ip access-list standard ${cisco_acl_name}
   remark Managed by tacctl — edit with 'tacctl config mgmt-acl'
@@ -3796,7 +3816,7 @@ set system accounting destination tacplus"
         [[ "$entry" == *:* ]] && continue
         mgmt_has_any="true"
         mgmt_terms+="set firewall family inet filter ${juniper_acl_name} term permit-mgmt from source-address ${entry}"$'\n'
-    done < <(read_mgmt_acl_cidrs)
+    done < <(read_mgmt_acl_cidrs "$scope")
     if [[ "$mgmt_has_any" == "true" ]]; then
         MGMT_ACL_BLOCK="# Restrict SSH / NETCONF to the configured mgmt subnets.
 # These 'set firewall' lines define the filter in the candidate config.
@@ -4450,7 +4470,8 @@ cmd_scope_usage() {
     echo "  tacctl scope aaa-order <scope> [tacacs-first|local-first] AAA method-list order in this scope's rendered device configs (default tacacs-first)"
     echo "  tacctl scope exec-timeout <scope> [minutes]              Per-scope idle-session timeout in rendered device configs (0..60 min; default 60; 0 = never expire)"
     echo "  tacctl scope tacacs-group <scope> [name]                 Per-scope Cisco aaa-group-server label (default TACACS-GROUP)"
-    echo "  tacctl scope mgmt-acl <scope> cisco-name|juniper-name [name]  Per-scope mgmt-ACL / filter name (defaults VTY-ACL / MGMT-ACL)"
+    echo "  tacctl scope mgmt-acl <scope> list|add|remove|clear      Per-scope permit list (fallback: global mgmt_acl.permits)"
+    echo "  tacctl scope mgmt-acl <scope> cisco-name|juniper-name [name]  Per-scope ACL / filter name (defaults VTY-ACL / MGMT-ACL)"
     echo ""
     echo "Current scopes: ${count}"
     echo "Default scope:  ${default_val:-<unset>}"
@@ -5390,22 +5411,25 @@ cmd_scope_tacacs_group() {
     echo ""
 }
 
-# --- Per-scope mgmt-ACL name: tacctl scope mgmt-acl <scope> cisco-name|juniper-name [name] ---
-# Per-scope override for the mgmt-ACL name that
-# `tacctl config cisco|juniper --scope <scope>` emits:
-#   Cisco:   `ip access-list standard <NAME>` + `access-class <NAME> in`
-#   Junos:   `set firewall family inet filter <NAME>` + lo0 apply
-# Fallback chain: per-scope override -> global (mgmt_acl.names.*) ->
-# shipped default (VTY-ACL / MGMT-ACL). Subcommand shape mirrors the
-# global `tacctl config mgmt-acl cisco-name|juniper-name` so operators
-# who know one form immediately know the other.
+# --- Per-scope mgmt-ACL: tacctl scope mgmt-acl <scope> <sub> [args] ---
+# Subcommand shape mirrors the global `tacctl config mgmt-acl` so
+# operators who know one form immediately know the other:
+#   list | add <cidrs> | remove <cidrs> | clear   → permit CIDR list
+#   cisco-name   [label]                          → Cisco VTY-ACL name
+#   juniper-name [label]                          → Junos filter name
+#
+# Permit list fallback chain at render time is per-scope -> global
+# (mgmt_acl.permits) -> empty. An explicit empty per-scope list
+# prunes the override so the scope falls back through the chain.
+# Name fallback chain is per-scope -> global (mgmt_acl.names.*) ->
+# shipped default (VTY-ACL / MGMT-ACL).
 cmd_scope_mgmt_acl() {
     local scope="${1:-}"
     local sub="${2:-}"
-    local new_name="${3:-}"
+    local arg="${3:-}"
 
     if [[ -z "$scope" ]]; then
-        error "Usage: tacctl scope mgmt-acl <scope> <cisco-name|juniper-name> [name]"
+        error "Usage: tacctl scope mgmt-acl <scope> <list|add|remove|clear|cisco-name|juniper-name> [args]"
         exit 1
     fi
     if ! scope_exists "$scope"; then
@@ -5413,67 +5437,183 @@ cmd_scope_mgmt_acl() {
         exit 1
     fi
 
-    local vendor
     case "$sub" in
-        cisco-name)   vendor="cisco" ;;
-        juniper-name) vendor="juniper" ;;
         ""|-h|--help|help)
+            local n_scope n_global
+            n_scope=$(read_mgmt_acl_cidrs "$scope" | awk 'NF' | wc -l)
+            n_global=$(read_mgmt_acl_cidrs          | awk 'NF' | wc -l)
+            echo ""
+            echo -e "${BOLD}tacctl scope mgmt-acl ${scope}${NC} — per-scope Cisco VTY-ACL + Juniper lo0-filter"
             echo ""
             echo "Usage:"
-            echo "  tacctl scope mgmt-acl ${scope} cisco-name   [label]   Per-scope Cisco VTY-ACL name"
-            echo "  tacctl scope mgmt-acl ${scope} juniper-name [label]   Per-scope Junos filter name"
+            echo "  tacctl scope mgmt-acl ${scope} list                          Show effective permits for this scope"
+            echo "  tacctl scope mgmt-acl ${scope} add    <cidr>[,<cidr>...]     Add one or more CIDRs to the per-scope list"
+            echo "  tacctl scope mgmt-acl ${scope} remove <cidr>[,<cidr>...]     Remove one or more CIDRs from the per-scope list"
+            echo "  tacctl scope mgmt-acl ${scope} clear                         Wipe the per-scope list (confirms; render falls back to global)"
+            echo "  tacctl scope mgmt-acl ${scope} cisco-name   [label]          Per-scope Cisco VTY-ACL name"
+            echo "  tacctl scope mgmt-acl ${scope} juniper-name [label]          Per-scope Junos filter name"
             echo ""
-            echo "  Fallback: per-scope override -> global (tacctl config mgmt-acl)"
-            echo "  -> shipped default (VTY-ACL / MGMT-ACL)."
+            echo "Current entries: ${n_scope} (per-scope) / ${n_global} (global fallback)"
             echo ""
             return
             ;;
+        list)
+            local scope_entries global_entries
+            scope_entries=$(conf_get_list "scope_mgmt_acl.permits.${scope}")
+            global_entries=$(conf_get_list mgmt_acl.permits)
+            echo ""
+            echo -e "${BOLD}Management ACL for scope '${scope}'${NC}"
+            echo "--------------------------------------------"
+            if [[ -n "$scope_entries" ]]; then
+                echo "  Source: per-scope override (scope_mgmt_acl.permits.${scope})"
+                echo "$scope_entries" | while IFS= read -r e; do
+                    [[ -z "$e" ]] && continue
+                    echo "  - ${e}"
+                done
+            elif [[ -n "$global_entries" ]]; then
+                echo "  Source: global (mgmt_acl.permits) — per-scope list is empty"
+                echo "$global_entries" | while IFS= read -r e; do
+                    [[ -z "$e" ]] && continue
+                    echo "  - ${e}"
+                done
+            else
+                echo "  (empty — both per-scope and global lists are unset)"
+                echo ""
+                echo "  Add to this scope only:  tacctl scope mgmt-acl ${scope} add <cidr>"
+                echo "  Add to the global list:  tacctl config mgmt-acl add <cidr>"
+            fi
+            echo ""
+            ;;
+        add)
+            if [[ -z "$arg" ]]; then
+                error "Usage: tacctl scope mgmt-acl ${scope} add <cidr>[,<cidr>...]"
+                exit 1
+            fi
+            local requested added="" skipped=""
+            requested=$(parse_cidr_list "$arg")
+            [[ -z "$requested" ]] && { error "No valid CIDRs provided."; exit 1; }
+            local current
+            current=$(conf_get_list "scope_mgmt_acl.permits.${scope}")
+            while IFS= read -r c; do
+                [[ -z "$c" ]] && continue
+                if printf '%s\n' "$current" | grep -qxF "$c"; then
+                    skipped+="${skipped:+ }${c}"
+                else
+                    added+="${added:+$'\n'}${c}"
+                    current=$(printf '%s\n%s\n' "$current" "$c")
+                fi
+            done <<< "$requested"
+            if [[ -z "$added" ]]; then
+                info "No new CIDRs to add to scope '${scope}' (already present: ${skipped})."
+                echo ""
+                return
+            fi
+            write_mgmt_acl_cidrs "$current" "$scope"
+            local n
+            n=$(printf '%s\n' "$added" | wc -l)
+            info "Added ${n} to scope '${scope}' mgmt-acl: $(printf '%s\n' "$added" | paste -sd' ')"
+            [[ -n "$skipped" ]] && info "(Already present, unchanged: ${skipped})"
+            info "Re-run 'tacctl config cisco --scope ${scope}' / 'tacctl config juniper --scope ${scope}' to see the new output."
+            echo ""
+            ;;
+        remove)
+            if [[ -z "$arg" ]]; then
+                error "Usage: tacctl scope mgmt-acl ${scope} remove <cidr>[,<cidr>...]"
+                exit 1
+            fi
+            local requested removed="" missing=""
+            requested=$(parse_cidr_list "$arg")
+            [[ -z "$requested" ]] && { error "No valid CIDRs provided."; exit 1; }
+            local current
+            current=$(conf_get_list "scope_mgmt_acl.permits.${scope}")
+            if [[ -z "$current" ]]; then
+                warn "Nothing to remove — scope '${scope}' has no per-scope permits (rendering from the global list)."
+                exit 0
+            fi
+            while IFS= read -r c; do
+                [[ -z "$c" ]] && continue
+                if printf '%s\n' "$current" | grep -qxF "$c"; then
+                    removed+="${removed:+$'\n'}${c}"
+                    current=$(printf '%s\n' "$current" | grep -vxF "$c" || true)
+                else
+                    missing+="${missing:+ }${c}"
+                fi
+            done <<< "$requested"
+            if [[ -z "$removed" ]]; then
+                warn "Nothing to remove (not present in per-scope list: ${missing})."
+                exit 0
+            fi
+            write_mgmt_acl_cidrs "$current" "$scope"
+            local n
+            n=$(printf '%s\n' "$removed" | wc -l)
+            info "Removed ${n} from scope '${scope}' mgmt-acl: $(printf '%s\n' "$removed" | paste -sd' ')"
+            [[ -n "$missing" ]] && info "(Not present, skipped: ${missing})"
+            echo ""
+            ;;
+        clear)
+            local current
+            current=$(conf_get_list "scope_mgmt_acl.permits.${scope}")
+            if [[ -z "$current" ]]; then
+                info "Per-scope list for '${scope}' is already empty (render falls back to global)."
+                echo ""
+                return
+            fi
+            read -rp "  Clear all per-scope mgmt-acl entries for '${scope}'? Render will fall back to global. [y/N]: " confirm
+            if [[ ! "$confirm" =~ ^[Yy] ]]; then
+                info "Aborted."
+                return
+            fi
+            conf_unset "scope_mgmt_acl.permits.${scope}"
+            info "Per-scope mgmt-acl cleared for '${scope}'."
+            echo ""
+            ;;
+        cisco-name|juniper-name)
+            local vendor="${sub%-name}"
+            local new_name="$arg"
+            local current source effective
+            current=$(conf_get "scope_mgmt_acl.names.${vendor}.${scope}")
+            effective=$(read_mgmt_acl_name "$vendor" "$scope")
+            if [[ -z "$current" ]]; then
+                local global_val shipped
+                case "$vendor" in
+                    cisco)   global_val=$(conf_get mgmt_acl.names.cisco   "$CISCO_ACL_NAME_DEFAULT");   shipped="$CISCO_ACL_NAME_DEFAULT" ;;
+                    juniper) global_val=$(conf_get mgmt_acl.names.juniper "$JUNIPER_ACL_NAME_DEFAULT"); shipped="$JUNIPER_ACL_NAME_DEFAULT" ;;
+                esac
+                if [[ "$global_val" == "$shipped" ]]; then
+                    source="default"
+                else
+                    source="global (tacctl config mgmt-acl ${vendor}-name)"
+                fi
+            else
+                source="override (tacctl.yaml: scope_mgmt_acl.names.${vendor}.${scope})"
+            fi
+
+            if [[ -z "$new_name" ]]; then
+                echo ""
+                echo "  Scope '${scope}' ${vendor} mgmt-acl name: ${effective}"
+                echo "  Source: ${source}"
+                echo ""
+                echo "    Rendered into ${vendor} device configs for this scope only."
+                echo "    Clear the per-scope override by setting it to the global value."
+                echo ""
+                echo "  Usage: tacctl scope mgmt-acl ${scope} ${sub} <name>"
+                echo ""
+                return
+            fi
+
+            conf_set "scope_mgmt_acl.names.${vendor}.${scope}" "$new_name" || exit 1
+            info "Scope '${scope}' ${vendor} mgmt-acl name set to ${new_name}."
+            echo ""
+            echo "  Re-run 'tacctl config ${vendor} --scope ${scope}' and push the updated"
+            echo "  ACL / filter block to each device in this scope. A stale ACL name on"
+            echo "  the device will still reference the old filter until replaced."
+            echo ""
+            ;;
         *)
-            error "Unknown subcommand '${sub}'. Use: cisco-name | juniper-name."
+            error "Unknown subcommand '${sub}'. Use: list | add | remove | clear | cisco-name | juniper-name."
             exit 1
             ;;
     esac
-
-    local current source effective
-    current=$(conf_get "mgmt_acl.names.${vendor}.${scope}")
-    effective=$(read_mgmt_acl_name "$vendor" "$scope")
-    if [[ -z "$current" ]]; then
-        # No per-scope override — report whether the answer came from
-        # the global override or the shipped default.
-        local global_val shipped
-        case "$vendor" in
-            cisco)   global_val=$(conf_get mgmt_acl.names.cisco   "$CISCO_ACL_NAME_DEFAULT");   shipped="$CISCO_ACL_NAME_DEFAULT" ;;
-            juniper) global_val=$(conf_get mgmt_acl.names.juniper "$JUNIPER_ACL_NAME_DEFAULT"); shipped="$JUNIPER_ACL_NAME_DEFAULT" ;;
-        esac
-        if [[ "$global_val" == "$shipped" ]]; then
-            source="default"
-        else
-            source="global (tacctl config mgmt-acl ${vendor}-name)"
-        fi
-    else
-        source="override (tacctl.yaml: mgmt_acl.names.${vendor}.${scope})"
-    fi
-
-    if [[ -z "$new_name" ]]; then
-        echo ""
-        echo "  Scope '${scope}' ${vendor} mgmt-ACL name: ${effective}"
-        echo "  Source: ${source}"
-        echo ""
-        echo "    Rendered into ${vendor} device configs for this scope only."
-        echo "    Clear the per-scope override by setting it to the global value."
-        echo ""
-        echo "  Usage: tacctl scope mgmt-acl ${scope} ${sub} <name>"
-        echo ""
-        return
-    fi
-
-    conf_set "mgmt_acl.names.${vendor}.${scope}" "$new_name" || exit 1
-    info "Scope '${scope}' ${vendor} mgmt-ACL name set to ${new_name}."
-    echo ""
-    echo "  Re-run 'tacctl config ${vendor} --scope ${scope}' and push the updated"
-    echo "  ACL / filter block to each device in this scope. A stale ACL name on"
-    echo "  the device will still reference the old filter until replaced."
-    echo ""
 }
 
 # --- USER SCOPES: tacctl user scope <user> list|add|remove|set|clear ---
