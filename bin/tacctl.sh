@@ -4483,11 +4483,25 @@ cmd_scope_show() {
     default_val=$(read_default_scope)
     local is_default="no"
     [[ "$name" == "$default_val" ]] && is_default="yes"
+    # Per-scope device-render knobs. Absence of an override falls back
+    # to the shipped defaults (local-first / 60 min), matching what
+    # `tacctl config cisco|juniper --scope <name>` emits.
+    local aaa_order_val exec_timeout_val exec_timeout_display
+    aaa_order_val=$(conf_get "aaa.order.${name}" local-first)
+    exec_timeout_val=$(conf_get "exec_timeout.${name}" 60)
+    if [[ "$exec_timeout_val" == "0" ]]; then
+        exec_timeout_display="0 min (never expire)"
+    else
+        exec_timeout_display="${exec_timeout_val} min"
+    fi
+
     echo ""
     echo -e "${BOLD}Scope:${NC} ${name}"
     echo "--------------------------------------------"
     echo -e "  ${BOLD}Default:${NC}       ${is_default}"
     echo -e "  ${BOLD}Secret:${NC}        ${secret_line}"
+    echo -e "  ${BOLD}AAA order:${NC}     ${aaa_order_val}"
+    echo -e "  ${BOLD}Exec timeout:${NC}  ${exec_timeout_display}"
     echo -e "  ${BOLD}Prefixes:${NC}"
     local pfx
     pfx=$(read_scope_prefixes "$name")

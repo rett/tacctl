@@ -108,6 +108,33 @@ setup() {
     assert_output --partial "prod-secret-1234567890abcdef"
 }
 
+@test "scope show: includes per-scope AAA order and exec-timeout" {
+    # Output carries ANSI bold around the labels; --partial can't span
+    # both the label and value cleanly, so strip color first.
+    _show() { "$TACCTL_BIN_SCRIPT" scope show "$1" | sed -E 's/\x1b\[[0-9;]*m//g'; }
+
+    # Defaults should display when no per-scope overrides exist.
+    run _show lab
+    assert_success
+    assert_output --partial "AAA order:     local-first"
+    assert_output --partial "Exec timeout:  60 min"
+    refute_output --partial "never expire"
+
+    # After overrides, the new values appear.
+    "$TACCTL_BIN_SCRIPT" scope aaa-order    lab tacacs-first > /dev/null
+    "$TACCTL_BIN_SCRIPT" scope exec-timeout lab 15 > /dev/null
+    run _show lab
+    assert_success
+    assert_output --partial "AAA order:     tacacs-first"
+    assert_output --partial "Exec timeout:  15 min"
+
+    # Exec timeout 0 renders with a "never expire" annotation.
+    "$TACCTL_BIN_SCRIPT" scope exec-timeout lab 0 > /dev/null
+    run _show lab
+    assert_success
+    assert_output --partial "Exec timeout:  0 min (never expire)"
+}
+
 @test "scopes lookup: returns owning scope for a covered IP" {
     "$TACCTL_BIN_SCRIPT" scope add prod \
         --prefixes 10.0.0.0/8 --secret "prod-secret-1234567890abcdef"
