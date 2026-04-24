@@ -798,6 +798,52 @@ chars, mixed character classes).
 Generate a strong key with
 .B openssl rand -base64 24
 and apply it.
+.SS Per-scope idle-session timeout \fB(tacctl scope exec-timeout)\fR
+.TP
+.BI "scope exec-timeout " scope " [" minutes ]
+Show or set the idle-session timeout (in minutes) that
+.B "config cisco --scope " \fIscope\fR
+and
+.B "config juniper --scope " \fIscope\fR
+render into device configs. Cisco emits
+.BR "exec-timeout \fIn\fR 0"
+on
+.B line con 0
+and
+.BR "line vty 0 15" ;
+Junos emits
+.BR "set system login idle-timeout \fIn\fR" .
+Range 0..60 (Junos's max). A value of
+.B 0
+disables idle expiry on both vendors. Default 60.
+.SS Per-scope AAA method-list order \fB(tacctl scope aaa-order)\fR
+.TP
+.BI "scope aaa-order " scope " [" local-first | tacacs-first ]
+Show or set the order of methods in the Cisco
+.B aaa authentication login
+/
+.B aaa authorization
+lines and Junos
+.B system authentication-order
+emitted by
+.B "config cisco --scope " \fIscope\fR
+and
+.B "config juniper --scope " \fIscope\fR .
+Default (unset)
+.B local-first
+lets a local break-glass account authenticate even while TACACS+ is
+reachable — any local username that collides with a TACACS+ user
+will win locally on devices in this scope, so scope local accounts
+to emergency / break-glass credentials only. Set
+.B tacacs-first
+per-scope when policy requires central AAA to see every login
+attempt for that scope (local then only kicks in on server outage).
+The change takes effect for the next
+.B "config cisco"
+/
+.B "config juniper"
+render of the named scope — existing device configs are unchanged
+until the new method-list stanzas are pushed.
 .SH CONVENTIONS
 The following patterns apply uniformly across subcommand families.
 .TP
@@ -812,6 +858,8 @@ Dispatcher commands
 and every nested dispatcher such as
 .BR "scope prefixes" ,
 .BR "scope secret" ,
+.BR "scope aaa-order" ,
+.BR "scope exec-timeout" ,
 .BR "user scope" ,
 or
 .BR "group privilege" )
