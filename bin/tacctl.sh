@@ -3748,10 +3748,41 @@ for m in re.finditer(r'^(\w+): &\1\n  name: \1\n  services:\n(.*?)  accounter:',
 " "$CONFIG")
 
     # Build dynamic sections
+    # Define each template-user's class as a LOCAL class (reusing the
+    # template-user name) instead of binding to a Junos predefined class.
+    # Junos refuses to set permissions on predefined names (renames
+    # `read-only` → `read-only-local` on commit), so granting
+    # `view-configuration` — needed for monitoring tools like SolarWinds
+    # to read the config tree — requires a non-predefined class.
+    #   RO: view, view-configuration         (operational state + config tree)
+    #   OP: operator-equivalent set + view-configuration
+    #   RW: all
     local TEMPLATE_USERS=""
     while IFS='|' read -r gname jclass junos_class; do
         [[ -z "$gname" ]] && continue
-        TEMPLATE_USERS+="set system login user ${jclass} class ${junos_class}"$'\n'
+        case "$junos_class" in
+            read-only)
+                TEMPLATE_USERS+="set system login class ${jclass} permissions view"$'\n'
+                TEMPLATE_USERS+="set system login class ${jclass} permissions view-configuration"$'\n'
+                TEMPLATE_USERS+="set system login user ${jclass} class ${jclass}"$'\n'
+                ;;
+            operator)
+                TEMPLATE_USERS+="set system login class ${jclass} permissions clear"$'\n'
+                TEMPLATE_USERS+="set system login class ${jclass} permissions network"$'\n'
+                TEMPLATE_USERS+="set system login class ${jclass} permissions reset"$'\n'
+                TEMPLATE_USERS+="set system login class ${jclass} permissions trace"$'\n'
+                TEMPLATE_USERS+="set system login class ${jclass} permissions view"$'\n'
+                TEMPLATE_USERS+="set system login class ${jclass} permissions view-configuration"$'\n'
+                TEMPLATE_USERS+="set system login user ${jclass} class ${jclass}"$'\n'
+                ;;
+            super-user)
+                TEMPLATE_USERS+="set system login class ${jclass} permissions all"$'\n'
+                TEMPLATE_USERS+="set system login user ${jclass} class ${jclass}"$'\n'
+                ;;
+            *)
+                TEMPLATE_USERS+="set system login user ${jclass} class ${junos_class}"$'\n'
+                ;;
+        esac
     done <<< "$group_juniper"
     TEMPLATE_USERS="${TEMPLATE_USERS%$'\n'}"
 
@@ -3847,9 +3878,16 @@ set firewall family inet filter ${juniper_acl_name} term default-accept then acc
     done <<< "$group_juniper"
 
     local GROUP_SUMMARY=""
+    local class_desc
     while IFS='|' read -r gname jclass junos_class; do
         [[ -z "$gname" ]] && continue
-        GROUP_SUMMARY+="  ${gname}: ${jclass} (${junos_class})"$'\n'
+        case "$junos_class" in
+            read-only)  class_desc="local: view + view-configuration" ;;
+            operator)   class_desc="local: clear/network/reset/trace/view + view-configuration" ;;
+            super-user) class_desc="local: all" ;;
+            *)          class_desc="$junos_class" ;;
+        esac
+        GROUP_SUMMARY+="  ${gname}: ${jclass} (${class_desc})"$'\n'
     done <<< "$group_juniper"
 
     # Build the per-class allow-commands / deny-commands block from
@@ -3940,7 +3978,9 @@ set firewall family inet filter ${juniper_acl_name} term default-accept then acc
     echo "  - Template users MUST exist before TACACS+ logins will work"
     echo "  - The 'password' fallback in authentication-order ensures local access"
     echo "  - If a login fails silently, the template user is likely missing"
-    echo "  - Adjust the Junos class (read-only/operator/super-user) as needed"
+    echo "  - Each template-user is bound to a LOCAL class of the same name;"
+    echo "    edit its 'permissions' to fit your policy (Junos refuses to set"
+    echo "    permissions on the predefined read-only/operator/super-user names)"
     echo "  - Uncomment and edit the source-address line to pin the client"
     echo "    source IP for prefix-ACL matching on tacquito"
     echo "  - Junos replaces the plaintext 'secret' with '\$9\$...' on commit,"
