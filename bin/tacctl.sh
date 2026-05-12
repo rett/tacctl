@@ -3789,14 +3789,17 @@ for m in re.finditer(r'^(\w+): &\1\n  name: \1\n  services:\n(.*?)  accounter:',
     # AAA method-list order is per-scope (aaa.order.<scope>). Junos has
     # a single authentication-order statement (no separate authz
     # method-list — permissions come from the user's login class).
-    # Default tacacs-first keeps Junos policy-centric; local-first
-    # swaps to `[ password tacplus ]` so local breakglass users log in
-    # while tacplus is up.
+    # Default tacacs-first emits `tacplus` alone — Junos falls back to
+    # local password automatically when the server is unreachable, which
+    # is exactly the desired breakglass behavior and avoids local-password
+    # acceptance when tacplus is up but rejects the credential.
+    # local-first keeps `[ password tacplus ]` so local users log in
+    # ahead of tacplus while it's up.
     local junos_authn_order
     if [[ "$(conf_get "aaa.order.${scope}" tacacs-first)" == "local-first" ]]; then
         junos_authn_order="[ password tacplus ]"
     else
-        junos_authn_order="[ tacplus password ]"
+        junos_authn_order="tacplus"
     fi
 
     # Per-scope idle-session timeout (exec_timeout.<scope>). Junos
@@ -3976,7 +3979,9 @@ set firewall family inet filter ${juniper_acl_name} term default-accept then acc
     echo ""
     echo -e "${YELLOW}Notes:${NC}"
     echo "  - Template users MUST exist before TACACS+ logins will work"
-    echo "  - The 'password' fallback in authentication-order ensures local access"
+    echo "  - With authentication-order 'tacplus', Junos auto-falls-back to"
+    echo "    local password ONLY when the tacplus server is unreachable —"
+    echo "    a tacplus reject does not fall through to local"
     echo "  - If a login fails silently, the template user is likely missing"
     echo "  - Each template-user is bound to a LOCAL class of the same name;"
     echo "    edit its 'permissions' to fit your policy (Junos refuses to set"
