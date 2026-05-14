@@ -8462,16 +8462,6 @@ cmd_hash_commands() {
     htpasswd -nBC 12 "" | cut -d: -f2
 
   =================================================================
-  Windows — PowerShell with BCrypt.Net (no Python needed)
-  =================================================================
-    Install-Module BCrypt.Net-Next -Scope CurrentUser -Force
-    $pw  = (Get-Credential -UserName '_' -Message 'Password').GetNetworkCredential().Password
-    $raw = [BCrypt.Net.BCrypt]::HashPassword($pw, 12)
-    $hex = -join ($raw.ToCharArray() | % { '{0:x2}' -f [byte][char]$_ })
-    "raw: $raw"
-    "hex: $hex"
-
-  =================================================================
   Handing the hash to your admin
   =================================================================
   'tacctl user passwd --hash' accepts either form; the server
