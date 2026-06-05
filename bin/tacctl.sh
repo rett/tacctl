@@ -986,6 +986,51 @@ PY
 )
 }
 
+# --- One-shot: migrate legacy Cisco exec service name `exec` -> `shell` ---
+# Pre-a1e39e6 installs named the Cisco exec service `name: exec`, but real
+# devices request `service=shell` for EXEC authorization (Cisco
+# `aaa authorization exec`, Peplink Balance, etc.). tacquito's session
+# authorizer only returns AVPs for a service whose name matches the requested
+# service, so legacy `name: exec` blocks never match `service=shell`:
+# authorization fails AFTER a successful authentication, which clients surface
+# as "invalid password". `tacctl group add` now emits `name: shell`, but
+# already-deployed configs are never rewritten by regenerate_tacquito_commands
+# (it only touches `commands:` blocks). This rewrites the `exec_*` service
+# anchors in place.
+# Idempotent: silent no-op once every exec anchor already says `name: shell`.
+conf_migrate_exec_service_name() {
+    [[ -r "$CONFIG" ]] || return 0
+    # Count eligible legacy lines first so we only back up / write when there's
+    # something to do. Only the service-name line directly under a Cisco
+    # `exec_<group>: &exec_<group>` anchor matches; the `^exec_` anchor and
+    # trailing `$` keep junos blocks (`junos_exec_*` / `name: junos-exec`) and
+    # group bodies untouched.
+    local n
+    n=$(python3 -c "
+import re, sys
+cfg = open(sys.argv[1]).read()
+print(len(re.findall(r'(?m)^exec_\w+: &exec_\w+\n  name: exec\$', cfg)))
+" "$CONFIG" 2>/dev/null) || return 0
+    [[ "${n:-0}" -gt 0 ]] || return 0
+
+    # Snapshot before mutating so the backup is the pre-migration file, then
+    # rewrite atomically (mirrors regenerate_tacquito_commands).
+    backup_config
+    python3 - "$CONFIG" <<'PY'
+import re, sys, tempfile, os
+cfg_path = sys.argv[1]
+cfg = open(cfg_path).read()
+new_cfg = re.sub(r'(?m)^(exec_\w+: &exec_\w+\n  name: )exec$', r'\1shell', cfg)
+tmp = tempfile.NamedTemporaryFile('w', dir=os.path.dirname(cfg_path) or '.', delete=False)
+tmp.write(new_cfg)
+tmp.close()
+os.chmod(tmp.name, 0o640)
+os.rename(tmp.name, cfg_path)
+PY
+    chown tacquito:tacquito "$CONFIG" 2>/dev/null || true
+    info "Migrated tacquito.yaml service name(s) exec → shell for ${n} group(s)"
+}
+
 # --- Regenerate tacquito.yaml's per-group `commands:` blocks from tacctl ---
 # tacctl.yaml (merged with defaults) is the single source of truth. This
 # function rewrites every group's commands: block in tacquito.yaml to match.
@@ -8905,6 +8950,9 @@ cmd_upgrade() {
     # overrides (idempotent: no-op once scraped), then regenerate so
     # tacquito.yaml matches the tacctl-authored state.
     conf_migrate_command_rules
+    # Legacy installs named the Cisco exec service `name: exec`; devices request
+    # `service=shell`, so authorization silently failed post-auth. Heal in place.
+    conf_migrate_exec_service_name
     regenerate_tacquito_commands
 
     # --- Record current version ---
