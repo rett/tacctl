@@ -48,7 +48,7 @@ setup() {
     refute_output --partial "Applied tacquito patch"
     # Sentinel that appears exactly once in the patched file (the phrase
     # "default service = permit" intentionally recurs across two comments).
-    run grep -c "clientNamedService := false" "$SESSION_GO"
+    run grep -c "clientNamedCmd := false" "$SESSION_GO"
     assert_output "1"
 }
 

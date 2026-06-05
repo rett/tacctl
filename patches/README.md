@@ -37,8 +37,14 @@ request matches nothing and is denied (`not authorized`), which the device
 surfaces to the operator as "invalid password". shrubbery `tac_plus` handles
 these via `default service = permit`.
 
-The patch mirrors that: when the client named **no** `service`/`cmd` and nothing
-matched, it authorizes the exec session using the user's `shell` service values
-(e.g. `priv-lvl`). Requests that *do* name a service we don't authorize remain
-strictly denied, and normal Cisco/Juniper requests (which always name a service)
-are unaffected.
+The patch mirrors that: for any session (exec) authorization that is **not** a
+command authorization and matched **no** configured service, it authorizes the
+session using the user's `shell` service values (e.g. `priv-lvl`). This covers
+both a bare request (no `service=`) and a request naming a service we don't
+explicitly configure (Peplink sends a non-`shell` service). The fallback is
+**bounded by the user's own group** — it can never grant more than the user's
+configured `shell` priv-lvl — so it is safe. Requests that match a configured
+service (normal Cisco `service=shell`, Juniper `service=junos-exec`) take the
+existing path unchanged, and command authorizations are handled by the command
+authorizer, never silently permitted here. The patch also logs the raw client
+args at debug level, which helps when onboarding a new third-party device.
