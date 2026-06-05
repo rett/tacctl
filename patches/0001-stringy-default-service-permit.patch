@@ -1,0 +1,46 @@
+diff --git a/cmds/server/config/authorizers/stringy/session.go b/cmds/server/config/authorizers/stringy/session.go
+index f1aba2a..bf0b4ed 100644
+--- a/cmds/server/config/authorizers/stringy/session.go
++++ b/cmds/server/config/authorizers/stringy/session.go
+@@ -86,6 +86,19 @@ func (sa SessionBasedAuthorizer) Handle(response tq.Response, request tq.Request
+
+ // evaluate is the main entry point for session based auth flows
+ func (sa SessionBasedAuthorizer) evaluate() ([]string, tq.AuthorStatus) {
++	// Detect whether the client named a service or command at all. Some
++	// third-party devices (e.g. Peplink Balance) send a "bare" exec
++	// authorization with no service= arg; shrubbery tac_plus answers those via
++	// `default service = permit`. tacquito is otherwise strict and would deny
++	// them. Capture this before we inject scope/rem-addr below so the injected
++	// args do not count as a client-named service.
++	clientNamedService := false
++	for _, avp := range sa.body.Args.Args() {
++		if a, _, _ := tq.Arg(avp).ASV(); a == "service" || a == "cmd" {
++			clientNamedService = true
++			break
++		}
++	}
+ 	// overload the body.Args fields to include injected arg concepts in them.  Doing so artifically injects avps into the
+ 	// requested client args and allows them to behave in evaluation the same as if they came from the client.  We do this for
+ 	// args that will never present in a client request, but for things we'd like to filter on.  A use cases is filtering for scope
+@@ -107,6 +120,21 @@ func (sa SessionBasedAuthorizer) evaluate() ([]string, tq.AuthorStatus) {
+ 		}
+ 		responseArgs.Append(matched...)
+ 	}
++
++	// default service = permit: a client that named no service/command and
++	// matched nothing still gets its exec session authorized using the shell
++	// (exec) service's values, rather than being denied. Clients that DID name
++	// a service we do not authorize remain strictly denied.
++	if !clientNamedService && len(responseArgs.Args()) == 0 {
++		for _, s := range sa.user.Services {
++			if s.Name == "shell" {
++				for _, v := range s.SetValues {
++					responseArgs.Append(v.String())
++				}
++			}
++		}
++	}
++
+ 	return responseArgs.Args(), authorStatus
+ }
+
