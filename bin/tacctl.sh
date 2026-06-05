@@ -64,7 +64,12 @@ TACCTL_OVERRIDES_FILE="${TACCTL_ETC}/tacctl.yaml"
 # --- System lifecycle constants ---
 GO_VERSION="1.26.2"
 TACQUITO_REPO="https://github.com/facebookincubator/tacquito.git"
-TACQUITO_SRC="/opt/tacquito-src"
+# Overridable so tests can point the patch overlay at a scratch checkout.
+TACQUITO_SRC="${TACQUITO_SRC:-/opt/tacquito-src}"
+# tacquito source patches (git-apply diffs) re-applied on install/upgrade after
+# the upstream pull; see patches/README.md. Derived from the script's own
+# location so it works for both the deployed clone and a dev checkout.
+PATCH_DIR="${TACCTL_PATCH_DIR:-$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../patches}"
 TACQUITO_BIN="${TACCTL_BIN}/tacquito"
 HASHGEN_BIN="${TACCTL_BIN}/tacquito-hashgen"
 DEPLOY_DIR="/opt/tacctl"
@@ -1203,6 +1208,56 @@ get_version() {
     local script_dir
     script_dir=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
     git -C "${script_dir}/.." describe --tags --always --dirty 2>/dev/null || echo "unknown"
+}
+
+# --- tacquito source patch overlay (see patches/README.md) ---
+# tacquito is built from an upstream checkout; behaviors we depend on but that
+# are not upstream live as git-apply diffs in $PATCH_DIR and are re-applied
+# after every upstream pull so they survive updates.
+
+# tacquito_patches_applied succeeds only when EVERY patch is already applied to
+# the working tree (reverse-check). Lets an upgrade that found no upstream change
+# still decide to rebuild when a newly-shipped patch isn't in the binary yet.
+# No patches at all counts as satisfied.
+tacquito_patches_applied() {
+    local patch
+    shopt -s nullglob
+    for patch in "$PATCH_DIR"/*.patch; do
+        if ! git -C "$TACQUITO_SRC" apply --reverse --check "$patch" 2>/dev/null; then
+            shopt -u nullglob
+            return 1
+        fi
+    done
+    shopt -u nullglob
+    return 0
+}
+
+# apply_tacquito_patches applies every patch in $PATCH_DIR onto the tacquito
+# source tree. Callers run `git checkout -- .` before the upstream pull, so the
+# tree is pristine upstream when we apply. Idempotent: an already-applied patch
+# (reverse-check passes) is skipped. Aborts the run if a patch will not apply
+# (upstream drift) rather than silently building an unpatched binary. Returns 0
+# if it applied at least one patch, 1 if there was nothing to do.
+apply_tacquito_patches() {
+    [[ -d "$PATCH_DIR" ]] || return 1
+    local patch applied=0
+    shopt -s nullglob
+    for patch in "$PATCH_DIR"/*.patch; do
+        if git -C "$TACQUITO_SRC" apply --reverse --check "$patch" 2>/dev/null; then
+            continue  # already applied
+        fi
+        if ! git -C "$TACQUITO_SRC" apply --check "$patch" 2>/dev/null; then
+            shopt -u nullglob
+            error "tacquito patch will not apply cleanly: $(basename "$patch")."
+            error "Upstream likely changed the patched file; refresh the diff in patches/."
+            exit 1
+        fi
+        git -C "$TACQUITO_SRC" apply "$patch"
+        info "Applied tacquito patch: $(basename "$patch")"
+        applied=$((applied + 1))
+    done
+    shopt -u nullglob
+    [[ $applied -gt 0 ]]
 }
 
 # Normalize DEPLOY_DIR perms after git clone/pull. The script runs with
@@ -8602,11 +8657,18 @@ cmd_install() {
     # --- Step 2: Clone and build tacquito ---
     if [[ -d "$TACQUITO_SRC" ]]; then
         info "Tacquito source already exists at ${TACQUITO_SRC}, pulling latest..."
-        cd "$TACQUITO_SRC" && git pull --quiet
+        cd "$TACQUITO_SRC"
+        # Drop any previously-applied source patches so the pull stays clean.
+        git checkout -- . 2>/dev/null || true
+        git pull --quiet
     else
         info "Cloning tacquito..."
         git clone --quiet "$TACQUITO_REPO" "$TACQUITO_SRC"
     fi
+
+    # Re-apply our source patch overlay on top of pristine upstream (see
+    # patches/README.md). Aborts on a patch that no longer applies.
+    apply_tacquito_patches || true
 
     info "Building tacquito server..."
     cd "${TACQUITO_SRC}/cmds/server"
@@ -8968,8 +9030,13 @@ cmd_upgrade() {
     LOCAL=$(git rev-parse HEAD)
     REMOTE=$(git rev-parse @{u})
 
-    if [[ "$LOCAL" == "$REMOTE" ]]; then
-        info "Tacquito source already up to date (${CURRENT_COMMIT})."
+    # Rebuild when upstream advanced, OR a shipped source patch isn't applied
+    # yet (a new patch can land with unchanged upstream), OR the binary is
+    # missing. patches/ lives in the management repo; on an upgrade that ships a
+    # new patch, tacctl self-updates and re-execs (below) before reaching here,
+    # so PATCH_DIR is current by this point.
+    if [[ "$LOCAL" == "$REMOTE" ]] && tacquito_patches_applied && [[ -f "$TACQUITO_BIN" ]]; then
+        info "Tacquito source already up to date (${CURRENT_COMMIT}); patches applied."
         SKIP_BUILD=true
     else
         SKIP_BUILD=false
@@ -8980,14 +9047,20 @@ cmd_upgrade() {
     fi
 
     if [[ "$SKIP_BUILD" == "false" ]]; then
-        git pull --quiet
-        NEW_COMMIT=$(git rev-parse --short HEAD)
-        info "Updated: ${CURRENT_COMMIT} -> ${NEW_COMMIT}"
+        # Drop previously-applied patches so the pull is clean, then rebuild from
+        # pristine upstream + our patch overlay (see patches/README.md).
+        git checkout -- . 2>/dev/null || true
+        if [[ "$LOCAL" != "$REMOTE" ]]; then
+            git pull --quiet
+            NEW_COMMIT=$(git rev-parse --short HEAD)
+            info "Updated: ${CURRENT_COMMIT} -> ${NEW_COMMIT}"
 
-        echo ""
-        info "Changes:"
-        git log --oneline "${CURRENT_COMMIT}..${NEW_COMMIT}" | head -20
-        echo ""
+            echo ""
+            info "Changes:"
+            git log --oneline "${CURRENT_COMMIT}..${NEW_COMMIT}" | head -20
+            echo ""
+        fi
+        apply_tacquito_patches || true
 
         info "Building tacquito server..."
         cd "${TACQUITO_SRC}/cmds/server"
