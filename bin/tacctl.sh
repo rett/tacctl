@@ -9026,7 +9026,10 @@ cmd_upgrade() {
     info "Pulling latest source..."
     cd "$TACQUITO_SRC"
     git fetch --quiet
-    local LOCAL REMOTE SKIP_BUILD NEW_COMMIT
+    local LOCAL REMOTE SKIP_BUILD
+    # Default to the current commit so the summary is always defined even when a
+    # rebuild is driven by a patch overlay change rather than an upstream pull.
+    local NEW_COMMIT="$CURRENT_COMMIT"
     LOCAL=$(git rev-parse HEAD)
     REMOTE=$(git rev-parse @{u})
 
@@ -9287,8 +9290,10 @@ cmd_upgrade() {
 
     echo ""
     echo "============================================"
-    if [[ "$SKIP_BUILD" == "false" ]]; then
+    if [[ "$SKIP_BUILD" == "false" && "$CURRENT_COMMIT" != "$NEW_COMMIT" ]]; then
         echo "  Upgrade Complete: ${CURRENT_COMMIT} -> ${NEW_COMMIT}"
+    elif [[ "$SKIP_BUILD" == "false" ]]; then
+        echo "  Upgrade Complete: rebuilt at ${CURRENT_COMMIT} (patch overlay refreshed)"
     else
         echo "  Scripts Updated (source unchanged at ${CURRENT_COMMIT})"
     fi
