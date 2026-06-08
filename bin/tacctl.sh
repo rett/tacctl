@@ -18,7 +18,7 @@
 #   ./tacctl.sh scope prefixes <name> {list|add|remove|clear}
 #   ./tacctl.sh scope secret   <name> {show|set|generate}
 #   ./tacctl.sh config show
-#   ./tacctl.sh config cisco   [--scope <name>]
+#   ./tacctl.sh config cisco   [--scope <name>] [--legacy]
 #   ./tacctl.sh config juniper [--scope <name>]
 #
 set -euo pipefail
@@ -3508,18 +3508,22 @@ parse_cidr_list() {
 
 # --- CONFIG CISCO (show working device config) ---
 cmd_config_cisco() {
-    # Parse --scope <name>
-    local scope=""
+    # Parse --scope <name> and --legacy
+    local scope="" legacy=0
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --scope)
                 scope="${2:-}"
-                [[ -z "$scope" ]] && { error "Usage: tacctl config cisco [--scope <name>]"; exit 1; }
+                [[ -z "$scope" ]] && { error "Usage: tacctl config cisco [--scope <name>] [--legacy]"; exit 1; }
                 shift 2
+                ;;
+            --legacy)
+                legacy=1
+                shift
                 ;;
             *)
                 error "Unknown argument: '$1'"
-                error "Usage: tacctl config cisco [--scope <name>]"
+                error "Usage: tacctl config cisco [--scope <name>] [--legacy]"
                 exit 1
                 ;;
         esac
@@ -3701,8 +3705,29 @@ ${mgmt_entries}  deny   any log"
     echo "--------------------------------------------"
     echo ""
 
-    local template_file
-    template_file=$(resolve_template "cisco")
+    # TACACS+ server-definition block differs by IOS generation: legacy 12.x
+    # global syntax vs the structured 'tacacs server <name>' block (15.0+).
+    # Used only by the inline fallback below; the templates embed their own.
+    local tacacs_server_block
+    if [[ "$legacy" == 1 ]]; then
+        tacacs_server_block="tacacs-server host ${server_ip} single-connection timeout 5 key ${secret}
+!
+aaa group server tacacs+ ${TACACS_GROUP}
+  server ${server_ip}"
+    else
+        tacacs_server_block="tacacs server TACACS
+  address ipv4 ${server_ip}
+  key ${secret}
+  single-connection
+  timeout 5
+!
+aaa group server tacacs+ ${TACACS_GROUP}
+  server name TACACS"
+    fi
+
+    local template_file template_name="cisco"
+    [[ "$legacy" == 1 ]] && template_name="cisco-legacy"
+    template_file=$(resolve_template "$template_name")
     # Filter the device-config emission through `awk 'NF'` so blank
     # lines introduced by multi-line `${VAR}` substitution don't reach
     # the operator. `!` separator lines have NF=1 so they survive.
@@ -3721,14 +3746,7 @@ aaa new-model
 ! Uncomment and replace with your management interface, e.g.:
 ! ip tacacs source-interface Loopback0
 !
-tacacs server TACACS
-  address ipv4 ${server_ip}
-  key ${secret}
-  single-connection
-  timeout 5
-!
-aaa group server tacacs+ ${TACACS_GROUP}
-  server name TACACS
+${tacacs_server_block}
 !
 aaa authentication login default ${AUTHN_METHODS}
 aaa authorization exec default ${AUTHZ_EXEC_METHODS}
@@ -3765,10 +3783,15 @@ EOF
     echo "  - Ensure a local admin account exists as a backup"
     echo "  - Uncomment 'ip tacacs source-interface ...' to pin the TACACS+ client source"
     echo "  - ${cisco_acl_name} permits are managed with 'tacctl config mgmt-acl add <cidr>'"
-    echo "  - For Type 6 (AES) key encryption, run on the device first:"
-    echo "      conf t ; key config-key password-encrypt <master-key>"
-    echo "      password encryption aes"
-    echo "    then re-enter the tacacs key. (Type 7 is trivially reversible.)"
+    if [[ "$legacy" == 1 ]]; then
+        echo "  - Type 6 (AES) key encryption is NOT available on IOS 12.x;"
+        echo "    'service password-encryption' stores the key as Type 7."
+    else
+        echo "  - For Type 6 (AES) key encryption, run on the device first:"
+        echo "      conf t ; key config-key password-encrypt <master-key>"
+        echo "      password encryption aes"
+        echo "    then re-enter the tacacs key. (Type 7 is trivially reversible.)"
+    fi
     echo "  - Manage 'privilege exec level' mappings with 'tacctl group privilege add ...'"
     echo "    (defaults move only the verified priv-15 commands DOWN; nothing is moved UP)"
     if [[ -n "$template_file" ]]; then
@@ -6019,7 +6042,7 @@ cmd_config() {
             echo "  allow list|add|remove|clear          Manage connection allow list (IP ACL; add/remove accept comma-lists)"
             echo "  deny list|add|remove|clear           Manage connection deny list (IP ACL; add/remove accept comma-lists)"
             echo "  mgmt-acl list|add|remove|clear       Manage Cisco VTY-ACL + Juniper lo0-filter permits"
-            echo "  cisco   [--scope <name>]             Show working Cisco device configuration for a scope"
+            echo "  cisco   [--scope <name>] [--legacy]  Show working Cisco device configuration for a scope (--legacy = IOS 12.x syntax)"
             echo "  juniper [--scope <name>]             Show working Juniper device configuration for a scope"
             echo "  branch [name]                        Show or change the tacctl repo branch"
             echo ""
@@ -6030,6 +6053,7 @@ cmd_config() {
             echo "  tacctl config listen tcp6 [::]:49"
             echo "  tacctl config sudoers install adm"
             echo "  tacctl config cisco --scope prod"
+            echo "  tacctl config cisco --scope prod --legacy   # legacy IOS 12.x syntax"
             echo ""
             exit 1
             ;;
@@ -9519,7 +9543,7 @@ cmd_user() {
             echo "  rename <old> <new>                          Rename a user"
             echo "  move <user> <group>                         Move user to a different group"
             echo "  verify <username>                           Verify password and show user details"
-            echo "  scope <user> list|add|remove|set|clear     Manage which scopes the user can auth from"
+            echo "  scope <user> list|add|remove|set|clear      Manage which scopes the user can auth from"
             echo ""
             echo "Examples:"
             echo "  tacctl user list"
