@@ -30,6 +30,7 @@ tacctl user list
 # Show device configs with your server's IP and scope-specific secret pre-filled
 tacctl config cisco                   # default scope
 tacctl config cisco --scope prod      # specific scope
+tacctl config cisco --scope prod --legacy   # legacy IOS 12.x syntax (pre-15.0 devices)
 tacctl config juniper --scope prod
 ```
 
@@ -348,7 +349,7 @@ config dump                                 Show tacctl defaults + overrides + m
 config defaults                             Print canonical tacctl defaults (shipped, embedded in bin/tacctl.sh)
 config get <path> [fallback]                Read a dotted-path value from the merged config
 config get-list <path>                      Read a list value (one item per line)
-config cisco [--scope <name>]               Generate working Cisco device config for a scope (default if omitted)
+config cisco [--scope <name>] [--legacy]    Generate working Cisco device config for a scope (default if omitted). --legacy emits IOS 12.x syntax (tacacs-server host / aaa group server ... / server <ip>) for devices predating the IOS 15.0 'tacacs server' block
 config juniper [--scope <name>]             Generate working Juniper device config for a scope (default if omitted)
 config validate                             Validate YAML syntax + server-config structure (orphan scope refs, scope.default pointing at a nonexistent scope, reserved usernames, missing accounter:) + schema-walk tacctl.yaml (including commands.<group> / privileges.<group> / mgmt_acl.*)
 config diff [timestamp]                     Diff current config vs a backup
@@ -493,6 +494,9 @@ dynamically.
 - `local` fallback ensures access if TACACS+ is unreachable
 - Custom privilege levels (2-14) require `privilege exec level` command mappings
 - Use `config cisco` to regenerate after adding groups
+- By default the output uses the modern IOS 15.0+ `tacacs server <name>` block. For older devices
+  (e.g. IOS 12.4), add `--legacy` to emit the global `tacacs-server host` / `aaa group server ... / server <ip>`
+  syntax instead. Only the server-definition block changes; the AAA, privilege, and line config are identical.
 
 ### Juniper Junos
 

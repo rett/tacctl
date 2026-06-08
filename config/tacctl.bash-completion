@@ -215,7 +215,10 @@ for u in (d.get('users') or []):
                     mgmt-acl)
                         COMPREPLY=($(compgen -W "list add remove clear cisco-name juniper-name" -- "$cur"))
                         ;;
-                    cisco|juniper)
+                    cisco)
+                        COMPREPLY=($(compgen -W "--scope --legacy" -- "$cur"))
+                        ;;
+                    juniper)
                         COMPREPLY=($(compgen -W "--scope" -- "$cur"))
                         ;;
                     get|get-list)
@@ -230,8 +233,16 @@ for u in (d.get('users') or []):
                         COMPREPLY=($(compgen -W "$(_tacctl_backup_names)" -- "$cur"))
                         ;;
                 esac
-            elif [[ $pos -eq 4 && ( "${words[offset + 2]}" == "cisco" || "${words[offset + 2]}" == "juniper" ) && "${words[offset + 3]}" == "--scope" ]]; then
-                COMPREPLY=($(compgen -W "$(_tacctl_scope_names)" -- "$cur"))
+            elif [[ $pos -ge 4 && ( "${words[offset + 2]}" == "cisco" || "${words[offset + 2]}" == "juniper" ) ]]; then
+                if [[ "${words[cword - 1]}" == "--scope" ]]; then
+                    COMPREPLY=($(compgen -W "$(_tacctl_scope_names)" -- "$cur"))
+                elif [[ "${words[offset + 2]}" == "cisco" ]]; then
+                    # Offer whichever cisco flag isn't already on the line.
+                    local cflags=""
+                    [[ " ${words[*]} " == *" --scope "* ]]  || cflags+=" --scope"
+                    [[ " ${words[*]} " == *" --legacy "* ]] || cflags+=" --legacy"
+                    COMPREPLY=($(compgen -W "$cflags" -- "$cur"))
+                fi
             fi
             ;;
         scope)

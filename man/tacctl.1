@@ -558,7 +558,7 @@ in
 and survive
 .BR "tacctl upgrade" .
 .TP
-.BI "config cisco " [ "--scope " name ]
+.BI "config cisco " [ "--scope " name "] [--legacy]"
 Print a ready-to-paste Cisco IOS/IOS-XE configuration with the
 server IP, shared secret, current group-to-privilege mappings, and
 the VTY-ACL built from
@@ -566,7 +566,13 @@ the VTY-ACL built from
 pre-filled. Without
 .BR --scope ,
 emits the default scope's secret (header names the scope and lists
-sibling scopes as a hint).
+sibling scopes as a hint). With
+.BR --legacy ,
+emits legacy IOS 12.x syntax
+.RB ( "tacacs-server host" " and " "aaa group server \&... / server <ip>" )
+for devices predating the structured
+.B "tacacs server"
+block introduced in IOS 15.0.
 .TP
 .BI "config juniper " [ "--scope " name ]
 Print a ready-to-paste Juniper Junos configuration with template
@@ -1140,6 +1146,9 @@ Grant a user full production access across two datacenters:
 .TP
 Generate a Cisco-ready configuration for the prod scope:
 .B tacctl config cisco --scope prod_dc_east
+.TP
+Generate legacy IOS 12.x syntax for an older device (e.g. an ITP on 12.4):
+.B tacctl config cisco --scope prod_dc_east --legacy
 .TP
 Bind the listener to a specific management IP:
 .B tacctl config listen tcp 10.1.0.1:49
