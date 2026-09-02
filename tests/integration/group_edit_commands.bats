@@ -114,14 +114,43 @@ setup() {
     assert_failure
 }
 
-@test "group commands add: inserts a named rule with a regex match" {
-    run "$TACCTL_BIN_SCRIPT" group commands add operator show --match '^show .*$' --action permit
+@test "group commands add: inserts a named rule with an argument regex match" {
+    run "$TACCTL_BIN_SCRIPT" group commands add operator show --match 'running-config.*' --action permit
     assert_success
 
     run "$TACCTL_BIN_SCRIPT" group commands list operator
     assert_output --partial "show"
     assert_output --partial "permit"
-    assert_output --partial '^show .*$'
+    assert_output --partial 'running-config.*'
+}
+
+@test "group commands add: rejects a --match that repeats the command word (can never fire)" {
+    # tacquito tests match regexes against the arguments only, so a regex
+    # anchored on the command word itself never matches anything.
+    run "$TACCTL_BIN_SCRIPT" group commands add operator show --match '^show .*$' --action permit
+    assert_failure
+    assert_output --partial "can never match"
+    assert_output --partial "ARGUMENTS only"
+
+    run "$TACCTL_BIN_SCRIPT" group commands add operator ping --match '^ping( .*)?$' --action permit
+    assert_failure
+
+    # The override must not have been written.
+    run "$TACCTL_BIN_SCRIPT" group commands list operator
+    refute_output --partial '^show .*$'
+}
+
+@test "group commands: shipped defaults render into tacquito.yaml without match regexes" {
+    # Any mutation regenerates the tacquito.yaml commands: blocks from the
+    # merged tacctl view. The built-in permits must be name-only rules so
+    # `show running-config` (tested by tacquito as 'running-config') is
+    # authorized rather than falling through to the deny catch-all.
+    "$TACCTL_BIN_SCRIPT" group commands default operator deny > /dev/null
+    run awk '/^operator: &operator/,/^  accounter:/' "$TACCTL_CONFIG"
+    assert_output --partial 'name: "show"'
+    assert_output --partial 'name: "*"'
+    refute_output --partial 'match:'
+    refute_output --partial '^show'
 }
 
 @test "group commands add: rejects '*' (must use default)" {
@@ -141,7 +170,7 @@ setup() {
 }
 
 @test "group commands add: rejects invalid --action" {
-    run "$TACCTL_BIN_SCRIPT" group commands add operator show --match '^show' --action maybe
+    run "$TACCTL_BIN_SCRIPT" group commands add operator show --match 'run.*' --action maybe
     assert_failure
 }
 
@@ -152,14 +181,14 @@ setup() {
 }
 
 @test "group commands add: idempotent for the same (name, match) pair" {
-    "$TACCTL_BIN_SCRIPT" group commands add operator show --match '^show' --action permit
-    run "$TACCTL_BIN_SCRIPT" group commands add operator show --match '^show' --action permit
+    "$TACCTL_BIN_SCRIPT" group commands add operator show --match 'run.*' --action permit
+    run "$TACCTL_BIN_SCRIPT" group commands add operator show --match 'run.*' --action permit
     assert_success
     assert_output --partial "already present"
 }
 
 @test "group commands remove: drops a named rule" {
-    "$TACCTL_BIN_SCRIPT" group commands add operator show --match '^show' --action permit
+    "$TACCTL_BIN_SCRIPT" group commands add operator show --match 'run.*' --action permit
     run "$TACCTL_BIN_SCRIPT" group commands remove operator show
     assert_success
     assert_output --partial "Removed rule"
@@ -167,7 +196,7 @@ setup() {
     run "$TACCTL_BIN_SCRIPT" group commands list operator
     # 'show' shouldn't appear as a rule name anymore, but 'permit' still will
     # (the catchall). Check that the regex is gone.
-    refute_output --partial '^show'
+    refute_output --partial 'run.*'
 }
 
 @test "group commands remove: refuses to drop the catchall" {
