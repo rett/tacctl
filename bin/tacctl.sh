@@ -135,7 +135,7 @@ privileges:
   # silently restrict readonly users). Override any list in tacctl.yaml.
   operator:
     # Shipped priv-15 read/diagnostic commands lowered to priv-7 so
-    # commands.operator's `^show .*$` permit is actually reachable for
+    # commands.operator's `show` permit is actually reachable for
     # common read paths. No write/configure/debug included.
     - show running-config
     - show startup-config
@@ -152,6 +152,13 @@ commands:
   # allow-commands / deny-commands for Junos.
   #
   # Each rule: {name, action: permit|deny, match: [regex, ...]}
+  # `name` is compared literally against the TACACS+ cmd= word. `match`
+  # regexes are applied by tacquito to the command's ARGUMENTS only —
+  # the space-joined cmd-arg values after the cmd word, e.g. for
+  # `show running-config` the string tested is `running-config`, not
+  # the full line. A regex that repeats the command word (`^show .*$`)
+  # can therefore never match and silently denies every invocation.
+  # Omit `match` to permit/deny the command with any arguments.
   # A trailing name: "*" entry is the catch-all; its action is the
   # group's default action.
   #
@@ -163,18 +170,18 @@ commands:
   operator:
     # Read-only + diagnostics; everything else (configure, write,
     # debug, reload, etc.) hits the deny catch-all.
-    - { name: show,       action: permit, match: ["^show .*$"] }
-    - { name: ping,       action: permit, match: ["^ping( .*)?$"] }
-    - { name: traceroute, action: permit, match: ["^traceroute( .*)?$"] }
-    - { name: terminal,   action: permit, match: ["^terminal .*$"] }
+    - { name: show,       action: permit }
+    - { name: ping,       action: permit }
+    - { name: traceroute, action: permit }
+    - { name: terminal,   action: permit }
     - { name: "*",        action: deny }
   readonly:
     # Defense in depth on top of priv-1 / RO-CLASS. Permits are the
     # read / diagnostic subset of operator's; `terminal` is omitted
     # (terminal monitor can leak debug output across sessions).
-    - { name: show,       action: permit, match: ["^show .*$"] }
-    - { name: ping,       action: permit, match: ["^ping( .*)?$"] }
-    - { name: traceroute, action: permit, match: ["^traceroute( .*)?$"] }
+    - { name: show,       action: permit }
+    - { name: ping,       action: permit }
+    - { name: traceroute, action: permit }
     - { name: "*",        action: deny }
 YAML
 }
@@ -329,6 +336,25 @@ import re
 
 CMD_RE = re.compile(r'^[a-zA-Z][a-zA-Z0-9 _-]+$')
 
+def command_match_is_dead(name, rx):
+    """True when a command-rule `match` regex can never match.
+
+    tacquito's CommandBasedAuthorizer compares a rule's `name` to the
+    TACACS+ cmd= word and then tests each `match` regex against the
+    space-joined cmd-arg values ONLY (`show running-config` is tested
+    as 'running-config'). A regex that begins with the command word
+    itself -- `^show .*$`, `^ping( .*)?$`, `^show$` -- would only ever
+    match an argument string that repeats the command, so the rule is
+    dead and every invocation falls through to the next rule (usually
+    the deny catch-all). Used at write time, by `group commands add`,
+    and by the upgrade migration that heals older configs.
+    """
+    if not isinstance(name, str) or name == '*' or not isinstance(rx, str):
+        return False
+    body = rx[1:] if rx.startswith('^') else rx
+    tail = r'(?:\s|\\s|\$|\((?:\?:)?(?:\s|\\s))'
+    return re.match(re.escape(name) + tail, body) is not None
+
 def schema_for(path):
     if path in SCHEMA:
         return SCHEMA[path]
@@ -456,6 +482,11 @@ def validate(path, value, is_list):
                     re.compile(m)
                 except re.error as e:
                     return False, f"element {i}: match[{j}]: invalid regex ({e})"
+                if command_match_is_dead(name, m):
+                    return False, (f"element {i}: match[{j}]: {m!r} repeats the command word; "
+                                   f"tacquito tests match regexes against the ARGUMENTS only "
+                                   f"(e.g. 'running-config' for 'show running-config'), so this "
+                                   f"rule can never match. Drop the '{name} ' prefix or omit match.")
             extra = set(item.keys()) - {'name', 'action', 'match'}
             if extra:
                 return False, f"element {i}: unknown keys {sorted(extra)}"
@@ -789,6 +820,20 @@ validate_regex() {
     fi
 }
 
+# --- Detect a command-rule --match regex that can never match ---
+# Exit 0 when <regex> repeats the rule's own command word (`^show .*$`
+# for rule 'show'). tacquito tests --match against the command's
+# arguments only, so such a rule silently denies every invocation.
+# Logic lives in the schema module (command_match_is_dead) so the
+# write-time validator, this CLI gate, and the upgrade migration agree.
+command_match_is_dead() {
+    local name="$1" pattern="$2"
+    python3 -c "$(_conf_schema_py)
+import sys
+sys.exit(0 if command_match_is_dead(sys.argv[1], sys.argv[2]) else 1)
+" "$name" "$pattern"
+}
+
 # --- Validate a Cisco privilege-exec command string ---
 # Cisco command paths can contain spaces ("show running-config",
 # "terminal monitor"). Allow letters, digits, spaces, '-', '_'. Reject
@@ -956,8 +1001,9 @@ conf_migrate_command_rules() {
         [[ -z "$group" ]] && continue
         conf_set_json "commands.${group}" "$rules_json"
         info "Migrated tacquito.yaml commands: block for group '${group}' → commands.${group}"
-    done < <(python3 - "$CONFIG" "$_TACCTL_CFG_CACHE" <<'PY'
+    done < <(python3 - "$CONFIG" "$_TACCTL_CFG_CACHE" <(_conf_schema_py) <<'PY'
 import json, re, sys
+exec(open(sys.argv[3]).read())  # command_match_is_dead
 cfg = open(sys.argv[1]).read()
 merged = json.loads(sys.argv[2])
 current_commands = (merged.get('commands') or {})
@@ -981,12 +1027,77 @@ for gm in re.finditer(
         name = rm.group('name').strip().strip('"')
         matches_str = (rm.group('match') or '').strip()
         matches = [m.strip().strip('"') for m in re.findall(r'"([^"]+)"', matches_str)] if matches_str else []
+        # Drop match regexes that can never fire (they repeat the command
+        # word; tacquito tests match against the arguments only). Older
+        # shipped defaults had this shape, so a stale block normalizes to
+        # the current default instead of being scraped into an override.
+        matches = [m for m in matches if not command_match_is_dead(name, m)]
         rule = {'name': name, 'action': rm.group('action')}
         if matches:
             rule['match'] = matches
         rules.append(rule)
     if rules and current_commands.get(group) != rules:
         print(f"{group}\t{json.dumps(rules)}")
+PY
+)
+}
+
+# --- One-shot: strip dead `match` regexes from commands.<group> overrides ---
+# tacctl <= 0.1.10 shipped operator/readonly defaults whose match regexes
+# repeated the command word (`^show .*$`). tacquito tests match against the
+# command's ARGUMENTS only ('running-config' for `show running-config`),
+# so those rules never matched and every operator/readonly `show ...` fell
+# through to the deny catch-all -- "not authorized" on the device. The
+# shipped defaults are fixed; this heals overrides in tacctl.yaml that
+# carry the same dead shape (scraped from an older tacquito.yaml, or
+# hand-copied). A healed override that now equals the shipped default is
+# dropped so the default applies. Idempotent: silent when nothing is dead.
+conf_migrate_dead_command_matches() {
+    [[ -f "$TACCTL_OVERRIDES_FILE" ]] || return 0
+    local group verb rules_json
+    while IFS=$'\t' read -r group verb rules_json; do
+        [[ -z "$group" ]] && continue
+        case "$verb" in
+            unset)
+                conf_unset "commands.${group}"
+                info "Dropped commands.${group} override: its match regexes could never fire; shipped defaults now apply"
+                ;;
+            set)
+                conf_set_json "commands.${group}" "$rules_json"
+                info "Rewrote commands.${group} override: removed match regexes that could never fire"
+                ;;
+        esac
+    done < <(python3 - "$TACCTL_OVERRIDES_FILE" <(conf_emit_defaults) <(_conf_schema_py) <<'PY'
+import json, sys, yaml
+exec(open(sys.argv[3]).read())  # command_match_is_dead
+try:
+    overrides = yaml.safe_load(open(sys.argv[1])) or {}
+except Exception:
+    sys.exit(0)
+defaults = yaml.safe_load(open(sys.argv[2])) or {}
+default_cmds = defaults.get('commands') or {}
+for group, rules in sorted((overrides.get('commands') or {}).items()):
+    if not isinstance(rules, list):
+        continue
+    changed = False
+    healed = []
+    for r in rules:
+        if isinstance(r, dict) and r.get('match'):
+            kept = [m for m in r['match'] if not command_match_is_dead(r.get('name'), m)]
+            if len(kept) != len(r['match']):
+                changed = True
+                r = dict(r)
+                if kept:
+                    r['match'] = kept
+                else:
+                    del r['match']
+        healed.append(r)
+    if not changed:
+        continue
+    if healed == default_cmds.get(group):
+        print(f"{group}\tunset\t")
+    else:
+        print(f"{group}\tset\t{json.dumps(healed)}")
 PY
 )
 }
@@ -6564,6 +6675,15 @@ cmd_group_commands() {
                 case "$1" in
                     --match)
                         validate_regex "${2:-}"
+                        if command_match_is_dead "$name" "${2:-}"; then
+                            error "--match '${2}' can never match for rule '${name}'."
+                            error "tacquito tests --match against the command's ARGUMENTS only (the"
+                            error "cmd-arg values after '${name}', e.g. 'running-config' for"
+                            error "'${name} running-config'), never the full command line."
+                            error "Omit --match to cover any arguments, or match the args alone"
+                            error "(e.g. --match 'running-config')."
+                            exit 1
+                        fi
                         matches+="${matches:+,}${2}"
                         shift 2
                         ;;
@@ -6663,6 +6783,12 @@ cmd_group_commands_usage() {
     echo "  tacctl group commands remove <group> <name>                     Drop a rule"
     echo "  tacctl group commands clear <group>                             Drop overrides — revert to shipped defaults (confirms)"
     echo "  tacctl group commands seed [<group>] [--force]                  Re-apply legacy seed set (recovery tool)"
+    echo ""
+    echo "<name> is compared literally to the TACACS+ cmd= word. --match"
+    echo "regexes are tested against the command's ARGUMENTS only (the"
+    echo "cmd-arg values after the word: 'running-config' for 'show"
+    echo "running-config'), never the full line -- so '^show .*$' can"
+    echo "never match and is rejected. Omit --match to cover any args."
     echo ""
     echo "Rules live under commands.<group> in /etc/tacquito/tacctl.yaml;"
     echo "tacquito.yaml's per-group commands: block is a regenerated"
@@ -8842,7 +8968,9 @@ PY
 
     # Sync tacquito.yaml's per-group commands: blocks from tacctl.yaml.
     # Built-in groups pick up their shipped defaults; custom groups get
-    # any explicit overrides the operator has set.
+    # any explicit overrides the operator has set. Heal overrides that
+    # carry pre-0.1.11 dead match regexes first (no-op on fresh installs).
+    conf_migrate_dead_command_matches
     regenerate_tacquito_commands
 
     mkdir -p "$BACKUP_DIR" "${BACKUP_DIR}/disabled" "$PASSWORD_DATES_DIR"
@@ -9036,6 +9164,11 @@ cmd_upgrade() {
     # overrides (idempotent: no-op once scraped), then regenerate so
     # tacquito.yaml matches the tacctl-authored state.
     conf_migrate_command_rules
+    # tacctl <= 0.1.10 shipped match regexes that repeated the command word
+    # (`^show .*$`); tacquito tests match against the arguments only, so
+    # operator/readonly users were denied every `show`. Heal overrides that
+    # still carry that shape.
+    conf_migrate_dead_command_matches
     # Legacy installs named the Cisco exec service `name: exec`; devices request
     # `service=shell`, so authorization silently failed post-auth. Heal in place.
     conf_migrate_exec_service_name
