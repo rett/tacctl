@@ -64,6 +64,42 @@ setup() {
     assert_success
 }
 
+# --- command_match_is_dead ---------------------------------------------------
+# tacquito tests a rule's match regex against the command ARGUMENTS only, so
+# a regex that starts with the command word itself can never match.
+
+@test "command_match_is_dead: flags regexes that repeat the command word" {
+    run command_match_is_dead show '^show .*$'
+    assert_success
+    run command_match_is_dead ping '^ping( .*)?$'
+    assert_success
+    run command_match_is_dead show '^show$'
+    assert_success
+    run command_match_is_dead show 'show\s+running.*'
+    assert_success
+}
+
+@test "command_match_is_dead: accepts argument-only regexes" {
+    run command_match_is_dead show 'running-config'
+    assert_failure
+    run command_match_is_dead show '^run.*$'
+    assert_failure
+    run command_match_is_dead show '.*'
+    assert_failure
+    run command_match_is_dead clear '(counters|line) .*'
+    assert_failure
+    # A different command word is a legitimate (if odd) argument regex.
+    run command_match_is_dead show 'ping .*'
+    assert_failure
+}
+
+@test "command_match_is_dead: never flags the catchall or empty input" {
+    run command_match_is_dead '*' '^\* .*$'
+    assert_failure
+    run command_match_is_dead show ''
+    assert_failure
+}
+
 @test "validate_regex: rejects invalid regex" {
     run validate_regex '('
     assert_failure

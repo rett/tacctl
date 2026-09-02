@@ -162,7 +162,9 @@ Or build rules manually:
 tacctl group commands default operator deny
 tacctl group commands add operator show --action permit
 tacctl group commands add operator ping --action permit
+tacctl group commands add operator clear --match 'counters.*' --action permit
 ```
+A rule's `name` is compared literally to the TACACS+ `cmd=` word. `--match` regexes are tested by tacquito against the command's **arguments only** — the space-joined `cmd-arg` values after the word, so `show running-config` is tested as `running-config`, never as the full line. A regex that repeats the command word (`^show .*$`) can never match and is rejected by `tacctl group commands add`; omit `--match` to cover any arguments. (tacctl ≤ 0.1.10 shipped defaults with that dead shape, which denied every `show` to operator/readonly users; `tacctl upgrade` heals any override still carrying it.)
 The trailing `*` catchall encodes the default action. Once any group has rules, `tacctl config cisco` emits `aaa authorization commands 1/7/15 default group TACACS-GROUP local` so IOS asks tacquito per command. Juniper enforcement is local via class `allow-commands`/`deny-commands` regex — `tacctl config juniper` emits the equivalent `set system login class …` lines, but you must push them to each device.
 
 When you add the first rule to a group, tacctl auto-seeds a `* permit` catchall onto sibling groups at the same Cisco priv-lvl so their users aren't accidentally locked out.
@@ -411,15 +413,15 @@ commands:                    # per-group command-authz rules. Rendered for both 
   superuser:
     - { name: "*", action: permit }
   operator:
-    - { name: show,       action: permit, match: ["^show .*$"] }
-    - { name: ping,       action: permit, match: ["^ping( .*)?$"] }
-    - { name: traceroute, action: permit, match: ["^traceroute( .*)?$"] }
-    - { name: terminal,   action: permit, match: ["^terminal .*$"] }
+    - { name: show,       action: permit }
+    - { name: ping,       action: permit }
+    - { name: traceroute, action: permit }
+    - { name: terminal,   action: permit }
     - { name: "*",        action: deny }
   readonly:
-    - { name: show,       action: permit, match: ["^show .*$"] }
-    - { name: ping,       action: permit, match: ["^ping( .*)?$"] }
-    - { name: traceroute, action: permit, match: ["^traceroute( .*)?$"] }
+    - { name: show,       action: permit }
+    - { name: ping,       action: permit }
+    - { name: traceroute, action: permit }
     - { name: "*",        action: deny }
 ```
 

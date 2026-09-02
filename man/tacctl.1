@@ -227,8 +227,21 @@ is matched against the TACACS+
 .B cmd=
 field literally. Each
 .B --match
-adds an arg-list regex (auto-anchored with
+adds a regex that tacquito tests against the command's
+.I arguments
+only: the space-joined
+.B cmd-arg
+values after the command word (auto-anchored with
 .RB ` ^…$ `).
+For
+.B show running-config
+the string tested is
+.BR running-config ,
+never the full line, so a regex that repeats the command word
+.RB ( "^show .*$" )
+can never match and is rejected. Omit
+.B --match
+to cover any arguments.
 The first matching rule wins; tacquito returns FAIL if no rule
 matches and the
 .RB ` * `
