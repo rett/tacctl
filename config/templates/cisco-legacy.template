@@ -1,0 +1,41 @@
+! --- TACACS+ Server & AAA (legacy IOS 12.x syntax) ---
+! Encrypt Type 0 plaintext secrets in the running-config as Type 7.
+! (Type 7 is trivially reversible; Type 6 AES key encryption is NOT
+!  available on IOS 12.4 — only Type 0/7 apply on this train.)
+service password-encryption
+!
+aaa new-model
+!
+! Optional: pin TACACS+ client to a known source interface so prefix-based
+! ACLs on the tacquito side have a stable source IP. Uncomment and replace
+! the interface token with your management interface (e.g. Loopback0).
+! ip tacacs source-interface Loopback0
+!
+! Legacy global TACACS+ syntax. The structured 'tacacs server <name>' block
+! (address ipv4 / key / single-connection) is IOS 15.0+ and is NOT available here.
+tacacs-server host ${SERVER_IP} single-connection timeout 5 key ${SECRET}
+!
+aaa group server tacacs+ ${TACACS_GROUP}
+  server ${SERVER_IP}
+!
+aaa authentication login default ${AUTHN_METHODS}
+aaa authorization exec default ${AUTHZ_EXEC_METHODS}
+aaa accounting exec default start-stop group ${TACACS_GROUP}
+aaa accounting commands 1 default start-stop group ${TACACS_GROUP}
+aaa accounting commands 7 default start-stop group ${TACACS_GROUP}
+aaa accounting commands 15 default start-stop group ${TACACS_GROUP}
+!
+${AUTHZ_COMMANDS_BLOCK}
+!
+${PRIVILEGE_COMMANDS}
+${VTY_ACL_BLOCK}
+!
+line con 0
+  login authentication default
+  exec-timeout ${EXEC_TIMEOUT} 0
+!
+line vty 0 15
+  login authentication default
+  transport input ssh
+${VTY_ACCESS_CLASS}
+  exec-timeout ${EXEC_TIMEOUT} 0

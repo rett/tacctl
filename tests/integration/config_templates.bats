@@ -41,6 +41,40 @@ _normalize() {
     golden_diff "$out" "cisco-prod.conf"
 }
 
+@test "config cisco --legacy: renders deterministic legacy IOS config for lab scope" {
+    local out="$BATS_TEST_TMPDIR/cisco-legacy.conf"
+    "$TACCTL_BIN_SCRIPT" config cisco --legacy --scope lab | _normalize > "$out"
+    [[ -s "$out" ]]
+    golden_diff "$out" "cisco-legacy-lab.conf"
+}
+
+@test "config cisco --legacy: emits legacy tacacs-server host syntax, not the IOS 15.0 block" {
+    run "$TACCTL_BIN_SCRIPT" config cisco --legacy --scope lab
+    assert_success
+    assert_output --partial "tacacs-server host 10.0.0.42 single-connection timeout 5 key "
+    assert_output --partial "aaa group server tacacs+ TACACS-GROUP"
+    assert_output --partial "  server 10.0.0.42"
+    # Refute the real (substituted) IOS 15.0 config lines — not bare tokens, which
+    # also appear in the template's explanatory comments.
+    refute_output --partial "  address ipv4 10.0.0.42"
+    refute_output --partial "  server name TACACS"
+}
+
+@test "config cisco --legacy: --legacy is order-independent with --scope" {
+    run "$TACCTL_BIN_SCRIPT" config cisco --scope lab --legacy
+    assert_success
+    assert_output --partial "tacacs-server host 10.0.0.42"
+}
+
+@test "config cisco: default (non-legacy) output keeps the IOS 15.0 tacacs server block" {
+    run "$TACCTL_BIN_SCRIPT" config cisco --scope lab
+    assert_success
+    assert_output --partial "tacacs server TACACS"
+    assert_output --partial "address ipv4 10.0.0.42"
+    assert_output --partial "server name TACACS"
+    refute_output --partial "tacacs-server host"
+}
+
 @test "config juniper: renders deterministic Junos config from fixture + lab scope" {
     local out="$BATS_TEST_TMPDIR/juniper.conf"
     "$TACCTL_BIN_SCRIPT" config juniper --scope lab | _normalize > "$out"
