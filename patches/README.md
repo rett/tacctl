@@ -48,3 +48,24 @@ service (normal Cisco `service=shell`, Juniper `service=junos-exec`) take the
 existing path unchanged, and command authorizations are handled by the command
 authorizer, never silently permitted here. The patch also logs the raw client
 args at debug level, which helps when onboarding a new third-party device.
+
+### `0002-acct-success-empty-server-msg.patch`
+Drops the `server_msg` from successful accounting replies in both accounters
+(`cmds/server/config/accounters/local/local.go` and `syslog/syslog.go`), and
+updates the matching upstream tests in `cmds/server/test/`.
+
+Upstream answers every successful accounting request with a human-readable
+message (`success, logging started`, `success, logging stopped`,
+`success, watchdog`, `success, watchdog update`). Most TACACS+ servers
+(shrubbery `tac_plus`, Cisco ISE) send these replies with an empty message, and
+some clients do not tolerate one: **WTI console servers** (v8.x, whose TACACS+
+client is pam_tacplus-style) authenticate and authorize an SSH login, send the
+accounting START, and then drop the session as soon as the reply arrives
+(`client_loop: send disconnect: Broken pipe`, no accounting STOP). Disabling
+the WTI's Session Management Module (accounting) makes the login work, which
+isolates the accounting reply.
+
+The patch only removes the message; the reply status is still
+`AcctReplyStatusSuccess`, and error replies (`accounting failure`,
+`unexpected accounting flag`, ...) keep their messages. Clients that ignore the
+message (Cisco, Juniper, ...) see no difference.
