@@ -1,6 +1,6 @@
 # tacctl
 
-Management toolkit for [tacquito](https://github.com/facebookincubator/tacquito), a TACACS+ server (RFC 8907) by Facebook Incubator. Provides a CLI for user, group, and configuration management with multi-vendor support for Cisco IOS/IOS-XE and Juniper Junos devices.
+Management toolkit for [tacquito](https://github.com/facebookincubator/tacquito), a TACACS+ server (RFC 8907) by Facebook Incubator. Provides a CLI for user, group, and configuration management with multi-vendor support for Cisco IOS/IOS-XE and Juniper Junos devices, plus WTI console servers.
 
 ## Quick Start
 
@@ -32,6 +32,7 @@ tacctl config cisco                   # default scope
 tacctl config cisco --scope prod      # specific scope
 tacctl config cisco --scope prod --legacy   # legacy IOS 12.x syntax (pre-15.0 devices)
 tacctl config juniper --scope prod
+tacctl config wti --scope prod        # WTI console server: serial-menu walkthrough
 ```
 
 ## Project Structure
@@ -47,6 +48,7 @@ tacctl/
     templates/
       cisco.template        # Default Cisco device config template
       juniper.template      # Default Juniper device config template
+      wti.template          # Default WTI console-server setup walkthrough
   README.md
   LICENSE
 ```
@@ -337,11 +339,13 @@ group privilege seed [<group>] [--force]                  Populate built-ins wit
 
 **Default Groups:**
 
-| Group | Cisco priv-lvl | Juniper class | Use Case |
-|-------|---------------|---------------|----------|
-| `readonly` | 1 | RO-CLASS | Monitoring, read-only |
-| `operator` | 7 | OP-CLASS | Operational (show, ping, traceroute) |
-| `superuser` | 15 | RW-CLASS | Full administrative access |
+| Group | Cisco priv-lvl | Juniper class | WTI access level | Use Case |
+|-------|---------------|---------------|------------------|----------|
+| `readonly` | 1 | RO-CLASS | ViewOnly | Monitoring, read-only |
+| `operator` | 7 | OP-CLASS | User | Operational (show, ping, traceroute) |
+| `superuser` | 15 | RW-CLASS | Administrator | Full administrative access |
+
+The WTI column is derived from the Cisco priv-lvl (WTI bands: 0-4 ViewOnly, 5-9 User, 10-14 SuperUser, 15 Administrator); a group at priv-lvl 10-14 is the only way to land in the SuperUser band.
 
 ### Config Commands — `tacctl config`
 
@@ -353,6 +357,7 @@ config get <path> [fallback]                Read a dotted-path value from the me
 config get-list <path>                      Read a list value (one item per line)
 config cisco [--scope <name>] [--legacy]    Generate working Cisco device config for a scope (default if omitted). --legacy emits IOS 12.x syntax (tacacs-server host / aaa group server ... / server <ip>) for devices predating the IOS 15.0 'tacacs server' block
 config juniper [--scope <name>]             Generate working Juniper device config for a scope (default if omitted)
+config wti [--scope <name>]                 Print the step-by-step serial-menu procedure for a WTI console server (firmware v8.x) with the scope's server IP, secret, and group→access-level mapping filled in
 config validate                             Validate YAML syntax + server-config structure (orphan scope refs, scope.default pointing at a nonexistent scope, reserved usernames, missing accounter:) + schema-walk tacctl.yaml (including commands.<group> / privileges.<group> / mgmt_acl.*)
 config diff [timestamp]                     Diff current config vs a backup
 config loglevel [debug|info|error]          Show or change log level
@@ -484,7 +489,8 @@ Config backups are created automatically before every change. Last 30 backups ar
 ## Network Device Configuration
 
 Use `tacctl config cisco` or `tacctl config juniper` to generate
-copy-pasteable configs with your server's IP and shared secret pre-filled.
+copy-pasteable configs with your server's IP and shared secret pre-filled,
+or `tacctl config wti` for a menu-by-menu walkthrough of a WTI console server.
 
 ### Cisco IOS / IOS-XE
 
@@ -510,9 +516,37 @@ verification commands. All groups and their Juniper classes are included dynamic
 - If a login fails silently after successful TACACS+ auth, the template user is missing
 - Use `config juniper` to regenerate after adding groups
 
+### WTI Console Servers (DSM/CPM/REM/TSM/RSM, firmware v8.x)
+
+WTI units are configured through numbered text menus on the serial SetUp port, so
+`tacctl config wti` prints a walkthrough instead of a pasteable config: `/N` → the
+**TACACS** entry (item 28 on recent firmware) → one value per menu item, then `[Esc]`
+until "Saving Configuration". No WTI-specific service is added to `tacquito.yaml` — the
+unit requests exec authorization and reads the standard `priv-lvl` attribute from the same
+`shell` service Cisco uses. WTI maps priv-lvl bands to its four access levels:
+
+| priv-lvl | WTI access level | Shipped group |
+|----------|------------------|---------------|
+| 0-4 | ViewOnly (only the ports/services granted under Default TACACS User Access; factory: none) | `readonly` (1) |
+| 5-9 | User (only the ports/services granted under Default TACACS User Access; factory: none) | `operator` (7) |
+| 10-14 | SuperUser (all ports/plugs; no configuration menus) | *(add a group at 10-14)* |
+| 15 | Administrator | `superuser` (15) |
+
+**Key points:**
+- WTI authenticates with **PAP**; tacquito's bcrypt authenticator handles PAP, nothing to change server-side
+- **Account Management Module = Enabled** is the authorization request that carries `priv-lvl`; **Session Management Module = Enabled** is accounting (the unit's client uses PAM terminology). Accounting needs tacquito built with `patches/0002` (empty `server_msg` on accounting success): given upstream's `success, logging started` message, the unit drops the SSH session right after login. `tacctl install` / `tacctl upgrade` apply the patch overlay
+- **Service Name** is set to `shell` so the unit's request matches tacquito's configured service directly. The factory default `wti` also works, but only through the default-service-permit patch in `patches/` (an unmatched service is answered with the group's `shell` priv-lvl)
+- **Fallback Local** follows the scope's `aaa-order`: `tacacs-first` → `On (Transport Failure)`, `local-first` → `On (All Failures)`. Keep a local Administrator account on the unit as break-glass
+- **Default User Access must be `On`** (Access Level `ViewOnly` as the least-privilege floor; the returned `priv-lvl` still sets the effective level). SSH logins go through the unit's OpenSSH, which has to resolve the account locally: with it `Off`, a TACACS-only user is invalid to sshd, which forwards a junk password (`\b\n\r\177INCORRECT…`), so tacquito logs `failed to validate the user` on every attempt no matter what was typed
+- If the unit's **IP Tables** (`/N`) end in `DROP`, they must accept `-i lo` and `-m conntrack --ctstate ESTABLISHED,RELATED` before the final DROP. Otherwise the unit's TACACS+ SYN leaves but tacquito's SYN-ACK is dropped: every login waits out the Fallback Timer, and tacquito logs nothing (only SYNs in tcpdump, half-open sockets in `ss`). The unit's Ping Test passes regardless — it is ICMP only
+- Test the first login with `ssh -o PreferredAuthentications=password <user>@<wti>`. If a plain `ssh` is closed without a password prompt while the password method works, the unit's Invalid Access Lockout is armed from earlier failures — `/UL` clears it
+- Port and service access for User/ViewOnly-level logins is defined only under Default TACACS User Access → Configure Port Access / Service Access (factory: Administrator and SuperUser get all ports, User and ViewOnly get none). A same-named local account on the unit overrides the server-assigned level, so keep the two directories disjoint
+- The output warns when the scope secret contains whitespace/punctuation or exceeds 32 characters, or when a scope member's username exceeds WTI's 32-character limit — regenerate a hex-only key with `tacctl scope secret <name> set $(openssl rand -hex 16)`
+- Verify with `tacctl config loglevel debug` + `tacctl log tail`: `accepting user [x] using a bcrypt password` (PAP), then `client args [service=shell ...]`, then `authorized user [x] ... [priv-lvl=N]`; accounting (start at login, stop after `/X`) lands in `tacctl log accounting`. On the unit, TACACS Parameters → `12. Debug: On` echoes every exchange on the serial session — turn it back `Off` when done
+
 ### Custom Templates
 
-The generated Cisco and Juniper configs are rendered from template files using `${VAR}` placeholders (processed by `envsubst`). You can customize the output by editing the templates.
+The generated Cisco, Juniper, and WTI output is rendered from template files using `${VAR}` placeholders (processed by `envsubst`). You can customize the output by editing the templates.
 
 **Template locations** (checked in order):
 1. `/etc/tacquito/templates/` — per-host overrides (takes precedence)
@@ -521,18 +555,22 @@ The generated Cisco and Juniper configs are rendered from template files using `
 **Template files:**
 - `cisco.template` — Cisco IOS/IOS-XE device config
 - `juniper.template` — Juniper Junos device config
+- `wti.template` — WTI console-server serial-menu walkthrough
 
 **Available variables:**
 
 | Variable | Used in | Description |
 |----------|---------|-------------|
-| `${SERVER_IP}` | Both | Auto-detected server IP address |
-| `${SECRET}` | Both | Shared TACACS+ secret |
+| `${SERVER_IP}` | All | Auto-detected server IP address |
+| `${SECRET}` | All | Shared TACACS+ secret |
 | `${PRIVILEGE_COMMANDS}` | Cisco | Pre-rendered privilege level command mappings |
 | `${TEMPLATE_USERS}` | Juniper | Pre-rendered `set system login user` lines |
 | `${TACPLUS_CONFIG}` | Juniper | Pre-rendered TACACS+ server setup commands |
 | `${VERIFY_COMMANDS}` | Juniper | Pre-rendered `show configuration` commands |
-| `${GROUP_SUMMARY}` | Both | Human-readable group mapping table |
+| `${GROUP_SUMMARY}` | All | Human-readable group mapping table |
+| `${SCOPE}` | WTI | Name of the scope being rendered |
+| `${FALLBACK_LOCAL}` | WTI | `On (Transport Failure)` or `On (All Failures)`, from the scope's `aaa-order` |
+| `${SERVICE_NAME}` | WTI | Authorization service name the unit should send (`shell`) |
 
 **To customize:** copy the default template to the override location and edit it:
 ```bash
@@ -587,6 +625,17 @@ Use `--branch` to switch to a different branch (e.g., `develop` for pre-release 
 **TACACS+ auth succeeds but Juniper login fails**
 - Template user is missing on the device
 - Fix: create all template users shown by `tacctl config juniper`
+
+**WTI login refused, or lands at the wrong access level**
+- `tacctl config loglevel debug`, retry, then `tacctl log tail 50`: the `client args [...]` line shows the service name the unit sent. If it is not `shell`, set TACACS Parameters → Service Name to `shell` (or confirm the default-service-permit patch is applied: `tacctl status`)
+- No authorization request at all → Account Management Module is Disabled on the unit
+- `failed to validate the user [x] using a bcrypt password` on every attempt although `tacctl user verify` accepts the password → Default User Access is `Off` on the unit (its sshd sends a junk password for users it cannot resolve); set it `On` / Access Level `ViewOnly`
+- Nothing in the tacquito log while the unit waits the Fallback Timer, SYNs visible in tcpdump → the unit's IP Tables drop tacquito's replies; add the `ESTABLISHED,RELATED` accept rule before the final DROP
+- Login succeeds, then the session drops (`Broken pipe`) with an accounting start but no stop → tacquito lacks `patches/0002`; run `tacctl upgrade`, or disable the unit's Session Management Module until it is rebuilt
+- Level is right but no ports are reachable → User/ViewOnly-level accounts only get the ports granted under Default TACACS User Access → Configure Port Access (factory: none)
+- Level is wrong for one user only → a same-named local account on the unit overrides the server-assigned level
+- `bad secret detected` in `tacctl log failures` → Secret Word was mistyped or truncated on the unit; `unknown authenticate start packet type` → the unit did not send PAP with TACACS+ minor version 1 (open an issue)
+- Set TACACS Parameters → `12. Debug: On` on the unit to see the exchange from its side
 
 **No connection attempts reaching the server**
 - Verify port 49 reachable: `telnet <server_ip> 49` from the device
