@@ -194,7 +194,7 @@ for u in (d.get('users') or []):
             ;;
         config)
             if [[ $pos -eq 2 ]]; then
-                COMPREPLY=($(compgen -W "show dump defaults get get-list cisco juniper validate loglevel listen metrics sudoers password-age bcrypt-cost password-min-length secret-min-length diff restore allow deny mgmt-acl branch" -- "$cur"))
+                COMPREPLY=($(compgen -W "show dump defaults get get-list cisco juniper wti validate loglevel listen metrics sudoers password-age bcrypt-cost password-min-length secret-min-length diff restore allow deny mgmt-acl branch" -- "$cur"))
             elif [[ $pos -eq 3 ]]; then
                 case "${words[offset + 2]}" in
                     loglevel)
@@ -218,7 +218,7 @@ for u in (d.get('users') or []):
                     cisco)
                         COMPREPLY=($(compgen -W "--scope --legacy" -- "$cur"))
                         ;;
-                    juniper)
+                    juniper|wti)
                         COMPREPLY=($(compgen -W "--scope" -- "$cur"))
                         ;;
                     get|get-list)
@@ -233,7 +233,7 @@ for u in (d.get('users') or []):
                         COMPREPLY=($(compgen -W "$(_tacctl_backup_names)" -- "$cur"))
                         ;;
                 esac
-            elif [[ $pos -ge 4 && ( "${words[offset + 2]}" == "cisco" || "${words[offset + 2]}" == "juniper" ) ]]; then
+            elif [[ $pos -ge 4 && ( "${words[offset + 2]}" == "cisco" || "${words[offset + 2]}" == "juniper" || "${words[offset + 2]}" == "wti" ) ]]; then
                 if [[ "${words[cword - 1]}" == "--scope" ]]; then
                     COMPREPLY=($(compgen -W "$(_tacctl_scope_names)" -- "$cur"))
                 elif [[ "${words[offset + 2]}" == "cisco" ]]; then

@@ -1,0 +1,62 @@
+Step 1: Log in on the serial SetUp port as an Administrator-level account
+        (factory default: super / super) and reach the Text Interface command
+        prompt. Keep this serial session open until Step 7 succeeds.
+
+Step 2: Open the TACACS Parameters menu
+        /N [Enter]              Network Parameters (eth0/IPv4 [Shared])
+        28 [Enter]              TACACS Parameters -- the item number varies by
+                                model/firmware; pick the entry labelled "TACACS"
+
+Step 3: Set each item (type the item number, [Enter], then the value)
+         1. Enable                     : On
+         2. Primary Host/Address       : ${SERVER_IP}
+         3. Secondary Host/Address     : (leave Undefined -- single tacquito server)
+         4. Secret Word                : ${SECRET}
+         5. Fallback Timer             : 15
+         6. Fallback Local             : ${FALLBACK_LOCAL}
+         7. Authentication Port        : 49
+         8. Default User Access        : Enable On, Access Level ViewOnly,
+                                         Service Access Telnet/SSH On   (REQUIRED; see notes)
+         9. Account Management Module  : Enabled   (TACACS+ authorization -- carries priv-lvl back; REQUIRED)
+        10. Session Management Module  : Enabled   (TACACS+ accounting -- needs tacctl's tacquito patch 0002)
+        11. Service Name               : ${SERVICE_NAME}     (factory default is "wti"; see notes below)
+        12. Debug                      : Off       (turn On only while troubleshooting)
+
+Step 4: Ping test
+        13. Ping TACACS Servers        -- confirms ${SERVER_IP} answers ICMP from the unit.
+                                          ICMP only: a pass does NOT prove TCP/49 works (Step 5)
+
+Step 5: Check the unit's firewall (IP Tables under /N)
+        If the IP Tables list sets 'iptables -P INPUT DROP' or ends in
+        'iptables -A INPUT -j DROP', it must also accept loopback and replies
+        to the unit's own connections, BEFORE the final DROP:
+          iptables -A INPUT -i lo -j ACCEPT
+          iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+        (older builds: -m state --state ESTABLISHED,RELATED). Without them the
+        unit's TACACS+ SYN leaves but tacquito's SYN-ACK is dropped: every
+        login waits out the Fallback Timer and tacquito logs nothing.
+
+Step 6: Save
+        Press [Esc] repeatedly until the unit prints "Saving Configuration"
+        and returns to the command prompt.
+
+Step 7: Test from a SECOND session -- keep the Step 1 serial session open as a
+        back door until this works. Log in with a tacquito user that is a member
+        of scope '${SCOPE}', forcing the password method first:
+          ssh -o PreferredAuthentications=password <user>@<wti-ip>
+        then type /H: the Help menu lists only the commands allowed for the
+        access level the server assigned (see the mapping below). Log out with
+        /X so the accounting STOP record is sent.
+        If a plain 'ssh <user>@<wti-ip>' is closed without a password prompt
+        while the password method works, the unit's Invalid Access Lockout is
+        armed from earlier failures: /UL clears it.
+
+Step 8: Only if Step 7 fails -- turn on the unit's TACACS debug
+        /N, 28, then 12. Debug: On, [Esc] to save. Retry the Step 7 login: the
+        unit now echoes each TACACS+ exchange (PAP authentication, then the
+        authorization that returns priv-lvl, then accounting) on THIS serial
+        session. Read it next to tacquito's debug log (see "Verify" below),
+        then set 12. Debug back to Off and [Esc] to save.
+        Session dropped ("Broken pipe") right after login, no accounting STOP:
+        the tacquito binary lacks patch 0002 -- run 'tacctl upgrade', or set
+        10. Session Management Module: Disabled until it is rebuilt.

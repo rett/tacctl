@@ -20,6 +20,7 @@
 #   ./tacctl.sh config show
 #   ./tacctl.sh config cisco   [--scope <name>] [--legacy]
 #   ./tacctl.sh config juniper [--scope <name>]
+#   ./tacctl.sh config wti     [--scope <name>]
 #
 set -euo pipefail
 
@@ -2483,7 +2484,9 @@ try:
     priv = ''
     jclass = ''
     for s in g.get('services', []) or []:
-        if s.get('name') == 'exec':
+        # 'shell' is the on-wire Cisco exec service name; 'exec' is the
+        # legacy spelling healed by conf_migrate_exec_service_name().
+        if s.get('name') in ('shell', 'exec'):
             for sv in s.get('set_values', []) or []:
                 if sv.get('name') == 'priv-lvl':
                     v = sv.get('values') or []
@@ -4231,6 +4234,296 @@ set firewall family inet filter ${juniper_acl_name} term default-accept then acc
     echo ""
     echo -e "${BOLD}Verify after commit:${NC}"
     echo "$VERIFY_COMMANDS"
+    echo ""
+}
+
+# --- WTI access level for a Cisco priv-lvl ---
+# WTI console servers (DSM/CPM/REM/TSM/RSM, firmware v8.x) take the access
+# level of a TACACS+ user from the standard `priv-lvl` attribute returned
+# on exec authorization. The band → level mapping is WTI's own (from the
+# WTI "TACACS with Cisco ISE" application note):
+#   0-4 ViewOnly, 5-9 User, 10-14 SuperUser, 15 Administrator.
+# The shipped groups therefore land as readonly(1)→ViewOnly,
+# operator(7)→User, superuser(15)→Administrator; a custom group at
+# priv-lvl 10-14 is the only way to hand out SuperUser.
+wti_access_level_for_privlvl() {
+    local privlvl="$1"
+    if   (( privlvl >= 15 )); then echo "Administrator"
+    elif (( privlvl >= 10 )); then echo "SuperUser"
+    elif (( privlvl >= 5  )); then echo "User"
+    else                            echo "ViewOnly"
+    fi
+}
+
+# --- CONFIG WTI (step-by-step serial-CLI procedure) ---
+# WTI units are configured through numbered text menus, not a pasteable
+# config, so this emits an operator walkthrough with the scope's values
+# filled in. No WTI-specific service block is needed in tacquito.yaml: the
+# unit takes a login's level from the `priv-lvl` attribute returned on exec
+# authorization (documented), so it reads the same `exec_<group>`
+# (`name: shell`) services Cisco does. Its authorization service name is
+# operator-settable (factory default `wti`); the walkthrough sets it to
+# `shell` so the request matches tacquito's configured service directly.
+# Should the unit send something else anyway, the default-service-permit
+# patch in patches/ still answers with the same shell priv-lvl, so either
+# way the operator gets the mapping printed below.
+#
+# Verified against a v8.10 unit: PAP authen → author service=shell
+# protocol=tcp → priv-lvl=15 (Administrator) → acct start/stop. Three
+# unit-side settings are load-bearing and easy to get wrong, so the
+# walkthrough calls each out: Default User Access must be On (with it Off
+# the unit's OpenSSH treats TACACS-only users as invalid and sends a junk
+# password), IP Tables must accept ESTABLISHED,RELATED (or tacquito's
+# SYN-ACK is dropped), and Session Management needs patch 0002 (the unit
+# drops the session on a non-empty accounting server_msg).
+cmd_config_wti() {
+    # Parse --scope <name>
+    local scope=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --scope)
+                scope="${2:-}"
+                [[ -z "$scope" ]] && { error "Usage: tacctl config wti [--scope <name>]"; exit 1; }
+                shift 2
+                ;;
+            *)
+                error "Unknown argument: '$1'"
+                error "Usage: tacctl config wti [--scope <name>]"
+                exit 1
+                ;;
+        esac
+    done
+    if [[ -z "$scope" ]]; then
+        scope=$(read_default_scope)
+        if [[ -z "$scope" ]]; then
+            error "No default scope set and no --scope provided."
+            error "Run 'tacctl scope default <name>' or pass --scope <name>."
+            exit 1
+        fi
+    elif ! scope_exists "$scope"; then
+        error "Scope '${scope}' does not exist. Available: $(list_scopes | paste -sd' ')"
+        exit 1
+    fi
+    local secret server_ip
+    secret=$(read_scope_secret "$scope")
+    server_ip=$(ip -4 route get 1.0.0.0 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}')
+    if [[ -z "$server_ip" ]]; then
+        server_ip="<TACQUITO_SERVER_IP>"
+    fi
+
+    # Compute "other scopes" list for the header.
+    local other_scopes
+    # `grep -vxF` exits 1 when no lines survive (e.g. only the one named scope
+    # exists). Under `set -o pipefail` that kills the subshell and, via
+    # `set -e`, the whole script. Append `|| true` to the grep so the pipeline
+    # stays zero-exit when the "other scopes" set is empty.
+    other_scopes=$(list_scopes | { grep -vxF "$scope" || true; } | paste -sd,)
+
+    # Collect all groups with their priv-lvl (same walk as config cisco —
+    # WTI consumes the identical `shell` service).
+    local group_info
+    group_info=$(python3 -c "
+import re, sys
+config = open(sys.argv[1]).read()
+groups_match = re.search(r'^# --- Groups ---\s*\n(.*?)(?=^# --- Users|\Z)', config, re.MULTILINE | re.DOTALL)
+if not groups_match:
+    sys.exit(0)
+for m in re.finditer(r'^(\w+): &\1\n  name: \1\n  services:\n(.*?)  accounter:', groups_match.group(1), re.MULTILINE | re.DOTALL):
+    name = m.group(1)
+    pm = re.search(r'\*exec_(\w+)', m.group(2))
+    if pm:
+        svc = pm.group(1)
+        sm = re.search(r'exec_' + svc + r':.*?values:\s*\[(\d+)\]', config, re.DOTALL)
+        if sm:
+            print(f'{name}|{sm.group(1)}')
+" "$CONFIG")
+
+    local GROUP_SUMMARY="" has_superuser_band="false"
+    while IFS='|' read -r gname privlvl; do
+        [[ -z "$gname" ]] && continue
+        local wlevel
+        wlevel=$(wti_access_level_for_privlvl "$privlvl")
+        [[ "$wlevel" == "SuperUser" ]] && has_superuser_band="true"
+        GROUP_SUMMARY+="  ${gname}: priv-lvl ${privlvl} → ${wlevel}"$'\n'
+    done <<< "$group_info"
+
+    # Fallback Local follows the scope's aaa-order. WTI always asks the
+    # server first; the setting only picks when its own user directory is
+    # consulted. "On (Transport Failure)" = only when the server cannot be
+    # reached, which is what Cisco's `group TACACS local` (tacacs-first)
+    # does. "On (All Failures)" = also after a server reject (bad password,
+    # unknown user), the nearest WTI has to local-first. Plain "Off" is never
+    # emitted: it would lock the operator out the moment tacquito is down.
+    local FALLBACK_LOCAL
+    if [[ "$(conf_get "aaa.order.${scope}" tacacs-first)" == "local-first" ]]; then
+        FALLBACK_LOCAL="On (All Failures)"
+    else
+        FALLBACK_LOCAL="On (Transport Failure)"
+    fi
+
+    # Authorization service name the unit should send. tacquito's session
+    # authorizer only returns AVPs for a service whose name matches the
+    # inbound `service=` value; `shell` is what every exec_<group> block
+    # is named.
+    local SERVICE_NAME="shell"
+
+    # WTI field constraints. The unit documents no Secret Word limit, but
+    # every credential field it does document (username ≤ 32 chars,
+    # password 5-16) rejects spaces and non-printable characters, and the
+    # value is keyed in by hand at a menu prompt. Flag anything that is
+    # likely to be mangled on entry so the operator can regenerate a
+    # hex-only key before touching the device.
+    local secret_warnings=""
+    if [[ "$secret" =~ [[:space:]] ]] || [[ "$secret" =~ [^[:print:]] ]]; then
+        secret_warnings+="  - ${RED}Secret contains whitespace or non-printable characters — WTI rejects${NC}"$'\n'
+        secret_warnings+="    ${RED}those in credential fields. Regenerate a hex key:${NC}"$'\n'
+        secret_warnings+="      tacctl scope secret ${scope} set \$(openssl rand -hex 16)"$'\n'
+    elif [[ ! "$secret" =~ ^[A-Za-z0-9_-]+$ ]]; then
+        secret_warnings+="  - Secret contains punctuation (e.g. + / =); the WTI menu prompt is untested"$'\n'
+        secret_warnings+="    with those. If tacquito logs 'bad secret detected' after saving, switch"$'\n'
+        secret_warnings+="    to a hex-only key: tacctl scope secret ${scope} set \$(openssl rand -hex 16)"$'\n'
+    fi
+    if [[ "${#secret}" -gt 32 ]]; then
+        secret_warnings+="  - Secret is ${#secret} chars. WTI documents no Secret Word maximum, but its other"$'\n'
+        secret_warnings+="    credential fields cap at 16-32 chars; a silent truncation shows up on the"$'\n'
+        secret_warnings+="    tacquito side as 'bad secret detected'. A 32-char hex key is the safe choice."$'\n'
+    fi
+    # WTI usernames are capped at 32 characters (Add User menu); a longer
+    # tacquito user can authenticate but cannot be represented on the unit.
+    local user_warnings=""
+    while IFS= read -r uname; do
+        [[ -z "$uname" ]] && continue
+        if [[ "${#uname}" -gt 32 ]]; then
+            user_warnings+="  - User '${uname}' is ${#uname} chars; WTI usernames max out at 32"$'\n'
+        fi
+    done < <(list_users_in_scope "$scope")
+
+    echo ""
+    echo -e "${BOLD}WTI Console Server Configuration${NC}  (scope: ${scope}, firmware v8.x text interface)"
+    if [[ -n "$other_scopes" ]]; then
+        echo -e "${YELLOW}(other scopes: ${other_scopes} — use --scope <name> to emit those)${NC}"
+    fi
+    echo -e "${YELLOW}Follow these steps on the WTI serial (SetUp) console:${NC}"
+    echo "--------------------------------------------"
+    echo ""
+
+    local template_file
+    template_file=$(resolve_template "wti")
+    if [[ -n "$template_file" ]]; then
+        export SERVER_IP="$server_ip" SECRET="$secret" SCOPE="$scope" FALLBACK_LOCAL SERVICE_NAME GROUP_SUMMARY
+        # shellcheck disable=SC2016
+        envsubst '${SERVER_IP} ${SECRET} ${SCOPE} ${FALLBACK_LOCAL} ${SERVICE_NAME} ${GROUP_SUMMARY}' < "$template_file"
+    else
+        cat <<EOF
+Step 1: Log in on the serial SetUp port as an Administrator-level account
+        (factory default: super / super). Keep this session open until Step 7 succeeds.
+
+Step 2: /N [Enter] -> Network Parameters; 28 [Enter] -> TACACS Parameters.
+
+Step 3: Set each item:
+         1. Enable                     : On
+         2. Primary Host/Address       : ${server_ip}
+         3. Secondary Host/Address     : (leave Undefined)
+         4. Secret Word                : ${secret}
+         5. Fallback Timer             : 15
+         6. Fallback Local             : ${FALLBACK_LOCAL}
+         7. Authentication Port        : 49
+         8. Default User Access        : Enable On, Access Level ViewOnly (REQUIRED)
+         9. Account Management Module  : Enabled   (authorization -- carries priv-lvl)
+        10. Session Management Module  : Enabled   (accounting -- needs tacquito patch 0002)
+        11. Service Name               : ${SERVICE_NAME}
+        12. Debug                      : Off
+
+Step 4: 13. Ping TACACS Servers -- confirms ${server_ip} answers ICMP (not TCP/49).
+
+Step 5: If the unit's IP Tables (/N) end in DROP, accept these before the DROP:
+          iptables -A INPUT -i lo -j ACCEPT
+          iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+
+Step 6: Press [Esc] repeatedly until "Saving Configuration" is printed.
+
+Step 7: From a SECOND session, log in as a tacquito user in scope '${scope}'
+        with 'ssh -o PreferredAuthentications=password <user>@<wti-ip>', type /H
+        to see the commands allowed at the assigned access level, and /X to exit.
+
+Step 8: Only if Step 7 fails: set 12. Debug: On, retry the login, and read the
+        exchange the unit prints on this serial session next to tacquito's debug
+        log (see below). Set Debug back to Off afterwards.
+EOF
+    fi
+
+    echo ""
+    echo "--------------------------------------------"
+    echo -e "${YELLOW}Group → WTI Access Level Mapping (from priv-lvl):${NC}"
+    echo -n "$GROUP_SUMMARY"
+    echo "  (WTI bands: 0-4 ViewOnly, 5-9 User, 10-14 SuperUser, 15 Administrator)"
+    if [[ "$has_superuser_band" == "false" ]]; then
+        echo "  No group lands in the SuperUser band; to grant it, add a group at"
+        echo "  priv-lvl 10-14, e.g. 'tacctl group add wtisuper 12 OP-CLASS'."
+    fi
+    echo ""
+    if [[ -n "$secret_warnings" || -n "$user_warnings" ]]; then
+        echo -e "${YELLOW}Warnings:${NC}"
+        echo -en "$secret_warnings"
+        echo -n "$user_warnings"
+        echo ""
+    fi
+    echo -e "${YELLOW}Notes:${NC}"
+    echo "  - WTI authenticates with PAP (password travels inside the TACACS+ body,"
+    echo "    obfuscated with the shared secret) — tacquito's bcrypt authenticator"
+    echo "    handles PAP, no server-side change needed"
+    echo "  - The Account/Session Management Module items are PAM terms (the unit's"
+    echo "    client is pam_tacplus-style): 'Account' is the TACACS+ authorization"
+    echo "    request that carries priv-lvl back — without it every login gets the"
+    echo "    'Default User Access' level; 'Session' is accounting start/stop"
+    echo "  - Service Name '${SERVICE_NAME}' makes the unit's authorization request match"
+    echo "    tacquito's configured service directly. Leaving the factory 'wti' also"
+    echo "    works, but only via the default-service-permit patch (patches/0001),"
+    echo "    which answers an unmatched service with the group's shell priv-lvl"
+    echo "  - Default User Access must be On (Access Level ViewOnly is only the floor;"
+    echo "    the priv-lvl tacquito returns sets the effective level). SSH logins go"
+    echo "    through the unit's OpenSSH, which must resolve the account locally: with"
+    echo "    it Off, a TACACS-only user is invalid to sshd, which sends a junk password"
+    echo "    (OpenSSH's 'INCORRECT' filler) — tacquito then logs 'failed to validate"
+    echo "    the user' on every attempt whatever was typed, and a plain ssh is closed"
+    echo "    unprompted"
+    echo "  - Session Management (accounting) needs tacquito built with tacctl's patch"
+    echo "    0002 (patches/): upstream answers accounting with a non-empty server_msg,"
+    echo "    and the unit drops the SSH session right after login when it gets one."
+    echo "    'tacctl upgrade' applies the patch overlay and rebuilds"
+    echo "  - Port and service access for User/ViewOnly-level logins (priv-lvl 0-9) is"
+    echo "    defined only under 8. Default TACACS User Access → Configure Port Access /"
+    echo "    Service Access (factory: Administrator+SuperUser all ports, User+ViewOnly"
+    echo "    none). If such a login lands at the right level but reaches no ports,"
+    echo "    grant them there. A same-named LOCAL account on the unit overrides the"
+    echo "    server-assigned level — keep the two directories disjoint"
+    echo "  - Fallback Local '${FALLBACK_LOCAL}' mirrors this scope's aaa-order;"
+    echo "    keep a local Administrator account on the unit as break-glass. It acts"
+    echo "    only after the TACACS+ transport fails (Fallback Timer expiry), not on an"
+    echo "    immediate 'Connection closed' or 'Permission denied'"
+    echo "  - A firewall that drops tacquito's replies (the unit's own IP Tables"
+    echo "    without ESTABLISHED,RELATED — Step 5) shows up on the server only as"
+    echo "    SYNs in tcpdump and half-open (SYN-RECV) sockets; tacquito logs nothing"
+    echo "  - The unit's source IP must fall inside a prefix of scope '${scope}'"
+    echo "    ('tacctl scope lookup <wti-ip>' to check)"
+    if [[ -n "$template_file" ]]; then
+        echo "  - Using template: ${template_file}"
+    fi
+    echo ""
+    echo -e "${BOLD}Verify on the tacquito side:${NC}"
+    echo "  tacctl config loglevel debug          # then log in on the WTI (Step 7) and watch:"
+    echo "  tacctl log tail 50                    # 1. 'accepting user [x] using a bcrypt password'  (PAP authen)"
+    echo "                                        # 2. 'session authz user [x]: client args [service=${SERVICE_NAME} ...]'"
+    echo "                                        # 3. 'authorized user [x] as session based; args [priv-lvl=N]'"
+    echo "  tacctl log accounting                 # start record at login, stop record after /X"
+    echo "  tacctl log failures                   # 'bad secret detected' = Secret Word mismatch;"
+    echo "                                        # 'failed to validate the user [x] using a bcrypt"
+    echo "                                        # password' on EVERY attempt = Default User Access Off;"
+    echo "                                        # 'unknown authenticate start packet type' = unit did not"
+    echo "                                        # send PAP with TACACS+ minor version 1 (open an issue)"
+    echo "  tacctl config loglevel info           # restore when done"
+    echo "  On the WTI (Step 8): with 12. Debug: On the unit echoes each TACACS+ exchange on"
+    echo "  the serial session; line up the authen/author/acct replies with the entries above"
     echo ""
 }
 
@@ -6062,6 +6355,9 @@ cmd_config() {
         juniper)
             cmd_config_juniper "$@"
             ;;
+        wti)
+            cmd_config_wti "$@"
+            ;;
         validate)
             cmd_config_validate
             ;;
@@ -6155,6 +6451,7 @@ cmd_config() {
             echo "  mgmt-acl list|add|remove|clear       Manage Cisco VTY-ACL + Juniper lo0-filter permits"
             echo "  cisco   [--scope <name>] [--legacy]  Show working Cisco device configuration for a scope (--legacy = IOS 12.x syntax)"
             echo "  juniper [--scope <name>]             Show working Juniper device configuration for a scope"
+            echo "  wti     [--scope <name>]             Show step-by-step WTI console-server (v8.x serial menu) setup for a scope"
             echo "  branch [name]                        Show or change the tacctl repo branch"
             echo ""
             echo "Examples:"
@@ -6165,6 +6462,7 @@ cmd_config() {
             echo "  tacctl config sudoers install adm"
             echo "  tacctl config cisco --scope prod"
             echo "  tacctl config cisco --scope prod --legacy   # legacy IOS 12.x syntax"
+            echo "  tacctl config wti --scope prod"
             echo ""
             exit 1
             ;;
@@ -9619,7 +9917,7 @@ usage() {
     echo "  user <subcommand>             User management (list, add, remove, passwd, scope, ...)"
     echo "  group <subcommand>            Group management (list, add, edit, remove)"
     echo "  scope <subcommand>            Scope management (named CIDR + shared-secret bundles)"
-    echo "  config <subcommand>           Configuration (show, cisco, juniper, validate, ...)"
+    echo "  config <subcommand>           Configuration (show, cisco, juniper, wti, validate, ...)"
     echo "  log <subcommand>              Log viewer (tail, search, failures, accounting)"
     echo "  backup <subcommand>           Backup management (list, diff, restore)"
     echo "  hash <subcommand>             Bcrypt helper (generate, commands — runs as invoking user, no sudo)"

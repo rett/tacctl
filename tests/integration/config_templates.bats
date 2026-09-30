@@ -94,6 +94,174 @@ _normalize() {
     assert_output --partial "does not exist"
 }
 
+# --- config wti -------------------------------------------------------------
+# WTI console servers are driven by numbered serial menus, so the render is a
+# walkthrough (not a pasteable config). The unit reads priv-lvl from the same
+# `shell` service Cisco uses; the goldens pin the menu values + band mapping.
+
+@test "config wti: renders deterministic walkthrough from fixture + lab scope" {
+    local out="$BATS_TEST_TMPDIR/wti.conf"
+    "$TACCTL_BIN_SCRIPT" config wti --scope lab | _normalize > "$out"
+    [[ -s "$out" ]]
+    golden_diff "$out" "wti-lab.conf"
+}
+
+@test "config wti: fills in server IP, secret, port 49, service name shell" {
+    run "$TACCTL_BIN_SCRIPT" config wti --scope lab
+    assert_success
+    assert_output --partial "Primary Host/Address       : 10.0.0.42"
+    assert_output --partial "Secret Word                : lab-secret-0123456789abcdef"
+    assert_output --partial "Authentication Port        : 49"
+    assert_output --partial "Service Name               : shell"
+    assert_output --partial "Account Management Module  : Enabled"
+    assert_output --partial "Session Management Module  : Enabled"
+}
+
+@test "config wti: verification covers both sides (WTI Debug + tacquito debug log)" {
+    run "$TACCTL_BIN_SCRIPT" config wti --scope lab
+    assert_success
+    # Debug stays Off in the base procedure and is only flipped in the
+    # troubleshooting step, which must tell the operator to flip it back.
+    assert_output --partial "12. Debug                      : Off"
+    assert_output --partial "Step 8: Only if Step 7 fails"
+    assert_output --partial "12. Debug: On"
+    assert_output --partial "back to Off"
+    assert_output --partial "tacctl config loglevel debug"
+    assert_output --partial "client args [service=shell"
+    assert_output --partial "args [priv-lvl=N]"
+    assert_output --partial "bad secret detected"
+    assert_output --partial "tacctl config loglevel info"
+}
+
+@test "config wti: Default User Access is On (ViewOnly floor), never Off" {
+    # Verified on a v8.10 unit: with item 8 Off, the unit's OpenSSH treats a
+    # TACACS-only user as invalid and forwards a junk password to tacquito.
+    run "$TACCTL_BIN_SCRIPT" config wti --scope lab
+    assert_success
+    assert_output --partial "Default User Access        : Enable On, Access Level ViewOnly"
+    refute_output --partial "Default User Access        : Off"
+    assert_output --partial "INCORRECT"
+    assert_output --partial "password' on EVERY attempt = Default User Access Off"
+}
+
+@test "config wti: walkthrough covers the unit firewall and password-method test" {
+    run "$TACCTL_BIN_SCRIPT" config wti --scope lab
+    assert_success
+    assert_output --partial "iptables -A INPUT -i lo -j ACCEPT"
+    assert_output --partial "iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT"
+    assert_output --partial "ssh -o PreferredAuthentications=password"
+    assert_output --partial "/UL clears it"
+}
+
+@test "config wti: Session Management calls out tacquito patch 0002" {
+    run "$TACCTL_BIN_SCRIPT" config wti --scope lab
+    assert_success
+    assert_output --partial "Session Management Module  : Enabled   (TACACS+ accounting -- needs tacctl's tacquito patch 0002)"
+    assert_output --partial "the tacquito binary lacks patch 0002"
+}
+
+@test "config wti: maps shipped groups onto WTI access-level bands" {
+    run "$TACCTL_BIN_SCRIPT" config wti --scope lab
+    assert_success
+    assert_output --partial "readonly: priv-lvl 1 → ViewOnly"
+    assert_output --partial "operator: priv-lvl 7 → User"
+    assert_output --partial "superuser: priv-lvl 15 → Administrator"
+    # Nothing ships in the 10-14 band; the hint tells the operator how to get there.
+    assert_output --partial "No group lands in the SuperUser band"
+}
+
+@test "config wti: a group at priv-lvl 10-14 lands in the SuperUser band" {
+    "$TACCTL_BIN_SCRIPT" group add wtisuper 12 OP-CLASS > /dev/null
+    run "$TACCTL_BIN_SCRIPT" config wti --scope lab
+    assert_success
+    assert_output --partial "wtisuper: priv-lvl 12 → SuperUser"
+    refute_output --partial "No group lands in the SuperUser band"
+}
+
+@test "config wti: default tacacs-first renders Fallback Local 'On (Transport Failure)'" {
+    run "$TACCTL_BIN_SCRIPT" config wti --scope lab
+    assert_success
+    assert_output --partial "Fallback Local             : On (Transport Failure)"
+}
+
+@test "config wti: scope aaa-order local-first renders Fallback Local 'On (All Failures)'" {
+    "$TACCTL_BIN_SCRIPT" scope aaa-order lab local-first > /dev/null
+    run "$TACCTL_BIN_SCRIPT" config wti --scope lab
+    assert_success
+    assert_output --partial "Fallback Local             : On (All Failures)"
+    refute_output --partial "On (Transport Failure)"
+    # Override stays scoped: prod keeps the default.
+    run "$TACCTL_BIN_SCRIPT" config wti --scope prod
+    assert_success
+    assert_output --partial "Fallback Local             : On (Transport Failure)"
+}
+
+@test "config wti: no secret warning for a hyphenated alphanumeric key of <= 32 chars" {
+    run "$TACCTL_BIN_SCRIPT" config wti --scope lab
+    assert_success
+    refute_output --partial "Warnings:"
+}
+
+@test "config wti: warns when the scope secret carries punctuation" {
+    "$TACCTL_BIN_SCRIPT" scope secret lab set 'ab+cd/ef=0123456789xyz' > /dev/null
+    run "$TACCTL_BIN_SCRIPT" config wti --scope lab
+    assert_success
+    assert_output --partial "Warnings:"
+    assert_output --partial "Secret contains punctuation"
+    assert_output --partial "tacctl scope secret lab set"
+}
+
+@test "config wti: warns when the scope secret exceeds 32 chars" {
+    "$TACCTL_BIN_SCRIPT" scope secret lab set 'abcdefghij0123456789ABCDEFGHIJ0123456789' > /dev/null
+    run "$TACCTL_BIN_SCRIPT" config wti --scope lab
+    assert_success
+    assert_output --partial "Secret is 40 chars"
+}
+
+@test "config wti: warns when a scope member's username exceeds WTI's 32-char cap" {
+    local longname="abcdefghij0123456789abcdefghij012"   # 33 chars
+    local test_hash="24326224313024616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161"
+    "$TACCTL_BIN_SCRIPT" user add "$longname" readonly --scopes lab --hash "$test_hash" > /dev/null
+    run "$TACCTL_BIN_SCRIPT" config wti --scope lab
+    assert_success
+    assert_output --partial "User '${longname}' is 33 chars"
+    # Members of other scopes only are not the WTI's problem.
+    run "$TACCTL_BIN_SCRIPT" config wti --scope prod
+    assert_success
+    refute_output --partial "is 33 chars"
+}
+
+@test "config wti: errors on unknown scope" {
+    run "$TACCTL_BIN_SCRIPT" config wti --scope nosuchscope
+    assert_failure
+    assert_output --partial "does not exist"
+}
+
+@test "config wti: rejects unknown arguments" {
+    run "$TACCTL_BIN_SCRIPT" config wti --legacy
+    assert_failure
+    assert_output --partial "Unknown argument"
+}
+
+@test "config wti: falls back to the inline walkthrough when no template resolves" {
+    # Point both template dirs at nowhere: TACCTL_ETC is already the tmp etc
+    # (no templates/ dir), and the repo dir is derived from the script's own
+    # location, so run a copy of the script from an empty directory.
+    local alt="$BATS_TEST_TMPDIR/alt/bin"
+    mkdir -p "$alt"
+    cp "$TACCTL_BIN_SCRIPT" "$alt/tacctl.sh"
+    run "$alt/tacctl.sh" config wti --scope lab
+    assert_success
+    refute_output --partial "Using template:"
+    assert_output --partial "Secret Word                : lab-secret-0123456789abcdef"
+    assert_output --partial "Service Name               : shell"
+    # The inline fallback carries the same load-bearing settings and
+    # troubleshooting step as the template.
+    assert_output --partial "Default User Access        : Enable On, Access Level ViewOnly"
+    assert_output --partial "ESTABLISHED,RELATED -j ACCEPT"
+    assert_output --partial "Step 8: Only if Step 7 fails"
+}
+
 @test "config validate: succeeds on a valid config" {
     run "$TACCTL_BIN_SCRIPT" config validate
     assert_success

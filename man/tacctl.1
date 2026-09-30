@@ -16,7 +16,8 @@ a TACACS+ server (RFC 8907).
 It installs and upgrades the server, manages users, groups, and scopes
 (named CIDR + shared-secret bundles), edits server configuration,
 inspects logs and backups, and generates ready-to-paste device
-configuration for Cisco IOS/IOS-XE and Juniper Junos.
+configuration for Cisco IOS/IOS-XE and Juniper Junos, plus a
+menu-by-menu setup procedure for WTI console servers.
 .PP
 Most commands require root.
 .B tacctl
@@ -595,6 +596,39 @@ lo0 firewall-filter example built from
 pre-filled. Scope handling matches
 .BR "config cisco" .
 .TP
+.BI "config wti " [ "--scope " name ]
+Print a step-by-step procedure for the serial text interface of a WTI
+console server (DSM/CPM/REM/TSM/RSM, firmware v8.x): the
+.B /N
+Network Parameters menu, the TACACS Parameters item, and the value to
+key in for every field (server IP, Secret Word, port 49, Fallback Local
+derived from the scope's
+.BR aaa-order ,
+Default User Access
+.B On
+with Access Level ViewOnly (required: with it Off the unit's OpenSSH
+treats TACACS-only users as invalid and sends a junk password),
+Account/Session Management Modules, Service Name
+.BR shell ),
+an IP Tables check (the unit must accept ESTABLISHED,RELATED traffic or
+tacquito's replies are dropped),
+followed by the group-to-access-level mapping, a troubleshooting step
+that turns on the unit's TACACS Debug echo, and the matching tacquito
+log lines to look for. WTI reads the standard
+.B priv-lvl
+attribute from the same
+.B shell
+service Cisco uses (0\-4 ViewOnly, 5\-9 User, 10\-14 SuperUser, 15
+Administrator), so no extra service block is needed. The unit's
+accounting (Session Management Module) needs tacquito built with the
+.I patches/0002
+overlay, which sends an empty server_msg on accounting success; the
+unit drops the SSH session when it receives upstream's message. Warns when the
+scope secret or a scope member's username is unlikely to survive the
+unit's menu entry (whitespace, punctuation, over 32 characters). Scope
+handling matches
+.BR "config cisco" .
+.TP
 .BI "config branch " [ name ]
 Show or change the tacctl repository branch used by
 .B tacctl upgrade.
@@ -762,7 +796,7 @@ Used by
 when
 .B --scopes
 is omitted, and by
-.BR "config cisco" " / " "config juniper"
+.BR "config cisco" " / " "config juniper" " / " "config wti"
 when
 .B --scope
 is omitted.
@@ -1162,6 +1196,9 @@ Generate a Cisco-ready configuration for the prod scope:
 .TP
 Generate legacy IOS 12.x syntax for an older device (e.g. an ITP on 12.4):
 .B tacctl config cisco --scope prod_dc_east --legacy
+.TP
+Print the serial-menu walkthrough for a WTI console server in the lab scope:
+.B tacctl config wti --scope lab_east
 .TP
 Bind the listener to a specific management IP:
 .B tacctl config listen tcp 10.1.0.1:49
