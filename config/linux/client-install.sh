@@ -630,6 +630,8 @@ pam_committed=1
 # who locked the screen could not unlock it. Plasma sources env/*.sh at session
 # start; ours puts a locked-down config directory first for accounts this
 # script created (full name ending in "(TACACS+)"). Other accounts keep theirs.
+# Timeout=0 is what the settings page shows as "Never"; Autolock is what the
+# locker itself obeys.
 if [[ -f "$PAM_DIR/kde" || -d "$XDG_DIR/plasma-workspace" || ( "$CLIENT_TEST" != "1" && -f /usr/lib/pam.d/kde ) ]]; then
     mkdir -p "$XDG_DIR/tacctl" "$XDG_DIR/plasma-workspace/env"
     chmod 0755 "$XDG_DIR/tacctl"
@@ -637,6 +639,7 @@ if [[ -f "$PAM_DIR/kde" || -d "$XDG_DIR/plasma-workspace" || ( "$CLIENT_TEST" !=
 # Managed by tacctl. Applies to TACACS+ accounts only.
 [Daemon]
 Autolock[$i]=false
+Timeout[$i]=0
 LockOnResume[$i]=false
 LockOnStart[$i]=false
 EOF

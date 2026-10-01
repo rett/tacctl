@@ -653,6 +653,7 @@ _rhel_env() {
 
     run cat "$TACCTL_CLIENT_XDG/tacctl/kscreenlockerrc"
     assert_line 'Autolock[$i]=false'
+    assert_line 'Timeout[$i]=0'
     assert_line 'LockOnResume[$i]=false'
     run cat "$TACCTL_CLIENT_XDG/tacctl/kdeglobals"
     assert_line '[KDE Action Restrictions][$i]'
