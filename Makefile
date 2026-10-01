@@ -29,6 +29,7 @@ coverage:
 lint:
 	$(SHELLCHECK) bin/tacctl.sh
 	$(SHELLCHECK) tests/helpers/*.bash
+	$(SHELLCHECK) config/linux/*.sh
 
 # First-time setup: ensure bats submodules are populated.
 bootstrap:

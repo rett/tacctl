@@ -1976,6 +1976,104 @@ prompt_password() {
 }
 
 # =====================================================================
+#  CALLER TIERS (read-only / operator / superuser)
+# =====================================================================
+#
+# tacctl always runs as root, so the tier of the person behind sudo is
+# enforced here as well as in the sudoers drop-in ('tacctl config sudoers
+# tiers'): sudoers argument globs are loose, this gate is not.
+#
+# Only callers in the local group $TIER_USERS_GROUP are tier-managed --
+# those are the accounts tacctl provisions for TACACS+ users. Everyone
+# else who reaches this point (root, a local admin with sudo) keeps the
+# full access they always had. For a managed caller the tier comes from
+# tacquito.yaml, never from local group membership, so a stale local
+# group cannot grant more than the user's TACACS+ group does.
+TIER_USERS_GROUP="tac-users"
+TIER_GROUP_READONLY="tac-readonly"
+TIER_GROUP_OPERATOR="tac-operator"
+TIER_GROUP_SUPERUSER="tac-superuser"
+
+# priv-lvl -> tier. 15 is superuser; the shipped operator group is 7.
+tier_for_privlvl() {
+    local privlvl="${1:-}"
+    [[ "$privlvl" =~ ^[0-9]+$ ]] || { echo "none"; return; }
+    if   (( privlvl >= 15 )); then echo "superuser"
+    elif (( privlvl >= 7  )); then echo "operator"
+    else                           echo "readonly"
+    fi
+}
+
+# Prints: unrestricted | superuser | operator | readonly | none
+# 'none' = tier-managed caller with no usable tacctl user (unknown or
+# disabled), which is denied everything.
+caller_tier() {
+    local caller="${SUDO_USER:-}"
+    if [[ -z "$caller" || "$caller" == "root" ]]; then
+        echo "unrestricted"
+        return
+    fi
+    # No pipeline here: under pipefail a SIGPIPE would read as "not a
+    # member" and fail open.
+    local caller_groups
+    caller_groups=$(id -nG -- "$caller" 2>/dev/null) || caller_groups=""
+    if [[ " ${caller_groups} " != *" ${TIER_USERS_GROUP} "* ]]; then
+        echo "unrestricted"
+        return
+    fi
+    if [[ ! -f "$CONFIG" ]] || [[ ! "$caller" =~ ^[a-zA-Z0-9_-]+$ ]] || ! user_exists "$caller"; then
+        echo "none"
+        return
+    fi
+    if is_disabled_hash "$(get_user_hash "$caller")"; then
+        echo "none"
+        return
+    fi
+    tier_for_privlvl "$(get_group_privlvl "$(get_user_group "$caller")")"
+}
+
+# tier_permits <tier> <command> [subcommand] -> 0 if allowed.
+# Keep in step with emit_tier_sudoers(). Anything that prints a shared
+# secret or a password hash (config cisco|juniper|wti, scope show|secret,
+# backup diff, config dump) is superuser-only.
+tier_permits() {
+    local tier="$1" cmd="${2:-}" sub="${3:-}"
+    case "$tier" in
+        unrestricted|superuser) return 0 ;;
+        readonly|operator) ;;
+        *) return 1 ;;
+    esac
+    case "$cmd" in
+        ""|passwd|status|version|--version|-v|hash|_completion-names) return 0 ;;
+    esac
+    case "$cmd $sub" in
+        "user list"|"user show"|"group list"|"scope list") return 0 ;;
+    esac
+    [[ "$tier" == "operator" ]] || return 1
+    case "$cmd $sub" in
+        "log tail"|"log search"|"log failures"|"log accounting") return 0 ;;
+        "config validate"|"backup list") return 0 ;;
+    esac
+    return 1
+}
+
+enforce_tier() {
+    local tier
+    tier=$(caller_tier)
+    if tier_permits "$tier" "$@"; then
+        return 0
+    fi
+    logger -t tacctl -p auth.warning \
+        "tier DENY user=${SUDO_USER:-root} tier=${tier} cmd=${1:-} ${2:-}" 2>/dev/null || true
+    if [[ "$tier" == "none" ]]; then
+        error "'${SUDO_USER}' has no active tacctl user, so tacctl access is denied."
+    else
+        error "'tacctl ${1:-} ${2:-}' is not permitted for the ${tier} tier."
+    fi
+    exit 1
+}
+
+# =====================================================================
 #  COMMANDS
 # =====================================================================
 
@@ -2358,6 +2456,74 @@ cmd_passwd() {
 
     restart_service
     record_password_date "$username"
+    info "Password changed for '${username}'."
+    echo ""
+}
+
+# --- PASSWD (self-service) ---
+# 'tacctl passwd' with no arguments: the caller changes the password of the
+# tacctl user that matches their own login. The target is taken from
+# SUDO_USER only -- there is deliberately no username argument, so the
+# sudoers rule for the lower tiers can allow this exact command without
+# letting anyone reset somebody else's password. The current password must
+# verify first.
+cmd_passwd_self() {
+    if [[ $# -gt 0 ]]; then
+        error "Usage: tacctl passwd   (changes your own password; takes no arguments)"
+        error "To set another user's password: tacctl user passwd <username>"
+        exit 1
+    fi
+    local username="${SUDO_USER:-}"
+    if [[ -z "$username" || "$username" == "root" ]]; then
+        error "'tacctl passwd' changes the password of the user who invoked sudo."
+        error "As root, use: tacctl user passwd <username>"
+        exit 1
+    fi
+    validate_username "$username"
+    if ! user_exists "$username"; then
+        error "No tacctl user named '${username}'."
+        exit 1
+    fi
+    local stored_hash
+    stored_hash=$(get_user_hash "$username")
+    if is_disabled_hash "$stored_hash"; then
+        error "User '${username}' is disabled. Ask a superuser to re-enable it."
+        exit 1
+    fi
+
+    echo ""
+    echo -e "  Changing password for: ${BOLD}${username}${NC}"
+
+    local current
+    current=$(read_password_masked "  Current password: ")
+    if [[ "$(verify_hash "$current" "$stored_hash")" != "MATCH" ]]; then
+        unset current
+        # Same rate limit as 'user verify': not a local bcrypt oracle.
+        sleep 0.5
+        logger -t tacctl -p auth.warning \
+            "passwd FAIL user=${username} reason=bad-current-password" 2>/dev/null || true
+        error "Current password does not match."
+        exit 1
+    fi
+
+    local password
+    password=$(prompt_password "$username")
+    if [[ "$password" == "$current" ]]; then
+        unset current password
+        error "New password must differ from the current one."
+        exit 1
+    fi
+    unset current
+    local hash
+    hash=$(generate_hash "$password")
+    unset password
+
+    backup_config
+    replace_user_hash "$username" "$hash"
+    chown tacquito:tacquito "$CONFIG"
+    restart_service
+    record_password_date "$username"
+    logger -t tacctl -p auth.info "passwd OK user=${username} (self-service)" 2>/dev/null || true
     info "Password changed for '${username}'."
     echo ""
 }
@@ -4527,6 +4693,237 @@ EOF
     echo ""
 }
 
+# --- CONFIG LINUX (TACACS+ login for Linux hosts) ---
+# Linux hosts authenticate through pam_tacplus. No distribution ships a
+# usable build and upstream is archived, so tacctl pins one tag, prepares a
+# self-contained source tarball once on the server ('config linux build'),
+# and embeds it in a per-scope install script ('config linux script') that
+# builds it on the target with only gcc, make and the PAM headers. The
+# script bodies live in config/linux/.
+LINUX_DIR="${TACCTL_LINUX_DIR:-/var/lib/tacctl/linux}"
+LINUX_SRC_DIR="${SCRIPT_DIR}/../config/linux"
+LINUX_UID_FILE="${TACCTL_ETC}/linux-uids"
+LINUX_UID_BASE=20000
+PAM_TACPLUS_REPO="https://github.com/kravietz/pam_tacplus.git"
+PAM_TACPLUS_TAG="v1.7.0"
+PAM_TACPLUS_COMMIT="b1b7f5351eca07f1bf2f6184602bdfb73d10a155"
+PAM_TACPLUS_TARBALL="${LINUX_DIR}/pam_tacplus-1.7.0.tar.gz"
+
+# Stable UID for a user across every enrolled host. Allocated once, never
+# reused, kept in $LINUX_UID_FILE as "name:uid" lines.
+linux_uid_for() {
+    local username="$1" uid
+    touch "$LINUX_UID_FILE"
+    uid=$(awk -F: -v u="$username" '$1 == u { print $2; exit }' "$LINUX_UID_FILE")
+    if [[ -z "$uid" ]]; then
+        uid=$(awk -F: -v base="$LINUX_UID_BASE" 'BEGIN { m = base - 1 } $2 > m { m = $2 } END { print m + 1 }' "$LINUX_UID_FILE")
+        echo "${username}:${uid}" >> "$LINUX_UID_FILE"
+    fi
+    echo "$uid"
+}
+
+# "name:tier:uid" lines for every user in a scope that can be a Linux
+# account. Names useradd would reject are skipped with a warning.
+linux_scope_users() {
+    local scope="$1" username tier
+    while IFS= read -r username; do
+        [[ -n "$username" && "$username" != "root" ]] || continue
+        if [[ ! "$username" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]]; then
+            warn "Skipping '${username}': not a valid Linux account name (lowercase letters, digits, _ and - only)." >&2
+            continue
+        fi
+        tier=$(tier_for_privlvl "$(get_group_privlvl "$(get_user_group "$username")")")
+        if [[ "$tier" == "none" ]]; then
+            warn "Skipping '${username}': its group has no priv-lvl." >&2
+            continue
+        fi
+        echo "${username}:${tier}:$(linux_uid_for "$username")"
+    done < <(list_users_in_scope "$scope")
+}
+
+cmd_config_linux_build() {
+    local tool
+    for tool in git gnulib-tool autoreconf libtoolize make gcc; do
+        if ! command -v "$tool" >/dev/null; then
+            error "'${tool}' not found. Install the build tools first:"
+            error "  apt install autoconf automake libtool gnulib libpam0g-dev build-essential git"
+            return 1
+        fi
+    done
+    local work
+    work=$(mktemp -d)
+    info "Fetching pam_tacplus ${PAM_TACPLUS_TAG}..."
+    if ! git clone --quiet --depth 1 --branch "$PAM_TACPLUS_TAG" "$PAM_TACPLUS_REPO" "$work/src" 2>/dev/null; then
+        rm -rf "$work"
+        error "Could not clone ${PAM_TACPLUS_REPO}."
+        return 1
+    fi
+    local got
+    got=$(git -C "$work/src" rev-parse HEAD)
+    if [[ "$got" != "$PAM_TACPLUS_COMMIT" ]]; then
+        rm -rf "$work"
+        error "Tag ${PAM_TACPLUS_TAG} resolved to ${got}, expected ${PAM_TACPLUS_COMMIT}. Refusing to build."
+        return 1
+    fi
+    info "Preparing source tarball..."
+    if ! (
+        cd "$work/src"
+        # Current gnulib no longer defines this macro; glibc provides
+        # explicit_bzero, so the branch that used it is never taken.
+        sed -i '/^  gl_PREREQ_EXPLICIT_BZERO$/d' configure.ac
+        gnulib-tool --makefile-name=Makefile.gnulib --libtool --import \
+            fcntl crypto/md5 array-list list xlist getrandom realloc-posix \
+            explicit_bzero xalloc getopt-gnu
+        autoreconf -f -i
+        ./configure
+        make dist
+    ) >"$work/build.log" 2>&1; then
+        tail -20 "$work/build.log" >&2
+        rm -rf "$work"
+        error "Preparing the pam_tacplus tarball failed."
+        return 1
+    fi
+    mkdir -p "$LINUX_DIR"
+    chmod 755 "$LINUX_DIR"
+    install -m 0644 "$work/src/pam_tacplus-1.7.0.tar.gz" "$PAM_TACPLUS_TARBALL"
+    rm -rf "$work"
+    info "Wrote ${PAM_TACPLUS_TARBALL} (sha256 $(sha256sum "$PAM_TACPLUS_TARBALL" | awk '{print $1}'))."
+}
+
+cmd_config_linux_script() {
+    local scope="" server="" output=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --scope)  scope="${2:-}";  shift 2 || true ;;
+            --server) server="${2:-}"; shift 2 || true ;;
+            --output|-o) output="${2:-}"; shift 2 || true ;;
+            *)
+                error "Unknown argument: '$1'"
+                error "Usage: tacctl config linux script [--scope <name>] [--server <address>] [--output <file>]"
+                return 1
+                ;;
+        esac
+    done
+    if [[ -z "$scope" ]]; then
+        scope=$(read_default_scope)
+        [[ -n "$scope" ]] || { error "No default scope set and no --scope provided."; return 1; }
+    elif ! scope_exists "$scope"; then
+        error "Scope '${scope}' does not exist. Available: $(list_scopes | paste -sd' ')"
+        return 1
+    fi
+    if [[ ! -f "$PAM_TACPLUS_TARBALL" ]]; then
+        error "pam_tacplus tarball not found. Run 'tacctl config linux build' first."
+        return 1
+    fi
+
+    # pam_tacplus reads the secret as one whitespace-delimited PAM argument.
+    local secret
+    secret=$(read_scope_secret "$scope")
+    if [[ ! "$secret" =~ ^[A-Za-z0-9_.+/=-]+$ || "$secret" == REPLACE* ]]; then
+        error "Scope '${scope}' has a secret that cannot be written on a PAM line (or a placeholder)."
+        error "Regenerate it: tacctl scope secret ${scope} generate"
+        return 1
+    fi
+
+    local listen port
+    listen=$(read_service_override TACQUITO_ADDRESS)
+    listen=${listen:-:49}
+    port="${listen##*:}"
+    if [[ -z "$server" ]]; then
+        server=$(ip -4 route get 1.0.0.0 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}')
+        [[ -n "$server" ]] || { error "Could not detect this server's address. Pass --server <address>."; return 1; }
+    fi
+    if [[ ! "$server" =~ ^[A-Za-z0-9.:-]+$ ]]; then
+        error "Invalid --server '${server}'. Give a bare IPv4/IPv6 address or hostname (the port comes from 'tacctl config listen')."
+        return 1
+    fi
+
+    local users
+    users=$(linux_scope_users "$scope")
+    if [[ -z "$users" ]]; then
+        warn "No users in scope '${scope}' can become Linux accounts; the script will install TACACS+ with no users."
+    fi
+
+    output="${output:-tacctl-linux-${scope}.sh}"
+    local tmp
+    tmp=$(mktemp)
+    {
+        echo "#!/usr/bin/env bash"
+        echo "# tacctl Linux client installer for scope '${scope}'. Generated $(date -u +%Y-%m-%dT%H:%M:%SZ)."
+        echo "# CONTAINS THE SCOPE'S SHARED SECRET. Delete after use."
+        echo "set -euo pipefail"
+        echo "umask 077"
+        printf 'TAC_SERVER=%q\n' "$server"
+        printf 'TAC_PORT=%q\n' "$port"
+        printf 'TAC_SECRET=%q\n' "$secret"
+        printf 'TAC_SCOPE=%q\n' "$scope"
+        printf 'TARBALL_SHA256=%q\n' "$(sha256sum "$PAM_TACPLUS_TARBALL" | awk '{print $1}')"
+        printf 'TAC_USERS=%q\n' "$users"
+        cat "${LINUX_SRC_DIR}/client-install.sh"
+        echo "__TARBALL__"
+        base64 "$PAM_TACPLUS_TARBALL"
+    } > "$tmp"
+    install -m 0600 "$tmp" "$output"
+    rm -f "$tmp"
+    # Under sudo the file would otherwise be root's; hand it to the caller.
+    if [[ -n "${SUDO_UID:-}" ]]; then
+        chown "${SUDO_UID}:${SUDO_GID:-$SUDO_UID}" "$output" 2>/dev/null || true
+    fi
+
+    info "Wrote ${output} (mode 0600; contains the shared secret for scope '${scope}')."
+    echo ""
+    echo "  Server:  ${server} port ${port}"
+    echo "  Users:   $(awk -F: 'NF { printf "%s(%s) ", $1, $2 }' <<< "$users")"
+    echo ""
+    echo "  The target host's address must be inside scope '${scope}':"
+    echo "    tacctl scope lookup <host-ip>"
+    echo "  On the target host, as root, from a session you keep open:"
+    echo "    bash ${output##*/}                   # install"
+    echo "    bash ${output##*/} --accounts-only   # later: sync users only"
+    echo "  Then delete the script."
+    echo ""
+}
+
+cmd_config_linux_remove_script() {
+    local output=""
+    case "${1:-}" in
+        --output|-o) output="${2:-}" ;;
+        "") ;;
+        *) error "Usage: tacctl config linux remove-script [--output <file>]"; return 1 ;;
+    esac
+    output="${output:-tacctl-linux-remove.sh}"
+    install -m 0644 "${LINUX_SRC_DIR}/client-remove.sh" "$output"
+    if [[ -n "${SUDO_UID:-}" ]]; then
+        chown "${SUDO_UID}:${SUDO_GID:-$SUDO_UID}" "$output" 2>/dev/null || true
+    fi
+    info "Wrote ${output} (no secrets). Run it as root on the host to remove TACACS+ authentication."
+    info "Local accounts and home directories are left in place."
+}
+
+cmd_config_linux() {
+    local sub="${1:-}"
+    shift || true
+    case "$sub" in
+        build)         cmd_config_linux_build ;;
+        script)        cmd_config_linux_script "$@" ;;
+        remove-script) cmd_config_linux_remove_script "$@" ;;
+        *)
+            echo ""
+            echo -e "${BOLD}Linux host TACACS+ login${NC}"
+            echo ""
+            echo "Usage: tacctl config linux <subcommand>"
+            echo ""
+            echo "  build                                   Fetch and prepare the pinned pam_tacplus source (once, and after upgrades)"
+            echo "  script [--scope <name>] [--server <address>] [--output <file>]"
+            echo "                                          Write the install script for hosts in a scope (contains the secret)"
+            echo "  remove-script [--output <file>]         Write the removal script (no secrets; accounts are left in place)"
+            echo ""
+            [[ -z "$sub" ]] && return 0
+            return 1
+            ;;
+    esac
+}
+
 # --- CONFIG BRANCH ---
 cmd_config_branch() {
     local new_branch="${1:-}"
@@ -6358,6 +6755,9 @@ cmd_config() {
         wti)
             cmd_config_wti "$@"
             ;;
+        linux)
+            cmd_config_linux "$@"
+            ;;
         validate)
             cmd_config_validate
             ;;
@@ -6442,6 +6842,7 @@ cmd_config() {
             echo "  listen [show|tcp|tcp6|reset] [addr]  Show, change, or reset TCP listen address"
             echo "  metrics <show|enable|disable|address <host:port>|reset>  Prometheus exporter control"
             echo "  sudoers [show|install|remove] [grp]  Manage NOPASSWD sudoers drop-in for tacctl"
+            echo "  sudoers tiers [show|install|remove]  Manage per-tier (RO/OP/SU) sudoers rules for TACACS+ users"
             echo "  password-age [days]                  Show or set password age warning threshold"
             echo "  bcrypt-cost [10-14]                  Show or set bcrypt cost factor (default 12)"
             echo "  password-min-length [8-64]           Show or set minimum interactive password length (default 12)"
@@ -6452,6 +6853,7 @@ cmd_config() {
             echo "  cisco   [--scope <name>] [--legacy]  Show working Cisco device configuration for a scope (--legacy = IOS 12.x syntax)"
             echo "  juniper [--scope <name>]             Show working Juniper device configuration for a scope"
             echo "  wti     [--scope <name>]             Show step-by-step WTI console-server (v8.x serial menu) setup for a scope"
+            echo "  linux   build|script|remove-script   TACACS+ login for Linux hosts (pam_tacplus install/removal scripts)"
             echo "  branch [name]                        Show or change the tacctl repo branch"
             echo ""
             echo "Examples:"
@@ -8490,9 +8892,88 @@ cmd_config_metrics() {
 # operators opt in explicitly.
 SUDOERS_FILE="${TACCTL_SUDOERS_FILE:-/etc/sudoers.d/tacctl}"
 
+TIER_SUDOERS_FILE="${TACCTL_TIER_SUDOERS_FILE:-/etc/sudoers.d/tacctl-tiers}"
+
+# Sudoers body for the tier groups. Keep in step with tier_permits(), which
+# re-checks every call inside tacctl (the globs below only narrow what sudo
+# will start). The lower tiers are NOPASSWD because every command listed is
+# either read-only or, for 'passwd', asks for the current password itself.
+emit_tier_sudoers() {
+    local t="/usr/local/bin/tacctl"
+    cat <<EOF
+# Managed by tacctl. Per-tier access for TACACS+ users with local accounts.
+# Remove with: tacctl config sudoers tiers remove
+Cmnd_Alias TACCTL_RO = ${t} "", ${t} passwd, ${t} status, ${t} version, \\
+    ${t} user list, ${t} user show *, ${t} group list, ${t} scope list, \\
+    ${t} _completion-names *
+Cmnd_Alias TACCTL_OP = ${t} log tail, ${t} log tail *, ${t} log search *, \\
+    ${t} log failures, ${t} log accounting, ${t} log accounting *, \\
+    ${t} config validate, ${t} backup list
+
+%${TIER_GROUP_SUPERUSER} ALL=(ALL:ALL) ALL
+%${TIER_GROUP_SUPERUSER} ALL=(root) NOPASSWD: TACCTL_RO, TACCTL_OP
+%${TIER_GROUP_OPERATOR} ALL=(root) NOPASSWD: TACCTL_RO, TACCTL_OP
+%${TIER_GROUP_READONLY} ALL=(root) NOPASSWD: TACCTL_RO
+EOF
+}
+
+cmd_config_sudoers_tiers() {
+    local sub="${1:-show}"
+    case "$sub" in
+        show)
+            echo ""
+            if [[ -f "$TIER_SUDOERS_FILE" ]]; then
+                echo "  Status: installed at ${TIER_SUDOERS_FILE}"
+            else
+                echo "  Status: not installed. 'tacctl config sudoers tiers install' would write:"
+            fi
+            echo ""
+            if [[ -f "$TIER_SUDOERS_FILE" ]]; then
+                sed 's/^/    /' "$TIER_SUDOERS_FILE"
+            else
+                emit_tier_sudoers | sed 's/^/    /'
+            fi
+            echo ""
+            ;;
+        install)
+            local tmp
+            tmp=$(mktemp)
+            emit_tier_sudoers > "$tmp"
+            if ! visudo -cf "$tmp" >/dev/null; then
+                error "visudo validation failed. Not installed."
+                rm -f "$tmp"
+                return 1
+            fi
+            install -m 0440 -o root -g root "$tmp" "$TIER_SUDOERS_FILE"
+            rm -f "$tmp"
+            info "Installed ${TIER_SUDOERS_FILE}."
+            info "Tiers apply to members of ${TIER_GROUP_READONLY}, ${TIER_GROUP_OPERATOR} and ${TIER_GROUP_SUPERUSER}."
+            echo ""
+            ;;
+        remove)
+            if [[ ! -f "$TIER_SUDOERS_FILE" ]]; then
+                info "Not installed. Nothing to remove."
+                return
+            fi
+            rm -f "$TIER_SUDOERS_FILE"
+            info "Removed ${TIER_SUDOERS_FILE}."
+            ;;
+        *)
+            error "Invalid subcommand: '${sub}'. Use: tiers show, tiers install, or tiers remove"
+            return 1
+            ;;
+    esac
+}
+
 cmd_config_sudoers() {
     local sub="${1:-}"
     local group="${2:-adm}"
+
+    if [[ "$sub" == "tiers" ]]; then
+        shift
+        cmd_config_sudoers_tiers "$@"
+        return
+    fi
 
     # Accept "%adm" or "adm" -- normalize to the bare group name.
     group="${group#%}"
@@ -8514,6 +8995,7 @@ cmd_config_sudoers() {
             echo "    tacctl config sudoers install          # grant to group 'adm'"
             echo "    tacctl config sudoers install wheel    # grant to group 'wheel'"
             echo "    tacctl config sudoers remove"
+            echo "    tacctl config sudoers tiers [show|install|remove]   # RO/OP/SU rules for TACACS+ users"
             echo ""
             return
             ;;
@@ -8756,7 +9238,7 @@ cmd_log() {
             echo ""
             echo -e "${BOLD}Log entries matching '${term}'${NC}"
             echo "--------------------------------------------"
-            journalctl -u tacquito --no-pager --since "7 days ago" 2>/dev/null | grep -i "$term" || echo "  No matches found."
+            journalctl -u tacquito --no-pager --since "7 days ago" 2>/dev/null | grep -i -e "$term" || echo "  No matches found."
             echo ""
             ;;
         failures)
@@ -9914,6 +10396,7 @@ usage() {
     echo "  upgrade [--branch <name>]     Pull latest source, rebuild, and update scripts"
     echo "  uninstall                     Remove tacquito and all associated files"
     echo "  status                        Show service health, stats, and recent errors"
+    echo "  passwd                        Change your own password (asks for the current one)"
     echo "  user <subcommand>             User management (list, add, remove, passwd, scope, ...)"
     echo "  group <subcommand>            Group management (list, add, edit, remove)"
     echo "  scope <subcommand>            Scope management (named CIDR + shared-secret bundles)"
@@ -9994,7 +10477,13 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     COMMAND="${1:-}"
     shift || true
 
+    enforce_tier "$COMMAND" "${1:-}"
+
     case "$COMMAND" in
+        passwd)
+            preflight
+            cmd_passwd_self "$@"
+            ;;
         install)
             cmd_install "$@"
             ;;

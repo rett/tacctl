@@ -135,6 +135,15 @@ the YAML. Create an operator-specific account instead (for example,
 .BI "user remove " name
 Remove a user after confirmation.
 .TP
+.B passwd
+Change your own password. Takes no arguments: the target is the tacctl
+user whose name matches the login that invoked
+.BR sudo (8).
+The current password must verify before the new one is accepted, and the
+new one is held to the same strength policy as
+.BR "user passwd" .
+Available to every tier.
+.TP
 .BI "user passwd " "name " [ "--hash " hash ]
 Change a user's password. Prompts for the new password with
 confirmation. If
@@ -464,6 +473,43 @@ to expose to external scrapers); non-loopback binds print a warning.
 .B reset
 clears the override and falls back to the unit default.
 .TP
+.B "config linux build"
+Fetch the pinned
+.B pam_tacplus
+release (v1.7.0, verified by commit hash) and prepare a self-contained
+source tarball under
+.IR /var/lib/tacctl/linux .
+Needs autoconf, automake, libtool, gnulib and the PAM headers on the
+server. Run once before generating scripts.
+.TP
+.B "config linux script " "[ \-\-scope " name " ] [ \-\-server " address " ] [ \-\-output " file " ]"
+Write an install script that sets up TACACS+ login on a Debian or Ubuntu
+host in the given scope. The script embeds the scope's shared secret (it
+is written mode 0600; delete it after use), the source tarball, and the
+scope's users with their tier and a stable UID. Run as root on the target
+it builds the module, creates a local account per user (locked password)
+in the groups
+.BR tac-users " and " tac-readonly ", " tac-operator " or " tac-superuser ,
+points the
+.BR sshd ", " sudo " and " login
+PAM services at TACACS+ for members of
+.B tac-users
+only, and grants
+.B tac-superuser
+full sudo. Accounts that already exist are adopted with their local
+password left intact. Other local accounts are not affected. It refuses
+to run when no local administrator with a usable password exists outside
+the TACACS+ user list, and puts the PAM files back if any step fails.
+Re-run it with
+.B \-\-accounts\-only
+to sync users after changes on the server.
+.TP
+.B "config linux remove-script " "[ \-\-output " file " ]"
+Write a script that removes TACACS+ login from a host: it undoes the PAM
+edits, deletes the files holding the shared secret, the module and the
+sudoers drop-in, and reports accounts left with no way to log in. Local
+accounts, home directories and the tac-* groups are left in place.
+.TP
 .B "config sudoers " "{ show | install | remove } " [ group ]
 Manage the optional
 .I /etc/sudoers.d/tacctl
@@ -474,6 +520,34 @@ to a group (default:
 Installs are validated with
 .BR visudo (8)
 before taking effect. Not installed by default.
+.TP
+.B "config sudoers tiers " "{ show | install | remove }"
+Manage
+.IR /etc/sudoers.d/tacctl-tiers ,
+which grants tacctl by tier to TACACS+ users that have local accounts.
+Members of
+.B tac-readonly
+may run
+.BR passwd ", " status ", " version ", " "user list" ", " "user show" ", "
+.BR "group list" " and " "scope list" .
+Members of
+.B tac-operator
+may additionally run
+.BR "log tail" ", " "log search" ", " "log failures" ", " "log accounting" ", "
+.BR "config validate" " and " "backup list" .
+Members of
+.B tac-superuser
+get full
+.BR sudo (8)
+access. Lower-tier rules are NOPASSWD. Commands that print a shared
+secret or a password hash are superuser-only. tacctl re-checks the
+caller's tier itself on every run, reading the tier from the user's group
+in
+.I tacquito.yaml
+(priv-lvl 15 superuser, 7\-14 operator, below 7 read-only); callers
+outside the local group
+.B tac-users
+are not tier-restricted.
 .TP
 .BI "config password-age " [ days ]
 Show or set the password age warning threshold. Default 90 days.

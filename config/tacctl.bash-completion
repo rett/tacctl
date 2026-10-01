@@ -32,7 +32,7 @@ _tacctl() {
     done
 
     local pos=$((cword - offset))
-    local commands="install upgrade uninstall status user group config scope log backup hash version"
+    local commands="install upgrade uninstall status passwd user group config scope log backup hash version"
 
     # Top-level commands
     if [[ $pos -eq 1 ]]; then
@@ -194,7 +194,7 @@ for u in (d.get('users') or []):
             ;;
         config)
             if [[ $pos -eq 2 ]]; then
-                COMPREPLY=($(compgen -W "show dump defaults get get-list cisco juniper wti validate loglevel listen metrics sudoers password-age bcrypt-cost password-min-length secret-min-length diff restore allow deny mgmt-acl branch" -- "$cur"))
+                COMPREPLY=($(compgen -W "show dump defaults get get-list cisco juniper wti linux validate loglevel listen metrics sudoers password-age bcrypt-cost password-min-length secret-min-length diff restore allow deny mgmt-acl branch" -- "$cur"))
             elif [[ $pos -eq 3 ]]; then
                 case "${words[offset + 2]}" in
                     loglevel)
@@ -206,8 +206,11 @@ for u in (d.get('users') or []):
                     metrics)
                         COMPREPLY=($(compgen -W "show enable disable address reset" -- "$cur"))
                         ;;
+                    linux)
+                        COMPREPLY=($(compgen -W "build script remove-script" -- "$cur"))
+                        ;;
                     sudoers)
-                        COMPREPLY=($(compgen -W "show install remove" -- "$cur"))
+                        COMPREPLY=($(compgen -W "show install remove tiers" -- "$cur"))
                         ;;
                     allow|deny)
                         COMPREPLY=($(compgen -W "list add remove clear" -- "$cur"))

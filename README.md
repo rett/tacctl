@@ -213,6 +213,41 @@ tacctl config sudoers install adm     # or: wheel, ops, etc.
 ```
 This writes `/etc/sudoers.d/tacctl` (validated with `visudo -cf`) granting `%adm ALL=(ALL) NOPASSWD: /usr/local/bin/tacctl`. Because `tacctl` can modify system config and restart services, this is effectively passwordless root for members of that group — the command prompts for confirmation before installing. Remove with `tacctl config sudoers remove`.
 
+### TACACS+ login for Linux hosts
+Linux hosts log in against tacquito through `pam_tacplus`. No current distribution packages a usable build and upstream is archived, so tacctl pins v1.7.0 (verified by commit hash) and builds it on each host.
+```
+tacctl config linux build                                  # once, on the server: prepare the source tarball
+tacctl config linux script --scope prod -o enroll.sh       # install script for hosts in a scope
+tacctl config linux remove-script -o unenroll.sh           # removal script (no secrets)
+```
+Copy the install script to the host and run it as root from a session you keep open. It:
+- builds and installs `pam_tacplus` (needs only `gcc`, `make`, `libpam0g-dev` on the host);
+- creates a local account for each user in the scope, with a locked password and a UID that is the same on every host, in `tac-users` plus `tac-readonly`, `tac-operator` or `tac-superuser`;
+- sends `sshd`, `sudo` and console `login` to TACACS+ for members of `tac-users` only (the shared `common-*` files and every other local account are untouched);
+- grants `%tac-superuser` full sudo, authenticated with the TACACS+ password.
+
+A reject from the server is final. If the server is unreachable, login falls through to the local password, which only pre-existing (adopted) accounts have. The script refuses to run unless a local administrator with a usable password exists outside the TACACS+ user list, and restores the PAM files if any step fails. Re-run it with `--accounts-only` after adding, removing or moving users.
+
+The install script contains the scope's shared secret, and so do the root-only `/etc/pam.d/tacctl-*` files it writes: use a dedicated scope per host or host group, and keep TACACS+ traffic on a management network or tunnel (no Linux PAM client supports TACACS+ over TLS). `passwd` does not work for TACACS+ users; they change passwords with `tacctl passwd` on the server.
+
+The removal script undoes the PAM edits and deletes the secret, module and sudoers drop-in. Accounts, home directories and the `tac-*` groups stay; it lists any account left with neither a local password nor an SSH key.
+
+### Tiered access for TACACS+ users (opt-in)
+TACACS+ users who have a local account on the server can be given tacctl access that follows their group:
+```
+tacctl config sudoers tiers show      # print the rules
+tacctl config sudoers tiers install   # write /etc/sudoers.d/tacctl-tiers
+```
+| Local group | Tier (priv-lvl) | tacctl access |
+|---|---|---|
+| `tac-readonly` | read-only (below 7) | `passwd`, `status`, `version`, `user list`, `user show`, `group list`, `scope list` |
+| `tac-operator` | operator (7-14) | read-only set plus `log tail/search/failures/accounting`, `config validate`, `backup list` |
+| `tac-superuser` | superuser (15) | everything, plus full `sudo` |
+
+Lower-tier rules are `NOPASSWD`. Anything that prints a shared secret or a password hash (`config cisco|juniper|wti`, `scope show`, `scope secret`, `backup diff`, `config dump`) stays superuser-only. tacctl also checks the tier itself on every run, taking it from the user's group in `tacquito.yaml` rather than from local group membership, and logs denials to syslog. Callers who are not in the local group `tac-users` (root, local admins) are not restricted.
+
+`tacctl passwd` (no arguments) lets any tier change their own password: it acts only on the user who invoked sudo and asks for the current password first.
+
 ## Self-Service Password Generation
 
 Users can generate their own bcrypt hash and provide it to an admin. The admin never sees the plaintext password.
@@ -302,6 +337,7 @@ user add <name> <group> --scopes <name>[,name...] Grant specific scopes at creat
 user add <name> <group> --hash <hash>             Add user with pre-generated bcrypt hash
 user remove <name>                                Remove a user (with confirmation)
 user passwd <name>                                Change password (with confirmation)
+passwd                                            Change your own password (asks for the current one; all tiers)
 user passwd <name> --hash <hash>                  Change password with pre-generated bcrypt hash
 user disable <name>                               Disable (preserves hash for re-enable)
 user enable <name>                                Re-enable a disabled user
@@ -363,7 +399,9 @@ config diff [timestamp]                     Diff current config vs a backup
 config loglevel [debug|info|error]          Show or change log level
 config listen [show|tcp|tcp6|reset] [addr]  Show, change, or reset TCP listen address
 config metrics <show|enable|disable|address <host:port>|reset>   Prometheus exporter control. Default: loopback-only 127.0.0.1:8080. `disable` sinks to 127.0.0.1:0 (unreachable ephemeral port) since tacquito's own disable flag would crash the server.
+config linux build|script|remove-script     TACACS+ login for Linux hosts (pam_tacplus install/removal scripts)
 config sudoers [show|install|remove] [grp]  Manage NOPASSWD sudoers drop-in for tacctl
+config sudoers tiers [show|install|remove]  Manage per-tier (RO/OP/SU) sudoers rules for TACACS+ users
 config password-age [days]                  Show or set password age warning threshold (default 90)
 config bcrypt-cost [10-14]                  Show or set bcrypt cost factor for new hashes (default 12)
 config password-min-length [8-64]           Show or set minimum interactive password length (default 12)
