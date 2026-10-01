@@ -207,7 +207,7 @@ for u in (d.get('users') or []):
                         COMPREPLY=($(compgen -W "show enable disable address reset" -- "$cur"))
                         ;;
                     linux)
-                        COMPREPLY=($(compgen -W "build script remove-script uid" -- "$cur"))
+                        COMPREPLY=($(compgen -W "build script remove-script uid builds" -- "$cur"))
                         ;;
                     sudoers)
                         COMPREPLY=($(compgen -W "show install remove tiers" -- "$cur"))
@@ -252,7 +252,7 @@ for u in (d.get('users') or []):
             if [[ $pos -eq 2 ]]; then
                 COMPREPLY=($(compgen -W "list enroll sync unenroll" -- "$cur"))
             elif [[ "$cur" == -* ]]; then
-                COMPREPLY=($(compgen -W "--local --scope --server --name --port --identity --all --force --allow-uid-mismatch --adopt" -- "$cur"))
+                COMPREPLY=($(compgen -W "--local --scope --server --name --port --identity --all --force --allow-uid-mismatch --adopt --build-on-host" -- "$cur"))
             fi
             ;;
         scope)

@@ -100,7 +100,7 @@ _client_env() {
     _gen > /dev/null
     local want got
     want=$(sed -n 's/^TARBALL_SHA256=//p' "$OUT")
-    got=$(sed -n '/^__TARBALL__$/,$p' "$OUT" | tail -n +2 | base64 -d | sha256sum | awk '{print $1}')
+    got=$(sed -n '/^__TARBALL__$/,/^__PREBUILT__$/p' "$OUT" | sed '1d;/^__PREBUILT__$/d' | base64 -d | sha256sum | awk '{print $1}')
     [[ -n "$want" && "$want" == "$got" ]]
 }
 
@@ -461,6 +461,43 @@ _client_env() {
     run bash "$OUT"
     assert_success
     assert_output --partial "Building pam_tacplus"
+}
+
+@test "client install: a prebuilt module is installed without build tools; a bad one falls back" {
+    stub_cmd getent 'echo "192.0.2.50 STREAM web1"'
+    stub_cmd ip 'echo "192.0.2.50 dev eth0 src 192.0.2.1 uid 0"'
+    stub_cmd ssh 'case "$*" in
+        *mktemp*) cat > "$PUSHED"; echo /tmp/tacctl.AbCd1234 ;;
+        *os-release*) echo "ID=ubuntu"; echo "VERSION_CODENAME=noble"; echo "TACCTL_ARCH=$(uname -m)" ;;
+    esac'
+    stub_cmd podman 'case "$1" in
+        build) ;;
+        run)   cat > /dev/null; d=$(mktemp -d); echo lib > "$d/libtac.so.5.0.0"; echo mod > "$d/pam_tacplus.so"
+               tar -C "$d" -czf - libtac.so.5.0.0 pam_tacplus.so ;;
+        image) echo "sha256:feedface" ;;
+    esac'
+    export PUSHED="${BATS_TEST_TMPDIR}/pushed.sh"
+    "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab > /dev/null
+
+    _client_env
+    export TACCTL_CLIENT_NEED_PKGS=" gcc"
+    run bash "$PUSHED" --adopt bob
+    assert_success
+    assert_output --partial "built on the tacctl server for docker.io/library/ubuntu:noble"
+    refute_output --partial "Building pam_tacplus"
+    run cat "$TACCTL_CLIENT_STATE/lib/security/pam_tacplus.so"
+    assert_output "mod"
+    run grep -c "^apt-get" "$CALLS_LOG"
+    assert_output "0"
+
+    # Corrupt the recorded checksum: the host compiles from source instead.
+    rm -rf "$TACCTL_CLIENT_STATE/lib" "$TACCTL_CLIENT_STATE/module"
+    sed -i 's/^PREBUILT_SHA256=.*/PREBUILT_SHA256=0000/' "$PUSHED"
+    run bash "$PUSHED"
+    assert_success
+    assert_output --partial "failed its checksum"
+    assert_output --partial "Building pam_tacplus on this host"
+    stub_called "apt-get install -y gcc"
 }
 
 @test "client remove: refuses when nobody would keep a usable local password" {

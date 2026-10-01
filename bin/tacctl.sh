@@ -4703,8 +4703,11 @@ EOF
 # usable build and upstream is archived, so tacctl pins one tag, prepares a
 # self-contained source tarball once on the server ('config linux build'),
 # and embeds it in a per-scope install script ('config linux script') that
-# builds it on the target with only gcc, make and the PAM headers. The
-# script bodies live in config/linux/.
+# builds it on the target with only gcc, make and the PAM headers.
+# 'host enroll' goes one better: it builds the module here, in a container
+# of the target's OS release, and ships the binary so the target compiles
+# nothing; the embedded source stays as the fallback. The script bodies
+# live in config/linux/.
 LINUX_DIR="${TACCTL_LINUX_DIR:-/var/lib/tacctl/linux}"
 LINUX_SRC_DIR="${SCRIPT_DIR}/../config/linux"
 LINUX_UID_FILE="${TACCTL_ETC}/linux-uids"
@@ -4713,6 +4716,7 @@ PAM_TACPLUS_REPO="https://github.com/kravietz/pam_tacplus.git"
 PAM_TACPLUS_TAG="v1.7.0"
 PAM_TACPLUS_COMMIT="b1b7f5351eca07f1bf2f6184602bdfb73d10a155"
 PAM_TACPLUS_TARBALL="${LINUX_DIR}/pam_tacplus-1.7.0.tar.gz"
+LINUX_BUILDS_DIR="${LINUX_DIR}/builds"
 
 # Stable UID for a user across every enrolled host. Allocated once, never
 # reused, kept in $LINUX_UID_FILE as "name:uid" lines.
@@ -4813,11 +4817,13 @@ cmd_config_linux_build() {
     info "Wrote ${PAM_TACPLUS_TARBALL} (sha256 $(sha256sum "$PAM_TACPLUS_TARBALL" | awk '{print $1}'))."
 }
 
-# linux_write_install_script <scope> <server> <outfile> [accounts-only]
+# linux_write_install_script <scope> <server> <outfile> [accounts-only] [prebuilt-dir]
 # Writes the per-scope client script to <outfile> (mode 0600). With a 4th
 # argument the pam_tacplus tarball is left out: enough for --accounts-only.
+# A 5th names a directory under $LINUX_BUILDS_DIR whose prebuilt module is
+# embedded as well; the host uses it in preference to compiling.
 linux_write_install_script() {
-    local scope="$1" server="$2" output="$3" accounts_only="${4:-}"
+    local scope="$1" server="$2" output="$3" accounts_only="${4:-}" prebuilt="${5:-}"
     if [[ -z "$accounts_only" && ! -f "$PAM_TACPLUS_TARBALL" ]]; then
         error "pam_tacplus tarball not found. Run 'tacctl config linux build' first."
         return 1
@@ -4858,16 +4864,169 @@ linux_write_install_script() {
         printf 'TAC_SCOPE=%q\n' "$scope"
         if [[ -z "$accounts_only" ]]; then
             printf 'TARBALL_SHA256=%q\n' "$(sha256sum "$PAM_TACPLUS_TARBALL" | awk '{print $1}')"
+            if [[ -n "$prebuilt" ]]; then
+                printf 'PREBUILT_SHA256=%q\n' "$(sha256sum "$prebuilt/module.tar.gz" | awk '{print $1}')"
+                printf 'PREBUILT_FOR=%q\n' "$(sed -n 's/^image=//p' "$prebuilt/info")"
+            fi
         fi
         printf 'TAC_USERS=%q\n' "$LINUX_SCRIPT_USERS"
         cat "${LINUX_SRC_DIR}/client-install.sh"
         if [[ -z "$accounts_only" ]]; then
             echo "__TARBALL__"
             base64 "$PAM_TACPLUS_TARBALL"
+            if [[ -n "$prebuilt" ]]; then
+                echo "__PREBUILT__"
+                base64 "$prebuilt/module.tar.gz"
+            fi
         fi
     } > "$tmp"
     install -m 0600 "$tmp" "$output"
     rm -f "$tmp"
+}
+
+# --- Prebuilt modules ---
+# podman runs as the user who invoked sudo (rootless), never as root unless
+# tacctl itself was started by root.
+_linux_podman() {
+    if [[ $EUID -eq 0 && -n "${SUDO_USER:-}" && "$SUDO_USER" != "root" ]]; then
+        (cd / && sudo -u "$SUDO_USER" -H podman "$@")
+    else
+        podman "$@"
+    fi
+}
+
+# linux_image_for_os <os-release text>: the container image that matches a
+# host's userland, or nothing when tacctl knows none. Ubuntu derivatives
+# (Mint, KDE neon, ...) name their base in UBUNTU_CODENAME.
+linux_image_for_os() {
+    local text="$1" id codename ubuntu
+    id=$(sed -n 's/^ID=//p' <<< "$text" | head -1 | tr -d "\"'")
+    codename=$(sed -n 's/^VERSION_CODENAME=//p' <<< "$text" | head -1 | tr -d "\"'")
+    ubuntu=$(sed -n 's/^UBUNTU_CODENAME=//p' <<< "$text" | head -1 | tr -d "\"'")
+    if [[ "$id" == "ubuntu" && -z "$ubuntu" ]]; then ubuntu="$codename"; fi
+    if [[ "$ubuntu" =~ ^[a-z]+$ ]]; then
+        echo "docker.io/library/ubuntu:${ubuntu}"
+    elif [[ "$id" == "debian" && "$codename" =~ ^[a-z]+$ ]]; then
+        echo "docker.io/library/debian:${codename}"
+    fi
+}
+
+# linux_host_platform <target> <port> <identity>: prints "<image>|<arch>"
+# for the host (image empty when unknown). Fails if the host did not answer.
+linux_host_platform() {
+    local target="$1" port="$2" identity="$3" out arch
+    # shellcheck disable=SC2016  # expanded by the probed shell
+    local probe='cat /etc/os-release 2>/dev/null; echo; echo "TACCTL_ARCH=$(uname -m)"'
+    if [[ "$target" == "local" ]]; then
+        out=$(bash -c "$probe")
+    else
+        out=$(_host_ssh "$port" "$identity" -T "$target" "$probe" < /dev/null 2>/dev/null) || return 1
+    fi
+    arch=$(sed -n 's/^TACCTL_ARCH=//p' <<< "$out" | head -1)
+    [[ "$arch" =~ ^[A-Za-z0-9_]+$ ]] || return 1
+    echo "$(linux_image_for_os "$out")|${arch}"
+}
+
+# linux_prebuilt_for <image>: makes sure a pam_tacplus module built for
+# <image> on this machine's architecture is cached, building it in a
+# container on first use, and sets LINUX_PREBUILT to its directory. The
+# tools image (base + compiler) is built with network access; the compile
+# itself runs with none, reading the source on stdin and writing the two
+# libraries to stdout.
+linux_prebuilt_for() {
+    local image="$1" key dir src_sha
+    LINUX_PREBUILT=""
+    if ! command -v podman >/dev/null; then
+        warn "podman is not installed here (apt install podman uidmap)."
+        return 1
+    fi
+    key="${image##*/}"
+    key="${key//:/-}-$(uname -m)"
+    dir="${LINUX_BUILDS_DIR}/${key}"
+    src_sha=$(sha256sum "$PAM_TACPLUS_TARBALL" | awk '{print $1}')
+    if [[ -s "$dir/module.tar.gz" && "$(sed -n 's/^source=//p' "$dir/info" 2>/dev/null)" == "$src_sha" ]]; then
+        LINUX_PREBUILT="$dir"
+        return 0
+    fi
+
+    info "Building pam_tacplus for ${image##*/} in a container (once per OS release; takes a minute or two)..."
+    local work tools="localhost/tacctl-build:${key}"
+    work=$(mktemp -d)
+    chmod 755 "$work"
+    mkdir "$work/ctx"
+    chmod 755 "$work/ctx"
+    # The Containerfile goes through a file, not stdin: podman reopens
+    # /dev/stdin by path, which a pipe owned by root does not allow.
+    printf 'FROM %s\nRUN apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends gcc make libc6-dev libpam0g-dev >/dev/null && rm -rf /var/lib/apt/lists/*\n' "$image" \
+        > "$work/ctx/Containerfile"
+    chmod 644 "$work/ctx/Containerfile"
+    if ! _linux_podman build -q -t "$tools" -f "$work/ctx/Containerfile" "$work/ctx" > "$work/log" 2>&1; then
+        tail -5 "$work/log" >&2
+        rm -rf "$work"
+        warn "Could not prepare the build image for ${image}."
+        return 1
+    fi
+    # shellcheck disable=SC2016  # runs inside the container
+    local build='set -e; w=$(mktemp -d); cd "$w"; tar --no-same-owner -xzf -; cd pam_tacplus-*/
+        lib=/usr/lib/$(gcc -print-multiarch)
+        ./configure --prefix=/usr --libdir="$lib" --enable-pamdir="$lib/security" >&2
+        make >&2; make install DESTDIR="$w/stage" >&2
+        mkdir "$w/out"; cp "$w/stage$lib/libtac.so.5.0.0" "$w/stage$lib/security/pam_tacplus.so" "$w/out/"
+        tar -C "$w/out" -czf - libtac.so.5.0.0 pam_tacplus.so'
+    if ! _linux_podman run --rm -i --network none --cap-drop all --security-opt no-new-privileges \
+            "$tools" sh -c "$build" < "$PAM_TACPLUS_TARBALL" > "$work/module.tar.gz" 2> "$work/log" \
+        || [[ "$(tar -tzf "$work/module.tar.gz" 2>/dev/null | sort | paste -sd' ')" != "libtac.so.5.0.0 pam_tacplus.so" ]]; then
+        tail -20 "$work/log" >&2
+        rm -rf "$work"
+        warn "The container build of pam_tacplus for ${image} failed."
+        return 1
+    fi
+    mkdir -p "$dir"
+    chmod 755 "$LINUX_BUILDS_DIR" "$dir"
+    install -m 0644 "$work/module.tar.gz" "$dir/module.tar.gz"
+    {
+        echo "image=${image}"
+        echo "digest=$(_linux_podman image inspect --format '{{.Digest}}' "$image" 2>/dev/null || true)"
+        echo "arch=$(uname -m)"
+        echo "source=${src_sha}"
+        echo "built=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    } > "$dir/info"
+    rm -rf "$work"
+    LINUX_PREBUILT="$dir"
+    info "Cached in ${dir}."
+}
+
+cmd_config_linux_builds() {
+    local sub="${1:-list}" dir
+    case "$sub" in
+        list)
+            echo ""
+            echo -e "${BOLD}Prebuilt pam_tacplus modules${NC} (${LINUX_BUILDS_DIR})"
+            echo "--------------------------------------------"
+            local any=0
+            for dir in "$LINUX_BUILDS_DIR"/*/; do
+                [[ -f "${dir}info" ]] || continue
+                any=1
+                printf "  %-28s %-8s built %s\n      base image %s\n" \
+                    "$(sed -n 's/^image=//p' "${dir}info" | sed 's|.*/||')" \
+                    "$(sed -n 's/^arch=//p' "${dir}info")" \
+                    "$(sed -n 's/^built=//p' "${dir}info")" \
+                    "$(sed -n 's/^digest=//p' "${dir}info")"
+            done
+            if [[ "$any" == "0" ]]; then
+                echo "  None yet. 'tacctl host enroll' builds one the first time it meets an OS release."
+            fi
+            echo ""
+            ;;
+        clear)
+            rm -rf "$LINUX_BUILDS_DIR"
+            info "Prebuilt modules removed; the next enroll of each OS release rebuilds."
+            ;;
+        *)
+            error "Usage: tacctl config linux builds [list|clear]"
+            return 1
+            ;;
+    esac
 }
 
 cmd_config_linux_script() {
@@ -5002,6 +5161,7 @@ cmd_config_linux() {
         script)        cmd_config_linux_script "$@" ;;
         remove-script) cmd_config_linux_remove_script "$@" ;;
         uid)           cmd_config_linux_uid "$@" ;;
+        builds)        cmd_config_linux_builds "$@" ;;
         *)
             echo ""
             echo -e "${BOLD}Linux host TACACS+ login${NC}"
@@ -5013,6 +5173,7 @@ cmd_config_linux() {
             echo "                                          Write the install script for hosts in a scope (contains the secret)"
             echo "  remove-script [--output <file>]         Write the removal script (no secrets; accounts are left in place)"
             echo "  uid [<username> [<uid>]]                Show or change the UID/GID a user gets on every host"
+            echo "  builds [list|clear]                     Show or drop the modules 'host enroll' built in containers"
             echo ""
             [[ -z "$sub" ]] && return 0
             return 1
@@ -5116,11 +5277,12 @@ host_server_address_for() {
 }
 
 cmd_host_enroll() {
-    local target="" scope="" server="" name="" port="" identity="" is_local=0
+    local target="" scope="" server="" name="" port="" identity="" is_local=0 build_on_host=0
     local -a script_args=()
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --local)    is_local=1; shift ;;
+            --build-on-host) build_on_host=1; shift ;;
             --allow-uid-mismatch) script_args+=(--allow-uid-mismatch); shift ;;
             --adopt)
                 if [[ ! "${2:-}" =~ ^[a-z_][a-z0-9_-]*(,[a-z_][a-z0-9_-]*)*$ ]]; then
@@ -5199,9 +5361,29 @@ cmd_host_enroll() {
         return 1
     fi
 
+    # Build the module here for the host's OS release when we can, so the
+    # host needs no compiler. Anything short of that falls back to
+    # compiling on the host from the embedded source.
+    local prebuilt="" platform image arch
+    if [[ "$build_on_host" == "1" ]]; then
+        info "pam_tacplus will be compiled on the host (--build-on-host)."
+    elif platform=$(linux_host_platform "$target" "$port" "$identity"); then
+        image="${platform%%|*}"
+        arch="${platform##*|}"
+        if [[ -z "$image" ]]; then
+            info "No container image is known for this host's OS; pam_tacplus will be compiled on the host."
+        elif [[ "$arch" != "$(uname -m)" ]]; then
+            info "The host is ${arch} and this server is $(uname -m); pam_tacplus will be compiled on the host."
+        elif linux_prebuilt_for "$image"; then
+            prebuilt="$LINUX_PREBUILT"
+        else
+            warn "pam_tacplus will be compiled on the host instead."
+        fi
+    fi
+
     local script
     script=$(mktemp)
-    linux_write_install_script "$scope" "$server" "$script" || { rm -f "$script"; return 1; }
+    linux_write_install_script "$scope" "$server" "$script" "" "$prebuilt" || { rm -f "$script"; return 1; }
     info "Enrolling ${name} (${target}) in scope '${scope}', server ${server}..."
     if ! host_run_script "$target" "$port" "$identity" "$script" "${script_args[@]}"; then
         rm -f "$script"
@@ -5345,6 +5527,7 @@ cmd_host_usage() {
     echo "      --server <address>               Address the host should use for this server (default: detected)"
     echo "      --name <name>                    Registry name (default: short hostname)"
     echo "      --port <n>, --identity <file>    SSH port and key"
+    echo "      --build-on-host                  Compile pam_tacplus on the host instead of in a container here"
     echo "  sync <name> | --all                  Push account adds, removals and tier changes"
     echo "      --allow-uid-mismatch             (enroll and sync) accept a UID/GID conflict on the host instead of stopping"
     echo "      --adopt <name>[,<name>...]       (enroll and sync) take over accounts that already exist on the host"
@@ -9946,6 +10129,56 @@ EOF
 }
 
 # --- INSTALL ---
+# Packages tacctl needs on the server. The core set is required; the rest
+# serve 'tacctl host' (preparing the pam_tacplus source, building it in
+# containers, reaching hosts over ssh), so failing to get them only warns.
+DEPS_CORE="git wget python3 python3-bcrypt"
+DEPS_LINUX_HOSTS="openssh-client autoconf automake libtool gnulib gcc make libpam0g-dev podman uidmap"
+
+_pkg_installed() {
+    dpkg-query -W -f='${Status}' "$1" 2>/dev/null | grep -q 'install ok installed'
+}
+
+_apt_install() {
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$@" >/dev/null && return 0
+    # A stale package index is the usual cause: refresh it once and retry.
+    apt-get update -qq >/dev/null || true
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$@" >/dev/null
+}
+
+# Install whatever is missing from the lists above. Run by 'tacctl install'
+# and at the end of every 'tacctl upgrade', so a release that needs a new
+# package brings it along.
+ensure_dependencies() {
+    if ! command -v apt-get &>/dev/null || ! command -v dpkg-query &>/dev/null; then
+        warn "Not a Debian/Ubuntu system; make sure the equivalents of these are installed:"
+        warn "  ${DEPS_CORE} ${DEPS_LINUX_HOSTS}"
+        return 0
+    fi
+    local pkg
+    local -a core=() extra=()
+    for pkg in $DEPS_CORE; do _pkg_installed "$pkg" || core+=("$pkg"); done
+    for pkg in $DEPS_LINUX_HOSTS; do _pkg_installed "$pkg" || extra+=("$pkg"); done
+    if [[ ${#core[@]} -eq 0 && ${#extra[@]} -eq 0 ]]; then
+        info "Required packages: all present."
+        return 0
+    fi
+    if [[ ${#core[@]} -gt 0 ]]; then
+        info "Installing required packages: ${core[*]}"
+        if ! _apt_install "${core[@]}"; then
+            error "Could not install: ${core[*]}. Install them and re-run."
+            return 1
+        fi
+    fi
+    if [[ ${#extra[@]} -gt 0 ]]; then
+        info "Installing packages for Linux host support: ${extra[*]}"
+        if ! _apt_install "${extra[@]}"; then
+            warn "Could not install: ${extra[*]}. 'tacctl host' and 'tacctl config linux' need them; everything else works."
+        fi
+    fi
+    return 0
+}
+
 cmd_install() {
     # Parse optional --branch flag
     local INSTALL_BRANCH=""
@@ -10114,7 +10347,10 @@ cmd_install() {
     info "  tacctl — user, config, and system management"
     info "  Deploy source: ${DEPLOY_DIR}"
 
-    # --- Step 3: Install python3-bcrypt ---
+    # --- Step 3: Install packages (python3-bcrypt and the rest) ---
+    if command -v apt-get &>/dev/null; then
+        ensure_dependencies || exit 1
+    fi
     if ! python3 -c "import bcrypt" 2>/dev/null; then
         info "Installing python3-bcrypt..."
         if command -v apt-get &>/dev/null; then
@@ -10530,6 +10766,9 @@ cmd_upgrade() {
     # Always normalize, even when nothing was pulled -- self-healing for
     # prior installs whose files were left at 0600 by the script's umask.
     normalize_deploy_perms
+
+    # A newer tacctl may need packages the last one did not.
+    ensure_dependencies || exit 1
 
     # --- Ensure symlink exists (755 so non-root users can exec into sudo) ---
     if [[ -d "$DEPLOY_DIR" ]]; then

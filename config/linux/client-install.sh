@@ -1,8 +1,10 @@
 # --- tacctl Linux client: install / account sync -------------------------------
 # Body of the script emitted by 'tacctl config linux script'. tacctl prepends
 # a header that sets TAC_SERVER, TAC_PORT, TAC_SECRET, TAC_SCOPE,
-# TARBALL_SHA256 and TAC_USERS, and appends the pam_tacplus source tarball
-# (base64) after the __TARBALL__ marker. Run as root on the target host:
+# TARBALL_SHA256 and TAC_USERS (plus PREBUILT_SHA256 and PREBUILT_FOR when a
+# prebuilt module is included), and appends the pam_tacplus source tarball
+# (base64) after the __TARBALL__ marker, then the prebuilt module after
+# __PREBUILT__. Run as root on the target host:
 #
 #   bash tacctl-linux-<scope>.sh                  full install (or re-install)
 #   bash tacctl-linux-<scope>.sh --accounts-only  sync accounts and groups only
@@ -198,9 +200,11 @@ check_adoption
 check_ids
 
 # --- pam_tacplus module --------------------------------------------------------
-# Built from the embedded source tarball, before any account is created, so
-# a host that cannot build is left as it was. A host that already has the
-# module from this same tarball is not rebuilt.
+# Installed before any account is created, so a host that cannot get the
+# module is left as it was. 'tacctl host enroll' normally embeds a module
+# built on the server for this OS release; otherwise, or if that one does
+# not load here, it is compiled from the embedded source tarball. A host
+# that already has the module from this same source is left alone.
 build_dir=""
 pam_edit_started=0
 pam_committed=0
@@ -258,51 +262,88 @@ ensure_build_tools() {
         Nothing was changed: no accounts created, PAM untouched."
 }
 
+# Where this host keeps PAM modules; shared libraries go one level up.
+# Found without a compiler, since a prebuilt module needs none.
+pam_module_dir() {
+    local d
+    for d in "/usr/lib/$(uname -m)-linux-gnu/security" /usr/lib/*/security \
+             /usr/lib64/security /usr/lib/security /lib/security; do
+        if [[ -f "$d/pam_unix.so" ]]; then echo "$d"; return 0; fi
+    done
+    return 1
+}
+
+# Unpack the module the tacctl server built for this OS release into
+# $build_dir/out. Fails (so the caller compiles instead) when there is
+# none, or when it does not load against this host's libraries.
+unpack_prebuilt() {
+    local out="$build_dir/out"
+    [[ -n "${PREBUILT_SHA256:-}" ]] || return 1
+    sed -n '/^__PREBUILT__$/,$p' "$0" | tail -n +2 | base64 -d > "$build_dir/prebuilt.tar.gz"
+    if ! echo "${PREBUILT_SHA256}  $build_dir/prebuilt.tar.gz" | sha256sum -c --quiet 2>/dev/null; then
+        warn "The prebuilt pam_tacplus failed its checksum; building on this host instead."
+        return 1
+    fi
+    rm -rf "$out"; mkdir -p "$out"
+    tar -C "$out" --no-same-owner -xzf "$build_dir/prebuilt.tar.gz" libtac.so.5.0.0 pam_tacplus.so
+    ln -s libtac.so.5.0.0 "$out/libtac.so.5"
+    if LD_LIBRARY_PATH="$out" ldd "$out/pam_tacplus.so" 2>&1 | grep -q 'not found'; then
+        warn "The prebuilt pam_tacplus (${PREBUILT_FOR:-unknown}) does not load on this host; building here instead."
+        return 1
+    fi
+    return 0
+}
+
+compile_module() {
+    local lib_dir="$1" sec_dir="$2" out="$build_dir/out"
+    ensure_build_tools
+    info "Building pam_tacplus on this host (this takes a minute)..."
+    rm -rf "$out"; mkdir -p "$out"
+    if [[ "$CLIENT_TEST" == "1" ]]; then
+        touch "$out/libtac.so.5.0.0" "$out/pam_tacplus.so"
+        return 0
+    fi
+    sed -n '/^__TARBALL__$/,/^__PREBUILT__$/p' "$0" | sed '1d;/^__PREBUILT__$/d' | base64 -d > "$build_dir/src.tar.gz"
+    echo "${TARBALL_SHA256}  $build_dir/src.tar.gz" | sha256sum -c --quiet \
+        || die "Embedded pam_tacplus tarball failed its checksum."
+    tar -C "$build_dir" -xzf "$build_dir/src.tar.gz"
+    (
+        cd "$build_dir"/pam_tacplus-*/
+        ./configure --prefix=/usr --libdir="$lib_dir" --enable-pamdir="$sec_dir" >"$build_dir/build.log" 2>&1
+        make >>"$build_dir/build.log" 2>&1
+        make install DESTDIR="$build_dir/stage" >>"$build_dir/build.log" 2>&1
+    ) || { tail -20 "$build_dir/build.log" >&2; die "pam_tacplus build failed."; }
+    cp "$build_dir/stage$lib_dir/libtac.so.5.0.0" "$build_dir/stage$sec_dir/pam_tacplus.so" "$out/"
+}
+
 install_module() {
-    local multiarch lib_dir sec_dir="" d
+    local lib_dir sec_dir
     if module_current; then
         info "pam_tacplus is already installed from this source; not rebuilding."
         return 0
     fi
-    ensure_build_tools
 
     if [[ "$CLIENT_TEST" == "1" ]]; then
-        lib_dir="$STATE_DIR/lib"
-        sec_dir="$lib_dir/security"
+        sec_dir="$STATE_DIR/lib/security"
         mkdir -p "$sec_dir"
     else
-        multiarch=$(gcc -print-multiarch 2>/dev/null || true)
-        lib_dir="/usr/lib${multiarch:+/$multiarch}"
-        for d in "$lib_dir/security" /usr/lib64/security /usr/lib/security /lib/security; do
-            if [[ -f "$d/pam_unix.so" ]]; then sec_dir="$d"; break; fi
-        done
-        [[ -n "$sec_dir" ]] || die "Could not find the PAM module directory."
+        sec_dir=$(pam_module_dir) || die "Could not find the PAM module directory."
     fi
+    lib_dir="${sec_dir%/security}"
 
     if [[ -e "$lib_dir/libtac.so.5" ]] && ! grep -qxF "$lib_dir/libtac.so.5" "$STATE_DIR/files" 2>/dev/null; then
         die "$lib_dir/libtac.so.5 already exists and was not installed by tacctl. Remove the other libtac first."
     fi
 
-    info "Building pam_tacplus (this takes a minute)..."
-    if [[ "$CLIENT_TEST" == "1" ]]; then
-        mkdir -p "$build_dir/stage$sec_dir"
-        touch "$build_dir/stage$lib_dir/libtac.so.5.0.0" "$build_dir/stage$sec_dir/pam_tacplus.so"
+    if unpack_prebuilt; then
+        info "Installing pam_tacplus built on the tacctl server for ${PREBUILT_FOR:-this OS} (nothing is compiled here)."
     else
-        sed -n '/^__TARBALL__$/,$p' "$0" | tail -n +2 | base64 -d > "$build_dir/src.tar.gz"
-        echo "${TARBALL_SHA256}  $build_dir/src.tar.gz" | sha256sum -c --quiet \
-            || die "Embedded pam_tacplus tarball failed its checksum."
-        tar -C "$build_dir" -xzf "$build_dir/src.tar.gz"
-        (
-            cd "$build_dir"/pam_tacplus-*/
-            ./configure --prefix=/usr --libdir="$lib_dir" --enable-pamdir="$sec_dir" >"$build_dir/build.log" 2>&1
-            make >>"$build_dir/build.log" 2>&1
-            make install DESTDIR="$build_dir/stage" >>"$build_dir/build.log" 2>&1
-        ) || { tail -20 "$build_dir/build.log" >&2; die "pam_tacplus build failed."; }
+        compile_module "$lib_dir" "$sec_dir"
     fi
 
-    install -m 0644 "$build_dir/stage$lib_dir/libtac.so.5.0.0" "$lib_dir/libtac.so.5.0.0"
+    install -m 0644 "$build_dir/out/libtac.so.5.0.0" "$lib_dir/libtac.so.5.0.0"
     ln -sf libtac.so.5.0.0 "$lib_dir/libtac.so.5"
-    install -m 0644 "$build_dir/stage$sec_dir/pam_tacplus.so" "$sec_dir/pam_tacplus.so"
+    install -m 0644 "$build_dir/out/pam_tacplus.so" "$sec_dir/pam_tacplus.so"
     ldconfig
     {
         echo "$lib_dir/libtac.so.5.0.0"

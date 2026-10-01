@@ -214,7 +214,7 @@ tacctl config sudoers install adm     # or: wheel, ops, etc.
 This writes `/etc/sudoers.d/tacctl` (validated with `visudo -cf`) granting `%adm ALL=(ALL) NOPASSWD: /usr/local/bin/tacctl`. Because `tacctl` can modify system config and restart services, this is effectively passwordless root for members of that group — the command prompts for confirmation before installing. Remove with `tacctl config sudoers remove`.
 
 ### TACACS+ login for Linux hosts
-Linux hosts log in against tacquito through `pam_tacplus`. No current distribution packages a usable build and upstream is archived, so tacctl pins v1.7.0 (verified by commit hash) and builds it on each host.
+Linux hosts log in against tacquito through `pam_tacplus`. No current distribution packages a usable build and upstream is archived, so tacctl pins v1.7.0 (verified by commit hash) and builds it itself: in a container on the server when hosts are enrolled with `tacctl host enroll`, or on the host when the install script is run by hand.
 ```
 tacctl config linux build                                  # once, on the server: prepare the source tarball
 tacctl config linux script --scope prod -o enroll.sh       # install script for hosts in a scope
@@ -242,7 +242,18 @@ tacctl host sync web1                         # ...and push the account (or: tac
 tacctl host list
 tacctl host unenroll web1                     # remove TACACS+ login; accounts and home directories stay
 ```
-`ssh` runs as the user who invoked `sudo`, with their keys; the remote login must be root or able to `sudo` (a password prompt works when run from a terminal). `--scope` enrolls into an existing scope instead of creating one, `--server` overrides the detected server address, and `--port` / `--identity` are passed to ssh. Account changes are not pushed automatically: run `host sync` after `user add`, `remove`, `move` or `scope` changes. Until then a removed user is already refused at password login by the server, but an SSH key on the host keeps working.
+`ssh` runs as the user who invoked `sudo`, with their keys; the remote login must be root or able to `sudo` (a password prompt works when run from a terminal). Without a terminal, a host whose sudo needs a password is reported as such rather than attempted. `--scope` enrolls into an existing scope instead of creating one, `--server` overrides the detected server address, and `--port` / `--identity` are passed to ssh. Account changes are not pushed automatically: run `host sync` after `user add`, `remove`, `move` or `scope` changes. Until then a removed user is already refused at password login by the server, but an SSH key on the host keeps working.
+
+#### Where the module is built
+`host enroll` reads the host's `/etc/os-release` and architecture, builds `pam_tacplus` once for that OS release in a rootless `podman` container on the server (base image plus compiler pulled with network access; the compile itself runs with no network and no capabilities), caches it under `/var/lib/tacctl/linux/builds/`, and ships the binary. The host installs it without a compiler, headers or package repository, after checking its checksum and that it loads against the host's libraries.
+```
+tacctl config linux builds               # list cached builds with the base image digest each used
+tacctl config linux builds clear         # drop them; the next enroll of each OS release rebuilds
+tacctl host enroll web1 --build-on-host  # skip the container and compile on the host
+```
+The host compiles from the embedded source instead when there is no image for its OS (anything but Debian, Ubuntu and Ubuntu derivatives), its architecture differs from the server's, `podman` is missing or the container build fails, or the shipped module does not load there. Base images come from Docker Hub (`ubuntu:<codename>`, `debian:<codename>`) and are trusted as pulled; the digest is recorded with each build.
+
+`tacctl install` and every `tacctl upgrade` install the packages this needs if they are missing (`podman`, `uidmap`, the autotools set for `config linux build`, `openssh-client`), along with tacctl's core requirements.
 
 #### Consistent UIDs and GIDs
 Each user gets one number, used as both UID and primary GID on every host this server enrolls. It is assigned the first time the user is sent to a host (from 20000 up, never reused) and stored in `/etc/tacquito/linux-uids`.
@@ -437,7 +448,7 @@ host enroll <[user@]host>|--local [opts]    Install TACACS+ login on a host over
 host sync <name>|--all                      Push account adds, removals and tier changes
 host unenroll <name> [--force]              Remove TACACS+ login from a host (accounts are kept)
 config linux uid [<user> [<uid>]]           Show or change the UID/GID a user gets on every host
-config linux build|script|remove-script     TACACS+ login for Linux hosts (pam_tacplus install/removal scripts)
+config linux build|script|remove-script|uid|builds   TACACS+ login for Linux hosts (pam_tacplus)
 config sudoers [show|install|remove] [grp]  Manage NOPASSWD sudoers drop-in for tacctl
 config sudoers tiers [show|install|remove]  Manage per-tier (RO/OP/SU) sudoers rules for TACACS+ users
 config password-age [days]                  Show or set password age warning threshold (default 90)

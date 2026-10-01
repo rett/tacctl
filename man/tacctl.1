@@ -477,7 +477,7 @@ clears the override and falls back to the unit default.
 Show enrolled Linux hosts with their SSH target, scope, server address
 and user count.
 .TP
-.B "host enroll " "{ [" user "@]" host " | \-\-local } [ \-\-scope " name " ] [ \-\-server " address " ] [ \-\-name " name " ] [ \-\-port " n " ] [ \-\-identity " file " ]"
+.B "host enroll " "{ [" user "@]" host " | \-\-local } [ \-\-scope " name " ] [ \-\-server " address " ] [ \-\-name " name " ] [ \-\-port " n " ] [ \-\-identity " file " ] [ \-\-build\-on\-host ]"
 Copy the
 .B "config linux"
 install script to a host over SSH, run it there as root, and register the
@@ -493,7 +493,14 @@ enrolls this machine without SSH. ssh runs as the user who invoked
 .BR sudo (8),
 using their keys; the remote login must be root or able to sudo. The
 remote copy of the script is deleted after the run. Nothing is registered
-if the remote run fails. Requires
+if the remote run fails. pam_tacplus is built on this server, in a rootless
+.BR podman (1)
+container matching the host's OS release, cached, and shipped as a binary;
+the host compiles it from source instead when no image matches its OS, its
+architecture differs, the container build fails, or
+.B \-\-build\-on\-host
+is given. A host that already has the module from the same source is not
+touched. Requires
 .B "config linux build"
 to have been run.
 .TP
@@ -568,6 +575,13 @@ number on that host with
 Changing a UID does not renumber accounts that already exist on hosts.
 Accounts that existed before enrollment are adopted with their own UID,
 and a difference from the assigned one is reported on every sync.
+.TP
+.B "config linux builds " "[ list | clear ]"
+List or delete the pam_tacplus modules that
+.B "host enroll"
+built in containers, one per OS release and architecture, kept in
+.IR /var/lib/tacctl/linux/builds .
+The listing shows the digest of the base image each was built from.
 .TP
 .B "config linux remove-script " "[ \-\-output " file " ]"
 Write a script that removes TACACS+ login from a host: it undoes the PAM

@@ -201,3 +201,105 @@ _hosts() { cat "$TACCTL_ETC/linux-hosts" 2>/dev/null; }
     assert_failure
     assert_output --partial "not permitted"
 }
+
+# --- prebuilt module (container build on the server) --------------------------
+
+# The probe answers as <os-release lines> on <arch>; podman is a stand-in
+# that "builds" a two-file bundle.
+_prebuilt_env() {
+    export PROBE_OS="$1" PROBE_ARCH="${2:-$(uname -m)}"
+    stub_cmd ssh 'case "$*" in
+        *mktemp*) cat > "$PUSHED"; echo /tmp/tacctl.AbCd1234 ;;
+        *os-release*) printf "%b" "$PROBE_OS"; [[ "$*" == *"echo; echo"* ]] && echo; echo "TACCTL_ARCH=$PROBE_ARCH" ;;
+        *) [[ -z "${SSH_RUN_FAILS:-}" ]] ;;
+    esac'
+    stub_cmd podman 'case "$1" in
+        build) [[ -z "${PODMAN_FAILS:-}" ]] ;;
+        run)   cat > /dev/null; d=$(mktemp -d); echo lib > "$d/libtac.so.5.0.0"; echo mod > "$d/pam_tacplus.so"
+               tar -C "$d" -czf - libtac.so.5.0.0 pam_tacplus.so ;;
+        image) echo "sha256:feedface" ;;
+    esac'
+}
+
+@test "host enroll: builds the module in a container for the host's OS and ships it" {
+    _prebuilt_env 'ID=neon\nID_LIKE="ubuntu debian"\nVERSION_CODENAME=noble\nUBUNTU_CODENAME=noble'
+    run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab
+    assert_success
+    assert_output --partial "Building pam_tacplus for ubuntu:noble in a container"
+    stub_called "podman build .*-t localhost/tacctl-build:ubuntu-noble-$(uname -m)"
+    stub_called "podman run --rm -i --network none .*localhost/tacctl-build:ubuntu-noble-$(uname -m)"
+
+    local dir="$TACCTL_LINUX_DIR/builds/ubuntu-noble-$(uname -m)"
+    run cat "$dir/info"
+    assert_line "image=docker.io/library/ubuntu:noble"
+    assert_line "digest=sha256:feedface"
+
+    # The pushed script carries the bundle, its checksum, and still the source.
+    local want got
+    want=$(sed -n 's/^PREBUILT_SHA256=//p' "$PUSHED")
+    got=$(sed -n '/^__PREBUILT__$/,$p' "$PUSHED" | tail -n +2 | base64 -d | sha256sum | awk '{print $1}')
+    [[ -n "$want" && "$want" == "$got" ]]
+    want=$(sed -n 's/^TARBALL_SHA256=//p' "$PUSHED")
+    got=$(sed -n '/^__TARBALL__$/,/^__PREBUILT__$/p' "$PUSHED" | sed '1d;/^__PREBUILT__$/d' | base64 -d | sha256sum | awk '{print $1}')
+    [[ "$want" == "$got" ]]
+
+    # A second host of the same OS reuses the cached build.
+    run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab --name web2
+    assert_success
+    refute_output --partial "in a container"
+    run grep -c "^podman run" "$CALLS_LOG"
+    assert_output "1"
+
+    run "$TACCTL_BIN_SCRIPT" config linux builds
+    assert_output --partial "ubuntu:noble"
+    run "$TACCTL_BIN_SCRIPT" config linux builds clear
+    assert_success
+    [[ ! -d "$TACCTL_LINUX_DIR/builds" ]]
+}
+
+@test "host enroll: Debian and plain Ubuntu hosts map to their own images" {
+    _prebuilt_env 'ID=debian\nVERSION_CODENAME=bookworm'
+    run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab
+    assert_success
+    stub_called "podman build .*-t localhost/tacctl-build:debian-bookworm-"
+    _prebuilt_env 'ID=ubuntu\nVERSION_CODENAME=jammy'
+    run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab
+    assert_success
+    stub_called "podman build .*-t localhost/tacctl-build:ubuntu-jammy-"
+}
+
+@test "host enroll: unknown OS, other architecture or --build-on-host compile on the host" {
+    _prebuilt_env 'ID=fedora\nVERSION_CODENAME=""'
+    run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab
+    assert_success
+    assert_output --partial "No container image is known"
+
+    _prebuilt_env 'ID=ubuntu\nVERSION_CODENAME=noble' riscv64
+    run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab
+    assert_success
+    assert_output --partial "The host is riscv64"
+
+    _prebuilt_env 'ID=ubuntu\nVERSION_CODENAME=noble'
+    run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab --build-on-host
+    assert_success
+    assert_output --partial "compiled on the host (--build-on-host)"
+
+    run grep -c "^podman" "$CALLS_LOG"
+    assert_output "0"
+    refute grep -q -e '^__PREBUILT__$' -e '^PREBUILT_SHA256=' "$PUSHED"
+    grep -q '^__TARBALL__$' "$PUSHED"
+}
+
+@test "host enroll: a failed container build falls back to compiling on the host" {
+    _prebuilt_env 'ID=ubuntu\nVERSION_CODENAME=noble; rm -rf /'
+    run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab
+    assert_success
+    assert_output --partial "No container image is known"
+
+    _prebuilt_env 'ID=ubuntu\nVERSION_CODENAME=noble'
+    PODMAN_FAILS=1 run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab
+    assert_success
+    assert_output --partial "compiled on the host instead"
+    assert_output --partial "Host 'web1' enrolled"
+    refute grep -q '^__PREBUILT__$' "$PUSHED"
+}
