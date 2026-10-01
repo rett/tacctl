@@ -32,7 +32,7 @@ _tacctl() {
     done
 
     local pos=$((cword - offset))
-    local commands="install upgrade uninstall status passwd user group config scope log backup hash version"
+    local commands="install upgrade uninstall status passwd user group config scope host log backup hash version"
 
     # Top-level commands
     if [[ $pos -eq 1 ]]; then
@@ -207,7 +207,7 @@ for u in (d.get('users') or []):
                         COMPREPLY=($(compgen -W "show enable disable address reset" -- "$cur"))
                         ;;
                     linux)
-                        COMPREPLY=($(compgen -W "build script remove-script" -- "$cur"))
+                        COMPREPLY=($(compgen -W "build script remove-script uid" -- "$cur"))
                         ;;
                     sudoers)
                         COMPREPLY=($(compgen -W "show install remove tiers" -- "$cur"))
@@ -246,6 +246,13 @@ for u in (d.get('users') or []):
                     [[ " ${words[*]} " == *" --legacy "* ]] || cflags+=" --legacy"
                     COMPREPLY=($(compgen -W "$cflags" -- "$cur"))
                 fi
+            fi
+            ;;
+        host)
+            if [[ $pos -eq 2 ]]; then
+                COMPREPLY=($(compgen -W "list enroll sync unenroll" -- "$cur"))
+            elif [[ "$cur" == -* ]]; then
+                COMPREPLY=($(compgen -W "--local --scope --server --name --port --identity --all --force --allow-uid-mismatch --adopt" -- "$cur"))
             fi
             ;;
         scope)

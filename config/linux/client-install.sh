@@ -6,6 +6,8 @@
 #
 #   bash tacctl-linux-<scope>.sh                  full install (or re-install)
 #   bash tacctl-linux-<scope>.sh --accounts-only  sync accounts and groups only
+#   --allow-uid-mismatch (either form)            accept UID/GID conflicts on this host
+#   --adopt <name>[,<name>...] (either form)      take over pre-existing accounts
 #
 # TACCTL_FORCE=1 skips the local-administrator (lockout) check.
 # shellcheck shell=bash disable=SC2154,SC2317
@@ -21,11 +23,19 @@ warn() { echo "[WARN] $*" >&2; }
 die()  { echo "[ERROR] $*" >&2; exit 1; }
 
 ACCOUNTS_ONLY=0
-case "${1:-}" in
-    "") ;;
-    --accounts-only) ACCOUNTS_ONLY=1 ;;
-    *) die "Unknown argument '$1'. Usage: $0 [--accounts-only]" ;;
-esac
+ALLOW_UID_MISMATCH=0
+ADOPT=""    # comma-separated names of pre-existing accounts to take over
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --accounts-only)      ACCOUNTS_ONLY=1; shift ;;
+        --allow-uid-mismatch) ALLOW_UID_MISMATCH=1; shift ;;
+        --adopt)
+            [[ -n "${2:-}" ]] || die "--adopt needs a comma-separated list of account names."
+            ADOPT+="${ADOPT:+,}$2"; shift 2
+            ;;
+        *) die "Unknown argument '$1'. Usage: $0 [--accounts-only] [--allow-uid-mismatch] [--adopt <name>[,<name>...]]" ;;
+    esac
+done
 
 # TACCTL_CLIENT_TEST=1 is for the bats suite only: it skips the root check
 # and the module build so the account and PAM logic can run unprivileged
@@ -67,9 +77,129 @@ mkdir -p "$STATE_DIR/backup"
 chmod 700 "$STATE_DIR"
 touch "$STATE_DIR/created" "$STATE_DIR/adopted" "$STATE_DIR/expired"
 
+# id_is_free <name> <id>: the number is unused as a UID, and as a GID is
+# either unused or already the group named <name>.
+id_is_free() {
+    local name="$1" id="$2" gname ggid
+    if getent passwd "$id" >/dev/null; then return 1; fi
+    gname=$(getent group "$id" | cut -d: -f1 || true)
+    if [[ -n "$gname" && "$gname" != "$name" ]]; then return 1; fi
+    ggid=$(getent group "$name" | cut -d: -f3 || true)
+    if [[ -n "$ggid" && "$ggid" != "$id" ]]; then return 1; fi
+    return 0
+}
+
+# --- UID/GID consistency -------------------------------------------------------
+# tacctl gives each user one number, used as both UID and primary GID on
+# every host. Nothing is created or changed until every user in the list
+# can have that number here, unless --allow-uid-mismatch was given.
+check_ids() {
+    local name _tier uid cur owner conflicts="" mismatches=""
+    while IFS=: read -r name _tier uid; do
+        [[ -n "$name" ]] || continue
+        if getent passwd "$name" >/dev/null; then
+            cur=$(getent passwd "$name" | cut -d: -f3)
+            if [[ "$cur" != "$uid" ]]; then
+                mismatches+="    ${name}: UID ${cur} on this host, ${uid} assigned by tacctl"$'\n'
+            fi
+            continue
+        fi
+        owner=$(getent passwd "$uid" | cut -d: -f1 || true)
+        if [[ -n "$owner" ]]; then
+            conflicts+="    ${name}: UID ${uid} already belongs to user '${owner}'"$'\n'
+        fi
+        owner=$(getent group "$uid" | cut -d: -f1 || true)
+        if [[ -n "$owner" && "$owner" != "$name" ]]; then
+            conflicts+="    ${name}: GID ${uid} already belongs to group '${owner}'"$'\n'
+        fi
+        cur=$(getent group "$name" | cut -d: -f3 || true)
+        if [[ -n "$cur" && "$cur" != "$uid" ]]; then
+            conflicts+="    ${name}: a group named '${name}' exists with GID ${cur}, not ${uid}"$'\n'
+        fi
+    done <<< "$TAC_USERS"
+
+    if [[ -n "$mismatches" ]]; then
+        warn "Existing accounts whose UID differs from the one tacctl assigned:"
+        printf '%s' "$mismatches" >&2
+        cat >&2 <<'TXT'
+  They are adopted as they are. To make them consistent, either
+    - renumber the account on this host (user logged out, as root):
+        usermod -u <uid> <user> && groupmod -g <uid> <user>
+        find / -xdev \( -uid <old> -o -gid <old> \) -exec chown -h <user>:<user> {} +
+    - or make this host's number the assigned one (if no other host has the user yet):
+        tacctl config linux uid <user> <uid-on-this-host>
+TXT
+    fi
+
+    [[ -n "$conflicts" ]] || return 0
+    if [[ "$ALLOW_UID_MISMATCH" == "1" ]]; then
+        warn "UID/GID conflicts accepted (--allow-uid-mismatch); these users get this host's next free number:"
+        printf '%s' "$conflicts" >&2
+        return 0
+    fi
+    echo "[ERROR] Cannot give these users their assigned UID/GID on this host:" >&2
+    printf '%s' "$conflicts" >&2
+    cat >&2 <<'TXT'
+  Nothing was changed. Options:
+    1. Free the number on this host by renumbering the account or group that holds it:
+         usermod -u <new-uid> <other-user>     (or: groupmod -g <new-gid> <other-group>)
+         find / -xdev \( -uid <old> -o -gid <old> \) -exec chown -h <other-user> {} +
+    2. Assign the tacctl user a number that is free on every host, then re-run:
+         tacctl config linux uid <user> <new-uid>
+       (hosts that already have the account keep the old number until renumbered)
+    3. Accept a different number on this host only:
+         tacctl host enroll|sync ... --allow-uid-mismatch
+       (or run this script with --allow-uid-mismatch)
+TXT
+    exit 1
+}
+
+# --- Adoption ------------------------------------------------------------------
+# An account that already exists under a TACACS+ user's name is only taken
+# over when the operator names it with --adopt: a matching name does not
+# prove it is the same person. Accounts this script created or adopted on
+# an earlier run need no flag.
+PRIVILEGED_GROUPS="sudo wheel admin adm root docker lxd libvirt disk shadow"
+
+check_adoption() {
+    local name _rest unconfirmed=""
+    while IFS=: read -r name _rest; do
+        [[ -n "$name" ]] || continue
+        getent passwd "$name" >/dev/null || continue
+        if grep -qxF "$name" "$STATE_DIR/created" "$STATE_DIR/adopted"; then continue; fi
+        if [[ ",${ADOPT}," == *",${name},"* ]]; then continue; fi
+        unconfirmed+=" ${name}"
+    done <<< "$TAC_USERS"
+    [[ -n "$unconfirmed" ]] || return 0
+    echo "[ERROR] These TACACS+ users already have a local account on this host that tacctl did not create:${unconfirmed}" >&2
+    cat >&2 <<'TXT'
+  Nothing was changed. A matching name does not prove it is the same person. Options:
+    1. It is the same person: take the account over, keeping its UID, password, files and groups:
+         tacctl host enroll|sync ... --adopt <name>[,<name>...]
+       (or run this script with --adopt <name>[,<name>...])
+    2. It is someone or something else: rename the tacctl user (tacctl user rename <old> <new>),
+       or keep the user off this host (tacctl user scope <name> remove <scope>).
+    3. The local account is obsolete: remove or rename it on this host, then re-run.
+TXT
+    exit 1
+}
+
+# Local groups that grant rights regardless of the TACACS+ tier.
+privileged_groups_of() {
+    local g found="" groups
+    groups=" $(id -nG "$1" 2>/dev/null) "
+    for g in $PRIVILEGED_GROUPS; do
+        if [[ "$groups" == *" $g "* ]]; then found+="${found:+, }$g"; fi
+    done
+    echo "$found"
+}
+
+check_adoption
+check_ids
+
 # --- Accounts and groups -------------------------------------------------------
 sync_accounts() {
-    local g name tier uid managed member
+    local g name tier uid managed member priv pw home still
     for g in "$G_USERS" tac-readonly tac-operator tac-superuser; do
         getent group "$g" >/dev/null || groupadd "$g"
     done
@@ -79,15 +209,21 @@ sync_accounts() {
         if getent passwd "$name" >/dev/null; then
             if ! grep -qxF "$name" "$STATE_DIR/created" "$STATE_DIR/adopted"; then
                 echo "$name" >> "$STATE_DIR/adopted"
-                info "Adopted existing account '${name}' (local password left as it is)."
+                info "Adopted existing account '${name}' (UID, local password, files and groups left as they are)."
+                priv=$(privileged_groups_of "$name")
+                if [[ -n "$priv" ]]; then
+                    warn "'${name}' is in local group(s): ${priv}. Those rights stay whatever the TACACS+ tier (${tier}) is."
+                fi
             fi
         else
             # New accounts get a locked password: TACACS+ is their only password.
-            if getent passwd "$uid" >/dev/null; then
-                warn "UID ${uid} is taken on this host; '${name}' gets the next free UID."
-                useradd -m -s /bin/bash -c "TACACS+ user (tacctl)" "$name"
+            # UID and primary GID are the same number on every host. The
+            # fallback is only reachable with --allow-uid-mismatch.
+            if id_is_free "$name" "$uid"; then
+                getent group "$name" >/dev/null || groupadd -g "$uid" "$name"
+                useradd -m -u "$uid" -g "$name" -s /bin/bash -c "TACACS+ user (tacctl)" "$name"
             else
-                useradd -m -u "$uid" -s /bin/bash -c "TACACS+ user (tacctl)" "$name"
+                useradd -m -s /bin/bash -c "TACACS+ user (tacctl)" "$name"
             fi
             echo "$name" >> "$STATE_DIR/created"
             info "Created account '${name}' (${tier})."
@@ -119,7 +255,16 @@ sync_accounts() {
             echo "$member" >> "$STATE_DIR/expired"
             info "'${member}' is no longer a TACACS+ user here: account expired, files kept."
         else
-            info "'${member}' is no longer a TACACS+ user here: removed from the tac-* groups."
+            # Adopted (or hand-added) account: not tacctl's to lock.
+            pw=$(getent shadow "$member" 2>/dev/null | cut -d: -f2 || true)
+            home=$(getent passwd "$member" | cut -d: -f6 || true)
+            still="no local password"
+            if [[ -n "$pw" && "$pw" != '!'* && "$pw" != '*'* ]]; then still="local password works"; fi
+            if [[ -s "$home/.ssh/authorized_keys" ]]; then still+=", SSH key present"; fi
+            priv=$(privileged_groups_of "$member")
+            warn "'${member}' is no longer a TACACS+ user here but its local account was NOT disabled (${still}${priv:+; groups: $priv})."
+            warn "  To block it: usermod -L -e 1 ${member}"
+            sed -i "/^${member}\$/d" "$STATE_DIR/adopted"
         fi
     done
 }

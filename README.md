@@ -232,6 +232,39 @@ The install script contains the scope's shared secret, and so do the root-only `
 
 The removal script undoes the PAM edits and deletes the secret, module and sudoers drop-in. Accounts, home directories and the `tac-*` groups stay; it lists any account left with neither a local password nor an SSH key.
 
+#### Enrolling hosts over SSH
+`tacctl host` does the copy-and-run for you and keeps a registry of enrolled hosts:
+```
+tacctl host enroll admin@web1.example.net     # creates scope linux-web1 (the host's /32, own secret), installs, registers
+tacctl host enroll --local                    # this machine
+tacctl user scope jsmith add linux-web1       # give a user a login on that host...
+tacctl host sync web1                         # ...and push the account (or: tacctl host sync --all)
+tacctl host list
+tacctl host unenroll web1                     # remove TACACS+ login; accounts and home directories stay
+```
+`ssh` runs as the user who invoked `sudo`, with their keys; the remote login must be root or able to `sudo` (a password prompt works when run from a terminal). `--scope` enrolls into an existing scope instead of creating one, `--server` overrides the detected server address, and `--port` / `--identity` are passed to ssh. Account changes are not pushed automatically: run `host sync` after `user add`, `remove`, `move` or `scope` changes. Until then a removed user is already refused at password login by the server, but an SSH key on the host keeps working.
+
+#### Consistent UIDs and GIDs
+Each user gets one number, used as both UID and primary GID on every host this server enrolls. It is assigned the first time the user is sent to a host (from 20000 up, never reused) and stored in `/etc/tacquito/linux-uids`.
+```
+tacctl config linux uid                  # list assignments
+tacctl config linux uid jsmith           # print one
+tacctl config linux uid jsmith 20500     # change it
+```
+If the number is already taken on a host, by a user or by a group, the install or sync **stops before changing anything** and lists the options:
+1. free the number on the host by renumbering whatever holds it (`usermod -u` / `groupmod -g`, then `chown` its files);
+2. assign the tacctl user a number that is free everywhere (`tacctl config linux uid <user> <uid>`) and re-run;
+3. accept a different number on that host only: `tacctl host enroll|sync ... --allow-uid-mismatch`.
+
+Accounts that existed before enrollment are adopted with the UID they already have; every sync reports the difference and how to fix it. Changing an assignment does not renumber accounts already created on hosts. Two tacctl servers assign independently, so copy `linux-uids` between them if their hosts must agree.
+
+#### Accounts that already exist on a host
+If a host already has a local account with the same name as a TACACS+ user, the install or sync stops before changing anything: a matching name does not prove it is the same person. The message lists the options: confirm it with `--adopt <name>[,<name>...]` on `tacctl host enroll` or `sync`, rename the tacctl user or keep it off that host, or remove the local account.
+
+An adopted account keeps its UID, local password, files and groups; tacctl only adds it to `tac-users` and its tier group. Two consequences are reported when they apply:
+- at adoption, if the account is in a privileged local group (`sudo`, `wheel`, `adm`, `docker`, ...), since those rights hold whatever the TACACS+ tier is;
+- when the user is later removed from the scope or disabled, since an adopted account is **not** locked or expired (accounts tacctl created are): it goes back to being a plain local account, and the sync says whether its local password or an SSH key still works and how to block it (`usermod -L -e 1 <name>`).
+
 ### Tiered access for TACACS+ users (opt-in)
 TACACS+ users who have a local account on the server can be given tacctl access that follows their group:
 ```
@@ -399,6 +432,11 @@ config diff [timestamp]                     Diff current config vs a backup
 config loglevel [debug|info|error]          Show or change log level
 config listen [show|tcp|tcp6|reset] [addr]  Show, change, or reset TCP listen address
 config metrics <show|enable|disable|address <host:port>|reset>   Prometheus exporter control. Default: loopback-only 127.0.0.1:8080. `disable` sinks to 127.0.0.1:0 (unreachable ephemeral port) since tacquito's own disable flag would crash the server.
+host list                                   Show enrolled Linux hosts
+host enroll <[user@]host>|--local [opts]    Install TACACS+ login on a host over SSH and register it
+host sync <name>|--all                      Push account adds, removals and tier changes
+host unenroll <name> [--force]              Remove TACACS+ login from a host (accounts are kept)
+config linux uid [<user> [<uid>]]           Show or change the UID/GID a user gets on every host
 config linux build|script|remove-script     TACACS+ login for Linux hosts (pam_tacplus install/removal scripts)
 config sudoers [show|install|remove] [grp]  Manage NOPASSWD sudoers drop-in for tacctl
 config sudoers tiers [show|install|remove]  Manage per-tier (RO/OP/SU) sudoers rules for TACACS+ users

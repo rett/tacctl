@@ -473,6 +473,55 @@ to expose to external scrapers); non-loopback binds print a warning.
 .B reset
 clears the override and falls back to the unit default.
 .TP
+.B "host list"
+Show enrolled Linux hosts with their SSH target, scope, server address
+and user count.
+.TP
+.B "host enroll " "{ [" user "@]" host " | \-\-local } [ \-\-scope " name " ] [ \-\-server " address " ] [ \-\-name " name " ] [ \-\-port " n " ] [ \-\-identity " file " ]"
+Copy the
+.B "config linux"
+install script to a host over SSH, run it there as root, and register the
+host. Without
+.B \-\-scope
+a scope named
+.BI linux\- name
+is created for the host's own address (/32) with a generated secret, so a
+secret read off one host is useless from another. The server address
+defaults to the source address of the route to the host.
+.B \-\-local
+enrolls this machine without SSH. ssh runs as the user who invoked
+.BR sudo (8),
+using their keys; the remote login must be root or able to sudo. The
+remote copy of the script is deleted after the run. Nothing is registered
+if the remote run fails. Requires
+.B "config linux build"
+to have been run.
+.TP
+.B "host sync " "{ " name " | \-\-all } [ \-\-allow\-uid\-mismatch ] [ \-\-adopt " names " ]"
+Push the scope's current user list to the host: new users get accounts,
+tier changes move group membership, and users no longer in the scope lose
+the tac-* groups (accounts tacctl created are expired, which also blocks
+SSH-key logins). Run after
+.BR "user add" ", " "user remove" ", " "user move" " or " "user scope"
+changes.
+.IP
+If the host already has a local account under a TACACS+ user's name that
+tacctl did not create, enroll and sync stop before changing anything
+unless the name is given with
+.BI \-\-adopt " name" [, name ...].
+An adopted account keeps its UID, local password, files and groups. A
+warning is printed if it belongs to a privileged local group, and again
+when the user is later removed or disabled: adopted accounts are not
+locked or expired, so the account stays usable locally until blocked by
+hand.
+.TP
+.B "host unenroll " name " [ \-\-force ]"
+Run the removal script on the host and drop it from the registry. Local
+accounts and home directories are left in place. If the removal fails the
+host stays registered unless
+.B \-\-force
+is given.
+.TP
 .B "config linux build"
 Fetch the pinned
 .B pam_tacplus
@@ -503,6 +552,22 @@ the TACACS+ user list, and puts the PAM files back if any step fails.
 Re-run it with
 .B \-\-accounts\-only
 to sync users after changes on the server.
+.TP
+.B "config linux uid " "[ " username " [ " uid " ] ]"
+List the UID assigned to each user, print one user's UID, or change it.
+Each user has one number, used as both UID and primary GID on every
+enrolled host; it is assigned the first time the user is sent to a host
+and kept in
+.IR /etc/tacquito/linux\-uids .
+The install and sync scripts stop before changing anything if that number
+is already used on a host by another user or group, and print the ways to
+resolve it: renumber the conflicting account on the host, assign the
+tacctl user a different number with this command, or accept a different
+number on that host with
+.BR \-\-allow\-uid\-mismatch .
+Changing a UID does not renumber accounts that already exist on hosts.
+Accounts that existed before enrollment are adopted with their own UID,
+and a difference from the assigned one is reported on every sync.
 .TP
 .B "config linux remove-script " "[ \-\-output " file " ]"
 Write a script that removes TACACS+ login from a host: it undoes the PAM

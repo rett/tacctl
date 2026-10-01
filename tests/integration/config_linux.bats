@@ -60,7 +60,8 @@ _client_env() {
             awk -F: -v k="$key" "\$1 == k || \$3 == k { print; found=1 } END { exit !found }" "$FAKE_DB/$db" && rc=0
         done
         exit $rc'
-    stub_cmd groupadd 'echo "$1:x:900:" >> "$FAKE_DB/group"'
+    stub_cmd groupadd 'gid=900; [[ "$1" == "-g" ]] && { gid="$2"; shift 2; }
+        echo "$1:x:$gid:" >> "$FAKE_DB/group"'
     stub_cmd useradd
     stub_cmd usermod
     stub_cmd gpasswd
@@ -123,6 +124,18 @@ _client_env() {
     assert_output "0"
 }
 
+@test "config linux script: leaves disabled users out until they are re-enabled" {
+    "$TACCTL_BIN_SCRIPT" user disable bob > /dev/null
+    _gen > /dev/null
+    run sed '/^__TARBALL__$/,$d' "$OUT"
+    assert_output --partial "alice:superuser:20000"
+    refute_output --partial "bob:"
+    "$TACCTL_BIN_SCRIPT" user enable bob > /dev/null
+    _gen > /dev/null
+    run sed '/^__TARBALL__$/,$d' "$OUT"
+    assert_output --partial "bob:readonly:20001"
+}
+
 @test "config linux script: refuses a placeholder or unsafe secret" {
     load_fixture tacquito.minimal.yaml
     sed -i 's/key: ".*"/key: "REPLACE_WITH_SHARED_SECRET"/' "$TACCTL_CONFIG"
@@ -137,7 +150,7 @@ _client_env() {
     assert_failure
     run "$TACCTL_BIN_SCRIPT" config linux script --scope lab --server 'x;reboot' --output "$OUT"
     assert_failure
-    assert_output --partial "Invalid --server"
+    assert_output --partial "Invalid server address"
 }
 
 @test "config linux remove-script: carries no secret" {
@@ -161,9 +174,10 @@ _client_env() {
 @test "client install: creates new accounts, adopts existing ones, sets tier groups" {
     _gen > /dev/null
     _client_env
-    run bash "$OUT" --accounts-only
+    run bash "$OUT" --accounts-only --adopt bob
     assert_success
-    stub_called "useradd -m -u 20000 -s /bin/bash .* alice"
+    stub_called "groupadd -g 20000 alice"
+    stub_called "useradd -m -u 20000 -g alice -s /bin/bash .* alice"
     run grep -c "useradd .* bob" "$CALLS_LOG"
     assert_output "0"
     stub_called "usermod -aG tac-users,tac-superuser alice"
@@ -173,10 +187,134 @@ _client_env() {
     [[ ! -f "$TACCTL_CLIENT_PAM_DIR/tacctl-auth" ]]
 }
 
+@test "client install: stops before changing anything when the assigned UID is taken" {
+    _gen > /dev/null
+    _client_env
+    echo 'squatter:x:20000:20000::/home/squatter:/bin/bash' >> "$FAKE_DB/passwd"
+    run bash "$OUT" --accounts-only --adopt bob
+    assert_failure
+    assert_output --partial "alice: UID 20000 already belongs to user 'squatter'"
+    assert_output --partial "Nothing was changed"
+    assert_output --partial "tacctl config linux uid <user> <new-uid>"
+    assert_output --partial "--allow-uid-mismatch"
+    run grep -cE "^(useradd|groupadd|usermod|gpasswd)" "$CALLS_LOG"
+    assert_output "0"
+}
+
+@test "client install: stops when the assigned GID or the user's group name is taken" {
+    _gen > /dev/null
+    _client_env
+    echo 'staff2:x:20000:' >> "$FAKE_DB/group"
+    run bash "$OUT" --accounts-only --adopt bob
+    assert_failure
+    assert_output --partial "alice: GID 20000 already belongs to group 'staff2'"
+    printf '%s\n' 'sudo:x:27:admin' 'alice:x:1500:' > "$FAKE_DB/group"
+    run bash "$OUT" --accounts-only --adopt bob
+    assert_failure
+    assert_output --partial "a group named 'alice' exists with GID 1500, not 20000"
+}
+
+@test "client install: --allow-uid-mismatch falls back to the host's next free number" {
+    _gen > /dev/null
+    _client_env
+    echo 'squatter:x:20000:20000::/home/squatter:/bin/bash' >> "$FAKE_DB/passwd"
+    run bash "$OUT" --accounts-only --allow-uid-mismatch --adopt bob
+    assert_success
+    assert_output --partial "conflicts accepted"
+    stub_called "useradd -m -s /bin/bash .* alice"
+    run grep -c "useradd -m -u" "$CALLS_LOG"
+    assert_output "0"
+}
+
+@test "client install: an adopted account with a different UID is reported with fixes" {
+    _gen > /dev/null
+    _client_env
+    run bash "$OUT" --accounts-only --adopt bob
+    assert_success
+    assert_output --partial "bob: UID 1001 on this host, 20001 assigned by tacctl"
+    assert_output --partial "usermod -u <uid> <user> && groupmod -g <uid> <user>"
+    assert_output --partial "tacctl config linux uid <user> <uid-on-this-host>"
+}
+
+@test "config linux uid: lists, shows and reassigns; refuses duplicates and bad values" {
+    _gen > /dev/null
+    run "$TACCTL_BIN_SCRIPT" config linux uid
+    assert_success
+    assert_line --regexp "alice +20000"
+    run "$TACCTL_BIN_SCRIPT" config linux uid bob
+    assert_output "20001"
+    run "$TACCTL_BIN_SCRIPT" config linux uid bob 1001
+    assert_success
+    assert_output --partial "usermod -u 1001 bob && groupmod -g 1001 bob"
+    _gen > /dev/null
+    run sed '/^__TARBALL__$/,$d' "$OUT"
+    assert_output --partial "bob:readonly:1001"
+    run "$TACCTL_BIN_SCRIPT" config linux uid bob 20000
+    assert_failure
+    assert_output --partial "already assigned to 'alice'"
+    run "$TACCTL_BIN_SCRIPT" config linux uid bob 500
+    assert_failure
+    run "$TACCTL_BIN_SCRIPT" config linux uid ghost 30000
+    assert_failure
+    # A new user is numbered after the highest assignment, never into a gap.
+    "$TACCTL_BIN_SCRIPT" user add carol operator --hash "$HASH" --scopes lab > /dev/null
+    _gen > /dev/null
+    run "$TACCTL_BIN_SCRIPT" config linux uid carol
+    assert_output "20001"
+}
+
+@test "client install: a pre-existing account stops the run unless named with --adopt" {
+    _gen > /dev/null
+    _client_env
+    run bash "$OUT" --accounts-only
+    assert_failure
+    assert_output --partial "already have a local account on this host that tacctl did not create: bob"
+    assert_output --partial "Nothing was changed"
+    assert_output --partial "--adopt <name>"
+    assert_output --partial "tacctl user rename <old> <new>"
+    run grep -cE "^(useradd|groupadd|usermod|gpasswd)" "$CALLS_LOG"
+    assert_output "0"
+    [[ ! -s "$TACCTL_CLIENT_STATE/adopted" ]]
+}
+
+@test "client install: an adopted account needs no flag on later runs" {
+    _gen > /dev/null
+    _client_env
+    bash "$OUT" --accounts-only --adopt bob > /dev/null
+    run bash "$OUT" --accounts-only
+    assert_success
+}
+
+@test "client install: adopting an account in privileged local groups warns" {
+    _gen > /dev/null
+    _client_env
+    FAKE_ID_GROUPS="sudo docker" run bash "$OUT" --accounts-only --adopt bob
+    assert_success
+    assert_output --partial "'bob' is in local group(s): sudo, docker. Those rights stay whatever the TACACS+ tier (readonly) is."
+}
+
+@test "client install: a removed adopted account is left usable and says so" {
+    _gen > /dev/null
+    _client_env
+    mkdir -p "$TACCTL_CLIENT_STATE"
+    echo "olduser" > "$TACCTL_CLIENT_STATE/adopted"
+    echo "tac-users:x:900:olduser" >> "$FAKE_DB/group"
+    echo 'olduser:x:1500:1500::/nonexistent:/bin/bash' >> "$FAKE_DB/passwd"
+    echo 'olduser:$y$hash:1::::::' >> "$FAKE_DB/shadow"
+    run bash "$OUT" --accounts-only --adopt bob
+    assert_success
+    assert_output --partial "'olduser' is no longer a TACACS+ user here but its local account was NOT disabled (local password works"
+    assert_output --partial "usermod -L -e 1 olduser"
+    run grep -c "usermod -e 1 olduser" "$CALLS_LOG"
+    assert_output "0"
+    run grep -c olduser "$TACCTL_CLIENT_STATE/adopted"
+    assert_output "0"
+}
+
 @test "client install: a tier change drops the old tier group" {
     _gen > /dev/null
     _client_env
-    FAKE_ID_GROUPS="tac-users tac-superuser" run bash "$OUT" --accounts-only
+    FAKE_ID_GROUPS="tac-users tac-superuser" run bash "$OUT" --accounts-only --adopt bob
     assert_success
     stub_called "gpasswd -d bob tac-superuser"
 }
@@ -187,7 +325,7 @@ _client_env() {
     mkdir -p "$TACCTL_CLIENT_STATE"
     echo "olduser" > "$TACCTL_CLIENT_STATE/created"
     echo "tac-users:x:900:olduser,localguy" >> "$FAKE_DB/group"
-    run bash "$OUT" --accounts-only
+    run bash "$OUT" --accounts-only --adopt bob
     assert_success
     stub_called "gpasswd -d olduser tac-users"
     stub_called "usermod -e 1 olduser"
@@ -200,7 +338,7 @@ _client_env() {
     _gen > /dev/null
     _client_env
     printf '%s\n' 'sudo:x:27:bob' > "$FAKE_DB/group"
-    run bash "$OUT" --accounts-only
+    run bash "$OUT" --accounts-only --adopt bob
     assert_failure
     assert_output --partial "No local administrator"
     run grep -c "useradd" "$CALLS_LOG"
@@ -210,7 +348,7 @@ _client_env() {
 @test "client install then remove: PAM files are edited and restored byte-for-byte" {
     _gen > /dev/null
     _client_env
-    run bash "$OUT"
+    run bash "$OUT" --adopt bob
     assert_success
 
     run cat "$TACCTL_CLIENT_PAM_DIR/sshd"
@@ -230,7 +368,7 @@ _client_env() {
     assert_output --partial "%tac-superuser ALL=(ALL:ALL) ALL"
 
     # Re-running must not stack a second session include.
-    run bash "$OUT"
+    run bash "$OUT" --adopt bob
     assert_success
     run grep -c "tacctl-session" "$TACCTL_CLIENT_PAM_DIR/sshd"
     assert_output "1"
@@ -251,7 +389,7 @@ _client_env() {
     _gen > /dev/null
     _client_env
     stub_cmd visudo 'exit 1'
-    run bash "$OUT"
+    run bash "$OUT" --adopt bob
     assert_failure
     assert_output --partial "restored from backup"
     cmp "$TACCTL_CLIENT_PAM_DIR/sshd" "$BATS_TEST_TMPDIR/sshd.orig"
@@ -263,7 +401,7 @@ _client_env() {
     _gen > /dev/null
     _client_env
     echo "auth required pam_unix.so" > "$TACCTL_CLIENT_PAM_DIR/sshd"
-    run bash "$OUT"
+    run bash "$OUT" --adopt bob
     assert_failure
     assert_output --partial "unfamiliar PAM layout"
 }

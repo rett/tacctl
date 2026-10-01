@@ -39,6 +39,11 @@ if [[ "${BASH_SOURCE[0]}" == "$0" \
     && "${TACCTL_SKIP_SUDO:-0}" != "1" \
     && $EUID -ne 0 \
     && "${1:-}" != "hash" ]]; then
+    # 'host' runs ssh as the invoking user; carry their agent socket across
+    # sudo's environment reset so agent-held keys work.
+    if [[ "${1:-}" == "host" && -n "${SSH_AUTH_SOCK:-}" ]]; then
+        exec sudo SSH_AUTH_SOCK="$SSH_AUTH_SOCK" "$0" "$@"
+    fi
     exec sudo "$0" "$@"
 fi
 umask 077
@@ -4722,14 +4727,20 @@ linux_uid_for() {
     echo "$uid"
 }
 
-# "name:tier:uid" lines for every user in a scope that can be a Linux
-# account. Names useradd would reject are skipped with a warning.
+# "name:tier:uid" lines for every active user in a scope that can be a
+# Linux account. Names useradd would reject are skipped with a warning.
 linux_scope_users() {
     local scope="$1" username tier
     while IFS= read -r username; do
         [[ -n "$username" && "$username" != "root" ]] || continue
         if [[ ! "$username" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]]; then
             warn "Skipping '${username}': not a valid Linux account name (lowercase letters, digits, _ and - only)." >&2
+            continue
+        fi
+        # Disabled users are left out, so a sync treats them like users
+        # removed from the scope: no new account, and an account tacctl
+        # created earlier is expired (which also stops SSH-key logins).
+        if is_disabled_hash "$(get_user_hash "$username")"; then
             continue
         fi
         tier=$(tier_for_privlvl "$(get_group_privlvl "$(get_user_group "$username")")")
@@ -4739,6 +4750,18 @@ linux_scope_users() {
         fi
         echo "${username}:${tier}:$(linux_uid_for "$username")"
     done < <(list_users_in_scope "$scope")
+}
+
+# Number of users in a scope that would get a Linux account. Unlike
+# linux_scope_users this assigns no UIDs, so read-only commands can use it.
+linux_scope_user_count() {
+    local scope="$1" username n=0
+    while IFS= read -r username; do
+        [[ "$username" =~ ^[a-z_][a-z0-9_-]{0,31}$ && "$username" != "root" ]] || continue
+        if is_disabled_hash "$(get_user_hash "$username")"; then continue; fi
+        n=$((n + 1))
+    done < <(list_users_in_scope "$scope")
+    echo "$n"
 }
 
 cmd_config_linux_build() {
@@ -4790,6 +4813,63 @@ cmd_config_linux_build() {
     info "Wrote ${PAM_TACPLUS_TARBALL} (sha256 $(sha256sum "$PAM_TACPLUS_TARBALL" | awk '{print $1}'))."
 }
 
+# linux_write_install_script <scope> <server> <outfile> [accounts-only]
+# Writes the per-scope client script to <outfile> (mode 0600). With a 4th
+# argument the pam_tacplus tarball is left out: enough for --accounts-only.
+linux_write_install_script() {
+    local scope="$1" server="$2" output="$3" accounts_only="${4:-}"
+    if [[ -z "$accounts_only" && ! -f "$PAM_TACPLUS_TARBALL" ]]; then
+        error "pam_tacplus tarball not found. Run 'tacctl config linux build' first."
+        return 1
+    fi
+
+    # pam_tacplus reads the secret as one whitespace-delimited PAM argument.
+    local secret
+    secret=$(read_scope_secret "$scope")
+    if [[ ! "$secret" =~ ^[A-Za-z0-9_.+/=-]+$ || "$secret" == REPLACE* ]]; then
+        error "Scope '${scope}' has a secret that cannot be written on a PAM line (or a placeholder)."
+        error "Regenerate it: tacctl scope secret ${scope} generate"
+        return 1
+    fi
+    if [[ ! "$server" =~ ^[A-Za-z0-9.:-]+$ ]]; then
+        error "Invalid server address '${server}'. Give a bare IPv4/IPv6 address or hostname (the port comes from 'tacctl config listen')."
+        return 1
+    fi
+
+    local listen port
+    listen=$(read_service_override TACQUITO_ADDRESS)
+    listen=${listen:-:49}
+    port="${listen##*:}"
+
+    LINUX_SCRIPT_USERS=$(linux_scope_users "$scope")
+    LINUX_SCRIPT_PORT="$port"
+
+    local tmp
+    tmp=$(mktemp)
+    {
+        echo "#!/usr/bin/env bash"
+        echo "# tacctl Linux client installer for scope '${scope}'. Generated $(date -u +%Y-%m-%dT%H:%M:%SZ)."
+        echo "# CONTAINS THE SCOPE'S SHARED SECRET. Delete after use."
+        echo "set -euo pipefail"
+        echo "umask 077"
+        printf 'TAC_SERVER=%q\n' "$server"
+        printf 'TAC_PORT=%q\n' "$port"
+        printf 'TAC_SECRET=%q\n' "$secret"
+        printf 'TAC_SCOPE=%q\n' "$scope"
+        if [[ -z "$accounts_only" ]]; then
+            printf 'TARBALL_SHA256=%q\n' "$(sha256sum "$PAM_TACPLUS_TARBALL" | awk '{print $1}')"
+        fi
+        printf 'TAC_USERS=%q\n' "$LINUX_SCRIPT_USERS"
+        cat "${LINUX_SRC_DIR}/client-install.sh"
+        if [[ -z "$accounts_only" ]]; then
+            echo "__TARBALL__"
+            base64 "$PAM_TACPLUS_TARBALL"
+        fi
+    } > "$tmp"
+    install -m 0600 "$tmp" "$output"
+    rm -f "$tmp"
+}
+
 cmd_config_linux_script() {
     local scope="" server="" output=""
     while [[ $# -gt 0 ]]; do
@@ -4811,60 +4891,17 @@ cmd_config_linux_script() {
         error "Scope '${scope}' does not exist. Available: $(list_scopes | paste -sd' ')"
         return 1
     fi
-    if [[ ! -f "$PAM_TACPLUS_TARBALL" ]]; then
-        error "pam_tacplus tarball not found. Run 'tacctl config linux build' first."
-        return 1
-    fi
-
-    # pam_tacplus reads the secret as one whitespace-delimited PAM argument.
-    local secret
-    secret=$(read_scope_secret "$scope")
-    if [[ ! "$secret" =~ ^[A-Za-z0-9_.+/=-]+$ || "$secret" == REPLACE* ]]; then
-        error "Scope '${scope}' has a secret that cannot be written on a PAM line (or a placeholder)."
-        error "Regenerate it: tacctl scope secret ${scope} generate"
-        return 1
-    fi
-
-    local listen port
-    listen=$(read_service_override TACQUITO_ADDRESS)
-    listen=${listen:-:49}
-    port="${listen##*:}"
     if [[ -z "$server" ]]; then
         server=$(ip -4 route get 1.0.0.0 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}')
         [[ -n "$server" ]] || { error "Could not detect this server's address. Pass --server <address>."; return 1; }
     fi
-    if [[ ! "$server" =~ ^[A-Za-z0-9.:-]+$ ]]; then
-        error "Invalid --server '${server}'. Give a bare IPv4/IPv6 address or hostname (the port comes from 'tacctl config listen')."
-        return 1
-    fi
-
-    local users
-    users=$(linux_scope_users "$scope")
-    if [[ -z "$users" ]]; then
-        warn "No users in scope '${scope}' can become Linux accounts; the script will install TACACS+ with no users."
-    fi
 
     output="${output:-tacctl-linux-${scope}.sh}"
-    local tmp
-    tmp=$(mktemp)
-    {
-        echo "#!/usr/bin/env bash"
-        echo "# tacctl Linux client installer for scope '${scope}'. Generated $(date -u +%Y-%m-%dT%H:%M:%SZ)."
-        echo "# CONTAINS THE SCOPE'S SHARED SECRET. Delete after use."
-        echo "set -euo pipefail"
-        echo "umask 077"
-        printf 'TAC_SERVER=%q\n' "$server"
-        printf 'TAC_PORT=%q\n' "$port"
-        printf 'TAC_SECRET=%q\n' "$secret"
-        printf 'TAC_SCOPE=%q\n' "$scope"
-        printf 'TARBALL_SHA256=%q\n' "$(sha256sum "$PAM_TACPLUS_TARBALL" | awk '{print $1}')"
-        printf 'TAC_USERS=%q\n' "$users"
-        cat "${LINUX_SRC_DIR}/client-install.sh"
-        echo "__TARBALL__"
-        base64 "$PAM_TACPLUS_TARBALL"
-    } > "$tmp"
-    install -m 0600 "$tmp" "$output"
-    rm -f "$tmp"
+    linux_write_install_script "$scope" "$server" "$output" || return 1
+    local users="$LINUX_SCRIPT_USERS" port="$LINUX_SCRIPT_PORT"
+    if [[ -z "$users" ]]; then
+        warn "No users in scope '${scope}' can become Linux accounts; the script installs TACACS+ with no users."
+    fi
     # Under sudo the file would otherwise be root's; hand it to the caller.
     if [[ -n "${SUDO_UID:-}" ]]; then
         chown "${SUDO_UID}:${SUDO_GID:-$SUDO_UID}" "$output" 2>/dev/null || true
@@ -4880,7 +4917,7 @@ cmd_config_linux_script() {
     echo "  On the target host, as root, from a session you keep open:"
     echo "    bash ${output##*/}                   # install"
     echo "    bash ${output##*/} --accounts-only   # later: sync users only"
-    echo "  Then delete the script."
+    echo "  Then delete the script. 'tacctl host enroll' does all of this over SSH."
     echo ""
 }
 
@@ -4900,6 +4937,63 @@ cmd_config_linux_remove_script() {
     info "Local accounts and home directories are left in place."
 }
 
+# 'config linux uid': show or change the number a user gets as UID and
+# primary GID on every host. Changing it does not renumber accounts that
+# already exist on enrolled hosts; the next sync reports them.
+cmd_config_linux_uid() {
+    local username="${1:-}" uid="${2:-}"
+    touch "$LINUX_UID_FILE"
+    if [[ -z "$username" ]]; then
+        echo ""
+        echo -e "${BOLD}Assigned Linux UIDs${NC} (same number is the primary GID)"
+        echo "--------------------------------------------"
+        if [[ -s "$LINUX_UID_FILE" ]]; then
+            sort -t: -k2 -n "$LINUX_UID_FILE" | awk -F: '{ printf "  %-24s %s\n", $1, $2 }'
+        else
+            echo "  None yet. A UID is assigned the first time a user is sent to a host."
+        fi
+        echo ""
+        echo "  Change one: tacctl config linux uid <username> <uid>"
+        echo ""
+        return 0
+    fi
+    validate_username "$username"
+    if [[ -z "$uid" ]]; then
+        uid=$(awk -F: -v u="$username" '$1 == u { print $2; exit }' "$LINUX_UID_FILE")
+        if [[ -z "$uid" ]]; then
+            error "No UID assigned to '${username}' yet."
+            return 1
+        fi
+        echo "$uid"
+        return 0
+    fi
+    if ! user_exists "$username"; then
+        error "User '${username}' does not exist."
+        return 1
+    fi
+    if [[ ! "$uid" =~ ^[0-9]{4,9}$ ]] || (( uid < 1000 || uid == 65534 )); then
+        error "UID must be a number from 1000 up (not 65534)."
+        return 1
+    fi
+    local holder
+    holder=$(awk -F: -v id="$uid" '$2 == id { print $1; exit }' "$LINUX_UID_FILE")
+    if [[ -n "$holder" && "$holder" != "$username" ]]; then
+        error "UID ${uid} is already assigned to '${holder}'."
+        return 1
+    fi
+    local tmp
+    tmp=$(mktemp)
+    awk -F: -v u="$username" '$1 != u' "$LINUX_UID_FILE" > "$tmp"
+    echo "${username}:${uid}" >> "$tmp"
+    install -m 0600 "$tmp" "$LINUX_UID_FILE"
+    rm -f "$tmp"
+    info "'${username}' is now assigned UID/GID ${uid}."
+    warn "Hosts that already have the account keep its old number until it is renumbered there:"
+    echo "    usermod -u ${uid} ${username} && groupmod -g ${uid} ${username}"
+    echo "    find / -xdev \\( -uid <old> -o -gid <old> \\) -exec chown -h ${username}:${username} {} +"
+    echo "  'tacctl host sync' lists the hosts where the number still differs."
+}
+
 cmd_config_linux() {
     local sub="${1:-}"
     shift || true
@@ -4907,6 +5001,7 @@ cmd_config_linux() {
         build)         cmd_config_linux_build ;;
         script)        cmd_config_linux_script "$@" ;;
         remove-script) cmd_config_linux_remove_script "$@" ;;
+        uid)           cmd_config_linux_uid "$@" ;;
         *)
             echo ""
             echo -e "${BOLD}Linux host TACACS+ login${NC}"
@@ -4917,10 +5012,350 @@ cmd_config_linux() {
             echo "  script [--scope <name>] [--server <address>] [--output <file>]"
             echo "                                          Write the install script for hosts in a scope (contains the secret)"
             echo "  remove-script [--output <file>]         Write the removal script (no secrets; accounts are left in place)"
+            echo "  uid [<username> [<uid>]]                Show or change the UID/GID a user gets on every host"
             echo ""
             [[ -z "$sub" ]] && return 0
             return 1
             ;;
+    esac
+}
+
+# =====================================================================
+#  HOST COMMANDS (enroll / sync / unenroll Linux hosts)
+# =====================================================================
+#
+# 'tacctl host' pushes the 'config linux' scripts to a host and runs them
+# there, and keeps a registry of enrolled hosts so 'host sync' knows where
+# to push account changes. One line per host in $LINUX_HOSTS_FILE:
+#   name|target|port|scope|server|identity
+# target is [user@]host for ssh, or 'local' for this machine.
+#
+# ssh runs as the user who invoked sudo, so their keys and known_hosts are
+# used. The remote login must be root or able to sudo.
+LINUX_HOSTS_FILE="${TACCTL_ETC}/linux-hosts"
+
+host_record() { # <name> -> registry line, or nothing
+    [[ -f "$LINUX_HOSTS_FILE" ]] || return 0
+    awk -F'|' -v n="$1" '$1 == n { print; exit }' "$LINUX_HOSTS_FILE"
+}
+
+host_forget() {
+    [[ -f "$LINUX_HOSTS_FILE" ]] || return 0
+    local tmp
+    tmp=$(mktemp)
+    awk -F'|' -v n="$1" '$1 != n' "$LINUX_HOSTS_FILE" > "$tmp"
+    install -m 0600 "$tmp" "$LINUX_HOSTS_FILE"
+    rm -f "$tmp"
+}
+
+host_remember() { # <name> <target> <port> <scope> <server> <identity>
+    host_forget "$1"
+    local IFS='|'
+    echo "$*" >> "$LINUX_HOSTS_FILE"
+    chmod 600 "$LINUX_HOSTS_FILE"
+}
+
+_host_ssh() { # <port> <identity> <ssh args...>
+    local port="$1" identity="$2"
+    shift 2
+    local -a cmd=()
+    if [[ $EUID -eq 0 && -n "${SUDO_USER:-}" && "$SUDO_USER" != "root" ]]; then
+        cmd=(sudo -u "$SUDO_USER" -H)
+        [[ -n "${SSH_AUTH_SOCK:-}" ]] && cmd+=(env "SSH_AUTH_SOCK=${SSH_AUTH_SOCK}")
+    fi
+    cmd+=(ssh -o ConnectTimeout=10)
+    [[ -n "$port" ]] && cmd+=(-p "$port")
+    [[ -n "$identity" ]] && cmd+=(-i "$identity")
+    "${cmd[@]}" "$@"
+}
+
+# host_run_script <target> <port> <identity> <script> [script args...]
+# Copies <script> to the host and runs it as root there; for target
+# 'local' runs it here. The remote copy is deleted afterwards (the install
+# script holds the scope secret).
+host_run_script() {
+    local target="$1" port="$2" identity="$3" script="$4"
+    shift 4
+    if [[ "$target" == "local" ]]; then
+        bash "$script" "$@"
+        return
+    fi
+    local remote
+    # shellcheck disable=SC2016  # expanded by the remote shell
+    remote=$(_host_ssh "$port" "$identity" "$target" \
+        'umask 077; f=$(mktemp /tmp/tacctl.XXXXXXXX) && cat > "$f" && echo "$f"' < "$script") || {
+        error "Could not copy the script to ${target} (ssh failed)."
+        return 1
+    }
+    if [[ ! "$remote" =~ ^/tmp/tacctl\.[A-Za-z0-9]+$ ]]; then
+        error "Unexpected reply from ${target} while copying the script."
+        return 1
+    fi
+    # A terminal lets the remote sudo prompt for a password; without one
+    # only passwordless sudo (or a root login) can work.
+    local tty_flag="-T" sudo_cmd="sudo -n"
+    if [[ -t 0 ]]; then tty_flag="-t"; sudo_cmd="sudo"; fi
+    local remote_cmd="if [ \"\$(id -u)\" = 0 ]; then bash ${remote} $*; else ${sudo_cmd} bash ${remote} $*; fi; rc=\$?; rm -f ${remote}; exit \$rc"
+    _host_ssh "$port" "$identity" "$tty_flag" "$target" "$remote_cmd"
+}
+
+# Address the host should use to reach this server: the source address of
+# our route to it.
+host_server_address_for() {
+    local dest="$1" src
+    src=$(ip -4 route get "$dest" 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}' | head -1)
+    echo "$src"
+}
+
+cmd_host_enroll() {
+    local target="" scope="" server="" name="" port="" identity="" is_local=0
+    local -a script_args=()
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --local)    is_local=1; shift ;;
+            --allow-uid-mismatch) script_args+=(--allow-uid-mismatch); shift ;;
+            --adopt)
+                if [[ ! "${2:-}" =~ ^[a-z_][a-z0-9_-]*(,[a-z_][a-z0-9_-]*)*$ ]]; then
+                    error "--adopt needs a comma-separated list of account names."
+                    return 1
+                fi
+                script_args+=(--adopt "$2"); shift 2
+                ;;
+            --scope)    scope="${2:-}";    shift 2 || true ;;
+            --server)   server="${2:-}";   shift 2 || true ;;
+            --name)     name="${2:-}";     shift 2 || true ;;
+            --port)     port="${2:-}";     shift 2 || true ;;
+            --identity) identity="${2:-}"; shift 2 || true ;;
+            -*) error "Unknown option: '$1'"; cmd_host_usage; return 1 ;;
+            *)
+                [[ -z "$target" ]] || { error "Only one host per enroll."; return 1; }
+                target="$1"; shift
+                ;;
+        esac
+    done
+
+    local host_part host_ip
+    if [[ "$is_local" == "1" ]]; then
+        [[ -z "$target" ]] || { error "--local takes no host argument."; return 1; }
+        target="local"
+        host_ip="127.0.0.1"
+        name="${name:-$(hostname -s)}"
+        server="${server:-127.0.0.1}"
+    else
+        if [[ ! "$target" =~ ^([a-z_][a-z0-9_-]*@)?[A-Za-z0-9][A-Za-z0-9.:-]*$ ]]; then
+            error "Usage: tacctl host enroll <[user@]host> | --local  [options]"
+            return 1
+        fi
+        host_part="${target#*@}"
+        host_ip=$(getent ahostsv4 "$host_part" 2>/dev/null | awk '{print $1; exit}')
+        [[ -n "$host_ip" ]] || { error "Could not resolve '${host_part}' to an IPv4 address."; return 1; }
+        if [[ -z "$name" ]]; then
+            # A bare IP has no hostname to borrow: 10.1.2.3 -> h10-1-2-3.
+            if [[ "$host_part" =~ ^[0-9.]+$ ]]; then name="h${host_part//./-}"; else name="${host_part%%.*}"; fi
+        fi
+        if [[ -z "$server" ]]; then
+            server=$(host_server_address_for "$host_ip")
+            [[ -n "$server" ]] || { error "Could not work out which address ${host_part} should use for this server. Pass --server."; return 1; }
+        fi
+    fi
+    if [[ ! "$name" =~ ^[a-zA-Z][a-zA-Z0-9_-]{0,25}$ ]]; then
+        error "Invalid host name '${name}'. Pass --name <letters, digits, _ or -, starting with a letter, max 26>."
+        return 1
+    fi
+    if [[ -n "$port" && ! "$port" =~ ^[0-9]{1,5}$ ]]; then
+        error "Invalid --port '${port}'."
+        return 1
+    fi
+    if [[ -n "$identity" && ! -f "$identity" ]]; then
+        error "Identity file '${identity}' not found."
+        return 1
+    fi
+    if [[ ! -f "$PAM_TACPLUS_TARBALL" ]]; then
+        error "pam_tacplus tarball not found. Run 'tacctl config linux build' first."
+        return 1
+    fi
+
+    # Each host gets its own scope (its address as a /32, its own secret)
+    # unless told to share one, so a secret read off one host is useless
+    # from any other.
+    if [[ -z "$scope" ]]; then
+        scope="linux-${name}"
+        if scope_exists "$scope"; then
+            info "Using existing scope '${scope}'."
+        else
+            info "Creating scope '${scope}' for ${host_ip}/32..."
+            cmd_scope_add "$scope" --prefixes "${host_ip}/32" --secret generate >/dev/null
+        fi
+    elif ! scope_exists "$scope"; then
+        error "Scope '${scope}' does not exist. Available: $(list_scopes | paste -sd' ')"
+        return 1
+    fi
+
+    local script
+    script=$(mktemp)
+    linux_write_install_script "$scope" "$server" "$script" || { rm -f "$script"; return 1; }
+    info "Enrolling ${name} (${target}) in scope '${scope}', server ${server}..."
+    if ! host_run_script "$target" "$port" "$identity" "$script" "${script_args[@]}"; then
+        rm -f "$script"
+        error "Enrollment of ${name} failed; the host was not registered."
+        return 1
+    fi
+    rm -f "$script"
+    host_remember "$name" "$target" "$port" "$scope" "$server" "$identity"
+    logger -t tacctl -p auth.info "host enroll name=${name} target=${target} scope=${scope} by=${SUDO_USER:-root}" 2>/dev/null || true
+    info "Host '${name}' enrolled."
+    if [[ -z "$LINUX_SCRIPT_USERS" ]]; then
+        echo ""
+        echo "  No users are in scope '${scope}' yet. To give someone a login on this host:"
+        echo "    tacctl user scope <username> add ${scope}"
+        echo "    tacctl host sync ${name}"
+        echo ""
+    fi
+}
+
+cmd_host_sync() {
+    local which=""
+    local -a script_args=(--accounts-only)
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --allow-uid-mismatch) script_args+=(--allow-uid-mismatch); shift ;;
+            --adopt)
+                if [[ ! "${2:-}" =~ ^[a-z_][a-z0-9_-]*(,[a-z_][a-z0-9_-]*)*$ ]]; then
+                    error "--adopt needs a comma-separated list of account names."
+                    return 1
+                fi
+                script_args+=(--adopt "$2"); shift 2
+                ;;
+            --all) which="--all"; shift ;;
+            -*) error "Unknown option: '$1'"; return 1 ;;
+            *) which="$1"; shift ;;
+        esac
+    done
+    if [[ -z "$which" ]]; then
+        error "Usage: tacctl host sync <name> | --all  [--allow-uid-mismatch] [--adopt <name>[,<name>...]]"
+        return 1
+    fi
+    local -a names=()
+    if [[ "$which" == "--all" ]]; then
+        [[ -f "$LINUX_HOSTS_FILE" ]] && mapfile -t names < <(cut -d'|' -f1 "$LINUX_HOSTS_FILE")
+        if [[ ${#names[@]} -eq 0 ]]; then
+            info "No hosts enrolled."
+            return 0
+        fi
+    else
+        [[ -n "$(host_record "$which")" ]] || { error "No enrolled host named '${which}'. See 'tacctl host list'."; return 1; }
+        names=("$which")
+    fi
+
+    local name target port scope server identity script failed=0
+    for name in "${names[@]}"; do
+        IFS='|' read -r _ target port scope server identity <<< "$(host_record "$name")"
+        if ! scope_exists "$scope"; then
+            error "${name}: scope '${scope}' no longer exists; skipped."
+            failed=1
+            continue
+        fi
+        script=$(mktemp)
+        if linux_write_install_script "$scope" "$server" "$script" accounts-only \
+            && host_run_script "$target" "$port" "$identity" "$script" "${script_args[@]}"; then
+            info "${name}: synced ($(awk -F: 'NF { n++ } END { print n + 0 }' <<< "$LINUX_SCRIPT_USERS") users)."
+        else
+            error "${name}: sync failed (see the host's output above; nothing was changed there if it reported a conflict)."
+            failed=1
+        fi
+        rm -f "$script"
+    done
+    return "$failed"
+}
+
+cmd_host_unenroll() {
+    local name="" force=0
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --force) force=1; shift ;;
+            -*) error "Unknown option: '$1'"; return 1 ;;
+            *) name="$1"; shift ;;
+        esac
+    done
+    if [[ -z "$name" ]]; then
+        error "Usage: tacctl host unenroll <name> [--force]"
+        return 1
+    fi
+    local record target port scope identity
+    record=$(host_record "$name")
+    [[ -n "$record" ]] || { error "No enrolled host named '${name}'. See 'tacctl host list'."; return 1; }
+    IFS='|' read -r _ target port scope _ identity <<< "$record"
+
+    info "Removing TACACS+ authentication from ${name} (${target})..."
+    if ! host_run_script "$target" "$port" "$identity" "${LINUX_SRC_DIR}/client-remove.sh"; then
+        if [[ "$force" != "1" ]]; then
+            error "Removal on ${name} failed; it is still registered. Fix the cause, or pass --force to forget the host anyway."
+            return 1
+        fi
+        warn "Removal on ${name} failed; forgetting the host anyway (--force)."
+    fi
+    host_forget "$name"
+    logger -t tacctl -p auth.info "host unenroll name=${name} target=${target} by=${SUDO_USER:-root}" 2>/dev/null || true
+    info "Host '${name}' unenrolled. Local accounts and home directories were left in place."
+    if [[ -z "$(awk -F'|' -v s="$scope" '$4 == s' "$LINUX_HOSTS_FILE" 2>/dev/null)" ]]; then
+        echo ""
+        echo "  No enrolled host uses scope '${scope}' any more. To stop its secret being accepted:"
+        echo "    tacctl scope remove ${scope}"
+        echo ""
+    fi
+}
+
+cmd_host_list() {
+    echo ""
+    echo -e "${BOLD}Enrolled Linux hosts${NC}"
+    echo "--------------------------------------------"
+    if [[ ! -s "$LINUX_HOSTS_FILE" ]]; then
+        echo "  None. Enroll one with: tacctl host enroll <[user@]host>"
+        echo ""
+        return
+    fi
+    printf "  ${BOLD}%-20s %-28s %-20s %-16s %s${NC}\n" "NAME" "TARGET" "SCOPE" "SERVER" "USERS"
+    local name target port scope server _identity
+    while IFS='|' read -r name target port scope server _identity; do
+        [[ -n "$name" ]] || continue
+        printf "  %-20s %-28s %-20s %-16s %s\n" "$name" "${target}${port:+:$port}" "$scope" "$server" \
+            "$(linux_scope_user_count "$scope")"
+    done < "$LINUX_HOSTS_FILE"
+    echo ""
+}
+
+cmd_host_usage() {
+    echo ""
+    echo -e "${BOLD}Host Commands${NC} (TACACS+ login for Linux hosts)"
+    echo ""
+    echo "Usage: tacctl host <subcommand> [arguments]"
+    echo ""
+    echo "  list                                 Show enrolled hosts"
+    echo "  enroll <[user@]host> [options]       Install TACACS+ login on a host over SSH and register it"
+    echo "  enroll --local [options]             Same, for this machine"
+    echo "      --scope <name>                   Use an existing scope (default: create linux-<name> for the host's /32)"
+    echo "      --server <address>               Address the host should use for this server (default: detected)"
+    echo "      --name <name>                    Registry name (default: short hostname)"
+    echo "      --port <n>, --identity <file>    SSH port and key"
+    echo "  sync <name> | --all                  Push account adds, removals and tier changes"
+    echo "      --allow-uid-mismatch             (enroll and sync) accept a UID/GID conflict on the host instead of stopping"
+    echo "      --adopt <name>[,<name>...]       (enroll and sync) take over accounts that already exist on the host"
+    echo "  unenroll <name> [--force]            Remove TACACS+ login from the host (accounts and homes are kept)"
+    echo ""
+    echo "ssh runs as the user who invoked sudo; the remote login must be root or able to sudo."
+    echo ""
+}
+
+cmd_host() {
+    local sub="${1:-}"
+    shift || true
+    case "$sub" in
+        list)     cmd_host_list ;;
+        enroll)   cmd_host_enroll "$@" ;;
+        sync)     cmd_host_sync "$@" ;;
+        unenroll) cmd_host_unenroll "$@" ;;
+        "")       cmd_host_usage ;;
+        *)        error "Unknown subcommand: '${sub}'"; cmd_host_usage; return 1 ;;
     esac
 }
 
@@ -10400,6 +10835,7 @@ usage() {
     echo "  user <subcommand>             User management (list, add, remove, passwd, scope, ...)"
     echo "  group <subcommand>            Group management (list, add, edit, remove)"
     echo "  scope <subcommand>            Scope management (named CIDR + shared-secret bundles)"
+    echo "  host <subcommand>             Linux hosts: enroll, sync, unenroll TACACS+ login over SSH"
     echo "  config <subcommand>           Configuration (show, cisco, juniper, wti, validate, ...)"
     echo "  log <subcommand>              Log viewer (tail, search, failures, accounting)"
     echo "  backup <subcommand>           Backup management (list, diff, restore)"
@@ -10512,6 +10948,10 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
         scope)
             preflight
             cmd_scope "$@"
+            ;;
+        host)
+            preflight
+            cmd_host "$@"
             ;;
         log)
             preflight
