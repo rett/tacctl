@@ -45,6 +45,14 @@ _client_env() {
         '@include common-password' > "$TACCTL_CLIENT_PAM_DIR/sshd"
     printf '%s\n' 'session required pam_limits.so' '@include common-auth' \
         '@include common-account' '@include common-session-noninteractive' > "$TACCTL_CLIENT_PAM_DIR/sudo"
+    printf '%s\n' 'session required pam_limits.so' '@include common-auth' \
+        '@include common-account' '@include common-session' > "$TACCTL_CLIENT_PAM_DIR/sudo-i"
+    cp "$TACCTL_CLIENT_PAM_DIR/sudo-i" "$BATS_TEST_TMPDIR/sudo-i.orig"
+    printf '%s\n' 'auth    requisite       pam_nologin.so' '@include common-auth' \
+        '-auth   optional        pam_kwallet5.so' '@include common-account' \
+        'session required        pam_loginuid.so' '@include common-session' \
+        '@include common-password' > "$TACCTL_CLIENT_PAM_DIR/sddm"
+    cp "$TACCTL_CLIENT_PAM_DIR/sddm" "$BATS_TEST_TMPDIR/sddm.orig"
     cp "$TACCTL_CLIENT_PAM_DIR/sshd" "$BATS_TEST_TMPDIR/sshd.orig"
     cp "$TACCTL_CLIENT_PAM_DIR/sudo" "$BATS_TEST_TMPDIR/sudo.orig"
 
@@ -311,6 +319,24 @@ _client_env() {
     assert_output "0"
 }
 
+@test "client install: accounts are named after their login; old generic names are corrected" {
+    _gen > /dev/null
+    _client_env
+    run bash "$OUT" --accounts-only --adopt bob
+    assert_success
+    stub_called "useradd -m -u 20000 -g alice -s /bin/bash -c alice .TACACS.. alice"
+
+    # An account created by an earlier version carries the generic name.
+    echo "alice:x:20000:20000:TACACS+ user (tacctl):/home/alice:/bin/bash" >> "$FAKE_DB/passwd"
+    echo "alice" > "$TACCTL_CLIENT_STATE/created"
+    run bash "$OUT" --accounts-only
+    assert_success
+    stub_called "usermod -c alice .TACACS.. alice"
+    # Adopted accounts keep their own name.
+    run grep -c "usermod -c .* bob" "$CALLS_LOG"
+    assert_output "0"
+}
+
 @test "client install: a tier change drops the old tier group" {
     _gen > /dev/null
     _client_env
@@ -360,6 +386,17 @@ _client_env() {
     run cat "$TACCTL_CLIENT_PAM_DIR/sudo"
     assert_line "@include tacctl-auth"
     refute_line "@include tacctl-session"
+    # 'sudo -i' authenticates through its own service file.
+    run cat "$TACCTL_CLIENT_PAM_DIR/sudo-i"
+    assert_line "@include tacctl-auth"
+    assert_line "@include tacctl-account"
+    refute_line "@include tacctl-session"
+    # Graphical login, session included.
+    run cat "$TACCTL_CLIENT_PAM_DIR/sddm"
+    assert_line "@include tacctl-auth"
+    assert_line "@include tacctl-account"
+    assert_line "@include tacctl-session"
+    refute_line "@include common-auth"
     run cat "$TACCTL_CLIENT_PAM_DIR/tacctl-auth"
     assert_output --partial "pam_succeed_if.so quiet user ingroup tac-users"
     assert_output --partial "pam_tacplus.so server=192.0.2.10:49 secret=0123456789abcdef0123456789abcdef"
@@ -379,6 +416,8 @@ _client_env() {
     assert_output --partial "left in place"
     cmp "$TACCTL_CLIENT_PAM_DIR/sshd" "$BATS_TEST_TMPDIR/sshd.orig"
     cmp "$TACCTL_CLIENT_PAM_DIR/sudo" "$BATS_TEST_TMPDIR/sudo.orig"
+    cmp "$TACCTL_CLIENT_PAM_DIR/sudo-i" "$BATS_TEST_TMPDIR/sudo-i.orig"
+    cmp "$TACCTL_CLIENT_PAM_DIR/sddm" "$BATS_TEST_TMPDIR/sddm.orig"
     [[ ! -f "$TACCTL_CLIENT_PAM_DIR/tacctl-auth" ]]
     [[ ! -f "$TACCTL_CLIENT_SUDOERS" ]]
     run grep -cE "userdel|groupdel" "$CALLS_LOG"
@@ -498,6 +537,109 @@ _client_env() {
     assert_output --partial "failed its checksum"
     assert_output --partial "Building pam_tacplus on this host"
     stub_called "apt-get install -y gcc"
+}
+
+# RHEL-family layout: service files include password-auth/system-auth.
+_rhel_env() {
+    _client_env
+    export TACCTL_CLIENT_FAMILY=rhel
+    printf '%s\n' '#%PAM-1.0' 'auth       substack     password-auth' 'auth       include      postlogin' \
+        'account    required     pam_nologin.so' 'account    include      password-auth' \
+        'password   include      password-auth' 'session    required     pam_loginuid.so' \
+        'session    include      password-auth' 'session    include      postlogin' > "$TACCTL_CLIENT_PAM_DIR/sshd"
+    printf '%s\n' '#%PAM-1.0' 'auth       include      system-auth' 'account    include      system-auth' \
+        'password   include      system-auth' 'session    include      system-auth' > "$TACCTL_CLIENT_PAM_DIR/sudo"
+    printf '%s\n' '#%PAM-1.0' 'auth       include      sudo' 'account    include      sudo' \
+        'session    include      sudo' > "$TACCTL_CLIENT_PAM_DIR/sudo-i"
+    rm -f "$TACCTL_CLIENT_PAM_DIR/sddm"
+    printf '%s\n' 'auth     [success=done ignore=ignore default=bad] pam_selinux_permit.so' \
+        'auth        substack      password-auth' 'auth        optional      pam_gnome_keyring.so' \
+        'account     required      pam_nologin.so' 'account     include       password-auth' \
+        'password    substack       password-auth' 'session     required      pam_loginuid.so' \
+        'session     include       password-auth' 'session     include       postlogin' \
+        > "$TACCTL_CLIENT_PAM_DIR/gdm-password"
+    for f in sshd sudo sudo-i gdm-password; do cp "$TACCTL_CLIENT_PAM_DIR/$f" "$BATS_TEST_TMPDIR/$f.orig"; done
+    stub_cmd dnf
+}
+
+@test "client install (RHEL family): include lines go in front of the shared stack and come out cleanly" {
+    _gen > /dev/null
+    _rhel_env
+    run bash "$OUT" --adopt bob
+    assert_success
+
+    run cat "$TACCTL_CLIENT_PAM_DIR/sshd"
+    assert_line --index 1 "auth       include      tacctl-auth"
+    assert_line --index 2 "auth       substack     password-auth"
+    assert_line --index 5 "account    include      tacctl-account"
+    assert_line --index 6 "account    include      password-auth"
+    assert_line --index 9 "session    include      password-auth"
+    assert_line --index 10 "session    include      tacctl-session"
+    run cat "$TACCTL_CLIENT_PAM_DIR/sudo"
+    assert_line --index 1 "auth       include      tacctl-auth"
+    assert_line --index 3 "account    include      tacctl-account"
+    refute_output --partial "tacctl-session"
+    run cat "$TACCTL_CLIENT_PAM_DIR/gdm-password"
+    assert_line --index 1 "auth       include      tacctl-auth"
+    assert_line --index 2 "auth        substack      password-auth"
+    assert_line --index 5 "account    include      tacctl-account"
+    assert_line --index 10 "session    include      tacctl-session"
+    # sudo-i only includes sudo here, so it is left alone.
+    cmp "$TACCTL_CLIENT_PAM_DIR/sudo-i" "$BATS_TEST_TMPDIR/sudo-i.orig"
+    # The tacctl files carry no Debian @include.
+    run cat "$TACCTL_CLIENT_PAM_DIR/tacctl-auth" "$TACCTL_CLIENT_PAM_DIR/tacctl-account"
+    assert_output --partial "pam_tacplus.so server=192.0.2.10:49"
+    refute_output --partial "@include"
+
+    # Re-running must not stack a second set of lines.
+    run bash "$OUT"
+    assert_success
+    run grep -c "tacctl-" "$TACCTL_CLIENT_PAM_DIR/sshd"
+    assert_output "3"
+
+    "$TACCTL_BIN_SCRIPT" config linux remove-script --output "$BATS_TEST_TMPDIR/remove.sh" > /dev/null
+    run bash "$BATS_TEST_TMPDIR/remove.sh"
+    assert_success
+    for f in sshd sudo sudo-i gdm-password; do cmp "$TACCTL_CLIENT_PAM_DIR/$f" "$BATS_TEST_TMPDIR/$f.orig"; done
+    [[ ! -f "$TACCTL_CLIENT_PAM_DIR/tacctl-auth" ]]
+}
+
+@test "client install (RHEL family): build packages come from dnf; unfamiliar layout is refused" {
+    _gen > /dev/null
+    _rhel_env
+    export TACCTL_CLIENT_NEED_PKGS=" gcc pam-devel"
+    run bash "$OUT" --adopt bob
+    assert_success
+    stub_called "dnf install -y -q gcc pam-devel"
+    run grep -c "^apt-get" "$CALLS_LOG"
+    assert_output "0"
+
+    rm -rf "$TACCTL_CLIENT_STATE"
+    echo "auth required pam_unix.so" > "$TACCTL_CLIENT_PAM_DIR/sudo"
+    run bash "$OUT" --adopt bob
+    assert_failure
+    assert_output --partial "unfamiliar PAM layout"
+}
+
+@test "client install: with SELinux on, a policy module for the TACACS+ port is installed and later removed" {
+    _gen > /dev/null
+    _rhel_env
+    stub_cmd selinuxenabled
+    stub_cmd semodule
+    stub_cmd restorecon
+    run bash "$OUT" --adopt bob
+    assert_success
+    assert_output --partial "policy module tacctl_pam installed"
+    stub_called "semodule -i .*/tacctl_pam.cil"
+    run cat "$TACCTL_CLIENT_STATE/tacctl_pam.cil"
+    assert_line "(portcon tcp 49 (system_u object_r tacctl_tacacs_port_t ((s0) (s0))))"
+    assert_output --partial "(allow sshd_t tacctl_tacacs_port_t (tcp_socket (name_connect)))"
+
+    "$TACCTL_BIN_SCRIPT" config linux remove-script --output "$BATS_TEST_TMPDIR/remove.sh" > /dev/null
+    run bash "$BATS_TEST_TMPDIR/remove.sh"
+    assert_success
+    stub_called "semodule -r tacctl_pam"
+    [[ ! -f "$TACCTL_CLIENT_STATE/tacctl_pam.cil" ]]
 }
 
 @test "client remove: refuses when nobody would keep a usable local password" {

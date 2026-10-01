@@ -496,6 +496,9 @@ remote copy of the script is deleted after the run. Nothing is registered
 if the remote run fails. pam_tacplus is built on this server, in a rootless
 .BR podman (1)
 container matching the host's OS release, cached, and shipped as a binary;
+Debian, Ubuntu and RHEL-family hosts (RHEL, AlmaLinux, Rocky, CentOS
+Stream, Oracle Linux) are supported, the latter built against AlmaLinux of
+the same major release;
 the host compiles it from source instead when no image matches its OS, its
 architecture differs, the container build fails, or
 .B \-\-build\-on\-host

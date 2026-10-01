@@ -4899,7 +4899,7 @@ _linux_podman() {
 # host's userland, or nothing when tacctl knows none. Ubuntu derivatives
 # (Mint, KDE neon, ...) name their base in UBUNTU_CODENAME.
 linux_image_for_os() {
-    local text="$1" id codename ubuntu
+    local text="$1" id like major codename ubuntu
     id=$(sed -n 's/^ID=//p' <<< "$text" | head -1 | tr -d "\"'")
     codename=$(sed -n 's/^VERSION_CODENAME=//p' <<< "$text" | head -1 | tr -d "\"'")
     ubuntu=$(sed -n 's/^UBUNTU_CODENAME=//p' <<< "$text" | head -1 | tr -d "\"'")
@@ -4908,6 +4908,16 @@ linux_image_for_os() {
         echo "docker.io/library/ubuntu:${ubuntu}"
     elif [[ "$id" == "debian" && "$codename" =~ ^[a-z]+$ ]]; then
         echo "docker.io/library/debian:${codename}"
+    else
+        # RHEL and its rebuilds share an ABI per major release, so one
+        # AlmaLinux image serves RHEL, CentOS Stream, Rocky, Alma and Oracle.
+        like=$(sed -n 's/^ID_LIKE=//p' <<< "$text" | head -1 | tr -d "\"'")
+        major=$(sed -n 's/^VERSION_ID=//p' <<< "$text" | head -1 | tr -d "\"'")
+        major="${major%%.*}"
+        if [[ " rhel centos almalinux rocky ol " == *" ${id} "* || " ${like} " == *" rhel "* ]] \
+            && [[ "$major" =~ ^[0-9]+$ ]]; then
+            echo "docker.io/library/almalinux:${major}"
+        fi
     fi
 }
 
@@ -4957,8 +4967,11 @@ linux_prebuilt_for() {
     chmod 755 "$work/ctx"
     # The Containerfile goes through a file, not stdin: podman reopens
     # /dev/stdin by path, which a pipe owned by root does not allow.
-    printf 'FROM %s\nRUN apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends gcc make libc6-dev libpam0g-dev >/dev/null && rm -rf /var/lib/apt/lists/*\n' "$image" \
-        > "$work/ctx/Containerfile"
+    local tools_cmd='apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends gcc make libc6-dev libpam0g-dev >/dev/null && rm -rf /var/lib/apt/lists/*'
+    if [[ "$image" == */almalinux:* ]]; then
+        tools_cmd='dnf install -y -q gcc make pam-devel tar gzip >/dev/null && dnf clean all >/dev/null'
+    fi
+    printf 'FROM %s\nRUN %s\n' "$image" "$tools_cmd" > "$work/ctx/Containerfile"
     chmod 644 "$work/ctx/Containerfile"
     if ! _linux_podman build -q -t "$tools" -f "$work/ctx/Containerfile" "$work/ctx" > "$work/log" 2>&1; then
         tail -5 "$work/log" >&2
@@ -4968,7 +4981,7 @@ linux_prebuilt_for() {
     fi
     # shellcheck disable=SC2016  # runs inside the container
     local build='set -e; w=$(mktemp -d); cd "$w"; tar --no-same-owner -xzf -; cd pam_tacplus-*/
-        lib=/usr/lib/$(gcc -print-multiarch)
+        ma=$(gcc -print-multiarch); if [ -n "$ma" ]; then lib=/usr/lib/$ma; else lib=/usr/lib64; fi
         ./configure --prefix=/usr --libdir="$lib" --enable-pamdir="$lib/security" >&2
         make >&2; make install DESTDIR="$w/stage" >&2
         mkdir "$w/out"; cp "$w/stage$lib/libtac.so.5.0.0" "$w/stage$lib/security/pam_tacplus.so" "$w/out/"
@@ -5225,6 +5238,9 @@ _host_ssh() { # <port> <identity> <ssh args...>
         [[ -n "${SSH_AUTH_SOCK:-}" ]] && cmd+=(env "SSH_AUTH_SOCK=${SSH_AUTH_SOCK}")
     fi
     cmd+=(ssh -o ConnectTimeout=10)
+    # With no terminal nobody can answer a password or host-key prompt:
+    # fail instead of waiting on one.
+    if ! { : > /dev/tty; } 2>/dev/null; then cmd+=(-o BatchMode=yes); fi
     [[ -n "$port" ]] && cmd+=(-p "$port")
     [[ -n "$identity" ]] && cmd+=(-i "$identity")
     "${cmd[@]}" "$@"
@@ -5322,6 +5338,10 @@ cmd_host_enroll() {
         if [[ -z "$name" ]]; then
             # A bare IP has no hostname to borrow: 10.1.2.3 -> h10-1-2-3.
             if [[ "$host_part" =~ ^[0-9.]+$ ]]; then name="h${host_part//./-}"; else name="${host_part%%.*}"; fi
+        fi
+        # Re-enrolling a registered host keeps the server address it has.
+        if [[ -z "$server" && "$name" =~ ^[a-zA-Z][a-zA-Z0-9_-]*$ ]]; then
+            server=$(host_record "$name" | cut -d'|' -f5)
         fi
         if [[ -z "$server" ]]; then
             server=$(host_server_address_for "$host_ip")

@@ -69,7 +69,7 @@ _hosts() { cat "$TACCTL_ETC/linux-hosts" 2>/dev/null; }
     touch "$BATS_TEST_TMPDIR/key"
     run "$TACCTL_BIN_SCRIPT" host enroll root@192.0.2.50 --scope lab --port 2222 --identity "$BATS_TEST_TMPDIR/key"
     assert_success
-    stub_called "ssh -o ConnectTimeout=10 -p 2222 -i ${BATS_TEST_TMPDIR}/key "
+    stub_called "ssh -o ConnectTimeout=10 .*-p 2222 -i ${BATS_TEST_TMPDIR}/key "
     run _hosts
     assert_output --partial "h192-0-2-50|root@192.0.2.50|2222|lab|"
 }
@@ -302,4 +302,12 @@ _prebuilt_env() {
     assert_output --partial "compiled on the host instead"
     assert_output --partial "Host 'web1' enrolled"
     refute grep -q '^__PREBUILT__$' "$PUSHED"
+}
+
+@test "host enroll: re-enrolling a registered host keeps its server address" {
+    "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab --server 198.51.100.7 > /dev/null
+    run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab
+    assert_success
+    run _hosts
+    assert_output "web1|web1||lab|198.51.100.7|"
 }

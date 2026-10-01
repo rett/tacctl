@@ -12,7 +12,11 @@ umask 077
 STATE_DIR="${TACCTL_CLIENT_STATE:-/var/lib/tacctl-client}"
 PAM_DIR="${TACCTL_CLIENT_PAM_DIR:-/etc/pam.d}"
 SUDOERS_HOST_FILE="${TACCTL_CLIENT_SUDOERS:-/etc/sudoers.d/tacctl-host}"
-PAM_SERVICES="sshd sudo login"
+# sudo-i is the service 'sudo -i' uses; where it exists it has its own copy
+# of the includes (Debian) or simply includes sudo (RHEL family). sddm and
+# gdm-password are the graphical logins; GNOME's lock screen also unlocks
+# through gdm-password. Files a host does not have are skipped.
+PAM_SERVICES="sshd sudo sudo-i login sddm gdm-password"
 G_USERS="tac-users"
 
 info() { echo "[INFO] $*"; }
@@ -46,7 +50,8 @@ for svc in $PAM_SERVICES; do
     sed -i -E \
         -e 's/^@include tacctl-auth$/@include common-auth/' \
         -e 's/^@include tacctl-account$/@include common-account/' \
-        -e '/^@include tacctl-session$/d' "$f"
+        -e '/^@include tacctl-session$/d' \
+        -e '/^(auth|account|session)[[:space:]]+include[[:space:]]+tacctl-(auth|account|session)$/d' "$f"
     if grep -q 'tacctl-' "$f"; then
         die "$f still references tacctl PAM files; fix it by hand before continuing (original: $STATE_DIR/backup/$svc)."
     fi
@@ -58,12 +63,17 @@ rm -f "$SUDOERS_HOST_FILE"
 
 if [[ -f "$STATE_DIR/files" ]]; then
     while IFS= read -r path; do
-        if [[ "$path" == /usr/lib/* || "$path" == /lib/* ]]; then rm -f "$path"; fi
+        if [[ "$path" == /usr/lib/* || "$path" == /usr/lib64/* || "$path" == /lib/* ]]; then rm -f "$path"; fi
     done < "$STATE_DIR/files"
     ldconfig
     rm -f "$STATE_DIR/files"
 fi
 rm -f "$STATE_DIR/installed" "$STATE_DIR/module"
+
+if [[ -f "$STATE_DIR/tacctl_pam.cil" ]]; then
+    if command -v semodule >/dev/null; then semodule -r tacctl_pam 2>/dev/null || true; fi
+    rm -f "$STATE_DIR/tacctl_pam.cil"
+fi
 
 # Report accounts that now have no way to log in. Nothing is changed.
 orphans=""

@@ -223,14 +223,18 @@ tacctl config linux remove-script -o unenroll.sh           # removal script (no 
 Copy the install script to the host and run it as root from a session you keep open. It:
 - builds and installs `pam_tacplus` before creating any account (`gcc`, `make` and `libpam0g-dev` are installed with apt if missing; a host that already has the module from the same source is not rebuilt);
 - creates a local account for each user in the scope, with a locked password and a UID that is the same on every host, in `tac-users` plus `tac-readonly`, `tac-operator` or `tac-superuser`;
-- sends `sshd`, `sudo` and console `login` to TACACS+ for members of `tac-users` only (the shared `common-*` files and every other local account are untouched);
+- sends `sshd`, `sudo` (including `sudo -i`), console `login` and the graphical logins `sddm` and `gdm-password` (where present) to TACACS+ for members of `tac-users` only (the shared `common-*` files, or `system-auth`/`password-auth` on the RHEL family, and every other local account are untouched);
 - grants `%tac-superuser` full sudo, authenticated with the TACACS+ password.
 
 A reject from the server is final. If the server is unreachable, login falls through to the local password, which only pre-existing (adopted) accounts have. The script refuses to run unless a local administrator with a usable password exists outside the TACACS+ user list, and restores the PAM files if any step fails. Re-run it with `--accounts-only` after adding, removing or moving users.
 
 The install script contains the scope's shared secret, and so do the root-only `/etc/pam.d/tacctl-*` files it writes: use a dedicated scope per host or host group, and keep TACACS+ traffic on a management network or tunnel (no Linux PAM client supports TACACS+ over TLS). `passwd` does not work for TACACS+ users; they change passwords with `tacctl passwd` on the server.
 
-The removal script undoes the PAM edits and deletes the secret, module and sudoers drop-in. Accounts, home directories and the `tac-*` groups stay; it lists any account left with neither a local password nor an SSH key.
+Graphical login: SDDM and GDM authenticate TACACS+ users, and GNOME's lock screen unlocks through GDM. The user's keyring or wallet is not unlocked automatically. KDE Plasma's lock screen is the exception: it checks passwords as the logged-in user and so cannot read the root-only secret; a TACACS+ user who locks a Plasma session unlocks it from another login with `loginctl unlock-sessions`. The install script says so when it finds Plasma. Accounts are created with the full name `<login> (TACACS+)`, which is what login screens list.
+
+Debian, Ubuntu and their derivatives are supported, and so is the RHEL family (RHEL, AlmaLinux, Rocky, CentOS Stream, Oracle Linux; 8, 9 and 10 tested). On RHEL-family hosts the script adds an `include` line in front of the service's `password-auth`/`system-auth` line instead of replacing a Debian `@include`, leaves the authselect-managed files alone, uses `dnf` for build packages, and, when SELinux is enabled, installs a small policy module (`tacctl_pam`) that labels the TACACS+ port and lets `sshd`, `login` and `sudo` connect to it.
+
+The removal script undoes the PAM edits and deletes the secret, module, SELinux policy module and sudoers drop-in. Accounts, home directories and the `tac-*` groups stay; it lists any account left with neither a local password nor an SSH key.
 
 #### Enrolling hosts over SSH
 `tacctl host` does the copy-and-run for you and keeps a registry of enrolled hosts:
@@ -251,7 +255,7 @@ tacctl config linux builds               # list cached builds with the base imag
 tacctl config linux builds clear         # drop them; the next enroll of each OS release rebuilds
 tacctl host enroll web1 --build-on-host  # skip the container and compile on the host
 ```
-The host compiles from the embedded source instead when there is no image for its OS (anything but Debian, Ubuntu and Ubuntu derivatives), its architecture differs from the server's, `podman` is missing or the container build fails, or the shipped module does not load there. Base images come from Docker Hub (`ubuntu:<codename>`, `debian:<codename>`) and are trusted as pulled; the digest is recorded with each build.
+The host compiles from the embedded source instead when there is no image for its OS, its architecture differs from the server's, `podman` is missing or the container build fails, or the shipped module does not load there. Base images come from Docker Hub (`ubuntu:<codename>`, `debian:<codename>`, and `almalinux:<major>` for every RHEL-family host, since they share an ABI per major release) and are trusted as pulled; the digest is recorded with each build.
 
 `tacctl install` and every `tacctl upgrade` install the packages this needs if they are missing (`podman`, `uidmap`, the autotools set for `config linux build`, `openssh-client`), along with tacctl's core requirements.
 

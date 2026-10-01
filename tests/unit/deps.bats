@@ -53,14 +53,20 @@ _dpkg() {
     assert_output --partial "everything else works"
 }
 
-@test "linux_image_for_os: maps Ubuntu, derivatives and Debian; rejects the rest" {
+@test "linux_image_for_os: maps Ubuntu, derivatives, Debian and the RHEL family; rejects the rest" {
     run linux_image_for_os $'ID=ubuntu\nVERSION_CODENAME=jammy'
     assert_output "docker.io/library/ubuntu:jammy"
     run linux_image_for_os $'ID=linuxmint\nVERSION_CODENAME=wilma\nUBUNTU_CODENAME=noble'
     assert_output "docker.io/library/ubuntu:noble"
     run linux_image_for_os $'ID=debian\nVERSION_CODENAME="bookworm"'
     assert_output "docker.io/library/debian:bookworm"
-    run linux_image_for_os $'ID="rocky"\nVERSION_ID="9.4"'
+    run linux_image_for_os $'ID="rocky"\nID_LIKE="rhel centos fedora"\nVERSION_ID="9.4"'
+    assert_output "docker.io/library/almalinux:9"
+    run linux_image_for_os $'ID="rhel"\nVERSION_ID="8.10"'
+    assert_output "docker.io/library/almalinux:8"
+    run linux_image_for_os $'ID=fedora\nVERSION_ID=42'
+    assert_output ""
+    run linux_image_for_os $'ID=rhel\nVERSION_ID="9;reboot"'
     assert_output ""
     run linux_image_for_os $'ID=ubuntu\nVERSION_CODENAME=noble;reboot'
     assert_output ""

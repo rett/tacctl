@@ -17,7 +17,11 @@
 STATE_DIR="${TACCTL_CLIENT_STATE:-/var/lib/tacctl-client}"
 PAM_DIR="${TACCTL_CLIENT_PAM_DIR:-/etc/pam.d}"
 SUDOERS_HOST_FILE="${TACCTL_CLIENT_SUDOERS:-/etc/sudoers.d/tacctl-host}"
-PAM_SERVICES="sshd sudo login"
+# sudo-i is the service 'sudo -i' uses; where it exists it has its own copy
+# of the includes (Debian) or simply includes sudo (RHEL family). sddm and
+# gdm-password are the graphical logins; GNOME's lock screen also unlocks
+# through gdm-password. Files a host does not have are skipped.
+PAM_SERVICES="sshd sudo sudo-i login sddm gdm-password"
 G_USERS="tac-users"
 
 info() { echo "[INFO] $*"; }
@@ -44,7 +48,20 @@ done
 # against scratch directories.
 CLIENT_TEST="${TACCTL_CLIENT_TEST:-0}"
 [[ $EUID -eq 0 || "$CLIENT_TEST" == "1" ]] || die "Run as root (sudo bash $0)."
-command -v apt-get >/dev/null || die "Only Debian/Ubuntu hosts are supported so far."
+
+# Debian/Ubuntu and RHEL-family hosts differ in package tool and in how the
+# PAM service files pull in the shared stack.
+if [[ "$CLIENT_TEST" == "1" && -n "${TACCTL_CLIENT_FAMILY:-}" ]]; then
+    FAMILY="$TACCTL_CLIENT_FAMILY"
+elif command -v apt-get >/dev/null; then
+    FAMILY="debian"
+elif command -v dnf >/dev/null || command -v yum >/dev/null; then
+    FAMILY="rhel"
+else
+    die "Only Debian/Ubuntu and RHEL-family hosts are supported (no apt-get, dnf or yum here)."
+fi
+# RHEL family: the shared stacks the service files include.
+RHEL_STACK='(password-auth|system-auth)'
 
 # Names of the TACACS+ users this script manages, one per line.
 tac_user_names() {
@@ -237,29 +254,49 @@ module_current() {
     return 0
 }
 
-apt_install() {
-    # shellcheck disable=SC2086
-    DEBIAN_FRONTEND=noninteractive apt-get install -y $1 >/dev/null
+pkg_install() {
+    if [[ "$FAMILY" == "rhel" ]]; then
+        # shellcheck disable=SC2086
+        "$(command -v dnf || command -v yum)" install -y -q $1 >/dev/null
+    else
+        # shellcheck disable=SC2086
+        DEBIAN_FRONTEND=noninteractive apt-get install -y $1 >/dev/null
+    fi
+}
+
+pkg_refresh() {
+    if [[ "$FAMILY" == "rhel" ]]; then
+        "$(command -v dnf || command -v yum)" -q makecache >/dev/null || true
+    else
+        apt-get update >/dev/null || true
+    fi
+}
+
+# pkg_ensure <packages> <purpose>: install, retrying once after an index refresh.
+pkg_ensure() {
+    local pkgs="$1" purpose="$2"
+    info "Installing ${purpose}:${pkgs}"
+    if pkg_install "$pkgs"; then return 0; fi
+    # A stale package index is the usual cause: refresh it once and retry.
+    warn "Package install failed; refreshing the package index and retrying."
+    pkg_refresh
+    pkg_install "$pkgs" || die "Could not install the ${purpose}:${pkgs}
+        This host needs working package repositories to build pam_tacplus.
+        Nothing was changed: no accounts created, PAM untouched."
 }
 
 ensure_build_tools() {
-    local need_pkgs=""
+    local need_pkgs="" pam_dev="libpam0g-dev"
+    if [[ "$FAMILY" == "rhel" ]]; then pam_dev="pam-devel"; fi
     if [[ "$CLIENT_TEST" == "1" ]]; then
         need_pkgs="${TACCTL_CLIENT_NEED_PKGS:-}"
     else
         command -v gcc  >/dev/null || need_pkgs+=" gcc"
         command -v make >/dev/null || need_pkgs+=" make"
-        [[ -f /usr/include/security/pam_modules.h ]] || need_pkgs+=" libpam0g-dev"
+        [[ -f /usr/include/security/pam_modules.h ]] || need_pkgs+=" ${pam_dev}"
     fi
     [[ -n "$need_pkgs" ]] || return 0
-    info "Installing build packages:${need_pkgs}"
-    if apt_install "$need_pkgs"; then return 0; fi
-    # A stale package index is the usual cause: refresh it once and retry.
-    warn "Package install failed; refreshing the package index and retrying."
-    apt-get update >/dev/null || true
-    apt_install "$need_pkgs" || die "Could not install the build packages:${need_pkgs}
-        This host needs working package repositories to build pam_tacplus.
-        Nothing was changed: no accounts created, PAM untouched."
+    pkg_ensure "$need_pkgs" "build packages"
 }
 
 # Where this host keeps PAM modules; shared libraries go one level up.
@@ -322,6 +359,10 @@ install_module() {
         info "pam_tacplus is already installed from this source; not rebuilding."
         return 0
     fi
+    # Minimal RHEL-family installs come without tar.
+    if [[ "$CLIENT_TEST" != "1" ]] && ! command -v tar >/dev/null; then
+        pkg_ensure " tar" "packages needed to unpack the module"
+    fi
 
     if [[ "$CLIENT_TEST" == "1" ]]; then
         sec_dir="$STATE_DIR/lib/security"
@@ -356,7 +397,11 @@ install_module() {
 if [[ "$ACCOUNTS_ONLY" != "1" ]]; then
     for svc in sshd sudo; do
         [[ -f "$PAM_DIR/$svc" ]] || die "$PAM_DIR/$svc not found."
-        if ! grep -qE '^@include[[:space:]]+(common-auth|tacctl-auth)[[:space:]]*$' "$PAM_DIR/$svc"; then
+        if [[ "$FAMILY" == "rhel" ]]; then
+            if ! grep -qE "^auth[[:space:]]+(substack|include)[[:space:]]+(${RHEL_STACK}|tacctl-auth)[[:space:]]*\$" "$PAM_DIR/$svc"; then
+                die "$PAM_DIR/$svc has no 'auth substack|include password-auth|system-auth' line; refusing to edit an unfamiliar PAM layout."
+            fi
+        elif ! grep -qE '^@include[[:space:]]+(common-auth|tacctl-auth)[[:space:]]*$' "$PAM_DIR/$svc"; then
             die "$PAM_DIR/$svc has no '@include common-auth' line; refusing to edit an unfamiliar PAM layout."
         fi
     done
@@ -382,16 +427,23 @@ sync_accounts() {
                 if [[ -n "$priv" ]]; then
                     warn "'${name}' is in local group(s): ${priv}. Those rights stay whatever the TACACS+ tier (${tier}) is."
                 fi
+            elif grep -qxF "$name" "$STATE_DIR/created" \
+                && [[ "$(getent passwd "$name" | cut -d: -f5)" == "TACACS+ user (tacctl)" ]]; then
+                # Earlier versions gave every account the same full name,
+                # which is all a graphical login screen shows.
+                usermod -c "${name} (TACACS+)" "$name"
             fi
         else
             # New accounts get a locked password: TACACS+ is their only password.
+            # The full name carries the login name, since graphical login
+            # screens list accounts by full name.
             # UID and primary GID are the same number on every host. The
             # fallback is only reachable with --allow-uid-mismatch.
             if id_is_free "$name" "$uid"; then
                 getent group "$name" >/dev/null || groupadd -g "$uid" "$name"
-                useradd -m -u "$uid" -g "$name" -s /bin/bash -c "TACACS+ user (tacctl)" "$name"
+                useradd -m -u "$uid" -g "$name" -s /bin/bash -c "${name} (TACACS+)" "$name"
             else
-                useradd -m -s /bin/bash -c "TACACS+ user (tacctl)" "$name"
+                useradd -m -s /bin/bash -c "${name} (TACACS+)" "$name"
             fi
             echo "$name" >> "$STATE_DIR/created"
             info "Created account '${name}' (${tier})."
@@ -465,11 +517,20 @@ write_pam() {
     install -m 0600 -o root -g root /dev/null "$file"
     cat > "$file"
 }
+# On Debian the tacctl files replace the service's @include of common-auth
+# and common-account and pull those in themselves. On the RHEL family the
+# service keeps its own line for password-auth/system-auth and a tacctl
+# 'include' line is put in front of it; 'include' splices the lines into
+# the service's stack, so the skip, 'done' and 'die' actions behave the
+# same in both layouts.
+tail_auth="@include common-auth"
+tail_account="@include common-account"
+if [[ "$FAMILY" == "rhel" ]]; then tail_auth=""; tail_account=""; fi
 write_pam tacctl-auth <<EOF
 # Managed by tacctl (scope ${TAC_SCOPE}). Do not edit; re-run the install script.
 auth    [success=ok default=1]                               ${gate}
 auth    [success=done authinfo_unavail=ignore default=die]   pam_tacplus.so ${tac_args}
-@include common-auth
+${tail_auth}
 EOF
 # Authorization is only possible in the process that did the TACACS+
 # authentication; for SSH-key logins the module reports auth_err, which is
@@ -478,7 +539,7 @@ write_pam tacctl-account <<EOF
 # Managed by tacctl (scope ${TAC_SCOPE}). Do not edit; re-run the install script.
 account [success=ok default=1]                               ${gate}
 account [success=ok perm_denied=die default=ignore]          pam_tacplus.so ${tac_args}
-@include common-account
+${tail_account}
 EOF
 write_pam tacctl-session <<EOF
 # Managed by tacctl (scope ${TAC_SCOPE}). Do not edit; re-run the install script.
@@ -491,15 +552,59 @@ for svc in $PAM_SERVICES; do
     [[ -f "$f" ]] || continue
     # Keep the first backup: it is the pre-tacctl original.
     [[ -f "$STATE_DIR/backup/$svc" ]] || cp -p "$f" "$STATE_DIR/backup/$svc"
+    if [[ "$FAMILY" == "rhel" ]]; then
+        if ! grep -qE '^auth[[:space:]]+include[[:space:]]+tacctl-auth$' "$f"; then
+            sed -i -E "0,/^auth[[:space:]]+(substack|include)[[:space:]]+${RHEL_STACK}[[:space:]]*\$/s//auth       include      tacctl-auth\n&/" "$f"
+        fi
+        if ! grep -qE '^account[[:space:]]+include[[:space:]]+tacctl-account$' "$f"; then
+            sed -i -E "0,/^account[[:space:]]+(substack|include)[[:space:]]+${RHEL_STACK}[[:space:]]*\$/s//account    include      tacctl-account\n&/" "$f"
+        fi
+        if [[ "$svc" != sudo* ]] && ! grep -qE '^session[[:space:]]+include[[:space:]]+tacctl-session$' "$f"; then
+            sed -i -E "0,/^session[[:space:]]+(substack|include)[[:space:]]+${RHEL_STACK}[[:space:]]*\$/s//&\nsession    include      tacctl-session/" "$f"
+        fi
+        continue
+    fi
     sed -i -E \
         -e 's/^@include[[:space:]]+common-auth[[:space:]]*$/@include tacctl-auth/' \
         -e 's/^@include[[:space:]]+common-account[[:space:]]*$/@include tacctl-account/' "$f"
-    if [[ "$svc" != "sudo" ]] && ! grep -q '^@include tacctl-session$' "$f"; then
+    if [[ "$svc" != sudo* ]] && ! grep -q '^@include tacctl-session$' "$f"; then
         sed -i -E '/^@include[[:space:]]+common-session[[:space:]]*$/a @include tacctl-session' "$f"
     fi
 done
-grep -q '^@include tacctl-auth$' "$PAM_DIR/sshd" || die "Failed to edit $PAM_DIR/sshd."
-grep -q '^@include tacctl-auth$' "$PAM_DIR/sudo" || die "Failed to edit $PAM_DIR/sudo."
+for svc in sshd sudo; do
+    grep -qE '^(@include|auth[[:space:]]+include[[:space:]]+)[[:space:]]*tacctl-auth$' "$PAM_DIR/$svc" \
+        || die "Failed to edit $PAM_DIR/$svc."
+    grep -qE '^(@include|account[[:space:]]+include[[:space:]]+)[[:space:]]*tacctl-account$' "$PAM_DIR/$svc" \
+        || die "Failed to edit $PAM_DIR/$svc."
+done
+
+# --- SELinux -------------------------------------------------------------------
+# sshd, login and (for confined users) sudo may not open a TACACS+
+# connection on their own: RHEL's policy has no type for the port and only
+# lets them through with the broad nis_enabled boolean. A small local
+# module labels exactly the configured port and allows those three to
+# connect to it. It is CIL text, so nothing has to be compiled. Failure is
+# reported, not fatal: logins then behave as if the server were unreachable.
+if command -v selinuxenabled >/dev/null && selinuxenabled 2>/dev/null; then
+    cat > "$STATE_DIR/tacctl_pam.cil" <<CIL
+(type tacctl_tacacs_port_t)
+(roletype object_r tacctl_tacacs_port_t)
+(typeattributeset port_type tacctl_tacacs_port_t)
+(portcon tcp ${TAC_PORT} (system_u object_r tacctl_tacacs_port_t ((s0) (s0))))
+(optional tacctl_pam_sshd (allow sshd_t tacctl_tacacs_port_t (tcp_socket (name_connect))))
+(optional tacctl_pam_login (allow local_login_t tacctl_tacacs_port_t (tcp_socket (name_connect))))
+(optional tacctl_pam_sudo (allow sudodomain tacctl_tacacs_port_t (tcp_socket (name_connect))))
+CIL
+    if semodule -i "$STATE_DIR/tacctl_pam.cil" 2>/dev/null; then
+        info "SELinux: policy module tacctl_pam installed (sshd, login and sudo may connect to tcp/${TAC_PORT})."
+    else
+        warn "SELinux: could not install the tacctl_pam policy module; TACACS+ logins may be denied (check: ausearch -m avc -c sshd)."
+    fi
+    if [[ -f "$STATE_DIR/files" ]]; then
+        # shellcheck disable=SC2046
+        restorecon $(cat "$STATE_DIR/files") "$PAM_DIR"/tacctl-* 2>/dev/null || true
+    fi
+fi
 
 # --- sudo for superusers -------------------------------------------------------
 sudoers_tmp=$(mktemp)
@@ -519,6 +624,15 @@ pam_committed=1
 } > "$STATE_DIR/installed"
 
 # --- Post-install checks -------------------------------------------------------
+# KDE's lock screen authenticates as the logged-in user, not as root, so it
+# cannot read the root-only files that hold the shared secret.
+if [[ -f "$PAM_DIR/sddm" || -f "$PAM_DIR/gdm-password" ]]; then
+    info "Graphical login (SDDM/GDM) uses TACACS+ for these users. Their keyring or wallet is not unlocked automatically."
+fi
+if [[ -f "$PAM_DIR/kde" || -f /usr/lib/pam.d/kde ]]; then
+    warn "KDE Plasma's lock screen cannot check TACACS+ passwords: a TACACS+ user who locks the"
+    warn "  screen must unlock it from another login (ssh or a text console): loginctl unlock-sessions"
+fi
 if ! timeout 4 bash -c "exec 3<>/dev/tcp/${TAC_SERVER}/${TAC_PORT}" 2>/dev/null; then
     warn "Cannot reach ${TAC_SERVER} port ${TAC_PORT} from this host. TACACS+ logins will fail until it is reachable."
 fi
