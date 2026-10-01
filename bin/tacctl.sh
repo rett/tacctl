@@ -5238,6 +5238,12 @@ _host_ssh() { # <port> <identity> <ssh args...>
         [[ -n "${SSH_AUTH_SOCK:-}" ]] && cmd+=(env "SSH_AUTH_SOCK=${SSH_AUTH_SOCK}")
     fi
     cmd+=(ssh -o ConnectTimeout=10)
+    # One connection per host for the whole command: the probe, the copy
+    # and the run share it, so a login that needs a password or a key
+    # passphrase is asked for it once instead of once per step. The socket
+    # sits in the ssh user's own ~/.ssh; host_run_script closes it, and it
+    # goes away by itself a minute after the last use.
+    cmd+=(-o ControlMaster=auto -o "ControlPath=~/.ssh/tacctl-%C" -o ControlPersist=60)
     # With no terminal nobody can answer a password or host-key prompt:
     # fail instead of waiting on one.
     if ! { : > /dev/tty; } 2>/dev/null; then cmd+=(-o BatchMode=yes); fi
@@ -5281,7 +5287,10 @@ host_run_script() {
         run="if sudo -n true 2>/dev/null; then sudo -n bash ${remote} $*; else echo '[ERROR] sudo on this host needs a password and there is no terminal to ask on. Run tacctl host from a terminal, allow passwordless sudo for this login, or log in as root.' >&2; false; fi"
     fi
     local remote_cmd="trap 'rm -f ${remote}' EXIT; trap 'exit 130' HUP INT TERM; if [ \"\$(id -u)\" = 0 ]; then bash ${remote} $*; else ${run}; fi"
-    _host_ssh "$port" "$identity" "$tty_flag" "$target" "$remote_cmd"
+    local rc=0
+    _host_ssh "$port" "$identity" "$tty_flag" "$target" "$remote_cmd" || rc=$?
+    _host_ssh "$port" "$identity" -O exit "$target" > /dev/null 2>&1 || true
+    return "$rc"
 }
 
 # Address the host should use to reach this server: the source address of
