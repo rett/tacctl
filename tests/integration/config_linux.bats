@@ -38,6 +38,7 @@ _client_env() {
     export TACCTL_CLIENT_STATE="${BATS_TEST_TMPDIR}/state"
     export TACCTL_CLIENT_PAM_DIR="${BATS_TEST_TMPDIR}/pam.d"
     export TACCTL_CLIENT_SUDOERS="${BATS_TEST_TMPDIR}/sudoers-host"
+    export TACCTL_CLIENT_XDG="${BATS_TEST_TMPDIR}/xdg"
     export FAKE_DB="${BATS_TEST_TMPDIR}/db"
     mkdir -p "$TACCTL_CLIENT_PAM_DIR" "$FAKE_DB"
     printf '%s\n' '# sshd' '@include common-auth' 'account    required     pam_nologin.so' \
@@ -640,6 +641,49 @@ _rhel_env() {
     assert_success
     stub_called "semodule -r tacctl_pam"
     [[ ! -f "$TACCTL_CLIENT_STATE/tacctl_pam.cil" ]]
+}
+
+@test "client install: on a Plasma host, screen locking is switched off for TACACS+ accounts only" {
+    _gen > /dev/null
+    _client_env
+    mkdir -p "$TACCTL_CLIENT_XDG/plasma-workspace/env"
+    run bash "$OUT" --adopt bob
+    assert_success
+    assert_output --partial "screen locking is switched off for TACACS+ accounts"
+
+    run cat "$TACCTL_CLIENT_XDG/tacctl/kscreenlockerrc"
+    assert_line 'Autolock[$i]=false'
+    assert_line 'LockOnResume[$i]=false'
+    run cat "$TACCTL_CLIENT_XDG/tacctl/kdeglobals"
+    assert_line '[KDE Action Restrictions][$i]'
+    assert_line 'action/lock_screen=false'
+
+    # The session script only redirects accounts this script created.
+    env_script="$TACCTL_CLIENT_XDG/plasma-workspace/env/tacctl-nolock.sh"
+    mkdir -p "$BATS_TEST_TMPDIR/stub"
+    printf '%s\n' '#!/bin/sh' 'echo "u:x:1:1:$FAKE_GECOS:/h:/bin/sh"' > "$BATS_TEST_TMPDIR/stub/getent"
+    chmod +x "$BATS_TEST_TMPDIR/stub/getent"
+    run env PATH="$BATS_TEST_TMPDIR/stub:$PATH" FAKE_GECOS="carol (TACACS+)" XDG_CONFIG_DIRS=/etc/xdg \
+        sh -c ". '$env_script'; echo \"\$XDG_CONFIG_DIRS\""
+    assert_output "$TACCTL_CLIENT_XDG/tacctl:/etc/xdg"
+    run env PATH="$BATS_TEST_TMPDIR/stub:$PATH" FAKE_GECOS="Local Admin" XDG_CONFIG_DIRS=/etc/xdg \
+        sh -c ". '$env_script'; echo \"\$XDG_CONFIG_DIRS\""
+    assert_output "/etc/xdg"
+
+    "$TACCTL_BIN_SCRIPT" config linux remove-script --output "$BATS_TEST_TMPDIR/remove.sh" > /dev/null
+    run bash "$BATS_TEST_TMPDIR/remove.sh"
+    assert_success
+    [ ! -e "$env_script" ]
+    [ ! -e "$TACCTL_CLIENT_XDG/tacctl" ]
+}
+
+@test "client install: without Plasma, no desktop configuration is written" {
+    _gen > /dev/null
+    _client_env
+    run bash "$OUT" --adopt bob
+    assert_success
+    refute_output --partial "screen locking"
+    [ ! -e "$TACCTL_CLIENT_XDG" ]
 }
 
 @test "client remove: refuses when nobody would keep a usable local password" {

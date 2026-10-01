@@ -17,6 +17,7 @@
 STATE_DIR="${TACCTL_CLIENT_STATE:-/var/lib/tacctl-client}"
 PAM_DIR="${TACCTL_CLIENT_PAM_DIR:-/etc/pam.d}"
 SUDOERS_HOST_FILE="${TACCTL_CLIENT_SUDOERS:-/etc/sudoers.d/tacctl-host}"
+XDG_DIR="${TACCTL_CLIENT_XDG:-/etc/xdg}"
 # sudo-i is the service 'sudo -i' uses; where it exists it has its own copy
 # of the includes (Debian) or simply includes sudo (RHEL family). sddm and
 # gdm-password are the graphical logins; GNOME's lock screen also unlocks
@@ -623,15 +624,46 @@ pam_committed=1
     echo "installed=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 } > "$STATE_DIR/installed"
 
-# --- Post-install checks -------------------------------------------------------
+# --- KDE Plasma: no screen lock for TACACS+ accounts ---------------------------
 # KDE's lock screen authenticates as the logged-in user, not as root, so it
-# cannot read the root-only files that hold the shared secret.
+# cannot read the root-only files that hold the shared secret: a TACACS+ user
+# who locked the screen could not unlock it. Plasma sources env/*.sh at session
+# start; ours puts a locked-down config directory first for accounts this
+# script created (full name ending in "(TACACS+)"). Other accounts keep theirs.
+if [[ -f "$PAM_DIR/kde" || -d "$XDG_DIR/plasma-workspace" || ( "$CLIENT_TEST" != "1" && -f /usr/lib/pam.d/kde ) ]]; then
+    mkdir -p "$XDG_DIR/tacctl" "$XDG_DIR/plasma-workspace/env"
+    chmod 0755 "$XDG_DIR/tacctl"
+    cat > "$XDG_DIR/tacctl/kscreenlockerrc" <<'EOF'
+# Managed by tacctl. Applies to TACACS+ accounts only.
+[Daemon]
+Autolock[$i]=false
+LockOnResume[$i]=false
+LockOnStart[$i]=false
+EOF
+    cat > "$XDG_DIR/tacctl/kdeglobals" <<'EOF'
+# Managed by tacctl. Applies to TACACS+ accounts only.
+[KDE Action Restrictions][$i]
+action/lock_screen=false
+EOF
+    cat > "$XDG_DIR/plasma-workspace/env/tacctl-nolock.sh" <<EOF
+# Managed by tacctl. KDE's lock screen cannot check TACACS+ passwords, so
+# screen locking is switched off for TACACS+ accounts.
+case "\$(getent passwd "\$(id -un)" | cut -d: -f5)" in
+    *"(TACACS+)") export XDG_CONFIG_DIRS="${XDG_DIR}/tacctl:\${XDG_CONFIG_DIRS:-/etc/xdg}" ;;
+esac
+EOF
+    chmod 0644 "$XDG_DIR/tacctl/kscreenlockerrc" "$XDG_DIR/tacctl/kdeglobals" "$XDG_DIR/plasma-workspace/env/tacctl-nolock.sh"
+    kde_nolock=1
+fi
+
+# --- Post-install checks -------------------------------------------------------
 if [[ -f "$PAM_DIR/sddm" || -f "$PAM_DIR/gdm-password" ]]; then
     info "Graphical login (SDDM/GDM) uses TACACS+ for these users. Their keyring or wallet is not unlocked automatically."
 fi
-if [[ -f "$PAM_DIR/kde" || -f /usr/lib/pam.d/kde ]]; then
-    warn "KDE Plasma's lock screen cannot check TACACS+ passwords: a TACACS+ user who locks the"
-    warn "  screen must unlock it from another login (ssh or a text console): loginctl unlock-sessions"
+if [[ "${kde_nolock:-0}" == "1" ]]; then
+    info "KDE Plasma: screen locking is switched off for TACACS+ accounts (the lock screen cannot check"
+    info "  TACACS+ passwords). It applies from their next login; a session locked anyway is unlocked"
+    info "  from another login with: loginctl unlock-sessions"
 fi
 if ! timeout 4 bash -c "exec 3<>/dev/tcp/${TAC_SERVER}/${TAC_PORT}" 2>/dev/null; then
     warn "Cannot reach ${TAC_SERVER} port ${TAC_PORT} from this host. TACACS+ logins will fail until it is reachable."

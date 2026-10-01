@@ -11,6 +11,7 @@ umask 077
 
 STATE_DIR="${TACCTL_CLIENT_STATE:-/var/lib/tacctl-client}"
 PAM_DIR="${TACCTL_CLIENT_PAM_DIR:-/etc/pam.d}"
+XDG_DIR="${TACCTL_CLIENT_XDG:-/etc/xdg}"
 SUDOERS_HOST_FILE="${TACCTL_CLIENT_SUDOERS:-/etc/sudoers.d/tacctl-host}"
 # sudo-i is the service 'sudo -i' uses; where it exists it has its own copy
 # of the includes (Debian) or simply includes sudo (RHEL family). sddm and
@@ -60,6 +61,10 @@ rm -f "$PAM_DIR/tacctl-auth" "$PAM_DIR/tacctl-account" "$PAM_DIR/tacctl-session"
 info "PAM service files restored; shared secret removed."
 
 rm -f "$SUDOERS_HOST_FILE"
+
+# KDE Plasma: TACACS+ accounts may lock the screen again.
+rm -f "$XDG_DIR/plasma-workspace/env/tacctl-nolock.sh" "$XDG_DIR/tacctl/kscreenlockerrc" "$XDG_DIR/tacctl/kdeglobals"
+rmdir "$XDG_DIR/tacctl" 2>/dev/null || true
 
 if [[ -f "$STATE_DIR/files" ]]; then
     while IFS= read -r path; do
