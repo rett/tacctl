@@ -48,7 +48,7 @@ _hosts() { cat "$TACCTL_ETC/linux-hosts" 2>/dev/null; }
     assert_output --partial "alice:superuser:20000"
     grep -q '^__TARBALL__$' "$PUSHED"
     # Ran as root or via sudo on the host, then removed the copy.
-    stub_called "ssh .*admin@web1.example.net .*sudo -n bash /tmp/tacctl.AbCd1234 ;.*rm -f /tmp/tacctl.AbCd1234"
+    stub_called "ssh .*admin@web1.example.net .*rm -f /tmp/tacctl.AbCd1234.*sudo -n bash /tmp/tacctl.AbCd1234"
 }
 
 @test "host enroll: without --scope creates a per-host /32 scope with its own secret" {

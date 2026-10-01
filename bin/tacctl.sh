@@ -5091,11 +5091,19 @@ host_run_script() {
         error "Unexpected reply from ${target} while copying the script."
         return 1
     fi
-    # A terminal lets the remote sudo prompt for a password; without one
-    # only passwordless sudo (or a root login) can work.
-    local tty_flag="-T" sudo_cmd="sudo -n"
-    if [[ -t 0 ]]; then tty_flag="-t"; sudo_cmd="sudo"; fi
-    local remote_cmd="if [ \"\$(id -u)\" = 0 ]; then bash ${remote} $*; else ${sudo_cmd} bash ${remote} $*; fi; rc=\$?; rm -f ${remote}; exit \$rc"
+    # A terminal lets the remote sudo prompt for a password (the prompt
+    # names the host, since 'host sync --all' asks once per host). Without
+    # one only passwordless sudo or a root login can work, so say so
+    # instead of failing on sudo's own message. The copy holds the scope
+    # secret: it is removed however the remote shell ends.
+    local tty_flag="-T" run
+    if [[ -t 0 ]]; then
+        tty_flag="-t"
+        run="sudo -p '[sudo] password for %u on %H: ' bash ${remote} $*"
+    else
+        run="if sudo -n true 2>/dev/null; then sudo -n bash ${remote} $*; else echo '[ERROR] sudo on this host needs a password and there is no terminal to ask on. Run tacctl host from a terminal, allow passwordless sudo for this login, or log in as root.' >&2; false; fi"
+    fi
+    local remote_cmd="trap 'rm -f ${remote}' EXIT; trap 'exit 130' HUP INT TERM; if [ \"\$(id -u)\" = 0 ]; then bash ${remote} $*; else ${run}; fi"
     _host_ssh "$port" "$identity" "$tty_flag" "$target" "$remote_cmd"
 }
 

@@ -404,6 +404,63 @@ _client_env() {
     run bash "$OUT" --adopt bob
     assert_failure
     assert_output --partial "unfamiliar PAM layout"
+    run grep -cE "useradd|groupadd" "$CALLS_LOG"
+    assert_output "0"
+}
+
+@test "client install: a host that cannot get the build packages is left untouched" {
+    _gen > /dev/null
+    _client_env
+    export TACCTL_CLIENT_NEED_PKGS=" gcc make"
+    stub_cmd apt-get 'exit 100'
+    run bash "$OUT" --adopt bob
+    assert_failure
+    assert_output --partial "Could not install the build packages: gcc make"
+    stub_called "apt-get update"
+    run grep -cE "useradd|groupadd|usermod" "$CALLS_LOG"
+    assert_output "0"
+    cmp "$TACCTL_CLIENT_PAM_DIR/sshd" "$BATS_TEST_TMPDIR/sshd.orig"
+    [[ ! -f "$TACCTL_CLIENT_STATE/module" ]]
+}
+
+@test "client install: a stale package index is refreshed once and the install retried" {
+    _gen > /dev/null
+    _client_env
+    export TACCTL_CLIENT_NEED_PKGS=" libpam0g-dev"
+    stub_cmd apt-get '[[ "$1" == "update" ]] && { touch "$FAKE_DB/updated"; exit 0; }
+        [[ -f "$FAKE_DB/updated" ]]'
+    run bash "$OUT" --adopt bob
+    assert_success
+    assert_output --partial "refreshing the package index"
+    run grep -c "apt-get install -y libpam0g-dev" "$CALLS_LOG"
+    assert_output "2"
+}
+
+@test "client install: the module is built once and reused until the source changes" {
+    _gen > /dev/null
+    _client_env
+    run bash "$OUT" --adopt bob
+    assert_success
+    assert_output --partial "Building pam_tacplus"
+    [[ -f "$TACCTL_CLIENT_STATE/lib/security/pam_tacplus.so" ]]
+
+    run bash "$OUT"
+    assert_success
+    assert_output --partial "not rebuilding"
+    refute_output --partial "Building pam_tacplus"
+
+    # A missing file forces a rebuild.
+    rm "$TACCTL_CLIENT_STATE/lib/security/pam_tacplus.so"
+    run bash "$OUT"
+    assert_success
+    assert_output --partial "Building pam_tacplus"
+
+    # So does a different source tarball.
+    echo "another tarball" > "$TACCTL_LINUX_DIR/pam_tacplus-1.7.0.tar.gz"
+    _gen > /dev/null
+    run bash "$OUT"
+    assert_success
+    assert_output --partial "Building pam_tacplus"
 }
 
 @test "client remove: refuses when nobody would keep a usable local password" {

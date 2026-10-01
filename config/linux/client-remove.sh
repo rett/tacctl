@@ -63,7 +63,7 @@ if [[ -f "$STATE_DIR/files" ]]; then
     ldconfig
     rm -f "$STATE_DIR/files"
 fi
-rm -f "$STATE_DIR/installed"
+rm -f "$STATE_DIR/installed" "$STATE_DIR/module"
 
 # Report accounts that now have no way to log in. Nothing is changed.
 orphans=""

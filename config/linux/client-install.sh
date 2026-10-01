@@ -38,7 +38,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # TACCTL_CLIENT_TEST=1 is for the bats suite only: it skips the root check
-# and the module build so the account and PAM logic can run unprivileged
+# and fakes the module build so the account and PAM logic can run unprivileged
 # against scratch directories.
 CLIENT_TEST="${TACCTL_CLIENT_TEST:-0}"
 [[ $EUID -eq 0 || "$CLIENT_TEST" == "1" ]] || die "Run as root (sudo bash $0)."
@@ -197,6 +197,133 @@ privileged_groups_of() {
 check_adoption
 check_ids
 
+# --- pam_tacplus module --------------------------------------------------------
+# Built from the embedded source tarball, before any account is created, so
+# a host that cannot build is left as it was. A host that already has the
+# module from this same tarball is not rebuilt.
+build_dir=""
+pam_edit_started=0
+pam_committed=0
+restore_pam() {
+    local svc
+    for svc in $PAM_SERVICES; do
+        if [[ -f "$STATE_DIR/backup/$svc" ]]; then
+            cp -p "$STATE_DIR/backup/$svc" "$PAM_DIR/$svc"
+        fi
+    done
+    rm -f "$PAM_DIR/tacctl-auth" "$PAM_DIR/tacctl-account" "$PAM_DIR/tacctl-session"
+    warn "Install failed: PAM service files restored from backup, TACACS+ not enabled."
+}
+# Any exit before the final commit puts the PAM service files back.
+cleanup() {
+    if [[ "$pam_edit_started" == "1" && "$pam_committed" != "1" ]]; then
+        restore_pam
+    fi
+    if [[ -n "$build_dir" ]]; then rm -rf "$build_dir"; fi
+}
+
+# The installed module came from this tarball and all of its files are present.
+module_current() {
+    local path
+    [[ -f "$STATE_DIR/module" && -s "$STATE_DIR/files" ]] || return 1
+    [[ "$(cat "$STATE_DIR/module")" == "$TARBALL_SHA256" ]] || return 1
+    while IFS= read -r path; do
+        [[ -e "$path" ]] || return 1
+    done < "$STATE_DIR/files"
+    return 0
+}
+
+apt_install() {
+    # shellcheck disable=SC2086
+    DEBIAN_FRONTEND=noninteractive apt-get install -y $1 >/dev/null
+}
+
+ensure_build_tools() {
+    local need_pkgs=""
+    if [[ "$CLIENT_TEST" == "1" ]]; then
+        need_pkgs="${TACCTL_CLIENT_NEED_PKGS:-}"
+    else
+        command -v gcc  >/dev/null || need_pkgs+=" gcc"
+        command -v make >/dev/null || need_pkgs+=" make"
+        [[ -f /usr/include/security/pam_modules.h ]] || need_pkgs+=" libpam0g-dev"
+    fi
+    [[ -n "$need_pkgs" ]] || return 0
+    info "Installing build packages:${need_pkgs}"
+    if apt_install "$need_pkgs"; then return 0; fi
+    # A stale package index is the usual cause: refresh it once and retry.
+    warn "Package install failed; refreshing the package index and retrying."
+    apt-get update >/dev/null || true
+    apt_install "$need_pkgs" || die "Could not install the build packages:${need_pkgs}
+        This host needs working package repositories to build pam_tacplus.
+        Nothing was changed: no accounts created, PAM untouched."
+}
+
+install_module() {
+    local multiarch lib_dir sec_dir="" d
+    if module_current; then
+        info "pam_tacplus is already installed from this source; not rebuilding."
+        return 0
+    fi
+    ensure_build_tools
+
+    if [[ "$CLIENT_TEST" == "1" ]]; then
+        lib_dir="$STATE_DIR/lib"
+        sec_dir="$lib_dir/security"
+        mkdir -p "$sec_dir"
+    else
+        multiarch=$(gcc -print-multiarch 2>/dev/null || true)
+        lib_dir="/usr/lib${multiarch:+/$multiarch}"
+        for d in "$lib_dir/security" /usr/lib64/security /usr/lib/security /lib/security; do
+            if [[ -f "$d/pam_unix.so" ]]; then sec_dir="$d"; break; fi
+        done
+        [[ -n "$sec_dir" ]] || die "Could not find the PAM module directory."
+    fi
+
+    if [[ -e "$lib_dir/libtac.so.5" ]] && ! grep -qxF "$lib_dir/libtac.so.5" "$STATE_DIR/files" 2>/dev/null; then
+        die "$lib_dir/libtac.so.5 already exists and was not installed by tacctl. Remove the other libtac first."
+    fi
+
+    info "Building pam_tacplus (this takes a minute)..."
+    if [[ "$CLIENT_TEST" == "1" ]]; then
+        mkdir -p "$build_dir/stage$sec_dir"
+        touch "$build_dir/stage$lib_dir/libtac.so.5.0.0" "$build_dir/stage$sec_dir/pam_tacplus.so"
+    else
+        sed -n '/^__TARBALL__$/,$p' "$0" | tail -n +2 | base64 -d > "$build_dir/src.tar.gz"
+        echo "${TARBALL_SHA256}  $build_dir/src.tar.gz" | sha256sum -c --quiet \
+            || die "Embedded pam_tacplus tarball failed its checksum."
+        tar -C "$build_dir" -xzf "$build_dir/src.tar.gz"
+        (
+            cd "$build_dir"/pam_tacplus-*/
+            ./configure --prefix=/usr --libdir="$lib_dir" --enable-pamdir="$sec_dir" >"$build_dir/build.log" 2>&1
+            make >>"$build_dir/build.log" 2>&1
+            make install DESTDIR="$build_dir/stage" >>"$build_dir/build.log" 2>&1
+        ) || { tail -20 "$build_dir/build.log" >&2; die "pam_tacplus build failed."; }
+    fi
+
+    install -m 0644 "$build_dir/stage$lib_dir/libtac.so.5.0.0" "$lib_dir/libtac.so.5.0.0"
+    ln -sf libtac.so.5.0.0 "$lib_dir/libtac.so.5"
+    install -m 0644 "$build_dir/stage$sec_dir/pam_tacplus.so" "$sec_dir/pam_tacplus.so"
+    ldconfig
+    {
+        echo "$lib_dir/libtac.so.5.0.0"
+        echo "$lib_dir/libtac.so.5"
+        echo "$sec_dir/pam_tacplus.so"
+    } > "$STATE_DIR/files"
+    echo "$TARBALL_SHA256" > "$STATE_DIR/module"
+}
+
+if [[ "$ACCOUNTS_ONLY" != "1" ]]; then
+    for svc in sshd sudo; do
+        [[ -f "$PAM_DIR/$svc" ]] || die "$PAM_DIR/$svc not found."
+        if ! grep -qE '^@include[[:space:]]+(common-auth|tacctl-auth)[[:space:]]*$' "$PAM_DIR/$svc"; then
+            die "$PAM_DIR/$svc has no '@include common-auth' line; refusing to edit an unfamiliar PAM layout."
+        fi
+    done
+    build_dir=$(mktemp -d)
+    trap cleanup EXIT
+    install_module
+fi
+
 # --- Accounts and groups -------------------------------------------------------
 sync_accounts() {
     local g name tier uid managed member priv pw home still
@@ -273,82 +400,6 @@ sync_accounts
 if [[ "$ACCOUNTS_ONLY" == "1" ]]; then
     info "Accounts synced for scope '${TAC_SCOPE}'."
     exit 0
-fi
-
-# --- Build pam_tacplus from the embedded source tarball ------------------------
-for svc in sshd sudo; do
-    [[ -f "$PAM_DIR/$svc" ]] || die "$PAM_DIR/$svc not found."
-    if ! grep -qE '^@include[[:space:]]+(common-auth|tacctl-auth)[[:space:]]*$' "$PAM_DIR/$svc"; then
-        die "$PAM_DIR/$svc has no '@include common-auth' line; refusing to edit an unfamiliar PAM layout."
-    fi
-done
-
-build_dir=$(mktemp -d)
-pam_edit_started=0
-pam_committed=0
-restore_pam() {
-    local svc
-    for svc in $PAM_SERVICES; do
-        if [[ -f "$STATE_DIR/backup/$svc" ]]; then
-            cp -p "$STATE_DIR/backup/$svc" "$PAM_DIR/$svc"
-        fi
-    done
-    rm -f "$PAM_DIR/tacctl-auth" "$PAM_DIR/tacctl-account" "$PAM_DIR/tacctl-session"
-    warn "Install failed: PAM service files restored from backup, TACACS+ not enabled."
-}
-# Any exit before the final commit puts the PAM service files back.
-cleanup() {
-    if [[ "$pam_edit_started" == "1" && "$pam_committed" != "1" ]]; then
-        restore_pam
-    fi
-    rm -rf "$build_dir"
-}
-trap cleanup EXIT
-if [[ "$CLIENT_TEST" != "1" ]]; then
-need_pkgs=""
-command -v gcc  >/dev/null || need_pkgs+=" gcc"
-command -v make >/dev/null || need_pkgs+=" make"
-[[ -f /usr/include/security/pam_modules.h ]] || need_pkgs+=" libpam0g-dev"
-if [[ -n "$need_pkgs" ]]; then
-    info "Installing build packages:${need_pkgs}"
-    # shellcheck disable=SC2086
-    DEBIAN_FRONTEND=noninteractive apt-get install -y $need_pkgs >/dev/null
-fi
-
-sed -n '/^__TARBALL__$/,$p' "$0" | tail -n +2 | base64 -d > "$build_dir/src.tar.gz"
-echo "${TARBALL_SHA256}  $build_dir/src.tar.gz" | sha256sum -c --quiet \
-    || die "Embedded pam_tacplus tarball failed its checksum."
-tar -C "$build_dir" -xzf "$build_dir/src.tar.gz"
-
-multiarch=$(gcc -print-multiarch 2>/dev/null || true)
-lib_dir="/usr/lib${multiarch:+/$multiarch}"
-sec_dir=""
-for d in "$lib_dir/security" /usr/lib64/security /usr/lib/security /lib/security; do
-    if [[ -f "$d/pam_unix.so" ]]; then sec_dir="$d"; break; fi
-done
-[[ -n "$sec_dir" ]] || die "Could not find the PAM module directory."
-
-if [[ -e "$lib_dir/libtac.so.5" && ! -f "$STATE_DIR/installed" ]]; then
-    die "$lib_dir/libtac.so.5 already exists and was not installed by tacctl. Remove the other libtac first."
-fi
-
-info "Building pam_tacplus (this takes a minute)..."
-(
-    cd "$build_dir"/pam_tacplus-*/
-    ./configure --prefix=/usr --libdir="$lib_dir" --enable-pamdir="$sec_dir" >"$build_dir/build.log" 2>&1
-    make >>"$build_dir/build.log" 2>&1
-    make install DESTDIR="$build_dir/stage" >>"$build_dir/build.log" 2>&1
-) || { tail -20 "$build_dir/build.log" >&2; die "pam_tacplus build failed."; }
-
-install -m 0644 "$build_dir/stage$lib_dir/libtac.so.5.0.0" "$lib_dir/libtac.so.5.0.0"
-ln -sf libtac.so.5.0.0 "$lib_dir/libtac.so.5"
-install -m 0644 "$build_dir/stage$sec_dir/pam_tacplus.so" "$sec_dir/pam_tacplus.so"
-ldconfig
-{
-    echo "$lib_dir/libtac.so.5.0.0"
-    echo "$lib_dir/libtac.so.5"
-    echo "$sec_dir/pam_tacplus.so"
-} > "$STATE_DIR/files"
 fi
 
 # --- PAM -----------------------------------------------------------------------

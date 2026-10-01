@@ -221,7 +221,7 @@ tacctl config linux script --scope prod -o enroll.sh       # install script for 
 tacctl config linux remove-script -o unenroll.sh           # removal script (no secrets)
 ```
 Copy the install script to the host and run it as root from a session you keep open. It:
-- builds and installs `pam_tacplus` (needs only `gcc`, `make`, `libpam0g-dev` on the host);
+- builds and installs `pam_tacplus` before creating any account (`gcc`, `make` and `libpam0g-dev` are installed with apt if missing; a host that already has the module from the same source is not rebuilt);
 - creates a local account for each user in the scope, with a locked password and a UID that is the same on every host, in `tac-users` plus `tac-readonly`, `tac-operator` or `tac-superuser`;
 - sends `sshd`, `sudo` and console `login` to TACACS+ for members of `tac-users` only (the shared `common-*` files and every other local account are untouched);
 - grants `%tac-superuser` full sudo, authenticated with the TACACS+ password.
