@@ -208,6 +208,8 @@ cmd_config() {
             echo "  restore <timestamp> [--legacy]       Restore a snapshot (prompts for confirmation); --legacy for an old-style backup"
             echo "  loglevel [debug|info|error]          Show or change log level"
             echo "  listen [show|tcp|tcp6|reset] [addr]  Show, change, or reset TCP listen address"
+            echo "         [--listener <name>]           ...of another listener (its own tacquito@<name> unit; reset removes it)"
+            echo "         [--backend <id>]              ...of another backend (default: tacacs)"
             echo "  metrics <show|enable|disable|address <host:port>|reset>  Prometheus exporter control"
             echo "  sudoers [show|install|remove] [grp]  Manage NOPASSWD sudoers drop-in for tacctl"
             echo "  sudoers tiers [show|install|remove]  Manage per-tier (RO/OP/SU) sudoers rules for TACACS+ users"

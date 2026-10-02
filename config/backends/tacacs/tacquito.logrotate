@@ -1,4 +1,5 @@
-/var/log/tacquito/accounting.log {
+# The default listener's accounting log and one per other listener.
+/var/log/tacquito/accounting.log /var/log/tacquito/accounting-*.log {
     daily
     rotate 90
     compress
@@ -6,7 +7,9 @@
     missingok
     notifempty
     create 0640 tacquito tacquito
+    sharedscripts
     postrotate
+        # Restarting tacquito.service restarts every listener's instance too.
         systemctl restart tacquito > /dev/null 2>&1 || true
     endscript
 }

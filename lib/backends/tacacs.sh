@@ -1,14 +1,14 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034  # constants assigned here are read by the other lib files
 # shellcheck disable=SC2164  # errexit is set by bin/tacctl.sh before this file is sourced
-# tacctl lib/backends/tacacs.sh -- the TACACS+ backend (tacquito): renderer (model + tacctl.yaml -> tacquito.yaml), daemon load-smoke, service and systemd drop-in, status and log sections, build/install/upgrade/uninstall steps, and legacy (pre-store) mode: migrations, the import gate, 'store rollback'
+# tacctl lib/backends/tacacs.sh -- the TACACS+ backend (tacquito): renderer (model + tacctl.yaml -> tacquito.yaml), daemon load-smoke, units, listeners and their rendered systemd drop-ins, status and log sections, build/install/upgrade/uninstall steps, and legacy (pre-store) mode: migrations, the import gate, 'store rollback'
 # Sourced by bin/tacctl.sh after lib/backend.sh (see the load block there for ordering); not executable.
 #
 # Everything tacctl knows about tacquito lives here, in three layers:
 #
 #   1. The code itself, under the names it has always had
 #      (render_tacacs_config, tacacs_render_apply, tacacs_load_smoke,
-#      cmd_config_listen, apply_tacquito_patches, ...).
+#      cmd_config_loglevel, apply_tacquito_patches, ...).
 #   2. The backend contract (lib/backend.sh): the backend_tacacs_* functions
 #      at the end of this file, which is how generic code reaches layer 1.
 #   3. Legacy mode. An install from before the store keeps a tacquito.yaml
@@ -19,7 +19,9 @@
 #      and are called by name where generic code branches on model_mode.
 #
 # tacquito.yaml is an ARTIFACT: everything in it is derived from the model
-# (lib/model.sh) and the merged tacctl.yaml view (lib/conf.sh).
+# (lib/model.sh) and the merged tacctl.yaml view (lib/conf.sh). So is the
+# systemd drop-in of each listener's unit (see "Units, listeners and their
+# systemd drop-ins"), derived from tacctl.yaml alone.
 #
 #   render_tacacs_config <model.json> <out>   pure: model -> file, nothing else
 #   tacacs_render_apply [--force]             the live config: drift gate,
@@ -32,7 +34,29 @@
 BACKEND_IDS+=(tacacs)
 
 # --- Daemon paths and build constants ---
-SERVICE_FILE="/etc/systemd/system/tacquito.service"
+# The unit of the default listener, and the name operators and tacctl use for
+# the service as a whole. Other listeners are instances of tacquito@.service
+# (see "Units, listeners and their systemd drop-ins" below).
+TACACS_UNIT="tacquito.service"
+# The default listener's drop-in directory. TACCTL_OVERRIDE_DIR and
+# TACCTL_SYSTEMD_DIR (where unit files and the instances' drop-in
+# directories live) are overridable for tests.
+OVERRIDE_DIR="${TACCTL_OVERRIDE_DIR:-/etc/systemd/system/tacquito.service.d}"
+TACACS_UNIT_DIR="${TACCTL_SYSTEMD_DIR:-$(dirname "$OVERRIDE_DIR")}"
+SERVICE_FILE="${TACACS_UNIT_DIR}/tacquito.service"
+TEMPLATE_FILE="${TACACS_UNIT_DIR}/tacquito@.service"
+# The drop-in tacctl renders into a unit's .d directory, and the hand-managed
+# one of installs from before the listener model.
+TACACS_DROPIN="tacctl.conf"
+OVERRIDE_FILE="${OVERRIDE_DIR}/tacctl-overrides.conf"
+# Mirrors of the python constants in _render_tacacs_py and of the
+# Environment= defaults in config/backends/tacacs/tacquito.service.
+TACACS_LEVEL_DEFAULT=20
+TACACS_METRICS_DEFAULT="127.0.0.1:8080"
+TACACS_METRICS_SINK="127.0.0.1:0"
+# How long a restarted unit must stay up before a settings change counts as
+# applied (_tacacs_unit_settled).
+TACACS_SETTLE_SECONDS="${TACCTL_SETTLE_SECONDS:-0.5}"
 GO_VERSION="1.26.2"
 TACQUITO_REPO="https://github.com/facebookincubator/tacquito.git"
 # Overridable so tests can point the patch overlay at a scratch checkout.
@@ -49,11 +73,12 @@ TACACS_SHARE="config/backends/tacacs"
 # =====================================================================
 
 # --- Python: renderer and read-back check -----------------------------------
-# Appended to _store_py, _model_py and _rendered_py (lib/store.sh,
-# lib/model.sh, lib/backend.sh), whose names it uses; carries its own
-# command dispatcher.
+# Appended to _store_py, _model_py, _rendered_py and _listener_py
+# (lib/store.sh, lib/model.sh, lib/backend.sh, lib/conf.sh), whose names it
+# uses; carries its own command dispatcher.
 _render_tacacs_py() {
     cat <<'PY'
+import shlex
 import shutil
 
 # ---- tacquito.yaml renderer ------------------------------------------------
@@ -372,6 +397,125 @@ def render_to_file(model, conf, out):
         raise
 
 
+# ---- systemd drop-ins: one per listener ------------------------------------
+#
+# A listener of listeners.tacacs in tacctl.yaml is one tacquito process: the
+# default one is tacquito.service, every other one an instance of
+# tacquito@.service. What differs between them is five flags, which the units
+# take from the environment; the drop-in sets them. Like tacquito.yaml it is
+# derived from tacctl.yaml alone and rendered byte-identically.
+
+TACACS_LEVEL_DEFAULT = 20
+TACACS_METRICS_DEFAULT = '127.0.0.1:8080'
+# "No exporter": a loopback port nobody can know. Also what keeps two
+# processes from colliding on one metrics port.
+TACACS_METRICS_SINK = '127.0.0.1:0'
+DROPIN_HEADER = (
+    "# GENERATED by tacctl from tacctl.yaml (listeners.tacacs and backends.tacacs). Edits here are overwritten.\n"
+    "# Change these with 'tacctl config listen', 'tacctl config loglevel' and 'tacctl config metrics';\n"
+    "# unit settings of your own belong in another .conf file of this directory.\n"
+)
+LEGACY_DROPIN_KEYS = ('TACQUITO_NETWORK', 'TACQUITO_ADDRESS', 'TACQUITO_LEVEL', 'TACQUITO_METRICS_ADDRESS')
+
+
+def tacacs_units(conf, log_dir):
+    """{listener name: drop-in text}, the default listener first. Refuses a
+    listener model that cannot be served (invalid entry, two listeners on one
+    address, reserved TLS)."""
+    problems = listeners_problems(conf)
+    if problems:
+        raise StoreError('tacctl.yaml: ' + '; '.join(problems))
+    backends = conf.get('backends')
+    settings = (backends.get('tacacs') if isinstance(backends, dict) else None) or {}
+    if not isinstance(settings, dict):
+        raise StoreError('tacctl.yaml: backends.tacacs is not a mapping')
+    level = settings.get('level', TACACS_LEVEL_DEFAULT)
+    if not is_int(level) or not 0 <= level <= 100:
+        raise StoreError('tacctl.yaml: backends.tacacs.level is not a log level (10, 20 or 30)')
+    metrics = settings.get('metrics_address', TACACS_METRICS_DEFAULT)
+    why = host_port_problem(metrics)
+    if why:
+        raise StoreError(f'tacctl.yaml: backends.tacacs.metrics_address {why}')
+    out = {}
+    for name, l in listeners_effective(conf, 'tacacs').items():
+        if name == 'default':
+            mine, log = metrics, 'accounting.log'
+        else:
+            mine, log = l['metrics_address'] or TACACS_METRICS_SINK, f'accounting-{name}.log'
+            if mine == metrics and not mine.endswith(':0'):
+                raise StoreError(f'tacctl.yaml: listeners.tacacs.{name}: metrics_address {mine} is the default listener\'s (backends.tacacs.metrics_address)')
+        env = (('TACQUITO_NETWORK', l['network']), ('TACQUITO_ADDRESS', l['address']),
+               ('TACQUITO_LEVEL', level), ('TACQUITO_METRICS_ADDRESS', mine),
+               ('TACQUITO_ACCT_LOG', os.path.join(log_dir, log)))
+        # '%' starts a specifier in a unit file.
+        out[name] = DROPIN_HEADER + '[Service]\n' + ''.join(
+            'Environment="%s=%s"\n' % (k, str(v).replace('%', '%%')) for k, v in env)
+    return out
+
+
+def render_units(conf, out_dir, log_dir, json_path, default_dropin, unit_dir):
+    """Write every listener's drop-in to <out_dir>/<name>.conf and an index,
+    one '<name>\t<status>\t<live path>' line each; the status is the live
+    drop-in's against the render, in the words of render-live."""
+    units = tacacs_units(conf, log_dir)
+    try:
+        records = rendered_load(json_path)
+    except StoreError:
+        records = None
+    os.makedirs(out_dir, exist_ok=True)
+    index = []
+    for name, text in units.items():
+        live = default_dropin if name == 'default' else os.path.join(
+            unit_dir, f'tacquito@{name}.service.d', os.path.basename(default_dropin))
+        live = os.path.abspath(live)
+        with open(os.path.join(out_dir, name + '.conf'), 'w') as f:
+            f.write(text)
+        same = False
+        if os.path.exists(live):
+            with open(live, 'rb') as f:
+                same = f.read() == text.encode()
+        if records is None:
+            status = 'same' if same else 'unreadable'
+        else:
+            status = rendered_status(records, live)
+            if same:
+                status = 'current' if status == 'ok' else 'same'
+        index.append(f'{name}\t{status}\t{live}\n')
+    with open(os.path.join(out_dir, 'index'), 'w') as f:
+        f.write(''.join(index))
+
+
+def legacy_dropin_values(path):
+    """The settings of a hand-managed tacctl-overrides.conf (the drop-in of
+    installs from before the listener model), as {TACQUITO_*: value}. Any
+    line that is not one of them is refused, by line: converting would drop
+    it, or change which of two drop-ins wins."""
+    values, foreign = {}, []
+    with open(path) as f:
+        lines = f.read().splitlines()
+    for n, raw in enumerate(lines, 1):
+        line = raw.strip()
+        if not line or line[0] in '#;' or line == '[Service]':
+            continue
+        ours = False
+        if line.startswith('Environment='):
+            try:
+                items = shlex.split(line[len('Environment='):])
+            except ValueError:
+                items = []
+            pairs = [item.partition('=') for item in items]
+            ours = bool(pairs) and all(sep and k in LEGACY_DROPIN_KEYS for k, sep, _v in pairs)
+            if ours:
+                values.update((k, v) for k, _sep, v in pairs)
+        if not ours:
+            foreign.append(f'  line {n}: {line}')
+    if foreign:
+        raise StoreError(
+            f'{path} holds lines tacctl did not write and cannot carry over:\n' + '\n'.join(foreign)
+            + '\nMove them to a drop-in of your own in that directory (another .conf file) and run this again.')
+    return values
+
+
 def load_conf_view(overrides_path):
     """The merged tacctl.yaml view arrives on stdin. A tacctl.yaml that does
     not parse would silently fall back to shipped defaults there, and with
@@ -401,7 +545,9 @@ def render_main(argv):
 
     elif cmd == 'render-live':
         # render-live <store.yaml> <out> <tacctl.yaml path> <rendered.json> <live config>
-        # (merged view on stdin). Renders the store to <out> and prints how
+        #             [<units dir> <log dir> <default drop-in> <unit dir>]
+        # (merged view on stdin). With the last four it also renders the
+        # listeners' drop-ins (render_units). Renders the store to <out> and prints how
         # the live config stands against it, in one interpreter run:
         #   current     identical to the render, and recorded as such
         #   same        identical to the render, but not (or wrongly) recorded
@@ -411,7 +557,10 @@ def render_main(argv):
         #   missing     there is no live config
         #   unreadable  differs, and the render records cannot be read
         model = store_normalize(store_load_raw(rest[0]))
-        render_to_file(model, load_conf_view(rest[2]), rest[1])
+        conf = load_conf_view(rest[2])
+        render_to_file(model, conf, rest[1])
+        if len(rest) > 5:
+            render_units(conf, rest[5], rest[6], rest[3], rest[7], rest[8])
         live = os.path.abspath(rest[4])
         try:
             status = rendered_status(rendered_load(rest[3]), live)
@@ -425,6 +574,17 @@ def render_main(argv):
             print('current' if status == 'ok' else 'same')
         else:
             print(status)
+
+    elif cmd == 'render-units':
+        # render-units <units dir> <tacctl.yaml path> <rendered.json> <log dir>
+        #              <default drop-in> <unit dir>; merged view on stdin.
+        # The drop-ins alone: needs no store.
+        render_units(load_conf_view(rest[1]), rest[0], rest[3], rest[2], rest[4], rest[5])
+
+    elif cmd == 'legacy-dropin':
+        # legacy-dropin <tacctl-overrides.conf>: its settings, KEY=VALUE lines.
+        for k, v in legacy_dropin_values(rest[0]).items():
+            print(f'{k}={v}')
 
     elif cmd == 'matches-model':
         # matches-model <tacquito.yaml>; model on stdin. Exit 0 when the
@@ -450,7 +610,7 @@ PY
 
 # Run the render program: _render_python <command> [args...].
 _render_python() {
-    python3 <(_store_py; _model_py; _rendered_py; _render_tacacs_py) "$@"
+    python3 <(_store_py; _model_py; _rendered_py; _listener_py; _render_tacacs_py) "$@"
 }
 
 # --- Renderer ---------------------------------------------------------------
@@ -509,16 +669,20 @@ tacacs_render_apply() {
 # render_stage and render_commit: generic code stages every backend before
 # it commits any (lib/backend.sh).
 
-# _tacacs_render_stage <dir> <force 0|1>: render the store into
+# _tacacs_render_stage <dir> <force 0|1> [units]: render the store into
 # <dir>/tacquito.yaml, note in <dir>/status how $CONFIG stands against it,
 # and refuse (3) when replacing $CONFIG would discard something and force
-# is not set. Touches nothing outside <dir>.
+# is not set. With 'units' the listeners' drop-ins are staged in <dir>/units
+# by the same run (for _tacacs_units_commit); they never refuse. Touches
+# nothing outside <dir>.
 _tacacs_render_stage() {
     local dir="$1" force="$2" status
+    local -a units=()
+    [[ "${3:-}" == "units" ]] && units=("${dir}/units")
 
     # One interpreter run renders the store and reports how the live file
     # stands against the render (see render-live above).
-    status=$(_tacacs_render_live "${dir}/tacquito.yaml") || return 1
+    status=$(_tacacs_render_live "${dir}/tacquito.yaml" ${units[@]+"${units[@]}"}) || return 1
 
     case "$status" in
         current|same|ok|missing) ;;
@@ -627,22 +791,47 @@ tacacs_render_check() {
     ( _tacacs_render_check_run )
 }
 
+# With 'units' the word covers the listeners' drop-ins too: the artifact
+# furthest from the render decides.
 _tacacs_render_check_run() {
-    local tmpd
+    local tmpd status word s _name _live
+    local -a states=()
     tmpd=$(mktemp -d) || exit 1
     # shellcheck disable=SC2064  # expand tmpd now; the subshell owns this trap
     trap "rm -rf '${tmpd}'" EXIT
-    _tacacs_render_live "${tmpd}/tacquito.yaml" || exit 1
-    exit 0
+    if [[ "${1:-}" != "units" ]]; then
+        _tacacs_render_live "${tmpd}/tacquito.yaml" || exit 1
+        exit 0
+    fi
+    status=$(_tacacs_render_live "${tmpd}/tacquito.yaml" "${tmpd}/units") || exit 1
+    states=("$status")
+    while IFS=$'\t' read -r _name s _live; do
+        [[ -n "$s" ]] && states+=("$s")
+    done < "${tmpd}/units/index"
+    for word in unreadable drift unrecorded missing ok same current; do
+        for s in "${states[@]}"; do
+            if [[ "$s" == "$word" ]]; then
+                echo "$word"
+                exit 0
+            fi
+        done
+    done
+    exit 1
 }
 
-# _tacacs_render_live <out>: render the current store into <out> and print
-# the state of $CONFIG against that render (one word; see render-live).
-# Returns 1, message on stderr, when the store cannot be rendered.
+# _tacacs_render_live <out> [<units dir>]: render the current store into
+# <out> and print the state of $CONFIG against that render (one word; see
+# render-live). With <units dir> the listeners' drop-ins are rendered there
+# too (render_units). Returns 1, message on stderr, when the store or the
+# listener model cannot be rendered.
 _tacacs_render_live() {
+    local -a units=()
+    if [[ -n "${2:-}" ]]; then
+        units=("$2" "$LOG_DIR" "$(_tacacs_dropin default)" "$TACACS_UNIT_DIR")
+    fi
     _conf_load_cache
     _render_python render-live "$STORE_FILE" "$1" "${TACCTL_OVERRIDES_FILE:-}" "$RENDERED_FILE" "$CONFIG" \
-        < <(printf '%s' "$_TACCTL_CFG_CACHE")
+        ${units[@]+"${units[@]}"} < <(printf '%s' "$_TACCTL_CFG_CACHE")
 }
 
 # Copy a file that is about to be overwritten into backups/legacy/. A file
@@ -743,37 +932,83 @@ _tacacs_smoke_stop() {
 }
 
 # =====================================================================
-#  SERVICE AND SYSTEMD DROP-IN
+#  SERVICE, LISTENERS AND SYSTEMD DROP-INS
 # =====================================================================
 
 # Most recent login timestamp for a user, or "never". Parses the accounting
 # log for JSON lines that pair "User":"<name>" with cmd=login (Flags:2 START).
 # Session stops (cmd=logout / cmd=exit on Flags:4) are excluded.
+# Every listener has an accounting log of its own; the newest login wins.
 _tacacs_last_login() {
-    local username="$1"
-    [[ -r "$ACCT_LOG" ]] || { echo "never"; return; }
-    local ts
-    ts=$(grep -F "\"User\":\"${username}\"" "$ACCT_LOG" 2>/dev/null \
-        | grep -F 'cmd=login' \
-        | tail -1 \
-        | grep -oE '[0-9]{4}/[0-9]{2}/[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}' \
-        | head -1)
-    if [[ -z "$ts" ]]; then
+    local username="$1" log ts best=""
+    for log in "$ACCT_LOG" "$LOG_DIR"/accounting-*.log; do
+        [[ -r "$log" ]] || continue
+        ts=$(grep -F "\"User\":\"${username}\"" "$log" 2>/dev/null \
+            | grep -F 'cmd=login' \
+            | tail -1 \
+            | grep -oE '[0-9]{4}/[0-9]{2}/[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}' \
+            | head -1) || ts=""
+        if [[ -n "$ts" && ( -z "$best" || "$ts" > "$best" ) ]]; then
+            best="$ts"
+        fi
+    done
+    if [[ -z "$best" ]]; then
         echo "never"
     else
-        echo "${ts//\//-}"
+        echo "${best//\//-}"
     fi
 }
 
-# --- Systemd service drop-in helpers ---
-# User-customized flags (-network, -address, -level) live as Environment=
-# entries in a drop-in so that `tacctl upgrade` can safely replace the main
-# service unit without clobbering them. Template defaults are in
-# config/backends/tacacs/tacquito.service; the drop-in only records overrides.
-OVERRIDE_DIR="${TACCTL_OVERRIDE_DIR:-/etc/systemd/system/tacquito.service.d}"
-OVERRIDE_FILE="${OVERRIDE_DIR}/tacctl-overrides.conf"
+# --- Units, listeners and their systemd drop-ins ---
+#
+# One tacquito process serves one listener, so a listener of
+# listeners.tacacs in tacctl.yaml (lib/conf.sh: _listener_py) is one systemd
+# unit:
+#
+#   default           tacquito.service, the unit it has always been
+#   any other <name>  tacquito@<name>.service, an instance of the template
+#                     unit tacquito@.service
+#
+# The default listener is deliberately not 'tacquito@default'. systemd has no
+# way to make 'tacquito.service' a name of a template instance: an Alias= in
+# the template's [Install] section is refused when the instance is enabled
+# ("cannot alias"), and a symlink tacquito.service -> tacquito@default.service
+# is rejected when units are loaded ("symlink target name type does not match
+# source"); a plain unit may only be aliased by a plain name (systemd.unit(5),
+# checked with systemd 255). A wrapper unit of that name would answer
+# 'systemctl is-active tacquito' for itself, not for the daemon, and
+# 'journalctl -u tacquito' matches on the unit a process runs in, so it would
+# show nothing of the daemon. Keeping the default listener in tacquito.service
+# keeps every one of those exactly as it was. The instances are PartOf= and
+# WantedBy= tacquito.service: stop, restart, start, enable and disable of
+# 'tacquito' act on all listeners.
+#
+# The flags that differ per listener (-network, -address, -level,
+# -metrics-address, -acct-log-path) reach a unit as TACQUITO_* environment
+# variables from a drop-in, <unit>.d/tacctl.conf. The drop-in is an ARTIFACT
+# like tacquito.yaml: rendered from tacctl.yaml (listeners.tacacs.<name>,
+# backends.tacacs.level, backends.tacacs.metrics_address), staged and
+# committed with it (backend_tacacs_render_stage/_commit), recorded in
+# rendered.json. Unlike tacquito.yaml it holds nothing tacctl.yaml does not,
+# so a hand edit never refuses a command: the next render replaces it and
+# keeps a copy under backups/legacy/.
+#
+# Changing a listener, the log level or the metrics address
+# (_tacacs_settings_apply) does not go through store_apply: it renders no
+# tacquito.yaml, so it needs no store and works on an install still in
+# legacy mode, as these commands always did; and it proves the change by
+# restarting the unit and puts everything back when the unit does not come up,
+# which store_apply does not do. It snapshots first when there is a store.
+#
+# Installs from before the listener model kept these settings in a
+# hand-managed drop-in, tacquito.service.d/tacctl-overrides.conf, which was
+# also their source of truth. While that file exists the install is "not
+# converted": its values are what is in effect and what is shown, and tacctl
+# renders no drop-in beside it. 'tacctl upgrade' converts
+# (_tacacs_units_install), and so does the first settings change.
 
-# Read an Environment= override; echo empty if not set.
+# Read one Environment= value of the hand-managed drop-in of an install that
+# is not converted; echo empty if not set.
 # `|| true` absorbs grep's exit-1-on-no-match so `pipefail + set -e`
 # callers don't abort when the override file doesn't exist / is empty.
 read_service_override() {
@@ -781,38 +1016,397 @@ read_service_override() {
     { grep -oP "^Environment=\"${key}=\K[^\"]*" "$OVERRIDE_FILE" 2>/dev/null || true; } | tail -1
 }
 
-# Write (or replace) an Environment= override for the given key.
-set_service_override() {
-    local key="$1" value="$2"
-    mkdir -p "$OVERRIDE_DIR"
-    if [[ ! -f "$OVERRIDE_FILE" ]] || ! grep -q "^\[Service\]" "$OVERRIDE_FILE"; then
-        local tmp; tmp=$(mktemp)
-        echo "[Service]" > "$tmp"
-        [[ -f "$OVERRIDE_FILE" ]] && cat "$OVERRIDE_FILE" >> "$tmp"
-        mv "$tmp" "$OVERRIDE_FILE"
-    fi
-    sed -i "/^Environment=\"${key}=/d" "$OVERRIDE_FILE"
-    echo "Environment=\"${key}=${value}\"" >> "$OVERRIDE_FILE"
+# True while the hand-managed drop-in is still there.
+_tacacs_units_legacy() {
+    [[ -f "$OVERRIDE_FILE" ]]
 }
 
-# Remove a single override key; drop the file (and dir) if no overrides remain.
-clear_service_override() {
-    local key="$1"
-    [[ -f "$OVERRIDE_FILE" ]] || return 0
-    sed -i "/^Environment=\"${key}=/d" "$OVERRIDE_FILE"
-    if ! grep -q "^Environment=" "$OVERRIDE_FILE"; then
-        rm -f "$OVERRIDE_FILE"
-        rmdir "$OVERRIDE_DIR" 2>/dev/null || true
+# _tacacs_unit <listener>: the systemd unit that serves it.
+_tacacs_unit() {
+    if [[ "${1:-default}" == "default" ]]; then
+        echo "$TACACS_UNIT"
+    else
+        echo "tacquito@${1}.service"
     fi
+}
+
+# _tacacs_dropin <listener>: the drop-in tacctl renders for it.
+_tacacs_dropin() {
+    if [[ "${1:-default}" == "default" ]]; then
+        echo "${OVERRIDE_DIR}/${TACACS_DROPIN}"
+    else
+        echo "${TACACS_UNIT_DIR}/tacquito@${1}.service.d/${TACACS_DROPIN}"
+    fi
+}
+
+# _tacacs_acct_log <listener>: its accounting log.
+_tacacs_acct_log() {
+    if [[ "${1:-default}" == "default" ]]; then
+        echo "$ACCT_LOG"
+    else
+        echo "${LOG_DIR}/accounting-${1}.log"
+    fi
+}
+
+# The listeners in effect, one '<name> <network> <address>' line each, the
+# default listener first. Most installs have the default listener on its
+# default address, which costs no read of tacctl.yaml.
+_tacacs_listener_lines() {
+    if _tacacs_units_legacy; then
+        local net addr
+        net=$(read_service_override TACQUITO_NETWORK)
+        addr=$(read_service_override TACQUITO_ADDRESS)
+        echo "default ${net:-tcp} ${addr:-:49}"
+        return 0
+    fi
+    if ! grep -qs 'listeners' "$TACCTL_OVERRIDES_FILE"; then
+        echo "default tcp :49"
+        return 0
+    fi
+    local name net addr _rest
+    while IFS=$'\t' read -r name net addr _rest; do
+        echo "${name} ${net} ${addr}"
+    done < <(backend_listeners tacacs)
+}
+
+# _tacacs_setting <level|metrics_address>: '<value> <override|default>'.
+_tacacs_setting() {
+    local key="$1" value="" fallback
+    case "$key" in
+        level) fallback="$TACACS_LEVEL_DEFAULT" ;;
+        *)     fallback="$TACACS_METRICS_DEFAULT" ;;
+    esac
+    if _tacacs_units_legacy; then
+        case "$key" in
+            level) value=$(read_service_override TACQUITO_LEVEL) ;;
+            *)     value=$(read_service_override TACQUITO_METRICS_ADDRESS) ;;
+        esac
+    elif grep -qs 'backends' "$TACCTL_OVERRIDES_FILE" && conf_has_override "backends.tacacs.${key}"; then
+        value=$(conf_get "backends.tacacs.${key}")
+    fi
+    if [[ -n "$value" ]]; then
+        echo "${value} override"
+    else
+        echo "${fallback} default"
+    fi
+}
+
+# -u arguments for journalctl, one per line: the default listener's unit as
+# it has always been named, then every other listener's.
+_tacacs_journal_units() {
+    printf '%s\n' -u tacquito
+    local name _net _addr
+    while read -r name _net _addr; do
+        [[ "$name" == "default" ]] || printf '%s\n' -u "$(_tacacs_unit "$name")"
+    done < <(_tacacs_listener_lines)
+}
+
+# --- Rendering the drop-ins ---
+
+# _tacacs_units_stage <dir>: render every listener's drop-in into
+# <dir>/units (see render_units) without a store. Returns 1, message on
+# stderr, when the listener model cannot be served.
+_tacacs_units_stage() {
+    _conf_load_cache
+    _render_python render-units "${1}/units" "${TACCTL_OVERRIDES_FILE:-}" "$RENDERED_FILE" \
+        "$LOG_DIR" "$(_tacacs_dropin default)" "$TACACS_UNIT_DIR" \
+        < <(printf '%s' "$_TACCTL_CFG_CACHE")
+}
+
+# _tacacs_units_commit <dir>: install the drop-ins staged in <dir>/units and
+# remove those of listeners that are gone. Prints the unit of every drop-in
+# it wrote or removed, one per line (nothing: all were current). Files only:
+# the caller reloads systemd and restarts.
+_tacacs_units_commit() {
+    local dir="${1}/units" name status live f inst
+    local -a names=()
+    [[ -f "${dir}/index" ]] || return 0
+    while IFS=$'\t' read -r name status live; do
+        [[ -n "$name" ]] || continue
+        names+=("$name")
+        case "$status" in
+            current)
+                continue
+                ;;
+            same)
+                rendered_record "$live" || return 1
+                continue
+                ;;
+            unreadable)
+                error "Cannot read ${RENDERED_FILE}; refusing to overwrite ${live}."
+                return 1
+                ;;
+            drift|unrecorded)
+                _tacacs_save_displaced "$live" || return 1
+                ;;
+        esac
+        mkdir -p "$(dirname "$live")" || return 1
+        chmod 755 "$(dirname "$live")"
+        cp "${dir}/${name}.conf" "${live}.tacctl-new" || return 1
+        chmod 644 "${live}.tacctl-new"
+        mv -f "${live}.tacctl-new" "$live" || { rm -f "${live}.tacctl-new"; return 1; }
+        rendered_record "$live" || return 1
+        _tacacs_unit "$name"
+    done < "${dir}/index"
+
+    for f in "$TACACS_UNIT_DIR"/tacquito@*.service.d/"$TACACS_DROPIN"; do
+        [[ -f "$f" ]] || continue
+        inst="${f%.service.d/*}"
+        inst="${inst##*/tacquito@}"
+        [[ " ${names[*]} " == *" ${inst} "* ]] && continue
+        rm -f "$f" || return 1
+        rmdir "$(dirname "$f")" 2>/dev/null || true
+        rendered_forget "$f" || return 1
+        _tacacs_unit "$inst"
+    done
+    return 0
+}
+
+# --- Copies to put back when a change does not hold ---
+
+# Every file a settings change or a unit install can touch.
+_tacacs_units_files() {
+    printf '%s\n' "$TACCTL_OVERRIDES_FILE" "$RENDERED_FILE" "$SERVICE_FILE" "$TEMPLATE_FILE" \
+        "$OVERRIDE_FILE" "$(_tacacs_dropin default)"
+    local f
+    for f in "$TACACS_UNIT_DIR"/tacquito@*.service.d/"$TACACS_DROPIN"; do
+        [[ -f "$f" ]] && printf '%s\n' "$f"
+    done
+    return 0
+}
+
+# _tacacs_units_keep <dir>: copy them. Line n of <dir>/index names the file
+# kept as <dir>/n (no such copy: the file did not exist).
+_tacacs_units_keep() {
+    local dir="$1" path n=0
+    mkdir -p "$dir" || return 1
+    : > "${dir}/index" || return 1
+    while IFS= read -r path; do
+        [[ -n "$path" ]] || continue
+        n=$((n + 1))
+        printf '%s\n' "$path" >> "${dir}/index"
+        if [[ -f "$path" ]]; then
+            cp -p "$path" "${dir}/${n}" || return 1
+        fi
+    done < <(_tacacs_units_files)
+}
+
+# _tacacs_units_restore <dir>: put them back, and remove drop-ins of
+# instances that did not exist then. Never fails: it warns per file.
+_tacacs_units_restore() {
+    local dir="$1" path n=0 f
+    while IFS= read -r path; do
+        n=$((n + 1))
+        if [[ -f "${dir}/${n}" ]]; then
+            mkdir -p "$(dirname "$path")" || true
+        fi
+        _backends_render_put "${dir}/${n}" "$path"
+    done < "${dir}/index"
+    for f in "$TACACS_UNIT_DIR"/tacquito@*.service.d/"$TACACS_DROPIN"; do
+        [[ -f "$f" ]] || continue
+        if ! grep -qxF -- "$f" "${dir}/index"; then
+            rm -f "$f"
+            rmdir "$(dirname "$f")" 2>/dev/null || true
+        fi
+    done
+    rmdir "$OVERRIDE_DIR" 2>/dev/null || true
+    _conf_invalidate
+    return 0
+}
+
+# tacctl.yaml must parse before a setting is written into it: conf_set reads
+# a file it cannot parse as empty and would replace it. Returns 1, message on
+# stderr.
+_tacacs_overrides_readable() {
+    [[ -f "$TACCTL_OVERRIDES_FILE" ]] || return 0
+    python3 -c '
+import sys, yaml
+doc = yaml.safe_load(open(sys.argv[1]))
+sys.exit(0 if doc is None or isinstance(doc, dict) else 1)
+' "$TACCTL_OVERRIDES_FILE" 2>/dev/null && return 0
+    error "${TACCTL_OVERRIDES_FILE} is not valid YAML ('tacctl config validate' shows where); fix it first."
+    return 1
+}
+
+# --- Installs that are not converted yet ---
+
+# _tacacs_listener_json <name> <network> <address>: the listener's entry in
+# tacctl.yaml with these two set and its other keys kept, as JSON.
+_tacacs_listener_json() {
+    python3 -c '
+import json, sys
+cur = json.loads(sys.argv[1])
+cur = cur if isinstance(cur, dict) else {}
+cur.update(network=sys.argv[2], address=sys.argv[3])
+print(json.dumps(cur))
+' "$(conf_get_json "listeners.tacacs.${1}")" "$2" "$3"
+}
+
+# Write what the hand-managed drop-in says into tacctl.yaml: a key it sets is
+# set, a key it does not set goes back to the default (the file is the truth
+# for as long as it exists). The file itself stays; _tacacs_legacy_retire
+# removes it once the rendered drop-in is in place. Returns 1, message on
+# stderr, for a file tacctl cannot carry over or a value the schema refuses.
+_tacacs_legacy_import() {
+    local out key value net="" addr="" level="" metrics=""
+    out=$(_render_python legacy-dropin "$OVERRIDE_FILE") || return 1
+    while IFS='=' read -r key value; do
+        case "$key" in
+            TACQUITO_NETWORK)         net="$value" ;;
+            TACQUITO_ADDRESS)         addr="$value" ;;
+            TACQUITO_LEVEL)           level="$value" ;;
+            TACQUITO_METRICS_ADDRESS) metrics="$value" ;;
+        esac
+    done <<< "$out"
+    if [[ -n "${net}${addr}" ]]; then
+        conf_set_json listeners.tacacs.default \
+            "$(printf '{"network": "%s", "address": "%s"}' "${net:-tcp}" "${addr:-:49}")" || return 1
+    else
+        conf_unset listeners.tacacs.default || return 1
+    fi
+    if [[ -n "$level" ]]; then
+        conf_set backends.tacacs.level "$level" || return 1
+    else
+        conf_unset backends.tacacs.level || return 1
+    fi
+    if [[ -n "$metrics" ]]; then
+        conf_set backends.tacacs.metrics_address "$metrics" || return 1
+    else
+        conf_unset backends.tacacs.metrics_address || return 1
+    fi
+}
+
+# Remove the hand-managed drop-in, keeping a copy under backups/legacy/.
+# Called once the drop-in rendered from its imported values is installed.
+_tacacs_legacy_retire() {
+    _tacacs_units_legacy || return 0
+    local dir="${BACKUP_DIR}/legacy" dest
+    mkdir -p "$dir" || return 1
+    chmod 700 "$dir"
+    dest="${dir}/$(basename "$OVERRIDE_FILE").$(date +%Y%m%d_%H%M%S_%3N)"
+    cp "$OVERRIDE_FILE" "$dest" || return 1
+    chmod 600 "$dest"
+    rm -f "$OVERRIDE_FILE" "${OVERRIDE_FILE}.bak" || return 1
+    info "Listener, log level and metrics settings moved from ${OVERRIDE_FILE} into ${TACCTL_OVERRIDES_FILE} (the old drop-in is kept as ${dest})."
+}
+
+# --- Instances ---
+
+# Bring the template instances in line with the listeners: every listener
+# other than the default one has its instance enabled and running, and an
+# enabled instance without a listener is stopped and disabled. Cheap when
+# there is neither. Never fails the caller.
+_tacacs_instances_sync() {
+    local name _net _addr link inst
+    local -a names=()
+    while read -r name _net _addr; do
+        [[ -n "$name" && "$name" != "default" ]] || continue
+        names+=("$name")
+        systemctl enable --quiet --now "$(_tacacs_unit "$name")" 2>/dev/null \
+            || warn "Could not enable and start $(_tacacs_unit "$name") — check: systemctl status $(_tacacs_unit "$name")"
+    done < <(_tacacs_listener_lines)
+    for link in "$TACACS_UNIT_DIR"/tacquito.service.wants/tacquito@*.service; do
+        [[ -L "$link" ]] || continue
+        inst="${link##*/tacquito@}"
+        inst="${inst%.service}"
+        [[ " ${names[*]-} " == *" ${inst} "* ]] && continue
+        systemctl disable --quiet --now "$(_tacacs_unit "$inst")" 2>/dev/null || true
+    done
+    return 0
+}
+
+# Has <unit> stayed up? A daemon that cannot bind its address exits within
+# milliseconds of a start systemd already called successful.
+_tacacs_unit_settled() {
+    sleep "$TACACS_SETTLE_SECONDS"
+    systemctl is-active --quiet "$1"
+}
+
+# --- Changing a setting ---
+
+# _tacacs_settings_apply <all|listener> <writer> [<arg>...]
+# Run <writer> (conf_* calls changing listeners.tacacs or backends.tacacs)
+# and make the units follow: render the drop-ins, reload systemd, restart
+# what the change concerns and check that it stayed up.
+#   all        the change concerns every listener (log level, metrics, the
+#              default listener: restarting tacquito.service restarts all)
+#   <listener> only that listener's instance is restarted, started (new) or
+#              stopped (removed)
+# An install that is not converted is converted first.
+#   return 0  applied
+#          1  failed or refused; tacctl.yaml, the drop-ins and the units are
+#             as they were (message on stderr)
+# No store is needed. Call it in the current shell.
+_tacacs_settings_apply() {
+    local target="$1"
+    shift
+    local keep unit
+    _tacacs_overrides_readable || return 1
+    mkdir -p "$TACCTL_STATE_DIR" || return 1
+    keep=$(mktemp -d "${TACCTL_STATE_DIR}/.units.XXXXXX") || return 1
+    if ! _tacacs_units_keep "${keep}/keep"; then
+        rm -rf "$keep"
+        return 1
+    fi
+    if ! backup_snapshot; then
+        rm -rf "$keep"
+        error "Nothing was changed: the pre-change snapshot could not be made."
+        return 1
+    fi
+
+    if { _tacacs_units_legacy && ! _tacacs_legacy_import; } || ! "$@" || ! _tacacs_units_stage "$keep"; then
+        _tacacs_units_restore "${keep}/keep"
+        rm -rf "$keep"
+        error "Nothing was changed."
+        return 1
+    fi
+    if ! _tacacs_units_commit "$keep" > /dev/null || ! _tacacs_legacy_retire; then
+        _tacacs_units_restore "${keep}/keep"
+        rm -rf "$keep"
+        systemctl daemon-reload
+        error "The change could not be installed. Settings and drop-ins are as they were."
+        return 1
+    fi
+    systemctl daemon-reload
+
+    if [[ "$target" == "all" || "$target" == "default" ]]; then
+        unit="tacquito"
+        systemctl restart "$unit"
+        _tacacs_instances_sync
+    else
+        unit=$(_tacacs_unit "$target")
+        if [[ ! -f "$(_tacacs_dropin "$target")" ]]; then
+            # The listener was removed: nothing to prove.
+            systemctl disable --quiet --now "$unit" 2>/dev/null || true
+            rm -rf "$keep"
+            return 0
+        fi
+        systemctl enable --quiet "$unit" 2>/dev/null || true
+        systemctl restart "$unit"
+    fi
+
+    if _tacacs_unit_settled "$unit"; then
+        rm -rf "$keep"
+        return 0
+    fi
+    error "${unit%.service} failed to start. Restoring previous override."
+    _tacacs_units_restore "${keep}/keep"
+    rm -rf "$keep"
+    systemctl daemon-reload
+    if [[ "$unit" == "tacquito" || -f "$(_tacacs_dropin "$target")" ]]; then
+        systemctl restart "$unit"
+    else
+        systemctl disable --quiet --now "$unit" 2>/dev/null || true
+    fi
+    return 1
 }
 
 # --- CONFIG LOGLEVEL ---
 cmd_config_loglevel() {
     local new_level="${1:-}"
 
-    local current_num
-    current_num=$(read_service_override TACQUITO_LEVEL)
-    current_num=${current_num:-20}
+    local current_num _src
+    read -r current_num _src < <(_tacacs_setting level)
 
     if [[ -z "$new_level" ]]; then
         local level_name="unknown"
@@ -845,72 +1439,85 @@ cmd_config_loglevel() {
         return
     fi
 
-    # Default level (20) uses the template default -- clear the override
-    # instead of pinning it, so future template bumps can move the default.
-    if [[ "$level_num" == "20" ]]; then
-        clear_service_override TACQUITO_LEVEL
-    else
-        set_service_override TACQUITO_LEVEL "$level_num"
-    fi
-    systemctl daemon-reload
-    systemctl restart tacquito
+    # The default level (20) is not written down (conf_set prunes a value
+    # equal to the default), so a later release can move the default.
+    _tacacs_settings_apply all conf_set backends.tacacs.level "$level_num" || return 1
 
     info "Log level changed to ${new_level} (${level_num}). Service restarted."
     echo ""
 }
 
-# --- CONFIG LISTEN ---
-cmd_config_listen() {
-    local sub="${1:-}"
-    local addr="${2:-}"
+# --- CONFIG LISTEN (the contract's 'listeners' verb; CLI in lib/backend.sh) ---
 
-    local current_net current_addr net_src addr_src
-    current_net=$(read_service_override TACQUITO_NETWORK)
-    if [[ -n "$current_net" ]]; then net_src="override"; else net_src="default"; fi
-    current_net=${current_net:-tcp}
-    current_addr=$(read_service_override TACQUITO_ADDRESS)
-    if [[ -n "$current_addr" ]]; then addr_src="override"; else addr_src="default"; fi
-    current_addr=${current_addr:-:49}
+# _tacacs_listener_get <name>: sets L_NET, L_ADDR and L_SRC (override|default)
+# of a listener in effect. Returns 1 when there is none of that name.
+_tacacs_listener_get() {
+    local want="$1" name net addr
+    L_NET="" L_ADDR="" L_SRC="default"
+    while read -r name net addr; do
+        if [[ "$name" == "$want" ]]; then
+            L_NET="$net"
+            L_ADDR="$addr"
+        fi
+    done < <(_tacacs_listener_lines)
+    [[ -n "$L_NET" ]] || return 1
+    if _tacacs_units_legacy; then
+        if [[ -n "$(read_service_override TACQUITO_NETWORK)$(read_service_override TACQUITO_ADDRESS)" ]]; then
+            L_SRC="override"
+        fi
+    elif [[ "$want" != "default" ]] || conf_has_override "listeners.tacacs.${want}"; then
+        L_SRC="override"
+    fi
+    return 0
+}
 
+_tacacs_listener_show() {
+    local want="$1" name net addr
+    if ! _tacacs_listener_get "$want"; then
+        error "No listener '${want}'. Create it: tacctl config listen --listener ${want} tcp <address>"
+        return 1
+    fi
+    if [[ "$want" != "default" ]]; then
+        echo "  Listener '${want}': ${L_NET} ${L_ADDR}"
+        echo "  ($(_tacacs_unit "$want"); set in ${TACCTL_OVERRIDES_FILE})"
+        return 0
+    fi
+    echo "  Current listener: ${L_NET} ${L_ADDR}"
+    if [[ "$L_SRC" != "override" ]]; then
+        echo "  (template default)"
+    elif _tacacs_units_legacy; then
+        echo "  (override in ${OVERRIDE_FILE})"
+    else
+        echo "  (override in ${TACCTL_OVERRIDES_FILE})"
+    fi
+    while read -r name net addr; do
+        [[ "$name" == "default" ]] || echo "  Listener '${name}': ${net} ${addr} ($(_tacacs_unit "$name"))"
+    done < <(_tacacs_listener_lines)
+}
+
+# Would listeners.tacacs.<name> = <json> collide with another listener or be
+# refused by the schema? Checked before anything is written. Message on stderr.
+_tacacs_listener_check() {
+    _conf_load_cache
+    python3 <(_listener_py; cat <<'PY'
+import json, sys
+doc, name, value = json.loads(sys.argv[1]), sys.argv[2], json.loads(sys.argv[3])
+section = doc.get('listeners') if isinstance(doc.get('listeners'), dict) else {}
+mine = section.get('tacacs') if isinstance(section.get('tacacs'), dict) else {}
+doc['listeners'] = dict(section, tacacs=dict(mine, **{name: value}))
+path = f'listeners.tacacs.{name}'
+bad = listeners_problems(doc, only=path)
+if bad:
+    print(bad[0][len(path) + 2:], file=sys.stderr)
+    sys.exit(1)
+PY
+) "$_TACCTL_CFG_CACHE" "$1" "$2"
+}
+
+_tacacs_listener_set() {
+    local name="$1" sub="$2" addr="$3"
     case "$sub" in
-        ""|show)
-            echo ""
-            echo "  Current listener: ${current_net} ${current_addr}"
-            if [[ "$net_src" == "override" || "$addr_src" == "override" ]]; then
-                echo "  (override in ${OVERRIDE_FILE})"
-            else
-                echo "  (template default)"
-            fi
-            echo ""
-            echo "  Usage: tacctl config listen <show|tcp|tcp6|reset> [address]"
-            echo "  Examples:"
-            echo "    tacctl config listen tcp :49"
-            echo "    tacctl config listen tcp 10.1.0.1:49"
-            echo "    tacctl config listen tcp6 [::]:49"
-            echo "    tacctl config listen reset       # drop override, use template default"
-            echo ""
-            return
-            ;;
-        reset)
-            if [[ "$net_src" == "default" && "$addr_src" == "default" ]]; then
-                info "No listener override set. Already on template default (${current_net} ${current_addr})."
-                return
-            fi
-            clear_service_override TACQUITO_NETWORK
-            clear_service_override TACQUITO_ADDRESS
-            systemctl daemon-reload
-            systemctl restart tacquito
-            if systemctl is-active --quiet tacquito; then
-                info "Listener override removed. Using template default. Service restarted."
-            else
-                error "tacquito failed to start after reset."
-                return 1
-            fi
-            echo ""
-            return
-            ;;
-        tcp|tcp6)
-            ;;
+        tcp|tcp6) ;;
         *)
             error "Invalid subcommand: '${sub}'. Use: show, tcp, tcp6, or reset"
             return 1
@@ -924,12 +1531,21 @@ cmd_config_listen() {
 
     validate_listen_address "$sub" "$addr" || return 1
 
-    if [[ "$current_net" == "$sub" && "$current_addr" == "$addr" ]]; then
+    local existed=1
+    _tacacs_listener_get "$name" || existed=0
+    if [[ "$L_NET" == "$sub" && "$L_ADDR" == "$addr" ]]; then
         info "Already listening on ${sub} ${addr}."
         return
     fi
 
-    if [[ "$sub" == "tcp6" && "$current_net" != "tcp6" ]]; then
+    local json why
+    json=$(_tacacs_listener_json "$name" "$sub" "$addr") || return 1
+    if ! why=$(_tacacs_listener_check "$name" "$json" 2>&1); then
+        error "Cannot listen on ${sub} ${addr}: ${why}"
+        return 1
+    fi
+
+    if [[ "$sub" == "tcp6" && "$L_NET" != "tcp6" ]]; then
         echo ""
         warn "tcp6 enables dual-stack sockets on most platforms."
         warn "IPv4 clients connect with mapped addresses (::ffff:a.b.c.d)"
@@ -943,34 +1559,43 @@ cmd_config_listen() {
         fi
     fi
 
-    # Snapshot override file for rollback if restart fails.
-    local had_override="false"
-    if [[ -f "$OVERRIDE_FILE" ]]; then
-        cp "$OVERRIDE_FILE" "${OVERRIDE_FILE}.bak"
-        had_override="true"
-    fi
+    # A unit that does not come up with the new address gets the previous
+    # settings back (see _tacacs_settings_apply).
+    _tacacs_settings_apply "$name" conf_set_json "listeners.tacacs.${name}" "$json" || return 1
 
-    set_service_override TACQUITO_NETWORK "$sub"
-    set_service_override TACQUITO_ADDRESS "$addr"
-
-    systemctl daemon-reload
-    systemctl restart tacquito
-
-    if systemctl is-active --quiet tacquito; then
+    if [[ "$name" == "default" ]]; then
         info "Listener changed to ${sub} ${addr}. Service restarted."
-        rm -f "${OVERRIDE_FILE}.bak"
+    elif (( existed )); then
+        info "Listener '${name}' changed to ${sub} ${addr}. $(_tacacs_unit "$name") restarted."
     else
-        error "tacquito failed to start. Restoring previous override."
-        if [[ "$had_override" == "true" ]]; then
-            mv "${OVERRIDE_FILE}.bak" "$OVERRIDE_FILE"
-        else
-            rm -f "$OVERRIDE_FILE"
-            rmdir "$OVERRIDE_DIR" 2>/dev/null || true
-        fi
-        systemctl daemon-reload
-        systemctl restart tacquito
+        info "Listener '${name}' added on ${sub} ${addr}. $(_tacacs_unit "$name") enabled and started."
+        info "It logs accounting to $(_tacacs_acct_log "$name") and exports no metrics unless listeners.tacacs.${name}.metrics_address is set."
+    fi
+    echo ""
+}
+
+_tacacs_listener_reset() {
+    local name="$1"
+    if ! _tacacs_listener_get "$name"; then
+        error "No listener '${name}'."
         return 1
     fi
+    if [[ "$name" != "default" ]]; then
+        # Only the built-in listener has a default to go back to.
+        _tacacs_settings_apply "$name" conf_unset "listeners.tacacs.${name}" || return 1
+        info "Listener '${name}' removed. $(_tacacs_unit "$name") stopped and disabled."
+        echo ""
+        return
+    fi
+    if [[ "$L_SRC" == "default" ]]; then
+        info "No listener override set. Already on template default (${L_NET} ${L_ADDR})."
+        return
+    fi
+    if ! _tacacs_settings_apply default conf_unset listeners.tacacs.default; then
+        error "tacquito failed to start after reset."
+        return 1
+    fi
+    info "Listener override removed. Using template default. Service restarted."
     echo ""
 }
 
@@ -982,6 +1607,8 @@ cmd_config_listen() {
 # We deliberately do NOT toggle tacquito's -export-promhttp flag: upstream's
 # goroutine unconditionally cancels the server context when the exporter
 # returns, so `-export-promhttp=false` would tear down the whole daemon.
+# This is the default listener's exporter; another listener exports metrics
+# only when listeners.tacacs.<name>.metrics_address is set.
 cmd_config_metrics() {
     local sub="${1:-}"
     local arg="${2:-}"
@@ -989,13 +1616,11 @@ cmd_config_metrics() {
     # Defaults must match config/backends/tacacs/tacquito.service Environment= lines.
     # Loopback-only by default: local scrapers on the box can reach it, external
     # ones can't without an explicit `tacctl config metrics address` change.
-    local default_addr="127.0.0.1:8080"
-    local disable_sink="127.0.0.1:0"
+    local default_addr="$TACACS_METRICS_DEFAULT"
+    local disable_sink="$TACACS_METRICS_SINK"
 
     local cur_addr addr_src
-    cur_addr=$(read_service_override TACQUITO_METRICS_ADDRESS)
-    if [[ -n "$cur_addr" ]]; then addr_src="override"; else addr_src="default"; fi
-    cur_addr=${cur_addr:-$default_addr}
+    read -r cur_addr addr_src < <(_tacacs_setting metrics_address)
 
     local state state_color
     if [[ "$cur_addr" == "$disable_sink" ]]; then
@@ -1044,9 +1669,7 @@ cmd_config_metrics() {
                 info "Already enabled on default (${default_addr})."
                 return
             fi
-            clear_service_override TACQUITO_METRICS_ADDRESS
-            systemctl daemon-reload
-            systemctl restart tacquito
+            _tacacs_settings_apply all conf_unset backends.tacacs.metrics_address || return 1
             info "Metrics exporter enabled on ${default_addr}/metrics."
             echo ""
             ;;
@@ -1055,9 +1678,7 @@ cmd_config_metrics() {
                 info "Already disabled (sunk to ${disable_sink})."
                 return
             fi
-            set_service_override TACQUITO_METRICS_ADDRESS "$disable_sink"
-            systemctl daemon-reload
-            systemctl restart tacquito
+            _tacacs_settings_apply all conf_set backends.tacacs.metrics_address "$disable_sink" || return 1
             info "Metrics exporter sunk to ${disable_sink} — no scraper can reach it."
             warn "Note: the exporter goroutine still runs; bind-to-loopback-0 is the"
             warn "closest 'off' state tacquito supports without an upstream patch."
@@ -1075,13 +1696,8 @@ cmd_config_metrics() {
                 error "Address must include a port (e.g. '127.0.0.1:8080' or ':8080')."
                 exit 1
             fi
-            if [[ "$arg" == "$default_addr" ]]; then
-                clear_service_override TACQUITO_METRICS_ADDRESS
-            else
-                set_service_override TACQUITO_METRICS_ADDRESS "$arg"
-            fi
-            systemctl daemon-reload
-            systemctl restart tacquito
+            # The default address is not written down (conf_set prunes it).
+            _tacacs_settings_apply all conf_set backends.tacacs.metrics_address "$arg" || return 1
             info "Metrics listen address set to ${arg}. Service restarted."
             if [[ "$arg" != 127.* && "$arg" != "[::1]"* && "$arg" != "$disable_sink" ]]; then
                 warn "Exporter is now externally reachable. Ensure downstream scrapers"
@@ -1090,9 +1706,7 @@ cmd_config_metrics() {
             echo ""
             ;;
         reset)
-            clear_service_override TACQUITO_METRICS_ADDRESS
-            systemctl daemon-reload
-            systemctl restart tacquito
+            _tacacs_settings_apply all conf_unset backends.tacacs.metrics_address || return 1
             info "Metrics override cleared. Using unit default (${default_addr})."
             echo ""
             ;;
@@ -1108,11 +1722,15 @@ cmd_config_metrics() {
 #  STATUS SECTIONS (tacctl status)
 # =====================================================================
 
-# Service state, uptime, PID, memory, listener, log level.
+# Service state, uptime, PID, memory, listener, log level: the default
+# listener's unit as this report always showed it, then one line per other
+# listener's instance.
 _tacacs_status_service() {
-    # Service state
+    # Service state. is-active prints the state and fails for anything but
+    # 'active': the word is what is shown.
     local state
-    state=$(systemctl is-active tacquito 2>/dev/null || echo "unknown")
+    state=$(systemctl is-active tacquito 2>/dev/null) || true
+    state=${state:-unknown}
     local state_color="$GREEN"
     [[ "$state" != "active" ]] && state_color="$RED"
     echo -e "  ${BOLD}Service:${NC}              ${state_color}${state}${NC}"
@@ -1135,29 +1753,40 @@ _tacacs_status_service() {
         echo -e "  ${BOLD}Memory:${NC}               ${mem}"
     fi
 
-    # Listening port
-    local listen
-    listen=$(ss -tlnp 2>/dev/null | { grep ":49 " || true; } | awk '{print $4}' | head -1)
+    # Listening port: the default listener's, from the listener model.
+    local listeners name net addr port listen
+    listeners=$(_tacacs_listener_lines)
+    read -r name net addr <<< "$listeners"
+    port="${addr##*:}"
+    listen=$(ss -tlnp 2>/dev/null | { grep ":${port} " || true; } | awk '{print $4}' | head -1)
     if [[ -n "$listen" ]]; then
         echo -e "  ${BOLD}Listening:${NC}            ${GREEN}${listen}${NC}"
     else
-        echo -e "  ${BOLD}Listening:${NC}            ${RED}port 49 not detected${NC}"
+        echo -e "  ${BOLD}Listening:${NC}            ${RED}port ${port} not detected${NC}"
     fi
 
-    # Log level
-    # Tolerate no-match: when tacquito is launched with ${TACQUITO_LEVEL}
-    # rather than a literal -level flag, grep finds nothing and (under
-    # pipefail + set -e) would abort status. `|| true` absorbs that.
-    # Log level resolution: drop-in override wins; fall back to scraping a
-    # literal -level N from ExecStart (older unit files); fall back to the
-    # template default of 20 (info). Units that use \${TACQUITO_LEVEL}
-    # placeholders would otherwise come back as "unknown".
-    local loglevel
-    loglevel=$(read_service_override TACQUITO_LEVEL)
-    if [[ -z "$loglevel" ]]; then
-        loglevel=$(systemctl show tacquito --property=ExecStart 2>/dev/null | grep -oP '\-level \K\d+' || true)
-    fi
-    loglevel=${loglevel:-20}
+    # The other listeners, one instance each.
+    local unit istate ipid
+    while read -r name net addr; do
+        [[ -n "$name" && "$name" != "default" ]] || continue
+        unit=$(_tacacs_unit "$name")
+        istate=$(systemctl is-active "$unit" 2>/dev/null) || true
+        istate=${istate:-unknown}
+        state_color="$GREEN"
+        [[ "$istate" != "active" ]] && state_color="$RED"
+        ipid=$(systemctl show "$unit" --property=MainPID 2>/dev/null | cut -d= -f2)
+        if [[ -n "$ipid" && "$ipid" != "0" ]]; then
+            ipid=", PID ${ipid}"
+        else
+            ipid=""
+        fi
+        echo -e "  ${BOLD}Listener ${name}:${NC} ${state_color}${istate}${NC} — ${net} ${addr} (${unit}${ipid})"
+    done <<< "$listeners"
+
+    # Log level: the backend's setting (tacctl.yaml; the hand-managed drop-in
+    # on an install that is not converted). Every listener runs at it.
+    local loglevel _src
+    read -r loglevel _src < <(_tacacs_setting level)
     local level_name
     case "$loglevel" in
         10) level_name="error" ;;
@@ -1177,20 +1806,27 @@ _tacacs_status_accounting() {
         log_lines=$(wc -l < "$ACCT_LOG" 2>/dev/null)
         echo -e "  ${BOLD}Accounting log:${NC}       ${log_size} (${log_lines} entries)"
     fi
+    # The other listeners' logs.
+    local log name
+    for log in "$LOG_DIR"/accounting-*.log; do
+        [[ -f "$log" ]] || continue
+        name="${log##*/accounting-}"
+        echo -e "  ${BOLD}Accounting log (${name%.log}):${NC} $(du -sh "$log" 2>/dev/null | awk '{print $1}') ($(wc -l < "$log" 2>/dev/null) entries)"
+    done
 }
 
 # Authentication counters from the metrics exporter, then recent errors.
 _tacacs_status_activity() {
-    # Prometheus metrics — auth stats. Respects the tacctl config metrics
-    # address override: when the exporter is bound to 127.0.0.1:0 (our
-    # "disabled" sink) we skip scraping and report the disabled state
-    # explicitly rather than pretending the service is unreachable.
+    # Prometheus metrics — auth stats of the default listener. Respects the
+    # tacctl config metrics address: when the exporter is bound to
+    # 127.0.0.1:0 (our "disabled" sink) we skip scraping and report the
+    # disabled state explicitly rather than pretending the service is
+    # unreachable.
     echo ""
     echo -e "  ${BOLD}Authentication Stats (since last restart):${NC}"
-    local metrics_addr metrics_url
-    metrics_addr=$(read_service_override TACQUITO_METRICS_ADDRESS)
-    metrics_addr=${metrics_addr:-127.0.0.1:8080}
-    if [[ "$metrics_addr" == "127.0.0.1:0" ]]; then
+    local metrics_addr metrics_url _src
+    read -r metrics_addr _src < <(_tacacs_setting metrics_address)
+    if [[ "$metrics_addr" == "$TACACS_METRICS_SINK" ]]; then
         echo -e "    ${YELLOW}Metrics exporter disabled (tacctl config metrics enable)${NC}"
     else
         if [[ "$metrics_addr" == :* ]]; then
@@ -1220,7 +1856,9 @@ _tacacs_status_activity() {
     echo ""
     echo -e "  ${BOLD}Recent Errors (last 5):${NC}"
     local errors
-    errors=$(journalctl -u tacquito --no-pager -n 100 --since "24 hours ago" 2>/dev/null | grep "ERROR:" | tail -5 || true)
+    local -a units
+    mapfile -t units < <(_tacacs_journal_units)
+    errors=$(journalctl "${units[@]}" --no-pager -n 100 --since "24 hours ago" 2>/dev/null | grep "ERROR:" | tail -5 || true)
     if [[ -n "$errors" ]]; then
         echo "$errors" | while IFS= read -r line; do
             echo -e "    ${RED}${line}${NC}"
@@ -1247,6 +1885,10 @@ cmd_log_clear() {
     echo -e "${BOLD}Clear tacquito logs${NC}"
     echo "--------------------------------------------"
     warn "This permanently deletes tacquito journal entries and truncates ${ACCT_LOG}."
+    local log
+    for log in "$LOG_DIR"/accounting-*.log; do
+        [[ -f "$log" ]] && warn "Also truncated: ${log}"
+    done
     warn "Historical authentication and accounting records will be lost."
 
     if [[ "$force" != "true" ]]; then
@@ -1266,9 +1908,10 @@ cmd_log_clear() {
     fi
 
     # Truncate in place so logrotate's ownership/permissions stay intact.
-    if [[ -f "$ACCT_LOG" ]]; then
-        : > "$ACCT_LOG" 2>/dev/null || warn "Could not truncate ${ACCT_LOG} (check permissions)."
-    fi
+    for log in "$ACCT_LOG" "$LOG_DIR"/accounting-*.log; do
+        [[ -f "$log" ]] || continue
+        : > "$log" 2>/dev/null || warn "Could not truncate ${log} (check permissions)."
+    done
 
     info "Logs cleared (journal + accounting)."
     echo ""
@@ -1999,8 +2642,14 @@ _tacacs_install_start() {
     fi
 
     # --- Step 7: Install systemd service ---
+    # The unit, the template for further listeners and the drop-ins; over an
+    # earlier install this is the same conversion as on upgrade.
     info "Installing systemd service..."
-    cp "${PROJECT_DIR}/${TACACS_SHARE}/tacquito.service" "$SERVICE_FILE"
+    if ! _tacacs_units_install "$PROJECT_DIR"; then
+        error "Could not install the systemd units (see above)."
+        exit 1
+    fi
+    _tacacs_units_keep_discard
     systemctl daemon-reload
     systemctl enable tacquito.service
 
@@ -2015,15 +2664,219 @@ _tacacs_install_start() {
         error "Tacquito failed to start. Check: journalctl -u tacquito"
         exit 1
     fi
+    _tacacs_instances_sync
 
     # --- Step 9: Verify ---
-    local LISTEN_CHECK
-    LISTEN_CHECK=$(ss -tlnp | grep ":49 " || true)
-    if [[ -n "$LISTEN_CHECK" ]]; then
-        info "Listening on port 49/tcp"
+    _tacacs_listen_check
+}
+
+# Is the default listener's port open? Said after a start or a restart.
+_tacacs_listen_check() {
+    local _name _net addr port
+    read -r _name _net addr < <(_tacacs_listener_lines)
+    port="${addr##*:}"
+    if [[ -n "$(ss -tlnp | grep ":${port} " || true)" ]]; then
+        info "Listening on port ${port}/tcp"
     else
-        warn "Port 49 not detected — check logs."
+        warn "Port ${port} not detected — check logs."
     fi
+}
+
+# --- The units on disk: install, upgrade, conversion ---
+#
+# _tacacs_units_install <tree>: bring the unit files and drop-ins of this
+# machine to what this release ships and what tacctl.yaml says. One function
+# for a fresh install, an upgrade and the conversion of an install from
+# before the listener model; idempotent, and it needs no store.
+#
+#   1. copies   everything it may touch is copied first (_tacacs_units_keep)
+#   2. import   the settings of the old layout go into tacctl.yaml: the
+#               hand-managed drop-in (_tacacs_legacy_import) and, for units
+#               older still, literal -network/-address/-level flags
+#   3. stage    the drop-ins are rendered from tacctl.yaml and proven
+#               (_tacacs_units_stage): a listener model that cannot be
+#               served stops here
+#   4. files    tacquito.service, tacquito@.service, the drop-ins; then the
+#               hand-managed drop-in is retired; daemon-reload
+#
+# The running daemon is not touched: systemd keeps the process it started
+# until the caller restarts the unit, and that restart is the whole
+# authentication gap. Until step 4 nothing systemd reads has changed. A
+# failure in 2-4 puts every file back from the copies (and reloads), so the
+# old unit keeps running under the old files.
+#
+# What an interruption leaves, and why a re-run converges: the hand-managed
+# drop-in is removed last, and for as long as it exists it is what every
+# reader shows and what step 2 imports again, so a run that died anywhere
+# before that repeats from the start with the same result; the unit files
+# and drop-ins are written by rename and compared before they are written,
+# so a second pass over finished work changes nothing. A reload that never
+# happened is caught by asking systemd (NeedDaemonReload).
+#
+# Sets TACACS_UNITS_STATE: '' nothing to do, 'changed', or 'stopped'
+# (refused or failed, files as they were; returns 1). After 'changed' the
+# copies stay in TACACS_UNITS_KEEP until the caller has restarted the unit:
+# _tacacs_units_keep_discard when it came up, _tacacs_units_rollback when it
+# did not.
+TACACS_UNITS_STATE=""
+TACACS_UNITS_KEEP=""
+# What _tacacs_units_install did, one line each, for the caller to print.
+TACACS_UNITS_NOTES=()
+
+_tacacs_units_install() {
+    local tree="$1" src keep f dest legacy=0 changed=0 why=""
+    src="${tree}/${TACACS_SHARE}"
+    TACACS_UNITS_STATE=""
+    TACACS_UNITS_KEEP=""
+    TACACS_UNITS_NOTES=()
+    if [[ ! -f "${src}/tacquito.service" || ! -f "${src}/tacquito@.service" ]]; then
+        _tacacs_units_stopped "the unit files are not under ${src}"
+        return 1
+    fi
+    if ! _tacacs_overrides_readable; then
+        _tacacs_units_stopped "${TACCTL_OVERRIDES_FILE} cannot be read"
+        return 1
+    fi
+
+    mkdir -p "$TACCTL_STATE_DIR" "$TACACS_UNIT_DIR" || return 1
+    # Copies an interrupted run left behind.
+    rm -rf "${TACCTL_STATE_DIR}"/.units.* 2>/dev/null || true
+    keep=$(mktemp -d "${TACCTL_STATE_DIR}/.units.XXXXXX") || return 1
+    if ! _tacacs_units_keep "${keep}/keep"; then
+        rm -rf "$keep"
+        _tacacs_units_stopped "the current unit files could not be copied"
+        return 1
+    fi
+
+    _tacacs_units_legacy && legacy=1
+    if ! _tacacs_units_import_old; then
+        why="its settings could not be moved into ${TACCTL_OVERRIDES_FILE}"
+    elif ! _tacacs_units_stage "$keep"; then
+        why="the drop-ins could not be rendered from ${TACCTL_OVERRIDES_FILE}"
+    fi
+    if [[ -n "$why" ]]; then
+        _tacacs_units_restore "${keep}/keep"
+        rm -rf "$keep"
+        _tacacs_units_stopped "$why"
+        return 1
+    fi
+
+    for f in tacquito.service "tacquito@.service"; do
+        dest="${TACACS_UNIT_DIR}/${f}"
+        cmp -s "${src}/${f}" "$dest" && continue
+        if [[ "$f" == "tacquito.service" && -f "$dest" ]]; then
+            cp "$dest" "${dest}.bak" || why="${dest} could not be backed up"
+            TACACS_UNITS_NOTES+=("Updated: ${f} (previous backed up to ${dest}.bak)")
+        elif [[ -f "$dest" ]]; then
+            TACACS_UNITS_NOTES+=("Updated: ${f}")
+        else
+            TACACS_UNITS_NOTES+=("Installed: ${f}")
+        fi
+        if [[ -z "$why" ]] && cp "${src}/${f}" "${dest}.tacctl-new" \
+            && chmod 644 "${dest}.tacctl-new" && mv -f "${dest}.tacctl-new" "$dest"; then
+            changed=1
+        else
+            rm -f "${dest}.tacctl-new"
+            why="${why:-${dest} could not be written}"
+            break
+        fi
+    done
+
+    local written=""
+    if [[ -z "$why" ]]; then
+        if written=$(_tacacs_units_commit "$keep"); then
+            if [[ -n "$written" ]]; then
+                changed=1
+                TACACS_UNITS_NOTES+=("Rendered: the listener drop-in of ${written//$'\n'/, }")
+            fi
+        else
+            why="a drop-in could not be installed"
+        fi
+    fi
+    if [[ -z "$why" ]] && (( legacy )); then
+        if _tacacs_legacy_retire; then
+            changed=1
+        else
+            why="${OVERRIDE_FILE} could not be retired"
+        fi
+    fi
+    if [[ -n "$why" ]]; then
+        _tacacs_units_restore "${keep}/keep"
+        rm -rf "$keep"
+        systemctl daemon-reload || true
+        _tacacs_units_stopped "$why"
+        return 1
+    fi
+
+    if (( changed )) || [[ "$(systemctl show tacquito --property=NeedDaemonReload 2>/dev/null | cut -d= -f2)" == "yes" ]]; then
+        systemctl daemon-reload
+    fi
+    if (( changed )); then
+        TACACS_UNITS_STATE="changed"
+        TACACS_UNITS_KEEP="$keep"
+    else
+        rm -rf "$keep"
+    fi
+    return 0
+}
+
+# Step 2 of _tacacs_units_install.
+_tacacs_units_import_old() {
+    if _tacacs_units_legacy; then
+        _tacacs_legacy_import || return 1
+    fi
+    # Units from before the drop-in carried the flags as literals in
+    # ExecStart; today's take them from the environment (${TACQUITO_*}).
+    # A literal that differs from the default and that tacctl.yaml does not
+    # already set is kept.
+    [[ -f "$SERVICE_FILE" ]] || return 0
+    # `grep | head` under pipefail + set -e: when grep finds nothing it exits
+    # 1. `|| true` on each keeps this best-effort.
+    local mig_net mig_addr mig_level
+    mig_net=$(grep -oP '\-network \K\S+' "$SERVICE_FILE" 2>/dev/null | head -1 || true)
+    mig_addr=$(grep -oP '\-address \K\S+' "$SERVICE_FILE" 2>/dev/null | head -1 || true)
+    mig_level=$(grep -oP '\-level \K\d+' "$SERVICE_FILE" 2>/dev/null | head -1 || true)
+    [[ "$mig_net" == \$* ]] && mig_net=""
+    [[ "$mig_addr" == \$* ]] && mig_addr=""
+    if [[ -n "${mig_net}${mig_addr}" && "${mig_net:-tcp} ${mig_addr:-:49}" != "tcp :49" ]] \
+        && ! conf_has_override listeners.tacacs.default; then
+        conf_set_json listeners.tacacs.default \
+            "$(printf '{"network": "%s", "address": "%s"}' "${mig_net:-tcp}" "${mig_addr:-:49}")" || return 1
+        info "  Migrated custom -network/-address flags of tacquito.service to ${TACCTL_OVERRIDES_FILE}"
+    fi
+    if [[ -n "$mig_level" && "$mig_level" != "$TACACS_LEVEL_DEFAULT" ]] \
+        && ! conf_has_override backends.tacacs.level; then
+        conf_set backends.tacacs.level "$mig_level" || return 1
+        info "  Migrated the custom -level flag of tacquito.service to ${TACCTL_OVERRIDES_FILE}"
+    fi
+    return 0
+}
+
+_tacacs_units_stopped() {
+    TACACS_UNITS_STATE="stopped"
+    echo ""
+    warn "Unit update stopped: $1."
+    warn "tacquito.service, its drop-in and the running daemon were left as they are; ${TACCTL_OVERRIDES_FILE} is unchanged."
+    warn "Listener, log level and metrics settings keep working from the files in place. Fix what is reported above and run 'tacctl upgrade' again."
+    echo ""
+}
+
+# The restart proved the new unit files: drop the copies.
+_tacacs_units_keep_discard() {
+    [[ -n "$TACACS_UNITS_KEEP" ]] && rm -rf "$TACACS_UNITS_KEEP"
+    TACACS_UNITS_KEEP=""
+    return 0
+}
+
+# The unit did not come up under the new files: put the previous ones back
+# (unit, template, drop-ins, tacctl.yaml, render records) and reload. The
+# caller restarts.
+_tacacs_units_rollback() {
+    [[ -n "$TACACS_UNITS_KEEP" ]] || return 1
+    _tacacs_units_restore "${TACACS_UNITS_KEEP}/keep"
+    _tacacs_units_keep_discard
+    systemctl daemon-reload || true
+    return 0
 }
 
 # State the upgrade phases share: set by 'build', read by 'finish'.
@@ -2114,49 +2967,34 @@ _tacacs_upgrade_build() {
     fi
 }
 
-# upgrade files <tree>: the unit (rescuing hand-edited flags into the
-# drop-in), README.md in the config directory, logrotate. Counts what it
-# replaced in SCRIPTS_UPDATED.
+# The units and drop-ins on upgrade (_tacacs_units_install, which also
+# converts an install from before the listener model): report, and count in
+# SCRIPTS_UPDATED so that 'finish' restarts. A unit update that stops is not
+# an upgrade failure: the files in place keep working, and the summary says so.
+_tacacs_upgrade_units() {
+    local note
+    _tacacs_units_install "$1" || true
+    case "$TACACS_UNITS_STATE" in
+        changed)
+            for note in ${TACACS_UNITS_NOTES[@]+"${TACACS_UNITS_NOTES[@]}"}; do
+                info "  ${note}"
+            done
+            SCRIPTS_UPDATED=$((SCRIPTS_UPDATED + 1))
+            ;;
+        stopped)
+            UPGRADE_SUMMARY_NOTES+=("Units: NOT updated — the previous unit files are in place (see 'Unit update stopped' above)")
+            ;;
+        *)
+            info "  Unchanged: tacquito.service"
+            ;;
+    esac
+}
+
+# upgrade files <tree>: the units, README.md in the config directory,
+# logrotate. Counts what it replaced in SCRIPTS_UPDATED.
 _tacacs_upgrade_files() {
     local ACTIVE_DEPLOY_DIR="$1"
-    if [[ -f "${ACTIVE_DEPLOY_DIR}/${TACACS_SHARE}/tacquito.service" ]]; then
-        if ! diff -q "${ACTIVE_DEPLOY_DIR}/${TACACS_SHARE}/tacquito.service" "$SERVICE_FILE" &>/dev/null; then
-            # Before replacing the installed unit with the new template, rescue
-            # any hand-edited -network/-address/-level flags into the drop-in.
-            # Only the pre-drop-in schema hardcoded these in ExecStart; the
-            # new template references them via TACQUITO_* env vars. We only
-            # migrate values that (a) are present AND (b) differ from the
-            # template's defaults -- otherwise there's nothing to preserve.
-            local mig_net mig_addr mig_level migrated=0
-            # `grep | head` under pipefail + set -e: when grep finds nothing
-            # it exits 1 and kills the subshell. `|| true` on each keeps the
-            # migration pass best-effort for installs whose unit file uses
-            # ${TACQUITO_*} env-var placeholders (no literal values to scrape).
-            mig_net=$(grep -oP '\-network \K\S+' "$SERVICE_FILE" 2>/dev/null | head -1 || true)
-            mig_addr=$(grep -oP '\-address \K\S+' "$SERVICE_FILE" 2>/dev/null | head -1 || true)
-            mig_level=$(grep -oP '\-level \K\d+' "$SERVICE_FILE" 2>/dev/null | head -1 || true)
-            if [[ -n "$mig_net" && "$mig_net" != "tcp" && "$mig_net" != "\${TACQUITO_NETWORK}" ]]; then
-                [[ -z "$(read_service_override TACQUITO_NETWORK)" ]] && { set_service_override TACQUITO_NETWORK "$mig_net"; migrated=1; }
-            fi
-            if [[ -n "$mig_addr" && "$mig_addr" != ":49" && "$mig_addr" != "\${TACQUITO_ADDRESS}" ]]; then
-                [[ -z "$(read_service_override TACQUITO_ADDRESS)" ]] && { set_service_override TACQUITO_ADDRESS "$mig_addr"; migrated=1; }
-            fi
-            if [[ -n "$mig_level" && "$mig_level" != "20" ]]; then
-                [[ -z "$(read_service_override TACQUITO_LEVEL)" ]] && { set_service_override TACQUITO_LEVEL "$mig_level"; migrated=1; }
-            fi
-
-            cp "$SERVICE_FILE" "${SERVICE_FILE}.bak"
-            cp "${ACTIVE_DEPLOY_DIR}/${TACACS_SHARE}/tacquito.service" "$SERVICE_FILE"
-            systemctl daemon-reload
-            info "  Updated: tacquito.service (previous backed up to ${SERVICE_FILE}.bak)"
-            if [[ "$migrated" == "1" ]]; then
-                info "  Migrated custom -network/-address/-level flags to ${OVERRIDE_FILE}"
-            fi
-            SCRIPTS_UPDATED=$((SCRIPTS_UPDATED + 1))
-        else
-            info "  Unchanged: tacquito.service"
-        fi
-    fi
+    _tacacs_upgrade_units "$ACTIVE_DEPLOY_DIR"
 
     update_if_changed "${ACTIVE_DEPLOY_DIR}/README.md" "${CONFIG_DIR}/README.md" "README.md"
     # Installs before the README fix have it 0600 root, or not at all.
@@ -2193,14 +3031,27 @@ _tacacs_upgrade_finish() {
         if systemctl is-active --quiet tacquito.service; then
             info "Tacquito is running."
             rm -f "${TACQUITO_BIN}.bak"
+            _tacacs_units_keep_discard
+            _tacacs_instances_sync
         else
+            # Everything this upgrade replaced under the daemon goes back at
+            # once -- unit files with their settings, and the binary -- and
+            # one restart follows: the shortest way back to a listener.
+            local -a rolled=()
+            if _tacacs_units_rollback; then
+                error "Tacquito failed to start after upgrade. The previous unit files and settings were restored."
+                rolled+=("unit files")
+            fi
             if [[ "$SKIP_BUILD" == "false" ]]; then
                 error "Tacquito failed to start after upgrade. Rolling back binary..."
                 mv "${TACQUITO_BIN}.bak" "$TACQUITO_BIN"
+                rolled+=("binary")
+            fi
+            if (( ${#rolled[@]} )); then
                 systemctl restart tacquito.service
                 sleep 2
                 if systemctl is-active --quiet tacquito.service; then
-                    warn "Rolled back to previous binary. Service is running."
+                    warn "Rolled back to the previous ${rolled[*]}. Service is running."
                 else
                     error "Rollback failed. Check: journalctl -u tacquito"
                 fi
@@ -2213,13 +3064,10 @@ _tacacs_upgrade_finish() {
             fi
         fi
 
-        local LISTEN_CHECK
-        LISTEN_CHECK=$(ss -tlnp | grep ":49 " || true)
-        if [[ -n "$LISTEN_CHECK" ]]; then
-            info "Listening on port 49/tcp"
-        else
-            warn "Port 49 not detected — check logs."
-        fi
+        _tacacs_listen_check
+    else
+        # Nothing to restart for; unit files (if any changed) count as proven.
+        _tacacs_units_keep_discard
     fi
 
     if [[ "$SKIP_BUILD" == "false" && "$CURRENT_COMMIT" != "$NEW_COMMIT" ]]; then
@@ -2229,15 +3077,38 @@ _tacacs_upgrade_finish() {
     else
         UPGRADE_SUMMARY_HEAD="Scripts Updated (source unchanged at ${CURRENT_COMMIT})"
     fi
+    if [[ "$TACACS_UNITS_STATE" == "changed" ]]; then
+        UPGRADE_SUMMARY_NOTES+=("Units: tacquito.service and its listener drop-in are current (settings in ${TACCTL_OVERRIDES_FILE})")
+    fi
     case "$STORE_STATE" in
         flipped) UPGRADE_SUMMARY_NOTES+=("Store: migrated from tacquito.yaml ('tacctl store rollback' undoes it)") ;;
         stopped) UPGRADE_SUMMARY_NOTES+=("Store: NOT migrated — legacy read-only mode (see 'Store migration stopped' above)") ;;
     esac
 }
 
-# uninstall stop
+# The instance units this machine knows of, one per line: from the drop-in
+# directories and from the links 'systemctl enable' made.
+_tacacs_instance_units() {
+    local f
+    for f in "$TACACS_UNIT_DIR"/tacquito@*.service.d \
+             "$TACACS_UNIT_DIR"/tacquito.service.wants/tacquito@*.service \
+             "$TACACS_UNIT_DIR"/multi-user.target.wants/tacquito@*.service; do
+        [[ -e "$f" || -L "$f" ]] || continue
+        f="${f##*/}"
+        echo "${f%.d}"
+    done | sort -u
+}
+
+# uninstall stop: every listener's unit. An install from before the listener
+# model has only tacquito.service.
 _tacacs_uninstall_stop() {
     # --- Stop and disable service ---
+    local unit
+    while IFS= read -r unit; do
+        [[ -n "$unit" ]] || continue
+        info "Stopping ${unit}..."
+        systemctl disable --quiet --now "$unit" 2>/dev/null || true
+    done < <(_tacacs_instance_units)
     if systemctl is-active --quiet tacquito 2>/dev/null; then
         info "Stopping tacquito service..."
         systemctl stop tacquito
@@ -2247,7 +3118,7 @@ _tacacs_uninstall_stop() {
     fi
 }
 
-# uninstall program: binaries (silently, under the generic step's message), then the unit.
+# uninstall program: binaries (silently, under the generic step's message), then the units.
 _tacacs_uninstall_program() {
     rm -f /usr/local/bin/tacquito
     rm -f /usr/local/bin/tacquito.bak
@@ -2255,9 +3126,18 @@ _tacacs_uninstall_program() {
 
     # --- Remove systemd unit ---
     info "Removing systemd unit..."
-    rm -f /etc/systemd/system/tacquito.service
-    rm -f /etc/systemd/system/tacquito.service.bak
-    rm -rf /etc/systemd/system/tacquito.service.d
+    _tacacs_uninstall_units
+}
+
+# Remove every unit file, drop-in directory and enablement link of either
+# layout: tacquito.service with the hand-managed drop-in (before the listener
+# model), or with the rendered one plus the template and its instances.
+_tacacs_uninstall_units() {
+    local dir="${TACACS_UNIT_DIR:?}"
+    rm -f "$SERVICE_FILE" "${SERVICE_FILE}.bak" "$TEMPLATE_FILE"
+    rm -rf "${OVERRIDE_DIR:?}" "${dir}/tacquito.service.d" "${dir}/tacquito.service.wants"
+    rm -rf "${dir}"/tacquito@*.service.d
+    rm -f "${dir}"/multi-user.target.wants/tacquito@*.service "${dir}/multi-user.target.wants/tacquito.service"
     systemctl daemon-reload
 }
 
@@ -2305,10 +3185,19 @@ backend_tacacs_describe() {
     printf '%s\n' \
         "protocol=tacacs" \
         "impl=tacquito" \
-        "units=tacquito.service" \
+        "units=$(_tacacs_units_all)" \
         "user=tacquito" \
         "config_dir=${CONFIG_DIR}" \
         "log_dir=${LOG_DIR}"
+}
+
+# Every listener's unit, space-separated, the default listener's first.
+_tacacs_units_all() {
+    local name _net _addr out=""
+    while read -r name _net _addr; do
+        [[ -n "$name" ]] && out+="${out:+ }$(_tacacs_unit "$name")"
+    done < <(_tacacs_listener_lines)
+    echo "$out"
 }
 
 backend_tacacs_installed() {
@@ -2347,12 +3236,24 @@ backend_tacacs_uninstall() {
     esac
 }
 
+# tacquito.yaml, then the drop-in of every listener. An install that is not
+# converted (hand-managed drop-in still in place) has no rendered drop-ins.
 backend_tacacs_artifacts() {
     printf '%s\n' "$CONFIG"
+    _tacacs_units_legacy && return 0
+    local name _net _addr
+    while read -r name _net _addr; do
+        [[ -n "$name" ]] && _tacacs_dropin "$name"
+    done < <(_tacacs_listener_lines)
+    return 0
 }
 
 backend_tacacs_render_check() {
-    tacacs_render_check
+    if _tacacs_units_legacy; then
+        tacacs_render_check
+    else
+        ( _tacacs_render_check_run units )
+    fi
 }
 
 backend_tacacs_render_gate() {
@@ -2369,11 +3270,28 @@ backend_tacacs_render_stage() {
             return 1
             ;;
     esac
-    _tacacs_render_stage "$dir" "$overwrite"
+    if _tacacs_units_legacy; then
+        _tacacs_render_stage "$dir" "$overwrite"
+    else
+        _tacacs_render_stage "$dir" "$overwrite" units
+    fi
 }
 
+# CHANGED when tacquito.yaml or a drop-in was replaced. systemd is told about
+# changed drop-ins here (once there is a unit to reload); the restart that
+# makes a process use them is the 'service restart' that follows a CHANGED.
 backend_tacacs_render_commit() {
-    _tacacs_render_commit "${1:-}"
+    local dir="${1:-}" result written
+    result=$(_tacacs_render_commit "$dir") || return 1
+    written=$(_tacacs_units_commit "$dir") || return 1
+    if [[ -n "$written" && -f "$SERVICE_FILE" ]]; then
+        systemctl daemon-reload >&2 || true
+    fi
+    if [[ "$result" == "CHANGED" || -n "$written" ]]; then
+        echo "CHANGED"
+    else
+        echo "UNCHANGED"
+    fi
 }
 
 backend_tacacs_render_notes() {
@@ -2385,39 +3303,51 @@ backend_tacacs_render_notes() {
 # sed -i and python rewrites change the file inode, breaking fsnotify
 # hot-reload, so a changed config is always followed by a restart; tacquito
 # has no reload of its own.
+#
+# service <action> [<listener>]: without a listener the action is on
+# tacquito.service, which for stop, start and restart is every listener (the
+# instances are PartOf= and WantedBy= it), and for is-active, since and pid
+# the default listener's process. With one, it is on that listener's unit
+# only ('default' restarts everything, for the same reason).
 backend_tacacs_service() {
+    local unit="tacquito"
+    if [[ -n "${2:-}" && "$2" != "default" ]]; then
+        unit=$(_tacacs_unit "$2")
+    fi
     case "${1:-}" in
         restart|reload)
-            if systemctl restart tacquito 2>/dev/null; then
+            if systemctl restart "$unit" 2>/dev/null; then
                 info "Service restarted."
             else
-                warn "Service restart failed — run: sudo systemctl restart tacquito"
+                warn "Service restart failed — run: sudo systemctl restart ${unit}"
             fi
+            # A render may have added or removed a listener.
+            [[ "$unit" != "tacquito" ]] || _tacacs_instances_sync
             ;;
-        start)     systemctl start tacquito ;;
-        stop)      systemctl stop tacquito ;;
-        is-active) systemctl is-active tacquito 2>/dev/null ;;
-        since)     systemctl show tacquito --property=ActiveEnterTimestamp 2>/dev/null | cut -d= -f2 ;;
-        pid)       systemctl show tacquito --property=MainPID 2>/dev/null | cut -d= -f2 ;;
+        start)     systemctl start "$unit" ;;
+        stop)      systemctl stop "$unit" ;;
+        is-active) systemctl is-active "$unit" 2>/dev/null ;;
+        since)     systemctl show "$unit" --property=ActiveEnterTimestamp 2>/dev/null | cut -d= -f2 ;;
+        pid)       systemctl show "$unit" --property=MainPID 2>/dev/null | cut -d= -f2 ;;
         *)
-            error "Usage: backend_tacacs_service <start|stop|restart|reload|is-active|since|pid>"
+            error "Usage: backend_tacacs_service <start|stop|restart|reload|is-active|since|pid> [<listener>]"
             return 2
             ;;
     esac
 }
 
-# listeners list: the one listener of today's unit, with the drop-in
-# overrides applied. Changing it is 'tacctl config listen' (cmd_config_listen).
+# listeners list                      '<name> <network> <address>' per listener, default first
+# listeners show [<name>]             the listener as 'tacctl config listen' prints it
+# listeners set <name> <net> <addr>   create or change it; restarts its unit
+# listeners reset [<name>]            the default listener back to its default address; any other is removed
 backend_tacacs_listeners() {
     case "${1:-}" in
-        list)
-            local net addr
-            net=$(read_service_override TACQUITO_NETWORK)
-            addr=$(read_service_override TACQUITO_ADDRESS)
-            echo "default ${net:-tcp} ${addr:-:49}"
-            ;;
+        list)  _tacacs_listener_lines ;;
+        show)  _tacacs_listener_show "${2:-default}" ;;
+        set)   _tacacs_listener_set "${2:-default}" "${3:-}" "${4:-}" ;;
+        reset) _tacacs_listener_reset "${2:-default}" ;;
         *)
-            error "Usage: backend_tacacs_listeners list"
+            error "Usage: backend_tacacs_listeners <list|show [<name>]|set <name> <network> <address>|reset [<name>]>"
             return 2
             ;;
     esac
@@ -2436,6 +3366,9 @@ backend_tacacs_status() {
 backend_tacacs_log() {
     local subcmd="${1:-}"
     shift || true
+    # Every listener's unit (just 'tacquito' with only the default listener).
+    local -a units
+    mapfile -t units < <(_tacacs_journal_units)
 
     case "$subcmd" in
         tail)
@@ -2443,7 +3376,7 @@ backend_tacacs_log() {
             echo ""
             echo -e "${BOLD}Recent TACACS+ Log Entries${NC}"
             echo "--------------------------------------------"
-            journalctl -u tacquito --no-pager -n "$count" 2>/dev/null || echo "  No log entries found."
+            journalctl "${units[@]}" --no-pager -n "$count" 2>/dev/null || echo "  No log entries found."
             echo ""
             ;;
         search)
@@ -2455,7 +3388,7 @@ backend_tacacs_log() {
             echo ""
             echo -e "${BOLD}Log entries matching '${term}'${NC}"
             echo "--------------------------------------------"
-            journalctl -u tacquito --no-pager --since "7 days ago" 2>/dev/null | grep -i -e "$term" || echo "  No matches found."
+            journalctl "${units[@]}" --no-pager --since "7 days ago" 2>/dev/null | grep -i -e "$term" || echo "  No matches found."
             echo ""
             ;;
         failures)
@@ -2463,7 +3396,7 @@ backend_tacacs_log() {
             echo -e "${BOLD}Authentication Failures (last 24 hours)${NC}"
             echo "--------------------------------------------"
             local failures
-            failures=$(journalctl -u tacquito --no-pager --since "24 hours ago" 2>/dev/null | grep -i "ERROR\|fail\|bad secret" || true)
+            failures=$(journalctl "${units[@]}" --no-pager --since "24 hours ago" 2>/dev/null | grep -i "ERROR\|fail\|bad secret" || true)
             if [[ -n "$failures" ]]; then
                 echo "$failures"
             else
@@ -2495,6 +3428,14 @@ backend_tacacs_accounting() {
             else
                 echo "  No accounting log found at ${ACCT_LOG}"
             fi
+            # The other listeners' logs, each under its name.
+            local log
+            for log in "$LOG_DIR"/accounting-*.log; do
+                [[ -f "$log" ]] || continue
+                echo ""
+                echo -e "${BOLD}${log}${NC}"
+                tail -n "$count" "$log"
+            done
             echo ""
             ;;
         *)

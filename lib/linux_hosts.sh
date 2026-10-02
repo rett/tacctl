@@ -145,9 +145,12 @@ linux_write_install_script() {
         return 1
     fi
 
-    # pam_tacplus talks to the TACACS+ backend's listener.
-    local listen="" port _lname _lnet
-    read -r _lname _lnet listen < <(backend_call tacacs listeners list) || true
+    # pam_tacplus talks to the TACACS+ backend's default listener
+    # (listeners.tacacs.default in tacctl.yaml).
+    local listen="" port _lname _lnet _laddr
+    while read -r _lname _lnet _laddr; do
+        [[ "$_lname" == "default" ]] && listen="$_laddr"
+    done < <(backend_call tacacs listeners list)
     listen=${listen:-:49}
     port="${listen##*:}"
 

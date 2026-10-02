@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034  # registry and result globals assigned here are read by the other lib files
-# tacctl lib/backend.sh -- backend registry and contract, enabled backends, rendered-artifact bookkeeping and drift, render/restart across backends, the mutation path (store_apply), 'tacctl config render'
+# tacctl lib/backend.sh -- backend registry and contract, enabled backends, listeners ('tacctl config listen'), rendered-artifact bookkeeping and drift, render/restart across backends, the mutation path (store_apply), 'tacctl config render'
 # Sourced by bin/tacctl.sh before lib/backends/*.sh (see the load block there for ordering); not executable.
 #
 # A backend is a daemon that serves the model (lib/model.sh) over one
@@ -62,14 +62,25 @@
 #   render_notes        after 'tacctl config render': warn about anything
 #                       the rendered state means for this daemon (tacquito
 #                       refuses a config without users). Usually silent.
-#   service <start|stop|restart|reload|is-active|since|pid>
+#   service <start|stop|restart|reload|is-active|since|pid> [<listener>]
 #                       'restart' reports its own outcome and never fails
 #                       the caller; 'is-active' prints and returns what
-#                       systemctl does.
-#   listeners list      one '<name> <network> <address>' line per listener,
-#                       effective values. (Setting one is still the TACACS+
-#                       module's 'tacctl config listen'; show/set/reset join
-#                       this verb with the listener model.)
+#                       systemctl does. Without a listener the action is on
+#                       the backend as a whole; with one, on the unit (or
+#                       whatever the daemon has) that serves that listener.
+#   listeners <list|show [<name>]|set <name> <network> <address>|reset [<name>]>
+#                       the backend's listeners.<id>.<name> of tacctl.yaml
+#                       (lib/conf.sh: _listener_py; read with
+#                       backend_listeners). 'list' prints one
+#                       '<name> <network> <address>' line per listener in
+#                       effect, the built-in one first. 'show' prints one
+#                       for the operator. 'set' creates or changes one and
+#                       'reset' puts a built-in one back to its default or
+#                       removes any other: both validate before they write,
+#                       make the daemon follow, report, and return 1 with
+#                       everything as it was when the daemon does not come
+#                       up. 'tacctl config listen' (cmd_config_listen below)
+#                       is the CLI of this verb.
 #   status <service|config|accounting|activity>
 #                       this backend's lines of 'tacctl status', one part
 #                       per place the report has always had them.
@@ -98,12 +109,20 @@
 # built; the config is rendered after the service account exists and before
 # the unit starts). 'accounting clear' is gone: one confirmation in
 # 'log clear' has always covered both logs. artifacts and render_notes are
-# new. 'listeners' is only as wide as today's single listener needs.
+# new.
 #
-# Commands that exist for one daemon only -- 'config listen', 'config
-# loglevel', 'config metrics', 'store import' and 'store rollback' -- are
-# that backend's own CLI. The dispatcher calls them by name; they are not
-# generic code reaching into a daemon, and not part of the contract.
+# Commands that exist for one daemon only -- 'config loglevel', 'config
+# metrics', 'store import' and 'store rollback' -- are that backend's own
+# CLI. The dispatcher calls them by name; they are not generic code reaching
+# into a daemon, and not part of the contract. Their settings are per backend
+# in tacctl.yaml (backends.<id>.<key>).
+#
+# Listeners, log level and metrics are settings of a daemon, not of the
+# model, and do not go through store_apply: nothing in them needs the store,
+# so they work before an install has one. A backend that renders them into
+# artifacts (the TACACS+ module's systemd drop-ins) stages and commits those
+# with the rest, so a restored tacctl.yaml is applied by the render that
+# follows it.
 #
 # --- Two backends: what is shared, what is per backend ----------------------
 #
@@ -339,6 +358,81 @@ backends_last_login() {
     echo "${best:-never}"
 }
 
+# --- Listeners (plan 3.4) ---------------------------------------------------
+
+# backend_listeners <id>: the backend's listeners in effect, from tacctl.yaml
+# and the built-in defaults, the built-in ones first. One tab-separated line
+# each: name, network, address, role, metrics address ('-' for none), and
+# 'override' (written in tacctl.yaml) or 'default'.
+backend_listeners() {
+    _conf_load_cache
+    python3 <(_listener_py; cat <<'PY'
+import json, sys
+doc, backend = json.loads(sys.argv[1]), sys.argv[2]
+section = doc.get('listeners') if isinstance(doc.get('listeners'), dict) else {}
+mine = section.get(backend) if isinstance(section.get(backend), dict) else {}
+for name, l in listeners_effective(doc, backend).items():
+    print('\t'.join((name, l['network'], l['address'], l['role'], l['metrics_address'] or '-',
+                     'override' if name in mine else 'default')))
+PY
+) "$_TACCTL_CFG_CACHE" "$1"
+}
+
+# tacctl config listen [--backend <id>] [--listener <name>] [show|<network> <address>|reset]
+# Without flags: the TACACS+ backend's default listener, as this command
+# always worked.
+cmd_config_listen() {
+    local backend="tacacs" listener="default"
+    local -a args=()
+    while (( $# )); do
+        case "$1" in
+            --backend|--listener)
+                if [[ -z "${2:-}" ]]; then
+                    error "$1 needs a value. Usage: tacctl config listen [--backend <id>] [--listener <name>] <show|tcp|tcp6|reset> [address]"
+                    return 1
+                fi
+                if [[ "$1" == "--backend" ]]; then backend="$2"; else listener="$2"; fi
+                shift 2
+                ;;
+            --backend=*)  backend="${1#*=}"; shift ;;
+            --listener=*) listener="${1#*=}"; shift ;;
+            *)            args+=("$1"); shift ;;
+        esac
+    done
+    if ! backend_registered "$backend"; then
+        error "Unknown backend '${backend}' (known: ${BACKEND_IDS[*]})."
+        return 1
+    fi
+    if [[ ! "$listener" =~ ^[a-z][a-z0-9_-]{0,31}$ ]]; then
+        error "Invalid listener name '${listener}': a lowercase letter, then up to 31 of [a-z0-9_-]."
+        return 1
+    fi
+
+    local sub="${args[0]:-}" shown
+    case "$sub" in
+        ""|show)
+            shown=$(backend_call "$backend" listeners show "$listener") || return 1
+            echo ""
+            echo "$shown"
+            echo ""
+            echo "  Usage: tacctl config listen <show|tcp|tcp6|reset> [address]"
+            echo "  Examples:"
+            echo "    tacctl config listen tcp :49"
+            echo "    tacctl config listen tcp 10.1.0.1:49"
+            echo "    tacctl config listen tcp6 [::]:49"
+            echo "    tacctl config listen reset       # drop override, use template default"
+            echo ""
+            ;;
+        reset)
+            backend_call "$backend" listeners reset "$listener"
+            ;;
+        *)
+            # A network and an address; the backend says which networks it has.
+            backend_call "$backend" listeners set "$listener" "$sub" "${args[1]:-}"
+            ;;
+    esac
+}
+
 # --- Rendered-artifact bookkeeping (plan 4.5) -------------------------------
 # Python appended to _store_py (lib/store.sh), whose names it uses. A
 # backend's own render program includes _rendered_py for rendered_status.
@@ -500,7 +594,17 @@ print_drift_lines() {
             *)       dstatus="render records cannot be read" ;;
         esac
         echo -e "  ${RED}DRIFT:${NC}                ${dpath} — ${dstatus}"
-        echo "                        keep the edits: 'tacctl store import --replace' then 'tacctl config render --force'; discard them: 'tacctl config render --force'"
+        case "$dpath" in
+            */tacctl.conf)
+                # A unit drop-in a backend renders (always under this name)
+                # holds nothing tacctl.yaml does not: there is nothing to
+                # import, and a render replaces it without --force.
+                echo "                        'tacctl config render' rewrites it from tacctl.yaml (a copy is kept); unit settings of your own belong in another .conf file of that directory"
+                ;;
+            *)
+                echo "                        keep the edits: 'tacctl store import --replace' then 'tacctl config render --force'; discard them: 'tacctl config render --force'"
+                ;;
+        esac
     done <<< "$drift"
     return 1
 }

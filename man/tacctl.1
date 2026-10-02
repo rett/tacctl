@@ -435,15 +435,25 @@ Alias of
 .BR "backup restore" .
 .TP
 .BI "config loglevel " [ debug | info | error ]
-Show or change the server log level. Written to a systemd drop-in so
-the change survives upgrades.
+Show or change the server log level. Stored in
+.I tacctl.yaml
+.RB ( backends.tacacs.level ),
+so the change survives upgrades.
 .TP
-.B "config listen " "{ show | tcp | tcp6 | reset } " [ address ]
-Show, change, or reset the TCP listen address. Stored in the drop-in
-at
-.IR /etc/systemd/system/tacquito.service.d/tacctl-overrides.conf .
+.B "config listen " "[ \-\-backend \fIid\fR ] [ \-\-listener \fIname\fR ] { show | tcp | tcp6 | reset } " [ address ]
+Show, change, or reset the TCP listen address. Stored in
+.I tacctl.yaml
+.RB ( listeners.tacacs. \fIname\fR),
+from which tacctl renders the unit's systemd drop-in.
 .B reset
 clears the override and falls back to the template default.
+With
+.BI \-\-listener " name"
+the command addresses another listener, which runs as its own unit
+.BI tacquito@ name .service
+with its own accounting log; there
+.B reset
+removes it.
 .B
 Switching to tcp6
 prompts for confirmation because dual-stack sockets accept IPv4
@@ -1333,13 +1343,16 @@ templates.
 .I /etc/systemd/system/tacquito.service
 Systemd unit file.
 .TP
-.I /etc/systemd/system/tacquito.service.d/tacctl-overrides.conf
-Systemd drop-in where
-.BR "tacctl config listen" ,
+.I /etc/systemd/system/tacquito.service.d/tacctl.conf
+Systemd drop-in holding the listen address, log level, metrics address
+and accounting log of the unit. Rendered by tacctl from
+.I tacctl.yaml
+.RB ( "tacctl config listen" ,
 .BR "tacctl config loglevel" ,
-and
-.B "tacctl config metrics"
-write their overrides. Preserved across upgrades.
+.BR "tacctl config metrics" );
+edits are overwritten. Further listeners are instances of
+.I /etc/systemd/system/tacquito@.service
+with a drop-in each.
 .TP
 .I /etc/sudoers.d/tacctl
 Optional NOPASSWD sudoers rule. Installed only via

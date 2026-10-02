@@ -124,8 +124,8 @@ render_gate         → may a mutation replace the artifacts? 0 yes / 10 yes, ad
 render_stage <dir> [--force]  → render the current store into <dir> and prove it; touches nothing else
 render_commit <dir>           → install what was staged, record shas; prints CHANGED|UNCHANGED
 render_notes        → warnings after 'config render'
-service <start|stop|restart|reload|is-active|since|pid>
-listeners list      → '<name> <network> <address>' per listener (set/reset: WP2.2, see 3.4)
+service <start|stop|restart|reload|is-active|since|pid> [listener]
+listeners list|show [name]|set <name> <network> <address>|reset [name]   (list → '<name> <network> <address>' per listener; see 3.4)
 status <service|config|accounting|activity>   → the backend's lines of 'tacctl status'
 log <tail|search|failures|clear> …
 accounting tail [n]
@@ -149,7 +149,9 @@ So the interim read-model is **not a throwaway**: it is written once, against th
 ### 3.4 Listener model (TACACSS-ready, not built)
 
 `tacctl.yaml` wildcard schema `listeners.<backend>.<name>` → dict `{network: tcp|tcp6|udp|udp6, address: host:port, role: auth|acct|both, tls: {enabled: bool, cert, key, ca, require_client_cert}}`. Defaults: `listeners.tacacs.default = {network: tcp, address: ":49", tls: {enabled: false}}`; `listeners.radius.auth = {udp, ":1812", role: auth}`, `listeners.radius.acct = {udp, ":1813", role: acct}`.
-- TACACS+: one systemd instance per listener: `tacquito@<name>.service` with rendered drop-in `/etc/systemd/system/tacquito@<name>.service.d/tacctl.conf` (`Environment=` lines, now an artifact, not the source of truth). `tacquito.service` stays as an alias of `tacquito@default.service` (`Alias=` in the template unit's `[Install]` or a symlink created by install/upgrade). Per-instance `-acct-log-path /var/log/tacquito/accounting[-<name>].log` and `-metrics-address` (default instance keeps today's paths). `tls.enabled: true` is **rejected by the schema with "reserved"** until Phase 6 implements it.
+- TACACS+: one systemd unit per listener, each with a rendered drop-in `<unit>.d/tacctl.conf` (`Environment=` lines, now an artifact recorded in `rendered.json`, not the source of truth). Per-listener `-acct-log-path /var/log/tacquito/accounting[-<name>].log` and `-metrics-address` (the default listener keeps today's paths; another listener exports metrics only when it sets `metrics_address`). `tls.enabled: true` is **rejected by the schema with "reserved"** until Phase 6 implements it.
+  **As built (WP2.2), departing from the proposal of `tacquito@default` plus a `tacquito.service` alias:** the default listener stays in `tacquito.service` itself and only the other listeners are instances `tacquito@<name>.service` of the template `tacquito@.service`. systemd cannot alias a plain name to a template instance — `Alias=tacquito.service` in the template is refused at `enable` ("cannot alias"), a symlink is rejected at load ("symlink target name type does not match source") — and a wrapper unit of that name would make `systemctl is-active tacquito` answer for the wrapper and `journalctl -u tacquito` show nothing of the daemon (the journal matches the unit a process runs in). The instances are `PartOf=` and `WantedBy=tacquito.service`, so `systemctl stop|start|restart|enable|disable tacquito` covers every listener. The header of the "Units, listeners and their systemd drop-ins" section in `lib/backends/tacacs.sh` is authoritative.
+  Listener, log-level and metrics changes are written to `tacctl.yaml` outside `store_apply` (they need no store and prove themselves by restarting the unit, rolling back when it does not come up); the drop-ins are also staged and committed with `tacquito.yaml`, so a restored `tacctl.yaml` is applied by the render that follows.
 - RADIUS: listeners render into `listen {}` blocks of the tacctl virtual server; `tls.enabled` reserved likewise.
 
 ---
@@ -284,12 +286,12 @@ Switching methods: the install script always runs `remove_method_artifacts <othe
 |---|---|---|---|
 | Canonical data | `/etc/tacquito/tacquito.yaml` | `/etc/tacctl/store.yaml` (+ `tacctl.yaml`); tacquito.yaml rendered | gated import (4.3), legacy read-only mode (4.4), drift detection (4.5), rollback (4.4) |
 | tacctl state files | `/etc/tacquito/{tacctl.yaml,linux-hosts,linux-uids,backups/,templates/}` | `/etc/tacctl/…` | symlinks at old paths for one release; idempotent re-move (4.4); `TACCTL_STATE_DIR` env (tests), `TACCTL_ETC` keeps meaning the TACACS+ dir |
-| systemd | `tacquito.service` + `tacquito.service.d/tacctl-overrides.conf` | `tacquito@.service` template, `tacquito@default` instance, `tacquito.service` alias; drop-ins rendered from `listeners.tacacs.<name>` | upgrade imports the existing drop-in values once (pattern `:10843-10859`); `systemctl status tacquito`, `journalctl -u tacquito` keep working |
+| systemd | `tacquito.service` + `tacquito.service.d/tacctl-overrides.conf` | `tacquito.service` (default listener) + `tacquito@.service` template for further listeners (see 3.4 for why not `tacquito@default` with an alias); drop-ins `<unit>.d/tacctl.conf` rendered from `listeners.tacacs.<name>` and `backends.tacacs.*` | upgrade imports the existing drop-in values once into `tacctl.yaml` and retires the file (a copy goes to `backups/legacy/`); `systemctl status tacquito`, `journalctl -u tacquito` are unchanged because the unit is unchanged |
 | Accounting log / logrotate | one file | default instance unchanged; extra instances `accounting-<name>.log`; RADIUS detail file | logrotate rendered per backend |
 | CLI | unchanged verbs | plus `backend …`, `store import|rollback|show`, `scope protocols …`, `config render|import`, `config <vendor> --protocol`, `config listen` gains `--backend/--listener` (no flag = TACACS+ default listener), `host enroll --method` | no verb removed; `tier_permits`/`emit_tier_sudoers` extended for the new read-only verbs |
 | Backups | `tacquito.yaml.<ts>` | snapshot dirs; legacy files listed and importable | (4.6) |
 | Completion | hard-coded paths | via `_completion-names` only | |
-| Tests | fixtures `tacquito.*.yaml` | `load_fixture` runs `store import` so the importer is exercised by every integration test; new `store.*.yaml` and `radius` fixtures | existing assertions kept; e2e stubs match `tacquito@default` or the alias |
+| Tests | fixtures `tacquito.*.yaml` | `load_fixture` runs `store import` so the importer is exercised by every integration test; new `store.*.yaml` and `radius` fixtures | existing assertions kept; e2e stubs keep matching `tacquito` (the default listener's unit kept its name, 3.4) |
 | Suggested releases (user-driven) | | 0.2.0 = Phases 0-1 (split, state dir, store flip); 0.3.0 = Phases 2-3 (backends, RADIUS); 0.4.0 = Phases 4-5 (host RADIUS, docs) | each soaked on the dev server before the user cuts a release |
 
 ---
@@ -422,7 +424,7 @@ Common rules for every package (restate in each hand-off): read `/home/user/tacc
 - **Goal:** `tacquito@.service` + `tacquito.service` alias; `listeners.<backend>.<name>` schema with TLS fields reserved; drop-ins rendered.
 - **Read first:** `config/backends/tacacs/tacquito.service`, override helpers and `cmd_config_listen/loglevel/metrics` (now in `lib/backends/tacacs.sh`), upgrade drop-in migration (ex-`:10843-10859`), `linux_write_install_script` port read (ex-`:4845-4848`), `cmd_status` listener lines (ex-`:8717-8747`), `config/backends/tacacs/tacquito.logrotate`, §3.4.
 - **Scope:** schema type `listener` (validate network/address pairs via `validate_listen_address` ex-`:1783`; `tls.enabled: true` → error "reserved for a future release"); `backend_tacacs_listeners list|show|set|reset`; `tacctl config listen [--backend tacacs] [--listener default] tcp|tcp6 <addr>|show|reset` keeps today's syntax when flags are omitted; `loglevel` and `metrics` become per-backend settings in `tacctl.yaml` (`backends.tacacs.level`, `backends.tacacs.metrics_address`); render drop-ins `/etc/systemd/system/tacquito@<name>.service.d/tacctl.conf`; upgrade imports existing `tacctl-overrides.conf` once, installs the template unit, enables `tacquito@default`, creates the alias, removes the old unit+drop-in dir; per-instance acct log and logrotate; `status` lists each instance. Tests with stubbed `systemctl`; e2e stubs accept `tacquito@default`/alias.
-- **Acceptance:** `make test` green; on the dev server after `tacctl upgrade --branch develop`: `systemctl status tacquito` and `tacquito@default` both active, `tacctl config listen` shows the migrated value.
+- **Acceptance:** `make test` green; on the dev server after `tacctl upgrade --branch develop`: `systemctl status tacquito` active (there is no `tacquito@default`: see 3.4, as built), `tacctl config listen` and `tacctl config loglevel` show the migrated values.
 - **Executor:** Opus. **Deps:** WP2.1. **Worktree:** no (edits `lib/backends/tacacs.sh`, `lib/service.sh`, lifecycle).
 
 ### WP2.3 — Backend CLI, tier/sudoers, completion
@@ -435,7 +437,7 @@ Common rules for every package (restate in each hand-off): read `/home/user/tacc
 ### WP2.4 — status / log / backup loops over backends
 - **Goal:** `tacctl status`, `log *`, `backup restore` iterate enabled backends with per-backend sections (Decision 12).
 - **Read first:** `cmd_status` (ex-`:8687-9023`), `cmd_log*` (ex-`:9837-9943`), WP1.5 `backup restore`, `backend_tacacs_health/log/accounting`.
-- **Scope:** generic sections (users, scopes, posture, password age, drift) + `for b in enabled: section from backend_<b>_health`; `log tail|search|failures|accounting|clear [--backend <id>]` default all enabled; `backup restore` renders all backends. Keep single-backend output compatible with `tests/integration/status_and_scope_lookup.bats` and `tests/e2e/log.bats` (update stubs for `tacquito@default`).
+- **Scope:** generic sections (users, scopes, posture, password age, drift) + `for b in enabled: section from backend_<b>_health`; `log tail|search|failures|accounting|clear [--backend <id>]` default all enabled; `backup restore` renders all backends. Keep single-backend output compatible with `tests/integration/status_and_scope_lookup.bats` and `tests/e2e/log.bats` (the stubs keep matching `tacquito`: WP2.2 left the default listener's unit name as it was).
 - **Acceptance:** `make test` green.
 - **Executor:** Sonnet. **Deps:** WP2.1 (and WP2.2 for instance names). **Worktree:** parallel with 2.3.
 

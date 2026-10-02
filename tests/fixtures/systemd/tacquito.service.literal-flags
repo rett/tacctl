@@ -1,0 +1,19 @@
+[Unit]
+Description=Tacquito TACACS+ Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tacquito
+Group=tacquito
+ExecStart=/usr/local/bin/tacquito \
+    -config /etc/tacquito/tacquito.yaml \
+    -network tcp -address 10.1.0.1:49 \
+    -acct-log-path /var/log/tacquito/accounting.log \
+    -level 30
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

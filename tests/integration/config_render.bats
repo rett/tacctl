@@ -46,7 +46,7 @@ saved_copies() {
     cp "${TACCTL_SRC}/tests/fixtures/store.multiscope.yaml" "$STORE"
     run "$TACCTL_BIN_SCRIPT" config render
     assert_success
-    assert_output --partial "Rendered ${TACCTL_CONFIG}."
+    assert_output --partial "Rendered ${TACCTL_CONFIG}, ${TACCTL_OVERRIDE_DIR}/tacctl.conf."
     cmp "$TACCTL_CONFIG" "$GOLDEN"
     [[ "$(stat -c %a "$TACCTL_CONFIG")" == "640" ]]
     [[ "$(stat -c %a "$RENDERED")" == "600" ]]
@@ -71,7 +71,7 @@ saved_copies() {
     sed -i 's/juniper_class: OP-CLASS/juniper_class: OPS/' "$STORE"
     run "$TACCTL_BIN_SCRIPT" config render
     assert_success
-    assert_output --partial "Rendered ${TACCTL_CONFIG}."
+    assert_output --partial "Rendered ${TACCTL_CONFIG}, ${TACCTL_OVERRIDE_DIR}/tacctl.conf."
     grep -q 'values: \["OPS"\]' "$TACCTL_CONFIG"
     [[ -z "$(saved_copies)" ]]
     run "$TACCTL_BIN_SCRIPT" config validate
@@ -146,7 +146,7 @@ saved_copies() {
     rm "$TACCTL_CONFIG"
     run "$TACCTL_BIN_SCRIPT" config render
     assert_success
-    assert_output --partial "Rendered ${TACCTL_CONFIG}."
+    assert_output --partial "Rendered ${TACCTL_CONFIG}, ${TACCTL_OVERRIDE_DIR}/tacctl.conf."
     cmp "$TACCTL_CONFIG" "$GOLDEN"
     [[ -z "$(saved_copies)" ]]
 }

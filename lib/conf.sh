@@ -197,8 +197,252 @@ conf_get_keys() { _conf_walk get_keys "$1"; }
 #
 # Types: int (with optional min/max), string (with optional regex pattern
 # + optional max_length), nullable_string (string or null), cidr_list,
-# cisco_cmd_list, backend_list, string_scalar. The `pattern` is a Python regex.
+# cisco_cmd_list, backend_list, host_port, listener, string_scalar. The
+# `pattern` is a Python regex.
+
+# --- Listener model (plan 3.4) ---------------------------------------------
+# listeners.<backend>.<name> in tacctl.yaml says where a backend's daemon
+# listens:
+#
+#   listeners:
+#     tacacs:
+#       default: { network: tcp, address: ":49" }
+#       mgmt:    { network: tcp, address: "10.1.0.1:4949" }
+#
+# Keys: network (tcp|tcp6|udp|udp6), address (host:port, [v6]:port or :port),
+# role (auth|acct|both), metrics_address (host:port; a daemon that exports
+# metrics per process), and tls {enabled, cert, key, ca,
+# require_client_cert}. The tls block is reserved: its fields are accepted so
+# that TACACS+ over TLS needs no schema change, and 'enabled: true' is
+# refused until a release implements it.
+#
+# LISTENER_BACKENDS says what each backend's daemon can do and which
+# listeners exist without being written down ('defaults'); a listener named
+# there can be changed and reset but not removed. Python shared by the schema
+# below and by the backends' renderers.
+_listener_py() {
+    cat <<'PY'
+import ipaddress, re
+
+LISTENER_BACKENDS = {
+    # One tacquito process serves one stream listener, authentication and
+    # accounting together.
+    'tacacs': {'networks': ('tcp', 'tcp6'), 'roles': ('both',),
+               'defaults': {'default': {'network': 'tcp', 'address': ':49'}}},
+}
+LISTENER_NETWORKS = ('tcp', 'tcp6', 'udp', 'udp6')
+LISTENER_ROLES = ('auth', 'acct', 'both')
+LISTENER_KEYS = ('network', 'address', 'role', 'metrics_address', 'tls')
+LISTENER_TLS_KEYS = ('enabled', 'cert', 'key', 'ca', 'require_client_cert')
+RE_LISTENER_NAME = re.compile(r'[a-z][a-z0-9_-]{0,31}')
+RE_HOST_PORT = re.compile(r'(\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9.-]*):([0-9]{1,5})')
+WILDCARD_HOSTS = ('', '0.0.0.0', '::')
+
+
+def split_listen_address(addr):
+    """'host:port' or '[v6]:port' -> (host, port); None when it is neither."""
+    if not isinstance(addr, str):
+        return None
+    m = re.fullmatch(r'\[([^\]]+)\]:(\d+)', addr) or re.fullmatch(r'([^:]*):(\d+)', addr)
+    if not m:
+        return None
+    return m.group(1), int(m.group(2))
+
+
+def listen_address_problem(network, addr):
+    """'' when addr is a listen address of the network's family, else why not.
+    The host is empty (every address) or an IP literal, never a name."""
+    parts = split_listen_address(addr)
+    if parts is None:
+        return 'must be host:port, [ipv6]:port or :port'
+    host, port = parts
+    if not 1 <= port <= 65535:
+        return 'port must be 1..65535'
+    if host:
+        try:
+            ip = ipaddress.ip_address(host)
+        except ValueError:
+            return f'{host!r} is not an IP address'
+        if network in ('tcp', 'udp') and ip.version != 4:
+            return f'{network} takes an IPv4 address ({network}6 for IPv6)'
+        if network in ('tcp6', 'udp6') and ip.version != 6:
+            return f'{network} takes an IPv6 address in brackets'
+    return ''
+
+
+def host_port_problem(value):
+    """'' when value is host:port (host may be empty or a name; port 0 is
+    the kernel's choice), else why not."""
+    if not isinstance(value, str):
+        return 'must be a string host:port'
+    m = RE_HOST_PORT.fullmatch(value)
+    if not m:
+        return "must be host:port (e.g. '127.0.0.1:8080' or ':8080')"
+    if int(m.group(2)) > 65535:
+        return 'port must be 0..65535'
+    return ''
+
+
+def listener_normalize(backend, value):
+    """Every key present, defaults filled in. value must have passed
+    listener_problem."""
+    spec = LISTENER_BACKENDS[backend]
+    tls = value.get('tls') or {}
+    return {
+        'network': value.get('network') or spec['networks'][0],
+        'address': value['address'],
+        'role': value.get('role') or spec['roles'][-1],
+        'metrics_address': value.get('metrics_address') or '',
+        'tls': {
+            'enabled': False,
+            'cert': tls.get('cert') or '',
+            'key': tls.get('key') or '',
+            'ca': tls.get('ca') or '',
+            'require_client_cert': bool(tls.get('require_client_cert')),
+        },
+    }
+
+
+def listener_compact(backend, value):
+    """What tacctl.yaml stores: only what differs from the defaults."""
+    spec = LISTENER_BACKENDS[backend]
+    full = listener_normalize(backend, value)
+    out = {'network': full['network'], 'address': full['address']}
+    if full['role'] != spec['roles'][-1]:
+        out['role'] = full['role']
+    if full['metrics_address']:
+        out['metrics_address'] = full['metrics_address']
+    tls = {k: v for k, v in full['tls'].items() if v}
+    if tls:
+        out['tls'] = tls
+    return out
+
+
+def listener_problem(backend, name, value):
+    """'' when value is a valid listeners.<backend>.<name>, else why not."""
+    spec = LISTENER_BACKENDS.get(backend)
+    if spec is None:
+        return f"'{backend}' is not a backend with listeners (known: {', '.join(LISTENER_BACKENDS)})"
+    if not RE_LISTENER_NAME.fullmatch(name):
+        return 'a listener name is a lowercase letter, then up to 31 of [a-z0-9_-]'
+    if not isinstance(value, dict):
+        return 'must be a mapping {network, address, role?, metrics_address?, tls?}'
+    extra = sorted(set(value) - set(LISTENER_KEYS))
+    if extra:
+        return f"unknown keys {extra} (known: {', '.join(LISTENER_KEYS)})"
+    network = value.get('network', spec['networks'][0])
+    if network not in LISTENER_NETWORKS:
+        return f"network must be one of {', '.join(LISTENER_NETWORKS)} (got {network!r})"
+    if network not in spec['networks']:
+        return f"the {backend} backend listens on {' or '.join(spec['networks'])} only (got {network})"
+    if 'address' not in value:
+        return 'address is required'
+    why = listen_address_problem(network, value['address'])
+    if why:
+        return f"address {value['address']!r}: {why}"
+    role = value.get('role', spec['roles'][-1])
+    if role not in LISTENER_ROLES:
+        return f"role must be one of {', '.join(LISTENER_ROLES)} (got {role!r})"
+    if role not in spec['roles']:
+        return f"a {backend} listener has role {' or '.join(spec['roles'])} (got {role})"
+    if value.get('metrics_address') not in (None, ''):
+        why = host_port_problem(value['metrics_address'])
+        if why:
+            return f'metrics_address: {why}'
+    tls = value.get('tls')
+    if tls is not None:
+        if not isinstance(tls, dict):
+            return f"tls must be a mapping {{{', '.join(LISTENER_TLS_KEYS)}}}"
+        extra = sorted(set(tls) - set(LISTENER_TLS_KEYS))
+        if extra:
+            return f"tls: unknown keys {extra} (known: {', '.join(LISTENER_TLS_KEYS)})"
+        for k in ('enabled', 'require_client_cert'):
+            if not isinstance(tls.get(k, False), bool):
+                return f'tls.{k} must be true or false'
+        for k in ('cert', 'key', 'ca'):
+            if not isinstance(tls.get(k, ''), str):
+                return f'tls.{k} must be a file path'
+        if tls.get('enabled'):
+            return 'tls.enabled: true is reserved for a future release (TLS listeners are not implemented)'
+    return ''
+
+
+def listeners_effective(doc, backend):
+    """{name: normalized listener} for one backend: the built-in ones
+    (as overridden), then the others by name. An entry that does not
+    validate is left out, or falls back to the built-in one of its name;
+    listeners_problems names it."""
+    spec = LISTENER_BACKENDS.get(backend) or {'defaults': {}}
+    section = ((doc or {}).get('listeners') or {})
+    mine = section.get(backend) if isinstance(section, dict) else None
+    mine = mine if isinstance(mine, dict) else {}
+    out = {}
+    for name in list(spec['defaults']) + sorted(n for n in mine if isinstance(n, str) and n not in spec['defaults']):
+        value = mine.get(name)
+        if value is None or listener_problem(backend, name, value):
+            value = spec['defaults'].get(name)
+        if value is not None:
+            out[name] = listener_normalize(backend, value)
+    return out
+
+
+def _binds_collide(a, b):
+    """Two listeners that cannot both bind: same transport and port, and
+    the same host or a wildcard on either side (':49' is every address of
+    both families)."""
+    if a['network'][:3] != b['network'][:3]:
+        return False
+    (ha, pa), (hb, pb) = split_listen_address(a['address']), split_listen_address(b['address'])
+    if pa != pb:
+        return False
+    if ha in WILDCARD_HOSTS or hb in WILDCARD_HOSTS:
+        return True
+    return ipaddress.ip_address(ha) == ipaddress.ip_address(hb)
+
+
+def listeners_problems(doc, only=None):
+    """Every problem of the listeners section of a tacctl.yaml document, as
+    '<path>: <reason>' strings: invalid entries, and two listeners (of any
+    backends) on one network and address. With only=<path>, the problems of
+    that one listener, a collision told from its side."""
+    problems = []
+    section = (doc or {}).get('listeners')
+    if section is None:
+        section = {}
+    if not isinstance(section, dict):
+        return ['listeners: must be a mapping of backends']
+    for backend, mine in section.items():
+        if not isinstance(mine, dict):
+            problems.append(f'listeners.{backend}: must be a mapping of listener names')
+            continue
+        for name, value in mine.items():
+            why = listener_problem(str(backend), str(name), value)
+            if why:
+                problems.append(f'listeners.{backend}.{name}: {why}')
+    if only is not None:
+        problems = [p for p in problems if p.startswith(only + ':')]
+    seen = []
+    for backend in LISTENER_BACKENDS:
+        for name, l in listeners_effective(doc, backend).items():
+            path = f'listeners.{backend}.{name}'
+            for other_path, other in seen:
+                if only is not None and only not in (path, other_path):
+                    continue
+                # Told from the later listener's side, or from only's.
+                (pa, a), (pb, b) = ((other_path, other), (path, l)) if only == other_path else ((path, l), (other_path, other))
+                if _binds_collide(a, b):
+                    problems.append(f"{pa}: {a['network']} {a['address']} is already used by {pb} ({b['network']} {b['address']})")
+                if a['metrics_address'] and a['metrics_address'] == b['metrics_address'] \
+                        and not a['metrics_address'].endswith(':0'):
+                    problems.append(f"{pa}: metrics_address {a['metrics_address']} is already used by {pb}")
+            seen.append((path, l))
+    return problems
+
+PY
+}
+
 _conf_schema_py() {
+    _listener_py
     cat <<'PY'
 SCHEMA = {
     'password.max_age_days': {'type': 'int', 'min': 1},
@@ -218,6 +462,13 @@ SCHEMA = {
     'backends.enabled':      {'type': 'backend_list',
                               'values': ['tacacs'],
                               'default': ['tacacs']},
+    # Per-backend daemon settings ('tacctl config loglevel|metrics'). They
+    # apply to every listener's process; tacquito takes 10 (error), 20 (info)
+    # or 30 (debug). The metrics address is the default listener's; another
+    # listener exports metrics only when it sets metrics_address itself.
+    'backends.tacacs.level': {'type': 'int', 'min': 0, 'max': 100, 'default': 20},
+    'backends.tacacs.metrics_address':
+                             {'type': 'host_port', 'default': '127.0.0.1:8080'},
 }
 # Wildcard paths: each operator-created group/scope gets its own entry
 # under privileges.<group>, commands.<group>, aaa.order.<scope>. The
@@ -266,6 +517,10 @@ WILDCARDS = [
     # renders fall through to the global `mgmt_acl.permits`.
     ('scope_mgmt_acl.permits.',
                       {'type': 'cidr_list', 'default': []}),
+    # listeners.<backend>.<name>: two trailing segments, and the value is a
+    # mapping (see _listener_py). Its default is per name, from
+    # LISTENER_BACKENDS.
+    ('listeners.',    {'type': 'listener', 'depth': 2}),
 ]
 
 import re
@@ -295,10 +550,12 @@ def schema_for(path):
     if path in SCHEMA:
         return SCHEMA[path]
     for prefix, rule in WILDCARDS:
-        if path.startswith(prefix) and '.' not in path[len(prefix):]:
-            # Reject empty group names (just the prefix itself).
-            if path[len(prefix):]:
-                return rule
+        if not path.startswith(prefix):
+            continue
+        # Reject empty names (just the prefix itself, or an empty segment).
+        parts = path[len(prefix):].split('.')
+        if len(parts) == rule.get('depth', 1) and all(parts):
+            return rule
     return None
 
 def implicit_default(path):
@@ -310,6 +567,9 @@ def implicit_default(path):
     rule = schema_for(path)
     if rule is None:
         return None
+    if rule['type'] == 'listener':
+        _, backend, name = path.split('.')
+        return (LISTENER_BACKENDS.get(backend) or {'defaults': {}})['defaults'].get(name)
     return rule.get('default')
 
 def validate(path, value, is_list):
@@ -370,6 +630,13 @@ def validate(path, value, is_list):
             except ValueError:
                 return False, f"element {i}: {item!r} is not a valid CIDR"
         return True, ''
+    if t == 'host_port':
+        why = host_port_problem(value)
+        return (not why), why
+    if t == 'listener':
+        _, backend, name = path.split('.')
+        why = listener_problem(backend, name, value)
+        return (not why), why
     if t == 'backend_list':
         vals = rule.get('values') or []
         if not isinstance(value, list) or not value:
@@ -554,6 +821,9 @@ elif mode == 'set_json':
     if not ok:
         print(f"tacctl config: {path}: {msg}", file=sys.stderr)
         sys.exit(1)
+    if schema_for(path)['type'] == 'listener':
+        # Stored without the keys that only repeat a default.
+        parsed = listener_compact(path.split('.')[1], parsed)
 elif mode == 'unset':
     pass  # unsetting an unknown key is a no-op, not an error.
 else:
@@ -590,6 +860,14 @@ elif mode == 'set_json':
         set_nested(overrides, path, parsed)
 elif mode == 'unset':
     unset_nested(overrides, path)
+
+# A listener is also checked against the others: two on one network and
+# address cannot both bind. Refused before anything is written.
+if path.startswith('listeners.') and mode != 'unset':
+    clash = listeners_problems(overrides, only=path)
+    if clash:
+        print(f"tacctl config: {clash[0]}", file=sys.stderr)
+        sys.exit(1)
 
 # Empty overrides dict -> remove the file entirely (no-overrides posture).
 if not overrides:
@@ -689,12 +967,18 @@ def walk(node, prefix=''):
                 yield child, v
     # Top-level non-dict shouldn't happen for tacctl.yaml; ignore.
 
-for path, value in walk(data):
+# The listeners section is checked as a whole (its leaves are mappings, and
+# two listeners can collide); everything else leaf by leaf.
+rest = {k: v for k, v in data.items() if k != 'listeners'} if isinstance(data, dict) else data
+for path, value in walk(rest):
     # Lists come through as the raw value (not split into elements).
     is_list = isinstance(value, list)
     ok, msg = validate(path, value, is_list=is_list)
     if not ok:
         print(f"{path}: {msg}")
+if isinstance(data, dict):
+    for problem in listeners_problems(data):
+        print(problem)
 PY
 }
 # Items arrive on stdin, one per line. Callers pass a list via `<<< "$list"`

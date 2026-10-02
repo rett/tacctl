@@ -1,0 +1,53 @@
+[Unit]
+Description=Tacquito TACACS+ Server (listener %i)
+Documentation=https://github.com/facebookincubator/tacquito
+After=network-online.target
+Wants=network-online.target
+# One instance per listener other than the default one, which is
+# tacquito.service. Stopping or restarting tacquito.service does the same to
+# every instance, and starting it starts the enabled ones (see [Install]).
+PartOf=tacquito.service
+# An instance exists only as a listener in tacctl.yaml
+# (tacctl config listen --listener %i ...), from which tacctl renders this
+# drop-in. Without it there is no address to listen on.
+AssertPathExists=/etc/systemd/system/tacquito@%i.service.d/tacctl.conf
+
+[Service]
+Type=simple
+User=tacquito
+Group=tacquito
+# TACQUITO_NETWORK and TACQUITO_ADDRESS come from the rendered drop-in only.
+# The rest are defaults the drop-in repeats: the log level of the backend, no
+# reachable metrics exporter (see tacquito.service for why it is a loopback
+# sink rather than off), and an accounting log of the instance's own.
+Environment="TACQUITO_LEVEL=20"
+Environment="TACQUITO_METRICS_ADDRESS=127.0.0.1:0"
+Environment="TACQUITO_ACCT_LOG=/var/log/tacquito/accounting-%i.log"
+ExecStart=/usr/local/bin/tacquito \
+    -config /etc/tacquito/tacquito.yaml \
+    -network ${TACQUITO_NETWORK} -address ${TACQUITO_ADDRESS} \
+    -acct-log-path ${TACQUITO_ACCT_LOG} \
+    -level ${TACQUITO_LEVEL} \
+    -metrics-address ${TACQUITO_METRICS_ADDRESS}
+Restart=on-failure
+RestartSec=5
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/log/tacquito
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+
+# Port 49 requires CAP_NET_BIND_SERVICE since it is < 1024
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=tacquito.service

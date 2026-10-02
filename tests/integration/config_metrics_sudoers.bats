@@ -9,6 +9,7 @@ load ../helpers/fixtures
 setup() {
     tacctl_tmpenv_init
     tacctl_mocks_init
+    export TACCTL_SETTLE_SECONDS=0
     stub_cmd chown
     # systemctl stub: is-active returns 0 (active), others succeed.
     stub_cmd systemctl 'if [[ "$1" == "is-active" ]]; then exit 0; fi; exit 0'
@@ -42,10 +43,12 @@ setup() {
 
 # --- metrics: address --------------------------------------------------------
 
-@test "config metrics address: pins a custom host:port via drop-in override" {
+@test "config metrics address: pins a custom host:port in tacctl.yaml and the rendered drop-in" {
     run "$TACCTL_BIN_SCRIPT" config metrics address 10.1.0.1:9090
     assert_success
-    run grep -F 'TACQUITO_METRICS_ADDRESS=10.1.0.1:9090' "$TACCTL_OVERRIDE_DIR/tacctl-overrides.conf"
+    run grep -F 'metrics_address: 10.1.0.1:9090' "$TACCTL_STATE_DIR/tacctl.yaml"
+    assert_success
+    run grep -F 'TACQUITO_METRICS_ADDRESS=10.1.0.1:9090' "$TACCTL_OVERRIDE_DIR/tacctl.conf"
     assert_success
     stub_called 'systemctl daemon-reload'
     stub_called 'systemctl restart tacquito'
@@ -60,16 +63,19 @@ setup() {
 @test "config metrics address: setting default clears the override" {
     # Pin first, then set to default value.
     "$TACCTL_BIN_SCRIPT" config metrics address 10.1.0.1:9090
-    [[ -f "$TACCTL_OVERRIDE_DIR/tacctl-overrides.conf" ]]
+    grep -q 'metrics_address' "$TACCTL_STATE_DIR/tacctl.yaml"
 
     run "$TACCTL_BIN_SCRIPT" config metrics address 127.0.0.1:8080
     assert_success
-    # Override file (if it still exists) no longer names METRICS_ADDRESS.
-    if [[ -f "$TACCTL_OVERRIDE_DIR/tacctl-overrides.conf" ]]; then
-        run grep -c '^Environment="TACQUITO_METRICS_ADDRESS=' \
-            "$TACCTL_OVERRIDE_DIR/tacctl-overrides.conf"
+    # tacctl.yaml (if it still exists) no longer names the metrics address,
+    # and the drop-in is rendered with the default.
+    if [[ -f "$TACCTL_STATE_DIR/tacctl.yaml" ]]; then
+        run grep -c 'metrics_address' "$TACCTL_STATE_DIR/tacctl.yaml"
         assert_output "0"
     fi
+    grep -qxF 'Environment="TACQUITO_METRICS_ADDRESS=127.0.0.1:8080"' "$TACCTL_OVERRIDE_DIR/tacctl.conf"
+    run "$TACCTL_BIN_SCRIPT" config metrics
+    assert_output --partial "127.0.0.1:8080  (default)"
 }
 
 @test "config metrics address: rejects missing argument" {
@@ -90,7 +96,7 @@ setup() {
     run "$TACCTL_BIN_SCRIPT" config metrics disable
     assert_success
 
-    run grep -F 'TACQUITO_METRICS_ADDRESS=127.0.0.1:0' "$TACCTL_OVERRIDE_DIR/tacctl-overrides.conf"
+    run grep -F 'TACQUITO_METRICS_ADDRESS=127.0.0.1:0' "$TACCTL_OVERRIDE_DIR/tacctl.conf"
     assert_success
 
     run "$TACCTL_BIN_SCRIPT" config metrics
@@ -108,15 +114,16 @@ setup() {
 
 @test "config metrics reset: clears the override" {
     "$TACCTL_BIN_SCRIPT" config metrics address 10.1.0.1:9090
-    [[ -f "$TACCTL_OVERRIDE_DIR/tacctl-overrides.conf" ]]
+    grep -q 'metrics_address' "$TACCTL_STATE_DIR/tacctl.yaml"
 
     run "$TACCTL_BIN_SCRIPT" config metrics reset
     assert_success
-    if [[ -f "$TACCTL_OVERRIDE_DIR/tacctl-overrides.conf" ]]; then
-        run grep -c '^Environment="TACQUITO_METRICS_ADDRESS=' \
-            "$TACCTL_OVERRIDE_DIR/tacctl-overrides.conf"
+    assert_output --partial "Metrics override cleared. Using unit default (127.0.0.1:8080)."
+    if [[ -f "$TACCTL_STATE_DIR/tacctl.yaml" ]]; then
+        run grep -c 'metrics_address' "$TACCTL_STATE_DIR/tacctl.yaml"
         assert_output "0"
     fi
+    grep -qxF 'Environment="TACQUITO_METRICS_ADDRESS=127.0.0.1:8080"' "$TACCTL_OVERRIDE_DIR/tacctl.conf"
 }
 
 @test "config metrics: rejects unknown subcommand" {

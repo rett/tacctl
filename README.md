@@ -59,8 +59,9 @@ tacctl/
 | File | Purpose |
 |------|---------|
 | `/etc/tacquito/tacquito.yaml` | Server configuration |
-| `/etc/systemd/system/tacquito.service` | Systemd unit file |
-| `/etc/systemd/system/tacquito.service.d/tacctl-overrides.conf` | Systemd drop-in for `-network`/`-address`/`-level` overrides (preserved across upgrades) |
+| `/etc/systemd/system/tacquito.service` | Systemd unit file (the default listener) |
+| `/etc/systemd/system/tacquito@.service` | Template unit: one instance `tacquito@<name>` per further listener (`tacctl config listen --listener <name> …`) |
+| `/etc/systemd/system/tacquito.service.d/tacctl.conf` | Systemd drop-in with the listen address, log level, metrics address and accounting log of the unit. Rendered from `tacctl.yaml`; do not edit (own unit settings go in another `.conf` file there). Instances have `tacquito@<name>.service.d/tacctl.conf` |
 | `/etc/sudoers.d/tacctl` | Optional NOPASSWD rule (installed via `tacctl config sudoers install`) |
 | `/var/log/tacquito/accounting.log` | Accounting records |
 | `/etc/tacctl/backups/` | Config snapshots (`<timestamp>/`), old-style backups, password dates |
@@ -86,7 +87,14 @@ The default listener is `-address :49` (all interfaces). Change it to your manag
 ```
 tacctl config listen tcp 10.1.0.1:49
 ```
-The setting lives in a systemd drop-in (`/etc/systemd/system/tacquito.service.d/tacctl-overrides.conf`) so it survives `tacctl upgrade`. Use `tacctl config listen show` to inspect, or `tacctl config listen reset` to revert to the template default.
+The setting lives in `tacctl.yaml` (`listeners.tacacs.default`), from which tacctl renders the unit's systemd drop-in, so it survives `tacctl upgrade`. Use `tacctl config listen show` to inspect, or `tacctl config listen reset` to revert to the template default.
+
+A second listener is a second tacquito process with its own unit, `tacquito@<name>.service`:
+```
+tacctl config listen --listener mgmt tcp 10.1.0.1:4949   # add or change
+tacctl config listen --listener mgmt reset               # remove
+```
+`systemctl stop|start|restart tacquito` acts on every listener; `tacquito.service` itself is the default one. A listener's accounting goes to `/var/log/tacquito/accounting-<name>.log`.
 
 ### Scopes (environment isolation)
 A **scope** is a named bundle of `(client CIDR prefixes, shared secret)`. Each user carries a list of scope names; authentication succeeds only when the scope the client IP falls inside is in the user's scope list. Scopes let you run multiple environments (prod, lab, edge) off a single tacquito instance with distinct secrets and tight device-class boundaries.

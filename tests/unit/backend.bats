@@ -218,12 +218,22 @@ PY
 
 # --- The TACACS+ module's read-only verbs ------------------------------------
 
-@test "tacacs artifacts: the rendered tacquito.yaml" {
+@test "tacacs artifacts: the rendered tacquito.yaml, then the default listener's drop-in" {
+    local dropin="${TACCTL_OVERRIDE_DIR}/tacctl.conf"
     run backend_call tacacs artifacts
-    assert_output "$CONFIG"
+    assert_line --index 0 "$CONFIG"
+    assert_line --index 1 "$dropin"
     run backends_artifacts
-    assert_output "$CONFIG"
+    assert_output "${CONFIG}
+${dropin}"
     run backends_artifact_names
+    assert_output "${CONFIG}, ${dropin}"
+}
+
+@test "tacacs artifacts: an install whose hand-managed drop-in is still there has no rendered one" {
+    mkdir -p "$TACCTL_OVERRIDE_DIR"
+    printf '[Service]\nEnvironment="TACQUITO_LEVEL=30"\n' > "${TACCTL_OVERRIDE_DIR}/tacctl-overrides.conf"
+    run backend_call tacacs artifacts
     assert_output "$CONFIG"
 }
 
@@ -240,17 +250,33 @@ PY
     assert_success
 }
 
-@test "tacacs listeners list: the unit's default, then the drop-in overrides" {
+@test "tacacs listeners list: the built-in default, then what tacctl.yaml says" {
     run backend_call tacacs listeners list
     assert_output "default tcp :49"
-    set_service_override TACQUITO_NETWORK tcp6
-    set_service_override TACQUITO_ADDRESS "[::]:4949"
+    # ...without reading the merged config when tacctl.yaml names no listener.
+    stub_cmd python3 'exit 97'
+    run backend_call tacacs listeners list
+    assert_output "default tcp :49"
+    rm -f "${STUB_BIN}/python3"
+    conf_set_json listeners.tacacs.default '{"network": "tcp6", "address": "[::]:4949"}'
     run backend_call tacacs listeners list
     assert_output "default tcp6 [::]:4949"
 }
 
-@test "tacacs listeners: 'list' only; 'tacctl config listen' is unchanged by it" {
+@test "tacacs listeners list: an install that is not converted shows its hand-managed drop-in" {
+    mkdir -p "$TACCTL_OVERRIDE_DIR"
+    printf '[Service]\nEnvironment="TACQUITO_NETWORK=tcp6"\nEnvironment="TACQUITO_ADDRESS=[::]:4949"\n' \
+        > "${TACCTL_OVERRIDE_DIR}/tacctl-overrides.conf"
+    conf_set_json listeners.tacacs.default '{"network": "tcp", "address": "10.1.0.1:49"}'
+    run backend_call tacacs listeners list
+    assert_output "default tcp6 [::]:4949"
+}
+
+@test "tacacs listeners: list, show, set and reset; 'tacctl config listen' did not grow a 'list'" {
     run backend_call tacacs listeners show
+    assert_success
+    assert_line "  Current listener: tcp :49"
+    run backend_call tacacs listeners frobnicate
     assert_failure 2
     # The CLI did not grow a 'list' subcommand.
     touch "$TACCTL_CONFIG"

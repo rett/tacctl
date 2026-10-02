@@ -4,19 +4,13 @@ Documentation=https://github.com/facebookincubator/tacquito
 After=network-online.target
 Wants=network-online.target
 
-# The default listener (listeners.tacacs.default in tacctl.yaml). Every other
-# listener is an instance of tacquito@.service; those are PartOf= this unit
-# and wanted by it, so starting, stopping, restarting, enabling or disabling
-# 'tacquito' acts on every listener.
-
 [Service]
 Type=simple
 User=tacquito
 Group=tacquito
-# Defaults. The values in effect are in the drop-in tacctl renders from
-# tacctl.yaml, /etc/systemd/system/tacquito.service.d/tacctl.conf; change
-# them with `tacctl config listen`, `tacctl config loglevel` and
-# `tacctl config metrics`, not here.
+# Defaults; override via /etc/systemd/system/tacquito.service.d/tacctl-overrides.conf
+# (managed by `tacctl config listen`, `tacctl config loglevel`, and
+# `tacctl config metrics`).
 Environment="TACQUITO_NETWORK=tcp"
 Environment="TACQUITO_ADDRESS=:49"
 Environment="TACQUITO_LEVEL=20"
@@ -33,11 +27,10 @@ Environment="TACQUITO_LEVEL=20"
 # ephemeral-port loopback sink gives the same operator-visible result
 # without requiring a tacquito patch.
 Environment="TACQUITO_METRICS_ADDRESS=127.0.0.1:8080"
-Environment="TACQUITO_ACCT_LOG=/var/log/tacquito/accounting.log"
 ExecStart=/usr/local/bin/tacquito \
     -config /etc/tacquito/tacquito.yaml \
     -network ${TACQUITO_NETWORK} -address ${TACQUITO_ADDRESS} \
-    -acct-log-path ${TACQUITO_ACCT_LOG} \
+    -acct-log-path /var/log/tacquito/accounting.log \
     -level ${TACQUITO_LEVEL} \
     -metrics-address ${TACQUITO_METRICS_ADDRESS}
 Restart=on-failure

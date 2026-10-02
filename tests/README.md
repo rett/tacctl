@@ -231,6 +231,41 @@ Generic code reaches a daemon only through the backend contract
   call them, and `store_apply`, in the test shell rather than under `run` when
   the test reads those.
 
+## Listeners and units
+
+A listener of a backend is `listeners.<backend>.<name>` in `tacctl.yaml`
+(schema and reader: `lib/conf.sh` `_listener_py`, `backend_listeners`). The
+TACACS+ backend runs each in a systemd unit of its own (`tacquito.service`
+for `default`, `tacquito@<name>.service` for any other) and renders one
+drop-in per unit, `<unit>.d/tacctl.conf`, an artifact recorded in
+`rendered.json` like `tacquito.yaml`.
+
+- Where the files land in a test: `tacctl_tmpenv_init` sets
+  `TACCTL_OVERRIDE_DIR=$BATS_TEST_TMPDIR/systemd-dropin`, the default
+  listener's drop-in directory. Unit files and the instances' drop-in
+  directories go to `TACCTL_SYSTEMD_DIR`, which defaults to the parent of
+  that directory (`$BATS_TEST_TMPDIR`), never to `/etc/systemd/system`. A test
+  that needs the real layout (drop-in directory beside the unit file) exports
+  both before sourcing, as `integration/units_convert.bats` does.
+- Any mutating command now also writes `systemd-dropin/tacctl.conf` and
+  records it, and `backend_call tacacs artifacts` lists it after
+  `tacquito.yaml`; messages that name the artifacts name both. With no unit
+  file in the test's unit directory a render makes no `systemctl` call for it.
+- `config listen|loglevel|metrics` restart a unit and then check that it
+  stayed up after `TACCTL_SETTLE_SECONDS` (default 0.5). Export
+  `TACCTL_SETTLE_SECONDS=0` in a file that runs many of them. To make the
+  unit "not come up", stub `systemctl` so that `is-active` fails.
+- An install "not converted" is one whose hand-managed
+  `tacctl-overrides.conf` still exists in the default drop-in directory:
+  write that file to get one (`old_install` in `units_convert.bats`).
+  `tests/fixtures/systemd/` holds the unit files of earlier releases.
+
+| File | Covers |
+|---|---|
+| `unit/listeners.bats` | the schema and its rejections (reserved TLS, collisions), `backends.tacacs.*`, `backend_listeners`, the shipped unit files |
+| `integration/listeners.bats` | `config listen` with and without `--listener`/`--backend`, the `listeners` and `service` verbs, drop-in rendering and its place in the render machinery, `status` and logs with several listeners |
+| `integration/units_convert.bats` | `_tacacs_units_install` (fresh, conversion, already converted, interrupted, failures), the restart and rollback of `_tacacs_upgrade_finish`, commands on an install that is not converted, uninstall of both layouts |
+
 ## Install, upgrade, uninstall
 
 `cmd_install`, `cmd_upgrade` and `cmd_uninstall` shell out to git, go, apt,
@@ -250,6 +285,9 @@ commands call them (the config ones live in `lib/backends/tacacs.sh`):
 | `upgrade_store_flip` (the import gate: 0 flipped, 10 store present, 20 stopped; part of the backend's `upgrade finish` phase) | upgrade, install over a legacy config | `integration/upgrade_store_flip.bats` |
 | `cmd_store_rollback` (`tacctl store rollback`) | operator | `integration/upgrade_store_flip.bats` |
 | `install_readme`, `uninstall_remove_access` | install, uninstall | `e2e/install_seed.bats` |
+| `_tacacs_units_install` (unit, template unit, drop-ins; converts the hand-managed drop-in) | install (`start` phase), upgrade (`files` phase, through `_tacacs_upgrade_units`) | `integration/units_convert.bats` |
+| `_tacacs_upgrade_finish` (the restart; unit files, settings and binary go back when the unit does not come up) | upgrade | `integration/units_convert.bats` |
+| `_tacacs_uninstall_stop`, `_tacacs_uninstall_units` | uninstall | `integration/units_convert.bats` |
 
 Notes:
 
@@ -259,6 +297,9 @@ Notes:
 - `e2e/install_seed.bats` sets `TACCTL_TIER_SUDOERS_FILE` and `TACCTL_LINUX_DIR`
   before sourcing, because `uninstall_remove_access` deletes those paths; a
   test that calls it must do the same.
+- `_tacacs_upgrade_files` and `_tacacs_uninstall_program|data` themselves
+  write fixed paths (`/etc/logrotate.d`, `/usr/local/bin`): do not call them
+  from a test; call the functions in the table.
 - The suite runs unprivileged with `chown` stubbed. Real ownership (the store
   0600 root, `tacquito.yaml` 0640 `tacquito:tacquito`, `config_service_access`)
   is only exercised by a run as root on a real host.

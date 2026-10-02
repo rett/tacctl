@@ -171,28 +171,12 @@ backup_names() {
 }
 
 # --- Validate listen address (host:port or [ipv6]:port) against network family ---
+# The check itself is the listener model's (lib/conf.sh: _listener_py), so
+# the CLI and the tacctl.yaml schema cannot disagree.
 validate_listen_address() {
     local net="$1" addr="$2"
-    if ! python3 - "$net" "$addr" <<'PY' 2>/dev/null
-import ipaddress, re, sys
-net, addr = sys.argv[1], sys.argv[2]
-m = re.match(r'^\[([^\]]+)\]:(\d+)$', addr)
-if m:
-    host, port = m.group(1), int(m.group(2))
-else:
-    m = re.match(r'^([^:]*):(\d+)$', addr)
-    if not m:
-        sys.exit(1)
-    host, port = m.group(1), int(m.group(2))
-if not 1 <= port <= 65535:
-    sys.exit(1)
-if host:
-    ip = ipaddress.ip_address(host)
-    if net == "tcp" and ip.version != 4:
-        sys.exit(1)
-    if net == "tcp6" and ip.version != 6:
-        sys.exit(1)
-PY
+    if ! python3 <(_listener_py; printf '%s\n' 'import sys' \
+            'sys.exit(1 if listen_address_problem(sys.argv[1], sys.argv[2]) else 0)') "$net" "$addr" 2>/dev/null
     then
         error "Invalid ${net} address: '${addr}'"
         return 1

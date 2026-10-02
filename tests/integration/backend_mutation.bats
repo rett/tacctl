@@ -187,7 +187,7 @@ no_leftovers() {
     run store_apply store_user_set bob disabled=true
     assert_failure 1
     assert_output --partial "fake: cannot express this model"
-    assert_output --partial "The change was not applied: ${TACCTL_CONFIG}, ${FAKE_CONF} could not be rendered. Store and tacctl.yaml are as they were."
+    assert_output --partial "The change was not applied: ${TACCTL_CONFIG}, ${TACCTL_OVERRIDE_DIR}/tacctl.conf, ${FAKE_CONF} could not be rendered. Store and tacctl.yaml are as they were."
     [[ "$(state)" == "$before" ]]
     # tacacs staged, and was never committed.
     ! grep -q 'commit' "$FAKE_LOG"
@@ -281,7 +281,7 @@ no_leftovers() {
 @test "config render: reports each backend, restarts the ones it changed" {
     run cmd_config_render
     assert_success
-    assert_line --partial "${TACCTL_CONFIG} is already up to date."
+    assert_line --partial "${TACCTL_CONFIG}, ${TACCTL_OVERRIDE_DIR}/tacctl.conf is already up to date."
     assert_line --partial "Rendered ${FAKE_CONF}."
     ! stub_called 'systemctl restart'
     grep -qx 'service restart' "$FAKE_LOG"

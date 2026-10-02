@@ -138,6 +138,10 @@ assert_stopped() {
     fake_tacquito serve
     cp "${FIX}/legacy.fresh-install.yaml" "$CONFIG"
     upgrade_sync
+    # The upgrade's 'files' phase, which runs before the gate: unit files and
+    # the listener drop-in (tests/integration/units_convert.bats).
+    _tacacs_units_install "$TACCTL_SRC" > /dev/null
+    _tacacs_units_keep_discard
     flip
     [[ "$FLIP_RC" -eq 0 ]]
     run "$TACCTL_BIN_SCRIPT" config validate
