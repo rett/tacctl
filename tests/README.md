@@ -1,6 +1,6 @@
 # tacctl tests
 
-Test suite for `bin/tacctl.sh`, built on [bats-core](https://github.com/bats-core/bats-core).
+Test suite for `bin/tacctl.sh` (the entrypoint) and `lib/*.sh` (the code it loads), built on [bats-core](https://github.com/bats-core/bats-core).
 
 ## Running
 
@@ -11,7 +11,7 @@ make test-unit       # pure-logic only, <5s
 make test-integration
 make test-e2e
 make coverage        # produces coverage/index.html (requires: apt install kcov)
-make lint            # shellcheck
+make lint            # shellcheck (bin/tacctl.sh, lib/*.sh, tests/helpers, config/linux)
 ```
 
 Run a single file:
@@ -33,6 +33,9 @@ tests/
 ├── integration/         # real file I/O into $TACCTL_ETC tmpdir
 └── e2e/                 # stubbed systemctl/git/etc.
 ```
+
+The code under test is `bin/tacctl.sh` (entrypoint) plus `lib/*.sh`. Tests keep
+sourcing `bin/tacctl.sh` through `tacctl_source_lib`; it loads the lib files.
 
 ## Writing a test
 
@@ -105,7 +108,9 @@ git diff tests/fixtures/golden/   # review the delta
 
 ## Coverage baseline
 
-Measured via `make coverage` (kcov v42, full suite of 335 tests):
+Measured via `make coverage` (kcov v42, full suite of 335 tests). This table predates
+the split of `bin/tacctl.sh` into `bin/` + `lib/*.sh`; the `bin/tacctl.sh` figure now
+spreads over the entrypoint and eleven lib files and has not been re-measured:
 
 | Target | Coverage |
 |---|---|

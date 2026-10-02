@@ -21,10 +21,21 @@ setup() {
 }
 
 # Strip ANSI color codes and the dynamic hostname line that can vary across
-# machines / test runs, so the golden file is reproducible.
+# machines / test runs, so the golden file is reproducible. The "Using
+# template:" line legitimately prints the absolute path of the template it
+# rendered, which sits under this checkout; swap that checkout prefix for a
+# <TACCTL_SRC> placeholder (literal match via index(), so any path is safe)
+# so the goldens pass from any checkout or worktree while still pinning
+# which template file was picked.
 _normalize() {
     sed -E 's/\x1b\[[0-9;]*m//g' \
-        | sed -E 's/^hostname .*/hostname TACQUITO-HOSTNAME/'
+        | sed -E 's/^hostname .*/hostname TACQUITO-HOSTNAME/' \
+        | awk '{
+            p = "Using template: " ENVIRON["TACCTL_SRC"] "/"
+            i = index($0, p)
+            if (i) $0 = substr($0, 1, i - 1) "Using template: <TACCTL_SRC>/" substr($0, i + length(p))
+            print
+        }'
 }
 
 @test "config cisco: renders deterministic IOS config from fixture + lab scope" {
@@ -250,6 +261,7 @@ _normalize() {
     local alt="$BATS_TEST_TMPDIR/alt/bin"
     mkdir -p "$alt"
     cp "$TACCTL_BIN_SCRIPT" "$alt/tacctl.sh"
+    cp -r "${TACCTL_SRC}/lib" "$BATS_TEST_TMPDIR/alt/lib"
     run "$alt/tacctl.sh" config wti --scope lab
     assert_success
     refute_output --partial "Using template:"
@@ -263,8 +275,17 @@ _normalize() {
 }
 
 @test "config validate: succeeds on a valid config" {
+    # The hand-written multiscope fixture is not valid by validate's own
+    # rules (inline authenticators instead of bcrypt_<user> anchors, users
+    # without accounter:), so build the config the way the product does:
+    # shipped template + real shared secret + one user via 'user add'.
+    cp "${TACCTL_SRC}/config/tacquito.yaml" "$TACCTL_CONFIG"
+    sed -i 's/REPLACE_WITH_SHARED_SECRET/lab-secret-0123456789abcdef/' "$TACCTL_CONFIG"
+    run "$TACCTL_BIN_SCRIPT" user add alice superuser --hash "24326224313024616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161"
+    assert_success
     run "$TACCTL_BIN_SCRIPT" config validate
     assert_success
+    assert_output --partial "Configuration is valid."
 }
 
 # --- per-scope aaa-order: render flip ----------------------------------------

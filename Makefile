@@ -21,13 +21,13 @@ test-e2e:
 coverage:
 	@command -v $(KCOV) >/dev/null || { echo "kcov not found. apt install kcov"; exit 1; }
 	rm -rf coverage
-	$(KCOV) --include-path=bin,tests/helpers --bash-dont-parse-binary-dir \
+	$(KCOV) --include-path=bin,lib,tests/helpers --bash-dont-parse-binary-dir \
 		coverage $(BATS) tests/unit tests/integration tests/e2e
 	@echo "Report: coverage/index.html"
 
 # Static analysis for all bash in the repo.
 lint:
-	$(SHELLCHECK) bin/tacctl.sh
+	$(SHELLCHECK) bin/tacctl.sh lib/*.sh
 	$(SHELLCHECK) tests/helpers/*.bash
 	$(SHELLCHECK) config/linux/*.sh
 

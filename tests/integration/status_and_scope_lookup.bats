@@ -67,6 +67,34 @@ esac'
     assert_output --partial "inactive"
 }
 
+@test "status: backup count is a single 0 when there are no backups" {
+    # Regression: `ls <no-match> | wc -l || echo 0` printed "0" twice, leaving
+    # a stray "0" line under the count.
+    run "$TACCTL_BIN_SCRIPT" status
+    assert_success
+    assert_line --regexp 'Config backups:.* 0$'
+    refute_line "0"
+}
+
+# =============================================================================
+#  cmd_config_validate
+# =============================================================================
+
+@test "config validate: structure and scope errors fail the command and are counted" {
+    # Regression: both error loops ran in a pipeline subshell, so their
+    # increments were lost and validate printed the errors, then reported
+    # "Configuration is valid." and exited 0. The fixture's three users have
+    # no bcrypt anchor (3) and alice/bob have no accounter (2); pointing
+    # carol at a missing scope adds one scope-integrity error.
+    sed -i 's/^      - dmz$/      - nosuchscope/' "$TACCTL_CONFIG"
+    run "$TACCTL_BIN_SCRIPT" config validate
+    assert_failure
+    assert_output --partial "has no bcrypt authenticator anchor"
+    assert_output --partial "references nonexistent scope 'nosuchscope'"
+    assert_output --partial "Validation failed with 6 error(s)."
+    refute_output --partial "Configuration is valid."
+}
+
 # =============================================================================
 #  cmd_config_show
 # =============================================================================

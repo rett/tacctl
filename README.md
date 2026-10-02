@@ -40,7 +40,8 @@ tacctl config wti --scope prod        # WTI console server: serial-menu walkthro
 ```
 tacctl/
   bin/
-    tacctl.sh               # CLI (symlinked to /usr/local/bin/tacctl)
+    tacctl.sh               # CLI entrypoint (symlinked to /usr/local/bin/tacctl)
+  lib/                      # Code sourced by bin/tacctl.sh (core, conf, policy, users, groups, ...)
   config/
     tacquito.yaml           # Template TACACS+ config (used by installer)
     tacquito.service        # Systemd unit file
