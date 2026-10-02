@@ -363,6 +363,39 @@ show; rm"
     assert_output --partial "1..63 chars"
 }
 
+# --- radius_group.<scope> ---------------------------------------------------
+
+@test "radius_group.<scope>: unset reads empty (render falls back to RADIUS-GROUP)" {
+    run conf_get radius_group.lab
+    assert_output ""
+}
+
+@test "radius_group.<scope>: round-trip an explicit override, independent of tacacs_group" {
+    conf_set radius_group.lab RADIUS_PROD
+    run conf_get radius_group.lab
+    assert_output "RADIUS_PROD"
+    run conf_get tacacs_group.lab
+    assert_output ""
+}
+
+@test "radius_group.<scope>: setting the implicit default prunes override" {
+    conf_set radius_group.lab RADIUS_PROD
+    [[ -f "$TACCTL_OVERRIDES_FILE" ]]
+    conf_set radius_group.lab RADIUS-GROUP
+    [[ ! -f "$TACCTL_OVERRIDES_FILE" ]]
+}
+
+@test "radius_group.<scope>: rejects invalid characters, empty and too-long" {
+    run conf_set radius_group.lab "bad name with spaces"
+    assert_failure
+    assert_output --partial "must start with a letter"
+    run conf_set radius_group.lab ""
+    assert_failure
+    run conf_set radius_group.lab "$(printf 'A%.0s' {1..64})"
+    assert_failure
+    assert_output --partial "1..63 chars"
+}
+
 # --- mgmt_acl.names.<vendor>.<scope> ----------------------------------------
 
 @test "scope_mgmt_acl.names.cisco.<scope>: unset reads empty; global/default win" {

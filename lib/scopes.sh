@@ -216,6 +216,7 @@ cmd_scope() {
         aaa-order)         cmd_scope_aaa_order "$@" ;;
         exec-timeout)      cmd_scope_exec_timeout "$@" ;;
         tacacs-group)      cmd_scope_tacacs_group "$@" ;;
+        radius-group)      cmd_scope_radius_group "$@" ;;
         mgmt-acl)          cmd_scope_mgmt_acl "$@" ;;
         *)
             error "Unknown subcommand: '${subcmd}'"
@@ -250,6 +251,7 @@ cmd_scope_usage() {
     echo "  tacctl scope aaa-order <scope> [tacacs-first|local-first] AAA method-list order in this scope's rendered device configs (default tacacs-first)"
     echo "  tacctl scope exec-timeout <scope> [minutes]              Per-scope idle-session timeout in rendered device configs (0..60 min; default 60; 0 = never expire)"
     echo "  tacctl scope tacacs-group <scope> [name]                 Per-scope Cisco aaa-group-server label (default TACACS-GROUP)"
+    echo "  tacctl scope radius-group <scope> [name]                 Per-scope Cisco aaa-group-server label for RADIUS (default RADIUS-GROUP)"
     echo "  tacctl scope mgmt-acl <scope> list|add|remove|clear      Per-scope permit list (fallback: global mgmt_acl.permits)"
     echo "  tacctl scope mgmt-acl <scope> cisco-name|juniper-name [name]  Per-scope ACL / filter name (defaults VTY-ACL / MGMT-ACL)"
     echo ""
@@ -358,10 +360,11 @@ cmd_scope_show() {
     # Per-scope device-render knobs. Absence of an override falls back
     # through the per-scope -> global -> shipped-default chain,
     # matching what `tacctl config cisco|juniper --scope <name>` emits.
-    local aaa_order_val exec_timeout_val exec_timeout_display tacacs_group_val cisco_acl_val juniper_acl_val
+    local aaa_order_val exec_timeout_val exec_timeout_display tacacs_group_val radius_group_val cisco_acl_val juniper_acl_val
     aaa_order_val=$(conf_get "aaa.order.${name}" tacacs-first)
     exec_timeout_val=$(conf_get "exec_timeout.${name}" 60)
     tacacs_group_val=$(conf_get "tacacs_group.${name}" TACACS-GROUP)
+    radius_group_val=$(conf_get "radius_group.${name}" RADIUS-GROUP)
     cisco_acl_val=$(read_mgmt_acl_name cisco "$name")
     juniper_acl_val=$(read_mgmt_acl_name juniper "$name")
     if [[ "$exec_timeout_val" == "0" ]]; then
@@ -379,6 +382,7 @@ cmd_scope_show() {
     echo -e "  ${BOLD}AAA order:${NC}     ${aaa_order_val}"
     echo -e "  ${BOLD}Exec timeout:${NC}  ${exec_timeout_display}"
     echo -e "  ${BOLD}TACACS group:${NC}  ${tacacs_group_val}"
+    echo -e "  ${BOLD}RADIUS group:${NC}  ${radius_group_val}"
     echo -e "  ${BOLD}Cisco ACL:${NC}     ${cisco_acl_val}"
     echo -e "  ${BOLD}Juniper ACL:${NC}   ${juniper_acl_val}"
     echo -e "  ${BOLD}Prefixes:${NC}"
@@ -1107,6 +1111,54 @@ cmd_scope_tacacs_group() {
     echo "  Re-run 'tacctl config cisco --scope ${scope}' and push the updated AAA"
     echo "  stanzas to each device in this scope — the change is not applied until"
     echo "  the device receives the new group name. Leaving a stale local group"
+    echo "  reference on the device will break authentication."
+    echo ""
+}
+
+# --- Per-scope Cisco aaa-group-server label for RADIUS: tacctl scope radius-group <scope> [name] ---
+# The RADIUS twin of tacacs-group: rendered into every Cisco
+# `aaa group server radius <NAME>` and the method-list / accounting lines
+# of `tacctl config cisco --protocol radius`. Junos has no equivalent.
+cmd_scope_radius_group() {
+    local scope="${1:-}"
+    local new_name="${2:-}"
+
+    if [[ -z "$scope" ]]; then
+        error "Usage: tacctl scope radius-group <scope> [name]"
+        exit 1
+    fi
+    _scope_require "$scope" || exit 1
+
+    local current source
+    current=$(conf_get "radius_group.${scope}")
+    if [[ -z "$current" ]]; then
+        current="RADIUS-GROUP"
+        source="default"
+    else
+        source="override (tacctl.yaml: radius_group.${scope})"
+    fi
+
+    if [[ -z "$new_name" ]]; then
+        echo ""
+        echo "  Scope '${scope}' Cisco RADIUS aaa-group-server name: ${current}"
+        echo "  Source: ${source}"
+        echo ""
+        echo "    Rendered into every 'aaa group server radius <NAME>' and the method-list"
+        echo "    / accounting lines that reference the group by"
+        echo "    'tacctl config cisco --protocol radius' (Cisco only; Junos has no"
+        echo "    equivalent)."
+        echo ""
+        echo "  Usage: tacctl scope radius-group ${scope} <name>"
+        echo ""
+        return
+    fi
+
+    conf_set "radius_group.${scope}" "$new_name" || exit 1
+    info "Scope '${scope}' RADIUS aaa-group-server label set to ${new_name}."
+    echo ""
+    echo "  Re-run 'tacctl config cisco --scope ${scope} --protocol radius' and push the"
+    echo "  updated AAA stanzas to each device in this scope — the change is not applied"
+    echo "  until the device receives the new group name. Leaving a stale local group"
     echo "  reference on the device will break authentication."
     echo ""
 }

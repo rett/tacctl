@@ -224,8 +224,8 @@ cmd_config() {
             echo "  allow list|add|remove|clear          Manage connection allow list (IP ACL; add/remove accept comma-lists)"
             echo "  deny list|add|remove|clear           Manage connection deny list (IP ACL; add/remove accept comma-lists)"
             echo "  mgmt-acl list|add|remove|clear       Manage Cisco VTY-ACL + Juniper lo0-filter permits"
-            echo "  cisco   [--scope <name>] [--legacy]  Show working Cisco device configuration for a scope (--legacy = IOS 12.x syntax)"
-            echo "  juniper [--scope <name>]             Show working Juniper device configuration for a scope"
+            echo "  cisco   [--scope <name>] [--legacy] [--protocol tacacs|radius]  Show working Cisco device configuration for a scope (--legacy = IOS 12.x syntax; --protocol radius = RADIUS backend, default tacacs)"
+            echo "  juniper [--scope <name>] [--protocol tacacs|radius]             Show working Juniper device configuration for a scope"
             echo "  wti     [--scope <name>]             Show step-by-step WTI console-server (v8.x serial menu) setup for a scope"
             echo "  linux   build|script|remove-script   TACACS+ login for Linux hosts (pam_tacplus install/removal scripts)"
             echo "  branch [name]                        Show or change the tacctl repo branch"
@@ -238,6 +238,7 @@ cmd_config() {
             echo "  tacctl config sudoers install adm"
             echo "  tacctl config cisco --scope prod"
             echo "  tacctl config cisco --scope prod --legacy   # legacy IOS 12.x syntax"
+            echo "  tacctl config cisco --scope prod --protocol radius"
             echo "  tacctl config wti --scope prod"
             echo ""
             exit 1

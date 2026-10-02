@@ -518,6 +518,12 @@ WILDCARDS = [
                        # acl_name type enforces letter-start +
                        # [A-Za-z0-9_-] which is what IOS accepts.
                        'default': 'TACACS-GROUP'}),
+    ('radius_group.', {'type': 'acl_name',
+                       # The RADIUS twin of tacacs_group.<scope>: the
+                       # Cisco `aaa group server radius <name>` label
+                       # `config cisco --protocol radius` renders. Same
+                       # naming rules, own default.
+                       'default': 'RADIUS-GROUP'}),
     # Per-scope mgmt-ACL overrides. These live under a separate
     # `scope_mgmt_acl.*` top-level namespace rather than extending
     # `mgmt_acl.*`, because the global `mgmt_acl.permits` is a list

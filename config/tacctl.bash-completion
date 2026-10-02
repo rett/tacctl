@@ -227,9 +227,12 @@ for u in (d.get('users') or []):
                         COMPREPLY=($(compgen -W "list add remove clear cisco-name juniper-name" -- "$cur"))
                         ;;
                     cisco)
-                        COMPREPLY=($(compgen -W "--scope --legacy" -- "$cur"))
+                        COMPREPLY=($(compgen -W "--scope --legacy --protocol" -- "$cur"))
                         ;;
-                    juniper|wti)
+                    juniper)
+                        COMPREPLY=($(compgen -W "--scope --protocol" -- "$cur"))
+                        ;;
+                    wti)
                         COMPREPLY=($(compgen -W "--scope" -- "$cur"))
                         ;;
                     get|get-list)
@@ -260,11 +263,14 @@ for u in (d.get('users') or []):
             elif [[ $pos -ge 4 && ( "${words[offset + 2]}" == "cisco" || "${words[offset + 2]}" == "juniper" || "${words[offset + 2]}" == "wti" ) ]]; then
                 if [[ "${words[cword - 1]}" == "--scope" ]]; then
                     COMPREPLY=($(compgen -W "$(_tacctl_scope_names)" -- "$cur"))
-                elif [[ "${words[offset + 2]}" == "cisco" ]]; then
-                    # Offer whichever cisco flag isn't already on the line.
+                elif [[ "${words[cword - 1]}" == "--protocol" && "${words[offset + 2]}" != "wti" ]]; then
+                    COMPREPLY=($(compgen -W "tacacs radius" -- "$cur"))
+                elif [[ "${words[offset + 2]}" == "cisco" || "${words[offset + 2]}" == "juniper" ]]; then
+                    # Offer whichever cisco/juniper flag isn't already on the line.
                     local cflags=""
-                    [[ " ${words[*]} " == *" --scope "* ]]  || cflags+=" --scope"
-                    [[ " ${words[*]} " == *" --legacy "* ]] || cflags+=" --legacy"
+                    [[ " ${words[*]} " == *" --scope "* ]]    || cflags+=" --scope"
+                    [[ " ${words[*]} " == *" --protocol "* ]] || cflags+=" --protocol"
+                    [[ "${words[offset + 2]}" == "cisco" && " ${words[*]} " != *" --legacy "* ]] && cflags+=" --legacy"
                     COMPREPLY=($(compgen -W "$cflags" -- "$cur"))
                 fi
             fi
@@ -279,10 +285,10 @@ for u in (d.get('users') or []):
         scope)
             local ssub="${words[offset + 2]}"
             if [[ $pos -eq 2 ]]; then
-                COMPREPLY=($(compgen -W "list routing show add remove rename default lookup prefixes secret protocols aaa-order exec-timeout tacacs-group mgmt-acl" -- "$cur"))
+                COMPREPLY=($(compgen -W "list routing show add remove rename default lookup prefixes secret protocols aaa-order exec-timeout tacacs-group radius-group mgmt-acl" -- "$cur"))
             elif [[ $pos -eq 3 ]]; then
                 case "$ssub" in
-                    show|remove|rename|default|prefixes|secret|protocols|aaa-order|exec-timeout|tacacs-group|mgmt-acl)
+                    show|remove|rename|default|prefixes|secret|protocols|aaa-order|exec-timeout|tacacs-group|radius-group|mgmt-acl)
                         COMPREPLY=($(compgen -W "$(_tacctl_scope_names)" -- "$cur"))
                         ;;
                     lookup)

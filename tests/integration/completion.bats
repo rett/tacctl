@@ -92,6 +92,31 @@ complete_words() {
     refute_line "--backend"
 }
 
+@test "completion: config cisco and juniper take --protocol, and its value is tacacs or radius" {
+    complete_words tacctl config cisco ""
+    assert_output "$(printf -- '--scope\n--legacy\n--protocol')"
+    complete_words tacctl config juniper ""
+    assert_output "$(printf -- '--scope\n--protocol')"
+    complete_words tacctl config cisco --protocol ""
+    assert_output "$(printf 'tacacs\nradius')"
+    complete_words tacctl config juniper --scope lab --protocol ""
+    assert_output "$(printf 'tacacs\nradius')"
+    complete_words tacctl config juniper --scope lab ""
+    assert_output "--protocol"
+    complete_words tacctl config cisco --protocol radius ""
+    assert_output "$(printf -- '--scope\n--legacy')"
+    complete_words tacctl config cisco --protocol radius --scope lab ""
+    assert_output "--legacy"
+    # WTI is TACACS+ only: no --protocol offered.
+    complete_words tacctl config wti ""
+    assert_output "--scope"
+}
+
+@test "completion: scope offers radius-group beside tacacs-group" {
+    complete_words tacctl scope radius
+    assert_output "radius-group"
+}
+
 @test "completion: log subcommands take --backend, and its value is a backend id" {
     complete_words tacctl log tail --
     assert_output "--backend"

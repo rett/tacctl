@@ -779,7 +779,7 @@ in
 and survive
 .BR "tacctl upgrade" .
 .TP
-.BI "config cisco " [ "--scope " name "] [--legacy]"
+.BI "config cisco " [ "--scope " name "] [--legacy] [--protocol " tacacs | radius ]
 Print a ready-to-paste Cisco IOS/IOS-XE configuration with the
 server IP, shared secret, current group-to-privilege mappings, and
 the VTY-ACL built from
@@ -794,14 +794,28 @@ emits legacy IOS 12.x syntax
 for devices predating the structured
 .B "tacacs server"
 block introduced in IOS 15.0.
+.IP
+With
+.B "--protocol radius"
+(default
+.BR tacacs )
+the configuration is for the RADIUS backend instead (see
+.B RADIUS DEVICE CONFIGURATIONS
+below);
+.B --legacy
+is TACACS+ only.
 .TP
-.BI "config juniper " [ "--scope " name ]
+.BI "config juniper " [ "--scope " name "] [--protocol " tacacs | radius ]
 Print a ready-to-paste Juniper Junos configuration with template
 users, TACACS+ server setup, verification commands, and a commented
 lo0 firewall-filter example built from
 .B config mgmt-acl
 pre-filled. Scope handling matches
 .BR "config cisco" .
+.B "--protocol radius"
+renders the RADIUS configuration (see
+.B RADIUS DEVICE CONFIGURATIONS
+below).
 .TP
 .BI "config wti " [ "--scope " name ]
 Print a step-by-step procedure for the serial text interface of a WTI
@@ -835,6 +849,10 @@ scope secret or a scope member's username is unlikely to survive the
 unit's menu entry (whitespace, punctuation, over 32 characters). Scope
 handling matches
 .BR "config cisco" .
+TACACS+ only:
+.B "--protocol radius"
+is refused, because nothing in this repository establishes that the
+supported firmware does RADIUS.
 .TP
 .BI "config branch " [ name ]
 Show or change the tacctl repository branch used by
@@ -1274,6 +1292,23 @@ and
 .BR TACACS-GROUP .
 Junos has no equivalent — its AAA configuration does not group named
 servers this way.
+.SS Per-scope Cisco RADIUS group label \fB(tacctl scope radius-group)\fR
+.TP
+.BI "scope radius-group " scope " [" name ]
+The RADIUS twin of
+.BR "scope tacacs-group" :
+show or set the Cisco
+.B aaa group server radius <NAME>
+label rendered by
+.BR "config cisco --protocol radius" .
+Same naming rules (letter-start, letters, digits and
+.BR [_-] ;
+1..63 chars). Default (unset)
+.BR RADIUS-GROUP .
+Junos has no equivalent. Stored as
+.B radius_group.<scope>
+in
+.IR tacctl.yaml .
 .SS Per-scope AAA method-list order \fB(tacctl scope aaa-order)\fR
 .TP
 .BI "scope aaa-order " scope " [" tacacs-first | local-first ]
@@ -1302,6 +1337,83 @@ The change takes effect for the next
 .B "config juniper"
 render of the named scope — existing device configs are unchanged
 until the new method-list stanzas are pushed.
+.SH RADIUS DEVICE CONFIGURATIONS
+.B "config cisco"
+and
+.B "config juniper"
+render the configuration for logging in to a device against the RADIUS
+backend when given
+.BR "--protocol radius" .
+The server address, the authentication and accounting ports (the
+.B auth
+and
+.B acct
+listeners shown by
+.BR "config listen --backend radius show" )
+and the scope's shared secret are filled in; the management ACL, the
+exec timeout, the scope's
+.B aaa-order
+(the server first, or local first) and the local fallback behave as in
+the TACACS+ output. Without the flag the output is the TACACS+
+configuration, unchanged.
+.PP
+Cisco output is a
+.B "radius server"
+block,
+.B "aaa group server radius"
+(named by
+.BR "scope radius-group" ),
+.BR "aaa authentication login" ,
+.BR "aaa authorization exec"
+(the privilege level comes from the reply's
+.BR "Cisco-AVPair shell:priv-lvl=N" )
+and
+.BR "aaa accounting exec" ,
+with the same
+.B "privilege exec level"
+mappings. Juniper output is
+.BR "system radius-server" ,
+.BR authentication-order ,
+.B "system accounting destination radius"
+and the template users that the reply's
+.B Juniper-Local-User-Name
+selects, with the per-class allow-commands and deny-commands rules,
+which stay in force because the class is local to the device.
+.PP
+RADIUS has no per-command authorization and no command accounting, and
+tacctl's RADIUS accepts PAP only. Each RADIUS output says so under the
+configuration, and tells which TACACS+ features are not available
+(rules set with
+.B "group commands"
+are not enforced by the server).
+.PP
+tacctl refuses, with an error and no output, when the configuration
+would look right and not work: the RADIUS backend is not enabled
+.RB ( "backend enable radius" ),
+the scope's
+.B "scope protocols"
+filter leaves out
+.BR radius ,
+or the scope secret holds a character that IOS or Junos read as syntax
+(whitespace, quotes, a backtick, a non-ASCII character, or any of
+.BR "? ! # $ \\e ; { } [ ] | & < > , * ( )" ).
+Letters, digits and
+.B ". _ + / = : @ % ^ ~ -"
+paste unquoted, and
+.B "scope secret generate"
+makes such a secret. The secret is shared with TACACS+, so changing it
+means changing it on every device of the scope. A secret longer than 63
+characters renders with a warning. A listener bound to one IPv4 address
+supplies the server address; an IPv6 or loopback bind is warned about.
+.B "config wti"
+is TACACS+ only and says so for
+.BR "--protocol radius" .
+Operator overrides
+.I cisco-radius.template
+and
+.I juniper-radius.template
+in the templates directory work as for the TACACS+ templates; see
+.BR FILES .
 .SH CONVENTIONS
 The following patterns apply uniformly across subcommand families.
 .TP
@@ -1319,6 +1431,7 @@ and every nested dispatcher such as
 .BR "scope aaa-order" ,
 .BR "scope exec-timeout" ,
 .BR "scope tacacs-group" ,
+.BR "scope radius-group" ,
 .BR "scope mgmt-acl" ,
 .BR "user scope" ,
 or
@@ -1484,8 +1597,18 @@ re-check the file with
 .BR "tacctl config validate" .
 .TP
 .I /etc/tacquito/templates/
-Host-specific overrides for the Cisco and Juniper device config
-templates.
+Host-specific overrides for the device config templates
+.RI ( cisco ,
+.IR cisco-legacy ,
+.IR juniper ,
+.IR wti ,
+and for
+.BR "--protocol radius"
+.IR cisco-radius " and " juniper-radius ).
+A file named
+.I <name>.template
+here is used in place of the one shipped in
+.IR config/templates/ .
 .TP
 .I /etc/systemd/system/tacquito.service
 Systemd unit file.

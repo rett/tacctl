@@ -31,7 +31,7 @@ tests/
 │   ├── store.*.yaml     # store.yaml fixtures; store.X.yaml is exactly what importing tacquito.X.yaml writes
 │   ├── model/           # golden model JSON (what model_dump returns for a fixture)
 │   ├── templates/       # device config templates
-│   └── golden/          # expected rendered output: device configs (M3), tacquito.X.rendered.yaml
+│   └── golden/          # expected rendered output: device configs (M3; `--protocol radius` ones are `*-radius-lab.conf`), tacquito.X.rendered.yaml
 │                        #   (what the TACACS+ renderer produces from store.X.yaml) and radius.<family>.*
 ├── containers/radius/   # the check against real FreeRADIUS in podman (not run by make test)
 ├── unit/                # pure-logic, no I/O, no mocks

@@ -149,32 +149,205 @@ write_mgmt_acl_name() {
     info "Set ${which}-name = '${name}'."
 }
 
+# --- RADIUS device configs: `config cisco|juniper [--protocol radius]` ---
+# Protocols a device-config command can render for. 'tacacs' is what these
+# commands always produced and stays the default.
+CONFIG_PROTOCOLS="tacacs radius"
+
+# config_protocol_valid <value>: 0, or an error naming the protocols there are.
+config_protocol_valid() {
+    if [[ " ${CONFIG_PROTOCOLS} " != *" ${1} "* ]]; then
+        error "Unknown protocol '${1}'. Known protocols: ${CONFIG_PROTOCOLS// /, }"
+        return 1
+    fi
+}
+
+# What a RADIUS device config may carry as a secret. Device CLIs treat
+# whitespace, quotes, '?' (context help on paste), '!' and '#' (comments),
+# '$' and '\' (escapes), ';' '{' '}' '[' ']' '|' '&' '<' '>' ',' '*' '(' ')'
+# and '`' as syntax, or limit what they take; a scope secret may hold any of
+# them (the same secret serves TACACS+, whose templates are not this strict),
+# so the render refuses rather than print a line that breaks or is altered
+# on the device. This is the set that pastes unquoted on IOS and Junos, and
+# base64 (what 'scope secret generate' makes) is inside it.
+CONFIG_RADIUS_SECRET_RE='^[A-Za-z0-9._+/=:@%^~-]+$'
+
+# radius_device_prepare <vendor> <scope>: everything a RADIUS device config
+# needs from the RADIUS backend, or an error when the config would not work.
+# Sets RADIUS_AUTH_PORT, RADIUS_ACCT_PORT, RADIUS_SECRET, RADIUS_SERVER_ADDR
+# (an address the listeners are bound to, else empty: the caller keeps the
+# address it found by route) and RADIUS_WARNINGS (text for the summary).
+#
+# Refused, rather than warned about, because the output would look like a
+# working configuration and not be one:
+#   - the backend is not enabled: nothing answers on the ports;
+#   - the scope's protocols filter leaves RADIUS out: the daemon loads neither
+#     its clients nor its secret, so its devices are ignored;
+#   - the secret cannot be pasted safely (see CONFIG_RADIUS_SECRET_RE).
+# Advice that does not break the config (a secret longer than some devices
+# take, a listener bound to an address the route lookup would not find) is
+# a warning.
+radius_device_prepare() {
+    local vendor="$1" scope="$2"
+    RADIUS_AUTH_PORT="" RADIUS_ACCT_PORT="" RADIUS_SECRET="" RADIUS_SERVER_ADDR="" RADIUS_WARNINGS=""
+
+    _backends_load || return 1
+    if ! _backend_is_enabled radius; then
+        error "The RADIUS backend is not enabled, so nothing on this server answers RADIUS requests and this configuration would not work."
+        error "Enable it first: tacctl backend enable radius   (tacctl backend list shows what is enabled)"
+        return 1
+    fi
+    local protocols
+    protocols=$(model_scope "$scope" protocols | paste -sd, || true)
+    if [[ -n "$protocols" && ",${protocols}," != *",radius,"* ]]; then
+        error "Scope '${scope}' is limited to ${protocols} (tacctl scope protocols), so the RADIUS backend ignores its devices and does not load its secret; this configuration would not work."
+        error "Serve it over RADIUS too: tacctl scope protocols ${scope} set ${protocols},radius   (or 'clear' for every protocol)"
+        return 1
+    fi
+
+    local line
+    while IFS= read -r line; do
+        case "$line" in
+            AUTH_PORT=*) RADIUS_AUTH_PORT="${line#*=}" ;;
+            ACCT_PORT=*) RADIUS_ACCT_PORT="${line#*=}" ;;
+            SECRET=*)    RADIUS_SECRET="${line#*=}" ;;
+        esac
+    done < <(backend_call radius device_vars "$vendor" "$scope")
+    if [[ -z "$RADIUS_AUTH_PORT" || -z "$RADIUS_ACCT_PORT" ]]; then
+        error "Could not read the RADIUS auth and acct listener ports (tacctl config listen --backend radius show)."
+        return 1
+    fi
+    if [[ -z "$RADIUS_SECRET" ]]; then
+        error "Scope '${scope}' has no shared secret: set one with 'tacctl scope secret ${scope} generate'."
+        return 1
+    fi
+    # LC_ALL=C: A-Z must mean ASCII, not whatever the locale's collation says.
+    if ! ( LC_ALL=C; [[ "$RADIUS_SECRET" =~ $CONFIG_RADIUS_SECRET_RE ]] ); then
+        error "The secret of scope '${scope}' has a character that IOS and Junos read as syntax (whitespace, a quote, ? ! # \$ \\ ; { } [ ] | & < > , * ( ) \` or a non-ASCII character), so it cannot be pasted into a device configuration as it is."
+        error "Use letters, digits and . _ + / = : @ % ^ ~ - : tacctl scope secret ${scope} generate   (or: set <value>)"
+        error "The scope's secret is shared with TACACS+: change it on every device of the scope, whatever the protocol."
+        return 1
+    fi
+
+    # The advice the backend gives on shared secrets (what the shortest
+    # RADIUS client takes): a warning, not a refusal.
+    local max_len="" charset=""
+    while IFS= read -r line; do
+        case "$line" in
+            max_len=*) max_len="${line#*=}" ;;
+            charset=*) charset="${line#*=}" ;;
+        esac
+    done < <(backend_call radius secret_constraints)
+    if [[ -n "$max_len" ]] && (( ${#RADIUS_SECRET} > max_len )); then
+        RADIUS_WARNINGS+="  - The secret is ${#RADIUS_SECRET} characters; some RADIUS clients take no more than ${max_len}. FreeRADIUS accepts it, but check your"$'\n'
+        RADIUS_WARNINGS+="    device's limit before pasting (tacctl scope secret ${scope} generate makes a 32-character one; the scope's secret is shared with TACACS+)"$'\n'
+    fi
+    if [[ -n "$charset" ]]; then
+        local charset_re="^${charset}+\$"
+        if ! ( LC_ALL=C; [[ "$RADIUS_SECRET" =~ $charset_re ]] ); then
+            RADIUS_WARNINGS+="  - The secret has characters outside ${charset}, which some RADIUS clients do not take"$'\n'
+        fi
+    fi
+
+    # A listener bound to one address answers there only. The route lookup the
+    # renderers use finds the address a device would reach by default.
+    local lname lnet laddr lhost bound_v6=""
+    while read -r lname lnet laddr; do
+        [[ "$lname" == "auth" || "$lname" == "acct" ]] || continue
+        lhost="${laddr%:*}"
+        lhost="${lhost#[}"
+        lhost="${lhost%]}"
+        if [[ "$lnet" == "udp6" || "$lhost" == *:* ]]; then
+            bound_v6="${bound_v6:+${bound_v6}, }${lname} (${lnet} ${laddr})"
+            continue
+        fi
+        [[ -z "$lhost" || "$lhost" == "0.0.0.0" ]] && continue
+        if [[ "$lhost" == 127.* ]]; then
+            RADIUS_WARNINGS+="  - The ${lname} listener is bound to ${lhost}: no device can reach it (tacctl config listen --backend radius)"$'\n'
+        fi
+        if [[ -z "$RADIUS_SERVER_ADDR" ]]; then
+            RADIUS_SERVER_ADDR="$lhost"
+        elif [[ "$RADIUS_SERVER_ADDR" != "$lhost" ]]; then
+            RADIUS_WARNINGS+="  - The auth and acct listeners are bound to different addresses (${RADIUS_SERVER_ADDR}, ${lhost}); the device takes one address for both, this uses ${RADIUS_SERVER_ADDR}"$'\n'
+        fi
+    done < <(backend_call radius listeners list)
+    if [[ -n "$bound_v6" ]]; then
+        RADIUS_WARNINGS+="  - IPv6 listener(s): ${bound_v6}. This configuration addresses the server over IPv4 and will not reach them;"$'\n'
+        RADIUS_WARNINGS+="    adapt the server address by hand"$'\n'
+    fi
+    return 0
+}
+
+# radius_summary_limits <cisco|juniper> <scope>: what a login over RADIUS
+# does not have, relative to TACACS+, and the warnings radius_device_prepare
+# collected. Printed in the summary under the config, not written into it.
+radius_summary_limits() {
+    local vendor="$1" scope="$2"
+    echo -e "${YELLOW}What RADIUS does not give you (compared with TACACS+):${NC}"
+    if [[ "$vendor" == "cisco" ]]; then
+        echo "  - No per-command authorization. The only authorization is what the Access-Accept"
+        echo "    carries: the privilege level (Cisco-AVPair shell:priv-lvl=N, with Service-Type)."
+        echo "    'tacctl group commands' rules are not enforced; a user may run whatever their"
+        echo "    privilege level allows, so review the 'privilege exec level' mappings above"
+        echo "  - No command accounting. Only exec session start/stop records are sent"
+        echo "    (TACACS+ also records every command at privilege 1, 7 and 15)"
+    else
+        echo "  - No per-command authorization from the server. The only authorization is what the"
+        echo "    Access-Accept carries: the login class (Juniper-Local-User-Name). 'tacctl group"
+        echo "    commands' rules are not enforced by the server; the allow-commands/deny-commands"
+        echo "    lines above are, because the class is local to the device, and stay in force"
+        echo "  - No command accounting. Only login and change-log events are sent"
+        echo "    (TACACS+ also records commands)"
+    fi
+    echo "  - Password logins only (PAP): no CHAP, MS-CHAP or EAP"
+    echo "  - UDP, not TCP/49: allow UDP ${RADIUS_AUTH_PORT} (authentication) and ${RADIUS_ACCT_PORT} (accounting)"
+    echo "    from the device to the server"
+    echo "  - The server answers only a device whose source address lies in a prefix of scope"
+    echo "    '${scope}' ('tacctl scope lookup <device-ip>' to check)"
+    if [[ -n "$RADIUS_WARNINGS" ]]; then
+        echo ""
+        echo -e "${YELLOW}Warnings:${NC}"
+        echo -n "$RADIUS_WARNINGS"
+    fi
+}
+
 # --- CONFIG CISCO (show working device config) ---
 # The *_BLOCK / *_CONFIG / *_RULES values built here are device-config text
 # handed to envsubst via the environment, never re-parsed as shell words, so
 # the quotes embedded in them are meant literally.
 # shellcheck disable=SC2089,SC2090
 cmd_config_cisco() {
-    # Parse --scope <name> and --legacy
-    local scope="" legacy=0
+    # Parse --scope <name>, --legacy and --protocol tacacs|radius
+    local scope="" legacy=0 protocol="tacacs"
+    local usage="Usage: tacctl config cisco [--scope <name>] [--legacy] [--protocol tacacs|radius]"
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --scope)
                 scope="${2:-}"
-                [[ -z "$scope" ]] && { error "Usage: tacctl config cisco [--scope <name>] [--legacy]"; exit 1; }
+                [[ -z "$scope" ]] && { error "$usage"; exit 1; }
                 shift 2
                 ;;
             --legacy)
                 legacy=1
                 shift
                 ;;
+            --protocol)
+                protocol="${2:-}"
+                [[ -z "$protocol" ]] && { error "$usage"; exit 1; }
+                config_protocol_valid "$protocol" || exit 1
+                shift 2
+                ;;
             *)
                 error "Unknown argument: '$1'"
-                error "Usage: tacctl config cisco [--scope <name>] [--legacy]"
+                error "$usage"
                 exit 1
                 ;;
         esac
     done
+    if [[ "$protocol" == "radius" && "$legacy" == 1 ]]; then
+        error "--legacy (IOS 12.x syntax) applies to TACACS+ only; the RADIUS configuration uses the structured 'radius server' block (IOS 15.2 / IOS-XE and later)."
+        exit 1
+    fi
     if [[ -z "$scope" ]]; then
         scope=$(read_default_scope)
         if [[ -z "$scope" ]]; then
@@ -190,6 +363,16 @@ cmd_config_cisco() {
     server_ip=$(ip -4 route get 1.0.0.0 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}')
     if [[ -z "$server_ip" ]]; then
         server_ip="<TACQUITO_SERVER_IP>"
+    fi
+    # RADIUS: refuse when the config would not work, take ports, secret and
+    # (when a listener is bound to one) the address from the backend.
+    local AUTH_PORT="" ACCT_PORT=""
+    if [[ "$protocol" == "radius" ]]; then
+        radius_device_prepare cisco "$scope" || exit 1
+        secret="$RADIUS_SECRET"
+        AUTH_PORT="$RADIUS_AUTH_PORT"
+        ACCT_PORT="$RADIUS_ACCT_PORT"
+        [[ -n "$RADIUS_SERVER_ADDR" ]] && server_ip="$RADIUS_SERVER_ADDR"
     fi
 
     # Compute "other scopes" list for the header.
@@ -263,8 +446,13 @@ cmd_config_cisco() {
     # name — overriding per-scope lets operators match site naming
     # conventions (e.g. TACACS_PROD, ISE-GROUP). Default matches the
     # historical template value.
-    local TACACS_GROUP
+    # `config cisco --protocol radius` uses radius_group.<scope> the same
+    # way (default RADIUS-GROUP); aaa_group is the one the lines below use.
+    local TACACS_GROUP RADIUS_GROUP aaa_group
     TACACS_GROUP=$(conf_get "tacacs_group.${scope}" TACACS-GROUP)
+    RADIUS_GROUP=$(conf_get "radius_group.${scope}" RADIUS-GROUP)
+    aaa_group="$TACACS_GROUP"
+    [[ "$protocol" == "radius" ]] && aaa_group="$RADIUS_GROUP"
 
     # AAA method-list order is per-scope. tacctl.yaml's aaa.order.<scope>
     # key flips every generated `aaa authentication login` /
@@ -274,16 +462,19 @@ cmd_config_cisco() {
     # is reachable; any local name that collides with a TACACS+ user
     # wins locally). Accounting method-lists are unaffected — they
     # always point at the TACACS group regardless of this setting.
+    # (--protocol radius: the same, with the RADIUS group; `radius-first`
+    # wording does not exist, the schema values stay tacacs-first|local-first
+    # and mean "the server first" / "local first".)
     local aaa_order AUTHN_METHODS AUTHZ_EXEC_METHODS AUTHZ_CMD_METHODS
     aaa_order=$(conf_get "aaa.order.${scope}" tacacs-first)
     if [[ "$aaa_order" == "local-first" ]]; then
-        AUTHN_METHODS="local group ${TACACS_GROUP}"
-        AUTHZ_EXEC_METHODS="local group ${TACACS_GROUP} if-authenticated"
-        AUTHZ_CMD_METHODS="local group ${TACACS_GROUP}"
+        AUTHN_METHODS="local group ${aaa_group}"
+        AUTHZ_EXEC_METHODS="local group ${aaa_group} if-authenticated"
+        AUTHZ_CMD_METHODS="local group ${aaa_group}"
     else
-        AUTHN_METHODS="group ${TACACS_GROUP} local"
-        AUTHZ_EXEC_METHODS="group ${TACACS_GROUP} local if-authenticated"
-        AUTHZ_CMD_METHODS="group ${TACACS_GROUP} local"
+        AUTHN_METHODS="group ${aaa_group} local"
+        AUTHZ_EXEC_METHODS="group ${aaa_group} local if-authenticated"
+        AUTHZ_CMD_METHODS="group ${aaa_group} local"
     fi
 
     # Per-scope idle-session timeout. Default 60 minutes matches the
@@ -306,6 +497,8 @@ aaa authorization commands 15 default ${AUTHZ_CMD_METHODS}"
 ! To restrict commands per group, use 'tacctl group commands'."
     fi
 
+    local protocol_flag=""
+    [[ "$protocol" == "radius" ]] && protocol_flag=" --protocol radius"
     local VTY_ACL_BLOCK VTY_ACCESS_CLASS mgmt_entries=""
     while IFS= read -r entry; do
         [[ -z "$entry" ]] && continue
@@ -324,12 +517,14 @@ ${mgmt_entries}  deny   any log"
         VTY_ACL_BLOCK="! ${cisco_acl_name} not emitted — mgmt-acl list is empty.
 ! Populate it on the tacquito server with
 !   tacctl config mgmt-acl add <cidr>
-! then re-run 'tacctl config cisco' to get the access-list block."
+! then re-run 'tacctl config cisco${protocol_flag}' to get the access-list block."
         VTY_ACCESS_CLASS="! access-class ${cisco_acl_name} in   ! uncomment after populating mgmt-acl"
     fi
 
     echo ""
-    echo -e "${BOLD}Cisco IOS / IOS-XE Configuration${NC}  (scope: ${scope})"
+    local proto_note=""
+    [[ "$protocol" == "radius" ]] && proto_note=", protocol: RADIUS"
+    echo -e "${BOLD}Cisco IOS / IOS-XE Configuration${NC}  (scope: ${scope}${proto_note})"
     if [[ -n "$other_scopes" ]]; then
         echo -e "${YELLOW}(other scopes: ${other_scopes} — use --scope <name> to emit those)${NC}"
     fi
@@ -359,12 +554,55 @@ aaa group server tacacs+ ${TACACS_GROUP}
 
     local template_file template_name="cisco"
     [[ "$legacy" == 1 ]] && template_name="cisco-legacy"
+    [[ "$protocol" == "radius" ]] && template_name="cisco-radius"
     template_file=$(resolve_template "$template_name")
     # Filter the device-config emission through `awk 'NF'` so blank
     # lines introduced by multi-line `${VAR}` substitution don't reach
     # the operator. `!` separator lines have NF=1 so they survive.
     {
-        if [[ -n "$template_file" ]]; then
+        if [[ -n "$template_file" && "$protocol" == "radius" ]]; then
+            # shellcheck disable=SC2030
+            export SERVER_IP="$server_ip" SECRET="$secret" AUTH_PORT ACCT_PORT RADIUS_GROUP PRIVILEGE_COMMANDS GROUP_SUMMARY VTY_ACL_BLOCK VTY_ACCESS_CLASS AUTHN_METHODS AUTHZ_EXEC_METHODS EXEC_TIMEOUT
+            # shellcheck disable=SC2016  # envsubst takes the literal ${VAR} names
+            envsubst '${SERVER_IP} ${SECRET} ${AUTH_PORT} ${ACCT_PORT} ${RADIUS_GROUP} ${PRIVILEGE_COMMANDS} ${GROUP_SUMMARY} ${VTY_ACL_BLOCK} ${VTY_ACCESS_CLASS} ${AUTHN_METHODS} ${AUTHZ_EXEC_METHODS} ${EXEC_TIMEOUT}' < "$template_file"
+        elif [[ "$protocol" == "radius" ]]; then
+            cat <<EOF
+! --- RADIUS Server & AAA ---
+service password-encryption
+!
+aaa new-model
+!
+! Optional: pin RADIUS client to a known source interface.
+! Uncomment and replace with your management interface, e.g.:
+! ip radius source-interface Loopback0
+!
+radius server RADIUS
+  address ipv4 ${server_ip} auth-port ${AUTH_PORT} acct-port ${ACCT_PORT}
+  key ${secret}
+  timeout 5
+  retransmit 2
+!
+aaa group server radius ${RADIUS_GROUP}
+  server name RADIUS
+!
+aaa authentication login default ${AUTHN_METHODS}
+aaa authorization exec default ${AUTHZ_EXEC_METHODS}
+aaa accounting exec default start-stop group ${RADIUS_GROUP}
+!
+${PRIVILEGE_COMMANDS}
+${VTY_ACL_BLOCK}
+!
+line con 0
+  login authentication default
+  exec-timeout ${EXEC_TIMEOUT} 0
+!
+line vty 0 15
+  login authentication default
+  transport input ssh
+${VTY_ACCESS_CLASS}
+  exec-timeout ${EXEC_TIMEOUT} 0
+EOF
+        elif [[ -n "$template_file" ]]; then
             # The exports only need to reach envsubst in this same pipeline subshell.
             # shellcheck disable=SC2030
             export SERVER_IP="$server_ip" SECRET="$secret" PRIVILEGE_COMMANDS GROUP_SUMMARY VTY_ACL_BLOCK VTY_ACCESS_CLASS AUTHZ_COMMANDS_BLOCK AUTHN_METHODS AUTHZ_EXEC_METHODS EXEC_TIMEOUT TACACS_GROUP
@@ -413,6 +651,27 @@ EOF
     echo -e "${YELLOW}Group → Privilege Level Mapping:${NC}"
     echo -n "$GROUP_SUMMARY"
     echo ""
+    if [[ "$protocol" == "radius" ]]; then
+        radius_summary_limits cisco "$scope"
+        echo ""
+        echo -e "${YELLOW}Notes:${NC}"
+        echo "  - The 'local' fallback ensures access if the RADIUS server is unreachable;"
+        echo "    a reject from the server does not fall through to local"
+        echo "  - Ensure a local admin account exists as a backup"
+        echo "  - Uncomment 'ip radius source-interface ...' to pin the RADIUS client source"
+        echo "  - ${cisco_acl_name} permits are managed with 'tacctl config mgmt-acl add <cidr>'"
+        echo "  - For Type 6 (AES) key encryption, run on the device first:"
+        echo "      conf t ; key config-key password-encrypt <master-key>"
+        echo "      password encryption aes"
+        echo "    then re-enter the radius key. (Type 7 is trivially reversible.)"
+        echo "  - Manage 'privilege exec level' mappings with 'tacctl group privilege add ...'"
+        echo "    (defaults move only the verified priv-15 commands DOWN; nothing is moved UP)"
+        if [[ -n "$template_file" ]]; then
+            echo "  - Using template: ${template_file}"
+        fi
+        echo ""
+        return 0
+    fi
     echo -e "${YELLOW}Notes:${NC}"
     echo "  - The 'local' fallback ensures access if TACACS+ is unreachable"
     echo "  - Ensure a local admin account exists as a backup"
@@ -441,18 +700,25 @@ EOF
 # the quotes embedded in them are meant literally.
 # shellcheck disable=SC2089,SC2090
 cmd_config_juniper() {
-    # Parse --scope <name>
-    local scope=""
+    # Parse --scope <name> and --protocol tacacs|radius
+    local scope="" protocol="tacacs"
+    local usage="Usage: tacctl config juniper [--scope <name>] [--protocol tacacs|radius]"
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --scope)
                 scope="${2:-}"
-                [[ -z "$scope" ]] && { error "Usage: tacctl config juniper [--scope <name>]"; exit 1; }
+                [[ -z "$scope" ]] && { error "$usage"; exit 1; }
+                shift 2
+                ;;
+            --protocol)
+                protocol="${2:-}"
+                [[ -z "$protocol" ]] && { error "$usage"; exit 1; }
+                config_protocol_valid "$protocol" || exit 1
                 shift 2
                 ;;
             *)
                 error "Unknown argument: '$1'"
-                error "Usage: tacctl config juniper [--scope <name>]"
+                error "$usage"
                 exit 1
                 ;;
         esac
@@ -472,6 +738,13 @@ cmd_config_juniper() {
     server_ip=$(ip -4 route get 1.0.0.0 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}')
     if [[ -z "$server_ip" ]]; then
         server_ip="<TACQUITO_SERVER_IP>"
+    fi
+    # RADIUS: refuse when the config would not work, take ports, secret and
+    # (when a listener is bound to one) the address from the backend.
+    if [[ "$protocol" == "radius" ]]; then
+        radius_device_prepare juniper "$scope" || exit 1
+        secret="$RADIUS_SECRET"
+        [[ -n "$RADIUS_SERVER_ADDR" ]] && server_ip="$RADIUS_SERVER_ADDR"
     fi
 
     # Compute "other scopes" list for the header.
@@ -540,11 +813,13 @@ cmd_config_juniper() {
     # acceptance when tacplus is up but rejects the credential.
     # local-first keeps `[ password tacplus ]` so local users log in
     # ahead of tacplus while it's up.
-    local junos_authn_order
+    # --protocol radius: the same two shapes with `radius` for `tacplus`.
+    local junos_authn_order junos_aaa_method="tacplus"
+    [[ "$protocol" == "radius" ]] && junos_aaa_method="radius"
     if [[ "$(conf_get "aaa.order.${scope}" tacacs-first)" == "local-first" ]]; then
-        junos_authn_order="[ password tacplus ]"
+        junos_authn_order="[ password ${junos_aaa_method} ]"
     else
-        junos_authn_order="tacplus"
+        junos_authn_order="${junos_aaa_method}"
     fi
 
     # Per-scope idle-session timeout (exec_timeout.<scope>). Junos
@@ -576,6 +851,28 @@ set system tacplus-server ${server_ip} single-connection
 # capture who logged in and who changed config.
 set system accounting events [ login change-log ]
 set system accounting destination tacplus"
+
+    # RADIUS server block (--protocol radius). Ports are explicit: older Junos
+    # releases default to 1645/1646, tacctl's listeners are 1812/1813 unless
+    # configured otherwise. `destination radius` is the RADIUS twin of
+    # `destination tacplus` above: system accounting goes to the servers
+    # configured under system radius-server.
+    local RADIUS_CONFIG=""
+    if [[ "$protocol" == "radius" ]]; then
+        RADIUS_CONFIG="delete system authentication-order
+set system authentication-order ${junos_authn_order}
+set system login idle-timeout ${junos_idle_timeout}
+set system radius-server ${server_ip} port ${RADIUS_AUTH_PORT}
+set system radius-server ${server_ip} accounting-port ${RADIUS_ACCT_PORT}
+set system radius-server ${server_ip} secret ${secret}
+# Optional: pin client source IP for prefix-ACL matching on the server (it
+# answers only devices whose source address is inside a prefix of the scope).
+# Replace 10.0.0.1 with the device's management interface address, e.g.:
+#   set system radius-server ${server_ip} source-address 10.0.0.1
+# Accounting events: login + change-log only.
+set system accounting events [ login change-log ]
+set system accounting destination radius"
+    fi
 
     # Build the Juniper mgmt-acl block from the shared permit list.
     # When populated, emit live `set firewall …` commands so the filter
@@ -620,6 +917,11 @@ set firewall family inet filter ${juniper_acl_name} term default-accept then acc
     local VERIFY_COMMANDS
     VERIFY_COMMANDS="  show configuration system tacplus-server
   show configuration system authentication-order"
+    if [[ "$protocol" == "radius" ]]; then
+        VERIFY_COMMANDS="  show configuration system radius-server
+  show configuration system authentication-order
+  show configuration system accounting"
+    fi
     while IFS='|' read -r gname jclass junos_class; do
         [[ -z "$gname" ]] && continue
         VERIFY_COMMANDS+=$'\n'"  show configuration system login user ${jclass}"
@@ -649,9 +951,15 @@ set firewall family inet filter ${juniper_acl_name} term default-accept then acc
     # afterwards.
     local CLASS_COMMAND_RULES=""
     if any_group_has_commands; then
-        CLASS_COMMAND_RULES="# Per-command authorization (enforced LOCALLY by Junos, not via TACACS+).
+        if [[ "$protocol" == "radius" ]]; then
+            CLASS_COMMAND_RULES="# Per-command rules (enforced LOCALLY by Junos on the class, not by the RADIUS server).
 # Push these on every device after 'tacctl group commands' changes.
 "
+        else
+            CLASS_COMMAND_RULES="# Per-command authorization (enforced LOCALLY by Junos, not via TACACS+).
+# Push these on every device after 'tacctl group commands' changes.
+"
+        fi
         while IFS='|' read -r gname jclass junos_class; do
             [[ -z "$gname" ]] && continue
             local rules
@@ -688,7 +996,9 @@ set firewall family inet filter ${juniper_acl_name} term default-accept then acc
     fi
 
     echo ""
-    echo -e "${BOLD}Juniper Junos Configuration${NC}  (scope: ${scope})"
+    local proto_note=""
+    [[ "$protocol" == "radius" ]] && proto_note=", protocol: RADIUS"
+    echo -e "${BOLD}Juniper Junos Configuration${NC}  (scope: ${scope}${proto_note})"
     if [[ -n "$other_scopes" ]]; then
         echo -e "${YELLOW}(other scopes: ${other_scopes} — use --scope <name> to emit those)${NC}"
     fi
@@ -696,9 +1006,15 @@ set firewall family inet filter ${juniper_acl_name} term default-accept then acc
     echo "--------------------------------------------"
     echo ""
 
-    local template_file
-    template_file=$(resolve_template "juniper")
-    if [[ -n "$template_file" ]]; then
+    local template_file template_name="juniper"
+    [[ "$protocol" == "radius" ]] && template_name="juniper-radius"
+    template_file=$(resolve_template "$template_name")
+    if [[ -n "$template_file" && "$protocol" == "radius" ]]; then
+        # shellcheck disable=SC2031
+        export SERVER_IP="$server_ip" SECRET="$secret" TEMPLATE_USERS RADIUS_CONFIG MGMT_ACL_BLOCK CLASS_COMMAND_RULES VERIFY_COMMANDS GROUP_SUMMARY
+        # shellcheck disable=SC2016  # envsubst takes the literal ${VAR} names
+        envsubst '${SERVER_IP} ${SECRET} ${TEMPLATE_USERS} ${RADIUS_CONFIG} ${MGMT_ACL_BLOCK} ${CLASS_COMMAND_RULES} ${VERIFY_COMMANDS} ${GROUP_SUMMARY}' < "$template_file"
+    elif [[ -n "$template_file" ]]; then
         # Assigned and exported right here; the warning is cross-talk from
         # the cisco renderer's pipeline subshell.
         # shellcheck disable=SC2031
@@ -709,8 +1025,13 @@ set firewall family inet filter ${juniper_acl_name} term default-accept then acc
         echo "# Step 1: Create template users (REQUIRED)"
         echo "$TEMPLATE_USERS"
         echo ""
-        echo "# Step 2: Configure TACACS+"
-        echo "$TACPLUS_CONFIG"
+        if [[ "$protocol" == "radius" ]]; then
+            echo "# Step 2: Configure RADIUS"
+            echo "$RADIUS_CONFIG"
+        else
+            echo "# Step 2: Configure TACACS+"
+            echo "$TACPLUS_CONFIG"
+        fi
         echo ""
         echo "# Step 3: (optional) Per-class command rules"
         echo "$CLASS_COMMAND_RULES"
@@ -727,6 +1048,33 @@ set firewall family inet filter ${juniper_acl_name} term default-accept then acc
     echo -e "${YELLOW}Group → Juniper Class Mapping:${NC}"
     echo -n "$GROUP_SUMMARY"
     echo ""
+    if [[ "$protocol" == "radius" ]]; then
+        radius_summary_limits juniper "$scope"
+        echo ""
+        echo -e "${YELLOW}Notes:${NC}"
+        echo "  - Template users MUST exist before RADIUS logins will work: the server names"
+        echo "    one in Juniper-Local-User-Name and Junos logs the user in as that local user"
+        echo "  - With authentication-order '${junos_authn_order}', Junos falls back to the local"
+        echo "    password when no RADIUS server answers; test with the server unreachable"
+        echo "    before relying on it. A reject from the server does not fall through to local"
+        echo "  - If a login fails silently, the template user is likely missing"
+        echo "  - Each template-user is bound to a LOCAL class of the same name;"
+        echo "    edit its 'permissions' to fit your policy (Junos refuses to set"
+        echo "    permissions on the predefined read-only/operator/super-user names)"
+        echo "  - Uncomment and edit the source-address line to pin the client"
+        echo "    source IP; the server matches it against the scope's prefixes"
+        echo "  - Junos replaces the plaintext 'secret' with '\$9\$...' on commit,"
+        echo "    but it sits in the candidate config until then — commit promptly"
+        echo "    and protect the commit archive (/config/rescue.conf, juniper.conf.*)."
+        if [[ -n "$template_file" ]]; then
+            echo "  - Using template: ${template_file}"
+        fi
+        echo ""
+        echo -e "${BOLD}Verify after commit:${NC}"
+        echo "$VERIFY_COMMANDS"
+        echo ""
+        return 0
+    fi
     echo -e "${YELLOW}Notes:${NC}"
     echo "  - Template users MUST exist before TACACS+ logins will work"
     echo "  - With authentication-order 'tacplus', Junos auto-falls-back to"
@@ -769,6 +1117,8 @@ wti_access_level_for_privlvl() {
 }
 
 # --- CONFIG WTI (step-by-step serial-CLI procedure) ---
+# TACACS+ only: `--protocol radius` is refused, because nothing in this
+# repository establishes that the supported firmware does RADIUS.
 # WTI units are configured through numbered text menus, not a pasteable
 # config, so this emits an operator walkthrough with the scope's values
 # filled in. No WTI-specific service block is needed in tacquito.yaml: the
@@ -790,22 +1140,36 @@ wti_access_level_for_privlvl() {
 # SYN-ACK is dropped), and Session Management needs patch 0002 (the unit
 # drops the session on a non-empty accounting server_msg).
 cmd_config_wti() {
-    # Parse --scope <name>
-    local scope=""
+    # Parse --scope <name>. --protocol is accepted so every device command
+    # takes the same flag, but WTI is TACACS+ only (see above).
+    local scope="" protocol="tacacs"
+    local usage="Usage: tacctl config wti [--scope <name>] [--protocol tacacs]"
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --scope)
                 scope="${2:-}"
-                [[ -z "$scope" ]] && { error "Usage: tacctl config wti [--scope <name>]"; exit 1; }
+                [[ -z "$scope" ]] && { error "$usage"; exit 1; }
+                shift 2
+                ;;
+            --protocol)
+                protocol="${2:-}"
+                [[ -z "$protocol" ]] && { error "$usage"; exit 1; }
+                config_protocol_valid "$protocol" || exit 1
                 shift 2
                 ;;
             *)
                 error "Unknown argument: '$1'"
-                error "Usage: tacctl config wti [--scope <name>]"
+                error "$usage"
                 exit 1
                 ;;
         esac
     done
+    if [[ "$protocol" == "radius" ]]; then
+        error "'config wti' renders TACACS+ only. The walkthrough follows the unit's TACACS Parameters menu (verified on a v8.10 unit); nothing in this repository establishes"
+        error "that the supported firmware (v8.x) does RADIUS, or which menu and attributes it uses, so no RADIUS procedure is offered rather than a guessed one."
+        error "Use 'tacctl config wti' for TACACS+, or configure the unit's RADIUS support from WTI's documentation against this server's RADIUS listeners (tacctl config listen --backend radius show)."
+        exit 1
+    fi
     if [[ -z "$scope" ]]; then
         scope=$(read_default_scope)
         if [[ -z "$scope" ]]; then
