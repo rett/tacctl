@@ -30,7 +30,7 @@ setup() {
     run "$TACCTL_BIN_SCRIPT" backup list
     assert_success
     # Milliseconds in backup_config's timestamp prevent same-second collisions.
-    run bash -c 'ls "$TACCTL_ETC/backups"/tacquito.yaml.* | wc -l'
+    run bash -c 'ls "${TACCTL_STATE_DIR}/backups"/tacquito.yaml.* | wc -l'
     [[ "$output" -ge 2 ]]
 }
 
@@ -48,7 +48,7 @@ setup() {
 
     # Grab the pre-add backup timestamp (oldest file).
     local backup_file ts
-    backup_file=$(ls -1 "$TACCTL_ETC/backups"/tacquito.yaml.* | head -1)
+    backup_file=$(ls -1 "${TACCTL_STATE_DIR}/backups"/tacquito.yaml.* | head -1)
     ts=$(basename "$backup_file" | sed 's/tacquito\.yaml\.//')
 
     run bash -c 'echo y | "'"$TACCTL_BIN_SCRIPT"'" backup restore '"$ts"

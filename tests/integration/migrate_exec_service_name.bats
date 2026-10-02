@@ -19,7 +19,7 @@ setup() {
 }
 
 backup_count() {
-    ls -1 "${TACCTL_ETC}/backups"/tacquito.yaml.* 2>/dev/null | wc -l
+    ls -1 "${TACCTL_STATE_DIR}/backups"/tacquito.yaml.* 2>/dev/null | wc -l
 }
 
 @test "migrate exec->shell: rewrites all three Cisco exec service anchors" {
@@ -55,7 +55,7 @@ backup_count() {
     [ "$(backup_count)" -eq 1 ]
     # The snapshot is the legacy (pre-migration) content.
     local snap
-    snap=$(ls "${TACCTL_ETC}/backups"/tacquito.yaml.*)
+    snap=$(ls "${TACCTL_STATE_DIR}/backups"/tacquito.yaml.*)
     run grep -c '^  name: exec$' "$snap"
     assert_output "3"
 }

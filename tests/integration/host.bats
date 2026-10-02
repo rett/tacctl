@@ -34,7 +34,7 @@ setup() {
     esac'
 }
 
-_hosts() { cat "$TACCTL_ETC/linux-hosts" 2>/dev/null; }
+_hosts() { cat "${TACCTL_STATE_DIR}/linux-hosts" 2>/dev/null; }
 
 @test "host enroll: pushes the install script and registers the host" {
     run "$TACCTL_BIN_SCRIPT" host enroll admin@web1.example.net --scope lab

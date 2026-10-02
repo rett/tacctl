@@ -10,12 +10,13 @@ setup() {
 @test "sanity: tacctl.sh sources without dispatching" {
     [[ -n "$TACCTL_SRC" ]]
     [[ "$CONFIG" == "${TACCTL_ETC}/tacquito.yaml" ]]
-    [[ "$BACKUP_DIR" == "${TACCTL_ETC}/backups" ]]
+    [[ "$BACKUP_DIR" == "${TACCTL_STATE_DIR}/backups" ]]
     [[ "$ACCT_LOG" == "${TACCTL_LOG}/accounting.log" ]]
 }
 
 @test "sanity: tmpenv points at tmpdir, not host" {
     [[ "$TACCTL_ETC" == "${BATS_TEST_TMPDIR}/etc" ]]
+    [[ "$TACCTL_STATE_DIR" == "${BATS_TEST_TMPDIR}/state" ]]
     [[ "$TACCTL_CONFIG" != "/etc/tacquito/tacquito.yaml" ]]
 }
 

@@ -197,6 +197,145 @@ ensure_dependencies() {
     return 0
 }
 
+# --- State directory migration ---
+# tacctl-owned state (tacctl.yaml, linux-hosts, linux-uids, backups/,
+# templates/) used to live beside the daemon's config in TACCTL_ETC. It now
+# lives in TACCTL_STATE_DIR, and each old path becomes a symlink to the new
+# one so the previous release still finds its files after a rollback.
+#
+# The previous release replaces files by rename (conf_set), so a rolled-back
+# release turns a symlink at an old path back into a regular file. state_migrate
+# is therefore idempotent and runs on every install and upgrade: a regular
+# file at an old path that is newer than the file at the new path wins, the
+# displaced file is kept under backups/legacy/, and the symlink is restored.
+# Symlinks are never followed when deciding what to move. Backups go first so
+# backups/legacy exists in the new location before anything is displaced.
+STATE_MIGRATE_ITEMS=(backups templates tacctl.yaml linux-hosts linux-uids)
+
+# Unused name for a displaced item under backups/legacy (created on demand).
+_state_legacy_path() {
+    local label="$1" dir="${TACCTL_STATE_DIR}/backups/legacy" ts dest n=0
+    mkdir -p "$dir" || return 1
+    ts=$(date +%Y%m%d-%H%M%S)
+    dest="${dir}/${label}.${ts}"
+    while [[ -e "$dest" || -L "$dest" ]]; do
+        n=$((n + 1))
+        dest="${dir}/${label}.${ts}.${n}"
+    done
+    echo "$dest"
+}
+
+# Merge the entries of real directory $1 into real directory $2. Missing
+# entries move over; directories present in both recurse; for a file present
+# in both the newer one stays and the other goes to backups/legacy. Anything
+# else (symlinks, mixed types) is left in place with a warning. Succeeds only
+# when $1 ends up empty (and is removed).
+_state_merge_dir() {
+    local src="$1" dst="$2" rel="$3" entry name legacy
+    while IFS= read -r -d '' entry; do
+        name="${entry##*/}"
+        if [[ ! -e "${dst}/${name}" && ! -L "${dst}/${name}" ]]; then
+            mv "$entry" "${dst}/${name}" || return 1
+        elif [[ -L "$entry" || -L "${dst}/${name}" ]]; then
+            warn "State migration: not merging symlink ${entry}"
+        elif [[ -d "$entry" && -d "${dst}/${name}" ]]; then
+            _state_merge_dir "$entry" "${dst}/${name}" "${rel}_${name}" || true
+        elif [[ -f "$entry" && -f "${dst}/${name}" ]]; then
+            legacy=$(_state_legacy_path "${rel}_${name}") || return 1
+            if [[ "$entry" -nt "${dst}/${name}" ]]; then
+                cp -p "${dst}/${name}" "$legacy" || return 1
+                mv "$entry" "${dst}/${name}" || return 1
+            else
+                mv "$entry" "$legacy" || return 1
+            fi
+        else
+            warn "State migration: type mismatch, left in place: ${entry}"
+        fi
+    done < <(find "$src" -mindepth 1 -maxdepth 1 -print0)
+    rmdir "$src" 2>/dev/null
+}
+
+# Bring one item up to date: old = ${TACCTL_ETC}/<name>, new = ${TACCTL_STATE_DIR}/<name>.
+_state_migrate_item() {
+    local name="$1"
+    local old="${TACCTL_ETC}/${name}" new="${TACCTL_STATE_DIR}/${name}"
+    local old_real new_real legacy
+    old_real=$(readlink -f "$old")
+    new_real=$(readlink -f "$new")
+
+    # Never move something into itself.
+    if [[ "${new_real}/" == "${old_real}/"* || "${old_real}/" == "${new_real}/"* ]]; then
+        return 0
+    fi
+
+    if [[ -L "$old" ]]; then
+        # A link to the new path is the settled state. Any other link is the
+        # operator's; leave it.
+        warn "State migration: ${old} is a symlink elsewhere; left alone"
+        return 0
+    fi
+
+    if [[ ! -e "$old" ]]; then
+        # Interrupted run, or state created fresh in the new location: restore
+        # the compatibility link, but only on hosts that have an old directory.
+        if [[ ( -e "$new" || -L "$new" ) && -d "$TACCTL_ETC" ]]; then
+            ln -s "$new" "$old" || return 1
+        fi
+        return 0
+    fi
+
+    if [[ ! -e "$new" && ! -L "$new" ]]; then
+        mv "$old" "$new" || return 1
+        ln -s "$new" "$old" || return 1
+        info "State migrated: ${old} -> ${new}"
+        return 0
+    fi
+
+    # Both exist (old is a real file or directory, never a symlink here).
+    if [[ -L "$new" ]]; then
+        warn "State migration: ${new} is a symlink; ${old} left alone"
+        return 0
+    elif [[ -d "$old" && -d "$new" ]]; then
+        if ! _state_merge_dir "$old" "$new" "$name"; then
+            warn "State migration: ${old} not fully merged into ${new}; left in place"
+            return 0
+        fi
+    elif [[ -f "$old" && -f "$new" ]]; then
+        if cmp -s "$old" "$new"; then
+            rm -f "$old" || return 1
+        else
+            legacy=$(_state_legacy_path "$name") || return 1
+            if [[ "$old" -nt "$new" ]]; then
+                # Rolled-back code wrote the old path: its content is newer.
+                cp -p "$new" "$legacy" || return 1
+                mv "$old" "$new" || return 1
+            else
+                mv "$old" "$legacy" || return 1
+            fi
+            warn "State migration: ${name} existed in both places; the displaced copy is ${legacy}"
+        fi
+    else
+        warn "State migration: ${old} and ${new} are different kinds of file; left alone"
+        return 0
+    fi
+    ln -s "$new" "$old" || return 1
+    info "State migrated: ${old} -> ${new}"
+}
+
+state_migrate() {
+    local item rc=0
+    if [[ "$(readlink -f "$TACCTL_STATE_DIR")" == "$(readlink -f "$TACCTL_ETC")" ]]; then
+        return 0
+    fi
+    mkdir -p "$TACCTL_STATE_DIR" || return 1
+    [[ "$(stat -c %a "$TACCTL_STATE_DIR")" == 700 ]] || chmod 700 "$TACCTL_STATE_DIR" || return 1
+    if [[ $EUID -eq 0 ]]; then chown root:root "$TACCTL_STATE_DIR" || return 1; fi
+    for item in "${STATE_MIGRATE_ITEMS[@]}"; do
+        _state_migrate_item "$item" || { error "State migration failed for ${item}"; rc=1; }
+    done
+    return "$rc"
+}
+
 cmd_install() {
     # Parse optional --branch flag
     local INSTALL_BRANCH=""
@@ -340,11 +479,13 @@ cmd_install() {
     chmod 755 "${DEPLOY_DIR}/bin/tacctl.sh"
     ln -sf "${DEPLOY_DIR}/bin/tacctl.sh" /usr/local/bin/tacctl
     cp "${PROJECT_DIR}/README.md" "${CONFIG_DIR}/README.md" 2>/dev/null || true
+    # Create the state directory (and adopt any state from /etc/tacquito) before anything writes to it
+    state_migrate || exit 1
     # Install default config templates
     if [[ -d "${PROJECT_DIR}/config/templates" ]]; then
-        mkdir -p "${CONFIG_DIR}/templates"
-        cp -n "${PROJECT_DIR}/config/templates/"*.template "${CONFIG_DIR}/templates/" 2>/dev/null || true
-        info "Config templates installed: ${CONFIG_DIR}/templates/"
+        mkdir -p "${TEMPLATE_DIR_LOCAL}"
+        cp -n "${PROJECT_DIR}/config/templates/"*.template "${TEMPLATE_DIR_LOCAL}/" 2>/dev/null || true
+        info "Config templates installed: ${TEMPLATE_DIR_LOCAL}/"
     fi
     # Install logrotate config
     if [[ -f "${PROJECT_DIR}/config/tacquito.logrotate" ]]; then
@@ -637,6 +778,9 @@ cmd_upgrade() {
     echo "============================================"
     echo ""
 
+    # --- Move tacctl state out of /etc/tacquito (idempotent; before anything reads tacctl.yaml) ---
+    state_migrate || exit 1
+
     # --- Sync tacquito.yaml command blocks with tacctl config ---
     # Pre-unified-commands installs kept operator-customized commands:
     # blocks in tacquito.yaml; scrape those back into tacctl.yaml as
@@ -865,12 +1009,12 @@ cmd_upgrade() {
 
     # Update default config templates (only if user hasn't customized them)
     if [[ -d "${ACTIVE_DEPLOY_DIR}/config/templates" ]]; then
-        mkdir -p "${CONFIG_DIR}/templates"
+        mkdir -p "${TEMPLATE_DIR_LOCAL}"
         for tmpl in "${ACTIVE_DEPLOY_DIR}/config/templates/"*.template; do
             [[ -f "$tmpl" ]] || continue
             local tmpl_name dest
             tmpl_name=$(basename "$tmpl")
-            dest="${CONFIG_DIR}/templates/${tmpl_name}"
+            dest="${TEMPLATE_DIR_LOCAL}/${tmpl_name}"
             if [[ ! -f "$dest" ]]; then
                 cp "$tmpl" "$dest"
                 info "  Installed: ${tmpl_name}"
@@ -946,6 +1090,7 @@ cmd_uninstall() {
     echo "  - Management CLI (tacctl)"
     echo "  - Password hash generator (tacquito-hashgen)"
     echo "  - Configuration directory (/etc/tacquito)"
+    echo "  - State directory (${TACCTL_STATE_DIR})"
     echo "  - Log directory (/var/log/tacquito)"
     echo "  - Logrotate config"
     echo "  - Service user (tacquito)"
@@ -976,7 +1121,7 @@ cmd_uninstall() {
     local PRESERVE_BACKUPS=false PRESERVE_LOGS=false
 
     echo ""
-    read -rp "Preserve config backups (/etc/tacquito/backups)? [y/N]: " keep_backups
+    read -rp "Preserve config backups (${BACKUP_DIR})? [y/N]: " keep_backups
     if [[ "$keep_backups" == "y" || "$keep_backups" == "Y" ]]; then
         PRESERVE_BACKUPS=true
     fi
@@ -1015,14 +1160,22 @@ cmd_uninstall() {
     # --- Remove configuration ---
     local BACKUP_ARCHIVE="" LOG_ARCHIVE=""
     if [[ "$PRESERVE_BACKUPS" == "true" ]]; then
-        if [[ -d /etc/tacquito/backups ]]; then
+        # Backups of a host that never ran state_migrate are still under /etc/tacquito.
+        local backups_parent=""
+        if [[ -d "${TACCTL_STATE_DIR}/backups" ]]; then
+            backups_parent="$TACCTL_STATE_DIR"
+        elif [[ -d /etc/tacquito/backups && ! -L /etc/tacquito/backups ]]; then
+            backups_parent=/etc/tacquito
+        fi
+        if [[ -n "$backups_parent" ]]; then
             BACKUP_ARCHIVE="/root/tacquito-backups-$(date +%Y%m%d_%H%M%S).tar.gz"
-            tar czf "$BACKUP_ARCHIVE" -C /etc/tacquito backups/ 2>/dev/null || true
+            tar czf "$BACKUP_ARCHIVE" -C "$backups_parent" backups/ 2>/dev/null || true
             info "Config backups saved to ${BACKUP_ARCHIVE}"
         fi
     fi
-    info "Removing configuration directory..."
-    rm -rf /etc/tacquito
+    info "Removing configuration and state directories..."
+    # rm -rf does not follow the compatibility symlinks left in /etc/tacquito.
+    rm -rf /etc/tacquito "${TACCTL_STATE_DIR:?}"
 
     # --- Remove logs ---
     if [[ "$PRESERVE_LOGS" == "true" ]]; then

@@ -3,7 +3,7 @@
 # Sourced by bin/tacctl.sh (see the load block there for ordering); not executable.
 
 # --- Resolve template file (user override → repo default) ---
-TEMPLATE_DIR_LOCAL="${TACCTL_ETC}/templates"
+TEMPLATE_DIR_LOCAL="${TACCTL_STATE_DIR}/templates"
 TEMPLATE_DIR_REPO="$(if cd "${SCRIPT_DIR}/../config/templates" 2>/dev/null; then pwd; fi)"
 
 resolve_template() {

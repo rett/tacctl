@@ -14,7 +14,7 @@
 # live in config/linux/.
 LINUX_DIR="${TACCTL_LINUX_DIR:-/var/lib/tacctl/linux}"
 LINUX_SRC_DIR="${SCRIPT_DIR}/../config/linux"
-LINUX_UID_FILE="${TACCTL_ETC}/linux-uids"
+LINUX_UID_FILE="${TACCTL_STATE_DIR}/linux-uids"
 LINUX_UID_BASE=20000
 PAM_TACPLUS_REPO="https://github.com/kravietz/pam_tacplus.git"
 PAM_TACPLUS_TAG="v1.7.0"
@@ -510,7 +510,7 @@ cmd_config_linux() {
 #
 # ssh runs as the user who invoked sudo, so their keys and known_hosts are
 # used. The remote login must be root or able to sudo.
-LINUX_HOSTS_FILE="${TACCTL_ETC}/linux-hosts"
+LINUX_HOSTS_FILE="${TACCTL_STATE_DIR}/linux-hosts"
 
 host_record() { # <name> -> registry line, or nothing
     [[ -f "$LINUX_HOSTS_FILE" ]] || return 0

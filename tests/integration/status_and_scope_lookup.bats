@@ -124,7 +124,7 @@ esac'
 
 @test "scopes default: prints current default when no arg" {
     # multiscope fixture doesn't pin a default; seed the override ourselves.
-    printf 'scope:\n  default: lab\n' > "$TACCTL_ETC/tacctl.yaml"
+    printf 'scope:\n  default: lab\n' > "${TACCTL_STATE_DIR}/tacctl.yaml"
     run "$TACCTL_BIN_SCRIPT" scope default
     assert_success
     assert_output --partial "Default scope: lab"

@@ -53,7 +53,7 @@ _alice_hash() {
 @test "user passwd: records a password-date sidecar" {
     run "$TACCTL_BIN_SCRIPT" user passwd alice --hash "$HASH_B"
     assert_success
-    [[ -f "$TACCTL_ETC/backups/password-dates/alice.date" ]]
+    [[ -f "${TACCTL_STATE_DIR}/backups/password-dates/alice.date" ]]
 }
 
 @test "user passwd: rejects unknown user" {
@@ -77,8 +77,8 @@ _alice_hash() {
     # Hash was swapped for the marker; original is parked in disabled/ sidecar.
     local current; current=$(_alice_hash)
     [[ "$current" != "$HASH_A" ]]
-    [[ -f "$TACCTL_ETC/backups/disabled/alice.hash" ]]
-    [[ "$(cat "$TACCTL_ETC/backups/disabled/alice.hash")" == "$HASH_A" ]]
+    [[ -f "${TACCTL_STATE_DIR}/backups/disabled/alice.hash" ]]
+    [[ "$(cat "${TACCTL_STATE_DIR}/backups/disabled/alice.hash")" == "$HASH_A" ]]
 }
 
 @test "user disable: idempotent on an already-disabled user" {
@@ -90,12 +90,12 @@ _alice_hash() {
 
 @test "user enable: restores the original hash and deletes the sidecar" {
     "$TACCTL_BIN_SCRIPT" user disable alice
-    [[ -f "$TACCTL_ETC/backups/disabled/alice.hash" ]]
+    [[ -f "${TACCTL_STATE_DIR}/backups/disabled/alice.hash" ]]
 
     run "$TACCTL_BIN_SCRIPT" user enable alice
     assert_success
     [[ "$(_alice_hash)" == "$HASH_A" ]]
-    [[ ! -f "$TACCTL_ETC/backups/disabled/alice.hash" ]]
+    [[ ! -f "${TACCTL_STATE_DIR}/backups/disabled/alice.hash" ]]
 }
 
 @test "user enable: refuses when there's no sidecar to restore from" {
@@ -106,7 +106,7 @@ _alice_hash() {
 
 @test "user enable: errors when sidecar was hand-deleted" {
     "$TACCTL_BIN_SCRIPT" user disable alice
-    rm -f "$TACCTL_ETC/backups/disabled/alice.hash"
+    rm -f "${TACCTL_STATE_DIR}/backups/disabled/alice.hash"
     run "$TACCTL_BIN_SCRIPT" user enable alice
     assert_failure
     assert_output --partial "No saved hash"
@@ -131,11 +131,11 @@ _alice_hash() {
 }
 
 @test "user rename: migrates the password-date sidecar too" {
-    date -u +%Y-%m-%d > "$TACCTL_ETC/backups/password-dates/alice.date"
+    date -u +%Y-%m-%d > "${TACCTL_STATE_DIR}/backups/password-dates/alice.date"
     run "$TACCTL_BIN_SCRIPT" user rename alice aliceA
     assert_success
-    [[ ! -f "$TACCTL_ETC/backups/password-dates/alice.date" ]]
-    [[ -f "$TACCTL_ETC/backups/password-dates/aliceA.date" ]]
+    [[ ! -f "${TACCTL_STATE_DIR}/backups/password-dates/alice.date" ]]
+    [[ -f "${TACCTL_STATE_DIR}/backups/password-dates/aliceA.date" ]]
 }
 
 @test "user rename: rejects when new name is already taken" {

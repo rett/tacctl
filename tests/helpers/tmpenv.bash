@@ -4,6 +4,7 @@
 
 tacctl_tmpenv_init() {
     export TACCTL_ETC="${BATS_TEST_TMPDIR}/etc"
+    export TACCTL_STATE_DIR="${BATS_TEST_TMPDIR}/state"
     export TACCTL_LOG="${BATS_TEST_TMPDIR}/log"
     export TACCTL_BIN="${BATS_TEST_TMPDIR}/bin"
     export TACCTL_CONFIG="${TACCTL_ETC}/tacquito.yaml"
@@ -14,8 +15,8 @@ tacctl_tmpenv_init() {
     export TACCTL_SKIP_SUDO=1
 
     mkdir -p "${TACCTL_ETC}" "${TACCTL_LOG}" "${TACCTL_BIN}" \
-             "${TACCTL_ETC}/backups" \
-             "${TACCTL_ETC}/backups/password-dates"
+             "${TACCTL_STATE_DIR}/backups" \
+             "${TACCTL_STATE_DIR}/backups/password-dates"
     # Canonical defaults ship embedded in bin/tacctl.sh (conf_emit_defaults);
     # no fixture file to seed.
 }

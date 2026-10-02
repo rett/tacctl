@@ -5,14 +5,15 @@
 
 # Base paths: overridable via env for tests and non-standard deployments.
 # Production defaults are unchanged.
-: "${TACCTL_ETC:=/etc/tacquito}"
+: "${TACCTL_ETC:=/etc/tacquito}"   # the TACACS+ daemon's directory (tacquito.yaml)
+: "${TACCTL_STATE_DIR:=/etc/tacctl}"   # tacctl-owned state (see state_migrate)
 : "${TACCTL_LOG:=/var/log/tacquito}"
 : "${TACCTL_BIN:=/usr/local/bin}"
 : "${TACCTL_CONFIG:=${TACCTL_ETC}/tacquito.yaml}"
 
 CONFIG="${TACCTL_CONFIG}"
-BACKUP_DIR="${TACCTL_ETC}/backups"
-PASSWORD_DATES_DIR="${TACCTL_ETC}/backups/password-dates"
+BACKUP_DIR="${TACCTL_STATE_DIR}/backups"
+PASSWORD_DATES_DIR="${TACCTL_STATE_DIR}/backups/password-dates"
 ACCT_LOG="${TACCTL_LOG}/accounting.log"
 PASSWORD_MAX_AGE_DAYS=90
 BCRYPT_COST=12
@@ -27,7 +28,7 @@ SERVICE_FILE="/etc/systemd/system/tacquito.service"
 
 # Unified tacctl config: canonical defaults live in conf_emit_defaults();
 # operator overrides live in this one on-disk file.
-TACCTL_OVERRIDES_FILE="${TACCTL_ETC}/tacctl.yaml"
+TACCTL_OVERRIDES_FILE="${TACCTL_STATE_DIR}/tacctl.yaml"
 
 # --- System lifecycle constants ---
 GO_VERSION="1.26.2"

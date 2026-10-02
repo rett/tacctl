@@ -104,7 +104,7 @@ setup() {
 @test "user add: writes a backup before mutating" {
     "$TACCTL_BIN_SCRIPT" user add alice superuser --hash "$TEST_HASH" --scopes lab
     # backup_config writes tacquito.yaml.<timestamp> into $BACKUP_DIR.
-    run bash -c 'ls "$TACCTL_ETC/backups"/tacquito.yaml.* 2>/dev/null | wc -l'
+    run bash -c 'ls "${TACCTL_STATE_DIR}/backups"/tacquito.yaml.* 2>/dev/null | wc -l'
     [[ "${output:-0}" -ge 1 ]]
 }
 

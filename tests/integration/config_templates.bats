@@ -255,8 +255,8 @@ _normalize() {
 }
 
 @test "config wti: falls back to the inline walkthrough when no template resolves" {
-    # Point both template dirs at nowhere: TACCTL_ETC is already the tmp etc
-    # (no templates/ dir), and the repo dir is derived from the script's own
+    # Point both template dirs at nowhere: TACCTL_STATE_DIR is already the tmp
+    # state dir (no templates/ dir), and the repo dir is derived from the script's own
     # location, so run a copy of the script from an empty directory.
     local alt="$BATS_TEST_TMPDIR/alt/bin"
     mkdir -p "$alt"

@@ -130,7 +130,7 @@ _hash_of() {
     assert_output --partial "Password changed for 'ro'"
     [[ "$(_hash_of ro)" != "$HASH" ]]
     [[ "$(_hash_of su)" == "$HASH" ]]
-    [[ -f "$TACCTL_ETC/backups/password-dates/ro.date" ]]
+    [[ -f "${TACCTL_STATE_DIR}/backups/password-dates/ro.date" ]]
 }
 
 @test "passwd: wrong current password leaves the hash alone" {

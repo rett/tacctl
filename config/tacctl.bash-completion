@@ -78,14 +78,8 @@ for u in (d.get('users') or []):
                 }' /etc/tacquito/tacquito.yaml 2>/dev/null) ;;
             esac
         fi
-        # Backup timestamps live in a separate dir. Group-readable if the
-        # operator is in `tacquito`; otherwise the sudo fallback below
-        # picks them up.
-        if [[ "$kind" == "backups" && -r /etc/tacquito/backups ]]; then
-            out=$(ls -1t /etc/tacquito/backups/ 2>/dev/null \
-                   | awk -F. '/^tacquito\.yaml\./ { sub(/^tacquito\.yaml\./,""); print }' \
-                   | head -50)
-        fi
+        # Backup timestamps live in the root-only tacctl state directory
+        # (/etc/tacctl/backups), so they always come from the sudo fallback.
         if [[ -z "$out" ]]; then
             out=$(sudo -n tacctl _completion-names "$kind" 2>/dev/null)
         fi
