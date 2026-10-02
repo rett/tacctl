@@ -90,6 +90,9 @@ print("" if v is None else v)' "${TACCTL_STATE_DIR}/store.yaml" "$1" "$2"
     assert_failure
     as_user op yes -- backup diff
     assert_failure
+    as_user op yes -- backup restore 20250101_000000
+    assert_failure
+    assert_output --partial "not permitted for the operator tier"
     as_user op yes -- log clear
     assert_failure
     as_user op yes -- config sudoers tiers install

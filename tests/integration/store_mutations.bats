@@ -74,8 +74,10 @@ refute_stub_called() {
     fi
 }
 
+# Snapshots (backups/<ts>/) plus old-style tacquito.yaml.<ts> files: anything
+# a command could have left behind as a backup.
 backup_count() {
-    find "${TACCTL_STATE_DIR}/backups" -maxdepth 1 -name 'tacquito.yaml.*' 2>/dev/null | wc -l
+    find "${TACCTL_STATE_DIR}/backups" -maxdepth 1 \( -name 'tacquito.yaml.*' -o -type d -name '[0-9]*' \) 2>/dev/null | wc -l
 }
 
 # Everything a refused or rolled-back command must leave exactly as it was.
@@ -410,14 +412,16 @@ carol"
     assert_failure
 }
 
-@test "each mutation backs up the tacquito.yaml it replaces" {
+@test "each mutation snapshots the store and tacctl.yaml it changes" {
     rendered_install
-    cp "$TACCTL_CONFIG" "${BATS_TEST_TMPDIR}/config.before"
+    cp "$STORE" "${BATS_TEST_TMPDIR}/store.before"
     [[ "$(backup_count)" -eq 0 ]]
     run "$TACCTL_BIN_SCRIPT" user disable bob
     assert_success
     [[ "$(backup_count)" -eq 1 ]]
-    cmp "$(find "${TACCTL_STATE_DIR}/backups" -maxdepth 1 -name 'tacquito.yaml.*')" "${BATS_TEST_TMPDIR}/config.before"
+    cmp "$(find "${TACCTL_STATE_DIR}/backups" -mindepth 2 -maxdepth 2 -name store.yaml)" "${BATS_TEST_TMPDIR}/store.before"
+    # The snapshot is not the rendered file: tacquito.yaml is no longer backed up.
+    [[ -z "$(find "${TACCTL_STATE_DIR}/backups" -maxdepth 1 -name 'tacquito.yaml.*')" ]]
 }
 
 @test "a change that leaves the rendered file as it was does not restart the daemon" {

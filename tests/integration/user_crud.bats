@@ -118,11 +118,14 @@ print(",".join(v) if isinstance(v, list) else "" if v is None else v)' "${TACCTL
     assert_output --partial "reserved"
 }
 
-@test "user add: writes a backup before mutating" {
+@test "user add: snapshots the store before mutating" {
+    cp "${TACCTL_STATE_DIR}/store.yaml" "${BATS_TEST_TMPDIR}/store.before"
     "$TACCTL_BIN_SCRIPT" user add alice superuser --hash "$TEST_HASH" --scopes lab
-    # backup_config writes tacquito.yaml.<timestamp> into $BACKUP_DIR.
-    run bash -c 'ls "${TACCTL_STATE_DIR}/backups"/tacquito.yaml.* 2>/dev/null | wc -l'
-    [[ "${output:-0}" -ge 1 ]]
+    # backup_snapshot writes backups/<timestamp>/ holding the pre-change store.
+    local snap
+    snap=$(find "${TACCTL_STATE_DIR}/backups" -mindepth 2 -maxdepth 2 -name store.yaml)
+    [[ "$(wc -l <<< "$snap")" -eq 1 ]]
+    cmp "$snap" "${BATS_TEST_TMPDIR}/store.before"
 }
 
 @test "user list: shows added user with group and scopes" {

@@ -160,6 +160,10 @@ Notes:
   `$TACCTL_CONFIG` text for what tacquito is *given* (anchor names, the
   `scopes:`/`groups:` of a user entry, the disabled marker, `secrets[]` order).
   Note the renderer quotes a hash whose hex is all digits.
+- Every mutating command snapshots first: `$TACCTL_STATE_DIR/backups/<ts>/{store.yaml,tacctl.yaml,manifest}`
+  (not `tacquito.yaml.<ts>`; those exist only as old-style backups a test plants, or
+  the `backups/legacy/` copies the renderer makes). `tests/integration/backup.bats`
+  has helpers for listing snapshots and comparing the live state before and after.
 - For legacy read-only mode (no store), use `place_fixture`. Every mutating
   command must refuse there; `tests/integration/store_mutations.bats` holds the
   list of verbs and is where a new mutating verb gets added.

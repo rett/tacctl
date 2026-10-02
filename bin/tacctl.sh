@@ -169,14 +169,11 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
                 scopes) model_scopes 2>/dev/null ;;
                 users)  model_users 2>/dev/null ;;
                 groups) model_groups 2>/dev/null ;;
-                # Backup timestamps, newest first, capped at 50 so the
-                # completion menu stays usable on hosts with hundreds of
-                # backups. `config diff` / `backup diff|restore` take one.
-                backups)
-                    # shellcheck disable=SC2012  # mtime order needed; names are tacctl-generated tacquito.yaml.<timestamp>
-                    ls -1t "${BACKUP_DIR}" 2>/dev/null \
-                    | awk -F. '/^tacquito\.yaml\./ { sub(/^tacquito\.yaml\./,""); print }' \
-                    | head -50 ;;
+                # Backup timestamps: snapshots newest first, then old-style
+                # backups, capped at 50 so the completion menu stays usable
+                # on hosts with hundreds of backups. `config diff` /
+                # `backup diff|restore` take one.
+                backups) backup_names | head -50 || true ;;
             esac
             ;;
         version|--version|-v)

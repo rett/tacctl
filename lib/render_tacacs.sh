@@ -632,8 +632,11 @@ _tacacs_render_apply_run() {
 #               copy kept under backups/legacy/). A hand-edited file, or a
 #               never-rendered one that says something else, refuses the
 #               command here -- before anything is written.
-#   2. backup   backup_config (the pre-change tacquito.yaml), then a private
-#               copy of store.yaml and tacctl.yaml to roll back to.
+#   2. backup   backup_snapshot (store.yaml, tacctl.yaml and the manifest,
+#               under backups/<ts>/; skipped when nothing changed since the
+#               newest snapshot), then a private copy of store.yaml and
+#               tacctl.yaml to roll back to. A snapshot that cannot be made
+#               refuses the command, before anything is written.
 #   3. write    the caller's writer (store_* and/or conf_* calls).
 #   4. render   tacacs_render_apply. If it fails, store.yaml and tacctl.yaml
 #               are put back as they were, so the canonical files and the
@@ -666,7 +669,7 @@ store_apply() {
         10) force=(--force) ;;
         *) return "$rc" ;;
     esac
-    [[ -f "$CONFIG" ]] && backup_config
+    backup_snapshot || { error "Nothing was changed: the pre-change snapshot could not be made."; return 1; }
 
     local keep
     keep=$(mktemp -d "${TACCTL_STATE_DIR}/.apply.XXXXXX") || return 1
@@ -677,10 +680,15 @@ store_apply() {
 
     local result=""
     rc=0
+    # The snapshot above is this command's; the writer's own store writes
+    # must not add one per intermediate state.
+    _BACKUP_SNAPSHOT_HELD=1
     if ! "$@"; then
+        _BACKUP_SNAPSHOT_HELD=0
         _store_apply_rollback "$keep"
         return 1
     fi
+    _BACKUP_SNAPSHOT_HELD=0
     result=$(tacacs_render_apply "${force[@]}") || rc=$?
     if (( rc != 0 )); then
         _store_apply_rollback "$keep"

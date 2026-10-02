@@ -70,18 +70,149 @@ print_drift_lines() {
     return 1
 }
 
-# --- Backup config before changes ---
+# --- Snapshots of the canonical files (plan 4.6) ---
+# A snapshot is a directory backups/<ts>/ holding store.yaml, tacctl.yaml (when
+# there is one) and a manifest: the rendered.json of that moment plus the
+# tacctl version. Restoring one restores the truth, not the artifact derived
+# from it. Snapshots hold shared secrets and password hashes: the directory is
+# 0700 and the files 0600, root only.
+#
+# <ts> is YYYYMMDD_HHMMSS_mmm, with -N appended when two snapshots land in the
+# same millisecond; names sort in time order. A directory under backups/ is a
+# snapshot only if its name has that shape. Everything else there (password-
+# dates/, disabled/, legacy/, old-style tacquito.yaml.<ts> files) is not ours
+# to prune.
 BACKUP_RETENTION=30
+BACKUP_SNAPSHOT_RE='^[0-9]{8}_[0-9]{6}(_[0-9]{3})?(-[0-9]+)?$'
 
+# Set to 1 while a command that already took its snapshot runs its writes
+# (store_apply, backup restore): the store writer's own snapshot hook then
+# stays quiet instead of snapshotting every intermediate state.
+_BACKUP_SNAPSHOT_HELD=0
+# A snapshot id retention must not delete (the one a restore reads from).
+_BACKUP_KEEP_ID=""
+_BACKUP_VERSION=""
+
+# Snapshot ids, newest first, one per line. Never fails.
+_backup_snapshot_ids() {
+    { find "$BACKUP_DIR" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2>/dev/null || true; } \
+        | { grep -E "$BACKUP_SNAPSHOT_RE" || true; } \
+        | sort -r
+}
+
+# True when the live store.yaml and tacctl.yaml are byte-identical to the ones
+# in snapshot directory $1 (tacctl.yaml absent on both sides counts).
+_backup_snapshot_current() {
+    local dir="$1"
+    cmp -s "$STORE_FILE" "${dir}/store.yaml" || return 1
+    if [[ -f "$TACCTL_OVERRIDES_FILE" ]]; then
+        cmp -s "$TACCTL_OVERRIDES_FILE" "${dir}/tacctl.yaml" || return 1
+    else
+        [[ ! -e "${dir}/tacctl.yaml" ]] || return 1
+    fi
+}
+
+# backup_snapshot: snapshot store.yaml and tacctl.yaml before a change.
+# Called by store_apply and, through store_snapshot_hook, by every store write.
+#   - Does nothing while _BACKUP_SNAPSHOT_HELD=1 (the caller has its own).
+#   - Does nothing when the live files already equal the newest snapshot, so
+#     a command that changes nothing, or a second write of one command, does
+#     not pile up identical snapshots.
+#   - Builds the directory under a private name and renames it into place, so
+#     a snapshot is never seen half written; a name already taken gets a -N
+#     suffix.
+#   - Then keeps the newest $BACKUP_RETENTION snapshots. It never removes the
+#     one just made, $_BACKUP_KEEP_ID, or anything that is not a snapshot.
+# Returns 1 (message on stderr) when the snapshot could not be made.
+backup_snapshot() {
+    (( _BACKUP_SNAPSHOT_HELD )) && return 0
+    [[ -f "$STORE_FILE" ]] || return 0
+    local ids=()
+    mapfile -t ids < <(_backup_snapshot_ids)
+    if (( ${#ids[@]} )) && _backup_snapshot_current "${BACKUP_DIR}/${ids[0]}"; then
+        return 0
+    fi
+
+    if [[ ! -d "$BACKUP_DIR" ]]; then
+        mkdir -p "$BACKUP_DIR" || { error "Cannot create ${BACKUP_DIR}."; return 1; }
+        chmod 750 "$BACKUP_DIR"
+        chown tacquito:tacquito "$BACKUP_DIR" 2>/dev/null || true
+    fi
+    local tmp
+    tmp=$(mktemp -d "${BACKUP_DIR}/.snap.XXXXXX") || { error "Cannot create a snapshot in ${BACKUP_DIR}."; return 1; }
+    [[ -n "$_BACKUP_VERSION" ]] || _BACKUP_VERSION=$(get_version)
+    if ! _backup_snapshot_fill "$tmp"; then
+        rm -rf "$tmp"
+        error "Cannot write a snapshot in ${BACKUP_DIR}."
+        return 1
+    fi
+
+    # Milliseconds keep two commands in one second apart; the loop covers the
+    # same millisecond.
+    local name final n=0
+    name=$(date +%Y%m%d_%H%M%S_%3N)
+    final="${BACKUP_DIR}/${name}"
+    while [[ -e "$final" || -L "$final" ]] || ! mv -T "$tmp" "$final" 2>/dev/null; do
+        n=$((n + 1))
+        if (( n > 100 )); then
+            rm -rf "$tmp"
+            error "Cannot name a snapshot in ${BACKUP_DIR}."
+            return 1
+        fi
+        final="${BACKUP_DIR}/${name}-${n}"
+    done
+    name="${final##*/}"
+    info "Config snapshot saved to ${final}"
+
+    # Retention. ids was read before this snapshot existed: the new one goes
+    # in front, and the oldest of the rest go.
+    ids=("$name" ${ids[@]+"${ids[@]}"})
+    local i
+    for (( i = BACKUP_RETENTION; i < ${#ids[@]}; i++ )); do
+        [[ "${ids[i]}" == "$name" || "${ids[i]}" == "$_BACKUP_KEEP_ID" ]] && continue
+        rm -rf -- "${BACKUP_DIR:?}/${ids[i]}"
+    done
+    return 0
+}
+
+# Fill directory $1 (0700, private) with the files of a snapshot, 0600.
+_backup_snapshot_fill() {
+    local dir="$1"
+    cp "$STORE_FILE" "${dir}/store.yaml" || return 1
+    if [[ -f "$TACCTL_OVERRIDES_FILE" ]]; then
+        cp "$TACCTL_OVERRIDES_FILE" "${dir}/tacctl.yaml" || return 1
+    fi
+    python3 - "$RENDERED_FILE" "$_BACKUP_VERSION" > "${dir}/manifest" <<'PY' || return 1
+import datetime, json, sys
+path, version = sys.argv[1:3]
+try:
+    with open(path) as f:
+        rendered = json.load(f)
+except FileNotFoundError:
+    rendered = {}
+except (OSError, ValueError):
+    rendered = None  # present but unreadable: say so rather than guess
+print(json.dumps({
+    "tacctl_version": version,
+    "created": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    "rendered": rendered,
+}, indent=2, sort_keys=True))
+PY
+    # mktemp -d made the directory 0700 already; stated so the mode does not
+    # depend on it.
+    chmod 700 "$dir"
+    chmod 600 "${dir}"/*
+}
+
+# Old-style backup of tacquito.yaml alone. Only the legacy (no store yet)
+# paths use it: a pre-store install keeps backing up the file that is still
+# its source of truth. With a store, backup_snapshot is the backup.
 backup_config() {
     mkdir -p "$BACKUP_DIR"
     chmod 750 "$BACKUP_DIR"
     chown tacquito:tacquito "$BACKUP_DIR" 2>/dev/null || true
     # Milliseconds (%3N) avoid collisions when two mutating commands land in
-    # the same wall-clock second — prior YYYYMMDD_HHMMSS format silently
-    # overwrote the first backup, losing the pre-mutation snapshot.
-    # 'backup list' / 'restore' parse the suffix verbatim, so old-format
-    # files are still recognized.
+    # the same wall-clock second.
     local ts
     ts=$(date +%Y%m%d_%H%M%S_%3N)
     cp "$CONFIG" "${BACKUP_DIR}/tacquito.yaml.${ts}"
@@ -98,6 +229,40 @@ backup_config() {
         # shellcheck disable=SC2012  # mtime order needed; names are tacctl-generated tacquito.yaml.<timestamp>
         ls -1t "${BACKUP_DIR}"/tacquito.yaml.* | tail -n +$((BACKUP_RETENTION + 1)) | xargs rm -f
     fi
+}
+
+# Old-style backups: whole tacquito.yaml copies made before the store existed
+# (backups/tacquito.yaml.<ts>, left in place by the state migration) and the
+# files the renderer and the upgrade keep in backups/legacy/ (tacquito.yaml.
+# drift.<ts>, tacquito.yaml.pre-store.<ts>). The id is the file name without
+# the leading 'tacquito.yaml.', so it may contain dots. Printed newest first
+# (by modification time), one '<id><TAB><path>' per line. Never fails.
+_backup_legacy_entries() {
+    local dir
+    for dir in "$BACKUP_DIR" "${BACKUP_DIR}/legacy"; do
+        find "$dir" -maxdepth 1 -type f -name 'tacquito.yaml.?*' -printf '%T@\t%f\t%p\n' 2>/dev/null || true
+    done | sort -t$'\t' -k1,1nr -k2,2r | awk -F'\t' '{ id = $2; sub(/^tacquito\.yaml\./, "", id); print id "\t" $3 }'
+}
+
+# _backup_legacy_path <id>: print the path of an old-style backup, or fail.
+# The id may not name a directory: letters, digits, dot, underscore, dash.
+_backup_legacy_path() {
+    local id="$1" dir
+    [[ "$id" =~ ^[A-Za-z0-9_][A-Za-z0-9._-]*$ ]] || return 1
+    for dir in "$BACKUP_DIR" "${BACKUP_DIR}/legacy"; do
+        if [[ -f "${dir}/tacquito.yaml.${id}" && ! -L "${dir}/tacquito.yaml.${id}" ]]; then
+            echo "${dir}/tacquito.yaml.${id}"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# backup_names: every id 'backup diff|restore' takes, snapshots first, newest
+# first, then old-style backups. For completion.
+backup_names() {
+    _backup_snapshot_ids
+    _backup_legacy_entries | cut -f1
 }
 
 # --- Validate listen address (host:port or [ipv6]:port) against network family ---
@@ -272,12 +437,21 @@ cmd_status() {
         echo -e "  ${BOLD}Accounting log:${NC}       ${log_size} (${log_lines} entries)"
     fi
 
-    # Backup count. `find` on a missing backups directory exits non-zero;
-    # under `set -euo pipefail` that kills the pipeline *and* the script.
-    # `|| true` absorbs the failure; `wc -l` has already printed the count
-    # (0 in that case), so nothing more may be echoed here.
-    local backup_count
-    backup_count=$(find "${BACKUP_DIR}" -maxdepth 1 -name 'tacquito.yaml.*' 2>/dev/null | wc -l || true)
+    # Backup count: snapshots, plus the old-style files an upgrade leaves
+    # behind. Both listings absorb a missing backups directory themselves
+    # (under `set -euo pipefail` a failing `find` would kill the script);
+    # `wc -l` prints the count, 0 included, so nothing more may be echoed.
+    # Without a store the old-style files are the backups, so they are the
+    # count.
+    local backup_count snapshot_count old_count
+    snapshot_count=$(_backup_snapshot_ids | wc -l)
+    old_count=$(_backup_legacy_entries | wc -l)
+    if [[ "$(model_mode)" == "store" ]]; then
+        backup_count="$snapshot_count"
+        (( old_count > 0 )) && backup_count+=" (+${old_count} old-style)"
+    else
+        backup_count=$(( snapshot_count + old_count ))
+    fi
     echo -e "  ${BOLD}Config backups:${NC}       ${backup_count}"
 
     # Prometheus metrics — auth stats. Respects the tacctl config metrics
@@ -1012,123 +1186,377 @@ cmd_log() {
 # =====================================================================
 #  BACKUP COMMANDS
 # =====================================================================
+#
+# With a store, a backup is a snapshot (backup_snapshot above) and list, diff
+# and restore work on those; old-style tacquito.yaml.<ts> copies are listed
+# after them and can be diffed, and restored with --legacy (through the
+# importer's check). Without a store (legacy read-only mode) nothing takes
+# snapshots, and list, diff and restore work on the old-style files exactly as
+# they always did: a snapshot found there (left by 'store rollback') is listed
+# but refused, because restoring it would create the store without the import
+# gate.
+
+# Print one file's diff between a snapshot's copy and the live one; a file
+# that does not exist diffs as empty. $1 label, $2 snapshot file, $3 live
+# file, $4 snapshot id.
+_backup_diff_file() {
+    local label="$1" ts="$4" rc=0 a="$2" b="$3"
+    [[ -f "$a" ]] || a=/dev/null
+    [[ -f "$b" ]] || b=/dev/null
+    if [[ "$a" == /dev/null && "$b" == /dev/null ]]; then
+        echo "  ${label}: absent in the snapshot and now"
+        return 0
+    fi
+    # Unified format (-u) shows surrounding context and ---/+++ labels so
+    # changes land in their structural neighborhood instead of as a bare
+    # `30c30`. --label keeps the header short and stable (absolute paths
+    # would churn per-host).
+    diff -u \
+        --label "snapshot/${ts}/${label}" \
+        --label "current/${label}" \
+        --color=always "$a" "$b" || rc=$?
+    (( rc == 0 )) && echo "  ${label}: no differences"
+    return 0
+}
+
+# Diff of the live canonical files against snapshot $1.
+_backup_diff_snapshot() {
+    local ts="$1" dir="${BACKUP_DIR}/$1"
+    echo ""
+    echo -e "${BOLD}Diff: current store and tacctl.yaml vs snapshot ${ts}${NC}"
+    echo "--------------------------------------------"
+    _backup_diff_file store.yaml "${dir}/store.yaml" "$STORE_FILE" "$ts"
+    _backup_diff_file tacctl.yaml "${dir}/tacctl.yaml" "$TACCTL_OVERRIDES_FILE" "$ts"
+}
+
+# Diff of the live tacquito.yaml against old-style backup file $2 (id $1).
+_backup_diff_legacy() {
+    local ts="$1" file="$2"
+    echo ""
+    echo -e "${BOLD}Diff: current config vs backup ${ts}${NC}"
+    echo "--------------------------------------------"
+    diff -u \
+        --label "backup/${ts}" \
+        --label "current" \
+        --color=always "$file" "$CONFIG" || true
+}
+
+# Is $1 the id of a snapshot directory?
+_backup_is_snapshot() {
+    [[ "$1" =~ $BACKUP_SNAPSHOT_RE && -d "${BACKUP_DIR}/$1" && ! -L "${BACKUP_DIR}/$1" ]]
+}
+
+_backup_list() {
+    local ids=() entries=() id path size entry
+    mapfile -t ids < <(_backup_snapshot_ids)
+    mapfile -t entries < <(_backup_legacy_entries)
+    echo ""
+    echo -e "${BOLD}Config Backups${NC}"
+    echo "--------------------------------------------"
+    if [[ "$(model_mode)" == "legacy" ]]; then
+        echo "  No store yet: 'backup diff' and 'backup restore' work on old-style backups only."
+    fi
+    if (( ${#ids[@]} + ${#entries[@]} == 0 )); then
+        echo "  No backups found."
+        echo ""
+        return 0
+    fi
+    printf "  ${BOLD}%-36s %-10s %-8s${NC}\n" "TIMESTAMP" "KIND" "SIZE"
+    echo "  ------------------------------------------------------"
+    for id in "${ids[@]}"; do
+        size=$(du -sh "${BACKUP_DIR}/${id}" 2>/dev/null | awk '{print $1}')
+        printf "  %-36s %-10s %-8s\n" "$id" "snapshot" "$size"
+    done
+    for entry in "${entries[@]}"; do
+        IFS=$'\t' read -r id path <<< "$entry"
+        size=$(du -sh "$path" 2>/dev/null | awk '{print $1}')
+        printf "  %-36s %-10s %-8s\n" "$id" "old-style" "$size"
+    done
+    echo ""
+    echo "  Old-style entries restore with 'tacctl backup restore <timestamp> --legacy'."
+    echo ""
+}
+
+_backup_diff() {
+    local id="${1:-}" path
+
+    if [[ -z "$id" ]]; then
+        # The most recent backup: a snapshot with a store, else an old-style file.
+        if [[ "$(model_mode)" == "store" ]]; then
+            id=$(_backup_snapshot_ids | head -n 1 || true)
+            if [[ -z "$id" ]]; then
+                error "No snapshots found."
+                return 1
+            fi
+        else
+            id=$(_backup_legacy_entries | head -n 1 | cut -f1 || true)
+            if [[ -z "$id" ]]; then
+                error "No backups found."
+                return 1
+            fi
+        fi
+    fi
+
+    if _backup_is_snapshot "$id"; then
+        if [[ "$(model_mode)" != "store" ]]; then
+            error "Snapshot ${id} holds the store, which is not initialised here. ${STORE_NOT_INITIALISED_MSG}"
+            return 1
+        fi
+        _backup_diff_snapshot "$id"
+    elif path=$(_backup_legacy_path "$id"); then
+        _backup_diff_legacy "$id" "$path"
+    else
+        error "Backup not found: ${id}"
+        error "Run 'tacctl backup list' to see available backups."
+        return 1
+    fi
+    echo ""
+}
+
+# Ask the operator; 0 only on y/Y.
+_backup_confirm() {
+    local confirm
+    read -rp "  Restore this backup? [y/N]: " confirm || true
+    if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+        info "Cancelled."
+        return 1
+    fi
+}
+
+# Install file $1 as $2 through a temporary file beside it and a rename, so a
+# reader never sees a half-written file. With a mode $3 the file gets it;
+# without, it keeps the mode and owner of $1.
+_backup_put() {
+    local src="$1" dst="$2" mode="${3:-}" tmp="${2}.tacctl-new"
+    if [[ -n "$mode" ]]; then
+        cp "$src" "$tmp" || { rm -f "$tmp"; return 1; }
+        chmod "$mode" "$tmp"
+    else
+        cp -p "$src" "$tmp" || { rm -f "$tmp"; return 1; }
+    fi
+    mv -f "$tmp" "$dst" || { rm -f "$tmp"; return 1; }
+}
+
+# Put the four files a restore can touch back as _backup_apply saved them in
+# $1: store.yaml, tacctl.yaml, tacquito.yaml and rendered.json. A file that was
+# absent then is removed now.
+_backup_apply_rollback() {
+    local keep="$1" f dst name
+    for f in "${STORE_FILE}:store.yaml" "${TACCTL_OVERRIDES_FILE}:tacctl.yaml" \
+             "${CONFIG}:tacquito.yaml" "${RENDERED_FILE}:rendered.json"; do
+        dst="${f%:*}"
+        name="${f##*:}"
+        if [[ -f "${keep}/${name}" ]]; then
+            _backup_put "${keep}/${name}" "$dst" || warn "Could not put ${dst} back."
+        else
+            rm -f "$dst"
+        fi
+    done
+    rm -rf "$keep"
+    _model_invalidate
+    _conf_invalidate
+}
+
+# _backup_apply <writer> [<arg>...]
+# Run <writer>, which installs the restored store (and tacctl.yaml) as the
+# live files, then force-render tacquito.yaml from them. If either fails, the
+# four files are put back as they were -- store.yaml, tacctl.yaml, tacquito.yaml
+# and rendered.json -- so store, overrides, rendered config and its record
+# always agree. Returns 0 applied, 1 failed and rolled back.
+_backup_apply() {
+    local keep f rc=0
+    keep=$(mktemp -d "${TACCTL_STATE_DIR}/.restore.XXXXXX") || return 1
+    for f in "${STORE_FILE}:store.yaml" "${TACCTL_OVERRIDES_FILE}:tacctl.yaml" \
+             "${CONFIG}:tacquito.yaml" "${RENDERED_FILE}:rendered.json"; do
+        if [[ -f "${f%:*}" ]]; then
+            cp -p "${f%:*}" "${keep}/${f##*:}" || { rm -rf "$keep"; return 1; }
+        fi
+    done
+    _BACKUP_SNAPSHOT_HELD=1
+    "$@" || rc=$?
+    # --force: a restore is an explicit overwrite, the operator has seen the
+    # diff, and a hand-edited tacquito.yaml is kept under backups/legacy/.
+    if (( rc == 0 )); then
+        tacacs_render_apply --force > /dev/null || rc=$?
+    fi
+    _BACKUP_SNAPSHOT_HELD=0
+    if (( rc != 0 )); then
+        _backup_apply_rollback "$keep"
+        return 1
+    fi
+    rm -rf "$keep"
+    return 0
+}
+
+# Writer for _backup_apply: make snapshot directory $1 the live store.yaml
+# and tacctl.yaml (no tacctl.yaml in it means none now).
+_backup_install_snapshot() {
+    local dir="$1"
+    _backup_put "${dir}/store.yaml" "$STORE_FILE" 600 || return 1
+    if [[ -f "${dir}/tacctl.yaml" ]]; then
+        _backup_put "${dir}/tacctl.yaml" "$TACCTL_OVERRIDES_FILE" 640 || return 1
+        chown tacquito:tacquito "$TACCTL_OVERRIDES_FILE" 2>/dev/null || true
+    else
+        rm -f "$TACCTL_OVERRIDES_FILE"
+    fi
+    _model_invalidate
+    _conf_invalidate
+}
+
+# Writer for _backup_apply: import old-style backup $1 over the store.
+_backup_import_legacy() {
+    store_import --replace "$1" > /dev/null
+}
+
+_backup_restore_snapshot() {
+    local id="$1" dir="${BACKUP_DIR}/$1" problems
+    if [[ ! -f "${dir}/store.yaml" ]]; then
+        error "Snapshot ${id} has no store.yaml. Nothing was changed."
+        return 1
+    fi
+    # Everything that can be checked without touching a live file is checked
+    # first. What only the render can tell (the read-back of the rendered
+    # config) is covered by _backup_apply's rollback.
+    if ! store_validate "${dir}/store.yaml"; then
+        error "Snapshot ${id} cannot be restored: its store.yaml is not valid. Nothing was changed."
+        return 1
+    fi
+    problems=$(TACCTL_OVERRIDES_FILE="${dir}/tacctl.yaml" _conf_validate_overrides_file) || true
+    if [[ -n "$problems" ]]; then
+        printf '%s\n' "$problems" | sed 's/^/  tacctl.yaml: /' >&2
+        error "Snapshot ${id} cannot be restored: its tacctl.yaml is not valid. Nothing was changed."
+        return 1
+    fi
+
+    echo ""
+    echo "  Restoring snapshot: ${id}"
+    _backup_diff_snapshot "$id"
+    echo ""
+    _backup_confirm || return 0
+
+    # The current state first, so the restore can be undone with another one.
+    # Retention must not take the snapshot being read in the process.
+    _BACKUP_KEEP_ID="$id"
+    backup_snapshot || { error "Could not snapshot the current state. Nothing was changed."; return 1; }
+    if ! _backup_apply _backup_install_snapshot "$dir"; then
+        error "Snapshot ${id} was not restored: ${CONFIG} could not be rendered from it. Store, tacctl.yaml and ${CONFIG} are as they were."
+        return 1
+    fi
+    restart_service
+    info "Restored snapshot ${id}."
+    echo ""
+}
+
+_backup_restore_legacy() {
+    local id="$1" file
+    if ! file=$(_backup_legacy_path "$id"); then
+        error "Old-style backup not found: ${id}"
+        error "Run 'tacctl backup list' to see available backups."
+        return 1
+    fi
+    echo ""
+    echo "  Checking that the store can take ${file}"
+    if ! store_import --check "$file"; then
+        error "Old-style backup ${id} cannot be restored: the importer's check failed (see above). Nothing was changed."
+        error "To import it anyway: 'tacctl store import --replace ${file}', then 'tacctl config render --force'."
+        return 1
+    fi
+
+    echo ""
+    echo "  Restoring old-style backup: ${id}"
+    _backup_diff_legacy "$id" "$file"
+    echo ""
+    _backup_confirm || return 0
+
+    backup_snapshot || { error "Could not snapshot the current state. Nothing was changed."; return 1; }
+    if ! _backup_apply _backup_import_legacy "$file"; then
+        error "Old-style backup ${id} was not restored. Store, tacctl.yaml and ${CONFIG} are as they were."
+        return 1
+    fi
+    restart_service
+    info "Restored old-style backup ${id}."
+    echo ""
+}
+
+# No store yet: copy the old-style file back, as it always did.
+_backup_restore_unflipped() {
+    local id="$1" file
+    if ! file=$(_backup_legacy_path "$id"); then
+        if _backup_is_snapshot "$id"; then
+            error "Snapshot ${id} holds the store, which is not initialised here. ${STORE_NOT_INITIALISED_MSG}"
+        else
+            error "Backup not found: ${id}"
+            error "Run 'tacctl backup list' to see available backups."
+        fi
+        return 1
+    fi
+
+    echo ""
+    echo "  Restoring config from: ${id}"
+    echo ""
+    echo -e "  ${BOLD}Changes that will be applied:${NC}"
+    diff --color=always "$CONFIG" "$file" || true
+    echo ""
+    _backup_confirm || return 0
+
+    # Back up current config before restoring (safety net)
+    backup_config
+    cp "$file" "$CONFIG"
+    chown tacquito:tacquito "$CONFIG"
+    chmod 640 "$CONFIG"
+    restart_service
+    info "Config restored from backup ${id}."
+    echo ""
+}
+
+_backup_restore() {
+    local id="" legacy=0 arg
+    for arg in "$@"; do
+        case "$arg" in
+            --legacy) legacy=1 ;;
+            -*)
+                error "Unknown option '${arg}'. Usage: tacctl backup restore <timestamp> [--legacy]"
+                return 1
+                ;;
+            *)
+                if [[ -n "$id" ]]; then
+                    error "Only one timestamp may be given."
+                    return 1
+                fi
+                id="$arg"
+                ;;
+        esac
+    done
+    if [[ -z "$id" ]]; then
+        error "Usage: tacctl backup restore <timestamp> [--legacy]"
+        error "Run 'tacctl backup list' to see available backups."
+        return 1
+    fi
+
+    if [[ "$(model_mode)" != "store" ]]; then
+        _backup_restore_unflipped "$id"
+    elif (( legacy )); then
+        _backup_restore_legacy "$id"
+    elif _backup_is_snapshot "$id"; then
+        _backup_restore_snapshot "$id"
+    elif _backup_legacy_path "$id" > /dev/null; then
+        error "${id} is an old-style backup. Restore it with: tacctl backup restore ${id} --legacy"
+        return 1
+    else
+        error "Backup not found: ${id}"
+        error "Run 'tacctl backup list' to see available backups."
+        return 1
+    fi
+}
 
 cmd_backup() {
     local subcmd="${1:-}"
     shift || true
 
     case "$subcmd" in
-        list)
-            echo ""
-            echo -e "${BOLD}Config Backups${NC}"
-            echo "--------------------------------------------"
-            if ls "${BACKUP_DIR}"/tacquito.yaml.* &>/dev/null; then
-                printf "  ${BOLD}%-25s %-10s${NC}\n" "TIMESTAMP" "SIZE"
-                echo "  -----------------------------------"
-                # shellcheck disable=SC2012  # mtime order needed; names are tacctl-generated tacquito.yaml.<timestamp>
-                ls -1t "${BACKUP_DIR}"/tacquito.yaml.* | while IFS= read -r f; do
-                    local ts size
-                    ts=$(basename "$f" | sed 's/tacquito\.yaml\.//')
-                    size=$(du -sh "$f" 2>/dev/null | awk '{print $1}')
-                    printf "  %-25s %-10s\n" "$ts" "$size"
-                done
-            else
-                echo "  No backups found."
-            fi
-            echo ""
-            ;;
-        diff)
-            local timestamp="${1:-}"
-            local backup_file=""
-
-            if [[ -z "$timestamp" ]]; then
-                # Use most recent backup
-                # shellcheck disable=SC2012  # mtime order needed; names are tacctl-generated tacquito.yaml.<timestamp>
-                backup_file=$(ls -1t "${BACKUP_DIR}"/tacquito.yaml.* 2>/dev/null | head -1)
-                if [[ -z "$backup_file" ]]; then
-                    error "No backups found."
-                    exit 1
-                fi
-            else
-                backup_file="${BACKUP_DIR}/tacquito.yaml.${timestamp}"
-                if [[ ! -f "$backup_file" ]]; then
-                    error "Backup not found: ${timestamp}"
-                    error "Run 'tacctl backup list' to see available backups."
-                    exit 1
-                fi
-            fi
-
-            local ts
-            ts=$(basename "$backup_file" | sed 's/tacquito\.yaml\.//')
-            echo ""
-            echo -e "${BOLD}Diff: current config vs backup ${ts}${NC}"
-            echo "--------------------------------------------"
-            # Unified format (-u) shows surrounding context and
-            # ---/+++ filename labels so changes land in their
-            # structural neighborhood instead of as a bare `30c30`.
-            # --label keeps the header short and stable (absolute
-            # paths would churn per-host).
-            diff -u \
-                --label "backup/${ts}" \
-                --label "current" \
-                --color=always "$backup_file" "$CONFIG" || true
-            echo ""
-            ;;
-        restore)
-            local timestamp="${1:-}"
-            if [[ -z "$timestamp" ]]; then
-                error "Usage: tacctl backup restore <timestamp>"
-                error "Run 'tacctl backup list' to see available backups."
-                exit 1
-            fi
-
-            local backup_file="${BACKUP_DIR}/tacquito.yaml.${timestamp}"
-            if [[ ! -f "$backup_file" ]]; then
-                error "Backup not found: ${timestamp}"
-                exit 1
-            fi
-
-            echo ""
-            echo "  Restoring config from: ${timestamp}"
-            echo ""
-            echo -e "  ${BOLD}Changes that will be applied:${NC}"
-            diff --color=always "$CONFIG" "$backup_file" || true
-            echo ""
-
-            read -rp "  Restore this backup? [y/N]: " confirm
-            if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
-                info "Cancelled."
-                exit 0
-            fi
-
-            # Back up current config before restoring (safety net)
-            backup_config
-
-            if [[ "$(model_mode)" == "store" ]]; then
-                # The store is canonical and tacquito.yaml is rendered from
-                # it, so restoring means adopting the backup's content into
-                # the store (a strict import: a backup the store cannot
-                # represent restores nothing) and rendering it back out.
-                # Interim until backups are store snapshots.
-                if ! store_import --replace "$backup_file" > /dev/null; then
-                    error "Backup ${timestamp} cannot be restored into the store. Nothing was changed."
-                    exit 1
-                fi
-                local result
-                if ! result=$(tacacs_render_apply --force); then
-                    error "The store now holds backup ${timestamp}, but ${CONFIG} could not be rendered. Run 'tacctl config render --force'."
-                    exit 1
-                fi
-                [[ "$result" == "CHANGED" ]] && restart_service
-            else
-                cp "$backup_file" "$CONFIG"
-                chown tacquito:tacquito "$CONFIG"
-                chmod 640 "$CONFIG"
-                restart_service
-            fi
-            info "Config restored from backup ${timestamp}."
-            echo ""
-            ;;
+        list)    _backup_list ;;
+        diff)    _backup_diff "$@" ;;
+        restore) _backup_restore "$@" ;;
         *)
             echo ""
             echo -e "${BOLD}Backup Commands${NC}"
@@ -1136,12 +1564,11 @@ cmd_backup() {
             echo "Usage: tacctl backup <subcommand> [arguments]"
             echo ""
             echo "Subcommands:"
-            echo "  list                  Show available backups"
-            echo "  diff [timestamp]      Diff current config vs a backup (default: most recent)"
-            echo "  restore <timestamp>   Restore a backup (with confirmation)"
+            echo "  list                           Show snapshots, then old-style backups"
+            echo "  diff [timestamp]               Diff store.yaml and tacctl.yaml against a snapshot (default: most recent)"
+            echo "  restore <timestamp> [--legacy] Restore a snapshot (with confirmation); --legacy for an old-style backup"
             echo ""
             exit 1
             ;;
     esac
 }
-

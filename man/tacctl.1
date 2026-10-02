@@ -427,8 +427,12 @@ present as tacctl-managed users, users missing the
 field, and per-scope key divergence.
 .TP
 .BI "config diff " [ timestamp ]
-Diff the current config against a backup. Defaults to the most recent
-backup.
+Alias of
+.BR "backup diff" .
+.TP
+.BI "config restore " "timestamp " [ \-\-legacy ]
+Alias of
+.BR "backup restore" .
 .TP
 .BI "config loglevel " [ debug | info | error ]
 Show or change the server log level. Written to a systemd drop-in so
@@ -821,17 +825,40 @@ accounting records are irrecoverable once cleared.
 .SS Backup management \fB(tacctl backup)\fR
 .TP
 .B backup list
-List available config backups with timestamps.
+List snapshots, newest first, then old-style backups.
 .TP
 .BI "backup diff " [ timestamp ]
-Diff the current config against a backup (default: most recent).
+Diff
+.I store.yaml
+and
+.I tacctl.yaml
+against a snapshot (default: most recent). Superuser only: the output
+shows shared secrets and password hashes.
 .TP
-.BI "backup restore " timestamp
-Restore a config backup after confirmation.
+.BI "backup restore " timestamp " " [ \-\-legacy ]
+Restore both files from a snapshot after confirmation, re-render
+.IR tacquito.yaml ,
+and restart the service. The current state is snapshotted first, so a
+restore can itself be undone. Nothing changes if the snapshot is invalid or
+the render fails. With
+.B \-\-legacy
+the argument names an old-style
+.I tacquito.yaml.<timestamp>
+file, which goes through
+.B store import \-\-check
+before it is imported.
 .PP
-Backups are created automatically before every change. The last 30 are
-retained under
-.IR /etc/tacquito/backups/ .
+A snapshot is the directory
+.I /etc/tacctl/backups/<timestamp>/
+holding
+.IR store.yaml ,
+.I tacctl.yaml
+and a manifest (the
+.I rendered.json
+of that moment and the tacctl version), root-only. One is taken
+automatically before every change, unless the files already equal the
+newest snapshot. The newest 30 are retained. Without a store, list, diff
+and restore work on old-style backups only.
 .SS Hash generation \fB(tacctl hash)\fR
 .TP
 .B hash
@@ -1276,8 +1303,11 @@ which is a boolean). Required positional arguments come before flags.
 TACACS+ server configuration. Mode 0640, owned by
 .BR tacquito : tacquito .
 .TP
-.I /etc/tacquito/backups/
-Automatic configuration backups. Last 30 retained.
+.I /etc/tacctl/backups/
+Automatic snapshots of the canonical files, one directory per snapshot, last
+30 retained, root-only; old-style
+.I tacquito.yaml.<timestamp>
+backups from earlier releases.
 .TP
 .I /etc/tacquito/tacctl.yaml
 Operator overrides for tacctl tunables (bcrypt cost, password / secret

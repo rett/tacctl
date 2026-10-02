@@ -63,7 +63,7 @@ tacctl/
 | `/etc/systemd/system/tacquito.service.d/tacctl-overrides.conf` | Systemd drop-in for `-network`/`-address`/`-level` overrides (preserved across upgrades) |
 | `/etc/sudoers.d/tacctl` | Optional NOPASSWD rule (installed via `tacctl config sudoers install`) |
 | `/var/log/tacquito/accounting.log` | Accounting records |
-| `/etc/tacquito/backups/` | Config backups and password dates |
+| `/etc/tacctl/backups/` | Config snapshots (`<timestamp>/`), old-style backups, password dates |
 | `/usr/local/bin/tacquito` | Server binary |
 | `/usr/local/bin/tacctl` | Symlink to management CLI |
 | `/usr/local/bin/tacquito-hashgen` | Password hash generator |
@@ -445,7 +445,8 @@ config juniper [--scope <name>]             Generate working Juniper device conf
 config wti [--scope <name>]                 Print the step-by-step serial-menu procedure for a WTI console server (firmware v8.x) with the scope's server IP, secret, and group→access-level mapping filled in
 config render [--force]                     Regenerate tacquito.yaml from the store and tacctl.yaml (needs the store; refuses to overwrite a hand-edited file unless --force, which first saves it under backups/legacy/)
 config validate                             Validate YAML syntax + server-config structure (orphan scope refs, scope.default pointing at a nonexistent scope, reserved usernames, missing accounter:) + schema-walk tacctl.yaml (including commands.<group> / privileges.<group> / mgmt_acl.*)
-config diff [timestamp]                     Diff current config vs a backup
+config diff [timestamp]                     Alias of `backup diff`
+config restore <timestamp> [--legacy]       Alias of `backup restore`
 config loglevel [debug|info|error]          Show or change log level
 config listen [show|tcp|tcp6|reset] [addr]  Show, change, or reset TCP listen address
 config metrics <show|enable|disable|address <host:port>|reset>   Prometheus exporter control. Default: loopback-only 127.0.0.1:8080. `disable` sinks to 127.0.0.1:0 (unreachable ephemeral port) since tacquito's own disable flag would crash the server.
@@ -570,12 +571,16 @@ log clear [--force]       Purge tacquito journal + truncate accounting log (prom
 ### Backup Commands — `tacctl backup`
 
 ```
-backup list               Show available config backups with timestamps
-backup diff [timestamp]   Diff current config vs a backup (default: most recent)
-backup restore <ts>       Restore a config backup (with confirmation)
+backup list                    Show snapshots (newest first), then old-style backups
+backup diff [timestamp]        Diff store.yaml and tacctl.yaml against a snapshot (default: most recent)
+backup restore <ts> [--legacy] Restore a snapshot (with confirmation); --legacy for an old-style backup
 ```
 
-Config backups are created automatically before every change. Last 30 backups are retained.
+A backup is a snapshot of the canonical files, `/etc/tacctl/backups/<timestamp>/{store.yaml,tacctl.yaml,manifest}`, taken automatically before every change that would alter them (nothing is added when they already equal the newest snapshot). The manifest records `rendered.json` and the tacctl version. The newest 30 snapshots are kept. Snapshots hold shared secrets and password hashes: the directory is `0700`, the files `0600`, and `backup diff` and `backup restore` are superuser-only.
+
+`backup restore <ts>` puts back both files, re-renders `tacquito.yaml` (a hand-edited one is kept under `backups/legacy/` first), and restarts the service. It snapshots the current state first, so a restore can be undone with another restore, and it changes nothing if the snapshot is invalid or the render fails.
+
+Old-style `tacquito.yaml.<timestamp>` files (made before the store existed, or kept in `backups/legacy/`) are listed after the snapshots. `backup restore <timestamp> --legacy` runs `store import --check` on one, then imports it. Without a store (legacy read-only mode) `list`, `diff` and `restore` work on those files as before.
 
 ---
 
@@ -745,7 +750,7 @@ Use `--branch` to switch to a different branch (e.g., `develop` for pre-release 
 tacctl status          # Health check with auth stats
 tacctl log failures    # Recent auth failures
 tacctl config validate # Check config syntax
-tacctl config diff     # What changed since last backup
+tacctl config diff     # What changed since the last snapshot
 ```
 
 ---
