@@ -260,7 +260,7 @@ PY
     assert_line --regexp 'State:.*not installed, not enabled'
     tc cmd_backend status nope
     assert_failure 1
-    assert_output --partial "Unknown backend 'nope' (known: tacacs fake)"
+    assert_output --partial "Unknown backend 'nope' (known: tacacs radius fake)"
 }
 
 @test "backend list and status are read-only commands: they never write or start anything" {
@@ -371,9 +371,9 @@ PY
 @test "backend enable: an unknown or missing id is refused" {
     local before
     before=$(state)
-    tc cmd_backend_enable radius -y
+    tc cmd_backend_enable ldap -y
     assert_failure 1
-    assert_output --partial "Unknown backend 'radius'"
+    assert_output --partial "Unknown backend 'ldap'"
     tc cmd_backend_enable
     assert_failure 1
     tc cmd_backend_enable fake extra -y
@@ -611,9 +611,9 @@ PY
     tc cmd_backend_disable fake -y
     assert_success
     assert_output --partial "not enabled. Nothing to do."
-    tc cmd_backend_disable radius -y
+    tc cmd_backend_disable ldap -y
     assert_failure 1
-    assert_output --partial "Unknown backend 'radius'"
+    assert_output --partial "Unknown backend 'ldap'"
 }
 
 @test "backend disable: the gate covers the backends that stay, not the one going" {
@@ -1027,7 +1027,7 @@ PY
 @test "uninstall: a tacctl.yaml that cannot say what is enabled takes every backend" {
     printf 'backends:\n  enabled: [tacacs, gone]\n' > "$OVERRIDES"
     run bash -c 'set -euo pipefail; source "$1"; source "$2"; backends_select_present; echo "${BACKENDS_ENABLED[*]}"' _ "$TACCTL_BIN_SCRIPT" "$FAKE_SH"
-    assert_output "tacacs fake"
+    assert_output "tacacs radius fake"
 }
 
 @test "uninstall: the present backends are selected before the first phase, and the phases loop over that selection" {

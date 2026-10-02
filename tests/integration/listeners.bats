@@ -418,9 +418,9 @@ systemctl_fails_for() {
 }
 
 @test "config listen: bad flags, listener names and backends are refused" {
-    run "$TACCTL_BIN_SCRIPT" config listen --backend radius show
+    run "$TACCTL_BIN_SCRIPT" config listen --backend ldap show
     assert_failure
-    assert_output --partial "Unknown backend 'radius' (known: tacacs)."
+    assert_output --partial "Unknown backend 'ldap' (known: tacacs radius)."
     run "$TACCTL_BIN_SCRIPT" config listen --listener Bad_Name tcp :300
     assert_failure
     assert_output --partial "Invalid listener name 'Bad_Name'"

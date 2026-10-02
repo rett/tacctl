@@ -229,6 +229,12 @@ LISTENER_BACKENDS = {
     # accounting together.
     'tacacs': {'networks': ('tcp', 'tcp6'), 'roles': ('both',),
                'defaults': {'default': {'network': 'tcp', 'address': ':49'}}},
+    # One FreeRADIUS process serves every listener; a listener answers
+    # authentication or accounting, never both (a listener written without a
+    # role is an authentication one).
+    'radius': {'networks': ('udp', 'udp6'), 'roles': ('acct', 'auth'),
+               'defaults': {'auth': {'network': 'udp', 'address': ':1812', 'role': 'auth'},
+                            'acct': {'network': 'udp', 'address': ':1813', 'role': 'acct'}}},
 }
 LISTENER_NETWORKS = ('tcp', 'tcp6', 'udp', 'udp6')
 LISTENER_ROLES = ('auth', 'acct', 'both')
@@ -391,6 +397,10 @@ def _binds_collide(a, b):
     the same host or a wildcard on either side (':49' is every address of
     both families)."""
     if a['network'][:3] != b['network'][:3]:
+        return False
+    # FreeRADIUS, the one udp daemon, binds a socket per family: udp ':1812'
+    # is IPv4 only and does not take the port from a udp6 listener.
+    if a['network'][:3] == 'udp' and a['network'] != b['network']:
         return False
     (ha, pa), (hb, pb) = split_listen_address(a['address']), split_listen_address(b['address'])
     if pa != pb:

@@ -213,7 +213,7 @@ cmd_config() {
             echo "  loglevel [debug|info|error]          Show or change log level"
             echo "  listen [show|tcp|tcp6|reset] [addr]  Show, change, or reset a listen address (default: tacacs, listener 'default')"
             echo "         [--listener <name>]           ...of another listener (its own tacquito@<name> unit; reset removes it)"
-            echo "         [--backend <id>]              ...of another backend (see 'tacctl backend list')"
+            echo "         [--backend <id>]              ...of another backend (see 'tacctl backend list'); radius: --listener auth|acct <udp|udp6> <addr>"
             echo "  metrics <show|enable|disable|address <host:port>|reset>  Prometheus exporter control"
             echo "  sudoers [show|install|remove] [grp]  Manage NOPASSWD sudoers drop-in for tacctl"
             echo "  sudoers tiers [show|install|remove]  Manage per-tier (RO/OP/SU) sudoers rules for TACACS+ users"

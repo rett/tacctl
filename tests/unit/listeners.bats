@@ -105,9 +105,9 @@ x|{"network": "tcp", "address": ":300", "metrics_address": "nope"}|metrics_addre
 Bad|{"network": "tcp", "address": ":300"}|a listener name is a lowercase letter
 x|"tcp :300"|must be a mapping
 CASES
-    run conf_set_json listeners.radius.auth '{"network": "udp", "address": ":1812"}'
+    run conf_set_json listeners.ldap.auth '{"network": "udp", "address": ":1812"}'
     assert_failure
-    assert_output --partial "'radius' is not a backend with listeners"
+    assert_output --partial "'ldap' is not a backend with listeners"
     run conf_set_json listeners.tacacs '{"x": {"address": ":300"}}'
     assert_failure
     assert_output --partial "unknown config key"

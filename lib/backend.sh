@@ -5,7 +5,7 @@
 #
 # A backend is a daemon that serves the model (lib/model.sh) over one
 # protocol: tacquito for TACACS+ (lib/backends/tacacs.sh), FreeRADIUS for
-# RADIUS next. Everything protocol-neutral -- the store, tacctl.yaml,
+# RADIUS (lib/backends/radius.sh). Everything protocol-neutral -- the store, tacctl.yaml,
 # snapshots, the commands that change users, groups and scopes -- talks to
 # a daemon only through the verbs below, so a second backend is one more
 # module and no edits here.
@@ -404,7 +404,7 @@ cmd_config_listen() {
         case "$1" in
             --backend|--listener)
                 if [[ -z "${2:-}" ]]; then
-                    error "$1 needs a value. Usage: tacctl config listen [--backend <id>] [--listener <name>] <show|tcp|tcp6|reset> [address]"
+                    error "$1 needs a value. Usage: tacctl config listen [--backend <id>] [--listener <name>] <show|<network> <address>|reset>"
                     return 1
                 fi
                 if [[ "$1" == "--backend" ]]; then backend="$2"; else listener="$2"; fi
@@ -431,6 +431,13 @@ cmd_config_listen() {
             echo ""
             echo "$shown"
             echo ""
+            if [[ "$backend" != "tacacs" ]]; then
+                # Another backend's networks and listener names are its own.
+                echo "  Usage: tacctl config listen --backend ${backend} --listener <name> <network> <address>"
+                echo "         tacctl config listen --backend ${backend} --listener <name> reset"
+                echo ""
+                return 0
+            fi
             echo "  Usage: tacctl config listen <show|tcp|tcp6|reset> [address]"
             echo "  Examples:"
             echo "    tacctl config listen tcp :49"

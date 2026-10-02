@@ -20,11 +20,12 @@ setup() {
 
 # --- The contract ------------------------------------------------------------
 
-@test "contract: tacacs is registered, exactly once" {
+@test "contract: tacacs and radius are registered, exactly once each, tacacs first" {
     run printf '%s\n' "${BACKEND_IDS[@]}"
-    assert_output "tacacs"
+    assert_output "$(printf 'tacacs\nradius')"
     backend_registered tacacs
-    ! backend_registered radius
+    backend_registered radius
+    ! backend_registered ldap
     ! backend_registered ""
 }
 
@@ -95,9 +96,9 @@ phases_called() { # <command function> <install|upgrade|uninstall>
 }
 
 @test "backend_call: an unknown backend or verb is an error (2), not a silent no-op" {
-    run backend_call radius describe
+    run backend_call ldap describe
     assert_failure 2
-    assert_output --partial "Unknown backend 'radius'"
+    assert_output --partial "Unknown backend 'ldap'"
     run backend_call tacacs no_such_verb
     assert_failure 2
     assert_output --partial "does not implement 'no_such_verb'"
@@ -166,10 +167,10 @@ PY
 }
 
 @test "backends_enabled: a backend this tacctl does not have is refused, by name" {
-    printf 'backends:\n  enabled: [tacacs, radius]\n' > "$OVERRIDES"
+    printf 'backends:\n  enabled: [tacacs, ldap]\n' > "$OVERRIDES"
     run backends_enabled
     assert_failure 1
-    assert_output --partial "backends.enabled names 'radius'"
+    assert_output --partial "backends.enabled names 'ldap'"
     refute_line "tacacs"
 }
 
@@ -185,9 +186,9 @@ PY
 }
 
 @test "schema: backends.enabled takes known backends only, non-empty, no duplicates" {
-    run conf_set_list backends.enabled <<< "radius"
+    run conf_set_list backends.enabled <<< "ldap"
     assert_failure
-    assert_output --partial "'radius' is not a backend"
+    assert_output --partial "'ldap' is not a backend"
     run conf_set_list backends.enabled < /dev/null
     assert_failure
     assert_output --partial "non-empty"
@@ -210,9 +211,9 @@ PY
     run _conf_validate_overrides_file
     assert_output ""
     # and what is not registered is still refused, with the registry in the message
-    run conf_set_list backends.enabled <<< $'tacacs\nradius'
+    run conf_set_list backends.enabled <<< $'tacacs\nldap'
     assert_failure
-    assert_output --partial "'radius' is not a backend (known: tacacs, fake)"
+    assert_output --partial "'ldap' is not a backend (known: tacacs, radius, fake)"
 }
 
 @test "schema: setting backends.enabled to the default writes no override, and is not a shipped default line" {

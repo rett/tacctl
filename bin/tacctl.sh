@@ -88,6 +88,8 @@ source "${SCRIPT_DIR}/../lib/linux_hosts.sh"
 source "${SCRIPT_DIR}/../lib/backend.sh"
 # shellcheck source=lib/backends/tacacs.sh
 source "${SCRIPT_DIR}/../lib/backends/tacacs.sh"
+# shellcheck source=lib/backends/radius.sh
+source "${SCRIPT_DIR}/../lib/backends/radius.sh"
 # shellcheck source=lib/service.sh
 source "${SCRIPT_DIR}/../lib/service.sh"
 # shellcheck source=lib/lifecycle.sh

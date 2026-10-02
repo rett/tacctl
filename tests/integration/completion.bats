@@ -117,11 +117,13 @@ complete_words() {
     load_fixture tacquito.minimal.yaml
     run "$TACCTL_BIN_SCRIPT" _completion-names backends
     assert_success
-    assert_output "tacacs"
+    assert_output "$(printf 'tacacs\nradius')"
     run "$TACCTL_BIN_SCRIPT" _completion-names enabled-backends
     assert_output "tacacs"
     run "$TACCTL_BIN_SCRIPT" _completion-names listeners
-    assert_output "default"
+    assert_output "$(printf 'acct\nauth\ndefault')"
+    run "$TACCTL_BIN_SCRIPT" _completion-names listeners radius
+    assert_output "$(printf 'acct\nauth')"
     "$TACCTL_BIN_SCRIPT" config listen --listener mgmt tcp 127.0.0.1:4949 > /dev/null
     run "$TACCTL_BIN_SCRIPT" _completion-names listeners tacacs
     assert_output "$(printf 'default\nmgmt')"

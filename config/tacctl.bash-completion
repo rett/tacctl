@@ -251,6 +251,7 @@ for u in (d.get('users') or []):
                     --listener) COMPREPLY=($(compgen -W "$(_tacctl_listener_names)" -- "$cur")) ;;
                     *)
                         local lflags="show tcp tcp6 reset"
+                        [[ " ${words[*]} " == *" --backend radius "* ]] && lflags="show udp udp6 reset"
                         [[ " ${words[*]} " == *" --backend "* ]]  || lflags+=" --backend"
                         [[ " ${words[*]} " == *" --listener "* ]] || lflags+=" --listener"
                         COMPREPLY=($(compgen -W "$lflags" -- "$cur"))

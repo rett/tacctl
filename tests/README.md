@@ -31,8 +31,9 @@ tests/
 │   ├── store.*.yaml     # store.yaml fixtures; store.X.yaml is exactly what importing tacquito.X.yaml writes
 │   ├── model/           # golden model JSON (what model_dump returns for a fixture)
 │   ├── templates/       # device config templates
-│   └── golden/          # expected rendered output: device configs (M3) and tacquito.X.rendered.yaml,
-│                        #   what the TACACS+ renderer produces from store.X.yaml
+│   └── golden/          # expected rendered output: device configs (M3), tacquito.X.rendered.yaml
+│                        #   (what the TACACS+ renderer produces from store.X.yaml) and radius.<family>.*
+├── containers/radius/   # the check against real FreeRADIUS in podman (not run by make test)
 ├── unit/                # pure-logic, no I/O, no mocks
 ├── integration/         # real file I/O into $TACCTL_ETC tmpdir
 └── e2e/                 # stubbed systemctl/git/etc.
@@ -206,7 +207,8 @@ tests that exercise it install a stand-in script there.
 ## Backends
 
 Generic code reaches a daemon only through the backend contract
-(`lib/backend.sh`); TACACS+ (tacquito) is the module `lib/backends/tacacs.sh`.
+(`lib/backend.sh`); TACACS+ (tacquito) is the module `lib/backends/tacacs.sh`,
+RADIUS (FreeRADIUS) `lib/backends/radius.sh` (see "The RADIUS backend").
 
 - `tests/unit/backend.bats` checks the contract itself: every registered
   backend defines every verb in `BACKEND_VERBS` (and no `backend_<id>_*`
@@ -246,6 +248,78 @@ Generic code reaches a daemon only through the backend contract
   shell variables (`BACKENDS_CHANGED`, `BACKENDS_ADOPT`, `BACKENDS_ENABLED`):
   call them, and `store_apply`, in the test shell rather than under `run` when
   the test reads those.
+
+## The RADIUS backend
+
+`lib/backends/radius.sh` (FreeRADIUS from the distro package). The tests never
+run FreeRADIUS; what the real daemon does with the rendered files is checked
+in containers (next section).
+
+- `tacctl_tmpenv_init` points the module at the test's tmpdir:
+  `TACCTL_RADIUS_DIR` (the raddb), `TACCTL_RADIUS_LOG`, `TACCTL_RADIUS_BIN`
+  (the daemon binary; absent unless a test installs a stand-in, and then the
+  module's config check runs it) and `TACCTL_LOGROTATE_DIR`. The unit
+  drop-in goes to `TACCTL_SYSTEMD_DIR`. `TACCTL_RADIUS_FAMILY=debian|rhel`
+  selects the distro layout (unit, account, paths) instead of detection.
+- `tests/fixtures/store.radius.yaml` has what the renderer must handle: a
+  TACACS+-only and a RADIUS-only scope, an IPv6 prefix, overlapping prefixes,
+  secrets that need each quoting form, a disabled user, the sink, a custom
+  group and both filters.
+- `unit/render_radius.bats`: hash conversion, secret quoting, clients, users,
+  the filter policy, the render id, notes, listeners, the drop-in, and the
+  goldens `golden/radius.{debian,rhel}.{conf,users}`, rendered with the
+  production paths of each layout
+  (`UPDATE_GOLDEN=1 tests/bats/bats-core/bin/bats tests/unit/render_radius.bats`).
+- `integration/radius.bats`: the commands, with stubs written in the file
+  itself: a `systemctl` that remembers which units are active and enabled
+  (in `$SD`), `apt-get`/`dnf` that "install" a stand-in daemon, `ss`, `id`.
+  `$SD/fail-start` makes a start or restart leave the unit inactive,
+  `$SD/fail-check` makes the daemon's `-C` reject the config. No stub was
+  added to `tests/helpers/`; `tmpenv.bash` gained the four variables above.
+- 'radius' is a registered backend now. Tests that need an id tacctl does
+  not have use `ldap`.
+
+## RADIUS in containers
+
+The one check that runs real FreeRADIUS: rootless podman, one container per
+distro, nothing on the host touched outside podman and a temp directory.
+Needs podman and `python3-bcrypt`; the first run of a distro builds an image
+(`localhost/tacctl-radius-check:<distro>`, kept) and needs the package
+mirrors.
+
+```sh
+tests/containers/radius/run.sh ubuntu-noble     # FreeRADIUS 3.2.x, Debian layout
+tests/containers/radius/run.sh almalinux-9      # 3.0.27, RHEL layout
+tests/containers/radius/run.sh almalinux-8      # 3.0.20, RHEL layout
+```
+
+Each prints `PASS`/`FAIL`/`SKIP` lines and exits non-zero on a `FAIL`. Add
+`--keep` to leave the container (`tacctl-radius-check-<distro>`) for a look;
+remove it with `podman rm -f`.
+
+| File | Does |
+|---|---|
+| `make-store.py <dir>` | writes a store with real bcrypt hashes (six users, six scopes, both filters) and one `sec.<scope>` file per secret |
+| `run.sh <distro>` | builds the image if needed, starts the container, runs the check, removes the container |
+| `flow.sh <data dir>` | inside a systemd container with this checkout mounted read-only at `/opt/tacctl`: `tacctl backend enable radius` for real (package install, render, the daemon's `-C`, the drop-in, start), then the cases, mutations, listeners, drift, reload, disable, re-enable, uninstall phases |
+| `cases.sh <data dir>` | the radclient cases: accept with the group's reply attributes, wrong password, user outside the client's scope, disabled user, sink, overlapping prefixes, a TACACS+-only scope, quoted secrets, both filters, the package's default client, IPv6, CHAP, Status-Server, accounting |
+
+Notes:
+
+- `ubuntu-noble` and `almalinux-9` run tacctl itself in the container.
+  `almalinux-8` has python 3.6, which cannot: there the two files are
+  rendered on the host for the RHEL layout (`TACCTL_RADIUS_FAMILY=rhel`,
+  `render_radius_config`), copied in and served by a daemon started by hand,
+  and only `cases.sh` runs.
+- tacquito is not in the containers. The TACACS+ backend renders its config
+  there and warns that its service did not restart; that is expected.
+- The systemd containers run with `--cap-add SYS_ADMIN`: the Debian unit's
+  sandboxing cannot be set up in a rootless container without it.
+- Clients are told apart by source address. All of 127.0.0.0/8 is local, so
+  `radclient` sends from 127.0.0.2, .3, .4, .9 and .66 with
+  `Packet-Src-IP-Address`; a request to the container's own address comes
+  from it (scope `prod`).
+- Record what a run showed, with package versions, in `docs/radius-notes.md`.
 
 ## Listeners and units
 
