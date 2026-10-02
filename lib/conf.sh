@@ -48,6 +48,9 @@ bcrypt:
 scope:
   default: lab            # matches the fresh-install seed scope; override via `tacctl scope default <name>`
 
+host:
+  default_method: tacplus # how `tacctl host enroll` sets up a new Linux host: tacplus | radius
+
 mgmt_acl:
   names:
     cisco: VTY-ACL        # ACL name emitted by `tacctl config cisco`
@@ -466,6 +469,7 @@ SCHEMA = {
     'bcrypt.cost':           {'type': 'int', 'min': 10, 'max': 14},
     'scope.default':         {'type': 'nullable_string',
                               'pattern': r'^[a-zA-Z][a-zA-Z0-9_-]{0,31}$'},
+    'host.default_method':   {'type': 'enum', 'values': ['tacplus', 'radius']},
     'mgmt_acl.names.cisco':  {'type': 'acl_name'},
     'mgmt_acl.names.juniper':{'type': 'acl_name'},
     'mgmt_acl.permits':      {'type': 'cidr_list'},

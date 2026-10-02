@@ -277,9 +277,11 @@ for u in (d.get('users') or []):
             ;;
         host)
             if [[ $pos -eq 2 ]]; then
-                COMPREPLY=($(compgen -W "list enroll sync unenroll" -- "$cur"))
+                COMPREPLY=($(compgen -W "list enroll sync unenroll default-method" -- "$cur"))
+            elif [[ "$prev" == "--method" || "${words[offset + 2]}" == "default-method" ]]; then
+                COMPREPLY=($(compgen -W "tacplus radius" -- "$cur"))
             elif [[ "$cur" == -* ]]; then
-                COMPREPLY=($(compgen -W "--local --scope --server --name --port --identity --all --force --allow-uid-mismatch --adopt --build-on-host" -- "$cur"))
+                COMPREPLY=($(compgen -W "--local --scope --server --name --port --identity --method --all --force --allow-uid-mismatch --adopt --build-on-host" -- "$cur"))
             fi
             ;;
         scope)

@@ -173,3 +173,159 @@ without the package manager, the uninstall phases. On Ubuntu also: after
 - **Load.** Each PAP check is one bcrypt verification (cost 12: about a
   quarter of a second of one thread); the thread pool is the package's
   default of 5 to 32.
+
+# Linux hosts over RADIUS (`host enroll --method radius`)
+
+The design is in the comments of `config/linux/client-install.sh` (the
+`*_radius` functions) and `lib/linux_hosts.sh`. This part records what it
+rests on: plan §9 items 4 and 5, answered by running the packaged modules.
+
+Everything below was run on 2026-10-02 in rootless podman 4.9.3 with
+`tests/containers/hosts/` (procedure: `tests/README.md`, "Linux hosts in
+containers"): a server container running tacctl, FreeRADIUS and tacquito,
+and `tacctl host enroll` over real SSH into a client container.
+
+## The module, per distribution
+
+| Host | Package (source) | Version | `account` step | accounting records | `require_message_authenticator` |
+|---|---|---|---|---|---|
+| Ubuntu 24.04 | `libpam-radius-auth` (universe) | 2.0.1-1 | returns success, sends nothing | **malformed** (`Acct-Status-Type = 14892`, random `NAS-IP-Address`) | no |
+| Debian 12 | `libpam-radius-auth` (main) | 2.0.0-1 | the same | correct | no |
+| Debian 13 | `libpam-radius-auth` (main) | 3.0.0-1 | **none** (`PAM_MODULE_UNKNOWN`) | correct | yes |
+| AlmaLinux / Rocky 8 | `pam_radius` (EPEL 8) | 2.0.0-4.el8 | returns success, sends nothing | correct | yes (backported) |
+| AlmaLinux / Rocky 9 | `pam_radius` (EPEL 9) | 2.0.0-4.el9 | the same | correct | yes (backported) |
+| AlmaLinux / Rocky 10 | `pam_radius` (EPEL 10) | 3.0.0-2.el10_1 | **none** | correct | yes |
+
+- Default server file: `/etc/pam_radius_auth.conf` (Debian family, EL10),
+  `/etc/pam_radius.conf` (EL8, EL9). tacctl uses neither: `conf=` with an
+  absolute path works on all of them, and the packaged file is left as
+  shipped.
+- Line syntax `server[:port] secret [timeout]`, IPv6 as `[addr]:port`
+  (from the packaged files' own comments; **an IPv6 server was not run**).
+  Without a port the module looks up service `radius`: on a minimal Debian
+  12 without `/etc/services` every request then fails at once
+  (`Servname not supported`). tacctl always writes the port.
+- The timeout is clamped to at least 3 seconds (1 and 2 behave as 3).
+  `retry=N` re-sends an Access-Request N times; accounting is sent once.
+- Accounting goes to the authentication port **plus one**, whatever the
+  server's accounting listener is (verified with a listener on each port).
+- The Debian package ships a `pam-auth-update` profile with `Default: no`:
+  installing it changes nothing in `/etc/pam.d` (the snapshot comparison
+  in every run confirms it).
+- The modules bind their socket to port 0 on the wildcard address (strace,
+  EL8/9/10).
+- EPEL: `dnf install epel-release` works on AlmaLinux, Rocky and CentOS
+  Stream (their `extras` repository); on RHEL (UBI 8/9/10 images) and Oracle
+  Linux 9 it does not, and `dnf install
+  https://dl.fedoraproject.org/pub/epel/epel-release-latest-<major>.noarch.rpm`
+  does. `pam_radius` needs only glibc and pam: no CRB or PowerTools. On
+  Oracle Linux `dnf install epel-release` exits 0 without installing
+  anything, so the script checks `rpm -q`, not the exit status.
+
+## What `pam_radius_auth` returns (`run.sh <client> probe`)
+
+The same on 2.0.0, 2.0.1 and 3.0.0 unless noted:
+
+| Case | Return | Took |
+|---|---|---|
+| Access-Accept | `PAM_SUCCESS` | at once |
+| Access-Reject: wrong password, empty password, user not in the scope | `PAM_AUTH_ERR` | 1 s (the server's reject delay) |
+| no answer (packets dropped, or a port nobody listens on) | `PAM_AUTHINFO_UNAVAIL` | 3 s x (retry + 1) |
+| wrong shared secret | `PAM_AUTHINFO_UNAVAIL` | 1 s where the module does not send Message-Authenticator (Debian 12, Ubuntu 24.04: the server answers with a reject the module cannot verify, and it gives up at once); the full timeout on the others (the answer is discarded, or the server drops the request) |
+| server name that does not resolve | `PAM_AUTHINFO_UNAVAIL` | at once |
+| server file missing or unreadable | `PAM_ABORT` | at once |
+| `account` | `PAM_SUCCESS` without asking the server (2.0.x); `PAM_MODULE_UNKNOWN` (3.0.0) | |
+| session open / close | `PAM_SUCCESS`; `PAM_AUTHINFO_UNAVAIL` after 3 s when the server is silent | |
+| password change | `PAM_AUTHTOK_ERR` after "You must choose a new password" (2.0.x); `PAM_MODULE_UNKNOWN` (3.0.0) | |
+
+Hence the lines (the gate and the control are those of the pam_tacplus stack):
+
+```
+# tacctl-auth
+auth    [success=ok default=1]                               pam_succeed_if.so quiet user ingroup tac-users
+auth    [success=done authinfo_unavail=ignore default=die]   pam_radius_auth.so conf=/etc/tacctl-pam_radius.conf retry=1 [require_message_authenticator]
+@include common-auth                                         (Debian family; on the RHEL family the service's own password-auth line follows)
+# tacctl-account: no module line (only '@include common-account' on the Debian family)
+# tacctl-session (left empty on pam_radius_auth 2.0.1, or when the accounting port is not auth+1)
+session [success=ok default=1]                               pam_succeed_if.so quiet user ingroup tac-users
+session optional                                             pam_radius_auth.so conf=/etc/tacctl-pam_radius.conf
+```
+
+`/etc/tacctl-pam_radius.conf` is `<server>:<port> <secret> 3`, 0600 root.
+`require_message_authenticator` is added when the installed module has the
+option (the string is in the binary); both FreeRADIUS versions tacctl runs
+on put a Message-Authenticator in every answer (3.2.5 seen with radclient;
+3.0.27 by the passing run with an AlmaLinux 9 server).
+
+## The runs
+
+`radius`, `tacplus`, `switch` as described in `tests/README.md`; every case
+passed in every run listed.
+
+| Client | pam / OpenSSH / sudo | radius | tacplus | switch |
+|---|---|---|---|---|
+| Ubuntu 24.04.5 | 1.5.3-5ubuntu5.7 / 9.6p1 / 1.9.15p5 | 56 pass (also with the AlmaLinux 9 server) | 50 pass | 82 pass |
+| Debian 13 | 1.7.0-5 / 10.0p2 / 1.9.16p2 | 57 pass | 50 pass | |
+| Debian 12 | 1.5.2-6+deb12u2 / 9.2p1 / 1.9.13p3 | 57 pass | | 82 pass |
+| AlmaLinux 8.10 | 1.3.1-40.el8_10 / 8.0p1 / 1.9.5p2 | 57 pass | | |
+| AlmaLinux 9.8 | 1.5.1-28.el9 / 9.9p1 / 1.9.17p2 | 57 pass (also with the AlmaLinux 9 server) | | |
+| AlmaLinux 10.2 | 1.6.1-9.el10_2.1 / 9.9p1 / 1.9.17p2 | 57 pass | 50 pass | 82 pass |
+| Rocky 8.9 | 1.3.1-27.el8 / 8.0p1 / 1.9.5p2 | 57 pass | | 82 pass |
+| Rocky 9.3 | 1.5.1-15.el9 / 9.9p1 / 1.9.17p2 | 57 pass | 50 pass | 82 pass |
+| Rocky 10.2 | 1.6.1-9.el10 / 9.9p1 / 1.9.17p2 | 57 pass | | |
+
+Servers: Ubuntu 24.04 with FreeRADIUS 3.2.5 and tacquito (the binary of the
+machine that built the image); AlmaLinux 9 with FreeRADIUS 3.0.27 (radius
+only). pam_tacplus 1.7.0 was compiled on the client in every tacplus run
+(no podman inside the server container).
+
+Timings seen with the server made silent (nft drop at the server):
+
+| | radius | tacplus |
+|---|---|---|
+| local administrator (not in `tac-users`): login, sudo | no delay (0 s) | no delay |
+| user without a local password: refused after | 8-9 s | 5-6 s |
+| adopted account, local password accepted after | 6 s (Ubuntu 24.04, no accounting line) or 9 s (6 s of authentication, 3 s for the accounting packet at session start); 3 s more at logout | 7-8 s |
+
+One run differed: Debian 12 took 14 s for both (not looked into; its probe
+shows the same 6 s for `retry=1`).
+
+A wrong shared secret on the host behaves like a silent server for both
+methods: users without a local password are refused, an adopted account's
+local password is accepted, the local administrator is unaffected.
+
+## SELinux (not verified in enforcing mode)
+
+Containers do not enforce SELinux; nothing here was exercised. From the
+EL8 (3.14.3-139), EL9 (38.1.75) and EL10 (42.1.18) targeted policies with
+`sesearch`/`seinfo`, and the system calls the module makes:
+
+- UDP has no `name_connect`; the port needs no label, default or not.
+- The module binds port 0, for which the kernel checks `node_bind` only.
+  `sshd_t`, `xdm_t` (and `sshd_session_t` on EL10) have it unconditionally;
+  `local_login_t` and the sudo domains of confined users have it only
+  through `kerberos_enabled` (on by default) or `nis_enabled`. The CIL
+  module `tacctl_pam_radius` allows `local_login_t` and `sudodomain`
+  `node_t:udp_socket node_bind` directly; it compiles and installs
+  (`semodule -n -i`) against all three policies.
+- `authlogin_radius` only adds `name_bind` on unreserved ports for login
+  programs, which a module that binds port 0 does not need; it is not set.
+  If RADIUS logins are denied on an enforcing host, `ausearch -m avc -c
+  sshd` and that boolean are the first things to look at.
+- The login domains may read `etc_t` files and not `var_lib_t` ones, which
+  is why the server file is `/etc/tacctl-pam_radius.conf` and not in
+  `/var/lib/tacctl-client` (plan §6.1 had it there).
+
+## Not verified
+
+- SELinux enforcing (above); a real desktop login through GDM or SDDM (the
+  `gdm-password` service was driven by a PAM client against a stand-in
+  service file); KDE's lock screen (a PAM client that is not root fails, as
+  with pam_tacplus: the server file is root-only); an IPv6 server address;
+  RHEL proper and Oracle Linux beyond installing EPEL and the package in
+  their container images; Ubuntu with `universe` disabled (the script only
+  says where the package is).
+- pam_radius_auth 2.0.x does not send Message-Authenticator and, without
+  the option, does not check the one in the answer (BlastRADIUS,
+  CVE-2024-3596): Debian 12 and Ubuntu 24.04 hosts are in that position,
+  and FreeRADIUS logs its "BlastRADIUS check" block for them.

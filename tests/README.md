@@ -34,6 +34,7 @@ tests/
 │   └── golden/          # expected rendered output: device configs (M3; `--protocol radius` ones are `*-radius-lab.conf`), tacquito.X.rendered.yaml
 │                        #   (what the TACACS+ renderer produces from store.X.yaml) and radius.<family>.*
 ├── containers/radius/   # the check against real FreeRADIUS in podman (not run by make test)
+├── containers/hosts/    # 'host enroll|sync|unenroll' for real, server and client containers (not run by make test)
 ├── unit/                # pure-logic, no I/O, no mocks
 ├── integration/         # real file I/O into $TACCTL_ETC tmpdir
 └── e2e/                 # stubbed systemctl/git/etc.
@@ -319,6 +320,66 @@ Notes:
   `radclient` sends from 127.0.0.2, .3, .4, .9 and .66 with
   `Packet-Src-IP-Address`; a request to the container's own address comes
   from it (scope `prod`).
+- Record what a run showed, with package versions, in `docs/radius-notes.md`.
+
+## Linux hosts in containers
+
+`tacctl host enroll|sync|unenroll` for real, for both methods: a server
+container runs tacctl with real FreeRADIUS (installed by `backend enable
+radius`) and real tacquito, and enrolls a client container of the
+distribution under test over SSH; the logins are then made with SSH and
+`sudo` on the client. Rootless podman, a network of its own
+(`tacctl-host-check`), nothing on the host touched.
+
+```sh
+tests/containers/hosts/run.sh ubuntu-noble radius    # one client, one cycle
+tests/containers/hosts/run.sh rocky-9 switch
+tests/containers/hosts/run.sh almalinux-9 radius --server almalinux-9
+tests/containers/hosts/run.sh debian-trixie probe    # what pam_radius_auth returns
+tests/containers/hosts/matrix.sh [<log dir>]         # everything docs/radius-notes.md records
+```
+
+Clients: `ubuntu-noble`, `debian-trixie`, `debian-bookworm`,
+`almalinux-8|9|10`, `rocky-8|9|10`. Cycles:
+
+| Cycle | Does |
+|---|---|
+| `radius`, `tacplus` | snapshot of the host; `host enroll --method <m>` (per-host scope); users added to the scope and pushed with `host sync` (one of them a pre-existing account that needs `--adopt`); where the secret is; SSH login right and wrong, `sudo` and `sudo -i` for the superuser, none for the readonly user; a user removed from the scope on the server and not yet synced; the local administrator; the server unreachable (packets dropped at the server with nft) with timings; a wrong shared secret on the host; console login, the stand-in for GDM and a PAM client that is not root; re-enroll; the server's logs; `host unenroll`; the snapshot again, byte for byte |
+| `switch` | all of `tacplus`, then `host enroll --method radius` on the enrolled host (nothing of pam_tacplus left, logins answered by FreeRADIUS), then back (nothing of pam_radius_auth's configuration left), then unenroll and the snapshot |
+| `probe` | no enroll: installs the package and prints what `pam_radius_auth` returns for accept, reject, a wrong secret, a silent server with `retry=0..2`, a missing server file, account, session and password change, and the accounting records the server got |
+
+Each run prints `PASS`/`FAIL`/`NOTE` lines and exits non-zero on a `FAIL`;
+`--keep` leaves `thc-server` and `thc-client-<client>` for a look.
+
+| File | Does |
+|---|---|
+| `run.sh` | builds the two images if needed (`localhost/tacctl-host-check:{server,client}-<distro>`, kept), starts the containers, runs the cycle |
+| `matrix.sh` | the runs recorded in `docs/radius-notes.md`, one after another, a log per run |
+| `server-setup.sh` | in the server: a store with three users (real bcrypt hashes), tacquito under its unit through the backend's own install phases, `backend enable radius` |
+| `client-prep.sh` | at client image build: sshd, sudo, a local administrator `ladm`, a pre-existing account `carl`, a stand-in `gdm-password` service file, and what a rootless container needs (below). No PAM module, no EPEL: enrollment brings those |
+| `sshtry.sh` | one SSH password login to the container's own sshd (via `SSH_ASKPASS`; `sshpass` is not in every base repository) |
+| `pamprobe.py` | a PAM client: runs the phases of a service for a user and prints each return code and how long it took |
+
+Notes:
+
+- **tacquito is not built here.** The server image takes
+  `/usr/local/bin/tacquito` from the machine that builds it; without one,
+  only `radius` and `probe` can run. The pinned pam_tacplus source is
+  prepared in the image by `config linux build`'s own function. With
+  `--server almalinux-9` (FreeRADIUS 3.0.27) only `radius` and `probe` run.
+- No podman in the server container, so pam_tacplus is compiled on the
+  client (the `--build-on-host` path), with the build packages enrollment
+  installs.
+- What the client containers need and a real host does not: `--cap-add
+  AUDIT_WRITE` for sshd, `pam_loginuid` commented out, `pam_unix`'s account
+  step replaced by `pam_permit`, and on the RHEL family `/etc/shadow` mode
+  0400 instead of 0000 (pam_unix's helper `unix_chkpwd` drops root's
+  capabilities, and current EL pam always goes through it). All are in
+  place before the snapshot.
+- SELinux is not enforced in containers: the policy modules are not
+  installed there, let alone exercised (see `docs/radius-notes.md`).
+- Remove the images to rebuild them after changing `client-prep.sh` or the
+  package lists in `run.sh`: `podman rmi $(podman images -q localhost/tacctl-host-check)`.
 - Record what a run showed, with package versions, in `docs/radius-notes.md`.
 
 ## Listeners and units

@@ -1,10 +1,21 @@
 # --- tacctl Linux client: install / account sync -------------------------------
 # Body of the script emitted by 'tacctl config linux script'. tacctl prepends
-# a header that sets TAC_SERVER, TAC_PORT, TAC_SECRET, TAC_SCOPE,
-# TARBALL_SHA256 and TAC_USERS (plus PREBUILT_SHA256 and PREBUILT_FOR when a
-# prebuilt module is included), and appends the pam_tacplus source tarball
-# (base64) after the __TARBALL__ marker, then the prebuilt module after
-# __PREBUILT__. Run as root on the target host:
+# a header that sets TAC_METHOD, TAC_SERVER, TAC_PORT, TAC_SECRET, TAC_SCOPE
+# and TAC_USERS. TAC_METHOD picks the PAM module the host authenticates
+# through; accounts, tiers, sudo and the fallback to local passwords are the
+# same for both:
+#
+#   tacplus  pam_tacplus, which tacctl ships itself. The header also sets
+#            TARBALL_SHA256 (plus PREBUILT_SHA256 and PREBUILT_FOR when a
+#            prebuilt module is included), and the pam_tacplus source tarball
+#            (base64) follows the __TARBALL__ marker, then the prebuilt
+#            module after __PREBUILT__.
+#   radius   pam_radius_auth from the distribution's package
+#            (libpam-radius-auth; pam_radius from EPEL on the RHEL family).
+#            The header also sets TAC_ACCT_PORT; nothing is appended.
+#
+# What each method needs is in the functions named <concern>_<method> below;
+# everything else is shared. Run as root on the target host:
 #
 #   bash tacctl-linux-<scope>.sh                  full install (or re-install)
 #   bash tacctl-linux-<scope>.sh --accounts-only  sync accounts and groups only
@@ -50,6 +61,14 @@ done
 CLIENT_TEST="${TACCTL_CLIENT_TEST:-0}"
 [[ $EUID -eq 0 || "$CLIENT_TEST" == "1" ]] || die "Run as root (sudo bash $0)."
 
+# pam_radius_auth reads its server and shared secret from a file. It sits in
+# /etc, not in $STATE_DIR: under SELinux sshd and login may read etc_t files
+# but nothing below /var/lib. (The test suite never touches /etc.)
+RADIUS_CONF="${TACCTL_CLIENT_RADIUS_CONF:-/etc/tacctl-pam_radius.conf}"
+if [[ "$CLIENT_TEST" == "1" && -z "${TACCTL_CLIENT_RADIUS_CONF:-}" ]]; then
+    RADIUS_CONF="$STATE_DIR/pam_radius.conf"
+fi
+
 # Debian/Ubuntu and RHEL-family hosts differ in package tool and in how the
 # PAM service files pull in the shared stack.
 if [[ "$CLIENT_TEST" == "1" && -n "${TACCTL_CLIENT_FAMILY:-}" ]]; then
@@ -64,7 +83,15 @@ fi
 # RHEL family: the shared stacks the service files include.
 RHEL_STACK='(password-auth|system-auth)'
 
-# Names of the TACACS+ users this script manages, one per line.
+# The method, and what messages, account names and comments call it.
+TAC_METHOD="${TAC_METHOD:-tacplus}"
+case "$TAC_METHOD" in
+    tacplus) PROTO="TACACS+"; OTHER_METHOD="radius" ;;
+    radius)  PROTO="RADIUS";  OTHER_METHOD="tacplus" ;;
+    *) die "Unknown method '${TAC_METHOD}' (tacplus or radius)." ;;
+esac
+
+# Names of the users this script manages, one per line.
 tac_user_names() {
     local name _rest
     while IFS=: read -r name _rest; do
@@ -73,7 +100,7 @@ tac_user_names() {
     return 0
 }
 
-# A local administrator who does not depend on TACACS+: root or a member of
+# A local administrator who does not depend on the server: root or a member of
 # sudo/wheel/admin with a usable local password, and not a managed user.
 local_admins() {
     local managed candidates user pw
@@ -88,8 +115,8 @@ local_admins() {
 }
 
 if [[ "${TACCTL_FORCE:-0}" != "1" && -z "$(local_admins)" ]]; then
-    die "No local administrator with a usable password exists outside the TACACS+ user list.
-        Every sudo-capable account would depend on the TACACS+ server. Give one local
+    die "No local administrator with a usable password exists outside the ${PROTO} user list.
+        Every sudo-capable account would depend on the ${PROTO} server. Give one local
         admin account a password first, or re-run with TACCTL_FORCE=1."
 fi
 
@@ -175,7 +202,7 @@ TXT
 }
 
 # --- Adoption ------------------------------------------------------------------
-# An account that already exists under a TACACS+ user's name is only taken
+# An account that already exists under a tacctl user's name is only taken
 # over when the operator names it with --adopt: a matching name does not
 # prove it is the same person. Accounts this script created or adopted on
 # an earlier run need no flag.
@@ -191,7 +218,7 @@ check_adoption() {
         unconfirmed+=" ${name}"
     done <<< "$TAC_USERS"
     [[ -n "$unconfirmed" ]] || return 0
-    echo "[ERROR] These TACACS+ users already have a local account on this host that tacctl did not create:${unconfirmed}" >&2
+    echo "[ERROR] These ${PROTO} users already have a local account on this host that tacctl did not create:${unconfirmed}" >&2
     cat >&2 <<'TXT'
   Nothing was changed. A matching name does not prove it is the same person. Options:
     1. It is the same person: take the account over, keeping its UID, password, files and groups:
@@ -204,7 +231,7 @@ TXT
     exit 1
 }
 
-# Local groups that grant rights regardless of the TACACS+ tier.
+# Local groups that grant rights regardless of the tier.
 privileged_groups_of() {
     local g found="" groups
     groups=" $(id -nG "$1" 2>/dev/null) "
@@ -217,12 +244,18 @@ privileged_groups_of() {
 check_adoption
 check_ids
 
-# --- pam_tacplus module --------------------------------------------------------
+# --- PAM module ----------------------------------------------------------------
 # Installed before any account is created, so a host that cannot get the
-# module is left as it was. 'tacctl host enroll' normally embeds a module
-# built on the server for this OS release; otherwise, or if that one does
-# not load here, it is compiled from the embedded source tarball. A host
-# that already has the module from this same source is left alone.
+# module is left as it was (on a host switching methods: still working with
+# the method it had).
+#
+# tacplus: 'tacctl host enroll' normally embeds a module built on the server
+# for this OS release; otherwise, or if that one does not load here, it is
+# compiled from the embedded source tarball. A host that already has the
+# module from this same source is left alone.
+#
+# radius: the distribution's package. On the RHEL family that package is in
+# EPEL, which is enabled here when the host does not have it.
 build_dir=""
 pam_edit_started=0
 pam_committed=0
@@ -234,7 +267,9 @@ restore_pam() {
         fi
     done
     rm -f "$PAM_DIR/tacctl-auth" "$PAM_DIR/tacctl-account" "$PAM_DIR/tacctl-session"
-    warn "Install failed: PAM service files restored from backup, TACACS+ not enabled."
+    # Nothing refers to the RADIUS server file any more; it holds the secret.
+    rm -f "$RADIUS_CONF"
+    warn "Install failed: PAM service files restored from backup, ${PROTO} not enabled."
 }
 # Any exit before the final commit puts the PAM service files back.
 cleanup() {
@@ -255,10 +290,13 @@ module_current() {
     return 0
 }
 
+# Extra dnf options for pkg_install (the EPEL repository, when pam_radius
+# needs it).
+PKG_OPTS=""
 pkg_install() {
     if [[ "$FAMILY" == "rhel" ]]; then
         # shellcheck disable=SC2086
-        "$(command -v dnf || command -v yum)" install -y -q $1 >/dev/null
+        "$(command -v dnf || command -v yum)" install -y -q $PKG_OPTS $1 >/dev/null
     else
         # shellcheck disable=SC2086
         DEBIAN_FRONTEND=noninteractive apt-get install -y $1 >/dev/null
@@ -354,7 +392,7 @@ compile_module() {
     cp "$build_dir/stage$lib_dir/libtac.so.5.0.0" "$build_dir/stage$sec_dir/pam_tacplus.so" "$out/"
 }
 
-install_module() {
+install_module_tacplus() {
     local lib_dir sec_dir
     if module_current; then
         info "pam_tacplus is already installed from this source; not rebuilding."
@@ -395,6 +433,134 @@ install_module() {
     echo "$TARBALL_SHA256" > "$STATE_DIR/module"
 }
 
+# Where pam_radius_auth.so is, or would be once its package is installed.
+radius_module_path() {
+    local sec_dir
+    if [[ "$CLIENT_TEST" == "1" ]]; then
+        sec_dir="$STATE_DIR/lib/security"
+    else
+        sec_dir=$(pam_module_dir) || return 1
+    fi
+    echo "$sec_dir/pam_radius_auth.so"
+}
+
+# The packaged module's version, as the package manager reports it.
+radius_module_version() {
+    if [[ "$CLIENT_TEST" == "1" ]]; then
+        echo "${TACCTL_CLIENT_RADIUS_VERSION:-}"
+    elif [[ "$FAMILY" == "rhel" ]]; then
+        rpm -q --qf '%{VERSION}-%{RELEASE}' pam_radius 2>/dev/null || true
+    else
+        dpkg-query -W -f '${Version}' libpam-radius-auth 2>/dev/null || true
+    fi
+}
+
+# Packages this script installed are noted, so the removal script can name
+# what it leaves behind.
+note_package() {
+    grep -qxF "$1" "$STATE_DIR/packages" 2>/dev/null || echo "$1" >> "$STATE_DIR/packages"
+}
+
+# RHEL family: pam_radius is not in the distribution's own repositories but
+# in EPEL (EL8 and EL9: 2.0.0, EL10: 3.0.0). It needs nothing from CRB or
+# PowerTools. AlmaLinux, Rocky and CentOS Stream carry the epel-release
+# package in a repository they enable by default; RHEL and Oracle Linux do
+# not, and there the release package comes from the EPEL project's own URL.
+# Sets EPEL_ADDED=1 when this run installed epel-release, so a failure
+# afterwards can take it out again.
+EPEL_ADDED=0
+ensure_epel() {
+    local dnf major
+    dnf=$(command -v dnf || command -v yum)
+    if "$dnf" -q list pam_radius >/dev/null 2>&1; then return 0; fi
+    if ! rpm -q epel-release >/dev/null 2>&1; then
+        info "pam_radius is packaged in EPEL, which this host does not have: installing epel-release."
+        "$dnf" install -y -q epel-release >/dev/null 2>&1 || true
+        if ! rpm -q epel-release >/dev/null 2>&1; then
+            major=$(rpm -E '%{?rhel}' 2>/dev/null || true)
+            if [[ "$major" =~ ^[0-9]+$ ]]; then
+                "$dnf" install -y -q "https://dl.fedoraproject.org/pub/epel/epel-release-latest-${major}.noarch.rpm" >/dev/null 2>&1 || true
+            fi
+        fi
+        rpm -q epel-release >/dev/null 2>&1 || die "Could not enable EPEL on this host (neither 'dnf install epel-release' nor the
+        release package from dl.fedoraproject.org worked). pam_radius is an EPEL package:
+        give the host that repository, or install pam_radius by hand, then re-run.
+        Nothing was changed: no accounts created, PAM untouched."
+        EPEL_ADDED=1
+    fi
+    # An EPEL the administrator keeps disabled is used for this one package only.
+    PKG_OPTS="--enablerepo=epel"
+}
+
+install_module_radius() {
+    local module pkg="libpam-radius-auth" hint="On Ubuntu it is in the 'universe' component."
+    module=$(radius_module_path) || die "Could not find the PAM module directory."
+    if [[ -f "$module" ]]; then
+        info "pam_radius_auth is already installed; nothing to install."
+        return 0
+    fi
+    if [[ "$FAMILY" == "rhel" ]]; then
+        pkg="pam_radius"
+        hint="It comes from EPEL."
+        ensure_epel
+    fi
+    info "Installing the RADIUS PAM module: ${pkg}"
+    if ! pkg_install " ${pkg}"; then
+        # A stale package index is the usual cause: refresh it once and retry.
+        warn "Package install failed; refreshing the package index and retrying."
+        pkg_refresh
+        if ! pkg_install " ${pkg}"; then
+            if [[ "$EPEL_ADDED" == "1" ]]; then
+                "$(command -v dnf || command -v yum)" remove -y -q epel-release >/dev/null 2>&1 || true
+            fi
+            die "Could not install the RADIUS PAM module: ${pkg}
+        This host needs a working package repository that carries it. ${hint}
+        Nothing was changed: no accounts created, PAM untouched."
+        fi
+    fi
+    if [[ "$CLIENT_TEST" == "1" ]]; then
+        mkdir -p "${module%/*}"
+        touch "$module"
+    fi
+    [[ -f "$module" ]] || die "Package ${pkg} is installed but ${module} is missing.
+        Nothing was changed: no accounts created, PAM untouched."
+    note_package "$pkg"
+    if [[ "$EPEL_ADDED" == "1" ]]; then note_package "epel-release"; fi
+}
+
+# remove_method_artifacts <method>: take out what the install of <method>
+# put on this host apart from the PAM files, which the caller has rewritten:
+# module files, the file with the secret, the SELinux module, the state
+# files. Safe to run when there is nothing. Packages are left installed.
+remove_method_artifacts() {
+    local path
+    case "$1" in
+        tacplus)
+            if [[ -f "$STATE_DIR/files" ]]; then
+                while IFS= read -r path; do
+                    if [[ "$path" == /usr/lib/* || "$path" == /usr/lib64/* || "$path" == /lib/* \
+                        || ( "$CLIENT_TEST" == "1" && "$path" == "$STATE_DIR"/lib/* ) ]]; then
+                        rm -f "$path"
+                    fi
+                done < "$STATE_DIR/files"
+                ldconfig
+            fi
+            rm -f "$STATE_DIR/files" "$STATE_DIR/module"
+            if [[ -f "$STATE_DIR/tacctl_pam.cil" ]]; then
+                if command -v semodule >/dev/null; then semodule -r tacctl_pam 2>/dev/null || true; fi
+                rm -f "$STATE_DIR/tacctl_pam.cil"
+            fi
+            ;;
+        radius)
+            rm -f "$RADIUS_CONF"
+            if [[ -f "$STATE_DIR/tacctl_pam_radius.cil" ]]; then
+                if command -v semodule >/dev/null; then semodule -r tacctl_pam_radius 2>/dev/null || true; fi
+                rm -f "$STATE_DIR/tacctl_pam_radius.cil"
+            fi
+            ;;
+    esac
+}
+
 if [[ "$ACCOUNTS_ONLY" != "1" ]]; then
     for svc in sshd sudo; do
         [[ -f "$PAM_DIR/$svc" ]] || die "$PAM_DIR/$svc not found."
@@ -408,12 +574,12 @@ if [[ "$ACCOUNTS_ONLY" != "1" ]]; then
     done
     build_dir=$(mktemp -d)
     trap cleanup EXIT
-    install_module
+    "install_module_${TAC_METHOD}"
 fi
 
 # --- Accounts and groups -------------------------------------------------------
 sync_accounts() {
-    local g name tier uid managed member priv pw home still
+    local g name tier uid managed member priv pw home still gecos
     for g in "$G_USERS" tac-readonly tac-operator tac-superuser; do
         getent group "$g" >/dev/null || groupadd "$g"
     done
@@ -426,25 +592,30 @@ sync_accounts() {
                 info "Adopted existing account '${name}' (UID, local password, files and groups left as they are)."
                 priv=$(privileged_groups_of "$name")
                 if [[ -n "$priv" ]]; then
-                    warn "'${name}' is in local group(s): ${priv}. Those rights stay whatever the TACACS+ tier (${tier}) is."
+                    warn "'${name}' is in local group(s): ${priv}. Those rights stay whatever the ${PROTO} tier (${tier}) is."
                 fi
-            elif grep -qxF "$name" "$STATE_DIR/created" \
-                && [[ "$(getent passwd "$name" | cut -d: -f5)" == "TACACS+ user (tacctl)" ]]; then
+            elif grep -qxF "$name" "$STATE_DIR/created"; then
                 # Earlier versions gave every account the same full name,
-                # which is all a graphical login screen shows.
-                usermod -c "${name} (TACACS+)" "$name"
+                # which is all a graphical login screen shows; and a host
+                # that switched methods carries the other method's name.
+                gecos=$(getent passwd "$name" | cut -d: -f5)
+                case "$gecos" in
+                    "${name} (${PROTO})") ;;
+                    "TACACS+ user (tacctl)"|"${name} (TACACS+)"|"${name} (RADIUS)")
+                        usermod -c "${name} (${PROTO})" "$name" ;;
+                esac
             fi
         else
-            # New accounts get a locked password: TACACS+ is their only password.
-            # The full name carries the login name, since graphical login
-            # screens list accounts by full name.
+            # New accounts get a locked password: the server's is their only
+            # password. The full name carries the login name, since graphical
+            # login screens list accounts by full name.
             # UID and primary GID are the same number on every host. The
             # fallback is only reachable with --allow-uid-mismatch.
             if id_is_free "$name" "$uid"; then
                 getent group "$name" >/dev/null || groupadd -g "$uid" "$name"
-                useradd -m -u "$uid" -g "$name" -s /bin/bash -c "${name} (TACACS+)" "$name"
+                useradd -m -u "$uid" -g "$name" -s /bin/bash -c "${name} (${PROTO})" "$name"
             else
-                useradd -m -s /bin/bash -c "${name} (TACACS+)" "$name"
+                useradd -m -s /bin/bash -c "${name} (${PROTO})" "$name"
             fi
             echo "$name" >> "$STATE_DIR/created"
             info "Created account '${name}' (${tier})."
@@ -474,7 +645,7 @@ sync_accounts() {
         if grep -qxF "$member" "$STATE_DIR/created"; then
             usermod -e 1 "$member"
             echo "$member" >> "$STATE_DIR/expired"
-            info "'${member}' is no longer a TACACS+ user here: account expired, files kept."
+            info "'${member}' is no longer a ${PROTO} user here: account expired, files kept."
         else
             # Adopted (or hand-added) account: not tacctl's to lock.
             pw=$(getent shadow "$member" 2>/dev/null | cut -d: -f2 || true)
@@ -483,7 +654,7 @@ sync_accounts() {
             if [[ -n "$pw" && "$pw" != '!'* && "$pw" != '*'* ]]; then still="local password works"; fi
             if [[ -s "$home/.ssh/authorized_keys" ]]; then still+=", SSH key present"; fi
             priv=$(privileged_groups_of "$member")
-            warn "'${member}' is no longer a TACACS+ user here but its local account was NOT disabled (${still}${priv:+; groups: $priv})."
+            warn "'${member}' is no longer a ${PROTO} user here but its local account was NOT disabled (${still}${priv:+; groups: $priv})."
             warn "  To block it: usermod -L -e 1 ${member}"
             sed -i "/^${member}\$/d" "$STATE_DIR/adopted"
         fi
@@ -497,21 +668,110 @@ if [[ "$ACCOUNTS_ONLY" == "1" ]]; then
 fi
 
 # --- PAM -----------------------------------------------------------------------
-# Only members of tac-users are sent to TACACS+; everyone else skips straight
-# to the distribution's own stack. A reject from the server is final. An
-# unreachable server falls through to the local password, which only
-# adopted accounts have.
+# Only members of tac-users are sent to the server; everyone else skips
+# straight to the distribution's own stack. A reject from the server is
+# final. An unreachable server falls through to the local password, which
+# only adopted accounts have.
 #
+# Each method sets the module lines of the three tacctl files: pam_auth,
+# pam_account and pam_session; an empty one leaves that phase to the
+# distribution's stack alone.
+gate="pam_succeed_if.so quiet user ingroup ${G_USERS}"
+
 # pam_tacplus takes the shared secret as a module argument, so these files
 # are root-only. sshd, sudo and login all read PAM config as root.
-if [[ "$TAC_SERVER" == *:* ]]; then
-    tac_args="server=[${TAC_SERVER}]:${TAC_PORT}"
-else
-    tac_args="server=${TAC_SERVER}:${TAC_PORT}"
-fi
-tac_args+=" secret=${TAC_SECRET} timeout=3 login=pap service=shell protocol=ssh"
-gate="pam_succeed_if.so quiet user ingroup ${G_USERS}"
+# Authorization is only possible in the process that did the TACACS+
+# authentication; for SSH-key logins the module reports auth_err, which is
+# ignored here. Removed or disabled users are handled by account sync.
+pam_lines_tacplus() {
+    local tac_args
+    if [[ "$TAC_SERVER" == *:* ]]; then
+        tac_args="server=[${TAC_SERVER}]:${TAC_PORT}"
+    else
+        tac_args="server=${TAC_SERVER}:${TAC_PORT}"
+    fi
+    tac_args+=" secret=${TAC_SECRET} timeout=3 login=pap service=shell protocol=ssh"
+    pam_auth="auth    [success=done authinfo_unavail=ignore default=die]   pam_tacplus.so ${tac_args}"
+    pam_account="account [success=ok perm_denied=die default=ignore]          pam_tacplus.so ${tac_args}"
+    pam_session="session optional                                             pam_tacplus.so ${tac_args}"
+}
+
+# pam_radius_auth, as observed on the packaged 2.0.0, 2.0.1 and 3.0.0
+# (docs/radius-notes.md, "Linux hosts"):
+#
+#   Access-Accept                          PAM_SUCCESS            -> done
+#   Access-Reject (wrong password, user    PAM_AUTH_ERR           -> die
+#     not in the scope, unknown, disabled)
+#   no answer after every try, an answer   PAM_AUTHINFO_UNAVAIL   -> ignore:
+#     that fails verification (wrong                                 on to the
+#     secret), server name not resolvable                            local stack
+#   server file missing or unreadable      PAM_ABORT              -> die
+#
+# so the control line is the one pam_tacplus has. The server and the secret
+# are in $RADIUS_CONF (root-only), never on a PAM line. The port is always
+# written: without one the module looks up 'radius' in /etc/services, which a
+# minimal host may not have.
+#
+# Timing. The module waits at least 3 seconds per try whatever the file says
+# and 'retry=1' gives two tries: a server that does not answer costs a member
+# of tac-users 6 seconds before the local password is asked for. Everyone
+# else never reaches the module. The session line sends one accounting
+# packet at login and one at logout, one try each (3 seconds when the server
+# is silent).
+#
+# account: the module has no account step that asks the server (2.0.x
+# returns success without sending anything; 3.0.0 has none and PAM reports
+# 'module is unknown'), so there is no line. What the server allows arrived
+# with the Access-Accept; removed or disabled users are handled by account
+# sync.
+#
+# session: accounting goes to the authentication port plus one, which the
+# module cannot be told otherwise, and 2.0.1 (Ubuntu 24.04) sends
+# Acct-Status-Type and its other integer attributes as garbage. In both
+# cases the line is left out and the host sends no accounting.
+RADIUS_TIMEOUT=3
+RADIUS_RETRY=1
+write_radius_conf() {
+    local host="$TAC_SERVER" tmp
+    if [[ "$host" == *:* ]]; then host="[${host}]"; fi
+    # Written whole and moved into place: a login never sees half a file.
+    tmp=$(mktemp "${RADIUS_CONF}.XXXXXX")
+    cat > "$tmp" <<EOF
+# Managed by tacctl (scope ${TAC_SCOPE}). Do not edit; re-run the install script.
+# Holds the scope's shared secret: root only.
+# server:port  secret  timeout
+${host}:${TAC_PORT} ${TAC_SECRET} ${RADIUS_TIMEOUT}
+EOF
+    chmod 0600 "$tmp"
+    if [[ "$CLIENT_TEST" != "1" ]]; then chown root:root "$tmp"; fi
+    mv -f "$tmp" "$RADIUS_CONF"
+}
+pam_lines_radius() {
+    local module version rad_args="conf=${RADIUS_CONF} retry=${RADIUS_RETRY}"
+    module=$(radius_module_path)
+    # Builds with the BlastRADIUS fix can insist that every answer carries a
+    # Message-Authenticator, which FreeRADIUS 3.0.27 / 3.2.5 and later always
+    # send. A module without the option would only log that it is unknown.
+    if grep -q require_message_authenticator "$module" 2>/dev/null; then
+        rad_args+=" require_message_authenticator"
+    fi
+    write_radius_conf
+    pam_auth="auth    [success=done authinfo_unavail=ignore default=die]   pam_radius_auth.so ${rad_args}"
+    pam_account=""
+    pam_session=""
+    version=$(radius_module_version)
+    if [[ -z "${TAC_ACCT_PORT:-}" || "$TAC_ACCT_PORT" != "$((TAC_PORT + 1))" ]]; then
+        info "No session accounting from this host: pam_radius_auth sends it to the authentication port plus one ($((TAC_PORT + 1))), and the server's accounting listener is ${TAC_ACCT_PORT:-not set}."
+    elif [[ "$version" == 2.0.1* ]]; then
+        info "No session accounting from this host: pam_radius_auth ${version} sends malformed accounting records. Logins are still in the server's authentication log."
+    else
+        pam_session="session optional                                             pam_radius_auth.so conf=${RADIUS_CONF}"
+    fi
+}
+
+pam_auth="" pam_account="" pam_session=""
 pam_edit_started=1
+"pam_lines_${TAC_METHOD}"
 
 write_pam() {
     local file="$PAM_DIR/$1"
@@ -527,26 +787,29 @@ write_pam() {
 tail_auth="@include common-auth"
 tail_account="@include common-account"
 if [[ "$FAMILY" == "rhel" ]]; then tail_auth=""; tail_account=""; fi
+pam_header="# Managed by tacctl (scope ${TAC_SCOPE}). Do not edit; re-run the install script."
 write_pam tacctl-auth <<EOF
-# Managed by tacctl (scope ${TAC_SCOPE}). Do not edit; re-run the install script.
+${pam_header}
 auth    [success=ok default=1]                               ${gate}
-auth    [success=done authinfo_unavail=ignore default=die]   pam_tacplus.so ${tac_args}
+${pam_auth}
 ${tail_auth}
 EOF
-# Authorization is only possible in the process that did the TACACS+
-# authentication; for SSH-key logins the module reports auth_err, which is
-# ignored here. Removed or disabled users are handled by account sync.
-write_pam tacctl-account <<EOF
-# Managed by tacctl (scope ${TAC_SCOPE}). Do not edit; re-run the install script.
-account [success=ok default=1]                               ${gate}
-account [success=ok perm_denied=die default=ignore]          pam_tacplus.so ${tac_args}
-${tail_account}
-EOF
-write_pam tacctl-session <<EOF
-# Managed by tacctl (scope ${TAC_SCOPE}). Do not edit; re-run the install script.
-session [success=ok default=1]                               ${gate}
-session optional                                             pam_tacplus.so ${tac_args}
-EOF
+# The gate skips exactly one line, so it is only written in front of one.
+{
+    echo "$pam_header"
+    if [[ -n "$pam_account" ]]; then
+        echo "account [success=ok default=1]                               ${gate}"
+        echo "$pam_account"
+    fi
+    echo "$tail_account"
+} | write_pam tacctl-account
+{
+    echo "$pam_header"
+    if [[ -n "$pam_session" ]]; then
+        echo "session [success=ok default=1]                               ${gate}"
+        echo "$pam_session"
+    fi
+} | write_pam tacctl-session
 
 for svc in $PAM_SERVICES; do
     f="$PAM_DIR/$svc"
@@ -580,13 +843,15 @@ for svc in sshd sudo; do
 done
 
 # --- SELinux -------------------------------------------------------------------
-# sshd, login and (for confined users) sudo may not open a TACACS+
+# Failure is reported, not fatal: logins then behave as if the server were
+# unreachable. Both modules are CIL text, so nothing has to be compiled.
+#
+# tacplus: sshd, login and (for confined users) sudo may not open a TACACS+
 # connection on their own: RHEL's policy has no type for the port and only
 # lets them through with the broad nis_enabled boolean. A small local
 # module labels exactly the configured port and allows those three to
-# connect to it. It is CIL text, so nothing has to be compiled. Failure is
-# reported, not fatal: logins then behave as if the server were unreachable.
-if command -v selinuxenabled >/dev/null && selinuxenabled 2>/dev/null; then
+# connect to it.
+selinux_tacplus() {
     cat > "$STATE_DIR/tacctl_pam.cil" <<CIL
 (type tacctl_tacacs_port_t)
 (roletype object_r tacctl_tacacs_port_t)
@@ -605,12 +870,38 @@ CIL
         # shellcheck disable=SC2046
         restorecon $(cat "$STATE_DIR/files") "$PAM_DIR"/tacctl-* 2>/dev/null || true
     fi
+}
+
+# radius: UDP has no connect permission and the port needs no label. The
+# packaged module binds its socket to port 0 on the wildcard address, which
+# asks for node_bind only (name_bind is not checked for port 0; the
+# authlogin_radius boolean is for older modules that picked a port
+# themselves). The EL8, EL9 and EL10 targeted policies give sshd and the
+# display managers node_bind outright, but login and the sudo domains of
+# confined users only through the kerberos_enabled or nis_enabled booleans:
+# the module allows those two directly. The server file is etc_t, which
+# every login program may read.
+selinux_radius() {
+    cat > "$STATE_DIR/tacctl_pam_radius.cil" <<'CIL'
+(optional tacctl_pam_radius_login (allow local_login_t node_t (udp_socket (node_bind))))
+(optional tacctl_pam_radius_sudo (allow sudodomain node_t (udp_socket (node_bind))))
+CIL
+    if semodule -i "$STATE_DIR/tacctl_pam_radius.cil" 2>/dev/null; then
+        info "SELinux: policy module tacctl_pam_radius installed (login and sudo may open the socket pam_radius_auth uses; sshd already may)."
+    else
+        warn "SELinux: could not install the tacctl_pam_radius policy module; RADIUS logins may be denied (check: ausearch -m avc -c sshd; 'setsebool -P authlogin_radius on' is the policy's own switch)."
+    fi
+    restorecon "$RADIUS_CONF" "$PAM_DIR"/tacctl-* 2>/dev/null || true
+}
+
+if command -v selinuxenabled >/dev/null && selinuxenabled 2>/dev/null; then
+    "selinux_${TAC_METHOD}"
 fi
 
 # --- sudo for superusers -------------------------------------------------------
 sudoers_tmp=$(mktemp)
 cat > "$sudoers_tmp" <<EOF
-# Managed by tacctl. TACACS+ superusers get full sudo (password required).
+# Managed by tacctl. ${PROTO} superusers get full sudo (password required).
 %tac-superuser ALL=(ALL:ALL) ALL
 EOF
 visudo -cf "$sudoers_tmp" >/dev/null || die "visudo rejected the sudoers drop-in."
@@ -618,41 +909,59 @@ install -m 0440 -o root -g root "$sudoers_tmp" "$SUDOERS_HOST_FILE"
 rm -f "$sudoers_tmp"
 
 pam_committed=1
+
+# --- The other method ------------------------------------------------------------
+# A host has one method. Whatever the other one left here goes now that the
+# PAM files no longer use it: its module files or its server file with the
+# secret, its SELinux module, its state. $STATE_DIR/method is absent on a
+# host enrolled before there were two; that host has tacplus.
+prev_method=""
+if [[ -f "$STATE_DIR/method" ]]; then
+    prev_method=$(cat "$STATE_DIR/method")
+elif [[ -f "$STATE_DIR/installed" ]]; then
+    prev_method="tacplus"
+fi
+remove_method_artifacts "$OTHER_METHOD"
+if [[ "$prev_method" == "$OTHER_METHOD" ]]; then
+    info "This host used ${OTHER_METHOD} before: its PAM lines, shared secret and module configuration were removed."
+fi
+echo "$TAC_METHOD" > "$STATE_DIR/method"
 {
     echo "scope=${TAC_SCOPE}"
     echo "server=${TAC_SERVER}:${TAC_PORT}"
     echo "installed=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 } > "$STATE_DIR/installed"
 
-# --- KDE Plasma: no screen lock for TACACS+ accounts ---------------------------
+# --- KDE Plasma: no screen lock for tacctl accounts ----------------------------
 # KDE's lock screen authenticates as the logged-in user, not as root, so it
-# cannot read the root-only files that hold the shared secret: a TACACS+ user
-# who locked the screen could not unlock it. Plasma sources env/*.sh at session
+# cannot read the root-only files that hold the shared secret: a user who
+# locked the screen could not unlock it. Plasma sources env/*.sh at session
 # start; ours puts a locked-down config directory first for accounts this
-# script created (full name ending in "(TACACS+)"). Other accounts keep theirs.
+# script created (full name ending in "(TACACS+)" or "(RADIUS)"). Other
+# accounts keep theirs.
 # Timeout=0 is what the settings page shows as "Never"; Autolock is what the
 # locker itself obeys.
 if [[ -f "$PAM_DIR/kde" || -d "$XDG_DIR/plasma-workspace" || ( "$CLIENT_TEST" != "1" && -f /usr/lib/pam.d/kde ) ]]; then
     mkdir -p "$XDG_DIR/tacctl" "$XDG_DIR/plasma-workspace/env"
     chmod 0755 "$XDG_DIR/tacctl"
-    cat > "$XDG_DIR/tacctl/kscreenlockerrc" <<'EOF'
-# Managed by tacctl. Applies to TACACS+ accounts only.
+    cat > "$XDG_DIR/tacctl/kscreenlockerrc" <<EOF
+# Managed by tacctl. Applies to ${PROTO} accounts only.
 [Daemon]
-Autolock[$i]=false
-Timeout[$i]=0
-LockOnResume[$i]=false
-LockOnStart[$i]=false
+Autolock[\$i]=false
+Timeout[\$i]=0
+LockOnResume[\$i]=false
+LockOnStart[\$i]=false
 EOF
-    cat > "$XDG_DIR/tacctl/kdeglobals" <<'EOF'
-# Managed by tacctl. Applies to TACACS+ accounts only.
-[KDE Action Restrictions][$i]
+    cat > "$XDG_DIR/tacctl/kdeglobals" <<EOF
+# Managed by tacctl. Applies to ${PROTO} accounts only.
+[KDE Action Restrictions][\$i]
 action/lock_screen=false
 EOF
     cat > "$XDG_DIR/plasma-workspace/env/tacctl-nolock.sh" <<EOF
-# Managed by tacctl. KDE's lock screen cannot check TACACS+ passwords, so
-# screen locking is switched off for TACACS+ accounts.
+# Managed by tacctl. KDE's lock screen cannot check ${PROTO} passwords, so
+# screen locking is switched off for ${PROTO} accounts.
 case "\$(getent passwd "\$(id -un)" | cut -d: -f5)" in
-    *"(TACACS+)") export XDG_CONFIG_DIRS="${XDG_DIR}/tacctl:\${XDG_CONFIG_DIRS:-/etc/xdg}" ;;
+    *"(${PROTO})") export XDG_CONFIG_DIRS="${XDG_DIR}/tacctl:\${XDG_CONFIG_DIRS:-/etc/xdg}" ;;
 esac
 EOF
     chmod 0644 "$XDG_DIR/tacctl/kscreenlockerrc" "$XDG_DIR/tacctl/kdeglobals" "$XDG_DIR/plasma-workspace/env/tacctl-nolock.sh"
@@ -661,25 +970,36 @@ fi
 
 # --- Post-install checks -------------------------------------------------------
 if [[ -f "$PAM_DIR/sddm" || -f "$PAM_DIR/gdm-password" ]]; then
-    info "Graphical login (SDDM/GDM) uses TACACS+ for these users. Their keyring or wallet is not unlocked automatically."
+    info "Graphical login (SDDM/GDM) uses ${PROTO} for these users. Their keyring or wallet is not unlocked automatically."
 fi
 if [[ "${kde_nolock:-0}" == "1" ]]; then
-    info "KDE Plasma: screen locking is switched off for TACACS+ accounts (the lock screen cannot check"
-    info "  TACACS+ passwords). It applies from their next login; a session locked anyway is unlocked"
+    info "KDE Plasma: screen locking is switched off for ${PROTO} accounts (the lock screen cannot check"
+    info "  ${PROTO} passwords). It applies from their next login; a session locked anyway is unlocked"
     info "  from another login with: loginctl unlock-sessions"
 fi
-if ! timeout 4 bash -c "exec 3<>/dev/tcp/${TAC_SERVER}/${TAC_PORT}" 2>/dev/null; then
-    warn "Cannot reach ${TAC_SERVER} port ${TAC_PORT} from this host. TACACS+ logins will fail until it is reachable."
-fi
+# TACACS+ is TCP: a connect shows whether the server is reachable. RADIUS is
+# UDP and the server answers nothing but a valid request, so there is no
+# probe: only a login shows it.
+reachability_tacplus() {
+    if ! timeout 4 bash -c "exec 3<>/dev/tcp/${TAC_SERVER}/${TAC_PORT}" 2>/dev/null; then
+        warn "Cannot reach ${TAC_SERVER} port ${TAC_PORT} from this host. TACACS+ logins will fail until it is reachable."
+    fi
+}
+reachability_radius() {
+    info "RADIUS is UDP: whether ${TAC_SERVER} port ${TAC_PORT} answers this host only shows at a login. A server that does not answer costs a RADIUS user $((RADIUS_TIMEOUT * (RADIUS_RETRY + 1))) seconds per attempt."
+}
+"reachability_${TAC_METHOD}"
 if command -v sshd >/dev/null; then
     sshd_conf=$(sshd -T 2>/dev/null || true)
     grep -qi '^usepam yes' <<< "$sshd_conf" \
-        || warn "sshd has 'UsePAM no': SSH logins will not use TACACS+."
+        || warn "sshd has 'UsePAM no': SSH logins will not use ${PROTO}."
     grep -qi '^passwordauthentication yes' <<< "$sshd_conf" \
-        || warn "sshd has 'PasswordAuthentication no': TACACS+ users cannot log in over SSH with a password."
+        || warn "sshd has 'PasswordAuthentication no': ${PROTO} users cannot log in over SSH with a password."
 fi
 
-info "TACACS+ authentication installed for scope '${TAC_SCOPE}' (server ${TAC_SERVER}:${TAC_PORT})."
-info "Local administrators unaffected by TACACS+: $(local_admins | paste -sd' ')"
-info "Keep this session open and test from a second one: ssh <tacacs-user>@$(hostname)"
+info "${PROTO} authentication installed for scope '${TAC_SCOPE}' (server ${TAC_SERVER}:${TAC_PORT})."
+info "Local administrators unaffected by ${PROTO}: $(local_admins | paste -sd' ')"
+test_user="tacacs-user"
+if [[ "$TAC_METHOD" == "radius" ]]; then test_user="radius-user"; fi
+info "Keep this session open and test from a second one: ssh <${test_user}>@$(hostname)"
 exit 0

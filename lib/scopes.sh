@@ -427,7 +427,11 @@ _scope_prefix_collisions() {
 # Writer for store_apply: create the scope and, with a 4th argument, point
 # scope.default at it.
 _scope_add_write() {
-    store_scope_set "$1" "prefixes=$2" "secret=$3" || return 1
+    if [[ -n "${5:-}" ]]; then
+        store_scope_set "$1" "prefixes=$2" "secret=$3" "protocols=$5" || return 1
+    else
+        store_scope_set "$1" "prefixes=$2" "secret=$3" || return 1
+    fi
     if [[ -n "${4:-}" ]]; then
         write_default_scope "$1" || return 1
     fi
@@ -436,7 +440,7 @@ _scope_add_write() {
 cmd_scope_add() {
     local name="${1:-}"
     if [[ -z "$name" ]]; then
-        error "Usage: tacctl scope add <name> --prefixes <cidrs> [--secret <value>|generate] [--default]"
+        error "Usage: tacctl scope add <name> --prefixes <cidrs> [--secret <value>|generate] [--protocols <protocol>[,<protocol>...]] [--default]"
         exit 1
     fi
     shift
@@ -450,15 +454,31 @@ cmd_scope_add() {
         exit 1
     fi
 
-    local prefixes="" secret_arg="" make_default=""
+    local prefixes="" secret_arg="" make_default="" protocols_arg="" protocols=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --prefixes) prefixes="${2:-}"; shift 2 ;;
             --secret)   secret_arg="${2:-}"; shift 2 ;;
+            --protocols) protocols_arg="${2:-}"; shift 2 ;;
             --default)  make_default="yes"; shift ;;
             *) error "Unknown flag: '$1'"; exit 1 ;;
         esac
     done
+
+    # --protocols: the filter 'scope protocols <name> set' would write,
+    # stored in the fixed order of SCOPE_PROTOCOLS.
+    if [[ -n "$protocols_arg" ]]; then
+        local p known
+        for p in ${protocols_arg//,/ }; do
+            if [[ " ${SCOPE_PROTOCOLS} " != *" ${p} "* ]]; then
+                error "Unknown protocol '${p}'. Known protocols: ${SCOPE_PROTOCOLS// /, }"
+                exit 1
+            fi
+        done
+        for known in $SCOPE_PROTOCOLS; do
+            [[ ",${protocols_arg}," == *",${known},"* ]] && protocols+="${protocols:+,}${known}"
+        done
+    fi
 
     if [[ -z "$prefixes" ]]; then
         error "--prefixes <cidrs> is required (comma-separated list)."
@@ -495,7 +515,7 @@ cmd_scope_add() {
         fi
     fi
 
-    store_apply _scope_add_write "$name" "$csv" "$secret_value" "$make_default" || exit $?
+    store_apply _scope_add_write "$name" "$csv" "$secret_value" "$make_default" "$protocols" || exit $?
 
     if [[ -n "$make_default" ]]; then
         info "Scope '${name}' added and set as default."

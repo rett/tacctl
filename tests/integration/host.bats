@@ -1,7 +1,9 @@
 #!/usr/bin/env bats
 # Integration tests for 'tacctl host' (enroll / sync / unenroll / list) with
 # ssh stubbed: the stub stores what would have been copied to the host and
-# records the command that would have run there.
+# records the command that would have run there. The second half is the
+# method (tacplus | radius): what is pushed, the registry's seventh field,
+# the scope's protocols, switching, and host.default_method.
 
 load ../helpers/setup
 load ../helpers/tmpenv
@@ -162,7 +164,7 @@ _hosts() { cat "${TACCTL_STATE_DIR}/linux-hosts" 2>/dev/null; }
     "$TACCTL_BIN_SCRIPT" user add bob readonly --hash "$HASH" --scopes lab > /dev/null
     "$TACCTL_BIN_SCRIPT" user disable bob > /dev/null
     run "$TACCTL_BIN_SCRIPT" host list
-    assert_line --regexp "web1 +web1 +lab +192\.0\.2\.1 +1$"
+    assert_line --regexp "web1 +web1 +lab +192\.0\.2\.1 +tacplus +1$"
 }
 
 @test "host sync: unknown host is an error" {
@@ -202,7 +204,7 @@ _hosts() { cat "${TACCTL_STATE_DIR}/linux-hosts" 2>/dev/null; }
     "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab > /dev/null
     run "$TACCTL_BIN_SCRIPT" host list
     assert_success
-    assert_line --regexp "web1 +web1 +lab +192\.0\.2\.1 +1"
+    assert_line --regexp "web1 +web1 +lab +192\.0\.2\.1 +tacplus +1"
 }
 
 @test "host: is superuser-only" {
@@ -321,4 +323,272 @@ _prebuilt_env() {
     assert_success
     run _hosts
     assert_output "web1|web1||lab|198.51.100.7|"
+}
+
+# --- methods (tacplus | radius) ------------------------------------------------
+
+# Enable the RADIUS backend the way tacctl.yaml records it. Enough for
+# commands that only read (an enroll into an existing scope).
+radius_on() {
+    printf 'backends:\n  enabled: [tacacs, radius]\n' >> "${TACCTL_STATE_DIR}/tacctl.yaml"
+}
+
+# The same, for tests whose command also changes the store (a scope created
+# or its protocols changed): the render then needs the daemon's config check,
+# which a stand-in that accepts everything provides.
+radius_on_rendering() {
+    mkdir -p "$(dirname "$TACCTL_RADIUS_BIN")" "$TACCTL_RADIUS_DIR" "$TACCTL_RADIUS_LOG"
+    printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "$TACCTL_RADIUS_BIN"
+    chmod +x "$TACCTL_RADIUS_BIN"
+    stub_cmd id 'exit 0'
+    stub_cmd sleep
+    stub_cmd ss
+    export TACCTL_SETTLE_SECONDS=0
+    radius_on
+    "$TACCTL_BIN_SCRIPT" config render > /dev/null
+}
+
+_protocols() { "$TACCTL_BIN_SCRIPT" scope protocols "$1" | sed -n "s/.*Scope '$1' protocols: //p"; }
+
+@test "host enroll --method radius: refused while the RADIUS backend is not enabled; nothing reaches the host" {
+    run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab --method radius
+    assert_failure
+    assert_output --partial "needs the RADIUS backend, which is not enabled"
+    assert_output --partial "tacctl backend enable radius"
+    run grep -c "^ssh" "$CALLS_LOG"
+    assert_output "0"
+    run _hosts
+    assert_output ""
+    # No per-host scope was created on the way either.
+    run "$TACCTL_BIN_SCRIPT" host enroll web1 --method radius
+    assert_failure
+    run "$TACCTL_BIN_SCRIPT" scope show linux-web1
+    assert_failure
+}
+
+@test "host enroll --method: an unknown method is refused" {
+    run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab --method ldap
+    assert_failure
+    assert_output --partial "Unknown method 'ldap'. Methods: tacplus, radius"
+    run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab --method
+    assert_failure
+    run grep -c "^ssh" "$CALLS_LOG"
+    assert_output "0"
+}
+
+@test "host enroll --method radius: pushes the package-based script and registers the method" {
+    radius_on
+    # Neither the pam_tacplus tarball nor a container build is involved.
+    rm -f "$TACCTL_LINUX_DIR"/*.tar.gz
+    stub_cmd podman
+    run "$TACCTL_BIN_SCRIPT" host enroll admin@web1.example.net --scope lab --method radius
+    assert_success
+    assert_output --partial "in scope 'lab', server 192.0.2.1, method radius..."
+    assert_output --partial "Host 'web1' enrolled"
+    run _hosts
+    assert_output "web1|admin@web1.example.net||lab|192.0.2.1||radius"
+    run cat "$PUSHED"
+    assert_line "TAC_METHOD=radius"
+    assert_line "TAC_SERVER=192.0.2.1"
+    assert_line "TAC_PORT=1812"
+    assert_line "TAC_ACCT_PORT=1813"
+    assert_line "TAC_SECRET=0123456789abcdef0123456789abcdef"
+    assert_output --partial "alice:superuser:20000"
+    refute_line "__TARBALL__"
+    refute_output --partial "TARBALL_SHA256="
+    run bash -n "$PUSHED"
+    assert_success
+    run grep -cE "^podman|os-release" "$CALLS_LOG"
+    assert_output "0"
+}
+
+@test "host enroll --method radius: the ports are the auth and acct listeners'; --build-on-host does not apply" {
+    radius_on
+    printf 'listeners:\n  radius:\n    auth: {network: udp, address: "192.0.2.1:11812", role: auth}\n    acct: {network: udp, address: ":11899", role: acct}\n' \
+        >> "${TACCTL_STATE_DIR}/tacctl.yaml"
+    run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab --method radius --build-on-host
+    assert_success
+    assert_output --partial "--build-on-host does not apply to method radius"
+    run cat "$PUSHED"
+    assert_line "TAC_PORT=11812"
+    assert_line "TAC_ACCT_PORT=11899"
+}
+
+@test "host enroll: the default method is tacplus and its script says so" {
+    run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab
+    assert_success
+    refute_output --partial "method"
+    run sed '/^__TARBALL__$/,$d' "$PUSHED"
+    assert_line "TAC_METHOD=tacplus"
+    assert_line "TAC_PORT=49"
+    refute_line --regexp "^TAC_ACCT_PORT="
+}
+
+@test "host enroll --method radius: a scope that is not served over RADIUS is refused" {
+    "$TACCTL_BIN_SCRIPT" scope protocols lab set tacacs > /dev/null
+    radius_on
+    run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab --method radius
+    assert_failure
+    assert_output --partial "Scope 'lab' is not served over RADIUS (its protocols: tacacs)"
+    assert_output --partial "tacctl scope protocols lab set tacacs,radius"
+    run grep -c "^ssh" "$CALLS_LOG"
+    assert_output "0"
+}
+
+@test "host enroll: a scope created for the host serves the method's protocol only" {
+    run "$TACCTL_BIN_SCRIPT" host enroll web1
+    assert_success
+    run _protocols linux-web1
+    assert_output "tacacs"
+
+    radius_on_rendering
+    stub_cmd getent 'echo "192.0.2.51 STREAM web2"'
+    run "$TACCTL_BIN_SCRIPT" host enroll web2 --method radius
+    assert_success
+    run _protocols linux-web2
+    assert_output "radius"
+    run _hosts
+    assert_line "web2|web2||linux-web2|192.0.2.1||radius"
+    # Its /32 and secret are a RADIUS client, and not a TACACS+ one.
+    grep -q "tacctl_scope = \"linux-web2\"" "${TACCTL_RADIUS_DIR}/tacctl-radius.conf"
+    run grep -c "linux-web2" "${TACCTL_ETC}/tacquito.yaml"
+    assert_output "0"
+}
+
+@test "host enroll: re-enrolling with the other method switches the host and its own scope" {
+    radius_on_rendering
+    "$TACCTL_BIN_SCRIPT" host enroll web1 > /dev/null
+    run _hosts
+    assert_output "web1|web1||linux-web1|192.0.2.1|"
+
+    run "$TACCTL_BIN_SCRIPT" host enroll web1 --method radius
+    assert_success
+    assert_output --partial "Scope 'linux-web1' was limited to tacacs; opening it to radius"
+    assert_output --partial "Switching web1 from tacplus to radius."
+    run _hosts
+    assert_output "web1|web1||linux-web1|192.0.2.1||radius"
+    run _protocols linux-web1
+    assert_output "radius"
+    grep -q '^TAC_METHOD=radius$' "$PUSHED"
+
+    # Without --method a registered host keeps the method it has.
+    run "$TACCTL_BIN_SCRIPT" host enroll web1
+    assert_success
+    refute_output --partial "Switching"
+    grep -q '^TAC_METHOD=radius$' "$PUSHED"
+    run _hosts
+    assert_output "web1|web1||linux-web1|192.0.2.1||radius"
+
+    # And back.
+    run "$TACCTL_BIN_SCRIPT" host enroll web1 --method tacplus
+    assert_success
+    assert_output --partial "Switching web1 from radius to tacplus."
+    run _hosts
+    assert_output "web1|web1||linux-web1|192.0.2.1|"
+    run _protocols linux-web1
+    assert_output "tacacs"
+    grep -q '^TAC_METHOD=tacplus$' "$PUSHED"
+}
+
+@test "host enroll: a failed switch leaves the registration, and the scope open to both" {
+    radius_on_rendering
+    "$TACCTL_BIN_SCRIPT" host enroll web1 > /dev/null
+    SSH_RUN_FAILS=1 run "$TACCTL_BIN_SCRIPT" host enroll web1 --method radius
+    assert_failure
+    assert_output --partial "its registration (method tacplus) was left as it was"
+    run _hosts
+    assert_output "web1|web1||linux-web1|192.0.2.1|"
+    run _protocols linux-web1
+    assert_output "tacacs,radius"
+}
+
+@test "host enroll: a per-host scope other hosts use is not opened to another protocol" {
+    radius_on_rendering
+    "$TACCTL_BIN_SCRIPT" host enroll web1 > /dev/null
+    "$TACCTL_BIN_SCRIPT" host enroll web1 --name web9 --scope linux-web1 > /dev/null
+    run "$TACCTL_BIN_SCRIPT" host enroll web1 --method radius
+    assert_failure
+    assert_output --partial "Scope 'linux-web1' is not served over RADIUS"
+    assert_output --partial "Other enrolled hosts use scope 'linux-web1'"
+    run _protocols linux-web1
+    assert_output "tacacs"
+}
+
+@test "host sync and unenroll: use the method the host was enrolled with" {
+    radius_on
+    "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab --method radius > /dev/null
+    "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab --name web2 > /dev/null
+    run "$TACCTL_BIN_SCRIPT" host sync web1
+    assert_success
+    run cat "$PUSHED"
+    assert_line "TAC_METHOD=radius"
+    assert_line "TAC_PORT=1812"
+    run "$TACCTL_BIN_SCRIPT" host sync web2
+    assert_success
+    run cat "$PUSHED"
+    assert_line "TAC_METHOD=tacplus"
+    assert_line "TAC_PORT=49"
+
+    run "$TACCTL_BIN_SCRIPT" host list
+    assert_line --regexp "web1 +web1 +lab +192\.0\.2\.1 +radius +1$"
+    assert_line --regexp "web2 +web1 +lab +192\.0\.2\.1 +tacplus +1$"
+
+    run "$TACCTL_BIN_SCRIPT" host unenroll web1
+    assert_success
+    assert_output --partial "Removing RADIUS authentication from web1"
+    run "$TACCTL_BIN_SCRIPT" host unenroll web2
+    assert_success
+    assert_output --partial "Removing TACACS+ authentication from web2"
+}
+
+@test "host: a six-field registry line is a tacplus host" {
+    echo "old1|admin@old1||lab|192.0.2.1|" > "${TACCTL_STATE_DIR}/linux-hosts"
+    run "$TACCTL_BIN_SCRIPT" host list
+    assert_line --regexp "old1 +admin@old1 +lab +192\.0\.2\.1 +tacplus +1$"
+    run "$TACCTL_BIN_SCRIPT" host sync old1
+    assert_success
+    run cat "$PUSHED"
+    assert_line "TAC_METHOD=tacplus"
+    # Re-enrolled without --method it stays tacplus, whatever the default is.
+    radius_on
+    "$TACCTL_BIN_SCRIPT" host default-method radius > /dev/null
+    run "$TACCTL_BIN_SCRIPT" host enroll admin@old1 --scope lab
+    assert_success
+    run _hosts
+    assert_output "old1|admin@old1||lab|192.0.2.1|"
+}
+
+@test "host default-method: sets host.default_method, which new hosts get" {
+    run "$TACCTL_BIN_SCRIPT" host default-method
+    assert_success
+    assert_output --partial "Default method for new hosts: tacplus"
+    run "$TACCTL_BIN_SCRIPT" host default-method ldap
+    assert_failure
+    run "$TACCTL_BIN_SCRIPT" host default-method radius
+    assert_success
+    assert_output --partial "RADIUS backend is not enabled yet"
+    run "$TACCTL_BIN_SCRIPT" config get host.default_method
+    assert_output "radius"
+    # The default names a backend that is off: enroll says so, and --method wins.
+    run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab
+    assert_failure
+    assert_output --partial "tacctl backend enable radius"
+    run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab --method tacplus
+    assert_success
+    radius_on
+    run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab --name web2
+    assert_success
+    run _hosts
+    assert_line "web1|web1||lab|192.0.2.1|"
+    assert_line "web2|web1||lab|192.0.2.1||radius"
+    run "$TACCTL_BIN_SCRIPT" host default-method tacplus
+    assert_success
+    run "$TACCTL_BIN_SCRIPT" config get host.default_method
+    assert_output "tacplus"
+}
+
+@test "host.default_method: only tacplus or radius is accepted in tacctl.yaml" {
+    printf 'host:\n  default_method: ldap\n' >> "${TACCTL_STATE_DIR}/tacctl.yaml"
+    run "$TACCTL_BIN_SCRIPT" config validate
+    assert_output --partial "host.default_method"
 }

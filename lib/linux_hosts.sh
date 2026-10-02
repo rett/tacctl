@@ -1,10 +1,18 @@
 # shellcheck shell=bash
-# tacctl lib/linux_hosts.sh -- config linux (pam_tacplus client scripts, prebuilt modules) and host enroll/sync/unenroll
+# tacctl lib/linux_hosts.sh -- config linux (client scripts for pam_tacplus and pam_radius_auth, prebuilt modules) and host enroll/sync/unenroll
 # Sourced by bin/tacctl.sh (see the load block there for ordering); not executable.
 
-# --- CONFIG LINUX (TACACS+ login for Linux hosts) ---
-# Linux hosts authenticate through pam_tacplus. No distribution ships a
-# usable build and upstream is archived, so tacctl pins one tag, prepares a
+# --- CONFIG LINUX (TACACS+ or RADIUS login for Linux hosts) ---
+# A Linux host authenticates against this server by one of two methods.
+# Accounts, tiers, sudo and the fallback to local passwords are the same;
+# the PAM module and what it needs differ (config/linux/client-install.sh):
+#
+#   tacplus  pam_tacplus, against the TACACS+ backend (the default)
+#   radius   pam_radius_auth from the host's distribution package (EPEL on
+#            the RHEL family), against the RADIUS backend
+#
+# For tacplus: no distribution ships a usable build of pam_tacplus and
+# upstream is archived, so tacctl pins one tag, prepares a
 # self-contained source tarball once on the server ('config linux build'),
 # and embeds it in a per-scope install script ('config linux script') that
 # builds it on the target with only gcc, make and the PAM headers.
@@ -21,6 +29,66 @@ PAM_TACPLUS_TAG="v1.7.0"
 PAM_TACPLUS_COMMIT="b1b7f5351eca07f1bf2f6184602bdfb73d10a155"
 PAM_TACPLUS_TARBALL="${LINUX_DIR}/pam_tacplus-1.7.0.tar.gz"
 LINUX_BUILDS_DIR="${LINUX_DIR}/builds"
+
+# The methods a host can be enrolled with. Each is served by one backend,
+# whose id is also the name of its protocol in a scope's 'protocols' filter.
+LINUX_METHODS="tacplus radius"
+
+linux_method_backend() {
+    case "$1" in
+        tacplus) echo "tacacs" ;;
+        radius)  echo "radius" ;;
+        *) return 1 ;;
+    esac
+}
+
+linux_method_label() {
+    if [[ "$1" == "radius" ]]; then echo "RADIUS"; else echo "TACACS+"; fi
+}
+
+# linux_method_require <method>: the method is known and its backend enabled.
+linux_method_require() {
+    local method="$1" backend
+    if ! backend=$(linux_method_backend "$method"); then
+        error "Unknown method '${method}'. Methods: ${LINUX_METHODS// /, }"
+        return 1
+    fi
+    _backends_load || return 1
+    if ! _backend_is_enabled "$backend"; then
+        error "Method '${method}' needs the $(linux_method_label "$method") backend, which is not enabled on this server."
+        error "Enable it first: tacctl backend enable ${backend}"
+        return 1
+    fi
+}
+
+# linux_scope_protocols <scope>: the scope's protocols filter as a csv, empty
+# when it has none (every enabled backend serves it).
+linux_scope_protocols() {
+    local protocols
+    protocols=$(model_scope "$1" protocols) || return 1
+    printf '%s\n' "$protocols" | awk 'NF' | paste -sd,
+}
+
+# linux_scope_serves <scope> <method>: fails, saying how to change it, when
+# the scope's protocols filter leaves the method's protocol out.
+linux_scope_serves() {
+    local scope="$1" method="$2" backend protocols
+    backend=$(linux_method_backend "$method")
+    protocols=$(linux_scope_protocols "$scope") || return 1
+    if [[ -n "$protocols" && ",${protocols}," != *",${backend},"* ]]; then
+        error "Scope '${scope}' is not served over $(linux_method_label "$method") (its protocols: ${protocols})."
+        error "Allow it: tacctl scope protocols ${scope} set ${protocols},${backend}"
+        return 1
+    fi
+}
+
+# The method for a host that is not registered yet and was given none.
+linux_default_method() {
+    local method
+    method=$(conf_get host.default_method tacplus)
+    linux_method_backend "$method" > /dev/null || method="tacplus"
+    echo "$method"
+}
 
 # Stable UID for a user across every enrolled host. Allocated once, never
 # reused, kept in $LINUX_UID_FILE as "name:uid" lines.
@@ -120,23 +188,29 @@ cmd_config_linux_build() {
     info "Wrote ${PAM_TACPLUS_TARBALL} (sha256 $(sha256sum "$PAM_TACPLUS_TARBALL" | awk '{print $1}'))."
 }
 
-# linux_write_install_script <scope> <server> <outfile> [accounts-only] [prebuilt-dir]
+# linux_write_install_script <scope> <server> <outfile> [accounts-only] [prebuilt-dir] [method]
 # Writes the per-scope client script to <outfile> (mode 0600). With a 4th
 # argument the pam_tacplus tarball is left out: enough for --accounts-only.
 # A 5th names a directory under $LINUX_BUILDS_DIR whose prebuilt module is
-# embedded as well; the host uses it in preference to compiling.
+# embedded as well; the host uses it in preference to compiling. The 6th is
+# the method (default tacplus); a radius script carries no tarball and no
+# prebuilt module, the host installs its distribution's package.
 linux_write_install_script() {
-    local scope="$1" server="$2" output="$3" accounts_only="${4:-}" prebuilt="${5:-}"
-    if [[ -z "$accounts_only" && ! -f "$PAM_TACPLUS_TARBALL" ]]; then
+    local scope="$1" server="$2" output="$3" accounts_only="${4:-}" prebuilt="${5:-}" method="${6:-tacplus}"
+    local embed=""
+    if [[ -z "$accounts_only" && "$method" == "tacplus" ]]; then embed="yes"; fi
+    if [[ -n "$embed" && ! -f "$PAM_TACPLUS_TARBALL" ]]; then
         error "pam_tacplus tarball not found. Run 'tacctl config linux build' first."
         return 1
     fi
 
-    # pam_tacplus reads the secret as one whitespace-delimited PAM argument.
-    local secret
+    # pam_tacplus reads the secret as one whitespace-delimited PAM argument,
+    # pam_radius_auth as one whitespace-delimited field of its server file.
+    local secret where="on a PAM line"
+    if [[ "$method" == "radius" ]]; then where="in pam_radius_auth's server file"; fi
     secret=$(model_scope "$scope" secret) || secret=""
     if [[ ! "$secret" =~ ^[A-Za-z0-9_.+/=-]+$ || "$secret" == REPLACE* ]]; then
-        error "Scope '${scope}' has a secret that cannot be written on a PAM line (or a placeholder)."
+        error "Scope '${scope}' has a secret that cannot be written ${where} (or a placeholder)."
         error "Regenerate it: tacctl scope secret ${scope} generate"
         return 1
     fi
@@ -146,12 +220,23 @@ linux_write_install_script() {
     fi
 
     # pam_tacplus talks to the TACACS+ backend's default listener
-    # (listeners.tacacs.default in tacctl.yaml).
-    local listen="" port _lname _lnet _laddr
-    while read -r _lname _lnet _laddr; do
-        [[ "$_lname" == "default" ]] && listen="$_laddr"
-    done < <(backend_call tacacs listeners list)
-    listen=${listen:-:49}
+    # (listeners.tacacs.default in tacctl.yaml); pam_radius_auth to the
+    # RADIUS backend's 'auth' listener, and for session accounting to 'acct'.
+    local listen="" port acct_port="" _lname _lnet _laddr
+    if [[ "$method" == "radius" ]]; then
+        while read -r _lname _lnet _laddr; do
+            case "$_lname" in
+                auth) listen="$_laddr" ;;
+                acct) acct_port="${_laddr##*:}" ;;
+            esac
+        done < <(backend_call radius listeners list)
+        listen=${listen:-:1812}
+    else
+        while read -r _lname _lnet _laddr; do
+            [[ "$_lname" == "default" ]] && listen="$_laddr"
+        done < <(backend_call tacacs listeners list)
+        listen=${listen:-:49}
+    fi
     port="${listen##*:}"
 
     LINUX_SCRIPT_USERS=$(linux_scope_users "$scope")
@@ -165,11 +250,13 @@ linux_write_install_script() {
         echo "# CONTAINS THE SCOPE'S SHARED SECRET. Delete after use."
         echo "set -euo pipefail"
         echo "umask 077"
+        printf 'TAC_METHOD=%q\n' "$method"
         printf 'TAC_SERVER=%q\n' "$server"
         printf 'TAC_PORT=%q\n' "$port"
+        if [[ "$method" == "radius" ]]; then printf 'TAC_ACCT_PORT=%q\n' "$acct_port"; fi
         printf 'TAC_SECRET=%q\n' "$secret"
         printf 'TAC_SCOPE=%q\n' "$scope"
-        if [[ -z "$accounts_only" ]]; then
+        if [[ -n "$embed" ]]; then
             printf 'TARBALL_SHA256=%q\n' "$(sha256sum "$PAM_TACPLUS_TARBALL" | awk '{print $1}')"
             if [[ -n "$prebuilt" ]]; then
                 printf 'PREBUILT_SHA256=%q\n' "$(sha256sum "$prebuilt/module.tar.gz" | awk '{print $1}')"
@@ -178,7 +265,7 @@ linux_write_install_script() {
         fi
         printf 'TAC_USERS=%q\n' "$LINUX_SCRIPT_USERS"
         cat "${LINUX_SRC_DIR}/client-install.sh"
-        if [[ -z "$accounts_only" ]]; then
+        if [[ -n "$embed" ]]; then
             echo "__TARBALL__"
             base64 "$PAM_TACPLUS_TARBALL"
             if [[ -n "$prebuilt" ]]; then
@@ -350,35 +437,41 @@ cmd_config_linux_builds() {
 }
 
 cmd_config_linux_script() {
-    local scope="" server="" output=""
+    local scope="" server="" output="" method=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --scope)  scope="${2:-}";  shift 2 || true ;;
             --server) server="${2:-}"; shift 2 || true ;;
+            --method) method="${2:-}"; shift 2 || true ;;
             --output|-o) output="${2:-}"; shift 2 || true ;;
             *)
                 error "Unknown argument: '$1'"
-                error "Usage: tacctl config linux script [--scope <name>] [--server <address>] [--output <file>]"
+                error "Usage: tacctl config linux script [--scope <name>] [--server <address>] [--method tacplus|radius] [--output <file>]"
                 return 1
                 ;;
         esac
     done
+    method="${method:-$(linux_default_method)}"
+    linux_method_require "$method" || return 1
+    local label
+    label=$(linux_method_label "$method")
     if [[ -z "$scope" ]]; then
         scope=$(read_default_scope)
         [[ -n "$scope" ]] || { error "No default scope set and no --scope provided."; return 1; }
     elif ! _scope_require "$scope"; then
         return 1
     fi
+    linux_scope_serves "$scope" "$method" || return 1
     if [[ -z "$server" ]]; then
         server=$(ip -4 route get 1.0.0.0 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}')
         [[ -n "$server" ]] || { error "Could not detect this server's address. Pass --server <address>."; return 1; }
     fi
 
     output="${output:-tacctl-linux-${scope}.sh}"
-    linux_write_install_script "$scope" "$server" "$output" || return 1
+    linux_write_install_script "$scope" "$server" "$output" "" "" "$method" || return 1
     local users="$LINUX_SCRIPT_USERS" port="$LINUX_SCRIPT_PORT"
     if [[ -z "$users" ]]; then
-        warn "No users in scope '${scope}' can become Linux accounts; the script installs TACACS+ with no users."
+        warn "No users in scope '${scope}' can become Linux accounts; the script installs ${label} with no users."
     fi
     # Under sudo the file would otherwise be root's; hand it to the caller.
     if [[ -n "${SUDO_UID:-}" ]]; then
@@ -388,6 +481,9 @@ cmd_config_linux_script() {
     info "Wrote ${output} (mode 0600; contains the shared secret for scope '${scope}')."
     echo ""
     echo "  Server:  ${server} port ${port}"
+    if [[ "$method" == "radius" ]]; then
+        echo "  Method:  radius (the host installs pam_radius_auth from its distribution's packages; EPEL on the RHEL family)"
+    fi
     echo "  Users:   $(awk -F: 'NF { printf "%s(%s) ", $1, $2 }' <<< "$users")"
     echo ""
     echo "  The target host's address must be inside scope '${scope}':"
@@ -411,7 +507,7 @@ cmd_config_linux_remove_script() {
     if [[ -n "${SUDO_UID:-}" ]]; then
         chown "${SUDO_UID}:${SUDO_GID:-$SUDO_UID}" "$output" 2>/dev/null || true
     fi
-    info "Wrote ${output} (no secrets). Run it as root on the host to remove TACACS+ authentication."
+    info "Wrote ${output} (no secrets). Run it as root on the host to remove TACACS+ or RADIUS authentication."
     info "Local accounts and home directories are left in place."
 }
 
@@ -483,12 +579,12 @@ cmd_config_linux() {
         builds)        cmd_config_linux_builds "$@" ;;
         *)
             echo ""
-            echo -e "${BOLD}Linux host TACACS+ login${NC}"
+            echo -e "${BOLD}Linux host TACACS+ or RADIUS login${NC}"
             echo ""
             echo "Usage: tacctl config linux <subcommand>"
             echo ""
             echo "  build                                   Fetch and prepare the pinned pam_tacplus source (once, and after upgrades)"
-            echo "  script [--scope <name>] [--server <address>] [--output <file>]"
+            echo "  script [--scope <name>] [--server <address>] [--method tacplus|radius] [--output <file>]"
             echo "                                          Write the install script for hosts in a scope (contains the secret)"
             echo "  remove-script [--output <file>]         Write the removal script (no secrets; accounts are left in place)"
             echo "  uid [<username> [<uid>]]                Show or change the UID/GID a user gets on every host"
@@ -507,8 +603,11 @@ cmd_config_linux() {
 # 'tacctl host' pushes the 'config linux' scripts to a host and runs them
 # there, and keeps a registry of enrolled hosts so 'host sync' knows where
 # to push account changes. One line per host in $LINUX_HOSTS_FILE:
-#   name|target|port|scope|server|identity
-# target is [user@]host for ssh, or 'local' for this machine.
+#   name|target|port|scope|server|identity[|method]
+# target is [user@]host for ssh, or 'local' for this machine. A line of six
+# fields is a tacplus host: that is how every line was written before there
+# were two methods, and how a tacplus host is still written, so the file of
+# a server that only uses TACACS+ stays readable by the release before.
 #
 # ssh runs as the user who invoked sudo, so their keys and known_hosts are
 # used. The remote login must be root or able to sudo.
@@ -528,11 +627,23 @@ host_forget() {
     rm -f "$tmp"
 }
 
-host_remember() { # <name> <target> <port> <scope> <server> <identity>
+host_remember() { # <name> <target> <port> <scope> <server> <identity> [<method>]
     host_forget "$1"
-    local IFS='|'
-    echo "$*" >> "$LINUX_HOSTS_FILE"
+    local line="$1|$2|$3|$4|$5|$6"
+    if [[ "${7:-tacplus}" != "tacplus" ]]; then line+="|$7"; fi
+    echo "$line" >> "$LINUX_HOSTS_FILE"
     chmod 600 "$LINUX_HOSTS_FILE"
+}
+
+# host_method <name>: the method a registered host was enrolled with;
+# nothing when it is not registered.
+host_method() {
+    local record method
+    record=$(host_record "$1")
+    [[ -n "$record" ]] || return 0
+    method=$(cut -d'|' -f7 <<< "$record")
+    linux_method_backend "${method:-tacplus}" > /dev/null || method="tacplus"
+    echo "${method:-tacplus}"
 }
 
 _host_ssh() { # <port> <identity> <ssh args...>
@@ -608,7 +719,7 @@ host_server_address_for() {
 }
 
 cmd_host_enroll() {
-    local target="" scope="" server="" name="" port="" identity="" is_local=0 build_on_host=0
+    local target="" scope="" server="" name="" port="" identity="" is_local=0 build_on_host=0 method=""
     local -a script_args=()
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -627,6 +738,13 @@ cmd_host_enroll() {
             --name)     name="${2:-}";     shift 2 || true ;;
             --port)     port="${2:-}";     shift 2 || true ;;
             --identity) identity="${2:-}"; shift 2 || true ;;
+            --method)
+                if [[ -z "${2:-}" ]]; then
+                    error "--method needs a method: ${LINUX_METHODS// /, }"
+                    return 1
+                fi
+                method="$2"; shift 2
+                ;;
             -*) error "Unknown option: '$1'"; cmd_host_usage; return 1 ;;
             *)
                 [[ -z "$target" ]] || { error "Only one host per enroll."; return 1; }
@@ -675,31 +793,64 @@ cmd_host_enroll() {
         error "Identity file '${identity}' not found."
         return 1
     fi
-    if [[ ! -f "$PAM_TACPLUS_TARBALL" ]]; then
+
+    # The method: the one asked for; else the one a registered host has (so
+    # re-enrolling never switches a host by accident); else the default.
+    # Re-enrolling with the other method is how a host switches.
+    local prev_method label backend
+    prev_method=$(host_method "$name")
+    method="${method:-${prev_method:-$(linux_default_method)}}"
+    linux_method_require "$method" || return 1
+    label=$(linux_method_label "$method")
+    backend=$(linux_method_backend "$method")
+    if [[ "$method" == "tacplus" && ! -f "$PAM_TACPLUS_TARBALL" ]]; then
         error "pam_tacplus tarball not found. Run 'tacctl config linux build' first."
         return 1
     fi
 
     # Each host gets its own scope (its address as a /32, its own secret)
     # unless told to share one, so a secret read off one host is useless
-    # from any other.
+    # from any other. A scope created here serves the method's protocol
+    # only. One found from an earlier enroll of this host with the other
+    # method is opened to both for the switch and narrowed to the new one
+    # once the host has switched; a scope other hosts use, or one named with
+    # --scope, is never changed here.
+    local narrow_scope="" protocols
     if [[ -z "$scope" ]]; then
         scope="linux-${name}"
         if model_scope_exists "$scope"; then
             info "Using existing scope '${scope}'."
+            protocols=$(linux_scope_protocols "$scope") || return 1
+            if [[ -n "$protocols" && ",${protocols}," != *",${backend},"* ]]; then
+                if [[ -n "$(awk -F'|' -v s="$scope" -v n="$name" '$4 == s && $1 != n' "$LINUX_HOSTS_FILE" 2>/dev/null)" ]]; then
+                    linux_scope_serves "$scope" "$method" || true
+                    error "Other enrolled hosts use scope '${scope}', so it is not changed here."
+                    return 1
+                fi
+                info "Scope '${scope}' was limited to ${protocols}; opening it to ${backend} for this host."
+                store_apply store_scope_set "$scope" "protocols=${SCOPE_PROTOCOLS// /,}" || return 1
+                narrow_scope="yes"
+            fi
         else
             info "Creating scope '${scope}' for ${host_ip}/32..."
-            cmd_scope_add "$scope" --prefixes "${host_ip}/32" --secret generate >/dev/null
+            cmd_scope_add "$scope" --prefixes "${host_ip}/32" --secret generate --protocols "$backend" >/dev/null
         fi
     elif ! _scope_require "$scope"; then
         return 1
+    elif ! linux_scope_serves "$scope" "$method"; then
+        return 1
     fi
 
-    # Build the module here for the host's OS release when we can, so the
-    # host needs no compiler. Anything short of that falls back to
-    # compiling on the host from the embedded source.
+    # tacplus only: build the module here for the host's OS release when we
+    # can, so the host needs no compiler. Anything short of that falls back
+    # to compiling on the host from the embedded source. A radius host
+    # installs its distribution's package.
     local prebuilt="" platform image arch
-    if [[ "$build_on_host" == "1" ]]; then
+    if [[ "$method" == "radius" ]]; then
+        if [[ "$build_on_host" == "1" ]]; then
+            warn "--build-on-host does not apply to method radius: the host installs pam_radius_auth from its package repositories."
+        fi
+    elif [[ "$build_on_host" == "1" ]]; then
         info "pam_tacplus will be compiled on the host (--build-on-host)."
     elif platform=$(linux_host_platform "$target" "$port" "$identity"); then
         image="${platform%%|*}"
@@ -717,16 +868,32 @@ cmd_host_enroll() {
 
     local script
     script=$(mktemp)
-    linux_write_install_script "$scope" "$server" "$script" "" "$prebuilt" || { rm -f "$script"; return 1; }
-    info "Enrolling ${name} (${target}) in scope '${scope}', server ${server}..."
+    linux_write_install_script "$scope" "$server" "$script" "" "$prebuilt" "$method" || { rm -f "$script"; return 1; }
+    local how=""
+    if [[ "$method" != "tacplus" ]]; then how=", method ${method}"; fi
+    if [[ -n "$prev_method" && "$prev_method" != "$method" ]]; then
+        info "Switching ${name} from ${prev_method} to ${method}."
+    fi
+    info "Enrolling ${name} (${target}) in scope '${scope}', server ${server}${how}..."
     if ! host_run_script "$target" "$port" "$identity" "$script" "${script_args[@]}"; then
         rm -f "$script"
-        error "Enrollment of ${name} failed; the host was not registered."
+        if [[ -n "$prev_method" ]]; then
+            error "Enrollment of ${name} failed; its registration (method ${prev_method}) was left as it was."
+            if [[ -n "$narrow_scope" ]]; then
+                warn "Scope '${scope}' is still open to ${SCOPE_PROTOCOLS// /, }; see 'tacctl scope protocols ${scope}'."
+            fi
+        else
+            error "Enrollment of ${name} failed; the host was not registered."
+        fi
         return 1
     fi
     rm -f "$script"
-    host_remember "$name" "$target" "$port" "$scope" "$server" "$identity"
-    logger -t tacctl -p auth.info "host enroll name=${name} target=${target} scope=${scope} by=${SUDO_USER:-root}" 2>/dev/null || true
+    host_remember "$name" "$target" "$port" "$scope" "$server" "$identity" "$method"
+    if [[ -n "$narrow_scope" ]]; then
+        store_apply store_scope_set "$scope" "protocols=${backend}" \
+            || warn "Could not limit scope '${scope}' to ${backend}; see 'tacctl scope protocols ${scope}'."
+    fi
+    logger -t tacctl -p auth.info "host enroll name=${name} target=${target} scope=${scope} method=${method} by=${SUDO_USER:-root}" 2>/dev/null || true
     info "Host '${name}' enrolled."
     if [[ -z "$LINUX_SCRIPT_USERS" ]]; then
         echo ""
@@ -771,16 +938,17 @@ cmd_host_sync() {
         names=("$which")
     fi
 
-    local name target port scope server identity script failed=0
+    local name target port scope server identity method script failed=0
     for name in "${names[@]}"; do
-        IFS='|' read -r _ target port scope server identity <<< "$(host_record "$name")"
+        IFS='|' read -r _ target port scope server identity method <<< "$(host_record "$name")"
+        method=$(host_method "$name")
         if ! model_scope_exists "$scope"; then
             error "${name}: scope '${scope}' no longer exists; skipped."
             failed=1
             continue
         fi
         script=$(mktemp)
-        if linux_write_install_script "$scope" "$server" "$script" accounts-only \
+        if linux_write_install_script "$scope" "$server" "$script" accounts-only "" "$method" \
             && host_run_script "$target" "$port" "$identity" "$script" "${script_args[@]}"; then
             info "${name}: synced ($(awk -F: 'NF { n++ } END { print n + 0 }' <<< "$LINUX_SCRIPT_USERS") users)."
         else
@@ -805,12 +973,13 @@ cmd_host_unenroll() {
         error "Usage: tacctl host unenroll <name> [--force]"
         return 1
     fi
-    local record target port scope identity
+    local record target port scope identity label
     record=$(host_record "$name")
     [[ -n "$record" ]] || { error "No enrolled host named '${name}'. See 'tacctl host list'."; return 1; }
-    IFS='|' read -r _ target port scope _ identity <<< "$record"
+    IFS='|' read -r _ target port scope _ identity _ <<< "$record"
+    label=$(linux_method_label "$(host_method "$name")")
 
-    info "Removing TACACS+ authentication from ${name} (${target})..."
+    info "Removing ${label} authentication from ${name} (${target})..."
     if ! host_run_script "$target" "$port" "$identity" "${LINUX_SRC_DIR}/client-remove.sh"; then
         if [[ "$force" != "1" ]]; then
             error "Removal on ${name} failed; it is still registered. Fix the cause, or pass --force to forget the host anyway."
@@ -838,34 +1007,63 @@ cmd_host_list() {
         echo ""
         return
     fi
-    printf "  ${BOLD}%-20s %-28s %-20s %-16s %s${NC}\n" "NAME" "TARGET" "SCOPE" "SERVER" "USERS"
-    local name target port scope server _identity
-    while IFS='|' read -r name target port scope server _identity; do
+    printf "  ${BOLD}%-20s %-28s %-20s %-16s %-8s %s${NC}\n" "NAME" "TARGET" "SCOPE" "SERVER" "METHOD" "USERS"
+    local name target port scope server _identity _method
+    while IFS='|' read -r name target port scope server _identity _method; do
         [[ -n "$name" ]] || continue
-        printf "  %-20s %-28s %-20s %-16s %s\n" "$name" "${target}${port:+:$port}" "$scope" "$server" \
-            "$(linux_scope_user_count "$scope")"
+        printf "  %-20s %-28s %-20s %-16s %-8s %s\n" "$name" "${target}${port:+:$port}" "$scope" "$server" \
+            "$(host_method "$name")" "$(linux_scope_user_count "$scope")"
     done < "$LINUX_HOSTS_FILE"
     echo ""
 }
 
+# 'host default-method': show or set the method 'host enroll' and 'config
+# linux script' use when --method is not given (host.default_method in
+# tacctl.yaml). A registered host keeps its own method when re-enrolled.
+cmd_host_default_method() {
+    local method="${1:-}"
+    if [[ -z "$method" ]]; then
+        echo ""
+        echo "  Default method for new hosts: $(linux_default_method)"
+        echo ""
+        echo "  Usage: tacctl host default-method <${LINUX_METHODS// /|}>"
+        echo ""
+        return 0
+    fi
+    if ! linux_method_backend "$method" > /dev/null; then
+        error "Unknown method '${method}'. Methods: ${LINUX_METHODS// /, }"
+        return 1
+    fi
+    conf_set host.default_method "$method" || return 1
+    info "New hosts are enrolled with method '${method}' unless --method says otherwise."
+    _backends_load 2> /dev/null || return 0
+    if ! _backend_is_enabled "$(linux_method_backend "$method")"; then
+        warn "The $(linux_method_label "$method") backend is not enabled yet: tacctl backend enable $(linux_method_backend "$method")"
+    fi
+}
+
 cmd_host_usage() {
     echo ""
-    echo -e "${BOLD}Host Commands${NC} (TACACS+ login for Linux hosts)"
+    echo -e "${BOLD}Host Commands${NC} (TACACS+ or RADIUS login for Linux hosts)"
     echo ""
     echo "Usage: tacctl host <subcommand> [arguments]"
     echo ""
     echo "  list                                 Show enrolled hosts"
-    echo "  enroll <[user@]host> [options]       Install TACACS+ login on a host over SSH and register it"
+    echo "  enroll <[user@]host> [options]       Install TACACS+ or RADIUS login on a host over SSH and register it"
     echo "  enroll --local [options]             Same, for this machine"
+    echo "      --method tacplus|radius          pam_tacplus against the TACACS+ backend, or the host's pam_radius_auth"
+    echo "                                       package against the RADIUS backend (default: the host's current"
+    echo "                                       method, else 'host default-method'). Re-enroll with the other to switch"
     echo "      --scope <name>                   Use an existing scope (default: create linux-<name> for the host's /32)"
     echo "      --server <address>               Address the host should use for this server (default: detected)"
     echo "      --name <name>                    Registry name (default: short hostname)"
     echo "      --port <n>, --identity <file>    SSH port and key"
-    echo "      --build-on-host                  Compile pam_tacplus on the host instead of in a container here"
+    echo "      --build-on-host                  (tacplus) Compile pam_tacplus on the host instead of in a container here"
     echo "  sync <name> | --all                  Push account adds, removals and tier changes"
     echo "      --allow-uid-mismatch             (enroll and sync) accept a UID/GID conflict on the host instead of stopping"
     echo "      --adopt <name>[,<name>...]       (enroll and sync) take over accounts that already exist on the host"
-    echo "  unenroll <name> [--force]            Remove TACACS+ login from the host (accounts and homes are kept)"
+    echo "  unenroll <name> [--force]            Remove the login method from the host (accounts and homes are kept)"
+    echo "  default-method [tacplus|radius]      Show or set the method for hosts enrolled without --method"
     echo ""
     echo "ssh runs as the user who invoked sudo; the remote login must be root or able to sudo."
     echo ""
@@ -879,6 +1077,7 @@ cmd_host() {
         enroll)   cmd_host_enroll "$@" ;;
         sync)     cmd_host_sync "$@" ;;
         unenroll) cmd_host_unenroll "$@" ;;
+        default-method) cmd_host_default_method "$@" ;;
         "")       cmd_host_usage ;;
         *)        error "Unknown subcommand: '${sub}'"; cmd_host_usage; return 1 ;;
     esac
