@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# Unit tests for the TACACS+ renderer (lib/render_tacacs.sh): golden output,
+# Unit tests for the TACACS+ renderer (lib/backends/tacacs.sh; the rendered.json
+# bookkeeping is in lib/backend.sh): golden output,
 # read-back safety, quoting, rendered.json bookkeeping, the daemon load-smoke,
 # and the equivalence verdict of 'store import --check' for every
 # tests/fixtures/tacquito.*.yaml.

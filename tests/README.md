@@ -1,6 +1,6 @@
 # tacctl tests
 
-Test suite for `bin/tacctl.sh` (the entrypoint) and `lib/*.sh` (the code it loads), built on [bats-core](https://github.com/bats-core/bats-core).
+Test suite for `bin/tacctl.sh` (the entrypoint) and `lib/*.sh` plus `lib/backends/*.sh` (the code it loads), built on [bats-core](https://github.com/bats-core/bats-core).
 
 ## Running
 
@@ -11,7 +11,7 @@ make test-unit       # pure-logic only, <5s
 make test-integration
 make test-e2e
 make coverage        # produces coverage/index.html (requires: apt install kcov)
-make lint            # shellcheck (bin/tacctl.sh, lib/*.sh, tests/helpers, config/linux)
+make lint            # shellcheck (bin/tacctl.sh, lib/*.sh, lib/backends/*.sh, tests/helpers, config/linux)
 ```
 
 Run a single file:
@@ -38,8 +38,10 @@ tests/
 └── e2e/                 # stubbed systemctl/git/etc.
 ```
 
-The code under test is `bin/tacctl.sh` (entrypoint) plus `lib/*.sh`. Tests keep
-sourcing `bin/tacctl.sh` through `tacctl_source_lib`; it loads the lib files.
+The code under test is `bin/tacctl.sh` (entrypoint) plus `lib/*.sh` and the
+backend modules in `lib/backends/*.sh`. Tests keep sourcing `bin/tacctl.sh`
+through `tacctl_source_lib`; it loads the lib files. `tests/unit/sanity.bats`
+enumerates both directories.
 
 ## Writing a test
 
@@ -93,9 +95,9 @@ setup() {
     stub_cmd git 'echo "ok"'
 }
 
-@test "restart_service calls systemctl restart tacquito" {
+@test "restarting the TACACS+ backend calls systemctl restart tacquito" {
     tacctl_source_lib
-    restart_service
+    backend_call tacacs service restart
     stub_called 'systemctl restart tacquito'
 }
 ```
@@ -201,19 +203,51 @@ wrote: old layout, four disabled seed users, scope `lab`),
 The daemon load-smoke is skipped in tests (`$TACCTL_BIN` holds no `tacquito`);
 tests that exercise it install a stand-in script there.
 
+## Backends
+
+Generic code reaches a daemon only through the backend contract
+(`lib/backend.sh`); TACACS+ (tacquito) is the module `lib/backends/tacacs.sh`.
+
+- `tests/unit/backend.bats` checks the contract itself: every registered
+  backend defines every verb in `BACKEND_VERBS` (and no `backend_<id>_*`
+  function that is not one), every file in `lib/backends/` is sourced and
+  registers under its file name, `backends.enabled` and its schema, and the
+  TACACS+ module's read-only verbs. A new module needs no new test to be held
+  to the contract; a new verb goes into `BACKEND_VERBS`.
+- `tests/integration/backend_mutation.bats` covers what a mutation does with
+  two backends, using a stand-in backend defined in the test shell
+  (`BACKEND_IDS+=(fake)`, a few `backend_fake_*` functions, and
+  `backends: {enabled: [tacacs, fake]}` written to `tacctl.yaml` by hand; the
+  schema would refuse the id, the reader does not). It can refuse at its
+  gate, fail while staging, or fail in its commit after damaging its
+  artifact. Copy that pattern to test generic code against a backend that
+  misbehaves.
+- To make a render fail in a test, override the contract function
+  (`backend_tacacs_render_stage() { return 1; }`), not `tacacs_render_apply`:
+  commands render through `backends_render_all`. `tacacs_render_apply` is
+  still what the legacy-mode code calls (the upgrade gate, `config_sync_existing`).
+- Results of `backends_render_all`, `backends_gate` and `_backends_load` are
+  shell variables (`BACKENDS_CHANGED`, `BACKENDS_ADOPT`, `BACKENDS_ENABLED`):
+  call them, and `store_apply`, in the test shell rather than under `run` when
+  the test reads those.
+
 ## Install, upgrade, uninstall
 
 `cmd_install`, `cmd_upgrade` and `cmd_uninstall` shell out to git, go, apt,
 useradd and systemd and write fixed system paths, so they are not run by the
-suite. What they do to the configuration is in functions the tests drive
-directly, in the order the commands call them:
+suite. The daemon's own steps are the TACACS+ backend's lifecycle phases
+(`backend_tacacs_install|upgrade|uninstall <phase>`, the `_tacacs_install_*`,
+`_tacacs_upgrade_*` and `_tacacs_uninstall_*` functions); those write fixed
+system paths too and are not run either. What the commands do to the
+configuration is in functions the tests drive directly, in the order the
+commands call them (the config ones live in `lib/backends/tacacs.sh`):
 
 | Function | Called by | Tests |
 |---|---|---|
 | `state_migrate` | install, upgrade | `integration/state_migrate.bats` |
 | `install_seed_config` (fresh store + first render; existing data is kept) | install | `e2e/install_seed.bats` |
-| `config_sync_existing` (legacy migrations, or a re-render with a store) | upgrade, install over existing data | `integration/upgrade_store_flip.bats` |
-| `upgrade_store_flip` (the import gate: 0 flipped, 10 store present, 20 stopped) | upgrade, install over a legacy config | `integration/upgrade_store_flip.bats` |
+| `config_sync_existing` (legacy migrations, or a re-render with a store; the backend's `upgrade config` phase) | upgrade, install over existing data | `integration/upgrade_store_flip.bats` |
+| `upgrade_store_flip` (the import gate: 0 flipped, 10 store present, 20 stopped; part of the backend's `upgrade finish` phase) | upgrade, install over a legacy config | `integration/upgrade_store_flip.bats` |
 | `cmd_store_rollback` (`tacctl store rollback`) | operator | `integration/upgrade_store_flip.bats` |
 | `install_readme`, `uninstall_remove_access` | install, uninstall | `e2e/install_seed.bats` |
 

@@ -1,74 +1,6 @@
 # shellcheck shell=bash
-# tacctl lib/service.sh -- daemon control: restart, systemd drop-in, backups, status, validate, loglevel/listen/metrics, log
+# tacctl lib/service.sh -- snapshots and backups, listen-address validator, status, validate, log
 # Sourced by bin/tacctl.sh (see the load block there for ordering); not executable.
-
-# --- Restart service after config changes ---
-# sed -i and python rewrites change the file inode, breaking fsnotify hot-reload.
-restart_service() {
-    if systemctl restart tacquito 2>/dev/null; then
-        info "Service restarted."
-    else
-        warn "Service restart failed — run: sudo systemctl restart tacquito"
-    fi
-}
-
-# Most recent login timestamp for a user, or "never". Parses the accounting
-# log for JSON lines that pair "User":"<name>" with cmd=login (Flags:2 START).
-# Session stops (cmd=logout / cmd=exit on Flags:4) are excluded.
-get_last_login() {
-    local username="$1"
-    [[ -r "$ACCT_LOG" ]] || { echo "never"; return; }
-    local ts
-    ts=$(grep -F "\"User\":\"${username}\"" "$ACCT_LOG" 2>/dev/null \
-        | grep -F 'cmd=login' \
-        | tail -1 \
-        | grep -oE '[0-9]{4}/[0-9]{2}/[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}' \
-        | head -1)
-    if [[ -z "$ts" ]]; then
-        echo "never"
-    else
-        echo "${ts//\//-}"
-    fi
-}
-
-# --- Drift of rendered artifacts (plan 4.5) ---
-# backends_check_drift: compare every artifact tacctl rendered with the
-# sha256 recorded for it in rendered.json. Prints one '<status>\t<path>' line
-# per artifact that is no longer what tacctl rendered -- status is 'drift'
-# (edited by hand), 'missing' (deleted) or 'unreadable' (rendered.json itself
-# cannot be read) -- and returns 1 when there is any. Returns 0, silently,
-# when everything matches or nothing has been rendered yet.
-# Temporary home: moves to lib/backend.sh with the backend contract.
-backends_check_drift() {
-    [[ -f "$RENDERED_FILE" ]] || return 0
-    local out rc=0
-    out=$(_render_python drift "$RENDERED_FILE" 2>/dev/null) || rc=$?
-    (( rc == 0 )) && return 0
-    if [[ -z "$out" ]]; then
-        printf 'unreadable\t%s\n' "$RENDERED_FILE"
-    else
-        printf '%s\n' "$out"
-    fi
-    return 1
-}
-
-# Print the red DRIFT lines 'status' and 'config validate' show, one per
-# drifted artifact. Returns 1 when it printed any.
-print_drift_lines() {
-    local drift dstatus dpath
-    drift=$(backends_check_drift) && return 0
-    while IFS=$'\t' read -r dstatus dpath; do
-        [[ -n "$dpath" ]] || continue
-        case "$dstatus" in
-            drift)   dstatus="edited since tacctl rendered it" ;;
-            missing) dstatus="rendered by tacctl but no longer there" ;;
-            *)       dstatus="render records cannot be read" ;;
-        esac
-        echo -e "  ${RED}DRIFT:${NC}                ${dpath} — ${dstatus}"
-        echo "                        keep the edits: 'tacctl store import --replace' then 'tacctl config render --force'; discard them: 'tacctl config render --force'"
-    done <<< "$drift"
-    return 1
-}
 
 # --- Snapshots of the canonical files (plan 4.6) ---
 # A snapshot is a directory backups/<ts>/ holding store.yaml, tacctl.yaml (when
@@ -113,7 +45,7 @@ _backup_snapshot_current() {
 }
 
 # backup_snapshot: snapshot store.yaml and tacctl.yaml before a change.
-# Called by store_apply and, through store_snapshot_hook, by every store write.
+# Called by store_apply (lib/backend.sh) and, through store_snapshot_hook, by every store write.
 #   - Does nothing while _BACKUP_SNAPSHOT_HELD=1 (the caller has its own).
 #   - Does nothing when the live files already equal the newest snapshot, so
 #     a command that changes nothing, or a second write of one command, does
@@ -204,33 +136,6 @@ PY
     chmod 600 "${dir}"/*
 }
 
-# Old-style backup of tacquito.yaml alone. Only the legacy (no store yet)
-# paths use it: a pre-store install keeps backing up the file that is still
-# its source of truth. With a store, backup_snapshot is the backup.
-backup_config() {
-    mkdir -p "$BACKUP_DIR"
-    chmod 750 "$BACKUP_DIR"
-    chown tacquito:tacquito "$BACKUP_DIR" 2>/dev/null || true
-    # Milliseconds (%3N) avoid collisions when two mutating commands land in
-    # the same wall-clock second.
-    local ts
-    ts=$(date +%Y%m%d_%H%M%S_%3N)
-    cp "$CONFIG" "${BACKUP_DIR}/tacquito.yaml.${ts}"
-    chmod 640 "${BACKUP_DIR}/tacquito.yaml.${ts}"
-    chown tacquito:tacquito "${BACKUP_DIR}/tacquito.yaml.${ts}" 2>/dev/null || true
-    info "Config backed up to ${BACKUP_DIR}/tacquito.yaml.${ts}"
-
-    # Prune old backups, keep last $BACKUP_RETENTION. Same no-match
-    # guard as cmd_status: avoid set -e tripping the caller when the
-    # backups directory is empty.
-    local count
-    count=$(find "${BACKUP_DIR}" -maxdepth 1 -name 'tacquito.yaml.*' 2>/dev/null | wc -l || true)
-    if [[ "$count" -gt "$BACKUP_RETENTION" ]]; then
-        # shellcheck disable=SC2012  # mtime order needed; names are tacctl-generated tacquito.yaml.<timestamp>
-        ls -1t "${BACKUP_DIR}"/tacquito.yaml.* | tail -n +$((BACKUP_RETENTION + 1)) | xargs rm -f
-    fi
-}
-
 # Old-style backups: whole tacquito.yaml copies made before the store existed
 # (backups/tacquito.yaml.<ts>, left in place by the state migration) and the
 # files the renderer and the upgrade keep in backups/legacy/ (tacquito.yaml.
@@ -294,47 +199,6 @@ PY
     fi
 }
 
-# --- Systemd service drop-in helpers ---
-# User-customized flags (-network, -address, -level) live as Environment=
-# entries in a drop-in so that `tacctl upgrade` can safely replace the main
-# service unit without clobbering them. Template defaults are in
-# config/tacquito.service; the drop-in only records overrides.
-OVERRIDE_DIR="${TACCTL_OVERRIDE_DIR:-/etc/systemd/system/tacquito.service.d}"
-OVERRIDE_FILE="${OVERRIDE_DIR}/tacctl-overrides.conf"
-
-# Read an Environment= override; echo empty if not set.
-# `|| true` absorbs grep's exit-1-on-no-match so `pipefail + set -e`
-# callers don't abort when the override file doesn't exist / is empty.
-read_service_override() {
-    local key="$1"
-    { grep -oP "^Environment=\"${key}=\K[^\"]*" "$OVERRIDE_FILE" 2>/dev/null || true; } | tail -1
-}
-
-# Write (or replace) an Environment= override for the given key.
-set_service_override() {
-    local key="$1" value="$2"
-    mkdir -p "$OVERRIDE_DIR"
-    if [[ ! -f "$OVERRIDE_FILE" ]] || ! grep -q "^\[Service\]" "$OVERRIDE_FILE"; then
-        local tmp; tmp=$(mktemp)
-        echo "[Service]" > "$tmp"
-        [[ -f "$OVERRIDE_FILE" ]] && cat "$OVERRIDE_FILE" >> "$tmp"
-        mv "$tmp" "$OVERRIDE_FILE"
-    fi
-    sed -i "/^Environment=\"${key}=/d" "$OVERRIDE_FILE"
-    echo "Environment=\"${key}=${value}\"" >> "$OVERRIDE_FILE"
-}
-
-# Remove a single override key; drop the file (and dir) if no overrides remain.
-clear_service_override() {
-    local key="$1"
-    [[ -f "$OVERRIDE_FILE" ]] || return 0
-    sed -i "/^Environment=\"${key}=/d" "$OVERRIDE_FILE"
-    if ! grep -q "^Environment=" "$OVERRIDE_FILE"; then
-        rm -f "$OVERRIDE_FILE"
-        rmdir "$OVERRIDE_DIR" 2>/dev/null || true
-    fi
-}
-
 # =====================================================================
 #  STATUS & VALIDATION COMMANDS
 # =====================================================================
@@ -345,62 +209,12 @@ cmd_status() {
     echo -e "${BOLD}Tacquito Service Status${NC}"
     echo "--------------------------------------------"
 
-    # Service state
-    local state
-    state=$(systemctl is-active tacquito 2>/dev/null || echo "unknown")
-    local state_color="$GREEN"
-    [[ "$state" != "active" ]] && state_color="$RED"
-    echo -e "  ${BOLD}Service:${NC}              ${state_color}${state}${NC}"
+    # Each enabled backend prints its own lines, in the places this report
+    # has always had them.
+    _backends_load || return 1
 
-    # Uptime
-    if [[ "$state" == "active" ]]; then
-        local since
-        since=$(systemctl show tacquito --property=ActiveEnterTimestamp 2>/dev/null | cut -d= -f2)
-        echo -e "  ${BOLD}Since:${NC}                ${since}"
-    fi
-
-    # PID
-    local pid
-    pid=$(systemctl show tacquito --property=MainPID 2>/dev/null | cut -d= -f2)
-    if [[ -n "$pid" && "$pid" != "0" ]]; then
-        echo -e "  ${BOLD}PID:${NC}                  ${pid}"
-        # Memory usage
-        local mem
-        mem=$(ps -o rss= -p "$pid" 2>/dev/null | awk '{printf "%.1f MB", $1/1024}')
-        echo -e "  ${BOLD}Memory:${NC}               ${mem}"
-    fi
-
-    # Listening port
-    local listen
-    listen=$(ss -tlnp 2>/dev/null | { grep ":49 " || true; } | awk '{print $4}' | head -1)
-    if [[ -n "$listen" ]]; then
-        echo -e "  ${BOLD}Listening:${NC}            ${GREEN}${listen}${NC}"
-    else
-        echo -e "  ${BOLD}Listening:${NC}            ${RED}port 49 not detected${NC}"
-    fi
-
-    # Log level
-    # Tolerate no-match: when tacquito is launched with ${TACQUITO_LEVEL}
-    # rather than a literal -level flag, grep finds nothing and (under
-    # pipefail + set -e) would abort status. `|| true` absorbs that.
-    # Log level resolution: drop-in override wins; fall back to scraping a
-    # literal -level N from ExecStart (older unit files); fall back to the
-    # template default of 20 (info). Units that use \${TACQUITO_LEVEL}
-    # placeholders would otherwise come back as "unknown".
-    local loglevel
-    loglevel=$(read_service_override TACQUITO_LEVEL)
-    if [[ -z "$loglevel" ]]; then
-        loglevel=$(systemctl show tacquito --property=ExecStart 2>/dev/null | grep -oP '\-level \K\d+' || true)
-    fi
-    loglevel=${loglevel:-20}
-    local level_name
-    case "$loglevel" in
-        10) level_name="error" ;;
-        20) level_name="info" ;;
-        30) level_name="debug" ;;
-        *)  level_name="unknown" ;;
-    esac
-    echo -e "  ${BOLD}Log level:${NC}            ${level_name} (${loglevel})"
+    # Service state, uptime, PID, memory, listener, log level
+    backends_run status service
 
     # Everything status reports about users, scopes and filters comes from
     # one model view (key=value lines; 'orphan=' and 'pwdate=' repeat).
@@ -422,20 +236,14 @@ cmd_status() {
     echo -e "  ${BOLD}Users:${NC}                ${user_count}"
 
     # Config file
-    echo -e "  ${BOLD}Config:${NC}               ${CONFIG}"
+    backends_run status config
     if [[ "$(model_mode)" == "legacy" ]]; then
         echo -e "  ${YELLOW}Store:                not initialised — read-only until 'tacctl store import' (see 'tacctl store import --check')${NC}"
     fi
     print_drift_lines || true
 
     # Accounting log size
-    if [[ -f "$ACCT_LOG" ]]; then
-        local log_size
-        log_size=$(du -sh "$ACCT_LOG" 2>/dev/null | awk '{print $1}')
-        local log_lines
-        log_lines=$(wc -l < "$ACCT_LOG" 2>/dev/null)
-        echo -e "  ${BOLD}Accounting log:${NC}       ${log_size} (${log_lines} entries)"
-    fi
+    backends_run status accounting
 
     # Backup count: snapshots, plus the old-style files an upgrade leaves
     # behind. Both listings absorb a missing backups directory themselves
@@ -454,53 +262,8 @@ cmd_status() {
     fi
     echo -e "  ${BOLD}Config backups:${NC}       ${backup_count}"
 
-    # Prometheus metrics — auth stats. Respects the tacctl config metrics
-    # address override: when the exporter is bound to 127.0.0.1:0 (our
-    # "disabled" sink) we skip scraping and report the disabled state
-    # explicitly rather than pretending the service is unreachable.
-    echo ""
-    echo -e "  ${BOLD}Authentication Stats (since last restart):${NC}"
-    local metrics_addr metrics_url
-    metrics_addr=$(read_service_override TACQUITO_METRICS_ADDRESS)
-    metrics_addr=${metrics_addr:-127.0.0.1:8080}
-    if [[ "$metrics_addr" == "127.0.0.1:0" ]]; then
-        echo -e "    ${YELLOW}Metrics exporter disabled (tacctl config metrics enable)${NC}"
-    else
-        if [[ "$metrics_addr" == :* ]]; then
-            metrics_url="http://localhost${metrics_addr}/metrics"
-        else
-            metrics_url="http://${metrics_addr}/metrics"
-        fi
-        local metrics
-        metrics=$(curl -s "$metrics_url" 2>/dev/null || true)
-        if [[ -n "$metrics" ]]; then
-            local auth_pass auth_fail authz_pass authz_fail
-            auth_pass=$(echo "$metrics" | grep -P '^tacquito_authenstart_handle_pap ' | awk '{print $2}' | head -1 || true)
-            auth_fail=$(echo "$metrics" | grep -P '^tacquito_authenpap_handle_error ' | awk '{print $2}' | head -1 || true)
-            authz_pass=$(echo "$metrics" | grep -P '^tacquito_stringy_handle_authorize_accept_pass_add ' | awk '{print $2}' | head -1 || true)
-            authz_fail=$(echo "$metrics" | grep -P '^tacquito_stringy_handle_authorize_fail ' | awk '{print $2}' | head -1 || true)
-
-            echo -e "    Auth attempts:      ${auth_pass:-0}"
-            echo -e "    Auth errors:        ${auth_fail:-0}"
-            echo -e "    Authz granted:      ${authz_pass:-0}"
-            echo -e "    Authz denied:       ${authz_fail:-0}"
-        else
-            echo -e "    ${YELLOW}Metrics unavailable (${metrics_url})${NC}"
-        fi
-    fi
-
-    # Recent errors
-    echo ""
-    echo -e "  ${BOLD}Recent Errors (last 5):${NC}"
-    local errors
-    errors=$(journalctl -u tacquito --no-pager -n 100 --since "24 hours ago" 2>/dev/null | grep "ERROR:" | tail -5 || true)
-    if [[ -n "$errors" ]]; then
-        echo "$errors" | while IFS= read -r line; do
-            echo -e "    ${RED}${line}${NC}"
-        done
-    else
-        echo -e "    ${GREEN}No errors in the last 24 hours${NC}"
-    fi
+    # Authentication stats and recent errors
+    backends_run status activity
 
     # Security posture — aggregate scope prefixes + per-scope secret check +
     # IPv6/IPv4 ACL parity. Iterates all scopes rather than reading the first
@@ -523,11 +286,14 @@ cmd_status() {
         echo -e "      ${YELLOW}scopes with no prefixes: ${empty_prefix_scopes}${NC}"
     fi
 
-    # IPv6 parity warning: if the listener is tcp6 but no IPv6 CIDR exists
+    # IPv6 parity warning: if a listener is tcp6 but no IPv6 CIDR exists
     # anywhere in prefixes/allow, IPv4-mapped addresses can bypass ACLs.
-    local listener_net
-    listener_net=$(read_service_override TACQUITO_NETWORK)
-    listener_net=${listener_net:-tcp}
+    local listener_net="tcp" _lname _lnet _laddr
+    while read -r _lname _lnet _laddr; do
+        if [[ "$_lnet" == "tcp6" ]]; then
+            listener_net="tcp6"
+        fi
+    done < <(backends_run listeners list)
     if [[ "$listener_net" == "tcp6" ]]; then
         if [[ "$prefix_has_v6" != "1" && "$allow_has_v6" != "1" ]]; then
             echo -e "    ${RED}IPv6 ACL parity:    MISSING (listener is tcp6 but no IPv6 CIDRs — v4-mapped clients bypass ACLs)${NC}"
@@ -720,36 +486,43 @@ cmd_config_validate() {
         echo -e "  ${GREEN}Scopes integrity:${NC}     valid"
     fi
 
-    # Rendered artifact: can the store be rendered, and is the live file
+    # Rendered artifacts: can the store be rendered, and are the live files
     # that render? A hand-edited file is reported by the DRIFT line below
     # instead, and counted once.
     local drifted=0
     backends_check_drift > /dev/null || drifted=1
     if [[ "$mode" == "store" ]]; then
-        local rstate=""
-        if ! rstate=$(tacacs_render_check); then
-            echo -e "  ${RED}Rendered config:${NC}      the store cannot be rendered (see above)"
+        local rstate="" _b label
+        if ! _backends_load; then
             errors=$((errors + 1))
-        elif (( drifted )); then
-            :
-        else
-            case "$rstate" in
-                current|same)
-                    echo -e "  ${GREEN}Rendered config:${NC}      up to date"
-                    ;;
-                missing)
-                    echo -e "  ${RED}Rendered config:${NC}      ${CONFIG} is missing — run 'tacctl config render'"
-                    errors=$((errors + 1))
-                    ;;
-                unrecorded)
-                    echo -e "  ${YELLOW}Rendered config:${NC}      ${CONFIG} was not rendered by tacctl yet — the next change replaces it if it says what the store says; otherwise run 'tacctl config render --force'"
-                    ;;
-                *)
-                    echo -e "  ${RED}Rendered config:${NC}      ${CONFIG} is out of date with the store — run 'tacctl config render'"
-                    errors=$((errors + 1))
-                    ;;
-            esac
+            BACKENDS_ENABLED=()
         fi
+        for _b in ${BACKENDS_ENABLED[@]+"${BACKENDS_ENABLED[@]}"}; do
+            label=$(backend_artifact_names "$_b") || label="$_b"
+            if ! rstate=$(backend_call "$_b" render_check); then
+                echo -e "  ${RED}Rendered config:${NC}      the store cannot be rendered (see above)"
+                errors=$((errors + 1))
+            elif (( drifted )); then
+                :
+            else
+                case "$rstate" in
+                    current|same)
+                        echo -e "  ${GREEN}Rendered config:${NC}      up to date"
+                        ;;
+                    missing)
+                        echo -e "  ${RED}Rendered config:${NC}      ${label} is missing — run 'tacctl config render'"
+                        errors=$((errors + 1))
+                        ;;
+                    unrecorded)
+                        echo -e "  ${YELLOW}Rendered config:${NC}      ${label} was not rendered by tacctl yet — the next change replaces it if it says what the store says; otherwise run 'tacctl config render --force'"
+                        ;;
+                    *)
+                        echo -e "  ${RED}Rendered config:${NC}      ${label} is out of date with the store — run 'tacctl config render'"
+                        errors=$((errors + 1))
+                        ;;
+                esac
+            fi
+        done
     fi
     if (( drifted )); then
         print_drift_lines || true
@@ -770,400 +543,23 @@ cmd_config_validate() {
     echo ""
 }
 
-# --- CONFIG LOGLEVEL ---
-cmd_config_loglevel() {
-    local new_level="${1:-}"
-
-    local current_num
-    current_num=$(read_service_override TACQUITO_LEVEL)
-    current_num=${current_num:-20}
-
-    if [[ -z "$new_level" ]]; then
-        local level_name="unknown"
-        case "$current_num" in
-            10) level_name="error" ;;
-            20) level_name="info" ;;
-            30) level_name="debug" ;;
-        esac
-        echo ""
-        echo "  Current log level: ${level_name} (${current_num})"
-        echo ""
-        echo "  Usage: tacctl config loglevel <debug|info|error>"
-        echo ""
-        return
-    fi
-
-    local level_num
-    case "$new_level" in
-        debug)  level_num=30 ;;
-        info)   level_num=20 ;;
-        error)  level_num=10 ;;
-        *)
-            error "Invalid level: ${new_level}. Use: debug, info, or error"
-            return 1
-            ;;
-    esac
-
-    if [[ "$current_num" == "$level_num" ]]; then
-        info "Already at ${new_level} (${level_num})."
-        return
-    fi
-
-    # Default level (20) uses the template default -- clear the override
-    # instead of pinning it, so future template bumps can move the default.
-    if [[ "$level_num" == "20" ]]; then
-        clear_service_override TACQUITO_LEVEL
-    else
-        set_service_override TACQUITO_LEVEL "$level_num"
-    fi
-    systemctl daemon-reload
-    systemctl restart tacquito
-
-    info "Log level changed to ${new_level} (${level_num}). Service restarted."
-    echo ""
-}
-
-# --- CONFIG LISTEN ---
-cmd_config_listen() {
-    local sub="${1:-}"
-    local addr="${2:-}"
-
-    local current_net current_addr net_src addr_src
-    current_net=$(read_service_override TACQUITO_NETWORK)
-    if [[ -n "$current_net" ]]; then net_src="override"; else net_src="default"; fi
-    current_net=${current_net:-tcp}
-    current_addr=$(read_service_override TACQUITO_ADDRESS)
-    if [[ -n "$current_addr" ]]; then addr_src="override"; else addr_src="default"; fi
-    current_addr=${current_addr:-:49}
-
-    case "$sub" in
-        ""|show)
-            echo ""
-            echo "  Current listener: ${current_net} ${current_addr}"
-            if [[ "$net_src" == "override" || "$addr_src" == "override" ]]; then
-                echo "  (override in ${OVERRIDE_FILE})"
-            else
-                echo "  (template default)"
-            fi
-            echo ""
-            echo "  Usage: tacctl config listen <show|tcp|tcp6|reset> [address]"
-            echo "  Examples:"
-            echo "    tacctl config listen tcp :49"
-            echo "    tacctl config listen tcp 10.1.0.1:49"
-            echo "    tacctl config listen tcp6 [::]:49"
-            echo "    tacctl config listen reset       # drop override, use template default"
-            echo ""
-            return
-            ;;
-        reset)
-            if [[ "$net_src" == "default" && "$addr_src" == "default" ]]; then
-                info "No listener override set. Already on template default (${current_net} ${current_addr})."
-                return
-            fi
-            clear_service_override TACQUITO_NETWORK
-            clear_service_override TACQUITO_ADDRESS
-            systemctl daemon-reload
-            systemctl restart tacquito
-            if systemctl is-active --quiet tacquito; then
-                info "Listener override removed. Using template default. Service restarted."
-            else
-                error "tacquito failed to start after reset."
-                return 1
-            fi
-            echo ""
-            return
-            ;;
-        tcp|tcp6)
-            ;;
-        *)
-            error "Invalid subcommand: '${sub}'. Use: show, tcp, tcp6, or reset"
-            return 1
-            ;;
-    esac
-
-    if [[ -z "$addr" ]]; then
-        error "Missing address. Example: tacctl config listen ${sub} :49"
-        return 1
-    fi
-
-    validate_listen_address "$sub" "$addr" || return 1
-
-    if [[ "$current_net" == "$sub" && "$current_addr" == "$addr" ]]; then
-        info "Already listening on ${sub} ${addr}."
-        return
-    fi
-
-    if [[ "$sub" == "tcp6" && "$current_net" != "tcp6" ]]; then
-        echo ""
-        warn "tcp6 enables dual-stack sockets on most platforms."
-        warn "IPv4 clients connect with mapped addresses (::ffff:a.b.c.d)"
-        warn "which do NOT match IPv4 rules in 'tacctl scope prefixes <name>',"
-        warn "'config allow', or 'config deny' -- effectively bypassing them."
-        echo ""
-        read -rp "  Proceed with tcp6? [y/N]: " confirm
-        if [[ ! "$confirm" =~ ^[Yy] ]]; then
-            info "Aborted."
-            return
-        fi
-    fi
-
-    # Snapshot override file for rollback if restart fails.
-    local had_override="false"
-    if [[ -f "$OVERRIDE_FILE" ]]; then
-        cp "$OVERRIDE_FILE" "${OVERRIDE_FILE}.bak"
-        had_override="true"
-    fi
-
-    set_service_override TACQUITO_NETWORK "$sub"
-    set_service_override TACQUITO_ADDRESS "$addr"
-
-    systemctl daemon-reload
-    systemctl restart tacquito
-
-    if systemctl is-active --quiet tacquito; then
-        info "Listener changed to ${sub} ${addr}. Service restarted."
-        rm -f "${OVERRIDE_FILE}.bak"
-    else
-        error "tacquito failed to start. Restoring previous override."
-        if [[ "$had_override" == "true" ]]; then
-            mv "${OVERRIDE_FILE}.bak" "$OVERRIDE_FILE"
-        else
-            rm -f "$OVERRIDE_FILE"
-            rmdir "$OVERRIDE_DIR" 2>/dev/null || true
-        fi
-        systemctl daemon-reload
-        systemctl restart tacquito
-        return 1
-    fi
-    echo ""
-}
-
-# --- CONFIG METRICS ---
-# Control the prometheus exporter's listen address (tacquito's -metrics-address
-# flag). `disable` binds the exporter to 127.0.0.1:0 — a loopback address on
-# an ephemeral port that no scraper can discover, so from any reader's
-# perspective the exporter is gone even though the goroutine still runs.
-# We deliberately do NOT toggle tacquito's -export-promhttp flag: upstream's
-# goroutine unconditionally cancels the server context when the exporter
-# returns, so `-export-promhttp=false` would tear down the whole daemon.
-cmd_config_metrics() {
-    local sub="${1:-}"
-    local arg="${2:-}"
-
-    # Defaults must match config/tacquito.service Environment= lines.
-    # Loopback-only by default: local scrapers on the box can reach it, external
-    # ones can't without an explicit `tacctl config metrics address` change.
-    local default_addr="127.0.0.1:8080"
-    local disable_sink="127.0.0.1:0"
-
-    local cur_addr addr_src
-    cur_addr=$(read_service_override TACQUITO_METRICS_ADDRESS)
-    if [[ -n "$cur_addr" ]]; then addr_src="override"; else addr_src="default"; fi
-    cur_addr=${cur_addr:-$default_addr}
-
-    local state state_color
-    if [[ "$cur_addr" == "$disable_sink" ]]; then
-        state="disabled"; state_color="$RED"
-    elif [[ "$cur_addr" == 127.* || "$cur_addr" == "[::1]"* || "$cur_addr" == "localhost:"* ]]; then
-        state="enabled (loopback-only)"; state_color="$GREEN"
-    else
-        state="enabled (externally reachable)"; state_color="$YELLOW"
-    fi
-
-    case "$sub" in
-        ""|show|-h|--help|help)
-            echo ""
-            echo -e "${BOLD}Prometheus metrics exporter${NC}"
-            echo "--------------------------------------------"
-            echo -e "  State:    ${state_color}${state}${NC}"
-            echo -e "  Address:  ${cur_addr}  (${addr_src})"
-            if [[ "$state" != "disabled" ]]; then
-                echo ""
-                local scrape_url
-                if [[ "$cur_addr" == :* ]]; then
-                    scrape_url="http://localhost${cur_addr}/metrics"
-                else
-                    scrape_url="http://${cur_addr}/metrics"
-                fi
-                echo "  Scrape URL: ${scrape_url}"
-            fi
-            echo ""
-            echo "Usage:"
-            echo "  tacctl config metrics                      Show current state"
-            echo "  tacctl config metrics enable               Revert to default (${default_addr})"
-            echo "  tacctl config metrics disable              Sink to ${disable_sink} (no scraper can reach)"
-            echo "  tacctl config metrics address <host:port>  Explicit bind (e.g. 10.1.0.1:8080 for external)"
-            echo "  tacctl config metrics reset                Clear override (revert to unit default)"
-            echo ""
-            if [[ "$state" == "disabled" ]]; then
-                echo "  Note: tacquito still runs the exporter goroutine, bound to an"
-                echo "        ephemeral loopback port unknown to any scraper. This is the"
-                echo "        closest we can get without patching tacquito upstream."
-                echo ""
-            fi
-            return
-            ;;
-        enable)
-            if [[ "$state" != "disabled" && "$addr_src" == "default" ]]; then
-                info "Already enabled on default (${default_addr})."
-                return
-            fi
-            clear_service_override TACQUITO_METRICS_ADDRESS
-            systemctl daemon-reload
-            systemctl restart tacquito
-            info "Metrics exporter enabled on ${default_addr}/metrics."
-            echo ""
-            ;;
-        disable)
-            if [[ "$state" == "disabled" ]]; then
-                info "Already disabled (sunk to ${disable_sink})."
-                return
-            fi
-            set_service_override TACQUITO_METRICS_ADDRESS "$disable_sink"
-            systemctl daemon-reload
-            systemctl restart tacquito
-            info "Metrics exporter sunk to ${disable_sink} — no scraper can reach it."
-            warn "Note: the exporter goroutine still runs; bind-to-loopback-0 is the"
-            warn "closest 'off' state tacquito supports without an upstream patch."
-            echo ""
-            ;;
-        address)
-            if [[ -z "$arg" ]]; then
-                error "Usage: tacctl config metrics address <host:port>"
-                error "Examples:  127.0.0.1:8080  (loopback only — default)"
-                error "           :8080           (all interfaces — external scrapers can reach)"
-                error "           10.1.0.1:9090   (specific mgmt IP + custom port)"
-                exit 1
-            fi
-            if [[ "$arg" != *:* ]]; then
-                error "Address must include a port (e.g. '127.0.0.1:8080' or ':8080')."
-                exit 1
-            fi
-            if [[ "$arg" == "$default_addr" ]]; then
-                clear_service_override TACQUITO_METRICS_ADDRESS
-            else
-                set_service_override TACQUITO_METRICS_ADDRESS "$arg"
-            fi
-            systemctl daemon-reload
-            systemctl restart tacquito
-            info "Metrics listen address set to ${arg}. Service restarted."
-            if [[ "$arg" != 127.* && "$arg" != "[::1]"* && "$arg" != "$disable_sink" ]]; then
-                warn "Exporter is now externally reachable. Ensure downstream scrapers"
-                warn "have appropriate network-level access controls."
-            fi
-            echo ""
-            ;;
-        reset)
-            clear_service_override TACQUITO_METRICS_ADDRESS
-            systemctl daemon-reload
-            systemctl restart tacquito
-            info "Metrics override cleared. Using unit default (${default_addr})."
-            echo ""
-            ;;
-        *)
-            error "Unknown subcommand: '${sub}'"
-            error "Run 'tacctl config metrics' with no arguments for usage."
-            exit 1
-            ;;
-    esac
-}
-
 # =====================================================================
 #  LOG COMMANDS
 # =====================================================================
 
-# Purge the tacquito journal and truncate the file-based accounting log.
-# Destructive — prompts for confirmation. Accepts `--force` / `-y` to skip
-# the prompt for scripted use (e.g. scheduled cleanups).
-cmd_log_clear() {
-    local force=false
-    case "${1:-}" in
-        -y|--force|--yes) force=true ;;
-    esac
-
-    echo ""
-    echo -e "${BOLD}Clear tacquito logs${NC}"
-    echo "--------------------------------------------"
-    warn "This permanently deletes tacquito journal entries and truncates ${ACCT_LOG}."
-    warn "Historical authentication and accounting records will be lost."
-
-    if [[ "$force" != "true" ]]; then
-        read -rp "  Continue? [y/N]: " confirm
-        if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
-            info "Cancelled."
-            return 0
-        fi
-    fi
-
-    # Rotate closes the active journal file so the vacuum step can evict it;
-    # --vacuum-time=1s then drops everything older than one second. The
-    # per-unit filter keeps other services' journals intact.
-    journalctl --rotate 2>/dev/null || true
-    if ! journalctl --vacuum-time=1s -u tacquito >/dev/null 2>&1; then
-        warn "journalctl vacuum failed — run manually: sudo journalctl --vacuum-time=1s -u tacquito"
-    fi
-
-    # Truncate in place so logrotate's ownership/permissions stay intact.
-    if [[ -f "$ACCT_LOG" ]]; then
-        : > "$ACCT_LOG" 2>/dev/null || warn "Could not truncate ${ACCT_LOG} (check permissions)."
-    fi
-
-    info "Logs cleared (journal + accounting)."
-    echo ""
-}
-
+# Each enabled backend prints its own section (lib/backend.sh: log, accounting).
 cmd_log() {
     local subcmd="${1:-}"
     shift || true
 
     case "$subcmd" in
-        tail)
-            local count="${1:-20}"
-            echo ""
-            echo -e "${BOLD}Recent TACACS+ Log Entries${NC}"
-            echo "--------------------------------------------"
-            journalctl -u tacquito --no-pager -n "$count" 2>/dev/null || echo "  No log entries found."
-            echo ""
-            ;;
-        search)
-            local term="${1:-}"
-            if [[ -z "$term" ]]; then
-                error "Usage: tacctl log search <username>"
-                exit 1
-            fi
-            echo ""
-            echo -e "${BOLD}Log entries matching '${term}'${NC}"
-            echo "--------------------------------------------"
-            journalctl -u tacquito --no-pager --since "7 days ago" 2>/dev/null | grep -i -e "$term" || echo "  No matches found."
-            echo ""
-            ;;
-        failures)
-            echo ""
-            echo -e "${BOLD}Authentication Failures (last 24 hours)${NC}"
-            echo "--------------------------------------------"
-            local failures
-            failures=$(journalctl -u tacquito --no-pager --since "24 hours ago" 2>/dev/null | grep -i "ERROR\|fail\|bad secret" || true)
-            if [[ -n "$failures" ]]; then
-                echo "$failures"
-            else
-                echo -e "  ${GREEN}No failures in the last 24 hours${NC}"
-            fi
-            echo ""
+        tail|search|failures|clear)
+            _backends_load || return 1
+            backends_run log "$subcmd" "$@"
             ;;
         accounting)
-            local count="${1:-20}"
-            echo ""
-            echo -e "${BOLD}Recent Accounting Entries${NC}"
-            echo "--------------------------------------------"
-            if [[ -f "$ACCT_LOG" ]]; then
-                tail -n "$count" "$ACCT_LOG"
-            else
-                echo "  No accounting log found at ${ACCT_LOG}"
-            fi
-            echo ""
-            ;;
-        clear)
-            cmd_log_clear "$@"
+            _backends_load || return 1
+            backends_run accounting tail "$@"
             ;;
         *)
             echo ""
@@ -1337,13 +733,11 @@ _backup_put() {
     mv -f "$tmp" "$dst" || { rm -f "$tmp"; return 1; }
 }
 
-# Put the four files a restore can touch back as _backup_apply saved them in
-# $1: store.yaml, tacctl.yaml, tacquito.yaml and rendered.json. A file that was
-# absent then is removed now.
+# Put store.yaml and tacctl.yaml back as _backup_apply saved them in $1. A
+# file that was absent then is removed now.
 _backup_apply_rollback() {
     local keep="$1" f dst name
-    for f in "${STORE_FILE}:store.yaml" "${TACCTL_OVERRIDES_FILE}:tacctl.yaml" \
-             "${CONFIG}:tacquito.yaml" "${RENDERED_FILE}:rendered.json"; do
+    for f in "${STORE_FILE}:store.yaml" "${TACCTL_OVERRIDES_FILE}:tacctl.yaml"; do
         dst="${f%:*}"
         name="${f##*:}"
         if [[ -f "${keep}/${name}" ]]; then
@@ -1359,15 +753,15 @@ _backup_apply_rollback() {
 
 # _backup_apply <writer> [<arg>...]
 # Run <writer>, which installs the restored store (and tacctl.yaml) as the
-# live files, then force-render tacquito.yaml from them. If either fails, the
-# four files are put back as they were -- store.yaml, tacctl.yaml, tacquito.yaml
-# and rendered.json -- so store, overrides, rendered config and its record
-# always agree. Returns 0 applied, 1 failed and rolled back.
+# live files, then force-render every enabled backend from them. A render
+# that fails leaves every rendered config and rendered.json as they were
+# (backends_render_all); store.yaml and tacctl.yaml are then put back here,
+# so store, overrides, rendered configs and their records always agree.
+# Returns 0 applied, 1 failed and rolled back.
 _backup_apply() {
     local keep f rc=0
     keep=$(mktemp -d "${TACCTL_STATE_DIR}/.restore.XXXXXX") || return 1
-    for f in "${STORE_FILE}:store.yaml" "${TACCTL_OVERRIDES_FILE}:tacctl.yaml" \
-             "${CONFIG}:tacquito.yaml" "${RENDERED_FILE}:rendered.json"; do
+    for f in "${STORE_FILE}:store.yaml" "${TACCTL_OVERRIDES_FILE}:tacctl.yaml"; do
         if [[ -f "${f%:*}" ]]; then
             cp -p "${f%:*}" "${keep}/${f##*:}" || { rm -rf "$keep"; return 1; }
         fi
@@ -1375,9 +769,9 @@ _backup_apply() {
     _BACKUP_SNAPSHOT_HELD=1
     "$@" || rc=$?
     # --force: a restore is an explicit overwrite, the operator has seen the
-    # diff, and a hand-edited tacquito.yaml is kept under backups/legacy/.
+    # diff, and a hand-edited rendered config is kept under backups/legacy/.
     if (( rc == 0 )); then
-        tacacs_render_apply --force > /dev/null || rc=$?
+        backends_render_all --force || rc=$?
     fi
     _BACKUP_SNAPSHOT_HELD=0
     if (( rc != 0 )); then
@@ -1439,10 +833,10 @@ _backup_restore_snapshot() {
     _BACKUP_KEEP_ID="$id"
     backup_snapshot || { error "Could not snapshot the current state. Nothing was changed."; return 1; }
     if ! _backup_apply _backup_install_snapshot "$dir"; then
-        error "Snapshot ${id} was not restored: ${CONFIG} could not be rendered from it. Store, tacctl.yaml and ${CONFIG} are as they were."
+        error "Snapshot ${id} was not restored: $(backends_artifact_names) could not be rendered from it. Store, tacctl.yaml and $(backends_artifact_names) are as they were."
         return 1
     fi
-    restart_service
+    backends_restart_all
     info "Restored snapshot ${id}."
     echo ""
 }
@@ -1470,42 +864,11 @@ _backup_restore_legacy() {
 
     backup_snapshot || { error "Could not snapshot the current state. Nothing was changed."; return 1; }
     if ! _backup_apply _backup_import_legacy "$file"; then
-        error "Old-style backup ${id} was not restored. Store, tacctl.yaml and ${CONFIG} are as they were."
+        error "Old-style backup ${id} was not restored. Store, tacctl.yaml and $(backends_artifact_names) are as they were."
         return 1
     fi
-    restart_service
+    backends_restart_all
     info "Restored old-style backup ${id}."
-    echo ""
-}
-
-# No store yet: copy the old-style file back, as it always did.
-_backup_restore_unflipped() {
-    local id="$1" file
-    if ! file=$(_backup_legacy_path "$id"); then
-        if _backup_is_snapshot "$id"; then
-            error "Snapshot ${id} holds the store, which is not initialised here. ${STORE_NOT_INITIALISED_MSG}"
-        else
-            error "Backup not found: ${id}"
-            error "Run 'tacctl backup list' to see available backups."
-        fi
-        return 1
-    fi
-
-    echo ""
-    echo "  Restoring config from: ${id}"
-    echo ""
-    echo -e "  ${BOLD}Changes that will be applied:${NC}"
-    diff --color=always "$CONFIG" "$file" || true
-    echo ""
-    _backup_confirm || return 0
-
-    # Back up current config before restoring (safety net)
-    backup_config
-    cp "$file" "$CONFIG"
-    chown tacquito:tacquito "$CONFIG"
-    chmod 640 "$CONFIG"
-    restart_service
-    info "Config restored from backup ${id}."
     echo ""
 }
 

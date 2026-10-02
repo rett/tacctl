@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # What 'tacctl install' does to the configuration, and what 'tacctl uninstall'
 # removes beyond the directories -- the parts of the two commands that are
-# functions (lib/lifecycle.sh). The commands themselves shell out to git, go,
+# functions (lib/lifecycle.sh, lib/backends/tacacs.sh). The commands themselves shell out to git, go,
 # apt, useradd and systemd and are not driven here.
 #
 #   install_seed_config      fresh install: seed the store, render tacquito.yaml
@@ -116,8 +116,8 @@ PY
 }
 
 # tests/fixtures/legacy.fresh-install.yaml is what the template-editing
-# installer wrote (config/tacquito.yaml with the secret substituted, secrets
-# flattened and sorted, command rules spliced in, the four users appended),
+# installer wrote (config/backends/tacacs/tacquito.yaml with the secret substituted,
+# secrets flattened and sorted, command rules spliced in, the four users appended),
 # captured from the last commit that had it, with $SECRET as the secret.
 
 @test "install: the fixture of the old installer's output still matches the shipped template" {
@@ -125,7 +125,7 @@ PY
     # the fixture verbatim; only users, command rules and secrets were edited in.
     local section
     for section in 'Type constants' 'Accounting' 'Services'; do
-        diff <(sed -n "/^# --- ${section} ---/,/^# --- /p" "${TACCTL_SRC}/config/tacquito.yaml") \
+        diff <(sed -n "/^# --- ${section} ---/,/^# --- /p" "${TACCTL_SRC}/config/backends/tacacs/tacquito.yaml") \
              <(sed -n "/^# --- ${section} ---/,/^# --- /p" "${FIX}/legacy.fresh-install.yaml")
     done
 }
@@ -297,8 +297,15 @@ PY
 
 @test "cmd_install places README.md after the config directory exists" {
     # The order is the bug: the copy used to run before 'mkdir $CONFIG_DIR'.
+    # Both are in the TACACS+ backend's 'account' phase of install, which
+    # cmd_install runs before it seeds the configuration.
     local body mkdir_line readme_line
     body=$(declare -f cmd_install)
+    run grep -c 'backends_run install account' <<< "$body"
+    assert_output "1"
+    (( $(grep -n 'backends_run install account' <<< "$body" | cut -d: -f1) \
+        < $(grep -n 'install_seed_config' <<< "$body" | cut -d: -f1) ))
+    body=$(declare -f _tacacs_install_account)
     mkdir_line=$(grep -n 'mkdir -p "$CONFIG_DIR" "$LOG_DIR"' <<< "$body" | cut -d: -f1)
     readme_line=$(grep -n 'install_readme ' <<< "$body" | cut -d: -f1)
     [[ -n "$mkdir_line" && -n "$readme_line" ]]

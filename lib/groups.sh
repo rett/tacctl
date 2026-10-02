@@ -100,7 +100,11 @@ cmd_config_show() {
 
     echo ""
     echo -e "  ${BOLD}Config file:${NC}          ${CONFIG}"
-    echo -e "  ${BOLD}Service status:${NC}       $(systemctl is-active tacquito 2>/dev/null || echo 'unknown')"
+    local _b
+    _backends_load || return 1
+    for _b in "${BACKENDS_ENABLED[@]}"; do
+        echo -e "  ${BOLD}Service status:${NC}       $(backend_call "$_b" service is-active || echo 'unknown')"
+    done
 
     # Show listening port (TACACS+ = port 49)
     local listen

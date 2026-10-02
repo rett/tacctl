@@ -186,7 +186,7 @@ prompt_password() {
 #
 # Users live in the store (lib/store.sh); every command here reads them
 # through the model (lib/model.sh) and writes them with store_apply
-# (lib/render_tacacs.sh), which also re-renders tacquito.yaml. A disabled
+# (lib/backend.sh), which also re-renders tacquito.yaml. A disabled
 # user keeps its real hash in the store with 'disabled: true', and the date
 # of the last password change is the user's 'password_changed' field.
 
@@ -596,7 +596,7 @@ cmd_show() {
     if [[ "$pw_date" != "unknown" ]]; then
         pw_age=$(( ( $(date +%s) - $(date -d "$pw_date" +%s) ) / 86400 ))
     fi
-    last_login=$(get_last_login "$username")
+    last_login=$(backends_last_login "$username")
 
     echo ""
     echo -e "  ${BOLD}User:${NC}             ${username}"

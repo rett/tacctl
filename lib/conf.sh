@@ -117,7 +117,9 @@ YAML
 # Empty = cold cache (next read re-merges). _conf_invalidate is called from
 # every write path so subsequent reads see the mutation.
 _TACCTL_CFG_CACHE=""
-_conf_invalidate() { _TACCTL_CFG_CACHE=""; }
+# It also drops the list of enabled backends (lib/backend.sh), which is read
+# from the same file.
+_conf_invalidate() { _TACCTL_CFG_CACHE=""; _BACKENDS_LOADED=0; }
 
 _conf_load_cache() {
     [[ -n "$_TACCTL_CFG_CACHE" ]] && return 0
@@ -195,7 +197,7 @@ conf_get_keys() { _conf_walk get_keys "$1"; }
 #
 # Types: int (with optional min/max), string (with optional regex pattern
 # + optional max_length), nullable_string (string or null), cidr_list,
-# cisco_cmd_list, string_scalar. The `pattern` is a Python regex.
+# cisco_cmd_list, backend_list, string_scalar. The `pattern` is a Python regex.
 _conf_schema_py() {
     cat <<'PY'
 SCHEMA = {
@@ -208,6 +210,14 @@ SCHEMA = {
     'mgmt_acl.names.cisco':  {'type': 'acl_name'},
     'mgmt_acl.names.juniper':{'type': 'acl_name'},
     'mgmt_acl.permits':      {'type': 'cidr_list'},
+    # Backends that serve the model, in render and restart order. One id per
+    # module in lib/backends/ (add it here when the module lands). Not in
+    # conf_emit_defaults: 'default' below is the shipped value, as for the
+    # wildcard entries, and BACKENDS_DEFAULT_ENABLED in lib/backend.sh
+    # mirrors it.
+    'backends.enabled':      {'type': 'backend_list',
+                              'values': ['tacacs'],
+                              'default': ['tacacs']},
 }
 # Wildcard paths: each operator-created group/scope gets its own entry
 # under privileges.<group>, commands.<group>, aaa.order.<scope>. The
@@ -309,9 +319,9 @@ def validate(path, value, is_list):
         return False, f"unknown config key (typo? path must be one of the known tunables)"
     t = rule['type']
 
-    if is_list and t not in ('cidr_list', 'cisco_cmd_list', 'command_rules'):
+    if is_list and t not in ('cidr_list', 'cisco_cmd_list', 'command_rules', 'backend_list'):
         return False, f"{t} does not accept list input; drop 'set-list'"
-    if not is_list and t in ('cidr_list', 'cisco_cmd_list', 'command_rules'):
+    if not is_list and t in ('cidr_list', 'cisco_cmd_list', 'command_rules', 'backend_list'):
         return False, f"{t} requires list input (use conf_set_list)"
 
     if t == 'int':
@@ -359,6 +369,16 @@ def validate(path, value, is_list):
                 ipaddress.ip_network(item, strict=False)
             except ValueError:
                 return False, f"element {i}: {item!r} is not a valid CIDR"
+        return True, ''
+    if t == 'backend_list':
+        vals = rule.get('values') or []
+        if not isinstance(value, list) or not value:
+            return False, f"must be a non-empty list of backends (known: {', '.join(vals)})"
+        for i, item in enumerate(value):
+            if item not in vals:
+                return False, f"element {i}: {item!r} is not a backend (known: {', '.join(vals)})"
+            if item in value[:i]:
+                return False, f"element {i}: {item!r} is listed twice"
         return True, ''
     if t == 'cisco_cmd_list':
         if not isinstance(value, list):

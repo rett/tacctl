@@ -6,7 +6,7 @@
 # optional 'protocols' filter naming the backends that serve it. Users carry
 # a list of scope names and can authenticate only from devices matching a
 # scope they are a member of. Reads go through the model (lib/model.sh);
-# writes go through store_apply (lib/render_tacacs.sh), which re-renders
+# writes go through store_apply (lib/backend.sh), which re-renders
 # tacquito.yaml -- one secrets[] entry per (scope, prefix), most specific
 # first -- so nothing here touches that file.
 

@@ -555,7 +555,7 @@ drift.20250301_000000
     [[ "$(state_files)" == "$before" ]]
 }
 
-@test "backup restore: a render that fails puts all four files back" {
+@test "backup restore: a render that fails partway puts all four files back" {
     add_user alice
     add_user bob
     local snap before
@@ -563,9 +563,11 @@ drift.20250301_000000
     "$TACCTL_BIN_SCRIPT" config bcrypt-cost 11 > /dev/null
     before=$(state_files)
     tacctl_source_lib
-    # A render that gets as far as replacing tacquito.yaml and rendered.json,
-    # then fails: the worst case for consistency.
-    tacacs_render_apply() {
+    # A backend whose commit gets as far as replacing tacquito.yaml and
+    # rendered.json, then fails: the worst case for consistency.
+    # backends_render_all puts the rendered config and its record back,
+    # _backup_apply the store and tacctl.yaml.
+    backend_tacacs_render_commit() {
         printf '# half a render\n' > "$TACCTL_CONFIG"
         printf '{}\n' > "$RENDERED_FILE"
         return 1
@@ -671,7 +673,7 @@ drift.20250301_000000
     local before
     before=$(state_files)
     tacctl_source_lib
-    tacacs_render_apply() { return 1; }
+    backend_tacacs_render_stage() { return 1; }
     run _backup_apply _backup_import_legacy "${BACKUPS}/tacquito.yaml.20250101_000000"
     assert_failure
     [[ "$(state_files)" == "$before" ]]

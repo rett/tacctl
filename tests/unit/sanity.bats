@@ -29,14 +29,14 @@ setup() {
 
 @test "sanity: entrypoint and every lib file pass bash -n" {
     local f
-    for f in "$TACCTL_SRC"/bin/tacctl.sh "$TACCTL_SRC"/lib/*.sh; do
+    for f in "$TACCTL_SRC"/bin/tacctl.sh "$TACCTL_SRC"/lib/*.sh "$TACCTL_SRC"/lib/backends/*.sh; do
         run bash -n "$f"
         assert_success
     done
 }
 
 @test "sanity: no function is defined twice across bin/ and lib/" {
-    run bash -c 'grep -hoE "^[a-zA-Z_][a-zA-Z0-9_]*\(\)" "$1"/bin/tacctl.sh "$1"/lib/*.sh | sort | uniq -d' _ "$TACCTL_SRC"
+    run bash -c 'grep -hoE "^[a-zA-Z_][a-zA-Z0-9_]*\(\)" "$1"/bin/tacctl.sh "$1"/lib/*.sh "$1"/lib/backends/*.sh | sort | uniq -d' _ "$TACCTL_SRC"
     assert_success
     assert_output ""
 }

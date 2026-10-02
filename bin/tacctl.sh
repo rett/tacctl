@@ -57,9 +57,11 @@ SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 # Order: core.sh must come before conf.sh (conf.sh's source-time tunables
 # overwrite the built-in defaults core.sh assigns and need
 # TACCTL_OVERRIDES_FILE); render_devices.sh and linux_hosts.sh read SCRIPT_DIR.
-# model.sh, store.sh and render_tacacs.sh define functions plus STORE_FILE and
-# RENDERED_FILE, which depend on nothing in the later files, so their position
-# is not load-bearing.
+# model.sh and store.sh define functions plus STORE_FILE, which depend on
+# nothing in the later files, so their position is not load-bearing.
+# backend.sh must come before every lib/backends/*.sh: it declares
+# BACKEND_IDS, to which each module appends itself when sourced. A module
+# may use TACCTL_BIN and the other base paths of core.sh at source time.
 # shellcheck source=lib/core.sh
 source "${SCRIPT_DIR}/../lib/core.sh"
 # shellcheck source=lib/conf.sh
@@ -68,8 +70,6 @@ source "${SCRIPT_DIR}/../lib/conf.sh"
 source "${SCRIPT_DIR}/../lib/model.sh"
 # shellcheck source=lib/store.sh
 source "${SCRIPT_DIR}/../lib/store.sh"
-# shellcheck source=lib/render_tacacs.sh
-source "${SCRIPT_DIR}/../lib/render_tacacs.sh"
 # shellcheck source=lib/policy.sh
 source "${SCRIPT_DIR}/../lib/policy.sh"
 # shellcheck source=lib/users.sh
@@ -82,6 +82,10 @@ source "${SCRIPT_DIR}/../lib/scopes.sh"
 source "${SCRIPT_DIR}/../lib/render_devices.sh"
 # shellcheck source=lib/linux_hosts.sh
 source "${SCRIPT_DIR}/../lib/linux_hosts.sh"
+# shellcheck source=lib/backend.sh
+source "${SCRIPT_DIR}/../lib/backend.sh"
+# shellcheck source=lib/backends/tacacs.sh
+source "${SCRIPT_DIR}/../lib/backends/tacacs.sh"
 # shellcheck source=lib/service.sh
 source "${SCRIPT_DIR}/../lib/service.sh"
 # shellcheck source=lib/lifecycle.sh

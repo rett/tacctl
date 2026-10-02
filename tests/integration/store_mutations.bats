@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # How every mutating command applies a change: gate, backup, store write,
-# render, restart (store_apply in lib/render_tacacs.sh).
+# render, restart (store_apply in lib/backend.sh).
 #
 #   - legacy mode (no store): every mutating verb refuses and changes nothing,
 #     every read verb still works from tacquito.yaml;

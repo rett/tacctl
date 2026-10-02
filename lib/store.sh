@@ -853,7 +853,7 @@ _store_python() {
         python3 <(_store_py; _model_py; _store_main_py) "$@"
 }
 
-# --- Hooks filled in by later work packages --------------------------------
+# --- Hooks into code loaded after this file ---------------------------------
 
 # store_snapshot_hook: called before every write to an existing store.
 # Delegates to backup_snapshot once the snapshot package defines it.
@@ -864,8 +864,9 @@ store_snapshot_hook() {
 }
 
 # store_render_hook <model.json> <out-file>: render a tacquito.yaml from a
-# model for 'store import --check' (plan 4.3 step 2). Delegates to
-# render_tacacs_config once the renderer package defines it.
+# model for 'store import --check' (plan 4.3 step 2). The import is of a
+# legacy tacquito.yaml, so the proof is the TACACS+ backend's: this delegates
+# to render_tacacs_config (lib/backends/tacacs.sh) when it is loaded.
 # Returns 0 rendered, 2 no renderer available, anything else render failed.
 store_render_hook() {
     if declare -F render_tacacs_config >/dev/null; then
@@ -876,7 +877,8 @@ store_render_hook() {
 }
 
 # store_smoke_hook <rendered-file>: daemon load-smoke of a rendered config
-# (plan 4.3 step 4). Delegates to tacacs_load_smoke once it exists.
+# (plan 4.3 step 4). Delegates to tacacs_load_smoke (lib/backends/tacacs.sh)
+# when it is loaded.
 # Returns 0 passed, 2 skipped (no implementation or no daemon binary),
 # anything else failed.
 store_smoke_hook() {
@@ -1152,7 +1154,9 @@ _store_import_run() {
 # The first import of the live tacquito.yaml ("the flip") keeps that file as
 # backups/legacy/tacquito.yaml.pre-store.<ts> (0600: it holds the shared
 # secrets and hashes). 'tacctl store rollback' puts the newest one back and
-# removes the store, which returns the install to legacy read-only mode.
+# removes the store, which returns the install to legacy read-only mode. The
+# rollback touches the daemon and its live config, so it is the TACACS+
+# backend's (lib/backends/tacacs.sh: cmd_store_rollback, _store_unflip).
 
 # store_pre_store_latest: print the path of the newest pre-store file.
 # Returns 1, printing nothing, when there is none.
@@ -1188,84 +1192,6 @@ store_keep_pre_store() {
     cp "$src" "$dest" || return 1
     chmod 600 "$dest" || return 1
     echo "$dest"
-}
-
-# _store_unflip <pre-store-file>: make <pre-store-file> the live tacquito.yaml
-# again (0640, tacquito:tacquito when possible; left alone when it already
-# says the same, byte for byte) and remove the store and the render records.
-# The config goes back first: if that fails nothing was removed. No snapshot,
-# no restart -- callers do those.
-_store_unflip() {
-    local pre="$1" staged="${CONFIG}.tacctl-new"
-    if ! cmp -s "$pre" "$CONFIG"; then
-        cp "$pre" "$staged" || { rm -f "$staged"; return 1; }
-        chmod 640 "$staged"
-        chown tacquito:tacquito "$staged" 2>/dev/null || true
-        mv -f "$staged" "$CONFIG" || { rm -f "$staged"; return 1; }
-    fi
-    rm -f "$STORE_FILE" "$RENDERED_FILE" || return 1
-    _model_invalidate
-}
-
-# tacctl store rollback
-# Returns 0 rolled back (or cancelled at the prompt); 1 refused or failed,
-# with the store untouched; 2 usage.
-cmd_store_rollback() {
-    if (( $# )); then
-        error "Usage: tacctl store rollback"
-        return 2
-    fi
-    if [[ ! -f "$STORE_FILE" ]]; then
-        error "There is no store at ${STORE_FILE}: this install is already in legacy read-only mode. Nothing to roll back."
-        return 1
-    fi
-    local pre
-    if ! pre=$(store_pre_store_latest); then
-        error "No pre-store config (tacquito.yaml.pre-store.<timestamp>) under ${BACKUP_DIR}/legacy/: there is nothing to roll back to."
-        error "A fresh install starts with its store and never had a legacy tacquito.yaml. The store was left untouched."
-        return 1
-    fi
-    # Legacy mode reads everything from this file; one the loader cannot
-    # read would leave tacctl without a model.
-    if ! _store_python dump-legacy "$pre" "$PASSWORD_DATES_DIR" "${BACKUP_DIR}/disabled" > /dev/null; then
-        error "${pre} cannot be read as a tacquito.yaml. Nothing was changed."
-        return 1
-    fi
-
-    echo ""
-    echo -e "${BOLD}Roll back to the pre-store configuration${NC}"
-    echo ""
-    echo "  This restores ${pre}"
-    echo "  as ${CONFIG}, removes ${STORE_FILE} and the render records,"
-    echo "  and restarts the service. tacctl is then in legacy read-only mode: read commands"
-    echo "  work, commands that change users, groups, scopes or filters are refused."
-    echo "  The store is snapshotted first (see 'tacctl backup list')."
-    if ! _tacacs_matches_store "$pre"; then
-        echo ""
-        warn "The store no longer says what the pre-store file says: users, groups, scopes or filters changed since the import."
-        warn "Those changes stop being in effect. They stay in the snapshot, not in ${CONFIG}."
-    fi
-    echo ""
-    local confirm
-    read -rp "  Roll back? [y/N]: " confirm || true
-    if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
-        info "Cancelled."
-        return 0
-    fi
-
-    backup_snapshot || { error "Could not snapshot the store. Nothing was changed."; return 1; }
-    # A rendered config somebody edited by hand is not in the snapshot.
-    if [[ -f "$CONFIG" ]] && ! rendered_check "$CONFIG" > /dev/null; then
-        _tacacs_save_displaced "$CONFIG" || { error "Could not keep a copy of ${CONFIG}. Nothing was changed."; return 1; }
-    fi
-    if ! _store_unflip "$pre"; then
-        error "Rollback failed: ${CONFIG} could not be replaced. The store was left untouched."
-        return 1
-    fi
-    restart_service
-    info "Rolled back: ${CONFIG} is the pre-store file again and the store is gone (legacy read-only mode)."
-    info "To move to the store again: 'tacctl store import --check', then 'tacctl upgrade' (or 'tacctl store import' and 'tacctl config render --force')."
-    echo ""
 }
 
 # --- CLI: tacctl store ... --------------------------------------------------

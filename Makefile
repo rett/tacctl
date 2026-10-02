@@ -27,7 +27,7 @@ coverage:
 
 # Static analysis for all bash in the repo.
 lint:
-	$(SHELLCHECK) bin/tacctl.sh lib/*.sh
+	$(SHELLCHECK) bin/tacctl.sh lib/*.sh lib/backends/*.sh
 	$(SHELLCHECK) tests/helpers/*.bash
 	$(SHELLCHECK) config/linux/*.sh
 

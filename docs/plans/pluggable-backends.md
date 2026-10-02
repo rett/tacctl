@@ -110,25 +110,31 @@ Markers: **[V]** verified by reading code/docs or running a read-only check; **[
 
 ### 3.2 Backend contract (in-tree modules)
 
-Each `lib/backends/<id>.sh` appends to `BACKEND_IDS` and defines:
+**As implemented by WP2.1; the header of `lib/backend.sh` is authoritative** (it also explains each departure from the list this section first proposed). Each `lib/backends/<id>.sh` appends to `BACKEND_IDS` and defines `backend_<id>_<verb>` for every entry of `BACKEND_VERBS`:
 
 ```
-backend_<id>_describe        → protocol=tacacs|radius  impl=tacquito|freeradius  units=<list>  default_listeners=<json>
-backend_<id>_installed       → 0/1
-backend_<id>_install|_upgrade|_uninstall [--keep-logs]
-backend_<id>_render <model.json> [--force] → writes artifacts atomically, records shas in rendered.json, prints CHANGED|UNCHANGED
-backend_<id>_validate        → 0/1 + messages  (tacquito: structural python checks; freeradius -CX)
-backend_<id>_service <start|stop|restart|reload|is-active|since|pid> [listener]
-backend_<id>_listeners <list|show|set|reset> …   (see 3.4)
-backend_<id>_health          → JSON: listening sockets per listener, counters (backend-specific)
-backend_<id>_log <tail|search|failures|clear> …
-backend_<id>_accounting <tail|clear> …
-backend_<id>_last_login <user> → timestamp or "never"
-backend_<id>_secret_constraints → max_len= charset=
-backend_<id>_device_vars <vendor> <scope> → KEY=VALUE lines merged into template env
+describe            → key=value lines: protocol, impl, units, user, config_dir, log_dir
+installed           → 0/1
+install <phase> <tree>      phases: build files account start
+upgrade <phase> <tree>      phases: preflight config build files finish
+uninstall <phase> [--keep-logs]   phases: stop program data account
+artifacts           → the files the backend renders, one path per line
+render_check        → trial render + the daemon's own config check; prints current|same|ok|drift|unrecorded|missing|unreadable
+render_gate         → may a mutation replace the artifacts? 0 yes / 10 yes, adopt (force) / 3 refused / 1 failed
+render_stage <dir> [--force]  → render the current store into <dir> and prove it; touches nothing else
+render_commit <dir>           → install what was staged, record shas; prints CHANGED|UNCHANGED
+render_notes        → warnings after 'config render'
+service <start|stop|restart|reload|is-active|since|pid>
+listeners list      → '<name> <network> <address>' per listener (set/reset: WP2.2, see 3.4)
+status <service|config|accounting|activity>   → the backend's lines of 'tacctl status'
+log <tail|search|failures|clear> …
+accounting tail [n]
+last_login <user>   → timestamp or "never"
+secret_constraints  → max_len= charset=
+device_vars <vendor> <scope> → KEY=VALUE lines merged into template env
 ```
 
-`lib/backend.sh`: `backends_enabled` (from `tacctl.yaml` `backends.enabled`, default `[tacacs]`), `backend_call <id> <verb> …`, `backends_render_all [--force]`, `backends_restart_changed`, `backends_check_drift`. Every mutating command ends with `backends_render_all && backends_restart_changed` (replacing today's `chown tacquito:tacquito` + `restart_service` pairs).
+`lib/backend.sh`: `backends_enabled` (from `tacctl.yaml` `backends.enabled`, default `[tacacs]`), `backend_call <id> <verb> …`, `backends_run <verb> …` (every enabled backend), `backends_gate`, `backends_render_all [--force] [--force=<id>]` (stage every backend, then commit; all artifacts are replaced or none), `backends_restart_changed`, `backends_restart_all`, `backends_check_drift`, and `store_apply`, the one mutation path: gate → snapshot → write → `backends_render_all` → `backends_restart_changed`, with store.yaml and tacctl.yaml put back when the render fails. Legacy mode (no store) is TACACS+-only and its code (the import gate, `store rollback`, in-place migrations) lives in `lib/backends/tacacs.sh`, outside the contract.
 
 ### 3.3 Model and store
 

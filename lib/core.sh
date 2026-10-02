@@ -24,22 +24,15 @@ JUNIPER_ACL_NAME_DEFAULT="MGMT-ACL"
 DEFAULT_SCOPE_FRESH="lab"  # name used on fresh installs; upgrades keep existing scope name
 CONFIG_DIR="${TACCTL_ETC}"
 LOG_DIR="${TACCTL_LOG}"
-SERVICE_FILE="/etc/systemd/system/tacquito.service"
 
 # Unified tacctl config: canonical defaults live in conf_emit_defaults();
 # operator overrides live in this one on-disk file.
 TACCTL_OVERRIDES_FILE="${TACCTL_STATE_DIR}/tacctl.yaml"
 
 # --- System lifecycle constants ---
-GO_VERSION="1.26.2"
-TACQUITO_REPO="https://github.com/facebookincubator/tacquito.git"
-# Overridable so tests can point the patch overlay at a scratch checkout.
-TACQUITO_SRC="${TACQUITO_SRC:-/opt/tacquito-src}"
-TACQUITO_BIN="${TACCTL_BIN}/tacquito"
-HASHGEN_BIN="${TACCTL_BIN}/tacquito-hashgen"
+# (a backend's own -- unit file, source checkout, binaries -- are in its module)
 DEPLOY_DIR="/opt/tacctl"
 MANAGE_REPO="https://github.com/rett/tacctl.git"
-GO_BIN="/usr/local/go/bin/go"
 
 # --- Colors ---
 RED='\033[0;31m'

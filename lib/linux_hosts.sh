@@ -145,8 +145,9 @@ linux_write_install_script() {
         return 1
     fi
 
-    local listen port
-    listen=$(read_service_override TACQUITO_ADDRESS)
+    # pam_tacplus talks to the TACACS+ backend's listener.
+    local listen="" port _lname _lnet
+    read -r _lname _lnet listen < <(backend_call tacacs listeners list) || true
     listen=${listen:-:49}
     port="${listen##*:}"
 

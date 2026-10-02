@@ -278,7 +278,7 @@ _normalize() {
     # Build the config the way the product does: the shipped template with a
     # real shared secret, imported into the store, then one user via
     # 'user add' -- which renders tacquito.yaml from the store.
-    cp "${TACCTL_SRC}/config/tacquito.yaml" "$TACCTL_CONFIG"
+    cp "${TACCTL_SRC}/config/backends/tacacs/tacquito.yaml" "$TACCTL_CONFIG"
     sed -i 's/REPLACE_WITH_SHARED_SECRET/lab-secret-0123456789abcdef/' "$TACCTL_CONFIG"
     rm -f "${TACCTL_STATE_DIR}/store.yaml"
     run "$TACCTL_BIN_SCRIPT" store import
