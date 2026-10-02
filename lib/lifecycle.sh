@@ -404,7 +404,7 @@ cmd_install() {
     echo "  - Prompt for shared secret and user passwords"
     echo ""
 
-    read -rp "Continue with installation? [y/N]: " confirm
+    read -rp "Continue with installation? [y/N]: " confirm || true
     if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
         info "Cancelled."
         exit 0
@@ -786,7 +786,7 @@ cmd_uninstall() {
     echo -e "(/usr/local/go) will NOT be removed.${NC}"
     echo ""
 
-    read -rp "Are you sure you want to uninstall tacquito? [y/N]: " confirm
+    read -rp "Are you sure you want to uninstall tacquito? [y/N]: " confirm || true
     if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
         info "Cancelled."
         exit 0
@@ -804,14 +804,14 @@ cmd_uninstall() {
     local -A KEEP_LOGS=()
 
     echo ""
-    read -rp "Preserve config backups (${BACKUP_DIR})? [y/N]: " keep_backups
+    read -rp "Preserve config backups (${BACKUP_DIR})? [y/N]: " keep_backups || true
     if [[ "$keep_backups" == "y" || "$keep_backups" == "Y" ]]; then
         PRESERVE_BACKUPS=true
     fi
 
     for _b in "${BACKENDS_ENABLED[@]}"; do
         logs=$(backend_describe "$_b" log_dir) || continue
-        read -rp "Preserve accounting logs (${logs})? [y/N]: " keep_logs
+        read -rp "Preserve accounting logs (${logs})? [y/N]: " keep_logs || true
         if [[ "$keep_logs" == "y" || "$keep_logs" == "Y" ]]; then
             KEEP_LOGS[$_b]=1
         fi

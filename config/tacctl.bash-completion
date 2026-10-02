@@ -287,10 +287,10 @@ for u in (d.get('users') or []):
         scope)
             local ssub="${words[offset + 2]}"
             if [[ $pos -eq 2 ]]; then
-                COMPREPLY=($(compgen -W "list routing show add remove rename default lookup prefixes secret protocols aaa-order exec-timeout tacacs-group radius-group mgmt-acl" -- "$cur"))
+                COMPREPLY=($(compgen -W "list routing show add remove rename default lookup prefixes secret protocols aaa-order exec-timeout tacacs-group radius-group auth-method mgmt-acl" -- "$cur"))
             elif [[ $pos -eq 3 ]]; then
                 case "$ssub" in
-                    show|remove|rename|default|prefixes|secret|protocols|aaa-order|exec-timeout|tacacs-group|radius-group|mgmt-acl)
+                    show|remove|rename|default|prefixes|secret|protocols|aaa-order|exec-timeout|tacacs-group|radius-group|auth-method|mgmt-acl)
                         COMPREPLY=($(compgen -W "$(_tacctl_scope_names)" -- "$cur"))
                         ;;
                     lookup)
@@ -319,6 +319,10 @@ for u in (d.get('users') or []):
                     aaa-order)
                         # `scope aaa-order <scope> <tacacs-first|local-first>`
                         COMPREPLY=($(compgen -W "tacacs-first local-first" -- "$cur"))
+                        ;;
+                    auth-method)
+                        # `scope auth-method <scope> <tacacs|radius|default>`
+                        COMPREPLY=($(compgen -W "tacacs radius default" -- "$cur"))
                         ;;
                     mgmt-acl)
                         # `scope mgmt-acl <scope> <sub>` — name setters + permit-list ops.

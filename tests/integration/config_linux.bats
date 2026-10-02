@@ -1139,3 +1139,33 @@ _epel_stubs() {
     assert_line 'Autolock[$i]=false'
     grep -q '\*"(RADIUS)")' "$TACCTL_CLIENT_XDG/plasma-workspace/env/tacctl-nolock.sh"
 }
+
+# --- the scope's auth-method ---------------------------------------------------------
+
+@test "config linux script: without --method the scope's auth-method picks the method; --method wins" {
+    radius_on
+    "$TACCTL_BIN_SCRIPT" scope auth-method lab radius > /dev/null
+    run _gen
+    assert_success
+    assert_output --partial "Method radius: the auth-method of scope 'lab'"
+    grep -q '^TAC_METHOD=radius$' "$OUT"
+    run _gen --method tacplus
+    assert_success
+    refute_output --partial "auth-method"
+    run sed '/^__TARBALL__$/,$d' "$OUT"
+    assert_line "TAC_METHOD=tacplus"
+}
+
+@test "config linux script: a scope's auth-method tacacs comes before host.default_method" {
+    radius_on
+    "$TACCTL_BIN_SCRIPT" host default-method radius > /dev/null
+    run _gen
+    assert_success
+    grep -q '^TAC_METHOD=radius$' "$OUT"
+    "$TACCTL_BIN_SCRIPT" scope auth-method lab tacacs > /dev/null
+    run _gen
+    assert_success
+    assert_output --partial "Method tacplus: the auth-method of scope 'lab'"
+    run sed '/^__TARBALL__$/,$d' "$OUT"
+    assert_line "TAC_METHOD=tacplus"
+}

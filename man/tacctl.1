@@ -797,7 +797,9 @@ block introduced in IOS 15.0.
 .IP
 With
 .B "--protocol radius"
-(default
+(default: the scope's auth-method, see
+.BR "scope auth-method" ,
+else
 .BR tacacs )
 the configuration is for the RADIUS backend instead (see
 .B RADIUS DEVICE CONFIGURATIONS
@@ -851,8 +853,12 @@ handling matches
 .BR "config cisco" .
 TACACS+ only:
 .B "--protocol radius"
-is refused, because nothing in this repository establishes that the
-supported firmware does RADIUS.
+is refused; no RADIUS walkthrough is rendered yet (what WTI documents is
+recorded in
+.IR docs/radius-notes.md ).
+On a scope whose auth-method is
+.B radius
+the TACACS+ walkthrough is printed with a warning.
 .TP
 .BI "config branch " [ name ]
 Show or change the tacctl repository branch used by
@@ -1309,6 +1315,49 @@ Junos has no equivalent. Stored as
 .B radius_group.<scope>
 in
 .IR tacctl.yaml .
+.SS Per-scope default authentication method \fB(tacctl scope auth-method)\fR
+.TP
+.BI "scope auth-method " scope " [" tacacs | radius | default ]
+Show or set the protocol this scope uses when a command names none:
+.B "config cisco"
+and
+.B "config juniper"
+without
+.BR --protocol ,
+.B "host enroll"
+(for a host that is not registered yet) and
+.B "config linux script"
+without
+.B --method
+.RB ( tacacs
+is host method
+.BR tacplus ).
+An explicit
+.B --protocol
+or
+.B --method
+always wins.
+.B default
+clears the setting: device configurations are then TACACS+ and hosts take
+.BR "host default-method" .
+Refused when the scope's
+.B protocols
+filter leaves the protocol out;
+.B "scope protocols"
+in turn refuses a list without the scope's auth-method.
+.B "config cisco --legacy"
+on a scope set to
+.B radius
+needs
+.BR "--protocol tacacs" ;
+.B "config wti"
+stays TACACS+ and warns. Stored as
+.B scope_auth_method.<scope>
+in
+.IR tacctl.yaml ;
+follows
+.B "scope rename"
+and is removed with the scope.
 .SS Per-scope AAA method-list order \fB(tacctl scope aaa-order)\fR
 .TP
 .BI "scope aaa-order " scope " [" tacacs-first | local-first ]
@@ -1343,7 +1392,10 @@ and
 .B "config juniper"
 render the configuration for logging in to a device against the RADIUS
 backend when given
-.BR "--protocol radius" .
+.BR "--protocol radius" ,
+or without the flag for a scope whose auth-method is
+.B radius
+.RB ( "scope auth-method" ).
 The server address, the authentication and accounting ports (the
 .B auth
 and
@@ -1354,8 +1406,8 @@ and the scope's shared secret are filled in; the management ACL, the
 exec timeout, the scope's
 .B aaa-order
 (the server first, or local first) and the local fallback behave as in
-the TACACS+ output. Without the flag the output is the TACACS+
-configuration, unchanged.
+the TACACS+ output. Without the flag, and for a scope with no
+auth-method, the output is the TACACS+ configuration, unchanged.
 .PP
 Cisco output is a
 .B "radius server"
@@ -1432,6 +1484,7 @@ and every nested dispatcher such as
 .BR "scope exec-timeout" ,
 .BR "scope tacacs-group" ,
 .BR "scope radius-group" ,
+.BR "scope auth-method" ,
 .BR "scope mgmt-acl" ,
 .BR "user scope" ,
 or

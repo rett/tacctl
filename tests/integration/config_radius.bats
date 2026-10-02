@@ -409,7 +409,7 @@ radius_listeners() {
     assert_failure
     [[ -z "$output" ]]
     [[ "$stderr" == *"renders TACACS+ only"* ]]
-    [[ "$stderr" == *"nothing in this repository establishes"* ]]
+    [[ "$stderr" == *"no RADIUS walkthrough is rendered yet"* ]]
 }
 
 # --- operator template overrides ---------------------------------------------------

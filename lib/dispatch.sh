@@ -387,7 +387,7 @@ cmd_config_sudoers() {
     warn "/usr/local/bin/tacctl, which can modify system config and restart"
     warn "services. Effectively passwordless root for that group."
     echo ""
-    read -rp "  Install ${SUDOERS_FILE} for group '%${group}'? [y/N]: " confirm
+    read -rp "  Install ${SUDOERS_FILE} for group '%${group}'? [y/N]: " confirm || true
     if [[ ! "$confirm" =~ ^[Yy] ]]; then
         info "Aborted."
         return

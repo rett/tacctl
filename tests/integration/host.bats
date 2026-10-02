@@ -592,3 +592,104 @@ _protocols() { "$TACCTL_BIN_SCRIPT" scope protocols "$1" | sed -n "s/.*Scope '$1
     run "$TACCTL_BIN_SCRIPT" config validate
     assert_output --partial "host.default_method"
 }
+
+# --- the scope's auth-method (tacctl scope auth-method) ----------------------------
+
+@test "host enroll: without --method a new host takes the scope's auth-method" {
+    radius_on
+    "$TACCTL_BIN_SCRIPT" scope auth-method lab radius > /dev/null
+    run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab
+    assert_success
+    assert_output --partial "Method radius: the auth-method of scope 'lab'"
+    run _hosts
+    assert_output "web1|web1||lab|192.0.2.1||radius"
+    grep -q '^TAC_METHOD=radius$' "$PUSHED"
+}
+
+@test "host enroll: --method wins over the scope's auth-method" {
+    radius_on
+    "$TACCTL_BIN_SCRIPT" scope auth-method lab radius > /dev/null
+    run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab --method tacplus
+    assert_success
+    refute_output --partial "auth-method"
+    run _hosts
+    assert_output "web1|web1||lab|192.0.2.1|"
+    run sed '/^__TARBALL__$/,$d' "$PUSHED"
+    assert_line "TAC_METHOD=tacplus"
+}
+
+@test "host enroll: a registered host keeps its method whatever the scope's auth-method says" {
+    radius_on
+    "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab > /dev/null
+    "$TACCTL_BIN_SCRIPT" scope auth-method lab radius > /dev/null
+    run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab
+    assert_success
+    assert_output --partial "web1 is registered with method tacplus and keeps it; scope 'lab' has auth-method radius. To switch the host: --method radius"
+    refute_output --partial "Switching"
+    run _hosts
+    assert_output "web1|web1||lab|192.0.2.1|"
+    # Asked to, it switches.
+    run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab --method radius
+    assert_success
+    run _hosts
+    assert_output "web1|web1||lab|192.0.2.1||radius"
+}
+
+@test "host enroll: the scope's auth-method comes before host default-method" {
+    radius_on
+    "$TACCTL_BIN_SCRIPT" host default-method radius > /dev/null
+    "$TACCTL_BIN_SCRIPT" scope auth-method lab tacacs > /dev/null
+    run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab
+    assert_success
+    assert_output --partial "Method tacplus: the auth-method of scope 'lab'"
+    run _hosts
+    assert_output "web1|web1||lab|192.0.2.1|"
+    # A scope without one still takes the default.
+    "$TACCTL_BIN_SCRIPT" scope auth-method lab default > /dev/null
+    run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab --name web2
+    assert_success
+    run _hosts
+    assert_line "web2|web1||lab|192.0.2.1||radius"
+}
+
+@test "host enroll: the scope's auth-method names a backend that is off: refused, nothing reaches the host" {
+    "$TACCTL_BIN_SCRIPT" scope auth-method lab radius > /dev/null
+    run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab
+    assert_failure
+    assert_output --partial "tacctl backend enable radius"
+    run grep -c "^ssh" "$CALLS_LOG"
+    assert_output "0"
+}
+
+@test "host enroll: an existing linux-<name> scope's auth-method is used; one created by enroll has none" {
+    radius_on_rendering
+    "$TACCTL_BIN_SCRIPT" scope add linux-web1 --prefixes 192.0.2.50/32 --secret generate > /dev/null
+    "$TACCTL_BIN_SCRIPT" scope auth-method linux-web1 radius > /dev/null
+    run "$TACCTL_BIN_SCRIPT" host enroll web1
+    assert_success
+    assert_output --partial "Method radius: the auth-method of scope 'linux-web1'"
+    run _hosts
+    assert_output "web1|web1||linux-web1|192.0.2.1||radius"
+
+    stub_cmd getent 'echo "192.0.2.51 STREAM web2"'
+    run "$TACCTL_BIN_SCRIPT" host enroll web2
+    assert_success
+    refute_output --partial "auth-method"
+    run _hosts
+    assert_line "web2|web2||linux-web2|192.0.2.1|"
+    run "$TACCTL_BIN_SCRIPT" scope auth-method linux-web2
+    assert_output --partial "auth-method: not set"
+}
+
+@test "host enroll: switching a host does not limit its scope away from the scope's auth-method" {
+    radius_on_rendering
+    "$TACCTL_BIN_SCRIPT" host enroll web1 > /dev/null
+    "$TACCTL_BIN_SCRIPT" scope auth-method linux-web1 tacacs > /dev/null
+    run "$TACCTL_BIN_SCRIPT" host enroll web1 --method radius
+    assert_success
+    assert_output --partial "Scope 'linux-web1' has auth-method tacacs, so it stays open to tacacs, radius instead of being limited to radius."
+    run _protocols linux-web1
+    assert_output "tacacs,radius"
+    run _hosts
+    assert_output "web1|web1||linux-web1|192.0.2.1||radius"
+}

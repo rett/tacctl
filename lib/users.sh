@@ -388,7 +388,7 @@ cmd_remove() {
     fi
 
     echo ""
-    read -rp "  Remove user '${username}'? This cannot be undone. [y/N]: " confirm
+    read -rp "  Remove user '${username}'? This cannot be undone. [y/N]: " confirm || true
     if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
         info "Cancelled."
         exit 0
@@ -898,7 +898,7 @@ cmd_user_scope() {
             warn "WARNING: ${username} will be unable to authenticate on any device"
             warn "until you grant at least one scope with 'tacctl user scope ${username} add <name>'"
             warn "(Distinct from 'tacctl user disable' — the password hash is preserved.)"
-            read -rp "  Clear all scopes for '${username}'? [y/N]: " confirm
+            read -rp "  Clear all scopes for '${username}'? [y/N]: " confirm || true
             [[ ! "$confirm" =~ ^[Yy] ]] && { info "Aborted."; return; }
             store_apply store_user_set "$username" "scopes=" || exit $?
             info "Cleared scopes for user '${username}'."

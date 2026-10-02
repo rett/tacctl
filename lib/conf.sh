@@ -528,6 +528,18 @@ WILDCARDS = [
                        # `config cisco --protocol radius` renders. Same
                        # naming rules, own default.
                        'default': 'RADIUS-GROUP'}),
+    ('scope_auth_method.',
+                      {'type': 'enum',
+                       # The protocol a scope's devices and hosts use
+                       # when the command is given none ('tacctl scope
+                       # auth-method'): `config cisco|juniper` without
+                       # --protocol, `host enroll` and `config linux
+                       # script` without --method. No default here on
+                       # purpose: an unset key means "not decided for
+                       # this scope" (devices: tacacs; hosts:
+                       # host.default_method), which an explicit
+                       # 'tacacs' is not.
+                       'values': ['tacacs', 'radius']}),
     # Per-scope mgmt-ACL overrides. These live under a separate
     # `scope_mgmt_acl.*` top-level namespace rather than extending
     # `mgmt_acl.*`, because the global `mgmt_acl.permits` is a list

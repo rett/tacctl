@@ -117,6 +117,13 @@ complete_words() {
     assert_output "radius-group"
 }
 
+@test "completion: scope offers auth-method, a scope name, then tacacs, radius or default" {
+    complete_words tacctl scope auth
+    assert_output "auth-method"
+    complete_words tacctl scope auth-method lab ""
+    assert_output "$(printf 'tacacs\nradius\ndefault')"
+}
+
 @test "completion: log subcommands take --backend, and its value is a backend id" {
     complete_words tacctl log tail --
     assert_output "--backend"

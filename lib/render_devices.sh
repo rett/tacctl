@@ -162,6 +162,23 @@ config_protocol_valid() {
     fi
 }
 
+# config_protocol_resolve <scope> <protocol given with --protocol, or ''>:
+# the protocol a device config is rendered for. --protocol always wins; without
+# it the scope's auth-method decides ('tacctl scope auth-method'), and a scope
+# that has none gets TACACS+, as before the setting existed. Sets
+# CONFIG_PROTOCOL and CONFIG_PROTOCOL_SOURCE (flag | scope | default).
+config_protocol_resolve() {
+    local scope="$1" given="${2:-}"
+    CONFIG_PROTOCOL="$given" CONFIG_PROTOCOL_SOURCE="flag"
+    [[ -n "$given" ]] && return 0
+    CONFIG_PROTOCOL=$(scope_auth_method "$scope")
+    CONFIG_PROTOCOL_SOURCE="scope"
+    if [[ -z "$CONFIG_PROTOCOL" ]]; then
+        CONFIG_PROTOCOL="tacacs" CONFIG_PROTOCOL_SOURCE="default"
+    fi
+    return 0
+}
+
 # What a RADIUS device config may carry as a secret. Device CLIs treat
 # whitespace, quotes, '?' (context help on paste), '!' and '#' (comments),
 # '$' and '\' (escapes), ';' '{' '}' '[' ']' '|' '&' '<' '>' ',' '*' '(' ')'
@@ -318,8 +335,8 @@ radius_summary_limits() {
 # shellcheck disable=SC2089,SC2090
 cmd_config_cisco() {
     # Parse --scope <name>, --legacy and --protocol tacacs|radius
-    local scope="" legacy=0 protocol="tacacs"
-    local usage="Usage: tacctl config cisco [--scope <name>] [--legacy] [--protocol tacacs|radius]"
+    local scope="" legacy=0 protocol=""
+    local usage="Usage: tacctl config cisco [--scope <name>] [--legacy] [--protocol tacacs|radius]   (without --protocol: the scope's auth-method, else tacacs)"
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --scope)
@@ -356,6 +373,14 @@ cmd_config_cisco() {
             exit 1
         fi
     elif ! _scope_require "$scope"; then
+        exit 1
+    fi
+    # No --protocol: the scope's auth-method, else TACACS+.
+    config_protocol_resolve "$scope" "$protocol"
+    protocol="$CONFIG_PROTOCOL"
+    if [[ "$protocol" == "radius" && "$legacy" == 1 ]]; then
+        error "Scope '${scope}' has auth-method radius (tacctl scope auth-method), and --legacy (IOS 12.x syntax) applies to TACACS+ only."
+        error "For the legacy TACACS+ configuration add --protocol tacacs: tacctl config cisco --scope ${scope} --legacy --protocol tacacs"
         exit 1
     fi
     local secret server_ip
@@ -524,6 +549,7 @@ ${mgmt_entries}  deny   any log"
     echo ""
     local proto_note=""
     [[ "$protocol" == "radius" ]] && proto_note=", protocol: RADIUS"
+    [[ "$protocol" == "radius" && "$CONFIG_PROTOCOL_SOURCE" == "scope" ]] && proto_note+=" — the scope's auth-method"
     echo -e "${BOLD}Cisco IOS / IOS-XE Configuration${NC}  (scope: ${scope}${proto_note})"
     if [[ -n "$other_scopes" ]]; then
         echo -e "${YELLOW}(other scopes: ${other_scopes} — use --scope <name> to emit those)${NC}"
@@ -701,8 +727,8 @@ EOF
 # shellcheck disable=SC2089,SC2090
 cmd_config_juniper() {
     # Parse --scope <name> and --protocol tacacs|radius
-    local scope="" protocol="tacacs"
-    local usage="Usage: tacctl config juniper [--scope <name>] [--protocol tacacs|radius]"
+    local scope="" protocol=""
+    local usage="Usage: tacctl config juniper [--scope <name>] [--protocol tacacs|radius]   (without --protocol: the scope's auth-method, else tacacs)"
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --scope)
@@ -733,6 +759,9 @@ cmd_config_juniper() {
     elif ! _scope_require "$scope"; then
         exit 1
     fi
+    # No --protocol: the scope's auth-method, else TACACS+.
+    config_protocol_resolve "$scope" "$protocol"
+    protocol="$CONFIG_PROTOCOL"
     local secret server_ip
     secret=$(model_scope "$scope" secret) || secret=""
     server_ip=$(ip -4 route get 1.0.0.0 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}')
@@ -998,6 +1027,7 @@ set firewall family inet filter ${juniper_acl_name} term default-accept then acc
     echo ""
     local proto_note=""
     [[ "$protocol" == "radius" ]] && proto_note=", protocol: RADIUS"
+    [[ "$protocol" == "radius" && "$CONFIG_PROTOCOL_SOURCE" == "scope" ]] && proto_note+=" — the scope's auth-method"
     echo -e "${BOLD}Juniper Junos Configuration${NC}  (scope: ${scope}${proto_note})"
     if [[ -n "$other_scopes" ]]; then
         echo -e "${YELLOW}(other scopes: ${other_scopes} — use --scope <name> to emit those)${NC}"
@@ -1117,8 +1147,11 @@ wti_access_level_for_privlvl() {
 }
 
 # --- CONFIG WTI (step-by-step serial-CLI procedure) ---
-# TACACS+ only: `--protocol radius` is refused, because nothing in this
-# repository establishes that the supported firmware does RADIUS.
+# TACACS+ only: `--protocol radius` is refused. What WTI documents about RADIUS
+# on these units (the vendor dictionary, the RADIUS menu) is recorded in
+# docs/radius-notes.md; no RADIUS walkthrough is rendered from it yet, and the
+# RADIUS backend sends no WTI attribute. A scope whose auth-method is radius
+# therefore still gets this TACACS+ walkthrough, with a warning on stderr.
 # WTI units are configured through numbered text menus, not a pasteable
 # config, so this emits an operator walkthrough with the scope's values
 # filled in. No WTI-specific service block is needed in tacquito.yaml: the
@@ -1142,7 +1175,7 @@ wti_access_level_for_privlvl() {
 cmd_config_wti() {
     # Parse --scope <name>. --protocol is accepted so every device command
     # takes the same flag, but WTI is TACACS+ only (see above).
-    local scope="" protocol="tacacs"
+    local scope="" protocol=""
     local usage="Usage: tacctl config wti [--scope <name>] [--protocol tacacs]"
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -1165,8 +1198,8 @@ cmd_config_wti() {
         esac
     done
     if [[ "$protocol" == "radius" ]]; then
-        error "'config wti' renders TACACS+ only. The walkthrough follows the unit's TACACS Parameters menu (verified on a v8.10 unit); nothing in this repository establishes"
-        error "that the supported firmware (v8.x) does RADIUS, or which menu and attributes it uses, so no RADIUS procedure is offered rather than a guessed one."
+        error "'config wti' renders TACACS+ only. The walkthrough follows the unit's TACACS Parameters menu (verified on a v8.10 unit). WTI documents RADIUS for these units"
+        error "(docs/radius-notes.md), but no RADIUS walkthrough is rendered yet and this server's RADIUS backend returns no WTI access-level attribute, so no RADIUS procedure is offered."
         error "Use 'tacctl config wti' for TACACS+, or configure the unit's RADIUS support from WTI's documentation against this server's RADIUS listeners (tacctl config listen --backend radius show)."
         exit 1
     fi
@@ -1179,6 +1212,12 @@ cmd_config_wti() {
         fi
     elif ! _scope_require "$scope"; then
         exit 1
+    fi
+    # The scope's auth-method does not select a RADIUS walkthrough (there is
+    # none): say so rather than print TACACS+ steps without a word.
+    if [[ -z "$protocol" && "$(scope_auth_method "$scope")" == "radius" ]]; then
+        warn "Scope '${scope}' has auth-method radius, but 'config wti' renders TACACS+ only: this is the TACACS+ walkthrough." >&2
+        warn "The unit must reach this server over TACACS+ (TCP/49) and the scope must be served over it (tacctl scope protocols ${scope})." >&2
     fi
     local secret server_ip
     secret=$(model_scope "$scope" secret) || secret=""
@@ -1516,7 +1555,7 @@ cmd_config_mgmt_acl() {
                 echo ""
                 return
             fi
-            read -rp "  Clear all mgmt-acl entries? [y/N]: " confirm
+            read -rp "  Clear all mgmt-acl entries? [y/N]: " confirm || true
             if [[ ! "$confirm" =~ ^[Yy] ]]; then
                 info "Aborted."
                 return

@@ -437,3 +437,29 @@ show; rm"
     run conf_get_list scope_mgmt_acl.permits.lab
     assert_line "10.99.0.0/16"
 }
+
+# --- scope_auth_method.<scope> ----------------------------------------------
+
+@test "scope_auth_method.<scope>: unset reads empty; tacacs and radius both round-trip (no implicit default to prune)" {
+    run conf_get scope_auth_method.lab
+    assert_output ""
+    conf_set scope_auth_method.lab tacacs
+    run conf_get scope_auth_method.lab
+    assert_output "tacacs"
+    conf_set scope_auth_method.lab radius
+    run conf_get scope_auth_method.lab
+    assert_output "radius"
+    conf_unset scope_auth_method.lab
+    run conf_get scope_auth_method.lab
+    assert_output ""
+}
+
+@test "scope_auth_method.<scope>: only tacacs or radius; a scope name is required" {
+    run conf_set scope_auth_method.lab tacplus
+    assert_failure
+    assert_output --partial "must be one of: tacacs, radius"
+    run conf_set scope_auth_method.lab ""
+    assert_failure
+    run conf_set scope_auth_method radius
+    assert_failure
+}

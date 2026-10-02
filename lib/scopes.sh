@@ -49,6 +49,33 @@ _scope_require() {
     return 1
 }
 
+# scope_auth_method <scope>: the scope's default authentication method as set
+# with 'tacctl scope auth-method' (tacacs|radius), empty when it has none. A
+# value the schema does not know (a hand edit of tacctl.yaml) reads as none.
+scope_auth_method() {
+    local v
+    v=$(conf_get "scope_auth_method.${1}")
+    case "$v" in
+        tacacs|radius) echo "$v" ;;
+    esac
+    return 0
+}
+
+# Drop the scope's auth-method (the scope is going away). tacctl.yaml is left
+# alone when there is nothing to drop: a write re-dumps the whole file.
+_scope_auth_method_drop() {
+    [[ -n "$(conf_get "scope_auth_method.${1}")" ]] || return 0
+    conf_unset "scope_auth_method.${1}"
+}
+
+# Writer for store_apply: delete the scope (off every user that still has it)
+# and the auth-method stored under its name, so a scope created later with
+# the same name does not inherit it.
+_scope_remove_write() {
+    store_scope_del "$1" --strip-users || return 1
+    _scope_auth_method_drop "$1"
+}
+
 # --- CONFIG ALLOW/DENY PREFIX FILTERS ---
 cmd_config_prefix_filter() {
     local key="$1"
@@ -175,7 +202,7 @@ cmd_config_prefix_filter() {
                 warn "Clearing the deny list removes all per-IP deny overrides;"
                 warn "any source matching 'allow' (or all, if allow is empty) can connect."
             fi
-            read -rp "  Clear all ${n} ${label}-list entr$( [[ $n -eq 1 ]] && echo "y" || echo "ies" )? [y/N]: " confirm
+            read -rp "  Clear all ${n} ${label}-list entr$( [[ $n -eq 1 ]] && echo "y" || echo "ies" )? [y/N]: " confirm || true
             if [[ ! "$confirm" =~ ^[Yy] ]]; then
                 info "Aborted."
                 return
@@ -217,6 +244,7 @@ cmd_scope() {
         exec-timeout)      cmd_scope_exec_timeout "$@" ;;
         tacacs-group)      cmd_scope_tacacs_group "$@" ;;
         radius-group)      cmd_scope_radius_group "$@" ;;
+        auth-method)       cmd_scope_auth_method "$@" ;;
         mgmt-acl)          cmd_scope_mgmt_acl "$@" ;;
         *)
             error "Unknown subcommand: '${subcmd}'"
@@ -252,6 +280,7 @@ cmd_scope_usage() {
     echo "  tacctl scope exec-timeout <scope> [minutes]              Per-scope idle-session timeout in rendered device configs (0..60 min; default 60; 0 = never expire)"
     echo "  tacctl scope tacacs-group <scope> [name]                 Per-scope Cisco aaa-group-server label (default TACACS-GROUP)"
     echo "  tacctl scope radius-group <scope> [name]                 Per-scope Cisco aaa-group-server label for RADIUS (default RADIUS-GROUP)"
+    echo "  tacctl scope auth-method <scope> [tacacs|radius|default] Protocol this scope's device configs and host enrollments use when the command names none"
     echo "  tacctl scope mgmt-acl <scope> list|add|remove|clear      Per-scope permit list (fallback: global mgmt_acl.permits)"
     echo "  tacctl scope mgmt-acl <scope> cisco-name|juniper-name [name]  Per-scope ACL / filter name (defaults VTY-ACL / MGMT-ACL)"
     echo ""
@@ -360,7 +389,8 @@ cmd_scope_show() {
     # Per-scope device-render knobs. Absence of an override falls back
     # through the per-scope -> global -> shipped-default chain,
     # matching what `tacctl config cisco|juniper --scope <name>` emits.
-    local aaa_order_val exec_timeout_val exec_timeout_display tacacs_group_val radius_group_val cisco_acl_val juniper_acl_val
+    local aaa_order_val exec_timeout_val exec_timeout_display tacacs_group_val radius_group_val cisco_acl_val juniper_acl_val auth_method_val
+    auth_method_val=$(scope_auth_method "$name")
     aaa_order_val=$(conf_get "aaa.order.${name}" tacacs-first)
     exec_timeout_val=$(conf_get "exec_timeout.${name}" 60)
     tacacs_group_val=$(conf_get "tacacs_group.${name}" TACACS-GROUP)
@@ -379,6 +409,7 @@ cmd_scope_show() {
     echo -e "  ${BOLD}Default:${NC}       ${is_default}"
     echo -e "  ${BOLD}Secret:${NC}        ${secret_line}"
     echo -e "  ${BOLD}Protocols:${NC}     ${protocols:-all (no filter)}"
+    echo -e "  ${BOLD}Auth method:${NC}   ${auth_method_val:-not set (devices: tacacs; hosts: $(linux_default_method))}"
     echo -e "  ${BOLD}AAA order:${NC}     ${aaa_order_val}"
     echo -e "  ${BOLD}Exec timeout:${NC}  ${exec_timeout_display}"
     echo -e "  ${BOLD}TACACS group:${NC}  ${tacacs_group_val}"
@@ -561,24 +592,30 @@ cmd_scope_remove() {
 
     warn "About to remove scope '${name}'."
     [[ "$user_count" -gt 0 ]] && warn "This will also strip '${name}' from ${user_count} user(s)."
-    read -rp "  Confirm removal? [y/N]: " confirm
+    read -rp "  Confirm removal? [y/N]: " confirm || true
     if [[ ! "$confirm" =~ ^[Yy] ]]; then
         info "Aborted."
         return
     fi
 
     # --strip-users takes the scope off any user still referencing it, in
-    # the same write.
-    store_apply store_scope_del "$name" --strip-users || exit $?
+    # the same write (_scope_remove_write).
+    store_apply _scope_remove_write "$name" || exit $?
     info "Scope '${name}' removed."
     echo ""
 }
 
 # Writer for store_apply: rename the scope (and every user's reference to
-# it), then scope.default if it pointed at the old name.
+# it), then scope.default if it pointed at the old name, and the scope's
+# auth-method, which is stored under the scope's name.
 _scope_rename_write() {
-    local old="$1" new="$2" default_val
+    local old="$1" new="$2" default_val auth_method
     store_scope_rename "$old" "$new" || return 1
+    auth_method=$(scope_auth_method "$old")
+    _scope_auth_method_drop "$old" || return 1
+    if [[ -n "$auth_method" ]]; then
+        conf_set "scope_auth_method.${new}" "$auth_method" || return 1
+    fi
     default_val=$(conf_get scope.default)
     if [[ "$default_val" == "$old" ]]; then
         write_default_scope "$new" || return 1
@@ -794,9 +831,9 @@ cmd_scope_prefixes_dispatch() {
             if [[ "$user_count" -gt 0 ]]; then
                 warn "${user_count} user(s) will lose their grant of '${scope}'."
             fi
-            read -rp "  Confirm? [y/N]: " confirm
+            read -rp "  Confirm? [y/N]: " confirm || true
             [[ ! "$confirm" =~ ^[Yy] ]] && { info "Aborted."; return; }
-            store_apply store_scope_del "$scope" --strip-users || exit $?
+            store_apply _scope_remove_write "$scope" || exit $?
             info "Cleared prefixes for scope '${scope}' (the scope is removed)."
             echo ""
             ;;
@@ -960,6 +997,16 @@ cmd_scope_protocols() {
                 info "Scope '${scope}' protocols already ${new_list}."
                 echo ""
                 return
+            fi
+            # The scope's auth-method names the protocol its devices and
+            # hosts are configured for by default; a filter without it would
+            # leave those defaults pointing at a backend that ignores the scope.
+            local auth_method
+            auth_method=$(scope_auth_method "$scope")
+            if [[ -n "$auth_method" && ",${new_list}," != *",${auth_method},"* ]]; then
+                error "Scope '${scope}' has auth-method ${auth_method}, which protocols '${new_list}' would leave unserved. Nothing was changed."
+                error "Change or clear the auth-method first: tacctl scope auth-method ${scope} <tacacs|radius|default>   (or keep ${auth_method} in the list)"
+                exit 1
             fi
             store_apply store_scope_set "$scope" "protocols=${new_list}" || exit $?
             info "Scope '${scope}' protocols set to ${new_list}."
@@ -1183,6 +1230,100 @@ cmd_scope_radius_group() {
     echo ""
 }
 
+# --- Per-scope default authentication method: tacctl scope auth-method <scope> [tacacs|radius|default] ---
+# The protocol used for this scope when a command is not told one:
+#   config cisco|juniper   without --protocol (an explicit --protocol wins)
+#   host enroll            without --method, for a host that is not registered
+#                          yet (a registered host keeps its method)
+#   config linux script    without --method
+# Stored as scope_auth_method.<scope> in tacctl.yaml. Without it the commands
+# behave as they did before the setting existed: device configs are TACACS+,
+# hosts take 'host default-method'. 'default' removes the setting; 'tacplus'
+# (the name of the host method) is accepted for 'tacacs'.
+# The setting changes nothing on the server and re-renders nothing: it is
+# read when a device config or a host script is produced.
+cmd_scope_auth_method() {
+    local scope="${1:-}"
+    local new_method="${2:-}"
+
+    if [[ -z "$scope" ]]; then
+        error "Usage: tacctl scope auth-method <scope> [tacacs|radius|default]"
+        exit 1
+    fi
+    _scope_require "$scope" || exit 1
+
+    local current source
+    current=$(scope_auth_method "$scope")
+    if [[ -z "$current" ]]; then
+        source="default (not set)"
+    else
+        source="override (tacctl.yaml: scope_auth_method.${scope})"
+    fi
+
+    if [[ -z "$new_method" ]]; then
+        echo ""
+        echo "  Scope '${scope}' auth-method: ${current:-not set}"
+        echo "  Source: ${source}"
+        if [[ -z "$current" ]]; then
+            echo "  In effect: device configs tacacs; new hosts $(linux_default_method) ('tacctl host default-method')"
+        fi
+        echo ""
+        echo "    Used when the command names no protocol: 'tacctl config cisco|juniper' without"
+        echo "    --protocol, 'tacctl host enroll' (a host not yet registered) and"
+        echo "    'tacctl config linux script' without --method."
+        echo ""
+        echo "  Usage: tacctl scope auth-method ${scope} <tacacs|radius|default>"
+        echo ""
+        return
+    fi
+
+    case "$new_method" in
+        tacplus) new_method="tacacs" ;;
+        tacacs|radius) ;;
+        default)
+            if [[ -z "$(conf_get "scope_auth_method.${scope}")" ]]; then
+                info "Scope '${scope}' has no auth-method set; no change."
+                echo ""
+                return
+            fi
+            conf_unset "scope_auth_method.${scope}" || exit 1
+            info "Scope '${scope}' auth-method cleared (device configs: tacacs; new hosts: $(linux_default_method))."
+            echo ""
+            return
+            ;;
+        *)
+            error "Unknown auth-method '${new_method}'. Use tacacs, radius or default (to clear)."
+            exit 1
+            ;;
+    esac
+
+    # A protocols filter that leaves the method out means the backend for it
+    # ignores the scope: every config made from this default would not work.
+    local protocols
+    protocols=$(model_scope "$scope" protocols | awk 'NF' | paste -sd, || true)
+    if [[ -n "$protocols" && ",${protocols}," != *",${new_method},"* ]]; then
+        error "Scope '${scope}' is limited to ${protocols} (tacctl scope protocols), so it is not served over ${new_method}."
+        error "Serve it over ${new_method} first: tacctl scope protocols ${scope} set ${protocols},${new_method}   (or 'clear' for every protocol)"
+        exit 1
+    fi
+
+    if [[ "$new_method" == "$current" ]]; then
+        info "Scope '${scope}' auth-method already ${new_method}; no change."
+        echo ""
+        return
+    fi
+    conf_set "scope_auth_method.${scope}" "$new_method" || exit 1
+    info "Scope '${scope}' auth-method set to ${new_method}."
+    if _backends_load 2> /dev/null && ! _backend_is_enabled "$new_method"; then
+        warn "The ${new_method} backend is not enabled on this server: tacctl backend enable ${new_method}"
+    fi
+    echo ""
+    echo "  'tacctl config cisco|juniper --scope ${scope}' and new 'tacctl host enroll --scope ${scope}'"
+    echo "  now use ${new_method} unless told otherwise. Devices and hosts already configured are not"
+    echo "  changed: push the new device config, or re-enroll a host with --method, to switch them."
+    echo ""
+}
+
 # --- Per-scope mgmt-ACL: tacctl scope mgmt-acl <scope> <sub> [args] ---
 # Subcommand shape mirrors the global `tacctl config mgmt-acl` so
 # operators who know one form immediately know the other:
@@ -1327,7 +1468,7 @@ cmd_scope_mgmt_acl() {
                 echo ""
                 return
             fi
-            read -rp "  Clear all per-scope mgmt-acl entries for '${scope}'? Render will fall back to global. [y/N]: " confirm
+            read -rp "  Clear all per-scope mgmt-acl entries for '${scope}'? Render will fall back to global. [y/N]: " confirm || true
             if [[ ! "$confirm" =~ ^[Yy] ]]; then
                 info "Aborted."
                 return

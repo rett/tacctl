@@ -90,6 +90,17 @@ linux_default_method() {
     echo "$method"
 }
 
+# linux_scope_method <scope>: the host method the scope's auth-method stands
+# for ('tacctl scope auth-method': tacacs is method tacplus), empty when the
+# scope has none.
+linux_scope_method() {
+    case "$(scope_auth_method "$1")" in
+        tacacs) echo "tacplus" ;;
+        radius) echo "radius" ;;
+    esac
+    return 0
+}
+
 # Stable UID for a user across every enrolled host. Allocated once, never
 # reused, kept in $LINUX_UID_FILE as "name:uid" lines.
 linux_uid_for() {
@@ -451,16 +462,28 @@ cmd_config_linux_script() {
                 ;;
         esac
     done
-    method="${method:-$(linux_default_method)}"
-    linux_method_require "$method" || return 1
-    local label
-    label=$(linux_method_label "$method")
+    # The method: the one asked for; else the scope's auth-method; else the
+    # default. One that was asked for is checked before the scope is.
+    if [[ -n "$method" ]]; then
+        linux_method_require "$method" || return 1
+    fi
     if [[ -z "$scope" ]]; then
         scope=$(read_default_scope)
         [[ -n "$scope" ]] || { error "No default scope set and no --scope provided."; return 1; }
     elif ! _scope_require "$scope"; then
         return 1
     fi
+    if [[ -z "$method" ]]; then
+        method=$(linux_scope_method "$scope")
+        if [[ -n "$method" ]]; then
+            info "Method ${method}: the auth-method of scope '${scope}' (tacctl scope auth-method)."
+        else
+            method=$(linux_default_method)
+        fi
+        linux_method_require "$method" || return 1
+    fi
+    local label
+    label=$(linux_method_label "$method")
     linux_scope_serves "$scope" "$method" || return 1
     if [[ -z "$server" ]]; then
         server=$(ip -4 route get 1.0.0.0 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}')
@@ -795,11 +818,26 @@ cmd_host_enroll() {
     fi
 
     # The method: the one asked for; else the one a registered host has (so
-    # re-enrolling never switches a host by accident); else the default.
+    # re-enrolling never switches a host by accident); else the auth-method
+    # of the scope the host will use ('tacctl scope auth-method': the one
+    # named with --scope, or an existing linux-<name>; a scope created below
+    # has none); else the default.
     # Re-enrolling with the other method is how a host switches.
-    local prev_method label backend
+    local prev_method label backend scope_method=""
     prev_method=$(host_method "$name")
-    method="${method:-${prev_method:-$(linux_default_method)}}"
+    if model_scope_exists "${scope:-linux-${name}}" 2> /dev/null; then
+        scope_method=$(linux_scope_method "${scope:-linux-${name}}")
+    fi
+    if [[ -z "$method" && -n "$prev_method" ]]; then
+        method="$prev_method"
+        if [[ -n "$scope_method" && "$scope_method" != "$method" ]]; then
+            info "${name} is registered with method ${method} and keeps it; scope '${scope:-linux-${name}}' has auth-method $(linux_method_backend "$scope_method"). To switch the host: --method ${scope_method}"
+        fi
+    elif [[ -z "$method" && -n "$scope_method" ]]; then
+        method="$scope_method"
+        info "Method ${method}: the auth-method of scope '${scope:-linux-${name}}' (tacctl scope auth-method)."
+    fi
+    method="${method:-$(linux_default_method)}"
     linux_method_require "$method" || return 1
     label=$(linux_method_label "$method")
     backend=$(linux_method_backend "$method")
@@ -890,8 +928,17 @@ cmd_host_enroll() {
     rm -f "$script"
     host_remember "$name" "$target" "$port" "$scope" "$server" "$identity" "$method"
     if [[ -n "$narrow_scope" ]]; then
-        store_apply store_scope_set "$scope" "protocols=${backend}" \
-            || warn "Could not limit scope '${scope}' to ${backend}; see 'tacctl scope protocols ${scope}'."
+        # Not when the scope's auth-method is the other protocol: narrowing
+        # would leave that setting pointing at a backend that ignores the scope.
+        local scope_auth
+        scope_auth=$(scope_auth_method "$scope")
+        if [[ -n "$scope_auth" && "$scope_auth" != "$backend" ]]; then
+            warn "Scope '${scope}' has auth-method ${scope_auth}, so it stays open to ${SCOPE_PROTOCOLS// /, } instead of being limited to ${backend}."
+            warn "To limit it: tacctl scope auth-method ${scope} ${backend}   then   tacctl scope protocols ${scope} set ${backend}"
+        else
+            store_apply store_scope_set "$scope" "protocols=${backend}" \
+                || warn "Could not limit scope '${scope}' to ${backend}; see 'tacctl scope protocols ${scope}'."
+        fi
     fi
     logger -t tacctl -p auth.info "host enroll name=${name} target=${target} scope=${scope} method=${method} by=${SUDO_USER:-root}" 2>/dev/null || true
     info "Host '${name}' enrolled."
@@ -1053,7 +1100,8 @@ cmd_host_usage() {
     echo "  enroll --local [options]             Same, for this machine"
     echo "      --method tacplus|radius          pam_tacplus against the TACACS+ backend, or the host's pam_radius_auth"
     echo "                                       package against the RADIUS backend (default: the host's current"
-    echo "                                       method, else 'host default-method'). Re-enroll with the other to switch"
+    echo "                                       method, else the scope's auth-method, else 'host default-method')."
+    echo "                                       Re-enroll with the other to switch"
     echo "      --scope <name>                   Use an existing scope (default: create linux-<name> for the host's /32)"
     echo "      --server <address>               Address the host should use for this server (default: detected)"
     echo "      --name <name>                    Registry name (default: short hostname)"
@@ -1064,6 +1112,7 @@ cmd_host_usage() {
     echo "      --adopt <name>[,<name>...]       (enroll and sync) take over accounts that already exist on the host"
     echo "  unenroll <name> [--force]            Remove the login method from the host (accounts and homes are kept)"
     echo "  default-method [tacplus|radius]      Show or set the method for hosts enrolled without --method"
+    echo "                                       (a scope's own choice comes first: tacctl scope auth-method)"
     echo ""
     echo "ssh runs as the user who invoked sudo; the remote login must be root or able to sudo."
     echo ""

@@ -232,7 +232,7 @@ cmd_group_remove() {
     fi
 
     echo ""
-    read -rp "  Remove group '${groupname}'? [y/N]: " confirm
+    read -rp "  Remove group '${groupname}'? [y/N]: " confirm || true
     if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
         info "Cancelled."
         exit 0
@@ -478,7 +478,7 @@ cmd_group_commands() {
                 info "Group '${group}' has no command rules; nothing to clear."
                 exit 0
             fi
-            read -rp "  Clear all command rules for group '${group}'? [y/N]: " confirm
+            read -rp "  Clear all command rules for group '${group}'? [y/N]: " confirm || true
             if [[ ! "$confirm" =~ ^[Yy] ]]; then
                 info "Aborted."
                 return
@@ -921,7 +921,7 @@ cmd_group_privilege() {
                 info "Group '${group}' has no explicit priv mappings; nothing to clear."
                 exit 0
             fi
-            read -rp "  Clear all priv-exec mappings for group '${group}'? [y/N]: " confirm
+            read -rp "  Clear all priv-exec mappings for group '${group}'? [y/N]: " confirm || true
             if [[ ! "$confirm" =~ ^[Yy] ]]; then
                 info "Aborted."
                 return

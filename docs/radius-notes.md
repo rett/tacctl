@@ -329,3 +329,206 @@ EL8 (3.14.3-139), EL9 (38.1.75) and EL10 (42.1.18) targeted policies with
   the option, does not check the one in the answer (BlastRADIUS,
   CVE-2024-3596): Debian 12 and Ubuntu 24.04 hosts are in that position,
   and FreeRADIUS logs its "BlastRADIUS check" block for them.
+
+# WTI units over RADIUS: what the vendor documents (research only)
+
+Nothing here is implemented. `tacctl config wti` renders the TACACS+
+walkthrough only (`--protocol radius` is refused; a scope whose auth-method
+is `radius` gets the TACACS+ walkthrough with a warning), the RADIUS backend
+loads no WTI dictionary and sends no WTI attribute. This part records what
+WTI's own documents say, read on 2026-10-02, so that a design can rest on it.
+Each statement is marked **[D]** (in the named document), **[C]** (checked
+here, in a container or on this machine) or **[I]** (inferred; not stated
+anywhere that was read). No WTI unit was involved at any point.
+
+## Sources
+
+| | Document | How it was read |
+|---|---|---|
+| S1 | `https://ftp.wti.com/InfoCenter/rsa/dictionary/dictionary.wti` | the file itself (873 bytes, sha256 `5d750697120ab043e4113829cbcf12bdbd1aa8a2c375b3a319cc8d9b54b98e92`) |
+| S2 | WTI knowledge base, "Installing the WTI Dictionary to FreeRadius": `https://wti.com/blogs/knowledge-base/basic-linux-freeradius-setup-with-wti-dictionary-install` | through a fetch tool that returns the page as extracted text; wording may not be verbatim |
+| S3 | WTI knowledge base, "RADIUS client configuration": `https://www.wti.com/blogs/knowledge-base/radius-client-configuration` | as S2 |
+| S4 | "WTI User's Guide, Software SetUp and Operation", Part No. 14527 Rev. C, February 2021 (CPM, DSM, NBB, NPS, REM, RPC, VMR series), sections 7.3.1.14 to 7.3.1.14.2: `https://ftp.wti.com/download/manuals/wti_firmware_guide.pdf` | the PDF, as text (`pdftotext`) |
+| S5 | "DUO with Active Directory and Cisco ISE NAS-Identifier with WTI Radius client": `https://ftp.wti.com/pub/TechSupport/Articles/DUO_AD_CiscoISENASIdentifierwithRadiusclient.pdf` | the PDF, as text; its screenshots (the unit's RADIUS screen among them) are images and were not read |
+| S6 | RSA SecurID Access implementation guide for WTI devices (tested December 1, 2017): `https://ftp.wti.com/InfoCenter/rsa/certdoc/rsacertdoc.pdf` | as S5 |
+
+None of them names a firmware version. tacctl's TACACS+ walkthrough was
+verified on a v8.10 unit; whether the RADIUS menu of that firmware is the one
+S4 describes is **[I]**.
+
+## The dictionary (S1)
+
+```
+VENDOR        WTI                 24496
+ATTRIBUTE     WTI-Port            40    integer
+ATTRIBUTE     WTI-Super           41    integer
+ATTRIBUTE     WTI-Port-Access     42    string
+ATTRIBUTE     WTI-Plug-Access     43    string
+ATTRIBUTE     WTI-Group-Access    44    string
+ATTRIBUTE     WTI-Modem-String    45    string
+ATTRIBUTE     WTI-Text            46    string
+```
+
+- **[D]** Those seven attributes between `BEGIN-VENDOR WTI` and `END-VENDOR
+  WTI`, and nothing else: **no `VALUE` lines**, so the access levels are
+  written as numbers. The vendor id 24496 and `WTI-Super` = 41, integer, are
+  repeated in S5.
+- **[D]** The file carries `$Id: dictionary.wti,v 1.1 2010/10/06 ...` and no
+  licence or redistribution statement. Its two comment blocks (about
+  `dictionary.ascend`, and about a binary-coded-decimal format) describe none
+  of its attributes; **[I]** they were carried over from another dictionary.
+- **[I]** Redistribution is therefore unclear. The numbers above are facts;
+  a tacctl-owned dictionary would be written from them rather than be a copy
+  of the file.
+- **[C]** FreeRADIUS does not ship it: no file under `/usr/share/freeradius`
+  mentions vendor 24496 in 3.0.20 (AlmaLinux 8) or 3.2.5 (Ubuntu 24.04).
+
+## What the attributes mean
+
+- **[D]** `WTI-Super` "sets the command access level for the user": 0 =
+  ViewOnly, 1 = User, 2 = SuperUser, 3 = Administrator (S4; S2 has the same
+  four as "Read Only Rights", "User Rights", "SuperUser Rights",
+  "Administrator Rights"; S5 defines Administrator = 3 and User = 1 in ISE).
+  These are the unit's four access levels, the ones the TACACS+ mapping in
+  `wti_access_level_for_privlvl` ends in.
+- **[D]** `WTI-Port-Access`: a string with one character per serial port, 0
+  = deny, 1 = allow (S4: "an 8 character string", example `"11101001"` for
+  ports 1, 2, 3, 5 and 8; S2: `"00111100"` for ports 3 to 6).
+- **[D]** `WTI-Plug-Access`: the same for switched outlets, on power-control
+  and combo products only (S4: "a four character string", example `"0101"`;
+  S2's example is eight characters, `"11100000"`).
+- **[I]** The string length follows the number of ports or plugs of the
+  model; neither document says what a unit does with a string of another
+  length, or with more than eight ports.
+- `WTI-Group-Access`, `WTI-Port`, `WTI-Modem-String`, `WTI-Text`: in S1,
+  described nowhere that was read. **[I]** `WTI-Group-Access` is the plug-group
+  counterpart of the "Configure Plug Group Access" item of S4.
+- **[D]** The example users entry of S2, for FreeRADIUS 3.0.16 built from
+  source (`/usr/local/...`), the dictionary installed by copying it to
+  `/usr/local/share/freeradius` and adding `$INCLUDE dictionary.wti` to the
+  main `dictionary` there:
+
+  ```
+  testuser Cleartext-Password := "userpassword"
+  User-Name = "testuser",
+  WTI-Super="1",
+  WTI-Port-Access="00111100",
+  WTI-Plug-Access="11100000"
+  ```
+
+- **[D]** S5's flow ends: "Cisco ISE return to WTI with Access Accept +
+  Radius attribute 41 and WTI permits the user access."
+
+## When no WTI attribute comes back
+
+- **[D]** S4, "Default RADIUS User Access": "When enabled, allows RADIUS
+  users to access the unit without first defining a RADIUS user account on
+  the WTI Device. When new RADIUS users access the unit, they will inherit
+  the default Access Level, Port Access and Service Access". Its `Enable`
+  defaults to **On**, its `Access Level` to **User**; port, plug and plug
+  group access default to all on for Administrator and SuperUser and to
+  undefined for User and ViewOnly; service access to serial, Telnet/SSH, Web
+  and RESTful API on, outbound off.
+- **[D]** S3 on the same item: without the VSA on the server "by default a
+  logged in user will only have View rights. When enabled, this parameter
+  gives undefined valid users these default rights when logging in". The two
+  documents disagree on the level a factory-default unit hands out (User in
+  S4, View in S3); neither was checked on a unit.
+- **[I]** So an Access-Accept without `WTI-Super` logs the user in at the
+  Default User Access level when that item is enabled. This is what a WTI
+  unit pointed at tacctl's RADIUS backend as it is today would do.
+- Not documented: what happens to such a login with Default User Access
+  disabled (**[I]** from "without first defining a RADIUS user account": it
+  then needs an account of that name on the unit), whether a `WTI-Super`
+  in the reply overrides a same-named local account (for TACACS+ the local
+  account wins, see the walkthrough), and whether `WTI-Port-Access` absent
+  means "the level's default ports" or "none".
+
+## Service-Type
+
+Not mentioned in S1 to S6: not as something the unit sends, not as something
+it reads. S2's working example returns none. **[I]** The reply's
+`Service-Type` (which tacctl sends for Cisco) is ignored by the unit; not
+verified.
+
+## What the unit sends in an Access-Request
+
+- **[D]** Only indirectly: S5 builds its ISE policy set on the condition
+  `Radius-NAS-Identifier START_WITH CPM (DSM or REM)`. So the unit sends a
+  `NAS-Identifier`, and it begins with the product family.
+- Not documented: the full `NAS-Identifier` (model, site id or hostname) and
+  whether it can be set; `NAS-IP-Address`, `NAS-Port`, `NAS-Port-Type`,
+  `Service-Type`; any vendor attribute in the request; whether the password
+  goes as PAP (**[I]** yes: S2's example checks a `Cleartext-Password` and S6
+  passes one-time passwords through it); whether it sends or requires
+  `Message-Authenticator`; limits on the secret.
+- **[I]** For a server that must recognise a WTI unit, `NAS-Identifier` is
+  the only handle the documents give, and it is under the device's control,
+  not the server's. tacctl's own handle is the client's scope (the source
+  prefix and its secret). tacctl's auth log already records the value
+  (`nas=` in `tacctl-auth.log`, from `NAS-Identifier`, else `NAS-IP-Address`),
+  so one login from a real unit against the RADIUS backend shows what it
+  sends.
+
+## The unit's RADIUS menu
+
+- **[D]** Reached with `/N`, then item 29 (S3: "/n 29"; S5: "/N option 29
+  for Radius"; S6: "enter \n and then choose option 29"). The TACACS menu is
+  28 on the unit tacctl was tested with; **[I]** these numbers vary by model
+  and firmware as that one does.
+- **[D]** Items and factory defaults (S4, in the order printed there; the
+  item numbers inside the menu are not given):
+
+  | Item | Default | |
+  |---|---|---|
+  | Enable | Off | |
+  | Primary Host/Address IPv4, IPv6 | undefined | address or name |
+  | Primary Secret Word | undefined | |
+  | Secondary Host/Address IPv4, IPv6 | undefined | |
+  | Secondary Secret Word | undefined | |
+  | Fallback Timer | 3 seconds | how long the primary is tried before the secondary |
+  | Fallback Local | Off | Off; On (All Failures): also after a reject; On (Transport Failure): only when no server can be contacted |
+  | Retries | 3 | per server |
+  | Authentication Port | 1812 | |
+  | Accounting Port | 1813 | |
+  | OneTime Auth | Off | for one-time-password schemes |
+  | OneTime Auth Timer | 5 minutes | |
+  | Session Module Type | none given | "Enables/disables queries of session parameters" |
+  | Ping RADIUS Servers | | ICMP to the configured servers |
+  | Default RADIUS User Access | Enable On, Access Level User | see above |
+
+- **[D]** S3 also lists a `Debug` item ("will add useful debug information
+  to the log files internal to the WTI Device"); S6 uses it. S4's table has
+  none.
+- **[D]** With Fallback Local Off, a failed RADIUS login is final (S3: "the
+  attempt is over and the user fails the login process"): with the factory
+  default, a unit whose server is unreachable admits nobody over the network
+  services RADIUS covers.
+- **[I]** "Session Module Type" is accounting (the TACACS+ menu's "Session
+  Management Module" is). Whether the unit sends accounting at all without
+  it, and what the records hold, is not documented.
+- Not documented for RADIUS, known for TACACS+ from the tested unit and
+  **[I]** likely to apply: the unit's IP Tables must let the server's replies
+  in (for RADIUS, UDP from the server's authentication and accounting
+  ports; a rule accepting `ESTABLISHED,RELATED` covers them), SSH logins
+  need Default User Access enabled, and the Invalid Access Lockout arms on
+  repeated failures.
+
+## Loading a vendor dictionary into tacctl's instance (checked, not built)
+
+- **[C]** A users entry with `WTI-Super = 3` fails the daemon's check without
+  a dictionary (`Unknown name "WTI-Super"`, FreeRADIUS 3.0.20).
+- **[C]** FreeRADIUS reads `<confdir>/dictionary` after its own: with the
+  four lines (VENDOR, BEGIN-VENDOR, ATTRIBUTE WTI-Super, END-VENDOR) in a
+  file of that name in the directory given with `-d`, the same check passes.
+  In the real raddb that file is the package's (`/etc/raddb/dictionary`,
+  `/etc/freeradius/3.0/dictionary`: a configuration file of `freeradius` /
+  `freeradius-config`), which tacctl does not edit.
+- **[C]** `-D <dir>` makes the daemon read `<dir>/dictionary` instead of
+  `/usr/share/freeradius/dictionary`: a file there that includes the
+  package's main dictionary by absolute path and then defines the vendor
+  passes the check too (3.0.20). This is the way that leaves every package
+  file alone; it changes the unit's command line (the drop-in) and the
+  command of the config check.
+- Not checked: either way on 3.0.27 and 3.2.5, a started daemon, an
+  Access-Accept that carries the attribute, and `radclient` decoding it.
