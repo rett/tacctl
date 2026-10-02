@@ -1,82 +1,14 @@
 # shellcheck shell=bash
-# tacctl lib/groups.sh -- group helpers, config show, group commands
+# tacctl lib/groups.sh -- config show, group commands
 # Sourced by bin/tacctl.sh (see the load block there for ordering); not executable.
-
-# --- List all group names defined in the YAML ---
-list_all_groups() {
-    python3 -c "
-import re, sys
-cfg = open(sys.argv[1]).read()
-m = re.search(r'^# --- Groups ---\s*\n(.*?)(?=^# --- Users|\Z)', cfg, re.MULTILINE | re.DOTALL)
-if not m:
-    sys.exit(0)
-for g in re.findall(r'^(\w+): &\1\n', m.group(1), re.MULTILINE):
-    print(g)
-" "$CONFIG"
-}
-
-# --- Get a group's Cisco priv-lvl ---
-get_group_privlvl() {
-    local group="$1"
-    python3 -c "
-import re, sys
-cfg = open(sys.argv[1]).read()
-group = sys.argv[2]
-m = re.search(
-    r'^' + re.escape(group) + r': &' + re.escape(group) + r'\n((?:[ \t].*\n)+)',
-    cfg, re.MULTILINE,
-)
-if not m:
-    sys.exit(0)
-sm = re.search(r'\*exec_(\w+)', m.group(1))
-if not sm:
-    sys.exit(0)
-svc = sm.group(1)
-vm = re.search(r'exec_' + svc + r':.*?values:\s*\[(\d+)\]', cfg, re.DOTALL)
-if vm:
-    print(vm.group(1))
-" "$CONFIG" "$group"
-}
+#
+# Groups live in the store ({priv_lvl, juniper_class}); their command rules
+# and priv-exec mappings live in tacctl.yaml. Reads go through the model,
+# writes through store_apply, which re-renders tacquito.yaml.
 
 # =====================================================================
 #  CONFIG COMMANDS
 # =====================================================================
-
-# --- Helper: get current value from config using Python ---
-get_config_value() {
-    local key="$1"
-    python3 -c "
-import re, sys
-
-config = open(sys.argv[1]).read()
-key = sys.argv[2]
-
-if key == 'juniper-ro':
-    m = re.search(r'junos_exec_readonly:.*?values:\s*\[\"?([^\"\]\n]+)', config, re.DOTALL)
-    print(m.group(1) if m else 'NOT FOUND')
-elif key == 'juniper-rw':
-    m = re.search(r'junos_exec_superuser:.*?values:\s*\[\"?([^\"\]\n]+)', config, re.DOTALL)
-    print(m.group(1) if m else 'NOT FOUND')
-elif key == 'cisco-ro':
-    m = re.search(r'exec_readonly:.*?values:\s*\[(\d+)\]', config, re.DOTALL)
-    print(m.group(1) if m else 'NOT FOUND')
-elif key == 'cisco-op':
-    m = re.search(r'exec_operator:.*?values:\s*\[(\d+)\]', config, re.DOTALL)
-    print(m.group(1) if m else 'NOT FOUND')
-elif key == 'cisco-rw':
-    m = re.search(r'exec_superuser:.*?values:\s*\[(\d+)\]', config, re.DOTALL)
-    print(m.group(1) if m else 'NOT FOUND')
-elif key == 'juniper-op':
-    m = re.search(r'junos_exec_operator:.*?values:\s*\[\"?([^\"\]\n]+)', config, re.DOTALL)
-    print(m.group(1) if m else 'NOT FOUND')
-elif key == 'address':
-    # read from systemd unit
-    import subprocess
-    r = subprocess.run(['systemctl', 'show', 'tacquito', '--property=ExecStart'], capture_output=True, text=True)
-    m2 = re.search(r'-address\s+(\S+)', r.stdout)
-    print(m2.group(1) if m2 else ':49')
-" "$CONFIG" "$key"
-}
 
 # --- CONFIG SHOW ---
 cmd_config_show() {
@@ -84,56 +16,62 @@ cmd_config_show() {
     echo -e "${BOLD}Tacquito Configuration${NC}"
     echo "--------------------------------------------"
 
-    local juniper_ro juniper_op juniper_rw cisco_ro cisco_op cisco_rw
-    juniper_ro=$(get_config_value "juniper-ro")
-    juniper_op=$(get_config_value "juniper-op")
-    juniper_rw=$(get_config_value "juniper-rw")
-    cisco_ro=$(get_config_value "cisco-ro")
-    cisco_op=$(get_config_value "cisco-op")
-    cisco_rw=$(get_config_value "cisco-rw")
+    # One model view carries everything below: 'scope=<name>|<secret
+    # length>|<users>' followed by its 'prefix=<cidr>' lines, the built-in
+    # groups' priv-lvl and Juniper class, and the two connection filters.
+    local view
+    view=$(_model_view config-show) || exit 1
+    local -A cs=()
+    local key value
+    while IFS='=' read -r key value; do
+        case "$key" in
+            scope|prefix|"") ;;
+            *) cs[$key]="$value" ;;
+        esac
+    done <<< "$view"
 
     # Scopes — one block per scope showing its secret length + prefixes.
     local default_scope
     default_scope=$(read_default_scope)
-    local all_scopes
-    all_scopes=$(list_scopes)
     echo ""
     echo -e "  ${BOLD}Scopes:${NC}"
-    if [[ -z "$all_scopes" ]]; then
+    if ! grep -q '^scope=' <<< "$view"; then
         echo -e "    ${RED}(none configured)${NC}"
     else
-        while IFS= read -r scope; do
-            [[ -z "$scope" ]] && continue
-            local s_secret s_len s_pfx n_users marker=""
-            s_secret=$(read_scope_secret "$scope")
-            s_len=${#s_secret}
-            n_users=$(count_users_in_scope "$scope")
-            [[ "$scope" == "$default_scope" ]] && marker="  ${CYAN}(default)${NC}"
-            echo -e "    ${BOLD}${scope}${NC}${marker}"
-            echo -e "      Secret:             ${s_len} chars"
-            echo -e "      Users:              ${n_users}"
-            echo -e "      Prefixes:"
-            s_pfx=$(read_scope_prefixes "$scope")
-            if [[ -z "$s_pfx" ]]; then
-                echo -e "        ${RED}(empty — no clients can auth against this scope)${NC}"
-            else
-                echo "$s_pfx" | while IFS= read -r c; do
-                    [[ -z "$c" ]] && continue
-                    echo "        - ${c}"
-                done
-            fi
-        done <<< "$all_scopes"
+        # A scope's prefix lines follow its scope line; the "(empty)" note
+        # is printed when the next scope (or the end) arrives without any.
+        local scope s_len n_users marker pending=""
+        while IFS='=' read -r key value; do
+            case "$key" in
+                scope)
+                    [[ -n "$pending" ]] && echo -e "        ${RED}(empty — no clients can auth against this scope)${NC}"
+                    IFS='|' read -r scope s_len n_users <<< "$value"
+                    marker=""
+                    [[ "$scope" == "$default_scope" ]] && marker="  ${CYAN}(default)${NC}"
+                    echo -e "    ${BOLD}${scope}${NC}${marker}"
+                    echo -e "      Secret:             ${s_len} chars"
+                    echo -e "      Users:              ${n_users}"
+                    echo -e "      Prefixes:"
+                    pending=1
+                    ;;
+                prefix)
+                    echo "        - ${value}"
+                    pending=""
+                    ;;
+            esac
+        done <<< "$view"
+        [[ -n "$pending" ]] && echo -e "        ${RED}(empty — no clients can auth against this scope)${NC}"
     fi
     echo ""
     echo -e "  ${BOLD}Cisco (priv-lvl):${NC}"
-    echo -e "    Super-user:         ${cisco_rw}"
-    echo -e "    Operator:           ${cisco_op}"
-    echo -e "    Read-only:          ${cisco_ro}"
+    echo -e "    Super-user:         ${cs[cisco_rw]}"
+    echo -e "    Operator:           ${cs[cisco_op]}"
+    echo -e "    Read-only:          ${cs[cisco_ro]}"
     echo ""
     echo -e "  ${BOLD}Juniper (local-user-name):${NC}"
-    echo -e "    Super-user class:   ${juniper_rw}"
-    echo -e "    Operator class:     ${juniper_op}"
-    echo -e "    Read-only class:    ${juniper_ro}"
+    echo -e "    Super-user class:   ${cs[juniper_rw]}"
+    echo -e "    Operator class:     ${cs[juniper_op]}"
+    echo -e "    Read-only class:    ${cs[juniper_ro]}"
 
     # Global mgmt-ACL names. Per-scope overrides land in the
     # `tacctl scope show <name>` summary — surfacing both here would
@@ -147,36 +85,15 @@ cmd_config_show() {
     echo -e "    Cisco ACL:          ${cisco_acl_name}"
     echo -e "    Juniper filter:     ${juniper_acl_name}"
 
-    # Show allow/deny lists
-    local allow_list deny_list
-    allow_list=$(python3 -c "
-import re, sys
-config = open(sys.argv[1]).read()
-m = re.search(r'^prefix_allow:\s*\[(.*?)\]', config, re.MULTILINE)
-if m and m.group(1).strip():
-    print(', '.join(re.findall(r'\"([^\"]+)\"', m.group(1))))
-else:
-    print('')
-" "$CONFIG" || true)
-    deny_list=$(python3 -c "
-import re, sys
-config = open(sys.argv[1]).read()
-m = re.search(r'^prefix_deny:\s*\[(.*?)\]', config, re.MULTILINE)
-if m and m.group(1).strip():
-    print(', '.join(re.findall(r'\"([^\"]+)\"', m.group(1))))
-else:
-    print('')
-" "$CONFIG" || true)
-
     echo ""
     echo -e "  ${BOLD}Connection Filters:${NC} ${CYAN}(deny takes precedence over allow)${NC}"
-    if [[ -n "$deny_list" ]]; then
-        echo -e "    Deny:               ${deny_list}"
+    if [[ -n "${cs[deny]}" ]]; then
+        echo -e "    Deny:               ${cs[deny]}"
     else
         echo -e "    Deny:               ${CYAN}(none)${NC}"
     fi
-    if [[ -n "$allow_list" ]]; then
-        echo -e "    Allow:              ${allow_list}"
+    if [[ -n "${cs[allow]}" ]]; then
+        echo -e "    Allow:              ${cs[allow]}"
     else
         echo -e "    Allow:              ${CYAN}(all)${NC}"
     fi
@@ -208,58 +125,14 @@ cmd_group_list() {
     printf "  ${BOLD}%-20s %-15s %-20s %-10s${NC}\n" "GROUP" "CISCO PRIV-LVL" "JUNIPER CLASS" "USERS"
     echo "  -------------------------------------------------------------------"
 
-    python3 -c "
-import re, sys
-
-config = open(sys.argv[1]).read()
-
-# Find groups section
-groups_match = re.search(r'^# --- Groups ---\s*\n(.*?)(?=^# --- Users|\Z)', config, re.MULTILINE | re.DOTALL)
-if not groups_match:
-    sys.exit(0)
-
-groups_section = groups_match.group(1)
-
-# Find all group definitions
-for m in re.finditer(r'^(\w+): &\1\n  name: \1\n  services:\n(.*?)  accounter:', groups_section, re.MULTILINE | re.DOTALL):
-    name = m.group(1)
-    services = m.group(2)
-
-    # Extract Cisco priv-lvl
-    priv = 'n/a'
-    pm = re.search(r'\*exec_(\w+)', services)
-    if pm:
-        svc_name = pm.group(1)
-        sm = re.search(r'exec_' + svc_name + r':.*?values:\s*\[(\d+)\]', config, re.DOTALL)
-        if sm:
-            priv = sm.group(1)
-
-    # Extract Juniper class
-    jclass = 'n/a'
-    jm = re.search(r'\*junos_exec_(\w+)', services)
-    if jm:
-        svc_name = jm.group(1)
-        jcm = re.search(r'junos_exec_' + svc_name + r':.*?values:\s*\[\"([^\"]+)\"\]', config, re.DOTALL)
-        if jcm:
-            jclass = jcm.group(1)
-
-    # Count users in this group. Built-in accounting sinks (see
-    # HIDDEN_SINKS in cmd_list) are excluded so the count matches what
-    # 'tacctl user list' renders.
-    HIDDEN_SINKS = {'root'}
-    users_match = re.search(r'^users:\s*\n(.*?)(?=^# ---|\Z)', config, re.MULTILINE | re.DOTALL)
-    user_count = 0
-    if users_match:
-        for um in re.finditer(r'- name: (\S+)\n.*?groups: \[\*' + re.escape(name) + r'\]',
-                              users_match.group(1), re.DOTALL):
-            if um.group(1) in HIDDEN_SINKS:
-                continue
-            user_count += 1
-
-    print(f'{name}|{priv}|{jclass}|{user_count}')
-" "$CONFIG" | sort -t'|' -k2 -nr | while IFS='|' read -r name priv jclass user_count; do
+    # Highest priv-lvl first. The user count leaves out the accounting sink
+    # so it matches what 'tacctl user list' shows.
+    local rows name priv jclass user_count
+    rows=$(model_group_rows) || exit 1
+    while IFS='|' read -r name priv jclass user_count; do
+        [[ -z "$name" ]] && continue
         printf "  %-20s %-15s %-20s %-10s\n" "$name" "$priv" "$jclass" "$user_count"
-    done
+    done <<< "$rows"
 
     echo ""
 }
@@ -275,6 +148,7 @@ cmd_group_add() {
         echo "  Example: tacctl group add helpdesk 5 HELPDESK-CLASS" >&2
         exit 1
     fi
+    store_require || exit 1
 
     # Validate group name
     if [[ ! "$groupname" =~ ^[a-z][a-z0-9_-]*$ ]]; then
@@ -283,7 +157,7 @@ cmd_group_add() {
     fi
 
     # Check if group already exists
-    if grep -q "^${groupname}: &${groupname}$" "$CONFIG"; then
+    if model_group_exists "$groupname"; then
         error "Group '${groupname}' already exists."
         exit 1
     fi
@@ -296,84 +170,7 @@ cmd_group_add() {
 
     validate_class_name "$jclass"
 
-    backup_config
-
-    # Insert the new exec service, junos-exec service, and group before "# --- Groups ---"
-    local groups_line
-    groups_line=$({ grep -n "^# --- Groups ---" "$CONFIG" || true; } | head -1 | cut -d: -f1)
-    if [[ -z "$groups_line" ]]; then
-        error "Cannot find groups section in config."
-        exit 1
-    fi
-
-    # Build the new service + group block
-    local block
-    block=$(cat <<BLOCK
-
-# Cisco exec - ${groupname} (priv-lvl ${privlvl})
-exec_${groupname}: &exec_${groupname}
-  name: shell
-  set_values:
-    - name: priv-lvl
-      values: [${privlvl}]
-
-# Juniper junos-exec - ${groupname}
-# "${jclass}" must match a local template user on Juniper devices
-junos_exec_${groupname}: &junos_exec_${groupname}
-  name: junos-exec
-  set_values:
-    - name: local-user-name
-      values: ["${jclass}"]
-
-BLOCK
-)
-
-    # Insert services before "# --- Groups ---"
-    python3 -c "
-import sys
-config = open(sys.argv[1]).read()
-marker = '# --- Groups ---'
-idx = config.index(marker)
-new_block = sys.argv[2] + '\n'
-config = config[:idx] + new_block + config[idx:]
-import tempfile, os
-tmp = tempfile.NamedTemporaryFile('w', dir=os.path.dirname(sys.argv[1]), delete=False)
-tmp.write(config)
-tmp.close()
-os.rename(tmp.name, sys.argv[1])
-" "$CONFIG" "$block"
-
-    # Insert group definition after the last existing group (before "# --- Users ---")
-    local users_line
-    users_line=$({ grep -n "^# --- Users ---" "$CONFIG" || true; } | head -1 | cut -d: -f1)
-
-    python3 -c "
-import sys
-lines = open(sys.argv[1]).readlines()
-insert_at = int(sys.argv[2]) - 1
-group_block = [
-    '\n',
-    sys.argv[3] + ': &' + sys.argv[3] + '\n',
-    '  name: ' + sys.argv[3] + '\n',
-    '  services:\n',
-    '    - *exec_' + sys.argv[3] + '\n',
-    '    - *junos_exec_' + sys.argv[3] + '\n',
-    '  accounter: *file_accounter\n',
-]
-# NB: intentionally no group-level 'authenticator:' key. Each user
-# references its own '*bcrypt_<username>' anchor; the prior code wrote
-# '*bcrypt_user' here, which is an undefined anchor and makes yaml.safe_load
-# fail on every downstream read (list_scopes, read_user_scopes, etc.).
-lines = lines[:insert_at] + group_block + lines[insert_at:]
-import tempfile, os
-tmp = tempfile.NamedTemporaryFile('w', dir=os.path.dirname(sys.argv[1]), delete=False)
-tmp.writelines(lines)
-tmp.close()
-os.rename(tmp.name, sys.argv[1])
-" "$CONFIG" "$users_line" "$groupname"
-
-    chown tacquito:tacquito "$CONFIG"
-    restart_service
+    store_apply store_group_set "$groupname" "priv_lvl=${privlvl}" "juniper_class=${jclass}" || exit $?
 
     info "Group '${groupname}' added (Cisco priv-lvl ${privlvl}, Juniper ${jclass})."
     warn "On Juniper devices, create the template user: set system login user ${jclass} class <junos-class>"
@@ -388,6 +185,7 @@ cmd_group_remove() {
         error "Usage: tacctl group remove <name>"
         exit 1
     fi
+    store_require || exit 1
 
     # Protect built-in groups
     if [[ "$groupname" == "readonly" || "$groupname" == "operator" || "$groupname" == "superuser" ]]; then
@@ -396,14 +194,14 @@ cmd_group_remove() {
     fi
 
     # Check if group exists
-    if ! grep -q "^${groupname}: &${groupname}$" "$CONFIG"; then
+    if ! model_group_exists "$groupname"; then
         error "Group '${groupname}' does not exist."
         exit 1
     fi
 
     # Check if any users are assigned to this group
     local user_count
-    user_count=$(grep -c "groups: \[\*${groupname}\]" "$CONFIG" || true)
+    user_count=$(model_group_users "$groupname" | wc -l) || exit 1
     if [[ "$user_count" -gt 0 ]]; then
         error "Cannot remove group '${groupname}' — ${user_count} user(s) are assigned to it."
         error "Reassign those users first."
@@ -417,42 +215,7 @@ cmd_group_remove() {
         exit 0
     fi
 
-    backup_config
-
-    # Remove the exec service, junos-exec service, and group definition
-    python3 -c "
-import re, sys
-
-groupname = sys.argv[2]
-config = open(sys.argv[1]).read()
-
-# Remove exec service block
-config = re.sub(
-    r'\n# Cisco exec - ' + re.escape(groupname) + r'.*?exec_' + re.escape(groupname) + r':.*?values: \[\d+\]\n',
-    '\n', config, flags=re.DOTALL)
-
-# Remove junos-exec service block
-config = re.sub(
-    r'\n# Juniper junos-exec - ' + re.escape(groupname) + r'.*?junos_exec_' + re.escape(groupname) + r':.*?values: \[\"[^\"]+\"\]\n',
-    '\n', config, flags=re.DOTALL)
-
-# Remove group definition block
-config = re.sub(
-    r'\n' + re.escape(groupname) + r': &' + re.escape(groupname) + r'\n  name: ' + re.escape(groupname) + r'\n.*?accounter: \*file_accounter\n',
-    '\n', config, flags=re.DOTALL)
-
-# Clean up double blank lines
-config = re.sub(r'\n{3,}', '\n\n', config)
-
-import tempfile, os
-tmp = tempfile.NamedTemporaryFile('w', dir=os.path.dirname(sys.argv[1]), delete=False)
-tmp.write(config)
-tmp.close()
-os.rename(tmp.name, sys.argv[1])
-" "$CONFIG" "$groupname"
-
-    chown tacquito:tacquito "$CONFIG"
-    restart_service
+    store_apply store_group_del "$groupname" || exit $?
 
     info "Group '${groupname}' removed."
     echo ""
@@ -470,14 +233,13 @@ cmd_group_edit() {
         echo "  Example: tacctl group edit operator juniper-class NEW-CLASS" >&2
         exit 1
     fi
+    store_require || exit 1
 
     # Check if group exists
-    if ! grep -q "^${groupname}: &${groupname}$" "$CONFIG"; then
+    if ! model_group_exists "$groupname"; then
         error "Group '${groupname}' does not exist."
         exit 1
     fi
-
-    backup_config
 
     case "$field" in
         priv-lvl)
@@ -485,87 +247,13 @@ cmd_group_edit() {
                 error "Cisco privilege level must be 0-15."
                 exit 1
             fi
-
-            # Find the exec service for this group and update its priv-lvl
-            python3 -c "
-import re, sys
-config = open(sys.argv[1]).read()
-group = sys.argv[2]
-new_val = sys.argv[3]
-
-# Find the group block and extract the exec service reference
-gm = re.search(r'^' + re.escape(group) + r': &' + re.escape(group) + r'\n  name:.*?\n  services:\n(.*?)  accounter:', config, re.MULTILINE | re.DOTALL)
-if not gm:
-    print('ERROR:Could not find group block')
-    sys.exit(1)
-sm = re.search(r'\*exec_(\w+)', gm.group(1))
-if not sm:
-    print('ERROR:Could not find exec service for group')
-    sys.exit(1)
-svc = sm.group(1)
-
-# Find the exact service block and replace only its priv-lvl value.
-# Match both 'name: shell' (current) and 'name: exec' (legacy installs
-# that pre-date the 0.1.2 template fix) so in-place edits still work
-# while we wait for operators to upgrade.
-pattern = r'(exec_' + re.escape(svc) + r': &exec_' + re.escape(svc) + r'\n  name: (?:shell|exec)\n  set_values:\n    - name: priv-lvl\n      values: \[)\d+(\])'
-config = re.sub(pattern, r'\g<1>' + new_val + r'\2', config)
-
-import tempfile, os
-tmp = tempfile.NamedTemporaryFile('w', dir=os.path.dirname(sys.argv[1]), delete=False)
-tmp.write(config)
-tmp.close()
-os.rename(tmp.name, sys.argv[1])
-print('OK')
-" "$CONFIG" "$groupname" "$value"
-
-            chown tacquito:tacquito "$CONFIG"
-            restart_service
+            store_apply store_group_set "$groupname" "priv_lvl=${value}" || exit $?
             info "Group '${groupname}' Cisco priv-lvl changed to ${value}."
             ;;
 
         juniper-class)
             validate_class_name "$value"
-            # Find the junos-exec service for this group and update its local-user-name
-            python3 -c "
-import re, sys
-config = open(sys.argv[1]).read()
-group = sys.argv[2]
-new_class = sys.argv[3]
-
-# Find the group block and extract the junos-exec service reference
-gm = re.search(r'^' + re.escape(group) + r': &' + re.escape(group) + r'\n  name:.*?\n  services:\n(.*?)  accounter:', config, re.MULTILINE | re.DOTALL)
-if not gm:
-    print('ERROR:Could not find group block')
-    sys.exit(1)
-sm = re.search(r'\*junos_exec_(\w+)', gm.group(1))
-if not sm:
-    print('ERROR:Could not find junos-exec service for group')
-    sys.exit(1)
-svc = sm.group(1)
-
-# Find the exact service block and replace only its local-user-name value
-pattern = r'(junos_exec_' + re.escape(svc) + r': &junos_exec_' + re.escape(svc) + r'\n  name: junos-exec\n  set_values:\n    - name: local-user-name\n      values: \[\")([^\"]+)(\"\])'
-old_match = re.search(pattern, config)
-if old_match:
-    old_class = old_match.group(2)
-    config = re.sub(pattern, r'\g<1>' + new_class + r'\3', config)
-    # Update comment if present
-    config = config.replace(
-        '\"' + old_class + '\" must match',
-        '\"' + new_class + '\" must match'
-    )
-
-import tempfile, os
-tmp = tempfile.NamedTemporaryFile('w', dir=os.path.dirname(sys.argv[1]), delete=False)
-tmp.write(config)
-tmp.close()
-os.rename(tmp.name, sys.argv[1])
-print('OK')
-" "$CONFIG" "$groupname" "$value"
-
-            chown tacquito:tacquito "$CONFIG"
-            restart_service
+            store_apply store_group_set "$groupname" "juniper_class=${value}" || exit $?
             info "Group '${groupname}' Juniper class changed to ${value}."
             warn "On Juniper devices: set system login user ${value} class <junos-class>"
             ;;
@@ -583,11 +271,10 @@ print('OK')
 # and Juniper class allow/deny-commands (local enforcement on each device,
 # requires per-device push).
 #
-# Source of truth: commands.<group> in /etc/tacquito/tacctl.yaml, layered
-# over shipped defaults in conf_emit_defaults(). tacquito.yaml's per-group
-# commands: block is a regenerated artifact — do not hand-edit it;
-# regenerate_tacquito_commands() rewrites it from the tacctl source on
-# every mutation and on install / upgrade.
+# Source of truth: commands.<group> in tacctl.yaml, layered over shipped
+# defaults in conf_emit_defaults(). tacquito.yaml's per-group commands:
+# block is rendered from it with the rest of the file; every mutation below
+# writes tacctl.yaml and re-renders inside one store_apply.
 #
 # Rule shape: list of dicts {name, action: permit|deny, match?: [regex]}.
 # A trailing `name: "*"` rule's action is the group's default. Tacquito
@@ -628,7 +315,10 @@ cmd_group_commands() {
         error "Usage: tacctl group commands ${subcmd} <group> ..."
         exit 1
     fi
-    if ! grep -q "^${group}: &${group}$" "$CONFIG"; then
+    case "$subcmd" in
+        default|add|remove|clear) store_require || exit 1 ;;
+    esac
+    if ! model_group_exists "$group"; then
         error "Group '${group}' does not exist."
         exit 1
     fi
@@ -674,11 +364,7 @@ cmd_group_commands() {
                 error "Usage: tacctl group commands default <group> <permit|deny>"
                 exit 1
             fi
-            backup_config
-            seed_command_rules_safely "$group"
-            update_group_catchall "$group" "$new_default"
-            chown tacquito:tacquito "$CONFIG"
-            restart_service
+            store_apply _group_commands_write default "$group" "$new_default" || exit $?
             info "Group '${group}' default action set to ${new_default}."
             echo ""
             ;;
@@ -727,9 +413,6 @@ cmd_group_commands() {
                 esac
             done
 
-            backup_config
-            seed_command_rules_safely "$group"
-
             # Reject duplicate (name, match) — same name with same match
             # set is a no-op. Same name with different matches is fine.
             local existing
@@ -744,9 +427,7 @@ cmd_group_commands() {
                 done <<< "$existing"
             fi
 
-            insert_command_rule "$group" "$name" "$action" "$matches"
-            chown tacquito:tacquito "$CONFIG"
-            restart_service
+            store_apply _group_commands_write add "$group" "$name" "$action" "$matches" || exit $?
             info "Added rule '${name}' (action=${action}, match=[${matches}]) to group '${group}'."
             echo ""
             ;;
@@ -765,10 +446,7 @@ cmd_group_commands() {
                 warn "No rule named '${name}' in group '${group}'."
                 exit 0
             fi
-            backup_config
-            remove_command_rule "$group" "$name"
-            chown tacquito:tacquito "$CONFIG"
-            restart_service
+            store_apply remove_command_rule "$group" "$name" || exit $?
             info "Removed rule '${name}' from group '${group}'."
             echo ""
             ;;
@@ -782,10 +460,7 @@ cmd_group_commands() {
                 info "Aborted."
                 return
             fi
-            backup_config
-            write_group_commands "$group" ""
-            chown tacquito:tacquito "$CONFIG"
-            restart_service
+            store_apply write_group_commands "$group" "" || exit $?
             info "Cleared command rules for group '${group}' (reverted to shipped defaults)."
             warn "For a custom group, this leaves the group with no rules — if other groups"
             warn "at the same Cisco priv-lvl still have rules, Cisco will deny ALL commands to"
@@ -793,6 +468,18 @@ cmd_group_commands() {
             warn "('tacctl group commands default ${group} permit') or clear the siblings too."
             echo ""
             ;;
+    esac
+}
+
+# Writer for store_apply: the tacctl.yaml edits of 'commands default' and
+# 'commands add', siblings seeded first.
+_group_commands_write() {
+    local verb="$1" group="$2"
+    shift 2
+    seed_command_rules_safely "$group" || return 1
+    case "$verb" in
+        default) update_group_catchall "$group" "$1" ;;
+        add)     insert_command_rule "$group" "$1" "$2" "$3" ;;
     esac
 }
 
@@ -910,30 +597,12 @@ cmd_group_commands_seed() {
         candidates="readonly operator superuser"
     fi
 
-    backup_config
-    local touched="" skipped=""
-    for grp in $candidates; do
-        if ! grep -q "^${grp}: &${grp}$" "$CONFIG"; then
-            warn "Group '${grp}' does not exist in config; skipping."
-            continue
-        fi
-        if [[ -n "$(read_group_commands "$grp")" ]] && [[ "$force" != "true" ]]; then
-            warn "Group '${grp}' already has command rules; skipping (pass --force to overwrite)."
-            skipped+=" ${grp}"
-            continue
-        fi
-        # Protect siblings before writing rules to this group — if any
-        # other priv-lvl sibling lacks a commands: block, seed it with
-        # the permit-* catchall to avoid lockout once Cisco emits
-        # 'aaa authorization commands <level>'.
-        seed_command_rules_safely "$grp"
-        apply_default_rules "$grp"
-        touched+=" ${grp}"
-    done
+    store_require || exit 1
+    # shellcheck disable=SC2086  # candidates is a space-separated list of built-in names
+    store_apply _group_commands_seed_write "$force" $candidates || exit $?
+    local touched="$_GROUP_SEED_TOUCHED" skipped="$_GROUP_SEED_SKIPPED"
 
     if [[ -n "$touched" ]]; then
-        chown tacquito:tacquito "$CONFIG"
-        restart_service
         info "Seeded default command rules for:${touched}"
         echo ""
         echo "  Review with:"
@@ -952,6 +621,36 @@ cmd_group_commands_seed() {
         fi
         echo ""
     fi
+}
+
+# Writer for store_apply: seed each candidate group, recording which were
+# written and which were skipped for the caller's summary.
+_GROUP_SEED_TOUCHED=""
+_GROUP_SEED_SKIPPED=""
+_group_commands_seed_write() {
+    local force="$1" grp
+    shift
+    _GROUP_SEED_TOUCHED=""
+    _GROUP_SEED_SKIPPED=""
+    for grp in "$@"; do
+        if ! model_group_exists "$grp"; then
+            warn "Group '${grp}' does not exist in config; skipping."
+            continue
+        fi
+        if [[ -n "$(read_group_commands "$grp")" ]] && [[ "$force" != "true" ]]; then
+            warn "Group '${grp}' already has command rules; skipping (pass --force to overwrite)."
+            _GROUP_SEED_SKIPPED+=" ${grp}"
+            continue
+        fi
+        # Protect siblings before writing rules to this group — if any
+        # other priv-lvl sibling lacks command rules, seed it with the
+        # permit-* catchall to avoid lockout once Cisco emits
+        # 'aaa authorization commands <level>'.
+        seed_command_rules_safely "$grp" || return 1
+        apply_default_rules "$grp" || return 1
+        _GROUP_SEED_TOUCHED+=" ${grp}"
+    done
+    return 0
 }
 
 # --- Compute and apply the group's catchall ('*' rule) action ---
@@ -1002,23 +701,24 @@ remove_command_rule() {
 # are left alone.
 seed_command_rules_safely() {
     local group="$1"
-    local privlvl
-    privlvl=$(get_group_privlvl "$group")
+    local info_rows privlvl="" other other_priv _class
+    info_rows=$(model_group_info) || return 1
+    while IFS='|' read -r other other_priv _class; do
+        [[ "$other" == "$group" ]] && privlvl="$other_priv"
+    done <<< "$info_rows"
     [[ -z "$privlvl" ]] && return 0
     local seeded=""
-    while IFS= read -r other; do
+    while IFS='|' read -r other other_priv _class; do
         [[ -z "$other" ]] && continue
         [[ "$other" == "$group" ]] && continue
-        local other_priv
-        other_priv=$(get_group_privlvl "$other")
         [[ "$other_priv" != "$privlvl" ]] && continue
-        # Already has a commands: block? Skip.
+        # Already has command rules? Skip.
         if [[ -n "$(read_group_commands "$other")" ]]; then
             continue
         fi
-        write_group_commands "$other" "*|permit|"
+        write_group_commands "$other" "*|permit|" || return 1
         seeded+=" ${other}"
-    done < <(list_all_groups)
+    done <<< "$info_rows"
     if [[ -n "$seeded" ]]; then
         info "Auto-seeded permit-* catchall on sibling groups at priv-lvl ${privlvl}:${seeded}"
         info "(prevents lockout once Cisco 'aaa authorization commands ${privlvl}' is applied.)"
@@ -1064,13 +764,11 @@ cmd_group_privilege() {
         error "Usage: tacctl group privilege ${subcmd} <group> ..."
         exit 1
     fi
-    if ! grep -q "^${group}: &${group}$" "$CONFIG"; then
+    local privlvl
+    if ! privlvl=$(model_group "$group" priv_lvl); then
         error "Group '${group}' does not exist."
         exit 1
     fi
-
-    local privlvl
-    privlvl=$(get_group_privlvl "$group")
     if [[ -z "$privlvl" ]]; then
         error "Group '${group}' has no Cisco priv-lvl; nothing to map."
         exit 1
@@ -1259,7 +957,7 @@ cmd_group_privilege_seed() {
 
     local touched="" skipped=""
     for grp in $candidates; do
-        if ! grep -q "^${grp}: &${grp}$" "$CONFIG"; then
+        if ! model_group_exists "$grp"; then
             warn "Group '${grp}' does not exist; skipping."
             continue
         fi

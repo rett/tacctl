@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# tacctl lib/policy.sh -- command-authorization rules and priv-exec mappings (commands.<group>, privileges.<group>), migrations, tacquito.yaml regeneration
+# tacctl lib/policy.sh -- command-authorization rules and priv-exec mappings (commands.<group>, privileges.<group>), legacy tacquito.yaml migrations
 # Sourced by bin/tacctl.sh (see the load block there for ordering); not executable.
 
 # --- Validate a regex pattern ---
@@ -183,6 +183,9 @@ any_group_has_commands() {
 # Idempotent: a second run scrapes the same (now-regenerated) blocks and
 # sees no divergence.
 conf_migrate_command_rules() {
+    # Legacy installs only: once the store exists tacquito.yaml is rendered
+    # from tacctl.yaml and holds nothing to ingest.
+    [[ -f "$STORE_FILE" ]] && return 0
     [[ -r "$CONFIG" ]] || return 0
     _conf_load_cache
     # One python invocation emits "<group>\t<rules-json>" per group whose
@@ -301,12 +304,12 @@ PY
 # authorizer only returns AVPs for a service whose name matches the requested
 # service, so legacy `name: exec` blocks never match `service=shell`:
 # authorization fails AFTER a successful authentication, which clients surface
-# as "invalid password". `tacctl group add` now emits `name: shell`, but
-# already-deployed configs are never rewritten by regenerate_tacquito_commands
-# (it only touches `commands:` blocks). This rewrites the `exec_*` service
-# anchors in place.
+# as "invalid password". This rewrites the `exec_*` service anchors of a
+# legacy (pre-store) tacquito.yaml in place. With a store there is nothing
+# to do: the importer reads either name and the renderer writes `shell`.
 # Idempotent: silent no-op once every exec anchor already says `name: shell`.
 conf_migrate_exec_service_name() {
+    [[ -f "$STORE_FILE" ]] && return 0
     [[ -r "$CONFIG" ]] || return 0
     # Count eligible legacy lines first so we only back up / write when there's
     # something to do. Only the service-name line directly under a Cisco
@@ -339,16 +342,26 @@ PY
     info "Migrated tacquito.yaml service name(s) exec → shell for ${n} group(s)"
 }
 
-# --- Regenerate tacquito.yaml's per-group `commands:` blocks from tacctl ---
-# tacctl.yaml (merged with defaults) is the single source of truth. This
-# function rewrites every group's commands: block in tacquito.yaml to match.
-# Called after every command-rule mutation and from install/upgrade.
-# Idempotent: a second call with the same tacctl state is a no-op.
+# --- Bring tacquito.yaml's per-group `commands:` blocks in line with tacctl.yaml ---
+# Called by install and upgrade after they changed (or may have changed)
+# commands.<group> in tacctl.yaml. Commands no longer call it: they render.
 #
-# If `$1` is given, only that group's block is regenerated (cheaper).
-# With no argument, every group present in tacctl.yaml OR tacquito.yaml
-# is synced.
+# With a store, tacquito.yaml is an artifact, so this re-renders it. A
+# refused render (hand-edited file) is reported and left for the operator;
+# it never aborts the install or upgrade that called us.
+#
+# Without one (a legacy install whose import has not happened yet) the file
+# is still the source of truth for everything but command rules, and this
+# splices each group's commands: block in place -- the only regex editor of
+# tacquito.yaml left besides the other legacy migrations. Idempotent.
+#
+# If `$1` is given, only that group's block is regenerated (legacy mode).
 regenerate_tacquito_commands() {
+    if [[ -f "$STORE_FILE" ]]; then
+        tacacs_render_apply > /dev/null \
+            || warn "tacquito.yaml was not re-rendered; run 'tacctl config render' once the problem above is fixed."
+        return 0
+    fi
     local only_group="${1:-}"
     _conf_load_cache
     python3 - "$CONFIG" "$_TACCTL_CFG_CACHE" "$only_group" <<'PY'
@@ -426,13 +439,14 @@ PY
 # rules_arg format (kept for backward compat with callers): pipe-separated
 # rules joined with newlines, each rule `name|action|match1,match2,...`.
 # An empty rules_arg means "no overrides for this group" — if the group
-# has no defaults either, the commands: block disappears from tacquito.yaml
-# on the next regenerate.
+# has no defaults either, its commands: block disappears from tacquito.yaml
+# on the next render.
+# Writes tacctl.yaml only. The caller renders: run it through store_apply.
 write_group_commands() {
     local group="$1"
     local rules_arg="$2"
     if [[ -z "$(printf '%s' "$rules_arg" | awk 'NF')" ]]; then
-        conf_unset "commands.${group}"
+        conf_unset "commands.${group}" || return 1
     else
         # Parse pipe-format → JSON array of rule dicts, validate+write.
         local json
@@ -455,6 +469,5 @@ print(json.dumps(rules))
 ')
         conf_set_json "commands.${group}" "$json" || return 1
     fi
-    regenerate_tacquito_commands "$group"
 }
 

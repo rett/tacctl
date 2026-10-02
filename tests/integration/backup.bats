@@ -54,9 +54,33 @@ setup() {
     run bash -c 'echo y | "'"$TACCTL_BIN_SCRIPT"'" backup restore '"$ts"
     assert_success
 
-    # Alice is gone again.
+    # Alice is gone again: from the store, which the backup was adopted
+    # into, from every listing, and from the config rendered for tacquito.
+    run grep -c 'alice' "${TACCTL_STATE_DIR}/store.yaml"
+    assert_output "0"
+    run "$TACCTL_BIN_SCRIPT" user list
+    refute_output --partial "alice"
     run grep -c '^  - name: alice$' "$TACCTL_CONFIG"
     assert_output "0"
+    # Store and rendered file agree, so the next change is not refused.
+    run "$TACCTL_BIN_SCRIPT" config render
+    assert_success
+    assert_output --partial "already up to date"
+    run "$TACCTL_BIN_SCRIPT" user add bob operator --hash "$TEST_HASH" --scopes lab
+    assert_success
+}
+
+@test "backup restore: a backup the store cannot represent restores nothing" {
+    "$TACCTL_BIN_SCRIPT" user add alice superuser --hash "$TEST_HASH" --scopes lab
+    cp "${TACCTL_SRC}/tests/fixtures/legacy.unrepresentable.yaml" \
+        "${TACCTL_STATE_DIR}/backups/tacquito.yaml.19990101_000000"
+    cp "${TACCTL_STATE_DIR}/store.yaml" "${BATS_TEST_TMPDIR}/store.before"
+    cp "$TACCTL_CONFIG" "${BATS_TEST_TMPDIR}/config.before"
+    run bash -c 'echo y | "'"$TACCTL_BIN_SCRIPT"'" backup restore 19990101_000000'
+    assert_failure
+    assert_output --partial "cannot be restored into the store"
+    cmp "${TACCTL_STATE_DIR}/store.yaml" "${BATS_TEST_TMPDIR}/store.before"
+    cmp "$TACCTL_CONFIG" "${BATS_TEST_TMPDIR}/config.before"
 }
 
 @test "backup restore: rejects unknown timestamp" {

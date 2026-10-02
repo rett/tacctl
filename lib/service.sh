@@ -237,21 +237,30 @@ cmd_status() {
     esac
     echo -e "  ${BOLD}Log level:${NC}            ${level_name} (${loglevel})"
 
-    # User count
-    local user_count
-    user_count=$(python3 -c "
-import re, sys
-config = open(sys.argv[1]).read()
-users_match = re.search(r'^users:\s*\n(.*?)(?=^# ---|\Z)', config, re.MULTILINE | re.DOTALL)
-if users_match:
-    print(len(re.findall(r'- name:', users_match.group(1))))
-else:
-    print(0)
-" "$CONFIG")
+    # Everything status reports about users, scopes and filters comes from
+    # one model view (key=value lines; 'orphan=' and 'pwdate=' repeat).
+    local status_view key value
+    local -A st=([user_count]=0 [scope_count]=0 [prefix_count]=0 [prefix_unrestricted]=0
+                 [prefix_has_v6]=0 [allow_has_v6]=0 [placeholder_scopes]="" [weak_scopes]=""
+                 [empty_prefix_scopes]="" [total_refs]=0 [empty_scopes]="")
+    local orphan_lines="" pwdate_lines=""
+    status_view=$(_model_view status "$SECRET_MIN_LENGTH") || status_view=""
+    while IFS='=' read -r key value; do
+        case "$key" in
+            "")     ;;
+            orphan) orphan_lines+="${orphan_lines:+$'\n'}${value}" ;;
+            pwdate) pwdate_lines+="${pwdate_lines:+$'\n'}${value}" ;;
+            *)      st[$key]="$value" ;;
+        esac
+    done <<< "$status_view"
+    local user_count="${st[user_count]}"
     echo -e "  ${BOLD}Users:${NC}                ${user_count}"
 
     # Config file
     echo -e "  ${BOLD}Config:${NC}               ${CONFIG}"
+    if [[ "$(model_mode)" == "legacy" ]]; then
+        echo -e "  ${YELLOW}Store:                not initialised — read-only until 'tacctl store import' (see 'tacctl store import --check')${NC}"
+    fi
     print_drift_lines || true
 
     # Accounting log size
@@ -324,63 +333,10 @@ else:
     # secrets[] entry, so multi-scope installs are accurately summarized.
     echo ""
     echo -e "  ${BOLD}Security Posture:${NC}"
-    local posture_json
-    posture_json=$(python3 - "$CONFIG" "$SECRET_MIN_LENGTH" <<'PY' 2>/dev/null
-import json, re, sys, yaml
-cfg_path = sys.argv[1]
-min_secret = int(sys.argv[2])
-with open(cfg_path) as f:
-    d = yaml.safe_load(f) or {}
-
-# Collect CIDRs + secret lengths per scope (from secrets: list).
-all_cidrs = []
-weak_scopes = []
-placeholder_scopes = []
-empty_prefix_scopes = []
-for s in (d.get('secrets') or []):
-    name = s.get('name') or '(unnamed)'
-    key = (s.get('secret') or {}).get('key') or ''
-    opts = s.get('options') or {}
-    pfx = opts.get('prefixes') or ''
-    cidrs = []
-    try:
-        cidrs = json.loads(pfx) if pfx else []
-    except Exception:
-        cidrs = re.findall(r'"([^"]+)"', pfx)
-    if not cidrs:
-        empty_prefix_scopes.append(name)
-    all_cidrs.extend(cidrs)
-    if 'REPLACE' in key:
-        placeholder_scopes.append(name)
-    elif len(key) < min_secret:
-        weak_scopes.append(f"{name}:{len(key)}")
-
-cfg_text = open(cfg_path).read()
-def flat_list(key):
-    m = re.search(r'^' + key + r':\s*\[(.*?)\]', cfg_text, re.MULTILINE)
-    return re.findall(r'"([^"]+)"', m.group(1)) if m and m.group(1).strip() else []
-allow = flat_list('prefix_allow')
-
-def has_v6(lst):
-    return any(':' in c for c in lst)
-
-rfc1918 = {"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"}
-unrestricted = rfc1918.issubset(set(all_cidrs)) and len(all_cidrs) == 3
-
-print(f"prefix_count={len(all_cidrs)}")
-print(f"prefix_unrestricted={'1' if unrestricted else '0'}")
-print(f"prefix_has_v6={'1' if has_v6(all_cidrs) else '0'}")
-print(f"allow_has_v6={'1' if has_v6(allow) else '0'}")
-print(f"placeholder_scopes={','.join(placeholder_scopes)}")
-print(f"weak_scopes={','.join(weak_scopes)}")
-print(f"empty_prefix_scopes={','.join(empty_prefix_scopes)}")
-PY
-)
-    local prefix_count=0 prefix_unrestricted=0 prefix_has_v6=0 allow_has_v6=0
-    local placeholder_scopes="" weak_scopes="" empty_prefix_scopes=""
-    if [[ -n "$posture_json" ]]; then
-        eval "$posture_json"
-    fi
+    local prefix_count="${st[prefix_count]}" prefix_unrestricted="${st[prefix_unrestricted]}"
+    local prefix_has_v6="${st[prefix_has_v6]}" allow_has_v6="${st[allow_has_v6]}"
+    local placeholder_scopes="${st[placeholder_scopes]}" weak_scopes="${st[weak_scopes]}"
+    local empty_prefix_scopes="${st[empty_prefix_scopes]}"
 
     if [[ "$prefix_unrestricted" == "1" ]]; then
         echo -e "    ${RED}Prefix scope:       UNRESTRICTED (all RFC 1918 — harden with 'tacctl scope prefixes <name>')${NC}"
@@ -427,41 +383,10 @@ PY
         echo -e "    ${GREEN}Management ACL:     configured (${mgmt_acl_count} entr$( [[ $mgmt_acl_count -eq 1 ]] && echo "y" || echo "ies" ))${NC}"
     fi
 
-    # Scopes: multi-scope posture. Orphan detection = any user referencing
-    # a scope name that has no matching secrets[] entry.
-    local all_scopes scope_count="0"
-    all_scopes=$(list_scopes)
-    [[ -n "$all_scopes" ]] && scope_count=$(printf '%s\n' "$all_scopes" | wc -l)
-    local orphan_report
-    orphan_report=$(python3 - "$CONFIG" <<'PY' 2>/dev/null
-import yaml, sys
-with open(sys.argv[1]) as f:
-    d = yaml.safe_load(f) or {}
-names = {s.get('name') for s in (d.get('secrets') or []) if s.get('name')}
-empty_scopes = set(names)
-orphans = []
-total_refs = 0
-for u in (d.get('users') or []):
-    uname = u.get('name')
-    for s in (u.get('scopes') or []):
-        total_refs += 1
-        if s in names:
-            empty_scopes.discard(s)
-        else:
-            orphans.append(f"{uname}:{s}")
-print(f"REFS={total_refs}")
-print(f"EMPTY={','.join(sorted(empty_scopes))}")
-for o in orphans:
-    print(f"ORPHAN={o}")
-PY
-)
-    local total_refs="0" empty_scopes=""
-    if [[ -n "$orphan_report" ]]; then
-        total_refs=$(echo "$orphan_report" | awk -F= '/^REFS=/{print $2}')
-        empty_scopes=$(echo "$orphan_report" | awk -F= '/^EMPTY=/{print $2}')
-    fi
-    local orphan_lines
-    orphan_lines=$(echo "$orphan_report" | awk -F= '/^ORPHAN=/{print $2}' || true)
+    # Scopes: multi-scope posture. An orphan is a user referencing a scope
+    # that does not exist (possible only in a legacy config; the store
+    # refuses one).
+    local scope_count="${st[scope_count]}" total_refs="${st[total_refs]}" empty_scopes="${st[empty_scopes]}"
     if [[ "$scope_count" -eq 0 ]]; then
         echo -e "    ${RED}Scopes:             NONE (no auth targets defined)${NC}"
     elif [[ -n "$orphan_lines" ]]; then
@@ -491,22 +416,18 @@ PY
     local pw_warnings=0
     local today
     today=$(date +%s)
-    if [[ -d "$PASSWORD_DATES_DIR" ]]; then
-        for datefile in "${PASSWORD_DATES_DIR}"/*.date; do
-            [[ -f "$datefile" ]] || continue
-            local uname pw_date pw_epoch age_days
-            uname=$(basename "$datefile" .date)
-            pw_date=$(cat "$datefile")
-            pw_epoch=$(date -d "$pw_date" +%s 2>/dev/null || echo 0)
-            if [[ "$pw_epoch" -gt 0 ]]; then
-                age_days=$(( (today - pw_epoch) / 86400 ))
-                if [[ "$age_days" -gt "$PASSWORD_MAX_AGE_DAYS" ]]; then
-                    echo -e "    ${YELLOW}${uname}: password is ${age_days} days old (changed ${pw_date})${NC}"
-                    pw_warnings=$((pw_warnings + 1))
-                fi
+    local uname pw_date pw_epoch age_days
+    while IFS='|' read -r uname pw_date; do
+        [[ -n "$uname" ]] || continue
+        pw_epoch=$(date -d "$pw_date" +%s 2>/dev/null || echo 0)
+        if [[ "$pw_epoch" -gt 0 ]]; then
+            age_days=$(( (today - pw_epoch) / 86400 ))
+            if [[ "$age_days" -gt "$PASSWORD_MAX_AGE_DAYS" ]]; then
+                echo -e "    ${YELLOW}${uname}: password is ${age_days} days old (changed ${pw_date})${NC}"
+                pw_warnings=$((pw_warnings + 1))
             fi
-        done
-    fi
+        fi
+    done <<< "$pwdate_lines"
     if [[ "$pw_warnings" -eq 0 ]]; then
         echo -e "    ${GREEN}No passwords older than ${PASSWORD_MAX_AGE_DAYS} days${NC}"
     fi
@@ -515,20 +436,48 @@ PY
 }
 
 # --- CONFIG VALIDATE ---
+# With a store: the store against its schema, tacctl.yaml against its
+# schema, a trial render of tacquito.yaml (which also checks the command
+# rules and reads the result back), whether the live tacquito.yaml is that
+# render, and drift (a hand-edited artifact).
+# Without one (legacy read-only mode): the tacquito.yaml the daemon runs is
+# still the source of truth, so it is checked as the model the importer
+# reads from it; 'tacctl store import --check' is the full report.
 cmd_config_validate() {
+    local mode
+    mode=$(model_mode)
     echo ""
-    echo -e "${BOLD}Validating ${CONFIG}...${NC}"
-    echo ""
-
-    local errors=0
-
-    # Check YAML syntax
-    if python3 -c "import yaml; yaml.safe_load(open('$CONFIG'))" 2>/dev/null; then
-        echo -e "  ${GREEN}YAML syntax:${NC}          valid"
+    if [[ "$mode" == "store" ]]; then
+        echo -e "${BOLD}Validating ${STORE_FILE}...${NC}"
     else
-        echo -e "  ${RED}YAML syntax:${NC}          INVALID"
-        python3 -c "import yaml; yaml.safe_load(open('$CONFIG'))" 2>&1 | head -3
-        errors=$((errors + 1))
+        echo -e "${BOLD}Validating ${CONFIG}...${NC}"
+    fi
+    echo ""
+
+    local errors=0 line
+
+    if [[ "$mode" == "store" ]]; then
+        # store_validate prints one 'tacctl store: <problem>' line per error.
+        local store_errors
+        if store_errors=$(store_validate 2>&1); then
+            echo -e "  ${GREEN}Store:${NC}                valid"
+        else
+            while IFS= read -r line; do
+                [[ -z "$line" ]] && continue
+                echo -e "  ${RED}Store:${NC}                ${line#tacctl store: }"
+                errors=$((errors + 1))
+            done <<< "$store_errors"
+        fi
+    else
+        # Check YAML syntax
+        if python3 -c "import yaml; yaml.safe_load(open('$CONFIG'))" 2>/dev/null; then
+            echo -e "  ${GREEN}YAML syntax:${NC}          valid"
+        else
+            echo -e "  ${RED}YAML syntax:${NC}          INVALID"
+            python3 -c "import yaml; yaml.safe_load(open('$CONFIG'))" 2>&1 | head -3
+            errors=$((errors + 1))
+        fi
+        echo -e "  ${YELLOW}Store:${NC}                not initialised — read-only until 'tacctl store import' ('tacctl store import --check' reports what it would do)"
     fi
 
     # Validate the tacctl overrides file. Malformed YAML would silently
@@ -556,180 +505,86 @@ cmd_config_validate() {
         errors=$((errors + 1))
     fi
 
-    # Check required sections exist
-    local result
-    result=$(python3 -c "
-import re, sys
-
-config = open(sys.argv[1]).read()
-DISABLED_MARKER = sys.argv[2]
-errors = []
-
-# Check for users section
-if not re.search(r'^users:', config, re.MULTILINE):
-    errors.append('Missing users: section')
-
-# Check for secrets section
-if not re.search(r'^secrets:', config, re.MULTILINE):
-    errors.append('Missing secrets: section')
-
-# Check for at least one user
-users_match = re.search(r'^users:\s*\n(.*?)(?=^# ---|\Z)', config, re.MULTILINE | re.DOTALL)
-# 'root' is allowed as an accounting-only sink (install-time seed); it
-# must carry the disabled-hash + accounter pattern, enforced below.
-# 'tacquito' collides with the service user and is never legitimate.
-RESERVED_AUTHABLE = {'tacquito'}
-if users_match:
-    users = re.findall(r'- name: (\S+)', users_match.group(1))
-    if len(users) == 0:
-        errors.append('No users defined')
-    else:
-        # Check each user has a bcrypt anchor + an accounter field, and
-        # isn't using a reserved OS/service name. Missing accounter triggers
-        # a stream of acct.go errors at auth time ('user [X] does not have
-        # an accounter associated'); reserved names collide with local OS
-        # accounts tacquito resolves outside the YAML.
-        for u in users:
-            if u in RESERVED_AUTHABLE:
-                errors.append(f'User \"{u}\" uses a reserved name (remove with: tacctl user remove {u})')
-            if not re.search(r'^bcrypt_' + re.escape(u) + r':', config, re.MULTILINE):
-                errors.append(f'User \"{u}\" has no bcrypt authenticator anchor')
-            # Every user entry must carry 'accounter: *file_accounter'
-            # within its block. Bound the block with a look-ahead for the
-            # next list item or the next top-level '# ---' heading.
-            user_block = re.search(
-                r'^  - name: ' + re.escape(u) + r'\s*\n((?:    .*\n|  #.*\n)+?)(?=^  - name:|^# ---|\Z)',
-                users_match.group(1), re.MULTILINE)
-            if user_block and 'accounter:' not in user_block.group(1):
-                errors.append(f'User \"{u}\" has no accounter: field (tacquito will error on every auth)')
-
-        # Check for disabled-marker or empty hashes
-        for m in re.finditer(r'^bcrypt_(\w+):.*?hash:\s*(\S+)', config, re.MULTILINE | re.DOTALL):
-            username = m.group(1)
-            h = m.group(2)
-            if h == 'REPLACE_ME':
-                errors.append(f'User \"{username}\" has placeholder hash (REPLACE_ME)')
-            elif h == DISABLED_MARKER:
-                pass  # valid disabled-marker state
-            elif len(h) < 20:
-                errors.append(f'User \"{username}\" has suspiciously short hash')
-            elif username == 'root':
-                # Root must stay a disabled accounting sink. A real bcrypt
-                # hash here means someone set a password for the sink,
-                # which would make Junos's built-in root account
-                # TACACS+-authable — a policy break.
-                errors.append('User \"root\" has a real password set — must remain a disabled accounting sink')
-
-# Check shared secret
-secret_match = re.search(r'key:\s*\"?([^\"\n]+)\"?', config)
-if not secret_match:
-    errors.append('No shared secret (key:) found in secrets section')
-elif 'REPLACE' in secret_match.group(1):
-    errors.append('Shared secret contains placeholder value')
-
-# Check prefixes
-prefix_match = re.search(r'prefixes:', config)
-if not prefix_match:
-    errors.append('No prefixes defined in secrets section')
-
-if errors:
-    for e in errors:
-        print(f'ERROR:{e}')
-else:
-    print('OK')
-" "$CONFIG" "$DISABLED_MARKER_HEX")
-
-    if [[ "$result" == "OK" ]]; then
-        echo -e "  ${GREEN}Config structure:${NC}     valid"
-    else
+    # What the model says: is there anything to serve, are the secrets
+    # real. A store has already had its references checked above; a legacy
+    # model has not, so it gets the full set here.
+    local report="" structure_errors=0 scope_names=""
+    local -A counts=([users]="?" [groups]="?" [scopes]="?")
+    local full=()
+    [[ "$mode" == "legacy" ]] && full=(full)
+    if report=$(_model_view validate "${full[@]}"); then
         while IFS= read -r line; do
-            local msg="${line#ERROR:}"
-            echo -e "  ${RED}Error:${NC}                ${msg}"
-            errors=$((errors + 1))
-        done <<< "$result"
+            case "$line" in
+                COUNT:*)
+                    line="${line#COUNT:}"
+                    counts[${line%%=*}]="${line#*=}"
+                    ;;
+                ERROR:*)
+                    echo -e "  ${RED}Error:${NC}                ${line#ERROR:}"
+                    structure_errors=$((structure_errors + 1))
+                    ;;
+            esac
+        done <<< "$report"
+        scope_names=$(model_scopes) || scope_names=""
+    else
+        echo -e "  ${RED}Error:${NC}                users, groups and scopes could not be read (see above)"
+        structure_errors=1
     fi
+    if (( structure_errors == 0 )); then
+        echo -e "  ${GREEN}Config structure:${NC}     valid"
+    fi
+    errors=$((errors + structure_errors))
 
-    # Scope integrity: every user's scopes[] must reference an existing
-    # secrets[].name; scope.default in tacctl.yaml must also name one.
+    # scope.default in tacctl.yaml must name an existing scope.
     local default_scope_configured
     default_scope_configured=$(conf_get scope.default)
-    local scope_report
-    scope_report=$(python3 - "$CONFIG" "$default_scope_configured" <<'PY' 2>/dev/null
-import yaml, sys
-with open(sys.argv[1]) as f:
-    d = yaml.safe_load(f) or {}
-names = [s.get('name') for s in (d.get('secrets') or []) if s.get('name')]
-name_set = set(names)
-issues = []
-# Flat-emission invariant: every entry sharing a name must share its
-# secret.key. Divergence means one or more entries will auth with a
-# stale key, producing non-deterministic "bad secret" failures on the
-# subset of prefixes that rolled their key.
-keys_by_name = {}
-for s in (d.get('secrets') or []):
-    nm = s.get('name')
-    if not nm:
-        continue
-    k = (s.get('secret') or {}).get('key') or ''
-    keys_by_name.setdefault(nm, []).append(k)
-for nm, keys in keys_by_name.items():
-    uniq = set(keys)
-    if len(uniq) > 1:
-        issues.append(f"Scope '{nm}' has {len(keys)} entries but {len(uniq)} distinct secret.key values — entries must share a key")
-for u in (d.get('users') or []):
-    uname = u.get('name')
-    for s in (u.get('scopes') or []):
-        if s not in name_set:
-            issues.append(f"User '{uname}' references nonexistent scope '{s}'")
-# Default-scope override (read from tacctl.yaml before we were invoked).
-default_scope = sys.argv[2]
-if default_scope and default_scope not in name_set:
-    issues.append(f"Default scope override points at '{default_scope}' which is not a defined scope")
-for i in issues:
-    print(f"ERROR:{i}")
-if not issues:
-    print('OK')
-PY
-)
-    if [[ "$scope_report" == "OK" ]]; then
-        echo -e "  ${GREEN}Scopes integrity:${NC}     valid"
+    if [[ -n "$report" && -n "$default_scope_configured" ]] \
+        && ! grep -qxF -- "$default_scope_configured" <<< "$scope_names"; then
+        echo -e "  ${RED}Error:${NC}                Default scope override points at '${default_scope_configured}' which is not a defined scope"
+        errors=$((errors + 1))
     else
-        while IFS= read -r line; do
-            [[ "$line" == ERROR:* ]] || continue
-            local msg="${line#ERROR:}"
-            echo -e "  ${RED}Error:${NC}                ${msg}"
-            errors=$((errors + 1))
-        done <<< "$scope_report"
+        echo -e "  ${GREEN}Scopes integrity:${NC}     valid"
     fi
 
-    # Rendered artifacts must still be what tacctl rendered (silent until
-    # something has been rendered).
-    if ! print_drift_lines; then
+    # Rendered artifact: can the store be rendered, and is the live file
+    # that render? A hand-edited file is reported by the DRIFT line below
+    # instead, and counted once.
+    local drifted=0
+    backends_check_drift > /dev/null || drifted=1
+    if [[ "$mode" == "store" ]]; then
+        local rstate=""
+        if ! rstate=$(tacacs_render_check); then
+            echo -e "  ${RED}Rendered config:${NC}      the store cannot be rendered (see above)"
+            errors=$((errors + 1))
+        elif (( drifted )); then
+            :
+        else
+            case "$rstate" in
+                current|same)
+                    echo -e "  ${GREEN}Rendered config:${NC}      up to date"
+                    ;;
+                missing)
+                    echo -e "  ${RED}Rendered config:${NC}      ${CONFIG} is missing — run 'tacctl config render'"
+                    errors=$((errors + 1))
+                    ;;
+                unrecorded)
+                    echo -e "  ${YELLOW}Rendered config:${NC}      ${CONFIG} was not rendered by tacctl yet — the next change replaces it if it says what the store says; otherwise run 'tacctl config render --force'"
+                    ;;
+                *)
+                    echo -e "  ${RED}Rendered config:${NC}      ${CONFIG} is out of date with the store — run 'tacctl config render'"
+                    errors=$((errors + 1))
+                    ;;
+            esac
+        fi
+    fi
+    if (( drifted )); then
+        print_drift_lines || true
         errors=$((errors + 1))
     fi
 
-    # Check services
-    local svc_count
-    # Match shell (current template), exec (pre-0.1.2 legacy installs),
-    # and junos-exec. Exec anchors can carry either service name
-    # depending on install vintage.
-    svc_count=$(grep -c "name: shell\|name: exec\|name: junos-exec" "$CONFIG" 2>/dev/null || echo 0)
-    echo -e "  ${GREEN}Services defined:${NC}     ${svc_count}"
-
-    # Check groups
-    local grp_count
-    grp_count=$(grep -c "^[a-z].*: &" "$CONFIG" 2>/dev/null | head -1)
-    echo -e "  ${GREEN}Groups/anchors:${NC}       ${grp_count}"
-
-    # User count
-    local user_count
-    user_count=$(python3 -c "
-import re
-config = open('$CONFIG').read()
-m = re.search(r'^users:\s*\n(.*?)(?=^# ---|\Z)', config, re.MULTILINE | re.DOTALL)
-print(len(re.findall(r'- name:', m.group(1))) if m else 0)
-")
-    echo -e "  ${GREEN}Users defined:${NC}        ${user_count}"
+    echo -e "  ${GREEN}Groups defined:${NC}       ${counts[groups]}"
+    echo -e "  ${GREEN}Scopes defined:${NC}       ${counts[scopes]}"
+    echo -e "  ${GREEN}Users defined:${NC}        ${counts[users]}"
 
     echo ""
     if [[ "$errors" -gt 0 ]]; then
@@ -1249,10 +1104,28 @@ cmd_backup() {
             # Back up current config before restoring (safety net)
             backup_config
 
-            cp "$backup_file" "$CONFIG"
-            chown tacquito:tacquito "$CONFIG"
-            chmod 640 "$CONFIG"
-            restart_service
+            if [[ "$(model_mode)" == "store" ]]; then
+                # The store is canonical and tacquito.yaml is rendered from
+                # it, so restoring means adopting the backup's content into
+                # the store (a strict import: a backup the store cannot
+                # represent restores nothing) and rendering it back out.
+                # Interim until backups are store snapshots.
+                if ! store_import --replace "$backup_file" > /dev/null; then
+                    error "Backup ${timestamp} cannot be restored into the store. Nothing was changed."
+                    exit 1
+                fi
+                local result
+                if ! result=$(tacacs_render_apply --force); then
+                    error "The store now holds backup ${timestamp}, but ${CONFIG} could not be rendered. Run 'tacctl config render --force'."
+                    exit 1
+                fi
+                [[ "$result" == "CHANGED" ]] && restart_service
+            else
+                cp "$backup_file" "$CONFIG"
+                chown tacquito:tacquito "$CONFIG"
+                chmod 640 "$CONFIG"
+                restart_service
+            fi
             info "Config restored from backup ${timestamp}."
             echo ""
             ;;

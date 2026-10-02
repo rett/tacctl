@@ -25,16 +25,33 @@ setup() {
     load_fixture tacquito.minimal.yaml
 }
 
-@test "user add: inserts authenticator anchor + user entry into YAML" {
+# One field of a user in the canonical store (a list comma-joined).
+store_user() {
+    python3 -c '
+import sys, yaml
+with open(sys.argv[1]) as f:
+    u = (yaml.safe_load(f).get("users") or {}).get(sys.argv[2])
+if u is None:
+    sys.exit(1)
+v = u.get(sys.argv[3])
+print(",".join(v) if isinstance(v, list) else "" if v is None else v)' "${TACCTL_STATE_DIR}/store.yaml" "$1" "$2"
+}
+
+@test "user add: writes the user to the store and renders anchor + user entry into the YAML" {
     run "$TACCTL_BIN_SCRIPT" user add alice superuser --hash "$TEST_HASH" --scopes lab
     assert_success
     assert_output --partial "alice"
 
-    # Authenticator anchor is inserted before '# --- Services ---'.
+    # The store is where the user lives.
+    [[ "$(store_user alice group)" == "superuser" ]]
+    [[ "$(store_user alice scopes)" == "lab" ]]
+    [[ "$(store_user alice hash)" == "$TEST_HASH" ]]
+
+    # What tacquito reads: one authenticator anchor...
     run grep -c '^bcrypt_alice: &bcrypt_alice$' "$TACCTL_CONFIG"
     assert_output "1"
 
-    # User entry is inserted before '# --- Secret Providers ---'.
+    # ...and one user entry.
     run grep -c '^  - name: alice$' "$TACCTL_CONFIG"
     assert_output "1"
 
@@ -137,6 +154,8 @@ setup() {
     run bash -c 'echo y | "'"$TACCTL_BIN_SCRIPT"'" user remove alice'
     assert_success
 
+    run store_user alice group
+    assert_failure
     run grep -c '^bcrypt_alice:' "$TACCTL_CONFIG"
     assert_output "0"
     run grep -c '^  - name: alice$' "$TACCTL_CONFIG"
@@ -146,14 +165,14 @@ setup() {
 @test "user remove: 'n' confirmation aborts without mutation" {
     "$TACCTL_BIN_SCRIPT" user add alice superuser --hash "$TEST_HASH" --scopes lab
     local before_sha
-    before_sha=$(sha256sum "$TACCTL_CONFIG" | awk '{print $1}')
+    before_sha=$(cat "$TACCTL_CONFIG" "${TACCTL_STATE_DIR}/store.yaml" | sha256sum | awk '{print $1}')
 
     run bash -c 'echo n | "'"$TACCTL_BIN_SCRIPT"'" user remove alice'
     assert_success
     assert_output --partial "Cancelled"
 
     local after_sha
-    after_sha=$(sha256sum "$TACCTL_CONFIG" | awk '{print $1}')
+    after_sha=$(cat "$TACCTL_CONFIG" "${TACCTL_STATE_DIR}/store.yaml" | sha256sum | awk '{print $1}')
     [[ "$before_sha" == "$after_sha" ]]
 }
 
@@ -173,6 +192,7 @@ setup() {
     run "$TACCTL_BIN_SCRIPT" user add alice superuser --hash "$TEST_HASH" --scopes lab,prod
     assert_success
 
+    [[ "$(store_user alice scopes)" == "lab,prod" ]]
     run grep -A4 '^  - name: alice$' "$TACCTL_CONFIG"
     assert_output --partial 'scopes: ["lab", "prod"]'
 }

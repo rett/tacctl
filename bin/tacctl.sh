@@ -3,7 +3,8 @@
 # Tacquito TACACS+ Server — Management Script
 #
 # Manage local TACACS+ users and server configuration.
-# Changes are applied to /etc/tacquito/tacquito.yaml and hot-reloaded automatically.
+# Users, groups, scopes and filters live in /etc/tacctl/store.yaml; every
+# change is rendered into /etc/tacquito/tacquito.yaml and the daemon restarted.
 #
 # Usage:
 #   ./tacctl.sh user list
@@ -156,28 +157,18 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
             ;;
         _completion-names)
             # Hidden helper used by bash completion to enumerate scope, user,
-            # group, or backup-timestamp names. Completion runs in the user's
-            # shell where the config is unreadable (mode 0600); `sudo -n tacctl
+            # group, or backup-timestamp names (the first three from the
+            # model). Completion runs in the user's shell where the store and
+            # the config are unreadable; `sudo -n tacctl
             # _completion-names <kind>` bridges that when a NOPASSWD sudoers
             # rule for tacctl is installed. Not shown in `tacctl` help or the
             # man page — deliberate low-surface interface, behavior subject to
             # change.
             preflight
             case "${1:-}" in
-                scopes) list_scopes ;;
-                users)  python3 -c "
-import yaml
-with open('$CONFIG') as f:
-    d = yaml.safe_load(f) or {}
-for u in (d.get('users') or []):
-    n = u.get('name')
-    if n: print(n)
-" 2>/dev/null ;;
-                groups) awk '/^# --- Groups ---/,/^# --- Users ---/ {
-                    if (match($0, /^[a-z][a-zA-Z0-9_-]*: &/)) {
-                        sub(/:.*/, ""); print
-                    }
-                }' "$CONFIG" 2>/dev/null ;;
+                scopes) model_scopes 2>/dev/null ;;
+                users)  model_users 2>/dev/null ;;
+                groups) model_groups 2>/dev/null ;;
                 # Backup timestamps, newest first, capped at 50 so the
                 # completion menu stays usable on hosts with hundreds of
                 # backups. `config diff` / `backup diff|restore` take one.

@@ -1,40 +1,33 @@
 # shellcheck shell=bash
-# tacctl lib/scopes.sh -- scope (secrets[]) helpers, allow/deny prefix filters, scope commands
+# tacctl lib/scopes.sh -- default-scope helpers, allow/deny prefix filters, scope commands, legacy secrets[] migrations
 # Sourced by bin/tacctl.sh (see the load block there for ordering); not executable.
+#
+# A scope is a named (prefixes, shared secret) bundle in the store, with an
+# optional 'protocols' filter naming the backends that serve it. Users carry
+# a list of scope names and can authenticate only from devices matching a
+# scope they are a member of. Reads go through the model (lib/model.sh);
+# writes go through store_apply (lib/render_tacacs.sh), which re-renders
+# tacquito.yaml -- one secrets[] entry per (scope, prefix), most specific
+# first -- so nothing here touches that file.
 
-# --- CONFIG SECRET ---
-# --- Read the current shared secret from the YAML (may be empty) ---
-# =====================================================================
-#  SCOPE HELPERS — multi-scope YAML access
-# =====================================================================
-#
-# A "scope" in tacctl corresponds to one `secrets:` list entry in
-# /etc/tacquito/tacquito.yaml. Each scope is a named (prefixes,
-# shared-secret) bundle; users carry a list of scope names in their
-# `scopes:` YAML field and can auth only from devices matching a scope
-# they're a member of.
-#
-# These helpers use yaml.safe_load for reads (robust against anchor
-# expansion, field reordering, etc.) and regex-based surgical edits for
-# writes (to preserve YAML anchors like *authenticator_type_bcrypt that
-# safe_dump would otherwise inline).
+# Protocols a scope's 'protocols' filter may name. Must equal KNOWN_PROTOCOLS
+# in lib/store.sh (a unit test pins the two together).
+SCOPE_PROTOCOLS="tacacs radius"
 
 # --- Read scope.default from the merged tacctl config ---
 # Returns the configured default scope name (tacctl.yaml's scope.default,
 # layered over the shipped 'lab' default). Falls back to the name of the
-# sole secrets: entry if the merged value doesn't name an existing scope
-# and there's exactly one scope in tacquito.yaml. Empty output if no
-# scopes exist yet.
+# sole scope if the merged value doesn't name an existing scope and there
+# is exactly one. Empty output if no scopes exist yet.
 read_default_scope() {
-    local v
+    local v names
     v=$(conf_get scope.default)
-    if [[ -n "$v" ]] && scope_exists "$v"; then
+    names=$(model_scopes) || return 0
+    if [[ -n "$v" ]] && grep -qxF -- "$v" <<< "$names"; then
         echo "$v"
         return
     fi
     # Fallback: if there's exactly one scope, it's the implicit default.
-    local names
-    names=$(list_scopes)
     if [[ -n "$names" && $(printf '%s\n' "$names" | wc -l) -eq 1 ]]; then
         echo "$names"
     fi
@@ -48,172 +41,23 @@ write_default_scope() {
     conf_set scope.default "$1"
 }
 
-# --- List all scope names (one per line) ---
-list_scopes() {
-    [[ -r "$CONFIG" ]] || return 0
-    python3 -c "
-import yaml, sys
-with open(sys.argv[1]) as f:
-    d = yaml.safe_load(f) or {}
-# Under flat emission one logical scope spans N secrets[] entries; dedupe
-# by name preserving first-appearance order so callers see the logical view.
-seen = set()
-for s in (d.get('secrets') or []):
-    name = s.get('name')
-    if name and name not in seen:
-        seen.add(name)
-        print(name)
-" "$CONFIG" 2>/dev/null
+# Print "Scope '<name>' does not exist. Available: ..." and return 1 when
+# the scope is missing.
+_scope_require() {
+    model_scope_exists "$1" && return 0
+    error "Scope '$1' does not exist. Available: $(model_scopes_by_routing | paste -sd' ' || true)"
+    return 1
 }
 
-# --- Return 0 if the named scope exists ---
-scope_exists() {
-    local name="$1"
-    [[ -n "$name" ]] || return 1
-    list_scopes | grep -qxF "$name"
-}
-
-# --- Read one scope's CIDR prefixes (canonical, one per line) ---
-# Aggregates across every secrets[] entry whose name matches (flat emission
-# can spread a scope's prefixes across multiple entries). Output is sorted
-# by the standard (version, broadcast, network) key so the caller sees a
-# stable, specificity-ordered list.
-read_scope_prefixes() {
-    local name="$1"
-    python3 -c "
-import yaml, json, ipaddress, re, sys
-with open(sys.argv[1]) as f:
-    d = yaml.safe_load(f) or {}
-target = sys.argv[2]
-collected = []
-for s in (d.get('secrets') or []):
-    if s.get('name') != target:
-        continue
-    opts = s.get('options') or {}
-    pfx = opts.get('prefixes')
-    if not pfx:
-        continue
-    try:
-        arr = json.loads(pfx)
-    except Exception:
-        arr = re.findall(r'\"([^\"]+)\"', pfx)
-    for c in arr:
-        try:
-            collected.append(ipaddress.ip_network(c, strict=False))
-        except ValueError:
-            pass
-seen = set()
-uniq = []
-for n in collected:
-    if n not in seen:
-        seen.add(n)
-        uniq.append(n)
-# Sort specificity-first: prefix length DESC, then IPv4 before IPv6,
-# then network address ASC for a stable tie-break among prefixes of
-# the same length. Mirrors tacquito routing semantics — most-specific
-# prefix wins for any given client IP, so the display reads
-# top-to-bottom as 'most likely match first'.
-uniq.sort(key=lambda n: (-n.prefixlen, n.version, int(n.network_address)))
-for n in uniq:
-    print(n)
-" "$CONFIG" "$name" 2>/dev/null
-}
-
-# --- Read one scope's shared-secret key (raw value) ---
-read_scope_secret() {
-    local name="$1"
-    python3 -c "
-import yaml, sys
-with open(sys.argv[1]) as f:
-    d = yaml.safe_load(f) or {}
-target = sys.argv[2]
-for s in (d.get('secrets') or []):
-    if s.get('name') == target:
-        sec = s.get('secret') or {}
-        print(sec.get('key') or '')
-        break
-" "$CONFIG" "$name" 2>/dev/null
-}
-
-# --- Read one user's scope list (one scope name per line) ---
-read_user_scopes() {
-    local username="$1"
-    python3 -c "
-import yaml, sys
-with open(sys.argv[1]) as f:
-    d = yaml.safe_load(f) or {}
-target = sys.argv[2]
-for u in (d.get('users') or []):
-    if u.get('name') == target:
-        for s in (u.get('scopes') or []):
-            print(s)
-        break
-" "$CONFIG" "$username" 2>/dev/null
-}
-
-# --- Count users referencing a given scope ---
-count_users_in_scope() {
-    local scope="$1"
-    python3 -c "
-import yaml, sys
-with open(sys.argv[1]) as f:
-    d = yaml.safe_load(f) or {}
-target = sys.argv[2]
-c = 0
-for u in (d.get('users') or []):
-    if target in (u.get('scopes') or []):
-        c += 1
-print(c)
-" "$CONFIG" "$scope" 2>/dev/null
-}
-
-# --- List users referencing a given scope (one per line) ---
-list_users_in_scope() {
-    local scope="$1"
-    python3 -c "
-import yaml, sys
-with open(sys.argv[1]) as f:
-    d = yaml.safe_load(f) or {}
-target = sys.argv[2]
-for u in (d.get('users') or []):
-    if target in (u.get('scopes') or []):
-        print(u.get('name'))
-" "$CONFIG" "$scope" 2>/dev/null
-}
-
-# --- Return the scope that currently owns a given canonical CIDR, or empty ---
-# Canonical here means input is already normalized (e.g. 10.1.0.0/16, lowercase).
-# Matches on canonical ip_network equality — two string variants that canonicalize
-# to the same network compare equal. First match wins (scopes are unique by name,
-# and the point of this helper is to enforce one-scope-per-prefix).
-scope_owning_prefix() {
-    local cidr="$1"
-    [[ -n "$cidr" ]] || return 0
-    python3 - "$CONFIG" "$cidr" <<'PY' 2>/dev/null
-import yaml, json, ipaddress, re, sys
-with open(sys.argv[1]) as f:
-    d = yaml.safe_load(f) or {}
-try:
-    target = ipaddress.ip_network(sys.argv[2], strict=False)
-except ValueError:
-    sys.exit(0)
-for s in (d.get('secrets') or []):
-    name = s.get('name')
-    pfx = (s.get('options') or {}).get('prefixes') or ''
-    try:
-        arr = json.loads(pfx) if pfx else []
-    except Exception:
-        arr = re.findall(r'"([^"]+)"', pfx)
-    for c in arr:
-        try:
-            n = ipaddress.ip_network(c, strict=False)
-        except ValueError:
-            continue
-        if n == target:
-            print(name)
-            sys.exit(0)
-PY
-}
+# =====================================================================
+#  LEGACY tacquito.yaml MIGRATIONS (install only)
+# =====================================================================
+#
+# 'tacctl install' still builds its first tacquito.yaml from the shipped
+# template, whose single secrets[] entry lists several prefixes; these two
+# functions split and sort it. They edit the file by regex, are no-ops once
+# a store exists (the renderer emits the flat, sorted form itself), and go
+# away when install seeds the store instead.
 
 # --- Reorder secrets: entries globally by prefix specificity ---
 # Tacquito walks the secrets: slice in YAML order and returns the first
@@ -223,10 +67,11 @@ PY
 # key ascending. v4 before v6; smaller broadcast first (= narrower / more
 # specific / subnets above supernets); network address tiebreaks.
 #
-# Assumes flat form — one prefix per entry (enforced by flatten_secrets_if_needed
-# and by the add/set writers). Entries without a parseable prefix sort last.
+# Assumes flat form — one prefix per entry (flatten_secrets_if_needed runs
+# first). Entries without a parseable prefix sort last.
 # Idempotent; no-op when already in order.
 reorder_secrets_by_prefix_specificity() {
+    [[ -f "$STORE_FILE" ]] && return 0
     python3 - "$CONFIG" <<'PY'
 import re, sys, tempfile, os, ipaddress
 path = sys.argv[1]
@@ -283,8 +128,9 @@ PY
 # each carrying one prefix. After splitting, the global specificity sort is
 # applied so the on-disk order matches tacquito's first-match walk.
 #
-# Called at install-time (after template copy) and upgrade-time. Idempotent.
+# Called at install-time (after template copy). Idempotent.
 flatten_secrets_if_needed() {
+    [[ -f "$STORE_FILE" ]] && return 0
     python3 - "$CONFIG" <<'PY'
 import re, sys, tempfile, os
 path = sys.argv[1]
@@ -342,326 +188,6 @@ PY
     reorder_secrets_by_prefix_specificity
 }
 
-# --- Write: replace every entry for a scope with one-per-prefix chunks ---
-# Flat emission: remove every secrets[] entry whose name matches <scope>,
-# then insert a fresh chunk per prefix in <csv>, all sharing the scope's
-# existing key + the standard handler/type skeleton. Key is read from the
-# first existing entry before deletion. Empty csv deletes the scope from
-# the secrets block entirely (callers should gate this via the user-ref
-# guard for non-destructive semantics).
-set_scope_prefixes() {
-    local scope="$1"
-    local csv="$2"
-    python3 - "$CONFIG" "$scope" "$csv" <<'PY'
-import re, sys, tempfile, os, ipaddress
-path, scope, csv = sys.argv[1], sys.argv[2], sys.argv[3]
-cfg = open(path).read()
-
-raw = [c.strip() for c in csv.split(',') if c.strip()]
-nets = []
-seen = set()
-for c in raw:
-    try:
-        n = ipaddress.ip_network(c, strict=False)
-    except ValueError:
-        continue
-    if n in seen:
-        continue
-    seen.add(n)
-    nets.append(n)
-nets.sort(key=lambda n: (n.version, int(n.broadcast_address), int(n.network_address)))
-
-m = re.search(r'^(secrets:\s*\n)(.*?)(?=^\S|\Z)', cfg, re.MULTILINE | re.DOTALL)
-if not m:
-    sys.stderr.write("no secrets: block\n")
-    sys.exit(1)
-header, body = m.group(1), m.group(2)
-
-chunks = re.split(r'(?=^  - )', body, flags=re.MULTILINE)
-
-# Preserve the first matching chunk's key (invariant: all entries for a scope
-# share the same key). Also capture lead (non-entry) chunks to keep leading
-# whitespace / comments.
-existing_key = None
-lead, other_entries = [], []
-for ch in chunks:
-    if re.search(r'^  -\s+name:\s*' + re.escape(scope) + r'\s*$', ch, re.MULTILINE):
-        if existing_key is None:
-            km = re.search(r'key:\s*"([^"]*)"', ch)
-            if km:
-                existing_key = km.group(1)
-        continue  # drop this chunk
-    if re.search(r'^  -\s+name:\s*\S+', ch, re.MULTILINE):
-        other_entries.append(ch)
-    else:
-        lead.append(ch)
-
-if existing_key is None:
-    sys.stderr.write(f"scope '{scope}' not found\n")
-    sys.exit(1)
-
-def build_entry(name, key, cidr):
-    return (
-        f'  - name: {name}\n'
-        f'    secret:\n'
-        f'      group: tacquito\n'
-        f'      key: "{key}"\n'
-        f'    handler:\n'
-        f'      type: *handler_type_start\n'
-        f'    type: *provider_type_prefix\n'
-        f'    options:\n'
-        f'      prefixes: |\n'
-        f'        [\n'
-        f'          "{cidr}"\n'
-        f'        ]\n'
-    )
-
-new_entries = [build_entry(scope, existing_key, str(n)) for n in nets]
-new_body = ''.join(lead) + ''.join(other_entries) + ''.join(new_entries)
-new_cfg = cfg[:m.start()] + header + new_body + cfg[m.end():]
-
-tmp = tempfile.NamedTemporaryFile('w', dir=os.path.dirname(path), delete=False)
-tmp.write(new_cfg)
-tmp.close()
-os.rename(tmp.name, path)
-PY
-}
-
-# --- Write: replace shared-secret key on every entry whose name matches ---
-# Flat emission spreads one logical scope across N entries; every one of
-# them must carry the same key. A single-match update would leave the
-# scope's other entries on the old key — auth would then non-deterministically
-# succeed or fail depending on which (scope, prefix) entry tacquito matched
-# first.
-set_scope_secret() {
-    local scope="$1"
-    local value="$2"
-    # Keep the secret off argv AND off the environment — both leak via /proc
-    # (cmdline and environ) and via `ps e`. Pass the value through an
-    # anonymous pipe via process substitution: /proc/<pid>/cmdline sees only
-    # the ephemeral /dev/fd/N path, not the content, and the content is
-    # scoped to this python subprocess (no other process inherits it).
-    # Stdin stays free for the heredoc that carries the script.
-    python3 - "$CONFIG" "$scope" <(printf '%s' "$value") <<'PY'
-import re, sys, tempfile, os
-path, scope, secret_path = sys.argv[1], sys.argv[2], sys.argv[3]
-with open(secret_path) as f:
-    value = f.read()
-cfg = open(path).read()
-
-m = re.search(r'^(secrets:\s*\n)(.*?)(?=^\S|\Z)', cfg, re.MULTILINE | re.DOTALL)
-if not m:
-    sys.stderr.write("no secrets: block\n")
-    sys.exit(1)
-header, body = m.group(1), m.group(2)
-
-chunks = re.split(r'(?=^  - )', body, flags=re.MULTILINE)
-updated = 0
-for i, ch in enumerate(chunks):
-    if re.search(r'^  -\s+name:\s*' + re.escape(scope) + r'\s*$', ch, re.MULTILINE):
-        new_ch, n = re.subn(
-            r'(key:\s*")[^"]*(")',
-            lambda _m: _m.group(1) + value + _m.group(2),
-            ch, count=1,
-        )
-        if n > 0:
-            chunks[i] = new_ch
-            updated += 1
-if updated == 0:
-    sys.stderr.write(f"scope '{scope}' not found\n")
-    sys.exit(1)
-
-new_body = ''.join(chunks)
-new_cfg = cfg[:m.start()] + header + new_body + cfg[m.end():]
-tmp = tempfile.NamedTemporaryFile('w', dir=os.path.dirname(path), delete=False)
-tmp.write(new_cfg)
-tmp.close()
-os.rename(tmp.name, path)
-PY
-}
-
-# --- Add a new scope to the secrets: list (flat form) ---
-# Emits one entry per prefix, all with the same name + key. Entries are
-# appended at the end; the caller is expected to run
-# reorder_secrets_by_prefix_specificity afterward so the global slice
-# order matches the first-match-wins invariant.
-add_scope() {
-    local name="$1"
-    local prefixes_csv="$2"  # canonical + validated by caller
-    local secret_key="$3"
-    # Secret goes through /dev/fd via process substitution; argv only carries
-    # the ephemeral fd path. Protects /proc/<pid>/cmdline from the raw key.
-    python3 - "$CONFIG" "$name" "$prefixes_csv" <(printf '%s' "$secret_key") <<'PY'
-import re, sys, tempfile, os, ipaddress
-path, name, pfx_csv, secret_path = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
-with open(secret_path) as f:
-    secret_key = f.read()
-cfg = open(path).read()
-
-raw = [c.strip() for c in pfx_csv.split(',') if c.strip()]
-nets = []
-seen = set()
-for c in raw:
-    try:
-        n = ipaddress.ip_network(c, strict=False)
-    except ValueError:
-        continue
-    if n in seen:
-        continue
-    seen.add(n)
-    nets.append(n)
-nets.sort(key=lambda n: (n.version, int(n.broadcast_address), int(n.network_address)))
-
-def build_entry(cidr):
-    return (
-        f'  - name: {name}\n'
-        f'    secret:\n'
-        f'      group: tacquito\n'
-        f'      key: "{secret_key}"\n'
-        f'    handler:\n'
-        f'      type: *handler_type_start\n'
-        f'    type: *provider_type_prefix\n'
-        f'    options:\n'
-        f'      prefixes: |\n'
-        f'        [\n'
-        f'          "{cidr}"\n'
-        f'        ]\n'
-    )
-
-entry_block = ''.join(build_entry(str(n)) for n in nets)
-
-m = re.search(r'^(secrets:\s*\n)(.*?)(?=^\S|\Z)', cfg, re.MULTILINE | re.DOTALL)
-if not m:
-    new_cfg = cfg.rstrip() + '\n\nsecrets:\n' + entry_block
-else:
-    header, body = m.group(1), m.group(2)
-    if body.endswith('\n') and not body.endswith('\n\n'):
-        new_body = body + entry_block
-    else:
-        new_body = body.rstrip('\n') + '\n' + entry_block
-    new_cfg = cfg[:m.start()] + header + new_body + cfg[m.end():]
-
-tmp = tempfile.NamedTemporaryFile('w', dir=os.path.dirname(path), delete=False)
-tmp.write(new_cfg)
-tmp.close()
-os.rename(tmp.name, path)
-PY
-}
-
-# --- Delete every entry whose name matches (flat form may span N chunks) ---
-remove_scope() {
-    local name="$1"
-    python3 - "$CONFIG" "$name" <<'PY'
-import re, sys, tempfile, os
-path, name = sys.argv[1], sys.argv[2]
-cfg = open(path).read()
-
-m = re.search(r'^(secrets:\s*\n)(.*?)(?=^\S|\Z)', cfg, re.MULTILINE | re.DOTALL)
-if not m:
-    sys.exit(0)
-header, body = m.group(1), m.group(2)
-
-chunks = re.split(r'(?=^  - )', body, flags=re.MULTILINE)
-new_chunks = []
-dropped = 0
-for ch in chunks:
-    if re.search(r'^  -\s+name:\s*' + re.escape(name) + r'\s*$', ch, re.MULTILINE):
-        dropped += 1
-        continue
-    new_chunks.append(ch)
-
-if dropped == 0:
-    sys.stderr.write(f"scope '{name}' not found\n")
-    sys.exit(1)
-
-new_body = ''.join(new_chunks)
-new_cfg = cfg[:m.start()] + header + new_body + cfg[m.end():]
-tmp = tempfile.NamedTemporaryFile('w', dir=os.path.dirname(path), delete=False)
-tmp.write(new_cfg)
-tmp.close()
-os.rename(tmp.name, path)
-PY
-}
-
-# --- Rename every matching entry + rewrite every user's scopes: reference ---
-# Global re_sub in the secrets block covers all flat chunks that share the
-# old name; a single count=1 substitution would leave stragglers behind.
-rename_scope() {
-    local old_name="$1"
-    local new_name="$2"
-    python3 - "$CONFIG" "$old_name" "$new_name" <<'PY'
-import re, sys, tempfile, os
-path, old, new = sys.argv[1], sys.argv[2], sys.argv[3]
-cfg = open(path).read()
-
-m = re.search(r'^(secrets:\s*\n)(.*?)(?=^\S|\Z)', cfg, re.MULTILINE | re.DOTALL)
-if not m:
-    sys.stderr.write("no secrets: block\n")
-    sys.exit(1)
-header, body = m.group(1), m.group(2)
-new_body, n = re.subn(
-    r'^(  -\s+name:\s*)' + re.escape(old) + r'(\s*)$',
-    r'\g<1>' + new + r'\2',
-    body, flags=re.MULTILINE,
-)
-if n == 0:
-    sys.stderr.write(f"scope '{old}' not found\n")
-    sys.exit(1)
-
-cfg = cfg[:m.start()] + header + new_body + cfg[m.end():]
-
-# Update every user's scopes: list — only the old name is replaced.
-def repl(match):
-    inside = match.group(1)
-    items = re.findall(r'"([^"]+)"', inside)
-    items = [new if it == old else it for it in items]
-    return 'scopes: [' + ', '.join(f'"{it}"' for it in items) + ']'
-cfg = re.sub(r'scopes:\s*\[([^\]]*)\]', repl, cfg)
-
-tmp = tempfile.NamedTemporaryFile('w', dir=os.path.dirname(path), delete=False)
-tmp.write(cfg)
-tmp.close()
-os.rename(tmp.name, path)
-PY
-}
-
-# --- Replace one user's scopes: field with a new CSV ---
-set_user_scopes() {
-    local username="$1"
-    local csv="$2"  # comma-separated scope names; empty wipes to []
-    python3 - "$CONFIG" "$username" "$csv" <<'PY'
-import re, sys, tempfile, os
-path, username, csv = sys.argv[1], sys.argv[2], sys.argv[3]
-cfg = open(path).read()
-
-items = [c.strip() for c in csv.split(',') if c.strip()]
-new_line = 'scopes: [' + ', '.join(f'"{s}"' for s in items) + ']'
-
-# Find the user entry and replace its scopes: line.
-# User entry shape:
-#   - name: <username>\n    scopes: [...]\n    groups: [...]\n    ...
-# Scope to that user's block before doing the scopes: replace.
-pattern = re.compile(
-    r'(-\s+name:\s*' + re.escape(username) + r'\s*\n(?:\s+[^\n]*\n)*?\s+)scopes:\s*\[[^\]]*\]',
-)
-new_cfg, n = pattern.subn(r'\1' + new_line.replace('\\', r'\\'), cfg, count=1)
-if n == 0:
-    # User exists but has no scopes: field — insert one immediately after `- name:`
-    ins_pattern = re.compile(r'(-\s+name:\s*' + re.escape(username) + r'\s*\n)(\s+)')
-    im = ins_pattern.search(cfg)
-    if not im:
-        sys.stderr.write(f"user '{username}' not found\n")
-        sys.exit(1)
-    indent = im.group(2)
-    new_cfg = cfg[:im.end(1)] + indent + new_line + '\n' + cfg[im.end(2):]
-
-tmp = tempfile.NamedTemporaryFile('w', dir=os.path.dirname(path), delete=False)
-tmp.write(new_cfg)
-tmp.close()
-os.rename(tmp.name, path)
-PY
-}
-
 # --- CONFIG ALLOW/DENY PREFIX FILTERS ---
 cmd_config_prefix_filter() {
     local key="$1"
@@ -671,17 +197,16 @@ cmd_config_prefix_filter() {
     [[ "$key" == "prefix_allow" ]] && label="allow" || label="deny"
 
     case "$subcmd" in
+        add|remove|clear) store_require || exit 1 ;;
+    esac
+    # Canonical CIDRs, one per line, most specific first.
+    local current
+    current=$(model_filters "$label") || exit 1
+
+    case "$subcmd" in
         ""|-h|--help|help)
             local entries
-            entries=$(python3 -c "
-import re, sys
-config = open(sys.argv[1]).read()
-m = re.search(r'^' + sys.argv[2] + r':\s*\[(.*?)\]', config, re.MULTILINE)
-if m and m.group(1).strip():
-    print(len(re.findall(r'\"([^\"]+)\"', m.group(1))))
-else:
-    print(0)
-" "$CONFIG" "$key" 2>/dev/null || echo 0)
+            entries=$(printf '%s\n' "$current" | awk 'NF' | wc -l)
             echo ""
             echo -e "${BOLD}tacctl config ${label}${NC} — connection IP ACL (${label} list)"
             echo ""
@@ -700,27 +225,17 @@ else:
             echo ""
             echo -e "${BOLD}Connection ${label} list${NC}"
             echo "--------------------------------------------"
-            local entries
-            entries=$(python3 -c "
-import re, sys
-config = open(sys.argv[1]).read()
-m = re.search(r'^' + sys.argv[2] + r':\s*\[(.*?)\]', config, re.MULTILINE)
-if m and m.group(1).strip():
-    for c in re.findall(r'\"([^\"]+)\"', m.group(1)):
-        print(c)
-else:
-    print('EMPTY')
-" "$CONFIG" "$key" || true)
-            if [[ "$entries" == "EMPTY" ]]; then
+            if [[ -z "$current" ]]; then
                 if [[ "$label" == "allow" ]]; then
                     echo "  (empty — all connections allowed)"
                 else
                     echo "  (empty — no connections denied)"
                 fi
             else
-                echo "$entries" | while IFS= read -r entry; do
+                local entry
+                while IFS= read -r entry; do
                     echo "  - ${entry}"
-                done
+                done <<< "$current"
             fi
             echo ""
             echo -e "  ${CYAN}Note: deny takes precedence over allow.${NC}"
@@ -731,14 +246,12 @@ else:
                 error "Usage: tacctl config ${label} add <cidr>[,<cidr>...]"
                 exit 1
             fi
-            local requested added="" skipped=""
+            local requested added="" skipped="" c
             requested=$(parse_cidr_list "$cidr")
             [[ -z "$requested" ]] && { error "No valid CIDRs provided."; exit 1; }
-            local current
-            current=$(read_prefix_list "$key")
             while IFS= read -r c; do
                 [[ -z "$c" ]] && continue
-                if printf '%s\n' "$current" | grep -qxF "$c"; then
+                if printf '%s\n' "$current" | grep -qxF -- "$c"; then
                     skipped+="${skipped:+ }${c}"
                 else
                     added+="${added:+$'\n'}${c}"
@@ -750,10 +263,7 @@ else:
                 echo ""
                 return
             fi
-            backup_config
-            write_prefix_list "$key" "$(printf '%s\n' "$current" | awk 'NF' | paste -sd,)"
-            chown tacquito:tacquito "$CONFIG"
-            restart_service
+            store_apply store_filters_set "$label" "$(printf '%s\n' "$current" | awk 'NF' | paste -sd,)" || exit $?
             local n
             n=$(printf '%s\n' "$added" | wc -l)
             info "Added ${n} to ${label} list: $(printf '%s\n' "$added" | paste -sd' ')"
@@ -765,16 +275,14 @@ else:
                 error "Usage: tacctl config ${label} remove <cidr>[,<cidr>...]"
                 exit 1
             fi
-            local requested removed="" missing=""
+            local requested removed="" missing="" c
             requested=$(parse_cidr_list "$cidr")
             [[ -z "$requested" ]] && { error "No valid CIDRs provided."; exit 1; }
-            local current
-            current=$(read_prefix_list "$key")
             while IFS= read -r c; do
                 [[ -z "$c" ]] && continue
-                if printf '%s\n' "$current" | grep -qxF "$c"; then
+                if printf '%s\n' "$current" | grep -qxF -- "$c"; then
                     removed+="${removed:+$'\n'}${c}"
-                    current=$(printf '%s\n' "$current" | grep -vxF "$c" || true)
+                    current=$(printf '%s\n' "$current" | grep -vxF -- "$c" || true)
                 else
                     missing+="${missing:+ }${c}"
                 fi
@@ -783,10 +291,7 @@ else:
                 warn "Nothing to remove from ${label} list (not present: ${missing})."
                 exit 0
             fi
-            backup_config
-            write_prefix_list "$key" "$(printf '%s\n' "$current" | awk 'NF' | paste -sd,)"
-            chown tacquito:tacquito "$CONFIG"
-            restart_service
+            store_apply store_filters_set "$label" "$(printf '%s\n' "$current" | awk 'NF' | paste -sd,)" || exit $?
             local n
             n=$(printf '%s\n' "$removed" | wc -l)
             info "Removed ${n} from ${label} list: $(printf '%s\n' "$removed" | paste -sd' ')"
@@ -794,8 +299,7 @@ else:
             echo ""
             ;;
         clear)
-            local current n
-            current=$(read_prefix_list "$key")
+            local n
             if [[ -z "$current" ]]; then
                 info "${label} list is already empty."
                 return
@@ -815,10 +319,7 @@ else:
                 info "Aborted."
                 return
             fi
-            backup_config
-            write_prefix_list "$key" ""
-            chown tacquito:tacquito "$CONFIG"
-            restart_service
+            store_apply store_filters_set "$label" "" || exit $?
             info "Cleared ${label} list (${n} entr$( [[ $n -eq 1 ]] && echo "y" || echo "ies" ) removed)."
             echo ""
             ;;
@@ -829,69 +330,6 @@ else:
             exit 1
             ;;
     esac
-}
-
-# --- Read a prefix_allow / prefix_deny inline list (canonical CIDR per line) ---
-read_prefix_list() {
-    local key="$1"
-    python3 -c "
-import ipaddress, re, sys
-config = open(sys.argv[1]).read()
-m = re.search(r'^' + sys.argv[2] + r':\s*\[(.*?)\]', config, re.MULTILINE)
-if m and m.group(1).strip():
-    for c in re.findall(r'\"([^\"]+)\"', m.group(1)):
-        try:
-            print(ipaddress.ip_network(c, strict=False))
-        except ValueError:
-            print(c)
-" "$CONFIG" "$key"
-}
-
-# --- Write/replace a prefix_allow / prefix_deny inline list ---
-# csv may be empty — in that case the key line is removed entirely.
-# Entries are canonicalized and sorted by specificity (most-specific
-# prefix first) before being emitted, matching the storage convention
-# used by set_scope_prefixes.
-write_prefix_list() {
-    local key="$1"
-    local csv="$2"
-    python3 -c "
-import ipaddress, re, sys, tempfile, os
-config = open(sys.argv[1]).read()
-key = sys.argv[2]
-raw = [c.strip() for c in sys.argv[3].split(',') if c.strip()]
-# Canonicalize + sort by specificity
-def key_fn(c):
-    n = ipaddress.ip_network(c, strict=False)
-    # Primary: version (v4 before v6). Secondary: broadcast address
-    # ascending — disjoint ranges sort by end-of-range, and overlapping
-    # subnets naturally fall just above their supernet (the subnet
-    # ends earlier than the range containing it). Tertiary: network
-    # address, for determinism across same-end-address edge cases.
-    return (n.version, int(n.broadcast_address), int(n.network_address))
-entries = []
-for c in raw:
-    try:
-        entries.append(str(ipaddress.ip_network(c, strict=False)))
-    except ValueError:
-        pass
-entries = sorted(set(entries), key=key_fn)
-m = re.search(r'^' + key + r':\s*\[(.*?)\]', config, re.MULTILINE)
-if entries:
-    new_val = ', '.join('\"' + e + '\"' for e in entries)
-    new_line = key + ': [' + new_val + ']'
-    if m:
-        config = config.replace(m.group(0), new_line)
-    else:
-        config = config.rstrip() + '\n\n' + new_line + '\n'
-else:
-    if m:
-        config = config.replace(m.group(0) + '\n', '')
-tmp = tempfile.NamedTemporaryFile('w', dir=os.path.dirname(sys.argv[1]), delete=False)
-tmp.write(config)
-tmp.close()
-os.rename(tmp.name, sys.argv[1])
-" "$CONFIG" "$key" "$csv"
 }
 
 # =====================================================================
@@ -913,6 +351,7 @@ cmd_scope() {
         lookup)            cmd_scope_lookup "$@" ;;
         prefixes)          cmd_scope_prefixes_dispatch "$@" ;;
         secret)            cmd_scope_secret_dispatch "$@" ;;
+        protocols)         cmd_scope_protocols "$@" ;;
         aaa-order)         cmd_scope_aaa_order "$@" ;;
         exec-timeout)      cmd_scope_exec_timeout "$@" ;;
         tacacs-group)      cmd_scope_tacacs_group "$@" ;;
@@ -927,7 +366,7 @@ cmd_scope() {
 
 cmd_scope_usage() {
     local count=0 default_val
-    count=$(list_scopes | wc -l)
+    count=$(model_scopes | wc -l) || true
     default_val=$(read_default_scope)
     echo ""
     echo -e "${BOLD}tacctl scope${NC} — named (CIDR-prefixes, shared-secret) bundles"
@@ -946,6 +385,7 @@ cmd_scope_usage() {
     echo ""
     echo "  tacctl scope prefixes <scope> list|add|remove|clear      Manage a scope's CIDR list"
     echo "  tacctl scope secret   <scope> show|set|generate          Manage a scope's shared secret"
+    echo "  tacctl scope protocols <scope> list|set <csv>|clear      Limit a scope to some protocols (${SCOPE_PROTOCOLS// /, }); default: all"
     echo "  tacctl scope aaa-order <scope> [tacacs-first|local-first] AAA method-list order in this scope's rendered device configs (default tacacs-first)"
     echo "  tacctl scope exec-timeout <scope> [minutes]              Per-scope idle-session timeout in rendered device configs (0..60 min; default 60; 0 = never expire)"
     echo "  tacctl scope tacacs-group <scope> [name]                 Per-scope Cisco aaa-group-server label (default TACACS-GROUP)"
@@ -966,62 +406,11 @@ cmd_scope_list() {
     # One block per scope. First prefix sits on the scope's summary
     # row (name / users / default marker); subsequent prefixes indent
     # under the PREFIXES column so the list reads top-to-bottom as
-    # "this scope owns these CIDRs". Detailed first-match resolution
-    # order is `tacctl scope routing`; per-scope secret + knobs land
-    # in `tacctl scope show <name>`.
+    # "this scope owns these CIDRs", narrowest first. Detailed
+    # first-match resolution order is `tacctl scope routing`; per-scope
+    # secret + knobs land in `tacctl scope show <name>`.
     local rows
-    rows=$(python3 -c "
-import ipaddress, json, re, sys, yaml
-cfg_path = sys.argv[1]
-default_val = sys.argv[2]
-with open(cfg_path) as f:
-    d = yaml.safe_load(f) or {}
-ucount = {}
-for u in (d.get('users') or []):
-    for s in (u.get('scopes') or []):
-        ucount[s] = ucount.get(s, 0) + 1
-prefixes = {}
-order = []
-for s in (d.get('secrets') or []):
-    name = s.get('name') or '(unnamed)'
-    pfx = (s.get('options') or {}).get('prefixes') or ''
-    try:
-        arr = json.loads(pfx) if pfx else []
-    except Exception:
-        arr = re.findall(r'\"([^\"]+)\"', pfx)
-    if name not in prefixes:
-        prefixes[name] = []
-        order.append(name)
-    for cidr in arr:
-        if cidr not in prefixes[name]:
-            prefixes[name].append(cidr)
-
-def spec_key(cidr):
-    # Specificity-first sort: prefix length DESC (narrower = more
-    # specific first) with network-address ASC as tie-break among
-    # equal-length prefixes. Matches the most-specific-wins routing
-    # semantic tacquito applies to any given client IP.
-    try:
-        n = ipaddress.ip_network(cidr, strict=False)
-        return (-n.prefixlen, n.version, int(n.network_address))
-    except ValueError:
-        return (1, 0, 0)
-
-# Emit one line per (scope, prefix) pair, '|'-separated. First row
-# per scope carries users + default; continuation rows leave those
-# columns empty. Within each scope the prefixes are sorted by
-# specificity (narrower first) so the block mirrors how operators
-# think about overlap. Using '|' (not \t) because bash's read -r
-# with IFS=\t strips leading tabs when reassembling empty fields.
-for name in order:
-    pfx_list = sorted(prefixes[name] or ['(no prefix)'], key=spec_key)
-    is_default = 'yes' if name == default_val else ''
-    for idx, cidr in enumerate(pfx_list):
-        if idx == 0:
-            print(f'{name}|{cidr}|{ucount.get(name, 0)}|{is_default}')
-        else:
-            print(f'|{cidr}||')
-" "$CONFIG" "$default_val" 2>/dev/null)
+    rows=$(_model_view scope-rows "$default_val") || exit 1
 
     if [[ -z "$rows" ]]; then
         echo "  (no scopes configured)"
@@ -1045,12 +434,11 @@ for name in order:
     echo ""
 }
 
-# --- tacctl scope routing — the old per-(scope, prefix) view ---
-# Surfaces the tacquito first-match walk order for operator debugging:
-# each row is one secrets[] slot as tacquito sees it. Multi-prefix
-# scopes repeat their name so the display literally mirrors how a
-# connecting client gets routed. `tacctl scope list` is the dedup'd
-# per-scope view for day-to-day work.
+# --- tacctl scope routing — the per-(scope, prefix) view ---
+# Each row is one (scope, prefix) pair as tacquito sees it, most specific
+# first -- the order a connecting client is matched in. Multi-prefix
+# scopes repeat their name. `tacctl scope list` is the dedup'd per-scope
+# view for day-to-day work.
 cmd_scope_routing() {
     echo ""
     echo -e "${BOLD}Scope routing${NC} ${CYAN}(tacquito first-match order — narrower prefixes win)${NC}"
@@ -1058,43 +446,7 @@ cmd_scope_routing() {
     local default_val
     default_val=$(read_default_scope)
     local rows
-    rows=$(python3 -c "
-import ipaddress, json, re, sys, yaml
-cfg_path = sys.argv[1]
-default_val = sys.argv[2]
-with open(cfg_path) as f:
-    d = yaml.safe_load(f) or {}
-ucount = {}
-for u in (d.get('users') or []):
-    for s in (u.get('scopes') or []):
-        ucount[s] = ucount.get(s, 0) + 1
-# Collect every (scope, prefix) pair and sort specificity-first:
-# prefix length DESC so the most-specific row lands at the top
-# (matches tacquito's most-specific-wins routing), with
-# network-address ASC as tie-break. Entries with an unparseable
-# prefix (rare, malformed YAML) sort to the end.
-pairs = []
-for s in (d.get('secrets') or []):
-    name = s.get('name') or '(unnamed)'
-    pfx = (s.get('options') or {}).get('prefixes') or ''
-    try:
-        arr = json.loads(pfx) if pfx else []
-    except Exception:
-        arr = re.findall(r'\"([^\"]+)\"', pfx)
-    if not arr:
-        arr = ['(no prefix)']
-    for cidr in arr:
-        try:
-            net = ipaddress.ip_network(cidr, strict=False)
-            sort_key = (-net.prefixlen, net.version, int(net.network_address))
-        except ValueError:
-            sort_key = (1, 0, 0)  # sink unparseable to the end
-        pairs.append((sort_key, name, cidr))
-pairs.sort(key=lambda x: x[0])
-for _, name, cidr in pairs:
-    is_default = 'yes' if name == default_val else ''
-    print(f'{name}|{cidr}|{ucount.get(name, 0)}|{is_default}')
-" "$CONFIG" "$default_val" 2>/dev/null)
+    rows=$(_model_view scope-routing "$default_val") || exit 1
 
     if [[ -z "$rows" ]]; then
         echo "  (no scopes configured)"
@@ -1121,12 +473,11 @@ cmd_scope_show() {
         error "Usage: tacctl scope show <name>"
         exit 1
     fi
-    if ! scope_exists "$name"; then
+    local secret_val secret_len secret_line
+    if ! secret_val=$(model_scope "$name" secret); then
         error "Scope '${name}' does not exist."
         exit 1
     fi
-    local secret_val secret_len secret_line
-    secret_val=$(read_scope_secret "$name")
     secret_len=${#secret_val}
     if [[ -z "$secret_val" ]]; then
         secret_line="${RED}(unset)${NC}"
@@ -1141,6 +492,8 @@ cmd_scope_show() {
     default_val=$(read_default_scope)
     local is_default="no"
     [[ "$name" == "$default_val" ]] && is_default="yes"
+    local protocols
+    protocols=$(model_scope "$name" protocols | paste -sd, || true)
     # Per-scope device-render knobs. Absence of an override falls back
     # through the per-scope -> global -> shipped-default chain,
     # matching what `tacctl config cisco|juniper --scope <name>` emits.
@@ -1161,6 +514,7 @@ cmd_scope_show() {
     echo "--------------------------------------------"
     echo -e "  ${BOLD}Default:${NC}       ${is_default}"
     echo -e "  ${BOLD}Secret:${NC}        ${secret_line}"
+    echo -e "  ${BOLD}Protocols:${NC}     ${protocols:-all (no filter)}"
     echo -e "  ${BOLD}AAA order:${NC}     ${aaa_order_val}"
     echo -e "  ${BOLD}Exec timeout:${NC}  ${exec_timeout_display}"
     echo -e "  ${BOLD}TACACS group:${NC}  ${tacacs_group_val}"
@@ -1168,7 +522,7 @@ cmd_scope_show() {
     echo -e "  ${BOLD}Juniper ACL:${NC}   ${juniper_acl_val}"
     echo -e "  ${BOLD}Prefixes:${NC}"
     local pfx
-    pfx=$(read_scope_prefixes "$name")
+    pfx=$(model_scope_prefixes "$name")
     if [[ -z "$pfx" ]]; then
         echo "    (none — no clients can match this scope)"
     else
@@ -1179,7 +533,7 @@ cmd_scope_show() {
     fi
     echo -e "  ${BOLD}Users:${NC}"
     local users
-    users=$(list_users_in_scope "$name")
+    users=$(model_scope_users "$name")
     if [[ -z "$users" ]]; then
         echo "    (none)"
     else
@@ -1190,6 +544,30 @@ cmd_scope_show() {
     echo ""
 }
 
+# Print the "already claimed" lines for every CIDR in the newline-separated
+# list $1 that another scope than $2 owns. One prefix belongs to one scope:
+# tacquito answers a client from the first entry that matches, so a second
+# owner's users could never authenticate from that device.
+_scope_prefix_collisions() {
+    local c owner
+    while IFS= read -r c; do
+        [[ -z "$c" ]] && continue
+        owner=$(model_prefix_owner "$c")
+        if [[ -n "$owner" && "$owner" != "$2" ]]; then
+            echo "    - ${c}  (already in scope '${owner}')"
+        fi
+    done <<< "$1"
+}
+
+# Writer for store_apply: create the scope and, with a 4th argument, point
+# scope.default at it.
+_scope_add_write() {
+    store_scope_set "$1" "prefixes=$2" "secret=$3" || return 1
+    if [[ -n "${4:-}" ]]; then
+        write_default_scope "$1" || return 1
+    fi
+}
+
 cmd_scope_add() {
     local name="${1:-}"
     if [[ -z "$name" ]]; then
@@ -1197,21 +575,22 @@ cmd_scope_add() {
         exit 1
     fi
     shift
+    store_require || exit 1
     if ! [[ "$name" =~ ^[a-zA-Z][a-zA-Z0-9_-]{0,31}$ ]]; then
         error "Invalid scope name '${name}'. Use letters/digits/_-, starting with a letter."
         exit 1
     fi
-    if scope_exists "$name"; then
+    if model_scope_exists "$name"; then
         error "Scope '${name}' already exists."
         exit 1
     fi
 
-    local prefixes="" secret_arg="" make_default="false"
+    local prefixes="" secret_arg="" make_default=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --prefixes) prefixes="${2:-}"; shift 2 ;;
             --secret)   secret_arg="${2:-}"; shift 2 ;;
-            --default)  make_default="true"; shift ;;
+            --default)  make_default="yes"; shift ;;
             *) error "Unknown flag: '$1'"; exit 1 ;;
         esac
     done
@@ -1224,19 +603,10 @@ cmd_scope_add() {
     canon=$(parse_cidr_list "$prefixes")
     [[ -z "$canon" ]] && { error "No valid CIDRs in --prefixes."; exit 1; }
 
-    # One-scope-per-prefix invariant: every CIDR must belong to exactly one
-    # scope, otherwise tacquito's first-match-wins selector makes the losing
-    # scope's users silently unable to auth from that device. Abort before
-    # writing anything.
-    local collisions=""
-    while IFS= read -r c; do
-        [[ -z "$c" ]] && continue
-        local owner
-        owner=$(scope_owning_prefix "$c")
-        if [[ -n "$owner" ]]; then
-            collisions+="${collisions:+$'\n'}    - ${c}  (already in scope '${owner}')"
-        fi
-    done <<< "$canon"
+    # One-scope-per-prefix invariant (the store enforces it too). Abort
+    # before writing anything.
+    local collisions
+    collisions=$(_scope_prefix_collisions "$canon" "")
     if [[ -n "$collisions" ]]; then
         error "Cannot create scope '${name}': prefix(es) already claimed:"
         while IFS= read -r line; do error "$line"; done <<< "$collisions"
@@ -1260,18 +630,13 @@ cmd_scope_add() {
         fi
     fi
 
-    backup_config
-    add_scope "$name" "$csv" "$secret_value"
-    reorder_secrets_by_prefix_specificity
-    chown tacquito:tacquito "$CONFIG"
+    store_apply _scope_add_write "$name" "$csv" "$secret_value" "$make_default" || exit $?
 
-    if [[ "$make_default" == "true" ]]; then
-        write_default_scope "$name"
+    if [[ -n "$make_default" ]]; then
         info "Scope '${name}' added and set as default."
     else
         info "Scope '${name}' added."
     fi
-    restart_service
     echo ""
 }
 
@@ -1283,18 +648,20 @@ cmd_scope_remove() {
     fi
     shift 2>/dev/null || true
     [[ "${1:-}" == "--force" ]] && force="true"
+    store_require || exit 1
 
-    if ! scope_exists "$name"; then
+    if ! model_scope_exists "$name"; then
         error "Scope '${name}' does not exist."
         exit 1
     fi
 
-    local user_count
-    user_count=$(count_users_in_scope "$name")
+    local members user_count=0
+    members=$(model_scope_users "$name") || exit 1
+    [[ -n "$members" ]] && user_count=$(printf '%s\n' "$members" | wc -l)
     if [[ "$user_count" -gt 0 && "$force" != "true" ]]; then
         error "Cannot remove '${name}': ${user_count} user(s) still reference it."
         error "Remove them first:"
-        list_users_in_scope "$name" | sed 's/^/    tacctl user scope /' | sed 's/$/ remove '"${name}"'/'
+        printf '%s\n' "$members" | sed 's/^/    tacctl user scope /' | sed 's/$/ remove '"${name}"'/'
         error "Or pass --force to strip the scope from those users AND delete it."
         exit 1
     fi
@@ -1315,24 +682,23 @@ cmd_scope_remove() {
         return
     fi
 
-    backup_config
-
-    # Strip the scope from any users still referencing it.
-    if [[ "$user_count" -gt 0 ]]; then
-        while IFS= read -r u; do
-            [[ -z "$u" ]] && continue
-            local current
-            current=$(read_user_scopes "$u" | grep -vxF "$name" | paste -sd,)
-            set_user_scopes "$u" "$current"
-        done < <(list_users_in_scope "$name")
-    fi
-
-    remove_scope "$name"
-    reorder_secrets_by_prefix_specificity
-    chown tacquito:tacquito "$CONFIG"
-    restart_service
+    # --strip-users takes the scope off any user still referencing it, in
+    # the same write.
+    store_apply store_scope_del "$name" --strip-users || exit $?
     info "Scope '${name}' removed."
     echo ""
+}
+
+# Writer for store_apply: rename the scope (and every user's reference to
+# it), then scope.default if it pointed at the old name.
+_scope_rename_write() {
+    local old="$1" new="$2" default_val
+    store_scope_rename "$old" "$new" || return 1
+    default_val=$(conf_get scope.default)
+    if [[ "$default_val" == "$old" ]]; then
+        write_default_scope "$new" || return 1
+        info "Default-scope marker updated: ${old} -> ${new}"
+    fi
 }
 
 cmd_scope_rename() {
@@ -1341,11 +707,12 @@ cmd_scope_rename() {
         error "Usage: tacctl scope rename <old> <new>"
         exit 1
     fi
-    if ! scope_exists "$old"; then
+    store_require || exit 1
+    if ! model_scope_exists "$old"; then
         error "Scope '${old}' does not exist."
         exit 1
     fi
-    if scope_exists "$new"; then
+    if model_scope_exists "$new"; then
         error "Scope '${new}' already exists."
         exit 1
     fi
@@ -1353,20 +720,9 @@ cmd_scope_rename() {
         error "Invalid new name '${new}'."
         exit 1
     fi
-    backup_config
-    rename_scope "$old" "$new"
-    reorder_secrets_by_prefix_specificity
-    # Update scope.default if it pointed at the old name.
-    local default_val
-    default_val=$(conf_get scope.default)
-    if [[ "$default_val" == "$old" ]]; then
-        write_default_scope "$new"
-        info "Default-scope marker updated: ${old} -> ${new}"
-    fi
-    chown tacquito:tacquito "$CONFIG"
-    restart_service
+    store_apply _scope_rename_write "$old" "$new" || exit $?
     local user_count
-    user_count=$(count_users_in_scope "$new")
+    user_count=$(model_scope_users "$new" | wc -l)
     info "Scope renamed: ${old} -> ${new} (${user_count} user(s) updated)."
     echo ""
 }
@@ -1390,7 +746,7 @@ cmd_scope_default() {
         echo ""
         return
     fi
-    if ! scope_exists "$name"; then
+    if ! model_scope_exists "$name"; then
         error "Scope '${name}' does not exist."
         exit 1
     fi
@@ -1400,12 +756,12 @@ cmd_scope_default() {
 }
 
 # --- Resolve an IP or CIDR to the scope that would own it ---
-# Matches tacquito's selection logic: walks the live secrets[] list in
-# slice order (specificity-sorted) and returns the first scope whose
-# prefix contains the query. Emits the owning scope name, the matching
-# prefix, and (when the query is an IP inside a broader covering supernet)
-# any additional scopes whose prefixes also contain the address — handy
-# when debugging unexpected auth routing.
+# Matches tacquito's selection logic: walks the (scope, prefix) pairs in
+# the order they are rendered (most specific first) and returns the first
+# scope whose prefix contains the query. Emits the owning scope name, the
+# matching prefix, and (when a broader covering supernet exists) any
+# additional scopes whose prefixes also contain the address — handy when
+# debugging unexpected auth routing.
 cmd_scope_lookup() {
     local query="${1:-}"
     if [[ -z "$query" ]]; then
@@ -1415,70 +771,8 @@ cmd_scope_lookup() {
         error "  tacctl scope lookup 10.5.0.0/16"
         exit 1
     fi
-    python3 - "$CONFIG" "$query" <<'PY'
-import yaml, json, ipaddress, re, sys
-path, query = sys.argv[1], sys.argv[2]
-
-# Parse query as either a single address or a CIDR network.
-q_net = None
-q_host = None
-try:
-    if '/' in query:
-        q_net = ipaddress.ip_network(query, strict=False)
-    else:
-        q_host = ipaddress.ip_address(query)
-except ValueError as e:
-    print(f"ERROR: invalid address or CIDR: {e}")
-    sys.exit(2)
-
-with open(path) as f:
-    d = yaml.safe_load(f) or {}
-
-# Walk secrets[] in YAML slice order (= tacquito's match order).
-matches = []  # list of (scope_name, prefix_net) in iteration order
-for s in (d.get('secrets') or []):
-    name = s.get('name')
-    pfx = (s.get('options') or {}).get('prefixes') or ''
-    try:
-        arr = json.loads(pfx) if pfx else []
-    except Exception:
-        arr = re.findall(r'"([^"]+)"', pfx)
-    for c in arr:
-        try:
-            pnet = ipaddress.ip_network(c, strict=False)
-        except ValueError:
-            continue
-        # For IP queries: match if the prefix contains the host.
-        # For CIDR queries: match if the prefix equals or strictly contains
-        # the query (i.e. the query is within the scope's address space).
-        if q_host is not None and q_host in pnet:
-            matches.append((name, pnet))
-        elif q_net is not None and (pnet == q_net or q_net.subnet_of(pnet)):
-            matches.append((name, pnet))
-
-if not matches:
-    if q_host is not None:
-        print(f"No scope owns {q_host} — no prefix in any scope contains it.")
-    else:
-        print(f"No scope owns {q_net} — no prefix covers the full range.")
-    sys.exit(1)
-
-# Winner: first match in slice order (matches tacquito's selector).
-winner_scope, winner_pfx = matches[0]
-if q_host is not None:
-    print(f"  {q_host} -> scope '{winner_scope}' (via prefix {winner_pfx})")
-else:
-    print(f"  {q_net} -> scope '{winner_scope}' (via prefix {winner_pfx})")
-
-# If multiple prefixes cover the query (overlapping supernets across scopes),
-# show the shadow — operators often want to confirm that tacquito would
-# actually pick the scope they expect.
-if len(matches) > 1:
-    print("")
-    print("  Also covered by (shadowed — tacquito's first-match picks the one above):")
-    for name, pnet in matches[1:]:
-        print(f"    - scope '{name}' via prefix {pnet}")
-PY
+    # Exit status: 0 found, 1 no scope owns it, 2 not an address.
+    _model_view scope-lookup "$query"
 }
 
 # --- Per-scope prefix management: tacctl scope prefixes <scope> ... ---
@@ -1490,14 +784,20 @@ cmd_scope_prefixes_dispatch() {
         error "Usage: tacctl scope prefixes <scope> {list|add|remove|clear} [<cidrs>]"
         exit 1
     fi
-    if ! scope_exists "$scope"; then
+    case "$sub" in
+        add|remove|clear) store_require || exit 1 ;;
+    esac
+    # Display order (longest prefix first); also the membership list.
+    local current
+    if ! model_scope_exists "$scope"; then
         error "Scope '${scope}' does not exist."
         exit 1
     fi
+    current=$(model_scope_prefixes "$scope") || exit 1
     case "$sub" in
         ""|-h|--help|help)
             local count=0
-            count=$(read_scope_prefixes "$scope" | wc -l)
+            count=$(printf '%s\n' "$current" | awk 'NF' | wc -l)
             echo ""
             echo -e "${BOLD}tacctl scope prefixes ${scope}${NC} — CIDR prefix list for scope '${scope}'"
             echo ""
@@ -1505,7 +805,7 @@ cmd_scope_prefixes_dispatch() {
             echo "  tacctl scope prefixes ${scope} list                        Show entries"
             echo "  tacctl scope prefixes ${scope} add    <cidr>[,<cidr>...]   Add one or more"
             echo "  tacctl scope prefixes ${scope} remove <cidr>[,<cidr>...]   Remove one or more"
-            echo "  tacctl scope prefixes ${scope} clear [--force]             Wipe all (confirms; --force proceeds when users still reference)"
+            echo "  tacctl scope prefixes ${scope} clear [--force]             Wipe all, which removes the scope (confirms; --force also strips it from users)"
             echo ""
             echo "Current entries: ${count}"
             echo ""
@@ -1514,15 +814,14 @@ cmd_scope_prefixes_dispatch() {
             echo ""
             echo -e "${BOLD}Prefixes for scope '${scope}'${NC}"
             echo "--------------------------------------------"
-            local entries
-            entries=$(read_scope_prefixes "$scope")
-            if [[ -z "$entries" ]]; then
+            if [[ -z "$current" ]]; then
                 echo "  (empty — no clients can match this scope)"
             else
-                echo "$entries" | while IFS= read -r c; do
+                local c
+                while IFS= read -r c; do
                     [[ -z "$c" ]] && continue
                     echo "  - ${c}"
-                done
+                done <<< "$current"
             fi
             echo ""
             ;;
@@ -1531,25 +830,16 @@ cmd_scope_prefixes_dispatch() {
                 error "Usage: tacctl scope prefixes ${scope} ${sub} <cidr>[,<cidr>...]"
                 exit 1
             fi
-            local requested
+            local requested c
             requested=$(parse_cidr_list "$arg")
             [[ -z "$requested" ]] && { error "No valid CIDRs provided."; exit 1; }
-            local current
-            current=$(read_scope_prefixes "$scope")
             local changed="" missing_or_present=""
             if [[ "$sub" == "add" ]]; then
                 # Cross-scope collision check BEFORE any mutation. A CIDR owned
                 # by another scope can't be silently stolen — operator must
                 # remove it from the owning scope first.
-                local collisions=""
-                while IFS= read -r c; do
-                    [[ -z "$c" ]] && continue
-                    local owner
-                    owner=$(scope_owning_prefix "$c")
-                    if [[ -n "$owner" && "$owner" != "$scope" ]]; then
-                        collisions+="${collisions:+$'\n'}    - ${c}  (already in scope '${owner}')"
-                    fi
-                done <<< "$requested"
+                local collisions
+                collisions=$(_scope_prefix_collisions "$requested" "$scope")
                 if [[ -n "$collisions" ]]; then
                     error "Cannot add prefix(es) to scope '${scope}':"
                     while IFS= read -r line; do error "$line"; done <<< "$collisions"
@@ -1559,7 +849,7 @@ cmd_scope_prefixes_dispatch() {
                 fi
                 while IFS= read -r c; do
                     [[ -z "$c" ]] && continue
-                    if printf '%s\n' "$current" | grep -qxF "$c"; then
+                    if printf '%s\n' "$current" | grep -qxF -- "$c"; then
                         missing_or_present+="${missing_or_present:+ }${c}"
                     else
                         changed+="${changed:+$'\n'}${c}"
@@ -1570,20 +860,21 @@ cmd_scope_prefixes_dispatch() {
             else
                 while IFS= read -r c; do
                     [[ -z "$c" ]] && continue
-                    if printf '%s\n' "$current" | grep -qxF "$c"; then
+                    if printf '%s\n' "$current" | grep -qxF -- "$c"; then
                         changed+="${changed:+$'\n'}${c}"
-                        current=$(printf '%s\n' "$current" | grep -vxF "$c" || true)
+                        current=$(printf '%s\n' "$current" | grep -vxF -- "$c" || true)
                     else
                         missing_or_present+="${missing_or_present:+ }${c}"
                     fi
                 done <<< "$requested"
                 [[ -z "$changed" ]] && { warn "Nothing to remove (not present: ${missing_or_present})."; exit 0; }
+                if [[ -z "$(printf '%s\n' "$current" | awk 'NF')" ]]; then
+                    error "Cannot remove every prefix of scope '${scope}': a scope needs at least one."
+                    error "To delete the scope: tacctl scope remove ${scope}"
+                    exit 1
+                fi
             fi
-            backup_config
-            set_scope_prefixes "$scope" "$(printf '%s\n' "$current" | awk 'NF' | paste -sd,)"
-            reorder_secrets_by_prefix_specificity
-            chown tacquito:tacquito "$CONFIG"
-            restart_service
+            store_apply store_scope_set "$scope" "prefixes=$(printf '%s\n' "$current" | awk 'NF' | paste -sd,)" || exit $?
             local n
             n=$(printf '%s\n' "$changed" | wc -l)
             local verb="Added"; [[ "$sub" == "remove" ]] && verb="Removed"
@@ -1592,44 +883,36 @@ cmd_scope_prefixes_dispatch() {
             echo ""
             ;;
         clear)
-            # Flat emission: clearing all prefixes removes every entry for
-            # this scope from secrets[]; the scope vanishes from YAML and
-            # any users with it in their scopes[] become orphans. Mirror
-            # the scopes-remove guard: refuse when users reference the
-            # scope unless --force is given.
+            # A scope cannot exist without a prefix, so clearing them all
+            # removes the scope. Same guard as 'scope remove': refuse while
+            # users reference it unless --force, which strips it from them.
             local force="false"
             [[ "$arg" == "--force" ]] && force="true"
-            local cur
-            cur=$(read_scope_prefixes "$scope")
-            if [[ -z "$cur" ]]; then
+            if [[ -z "$current" ]]; then
                 info "Scope '${scope}' prefix list is already empty."
                 return
             fi
-            local user_count
-            user_count=$(count_users_in_scope "$scope")
+            local members user_count=0
+            members=$(model_scope_users "$scope") || exit 1
+            [[ -n "$members" ]] && user_count=$(printf '%s\n' "$members" | wc -l)
             if [[ "$user_count" -gt 0 && "$force" != "true" ]]; then
                 error "Cannot clear prefixes for '${scope}': ${user_count} user(s) still reference it."
-                error "Clearing every prefix removes the scope from the secrets list"
-                error "and leaves those users with orphan scope references."
+                error "Clearing every prefix removes the scope, and with it those users' grant."
                 error "Detach users first:"
-                list_users_in_scope "$scope" | sed 's/^/    tacctl user scope /' | sed 's/$/ remove '"${scope}"'/'
-                error "Or pass --force to proceed and leave orphan refs (use 'tacctl config validate' to find them)."
+                printf '%s\n' "$members" | sed 's/^/    tacctl user scope /' | sed 's/$/ remove '"${scope}"'/'
+                error "Or pass --force to strip the scope from those users AND remove it."
                 exit 1
             fi
             local n
-            n=$(printf '%s\n' "$cur" | wc -l)
-            warn "Clearing all ${n} prefix(es) from '${scope}' removes it from tacquito.yaml."
+            n=$(printf '%s\n' "$current" | wc -l)
+            warn "Clearing all ${n} prefix(es) from '${scope}' removes the scope."
             if [[ "$user_count" -gt 0 ]]; then
-                warn "${user_count} user(s) will have orphan refs to '${scope}' after this."
+                warn "${user_count} user(s) will lose their grant of '${scope}'."
             fi
             read -rp "  Confirm? [y/N]: " confirm
             [[ ! "$confirm" =~ ^[Yy] ]] && { info "Aborted."; return; }
-            backup_config
-            set_scope_prefixes "$scope" ""
-            reorder_secrets_by_prefix_specificity
-            chown tacquito:tacquito "$CONFIG"
-            restart_service
-            info "Cleared prefixes for scope '${scope}'."
+            store_apply store_scope_del "$scope" --strip-users || exit $?
+            info "Cleared prefixes for scope '${scope}' (the scope is removed)."
             echo ""
             ;;
         *)
@@ -1649,16 +932,17 @@ cmd_scope_secret_dispatch() {
         error "Usage: tacctl scope secret <scope> {show|set <value>|generate}"
         exit 1
     fi
-    if ! scope_exists "$scope"; then
+    case "$sub" in
+        set|generate) store_require || exit 1 ;;
+    esac
+    local cur s_len
+    if ! cur=$(model_scope "$scope" secret); then
         error "Scope '${scope}' does not exist."
         exit 1
     fi
+    s_len=${#cur}
     case "$sub" in
         ""|-h|--help|help)
-            local s_len=0
-            local cur
-            cur=$(read_scope_secret "$scope")
-            s_len=${#cur}
             echo ""
             echo -e "${BOLD}tacctl scope secret ${scope}${NC} — shared secret for scope '${scope}'"
             echo ""
@@ -1671,9 +955,6 @@ cmd_scope_secret_dispatch() {
             echo ""
             ;;
         show)
-            local cur s_len
-            cur=$(read_scope_secret "$scope")
-            s_len=${#cur}
             echo ""
             echo -e "${BOLD}Scope '${scope}' — shared secret${NC}"
             echo "--------------------------------------------"
@@ -1704,10 +985,8 @@ cmd_scope_secret_dispatch() {
                 error "Secret is single-character-class (low entropy)."
                 exit 1
             fi
-            backup_config
-            set_scope_secret "$scope" "$arg"
-            chown tacquito:tacquito "$CONFIG"
-            restart_service
+            # The value reaches the store writer on stdin (see store_mutate).
+            store_apply store_scope_set "$scope" "secret=${arg}" || exit $?
             info "Scope '${scope}' secret updated."
             warn "Update ALL devices in scope '${scope}' with the new secret: ${arg}"
             echo ""
@@ -1716,10 +995,7 @@ cmd_scope_secret_dispatch() {
             local new_val
             new_val=$(openssl rand -base64 24)
             echo -e "  Generated: ${BOLD}${new_val}${NC}"
-            backup_config
-            set_scope_secret "$scope" "$new_val"
-            chown tacquito:tacquito "$CONFIG"
-            restart_service
+            store_apply store_scope_set "$scope" "secret=${new_val}" || exit $?
             info "Scope '${scope}' secret updated."
             warn "Update ALL devices in scope '${scope}' with the new secret above."
             echo ""
@@ -1727,6 +1003,99 @@ cmd_scope_secret_dispatch() {
         *)
             error "Unknown subcommand: '${sub}'"
             error "Run 'tacctl scope secret ${scope}' for usage."
+            exit 1
+            ;;
+    esac
+}
+
+# --- Per-scope protocol filter: tacctl scope protocols <scope> [list|set <csv>|clear] ---
+# A scope without a filter is served by every enabled backend. A filter
+# names the protocols that may serve it; a backend whose protocol is not
+# listed leaves the scope (its prefixes, its secret, and its users' grant of
+# it) out of what it renders.
+cmd_scope_protocols() {
+    local scope="${1:-}"
+    local sub="${2:-}"
+    local arg="${3:-}"
+    if [[ -z "$scope" ]]; then
+        error "Usage: tacctl scope protocols <scope> [list|set <protocol>[,<protocol>...]|clear]"
+        exit 1
+    fi
+    case "$sub" in
+        set|clear) store_require || exit 1 ;;
+    esac
+    local current
+    if ! current=$(model_scope "$scope" protocols); then
+        error "Scope '${scope}' does not exist."
+        exit 1
+    fi
+    current=$(printf '%s\n' "$current" | awk 'NF' | paste -sd,)
+
+    case "$sub" in
+        ""|list|-h|--help|help)
+            echo ""
+            if [[ -z "$current" ]]; then
+                echo "  Scope '${scope}' protocols: all (no filter — every enabled backend serves it)"
+            else
+                echo "  Scope '${scope}' protocols: ${current}"
+            fi
+            echo ""
+            echo "  Usage: tacctl scope protocols ${scope} set <protocol>[,<protocol>...]   (known: ${SCOPE_PROTOCOLS// /, })"
+            echo "         tacctl scope protocols ${scope} clear                            (back to all)"
+            echo ""
+            ;;
+        set)
+            if [[ -z "$arg" ]]; then
+                error "Usage: tacctl scope protocols ${scope} set <protocol>[,<protocol>...]"
+                error "Known protocols: ${SCOPE_PROTOCOLS// /, }"
+                exit 1
+            fi
+            local p known wanted=""
+            local -a _REQ
+            IFS=',' read -ra _REQ <<< "$arg"
+            for p in "${_REQ[@]}"; do
+                p=$(echo "$p" | xargs)
+                [[ -z "$p" ]] && continue
+                if [[ " ${SCOPE_PROTOCOLS} " != *" ${p} "* ]]; then
+                    error "Unknown protocol '${p}'. Known protocols: ${SCOPE_PROTOCOLS// /, }"
+                    exit 1
+                fi
+                wanted+=" ${p} "
+            done
+            # Stored in the fixed order of SCOPE_PROTOCOLS, each once.
+            local new_list=""
+            for known in $SCOPE_PROTOCOLS; do
+                [[ "$wanted" == *" ${known} "* ]] && new_list+="${new_list:+,}${known}"
+            done
+            if [[ -z "$new_list" ]]; then
+                error "No protocols given. To remove the filter: tacctl scope protocols ${scope} clear"
+                exit 1
+            fi
+            if [[ "$new_list" == "$current" ]]; then
+                info "Scope '${scope}' protocols already ${new_list}."
+                echo ""
+                return
+            fi
+            store_apply store_scope_set "$scope" "protocols=${new_list}" || exit $?
+            info "Scope '${scope}' protocols set to ${new_list}."
+            if [[ ",${new_list}," != *",tacacs,"* ]]; then
+                warn "Scope '${scope}' is no longer served over TACACS+: its devices and its users' grant of it are left out of tacquito.yaml."
+            fi
+            echo ""
+            ;;
+        clear)
+            if [[ -z "$current" ]]; then
+                info "Scope '${scope}' has no protocols filter."
+                echo ""
+                return
+            fi
+            store_apply store_scope_set "$scope" "protocols=null" || exit $?
+            info "Scope '${scope}' protocols filter cleared (every enabled backend serves it)."
+            echo ""
+            ;;
+        *)
+            error "Unknown subcommand: '${sub}'"
+            error "Usage: tacctl scope protocols ${scope} [list|set <protocol>[,<protocol>...]|clear]"
             exit 1
             ;;
     esac
@@ -1747,10 +1116,7 @@ cmd_scope_aaa_order() {
         error "Usage: tacctl scope aaa-order <scope> [tacacs-first|local-first]"
         exit 1
     fi
-    if ! scope_exists "$scope"; then
-        error "Scope '${scope}' does not exist. Available: $(list_scopes | paste -sd' ')"
-        exit 1
-    fi
+    _scope_require "$scope" || exit 1
 
     local current source
     current=$(conf_get "aaa.order.${scope}")
@@ -1801,10 +1167,7 @@ cmd_scope_exec_timeout() {
         error "Usage: tacctl scope exec-timeout <scope> [minutes]"
         exit 1
     fi
-    if ! scope_exists "$scope"; then
-        error "Scope '${scope}' does not exist. Available: $(list_scopes | paste -sd' ')"
-        exit 1
-    fi
+    _scope_require "$scope" || exit 1
 
     local current source
     current=$(conf_get "exec_timeout.${scope}")
@@ -1852,10 +1215,7 @@ cmd_scope_tacacs_group() {
         error "Usage: tacctl scope tacacs-group <scope> [name]"
         exit 1
     fi
-    if ! scope_exists "$scope"; then
-        error "Scope '${scope}' does not exist. Available: $(list_scopes | paste -sd' ')"
-        exit 1
-    fi
+    _scope_require "$scope" || exit 1
 
     local current source
     current=$(conf_get "tacacs_group.${scope}")
@@ -1911,10 +1271,7 @@ cmd_scope_mgmt_acl() {
         error "Usage: tacctl scope mgmt-acl <scope> <list|add|remove|clear|cisco-name|juniper-name> [args]"
         exit 1
     fi
-    if ! scope_exists "$scope"; then
-        error "Scope '${scope}' does not exist. Available: $(list_scopes | paste -sd' ')"
-        exit 1
-    fi
+    _scope_require "$scope" || exit 1
 
     case "$sub" in
         ""|-h|--help|help)

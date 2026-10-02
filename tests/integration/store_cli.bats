@@ -140,19 +140,27 @@ PY
     diff -u "${TACCTL_SRC}/tests/fixtures/store.minimal.yaml" "$STORE"
 }
 
-@test "store: existing commands are unaffected by a store being present" {
-    # Nothing is rewired yet: readers keep using tacquito.yaml.
+@test "store: commands read tacquito.yaml until a store exists, and the store from then on" {
     place_fixture tacquito.multiscope.yaml
     local users_before scopes_before
     users_before=$("$TACCTL_BIN_SCRIPT" user list)
     scopes_before=$("$TACCTL_BIN_SCRIPT" scope list)
+    [[ "$users_before" == *"alice"* ]]
     [[ "$scopes_before" == *"prod-inner"* ]]
     run "$TACCTL_BIN_SCRIPT" store import
     assert_success
-    # Empty the store's view; the legacy readers must not notice.
-    cp "${TACCTL_SRC}/tests/fixtures/store.minimal.yaml" "$STORE"
+    # The import changes nothing a reader sees.
     [[ "$("$TACCTL_BIN_SCRIPT" user list)" == "$users_before" ]]
     [[ "$("$TACCTL_BIN_SCRIPT" scope list)" == "$scopes_before" ]]
+    # Swap in a different store: the readers follow it, not tacquito.yaml,
+    # which still holds the multiscope data.
+    cp "${TACCTL_SRC}/tests/fixtures/store.minimal.yaml" "$STORE"
+    run "$TACCTL_BIN_SCRIPT" user list
+    refute_output --partial "alice"
+    run "$TACCTL_BIN_SCRIPT" scope list
+    assert_output --partial "lab"
+    refute_output --partial "prod-inner"
+    grep -q 'prod-inner' "$TACCTL_CONFIG"
 }
 
 @test "store: tier gate keeps store commands superuser-only" {

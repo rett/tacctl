@@ -37,38 +37,37 @@ linux_uid_for() {
 
 # "name:tier:uid" lines for every active user in a scope that can be a
 # Linux account. Names useradd would reject are skipped with a warning.
+# Disabled users (and the accounting sink) are left out by the model view,
+# so a sync treats them like users removed from the scope: no new account,
+# and an account tacctl created earlier is expired (which also stops
+# SSH-key logins).
 linux_scope_users() {
-    local scope="$1" username tier
-    while IFS= read -r username; do
+    local scope="$1" username privlvl tier rows
+    rows=$(_model_view linux-users "$scope") || return 1
+    while IFS='|' read -r username privlvl; do
         [[ -n "$username" && "$username" != "root" ]] || continue
         if [[ ! "$username" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]]; then
             warn "Skipping '${username}': not a valid Linux account name (lowercase letters, digits, _ and - only)." >&2
             continue
         fi
-        # Disabled users are left out, so a sync treats them like users
-        # removed from the scope: no new account, and an account tacctl
-        # created earlier is expired (which also stops SSH-key logins).
-        if is_disabled_hash "$(get_user_hash "$username")"; then
-            continue
-        fi
-        tier=$(tier_for_privlvl "$(get_group_privlvl "$(get_user_group "$username")")")
+        tier=$(tier_for_privlvl "$privlvl")
         if [[ "$tier" == "none" ]]; then
             warn "Skipping '${username}': its group has no priv-lvl." >&2
             continue
         fi
         echo "${username}:${tier}:$(linux_uid_for "$username")"
-    done < <(list_users_in_scope "$scope")
+    done <<< "$rows"
 }
 
 # Number of users in a scope that would get a Linux account. Unlike
 # linux_scope_users this assigns no UIDs, so read-only commands can use it.
 linux_scope_user_count() {
-    local scope="$1" username n=0
-    while IFS= read -r username; do
+    local scope="$1" username _privlvl n=0 rows
+    rows=$(_model_view linux-users "$scope") || rows=""
+    while IFS='|' read -r username _privlvl; do
         [[ "$username" =~ ^[a-z_][a-z0-9_-]{0,31}$ && "$username" != "root" ]] || continue
-        if is_disabled_hash "$(get_user_hash "$username")"; then continue; fi
         n=$((n + 1))
-    done < <(list_users_in_scope "$scope")
+    done <<< "$rows"
     echo "$n"
 }
 
@@ -135,7 +134,7 @@ linux_write_install_script() {
 
     # pam_tacplus reads the secret as one whitespace-delimited PAM argument.
     local secret
-    secret=$(read_scope_secret "$scope")
+    secret=$(model_scope "$scope" secret) || secret=""
     if [[ ! "$secret" =~ ^[A-Za-z0-9_.+/=-]+$ || "$secret" == REPLACE* ]]; then
         error "Scope '${scope}' has a secret that cannot be written on a PAM line (or a placeholder)."
         error "Regenerate it: tacctl scope secret ${scope} generate"
@@ -363,8 +362,7 @@ cmd_config_linux_script() {
     if [[ -z "$scope" ]]; then
         scope=$(read_default_scope)
         [[ -n "$scope" ]] || { error "No default scope set and no --scope provided."; return 1; }
-    elif ! scope_exists "$scope"; then
-        error "Scope '${scope}' does not exist. Available: $(list_scopes | paste -sd' ')"
+    elif ! _scope_require "$scope"; then
         return 1
     fi
     if [[ -z "$server" ]]; then
@@ -443,7 +441,7 @@ cmd_config_linux_uid() {
         echo "$uid"
         return 0
     fi
-    if ! user_exists "$username"; then
+    if ! model_user_exists "$username"; then
         error "User '${username}' does not exist."
         return 1
     fi
@@ -683,14 +681,13 @@ cmd_host_enroll() {
     # from any other.
     if [[ -z "$scope" ]]; then
         scope="linux-${name}"
-        if scope_exists "$scope"; then
+        if model_scope_exists "$scope"; then
             info "Using existing scope '${scope}'."
         else
             info "Creating scope '${scope}' for ${host_ip}/32..."
             cmd_scope_add "$scope" --prefixes "${host_ip}/32" --secret generate >/dev/null
         fi
-    elif ! scope_exists "$scope"; then
-        error "Scope '${scope}' does not exist. Available: $(list_scopes | paste -sd' ')"
+    elif ! _scope_require "$scope"; then
         return 1
     fi
 
@@ -773,7 +770,7 @@ cmd_host_sync() {
     local name target port scope server identity script failed=0
     for name in "${names[@]}"; do
         IFS='|' read -r _ target port scope server identity <<< "$(host_record "$name")"
-        if ! scope_exists "$scope"; then
+        if ! model_scope_exists "$scope"; then
             error "${name}: scope '${scope}' no longer exists; skipped."
             failed=1
             continue

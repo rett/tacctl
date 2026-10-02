@@ -261,10 +261,11 @@ def render_tacacs(model, conf):
     return "".join(w)
 
 
-def render_readback(path, model, conf):
-    """Read a rendered file back with the importer and check it says what
-    the model says. Guards every render against a quoting or layout bug:
-    a file that fails here is never installed."""
+def readback_problems(path, model):
+    """Read a tacquito.yaml with the importer and list where it says
+    something other than the model: groups, users (group, scopes, usable
+    hash), scopes, filters, or content the store cannot hold. Command rules
+    are not compared; they come from tacctl.yaml."""
     back, rep = legacy_load(path)
     problems = [f'importer reports: {m}' for m in rep['errors'] + rep['dropped']]
     scopes = tacacs_scopes(model)
@@ -293,6 +294,14 @@ def render_readback(path, model, conf):
         if canonical_cidr_list(list((model.get('filters') or {}).get(k) or [])) != canonical_cidr_list(back['filters'][k]):
             problems.append(f'filters.{k} differs')
 
+    return problems
+
+
+def render_readback(path, model, conf):
+    """Read a rendered file back with the importer and check it says what
+    the model says. Guards every render against a quoting or layout bug:
+    a file that fails here is never installed."""
+    problems = readback_problems(path, model)
     with open(path) as f:
         doc = yaml.safe_load(f)
     by_name = {v['name']: v for v in doc.values()
@@ -391,6 +400,38 @@ def render_main(argv):
         with open(rest[0]) as f:
             model = json.load(f)
         render_to_file(model, load_conf_view(rest[2]), rest[1])
+
+    elif cmd == 'render-live':
+        # render-live <store.yaml> <out> <tacctl.yaml path> <rendered.json> <live config>
+        # (merged view on stdin). Renders the store to <out> and prints how
+        # the live config stands against it, in one interpreter run:
+        #   current     identical to the render, and recorded as such
+        #   same        identical to the render, but not (or wrongly) recorded
+        #   ok          differs; it is what tacctl last rendered
+        #   drift       differs; edited since tacctl rendered it
+        #   unrecorded  differs; tacctl never rendered it
+        #   missing     there is no live config
+        #   unreadable  differs, and the render records cannot be read
+        model = store_normalize(store_load_raw(rest[0]))
+        render_to_file(model, load_conf_view(rest[2]), rest[1])
+        live = os.path.abspath(rest[4])
+        try:
+            status = rendered_status(rendered_load(rest[3]), live)
+        except StoreError:
+            status = 'unreadable'
+        same = False
+        if os.path.exists(live):
+            with open(rest[1], 'rb') as a, open(live, 'rb') as b:
+                same = a.read() == b.read()
+        if same:
+            print('current' if status == 'ok' else 'same')
+        else:
+            print(status)
+
+    elif cmd == 'matches-model':
+        # matches-model <tacquito.yaml>; model on stdin. Exit 0 when the
+        # file says exactly what the model says (see readback_problems).
+        return 1 if readback_problems(rest[0], json.load(sys.stdin)) else 0
 
     elif cmd == 'record':
         # record <rendered.json> <path>
@@ -529,24 +570,27 @@ tacacs_render_apply() {
 }
 
 _tacacs_render_apply_run() {
-    local force="$1" tmpd status rc=0
+    local force="$1" tmpd status
     tmpd=$(mktemp -d) || exit 1
     # shellcheck disable=SC2064  # expand tmpd now; the subshell owns this trap
     trap "rm -rf '${tmpd}'" EXIT
 
-    model_dump > "${tmpd}/model.json" || exit 1
-    render_tacacs_config "${tmpd}/model.json" "${tmpd}/tacquito.yaml" || exit 1
+    # One interpreter run renders the store and reports how the live file
+    # stands against the render (see render-live above).
+    status=$(_tacacs_render_live "${tmpd}/tacquito.yaml") || exit 1
 
-    if [[ -f "$CONFIG" ]] && cmp -s "${tmpd}/tacquito.yaml" "$CONFIG"; then
-        rendered_record "$CONFIG" || exit 1
-        echo "UNCHANGED"
-        exit 0
-    fi
-
-    status=$(rendered_check "$CONFIG") || rc=$?
-    case "$rc" in
-        0|2) ;;
-        1|3)
+    case "$status" in
+        current)
+            echo "UNCHANGED"
+            exit 0
+            ;;
+        same)
+            rendered_record "$CONFIG" || exit 1
+            echo "UNCHANGED"
+            exit 0
+            ;;
+        ok|missing) ;;
+        drift|unrecorded)
             if (( ! force )); then
                 if [[ "$status" == "drift" ]]; then
                     error "${CONFIG} was edited since tacctl rendered it; rendering would discard those edits."
@@ -574,6 +618,153 @@ _tacacs_render_apply_run() {
     rendered_record "$CONFIG" || exit 1
     echo "CHANGED"
     exit 0
+}
+
+# --- Mutations: store write + render as one step ----------------------------
+#
+# Every command that changes users, groups, scopes, filters or command rules
+# goes through store_apply. The sequence:
+#
+#   1. gate     the store must exist (plan 4.4), and tacquito.yaml must be
+#               replaceable: what tacctl last rendered, or missing, or a file
+#               tacctl never rendered that says exactly what the store says
+#               (the state right after 'store import'; it is adopted, and a
+#               copy kept under backups/legacy/). A hand-edited file, or a
+#               never-rendered one that says something else, refuses the
+#               command here -- before anything is written.
+#   2. backup   backup_config (the pre-change tacquito.yaml), then a private
+#               copy of store.yaml and tacctl.yaml to roll back to.
+#   3. write    the caller's writer (store_* and/or conf_* calls).
+#   4. render   tacacs_render_apply. If it fails, store.yaml and tacctl.yaml
+#               are put back as they were, so the canonical files and the
+#               rendered config never disagree because of a failed command.
+#   5. restart  only when the rendered file changed.
+#
+# store_require: return 0 when the store exists; else print the plan-4.4
+# message and return 1. Mutating commands call it before they prompt.
+store_require() {
+    [[ -f "$STORE_FILE" ]] && return 0
+    error "$STORE_NOT_INITIALISED_MSG"
+    return 1
+}
+
+# store_apply <writer> [<arg>...]
+# Run <writer> (a function making the store_* / conf_* writes of one command)
+# inside the sequence above. The writer must return non-zero on failure and
+# must not exit.
+#   return 0  applied, rendered, daemon restarted if the config changed
+#          1  failed; nothing is changed (a partial write was rolled back)
+#          3  refused at the gate because tacquito.yaml is not what tacctl
+#             rendered; nothing is changed
+# Call it in the current shell, not in $(...).
+store_apply() {
+    store_require || return 1
+    local force=() rc=0
+    _store_apply_gate || rc=$?
+    case "$rc" in
+        0) ;;
+        10) force=(--force) ;;
+        *) return "$rc" ;;
+    esac
+    [[ -f "$CONFIG" ]] && backup_config
+
+    local keep
+    keep=$(mktemp -d "${TACCTL_STATE_DIR}/.apply.XXXXXX") || return 1
+    cp -p "$STORE_FILE" "${keep}/store.yaml" || { rm -rf "$keep"; return 1; }
+    if [[ -f "$TACCTL_OVERRIDES_FILE" ]]; then
+        cp -p "$TACCTL_OVERRIDES_FILE" "${keep}/tacctl.yaml" || { rm -rf "$keep"; return 1; }
+    fi
+
+    local result=""
+    rc=0
+    if ! "$@"; then
+        _store_apply_rollback "$keep"
+        return 1
+    fi
+    result=$(tacacs_render_apply "${force[@]}") || rc=$?
+    if (( rc != 0 )); then
+        _store_apply_rollback "$keep"
+        error "The change was not applied: ${CONFIG} could not be rendered. Store and tacctl.yaml are as they were."
+        return 1
+    fi
+    rm -rf "$keep"
+    if [[ "$result" == "CHANGED" ]]; then
+        restart_service
+    fi
+    return 0
+}
+
+# Put store.yaml and tacctl.yaml back from the copies store_apply took.
+_store_apply_rollback() {
+    local keep="$1"
+    mv -f "${keep}/store.yaml" "$STORE_FILE"
+    if [[ -f "${keep}/tacctl.yaml" ]]; then
+        mv -f "${keep}/tacctl.yaml" "$TACCTL_OVERRIDES_FILE"
+    else
+        rm -f "$TACCTL_OVERRIDES_FILE"
+    fi
+    rm -rf "$keep"
+    _model_invalidate
+    _conf_invalidate
+}
+
+# The gate of step 1. Returns 0 go ahead; 10 go ahead and adopt the
+# never-rendered file (render with --force); 3 refused; 1 failed.
+_store_apply_gate() {
+    local rc=0
+    rendered_check "$CONFIG" >/dev/null || rc=$?
+    case "$rc" in
+        0|2) return 0 ;;
+        1)
+            error "${CONFIG} was edited since tacctl rendered it; this command would discard those edits."
+            ;;
+        3)
+            if _tacacs_matches_store "$CONFIG"; then
+                return 10
+            fi
+            error "${CONFIG} was not rendered by tacctl and does not say what the store says; this command would replace it."
+            ;;
+        *)
+            error "Cannot read ${RENDERED_FILE}; refusing to overwrite ${CONFIG}."
+            return 1
+            ;;
+    esac
+    error "Nothing was changed. To keep what the file says: 'tacctl store import --replace', then 'tacctl config render --force'."
+    error "To discard it: 'tacctl config render --force' alone. Then run this command again."
+    return 3
+}
+
+# _tacacs_matches_store <tacquito.yaml>: 0 when the file, read with the
+# importer, holds the groups, users, scopes and filters of the current store
+# and nothing the store cannot represent.
+_tacacs_matches_store() {
+    model_load 2>/dev/null || return 1
+    _render_python matches-model "$1" < <(printf '%s' "$_TACCTL_MODEL_CACHE") 2>/dev/null
+}
+
+# tacacs_render_check: trial render of the current store, nothing installed.
+# Prints the state of the live config against it (one word; see render-live).
+# Returns 1 (message on stderr) when the store cannot be rendered.
+tacacs_render_check() {
+    ( _tacacs_render_check_run )
+}
+
+_tacacs_render_check_run() {
+    local tmpd
+    tmpd=$(mktemp -d) || exit 1
+    # shellcheck disable=SC2064  # expand tmpd now; the subshell owns this trap
+    trap "rm -rf '${tmpd}'" EXIT
+    _tacacs_render_live "${tmpd}/tacquito.yaml" || exit 1
+    exit 0
+}
+
+# _tacacs_render_live <out>: render the current store into <out> and print
+# the state of $CONFIG against that render (one word; see render-live).
+# Returns 1, message on stderr, when the store cannot be rendered.
+_tacacs_render_live() {
+    _conf_load_cache
+    _render_python render-live "$STORE_FILE" "$1" "${TACCTL_OVERRIDES_FILE:-}" "$RENDERED_FILE" "$CONFIG" \
+        < <(printf '%s' "$_TACCTL_CFG_CACHE")
 }
 
 # Copy a file that is about to be overwritten into backups/legacy/.

@@ -275,16 +275,19 @@ _normalize() {
 }
 
 @test "config validate: succeeds on a valid config" {
-    # The hand-written multiscope fixture is not valid by validate's own
-    # rules (inline authenticators instead of bcrypt_<user> anchors, users
-    # without accounter:), so build the config the way the product does:
-    # shipped template + real shared secret + one user via 'user add'.
+    # Build the config the way the product does: the shipped template with a
+    # real shared secret, imported into the store, then one user via
+    # 'user add' -- which renders tacquito.yaml from the store.
     cp "${TACCTL_SRC}/config/tacquito.yaml" "$TACCTL_CONFIG"
     sed -i 's/REPLACE_WITH_SHARED_SECRET/lab-secret-0123456789abcdef/' "$TACCTL_CONFIG"
+    rm -f "${TACCTL_STATE_DIR}/store.yaml"
+    run "$TACCTL_BIN_SCRIPT" store import
+    assert_success
     run "$TACCTL_BIN_SCRIPT" user add alice superuser --hash "24326224313024616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161"
     assert_success
     run "$TACCTL_BIN_SCRIPT" config validate
     assert_success
+    assert_line --regexp 'Rendered config:.* up to date$'
     assert_output --partial "Configuration is valid."
 }
 

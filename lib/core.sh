@@ -70,6 +70,10 @@ preflight() {
         error "python3-bcrypt not installed. Install it first."
         exit 1
     fi
+    # Warm the model cache in this shell: accessors called later inside
+    # $(...) would otherwise each reload it. Best effort -- a command that
+    # needs the model reports the load error itself.
+    model_load 2>/dev/null || true
 }
 
 # --- Validate class/value names ---

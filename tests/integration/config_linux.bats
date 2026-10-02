@@ -147,7 +147,9 @@ _client_env() {
 
 @test "config linux script: refuses a placeholder or unsafe secret" {
     load_fixture tacquito.minimal.yaml
-    sed -i 's/key: ".*"/key: "REPLACE_WITH_SHARED_SECRET"/' "$TACCTL_CONFIG"
+    # The secret is the store's; put the placeholder there.
+    sed -i 's/secret: .*/secret: REPLACE_WITH_SHARED_SECRET/' "${TACCTL_STATE_DIR}/store.yaml"
+    grep -q 'secret: REPLACE_WITH_SHARED_SECRET' "${TACCTL_STATE_DIR}/store.yaml"
     run _gen
     assert_failure
     assert_output --partial "tacctl scope secret lab generate"

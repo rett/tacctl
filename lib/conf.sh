@@ -695,6 +695,10 @@ conf_set_list() {
 # conf_get returns the merged (defaults + overrides) value, or the $2
 # fallback when either file is missing. The clamp-to-range checks below
 # handle garbage in the overrides file (hand-edited out of range, etc.).
+# The four reads share one merge of defaults + overrides: each $(conf_get)
+# runs in a subshell and would otherwise redo it. The cache is dropped again
+# afterwards so nothing later in this shell depends on its age.
+_conf_load_cache
 PASSWORD_MAX_AGE_DAYS=$(conf_get password.max_age_days 90)
 if ! [[ "$PASSWORD_MAX_AGE_DAYS" =~ ^[0-9]+$ ]] || [[ "$PASSWORD_MAX_AGE_DAYS" -lt 1 ]]; then
     PASSWORD_MAX_AGE_DAYS=90
@@ -722,6 +726,7 @@ SECRET_MIN_LENGTH=$(conf_get secret.min_length 16)
 if ! [[ "$SECRET_MIN_LENGTH" =~ ^[0-9]+$ ]] || [[ "$SECRET_MIN_LENGTH" -lt 16 || "$SECRET_MIN_LENGTH" -gt 128 ]]; then
     SECRET_MIN_LENGTH=16
 fi
+_conf_invalidate
 
 # --- CONFIG PASSWORD-AGE ---
 cmd_config_password_age() {

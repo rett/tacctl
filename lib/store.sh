@@ -24,11 +24,15 @@ STORE_NOT_INITIALISED_MSG="store not initialised — review 'tacctl store import
 # Emitted as source so one interpreter run can combine it with the model code
 # (lib/model.sh: _model_py) and the command dispatcher (_store_main_py).
 # STORE_SCHEMA is the one description of what is legal in store.yaml.
-_store_py() {
+#
+# _store_base_py is the part with no file I/O and no YAML: the schema, the
+# constants and the hash/CIDR helpers. The model's read accessors run on it
+# alone (lib/model.sh: _model_python), which keeps the many small reads a
+# command makes cheap -- importing PyYAML and compiling the rest costs more
+# than the read itself. _store_py is the base plus everything else.
+_store_base_py() {
     cat <<'PY'
-import binascii, contextlib, datetime, difflib, fcntl, hashlib, hmac
-import ipaddress, json, os, re, sys, tempfile
-import yaml
+import binascii, ipaddress, json, os, re, sys
 
 
 class StoreError(Exception):
@@ -149,6 +153,17 @@ def canonical_cidr_list(items):
         if canon not in out:
             out.append(canon)
     return sorted(out, key=cidr_key)
+
+
+PY
+}
+
+_store_py() {
+    _store_base_py
+    cat <<'PY'
+
+import contextlib, datetime, difflib, fcntl, hashlib, hmac, tempfile
+import yaml
 
 
 def _check_field(spec, val):
@@ -292,7 +307,7 @@ def store_validate(store):
             if u.get('disabled') is not True:
                 errs.append(f"user '{name}': the accounting sink must stay disabled")
 
-    # One prefix, one scope (scope_owning_prefix invariant). Overlap between
+    # One prefix, one scope (see model_prefix_owner). Overlap between
     # scopes is fine -- only the identical network is exclusive.
     owner = {}
     for name, s in scopes.items():

@@ -40,8 +40,19 @@ as_user() {
     SUDO_USER="$name" run "$TACCTL_BIN_SCRIPT" "$@"
 }
 
+# A user's hash as tacquito reads it from the rendered config (quoted there
+# when the hex happens to be all digits).
 _hash_of() {
-    grep -A5 "^bcrypt_$1:" "$TACCTL_CONFIG" | awk '/^[[:space:]]*hash:/ {print $2; exit}'
+    grep -A5 "^bcrypt_$1:" "$TACCTL_CONFIG" | awk '/^[[:space:]]*hash:/ {gsub(/"/, "", $2); print $2; exit}'
+}
+
+# One field of a user in the canonical store.
+store_user() {
+    python3 -c '
+import sys, yaml
+with open(sys.argv[1]) as f:
+    v = yaml.safe_load(f)["users"][sys.argv[2]].get(sys.argv[3])
+print("" if v is None else v)' "${TACCTL_STATE_DIR}/store.yaml" "$1" "$2"
 }
 
 # --- tier gate ----------------------------------------------------------------
@@ -130,7 +141,10 @@ _hash_of() {
     assert_output --partial "Password changed for 'ro'"
     [[ "$(_hash_of ro)" != "$HASH" ]]
     [[ "$(_hash_of su)" == "$HASH" ]]
-    [[ -f "${TACCTL_STATE_DIR}/backups/password-dates/ro.date" ]]
+    # The store holds the same new hash, and today's date for it.
+    [[ "$(store_user ro hash)" == "$(_hash_of ro)" ]]
+    [[ "$(store_user su hash)" == "$HASH" ]]
+    [[ "$(store_user ro password_changed)" == "$(date +%Y-%m-%d)" ]]
 }
 
 @test "passwd: wrong current password leaves the hash alone" {

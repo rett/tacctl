@@ -14,8 +14,9 @@
 # those are the accounts tacctl provisions for TACACS+ users. Everyone
 # else who reaches this point (root, a local admin with sudo) keeps the
 # full access they always had. For a managed caller the tier comes from
-# tacquito.yaml, never from local group membership, so a stale local
-# group cannot grant more than the user's TACACS+ group does.
+# the model (the user's group and its priv-lvl), never from local group
+# membership, so a stale local group cannot grant more than the user's
+# TACACS+ group does.
 TIER_USERS_GROUP="tac-users"
 TIER_GROUP_READONLY="tac-readonly"
 TIER_GROUP_OPERATOR="tac-operator"
@@ -48,15 +49,15 @@ caller_tier() {
         echo "unrestricted"
         return
     fi
-    if [[ ! -f "$CONFIG" ]] || [[ ! "$caller" =~ ^[a-zA-Z0-9_-]+$ ]] || ! user_exists "$caller"; then
+    if [[ ! "$caller" =~ ^[a-zA-Z0-9_-]+$ ]]; then
         echo "none"
         return
     fi
-    if is_disabled_hash "$(get_user_hash "$caller")"; then
-        echo "none"
-        return
-    fi
-    tier_for_privlvl "$(get_group_privlvl "$(get_user_group "$caller")")"
+    # Empty for an unknown or disabled user, and when the model cannot be
+    # read at all: every one of those is denied.
+    local privlvl
+    privlvl=$(model_user_privlvl "$caller" 2>/dev/null) || privlvl=""
+    tier_for_privlvl "$privlvl"
 }
 
 # tier_permits <tier> <command> [subcommand] -> 0 if allowed.

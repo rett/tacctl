@@ -182,12 +182,11 @@ cmd_config_cisco() {
             error "Run 'tacctl scope default <name>' or pass --scope <name>."
             exit 1
         fi
-    elif ! scope_exists "$scope"; then
-        error "Scope '${scope}' does not exist. Available: $(list_scopes | paste -sd' ')"
+    elif ! _scope_require "$scope"; then
         exit 1
     fi
     local secret server_ip
-    secret=$(read_scope_secret "$scope")
+    secret=$(model_scope "$scope" secret) || secret=""
     server_ip=$(ip -4 route get 1.0.0.0 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}')
     if [[ -z "$server_ip" ]]; then
         server_ip="<TACQUITO_SERVER_IP>"
@@ -199,25 +198,11 @@ cmd_config_cisco() {
     # exists). Under `set -o pipefail` that kills the subshell and, via
     # `set -e`, the whole script. Append `|| true` to the grep so the pipeline
     # stays zero-exit when the "other scopes" set is empty.
-    other_scopes=$(list_scopes | { grep -vxF "$scope" || true; } | paste -sd,)
+    other_scopes=$(model_scopes_by_routing | { grep -vxF "$scope" || true; } | paste -sd,)
 
     # Collect all groups with their priv-lvl
     local group_info
-    group_info=$(python3 -c "
-import re, sys
-config = open(sys.argv[1]).read()
-groups_match = re.search(r'^# --- Groups ---\s*\n(.*?)(?=^# --- Users|\Z)', config, re.MULTILINE | re.DOTALL)
-if not groups_match:
-    sys.exit(0)
-for m in re.finditer(r'^(\w+): &\1\n  name: \1\n  services:\n(.*?)  accounter:', groups_match.group(1), re.MULTILINE | re.DOTALL):
-    name = m.group(1)
-    pm = re.search(r'\*exec_(\w+)', m.group(2))
-    if pm:
-        svc = pm.group(1)
-        sm = re.search(r'exec_' + svc + r':.*?values:\s*\[(\d+)\]', config, re.DOTALL)
-        if sm:
-            print(f'{name}|{sm.group(1)}')
-" "$CONFIG")
+    group_info=$(model_group_info | cut -d'|' -f1,2 | awk -F'|' '$2 != ""')
 
     # Build the privilege-exec block from per-group mappings
     # (managed via 'tacctl group privilege'). For each group with priv-lvl
@@ -479,12 +464,11 @@ cmd_config_juniper() {
             error "Run 'tacctl scope default <name>' or pass --scope <name>."
             exit 1
         fi
-    elif ! scope_exists "$scope"; then
-        error "Scope '${scope}' does not exist. Available: $(list_scopes | paste -sd' ')"
+    elif ! _scope_require "$scope"; then
         exit 1
     fi
     local secret server_ip
-    secret=$(read_scope_secret "$scope")
+    secret=$(model_scope "$scope" secret) || secret=""
     server_ip=$(ip -4 route get 1.0.0.0 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}')
     if [[ -z "$server_ip" ]]; then
         server_ip="<TACQUITO_SERVER_IP>"
@@ -496,33 +480,17 @@ cmd_config_juniper() {
     # exists). Under `set -o pipefail` that kills the subshell and, via
     # `set -e`, the whole script. Append `|| true` to the grep so the pipeline
     # stays zero-exit when the "other scopes" set is empty.
-    other_scopes=$(list_scopes | { grep -vxF "$scope" || true; } | paste -sd,)
+    other_scopes=$(model_scopes_by_routing | { grep -vxF "$scope" || true; } | paste -sd,)
 
     # Collect all groups with their Juniper class and suggested Junos login class
     local group_juniper
-    group_juniper=$(python3 -c "
-import re, sys
-config = open(sys.argv[1]).read()
-groups_match = re.search(r'^# --- Groups ---\s*\n(.*?)(?=^# --- Users|\Z)', config, re.MULTILINE | re.DOTALL)
-if not groups_match:
-    sys.exit(0)
-for m in re.finditer(r'^(\w+): &\1\n  name: \1\n  services:\n(.*?)  accounter:', groups_match.group(1), re.MULTILINE | re.DOTALL):
-    name = m.group(1)
-    jm = re.search(r'\*junos_exec_(\w+)', m.group(2))
-    if jm:
-        svc = jm.group(1)
-        jcm = re.search(r'junos_exec_' + svc + r':.*?values:\s*\[\"([^\"]+)\"\]', config, re.DOTALL)
-        if jcm:
-            jclass = jcm.group(1)
-            # Suggest a Junos login class based on group name
-            if 'super' in name or 'admin' in name:
-                junos_class = 'super-user'
-            elif 'readonly' in name or 'read' in name:
-                junos_class = 'read-only'
-            else:
-                junos_class = 'operator'
-            print(f'{name}|{jclass}|{junos_class}')
-" "$CONFIG")
+    # Suggest a Junos login class from the group name.
+    group_juniper=$(model_group_info | awk -F'|' '$3 != "" {
+        cls = "operator"
+        if ($1 ~ /super|admin/) cls = "super-user"
+        else if ($1 ~ /read/) cls = "read-only"
+        print $1 "|" $3 "|" cls
+    }')
 
     # Build dynamic sections
     # Define each template-user's class as a LOCAL class (reusing the
@@ -845,12 +813,11 @@ cmd_config_wti() {
             error "Run 'tacctl scope default <name>' or pass --scope <name>."
             exit 1
         fi
-    elif ! scope_exists "$scope"; then
-        error "Scope '${scope}' does not exist. Available: $(list_scopes | paste -sd' ')"
+    elif ! _scope_require "$scope"; then
         exit 1
     fi
     local secret server_ip
-    secret=$(read_scope_secret "$scope")
+    secret=$(model_scope "$scope" secret) || secret=""
     server_ip=$(ip -4 route get 1.0.0.0 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}')
     if [[ -z "$server_ip" ]]; then
         server_ip="<TACQUITO_SERVER_IP>"
@@ -862,26 +829,12 @@ cmd_config_wti() {
     # exists). Under `set -o pipefail` that kills the subshell and, via
     # `set -e`, the whole script. Append `|| true` to the grep so the pipeline
     # stays zero-exit when the "other scopes" set is empty.
-    other_scopes=$(list_scopes | { grep -vxF "$scope" || true; } | paste -sd,)
+    other_scopes=$(model_scopes_by_routing | { grep -vxF "$scope" || true; } | paste -sd,)
 
     # Collect all groups with their priv-lvl (same walk as config cisco —
     # WTI consumes the identical `shell` service).
     local group_info
-    group_info=$(python3 -c "
-import re, sys
-config = open(sys.argv[1]).read()
-groups_match = re.search(r'^# --- Groups ---\s*\n(.*?)(?=^# --- Users|\Z)', config, re.MULTILINE | re.DOTALL)
-if not groups_match:
-    sys.exit(0)
-for m in re.finditer(r'^(\w+): &\1\n  name: \1\n  services:\n(.*?)  accounter:', groups_match.group(1), re.MULTILINE | re.DOTALL):
-    name = m.group(1)
-    pm = re.search(r'\*exec_(\w+)', m.group(2))
-    if pm:
-        svc = pm.group(1)
-        sm = re.search(r'exec_' + svc + r':.*?values:\s*\[(\d+)\]', config, re.DOTALL)
-        if sm:
-            print(f'{name}|{sm.group(1)}')
-" "$CONFIG")
+    group_info=$(model_group_info | cut -d'|' -f1,2 | awk -F'|' '$2 != ""')
 
     local GROUP_SUMMARY="" has_superuser_band="false"
     while IFS='|' read -r gname privlvl; do
@@ -941,7 +894,7 @@ for m in re.finditer(r'^(\w+): &\1\n  name: \1\n  services:\n(.*?)  accounter:',
         if [[ "${#uname}" -gt 32 ]]; then
             user_warnings+="  - User '${uname}' is ${#uname} chars; WTI usernames max out at 32"$'\n'
         fi
-    done < <(list_users_in_scope "$scope")
+    done < <(model_scope_users "$scope")
 
     echo ""
     echo -e "${BOLD}WTI Console Server Configuration${NC}  (scope: ${scope}, firmware v8.x text interface)"

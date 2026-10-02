@@ -62,9 +62,16 @@ model_dump() {
     printf '%s\n' "$_TACCTL_MODEL_CACHE"
 }
 
+# Run the read program on the cached model: _model_python get|view <args...>.
+# It is the schema base (lib/store.sh: _store_base_py) plus the accessors and
+# views below -- no YAML, no file access; the model arrives on stdin.
+_model_python() {
+    python3 <(_store_base_py; _model_read_py; _model_read_main_py) "$@"
+}
+
 _model_query() {
     model_load || return 1
-    _store_python get "$@" < <(printf '%s' "$_TACCTL_MODEL_CACHE")
+    _model_python get "$@" < <(printf '%s' "$_TACCTL_MODEL_CACHE")
 }
 
 # Accessors. Conventions shared by all of them:
@@ -90,7 +97,445 @@ model_scope()  { _model_query scopes "$@"; }
 # model_filters [allow|deny]: JSON of both lists, or one list a CIDR per line.
 model_filters() { _model_query filters "$@"; }
 
-# --- Python: legacy loader, import, accessors, equivalence ------------------
+# --- Views ------------------------------------------------------------------
+# Canned read-only reports over the model (python: model_view below). They
+# exist so a command needs one interpreter run for a table, not one per cell.
+# Every view works the same in store and legacy mode. Lines are '|'-separated
+# or key=value; names cannot contain either character.
+_model_view() {
+    model_load || return 1
+    _model_python view "$@" < <(printf '%s' "$_TACCTL_MODEL_CACHE")
+}
+
+# Existence tests: return 0/1, print nothing. An empty name is never found.
+model_user_exists()  { [[ -n "${1:-}" ]] && _model_view has users "$1"; }
+model_group_exists() { [[ -n "${1:-}" ]] && _model_view has groups "$1"; }
+model_scope_exists() { [[ -n "${1:-}" ]] && _model_view has scopes "$1"; }
+
+# model_user_info <name>: key=value lines -- group, status (active|disabled),
+# password_changed (date or 'unknown'), priv_lvl, juniper_class, hash_type
+# (the '$2b$12$' prefix, empty when disabled), has_hash (1|0) -- then one
+# 'scope=<name>|<1 if the scope exists, else 0>' line per scope. Returns 1,
+# printing nothing, when the user does not exist. Never prints the hash.
+model_user_info() { _model_view user-info "$1"; }
+
+# model_user_privlvl <name>: priv-lvl of the user's group, or nothing when the
+# user is unknown, disabled, the accounting sink, or its group is missing.
+model_user_privlvl() { _model_view user-privlvl "$1"; }
+
+# model_user_rows: 'name|group|status|password_changed|scope,scope' per user,
+# by name, without the accounting sink.
+model_user_rows() { _model_view user-rows; }
+
+# model_group_rows: 'name|priv_lvl|juniper_class|users' by priv-lvl, highest
+# first (equal levels in reverse name order). The user count leaves out the
+# accounting sink.
+model_group_rows() { _model_view group-rows; }
+
+# model_group_users <group>: names of every user in the group (the accounting
+# sink included), by name.
+model_group_users() { _model_view group-users "$1"; }
+
+# model_group_info: 'name|priv_lvl|juniper_class' per group, built-ins first
+# (readonly, operator, superuser), then the rest by name.
+model_group_info() { _model_view group-info; }
+
+# model_scopes_by_routing: every scope name in the order listings use: by
+# where the scope's most specific prefix sits in the daemon's first-match
+# walk (the order of first appearance in the rendered secrets list).
+model_scopes_by_routing() { _model_view scope-names; }
+
+# model_scope_prefixes <scope>: its prefixes in display order -- longest
+# prefix first, the order every listing has always used. ('model_scope <s>
+# prefixes' prints them in stored order.) Unknown scope: no output.
+model_scope_prefixes() { _model_view scope-prefixes "$1"; }
+
+# model_scope_users <scope>: names of the users granted the scope, by name.
+model_scope_users() { _model_view scope-users "$1"; }
+
+# model_prefix_owner <cidr>: the scope holding exactly this network (after
+# canonicalisation), or nothing.
+model_prefix_owner() { [[ -n "${1:-}" ]] || return 0; _model_view prefix-owner "$1"; }
+
+# --- Python: accessors and views --------------------------------------------
+# The read side: needs only _store_base_py. Part of the full program too
+# (_model_py includes it), so 'store show' and the importer see the same code.
+_model_read_py() {
+    cat <<'PY'
+
+# ---- accessors ------------------------------------------------------------
+
+def _emit(value):
+    if value is None:
+        return
+    if isinstance(value, bool):
+        print('true' if value else 'false')
+    elif isinstance(value, list):
+        for item in value:
+            print(item)
+    else:
+        print(value)
+
+
+def model_get(model, argv):
+    kind = argv[0]
+    name = argv[1] if len(argv) > 1 else None
+    field = argv[2] if len(argv) > 2 else None
+    if kind == 'filters':
+        if name is None:
+            print(json.dumps(model['filters'], sort_keys=True))
+        elif name in FILTER_KEYS:
+            _emit(model['filters'].get(name) or [])
+        else:
+            raise StoreError(f"filters: unknown list '{name}'")
+        return 0
+    section = model[kind]
+    if name is None:
+        for n in sorted(section):
+            print(n)
+        return 0
+    ent = section.get(name)
+    if ent is None:
+        return 1
+    if field is None:
+        print(json.dumps(dict(ent, name=name), sort_keys=True))
+    elif field in STORE_SCHEMA[kind]['fields']:
+        _emit(ent.get(field))
+    else:
+        raise StoreError(f"{STORE_SCHEMA[kind]['label']}: unknown field '{field}'")
+    return 0
+
+
+# ---- views ----------------------------------------------------------------
+#
+# Each prints lines for a bash caller to read; none prints a secret or a
+# hash. They take the model as either loader built it, so a legacy model with
+# dangling references (a user pointing at a scope that is gone) still works.
+
+BUILTIN_DISPLAY_ORDER = ('readonly', 'operator', 'superuser')
+RFC1918 = {'10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'}
+
+
+def user_is_disabled(u):
+    """True when the user cannot authenticate: flagged, the accounting sink,
+    or without a password. The renderer emits the marker in the same cases."""
+    return bool(u.get('disabled') or u.get('accounting_sink') or not u.get('hash'))
+
+
+def display_key(cidr):
+    """Listing order: longest prefix first, IPv4 before IPv6, then address."""
+    try:
+        n = ipaddress.ip_network(cidr, strict=False)
+    except ValueError:
+        return (1, 0, 0)
+    return (-n.prefixlen, n.version, int(n.network_address))
+
+
+def routing_pairs(scopes):
+    """[(cidr, scope)] in the order the daemon tries them (as rendered)."""
+    pairs = [(c, name) for name, s in scopes.items()
+             for c in (s.get('prefixes') or []) if canonical_cidr(c) is not None]
+    return sorted(pairs, key=lambda t: (cidr_key(t[0]), t[1]))
+
+
+def scope_display_order(scopes):
+    """Scope names by where their first prefix sits in the routing order;
+    a scope without prefixes goes last."""
+    order = []
+    for _c, name in routing_pairs(scopes):
+        if name not in order:
+            order.append(name)
+    return order + sorted(n for n in scopes if n not in order)
+
+
+def model_view(model, argv):
+    view, args = argv[0], argv[1:]
+    users, groups, scopes = model['users'], model['groups'], model['scopes']
+    filters = model.get('filters') or {}
+
+    def members(scope):
+        return sorted(n for n, u in users.items() if scope in (u.get('scopes') or []))
+
+    def priv_of(user):
+        g = groups.get(user.get('group')) or {}
+        return g.get('priv_lvl')
+
+    if view == 'has':
+        return 0 if args[1] in model[args[0]] else 1
+
+    if view == 'user-rows':
+        for name in sorted(users):
+            u = users[name]
+            if u.get('accounting_sink'):
+                continue
+            status = 'disabled' if user_is_disabled(u) else 'active'
+            print('|'.join([name, str(u.get('group') or ''), status,
+                            u.get('password_changed') or 'unknown',
+                            ','.join(u.get('scopes') or [])]))
+        return 0
+
+    if view == 'user-info':
+        u = users.get(args[0])
+        if u is None:
+            return 1
+        g = groups.get(u.get('group')) or {}
+        disabled = user_is_disabled(u)
+        hash_type = ''
+        if not disabled:
+            try:
+                hash_type = binascii.unhexlify(u['hash'][:14]).decode('ascii')
+            except (binascii.Error, ValueError, UnicodeDecodeError):
+                hash_type = ''
+        print(f"group={u.get('group') or ''}")
+        print('status=' + ('disabled' if disabled else 'active'))
+        print(f"password_changed={u.get('password_changed') or 'unknown'}")
+        print(f"priv_lvl={'' if g.get('priv_lvl') is None else g['priv_lvl']}")
+        print(f"juniper_class={g.get('juniper_class') or ''}")
+        print(f'hash_type={hash_type}')
+        print(f"has_hash={'1' if u.get('hash') else '0'}")
+        for s in u.get('scopes') or []:
+            print(f"scope={s}|{'1' if s in scopes else '0'}")
+        return 0
+
+    if view == 'user-privlvl':
+        u = users.get(args[0])
+        if u is not None and not user_is_disabled(u) and priv_of(u) is not None:
+            print(priv_of(u))
+        return 0
+
+    if view == 'group-rows':
+        counts = {}
+        for u in users.values():
+            if not u.get('accounting_sink'):
+                counts[u.get('group')] = counts.get(u.get('group'), 0) + 1
+        # Highest priv-lvl first; equal levels in reverse name order, the
+        # order 'group list' has always printed (it used 'sort -nr').
+        def by_priv(name):
+            p = groups[name].get('priv_lvl')
+            return (p if is_int(p) else -1, name)
+        for name in sorted(groups, key=by_priv, reverse=True):
+            g = groups[name]
+            priv = 'n/a' if g.get('priv_lvl') is None else g['priv_lvl']
+            print(f"{name}|{priv}|{g.get('juniper_class') or 'n/a'}|{counts.get(name, 0)}")
+        return 0
+
+    if view == 'group-users':
+        for n in sorted(n for n, u in users.items() if u.get('group') == args[0]):
+            print(n)
+        return 0
+
+    if view == 'group-info':
+        first = [g for g in BUILTIN_DISPLAY_ORDER if g in groups]
+        for name in first + sorted(g for g in groups if g not in first):
+            g = groups[name]
+            print(f"{name}|{'' if g.get('priv_lvl') is None else g['priv_lvl']}|{g.get('juniper_class') or ''}")
+        return 0
+
+    if view == 'scope-names':
+        for name in scope_display_order(scopes):
+            print(name)
+        return 0
+
+    if view == 'scope-prefixes':
+        s = scopes.get(args[0]) or {}
+        for c in sorted(s.get('prefixes') or [], key=display_key):
+            print(c)
+        return 0
+
+    if view == 'scope-users':
+        for n in members(args[0]):
+            print(n)
+        return 0
+
+    if view == 'prefix-owner':
+        target = canonical_cidr(args[0])
+        if target is None:
+            return 0
+        for name in sorted(scopes):
+            if target in [canonical_cidr(c) for c in (scopes[name].get('prefixes') or [])]:
+                print(name)
+                break
+        return 0
+
+    if view == 'scope-rows':
+        # One line per (scope, prefix): the first carries the user count and
+        # the default marker, the rest leave those columns empty.
+        default = args[0] if args else ''
+        for name in scope_display_order(scopes):
+            pfx = sorted(scopes[name].get('prefixes') or [], key=display_key) or ['(no prefix)']
+            for idx, c in enumerate(pfx):
+                if idx == 0:
+                    print(f"{name}|{c}|{len(members(name))}|{'yes' if name == default else ''}")
+                else:
+                    print(f'|{c}||')
+        return 0
+
+    if view == 'scope-routing':
+        default = args[0] if args else ''
+        rows = [(display_key(c), name, c) for name, s in scopes.items()
+                for c in (s.get('prefixes') or ['(no prefix)'])]
+        for _k, name, c in sorted(rows):
+            print(f"{name}|{c}|{len(members(name))}|{'yes' if name == default else ''}")
+        return 0
+
+    if view == 'scope-lookup':
+        query = args[0]
+        q_net = q_host = None
+        try:
+            if '/' in query:
+                q_net = ipaddress.ip_network(query, strict=False)
+            else:
+                q_host = ipaddress.ip_address(query)
+        except ValueError as e:
+            print(f'ERROR: invalid address or CIDR: {e}')
+            return 2
+        what = q_host if q_host is not None else q_net
+        matches = []
+        for c, name in routing_pairs(scopes):
+            pnet = ipaddress.ip_network(c, strict=False)
+            if pnet.version != what.version:
+                continue
+            if q_host is not None and q_host in pnet:
+                matches.append((name, pnet))
+            elif q_net is not None and (pnet == q_net or q_net.subnet_of(pnet)):
+                matches.append((name, pnet))
+        if not matches:
+            if q_host is not None:
+                print(f'No scope owns {q_host} — no prefix in any scope contains it.')
+            else:
+                print(f'No scope owns {q_net} — no prefix covers the full range.')
+            return 1
+        print(f"  {what} -> scope '{matches[0][0]}' (via prefix {matches[0][1]})")
+        if len(matches) > 1:
+            print('')
+            print("  Also covered by (shadowed — tacquito's first-match picks the one above):")
+            for name, pnet in matches[1:]:
+                print(f"    - scope '{name}' via prefix {pnet}")
+        return 0
+
+    if view == 'config-show':
+        for name in scope_display_order(scopes):
+            s = scopes[name]
+            print(f"scope={name}|{len(s.get('secret') or '')}|{len(members(name))}")
+            for c in sorted(s.get('prefixes') or [], key=display_key):
+                print(f'prefix={c}')
+        for key, grp, field in (('cisco_ro', 'readonly', 'priv_lvl'), ('cisco_op', 'operator', 'priv_lvl'),
+                                ('cisco_rw', 'superuser', 'priv_lvl'), ('juniper_ro', 'readonly', 'juniper_class'),
+                                ('juniper_op', 'operator', 'juniper_class'), ('juniper_rw', 'superuser', 'juniper_class')):
+            val = (groups.get(grp) or {}).get(field)
+            print(f"{key}={'NOT FOUND' if val is None else val}")
+        print('allow=' + ', '.join(filters.get('allow') or []))
+        print('deny=' + ', '.join(filters.get('deny') or []))
+        return 0
+
+    if view == 'linux-users':
+        for n in members(args[0]):
+            u = users[n]
+            if u.get('accounting_sink') or user_is_disabled(u):
+                continue
+            p = priv_of(u)
+            print(f"{n}|{'' if p is None else p}")
+        return 0
+
+    if view == 'status':
+        min_secret = int(args[0])
+        all_cidrs, weak, placeholder, no_prefix = [], [], [], []
+        for name in sorted(scopes):
+            s = scopes[name]
+            key = s.get('secret') or ''
+            if not s.get('prefixes'):
+                no_prefix.append(name)
+            all_cidrs.extend(s.get('prefixes') or [])
+            if 'REPLACE' in key:
+                placeholder.append(name)
+            elif len(key) < min_secret:
+                weak.append(f'{name}:{len(key)}')
+        refs, unused = 0, set(scopes)
+        orphans = []
+        for n in sorted(users):
+            for s in users[n].get('scopes') or []:
+                refs += 1
+                if s in scopes:
+                    unused.discard(s)
+                else:
+                    orphans.append(f'{n}:{s}')
+        print(f'user_count={len(users)}')
+        print(f'scope_count={len(scopes)}')
+        print(f'prefix_count={len(all_cidrs)}')
+        print(f"prefix_unrestricted={'1' if set(all_cidrs) == RFC1918 else '0'}")
+        print(f"prefix_has_v6={'1' if any(':' in c for c in all_cidrs) else '0'}")
+        print(f"allow_has_v6={'1' if any(':' in c for c in (filters.get('allow') or [])) else '0'}")
+        print('placeholder_scopes=' + ','.join(placeholder))
+        print('weak_scopes=' + ','.join(weak))
+        print('empty_prefix_scopes=' + ','.join(no_prefix))
+        print(f'total_refs={refs}')
+        print('empty_scopes=' + ','.join(sorted(unused)))
+        for o in orphans:
+            print(f'orphan={o}')
+        for n in sorted(users):
+            if users[n].get('password_changed'):
+                print(f"pwdate={n}|{users[n]['password_changed']}")
+        return 0
+
+    if view == 'validate':
+        # Checks 'config validate' makes on the model. 'full' adds the
+        # reference checks store_validate already makes on a store, for a
+        # legacy model nothing has validated.
+        full = bool(args) and args[0] == 'full'
+        errs = []
+        if not users:
+            errs.append('No users defined (tacquito refuses to serve such a config)')
+        if not scopes:
+            errs.append('No scopes defined (tacquito refuses to serve such a config)')
+        for name in sorted(scopes):
+            s = scopes[name]
+            if 'REPLACE' in (s.get('secret') or ''):
+                errs.append(f"Shared secret contains placeholder value (scope '{name}')")
+            if full and not s.get('secret'):
+                errs.append(f"Scope '{name}' has no shared secret")
+            if full and not s.get('prefixes'):
+                errs.append(f"Scope '{name}' has no prefixes")
+        if full:
+            for n in sorted(users):
+                u = users[n]
+                if n in RESERVED_USERS:
+                    errs.append(f'User "{n}" uses a reserved name (remove with: tacctl user remove {n})')
+                if u.get('group') not in groups:
+                    errs.append(f"User '{n}' is in nonexistent group '{u.get('group')}'")
+                for s in u.get('scopes') or []:
+                    if s not in scopes:
+                        errs.append(f"User '{n}' references nonexistent scope '{s}'")
+        print(f'COUNT:users={len(users)}')
+        print(f'COUNT:groups={len(groups)}')
+        print(f'COUNT:scopes={len(scopes)}')
+        for e in errs:
+            print(f'ERROR:{e}')
+        return 0
+
+    raise StoreError(f'internal: unknown view {view!r}')
+PY
+}
+
+# Entry point of the read program (see _model_python).
+_model_read_main_py() {
+    cat <<'PY'
+
+
+if __name__ == '__main__':
+    try:
+        _model = json.load(sys.stdin)
+        if sys.argv[1] == 'get':
+            sys.exit(model_get(_model, sys.argv[2:]))
+        elif sys.argv[1] == 'view':
+            sys.exit(model_view(_model, sys.argv[2:]))
+        raise StoreError(f'internal: unknown command {sys.argv[1]!r}')
+    except StoreError as e:
+        print(f'tacctl store: {e}', file=sys.stderr)
+        sys.exit(1)
+PY
+}
+
+# --- Python: legacy loader, import, equivalence -----------------------------
 # Appended to _store_py (lib/store.sh), whose names it uses.
 _model_py() {
     cat <<'PY'
@@ -228,8 +673,8 @@ def _legacy_group(g, rep, refs):
 
 
 def _parse_prefix_block(block):
-    """The `prefixes: |` JSON block -> list of strings, as read_scope_prefixes
-    reads it (JSON first, quoted-string scrape as the fallback)."""
+    """The `prefixes: |` JSON block -> list of strings, the way tacctl always
+    read it (JSON first, quoted-string scrape as the fallback)."""
     if not block:
         return []
     try:
@@ -580,48 +1025,9 @@ def import_load(src, dates_dir, disabled_dir, existing, force):
     return True, model
 
 
-# ---- accessors ------------------------------------------------------------
-
-def _emit(value):
-    if value is None:
-        return
-    if isinstance(value, bool):
-        print('true' if value else 'false')
-    elif isinstance(value, list):
-        for item in value:
-            print(item)
-    else:
-        print(value)
-
-
-def model_get(model, argv):
-    kind = argv[0]
-    name = argv[1] if len(argv) > 1 else None
-    field = argv[2] if len(argv) > 2 else None
-    if kind == 'filters':
-        if name is None:
-            print(json.dumps(model['filters'], sort_keys=True))
-        elif name in FILTER_KEYS:
-            _emit(model['filters'].get(name) or [])
-        else:
-            raise StoreError(f"filters: unknown list '{name}'")
-        return 0
-    section = model[kind]
-    if name is None:
-        for n in sorted(section):
-            print(n)
-        return 0
-    ent = section.get(name)
-    if ent is None:
-        return 1
-    if field is None:
-        print(json.dumps(dict(ent, name=name), sort_keys=True))
-    elif field in STORE_SCHEMA[kind]['fields']:
-        _emit(ent.get(field))
-    else:
-        raise StoreError(f"{STORE_SCHEMA[kind]['label']}: unknown field '{field}'")
-    return 0
-
+PY
+    _model_read_py
+    cat <<'PY'
 
 # ---- equivalence of two tacquito.yaml files (plan 4.3 step 3) --------------
 #

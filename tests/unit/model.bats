@@ -98,34 +98,50 @@ YAML
     golden_diff "${BATS_TEST_TMPDIR}/multiscope.json" ../model/multiscope.json
 }
 
-@test "legacy loader: agrees with today's readers on the multiscope fixture" {
+# The two tests below pinned the legacy loader to the pre-store readers that
+# parsed tacquito.yaml directly (list_scopes, read_scope_secret,
+# read_scope_prefixes, read_user_scopes, list_all_groups, get_group_privlvl,
+# get_user_group, get_user_hash, read_prefix_list). Those readers are gone;
+# the values are what they returned for these fixtures.
+
+@test "legacy loader: reads the multiscope fixture as the pre-store readers did" {
     place_fixture tacquito.multiscope.yaml
-    # Scope names: list_scopes is first-appearance order, the model is sorted.
-    [[ "$(model_scopes)" == "$(list_scopes | sort)" ]]
-    local s
-    for s in $(list_scopes); do
-        [[ "$(model_scope "$s" secret)" == "$(read_scope_secret "$s")" ]]
-        [[ "$(model_scope "$s" prefixes | sort)" == "$(read_scope_prefixes "$s" | sort)" ]]
-    done
-    local u
-    for u in alice bob carol; do
-        [[ "$(model_user "$u" scopes)" == "$(read_user_scopes "$u")" ]]
-    done
-    [[ "$(model_groups)" == "$(list_all_groups | sort)" ]]
-    local g
-    for g in $(list_all_groups); do
-        [[ "$(model_group "$g" priv_lvl)" == "$(get_group_privlvl "$g")" ]]
-    done
+    [[ "$(model_scopes)" == "dmz
+lab
+prod
+prod-inner" ]]
+    [[ "$(model_scope prod secret)" == "prod-secret-0123456789abcdef" ]]
+    [[ "$(model_scope prod-inner secret)" == "inner-secret-0123456789abcdef" ]]
+    [[ "$(model_scope lab secret)" == "lab-secret-0123456789abcdef" ]]
+    [[ "$(model_scope dmz secret)" == "dmz-secret-0123456789abcdef" ]]
+    [[ "$(model_scope prod prefixes)" == "10.0.0.0/8" ]]
+    [[ "$(model_scope prod-inner prefixes)" == "10.10.99.0/24" ]]
+    [[ "$(model_scope lab prefixes)" == "172.16.0.0/12
+192.168.0.0/16" ]]
+    [[ "$(model_scope dmz prefixes)" == "203.0.113.0/24" ]]
+    # A user's scopes keep the order they were granted in.
+    [[ "$(model_user alice scopes)" == "prod
+lab" ]]
+    [[ "$(model_user bob scopes)" == "lab" ]]
+    [[ "$(model_user carol scopes)" == "lab
+dmz" ]]
+    [[ "$(model_groups)" == "operator
+readonly
+superuser" ]]
+    [[ "$(model_group readonly priv_lvl)" == "1" ]]
+    [[ "$(model_group operator priv_lvl)" == "7" ]]
+    [[ "$(model_group superuser priv_lvl)" == "15" ]]
 }
 
-@test "legacy loader: agrees with today's readers on users added by cmd_add's layout" {
+@test "legacy loader: reads users added by cmd_add's old layout as the pre-store readers did" {
     load_fixture legacy.import-edge.yaml
-    [[ "$(model_user alice group)" == "$(get_user_group alice)" ]]
-    [[ "$(model_user alice hash)" == "$(get_user_hash alice)" ]]
-    [[ "$(model_user dave group)" == "$(get_user_group dave)" ]]
-    [[ "$(model_filters allow)" == "$(read_prefix_list prefix_allow)" ]]
-    [[ "$(model_filters deny)" == "$(read_prefix_list prefix_deny)" ]]
-    [[ "$(model_group helpdesk priv_lvl)" == "$(get_group_privlvl helpdesk)" ]]
+    [[ "$(model_user alice group)" == "superuser" ]]
+    [[ "$(model_user alice hash)" == "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141" ]]
+    [[ "$(model_user dave group)" == "helpdesk" ]]
+    [[ "$(model_filters allow)" == "10.0.0.0/8
+192.168.0.0/16" ]]
+    [[ "$(model_filters deny)" == "10.66.0.0/16" ]]
+    [[ "$(model_group helpdesk priv_lvl)" == "5" ]]
 }
 
 # --- accessors --------------------------------------------------------------

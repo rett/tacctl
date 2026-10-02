@@ -15,25 +15,6 @@ is_disabled_hash() {
     [[ "$1" == "$DISABLED_MARKER_HEX" ]]
 }
 
-# --- Track password change date ---
-record_password_date() {
-    local username="$1"
-    mkdir -p "$PASSWORD_DATES_DIR"
-    chmod 750 "$PASSWORD_DATES_DIR"
-    chown tacquito:tacquito "$PASSWORD_DATES_DIR" 2>/dev/null || true
-    date +%Y-%m-%d > "${PASSWORD_DATES_DIR}/${username}.date"
-}
-
-get_password_date() {
-    local username="$1"
-    local datefile="${PASSWORD_DATES_DIR}/${username}.date"
-    if [[ -f "$datefile" ]]; then
-        cat "$datefile"
-    else
-        echo "unknown"
-    fi
-}
-
 # --- Generate bcrypt hex hash from password ---
 # Password is passed via stdin (not argv) so it never lands in
 # /proc/<pid>/cmdline, which is world-readable on Linux by default.
@@ -113,54 +94,6 @@ try:
 except ValueError:
     print("INVALID_HASH")
 ' <(printf '%s' "$hexhash") 2>/dev/null || echo "FAIL"
-}
-
-# --- Replace a user's hash in config (safe from sed injection) ---
-# Hash travels via argv (already stored in readable config on disk).
-replace_user_hash() {
-    local username="$1"
-    local new_hash="$2"
-    # bcrypt hash is a one-way digest, but keeping it off argv matches the
-    # same process-substitution pattern used for raw secrets — a leaked
-    # hash is an offline-crack target and the /proc/<pid>/cmdline exposure
-    # is free to close.
-    python3 - "$CONFIG" "$username" <(printf '%s' "$new_hash") <<'PY'
-import re, sys, tempfile, os
-config_path, username, hash_path = sys.argv[1], sys.argv[2], sys.argv[3]
-with open(hash_path) as f:
-    new_hash = f.read()
-config = open(config_path).read()
-pattern = r'(bcrypt_' + re.escape(username) + r':.*?hash:\s*)\S+'
-config = re.sub(pattern, r'\g<1>' + new_hash, config, count=1, flags=re.DOTALL)
-tmp = tempfile.NamedTemporaryFile('w', dir=os.path.dirname(config_path), delete=False)
-tmp.write(config)
-tmp.close()
-os.rename(tmp.name, config_path)
-PY
-}
-
-# --- Check if user exists ---
-user_exists() {
-    local username="$1"
-    grep -qP "^bcrypt_${username}:" "$CONFIG"
-}
-
-# --- Get user's hash ---
-get_user_hash() {
-    local username="$1"
-    # Find the bcrypt anchor for this user and extract the hash value
-    grep -A4 "^bcrypt_${username}:" "$CONFIG" | grep "hash:" | awk '{print $2}'
-}
-
-# --- Get user's group ---
-get_user_group() {
-    local username="$1"
-    python3 -c "
-import re, sys
-config = open(sys.argv[1]).read()
-m = re.search(r'- name: ' + re.escape(sys.argv[2]) + r'\n.*?groups: \[\*(\w+)\]', config, re.DOTALL)
-print(m.group(1) if m else 'unknown')
-" "$CONFIG" "$username"
 }
 
 # --- Read password with asterisk masking ---
@@ -246,9 +179,53 @@ prompt_password() {
     echo "$password"
 }
 
+
 # =====================================================================
 #  COMMANDS
 # =====================================================================
+#
+# Users live in the store (lib/store.sh); every command here reads them
+# through the model (lib/model.sh) and writes them with store_apply
+# (lib/render_tacacs.sh), which also re-renders tacquito.yaml. A disabled
+# user keeps its real hash in the store with 'disabled: true', and the date
+# of the last password change is the user's 'password_changed' field.
+
+# _user_info <username>: fill the caller's associative array 'ui' (declare it
+# with 'local -A ui=()') from model_user_info, plus ui[scopes] (one name per
+# line) and ui[orphans] (the scopes among them that do not exist). Returns 1
+# when the user does not exist.
+_user_info() {
+    local out key value
+    out=$(model_user_info "$1") || return 1
+    ui[scopes]=""
+    ui[orphans]=""
+    while IFS='=' read -r key value; do
+        case "$key" in
+            "") ;;
+            scope)
+                ui[scopes]+="${ui[scopes]:+$'\n'}${value%%|*}"
+                if [[ "${value##*|}" != "1" ]]; then
+                    ui[orphans]+="${ui[orphans]:+$'\n'}${value%%|*}"
+                fi
+                ;;
+            *) ui[$key]="$value" ;;
+        esac
+    done <<< "$out"
+}
+
+# Parse a --hash argument into canonical hex on stdout; exits on a bad one.
+_user_hash_arg() {
+    local normalized
+    normalized=$(normalize_bcrypt_hash "$1")
+    if [[ -z "$normalized" ]]; then
+        error "Invalid bcrypt hash."
+        error "Accepted forms:"
+        error "  - hex-encoded (from 'tacctl hash'): 24326224313224..."
+        error "  - raw (from bcrypt libs):           \$2b\$12\$..."
+        exit 1
+    fi
+    printf '%s\n' "$normalized"
+}
 
 # --- LIST ---
 cmd_list() {
@@ -258,69 +235,23 @@ cmd_list() {
     printf "  ${BOLD}%-20s %-15s %-10s %-12s %-30s${NC}\n" "USERNAME" "GROUP" "STATUS" "PW CHANGED" "SCOPES"
     echo "  -----------------------------------------------------------------------------------------------"
 
-    # Use Python for reliable YAML-ish parsing. Pull scopes via yaml.safe_load
-    # since that field can span multiple forms ([\"a\",\"b\"] or block list);
-    # the other fields stay on the regex path for consistency with prior output.
-    python3 -c "
-import re, sys, yaml
-
-config_path = sys.argv[1]
-config = open(config_path).read()
-
-# Extract only the users: section for the regex pass.
-users_match = re.search(r'^users:\s*\n(.*?)(?=^# ---|\Z)', config, re.MULTILINE | re.DOTALL)
-if not users_match:
-    sys.exit(0)
-users_section = users_match.group(1)
-
-# Build a scopes map via safe_load so we don't have to teach the regex about
-# every YAML list form.
-scopes_map = {}
-try:
-    with open(config_path) as f:
-        d = yaml.safe_load(f) or {}
-    for u in (d.get('users') or []):
-        name = u.get('name')
-        if name:
-            scopes_map[name] = u.get('scopes') or []
-except Exception:
-    pass
-
-DISABLED_MARKER = sys.argv[2]
-# Built-in accounting sinks are hidden from the user-list output:
-# they are not manageable identities, they exist so tacquito does
-# not error on accounting packets generated by device-built-in
-# accounts like Junos root that run non-tty CLI as internal daemons.
-HIDDEN_SINKS = {'root'}
-for m in re.finditer(r'- name: (\S+)\n.*?groups: \[\*(\w+)\]', users_section, re.DOTALL):
-    username = m.group(1)
-    if username in HIDDEN_SINKS:
-        continue
-    group = m.group(2)
-
-    auth_match = re.search(r'^bcrypt_' + re.escape(username) + r':.*?hash:\s*(\S+)', config, re.MULTILINE | re.DOTALL)
-    if auth_match:
-        h = auth_match.group(1)
-        status = 'disabled' if h == 'DISABLED' or h == DISABLED_MARKER else 'active'
-    else:
-        status = 'unknown'
-
-    scopes = scopes_map.get(username, [])
-    print(f'{username}|{group}|{status}|' + ','.join(scopes))
-" "$CONFIG" "$DISABLED_MARKER_HEX" | sort | while IFS='|' read -r username group status scopes_csv; do
+    # The accounting sink ('root') is not a manageable identity and is left
+    # out: it exists so tacquito does not error on accounting packets from
+    # device-built-in accounts such as Junos root.
+    local rows
+    rows=$(model_user_rows) || exit 1
+    local username group status pw_date scopes_csv
+    while IFS='|' read -r username group status pw_date scopes_csv; do
+        [[ -z "$username" ]] && continue
         local color="$GREEN"
         [[ "$status" == "disabled" ]] && color="$RED"
-        [[ "$status" == "unknown" ]] && color="$YELLOW"
-        local pw_date
-        pw_date=$(get_password_date "$username")
         local scopes_display=""
         if [[ -z "$scopes_csv" ]]; then
             scopes_display="(none)"
         else
             # Truncate >3 scopes with "(…+N)" suffix.
-            local IFS_old="$IFS"
+            local -a _SC
             IFS=',' read -ra _SC <<< "$scopes_csv"
-            IFS="$IFS_old"
             if (( ${#_SC[@]} > 3 )); then
                 scopes_display="${_SC[0]},${_SC[1]},${_SC[2]} (…+$(( ${#_SC[@]} - 3 )))"
             else
@@ -328,7 +259,7 @@ for m in re.finditer(r'- name: (\S+)\n.*?groups: \[\*(\w+)\]', users_section, re
             fi
         fi
         printf "  %-20s %-15s ${color}%-10s${NC} %-12s %-30s\n" "$username" "$group" "$status" "$pw_date" "$scopes_display"
-    done
+    done <<< "$rows"
 
     echo ""
 }
@@ -342,17 +273,17 @@ cmd_add() {
         error "Usage: tacctl user add <username> <group> [--hash <bcrypt-hash>] [--scopes <name>[,<name>...]]"
         exit 1
     fi
+    store_require || exit 1
     validate_username "$username"
     reject_reserved_username "$username"
-    # Validate group exists in config
-    if ! grep -q "^${group}: &${group}$" "$CONFIG"; then
+    if ! model_group_exists "$group"; then
         local available
-        available=$(grep -oP '^\w+(?=: &\w)' "$CONFIG" | grep -v "^bcrypt_\|^exec_\|^junos_\|^file_\|^authenticator\|^action\|^accounter\|^handler\|^provider" | tr '\n' '|' | sed 's/|$//')
+        available=$(model_group_info | cut -d'|' -f1 | paste -sd'|' || true)
         error "Group '${group}' does not exist. Available: ${available}"
         error "Usage: tacctl user add <username> <group>"
         exit 1
     fi
-    if user_exists "$username"; then
+    if model_user_exists "$username"; then
         error "User '${username}' already exists."
         exit 1
     fi
@@ -369,16 +300,7 @@ cmd_add() {
                     error "Usage: tacctl user add <username> <group> --hash <bcrypt-hash>"
                     exit 1
                 fi
-                local normalized
-                normalized=$(normalize_bcrypt_hash "$hash")
-                if [[ -z "$normalized" ]]; then
-                    error "Invalid bcrypt hash."
-                    error "Accepted forms:"
-                    error "  - hex-encoded (from 'tacctl hash'): 24326224313224..."
-                    error "  - raw (from bcrypt libs):           \$2b\$12\$..."
-                    exit 1
-                fi
-                hash="$normalized"
+                hash=$(_user_hash_arg "$hash") || exit 1
                 shift 2
                 ;;
             --scopes)
@@ -398,21 +320,23 @@ cmd_add() {
     done
 
     # Determine scopes list. If --scopes given, validate each name exists; else
-    # fall back to scope.default from tacctl.yaml (or the sole secrets[]
-    # entry if only one scope exists; or the shipped default 'lab').
+    # fall back to scope.default from tacctl.yaml (or the sole scope if only
+    # one exists; or the shipped default 'lab').
     local scope_names=""
     if [[ -n "$scopes_csv" ]]; then
-        local s
+        local s all_scopes
+        all_scopes=$(model_scopes_by_routing) || exit 1
+        local -a _REQ
         IFS=',' read -ra _REQ <<< "$scopes_csv"
         for s in "${_REQ[@]}"; do
             s=$(echo "$s" | xargs)
             [[ -z "$s" ]] && continue
-            if ! scope_exists "$s"; then
-                error "Scope '${s}' does not exist. Available: $(list_scopes | paste -sd' ')"
+            if ! grep -qxF -- "$s" <<< "$all_scopes"; then
+                error "Scope '${s}' does not exist. Available: $(paste -sd' ' <<< "$all_scopes")"
                 exit 1
             fi
             # within-input dedupe
-            if ! printf '%s\n' "$scope_names" | grep -qxF "$s" 2>/dev/null; then
+            if ! printf '%s\n' "$scope_names" | grep -qxF -- "$s" 2>/dev/null; then
                 scope_names+="${scope_names:+$'\n'}${s}"
             fi
         done
@@ -425,10 +349,8 @@ cmd_add() {
             exit 1
         fi
     fi
-    # Build JSON array form for the YAML writer (safe strings — scope names
-    # already validated via scope_exists, which only allows existing YAML names).
-    local scopes_json
-    scopes_json=$(printf '%s\n' "$scope_names" | awk 'NF' | awk 'BEGIN{printf "["} NR>1{printf ", "} {printf "\"%s\"", $0} END{printf "]"}')
+    local scopes_display
+    scopes_display=$(printf '%s\n' "$scope_names" | awk 'NF' | paste -sd,)
 
     echo ""
     echo -e "  Adding user: ${BOLD}${username}${NC} (${group})"
@@ -442,72 +364,10 @@ cmd_add() {
         info "Using pre-generated bcrypt hash."
     fi
 
-    backup_config
+    # The hash reaches the store writer on stdin (see store_mutate).
+    store_apply store_user_set "$username" "group=${group}" "scopes=${scopes_display}" \
+        "hash=${hash}" disabled=false password_changed=today || exit $?
 
-    # Insert authenticator anchor and user entry using Python. The bcrypt
-    # hash goes through a /dev/fd pipe so it never appears in
-    # /proc/<pid>/cmdline; the other args (username, group, scopes_json)
-    # are non-secret and stay on argv for readability.
-    python3 - "$CONFIG" "$username" <(printf '%s' "$hash") "$group" "$scopes_json" <<'PY'
-import sys, tempfile, os, re
-
-config_path = sys.argv[1]
-username = sys.argv[2]
-hash_path = sys.argv[3]
-group = sys.argv[4]
-scopes_json = sys.argv[5]
-with open(hash_path) as f:
-    hash_val = f.read()
-config = open(config_path).read()
-
-# Insert authenticator block before '# --- Services ---'. Normalize the
-# whitespace at the seam: strip trailing newlines from what's already
-# there, then apply a deterministic '\n\n' (= one blank line) before
-# and after the new block so spacing stays consistent regardless of
-# whatever the prior insert (or original template) left behind.
-auth_block = (
-    f'bcrypt_{username}: &bcrypt_{username}\n'
-    f'  type: *authenticator_type_bcrypt\n'
-    f'  options:\n'
-    f'    hash: {hash_val}\n'
-)
-marker = '# --- Services ---'
-idx = config.index(marker)
-prefix = config[:idx].rstrip('\n')
-config = prefix + '\n\n' + auth_block.rstrip('\n') + '\n\n' + config[idx:]
-
-# Insert user entry before the Secret Providers section. Prefix match
-# accommodates both header variants: '# --- Secret Providers ---' and
-# '# --- Secret Providers (Scopes) ---' (the template gained the suffix
-# at one point and old installs may carry either form).
-user_block = (
-    f'  # {username}\n'
-    f'  - name: {username}\n'
-    f'    scopes: {scopes_json}\n'
-    f'    groups: [*{group}]\n'
-    f'    authenticator: *bcrypt_{username}\n'
-    f'    accounter: *file_accounter\n'
-)
-m2 = re.search(r'^# --- Secret Providers\b', config, re.M)
-if not m2:
-    raise SystemExit("could not locate '# --- Secret Providers' section header")
-idx2 = m2.start()
-prefix2 = config[:idx2].rstrip('\n')
-config = prefix2 + '\n\n' + user_block.rstrip('\n') + '\n\n' + config[idx2:]
-
-tmp = tempfile.NamedTemporaryFile('w', dir=os.path.dirname(config_path), delete=False)
-tmp.write(config)
-tmp.close()
-os.rename(tmp.name, config_path)
-PY
-
-    # Fix ownership
-    chown tacquito:tacquito "$CONFIG"
-
-    restart_service
-    record_password_date "$username"
-    local scopes_display
-    scopes_display=$(printf '%s\n' "$scope_names" | awk 'NF' | paste -sd,)
     info "User '${username}' added (${group}) with scopes: ${scopes_display}"
     echo ""
 }
@@ -520,8 +380,9 @@ cmd_remove() {
         error "Usage: tacctl user remove <username>"
         exit 1
     fi
+    store_require || exit 1
     validate_username "$username"
-    if ! user_exists "$username"; then
+    if ! model_user_exists "$username"; then
         error "User '${username}' does not exist."
         exit 1
     fi
@@ -533,43 +394,8 @@ cmd_remove() {
         exit 0
     fi
 
-    backup_config
+    store_apply store_user_del "$username" || exit $?
 
-    # Remove the authenticator anchor block (bcrypt_<username> through next blank line or next anchor)
-    sed -i "/^bcrypt_${username}:/,/^$/d" "$CONFIG"
-
-    # Remove the user entry block (from "# <username>" or "- name: <username>" to next "- name:" or section)
-    # First try removing a comment line above the user entry
-    sed -i "/^  # ${username}$/d" "$CONFIG"
-    # Remove the user entry itself (multi-line block)
-    python3 -c "
-import sys
-lines = open(sys.argv[1]).readlines()
-out = []
-skip = False
-for i, line in enumerate(lines):
-    if line.strip() == '- name: ${username}':
-        skip = True
-        continue
-    if skip:
-        if line.startswith('  - name:') or not line.startswith('    '):
-            skip = False
-        else:
-            continue
-    out.append(line)
-import tempfile, os
-tmp = tempfile.NamedTemporaryFile('w', dir=os.path.dirname(sys.argv[1]), delete=False)
-tmp.writelines(out)
-tmp.close()
-os.rename(tmp.name, sys.argv[1])
-" "$CONFIG"
-
-    # Clean up double blank lines
-    sed -i '/^$/N;/^\n$/d' "$CONFIG"
-
-    chown tacquito:tacquito "$CONFIG"
-
-    restart_service
     info "User '${username}' removed."
     echo ""
 }
@@ -582,9 +408,10 @@ cmd_passwd() {
         error "Usage: tacctl user passwd <username> [--hash <bcrypt-hash>]"
         exit 1
     fi
+    store_require || exit 1
     validate_username "$username"
     reject_reserved_username "$username"
-    if ! user_exists "$username"; then
+    if ! model_user_exists "$username"; then
         error "User '${username}' does not exist."
         exit 1
     fi
@@ -597,16 +424,7 @@ cmd_passwd() {
             error "Usage: tacctl user passwd <username> --hash <bcrypt-hash>"
             exit 1
         fi
-        local normalized
-        normalized=$(normalize_bcrypt_hash "$hash")
-        if [[ -z "$normalized" ]]; then
-            error "Invalid bcrypt hash."
-            error "Accepted forms:"
-            error "  - hex-encoded (from 'tacctl hash'): 24326224313224..."
-            error "  - raw (from bcrypt libs):           \$2b\$12\$..."
-            exit 1
-        fi
-        hash="$normalized"
+        hash=$(_user_hash_arg "$hash") || exit 1
     fi
 
     echo ""
@@ -621,14 +439,10 @@ cmd_passwd() {
         info "Using pre-generated bcrypt hash."
     fi
 
-    backup_config
+    # Setting a password also enables the account, as it always has: this is
+    # how the seeded placeholder users are activated.
+    store_apply store_user_set "$username" "hash=${hash}" disabled=false password_changed=today || exit $?
 
-    replace_user_hash "$username" "$hash"
-
-    chown tacquito:tacquito "$CONFIG"
-
-    restart_service
-    record_password_date "$username"
     info "Password changed for '${username}'."
     echo ""
 }
@@ -652,17 +466,19 @@ cmd_passwd_self() {
         error "As root, use: tacctl user passwd <username>"
         exit 1
     fi
+    store_require || exit 1
     validate_username "$username"
-    if ! user_exists "$username"; then
+    local -A ui=()
+    if ! _user_info "$username"; then
         error "No tacctl user named '${username}'."
         exit 1
     fi
-    local stored_hash
-    stored_hash=$(get_user_hash "$username")
-    if is_disabled_hash "$stored_hash"; then
+    if [[ "${ui[status]}" == "disabled" ]]; then
         error "User '${username}' is disabled. Ask a superuser to re-enable it."
         exit 1
     fi
+    local stored_hash
+    stored_hash=$(model_user "$username" hash) || exit 1
 
     echo ""
     echo -e "  Changing password for: ${BOLD}${username}${NC}"
@@ -691,17 +507,15 @@ cmd_passwd_self() {
     hash=$(generate_hash "$password")
     unset password
 
-    backup_config
-    replace_user_hash "$username" "$hash"
-    chown tacquito:tacquito "$CONFIG"
-    restart_service
-    record_password_date "$username"
+    store_apply store_user_set "$username" "hash=${hash}" password_changed=today || exit $?
     logger -t tacctl -p auth.info "passwd OK user=${username} (self-service)" 2>/dev/null || true
     info "Password changed for '${username}'."
     echo ""
 }
 
 # --- DISABLE ---
+# The user keeps its password hash in the store; 'disabled: true' makes the
+# renderer emit a hash nothing matches.
 cmd_disable() {
     local username="${1:-}"
 
@@ -709,32 +523,21 @@ cmd_disable() {
         error "Usage: tacctl user disable <username>"
         exit 1
     fi
+    store_require || exit 1
     validate_username "$username"
-    if ! user_exists "$username"; then
+    local -A ui=()
+    if ! _user_info "$username"; then
         error "User '${username}' does not exist."
         exit 1
     fi
 
-    local current_hash
-    current_hash=$(get_user_hash "$username")
-    if is_disabled_hash "$current_hash"; then
+    if [[ "${ui[status]}" == "disabled" ]]; then
         warn "User '${username}' is already disabled."
         exit 0
     fi
 
-    backup_config
+    store_apply store_user_set "$username" disabled=true || exit $?
 
-    # Save the real hash to a sidecar file for re-enabling
-    mkdir -p "${BACKUP_DIR}/disabled"
-    chmod 700 "${BACKUP_DIR}/disabled"
-    echo "$current_hash" > "${BACKUP_DIR}/disabled/${username}.hash"
-    chmod 600 "${BACKUP_DIR}/disabled/${username}.hash"
-
-    replace_user_hash "$username" "$DISABLED_MARKER_HEX"
-
-    chown tacquito:tacquito "$CONFIG"
-
-    restart_service
     info "User '${username}' disabled. Use 'enable' to restore access."
     echo ""
 }
@@ -747,37 +550,29 @@ cmd_enable() {
         error "Usage: tacctl user enable <username>"
         exit 1
     fi
+    store_require || exit 1
     validate_username "$username"
-    if ! user_exists "$username"; then
+    local -A ui=()
+    if ! _user_info "$username"; then
         error "User '${username}' does not exist."
         exit 1
     fi
 
-    local current_hash
-    current_hash=$(get_user_hash "$username")
-    if ! is_disabled_hash "$current_hash"; then
+    if [[ "${ui[status]}" != "disabled" ]]; then
         warn "User '${username}' is not disabled."
         exit 0
     fi
 
-    local saved_hash_file="${BACKUP_DIR}/disabled/${username}.hash"
-    if [[ ! -f "$saved_hash_file" ]]; then
+    # Nothing to restore: a seeded placeholder, the accounting sink, or a
+    # user whose saved hash did not survive the import.
+    if [[ "${ui[has_hash]}" != "1" ]]; then
         error "No saved hash found for '${username}'. Set a new password instead:"
         error "  tacctl user passwd ${username}"
         exit 1
     fi
 
-    local saved_hash
-    saved_hash=$(cat "$saved_hash_file")
+    store_apply store_user_set "$username" disabled=false || exit $?
 
-    backup_config
-
-    replace_user_hash "$username" "$saved_hash"
-    rm -f "$saved_hash_file"
-
-    chown tacquito:tacquito "$CONFIG"
-
-    restart_service
     info "User '${username}' re-enabled with previous password."
     echo ""
 }
@@ -791,69 +586,22 @@ cmd_show() {
         exit 1
     fi
     validate_username "$username"
-    if ! user_exists "$username"; then
+    local -A ui=()
+    if ! _user_info "$username"; then
         error "User '${username}' does not exist."
         exit 1
     fi
 
-    local group stored_hash status pw_date last_login
-    local pw_age=""
-    group=$(get_user_group "$username")
-    stored_hash=$(get_user_hash "$username")
-    if is_disabled_hash "$stored_hash"; then
-        status="disabled"
-    else
-        status="active"
-    fi
-    pw_date=$(get_password_date "$username")
+    local pw_date="${ui[password_changed]}" pw_age="" last_login
     if [[ "$pw_date" != "unknown" ]]; then
         pw_age=$(( ( $(date +%s) - $(date -d "$pw_date" +%s) ) / 86400 ))
     fi
     last_login=$(get_last_login "$username")
 
-    # Resolve Cisco priv-lvl and Juniper class for the user's group by
-    # walking the YAML services chain. Falls back to empty on any error.
-    local yaml_info priv_lvl juniper_class
-    yaml_info=$(python3 - "$CONFIG" "$group" <<'PY' 2>/dev/null || echo '|'
-import yaml, sys
-try:
-    with open(sys.argv[1]) as f:
-        c = yaml.safe_load(f)
-    g = c.get(sys.argv[2], {}) or {}
-    priv = ''
-    jclass = ''
-    for s in g.get('services', []) or []:
-        # 'shell' is the on-wire Cisco exec service name; 'exec' is the
-        # legacy spelling healed by conf_migrate_exec_service_name().
-        if s.get('name') in ('shell', 'exec'):
-            for sv in s.get('set_values', []) or []:
-                if sv.get('name') == 'priv-lvl':
-                    v = sv.get('values') or []
-                    if v:
-                        priv = v[0]
-        elif s.get('name') == 'junos-exec':
-            for sv in s.get('set_values', []) or []:
-                if sv.get('name') == 'local-user-name':
-                    v = sv.get('values') or []
-                    if v:
-                        jclass = v[0]
-    print(f'{priv}|{jclass}')
-except Exception:
-    print('|')
-PY
-)
-    IFS='|' read -r priv_lvl juniper_class <<< "$yaml_info"
-
-    # Hash fingerprint: the hash is stored hex-encoded in the YAML ("24326224313024..." = "$2b$10$..."). Decode the first 7 bcrypt chars (14 hex chars) to surface algorithm + cost without disclosing salt or digest.
-    local hash_prefix=""
-    if [[ -n "$stored_hash" ]] && ! is_disabled_hash "$stored_hash"; then
-        hash_prefix=$(echo "${stored_hash:0:14}" | xxd -r -p 2>/dev/null)
-    fi
-
     echo ""
     echo -e "  ${BOLD}User:${NC}             ${username}"
-    echo -e "  ${BOLD}Group:${NC}            ${group}"
-    if [[ "$status" == "disabled" ]]; then
+    echo -e "  ${BOLD}Group:${NC}            ${ui[group]}"
+    if [[ "${ui[status]}" == "disabled" ]]; then
         echo -e "  ${BOLD}Status:${NC}           ${RED}disabled${NC}"
     else
         echo -e "  ${BOLD}Status:${NC}           ${GREEN}active${NC}"
@@ -864,22 +612,20 @@ PY
         echo -e "  ${BOLD}Password changed:${NC} ${pw_date}"
     fi
     echo -e "  ${BOLD}Last login:${NC}       ${last_login}"
-    [[ -n "$priv_lvl" ]]      && echo -e "  ${BOLD}Cisco priv-lvl:${NC}   ${priv_lvl}"
-    [[ -n "$juniper_class" ]] && echo -e "  ${BOLD}Juniper class:${NC}    ${juniper_class}"
-    echo -e "  ${BOLD}Hash type:${NC}        ${hash_prefix}"
-    local user_scopes
-    user_scopes=$(read_user_scopes "$username")
-    if [[ -z "$user_scopes" ]]; then
+    [[ -n "${ui[priv_lvl]}" ]]      && echo -e "  ${BOLD}Cisco priv-lvl:${NC}   ${ui[priv_lvl]}"
+    [[ -n "${ui[juniper_class]}" ]] && echo -e "  ${BOLD}Juniper class:${NC}    ${ui[juniper_class]}"
+    # Algorithm and cost only ('$2b$12$'); never the salt or digest.
+    echo -e "  ${BOLD}Hash type:${NC}        ${ui[hash_type]}"
+    if [[ -z "${ui[scopes]}" ]]; then
         echo -e "  ${BOLD}Scopes:${NC}           ${RED}(none — cannot authenticate on any device)${NC}"
     else
-        local first=1
+        local first=1 s label
         while IFS= read -r s; do
             [[ -z "$s" ]] && continue
-            local label=""
-            if scope_exists "$s"; then
-                label="$s"
-            else
+            if grep -qxF -- "$s" <<< "${ui[orphans]}"; then
                 label="${RED}${s} (ORPHAN)${NC}"
+            else
+                label="$s"
             fi
             if (( first )); then
                 echo -e "  ${BOLD}Scopes:${NC}           ${label}"
@@ -887,7 +633,7 @@ PY
             else
                 echo -e "                    ${label}"
             fi
-        done <<< "$user_scopes"
+        done <<< "${ui[scopes]}"
     fi
     echo ""
 }
@@ -901,34 +647,29 @@ cmd_verify() {
         exit 1
     fi
     validate_username "$username"
-    if ! user_exists "$username"; then
+    local -A ui=()
+    if ! _user_info "$username"; then
         error "User '${username}' does not exist."
         exit 1
     fi
 
     # Show user details
-    local group
-    group=$(get_user_group "$username")
-    local stored_hash
-    stored_hash=$(get_user_hash "$username")
-    local status="active"
-    is_disabled_hash "$stored_hash" && status="disabled"
-    local pw_date
-    pw_date=$(get_password_date "$username")
-
     echo ""
     echo -e "  ${BOLD}User:${NC}           ${username}"
-    echo -e "  ${BOLD}Group:${NC}          ${group}"
-    if [[ "$status" == "disabled" ]]; then
+    echo -e "  ${BOLD}Group:${NC}          ${ui[group]}"
+    if [[ "${ui[status]}" == "disabled" ]]; then
         echo -e "  ${BOLD}Status:${NC}         ${RED}disabled${NC}"
-        echo -e "  ${BOLD}PW changed:${NC}     ${pw_date}"
+        echo -e "  ${BOLD}PW changed:${NC}     ${ui[password_changed]}"
         echo ""
         error "User is disabled — cannot verify password."
         exit 1
     fi
     echo -e "  ${BOLD}Status:${NC}         ${GREEN}active${NC}"
-    echo -e "  ${BOLD}PW changed:${NC}     ${pw_date}"
+    echo -e "  ${BOLD}PW changed:${NC}     ${ui[password_changed]}"
     echo ""
+
+    local stored_hash
+    stored_hash=$(model_user "$username" hash) || exit 1
 
     local password
     password=$(read_password_masked "  Enter password to verify: ")
@@ -958,6 +699,8 @@ cmd_verify() {
 }
 
 # --- RENAME ---
+# The store keeps everything about a user under its name, so the hash, the
+# disabled flag and the password date all move with it.
 cmd_rename() {
     local oldname="${1:-}"
     local newname="${2:-}"
@@ -966,55 +709,21 @@ cmd_rename() {
         error "Usage: tacctl user rename <old-username> <new-username>"
         exit 1
     fi
+    store_require || exit 1
     validate_username "$oldname"
     validate_username "$newname"
-    if ! user_exists "$oldname"; then
+    reject_reserved_username "$newname"
+    if ! model_user_exists "$oldname"; then
         error "User '${oldname}' does not exist."
         exit 1
     fi
-    if user_exists "$newname"; then
+    if model_user_exists "$newname"; then
         error "User '${newname}' already exists."
         exit 1
     fi
 
-    backup_config
+    store_apply store_user_rename "$oldname" "$newname" || exit $?
 
-    # Use Python for reliable multi-reference rename
-    python3 -c "
-import re, sys
-
-oldname = sys.argv[2]
-newname = sys.argv[3]
-
-config = open(sys.argv[1]).read()
-
-# Rename bcrypt anchor: 'bcrypt_old: &bcrypt_old' -> 'bcrypt_new: &bcrypt_new'
-config = config.replace(f'bcrypt_{oldname}: &bcrypt_{oldname}', f'bcrypt_{newname}: &bcrypt_{newname}')
-
-# Rename authenticator reference: '*bcrypt_old' -> '*bcrypt_new'
-config = config.replace(f'*bcrypt_{oldname}', f'*bcrypt_{newname}')
-
-# Rename user entry: '- name: old' -> '- name: new'
-config = re.sub(rf'^(\s+- name: ){re.escape(oldname)}$', rf'\g<1>{newname}', config, flags=re.MULTILINE)
-
-# Rename comment if present: '# old' -> '# new'
-config = re.sub(rf'^(\s+# ){re.escape(oldname)}$', rf'\g<1>{newname}', config, flags=re.MULTILINE)
-
-import tempfile, os
-tmp = tempfile.NamedTemporaryFile('w', dir=os.path.dirname(sys.argv[1]), delete=False)
-tmp.write(config)
-tmp.close()
-os.rename(tmp.name, sys.argv[1])
-" "$CONFIG" "$oldname" "$newname"
-
-    chown tacquito:tacquito "$CONFIG"
-
-    # Rename password date file
-    if [[ -f "${PASSWORD_DATES_DIR}/${oldname}.date" ]]; then
-        mv "${PASSWORD_DATES_DIR}/${oldname}.date" "${PASSWORD_DATES_DIR}/${newname}.date"
-    fi
-
-    restart_service
     info "User renamed: ${oldname} -> ${newname}"
     echo ""
 }
@@ -1028,49 +737,28 @@ cmd_move() {
         error "Usage: tacctl move <username> <new-group>"
         exit 1
     fi
+    store_require || exit 1
     validate_username "$username"
     validate_class_name "$newgroup"
-    if ! user_exists "$username"; then
+    local oldgroup
+    if ! oldgroup=$(model_user "$username" group); then
         error "User '${username}' does not exist."
         exit 1
     fi
-    if ! grep -q "^${newgroup}: &${newgroup}$" "$CONFIG"; then
+    if ! model_group_exists "$newgroup"; then
         local available
-        available=$(grep -oP '^\w+(?=: &\w)' "$CONFIG" | grep -v "^bcrypt_\|^exec_\|^junos_\|^file_\|^authenticator\|^action\|^accounter\|^handler\|^provider" | tr '\n' '|' | sed 's/|$//' || true)
+        available=$(model_group_info | cut -d'|' -f1 | paste -sd'|' || true)
         error "Group '${newgroup}' does not exist. Available: ${available}"
         exit 1
     fi
 
-    local oldgroup
-    oldgroup=$(get_user_group "$username")
     if [[ "$oldgroup" == "$newgroup" ]]; then
         info "User '${username}' is already in group '${newgroup}'."
         return
     fi
 
-    backup_config
+    store_apply store_user_set "$username" "group=${newgroup}" || exit $?
 
-    # Replace the group reference in the user entry
-    python3 -c "
-import re, sys
-config = open(sys.argv[1]).read()
-username = sys.argv[2]
-oldgroup = sys.argv[3]
-newgroup = sys.argv[4]
-
-# Find the user block and replace the group
-pattern = r'(- name: ' + re.escape(username) + r'\n.*?groups: \[\*)' + re.escape(oldgroup) + r'(\])'
-config = re.sub(pattern, r'\g<1>' + newgroup + r'\2', config, flags=re.DOTALL)
-
-import tempfile, os
-tmp = tempfile.NamedTemporaryFile('w', dir=os.path.dirname(sys.argv[1]), delete=False)
-tmp.write(config)
-tmp.close()
-os.rename(tmp.name, sys.argv[1])
-" "$CONFIG" "$username" "$oldgroup" "$newgroup"
-
-    chown tacquito:tacquito "$CONFIG"
-    restart_service
     info "User '${username}' moved: ${oldgroup} -> ${newgroup}"
     echo ""
 }
@@ -1085,30 +773,34 @@ cmd_user_scope() {
         error "Usage: tacctl user scope <user> {list|add|remove|set|clear} [<scope>[,<scope>...]]"
         exit 1
     fi
+    case "$sub" in
+        add|remove|set|clear) store_require || exit 1 ;;
+    esac
     validate_username "$username"
-    if ! user_exists "$username"; then
+    local -A ui=()
+    if ! _user_info "$username"; then
         error "User '${username}' does not exist."
         exit 1
     fi
+    local current="${ui[scopes]}"
 
     case "$sub" in
         ""|list|-h|--help|help)
             echo ""
             echo -e "${BOLD}Scopes for user '${username}'${NC}"
             echo "--------------------------------------------"
-            local cur
-            cur=$(read_user_scopes "$username")
-            if [[ -z "$cur" ]]; then
+            if [[ -z "$current" ]]; then
                 echo -e "  ${RED}(none — user cannot authenticate on any device)${NC}"
             else
-                echo "$cur" | while IFS= read -r s; do
+                local s
+                while IFS= read -r s; do
                     [[ -z "$s" ]] && continue
-                    if scope_exists "$s"; then
-                        echo "  - ${s}"
-                    else
+                    if grep -qxF -- "$s" <<< "${ui[orphans]}"; then
                         echo -e "  ${RED}- ${s}  (ORPHAN: scope does not exist)${NC}"
+                    else
+                        echo "  - ${s}"
                     fi
-                done
+                done <<< "$current"
             fi
             echo ""
             if [[ -z "$sub" || "$sub" == "list" ]]; then
@@ -1130,24 +822,25 @@ cmd_user_scope() {
             fi
             # Parse + validate scope names
             local requested=""
-            local s
+            local s all_scopes
+            all_scopes=$(model_scopes_by_routing) || exit 1
+            local -a SCOPES
             IFS=',' read -ra SCOPES <<< "$arg"
             for s in "${SCOPES[@]}"; do
                 s=$(echo "$s" | xargs)
                 [[ -z "$s" ]] && continue
-                if ! scope_exists "$s"; then
-                    error "Scope '${s}' does not exist. Available: $(list_scopes | paste -sd' ')"
+                if ! grep -qxF -- "$s" <<< "$all_scopes"; then
+                    error "Scope '${s}' does not exist. Available: $(paste -sd' ' <<< "$all_scopes")"
                     exit 1
                 fi
                 # within-input dedupe
-                if ! printf '%s\n' "$requested" | grep -qxF "$s"; then
+                if ! printf '%s\n' "$requested" | grep -qxF -- "$s"; then
                     requested+="${requested:+$'\n'}${s}"
                 fi
             done
             [[ -z "$requested" ]] && { error "No valid scope names provided."; exit 1; }
 
-            local current new_list
-            current=$(read_user_scopes "$username")
+            local new_list
             local changed="" noop=""
             if [[ "$sub" == "set" ]]; then
                 new_list=$(printf '%s\n' "$requested" | paste -sd,)
@@ -1156,7 +849,7 @@ cmd_user_scope() {
                 new_list="$current"
                 while IFS= read -r s; do
                     [[ -z "$s" ]] && continue
-                    if printf '%s\n' "$current" | grep -qxF "$s"; then
+                    if printf '%s\n' "$current" | grep -qxF -- "$s"; then
                         noop+="${noop:+ }${s}"
                     else
                         changed+="${changed:+$'\n'}${s}"
@@ -1169,9 +862,9 @@ cmd_user_scope() {
                 new_list="$current"
                 while IFS= read -r s; do
                     [[ -z "$s" ]] && continue
-                    if printf '%s\n' "$current" | grep -qxF "$s"; then
+                    if printf '%s\n' "$current" | grep -qxF -- "$s"; then
                         changed+="${changed:+$'\n'}${s}"
-                        new_list=$(printf '%s\n' "$new_list" | grep -vxF "$s" || true)
+                        new_list=$(printf '%s\n' "$new_list" | grep -vxF -- "$s" || true)
                     else
                         noop+="${noop:+ }${s}"
                     fi
@@ -1180,10 +873,7 @@ cmd_user_scope() {
                 new_list=$(printf '%s\n' "$new_list" | awk 'NF' | paste -sd,)
             fi
 
-            backup_config
-            set_user_scopes "$username" "$new_list"
-            chown tacquito:tacquito "$CONFIG"
-            restart_service
+            store_apply store_user_set "$username" "scopes=${new_list}" || exit $?
             local n
             n=$(printf '%s\n' "$changed" | wc -l)
             local verb
@@ -1201,8 +891,6 @@ cmd_user_scope() {
             echo ""
             ;;
         clear)
-            local current
-            current=$(read_user_scopes "$username")
             if [[ -z "$current" ]]; then
                 info "User '${username}' already has no scopes."
                 return
@@ -1212,10 +900,7 @@ cmd_user_scope() {
             warn "(Distinct from 'tacctl user disable' — the password hash is preserved.)"
             read -rp "  Clear all scopes for '${username}'? [y/N]: " confirm
             [[ ! "$confirm" =~ ^[Yy] ]] && { info "Aborted."; return; }
-            backup_config
-            set_user_scopes "$username" ""
-            chown tacquito:tacquito "$CONFIG"
-            restart_service
+            store_apply store_user_set "$username" "scopes=" || exit $?
             info "Cleared scopes for user '${username}'."
             echo ""
             ;;

@@ -14,7 +14,11 @@ setup() {
     tacctl_mocks_init
     stub_cmd chown
     stub_cmd logger
-    load_fixture tacquito.legacy-exec.yaml
+    # These migrations heal a legacy (pre-store) tacquito.yaml, which is what
+    # an upgrade runs them on; place_fixture leaves the install without a
+    # store. The last tests cover the store case, where they must not touch
+    # the rendered file.
+    place_fixture tacquito.legacy-exec.yaml
     tacctl_source_lib
 }
 
@@ -76,9 +80,34 @@ backup_count() {
 }
 
 @test "migrate exec->shell: no-op on an already-current (name: shell) config" {
-    load_fixture tacquito.minimal.yaml
+    place_fixture tacquito.minimal.yaml
     run conf_migrate_exec_service_name
     assert_success
     refute_output --partial "Migrated"
     [ "$(backup_count)" -eq 0 ]
+}
+
+# --- with a store -------------------------------------------------------------
+
+@test "migrate exec->shell: with a store the file is left alone; the import and render do the healing" {
+    stub_cmd systemctl
+    load_fixture tacquito.legacy-exec.yaml
+    local before
+    before=$(cksum "$TACCTL_CONFIG")
+    run conf_migrate_exec_service_name
+    assert_success
+    assert_output ""
+    [ "$(cksum "$TACCTL_CONFIG")" = "$before" ]
+    [ "$(backup_count)" -eq 0 ]
+
+    # The importer read 'exec' as the Cisco shell service, and the renderer
+    # only ever writes 'shell'.
+    run "$TACCTL_BIN_SCRIPT" config render --force
+    assert_success
+    run grep -c '^  name: shell$' "$TACCTL_CONFIG"
+    assert_output "3"
+    run grep -c '^  name: exec$' "$TACCTL_CONFIG"
+    assert_output "0"
+    run grep -A4 '^exec_operator:' "$TACCTL_CONFIG"
+    assert_output --partial "values: [7]"
 }

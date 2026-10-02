@@ -252,10 +252,10 @@ for u in (d.get('users') or []):
         scope)
             local ssub="${words[offset + 2]}"
             if [[ $pos -eq 2 ]]; then
-                COMPREPLY=($(compgen -W "list routing show add remove rename default lookup prefixes secret aaa-order exec-timeout tacacs-group mgmt-acl" -- "$cur"))
+                COMPREPLY=($(compgen -W "list routing show add remove rename default lookup prefixes secret protocols aaa-order exec-timeout tacacs-group mgmt-acl" -- "$cur"))
             elif [[ $pos -eq 3 ]]; then
                 case "$ssub" in
-                    show|remove|rename|default|prefixes|secret|aaa-order|exec-timeout|tacacs-group|mgmt-acl)
+                    show|remove|rename|default|prefixes|secret|protocols|aaa-order|exec-timeout|tacacs-group|mgmt-acl)
                         COMPREPLY=($(compgen -W "$(_tacctl_scope_names)" -- "$cur"))
                         ;;
                     lookup)
@@ -277,6 +277,10 @@ for u in (d.get('users') or []):
                         # `scope secret <scope> <show|set|generate>`
                         COMPREPLY=($(compgen -W "show set generate" -- "$cur"))
                         ;;
+                    protocols)
+                        # `scope protocols <scope> <list|set|clear>`
+                        COMPREPLY=($(compgen -W "list set clear" -- "$cur"))
+                        ;;
                     aaa-order)
                         # `scope aaa-order <scope> <tacacs-first|local-first>`
                         COMPREPLY=($(compgen -W "tacacs-first local-first" -- "$cur"))
@@ -294,6 +298,11 @@ for u in (d.get('users') or []):
                         COMPREPLY=($(compgen -W "--force" -- "$cur"))
                         ;;
                 esac
+            elif [[ $pos -eq 5 && "$ssub" == "protocols" ]]; then
+                # `scope protocols <scope> set <protocol>[,<protocol>...]`
+                if [[ "${words[offset + 4]}" == "set" ]]; then
+                    COMPREPLY=($(compgen -W "tacacs radius tacacs,radius" -- "$cur"))
+                fi
             elif [[ $pos -eq 5 && "$ssub" == "prefixes" ]]; then
                 # `scope prefixes <scope> clear --force` — only clear takes --force
                 # Slot layout: [offset+2]=prefixes [offset+3]=<scope> [offset+4]=<sub>

@@ -206,14 +206,15 @@ saved_copies() {
     refute_output --partial "DRIFT"
 }
 
-# --- the renderer against the editors it replaces ----------------------------
+# --- the renderer behind every mutating command -------------------------------
 
-@test "equivalence: a file built by tacctl's own editors is what the renderer produces from its import" {
-    # Start from a rendered file, drive it through the regex editors every
-    # mutating command still uses, then ask whether importing the result and
-    # rendering it again would change anything the daemon acts on.
+@test "round trip: the file left by a run of mutating commands re-imports as the store that rendered it" {
+    # Every command below writes the store and re-renders. The rendered file
+    # must then say exactly what the store says: importing it and rendering
+    # the import changes nothing the daemon acts on, and replacing the store
+    # with that import changes nothing in the store.
     local hash="24326224313024616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161"
-    load_fixture golden/tacquito.multiscope.rendered.yaml
+    rendered_install
     run "$TACCTL_BIN_SCRIPT" group add helpdesk 5 HELPDESK-CLASS
     assert_success
     run "$TACCTL_BIN_SCRIPT" group commands add helpdesk show --match '^version$' --action permit
@@ -241,6 +242,13 @@ saved_copies() {
     run "$TACCTL_BIN_SCRIPT" config allow add 10.0.0.0/8,192.168.0.0/16,2001:db8::/32
     assert_success
 
+    # No command left the file and the store apart, or the file unrecorded.
+    run "$TACCTL_BIN_SCRIPT" config validate
+    assert_success
+    refute_output --partial "DRIFT"
+    run "$TACCTL_BIN_SCRIPT" config render
+    assert_output --partial "already up to date"
+
     run "$TACCTL_BIN_SCRIPT" store import --check
     assert_success
     assert_output --partial "Groups:   4"
@@ -249,4 +257,9 @@ saved_copies() {
     assert_output --partial "Filters:  allow 3, deny 1"
     assert_output --partial "    EQUIVALENT"
     refute_output --partial "never matches a client"
+
+    cp "$STORE" "${BATS_TEST_TMPDIR}/store.before"
+    run "$TACCTL_BIN_SCRIPT" store import --replace
+    assert_success
+    diff -u "${BATS_TEST_TMPDIR}/store.before" "$STORE"
 }

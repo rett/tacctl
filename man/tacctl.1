@@ -1015,6 +1015,21 @@ chars, mixed character classes).
 Generate a strong key with
 .B openssl rand -base64 24
 and apply it.
+.SS Per-scope protocols \fB(tacctl scope protocols)\fR
+.TP
+.BI "scope protocols " "scope " "[list]"
+Show which protocols serve the scope. Without a filter, every enabled
+backend serves it.
+.TP
+.BI "scope protocols " "scope " "set " protocol\fR[,protocol...]
+Limit the scope to the named protocols
+.RB ( tacacs ", " radius ).
+A backend whose protocol is not listed leaves the scope out of what it
+renders: for TACACS+ that means its prefixes, its secret and its users'
+grant of it are absent from tacquito.yaml.
+.TP
+.BI "scope protocols " "scope " "clear"
+Remove the filter.
 .SS Per-scope idle-session timeout \fB(tacctl scope exec-timeout)\fR
 .TP
 .BI "scope exec-timeout " scope " [" minutes ]

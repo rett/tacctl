@@ -80,19 +80,77 @@ esac'
 #  cmd_config_validate
 # =============================================================================
 
-@test "config validate: structure and scope errors fail the command and are counted" {
-    # Regression: both error loops ran in a pipeline subshell, so their
+@test "config validate: store and scope errors fail the command and are counted" {
+    # Regression: the error loops once ran in a pipeline subshell, so their
     # increments were lost and validate printed the errors, then reported
-    # "Configuration is valid." and exited 0. The fixture's three users have
-    # no bcrypt anchor (3) and alice/bob have no accounter (2); pointing
-    # carol at a missing scope adds one scope-integrity error.
+    # "Configuration is valid." and exited 0. Break the store three ways
+    # (carol points at a missing scope, bob at a missing group, alice's hash
+    # is not a hash) and add one scope-integrity error (the default scope
+    # names nothing).
+    local store="${TACCTL_STATE_DIR}/store.yaml"
+    sed -i 's/scopes: \[lab, dmz\]/scopes: [lab, nosuchscope]/' "$store"
+    sed -i 's/group: operator/group: nosuchgroup/' "$store"
+    sed -i "0,/hash: .*/s//hash: 'REPLACE_ME'/" "$store"
+    printf 'scope:\n  default: gone\n' > "${TACCTL_STATE_DIR}/tacctl.yaml"
+    run "$TACCTL_BIN_SCRIPT" config validate
+    assert_failure
+    assert_output --partial "user 'carol': scope 'nosuchscope' does not exist"
+    assert_output --partial "user 'bob': group 'nosuchgroup' does not exist"
+    assert_output --partial "user 'alice': hash is not a hex-encoded bcrypt hash"
+    assert_output --partial "Default scope override points at 'gone'"
+    # 3 store errors + default scope + the store cannot be rendered.
+    assert_output --partial "Validation failed with 5 error(s)."
+    refute_output --partial "Configuration is valid."
+    # Nothing validate prints may quote a secret.
+    refute_output --partial "lab-secret-0123456789abcdef"
+}
+
+@test "config validate: a healthy store passes; an unrendered tacquito.yaml is a note, not an error" {
+    run "$TACCTL_BIN_SCRIPT" config validate
+    assert_success
+    assert_output --partial "Store:"
+    assert_output --partial "Config structure:"
+    assert_output --partial "was not rendered by tacctl yet"
+    assert_line --regexp 'Users defined:.* 3$'
+    assert_line --regexp 'Scopes defined:.* 4$'
+    assert_line --regexp 'Groups defined:.* 3$'
+    assert_output --partial "Configuration is valid."
+}
+
+@test "config validate: after a render the artifact is reported up to date; a stale one is an error" {
+    "$TACCTL_BIN_SCRIPT" config render --force > /dev/null 2>&1
+    run "$TACCTL_BIN_SCRIPT" config validate
+    assert_success
+    assert_line --regexp 'Rendered config:.* up to date$'
+
+    # The store moves on without a render (a hand edit of the store, or a
+    # render that could not complete): the daemon's file is now stale.
+    sed -i 's/juniper_class: OP-CLASS/juniper_class: OPS/' "${TACCTL_STATE_DIR}/store.yaml"
+    run "$TACCTL_BIN_SCRIPT" config validate
+    assert_failure
+    assert_output --partial "out of date with the store"
+    assert_output --partial "Validation failed with 1 error(s)."
+}
+
+@test "config validate: a store with no users or a placeholder secret is an error" {
+    cp "${TACCTL_SRC}/tests/fixtures/store.minimal.yaml" "${TACCTL_STATE_DIR}/store.yaml"
+    sed -i 's/secret: .*/secret: REPLACE_WITH_SHARED_SECRET/' "${TACCTL_STATE_DIR}/store.yaml"
+    run "$TACCTL_BIN_SCRIPT" config validate
+    assert_failure
+    assert_output --partial "No users defined"
+    assert_output --partial "Shared secret contains placeholder value (scope 'lab')"
+}
+
+@test "config validate: legacy mode checks tacquito.yaml through the model and points at the import" {
+    rm "${TACCTL_STATE_DIR}/store.yaml"
     sed -i 's/^      - dmz$/      - nosuchscope/' "$TACCTL_CONFIG"
     run "$TACCTL_BIN_SCRIPT" config validate
     assert_failure
-    assert_output --partial "has no bcrypt authenticator anchor"
-    assert_output --partial "references nonexistent scope 'nosuchscope'"
-    assert_output --partial "Validation failed with 6 error(s)."
-    refute_output --partial "Configuration is valid."
+    assert_output --partial "YAML syntax:"
+    assert_output --partial "not initialised"
+    assert_output --partial "tacctl store import --check"
+    assert_output --partial "User 'carol' references nonexistent scope 'nosuchscope'"
+    assert_output --partial "Validation failed with 1 error(s)."
 }
 
 # =============================================================================

@@ -144,10 +144,29 @@ Notes:
   copy the cached store. The seed is the `store.yaml` file only: no lock file,
   snapshot or output. If a test planted password-date or disabled-hash sidecars
   before loading, the helper imports directly instead, because the importer reads them.
-- The store and `tacquito.yaml` are independent copies. A test that edits
-  `$TACCTL_CONFIG` after `load_fixture`, or writes its own, leaves the store
-  unchanged; once commands read the store, put the change in the store instead
-  (`load_store_fixture`, or a `tacctl` command).
+- Commands read and write the store. `tacquito.yaml` is what tacctl renders from
+  it, so after `load_fixture` the hand-built fixture file is only the starting
+  artifact: a test that edits `$TACCTL_CONFIG`, or writes its own, changes
+  nothing a command reads. Put the change in the store instead
+  (`load_store_fixture`, a `tacctl` command, or an edit of
+  `$TACCTL_STATE_DIR/store.yaml` when the test needs a store no command would
+  write).
+- The first mutating command after `load_fixture` replaces the fixture file with
+  the render of the store and prints a `Previous … saved to …/backups/legacy/…`
+  line: the file was never rendered by tacctl, and it is adopted because it says
+  what the store says. A fixture file edited after loading no longer does, and
+  the command is refused (exit 3) like any hand edit.
+- What to assert on: the store (or a read command) for what a command *did*;
+  `$TACCTL_CONFIG` text for what tacquito is *given* (anchor names, the
+  `scopes:`/`groups:` of a user entry, the disabled marker, `secrets[]` order).
+  Note the renderer quotes a hash whose hex is all digits.
+- For legacy read-only mode (no store), use `place_fixture`. Every mutating
+  command must refuse there; `tests/integration/store_mutations.bats` holds the
+  list of verbs and is where a new mutating verb gets added.
+- The legacy `tacquito.yaml` migrations (`conf_migrate_command_rules`,
+  `conf_migrate_exec_service_name`, `flatten_secrets_if_needed`, and the legacy
+  half of `regenerate_tacquito_commands`) are no-ops once a store exists, so
+  their tests place fixtures with `place_fixture`.
 
 The renderer goldens work the same way:
 
@@ -165,11 +184,11 @@ per-group command rules (the product writes those from `tacctl.yaml` on every
 install and upgrade), `tacquito.legacy-exec.yaml` still names the Cisco
 service `exec`, and `tacquito.multiscope.yaml` lists `prod` before the
 narrower `prod-inner`, an order the product never leaves on disk. Each one
-passes once the product's own sync steps have run on it: the migrations every
-upgrade runs (`conf_migrate_exec_service_name`, `regenerate_tacquito_commands`)
-and, for multiscope, the flatten-and-sort of `secrets` that install and every
-scope mutation apply (`flatten_secrets_if_needed`; upgrade does not run it); `tests/unit/render_tacacs.bats` pins both
-verdicts. A test that needs a config which passes the check as-is should load
+passes once the sync steps a pre-store install had applied have run on it: the
+migrations every upgrade runs on a legacy file (`conf_migrate_exec_service_name`,
+`regenerate_tacquito_commands`) and, for multiscope, the flatten-and-sort of
+`secrets` that install applied (`flatten_secrets_if_needed`; upgrade does not
+run it); `tests/unit/render_tacacs.bats` pins both verdicts. A test that needs a config which passes the check as-is should load
 `golden/tacquito.minimal.rendered.yaml` or `golden/tacquito.multiscope.rendered.yaml`.
 
 The daemon load-smoke is skipped in tests (`$TACCTL_BIN` holds no `tacquito`);

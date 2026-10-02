@@ -121,18 +121,35 @@ setup() {
     assert_output --partial "still reference"
 }
 
-@test "scopes prefixes clear: --force clears with users present (leaves orphan refs)" {
+@test "scopes prefixes clear: --force removes the scope and strips it from its users" {
     "$TACCTL_BIN_SCRIPT" user add alice superuser \
         --hash "$TEST_HASH" --scopes lab > /dev/null
     run bash -c 'echo y | "'"$TACCTL_BIN_SCRIPT"'" scope prefixes lab clear --force'
     assert_success
 
-    # Scope is gone from secrets[], but alice's scopes[] still refers to it
-    # (orphan reference that `tacctl config validate` would surface).
+    # A scope cannot exist without a prefix, so it is gone; and the store
+    # holds no reference to a scope that does not exist, so alice loses the
+    # grant rather than keeping an orphan reference.
     run "$TACCTL_BIN_SCRIPT" scope list
     refute_output --partial "lab"
     run grep -A4 '^  - name: alice$' "$TACCTL_CONFIG"
-    assert_output --partial '"lab"'
+    assert_output --partial 'scopes: []'
+    run "$TACCTL_BIN_SCRIPT" user scope alice list
+    assert_output --partial "(none"
+    run "$TACCTL_BIN_SCRIPT" config validate
+    refute_output --partial "nonexistent scope"
+}
+
+@test "scopes prefixes remove: refuses to remove a scope's last prefix" {
+    # 'lab' has two prefixes in the minimal fixture: removing both at once
+    # would leave a scope no client can match.
+    local all
+    all=$("$TACCTL_BIN_SCRIPT" scope prefixes lab list | sed -n 's/^  - //p' | paste -sd,)
+    cp "${TACCTL_STATE_DIR}/store.yaml" "${BATS_TEST_TMPDIR}/before.yaml"
+    run "$TACCTL_BIN_SCRIPT" scope prefixes lab remove "$all"
+    assert_failure
+    assert_output --partial "a scope needs at least one"
+    cmp "${TACCTL_STATE_DIR}/store.yaml" "${BATS_TEST_TMPDIR}/before.yaml"
 }
 
 # --- scopes secret show ------------------------------------------------------
