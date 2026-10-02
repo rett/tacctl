@@ -443,6 +443,7 @@ config get-list <path>                      Read a list value (one item per line
 config cisco [--scope <name>] [--legacy]    Generate working Cisco device config for a scope (default if omitted). --legacy emits IOS 12.x syntax (tacacs-server host / aaa group server ... / server <ip>) for devices predating the IOS 15.0 'tacacs server' block
 config juniper [--scope <name>]             Generate working Juniper device config for a scope (default if omitted)
 config wti [--scope <name>]                 Print the step-by-step serial-menu procedure for a WTI console server (firmware v8.x) with the scope's server IP, secret, and group→access-level mapping filled in
+config render [--force]                     Regenerate tacquito.yaml from the store and tacctl.yaml (needs the store; refuses to overwrite a hand-edited file unless --force, which first saves it under backups/legacy/)
 config validate                             Validate YAML syntax + server-config structure (orphan scope refs, scope.default pointing at a nonexistent scope, reserved usernames, missing accounter:) + schema-walk tacctl.yaml (including commands.<group> / privileges.<group> / mgmt_acl.*)
 config diff [timestamp]                     Diff current config vs a backup
 config loglevel [debug|info|error]          Show or change log level

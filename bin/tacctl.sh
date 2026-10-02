@@ -56,8 +56,9 @@ SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 # Order: core.sh must come before conf.sh (conf.sh's source-time tunables
 # overwrite the built-in defaults core.sh assigns and need
 # TACCTL_OVERRIDES_FILE); render_devices.sh and linux_hosts.sh read SCRIPT_DIR.
-# model.sh and store.sh define functions plus STORE_FILE, which depends on
-# nothing in the later files, so their position is not load-bearing.
+# model.sh, store.sh and render_tacacs.sh define functions plus STORE_FILE and
+# RENDERED_FILE, which depend on nothing in the later files, so their position
+# is not load-bearing.
 # shellcheck source=lib/core.sh
 source "${SCRIPT_DIR}/../lib/core.sh"
 # shellcheck source=lib/conf.sh
@@ -66,6 +67,8 @@ source "${SCRIPT_DIR}/../lib/conf.sh"
 source "${SCRIPT_DIR}/../lib/model.sh"
 # shellcheck source=lib/store.sh
 source "${SCRIPT_DIR}/../lib/store.sh"
+# shellcheck source=lib/render_tacacs.sh
+source "${SCRIPT_DIR}/../lib/render_tacacs.sh"
 # shellcheck source=lib/policy.sh
 source "${SCRIPT_DIR}/../lib/policy.sh"
 # shellcheck source=lib/users.sh
@@ -120,7 +123,11 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
             cmd_group "$@"
             ;;
         config)
-            preflight
+            # 'config render' rebuilds tacquito.yaml from the store, so it
+            # must work when that file is the thing that is missing.
+            if [[ "${1:-}" != "render" || ! -f "$STORE_FILE" ]]; then
+                preflight
+            fi
             cmd_config "$@"
             ;;
         scope)

@@ -96,15 +96,32 @@ PY
     [[ -f "$STORE" ]]
 }
 
-@test "store import --check: writes nothing and exits 3 while no renderer exists" {
+@test "store import --check: a file the render would change exits 1 and writes nothing" {
+    # The raw fixture has no command rules; the render adds tacctl.yaml's.
     load_fixture tacquito.multiscope.yaml
     local before
-    before=$(find "$TACCTL_STATE_DIR" | sort)
+    before=$(find "$TACCTL_STATE_DIR" "$TACCTL_ETC" | sort)
     run "$TACCTL_BIN_SCRIPT" store import --check
-    assert_failure 3
+    assert_failure 1
     assert_output --partial "import + validate:   OK"
+    assert_output --partial "render:              OK"
+    assert_output --partial "NOT EQUIVALENT"
     [[ ! -e "$STORE" ]]
-    [[ "$(find "$TACCTL_STATE_DIR" | sort)" == "$before" ]]
+    [[ "$(find "$TACCTL_STATE_DIR" "$TACCTL_ETC" | sort)" == "$before" ]]
+    cmp "$TACCTL_CONFIG" "${TACCTL_SRC}/tests/fixtures/tacquito.multiscope.yaml"
+}
+
+@test "store import --check: a file tacctl rendered exits 0 and writes nothing" {
+    load_fixture golden/tacquito.multiscope.rendered.yaml
+    local before
+    before=$(find "$TACCTL_STATE_DIR" "$TACCTL_ETC" | sort)
+    run "$TACCTL_BIN_SCRIPT" store import --check
+    assert_success
+    assert_output --partial "    EQUIVALENT"
+    assert_output --partial "daemon load-smoke:   SKIPPED"
+    assert_output --partial "Check passed. Nothing was written."
+    [[ ! -e "$STORE" ]]
+    [[ "$(find "$TACCTL_STATE_DIR" "$TACCTL_ETC" | sort)" == "$before" ]]
 }
 
 @test "store import <file>: imports a named file, e.g. a legacy backup" {

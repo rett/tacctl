@@ -624,85 +624,248 @@ def model_get(model, argv):
 
 
 # ---- equivalence of two tacquito.yaml files (plan 4.3 step 3) --------------
+#
+# "Equivalent" means: tacquito, given either file, answers every client the
+# same way. The comparison therefore models what the daemon does with a
+# config rather than how the file is spelled. Each rule below is read off
+# the tacquito source (cmds/server/loader/loader.go, config/secret/prefix,
+# config/authorizers/stringy, config/authenticators/bcrypt):
+#
+#   scalars  The daemon decodes YAML into string fields, so `15` and "15"
+#            are the same value to it while `01` and `1` are not. Both files
+#            are loaded with yaml.BaseLoader, which keeps every scalar as
+#            the text that was written.
+#   users    Keyed by name. Scope order is irrelevant (membership test). A
+#            user without its own authenticator/accounter gets the first one
+#            its groups define, so the EFFECTIVE authenticator and accounter
+#            are compared. Groups stay as written, in order: their services
+#            and commands are appended to the user's in that order. A hash
+#            is compared case-insensitively (hex); 'DISABLED' and the
+#            disabled marker are one value (both can never authenticate and
+#            draw the same reply).
+#   secrets  The daemon builds one provider per secrets[] entry, in file
+#            order, and answers a client with the first provider holding a
+#            prefix that contains it. It builds NO provider for an entry
+#            whose scope has no users, whose type/handler is not the
+#            standard one, or whose prefixes option is not a non-empty JSON
+#            list of strings; a prefix Go's net.ParseCIDR rejects (a bare
+#            address, a dotted netmask) is skipped. Two CIDRs nest or are
+#            disjoint, so a prefix is dead when an earlier provider holds
+#            one containing it, and among the live prefixes the most
+#            specific wins whatever the order: the routing is exactly the
+#            set of live (prefix, scope, key). That set compares equal for
+#            harmless reorderings and for one multi-prefix entry versus one
+#            entry per prefix, and unequal whenever some client would get a
+#            different scope or key.
+#   filters  prefix_allow / prefix_deny as sets of parseable CIDRs.
+#
+# Two further parts are compared although the daemon ignores them today,
+# because they decide what happens on the next change: groups no user is in,
+# and the routing as it would be if every scope had a user. A difference
+# confined to those is reported as latent, and still fails the check.
+
+def _go_cidr(text):
+    """A prefix as Go's net.ParseCIDR accepts it (address/bits), else None."""
+    if not isinstance(text, str) or not re.fullmatch(r'[0-9A-Fa-f:.]+/[0-9]+', text):
+        return None
+    try:
+        return ipaddress.ip_network(text, strict=False)
+    except ValueError:
+        return None
+
+
+def _go_prefix_list(raw):
+    """options.prefixes as the prefix provider reads it (json.Unmarshal into
+    []string). None when the provider would refuse the entry."""
+    if not isinstance(raw, str):
+        return None
+    try:
+        arr = json.loads(raw)
+    except ValueError:
+        return None
+    if not isinstance(arr, list) or not arr:
+        return None
+    if any(c is not None and not isinstance(c, str) for c in arr):
+        return None
+    return [c for c in arr if isinstance(c, str)]
+
+
+def _yaml_null(v):
+    return v is None or (isinstance(v, str) and v in ('', '~', 'null', 'Null', 'NULL'))
+
+
+def _as_list(v):
+    return v if isinstance(v, list) else []
+
+
+def _is_one(v):
+    """True for a type field that decodes to the integer 1."""
+    try:
+        return int(str(v)) == 1
+    except ValueError:
+        return False
+
+
+def _equiv_redact(node, fingerprint, sensitive=False):
+    """Copy of node with every scalar under an authenticator or secret
+    mapping (bar its type/group) replaced by a fingerprint."""
+    if isinstance(node, dict):
+        out = {}
+        for k, v in node.items():
+            inner = sensitive or k in ('authenticator', 'secret')
+            if inner and k in ('type', 'group') and not isinstance(v, (dict, list)):
+                out[k] = v
+            else:
+                out[k] = _equiv_redact(v, fingerprint, inner)
+        return out
+    if isinstance(node, list):
+        return [_equiv_redact(v, fingerprint, sensitive) for v in node]
+    if sensitive and node is not None:
+        return fingerprint(str(node))
+    return node
+
+
+def _equiv_hash(auth):
+    """Authenticator mapping with options.hash in its comparison form."""
+    if not isinstance(auth, dict) or not isinstance(auth.get('options'), dict):
+        return auth
+    h = auth['options'].get('hash')
+    if not isinstance(h, str):
+        return auth
+    if h == 'DISABLED' or h.lower() == DISABLED_MARKER_HEX:
+        folded = '<disabled>'
+    else:
+        folded = h.lower()
+    return dict(auth, options=dict(auth['options'], hash=folded))
+
+
+def _equiv_routes(providers):
+    """Ordered providers [(index, scope, key, extra, [network...])] ->
+    (live routes sorted by prefix, notes about prefixes that never match)."""
+    live, earlier, notes = [], [], []
+    for idx, scope, key, extra, nets in providers:
+        for net in nets:
+            cover = next((n for n in earlier if n.version == net.version and net.subnet_of(n)), None)
+            if cover is not None:
+                notes.append(f"secrets[{idx}] '{scope}': {net} never matches a client "
+                             f"(an earlier entry already covers it with {cover})")
+                continue
+            route = {'prefix': str(net), 'scope': scope, 'key': key}
+            if extra:
+                route['nonstandard'] = extra
+            live.append((net, route))
+        # The prefixes of one provider share one answer, so only earlier
+        # providers can shadow.
+        earlier.extend(nets)
+    live.sort(key=lambda t: cidr_key(str(t[0])))
+    return [r for _, r in live], notes
+
 
 def _equiv_normalize(doc, fingerprint):
-    """Reduce a loaded tacquito.yaml to what the daemon acts on.
-
-    users    dict by name; scopes sorted; group/authenticator/accounter dicts
-             as loaded (aliases already inlined), with two legacy spellings
-             folded: service name 'exec' -> 'shell', hash 'DISABLED' -> marker.
-    secrets  tacquito walks secrets[] and takes the first entry with a prefix
-             containing the client. Two CIDRs either nest or are disjoint, so
-             an entry is dead exactly when an earlier one contains it, and
-             among the live entries the most specific wins whatever the order.
-             The routing is therefore fully described by the live
-             (prefix, scope, key) set plus the list of dead entries -- which
-             compares equal for harmless reorderings and for multi-prefix
-             entries versus one entry per prefix, and unequal whenever a
-             client would land in a different scope.
-    filters  sets.
-    """
+    """Reduce a loaded tacquito.yaml to the comparison form described above.
+    Returns (form, notes)."""
     notes = []
-    out = {'users': {}, 'secrets': {'routes': [], 'shadowed': []},
-           'prefix_allow': [], 'prefix_deny': []}
+    form = {'users': {}, 'groups_without_users': {},
+            'secrets': {'routes': [], 'routes_if_every_scope_had_users': []},
+            'prefix_allow': [], 'prefix_deny': []}
     if not isinstance(doc, dict):
-        return out, notes
+        return form, notes
 
-    def clean(node):
-        if isinstance(node, dict):
-            res = {k: clean(v) for k, v in node.items()}
-            if res.get('name') == 'exec' and 'set_values' in res:
-                res['name'] = 'shell'
-                notes.append("service name 'exec' compared as 'shell'")
-            return res
-        if isinstance(node, list):
-            return [clean(v) for v in node]
-        return node
-
-    for u in doc.get('users') or []:
+    # ---- users ----
+    used_groups, scoped = set(), set()
+    for u in _as_list(doc.get('users')):
         if not isinstance(u, dict):
             continue
-        ent = clean({k: v for k, v in u.items() if k != 'name'})
-        if isinstance(ent.get('scopes'), list):
-            ent['scopes'] = sorted(str(s) for s in ent['scopes'])
-        auth = ent.get('authenticator')
-        if isinstance(auth, dict) and isinstance(auth.get('options'), dict) and 'hash' in auth['options']:
-            h = str(auth['options']['hash']).strip()
-            if h == 'DISABLED' or h.lower() == DISABLED_MARKER_HEX:
-                auth['options']['hash'] = '<disabled>'
-            else:
-                auth['options']['hash'] = fingerprint(h.lower())
-        out['users'][str(u.get('name'))] = ent
+        name = str(u.get('name'))
+        ent = {k: v for k, v in u.items() if k != 'name'}
+        groups = [g for g in _as_list(u.get('groups')) if isinstance(g, dict)]
+        used_groups.update(str(g.get('name')) for g in groups)
+        for field in ('authenticator', 'accounter'):
+            eff = u.get(field)
+            if _yaml_null(eff):
+                eff = next((g[field] for g in groups if not _yaml_null(g.get(field))), None)
+            ent[field] = eff
+        ent['authenticator'] = _equiv_hash(ent['authenticator'])
+        ent['groups'] = [dict(g, authenticator=_equiv_hash(g['authenticator']))
+                         if isinstance(g, dict) and 'authenticator' in g else g
+                         for g in _as_list(u.get('groups'))]
+        if isinstance(u.get('scopes'), list):
+            ent['scopes'] = sorted({str(s) for s in u['scopes']})
+            scoped.update(ent['scopes'])
+        key, n = name, 1
+        while key in form['users']:
+            # tacquito lets a later entry override an earlier one per scope;
+            # nothing tacctl renders does that, so keep both visible.
+            n += 1
+            key = f'{name} (entry {n})'
+        form['users'][key] = _equiv_redact(ent, fingerprint)
 
-    live = []   # (network, scope, key fingerprint)
-    for s in doc.get('secrets') or []:
+    # ---- groups nobody is in (latent) ----
+    for val in doc.values():
+        if (isinstance(val, dict) and 'name' in val and isinstance(val.get('services'), list)
+                and str(val['name']) not in used_groups):
+            g = dict(val, authenticator=_equiv_hash(val['authenticator'])) if 'authenticator' in val else val
+            form['groups_without_users'][str(val['name'])] = _equiv_redact(g, fingerprint)
+
+    # ---- secrets ----
+    providers = []
+    for idx, s in enumerate(_as_list(doc.get('secrets'))):
         if not isinstance(s, dict):
             continue
         name = str(s.get('name'))
-        key = (s.get('secret') or {}).get('key') if isinstance(s.get('secret'), dict) else None
-        fp = fingerprint(str(key))
-        block = (s.get('options') or {}).get('prefixes') if isinstance(s.get('options'), dict) else None
-        for c in _parse_prefix_block(block if isinstance(block, str) else ''):
-            try:
-                net = ipaddress.ip_network(c, strict=False)
-            except ValueError:
-                continue
-            cover = next((n for n, _, _ in live
-                          if n.version == net.version and net.subnet_of(n)), None)
-            if cover is not None:
-                out['secrets']['shadowed'].append(
-                    {'prefix': str(net), 'scope': name, 'never_matches_because_of': str(cover)})
-            else:
-                live.append((net, name, fp))
-    live.sort(key=lambda t: cidr_key(str(t[0])))
-    out['secrets']['routes'] = [{'prefix': str(n), 'scope': nm, 'key': fp} for n, nm, fp in live]
-    out['secrets']['shadowed'].sort(key=lambda d: cidr_key(d['prefix']))
+        sec = s.get('secret') if isinstance(s.get('secret'), dict) else {}
+        key = sec.get('key')
+        fp = fingerprint('' if _yaml_null(key) else str(key))
+        handler = s.get('handler') if isinstance(s.get('handler'), dict) else {}
+        opts = s.get('options') if isinstance(s.get('options'), dict) else {}
+        # Anything beyond the skeleton tacctl writes rides along, so it shows.
+        extra = {k: v for k, v in s.items() if k not in ('name', 'secret', 'handler', 'type', 'options')}
+        if {k: v for k, v in sec.items() if k != 'key'} != {'group': 'tacquito'}:
+            extra['secret'] = {k: v for k, v in sec.items() if k != 'key'}
+        if {k: v for k, v in handler.items() if k != 'type'}:
+            extra['handler'] = {k: v for k, v in handler.items() if k != 'type'}
+        if {k: v for k, v in opts.items() if k != 'prefixes'}:
+            extra['options'] = {k: v for k, v in opts.items() if k != 'prefixes'}
+        extra = _equiv_redact(extra, fingerprint)
+        label = f"secrets[{idx}] '{name}'"
+        if not _is_one(s.get('type')):
+            notes.append(f"{label}: not a prefix provider; tacquito builds nothing for it")
+            continue
+        if not _is_one(handler.get('type')):
+            notes.append(f"{label}: no standard handler; tacquito builds nothing for it")
+            continue
+        prefixes = _go_prefix_list(opts.get('prefixes'))
+        if prefixes is None:
+            notes.append(f"{label}: prefixes is not a non-empty JSON list of strings; tacquito builds nothing for it")
+            continue
+        nets = []
+        for c in prefixes:
+            net = _go_cidr(c)
+            if net is None:
+                notes.append(f"{label}: prefix {c!r} is not a CIDR tacquito can parse; it is skipped")
+            elif net not in nets:
+                nets.append(net)
+        providers.append((idx, name, fp, extra, nets))
 
+    active = [p for p in providers if p[1] in scoped]
+    for name in sorted({p[1] for p in providers if p[1] not in scoped}):
+        notes.append(f"scope '{name}' has no users; tacquito does not load it")
+    form['secrets']['routes'], shadow_notes = _equiv_routes(active)
+    form['secrets']['routes_if_every_scope_had_users'], latent_notes = _equiv_routes(providers)
+    notes.extend(shadow_notes)
+    notes.extend(n + ' once every scope has a user' for n in latent_notes if n not in shadow_notes)
+
+    # ---- prefix filters ----
     for k in ('prefix_allow', 'prefix_deny'):
-        items = doc.get(k) or []
-        if isinstance(items, list):
-            out[k] = sorted({canonical_cidr(c) or str(c) for c in items})
-    return out, sorted(set(notes))
+        kept = set()
+        for c in _as_list(doc.get(k)):
+            net = _go_cidr(c)
+            if net is None:
+                notes.append(f"{k}: {c!r} is not a CIDR tacquito can parse; it is ignored")
+            else:
+                kept.add(str(net))
+        form[k] = sorted(kept, key=cidr_key)
+    return form, notes
 
 
 def equiv_check(live_path, rendered_path):
@@ -717,7 +880,7 @@ def equiv_check(live_path, rendered_path):
     for path in (live_path, rendered_path):
         try:
             with open(path) as f:
-                doc = yaml.safe_load(f)
+                doc = yaml.load(f, Loader=yaml.BaseLoader)
         except yaml.YAMLError as e:
             raise StoreError(yaml_problem(path, e))
         except OSError as e:
@@ -733,6 +896,14 @@ def equiv_check(live_path, rendered_path):
     tb = json.dumps(b, indent=2, sort_keys=True).splitlines(keepends=True)
     sys.stdout.writelines(difflib.unified_diff(ta, tb, fromfile='live (normalised)',
                                                tofile='rendered (normalised)'))
+
+    def serving(form):
+        return (form['users'], form['secrets']['routes'], form['prefix_allow'], form['prefix_deny'])
+
+    if serving(a) == serving(b):
+        print('note: the two differ only in groups without users or scopes without users. '
+              'tacquito answers today\'s clients identically, but the difference takes '
+              'effect as soon as such a group or scope gets a user.')
     print('NOT EQUIVALENT')
     return 1
 PY

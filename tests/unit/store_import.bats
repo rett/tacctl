@@ -502,6 +502,7 @@ carol"
 
 @test "import --check: writes nothing; without a renderer it exits 3 and says so" {
     load_fixture tacquito.multiscope.yaml
+    unset -f render_tacacs_config
     run store_import --check
     assert_failure 3
     assert_output --partial "import + validate:   OK"
@@ -570,7 +571,7 @@ carol"
 @test "equiv: a file is equivalent to itself" {
     run store_equiv_check "${TACCTL_SRC}/tests/fixtures/tacquito.multiscope.yaml" "${TACCTL_SRC}/tests/fixtures/tacquito.multiscope.yaml"
     assert_success
-    assert_output "EQUIVALENT"
+    assert_line "EQUIVALENT"
 }
 
 @test "equiv: comments, anchors-vs-inline and user scope order do not matter" {
@@ -587,7 +588,7 @@ yaml.dump({k: d[k] for k in ('users', 'secrets')}, open(sys.argv[2], 'w'), Dumpe
 PY
     run store_equiv_check "$a" "$b"
     assert_success
-    assert_output "EQUIVALENT"
+    assert_line "EQUIVALENT"
 }
 
 @test "equiv: one multi-prefix entry equals one entry per prefix in any harmless order" {
@@ -598,25 +599,135 @@ PY
     append_secret lab '"lab-secret-placeholder-16chars"' 10.0.0.0/8
     run store_equiv_check "${BATS_TEST_TMPDIR}/multi.yaml" "$CONFIG"
     assert_success
-    assert_output "EQUIVALENT"
+    assert_line "EQUIVALENT"
+}
+
+# Rewrite the multiscope fixture with python statements applied to the
+# loaded document `d` (users, secrets), into $1.
+multiscope_variant() {
+    python3 - "${TACCTL_SRC}/tests/fixtures/tacquito.multiscope.yaml" "$1" "$2" <<'PY'
+import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+d = {k: d[k] for k in ('users', 'secrets')}
+users = {u['name']: u for u in d['users']}
+s = d['secrets']
+exec(sys.argv[3])
+yaml.safe_dump(d, open(sys.argv[2], 'w'))
+PY
 }
 
 @test "equiv: an order change that re-routes clients is NOT equivalent" {
-    # In the fixture 10.0.0.0/8 (prod) precedes 10.10.99.0/24 (prod-inner), so
-    # prod-inner never matches. Sorting by specificity brings it to life.
-    local a="${TACCTL_SRC}/tests/fixtures/tacquito.multiscope.yaml" b="${BATS_TEST_TMPDIR}/b.yaml"
-    python3 - "$a" "$b" <<'PY'
-import sys, yaml
-d = yaml.safe_load(open(sys.argv[1]))
-s = d['secrets']
-s[0], s[1] = s[1], s[0]
-yaml.safe_dump({k: d[k] for k in ('users', 'secrets')}, open(sys.argv[2], 'w'))
-PY
+    # 10.0.0.0/8 (prod) precedes 10.10.99.0/24 (prod-inner). Once prod-inner
+    # has a user the daemon loads it, and the order decides who answers
+    # 10.10.99.x: prod in file a, prod-inner in file b.
+    local a="${BATS_TEST_TMPDIR}/a.yaml" b="${BATS_TEST_TMPDIR}/b.yaml"
+    multiscope_variant "$a" "users['bob']['scopes'].append('prod-inner')"
+    multiscope_variant "$b" "users['bob']['scopes'].append('prod-inner'); s[0], s[1] = s[1], s[0]"
     run store_equiv_check "$a" "$b"
     assert_failure
     assert_output --partial "NOT EQUIVALENT"
-    assert_output --partial "never_matches_because_of"
-    assert_output --partial "prod-inner"
+    assert_output --partial "note: ${a}: secrets[1] 'prod-inner': 10.10.99.0/24 never matches a client (an earlier entry already covers it with 10.0.0.0/8)"
+    refute_output --partial "differ only in groups without users"
+    refute_output --partial "once every scope has a user"
+}
+
+@test "equiv: the same order change on a scope without users is reported as latent, and still fails" {
+    # Nobody is in prod-inner, so tacquito loads neither copy of it and no
+    # client is answered differently today. Give the scope a user and the
+    # two files part ways -- so they are not interchangeable.
+    local a="${TACCTL_SRC}/tests/fixtures/tacquito.multiscope.yaml" b="${BATS_TEST_TMPDIR}/b.yaml"
+    multiscope_variant "$b" "s[0], s[1] = s[1], s[0]"
+    run store_equiv_check "$a" "$b"
+    assert_failure
+    assert_output --partial "note: ${a}: scope 'prod-inner' has no users; tacquito does not load it"
+    assert_output --partial "differ only in groups without users or scopes without users"
+    assert_output --partial "NOT EQUIVALENT"
+}
+
+@test "equiv: an entry for a scope without users shadows nothing" {
+    # 'spare' (no users) lists 192.168.0.0/16 ahead of everything. tacquito
+    # skips it, so what follows is still matched in file order -- and two
+    # files that order those later entries differently are different.
+    local a="${BATS_TEST_TMPDIR}/a.yaml" b="${BATS_TEST_TMPDIR}/b.yaml"
+    local entry="dict(s[2], name='%s', options={'prefixes': '[\"%s\"]'})"
+    local setup="users['carol']['scopes'].append('inner')
+s.insert(0, $(printf "$entry" spare 192.168.0.0/16))
+wide, narrow = $(printf "$entry" lab 192.168.0.0/16), $(printf "$entry" inner 192.168.7.0/24)
+del s[3]"
+    multiscope_variant "$a" "${setup}; s[1:1] = [wide, narrow]"
+    multiscope_variant "$b" "${setup}; s[1:1] = [narrow, wide]"
+    run store_equiv_check "$a" "$b"
+    assert_failure
+    assert_output --partial "NOT EQUIVALENT"
+    refute_output --partial "differ only in groups without users"
+    assert_output --partial '"prefix": "192.168.7.0/24"'
+}
+
+@test "equiv: a user without an accounter inherits its group's, so adding the same one changes nothing" {
+    local a="${TACCTL_SRC}/tests/fixtures/tacquito.multiscope.yaml" b="${BATS_TEST_TMPDIR}/b.yaml" c="${BATS_TEST_TMPDIR}/c.yaml"
+    multiscope_variant "$b" "
+for u in d['users']:
+    u['accounter'] = {'name': 'tacquito_accounter', 'type': 3}"
+    run store_equiv_check "$a" "$b"
+    assert_success
+    assert_output --partial "EQUIVALENT"
+    # ...but when the group has none either, the user really has no accounter.
+    multiscope_variant "$c" "
+for u in d['users']:
+    for g in u['groups']:
+        g.pop('accounter', None)"
+    run store_equiv_check "$c" "$b"
+    assert_failure
+    assert_output --partial '"accounter": null'
+}
+
+@test "equiv: prefixes tacquito cannot parse are not treated as the CIDR tacctl would write" {
+    # A bare address is skipped by the daemon (Go's ParseCIDR wants a mask);
+    # the importer reads it as a /32 and the renderer would emit one.
+    local a="${BATS_TEST_TMPDIR}/a.yaml" b="${BATS_TEST_TMPDIR}/b.yaml"
+    multiscope_variant "$a" "s[3]['options']['prefixes'] = '[\"203.0.113.9\"]'; d['prefix_deny'] = ['10.1.1.1']"
+    multiscope_variant "$b" "s[3]['options']['prefixes'] = '[\"203.0.113.9/32\"]'; d['prefix_deny'] = ['10.1.1.1/32']"
+    run store_equiv_check "$a" "$b"
+    assert_failure
+    assert_output --partial "note: ${a}: secrets[3] 'dmz': prefix '203.0.113.9' is not a CIDR tacquito can parse; it is skipped"
+    assert_output --partial "note: ${a}: prefix_deny: '10.1.1.1' is not a CIDR tacquito can parse; it is ignored"
+    assert_output --partial '+    "10.1.1.1/32"'
+    assert_output --partial '"prefix": "203.0.113.9/32"'
+}
+
+@test "equiv: a prefixes block that is not strict JSON yields no provider" {
+    # The importer scrapes the CIDRs out of it; tacquito refuses the entry.
+    local a="${BATS_TEST_TMPDIR}/a.yaml"
+    multiscope_variant "$a" "s[3]['options']['prefixes'] = '[\"203.0.113.0/24\",]'"
+    run store_equiv_check "$a" "${TACCTL_SRC}/tests/fixtures/tacquito.multiscope.yaml"
+    assert_failure
+    assert_output --partial "secrets[3] 'dmz': prefixes is not a non-empty JSON list of strings; tacquito builds nothing for it"
+    assert_output --partial '"prefix": "203.0.113.0/24"'
+}
+
+@test "equiv: scalars compare as the text the daemon decodes, not as YAML types" {
+    local a="${TACCTL_SRC}/tests/fixtures/tacquito.multiscope.yaml" b="${BATS_TEST_TMPDIR}/b.yaml"
+    sed 's/values: \[15\]/values: ["15"]/' "$a" > "$b"
+    run store_equiv_check "$a" "$b"
+    assert_success
+    sed 's/values: \[15\]/values: [015]/' "$a" > "$b"
+    run store_equiv_check "$a" "$b"
+    assert_failure
+    assert_output --partial '"015"'
+}
+
+@test "equiv: no hash or key is printed, wherever it sits" {
+    local a="${BATS_TEST_TMPDIR}/a.yaml"
+    multiscope_variant "$a" "
+users['bob']['groups'][0]['authenticator'] = {'type': 1, 'options': {'hash': '2432deadbeef', 'key': 'grpkey'}}
+s[0]['secret']['extra'] = 'side-secret'"
+    run store_equiv_check "$a" "${TACCTL_SRC}/tests/fixtures/tacquito.multiscope.yaml"
+    assert_failure
+    assert_output --partial "<redacted:"
+    refute_output --partial "2432deadbeef"
+    refute_output --partial "grpkey"
+    refute_output --partial "side-secret"
+    refute_output --partial "prod-secret"
 }
 
 @test "equiv: a changed user hash or group is reported without printing hashes" {
@@ -629,16 +740,25 @@ PY
     refute_output --partial "646f6e74636172"
 }
 
-@test "equiv: legacy 'exec' service and 'DISABLED' literal compare equal to their modern forms" {
-    run store_equiv_check "${TACCTL_SRC}/tests/fixtures/tacquito.legacy-exec.yaml" "${TACCTL_SRC}/tests/fixtures/tacquito.minimal.yaml"
-    assert_success
-    assert_output "EQUIVALENT"
+@test "equiv: the 'DISABLED' literal equals the disabled marker; service 'exec' does not equal 'shell'" {
+    # Neither a literal DISABLED nor the marker can ever authenticate, and
+    # the daemon answers both the same way.
     load_fixture legacy.import-edge.yaml
-    sed "s/hash: DISABLED\$/hash: ${DISABLED_MARKER_HEX}/; s/^  name: exec\$/  name: shell/" "$CONFIG" > "${BATS_TEST_TMPDIR}/modern.yaml"
-    run store_equiv_check "$CONFIG" "${BATS_TEST_TMPDIR}/modern.yaml"
+    sed "s/hash: DISABLED\$/hash: ${DISABLED_MARKER_HEX}/" "$CONFIG" > "${BATS_TEST_TMPDIR}/marker.yaml"
+    ! cmp -s "$CONFIG" "${BATS_TEST_TMPDIR}/marker.yaml"
+    run store_equiv_check "$CONFIG" "${BATS_TEST_TMPDIR}/marker.yaml"
     assert_success
-    assert_output --partial "note: ${CONFIG}: service name 'exec' compared as 'shell'"
     assert_output --partial "EQUIVALENT"
+    # A group that answers service=exec does not answer the service=shell
+    # request Cisco devices send: renaming it changes who gets a shell.
+    sed "s/^  name: exec\$/  name: shell/" "$CONFIG" > "${BATS_TEST_TMPDIR}/shell.yaml"
+    ! cmp -s "$CONFIG" "${BATS_TEST_TMPDIR}/shell.yaml"
+    run store_equiv_check "$CONFIG" "${BATS_TEST_TMPDIR}/shell.yaml"
+    assert_failure
+    assert_output --partial '"name": "exec"'
+    run store_equiv_check "${TACCTL_SRC}/tests/fixtures/tacquito.legacy-exec.yaml" "${TACCTL_SRC}/tests/fixtures/tacquito.minimal.yaml"
+    assert_failure
+    assert_output --partial "differ only in groups without users or scopes without users"
 }
 
 @test "equiv: prefix filters compare as sets" {

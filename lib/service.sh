@@ -31,6 +31,45 @@ get_last_login() {
     fi
 }
 
+# --- Drift of rendered artifacts (plan 4.5) ---
+# backends_check_drift: compare every artifact tacctl rendered with the
+# sha256 recorded for it in rendered.json. Prints one '<status>\t<path>' line
+# per artifact that is no longer what tacctl rendered -- status is 'drift'
+# (edited by hand), 'missing' (deleted) or 'unreadable' (rendered.json itself
+# cannot be read) -- and returns 1 when there is any. Returns 0, silently,
+# when everything matches or nothing has been rendered yet.
+# Temporary home: moves to lib/backend.sh with the backend contract.
+backends_check_drift() {
+    [[ -f "$RENDERED_FILE" ]] || return 0
+    local out rc=0
+    out=$(_render_python drift "$RENDERED_FILE" 2>/dev/null) || rc=$?
+    (( rc == 0 )) && return 0
+    if [[ -z "$out" ]]; then
+        printf 'unreadable\t%s\n' "$RENDERED_FILE"
+    else
+        printf '%s\n' "$out"
+    fi
+    return 1
+}
+
+# Print the red DRIFT lines 'status' and 'config validate' show, one per
+# drifted artifact. Returns 1 when it printed any.
+print_drift_lines() {
+    local drift dstatus dpath
+    drift=$(backends_check_drift) && return 0
+    while IFS=$'\t' read -r dstatus dpath; do
+        [[ -n "$dpath" ]] || continue
+        case "$dstatus" in
+            drift)   dstatus="edited since tacctl rendered it" ;;
+            missing) dstatus="rendered by tacctl but no longer there" ;;
+            *)       dstatus="render records cannot be read" ;;
+        esac
+        echo -e "  ${RED}DRIFT:${NC}                ${dpath} — ${dstatus}"
+        echo "                        keep the edits: 'tacctl store import --replace' then 'tacctl config render --force'; discard them: 'tacctl config render --force'"
+    done <<< "$drift"
+    return 1
+}
+
 # --- Backup config before changes ---
 BACKUP_RETENTION=30
 
@@ -213,6 +252,7 @@ else:
 
     # Config file
     echo -e "  ${BOLD}Config:${NC}               ${CONFIG}"
+    print_drift_lines || true
 
     # Accounting log size
     if [[ -f "$ACCT_LOG" ]]; then
@@ -660,6 +700,12 @@ PY
             echo -e "  ${RED}Error:${NC}                ${msg}"
             errors=$((errors + 1))
         done <<< "$scope_report"
+    fi
+
+    # Rendered artifacts must still be what tacctl rendered (silent until
+    # something has been rendered).
+    if ! print_drift_lines; then
+        errors=$((errors + 1))
     fi
 
     # Check services

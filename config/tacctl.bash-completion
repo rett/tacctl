@@ -188,7 +188,7 @@ for u in (d.get('users') or []):
             ;;
         config)
             if [[ $pos -eq 2 ]]; then
-                COMPREPLY=($(compgen -W "show dump defaults get get-list cisco juniper wti linux validate loglevel listen metrics sudoers password-age bcrypt-cost password-min-length secret-min-length diff restore allow deny mgmt-acl branch" -- "$cur"))
+                COMPREPLY=($(compgen -W "show dump defaults get get-list cisco juniper wti linux validate render loglevel listen metrics sudoers password-age bcrypt-cost password-min-length secret-min-length diff restore allow deny mgmt-acl branch" -- "$cur"))
             elif [[ $pos -eq 3 ]]; then
                 case "${words[offset + 2]}" in
                     loglevel)

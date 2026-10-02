@@ -31,7 +31,8 @@ tests/
 │   ├── store.*.yaml     # store.yaml fixtures; store.X.yaml is exactly what importing tacquito.X.yaml writes
 │   ├── model/           # golden model JSON (what model_dump returns for a fixture)
 │   ├── templates/       # device config templates
-│   └── golden/          # expected rendered output (M3)
+│   └── golden/          # expected rendered output: device configs (M3) and tacquito.X.rendered.yaml,
+│                        #   what the TACACS+ renderer produces from store.X.yaml
 ├── unit/                # pure-logic, no I/O, no mocks
 ├── integration/         # real file I/O into $TACCTL_ETC tmpdir
 └── e2e/                 # stubbed systemctl/git/etc.
@@ -119,6 +120,32 @@ git diff tests/fixtures/model/ tests/fixtures/store.*.yaml
 
 Store tests set `TACCTL_STATE_DIR` to a directory under `$BATS_TEST_TMPDIR` in
 their own `setup()`, so the store never resolves to `/etc/tacctl`.
+
+The renderer goldens work the same way:
+
+```sh
+UPDATE_GOLDEN=1 tests/bats/bats-core/bin/bats tests/unit/render_tacacs.bats
+git diff tests/fixtures/golden/tacquito.*.rendered.yaml
+```
+
+### Which fixtures pass `store import --check`
+
+`--check` renders the imported model and asks whether tacquito would behave
+identically on the two files. The hand-built `tacquito.*.yaml` fixtures do
+**not** pass as they stand, and that is the correct verdict: they carry no
+per-group command rules (the product writes those from `tacctl.yaml` on every
+install and upgrade), `tacquito.legacy-exec.yaml` still names the Cisco
+service `exec`, and `tacquito.multiscope.yaml` lists `prod` before the
+narrower `prod-inner`, an order the product never leaves on disk. Each one
+passes once the product's own sync steps have run on it: the migrations every
+upgrade runs (`conf_migrate_exec_service_name`, `regenerate_tacquito_commands`)
+and, for multiscope, the flatten-and-sort of `secrets` that install and every
+scope mutation apply (`flatten_secrets_if_needed`; upgrade does not run it); `tests/unit/render_tacacs.bats` pins both
+verdicts. A test that needs a config which passes the check as-is should load
+`golden/tacquito.minimal.rendered.yaml` or `golden/tacquito.multiscope.rendered.yaml`.
+
+The daemon load-smoke is skipped in tests (`$TACCTL_BIN` holds no `tacquito`);
+tests that exercise it install a stand-in script there.
 
 ## Coverage baseline
 

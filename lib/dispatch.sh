@@ -124,6 +124,9 @@ cmd_config() {
         validate)
             cmd_config_validate
             ;;
+        render)
+            cmd_config_render "$@"
+            ;;
         dump)
             cmd_config_dump
             ;;
@@ -199,6 +202,7 @@ cmd_config() {
             echo "  get <path> [fallback]                Read a dotted-path value from the merged config"
             echo "  get-list <path>                      Read a list value (one item per line)"
             echo "  validate                             Validate config syntax and structure"
+            echo "  render [--force]                     Regenerate tacquito.yaml from the store (--force overwrites hand edits)"
             echo "  diff [timestamp]                     Diff current config vs last backup (or named one)"
             echo "  restore <timestamp>                  Restore a prior backup (prompts for confirmation)"
             echo "  loglevel [debug|info|error]          Show or change log level"
