@@ -98,22 +98,41 @@ cmd_config_show() {
         echo -e "    Allow:              ${CYAN}(all)${NC}"
     fi
 
-    echo ""
-    echo -e "  ${BOLD}Config file:${NC}          ${CONFIG}"
-    local _b
+    # What each enabled backend serves: its rendered config, its service and
+    # the listeners it should have, probed where the listener model says
+    # (tcp or udp, the port of the listener -- not 49). With one backend these
+    # are plain lines; with more, each has a labelled block.
     _backends_load || return 1
+    local _b multi=0 ind="" artifact state lname lnet laddr _rest bound label pad
+    (( ${#BACKENDS_ENABLED[@]} > 1 )) && multi=1
     for _b in "${BACKENDS_ENABLED[@]}"; do
-        echo -e "  ${BOLD}Service status:${NC}       $(backend_call "$_b" service is-active || echo 'unknown')"
+        echo ""
+        if (( multi )); then
+            echo -e "  ${BOLD}Backend: ${_b}${NC}"
+            ind="  "
+        fi
+        artifact=$(backend_call "$_b" artifacts | head -n 1 || true)
+        echo -e "${ind}  ${BOLD}Config file:${NC}          ${artifact}"
+        # is-active prints the state and fails for anything but 'active'.
+        state=$(backend_call "$_b" service is-active) || true
+        echo -e "${ind}  ${BOLD}Service status:${NC}       ${state:-unknown}"
+        while read -r lname lnet laddr _rest; do
+            [[ -n "$lname" ]] || continue
+            if [[ "$lname" == "default" ]]; then
+                label="Listening on:"
+                pad="         "
+            else
+                label="Listening on (${lname}):"
+                pad=" "
+            fi
+            bound=$(backend_listener_probe "$lnet" "$laddr")
+            if [[ -n "$bound" ]]; then
+                echo -e "${ind}  ${BOLD}${label}${NC}${pad}${bound}"
+            else
+                echo -e "${ind}  ${BOLD}${label}${NC}${pad}${RED}port ${laddr##*:} not detected${NC}"
+            fi
+        done < <(backend_call "$_b" listeners list)
     done
-
-    # Show listening port (TACACS+ = port 49)
-    local listen
-    listen=$(ss -tlnp 2>/dev/null | { grep ":49 " || true; } | awk '{print $4}' | head -1)
-    if [[ -n "$listen" ]]; then
-        echo -e "  ${BOLD}Listening on:${NC}         ${listen}"
-    else
-        echo -e "  ${BOLD}Listening on:${NC}         ${RED}port 49 not detected${NC}"
-    fi
     echo ""
 }
 

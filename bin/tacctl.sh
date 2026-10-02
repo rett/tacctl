@@ -18,6 +18,8 @@
 #   ./tacctl.sh scope {list|show|add|remove|rename|default}
 #   ./tacctl.sh scope prefixes <name> {list|add|remove|clear}
 #   ./tacctl.sh scope secret   <name> {show|set|generate}
+#   ./tacctl.sh backend {list|status [<id>]|enable <id>|disable <id>}
+#   ./tacctl.sh store {show|import|rollback}
 #   ./tacctl.sh config show
 #   ./tacctl.sh config cisco   [--scope <name>] [--legacy]
 #   ./tacctl.sh config juniper [--scope <name>]
@@ -151,6 +153,10 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
             preflight
             cmd_backup "$@"
             ;;
+        backend)
+            preflight
+            cmd_backend "$@"
+            ;;
         store)
             # No preflight: 'store import <file>' and 'store show' must work
             # on a file other than the live config, and need no bcrypt.
@@ -178,6 +184,13 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
                 # on hosts with hundreds of backups. `config diff` /
                 # `backup diff|restore` take one.
                 backups) backup_names | head -50 || true ;;
+                # Backend ids: every registered one ('backend enable <id>',
+                # '--backend <id>'), or only the enabled ones ('backend
+                # disable <id>'). 'listeners [<backend>]' is the listener
+                # names of that backend (every backend's without one).
+                backends) printf '%s\n' "${BACKEND_IDS[@]}" ;;
+                enabled-backends) backends_enabled 2>/dev/null || true ;;
+                listeners) _completion_listeners "${2:-}" ;;
             esac
             ;;
         version|--version|-v)

@@ -124,7 +124,7 @@ render_gate         → may a mutation replace the artifacts? 0 yes / 10 yes, ad
 render_stage <dir> [--force]  → render the current store into <dir> and prove it; touches nothing else
 render_commit <dir>           → install what was staged, record shas; prints CHANGED|UNCHANGED
 render_notes        → warnings after 'config render'
-service <start|stop|restart|reload|is-active|since|pid> [listener]
+service <start|stop|restart|reload|enable|disable|is-active|since|pid> [listener]   (enable/disable added by WP2.3 for 'backend enable|disable')
 listeners list|show [name]|set <name> <network> <address>|reset [name]   (list → '<name> <network> <address>' per listener; see 3.4)
 status <service|config|accounting|activity>   → the backend's lines of 'tacctl status'
 log <tail|search|failures|clear> …

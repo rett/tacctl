@@ -218,10 +218,26 @@ Generic code reaches a daemon only through the backend contract
   two backends, using a stand-in backend defined in the test shell
   (`BACKEND_IDS+=(fake)`, a few `backend_fake_*` functions, and
   `backends: {enabled: [tacacs, fake]}` written to `tacctl.yaml` by hand; the
-  schema would refuse the id, the reader does not). It can refuse at its
+  schema accepts whatever `BACKEND_IDS` holds when it is read, so
+  `conf_set_list backends.enabled` takes the id too). It can refuse at its
   gate, fail while staging, or fail in its commit after damaging its
   artifact. Copy that pattern to test generic code against a backend that
   misbehaves.
+- `tests/integration/backend_cli.bats` covers `tacctl backend
+  list|status|enable|disable` and the per-backend sections of `status`,
+  `config validate`, `config show`, `log` and `backup restore`, with a fuller
+  stand-in (`fake_backend_write`: every verb, and environment knobs to make
+  one step fail: `FAKE_GATE`, `FAKE_FAIL`, `FAKE_PHASE_FAIL`, `FAKE_START`,
+  `FAKE_STOP_FAIL`). The stand-in is a file sourced after `bin/tacctl.sh` in a
+  bash of its own under `set -euo pipefail` (`tc <function> [args]`), because
+  a module's install phases `exit` on failure and errexit is ignored inside
+  bats' `run`. Every failure of `enable` asserts the same thing: `state()`
+  (store, tacctl.yaml, both artifacts, rendered.json) is byte-identical to
+  before and no `.apply.*`, `.enable.*` or staging directory is left.
+- `tests/integration/completion.bats` runs the real completion function with
+  the real bash-completion library and a stub `sudo` that plays the
+  `_completion-names` bridge; `tests/integration/tiers.bats` holds the check
+  that `tier_permits` and `emit_tier_sudoers` agree on every verb.
 - To make a render fail in a test, override the contract function
   (`backend_tacacs_render_stage() { return 1; }`), not `tacacs_render_apply`:
   commands render through `backends_render_all`. `tacacs_render_apply` is

@@ -87,7 +87,15 @@ by archiving them to
 .TP
 .B status
 Show service health, authentication statistics, recent errors, and
-password-age warnings.
+password-age warnings. With more than one backend enabled each backend has a
+labelled section
+.RB ( "== Backend: <id> ..." )
+holding its service, config, accounting log, drift and activity lines; the
+users, backups, security posture and password-age lines that belong to no
+backend stay in the general part. With one backend enabled the report is
+laid out as it always was. A listener on an IPv6 network
+.RB ( tcp6 ", " udp6 )
+of any backend triggers the IPv6 ACL parity check.
 .TP
 .BR "version" ", " "--version" ", " "-v"
 Print the tacctl version. The version is derived from
@@ -370,7 +378,10 @@ regex; a per-device config push is required after every change.
 .SS Server configuration \fB(tacctl config)\fR
 .TP
 .B config show
-Show the current configuration summary.
+Show the current configuration summary. Each enabled backend adds its config
+file, service state and the listeners it should have, probed on the port
+(and protocol) of the listener, not on port 49; with more than one backend
+enabled each has a labelled block.
 .TP
 .B config dump
 Print the tacctl tunable posture: canonical defaults
@@ -425,6 +436,26 @@ reserved usernames
 present as tacctl-managed users, users missing the
 .B accounter:
 field, and per-scope key divergence.
+.IP
+Then, for every enabled backend, whether its rendered config is up to date
+with the store and whether any of its files was edited by hand (drift). With
+more than one backend enabled each gets a labelled block, and a drifted file of
+one backend does not hide another's state; files left behind by a disabled
+backend are not checked.
+.TP
+.B "config render " [ \-\-force ]
+Render every enabled backend's config (for TACACS+:
+.I tacquito.yaml
+and the systemd drop-ins) from the store and
+.IR tacctl.yaml ,
+all backends or none, and restart the ones whose files changed. Needed after
+hand-restoring files or when
+.B config validate
+reports a config that is missing or out of date. Refuses to overwrite an
+artifact that was edited by hand (drift); with
+.B \-\-force
+it replaces it and keeps a copy under
+.IR /etc/tacctl/backups/legacy/ .
 .TP
 .BI "config diff " [ timestamp ]
 Alias of
@@ -441,7 +472,13 @@ Show or change the server log level. Stored in
 so the change survives upgrades.
 .TP
 .B "config listen " "[ \-\-backend \fIid\fR ] [ \-\-listener \fIname\fR ] { show | tcp | tcp6 | reset } " [ address ]
-Show, change, or reset the TCP listen address. Stored in
+Show, change, or reset a listen address (default: the
+.B tacacs
+backend's listener
+.BR default ;
+the backend ids are listed by
+.BR "backend list" ).
+Stored in
 .I tacctl.yaml
 .RB ( listeners.tacacs. \fIname\fR),
 from which tacctl renders the unit's systemd drop-in.
@@ -802,7 +839,97 @@ handling matches
 .BI "config branch " [ name ]
 Show or change the tacctl repository branch used by
 .B tacctl upgrade.
+.SS Auth backends \fB(tacctl backend)\fR
+A backend is a daemon that serves the store over one protocol. This release
+has one,
+.B tacacs
+(TACACS+ served by tacquito); which are enabled is
+.B backends.enabled
+in
+.IR tacctl.yaml .
+.TP
+.B backend list
+Every backend this tacctl has: protocol, implementation, whether it is
+installed, whether it is enabled, and its service state. Read-only.
+.TP
+.BI "backend status " [ id ]
+Service and listener state of every backend (or one): state, uptime, PID,
+and for each listener its network and address, the state of its unit and
+whether something is listening there. Read-only.
+.TP
+.BI "backend enable " "id " [ \-y ]
+Enable a backend. If it is not installed, confirms (\fB\-y\fR skips) and runs its
+install steps (packages, service account, unit). Then, as one step: every
+backend that will be enabled has its gate checked (a hand-edited rendered file
+refuses the command, exit 3), a snapshot is taken, the id is added to
+.BR backends.enabled ,
+and the config of every enabled backend is rendered, all or none. Then the
+service is enabled at boot and started, and must report
+.BR active .
+If any step fails, the files tacctl owns
+.RB ( tacctl.yaml ,
+the store, every rendered file) are left or put back exactly as they were, the
+service is stopped and disabled, and the exit status is 1; software that the
+install step put on the machine stays.
+.TP
+.BI "backend disable " "id " [ \-y ]
+Take a backend out of
+.BR backends.enabled ,
+stop its service and disable it at boot. Asks for confirmation (\fB\-y\fR
+skips) because clients of that protocol stop authenticating. Its package and
+the files it rendered stay where they are (and are no longer rendered or
+reported as drift);
+.B "backend enable"
+brings it back. Refused for the last enabled backend (nothing would serve the
+store: enable another first, or use
+.BR uninstall ),
+and for
+.B tacacs
+on an install that has no store yet (legacy read-only mode, where
+.I tacquito.yaml
+is still the source of truth).
+.PP
+.B backend list
+and
+.B backend status
+are available to the read-only and operator tiers;
+.B enable
+and
+.B disable
+are superuser only.
+.SS Canonical store \fB(tacctl store)\fR
+.TP
+.BR "store show " [ \-\-json ]
+Print the model (users, groups, scopes, filters) as YAML or JSON.
+.B Superuser only:
+the output contains shared secrets and password hashes.
+.TP
+.B "store import " "[ \-\-check | \-\-force ] [ \-\-replace ] [ " file " ]"
+Import an old-style
+.I tacquito.yaml
+(default: the live one) into the store.
+.B \-\-check
+writes nothing and reports what would happen and whether the rendered config
+is equivalent;
+.B \-\-force
+drops content the store cannot represent (each item is listed);
+.B \-\-replace
+overwrites an existing store. Also the way to keep a hand edit of
+.I tacquito.yaml
+that
+.B config validate
+reports as drift.
+.TP
+.B store rollback
+Undo the move into the store: restore the pre-store
+.IR tacquito.yaml ,
+remove the store, restart. The install is back in legacy read-only mode.
 .SS Log inspection \fB(tacctl log)\fR
+With more than one backend enabled each log subcommand shows every backend's
+log in a section headed by its name; with one, the output is unchanged.
+.B \-\-backend
+.I id
+(any subcommand, anywhere on the line) limits it to one backend.
 .TP
 .BI "log tail " [ n ]
 Show the last
@@ -846,11 +973,17 @@ against a snapshot (default: most recent). Superuser only: the output
 shows shared secrets and password hashes.
 .TP
 .BI "backup restore " timestamp " " [ \-\-legacy ]
-Restore both files from a snapshot after confirmation, re-render
-.IR tacquito.yaml ,
-and restart the service. The current state is snapshotted first, so a
-restore can itself be undone. Nothing changes if the snapshot is invalid or
-the render fails. With
+Restore both files from a snapshot after confirmation, re-render every
+enabled backend's config (all or none), and restart the backends. The current
+state is snapshotted first, so a restore can itself be undone. Nothing changes
+if the snapshot is invalid or the render fails. A snapshot's
+.B backends.enabled
+comes back with the rest of
+.IR tacctl.yaml :
+a backend it enables must already be installed (otherwise nothing changes and
+the message says to run
+.BR "backend enable" ),
+is enabled at boot and started; one it leaves out is stopped and disabled. With
 .B \-\-legacy
 the argument names an old-style
 .I tacquito.yaml.<timestamp>
@@ -1309,8 +1442,22 @@ take a single argument (except
 which is a boolean). Required positional arguments come before flags.
 .SH FILES
 .TP
+.I /etc/tacctl/store.yaml
+The canonical users, groups, scopes and connection filters (shared secrets and
+password hashes included). Mode 0600, root only. Every command that changes
+them renders each enabled backend's config from it. Print it with
+.BR "tacctl store show" .
+.TP
+.I /etc/tacctl/rendered.json
+The checksum of every file tacctl rendered, from which
+.B status
+and
+.B config validate
+report a hand edit as drift.
+.TP
 .I /etc/tacquito/tacquito.yaml
-TACACS+ server configuration. Mode 0640, owned by
+TACACS+ server configuration, rendered by tacctl from the store. Mode 0640,
+owned by
 .BR tacquito : tacquito .
 .TP
 .I /etc/tacctl/backups/

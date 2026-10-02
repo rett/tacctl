@@ -63,7 +63,10 @@ caller_tier() {
 # tier_permits <tier> <command> [subcommand] -> 0 if allowed.
 # Keep in step with emit_tier_sudoers(). Anything that prints a shared
 # secret or a password hash (config cisco|juniper|wti, scope show|secret,
-# backup diff, config dump) is superuser-only.
+# backup diff, config dump, store show) is superuser-only, and so is
+# everything that changes anything (backend enable|disable, store import|
+# rollback, config render). tests/integration/tiers.bats checks the two
+# against each other.
 tier_permits() {
     local tier="$1" cmd="${2:-}" sub="${3:-}"
     case "$tier" in
@@ -76,6 +79,7 @@ tier_permits() {
     esac
     case "$cmd $sub" in
         "user list"|"user show"|"group list"|"scope list") return 0 ;;
+        "backend list"|"backend status") return 0 ;;
     esac
     [[ "$tier" == "operator" ]] || return 1
     case "$cmd $sub" in
@@ -203,13 +207,13 @@ cmd_config() {
             echo "  get <path> [fallback]                Read a dotted-path value from the merged config"
             echo "  get-list <path>                      Read a list value (one item per line)"
             echo "  validate                             Validate config syntax and structure"
-            echo "  render [--force]                     Regenerate tacquito.yaml from the store (--force overwrites hand edits)"
+            echo "  render [--force]                     Regenerate every enabled backend's config from the store (--force overwrites hand edits)"
             echo "  diff [timestamp]                     Diff store.yaml and tacctl.yaml vs the last snapshot (or named one)"
             echo "  restore <timestamp> [--legacy]       Restore a snapshot (prompts for confirmation); --legacy for an old-style backup"
             echo "  loglevel [debug|info|error]          Show or change log level"
-            echo "  listen [show|tcp|tcp6|reset] [addr]  Show, change, or reset TCP listen address"
+            echo "  listen [show|tcp|tcp6|reset] [addr]  Show, change, or reset a listen address (default: tacacs, listener 'default')"
             echo "         [--listener <name>]           ...of another listener (its own tacquito@<name> unit; reset removes it)"
-            echo "         [--backend <id>]              ...of another backend (default: tacacs)"
+            echo "         [--backend <id>]              ...of another backend (see 'tacctl backend list')"
             echo "  metrics <show|enable|disable|address <host:port>|reset>  Prometheus exporter control"
             echo "  sudoers [show|install|remove] [grp]  Manage NOPASSWD sudoers drop-in for tacctl"
             echo "  sudoers tiers [show|install|remove]  Manage per-tier (RO/OP/SU) sudoers rules for TACACS+ users"
@@ -260,6 +264,7 @@ emit_tier_sudoers() {
 # Remove with: tacctl config sudoers tiers remove
 Cmnd_Alias TACCTL_RO = ${t} "", ${t} passwd, ${t} status, ${t} version, \\
     ${t} user list, ${t} user show *, ${t} group list, ${t} scope list, \\
+    ${t} backend list, ${t} backend status, ${t} backend status *, \\
     ${t} _completion-names *
 Cmnd_Alias TACCTL_OP = ${t} log tail, ${t} log tail *, ${t} log search *, \\
     ${t} log failures, ${t} log accounting, ${t} log accounting *, \\
@@ -427,8 +432,10 @@ usage() {
     echo "  group <subcommand>            Group management (list, add, edit, remove)"
     echo "  scope <subcommand>            Scope management (named CIDR + shared-secret bundles)"
     echo "  host <subcommand>             Linux hosts: enroll, sync, unenroll TACACS+ login over SSH"
-    echo "  config <subcommand>           Configuration (show, cisco, juniper, wti, validate, ...)"
-    echo "  log <subcommand>              Log viewer (tail, search, failures, accounting)"
+    echo "  backend <subcommand>          Auth backends: list, status, enable <id>, disable <id>"
+    echo "  store <subcommand>            The canonical store: show, import, rollback"
+    echo "  config <subcommand>           Configuration (show, render, cisco, juniper, wti, validate, ...)"
+    echo "  log <subcommand>              Log viewer (tail, search, failures, accounting; --backend <id>)"
     echo "  backup <subcommand>           Backup management (list, diff, restore)"
     echo "  hash <subcommand>             Bcrypt helper (generate, commands — runs as invoking user, no sudo)"
     echo "  version                       Print tacctl version"
@@ -436,6 +443,7 @@ usage() {
     echo "Run any command without arguments for detailed help, e.g.:"
     echo "  tacctl user"
     echo "  tacctl config"
+    echo "  tacctl backend"
     echo ""
     echo "Examples:"
     echo "  tacctl install"

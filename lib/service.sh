@@ -193,12 +193,16 @@ cmd_status() {
     echo -e "${BOLD}Tacquito Service Status${NC}"
     echo "--------------------------------------------"
 
-    # Each enabled backend prints its own lines, in the places this report
-    # has always had them.
+    # With one enabled backend it prints its own lines, in the places this
+    # report has always had them. With more, each backend gets a labelled
+    # section of its own (below, after the backup count) with all of its lines,
+    # and what is not any backend's stays up here.
     _backends_load || return 1
+    local multi=0 _b
+    (( ${#BACKENDS_ENABLED[@]} > 1 )) && multi=1
 
     # Service state, uptime, PID, memory, listener, log level
-    backends_run status service
+    (( multi )) || backends_run status service
 
     # Everything status reports about users, scopes and filters comes from
     # one model view (key=value lines; 'orphan=' and 'pwdate=' repeat).
@@ -220,14 +224,19 @@ cmd_status() {
     echo -e "  ${BOLD}Users:${NC}                ${user_count}"
 
     # Config file
-    backends_run status config
+    (( multi )) || backends_run status config
     if [[ "$(model_mode)" == "legacy" ]]; then
         echo -e "  ${YELLOW}Store:                not initialised — read-only until 'tacctl store import' (see 'tacctl store import --check')${NC}"
     fi
-    print_drift_lines || true
+    # Drift: a backend's own artifacts are reported in its section.
+    if (( multi )); then
+        print_drift_lines --unowned || true
+    else
+        print_drift_lines || true
+    fi
 
     # Accounting log size
-    backends_run status accounting
+    (( multi )) || backends_run status accounting
 
     # Backup count: snapshots, plus the old-style files an upgrade leaves
     # behind. Both listings absorb a missing backups directory themselves
@@ -247,7 +256,18 @@ cmd_status() {
     echo -e "  ${BOLD}Config backups:${NC}       ${backup_count}"
 
     # Authentication stats and recent errors
-    backends_run status activity
+    if (( multi )); then
+        for _b in "${BACKENDS_ENABLED[@]}"; do
+            backend_heading "$_b"
+            backend_call "$_b" status service
+            backend_call "$_b" status config
+            backend_call "$_b" status accounting
+            print_drift_lines "$_b" || true
+            backend_call "$_b" status activity
+        done
+    else
+        backends_run status activity
+    fi
 
     # Security posture — aggregate scope prefixes + per-scope secret check +
     # IPv6/IPv4 ACL parity. Iterates all scopes rather than reading the first
@@ -270,17 +290,23 @@ cmd_status() {
         echo -e "      ${YELLOW}scopes with no prefixes: ${empty_prefix_scopes}${NC}"
     fi
 
-    # IPv6 parity warning: if a listener is tcp6 but no IPv6 CIDR exists
-    # anywhere in prefixes/allow, IPv4-mapped addresses can bypass ACLs.
-    local listener_net="tcp" _lname _lnet _laddr
-    while read -r _lname _lnet _laddr; do
-        if [[ "$_lnet" == "tcp6" ]]; then
-            listener_net="tcp6"
-        fi
-    done < <(backends_run listeners list)
-    if [[ "$listener_net" == "tcp6" ]]; then
+    # IPv6 parity warning: if a listener is on an IPv6 network (tcp6, udp6) but
+    # no IPv6 CIDR exists anywhere in prefixes/allow, IPv4-mapped addresses can
+    # bypass ACLs. Scopes are shared by every backend, so any backend's
+    # listener counts; the message names the first one (and its backend, when
+    # there is more than one).
+    local listener_net="" listener_who="listener" _lname _lnet _laddr
+    for _b in "${BACKENDS_ENABLED[@]}"; do
+        while read -r _lname _lnet _laddr; do
+            if [[ "$_lnet" == *6 && -z "$listener_net" ]]; then
+                listener_net="$_lnet"
+                (( multi )) && listener_who="${_b} listener ${_lname}"
+            fi
+        done < <(backend_call "$_b" listeners list)
+    done
+    if [[ -n "$listener_net" ]]; then
         if [[ "$prefix_has_v6" != "1" && "$allow_has_v6" != "1" ]]; then
-            echo -e "    ${RED}IPv6 ACL parity:    MISSING (listener is tcp6 but no IPv6 CIDRs — v4-mapped clients bypass ACLs)${NC}"
+            echo -e "    ${RED}IPv6 ACL parity:    MISSING (${listener_who} is ${listener_net} but no IPv6 CIDRs — v4-mapped clients bypass ACLs)${NC}"
         else
             echo -e "    ${GREEN}IPv6 ACL parity:    present${NC}"
         fi
@@ -471,47 +497,69 @@ cmd_config_validate() {
     fi
 
     # Rendered artifacts: can the store be rendered, and are the live files
-    # that render? A hand-edited file is reported by the DRIFT line below
-    # instead, and counted once.
-    local drifted=0
-    backends_check_drift > /dev/null || drifted=1
+    # that render? A hand-edited file is reported by the DRIFT line instead,
+    # and counted once. With one enabled backend these are plain lines; with
+    # more, each backend has a labelled block of its own (a drifted artifact
+    # of one backend does not hide the render state of another), and the
+    # artifacts no backend claims are reported first. What a disabled backend
+    # left behind is not reported: nothing serves it.
     if [[ "$mode" == "store" ]]; then
-        local rstate="" _b label
         if ! _backends_load; then
             errors=$((errors + 1))
             BACKENDS_ENABLED=()
         fi
-        for _b in ${BACKENDS_ENABLED[@]+"${BACKENDS_ENABLED[@]}"}; do
+    elif ! _backends_load 2> /dev/null; then
+        BACKENDS_ENABLED=()
+    fi
+    local multi=0 rstate="" _b label drifted ind=""
+    local -a targets=(${BACKENDS_ENABLED[@]+"${BACKENDS_ENABLED[@]}"})
+    (( ${#targets[@]} > 1 )) && multi=1
+    (( ${#targets[@]} )) || targets=("")
+    if (( multi )) && ! backends_check_drift --unowned > /dev/null; then
+        print_drift_lines --unowned || true
+        errors=$((errors + 1))
+    fi
+    for _b in "${targets[@]}"; do
+        drifted=0
+        if (( multi )); then
+            echo -e "  ${BOLD}Backend ${_b}:${NC}"
+            ind="  "
+            backends_check_drift "$_b" > /dev/null || drifted=1
+        else
+            backends_check_drift > /dev/null || drifted=1
+        fi
+        if [[ "$mode" == "store" && -n "$_b" ]]; then
             label=$(backend_artifact_names "$_b") || label="$_b"
             if ! rstate=$(backend_call "$_b" render_check); then
-                echo -e "  ${RED}Rendered config:${NC}      the store cannot be rendered (see above)"
+                echo -e "${ind}  ${RED}Rendered config:${NC}      the store cannot be rendered (see above)"
                 errors=$((errors + 1))
             elif (( drifted )); then
                 :
             else
                 case "$rstate" in
                     current|same)
-                        echo -e "  ${GREEN}Rendered config:${NC}      up to date"
+                        echo -e "${ind}  ${GREEN}Rendered config:${NC}      up to date"
                         ;;
                     missing)
-                        echo -e "  ${RED}Rendered config:${NC}      ${label} is missing — run 'tacctl config render'"
+                        echo -e "${ind}  ${RED}Rendered config:${NC}      ${label} is missing — run 'tacctl config render'"
                         errors=$((errors + 1))
                         ;;
                     unrecorded)
-                        echo -e "  ${YELLOW}Rendered config:${NC}      ${label} was not rendered by tacctl yet — the next change replaces it if it says what the store says; otherwise run 'tacctl config render --force'"
+                        echo -e "${ind}  ${YELLOW}Rendered config:${NC}      ${label} was not rendered by tacctl yet — the next change replaces it if it says what the store says; otherwise run 'tacctl config render --force'"
                         ;;
                     *)
-                        echo -e "  ${RED}Rendered config:${NC}      ${label} is out of date with the store — run 'tacctl config render'"
+                        echo -e "${ind}  ${RED}Rendered config:${NC}      ${label} is out of date with the store — run 'tacctl config render'"
                         errors=$((errors + 1))
                         ;;
                 esac
             fi
-        done
-    fi
-    if (( drifted )); then
-        print_drift_lines || true
-        errors=$((errors + 1))
-    fi
+        fi
+        if (( drifted )); then
+            if (( multi )); then print_drift_lines "$_b" || true; else print_drift_lines || true; fi
+            errors=$((errors + 1))
+        fi
+    done
+    ind=""
 
     echo -e "  ${GREEN}Groups defined:${NC}       ${counts[groups]}"
     echo -e "  ${GREEN}Scopes defined:${NC}       ${counts[scopes]}"
@@ -531,25 +579,57 @@ cmd_config_validate() {
 #  LOG COMMANDS
 # =====================================================================
 
-# Each enabled backend prints its own section (lib/backend.sh: log, accounting).
+# Each backend prints its own section (lib/backend.sh: log, accounting): every
+# enabled backend, or the one --backend names. With more than one at work each
+# section has a heading naming its backend; with one, the output is what it
+# always was.
 cmd_log() {
     local subcmd="${1:-}"
     shift || true
 
     case "$subcmd" in
-        tail|search|failures|clear)
+        tail|search|failures|clear|accounting)
+            local -a rest=() ids=()
+            local only="" _b multi=0
+            while (( $# )); do
+                case "$1" in
+                    --backend)
+                        if [[ -z "${2:-}" ]]; then
+                            error "--backend needs a backend id. Usage: tacctl log ${subcmd} [--backend <id>] ..."
+                            return 1
+                        fi
+                        only="$2"
+                        shift 2
+                        ;;
+                    --backend=*) only="${1#*=}"; shift ;;
+                    *)           rest+=("$1"); shift ;;
+                esac
+            done
             _backends_load || return 1
-            backends_run log "$subcmd" "$@"
-            ;;
-        accounting)
-            _backends_load || return 1
-            backends_run accounting tail "$@"
+            if [[ -n "$only" ]]; then
+                if ! backend_registered "$only"; then
+                    error "Unknown backend '${only}' (known: ${BACKEND_IDS[*]})."
+                    return 1
+                fi
+                ids=("$only")
+            else
+                ids=("${BACKENDS_ENABLED[@]}")
+            fi
+            (( ${#ids[@]} > 1 )) && multi=1
+            for _b in "${ids[@]}"; do
+                (( multi )) && backend_heading "$_b"
+                if [[ "$subcmd" == "accounting" ]]; then
+                    backend_call "$_b" accounting tail ${rest[@]+"${rest[@]}"}
+                else
+                    backend_call "$_b" log "$subcmd" ${rest[@]+"${rest[@]}"}
+                fi
+            done
             ;;
         *)
             echo ""
             echo -e "${BOLD}Log Commands${NC}"
             echo ""
-            echo "Usage: tacctl log <subcommand> [arguments]"
+            echo "Usage: tacctl log <subcommand> [--backend <id>] [arguments]"
             echo ""
             echo "Subcommands:"
             echo "  tail [n]              Show last N journal entries (default 20)"
@@ -557,6 +637,9 @@ cmd_log() {
             echo "  failures              Show auth failures from the last 24 hours"
             echo "  accounting [n]        Show last N accounting log entries"
             echo "  clear                 Purge tacquito journal + truncate accounting log (confirms)"
+            echo ""
+            echo "With more than one backend enabled each subcommand shows every backend's log in a"
+            echo "section of its own; --backend <id> shows only that backend's."
             echo ""
             exit 1
             ;;
@@ -786,6 +869,37 @@ _backup_import_legacy() {
     store_import --replace "$1" > /dev/null
 }
 
+# The backends a snapshot's tacctl.yaml enables, one per line.
+_backup_snapshot_enabled() {
+    (
+        TACCTL_OVERRIDES_FILE="${1}/tacctl.yaml"
+        _conf_invalidate
+        _backends_load && printf '%s\n' "${BACKENDS_ENABLED[@]}"
+    )
+}
+
+# A restore brings back the snapshot's backends.enabled with the rest of
+# tacctl.yaml, and the daemons follow it the way 'tacctl backend enable' and
+# 'disable' do: a backend it enables is enabled at boot (the restart that
+# follows starts it), one it takes out is stopped and disabled. $1 is the
+# enabled list before the restore, space-separated.
+_backup_reconcile_backends() {
+    local before=" $1 " _b
+    _backends_load || return 1
+    for _b in "${BACKENDS_ENABLED[@]}"; do
+        [[ "$before" == *" ${_b} "* ]] && continue
+        info "Backend '${_b}' is enabled by this snapshot."
+        backend_call "$_b" service enable || warn "Could not enable the service of backend '${_b}' at boot."
+    done
+    for _b in $1; do
+        [[ " ${BACKENDS_ENABLED[*]} " == *" ${_b} "* ]] && continue
+        info "Backend '${_b}' is not enabled by this snapshot: stopping and disabling its service."
+        backend_call "$_b" service stop || warn "Could not stop the service of backend '${_b}'."
+        backend_call "$_b" service disable || warn "Could not disable the service of backend '${_b}'."
+    done
+    return 0
+}
+
 _backup_restore_snapshot() {
     local id="$1" dir="${BACKUP_DIR}/$1" problems
     if [[ ! -f "${dir}/store.yaml" ]]; then
@@ -806,6 +920,21 @@ _backup_restore_snapshot() {
         return 1
     fi
 
+    # The backends it enables must be on this machine: a restore cannot
+    # install one. (Nothing is touched yet.)
+    local before_enabled snap_enabled _b
+    _backends_load || return 1
+    before_enabled="${BACKENDS_ENABLED[*]}"
+    snap_enabled=$(_backup_snapshot_enabled "$dir") || snap_enabled=""
+    for _b in $snap_enabled; do
+        # One that is enabled already is running here.
+        [[ " ${before_enabled} " == *" ${_b} "* ]] && continue
+        if ! backend_call "$_b" installed; then
+            error "Snapshot ${id} enables backend '${_b}', which is not installed here. Run 'tacctl backend enable ${_b}' first. Nothing was changed."
+            return 1
+        fi
+    done
+
     echo ""
     echo "  Restoring snapshot: ${id}"
     _backup_diff_snapshot "$id"
@@ -820,6 +949,7 @@ _backup_restore_snapshot() {
         error "Snapshot ${id} was not restored: $(backends_artifact_names) could not be rendered from it. Store, tacctl.yaml and $(backends_artifact_names) are as they were."
         return 1
     fi
+    _backup_reconcile_backends "$before_enabled" || true
     backends_restart_all
     info "Restored snapshot ${id}."
     echo ""

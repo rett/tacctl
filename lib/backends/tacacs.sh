@@ -1815,41 +1815,63 @@ _tacacs_status_accounting() {
     done
 }
 
-# Authentication counters from the metrics exporter, then recent errors.
-_tacacs_status_activity() {
-    # Prometheus metrics — auth stats of the default listener. Respects the
-    # tacctl config metrics address: when the exporter is bound to
-    # 127.0.0.1:0 (our "disabled" sink) we skip scraping and report the
-    # disabled state explicitly rather than pretending the service is
-    # unreachable.
-    echo ""
-    echo -e "  ${BOLD}Authentication Stats (since last restart):${NC}"
-    local metrics_addr metrics_url _src
-    read -r metrics_addr _src < <(_tacacs_setting metrics_address)
+# Print the four counters of the exporter at <metrics address>, or why there
+# are none. Respects the tacctl config metrics address: when the exporter is
+# bound to 127.0.0.1:0 (our "disabled" sink) we skip scraping and report the
+# disabled state explicitly rather than pretending the service is unreachable.
+_tacacs_status_stats() {
+    local metrics_addr="$1" metrics_url
     if [[ "$metrics_addr" == "$TACACS_METRICS_SINK" ]]; then
         echo -e "    ${YELLOW}Metrics exporter disabled (tacctl config metrics enable)${NC}"
+        return 0
+    fi
+    if [[ "$metrics_addr" == :* ]]; then
+        metrics_url="http://localhost${metrics_addr}/metrics"
     else
-        if [[ "$metrics_addr" == :* ]]; then
-            metrics_url="http://localhost${metrics_addr}/metrics"
-        else
-            metrics_url="http://${metrics_addr}/metrics"
-        fi
-        local metrics
-        metrics=$(curl -s "$metrics_url" 2>/dev/null || true)
-        if [[ -n "$metrics" ]]; then
-            local auth_pass auth_fail authz_pass authz_fail
-            auth_pass=$(echo "$metrics" | grep -P '^tacquito_authenstart_handle_pap ' | awk '{print $2}' | head -1 || true)
-            auth_fail=$(echo "$metrics" | grep -P '^tacquito_authenpap_handle_error ' | awk '{print $2}' | head -1 || true)
-            authz_pass=$(echo "$metrics" | grep -P '^tacquito_stringy_handle_authorize_accept_pass_add ' | awk '{print $2}' | head -1 || true)
-            authz_fail=$(echo "$metrics" | grep -P '^tacquito_stringy_handle_authorize_fail ' | awk '{print $2}' | head -1 || true)
+        metrics_url="http://${metrics_addr}/metrics"
+    fi
+    local metrics
+    metrics=$(curl -s "$metrics_url" 2>/dev/null || true)
+    if [[ -n "$metrics" ]]; then
+        local auth_pass auth_fail authz_pass authz_fail
+        auth_pass=$(echo "$metrics" | grep -P '^tacquito_authenstart_handle_pap ' | awk '{print $2}' | head -1 || true)
+        auth_fail=$(echo "$metrics" | grep -P '^tacquito_authenpap_handle_error ' | awk '{print $2}' | head -1 || true)
+        authz_pass=$(echo "$metrics" | grep -P '^tacquito_stringy_handle_authorize_accept_pass_add ' | awk '{print $2}' | head -1 || true)
+        authz_fail=$(echo "$metrics" | grep -P '^tacquito_stringy_handle_authorize_fail ' | awk '{print $2}' | head -1 || true)
 
-            echo -e "    Auth attempts:      ${auth_pass:-0}"
-            echo -e "    Auth errors:        ${auth_fail:-0}"
-            echo -e "    Authz granted:      ${authz_pass:-0}"
-            echo -e "    Authz denied:       ${authz_fail:-0}"
-        else
-            echo -e "    ${YELLOW}Metrics unavailable (${metrics_url})${NC}"
-        fi
+        echo -e "    Auth attempts:      ${auth_pass:-0}"
+        echo -e "    Auth errors:        ${auth_fail:-0}"
+        echo -e "    Authz granted:      ${authz_pass:-0}"
+        echo -e "    Authz denied:       ${authz_fail:-0}"
+    else
+        echo -e "    ${YELLOW}Metrics unavailable (${metrics_url})${NC}"
+    fi
+}
+
+# Authentication counters from the metrics exporter, then recent errors. The
+# first block is the default listener's exporter (backends.tacacs.metrics_address);
+# every other listener is its own process and has an exporter only when it
+# sets metrics_address, so each has a block of its own (or a line saying it
+# has none). With only the default listener the report is what it always was.
+_tacacs_status_activity() {
+    echo ""
+    echo -e "  ${BOLD}Authentication Stats (since last restart):${NC}"
+    local metrics_addr _src
+    read -r metrics_addr _src < <(_tacacs_setting metrics_address)
+    _tacacs_status_stats "$metrics_addr"
+
+    local name _net _addr _role maddr _origin
+    if ! _tacacs_units_legacy && (( $(_tacacs_listener_lines | wc -l) > 1 )); then
+        while IFS=$'\t' read -r name _net _addr _role maddr _origin; do
+            [[ -n "$name" && "$name" != "default" ]] || continue
+            echo ""
+            if [[ -z "$maddr" || "$maddr" == "-" ]]; then
+                echo -e "  ${BOLD}Authentication Stats, listener ${name}:${NC} no metrics exporter (listeners.tacacs.${name}.metrics_address)"
+            else
+                echo -e "  ${BOLD}Authentication Stats, listener ${name} (since last restart):${NC}"
+                _tacacs_status_stats "$maddr"
+            fi
+        done < <(backend_listeners tacacs)
     fi
 
     # Recent errors
@@ -2408,6 +2430,18 @@ cmd_store_rollback() {
     fi
     if [[ ! -f "$STORE_FILE" ]]; then
         error "There is no store at ${STORE_FILE}: this install is already in legacy read-only mode. Nothing to roll back."
+        return 1
+    fi
+    # Legacy mode is TACACS+ only: with another backend enabled, the rollback
+    # would leave it serving a store that is gone.
+    local _b others=""
+    _backends_load || return 1
+    for _b in "${BACKENDS_ENABLED[@]}"; do
+        [[ "$_b" == "tacacs" ]] || others+="${others:+, }${_b}"
+    done
+    if [[ -n "$others" ]]; then
+        error "Backend(s) ${others} are enabled, and legacy mode (what a rollback returns to) serves TACACS+ only."
+        error "Disable them first ('tacctl backend disable <id>'). Nothing was changed."
         return 1
     fi
     local pre
@@ -3188,7 +3222,8 @@ backend_tacacs_describe() {
         "units=$(_tacacs_units_all)" \
         "user=tacquito" \
         "config_dir=${CONFIG_DIR}" \
-        "log_dir=${LOG_DIR}"
+        "log_dir=${LOG_DIR}" \
+        "import_cmd=tacctl store import --replace"
 }
 
 # Every listener's unit, space-separated, the default listener's first.
@@ -3326,11 +3361,23 @@ backend_tacacs_service() {
             ;;
         start)     systemctl start "$unit" ;;
         stop)      systemctl stop "$unit" ;;
+        enable|disable)
+            # At boot: every listener's unit, as 'start' and 'stop' reach them
+            # through tacquito.service. A unit that is not there (an instance
+            # whose listener was removed) is not an error for 'disable'.
+            local -a units
+            if [[ "$unit" == "tacquito" ]]; then
+                read -ra units <<< "$(_tacacs_units_all)"
+            else
+                units=("$unit")
+            fi
+            systemctl "$1" "${units[@]}"
+            ;;
         is-active) systemctl is-active "$unit" 2>/dev/null ;;
         since)     systemctl show "$unit" --property=ActiveEnterTimestamp 2>/dev/null | cut -d= -f2 ;;
         pid)       systemctl show "$unit" --property=MainPID 2>/dev/null | cut -d= -f2 ;;
         *)
-            error "Usage: backend_tacacs_service <start|stop|restart|reload|is-active|since|pid> [<listener>]"
+            error "Usage: backend_tacacs_service <start|stop|restart|reload|enable|disable|is-active|since|pid> [<listener>]"
             return 2
             ;;
     esac

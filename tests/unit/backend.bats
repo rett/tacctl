@@ -200,6 +200,21 @@ PY
     [[ ! -e "$OVERRIDES" ]]
 }
 
+@test "schema: backends.enabled takes whatever the registry holds, so a new module only registers itself" {
+    BACKEND_IDS+=(fake)
+    run conf_set_list backends.enabled <<< $'tacacs\nfake'
+    assert_success
+    run grep -c 'fake' "$OVERRIDES"
+    assert_output "1"
+    # the overrides walk agrees
+    run _conf_validate_overrides_file
+    assert_output ""
+    # and what is not registered is still refused, with the registry in the message
+    run conf_set_list backends.enabled <<< $'tacacs\nradius'
+    assert_failure
+    assert_output --partial "'radius' is not a backend (known: tacacs, fake)"
+}
+
 @test "schema: setting backends.enabled to the default writes no override, and is not a shipped default line" {
     conf_set_list backends.enabled <<< "tacacs"
     [[ ! -e "$OVERRIDES" ]]

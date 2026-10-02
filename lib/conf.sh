@@ -443,7 +443,12 @@ PY
 
 _conf_schema_py() {
     _listener_py
-    cat <<'PY'
+    # The registered backends (lib/backend.sh) as a Python list literal.
+    local ids="" id
+    for id in ${BACKEND_IDS[@]+"${BACKEND_IDS[@]}"}; do
+        ids+="${ids:+, }'${id}'"
+    done
+    sed "s/@BACKEND_IDS@/[${ids}]/" <<'PY'
 SCHEMA = {
     'password.max_age_days': {'type': 'int', 'min': 1},
     'password.min_length':   {'type': 'int', 'min': 8,  'max': 64},
@@ -454,13 +459,15 @@ SCHEMA = {
     'mgmt_acl.names.cisco':  {'type': 'acl_name'},
     'mgmt_acl.names.juniper':{'type': 'acl_name'},
     'mgmt_acl.permits':      {'type': 'cidr_list'},
-    # Backends that serve the model, in render and restart order. One id per
-    # module in lib/backends/ (add it here when the module lands). Not in
-    # conf_emit_defaults: 'default' below is the shipped value, as for the
-    # wildcard entries, and BACKENDS_DEFAULT_ENABLED in lib/backend.sh
-    # mirrors it.
+    # Backends that serve the model, in render and restart order. 'values' is
+    # the registry (BACKEND_IDS, lib/backend.sh: every module in lib/backends/
+    # registers itself), substituted when the schema is emitted, so a new
+    # module needs no edit here. Not in conf_emit_defaults: 'default' below is
+    # the shipped value, as for the wildcard entries, and
+    # BACKENDS_DEFAULT_ENABLED in lib/backend.sh mirrors it (a unit test pins
+    # both).
     'backends.enabled':      {'type': 'backend_list',
-                              'values': ['tacacs'],
+                              'values': @BACKEND_IDS@,
                               'default': ['tacacs']},
     # Per-backend daemon settings ('tacctl config loglevel|metrics'). They
     # apply to every listener's process; tacquito takes 10 (error), 20 (info)
