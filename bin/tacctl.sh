@@ -56,10 +56,16 @@ SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 # Order: core.sh must come before conf.sh (conf.sh's source-time tunables
 # overwrite the built-in defaults core.sh assigns and need
 # TACCTL_OVERRIDES_FILE); render_devices.sh and linux_hosts.sh read SCRIPT_DIR.
+# model.sh and store.sh define functions plus STORE_FILE, which depends on
+# nothing in the later files, so their position is not load-bearing.
 # shellcheck source=lib/core.sh
 source "${SCRIPT_DIR}/../lib/core.sh"
 # shellcheck source=lib/conf.sh
 source "${SCRIPT_DIR}/../lib/conf.sh"
+# shellcheck source=lib/model.sh
+source "${SCRIPT_DIR}/../lib/model.sh"
+# shellcheck source=lib/store.sh
+source "${SCRIPT_DIR}/../lib/store.sh"
 # shellcheck source=lib/policy.sh
 source "${SCRIPT_DIR}/../lib/policy.sh"
 # shellcheck source=lib/users.sh
@@ -132,6 +138,11 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
         backup)
             preflight
             cmd_backup "$@"
+            ;;
+        store)
+            # No preflight: 'store import <file>' and 'store show' must work
+            # on a file other than the live config, and need no bcrypt.
+            cmd_store "$@"
             ;;
         hash)
             cmd_hash "$@"

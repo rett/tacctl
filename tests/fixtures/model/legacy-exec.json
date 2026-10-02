@@ -1,0 +1,34 @@
+{
+    "filters": {
+        "allow": [],
+        "deny": []
+    },
+    "groups": {
+        "operator": {
+            "builtin": true,
+            "juniper_class": "OP-CLASS",
+            "priv_lvl": 7
+        },
+        "readonly": {
+            "builtin": true,
+            "juniper_class": "RO-CLASS",
+            "priv_lvl": 1
+        },
+        "superuser": {
+            "builtin": true,
+            "juniper_class": "RW-CLASS",
+            "priv_lvl": 15
+        }
+    },
+    "scopes": {
+        "lab": {
+            "prefixes": [
+                "192.168.0.0/16"
+            ],
+            "protocols": null,
+            "secret": "lab-secret-placeholder-16chars"
+        }
+    },
+    "users": {},
+    "version": 1
+}

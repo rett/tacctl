@@ -1,0 +1,185 @@
+# Importer fixture: content the store cannot represent. A strict import must
+# fail and list every item; --force drops them and reports what it dropped.
+#
+#   netops      group with a third service (ppp) and an extra set_value
+#   mallory     user-level commands override
+#   sha         non-bcrypt (sha512) authenticator
+#   twogroups   member of two groups
+#   syslogger   accounter other than the file accounter
+#   dnszone     non-prefix (DNS) secret provider
+#   custom_setting   unknown top-level key
+
+authenticator_type_bcrypt: &authenticator_type_bcrypt 1
+action_deny:  &action_deny  1
+action_permit: &action_permit 2
+accounter_type_file: &accounter_type_file 3
+handler_type_start: &handler_type_start 1
+provider_type_prefix: &provider_type_prefix 1
+
+# --- Accounting ---
+file_accounter: &file_accounter
+  name: tacquito_accounter
+  type: *accounter_type_file
+
+syslog_accounter: &syslog_accounter
+  name: syslog
+  type: 2
+
+custom_setting: something-local
+
+bcrypt_mallory: &bcrypt_mallory
+  type: *authenticator_type_bcrypt
+  options:
+    hash: 243262243132244d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d
+
+bcrypt_twogroups: &bcrypt_twogroups
+  type: *authenticator_type_bcrypt
+  options:
+    hash: 243262243132245454545454545454545454545454545454545454545454545454545454545454545454545454545454545454545454545454545454
+
+bcrypt_syslogger: &bcrypt_syslogger
+  type: *authenticator_type_bcrypt
+  options:
+    hash: 243262243132245353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535353
+
+sha_sha: &sha_sha
+  type: 2
+  options:
+    hash: 0123456789abcdef
+
+# --- Services ---
+exec_readonly: &exec_readonly
+  name: shell
+  set_values:
+    - name: priv-lvl
+      values: [1]
+
+junos_exec_readonly: &junos_exec_readonly
+  name: junos-exec
+  set_values:
+    - name: local-user-name
+      values: ["RO-CLASS"]
+
+exec_operator: &exec_operator
+  name: shell
+  set_values:
+    - name: priv-lvl
+      values: [7]
+
+junos_exec_operator: &junos_exec_operator
+  name: junos-exec
+  set_values:
+    - name: local-user-name
+      values: ["OP-CLASS"]
+
+exec_superuser: &exec_superuser
+  name: shell
+  set_values:
+    - name: priv-lvl
+      values: [15]
+
+junos_exec_superuser: &junos_exec_superuser
+  name: junos-exec
+  set_values:
+    - name: local-user-name
+      values: ["RW-CLASS"]
+
+exec_netops: &exec_netops
+  name: shell
+  set_values:
+    - name: priv-lvl
+      values: [15]
+    - name: idletime
+      values: [30]
+
+junos_exec_netops: &junos_exec_netops
+  name: junos-exec
+  set_values:
+    - name: local-user-name
+      values: ["NETOPS-CLASS"]
+
+ppp_netops: &ppp_netops
+  name: ppp
+  set_values:
+    - name: F5-LTM-User-Role
+      values: ["0"]
+
+# --- Groups ---
+readonly: &readonly
+  name: readonly
+  services:
+    - *exec_readonly
+    - *junos_exec_readonly
+  accounter: *file_accounter
+
+operator: &operator
+  name: operator
+  services:
+    - *exec_operator
+    - *junos_exec_operator
+  accounter: *file_accounter
+
+superuser: &superuser
+  name: superuser
+  services:
+    - *exec_superuser
+    - *junos_exec_superuser
+  accounter: *file_accounter
+
+netops: &netops
+  name: netops
+  services:
+    - *exec_netops
+    - *junos_exec_netops
+    - *ppp_netops
+  accounter: *file_accounter
+
+# --- Users ---
+users:
+  - name: mallory
+    scopes: ["lab"]
+    groups: [*netops]
+    commands:
+      - name: "configure"
+        action: *action_permit
+    authenticator: *bcrypt_mallory
+    accounter: *file_accounter
+  - name: sha
+    scopes: ["lab"]
+    groups: [*readonly]
+    authenticator: *sha_sha
+    accounter: *file_accounter
+  - name: twogroups
+    scopes: ["lab"]
+    groups: [*readonly, *operator]
+    authenticator: *bcrypt_twogroups
+    accounter: *file_accounter
+  - name: syslogger
+    scopes: ["lab"]
+    groups: [*operator]
+    authenticator: *bcrypt_syslogger
+    accounter: *syslog_accounter
+
+# --- Secret Providers (Scopes) ---
+secrets:
+  - name: lab
+    secret:
+      group: tacquito
+      key: "unrep-lab-secret-0123456789"
+    handler:
+      type: *handler_type_start
+    type: *provider_type_prefix
+    options:
+      prefixes: |
+        [
+          "192.168.0.0/16"
+        ]
+  - name: dnszone
+    secret:
+      group: tacquito
+      key: "unrep-dns-secret-0123456789"
+    handler:
+      type: *handler_type_start
+    type: 2
+    options:
+      suffix: ".example.net"

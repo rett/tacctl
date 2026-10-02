@@ -26,7 +26,10 @@ tests/
 ├── bats/                # vendored bats-core + helpers (git submodules)
 ├── helpers/             # setup.bash, tmpenv.bash, mocks.bash, fixtures.bash
 ├── fixtures/
-│   ├── *.yaml           # tacquito.yaml fixtures
+│   ├── tacquito.*.yaml  # tacquito.yaml fixtures (every one must import into the store without --force)
+│   ├── legacy.*.yaml    # tacquito.yaml inputs for the importer only (edge cases, unrepresentable content)
+│   ├── store.*.yaml     # store.yaml fixtures; store.X.yaml is exactly what importing tacquito.X.yaml writes
+│   ├── model/           # golden model JSON (what model_dump returns for a fixture)
 │   ├── templates/       # device config templates
 │   └── golden/          # expected rendered output (M3)
 ├── unit/                # pure-logic, no I/O, no mocks
@@ -105,6 +108,17 @@ Regenerate the golden files after intentional output changes:
 UPDATE_GOLDEN=1 make test-integration
 git diff tests/fixtures/golden/   # review the delta
 ```
+
+The store tests use the same switch for `tests/fixtures/model/*.json` and
+`tests/fixtures/store.*.yaml`:
+
+```sh
+UPDATE_GOLDEN=1 tests/bats/bats-core/bin/bats tests/unit/store_import.bats
+git diff tests/fixtures/model/ tests/fixtures/store.*.yaml
+```
+
+Store tests set `TACCTL_STATE_DIR` to a directory under `$BATS_TEST_TMPDIR` in
+their own `setup()`, so the store never resolves to `/etc/tacctl`.
 
 ## Coverage baseline
 
