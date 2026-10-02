@@ -43,7 +43,7 @@ tacctl/
     tacctl.sh               # CLI entrypoint (symlinked to /usr/local/bin/tacctl)
   lib/                      # Code sourced by bin/tacctl.sh (core, conf, policy, users, groups, ...)
   config/
-    tacquito.yaml           # Template TACACS+ config (used by installer)
+    tacquito.yaml           # Reference TACACS+ config layout (the installer seeds the store and renders the live file)
     tacquito.service        # Systemd unit file
     tacquito.logrotate      # Log rotation config (daily, 90-day retention)
     templates/
@@ -698,6 +698,8 @@ The upgrade command:
 3. Updates system config files (service unit, logrotate, README) if changed
 4. Restarts the service only if something changed
 5. Re-executes itself if tacctl was updated during the pull
+
+**Moving into the store.** Users, groups, scopes and filters live in `/etc/tacctl/store.yaml`, and `tacquito.yaml` is rendered from it. An install from before the store is moved over by the first upgrade, behind a gate: `tacctl store import --check` must prove that the rendered file makes tacquito answer every client exactly as the current one does, and that the daemon loads it. Only then is the store written, the old file kept as `/etc/tacctl/backups/legacy/tacquito.yaml.pre-store.<timestamp>`, `tacquito.yaml` rendered, and the service restarted. On any other verdict the upgrade still completes, prints the report, and leaves `tacquito.yaml` and the running daemon untouched; tacctl is then in legacy read-only mode (read commands work, changes are refused) until the listed items are fixed and `tacctl upgrade` is run again. Nothing is forced automatically. `tacctl store rollback` undoes the move: it restores the pre-store file, removes the store, and restarts.
 
 Use `--branch` to switch to a different branch (e.g., `develop` for pre-release features). You can also switch branches without upgrading: `tacctl config branch <name>`.
 

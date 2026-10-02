@@ -217,7 +217,7 @@ esac'
     run "$TACCTL_BIN_SCRIPT" scope lookup 10.10.99.42
     assert_success
     # 10.10.99.0/24 (prod-inner) is more specific than 10.0.0.0/8 (prod).
-    # Order after reorder_secrets_by_prefix_specificity puts prod-inner first.
+    # The renderer orders secrets[] by specificity, so prod-inner comes first.
     assert_output --partial "prod-inner"
     assert_output --partial "10.10.99.0/24"
 }

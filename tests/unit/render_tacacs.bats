@@ -54,14 +54,6 @@ upgrade_migrations() {
     regenerate_tacquito_commands
 }
 
-# upgrade_migrations plus the flatten-and-sort of secrets[] that install and
-# every scope mutation apply (upgrade does NOT run it): after this the file
-# is in the state the product itself leaves on disk.
-product_sync() {
-    upgrade_migrations
-    flatten_secrets_if_needed
-}
-
 HASH_X="24326224313224$(printf '58%.0s' {1..53})"
 
 # --- golden output -----------------------------------------------------------
@@ -483,12 +475,15 @@ smoke_arg() {   # value following flag $1 in the recorded argv
 
 # --- 'store import --check' verdict for every tacquito.* fixture -------------
 #
-# The fixtures are hand-built and predate two things the product does to
-# real files: it writes each group's command rules from tacctl.yaml
-# (regenerate_tacquito_commands, on install and every upgrade) and it keeps
+# The fixtures are hand-built and predate two things the product did to
+# real files: it wrote each group's command rules from tacctl.yaml
+# (regenerate_tacquito_commands, on install and every upgrade) and it kept
 # secrets[] flat and sorted by specificity (on install and on every scope
-# mutation -- not on upgrade). So the honest verdict on a raw fixture is NOT
-# EQUIVALENT, and EQUIVALENT once those same product steps have run on it.
+# mutation -- never on upgrade, and the code that did it is gone now that
+# both render from the store). So the honest verdict on a raw fixture is NOT
+# EQUIVALENT, and EQUIVALENT once upgrade's migrations have run on it --
+# except for multiscope, whose secrets[] order no pre-store release would
+# have left on disk and which upgrade does not sort.
 
 @test "check: tacquito.minimal raw differs only latently (groups have no command rules yet)" {
     place_fixture tacquito.minimal.yaml
@@ -538,13 +533,13 @@ smoke_arg() {   # value following flag $1 in the recorded argv
     assert_output "1"
 }
 
-@test "check: every tacquito.* fixture is EQUIVALENT once the product's own sync steps have run on it" {
+@test "check: a fixture with secrets[] in product order is EQUIVALENT once upgrade's migrations have run on it" {
     local f
-    for f in minimal legacy-exec dead-matches multiscope; do
+    for f in minimal legacy-exec dead-matches; do
         place_fixture "tacquito.${f}.yaml"
         _conf_invalidate
         rm -f "$TACCTL_OVERRIDES_FILE"
-        product_sync
+        upgrade_migrations
         run store_import --check
         assert_success
         assert_output --partial "    EQUIVALENT"
@@ -562,20 +557,11 @@ smoke_arg() {   # value following flag $1 in the recorded argv
     assert_output --partial "differ only in groups without users or scopes without users"
     assert_output --partial "NOT EQUIVALENT"
     refute_output --partial '"commands"'
-    local f
-    for f in minimal legacy-exec dead-matches; do
-        place_fixture "tacquito.${f}.yaml"
-        _conf_invalidate
-        rm -f "$TACCTL_OVERRIDES_FILE"
-        upgrade_migrations
-        run store_import --check
-        assert_success
-    done
 }
 
 @test "check: operator command overrides in tacctl.yaml are part of the proof" {
-    place_fixture tacquito.multiscope.yaml
-    product_sync
+    place_fixture tacquito.minimal.yaml
+    upgrade_migrations
     conf_set_json commands.operator '[{"name": "show", "action": "permit"}, {"name": "*", "action": "deny"}]'
     run store_import --check
     assert_failure 1

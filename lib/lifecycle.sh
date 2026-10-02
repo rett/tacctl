@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2164  # errexit is set by bin/tacctl.sh before this file is sourced
-# tacctl lib/lifecycle.sh -- tacquito patch overlay, deploy-repo helpers, config branch, install/upgrade/uninstall
+# tacctl lib/lifecycle.sh -- tacquito patch overlay, deploy-repo helpers, config branch, state migration, config seeding and the store gate, install/upgrade/uninstall
 # Sourced by bin/tacctl.sh (see the load block there for ordering); not executable.
 
 # --- tacquito source patch overlay (see patches/README.md) ---
@@ -336,6 +336,293 @@ state_migrate() {
     return "$rc"
 }
 
+# --- The daemon's config: seeding, syncing, and the move into the store ---
+#
+# Users, groups, scopes and filters live in the store and tacquito.yaml is
+# rendered from it. A fresh install is created that way (install_seed_config).
+# An install from before the store still has a tacquito.yaml that is its own
+# source of truth; upgrade moves it into the store through a gate
+# (upgrade_store_flip) and otherwise leaves it exactly as it is.
+
+# The daemon runs as the 'tacquito' user and must be able to read its config.
+# The renderer's own chown is best-effort because the test suite runs
+# unprivileged; install and upgrade run as root, where a failure is real.
+config_service_access() {
+    [[ $EUID -eq 0 && -f "$CONFIG" ]] || return 0
+    chown tacquito:tacquito "$CONFIG" && chmod 640 "$CONFIG"
+}
+
+# Set by config_sync_existing: 1 when it changed the rendered tacquito.yaml,
+# so the caller knows the daemon has to be restarted.
+CONFIG_SYNC_RENDERED=0
+
+# config_sync_existing: bring an existing install's config in line with this
+# release. Idempotent; run by every upgrade before anything else looks at the
+# config.
+#
+# Without a store, these are the in-place migrations of the legacy
+# tacquito.yaml that upgrades have always run. They must stay ahead of the
+# store gate: it judges the file as they leave it.
+#
+# With a store the legacy migrations are no-ops and the config is re-rendered
+# (a new release can ship new default command rules). One case gets finished
+# here: a store beside a tacquito.yaml tacctl never rendered -- an upgrade
+# interrupted between writing the store and rendering, or a manual
+# 'tacctl store import'. When the render passes what the gate asks for
+# (equivalent to that file, and the daemon loads it) it replaces the file;
+# when it does not, the file is the operator's to resolve and is left alone.
+config_sync_existing() {
+    CONFIG_SYNC_RENDERED=0
+    # Pre-unified-commands installs kept operator-customized commands:
+    # blocks in tacquito.yaml; scrape those back into tacctl.yaml as
+    # overrides (idempotent: no-op once scraped).
+    conf_migrate_command_rules
+    # tacctl <= 0.1.10 shipped match regexes that repeated the command word
+    # (`^show .*$`); tacquito tests match against the arguments only, so
+    # operator/readonly users were denied every `show`. Heal overrides that
+    # still carry that shape.
+    conf_migrate_dead_command_matches
+    # Legacy installs named the Cisco exec service `name: exec`; devices request
+    # `service=shell`, so authorization silently failed post-auth. Heal in place.
+    conf_migrate_exec_service_name
+    if [[ ! -f "$STORE_FILE" ]]; then
+        regenerate_tacquito_commands
+        return 0
+    fi
+
+    local force=() result rc=0
+    rendered_check "$CONFIG" > /dev/null || rc=$?
+    if (( rc == 3 )); then
+        if ! ( _config_render_is_proven ); then
+            warn "${CONFIG} was not rendered by tacctl, and what the store renders is not proven equivalent to it; it was left as it is."
+            warn "To keep what the file says: 'tacctl store import --replace', then 'tacctl config render --force'."
+            warn "To replace it with the store's content: 'tacctl config render --force'."
+            return 0
+        fi
+        info "${CONFIG} is equivalent to what the store renders; replacing it with the rendered file."
+        force=(--force)
+    fi
+    rc=0
+    result=$(tacacs_render_apply "${force[@]}") || rc=$?
+    if (( rc != 0 )); then
+        warn "tacquito.yaml was not re-rendered; run 'tacctl config render' once the problem above is fixed."
+    elif [[ "$result" == "CHANGED" ]]; then
+        CONFIG_SYNC_RENDERED=1
+    fi
+    return 0
+}
+
+# Run in a subshell (it owns a temp dir holding a rendered config): succeeds
+# when what the store renders is equivalent to the live tacquito.yaml and the
+# daemon loads it. As at the gate, a load-smoke that cannot run is not a pass.
+_config_render_is_proven() {
+    local tmpd
+    tmpd=$(mktemp -d) || exit 1
+    # shellcheck disable=SC2064  # expand tmpd now; the subshell owns this trap
+    trap "rm -rf '${tmpd}'" EXIT
+    _tacacs_render_live "${tmpd}/tacquito.yaml" > /dev/null || exit 1
+    store_equiv_check "$CONFIG" "${tmpd}/tacquito.yaml" > /dev/null 2>&1 || exit 1
+    store_smoke_hook "${tmpd}/tacquito.yaml" || exit 1
+    exit 0
+}
+
+# upgrade_store_flip: move a legacy install into the store, if and only if
+# that is proven not to change what the daemon does.
+#   return 0   flipped: store written, tacquito.yaml rendered from it and
+#              recorded. The caller restarts the daemon.
+#          10  nothing to do: a store exists. It is never re-imported.
+#          20  stopped: nothing was changed, the install stays in legacy
+#              read-only mode, the daemon must not be restarted on our account.
+#
+# The gate is 'tacctl store import --check': import, validate, render,
+# equivalence with the live file, and the daemon loading the rendered file.
+# Only its "proven" verdict (exit 0) passes; a failed check (1) and a clean
+# import whose equivalence was not proven (3) both stop. So does a missing
+# daemon binary: the check would skip the load-smoke and still report
+# success, and an upgrade always has the binary it just built or kept.
+# Nothing is forced and the legacy file is not rewritten to make it pass.
+#
+# Order after the gate, and what an interruption leaves behind:
+#   1. the legacy file is kept as backups/legacy/tacquito.yaml.pre-store.<ts>
+#      (interrupted here: still legacy mode; the next run reuses the copy);
+#   2. the store is written (interrupted here: store mode with the legacy
+#      file still live and equivalent; config_sync_existing finishes the
+#      render on the next upgrade, and so does any mutating command);
+#   3. tacquito.yaml is rendered and its checksum recorded;
+#   4. the installed file is compared with the kept one once more. If 3 or 4
+#      fails the store is removed again and the legacy file is live as before.
+upgrade_store_flip() {
+    if [[ -f "$STORE_FILE" ]]; then
+        return 10
+    fi
+    echo ""
+    info "Store migration: ${STORE_FILE} does not exist yet."
+    if [[ ! -f "$CONFIG" ]]; then
+        _upgrade_flip_stopped "there is no ${CONFIG} to import"
+        return 20
+    fi
+    if [[ ! -x "$TACQUITO_BIN" ]] || ! command -v timeout > /dev/null 2>&1; then
+        _upgrade_flip_stopped "the daemon load-smoke cannot run (${TACQUITO_BIN} or 'timeout' is missing), so the rendered config cannot be proven to load"
+        return 20
+    fi
+
+    info "Checking that ${CONFIG} can move into the store without changing what tacquito does (the check writes nothing)..."
+    local rc=0
+    store_import --check || rc=$?
+    case "$rc" in
+        0) ;;
+        3)
+            _upgrade_flip_stopped "the import is clean but its equivalence with ${CONFIG} was not proven"
+            return 20
+            ;;
+        *)
+            _upgrade_flip_stopped "the check above did not pass"
+            return 20
+            ;;
+    esac
+
+    info "Gate passed: writing the store and rendering ${CONFIG} from it..."
+    # The report was printed by the check; errors still reach stderr.
+    if ! store_import > /dev/null; then
+        _upgrade_flip_stopped "the import failed after a clean check"
+        return 20
+    fi
+    local pre
+    if ! pre=$(store_pre_store_latest); then
+        rm -f "$STORE_FILE"
+        _model_invalidate
+        _upgrade_flip_stopped "the pre-store copy of ${CONFIG} is missing"
+        return 20
+    fi
+    # --force, deliberately: this is the first render over a file tacctl
+    # never rendered, and that file is the pre-store copy just kept.
+    if ! tacacs_render_apply --force > /dev/null; then
+        _store_unflip "$pre" || true
+        _upgrade_flip_stopped "${CONFIG} could not be rendered from the store (the store was removed again)"
+        return 20
+    fi
+    if ! store_equiv_check "$pre" "$CONFIG" > /dev/null 2>&1; then
+        _store_unflip "$pre" || true
+        _upgrade_flip_stopped "the rendered ${CONFIG} was not equivalent to the file it replaced (that file is back and the store was removed again)"
+        return 20
+    fi
+    config_service_access \
+        || warn "Could not make ${CONFIG} readable by the tacquito service user (expected tacquito:tacquito, 0640); fix that before the service restarts."
+
+    info "Store migration complete: users, groups, scopes and filters now live in ${STORE_FILE}."
+    info "  ${CONFIG} is rendered from the store; change it with tacctl commands."
+    info "  'tacctl store rollback' returns to the kept pre-store file."
+    return 0
+}
+
+# Said when the daemon does not come back after an upgrade that flipped.
+_upgrade_flip_hint() {
+    [[ "$1" == "flipped" ]] || return 0
+    error "This upgrade moved the configuration into the store. If the rendered ${CONFIG} is the cause, 'tacctl store rollback' restores the previous file."
+}
+
+_upgrade_flip_stopped() {
+    echo ""
+    warn "Store migration stopped: $1."
+    warn "${CONFIG} and the running daemon were left as they are."
+    warn "tacctl stays in legacy read-only mode: read commands work; commands that change users, groups, scopes or filters are refused."
+    warn "To proceed: 'tacctl store import --check' prints the report again. Fix what it lists in ${CONFIG} and run 'tacctl upgrade' again,"
+    warn "or accept the difference yourself: 'tacctl store import' (--force drops what the store cannot hold), then 'tacctl config render --force'."
+    echo ""
+}
+
+# What the shipped tacquito.yaml template listed for the first scope (RFC 1918).
+INSTALL_SCOPE_PREFIXES="10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+# Set by install_seed_config. Mode is one of:
+#   fresh    store seeded and rendered; INSTALL_SHARED_SECRET holds the new secret
+#   store    a store was already there and was kept
+#   flipped  a legacy tacquito.yaml was already there and moved into the store
+#   legacy   a legacy tacquito.yaml was already there and the gate stopped
+INSTALL_CONFIG_MODE=""
+INSTALL_SHARED_SECRET=""
+
+# install_seed_config: give the install its configuration. Needs the state
+# and config directories (state_migrate, install step 4).
+#
+# A fresh install gets a store holding the built-in groups, the scope
+# $DEFAULT_SCOPE_FRESH (RFC 1918 prefixes, a generated secret) and the seed
+# users (lib/store.sh: SEED_USERS), and tacquito.yaml rendered from it.
+#
+# Existing data is never replaced: a store is kept as it is, and a legacy
+# tacquito.yaml goes through the same migrations and gate as on upgrade.
+# Returns 1 when a fresh configuration could not be written.
+install_seed_config() {
+    INSTALL_CONFIG_MODE=""
+    INSTALL_SHARED_SECRET=""
+    mkdir -p "$BACKUP_DIR" "${BACKUP_DIR}/disabled" "$PASSWORD_DATES_DIR" || return 1
+    chmod 750 "$BACKUP_DIR" "$PASSWORD_DATES_DIR"
+    chmod 700 "${BACKUP_DIR}/disabled"
+    chown tacquito:tacquito "$BACKUP_DIR" "$PASSWORD_DATES_DIR" || return 1
+
+    if [[ -f "$STORE_FILE" ]]; then
+        info "Existing store found at ${STORE_FILE}: its users, groups and scopes are kept (no new shared secret)."
+        config_sync_existing
+        INSTALL_CONFIG_MODE="store"
+        return 0
+    fi
+    if [[ -f "$CONFIG" ]]; then
+        info "Existing ${CONFIG} found: it is kept, not replaced by a fresh configuration."
+        config_sync_existing
+        local rc=0
+        upgrade_store_flip || rc=$?
+        if (( rc == 0 )); then
+            INSTALL_CONFIG_MODE="flipped"
+        else
+            INSTALL_CONFIG_MODE="legacy"
+        fi
+        return 0
+    fi
+
+    local secret
+    secret=$(openssl rand -hex 16) || secret=""
+    if [[ -z "$secret" ]]; then
+        error "Could not generate a shared secret (openssl rand failed)."
+        return 1
+    fi
+    info "Seeding the store at ${STORE_FILE}..."
+    # The secret travels on stdin, never on argv (/proc/<pid>/cmdline).
+    store_seed_fresh "$DEFAULT_SCOPE_FRESH" "$INSTALL_SCOPE_PREFIXES" \
+        < <(printf '%s\n' "$secret") || return 1
+
+    # 'tacctl user add <u> <g>' without --scopes lands new users in this
+    # scope (least privilege by default). It is also tacctl's shipped
+    # default, so no override is persisted. Operators who want a production
+    # scope create it:
+    #   tacctl scope add prod --prefixes ... --secret generate
+    #   tacctl scope default prod   (if they want prod-default posture)
+    write_default_scope "$DEFAULT_SCOPE_FRESH" || return 1
+    info "Default scope seeded: ${DEFAULT_SCOPE_FRESH} (new users land here unless --scopes given)"
+    # A tacctl.yaml adopted from an earlier install may still carry
+    # pre-0.1.11 dead match regexes (no-op otherwise).
+    conf_migrate_dead_command_matches
+
+    info "Writing configuration to ${CONFIG}..."
+    if ! tacacs_render_apply > /dev/null; then
+        error "Could not render ${CONFIG} from the store."
+        return 1
+    fi
+    INSTALL_SHARED_SECRET="$secret"
+    INSTALL_CONFIG_MODE="fresh"
+    info "Built-in users seeded (disabled — set a password to activate):"
+    info "  engineer (superuser) — disabled"
+    info "  operator (operator)  — disabled"
+    info "  viewer   (readonly)  — disabled"
+    info "  root     (readonly)  — disabled (accounting sink for Junos internal daemons)"
+}
+
+# install_readme <src>: put README.md in the config directory, readable by
+# everyone (the script's umask would leave it 0600). No-op without <src>.
+install_readme() {
+    local src="$1" dest="${CONFIG_DIR}/README.md"
+    [[ -f "$src" ]] || return 0
+    cp "$src" "$dest" && chmod 644 "$dest"
+}
+
 cmd_install() {
     # Parse optional --branch flag
     local INSTALL_BRANCH=""
@@ -478,7 +765,6 @@ cmd_install() {
     # Symlink management CLI (755 so non-root users can exec into sudo)
     chmod 755 "${DEPLOY_DIR}/bin/tacctl.sh"
     ln -sf "${DEPLOY_DIR}/bin/tacctl.sh" /usr/local/bin/tacctl
-    cp "${PROJECT_DIR}/README.md" "${CONFIG_DIR}/README.md" 2>/dev/null || true
     # Create the state directory (and adopt any state from /etc/tacquito) before anything writes to it
     state_migrate || exit 1
     # Install default config templates
@@ -539,136 +825,15 @@ cmd_install() {
     # CONFIG_DIR is world-traversable so everyone can read README.md; sensitive files inside (tacquito.yaml, backups) are 0640 and stay protected by their own perms. LOG_DIR stays 0750.
     chmod 755 "$CONFIG_DIR"
     chmod 750 "$LOG_DIR"
+    install_readme "${PROJECT_DIR}/README.md" || warn "Could not install ${CONFIG_DIR}/README.md."
 
-    # --- Step 5: Generate shared secret ---
-    local SHARED_SECRET
-    SHARED_SECRET=$(openssl rand -hex 16)
-
-    # --- Step 6: Write configuration ---
-    local CONFIG_FILE="${CONFIG_DIR}/tacquito.yaml"
-    info "Writing configuration to ${CONFIG_FILE}..."
-
-    cp "${PROJECT_DIR}/config/tacquito.yaml" "$CONFIG_FILE"
-
-    # Replace shared secret placeholder using Python. Secret passes through
-    # /dev/fd (process substitution) so it never appears on argv or in the
-    # environment — /proc/<pid>/cmdline sees only the ephemeral fd path.
-    python3 - "$CONFIG_FILE" <(printf '%s' "$SHARED_SECRET") <<'PY'
-import sys, tempfile, os
-config_path, secret_path = sys.argv[1], sys.argv[2]
-with open(secret_path) as f:
-    secret = f.read()
-config = open(config_path).read()
-config = config.replace('REPLACE_WITH_SHARED_SECRET', secret)
-tmp = tempfile.NamedTemporaryFile('w', dir=os.path.dirname(config_path), delete=False)
-tmp.write(config)
-tmp.close()
-os.rename(tmp.name, config_path)
-PY
-
-    chown tacquito:tacquito "$CONFIG_FILE"
-    chmod 640 "$CONFIG_FILE"
-
-    # --- Seed scope.default ---
-    # Fresh installs ship with 'lab' as the sole scope, and tacctl's
-    # shipped default for scope.default is also 'lab' — so this write
-    # revert-to-defaults (no override persisted) while still printing
-    # the info line to confirm intent to the operator. 'tacctl user add
-    # <u> <g>' without --scopes lands new users in lab (least-privilege
-    # by default). Operators who want a production scope create it:
-    #   tacctl scope add prod --prefixes ... --secret generate
-    #   tacctl scope default prod   (if they want prod-default posture)
-    write_default_scope "$DEFAULT_SCOPE_FRESH"
-    info "Default scope seeded: ${DEFAULT_SCOPE_FRESH} (new users land here unless --scopes given)"
-
-    # Flatten the seed template's multi-prefix entry into one entry per
-    # prefix so tacquito's first-match walk lands on the narrowest
-    # matching entry. Idempotent.
-    flatten_secrets_if_needed
-
-    # Sync tacquito.yaml's per-group commands: blocks from tacctl.yaml.
-    # Built-in groups pick up their shipped defaults; custom groups get
-    # any explicit overrides the operator has set. Heal overrides that
-    # carry pre-0.1.11 dead match regexes first (no-op on fresh installs).
-    conf_migrate_dead_command_matches
-    regenerate_tacquito_commands
-
-    mkdir -p "$BACKUP_DIR" "${BACKUP_DIR}/disabled" "$PASSWORD_DATES_DIR"
-    chmod 750 "$BACKUP_DIR" "$PASSWORD_DATES_DIR"
-    chmod 700 "${BACKUP_DIR}/disabled"
-    chown tacquito:tacquito "$BACKUP_DIR" "$PASSWORD_DATES_DIR"
-
-    # --- Seed built-in users (disabled placeholders + root accounting sink) ---
-    # engineer/operator/viewer: templated accounts covering the shipped
-    # privilege tiers so a fresh install has usable identities without ever
-    # writing an unknown credential. Each hash is DISABLED_MARKER_HEX, so
-    # auth denies until the operator runs `tacctl user passwd <name>` —
-    # which replaces the marker with a real bcrypt hash and implicitly
-    # enables the account (is_disabled_hash only matches the marker).
-    #
-    # root: permanently-disabled accounting sink. Junos devices emit
-    # accounting packets with User=root whenever internal daemons (mgd,
-    # jsd, op-script probes, etc.) run non-tty CLI commands; tacquito's
-    # acct handler errors when it can't find the user. Seeding root here
-    # with an accounter silences those errors and routes the packets to
-    # the file accounter. The hash stays at DISABLED_MARKER_HEX forever —
-    # root is a Junos built-in intended for local/console use, never
-    # TACACS+. `cmd_passwd` rejects the name to keep the sink
-    # unauthenticable across its lifetime.
-    info "Seeding built-in users (disabled — set a password to activate)..."
-    python3 - "$CONFIG_FILE" "$DISABLED_MARKER_HEX" "$DEFAULT_SCOPE_FRESH" <<'PY'
-import sys, tempfile, os, re
-config_path, marker, default_scope = sys.argv[1], sys.argv[2], sys.argv[3]
-builtins = [
-    ("engineer", "superuser"),
-    ("operator", "operator"),
-    ("viewer",   "readonly"),
-    ("root",     "readonly"),
-]
-config = open(config_path).read()
-
-# Insert all authenticator anchor blocks before '# --- Services ---'.
-auth_blocks = "".join(
-    f'bcrypt_{u}: &bcrypt_{u}\n'
-    f'  type: *authenticator_type_bcrypt\n'
-    f'  options:\n'
-    f'    hash: {marker}\n\n'
-    for u, _ in builtins
-)
-marker_auth = '# --- Services ---'
-idx = config.index(marker_auth)
-prefix = config[:idx].rstrip('\n')
-config = prefix + '\n\n' + auth_blocks.rstrip('\n') + '\n\n' + config[idx:]
-
-# Insert all user entries before the Secret Providers section. Prefix
-# match tolerates both '# --- Secret Providers ---' and the newer
-# '# --- Secret Providers (Scopes) ---'.
-user_blocks = "".join(
-    f'  # {u}\n'
-    f'  - name: {u}\n'
-    f'    scopes: ["{default_scope}"]\n'
-    f'    groups: [*{g}]\n'
-    f'    authenticator: *bcrypt_{u}\n'
-    f'    accounter: *file_accounter\n\n'
-    for u, g in builtins
-)
-m_sp = re.search(r'^# --- Secret Providers\b', config, re.M)
-if not m_sp:
-    raise SystemExit("seed: could not locate '# --- Secret Providers' section")
-idx2 = m_sp.start()
-prefix2 = config[:idx2].rstrip('\n')
-config = prefix2 + '\n\n' + user_blocks.rstrip('\n') + '\n\n' + config[idx2:]
-
-tmp = tempfile.NamedTemporaryFile('w', dir=os.path.dirname(config_path), delete=False)
-tmp.write(config)
-tmp.close()
-os.rename(tmp.name, config_path)
-PY
-    chown tacquito:tacquito "$CONFIG_FILE"
-    info "  engineer (superuser) — disabled"
-    info "  operator (operator)  — disabled"
-    info "  viewer   (readonly)  — disabled"
-    info "  root     (readonly)  — disabled (accounting sink for Junos internal daemons)"
+    # --- Steps 5-6: Shared secret, store, configuration ---
+    local CONFIG_FILE="$CONFIG"
+    install_seed_config || exit 1
+    if ! config_service_access; then
+        error "Could not make ${CONFIG_FILE} readable by the tacquito service user."
+        exit 1
+    fi
 
     # --- Step 7: Install systemd service ---
     info "Installing systemd service..."
@@ -704,12 +869,24 @@ PY
     echo "============================================"
     echo ""
     echo "  Service:        tacquito.service (enabled, running)"
-    echo "  Config:         ${CONFIG_FILE}"
+    echo "  Store:          ${STORE_FILE}"
+    echo "  Config:         ${CONFIG_FILE} (rendered from the store)"
     echo "  Accounting log: ${LOG_DIR}/accounting.log"
     echo ""
-    echo "  Shared Secret:  ${SHARED_SECRET}"
+    if [[ "$INSTALL_CONFIG_MODE" != "fresh" ]]; then
+        # Existing data was kept: no new secret, no seeded users.
+        case "$INSTALL_CONFIG_MODE" in
+            store)   echo "  Existing store kept: users, groups, scopes and shared secrets are unchanged." ;;
+            flipped) echo "  Existing tacquito.yaml kept and moved into the store: users, scopes and shared secrets are unchanged." ;;
+            *)       echo -e "  ${YELLOW}Existing tacquito.yaml kept, NOT moved into the store: legacy read-only mode (see the report above).${NC}" ;;
+        esac
+        echo "  Show a scope's shared secret: tacctl scope secret <scope> show"
+        echo ""
+        return 0
+    fi
+    echo "  Shared Secret:  ${INSTALL_SHARED_SECRET}"
     echo ""
-    echo -e "  ${RED}SAVE THE SHARED SECRET — it is not stored in plaintext.${NC}"
+    echo -e "  ${RED}SAVE THE SHARED SECRET${NC} (shown again by: tacctl scope secret ${DEFAULT_SCOPE_FRESH} show)."
     echo -e "  ${YELLOW}Clear your terminal after recording: history -c && clear${NC}"
     echo ""
     echo "  Built-in users:"
@@ -781,21 +958,10 @@ cmd_upgrade() {
     # --- Move tacctl state out of /etc/tacquito (idempotent; before anything reads tacctl.yaml) ---
     state_migrate || exit 1
 
-    # --- Sync tacquito.yaml command blocks with tacctl config ---
-    # Pre-unified-commands installs kept operator-customized commands:
-    # blocks in tacquito.yaml; scrape those back into tacctl.yaml as
-    # overrides (idempotent: no-op once scraped), then regenerate so
-    # tacquito.yaml matches the tacctl-authored state.
-    conf_migrate_command_rules
-    # tacctl <= 0.1.10 shipped match regexes that repeated the command word
-    # (`^show .*$`); tacquito tests match against the arguments only, so
-    # operator/readonly users were denied every `show`. Heal overrides that
-    # still carry that shape.
-    conf_migrate_dead_command_matches
-    # Legacy installs named the Cisco exec service `name: exec`; devices request
-    # `service=shell`, so authorization silently failed post-auth. Heal in place.
-    conf_migrate_exec_service_name
-    regenerate_tacquito_commands
+    # --- Bring the existing config in line with this release ---
+    # Legacy migrations of tacquito.yaml, or a re-render once the store
+    # exists. The store gate further down judges the file as this leaves it.
+    config_sync_existing
 
     # --- Record current version ---
     local CURRENT_COMMIT
@@ -999,6 +1165,8 @@ cmd_upgrade() {
     fi
 
     update_if_changed "${ACTIVE_DEPLOY_DIR}/README.md" "${CONFIG_DIR}/README.md" "README.md"
+    # Installs before the README fix have it 0600 root, or not at all.
+    chmod 644 "${CONFIG_DIR}/README.md" 2>/dev/null || true
     update_if_changed "${ACTIVE_DEPLOY_DIR}/config/tacquito.logrotate" "/etc/logrotate.d/tacquito" "logrotate config"
     update_if_changed "${ACTIVE_DEPLOY_DIR}/config/tacctl.bash-completion" "/etc/bash_completion.d/tacctl" "bash completion"
     chmod 644 /etc/bash_completion.d/tacctl 2>/dev/null || true
@@ -1027,8 +1195,22 @@ cmd_upgrade() {
 
     info "${SCRIPTS_UPDATED} file(s) updated."
 
-    # --- Restart service (if binaries or service file changed) ---
-    if [[ "$SKIP_BUILD" == "false" ]] || [[ "$SCRIPTS_UPDATED" -gt 0 ]]; then
+    # --- Move a legacy install into the store (gated; see upgrade_store_flip) ---
+    # Here rather than next to the migrations above, so the gate's load-smoke
+    # runs the daemon binary this upgrade leaves in place, and so one restart
+    # below covers the new binary and the rendered config. A stop is not an
+    # upgrade failure: the code is installed and the daemon keeps its config.
+    local STORE_STATE="present" flip_rc=0
+    upgrade_store_flip || flip_rc=$?
+    case "$flip_rc" in
+        0)  STORE_STATE="flipped" ;;
+        10) ;;
+        *)  STORE_STATE="stopped" ;;
+    esac
+
+    # --- Restart service (if binaries, service file or the rendered config changed) ---
+    if [[ "$SKIP_BUILD" == "false" ]] || [[ "$SCRIPTS_UPDATED" -gt 0 ]] \
+        || [[ "$STORE_STATE" == "flipped" ]] || [[ "$CONFIG_SYNC_RENDERED" == "1" ]]; then
         info "Restarting tacquito service..."
         systemctl restart tacquito.service
         sleep 2
@@ -1047,9 +1229,11 @@ cmd_upgrade() {
                 else
                     error "Rollback failed. Check: journalctl -u tacquito"
                 fi
+                _upgrade_flip_hint "$STORE_STATE"
                 exit 1
             else
                 error "Tacquito failed to start. Check: journalctl -u tacquito"
+                _upgrade_flip_hint "$STORE_STATE"
                 exit 1
             fi
         fi
@@ -1073,11 +1257,26 @@ cmd_upgrade() {
         echo "  Scripts Updated (source unchanged at ${CURRENT_COMMIT})"
     fi
     echo "  Managed scripts: ${SCRIPTS_UPDATED} updated"
+    case "$STORE_STATE" in
+        flipped) echo "  Store: migrated from tacquito.yaml ('tacctl store rollback' undoes it)" ;;
+        stopped) echo "  Store: NOT migrated — legacy read-only mode (see 'Store migration stopped' above)" ;;
+    esac
     echo "============================================"
     echo ""
 }
 
 # --- UNINSTALL ---
+# uninstall_remove_access: remove what grants or serves access through a
+# tacctl that is about to be gone. Both sudoers drop-ins go: the tier rules
+# allow commands of the removed binary to the tier groups, and must not
+# outlive it. So does the Linux host data (pam_tacplus source and prebuilt
+# modules), and its parent directory when that leaves it empty.
+uninstall_remove_access() {
+    rm -f "$SUDOERS_FILE" "$TIER_SUDOERS_FILE"
+    rm -rf "${LINUX_DIR:?}"
+    rmdir "$(dirname "$LINUX_DIR")" 2>/dev/null || true
+}
+
 cmd_uninstall() {
 
     echo ""
@@ -1093,6 +1292,9 @@ cmd_uninstall() {
     echo "  - State directory (${TACCTL_STATE_DIR})"
     echo "  - Log directory (/var/log/tacquito)"
     echo "  - Logrotate config"
+    echo "  - Sudoers rules (${SUDOERS_FILE}, ${TIER_SUDOERS_FILE})"
+    echo "  - Bash completion (/etc/bash_completion.d/tacctl)"
+    echo "  - Linux host build data (${LINUX_DIR})"
     echo "  - Service user (tacquito)"
     echo "  - Management repo (${DEPLOY_DIR})"
     echo ""
@@ -1145,12 +1347,16 @@ cmd_uninstall() {
     rm -f /etc/systemd/system/tacquito.service
     rm -f /etc/systemd/system/tacquito.service.bak
     rm -rf /etc/systemd/system/tacquito.service.d
-    rm -f /etc/sudoers.d/tacctl
     systemctl daemon-reload
 
-    # --- Remove logrotate config ---
-    info "Removing logrotate config..."
+    # --- Remove sudoers rules and Linux host build data ---
+    info "Removing sudoers rules and Linux host build data..."
+    uninstall_remove_access
+
+    # --- Remove logrotate config and bash completion ---
+    info "Removing logrotate config and bash completion..."
     rm -f /etc/logrotate.d/tacquito
+    rm -f /etc/bash_completion.d/tacctl
 
     # --- Remove man page ---
     info "Removing man page..."
@@ -1212,7 +1418,7 @@ cmd_uninstall() {
     echo "    - Tacquito service and binary"
     echo "    - Management CLI and symlinks"
     echo "    - Configuration and systemd unit"
-    echo "    - Logrotate config"
+    echo "    - Logrotate config, sudoers rules, bash completion"
     echo "    - Service user"
     if [[ "$PRESERVE_BACKUPS" == "true" && -n "$BACKUP_ARCHIVE" ]]; then
         echo "    - Config backups saved to: ${BACKUP_ARCHIVE}"

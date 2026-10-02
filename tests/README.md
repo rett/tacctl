@@ -27,7 +27,7 @@ tests/
 ├── helpers/             # setup.bash, tmpenv.bash, mocks.bash, fixtures.bash
 ├── fixtures/
 │   ├── tacquito.*.yaml  # tacquito.yaml fixtures (every one must import into the store without --force)
-│   ├── legacy.*.yaml    # tacquito.yaml inputs for the importer only (edge cases, unrepresentable content)
+│   ├── legacy.*.yaml    # tacquito.yaml inputs for the importer and the upgrade gate (edge cases, unrepresentable content, the old installer's output)
 │   ├── store.*.yaml     # store.yaml fixtures; store.X.yaml is exactly what importing tacquito.X.yaml writes
 │   ├── model/           # golden model JSON (what model_dump returns for a fixture)
 │   ├── templates/       # device config templates
@@ -168,8 +168,8 @@ Notes:
   command must refuse there; `tests/integration/store_mutations.bats` holds the
   list of verbs and is where a new mutating verb gets added.
 - The legacy `tacquito.yaml` migrations (`conf_migrate_command_rules`,
-  `conf_migrate_exec_service_name`, `flatten_secrets_if_needed`, and the legacy
-  half of `regenerate_tacquito_commands`) are no-ops once a store exists, so
+  `conf_migrate_exec_service_name`, and the legacy half of
+  `regenerate_tacquito_commands`) are no-ops once a store exists, so
   their tests place fixtures with `place_fixture`.
 
 The renderer goldens work the same way:
@@ -184,19 +184,50 @@ git diff tests/fixtures/golden/tacquito.*.rendered.yaml
 `--check` renders the imported model and asks whether tacquito would behave
 identically on the two files. The hand-built `tacquito.*.yaml` fixtures do
 **not** pass as they stand, and that is the correct verdict: they carry no
-per-group command rules (the product writes those from `tacctl.yaml` on every
+per-group command rules (the product wrote those from `tacctl.yaml` on every
 install and upgrade), `tacquito.legacy-exec.yaml` still names the Cisco
 service `exec`, and `tacquito.multiscope.yaml` lists `prod` before the
-narrower `prod-inner`, an order the product never leaves on disk. Each one
-passes once the sync steps a pre-store install had applied have run on it: the
-migrations every upgrade runs on a legacy file (`conf_migrate_exec_service_name`,
-`regenerate_tacquito_commands`) and, for multiscope, the flatten-and-sort of
-`secrets` that install applied (`flatten_secrets_if_needed`; upgrade does not
-run it); `tests/unit/render_tacacs.bats` pins both verdicts. A test that needs a config which passes the check as-is should load
+narrower `prod-inner`, an order no pre-store release left on disk. All but
+multiscope pass once the migrations every upgrade runs on a legacy file have
+run on them (`config_sync_existing`: `conf_migrate_exec_service_name`,
+`regenerate_tacquito_commands`). Multiscope does not: upgrade never sorted
+`secrets`, and the gate does not rewrite a file to make it pass, so it is the
+fixture for a clean import that is not equivalent. `tests/unit/render_tacacs.bats`
+pins these verdicts. A test that needs a config which passes the check as-is
+should load `legacy.fresh-install.yaml` (what the template-editing installer
+wrote: old layout, four disabled seed users, scope `lab`),
 `golden/tacquito.minimal.rendered.yaml` or `golden/tacquito.multiscope.rendered.yaml`.
 
 The daemon load-smoke is skipped in tests (`$TACCTL_BIN` holds no `tacquito`);
 tests that exercise it install a stand-in script there.
+
+## Install, upgrade, uninstall
+
+`cmd_install`, `cmd_upgrade` and `cmd_uninstall` shell out to git, go, apt,
+useradd and systemd and write fixed system paths, so they are not run by the
+suite. What they do to the configuration is in functions the tests drive
+directly, in the order the commands call them:
+
+| Function | Called by | Tests |
+|---|---|---|
+| `state_migrate` | install, upgrade | `integration/state_migrate.bats` |
+| `install_seed_config` (fresh store + first render; existing data is kept) | install | `e2e/install_seed.bats` |
+| `config_sync_existing` (legacy migrations, or a re-render with a store) | upgrade, install over existing data | `integration/upgrade_store_flip.bats` |
+| `upgrade_store_flip` (the import gate: 0 flipped, 10 store present, 20 stopped) | upgrade, install over a legacy config | `integration/upgrade_store_flip.bats` |
+| `cmd_store_rollback` (`tacctl store rollback`) | operator | `integration/upgrade_store_flip.bats` |
+| `install_readme`, `uninstall_remove_access` | install, uninstall | `e2e/install_seed.bats` |
+
+Notes:
+
+- The gate refuses to run without the daemon binary (a skipped load-smoke is
+  not a pass), so a test that expects a flip installs a stand-in `tacquito`
+  in `$TACCTL_BIN` first.
+- `e2e/install_seed.bats` sets `TACCTL_TIER_SUDOERS_FILE` and `TACCTL_LINUX_DIR`
+  before sourcing, because `uninstall_remove_access` deletes those paths; a
+  test that calls it must do the same.
+- The suite runs unprivileged with `chown` stubbed. Real ownership (the store
+  0600 root, `tacquito.yaml` 0640 `tacquito:tacquito`, `config_service_access`)
+  is only exercised by a run as root on a real host.
 
 ## Coverage baseline
 
@@ -210,8 +241,9 @@ spreads over the entrypoint and eleven lib files and has not been re-measured:
 | `tests/helpers/*` (tmpenv, setup, mocks) | 92%+ |
 | Overall | 52.41% (2319 / 4425 lines) |
 
-Uncovered territory is dominated by `cmd_install` / `cmd_upgrade` / `cmd_uninstall`
-(heavy shell-outs to git, apt, go, systemctl, useradd — deliberately deferred)
+Uncovered territory is dominated by the bodies of `cmd_install` / `cmd_upgrade` /
+`cmd_uninstall` (heavy shell-outs to git, apt, go, systemctl, useradd — see
+"Install, upgrade, uninstall" above for the parts that are covered)
 plus a smattering of defensive error branches. Filling these in is a follow-up
 milestone, not a blocker.
 

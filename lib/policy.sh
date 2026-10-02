@@ -343,8 +343,9 @@ PY
 }
 
 # --- Bring tacquito.yaml's per-group `commands:` blocks in line with tacctl.yaml ---
-# Called by install and upgrade after they changed (or may have changed)
-# commands.<group> in tacctl.yaml. Commands no longer call it: they render.
+# Called by config_sync_existing (lib/lifecycle.sh, on install and upgrade) and
+# by tests, after commands.<group> in tacctl.yaml may have changed. Commands
+# do not call it: they render.
 #
 # With a store, tacquito.yaml is an artifact, so this re-renders it. A
 # refused render (hand-edited file) is reported and left for the operator;

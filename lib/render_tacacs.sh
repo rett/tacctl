@@ -775,9 +775,14 @@ _tacacs_render_live() {
         < <(printf '%s' "$_TACCTL_CFG_CACHE")
 }
 
-# Copy a file that is about to be overwritten into backups/legacy/.
+# Copy a file that is about to be overwritten into backups/legacy/. A file
+# the import already kept as the pre-store config is not copied twice.
 _tacacs_save_displaced() {
     local src="$1" dir="${BACKUP_DIR}/legacy" dest
+    if dest=$(store_pre_store_latest) && cmp -s "$src" "$dest"; then
+        info "Previous ${src} is already kept as ${dest}" >&2
+        return 0
+    fi
     mkdir -p "$dir" || return 1
     chmod 700 "$dir"
     dest="${dir}/$(basename "$src").drift.$(date +%Y%m%d_%H%M%S_%3N)"

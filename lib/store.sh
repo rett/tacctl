@@ -125,7 +125,7 @@ def normalize_hash(value):
 
 def cidr_key(c):
     """Render order: IPv4 first, narrower/earlier ranges first. Same key as
-    sort_cidrs_by_specificity and reorder_secrets_by_prefix_specificity."""
+    sort_cidrs_by_specificity (lib/core.sh)."""
     n = ipaddress.ip_network(c, strict=False)
     return (n.version, int(n.broadcast_address), int(n.network_address))
 
@@ -718,6 +718,25 @@ def op_filters_set(store, args):
         if canonical_cidr(c) is None:
             raise StoreError(f"filters.{args[0]}: invalid CIDR {c!r}")
     store['filters'][args[0]] = items
+
+
+# What a fresh install starts with besides the built-in groups: one account
+# per shipped tier, each without a password and therefore disabled until
+# 'tacctl user passwd <name>', and 'root' as the accounting sink. Junos
+# devices send accounting records with User=root whenever an internal daemon
+# runs a CLI command, and tacquito logs an error for a user it does not know;
+# the sink gives those records a home and can never authenticate.
+SEED_USERS = (('engineer', 'superuser'), ('operator', 'operator'),
+              ('viewer', 'readonly'), ('root', 'readonly'))
+
+
+def op_seed_fresh(store, args):
+    if len(args) != 3:
+        raise StoreError('usage: <scope> <cidr>[,<cidr>...] <secret>')
+    scope, prefixes, secret = args
+    op_scope_set(store, [scope, 'prefixes=' + prefixes, 'secret=' + secret])
+    for name, group in SEED_USERS:
+        op_user_set(store, [name, 'group=' + group, 'scopes=' + scope])
 PY
 }
 
@@ -920,6 +939,27 @@ store_init() {
     return "$rc"
 }
 
+# store_seed_fresh <scope> <cidr>[,<cidr>...]   (shared secret on stdin)
+# Create the store of a fresh install in one validated write: the built-in
+# groups, the scope, and the seed users (SEED_USERS above) as members of it.
+# Fails, writing nothing, if a store already exists.
+store_seed_fresh() {
+    local scope="${1:-}" prefixes="${2:-}" secret="" rc=0
+    if [[ -e "$STORE_FILE" ]]; then
+        error "Store already exists at ${STORE_FILE}."
+        return 1
+    fi
+    IFS= read -r secret || true
+    if [[ -z "$scope" || -z "$prefixes" || -z "$secret" ]]; then
+        error "Usage: store_seed_fresh <scope> <cidr>[,<cidr>...]  (shared secret on stdin)"
+        return 1
+    fi
+    _store_python mutate "$STORE_FILE" 1 'op_seed_fresh(store, args)' \
+        < <(printf '%s\0' "$scope" "$prefixes" "$secret") || rc=$?
+    _model_invalidate
+    return "$rc"
+}
+
 # --- Typed mutations --------------------------------------------------------
 # Each is one validated atomic write. They create-or-update ("set") or fail
 # when the target is missing ("del"); callers decide whether "already exists"
@@ -1041,14 +1081,25 @@ _store_import_run() {
     echo ""
 
     if (( ! check )); then
+        local pre=""
         if [[ -n "$existing" ]]; then
             store_snapshot_hook || exit 1
+        elif [[ "$src" -ef "$CONFIG" ]]; then
+            # The flip: the live config is about to stop being the source of
+            # truth. Keep it, so 'tacctl store rollback' can go back.
+            if ! pre=$(store_keep_pre_store "$src"); then
+                error "Import failed: could not keep a copy of ${src} under ${BACKUP_DIR}/legacy/. Nothing was written."
+                exit 1
+            fi
         fi
         if ! _store_python import-write "${tmpd}/model.json" "$STORE_FILE"; then
             error "Import failed. Nothing was written."
             exit 1
         fi
         info "Store written to ${STORE_FILE}."
+        if [[ -n "$pre" ]]; then
+            info "Pre-store ${src} kept as ${pre} ('tacctl store rollback' returns to it)."
+        fi
         exit 0
     fi
 
@@ -1096,6 +1147,127 @@ _store_import_run() {
     exit 0
 }
 
+# --- The pre-store config and rollback (plan 4.4) ---------------------------
+#
+# The first import of the live tacquito.yaml ("the flip") keeps that file as
+# backups/legacy/tacquito.yaml.pre-store.<ts> (0600: it holds the shared
+# secrets and hashes). 'tacctl store rollback' puts the newest one back and
+# removes the store, which returns the install to legacy read-only mode.
+
+# store_pre_store_latest: print the path of the newest pre-store file.
+# Returns 1, printing nothing, when there is none.
+store_pre_store_latest() {
+    local f newest=""
+    for f in "${BACKUP_DIR}/legacy"/tacquito.yaml.pre-store.*; do
+        [[ -f "$f" && ! -L "$f" ]] || continue
+        if [[ -z "$newest" || "$f" > "$newest" ]]; then
+            newest="$f"
+        fi
+    done
+    [[ -n "$newest" ]] || return 1
+    echo "$newest"
+}
+
+# store_keep_pre_store <file>: keep a copy of <file> as a pre-store file and
+# print its path. An identical newest copy is reused, so a repeated or
+# resumed import does not pile them up.
+store_keep_pre_store() {
+    local src="$1" dir="${BACKUP_DIR}/legacy" newest ts dest n=0
+    if newest=$(store_pre_store_latest) && cmp -s "$src" "$newest"; then
+        echo "$newest"
+        return 0
+    fi
+    mkdir -p "$dir" || return 1
+    chmod 700 "$dir" || return 1
+    ts=$(date +%Y%m%d_%H%M%S)
+    dest="${dir}/tacquito.yaml.pre-store.${ts}"
+    while [[ -e "$dest" || -L "$dest" ]]; do
+        n=$((n + 1))
+        dest="${dir}/tacquito.yaml.pre-store.${ts}.${n}"
+    done
+    cp "$src" "$dest" || return 1
+    chmod 600 "$dest" || return 1
+    echo "$dest"
+}
+
+# _store_unflip <pre-store-file>: make <pre-store-file> the live tacquito.yaml
+# again (0640, tacquito:tacquito when possible; left alone when it already
+# says the same, byte for byte) and remove the store and the render records.
+# The config goes back first: if that fails nothing was removed. No snapshot,
+# no restart -- callers do those.
+_store_unflip() {
+    local pre="$1" staged="${CONFIG}.tacctl-new"
+    if ! cmp -s "$pre" "$CONFIG"; then
+        cp "$pre" "$staged" || { rm -f "$staged"; return 1; }
+        chmod 640 "$staged"
+        chown tacquito:tacquito "$staged" 2>/dev/null || true
+        mv -f "$staged" "$CONFIG" || { rm -f "$staged"; return 1; }
+    fi
+    rm -f "$STORE_FILE" "$RENDERED_FILE" || return 1
+    _model_invalidate
+}
+
+# tacctl store rollback
+# Returns 0 rolled back (or cancelled at the prompt); 1 refused or failed,
+# with the store untouched; 2 usage.
+cmd_store_rollback() {
+    if (( $# )); then
+        error "Usage: tacctl store rollback"
+        return 2
+    fi
+    if [[ ! -f "$STORE_FILE" ]]; then
+        error "There is no store at ${STORE_FILE}: this install is already in legacy read-only mode. Nothing to roll back."
+        return 1
+    fi
+    local pre
+    if ! pre=$(store_pre_store_latest); then
+        error "No pre-store config (tacquito.yaml.pre-store.<timestamp>) under ${BACKUP_DIR}/legacy/: there is nothing to roll back to."
+        error "A fresh install starts with its store and never had a legacy tacquito.yaml. The store was left untouched."
+        return 1
+    fi
+    # Legacy mode reads everything from this file; one the loader cannot
+    # read would leave tacctl without a model.
+    if ! _store_python dump-legacy "$pre" "$PASSWORD_DATES_DIR" "${BACKUP_DIR}/disabled" > /dev/null; then
+        error "${pre} cannot be read as a tacquito.yaml. Nothing was changed."
+        return 1
+    fi
+
+    echo ""
+    echo -e "${BOLD}Roll back to the pre-store configuration${NC}"
+    echo ""
+    echo "  This restores ${pre}"
+    echo "  as ${CONFIG}, removes ${STORE_FILE} and the render records,"
+    echo "  and restarts the service. tacctl is then in legacy read-only mode: read commands"
+    echo "  work, commands that change users, groups, scopes or filters are refused."
+    echo "  The store is snapshotted first (see 'tacctl backup list')."
+    if ! _tacacs_matches_store "$pre"; then
+        echo ""
+        warn "The store no longer says what the pre-store file says: users, groups, scopes or filters changed since the import."
+        warn "Those changes stop being in effect. They stay in the snapshot, not in ${CONFIG}."
+    fi
+    echo ""
+    local confirm
+    read -rp "  Roll back? [y/N]: " confirm || true
+    if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+        info "Cancelled."
+        return 0
+    fi
+
+    backup_snapshot || { error "Could not snapshot the store. Nothing was changed."; return 1; }
+    # A rendered config somebody edited by hand is not in the snapshot.
+    if [[ -f "$CONFIG" ]] && ! rendered_check "$CONFIG" > /dev/null; then
+        _tacacs_save_displaced "$CONFIG" || { error "Could not keep a copy of ${CONFIG}. Nothing was changed."; return 1; }
+    fi
+    if ! _store_unflip "$pre"; then
+        error "Rollback failed: ${CONFIG} could not be replaced. The store was left untouched."
+        return 1
+    fi
+    restart_service
+    info "Rolled back: ${CONFIG} is the pre-store file again and the store is gone (legacy read-only mode)."
+    info "To move to the store again: 'tacctl store import --check', then 'tacctl upgrade' (or 'tacctl store import' and 'tacctl config render --force')."
+    echo ""
+}
+
 # --- CLI: tacctl store ... --------------------------------------------------
 
 cmd_store_usage() {
@@ -1109,6 +1281,8 @@ cmd_store_usage() {
     echo "      --check     write nothing; report what an import would do"
     echo "      --force     drop content the store cannot represent (each item is listed)"
     echo "      --replace   overwrite an existing store"
+    echo "  rollback                               Undo the import: restore the pre-store tacquito.yaml, remove"
+    echo "                                         the store, restart (back to legacy read-only mode)."
     echo ""
 }
 
@@ -1135,6 +1309,7 @@ cmd_store() {
     case "$sub" in
         show)   cmd_store_show "$@" ;;
         import) store_import "$@" ;;
+        rollback) cmd_store_rollback "$@" ;;
         ""|help|-h|--help) cmd_store_usage ;;
         *)
             error "Unknown store subcommand '${sub}'."

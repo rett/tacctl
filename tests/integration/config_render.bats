@@ -123,7 +123,11 @@ saved_copies() {
     run "$TACCTL_BIN_SCRIPT" config render --force
     assert_success
     cmp "$TACCTL_CONFIG" "$GOLDEN"
-    cmp "$(saved_copies)" "${TACCTL_SRC}/tests/fixtures/tacquito.multiscope.yaml"
+    # The import already kept the file as the pre-store config; the forced
+    # render says so instead of saving a second, identical copy.
+    assert_output --partial "is already kept as ${LEGACY_DIR}/tacquito.yaml.pre-store."
+    [[ -z "$(saved_copies)" ]]
+    cmp "${LEGACY_DIR}"/tacquito.yaml.pre-store.* "${TACCTL_SRC}/tests/fixtures/tacquito.multiscope.yaml"
 }
 
 @test "config render: an unrecorded file that already equals the render is adopted, not refused" {
