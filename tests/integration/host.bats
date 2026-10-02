@@ -82,6 +82,17 @@ _hosts() { cat "$TACCTL_ETC/linux-hosts" 2>/dev/null; }
     assert_output ""
 }
 
+@test "host enroll: every step shares one ssh connection, closed at the end" {
+    run "$TACCTL_BIN_SCRIPT" host enroll admin@web1.example.net --scope lab
+    assert_success
+    run grep -c "^ssh .*-o ControlMaster=auto -o ControlPath=~/.ssh/tacctl-%C -o ControlPersist=60 " "$CALLS_LOG"
+    total="$output"
+    run grep -c "^ssh" "$CALLS_LOG"
+    assert_output "$total"
+    run bash -c "grep ^ssh '$CALLS_LOG' | tail -1"
+    assert_output --regexp "^ssh .*-O exit admin@web1.example.net$"
+}
+
 @test "host enroll: rejects option-like and malformed targets" {
     run "$TACCTL_BIN_SCRIPT" host enroll "web1;reboot" --scope lab
     assert_failure
