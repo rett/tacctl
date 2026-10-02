@@ -491,7 +491,7 @@ smoke_arg() {   # value following flag $1 in the recorded argv
 # EQUIVALENT, and EQUIVALENT once those same product steps have run on it.
 
 @test "check: tacquito.minimal raw differs only latently (groups have no command rules yet)" {
-    load_fixture tacquito.minimal.yaml
+    place_fixture tacquito.minimal.yaml
     run store_import --check
     assert_failure 1
     assert_output --partial "render:              OK"
@@ -502,7 +502,7 @@ smoke_arg() {   # value following flag $1 in the recorded argv
 }
 
 @test "check: tacquito.legacy-exec raw is NOT equivalent (service 'exec' is not 'shell')" {
-    load_fixture tacquito.legacy-exec.yaml
+    place_fixture tacquito.legacy-exec.yaml
     run store_import --check
     assert_failure 1
     assert_output --partial '-          "name": "exec",'
@@ -511,7 +511,7 @@ smoke_arg() {   # value following flag $1 in the recorded argv
 }
 
 @test "check: tacquito.dead-matches raw is NOT equivalent (rendering drops the dead match regexes)" {
-    load_fixture tacquito.dead-matches.yaml
+    place_fixture tacquito.dead-matches.yaml
     run store_import --check
     assert_failure 1
     assert_output --partial '-          "match": ['
@@ -520,7 +520,7 @@ smoke_arg() {   # value following flag $1 in the recorded argv
 }
 
 @test "check: tacquito.multiscope raw is NOT equivalent: its users gain command rules" {
-    load_fixture tacquito.multiscope.yaml
+    place_fixture tacquito.multiscope.yaml
     run store_import --check
     assert_failure 1
     assert_output --partial "NOT EQUIVALENT"
@@ -541,7 +541,7 @@ smoke_arg() {   # value following flag $1 in the recorded argv
 @test "check: every tacquito.* fixture is EQUIVALENT once the product's own sync steps have run on it" {
     local f
     for f in minimal legacy-exec dead-matches multiscope; do
-        load_fixture "tacquito.${f}.yaml"
+        place_fixture "tacquito.${f}.yaml"
         _conf_invalidate
         rm -f "$TACCTL_OVERRIDES_FILE"
         product_sync
@@ -555,7 +555,7 @@ smoke_arg() {   # value following flag $1 in the recorded argv
 }
 
 @test "check: upgrade's migrations alone leave tacquito.multiscope latently different (prod before prod-inner)" {
-    load_fixture tacquito.multiscope.yaml
+    place_fixture tacquito.multiscope.yaml
     upgrade_migrations
     run store_import --check
     assert_failure 1
@@ -564,7 +564,7 @@ smoke_arg() {   # value following flag $1 in the recorded argv
     refute_output --partial '"commands"'
     local f
     for f in minimal legacy-exec dead-matches; do
-        load_fixture "tacquito.${f}.yaml"
+        place_fixture "tacquito.${f}.yaml"
         _conf_invalidate
         rm -f "$TACCTL_OVERRIDES_FILE"
         upgrade_migrations
@@ -574,7 +574,7 @@ smoke_arg() {   # value following flag $1 in the recorded argv
 }
 
 @test "check: operator command overrides in tacctl.yaml are part of the proof" {
-    load_fixture tacquito.multiscope.yaml
+    place_fixture tacquito.multiscope.yaml
     product_sync
     conf_set_json commands.operator '[{"name": "show", "action": "permit"}, {"name": "*", "action": "deny"}]'
     run store_import --check

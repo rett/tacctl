@@ -6,14 +6,16 @@ load ../helpers/setup
 load ../helpers/tmpenv
 load ../helpers/fixtures
 
+# These tests exercise the importer, so they start from an empty state dir:
+# fixtures go in with place_fixture (copy only), not load_fixture (which
+# would seed the store from them).
+
 hexhash() { printf '24326224313224'; printf "${1}%.0s" {1..53}; }
 HASH_A="$(hexhash 41)"
 HASH_D="$(hexhash 44)"
 
 setup() {
     tacctl_tmpenv_init
-    export TACCTL_STATE_DIR="${BATS_TEST_TMPDIR}/state"
-    mkdir -p "$TACCTL_STATE_DIR"
     tacctl_source_lib
 }
 
@@ -91,7 +93,7 @@ YAML
     local name
     for name in minimal multiscope; do
         rm -f "$STORE_FILE"
-        load_fixture "tacquito.${name}.yaml"
+        place_fixture "tacquito.${name}.yaml"
         store_import > /dev/null
         # Same regeneration switch as golden_diff (which is rooted in golden/).
         if [[ "${UPDATE_GOLDEN:-0}" == "1" ]]; then
@@ -102,7 +104,7 @@ YAML
 }
 
 @test "import: re-importing the same file is a no-op" {
-    load_fixture tacquito.multiscope.yaml
+    place_fixture tacquito.multiscope.yaml
     store_import > /dev/null
     local before
     before=$(stat -c %i "$STORE_FILE")
@@ -114,7 +116,7 @@ YAML
 # --- legacy `name: exec` -----------------------------------------------------
 
 @test "import: legacy 'name: exec' service yields the same groups as 'name: shell', with a note" {
-    load_fixture tacquito.legacy-exec.yaml
+    place_fixture tacquito.legacy-exec.yaml
     run store_import
     assert_success
     assert_output --partial "group 'readonly': legacy service name 'exec'"
@@ -359,7 +361,7 @@ twogroups"
 # --- errors --force cannot override -----------------------------------------
 
 @test "import: same scope with different keys is refused even with --force, keys not printed" {
-    load_fixture tacquito.minimal.yaml
+    place_fixture tacquito.minimal.yaml
     append_secret lab '"a-different-key-0123456789"' 10.20.0.0/16
     run store_import
     assert_failure
@@ -373,7 +375,7 @@ twogroups"
 }
 
 @test "import: a secret key that YAML reads as a number is refused, not guessed" {
-    load_fixture tacquito.minimal.yaml
+    place_fixture tacquito.minimal.yaml
     append_secret branch 1234567890123456 10.20.0.0/16
     run store_import --force
     assert_failure
@@ -382,7 +384,7 @@ twogroups"
 }
 
 @test "import: one prefix in two scopes is refused" {
-    load_fixture tacquito.minimal.yaml
+    place_fixture tacquito.minimal.yaml
     append_secret other '"other-secret-0123456789"' 192.168.0.0/16
     run store_import --force
     assert_failure
@@ -391,7 +393,7 @@ twogroups"
 }
 
 @test "import: a user referencing a scope that does not exist is refused" {
-    load_fixture tacquito.multiscope.yaml
+    place_fixture tacquito.multiscope.yaml
     sed -i 's/^      - dmz$/      - mars/' "$CONFIG"
     run store_import --force
     assert_failure
@@ -400,7 +402,7 @@ twogroups"
 }
 
 @test "import: a missing built-in group is refused" {
-    load_fixture tacquito.minimal.yaml
+    place_fixture tacquito.minimal.yaml
     sed -i '/^operator: &operator$/,/^  accounter:/d' "$CONFIG"
     run store_import --force
     assert_failure
@@ -419,7 +421,7 @@ twogroups"
 # --- flags, files, overwrite ------------------------------------------------
 
 @test "import: explicit file argument is imported instead of \$CONFIG" {
-    load_fixture tacquito.minimal.yaml
+    place_fixture tacquito.minimal.yaml
     run store_import "${TACCTL_SRC}/tests/fixtures/tacquito.multiscope.yaml"
     assert_success
     run model_users
@@ -432,7 +434,7 @@ carol"
     run store_import "${BATS_TEST_TMPDIR}/absent.yaml"
     assert_failure
     assert_output --partial "not found"
-    load_fixture tacquito.minimal.yaml
+    place_fixture tacquito.minimal.yaml
     run store_import --frobnicate
     assert_failure 2
     run store_import a.yaml b.yaml
@@ -440,10 +442,10 @@ carol"
 }
 
 @test "import: refuses to overwrite an existing store without --replace" {
-    load_fixture tacquito.multiscope.yaml
+    place_fixture tacquito.multiscope.yaml
     store_import > /dev/null
     cp "$STORE_FILE" "${BATS_TEST_TMPDIR}/before.yaml"
-    load_fixture tacquito.minimal.yaml
+    place_fixture tacquito.minimal.yaml
     run store_import
     assert_failure
     assert_output --partial "A store already exists"
@@ -476,16 +478,16 @@ carol"
 }
 
 @test "import: --replace snapshots first when backup_snapshot exists" {
-    load_fixture tacquito.multiscope.yaml
+    place_fixture tacquito.multiscope.yaml
     store_import > /dev/null
     backup_snapshot() { touch "${BATS_TEST_TMPDIR}/snapped"; }
-    load_fixture tacquito.minimal.yaml
+    place_fixture tacquito.minimal.yaml
     store_import --replace > /dev/null
     [[ -e "${BATS_TEST_TMPDIR}/snapped" ]]
 }
 
 @test "import: the model temp file is cleaned up" {
-    load_fixture tacquito.multiscope.yaml
+    place_fixture tacquito.multiscope.yaml
     export TMPDIR="${BATS_TEST_TMPDIR}/tmp"
     mkdir -p "$TMPDIR"
     store_import > /dev/null
@@ -501,7 +503,7 @@ carol"
 # --- --check ----------------------------------------------------------------
 
 @test "import --check: writes nothing; without a renderer it exits 3 and says so" {
-    load_fixture tacquito.multiscope.yaml
+    place_fixture tacquito.multiscope.yaml
     unset -f render_tacacs_config
     run store_import --check
     assert_failure 3
@@ -522,7 +524,7 @@ carol"
 }
 
 @test "import --check: the render hook receives the model and an output path; EQUIVALENT passes" {
-    load_fixture tacquito.multiscope.yaml
+    place_fixture tacquito.multiscope.yaml
     render_tacacs_config() {
         python3 -c 'import json,sys; m=json.load(open(sys.argv[1])); assert sorted(m["users"])==["alice","bob","carol"]' "$1" || return 1
         [[ "$(stat -c %a "$1")" == "600" ]] || return 1
@@ -538,7 +540,7 @@ carol"
 }
 
 @test "import --check: a non-equivalent render fails with a redacted diff" {
-    load_fixture tacquito.multiscope.yaml
+    place_fixture tacquito.multiscope.yaml
     render_tacacs_config() { sed 's/dmz-secret-0123456789abcdef/rotated-secret-0123456789abc/' "$CONFIG" > "$2"; }
     run store_import --check
     assert_failure 1
@@ -550,7 +552,7 @@ carol"
 }
 
 @test "import --check: render failure and smoke failure both fail the check" {
-    load_fixture tacquito.multiscope.yaml
+    place_fixture tacquito.multiscope.yaml
     render_tacacs_config() { return 1; }
     run store_import --check
     assert_failure 1
@@ -592,7 +594,7 @@ PY
 }
 
 @test "equiv: one multi-prefix entry equals one entry per prefix in any harmless order" {
-    load_fixture tacquito.minimal.yaml
+    place_fixture tacquito.minimal.yaml
     cp "$CONFIG" "${BATS_TEST_TMPDIR}/multi.yaml"
     sed -i 's|"192.168.0.0/16"|"192.168.0.0/16", "10.0.0.0/8", "172.16.0.0/12"|' "${BATS_TEST_TMPDIR}/multi.yaml"
     append_secret lab '"lab-secret-placeholder-16chars"' 172.16.0.0/12

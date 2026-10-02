@@ -31,7 +31,7 @@ saved_copies() {
 }
 
 @test "config render: refused in legacy mode (no store); tacquito.yaml is not touched" {
-    load_fixture tacquito.multiscope.yaml
+    place_fixture tacquito.multiscope.yaml
     run "$TACCTL_BIN_SCRIPT" config render
     assert_failure 1
     assert_output --partial "store not initialised"
@@ -112,7 +112,7 @@ saved_copies() {
 @test "config render: refuses to replace a file tacctl never rendered; --force saves it first" {
     # The state right after 'store import' on an existing install: a store,
     # and a tacquito.yaml written by the old editors.
-    load_fixture tacquito.multiscope.yaml
+    place_fixture tacquito.multiscope.yaml
     "$TACCTL_BIN_SCRIPT" store import > /dev/null
     run "$TACCTL_BIN_SCRIPT" config render
     assert_failure 3
@@ -199,7 +199,7 @@ saved_copies() {
 }
 
 @test "status and config validate: no DRIFT line on an install that never rendered" {
-    load_fixture tacquito.multiscope.yaml
+    place_fixture tacquito.multiscope.yaml
     run "$TACCTL_BIN_SCRIPT" status
     refute_output --partial "DRIFT"
     run "$TACCTL_BIN_SCRIPT" config validate

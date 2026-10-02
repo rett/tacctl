@@ -118,8 +118,36 @@ UPDATE_GOLDEN=1 tests/bats/bats-core/bin/bats tests/unit/store_import.bats
 git diff tests/fixtures/model/ tests/fixtures/store.*.yaml
 ```
 
-Store tests set `TACCTL_STATE_DIR` to a directory under `$BATS_TEST_TMPDIR` in
-their own `setup()`, so the store never resolves to `/etc/tacctl`.
+`tacctl_tmpenv_init` points `TACCTL_STATE_DIR` at `$BATS_TEST_TMPDIR/state`, so
+the store never resolves to `/etc/tacctl`; tests need no setup of their own for it.
+
+## Fixtures and the store
+
+tacctl-owned state (users, groups, scopes, filters) lives in
+`$TACCTL_STATE_DIR/store.yaml`, not in the daemon's `tacquito.yaml`. Three
+helpers in `tests/helpers/fixtures.bash` put a fixture in place:
+
+| Helper | Does |
+|---|---|
+| `load_fixture tacquito.X.yaml` | Copies the file to `$TACCTL_CONFIG` and seeds `store.yaml` from it with a strict `tacctl store import` (never `--force`). A fixture the importer rejects fails the test with the importer's report; fix the fixture. |
+| `load_store_fixture store.X.yaml` | Copies `tests/fixtures/store.X.yaml` to `$TACCTL_STATE_DIR/store.yaml` (0600). Does not touch `tacquito.yaml`. |
+| `place_fixture <name>` | Copy only: no seeding. For tests of the importer and of the no-store (legacy) read path, which need an empty state dir. |
+
+Notes:
+
+- `load_fixture` of a directory fixture, or of a `legacy.*.yaml` file, copies and
+  does not seed. Only `tacquito.*.yaml` names are seeded.
+- A second `load_fixture tacquito.*.yaml` in the same test replaces both the file
+  and the store.
+- Seeding is cheap: the importer runs once per distinct fixture per bats run (in a
+  scratch directory, cached under `$BATS_RUN_TMPDIR/store-seed`) and later loads
+  copy the cached store. The seed is the `store.yaml` file only: no lock file,
+  snapshot or output. If a test planted password-date or disabled-hash sidecars
+  before loading, the helper imports directly instead, because the importer reads them.
+- The store and `tacquito.yaml` are independent copies. A test that edits
+  `$TACCTL_CONFIG` after `load_fixture`, or writes its own, leaves the store
+  unchanged; once commands read the store, put the change in the store instead
+  (`load_store_fixture`, or a `tacctl` command).
 
 The renderer goldens work the same way:
 

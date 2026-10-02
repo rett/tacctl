@@ -6,10 +6,11 @@ load ../helpers/setup
 load ../helpers/tmpenv
 load ../helpers/fixtures
 
+# Legacy-loader tests place tacquito.* fixtures with place_fixture (copy only):
+# load_fixture would seed a store, and the store would win.
+
 setup() {
     tacctl_tmpenv_init
-    export TACCTL_STATE_DIR="${BATS_TEST_TMPDIR}/state"
-    mkdir -p "$TACCTL_STATE_DIR"
     tacctl_source_lib
 }
 
@@ -50,7 +51,7 @@ dump_model_to() {
 }
 
 @test "store loader: the store wins over tacquito.yaml once it exists" {
-    load_fixture tacquito.multiscope.yaml
+    place_fixture tacquito.multiscope.yaml
     use_store_fixture store.minimal.yaml
     run model_users
     assert_output ""
@@ -92,13 +93,13 @@ YAML
 # --- legacy loader ----------------------------------------------------------
 
 @test "legacy loader: reads tacquito.yaml when no store exists" {
-    load_fixture tacquito.multiscope.yaml
+    place_fixture tacquito.multiscope.yaml
     dump_model_to "${BATS_TEST_TMPDIR}/multiscope.json"
     golden_diff "${BATS_TEST_TMPDIR}/multiscope.json" ../model/multiscope.json
 }
 
 @test "legacy loader: agrees with today's readers on the multiscope fixture" {
-    load_fixture tacquito.multiscope.yaml
+    place_fixture tacquito.multiscope.yaml
     # Scope names: list_scopes is first-appearance order, the model is sorted.
     [[ "$(model_scopes)" == "$(list_scopes | sort)" ]]
     local s

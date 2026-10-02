@@ -10,10 +10,6 @@ HASH_A="24326224313224$(printf '41%.0s' {1..53})"
 
 setup() {
     tacctl_tmpenv_init
-    # The shared tmpenv helper does not know the state dir yet; keep the
-    # store out of /etc/tacctl ourselves.
-    export TACCTL_STATE_DIR="${BATS_TEST_TMPDIR}/state"
-    mkdir -p "$TACCTL_STATE_DIR"
     tacctl_source_lib
 }
 
