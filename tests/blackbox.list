@@ -32,6 +32,14 @@ tests/integration/tiers.bats
 # White-box in its setup (it drives the unit phases of install/upgrade as bash
 # functions); its CLI tests run the binary (WP2.4c).
 tests/integration/units_convert.bats
+# White-box in their setup (state_migrate, config_sync_existing,
+# upgrade_store_flip, install_seed_config and the legacy migrations run as
+# bash functions; their Go ports are internal/lifecycle's tests); 'store
+# rollback' and every other command line run the binary (WP3.3a).
+tests/integration/upgrade_store_flip.bats
+tests/integration/migrate_dead_command_matches.bats
+tests/integration/migrate_exec_service_name.bats
+tests/e2e/install_seed.bats
 tests/integration/user_crud.bats
 tests/integration/user_lifecycle.bats
 tests/e2e/log.bats

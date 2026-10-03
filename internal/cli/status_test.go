@@ -184,6 +184,9 @@ func TestWP24dSpecs(t *testing.T) {
 // from a file of its own; the other stubs stay bash's.
 func TestRegisterFamilyVerbReplacesTheStub(t *testing.T) {
 	for _, c := range []struct{ family, name, other string }{{"store", "rollback", ""}, {"backend", "enable", "disable"}} {
+		// The real registrations (store rollback: WP3.3a) come back after.
+		prevStore, hadStore := storeVerbs[c.name]
+		prevBackend, hadBackend := backendVerbs[c.name]
 		registerFamilyVerb(c.family, c.name, func(inv *invocation) *cobra.Command {
 			return withRun(verb(c.name, "a test verb"), inv.native(noPreflight, func(args []string) error {
 				inv.write(c.name + " " + strings.Join(args, " ") + "\n")
@@ -196,6 +199,12 @@ func TestRegisterFamilyVerbReplacesTheStub(t *testing.T) {
 		}
 		delete(storeVerbs, c.name)
 		delete(backendVerbs, c.name)
+		if hadStore {
+			storeVerbs[c.name] = prevStore
+		}
+		if hadBackend {
+			backendVerbs[c.name] = prevBackend
+		}
 		if c.other != "" {
 			h := newHarness(t, []string{c.family, c.other})
 			h.expectDelegated(t, h.run())

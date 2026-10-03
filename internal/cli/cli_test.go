@@ -134,7 +134,6 @@ func TestEverythingNotCutOverIsDelegated(t *testing.T) {
 		[]string{"help", "version"}, []string{"User", "list"}, []string{"Hash"},
 		// The verbs of native families that stay bash's until Phase 3.
 		[]string{"backend", "enable", "radius", "-y"}, []string{"backend", "disable", "radius"},
-		[]string{"store", "rollback"}, []string{"store", "rollback", "help"},
 	)
 	for _, args := range cases {
 		h := newHarness(t, args)

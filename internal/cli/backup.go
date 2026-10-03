@@ -30,6 +30,7 @@ import (
 	"github.com/rett/tacctl/internal/backend"
 	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/execx"
+	"github.com/rett/tacctl/internal/lifecycle"
 	"github.com/rett/tacctl/internal/model"
 	rtacacs "github.com/rett/tacctl/internal/render/tacacs"
 	"github.com/rett/tacctl/internal/snapshot"
@@ -642,7 +643,7 @@ func (inv *invocation) restoreUnflipped(id string) error {
 	}
 
 	// Back up the current config before restoring (safety net).
-	if err := inv.backupConfig(); err != nil {
+	if err := lifecycle.BackupConfig(a.Paths, a.Out, a.Knobs.Now()); err != nil {
 		return err
 	}
 	data, err := os.ReadFile(file)
@@ -661,77 +662,4 @@ func (inv *invocation) restoreUnflipped(id string) error {
 	a.Out.InfoE("Config restored from backup " + id + ".")
 	inv.echo("")
 	return nil
-}
-
-// backupConfig is backup_config (lib/backends/tacacs.sh), the legacy-mode
-// backup: tacquito.yaml copied to backups/tacquito.yaml.<YYYYMMDD_HHMMSS_mmm>
-// (0640, tacquito's), then the newest snapshot.Retention of those files
-// kept (by modification time).
-func (inv *invocation) backupConfig() error {
-	a := inv.app
-	dir := a.Paths.BackupDir
-	if err := os.MkdirAll(dir, 0o750); err != nil {
-		inv.stderrLine("mkdir: " + err.Error())
-		return exit(1)
-	}
-	_ = os.Chmod(dir, 0o750)
-	rtacacs.ChownTacquito(dir)
-	now := a.Knobs.Now()
-	ts := now.Format("20060102_150405") + "_" + leftPad3(now.Nanosecond()/1e6)
-	dst := filepath.Join(dir, "tacquito.yaml."+ts)
-	data, err := os.ReadFile(a.Paths.Config)
-	if err == nil {
-		err = os.WriteFile(dst, data, 0o640)
-	}
-	if err != nil {
-		inv.stderrLine("cp: " + err.Error())
-		return exit(1)
-	}
-	_ = os.Chmod(dst, 0o640)
-	rtacacs.ChownTacquito(dst)
-	a.Out.Info("Config backed up to " + dst)
-
-	// Prune: every tacquito.yaml.* entry of backups/ counts, newest first
-	// by modification time (ls -1t: ties by name), the oldest beyond the
-	// retention go.
-	des, err := os.ReadDir(dir)
-	if err != nil {
-		return nil
-	}
-	type entry struct {
-		name  string
-		mtime int64
-	}
-	var all []entry
-	for _, de := range des {
-		if !strings.HasPrefix(de.Name(), "tacquito.yaml.") {
-			continue
-		}
-		fi, err := os.Stat(filepath.Join(dir, de.Name()))
-		if err != nil {
-			continue
-		}
-		all = append(all, entry{de.Name(), fi.ModTime().UnixNano()})
-	}
-	if len(all) <= snapshot.Retention {
-		return nil
-	}
-	sort.SliceStable(all, func(i, j int) bool {
-		if all[i].mtime != all[j].mtime {
-			return all[i].mtime > all[j].mtime
-		}
-		return all[i].name < all[j].name
-	})
-	for _, e := range all[snapshot.Retention:] {
-		_ = os.Remove(filepath.Join(dir, e.name))
-	}
-	return nil
-}
-
-func leftPad3(n int) string {
-	s := strconv.Itoa(n)
-	for len(s) < 3 {
-		s = "0" + s
-	}
-	return s
 }

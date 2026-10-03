@@ -406,7 +406,7 @@ func TestStoreShowAndImportArguments(t *testing.T) {
 	if strings.Contains(sb.err.String(), "Config not found") {
 		t.Error("store ran preflight")
 	}
-	// 'store rollback' stays bash's.
-	h := newHarness(t, []string{"store", "rollback"})
-	h.expectDelegated(t, h.run())
+	// 'store rollback' is native too (WP3.3a), and also runs no preflight.
+	sb.run("", []string{"store", "rollback"})
+	sb.expect(1, "", "There is no store at ")
 }

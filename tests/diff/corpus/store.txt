@@ -70,3 +70,25 @@ user add alice superuser --hash {HASH} --scopes lab ;; store rollback <<< y ;; u
 user add alice superuser --hash {HASH} --scopes lab ;; store rollback <<< n ;; user list
 store rollback ;; store show
 store rollback ;; store rollback
+
+# rollback of a real flip: the live legacy config imported (the import keeps
+# the pre-store copy), then rolled back (WP3.3a)
+@fixture legacy.fresh-install.yaml
+store rollback
+store import ;; store rollback <<< n ;; store show
+store import ;; store rollback <<< y ;; user list ;; store show
+store import ;; store rollback <<< yes
+store import ;; config render --force ;; store rollback <<< y ;; user list ;; backup list
+store import ;; config render --force ;; user add alice superuser --hash {HASH} --scopes lab ;; store rollback <<< y ;; user list
+store import ;; config render --force ;; store rollback extra
+store import ;; config render --force ;; store rollback ""
+store import ;; config render --force ;; store rollback <<< y ;; store rollback <<< y ;; store import ;; store rollback <<< y
+store import ;; config render --force ;; store rollback <<< Y ;; config validate
+# a pre-store copy beside a store that never had a live legacy file
+@fixture store.minimal.yaml
+@root tests/diff/roots/store-prestore
+store rollback <<< n
+store rollback <<< y ;; user list ;; store show
+@root tests/diff/roots/store-prestore-broken
+@known proposed 3.9 item: a tacquito.yaml that is not YAML is reported in yaml.v3's words (the legacy importer reads it as tacquito does, plan 3.3), not PyYAML's
+store rollback <<< y

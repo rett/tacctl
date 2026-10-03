@@ -1,8 +1,8 @@
 package cli
 
 // The 'store' family (lib/store.sh cmd_store at 0.1.16). Native since
-// WP2.4d: show and import. Still bash's, by delegation: rollback (WP3.3a,
-// with the legacy mode it returns to). bin/tacctl.sh runs no preflight for
+// WP2.4d: show and import; rollback since WP3.3a (store_rollback.go,
+// registered with registerFamilyVerb). bin/tacctl.sh runs no preflight for
 // 'store': 'store import <file>' and 'store show' work without the live
 // config.
 
@@ -45,7 +45,7 @@ func storeCmd(inv *invocation) *cobra.Command {
 		withRun(verb("show [--json]", "Print the model (YAML by default)"), n(inv.storeShow)),
 		withRun(verb("import [--check|--force] [--replace] [<file>]",
 			"Import a legacy tacquito.yaml (default: the live one)"), n(inv.storeImport)),
-		// Delegated until WP3.3a, which registers it (registerFamilyVerb).
+		// Replaced by store_rollback.go's (registerFamilyVerb).
 		verb("rollback", "Undo the import: restore the pre-store tacquito.yaml"),
 	)
 	replaceRegistered(inv, c, storeVerbs)
