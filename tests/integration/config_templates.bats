@@ -22,18 +22,19 @@ setup() {
 
 # Strip ANSI color codes and the dynamic hostname line that can vary across
 # machines / test runs, so the golden file is reproducible. The "Using
-# template:" line legitimately prints the absolute path of the template it
-# rendered, which sits under this checkout; swap that checkout prefix for a
-# <TACCTL_SRC> placeholder (literal match via index(), so any path is safe)
-# so the goldens pass from any checkout or worktree while still pinning
-# which template file was picked.
+# template:" note names the shipped template the Go binary rendered as
+# 'built-in <name>.template'; 0.1.16 printed the path of the file in its
+# checkout instead (docs/plans/go-rewrite.md 3.9 item 3), so that path is
+# rewritten to the built-in form (literal match via index(), so any
+# checkout path is safe) and one golden serves both implementations while
+# still pinning which template was picked.
 _normalize() {
     sed -E 's/\x1b\[[0-9;]*m//g' \
         | sed -E 's/^hostname .*/hostname TACQUITO-HOSTNAME/' \
         | awk '{
-            p = "Using template: " ENVIRON["TACCTL_SRC"] "/"
+            p = "Using template: " ENVIRON["TACCTL_SRC"] "/config/templates/"
             i = index($0, p)
-            if (i) $0 = substr($0, 1, i - 1) "Using template: <TACCTL_SRC>/" substr($0, i + length(p))
+            if (i) $0 = substr($0, 1, i - 1) "Using template: built-in " substr($0, i + length(p))
             print
         }'
 }

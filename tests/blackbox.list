@@ -41,4 +41,4 @@ tests/e2e/smoke.bats
 tests/integration/backend_cli.bats  # go-tags: cutover:wp2-4d
 # Pins the CLI behaviour of verbs no other test covers (WP0.2): against Go, the
 # sections of the packages cut over so far; whole once WP3.3d is done.
-tests/integration/characterisation.bats  # go-tags: cutover:wp0-1 cutover:wp2-4a cutover:wp2-4b cutover:wp2-4c cutover:wp2-4d
+tests/integration/characterisation.bats  # go-tags: cutover:wp0-1 cutover:wp2-4a cutover:wp2-4b cutover:wp2-4c cutover:wp2-4d cutover:wp3-1

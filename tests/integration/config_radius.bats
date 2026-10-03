@@ -50,11 +50,22 @@ _normalize() {
     sed -E 's/\x1b\[[0-9;]*m//g' \
         | sed -E 's/^hostname .*/hostname TACQUITO-HOSTNAME/' \
         | awk '{
-            p = "Using template: " ENVIRON["TACCTL_SRC"] "/"
+            p = "Using template: " ENVIRON["TACCTL_SRC"] "/config/templates/"
             i = index($0, p)
-            if (i) $0 = substr($0, 1, i - 1) "Using template: <TACCTL_SRC>/" substr($0, i + length(p))
+            if (i) $0 = substr($0, 1, i - 1) "Using template: built-in " substr($0, i + length(p))
             print
         }'
+}
+
+# The 'Using template:' note of a shipped template: 0.1.16 names the file in
+# its checkout, the Go binary its embedded copy (docs/plans/go-rewrite.md
+# 3.9 item 3).
+shipped_template_note() {
+    if [[ "$TACCTL_IMPL" == go ]]; then
+        echo "Using template: built-in $1.template"
+    else
+        echo "Using template: ${TACCTL_SRC}/config/templates/$1.template"
+    fi
 }
 
 # Enable the RADIUS backend the way tacctl.yaml records it. Call it after the
@@ -125,7 +136,7 @@ radius_listeners() {
     assert_output --partial "aaa authentication login default group RADIUS-GROUP local"
     assert_output --partial "aaa authorization exec default group RADIUS-GROUP local if-authenticated"
     assert_output --partial "aaa accounting exec default start-stop group RADIUS-GROUP"
-    assert_output --partial "Using template: ${TACCTL_SRC}/config/templates/cisco-radius.template"
+    assert_output --partial "$(shipped_template_note cisco-radius)"
 }
 
 @test "config cisco --protocol radius: nothing RADIUS cannot do is configured" {
@@ -220,7 +231,7 @@ radius_listeners() {
     assert_output --partial "show configuration system radius-server"
     local cfg="${output%%Group → Juniper Class Mapping*}"
     [[ "$cfg" != *tacplus* && "$cfg" != *TACACS* ]]
-    assert_output --partial "Using template: ${TACCTL_SRC}/config/templates/juniper-radius.template"
+    assert_output --partial "$(shipped_template_note juniper-radius)"
 }
 
 @test "config juniper --protocol radius: the summary says what RADIUS loses and that the class rules stay" {
