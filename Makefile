@@ -1,4 +1,4 @@
-.PHONY: test test-unit test-integration test-e2e test-blackbox test-go test-diff build \
+.PHONY: test test-unit test-integration test-e2e test-blackbox test-go test-diff test-pyyaml build \
 	coverage lint lint-sh lint-go clean bootstrap
 
 BATS := tests/bats/bats-core/bin/bats
@@ -78,6 +78,13 @@ test-blackbox: $(if $(filter go,$(TACCTL_IMPL)),build)
 # Go unit tests (-race needs cgo).
 test-go:
 	CGO_ENABLED=1 $(GO) test -race ./...
+
+# internal/yamlpy's PyYAML corpus (docs/plans/go-rewrite.md 3.3): regenerate
+# the expected files with PyYAML and compare with the committed ones. Without
+# python3 or python3-yaml it says so and passes.
+test-pyyaml:
+	@if command -v python3 > /dev/null 2>&1; then python3 tests/tools/pyyaml-corpus.py --check; \
+	else echo "make: python3 not found; the PyYAML corpus was not checked"; fi
 
 # The differential runner (docs/plans/go-rewrite.md 2.5): make test-diff CORPUS=users
 test-diff: build
