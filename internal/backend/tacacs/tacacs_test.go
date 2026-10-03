@@ -162,27 +162,3 @@ func (r *recorder) Write(p []byte) (int, error) {
 	r.n += len(p)
 	return len(p), nil
 }
-
-// The lifecycle phases are WP3.3b's: until then every phase is a no-op.
-func TestLifecyclePhasesPending(t *testing.T) {
-	e := newTenv(t)
-	ctx := context.Background()
-	for _, ph := range backend.InstallPhases {
-		if err := e.b.Install(ctx, ph, "/nonexistent"); err != nil {
-			t.Fatal(err)
-		}
-	}
-	for _, ph := range backend.UpgradePhases {
-		if err := e.b.Upgrade(ctx, ph, "/nonexistent"); err != nil {
-			t.Fatal(err)
-		}
-	}
-	for _, ph := range backend.UninstallPhases {
-		if err := e.b.Uninstall(ctx, ph, true); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if len(e.run.Calls()) != 0 {
-		t.Fatal(e.run.Argvs())
-	}
-}

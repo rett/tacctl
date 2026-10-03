@@ -19,8 +19,7 @@
 //   - the status parts, log and accounting commands, last login, secret
 //     constraints and device variables.
 //
-// The lifecycle phases (install, upgrade, uninstall) are WP3.3b's
-// (lifecycle*.go); until then they are no-ops (phases_pending.go).
+// The lifecycle phases (install, upgrade, uninstall) are in lifecycle*.go.
 //
 // Messages are the 0.1.16 ones, byte for byte: info and warn lines on the
 // Env's Stdout, errors on its Stderr, everything of a render step on
@@ -77,8 +76,13 @@ type Backend struct {
 	// (TACACS_SMOKE_SECONDS; 0: 5s).
 	SmokeTime time.Duration
 	// Sleep waits d or until ctx is done (nil: a timer); the settle wait
-	// of a settings change goes through it.
+	// of a settings change and the waits after a start or restart of the
+	// lifecycle phases go through it.
 	Sleep func(ctx context.Context, d time.Duration)
+
+	// life is what the lifecycle phases of this invocation share
+	// (lifecycle.go).
+	life lifeState
 }
 
 var _ backend.Backend = (*Backend)(nil)
