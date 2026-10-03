@@ -1,6 +1,6 @@
 .\" Manual page for tacctl, the management CLI for TACACS+ (tacquito) and RADIUS (FreeRADIUS).
 .\" Render locally with: groff -man -Tascii man/tacctl.1 | less
-.TH TACCTL 1 "2026-10-02" "tacctl 0.2.0" "tacctl Manual"
+.TH TACCTL 1 "2026-10-02" "tacctl 0.1.15" "tacctl Manual"
 .SH NAME
 tacctl \- manage users, groups and scopes for TACACS+ (tacquito) and RADIUS (FreeRADIUS)
 .SH SYNOPSIS
@@ -30,7 +30,7 @@ See
 .BR BACKENDS ,
 .B "STORE AND GENERATED CONFIGURATION"
 and
-.BR "UPGRADING TO 0.2.0" .
+.BR "UPGRADING TO 0.1.15" .
 .PP
 Most commands require root.
 .B tacctl
@@ -107,7 +107,7 @@ unit files back if it does not come up). Listener, log-level and metrics
 settings live in
 .I tacctl.yaml
 and survive. See
-.BR "UPGRADING TO 0.2.0" .
+.BR "UPGRADING TO 0.1.15" .
 .TP
 .B uninstall
 Remove tacctl and every backend that is enabled or installed: the tacquito
@@ -2069,10 +2069,10 @@ directly: read commands work, commands that change users, groups, scopes
 or filters are refused with
 .IR "store not initialised" .
 Only TACACS+ exists in that mode.
-.SH UPGRADING TO 0.2.0
+.SH UPGRADING TO 0.1.15
 The first
 .B "tacctl upgrade"
-from 0.1.x pulls 0.2.0, re-executes it, and then:
+from 0.1.14 or earlier pulls 0.1.15, re-executes it, and then:
 .IP 1. 4
 moves
 .IR tacctl.yaml ,

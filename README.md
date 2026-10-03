@@ -2,9 +2,9 @@
 
 Management toolkit for network-device AAA. Users, groups and scopes are kept once, in tacctl's own store, and served over **TACACS+** by [tacquito](https://github.com/facebookincubator/tacquito) (RFC 8907, by Facebook Incubator) and, when enabled, over **RADIUS** by a tacctl-owned FreeRADIUS instance. Provides a CLI for user, group, and configuration management with multi-vendor support for Cisco IOS/IOS-XE and Juniper Junos devices, plus WTI console servers and Linux hosts.
 
-## What's new in 0.2.0
+## What's new in 0.1.15
 
-This is a large release; read [Upgrading to 0.2.0](#upgrading-to-020) before running `tacctl upgrade` on an existing server.
+This is a large release; read [Upgrading to 0.1.15](#upgrading-to-0115) before running `tacctl upgrade` on an existing server.
 
 - **A canonical store.** Users, groups, scopes and connection filters live in `/etc/tacctl/store.yaml`; `tacquito.yaml` is generated from it on every change and is no longer the source of truth. Hand edits of a generated file are detected (drift) and never silently overwritten. See [The store and generated configs](#the-store-and-generated-configs).
 - **`/etc/tacctl`** holds everything tacctl owns (store, `tacctl.yaml`, snapshots, templates, the Linux host registry). `/etc/tacquito` is the TACACS+ daemon's directory again.
@@ -967,9 +967,9 @@ Use `--branch` to switch to a different branch (e.g., `develop` for pre-release 
 
 `/usr/local/bin/tacctl` is symlinked to `/opt/tacctl/bin/tacctl.sh`, so git pulls update it instantly.
 
-### Upgrading to 0.2.0
+### Upgrading to 0.1.15
 
-The first `tacctl upgrade` from 0.1.x runs the old release's upgrade, which pulls 0.2.0 and re-executes it; 0.2.0 then does the following on its own. Nothing needs to be prepared, and RADIUS stays off (`tacctl backend enable radius` afterwards, if wanted).
+The first `tacctl upgrade` from 0.1.14 or earlier runs the old release's upgrade, which pulls 0.1.15 and re-executes it; 0.1.15 then does the following on its own. Nothing needs to be prepared, and RADIUS stays off (`tacctl backend enable radius` afterwards, if wanted).
 
 1. **State directory.** `tacctl.yaml`, `linux-hosts`, `linux-uids`, `backups/` and `templates/` move from `/etc/tacquito` to `/etc/tacctl` (0700 root). Each old path becomes a symlink to the new one, for one release, so the previous release still finds its files after a rollback. This runs on every upgrade: if older code has meanwhile replaced a symlink with a regular file, the newer content wins and the other copy is kept under `/etc/tacctl/backups/legacy/`.
 2. **Units.** `tacquito.service` and the template `tacquito@.service` are installed. The listen address, log level and metrics address of the old hand-managed drop-in `tacquito.service.d/tacctl-overrides.conf` are imported once into `tacctl.yaml` (`listeners.tacacs.default`, `backends.tacacs.level`, `backends.tacacs.metrics_address`), the drop-in is replaced by the rendered `tacctl.conf`, and the old file is kept under `backups/legacy/`. The running daemon is not touched until the one restart at the end; if the unit does not come up then, the unit files, drop-ins, `tacctl.yaml` and the binary are restored together.
@@ -977,7 +977,7 @@ The first `tacctl upgrade` from 0.1.x runs the old release's upgrade, which pull
 
 **When the gate stops**, the upgrade still completes: the code is installed, `tacquito.yaml` and the running daemon are left exactly as they were, and tacctl runs in **legacy read-only mode** (read commands work, changes are refused). The report says why: content the store cannot hold (another service on a group, a non-bcrypt authenticator, an unknown top-level key, …), a render that is not equivalent (the differences are printed), the tacquito binary or `timeout` missing. The upgrade **never forces either through**. To proceed, either fix what `tacctl store import --check` lists in `tacquito.yaml` and run `tacctl upgrade` again, or accept the difference yourself: `tacctl store import` (`--force` drops what the store cannot hold, listing each item), then `tacctl config render --force`.
 
-**Rollback.** `tacctl store rollback` returns to the kept pre-store `tacquito.yaml` and legacy read-only mode under 0.2.0 (refused while RADIUS is enabled: `tacctl backend disable radius` first). Run it before putting the previous release's code back (`git -C /opt/tacctl checkout 0.1.14`): that release edits `tacquito.yaml` directly, and with the store still in place its edits would be drift to 0.2.0. It finds `tacctl.yaml`, `linux-*`, `backups` and `templates` through the symlinks in `/etc/tacquito`, and a later upgrade moves whatever it wrote and runs the gate again. Its `config listen|loglevel|metrics` write the old `tacctl-overrides.conf` drop-in, which the rendered `tacctl.conf` beside it overrides (systemd reads drop-ins in name order); remove `tacctl.conf` from `tacquito.service.d` after going back if you change those settings there.
+**Rollback.** `tacctl store rollback` returns to the kept pre-store `tacquito.yaml` and legacy read-only mode under 0.1.15 (refused while RADIUS is enabled: `tacctl backend disable radius` first). Run it before putting the previous release's code back (`git -C /opt/tacctl checkout 0.1.14`): that release edits `tacquito.yaml` directly, and with the store still in place its edits would be drift to 0.1.15. It finds `tacctl.yaml`, `linux-*`, `backups` and `templates` through the symlinks in `/etc/tacquito`, and a later upgrade moves whatever it wrote and runs the gate again. Its `config listen|loglevel|metrics` write the old `tacctl-overrides.conf` drop-in, which the rendered `tacctl.conf` beside it overrides (systemd reads drop-ins in name order); remove `tacctl.conf` from `tacquito.service.d` after going back if you change those settings there.
 
 After the upgrade: `tacctl status`, `tacctl config validate` (store, rendered config, drift), and `tacctl backup list` (the pre-store file is under the old-style backups).
 
@@ -1006,7 +1006,7 @@ After the upgrade: `tacctl status`, `tacctl config validate` (store, rendered co
 - A generated file was edited by hand; tacctl will not overwrite it. `tacctl config validate` names the file and both ways out: keep the edit (`tacctl store import --replace`, then `tacctl config render --force`; TACACS+ only) or discard it (`tacctl config render --force`, the edited copy is kept under `/etc/tacctl/backups/legacy/`)
 
 **`store not initialised`**
-- The install is in legacy read-only mode (the upgrade's store gate stopped, or after `store rollback`). See [Upgrading to 0.2.0](#upgrading-to-020)
+- The install is in legacy read-only mode (the upgrade's store gate stopped, or after `store rollback`). See [Upgrading to 0.1.15](#upgrading-to-0115)
 
 **RADIUS: no answer, or `Access-Reject`**
 - `tacctl log failures --backend radius` gives the reason per reject (`not an enabled user of this scope`: the user lacks the scope the device's address falls in, or is disabled; `Crypt digest does not match`: wrong password)

@@ -305,7 +305,7 @@ Switching methods: the install script always runs `remove_method_artifacts <othe
 | Backups | `tacquito.yaml.<ts>` | snapshot dirs; legacy files listed and importable | (4.6) |
 | Completion | hard-coded paths | via `_completion-names` only | |
 | Tests | fixtures `tacquito.*.yaml` | `load_fixture` runs `store import` so the importer is exercised by every integration test; new `store.*.yaml` and `radius` fixtures | existing assertions kept; e2e stubs keep matching `tacquito` (the default listener's unit kept its name, 3.4) |
-| Suggested releases (user-driven) | | 0.2.0 = Phases 0-1 (split, state dir, store flip); 0.3.0 = Phases 2-3 (backends, RADIUS); 0.4.0 = Phases 4-5 (host RADIUS, docs) | each soaked on the dev server before the user cuts a release |
+| Suggested releases (user-driven) | | 0.1.15 = Phases 0-1 (split, state dir, store flip); 0.3.0 = Phases 2-3 (backends, RADIUS); 0.4.0 = Phases 4-5 (host RADIUS, docs) | each soaked on the dev server before the user cuts a release |
 
 ---
 
@@ -519,7 +519,7 @@ Common rules for every package (restate in each hand-off): read `/home/user/tacc
 ### WP5.1 — Documentation, man page, completion, tests README
 - **Goal:** README, `man/tacctl.1`, completion and `tests/README.md` describe the backend model, store, `/etc/tacctl`, RADIUS, `--protocol`, `--method`, migration and rollback.
 - **Read first:** `README.md` (whole), `man/tacctl.1`, `config/tacctl.bash-completion`, this plan §3-7.
-- **Scope:** restructure README "System Files" per backend; new sections "Backends", "Canonical store and generated configs", "Upgrading to 0.2.0" (gate, legacy mode, rollback), "RADIUS", "Linux hosts: methods"; man page sections for every new verb; completion words. Out of scope: code.
+- **Scope:** restructure README "System Files" per backend; new sections "Backends", "Canonical store and generated configs", "Upgrading to 0.1.15" (gate, legacy mode, rollback), "RADIUS", "Linux hosts: methods"; man page sections for every new verb; completion words. Out of scope: code.
 - **Acceptance:** `man -l man/tacctl.1` renders; every new verb documented; README examples run on the dev server.
 - **Executor:** Sonnet. **Deps:** WP2.3, 3.3, 4.2 merged. **Worktree:** safe (docs only), but conflicts with WP5.2 on README.
 
