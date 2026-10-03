@@ -48,7 +48,7 @@ func (sb *sandbox) path(p ...string) string { return filepath.Join(append([]stri
 // Every config verb without a RunE of its own (and every word below it) is
 // still bash's; a verb registered with registerConfigVerb replaces its
 // stub; the family itself is native (usage, exit 1).
-func TestConfigDelegatedVerbs(t *testing.T) {
+func TestConfigVerbsAllNative(t *testing.T) {
 	inv := &invocation{app: newHarness(t, nil).app}
 	native := map[string]bool{}
 	var delegated [][]string
@@ -63,20 +63,14 @@ func TestConfigDelegatedVerbs(t *testing.T) {
 		delegated = append(delegated, all...)
 	}
 	for _, w := range []string{"show", "validate", "render", "dump", "defaults", "get", "get-list", "loglevel", "listen",
-		"metrics", "sudoers", "password-age", "bcrypt-cost", "password-min-length", "secret-min-length", "branch"} {
+		"metrics", "sudoers", "password-age", "bcrypt-cost", "password-min-length", "secret-min-length", "branch",
+		"diff", "restore", "allow", "deny", "mgmt-acl", "cisco", "juniper", "wti", "linux"} {
 		if !native[w] {
 			t.Errorf("config %s is not native", w)
 		}
 	}
-	if len(delegated) == 0 {
-		t.Skip("no delegated config verb left")
-	}
-	for _, p := range delegated {
-		for _, extra := range [][]string{nil, {"help"}, {"--scope", "lab"}, {"bogus"}} {
-			args := append(append([]string(nil), p...), extra...)
-			h := newHarness(t, args)
-			h.expectDelegated(t, h.run())
-		}
+	if len(delegated) != 0 {
+		t.Errorf("config verbs still delegated: %v", delegated)
 	}
 	for _, args := range [][]string{{"config"}, {"config", "help"}, {"config", "-h"}, {"config", "--help"}, {"config", "bogus", "x"}} {
 		sb := newSandbox(t, true)

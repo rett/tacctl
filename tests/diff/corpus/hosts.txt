@@ -1,0 +1,162 @@
+# tacctl host ... and tacctl config linux ...: host.bats and config_linux.bats
+# command lines, plus the error paths. ssh, podman, getent, ip and git are
+# stand-ins (tests/diff/stubs/hosts): nothing leaves this machine. The ssh
+# stand-in keeps every script pushed to a host as 'pushed' in the state
+# root, so the installers of the two implementations are compared byte for
+# byte. Never add a line that runs 'host enroll --local' to completion: it
+# would run the installer on this machine.
+# Run: tests/diff/run.sh hosts
+@fixture tacquito.multiscope.yaml
+@path tests/diff/stubs/hosts
+
+# --- without the pam_tacplus tarball -------------------------------------------
+host enroll web1 --scope lab
+config linux script --scope lab --server 192.0.2.10
+config linux build
+
+@root tests/diff/roots/hosts
+
+# --- the families ----------------------------------------------------------------
+host
+host bogus
+host help
+host -h
+host list
+config linux
+config linux bogus
+config linux help
+
+# --- enroll ------------------------------------------------------------------------
+host enroll admin@web1.example.net --scope lab
+host enroll web1 --scope lab ;; host list
+host enroll web1
+host enroll web1 ;; host enroll web1 ;; host list
+host enroll root@192.0.2.50 --scope lab --port 2222 --identity /etc/passwd ;; host list
+host enroll web1 --scope lab --build-on-host
+host enroll web1 --scope lab --allow-uid-mismatch --adopt alice,bob
+host enroll web1 --scope lab --server 198.51.100.7 ;; host enroll web1 --scope lab ;; host list
+host enroll web1 --scope lab --name web2 ;; host enroll web1 --scope dmz --name web3 ;; host list
+host enroll web1 --scope prod --method tacplus
+host enroll --local --name 9x
+host enroll --local --port x
+@env SSH_STUB_OS=ID=fedora
+host enroll web1 --scope lab
+@unenv SSH_STUB_OS
+@env SSH_STUB_ARCH=riscv64
+host enroll web1 --scope lab
+@unenv SSH_STUB_ARCH
+@env PODMAN_STUB_RC=125
+host enroll web1 --scope lab
+@unenv PODMAN_STUB_RC
+@env SSH_STUB_OS=ID=debian\nVERSION_CODENAME=bookworm
+host enroll web1 --scope lab ;; config linux builds ;; host enroll web1 --scope lab --name web2
+@unenv SSH_STUB_OS
+@env SSH_STUB_OS=ID="rocky"\nID_LIKE="rhel centos fedora"\nVERSION_ID="9.4"
+host enroll web1 --scope lab ;; config linux builds ;; config linux builds clear ;; config linux builds
+@unenv SSH_STUB_OS
+scope protocols lab set radius ;; host enroll web1 --scope lab
+scope auth-method lab radius ;; host enroll web1 --scope lab
+scope auth-method lab radius ;; host enroll web1 --scope lab --method tacplus ;; host list
+host default-method radius ;; host enroll web1 --scope lab
+host default-method radius ;; host enroll web1 --scope lab --method tacplus ;; host list
+
+# enroll refused
+host enroll
+host enroll 'web1;reboot' --scope lab
+host enroll -oProxyCommand=x --scope lab
+host enroll web1 web2
+host enroll --local web1
+host enroll web1 --adopt 'x;y'
+host enroll web1 --adopt
+host enroll web1 --method
+host enroll web1 --method ldap
+host enroll web1 --method radius
+host enroll web1 --scope nope
+host enroll web1 --name 9x
+host enroll web1 --port 123456
+host enroll web1 --identity /no/such/key
+host enroll ghost.example.net --scope lab
+@env IP_STUB_RC=2
+host enroll web1 --scope lab
+@unenv IP_STUB_RC
+@env SSH_STUB_RC=1
+host enroll web1 --scope lab
+host enroll web1
+@unenv SSH_STUB_RC
+
+# --- sync, unenroll ----------------------------------------------------------------
+host sync
+host sync --bogus
+host sync ghost
+host sync --all
+host unenroll
+host unenroll ghost
+host enroll web1 --scope lab ;; host sync web1
+host enroll web1 --scope lab ;; user add dave readonly --hash {HASH} --scopes lab ;; host sync web1 ;; config linux uid
+host enroll web1 --scope lab ;; host enroll web1 --scope lab --name web2 ;; host sync --all
+host enroll web1 --scope lab ;; host sync web1 --adopt alice --allow-uid-mismatch
+host enroll web1 --scope lab ;; host sync web1 --adopt 'x;reboot'
+host enroll web1 ;; host unenroll web1 ;; host list
+
+# with three hosts enrolled already (web2 a radius host, old1 on a scope
+# that is gone)
+@root tests/diff/roots/hosts-enrolled
+host list
+host sync --all
+host sync web2
+host unenroll web1
+host unenroll web2
+host unenroll old1
+host unenroll web1 -x
+host enroll admin@web1 --scope lab
+host enroll web2 --scope lab
+host enroll web2 --scope lab --method tacplus ;; host list
+@env SSH_STUB_RC=1
+host sync web1
+host sync --all
+host unenroll web1
+host unenroll web1 --force ;; host list
+@unenv SSH_STUB_RC
+@root tests/diff/roots/hosts
+
+# --- default-method ----------------------------------------------------------------
+host default-method
+host default-method radius
+host default-method ldap
+host default-method radius ;; host default-method ;; config get host.default_method
+
+# --- config linux ----------------------------------------------------------------------
+config linux script --scope lab --server 192.0.2.10
+config linux script --scope lab
+config linux script --scope lab --server 192.0.2.10 --output lab.sh
+config linux script --scope lab --server 192.0.2.10 -o nodir/lab.sh
+config linux script --scope dmz --server 192.0.2.10
+config linux script --server 192.0.2.10
+config linux script --scope nope
+config linux script --scope lab --server 'x;reboot'
+config linux script --scope lab --method radius
+config linux script --scope lab --method ldap
+config linux script --bogus
+config linux script extra
+@env IP_STUB_RC=2
+config linux script --scope lab
+@unenv IP_STUB_RC
+scope protocols lab set radius ;; config linux script --scope lab --server 192.0.2.10
+scope auth-method lab radius ;; config linux script --scope lab --server 192.0.2.10
+config linux remove-script
+config linux remove-script -o rm.sh
+config linux remove-script --output nodir/rm.sh
+config linux remove-script bogus
+config linux uid
+config linux uid alice
+config linux uid 'bad name'
+config linux uid bob 1001
+config linux script --scope lab --server 192.0.2.10 ;; config linux uid ;; config linux uid bob ;; config linux uid bob 1001 ;; config linux uid bob 20000 ;; config linux uid bob 500 ;; config linux uid bob 65534 ;; config linux uid ghost 30000 ;; config linux uid ;; config linux script --scope lab --server 192.0.2.10
+@known proposed 3.9 item 20: bash's arithmetic complaint about 09999 (a broken octal number) is not printed; the outcome is the same
+config linux script --scope lab --server 192.0.2.10 ;; config linux uid alice 09999
+config linux script --scope lab --server 192.0.2.10 ;; config linux uid alice 01000
+config linux builds
+config linux builds list
+config linux builds clear
+config linux builds bogus
+config linux build

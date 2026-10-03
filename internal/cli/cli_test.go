@@ -103,7 +103,7 @@ func commandPaths(c *cobra.Command, prefix []string, out *[][]string) {
 
 // nativeWords are the first words the Go binary owns (cut over).
 var nativeWords = map[string]bool{"version": true, "user": true, "hash": true, "passwd": true, "_completion-names": true,
-	"config": true, "scope": true, "group": true,
+	"config": true, "scope": true, "group": true, "host": true,
 	"status": true, "log": true, "backup": true, "backend": true, "store": true}
 
 // The no-sub / help / -h / unknown table of docs/plans/go-rewrite.md 3.2:
@@ -132,7 +132,6 @@ func TestEverythingNotCutOverIsDelegated(t *testing.T) {
 		[]string{"completion", "bash"}, []string{"shell"}, []string{"-x", "user", "list"},
 		[]string{"--x=1", "user", "list"}, []string{"--", "version"}, []string{"Version"},
 		[]string{"help", "version"}, []string{"User", "list"}, []string{"Hash"},
-		[]string{"host", "user", "list"}, []string{"host", "unenroll", "lab", "--force"},
 		// The verbs of native families that stay bash's until Phase 3.
 		[]string{"backend", "enable", "radius", "-y"}, []string{"backend", "disable", "radius"},
 		[]string{"store", "rollback"}, []string{"store", "rollback", "help"},
@@ -241,7 +240,7 @@ func TestReexecUnderSudo(t *testing.T) {
 		}
 	}
 	// Root never re-execs.
-	h := mk([]string{"host", "list"}, 0)
+	h := mk([]string{"upgrade"}, 0)
 	if err := h.run(); err != nil || h.runner.Execs()[0].Argv[0] == "sudo" {
 		t.Errorf("root re-exec'd: %v %+v", err, h.runner.Execs())
 	}
@@ -271,7 +270,7 @@ func TestDelegateRefusesNonBashTargets(t *testing.T) {
 			t.Errorf("%s: exit %d stderr %q", name, code, h.err.String())
 		}
 	}
-	h := newHarness(t, []string{"host", "list"}, "TACCTL_BASH_IMPL=/nonexistent/bin/tacctl.sh")
+	h := newHarness(t, []string{"upgrade"}, "TACCTL_BASH_IMPL=/nonexistent/bin/tacctl.sh")
 	check("missing", h, 1, "\033[0;31m[ERROR]\033[0m command not available in this build\n")
 	if len(h.runner.Execs()) != 0 {
 		t.Error("exec'd a missing file")
@@ -284,14 +283,14 @@ func TestDelegateRefusesNonBashTargets(t *testing.T) {
 	if err := os.WriteFile(shim, []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	check("shim", newHarness(t, []string{"host", "list"}, "TACCTL_BASH_IMPL="+shim), 1, "No bash implementation of tacctl at "+shim)
+	check("shim", newHarness(t, []string{"upgrade"}, "TACCTL_BASH_IMPL="+shim), 1, "No bash implementation of tacctl at "+shim)
 
 	impl := bashTree(t)
-	h = newHarness(t, []string{"host", "list"}, "TACCTL_BASH_IMPL="+impl)
+	h = newHarness(t, []string{"upgrade"}, "TACCTL_BASH_IMPL="+impl)
 	h.app.Exe = impl // TACCTL_BASH_IMPL pointing back at this binary
 	check("self", h, 1, "command not available in this build")
 
-	h = newHarness(t, []string{"host", "list"})
+	h = newHarness(t, []string{"upgrade"})
 	h.runner.ExecErr = errors.New("permission denied")
 	check("exec failure", h, 126, "Cannot run ")
 }
@@ -472,7 +471,7 @@ func TestMain(t *testing.T) {
 		t.Errorf("Main: %d %q %q", code, out.String(), errb.String())
 	}
 	out.Reset()
-	code = Main([]string{"tacctl", "host", "list"}, []string{"TACCTL_SKIP_SUDO=1", "TACCTL_BASH_IMPL=/nonexistent/tacctl.sh"}, app.Stdio{Stdout: &out, Stderr: &errb}, BuildInfo{})
+	code = Main([]string{"tacctl", "upgrade"}, []string{"TACCTL_SKIP_SUDO=1", "TACCTL_BASH_IMPL=/nonexistent/tacctl.sh"}, app.Stdio{Stdout: &out, Stderr: &errb}, BuildInfo{})
 	if code != 1 || !strings.Contains(errb.String(), "command not available in this build") {
 		t.Errorf("Main delegation failure: %d %q", code, errb.String())
 	}

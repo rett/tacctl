@@ -9,9 +9,9 @@ package cli
 //
 // Registered from other files with registerConfigVerb (below), which
 // replaces the delegated stub of the same name: diff and restore
-// (backup.go), allow, deny and mgmt-acl (config_policy_register.go). Still
-// bash's, by delegation: cisco, juniper and wti (WP3.1), linux (WP3.2). The
-// family node, its usage and its preflight rule stay here.
+// (backup.go), allow, deny and mgmt-acl (config_policy_register.go),
+// cisco, juniper and wti (devices.go), linux (linux.go). Every config verb
+// is native; the family node, its usage and its preflight rule stay here.
 
 import (
 	"context"

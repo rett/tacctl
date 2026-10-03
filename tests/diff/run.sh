@@ -45,6 +45,13 @@
 #                       logger) exit <rc>; the default is 0
 #   @known <reason>     the next command line is a known difference (an
 #                       intended change of plan 3.9): reported, not a failure
+#   @path <dir>         put this tree's <dir> on PATH after the standard stubs
+#                       (stand-ins for more system commands: ssh, podman, ...)
+#   @root <dir>         copy the contents of this tree's <dir> into the state
+#                       root before each command line (files a fixture lacks)
+#
+# Commands run with the state root as their working directory, so a file a
+# command writes to a relative path is part of the state compared.
 #
 # Both sides run in 'env -i' with the same sandbox: TACCTL_* paths under a
 # per-side root, LANG=C.UTF-8, TZ=UTC, TACCTL_SKIP_SUDO=1, and PATH stubs
@@ -273,10 +280,13 @@ exec_in() {
     local -a envv
     mapfile -t envv < <(sandbox_env "$root")
     local rc=0
-    env -i "PATH=${stubs}:${PATH}" "HOME=${root}/../home" LANG=C.UTF-8 LC_ALL=C.UTF-8 TZ=UTC TERM=dumb \
-        "PYTHONPATH=${work}/pysite" PYTHONDONTWRITEBYTECODE=1 \
-        "${envv[@]}" "${extra[@]}" \
-        timeout 300 "$bin" "$@" < "${RUN_STDIN}" > "${RUN_OUT}" 2> "${RUN_ERR}" || rc=$?
+    (
+        cd "$root" || exit 2
+        exec env -i "PATH=${stubs}:${EXTRA_PATH:+${EXTRA_PATH}:}${PATH}" "HOME=${root}/../home" LANG=C.UTF-8 LC_ALL=C.UTF-8 TZ=UTC TERM=dumb \
+            "PYTHONPATH=${work}/pysite" PYTHONDONTWRITEBYTECODE=1 \
+            "${envv[@]}" "${extra[@]}" \
+            timeout 300 "$bin" "$@" < "${RUN_STDIN}" > "${RUN_OUT}" 2> "${RUN_ERR}"
+    ) || rc=$?
     echo "$rc" > "${RUN_RC}"
 }
 
@@ -407,6 +417,7 @@ prepare_side() {
     rm -rf "${work}/side"
     mkdir -p "${work}/side/cwd" "${work}/side/home"
     cp -a "${fixture_dir}/${fx}/root" "${work}/side/root"
+    if [[ -n "$EXTRA_ROOT" ]]; then cp -R "${EXTRA_ROOT}/." "${work}/side/root/"; fi
     : > "${work}/side/calls.log"
     make_stubs "${work}/side/stubs" "${work}/side/calls.log" "$@"
 }
@@ -515,12 +526,14 @@ run_line() {
 }
 
 declare -a EXTRA_ENV=()
+EXTRA_PATH="" EXTRA_ROOT=""
 run_corpus() {
     local file="$1" cname
     cname="$(basename "$file" .txt)"
     local fx=tacquito.minimal.yaml knownwhy="" num=0 raw
     local -a stubargs=()
     EXTRA_ENV=()
+    EXTRA_PATH="" EXTRA_ROOT=""
     while IFS= read -r raw || [[ -n "$raw" ]]; do
         num=$((num + 1))
         raw="${raw%"${raw##*[![:space:]]}"}"   # trailing blanks
@@ -542,6 +555,16 @@ run_corpus() {
                 continue
                 ;;
             @known\ *) knownwhy="${raw#@known }"; continue ;;
+            @path\ *)
+                [[ -d "${src}/${raw#@path }" ]] || die "${file}:${num}: no directory ${raw#@path }"
+                EXTRA_PATH="${EXTRA_PATH:+${EXTRA_PATH}:}${src}/${raw#@path }"
+                continue
+                ;;
+            @root\ *)
+                [[ -d "${src}/${raw#@root }" ]] || die "${file}:${num}: no directory ${raw#@root }"
+                EXTRA_ROOT="${src}/${raw#@root }"
+                continue
+                ;;
             @*) die "${file}:${num}: unknown directive ${raw%% *}" ;;
         esac
         if [[ -n "$filter" ]] && ! [[ "$raw" =~ $filter ]]; then

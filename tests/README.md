@@ -564,11 +564,16 @@ tests/diff/run.sh --self-test                # the runner against itself and aga
   `TACCTL_BASH_IMPL` and `TACCTL_TREE` pointing at this tree, as the bats harness
   does), `bash`, `tree`, or any executable.
 - **Corpora** are `tests/diff/corpus/<name>.txt`: `users`, `scopes`, `groups`,
-  `config`, `backup`, `store` (more arrive with the packages that cut over devices
-  and hosts). One command per line, program name left out; `<<< text` is stdin
+  `config`, `backup`, `store`, `hosts` (more arrive with the packages that cut over
+  devices). One command per line, program name left out; `<<< text` is stdin
   (`\n` a line break; no `<<<` means a closed stdin); ` ;; ` chains commands that
-  share one state; `@fixture`, `@env`, `@unenv`, `@stub <cmd> <rc>`, `@known <why>`
-  are directives; `{HASH}`, `{FIXTURES}`, `{DATE}`, `{TS}` are placeholders. The
+  share one state; `@fixture`, `@env`, `@unenv`, `@stub <cmd> <rc>`, `@known <why>`,
+  `@path <dir>` (more stand-ins on PATH: the hosts corpus stubs ssh, podman, getent,
+  ip and `git clone` from `tests/diff/stubs/hosts`, so nothing leaves the machine) and
+  `@root <dir>` (files copied into the state root, such as the stand-in pam_tacplus
+  tarball) are directives; `{HASH}`, `{FIXTURES}`, `{DATE}`, `{TS}` are
+  placeholders. Commands run in the state root, so a file written to a relative
+  path is compared with the rest of the state. The
   header of `run.sh` is the full syntax. Every corpus has at least as many failing
   lines as succeeding ones (the summary prints the count); add the error paths
   (unknown verb, missing argument, bad value, closed stdin, `n` to a prompt) with
