@@ -1,0 +1,22 @@
+# Plain scalars typed by PyYAML's YAML 1.1 resolver (safe_load).
+bools: [yes, no, on, off, Yes, NO, On, OFF, true, false, TRUE, False, y, n, Y, N, yEs]
+nulls: [~, null, Null, NULL, nil, None]
+empty_value:
+ints: [0, -0, +0, +1, 12, -12, 007, 08, 0_7, 0b101, -0b1, 0x1f, -0x1F, 0xff_ff, 1_000, 1:30, 1:30:00, -1:30, 0o17, 9223372036854775807, -9223372036854775808]
+floats: [1.5, .5, 5., -.5, +.5, 1.0e+5, 1.0E-5, 1_0.5, .inf, -.Inf, +.INF, 190:20:30.15, 0.0, -0.0, 6.8523015e+5]
+float_like_strings: [1e5, 1.0e5, inf, nan, 1.2.3, 1..2, ., .e5, 1.0e]
+nan: .NaN
+dates: [2026-10-01, 1999-01-31]
+date_like_strings: [2026-1-1, 2026-10-1, 20261001, 2026/10/01, '2026-10-01']
+quoted: ['1', "2", 'yes', "null", '', "", 'it''s', "tab\there", '0123']
+strings: [abc, a b, 'x,y', a:b, $2b$12$abc, '*', it's, -x, +abc, =x, a=b]
+block_strings:
+- ::1
+- fd00:10::/64
+- a, b
+- x: y
+- 'key: value'
+- yes please
+cidrs: [10.0.0.0/8, 192.168.1.1, 1.2]
+explicit: [!!str 1, !!str yes, !!int "12", !!bool "on", !!null "", !!float "1", !!str ~]
+flow_map: {a: 1, b: [x, y], 'c d': {e: null}}

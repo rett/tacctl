@@ -1,0 +1,196 @@
+- v: ' a'
+  l:
+  - ' a'
+  k:
+    ' a': ' a'
+- v: 'a '
+  l:
+  - 'a '
+  k:
+    'a ': 'a '
+- v: ' '
+  l:
+  - ' '
+  k:
+    ' ': ' '
+- v: '  '
+  l:
+  - '  '
+  k:
+    '  ': '  '
+- v: a  b
+  l:
+  - a  b
+  k:
+    a  b: a  b
+- v: a   b
+  l:
+  - a   b
+  k:
+    a   b: a   b
+- v: "a\tb"
+  l:
+  - "a\tb"
+  k:
+    "a\tb": "a\tb"
+- v: "\ta"
+  l:
+  - "\ta"
+  k:
+    "\ta": "\ta"
+- v: "a\t"
+  l:
+  - "a\t"
+  k:
+    "a\t": "a\t"
+- v: "\t"
+  l:
+  - "\t"
+  k:
+    "\t": "\t"
+- v: "a \tb"
+  l:
+  - "a \tb"
+  k:
+    "a \tb": "a \tb"
+- v: "a\t b"
+  l:
+  - "a\t b"
+  k:
+    "a\t b": "a\t b"
+- v: 'a
+
+    b'
+  l:
+  - 'a
+
+    b'
+  k:
+    ? 'a
+
+      b'
+    : 'a
+
+      b'
+- v: 'a
+
+
+    b'
+  l:
+  - 'a
+
+
+    b'
+  k:
+    ? 'a
+
+
+      b'
+    : 'a
+
+
+      b'
+- v: "a \nb"
+  l:
+  - "a \nb"
+  k:
+    ? "a \nb"
+    : "a \nb"
+- v: "a\n b"
+  l:
+  - "a\n b"
+  k:
+    ? "a\n b"
+    : "a\n b"
+- v: "a\n\tb"
+  l:
+  - "a\n\tb"
+  k:
+    ? "a\n\tb"
+    : "a\n\tb"
+- v: 'a
+
+
+
+    b'
+  l:
+  - 'a
+
+
+
+    b'
+  k:
+    ? 'a
+
+
+
+      b'
+    : 'a
+
+
+
+      b'
+- v: 'a b
+
+    c d'
+  l:
+  - 'a b
+
+    c d'
+  k:
+    ? 'a b
+
+      c d'
+    : 'a b
+
+      c d'
+- v: ' a
+
+    b'
+  l:
+  - ' a
+
+    b'
+  k:
+    ? ' a
+
+      b'
+    : ' a
+
+      b'
+- v: 'a
+
+    b '
+  l:
+  - 'a
+
+    b '
+  k:
+    ? 'a
+
+      b '
+    : 'a
+
+      b '
+- v: 'line one
+
+    line two
+
+    line three'
+  l:
+  - 'line one
+
+    line two
+
+    line three'
+  k:
+    ? 'line one
+
+      line two
+
+      line three'
+    : 'line one
+
+      line two
+
+      line three'
