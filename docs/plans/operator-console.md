@@ -16,7 +16,7 @@ The proposal has four parts that build on each other:
 ---
 
 
-> **Status 2026-10-03 — decided.** The user accepted the recommended placement (option (b): **0.2.1** = registry, shell, `ssh`; **0.2.2** = console), asked the in-progress rewrite to make all §9.3 door-openers now, and accepted every recommendation in §12. This document is the plan of record for 0.2.1/0.2.2, to be revisited (and split into work packages) when that work starts after 0.2.0.
+> **Status 2026-10-03 — decided.** The user accepted the recommended placement (option (b): **0.2.1** = registry, shell, `ssh`; **0.2.2** = console), asked the in-progress rewrite to make all §9.3 door-openers now, and accepted every recommendation in §12. This document is the plan of record for 0.2.1/0.2.2, to be revisited (and split into work packages) when that work starts after 0.2.0. **Requirement (user, 2026-10-03): `ssh <name>` must reach every kind of device tacctl serves — Cisco IOS/IOS-XE, Juniper Junos, WTI and enrolled Linux hosts (plus `other`) — through the vendor profiles of §5.2; the acceptance of the 0.2.1 `ssh` package includes a live session to each vendor available in the lab, and the legacy-IOS option names [A] are verified there.**
 
 ## 0. Summary of the recommendation
 
