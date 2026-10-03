@@ -1,0 +1,12 @@
+
+[1mtacctl config allow[0m — connection IP ACL (allow list)
+
+Usage:
+  tacctl config allow list                          Show current allow list
+  tacctl config allow add    <cidr>[,<cidr>...]     Add one or more CIDRs
+  tacctl config allow remove <cidr>[,<cidr>...]     Remove one or more CIDRs
+  tacctl config allow clear                         Wipe all (confirms)
+
+Current entries: 0
+Note: 'deny' takes precedence over 'allow'. Both empty = all connections accepted.
+

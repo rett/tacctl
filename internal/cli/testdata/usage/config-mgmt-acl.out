@@ -1,0 +1,15 @@
+
+[1mtacctl config mgmt-acl[0m — shared Cisco VTY-ACL + Juniper lo0-filter permits
+
+Usage:
+  tacctl config mgmt-acl list                          Show current permits
+  tacctl config mgmt-acl add    <cidr>[,<cidr>...]     Add one or more CIDRs
+  tacctl config mgmt-acl remove <cidr>[,<cidr>...]     Remove one or more CIDRs
+  tacctl config mgmt-acl clear                         Wipe all permits (confirms)
+  tacctl config mgmt-acl cisco-name [name]             Show or set the Cisco ACL name (default VTY-ACL)
+  tacctl config mgmt-acl juniper-name [name]           Show or set the Juniper filter name (default MGMT-ACL)
+
+Storage: tacctl.yaml (mgmt_acl.permits + mgmt_acl.names).
+         cisco=VTY-ACL  juniper=MGMT-ACL
+Current entries: 0
+

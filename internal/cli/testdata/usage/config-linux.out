@@ -1,0 +1,12 @@
+
+[1mLinux host TACACS+ or RADIUS login[0m
+
+Usage: tacctl config linux <subcommand>
+
+  build                                   Fetch and prepare the pinned pam_tacplus source (once, and after upgrades)
+  script [--scope <name>] [--server <address>] [--method tacplus|radius] [--output <file>]
+                                          Write the install script for hosts in a scope (contains the secret)
+  remove-script [--output <file>]         Write the removal script (no secrets; accounts are left in place)
+  uid [<username> [<uid>]]                Show or change the UID/GID a user gets on every host
+  builds [list|clear]                     Show or drop the modules 'host enroll' built in containers
+

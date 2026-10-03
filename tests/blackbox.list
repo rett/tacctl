@@ -1,0 +1,23 @@
+# The bats files that drive tacctl only through its command line, run against
+# the Go binary with 'TACCTL_IMPL=go make test-blackbox' (docs/plans/go-rewrite.md
+# 2.2). One path per line; '#' starts a comment. A file followed by
+# '# go-after: <work package>' runs only in bash mode until that package has
+# cut its commands over. Tests tagged 'bash-only' (# bats test_tags=bash-only)
+# are skipped in go mode. Packages that cut commands over add the files they
+# make pass.
+tests/integration/config_metrics_sudoers.bats
+tests/integration/config_mgmt_acl.bats
+tests/integration/config_render.bats
+tests/integration/config_setters.bats
+tests/integration/config_templates.bats
+tests/integration/group_crud.bats
+tests/integration/group_edit_commands.bats
+tests/integration/host.bats
+tests/integration/prompts_closed_stdin.bats
+tests/integration/scope_crud.bats
+tests/integration/scope_prefixes_secret.bats
+tests/integration/scope_vendor_attrs.bats
+tests/integration/status_and_scope_lookup.bats
+tests/integration/user_crud.bats
+tests/e2e/log.bats
+tests/e2e/smoke.bats

@@ -30,6 +30,67 @@
 #
 set -euo pipefail
 
+# tacctl.sh --build <out> [--tags <tags>]: compile the Go implementation in
+# this script's tree (cmd/tacctl, vendored modules, no network) into <out>,
+# atomically, and exit. Needs no root and installs nothing: 'make build' uses
+# it, and the 0.2.0 bootstrap shim and upgrade will share the same recipe
+# (docs/plans/go-rewrite.md 5.1). The version stamped in is 'git describe'
+# of the tree; GOCACHE as root defaults to /root/.cache/go-build.
+tacctl_go_build() {
+    local out="${1:-}" tags="" tree version commit date
+    local go_bin="/usr/local/go/bin/go"
+    if [[ -z "$out" || "$out" == -* ]]; then
+        echo "Usage: tacctl.sh --build <out> [--tags <tags>]" >&2
+        return 1
+    fi
+    shift
+    if [[ "${1:-}" == "--tags" ]]; then
+        tags="${2:-}"
+        [[ -n "$tags" ]] || { echo "Usage: tacctl.sh --build <out> [--tags <tags>]" >&2; return 1; }
+        shift 2
+    fi
+    if [[ $# -gt 0 ]]; then
+        echo "Usage: tacctl.sh --build <out> [--tags <tags>]" >&2
+        return 1
+    fi
+    tree="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)" || return 1
+    if [[ ! -f "${tree}/go.mod" ]]; then
+        echo -e "\033[0;31m[ERROR]\033[0m No Go module in ${tree} (go.mod missing)." >&2
+        return 1
+    fi
+    if [[ ! -x "$go_bin" ]]; then
+        echo -e "\033[0;31m[ERROR]\033[0m Go toolchain not found at ${go_bin}." >&2
+        return 1
+    fi
+    [[ "$out" == /* ]] || out="${PWD}/${out}"
+    mkdir -p "$(dirname "$out")" || return 1
+    version=$(git -C "$tree" describe --tags --always --dirty 2> /dev/null) || version="unknown"
+    commit=$(git -C "$tree" rev-parse HEAD 2> /dev/null) || commit="unknown"
+    date=$(git -C "$tree" log -1 --format=%cI 2> /dev/null) || date="unknown"
+    if [[ -z "${GOCACHE:-}" && $EUID -eq 0 ]]; then
+        export GOCACHE=/root/.cache/go-build
+    fi
+    local -a build=(build -trimpath -buildvcs=false)
+    [[ -z "$tags" ]] || build+=(-tags "$tags")
+    build+=(-ldflags "-s -w -X main.version=${version} -X main.commit=${commit} -X main.date=${date}")
+    build+=(-o "${out}.new" ./cmd/tacctl)
+    # A subshell for cd and umask; the trap drops a half-written binary on
+    # failure or Ctrl-C. <out> itself changes only by the final rename.
+    (
+        trap 'rm -f "${out}.new"' EXIT
+        cd "$tree" \
+            && umask 022 \
+            && GOTOOLCHAIN=local GOFLAGS=-mod=vendor CGO_ENABLED=0 "$go_bin" "${build[@]}" \
+            && chmod 755 "${out}.new" \
+            && mv -f "${out}.new" "$out"
+    )
+}
+if [[ "${BASH_SOURCE[0]}" == "$0" && "${1:-}" == "--build" ]]; then
+    shift
+    tacctl_go_build "$@" || exit 1
+    exit 0
+fi
+
 # Re-exec under sudo only when invoked as a script. When sourced (e.g. by bats
 # tests), skip re-exec so tests can call functions directly as any user.
 # TACCTL_SKIP_SUDO=1 is a test-only escape for subprocess invocations from

@@ -11,8 +11,30 @@ make test-unit       # pure-logic only, <5s
 make test-integration
 make test-e2e
 make coverage        # produces coverage/index.html (requires: apt install kcov)
-make lint            # shellcheck (bin/tacctl.sh, lib/*.sh, lib/backends/*.sh, tests/helpers, config/linux)
+make lint            # shellcheck (bin/tacctl.sh, lib/*.sh, lib/backends/*.sh, tests/helpers, tests/tools, config/linux)
+                     #   + gofmt, go vet, golangci-lint (pinned; prints how to install it when missing)
 ```
+
+The bats files run in parallel (`bats --jobs`, one file per job) when GNU
+`parallel` is installed: `BATS_JOBS` sets the number of jobs (default: the
+CPU count), `BATS_JOBS=1` runs serially.
+
+During the Go rewrite (`docs/plans/go-rewrite.md`) the suite drives either
+implementation: `TACCTL_IMPL=bash` (the default) runs `bin/tacctl.sh`,
+`TACCTL_IMPL=go` runs `dist/tacctl`, which hands every command it does not
+implement yet to `bin/tacctl.sh`.
+
+```sh
+make build                         # dist/tacctl (bin/tacctl.sh --build, with the test knobs)
+make test-go                       # go test -race ./...
+TACCTL_IMPL=go make test-blackbox  # tests/blackbox.list against dist/tacctl
+```
+
+`tests/blackbox.list` lists the files that drive tacctl only through its
+command line; a test there that cannot run against the binary is tagged
+`# bats test_tags=bash-only`. `tests/tools/usage-goldens.sh` rewrites
+`internal/cli/testdata/usage/` (the usage blocks the Go side must print) from
+the `0.1.16` tag.
 
 Run a single file:
 ```sh

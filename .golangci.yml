@@ -1,0 +1,40 @@
+# golangci-lint v2 (version pinned in the Makefile: make lint).
+version: "2"
+
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    - depguard
+    - forbidigo
+    - misspell
+    - unconvert
+  settings:
+    # The package rules of docs/plans/go-rewrite.md 3.1 and 9.0.
+    depguard:
+      rules:
+        exec:
+          files:
+            - $all
+            - "!**/internal/execx/*.go"
+          deny:
+            - pkg: os/exec
+              desc: run programs through internal/execx (PATH stubs, fake runner)
+    forbidigo:
+      analyze-types: true
+      forbid:
+        - pattern: ^os\.Exit$
+          msg: only cmd/tacctl exits; return an error (cli.ExitError for a status)
+        - pattern: ^os\.(Getenv|LookupEnv|Environ|Setenv|Unsetenv|Clearenv)$
+          msg: the environment is read once, in internal/paths (paths.Env)
+  exclusions:
+    rules:
+      - path: ^cmd/tacctl/
+        linters: [forbidigo]
+        text: os\.(Exit|Environ)
+      - path: ^internal/(paths/|app/knobs)
+        linters: [forbidigo]
+        text: os\.(Getenv|LookupEnv)
+
+formatters:
+  enable:
+    - gofmt

@@ -1,0 +1,17 @@
+
+[1mtacctl hash[0m — bcrypt hash helper (non-root)
+
+Usage:
+  tacctl hash generate                Prompt for a password and print its bcrypt hash
+  tacctl hash commands                Show OS-specific one-liners for offline generation
+
+Use 'generate' when you can shell in to this server.
+Use 'commands' to hand an operator a command they can run on their own machine,
+so the plaintext password never leaves their laptop.
+
+Either output plugs into:
+  tacctl user add <username> <group> --hash '<hash>'
+  tacctl user passwd <username> --hash '<hash>'
+
+Both accept either form — hex ('24326224...') or raw ('$2b$12$...').
+

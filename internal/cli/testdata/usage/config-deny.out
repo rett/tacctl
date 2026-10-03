@@ -1,0 +1,12 @@
+
+[1mtacctl config deny[0m — connection IP ACL (deny list)
+
+Usage:
+  tacctl config deny list                          Show current deny list
+  tacctl config deny add    <cidr>[,<cidr>...]     Add one or more CIDRs
+  tacctl config deny remove <cidr>[,<cidr>...]     Remove one or more CIDRs
+  tacctl config deny clear                         Wipe all (confirms)
+
+Current entries: 0
+Note: 'deny' takes precedence over 'allow'. Both empty = all connections accepted.
+

@@ -34,7 +34,9 @@ tacctl_tmpenv_init() {
 
 # Source tacctl.sh so unit tests can call its functions directly.
 # Depends on the main-gate (BASH_SOURCE==$0) introduced for testability.
+# Always the bash entrypoint, whichever implementation TACCTL_BIN_SCRIPT
+# runs: the functions exist only there.
 tacctl_source_lib() {
-    # shellcheck disable=SC1090
-    source "${TACCTL_BIN_SCRIPT}"
+    # shellcheck disable=SC1091,SC2153  # TACCTL_SRC: set by setup.bash
+    source "${TACCTL_SRC}/bin/tacctl.sh"
 }

@@ -254,6 +254,7 @@ _normalize() {
     assert_output --partial "Unknown argument"
 }
 
+# bats test_tags=bash-only
 @test "config wti: falls back to the inline walkthrough when no template resolves" {
     # Point both template dirs at nowhere: TACCTL_STATE_DIR is already the tmp
     # state dir (no templates/ dir), and the repo dir is derived from the script's own
