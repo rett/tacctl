@@ -182,6 +182,34 @@ complete_words() {
     assert_line "radius"
 }
 
+@test "completion: config linux script flags and methods, builds, backup restore --legacy" {
+    complete_words tacctl config linux ""
+    assert_output "$(printf 'build\nscript\nremove-script\nuid\nbuilds')"
+    complete_words tacctl config linux script ""
+    assert_output "$(printf -- '--scope\n--server\n--method\n--output')"
+    complete_words tacctl config linux script --method ""
+    assert_output "$(printf 'tacplus\nradius')"
+    complete_words tacctl config linux builds ""
+    assert_output "$(printf 'list\nclear')"
+    complete_words tacctl backup restore 20260101-000000 ""
+    assert_output -- "--legacy"
+    complete_words tacctl config restore 20260101-000000 ""
+    assert_output -- "--legacy"
+    complete_words tacctl host default-method ""
+    assert_output "$(printf 'tacplus\nradius')"
+}
+
+@test "completion: user, group and scope names come from the sudo bridge only, never from tacquito.yaml" {
+    # A rendered tacquito.yaml lacks the scopes TACACS+ does not serve.
+    stub_cmd sudo 'case "$*" in
+  *"_completion-names scopes") printf "%s\n" lab radius-only ;;
+esac'
+    complete_words tacctl scope show ""
+    assert_output "$(printf 'lab\nradius-only')"
+    run grep -c '/etc/tacquito' "$COMPLETION"
+    assert_output "0"
+}
+
 # --- the names the bridge asks tacctl for ---------------------------------------
 
 @test "_completion-names: backends are every registered id, enabled-backends the enabled ones, listeners a backend's" {

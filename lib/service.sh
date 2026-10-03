@@ -190,7 +190,7 @@ validate_listen_address() {
 # --- STATUS ---
 cmd_status() {
     echo ""
-    echo -e "${BOLD}Tacquito Service Status${NC}"
+    echo -e "${BOLD}Service Status${NC}"
     echo "--------------------------------------------"
 
     # With one enabled backend it prints its own lines, in the places this
@@ -645,11 +645,11 @@ cmd_log() {
             echo "Usage: tacctl log <subcommand> [--backend <id>] [arguments]"
             echo ""
             echo "Subcommands:"
-            echo "  tail [n]              Show last N journal entries (default 20)"
-            echo "  search <term>         Search journal for a username or keyword"
+            echo "  tail [n]              Show the last N log entries (default 20; TACACS+: journal, RADIUS: auth and daemon log)"
+            echo "  search <term>         Search the logs for a username or keyword"
             echo "  failures              Show auth failures from the last 24 hours"
             echo "  accounting [n]        Show last N accounting log entries"
-            echo "  clear                 Purge tacquito journal + truncate accounting log (confirms)"
+            echo "  clear [--force|-y]    Purge each backend's logs: journal or auth log, accounting log (confirms)"
             echo ""
             echo "With more than one backend enabled each subcommand shows every backend's log in a"
             echo "section of its own; --backend <id> shows only that backend's."

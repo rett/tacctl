@@ -517,7 +517,7 @@ def model_view(model, argv):
             print(f"  Tagged {vendor} (scope devices entry {tnet}): over RADIUS it gets that vendor's attribute only")
         if len(matches) > 1:
             print('')
-            print("  Also covered by (shadowed — tacquito's first-match picks the one above):")
+            print("  Also covered by (shadowed — the more specific prefix above wins):")
             for name, pnet in matches[1:]:
                 print(f"    - scope '{name}' via prefix {pnet}")
         return 0

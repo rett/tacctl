@@ -116,7 +116,7 @@ Markers: **[V]** verified by reading code/docs or running a read-only check; **[
 describe            → key=value lines: protocol, impl, units, user, config_dir, log_dir
 installed           → 0/1
 install <phase> <tree>      phases: build files account start
-upgrade <phase> <tree>      phases: preflight config build files finish
+upgrade <phase> <tree>      phases: preflight build config files finish   (WP5.2: config after the build and the scripts pull, so it runs once, with the new code)
 uninstall <phase> [--keep-logs]   phases: stop program data account
 artifacts           → the files the backend renders, one path per line
 render_check        → trial render + the daemon's own config check; prints current|same|ok|drift|unrecorded|missing|unreadable

@@ -393,15 +393,17 @@ cmd_install() {
 
     echo ""
     echo "============================================"
-    echo "  Tacquito TACACS+ Server Installer"
+    echo "  tacctl Installer"
     echo "============================================"
     echo ""
     echo "This will:"
-    echo "  - Install Go ${GO_VERSION} (if not present)"
-    echo "  - Clone and build tacquito from source"
-    echo "  - Create a 'tacquito' service user"
-    echo "  - Configure and start the TACACS+ service on port 49"
-    echo "  - Prompt for shared secret and user passwords"
+    echo "  - Install tacctl (${DEPLOY_DIR}, /usr/local/bin/tacctl) and its state directory (${TACCTL_STATE_DIR})"
+    echo "  - Install the TACACS+ backend: Go ${GO_VERSION} (if not present), tacquito built from"
+    echo "    source, a 'tacquito' service user, the service on port 49/tcp"
+    echo "  - Seed the store: scope '${DEFAULT_SCOPE_FRESH}' with a generated shared secret, built-in"
+    echo "    users created disabled (an existing configuration is kept instead)"
+    echo ""
+    echo "RADIUS (FreeRADIUS) is not installed; add it later with: tacctl backend enable radius"
     echo ""
 
     read -rp "Continue with installation? [y/N]: " confirm || true
@@ -504,7 +506,7 @@ cmd_install() {
     echo "  Installation Complete"
     echo "============================================"
     echo ""
-    echo "  Service:        tacquito.service (enabled, running)"
+    echo "  TACACS+:        tacquito.service (enabled, running)"
     echo "  Store:          ${STORE_FILE}"
     echo "  Config:         ${CONFIG_FILE} (rendered from the store)"
     echo "  Accounting log: ${LOG_DIR}/accounting.log"
@@ -538,11 +540,12 @@ cmd_install() {
     echo "    3. Narrow scope prefixes:  tacctl scope prefixes ${DEFAULT_SCOPE_FRESH} <your-subnets>"
     echo "    4. Add a prod scope:       tacctl scope add prod --prefixes <cidrs> --secret generate"
     echo "    5. Open port 49/tcp in your firewall if needed"
+    echo "    6. RADIUS as well (optional): tacctl backend enable radius"
     echo ""
     echo "  Security hardening:"
-    echo "    6. Bind to a specific IP:  tacctl config listen tcp <mgmt-ip>:49"
-    echo "    7. Add connection ACL:     tacctl config allow add <cidr>"
-    echo "    8. Review config:          tacctl config show"
+    echo "    7. Bind to a specific IP:  tacctl config listen tcp <mgmt-ip>:49"
+    echo "    8. Add connection ACL:     tacctl config allow add <cidr>"
+    echo "    9. Review config:          tacctl config show"
     echo ""
 }
 
@@ -563,6 +566,16 @@ update_if_changed() {
         info "  Updated: ${label}"
         SCRIPTS_UPDATED=$((SCRIPTS_UPDATED + 1))
     fi
+}
+
+# "tacacs (tacquito), radius (freeradius)": the enabled backends, for the banner.
+upgrade_backend_names() {
+    local _b impl out=""
+    for _b in "${BACKENDS_ENABLED[@]}"; do
+        impl=$(backend_describe "$_b" impl 2> /dev/null) || impl=""
+        out+="${out:+, }${_b}${impl:+ (${impl})}"
+    done
+    echo "$out"
 }
 
 # NOTE: Git pulls rely on HTTPS transport security. Commit signature verification
@@ -596,7 +609,7 @@ cmd_upgrade() {
 
     echo ""
     echo "============================================"
-    echo "  Tacquito Upgrade"
+    echo "  tacctl Upgrade"
     echo "============================================"
     echo ""
 
@@ -605,11 +618,7 @@ cmd_upgrade() {
     # tacctl.yaml may just have moved: read backends.enabled where it is now.
     _conf_invalidate
     _backends_load || exit 1
-
-    # --- Bring the existing config in line with this release ---
-    # Legacy migrations of tacquito.yaml, or a re-render once the store
-    # exists. The store gate further down judges the file as this leaves it.
-    backends_run upgrade config
+    info "Backends: $(upgrade_backend_names)"
 
     # --- Pull and rebuild each backend's daemon ---
     backends_run upgrade build
@@ -683,6 +692,15 @@ cmd_upgrade() {
         chmod 755 "${DEPLOY_DIR}/bin/tacctl.sh"
         ln -sf "${DEPLOY_DIR}/bin/tacctl.sh" /usr/local/bin/tacctl
     fi
+
+    # --- Bring the existing config in line with this release ---
+    # Legacy migrations of tacquito.yaml, or a re-render once the store
+    # exists (RADIUS: re-render, drop-in, restart). The store gate in
+    # 'finish' judges the file as this leaves it. Here, after the pull and
+    # its re-exec, so that it runs once and with the code being installed,
+    # and its output (a backend restart among it) follows the build and the
+    # scripts update instead of preceding them.
+    backends_run upgrade config
 
     # --- Update system config files ---
     info "Updating system files..."
@@ -762,31 +780,35 @@ uninstall_remove_access() {
 }
 
 cmd_uninstall() {
+    # Every backend that is enabled or still installed is removed.
+    backends_select_present
 
     echo ""
     echo "============================================"
-    echo -e "  ${RED}Tacquito Uninstaller${NC}"
+    echo -e "  ${RED}tacctl Uninstaller${NC}"
     echo "============================================"
     echo ""
+    echo "Backends: $(upgrade_backend_names)"
+    echo ""
     echo "This will remove:"
-    echo "  - Tacquito service and binary"
-    echo "  - Management CLI (tacctl)"
-    echo "  - Password hash generator (tacquito-hashgen)"
-    echo "  - Configuration directory (/etc/tacquito)"
-    echo "  - State directory (${TACCTL_STATE_DIR})"
-    echo "  - Log directory (/var/log/tacquito)"
-    echo "  - Logrotate config"
+    echo "  - Management CLI (tacctl), its state directory (${TACCTL_STATE_DIR}: store, tacctl.yaml, backups)"
     echo "  - Sudoers rules (${SUDOERS_FILE}, ${TIER_SUDOERS_FILE})"
-    echo "  - Bash completion (/etc/bash_completion.d/tacctl)"
+    echo "  - Bash completion (/etc/bash_completion.d/tacctl) and man page"
     echo "  - Linux host build data (${LINUX_DIR})"
-    echo "  - Service user (tacquito)"
     echo "  - Management repo (${DEPLOY_DIR})"
+    echo "  - TACACS+ (tacquito): service and units, binary, password hash generator (tacquito-hashgen),"
+    echo "    configuration directory (/etc/tacquito), log directory (/var/log/tacquito), logrotate config,"
+    echo "    service user (tacquito)"
+    if [[ " ${BACKENDS_ENABLED[*]} " == *" radius "* ]]; then
+        echo "  - RADIUS (FreeRADIUS): tacctl's instance (its config files, unit drop-in, logs, logrotate config);"
+        echo "    the FreeRADIUS package stays installed, with its own configuration as shipped"
+    fi
     echo ""
     echo -e "${YELLOW}The tacquito source (/opt/tacquito-src) and Go installation"
     echo -e "(/usr/local/go) will NOT be removed.${NC}"
     echo ""
 
-    read -rp "Are you sure you want to uninstall tacquito? [y/N]: " confirm || true
+    read -rp "Are you sure you want to uninstall tacctl? [y/N]: " confirm || true
     if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
         info "Cancelled."
         exit 0
@@ -795,8 +817,6 @@ cmd_uninstall() {
     echo ""
 
     # --- Stop and disable services ---
-    # Every backend that is enabled or still installed is removed.
-    backends_select_present
     backends_run uninstall stop
 
     # --- Ask about preserving data ---
@@ -884,7 +904,7 @@ cmd_uninstall() {
     echo "============================================"
     echo ""
     echo "  Removed:"
-    echo "    - Tacquito service and binary"
+    echo "    - TACACS+ (tacquito) service and binary"
     echo "    - Management CLI and symlinks"
     echo "    - Configuration and systemd unit"
     echo "    - Logrotate config, sudoers rules, bash completion"
@@ -899,7 +919,7 @@ cmd_uninstall() {
     echo ""
     echo "  Not removed:"
     echo "    - Go installation (/usr/local/go)"
-    echo "    - Tacquito source (/opt/tacquito-src)"
+    echo "    - tacquito source (/opt/tacquito-src)"
     echo "    - python3-bcrypt package"
     echo ""
 }

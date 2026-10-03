@@ -2225,8 +2225,8 @@ config_service_access() {
 CONFIG_SYNC_RENDERED=0
 
 # config_sync_existing: bring an existing install's config in line with this
-# release. Idempotent; run by every upgrade before anything else looks at the
-# config.
+# release. Idempotent; run by every upgrade (the 'config' phase, after the
+# build and the scripts pull) before the store gate looks at the config.
 #
 # Without a store, these are the in-place migrations of the legacy
 # tacquito.yaml that upgrades have always run. They must stay ahead of the

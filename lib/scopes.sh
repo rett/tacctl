@@ -414,7 +414,7 @@ cmd_scope_list() {
 # view for day-to-day work.
 cmd_scope_routing() {
     echo ""
-    echo -e "${BOLD}Scope routing${NC} ${CYAN}(tacquito first-match order — narrower prefixes win)${NC}"
+    echo -e "${BOLD}Scope routing${NC} ${CYAN}(first-match order — narrower prefixes win)${NC}"
     echo "--------------------------------------------------------------"
     local default_val
     default_val=$(read_default_scope)
@@ -1468,8 +1468,8 @@ cmd_scope_aaa_order() {
         echo "  Scope '${scope}' AAA method-list order: ${current}"
         echo "  Source: ${source}"
         echo ""
-        echo "    tacacs-first  TACACS+ is authoritative; local used only on server outage."
-        echo "    local-first   Local DB checked first; TACACS+ used for names not found locally."
+        echo "    tacacs-first  The server (TACACS+ or RADIUS) is authoritative; local used only on server outage."
+        echo "    local-first   Local DB checked first; the server used for names not found locally."
         echo ""
         echo "  Usage: tacctl scope aaa-order ${scope} <tacacs-first|local-first>"
         echo ""
@@ -1479,7 +1479,7 @@ cmd_scope_aaa_order() {
     conf_set "aaa.order.${scope}" "$new_order" || exit 1
     info "Scope '${scope}' AAA method-list order set to ${new_order}."
     if [[ "$new_order" == "local-first" ]]; then
-        warn "Local usernames that collide with TACACS+ users will win locally on devices in this scope."
+        warn "Local usernames that collide with tacctl users will win locally on devices in this scope (TACACS+ and RADIUS)."
         warn "Scope local accounts to break-glass / emergency use only."
     fi
     echo ""

@@ -617,7 +617,7 @@ ${mgmt_entries}  deny   any log"
         VTY_ACCESS_CLASS="  access-class ${cisco_acl_name} in"
     else
         VTY_ACL_BLOCK="! ${cisco_acl_name} not emitted — mgmt-acl list is empty.
-! Populate it on the tacquito server with
+! Populate it on the tacctl server with
 !   tacctl config mgmt-acl add <cidr>
 ! then re-run 'tacctl config cisco${protocol_flag}' to get the access-list block."
         VTY_ACCESS_CLASS="! access-class ${cisco_acl_name} in   ! uncomment after populating mgmt-acl"
@@ -1013,7 +1013,7 @@ set firewall family inet filter ${juniper_acl_name} term default-accept then acc
 # Apply (review first):
 # set interfaces lo0 unit 0 family inet filter input ${juniper_acl_name}"
     else
-        MGMT_ACL_BLOCK="# mgmt-acl empty — configure with 'tacctl config mgmt-acl add <cidr>' on the tacquito server
+        MGMT_ACL_BLOCK="# mgmt-acl empty — configure with 'tacctl config mgmt-acl add <cidr>' on the tacctl server
 # to emit a source-restricted lo0 firewall filter here."
     fi
 
@@ -1095,7 +1095,7 @@ set firewall family inet filter ${juniper_acl_name} term default-accept then acc
         CLASS_COMMAND_RULES="${CLASS_COMMAND_RULES%$'\n'}"
     else
         CLASS_COMMAND_RULES="# Per-command authorization not configured.
-# To restrict commands per group, use 'tacctl group commands' on the tacquito server."
+# To restrict commands per group, use 'tacctl group commands' on the tacctl server."
     fi
 
     echo ""

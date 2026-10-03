@@ -239,8 +239,10 @@ RADIUS (FreeRADIUS) `lib/backends/radius.sh` (see "The RADIUS backend").
   before and no `.apply.*`, `.enable.*` or staging directory is left.
 - `tests/integration/completion.bats` runs the real completion function with
   the real bash-completion library and a stub `sudo` that plays the
-  `_completion-names` bridge; `tests/integration/tiers.bats` holds the check
-  that `tier_permits` and `emit_tier_sudoers` agree on every verb.
+  `_completion-names` bridge (the only source of user, group, scope, backup,
+  backend and listener names: the completion reads no file);
+  `tests/integration/tiers.bats` holds the check that `tier_permits` and
+  `emit_tier_sudoers` agree on every verb.
 - To make a render fail in a test, override the contract function
   (`backend_tacacs_render_stage() { return 1; }`), not `tacacs_render_apply`:
   commands render through `backends_render_all`. `tacacs_render_apply` is
@@ -421,7 +423,8 @@ drop-in per unit, `<unit>.d/tacctl.conf`, an artifact recorded in
 
 `cmd_install`, `cmd_upgrade` and `cmd_uninstall` shell out to git, go, apt,
 useradd and systemd and write fixed system paths, so they are not run by the
-suite. The daemon's own steps are the TACACS+ backend's lifecycle phases
+suite as they are (one test runs `cmd_upgrade` with those steps replaced, for
+the order of its output). The daemon's own steps are the TACACS+ backend's lifecycle phases
 (`backend_tacacs_install|upgrade|uninstall <phase>`, the `_tacacs_install_*`,
 `_tacacs_upgrade_*` and `_tacacs_uninstall_*` functions); those write fixed
 system paths too and are not run either. What the commands do to the
@@ -439,9 +442,15 @@ commands call them (the config ones live in `lib/backends/tacacs.sh`):
 | `_tacacs_units_install` (unit, template unit, drop-ins; converts the hand-managed drop-in) | install (`start` phase), upgrade (`files` phase, through `_tacacs_upgrade_units`) | `integration/units_convert.bats` |
 | `_tacacs_upgrade_finish` (the restart; unit files, settings and binary go back when the unit does not come up) | upgrade | `integration/units_convert.bats` |
 | `_tacacs_uninstall_stop`, `_tacacs_uninstall_units` | uninstall | `integration/units_convert.bats` |
+| `_radius_upgrade_config` (re-render, drop-in, restart; the RADIUS backend's `upgrade config` phase) | upgrade, install over an existing store | `integration/radius.bats` |
+| `cmd_upgrade` itself, with the build, the system files and the package step replaced by stand-ins and no management repo: the order of its output (banner, build, then the `config` phase with the RADIUS re-render, then system files and summary) | upgrade | `integration/radius.bats` ("upgrade: the output reads in order") |
 
 Notes:
 
+- `cmd_upgrade` runs the backends' phases in the order of
+  `BACKEND_UPGRADE_PHASES` (`preflight build config files finish`;
+  `tests/unit/backend.bats` checks it): `config` comes after the build and
+  the scripts pull, so after a self-update it runs once, with the new code.
 - The gate refuses to run without the daemon binary (a skipped load-smoke is
   not a pass), so a test that expects a flip installs a stand-in `tacquito`
   in `$TACCTL_BIN` first.
@@ -488,8 +497,10 @@ not `bash -c`.
 
 ## Isolation guarantees
 
-- Every test runs with `$TACCTL_ETC`, `$TACCTL_LOG`, `$TACCTL_BIN` pointing at `$BATS_TEST_TMPDIR`.
-  No test touches `/etc/tacquito` or `/var/log/tacquito` on the host.
+- Every test runs with `$TACCTL_ETC`, `$TACCTL_STATE_DIR`, `$TACCTL_LOG`, `$TACCTL_BIN` and the
+  RADIUS paths (`$TACCTL_RADIUS_DIR`, `$TACCTL_RADIUS_LOG`, `$TACCTL_RADIUS_BIN`,
+  `$TACCTL_LOGROTATE_DIR`) pointing at `$BATS_TEST_TMPDIR`. No test touches `/etc/tacctl`,
+  `/etc/tacquito`, `/var/log/tacquito` or a FreeRADIUS directory on the host.
 - `tacctl_mocks_init` prepends `$BATS_TEST_TMPDIR/stubs` to `PATH`, so stubs shadow real
   `systemctl`, `git`, `journalctl`, `openssl`. Stubs record calls to `$CALLS_LOG`.
 - bats isolates each `@test` in its own process, so global state doesn't leak between tests.

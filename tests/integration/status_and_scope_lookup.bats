@@ -39,7 +39,7 @@ esac'
 @test "status: prints service active + PID + listening port + user count" {
     run "$TACCTL_BIN_SCRIPT" status
     assert_success
-    assert_output --partial "Tacquito Service Status"
+    assert_output --partial "Service Status"
     assert_output --partial "Service:"
     assert_output --partial "active"
     assert_output --partial "PID:"
@@ -160,7 +160,7 @@ esac'
 @test "config show: renders a per-scope block with user counts" {
     run "$TACCTL_BIN_SCRIPT" config show
     assert_success
-    assert_output --partial "Tacquito Configuration"
+    assert_output --partial "Configuration"
     assert_output --partial "Scopes:"
     assert_output --partial "prod"
     assert_output --partial "lab"

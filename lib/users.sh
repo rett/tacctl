@@ -230,7 +230,7 @@ _user_hash_arg() {
 # --- LIST ---
 cmd_list() {
     echo ""
-    echo -e "${BOLD}Tacquito Users${NC}"
+    echo -e "${BOLD}Users${NC}"
     echo "--------------------------------------------"
     printf "  ${BOLD}%-20s %-15s %-10s %-12s %-30s${NC}\n" "USERNAME" "GROUP" "STATUS" "PW CHANGED" "SCOPES"
     echo "  -----------------------------------------------------------------------------------------------"

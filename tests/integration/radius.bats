@@ -759,6 +759,49 @@ upgrade_radius() {
     ! stub_called '^systemctl (restart|daemon-reload)'
 }
 
+# cmd_upgrade itself, with what shells out to git, go, apt and fixed system
+# paths replaced: the build is one line, there is no management repo to
+# pull. The RADIUS re-render runs in the 'config' phase, which comes after
+# the build and the scripts pull (and so after a self-update's re-exec): its
+# lines must follow the banner and the build, and precede the system files
+# and the summary.
+@test "upgrade: the output reads in order; the RADIUS re-render and restart come after the banner and the build" {
+    radius_up
+    pre_vendor_state
+    mkdir -p "${BATS_TEST_TMPDIR}/deploy/bin"
+    : > "${BATS_TEST_TMPDIR}/deploy/bin/tacctl.sh"
+    stub_cmd ln
+    stub_cmd git
+    run bash -c 'set -euo pipefail; source "$1"
+        DEPLOY_DIR="$2"
+        _tacacs_upgrade_preflight() { :; }
+        _tacacs_upgrade_build() { info "Current commit: abc1234"; SKIP_BUILD=true; CURRENT_COMMIT=abc1234; NEW_COMMIT=abc1234; }
+        _tacacs_upgrade_files() { :; }
+        _tacacs_upgrade_finish() { UPGRADE_SUMMARY_HEAD="Scripts Updated"; }
+        ensure_dependencies() { :; }
+        ensure_safe_directory() { :; }
+        install_man_page() { :; }
+        update_if_changed() { :; }
+        cmd_upgrade' _ "$TACCTL_BIN_SCRIPT" "${BATS_TEST_TMPDIR}/deploy"
+    assert_success
+    output=$(sed 's/\x1b\[[0-9;]*m//g' <<< "$output")
+    local order=() pattern n
+    for pattern in "tacctl Upgrade" "Backends: tacacs (tacquito), radius (freeradius)" \
+                   "Current commit: abc1234" "RADIUS: re-rendered " "Restarting freeradius" \
+                   "FreeRADIUS is running." "Updating system files" "Scripts Updated"; do
+        n=$(grep -nF -- "$pattern" <<< "$output" | head -1 | cut -d: -f1)
+        [[ -n "$n" ]] || { echo "missing: ${pattern}"; echo "$output"; return 1; }
+        order+=("$n")
+    done
+    # Each line after the one before it.
+    for n in 1 2 3 4 5 6 7; do
+        (( order[n] > order[n - 1] )) || { echo "out of order at: ${order[*]}"; echo "$output"; return 1; }
+    done
+    # The banner is printed once, and nothing comes before it.
+    [[ "$(grep -c 'tacctl Upgrade' <<< "$output")" == 1 ]]
+    [[ -z "$(head -n "$(( order[0] - 2 ))" <<< "$output" | tr -d '[:space:]')" ]]
+}
+
 @test "upgrade: a disabled backend (no drop-in) is left alone" {
     radius_up
     tacctl backend disable radius -y

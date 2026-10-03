@@ -283,7 +283,7 @@ setup() {
     # collision caveat so operators understand the risk.
     run "$TACCTL_BIN_SCRIPT" scope aaa-order lab local-first
     assert_success
-    assert_output --partial "collide with TACACS+"
+    assert_output --partial "collide with tacctl users"
 }
 
 @test "scope aaa-order: rejects invalid enum value" {

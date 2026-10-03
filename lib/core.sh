@@ -56,7 +56,7 @@ get_version() {
 # --- Pre-flight ---
 preflight() {
     if [[ ! -f "$CONFIG" ]]; then
-        error "Config not found at ${CONFIG}. Is tacquito installed?"
+        error "Config not found at ${CONFIG}. Is tacctl installed? (tacctl install)"
         exit 1
     fi
     if ! python3 -c "import bcrypt" 2>/dev/null; then
@@ -100,7 +100,7 @@ reject_reserved_username() {
     case "$value" in
         root)
             error "Username 'root' is reserved as an accounting-only sink for Junos internal daemons (non-tty CLI as root)."
-            error "The hash stays disabled permanently — root must only be used for local/console login, never TACACS+."
+            error "The hash stays disabled permanently — root must only be used for local/console login, never TACACS+ or RADIUS."
             error "Create an operator-specific account instead (e.g. tacctl user add jsmith <group>)."
             exit 1
             ;;

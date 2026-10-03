@@ -28,7 +28,7 @@ tacctl_tmpenv_init() {
     mkdir -p "${TACCTL_ETC}" "${TACCTL_LOG}" "${TACCTL_BIN}" \
              "${TACCTL_STATE_DIR}/backups" \
              "${TACCTL_STATE_DIR}/backups/password-dates"
-    # Canonical defaults ship embedded in bin/tacctl.sh (conf_emit_defaults);
+    # Canonical defaults ship embedded in lib/conf.sh (conf_emit_defaults);
     # no fixture file to seed.
 }
 

@@ -42,49 +42,17 @@ _tacctl() {
 
     local cmd="${words[offset + 1]}"
 
-    # Name lookup for completion. The config is mode 0600, so direct read
-    # only works as root or group tacquito. When run as an unprivileged user,
-    # fall back to `sudo -n tacctl _completion-names <kind>` — works if the
+    # Name lookup for completion. Users, groups, scopes, backup timestamps
+    # and backends come from tacctl itself (the store in /etc/tacctl is
+    # root-only, and a rendered daemon config such as tacquito.yaml lacks
+    # the scopes that backend does not serve), through
+    # `sudo -n tacctl _completion-names <kind>` — works as root, or if the
     # operator has installed the NOPASSWD sudoers rule
     # (`tacctl config sudoers install`). No rule → empty completion, which
     # is harmless (operator still types names manually).
     _tacctl_names() {
-        local kind="$*"
-        local out=""
-        if [[ -r /etc/tacquito/tacquito.yaml ]]; then
-            case "$kind" in
-                scopes) out=$(python3 -c "
-import yaml
-with open('/etc/tacquito/tacquito.yaml') as f:
-    d = yaml.safe_load(f) or {}
-seen=set()
-for s in (d.get('secrets') or []):
-    n=s.get('name')
-    if n and n not in seen:
-        seen.add(n); print(n)
-" 2>/dev/null) ;;
-                users)  out=$(python3 -c "
-import yaml
-with open('/etc/tacquito/tacquito.yaml') as f:
-    d = yaml.safe_load(f) or {}
-for u in (d.get('users') or []):
-    n=u.get('name')
-    if n: print(n)
-" 2>/dev/null) ;;
-                groups) out=$(awk '/^# --- Groups ---/,/^# --- Users ---/ {
-                    if (match($0, /^[a-z][a-zA-Z0-9_-]*: &/)) {
-                        sub(/:.*/, ""); print
-                    }
-                }' /etc/tacquito/tacquito.yaml 2>/dev/null) ;;
-            esac
-        fi
-        # Backup timestamps live in the root-only tacctl state directory
-        # (/etc/tacctl/backups), so they always come from the sudo fallback.
-        if [[ -z "$out" ]]; then
-            # shellcheck disable=SC2086  # $kind may carry an argument ('listeners <backend>')
-            out=$(sudo -n tacctl _completion-names $kind 2>/dev/null)
-        fi
-        printf '%s\n' "$out"
+        # shellcheck disable=SC2086,SC2048  # $* may carry an argument ('listeners <backend>')
+        sudo -n tacctl _completion-names $* 2>/dev/null
     }
 
     _tacctl_scope_names()   { _tacctl_names scopes; }
@@ -260,6 +228,35 @@ for u in (d.get('users') or []):
                         COMPREPLY=($(compgen -W "$lflags" -- "$cur"))
                         ;;
                 esac
+            elif [[ $pos -ge 4 && "${words[offset + 2]}" == "linux" ]]; then
+                # `config linux script [--scope <s>] [--server <a>] [--method <m>] [--output <f>]`,
+                # `config linux builds [list|clear]`, `config linux uid [<user> [<uid>]]`
+                case "${words[offset + 3]}" in
+                    script)
+                        case "${words[cword - 1]}" in
+                            --scope)  COMPREPLY=($(compgen -W "$(_tacctl_scope_names)" -- "$cur")) ;;
+                            --method) COMPREPLY=($(compgen -W "tacplus radius" -- "$cur")) ;;
+                            --output|-o) COMPREPLY=($(compgen -f -- "$cur")) ;;
+                            --server) COMPREPLY=() ;;
+                            *) COMPREPLY=($(compgen -W "--scope --server --method --output" -- "$cur")) ;;
+                        esac
+                        ;;
+                    remove-script)
+                        if [[ "${words[cword - 1]}" == "--output" || "${words[cword - 1]}" == "-o" ]]; then
+                            COMPREPLY=($(compgen -f -- "$cur"))
+                        else
+                            COMPREPLY=($(compgen -W "--output" -- "$cur"))
+                        fi
+                        ;;
+                    builds)
+                        [[ $pos -eq 4 ]] && COMPREPLY=($(compgen -W "list clear" -- "$cur"))
+                        ;;
+                    uid)
+                        [[ $pos -eq 4 ]] && COMPREPLY=($(compgen -W "$(_tacctl_user_names)" -- "$cur"))
+                        ;;
+                esac
+            elif [[ $pos -eq 4 && ( "${words[offset + 2]}" == "diff" || "${words[offset + 2]}" == "restore" ) ]]; then
+                [[ "${words[offset + 2]}" == "restore" ]] && COMPREPLY=($(compgen -W "--legacy" -- "$cur"))
             elif [[ $pos -ge 4 && ( "${words[offset + 2]}" == "cisco" || "${words[offset + 2]}" == "juniper" || "${words[offset + 2]}" == "wti" ) ]]; then
                 if [[ "${words[cword - 1]}" == "--scope" ]]; then
                     COMPREPLY=($(compgen -W "$(_tacctl_scope_names)" -- "$cur"))
@@ -278,8 +275,10 @@ for u in (d.get('users') or []):
         host)
             if [[ $pos -eq 2 ]]; then
                 COMPREPLY=($(compgen -W "list enroll sync unenroll default-method" -- "$cur"))
-            elif [[ "$prev" == "--method" || "${words[offset + 2]}" == "default-method" ]]; then
+            elif [[ "$prev" == "--method" || ( $pos -eq 3 && "${words[offset + 2]}" == "default-method" ) ]]; then
                 COMPREPLY=($(compgen -W "tacplus radius" -- "$cur"))
+            elif [[ "$prev" == "--scope" ]]; then
+                COMPREPLY=($(compgen -W "$(_tacctl_scope_names)" -- "$cur"))
             elif [[ "$cur" == -* ]]; then
                 COMPREPLY=($(compgen -W "--local --scope --server --name --port --identity --method --all --force --allow-uid-mismatch --adopt --build-on-host" -- "$cur"))
             fi
@@ -452,6 +451,8 @@ for u in (d.get('users') or []):
                         COMPREPLY=($(compgen -W "$(_tacctl_backup_names)" -- "$cur"))
                         ;;
                 esac
+            elif [[ $pos -eq 4 && "${words[offset + 2]}" == "restore" ]]; then
+                COMPREPLY=($(compgen -W "--legacy" -- "$cur"))
             fi
             ;;
         hash)

@@ -11,12 +11,12 @@
 # tiers'): sudoers argument globs are loose, this gate is not.
 #
 # Only callers in the local group $TIER_USERS_GROUP are tier-managed --
-# those are the accounts tacctl provisions for TACACS+ users. Everyone
+# those are the accounts tacctl provisions for its users. Everyone
 # else who reaches this point (root, a local admin with sudo) keeps the
 # full access they always had. For a managed caller the tier comes from
 # the model (the user's group and its priv-lvl), never from local group
 # membership, so a stale local group cannot grant more than the user's
-# TACACS+ group does.
+# tacctl group does.
 TIER_USERS_GROUP="tac-users"
 TIER_GROUP_READONLY="tac-readonly"
 TIER_GROUP_OPERATOR="tac-operator"
@@ -216,7 +216,7 @@ cmd_config() {
             echo "         [--backend <id>]              ...of another backend (see 'tacctl backend list'); radius: --listener auth|acct <udp|udp6> <addr>"
             echo "  metrics <show|enable|disable|address <host:port>|reset>  Prometheus exporter control"
             echo "  sudoers [show|install|remove] [grp]  Manage NOPASSWD sudoers drop-in for tacctl"
-            echo "  sudoers tiers [show|install|remove]  Manage per-tier (RO/OP/SU) sudoers rules for TACACS+ users"
+            echo "  sudoers tiers [show|install|remove]  Manage per-tier (RO/OP/SU) sudoers rules for tacctl users with local accounts"
             echo "  password-age [days]                  Show or set password age warning threshold"
             echo "  bcrypt-cost [10-14]                  Show or set bcrypt cost factor (default 12)"
             echo "  password-min-length [8-64]           Show or set minimum interactive password length (default 12)"
@@ -227,7 +227,7 @@ cmd_config() {
             echo "  cisco   [--scope <name>] [--legacy] [--protocol tacacs|radius]  Show working Cisco device configuration for a scope (--legacy = IOS 12.x syntax; --protocol radius = RADIUS backend, default tacacs)"
             echo "  juniper [--scope <name>] [--protocol tacacs|radius]             Show working Juniper device configuration for a scope"
             echo "  wti     [--scope <name>] [--protocol tacacs|radius]             Show step-by-step WTI console-server (v8.x serial menu) setup for a scope (RADIUS: not verified on a unit)"
-            echo "  linux   build|script|remove-script   TACACS+ login for Linux hosts (pam_tacplus install/removal scripts)"
+            echo "  linux   build|script|remove-script|uid|builds  TACACS+ or RADIUS login for Linux hosts (install/removal scripts)"
             echo "  branch [name]                        Show or change the tacctl repo branch"
             echo ""
             echo "Examples:"
@@ -262,7 +262,7 @@ TIER_SUDOERS_FILE="${TACCTL_TIER_SUDOERS_FILE:-/etc/sudoers.d/tacctl-tiers}"
 emit_tier_sudoers() {
     local t="/usr/local/bin/tacctl"
     cat <<EOF
-# Managed by tacctl. Per-tier access for TACACS+ users with local accounts.
+# Managed by tacctl. Per-tier access for tacctl users with local accounts.
 # Remove with: tacctl config sudoers tiers remove
 Cmnd_Alias TACCTL_RO = ${t} "", ${t} passwd, ${t} status, ${t} version, \\
     ${t} user list, ${t} user show *, ${t} group list, ${t} scope list, \\
@@ -357,7 +357,7 @@ cmd_config_sudoers() {
             echo "    tacctl config sudoers install          # grant to group 'adm'"
             echo "    tacctl config sudoers install wheel    # grant to group 'wheel'"
             echo "    tacctl config sudoers remove"
-            echo "    tacctl config sudoers tiers [show|install|remove]   # RO/OP/SU rules for TACACS+ users"
+            echo "    tacctl config sudoers tiers [show|install|remove]   # RO/OP/SU rules for tacctl users with local accounts"
             echo ""
             return
             ;;
@@ -420,20 +420,20 @@ EOF
 
 usage() {
     echo ""
-    echo -e "${BOLD}Tacquito Control${NC} ($(get_version))"
+    echo -e "${BOLD}tacctl${NC} ($(get_version)) — TACACS+ (tacquito) and RADIUS (FreeRADIUS) from one store"
     echo ""
     echo "Usage: tacctl <command> [arguments]"
     echo ""
     echo "Commands:"
-    echo "  install [--branch <name>]     Install tacquito server and configure from scratch"
-    echo "  upgrade [--branch <name>]     Pull latest source, rebuild, and update scripts"
-    echo "  uninstall                     Remove tacquito and all associated files"
-    echo "  status                        Show service health, stats, and recent errors"
+    echo "  install [--branch <name>]     Install tacctl and the TACACS+ backend (tacquito) from scratch"
+    echo "  upgrade [--branch <name>]     Pull latest source, rebuild, update scripts and every enabled backend"
+    echo "  uninstall                     Remove tacctl, its backends' services and all associated files"
+    echo "  status                        Show service health, stats, and recent errors (per backend)"
     echo "  passwd                        Change your own password (asks for the current one)"
     echo "  user <subcommand>             User management (list, add, remove, passwd, scope, ...)"
     echo "  group <subcommand>            Group management (list, add, edit, remove)"
     echo "  scope <subcommand>            Scope management (named CIDR + shared-secret bundles)"
-    echo "  host <subcommand>             Linux hosts: enroll, sync, unenroll TACACS+ login over SSH"
+    echo "  host <subcommand>             Linux hosts: enroll, sync, unenroll TACACS+ or RADIUS login over SSH"
     echo "  backend <subcommand>          Auth backends: list, status, enable <id>, disable <id>"
     echo "  store <subcommand>            The canonical store: show, import, rollback"
     echo "  config <subcommand>           Configuration (show, render, cisco, juniper, wti, validate, ...)"

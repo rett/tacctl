@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 #
-# Tacquito TACACS+ Server — Management Script
+# tacctl — management CLI for network-device AAA servers
 #
-# Manage local TACACS+ users and server configuration.
+# Manages users, groups, scopes and filters once, and serves them over
+# TACACS+ (tacquito) and, when enabled, RADIUS (FreeRADIUS).
 # Users, groups, scopes and filters live in /etc/tacctl/store.yaml; every
-# change is rendered into /etc/tacquito/tacquito.yaml and the daemon restarted.
+# change is rendered into each enabled backend's config (for TACACS+
+# /etc/tacquito/tacquito.yaml) and the backends whose files changed restarted.
 #
-# Usage:
+# Usage (every command prints its own help when run without arguments):
 #   ./tacctl.sh user list
 #   ./tacctl.sh user add <username> <group> [--scopes <name>[,<name>...]]
 #   ./tacctl.sh user remove <username>
@@ -20,10 +22,11 @@
 #   ./tacctl.sh scope secret   <name> {show|set|generate}
 #   ./tacctl.sh backend {list|status [<id>]|enable <id>|disable <id>}
 #   ./tacctl.sh store {show|import|rollback}
+#   ./tacctl.sh host {list|enroll|sync|unenroll|default-method}
 #   ./tacctl.sh config show
-#   ./tacctl.sh config cisco   [--scope <name>] [--legacy]
-#   ./tacctl.sh config juniper [--scope <name>]
-#   ./tacctl.sh config wti     [--scope <name>]
+#   ./tacctl.sh config cisco   [--scope <name>] [--legacy] [--protocol tacacs|radius]
+#   ./tacctl.sh config juniper [--scope <name>] [--protocol tacacs|radius]
+#   ./tacctl.sh config wti     [--scope <name>] [--protocol tacacs|radius]
 #
 set -euo pipefail
 

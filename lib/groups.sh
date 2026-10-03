@@ -13,7 +13,7 @@
 # --- CONFIG SHOW ---
 cmd_config_show() {
     echo ""
-    echo -e "${BOLD}Tacquito Configuration${NC}"
+    echo -e "${BOLD}Configuration${NC}"
     echo "--------------------------------------------"
 
     # One model view carries everything below: 'scope=<name>|<secret
@@ -143,7 +143,7 @@ cmd_config_show() {
 # --- GROUP LIST ---
 cmd_group_list() {
     echo ""
-    echo -e "${BOLD}Tacquito Groups${NC}"
+    echo -e "${BOLD}Groups${NC}"
     echo "--------------------------------------------"
     printf "  ${BOLD}%-20s %-15s %-20s %-10s${NC}\n" "GROUP" "CISCO PRIV-LVL" "JUNIPER CLASS" "USERS"
     echo "  -------------------------------------------------------------------"
@@ -300,7 +300,7 @@ cmd_group_edit() {
 # writes tacctl.yaml and re-renders inside one store_apply.
 #
 # Rule shape: list of dicts {name, action: permit|deny, match?: [regex]}.
-# A trailing `name: "*"` rule's action is the group's default. Tacquito
+# A trailing `name: "*"` rule's action is the group's default. tacquito
 # returns FAIL for any rule that doesn't match, so the catchall is the
 # sole way to express "permit everything not explicitly denied."
 #
@@ -525,9 +525,10 @@ cmd_group_commands_usage() {
     echo "running-config'), never the full line -- so '^show .*$' can"
     echo "never match and is rejected. Omit --match to cover any args."
     echo ""
-    echo "Rules live under commands.<group> in /etc/tacquito/tacctl.yaml;"
+    echo "Rules live under commands.<group> in ${TACCTL_OVERRIDES_FILE};"
     echo "tacquito.yaml's per-group commands: block is a regenerated"
-    echo "artifact (do not hand-edit). Built-ins ship with defaults:"
+    echo "artifact (do not hand-edit). RADIUS does not enforce them"
+    echo "(no per-command authorization). Built-ins ship with defaults:"
     echo "   superuser: permit *   |   operator: show/ping/traceroute/"
     echo "                              terminal + deny *   |   readonly:"
     echo "                              show/ping/traceroute + deny *"

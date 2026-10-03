@@ -212,7 +212,7 @@ BACKEND_VERBS=(describe installed install upgrade uninstall
 # Lifecycle phases, in the order the generic commands run them. Everything
 # up to 'account' comes before the first render of an install, 'start' after.
 BACKEND_INSTALL_PHASES=(build files account start)
-BACKEND_UPGRADE_PHASES=(preflight config build files finish)
+BACKEND_UPGRADE_PHASES=(preflight build config files finish)
 BACKEND_UNINSTALL_PHASES=(stop program data account)
 
 # backends.enabled when tacctl.yaml does not set it. The schema in
