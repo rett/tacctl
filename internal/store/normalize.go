@@ -4,6 +4,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/rett/tacctl/internal/pyyaml"
 	"github.com/rett/tacctl/internal/yamlpy"
 )
 
@@ -25,7 +26,7 @@ func cloneMap(m *yamlpy.Map) *yamlpy.Map {
 	return out
 }
 
-// Normalize is store_normalize: a raw store (yamlpy.Decode's value) becomes
+// Normalize is store_normalize: a raw store (LoadRaw's value) becomes
 // the model document, with every optional field present and YAML-native
 // dates (yamlpy.Date) in password_changed turned into 'YYYY-MM-DD'
 // strings. It fails (*Error) only when the shape is too broken to walk;
@@ -307,8 +308,8 @@ func sortedKeys(m *yamlpy.Map) []string {
 
 // Text is store_dump_text: Header followed by the disk form as PyYAML's
 // safe_dump(sort_keys=False, default_flow_style=None, width=4096) writes
-// it, checked by reading it back (yamlpy.EmitChecked). It expects a store
-// that validates.
+// it, checked by reading it back with the store's reader (yamlpy.EmitChecked
+// with pyyaml.LoadBytes). It expects a store that validates.
 func (s *Store) Text() ([]byte, error) {
-	return yamlpy.EmitChecked(s.DiskForm(), yamlpy.StoreOptions, Header)
+	return yamlpy.EmitChecked(s.DiskForm(), yamlpy.StoreOptions, Header, pyyaml.LoadBytes)
 }

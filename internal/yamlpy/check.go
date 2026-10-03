@@ -10,18 +10,25 @@ import (
 // must not write the bytes).
 var ErrSelfCheck = errors.New("yamlpy: the emitted YAML does not read back as the value written")
 
+// Reader parses the bytes of one YAML document into the types Emit takes.
+// The production reader is internal/pyyaml's LoadBytes, the PyYAML port
+// tacctl reads its own files with; Decode (yaml.v3) is one too.
+type Reader func(data []byte) (any, error)
+
 // EmitChecked is Emit followed by the write-time self-check of
-// docs/plans/go-rewrite.md 3.3: the bytes are parsed again with Decode and
-// must be Equal to v. header, if not empty, is prepended to the output
-// before the check (tacctl's files start with comment lines), so the
-// bytes returned are exactly what the caller writes.
-func EmitChecked(v any, opts Options, header string) ([]byte, error) {
+// docs/plans/go-rewrite.md 3.3: the bytes are parsed again with read and
+// must be Equal to v. Callers pass the reader the file is read with in
+// production (pyyaml.LoadBytes), so a write that would not read back is
+// refused. header, if not empty, is prepended to the output before the
+// check (tacctl's files start with comment lines), so the bytes returned
+// are exactly what the caller writes.
+func EmitChecked(v any, opts Options, header string, read Reader) ([]byte, error) {
 	body, err := Emit(v, opts)
 	if err != nil {
 		return nil, err
 	}
 	out := append([]byte(header), body...)
-	back, err := Decode(out)
+	back, err := read(out)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrSelfCheck, err)
 	}

@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/rett/tacctl/internal/conf/py"
+	"github.com/rett/tacctl/internal/py"
 	"github.com/rett/tacctl/internal/ui"
 	"github.com/rett/tacctl/internal/yamlpy"
 )

@@ -323,9 +323,10 @@ func TestLoadUnparseableNamesFileNotContent(t *testing.T) {
 	refute(t, out, "leaky-secret")
 }
 
-func TestLoadRefusesWhatYamlpyRefuses(t *testing.T) {
-	// 0.1.16 (PyYAML) would load aliases; yamlpy refuses them, which the
-	// store reports as a load error naming the place, never the value.
+func TestLoadRefusesWhatTacctlNeverWrites(t *testing.T) {
+	// 0.1.16 (PyYAML) would load aliases; the reader refuses them (plan
+	// 3.9 item 15), which the store reports as a load error naming the
+	// place, never the value.
 	e := newEnv(t)
 	body := "version: 1\nscopes:\n  lab: &x {prefixes: [10.0.0.0/8], secret: s3cret-value}\n  lab2: *x\n"
 	if err := os.WriteFile(e.path, []byte(body), 0o600); err != nil {
@@ -336,7 +337,7 @@ func TestLoadRefusesWhatYamlpyRefuses(t *testing.T) {
 		t.Fatal("loaded")
 	}
 	out := store.Report(err)
-	equal(t, out, "tacctl store: "+e.path+": not supported by tacctl: scopes.lab2: unsupported value: an alias")
+	equal(t, out, "tacctl store: "+e.path+": line 4, column 9: an alias is not supported in this file")
 	refute(t, out, "s3cret")
 }
 
@@ -353,8 +354,8 @@ func TestLoadDates(t *testing.T) {
 }
 
 func TestLoadNeverShowsAValue(t *testing.T) {
-	// An unquoted all-digit hex hash is an integer to YAML 1.1, too big
-	// for yamlpy; the message must not quote it.
+	// An unquoted all-digit hex hash is an integer to YAML 1.1, beyond 64
+	// bits (plan 3.9 item 15); the message must not quote it.
 	e := newEnv(t)
 	digits := "2432622431322441414141414141414141414141414141414141414141414141"
 	body := "version: 1\nusers:\n  bob: {group: readonly, scopes: [], hash: " + digits + digits + ", disabled: false}\n"
@@ -366,7 +367,7 @@ func TestLoadNeverShowsAValue(t *testing.T) {
 		t.Fatal("loaded")
 	}
 	out := store.Report(err)
-	contains(t, out, "users.bob.hash")
+	equal(t, out, "tacctl store: "+e.path+": line 3, column 44: an integer beyond 64 bits is not supported in this file")
 	refute(t, out, digits)
 }
 

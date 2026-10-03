@@ -3,7 +3,7 @@ package pyyaml
 import (
 	"fmt"
 
-	"github.com/rett/tacctl/internal/conf/py"
+	"github.com/rett/tacctl/internal/py"
 )
 
 // This file is parser.py of PyYAML 6.0.1, state by state.

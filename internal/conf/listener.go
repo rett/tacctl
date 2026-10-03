@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/rett/tacctl/internal/cidr"
-	"github.com/rett/tacctl/internal/conf/py"
+	"github.com/rett/tacctl/internal/py"
 	"github.com/rett/tacctl/internal/yamlpy"
 )
 

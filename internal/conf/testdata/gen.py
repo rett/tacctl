@@ -14,11 +14,11 @@ keeps the files stable):
 - parse.jsonl: what load_overrides (lib/conf.sh) makes of a file: the
   problem line, a Python exception other than YAMLError ("crash"), or the
   value; hand-written documents and seeded mutations of tacctl.yaml-like
-  ones. internal/conf/pyyaml must agree on every one.
+  ones. internal/pyyaml must agree on every one.
 - validate.jsonl: validate(path, value, is_list) of the schema, for every
   schema path against many values; coerce_scalar of command-line words.
 - listeners.jsonl: listeners_effective and listeners_problems of documents.
-- py.jsonl: repr(), str() and json.dumps() of values (internal/conf/py).
+- py.jsonl: repr(), str() and json.dumps() of values (internal/py).
 - bash.jsonl: end-to-end runs of the 0.1.16 functions (conf_set,
   conf_set_list, conf_set_json, conf_unset, conf_get*, conf_has_override,
   _conf_validate_overrides_file, cmd_config_dump, the source-time

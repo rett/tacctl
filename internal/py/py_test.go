@@ -13,7 +13,7 @@ import (
 	"github.com/rett/tacctl/internal/yamlpy"
 )
 
-// corpusValue turns a ../testdata/py.jsonl value into the Go value:
+// corpusValue turns a ../conf/testdata/py.jsonl value into the Go value:
 // {"$float": ...}, {"$date": ...}, {"$bigint": ...}.
 func corpusValue(t *testing.T, raw json.RawMessage) any {
 	t.Helper()
@@ -62,7 +62,7 @@ func corpusValue(t *testing.T, raw json.RawMessage) any {
 // TestCorpus: repr(), str() and json.dumps() of values as Python 3.12
 // gives them (internal/conf/testdata/gen.py).
 func TestCorpus(t *testing.T) {
-	f, err := os.Open("../testdata/py.jsonl")
+	f, err := os.Open("../conf/testdata/py.jsonl")
 	if err != nil {
 		t.Fatal(err)
 	}

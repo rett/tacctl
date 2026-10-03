@@ -12,9 +12,13 @@
 // Values outside tacctl's domain are refused with an error instead of being
 // guessed at (ErrUnsupportedScalar, ErrUnsupportedValue).
 //
-// Decode is the matching reader: yaml.v3 parses, and plain scalars are typed
-// with PyYAML's YAML 1.1 resolver, so Decode followed by Emit is what
-// yaml.safe_dump(yaml.safe_load(text)) gives.
+// tacctl reads its own files with internal/pyyaml (the PyYAML port), which
+// is also the reader of EmitChecked's write-time self-check in production.
+// Decode is a second reader, on yaml.v3 with plain scalars typed by
+// PyYAML's YAML 1.1 resolver: the legacy tacquito.yaml importer types its
+// scalars with it (tacquito reads that file with yaml.v3), and this
+// package's own tests read back with it (they cannot import pyyaml, which
+// imports this package).
 package yamlpy
 
 import (

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rett/tacctl/internal/conf/py"
+	"github.com/rett/tacctl/internal/py"
 )
 
 // The schema half of tests/unit/listeners.bats (tacctl 0.1.16), named after

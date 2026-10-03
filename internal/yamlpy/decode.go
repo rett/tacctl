@@ -26,6 +26,10 @@ import (
 // being approximated: aliases, merge keys ('<<'), keys that are not
 // strings, timestamps with a time of day, tags other than the standard
 // scalar ones, integers outside int64. Syntax errors are yaml.v3's.
+//
+// It is not the reader of store.yaml or tacctl.yaml (internal/pyyaml is);
+// its users are the legacy tacquito.yaml importer (internal/store,
+// import_yaml.go) and tests.
 func Decode(data []byte) (any, error) {
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	var doc yaml.Node

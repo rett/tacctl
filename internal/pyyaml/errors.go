@@ -3,7 +3,7 @@ package pyyaml
 import (
 	"fmt"
 
-	"github.com/rett/tacctl/internal/conf/py"
+	"github.com/rett/tacctl/internal/py"
 )
 
 // Error is a yaml.YAMLError raised by safe_load: a ReaderError (an

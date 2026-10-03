@@ -10,8 +10,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/rett/tacctl/internal/conf/py"
 	"github.com/rett/tacctl/internal/execx"
+	"github.com/rett/tacctl/internal/py"
 	"github.com/rett/tacctl/internal/yamlpy"
 )
 

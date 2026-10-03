@@ -47,7 +47,7 @@ func TestEmitRefusesScalarsOutsideTheDomain(t *testing.T) {
 		all = append(all, c)
 	}
 	for _, s := range []string{"a\tb", "\t", "a\nb", string(all), "caf\u00e9", "\u2028", "\U0001F511"} {
-		if _, err := EmitChecked(NewMap(s, s), StoreOptions, ""); err != nil {
+		if _, err := EmitChecked(NewMap(s, s), StoreOptions, "", Decode); err != nil {
 			t.Errorf("EmitChecked(%q): %v", s, err)
 		}
 	}
@@ -223,18 +223,18 @@ func TestEqual(t *testing.T) {
 }
 
 func TestEmitCheckedHeader(t *testing.T) {
-	got, err := EmitChecked(NewMap("a", 1), ConfOptions, "# h\n\n")
+	got, err := EmitChecked(NewMap("a", 1), ConfOptions, "# h\n\n", Decode)
 	if err != nil || string(got) != "# h\n\na: 1\n" {
 		t.Errorf("EmitChecked = %q, %v", got, err)
 	}
 	// A header that is not YAML comments breaks the read-back.
-	if _, err := EmitChecked(NewMap("a", 1), ConfOptions, "b: 2\n"); !errors.Is(err, ErrSelfCheck) {
+	if _, err := EmitChecked(NewMap("a", 1), ConfOptions, "b: 2\n", Decode); !errors.Is(err, ErrSelfCheck) {
 		t.Errorf("err = %v, want ErrSelfCheck", err)
 	}
-	if _, err := EmitChecked(NewMap("a", 1), ConfOptions, "[\n"); !errors.Is(err, ErrSelfCheck) {
+	if _, err := EmitChecked(NewMap("a", 1), ConfOptions, "[\n", Decode); !errors.Is(err, ErrSelfCheck) {
 		t.Errorf("err = %v, want ErrSelfCheck", err)
 	}
-	if _, err := EmitChecked(float32(1), ConfOptions, ""); !errors.Is(err, ErrUnsupportedValue) {
+	if _, err := EmitChecked(float32(1), ConfOptions, "", Decode); !errors.Is(err, ErrUnsupportedValue) {
 		t.Errorf("err = %v, want ErrUnsupportedValue", err)
 	}
 }

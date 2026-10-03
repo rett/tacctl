@@ -292,7 +292,7 @@ func get(m *yamlpy.Map, key string) any {
 }
 
 // Validate is store_validate: every problem with a store document (raw
-// from yamlpy.Decode, or normalised), one message each, in 0.1.16's order
+// from LoadRaw, or normalised), one message each, in 0.1.16's order
 // and wording. An empty result means valid.
 func Validate(store any) []string {
 	root, ok := mapOf(store)

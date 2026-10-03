@@ -1,15 +1,20 @@
-// Package pyyaml reads YAML the way lib/conf.sh (tacctl 0.1.16) reads
-// tacctl.yaml: yaml.safe_load(open(path)) with PyYAML 6.0.1, including
+// Package pyyaml reads YAML the way tacctl 0.1.16 reads its own files,
+// store.yaml (lib/store.sh store_load_raw) and tacctl.yaml (lib/conf.sh
+// load_overrides): yaml.safe_load(open(path)) with PyYAML 6.0.1, including
 // which documents it refuses and the exact problem and position it names.
 // The Reader, Scanner, Parser, Composer and the safe Constructor are ported
 // from PyYAML's pure-Python modules (/usr/lib/python3/dist-packages/yaml)
 // method by method; the corpus in internal/conf/testdata compares the
-// outcome with PyYAML for thousands of documents.
+// outcome with PyYAML for thousands of documents, and
+// internal/store/testdata/load pins the store's messages.
 //
 // yaml.v3 (internal/yamlpy.Decode) accepts and refuses different documents
 // and words its errors differently (it names no column); Decision 11e of
 // docs/plans/go-rewrite.md makes 0.1.16's "could not parse <file>: line L,
-// column C: <problem>" messages parity, hence this package.
+// column C: <problem>" messages parity, and 3.3 makes this package the
+// reader of both files (yaml.v3 stays only for tacquito.yaml, which
+// tacquito reads with it). It is also the reader of the write-time
+// self-check (LoadBytes, for yamlpy.EmitChecked).
 //
 // Values are the types internal/yamlpy works with. A document PyYAML reads
 // but tacctl cannot represent (anchors and aliases, merge keys, keys that
@@ -80,6 +85,13 @@ func Load(data []byte, name string) (v any, err error) {
 		return nil, &UnsupportedError{Mark: *u.mark, What: u.what}
 	}
 	return convert(data0), nil
+}
+
+// LoadBytes is Load for bytes that are not a named file: the reader
+// yamlpy.EmitChecked parses what tacctl is about to write with (a
+// yamlpy.Reader), so the self-check reads the bytes as the next run will.
+func LoadBytes(data []byte) (any, error) {
+	return Load(data, "<bytes>")
 }
 
 // typeName is type(v).__name__ for constructed values.

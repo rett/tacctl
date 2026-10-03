@@ -12,6 +12,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/rett/tacctl/internal/pyyaml"
 	"github.com/rett/tacctl/internal/yamlpy"
 )
 
@@ -42,33 +43,75 @@ var reYAMLLine = regexp.MustCompile(`^line ([0-9]+): (.*)$`)
 // out, as a value may be a secret or a hash.
 var reQuoted = regexp.MustCompile("`[^`]*`|\"[^\"]*\"")
 
-// yamlProblem is yaml_problem: '<path>: <problem> (line N)', without any
-// snippet of the file (a line may hold a secret).
+// yamlProblem is yaml_problem for a yaml.v3 error (the readers of a legacy
+// tacquito.yaml, import_yaml.go): '<path>: <problem> (line N)', without
+// any snippet of the file (a line may hold a secret). yaml.v3 names no
+// column.
 func yamlProblem(path string, err error) error {
 	msg := err.Error()
 	msg = strings.TrimPrefix(msg, "yaml: ")
-	msg = strings.TrimPrefix(msg, "yamlpy: ")
 	msg = reQuoted.ReplaceAllString(msg, "(value not shown)")
 	if m := reYAMLLine.FindStringSubmatch(msg); m != nil {
 		return &Error{Msg: path + ": " + m[2] + " (line " + m[1] + ")"}
 	}
-	if errors.Is(err, yamlpy.ErrUnsupportedValue) {
-		return &Error{Msg: path + ": not supported by tacctl: " + msg}
-	}
 	return &Error{Msg: path + ": " + msg}
 }
 
-// LoadRaw is store_load_raw: the file decoded as yaml.safe_load would
-// (yamlpy.Decode), or an *Error naming the file and the problem, never its
-// content.
+// rePyRepr matches a Python repr() of a string in an exception message
+// ('text', "it's", with backslash escapes).
+var rePyRepr = regexp.MustCompile(`'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*"`)
+
+// hideValues takes the repr()s of values out of a message: a value may be
+// a secret or a hash.
+func hideValues(msg string) string {
+	return rePyRepr.ReplaceAllString(msg, "(value not shown)")
+}
+
+// loadProblem is the store's message for a file pyyaml.Load refuses:
+//
+//   - a YAML error (*pyyaml.Error): yaml_problem of lib/store.sh (0.1.16),
+//     '<path>: <problem> (line L, column C)', or '<path>: invalid YAML'
+//     for an unacceptable character (a ReaderError), exactly as 0.1.16;
+//   - YAML tacctl does not support (*pyyaml.UnsupportedError, plan 3.9
+//     item 15, which 0.1.16 read): '<path>: line L, column C: <what> is not
+//     supported in this file', worded as for tacctl.yaml;
+//   - a value safe_load cannot construct (*pyyaml.ValueError) or a file
+//     that is not UTF-8 (*pyyaml.DecodeError), which ended 0.1.16 with a
+//     Python traceback (plan 3.9 item 16): '<path>: line L, column C:
+//     <reason>' and "<path>: 'utf-8' codec can't decode ...", as for
+//     tacctl.yaml, except that a value quoted in the reason is not shown.
+//
+// None of them quotes a line of the file.
+func loadProblem(path string, err error) error {
+	var ye *pyyaml.Error
+	if errors.As(err, &ye) {
+		return &Error{Msg: path + ": " + ye.YAMLProblem()}
+	}
+	var ve *pyyaml.ValueError
+	if errors.As(err, &ve) {
+		return &Error{Msg: path + ": " + hideValues(ve.Why())}
+	}
+	var why interface{ Why() string }
+	if errors.As(err, &why) {
+		return &Error{Msg: path + ": " + why.Why()}
+	}
+	return &Error{Msg: path + ": " + hideValues(err.Error())}
+}
+
+// LoadRaw is store_load_raw: the file read as yaml.safe_load reads it
+// (pyyaml.Load, the PyYAML 6.0.1 port), or an *Error naming the file and
+// the problem (loadProblem), never its content. An empty file is nil; a
+// top level that is not a mapping is returned as it is (Normalize and
+// Validate refuse it), as a pyyaml.Unrepresentable when it holds what
+// tacctl does not support.
 func LoadRaw(path string) (any, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, &Error{Msg: path + ": " + strerror(err)}
 	}
-	v, err := yamlpy.Decode(data)
+	v, err := pyyaml.Load(data, path)
 	if err != nil {
-		return nil, yamlProblem(path, err)
+		return nil, loadProblem(path, err)
 	}
 	return v, nil
 }
@@ -195,14 +238,15 @@ func writeValidated(path string, s *Store) (bool, error) {
 // writeRefusal is the error for a store that validates but cannot be
 // written: the emitter refuses a value outside the domain it is verified
 // on (yamlpy.ErrUnsupportedScalar: invalid UTF-8 or a control character),
-// or its write-time self-check failed.
+// or its write-time self-check failed (the reader's reason is given
+// without the values it quotes).
 func writeRefusal(err error) error {
 	where := strings.TrimPrefix(err.Error(), "yamlpy: ")
 	if errors.Is(err, yamlpy.ErrUnsupportedScalar) {
 		where = strings.TrimSuffix(where, ": "+yamlpy.ErrUnsupportedScalar.Error())
 		return &Error{Msg: "cannot write " + where + ": the value is not valid UTF-8 or contains control characters; nothing was written"}
 	}
-	return &Error{Msg: "internal: cannot write the store (" + where + "); nothing was written"}
+	return &Error{Msg: "internal: cannot write the store (" + hideValues(where) + "); nothing was written"}
 }
 
 // Write is 'import-write': under the lock, canonicalise, validate and

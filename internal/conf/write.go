@@ -10,7 +10,8 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/rett/tacctl/internal/conf/py"
+	"github.com/rett/tacctl/internal/py"
+	"github.com/rett/tacctl/internal/pyyaml"
 	"github.com/rett/tacctl/internal/yamlpy"
 )
 
@@ -253,7 +254,7 @@ func (c *Config) write(mode, path string, value any, jsonErr error) error {
 		}
 		return syncDir(dir)
 	}
-	data, err := yamlpy.EmitChecked(overrides, yamlpy.ConfOptions, Header)
+	data, err := yamlpy.EmitChecked(overrides, yamlpy.ConfOptions, Header, pyyaml.LoadBytes)
 	if err != nil {
 		return fmt.Errorf("tacctl.yaml: cannot write %s: %w", c.Path, err)
 	}

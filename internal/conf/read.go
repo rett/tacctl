@@ -7,8 +7,8 @@ import (
 	"os"
 	"syscall"
 
-	"github.com/rett/tacctl/internal/conf/py"
-	"github.com/rett/tacctl/internal/conf/pyyaml"
+	"github.com/rett/tacctl/internal/py"
+	"github.com/rett/tacctl/internal/pyyaml"
 	"github.com/rett/tacctl/internal/yamlpy"
 )
 

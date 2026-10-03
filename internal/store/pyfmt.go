@@ -18,8 +18,8 @@ import (
 // Python's formatting of the values the store code puts into messages and
 // views. The messages of lib/store.sh and lib/model.sh use repr() ({x!r})
 // and str() of values that, in a hand-edited store, can be of any YAML
-// type; these helpers give the same text for the types yamlpy.Decode
-// returns.
+// type; these helpers give the same text for the types LoadRaw (and the
+// legacy readers) return.
 
 // PyRepr is Python's repr() of a decoded value: 'text' (or "text" when the
 // string holds a single quote and no double quote), None, True, False,

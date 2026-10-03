@@ -2,9 +2,7 @@ package yamlpy
 
 import (
 	"bytes"
-	"flag"
 	"os"
-	"strings"
 	"testing"
 )
 
@@ -46,7 +44,7 @@ func TestStoreFixtures(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Decode: %v", err)
 			}
-			got, err := EmitChecked(v, StoreOptions, string(header))
+			got, err := EmitChecked(v, StoreOptions, string(header), Decode)
 			if err != nil {
 				t.Fatalf("EmitChecked: %v", err)
 			}
@@ -59,56 +57,4 @@ func TestStoreFixtures(t *testing.T) {
 			}
 		})
 	}
-}
-
-var (
-	roundTripFile = flag.String("roundtrip", "", "a tacctl-written file to re-emit from its parsed form (TestRoundTripFile)")
-	roundTripMode = flag.String("roundtrip.mode", "conf", "store or conf: the dump arguments of -roundtrip")
-)
-
-// TestRoundTripFile re-emits a real tacctl-written file from its parsed
-// form and compares, header stripped. It runs only when -roundtrip is
-// given, and reports line numbers only, never content (the file may hold
-// settings, hashes or secrets). For a root-owned file without a copy:
-//
-//	go test -c -o dist/yamlpy.test ./internal/yamlpy
-//	sudo cat /etc/tacctl/tacctl.yaml | dist/yamlpy.test -test.run TestRoundTripFile -roundtrip /dev/stdin
-func TestRoundTripFile(t *testing.T) {
-	if *roundTripFile == "" {
-		t.Skip("no -roundtrip file given")
-	}
-	opts := ConfOptions
-	switch *roundTripMode {
-	case "store":
-		opts = StoreOptions
-	case "conf":
-	default:
-		t.Fatalf("-roundtrip.mode %q: want store or conf", *roundTripMode)
-	}
-	raw, err := os.ReadFile(*roundTripFile)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, body := splitHeader(raw)
-	v, err := Decode(raw)
-	if err != nil {
-		t.Fatalf("Decode: %v", err)
-	}
-	got, err := EmitChecked(v, opts, "")
-	if err != nil {
-		t.Fatalf("EmitChecked: %v", err)
-	}
-	if bytes.Equal(got, body) {
-		t.Logf("identical: %d lines", bytes.Count(body, []byte("\n")))
-		return
-	}
-	wl := strings.Split(string(body), "\n")
-	gl := strings.Split(string(got), "\n")
-	var differ []int
-	for i := 0; i < max(len(wl), len(gl)); i++ {
-		if i >= len(wl) || i >= len(gl) || wl[i] != gl[i] {
-			differ = append(differ, i+1)
-		}
-	}
-	t.Errorf("differs: %d of %d lines (line numbers after the header): %v", len(differ), len(wl), differ[:min(len(differ), 40)])
 }

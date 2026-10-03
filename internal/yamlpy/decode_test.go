@@ -57,7 +57,7 @@ func TestCorpusReadsBack(t *testing.T) {
 			if !Equal(got, data) {
 				t.Errorf("%s/%s: does not read back as the case's data", name, m.name)
 			}
-			if _, err := EmitChecked(data, m.opts, "# header\n\n"); err != nil {
+			if _, err := EmitChecked(data, m.opts, "# header\n\n", Decode); err != nil {
 				t.Errorf("%s/%s: EmitChecked: %v", name, m.name, err)
 			}
 		}

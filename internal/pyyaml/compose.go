@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"slices"
 
-	"github.com/rett/tacctl/internal/conf/py"
+	"github.com/rett/tacctl/internal/py"
 )
 
 // This file is composer.py and the implicit part of resolver.py of PyYAML

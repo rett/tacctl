@@ -1,5 +1,6 @@
 // Package py reproduces the bits of Python 3.12's behaviour that tacctl's
-// messages and tacctl.yaml handling depend on: repr() and str() of the
+// messages and its YAML reader (internal/pyyaml, for store.yaml and
+// tacctl.yaml) depend on: repr() and str() of the
 // values a YAML or JSON document holds, ==, str.split()/strip() whitespace,
 // int()/float() of a command-line word, json.dumps and an order-keeping
 // json.loads. lib/conf.sh (0.1.16) builds its messages with f-strings over

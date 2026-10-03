@@ -18,7 +18,7 @@ import (
 // The two readers of a legacy tacquito.yaml (lib/model.sh at 0.1.16):
 //
 //   - ReadLegacyYAML is yaml.safe_load, what the legacy loader and the
-//     renderer's read-back use. Unlike yamlpy.Decode (the store's reader)
+//     renderer's read-back use. Unlike the store's reader (pyyaml.Load)
 //     it resolves anchors and aliases, because every tacquito.yaml tacctl
 //     ever rendered uses them (&bcrypt_<user>, &exec_<group>, ...). An
 //     alias yields the very value of its anchor, as PyYAML's does: a
@@ -29,8 +29,8 @@ import (
 //     equivalence check uses: every scalar is the text that was written.
 //
 // yaml.v3 parses both (it is also what tacquito reads the file with), so a
-// syntax error is reported in yaml.v3's words, as for the store (go-rewrite
-// plan 3.9). Scalars of ReadLegacyYAML are typed by PyYAML's YAML 1.1 rules
+// syntax error is reported in yaml.v3's words (go-rewrite plan 3.3; the
+// store's own reader words them as PyYAML does). Scalars of ReadLegacyYAML are typed by PyYAML's YAML 1.1 rules
 // through yamlpy.Decode, which refuses what tacctl never writes (merge keys,
 // keys that are not strings, timestamps with a time of day, other tags);
 // the one exception is an integer outside int64 (an unquoted bcrypt hex

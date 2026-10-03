@@ -6,8 +6,8 @@
 // internal/model.
 //
 // The in-memory store is the document store_normalize builds: ordered
-// mappings (*yamlpy.Map) and lists ([]any) of the values yamlpy.Decode
-// returns. It is kept generic rather than typed because the validator must
+// mappings (*yamlpy.Map) and lists ([]any) of the values LoadRaw
+// (pyyaml.Load) returns. It is kept generic rather than typed because the validator must
 // report on whatever a hand-edited file holds, with the messages of
 // 0.1.16, and because a mutation may run on a store that does not validate
 // (the write then fails with the validator's list). internal/model builds

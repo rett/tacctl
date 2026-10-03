@@ -9,16 +9,16 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rett/tacctl/internal/conf/py"
+	"github.com/rett/tacctl/internal/py"
 	"github.com/rett/tacctl/internal/yamlpy"
 )
 
-// The 2000 documents of ../testdata/parse.jsonl are checked through
+// The 2000 documents of ../conf/testdata/parse.jsonl are checked through
 // conf.ReadOverrides (internal/conf); here, the error classes Load returns
 // for them, and the cases that need the error values themselves.
 
 func TestParseCorpusErrorClasses(t *testing.T) {
-	f, err := os.Open("../testdata/parse.jsonl")
+	f, err := os.Open("../conf/testdata/parse.jsonl")
 	if err != nil {
 		t.Fatal(err)
 	}
