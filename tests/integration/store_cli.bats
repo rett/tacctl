@@ -163,6 +163,9 @@ PY
     grep -q 'prod-inner' "$TACCTL_CONFIG"
 }
 
+# White-box (calls tier_permits); for the Go binary: internal/tier's
+# TestPermitsMatchesBash and TestGateAndSudoersAgree (store is superuser-only).
+# bats test_tags=bash-only
 @test "store: tier gate keeps store commands superuser-only" {
     tacctl_source_lib
     run tier_permits readonly store show

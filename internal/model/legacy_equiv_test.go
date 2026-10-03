@@ -411,3 +411,37 @@ func TestEquivErrors(t *testing.T) {
 		t.Errorf("missing file: %q", msg)
 	}
 }
+
+// EquivCheckRand takes its fingerprint key from the source it is given:
+// the same bytes give the same fingerprints (the differential runner fixes
+// them on both sides), HMAC-SHA256 keyed with the first 16 bytes as the
+// python keys it with os.urandom(16); the verdict is EquivCheck's.
+func TestEquivCheckRandKeysTheFingerprints(t *testing.T) {
+	a, b := ms, v("changed-hash")
+	run := func(src string) (string, bool) {
+		var out bytes.Buffer
+		ok, err := model.EquivCheckRand(strings.NewReader(src))(a, b, &out)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out.String(), ok
+	}
+	key := strings.Repeat("k", 16)
+	one, ok1 := run(key + "ignored")
+	two, ok2 := run(key)
+	if one != two || ok1 || ok2 {
+		t.Fatalf("same key, different reports:\n%s\n%s", one, two)
+	}
+	other, _ := run(strings.Repeat("o", 16))
+	if other == one || numberFingerprints(other) != numberFingerprints(one) {
+		t.Fatalf("another key must change the fingerprints only:\n%s\n%s", one, other)
+	}
+	plain, okPlain := equiv(t, a, b)
+	if okPlain != ok1 || numberFingerprints(plain) != numberFingerprints(one) {
+		t.Fatalf("EquivCheckRand and EquivCheck disagree:\n%s\n%s", plain, one)
+	}
+	// A source that runs dry falls back to crypto/rand.
+	if short, ok := run("short"); ok || numberFingerprints(short) != numberFingerprints(one) {
+		t.Fatalf("short source: %s", short)
+	}
+}

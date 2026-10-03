@@ -42,6 +42,14 @@ mk_snapshot() {
     chmod 600 "${BACKUPS}/$1/store.yaml"
 }
 
+# fixed_clock: every snapshot id is 19990101_000000_000 -- bash's through a
+# stubbed date, the Go binary's through its TACCTL_TEST_NOW knob (the same
+# local midnight, so the same id).
+fixed_clock() {
+    export TACCTL_TEST_NOW="1999-01-01T00:00:00$(date -d '1999-01-01 00:00:00' +%:z)"
+    stub_cmd date 'echo 19990101_000000_000'
+}
+
 add_user() {
     "$TACCTL_BIN_SCRIPT" user add "$1" "${2:-operator}" --hash "$TEST_HASH" --scopes lab > /dev/null
 }
@@ -142,7 +150,7 @@ PY
 # --- Naming: same-second mutations never collide ------------------------------
 
 @test "snapshot: names taken by an earlier snapshot get a numeric suffix" {
-    stub_cmd date 'echo 19990101_000000_000'
+    fixed_clock
     add_user alice
     add_user bob
     add_user carol
@@ -164,6 +172,9 @@ PY
 
 # --- No-op mutations -----------------------------------------------------------
 
+# White-box (calls backup_snapshot); for the Go binary: internal/snapshot's
+# TestSnapshotNothingIsAddedWhileTheFilesEqualTheNewest.
+# bats test_tags=bash-only
 @test "snapshot: nothing is added while the files equal the newest snapshot" {
     tacctl_source_lib
     backup_snapshot > /dev/null
@@ -181,6 +192,9 @@ PY
     [[ "$(snapshots | wc -l)" -eq 3 ]]
 }
 
+# White-box (store_apply with a writer of two store writes); for the Go
+# binary: internal/backend's TestStoreApplyTakesOneSnapshotForSeveralStoreWrites.
+# bats test_tags=bash-only
 @test "snapshot: one command with several store writes takes one snapshot" {
     tacctl_source_lib
     two_writes() {
@@ -237,7 +251,7 @@ PY
         mk_snapshot "20300101_000000_0${i}"
     done
     # A name older than every existing one.
-    stub_cmd date 'echo 19990101_000000_000'
+    fixed_clock
     add_user alice
     [[ -d "${BACKUPS}/19990101_000000_000" ]]
     [[ -f "${BACKUPS}/19990101_000000_000/store.yaml" ]]
@@ -347,8 +361,9 @@ drift.20250301_000000
 }
 
 @test "backup diff: says so when nothing differs" {
-    tacctl_source_lib
-    backup_snapshot > /dev/null
+    # A snapshot of the live state, as backup_snapshot would take it.
+    mkdir -m 700 "${BACKUPS}/20260101_000000_000"
+    cp "${TACCTL_STATE_DIR}/store.yaml" "${BACKUPS}/20260101_000000_000/store.yaml"
     run "$TACCTL_BIN_SCRIPT" backup diff
     assert_success
     assert_output --partial "store.yaml: no differences"
@@ -555,6 +570,9 @@ drift.20250301_000000
     [[ "$(state_files)" == "$before" ]]
 }
 
+# White-box (overrides backend_tacacs_render_commit); for the Go binary:
+# internal/cli's TestBackupRestoreACommitThatFailsPutsEveryFileBack (TACCTL_FAULT).
+# bats test_tags=bash-only
 @test "backup restore: a render that fails partway puts all four files back" {
     add_user alice
     add_user bob
@@ -578,6 +596,9 @@ drift.20250301_000000
     [[ -z "$(find "$TACCTL_STATE_DIR" -maxdepth 1 -name '.restore.*')" ]]
 }
 
+# White-box (_backup_apply with a writer of its own); for the Go binary:
+# internal/cli's TestBackupRestoreAWriterThatFailsPutsEveryFileBack.
+# bats test_tags=bash-only
 @test "backup restore: a failing writer also puts the files back" {
     add_user alice
     local before
@@ -666,6 +687,9 @@ drift.20250301_000000
     [[ "$(state_files)" == "$before" ]]
 }
 
+# White-box (overrides backend_tacacs_render_stage); for the Go binary:
+# internal/cli's TestBackupRestoreLegacyARenderThatFailsPutsEveryFileBack (TACCTL_FAULT).
+# bats test_tags=bash-only
 @test "backup restore --legacy: a failing render after the import puts everything back" {
     add_user alice
     cp "${TACCTL_SRC}/tests/fixtures/golden/tacquito.minimal.rendered.yaml" \

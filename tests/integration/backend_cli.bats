@@ -1038,3 +1038,151 @@ PY
     before_stop="${output%%backends_run uninstall stop*}"
     [[ "$before_stop" == *"backends_select_present"* ]]
 }
+
+# --- the same commands through the entrypoint, with the shipped backends -------
+# Everything above runs tacctl's functions in a bash that has sourced the
+# stand-in, so it cannot run against the Go binary (whose generic machinery is
+# tested with the same stand-in in internal/backend: faketest). The tests
+# below drive only the command line, with the two shipped backends (TACACS+
+# installed and enabled; RADIUS neither, or enabled by hand), and are what
+# tests/blackbox.list runs against the Go binary (tag cutover:wp2-4d).
+
+# Without the colours, for patterns that span a label and its value.
+run_plain() {
+    run "$TACCTL_BIN_SCRIPT" "$@"
+    output=$(sed 's/\x1b\[[0-9;]*m//g' <<< "$output")
+    mapfile -t lines <<< "$output"
+}
+
+# bats test_tags=cutover:wp2-4d
+@test "cli: backend list shows both shipped backends, installed and enabled or not" {
+    run_plain backend list
+    assert_success
+    assert_line --regexp '^  ID +PROTOCOL +IMPLEMENTATION +INSTALLED +ENABLED +SERVICE'
+    assert_line --regexp '^  tacacs +tacacs +tacquito +yes +yes +active +$'
+    assert_line --regexp '^  radius +radius +freeradius +no +no +- +$'
+}
+
+# bats test_tags=cutover:wp2-4d
+@test "cli: backend status shows each backend under a heading; one id; an unknown or empty one is refused" {
+    run_plain backend status
+    assert_success
+    assert_line "== Backend: tacacs (tacacs, tacquito) =="
+    assert_line "== Backend: radius (radius, freeradius) =="
+    assert_line --regexp '^  State: +installed, enabled$'
+    assert_line --regexp '^  Service: +active$'
+    assert_line --regexp '^  Listener default: tcp :49 — unit active, listening on \*:49$'
+    assert_line --regexp '^  State: +not installed, not enabled$'
+    stub_called '^ss -tlnp'
+    run_plain backend status radius
+    assert_success
+    refute_output --partial "Backend: tacacs"
+    assert_line --regexp '^  State: +not installed, not enabled$'
+    run_plain backend status nope
+    assert_failure 1
+    assert_output --partial "Unknown backend 'nope' (known: tacacs radius)."
+    run_plain backend status ""
+    assert_failure 1
+    assert_output --partial "Missing backend id (known: tacacs radius)."
+}
+
+# bats test_tags=cutover:wp2-4d
+@test "cli: backend status names a port nobody listens on" {
+    stub_cmd ss
+    run_plain backend status tacacs
+    assert_success
+    assert_line --regexp '^  Listener default: tcp :49 — unit active, port 49 not detected$'
+}
+
+# bats test_tags=cutover:wp2-4d
+@test "cli: backend list and status write nothing and start nothing" {
+    local before
+    before=$(state)
+    run "$TACCTL_BIN_SCRIPT" backend list
+    assert_success
+    run "$TACCTL_BIN_SCRIPT" backend status
+    assert_success
+    [[ "$(state)" == "$before" ]]
+    ! stub_called 'systemctl (start|stop|restart|enable|disable)'
+    no_leftovers
+}
+
+# bats test_tags=cutover:wp2-4d
+@test "cli: backend with no subcommand or an unknown one prints the usage, exit 1" {
+    run "$TACCTL_BIN_SCRIPT" backend
+    assert_failure 1
+    assert_output --partial "Usage: tacctl backend <subcommand> [arguments]"
+    assert_output --partial "Backends: tacacs radius"
+    run "$TACCTL_BIN_SCRIPT" backend frobnicate
+    assert_failure 1
+    assert_output --partial "enable <id> [-y]"
+}
+
+# bats test_tags=cutover:wp2-4d
+@test "cli: a backends.enabled naming no backend is refused by list, status and log" {
+    enable_by_hand "tacacs, ldap"
+    for cmd in "backend list" "backend status" "log tail" "status"; do
+        # shellcheck disable=SC2086
+        run "$TACCTL_BIN_SCRIPT" $cmd
+        assert_failure 1
+        assert_output --partial "backends.enabled names 'ldap', and this tacctl has no such backend (it has: tacacs radius)."
+    done
+}
+
+# bats test_tags=cutover:wp2-4d
+@test "cli: status and log with two enabled backends: a section each, under its heading" {
+    enable_by_hand "tacacs, radius"
+    run_plain status
+    assert_success
+    assert_line "== Backend: tacacs (tacacs, tacquito) =="
+    assert_line "== Backend: radius (radius, freeradius) =="
+    assert_line --regexp '^  Users: +3$'
+    assert_line --regexp '^  Config backups: +[0-9]+'
+    run_plain log tail 5
+    assert_success
+    assert_line "== Backend: tacacs (tacacs, tacquito) =="
+    assert_line "== Backend: radius (radius, freeradius) =="
+    stub_called '^journalctl -u tacquito --no-pager -n 5'
+    run_plain log tail --backend radius
+    assert_success
+    refute_output --partial "== Backend:"
+    ! stub_called '^journalctl -u tacquito --no-pager -n 20'
+}
+
+# bats test_tags=cutover:wp2-4d
+@test "cli: log --backend: unknown or missing id refused; --backend=<id> anywhere; a disabled backend can be read" {
+    run "$TACCTL_BIN_SCRIPT" log tail --backend nope
+    assert_failure 1
+    assert_output --partial "Unknown backend 'nope' (known: tacacs radius)."
+    run "$TACCTL_BIN_SCRIPT" log failures --backend
+    assert_failure 1
+    assert_output --partial "--backend needs a backend id. Usage: tacctl log failures [--backend <id>] ..."
+    run_plain log --backend=tacacs tail
+    assert_failure 1
+    assert_output --partial "Usage: tacctl log <subcommand> [--backend <id>] [arguments]"
+    run_plain log tail 3 --backend=tacacs
+    assert_success
+    stub_called '^journalctl -u tacquito --no-pager -n 3'
+    run_plain log accounting --backend radius
+    assert_success
+    refute_output --partial "== Backend:"
+}
+
+# bats test_tags=cutover:wp2-4d
+@test "cli: completion names backends, and the enabled ones" {
+    run "$TACCTL_BIN_SCRIPT" _completion-names backends
+    assert_success
+    assert_output "tacacs
+radius"
+    run "$TACCTL_BIN_SCRIPT" _completion-names enabled-backends
+    assert_success
+    assert_output "tacacs"
+    enable_by_hand "radius, tacacs"
+    run "$TACCTL_BIN_SCRIPT" _completion-names enabled-backends
+    assert_output "radius
+tacacs"
+    enable_by_hand "tacacs, ldap"
+    run "$TACCTL_BIN_SCRIPT" _completion-names enabled-backends
+    assert_success
+    assert_output ""
+}

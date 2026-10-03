@@ -29,13 +29,16 @@ var completionKinds = map[string]func(m *model.Model) []string{
 var completionArgKinds = map[string]func(inv *invocation, args []string) []string{
 	// _completion_listeners: listener names, every backend's or one's.
 	KindListeners: (*invocation).listenerNames,
+	// backup_names | head -50: snapshots newest first, then old-style ids.
+	KindBackups: (*invocation).backupNames,
+	// BACKEND_IDS, and backends_enabled 2>/dev/null || true.
+	KindBackends:        (*invocation).backendNames,
+	KindEnabledBackends: (*invocation).enabledBackendNames,
 }
 
-// delegatedCompletionKinds are the kinds bash still answers (WP2.4d:
-// backups, backends, enabled-backends).
-var delegatedCompletionKinds = map[string]bool{
-	"backups": true, "backends": true, "enabled-backends": true,
-}
+// delegatedCompletionKinds are the kinds bash still answers (none since
+// WP2.4d).
+var delegatedCompletionKinds = map[string]bool{}
 
 func completionNamesCmd(inv *invocation) *cobra.Command {
 	c := hidden("_completion-names")

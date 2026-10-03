@@ -425,10 +425,14 @@ func importCheck(out ui.Output, opts ImportOptions, src string, s *Store) error 
 }
 
 // printErr prints a hook's error: a store or file-system error as Report
-// words it ('tacctl store: ...'), anything else as an [ERROR] line.
+// words it ('tacctl store: ...'), ui.ErrReported (the hook printed its
+// own message) not at all, anything else as an [ERROR] line.
 func printErr(out ui.Output, err error) {
 	var se *Error
 	var oe *osError
+	if errors.Is(err, ui.ErrReported) {
+		return
+	}
 	if errors.As(err, &se) || errors.As(err, &oe) {
 		_, _ = io.WriteString(out.Stderr, Report(err)+"\n")
 		return

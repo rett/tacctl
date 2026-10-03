@@ -103,7 +103,8 @@ func commandPaths(c *cobra.Command, prefix []string, out *[][]string) {
 
 // nativeWords are the first words the Go binary owns (cut over).
 var nativeWords = map[string]bool{"version": true, "user": true, "hash": true, "passwd": true, "_completion-names": true,
-	"config": true, "scope": true, "group": true}
+	"config": true, "scope": true, "group": true,
+	"status": true, "log": true, "backup": true, "backend": true, "store": true}
 
 // The no-sub / help / -h / unknown table of docs/plans/go-rewrite.md 3.2:
 // every command of a family not cut over yet belongs to bash, so each of
@@ -130,10 +131,11 @@ func TestEverythingNotCutOverIsDelegated(t *testing.T) {
 		[]string{}, []string{""}, []string{"help"}, []string{"-h"}, []string{"--help"}, []string{"bogus"},
 		[]string{"completion", "bash"}, []string{"shell"}, []string{"-x", "user", "list"},
 		[]string{"--x=1", "user", "list"}, []string{"--", "version"}, []string{"Version"},
-		[]string{"_completion-names", "backups"},
 		[]string{"help", "version"}, []string{"User", "list"}, []string{"Hash"},
 		[]string{"host", "user", "list"}, []string{"host", "unenroll", "lab", "--force"},
-		[]string{"log", "--backend", "tacacs", "tail", "5"},
+		// The verbs of native families that stay bash's until Phase 3.
+		[]string{"backend", "enable", "radius", "-y"}, []string{"backend", "disable", "radius"},
+		[]string{"store", "rollback"}, []string{"store", "rollback", "help"},
 	)
 	for _, args := range cases {
 		h := newHarness(t, args)

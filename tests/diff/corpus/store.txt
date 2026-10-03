@@ -9,6 +9,15 @@ store show
 store show --json
 store show --bogus
 store frobnicate
+store help
+store -h
+store --help
+store show --json extra
+store show "" --json
+store import -
+store import --check -x
+store import "" --check
+store import --check --check {FIXTURES}/tacquito.minimal.yaml
 
 # import
 store import

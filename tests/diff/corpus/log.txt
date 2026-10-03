@@ -1,0 +1,112 @@
+# tacctl log ..., status and backend list|status: the command lines of
+# e2e/log.bats, status_and_scope_lookup.bats and backend_cli.bats plus the
+# error paths.
+# The runner stubs systemctl and logger only: journalctl, ss and the metrics
+# exporter are this machine's. So no line reads the TACACS+ journal (log tail,
+# search and failures go to --backend radius, whose logs are in the sandbox),
+# status runs after 'config metrics disable' (no scrape of a live exporter),
+# and 'log clear' never confirms for TACACS+ (it would rotate the journal).
+# Run: tests/diff/run.sh log
+@fixture tacquito.minimal.yaml
+
+# log: usage and argument errors
+log
+log bogus
+log help
+log -h
+log --backend tacacs tail
+log --backend=radius tail
+log search
+log search --backend radius
+log tail --backend
+log failures --backend
+log tail --backend ""
+log tail --backend nope
+log tail --backend=nope
+log accounting --backend tacacss
+
+# log: the sandboxed logs
+log tail --backend radius
+log tail 5 --backend=radius
+log tail x --backend radius
+log search alice --backend radius
+log failures --backend radius
+log accounting
+log accounting 5
+log accounting 0
+log accounting x
+log accounting --backend radius
+log accounting 3 --backend radius
+log clear
+log clear <<< n
+log clear <<< no
+log clear --backend radius
+log clear --backend radius <<< n
+log clear --backend radius --force
+log clear --backend radius -y
+log clear --backend radius --yes ;; log tail --backend radius
+
+# status
+config metrics disable ;; status
+config metrics disable ;; status extra words
+config metrics disable ;; user add alice superuser --hash {HASH} --scopes lab ;; status
+config metrics disable ;; config password-age 1 ;; status
+config metrics disable ;; config password-age 0 ;; status
+config metrics disable ;; config mgmt-acl add 10.0.0.0/8 <<< y ;; status
+config metrics disable ;; config listen tcp6 [::]:49 <<< y ;; status
+@fixture tacquito.multiscope.yaml
+config metrics disable ;; status
+@fixture tacquito.minimal.yaml
+
+# backend list and status
+backend
+backend bogus
+backend help
+backend list
+backend list extra
+backend status
+backend status tacacs
+backend status radius
+backend status nope
+backend status ""
+backend status radius tacacs
+_completion-names backends
+_completion-names enabled-backends
+_completion-names backups
+user add alice superuser --hash {HASH} --scopes lab ;; _completion-names backups
+log search "" --backend radius
+log clear --backend
+log clear --backend nope --force
+log accounting --backend=
+backend status --backend tacacs
+backend status -y
+backend status tacacss
+backend status TACACS
+backend Status
+log tail --backend TACACS
+log Tail
+log failures --backend ldap
+log search --backend=nope term
+log accounting --backend
+log clear -y --backend
+
+# legacy read-only mode: no store yet
+@fixture legacy.fresh-install.yaml
+config metrics disable ;; status
+backend list
+log accounting
+
+# no store and no tacquito.yaml: preflight refuses every command
+@fixture none
+status
+backend
+backend list
+backend status
+backend status nope
+log
+log tail
+log tail --backend radius
+log accounting --backend nope
+log clear
+_completion-names backends
+_completion-names enabled-backends

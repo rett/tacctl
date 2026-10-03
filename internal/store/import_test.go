@@ -1056,3 +1056,19 @@ func TestImportWriteFailure(t *testing.T) {
 	contains(t, out, "tacctl store: "+e.dir)
 	contains(t, out, ": Permission denied\n"+ui.Red+"[ERROR]"+ui.NC+" Import failed. Nothing was written.\n")
 }
+
+// A hook that printed its own message returns ui.ErrReported: the failure
+// line follows, and nothing is printed for the error a second time.
+func TestImportCheckAHookThatReportedItselfIsNotPrintedAgain(t *testing.T) {
+	e := newImportEnv(t)
+	e.place("tacquito.multiscope.yaml")
+	out, rc := checkWith(e, func(*store.Store) ([]byte, error) { return nil, ui.ErrReported }, nil)
+	status(t, rc, 1, out)
+	contains(t, out, "  import + validate:   OK\n  render:              FAILED\n")
+	refute(t, out, "[ERROR]")
+	same := func(*store.Store) ([]byte, error) { return readFile(t, e.config), nil }
+	out, rc = checkWith(e, same, func(string) error { return ui.ErrReported })
+	status(t, rc, 1, out)
+	contains(t, out, "    EQUIVALENT\n  daemon load-smoke:   FAILED\n")
+	refute(t, out, "[ERROR]")
+}

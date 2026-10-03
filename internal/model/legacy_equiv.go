@@ -60,7 +60,25 @@ var equivSalt = func() []byte {
 // the two forms and "NOT EQUIVALENT" (exit status 0 and 1 in 0.1.16). A
 // file that cannot be read or parsed is a *store.Error.
 func EquivCheck(live, rendered string, w io.Writer) (bool, error) {
-	key := equivSalt()
+	return equivCheck(equivSalt(), live, rendered, w)
+}
+
+// EquivCheckRand is EquivCheck with the fingerprint key (16 bytes) read
+// from r, the invocation's random source: a test that fixes the source
+// (TACCTL_TEST_RANDOM) gets the fingerprints 0.1.16 prints with its
+// os.urandom fixed the same way. A source that cannot be read falls back to
+// crypto/rand.
+func EquivCheckRand(r io.Reader) store.EquivFunc {
+	return func(live, rendered string, w io.Writer) (bool, error) {
+		key := make([]byte, 16)
+		if _, err := io.ReadFull(r, key); err != nil {
+			key = equivSalt()
+		}
+		return equivCheck(key, live, rendered, w)
+	}
+}
+
+func equivCheck(key []byte, live, rendered string, w io.Writer) (bool, error) {
 	fingerprint := func(v string) string {
 		mac := hmac.New(sha256.New, key)
 		mac.Write([]byte(v))

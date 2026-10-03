@@ -41,10 +41,10 @@ func newRoot(inv *invocation) *cobra.Command {
 	run := func(*cobra.Command, []string) error { return delegate(inv.app) }
 	root := &cobra.Command{Use: "tacctl", Short: "TACACS+ (tacquito) and RADIUS (FreeRADIUS) from one store"}
 	root.AddCommand(lifecycleCmds()...)
-	root.AddCommand(passwdCmd(inv))
+	root.AddCommand(passwdCmd(inv), statusCmd(inv))
 	root.AddCommand(
-		userCmd(inv), groupCmd(inv), scopeCmd(inv), hostCmd(), backendCmd(), storeCmd(),
-		configCmd(inv), logCmd(), backupCmd(), hashCmd(inv), versionCmd(inv),
+		userCmd(inv), groupCmd(inv), scopeCmd(inv), hostCmd(), backendCmd(inv), storeCmd(inv),
+		configCmd(inv), logCmd(inv), backupCmd(inv), hashCmd(inv), versionCmd(inv),
 		// Bash completion's bridge to live names (sudo -n tacctl _completion-names <kind>).
 		completionNamesCmd(inv),
 	)

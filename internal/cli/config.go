@@ -7,12 +7,11 @@ package cli
 // password-min-length, secret-min-length and branch (config_report.go:
 // show and validate; config_admin.go: sudoers, branch, render --dry-run).
 //
-// Still bash's, by delegation: diff and restore (WP2.4d), allow, deny and
-// mgmt-acl (WP2.4b), cisco, juniper and wti (WP3.1), linux (WP3.2). A verb
-// that leaves this list is either given a RunE here or registered from its
-// own file with registerConfigVerb (below), which replaces the delegated
-// stub of the same name: the family node, its usage and its preflight rule
-// stay here.
+// Registered from other files with registerConfigVerb (below), which
+// replaces the delegated stub of the same name: diff and restore
+// (backup.go), allow, deny and mgmt-acl (config_policy_register.go). Still
+// bash's, by delegation: cisco, juniper and wti (WP3.1), linux (WP3.2). The
+// family node, its usage and its preflight rule stay here.
 
 import (
 	"context"
