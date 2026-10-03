@@ -7,4 +7,6 @@ package all
 import (
 	// The TACACS+ module (tacquito).
 	_ "github.com/rett/tacctl/internal/backend/tacacs"
+	// The RADIUS module (FreeRADIUS).
+	_ "github.com/rett/tacctl/internal/backend/radius"
 )

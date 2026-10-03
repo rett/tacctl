@@ -18,7 +18,11 @@ type Set struct {
 
 // NewSet is the backends of r for one invocation.
 func NewSet(r *Registry, env *Env) *Set {
-	return &Set{Registry: r, Env: env, made: map[string]Backend{}}
+	s := &Set{Registry: r, Env: env, made: map[string]Backend{}}
+	if env != nil && env.Set == nil {
+		env.Set = s
+	}
+	return s
 }
 
 // IDs is every registered id (BACKEND_IDS).

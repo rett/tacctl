@@ -316,7 +316,7 @@ func duHuman(bytes int64) string {
 
 // echo writes line as 'echo -e "<line>"' prints it.
 func echo(w io.Writer, line string) {
-	text, stop := echoE(line)
+	text, stop := ui.EchoE(line)
 	if !stop {
 		text += "\n"
 	}

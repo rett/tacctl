@@ -219,6 +219,9 @@ func (m *Module) apply(ctx context.Context, opts backend.ApplyOptions, writer fu
 	if m.Apply != nil {
 		return m.Apply(ctx, opts, writer)
 	}
+	if m.env.Set != nil {
+		return m.env.Set.StoreApply(ctx, opts, writer)
+	}
 	return backend.NewSet(backend.Default(), m.env).StoreApply(ctx, opts, writer)
 }
 

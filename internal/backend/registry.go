@@ -32,6 +32,9 @@ type Env struct {
 	Fault func(point string) error
 	// Snapshots takes the pre-change snapshots (nil: none are taken).
 	Snapshots *snapshot.Snapshotter
+	// Set is the invocation's backend set, filled in by NewSet, so a module
+	// can run its own changes through Set.StoreApply.
+	Set *Set
 }
 
 // fault is the Env's fault check.

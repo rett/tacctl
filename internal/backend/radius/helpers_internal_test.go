@@ -31,7 +31,7 @@ func TestEchoE(t *testing.T) {
 		{`user=ev\il`, `user=ev\il`, false},
 		{`a\nb`, "a\nb", false},
 	} {
-		got, stop := echoE(c.in)
+		got, stop := ui.EchoE(c.in)
 		if got != c.out || stop != c.stop {
 			t.Errorf("echoE(%q) = %q, %v; want %q, %v", c.in, got, stop, c.out, c.stop)
 		}
