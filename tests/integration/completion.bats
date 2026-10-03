@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
-# Bash completion for the backend, store, log --backend, config listen and
-# scope vendor-attrs / devices / auth-method words
+# Bash completion for the backend, store, log --backend, config listen,
+# user scope and scope vendor-attrs / devices / auth-method words
 # (config/tacctl.bash-completion), and the hidden '_completion-names' kinds it
 # asks the sudo bridge for. The completion function runs in a bash of its own
 # with the real bash-completion library; 'sudo' is a stub that answers the
@@ -180,6 +180,35 @@ complete_words() {
     complete_words tacctl scope protocols lab set ""
     assert_line "tacacs"
     assert_line "radius"
+}
+
+@test "completion: scope prefixes offers remove (no clear), then --all, then --force only after --all" {
+    complete_words tacctl scope prefixes lab ""
+    assert_output "$(printf 'list\nadd\nremove')"
+    complete_words tacctl scope prefixes lab remove ""
+    assert_output -- "--all"
+    complete_words tacctl scope prefixes lab remove --all ""
+    assert_output -- "--force"
+    complete_words tacctl scope prefixes lab remove 10.0.0.0/8 ""
+    assert_output ""
+    complete_words tacctl scope prefixes lab add ""
+    assert_output ""
+}
+
+@test "completion: user scope offers replace and remove --all (no set or clear), then scope names" {
+    stub_cmd sudo 'case "$*" in
+  *"_completion-names scopes") printf "%s\n" lab prod ;;
+esac'
+    complete_words tacctl user scope alice ""
+    assert_output "$(printf 'list\nadd\nremove\nreplace')"
+    complete_words tacctl user scope alice remove ""
+    assert_output "$(printf -- '--all\nlab\nprod')"
+    complete_words tacctl user scope alice remove --all ""
+    assert_output ""
+    complete_words tacctl user scope alice replace ""
+    assert_output "$(printf 'lab\nprod')"
+    complete_words tacctl user scope alice add ""
+    assert_output "$(printf 'lab\nprod')"
 }
 
 @test "completion: config linux script flags and methods, builds, backup restore --legacy" {

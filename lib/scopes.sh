@@ -339,7 +339,7 @@ cmd_scope_usage() {
     echo "  tacctl scope default [<name>]                            Show or set the default scope"
     echo "  tacctl scope lookup <ip|cidr>                            Show which scope owns an address"
     echo ""
-    echo "  tacctl scope prefixes <scope> list|add|remove|clear      Manage a scope's CIDR list"
+    echo "  tacctl scope prefixes <scope> list|add|remove            Manage a scope's CIDR list"
     echo "  tacctl scope secret   <scope> show|set|generate          Manage a scope's shared secret"
     echo "  tacctl scope protocols <scope> list|set <csv>|clear      Limit a scope to some protocols (${SCOPE_PROTOCOLS// /, }); default: all"
     echo "  tacctl scope vendor-attrs <scope> [enable|disable <csv>] RADIUS: vendor privilege attributes sent to the scope's devices (${SCOPE_VENDORS// /, }); default: not sent"
@@ -851,11 +851,39 @@ cmd_scope_prefixes_dispatch() {
     local sub="${2:-}"
     local arg="${3:-}"
     if [[ -z "$scope" ]]; then
-        error "Usage: tacctl scope prefixes <scope> {list|add|remove|clear} [<cidrs>]"
+        error "Usage: tacctl scope prefixes <scope> {list|add|remove} [<cidrs>]"
+        error "       tacctl scope prefixes <scope> remove --all [--force]"
         exit 1
     fi
+    # A membership list (empty means no clients, and here no scope): emptying
+    # it is 'remove --all'; the old 'clear' fails naming its replacement.
+    if [[ "$sub" == "clear" ]]; then
+        error "'clear' was renamed: use 'tacctl scope prefixes ${scope} remove --all [--force]'"
+        exit 1
+    fi
+    # 'remove --all [--force]' empties the list; it takes no CIDRs, and
+    # --force is only valid with --all.
+    local remove_all="" force="false"
+    if [[ "$sub" == "remove" ]]; then
+        local a others=0
+        for a in "${@:3}"; do
+            case "$a" in
+                --all)   [[ -n "$remove_all" ]] && others=1; remove_all=1 ;;
+                --force) [[ "$force" == "true" ]] && others=1; force="true" ;;
+                *)       others=1 ;;
+            esac
+        done
+        if [[ -n "$remove_all" && "$others" -ne 0 ]]; then
+            error "Usage: tacctl scope prefixes ${scope} remove --all [--force]   ('--all' takes no CIDRs)"
+            exit 1
+        fi
+        if [[ "$force" == "true" && -z "$remove_all" ]]; then
+            error "Usage: tacctl scope prefixes ${scope} remove --all --force   ('--force' is only valid with --all)"
+            exit 1
+        fi
+    fi
     case "$sub" in
-        add|remove|clear) store_require || exit 1 ;;
+        add|remove) store_require || exit 1 ;;
     esac
     # Display order (longest prefix first); also the membership list.
     local current
@@ -872,10 +900,10 @@ cmd_scope_prefixes_dispatch() {
             echo -e "${BOLD}tacctl scope prefixes ${scope}${NC} — CIDR prefix list for scope '${scope}'"
             echo ""
             echo "Usage:"
-            echo "  tacctl scope prefixes ${scope} list                        Show entries"
-            echo "  tacctl scope prefixes ${scope} add    <cidr>[,<cidr>...]   Add one or more"
-            echo "  tacctl scope prefixes ${scope} remove <cidr>[,<cidr>...]   Remove one or more"
-            echo "  tacctl scope prefixes ${scope} clear [--force]             Wipe all, which removes the scope (confirms; --force also strips it from users)"
+            echo "  tacctl scope prefixes ${scope} list                         Show entries"
+            echo "  tacctl scope prefixes ${scope} add    <cidr>[,<cidr>...]    Add one or more"
+            echo "  tacctl scope prefixes ${scope} remove <cidr>[,<cidr>...]    Remove one or more"
+            echo "  tacctl scope prefixes ${scope} remove --all [--force]       Remove all, which removes the scope (confirms; --force also strips it from users)"
             echo ""
             echo "Current entries: ${count}"
             echo ""
@@ -896,8 +924,13 @@ cmd_scope_prefixes_dispatch() {
             echo ""
             ;;
         add|remove)
+            if [[ -n "$remove_all" ]]; then
+                _scope_prefixes_remove_all "$scope" "$current" "$force"
+                return
+            fi
             if [[ -z "$arg" ]]; then
                 error "Usage: tacctl scope prefixes ${scope} ${sub} <cidr>[,<cidr>...]"
+                [[ "$sub" == "remove" ]] && error "       tacctl scope prefixes ${scope} remove --all [--force]"
                 exit 1
             fi
             local requested c
@@ -969,45 +1002,48 @@ cmd_scope_prefixes_dispatch() {
             [[ -n "$missing_or_present" ]] && info "(Skipped: ${missing_or_present})"
             echo ""
             ;;
-        clear)
-            # A scope cannot exist without a prefix, so clearing them all
-            # removes the scope. Same guard as 'scope remove': refuse while
-            # users reference it unless --force, which strips it from them.
-            local force="false"
-            [[ "$arg" == "--force" ]] && force="true"
-            if [[ -z "$current" ]]; then
-                info "Scope '${scope}' prefix list is already empty."
-                return
-            fi
-            local members user_count=0
-            members=$(model_scope_users "$scope") || exit 1
-            [[ -n "$members" ]] && user_count=$(printf '%s\n' "$members" | wc -l)
-            if [[ "$user_count" -gt 0 && "$force" != "true" ]]; then
-                error "Cannot clear prefixes for '${scope}': ${user_count} user(s) still reference it."
-                error "Clearing every prefix removes the scope, and with it those users' grant."
-                error "Detach users first:"
-                printf '%s\n' "$members" | sed 's/^/    tacctl user scope /' | sed 's/$/ remove '"${scope}"'/'
-                error "Or pass --force to strip the scope from those users AND remove it."
-                exit 1
-            fi
-            local n
-            n=$(printf '%s\n' "$current" | wc -l)
-            warn "Clearing all ${n} prefix(es) from '${scope}' removes the scope."
-            if [[ "$user_count" -gt 0 ]]; then
-                warn "${user_count} user(s) will lose their grant of '${scope}'."
-            fi
-            read -rp "  Confirm? [y/N]: " confirm || true
-            [[ ! "$confirm" =~ ^[Yy] ]] && { info "Aborted."; return; }
-            store_apply _scope_remove_write "$scope" || exit $?
-            info "Cleared prefixes for scope '${scope}' (the scope is removed)."
-            echo ""
-            ;;
         *)
             error "Unknown subcommand: '${sub}'"
             error "Run 'tacctl scope prefixes ${scope}' for usage."
             exit 1
             ;;
     esac
+}
+
+# _scope_prefixes_remove_all <scope> <current-prefixes> <force>: 'scope
+# prefixes <scope> remove --all [--force]'. A scope cannot exist without a
+# prefix, so removing them all removes the scope. Same guard as 'scope
+# remove': refuse while users reference it unless --force, which strips it
+# from them.
+_scope_prefixes_remove_all() {
+    local scope="$1" current="$2" force="$3"
+    if [[ -z "$current" ]]; then
+        info "Scope '${scope}' prefix list is already empty."
+        return
+    fi
+    local members user_count=0
+    members=$(model_scope_users "$scope") || exit 1
+    [[ -n "$members" ]] && user_count=$(printf '%s\n' "$members" | wc -l)
+    if [[ "$user_count" -gt 0 && "$force" != "true" ]]; then
+        error "Cannot remove every prefix of '${scope}': ${user_count} user(s) still reference it."
+        error "Removing every prefix removes the scope, and with it those users' grant."
+        error "Detach users first:"
+        printf '%s\n' "$members" | sed 's/^/    tacctl user scope /' | sed 's/$/ remove '"${scope}"'/'
+        error "Or pass --force to strip the scope from those users AND remove it."
+        exit 1
+    fi
+    local n
+    n=$(printf '%s\n' "$current" | wc -l)
+    warn "Removing all ${n} prefix(es) from '${scope}' removes the scope."
+    if [[ "$user_count" -gt 0 ]]; then
+        warn "${user_count} user(s) will lose their grant of '${scope}'."
+    fi
+    local confirm=""
+    read -rp "  Confirm? [y/N]: " confirm || true
+    [[ ! "$confirm" =~ ^[Yy] ]] && { info "Aborted."; return; }
+    store_apply _scope_remove_write "$scope" || exit $?
+    info "Removed all prefixes from scope '${scope}' (the scope is removed)."
+    echo ""
 }
 
 # --- Per-scope secret management: tacctl scope secret <scope> ... ---

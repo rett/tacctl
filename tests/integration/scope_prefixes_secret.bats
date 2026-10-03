@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # Integration tests for per-scope prefix + secret management:
-#   tacctl scope prefixes <scope> {list|add|remove|clear}
+#   tacctl scope prefixes <scope> {list|add|remove|remove --all [--force]}
 #   tacctl scope secret   <scope> {show|set|generate}
 
 load ../helpers/setup
@@ -102,29 +102,96 @@ setup() {
     assert_output --partial "Nothing to remove"
 }
 
-# --- scopes prefixes clear ---------------------------------------------------
+# --- scopes prefixes remove --all -------------------------------------------
 
-@test "scopes prefixes clear: wipes all prefixes from an unreferenced scope" {
-    run bash -c 'echo y | "'"$TACCTL_BIN_SCRIPT"'" scope prefixes lab clear'
+@test "scopes prefixes remove --all: wipes all prefixes from an unreferenced scope" {
+    run bash -c 'echo y | "'"$TACCTL_BIN_SCRIPT"'" scope prefixes lab remove --all'
     assert_success
-    # Flat emission: clearing all prefixes deletes the scope's secrets[] entry
+    assert_output --partial "Removing all 1 prefix(es) from 'lab' removes the scope."
+    assert_output --partial "Removed all prefixes from scope 'lab' (the scope is removed)."
+    # Flat emission: removing all prefixes deletes the scope's secrets[] entry
     # entirely. The scope name vanishes from the YAML.
     run "$TACCTL_BIN_SCRIPT" scope list
     refute_output --partial "lab"
 }
 
-@test "scopes prefixes clear: refuses when users reference the scope (no --force)" {
-    "$TACCTL_BIN_SCRIPT" user add alice superuser \
-        --hash "$TEST_HASH" --scopes lab > /dev/null
-    run bash -c 'echo y | "'"$TACCTL_BIN_SCRIPT"'" scope prefixes lab clear'
-    assert_failure
-    assert_output --partial "still reference"
+@test "scopes prefixes remove --all: 'n' declines and changes nothing" {
+    local before
+    before=$(cksum "${TACCTL_STATE_DIR}/store.yaml")
+    run "$TACCTL_BIN_SCRIPT" scope prefixes lab remove --all <<< "n"
+    assert_success
+    assert_output --partial "Aborted."
+    [[ "$(cksum "${TACCTL_STATE_DIR}/store.yaml")" == "$before" ]]
+    run "$TACCTL_BIN_SCRIPT" scope prefixes lab list
+    assert_output --partial "192.168.0.0/16"
 }
 
-@test "scopes prefixes clear: --force removes the scope and strips it from its users" {
+@test "scopes prefixes remove --all: closed stdin cancels with a message and changes nothing" {
+    local before
+    before=$(cksum "${TACCTL_STATE_DIR}/store.yaml")
+    run "$TACCTL_BIN_SCRIPT" scope prefixes lab remove --all < /dev/null
+    assert_success
+    assert_output --partial "Aborted."
+    [[ "$(cksum "${TACCTL_STATE_DIR}/store.yaml")" == "$before" ]]
+}
+
+@test "scopes prefixes remove --all: refuses when users reference the scope (no --force)" {
     "$TACCTL_BIN_SCRIPT" user add alice superuser \
         --hash "$TEST_HASH" --scopes lab > /dev/null
-    run bash -c 'echo y | "'"$TACCTL_BIN_SCRIPT"'" scope prefixes lab clear --force'
+    local before
+    before=$(cksum "${TACCTL_STATE_DIR}/store.yaml")
+    run bash -c 'echo y | "'"$TACCTL_BIN_SCRIPT"'" scope prefixes lab remove --all'
+    assert_failure
+    assert_output --partial "still reference"
+    assert_output --partial "tacctl user scope alice remove lab"
+    [[ "$(cksum "${TACCTL_STATE_DIR}/store.yaml")" == "$before" ]]
+}
+
+@test "scopes prefixes remove --all: CIDRs beside --all, or --force without it, are usage errors" {
+    local before
+    before=$(cksum "${TACCTL_STATE_DIR}/store.yaml")
+    local args
+    for args in "--all 192.168.0.0/16" "192.168.0.0/16 --all" "--all --force 192.168.0.0/16" "--all --all"; do
+        # shellcheck disable=SC2086  # the args are a word list
+        run "$TACCTL_BIN_SCRIPT" scope prefixes lab remove $args <<< "y"
+        assert_failure 1
+        assert_output --partial "'--all' takes no CIDRs"
+    done
+    for args in "--force" "192.168.0.0/16 --force"; do
+        # shellcheck disable=SC2086  # the args are a word list
+        run "$TACCTL_BIN_SCRIPT" scope prefixes lab remove $args <<< "y"
+        assert_failure 1
+        assert_output --partial "'--force' is only valid with --all"
+    done
+    [[ "$(cksum "${TACCTL_STATE_DIR}/store.yaml")" == "$before" ]]
+}
+
+@test "scopes prefixes clear: removed, fails naming the replacement, changes nothing" {
+    local before
+    before=$(cksum "${TACCTL_STATE_DIR}/store.yaml")
+    local args
+    for args in "" "--force"; do
+        # shellcheck disable=SC2086  # the args are a word list
+        run "$TACCTL_BIN_SCRIPT" scope prefixes lab clear $args <<< "y"
+        assert_failure 1
+        assert_output --partial "'clear' was renamed: use 'tacctl scope prefixes lab remove --all [--force]'"
+    done
+    [[ "$(cksum "${TACCTL_STATE_DIR}/store.yaml")" == "$before" ]]
+    run "$TACCTL_BIN_SCRIPT" scope prefixes lab list
+    assert_output --partial "192.168.0.0/16"
+}
+
+@test "scopes prefixes help: lists remove --all, not clear" {
+    run "$TACCTL_BIN_SCRIPT" scope prefixes lab --help
+    assert_success
+    assert_output --partial "tacctl scope prefixes lab remove --all [--force]"
+    refute_output --partial "lab clear"
+}
+
+@test "scopes prefixes remove --all: --force removes the scope and strips it from its users" {
+    "$TACCTL_BIN_SCRIPT" user add alice superuser \
+        --hash "$TEST_HASH" --scopes lab > /dev/null
+    run bash -c 'echo y | "'"$TACCTL_BIN_SCRIPT"'" scope prefixes lab remove --all --force'
     assert_success
 
     # A scope cannot exist without a prefix, so it is gone; and the store

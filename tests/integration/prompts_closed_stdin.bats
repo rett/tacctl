@@ -70,11 +70,14 @@ closed() {
     "$TACCTL_BIN_SCRIPT" scope show dmz > /dev/null
 }
 
-@test "scope prefixes clear and config allow clear with stdin closed: aborted, exit 0, nothing changed" {
+@test "scope prefixes remove --all, user scope remove --all and config allow clear with stdin closed: aborted, exit 0, nothing changed" {
     "$TACCTL_BIN_SCRIPT" config allow add 10.0.0.0/8 > /dev/null
     local before
     before=$(state)
-    closed scope prefixes dmz clear --force
+    closed scope prefixes dmz remove --all --force
+    assert_success
+    assert_output --partial "Aborted."
+    closed user scope zed remove --all
     assert_success
     assert_output --partial "Aborted."
     closed config allow clear

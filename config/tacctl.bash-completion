@@ -103,8 +103,8 @@ _tacctl() {
                         COMPREPLY=($(compgen -W "--hash" -- "$cur"))
                         ;;
                     scope)
-                        # `user scope <user> {list|add|remove|set|clear}`
-                        COMPREPLY=($(compgen -W "list add remove set clear" -- "$cur"))
+                        # `user scope <user> {list|add|remove|replace}`
+                        COMPREPLY=($(compgen -W "list add remove replace" -- "$cur"))
                         ;;
                 esac
             elif [[ $pos -eq 5 && "$usub" == "add" ]]; then
@@ -114,11 +114,20 @@ _tacctl() {
                 # second flag after --hash <val> or --scopes <csv>
                 COMPREPLY=($(compgen -W "--hash --scopes" -- "$cur"))
             elif [[ $pos -ge 5 && "$usub" == "scope" ]]; then
-                # `user scope <user> {add|remove|set} <scope>[,<scope>...]`
+                # `user scope <user> {add|remove|replace} <scope>[,<scope>...]`
+                # and `user scope <user> remove --all` (--all only in the
+                # first slot, and takes no scope names after it).
                 # Slot layout: [offset+2]=scope [offset+3]=<user> [offset+4]=<sub>
                 case "${words[offset + 4]}" in
-                    add|remove|set)
+                    add|replace)
                         COMPREPLY=($(compgen -W "$(_tacctl_scope_names)" -- "$cur"))
+                        ;;
+                    remove)
+                        if [[ $pos -eq 5 ]]; then
+                            COMPREPLY=($(compgen -W "--all $(_tacctl_scope_names)" -- "$cur"))
+                        elif [[ "${words[offset + 5]}" != "--all" ]]; then
+                            COMPREPLY=($(compgen -W "$(_tacctl_scope_names)" -- "$cur"))
+                        fi
                         ;;
                 esac
             fi
@@ -304,8 +313,8 @@ _tacctl() {
                         COMPREPLY=($(compgen -W "--prefixes --secret --protocols --vendor-attrs --default" -- "$cur"))
                         ;;
                     prefixes)
-                        # `scope prefixes <scope> <list|add|remove|clear>`
-                        COMPREPLY=($(compgen -W "list add remove clear" -- "$cur"))
+                        # `scope prefixes <scope> <list|add|remove>`
+                        COMPREPLY=($(compgen -W "list add remove" -- "$cur"))
                         ;;
                     secret)
                         # `scope secret <scope> <show|set|generate>`
@@ -357,11 +366,16 @@ _tacctl() {
                 if [[ "${words[offset + 4]}" == "set" ]]; then
                     COMPREPLY=($(compgen -W "tacacs radius tacacs,radius" -- "$cur"))
                 fi
-            elif [[ $pos -eq 5 && "$ssub" == "prefixes" ]]; then
-                # `scope prefixes <scope> clear --force` — only clear takes --force
+            elif [[ $pos -ge 5 && "$ssub" == "prefixes" ]]; then
+                # `scope prefixes <scope> remove --all [--force]` — only
+                # 'remove --all' takes --force; CIDRs are free-form.
                 # Slot layout: [offset+2]=prefixes [offset+3]=<scope> [offset+4]=<sub>
-                if [[ "${words[offset + 4]}" == "clear" ]]; then
-                    COMPREPLY=($(compgen -W "--force" -- "$cur"))
+                if [[ "${words[offset + 4]}" == "remove" ]]; then
+                    if [[ $pos -eq 5 ]]; then
+                        COMPREPLY=($(compgen -W "--all" -- "$cur"))
+                    elif [[ $pos -eq 6 && "${words[offset + 5]}" == "--all" ]]; then
+                        COMPREPLY=($(compgen -W "--force" -- "$cur"))
+                    fi
                 fi
             elif [[ $pos -ge 6 && "$ssub" == "add" ]]; then
                 # `scope add <name> --flag <val> [--flag ...]` — offer remaining

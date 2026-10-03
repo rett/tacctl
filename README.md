@@ -253,10 +253,10 @@ tacctl scope remove <name> [--force]           # refuses if users reference it; 
 tacctl scope rename <old> <new>                # rewrites user refs, default marker and per-scope settings
 tacctl scope default [<name>]                  # show / set the default
 tacctl scope lookup <ip|cidr>                  # trace which scope owns an address (+ shadow overlaps)
-tacctl scope prefixes <name> list|add|remove|clear [--force]
+tacctl scope prefixes <name> list|add <cidrs>|remove <cidrs>|remove --all [--force]
 tacctl scope secret <name>   show|set <v>|generate
 tacctl scope protocols <name> list|set <csv>|clear
-tacctl user scope <user>     list|add|remove|set|clear
+tacctl user scope <user>     list|add <s>|remove <s>|replace <s>|remove --all
 ```
 
 ### Configure connection filters
@@ -530,10 +530,11 @@ These patterns apply uniformly across every subcommand family:
 
 - **No arguments** — dispatcher commands (`user`, `group`, `config`, `scope`, `host`, `backend`, `store`, `log`, `backup`, `hash`, and nested dispatchers like `scope prefixes` / `scope secret` / `scope aaa-order` / `scope exec-timeout` / `scope tacacs-group` / `scope radius-group` / `scope auth-method` / `scope vendor-attrs` / `scope devices` / `scope mgmt-acl` / `user scope` / `group privilege` / `config linux`) print their own usage and exit without side effects. Scalar getter/setters (`config loglevel`, `config listen`, `config metrics`, `config password-age`, `config bcrypt-cost`, `config password-min-length`, `config secret-min-length`, `config branch`, `scope default`, `host default-method`) print the current value when called with no arguments.
 - **Filters and opt-ins** — a setting that narrows something down is a *filter*: its verbs are `set` and `clear`, and empty (cleared) means everything (`scope protocols`, `config allow`, `config deny`). A setting that turns something on is an *opt-in*: its verbs are `enable` and `disable`, and nothing is on until it is enabled (`backend enable|disable`, `scope vendor-attrs`). An opt-in has no `set`, `clear` or `none`, so that nothing in it can read as "empty means all".
+- **Membership lists** — a list that names exactly what is in is a *membership list*, and empty means nothing, not everything (`user scope`, the scopes a user can authenticate from: none means nowhere; `scope prefixes`, the clients a scope serves: emptying it removes the scope). Its verbs are `add` and `remove`: `remove --all` empties it, and `user scope` replaces its whole list with `replace`.
 - **Multi-item input** — every `add` / `remove` that takes a CIDR, a scope name, or a Cisco exec command accepts either a single value or a comma-separated list (`a,b,c`). Every input is validated first; a bad entry aborts the entire operation without writing anything.
 - **CIDR semantics** — every CIDR-list subcommand (`scope prefixes`, `config allow`, `config deny`, `config mgmt-acl`) canonicalizes input before storage: `10.1.5.5/24` becomes `10.1.5.0/24`, `2001:DB8::/32` becomes `2001:db8::/32`. Exact duplicates (after canonicalization) are rejected as no-ops on `add`. Overlapping CIDRs of different prefix lengths coexist (`10.0.0.0/8` and `10.99.0.0/16` can both be present). Stored order is by broadcast-address ascending (IPv4 before IPv6): disjoint ranges sort by their end address, and an overlapping subnet falls immediately above its containing supernet (the subnet's range ends before the supernet's). This groups related CIDRs together and gives tacquito's provider selector the "most-specific first among overlaps" ordering it needs so a narrower scope wins a first-match lookup over a broader scope that contains it.
 - **Scope prefix invariants** — every CIDR belongs to **exactly one** scope after canonicalization. Adding a prefix already claimed by a different scope is rejected with a message naming the owner; you must `tacctl scope prefixes <owner> remove <cidr>` before re-adding it elsewhere. Overlapping prefixes *across* scopes are allowed and routed correctly (e.g. `10.5.0.0/16` in `staging` coexists with `10.0.0.0/8` in `lab`). In the rendered `tacquito.yaml` a scope with N prefixes becomes N `secrets:` entries sharing the same `name:` and `secret.key`, sorted globally by prefix specificity (v4 before v6, smaller broadcast first), so tacquito's slice-ordered walk picks the narrowest scope. The CLI shows the logical one-bundle-per-scope view.
-- **`clear`** — `clear` subcommands always prompt with `[y/N]` and print a warning describing the resulting posture (e.g. "no clients can connect" or "fails open"). Every prompt cancels, with a message, when standard input is closed.
+- **`clear` and `remove --all`** — `clear` and `remove --all` subcommands always prompt with `[y/N]` and print a warning describing the resulting posture (e.g. "no clients can connect" or "fails open"). Every prompt cancels, with a message, when standard input is closed.
 - **Service restart** — changes to the store, and to the `tacctl.yaml` settings a backend renders (command rules, listeners, `backends.*`), re-render every enabled backend and restart the ones whose files changed. Settings only device configs read (mgmt-acl permits + names, priv-exec mappings, per-scope AAA order, exec timeout, group labels) and tacctl's own tunables (bcrypt cost, password age, …) restart nothing.
 - **Flags** — long-form flags (`--hash`, `--scopes`, `--scope`, `--prefixes`, `--secret`, `--protocols`, `--vendor-attrs`, `--match`, `--action`, `--branch`, `--protocol`, `--method`, `--backend`, `--listener`) take a single argument; `--default`, `--force`, `--legacy`, `--check`, `--replace`, `--json`, `--local`, `--all` and `-y` take none. Required positional args come before flags.
 
@@ -582,8 +583,8 @@ user verify <name>                                Show user details and verify p
 user scope <name>                                 List the user's scopes (orphan refs flagged red)
 user scope <name> add <s>[,s...]                  Grant one or more scopes
 user scope <name> remove <s>[,s...]               Revoke one or more scopes
-user scope <name> set <s>[,s...]                  Replace the full scope list
-user scope <name> clear                           Wipe all scopes (with confirmation)
+user scope <name> replace <s>[,s...]              Replace the full scope list
+user scope <name> remove --all                    Revoke every scope (with confirmation)
 ```
 
 ### Group Commands — `tacctl group`
@@ -744,7 +745,8 @@ scope remove <name> [--force]                            Delete. Refuses if user
 scope rename <old> <new>                                 Rewrites every user's scopes[], the default marker and every per-scope setting
 scope default [<name>]                                   Show / set the default scope
 scope lookup <ip|cidr>                                   Resolve an IP/CIDR to the owning scope (+ shadowed overlaps, + its vendor tag)
-scope prefixes <name> list|add|remove|clear [--force]    Per-scope CIDR list (add/remove accept comma-lists; clear refuses if users reference unless --force)
+scope prefixes <name> list|add|remove <cidrs>            Per-scope CIDR list (add/remove accept comma-lists; the last prefix cannot be removed this way)
+scope prefixes <name> remove --all [--force]             Remove every prefix, which removes the scope (confirms; refuses if users reference it unless --force, which strips it from them)
 scope secret   <name> show|set <value>|generate          Per-scope shared secret (show prints the raw value + length/posture)
 scope protocols <name> list|set <csv>|clear              Limit the scope to some protocols (tacacs, radius). A filter: empty (`clear`) means every enabled backend serves it
 scope vendor-attrs <name> [enable|disable <csv>]         RADIUS: the vendors (cisco, juniper, wti) whose privilege attribute an Access-Accept carries for the scope's devices. Opt-in: a new scope sends none ("not sent"); there is no set/clear. Stored in store.yaml, so a change re-renders and restarts the RADIUS backend. TACACS+ is not affected. See "What an Access-Accept carries"
@@ -760,7 +762,7 @@ scope mgmt-acl <name> cisco-name|juniper-name [label]    Per-scope mgmt-acl / fi
 
 **Connection filters:** `deny` takes precedence over `allow`. Both empty = all connections accepted.
 
-**Settings stored under a scope's name** in `tacctl.yaml` (`aaa.order`, `exec_timeout`, `tacacs_group`, `radius_group`, `scope_auth_method`, `scope_mgmt_acl.names.cisco|juniper`, `scope_mgmt_acl.permits`) follow the scope on `scope rename` and are removed with it by `scope remove` (and `scope prefixes clear`), so a new scope of the same name starts from the defaults. Its `protocols`, `vendor-attrs` and `devices` are part of its entry in `store.yaml` and do the same.
+**Settings stored under a scope's name** in `tacctl.yaml` (`aaa.order`, `exec_timeout`, `tacacs_group`, `radius_group`, `scope_auth_method`, `scope_mgmt_acl.names.cisco|juniper`, `scope_mgmt_acl.permits`) follow the scope on `scope rename` and are removed with it by `scope remove` (and `scope prefixes remove --all`), so a new scope of the same name starts from the defaults. Its `protocols`, `vendor-attrs` and `devices` are part of its entry in `store.yaml` and do the same.
 
 ### Host Commands — `tacctl host`
 

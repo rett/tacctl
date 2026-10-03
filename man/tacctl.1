@@ -211,10 +211,11 @@ Move a user to a different group without changing the password.
 .BI "user verify " name
 Show user details and verify the password interactively.
 .TP
-.B "user scope " \fIname\fR " " [ "list " | " add " \fIs\fR[,s...] | " remove " \fIs\fR[,s...] | " set " \fIs\fR[,s...] | " clear " ]
+.B "user scope " \fIname\fR " " [ "list " | " add " \fIs\fR[,s...] | " remove " \fIs\fR[,s...] | " replace " \fIs\fR[,s...] | " remove \-\-all" ]
 Manage which scopes
 .I name
-can authenticate from. With no subcommand (or
+can authenticate from. This is a membership list: a user with no scopes
+can authenticate nowhere. With no subcommand (or
 .BR list ),
 prints the user's current scopes with orphan detection (any scope
 name that does not resolve to an existing scope is flagged red).
@@ -222,11 +223,11 @@ name that does not resolve to an existing scope is flagged red).
 and
 .B remove
 accept one or a comma-separated list of existing scope names;
-.B set
+.B replace
 replaces the whole list;
-.B clear
-empties it (with confirmation).
-.B clear
+.B "remove \-\-all"
+empties it (with confirmation) and takes no scope names.
+.B "remove \-\-all"
 preserves the bcrypt hash — distinct from
 .B user disable
 in that intent is "temporarily revoke scope access" rather than
@@ -1393,20 +1394,24 @@ client to the narrowest scope that contains it (and its own RADIUS client).
 .B "scope prefixes " \fIscope\fR " remove " \fIcidr\fR[,cidr...]
 Remove one or more CIDRs. The last prefix of a scope cannot be removed
 (use
-.B clear
+.B "remove \-\-all"
 or
 .BR "scope remove" ),
 and a prefix whose removal would leave a tagged address
 .RB ( "scope devices" )
 outside the scope is refused.
 .TP
-.BI "scope prefixes " "scope " "clear " [ --force ]
+.BI "scope prefixes " "scope " "remove \-\-all " [ \-\-force ]
 Empty the entire prefix list for the scope (with confirmation): the scope
 and its per-scope settings are removed, so it vanishes from every rendered
 config. The command refuses to proceed when users reference the scope
 unless
-.B --force
+.B \-\-force
 is given, which strips the scope from those users.
+.B \-\-all
+takes no CIDRs, and
+.B \-\-force
+is only valid with it.
 .SS Per-scope secret \fB(tacctl scope secret)\fR
 .TP
 .BI "scope secret " "scope " "show"
@@ -1868,8 +1873,10 @@ values.
 .B config validate
 reports any divergence.
 .TP
-.B "clear"
+.B "clear and remove \-\-all"
 .B clear
+and
+.B "remove \-\-all"
 subcommands always prompt with
 .B [y/N]
 and print a warning about the resulting posture (for example, "no
@@ -1897,6 +1904,23 @@ An opt-in has no
 or
 .BR none ,
 so that nothing in it can read as "empty means all".
+.TP
+.B "Membership lists"
+A list that names exactly what is in is a membership list, and empty
+means nothing, not everything
+.RB ( "user scope" ,
+the scopes a user can authenticate from: none means nowhere;
+.BR "scope prefixes" ,
+the clients a scope serves: emptying it removes the scope).
+Its verbs are
+.B add
+and
+.BR remove :
+.B "remove \-\-all"
+empties it, and
+.B "user scope"
+replaces its whole list with
+.BR replace .
 .TP
 .B Service restart
 Changes to the store, and to the

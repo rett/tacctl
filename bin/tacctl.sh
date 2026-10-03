@@ -16,9 +16,9 @@
 #   ./tacctl.sh user disable <username>
 #   ./tacctl.sh user enable <username>
 #   ./tacctl.sh user verify <username>
-#   ./tacctl.sh user scope <username> {list|add|remove|set|clear}
+#   ./tacctl.sh user scope <username> {list|add|remove|replace|remove --all}
 #   ./tacctl.sh scope {list|show|add|remove|rename|default}
-#   ./tacctl.sh scope prefixes <name> {list|add|remove|clear}
+#   ./tacctl.sh scope prefixes <name> {list|add|remove|remove --all [--force]}
 #   ./tacctl.sh scope secret   <name> {show|set|generate}
 #   ./tacctl.sh backend {list|status [<id>]|enable <id>|disable <id>}
 #   ./tacctl.sh store {show|import|rollback}
