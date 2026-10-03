@@ -41,8 +41,15 @@ These come from the go-rewrite plan's §3.9 "Not changed although tempting" list
 - `group commands add … --match` with a comma in the regex is split on the next write (`name|action|matches` line form).
 - `hash.Verify` honours a stored bcrypt cost up to 31, so a hand-edited `$2b$31$` hash makes `user verify` run for days. A cost cap could come later; tacquito verifies logins itself.
 - `config render --dry-run` does not report the drop-ins a real render would remove (open question from WP2.4c).
+- `config linux script -o <unwritable path>` prints install's complaint but still reports "Wrote …" and exits 0; an unresolvable host or a failing `ip` route lookup ends `host`/`config linux` commands silently with that tool's status (WP3.2).
+- The store gate's stopped message still names `'timeout'`, which the Go binary no longer runs (WP3.3a).
+- A failed legacy migration continues during install but aborts during upgrade (0.1.16's errexit difference, kept for parity; WP3.3a).
+- Install over an existing store ignores failures of the backends' `upgrade config` phase silently (WP3.3a).
+- `tests/diff/run.sh`: normalise the `Using template:` note so the device corpus compares those 38 lines in full; an `@overrides` directive for RADIUS-enabled successes; stub journalctl/ss/curl for a fuller `log` corpus; shellcheck `tests/diff/stubs/` in `make lint`.
 
 ## 4. State-format changes (0.3.0 at the earliest)
+
+- Drop the regex migrations of a legacy `tacquito.yaml` once no supported host can be older than the store release.
 
 0.2.0 makes no state-format changes, so rolling back to 0.1.16 is a checkout (go-rewrite Decision 10). Format changes wait for 0.3.0, with their own migration and gate:
 
