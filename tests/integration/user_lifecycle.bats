@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # Integration tests for the user-lifecycle subcommands:
-#   passwd, disable, enable, rename, move, scopes {list|add|remove|set|clear}.
+#   passwd, disable, enable, rename, move, scopes {list|add|remove|replace|remove --all}.
 
 load ../helpers/setup
 load ../helpers/tmpenv
@@ -289,21 +289,114 @@ no_sidecars() {
     refute_output --partial '"lab"'
 }
 
-@test "user scopes set: replaces the list wholesale" {
-    run "$TACCTL_BIN_SCRIPT" user scope alice set prod
+@test "user scopes replace: replaces the list wholesale" {
+    run "$TACCTL_BIN_SCRIPT" user scope alice replace prod
     assert_success
+    assert_output --partial "Replaced scopes on user 'alice': prod"
 
     run grep -A4 '^  - name: alice$' "$TACCTL_CONFIG"
     assert_output --partial 'scopes: ["prod"]'
     refute_output --partial '"lab"'
 }
 
-@test "user scopes clear: wipes all scopes after 'y' confirmation" {
-    run bash -c 'echo y | "'"$TACCTL_BIN_SCRIPT"'" user scope alice clear'
+@test "user scopes replace: takes a comma list in the order given" {
+    run "$TACCTL_BIN_SCRIPT" user scope alice replace prod,lab
     assert_success
 
     run grep -A4 '^  - name: alice$' "$TACCTL_CONFIG"
+    assert_output --partial 'scopes: ["prod", "lab"]'
+}
+
+@test "user scopes replace: one unknown scope aborts the lot and writes nothing" {
+    local before
+    before=$(cksum "${TACCTL_STATE_DIR}/store.yaml")
+    run "$TACCTL_BIN_SCRIPT" user scope alice replace prod,nosuchscope
+    assert_failure 1
+    assert_output --partial "Scope 'nosuchscope' does not exist"
+    [[ "$(cksum "${TACCTL_STATE_DIR}/store.yaml")" == "$before" ]]
+}
+
+@test "user scopes replace: needs at least one scope name" {
+    run "$TACCTL_BIN_SCRIPT" user scope alice replace
+    assert_failure 1
+    assert_output --partial "Usage: tacctl user scope alice replace <scope>"
+}
+
+@test "user scopes remove --all: wipes all scopes after 'y' confirmation" {
+    run bash -c 'echo y | "'"$TACCTL_BIN_SCRIPT"'" user scope alice remove --all'
+    assert_success
+    assert_output --partial "unable to authenticate on any device"
+    assert_output --partial "Distinct from 'tacctl user disable'"
+    assert_output --partial "Removed all scopes from user 'alice'."
+
+    run grep -A4 '^  - name: alice$' "$TACCTL_CONFIG"
     assert_output --partial 'scopes: []'
+}
+
+@test "user scopes remove --all: 'n' declines and changes nothing" {
+    local before
+    before=$(cksum "${TACCTL_STATE_DIR}/store.yaml")
+    run "$TACCTL_BIN_SCRIPT" user scope alice remove --all <<< "n"
+    assert_success
+    assert_output --partial "Aborted."
+    [[ "$(cksum "${TACCTL_STATE_DIR}/store.yaml")" == "$before" ]]
+    run grep -A4 '^  - name: alice$' "$TACCTL_CONFIG"
+    assert_output --partial 'scopes: ["lab"]'
+}
+
+@test "user scopes remove --all: closed stdin cancels with a message and changes nothing" {
+    local before
+    before=$(cksum "${TACCTL_STATE_DIR}/store.yaml")
+    run "$TACCTL_BIN_SCRIPT" user scope alice remove --all < /dev/null
+    assert_success
+    assert_output --partial "Aborted."
+    [[ "$(cksum "${TACCTL_STATE_DIR}/store.yaml")" == "$before" ]]
+}
+
+@test "user scopes remove --all: a user with no scopes is a no-op without a prompt" {
+    "$TACCTL_BIN_SCRIPT" user scope alice remove --all <<< "y" > /dev/null
+    local before
+    before=$(cksum "${TACCTL_STATE_DIR}/store.yaml")
+    run "$TACCTL_BIN_SCRIPT" user scope alice remove --all < /dev/null
+    assert_success
+    assert_output --partial "User 'alice' already has no scopes."
+    refute_output --partial "unable to authenticate"
+    [[ "$(cksum "${TACCTL_STATE_DIR}/store.yaml")" == "$before" ]]
+}
+
+@test "user scopes remove --all: scope names beside --all are a usage error" {
+    local before
+    before=$(cksum "${TACCTL_STATE_DIR}/store.yaml")
+    local args
+    for args in "--all lab" "lab --all" "--all --all"; do
+        # shellcheck disable=SC2086  # the args are a word list
+        run "$TACCTL_BIN_SCRIPT" user scope alice remove $args <<< "y"
+        assert_failure 1
+        assert_output --partial "'--all' takes no scope names"
+        [[ "$(cksum "${TACCTL_STATE_DIR}/store.yaml")" == "$before" ]]
+    done
+}
+
+@test "user scopes set and clear: removed, fail naming the replacement, change nothing" {
+    local before
+    before=$(cksum "${TACCTL_STATE_DIR}/store.yaml")
+    run "$TACCTL_BIN_SCRIPT" user scope alice set prod
+    assert_failure 1
+    assert_output --partial "'set' was renamed: use 'tacctl user scope alice replace <scope>[,<scope>...]'"
+    run "$TACCTL_BIN_SCRIPT" user scope alice clear <<< "y"
+    assert_failure 1
+    assert_output --partial "'clear' was renamed: use 'tacctl user scope alice remove --all'"
+    [[ "$(cksum "${TACCTL_STATE_DIR}/store.yaml")" == "$before" ]]
+    run grep -A4 '^  - name: alice$' "$TACCTL_CONFIG"
+    assert_output --partial 'scopes: ["lab"]'
+}
+
+@test "user scopes help: lists replace and remove --all, not set or clear" {
+    run "$TACCTL_BIN_SCRIPT" user scope alice --help
+    assert_success
+    assert_output --partial "tacctl user scope alice replace <scope>"
+    assert_output --partial "tacctl user scope alice remove  --all"
+    refute_output --regexp "alice (set|clear) "
 }
 
 @test "user scopes: rejects unknown user" {

@@ -763,18 +763,44 @@ cmd_move() {
     echo ""
 }
 
-# --- USER SCOPES: tacctl user scope <user> list|add|remove|set|clear ---
+# --- USER SCOPES: tacctl user scope <user> list|add|remove|replace ---
+# A membership list, not a filter: empty means the user can authenticate
+# nowhere. The verbs are add/remove/replace and 'remove --all'; the old
+# set/clear verbs fail with a message naming their replacement.
 cmd_user_scope() {
     local username="${1:-}"
     local sub="${2:-}"
     local arg="${3:-}"
 
     if [[ -z "$username" ]]; then
-        error "Usage: tacctl user scope <user> {list|add|remove|set|clear} [<scope>[,<scope>...]]"
+        error "Usage: tacctl user scope <user> {list|add|remove|replace} [<scope>[,<scope>...]]"
+        error "       tacctl user scope <user> remove --all"
         exit 1
     fi
     case "$sub" in
-        add|remove|set|clear) store_require || exit 1 ;;
+        set)
+            error "'set' was renamed: use 'tacctl user scope ${username} replace <scope>[,<scope>...]'"
+            exit 1
+            ;;
+        clear)
+            error "'clear' was renamed: use 'tacctl user scope ${username} remove --all'"
+            exit 1
+            ;;
+    esac
+    # 'remove --all' empties the list; it takes no scope names.
+    local remove_all=""
+    if [[ "$sub" == "remove" ]]; then
+        local a
+        for a in "${@:3}"; do
+            [[ "$a" == "--all" ]] && remove_all=1
+        done
+        if [[ -n "$remove_all" && $# -ne 3 ]]; then
+            error "Usage: tacctl user scope ${username} remove --all   ('--all' takes no scope names)"
+            exit 1
+        fi
+    fi
+    case "$sub" in
+        add|remove|replace) store_require || exit 1 ;;
     esac
     validate_username "$username"
     local -A ui=()
@@ -807,17 +833,22 @@ cmd_user_scope() {
                 return
             fi
             echo "Usage:"
-            echo "  tacctl user scope ${username} list                              Show current (default)"
-            echo "  tacctl user scope ${username} add    <scope>[,<scope>...]      Grant scope access"
-            echo "  tacctl user scope ${username} remove <scope>[,<scope>...]      Revoke scope access"
-            echo "  tacctl user scope ${username} set    <scope>[,<scope>...]      Replace full list"
-            echo "  tacctl user scope ${username} clear                             Wipe all (confirms)"
+            echo "  tacctl user scope ${username} list                          Show current (default)"
+            echo "  tacctl user scope ${username} add     <scope>[,<scope>...]  Grant scope access"
+            echo "  tacctl user scope ${username} remove  <scope>[,<scope>...]  Revoke scope access"
+            echo "  tacctl user scope ${username} replace <scope>[,<scope>...]  Replace full list"
+            echo "  tacctl user scope ${username} remove  --all                 Revoke every scope (confirms)"
             echo ""
             return
             ;;
-        add|remove|set)
+        add|remove|replace)
+            if [[ -n "$remove_all" ]]; then
+                _user_scope_remove_all "$username" "$current"
+                return
+            fi
             if [[ -z "$arg" ]]; then
                 error "Usage: tacctl user scope ${username} ${sub} <scope>[,<scope>...]"
+                [[ "$sub" == "remove" ]] && error "       tacctl user scope ${username} remove --all"
                 exit 1
             fi
             # Parse + validate scope names
@@ -842,7 +873,7 @@ cmd_user_scope() {
 
             local new_list
             local changed="" noop=""
-            if [[ "$sub" == "set" ]]; then
+            if [[ "$sub" == "replace" ]]; then
                 new_list=$(printf '%s\n' "$requested" | paste -sd,)
                 changed="$requested"
             elif [[ "$sub" == "add" ]]; then
@@ -880,7 +911,7 @@ cmd_user_scope() {
             case "$sub" in
                 add)    verb="Granted ${n} scope(s) to" ;;
                 remove) verb="Revoked ${n} scope(s) from" ;;
-                set)    verb="Replaced scopes on" ;;
+                replace) verb="Replaced scopes on" ;;
             esac
             info "${verb} user '${username}': $(printf '%s\n' "$changed" | paste -sd' ')"
             [[ -n "$noop" ]] && info "(Skipped: ${noop})"
@@ -890,26 +921,31 @@ cmd_user_scope() {
             fi
             echo ""
             ;;
-        clear)
-            if [[ -z "$current" ]]; then
-                info "User '${username}' already has no scopes."
-                return
-            fi
-            warn "WARNING: ${username} will be unable to authenticate on any device"
-            warn "until you grant at least one scope with 'tacctl user scope ${username} add <name>'"
-            warn "(Distinct from 'tacctl user disable' — the password hash is preserved.)"
-            read -rp "  Clear all scopes for '${username}'? [y/N]: " confirm || true
-            [[ ! "$confirm" =~ ^[Yy] ]] && { info "Aborted."; return; }
-            store_apply store_user_set "$username" "scopes=" || exit $?
-            info "Cleared scopes for user '${username}'."
-            echo ""
-            ;;
         *)
             error "Unknown subcommand: '${sub}'"
             error "Run 'tacctl user scope ${username}' for usage."
             exit 1
             ;;
     esac
+}
+
+# _user_scope_remove_all <user> <current-scopes>: 'user scope <user> remove
+# --all' — empty the user's scope list after a [y/N] confirmation.
+_user_scope_remove_all() {
+    local username="$1" current="$2"
+    if [[ -z "$current" ]]; then
+        info "User '${username}' already has no scopes."
+        return
+    fi
+    warn "WARNING: ${username} will be unable to authenticate on any device"
+    warn "until you grant at least one scope with 'tacctl user scope ${username} add <name>'"
+    warn "(Distinct from 'tacctl user disable' — the password hash is preserved.)"
+    local confirm=""
+    read -rp "  Remove all scopes from '${username}'? [y/N]: " confirm || true
+    [[ ! "$confirm" =~ ^[Yy] ]] && { info "Aborted."; return; }
+    store_apply store_user_set "$username" "scopes=" || exit $?
+    info "Removed all scopes from user '${username}'."
+    echo ""
 }
 
 # --- HASH (bcrypt hash helper — does not require root) ---
@@ -1044,7 +1080,7 @@ cmd_user() {
             echo "  rename <old> <new>                          Rename a user"
             echo "  move <user> <group>                         Move user to a different group"
             echo "  verify <username>                           Verify password and show user details"
-            echo "  scope <user> list|add|remove|set|clear      Manage which scopes the user can auth from"
+            echo "  scope <user> list|add|remove|replace        Manage which scopes the user can auth from"
             echo ""
             echo "Examples:"
             echo "  tacctl user list"

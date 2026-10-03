@@ -208,9 +208,9 @@ stored() { "$TACCTL_BIN_SCRIPT" config get "scope_auth_method.$1"; }
     assert_output --partial "auth-method: not set"
 }
 
-@test "scope prefixes clear: removing the scope that way drops its auth-method too" {
+@test "scope prefixes remove --all: removing the scope that way drops its auth-method too" {
     "$TACCTL_BIN_SCRIPT" scope auth-method dmz tacacs > /dev/null
-    run bash -c 'echo y | "'"$TACCTL_BIN_SCRIPT"'" scope prefixes dmz clear --force'
+    run bash -c 'echo y | "'"$TACCTL_BIN_SCRIPT"'" scope prefixes dmz remove --all --force'
     assert_success
     [[ -z "$(stored dmz)" ]]
 }
@@ -282,7 +282,7 @@ scope_mgmt_acl.permits="
     assert_output --partial "exec-timeout 15 0"
 }
 
-@test "scope remove and prefixes clear: every per-scope key of tacctl.yaml goes, so a new scope of that name starts from the defaults" {
+@test "scope remove and prefixes remove --all: every per-scope key of tacctl.yaml goes, so a new scope of that name starts from the defaults" {
     set_every_scope_key dmz
     run bash -c 'echo y | "'"$TACCTL_BIN_SCRIPT"'" scope remove dmz --force'
     assert_success
@@ -292,7 +292,7 @@ scope_mgmt_acl.permits="
     [[ "$(scope_keys dmz)" == "$NO_KEY" ]]
 
     set_every_scope_key dmz
-    run bash -c 'echo y | "'"$TACCTL_BIN_SCRIPT"'" scope prefixes dmz clear --force'
+    run bash -c 'echo y | "'"$TACCTL_BIN_SCRIPT"'" scope prefixes dmz remove --all --force'
     assert_success
     [[ "$(scope_keys dmz)" == "$NO_KEY" ]]
 }

@@ -448,11 +448,14 @@ cmd_install() {
     ln -sf "${DEPLOY_DIR}/bin/tacctl.sh" /usr/local/bin/tacctl
     # Create the state directory (and adopt any state from /etc/tacquito) before anything writes to it
     state_migrate || exit 1
-    # Install default config templates
+    # Install default config templates (a template already there and
+    # customised is kept; see templates_sync)
     if [[ -d "${PROJECT_DIR}/config/templates" ]]; then
-        mkdir -p "${TEMPLATE_DIR_LOCAL}"
-        cp -n "${PROJECT_DIR}/config/templates/"*.template "${TEMPLATE_DIR_LOCAL}/" 2>/dev/null || true
-        info "Config templates installed: ${TEMPLATE_DIR_LOCAL}/"
+        if templates_sync "$PROJECT_DIR"; then
+            info "Config templates installed: ${TEMPLATE_DIR_LOCAL}/"
+        else
+            warn "Could not install every config template in ${TEMPLATE_DIR_LOCAL}/."
+        fi
     fi
     # Each backend's system files (logrotate config)
     backends_run install files "$PROJECT_DIR"
@@ -568,6 +571,99 @@ update_if_changed() {
     fi
 }
 
+# --- Device config templates in the state directory ---
+# Install seeds TEMPLATE_DIR_LOCAL with the templates shipped in
+# config/templates, and every upgrade brings them up to date -- except one
+# the operator has customised. What tacctl wrote is recorded in a manifest
+# beside them, TEMPLATE_MANIFEST_NAME ('<sha256>  <name>.template' lines, as
+# sha256sum prints them; not a *.template itself), so a file that still matches its record is
+# tacctl's to replace. A file without a record (written by a release before
+# the manifest) is tacctl's when it is byte for byte some version of that
+# template in the history of the tree it comes from (a git clone); without
+# that history a file that differs from the shipped one counts as
+# customised. A customised template stays as it is, and this release's
+# version is written beside it as <name>.template.new: templates resolve by
+# their exact name (resolve_template), so it is never used.
+TEMPLATE_MANIFEST_NAME=".shipped.sha256"
+# Set by templates_sync: the templates it kept as customised.
+TEMPLATES_CUSTOMISED=()
+
+# _template_is_shipped <tree> <name> <file> <recorded sha256 or ''>: is
+# <file> a version of template <name> that tacctl wrote?
+_template_is_shipped() {
+    local tree="$1" name="$2" file="$3" recorded="$4" blob
+    if [[ -n "$recorded" ]]; then
+        [[ "$(sha256sum < "$file" | cut -d' ' -f1)" == "$recorded" ]]
+        return
+    fi
+    git -C "$tree" rev-parse --git-dir > /dev/null 2>&1 || return 1
+    blob=$(git -C "$tree" hash-object --no-filters -- "$file" 2> /dev/null) || return 1
+    # Every content the path had: the new-side blob of each change to it.
+    # (awk reads to the end: an early exit would fail the pipe under pipefail.)
+    git -C "$tree" log -m --format= --raw --no-abbrev --no-renames \
+        -- "config/templates/${name}" 2> /dev/null \
+        | awk -v blob="$blob" '$4 == blob { found = 1 } END { exit !found }'
+}
+
+# templates_sync <tree>: bring TEMPLATE_DIR_LOCAL in line with the
+# templates shipped in <tree>/config/templates (install and upgrade).
+# Counts what it wrote in place in SCRIPTS_UPDATED and names the
+# customised templates it kept in TEMPLATES_CUSTOMISED. Idempotent: a
+# second run writes nothing.
+templates_sync() {
+    local tree="$1"
+    local src_dir="${tree}/config/templates" manifest="${TEMPLATE_DIR_LOCAL}/${TEMPLATE_MANIFEST_NAME}"
+    local -A recorded=()
+    local tmpl name dest sum line want have=""
+    TEMPLATES_CUSTOMISED=()
+    [[ -d "$src_dir" ]] || return 0
+    mkdir -p "$TEMPLATE_DIR_LOCAL" || return 1
+    if [[ -f "$manifest" ]]; then
+        while read -r sum name; do
+            [[ "$sum" =~ ^[0-9a-f]{64}$ && "$name" == *.template ]] && recorded[$name]="$sum"
+        done < "$manifest"
+        have=$(< "$manifest")
+    fi
+
+    for tmpl in "${src_dir}/"*.template; do
+        [[ -f "$tmpl" ]] || continue
+        name="${tmpl##*/}"
+        dest="${TEMPLATE_DIR_LOCAL}/${name}"
+        sum=$(sha256sum < "$tmpl" | cut -d' ' -f1)
+        if [[ -f "$dest" ]] && cmp -s "$tmpl" "$dest"; then
+            info "  Unchanged: template: ${name}"
+        elif [[ ! -f "$dest" ]] || _template_is_shipped "$tree" "$name" "$dest" "${recorded[$name]:-}"; then
+            if [[ -f "$dest" ]]; then line="Updated"; else line="Installed"; fi
+            cp "$tmpl" "$dest" || return 1
+            info "  ${line}: template: ${name}"
+            SCRIPTS_UPDATED=$((SCRIPTS_UPDATED + 1))
+        else
+            # Customised: kept. This release's version goes beside it,
+            # rewritten only when it is not already there.
+            cmp -s "$tmpl" "${dest}.new" || cp "$tmpl" "${dest}.new" || return 1
+            warn "  Customised template kept: ${dest}"
+            warn "    This release's version is beside it: ${dest}.new"
+            warn "    Compare: diff ${dest} ${dest}.new  (to take it: mv ${dest}.new ${dest})"
+            TEMPLATES_CUSTOMISED+=("$name")
+            continue
+        fi
+        # The file is the shipped one now: record it, and drop a .new an
+        # earlier run left beside it.
+        recorded[$name]="$sum"
+        rm -f "${dest}.new"
+    done
+
+    want=""
+    for name in "${!recorded[@]}"; do
+        want+="${recorded[$name]}  ${name}"$'\n'
+    done
+    want=$(sort -k2 <<< "${want%$'\n'}")
+    if [[ "$want" != "$have" ]]; then
+        printf '%s\n' "$want" > "${manifest}.tacctl-new" \
+            && mv -f "${manifest}.tacctl-new" "$manifest" || return 1
+    fi
+}
+
 # "tacacs (tacquito), radius (freeradius)": the enabled backends, for the banner.
 upgrade_backend_names() {
     local _b impl out=""
@@ -639,20 +735,27 @@ cmd_upgrade() {
         # survive `git checkout -- .` and clutter the tree indefinitely.
         rm -f "${DEPLOY_DIR}"/bin/tacctl.sh.*-bak \
               "${DEPLOY_DIR}"/config/templates/*.template.*-bak 2>/dev/null || true
+        # The code this run was started from: a branch switch and a pull
+        # both count against it.
+        local START_MANAGE LOCAL_MANAGE REMOTE_MANAGE
+        START_MANAGE=$(git rev-parse HEAD 2>/dev/null || echo "")
         if [[ -n "$UPGRADE_BRANCH" ]]; then
             # --tags --force so force-pushed tags (e.g. after a history rewrite) update locally.
             git fetch --tags --force || {
                 error "git fetch failed. Check network / credentials."
                 exit 1
             }
-            git checkout "$UPGRADE_BRANCH" &>/dev/null || git checkout -b "$UPGRADE_BRANCH" "origin/${UPGRADE_BRANCH}" &>/dev/null
+            if ! git checkout "$UPGRADE_BRANCH" &>/dev/null \
+                && ! git checkout -b "$UPGRADE_BRANCH" "origin/${UPGRADE_BRANCH}" &>/dev/null; then
+                error "Could not switch ${DEPLOY_DIR} to branch '${UPGRADE_BRANCH}' (does it exist on the remote?)."
+                exit 1
+            fi
             info "Switched to branch '${UPGRADE_BRANCH}'."
         fi
         git fetch --tags --force || {
             error "git fetch failed. Check network / credentials."
             exit 1
         }
-        local LOCAL_MANAGE REMOTE_MANAGE
         LOCAL_MANAGE=$(git rev-parse HEAD 2>/dev/null)
         REMOTE_MANAGE=$(git rev-parse '@{u}' 2>/dev/null || echo "")
         if [[ -n "$REMOTE_MANAGE" && "$LOCAL_MANAGE" != "$REMOTE_MANAGE" ]]; then
@@ -667,14 +770,17 @@ cmd_upgrade() {
                 exit 1
             fi
             info "Management scripts updated: $(git rev-parse --short HEAD)"
-
-            # If tacctl's own code changed (entrypoint or lib/), re-run the new version
-            if ! git diff --quiet "$LOCAL_MANAGE" HEAD -- bin lib; then
-                info "tacctl updated — restarting upgrade with new version..."
-                exec "${DEPLOY_DIR}/bin/tacctl.sh" upgrade
-            fi
+        elif [[ "$LOCAL_MANAGE" != "$START_MANAGE" ]]; then
+            info "Management scripts updated: $(git rev-parse --short HEAD)"
         else
             info "Management scripts already up to date."
+        fi
+        # If tacctl's own code changed (entrypoint or lib/), re-run the new
+        # version. It runs without --branch: the clone is on that branch now,
+        # so it finds nothing more to pull and does not re-execute again.
+        if [[ -n "$START_MANAGE" ]] && ! git diff --quiet "$START_MANAGE" HEAD -- bin lib; then
+            info "tacctl updated — restarting upgrade with new version..."
+            exec "${DEPLOY_DIR}/bin/tacctl.sh" upgrade
         fi
     elif [[ ! -d "$DEPLOY_DIR" ]]; then
         info "Cloning management repo..."
@@ -726,23 +832,9 @@ cmd_upgrade() {
     # Man page: unconditional re-gzip (cheap, <10 KB) also heals hosts where the file is missing.
     install_man_page "${ACTIVE_DEPLOY_DIR}/man/tacctl.1"
 
-    # Update default config templates (only if user hasn't customized them)
-    if [[ -d "${ACTIVE_DEPLOY_DIR}/config/templates" ]]; then
-        mkdir -p "${TEMPLATE_DIR_LOCAL}"
-        for tmpl in "${ACTIVE_DEPLOY_DIR}/config/templates/"*.template; do
-            [[ -f "$tmpl" ]] || continue
-            local tmpl_name dest
-            tmpl_name=$(basename "$tmpl")
-            dest="${TEMPLATE_DIR_LOCAL}/${tmpl_name}"
-            if [[ ! -f "$dest" ]]; then
-                cp "$tmpl" "$dest"
-                info "  Installed: ${tmpl_name}"
-                SCRIPTS_UPDATED=$((SCRIPTS_UPDATED + 1))
-            else
-                update_if_changed "$tmpl" "$dest" "template: ${tmpl_name}"
-            fi
-        done
-    fi
+    # Device config templates: the ones the operator has not customised are
+    # refreshed; a customised one is kept, with this release's beside it.
+    templates_sync "$ACTIVE_DEPLOY_DIR" || warn "Could not update every config template in ${TEMPLATE_DIR_LOCAL}/."
 
     info "${SCRIPTS_UPDATED} file(s) updated."
 
@@ -754,6 +846,9 @@ cmd_upgrade() {
     UPGRADE_SUMMARY_HEAD=""
     UPGRADE_SUMMARY_NOTES=()
     backends_run upgrade finish
+    if (( ${#TEMPLATES_CUSTOMISED[@]} )); then
+        UPGRADE_SUMMARY_NOTES+=("Templates: kept ${#TEMPLATES_CUSTOMISED[@]} customised (${TEMPLATES_CUSTOMISED[*]}); this release's version of each is beside it as <name>.template.new (see above)")
+    fi
 
     echo ""
     echo "============================================"

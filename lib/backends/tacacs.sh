@@ -1371,7 +1371,8 @@ _tacacs_settings_apply() {
 
     if [[ "$target" == "all" || "$target" == "default" ]]; then
         unit="tacquito"
-        systemctl restart "$unit"
+        # A restart that fails is judged (and undone) by the check below.
+        systemctl restart "$unit" || true
         _tacacs_instances_sync
     else
         unit=$(_tacacs_unit "$target")
@@ -1382,7 +1383,7 @@ _tacacs_settings_apply() {
             return 0
         fi
         systemctl enable --quiet "$unit" 2>/dev/null || true
-        systemctl restart "$unit"
+        systemctl restart "$unit" || true
     fi
 
     if _tacacs_unit_settled "$unit"; then
@@ -1394,7 +1395,7 @@ _tacacs_settings_apply() {
     rm -rf "$keep"
     systemctl daemon-reload
     if [[ "$unit" == "tacquito" || -f "$(_tacacs_dropin "$target")" ]]; then
-        systemctl restart "$unit"
+        systemctl restart "$unit" || true
     else
         systemctl disable --quiet --now "$unit" 2>/dev/null || true
     fi
@@ -2241,6 +2242,11 @@ CONFIG_SYNC_RENDERED=0
 # when it does not, the file is the operator's to resolve and is left alone.
 config_sync_existing() {
     CONFIG_SYNC_RENDERED=0
+    # Without a store the legacy migrations below edit tacquito.yaml in place
+    # (the exec service name, then the commands: blocks); the daemon only
+    # needs a restart when they changed it, so the sum is taken before the first.
+    local sum_before=""
+    [[ -f "$STORE_FILE" ]] || sum_before=$(sha256sum "$CONFIG" 2>/dev/null | awk '{print $1}')
     # Pre-unified-commands installs kept operator-customized commands:
     # blocks in tacquito.yaml; scrape those back into tacctl.yaml as
     # overrides (idempotent: no-op once scraped).
@@ -2254,10 +2260,6 @@ config_sync_existing() {
     # `service=shell`, so authorization silently failed post-auth. Heal in place.
     conf_migrate_exec_service_name
     if [[ ! -f "$STORE_FILE" ]]; then
-        # The legacy migrations edit tacquito.yaml in place; the daemon only
-        # needs a restart when they changed it.
-        local sum_before
-        sum_before=$(sha256sum "$CONFIG" 2>/dev/null | awk '{print $1}')
         regenerate_tacquito_commands
         if [[ "$(sha256sum "$CONFIG" 2>/dev/null | awk '{print $1}')" != "$sum_before" ]]; then
             CONFIG_SYNC_RENDERED=1
@@ -2696,7 +2698,7 @@ _tacacs_install_start() {
 
     # --- Step 8: Start the service ---
     info "Starting tacquito..."
-    systemctl start tacquito.service
+    systemctl start tacquito.service || true
     sleep 2
 
     if systemctl is-active --quiet tacquito.service; then
@@ -2921,9 +2923,12 @@ _tacacs_units_rollback() {
 }
 
 # State the upgrade phases share: set by 'build', read by 'finish'.
+# SKIP_BUILD=false means the daemon has a new binary to be restarted on.
 SKIP_BUILD=""
 CURRENT_COMMIT=""
 NEW_COMMIT=""
+# 1 when that binary was built by an earlier run (see _tacacs_upgrade_build).
+TACQUITO_PREBUILT=0
 
 # upgrade preflight: nothing is touched when the build cannot run.
 _tacacs_upgrade_preflight() {
@@ -2942,7 +2947,16 @@ _tacacs_upgrade_preflight() {
 }
 
 # upgrade build: pull tacquito, rebuild when upstream or the patch overlay moved.
+#
+# The build runs before tacctl pulls itself, and a tacctl that changed
+# re-executes the upgrade, whose own build then finds the source current:
+# the binary the first run built is in place, but the daemon has not been
+# restarted on it. The first run's ${TACQUITO_BIN}.bak (removed only once
+# the daemon came up on the new binary, or put back when it did not) says
+# so, and this run takes over its restart and rollback. The commit it
+# started from is handed over in the environment, for the summary.
 _tacacs_upgrade_build() {
+    TACQUITO_PREBUILT=0
     # --- Record current version ---
     CURRENT_COMMIT=$(cd "$TACQUITO_SRC" && git rev-parse --short HEAD)
     info "Current commit: ${CURRENT_COMMIT}"
@@ -2964,14 +2978,25 @@ _tacacs_upgrade_build() {
     # new patch, tacctl self-updates and re-execs (below) before reaching here,
     # so PATCH_DIR is current by this point.
     if [[ "$LOCAL" == "$REMOTE" ]] && tacquito_patches_applied && [[ -f "$TACQUITO_BIN" ]]; then
+        if [[ -f "${TACQUITO_BIN}.bak" ]]; then
+            info "Tacquito source already up to date (${CURRENT_COMMIT}); patches applied. The binary built from it is not running yet."
+            SKIP_BUILD=false
+            TACQUITO_PREBUILT=1
+            CURRENT_COMMIT="${TACCTL_UPGRADE_TACQUITO_FROM:-$CURRENT_COMMIT}"
+            NEW_COMMIT=$(git rev-parse --short HEAD)
+            return 0
+        fi
         info "Tacquito source already up to date (${CURRENT_COMMIT}); patches applied."
         SKIP_BUILD=true
     else
         SKIP_BUILD=false
-        if [[ -f "$TACQUITO_BIN" ]]; then
+        # A .bak already there is the binary from before a build the daemon
+        # was not restarted on (above): the one to go back to, so it stays.
+        if [[ -f "$TACQUITO_BIN" && ! -f "${TACQUITO_BIN}.bak" ]]; then
             cp "$TACQUITO_BIN" "${TACQUITO_BIN}.bak"
             info "Backed up current binary to ${TACQUITO_BIN}.bak"
         fi
+        export TACCTL_UPGRADE_TACQUITO_FROM="${TACCTL_UPGRADE_TACQUITO_FROM:-$CURRENT_COMMIT}"
     fi
 
     if [[ "$SKIP_BUILD" == "false" ]]; then
@@ -3068,7 +3093,8 @@ _tacacs_upgrade_finish() {
     if [[ "$SKIP_BUILD" == "false" ]] || [[ "${TACACS_UNITS_STATE:-}" == "changed" ]] \
         || [[ "$STORE_STATE" == "flipped" ]] || [[ "$CONFIG_SYNC_RENDERED" == "1" ]]; then
         info "Restarting tacquito service..."
-        systemctl restart tacquito.service
+        # A restart that fails is judged, and rolled back, by the check below.
+        systemctl restart tacquito.service || true
         sleep 2
 
         if systemctl is-active --quiet tacquito.service; then
@@ -3091,7 +3117,7 @@ _tacacs_upgrade_finish() {
                 rolled+=("binary")
             fi
             if (( ${#rolled[@]} )); then
-                systemctl restart tacquito.service
+                systemctl restart tacquito.service || true
                 sleep 2
                 if systemctl is-active --quiet tacquito.service; then
                     warn "Rolled back to the previous ${rolled[*]}. Service is running."
@@ -3115,6 +3141,8 @@ _tacacs_upgrade_finish() {
 
     if [[ "$SKIP_BUILD" == "false" && "$CURRENT_COMMIT" != "$NEW_COMMIT" ]]; then
         UPGRADE_SUMMARY_HEAD="Upgrade Complete: ${CURRENT_COMMIT} -> ${NEW_COMMIT}"
+    elif (( TACQUITO_PREBUILT )); then
+        UPGRADE_SUMMARY_HEAD="Upgrade Complete: now running the tacquito binary built at ${CURRENT_COMMIT}"
     elif [[ "$SKIP_BUILD" == "false" ]]; then
         UPGRADE_SUMMARY_HEAD="Upgrade Complete: rebuilt at ${CURRENT_COMMIT} (patch overlay refreshed)"
     else

@@ -2,6 +2,15 @@
 
 Management toolkit for network-device AAA. Users, groups and scopes are kept once, in tacctl's own store, and served over **TACACS+** by [tacquito](https://github.com/facebookincubator/tacquito) (RFC 8907, by Facebook Incubator) and, when enabled, over **RADIUS** by a tacctl-owned FreeRADIUS instance. Provides a CLI for user, group, and configuration management with multi-vendor support for Cisco IOS/IOS-XE and Juniper Junos devices, plus WTI console servers and Linux hosts.
 
+## What's new in 0.1.16
+
+- **Membership lists use `replace` and `remove --all`.** `tacctl user scope <user> replace <scopes>` replaces a user's scopes and `user scope <user> remove --all` removes them all; `tacctl scope prefixes <scope> remove --all [--force]` removes every prefix (and with them the scope). `set` and `clear` on these two lists now fail with a message naming the new verb; update any scripts that call them.
+- **`scope show` no longer prints the scope secret**; it shows whether one is set and its length. `tacctl scope secret <scope> show` prints it.
+- **Customised templates survive upgrades.** A template you edited in `/etc/tacctl/templates/` is kept and the shipped version is written beside it as `<name>.template.new`; see [Custom Templates](#custom-templates).
+- **Upgrades restart a service only when it has something new to read**, and a failed restart rolls tacquito back to the previous binary. `tacctl upgrade --branch <name>` runs the new branch's own upgrade when tacctl's code differs.
+- **A `tacctl.yaml` that does not parse is never overwritten**: settings changes refuse with the parse error, and other commands warn and use the defaults.
+- RADIUS-only installs no longer need `tacquito.yaml`.
+
 ## What's new in 0.1.15
 
 This is a large release; read [Upgrading to 0.1.15](#upgrading-to-0115) before running `tacctl upgrade` on an existing server.
@@ -107,6 +116,7 @@ Which backends are enabled is `backends.enabled` in `tacctl.yaml` (default: `[ta
 
 - `backend enable <id>` installs the backend if it is not installed (asking first; `-y` skips), checks every backend's rendered files for hand edits, takes a snapshot, adds the id to `backends.enabled`, renders, then enables and starts the service, which must come up. Any failure puts `tacctl.yaml`, the store and every rendered file back and stops the service; software the install step put on the machine stays.
 - `backend disable <id>` stops the service and disables it at boot (asking first; `-y` skips). Its package and rendered files stay, and are no longer rendered or reported as drift; `backend enable` brings it back. Disabling the last enabled backend is refused, and so is disabling `tacacs` in legacy read-only mode.
+- Commands need the store (`/etc/tacctl/store.yaml`), or, on an install from before the store, its `tacquito.yaml`; with neither they stop with `Config not found … Is tacctl installed?`. `tacquito.yaml` is the `tacacs` backend's file, rendered from the store: a RADIUS-only install has none and runs every command without it. With `tacacs` enabled and `tacquito.yaml` missing, commands run and warn; `tacctl config render` (or any change) writes it again.
 - With more than one backend enabled, `tacctl status`, `tacctl config validate`, `tacctl config show` and `tacctl log …` print one labelled section per backend (`== Backend: radius (radius, freeradius) ==`); `log` takes `--backend <id>` to show one. With only `tacacs` enabled the output is laid out as before.
 - `backend list` and `backend status` are open to the read-only and operator tiers; `enable` and `disable` are superuser-only.
 
@@ -159,7 +169,7 @@ Every change goes one way: check that no generated file was edited by hand → s
 | `/etc/tacctl/tacctl.yaml` | Operator overrides — only keys you've changed. Absent keys inherit from the canonical defaults embedded in `lib/conf.sh`. Inspect with `tacctl config dump`; list canonical defaults with `tacctl config defaults`. |
 | `/etc/tacctl/rendered.json` | Checksums of the generated files (drift detection) |
 | `/etc/tacctl/backups/` | Snapshots (`<timestamp>/`), `legacy/` (old-style backups, pre-store config, displaced files), `password-dates/` (read by the importer) |
-| `/etc/tacctl/templates/` | Custom device config templates (override defaults) |
+| `/etc/tacctl/templates/` | Custom device config templates (override defaults); `.shipped.sha256` records what tacctl wrote there, `<name>.template.new` is a new release's version beside a template you customized (see [Custom Templates](#custom-templates)) |
 | `/etc/tacctl/linux-hosts`, `/etc/tacctl/linux-uids` | Enrolled Linux hosts; the UID/GID each user gets on every host |
 | `/var/lib/tacctl/linux/` | pam_tacplus source tarball and container-built modules |
 | `/etc/sudoers.d/tacctl`, `/etc/sudoers.d/tacctl-tiers` | Optional sudoers rules (`tacctl config sudoers install`, `… tiers install`) |
@@ -246,16 +256,16 @@ tacctl config juniper --scope lab_east
 Scope management commands:
 ```
 tacctl scope list                              # name, prefix list, user count, default marker
-tacctl scope show <name>                       # full detail + raw secret + users + default-ness
+tacctl scope show <name>                       # full detail + secret length/posture (not its value) + users + default-ness
 tacctl scope add <name> --prefixes <cidrs>     # --secret <v> | --secret generate | --protocols | --vendor-attrs | --default
 tacctl scope remove <name> [--force]           # refuses if users reference it; --force strips them
 tacctl scope rename <old> <new>                # rewrites user refs, default marker and per-scope settings
 tacctl scope default [<name>]                  # show / set the default
 tacctl scope lookup <ip|cidr>                  # trace which scope owns an address (+ shadow overlaps)
-tacctl scope prefixes <name> list|add|remove|clear [--force]
+tacctl scope prefixes <name> list|add <cidrs>|remove <cidrs>|remove --all [--force]
 tacctl scope secret <name>   show|set <v>|generate
 tacctl scope protocols <name> list|set <csv>|clear
-tacctl user scope <user>     list|add|remove|set|clear
+tacctl user scope <user>     list|add <s>|remove <s>|replace <s>|remove --all
 ```
 
 ### Configure connection filters
@@ -433,7 +443,7 @@ tacctl config sudoers tiers install   # write /etc/sudoers.d/tacctl-tiers
 | `tac-operator` | operator (7-14) | read-only set plus `log tail/search/failures/accounting`, `config validate`, `backup list` |
 | `tac-superuser` | superuser (15) | everything, plus full `sudo` |
 
-Lower-tier rules are `NOPASSWD`. Anything that prints a shared secret or a password hash (`config cisco|juniper|wti`, `scope show`, `scope secret`, `backup diff`, `config dump`, `store show`) stays superuser-only, and so does everything that changes anything. tacctl also checks the tier itself on every run, taking it from the user's group in the store rather than from local group membership, and logs denials to syslog. Callers who are not in the local group `tac-users` (root, local admins) are not restricted.
+Lower-tier rules are `NOPASSWD`. Anything that prints a shared secret or a password hash (`config cisco|juniper|wti`, `scope secret`, `backup diff`, `config dump`, `store show`) stays superuser-only, as does `scope show`, and so does everything that changes anything. tacctl also checks the tier itself on every run, taking it from the user's group in the store rather than from local group membership, and logs denials to syslog. Callers who are not in the local group `tac-users` (root, local admins) are not restricted.
 
 `tacctl passwd` (no arguments) lets any tier change their own password: it acts only on the user who invoked sudo and asks for the current password first.
 
@@ -529,10 +539,11 @@ These patterns apply uniformly across every subcommand family:
 
 - **No arguments** — dispatcher commands (`user`, `group`, `config`, `scope`, `host`, `backend`, `store`, `log`, `backup`, `hash`, and nested dispatchers like `scope prefixes` / `scope secret` / `scope aaa-order` / `scope exec-timeout` / `scope tacacs-group` / `scope radius-group` / `scope auth-method` / `scope vendor-attrs` / `scope devices` / `scope mgmt-acl` / `user scope` / `group privilege` / `config linux`) print their own usage and exit without side effects. Scalar getter/setters (`config loglevel`, `config listen`, `config metrics`, `config password-age`, `config bcrypt-cost`, `config password-min-length`, `config secret-min-length`, `config branch`, `scope default`, `host default-method`) print the current value when called with no arguments.
 - **Filters and opt-ins** — a setting that narrows something down is a *filter*: its verbs are `set` and `clear`, and empty (cleared) means everything (`scope protocols`, `config allow`, `config deny`). A setting that turns something on is an *opt-in*: its verbs are `enable` and `disable`, and nothing is on until it is enabled (`backend enable|disable`, `scope vendor-attrs`). An opt-in has no `set`, `clear` or `none`, so that nothing in it can read as "empty means all".
+- **Membership lists** — a list that names exactly what is in is a *membership list*, and empty means nothing, not everything (`user scope`, the scopes a user can authenticate from: none means nowhere; `scope prefixes`, the clients a scope serves: emptying it removes the scope). Its verbs are `add` and `remove`: `remove --all` empties it, and `user scope` replaces its whole list with `replace`.
 - **Multi-item input** — every `add` / `remove` that takes a CIDR, a scope name, or a Cisco exec command accepts either a single value or a comma-separated list (`a,b,c`). Every input is validated first; a bad entry aborts the entire operation without writing anything.
 - **CIDR semantics** — every CIDR-list subcommand (`scope prefixes`, `config allow`, `config deny`, `config mgmt-acl`) canonicalizes input before storage: `10.1.5.5/24` becomes `10.1.5.0/24`, `2001:DB8::/32` becomes `2001:db8::/32`. Exact duplicates (after canonicalization) are rejected as no-ops on `add`. Overlapping CIDRs of different prefix lengths coexist (`10.0.0.0/8` and `10.99.0.0/16` can both be present). Stored order is by broadcast-address ascending (IPv4 before IPv6): disjoint ranges sort by their end address, and an overlapping subnet falls immediately above its containing supernet (the subnet's range ends before the supernet's). This groups related CIDRs together and gives tacquito's provider selector the "most-specific first among overlaps" ordering it needs so a narrower scope wins a first-match lookup over a broader scope that contains it.
 - **Scope prefix invariants** — every CIDR belongs to **exactly one** scope after canonicalization. Adding a prefix already claimed by a different scope is rejected with a message naming the owner; you must `tacctl scope prefixes <owner> remove <cidr>` before re-adding it elsewhere. Overlapping prefixes *across* scopes are allowed and routed correctly (e.g. `10.5.0.0/16` in `staging` coexists with `10.0.0.0/8` in `lab`). In the rendered `tacquito.yaml` a scope with N prefixes becomes N `secrets:` entries sharing the same `name:` and `secret.key`, sorted globally by prefix specificity (v4 before v6, smaller broadcast first), so tacquito's slice-ordered walk picks the narrowest scope. The CLI shows the logical one-bundle-per-scope view.
-- **`clear`** — `clear` subcommands always prompt with `[y/N]` and print a warning describing the resulting posture (e.g. "no clients can connect" or "fails open"). Every prompt cancels, with a message, when standard input is closed.
+- **`clear` and `remove --all`** — `clear` and `remove --all` subcommands always prompt with `[y/N]` and print a warning describing the resulting posture (e.g. "no clients can connect" or "fails open"). Every prompt cancels, with a message, when standard input is closed.
 - **Service restart** — changes to the store, and to the `tacctl.yaml` settings a backend renders (command rules, listeners, `backends.*`), re-render every enabled backend and restart the ones whose files changed. Settings only device configs read (mgmt-acl permits + names, priv-exec mappings, per-scope AAA order, exec timeout, group labels) and tacctl's own tunables (bcrypt cost, password age, …) restart nothing.
 - **Flags** — long-form flags (`--hash`, `--scopes`, `--scope`, `--prefixes`, `--secret`, `--protocols`, `--vendor-attrs`, `--match`, `--action`, `--branch`, `--protocol`, `--method`, `--backend`, `--listener`) take a single argument; `--default`, `--force`, `--legacy`, `--check`, `--replace`, `--json`, `--local`, `--all` and `-y` take none. Required positional args come before flags.
 
@@ -581,8 +592,8 @@ user verify <name>                                Show user details and verify p
 user scope <name>                                 List the user's scopes (orphan refs flagged red)
 user scope <name> add <s>[,s...]                  Grant one or more scopes
 user scope <name> remove <s>[,s...]               Revoke one or more scopes
-user scope <name> set <s>[,s...]                  Replace the full scope list
-user scope <name> clear                           Wipe all scopes (with confirmation)
+user scope <name> replace <s>[,s...]              Replace the full scope list
+user scope <name> remove --all                    Revoke every scope (with confirmation)
 ```
 
 ### Group Commands — `tacctl group`
@@ -725,6 +736,8 @@ Merge semantics:
 
 **Write-time validation.** Every `tacctl config <setter>` invocation (and direct `conf_set` / `conf_set_list` calls) check the value against a schema table defined next to the defaults. Out-of-range numbers, bad ACL names, malformed CIDRs, invalid Cisco command strings, colliding or malformed listeners, and typo'd keys are rejected with a clear error before anything is written. `tacctl config validate` runs the same schema over `tacctl.yaml` to catch hand-edits.
 
+**A `tacctl.yaml` that does not parse** is never written into: every setter refuses with `tacctl.yaml: could not parse <path>: line L, column C: <problem>` and exits non-zero, leaving the file and every setting in it as they are. Commands that only read carry on with the defaults and say so once, on stderr. Fix or remove the file; `tacctl config validate` reports the same line. A change to users, groups or scopes is refused as well, since every backend's config is rendered from the file.
+
 **Read path caching.** Every read merges defaults + overrides and walks the dotted path, but the merged view is cached per script invocation (`_TACCTL_CFG_CACHE`). Commands that touch many tunables (`config cisco`, `status`, `config show`) load the merged YAML once and then answer from memory. Writes invalidate the cache.
 
 View effective posture with `tacctl config dump`; read individual values with `tacctl config get <path>` / `tacctl config get-list <path>`.
@@ -734,14 +747,15 @@ View effective posture with `tacctl config dump`; read individual values with `t
 ```
 scope list                                               One row per scope (deduplicated; prefixes joined)
 scope routing                                            One row per (scope, prefix) — first-match order
-scope show <name>                                        Full detail: prefixes, users, raw secret + posture, default-ness, protocols, auth-method, vendor attributes, tagged addresses
+scope show <name>                                        Full detail: prefixes, users, secret length + posture (the value: `scope secret <name> show`), default-ness, protocols, auth-method, vendor attributes, tagged addresses
 scope add <name> --prefixes <cidrs>                      Create a new scope
           [--secret <value>|--secret generate] [--protocols <csv>] [--vendor-attrs <csv>] [--default]
 scope remove <name> [--force]                            Delete. Refuses if users reference it unless --force
 scope rename <old> <new>                                 Rewrites every user's scopes[], the default marker and every per-scope setting
 scope default [<name>]                                   Show / set the default scope
 scope lookup <ip|cidr>                                   Resolve an IP/CIDR to the owning scope (+ shadowed overlaps, + its vendor tag)
-scope prefixes <name> list|add|remove|clear [--force]    Per-scope CIDR list (add/remove accept comma-lists; clear refuses if users reference unless --force)
+scope prefixes <name> list|add|remove <cidrs>            Per-scope CIDR list (add/remove accept comma-lists; the last prefix cannot be removed this way)
+scope prefixes <name> remove --all [--force]             Remove every prefix, which removes the scope (confirms; refuses if users reference it unless --force, which strips it from them)
 scope secret   <name> show|set <value>|generate          Per-scope shared secret (show prints the raw value + length/posture)
 scope protocols <name> list|set <csv>|clear              Limit the scope to some protocols (tacacs, radius). A filter: empty (`clear`) means every enabled backend serves it
 scope vendor-attrs <name> [enable|disable <csv>]         RADIUS: the vendors (cisco, juniper, wti) whose privilege attribute an Access-Accept carries for the scope's devices. Opt-in: a new scope sends none ("not sent"); there is no set/clear. Stored in store.yaml, so a change re-renders and restarts the RADIUS backend. TACACS+ is not affected. See "What an Access-Accept carries"
@@ -757,7 +771,7 @@ scope mgmt-acl <name> cisco-name|juniper-name [label]    Per-scope mgmt-acl / fi
 
 **Connection filters:** `deny` takes precedence over `allow`. Both empty = all connections accepted.
 
-**Settings stored under a scope's name** in `tacctl.yaml` (`aaa.order`, `exec_timeout`, `tacacs_group`, `radius_group`, `scope_auth_method`, `scope_mgmt_acl.names.cisco|juniper`, `scope_mgmt_acl.permits`) follow the scope on `scope rename` and are removed with it by `scope remove` (and `scope prefixes clear`), so a new scope of the same name starts from the defaults. Its `protocols`, `vendor-attrs` and `devices` are part of its entry in `store.yaml` and do the same.
+**Settings stored under a scope's name** in `tacctl.yaml` (`aaa.order`, `exec_timeout`, `tacacs_group`, `radius_group`, `scope_auth_method`, `scope_mgmt_acl.names.cisco|juniper`, `scope_mgmt_acl.permits`) follow the scope on `scope rename` and are removed with it by `scope remove` (and `scope prefixes remove --all`), so a new scope of the same name starts from the defaults. Its `protocols`, `vendor-attrs` and `devices` are part of its entry in `store.yaml` and do the same.
 
 ### Host Commands — `tacctl host`
 
@@ -931,13 +945,20 @@ The generated Cisco, Juniper, and WTI output is rendered from template files usi
 | `${FALLBACK_LOCAL}` | WTI | `On (Transport Failure)` or `On (All Failures)`, from the scope's `aaa-order` |
 | `${SERVICE_NAME}` | WTI | Authorization service name the unit should send (`shell`) |
 
-**To customize:** copy the default template to the override location and edit it:
+**To customize:** edit the copy in the override location (install puts one there; if it is missing, copy the default first):
 ```bash
 sudo cp /opt/tacctl/config/templates/cisco.template /etc/tacctl/templates/cisco.template
 sudo vi /etc/tacctl/templates/cisco.template
 ```
 
-**To reset to defaults:** remove the override file:
+**On upgrade:** a template in `/etc/tacctl/templates/` that you have not changed is replaced by the new release's. tacctl records what it wrote there in `/etc/tacctl/templates/.shipped.sha256` (`sha256sum` format; `cd /etc/tacctl/templates && sha256sum -c .shipped.sha256` lists which are still as shipped). A template you changed is left as it is: the new release's version is written beside it as `<name>.template.new`, and the upgrade warns, naming both files. A `.new` file is never used for rendering. Compare and merge what you want, or take the new version as it is:
+```bash
+sudo diff /etc/tacctl/templates/cisco.template /etc/tacctl/templates/cisco.template.new
+sudo mv /etc/tacctl/templates/cisco.template.new /etc/tacctl/templates/cisco.template
+```
+Until you do, each upgrade warns again and refreshes the `.new` file. A template with no record there counts as unchanged when it is byte for byte a version tacctl shipped (according to the git history in `/opt/tacctl`).
+
+**To reset to defaults:** remove the override file (and its `.new`, if any). The repo's default is used, and the next upgrade puts a fresh copy of it back:
 ```bash
 sudo rm /etc/tacctl/templates/cisco.template
 ```
@@ -956,12 +977,12 @@ tacctl upgrade --branch develop
 The upgrade command:
 1. Moves tacctl state into `/etc/tacctl` if it is not there yet (idempotent)
 2. Pulls latest tacquito server source and rebuilds the binary (if upstream or the patch overlay changed)
-3. Pulls latest management scripts from `rett/tacctl` on GitHub, and re-executes itself if tacctl was updated
+3. Pulls latest management scripts from `rett/tacctl` on GitHub (after switching to the `--branch` given), and re-executes itself if that changed tacctl's own code
 4. Installs packages a newer tacctl needs
 5. Brings the configuration in line with this release: re-renders each enabled backend from the store (RADIUS: and restarts it when its files or its unit drop-in changed); without a store, runs the in-place migrations of `tacquito.yaml`
-6. Updates system files (unit files and drop-ins, logrotate, completion, man page, templates you have not customized) if changed
+6. Updates system files (unit files and drop-ins, logrotate, completion, man page, templates you have not customized) if changed; a template you customized is kept, with the new release's version beside it as `<name>.template.new` (see [Custom Templates](#custom-templates))
 7. For an install without a store: moves it into the store, behind the gate described below
-8. Restarts tacquito only if something changed, and rolls the binary and unit files back if it does not come up
+8. Restarts tacquito only if what it reads changed (its binary, a unit or drop-in, or `tacquito.yaml`), and rolls the binary and unit files back if it does not come up. A new README, logrotate file, completion or template restarts nothing, and neither does an upgrade with nothing new
 
 Use `--branch` to switch to a different branch (e.g., `develop` for pre-release features). You can also switch branches without upgrading: `tacctl config branch <name>`.
 

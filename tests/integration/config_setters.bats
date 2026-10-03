@@ -197,3 +197,53 @@ setup() {
     assert_failure
     assert_output --partial "Invalid subcommand"
 }
+
+# --- a tacctl.yaml that does not parse ---------------------------------------
+
+# A tacctl.yaml with settings in it and a syntax error after them.
+_broken_overrides() {
+    OVERRIDES="${TACCTL_STATE_DIR}/tacctl.yaml"
+    printf 'password:\n  max_age_days: 30\nbcrypt:\n  cost: 14\ncommands: [unterminated\n' > "$OVERRIDES"
+    cp "$OVERRIDES" "${BATS_TEST_TMPDIR}/overrides.before"
+}
+
+@test "config setters: a tacctl.yaml that does not parse is refused, named, and not replaced" {
+    _broken_overrides
+    local cmd
+    for cmd in "password-age 45" "bcrypt-cost 13" "password-min-length 16" "secret-min-length 20"; do
+        # shellcheck disable=SC2086
+        run "$TACCTL_BIN_SCRIPT" config $cmd
+        assert_failure 1
+        assert_output --partial "tacctl.yaml: could not parse ${OVERRIDES}: line 6, column 1:"
+        assert_output --partial "Fix or remove the file"
+        refute_output --partial "set to"
+        cmp "$OVERRIDES" "${BATS_TEST_TMPDIR}/overrides.before"
+    done
+    run "$TACCTL_BIN_SCRIPT" scope aaa-order lab local-first
+    assert_failure
+    assert_output --partial "could not parse ${OVERRIDES}"
+    cmp "$OVERRIDES" "${BATS_TEST_TMPDIR}/overrides.before"
+}
+
+@test "read commands with a tacctl.yaml that does not parse: defaults, one warning on stderr, clean stdout" {
+    bats_require_minimum_version 1.5.0
+    _broken_overrides
+    run --separate-stderr "$TACCTL_BIN_SCRIPT" config get bcrypt.cost
+    assert_success
+    assert_output "12"
+    [[ "$(grep -c "could not parse ${OVERRIDES}" <<< "$stderr")" == "1" ]]
+    [[ "$stderr" == *"using the defaults"* ]]
+    run --separate-stderr "$TACCTL_BIN_SCRIPT" config password-age
+    assert_success
+    assert_output --partial "90 days"
+    refute_output --partial "could not parse"
+    [[ "$(grep -c "could not parse" <<< "$stderr")" == "1" ]]
+    run --separate-stderr "$TACCTL_BIN_SCRIPT" user list
+    assert_success
+    refute_output --partial "could not parse"
+    [[ "$(grep -c "could not parse" <<< "$stderr")" == "1" ]]
+    cmp "$OVERRIDES" "${BATS_TEST_TMPDIR}/overrides.before"
+    # config validate reports it, on one line.
+    run "$TACCTL_BIN_SCRIPT" config validate
+    assert_line --partial "INVALID — could not parse ${OVERRIDES}: line 6, column 1:"
+}

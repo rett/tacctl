@@ -450,8 +450,8 @@ cmd_config_validate() {
             done <<< "$schema_errors"
         fi
     else
-        echo -e "  ${RED}tacctl.yaml:${NC}          INVALID"
-        python3 -c "import yaml; yaml.safe_load(open('$TACCTL_OVERRIDES_FILE'))" 2>&1 | head -3
+        # One line: "could not parse <file>: line L, column C: <problem>".
+        echo -e "  ${RED}tacctl.yaml:${NC}          INVALID — $(_conf_validate_overrides_file 2>&1 | head -1)"
         errors=$((errors + 1))
     fi
 

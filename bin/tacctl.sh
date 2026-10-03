@@ -16,9 +16,9 @@
 #   ./tacctl.sh user disable <username>
 #   ./tacctl.sh user enable <username>
 #   ./tacctl.sh user verify <username>
-#   ./tacctl.sh user scope <username> {list|add|remove|set|clear}
+#   ./tacctl.sh user scope <username> {list|add|remove|replace|remove --all}
 #   ./tacctl.sh scope {list|show|add|remove|rename|default}
-#   ./tacctl.sh scope prefixes <name> {list|add|remove|clear}
+#   ./tacctl.sh scope prefixes <name> {list|add|remove|remove --all [--force]}
 #   ./tacctl.sh scope secret   <name> {show|set|generate}
 #   ./tacctl.sh backend {list|status [<id>]|enable <id>|disable <id>}
 #   ./tacctl.sh store {show|import|rollback}
@@ -135,8 +135,9 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
             cmd_group "$@"
             ;;
         config)
-            # 'config render' rebuilds tacquito.yaml from the store, so it
-            # must work when that file is the thing that is missing.
+            # 'config render' rebuilds tacquito.yaml from the store: with a
+            # store it skips preflight, which would warn that the file it is
+            # about to write is missing.
             if [[ "${1:-}" != "render" || ! -f "$STORE_FILE" ]]; then
                 preflight
             fi

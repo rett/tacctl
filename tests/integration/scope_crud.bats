@@ -122,13 +122,36 @@ setup() {
     [[ "$prod_rows" == "2" ]]
 }
 
-@test "scopes show: prints a scope's prefixes, secret, and user count" {
+@test "scopes show: prints a scope's prefixes and the secret's length, never its value" {
     "$TACCTL_BIN_SCRIPT" scope add prod \
         --prefixes 10.0.0.0/8 --secret "prod-secret-1234567890abcdef"
     run "$TACCTL_BIN_SCRIPT" scope show prod
     assert_success
     assert_output --partial "10.0.0.0/8"
+    refute_output --partial "prod-secret-1234567890abcdef"
+    assert_output --partial "(set, 28 chars)"
+    assert_output --partial "show with 'tacctl scope secret prod show'"
+    # The command it points to is the one that reveals it.
+    run "$TACCTL_BIN_SCRIPT" scope secret prod show
+    assert_success
     assert_output --partial "prod-secret-1234567890abcdef"
+}
+
+@test "scope show: a short or placeholder secret is flagged, still without its value" {
+    "$TACCTL_BIN_SCRIPT" scope add ph \
+        --prefixes 198.51.100.0/24 --secret "REPLACE_WITH_REAL_SECRET" > /dev/null
+    run "$TACCTL_BIN_SCRIPT" scope show ph
+    assert_success
+    refute_output --partial "REPLACE_WITH_REAL_SECRET"
+    assert_output --partial "PLACEHOLDER, 24 chars"
+    # A secret below the floor (raised after the scope was made).
+    "$TACCTL_BIN_SCRIPT" scope add short \
+        --prefixes 198.51.101.0/24 --secret "short-secret-0123456" > /dev/null
+    "$TACCTL_BIN_SCRIPT" config secret-min-length 32 > /dev/null
+    run "$TACCTL_BIN_SCRIPT" scope show short
+    assert_success
+    refute_output --partial "short-secret-0123456"
+    assert_output --partial "(set, 20 chars, below min 32)"
 }
 
 @test "scope show: includes per-scope AAA order and exec-timeout" {

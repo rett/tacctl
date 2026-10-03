@@ -380,6 +380,20 @@ assert_stopped() {
     [[ "$CONFIG_SYNC_RENDERED" == "0" ]]
 }
 
+@test "legacy: the exec service-name migration alone asks for a restart too" {
+    place_fixture tacquito.legacy-exec.yaml
+    state_migrate
+    config_sync_existing > /dev/null
+    # The commands: blocks are current now; only the service name goes back.
+    sed -i -E '/^exec_\w+: &exec_\w+$/{n;s/^  name: shell$/  name: exec/}' "$CONFIG"
+    grep -q '^  name: exec$' "$CONFIG"
+    config_sync_existing > /dev/null
+    ! grep -q '^  name: exec$' "$CONFIG"
+    [[ "$CONFIG_SYNC_RENDERED" == "1" ]]
+    config_sync_existing > /dev/null
+    [[ "$CONFIG_SYNC_RENDERED" == "0" ]]
+}
+
 @test "re-run: a store beside a never-rendered config that says something else leaves that config alone" {
     fake_tacquito serve
     place_fixture tacquito.multiscope.yaml

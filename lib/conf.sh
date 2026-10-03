@@ -115,6 +115,39 @@ commands:
 YAML
 }
 
+# --- Reading the overrides file ------------------------------------------
+# Python shared by every reader and the writer: load_overrides(path) returns
+# (mapping, problem). A missing or empty file is ({}, ''). A file that does
+# not parse, or whose top level is not a mapping, is ({}, '<why>') with the
+# reason on one line: readers carry on with the defaults and say so once,
+# the writer refuses (it would otherwise replace the file with only the key
+# it was asked to set).
+_conf_overrides_py() {
+    cat <<'PY'
+import os, yaml
+
+def load_overrides(path):
+    if not path or not os.path.exists(path):
+        return {}, ''
+    try:
+        with open(path) as f:
+            doc = yaml.safe_load(f)
+    except yaml.YAMLError as e:
+        why = ' '.join(str(getattr(e, 'problem', None) or e).split())
+        mark = getattr(e, 'problem_mark', None)
+        if mark is not None:
+            why = f"line {mark.line + 1}, column {mark.column + 1}: {why}"
+        return {}, why
+    except (OSError, UnicodeDecodeError) as e:
+        return {}, ' '.join(str(e).split())
+    if doc is None:
+        return {}, ''
+    if not isinstance(doc, dict):
+        return {}, f"the top level is a {type(doc).__name__}, not a mapping"
+    return doc, ''
+PY
+}
+
 # --- Cache control ---------------------------------------------------------
 # _TACCTL_CFG_CACHE holds the merged defaults+overrides as a JSON string.
 # Empty = cold cache (next read re-merges). _conf_invalidate is called from
@@ -123,23 +156,23 @@ _TACCTL_CFG_CACHE=""
 # It also drops the list of enabled backends (lib/backend.sh), which is read
 # from the same file.
 _conf_invalidate() { _TACCTL_CFG_CACHE=""; _BACKENDS_LOADED=0; }
+# Set once the warning about an overrides file that does not parse has been
+# given. The first read is at source time, in the command's own shell, so
+# the reads in later $(...) subshells inherit it and stay quiet.
+_TACCTL_CONF_WARNED=0
 
 _conf_load_cache() {
     [[ -n "$_TACCTL_CFG_CACHE" ]] && return 0
     # One python invocation: load defaults (from conf_emit_defaults output
     # on a throwaway fd) + overrides file, deep-merge, dump as JSON to
     # stdout. The merged JSON stays small (<2 KB for typical installs).
-    _TACCTL_CFG_CACHE=$(python3 - <(conf_emit_defaults) "${TACCTL_OVERRIDES_FILE:-}" <<'PY'
-import json, os, sys, yaml
+    # Line 1 is why the overrides file could not be read (empty when it
+    # could), line 2 the merged view.
+    local out problem
+    out=$(python3 - <(conf_emit_defaults) "${TACCTL_OVERRIDES_FILE:-}" <<PY
+$(_conf_overrides_py)
+import json, sys
 defaults_path, overrides_path = sys.argv[1:3]
-def load(p):
-    if p and os.path.exists(p):
-        try:
-            with open(p) as f:
-                return yaml.safe_load(f) or {}
-        except Exception:
-            return {}
-    return {}
 def merge(a, b):
     out = dict(a)
     for k, v in (b or {}).items():
@@ -148,9 +181,23 @@ def merge(a, b):
         else:
             out[k] = v
     return out
-print(json.dumps(merge(load(defaults_path), load(overrides_path))))
+defaults, _ = load_overrides(defaults_path)
+overrides, problem = load_overrides(overrides_path)
+print(problem)
+print(json.dumps(merge(defaults, overrides)))
 PY
 )
+    if [[ "$out" != *$'\n'* ]]; then
+        _TACCTL_CFG_CACHE=""
+        return 0
+    fi
+    problem=${out%%$'\n'*}
+    _TACCTL_CFG_CACHE=${out#*$'\n'}
+    if [[ -n "$problem" ]] && (( ! _TACCTL_CONF_WARNED )); then
+        _TACCTL_CONF_WARNED=1
+        warn "tacctl.yaml: could not parse ${TACCTL_OVERRIDES_FILE}: ${problem}; using the defaults (fix or remove the file; 'tacctl config validate' checks it)." >&2
+    fi
+    return 0
 }
 
 # Walk the cached merged view along a dotted path.
@@ -757,21 +804,23 @@ PY
 _conf_write() {
     local mode="$1" path="$2" value="${3:-}" items_file="${4:-}"
     mkdir -p "$(dirname "$TACCTL_OVERRIDES_FILE")"
+    # Exit 3, with the reason on stdout, is an overrides file that does not
+    # parse: nothing is written.
+    local problem rc=0
     # shellcheck disable=SC2016
-    python3 - <(conf_emit_defaults) "$TACCTL_OVERRIDES_FILE" "$mode" "$path" "$value" "$items_file" <<PY
+    problem=$(python3 - <(conf_emit_defaults) "$TACCTL_OVERRIDES_FILE" "$mode" "$path" "$value" "$items_file" <<PY
 $(_conf_schema_py)
+$(_conf_overrides_py)
 
 import os, sys, tempfile, yaml
 defaults_path, overrides_path, mode, path, value, items_file = sys.argv[1:7]
 
-def load(p):
-    if p and os.path.exists(p):
-        try:
-            with open(p) as f:
-                return yaml.safe_load(f) or {}
-        except Exception:
-            return {}
-    return {}
+# A file that does not parse is refused before anything else: read as
+# empty, it would be replaced by one holding only this key.
+overrides, problem = load_overrides(overrides_path)
+if problem:
+    print(problem)
+    sys.exit(3)
 
 def get_nested(d, path):
     cur = d
@@ -869,8 +918,7 @@ else:
     print(f"_conf_write: bad mode {mode!r}", file=sys.stderr)
     sys.exit(2)
 
-defaults = load(defaults_path)
-overrides = load(overrides_path)
+defaults, _ = load_overrides(defaults_path)
 
 # Revert-to-default prune: compare the new value against the YAML
 # defaults tree first, then fall back to the schema's implicit default
@@ -924,7 +972,12 @@ tmp.close()
 os.chmod(tmp.name, 0o640)
 os.rename(tmp.name, overrides_path)
 PY
-    local rc=$?
+) || rc=$?
+    if (( rc == 3 )); then
+        error "tacctl.yaml: could not parse ${TACCTL_OVERRIDES_FILE}: ${problem}"
+        error "Fix or remove the file ('tacctl config validate' checks it); nothing was written."
+        return 1
+    fi
     # Ownership matches tacquito.yaml when we're installed; silent-fail in tests.
     chown tacquito:tacquito "$TACCTL_OVERRIDES_FILE" 2>/dev/null || true
     _conf_invalidate
@@ -941,11 +994,10 @@ conf_unset()    { _conf_write unset    "$1"; }
 conf_has_override() {
     local path="$1"
     [[ -f "$TACCTL_OVERRIDES_FILE" ]] || return 1
-    python3 - "$TACCTL_OVERRIDES_FILE" "$path" <<'PY'
-import os, sys, yaml
-with open(sys.argv[1]) as f:
-    d = yaml.safe_load(f) or {}
-cur = d
+    python3 - "$TACCTL_OVERRIDES_FILE" "$path" <<PY
+$(_conf_overrides_py)
+import sys
+cur, _ = load_overrides(sys.argv[1])
 for part in sys.argv[2].split('.'):
     if isinstance(cur, dict) and part in cur:
         cur = cur[part]
@@ -985,13 +1037,13 @@ _conf_validate_overrides_file() {
     python3 - "$TACCTL_OVERRIDES_FILE" <<PY
 $(_conf_schema_py)
 
-import sys, yaml
+$(_conf_overrides_py)
+
+import sys
 overrides_path = sys.argv[1]
-try:
-    with open(overrides_path) as f:
-        data = yaml.safe_load(f) or {}
-except Exception as e:
-    print(f"could not parse {overrides_path}: {e}")
+data, problem = load_overrides(overrides_path)
+if problem:
+    print(f"could not parse {overrides_path}: {problem}")
     sys.exit(0)
 
 # Walk every leaf (scalar or list) in the overrides and run it through

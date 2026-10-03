@@ -1,6 +1,6 @@
 .\" Manual page for tacctl, the management CLI for TACACS+ (tacquito) and RADIUS (FreeRADIUS).
 .\" Render locally with: groff -man -Tascii man/tacctl.1 | less
-.TH TACCTL 1 "2026-10-02" "tacctl 0.1.15" "tacctl Manual"
+.TH TACCTL 1 "2026-10-02" "tacctl 0.1.16" "tacctl Manual"
 .SH NAME
 tacctl \- manage users, groups and scopes for TACACS+ (tacquito) and RADIUS (FreeRADIUS)
 .SH SYNOPSIS
@@ -101,9 +101,15 @@ changed, pull the management scripts (and re-execute when tacctl itself
 changed), install packages the new release needs, bring every enabled
 backend's configuration in line with the release (a re-render from the
 store; RADIUS restarts when its files or unit drop-in changed), refresh
-system files, move an install that has no store yet into the store behind a
-gate, and restart tacquito once if anything changed (rolling the binary and
-unit files back if it does not come up). Listener, log-level and metrics
+system files (a device template you changed is kept; see
+.I /etc/tacctl/templates/
+under
+.BR FILES ),
+move an install that has no store yet into the store behind a
+gate, and restart tacquito once if its binary, a unit or drop-in, or its
+configuration changed (rolling the binary and unit files back if it does not
+come up). A new README, logrotate file, completion or template restarts
+nothing, and neither does an upgrade with nothing new. Listener, log-level and metrics
 settings live in
 .I tacctl.yaml
 and survive. See
@@ -211,10 +217,11 @@ Move a user to a different group without changing the password.
 .BI "user verify " name
 Show user details and verify the password interactively.
 .TP
-.B "user scope " \fIname\fR " " [ "list " | " add " \fIs\fR[,s...] | " remove " \fIs\fR[,s...] | " set " \fIs\fR[,s...] | " clear " ]
+.B "user scope " \fIname\fR " " [ "list " | " add " \fIs\fR[,s...] | " remove " \fIs\fR[,s...] | " replace " \fIs\fR[,s...] | " remove \-\-all" ]
 Manage which scopes
 .I name
-can authenticate from. With no subcommand (or
+can authenticate from. This is a membership list: a user with no scopes
+can authenticate nowhere. With no subcommand (or
 .BR list ),
 prints the user's current scopes with orphan detection (any scope
 name that does not resolve to an existing scope is flagged red).
@@ -222,11 +229,11 @@ name that does not resolve to an existing scope is flagged red).
 and
 .B remove
 accept one or a comma-separated list of existing scope names;
-.B set
+.B replace
 replaces the whole list;
-.B clear
-empties it (with confirmation).
-.B clear
+.B "remove \-\-all"
+empties it (with confirmation) and takes no scope names.
+.B "remove \-\-all"
 preserves the bcrypt hash — distinct from
 .B user disable
 in that intent is "temporarily revoke scope access" rather than
@@ -1072,6 +1079,23 @@ and for
 on an install that has no store yet (legacy read-only mode, where
 .I tacquito.yaml
 is still the source of truth).
+.IP
+Commands need the store
+.RI ( /etc/tacctl/store.yaml ),
+or, on an install from before the store, its
+.IR tacquito.yaml ;
+with neither they stop with \(lqConfig not found\(rq.
+.I tacquito.yaml
+is the
+.B tacacs
+backend's file, rendered from the store: a RADIUS-only install has none
+and runs every command without it. With
+.B tacacs
+enabled and
+.I tacquito.yaml
+missing, commands run and warn;
+.B "tacctl config render"
+(or any change) writes it again.
 .PP
 .B backend list
 and
@@ -1259,7 +1283,7 @@ counts, user counts, and default marker. For the first-match routing
 view (one row per scope-prefix pair, numbered by slice position,
 mirroring how tacquito routes a connecting client) use
 .BR "scope routing" .
-For full per-scope detail (secret, per-scope knobs, user list) use
+For full per-scope detail (secret posture, per-scope knobs, user list) use
 .BR "scope show " \fIname\fR .
 .TP
 .B scope routing
@@ -1273,8 +1297,10 @@ reading top to bottom shows the order tacquito tries providers for a
 connecting client.
 .TP
 .BI "scope show " name
-Full detail for one scope: prefixes, users that reference it, raw
-shared-secret value with length/posture, whether the scope is
+Full detail for one scope: prefixes, users that reference it, the
+shared secret's length and posture (never its value:
+.BI "scope secret " name " show"
+prints that), whether the scope is
 the default, its protocols filter and auth-method, its vendor attributes
 and tagged addresses (RADIUS).
 .TP
@@ -1374,20 +1400,24 @@ client to the narrowest scope that contains it (and its own RADIUS client).
 .B "scope prefixes " \fIscope\fR " remove " \fIcidr\fR[,cidr...]
 Remove one or more CIDRs. The last prefix of a scope cannot be removed
 (use
-.B clear
+.B "remove \-\-all"
 or
 .BR "scope remove" ),
 and a prefix whose removal would leave a tagged address
 .RB ( "scope devices" )
 outside the scope is refused.
 .TP
-.BI "scope prefixes " "scope " "clear " [ --force ]
+.BI "scope prefixes " "scope " "remove \-\-all " [ \-\-force ]
 Empty the entire prefix list for the scope (with confirmation): the scope
 and its per-scope settings are removed, so it vanishes from every rendered
 config. The command refuses to proceed when users reference the scope
 unless
-.B --force
+.B \-\-force
 is given, which strips the scope from those users.
+.B \-\-all
+takes no CIDRs, and
+.B \-\-force
+is only valid with it.
 .SS Per-scope secret \fB(tacctl scope secret)\fR
 .TP
 .BI "scope secret " "scope " "show"
@@ -1849,8 +1879,10 @@ values.
 .B config validate
 reports any divergence.
 .TP
-.B "clear"
+.B "clear and remove \-\-all"
 .B clear
+and
+.B "remove \-\-all"
 subcommands always prompt with
 .B [y/N]
 and print a warning about the resulting posture (for example, "no
@@ -1878,6 +1910,23 @@ An opt-in has no
 or
 .BR none ,
 so that nothing in it can read as "empty means all".
+.TP
+.B "Membership lists"
+A list that names exactly what is in is a membership list, and empty
+means nothing, not everything
+.RB ( "user scope" ,
+the scopes a user can authenticate from: none means nowhere;
+.BR "scope prefixes" ,
+the clients a scope serves: emptying it removes the scope).
+Its verbs are
+.B add
+and
+.BR remove :
+.B "remove \-\-all"
+empties it, and
+.B "user scope"
+replaces its whole list with
+.BR replace .
 .TP
 .B Service restart
 Changes to the store, and to the
@@ -2156,7 +2205,11 @@ Only set keys you want to change \(em missing keys inherit from the
 defaults, and setting a key back to the default value removes it. An
 empty overrides file is deleted. Every write is schema-validated
 (out-of-range numbers, bad ACL names, malformed CIDRs, colliding listeners,
-typo'd keys are rejected before anything is written). Inspect the merged
+typo'd keys are rejected before anything is written). A file that does
+not parse is never written into: a setter refuses with
+.RI "\(lqtacctl.yaml: could not parse " path ": " reason \(rq
+and exits 1, leaving it as it is, and commands that only read use the
+defaults and warn once on stderr; fix or remove the file. Inspect the merged
 view with
 .BR "tacctl config dump" ;
 re-check the file with
@@ -2192,6 +2245,24 @@ A file named
 .I <name>.template
 here is used in place of the one shipped in
 .IR config/templates/ .
+Install puts a copy of each shipped template here, and
+.B "tacctl upgrade"
+replaces one with the new release's only while it is as tacctl wrote it:
+.I .shipped.sha256
+records what tacctl wrote (in
+.BR sha256sum (1)
+format). A template that was changed is kept, the new release's version is
+written beside it as
+.IR <name>.template.new ,
+which is never used for rendering, and the upgrade warns, naming both;
+compare them with
+.BR diff (1),
+or take the new version with
+.BR mv (1).
+A template that has no record there counts
+as unchanged when it is byte for byte a version tacctl shipped, according to
+the git history of
+.IR /opt/tacctl .
 .TP
 .IR /etc/tacctl/linux\-hosts ", " /etc/tacctl/linux\-uids
 The registry of enrolled Linux hosts (with each host's method) and the

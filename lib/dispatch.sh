@@ -62,8 +62,9 @@ caller_tier() {
 
 # tier_permits <tier> <command> [subcommand] -> 0 if allowed.
 # Keep in step with emit_tier_sudoers(). Anything that prints a shared
-# secret or a password hash (config cisco|juniper|wti, scope show|secret,
-# backup diff, config dump, store show) is superuser-only, and so is
+# secret or a password hash (config cisco|juniper|wti, scope secret,
+# backup diff, config dump, store show) is superuser-only, as is scope show
+# (it gives the secret's length, not its value), and so is
 # everything that changes anything (backend enable|disable, store import|
 # rollback, config render). tests/integration/tiers.bats checks the two
 # against each other.

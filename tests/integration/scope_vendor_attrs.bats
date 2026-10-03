@@ -240,7 +240,7 @@ entry() { sed -n "/^  $1:/,/^  [a-z]/p" "$STORE" | sed '$d'; }
     cmp "$STORE" "${BATS_TEST_TMPDIR}/before"
 }
 
-@test "rename keeps the vendor attributes and the tags; remove and prefixes clear take them with the scope" {
+@test "rename keeps the vendor attributes and the tags; remove and prefixes remove --all take them with the scope" {
     tc scope vendor-attrs dmz enable juniper
     tc scope devices dmz set 203.0.113.9 wti
     tc scope rename dmz edge
@@ -255,7 +255,7 @@ entry() { sed -n "/^  $1:/,/^  [a-z]/p" "$STORE" | sed '$d'; }
     tc scope vendor-attrs dmz
     assert_output --partial "not sent"
     tc scope devices dmz set 203.0.113.9 cisco
-    run bash -c 'echo y | "$1" scope prefixes dmz clear --force' _ "$TACCTL_BIN_SCRIPT"
+    run bash -c 'echo y | "$1" scope prefixes dmz remove --all --force' _ "$TACCTL_BIN_SCRIPT"
     assert_success
     ! grep -q '203.0.113.9' "$STORE"
 }
