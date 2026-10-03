@@ -12,8 +12,8 @@ import (
 
 // Ports of tests/unit/model.bats (store mode) and tests/unit/yaml.bats
 // (store mode: load_fixture tacquito.multiscope.yaml seeds exactly
-// store.multiscope.yaml). The legacy-loader halves of both files wait for
-// model.LegacyLoad (WP1.4b).
+// store.multiscope.yaml). The legacy-loader halves of both files are in
+// legacy_test.go.
 
 type env struct {
 	t    *testing.T
