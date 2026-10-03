@@ -1,0 +1,46 @@
+== dump-legacy
+{"filters": {"allow": [], "deny": []}, "groups": {"operator": {"builtin": true, "juniper_class": "OP-CLASS", "priv_lvl": 7}, "readonly": {"builtin": true, "juniper_class": "RO-CLASS", "priv_lvl": 1}, "superuser": {"builtin": true, "juniper_class": "RW-CLASS", "priv_lvl": 15}}, "scopes": {"dmz": {"prefixes": ["203.0.113.0/24"], "protocols": null, "secret": "dmz-secret-0123456789abcdef"}, "lab": {"prefixes": ["172.16.0.0/12", "192.168.0.0/16"], "protocols": null, "secret": "lab-secret-0123456789abcdef"}, "prod": {"prefixes": ["10.0.0.0/8"], "protocols": null, "secret": "prod-secret-0123456789abcdef"}, "prod-inner": {"prefixes": ["10.10.99.0/24"], "protocols": null, "secret": "inner-secret-0123456789abcdef"}}, "users": {"alice": {"accounting_sink": false, "disabled": false, "group": "superuser", "hash": "24326224313224646f6e74636172652e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e", "password_changed": "2026-08-15", "scopes": ["prod", "lab"]}, "bob": {"accounting_sink": false, "disabled": false, "group": "operator", "hash": "24326224313224646f6e74636172652e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e", "password_changed": null, "scopes": ["lab"]}, "carol": {"accounting_sink": false, "disabled": false, "group": "readonly", "hash": "24326224313224646f6e74636172652e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e", "password_changed": null, "scopes": ["lab", "dmz"]}}, "version": 1}
+rc=0
+== import-load force=0
+  Source:   FIXTURES/tacquito.multiscope.yaml
+  Groups:   3
+  Users:    3 (0 disabled)
+  Scopes:   4
+  Filters:  allow 0, deny 0
+
+  Notes:
+    - user 'alice': has no accounter of its own; the rendered config always attaches the file accounter
+    - user 'bob': has no accounter of its own; the rendered config always attaches the file accounter
+    - user 'carol': has no accounter of its own; the rendered config always attaches the file accounter
+    - kept the protocols filter of 1 scope(s) from the existing store
+    - kept the RADIUS vendor attributes and tagged addresses of 2 scope(s) from the existing store
+
+  Cannot be represented in the store:
+    - scope 'prod': the vendor tag of 192.168.5.1/32 (no prefix of the scope in this file contains it any more)
+    - scope 'lab': the vendor tag of 10.1.2.3/32 (no prefix of the scope in this file contains it any more)
+    - scope 'lab': the vendor tag of 10.0.0.9/32 (no prefix of the scope in this file contains it any more)
+-- stderr
+
+tacctl store: 3 item(s) cannot be represented in the store. Fix them, or re-run with --force to drop them.
+rc=1
+== import-load force=1
+  Source:   FIXTURES/tacquito.multiscope.yaml
+  Groups:   3
+  Users:    3 (0 disabled)
+  Scopes:   4
+  Filters:  allow 0, deny 0
+
+  Notes:
+    - user 'alice': has no accounter of its own; the rendered config always attaches the file accounter
+    - user 'bob': has no accounter of its own; the rendered config always attaches the file accounter
+    - user 'carol': has no accounter of its own; the rendered config always attaches the file accounter
+    - kept the protocols filter of 1 scope(s) from the existing store
+    - kept the RADIUS vendor attributes and tagged addresses of 2 scope(s) from the existing store
+
+  Dropped (--force):
+    - scope 'prod': the vendor tag of 192.168.5.1/32 (no prefix of the scope in this file contains it any more)
+    - scope 'lab': the vendor tag of 10.1.2.3/32 (no prefix of the scope in this file contains it any more)
+    - scope 'lab': the vendor tag of 10.0.0.9/32 (no prefix of the scope in this file contains it any more)
+-- stderr
+rc=0
+{"filters": {"allow": [], "deny": []}, "groups": {"operator": {"builtin": true, "juniper_class": "OP-CLASS", "priv_lvl": 7}, "readonly": {"builtin": true, "juniper_class": "RO-CLASS", "priv_lvl": 1}, "superuser": {"builtin": true, "juniper_class": "RW-CLASS", "priv_lvl": 15}}, "scopes": {"dmz": {"prefixes": ["203.0.113.0/24"], "protocols": null, "secret": "dmz-secret-0123456789abcdef"}, "lab": {"devices": {"172.16.0.5/32": "cisco"}, "prefixes": ["172.16.0.0/12", "192.168.0.0/16"], "protocols": ["tacacs"], "secret": "lab-secret-0123456789abcdef", "vendor_attrs": ["cisco", "wti"]}, "prod": {"prefixes": ["10.0.0.0/8"], "protocols": null, "secret": "prod-secret-0123456789abcdef"}, "prod-inner": {"prefixes": ["10.10.99.0/24"], "protocols": null, "secret": "inner-secret-0123456789abcdef"}}, "users": {"alice": {"accounting_sink": false, "disabled": false, "group": "superuser", "hash": "24326224313224646f6e74636172652e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e", "password_changed": "2026-08-15", "scopes": ["prod", "lab"]}, "bob": {"accounting_sink": false, "disabled": false, "group": "operator", "hash": "24326224313224646f6e74636172652e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e", "password_changed": null, "scopes": ["lab"]}, "carol": {"accounting_sink": false, "disabled": false, "group": "readonly", "hash": "24326224313224646f6e74636172652e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e", "password_changed": null, "scopes": ["lab", "dmz"]}}, "version": 1}

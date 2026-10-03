@@ -1,0 +1,16 @@
+
+  Source:   SRC
+  Groups:   3
+  Users:    3 (0 disabled)
+  Scopes:   4
+  Filters:  allow 0, deny 0
+
+  import + validate:   OK
+  render:              OK
+  equivalence:
+    note: SRC: scope 'prod-inner' has no users; tacquito does not load it
+    EQUIVALENT
+  daemon load-smoke:   SKIPPED
+
+[0;32m[INFO][0m Check passed. Nothing was written.
+rc=0

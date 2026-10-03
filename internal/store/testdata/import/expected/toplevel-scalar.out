@@ -1,0 +1,11 @@
+== dump-legacy
+tacctl store: cases/toplevel-scalar.yaml: top level is not a YAML mapping
+rc=1
+== import-load force=0
+-- stderr
+tacctl store: cases/toplevel-scalar.yaml: top level is not a YAML mapping
+rc=1
+== import-load force=1
+-- stderr
+tacctl store: cases/toplevel-scalar.yaml: top level is not a YAML mapping
+rc=1

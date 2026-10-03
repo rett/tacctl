@@ -1,0 +1,102 @@
+
+  Source:   SRC
+  Groups:   3
+  Users:    3 (0 disabled)
+  Scopes:   4
+  Filters:  allow 0, deny 0
+
+  Notes:
+    - user 'alice': has no accounter of its own; the rendered config always attaches the file accounter
+    - user 'bob': has no accounter of its own; the rendered config always attaches the file accounter
+    - user 'carol': has no accounter of its own; the rendered config always attaches the file accounter
+
+  import + validate:   OK
+  render:              OK
+  equivalence:
+    note: SRC: scope 'prod-inner' has no users; tacquito does not load it
+    note: SRC: secrets[1] 'prod-inner': 10.10.99.0/24 never matches a client (an earlier entry already covers it with 10.0.0.0/8) once every scope has a user
+    --- live (normalised)
+    +++ rendered (normalised)
+    @@ -26,6 +26,11 @@
+           }
+         ],
+         "routes_if_every_scope_had_users": [
+    +      {
+    +        "key": "<redacted:1>",
+    +        "prefix": "10.10.99.0/24",
+    +        "scope": "prod-inner"
+    +      },
+           {
+             "key": "<redacted:2>",
+             "prefix": "10.0.0.0/8",
+    @@ -66,6 +71,12 @@
+                 "name": "tacquito_accounter",
+                 "type": "3"
+               },
+    +          "commands": [
+    +            {
+    +              "action": "2",
+    +              "name": "*"
+    +            }
+    +          ],
+               "name": "superuser",
+               "services": [
+                 {
+    @@ -115,6 +126,28 @@
+                 "name": "tacquito_accounter",
+                 "type": "3"
+               },
+    +          "commands": [
+    +            {
+    +              "action": "2",
+    +              "name": "show"
+    +            },
+    +            {
+    +              "action": "2",
+    +              "name": "ping"
+    +            },
+    +            {
+    +              "action": "2",
+    +              "name": "traceroute"
+    +            },
+    +            {
+    +              "action": "2",
+    +              "name": "terminal"
+    +            },
+    +            {
+    +              "action": "1",
+    +              "name": "*"
+    +            }
+    +          ],
+               "name": "operator",
+               "services": [
+                 {
+    @@ -163,6 +196,24 @@
+                 "name": "tacquito_accounter",
+                 "type": "3"
+               },
+    +          "commands": [
+    +            {
+    +              "action": "2",
+    +              "name": "show"
+    +            },
+    +            {
+    +              "action": "2",
+    +              "name": "ping"
+    +            },
+    +            {
+    +              "action": "2",
+    +              "name": "traceroute"
+    +            },
+    +            {
+    +              "action": "1",
+    +              "name": "*"
+    +            }
+    +          ],
+               "name": "readonly",
+               "services": [
+                 {
+    NOT EQUIVALENT
+
+[0;31m[ERROR][0m Rendered config is not equivalent to SRC.
+rc=1

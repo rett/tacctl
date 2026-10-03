@@ -1,0 +1,43 @@
+note: variants/bare-address.yaml: secrets[3] 'dmz': prefix '203.0.113.9' is not a CIDR tacquito can parse; it is skipped
+note: variants/bare-address.yaml: scope 'prod-inner' has no users; tacquito does not load it
+note: variants/bare-address.yaml: secrets[1] 'prod-inner': 10.10.99.0/24 never matches a client (an earlier entry already covers it with 10.0.0.0/8) once every scope has a user
+note: variants/bare-address.yaml: prefix_deny: '10.1.1.1' is not a CIDR tacquito can parse; it is ignored
+--- live (normalised)
++++ rendered (normalised)
+@@ -1,7 +1,9 @@
+ {
+   "groups_without_users": {},
+   "prefix_allow": [],
+-  "prefix_deny": [],
++  "prefix_deny": [
++    "10.1.1.1/32"
++  ],
+   "secrets": {
+     "routes": [
+       {
+@@ -18,6 +20,11 @@
+         "key": "<redacted:1>",
+         "prefix": "192.168.0.0/16",
+         "scope": "lab"
++      },
++      {
++        "key": "<redacted:2>",
++        "prefix": "203.0.113.9/32",
++        "scope": "dmz"
+       }
+     ],
+     "routes_if_every_scope_had_users": [
+@@ -35,6 +42,11 @@
+         "key": "<redacted:1>",
+         "prefix": "192.168.0.0/16",
+         "scope": "lab"
++      },
++      {
++        "key": "<redacted:2>",
++        "prefix": "203.0.113.9/32",
++        "scope": "dmz"
+       }
+     ]
+   },
+NOT EQUIVALENT
+rc=1

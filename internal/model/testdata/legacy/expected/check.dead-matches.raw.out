@@ -1,0 +1,73 @@
+
+  Source:   SRC
+  Groups:   3
+  Users:    0 (0 disabled)
+  Scopes:   1
+  Filters:  allow 0, deny 0
+
+  import + validate:   OK
+  render:              OK
+  equivalence:
+    note: SRC: scope 'lab' has no users; tacquito does not load it
+    --- live (normalised)
+    +++ rendered (normalised)
+    @@ -8,30 +8,18 @@
+           "commands": [
+             {
+               "action": "2",
+    -          "match": [
+    -            "^show .*$"
+    -          ],
+               "name": "show"
+             },
+             {
+               "action": "2",
+    -          "match": [
+    -            "^ping( .*)?$"
+    -          ],
+               "name": "ping"
+             },
+             {
+               "action": "2",
+    -          "match": [
+    -            "^traceroute( .*)?$"
+    -          ],
+               "name": "traceroute"
+             },
+             {
+               "action": "2",
+    -          "match": [
+    -            "^terminal .*$"
+    -          ],
+               "name": "terminal"
+             },
+             {
+    @@ -73,23 +61,14 @@
+           "commands": [
+             {
+               "action": "2",
+    -          "match": [
+    -            "^show .*$"
+    -          ],
+               "name": "show"
+             },
+             {
+               "action": "2",
+    -          "match": [
+    -            "^ping( .*)?$"
+    -          ],
+               "name": "ping"
+             },
+             {
+               "action": "2",
+    -          "match": [
+    -            "^traceroute( .*)?$"
+    -          ],
+               "name": "traceroute"
+             },
+             {
+    note: the two differ only in groups without users or scopes without users. tacquito answers today's clients identically, but the difference takes effect as soon as such a group or scope gets a user.
+    NOT EQUIVALENT
+
+[0;31m[ERROR][0m Rendered config is not equivalent to SRC.
+rc=1

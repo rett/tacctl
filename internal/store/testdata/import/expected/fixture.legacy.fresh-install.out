@@ -1,0 +1,21 @@
+== dump-legacy
+{"filters": {"allow": [], "deny": []}, "groups": {"operator": {"builtin": true, "juniper_class": "OP-CLASS", "priv_lvl": 7}, "readonly": {"builtin": true, "juniper_class": "RO-CLASS", "priv_lvl": 1}, "superuser": {"builtin": true, "juniper_class": "RW-CLASS", "priv_lvl": 15}}, "scopes": {"lab": {"prefixes": ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"], "protocols": null, "secret": "0123456789abcdef0123456789abcdef"}}, "users": {"engineer": {"accounting_sink": false, "disabled": true, "group": "superuser", "hash": null, "password_changed": null, "scopes": ["lab"]}, "operator": {"accounting_sink": false, "disabled": true, "group": "operator", "hash": null, "password_changed": null, "scopes": ["lab"]}, "root": {"accounting_sink": true, "disabled": true, "group": "readonly", "hash": null, "password_changed": null, "scopes": ["lab"]}, "viewer": {"accounting_sink": false, "disabled": true, "group": "readonly", "hash": null, "password_changed": null, "scopes": ["lab"]}}, "version": 1}
+rc=0
+== import-load force=0
+  Source:   FIXTURES/legacy.fresh-install.yaml
+  Groups:   3
+  Users:    4 (3 disabled, 1 accounting sink)
+  Scopes:   1
+  Filters:  allow 0, deny 0
+-- stderr
+rc=0
+{"filters": {"allow": [], "deny": []}, "groups": {"operator": {"builtin": true, "juniper_class": "OP-CLASS", "priv_lvl": 7}, "readonly": {"builtin": true, "juniper_class": "RO-CLASS", "priv_lvl": 1}, "superuser": {"builtin": true, "juniper_class": "RW-CLASS", "priv_lvl": 15}}, "scopes": {"lab": {"prefixes": ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"], "protocols": null, "secret": "0123456789abcdef0123456789abcdef"}}, "users": {"engineer": {"accounting_sink": false, "disabled": true, "group": "superuser", "hash": null, "password_changed": null, "scopes": ["lab"]}, "operator": {"accounting_sink": false, "disabled": true, "group": "operator", "hash": null, "password_changed": null, "scopes": ["lab"]}, "root": {"accounting_sink": true, "disabled": true, "group": "readonly", "hash": null, "password_changed": null, "scopes": ["lab"]}, "viewer": {"accounting_sink": false, "disabled": true, "group": "readonly", "hash": null, "password_changed": null, "scopes": ["lab"]}}, "version": 1}
+== import-load force=1
+  Source:   FIXTURES/legacy.fresh-install.yaml
+  Groups:   3
+  Users:    4 (3 disabled, 1 accounting sink)
+  Scopes:   1
+  Filters:  allow 0, deny 0
+-- stderr
+rc=0
+{"filters": {"allow": [], "deny": []}, "groups": {"operator": {"builtin": true, "juniper_class": "OP-CLASS", "priv_lvl": 7}, "readonly": {"builtin": true, "juniper_class": "RO-CLASS", "priv_lvl": 1}, "superuser": {"builtin": true, "juniper_class": "RW-CLASS", "priv_lvl": 15}}, "scopes": {"lab": {"prefixes": ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"], "protocols": null, "secret": "0123456789abcdef0123456789abcdef"}}, "users": {"engineer": {"accounting_sink": false, "disabled": true, "group": "superuser", "hash": null, "password_changed": null, "scopes": ["lab"]}, "operator": {"accounting_sink": false, "disabled": true, "group": "operator", "hash": null, "password_changed": null, "scopes": ["lab"]}, "root": {"accounting_sink": true, "disabled": true, "group": "readonly", "hash": null, "password_changed": null, "scopes": ["lab"]}, "viewer": {"accounting_sink": false, "disabled": true, "group": "readonly", "hash": null, "password_changed": null, "scopes": ["lab"]}}, "version": 1}

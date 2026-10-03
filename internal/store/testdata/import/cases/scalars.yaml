@@ -1,0 +1,117 @@
+authenticator_type_bcrypt: &authenticator_type_bcrypt 1
+action_deny:  &action_deny  1
+action_permit: &action_permit 2
+accounter_type_file: &accounter_type_file 3
+handler_type_start: &handler_type_start 1
+provider_type_prefix: &provider_type_prefix 1
+file_accounter: &file_accounter
+  name: tacquito_accounter
+  type: *accounter_type_file
+readonly: &readonly
+  name: readonly
+  services:
+    - {name: shell, set_values: [{name: priv-lvl, values: [1]}]}
+    - {name: junos-exec, set_values: [{name: local-user-name, values: [RO-CLASS]}]}
+  accounter: *file_accounter
+operator: &operator
+  name: operator
+  services:
+    - {name: shell, set_values: [{name: priv-lvl, values: [7]}]}
+    - {name: junos-exec, set_values: [{name: local-user-name, values: [OP-CLASS]}]}
+  accounter: *file_accounter
+superuser: &superuser
+  name: superuser
+  services:
+    - {name: shell, set_values: [{name: priv-lvl, values: [15]}]}
+    - {name: junos-exec, set_values: [{name: local-user-name, values: [RW-CLASS]}]}
+  accounter: *file_accounter
+users:
+  - name: n1
+    scopes: [lab]
+    groups: [*readonly]
+    authenticator: {type: 0x1, options: {hash: "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141"}}
+    accounter: *file_accounter
+  - name: n2
+    scopes: [lab]
+    groups: [*readonly]
+    authenticator: {type: 01, options: {hash: "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141"}}
+    accounter: *file_accounter
+  - name: n3
+    scopes: [lab]
+    groups: [*readonly]
+    authenticator: {type: "1", options: {hash: "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141"}}
+    accounter: *file_accounter
+  - name: n4
+    scopes: [lab]
+    groups: [*readonly]
+    authenticator: {type: 1_0, options: {hash: "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141"}}
+    accounter: *file_accounter
+  - name: n5
+    scopes: [lab]
+    groups: [*readonly]
+    authenticator: {type: 0:1, options: {hash: "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141"}}
+    accounter: *file_accounter
+  - name: n6
+    scopes: [lab]
+    groups: [*readonly]
+    authenticator: {type: !!str 1, options: {hash: "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141"}}
+    accounter: *file_accounter
+  - name: n7
+    scopes: [lab]
+    groups: [*readonly]
+    authenticator: {type: 1, options: {hash: !!str 243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141}}
+    accounter: *file_accounter
+  - name: n8
+    scopes: [lab]
+    groups: [*readonly]
+    authenticator: {type: 1, options: {hash: 0x243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141}}
+    accounter: *file_accounter
+  - name: n9
+    scopes: [lab]
+    groups: [*readonly]
+    authenticator: {type: 1, options: {hash: 243262243132243131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131}}
+    accounter: *file_accounter
+  - name: m1
+    scopes: [lab]
+    groups: [*readonly]
+    authenticator: {type: 1, options: {hash: 2432_6224}}
+    accounter: *file_accounter
+  - name: m2
+    scopes: [lab]
+    groups: [*readonly]
+    authenticator: {type: 1, options: {hash: 1.5e3}}
+    accounter: *file_accounter
+  - name: m3
+    scopes: [lab]
+    groups: [*readonly]
+    authenticator: {type: 1, options: {hash: 2026-01-02}}
+    accounter: *file_accounter
+  - name: m4
+    scopes: [lab]
+    groups: [*readonly]
+    authenticator: {type: 1, options: {hash: ~}}
+    accounter: *file_accounter
+  - name: 'quoted'
+    scopes: ["lab"]
+    groups: [*readonly]
+    authenticator: {type: 1, options: {hash: '243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141'}}
+  - name: 2026-01-01
+    groups: [*readonly]
+  - name: 3.5
+    groups: [*readonly]
+  - name: null
+    groups: [*readonly]
+  - name: on
+    groups: [*readonly]
+secrets:
+  - name: lab
+    secret: {group: tacquito, key: "lab-secret-0123456789abcdef"}
+    handler: {type: *handler_type_start}
+    type: *provider_type_prefix
+    options:
+      prefixes: |
+        ["192.168.0.0/16"]
+  - {name: yes, type: 1, secret: {key: k}}
+  - {name: lab2, type: 1, secret: {key: 0o17}, handler: {type: 1}, options: {prefixes: '["10.3.0.0/16"]'}}
+  - {name: lab3, type: 1, secret: {key: 1e3}, handler: {type: 1}, options: {prefixes: '["10.4.0.0/16"]'}}
+  - {name: lab4, type: 1, secret: {key: no}, handler: {type: 1}, options: {prefixes: '["10.6.0.0/16"]'}}

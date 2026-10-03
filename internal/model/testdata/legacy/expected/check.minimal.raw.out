@@ -1,0 +1,85 @@
+
+  Source:   SRC
+  Groups:   3
+  Users:    0 (0 disabled)
+  Scopes:   1
+  Filters:  allow 0, deny 0
+
+  import + validate:   OK
+  render:              OK
+  equivalence:
+    note: SRC: scope 'lab' has no users; tacquito does not load it
+    --- live (normalised)
+    +++ rendered (normalised)
+    @@ -5,6 +5,28 @@
+             "name": "tacquito_accounter",
+             "type": "3"
+           },
+    +      "commands": [
+    +        {
+    +          "action": "2",
+    +          "name": "show"
+    +        },
+    +        {
+    +          "action": "2",
+    +          "name": "ping"
+    +        },
+    +        {
+    +          "action": "2",
+    +          "name": "traceroute"
+    +        },
+    +        {
+    +          "action": "2",
+    +          "name": "terminal"
+    +        },
+    +        {
+    +          "action": "1",
+    +          "name": "*"
+    +        }
+    +      ],
+           "name": "operator",
+           "services": [
+             {
+    @@ -36,6 +58,24 @@
+             "name": "tacquito_accounter",
+             "type": "3"
+           },
+    +      "commands": [
+    +        {
+    +          "action": "2",
+    +          "name": "show"
+    +        },
+    +        {
+    +          "action": "2",
+    +          "name": "ping"
+    +        },
+    +        {
+    +          "action": "2",
+    +          "name": "traceroute"
+    +        },
+    +        {
+    +          "action": "1",
+    +          "name": "*"
+    +        }
+    +      ],
+           "name": "readonly",
+           "services": [
+             {
+    @@ -67,6 +107,12 @@
+             "name": "tacquito_accounter",
+             "type": "3"
+           },
+    +      "commands": [
+    +        {
+    +          "action": "2",
+    +          "name": "*"
+    +        }
+    +      ],
+           "name": "superuser",
+           "services": [
+             {
+    note: the two differ only in groups without users or scopes without users. tacquito answers today's clients identically, but the difference takes effect as soon as such a group or scope gets a user.
+    NOT EQUIVALENT
+
+[0;31m[ERROR][0m Rendered config is not equivalent to SRC.
+rc=1

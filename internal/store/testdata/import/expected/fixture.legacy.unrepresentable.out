@@ -1,0 +1,42 @@
+== dump-legacy
+{"filters": {"allow": [], "deny": []}, "groups": {"netops": {"builtin": false, "juniper_class": "NETOPS-CLASS", "priv_lvl": 15}, "operator": {"builtin": true, "juniper_class": "OP-CLASS", "priv_lvl": 7}, "readonly": {"builtin": true, "juniper_class": "RO-CLASS", "priv_lvl": 1}, "superuser": {"builtin": true, "juniper_class": "RW-CLASS", "priv_lvl": 15}}, "scopes": {"lab": {"prefixes": ["192.168.0.0/16"], "protocols": null, "secret": "unrep-lab-secret-0123456789"}}, "users": {"mallory": {"accounting_sink": false, "disabled": false, "group": "netops", "hash": "243262243132244d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d", "password_changed": null, "scopes": ["lab"]}, "sha": {"accounting_sink": false, "disabled": true, "group": "readonly", "hash": null, "password_changed": null, "scopes": ["lab"]}, "syslogger": {"accounting_sink": false, "disabled": false, "group": "operator", "hash": "243262243132245353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535353", "password_changed": null, "scopes": ["lab"]}, "twogroups": {"accounting_sink": false, "disabled": false, "group": "readonly", "hash": "243262243132245454545454545454545454545454545454545454545454545454545454545454545454545454545454545454545454545454545454", "password_changed": null, "scopes": ["lab"]}}, "version": 1}
+rc=0
+== import-load force=0
+  Source:   FIXTURES/legacy.unrepresentable.yaml
+  Groups:   4
+  Users:    4 (1 disabled)
+  Scopes:   1
+  Filters:  allow 0, deny 0
+
+  Cannot be represented in the store:
+    - user 'mallory': user-level commands override
+    - group 'netops': service 'shell': extra set_value 'idletime'
+    - group 'netops': service 'ppp' (only shell and junos-exec are stored)
+    - user 'sha': non-bcrypt authenticator; stored as disabled with no password
+    - user 'twogroups': 2 groups (only the first is kept)
+    - user 'syslogger': accounter other than the file accounter
+    - unknown top-level key 'custom_setting'
+    - scope 'dnszone' (secrets[1]): non-prefix secret provider; entry skipped
+-- stderr
+
+tacctl store: 8 item(s) cannot be represented in the store. Fix them, or re-run with --force to drop them.
+rc=1
+== import-load force=1
+  Source:   FIXTURES/legacy.unrepresentable.yaml
+  Groups:   4
+  Users:    4 (1 disabled)
+  Scopes:   1
+  Filters:  allow 0, deny 0
+
+  Dropped (--force):
+    - user 'mallory': user-level commands override
+    - group 'netops': service 'shell': extra set_value 'idletime'
+    - group 'netops': service 'ppp' (only shell and junos-exec are stored)
+    - user 'sha': non-bcrypt authenticator; stored as disabled with no password
+    - user 'twogroups': 2 groups (only the first is kept)
+    - user 'syslogger': accounter other than the file accounter
+    - unknown top-level key 'custom_setting'
+    - scope 'dnszone' (secrets[1]): non-prefix secret provider; entry skipped
+-- stderr
+rc=0
+{"filters": {"allow": [], "deny": []}, "groups": {"netops": {"builtin": false, "juniper_class": "NETOPS-CLASS", "priv_lvl": 15}, "operator": {"builtin": true, "juniper_class": "OP-CLASS", "priv_lvl": 7}, "readonly": {"builtin": true, "juniper_class": "RO-CLASS", "priv_lvl": 1}, "superuser": {"builtin": true, "juniper_class": "RW-CLASS", "priv_lvl": 15}}, "scopes": {"lab": {"prefixes": ["192.168.0.0/16"], "protocols": null, "secret": "unrep-lab-secret-0123456789"}}, "users": {"mallory": {"accounting_sink": false, "disabled": false, "group": "netops", "hash": "243262243132244d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d", "password_changed": null, "scopes": ["lab"]}, "sha": {"accounting_sink": false, "disabled": true, "group": "readonly", "hash": null, "password_changed": null, "scopes": ["lab"]}, "syslogger": {"accounting_sink": false, "disabled": false, "group": "operator", "hash": "243262243132245353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535353535353", "password_changed": null, "scopes": ["lab"]}, "twogroups": {"accounting_sink": false, "disabled": false, "group": "readonly", "hash": "243262243132245454545454545454545454545454545454545454545454545454545454545454545454545454545454545454545454545454545454", "password_changed": null, "scopes": ["lab"]}}, "version": 1}

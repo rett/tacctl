@@ -1,0 +1,1704 @@
+--- live (normalised)
++++ rendered (normalised)
+@@ -78,6 +78,11 @@
+         "key": "<redacted:1>",
+         "prefix": "10.0.0.0/8",
+         "scope": "core"
++      },
++      {
++        "key": "<redacted:1>",
++        "prefix": "172.16.0.0/12",
++        "scope": "core"
+       }
+     ],
+     "routes_if_every_scope_had_users": [
+@@ -154,6 +159,11 @@
+       {
+         "key": "<redacted:1>",
+         "prefix": "10.0.0.0/8",
++        "scope": "core"
++      },
++      {
++        "key": "<redacted:1>",
++        "prefix": "172.16.0.0/12",
+         "scope": "core"
+       }
+     ]
+@@ -268,7 +278,7 @@
+       },
+       "authenticator": {
+         "options": {
+-          "hash": "<redacted:2>"
++          "hash": "<redacted:3>"
+         },
+         "type": "1"
+       },
+@@ -499,14 +509,116 @@
+         "site2"
+       ]
+     },
+-    "user010": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:4>"
++    "user014": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:5>"
++        },
++        "type": "1"
++      },
++      "groups": [
++        {
++          "name": "operator",
++          "services": [
++            {
++              "name": "shell",
++              "set_values": [
++                {
++                  "name": "priv-lvl",
++                  "values": [
++                    "7"
++                  ]
++                }
++              ]
++            }
++          ]
++        }
++      ],
++      "scopes": [
++        "core",
++        "site0"
++      ]
++    },
++    "user015": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:6>"
++        },
++        "type": "1"
++      },
++      "groups": [
++        {
++          "name": "operator",
++          "services": [
++            {
++              "name": "shell",
++              "set_values": [
++                {
++                  "name": "priv-lvl",
++                  "values": [
++                    "7"
++                  ]
++                }
++              ]
++            }
++          ]
++        }
++      ],
++      "scopes": [
++        "core",
++        "site1"
++      ]
++    },
++    "user016": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:7>"
++        },
++        "type": "1"
++      },
++      "groups": [
++        {
++          "name": "operator",
++          "services": [
++            {
++              "name": "shell",
++              "set_values": [
++                {
++                  "name": "priv-lvl",
++                  "values": [
++                    "7"
++                  ]
++                }
++              ]
++            }
++          ]
++        }
++      ],
++      "scopes": [
++        "core",
++        "site2"
++      ]
++    },
++    "user017": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:8>"
+         },
+         "type": "1"
+       },
+@@ -533,14 +645,14 @@
+         "site3"
+       ]
+     },
+-    "user011": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:9>"
++    "user018": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:10>"
+         },
+         "type": "1"
+       },
+@@ -567,14 +679,14 @@
+         "site4"
+       ]
+     },
+-    "user012": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:11>"
++    "user019": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:12>"
+         },
+         "type": "1"
+       },
+@@ -601,14 +713,14 @@
+         "site5"
+       ]
+     },
+-    "user013": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:13>"
++    "user020": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:14>"
+         },
+         "type": "1"
+       },
+@@ -635,14 +747,14 @@
+         "site6"
+       ]
+     },
+-    "user014": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:5>"
++    "user021": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:15>"
+         },
+         "type": "1"
+       },
+@@ -669,14 +781,14 @@
+         "site0"
+       ]
+     },
+-    "user015": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:6>"
++    "user022": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:16>"
+         },
+         "type": "1"
+       },
+@@ -703,14 +815,14 @@
+         "site1"
+       ]
+     },
+-    "user016": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:7>"
++    "user023": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:17>"
+         },
+         "type": "1"
+       },
+@@ -737,14 +849,251 @@
+         "site2"
+       ]
+     },
+-    "user017": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:8>"
++    "user024": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:18>"
++        },
++        "type": "1"
++      },
++      "groups": [
++        {
++          "name": "operator",
++          "services": [
++            {
++              "name": "shell",
++              "set_values": [
++                {
++                  "name": "priv-lvl",
++                  "values": [
++                    "7"
++                  ]
++                }
++              ]
++            }
++          ]
++        }
++      ],
++      "scopes": [
++        "core"
++      ]
++    },
++    "user025": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:19>"
++        },
++        "type": "1"
++      },
++      "groups": [
++        {
++          "name": "operator",
++          "services": [
++            {
++              "name": "shell",
++              "set_values": [
++                {
++                  "name": "priv-lvl",
++                  "values": [
++                    "7"
++                  ]
++                }
++              ]
++            }
++          ]
++        }
++      ],
++      "scopes": [
++        "core",
++        "site4"
++      ]
++    },
++    "user026": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:20>"
++        },
++        "type": "1"
++      },
++      "groups": [
++        {
++          "name": "operator",
++          "services": [
++            {
++              "name": "shell",
++              "set_values": [
++                {
++                  "name": "priv-lvl",
++                  "values": [
++                    "7"
++                  ]
++                }
++              ]
++            }
++          ]
++        }
++      ],
++      "scopes": [
++        "core",
++        "site5"
++      ]
++    },
++    "user027": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:21>"
++        },
++        "type": "1"
++      },
++      "groups": [
++        {
++          "name": "operator",
++          "services": [
++            {
++              "name": "shell",
++              "set_values": [
++                {
++                  "name": "priv-lvl",
++                  "values": [
++                    "7"
++                  ]
++                }
++              ]
++            }
++          ]
++        }
++      ],
++      "scopes": [
++        "core",
++        "site6"
++      ]
++    },
++    "user028": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:22>"
++        },
++        "type": "1"
++      },
++      "groups": [
++        {
++          "name": "operator",
++          "services": [
++            {
++              "name": "shell",
++              "set_values": [
++                {
++                  "name": "priv-lvl",
++                  "values": [
++                    "7"
++                  ]
++                }
++              ]
++            }
++          ]
++        }
++      ],
++      "scopes": [
++        "core",
++        "site0"
++      ]
++    },
++    "user029": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:23>"
++        },
++        "type": "1"
++      },
++      "groups": [
++        {
++          "name": "operator",
++          "services": [
++            {
++              "name": "shell",
++              "set_values": [
++                {
++                  "name": "priv-lvl",
++                  "values": [
++                    "7"
++                  ]
++                }
++              ]
++            }
++          ]
++        }
++      ],
++      "scopes": [
++        "core",
++        "site1"
++      ]
++    },
++    "user030": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:24>"
++        },
++        "type": "1"
++      },
++      "groups": [
++        {
++          "name": "operator",
++          "services": [
++            {
++              "name": "shell",
++              "set_values": [
++                {
++                  "name": "priv-lvl",
++                  "values": [
++                    "7"
++                  ]
++                }
++              ]
++            }
++          ]
++        }
++      ],
++      "scopes": [
++        "core",
++        "site2"
++      ]
++    },
++    "user031": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:25>"
+         },
+         "type": "1"
+       },
+@@ -771,14 +1120,14 @@
+         "site3"
+       ]
+     },
+-    "user018": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:10>"
++    "user032": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:26>"
+         },
+         "type": "1"
+       },
+@@ -805,14 +1154,14 @@
+         "site4"
+       ]
+     },
+-    "user019": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:12>"
++    "user033": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:27>"
+         },
+         "type": "1"
+       },
+@@ -839,14 +1188,14 @@
+         "site5"
+       ]
+     },
+-    "user020": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:14>"
++    "user034": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:28>"
+         },
+         "type": "1"
+       },
+@@ -873,14 +1222,14 @@
+         "site6"
+       ]
+     },
+-    "user021": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:15>"
++    "user035": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:29>"
+         },
+         "type": "1"
+       },
+@@ -907,14 +1256,14 @@
+         "site0"
+       ]
+     },
+-    "user022": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:16>"
++    "user036": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:30>"
+         },
+         "type": "1"
+       },
+@@ -941,14 +1290,14 @@
+         "site1"
+       ]
+     },
+-    "user023": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:17>"
++    "user037": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:31>"
+         },
+         "type": "1"
+       },
+@@ -975,14 +1324,14 @@
+         "site2"
+       ]
+     },
+-    "user024": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:18>"
++    "user038": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:32>"
+         },
+         "type": "1"
+       },
+@@ -1009,14 +1358,14 @@
+         "site3"
+       ]
+     },
+-    "user025": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:19>"
++    "user039": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:33>"
+         },
+         "type": "1"
+       },
+@@ -1043,14 +1392,14 @@
+         "site4"
+       ]
+     },
+-    "user026": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:20>"
++    "user040": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:34>"
+         },
+         "type": "1"
+       },
+@@ -1077,14 +1426,14 @@
+         "site5"
+       ]
+     },
+-    "user027": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:21>"
++    "user041": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:35>"
+         },
+         "type": "1"
+       },
+@@ -1111,14 +1460,14 @@
+         "site6"
+       ]
+     },
+-    "user028": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:22>"
++    "user042": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:36>"
+         },
+         "type": "1"
+       },
+@@ -1145,14 +1494,14 @@
+         "site0"
+       ]
+     },
+-    "user029": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:23>"
++    "user043": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:37>"
+         },
+         "type": "1"
+       },
+@@ -1179,28 +1528,28 @@
+         "site1"
+       ]
+     },
+-    "user030": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:24>"
+-        },
+-        "type": "1"
+-      },
+-      "groups": [
+-        {
+-          "name": "operator",
+-          "services": [
+-            {
+-              "name": "shell",
+-              "set_values": [
+-                {
+-                  "name": "priv-lvl",
+-                  "values": [
+-                    "7"
++    "user044": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:38>"
++        },
++        "type": "1"
++      },
++      "groups": [
++        {
++          "name": "operator",
++          "services": [
++            {
++              "name": "shell",
++              "set_values": [
++                {
++                  "name": "priv-lvl",
++                  "values": [
++                    "15"
+                   ]
+                 }
+               ]
+@@ -1213,14 +1562,14 @@
+         "site2"
+       ]
+     },
+-    "user031": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:25>"
++    "user045": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:39>"
+         },
+         "type": "1"
+       },
+@@ -1247,14 +1596,14 @@
+         "site3"
+       ]
+     },
+-    "user032": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:26>"
++    "user046": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:40>"
+         },
+         "type": "1"
+       },
+@@ -1281,14 +1630,14 @@
+         "site4"
+       ]
+     },
+-    "user033": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:27>"
++    "user047": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:41>"
+         },
+         "type": "1"
+       },
+@@ -1315,14 +1664,14 @@
+         "site5"
+       ]
+     },
+-    "user034": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:28>"
++    "user048": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:42>"
+         },
+         "type": "1"
+       },
+@@ -1349,14 +1698,14 @@
+         "site6"
+       ]
+     },
+-    "user035": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:29>"
++    "user049": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:43>"
+         },
+         "type": "1"
+       },
+@@ -1383,14 +1732,14 @@
+         "site0"
+       ]
+     },
+-    "user036": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:30>"
++    "user050": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:44>"
+         },
+         "type": "1"
+       },
+@@ -1417,14 +1766,14 @@
+         "site1"
+       ]
+     },
+-    "user037": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:31>"
++    "user051": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:45>"
+         },
+         "type": "1"
+       },
+@@ -1451,14 +1800,14 @@
+         "site2"
+       ]
+     },
+-    "user038": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:32>"
++    "user052": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:46>"
+         },
+         "type": "1"
+       },
+@@ -1485,14 +1834,14 @@
+         "site3"
+       ]
+     },
+-    "user039": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:33>"
++    "user053": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:47>"
+         },
+         "type": "1"
+       },
+@@ -1519,14 +1868,14 @@
+         "site4"
+       ]
+     },
+-    "user040": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:34>"
++    "user054": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:48>"
+         },
+         "type": "1"
+       },
+@@ -1553,14 +1902,14 @@
+         "site5"
+       ]
+     },
+-    "user041": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:35>"
++    "user055": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:49>"
+         },
+         "type": "1"
+       },
+@@ -1587,14 +1936,14 @@
+         "site6"
+       ]
+     },
+-    "user042": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:36>"
++    "user056": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:50>"
+         },
+         "type": "1"
+       },
+@@ -1621,14 +1970,14 @@
+         "site0"
+       ]
+     },
+-    "user043": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:37>"
++    "user057": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:51>"
+         },
+         "type": "1"
+       },
+@@ -1655,14 +2004,14 @@
+         "site1"
+       ]
+     },
+-    "user044": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:38>"
++    "user058": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:52>"
+         },
+         "type": "1"
+       },
+@@ -1689,14 +2038,14 @@
+         "site2"
+       ]
+     },
+-    "user045": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:39>"
++    "user059": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:53>"
+         },
+         "type": "1"
+       },
+@@ -1723,116 +2072,14 @@
+         "site3"
+       ]
+     },
+-    "user046": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:40>"
+-        },
+-        "type": "1"
+-      },
+-      "groups": [
+-        {
+-          "name": "operator",
+-          "services": [
+-            {
+-              "name": "shell",
+-              "set_values": [
+-                {
+-                  "name": "priv-lvl",
+-                  "values": [
+-                    "7"
+-                  ]
+-                }
+-              ]
+-            }
+-          ]
+-        }
+-      ],
+-      "scopes": [
+-        "core",
+-        "site4"
+-      ]
+-    },
+-    "user047": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:41>"
+-        },
+-        "type": "1"
+-      },
+-      "groups": [
+-        {
+-          "name": "operator",
+-          "services": [
+-            {
+-              "name": "shell",
+-              "set_values": [
+-                {
+-                  "name": "priv-lvl",
+-                  "values": [
+-                    "7"
+-                  ]
+-                }
+-              ]
+-            }
+-          ]
+-        }
+-      ],
+-      "scopes": [
+-        "core",
+-        "site5"
+-      ]
+-    },
+-    "user048": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:42>"
+-        },
+-        "type": "1"
+-      },
+-      "groups": [
+-        {
+-          "name": "operator",
+-          "services": [
+-            {
+-              "name": "shell",
+-              "set_values": [
+-                {
+-                  "name": "priv-lvl",
+-                  "values": [
+-                    "7"
+-                  ]
+-                }
+-              ]
+-            }
+-          ]
+-        }
+-      ],
+-      "scopes": [
+-        "core",
+-        "site6"
+-      ]
+-    },
+-    "user049": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:43>"
++    "zed": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:54>"
+         },
+         "type": "1"
+       },
+@@ -1857,346 +2104,6 @@
+       "scopes": [
+         "core",
+         "site0"
+-      ]
+-    },
+-    "user050": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:44>"
+-        },
+-        "type": "1"
+-      },
+-      "groups": [
+-        {
+-          "name": "operator",
+-          "services": [
+-            {
+-              "name": "shell",
+-              "set_values": [
+-                {
+-                  "name": "priv-lvl",
+-                  "values": [
+-                    "7"
+-                  ]
+-                }
+-              ]
+-            }
+-          ]
+-        }
+-      ],
+-      "scopes": [
+-        "core",
+-        "site1"
+-      ]
+-    },
+-    "user051": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:45>"
+-        },
+-        "type": "1"
+-      },
+-      "groups": [
+-        {
+-          "name": "operator",
+-          "services": [
+-            {
+-              "name": "shell",
+-              "set_values": [
+-                {
+-                  "name": "priv-lvl",
+-                  "values": [
+-                    "7"
+-                  ]
+-                }
+-              ]
+-            }
+-          ]
+-        }
+-      ],
+-      "scopes": [
+-        "core",
+-        "site2"
+-      ]
+-    },
+-    "user052": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:46>"
+-        },
+-        "type": "1"
+-      },
+-      "groups": [
+-        {
+-          "name": "operator",
+-          "services": [
+-            {
+-              "name": "shell",
+-              "set_values": [
+-                {
+-                  "name": "priv-lvl",
+-                  "values": [
+-                    "7"
+-                  ]
+-                }
+-              ]
+-            }
+-          ]
+-        }
+-      ],
+-      "scopes": [
+-        "core",
+-        "site3"
+-      ]
+-    },
+-    "user053": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:47>"
+-        },
+-        "type": "1"
+-      },
+-      "groups": [
+-        {
+-          "name": "operator",
+-          "services": [
+-            {
+-              "name": "shell",
+-              "set_values": [
+-                {
+-                  "name": "priv-lvl",
+-                  "values": [
+-                    "7"
+-                  ]
+-                }
+-              ]
+-            }
+-          ]
+-        }
+-      ],
+-      "scopes": [
+-        "core",
+-        "site4"
+-      ]
+-    },
+-    "user054": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:48>"
+-        },
+-        "type": "1"
+-      },
+-      "groups": [
+-        {
+-          "name": "operator",
+-          "services": [
+-            {
+-              "name": "shell",
+-              "set_values": [
+-                {
+-                  "name": "priv-lvl",
+-                  "values": [
+-                    "7"
+-                  ]
+-                }
+-              ]
+-            }
+-          ]
+-        }
+-      ],
+-      "scopes": [
+-        "core",
+-        "site5"
+-      ]
+-    },
+-    "user055": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:49>"
+-        },
+-        "type": "1"
+-      },
+-      "groups": [
+-        {
+-          "name": "operator",
+-          "services": [
+-            {
+-              "name": "shell",
+-              "set_values": [
+-                {
+-                  "name": "priv-lvl",
+-                  "values": [
+-                    "7"
+-                  ]
+-                }
+-              ]
+-            }
+-          ]
+-        }
+-      ],
+-      "scopes": [
+-        "core",
+-        "site6"
+-      ]
+-    },
+-    "user056": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:50>"
+-        },
+-        "type": "1"
+-      },
+-      "groups": [
+-        {
+-          "name": "operator",
+-          "services": [
+-            {
+-              "name": "shell",
+-              "set_values": [
+-                {
+-                  "name": "priv-lvl",
+-                  "values": [
+-                    "7"
+-                  ]
+-                }
+-              ]
+-            }
+-          ]
+-        }
+-      ],
+-      "scopes": [
+-        "core",
+-        "site0"
+-      ]
+-    },
+-    "user057": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:51>"
+-        },
+-        "type": "1"
+-      },
+-      "groups": [
+-        {
+-          "name": "operator",
+-          "services": [
+-            {
+-              "name": "shell",
+-              "set_values": [
+-                {
+-                  "name": "priv-lvl",
+-                  "values": [
+-                    "7"
+-                  ]
+-                }
+-              ]
+-            }
+-          ]
+-        }
+-      ],
+-      "scopes": [
+-        "core",
+-        "site1"
+-      ]
+-    },
+-    "user058": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:52>"
+-        },
+-        "type": "1"
+-      },
+-      "groups": [
+-        {
+-          "name": "operator",
+-          "services": [
+-            {
+-              "name": "shell",
+-              "set_values": [
+-                {
+-                  "name": "priv-lvl",
+-                  "values": [
+-                    "7"
+-                  ]
+-                }
+-              ]
+-            }
+-          ]
+-        }
+-      ],
+-      "scopes": [
+-        "core",
+-        "site2"
+-      ]
+-    },
+-    "user059": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:53>"
+-        },
+-        "type": "1"
+-      },
+-      "groups": [
+-        {
+-          "name": "operator",
+-          "services": [
+-            {
+-              "name": "shell",
+-              "set_values": [
+-                {
+-                  "name": "priv-lvl",
+-                  "values": [
+-                    "7"
+-                  ]
+-                }
+-              ]
+-            }
+-          ]
+-        }
+-      ],
+-      "scopes": [
+-        "core",
+-        "site3"
+       ]
+     }
+   }
+NOT EQUIVALENT
+rc=1

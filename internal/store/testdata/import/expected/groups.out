@@ -1,0 +1,97 @@
+== dump-legacy
+{"filters": {"allow": [], "deny": []}, "groups": {"g1": {"builtin": false, "juniper_class": "G1", "priv_lvl": 9}, "g10": {"builtin": false, "juniper_class": "1.5", "priv_lvl": null}, "g11": {"builtin": false, "juniper_class": "X", "priv_lvl": 99}, "g2": {"builtin": false, "juniper_class": null, "priv_lvl": null}, "g3": {"builtin": false, "juniper_class": "A", "priv_lvl": 7}, "g4": {"builtin": false, "juniper_class": "2026-01-01", "priv_lvl": 12}, "g5": {"builtin": false, "juniper_class": "17", "priv_lvl": null}, "g6": {"builtin": false, "juniper_class": null, "priv_lvl": null}, "g7": {"builtin": false, "juniper_class": "spaced", "priv_lvl": 3}, "g8": {"builtin": false, "juniper_class": "True", "priv_lvl": 15}, "g9": {"builtin": false, "juniper_class": null, "priv_lvl": null}, "operator": {"builtin": true, "juniper_class": "OP-CLASS", "priv_lvl": 7}, "readonly": {"builtin": true, "juniper_class": "RO-CLASS", "priv_lvl": null}, "superuser": {"builtin": true, "juniper_class": "RW-CLASS", "priv_lvl": 15}, "twin": {"builtin": false, "juniper_class": "T", "priv_lvl": 2}}, "scopes": {"lab": {"prefixes": ["192.168.0.0/16"], "protocols": null, "secret": "lab-secret-0123456789abcdef"}}, "users": {"dup1": {"accounting_sink": false, "disabled": false, "group": "twin", "hash": "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141", "password_changed": null, "scopes": ["lab"]}, "dup2": {"accounting_sink": false, "disabled": false, "group": "twin", "hash": "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141", "password_changed": null, "scopes": ["lab"]}, "dup3": {"accounting_sink": false, "disabled": false, "group": "twin", "hash": "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141", "password_changed": null, "scopes": ["lab"]}, "dup4": {"accounting_sink": false, "disabled": false, "group": "readonly", "hash": "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141", "password_changed": null, "scopes": ["lab"]}, "u1": {"accounting_sink": false, "disabled": false, "group": "g1", "hash": "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141", "password_changed": null, "scopes": ["lab"]}, "u10": {"accounting_sink": false, "disabled": false, "group": "g10", "hash": "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141", "password_changed": null, "scopes": ["lab"]}, "u11": {"accounting_sink": false, "disabled": false, "group": "g11", "hash": "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141", "password_changed": null, "scopes": ["lab"]}, "u2": {"accounting_sink": false, "disabled": false, "group": "g2", "hash": "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141", "password_changed": null, "scopes": ["lab"]}, "u3": {"accounting_sink": false, "disabled": false, "group": "g3", "hash": "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141", "password_changed": null, "scopes": ["lab"]}, "u4": {"accounting_sink": false, "disabled": false, "group": "g4", "hash": "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141", "password_changed": null, "scopes": ["lab"]}, "u5": {"accounting_sink": false, "disabled": false, "group": "g5", "hash": "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141", "password_changed": null, "scopes": ["lab"]}, "u6": {"accounting_sink": false, "disabled": false, "group": "g6", "hash": "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141", "password_changed": null, "scopes": ["lab"]}, "u7": {"accounting_sink": false, "disabled": false, "group": "g7", "hash": "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141", "password_changed": null, "scopes": ["lab"]}, "u8": {"accounting_sink": false, "disabled": false, "group": "g8", "hash": "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141", "password_changed": null, "scopes": ["lab"]}, "u9": {"accounting_sink": false, "disabled": false, "group": "g9", "hash": "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141", "password_changed": null, "scopes": ["lab"]}}, "version": 1}
+rc=0
+== import-load force=0
+  Source:   cases/groups.yaml
+  Groups:   15
+  Users:    15 (0 disabled)
+  Scopes:   1
+  Filters:  allow 0, deny 0
+
+  Notes:
+    - group 'g8': legacy service name 'exec' is stored as the Cisco shell service (rendered as 'shell', what 'tacctl upgrade' already migrates to)
+
+  Cannot be represented in the store:
+    - group 'g1': unsupported key 'description'
+    - group 'g1': group-level authenticator (the store keeps one per user)
+    - group 'g1': accounter other than the file accounter
+    - group 'g3': service 'ppp' (only shell and junos-exec are stored)
+    - group 'g3': service '' (only shell and junos-exec are stored)
+    - group 'g3': service 'None' (only shell and junos-exec are stored)
+    - group 'g3': service 'shell': unsupported key 'foo'
+    - group 'g3': service 'shell': match conditions
+    - group 'g3': service 'shell': is_optional
+    - group 'g3': service 'exec': second definition of the same service
+    - group 'g3': service 'junos-exec': set_value 'local-user-name': unsupported key 'bar'
+    - group 'g3': service 'junos-exec': set_value 'local-user-name': is_optional
+    - group 'g3': service 'junos-exec': set_value 'local-user-name': more than one value (first kept)
+    - group 'g3': service 'junos-exec': second 'local-user-name' set_value
+    - group 'g3': service 'junos-exec': extra set_value 'other'
+    - group 'g3': service 'junos-exec': extra set_value ''
+
+  Errors:
+    - group 'g2': services is not a list
+    - group 'g2': no shell service with a priv-lvl value
+    - group 'g2': no junos-exec service with a local-user-name value
+    - group 'g3': a service entry is not a mapping
+    - group 'g3': service 'junos-exec': set_values is not a list
+    - group 'g3': service 'junos-exec': a set_values entry is not a mapping
+    - group 'g5': priv-lvl is not a number
+    - group 'g6': priv-lvl is not a number
+    - group 'g6': no junos-exec service with a local-user-name value
+    - group 'g9': no shell service with a priv-lvl value
+    - group 'g9': no junos-exec service with a local-user-name value
+    - group 'g10': priv-lvl is not a number
+    - group 'twin' is defined more than once with different content
+    - group 'readonly': priv-lvl is not a number
+-- stderr
+
+tacctl store: 14 error(s) must be fixed in cases/groups.yaml before it can be imported.
+rc=1
+== import-load force=1
+  Source:   cases/groups.yaml
+  Groups:   15
+  Users:    15 (0 disabled)
+  Scopes:   1
+  Filters:  allow 0, deny 0
+
+  Notes:
+    - group 'g8': legacy service name 'exec' is stored as the Cisco shell service (rendered as 'shell', what 'tacctl upgrade' already migrates to)
+
+  Dropped (--force):
+    - group 'g1': unsupported key 'description'
+    - group 'g1': group-level authenticator (the store keeps one per user)
+    - group 'g1': accounter other than the file accounter
+    - group 'g3': service 'ppp' (only shell and junos-exec are stored)
+    - group 'g3': service '' (only shell and junos-exec are stored)
+    - group 'g3': service 'None' (only shell and junos-exec are stored)
+    - group 'g3': service 'shell': unsupported key 'foo'
+    - group 'g3': service 'shell': match conditions
+    - group 'g3': service 'shell': is_optional
+    - group 'g3': service 'exec': second definition of the same service
+    - group 'g3': service 'junos-exec': set_value 'local-user-name': unsupported key 'bar'
+    - group 'g3': service 'junos-exec': set_value 'local-user-name': is_optional
+    - group 'g3': service 'junos-exec': set_value 'local-user-name': more than one value (first kept)
+    - group 'g3': service 'junos-exec': second 'local-user-name' set_value
+    - group 'g3': service 'junos-exec': extra set_value 'other'
+    - group 'g3': service 'junos-exec': extra set_value ''
+
+  Errors:
+    - group 'g2': services is not a list
+    - group 'g2': no shell service with a priv-lvl value
+    - group 'g2': no junos-exec service with a local-user-name value
+    - group 'g3': a service entry is not a mapping
+    - group 'g3': service 'junos-exec': set_values is not a list
+    - group 'g3': service 'junos-exec': a set_values entry is not a mapping
+    - group 'g5': priv-lvl is not a number
+    - group 'g6': priv-lvl is not a number
+    - group 'g6': no junos-exec service with a local-user-name value
+    - group 'g9': no shell service with a priv-lvl value
+    - group 'g9': no junos-exec service with a local-user-name value
+    - group 'g10': priv-lvl is not a number
+    - group 'twin' is defined more than once with different content
+    - group 'readonly': priv-lvl is not a number
+-- stderr
+
+tacctl store: 14 error(s) must be fixed in cases/groups.yaml before it can be imported (--force does not override these).
+rc=1

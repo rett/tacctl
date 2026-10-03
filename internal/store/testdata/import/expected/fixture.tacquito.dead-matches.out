@@ -1,0 +1,21 @@
+== dump-legacy
+{"filters": {"allow": [], "deny": []}, "groups": {"operator": {"builtin": true, "juniper_class": "OP-CLASS", "priv_lvl": 7}, "readonly": {"builtin": true, "juniper_class": "RO-CLASS", "priv_lvl": 1}, "superuser": {"builtin": true, "juniper_class": "RW-CLASS", "priv_lvl": 15}}, "scopes": {"lab": {"prefixes": ["192.168.0.0/16"], "protocols": null, "secret": "lab-secret-placeholder-16chars"}}, "users": {}, "version": 1}
+rc=0
+== import-load force=0
+  Source:   FIXTURES/tacquito.dead-matches.yaml
+  Groups:   3
+  Users:    0 (0 disabled)
+  Scopes:   1
+  Filters:  allow 0, deny 0
+-- stderr
+rc=0
+{"filters": {"allow": [], "deny": []}, "groups": {"operator": {"builtin": true, "juniper_class": "OP-CLASS", "priv_lvl": 7}, "readonly": {"builtin": true, "juniper_class": "RO-CLASS", "priv_lvl": 1}, "superuser": {"builtin": true, "juniper_class": "RW-CLASS", "priv_lvl": 15}}, "scopes": {"lab": {"prefixes": ["192.168.0.0/16"], "protocols": null, "secret": "lab-secret-placeholder-16chars"}}, "users": {}, "version": 1}
+== import-load force=1
+  Source:   FIXTURES/tacquito.dead-matches.yaml
+  Groups:   3
+  Users:    0 (0 disabled)
+  Scopes:   1
+  Filters:  allow 0, deny 0
+-- stderr
+rc=0
+{"filters": {"allow": [], "deny": []}, "groups": {"operator": {"builtin": true, "juniper_class": "OP-CLASS", "priv_lvl": 7}, "readonly": {"builtin": true, "juniper_class": "RO-CLASS", "priv_lvl": 1}, "superuser": {"builtin": true, "juniper_class": "RW-CLASS", "priv_lvl": 15}}, "scopes": {"lab": {"prefixes": ["192.168.0.0/16"], "protocols": null, "secret": "lab-secret-placeholder-16chars"}}, "users": {}, "version": 1}

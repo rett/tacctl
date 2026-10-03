@@ -1,0 +1,53 @@
+== dump-legacy
+{"filters": {"allow": [], "deny": []}, "groups": {"operator": {"builtin": true, "juniper_class": "OP-CLASS", "priv_lvl": 7}, "orphans": {"builtin": false, "juniper_class": "ORPH", "priv_lvl": 4}, "readonly": {"builtin": true, "juniper_class": "RO-CLASS", "priv_lvl": 1}, "superuser": {"builtin": true, "juniper_class": "RW-CLASS", "priv_lvl": 15}}, "scopes": {}, "users": {}, "version": 1}
+rc=0
+== import-load force=0
+  Source:   cases/toplevel.yaml
+  Groups:   4
+  Users:    0 (0 disabled)
+  Scopes:   0
+  Filters:  allow 0, deny 0
+
+  Notes:
+    - top-level 'svc_unused': service anchor no group uses; ignored
+    - top-level 'auth_unused': authenticator anchor no user uses; ignored
+
+  Cannot be represented in the store:
+    - unknown top-level key 'action_deny'
+    - unknown top-level key 'provider_type_prefix'
+    - unknown top-level key 'bad_orphan'
+    - unknown top-level key 'random_map'
+    - unknown top-level key 'random_list'
+    - unknown top-level key 'random_scalar'
+
+  Errors:
+    - top-level 'bad_orphan': group entry without a usable name (quote names that YAML reads as numbers or booleans)
+-- stderr
+
+tacctl store: 1 error(s) must be fixed in cases/toplevel.yaml before it can be imported.
+rc=1
+== import-load force=1
+  Source:   cases/toplevel.yaml
+  Groups:   4
+  Users:    0 (0 disabled)
+  Scopes:   0
+  Filters:  allow 0, deny 0
+
+  Notes:
+    - top-level 'svc_unused': service anchor no group uses; ignored
+    - top-level 'auth_unused': authenticator anchor no user uses; ignored
+
+  Dropped (--force):
+    - unknown top-level key 'action_deny'
+    - unknown top-level key 'provider_type_prefix'
+    - unknown top-level key 'bad_orphan'
+    - unknown top-level key 'random_map'
+    - unknown top-level key 'random_list'
+    - unknown top-level key 'random_scalar'
+
+  Errors:
+    - top-level 'bad_orphan': group entry without a usable name (quote names that YAML reads as numbers or booleans)
+-- stderr
+
+tacctl store: 1 error(s) must be fixed in cases/toplevel.yaml before it can be imported (--force does not override these).
+rc=1

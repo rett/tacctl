@@ -1,0 +1,27 @@
+auth-forms	cases/auth-forms.yaml	
+dupkeys	cases/dupkeys.yaml	
+empty	cases/empty.yaml	
+groups	cases/groups.yaml	
+scalars	cases/scalars.yaml	
+secrets-not-list	cases/secrets-not-list.yaml	
+secrets	cases/secrets.yaml	
+shared-alias	cases/shared-alias.yaml	
+sidecars	cases/sidecars.yaml	
+toplevel-list	cases/toplevel-list.yaml	
+toplevel-scalar	cases/toplevel-scalar.yaml	
+toplevel	cases/toplevel.yaml	
+users-entries	cases/users-entries.yaml	
+users-not-list	cases/users-not-list.yaml	
+validation	cases/validation.yaml	
+fixture.legacy.fresh-install	FIXTURES/legacy.fresh-install.yaml	
+fixture.legacy.import-edge	FIXTURES/legacy.import-edge.yaml	
+fixture.legacy.unrepresentable	FIXTURES/legacy.unrepresentable.yaml	
+fixture.tacquito.dead-matches	FIXTURES/tacquito.dead-matches.yaml	
+fixture.tacquito.legacy-exec	FIXTURES/tacquito.legacy-exec.yaml	
+fixture.tacquito.minimal	FIXTURES/tacquito.minimal.yaml	
+fixture.tacquito.multiscope	FIXTURES/tacquito.multiscope.yaml	
+golden.tacquito.minimal.rendered	FIXTURES/golden/tacquito.minimal.rendered.yaml	
+golden.tacquito.multiscope.rendered	FIXTURES/golden/tacquito.multiscope.rendered.yaml	
+carry.legacy.import-edge.edge-extras	FIXTURES/legacy.import-edge.yaml	existing/edge-extras.yaml
+carry.legacy.import-edge.list	FIXTURES/legacy.import-edge.yaml	existing/list.yaml
+carry.tacquito.multiscope.edge-extras	FIXTURES/tacquito.multiscope.yaml	existing/edge-extras.yaml

@@ -1,0 +1,23 @@
+note: FIXTURES/legacy.import-edge.yaml: scope 'v6' has no users; tacquito does not load it
+--- live (normalised)
++++ rendered (normalised)
+@@ -314,7 +314,7 @@
+           "name": "readonly",
+           "services": [
+             {
+-              "name": "exec",
++              "name": "shell",
+               "set_values": [
+                 {
+                   "name": "priv-lvl",
+@@ -359,7 +359,7 @@
+           "name": "readonly",
+           "services": [
+             {
+-              "name": "exec",
++              "name": "shell",
+               "set_values": [
+                 {
+                   "name": "priv-lvl",
+NOT EQUIVALENT
+rc=1

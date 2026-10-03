@@ -1,0 +1,65 @@
+== dump-legacy
+{"filters": {"allow": [], "deny": []}, "groups": {"operator": {"builtin": true, "juniper_class": "OP-CLASS", "priv_lvl": 7}, "readonly": {"builtin": true, "juniper_class": "RO-CLASS", "priv_lvl": 1}, "superuser": {"builtin": true, "juniper_class": "RW-CLASS", "priv_lvl": 15}}, "scopes": {"lab": {"prefixes": ["192.168.0.0/16"], "protocols": null, "secret": "lab-secret-0123456789abcdef"}, "lab2": {"prefixes": ["10.3.0.0/16"], "protocols": null, "secret": "0o17"}, "lab3": {"prefixes": ["10.4.0.0/16"], "protocols": null, "secret": "1e3"}, "lab4": {"prefixes": ["10.6.0.0/16"], "protocols": null, "secret": null}}, "users": {"m1": {"accounting_sink": false, "disabled": false, "group": "readonly", "hash": "24326224", "password_changed": null, "scopes": ["lab"]}, "m2": {"accounting_sink": false, "disabled": true, "group": "readonly", "hash": null, "password_changed": null, "scopes": ["lab"]}, "m3": {"accounting_sink": false, "disabled": true, "group": "readonly", "hash": null, "password_changed": null, "scopes": ["lab"]}, "m4": {"accounting_sink": false, "disabled": true, "group": "readonly", "hash": null, "password_changed": null, "scopes": ["lab"]}, "n1": {"accounting_sink": false, "disabled": false, "group": "readonly", "hash": "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141", "password_changed": null, "scopes": ["lab"]}, "n2": {"accounting_sink": false, "disabled": false, "group": "readonly", "hash": "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141", "password_changed": null, "scopes": ["lab"]}, "n3": {"accounting_sink": false, "disabled": true, "group": "readonly", "hash": null, "password_changed": null, "scopes": ["lab"]}, "n4": {"accounting_sink": false, "disabled": true, "group": "readonly", "hash": null, "password_changed": null, "scopes": ["lab"]}, "n5": {"accounting_sink": false, "disabled": true, "group": "readonly", "hash": null, "password_changed": null, "scopes": ["lab"]}, "n6": {"accounting_sink": false, "disabled": true, "group": "readonly", "hash": null, "password_changed": null, "scopes": ["lab"]}, "n7": {"accounting_sink": false, "disabled": false, "group": "readonly", "hash": "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141", "password_changed": null, "scopes": ["lab"]}, "n8": {"accounting_sink": false, "disabled": true, "group": "readonly", "hash": null, "password_changed": null, "scopes": ["lab"]}, "n9": {"accounting_sink": false, "disabled": false, "group": "readonly", "hash": "243262243132243131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131", "password_changed": null, "scopes": ["lab"]}, "quoted": {"accounting_sink": false, "disabled": false, "group": "readonly", "hash": "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141", "password_changed": null, "scopes": ["lab"]}}, "version": 1}
+rc=0
+== import-load force=0
+  Source:   cases/scalars.yaml
+  Groups:   3
+  Users:    14 (8 disabled)
+  Scopes:   4
+  Filters:  allow 0, deny 0
+
+  Notes:
+    - user 'quoted': has no accounter of its own; the rendered config always attaches the file accounter
+
+  Cannot be represented in the store:
+    - user 'n3': non-bcrypt authenticator; stored as disabled with no password
+    - user 'n4': non-bcrypt authenticator; stored as disabled with no password
+    - user 'n5': non-bcrypt authenticator; stored as disabled with no password
+    - user 'n6': non-bcrypt authenticator; stored as disabled with no password
+    - user 'n8': password hash is not a bcrypt hash; stored as disabled with no password
+    - user 'm2': password hash is not a bcrypt hash; stored as disabled with no password
+    - user 'm3': password hash is not a bcrypt hash; stored as disabled with no password
+    - user 'm4': password hash is not a bcrypt hash; stored as disabled with no password
+
+  Errors:
+    - users[14]: no usable name (quote names that YAML reads as numbers or booleans)
+    - users[15]: no usable name (quote names that YAML reads as numbers or booleans)
+    - users[16]: no usable name (quote names that YAML reads as numbers or booleans)
+    - users[17]: no usable name (quote names that YAML reads as numbers or booleans)
+    - secrets[1]: name is not a string (quote names that YAML reads as numbers or booleans)
+    - scope 'lab4' (secrets[4]): secret.key is missing or not a YAML string (quote it)
+-- stderr
+
+tacctl store: 6 error(s) must be fixed in cases/scalars.yaml before it can be imported.
+rc=1
+== import-load force=1
+  Source:   cases/scalars.yaml
+  Groups:   3
+  Users:    14 (8 disabled)
+  Scopes:   4
+  Filters:  allow 0, deny 0
+
+  Notes:
+    - user 'quoted': has no accounter of its own; the rendered config always attaches the file accounter
+
+  Dropped (--force):
+    - user 'n3': non-bcrypt authenticator; stored as disabled with no password
+    - user 'n4': non-bcrypt authenticator; stored as disabled with no password
+    - user 'n5': non-bcrypt authenticator; stored as disabled with no password
+    - user 'n6': non-bcrypt authenticator; stored as disabled with no password
+    - user 'n8': password hash is not a bcrypt hash; stored as disabled with no password
+    - user 'm2': password hash is not a bcrypt hash; stored as disabled with no password
+    - user 'm3': password hash is not a bcrypt hash; stored as disabled with no password
+    - user 'm4': password hash is not a bcrypt hash; stored as disabled with no password
+
+  Errors:
+    - users[14]: no usable name (quote names that YAML reads as numbers or booleans)
+    - users[15]: no usable name (quote names that YAML reads as numbers or booleans)
+    - users[16]: no usable name (quote names that YAML reads as numbers or booleans)
+    - users[17]: no usable name (quote names that YAML reads as numbers or booleans)
+    - secrets[1]: name is not a string (quote names that YAML reads as numbers or booleans)
+    - scope 'lab4' (secrets[4]): secret.key is missing or not a YAML string (quote it)
+-- stderr
+
+tacctl store: 6 error(s) must be fixed in cases/scalars.yaml before it can be imported (--force does not override these).
+rc=1

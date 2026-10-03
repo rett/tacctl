@@ -1,0 +1,21 @@
+note: variants/spare-a.yaml: scope 'prod-inner' has no users; tacquito does not load it
+note: variants/spare-a.yaml: scope 'spare' has no users; tacquito does not load it
+note: variants/spare-a.yaml: secrets[2] 'inner': 192.168.7.0/24 never matches a client (an earlier entry already covers it with 192.168.0.0/16)
+note: variants/spare-a.yaml: secrets[1] 'lab': 192.168.0.0/16 never matches a client (an earlier entry already covers it with 192.168.0.0/16) once every scope has a user
+note: variants/spare-a.yaml: secrets[4] 'prod-inner': 10.10.99.0/24 never matches a client (an earlier entry already covers it with 10.0.0.0/8) once every scope has a user
+--- live (normalised)
++++ rendered (normalised)
+@@ -8,6 +8,11 @@
+         "key": "<redacted:1>",
+         "prefix": "10.0.0.0/8",
+         "scope": "prod"
++      },
++      {
++        "key": "<redacted:2>",
++        "prefix": "192.168.7.0/24",
++        "scope": "inner"
+       },
+       {
+         "key": "<redacted:2>",
+NOT EQUIVALENT
+rc=1

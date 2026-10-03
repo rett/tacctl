@@ -1,0 +1,33 @@
+== dump-legacy
+{"filters": {"allow": [], "deny": []}, "groups": {}, "scopes": {}, "users": {}, "version": 1}
+rc=0
+== import-load force=0
+  Source:   cases/empty.yaml
+  Groups:   0
+  Users:    0 (0 disabled)
+  Scopes:   0
+  Filters:  allow 0, deny 0
+
+  Errors:
+    - built-in group 'readonly' is missing
+    - built-in group 'operator' is missing
+    - built-in group 'superuser' is missing
+-- stderr
+
+tacctl store: 3 error(s) must be fixed in cases/empty.yaml before it can be imported.
+rc=1
+== import-load force=1
+  Source:   cases/empty.yaml
+  Groups:   0
+  Users:    0 (0 disabled)
+  Scopes:   0
+  Filters:  allow 0, deny 0
+
+  Errors:
+    - built-in group 'readonly' is missing
+    - built-in group 'operator' is missing
+    - built-in group 'superuser' is missing
+-- stderr
+
+tacctl store: 3 error(s) must be fixed in cases/empty.yaml before it can be imported (--force does not override these).
+rc=1

@@ -1,0 +1,61 @@
+note: FIXTURES/tacquito.dead-matches.yaml: scope 'lab' has no users; tacquito does not load it
+--- live (normalised)
++++ rendered (normalised)
+@@ -8,30 +8,18 @@
+       "commands": [
+         {
+           "action": "2",
+-          "match": [
+-            "^show .*$"
+-          ],
+           "name": "show"
+         },
+         {
+           "action": "2",
+-          "match": [
+-            "^ping( .*)?$"
+-          ],
+           "name": "ping"
+         },
+         {
+           "action": "2",
+-          "match": [
+-            "^traceroute( .*)?$"
+-          ],
+           "name": "traceroute"
+         },
+         {
+           "action": "2",
+-          "match": [
+-            "^terminal .*$"
+-          ],
+           "name": "terminal"
+         },
+         {
+@@ -73,23 +61,14 @@
+       "commands": [
+         {
+           "action": "2",
+-          "match": [
+-            "^show .*$"
+-          ],
+           "name": "show"
+         },
+         {
+           "action": "2",
+-          "match": [
+-            "^ping( .*)?$"
+-          ],
+           "name": "ping"
+         },
+         {
+           "action": "2",
+-          "match": [
+-            "^traceroute( .*)?$"
+-          ],
+           "name": "traceroute"
+         },
+         {
+note: the two differ only in groups without users or scopes without users. tacquito answers today's clients identically, but the difference takes effect as soon as such a group or scope gets a user.
+NOT EQUIVALENT
+rc=1
