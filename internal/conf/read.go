@@ -77,3 +77,54 @@ func osErrorText(err error, path string) string {
 	}
 	return py.CollapseSpace(err.Error())
 }
+
+// RenderProblem is the check radius_conf_view makes of tacctl.yaml before
+// the RADIUS renderer takes the merged view (lib/backends/radius.sh, 0.1.16),
+// in that program's words: "" when the file is absent, empty or a mapping,
+// else the message. For a YAML error it is yaml_problem's
+// "<path>: <problem> (line L, column C)", for a top level that is not a
+// mapping "<path>: not a YAML mapping"; fixIt is true for both, and the
+// caller appends " -- fix it before rendering". A file that cannot be read is
+// "<path>: <strerror>" with fixIt false. What 0.1.16 answered with a Python
+// traceback (a file that is not UTF-8, a value safe_load cannot construct,
+// YAML tacctl does not support) is "<path>: <the usual reason>" with fixIt
+// true.
+func RenderProblem(path string) (msg string, fixIt bool) {
+	if path == "" {
+		return "", false
+	}
+	if _, err := os.Stat(path); err != nil {
+		return "", false
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		var errno syscall.Errno
+		if errors.As(err, &errno) {
+			text := errno.Error()
+			if text != "" && text[0] >= 'a' && text[0] <= 'z' {
+				text = string(text[0]-'a'+'A') + text[1:]
+			}
+			return path + ": " + text, false
+		}
+		return path + ": I/O", false
+	}
+	doc, err := pyyaml.Load(data, path)
+	if err != nil {
+		var ye *pyyaml.Error
+		if errors.As(err, &ye) {
+			return path + ": " + ye.YAMLProblem(), true
+		}
+		var why interface{ Why() string }
+		if errors.As(err, &why) {
+			return path + ": " + why.Why(), true
+		}
+		return path + ": " + py.CollapseSpace(err.Error()), true
+	}
+	if doc == nil {
+		return "", false
+	}
+	if _, ok := doc.(*yamlpy.Map); !ok {
+		return path + ": not a YAML mapping", true
+	}
+	return "", false
+}

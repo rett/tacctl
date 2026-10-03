@@ -70,6 +70,22 @@ func (e *Error) Why() string {
 	return why
 }
 
+// YAMLProblem is the text of yaml_problem (lib/store.sh, 0.1.16) after the
+// path: "<problem> (line L, column C)". The problem is PyYAML's `problem`
+// attribute, "invalid YAML" when there is none (a ReaderError has none); the
+// position is the problem mark's, when there is one. Unlike Why it keeps the
+// problem's whitespace and puts the position last.
+func (e *Error) YAMLProblem() string {
+	problem := e.Problem
+	if e.reader || problem == "" {
+		problem = "invalid YAML"
+	}
+	if !e.reader && e.ProblemMark != nil {
+		problem += fmt.Sprintf(" (line %d, column %d)", e.ProblemMark.Line+1, e.ProblemMark.Column+1)
+	}
+	return problem
+}
+
 func scannerError(context string, cm *Mark, problem string, pm Mark) *Error {
 	return &Error{Context: context, ContextMark: cm, Problem: problem, ProblemMark: &pm}
 }
