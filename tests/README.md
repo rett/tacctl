@@ -526,3 +526,115 @@ not `bash -c`.
 - `tacctl_mocks_init` prepends `$BATS_TEST_TMPDIR/stubs` to `PATH`, so stubs shadow real
   `systemctl`, `git`, `journalctl`, `openssl`. Stubs record calls to `$CALLS_LOG`.
 - bats isolates each `@test` in its own process, so global state doesn't leak between tests.
+
+## The Go rewrite: differential runner, test knobs, characterisation tests
+
+Added by work package WP0.2 of `docs/plans/go-rewrite.md` (sections 2.2, 2.5, 3.6).
+
+### Differential runner: `tests/diff/run.sh`
+
+Runs every command of a corpus under two implementations of tacctl, each against
+its own copy of the same fixture state, and reports any difference in stdout,
+stderr, exit code, the calls made to the stubbed system commands (`systemctl`,
+`logger`) and the resulting state tree (modes, sizes and contents of every file
+under the sandbox root, an empty `TMPDIR` included).
+
+```sh
+make test-diff CORPUS=users                  # builds dist/tacctl first; A = the 0.1.16 tag, B = Go
+tests/diff/run.sh --b bash users             # B = the tag again: a difference here is a runner bug
+tests/diff/run.sh --b tree users             # B = bin/tacctl.sh of the working tree
+tests/diff/run.sh --all                      # every corpus
+tests/diff/run.sh --filter 'user add' users  # only the lines matching a regex; --keep keeps the work dir
+tests/diff/run.sh --self-test                # the runner against itself and against a deliberately wrong B
+```
+
+- **A is always a tag** (`--against`, default `0.1.16`): a shared clone of this
+  repository checked out at the tag into a temp dir, so a result does not depend on
+  which bash files the working tree touched. B is `go` (`dist/tacctl`, started with
+  `TACCTL_BASH_IMPL` and `TACCTL_TREE` pointing at this tree, as the bats harness
+  does), `bash`, `tree`, or any executable.
+- **Corpora** are `tests/diff/corpus/<name>.txt`: `users`, `scopes`, `groups`,
+  `config`, `backup`, `store` (more arrive with the packages that cut over devices
+  and hosts). One command per line, program name left out; `<<< text` is stdin
+  (`\n` a line break; no `<<<` means a closed stdin); ` ;; ` chains commands that
+  share one state; `@fixture`, `@env`, `@unenv`, `@stub <cmd> <rc>`, `@known <why>`
+  are directives; `{HASH}`, `{FIXTURES}`, `{DATE}`, `{TS}` are placeholders. The
+  header of `run.sh` is the full syntax. Every corpus has at least as many failing
+  lines as succeeding ones (the summary prints the count); add the error paths
+  (unknown verb, missing argument, bad value, closed stdin, `n` to a prompt) with
+  every success path.
+- **Both sides run the same sandbox** (`env -i`; `TACCTL_*` paths under one root;
+  `LANG=C.UTF-8`, `TZ=UTC`; `TACCTL_SKIP_SUDO=1`; PATH stubs). The two sides run one
+  after the other in the same place, so a path a command writes into a file is the
+  same on both. The fixture is built once, with A's implementation.
+- **Determinism** comes from the stubs on the bash side and the test knobs on the Go
+  side, fixed to the same values: the clock is today at 12:00:00 UTC (`date` stub;
+  `TACCTL_TEST_NOW`), randomness is the bytes `a1b2c3d4e5f60718293a4b5c6d7e8f90`
+  repeated (`openssl rand` stub; a `sitecustomize` that replaces python's
+  `os.urandom`, which is where bcrypt takes its salt; `TACCTL_TEST_RANDOM`). So a
+  generated password, secret or hash is the same on both sides; the Go code must
+  draw its salts and secrets from `app.Knobs.Rand()` for that to hold. What is still
+  normalised: ANSI colours (`--colour` keeps them), timestamps (`<TS>`, `<ISO>`), the
+  version, the sandbox and tree paths, and generated bcrypt hashes (not the ones
+  the command line itself carries).
+- Exit status: 0 no unexplained difference, 1 a difference, 2 a usage or setup
+  error. A line marked `@known` (an intended change listed in the plan's 3.9) is
+  reported as `known`, not a failure; the runner says so when the marked line no
+  longer differs.
+
+### Test knobs (`internal/app/knobs*.go`)
+
+Three environment variables let a test fix what a command takes from the world.
+They are read **only** by a binary built with `-tags testknobs` (`make build`, which
+the bats harness and the differential runner use); the installed binary and the
+bootstrap shim do not read them at all, whatever the variables hold, and
+`tacctl version --long` prints `test knobs: on|off`. `TACCTL_SKIP_SUDO` is not a
+knob: it stays an ordinary environment check.
+
+| Variable | Effect (test builds only) |
+|---|---|
+| `TACCTL_TEST_NOW=<RFC 3339>` | `Knobs.Now()` returns that instant, in the local zone, instead of the clock |
+| `TACCTL_TEST_RANDOM=<hex>` | `Knobs.Rand()` yields those bytes, repeated as often as needed, each call starting at the first byte; the bash stubs do the same |
+| `TACCTL_FAULT=<point>[,<point>...]` | `Knobs.Fault(point)` returns an error for each named point; it replaces the function-override fault injection of the bash tests |
+
+A malformed value is an error naming the variable; an empty one is the same as
+unset. Run the Go tests of the knobs both ways: `go test ./internal/app` (the
+off build: the variables are ignored) and `go test -tags testknobs ./internal/app`.
+
+### The fake runner (`internal/execx/fake`)
+
+The Go counterpart of `mocks.bash`: `stub_cmd systemctl 'exit 3'` is
+`r.On([]string{"systemctl"}, execx.Result{Code: 3})`, `stub_called 'systemctl restart tacquito'`
+is `r.Called("systemctl", "restart", "tacquito")` (or `r.CalledRegexp` for the
+bats pattern). Scripting: `On` (argv prefix, newest rule wins), `When`/`Func`/`OnFunc`
+(by predicate or function), `Seq` (a different answer per call, the last repeats),
+`Fail`, `Missing`/`Install` (what `LookPath` finds), `ExecErr`, `Strict` (an
+unscripted call is an error). Asserting: `Calls`, `Records` (with the stdin each
+call got), `Argvs`, `Called`, `Count`, `ArgvContains` (a secret must never reach an
+argv), `Signals`, `Execs`, `Reset`.
+
+### Characterisation tests: `tests/integration/characterisation.bats`
+
+CLI behaviour of the `0.1.16` bash implementation that no other test pins:
+`hash generate|commands`, `user verify`, the generated-password path of
+`user add|passwd`, `config defaults|branch`, the argument handling of
+`install|upgrade --branch`, the top-level usage (`help`, `-h`, no command, an
+unknown word, `version`), and every usage block of
+`internal/cli/testdata/usage/` compared with the real output. They were written
+and made green against bash first; the Go port must keep them green. Each test
+carries a `# bats test_tags=cutover:<package>` tag (`cutover:wp2-4a`, ...) naming
+the package that moves its verb to Go; a package checks its verbs with
+
+```sh
+TACCTL_IMPL=go tests/bats/bats-core/bin/bats --filter-tags cutover:wp2-4a \
+    tests/integration/characterisation.bats
+```
+
+`tests/blackbox.list` runs the whole file against Go from `WP3.3d`, the last
+cut-over it needs. Tests tagged `bash-only` cannot move as they are: the
+`config branch` tests call `cmd_config_branch` with `DEPLOY_DIR` pointed at a scratch
+directory (bash has no environment variable for the deploy clone; the Go
+port takes it from `TACCTL_TREE`), and the missing-`python3-bcrypt` test has no Go
+counterpart (the Go binary has no python3). Quirks the tests pin on purpose:
+`user verify` exits 0 on a wrong password, a closed stdin is a blank password
+(one is generated), `upgrade --branch` without a value exits 1 without a word.

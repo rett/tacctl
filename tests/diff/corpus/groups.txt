@@ -1,0 +1,109 @@
+# tacctl group ...: group_crud and group_edit_commands command lines, plus the error paths.
+# Run: tests/diff/run.sh groups
+@fixture tacquito.minimal.yaml
+
+group
+group bogus
+group list
+
+# add
+group add
+group add name
+group add name 5
+group add 1bad 5 HELPDESK
+group add HelpDesk 5 HELPDESK
+group add netops 16 NETOPS
+group add netops -1 NETOPS
+group add netops 7 'bad class'
+group add superuser 14 RW-CLASS
+group add helpdesk 5 HELPDESK-CLASS
+group add helpdesk 5 HELPDESK-CLASS ;; group list
+group add helpdesk 5 HELPDESK-CLASS ;; group add helpdesk 6 OTHER-CLASS
+group add helpdesk 5 HELPDESK-CLASS ;; user add alice helpdesk --hash {HASH} --scopes lab ;; user show alice
+
+# edit
+group edit
+group edit operator
+group edit operator foo bar
+group edit nosuchgroup priv-lvl 5
+group edit operator priv-lvl
+group edit operator priv-lvl 99
+group edit operator priv-lvl ten
+group edit operator priv-lvl 10 ;; group list
+group edit operator juniper-class
+group edit operator juniper-class 'bad class'
+group edit operator juniper-class NEW-OP-CLASS ;; group list
+
+# remove
+group remove
+group remove nosuchgroup
+group remove superuser
+group remove operator
+group add helpdesk 5 HELPDESK-CLASS ;; group remove helpdesk <<< y ;; group list
+group add helpdesk 5 HELPDESK-CLASS ;; group remove helpdesk <<< n ;; group list
+group add helpdesk 5 HELPDESK-CLASS ;; group remove helpdesk ;; group list
+group add helpdesk 5 HELPDESK-CLASS ;; user add alice helpdesk --hash {HASH} --scopes lab ;; group remove helpdesk <<< y
+
+# commands
+group commands
+group commands bogus operator
+group commands list
+group commands list nosuchgroup
+group commands list operator
+group commands list superuser
+group commands list readonly
+group commands default operator
+group commands default operator maybe
+group commands default operator deny ;; group commands list operator
+group commands default operator permit ;; group commands list operator
+group commands add operator
+group commands add operator '1bad' --action permit
+group commands add operator '*' --action permit
+group commands add operator show --bogus foo
+group commands add operator show --match '(' --action permit
+group commands add operator show --match 'run.*' --action maybe
+group commands add operator show --match '^show .*$' --action permit
+group commands add operator show --match 'run.*' --action permit ;; group commands list operator
+group commands add operator ping --match '^ping( .*)?$' --action permit ;; group commands list operator
+group commands add operator show --match 'running-config.*' --action permit ;; group commands add operator show --match 'version.*' --action permit ;; group commands list operator
+group commands add nosuchgroup show --action permit
+group commands remove operator
+group commands remove operator missing
+group commands remove operator show ;; group commands list operator
+group commands add operator show --match 'run.*' --action permit ;; group commands remove operator show ;; group commands list operator
+group commands remove nosuchgroup show
+group commands clear
+group commands clear nosuchgroup
+group commands clear operator <<< y ;; group commands list operator
+group commands clear operator <<< n ;; group commands list operator
+group commands clear operator
+group commands seed
+group commands seed operator ;; group commands list operator
+group commands seed nosuchgroup
+group commands seed --force
+
+# privilege
+group privilege
+group privilege bogus operator
+group privilege list
+group privilege list nosuchgroup
+group privilege list operator
+group privilege list readonly
+group privilege list superuser
+group privilege add
+group privilege add operator
+group privilege add nosuchgroup 'show version'
+group privilege add operator 'show; rm -rf /'
+group privilege add operator 'show version' ;; group privilege list operator
+group privilege add operator 'show version,show ip interface brief' ;; group privilege list operator
+group privilege remove operator
+group privilege remove operator 'show users'
+group privilege add operator 'show version' ;; group privilege remove operator 'show version' ;; group privilege list operator
+group privilege remove nosuchgroup 'show version'
+group privilege clear
+group privilege clear nosuchgroup
+group privilege clear operator
+group privilege add operator 'show version' ;; group privilege clear operator ;; group privilege list operator
+group privilege seed
+group privilege seed operator
+group privilege seed nosuchgroup

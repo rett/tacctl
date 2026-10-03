@@ -1,0 +1,24 @@
+# The runner's own corpus (tests/diff/run.sh --self-test): small, fast, and
+# touching what the normalisation must handle (a generated password and salted
+# hash, timestamps in snapshot names, colours, stdin, chains, failures).
+@fixture tacquito.minimal.yaml
+user list
+user show nosuch
+user add alice superuser --hash 24326224313024616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161 --scopes lab
+user add alice superuser --hash 24326224313024616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161 --scopes lab ;; user list ;; user add alice operator
+user add bob operator --scopes lab <<<
+user add bob operator --scopes lab <<< CorrectHorse99\nCorrectHorse99
+user add bob nosuchgroup --scopes lab
+user passwd ghost
+scope list
+scope show nosuch
+scope add prod --prefixes 10.0.0.0/8 --secret generate
+@known the self-test mutant changes this one on purpose; drop the marker and the run must report DIFF
+config defaults
+hash commands
+hash bogus
+bogus
+@fixture none
+user list
+@stub systemctl 1
+user add carol readonly --scopes lab <<<

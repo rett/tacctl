@@ -1,0 +1,43 @@
+# tacctl backup ...: backup.bats command lines plus the error paths. The clock is
+# fixed (TACCTL_TEST_NOW, the date stub), so a snapshot taken during the line is
+# {TS}; ids that were never taken are written out.
+# Run: tests/diff/run.sh backup
+@fixture tacquito.minimal.yaml
+
+backup
+backup bogus
+backup list
+backup diff
+backup diff {TS}
+backup diff 19990101_000000
+backup diff 20260101_000000_000
+backup diff ../store.yaml
+backup restore
+backup restore 19990101_000000
+backup restore 19990101_000000 --legacy
+backup restore a b
+backup restore a --frob
+backup restore --legacy pre-store.20250101_000000
+backup restore {TS} <<< y
+
+# after a change there is a snapshot
+user add alice superuser --hash {HASH} --scopes lab ;; backup list
+user add alice superuser --hash {HASH} --scopes lab ;; backup diff
+user add alice superuser --hash {HASH} --scopes lab ;; backup diff {TS}
+user add alice superuser --hash {HASH} --scopes lab ;; backup diff 19990101_000000
+user add alice superuser --hash {HASH} --scopes lab ;; config bcrypt-cost 10 ;; backup diff
+user add alice superuser --hash {HASH} --scopes lab ;; config bcrypt-cost 10 ;; backup list
+
+# restore
+user add alice superuser --hash {HASH} --scopes lab ;; backup restore {TS} <<< y ;; user list
+user add alice superuser --hash {HASH} --scopes lab ;; backup restore {TS} <<< n ;; user list
+user add alice superuser --hash {HASH} --scopes lab ;; backup restore {TS} ;; user list
+user add alice superuser --hash {HASH} --scopes lab ;; backup restore {TS} --legacy <<< y
+user add alice superuser --hash {HASH} --scopes lab ;; backup restore 19990101_000000 <<< y
+user add alice superuser --hash {HASH} --scopes lab ;; config bcrypt-cost 10 ;; backup restore {TS} <<< y ;; config get bcrypt.cost
+user add alice superuser --hash {HASH} --scopes lab ;; config restore {TS} <<< y ;; user list
+user add alice superuser --hash {HASH} --scopes lab ;; config diff {TS}
+
+# the old-style (legacy) side
+store rollback
+backup list ;; backup restore 20200101_000000_001 <<< y
