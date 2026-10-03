@@ -82,6 +82,9 @@ with open(sys.argv[1]) as f:
     cmp "$STORE" "${BATS_TEST_TMPDIR}/before.yaml"
 }
 
+# Calls the bash store writer directly; the Go store's validator has the
+# same check in its unit tests (internal/store).
+# bats test_tags=bash-only
 @test "scope protocols: the store's own schema refuses an unknown protocol" {
     tacctl_source_lib
     run store_scope_set dmz protocols=ldap
@@ -158,6 +161,9 @@ with open(sys.argv[1]) as f:
     assert_output --partial "Unknown subcommand"
 }
 
+# Calls the bash tier table directly; internal/tier's tests check the Go one
+# (and tiers.bats the gate through the command line).
+# bats test_tags=bash-only
 @test "scope protocols: mutating it is superuser-only under the tier gate" {
     tacctl_source_lib
     run tier_permits operator scope protocols

@@ -43,7 +43,7 @@ func newRoot(inv *invocation) *cobra.Command {
 	root.AddCommand(lifecycleCmds()...)
 	root.AddCommand(passwdCmd(inv))
 	root.AddCommand(
-		userCmd(inv), groupCmd(), scopeCmd(), hostCmd(), backendCmd(), storeCmd(),
+		userCmd(inv), groupCmd(inv), scopeCmd(inv), hostCmd(), backendCmd(), storeCmd(),
 		configCmd(inv), logCmd(), backupCmd(), hashCmd(inv), versionCmd(inv),
 		// Bash completion's bridge to live names (sudo -n tacctl _completion-names <kind>).
 		completionNamesCmd(inv),

@@ -22,16 +22,27 @@ setup() {
     # Freeze server-IP discovery so rendered output is deterministic.
     stub_cmd ip 'if [[ "$*" == *"route get 1.0.0.0"* ]]; then echo "1.0.0.0 via 10.0.0.1 dev eth0 src 10.0.0.42 uid 0"; fi'
 
+    # The setup and set_vendors change the store through the CLI, which
+    # renders and may restart (systemctl is stubbed): no settling pause.
+    export TACCTL_SETTLE_SECONDS=0
+
     load_fixture tacquito.multiscope.yaml
     OVERRIDES="${TACCTL_STATE_DIR}/tacctl.yaml"
     # Every scope sends every vendor's attribute (the opt-in tests below take
-    # it away again): one store write, nothing rendered.
-    bash -c 'source "$1"; store_mutate "for s in store[\"scopes\"].values(): s[\"vendor_attrs\"] = list(KNOWN_VENDORS)"' _ "$TACCTL_BIN_SCRIPT" > /dev/null
+    # it away again).
+    local s
+    for s in dmz lab prod prod-inner; do
+        "$TACCTL_BIN_SCRIPT" scope vendor-attrs "$s" enable cisco,juniper,wti > /dev/null
+    done
 }
 
-# A scope's vendor attributes in the store: set_vendors <scope> <csv|null>.
+# A scope's vendor attributes in the store: set_vendors <scope> <csv|null>
+# (call it before radius_on: with the backend enabled it would render it).
 set_vendors() {
-    bash -c 'source "$1"; store_scope_set "$2" "vendor_attrs=$3"' _ "$TACCTL_BIN_SCRIPT" "$1" "$2" > /dev/null
+    "$TACCTL_BIN_SCRIPT" scope vendor-attrs "$1" disable cisco,juniper,wti > /dev/null
+    if [[ "$2" != null ]]; then
+        "$TACCTL_BIN_SCRIPT" scope vendor-attrs "$1" enable "$2" > /dev/null
+    fi
 }
 
 # Same normalisation as config_templates.bats.
@@ -442,7 +453,8 @@ radius_listeners() {
 
 @test "config cisco --protocol radius: an address tagged with the vendor is enough, with a warning that only it gets the attribute" {
     set_vendors lab juniper
-    bash -c 'source "$1"; store_scope_set lab devices=192.168.7.7/32=cisco,192.168.8.0/24=wti' _ "$TACCTL_BIN_SCRIPT" > /dev/null
+    "$TACCTL_BIN_SCRIPT" scope devices lab set 192.168.7.7/32 cisco > /dev/null
+    "$TACCTL_BIN_SCRIPT" scope devices lab set 192.168.8.0/24 wti > /dev/null
     radius_on
     run "$TACCTL_BIN_SCRIPT" config cisco --scope lab --protocol radius
     assert_success
@@ -567,6 +579,9 @@ radius_listeners() {
     refute_output --partial "MY-CISCO"
 }
 
+# Runs a copy of the bash script from another directory (no config/templates
+# there): bash only; the Go binary embeds its templates (docs/plans/go-rewrite.md 3.7).
+# bats test_tags=bash-only
 @test "config cisco|juniper --protocol radius: without any template file the built-in text renders the same config" {
     local alt="$BATS_TEST_TMPDIR/alt/bin" v
     mkdir -p "$alt"

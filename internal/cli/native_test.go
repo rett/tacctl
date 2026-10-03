@@ -307,8 +307,14 @@ func TestNativePrelude(t *testing.T) {
 	sb.expect(0, "operator\nreadonly\nsuperuser\n", "")
 	ro("version")
 	sb.expect(0, "tacctl v", "")
-	// A delegated family is not gated by Go: bash gates it.
+	// scope list is open to the readonly tier, scope show (the secret's
+	// length) is not.
+	ro("scope", "list")
+	sb.expect(0, "prod-inner", "")
 	ro("scope", "show", "lab")
+	sb.expect(1, "", "[ERROR] 'tacctl scope show' is not permitted for the readonly tier.")
+	// A delegated family is not gated by Go: bash gates it.
+	ro("host", "list")
 	if len(sb.runner.Execs()) != 1 || sb.err.Len() != 0 || sb.runner.Called("id") {
 		t.Errorf("delegated command gated by Go: %q %q", sb.err.String(), sb.runner.Argvs())
 	}

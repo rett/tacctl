@@ -16,8 +16,6 @@ setup() {
     stub_cmd chown
     stub_cmd systemctl
     stub_cmd logger
-    # Deterministic `openssl rand -base64 24` — used by scopes secret generate.
-    stub_cmd openssl 'if [[ "$1" == "rand" && "$2" == "-base64" ]]; then echo "DETERMINISTICSECRET=="; else exit 1; fi'
     load_fixture tacquito.minimal.yaml
     # Seed a second scope for collision tests.
     "$TACCTL_BIN_SCRIPT" scope add prod \
@@ -263,14 +261,20 @@ setup() {
 
 # --- scopes secret generate --------------------------------------------------
 
-@test "scopes secret generate: uses openssl and persists the value" {
+# 0.1.16 ran 'openssl rand -base64 24'; 0.2.0 draws the same 24 random bytes
+# itself (docs/plans/go-rewrite.md 3.9 item 2). Either way: a fresh
+# 32-character base64 value, printed once and stored.
+@test "scopes secret generate: prints a fresh 32-character base64 secret and persists it" {
     run "$TACCTL_BIN_SCRIPT" scope secret prod generate
     assert_success
-    assert_output --partial "DETERMINISTICSECRET=="
+    local secret
+    secret=$(printf '%s\n' "$output" | sed -n 's/^  Generated: \x1b\[1m\(.*\)\x1b\[0m$/\1/p')
+    [[ "$secret" =~ ^[A-Za-z0-9+/]{32}$ ]]
+    [[ "$secret" != "prod-secret-1234567890abcdef" ]]
 
     run "$TACCTL_BIN_SCRIPT" scope secret prod show
-    assert_output --partial "DETERMINISTICSECRET=="
-    stub_called 'openssl rand -base64 24'
+    assert_output --partial "Value:  "$'\e'"[1m${secret}"$'\e'"[0m"
+    assert_output --partial "Length: 32 chars"
 }
 
 # --- scopes secret: unknown scope -------------------------------------------

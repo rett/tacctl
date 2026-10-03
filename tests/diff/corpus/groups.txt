@@ -107,3 +107,110 @@ group privilege add operator 'show version' ;; group privilege clear operator ;;
 group privilege seed
 group privilege seed operator
 group privilege seed nosuchgroup
+
+# WP2.4b: more usage, argument and value paths
+group -h
+group help
+group list extra
+group commands -h
+group commands help
+group privilege --help
+group privilege help
+group add helpdesk 05 HELPDESK-CLASS ;; group list
+group add helpdesk 015 HELPDESK-CLASS
+group add helpdesk 1.5 HELPDESK-CLASS
+group add help-desk_2 0 HD ;; group list
+group add helpdesk 5 'bad\tclass'
+group add 'bad\tname' 5 HD
+group edit helpdesk priv-lvl 5
+group edit operator priv-lvl 15 ;; group list ;; user add alice operator --hash {HASH} --scopes lab ;; user show alice
+group edit operator juniper-class 'x y'
+group remove helpdesk extra
+group add helpdesk 5 HELPDESK-CLASS ;; group remove helpdesk <<< yes ;; group list
+group add helpdesk 5 HELPDESK-CLASS ;; group remove helpdesk <<< Y
+
+# commands: rule shapes, siblings, catchall
+group commands list operator extra
+group commands default operator permit extra
+group commands default nosuchgroup deny
+group commands add operator show
+@known 3.9 item 16 (proposed extension): 0.1.16 crashed here with bash's 'unbound variable' diagnostic; 0.2.0 exits 1 the same way, without it
+group commands add operator show --match
+group commands add operator show --action
+group commands add operator show --match 'run.*' --match 'start.*' ;; group commands list operator
+group commands add operator show --match 'a{1,3}' ;; group commands list operator ;; group commands add operator ping ;; group commands list operator
+@known 3.9 item 14: --match regexes are checked with RE2, which has no lookarounds
+group commands add operator show --match '(?=x)'
+group commands add operator show --match 'show .*'
+group commands add operator show --match '^show$'
+group commands add operator show --match 'version' --action deny ;; group commands list operator
+group commands add operator show ;; group commands list operator
+group commands add operator configure --action deny ;; group commands list operator
+group commands add operator configure ;; group commands add operator configure
+group commands add operator configure --match 'x' ;; group commands add operator configure --match 'x'
+group commands add helpdesk show
+group add helpdesk 7 HELPDESK-CLASS ;; group commands add helpdesk show ;; group commands list operator ;; group commands list helpdesk
+group add helpdesk 7 HELPDESK-CLASS ;; group commands default helpdesk deny ;; group commands list helpdesk
+group add helpdesk 7 HELPDESK-CLASS ;; group commands list helpdesk ;; group commands clear helpdesk
+group add helpdesk 7 HELPDESK-CLASS ;; group commands seed helpdesk
+group commands remove operator '*'
+group commands remove operator 'sh.w' ;; group commands list operator
+@known 3.9 item 16 (proposed extension): 0.1.16 leaked grep's and python's error noise for a name that is no valid regex; same outcome without it
+group commands remove operator 'sh[' ;; group commands list operator
+group commands remove operator ping ;; group commands remove operator ping
+group commands clear operator <<< yes
+group commands clear superuser <<< y ;; group commands list superuser
+group commands seed operator extra
+group commands seed --bogus
+group commands seed - 
+group commands seed superuser --force ;; group commands list superuser
+group commands seed --force readonly ;; group commands list readonly
+group commands add operator configure ;; group commands seed operator ;; group commands seed operator --force ;; group commands list operator
+group commands default readonly permit ;; group commands list readonly
+
+# privilege: lists, defaults, validation
+group privilege list operator extra
+group privilege add operator 'show version, show users'
+group privilege add operator ' , '
+group privilege add operator "show version,'x"
+group privilege add operator ' show version'
+group privilege add operator 'show running-config' ;; group privilege list operator
+group privilege add readonly 'show version' ;; group privilege list readonly
+group privilege remove operator 'show running-config,show nothing' ;; group privilege list operator
+group privilege remove readonly 'show version'
+group privilege add operator 'a2345678901234567890123456789012345678901234567890123456789012345'
+group privilege add operator '9show'
+group privilege clear operator <<< y
+group privilege add operator 'show version' ;; group privilege clear operator <<< y ;; group privilege list operator
+group privilege add operator 'show version' ;; group privilege clear operator <<< n
+group privilege seed superuser ;; group privilege list superuser
+group privilege seed operator ;; group privilege seed operator --force ;; group privilege list operator
+group privilege seed --bogus
+group privilege seed operator readonly
+group privilege add operator 'show version' ;; group privilege seed
+group add helpdesk 5 HELPDESK-CLASS ;; group privilege list helpdesk ;; group privilege add helpdesk 'show version' ;; group privilege list helpdesk
+group add helpdesk 5 HELPDESK-CLASS ;; group privilege seed helpdesk
+
+# more refusals
+group add '' 5 HD
+group edit '' priv-lvl 5
+group commands list ''
+group commands default operator ''
+group commands add operator ''
+group privilege add '' 'show version'
+group privilege remove operator ''
+
+# no store: legacy read-only mode answers the reads, refuses the writes
+@fixture legacy.fresh-install.yaml
+group list
+group commands list operator
+group privilege list operator
+group add helpdesk 5 HELPDESK-CLASS
+group commands default operator deny
+group privilege add operator 'show version'
+
+# nothing at all: preflight
+@fixture none
+group
+group list
+group commands

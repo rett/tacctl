@@ -102,7 +102,8 @@ func commandPaths(c *cobra.Command, prefix []string, out *[][]string) {
 }
 
 // nativeWords are the first words the Go binary owns (cut over).
-var nativeWords = map[string]bool{"version": true, "user": true, "hash": true, "passwd": true, "_completion-names": true, "config": true}
+var nativeWords = map[string]bool{"version": true, "user": true, "hash": true, "passwd": true, "_completion-names": true,
+	"config": true, "scope": true, "group": true}
 
 // The no-sub / help / -h / unknown table of docs/plans/go-rewrite.md 3.2:
 // every command of a family not cut over yet belongs to bash, so each of
@@ -131,7 +132,7 @@ func TestEverythingNotCutOverIsDelegated(t *testing.T) {
 		[]string{"--x=1", "user", "list"}, []string{"--", "version"}, []string{"Version"},
 		[]string{"_completion-names", "backups"},
 		[]string{"help", "version"}, []string{"User", "list"}, []string{"Hash"},
-		[]string{"scope", "user", "list"}, []string{"scope", "prefixes", "lab", "clear"},
+		[]string{"host", "user", "list"}, []string{"host", "unenroll", "lab", "--force"},
 		[]string{"log", "--backend", "tacacs", "tail", "5"},
 	)
 	for _, args := range cases {
@@ -238,22 +239,22 @@ func TestReexecUnderSudo(t *testing.T) {
 		}
 	}
 	// Root never re-execs.
-	h := mk([]string{"scope", "list"}, 0)
+	h := mk([]string{"host", "list"}, 0)
 	if err := h.run(); err != nil || h.runner.Execs()[0].Argv[0] == "sudo" {
 		t.Errorf("root re-exec'd: %v %+v", err, h.runner.Execs())
 	}
 	// No sudo on PATH; exec failure; unknown executable.
-	h = mk([]string{"scope", "list"}, 1000)
+	h = mk([]string{"host", "list"}, 1000)
 	h.runner.Missing("sudo")
 	if code := exitCode(h.run(), h.app.Out); code != 127 || !strings.Contains(h.err.String(), "sudo not found") {
 		t.Errorf("missing sudo: %d %q", code, h.err.String())
 	}
-	h = mk([]string{"scope", "list"}, 1000)
+	h = mk([]string{"host", "list"}, 1000)
 	h.runner.ExecErr = errors.New("EACCES")
 	if code := exitCode(h.run(), h.app.Out); code != 126 {
 		t.Errorf("sudo exec failure: %d", code)
 	}
-	h = mk([]string{"scope", "list"}, 1000)
+	h = mk([]string{"host", "list"}, 1000)
 	h.app.Exe = ""
 	if code := exitCode(h.run(), h.app.Out); code != 1 || len(h.runner.Execs()) != 0 {
 		t.Errorf("unknown exe: %d", code)
@@ -268,7 +269,7 @@ func TestDelegateRefusesNonBashTargets(t *testing.T) {
 			t.Errorf("%s: exit %d stderr %q", name, code, h.err.String())
 		}
 	}
-	h := newHarness(t, []string{"scope", "list"}, "TACCTL_BASH_IMPL=/nonexistent/bin/tacctl.sh")
+	h := newHarness(t, []string{"host", "list"}, "TACCTL_BASH_IMPL=/nonexistent/bin/tacctl.sh")
 	check("missing", h, 1, "\033[0;31m[ERROR]\033[0m command not available in this build\n")
 	if len(h.runner.Execs()) != 0 {
 		t.Error("exec'd a missing file")
@@ -281,14 +282,14 @@ func TestDelegateRefusesNonBashTargets(t *testing.T) {
 	if err := os.WriteFile(shim, []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	check("shim", newHarness(t, []string{"scope", "list"}, "TACCTL_BASH_IMPL="+shim), 1, "No bash implementation of tacctl at "+shim)
+	check("shim", newHarness(t, []string{"host", "list"}, "TACCTL_BASH_IMPL="+shim), 1, "No bash implementation of tacctl at "+shim)
 
 	impl := bashTree(t)
-	h = newHarness(t, []string{"scope", "list"}, "TACCTL_BASH_IMPL="+impl)
+	h = newHarness(t, []string{"host", "list"}, "TACCTL_BASH_IMPL="+impl)
 	h.app.Exe = impl // TACCTL_BASH_IMPL pointing back at this binary
 	check("self", h, 1, "command not available in this build")
 
-	h = newHarness(t, []string{"scope", "list"})
+	h = newHarness(t, []string{"host", "list"})
 	h.runner.ExecErr = errors.New("permission denied")
 	check("exec failure", h, 126, "Cannot run ")
 }
@@ -469,7 +470,7 @@ func TestMain(t *testing.T) {
 		t.Errorf("Main: %d %q %q", code, out.String(), errb.String())
 	}
 	out.Reset()
-	code = Main([]string{"tacctl", "scope", "list"}, []string{"TACCTL_SKIP_SUDO=1", "TACCTL_BASH_IMPL=/nonexistent/tacctl.sh"}, app.Stdio{Stdout: &out, Stderr: &errb}, BuildInfo{})
+	code = Main([]string{"tacctl", "host", "list"}, []string{"TACCTL_SKIP_SUDO=1", "TACCTL_BASH_IMPL=/nonexistent/tacctl.sh"}, app.Stdio{Stdout: &out, Stderr: &errb}, BuildInfo{})
 	if code != 1 || !strings.Contains(errb.String(), "command not available in this build") {
 		t.Errorf("Main delegation failure: %d %q", code, errb.String())
 	}

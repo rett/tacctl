@@ -18,6 +18,8 @@ load ../helpers/fixtures
 
 HASH="24326224313024616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161"
 HASH_B="24326224313024626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262"
+# DISABLED_MARKER_HEX of lib/users.sh: '$2b$12$' and 53 dots, hex-encoded.
+DISABLED_MARKER="24326224313224$(printf '2e%.0s' {1..53})"
 
 setup() {
     tacctl_tmpenv_init
@@ -471,7 +473,15 @@ carol"
     run "$TACCTL_BIN_SCRIPT" scope add clash --prefixes 10.10.99.0/24 --secret clash-secret-0123456789abcdef
     assert_failure
     assert_output --partial "already in scope 'prod-inner'"
-    # Past the command's own check, the writer refuses too.
+    run store_get scopes clash
+    assert_failure
+}
+
+# Calls the bash store writer directly; the Go store's validator has the
+# same check in its unit tests (internal/store).
+# bats test_tags=bash-only
+@test "the one-prefix-one-scope rule: past the command's own check, the store writer refuses too" {
+    rendered_install
     tacctl_source_lib
     run store_scope_set clash prefixes=10.10.99.0/24 secret=clash-secret-0123456789abcdef
     assert_failure
@@ -649,9 +659,8 @@ PY
 @test "a missing tacquito.yaml does not block a change that recreates it" {
     rendered_install
     rm "$TACCTL_CONFIG"
-    # preflight needs the config for most commands; the writer itself does not.
-    tacctl_source_lib
-    run store_apply store_user_set bob disabled=true
+    # With a store, preflight only warns that the config is missing.
+    run "$TACCTL_BIN_SCRIPT" user disable bob
     assert_success
     [[ -f "$TACCTL_CONFIG" ]]
     [[ "$(store_get users bob disabled)" == "true" ]]
@@ -715,10 +724,12 @@ PY
 @test "a store write the schema refuses changes nothing and renders nothing" {
     rendered_install
     snapshot_state
-    tacctl_source_lib
-    run store_apply store_user_set bob group=nosuchgroup
+    # The command's own checks pass; the store's schema refuses the disabled
+    # marker as a password hash.
+    run "$TACCTL_BIN_SCRIPT" user add dave operator --hash "$DISABLED_MARKER" --scopes lab
     assert_failure 1
-    assert_output --partial "group 'nosuchgroup' does not exist"
+    assert_output --partial "the disabled marker is not a password hash"
+    refute_output --partial "User 'dave' added"
     assert_state_unchanged
 }
 
@@ -746,6 +757,9 @@ PY
     refute_output --partial "lab-secret-0123456789abcdef"
 }
 
+# Wraps python3, which the Go binary does not run; its Go counterpart checks
+# the argv of every program the commands run (internal/cli scope_test.go).
+# bats test_tags=bash-only
 @test "hashes and secrets do not reach any process's argv" {
     rendered_install
     # Record the command line of every python3 the commands start.
