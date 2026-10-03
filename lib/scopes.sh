@@ -451,15 +451,19 @@ cmd_scope_show() {
         error "Scope '${name}' does not exist."
         exit 1
     fi
+    # The value itself is never printed here: 'scope secret <name> show' is
+    # the one command that reveals it (and config cisco|juniper|wti, whose
+    # job is to hand it to a device).
     secret_len=${#secret_val}
+    local secret_reveal="show with 'tacctl scope secret ${name} show'"
     if [[ -z "$secret_val" ]]; then
         secret_line="${RED}(unset)${NC}"
     elif [[ "$secret_val" == *REPLACE* ]]; then
-        secret_line="${secret_val}  ${RED}(PLACEHOLDER — run 'tacctl scope secret ${name} generate')${NC}"
+        secret_line="${RED}(PLACEHOLDER, ${secret_len} chars — run 'tacctl scope secret ${name} generate')${NC}"
     elif [[ "$secret_len" -lt "$SECRET_MIN_LENGTH" ]]; then
-        secret_line="${secret_val}  ${RED}(${secret_len} chars, below min ${SECRET_MIN_LENGTH})${NC}"
+        secret_line="${RED}(set, ${secret_len} chars, below min ${SECRET_MIN_LENGTH})${NC} — ${secret_reveal}"
     else
-        secret_line="${secret_val}  ${GREEN}(${secret_len} chars)${NC}"
+        secret_line="${GREEN}(set, ${secret_len} chars)${NC} — ${secret_reveal}"
     fi
     local default_val
     default_val=$(read_default_scope)

@@ -107,6 +107,7 @@ Which backends are enabled is `backends.enabled` in `tacctl.yaml` (default: `[ta
 
 - `backend enable <id>` installs the backend if it is not installed (asking first; `-y` skips), checks every backend's rendered files for hand edits, takes a snapshot, adds the id to `backends.enabled`, renders, then enables and starts the service, which must come up. Any failure puts `tacctl.yaml`, the store and every rendered file back and stops the service; software the install step put on the machine stays.
 - `backend disable <id>` stops the service and disables it at boot (asking first; `-y` skips). Its package and rendered files stay, and are no longer rendered or reported as drift; `backend enable` brings it back. Disabling the last enabled backend is refused, and so is disabling `tacacs` in legacy read-only mode.
+- Commands need the store (`/etc/tacctl/store.yaml`), or, on an install from before the store, its `tacquito.yaml`; with neither they stop with `Config not found … Is tacctl installed?`. `tacquito.yaml` is the `tacacs` backend's file, rendered from the store: a RADIUS-only install has none and runs every command without it. With `tacacs` enabled and `tacquito.yaml` missing, commands run and warn; `tacctl config render` (or any change) writes it again.
 - With more than one backend enabled, `tacctl status`, `tacctl config validate`, `tacctl config show` and `tacctl log …` print one labelled section per backend (`== Backend: radius (radius, freeradius) ==`); `log` takes `--backend <id>` to show one. With only `tacacs` enabled the output is laid out as before.
 - `backend list` and `backend status` are open to the read-only and operator tiers; `enable` and `disable` are superuser-only.
 
@@ -246,7 +247,7 @@ tacctl config juniper --scope lab_east
 Scope management commands:
 ```
 tacctl scope list                              # name, prefix list, user count, default marker
-tacctl scope show <name>                       # full detail + raw secret + users + default-ness
+tacctl scope show <name>                       # full detail + secret length/posture (not its value) + users + default-ness
 tacctl scope add <name> --prefixes <cidrs>     # --secret <v> | --secret generate | --protocols | --vendor-attrs | --default
 tacctl scope remove <name> [--force]           # refuses if users reference it; --force strips them
 tacctl scope rename <old> <new>                # rewrites user refs, default marker and per-scope settings
@@ -433,7 +434,7 @@ tacctl config sudoers tiers install   # write /etc/sudoers.d/tacctl-tiers
 | `tac-operator` | operator (7-14) | read-only set plus `log tail/search/failures/accounting`, `config validate`, `backup list` |
 | `tac-superuser` | superuser (15) | everything, plus full `sudo` |
 
-Lower-tier rules are `NOPASSWD`. Anything that prints a shared secret or a password hash (`config cisco|juniper|wti`, `scope show`, `scope secret`, `backup diff`, `config dump`, `store show`) stays superuser-only, and so does everything that changes anything. tacctl also checks the tier itself on every run, taking it from the user's group in the store rather than from local group membership, and logs denials to syslog. Callers who are not in the local group `tac-users` (root, local admins) are not restricted.
+Lower-tier rules are `NOPASSWD`. Anything that prints a shared secret or a password hash (`config cisco|juniper|wti`, `scope secret`, `backup diff`, `config dump`, `store show`) stays superuser-only, as does `scope show`, and so does everything that changes anything. tacctl also checks the tier itself on every run, taking it from the user's group in the store rather than from local group membership, and logs denials to syslog. Callers who are not in the local group `tac-users` (root, local admins) are not restricted.
 
 `tacctl passwd` (no arguments) lets any tier change their own password: it acts only on the user who invoked sudo and asks for the current password first.
 
@@ -725,6 +726,8 @@ Merge semantics:
 
 **Write-time validation.** Every `tacctl config <setter>` invocation (and direct `conf_set` / `conf_set_list` calls) check the value against a schema table defined next to the defaults. Out-of-range numbers, bad ACL names, malformed CIDRs, invalid Cisco command strings, colliding or malformed listeners, and typo'd keys are rejected with a clear error before anything is written. `tacctl config validate` runs the same schema over `tacctl.yaml` to catch hand-edits.
 
+**A `tacctl.yaml` that does not parse** is never written into: every setter refuses with `tacctl.yaml: could not parse <path>: line L, column C: <problem>` and exits non-zero, leaving the file and every setting in it as they are. Commands that only read carry on with the defaults and say so once, on stderr. Fix or remove the file; `tacctl config validate` reports the same line. A change to users, groups or scopes is refused as well, since every backend's config is rendered from the file.
+
 **Read path caching.** Every read merges defaults + overrides and walks the dotted path, but the merged view is cached per script invocation (`_TACCTL_CFG_CACHE`). Commands that touch many tunables (`config cisco`, `status`, `config show`) load the merged YAML once and then answer from memory. Writes invalidate the cache.
 
 View effective posture with `tacctl config dump`; read individual values with `tacctl config get <path>` / `tacctl config get-list <path>`.
@@ -734,7 +737,7 @@ View effective posture with `tacctl config dump`; read individual values with `t
 ```
 scope list                                               One row per scope (deduplicated; prefixes joined)
 scope routing                                            One row per (scope, prefix) — first-match order
-scope show <name>                                        Full detail: prefixes, users, raw secret + posture, default-ness, protocols, auth-method, vendor attributes, tagged addresses
+scope show <name>                                        Full detail: prefixes, users, secret length + posture (the value: `scope secret <name> show`), default-ness, protocols, auth-method, vendor attributes, tagged addresses
 scope add <name> --prefixes <cidrs>                      Create a new scope
           [--secret <value>|--secret generate] [--protocols <csv>] [--vendor-attrs <csv>] [--default]
 scope remove <name> [--force]                            Delete. Refuses if users reference it unless --force

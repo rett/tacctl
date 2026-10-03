@@ -1072,6 +1072,23 @@ and for
 on an install that has no store yet (legacy read-only mode, where
 .I tacquito.yaml
 is still the source of truth).
+.IP
+Commands need the store
+.RI ( /etc/tacctl/store.yaml ),
+or, on an install from before the store, its
+.IR tacquito.yaml ;
+with neither they stop with \(lqConfig not found\(rq.
+.I tacquito.yaml
+is the
+.B tacacs
+backend's file, rendered from the store: a RADIUS-only install has none
+and runs every command without it. With
+.B tacacs
+enabled and
+.I tacquito.yaml
+missing, commands run and warn;
+.B "tacctl config render"
+(or any change) writes it again.
 .PP
 .B backend list
 and
@@ -1259,7 +1276,7 @@ counts, user counts, and default marker. For the first-match routing
 view (one row per scope-prefix pair, numbered by slice position,
 mirroring how tacquito routes a connecting client) use
 .BR "scope routing" .
-For full per-scope detail (secret, per-scope knobs, user list) use
+For full per-scope detail (secret posture, per-scope knobs, user list) use
 .BR "scope show " \fIname\fR .
 .TP
 .B scope routing
@@ -1273,8 +1290,10 @@ reading top to bottom shows the order tacquito tries providers for a
 connecting client.
 .TP
 .BI "scope show " name
-Full detail for one scope: prefixes, users that reference it, raw
-shared-secret value with length/posture, whether the scope is
+Full detail for one scope: prefixes, users that reference it, the
+shared secret's length and posture (never its value:
+.BI "scope secret " name " show"
+prints that), whether the scope is
 the default, its protocols filter and auth-method, its vendor attributes
 and tagged addresses (RADIUS).
 .TP
@@ -2156,7 +2175,11 @@ Only set keys you want to change \(em missing keys inherit from the
 defaults, and setting a key back to the default value removes it. An
 empty overrides file is deleted. Every write is schema-validated
 (out-of-range numbers, bad ACL names, malformed CIDRs, colliding listeners,
-typo'd keys are rejected before anything is written). Inspect the merged
+typo'd keys are rejected before anything is written). A file that does
+not parse is never written into: a setter refuses with
+.RI "\(lqtacctl.yaml: could not parse " path ": " reason \(rq
+and exits 1, leaving it as it is, and commands that only read use the
+defaults and warn once on stderr; fix or remove the file. Inspect the merged
 view with
 .BR "tacctl config dump" ;
 re-check the file with

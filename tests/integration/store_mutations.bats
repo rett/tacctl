@@ -224,8 +224,11 @@ legacy_install() {
     assert_output --partial "prod-inner"
     run "$TACCTL_BIN_SCRIPT" scope show lab
     assert_success
-    assert_output --partial "lab-secret-0123456789abcdef"
+    refute_output --partial "lab-secret-0123456789abcdef"
     assert_output --partial "- alice"
+    run "$TACCTL_BIN_SCRIPT" scope secret lab show
+    assert_success
+    assert_output --partial "lab-secret-0123456789abcdef"
     run "$TACCTL_BIN_SCRIPT" scope prefixes lab list
     assert_success
     assert_output --partial "172.16.0.0/12"
@@ -293,6 +296,71 @@ carol"
     SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" user disable bob
     assert_failure 1
     assert_output --partial "store not initialised"
+}
+
+# =============================================================================
+#  preflight: what a command needs before it runs
+# =============================================================================
+
+@test "preflight: a RADIUS-only install (TACACS+ disabled, no tacquito.yaml) runs ordinary commands" {
+    cp "${TACCTL_SRC}/tests/fixtures/store.multiscope.yaml" "$STORE"
+    chmod 600 "$STORE"
+    printf 'backends:\n  enabled: [radius]\n' > "$OVERRIDES"
+    [[ ! -e "$TACCTL_CONFIG" ]]
+    local cmd
+    for cmd in "user list" "user show alice" "group list" "scope list" "scope show lab" \
+               "scope secret lab show" "config show" "config get bcrypt.cost"; do
+        # shellcheck disable=SC2086
+        run "$TACCTL_BIN_SCRIPT" $cmd
+        assert_success
+        refute_output --partial "Config not found"
+        refute_output --partial "tacquito.yaml"
+    done
+    run "$TACCTL_BIN_SCRIPT" user list
+    assert_output --partial "alice"
+    # A tacctl.yaml setting is a command too.
+    run "$TACCTL_BIN_SCRIPT" config password-age 45
+    assert_success
+    [[ "$(conf_get password.max_age_days)" == "45" ]]
+    [[ ! -e "$TACCTL_CONFIG" ]]
+}
+
+@test "preflight: no store and a legacy tacquito.yaml still works" {
+    legacy_install
+    run "$TACCTL_BIN_SCRIPT" user list
+    assert_success
+    assert_output --partial "alice"
+    refute_output --partial "Config not found"
+    run "$TACCTL_BIN_SCRIPT" scope list
+    assert_success
+    assert_output --partial "prod-inner"
+}
+
+@test "preflight: neither a store nor tacquito.yaml gives the install hint" {
+    [[ ! -e "$STORE" && ! -e "$TACCTL_CONFIG" ]]
+    local cmd
+    for cmd in "user list" "scope list" "status" "backup list"; do
+        # shellcheck disable=SC2086
+        run "$TACCTL_BIN_SCRIPT" $cmd
+        assert_failure 1
+        assert_output --partial "Config not found: no store at ${STORE} and no ${TACCTL_CONFIG}."
+        assert_output --partial "Is tacctl installed? (tacctl install)"
+    done
+}
+
+@test "preflight: TACACS+ enabled with a store and no tacquito.yaml warns, runs, and the next change writes it" {
+    rendered_install
+    rm "$TACCTL_CONFIG"
+    run "$TACCTL_BIN_SCRIPT" user list
+    assert_success
+    assert_output --partial "TACACS+ is enabled and ${TACCTL_CONFIG} is missing; 'tacctl config render' writes it again."
+    assert_output --partial "alice"
+    run "$TACCTL_BIN_SCRIPT" user disable bob
+    assert_success
+    [[ -f "$TACCTL_CONFIG" ]]
+    run "$TACCTL_BIN_SCRIPT" user list
+    assert_success
+    refute_output --partial "is missing"
 }
 
 # =============================================================================

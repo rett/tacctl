@@ -293,6 +293,90 @@ show; rm"
     assert_output --partial "not a valid CIDR"
 }
 
+@test "_conf_validate_overrides_file: a file that does not parse is one line naming where" {
+    printf 'commands: [unterminated\n' > "$TACCTL_OVERRIDES_FILE"
+    run _conf_validate_overrides_file
+    assert_success
+    assert_output "could not parse ${TACCTL_OVERRIDES_FILE}: line 2, column 1: expected ',' or ']', but got '<stream end>'"
+}
+
+# --- An overrides file that does not parse --------------------------------
+# Writes refuse and leave it as it is; reads use the defaults and warn once.
+
+# A tacctl.yaml with a setting in it and a syntax error after it.
+_broken_overrides() {
+    printf 'bcrypt:\n  cost: 14\ncommands: [unterminated\n' > "$TACCTL_OVERRIDES_FILE"
+    cp "$TACCTL_OVERRIDES_FILE" "${BATS_TEST_TMPDIR}/overrides.before"
+    _conf_invalidate
+}
+
+@test "conf_set: an overrides file that does not parse is refused, named, and left as it was" {
+    _broken_overrides
+    run conf_set password.max_age_days 30
+    assert_failure 1
+    assert_output --partial "tacctl.yaml: could not parse ${TACCTL_OVERRIDES_FILE}: line 4, column 1: expected ',' or ']'"
+    assert_output --partial "Fix or remove the file"
+    assert_output --partial "nothing was written"
+    cmp "$TACCTL_OVERRIDES_FILE" "${BATS_TEST_TMPDIR}/overrides.before"
+}
+
+@test "conf_unset, conf_set_list, conf_set_json: refused the same way, file untouched" {
+    _broken_overrides
+    run conf_unset bcrypt.cost
+    assert_failure 1
+    assert_output --partial "could not parse ${TACCTL_OVERRIDES_FILE}"
+    run conf_set_list mgmt_acl.permits <<< "10.0.0.0/8"
+    assert_failure 1
+    assert_output --partial "could not parse ${TACCTL_OVERRIDES_FILE}"
+    run conf_set_json commands.operator '[{"name": "*", "action": "deny"}]'
+    assert_failure 1
+    assert_output --partial "could not parse ${TACCTL_OVERRIDES_FILE}"
+    cmp "$TACCTL_OVERRIDES_FILE" "${BATS_TEST_TMPDIR}/overrides.before"
+}
+
+@test "conf_set: an overrides file whose top level is not a mapping is refused" {
+    printf -- '- bcrypt\n' > "$TACCTL_OVERRIDES_FILE"
+    cp "$TACCTL_OVERRIDES_FILE" "${BATS_TEST_TMPDIR}/overrides.before"
+    run conf_set bcrypt.cost 13
+    assert_failure 1
+    assert_output --partial "could not parse ${TACCTL_OVERRIDES_FILE}: the top level is a list, not a mapping"
+    cmp "$TACCTL_OVERRIDES_FILE" "${BATS_TEST_TMPDIR}/overrides.before"
+}
+
+@test "conf_set: an empty overrides file is no overrides, and is written" {
+    : > "$TACCTL_OVERRIDES_FILE"
+    run conf_set bcrypt.cost 13
+    assert_success
+    run conf_get bcrypt.cost
+    assert_output "13"
+}
+
+@test "conf_get: an overrides file that does not parse reads as the defaults, with one warning on stderr" {
+    bats_require_minimum_version 1.5.0
+    _broken_overrides
+    _TACCTL_CONF_WARNED=0
+    run --separate-stderr conf_get bcrypt.cost
+    assert_success
+    # Its 14 is not used; stdout carries only the value.
+    assert_output "12"
+    [[ "$stderr" == *"tacctl.yaml: could not parse ${TACCTL_OVERRIDES_FILE}: line 4, column 1:"* ]]
+    [[ "$stderr" == *"using the defaults"* ]]
+    # Once per command: after the warning in this shell, reads are quiet.
+    _conf_load_cache 2> /dev/null
+    _conf_invalidate
+    run --separate-stderr conf_get bcrypt.cost
+    assert_output "12"
+    [[ -z "$stderr" ]]
+}
+
+@test "conf_has_override: an overrides file that does not parse has no overrides, and no traceback" {
+    bats_require_minimum_version 1.5.0
+    _broken_overrides
+    run --separate-stderr conf_has_override bcrypt.cost
+    assert_failure 1
+    [[ -z "$stderr" ]]
+}
+
 # --- exec_timeout.<scope> --------------------------------------------------
 
 @test "exec_timeout.<scope>: unset reads empty (render falls back to 60)" {

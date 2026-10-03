@@ -54,10 +54,21 @@ get_version() {
 }
 
 # --- Pre-flight ---
+# The store (lib/store.sh: STORE_FILE) is what commands read and write. An
+# install from before the store has only tacquito.yaml, which then stands in
+# for it (legacy read-only mode). tacquito.yaml is the TACACS+ backend's
+# file: with a store it is rendered from the store, so a RADIUS-only install
+# has none, and on a TACACS+ install the next render ('tacctl config render',
+# or any change) writes a missing one again.
 preflight() {
-    if [[ ! -f "$CONFIG" ]]; then
-        error "Config not found at ${CONFIG}. Is tacctl installed? (tacctl install)"
+    local store="${STORE_FILE:-${TACCTL_STATE_DIR}/store.yaml}"
+    if [[ ! -f "$store" && ! -f "$CONFIG" ]]; then
+        error "Config not found: no store at ${store} and no ${CONFIG}. Is tacctl installed? (tacctl install)"
         exit 1
+    fi
+    if [[ -f "$store" && ! -f "$CONFIG" ]] && declare -F _backends_load > /dev/null \
+        && _backends_load 2> /dev/null && [[ " ${BACKENDS_ENABLED[*]} " == *" tacacs "* ]]; then
+        warn "TACACS+ is enabled and ${CONFIG} is missing; 'tacctl config render' writes it again." >&2
     fi
     if ! python3 -c "import bcrypt" 2>/dev/null; then
         error "python3-bcrypt not installed. Install it first."

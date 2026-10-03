@@ -135,8 +135,9 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
             cmd_group "$@"
             ;;
         config)
-            # 'config render' rebuilds tacquito.yaml from the store, so it
-            # must work when that file is the thing that is missing.
+            # 'config render' rebuilds tacquito.yaml from the store: with a
+            # store it skips preflight, which would warn that the file it is
+            # about to write is missing.
             if [[ "${1:-}" != "render" || ! -f "$STORE_FILE" ]]; then
                 preflight
             fi
