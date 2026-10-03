@@ -57,7 +57,7 @@ scopes:
     secret: prod-secret-0123456789abcdef
   prod-inner:
     prefixes: [10.10.99.0/24]
-    secret: 'inner\secret "quoted" 0123456789'
+    secret: inner\secret "quoted" 0123456789
   wifi:
     prefixes: [10.20.0.0/16]
     secret: wifi-radius-only-0123456789

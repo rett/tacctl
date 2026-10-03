@@ -28,11 +28,8 @@ func splitHeader(raw []byte) (header, body []byte) {
 // TestStoreFixtures re-emits the three store fixtures from their parsed
 // form and compares with PyYAML's re-emit of the same fixture
 // (testdata/fixtures, written by tests/tools/pyyaml-corpus.py). The
-// minimal and multiscope fixtures are PyYAML output (pinned with cmp by
-// tests/unit/fixtures.bats), so the result must also equal the fixture
-// itself. store.radius.yaml is hand-written: besides its longer header,
-// one secret is single-quoted where PyYAML writes it plain, so only
-// PyYAML's re-emit is the reference there.
+// fixture bodies are PyYAML output, so the result must also equal the
+// fixture itself (after its header).
 func TestStoreFixtures(t *testing.T) {
 	for _, name := range []string{"minimal", "multiscope", "radius"} {
 		t.Run(name, func(t *testing.T) {
@@ -57,7 +54,7 @@ func TestStoreFixtures(t *testing.T) {
 			if !bytes.Equal(got, want) {
 				t.Errorf("differs from PyYAML's re-emit of store.%s.yaml:\n%s", name, firstDiff(want, got))
 			}
-			if name != "radius" && !bytes.Equal(got, body) {
+			if !bytes.Equal(got, body) {
 				t.Errorf("differs from store.%s.yaml:\n%s", name, firstDiff(body, got))
 			}
 		})

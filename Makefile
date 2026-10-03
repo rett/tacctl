@@ -78,12 +78,14 @@ test-blackbox: $(if $(filter go,$(TACCTL_IMPL)),build)
 # Go unit tests (-race needs cgo).
 test-go:
 	CGO_ENABLED=1 $(GO) test -race ./...
+	CGO_ENABLED=1 $(GO) test -race -tags testknobs ./...
 
 # internal/yamlpy's PyYAML corpus (docs/plans/go-rewrite.md 3.3): regenerate
 # the expected files with PyYAML and compare with the committed ones. Without
 # python3 or python3-yaml it says so and passes.
 test-pyyaml:
-	@if command -v python3 > /dev/null 2>&1; then python3 tests/tools/pyyaml-corpus.py --check; \
+	@if command -v python3 > /dev/null 2>&1; then python3 tests/tools/pyyaml-corpus.py --check && \
+		python3 tests/tools/pyyaml-corpus.py --check internal/conf/testdata/pyyaml; \
 	else echo "make: python3 not found; the PyYAML corpus was not checked"; fi
 
 # The differential runner (docs/plans/go-rewrite.md 2.5): make test-diff CORPUS=users
@@ -109,12 +111,13 @@ lint: lint-sh lint-go
 
 lint-sh:
 	$(SHELLCHECK) bin/tacctl.sh lib/*.sh lib/backends/*.sh
-	$(SHELLCHECK) tests/helpers/*.bash tests/tools/*.sh
+	$(SHELLCHECK) tests/helpers/*.bash tests/tools/*.sh tests/diff/*.sh
 	$(SHELLCHECK) config/linux/*.sh
 
 lint-go:
 	@out=$$($(GOFMT) -l cmd internal); if [ -n "$$out" ]; then echo "gofmt -l: not formatted:"; echo "$$out"; exit 1; fi
 	$(GO) vet ./...
+	$(GO) vet -tags testknobs ./...
 	@if ! command -v $(GOLANGCI_LINT) > /dev/null 2>&1; then \
 		echo "make: golangci-lint $(GOLANGCI_LINT_VERSION) not found. Install it for your user (no root):"; \
 		echo "    $(GOLANGCI_LINT_INSTALL)"; exit 1; fi
@@ -122,6 +125,7 @@ lint-go:
 		echo "make: $(GOLANGCI_LINT) is version '$$v'; this tree pins $(GOLANGCI_LINT_VERSION):"; \
 		echo "    $(GOLANGCI_LINT_INSTALL)"; exit 1; fi
 	PATH="$(dir $(GO)):$$PATH" $(GOLANGCI_LINT) run ./...
+	PATH="$(dir $(GO)):$$PATH" $(GOLANGCI_LINT) run --build-tags testknobs ./...
 
 # First-time setup: ensure bats submodules are populated.
 bootstrap:
