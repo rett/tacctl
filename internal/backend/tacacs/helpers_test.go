@@ -65,6 +65,15 @@ func newTenv(t *testing.T, extraEnv ...string) *tenv {
 		"TACCTL_SYSTEMD_DIR=" + filepath.Join(w, "systemd"),
 		"TACCTL_OVERRIDE_DIR=" + filepath.Join(w, "systemd", "tacquito.service.d"),
 		"TACCTL_SETTLE_SECONDS=0",
+		// Every other path a phase could write stays inside the test too.
+		"TACQUITO_SRC=" + filepath.Join(w, "src"),
+		"TACCTL_LOGROTATE_DIR=" + filepath.Join(w, "logrotate"),
+		"TACCTL_SUDOERS_FILE=" + filepath.Join(w, "sudoers"),
+		"TACCTL_TIER_SUDOERS_FILE=" + filepath.Join(w, "sudoers-tiers"),
+		"TACCTL_LINUX_DIR=" + filepath.Join(w, "linux"),
+		"TACCTL_RADIUS_DIR=" + filepath.Join(w, "raddb"),
+		"TACCTL_RADIUS_LOG=" + filepath.Join(w, "radius-log"),
+		"TACCTL_RADIUS_DICT=" + filepath.Join(w, "radius-dict"),
 	}, extraEnv...)
 	e.p = paths.Resolve(paths.NewEnv(vars), "", func(string) bool { return false })
 	reg := backend.NewRegistry(backend.TACACS, backend.RADIUS)
