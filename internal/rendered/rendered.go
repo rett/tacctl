@@ -38,7 +38,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/rett/tacctl/internal/conf/py"
+	"github.com/rett/tacctl/internal/py"
 	"github.com/rett/tacctl/internal/store"
 	"github.com/rett/tacctl/internal/yamlpy"
 )

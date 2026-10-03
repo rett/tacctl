@@ -11,9 +11,9 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/rett/tacctl/internal/conf/pyyaml"
 	"github.com/rett/tacctl/internal/hash"
 	"github.com/rett/tacctl/internal/model"
+	"github.com/rett/tacctl/internal/pyyaml"
 	"github.com/rett/tacctl/internal/rendered"
 	"github.com/rett/tacctl/internal/store"
 	"github.com/rett/tacctl/internal/yamlpy"

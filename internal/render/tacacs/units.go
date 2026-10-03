@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/rett/tacctl/internal/conf"
-	"github.com/rett/tacctl/internal/conf/py"
+	"github.com/rett/tacctl/internal/py"
 	"github.com/rett/tacctl/internal/rendered"
 	"github.com/rett/tacctl/internal/yamlpy"
 )
