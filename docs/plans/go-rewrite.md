@@ -762,6 +762,8 @@ Calendar: at one to two sessions per day with the user reviewing between package
 
 ## 12. Decisions for the user (each with the recommendation)
 
+**Update 2026-10-03 (later): Decision 13 is decided differently — shell mode, `ssh <name>`, a device registry and a login console are planned for 0.2.1/0.2.2 in `docs/plans/operator-console.md` (decided there). 0.2.0 stays a parity release with no new words or state files, and the rewrite adopts that document's §9.3 door-openers now: items 1, 2, 3, 4 (kinds map), 8, 9, 10 in WP2.4a and the later cut-overs; 4 (`hosts` kind), 5 and 6 in WP3.2; 7 in WP3.1; 11 and 12 throughout.**
+
 **All decided 2026-10-03: the user accepted every recommendation below ("proceed as advised").** In particular: 1 strangler; 2 cobra + own leaf parser; 3 generated completion; 4 hand-written man page; 5 yaml.v3 + `yamlpy` with the exit ramp decided at the end of WP1.1; 6 `$2b$` rewrite; 7 build-on-host, vendored, real binary, shim; 8 drop python from `DEPS_CORE`; 10 no state-format change; 12 `feature/go-rewrite`, subagents never commit, commits at package boundaries when lint and tests are green, merge to `develop` after WP4.3; **13 shell mode deferred to 0.2.x**; 14 hidden `_phase`; 15 user runs the container matrix once on the RC; 16 GitHub metadata at release; 17 knobs behind `-tags testknobs`; 18 (g) and (h) shipped in 0.1.16; 19 `parallel` installed; 20 shim prints the recovery recipe and exits 1; 21 characterisation tests in WP0.2; 22 documentation policy. The text below is kept as the record of each recommendation.
 
 1. **Strangler vs big-bang.** Recommend the strangler of §4: Go front door delegating to the untouched bash tree, families cut over in Phase 2-3, bash deleted in WP4.1.
