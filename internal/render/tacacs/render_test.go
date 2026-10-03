@@ -47,7 +47,7 @@ func TestRenderLeavesNoTempFileAndReplacesAtomically(t *testing.T) {
 	dir := t.TempDir()
 	out := filepath.Join(dir, "rendered.yaml")
 	writeFile(t, out, "previous content\n")
-	if _, err := RenderToFile(loadStore(t, "store.multiscope.yaml"), defaultView(t), out, testLoad, nil); err != nil {
+	if _, err := RenderToFile(loadStore(t, "store.multiscope.yaml"), defaultView(t), out, DefaultLoader, nil); err != nil {
 		t.Fatal(err)
 	}
 	if m, _ := filepath.Glob(filepath.Join(dir, ".tacquito.*")); len(m) > 0 {
@@ -373,7 +373,7 @@ func TestReadbackCatchesAFileThatDoesNotSayWhatTheModelSays(t *testing.T) {
 	}
 	p := filepath.Join(t.TempDir(), "bad.yaml")
 	writeFile(t, p, bad)
-	err := Readback(p, model.FromStore(st), defaultView(t), testLoad)
+	err := Readback(p, model.FromStore(st), defaultView(t), DefaultLoader)
 	if err == nil {
 		t.Fatal("the damaged file read back as the model")
 	}
@@ -392,7 +392,7 @@ func TestRenderToFileWritesNothingWhenTheReadbackFails(t *testing.T) {
 	dir := t.TempDir()
 	out := filepath.Join(dir, "tacquito.yaml")
 	lying := func(path string) (*LegacyResult, error) {
-		r, err := testLoad(path)
+		r, err := DefaultLoader(path)
 		if err != nil {
 			return nil, err
 		}
@@ -432,7 +432,7 @@ func TestReadbackProblemsNamesEachDifference(t *testing.T) {
 	m := model.FromStore(st)
 	p := filepath.Join(t.TempDir(), "t.yaml")
 	writeFile(t, p, string(render(t, st, defaultView(t))))
-	if probs, err := ReadbackProblems(p, m, testLoad); err != nil || len(probs) != 0 {
+	if probs, err := ReadbackProblems(p, m, DefaultLoader); err != nil || len(probs) != 0 {
 		t.Fatalf("%v %v", probs, err)
 	}
 	for _, tc := range []struct {
@@ -450,15 +450,15 @@ func TestReadbackProblemsNamesEachDifference(t *testing.T) {
 	} {
 		other := loadStore(t, "store.multiscope.yaml")
 		tc.edit(other)
-		probs, err := ReadbackProblems(p, model.FromStore(other), testLoad)
+		probs, err := ReadbackProblems(p, model.FromStore(other), DefaultLoader)
 		if err != nil || strings.Join(probs, "; ") != tc.want {
 			t.Fatalf("want %q, got %v %v", tc.want, probs, err)
 		}
-		if MatchesModel(p, model.FromStore(other), testLoad) {
+		if MatchesModel(p, model.FromStore(other), DefaultLoader) {
 			t.Fatal("matches")
 		}
 	}
-	if !MatchesModel(p, m, testLoad) {
+	if !MatchesModel(p, m, DefaultLoader) {
 		t.Fatal("the render does not match its own model")
 	}
 	// Prefixes and filters compare canonicalised, deduplicated and sorted.
@@ -469,7 +469,7 @@ func TestReadbackProblemsNamesEachDifference(t *testing.T) {
 		t.Fatalf("canonList %v", got)
 	}
 	// A file whose command rules differ from tacctl.yaml.
-	err := Readback(p, m, viewOf(t, "commands:\n  operator: []\n").Merged(), testLoad)
+	err := Readback(p, m, viewOf(t, "commands:\n  operator: []\n").Merged(), DefaultLoader)
 	if err == nil || !strings.Contains(err.Error(), "(command rules of group 'operator' differ)") {
 		t.Fatalf("got %v", err)
 	}

@@ -5,14 +5,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
 	"slices"
 	"strings"
 
-	"gopkg.in/yaml.v3"
-
 	"github.com/rett/tacctl/internal/hash"
 	"github.com/rett/tacctl/internal/model"
+	"github.com/rett/tacctl/internal/py"
 	"github.com/rett/tacctl/internal/pyyaml"
 	"github.com/rett/tacctl/internal/rendered"
 	"github.com/rett/tacctl/internal/store"
@@ -185,62 +183,54 @@ func MatchesModel(path string, m *model.Model, load LegacyLoader) bool {
 }
 
 // groupsByName is render_readback's by_name: the top-level mappings of the
-// file that have a 'services' list, by their 'name', as tacquito's YAML
-// library (yaml.v3) reads them; a later one of a name wins.
-func groupsByName(data []byte) (map[any]map[string]any, error) {
-	var doc yaml.Node
-	if err := yaml.Unmarshal(data, &doc); err != nil {
+// file (yaml.safe_load, store.ReadLegacyYAML) that have a 'services' list,
+// by their 'name'; a later one of a name wins.
+func groupsByName(path string) (map[string]*yamlpy.Map, error) {
+	doc, err := store.ReadLegacyYAML(path)
+	if err != nil {
 		return nil, err
 	}
-	out := map[any]map[string]any{}
-	if len(doc.Content) == 0 {
+	out := map[string]*yamlpy.Map{}
+	top, ok := doc.(*yamlpy.Map)
+	if !ok {
 		return out, nil
 	}
-	top := doc.Content[0]
-	if top.Kind != yaml.MappingNode {
-		return out, nil
-	}
-	for i := 1; i < len(top.Content); i += 2 {
-		var v any
-		if err := top.Content[i].Decode(&v); err != nil {
-			return nil, err
-		}
-		g, ok := v.(map[string]any)
+	for _, v := range top.All() {
+		g, ok := v.(*yamlpy.Map)
 		if !ok {
 			continue
 		}
-		if _, isList := g["services"].([]any); !isList {
+		if svc, _ := g.Get("services"); !isList(svc) {
 			continue
 		}
-		if name, has := g["name"]; has && isHashable(name) {
-			out[name] = g
+		// A name that is not a string never equals a group's name.
+		if name, ok := g.Get("name"); ok {
+			if s, isStr := name.(string); isStr {
+				out[s] = g
+			}
 		}
 	}
 	return out, nil
 }
 
-// isHashable: a value that can be a key of by_name (Python would fail on a
-// list or mapping name; such a file never comes out of Render).
-func isHashable(v any) bool {
-	switch v.(type) {
-	case []any, map[string]any, map[any]any:
-		return false
-	}
-	return true
+func isList(v any) bool {
+	_, ok := py.List(v)
+	return ok
 }
 
-// wantCommands is what the file must say for a group's rules, as YAML
-// decodes it: name, the action's number, and match when there is one.
+// wantCommands is what the file must say for a group's rules, as
+// yaml.safe_load reads it: name, the action's number, and match when there
+// is one.
 func wantCommands(rules []Rule) []any {
 	out := []any{}
 	for _, r := range rules {
-		c := map[string]any{"name": r.Name, "action": Actions[r.Action]}
+		c := yamlpy.NewMap("name", r.Name, "action", Actions[r.Action])
 		if len(r.Match) > 0 {
 			match := make([]any, len(r.Match))
 			for i, s := range r.Match {
 				match[i] = s
 			}
-			c["match"] = match
+			c.Set("match", match)
 		}
 		out = append(out, c)
 	}
@@ -257,27 +247,22 @@ func Readback(path string, m *model.Model, view *yamlpy.Map, load LegacyLoader) 
 	if err != nil {
 		return err
 	}
-	data, err := os.ReadFile(path)
+	byName, err := groupsByName(path)
 	if err != nil {
 		return err
-	}
-	byName, err := groupsByName(data)
-	if err != nil {
-		return &rendered.Error{Msg: "internal error: the rendered config does not parse as YAML. Nothing was written."}
 	}
 	for _, g := range m.Groups {
 		rules, err := GroupCommands(view, g.Name)
 		if err != nil {
 			return err
 		}
-		want := wantCommands(rules)
 		var got any = []any{}
 		if grp := byName[g.Name]; grp != nil {
-			if c := grp["commands"]; truthyYAML(c) {
+			if c, _ := grp.Get("commands"); truthy(c) {
 				got = c
 			}
 		}
-		if !reflect.DeepEqual(any(want), got) {
+		if !py.Equal(wantCommands(rules), got) {
 			problems = append(problems, fmt.Sprintf("command rules of group '%s' differ", g.Name))
 		}
 	}
@@ -286,27 +271,6 @@ func Readback(path string, m *model.Model, view *yamlpy.Map, load LegacyLoader) 
 			strings.Join(problems, "; ") + "). Nothing was written."}
 	}
 	return nil
-}
-
-// truthyYAML is bool() of a value yaml.v3 decoded.
-func truthyYAML(v any) bool {
-	switch x := v.(type) {
-	case nil:
-		return false
-	case bool:
-		return x
-	case string:
-		return x != ""
-	case int:
-		return x != 0
-	case float64:
-		return x != 0
-	case []any:
-		return len(x) > 0
-	case map[string]any:
-		return len(x) > 0
-	}
-	return true
 }
 
 // Chowner gives a file to tacquito:tacquito, best effort (nothing happens

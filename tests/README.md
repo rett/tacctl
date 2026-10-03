@@ -205,6 +205,11 @@ UPDATE_GOLDEN=1 tests/bats/bats-core/bin/bats tests/unit/render_tacacs.bats
 git diff tests/fixtures/golden/tacquito.*.rendered.yaml
 ```
 
+Drop-in and bookkeeping goldens: `golden/dropin.{default,default-override,mgmt,alt6}.conf` and
+`golden/rendered.json` come from 0.1.16 via `internal/render/tacacs/testdata/gen.py` (which also
+writes that package's `corpus.jsonl`); regenerate with
+`python3 internal/render/tacacs/testdata/gen.py` from the repository root.
+
 ### Which fixtures pass `store import --check`
 
 `--check` renders the imported model and asks whether tacquito would behave

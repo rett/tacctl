@@ -79,7 +79,7 @@ func testRenderer(t *testing.T, w, logDir string) *Renderer {
 			UnitDir:     filepath.Join(w, "systemd"),
 		},
 		Conf:  conf.Load(filepath.Join(w, "state", "tacctl.yaml"), conf.DefaultBackends),
-		Load:  testLoad,
+		Load:  DefaultLoader,
 		Chown: func(string) {},
 	}
 }
@@ -136,6 +136,10 @@ func TestCorpusMatchesBash(t *testing.T) {
 			}
 			if err != nil {
 				t.Fatalf("failed: %s", rendered.Report(err))
+			}
+			// The importer reads the render back with nothing to report.
+			if back, err := DefaultLoader(out); err != nil || len(back.Errors)+len(back.Dropped) > 0 {
+				t.Fatalf("importer: %v %v", back, err)
 			}
 			if status != c.Status {
 				t.Fatalf("status %q, want %q", status, c.Status)
