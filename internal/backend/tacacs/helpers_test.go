@@ -125,7 +125,7 @@ func (e *tenv) reset() {
 // stdin feeds the prompts.
 func (e *tenv) stdin(s string) {
 	e.env.Stdin = strings.NewReader(s)
-	e.b.prompter = nil
+	e.env.Prompter = nil
 }
 
 // writeOverrides writes tacctl.yaml by hand and has the view follow.

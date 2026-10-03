@@ -5,6 +5,7 @@ import (
 	"io"
 	"regexp"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/rett/tacctl/internal/conf"
@@ -24,6 +25,10 @@ type Env struct {
 	Runner execx.Runner
 	Out    ui.Output
 	Stdin  io.Reader
+	// Prompter reads every answer of the invocation from Stdin (nil: Prompt
+	// makes one on first use). The CLI passes its own, so that stdin is read
+	// through one buffer whichever code asks.
+	Prompter *ui.Prompter
 	// Now is the clock (nil: time.Now); pass the App's knob clock.
 	Now func() time.Time
 	// Fault is the TACCTL_FAULT check (nil: no faults); pass the App's
@@ -35,6 +40,21 @@ type Env struct {
 	// Set is the invocation's backend set, filled in by NewSet, so a module
 	// can run its own changes through Set.StoreApply.
 	Set *Set
+}
+
+// Prompt is the invocation's prompter: Env.Prompter, made from Stdin (an
+// empty input when there is none) on first use. Every module asks through
+// it: two buffered readers on one stdin would each swallow input meant
+// for the other.
+func (e *Env) Prompt() *ui.Prompter {
+	if e.Prompter == nil {
+		in := e.Stdin
+		if in == nil {
+			in = strings.NewReader("")
+		}
+		e.Prompter = ui.NewPrompter(in, e.Out)
+	}
+	return e.Prompter
 }
 
 // fault is the Env's fault check.

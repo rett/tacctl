@@ -32,7 +32,10 @@ TACCTL_IMPL=go make test-blackbox  # tests/blackbox.list against dist/tacctl
 
 `tests/blackbox.list` lists the files that drive tacctl only through its
 command line; a test there that cannot run against the binary is tagged
-`# bats test_tags=bash-only`. `tests/tools/usage-goldens.sh` rewrites
+`# bats test_tags=bash-only`. An entry marked `# go-after: <package>` runs
+only in bash mode until that package is done; one marked
+`# go-tags: <tag>...` runs in full in bash mode and, in go mode, only its
+tests carrying one of those tags (in a bats run of its own). `tests/tools/usage-goldens.sh` rewrites
 `internal/cli/testdata/usage/` (the usage blocks the Go side must print) from
 the `0.1.16` tag.
 
@@ -269,7 +272,9 @@ RADIUS (FreeRADIUS) `lib/backends/radius.sh` (see "The RADIUS backend").
   `_completion-names` bridge (the only source of user, group, scope, backup,
   backend and listener names: the completion reads no file);
   `tests/integration/tiers.bats` holds the check that `tier_permits` and
-  `emit_tier_sudoers` agree on every verb.
+  `emit_tier_sudoers` agree on every verb (bash-only: it sources the
+  library; for the Go binary, `internal/tier` derives both from one table and
+  `TestGateAndSudoersAgree` runs the same check over the same verb list).
 - To make a render fail in a test, override the contract function
   (`backend_tacacs_render_stage() { return 1; }`), not `tacacs_render_apply`:
   commands render through `backends_render_all`. `tacacs_render_apply` is
@@ -635,8 +640,10 @@ TACCTL_IMPL=go tests/bats/bats-core/bin/bats --filter-tags cutover:wp2-4a \
     tests/integration/characterisation.bats
 ```
 
-`tests/blackbox.list` runs the whole file against Go from `WP3.3d`, the last
-cut-over it needs. Tests tagged `bash-only` cannot move as they are: the
+`tests/blackbox.list` runs it against Go with
+`# go-tags: cutover:wp0-1 cutover:wp2-4a ...`: each cut-over package adds its
+tag there, and `WP3.3d`, the last cut-over it needs, replaces the marker so
+the whole file runs. Tests tagged `bash-only` cannot move as they are: the
 `config branch` tests call `cmd_config_branch` with `DEPLOY_DIR` pointed at a scratch
 directory (bash has no environment variable for the deploy clone; the Go
 port takes it from `TACCTL_TREE`), and the missing-`python3-bcrypt` test has no Go

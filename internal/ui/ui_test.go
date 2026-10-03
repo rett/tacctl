@@ -2,6 +2,7 @@ package ui
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 )
 
@@ -38,5 +39,18 @@ func TestColours(t *testing.T) {
 		if pair[0] != pair[1] {
 			t.Errorf("%s = %q, want %q", name, pair[0], pair[1])
 		}
+	}
+}
+
+// InfoE, WarnE and ErrorE print as 'echo -e' does: escapes interpreted, \c
+// ends the output.
+func TestEchoHelpers(t *testing.T) {
+	var out, errb strings.Builder
+	o := Output{Stdout: &out, Stderr: &errb}
+	o.InfoE(`a\tb`)
+	o.WarnE("plain")
+	o.ErrorE(`x\cy`)
+	if out.String() != Green+"[INFO]"+NC+" a\tb\n"+Yellow+"[WARN]"+NC+" plain\n" || errb.String() != Red+"[ERROR]"+NC+" x" {
+		t.Errorf("stdout %q stderr %q", out.String(), errb.String())
 	}
 }

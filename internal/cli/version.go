@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"runtime"
@@ -9,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/rett/tacctl/internal/app"
-	"github.com/rett/tacctl/internal/execx"
 )
 
 // BuildInfo is what the build stamped into the binary (cmd/tacctl's
@@ -77,28 +75,4 @@ func writeVersion(w io.Writer, b BuildInfo, long bool) {
 		fmt.Fprintf(&sb, "test knobs: %s\n", knobs)
 	}
 	_, _ = io.WriteString(w, sb.String())
-}
-
-// tierUsersGroup is TIER_USERS_GROUP (lib/dispatch.sh).
-const tierUsersGroup = "tac-users"
-
-// tierManaged reports whether the caller is one the bash tier gate decides
-// on with the model (caller_tier, lib/dispatch.sh): SUDO_USER set, not root,
-// and a member of tac-users. For such a caller even 'version' can be denied
-// (tier "none"), so the Go side hands it to bash until the gate is ported.
-func tierManaged(ctx context.Context, a *app.App) bool {
-	caller := a.Env.Get("SUDO_USER")
-	if caller == "" || caller == "root" {
-		return false
-	}
-	res, err := a.Runner.Run(ctx, execx.Cmd{Name: "id", Args: []string{"-nG", "--", caller}})
-	if err != nil || res.Code != 0 {
-		return false
-	}
-	for _, g := range strings.Fields(string(res.Stdout)) {
-		if g == tierUsersGroup {
-			return true
-		}
-	}
-	return false
 }

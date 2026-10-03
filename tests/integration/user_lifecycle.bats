@@ -147,7 +147,21 @@ no_sidecars() {
 @test "user enable: errors when there is no saved hash to restore" {
     # A disabled user with no password of its own: a seeded placeholder, or
     # an import that found the marker and no saved hash.
-    bash -c 'source "$TACCTL_BIN_SCRIPT"; store_user_set alice hash=null disabled=true'
+    # alice was added with --hash in setup(); take the hash away by editing
+    # the store file (no command does that, and the test must not call
+    # bash internals: it also runs against the Go binary).
+    python3 - "${TACCTL_STATE_DIR}/store.yaml" <<'PY'
+import sys, yaml
+path = sys.argv[1]
+with open(path) as f:
+    text = f.read()
+header = "".join(l for l in text.splitlines(True) if l.startswith("#")) + "\n"
+store = yaml.safe_load(text)
+store["users"]["alice"]["hash"] = None
+store["users"]["alice"]["disabled"] = True
+with open(path, "w") as f:
+    f.write(header + yaml.safe_dump(store, sort_keys=False, default_flow_style=None, width=4096))
+PY
     [[ -z "$(store_user alice hash)" ]]
     cp "${TACCTL_STATE_DIR}/store.yaml" "${BATS_TEST_TMPDIR}/before.yaml"
     run "$TACCTL_BIN_SCRIPT" user enable alice

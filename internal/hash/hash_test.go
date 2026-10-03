@@ -138,21 +138,22 @@ func TestVerifyDoesNotTreatEveryInputAsEmpty(t *testing.T) {
 }
 
 func TestVerifyInvalidHash(t *testing.T) {
-	tooShort := interopRaw04[:58]
+	tooShort := interopRaw04[:28] // 21 salt characters
 	for name, in := range map[string]string{
-		"not hex":       "not-hex",
-		"empty":         "",
-		"odd length":    hx(interopRaw04) + "0",
-		"newline":       hx(interopRaw04) + "\n",
-		"raw not hex":   interopRaw04,
-		"prefix 2x":     hx("$2x$" + interopRaw04[4:]),
-		"cost 03":       hx("$2b$03$" + interopRaw04[7:]),
-		"cost 32":       hx("$2b$32$" + interopRaw04[7:]),
-		"too short":     hx(tooShort),
-		"just a prefix": hx("$2b$"),
-		"three bytes":   hx("$2b"),
-		"bad salt char": hx("$2b$04$!" + interopRaw04[8:]),
-		"not bcrypt":    hx("hello world, this is not a hash at all, not even close!!"),
+		"not hex":         "not-hex",
+		"empty":           "",
+		"odd length":      hx(interopRaw04) + "0",
+		"newline":         hx(interopRaw04) + "\n",
+		"raw not hex":     interopRaw04,
+		"prefix 2x":       hx("$2x$" + interopRaw04[4:]),
+		"cost 03":         hx("$2b$03$" + interopRaw04[7:]),
+		"cost 32":         hx("$2b$32$" + interopRaw04[7:]),
+		"too short":       hx(tooShort),
+		"just a prefix":   hx("$2b$"),
+		"three bytes":     hx("$2b"),
+		"bad salt char":   hx("$2b$04$!" + interopRaw04[8:]),
+		"newline in salt": hx("$2b$04$\n" + interopRaw04[8:]),
+		"not bcrypt":      hx("hello world, this is not a hash at all, not even close!!"),
 	} {
 		if got := Verify(interopPW, in); got != InvalidHash {
 			t.Errorf("%s: Verify = %s, want INVALID_HASH", name, got)
@@ -167,6 +168,10 @@ func TestVerifyMalformedTailsAreNoMatch(t *testing.T) {
 		"trailing garbage": interopRaw04 + "X",
 		"bad last char":    interopRaw04[:59] + "!",
 		"59 characters":    interopRaw04[:59],
+		// checkpw compares the whole text: a short one is no match.
+		"58 characters":   interopRaw04[:58],
+		"salt only":       interopRaw04[:29],
+		"the corpus hash": "$2b$10$" + strings.Repeat("a", 48),
 	} {
 		if got := Verify(interopPW, hx(raw)); got != NoMatch {
 			t.Errorf("%s: Verify = %s, want NO_MATCH", name, got)

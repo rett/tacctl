@@ -15,9 +15,16 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/rett/tacctl/internal/app"
+	"github.com/rett/tacctl/internal/backend"
+	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/execx/fake"
+	"github.com/rett/tacctl/internal/model"
+	"github.com/rett/tacctl/internal/names"
 	"github.com/rett/tacctl/internal/paths"
+	"github.com/rett/tacctl/internal/store"
+	"github.com/rett/tacctl/internal/tier"
+	"github.com/rett/tacctl/internal/ui"
 )
 
 // bashTree makes a stand-in bash release tree (bin/tacctl.sh, lib/core.sh)
@@ -94,11 +101,15 @@ func commandPaths(c *cobra.Command, prefix []string, out *[][]string) {
 	}
 }
 
-// The no-sub / help / -h / unknown table of docs/plans/go-rewrite.md 3.2: in
-// WP0.1 every command but 'version' belongs to bash, so each of these must
-// reach bash exactly as typed. The test fails the moment a cobra default
-// (help command, -h/--help, suggestions, argument validation) intercepts.
-func TestEverythingButVersionIsDelegated(t *testing.T) {
+// nativeWords are the first words the Go binary owns (cut over).
+var nativeWords = map[string]bool{"version": true, "user": true, "hash": true, "passwd": true, "_completion-names": true}
+
+// The no-sub / help / -h / unknown table of docs/plans/go-rewrite.md 3.2:
+// every command of a family not cut over yet belongs to bash, so each of
+// these must reach bash exactly as typed. The test fails the moment a cobra
+// default (help command, -h/--help, suggestions, argument validation)
+// intercepts.
+func TestEverythingNotCutOverIsDelegated(t *testing.T) {
 	var all [][]string
 	commandPaths(newRoot(&invocation{app: newHarness(t, nil).app}), nil, &all)
 	if len(all) < 100 {
@@ -106,7 +117,7 @@ func TestEverythingButVersionIsDelegated(t *testing.T) {
 	}
 	var cases [][]string
 	for _, p := range all {
-		if p[0] == "version" {
+		if nativeWords[p[0]] {
 			continue
 		}
 		cases = append(cases, p)
@@ -118,8 +129,9 @@ func TestEverythingButVersionIsDelegated(t *testing.T) {
 		[]string{}, []string{""}, []string{"help"}, []string{"-h"}, []string{"--help"}, []string{"bogus"},
 		[]string{"completion", "bash"}, []string{"shell"}, []string{"-x", "user", "list"},
 		[]string{"--x=1", "user", "list"}, []string{"--", "version"}, []string{"Version"},
-		[]string{"_completion-names", "scopes"}, []string{"help", "version"},
-		[]string{"user", "scope", "alice", "set", "lab"}, []string{"scope", "prefixes", "lab", "clear"},
+		[]string{"_completion-names", "backups"}, []string{"_completion-names", "listeners", "tacacs"},
+		[]string{"help", "version"}, []string{"User", "list"}, []string{"Hash"},
+		[]string{"scope", "user", "list"}, []string{"scope", "prefixes", "lab", "clear"},
 		[]string{"config", "listen", "--backend", "radius", "--listener=auth", "udp", "0.0.0.0:1812"},
 		[]string{"log", "--backend", "tacacs", "tail", "5"},
 	)
@@ -146,17 +158,19 @@ func TestVersion(t *testing.T) {
 	}
 }
 
-// A tier-managed caller (SUDO_USER in tac-users) is handed to bash, whose
-// gate may deny even 'version'; anyone else gets the Go answer.
+// 'version' is native behind the Go tier gate: a tier-managed caller
+// (SUDO_USER in tac-users) with no tacctl user is denied, as bash denies
+// it; anyone else gets the version.
 func TestVersionTierCaller(t *testing.T) {
 	h := newHarness(t, []string{"version"}, "SUDO_USER=bob")
 	h.runner.On([]string{"id", "-nG", "--", "bob"}, execx.Result{Stdout: []byte("bob tac-users tac-operator\n")})
-	err := h.run()
-	if len(h.runner.Execs()) != 1 || err != nil {
-		t.Errorf("tier member not delegated: %v %d", err, len(h.runner.Execs()))
+	h.runner.On([]string{"logger"}, execx.Result{})
+	if code := exitCode(h.run(), h.app.Out); code != 1 || h.out.Len() != 0 || len(h.runner.Execs()) != 0 {
+		t.Errorf("tier member without a user: exit %d, %q, %d execs", code, h.out.String(), len(h.runner.Execs()))
 	}
-	if got := h.runner.Argvs(); !reflect.DeepEqual(got, []string{"id -nG -- bob"}) {
-		t.Errorf("calls %q", got)
+	if !strings.Contains(h.err.String(), "'bob' has no active tacctl user") ||
+		!h.runner.Called("logger", "-t", "tacctl", "-p", "auth.warning", "tier DENY user=bob tier=none cmd=version ") {
+		t.Errorf("denial: %q %q", h.err.String(), h.runner.Argvs())
 	}
 
 	for _, c := range []struct {
@@ -225,22 +239,22 @@ func TestReexecUnderSudo(t *testing.T) {
 		}
 	}
 	// Root never re-execs.
-	h := mk([]string{"user", "list"}, 0)
+	h := mk([]string{"scope", "list"}, 0)
 	if err := h.run(); err != nil || h.runner.Execs()[0].Argv[0] == "sudo" {
 		t.Errorf("root re-exec'd: %v %+v", err, h.runner.Execs())
 	}
 	// No sudo on PATH; exec failure; unknown executable.
-	h = mk([]string{"user", "list"}, 1000)
+	h = mk([]string{"scope", "list"}, 1000)
 	h.runner.Missing("sudo")
 	if code := exitCode(h.run(), h.app.Out); code != 127 || !strings.Contains(h.err.String(), "sudo not found") {
 		t.Errorf("missing sudo: %d %q", code, h.err.String())
 	}
-	h = mk([]string{"user", "list"}, 1000)
+	h = mk([]string{"scope", "list"}, 1000)
 	h.runner.ExecErr = errors.New("EACCES")
 	if code := exitCode(h.run(), h.app.Out); code != 126 {
 		t.Errorf("sudo exec failure: %d", code)
 	}
-	h = mk([]string{"user", "list"}, 1000)
+	h = mk([]string{"scope", "list"}, 1000)
 	h.app.Exe = ""
 	if code := exitCode(h.run(), h.app.Out); code != 1 || len(h.runner.Execs()) != 0 {
 		t.Errorf("unknown exe: %d", code)
@@ -255,7 +269,7 @@ func TestDelegateRefusesNonBashTargets(t *testing.T) {
 			t.Errorf("%s: exit %d stderr %q", name, code, h.err.String())
 		}
 	}
-	h := newHarness(t, []string{"user", "list"}, "TACCTL_BASH_IMPL=/nonexistent/bin/tacctl.sh")
+	h := newHarness(t, []string{"scope", "list"}, "TACCTL_BASH_IMPL=/nonexistent/bin/tacctl.sh")
 	check("missing", h, 1, "\033[0;31m[ERROR]\033[0m command not available in this build\n")
 	if len(h.runner.Execs()) != 0 {
 		t.Error("exec'd a missing file")
@@ -268,14 +282,14 @@ func TestDelegateRefusesNonBashTargets(t *testing.T) {
 	if err := os.WriteFile(shim, []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	check("shim", newHarness(t, []string{"user", "list"}, "TACCTL_BASH_IMPL="+shim), 1, "No bash implementation of tacctl at "+shim)
+	check("shim", newHarness(t, []string{"scope", "list"}, "TACCTL_BASH_IMPL="+shim), 1, "No bash implementation of tacctl at "+shim)
 
 	impl := bashTree(t)
-	h = newHarness(t, []string{"user", "list"}, "TACCTL_BASH_IMPL="+impl)
+	h = newHarness(t, []string{"scope", "list"}, "TACCTL_BASH_IMPL="+impl)
 	h.app.Exe = impl // TACCTL_BASH_IMPL pointing back at this binary
 	check("self", h, 1, "command not available in this build")
 
-	h = newHarness(t, []string{"user", "list"})
+	h = newHarness(t, []string{"scope", "list"})
 	h.runner.ExecErr = errors.New("permission denied")
 	check("exec failure", h, 126, "Cannot run ")
 }
@@ -356,9 +370,34 @@ func TestExitCode(t *testing.T) {
 		{&ExitError{Code: 2, Err: errors.New("Unknown backend 'x'")}, 2, "\033[0;31m[ERROR]\033[0m Unknown backend 'x'\n"},
 		{errors.New("boom"), 1, "\033[0;31m[ERROR]\033[0m boom\n"},
 		{errorsJoin(&ExitError{Code: 20}), 20, ""},
+		{ui.ErrInterrupted, 130, ""},
+		{ui.ErrReported, 1, ""},
+		{tier.ErrDenied, 1, ""},
+		{backend.ErrRefused, 3, ""},
+		{backend.ErrFailed, 1, ""},
+		{&backend.UnknownError{ID: "x"}, 2, "\033[0;31m[ERROR]\033[0m Unknown backend 'x'.\n"},
+		{store.ImportNotProven, 3, ""},
+		{store.ErrNotInitialised, 1, "\033[0;31m[ERROR]\033[0m " + store.NotInitialisedMsg + "\n"},
+		{&store.ExistsError{Path: "/s"}, 1, "\033[0;31m[ERROR]\033[0m Store already exists at /s.\n"},
+		{&store.NotFoundError{Path: "/s"}, 1, "\033[0;31m[ERROR]\033[0m Store not found at /s.\n"},
+		{store.ErrSeedUsage, 1, "\033[0;31m[ERROR]\033[0m " + store.SeedUsage + "\n"},
+		{&model.NoSourceError{Store: "/s", Config: "/c"}, 1, "\033[0;31m[ERROR]\033[0m No store at /s and no config at /c.\n"},
+		{&names.Error{Msgs: []string{"a", "b"}}, 1, "\033[0;31m[ERROR]\033[0m a\n\033[0;31m[ERROR]\033[0m b\n"},
+		{&store.Error{Msg: "bad"}, 1, "tacctl store: bad\n"},
+		{&conf.ValidationError{Path: "x.y", Msg: "no"}, 1, ""}, // its plain line: set below
+		{&conf.ParseError{Path: "/o", Why: "bad"}, 1, ""},      // its [ERROR] lines: set below
 	}
 	for _, c := range cases {
 		errb.Reset()
+		switch e := c.err.(type) {
+		case *conf.ValidationError:
+			c.msg = e.Error() + "\n"
+		case *conf.ParseError:
+			c.msg = ""
+			for _, l := range e.Lines() {
+				c.msg += "\033[0;31m[ERROR]\033[0m " + l + "\n"
+			}
+		}
 		if got := exitCode(c.err, o); got != c.code || errb.String() != c.msg {
 			t.Errorf("%v: %d %q, want %d %q", c.err, got, errb.String(), c.code, c.msg)
 		}
@@ -377,13 +416,24 @@ func TestExitCode(t *testing.T) {
 func errorsJoin(err error) error { return errors.Join(errors.New("context"), err) }
 
 func TestSudoArgv(t *testing.T) {
-	if got := sudoArgv("/x", []string{"host", "sync", "--all"}, "/s"); !reflect.DeepEqual(got, []string{"sudo", "SSH_AUTH_SOCK=/s", "/x", "host", "sync", "--all"}) {
+	sock := func(v string) func(string) string {
+		return func(name string) string {
+			if name == "SSH_AUTH_SOCK" {
+				return v
+			}
+			return "other"
+		}
+	}
+	if got := sudoArgv("/x", []string{"host", "sync", "--all"}, sock("/s")); !reflect.DeepEqual(got, []string{"sudo", "SSH_AUTH_SOCK=/s", "/x", "host", "sync", "--all"}) {
 		t.Errorf("host: %q", got)
 	}
-	if got := sudoArgv("/x", []string{"scope", "host"}, "/s"); !reflect.DeepEqual(got, []string{"sudo", "/x", "scope", "host"}) {
+	if got := sudoArgv("/x", []string{"host", "list"}, sock("")); !reflect.DeepEqual(got, []string{"sudo", "/x", "host", "list"}) {
+		t.Errorf("host without a socket: %q", got)
+	}
+	if got := sudoArgv("/x", []string{"scope", "host"}, sock("/s")); !reflect.DeepEqual(got, []string{"sudo", "/x", "scope", "host"}) {
 		t.Errorf("not host: %q", got)
 	}
-	if got := sudoArgv("/x", nil, "/s"); !reflect.DeepEqual(got, []string{"sudo", "/x"}) {
+	if got := sudoArgv("/x", nil, sock("/s")); !reflect.DeepEqual(got, []string{"sudo", "/x"}) {
 		t.Errorf("no args: %q", got)
 	}
 }
@@ -420,7 +470,7 @@ func TestMain(t *testing.T) {
 		t.Errorf("Main: %d %q %q", code, out.String(), errb.String())
 	}
 	out.Reset()
-	code = Main([]string{"tacctl", "user", "list"}, []string{"TACCTL_SKIP_SUDO=1", "TACCTL_BASH_IMPL=/nonexistent/tacctl.sh"}, app.Stdio{Stdout: &out, Stderr: &errb}, BuildInfo{})
+	code = Main([]string{"tacctl", "scope", "list"}, []string{"TACCTL_SKIP_SUDO=1", "TACCTL_BASH_IMPL=/nonexistent/tacctl.sh"}, app.Stdio{Stdout: &out, Stderr: &errb}, BuildInfo{})
 	if code != 1 || !strings.Contains(errb.String(), "command not available in this build") {
 		t.Errorf("Main delegation failure: %d %q", code, errb.String())
 	}

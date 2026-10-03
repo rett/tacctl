@@ -275,6 +275,10 @@ print("" if v is None else v)' "${TACCTL_STATE_DIR}/store.yaml" "$1" "$2"
     assert_output --partial "already enabled"
 }
 
+# The gate half sources the bash library; for the Go binary the same check is
+# internal/tier's TestGateAndSudoersAgree (the gate and the rules come from
+# one table there).
+# bats test_tags=bash-only
 @test "tier: store show never reaches the read-only tier, in the gate or in sudoers" {
     run "$TACCTL_BIN_SCRIPT" config sudoers tiers show
     refute_output --partial "store"
@@ -285,7 +289,9 @@ print("" if v is None else v)' "${TACCTL_STATE_DIR}/store.yaml" "$1" "$2"
 # The gate (tier_permits) and the sudoers rules (emit_tier_sudoers) are written
 # apart and must say the same. The rules' command lists are read from the
 # emitted text; every verb the CLI has that could be told apart is asked of
-# both for each lower tier.
+# both for each lower tier. Bash functions: in the Go port this cross-check
+# is internal/tier's TestGateAndSudoersAgree, over the same verb list.
+# bats test_tags=bash-only
 @test "tier gate and sudoers rules agree on every verb, for each lower tier" {
     run bash -c '
         source "$1"

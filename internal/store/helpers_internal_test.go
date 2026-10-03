@@ -2,6 +2,7 @@ package store
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"math"
 	"os"
@@ -75,6 +76,9 @@ func TestStrerror(t *testing.T) {
 	}
 	if got := Report(errors.New("plain")); got != "plain" {
 		t.Error(got)
+	}
+	if !Reportable(&osError{pe}) || !Reportable(fmt.Errorf("w: %w", &Error{Msg: "x"})) || Reportable(errors.New("plain")) || Reportable(ErrNotInitialised) {
+		t.Error("Reportable")
 	}
 	if (&osError{pe}).Error() != "/x: No such file or directory" {
 		t.Error("osError.Error")

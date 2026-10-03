@@ -46,3 +46,11 @@ func (o Output) Errorf(format string, a ...any) { o.Error(fmt.Sprintf(format, a.
 func line(w io.Writer, tag, msg string) {
 	_, _ = io.WriteString(w, tag+" "+msg+"\n")
 }
+
+// InfoE, WarnE and ErrorE are Info, Warn and Error exactly as lib/core.sh's
+// helpers print: through 'echo -e', so a backslash escape in msg is
+// interpreted (\t a tab, \c the end of the output). Use them for a message
+// that carries a value from the command line.
+func (o Output) InfoE(msg string)  { _, _ = io.WriteString(o.Stdout, Echo(Green+"[INFO]"+NC+" "+msg)) }
+func (o Output) WarnE(msg string)  { _, _ = io.WriteString(o.Stdout, Echo(Yellow+"[WARN]"+NC+" "+msg)) }
+func (o Output) ErrorE(msg string) { _, _ = io.WriteString(o.Stderr, Echo(Red+"[ERROR]"+NC+" "+msg)) }

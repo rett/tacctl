@@ -79,8 +79,6 @@ type Backend struct {
 	// Sleep waits d or until ctx is done (nil: a timer); the settle wait
 	// of a settings change goes through it.
 	Sleep func(ctx context.Context, d time.Duration)
-
-	prompter *ui.Prompter
 }
 
 var _ backend.Backend = (*Backend)(nil)

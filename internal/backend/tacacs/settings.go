@@ -31,18 +31,9 @@ import (
 // when the unit does not come up, which StoreApply does not do. It
 // snapshots first when there is a store.
 
-// prompt is the invocation's prompter on the Env's Stdin (one for the
-// module, so that no read swallows the input of the next).
-func (b *Backend) prompt() *ui.Prompter {
-	if b.prompter == nil {
-		in := b.env.Stdin
-		if in == nil {
-			in = strings.NewReader("")
-		}
-		b.prompter = ui.NewPrompter(in, b.env.Out)
-	}
-	return b.prompter
-}
+// prompt is the invocation's prompter (backend.Env.Prompt: one for the
+// whole invocation, so that no read swallows the input of the next).
+func (b *Backend) prompt() *ui.Prompter { return b.env.Prompt() }
 
 // confError writes a tacctl.yaml write error as lib/conf.sh does: a file
 // that does not parse as two [ERROR] lines, a value the schema refuses as a

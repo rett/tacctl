@@ -22,7 +22,21 @@ type Flag struct {
 	Value bool
 	// Repeat: the flag may be given more than once (each value is kept).
 	Repeat bool
+	// Kind is what the value is, for completion: a _completion-names kind
+	// (KindUsers, ...), KindList for a comma list of one, or "" for free
+	// text.
+	Kind string
 }
+
+// The value kinds of Flag.Kind and Spec.Args: completion offers the live
+// names of a _completion-names kind (completionKinds).
+const (
+	KindUsers  = "users"
+	KindGroups = "groups"
+	KindScopes = "scopes"
+	// KindList marks a comma list: "<kind>,list" completes after each comma.
+	KindList = ",list"
+)
 
 // Spec describes a verb's arguments.
 type Spec struct {
@@ -30,6 +44,10 @@ type Spec struct {
 	// MinArgs and MaxArgs bound the positional count; MaxArgs < 0 is no
 	// upper bound.
 	MinArgs, MaxArgs int
+	// Args are the kinds of the positionals, in order, for completion (""
+	// for free text; a word list such as "list|add|remove" for a fixed
+	// set).
+	Args []string
 }
 
 // Parsed is the result of Parse.

@@ -36,16 +36,17 @@ func hidden(name string) *cobra.Command {
 }
 
 // newRoot builds the tree for one invocation; commands without a RunE of
-// their own delegate to bash.
+// their own delegate to bash, those with one are native (native.go).
 func newRoot(inv *invocation) *cobra.Command {
 	run := func(*cobra.Command, []string) error { return delegate(inv.app) }
 	root := &cobra.Command{Use: "tacctl", Short: "TACACS+ (tacquito) and RADIUS (FreeRADIUS) from one store"}
 	root.AddCommand(lifecycleCmds()...)
+	root.AddCommand(passwdCmd(inv))
 	root.AddCommand(
-		userCmd(), groupCmd(), scopeCmd(), hostCmd(), backendCmd(), storeCmd(),
-		configCmd(), logCmd(), backupCmd(), hashCmd(), versionCmd(inv),
+		userCmd(inv), groupCmd(), scopeCmd(), hostCmd(), backendCmd(), storeCmd(),
+		configCmd(), logCmd(), backupCmd(), hashCmd(inv), versionCmd(inv),
 		// Bash completion's bridge to live names (sudo -n tacctl _completion-names <kind>).
-		hidden("_completion-names"),
+		completionNamesCmd(inv),
 	)
 	// 'help' is not a command of tacctl ('tacctl help' prints the usage and
 	// exits 1, as any unknown word does); this hidden stand-in only keeps

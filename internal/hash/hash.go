@@ -11,6 +11,7 @@
 package hash
 
 import (
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -97,32 +98,84 @@ const (
 	InvalidHash Result = "INVALID_HASH"
 )
 
-// Verify is verify_hash: MATCH or NO_MATCH for a hex-encoded '$2a$', '$2b$'
-// or '$2y$' hash, INVALID_HASH when hexHash is not hex or not a bcrypt hash.
-// Like python-bcrypt, only the first 72 bytes of password count, so a hash
+// Verify is verify_hash, classified as python-bcrypt 3.2.2's checkpw
+// does, with the hashing itself done by golang.org/x/crypto/bcrypt:
+//
+//   - INVALID_HASH (checkpw raises ValueError) when hexHash is not hex, or
+//     its text does not start with a salt bcrypt_hashpass accepts ('$2a$',
+//     '$2b$' or '$2y$', a cost of 04 to 31, then 22 characters of bcrypt's
+//     alphabet);
+//   - NO_MATCH when it does, but hashpw(password, h) cannot equal h: the text
+//     is not exactly 60 characters (truncated, or with a tail), or its salt
+//     is not in the canonical form hashpw writes back;
+//   - otherwise MATCH or NO_MATCH as bcrypt.CompareHashAndPassword says.
+//
+// Only the first 72 bytes of password count, as in python-bcrypt, so a hash
 // made from a longer password by tacctl 0.1.x still verifies.
 func Verify(password, hexHash string) Result {
 	h, err := hex.DecodeString(hexHash)
-	if err != nil || len(h) < 4 || h[0] != '$' || h[1] != '2' || h[3] != '$' ||
-		(h[2] != 'a' && h[2] != 'b' && h[2] != 'y') {
+	if err != nil {
 		return InvalidHash
+	}
+	salt, ok := parseSalt(h)
+	if !ok {
+		return InvalidHash
+	}
+	if len(h) != rawHashLen || bcryptB64.EncodeToString(salt) != string(h[7:7+saltChars]) {
+		return NoMatch
 	}
 	pw := []byte(password)
 	if len(pw) > MaxPasswordBytes {
 		pw = pw[:MaxPasswordBytes]
 	}
 	switch err := bcrypt.CompareHashAndPassword(h, pw); {
-	case err == nil && len(h) != 60:
-		// The library ignores bytes past the hash; python-bcrypt compares
-		// the whole string.
-		return NoMatch
 	case err == nil:
 		return Match
 	case errors.Is(err, bcrypt.ErrMismatchedHashAndPassword):
 		return NoMatch
-	default:
-		return InvalidHash
 	}
+	return InvalidHash
+}
+
+const (
+	rawHashLen = 60 // '$2b$12$' + 22 salt + 31 hash characters
+	saltChars  = 22
+	saltBytes  = 16
+	// bcryptAlphabet is bcrypt's base64 alphabet.
+	bcryptAlphabet = "./ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+)
+
+// bcryptB64 is bcrypt's base64: its own alphabet, no padding.
+var bcryptB64 = base64.NewEncoding(bcryptAlphabet).WithPadding(base64.NoPadding)
+
+// parseSalt is the salt check of bcrypt_hashpass (the OpenBSD code inside
+// python-bcrypt): '$2' and a minor version a, b or y, '$', two digits of a
+// cost from 4 to 31, '$', then 22 characters of bcrypt's alphabet, which
+// decode to the 16 salt bytes.
+func parseSalt(h []byte) (salt []byte, ok bool) {
+	if len(h) < 7 || h[0] != '$' || h[1] != '2' || (h[2] != 'a' && h[2] != 'b' && h[2] != 'y') || h[3] != '$' {
+		return nil, false
+	}
+	if h[4] < '0' || h[4] > '9' || h[5] < '0' || h[5] > '9' || h[6] != '$' {
+		return nil, false
+	}
+	if cost := int(h[4]-'0')*10 + int(h[5]-'0'); cost < MinCost || cost > 31 {
+		return nil, false
+	}
+	rest := h[7:]
+	if len(rest) < saltChars {
+		return nil, false
+	}
+	for _, c := range rest[:saltChars] {
+		if !strings.ContainsRune(bcryptAlphabet, rune(c)) { // the decoder would skip \r and \n
+			return nil, false
+		}
+	}
+	salt, err := bcryptB64.DecodeString(string(rest[:saltChars]))
+	if err != nil || len(salt) != saltBytes {
+		return nil, false
+	}
+	return salt, true
 }
 
 // hasRawPrefix is re.match(r'^\$2[aby]\$', s).

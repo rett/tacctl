@@ -2,9 +2,11 @@
 # the Go binary with 'TACCTL_IMPL=go make test-blackbox' (docs/plans/go-rewrite.md
 # 2.2). One path per line; '#' starts a comment. A file followed by
 # '# go-after: <work package>' runs only in bash mode until that package has
-# cut its commands over. Tests tagged 'bash-only' (# bats test_tags=bash-only)
-# are skipped in go mode. Packages that cut commands over add the files they
-# make pass.
+# cut its commands over. A file followed by '# go-tags: <tag> [<tag>...]' runs
+# in full in bash mode and, in go mode, only its tests tagged with one of those
+# tags (characterisation.bats: the cutover:<package> tags of the packages done
+# so far). Tests tagged 'bash-only' (# bats test_tags=bash-only) are skipped in
+# go mode. Packages that cut commands over add the files they make pass.
 tests/integration/config_metrics_sudoers.bats
 tests/integration/config_mgmt_acl.bats
 tests/integration/config_render.bats
@@ -18,8 +20,11 @@ tests/integration/scope_crud.bats
 tests/integration/scope_prefixes_secret.bats
 tests/integration/scope_vendor_attrs.bats
 tests/integration/status_and_scope_lookup.bats
+tests/integration/tiers.bats
 tests/integration/user_crud.bats
+tests/integration/user_lifecycle.bats
 tests/e2e/log.bats
 tests/e2e/smoke.bats
-# Pins the CLI behaviour of verbs no other test covers (WP0.2); runs against Go once the last verb is cut over.
-tests/integration/characterisation.bats  # go-after: WP3.3d
+# Pins the CLI behaviour of verbs no other test covers (WP0.2): against Go, the
+# sections of the packages cut over so far; whole once WP3.3d is done.
+tests/integration/characterisation.bats  # go-tags: cutover:wp0-1 cutover:wp2-4a

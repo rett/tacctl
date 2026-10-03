@@ -1,0 +1,14 @@
+# Managed by tacctl. Per-tier access for tacctl users with local accounts.
+# Remove with: tacctl config sudoers tiers remove
+Cmnd_Alias TACCTL_RO = /usr/local/bin/tacctl "", /usr/local/bin/tacctl passwd, /usr/local/bin/tacctl status, /usr/local/bin/tacctl version, \
+    /usr/local/bin/tacctl user list, /usr/local/bin/tacctl user show *, /usr/local/bin/tacctl group list, /usr/local/bin/tacctl scope list, \
+    /usr/local/bin/tacctl backend list, /usr/local/bin/tacctl backend status, /usr/local/bin/tacctl backend status *, \
+    /usr/local/bin/tacctl _completion-names *
+Cmnd_Alias TACCTL_OP = /usr/local/bin/tacctl log tail, /usr/local/bin/tacctl log tail *, /usr/local/bin/tacctl log search *, \
+    /usr/local/bin/tacctl log failures, /usr/local/bin/tacctl log accounting, /usr/local/bin/tacctl log accounting *, \
+    /usr/local/bin/tacctl config validate, /usr/local/bin/tacctl backup list
+
+%tac-superuser ALL=(ALL:ALL) ALL
+%tac-superuser ALL=(root) NOPASSWD: TACCTL_RO, TACCTL_OP
+%tac-operator ALL=(root) NOPASSWD: TACCTL_RO, TACCTL_OP
+%tac-readonly ALL=(root) NOPASSWD: TACCTL_RO

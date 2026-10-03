@@ -102,6 +102,14 @@ func Report(err error) string {
 	return err.Error()
 }
 
+// Reportable reports whether err is one Report words as a 'tacctl store:'
+// line: an *Error, or a file-system failure of this package.
+func Reportable(err error) bool {
+	var se *Error
+	var oe *osError
+	return errors.As(err, &se) || errors.As(err, &oe)
+}
+
 // osError marks a file-system failure the dispatcher reports as an
 // OSError.
 type osError struct{ err error }

@@ -157,11 +157,7 @@ func (m *Module) logClear(out ui.Output, flag string) {
 	out.Warn("This truncates " + m.L.AuthLog + ", " + m.L.AcctLog + " and " + m.L.DaemonLog + ".")
 	out.Warn("Historical authentication and accounting records will be lost.")
 	if !force {
-		var in io.Reader = strings.NewReader("")
-		if m.env.Stdin != nil {
-			in = m.env.Stdin
-		}
-		if !ui.NewPrompter(in, m.env.Out).Confirm("  Continue? [y/N]: ") {
+		if !m.env.Prompt().Confirm("  Continue? [y/N]: ") {
 			out.Info("Cancelled.")
 			return
 		}

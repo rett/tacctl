@@ -71,9 +71,20 @@ impl-check:
 # The black-box files (tests/blackbox.list) against TACCTL_IMPL. With go, the
 # binary is built first, list entries marked '# go-after: <package>' are
 # skipped, and so are tests tagged bash-only (they run a copy of the bash
-# script from another directory, or similar).
+# script from another directory, or similar). An entry marked
+# '# go-tags: <tag> [<tag>...]' runs in full with bash, and with go only its
+# tests carrying one of those tags (the cut-over tags of
+# characterisation.bats), in a bats run of its own.
 test-blackbox: $(if $(filter go,$(TACCTL_IMPL)),build)
-	$(call bats_run,$$(awk -v impl="$(TACCTL_IMPL)" '/^[[:space:]]*(#|$$)/ { next } impl == "go" && /#[[:space:]]*go-after:/ { next } { print $$1 }' tests/blackbox.list),$(if $(filter go,$(TACCTL_IMPL)),--filter-tags '!bash-only'))
+	$(call bats_run,$$(awk -v impl="$(TACCTL_IMPL)" '/^[[:space:]]*(#|$$)/ { next } impl == "go" && /#[[:space:]]*go-(after|tags):/ { next } { print $$1 }' tests/blackbox.list),$(if $(filter go,$(TACCTL_IMPL)),--filter-tags '!bash-only'))
+	@if [ "$(TACCTL_IMPL)" = go ]; then \
+		awk '/^[[:space:]]*#/ { next } /#[[:space:]]*go-tags:/ { f = $$1; sub(/.*go-tags:[[:space:]]*/, ""); print f, $$0 }' tests/blackbox.list | \
+		while read -r file tags; do \
+			set --; for t in $$tags; do set -- "$$@" --filter-tags "$$t,!bash-only"; done; \
+			echo "$(BATS) $(BATS_FLAGS) $$* $$file"; \
+			$(BATS) $(BATS_FLAGS) "$$@" "$$file" || exit 1; \
+		done; \
+	fi
 
 # Go unit tests (-race needs cgo).
 test-go:

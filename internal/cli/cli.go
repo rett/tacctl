@@ -11,7 +11,10 @@ import (
 	"syscall"
 
 	"github.com/rett/tacctl/internal/app"
+	// The shipped backend modules register themselves.
+	_ "github.com/rett/tacctl/internal/backend/all"
 	"github.com/rett/tacctl/internal/execx"
+	"github.com/rett/tacctl/internal/model"
 	"github.com/rett/tacctl/internal/paths"
 )
 
@@ -20,6 +23,11 @@ type invocation struct {
 	ctx   context.Context
 	app   *app.App
 	build BuildInfo
+
+	// The model as first read (native.go: model).
+	loaded bool
+	m      *model.Model
+	mErr   error
 }
 
 // Main runs tacctl with argv (os.Args: argv[0] is the program) and environ
@@ -46,6 +54,9 @@ func Main(argv, environ []string, stdio app.Stdio, build BuildInfo) int {
 func Run(ctx context.Context, a *app.App, build BuildInfo) error {
 	if needsSudo(a) {
 		return reexec(a)
+	}
+	if a.Version == "" {
+		a.Version = build.Version
 	}
 	inv := &invocation{ctx: ctx, app: a, build: build}
 	root := newRoot(inv)

@@ -13,6 +13,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/rett/tacctl/internal/shellquote"
 )
 
 // InvalidError is "Invalid CIDR: '<value>'", the message validate_cidr
@@ -229,9 +231,9 @@ func ParseList(input string) ([]string, error) {
 	var out []string
 	seen := map[string]bool{}
 	for _, raw := range strings.Split(input, ",") {
-		entry, err := xargsEcho(raw)
+		entry, err := shellquote.XargsEcho(raw)
 		if err != nil {
-			return nil, err
+			return nil, ErrUnmatchedQuote
 		}
 		if entry == "" {
 			continue
@@ -247,44 +249,4 @@ func ParseList(input string) ([]string, error) {
 		}
 	}
 	return out, nil
-}
-
-// xargsEcho is 'echo "$s" | xargs': the blank-separated words of s with
-// quote and backslash processing, joined by single spaces.
-func xargsEcho(s string) (string, error) {
-	var words []string
-	var cur strings.Builder
-	inWord := false
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		switch c {
-		case ' ', '\t', '\n': // xargs's blanks
-			if inWord {
-				words = append(words, cur.String())
-				cur.Reset()
-				inWord = false
-			}
-		case '\'', '"':
-			j := strings.IndexByte(s[i+1:], c)
-			if j < 0 {
-				return "", ErrUnmatchedQuote
-			}
-			cur.WriteString(s[i+1 : i+1+j])
-			inWord = true
-			i += j + 1
-		case '\\':
-			if i+1 < len(s) {
-				i++
-				cur.WriteByte(s[i])
-			}
-			inWord = true
-		default:
-			cur.WriteByte(c)
-			inWord = true
-		}
-	}
-	if inWord {
-		words = append(words, cur.String())
-	}
-	return strings.Join(words, " "), nil
 }
