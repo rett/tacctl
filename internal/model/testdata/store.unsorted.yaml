@@ -1,0 +1,16 @@
+version: 1
+groups:
+  zeta: {priv_lvl: 7, juniper_class: Z}
+  superuser: {priv_lvl: 15, juniper_class: RW-CLASS, builtin: true}
+  readonly:  {priv_lvl: 1,  juniper_class: RO-CLASS, builtin: true}
+  alpha: {priv_lvl: 7, juniper_class: A}
+  operator:  {priv_lvl: 7,  juniper_class: OP-CLASS, builtin: true}
+users:
+  zed: {group: zeta, scopes: [b, a], hash: null, disabled: true, password_changed: '2026-01-01'}
+  amy: {group: alpha, scopes: [a], hash: '2432622431322441414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141', disabled: false}
+  root: {group: readonly, scopes: [a], hash: null, disabled: true, accounting_sink: true}
+scopes:
+  b: {prefixes: [10.0.0.0/8, 'fd00::/8', 10.9.0.0/16], secret: bbbbbbbbbbbbbbbbbbbb, protocols: [tacacs], devices: {10.9.0.1/32: wti, 10.10.0.0/16: cisco}}
+  a: {prefixes: [10.0.0.0/8, 192.168.1.0/24], secret: short, vendor_attrs: [juniper], devices: {10.9.0.0/16: juniper, 10.10.1.0/24: cisco, 192.168.1.7/32: wti}}
+  h: {prefixes: [192.0.2.1/32, 192.0.2.2/32], secret: hhhhhhhhhhhhhhhhhhhhhhh}
+filters: {allow: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16]}

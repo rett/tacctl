@@ -1,0 +1,47 @@
+filters:
+  allow: []
+  deny: []
+groups:
+  operator: {builtin: true, juniper_class: OP-CLASS, priv_lvl: 7}
+  readonly: {builtin: true, juniper_class: RO-CLASS, priv_lvl: 1}
+  superuser: {builtin: true, juniper_class: RW-CLASS, priv_lvl: 15}
+scopes:
+  dmz:
+    prefixes: [203.0.113.0/24]
+    protocols: null
+    secret: dmz-secret-0123456789abcdef
+  lab:
+    prefixes: [172.16.0.0/12, 192.168.0.0/16]
+    protocols: null
+    secret: lab-secret-0123456789abcdef
+  prod:
+    prefixes: [10.0.0.0/8]
+    protocols: null
+    secret: prod-secret-0123456789abcdef
+  prod-inner:
+    prefixes: [10.10.99.0/24]
+    protocols: null
+    secret: inner-secret-0123456789abcdef
+users:
+  alice:
+    accounting_sink: false
+    disabled: false
+    group: superuser
+    hash: 24326224313224646f6e74636172652e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e
+    password_changed: null
+    scopes: [prod, lab]
+  bob:
+    accounting_sink: false
+    disabled: false
+    group: operator
+    hash: 24326224313224646f6e74636172652e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e
+    password_changed: null
+    scopes: [lab]
+  carol:
+    accounting_sink: false
+    disabled: false
+    group: readonly
+    hash: 24326224313224646f6e74636172652e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e
+    password_changed: null
+    scopes: [lab, dmz]
+version: 1
