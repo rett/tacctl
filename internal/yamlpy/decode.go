@@ -209,7 +209,7 @@ func constructInt(s string) (any, error) {
 		u, err = strconv.ParseUint(value, 10, 64)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("%w: integer %s", ErrUnsupportedValue, err)
+		return nil, fmt.Errorf("%w: integer out of range or malformed", ErrUnsupportedValue)
 	}
 	if neg {
 		if u > 1<<63 {
@@ -247,7 +247,7 @@ func constructFloat(s string) (any, error) {
 		for i := len(parts) - 1; i >= 0; i-- {
 			d, err := strconv.ParseFloat(parts[i], 64)
 			if err != nil {
-				return nil, fmt.Errorf("%w: float %s", ErrUnsupportedValue, err)
+				return nil, fmt.Errorf("%w: malformed float", ErrUnsupportedValue)
 			}
 			total += d * base
 			base *= 60
@@ -256,7 +256,7 @@ func constructFloat(s string) (any, error) {
 	}
 	f, err := strconv.ParseFloat(value, 64)
 	if err != nil {
-		return nil, fmt.Errorf("%w: float %s", ErrUnsupportedValue, err)
+		return nil, fmt.Errorf("%w: malformed float", ErrUnsupportedValue)
 	}
 	return sign * f, nil
 }
