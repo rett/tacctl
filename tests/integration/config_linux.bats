@@ -1,7 +1,9 @@
 #!/usr/bin/env bats
 # Integration tests for 'tacctl config linux' (script generation) and for the
 # generated client scripts, run unprivileged against scratch directories via
-# TACCTL_CLIENT_TEST=1 with the account tools stubbed.
+# TACCTL_CLIENT_TEST=1 with the account tools stubbed. The last section is
+# the radius method (pam_radius_auth from the host's packages) and switching
+# a host between the two.
 
 load ../helpers/setup
 load ../helpers/tmpenv
@@ -39,6 +41,7 @@ _client_env() {
     export TACCTL_CLIENT_PAM_DIR="${BATS_TEST_TMPDIR}/pam.d"
     export TACCTL_CLIENT_SUDOERS="${BATS_TEST_TMPDIR}/sudoers-host"
     export TACCTL_CLIENT_XDG="${BATS_TEST_TMPDIR}/xdg"
+    export TACCTL_CLIENT_RADIUS_CONF="${BATS_TEST_TMPDIR}/etc-tacctl-pam_radius.conf"
     export FAKE_DB="${BATS_TEST_TMPDIR}/db"
     mkdir -p "$TACCTL_CLIENT_PAM_DIR" "$FAKE_DB"
     printf '%s\n' '# sshd' '@include common-auth' 'account    required     pam_nologin.so' \
@@ -105,6 +108,16 @@ _client_env() {
     assert_output --partial "bob:readonly:20001"
 }
 
+@test "config linux script: the port is the default listener's, from the listener model" {
+    TACCTL_SETTLE_SECONDS=0 "$TACCTL_BIN_SCRIPT" config listen tcp 192.0.2.10:4949 > /dev/null
+    TACCTL_SETTLE_SECONDS=0 "$TACCTL_BIN_SCRIPT" config listen --listener mgmt tcp 127.0.0.1:5050 > /dev/null
+    run _gen
+    assert_success
+    run sed '/^__TARBALL__$/,$d' "$OUT"
+    assert_output --partial "TAC_PORT=4949"
+    refute_output --partial "5050"
+}
+
 @test "config linux script: embedded tarball matches the recorded checksum" {
     _gen > /dev/null
     local want got
@@ -147,7 +160,9 @@ _client_env() {
 
 @test "config linux script: refuses a placeholder or unsafe secret" {
     load_fixture tacquito.minimal.yaml
-    sed -i 's/key: ".*"/key: "REPLACE_WITH_SHARED_SECRET"/' "$TACCTL_CONFIG"
+    # The secret is the store's; put the placeholder there.
+    sed -i 's/secret: .*/secret: REPLACE_WITH_SHARED_SECRET/' "${TACCTL_STATE_DIR}/store.yaml"
+    grep -q 'secret: REPLACE_WITH_SHARED_SECRET' "${TACCTL_STATE_DIR}/store.yaml"
     run _gen
     assert_failure
     assert_output --partial "tacctl scope secret lab generate"
@@ -705,4 +720,463 @@ _rhel_env() {
     run bash "$BATS_TEST_TMPDIR/remove.sh"
     assert_success
     assert_output --partial "cannot log in: ghost"
+}
+
+# --- method radius --------------------------------------------------------------
+
+# Enable the RADIUS backend the way tacctl.yaml records it (no store mutation
+# follows in these tests, so nothing is rendered).
+radius_on() {
+    printf 'backends:\n  enabled: [tacacs, radius]\n' >> "${TACCTL_STATE_DIR}/tacctl.yaml"
+}
+
+# The radius install script for scope lab.
+_gen_radius() {
+    radius_on
+    _gen --method radius "$@"
+}
+
+RCONF_LINE="192.0.2.10:1812 0123456789abcdef0123456789abcdef 3"
+
+@test "config linux script --method radius: needs the backend, not the tarball; carries no module" {
+    run _gen --method radius
+    assert_failure
+    assert_output --partial "tacctl backend enable radius"
+    [[ ! -f "$OUT" ]]
+
+    rm -f "$TACCTL_LINUX_DIR"/*.tar.gz
+    run _gen_radius
+    assert_success
+    assert_output --partial "Method:  radius"
+    assert_output --partial "port 1812"
+    [[ "$(stat -c %a "$OUT")" == "600" ]]
+    run bash -n "$OUT"
+    assert_success
+    run cat "$OUT"
+    assert_line "TAC_METHOD=radius"
+    assert_line "TAC_PORT=1812"
+    assert_line "TAC_ACCT_PORT=1813"
+    assert_line "TAC_SECRET=0123456789abcdef0123456789abcdef"
+    refute_line "__TARBALL__"
+
+    run _gen --method ldap
+    assert_failure
+    assert_output --partial "Unknown method 'ldap'"
+}
+
+@test "config linux script --method radius: refuses a scope that is not served over RADIUS" {
+    "$TACCTL_BIN_SCRIPT" scope protocols lab set tacacs > /dev/null
+    run _gen_radius
+    assert_failure
+    assert_output --partial "Scope 'lab' is not served over RADIUS"
+}
+
+@test "client install (radius): package, root-only server file, PAM lines; remove restores everything" {
+    _gen_radius > /dev/null
+    _client_env
+    run bash "$OUT" --adopt bob
+    assert_success
+    assert_output --partial "Installing the RADIUS PAM module: libpam-radius-auth"
+    assert_output --partial "RADIUS authentication installed for scope 'lab' (server 192.0.2.10:1812)."
+    assert_output --partial "RADIUS is UDP"
+    refute_output --partial "TACACS+"
+    stub_called "apt-get install -y libpam-radius-auth"
+    # Nothing of the tacplus method.
+    refute_output --partial "pam_tacplus"
+    [[ ! -e "$TACCTL_CLIENT_STATE/module" && ! -e "$TACCTL_CLIENT_STATE/files" ]]
+    run cat "$TACCTL_CLIENT_STATE/method"
+    assert_output "radius"
+    run cat "$TACCTL_CLIENT_STATE/packages"
+    assert_output "libpam-radius-auth"
+
+    # The secret is in the server file, mode 0600, and on no PAM line.
+    [[ "$(stat -c %a "$TACCTL_CLIENT_RADIUS_CONF")" == "600" ]]
+    run grep -v '^#' "$TACCTL_CLIENT_RADIUS_CONF"
+    assert_output "$RCONF_LINE"
+    run grep -rl "0123456789abcdef" "$TACCTL_CLIENT_PAM_DIR"
+    assert_output ""
+
+    # The same control line as pam_tacplus has; the local stack behind it.
+    run cat "$TACCTL_CLIENT_PAM_DIR/tacctl-auth"
+    assert_line --index 1 "auth    [success=ok default=1]                               pam_succeed_if.so quiet user ingroup tac-users"
+    assert_line --index 2 "auth    [success=done authinfo_unavail=ignore default=die]   pam_radius_auth.so conf=${TACCTL_CLIENT_RADIUS_CONF} retry=1"
+    assert_line --index 3 "@include common-auth"
+    # No account step: only the distribution's.
+    run grep -v '^#' "$TACCTL_CLIENT_PAM_DIR/tacctl-account"
+    assert_output "@include common-account"
+    # Accounting at session start and end, for tac-users only.
+    run grep -v '^#' "$TACCTL_CLIENT_PAM_DIR/tacctl-session"
+    assert_line --index 0 "session [success=ok default=1]                               pam_succeed_if.so quiet user ingroup tac-users"
+    assert_line --index 1 "session optional                                             pam_radius_auth.so conf=${TACCTL_CLIENT_RADIUS_CONF}"
+    [[ "${#lines[@]}" == "2" ]]
+
+    # The service files are edited exactly as for tacplus.
+    run cat "$TACCTL_CLIENT_PAM_DIR/sshd"
+    assert_line "@include tacctl-auth"
+    assert_line "@include tacctl-account"
+    assert_line "@include tacctl-session"
+    refute_line "@include common-auth"
+    run cat "$TACCTL_CLIENT_SUDOERS"
+    assert_line "%tac-superuser ALL=(ALL:ALL) ALL"
+    assert_output --partial "RADIUS superusers"
+    stub_called "useradd -m -u 20000 -g alice -s /bin/bash -c alice .RADIUS. alice"
+
+    # A second run finds the module and installs nothing.
+    : > "$CALLS_LOG"
+    run bash "$OUT"
+    assert_success
+    assert_output --partial "pam_radius_auth is already installed"
+    run grep -c "^apt-get" "$CALLS_LOG"
+    assert_output "0"
+    run grep -c "tacctl-session" "$TACCTL_CLIENT_PAM_DIR/sshd"
+    assert_output "1"
+
+    "$TACCTL_BIN_SCRIPT" config linux remove-script --output "$BATS_TEST_TMPDIR/remove.sh" > /dev/null
+    run bash "$BATS_TEST_TMPDIR/remove.sh"
+    assert_success
+    assert_output --partial "RADIUS authentication removed."
+    assert_output --partial "Packages the install added were left installed: libpam-radius-auth"
+    cmp "$TACCTL_CLIENT_PAM_DIR/sshd" "$BATS_TEST_TMPDIR/sshd.orig"
+    cmp "$TACCTL_CLIENT_PAM_DIR/sudo" "$BATS_TEST_TMPDIR/sudo.orig"
+    cmp "$TACCTL_CLIENT_PAM_DIR/sudo-i" "$BATS_TEST_TMPDIR/sudo-i.orig"
+    cmp "$TACCTL_CLIENT_PAM_DIR/sddm" "$BATS_TEST_TMPDIR/sddm.orig"
+    [[ ! -e "$TACCTL_CLIENT_RADIUS_CONF" ]]
+    [[ ! -e "$TACCTL_CLIENT_PAM_DIR/tacctl-auth" && ! -e "$TACCTL_CLIENT_SUDOERS" && ! -e "$TACCTL_CLIENT_STATE/method" ]]
+    run grep -rl "0123456789abcdef" "$TACCTL_CLIENT_PAM_DIR"
+    assert_output ""
+}
+
+@test "client install (radius): a host that cannot get the package is left untouched" {
+    _gen_radius > /dev/null
+    _client_env
+    stub_cmd apt-get 'exit 100'
+    run bash "$OUT" --adopt bob
+    assert_failure
+    assert_output --partial "Could not install the RADIUS PAM module: libpam-radius-auth"
+    assert_output --partial "Nothing was changed"
+    stub_called "apt-get update"
+    run grep -cE "useradd|groupadd|usermod" "$CALLS_LOG"
+    assert_output "0"
+    cmp "$TACCTL_CLIENT_PAM_DIR/sshd" "$BATS_TEST_TMPDIR/sshd.orig"
+    [[ ! -e "$TACCTL_CLIENT_RADIUS_CONF" && ! -e "$TACCTL_CLIENT_STATE/method" && ! -e "$TACCTL_CLIENT_PAM_DIR/tacctl-auth" ]]
+}
+
+@test "client install (radius): no accounting line for pam_radius_auth 2.0.1 or an accounting port that is not auth+1" {
+    _gen_radius > /dev/null
+    _client_env
+    TACCTL_CLIENT_RADIUS_VERSION="2.0.1-1" run bash "$OUT" --adopt bob
+    assert_success
+    assert_output --partial "pam_radius_auth 2.0.1-1 sends malformed accounting records"
+    run grep -v '^#' "$TACCTL_CLIENT_PAM_DIR/tacctl-session"
+    assert_output ""
+    # The service file still includes it; it is just empty.
+    grep -q '^@include tacctl-session$' "$TACCTL_CLIENT_PAM_DIR/sshd"
+
+    TACCTL_CLIENT_RADIUS_VERSION="2.0.0-1" run bash "$OUT"
+    assert_success
+    grep -q "pam_radius_auth.so" "$TACCTL_CLIENT_PAM_DIR/tacctl-session"
+
+    sed -i 's/^TAC_ACCT_PORT=.*/TAC_ACCT_PORT=1899/' "$OUT"
+    run bash "$OUT"
+    assert_success
+    assert_output --partial "authentication port plus one (1813), and the server's accounting listener is 1899"
+    run grep -v '^#' "$TACCTL_CLIENT_PAM_DIR/tacctl-session"
+    assert_output ""
+}
+
+@test "client install (radius): require_message_authenticator only where the module has it; IPv6 server in brackets" {
+    _gen_radius > /dev/null
+    _client_env
+    mkdir -p "$TACCTL_CLIENT_STATE/lib/security"
+    echo "... require_message_authenticator ..." > "$TACCTL_CLIENT_STATE/lib/security/pam_radius_auth.so"
+    sed -i 's/^TAC_SERVER=.*/TAC_SERVER=2001:db8::10/' "$OUT"
+    run bash "$OUT" --adopt bob
+    assert_success
+    run cat "$TACCTL_CLIENT_PAM_DIR/tacctl-auth"
+    assert_line --regexp "pam_radius_auth.so conf=[^ ]+ retry=1 require_message_authenticator$"
+    run grep -v '^#' "$TACCTL_CLIENT_RADIUS_CONF"
+    assert_output "[2001:db8::10]:1812 0123456789abcdef0123456789abcdef 3"
+}
+
+@test "client install (radius): a failure after PAM edits begin rolls them back and removes the server file" {
+    _gen_radius > /dev/null
+    _client_env
+    stub_cmd visudo 'exit 1'
+    run bash "$OUT" --adopt bob
+    assert_failure
+    assert_output --partial "restored from backup, RADIUS not enabled"
+    cmp "$TACCTL_CLIENT_PAM_DIR/sshd" "$BATS_TEST_TMPDIR/sshd.orig"
+    [[ ! -e "$TACCTL_CLIENT_PAM_DIR/tacctl-auth" && ! -e "$TACCTL_CLIENT_RADIUS_CONF" ]]
+}
+
+# dnf and rpm for a host that has no EPEL: pam_radius is unknown until
+# epel-release is installed. EPEL_BY_NAME=no makes 'dnf install epel-release'
+# find nothing (RHEL, Oracle Linux); RADIUS_PKG=no makes pam_radius
+# uninstallable even then.
+_epel_stubs() {
+    stub_cmd rpm 'case "$*" in
+        "-q epel-release") [[ -e "$FAKE_DB/epel" ]] ;;
+        "-E %{?rhel}") echo 9 ;;
+        *) exit 1 ;;
+    esac'
+    stub_cmd dnf 'case " $* " in
+        *" list pam_radius "*) [[ -e "$FAKE_DB/epel" ]] ;;
+        *" install "*" epel-release "*) [[ "${EPEL_BY_NAME:-yes}" == "yes" ]] && touch "$FAKE_DB/epel"; exit 0 ;;
+        *" install "*epel-release-latest-9.noarch.rpm*) touch "$FAKE_DB/epel" ;;
+        *" install "*" pam_radius "*) [[ -e "$FAKE_DB/epel" && "${RADIUS_PKG:-yes}" == "yes" ]] ;;
+        *" remove "*" epel-release "*) rm -f "$FAKE_DB/epel" ;;
+    esac'
+}
+
+@test "client install (radius, RHEL family): enables EPEL, installs pam_radius, adds no @include" {
+    _gen_radius > /dev/null
+    _rhel_env
+    _epel_stubs
+    run bash "$OUT" --adopt bob
+    assert_success
+    assert_output --partial "pam_radius is packaged in EPEL, which this host does not have: installing epel-release."
+    stub_called "dnf install -y -q epel-release"
+    stub_called "dnf install -y -q --enablerepo=epel pam_radius"
+    run grep -c "^apt-get" "$CALLS_LOG"
+    assert_output "0"
+    run cat "$TACCTL_CLIENT_STATE/packages"
+    assert_line "pam_radius"
+    assert_line "epel-release"
+
+    run cat "$TACCTL_CLIENT_PAM_DIR/sshd"
+    assert_line --index 1 "auth       include      tacctl-auth"
+    assert_line --index 2 "auth       substack     password-auth"
+    assert_line --index 5 "account    include      tacctl-account"
+    assert_line --index 10 "session    include      tacctl-session"
+    run cat "$TACCTL_CLIENT_PAM_DIR/tacctl-auth" "$TACCTL_CLIENT_PAM_DIR/tacctl-account" "$TACCTL_CLIENT_PAM_DIR/tacctl-session"
+    refute_output --partial "@include"
+    assert_output --partial "pam_radius_auth.so conf=${TACCTL_CLIENT_RADIUS_CONF} retry=1"
+    # The account file has no rule at all on this family.
+    run grep -vc '^#\|^$' "$TACCTL_CLIENT_PAM_DIR/tacctl-account"
+    assert_output "0"
+
+    "$TACCTL_BIN_SCRIPT" config linux remove-script --output "$BATS_TEST_TMPDIR/remove.sh" > /dev/null
+    run bash "$BATS_TEST_TMPDIR/remove.sh"
+    assert_success
+    assert_output --partial "left installed: pam_radius epel-release"
+    for f in sshd sudo sudo-i gdm-password; do cmp "$TACCTL_CLIENT_PAM_DIR/$f" "$BATS_TEST_TMPDIR/$f.orig"; done
+    [[ ! -e "$TACCTL_CLIENT_RADIUS_CONF" ]]
+}
+
+@test "client install (radius, RHEL family): epel-release comes from the EPEL project where the distribution has none" {
+    _gen_radius > /dev/null
+    _rhel_env
+    _epel_stubs
+    EPEL_BY_NAME=no run bash "$OUT" --adopt bob
+    assert_success
+    stub_called "dnf install -y -q https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm"
+    stub_called "dnf install -y -q --enablerepo=epel pam_radius"
+}
+
+@test "client install (radius, RHEL family): a host with pam_radius in its repositories gets no EPEL" {
+    _gen_radius > /dev/null
+    _rhel_env
+    _epel_stubs
+    touch "$FAKE_DB/epel"
+    run bash "$OUT" --adopt bob
+    assert_success
+    refute_output --partial "EPEL"
+    stub_called "dnf install -y -q pam_radius"
+    run grep -c "epel-release" "$CALLS_LOG"
+    assert_output "0"
+}
+
+@test "client install (radius, RHEL family): when pam_radius cannot be installed, the EPEL it added is taken out again" {
+    _gen_radius > /dev/null
+    _rhel_env
+    _epel_stubs
+    RADIUS_PKG=no run bash "$OUT" --adopt bob
+    assert_failure
+    assert_output --partial "Could not install the RADIUS PAM module: pam_radius"
+    assert_output --partial "It comes from EPEL."
+    assert_output --partial "Nothing was changed"
+    stub_called "dnf remove -y -q epel-release"
+    [[ ! -e "$FAKE_DB/epel" ]]
+    run grep -cE "useradd|groupadd|usermod" "$CALLS_LOG"
+    assert_output "0"
+    for f in sshd sudo; do cmp "$TACCTL_CLIENT_PAM_DIR/$f" "$BATS_TEST_TMPDIR/$f.orig"; done
+    [[ ! -e "$TACCTL_CLIENT_STATE/packages" ]]
+
+    # No EPEL to be had at all.
+    EPEL_BY_NAME=no stub_cmd rpm 'exit 1'
+    EPEL_BY_NAME=no run bash "$OUT" --adopt bob
+    assert_failure
+    assert_output --partial "Could not enable EPEL on this host"
+    assert_output --partial "Nothing was changed"
+}
+
+@test "client install (radius): with SELinux on, the tacctl_pam_radius module is installed and later removed" {
+    _gen_radius > /dev/null
+    _rhel_env
+    _epel_stubs
+    stub_cmd selinuxenabled
+    stub_cmd semodule
+    stub_cmd restorecon
+    run bash "$OUT" --adopt bob
+    assert_success
+    assert_output --partial "policy module tacctl_pam_radius installed"
+    stub_called "semodule -i .*/tacctl_pam_radius.cil"
+    stub_called "restorecon ${TACCTL_CLIENT_RADIUS_CONF} "
+    run cat "$TACCTL_CLIENT_STATE/tacctl_pam_radius.cil"
+    assert_line "(optional tacctl_pam_radius_login (allow local_login_t node_t (udp_socket (node_bind))))"
+    assert_line "(optional tacctl_pam_radius_sudo (allow sudodomain node_t (udp_socket (node_bind))))"
+    [[ ! -e "$TACCTL_CLIENT_STATE/tacctl_pam.cil" ]]
+
+    "$TACCTL_BIN_SCRIPT" config linux remove-script --output "$BATS_TEST_TMPDIR/remove.sh" > /dev/null
+    run bash "$BATS_TEST_TMPDIR/remove.sh"
+    assert_success
+    stub_called "semodule -r tacctl_pam_radius"
+    [[ ! -e "$TACCTL_CLIENT_STATE/tacctl_pam_radius.cil" ]]
+}
+
+@test "client install: switching tacplus -> radius -> tacplus leaves nothing of the method left behind" {
+    _gen > /dev/null
+    cp "$OUT" "$BATS_TEST_TMPDIR/tacplus.sh"
+    _gen_radius > /dev/null
+    cp "$OUT" "$BATS_TEST_TMPDIR/radius.sh"
+    _rhel_env
+    _epel_stubs
+    stub_cmd selinuxenabled
+    stub_cmd semodule
+    stub_cmd restorecon
+
+    run bash "$BATS_TEST_TMPDIR/tacplus.sh" --adopt bob
+    assert_success
+    [[ -f "$TACCTL_CLIENT_STATE/lib/security/pam_tacplus.so" && -f "$TACCTL_CLIENT_STATE/tacctl_pam.cil" ]]
+    run cat "$TACCTL_CLIENT_STATE/method"
+    assert_output "tacplus"
+    # alice exists from here on, as an account this script created.
+    echo "alice:x:20000:20000:alice (TACACS+):/home/alice:/bin/bash" >> "$FAKE_DB/passwd"
+
+    # tacplus -> radius
+    run bash "$BATS_TEST_TMPDIR/radius.sh"
+    assert_success
+    assert_output --partial "This host used tacplus before: its PAM lines, shared secret and module configuration were removed."
+    run grep -rl "pam_tacplus\|0123456789abcdef" "$TACCTL_CLIENT_PAM_DIR"
+    assert_output ""
+    [[ ! -e "$TACCTL_CLIENT_STATE/lib/security/pam_tacplus.so" && ! -e "$TACCTL_CLIENT_STATE/lib/libtac.so.5" \
+        && ! -e "$TACCTL_CLIENT_STATE/lib/libtac.so.5.0.0" ]]
+    [[ ! -e "$TACCTL_CLIENT_STATE/module" && ! -e "$TACCTL_CLIENT_STATE/files" && ! -e "$TACCTL_CLIENT_STATE/tacctl_pam.cil" ]]
+    stub_called "semodule -r tacctl_pam$"
+    grep -q "pam_radius_auth.so" "$TACCTL_CLIENT_PAM_DIR/tacctl-auth"
+    [[ -f "$TACCTL_CLIENT_RADIUS_CONF" ]]
+    run cat "$TACCTL_CLIENT_STATE/method"
+    assert_output "radius"
+    # The service files were not edited twice, and the account is renamed.
+    run grep -c "tacctl-" "$TACCTL_CLIENT_PAM_DIR/sshd"
+    assert_output "3"
+    stub_called "usermod -c alice .RADIUS. alice"
+    sed -i 's/^alice:.*/alice:x:20000:20000:alice (RADIUS):\/home\/alice:\/bin\/bash/' "$FAKE_DB/passwd"
+
+    # radius -> tacplus
+    run bash "$BATS_TEST_TMPDIR/tacplus.sh"
+    assert_success
+    assert_output --partial "This host used radius before"
+    run grep -rl "pam_radius" "$TACCTL_CLIENT_PAM_DIR"
+    assert_output ""
+    [[ ! -e "$TACCTL_CLIENT_RADIUS_CONF" && ! -e "$TACCTL_CLIENT_STATE/tacctl_pam_radius.cil" ]]
+    stub_called "semodule -r tacctl_pam_radius"
+    grep -q "pam_tacplus.so server=192.0.2.10:49" "$TACCTL_CLIENT_PAM_DIR/tacctl-auth"
+    [[ -f "$TACCTL_CLIENT_STATE/lib/security/pam_tacplus.so" ]]
+    run cat "$TACCTL_CLIENT_STATE/method"
+    assert_output "tacplus"
+    stub_called "usermod -c alice .TACACS.. alice"
+
+    # The removal script takes out whichever is there.
+    "$TACCTL_BIN_SCRIPT" config linux remove-script --output "$BATS_TEST_TMPDIR/remove.sh" > /dev/null
+    run bash "$BATS_TEST_TMPDIR/remove.sh"
+    assert_success
+    assert_output --partial "TACACS+ authentication removed."
+    for f in sshd sudo sudo-i gdm-password; do cmp "$TACCTL_CLIENT_PAM_DIR/$f" "$BATS_TEST_TMPDIR/$f.orig"; done
+}
+
+@test "client install: a host enrolled before there were methods switches to radius cleanly" {
+    _gen > /dev/null
+    cp "$OUT" "$BATS_TEST_TMPDIR/tacplus.sh"
+    _gen_radius > /dev/null
+    _client_env
+    bash "$BATS_TEST_TMPDIR/tacplus.sh" --adopt bob > /dev/null
+    rm "$TACCTL_CLIENT_STATE/method"
+    run bash "$OUT"
+    assert_success
+    assert_output --partial "This host used tacplus before"
+    run grep -rl "pam_tacplus" "$TACCTL_CLIENT_PAM_DIR"
+    assert_output ""
+    [[ ! -e "$TACCTL_CLIENT_STATE/lib/security/pam_tacplus.so" && ! -e "$TACCTL_CLIENT_STATE/module" ]]
+}
+
+@test "client install (radius): a switch that cannot get the package leaves the tacplus setup working" {
+    _gen > /dev/null
+    cp "$OUT" "$BATS_TEST_TMPDIR/tacplus.sh"
+    _gen_radius > /dev/null
+    _client_env
+    bash "$BATS_TEST_TMPDIR/tacplus.sh" --adopt bob > /dev/null
+    cp "$TACCTL_CLIENT_PAM_DIR/tacctl-auth" "$BATS_TEST_TMPDIR/auth.before"
+    stub_cmd apt-get 'exit 100'
+    run bash "$OUT"
+    assert_failure
+    assert_output --partial "Nothing was changed"
+    cmp "$TACCTL_CLIENT_PAM_DIR/tacctl-auth" "$BATS_TEST_TMPDIR/auth.before"
+    grep -q '^@include tacctl-auth$' "$TACCTL_CLIENT_PAM_DIR/sshd"
+    [[ -f "$TACCTL_CLIENT_STATE/lib/security/pam_tacplus.so" ]]
+    run cat "$TACCTL_CLIENT_STATE/method"
+    assert_output "tacplus"
+}
+
+@test "client install (radius): on a Plasma host the lock-screen switch names RADIUS accounts" {
+    _gen_radius > /dev/null
+    _client_env
+    mkdir -p "$TACCTL_CLIENT_XDG/plasma-workspace/env"
+    run bash "$OUT" --adopt bob
+    assert_success
+    assert_output --partial "screen locking is switched off for RADIUS accounts"
+    run cat "$TACCTL_CLIENT_XDG/tacctl/kscreenlockerrc"
+    assert_line 'Autolock[$i]=false'
+    grep -q '\*"(RADIUS)")' "$TACCTL_CLIENT_XDG/plasma-workspace/env/tacctl-nolock.sh"
+}
+
+# --- the scope's auth-method ---------------------------------------------------------
+
+@test "config linux script: without --method the scope's auth-method picks the method; --method wins" {
+    radius_on
+    "$TACCTL_BIN_SCRIPT" scope auth-method lab radius > /dev/null
+    run _gen
+    assert_success
+    assert_output --partial "Method radius: scope 'lab' has auth-method radius (tacctl scope auth-method)"
+    grep -q '^TAC_METHOD=radius$' "$OUT"
+    run _gen --method tacplus
+    assert_success
+    refute_output --partial "auth-method"
+    run sed '/^__TARBALL__$/,$d' "$OUT"
+    assert_line "TAC_METHOD=tacplus"
+}
+
+@test "config linux script: a scope served over one protocol only picks the method when it has no auth-method" {
+    radius_on
+    # Written into the store directly: with the backend enabled 'scope
+    # protocols' would render it, which needs the daemon's stand-in.
+    bash -c 'source "$1"; store_scope_set lab protocols=radius' _ "$TACCTL_BIN_SCRIPT" > /dev/null
+    run _gen
+    assert_success
+    assert_output --partial "Method radius: scope 'lab' is served over radius only (tacctl scope protocols)"
+    grep -q '^TAC_METHOD=radius$' "$OUT"
+}
+
+@test "config linux script: a scope's auth-method tacacs comes before host.default_method" {
+    radius_on
+    "$TACCTL_BIN_SCRIPT" host default-method radius > /dev/null
+    run _gen
+    assert_success
+    grep -q '^TAC_METHOD=radius$' "$OUT"
+    "$TACCTL_BIN_SCRIPT" scope auth-method lab tacacs > /dev/null
+    run _gen
+    assert_success
+    assert_output --partial "Method tacplus: scope 'lab' has auth-method tacacs (tacctl scope auth-method)"
+    run sed '/^__TARBALL__$/,$d' "$OUT"
+    assert_line "TAC_METHOD=tacplus"
 }

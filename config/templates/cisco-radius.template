@@ -1,0 +1,40 @@
+! --- RADIUS Server & AAA ---
+! Encrypt Type 0 plaintext secrets in running-config.
+! (Type 7 is trivially reversible; for Type 6 AES encryption of the
+!  RADIUS key, run 'key config-key password-encrypt <master>' first,
+!  then re-enter the key with 'key 6 <encrypted-string>'.)
+service password-encryption
+!
+aaa new-model
+!
+! Optional: pin RADIUS client to a known source interface. The server
+! only answers a device whose source IP lies inside a prefix of this
+! scope, so a stable source is worth setting. Uncomment and replace the
+! interface token with your management interface (e.g. Loopback0).
+! ip radius source-interface Loopback0
+!
+radius server RADIUS
+  address ipv4 ${SERVER_IP} auth-port ${AUTH_PORT} acct-port ${ACCT_PORT}
+  key ${SECRET}
+  timeout 5
+  retransmit 2
+!
+aaa group server radius ${RADIUS_GROUP}
+  server name RADIUS
+!
+aaa authentication login default ${AUTHN_METHODS}
+aaa authorization exec default ${AUTHZ_EXEC_METHODS}
+aaa accounting exec default start-stop group ${RADIUS_GROUP}
+!
+${PRIVILEGE_COMMANDS}
+${VTY_ACL_BLOCK}
+!
+line con 0
+  login authentication default
+  exec-timeout ${EXEC_TIMEOUT} 0
+!
+line vty 0 15
+  login authentication default
+  transport input ssh
+${VTY_ACCESS_CLASS}
+  exec-timeout ${EXEC_TIMEOUT} 0

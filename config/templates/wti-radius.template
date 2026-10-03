@@ -1,0 +1,65 @@
+Step 1: Log in on the serial SetUp port as an Administrator-level account
+        (factory default: super / super) and reach the Text Interface command
+        prompt. Keep this serial session open until Step 7 succeeds.
+
+Step 2: Open the RADIUS Parameters menu
+        /N [Enter]              Network Parameters (eth0/IPv4 [Shared])
+        29 [Enter]              RADIUS Parameters -- 29 in WTI's user guide; the
+                                item number varies by model/firmware (the TACACS
+                                menu is 28 on the unit tacctl was tested with);
+                                pick the entry labelled "RADIUS"
+
+Step 3: Set each item (type the number the menu shows next to the label,
+        [Enter], then the value -- WTI does not document the numbers here)
+          Enable                        : On
+          Primary Host/Address (IPv4)   : ${SERVER_IP}
+          Primary Secret Word           : ${SECRET}
+          Secondary Host/Address        : (leave Undefined -- single tacctl server)
+          Fallback Timer                : 3   (factory default: seconds the primary is tried)
+          Fallback Local                : ${FALLBACK_LOCAL}
+          Retries                       : 3   (factory default)
+          Authentication Port           : ${AUTH_PORT}
+          Accounting Port               : ${ACCT_PORT}
+          OneTime Auth                  : Off
+          Default RADIUS User Access    : Enable On, Access Level ViewOnly,
+                                          Service Access Telnet/SSH On   (see notes)
+          Debug                         : Off (turn On only while troubleshooting)
+        Leave Session Module Type as it is: WTI does not document what it
+        sends, and nothing on the server depends on it.
+
+Step 4: Ping test
+          Ping RADIUS Servers           -- confirms ${SERVER_IP} answers ICMP from the unit.
+                                           ICMP only: a pass does NOT prove UDP ${AUTH_PORT} works (Step 5)
+
+Step 5: Check the unit's firewall (IP Tables under /N)
+        If the IP Tables list sets 'iptables -P INPUT DROP' or ends in
+        'iptables -A INPUT -j DROP', it must also accept loopback and the
+        replies to the unit's own requests, BEFORE the final DROP:
+          iptables -A INPUT -i lo -j ACCEPT
+          iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+        (older builds: -m state --state ESTABLISHED,RELATED). The server
+        answers over UDP from ${SERVER_IP} port ${AUTH_PORT} (and ${ACCT_PORT}).
+        Without the rule the unit's requests leave, the answers are dropped,
+        and every login waits out the Fallback Timer while the server's auth
+        log shows it answered.
+
+Step 6: Save
+        Press [Esc] repeatedly until the unit prints "Saving Configuration"
+        and returns to the command prompt.
+
+Step 7: Test from a SECOND session -- keep the Step 1 serial session open as a
+        back door until this works. Log in with a user that is a member of
+        scope '${SCOPE}', forcing the password method first:
+          ssh -o PreferredAuthentications=password <user>@<wti-ip>
+        then type /H: the Help menu lists only the commands allowed for the
+        access level the server assigned (see the mapping below). Log out with
+        /X. On the server, 'tacctl log tail 20 --backend radius' shows the
+        attempt (see "Verify" below).
+        If a plain 'ssh <user>@<wti-ip>' is closed without a password prompt
+        while the password method works, the unit's Invalid Access Lockout is
+        armed from earlier failures: /UL clears it.
+
+Step 8: Only if Step 7 fails -- turn on the unit's RADIUS debug
+        /N, 29, then Debug: On, [Esc] to save. Retry the Step 7 login and read
+        what the unit logs next to the server's auth log (see "Verify"
+        below), then set Debug back to Off and [Esc] to save.

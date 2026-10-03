@@ -1,0 +1,227 @@
+# Tacquito TACACS+ Server Configuration
+# Multi-vendor: Cisco IOS/IOS-XE + Juniper
+#
+# IMPORTANT: Before deploying, update the following:
+#   1. Password hashes — generate new ones with the install script or manually
+#   2. Shared secret (secret.key) — generate with: openssl rand -base64 24
+#   3. Prefixes — adjust to match your device management subnets
+#
+# This config hot-reloads on save — no service restart needed for changes.
+
+# --- Type constants ---
+authenticator_type_bcrypt: &authenticator_type_bcrypt 1
+action_deny:  &action_deny  1
+action_permit: &action_permit 2
+accounter_type_file: &accounter_type_file 3
+handler_type_start: &handler_type_start 1
+provider_type_prefix: &provider_type_prefix 1
+
+# --- Accounting ---
+file_accounter: &file_accounter
+  name: tacquito_accounter
+  type: *accounter_type_file
+
+# --- Per-user bcrypt authenticators ---
+# Added automatically by: tacctl user add <name> <group>
+
+bcrypt_engineer: &bcrypt_engineer
+  type: *authenticator_type_bcrypt
+  options:
+    hash: 243262243132242e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e
+
+bcrypt_operator: &bcrypt_operator
+  type: *authenticator_type_bcrypt
+  options:
+    hash: 243262243132242e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e
+
+bcrypt_viewer: &bcrypt_viewer
+  type: *authenticator_type_bcrypt
+  options:
+    hash: 243262243132242e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e
+
+bcrypt_root: &bcrypt_root
+  type: *authenticator_type_bcrypt
+  options:
+    hash: 243262243132242e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e
+
+# --- Services ---
+# Cisco IOS/IOS-XE: sends service=shell cmd= for exec login authorization
+#   (the AAA/AUTHOR/EXEC path). The anchor names keep 'exec' as a
+#   semantic label for the tier (readonly/operator/superuser) so
+#   per-group references elsewhere stay readable, but the on-wire
+#   service value must be 'shell' to match what modern IOS/IOS-XE
+#   routers and switches send.
+# Juniper: requests service=junos-exec, expects local-user-name.
+# Each device type only requests its own service — the other is ignored.
+
+# Cisco exec - read-only (priv-lvl 1)
+exec_readonly: &exec_readonly
+  name: shell
+  set_values:
+    - name: priv-lvl
+      values: [1]
+
+# Cisco exec - operator (priv-lvl 7)
+exec_operator: &exec_operator
+  name: shell
+  set_values:
+    - name: priv-lvl
+      values: [7]
+
+# Cisco exec - super-user (priv-lvl 15)
+exec_superuser: &exec_superuser
+  name: shell
+  set_values:
+    - name: priv-lvl
+      values: [15]
+
+# Juniper junos-exec - read-only
+# "RO-CLASS" must match a local template user on Juniper devices
+junos_exec_readonly: &junos_exec_readonly
+  name: junos-exec
+  set_values:
+    - name: local-user-name
+      values: ["RO-CLASS"]
+
+# Juniper junos-exec - super-user
+# "RW-CLASS" must match a local template user on Juniper devices
+junos_exec_superuser: &junos_exec_superuser
+  name: junos-exec
+  set_values:
+    - name: local-user-name
+      values: ["RW-CLASS"]
+
+# Juniper junos-exec - operator
+# "OP-CLASS" must match a local template user on Juniper devices
+junos_exec_operator: &junos_exec_operator
+  name: junos-exec
+  set_values:
+    - name: local-user-name
+      values: ["OP-CLASS"]
+
+# --- Groups ---
+readonly: &readonly
+  name: readonly
+  services:
+    - *exec_readonly
+    - *junos_exec_readonly
+  commands:
+    - name: "show"
+      action: *action_permit
+    - name: "ping"
+      action: *action_permit
+    - name: "traceroute"
+      action: *action_permit
+    - name: "*"
+      action: *action_deny
+  accounter: *file_accounter
+
+operator: &operator
+  name: operator
+  services:
+    - *exec_operator
+    - *junos_exec_operator
+  commands:
+    - name: "show"
+      action: *action_permit
+    - name: "ping"
+      action: *action_permit
+    - name: "traceroute"
+      action: *action_permit
+    - name: "terminal"
+      action: *action_permit
+    - name: "*"
+      action: *action_deny
+  accounter: *file_accounter
+
+superuser: &superuser
+  name: superuser
+  services:
+    - *exec_superuser
+    - *junos_exec_superuser
+  commands:
+    - name: "*"
+      action: *action_permit
+  accounter: *file_accounter
+
+# --- Users ---
+# Add users with: tacctl user add <name> <group>
+users:
+
+  # engineer
+  - name: engineer
+    scopes: ["lab"]
+    groups: [*superuser]
+    authenticator: *bcrypt_engineer
+    accounter: *file_accounter
+
+  # operator
+  - name: operator
+    scopes: ["lab"]
+    groups: [*operator]
+    authenticator: *bcrypt_operator
+    accounter: *file_accounter
+
+  # viewer
+  - name: viewer
+    scopes: ["lab"]
+    groups: [*readonly]
+    authenticator: *bcrypt_viewer
+    accounter: *file_accounter
+
+  # root
+  - name: root
+    scopes: ["lab"]
+    groups: [*readonly]
+    authenticator: *bcrypt_root
+    accounter: *file_accounter
+
+# --- Secret Providers (Scopes) ---
+# Each entry is a "scope": a named bundle of (prefixes, shared-secret)
+# that clients within those prefixes authenticate against with that key.
+# Manage with 'tacctl scope list|show|add|remove|rename|default' and the
+# per-scope 'tacctl scope prefixes <name>' / 'tacctl scope secret <name>'.
+# The default scope (stored as scope.default in /etc/tacquito/tacctl.yaml)
+# names which scope new users land in when 'tacctl user add' is called
+# without --scopes; fresh installs ship with 'lab' so forgotten-about
+# users are quarantined to lab rather than production.
+secrets:
+  - name: lab
+    secret:
+      group: tacquito
+      # Use hex-only secrets (openssl rand -hex 16) to avoid quoting issues on devices
+      key: "0123456789abcdef0123456789abcdef"
+    handler:
+      type: *handler_type_start
+    type: *provider_type_prefix
+    options:
+      prefixes: |
+        [
+          "10.0.0.0/8"
+        ]
+  - name: lab
+    secret:
+      group: tacquito
+      # Use hex-only secrets (openssl rand -hex 16) to avoid quoting issues on devices
+      key: "0123456789abcdef0123456789abcdef"
+    handler:
+      type: *handler_type_start
+    type: *provider_type_prefix
+    options:
+      prefixes: |
+        [
+          "172.16.0.0/12"
+        ]
+  - name: lab
+    secret:
+      group: tacquito
+      # Use hex-only secrets (openssl rand -hex 16) to avoid quoting issues on devices
+      key: "0123456789abcdef0123456789abcdef"
+    handler:
+      type: *handler_type_start
+    type: *provider_type_prefix
+    options:
+      prefixes: |
+        [
+          "192.168.0.0/16"
+        ]

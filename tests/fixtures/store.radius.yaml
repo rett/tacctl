@@ -1,0 +1,67 @@
+# tacctl canonical store: users, groups, scopes, prefix filters.
+# Managed by tacctl -- change it with tacctl commands. Contains shared
+# secrets and password hashes; keep it 0600.
+#
+# Fixture for the RADIUS backend: a TACACS+-only scope, a RADIUS-only one, an
+# IPv6 prefix, overlapping prefixes, secrets that need quoting, a disabled
+# user, the accounting sink, a custom group and both filters.
+
+version: 1
+groups:
+  netops: {priv_lvl: 10, juniper_class: NETOPS_class-1}
+  operator: {priv_lvl: 7, juniper_class: OP-CLASS, builtin: true}
+  readonly: {priv_lvl: 1, juniper_class: RO-CLASS, builtin: true}
+  superuser: {priv_lvl: 15, juniper_class: RW-CLASS, builtin: true}
+users:
+  alice:
+    group: superuser
+    scopes: [prod, lab, wifi]
+    hash: 24326224313224616c6963652e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e
+    disabled: false
+  bob:
+    group: operator
+    scopes: [lab, legacy]
+    hash: 24326124313224626f622e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e
+    disabled: false
+  carol:
+    group: readonly
+    scopes: [lab]
+    hash: 243262243132246361726f6c2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e
+    disabled: true
+  dave:
+    group: netops
+    scopes: [legacy]
+    hash: 24326224313224646176652e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e
+    disabled: false
+  erin:
+    group: netops
+    scopes: [wifi, prod-inner]
+    hash: 243262243132246572696e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e
+    disabled: false
+  root:
+    group: readonly
+    scopes: [lab]
+    hash: null
+    disabled: true
+    accounting_sink: true
+scopes:
+  lab:
+    prefixes: [172.16.0.0/12, 192.168.0.0/16, 'fd00:10::/64']
+    secret: 'it''s a "lab" secret ${confdir} #1'
+  legacy:
+    prefixes: [198.51.100.0/24]
+    secret: legacy-tacacs-only-0123456789
+    protocols: [tacacs]
+  prod:
+    prefixes: [10.0.0.0/8]
+    secret: prod-secret-0123456789abcdef
+  prod-inner:
+    prefixes: [10.10.99.0/24]
+    secret: 'inner\secret "quoted" 0123456789'
+  wifi:
+    prefixes: [10.20.0.0/16]
+    secret: wifi-radius-only-0123456789
+    protocols: [radius]
+filters:
+  allow: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 'fd00:10::/64']
+  deny: [10.66.0.0/16, 'fd00:10::bad/128']

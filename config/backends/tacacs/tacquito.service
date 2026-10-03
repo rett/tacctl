@@ -1,0 +1,64 @@
+[Unit]
+Description=Tacquito TACACS+ Server
+Documentation=https://github.com/facebookincubator/tacquito
+After=network-online.target
+Wants=network-online.target
+
+# The default listener (listeners.tacacs.default in tacctl.yaml). Every other
+# listener is an instance of tacquito@.service; those are PartOf= this unit
+# and wanted by it, so starting, stopping, restarting, enabling or disabling
+# 'tacquito' acts on every listener.
+
+[Service]
+Type=simple
+User=tacquito
+Group=tacquito
+# Defaults. The values in effect are in the drop-in tacctl renders from
+# tacctl.yaml, /etc/systemd/system/tacquito.service.d/tacctl.conf; change
+# them with `tacctl config listen`, `tacctl config loglevel` and
+# `tacctl config metrics`, not here.
+Environment="TACQUITO_NETWORK=tcp"
+Environment="TACQUITO_ADDRESS=:49"
+Environment="TACQUITO_LEVEL=20"
+# Prometheus exporter. Bind loopback-only by default — metrics are a
+# high-signal fingerprint of the service (auth counters, listener shape,
+# etc.) and should not ride the management interface without an explicit
+# operator choice. Manage via:
+#   tacctl config metrics address <host:port>   # custom bind
+#   tacctl config metrics disable               # route to 127.0.0.1:0 (no scraper can reach)
+#   tacctl config metrics enable                # revert to the default loopback:8080
+# tacquito's `-export-promhttp=false` is not used: upstream's handler
+# unconditionally cancels the server context when the exporter goroutine
+# returns, which would tear down the whole daemon. Binding to an
+# ephemeral-port loopback sink gives the same operator-visible result
+# without requiring a tacquito patch.
+Environment="TACQUITO_METRICS_ADDRESS=127.0.0.1:8080"
+Environment="TACQUITO_ACCT_LOG=/var/log/tacquito/accounting.log"
+ExecStart=/usr/local/bin/tacquito \
+    -config /etc/tacquito/tacquito.yaml \
+    -network ${TACQUITO_NETWORK} -address ${TACQUITO_ADDRESS} \
+    -acct-log-path ${TACQUITO_ACCT_LOG} \
+    -level ${TACQUITO_LEVEL} \
+    -metrics-address ${TACQUITO_METRICS_ADDRESS}
+Restart=on-failure
+RestartSec=5
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/log/tacquito
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+
+# Port 49 requires CAP_NET_BIND_SERVICE since it is < 1024
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target

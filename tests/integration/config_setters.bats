@@ -9,6 +9,7 @@ load ../helpers/fixtures
 setup() {
     tacctl_tmpenv_init
     tacctl_mocks_init
+    export TACCTL_SETTLE_SECONDS=0
     stub_cmd chown
     stub_cmd systemctl
     stub_cmd logger
@@ -114,10 +115,12 @@ setup() {
     assert_output --partial "info"
 }
 
-@test "config loglevel: sets debug via drop-in override" {
+@test "config loglevel: sets debug in tacctl.yaml and the rendered drop-in" {
     run "$TACCTL_BIN_SCRIPT" config loglevel debug
     assert_success
-    run cat "$TACCTL_OVERRIDE_DIR/tacctl-overrides.conf"
+    assert_output --partial "Log level changed to debug (30). Service restarted."
+    [[ "$(conf_get backends.tacacs.level)" == "30" ]]
+    run cat "$TACCTL_OVERRIDE_DIR/tacctl.conf"
     assert_output --partial "TACQUITO_LEVEL=30"
     stub_called 'systemctl daemon-reload'
     stub_called 'systemctl restart tacquito'
@@ -126,15 +129,17 @@ setup() {
 @test "config loglevel: setting back to info (default) clears the override" {
     # First pin an override.
     "$TACCTL_BIN_SCRIPT" config loglevel debug
-    [[ -f "$TACCTL_OVERRIDE_DIR/tacctl-overrides.conf" ]]
+    grep -q 'level: 30' "$TACCTL_STATE_DIR/tacctl.yaml"
 
     run "$TACCTL_BIN_SCRIPT" config loglevel info
     assert_success
-    # Override file is cleared (or no longer contains TACQUITO_LEVEL).
-    if [[ -f "$TACCTL_OVERRIDE_DIR/tacctl-overrides.conf" ]]; then
-        run grep -c '^Environment="TACQUITO_LEVEL=' "$TACCTL_OVERRIDE_DIR/tacctl-overrides.conf"
+    # The override is gone from tacctl.yaml (the file with it, when it held
+    # nothing else), and the drop-in is rendered with the default.
+    if [[ -f "$TACCTL_STATE_DIR/tacctl.yaml" ]]; then
+        run grep -c 'level' "$TACCTL_STATE_DIR/tacctl.yaml"
         assert_output "0"
     fi
+    grep -qxF 'Environment="TACQUITO_LEVEL=20"' "$TACCTL_OVERRIDE_DIR/tacctl.conf"
 }
 
 @test "config loglevel: rejects unknown level" {
@@ -156,7 +161,7 @@ setup() {
     stub_cmd systemctl 'if [[ "$1" == "is-active" ]]; then exit 0; else exit 0; fi'
     run "$TACCTL_BIN_SCRIPT" config listen tcp 10.1.0.1:49
     assert_success
-    run grep -F 'TACQUITO_ADDRESS=10.1.0.1:49' "$TACCTL_OVERRIDE_DIR/tacctl-overrides.conf"
+    run grep -F 'TACQUITO_ADDRESS=10.1.0.1:49' "$TACCTL_OVERRIDE_DIR/tacctl.conf"
     assert_success
 
     # Setting the same value again: idempotent.
@@ -168,16 +173,17 @@ setup() {
 @test "config listen reset: clears override when one exists" {
     stub_cmd systemctl 'if [[ "$1" == "is-active" ]]; then exit 0; else exit 0; fi'
     "$TACCTL_BIN_SCRIPT" config listen tcp 10.1.0.1:49
-    [[ -f "$TACCTL_OVERRIDE_DIR/tacctl-overrides.conf" ]]
+    grep -q 'address: 10.1.0.1:49' "$TACCTL_STATE_DIR/tacctl.yaml"
 
     run "$TACCTL_BIN_SCRIPT" config listen reset
     assert_success
-    # Either the override file is gone, or the listen vars are gone from it.
-    if [[ -f "$TACCTL_OVERRIDE_DIR/tacctl-overrides.conf" ]]; then
-        run grep -c -E '^Environment="TACQUITO_(NETWORK|ADDRESS)=' \
-            "$TACCTL_OVERRIDE_DIR/tacctl-overrides.conf"
+    # The listener is gone from tacctl.yaml, and the drop-in is rendered
+    # with the default address.
+    if [[ -f "$TACCTL_STATE_DIR/tacctl.yaml" ]]; then
+        run grep -c 'listeners' "$TACCTL_STATE_DIR/tacctl.yaml"
         assert_output "0"
     fi
+    grep -qxF 'Environment="TACQUITO_ADDRESS=:49"' "$TACCTL_OVERRIDE_DIR/tacctl.conf"
 }
 
 @test "config listen tcp: rejects missing address argument" {

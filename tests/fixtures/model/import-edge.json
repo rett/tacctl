@@ -1,0 +1,125 @@
+{
+    "filters": {
+        "allow": [
+            "10.0.0.0/8",
+            "192.168.0.0/16"
+        ],
+        "deny": [
+            "10.66.0.0/16"
+        ]
+    },
+    "groups": {
+        "auditors": {
+            "builtin": false,
+            "juniper_class": "AUDIT-CLASS",
+            "priv_lvl": 3
+        },
+        "helpdesk": {
+            "builtin": false,
+            "juniper_class": "HELPDESK-CLASS",
+            "priv_lvl": 5
+        },
+        "operator": {
+            "builtin": true,
+            "juniper_class": "OP-CLASS",
+            "priv_lvl": 7
+        },
+        "readonly": {
+            "builtin": true,
+            "juniper_class": "RO-CLASS",
+            "priv_lvl": 1
+        },
+        "superuser": {
+            "builtin": true,
+            "juniper_class": "RW-CLASS",
+            "priv_lvl": 15
+        }
+    },
+    "scopes": {
+        "lab": {
+            "prefixes": [
+                "10.1.0.0/16",
+                "172.16.0.0/12"
+            ],
+            "protocols": null,
+            "secret": "edge-lab-secret-0123456789"
+        },
+        "prod": {
+            "prefixes": [
+                "10.0.0.0/8",
+                "192.168.5.0/24"
+            ],
+            "protocols": null,
+            "secret": "edge-prod-secret-0123456789"
+        },
+        "v6": {
+            "prefixes": [
+                "2001:db8::/32"
+            ],
+            "protocols": null,
+            "secret": "edge-v6-secret-0123456789"
+        }
+    },
+    "users": {
+        "alice": {
+            "accounting_sink": false,
+            "disabled": false,
+            "group": "superuser",
+            "hash": "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141",
+            "password_changed": "2026-08-15",
+            "scopes": [
+                "prod",
+                "lab"
+            ]
+        },
+        "dave": {
+            "accounting_sink": false,
+            "disabled": true,
+            "group": "helpdesk",
+            "hash": "243262243132244444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444",
+            "password_changed": "2026-01-02",
+            "scopes": [
+                "lab"
+            ]
+        },
+        "engineer": {
+            "accounting_sink": false,
+            "disabled": true,
+            "group": "superuser",
+            "hash": null,
+            "password_changed": null,
+            "scopes": [
+                "lab"
+            ]
+        },
+        "erin": {
+            "accounting_sink": false,
+            "disabled": true,
+            "group": "operator",
+            "hash": null,
+            "password_changed": null,
+            "scopes": [
+                "lab"
+            ]
+        },
+        "frank": {
+            "accounting_sink": false,
+            "disabled": false,
+            "group": "readonly",
+            "hash": "243262243132244646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646",
+            "password_changed": null,
+            "scopes": []
+        },
+        "root": {
+            "accounting_sink": true,
+            "disabled": true,
+            "group": "readonly",
+            "hash": null,
+            "password_changed": null,
+            "scopes": [
+                "lab"
+            ]
+        }
+    },
+    "version": 1
+}

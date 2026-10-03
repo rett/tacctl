@@ -1,8 +1,8 @@
-.\" Manual page for tacctl, the tacquito management CLI.
+.\" Manual page for tacctl, the management CLI for TACACS+ (tacquito) and RADIUS (FreeRADIUS).
 .\" Render locally with: groff -man -Tascii man/tacctl.1 | less
-.TH TACCTL 1 "2026-04-18" "tacctl" "Tacquito Control Manual"
+.TH TACCTL 1 "2026-10-02" "tacctl 0.1.15" "tacctl Manual"
 .SH NAME
-tacctl \- management CLI for the tacquito TACACS+ server
+tacctl \- manage users, groups and scopes for TACACS+ (tacquito) and RADIUS (FreeRADIUS)
 .SH SYNOPSIS
 .B tacctl
 .I command
@@ -10,14 +10,27 @@ tacctl \- management CLI for the tacquito TACACS+ server
 .RI [ arguments... ]
 .SH DESCRIPTION
 .B tacctl
-is a shell-based management CLI for
+is a shell-based management CLI for network-device AAA. It keeps users,
+groups, scopes (named CIDR + shared-secret bundles) and connection filters
+in a store of its own,
+.IR /etc/tacctl/store.yaml ,
+and renders the configuration of every enabled
+.I backend
+from it: TACACS+ (RFC 8907) served by
 .BR tacquito ,
-a TACACS+ server (RFC 8907).
-It installs and upgrades the server, manages users, groups, and scopes
-(named CIDR + shared-secret bundles), edits server configuration,
-inspects logs and backups, and generates ready-to-paste device
-configuration for Cisco IOS/IOS-XE and Juniper Junos, plus a
-menu-by-menu setup procedure for WTI console servers.
+installed by
+.BR "tacctl install" ,
+and, opt-in, RADIUS served by a tacctl-owned FreeRADIUS instance
+.RB ( "tacctl backend enable radius" ).
+It installs and upgrades the servers, inspects logs and backups, enrolls
+Linux hosts (pam_tacplus or pam_radius_auth), and generates ready-to-paste
+device configuration for Cisco IOS/IOS-XE and Juniper Junos, plus a
+menu-by-menu setup procedure for WTI console servers, for either protocol.
+See
+.BR BACKENDS ,
+.B "STORE AND GENERATED CONFIGURATION"
+and
+.BR "UPGRADING TO 0.1.15" .
 .PP
 Most commands require root.
 .B tacctl
@@ -32,12 +45,23 @@ are deliberate exceptions: they run as the invoking user.
 .SS System lifecycle
 .TP
 .BI "install [--branch " name "]"
-Install the tacquito server and supporting configuration. Installs the
-Go toolchain, builds the tacquito binary, creates the
+Install tacctl and the TACACS+ backend. Installs the Go toolchain, builds
+the tacquito binary, creates the
 .B tacquito
-service user, seeds
-.IR /etc/tacquito/tacquito.yaml ,
-installs the systemd unit, and enables the service. The optional
+service user and the state directory
+.IR /etc/tacctl ,
+seeds the store (built-in groups and users, the scope
+.B lab
+with RFC 1918 prefixes and a generated shared secret, printed once),
+renders
+.I /etc/tacquito/tacquito.yaml
+from it, installs the systemd units, and enables the service. An existing
+store, or an existing
+.IR tacquito.yaml ,
+is kept instead (the latter goes through the upgrade's store gate). RADIUS
+is not installed: see
+.BR "backend enable" .
+The optional
 .BI --branch " name"
 flag selects a specific tacctl repository branch for the install.
 .IP
@@ -70,24 +94,41 @@ is rejected — root is a Junos built-in intended for local/console use
 only and must never authenticate via TACACS+.
 .TP
 .BI "upgrade [--branch " name "]"
-Pull the latest tacquito source and management scripts, rebuild the
-binary if changed, refresh system files, and restart the service.
-User-set flags for
-.BR -network ,
-.BR -address ,
-and
-.B -level
-are preserved via a systemd drop-in so they survive template updates.
+Move tacctl state into
+.I /etc/tacctl
+(idempotent), pull and rebuild tacquito when upstream or the patch overlay
+changed, pull the management scripts (and re-execute when tacctl itself
+changed), install packages the new release needs, bring every enabled
+backend's configuration in line with the release (a re-render from the
+store; RADIUS restarts when its files or unit drop-in changed), refresh
+system files, move an install that has no store yet into the store behind a
+gate, and restart tacquito once if anything changed (rolling the binary and
+unit files back if it does not come up). Listener, log-level and metrics
+settings live in
+.I tacctl.yaml
+and survive. See
+.BR "UPGRADING TO 0.1.15" .
 .TP
 .B uninstall
-Remove the tacquito service, binaries, configuration, logs, and
-management repository. Offers to preserve backups and accounting logs
-by archiving them to
+Remove tacctl and every backend that is enabled or installed: the tacquito
+service, units, binaries, configuration and logs; tacctl's FreeRADIUS
+configuration, unit drop-in and logs (the FreeRADIUS package stays, with its
+own configuration as shipped); the state directory, sudoers rules,
+completion, man page and management repository. Offers to preserve backups
+and each backend's logs by archiving them to
 .IR /root/ .
 .TP
 .B status
 Show service health, authentication statistics, recent errors, and
-password-age warnings.
+password-age warnings. With more than one backend enabled each backend has a
+labelled section
+.RB ( "== Backend: <id> ..." )
+holding its service, config, accounting log, drift and activity lines; the
+users, backups, security posture and password-age lines that belong to no
+backend stay in the general part. With one backend enabled the report is
+laid out as it always was. A listener on an IPv6 network
+.RB ( tcp6 ", " udp6 )
+of any backend triggers the IPv6 ACL parity check.
 .TP
 .BR "version" ", " "--version" ", " "-v"
 Print the tacctl version. The version is derived from
@@ -101,7 +142,8 @@ List all users with name, group, status, and password age.
 .TP
 .BI "user show " name
 Show detailed user info: group, status, password change date and age,
-last login (from the accounting log), Cisco privilege level, Juniper
+last login (the most recent of every enabled backend: the TACACS+
+accounting log, the RADIUS auth log), Cisco privilege level, Juniper
 class, and a hash fingerprint. Read-only -- does not prompt for the
 password (unlike
 .BR "user verify" ).
@@ -175,9 +217,7 @@ Manage which scopes
 can authenticate from. With no subcommand (or
 .BR list ),
 prints the user's current scopes with orphan detection (any scope
-name that does not resolve to a
-.B secrets[].name
-is flagged red).
+name that does not resolve to an existing scope is flagged red).
 .B add
 and
 .B remove
@@ -273,7 +313,8 @@ The merged view falls back to the shipped defaults for built-in groups
 .RB ( readonly ,
 .BR operator ,
 .BR superuser );
-for custom groups the group ends up with no rules at all. Tacquito.yaml
+for custom groups the group ends up with no rules at all.
+.I tacquito.yaml
 is regenerated afterwards so device-side enforcement stays in sync.
 Confirmation required.
 .TP
@@ -313,7 +354,7 @@ Show the Cisco
 .B "privilege exec level"
 mappings for a group. Reports whether the source is an explicit
 override (in
-.I /etc/tacquito/tacctl.yaml
+.I /etc/tacctl/tacctl.yaml
 under
 .BR privileges.\fIgroup\fR )
 or the built-in default set (move-DOWN commands only).
@@ -357,7 +398,7 @@ ships a priv-15 read/diagnostic family moved DOWN to priv-7
 .B superuser
 none (priv-15 is the ceiling).
 .PP
-Cisco devices enforce these rules LIVE — once any group has rules,
+Cisco devices enforce these rules LIVE over TACACS+ — once any group has rules,
 .B tacctl config cisco
 emits
 .B aaa authorization commands 1/7/15 default group TACACS-GROUP local
@@ -366,17 +407,27 @@ class
 .B allow-commands
 /
 .B deny-commands
-regex; a per-device config push is required after every change.
+regex; a per-device config push is required after every change. RADIUS
+has no per-command authorization: the server does not enforce these rules
+for logins over RADIUS
+.RB ( status ,
+.B "config render"
+and
+.B "backend enable"
+name the groups concerned).
 .SS Server configuration \fB(tacctl config)\fR
 .TP
 .B config show
-Show the current configuration summary.
+Show the current configuration summary. Each enabled backend adds its config
+file, service state and the listeners it should have, probed on the port
+(and protocol) of the listener, not on port 49; with more than one backend
+enabled each has a labelled block.
 .TP
 .B config dump
 Print the tacctl tunable posture: canonical defaults
 .RB ( conf_emit_defaults
 in
-.IR bin/tacctl.sh ),
+.IR lib/conf.sh ),
 operator overrides
 .RI ( tacctl.yaml ),
 and the effective merged view.
@@ -405,7 +456,10 @@ Read a list value (e.g.
 from the merged view, one element per stdout line.
 .TP
 .B config validate
-Validate YAML syntax for
+Validate the store
+.RI ( store.yaml :
+names, every user's group and scopes exist, each prefix owned by one scope),
+YAML syntax for
 .I tacquito.yaml
 and
 .IR tacctl.yaml ,
@@ -425,21 +479,89 @@ reserved usernames
 present as tacctl-managed users, users missing the
 .B accounter:
 field, and per-scope key divergence.
+.IP
+Then, for every enabled backend, whether its rendered config is up to date
+with the store and whether any of its files was edited by hand (drift). With
+more than one backend enabled each gets a labelled block, and a drifted file of
+one backend does not hide another's state; files left behind by a disabled
+backend are not checked. With RADIUS enabled it warns about a scope RADIUS
+serves that sends no vendor attribute and is not a Linux-host scope. Exits 1
+when it finds errors.
+.TP
+.B "config render " [ \-\-force ]
+Render every enabled backend's config (for TACACS+:
+.I tacquito.yaml
+and the systemd drop-ins) from the store and
+.IR tacctl.yaml ,
+all backends or none, and restart the ones whose files changed. Needed after
+hand-restoring files or when
+.B config validate
+reports a config that is missing or out of date. Refuses to overwrite an
+artifact that was edited by hand (drift); with
+.B \-\-force
+it replaces it and keeps a copy under
+.IR /etc/tacctl/backups/legacy/ .
 .TP
 .BI "config diff " [ timestamp ]
-Diff the current config against a backup. Defaults to the most recent
-backup.
+Alias of
+.BR "backup diff" .
+.TP
+.BI "config restore " "timestamp " [ \-\-legacy ]
+Alias of
+.BR "backup restore" .
 .TP
 .BI "config loglevel " [ debug | info | error ]
-Show or change the server log level. Written to a systemd drop-in so
-the change survives upgrades.
+Show or change the TACACS+ server's log level. Stored in
+.I tacctl.yaml
+.RB ( backends.tacacs.level ),
+so the change survives upgrades.
 .TP
-.B "config listen " "{ show | tcp | tcp6 | reset } " [ address ]
-Show, change, or reset the TCP listen address. Stored in the drop-in
-at
-.IR /etc/systemd/system/tacquito.service.d/tacctl-overrides.conf .
+.B "config listen " "[ \-\-backend \fIid\fR ] [ \-\-listener \fIname\fR ] { show | tcp | tcp6 | udp | udp6 | reset } " [ address ]
+Show, change, or reset a listen address (default: the
+.B tacacs
+backend's listener
+.BR default ;
+the backend ids are listed by
+.BR "backend list" ).
+Stored in
+.I tacctl.yaml
+.RB ( listeners. \fIbackend\fB. \fIname\fR),
+from which tacctl renders the TACACS+ units' systemd drop-ins and the
+RADIUS
+.B listen
+sections.
 .B reset
-clears the override and falls back to the template default.
+clears the override and falls back to the built-in default.
+With
+.BI \-\-listener " name"
+the command addresses another TACACS+ listener, which runs as its own unit
+.BI tacquito@ name .service
+with its own accounting log; there
+.B reset
+removes it. TACACS+ listeners take
+.B tcp
+or
+.BR tcp6 ;
+RADIUS ones
+.RB ( "\-\-backend radius" )
+take
+.B udp
+or
+.B udp6
+and are named: the built-in
+.B auth
+(udp :1812) and
+.B acct
+(udp :1813); a further name is an authentication listener. The unit is
+restarted and must stay up, or
+.I tacctl.yaml
+and the drop-ins are put back. A listener's
+.B tls
+block in
+.I tacctl.yaml
+is reserved:
+.B "tls.enabled: true"
+is rejected (TACACS+ over TLS is not implemented).
 .B
 Switching to tcp6
 prompts for confirmation because dual-stack sockets accept IPv4
@@ -449,7 +571,9 @@ that silently bypass IPv4 prefix ACLs; see
 .B NOTES.
 .TP
 .B "config metrics " "{ show | enable | disable | address " \fIhost:port\fR " | reset }"
-Control the prometheus HTTP exporter's listen address.
+Control tacquito's prometheus HTTP exporter's listen address (TACACS+ only;
+FreeRADIUS has no exporter). Stored as
+.BR backends.tacacs.metrics_address .
 .B show
 (no arg) prints current state and address.
 .B enable
@@ -474,18 +598,43 @@ to expose to external scrapers); non-loopback binds print a warning.
 clears the override and falls back to the unit default.
 .TP
 .B "host list"
-Show enrolled Linux hosts with their SSH target, scope, server address
-and user count.
+Show enrolled Linux hosts with their SSH target, scope, server address,
+method and user count.
 .TP
-.B "host enroll " "{ [" user "@]" host " | \-\-local } [ \-\-scope " name " ] [ \-\-server " address " ] [ \-\-name " name " ] [ \-\-port " n " ] [ \-\-identity " file " ] [ \-\-build\-on\-host ]"
+.B "host enroll " "{ [" user "@]" host " | \-\-local } [ \-\-method tacplus|radius ] [ \-\-scope " name " ] [ \-\-server " address " ] [ \-\-name " name " ] [ \-\-port " n " ] [ \-\-identity " file " ] [ \-\-build\-on\-host ] [ \-\-allow\-uid\-mismatch ] [ \-\-adopt " names " ]"
 Copy the
 .B "config linux"
 install script to a host over SSH, run it there as root, and register the
-host. Without
+host. The method is
+.B tacplus
+(pam_tacplus against the TACACS+ backend) or
+.B radius
+(the distribution's pam_radius_auth package against the RADIUS backend:
+.B libpam\-radius\-auth
+on Debian and Ubuntu,
+.B pam_radius
+from EPEL on the RHEL family, where the script enables EPEL when the host
+does not have it, and stops before any account or PAM change when it cannot
+install the package). It is, in order:
+.BR \-\-method ;
+the method the host is registered with; the scope's
+.BR "scope auth-method" ;
+the one protocol the scope's
+.B protocols
+filter names;
+.B "host default-method"
+(default
+.BR tacplus ).
+The method's backend must be enabled and the scope must allow its
+protocol. Re-enrolling a registered host with the other method switches it:
+the first method's module, secret file and SELinux module are removed
+(packages stay). Without
 .B \-\-scope
 a scope named
 .BI linux\- name
-is created for the host's own address (/32) with a generated secret, so a
+is created for the host's own address (/32) with a generated secret and
+.B protocols
+set to the method's protocol, so a
 secret read off one host is useless from another. The server address
 defaults to the source address of the route to the host.
 .B \-\-local
@@ -493,7 +642,11 @@ enrolls this machine without SSH. ssh runs as the user who invoked
 .BR sudo (8),
 using their keys; the remote login must be root or able to sudo. The
 remote copy of the script is deleted after the run. Nothing is registered
-if the remote run fails. pam_tacplus is built on this server, in a rootless
+if the remote run fails.
+.IP
+For
+.BR tacplus ,
+pam_tacplus is built on this server, in a rootless
 .BR podman (1)
 container matching the host's OS release, cached, and shipped as a binary;
 Debian, Ubuntu and RHEL-family hosts (RHEL, AlmaLinux, Rocky, CentOS
@@ -505,7 +658,27 @@ architecture differs, the container build fails, or
 is given. A host that already has the module from the same source is not
 touched. Requires
 .B "config linux build"
-to have been run.
+to have been run. For
+.B radius
+none of this applies
+.RB ( \-\-build\-on\-host
+warns that it is not applicable). Both methods are tested on Ubuntu 24.04,
+Debian 12 and 13, AlmaLinux and Rocky Linux 8, 9 and 10; SELinux in
+enforcing mode is not verified.
+.IP
+A reject from the server is final. When the server does not answer (or the
+host's shared secret is wrong), login falls through to the local password,
+which only adopted accounts have; local administrators outside
+.B tac\-users
+never reach the server. With the server silent a user without a local
+password is refused after about 5\(en6 s (tacplus) or 8\(en9 s (radius).
+pam_radius_auth 2.0.x on Ubuntu 24.04 and Debian 12 neither sends nor checks
+Message-Authenticator (BlastRADIUS, CVE-2024-3596); elsewhere tacctl adds
+.BR require_message_authenticator .
+Session accounting over RADIUS is sent only when the RADIUS
+.B acct
+listener is on the authentication port plus one, and never from Ubuntu
+24.04 (malformed records).
 .TP
 .B "host sync " "{ " name " | \-\-all } [ \-\-allow\-uid\-mismatch ] [ \-\-adopt " names " ]"
 Push the scope's current user list to the host: new users get accounts,
@@ -532,6 +705,17 @@ host stays registered unless
 .B \-\-force
 is given.
 .TP
+.BR "host default-method " [ tacplus | radius ]
+Show or set the method for hosts enrolled without
+.B \-\-method
+whose scope decides none
+.RB ( host.default_method
+in
+.IR tacctl.yaml ;
+default
+.BR tacplus ).
+Warns when the method's backend is not enabled.
+.TP
 .B "config linux build"
 Fetch the pinned
 .B pam_tacplus
@@ -539,19 +723,28 @@ release (v1.7.0, verified by commit hash) and prepare a self-contained
 source tarball under
 .IR /var/lib/tacctl/linux .
 Needs autoconf, automake, libtool, gnulib and the PAM headers on the
-server. Run once before generating scripts.
+server. Run once before generating
+.B tacplus
+scripts (the
+.B radius
+method needs nothing built).
 .TP
-.B "config linux script " "[ \-\-scope " name " ] [ \-\-server " address " ] [ \-\-output " file " ]"
-Write an install script that sets up TACACS+ login on a Debian or Ubuntu
-host in the given scope. The script embeds the scope's shared secret (it
-is written mode 0600; delete it after use), the source tarball, and the
+.B "config linux script " "[ \-\-scope " name " ] [ \-\-server " address " ] [ \-\-method tacplus|radius ] [ \-\-output " file " ]"
+Write an install script that sets up TACACS+ or RADIUS login on a Debian,
+Ubuntu or RHEL-family host in the given scope (method as for
+.BR "host enroll" ,
+without the registered host). The script embeds the scope's shared secret (it
+is written mode 0600; delete it after use), for
+.B tacplus
+the source tarball, and the
 scope's users with their tier and a stable UID. Run as root on the target
-it builds the module, creates a local account per user (locked password)
+it installs the module (tacplus: builds it; radius: installs the
+distribution's package), creates a local account per user (locked password)
 in the groups
 .BR tac-users " and " tac-readonly ", " tac-operator " or " tac-superuser ,
 points the
-.BR sshd ", " sudo " and " login
-PAM services at TACACS+ for members of
+.BR sshd ", " sudo ", " sudo\-i ", " login ", " sddm " and " gdm\-password
+PAM services (where present) at the server for members of
 .B tac-users
 only, and grants
 .B tac-superuser
@@ -568,7 +761,7 @@ List the UID assigned to each user, print one user's UID, or change it.
 Each user has one number, used as both UID and primary GID on every
 enrolled host; it is assigned the first time the user is sent to a host
 and kept in
-.IR /etc/tacquito/linux\-uids .
+.IR /etc/tacctl/linux\-uids .
 The install and sync scripts stop before changing anything if that number
 is already used on a host by another user or group, and print the ways to
 resolve it: renumber the conflicting account on the host, assign the
@@ -587,10 +780,11 @@ built in containers, one per OS release and architecture, kept in
 The listing shows the digest of the base image each was built from.
 .TP
 .B "config linux remove-script " "[ \-\-output " file " ]"
-Write a script that removes TACACS+ login from a host: it undoes the PAM
-edits, deletes the files holding the shared secret, the module and the
-sudoers drop-in, and reports accounts left with no way to log in. Local
-accounts, home directories and the tac-* groups are left in place.
+Write a script that removes TACACS+ or RADIUS login from a host (either
+method): it undoes the PAM edits, deletes the files holding the shared
+secret, the module, the SELinux module and the sudoers drop-in, and reports
+accounts left with no way to log in. Local accounts, home directories, the
+tac-* groups and installed packages are left in place.
 .TP
 .B "config sudoers " "{ show | install | remove } " [ group ]
 Manage the optional
@@ -606,12 +800,12 @@ before taking effect. Not installed by default.
 .B "config sudoers tiers " "{ show | install | remove }"
 Manage
 .IR /etc/sudoers.d/tacctl-tiers ,
-which grants tacctl by tier to TACACS+ users that have local accounts.
+which grants tacctl by tier to tacctl users that have local accounts.
 Members of
 .B tac-readonly
 may run
 .BR passwd ", " status ", " version ", " "user list" ", " "user show" ", "
-.BR "group list" " and " "scope list" .
+.BR "group list" ", " "scope list" ", " "backend list" " and " "backend status" .
 Members of
 .B tac-operator
 may additionally run
@@ -624,8 +818,7 @@ get full
 access. Lower-tier rules are NOPASSWD. Commands that print a shared
 secret or a password hash are superuser-only. tacctl re-checks the
 caller's tier itself on every run, reading the tier from the user's group
-in
-.I tacquito.yaml
+in the store
 (priv-lvl 15 superuser, 7\-14 operator, below 7 read-only); callers
 outside the local group
 .B tac-users
@@ -677,7 +870,7 @@ with both empty, all connections are accepted.
 Manage a shared CIDR permit list stored under
 .B mgmt_acl.permits
 in
-.I /etc/tacquito/tacctl.yaml
+.I /etc/tacctl/tacctl.yaml
 that drives both the Cisco VTY-ACL and a commented Juniper lo0
 firewall-filter example emitted by
 .B config cisco
@@ -724,11 +917,11 @@ Same character rules as
 Both overrides live under
 .B mgmt_acl.names.{cisco,juniper}
 in
-.I /etc/tacquito/tacctl.yaml
+.I /etc/tacctl/tacctl.yaml
 and survive
 .BR "tacctl upgrade" .
 .TP
-.BI "config cisco " [ "--scope " name "] [--legacy]"
+.BI "config cisco " [ "--scope " name "] [--legacy] [--protocol " tacacs | radius ]
 Print a ready-to-paste Cisco IOS/IOS-XE configuration with the
 server IP, shared secret, current group-to-privilege mappings, and
 the VTY-ACL built from
@@ -743,16 +936,34 @@ emits legacy IOS 12.x syntax
 for devices predating the structured
 .B "tacacs server"
 block introduced in IOS 15.0.
+.IP
+With
+.B "--protocol radius"
+(default: the scope's auth-method, see
+.BR "scope auth-method" ,
+else the one protocol its
+.B protocols
+filter names, else
+.BR tacacs )
+the configuration is for the RADIUS backend instead (see
+.B RADIUS DEVICE CONFIGURATIONS
+below);
+.B --legacy
+is TACACS+ only.
 .TP
-.BI "config juniper " [ "--scope " name ]
+.BI "config juniper " [ "--scope " name "] [--protocol " tacacs | radius ]
 Print a ready-to-paste Juniper Junos configuration with template
 users, TACACS+ server setup, verification commands, and a commented
 lo0 firewall-filter example built from
 .B config mgmt-acl
 pre-filled. Scope handling matches
 .BR "config cisco" .
+.B "--protocol radius"
+renders the RADIUS configuration (see
+.B RADIUS DEVICE CONFIGURATIONS
+below).
 .TP
-.BI "config wti " [ "--scope " name ]
+.BI "config wti " [ "--scope " name "] [--protocol " tacacs | radius ]
 Print a step-by-step procedure for the serial text interface of a WTI
 console server (DSM/CPM/REM/TSM/RSM, firmware v8.x): the
 .B /N
@@ -782,21 +993,145 @@ overlay, which sends an empty server_msg on accounting success; the
 unit drops the SSH session when it receives upstream's message. Warns when the
 scope secret or a scope member's username is unlikely to survive the
 unit's menu entry (whitespace, punctuation, over 32 characters). Scope
-handling matches
+handling and the protocol (flag, auth-method, the scope's only protocol,
+TACACS+) match
 .BR "config cisco" .
+.IP
+Over RADIUS the walkthrough is for the unit's RADIUS Parameters menu
+.RB ( /N ,
+item 29 in WTI's user guide) and prints the group to
+.B WTI-Super
+table (0 ViewOnly, 1 User, 2 SuperUser, 3 Administrator, in the bands
+above). It has
+.B not
+been verified on a unit: it is written from WTI's documents
+.RI ( docs/radius-notes.md ),
+which disagree on the level a login gets when the reply carries no
+.BR WTI-Super .
+Refused, as for Cisco and Juniper, when the scope sends no
+.B WTI-Super
+(see
+.BR "scope vendor-attrs" ).
 .TP
 .BI "config branch " [ name ]
 Show or change the tacctl repository branch used by
 .B tacctl upgrade.
+.SS Auth backends \fB(tacctl backend)\fR
+A backend is a daemon that serves the store over one protocol:
+.B tacacs
+(TACACS+ served by tacquito, installed by
+.BR install )
+and
+.B radius
+(RADIUS served by FreeRADIUS, opt-in); which are enabled is
+.B backends.enabled
+in
+.I tacctl.yaml
+(default:
+.BR tacacs ).
+See
+.BR BACKENDS .
+.TP
+.B backend list
+Every backend this tacctl has: protocol, implementation, whether it is
+installed, whether it is enabled, and its service state. Read-only.
+.TP
+.BI "backend status " [ id ]
+Service and listener state of every backend (or one): state, uptime, PID,
+and for each listener its network and address, the state of its unit and
+whether something is listening there. Read-only.
+.TP
+.BI "backend enable " "id " [ \-y ]
+Enable a backend. If it is not installed, confirms (\fB\-y\fR skips) and runs its
+install steps (packages, service account, unit). Then, as one step: every
+backend that will be enabled has its gate checked (a hand-edited rendered file
+refuses the command, exit 3), a snapshot is taken, the id is added to
+.BR backends.enabled ,
+and the config of every enabled backend is rendered, all or none. Then the
+service is enabled at boot and started, and must report
+.BR active .
+If any step fails, the files tacctl owns
+.RB ( tacctl.yaml ,
+the store, every rendered file) are left or put back exactly as they were, the
+service is stopped and disabled, and the exit status is 1; software that the
+install step put on the machine stays.
+.TP
+.BI "backend disable " "id " [ \-y ]
+Take a backend out of
+.BR backends.enabled ,
+stop its service and disable it at boot. Asks for confirmation (\fB\-y\fR
+skips) because clients of that protocol stop authenticating. Its package and
+the files it rendered stay where they are (and are no longer rendered or
+reported as drift);
+.B "backend enable"
+brings it back. Refused for the last enabled backend (nothing would serve the
+store: enable another first, or use
+.BR uninstall ),
+and for
+.B tacacs
+on an install that has no store yet (legacy read-only mode, where
+.I tacquito.yaml
+is still the source of truth).
+.PP
+.B backend list
+and
+.B backend status
+are available to the read-only and operator tiers;
+.B enable
+and
+.B disable
+are superuser only.
+.SS Canonical store \fB(tacctl store)\fR
+.TP
+.BR "store show " [ \-\-json ]
+Print the model (users, groups, scopes, filters) as YAML or JSON.
+.B Superuser only:
+the output contains shared secrets and password hashes.
+.TP
+.B "store import " "[ \-\-check | \-\-force ] [ \-\-replace ] [ " file " ]"
+Import an old-style
+.I tacquito.yaml
+(default: the live one) into the store.
+.B \-\-check
+writes nothing and reports what would happen and whether the rendered config
+is equivalent;
+.B \-\-force
+drops content the store cannot represent (each item is listed);
+.B \-\-replace
+overwrites an existing store. Also the way to keep a hand edit of
+.I tacquito.yaml
+that
+.B config validate
+reports as drift.
+.TP
+.B store rollback
+Undo the move into the store: restore the pre-store
+.IR tacquito.yaml ,
+remove the store, restart. The install is back in legacy read-only mode.
 .SS Log inspection \fB(tacctl log)\fR
+With more than one backend enabled each log subcommand shows every backend's
+log in a section headed by its name; with one, the output is unchanged.
+.B \-\-backend
+.I id
+(any subcommand, anywhere on the line) limits it to one backend. TACACS+
+logs to the journal of its units and to
+.IR /var/log/tacquito/accounting*.log ;
+RADIUS to
+.I tacctl\-auth.log
+(one line per Access-Accept or Access-Reject, with scope, client, NAS and
+reason),
+.I tacctl\-accounting.log
+and
+.I tacctl\-radius.log
+in the package's log directory.
 .TP
 .BI "log tail " [ n ]
 Show the last
 .I n
-journal entries for the tacquito service (default 20).
+entries (default 20): the tacquito journal; the RADIUS auth log and daemon log.
 .TP
 .BI "log search " term
-Search logs for a username or keyword over the last 7 days.
+Search logs for a username or keyword (TACACS+: over the last 7 days).
 .TP
 .B log failures
 Show authentication failures from the last 24 hours.
@@ -804,14 +1139,15 @@ Show authentication failures from the last 24 hours.
 .BI "log accounting " [ n ]
 Show the last
 .I n
-entries from
-.IR /var/log/tacquito/accounting.log .
+accounting records
+.RI ( /var/log/tacquito/accounting.log ;
+the RADIUS detail file).
 .TP
 .B "log clear " [ --force ]
 Purge tacquito journal entries
 .RB ( "journalctl --rotate && journalctl --vacuum-time=1s -u tacquito" )
-and truncate
-.IR /var/log/tacquito/accounting.log .
+and truncate the TACACS+ accounting logs; truncate the RADIUS auth,
+accounting and daemon logs.
 Prompts for confirmation;
 .B --force
 (or
@@ -821,17 +1157,46 @@ accounting records are irrecoverable once cleared.
 .SS Backup management \fB(tacctl backup)\fR
 .TP
 .B backup list
-List available config backups with timestamps.
+List snapshots, newest first, then old-style backups.
 .TP
 .BI "backup diff " [ timestamp ]
-Diff the current config against a backup (default: most recent).
+Diff
+.I store.yaml
+and
+.I tacctl.yaml
+against a snapshot (default: most recent). Superuser only: the output
+shows shared secrets and password hashes.
 .TP
-.BI "backup restore " timestamp
-Restore a config backup after confirmation.
+.BI "backup restore " timestamp " " [ \-\-legacy ]
+Restore both files from a snapshot after confirmation, re-render every
+enabled backend's config (all or none), and restart the backends. The current
+state is snapshotted first, so a restore can itself be undone. Nothing changes
+if the snapshot is invalid or the render fails. A snapshot's
+.B backends.enabled
+comes back with the rest of
+.IR tacctl.yaml :
+a backend it enables must already be installed (otherwise nothing changes and
+the message says to run
+.BR "backend enable" ),
+is enabled at boot and started; one it leaves out is stopped and disabled. With
+.B \-\-legacy
+the argument names an old-style
+.I tacquito.yaml.<timestamp>
+file, which goes through
+.B store import \-\-check
+before it is imported.
 .PP
-Backups are created automatically before every change. The last 30 are
-retained under
-.IR /etc/tacquito/backups/ .
+A snapshot is the directory
+.I /etc/tacctl/backups/<timestamp>/
+holding
+.IR store.yaml ,
+.I tacctl.yaml
+and a manifest (the
+.I rendered.json
+of that moment and the tacctl version), root-only. One is taken
+automatically before every change, unless the files already equal the
+newest snapshot. The newest 30 are retained. Without a store, list, diff
+and restore work on old-style backups only.
 .SS Hash generation \fB(tacctl hash)\fR
 .TP
 .B hash
@@ -863,15 +1228,18 @@ accept either and normalize to hex on write.
 .SH SCOPE MANAGEMENT
 A
 .I scope
-is a named bundle of (client CIDR prefixes, TACACS+ shared secret).
-It corresponds to one entry in the tacquito YAML
+is a named bundle of (client CIDR prefixes, shared secret), kept in the
+store and shared by every backend: the same prefixes and secret serve
+TACACS+ and RADIUS, unless the scope's
+.B protocols
+filter limits it. Each user's
+.B scopes
+list references one or more of these by name. A client is matched to the
+scope with the most specific prefix that contains its address (tacquito
+walks its rendered
 .B secrets:
-list, and each user's
-.B scopes:
-field references one or more of these by name. tacquito selects a
-provider by first-CIDR-match; authentication succeeds only when the
-matched scope is in the user's
-.B scopes:
+list, sorted by specificity, first match wins; FreeRADIUS takes the longest
+prefix); authentication succeeds only when that scope is in the user's
 list.
 .PP
 Fresh installs seed a single scope named
@@ -895,9 +1263,10 @@ For full per-scope detail (secret, per-scope knobs, user list) use
 .BR "scope show " \fIname\fR .
 .TP
 .B scope routing
-Print every
+Print every (scope, prefix) pair in first-match order, as rendered into
+tacquito's
 .B secrets[]
-entry in tacquito's first-match order (one row per scope-prefix pair,
+list (one row per scope-prefix pair,
 numbered by slice position). Multi-prefix scopes repeat their name on
 each prefix row so the display literally mirrors routing priority —
 reading top to bottom shows the order tacquito tries providers for a
@@ -905,10 +1274,11 @@ connecting client.
 .TP
 .BI "scope show " name
 Full detail for one scope: prefixes, users that reference it, raw
-shared-secret value with length/posture, and whether the scope is
-the default.
+shared-secret value with length/posture, whether the scope is
+the default, its protocols filter and auth-method, its vendor attributes
+and tagged addresses (RADIUS).
 .TP
-.B "scope add " \fIname\fR " --prefixes " \fIcidr\fR[,cidr...] " [ --secret \fIvalue\fR | --secret generate ] [ --default ]
+.B "scope add " \fIname\fR " --prefixes " \fIcidr\fR[,cidr...] " [ --secret \fIvalue\fR | --secret generate ] [ --protocols \fIcsv\fR ] [ --vendor-attrs \fIcsv\fR ] [ --default ]
 Create a new scope. Prefixes are required; each must not already
 belong to another scope (overlap with a broader scope's supernet is
 fine — the new scope's narrower prefix will win first-match).
@@ -917,36 +1287,53 @@ produces a strong key automatically.
 .B --default
 makes the new scope the default for
 .BR "user add" .
+.B --protocols
+and
+.B --vendor-attrs
+set what
+.B "scope protocols set"
+and
+.B "scope vendor-attrs enable"
+would.
 .TP
 .BI "scope remove " "name " [ --force ]
-Remove a scope. Drops every
-.B secrets[]
-entry whose name matches (flat emission spreads one logical scope across
-one entry per prefix). Refuses by default if any user references the
+Remove a scope from the store (and so from every backend's rendered
+config). Refuses by default if any user references the
 scope; with
 .BR --force ,
-strips the name from all affected users AND removes the secrets
-entries, with a loud warning.
+strips the name from all affected users AND removes the scope,
+with a loud warning. Its vendor attributes and tagged addresses go with it. Every
+.I tacctl.yaml
+setting stored under the scope's name
+.RB ( aaa.order ,
+.BR exec_timeout ,
+.BR tacacs_group ,
+.BR radius_group ,
+.BR scope_auth_method ,
+.B scope_mgmt_acl.names.cisco|juniper
+and
+.BR scope_mgmt_acl.permits )
+is removed with it, so a new scope of that name starts from the defaults.
 .TP
 .BI "scope rename " "old new"
-Rename a scope. Rewrites
-.B name:
-on every matching
-.B secrets[]
-entry, every user's
-.B scopes:
+Rename a scope. Rewrites the scope in the store (protocols, vendor
+attributes and tagged addresses included), every user's
+.B scopes
 reference, and
 .B scope.default
 in
 .I tacctl.yaml
 (if it pointed at
-.IR old ).
+.IR old ),
+and moves every
+.I tacctl.yaml
+setting stored under the old name to the new one.
 .TP
 .BI "scope default " [ name ]
 Show (no arg) or set (with arg) the default scope. Stored under
 .B scope.default
 in
-.IR /etc/tacquito/tacctl.yaml .
+.IR /etc/tacctl/tacctl.yaml .
 Used by
 .BR "user add"
 when
@@ -962,7 +1349,10 @@ Resolve an IPv4 / IPv6 address or CIDR to the scope that owns it,
 following the same slice-order walk tacquito's provider selector uses.
 Prints the matching prefix and, if multiple scopes' prefixes cover the
 query (e.g. a supernet/subnet overlap), lists the shadowed scopes
-below the winner for debugging.
+below the winner for debugging. An address the scope has tagged with a
+vendor
+.RB ( "scope devices" )
+is shown with its tag.
 .SS Per-scope prefixes \fB(tacctl scope prefixes)\fR
 .TP
 .BI "scope prefixes " "scope " "list"
@@ -975,46 +1365,120 @@ checked against the one-CIDR-per-scope invariant (rejected with the
 owning-scope name if already claimed elsewhere), and appended as its
 own
 .B secrets[]
-entry. After the write, tacctl re-sorts every entry globally by prefix
+entry in the rendered
+.IR tacquito.yaml ,
+where every entry is sorted globally by prefix
 specificity so tacquito's slice-ordered first-match walk routes each
-client to the narrowest scope that contains it.
+client to the narrowest scope that contains it (and its own RADIUS client).
 .TP
 .B "scope prefixes " \fIscope\fR " remove " \fIcidr\fR[,cidr...]
-Remove one or more CIDRs. Drops the matching
-.B secrets[]
-entries and re-applies the global specificity sort.
+Remove one or more CIDRs. The last prefix of a scope cannot be removed
+(use
+.B clear
+or
+.BR "scope remove" ),
+and a prefix whose removal would leave a tagged address
+.RB ( "scope devices" )
+outside the scope is refused.
 .TP
 .BI "scope prefixes " "scope " "clear " [ --force ]
-Empty the entire prefix list for the scope (with confirmation). Under
-flat emission this removes every
-.B secrets[]
-entry whose name matches, so the scope vanishes from tacquito.yaml and
-any user still referencing it becomes an orphan — the command refuses
-to proceed when users reference the scope unless
+Empty the entire prefix list for the scope (with confirmation): the scope
+and its per-scope settings are removed, so it vanishes from every rendered
+config. The command refuses to proceed when users reference the scope
+unless
 .B --force
-is given. With
-.BR --force ,
-orphan references are left in place for
-.B config validate
-to surface.
+is given, which strips the scope from those users.
 .SS Per-scope secret \fB(tacctl scope secret)\fR
 .TP
 .BI "scope secret " "scope " "show"
 Print the scope's raw shared-secret value plus its length and posture.
-The command runs as root, the YAML is mode 0640, and operators need
+The command runs as root, the store is mode 0600, and operators need
 the raw value to paste into device configs — so
 .B show
-prints it rather than hiding it.
+prints it rather than hiding it. Superuser only.
 .TP
 .BI "scope secret " "scope " "set " value
 Set the scope's key after validation (≥
 .B config secret-min-length
-chars, mixed character classes).
+chars, mixed character classes). With RADIUS enabled, a secret FreeRADIUS
+cannot carry (a backslash together with a
+.BR $ )
+fails the render and is refused;
+.B "config render"
+warns about one beyond the interoperability advice (63 printable
+characters, no space). The secret is shared by TACACS+ and RADIUS.
 .TP
 .BI "scope secret " "scope " "generate"
 Generate a strong key with
 .B openssl rand -base64 24
 and apply it.
+.SS Per-scope protocols \fB(tacctl scope protocols)\fR
+.TP
+.BI "scope protocols " "scope " "[list]"
+Show which protocols serve the scope. Without a filter, every enabled
+backend serves it.
+.TP
+.BI "scope protocols " "scope " "set " protocol\fR[,protocol...]
+Limit the scope to the named protocols
+.RB ( tacacs ", " radius ).
+A backend whose protocol is not listed leaves the scope out of what it
+renders: for TACACS+ that means its prefixes, its secret and its users'
+grant of it are absent from tacquito.yaml; for RADIUS, its prefixes are not
+clients. Refused when the list leaves out the scope's
+.BR "scope auth-method" .
+.TP
+.BI "scope protocols " "scope " "clear"
+Remove the filter.
+.SS Per-scope vendor attributes (RADIUS) \fB(tacctl scope vendor-attrs, tacctl scope devices)\fR
+Over RADIUS an Access-Accept always carries
+.B Service-Type
+.RB ( Administrative-User
+at priv-lvl 15, else
+.BR NAS-Prompt-User ).
+A vendor's privilege attribute is added only where the operator opted in:
+.B Cisco-AVPair \(dqshell:priv-lvl=N\(dq
+(cisco),
+.B Juniper-Local-User-Name
+(juniper),
+.B WTI-Super
+0\-3 (wti). An Access-Reject carries none. TACACS+ is not affected.
+.TP
+.BI "scope vendor-attrs " scope
+Show the vendors enabled for the scope, or
+.B "not sent"
+(the state of a new scope).
+.TP
+.BI "scope vendor-attrs " scope " enable|disable " vendor\fR[,vendor...]
+Enable or disable a vendor's attribute for every device of the scope that
+is not tagged. There is no
+.BR set ,
+.B clear
+or
+.BR none :
+nothing is sent until it is enabled. Stored on the scope in
+.I store.yaml
+.RB ( vendor_attrs ),
+so the change re-renders the RADIUS backend and restarts it.
+.TP
+.BI "scope devices " scope " [list]"
+List the scope's tagged addresses.
+.TP
+.BI "scope devices " scope " set " "ip\fR|\fIcidr vendor"
+Tag an address (a bare IP is a /32 or /128) or a range of the scope
+with its vendor: it gets that vendor's attribute and no other, whatever
+the scope enables. The address must be one
+.B "scope lookup"
+answers with this scope: inside a prefix of it, and inside no more
+specific prefix of another scope. Stored on the scope in
+.I store.yaml
+.RB ( devices ).
+.TP
+.BI "scope devices " scope " unset " ip\fR|\fIcidr
+Remove a tag.
+.B "scope prefixes remove"
+refuses to leave a tag outside the scope's prefixes (unset it first, or
+add the new prefix before removing the old one); tags go with the scope
+on rename and remove.
 .SS Per-scope idle-session timeout \fB(tacctl scope exec-timeout)\fR
 .TP
 .BI "scope exec-timeout " scope " [" minutes ]
@@ -1089,6 +1553,74 @@ and
 .BR TACACS-GROUP .
 Junos has no equivalent — its AAA configuration does not group named
 servers this way.
+.SS Per-scope Cisco RADIUS group label \fB(tacctl scope radius-group)\fR
+.TP
+.BI "scope radius-group " scope " [" name ]
+The RADIUS twin of
+.BR "scope tacacs-group" :
+show or set the Cisco
+.B aaa group server radius <NAME>
+label rendered by
+.BR "config cisco --protocol radius" .
+Same naming rules (letter-start, letters, digits and
+.BR [_-] ;
+1..63 chars). Default (unset)
+.BR RADIUS-GROUP .
+Junos has no equivalent. Stored as
+.B radius_group.<scope>
+in
+.IR tacctl.yaml .
+.SS Per-scope default authentication method \fB(tacctl scope auth-method)\fR
+.TP
+.BI "scope auth-method " scope " [" tacacs | radius | clear ]
+Show or set the protocol this scope uses when a command names none:
+.BR "config cisco" ,
+.B "config juniper"
+and
+.B "config wti"
+without
+.BR --protocol ,
+.B "host enroll"
+(for a host that is not registered yet) and
+.B "config linux script"
+without
+.B --method
+.RB ( tacacs
+is host method
+.BR tacplus ).
+The order is: an explicit
+.B --protocol
+or
+.BR --method ;
+a registered host's own method; this setting; the one protocol the
+scope's
+.B protocols
+filter names, when it names exactly one; the global default (device
+configurations TACACS+, hosts
+.BR "host default-method" ).
+.B clear
+removes the setting
+.RB ( default
+is accepted for it);
+.B tacplus
+is accepted for
+.BR tacacs ,
+which is the one spelling it prints.
+Refused when the scope's
+.B protocols
+filter leaves the protocol out;
+.B "scope protocols"
+in turn refuses a list without the scope's auth-method.
+.B "config cisco --legacy"
+on a scope that resolves to RADIUS needs
+.BR "--protocol tacacs" .
+Stored as
+.B scope_auth_method.<scope>
+in
+.IR tacctl.yaml ;
+follows
+.B "scope rename"
+and is removed with the scope.
 .SS Per-scope AAA method-list order \fB(tacctl scope aaa-order)\fR
 .TP
 .BI "scope aaa-order " scope " [" tacacs-first | local-first ]
@@ -1117,6 +1649,96 @@ The change takes effect for the next
 .B "config juniper"
 render of the named scope — existing device configs are unchanged
 until the new method-list stanzas are pushed.
+.SH RADIUS DEVICE CONFIGURATIONS
+.BR "config cisco" ,
+.B "config juniper"
+and
+.B "config wti"
+render the configuration for logging in to a device against the RADIUS
+backend when given
+.BR "--protocol radius" ,
+or without the flag for a scope that resolves to RADIUS (its auth-method,
+else its only protocol;
+.BR "scope auth-method" ).
+The server address, the authentication and accounting ports (the
+.B auth
+and
+.B acct
+listeners shown by
+.BR "config listen --backend radius show" )
+and the scope's shared secret are filled in; the management ACL, the
+exec timeout, the scope's
+.B aaa-order
+(the server first, or local first) and the local fallback behave as in
+the TACACS+ output. Without the flag, and for a scope that does not
+resolve to RADIUS, the output is the TACACS+ configuration, unchanged.
+.PP
+Cisco output is a
+.B "radius server"
+block,
+.B "aaa group server radius"
+(named by
+.BR "scope radius-group" ),
+.BR "aaa authentication login" ,
+.BR "aaa authorization exec"
+(the privilege level comes from the reply's
+.BR "Cisco-AVPair shell:priv-lvl=N" ,
+which the scope must send: see
+.BR "scope vendor-attrs" )
+and
+.BR "aaa accounting exec" ,
+with the same
+.B "privilege exec level"
+mappings. Juniper output is
+.BR "system radius-server" ,
+.BR authentication-order ,
+.B "system accounting destination radius"
+and the template users that the reply's
+.B Juniper-Local-User-Name
+selects, with the per-class allow-commands and deny-commands rules,
+which stay in force because the class is local to the device.
+.PP
+RADIUS has no per-command authorization and no command accounting, and
+tacctl's RADIUS accepts PAP only. Each RADIUS output says under the
+configuration what the Access-Accept carries for the device
+.RB ( Service-Type
+and the vendor's attribute, enabled for the scope or for tagged
+addresses only), and which TACACS+ features are not available
+(rules set with
+.B "group commands"
+are not enforced by the server).
+.PP
+tacctl refuses, with an error and no output, when the configuration
+would look right and not work: the RADIUS backend is not enabled
+.RB ( "backend enable radius" ),
+the scope's
+.B "scope protocols"
+filter leaves out
+.BR radius ,
+the scope sends the vendor's attribute to none of its devices (neither
+enabled with
+.B "scope vendor-attrs"
+nor an address tagged with
+.BR "scope devices" ;
+the error prints the command that enables it),
+or the scope secret holds a character that IOS or Junos read as syntax
+(whitespace, quotes, a backtick, a non-ASCII character, or any of
+.BR "? ! # $ \\e ; { } [ ] | & < > , * ( )" ).
+Letters, digits and
+.B ". _ + / = : @ % ^ ~ -"
+paste unquoted, and
+.B "scope secret generate"
+makes such a secret. The secret is shared with TACACS+, so changing it
+means changing it on every device of the scope. A secret longer than 63
+characters renders with a warning. A listener bound to one IPv4 address
+supplies the server address; an IPv6 or loopback bind is warned about.
+Operator overrides
+.IR cisco-radius.template ,
+.I juniper-radius.template
+and
+.I wti-radius.template
+in the templates directory work as for the TACACS+ templates; see
+.BR FILES .
 .SH CONVENTIONS
 The following patterns apply uniformly across subcommand families.
 .TP
@@ -1134,6 +1756,10 @@ and every nested dispatcher such as
 .BR "scope aaa-order" ,
 .BR "scope exec-timeout" ,
 .BR "scope tacacs-group" ,
+.BR "scope radius-group" ,
+.BR "scope auth-method" ,
+.BR "scope vendor-attrs" ,
+.BR "scope devices" ,
 .BR "scope mgmt-acl" ,
 .BR "user scope" ,
 or
@@ -1230,15 +1856,48 @@ subcommands always prompt with
 and print a warning about the resulting posture (for example, "no
 clients can connect" or "fails open").
 .TP
+.B "Filters and opt-ins"
+A setting that narrows something down is a filter: its verbs are
+.B set
+and
+.BR clear ,
+and empty (cleared) means everything
+.RB ( "scope protocols" ,
+.BR "config allow" ,
+.BR "config deny" ).
+A setting that turns something on is an opt-in: its verbs are
+.B enable
+and
+.BR disable ,
+and nothing is on until it is enabled
+.RB ( "backend enable|disable" ,
+.BR "scope vendor-attrs" ).
+An opt-in has no
+.BR set ,
+.B clear
+or
+.BR none ,
+so that nothing in it can read as "empty means all".
+.TP
 .B Service restart
-Changes that mutate
-.I /etc/tacquito/tacquito.yaml
-(read by tacquito) restart the tacquito service automatically.
-Changes to
-.I /etc/tacquito/tacctl.yaml
-(tacctl-internal tunables: mgmt-acl permits + names, bcrypt cost,
-password age, per-group priv-exec mappings, etc.) do not \(em tacquito
-itself never reads that file.
+Changes to the store, and to the
+.I tacctl.yaml
+settings a backend renders (command rules, listeners,
+.BR backends.* ),
+re-render every enabled backend and restart the backends whose files
+changed. Settings only device configurations read (mgmt-acl permits and
+names, per-group priv-exec mappings, per-scope AAA order, exec timeout and
+group labels) and tacctl's own tunables (bcrypt cost, password age, \&...)
+restart nothing.
+.TP
+.B Prompts
+Every confirmation prompt cancels, with a message, when standard input is
+closed.
+.B \-y
+(or
+.BR \-\-yes ,
+.B \-\-force
+where documented) answers yes.
 .TP
 .B Flags
 Long-form flags
@@ -1247,81 +1906,401 @@ Long-form flags
 .IR --scope ,
 .IR --prefixes ,
 .IR --secret ,
-.IR --default ,
+.IR --protocols ,
+.IR --vendor-attrs ,
 .IR --match ,
 .IR --action ,
-.IR --force ,
-.IR --branch )
-take a single argument (except
+.IR --branch ,
+.IR --protocol ,
+.IR --method ,
+.IR --backend ,
+.IR --listener ,
+.IR --server ,
+.IR --name ,
+.IR --port ,
+.IR --identity ,
+.IR --output ,
+.IR --adopt )
+take a single argument;
 .IR --default ,
-which is a boolean). Required positional arguments come before flags.
-.SH FILES
+.IR --force ,
+.IR --legacy ,
+.IR --check ,
+.IR --replace ,
+.IR --json ,
+.IR --local ,
+.IR --all ,
+.IR --build-on-host ,
+.I --allow-uid-mismatch
+and
+.I -y
+take none. Required positional arguments come before flags.
+.SH BACKENDS
 .TP
+.B tacacs
+TACACS+, served by tacquito built from source; installed by
+.B "tacctl install"
+and enabled by default.
+.TP
+.B radius
+RADIUS, served by FreeRADIUS from the distribution's package; installed and
+enabled by
+.BR "tacctl backend enable radius" .
+.PP
+Every change renders the configuration of every enabled backend from the
+store, all or none, and restarts only the backends whose files changed.
+With more than one backend enabled,
+.BR status ,
+.BR "config show" ,
+.B "config validate"
+and
+.B log
+print a labelled section per backend
+.RB ( "== Backend: radius (radius, freeradius) ==" ).
+.PP
+.B Listeners
+are
+.BI listeners. backend . name
+in
+.I tacctl.yaml
+.RB ( "config listen" ).
+The TACACS+ listener
+.B default
+(tcp :49) runs in
+.BR tacquito.service ;
+every further one is an instance
+.BI tacquito@ name .service
+of
+.BR tacquito@.service ,
+.B PartOf
+and
+.B WantedBy
+.BR tacquito.service ,
+so
+.B "systemctl restart tacquito"
+covers them all. Each unit has a rendered drop-in
+.IR <unit>.d/tacctl.conf .
+RADIUS listeners
+.RB ( auth ,
+udp :1812;
+.BR acct ,
+udp :1813) are
+.B listen
+sections of tacctl's FreeRADIUS configuration. TACACS+ over TLS is reserved
+in the schema and not implemented.
+.PP
+.B RADIUS.
+.B "backend enable radius"
+installs
+.B freeradius
+and
+.B freeradius\-utils
+(Debian/Ubuntu; RHEL family from AppStream) and starts the distribution's
+unit
+.RB ( freeradius
+or
+.BR radiusd )
+with a drop-in that runs tacctl's own instance
+.RB ( "\-n tacctl\-radius \-D" " <its dictionary>" ):
+the package's configuration is not read, edited or unlinked, so there is no
+EAP, inner tunnel, proxying or default client. A unit that is already
+running or enabled without tacctl's drop-in is somebody's RADIUS server and
+is refused. One client per prefix of every scope RADIUS serves, with the
+scope's secret; a user authenticates only from a client in one of their
+scopes; disabled users and the
+.B root
+sink never do. PAP only, against the stored bcrypt hashes (no CHAP,
+MS-CHAP or EAP). No per-command authorization and no command accounting.
+An Access-Accept carries
+.B Service-Type
+always, and a vendor's privilege attribute only where the scope opts in
+.RB ( "scope vendor-attrs" ", " "scope devices" ).
+FreeRADIUS 3.2.5 and 3.0.27 log a "BlastRADIUS check" block for a client the
+first time it sends Message-Authenticator and require it from that client
+from then on. Verified against FreeRADIUS 3.0.20, 3.0.27 and 3.2.5;
+nothing was tested on Cisco, Juniper or WTI hardware.
+.SH STORE AND GENERATED CONFIGURATION
+.I /etc/tacctl/store.yaml
+(users, groups, scopes, filters) and
+.I /etc/tacctl/tacctl.yaml
+(settings) are canonical. Generated from them:
 .I /etc/tacquito/tacquito.yaml
-TACACS+ server configuration. Mode 0640, owned by
-.BR tacquito : tacquito .
+and the tacquito unit drop-ins; for RADIUS
+.IR tacctl\-radius.conf ,
+.I tacctl\-radius.users
+and
+.I tacctl\-radius\-dictionary/dictionary
+in the FreeRADIUS configuration directory.
+.I /etc/tacctl/rendered.json
+holds their checksums.
+.PP
+A change is checked against hand edits, snapshotted, written, rendered into
+a staging area for every enabled backend and proved there (read back, the
+daemon's own config check), then installed, and the backends whose files
+changed are restarted; a failure at any step puts the store,
+.I tacctl.yaml
+and every generated file back.
+.PP
+.B Drift.
+A generated file that no longer matches its checksum was edited by hand:
+.B status
+and
+.B "config validate"
+show a
+.B DRIFT
+line and every change is refused (exit 3). Keep a hand edit of
+.I tacquito.yaml
+with
+.B "store import \-\-replace"
+then
+.BR "config render \-\-force" ;
+discard it with
+.B "config render \-\-force"
+(a copy goes to
+.IR /etc/tacctl/backups/legacy/ ).
+RADIUS files can only be re-rendered.
+.PP
+.B Legacy read-only mode.
+Without a store (an upgrade whose gate stopped, or after
+.BR "store rollback" )
+tacctl reads
+.I tacquito.yaml
+directly: read commands work, commands that change users, groups, scopes
+or filters are refused with
+.IR "store not initialised" .
+Only TACACS+ exists in that mode.
+.SH UPGRADING TO 0.1.15
+The first
+.B "tacctl upgrade"
+from 0.1.14 or earlier pulls 0.1.15, re-executes it, and then:
+.IP 1. 4
+moves
+.IR tacctl.yaml ,
+.IR linux\-hosts ,
+.IR linux\-uids ,
+.I backups/
+and
+.I templates/
+from
+.I /etc/tacquito
+to
+.IR /etc/tacctl ,
+leaving symlinks at the old paths for one release (idempotent; a regular
+file written there by older code wins over the moved copy, which is kept
+under
+.IR backups/legacy/ );
+.IP 2. 4
+installs
+.B tacquito.service
+and
+.BR tacquito@.service ,
+imports the hand-managed drop-in
+.I tacctl\-overrides.conf
+into
+.I tacctl.yaml
+once, renders
+.I tacctl.conf
+in its place and keeps the old file under
+.IR backups/legacy/ ;
+.IP 3. 4
+runs the store gate:
+.B "store import \-\-check"
+(import, render, equivalence of what tacquito loads from both files, a load
+test of the rendered file with the new binary on a loopback port). Only when
+it passes is the store written, the old file kept as
+.IR backups/legacy/tacquito.yaml.pre\-store. <timestamp>,
+.I tacquito.yaml
+rendered and tacquito restarted.
+.PP
+When the gate stops (unrepresentable content, a render that is not
+equivalent, the binary or
+.B timeout
+missing) the upgrade still completes, leaves
+.I tacquito.yaml
+and the daemon as they were, and tacctl is in legacy read-only mode. It never
+forces either through. Fix what
+.B "store import \-\-check"
+reports and upgrade again, or accept the difference:
+.B "store import"
+.RB [ \-\-force ],
+then
+.BR "config render \-\-force" .
+.B "store rollback"
+returns to the pre-store file; run it before checking out an older release,
+which edits
+.I tacquito.yaml
+directly.
+.SH FILES
+.SS tacctl
 .TP
-.I /etc/tacquito/backups/
-Automatic configuration backups. Last 30 retained.
+.I /etc/tacctl/
+State directory, mode 0700, root only.
 .TP
-.I /etc/tacquito/tacctl.yaml
-Operator overrides for tacctl tunables (bcrypt cost, password / secret
-minimum lengths, password age warning, default scope, mgmt-acl permits +
-names, per-group Cisco priv-exec mappings). Canonical defaults are
-embedded in
-.I bin/tacctl.sh
+.I /etc/tacctl/store.yaml
+The canonical users, groups, scopes and connection filters (shared secrets and
+password hashes included). Mode 0600, root only. Every command that changes
+them renders each enabled backend's config from it. Print it with
+.BR "tacctl store show" .
+.TP
+.I /etc/tacctl/tacctl.yaml
+Operator overrides for tacctl tunables and settings (bcrypt cost, password /
+secret minimum lengths, password age warning, default scope, default host
+method, mgmt-acl permits + names, per-group command rules and Cisco
+priv-exec mappings, per-scope device-config settings, listeners,
+.BR backends.* ).
+Canonical defaults are embedded in
+.I lib/conf.sh
 and emitted on demand by
 .BR "tacctl config defaults" .
 Only set keys you want to change \(em missing keys inherit from the
 defaults, and setting a key back to the default value removes it. An
 empty overrides file is deleted. Every write is schema-validated
-(out-of-range numbers, bad ACL names, malformed CIDRs, typo'd keys are
-rejected before anything is written). Inspect the merged view with
+(out-of-range numbers, bad ACL names, malformed CIDRs, colliding listeners,
+typo'd keys are rejected before anything is written). Inspect the merged
+view with
 .BR "tacctl config dump" ;
 re-check the file with
 .BR "tacctl config validate" .
 .TP
-.I /etc/tacquito/templates/
-Host-specific overrides for the Cisco and Juniper device config
-templates.
-.TP
-.I /etc/systemd/system/tacquito.service
-Systemd unit file.
-.TP
-.I /etc/systemd/system/tacquito.service.d/tacctl-overrides.conf
-Systemd drop-in where
-.BR "tacctl config listen" ,
-.BR "tacctl config loglevel" ,
+.I /etc/tacctl/rendered.json
+The checksum of every file tacctl rendered, from which
+.B status
 and
-.B "tacctl config metrics"
-write their overrides. Preserved across upgrades.
+.B config validate
+report a hand edit as drift.
 .TP
-.I /etc/sudoers.d/tacctl
-Optional NOPASSWD sudoers rule. Installed only via
-.BR "tacctl config sudoers install" .
+.I /etc/tacctl/backups/
+Automatic snapshots of the canonical files, one directory per snapshot, last
+30 retained, root-only;
+.I legacy/
+holds old-style
+.I tacquito.yaml.<timestamp>
+backups from earlier releases, the pre-store config and files a render or
+the state migration displaced.
 .TP
-.I /var/log/tacquito/accounting.log
-Per-session accounting records. Rotated daily, retained 90 days.
+.I /etc/tacctl/templates/
+Host-specific overrides for the device config templates
+.RI ( cisco ,
+.IR cisco-legacy ,
+.IR juniper ,
+.IR wti ,
+and for
+.BR "--protocol radius"
+.IR cisco-radius ,
+.IR juniper-radius " and " wti-radius ).
+A file named
+.I <name>.template
+here is used in place of the one shipped in
+.IR config/templates/ .
 .TP
-.I /usr/local/bin/tacquito
-The tacquito server binary.
+.IR /etc/tacctl/linux\-hosts ", " /etc/tacctl/linux\-uids
+The registry of enrolled Linux hosts (with each host's method) and the
+UID/GID each user gets on every host.
+.TP
+.I /var/lib/tacctl/linux/
+The pam_tacplus source tarball and the modules built in containers.
+.TP
+.IR /etc/sudoers.d/tacctl ", " /etc/sudoers.d/tacctl\-tiers
+Optional sudoers rules. Installed only via
+.B "tacctl config sudoers install"
+and
+.BR "tacctl config sudoers tiers install" .
 .TP
 .I /usr/local/bin/tacctl
 Symlink to
 .IR /opt/tacctl/bin/tacctl.sh .
 .TP
-.I /usr/local/bin/tacquito-hashgen
-Standalone bcrypt hash generator shipped with tacquito.
-.TP
 .I /opt/tacctl/
 Clone of the management (tacctl) repository. Source of the symlinked
 CLI and the source directory consulted by
 .BR "tacctl upgrade" .
+.SS TACACS+ (tacquito)
+.TP
+.I /etc/tacquito/tacquito.yaml
+TACACS+ server configuration, rendered by tacctl from the store. Mode 0640,
+owned by
+.BR tacquito : tacquito .
+.I /etc/tacquito
+also holds a copy of the README and, for one release, symlinks from the old
+paths of
+.IR tacctl.yaml ,
+.IR linux\-hosts ,
+.IR linux\-uids ,
+.I backups
+and
+.I templates
+into
+.IR /etc/tacctl .
+.TP
+.I /etc/systemd/system/tacquito.service
+Systemd unit file (the default listener).
+.TP
+.I /etc/systemd/system/tacquito@.service
+Template unit, one instance per further listener.
+.TP
+.I /etc/systemd/system/tacquito.service.d/tacctl.conf
+Systemd drop-in holding the listen address, log level, metrics address
+and accounting log of the unit. Rendered by tacctl from
+.I tacctl.yaml
+.RB ( "tacctl config listen" ,
+.BR "tacctl config loglevel" ,
+.BR "tacctl config metrics" );
+edits are overwritten. Instances have
+.IR tacquito@<name>.service.d/tacctl.conf .
+.TP
+.I /var/log/tacquito/accounting.log
+Per-session accounting records
+.RI ( accounting\-<name>.log
+per further listener). Rotated daily, retained 90 days
+.RI ( /etc/logrotate.d/tacquito ).
+.TP
+.I /usr/local/bin/tacquito
+The tacquito server binary.
+.TP
+.I /usr/local/bin/tacquito-hashgen
+Standalone bcrypt hash generator shipped with tacquito.
 .TP
 .I /opt/tacquito-src/
 Clone of the tacquito server source code, used to rebuild the binary
 during
 .BR "tacctl upgrade" .
+.SS RADIUS (FreeRADIUS)
+.I <raddb>
+is
+.I /etc/freeradius/3.0
+(Debian/Ubuntu) or
+.I /etc/raddb
+(RHEL family);
+.I <logs>
+is
+.I /var/log/freeradius
+or
+.IR /var/log/radius .
+No file of the FreeRADIUS package is edited.
+.TP
+.IR <raddb>/tacctl\-radius.conf ", " <raddb>/tacctl\-radius.users
+tacctl's FreeRADIUS configuration (listeners, clients, policy) and its users
+file (bcrypt hashes), rendered from the store; mode 0640, root and the
+daemon's group.
+.TP
+.I <raddb>/tacctl\-radius\-dictionary/dictionary
+The dictionary the daemon is started with: the package's, then the WTI
+vendor and tacctl's internal attributes.
+.TP
+.IR /etc/systemd/system/freeradius.service.d/tacctl.conf " (" radiusd.service.d " on RHEL)"
+Drop-in that starts the distribution's unit as tacctl's instance; present
+exactly while the backend is enabled.
+.TP
+.IR <logs>/tacctl\-auth.log ", " <logs>/tacctl\-accounting.log ", " <logs>/tacctl\-radius.log
+One line per Access-Accept or Access-Reject; accounting detail records; the
+daemon's log
+.RI ( /etc/logrotate.d/tacctl\-radius ).
+.SS Linux hosts
+.TP
+.IR /etc/pam.d/tacctl\-* ", " /etc/tacctl\-pam_radius.conf ", " /var/lib/tacctl\-client/
+On an enrolled host: the PAM files tacctl writes (root-only; for tacplus
+they hold the shared secret), the pam_radius_auth server file (0600), and
+the client's state.
 .SH EXAMPLES
 .TP
 Install on a fresh host:
@@ -1341,7 +2320,7 @@ clients, the /16 catches the rest of 10.10.x):
 .B "  tacctl scope add lab_east     --prefixes 10.10.99.0/24 --secret generate"
 .fi
 .TP
-Trace how tacquito would route a client IP through the scope list:
+Trace which scope a client IP falls into:
 .B tacctl scope lookup 10.10.99.7
 .TP
 Grant a user full production access across two datacenters:
@@ -1356,8 +2335,30 @@ Generate legacy IOS 12.x syntax for an older device (e.g. an ITP on 12.4):
 Print the serial-menu walkthrough for a WTI console server in the lab scope:
 .B tacctl config wti --scope lab_east
 .TP
-Bind the listener to a specific management IP:
-.B tacctl config listen tcp 10.1.0.1:49
+Serve the same users over RADIUS, with Cisco and Juniper privilege attributes for prod:
+.nf
+.B "  tacctl backend enable radius"
+.B "  tacctl scope vendor-attrs prod_dc_east enable cisco,juniper"
+.B "  tacctl config cisco --scope prod_dc_east --protocol radius"
+.fi
+.TP
+Tag one address of a scope as a WTI unit (it gets WTI-Super and nothing else):
+.B tacctl scope devices lab_east set 10.10.99.5 wti
+.TP
+Enroll a Linux host with pam_radius_auth, then switch it to pam_tacplus:
+.nf
+.B "  tacctl host enroll admin@web1 --method radius"
+.B "  tacctl host enroll admin@web1 --method tacplus"
+.fi
+.TP
+Bind the listeners to a specific management IP:
+.nf
+.B "  tacctl config listen tcp 10.1.0.1:49"
+.B "  tacctl config listen --backend radius --listener auth udp 10.1.0.1:1812"
+.fi
+.TP
+Check, without writing anything, whether a tacquito.yaml can move into the store:
+.B tacctl store import --check
 .TP
 Expose the Prometheus exporter to an external scraper (default is loopback-only):
 .B tacctl config metrics address 10.1.0.1:8080
@@ -1373,21 +2374,25 @@ Every tacctl tunable \(em bcrypt cost, password / secret minimum lengths,
 password-age warning threshold, default scope, mgmt-acl permits + ACL names,
 and per-group Cisco priv-exec mappings \(em is driven by two sources:
 the canonical defaults embedded in
-.I bin/tacctl.sh
+.I lib/conf.sh
 (printed by
 .BR "tacctl config defaults" )
 and operator overrides in
-.IR /etc/tacquito/tacctl.yaml .
+.IR /etc/tacctl/tacctl.yaml .
 Missing keys inherit from the defaults; setting a key back to the default
 value removes it; an empty overrides file is pruned. Writes are
 schema-validated (bad ranges, typo'd keys, malformed CIDRs rejected
 before anything lands on disk).
 .PP
 .B IPv4 only by default.
-The service runs with
+The TACACS+ listener runs with
 .B -network tcp
-which binds IPv4 only. Switching to
+and the RADIUS ones with
+.BR udp ,
+which bind IPv4 only. Switching to
 .B tcp6
+or
+.B udp6
 enables a dual-stack socket on most platforms; IPv4 clients then
 connect with IPv4-mapped addresses
 .RB ( ::ffff:10.1.0.1 )
@@ -1407,7 +2412,7 @@ referenced by a group class (for example
 .BR OP-CLASS ,
 .BR RW-CLASS )
 must have a matching local user on each Juniper device. Without this,
-TACACS+ authentication succeeds but Junos rejects the login silently.
+authentication succeeds but Junos rejects the login silently.
 Run
 .B tacctl config juniper
 to regenerate the device-side configuration after adding or editing
@@ -1415,16 +2420,17 @@ groups.
 .PP
 .B Config edits.
 .B tacctl
-automatically restarts the service and creates a backup before every
-change. Manual edits to
-.I /etc/tacquito/tacquito.yaml
-require
-.B sudo systemctl restart tacquito
-afterwards.
+creates a snapshot before every change and restarts what the change
+affects. Generated files
+.RI ( tacquito.yaml ,
+the unit drop-ins, the RADIUS files) are overwritten; a hand edit of one is
+drift and blocks every change until it is adopted or discarded (see
+.BR "STORE AND GENERATED CONFIGURATION" ).
 .SH SEE ALSO
 .BR systemctl (1),
 .BR journalctl (1),
 .BR visudo (8),
-.BR tacquito (8)
+.BR radiusd (8),
+.BR pam_radius_auth (8)
 .SH PROJECT
 https://github.com/rett/tacctl

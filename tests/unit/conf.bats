@@ -363,6 +363,39 @@ show; rm"
     assert_output --partial "1..63 chars"
 }
 
+# --- radius_group.<scope> ---------------------------------------------------
+
+@test "radius_group.<scope>: unset reads empty (render falls back to RADIUS-GROUP)" {
+    run conf_get radius_group.lab
+    assert_output ""
+}
+
+@test "radius_group.<scope>: round-trip an explicit override, independent of tacacs_group" {
+    conf_set radius_group.lab RADIUS_PROD
+    run conf_get radius_group.lab
+    assert_output "RADIUS_PROD"
+    run conf_get tacacs_group.lab
+    assert_output ""
+}
+
+@test "radius_group.<scope>: setting the implicit default prunes override" {
+    conf_set radius_group.lab RADIUS_PROD
+    [[ -f "$TACCTL_OVERRIDES_FILE" ]]
+    conf_set radius_group.lab RADIUS-GROUP
+    [[ ! -f "$TACCTL_OVERRIDES_FILE" ]]
+}
+
+@test "radius_group.<scope>: rejects invalid characters, empty and too-long" {
+    run conf_set radius_group.lab "bad name with spaces"
+    assert_failure
+    assert_output --partial "must start with a letter"
+    run conf_set radius_group.lab ""
+    assert_failure
+    run conf_set radius_group.lab "$(printf 'A%.0s' {1..64})"
+    assert_failure
+    assert_output --partial "1..63 chars"
+}
+
 # --- mgmt_acl.names.<vendor>.<scope> ----------------------------------------
 
 @test "scope_mgmt_acl.names.cisco.<scope>: unset reads empty; global/default win" {
@@ -403,4 +436,30 @@ show; rm"
     assert_line "10.0.0.0/8"
     run conf_get_list scope_mgmt_acl.permits.lab
     assert_line "10.99.0.0/16"
+}
+
+# --- scope_auth_method.<scope> ----------------------------------------------
+
+@test "scope_auth_method.<scope>: unset reads empty; tacacs and radius both round-trip (no implicit default to prune)" {
+    run conf_get scope_auth_method.lab
+    assert_output ""
+    conf_set scope_auth_method.lab tacacs
+    run conf_get scope_auth_method.lab
+    assert_output "tacacs"
+    conf_set scope_auth_method.lab radius
+    run conf_get scope_auth_method.lab
+    assert_output "radius"
+    conf_unset scope_auth_method.lab
+    run conf_get scope_auth_method.lab
+    assert_output ""
+}
+
+@test "scope_auth_method.<scope>: only tacacs or radius; a scope name is required" {
+    run conf_set scope_auth_method.lab tacplus
+    assert_failure
+    assert_output --partial "must be one of: tacacs, radius"
+    run conf_set scope_auth_method.lab ""
+    assert_failure
+    run conf_set scope_auth_method radius
+    assert_failure
 }

@@ -27,14 +27,35 @@ setup() {
         --hash "$HASH_A" --scopes lab > /dev/null
 }
 
-# Dump alice's hash from the config. The authenticator block cmd_add writes:
+# One field of a user in the canonical store, as text (true/false for a
+# boolean, empty for null or absent).
+store_user() {
+    python3 - "${TACCTL_STATE_DIR}/store.yaml" "$1" "$2" <<'PY'
+import sys, yaml
+with open(sys.argv[1]) as f:
+    user = (yaml.safe_load(f).get('users') or {}).get(sys.argv[2])
+if user is None:
+    sys.exit(1)
+v = user.get(sys.argv[3])
+print('' if v is None else str(v).lower() if isinstance(v, bool) else v)
+PY
+}
+
+# alice's hash as tacquito reads it from the rendered config. The
+# authenticator block is:
 #   bcrypt_alice: &bcrypt_alice
 #     type: *authenticator_type_bcrypt
 #     options:
-#       hash: <hex>
-# so the hash line is the 4th line of the block.
+#       hash: <hex>          (quoted when the hex is all digits)
 _alice_hash() {
-    grep -A5 '^bcrypt_alice:' "$TACCTL_CONFIG" | awk '/^[[:space:]]*hash:/ {print $2; exit}'
+    grep -A5 '^bcrypt_alice:' "$TACCTL_CONFIG" | awk '/^[[:space:]]*hash:/ {gsub(/"/, "", $2); print $2; exit}'
+}
+
+# '$2b$12$' + 53 dots, hex-encoded: the hash no password matches.
+DISABLED_MARKER="243262243132242e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e"
+
+no_sidecars() {
+    [[ -z "$(find "${TACCTL_STATE_DIR}/backups" \( -name '*.hash' -o -name '*.date' \) 2>/dev/null)" ]]
 }
 
 # --- user passwd --------------------------------------------------------------
@@ -48,12 +69,27 @@ _alice_hash() {
 
     local after; after=$(_alice_hash)
     [[ "$after" == "$HASH_B" ]]
+    [[ "$(store_user alice hash)" == "$HASH_B" ]]
 }
 
-@test "user passwd: records a password-date sidecar" {
+@test "user passwd: records the password date in the store, not in a sidecar" {
+    # Start from a known-old date so the change is visible.
+    sed -i "s/password_changed: .*/password_changed: '2020-01-01'/" "${TACCTL_STATE_DIR}/store.yaml"
+    [[ "$(store_user alice password_changed)" == "2020-01-01" ]]
     run "$TACCTL_BIN_SCRIPT" user passwd alice --hash "$HASH_B"
     assert_success
-    [[ -f "$TACCTL_ETC/backups/password-dates/alice.date" ]]
+    [[ "$(store_user alice password_changed)" == "$(date +%Y-%m-%d)" ]]
+    no_sidecars
+    run "$TACCTL_BIN_SCRIPT" user list
+    assert_output --partial "$(date +%Y-%m-%d)"
+}
+
+@test "user passwd: setting a password enables a disabled user" {
+    "$TACCTL_BIN_SCRIPT" user disable alice > /dev/null
+    run "$TACCTL_BIN_SCRIPT" user passwd alice --hash "$HASH_B"
+    assert_success
+    [[ "$(store_user alice disabled)" == "false" ]]
+    [[ "$(_alice_hash)" == "$HASH_B" ]]
 }
 
 @test "user passwd: rejects unknown user" {
@@ -70,15 +106,18 @@ _alice_hash() {
 
 # --- user disable / enable ---------------------------------------------------
 
-@test "user disable: replaces hash with DISABLED_MARKER_HEX + sidecar saves original" {
+@test "user disable: renders the marker hash; the store keeps the real one, flagged disabled" {
     run "$TACCTL_BIN_SCRIPT" user disable alice
     assert_success
 
-    # Hash was swapped for the marker; original is parked in disabled/ sidecar.
-    local current; current=$(_alice_hash)
-    [[ "$current" != "$HASH_A" ]]
-    [[ -f "$TACCTL_ETC/backups/disabled/alice.hash" ]]
-    [[ "$(cat "$TACCTL_ETC/backups/disabled/alice.hash")" == "$HASH_A" ]]
+    # tacquito gets the hash nothing matches; the original stays in the
+    # store (no sidecar file) for 'enable' to bring back.
+    [[ "$(_alice_hash)" == "$DISABLED_MARKER" ]]
+    [[ "$(store_user alice hash)" == "$HASH_A" ]]
+    [[ "$(store_user alice disabled)" == "true" ]]
+    no_sidecars
+    run "$TACCTL_BIN_SCRIPT" user list
+    assert_output --partial "disabled"
 }
 
 @test "user disable: idempotent on an already-disabled user" {
@@ -88,28 +127,50 @@ _alice_hash() {
     assert_output --partial "already disabled"
 }
 
-@test "user enable: restores the original hash and deletes the sidecar" {
+@test "user enable: restores the original hash and clears the disabled flag" {
     "$TACCTL_BIN_SCRIPT" user disable alice
-    [[ -f "$TACCTL_ETC/backups/disabled/alice.hash" ]]
+    [[ "$(store_user alice disabled)" == "true" ]]
 
     run "$TACCTL_BIN_SCRIPT" user enable alice
     assert_success
     [[ "$(_alice_hash)" == "$HASH_A" ]]
-    [[ ! -f "$TACCTL_ETC/backups/disabled/alice.hash" ]]
+    [[ "$(store_user alice hash)" == "$HASH_A" ]]
+    [[ "$(store_user alice disabled)" == "false" ]]
 }
 
-@test "user enable: refuses when there's no sidecar to restore from" {
+@test "user enable: refuses when the user is not disabled" {
     run "$TACCTL_BIN_SCRIPT" user enable alice
     assert_success
     assert_output --partial "not disabled"
 }
 
-@test "user enable: errors when sidecar was hand-deleted" {
-    "$TACCTL_BIN_SCRIPT" user disable alice
-    rm -f "$TACCTL_ETC/backups/disabled/alice.hash"
+@test "user enable: errors when there is no saved hash to restore" {
+    # A disabled user with no password of its own: a seeded placeholder, or
+    # an import that found the marker and no saved hash.
+    bash -c 'source "$TACCTL_BIN_SCRIPT"; store_user_set alice hash=null disabled=true'
+    [[ -z "$(store_user alice hash)" ]]
+    cp "${TACCTL_STATE_DIR}/store.yaml" "${BATS_TEST_TMPDIR}/before.yaml"
     run "$TACCTL_BIN_SCRIPT" user enable alice
     assert_failure
     assert_output --partial "No saved hash"
+    assert_output --partial "tacctl user passwd alice"
+    cmp "${TACCTL_STATE_DIR}/store.yaml" "${BATS_TEST_TMPDIR}/before.yaml"
+}
+
+@test "user disable/enable: a disabled user imported from a legacy config with its sidecar can be enabled" {
+    # The pre-store 'user disable' parked the real hash in a sidecar file;
+    # the importer reads it, so 'enable' still restores the password.
+    "$TACCTL_BIN_SCRIPT" user disable alice > /dev/null
+    mkdir -p "${TACCTL_STATE_DIR}/backups/disabled"
+    echo "$HASH_A" > "${TACCTL_STATE_DIR}/backups/disabled/alice.hash"
+    rm "${TACCTL_STATE_DIR}/store.yaml"
+    "$TACCTL_BIN_SCRIPT" store import > /dev/null
+    [[ "$(store_user alice disabled)" == "true" ]]
+    [[ "$(store_user alice hash)" == "$HASH_A" ]]
+
+    run "$TACCTL_BIN_SCRIPT" user enable alice
+    assert_success
+    [[ "$(_alice_hash)" == "$HASH_A" ]]
 }
 
 # --- user rename -------------------------------------------------------------
@@ -130,12 +191,27 @@ _alice_hash() {
     assert_success
 }
 
-@test "user rename: migrates the password-date sidecar too" {
-    date -u +%Y-%m-%d > "$TACCTL_ETC/backups/password-dates/alice.date"
+@test "user rename: the password date, the hash and the disabled flag move with the user" {
+    sed -i "s/password_changed: .*/password_changed: '2021-03-04'/" "${TACCTL_STATE_DIR}/store.yaml"
+    "$TACCTL_BIN_SCRIPT" user disable alice > /dev/null
     run "$TACCTL_BIN_SCRIPT" user rename alice aliceA
     assert_success
-    [[ ! -f "$TACCTL_ETC/backups/password-dates/alice.date" ]]
-    [[ -f "$TACCTL_ETC/backups/password-dates/aliceA.date" ]]
+    run store_user alice group
+    assert_failure
+    [[ "$(store_user aliceA password_changed)" == "2021-03-04" ]]
+    [[ "$(store_user aliceA hash)" == "$HASH_A" ]]
+    [[ "$(store_user aliceA disabled)" == "true" ]]
+    [[ "$(store_user aliceA group)" == "superuser" ]]
+}
+
+@test "user rename: rejects reserved new names" {
+    run "$TACCTL_BIN_SCRIPT" user rename alice tacquito
+    assert_failure
+    assert_output --partial "reserved"
+    run "$TACCTL_BIN_SCRIPT" user rename alice root
+    assert_failure
+    assert_output --partial "reserved"
+    [[ "$(store_user alice group)" == "superuser" ]]
 }
 
 @test "user rename: rejects when new name is already taken" {

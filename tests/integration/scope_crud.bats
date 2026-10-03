@@ -283,7 +283,7 @@ setup() {
     # collision caveat so operators understand the risk.
     run "$TACCTL_BIN_SCRIPT" scope aaa-order lab local-first
     assert_success
-    assert_output --partial "collide with TACACS+"
+    assert_output --partial "collide with tacctl users"
 }
 
 @test "scope aaa-order: rejects invalid enum value" {
@@ -367,6 +367,48 @@ setup() {
     run "$TACCTL_BIN_SCRIPT" scope tacacs-group lab "has spaces"
     assert_failure
     run "$TACCTL_BIN_SCRIPT" scope tacacs-group lab "9-digit-start"
+    assert_failure
+    assert_output --partial "must start with a letter"
+}
+
+# --- scope radius-group (per-scope) -----------------------------------------
+
+@test "scope radius-group: default is RADIUS-GROUP with 'default' source" {
+    run "$TACCTL_BIN_SCRIPT" scope radius-group lab
+    assert_success
+    assert_output --partial "RADIUS aaa-group-server name: RADIUS-GROUP"
+    assert_output --partial "Source: default"
+}
+
+@test "scope radius-group: rejects unknown scope and a missing scope" {
+    run "$TACCTL_BIN_SCRIPT" scope radius-group nosuchscope
+    assert_failure
+    assert_output --partial "does not exist"
+    run "$TACCTL_BIN_SCRIPT" scope radius-group
+    assert_failure
+    assert_output --partial "Usage: tacctl scope radius-group"
+}
+
+@test "scope radius-group: set + read back per-scope override, apart from the TACACS+ label" {
+    run "$TACCTL_BIN_SCRIPT" scope radius-group lab RADIUS_PROD
+    assert_success
+    assert_output --partial "RADIUS aaa-group-server label set to RADIUS_PROD"
+    [[ "$(conf_get radius_group.lab)" == "RADIUS_PROD" ]]
+    [[ -z "$(conf_get tacacs_group.lab)" ]]
+
+    run "$TACCTL_BIN_SCRIPT" scope radius-group lab
+    assert_success
+    assert_output --partial "name: RADIUS_PROD"
+    assert_output --partial "Source: override"
+    run "$TACCTL_BIN_SCRIPT" scope show lab
+    assert_line --regexp 'RADIUS group:.* RADIUS_PROD$'
+    assert_line --regexp 'TACACS group:.* TACACS-GROUP$'
+}
+
+@test "scope radius-group: rejects invalid names" {
+    run "$TACCTL_BIN_SCRIPT" scope radius-group lab "has spaces"
+    assert_failure
+    run "$TACCTL_BIN_SCRIPT" scope radius-group lab "9-digit-start"
     assert_failure
     assert_output --partial "must start with a letter"
 }

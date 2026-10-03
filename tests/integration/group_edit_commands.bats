@@ -23,6 +23,9 @@ setup() {
     run "$TACCTL_BIN_SCRIPT" group edit operator priv-lvl 10
     assert_success
     assert_output --partial "changed to 10"
+    # Regression: backticks in the embedded python comment sat inside a
+    # double-quoted bash string, so bash ran `name: shell` as a command.
+    refute_output --partial "command not found"
 
     run grep -A5 '^exec_operator:' "$TACCTL_CONFIG"
     assert_output --partial "values: [10]"

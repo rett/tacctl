@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
 # --- tacctl Linux client: remove -----------------------------------------------
-# Emitted by 'tacctl config linux remove-script'. Takes TACACS+ authentication
-# back out of a host: PAM edits, the pam_tacplus module, and the sudoers
-# drop-in. Local accounts, home directories and the tac-* groups are left in
-# place. Contains no secrets. Run as root on the target host.
+# Emitted by 'tacctl config linux remove-script'. Takes TACACS+ or RADIUS
+# authentication back out of a host, whichever method it was enrolled with
+# (everything of both is removed, so a host caught halfway through a switch
+# comes out clean too): the PAM edits, the pam_tacplus module, the
+# pam_radius_auth server file with the shared secret, the SELinux modules
+# and the sudoers drop-in. Local accounts, home directories and the tac-*
+# groups are left in place, and so are packages the install added
+# (pam_radius_auth, EPEL, build tools). Contains no secrets. Run as root on
+# the target host.
 #
 # TACCTL_FORCE=1 skips the local-administrator (lockout) check.
 set -euo pipefail
@@ -27,19 +32,30 @@ die()  { echo "[ERROR] $*" >&2; exit 1; }
 # TACCTL_CLIENT_TEST=1 is for the bats suite only (skips the root check).
 [[ $EUID -eq 0 || "${TACCTL_CLIENT_TEST:-0}" == "1" ]] || die "Run as root (sudo bash $0)."
 
+# Where the install script keeps pam_radius_auth's server file.
+RADIUS_CONF="${TACCTL_CLIENT_RADIUS_CONF:-/etc/tacctl-pam_radius.conf}"
+if [[ "${TACCTL_CLIENT_TEST:-0}" == "1" && -z "${TACCTL_CLIENT_RADIUS_CONF:-}" ]]; then
+    RADIUS_CONF="$STATE_DIR/pam_radius.conf"
+fi
+
+# What the messages call the method this host has. A host enrolled before
+# there were two has no method file: it has tacplus.
+PROTO="TACACS+"
+if [[ "$(cat "$STATE_DIR/method" 2>/dev/null || true)" == "radius" ]]; then PROTO="RADIUS"; fi
+
 usable_password() {
     local pw
     pw=$(getent shadow "$1" 2>/dev/null | cut -d: -f2)
     [[ -n "$pw" && "$pw" != '!'* && "$pw" != '*'* ]]
 }
 
-# Once TACACS+ is gone, someone must still be able to become root.
+# Once the server's passwords are gone, someone must still be able to become root.
 admins=""
 for user in root $(getent group sudo wheel admin 2>/dev/null | cut -d: -f4 | tr ',\n' '  '); do
     if usable_password "$user"; then admins+=" $user"; fi
 done
 if [[ "${TACCTL_FORCE:-0}" != "1" && -z "$admins" ]]; then
-    die "No administrator has a usable local password. Removing TACACS+ would lock
+    die "No administrator has a usable local password. Removing ${PROTO} would lock
         everyone out of sudo. Set a local password first, or re-run with TACCTL_FORCE=1."
 fi
 
@@ -58,11 +74,13 @@ for svc in $PAM_SERVICES; do
     fi
 done
 rm -f "$PAM_DIR/tacctl-auth" "$PAM_DIR/tacctl-account" "$PAM_DIR/tacctl-session"
+# The secret was on the pam_tacplus lines, or in pam_radius_auth's server file.
+rm -f "$RADIUS_CONF"
 info "PAM service files restored; shared secret removed."
 
 rm -f "$SUDOERS_HOST_FILE"
 
-# KDE Plasma: TACACS+ accounts may lock the screen again.
+# KDE Plasma: the accounts may lock the screen again.
 rm -f "$XDG_DIR/plasma-workspace/env/tacctl-nolock.sh" "$XDG_DIR/tacctl/kscreenlockerrc" "$XDG_DIR/tacctl/kdeglobals"
 rmdir "$XDG_DIR/tacctl" 2>/dev/null || true
 
@@ -73,12 +91,14 @@ if [[ -f "$STATE_DIR/files" ]]; then
     ldconfig
     rm -f "$STATE_DIR/files"
 fi
-rm -f "$STATE_DIR/installed" "$STATE_DIR/module"
+rm -f "$STATE_DIR/installed" "$STATE_DIR/module" "$STATE_DIR/method"
 
-if [[ -f "$STATE_DIR/tacctl_pam.cil" ]]; then
-    if command -v semodule >/dev/null; then semodule -r tacctl_pam 2>/dev/null || true; fi
-    rm -f "$STATE_DIR/tacctl_pam.cil"
-fi
+for mod in tacctl_pam tacctl_pam_radius; do
+    if [[ -f "$STATE_DIR/${mod}.cil" ]]; then
+        if command -v semodule >/dev/null; then semodule -r "$mod" 2>/dev/null || true; fi
+        rm -f "$STATE_DIR/${mod}.cil"
+    fi
+done
 
 # Report accounts that now have no way to log in. Nothing is changed.
 orphans=""
@@ -89,8 +109,11 @@ for member in $(getent group "$G_USERS" 2>/dev/null | cut -d: -f4 | tr ',' ' ');
     orphans+=" $member"
 done
 
-info "TACACS+ authentication removed. Accounts, home directories and tac-* groups were left in place."
+info "${PROTO} authentication removed. Accounts, home directories and tac-* groups were left in place."
 if [[ -n "$orphans" ]]; then
     warn "These accounts have no local password and no SSH key, so they cannot log in:${orphans}"
+fi
+if [[ -s "$STATE_DIR/packages" ]]; then
+    info "Packages the install added were left installed: $(paste -sd' ' "$STATE_DIR/packages")"
 fi
 info "Originals of the edited PAM files remain in $STATE_DIR/backup."
