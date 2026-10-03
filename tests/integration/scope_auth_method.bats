@@ -1,10 +1,11 @@
 #!/usr/bin/env bats
-# `tacctl scope auth-method <scope> [tacacs|radius|default]`: the per-scope
+# `tacctl scope auth-method <scope> [tacacs|radius|clear]`: the per-scope
 # default protocol (scope_auth_method.<scope> in tacctl.yaml), how it stands
-# against the scope's protocols filter, what happens to it on rename and
-# remove, and what it does to `config cisco|juniper|wti` without --protocol.
-# The host side (host enroll, config linux script) is in host.bats and
-# config_linux.bats.
+# against the scope's protocols filter, the rung after it (the one protocol
+# a protocols filter names), what happens to it and to every other per-scope
+# key of tacctl.yaml on rename and remove, and what it does to `config
+# cisco|juniper|wti` without --protocol. The host side (host enroll, config
+# linux script) is in host.bats and config_linux.bats.
 
 load ../helpers/setup
 load ../helpers/tmpenv
@@ -24,6 +25,9 @@ setup() {
 
     load_fixture tacquito.multiscope.yaml
     OVERRIDES="${TACCTL_STATE_DIR}/tacctl.yaml"
+    # Every scope sends every vendor's attribute, so a RADIUS device config
+    # renders (config_radius.bats has the refusal): one store write.
+    bash -c 'source "$1"; store_mutate "for s in store[\"scopes\"].values(): s[\"vendor_attrs\"] = list(KNOWN_VENDORS)"' _ "$TACCTL_BIN_SCRIPT" > /dev/null
 }
 
 # Enable the RADIUS backend the way tacctl.yaml records it. Call it after the
@@ -41,7 +45,9 @@ stored() { "$TACCTL_BIN_SCRIPT" config get "scope_auth_method.$1"; }
     assert_success
     assert_output --partial "Scope 'lab' auth-method: not set"
     assert_output --partial "Source: default"
-    assert_output --partial "device configs tacacs; new hosts tacplus"
+    assert_output --partial "In effect: devices: tacacs; hosts: tacacs"
+    # One spelling in output: the protocol is tacacs, tacplus is a host method's name.
+    refute_output --partial "tacplus"
     [[ -z "$(stored lab)" ]]
     [[ ! -f "$OVERRIDES" ]]
 }
@@ -49,7 +55,7 @@ stored() { "$TACCTL_BIN_SCRIPT" config get "scope_auth_method.$1"; }
 @test "scope auth-method: needs a scope that exists" {
     run "$TACCTL_BIN_SCRIPT" scope auth-method
     assert_failure
-    assert_output --partial "Usage: tacctl scope auth-method <scope> [tacacs|radius|default]"
+    assert_output --partial "Usage: tacctl scope auth-method <scope> [tacacs|radius|clear]"
     run "$TACCTL_BIN_SCRIPT" scope auth-method nosuchscope radius
     assert_failure
     assert_output --partial "does not exist"
@@ -71,7 +77,7 @@ stored() { "$TACCTL_BIN_SCRIPT" config get "scope_auth_method.$1"; }
     run "$TACCTL_BIN_SCRIPT" scope show lab
     assert_line --regexp 'Auth method:.* radius$'
     run "$TACCTL_BIN_SCRIPT" scope show prod
-    assert_line --regexp 'Auth method:.* not set \(devices: tacacs; hosts: tacplus\)$'
+    assert_line --regexp 'Auth method:.* not set \(devices: tacacs; hosts: tacacs\)$'
 
     run "$TACCTL_BIN_SCRIPT" scope auth-method lab radius
     assert_success
@@ -88,16 +94,36 @@ stored() { "$TACCTL_BIN_SCRIPT" config get "scope_auth_method.$1"; }
     [[ "$(stored prod)" == "tacacs" ]]
 }
 
-@test "scope auth-method default: clears the setting" {
+@test "scope auth-method clear: removes the setting, as 'scope protocols clear' does; 'default' is taken for it" {
     "$TACCTL_BIN_SCRIPT" scope auth-method lab tacacs > /dev/null
+    run "$TACCTL_BIN_SCRIPT" scope auth-method lab clear
+    assert_success
+    assert_output --partial "Scope 'lab' auth-method cleared (in effect: devices: tacacs; hosts: tacacs)."
+    [[ -z "$(stored lab)" ]]
+    [[ ! -f "$OVERRIDES" ]]
+    run "$TACCTL_BIN_SCRIPT" scope auth-method lab clear
+    assert_success
+    assert_output --partial "no auth-method set; no change"
+    "$TACCTL_BIN_SCRIPT" scope auth-method lab radius > /dev/null
     run "$TACCTL_BIN_SCRIPT" scope auth-method lab default
     assert_success
     assert_output --partial "auth-method cleared"
     [[ -z "$(stored lab)" ]]
-    [[ ! -f "$OVERRIDES" ]]
-    run "$TACCTL_BIN_SCRIPT" scope auth-method lab default
-    assert_success
-    assert_output --partial "no auth-method set; no change"
+    # Not advertised: the usage names clear only.
+    run "$TACCTL_BIN_SCRIPT" scope auth-method lab
+    assert_output --partial "<tacacs|radius|clear>"
+    refute_output --partial "|default"
+}
+
+@test "scope auth-method: without a setting, a scope its protocols filter limits to one protocol has that one in effect" {
+    "$TACCTL_BIN_SCRIPT" scope protocols dmz set radius > /dev/null
+    run "$TACCTL_BIN_SCRIPT" scope auth-method dmz
+    assert_output --partial "In effect: radius: the scope's only protocol"
+    run "$TACCTL_BIN_SCRIPT" scope show dmz
+    assert_line --regexp "Auth method:.* not set \(radius: the scope's only protocol\)$"
+    "$TACCTL_BIN_SCRIPT" scope protocols dmz set tacacs,radius > /dev/null
+    run "$TACCTL_BIN_SCRIPT" scope auth-method dmz
+    assert_output --partial "In effect: devices: tacacs; hosts: tacacs"
 }
 
 @test "scope auth-method: an unknown value is refused and nothing is stored" {
@@ -146,7 +172,7 @@ stored() { "$TACCTL_BIN_SCRIPT" config get "scope_auth_method.$1"; }
     run "$TACCTL_BIN_SCRIPT" scope protocols lab set tacacs
     assert_failure
     assert_output --partial "Scope 'lab' has auth-method radius, which protocols 'tacacs' would leave unserved. Nothing was changed."
-    assert_output --partial "tacctl scope auth-method lab <tacacs|radius|default>"
+    assert_output --partial "tacctl scope auth-method lab <tacacs|radius|clear>"
     cmp "${TACCTL_STATE_DIR}/store.yaml" "${BATS_TEST_TMPDIR}/before.yaml"
 
     # A list that keeps it, another scope, and the same list once the setting is gone.
@@ -154,7 +180,7 @@ stored() { "$TACCTL_BIN_SCRIPT" config get "scope_auth_method.$1"; }
     assert_success
     run "$TACCTL_BIN_SCRIPT" scope protocols dmz set tacacs
     assert_success
-    "$TACCTL_BIN_SCRIPT" scope auth-method lab default > /dev/null
+    "$TACCTL_BIN_SCRIPT" scope auth-method lab clear > /dev/null
     run "$TACCTL_BIN_SCRIPT" scope protocols lab set tacacs
     assert_success
 }
@@ -198,11 +224,97 @@ stored() { "$TACCTL_BIN_SCRIPT" config get "scope_auth_method.$1"; }
     cmp "$OVERRIDES" "${BATS_TEST_TMPDIR}/before.yaml"
 }
 
+# --- every per-scope key of tacctl.yaml -------------------------------------------
+
+# Set every key tacctl.yaml stores under a scope's name, for scope $1.
+set_every_scope_key() {
+    local s="$1"
+    "$TACCTL_BIN_SCRIPT" scope aaa-order "$s" local-first > /dev/null
+    "$TACCTL_BIN_SCRIPT" scope exec-timeout "$s" 15 > /dev/null
+    "$TACCTL_BIN_SCRIPT" scope tacacs-group "$s" TG-X > /dev/null
+    "$TACCTL_BIN_SCRIPT" scope radius-group "$s" RG-X > /dev/null
+    "$TACCTL_BIN_SCRIPT" scope auth-method "$s" tacacs > /dev/null
+    "$TACCTL_BIN_SCRIPT" scope mgmt-acl "$s" cisco-name CACL-X > /dev/null
+    "$TACCTL_BIN_SCRIPT" scope mgmt-acl "$s" juniper-name JACL-X > /dev/null
+    "$TACCTL_BIN_SCRIPT" scope mgmt-acl "$s" add 198.18.0.0/24 > /dev/null
+}
+
+# key=value for every per-scope key of scope $1 that tacctl.yaml holds.
+scope_keys() {
+    local k
+    for k in aaa.order exec_timeout tacacs_group radius_group scope_auth_method \
+             scope_mgmt_acl.names.cisco scope_mgmt_acl.names.juniper; do
+        echo "${k}=$("$TACCTL_BIN_SCRIPT" config get "${k}.$1")"
+    done
+    echo "scope_mgmt_acl.permits=$("$TACCTL_BIN_SCRIPT" config get-list "scope_mgmt_acl.permits.$1" | paste -sd,)"
+}
+
+EVERY_KEY="aaa.order=local-first
+exec_timeout=15
+tacacs_group=TG-X
+radius_group=RG-X
+scope_auth_method=tacacs
+scope_mgmt_acl.names.cisco=CACL-X
+scope_mgmt_acl.names.juniper=JACL-X
+scope_mgmt_acl.permits=198.18.0.0/24"
+
+NO_KEY="aaa.order=
+exec_timeout=
+tacacs_group=
+radius_group=
+scope_auth_method=
+scope_mgmt_acl.names.cisco=
+scope_mgmt_acl.names.juniper=
+scope_mgmt_acl.permits="
+
+@test "scope rename: every per-scope key of tacctl.yaml moves to the new name" {
+    set_every_scope_key dmz
+    [[ "$(scope_keys dmz)" == "$EVERY_KEY" ]]
+    run "$TACCTL_BIN_SCRIPT" scope rename dmz edge
+    assert_success
+    [[ "$(scope_keys edge)" == "$EVERY_KEY" ]]
+    [[ "$(scope_keys dmz)" == "$NO_KEY" ]]
+    ! grep -q 'dmz' "$OVERRIDES"
+    # What the renamed scope's device config says.
+    run "$TACCTL_BIN_SCRIPT" config cisco --scope edge
+    assert_output --partial "aaa group server tacacs+ TG-X"
+    assert_output --partial "ip access-list standard CACL-X"
+    assert_output --partial "exec-timeout 15 0"
+}
+
+@test "scope remove and prefixes clear: every per-scope key of tacctl.yaml goes, so a new scope of that name starts from the defaults" {
+    set_every_scope_key dmz
+    run bash -c 'echo y | "'"$TACCTL_BIN_SCRIPT"'" scope remove dmz --force'
+    assert_success
+    [[ "$(scope_keys dmz)" == "$NO_KEY" ]]
+    [[ ! -f "$OVERRIDES" ]]
+    "$TACCTL_BIN_SCRIPT" scope add dmz --prefixes 198.18.7.0/24 --secret "dmz-secret-0123456789abcdef" > /dev/null
+    [[ "$(scope_keys dmz)" == "$NO_KEY" ]]
+
+    set_every_scope_key dmz
+    run bash -c 'echo y | "'"$TACCTL_BIN_SCRIPT"'" scope prefixes dmz clear --force'
+    assert_success
+    [[ "$(scope_keys dmz)" == "$NO_KEY" ]]
+}
+
+@test "scope rename: another scope's keys, and keys whose name only contains the scope's, are not touched" {
+    set_every_scope_key lab
+    "$TACCTL_BIN_SCRIPT" scope add lab2 --prefixes 198.18.9.0/24 --secret "lab2-secret-0123456789abcdef" > /dev/null
+    "$TACCTL_BIN_SCRIPT" scope exec-timeout lab2 5 > /dev/null
+    run "$TACCTL_BIN_SCRIPT" scope rename dmz edge
+    assert_success
+    [[ "$(scope_keys lab)" == "$EVERY_KEY" ]]
+    [[ "$("$TACCTL_BIN_SCRIPT" config get exec_timeout.lab2)" == "5" ]]
+    run bash -c 'echo y | "'"$TACCTL_BIN_SCRIPT"'" scope remove lab2 --force'
+    assert_success
+    [[ "$(scope_keys lab)" == "$EVERY_KEY" ]]
+}
+
 # --- device configs ---------------------------------------------------------------
 
 # The header names where the protocol came from; the rest must be what
 # --protocol radius prints.
-_strip_source() { sed "s/ — the scope's auth-method)/)/"; }
+_strip_source() { sed "s/ — the scope's \(auth-method\|only protocol\)//"; }
 
 @test "config cisco|juniper: an explicit auth-method tacacs is the output of a scope with none" {
     local v a b
@@ -210,7 +322,7 @@ _strip_source() { sed "s/ — the scope's auth-method)/)/"; }
         a=$("$TACCTL_BIN_SCRIPT" config "$v" --scope lab)
         "$TACCTL_BIN_SCRIPT" scope auth-method lab tacacs > /dev/null
         b=$("$TACCTL_BIN_SCRIPT" config "$v" --scope lab)
-        "$TACCTL_BIN_SCRIPT" scope auth-method lab default > /dev/null
+        "$TACCTL_BIN_SCRIPT" scope auth-method lab clear > /dev/null
         [[ -n "$a" && "$a" == "$b" ]]
     done
 }
@@ -252,7 +364,7 @@ _strip_source() { sed "s/ — the scope's auth-method)/)/"; }
         a=$("$TACCTL_BIN_SCRIPT" config "$v" --scope lab)
         "$TACCTL_BIN_SCRIPT" scope auth-method lab radius > /dev/null
         b=$("$TACCTL_BIN_SCRIPT" config "$v" --scope lab --protocol tacacs)
-        "$TACCTL_BIN_SCRIPT" scope auth-method lab default > /dev/null
+        "$TACCTL_BIN_SCRIPT" scope auth-method lab clear > /dev/null
         [[ -n "$a" && "$a" == "$b" ]]
     done
     "$TACCTL_BIN_SCRIPT" scope auth-method lab tacacs > /dev/null
@@ -287,7 +399,7 @@ _strip_source() { sed "s/ — the scope's auth-method)/)/"; }
     [[ "$a" == "$b" ]]
 }
 
-@test "config wti: a radius scope still gets the TACACS+ walkthrough, with a warning on stderr" {
+@test "config wti: a radius scope gets the RADIUS walkthrough without --protocol, like cisco and juniper; --protocol tacacs is TACACS+" {
     local a
     a=$("$TACCTL_BIN_SCRIPT" config wti --scope lab 2> "${BATS_TEST_TMPDIR}/quiet")
     [[ ! -s "${BATS_TEST_TMPDIR}/quiet" ]]
@@ -295,13 +407,40 @@ _strip_source() { sed "s/ — the scope's auth-method)/)/"; }
     radius_on
     run --separate-stderr "$TACCTL_BIN_SCRIPT" config wti --scope lab
     assert_success
-    [[ "$output" == "$a" ]]
-    [[ "$stderr" == *"Scope 'lab' has auth-method radius, but 'config wti' renders TACACS+ only"* ]]
-    # Asked for by name, TACACS+ needs no warning; RADIUS stays refused.
+    [[ -z "$stderr" ]]
+    [[ "$output" == *"protocol: RADIUS — the scope's auth-method"* ]]
+    [[ "$output" == *"RADIUS Parameters"* ]]
     run --separate-stderr "$TACCTL_BIN_SCRIPT" config wti --scope lab --protocol tacacs
     assert_success
     [[ "$output" == "$a" && -z "$stderr" ]]
-    run --separate-stderr "$TACCTL_BIN_SCRIPT" config wti --scope lab --protocol radius
+}
+
+# --- the scope's only protocol --------------------------------------------------------
+
+@test "config cisco|juniper|wti: a scope its protocols filter limits to radius gets RADIUS without an auth-method" {
+    "$TACCTL_BIN_SCRIPT" scope protocols lab set radius > /dev/null
+    radius_on
+    local v a b
+    for v in cisco juniper wti; do
+        a=$("$TACCTL_BIN_SCRIPT" config "$v" --scope lab --protocol radius)
+        b=$("$TACCTL_BIN_SCRIPT" config "$v" --scope lab)
+        [[ "$b" == *"protocol: RADIUS — the scope's only protocol"* ]]
+        [[ "$a" == "$(_strip_source <<< "$b")" ]]
+    done
+    run --separate-stderr "$TACCTL_BIN_SCRIPT" config cisco --scope lab --legacy
     assert_failure
-    [[ -z "$output" ]]
+    [[ "$stderr" == *"Scope 'lab' is served over RADIUS only (tacctl scope protocols)"* ]]
+}
+
+@test "config cisco|juniper|wti: a filter naming tacacs alone, or both protocols, leaves the output as it was" {
+    local v a b c
+    for v in cisco juniper wti; do
+        a=$("$TACCTL_BIN_SCRIPT" config "$v" --scope dmz)
+        "$TACCTL_BIN_SCRIPT" scope protocols dmz set tacacs > /dev/null
+        b=$("$TACCTL_BIN_SCRIPT" config "$v" --scope dmz)
+        "$TACCTL_BIN_SCRIPT" scope protocols dmz set tacacs,radius > /dev/null
+        c=$("$TACCTL_BIN_SCRIPT" config "$v" --scope dmz)
+        "$TACCTL_BIN_SCRIPT" scope protocols dmz clear > /dev/null
+        [[ -n "$a" && "$a" == "$b" && "$a" == "$c" ]]
+    done
 }

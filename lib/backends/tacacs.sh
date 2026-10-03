@@ -1552,7 +1552,7 @@ _tacacs_listener_set() {
         warn "which do NOT match IPv4 rules in 'tacctl scope prefixes <name>',"
         warn "'config allow', or 'config deny' -- effectively bypassing them."
         echo ""
-        read -rp "  Proceed with tcp6? [y/N]: " confirm
+        read -rp "  Proceed with tcp6? [y/N]: " confirm || true
         if [[ ! "$confirm" =~ ^[Yy] ]]; then
             info "Aborted."
             return
@@ -1914,7 +1914,7 @@ cmd_log_clear() {
     warn "Historical authentication and accounting records will be lost."
 
     if [[ "$force" != "true" ]]; then
-        read -rp "  Continue? [y/N]: " confirm
+        read -rp "  Continue? [y/N]: " confirm || true
         if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
             info "Cancelled."
             return 0

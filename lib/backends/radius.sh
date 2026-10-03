@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034  # constants assigned here are read by the other lib files
-# tacctl lib/backends/radius.sh -- the RADIUS backend (FreeRADIUS from the distro package): renderer (model + tacctl.yaml -> tacctl-radius.conf and tacctl-radius.users), the daemon's config check, the unit drop-in, listeners, status and log sections, install/upgrade/uninstall steps
+# tacctl lib/backends/radius.sh -- the RADIUS backend (FreeRADIUS from the distro package): renderer (model + tacctl.yaml -> tacctl-radius.conf, tacctl-radius.users and tacctl's dictionary), the daemon's config check, the unit drop-in, listeners, status and log sections, install/upgrade/uninstall steps
 # Sourced by bin/tacctl.sh after lib/backend.sh (see the load block there for ordering); not executable.
 #
 # 'tacctl backend enable radius' gives the users, groups and scopes of the
@@ -21,8 +21,9 @@
 # instead does not work: the package's eap module refuses to load once no
 # site has an 'Auth-Type EAP', so mods-enabled/ would have to be edited too.)
 # From the package tacctl uses the binary, its modules (rlm_files, rlm_pap,
-# rlm_detail, rlm_linelog, rlm_always), the dictionaries, the service
-# account, the unit and the log directory.
+# rlm_detail, rlm_linelog, rlm_always), the dictionaries (included by
+# tacctl's own, see "Vendor attributes" below), the service account, the unit
+# and the log directory.
 #
 #                     Debian/Ubuntu              RHEL family
 #   raddb             /etc/freeradius/3.0        /etc/raddb
@@ -32,12 +33,13 @@
 #   logs              /var/log/freeradius        /var/log/radius
 #   pid file          /run/freeradius/freeradius.pid   /run/radiusd/radiusd.pid
 #   modules (libdir)  /usr/lib/freeradius        /usr/lib64/freeradius
+#   main dictionary   /usr/share/freeradius/dictionary   (both)
 #   packages          freeradius freeradius-utils (both; RHEL: AppStream, no EPEL)
 #
 # The family is detected (the raddb directory, else the package manager);
 # TACCTL_RADIUS_FAMILY=debian|rhel overrides it, and TACCTL_RADIUS_DIR,
-# TACCTL_RADIUS_LOG, TACCTL_RADIUS_BIN, TACCTL_SYSTEMD_DIR and
-# TACCTL_LOGROTATE_DIR move the paths (tests).
+# TACCTL_RADIUS_LOG, TACCTL_RADIUS_BIN, TACCTL_RADIUS_DICT,
+# TACCTL_SYSTEMD_DIR and TACCTL_LOGROTATE_DIR move the paths (tests).
 #
 # --- Artifacts ----------------------------------------------------------------
 #
@@ -47,9 +49,14 @@
 #                                 of every scope RADIUS serves (with that
 #                                 scope's secret), the policy.
 #   <raddb>/tacctl-radius.users   rlm_files: one entry per (user, scope).
+#   <raddb>/tacctl-radius-dictionary/dictionary
+#                                 the daemon's main dictionary ('-D'): the
+#                                 package's, then the WTI vendor and tacctl's
+#                                 internal attributes.
 #
-# Both hold secrets or hashes: 0640 root:<daemon group>, like the package's
-# own files. Outside the artifacts tacctl owns <unit>.service.d/tacctl.conf
+# The first two hold secrets or hashes; all three are 0640 root:<daemon
+# group>, like the package's own files (the dictionary's directory 0750).
+# Outside the artifacts tacctl owns <unit>.service.d/tacctl.conf
 # (the drop-in; present exactly while the backend is enabled),
 # /etc/logrotate.d/tacctl-radius and three files in the package's log
 # directory: tacctl-radius.log (the daemon), tacctl-auth.log (one line per
@@ -77,21 +84,70 @@
 # prefix, which is tacquito's "most specific first". The store allows a
 # network in one scope only, so two clients never collide.
 #
-# The render id is a hash of both files' content. A users file from one render
-# never matches a policy from another, so a daemon that somehow reads half of
-# a commit (a crash between the two renames, a HUP on a daemon that was not
-# restarted) authenticates nobody instead of mixing two states.
+# The render id is a hash of the three files' content. A users file from one
+# render never matches a policy from another, so a daemon that somehow reads
+# half of a commit (a crash between two renames, a HUP on a daemon that was
+# not restarted) authenticates nobody instead of mixing two states.
 #
-# --- What a group gives ---------------------------------------------------------
+# --- What an Access-Accept carries ----------------------------------------------
 #
-#   Service-Type              Administrative-User at priv-lvl 15, else NAS-Prompt-User
-#   Cisco-AVPair              "shell:priv-lvl=<priv_lvl>"
-#   Juniper-Local-User-Name   "<juniper_class>"
+#   Service-Type              always: Administrative-User at priv-lvl 15, else
+#                             NAS-Prompt-User (a standard attribute)
+#   Cisco-AVPair              "shell:priv-lvl=<priv_lvl>"      vendor cisco
+#   Juniper-Local-User-Name   "<juniper_class>"                vendor juniper
+#   WTI-Super                 0-3 (WTI_SUPER_BANDS)            vendor wti
 #
 # The same level and class TACACS+ returns. A reject carries none of them.
 # commands.<group> is NOT rendered: RADIUS has no per-command authorization.
 # 'tacctl status', 'config render' and 'backend enable' say so when a group
 # with RADIUS users has rules that restrict commands.
+#
+# --- Vendor attributes: opt-in per scope, per address ----------------------------
+#
+# A RADIUS server cannot see what kind of device asks, and one vendor's
+# privilege attribute has no business on another vendor's device. So a vendor
+# attribute is sent only where the operator said so:
+#
+#   scope vendor-attrs <scope> enable <vendor>   every device of the scope
+#                                                that is not tagged
+#   scope devices <scope> set <ip|cidr> <vendor> that address: its own
+#                                                vendor's attribute and no
+#                                                other, whatever the scope
+#                                                enables
+#
+# A new scope sends none. How it is rendered:
+#
+#   - one client{} per prefix of a scope and one per tagged address
+#     (FreeRADIUS answers with the longest matching prefix, so a tagged
+#     address inside a prefix is its own client; the store makes sure it is
+#     an address this scope answers for). Besides tacctl_scope each carries
+#     tacctl_device ("generic", or the vendor it is tagged with) and one
+#     tacctl_send_<vendor> = "yes" | "no" per vendor: what the scope enables
+#     for a generic client, its own vendor alone for a tagged one.
+#   - a users entry puts the group's values into the control list, in
+#     attributes of tacctl's own (Tacctl-Priv-Lvl, Tacctl-Juniper-Class,
+#     Tacctl-WTI-Super; check items with ':='), and only Service-Type into
+#     the reply.
+#   - post-auth adds a vendor's attribute to the reply when, and only when,
+#     the client says tacctl_send_<vendor> = "yes" and the control list has
+#     the value.
+#
+# The direction of failure is the point: a vendor attribute is only ever
+# ADDED, by an exact match on a field of the client. A client without the
+# field, a typo in the policy, a users entry without the value: each leaves
+# a device with too few attributes, never with another vendor's. The values
+# never travel: the control list is not part of a reply, and the three
+# attributes are numbered in the range FreeRADIUS keeps for site-local
+# attributes that "will NOT go into a RADIUS packet" (3000-3999), so even one
+# copied into a reply by mistake is not encoded (docs/radius-notes.md).
+#
+# WTI-Super is not in the dictionaries FreeRADIUS ships, and tacctl's three
+# attributes are in none. tacctl renders a dictionary of its own that
+# includes the package's main dictionary by absolute path and then defines
+# them, and the unit starts the daemon with '-D <its directory>'. No file of
+# the package is edited. (<raddb>/dictionary, the package's file for local
+# attributes, is still read after it; tacctl's numbers are at the top of the
+# site-local range to stay clear of what a site may have put there.)
 #
 # --- Filters, secrets, restart ----------------------------------------------------
 #
@@ -119,6 +175,8 @@
 #   install account  the package's account must exist; nothing is created
 #   (render)         the artifacts, each proven by 'radiusd -C' first
 #   install start    the drop-in, 'systemctl enable' and 'start', then active
+#   upgrade config   re-render (a release may change what it renders), bring
+#                    the drop-in in line with it, restart when either changed
 #   service enable   the drop-in, daemon-reload, 'systemctl enable'
 #   service disable  'systemctl disable', the drop-in removed, daemon-reload:
 #                    the unit is the package's again, stopped and not enabled
@@ -158,6 +216,7 @@ case "$RADIUS_FAMILY" in
         RADIUS_LOG_DIR="${TACCTL_RADIUS_LOG:-/var/log/radius}"
         RADIUS_PID_FILE="/run/radiusd/radiusd.pid"
         RADIUS_LIB_DIR="/usr/lib64/freeradius"
+        RADIUS_SYSTEM_DICT="${TACCTL_RADIUS_DICT:-/usr/share/freeradius/dictionary}"
         ;;
     *)
         RADIUS_DIR="${TACCTL_RADIUS_DIR:-/etc/freeradius/3.0}"
@@ -168,6 +227,7 @@ case "$RADIUS_FAMILY" in
         RADIUS_LOG_DIR="${TACCTL_RADIUS_LOG:-/var/log/freeradius}"
         RADIUS_PID_FILE="/run/freeradius/freeradius.pid"
         RADIUS_LIB_DIR="/usr/lib/freeradius"
+        RADIUS_SYSTEM_DICT="${TACCTL_RADIUS_DICT:-/usr/share/freeradius/dictionary}"
         ;;
 esac
 RADIUS_PKGS="freeradius freeradius-utils"
@@ -175,6 +235,10 @@ RADIUS_PKGS="freeradius freeradius-utils"
 RADIUS_NAME="tacctl-radius"
 RADIUS_CONF="${RADIUS_DIR}/${RADIUS_NAME}.conf"
 RADIUS_USERS="${RADIUS_DIR}/${RADIUS_NAME}.users"
+# The daemon reads <dir>/dictionary of the directory given with '-D': a
+# directory of tacctl's own, so that the file can have that name.
+RADIUS_DICT_DIR="${RADIUS_DIR}/${RADIUS_NAME}-dictionary"
+RADIUS_DICT="${RADIUS_DICT_DIR}/dictionary"
 RADIUS_DAEMON_LOG="${RADIUS_LOG_DIR}/tacctl-radius.log"
 RADIUS_AUTH_LOG="${RADIUS_LOG_DIR}/tacctl-auth.log"
 RADIUS_ACCT_LOG="${RADIUS_LOG_DIR}/tacctl-accounting.log"
@@ -194,11 +258,12 @@ RADIUS_SECRET_CHARSET='[!-~]'
 # Appended to _store_py, _rendered_py and _listener_py (lib/store.sh,
 # lib/backend.sh, lib/conf.sh), whose names it uses; carries its own command
 # dispatcher. Output depends only on the inputs -- no timestamps -- so an
-# unchanged model renders byte-identically.
+# unchanged model renders byte-identically. The three files it writes into an
+# output directory are named conf, users and dictionary.
 _render_radius_py() {
     cat <<'PY'
 
-# ---- tacctl-radius.conf / tacctl-radius.users renderer -----------------------
+# ---- tacctl-radius.conf / tacctl-radius.users / dictionary renderer ----------
 
 RADIUS_HEADER = (
     "# GENERATED by tacctl from /etc/tacctl/store.yaml and tacctl.yaml. Edits here are overwritten,\n"
@@ -211,6 +276,25 @@ RE_BCRYPT_RAW = re.compile(r'\$2[aby]\$[./A-Za-z0-9$]*')
 # What every NAS we found a figure for accepts; advice, not a refusal.
 SECRET_ADVICE_MAX_LEN = 63
 RE_SECRET_ADVICE = re.compile(r'[!-~]+')
+# WTI-Super for a privilege level: (lowest level of the band, value, the
+# unit's name for it). The bands are those of the TACACS+ mapping; must equal
+# wti_access_level_for_privlvl and wti_super_for_privlvl in
+# lib/render_devices.sh (a unit test pins them together).
+WTI_SUPER_BANDS = ((15, 3, 'Administrator'), (10, 2, 'SuperUser'), (5, 1, 'User'), (0, 0, 'ViewOnly'))
+# tacctl's own attributes: a users entry carries the group's values in them
+# (control list), the policy turns them into vendor attributes. Numbered at
+# the top of the range FreeRADIUS reserves for site-local attributes that
+# never go into a packet (3000-3999).
+INTERNAL_ATTRS = (('Tacctl-Priv-Lvl', 3990, 'integer'),
+                  ('Tacctl-Juniper-Class', 3991, 'string'),
+                  ('Tacctl-WTI-Super', 3992, 'integer'))
+# vendor -> (the attribute an Access-Accept gets, the control attribute that
+# must be there, the value as unlang writes it).
+VENDOR_REPLY = {
+    'cisco': ('Cisco-AVPair', 'Tacctl-Priv-Lvl', '"shell:priv-lvl=%{control:Tacctl-Priv-Lvl}"'),
+    'juniper': ('Juniper-Local-User-Name', 'Tacctl-Juniper-Class', '&control:Tacctl-Juniper-Class'),
+    'wti': ('WTI-Super', 'Tacctl-WTI-Super', '&control:Tacctl-WTI-Super'),
+}
 
 
 def radius_scopes(model):
@@ -250,14 +334,49 @@ def fr_secret(secret):
     return None
 
 
+def wti_super(priv_lvl):
+    """(WTI-Super value, the unit's name for that access level)."""
+    for floor, value, label in WTI_SUPER_BANDS:
+        if priv_lvl >= floor:
+            return value, label
+    return WTI_SUPER_BANDS[-1][1:]
+
+
 def group_reply(group):
-    """Reply items of a group, as (attribute, value-as-written) pairs."""
+    """Reply items of a group, as (attribute, value-as-written) pairs: the
+    standard attribute only. Vendor attributes are the policy's to add."""
     lvl = group['priv_lvl']
     return [
         ('Service-Type', 'Administrative-User' if lvl == 15 else 'NAS-Prompt-User'),
-        ('Cisco-AVPair', fr_dq(f'shell:priv-lvl={lvl}')),
-        ('Juniper-Local-User-Name', fr_dq(group['juniper_class'])),
     ]
+
+
+def group_control(group):
+    """What the policy makes vendor attributes from, as (attribute,
+    value-as-written) pairs for the control list."""
+    lvl = group['priv_lvl']
+    return [
+        ('Tacctl-Priv-Lvl', str(lvl)),
+        ('Tacctl-Juniper-Class', fr_dq(group['juniper_class'])),
+        ('Tacctl-WTI-Super', str(wti_super(lvl)[0])),
+    ]
+
+
+def radius_clients(scopes):
+    """The clients of the scopes RADIUS serves, most specific first, as
+    (cidr, scope, device, vendors-to-send): one per prefix ('generic': what
+    the scope enables) and one per tagged address (its own vendor alone). A
+    tagged CIDR that is also a prefix of its scope is one client, the tagged
+    one."""
+    clients = {}
+    for name, s in scopes.items():
+        enabled = [v for v in KNOWN_VENDORS if v in (s.get('vendor_attrs') or [])]
+        for c in s['prefixes']:
+            clients[str(ipaddress.ip_network(c, strict=False))] = (name, 'generic', enabled)
+    for name, s in scopes.items():
+        for c, vendor in (s.get('devices') or {}).items():
+            clients[str(ipaddress.ip_network(c, strict=False))] = (name, vendor, [vendor])
+    return [(c,) + clients[c] for c in sorted(clients, key=lambda c: (cidr_key(c), clients[c][0]))]
 
 
 def radius_users(model):
@@ -281,7 +400,9 @@ def render_users_text(model):
          "#\n"
          "# One entry per user and scope. Tmp-String-0 is set by the policy in tacctl-radius.conf to\n"
          "# '<render id>/<scope of the client>': a user matches only from a client of a scope they are in.\n"
-         "# Disabled users and the accounting sink have no entry.\n"]
+         "# Disabled users and the accounting sink have no entry.\n"
+         "# The Tacctl-* items go to the control list, never into a packet: the policy makes a vendor's\n"
+         "# attribute from them for a client whose scope or tag asks for it. The reply is Service-Type.\n"]
     for name, (u, mine) in radius_users(model).items():
         if name.startswith('DEFAULT'):
             raise StoreError(f"user '{name}' cannot be served over RADIUS: FreeRADIUS reads a users entry whose "
@@ -289,8 +410,9 @@ def render_users_text(model):
                              "scopes TACACS+-only ('tacctl scope protocols <scope> set tacacs').")
         raw = hash_raw(u['hash'])
         reply = group_reply(model['groups'][u['group']]) + [('Fall-Through', 'No')]
+        control = ''.join(f', {a} := {v}' for a, v in group_control(model['groups'][u['group']]))
         for scope in mine:
-            w.append(f'\n{name}\tTmp-String-0 == "{RID_PLACEHOLDER}/{scope}", Crypt-Password := {fr_dq(raw)}\n')
+            w.append(f'\n{name}\tTmp-String-0 == "{RID_PLACEHOLDER}/{scope}", Crypt-Password := {fr_dq(raw)}{control}\n')
             w.append(',\n'.join(f'\t{a} = {v}' for a, v in reply) + '\n')
     return ''.join(w)
 
@@ -402,7 +524,7 @@ def render_conf_text(model, conf, params):
          "\tlinelog tacctl_auth {\n"
          "\t\tfilename = ${logdir}/tacctl-auth.log\n"
          "\t\tpermissions = 0640\n"
-         "\t\tformat = \"%S %{reply:Packet-Type} scope=%{client:tacctl_scope} "
+         "\t\tformat = \"%S %{reply:Packet-Type} scope=%{client:tacctl_scope} device=%{client:tacctl_device} "
          "client=%{%{Packet-Src-IP-Address}:-%{Packet-Src-IPv6-Address}} "
          "nas=%{%{NAS-Identifier}:-%{%{NAS-IP-Address}:--}} "
          "reason='%{%{Tmp-String-1}:-%{%{Module-Failure-Message}:--}}' user=%{User-Name}\"\n"
@@ -423,25 +545,38 @@ def render_conf_text(model, conf, params):
                  f"\t\tport = {port}\n"
                  "\t}\n")
     w.append("\n"
-             "\t# One client per prefix of every scope RADIUS serves. An address in two prefixes is\n"
-             "\t# the client of the longer one (the more specific scope), as with TACACS+.\n")
-    entries = sorted(((c, n) for n, s in scopes.items() for c in s['prefixes']),
-                     key=lambda t: (cidr_key(t[0]), t[1]))
+             "\t# One client per prefix of every scope RADIUS serves, and one per tagged address of a\n"
+             "\t# scope ('tacctl scope devices'). An address in two of them is the client of the longer\n"
+             "\t# prefix (the more specific scope, the tagged address), as with TACACS+.\n"
+             "\t# tacctl_device is 'generic' or the vendor an address is tagged with; tacctl_send_<vendor>\n"
+             "\t# says whether post-auth adds that vendor's attribute for this client.\n")
     counter = {}
-    for cidr, name in entries:
+    for cidr, name, device, send in radius_clients(scopes):
         secret = fr_secret(scopes[name]['secret'])
         if secret is None:
             raise StoreError(
                 f"scope '{name}': its secret holds both a backslash and a dollar sign, which no FreeRADIUS "
                 f"config string can carry unchanged. Set another ('tacctl scope secret {name} generate'), or "
                 f"keep the scope TACACS+-only ('tacctl scope protocols {name} set tacacs').")
-        counter[name] = counter.get(name, 0) + 1
+        label = name if device == 'generic' else f'{name}.{device}'
+        counter[label] = counter.get(label, 0) + 1
         net = ipaddress.ip_network(cidr, strict=False)
-        w.append(f"\tclient {name}.{counter[name]} {{\n"
+        w.append(f"\tclient {label}.{counter[label]} {{\n"
                  f"\t\t{'ipaddr' if net.version == 4 else 'ipv6addr'} = {net}\n"
                  f"\t\tsecret = {secret}\n"
                  f"\t\ttacctl_scope = \"{name}\"\n"
-                 "\t}\n")
+                 f"\t\ttacctl_device = \"{device}\"\n"
+                 + ''.join(f"\t\ttacctl_send_{v} = \"{'yes' if v in send else 'no'}\"\n" for v in KNOWN_VENDORS)
+                 + "\t}\n")
+    # A vendor's attribute is added for a client that says yes, and for no
+    # other: no match, no attribute.
+    vendor_policy = ''.join(
+        f"\t\t\tif ((\"%{{client:tacctl_send_{v}}}\" == \"yes\") && &control:{VENDOR_REPLY[v][1]}) {{\n"
+        "\t\t\t\tupdate reply {\n"
+        f"\t\t\t\t\t&{VENDOR_REPLY[v][0]} := {VENDOR_REPLY[v][2]}\n"
+        "\t\t\t\t}\n"
+        "\t\t\t}\n"
+        for v in KNOWN_VENDORS)
     use_filter = "\t\ttacctl_filter\n" if filt else ""
     w.append("\n"
              "\tauthorize {\n" + use_filter +
@@ -463,6 +598,10 @@ def render_conf_text(model, conf, params):
              "\tpost-auth {\n"
              "\t\t# A filtered packet (tacctl_filter) gets no answer and no line in the auth log.\n"
              "\t\tif (!&control:Response-Packet-Type) {\n"
+             "\t\t\t# Vendor attributes: only for a client whose scope enables the vendor\n"
+             "\t\t\t# ('tacctl scope vendor-attrs') or whose address is tagged with it\n"
+             "\t\t\t# ('tacctl scope devices'). The values come from the control list.\n"
+             + vendor_policy +
              "\t\t\ttacctl_auth\n"
              "\t\t}\n"
              "\t\tPost-Auth-Type REJECT {\n"
@@ -470,6 +609,7 @@ def render_conf_text(model, conf, params):
              "\t\t\t\t&Service-Type !* ANY\n"
              "\t\t\t\t&Cisco-AVPair !* ANY\n"
              "\t\t\t\t&Juniper-Local-User-Name !* ANY\n"
+             "\t\t\t\t&WTI-Super !* ANY\n"
              "\t\t\t}\n"
              "\t\t\ttacctl_auth\n"
              "\t\t}\n"
@@ -483,16 +623,52 @@ def render_conf_text(model, conf, params):
     return ''.join(w)
 
 
+def render_dictionary_text(params):
+    """tacctl's dictionary: the package's main dictionary, the WTI vendor,
+    tacctl's internal attributes. Depends on the machine only (where the
+    package keeps its dictionary), not on the model."""
+    width = max(len(a) for a, _n, _t in INTERNAL_ATTRS)
+    w = ["# GENERATED by tacctl. Edits here are overwritten, and there is no way to adopt one.\n"
+         "#\n"
+         "# The main dictionary of tacctl's FreeRADIUS instance: the unit starts the daemon with\n"
+         "# '-D <this directory>', which makes it read this file in place of the package's main\n"
+         "# dictionary. That one is included first, unchanged; no file of the package is edited.\n"
+         "\n"
+         f"$INCLUDE {params['system_dict']}\n"
+         "\n"
+         "# WTI (Western Telematic Inc.) console servers and power units: the access level of a login.\n"
+         "# Written by tacctl from the numbers WTI publishes; not a copy of WTI's file, which also has\n"
+         "# attributes tacctl does not send and carries no licence statement:\n"
+         "#   https://ftp.wti.com/InfoCenter/rsa/dictionary/dictionary.wti\n"
+         "# The value names are those of the WTI user's guide (the published file has none).\n"
+         "VENDOR\t\tWTI\t\t\t24496\n"
+         "BEGIN-VENDOR\tWTI\n"
+         "ATTRIBUTE\tWTI-Super\t\t41\tinteger\n"]
+    for _floor, value, label in reversed(WTI_SUPER_BANDS):
+        w.append(f"VALUE\t\tWTI-Super\t\t{label}\t{value}\n")
+    w.append("END-VENDOR\tWTI\n"
+             "\n"
+             "# tacctl's own attributes. A users entry sets them in the control list and the policy in\n"
+             "# tacctl-radius.conf makes the vendor attributes of a reply from them. They are numbered in\n"
+             "# the range FreeRADIUS reserves for site-local attributes (3000-3999), which it never puts\n"
+             "# into a RADIUS packet.\n")
+    for attr, number, kind in INTERNAL_ATTRS:
+        w.append(f"ATTRIBUTE\t{attr.ljust(width)}\t{number}\t{kind}\n")
+    return ''.join(w)
+
+
 def render_radius(model, conf, params):
-    """Model + merged tacctl.yaml view -> (conf text, users text), bound to
-    each other by the render id."""
+    """Model + merged tacctl.yaml view -> (conf text, users text, dictionary
+    text). The first two are bound to each other by the render id, which is
+    a hash of all three."""
     errs = store_validate(model)
     if errs:
         raise StoreError('cannot render an invalid model:\n  - ' + '\n  - '.join(errs))
     conf_text = render_conf_text(model, conf, params)
     users_text = render_users_text(model)
-    rid = hashlib.sha256((conf_text + '\0' + users_text).encode()).hexdigest()[:16]
-    return conf_text.replace(RID_PLACEHOLDER, rid), users_text.replace(RID_PLACEHOLDER, rid)
+    dict_text = render_dictionary_text(params)
+    rid = hashlib.sha256((conf_text + '\0' + users_text + '\0' + dict_text).encode()).hexdigest()[:16]
+    return conf_text.replace(RID_PLACEHOLDER, rid), users_text.replace(RID_PLACEHOLDER, rid), dict_text
 
 
 def restrictive_rules(conf, group):
@@ -507,7 +683,9 @@ def radius_notes(model, conf):
     """What the rendered state means for an operator, '<kind>|<detail>' lines:
     commands (groups with RADIUS users whose command rules restrict
     something), secret (scopes whose secret is beyond the advice of
-    secret_constraints), filters (how many there are)."""
+    secret_constraints), filters (how many there are), vendors (how many of
+    the scopes served send a vendor attribute to their untagged devices, and
+    how many addresses are tagged)."""
     notes = []
     scopes = radius_scopes(model)
     users = radius_users(model)
@@ -522,6 +700,9 @@ def radius_notes(model, conf):
     filters = model.get('filters') or {}
     if filters.get('deny') or filters.get('allow'):
         notes.append(f"filters|{len(filters.get('allow') or [])} allow, {len(filters.get('deny') or [])} deny")
+    enabling = sum(1 for s in scopes.values() if s.get('vendor_attrs'))
+    tagged = sum(len(s.get('devices') or {}) for s in scopes.values())
+    notes.append(f"vendors|{enabling}|{len(scopes)}|{tagged}")
     return notes
 
 
@@ -564,28 +745,30 @@ def radius_main(argv):
 
     if cmd == 'render':
         # render <model.json> <out dir> <params json>; merged view on stdin.
-        # Pure: model -> <out dir>/conf and <out dir>/users.
+        # Pure: model -> <out dir>/conf, <out dir>/users and <out dir>/dictionary.
         with open(rest[0]) as f:
             model = json.load(f)
-        conf_text, users_text = render_radius(model, json.load(sys.stdin), json.loads(rest[2]))
-        for fname, text in (('conf', conf_text), ('users', users_text)):
+        texts = render_radius(model, json.load(sys.stdin), json.loads(rest[2]))
+        for fname, text in zip(('conf', 'users', 'dictionary'), texts):
             with open(os.path.join(rest[1], fname), 'w') as f:
                 f.write(text)
 
     elif cmd == 'render-live':
         # render-live <store.yaml> <out dir> <tacctl.yaml path> <rendered.json>
-        #             <live conf> <live users> <params json>; merged view on stdin.
-        # Renders the store to <out dir>/conf and <out dir>/users and prints
-        # '<conf state> <users state>'.
+        #             <live conf> <live users> <live dictionary> <params json>;
+        #             merged view on stdin.
+        # Renders the store to <out dir>/conf, <out dir>/users and
+        # <out dir>/dictionary and prints
+        # '<conf state> <users state> <dictionary state>'.
         model = store_normalize(store_load_raw(rest[0]))
         conf = radius_conf_view(rest[2])
-        conf_text, users_text = render_radius(model, conf, json.loads(rest[6]))
+        texts = render_radius(model, conf, json.loads(rest[7]))
         try:
             records = rendered_load(rest[3])
         except StoreError:
             records = None
         states = []
-        for fname, text, live in (('conf', conf_text, rest[4]), ('users', users_text, rest[5])):
+        for fname, text, live in zip(('conf', 'users', 'dictionary'), texts, rest[4:7]):
             path = os.path.join(rest[1], fname)
             fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
             with os.fdopen(fd, 'w') as f:
@@ -608,6 +791,10 @@ def radius_main(argv):
 
     elif cmd == 'hash-raw':
         print(hash_raw(rest[0]))
+
+    elif cmd == 'wti-super':
+        # wti-super <priv-lvl>: '<WTI-Super value> <access level name>'.
+        print(*wti_super(int(rest[0])))
 
     else:
         raise StoreError(f'internal: unknown command {cmd!r}')
@@ -633,13 +820,14 @@ _radius_python() {
 
 # What the renderer needs to know about this machine, as JSON.
 _radius_params() {
-    printf '{"name": "%s", "user": "%s", "group": "%s", "log_dir": "%s", "pid_file": "%s", "lib_dir": "%s"}' \
-        "$RADIUS_NAME" "$RADIUS_USER" "$RADIUS_GROUP" "$RADIUS_LOG_DIR" "$RADIUS_PID_FILE" "$RADIUS_LIB_DIR"
+    printf '{"name": "%s", "user": "%s", "group": "%s", "log_dir": "%s", "pid_file": "%s", "lib_dir": "%s", "system_dict": "%s"}' \
+        "$RADIUS_NAME" "$RADIUS_USER" "$RADIUS_GROUP" "$RADIUS_LOG_DIR" "$RADIUS_PID_FILE" "$RADIUS_LIB_DIR" "$RADIUS_SYSTEM_DICT"
 }
 
 # render_radius_config <model.json> <out dir>
 # Pure: a model (as model_dump prints it) and the merged tacctl.yaml view ->
-# <out dir>/conf and <out dir>/users. No drift check, no records, no daemon.
+# <out dir>/conf, <out dir>/users and <out dir>/dictionary. No drift check, no
+# records, no daemon.
 render_radius_config() {
     local model="${1:-}" out="${2:-}"
     if [[ -z "$model" || -z "$out" ]]; then
@@ -650,12 +838,13 @@ render_radius_config() {
     _radius_python render "$model" "$out" "$(_radius_params)" < <(printf '%s' "$_TACCTL_CFG_CACHE")
 }
 
-# _radius_render_live <dir>: render the current store into <dir>/conf and
-# <dir>/users; prints '<conf state> <users state>'.
+# _radius_render_live <dir>: render the current store into <dir>/conf,
+# <dir>/users and <dir>/dictionary; prints
+# '<conf state> <users state> <dictionary state>'.
 _radius_render_live() {
     _conf_load_cache
     _radius_python render-live "$STORE_FILE" "$1" "${TACCTL_OVERRIDES_FILE:-}" "$RENDERED_FILE" \
-        "$RADIUS_CONF" "$RADIUS_USERS" "$(_radius_params)" < <(printf '%s' "$_TACCTL_CFG_CACHE")
+        "$RADIUS_CONF" "$RADIUS_USERS" "$RADIUS_DICT" "$(_radius_params)" < <(printf '%s' "$_TACCTL_CFG_CACHE")
 }
 
 # The state furthest from the render among the words given.
@@ -672,32 +861,42 @@ _radius_worst() {
     return 1
 }
 
-# _radius_daemon_check <dir>: have the daemon itself read <dir>/conf and
-# <dir>/users ('radiusd -C'). Returns 0 accepted; 2 skipped (no daemon on this
-# machine); 1 rejected, the daemon's errors on stderr.
+# _radius_daemon_check <dir>: have the daemon itself read <dir>/conf,
+# <dir>/users and <dir>/dictionary ('radiusd -C'). Returns 0 accepted; 2
+# skipped (no daemon on this machine); 1 rejected, the daemon's errors on
+# stderr.
 #
 # The check drops to the service account before it reads the users file, so
-# the two files are copied into a scratch directory beside the live ones
-# (0750 root:<daemon group>; a staging directory under /tmp is closed to that
-# account) and the daemon is pointed at it with -d. The live files are not
-# touched and the directory is removed before this returns.
+# the files are copied into a scratch directory beside the live ones (0750
+# root:<daemon group>; a staging directory under /tmp is closed to that
+# account) and the daemon is pointed at it with -d, and at the copy of the
+# dictionary with -D. The live files are not touched and the directory is
+# removed before this returns.
 _radius_daemon_check() {
     local dir="$1" chk out rc=0
     [[ -x "$RADIUS_BIN" && -d "$RADIUS_DIR" ]] || return 2
+    # tacctl's dictionary includes the package's; without that one the daemon
+    # knows no attribute at all, and says so in a way that names neither.
+    if [[ ! -r "$RADIUS_SYSTEM_DICT" ]]; then
+        error "FreeRADIUS's main dictionary is not at ${RADIUS_SYSTEM_DICT}; tacctl's dictionary (${RADIUS_DICT}) includes it."
+        error "The freeradius package is incomplete or keeps its dictionaries somewhere tacctl does not know. Nothing was changed."
+        return 1
+    fi
     chk=$(mktemp -d "${RADIUS_DIR}/.tacctl-check.XXXXXX") || return 1
-    if ! { cp "${dir}/conf" "${chk}/${RADIUS_NAME}.conf" && cp "${dir}/users" "${chk}/${RADIUS_NAME}.users"; }; then
+    if ! { cp "${dir}/conf" "${chk}/${RADIUS_NAME}.conf" && cp "${dir}/users" "${chk}/${RADIUS_NAME}.users" \
+            && mkdir "${chk}/dictionary.d" && cp "${dir}/dictionary" "${chk}/dictionary.d/dictionary"; }; then
         rm -rf "$chk"
         return 1
     fi
     chown -R "root:${RADIUS_GROUP}" "$chk" 2> /dev/null || true
-    chmod 750 "$chk"
-    chmod 640 "${chk}/${RADIUS_NAME}.conf" "${chk}/${RADIUS_NAME}.users"
-    out=$("$RADIUS_BIN" -C -lstdout -d "$chk" -n "$RADIUS_NAME" 2>&1) || rc=$?
+    chmod 750 "$chk" "${chk}/dictionary.d"
+    chmod 640 "${chk}/${RADIUS_NAME}.conf" "${chk}/${RADIUS_NAME}.users" "${chk}/dictionary.d/dictionary"
+    out=$("$RADIUS_BIN" -C -lstdout -d "$chk" -D "${chk}/dictionary.d" -n "$RADIUS_NAME" 2>&1) || rc=$?
     rm -rf "$chk"
     (( rc == 0 )) && return 0
     error "FreeRADIUS rejects the rendered configuration ('${RADIUS_BIN##*/} -C'):"
     # The scratch paths are the live files' as far as the operator is concerned.
-    printf '%s\n' "$out" | { grep -i 'error' || true; } | sed "s#${chk}#${RADIUS_DIR}#g" | tail -n 5 >&2
+    printf '%s\n' "$out" | { grep -i 'error' || true; } | sed "s#${chk}/dictionary.d#${RADIUS_DICT_DIR}#g; s#${chk}#${RADIUS_DIR}#g" | tail -n 5 >&2
     return 1
 }
 
@@ -712,22 +911,29 @@ _radius_save_displaced() {
     warn "Previous ${src} saved to ${dest}" >&2
 }
 
+# The artifacts as one phrase for a message.
+_radius_artifact_names() {
+    echo "${RADIUS_CONF}, ${RADIUS_USERS} or ${RADIUS_DICT}"
+}
+
 # _radius_render_stage <dir> <force 0|1>: render, prove, and decide whether
-# the live artifacts may be replaced. Leaves <dir>/conf, <dir>/users and
-# <dir>/status ('<conf state> <users state>').
+# the live artifacts may be replaced. Leaves <dir>/conf, <dir>/users,
+# <dir>/dictionary and <dir>/status ('<conf state> <users state>
+# <dictionary state>'). An artifact that is missing is simply written: that
+# is the state of an install from before the dictionary existed.
 _radius_render_stage() {
     local dir="$1" force="$2" states worst rc=0
     states=$(_radius_render_live "$dir") || return 1
-    # shellcheck disable=SC2086  # two words
+    # shellcheck disable=SC2086  # three words
     worst=$(_radius_worst $states) || return 1
     case "$worst" in
         current|same|ok|missing) ;;
         drift|unrecorded)
             if (( ! force )); then
                 if [[ "$worst" == "drift" ]]; then
-                    error "${RADIUS_CONF} or ${RADIUS_USERS} was edited since tacctl rendered it; rendering would discard those edits."
+                    error "$(_radius_artifact_names) was edited since tacctl rendered it; rendering would discard those edits."
                 else
-                    error "${RADIUS_CONF} or ${RADIUS_USERS} was not rendered by tacctl; rendering would replace it."
+                    error "$(_radius_artifact_names) was not rendered by tacctl; rendering would replace it."
                 fi
                 error "There is no way to adopt an edit of the RADIUS files into the store. To discard it: 'tacctl config render --force' (the current files are saved under ${BACKUP_DIR}/legacy/ first)."
                 return 3
@@ -754,6 +960,12 @@ _radius_install_file() {
     esac
     # Same directory as the target, so the final step is a rename.
     local new="${live}.tacctl-new"
+    if [[ ! -d "${live%/*}" ]]; then
+        # The dictionary's directory, on its first render.
+        mkdir -p "${live%/*}" || return 1
+        chmod 750 "${live%/*}"
+        chown "root:${RADIUS_GROUP}" "${live%/*}" 2> /dev/null || true
+    fi
     cp "$staged" "$new" || return 1
     chmod 640 "$new"
     chown "root:${RADIUS_GROUP}" "$new" 2> /dev/null || true
@@ -763,15 +975,17 @@ _radius_install_file() {
 }
 
 # _radius_render_commit <dir>: install what _radius_render_stage left. The
-# users file first: until the config that carries the new render id is in
-# place too, the daemon would match nobody rather than a mix of two renders.
+# dictionary first (the other two need its attributes), then the users file:
+# until the config that carries the new render id is in place too, the daemon
+# would match nobody rather than a mix of two renders.
 _radius_render_commit() {
-    local dir="$1" conf_state users_state a b
-    read -r conf_state users_state < "${dir}/status" || return 1
+    local dir="$1" conf_state users_state dict_state a b c
+    read -r conf_state users_state dict_state < "${dir}/status" || return 1
     mkdir -p "$RADIUS_DIR" || return 1
+    c=$(_radius_install_file "${dir}/dictionary" "$RADIUS_DICT" "$dict_state") || return 1
     a=$(_radius_install_file "${dir}/users" "$RADIUS_USERS" "$users_state") || return 1
     b=$(_radius_install_file "${dir}/conf" "$RADIUS_CONF" "$conf_state") || return 1
-    if [[ -n "${a}${b}" ]]; then
+    if [[ -n "${a}${b}${c}" ]]; then
         echo "CHANGED"
     else
         echo "UNCHANGED"
@@ -782,7 +996,7 @@ _radius_render_commit() {
 # tacctl has no record of is refused like an edited one.
 _radius_render_gate() {
     local f rc
-    for f in "$RADIUS_CONF" "$RADIUS_USERS"; do
+    for f in "$RADIUS_CONF" "$RADIUS_USERS" "$RADIUS_DICT"; do
         rc=0
         rendered_check "$f" > /dev/null || rc=$?
         case "$rc" in
@@ -808,9 +1022,26 @@ _radius_render_check_run() {
     states=$(_radius_render_live "$tmpd") || exit 1
     _radius_daemon_check "$tmpd" || rc=$?
     (( rc == 0 || rc == 2 )) || exit 1
-    # shellcheck disable=SC2086  # two words
+    # shellcheck disable=SC2086  # three words
     _radius_worst $states
     exit 0
+}
+
+# _radius_render_apply: render this backend alone and install the result (the
+# upgrade's re-render; a command that changes the store goes through
+# store_apply and renders every backend). Prints CHANGED or UNCHANGED.
+# Returns 1 failed, 3 refused (an artifact was edited by hand); nothing is
+# replaced then.
+_radius_render_apply() {
+    (
+        local tmpd rc=0
+        tmpd=$(mktemp -d) || exit 1
+        # shellcheck disable=SC2064  # expand tmpd now; the subshell owns this trap
+        trap "rm -rf '${tmpd}'" EXIT
+        _radius_render_stage "$tmpd" 0 >&2 || rc=$?
+        (( rc == 0 )) || exit "$rc"
+        _radius_render_commit "$tmpd"
+    )
 }
 
 # The notes of the rendered state, '<kind>|<text>' lines (see radius_notes).
@@ -825,11 +1056,11 @@ _radius_notes() {
 #  UNIT, DROP-IN, LISTENERS
 # =====================================================================
 
-# The drop-in that makes the package's unit run tacctl's instance. The
-# package's pre-start and reload commands name its own configuration, so
-# every Exec line is replaced.
+# The drop-in that makes the package's unit run tacctl's instance, with
+# tacctl's dictionary ('-D'). The package's pre-start and reload commands
+# name its own configuration, so every Exec line is replaced.
 _radius_dropin_text() {
-    local args="-d ${RADIUS_DIR} -n ${RADIUS_NAME}"
+    local args="-d ${RADIUS_DIR} -D ${RADIUS_DICT_DIR} -n ${RADIUS_NAME}"
     cat <<EOF
 # Installed by tacctl ('tacctl backend enable radius'), removed by 'tacctl backend disable radius'.
 # ${RADIUS_UNIT} runs tacctl's FreeRADIUS instance (${RADIUS_CONF}) instead of the package's radiusd.conf.
@@ -857,10 +1088,14 @@ ExecReload=/bin/kill -HUP \$MAINPID
 EOF
 }
 
+# Set by _radius_dropin_install: 1 when it wrote the drop-in.
+RADIUS_DROPIN_CHANGED=0
+
 # Install the drop-in when it is missing or not what this release writes.
 # Prints nothing; returns 1 when it cannot be written.
 _radius_dropin_install() {
     local want
+    RADIUS_DROPIN_CHANGED=0
     want=$(_radius_dropin_text)
     if [[ -f "$RADIUS_DROPIN" && "$(cat "$RADIUS_DROPIN")" == "$want" ]]; then
         return 0
@@ -869,7 +1104,20 @@ _radius_dropin_install() {
     printf '%s\n' "$want" > "${RADIUS_DROPIN}.tacctl-new" || return 1
     chmod 644 "${RADIUS_DROPIN}.tacctl-new"
     mv -f "${RADIUS_DROPIN}.tacctl-new" "$RADIUS_DROPIN" || return 1
+    RADIUS_DROPIN_CHANGED=1
     systemctl daemon-reload
+}
+
+# Restart the unit on what the artifacts now are. A drop-in from a release
+# before the dictionary starts the daemon without '-D'; the configuration a
+# render of this release writes does not load that way, so the drop-in is
+# brought in line first (only once the dictionary it names is there, and only
+# while the backend runs tacctl's instance).
+_radius_unit_restart() {
+    if [[ -f "$RADIUS_DROPIN" && -f "$RADIUS_DICT" ]]; then
+        _radius_dropin_install || warn "Could not update ${RADIUS_DROPIN}."
+    fi
+    systemctl restart "$RADIUS_UNIT" 2> /dev/null
 }
 
 _radius_dropin_remove() {
@@ -995,7 +1243,7 @@ _radius_listener_apply() {
         rm -f "$keep"
         return 0
     fi
-    systemctl restart "$RADIUS_UNIT" 2> /dev/null || true
+    _radius_unit_restart || true
     sleep "$RADIUS_SETTLE_SECONDS"
     if systemctl is-active --quiet "$RADIUS_UNIT"; then
         rm -f "$keep"
@@ -1006,7 +1254,7 @@ _radius_listener_apply() {
         warn "Could not put the previous listener back; fix listeners.radius in ${TACCTL_OVERRIDES_FILE} and run 'tacctl config render'."
     fi
     rm -f "$keep"
-    systemctl restart "$RADIUS_UNIT" 2> /dev/null || true
+    _radius_unit_restart || true
     return 1
 }
 
@@ -1135,8 +1383,31 @@ _radius_status_config() {
             commands) echo -e "  ${YELLOW}Command rules:${NC}        not enforced over RADIUS (commands.<group> of: ${text})" ;;
             secret)   echo -e "  ${YELLOW}Secrets:${NC}              beyond what every RADIUS client takes (${RADIUS_SECRET_MAX_LEN} characters, no space, ASCII): ${text}" ;;
             filters)  echo -e "  ${BOLD}Connection filters:${NC}   enforced (${text})" ;;
+            vendors)  _radius_status_vendors "$text" ;;
         esac
     done < <(_radius_notes)
+}
+
+# The vendor-attributes line of the status reports, from the 'vendors' note
+# ('<scopes that enable one>|<scopes served>|<tagged addresses>'): a count,
+# not a line per scope ('tacctl scope list' has those).
+_radius_status_vendors() {
+    local enabling served tagged
+    IFS='|' read -r enabling served tagged <<< "$1"
+    if (( enabling == 0 && tagged == 0 )); then
+        echo -e "  ${BOLD}Vendor attributes:${NC}    not sent (no scope enables one: tacctl scope vendor-attrs <scope> enable <vendor>)"
+    else
+        echo -e "  ${BOLD}Vendor attributes:${NC}    enabled for ${enabling} of ${served} scope(s), ${tagged} tagged address(es) (tacctl scope list)"
+    fi
+}
+
+# status summary: what 'tacctl backend status' adds for this backend.
+_radius_status_summary() {
+    local kind text
+    while IFS='|' read -r kind text; do
+        [[ "$kind" == "vendors" ]] && _radius_status_vendors "$text"
+    done < <(_radius_notes)
+    return 0
 }
 
 # Records of a detail file: one per paragraph.
@@ -1293,11 +1564,15 @@ _radius_install_account() {
         error "${RADIUS_DIR} or ${RADIUS_LOG_DIR} is missing; the package did not install as expected."
         exit 1
     fi
+    if [[ ! -r "$RADIUS_SYSTEM_DICT" ]]; then
+        error "FreeRADIUS's main dictionary is not at ${RADIUS_SYSTEM_DICT}; the package did not install as expected."
+        exit 1
+    fi
 }
 
 # install start: after the first render.
 _radius_install_start() {
-    if [[ ! -f "$RADIUS_CONF" || ! -f "$RADIUS_USERS" ]]; then
+    if [[ ! -f "$RADIUS_CONF" || ! -f "$RADIUS_USERS" || ! -f "$RADIUS_DICT" ]]; then
         error "${RADIUS_CONF} was not rendered."
         exit 1
     fi
@@ -1322,14 +1597,75 @@ _radius_install_start() {
     backend_radius_render_notes
 }
 
-# upgrade files: the logrotate file and, while the backend runs tacctl's
-# instance, the drop-in, as this release writes them.
+# What 'upgrade config' did, for the summary 'upgrade finish' adds:
+# '' nothing | rendered | failed.
+RADIUS_UPGRADE_STATE=""
+
+# upgrade config: bring the artifacts and the drop-in in line with this
+# release, as one step, and restart when either changed. A release can change
+# what it renders (the dictionary, and with it the unit's command line, came
+# with the vendor attributes); the files of the release before are what
+# tacctl rendered then, so this is a re-render like any other, not drift.
+# The order matters: the artifacts first, the drop-in only once the
+# dictionary it names is in place, then the restart. A hand-edited artifact
+# refuses the render (as it refuses every mutation) and leaves all of it,
+# the running daemon included, as it was. Never fails the upgrade.
+_radius_upgrade_config() {
+    RADIUS_UPGRADE_STATE=""
+    [[ -f "$STORE_FILE" && -f "$RADIUS_DROPIN" ]] || return 0
+    backend_radius_installed || return 0
+    local result rc=0
+    result=$(_radius_render_apply) || rc=$?
+    if (( rc != 0 )); then
+        RADIUS_UPGRADE_STATE="failed"
+        warn "The RADIUS files were not re-rendered; FreeRADIUS keeps serving the previous ones. Run 'tacctl config render' once the problem above is fixed."
+        return 0
+    fi
+    _radius_dropin_install || warn "Could not update ${RADIUS_DROPIN}."
+    if [[ "$result" != "CHANGED" && "$RADIUS_DROPIN_CHANGED" != "1" ]]; then
+        return 0
+    fi
+    RADIUS_UPGRADE_STATE="rendered"
+    if [[ "$result" == "CHANGED" ]]; then
+        info "RADIUS: re-rendered $(backend_artifact_names radius)."
+        # What an operator of a release before the vendor attributes notices
+        # first: an Accept carried Cisco and Juniper attributes for everyone.
+        local kind text
+        while IFS='|' read -r kind text; do
+            if [[ "$kind" == "vendors" && "$text" == 0\|*\|0 ]]; then
+                warn "RADIUS: no scope enables a vendor attribute, so an Access-Accept carries Service-Type only."
+                warn "Enable what each scope's devices need: tacctl scope vendor-attrs <scope> enable cisco|juniper|wti (or tag addresses: tacctl scope devices)."
+            fi
+        done < <(_radius_notes)
+    fi
+    if [[ "$RADIUS_DROPIN_CHANGED" == "1" ]]; then
+        info "RADIUS: updated ${RADIUS_DROPIN}."
+    fi
+    info "Restarting ${RADIUS_UNIT%.service}..."
+    systemctl restart "$RADIUS_UNIT" 2> /dev/null || true
+    sleep 2
+    if systemctl is-active --quiet "$RADIUS_UNIT"; then
+        info "FreeRADIUS is running."
+    else
+        RADIUS_UPGRADE_STATE="failed"
+        error "FreeRADIUS did not start after the re-render. Check: journalctl -u ${RADIUS_UNIT%.service} and ${RADIUS_DAEMON_LOG}"
+    fi
+    return 0
+}
+
+# upgrade files: the logrotate file as this release writes it.
 _radius_upgrade_files() {
     backend_radius_installed || return 0
     _radius_logrotate_install || true
-    if [[ -f "$RADIUS_DROPIN" ]]; then
-        _radius_dropin_install || warn "Could not update ${RADIUS_DROPIN}."
-    fi
+    return 0
+}
+
+# upgrade finish: one line of the closing summary.
+_radius_upgrade_finish() {
+    case "$RADIUS_UPGRADE_STATE" in
+        rendered) UPGRADE_SUMMARY_NOTES+=("RADIUS: config re-rendered for this release, FreeRADIUS restarted") ;;
+        failed)   UPGRADE_SUMMARY_NOTES+=("RADIUS: NOT brought in line with this release (see above); 'tacctl config validate' says what stands") ;;
+    esac
     return 0
 }
 
@@ -1349,11 +1685,12 @@ _radius_uninstall_data() {
     [[ "${1:-}" == "--keep-logs" ]] && keep=true
     # Nothing of tacctl's here (an uninstall that takes every backend because
     # tacctl.yaml could not say which are enabled): nothing to do or to say.
-    for f in "$RADIUS_LOGROTATE" "$RADIUS_CONF" "$RADIUS_USERS" "$RADIUS_LOG_DIR"/tacctl-*.log*; do
+    for f in "$RADIUS_LOGROTATE" "$RADIUS_CONF" "$RADIUS_USERS" "$RADIUS_DICT_DIR" "$RADIUS_LOG_DIR"/tacctl-*.log*; do
         [[ -e "$f" ]] && had=1
     done
     (( had )) || return 0
     rm -f "$RADIUS_LOGROTATE" "$RADIUS_CONF" "$RADIUS_USERS" "${RADIUS_CONF}.tacctl-new" "${RADIUS_USERS}.tacctl-new"
+    rm -rf "${RADIUS_DICT_DIR:?}"
     local -a logs=()
     for f in "$RADIUS_LOG_DIR"/tacctl-*.log*; do
         [[ -f "$f" ]] && logs+=("${f##*/}")
@@ -1405,7 +1742,9 @@ backend_radius_install() {
 
 backend_radius_upgrade() {
     case "${1:-}" in
-        files) _radius_upgrade_files ;;
+        config) _radius_upgrade_config ;;
+        files)  _radius_upgrade_files ;;
+        finish) _radius_upgrade_finish ;;
     esac
 }
 
@@ -1419,7 +1758,7 @@ backend_radius_uninstall() {
 }
 
 backend_radius_artifacts() {
-    printf '%s\n' "$RADIUS_CONF" "$RADIUS_USERS"
+    printf '%s\n' "$RADIUS_CONF" "$RADIUS_USERS" "$RADIUS_DICT"
 }
 
 backend_radius_render_check() {
@@ -1452,13 +1791,20 @@ backend_radius_render_notes() {
     while IFS='|' read -r kind text; do
         case "$kind" in
             commands)
-                warn "RADIUS does not enforce the command rules (commands.<group>) of: ${text}. Over RADIUS their users are limited only by the group's privilege level (Cisco) or login class (Juniper)."
+                warn "RADIUS does not enforce the command rules (commands.<group>) of: ${text}. Over RADIUS their users are limited only by the group's privilege level (Cisco), login class (Juniper) or access level (WTI), where the scope sends it."
                 ;;
             secret)
                 warn "The secret of scope ${text} is longer than ${RADIUS_SECRET_MAX_LEN} characters or has a space or a non-ASCII character: FreeRADIUS takes it, some RADIUS clients do not."
                 ;;
         esac
     done < <(_radius_notes)
+    # The scopes whose network devices would get Service-Type alone (the same
+    # test as 'config validate'; Linux-host scopes need nothing).
+    local gaps
+    gaps=$(model_vendor_gaps 2> /dev/null | paste -sd, || true)
+    if [[ -n "$gaps" ]]; then
+        warn "Over RADIUS no vendor attribute is sent to the devices of scope(s) ${gaps//,/, }: an Access-Accept carries Service-Type only. Enable what they need: tacctl scope vendor-attrs <scope> enable cisco|juniper|wti"
+    fi
     return 0
 }
 
@@ -1467,7 +1813,7 @@ backend_radius_render_notes() {
 backend_radius_service() {
     case "${1:-}" in
         restart|reload)
-            if systemctl restart "$RADIUS_UNIT" 2> /dev/null; then
+            if _radius_unit_restart; then
                 info "Service restarted (${RADIUS_UNIT%.service})."
             else
                 warn "Service restart failed — run: sudo systemctl restart ${RADIUS_UNIT%.service}"
@@ -1525,6 +1871,7 @@ backend_radius_status() {
         config)     _radius_status_config ;;
         accounting) _radius_status_accounting ;;
         activity)   _radius_status_activity ;;
+        summary)    _radius_status_summary ;;
         *)          return 2 ;;
     esac
 }

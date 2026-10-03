@@ -1147,13 +1147,24 @@ _epel_stubs() {
     "$TACCTL_BIN_SCRIPT" scope auth-method lab radius > /dev/null
     run _gen
     assert_success
-    assert_output --partial "Method radius: the auth-method of scope 'lab'"
+    assert_output --partial "Method radius: scope 'lab' has auth-method radius (tacctl scope auth-method)"
     grep -q '^TAC_METHOD=radius$' "$OUT"
     run _gen --method tacplus
     assert_success
     refute_output --partial "auth-method"
     run sed '/^__TARBALL__$/,$d' "$OUT"
     assert_line "TAC_METHOD=tacplus"
+}
+
+@test "config linux script: a scope served over one protocol only picks the method when it has no auth-method" {
+    radius_on
+    # Written into the store directly: with the backend enabled 'scope
+    # protocols' would render it, which needs the daemon's stand-in.
+    bash -c 'source "$1"; store_scope_set lab protocols=radius' _ "$TACCTL_BIN_SCRIPT" > /dev/null
+    run _gen
+    assert_success
+    assert_output --partial "Method radius: scope 'lab' is served over radius only (tacctl scope protocols)"
+    grep -q '^TAC_METHOD=radius$' "$OUT"
 }
 
 @test "config linux script: a scope's auth-method tacacs comes before host.default_method" {
@@ -1165,7 +1176,7 @@ _epel_stubs() {
     "$TACCTL_BIN_SCRIPT" scope auth-method lab tacacs > /dev/null
     run _gen
     assert_success
-    assert_output --partial "Method tacplus: the auth-method of scope 'lab'"
+    assert_output --partial "Method tacplus: scope 'lab' has auth-method tacacs (tacctl scope auth-method)"
     run sed '/^__TARBALL__$/,$d' "$OUT"
     assert_line "TAC_METHOD=tacplus"
 }

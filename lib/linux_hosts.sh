@@ -90,14 +90,24 @@ linux_default_method() {
     echo "$method"
 }
 
-# linux_scope_method <scope>: the host method the scope's auth-method stands
-# for ('tacctl scope auth-method': tacacs is method tacplus), empty when the
-# scope has none.
+# linux_scope_method <scope>: the host method the scope stands for
+# (scope_protocol_choice: its auth-method, else the one protocol its
+# protocols filter names; protocol tacacs is method tacplus). Sets
+# LINUX_SCOPE_METHOD (empty when the scope decides nothing) and
+# LINUX_SCOPE_METHOD_WHY, the reason in words for a message.
 linux_scope_method() {
-    case "$(scope_auth_method "$1")" in
-        tacacs) echo "tacplus" ;;
-        radius) echo "radius" ;;
+    LINUX_SCOPE_METHOD="" LINUX_SCOPE_METHOD_WHY=""
+    scope_protocol_choice "$1"
+    case "$SCOPE_CHOICE" in
+        tacacs) LINUX_SCOPE_METHOD="tacplus" ;;
+        radius) LINUX_SCOPE_METHOD="radius" ;;
+        *)      return 0 ;;
     esac
+    if [[ "$SCOPE_CHOICE_SOURCE" == "protocols" ]]; then
+        LINUX_SCOPE_METHOD_WHY="scope '${1}' is served over ${SCOPE_CHOICE} only (tacctl scope protocols)"
+    else
+        LINUX_SCOPE_METHOD_WHY="scope '${1}' has auth-method ${SCOPE_CHOICE} (tacctl scope auth-method)"
+    fi
     return 0
 }
 
@@ -462,8 +472,9 @@ cmd_config_linux_script() {
                 ;;
         esac
     done
-    # The method: the one asked for; else the scope's auth-method; else the
-    # default. One that was asked for is checked before the scope is.
+    # The method: the one asked for; else what the scope says (its
+    # auth-method, else its only protocol); else the default. One that was
+    # asked for is checked before the scope is.
     if [[ -n "$method" ]]; then
         linux_method_require "$method" || return 1
     fi
@@ -474,9 +485,10 @@ cmd_config_linux_script() {
         return 1
     fi
     if [[ -z "$method" ]]; then
-        method=$(linux_scope_method "$scope")
+        linux_scope_method "$scope"
+        method="$LINUX_SCOPE_METHOD"
         if [[ -n "$method" ]]; then
-            info "Method ${method}: the auth-method of scope '${scope}' (tacctl scope auth-method)."
+            info "Method ${method}: ${LINUX_SCOPE_METHOD_WHY}."
         else
             method=$(linux_default_method)
         fi
@@ -818,24 +830,25 @@ cmd_host_enroll() {
     fi
 
     # The method: the one asked for; else the one a registered host has (so
-    # re-enrolling never switches a host by accident); else the auth-method
-    # of the scope the host will use ('tacctl scope auth-method': the one
-    # named with --scope, or an existing linux-<name>; a scope created below
-    # has none); else the default.
+    # re-enrolling never switches a host by accident); else what the scope
+    # the host will use says (the one named with --scope, or an existing
+    # linux-<name>; a scope created below says nothing): its auth-method,
+    # else the one protocol its protocols filter names; else the default.
     # Re-enrolling with the other method is how a host switches.
-    local prev_method label backend scope_method=""
+    local prev_method label backend scope_method="" scope_why=""
     prev_method=$(host_method "$name")
     if model_scope_exists "${scope:-linux-${name}}" 2> /dev/null; then
-        scope_method=$(linux_scope_method "${scope:-linux-${name}}")
+        linux_scope_method "${scope:-linux-${name}}"
+        scope_method="$LINUX_SCOPE_METHOD" scope_why="$LINUX_SCOPE_METHOD_WHY"
     fi
     if [[ -z "$method" && -n "$prev_method" ]]; then
         method="$prev_method"
         if [[ -n "$scope_method" && "$scope_method" != "$method" ]]; then
-            info "${name} is registered with method ${method} and keeps it; scope '${scope:-linux-${name}}' has auth-method $(linux_method_backend "$scope_method"). To switch the host: --method ${scope_method}"
+            info "${name} is registered with method ${method} and keeps it; ${scope_why}. To switch the host: --method ${scope_method}"
         fi
     elif [[ -z "$method" && -n "$scope_method" ]]; then
         method="$scope_method"
-        info "Method ${method}: the auth-method of scope '${scope:-linux-${name}}' (tacctl scope auth-method)."
+        info "Method ${method}: ${scope_why}."
     fi
     method="${method:-$(linux_default_method)}"
     linux_method_require "$method" || return 1
@@ -1100,7 +1113,8 @@ cmd_host_usage() {
     echo "  enroll --local [options]             Same, for this machine"
     echo "      --method tacplus|radius          pam_tacplus against the TACACS+ backend, or the host's pam_radius_auth"
     echo "                                       package against the RADIUS backend (default: the host's current"
-    echo "                                       method, else the scope's auth-method, else 'host default-method')."
+    echo "                                       method, else the scope's auth-method, else its only protocol,"
+    echo "                                       else 'host default-method')."
     echo "                                       Re-enroll with the other to switch"
     echo "      --scope <name>                   Use an existing scope (default: create linux-<name> for the host's /32)"
     echo "      --server <address>               Address the host should use for this server (default: detected)"

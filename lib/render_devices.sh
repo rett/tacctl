@@ -164,19 +164,49 @@ config_protocol_valid() {
 
 # config_protocol_resolve <scope> <protocol given with --protocol, or ''>:
 # the protocol a device config is rendered for. --protocol always wins; without
-# it the scope's auth-method decides ('tacctl scope auth-method'), and a scope
-# that has none gets TACACS+, as before the setting existed. Sets
-# CONFIG_PROTOCOL and CONFIG_PROTOCOL_SOURCE (flag | scope | default).
+# it the scope decides (scope_protocol_choice: its auth-method, else the one
+# protocol its protocols filter names), and otherwise it is TACACS+, as before
+# either existed. Sets CONFIG_PROTOCOL and CONFIG_PROTOCOL_SOURCE (flag |
+# scope | protocols | default).
 config_protocol_resolve() {
     local scope="$1" given="${2:-}"
     CONFIG_PROTOCOL="$given" CONFIG_PROTOCOL_SOURCE="flag"
     [[ -n "$given" ]] && return 0
-    CONFIG_PROTOCOL=$(scope_auth_method "$scope")
-    CONFIG_PROTOCOL_SOURCE="scope"
+    scope_protocol_choice "$scope"
+    CONFIG_PROTOCOL="$SCOPE_CHOICE" CONFIG_PROTOCOL_SOURCE="scope"
+    [[ "$SCOPE_CHOICE_SOURCE" == "protocols" ]] && CONFIG_PROTOCOL_SOURCE="protocols"
     if [[ -z "$CONFIG_PROTOCOL" ]]; then
         CONFIG_PROTOCOL="tacacs" CONFIG_PROTOCOL_SOURCE="default"
     fi
     return 0
+}
+
+# config_protocol_note: what the header of a device config adds after the
+# scope (", protocol: RADIUS" and where that came from).
+config_protocol_note() {
+    [[ "$CONFIG_PROTOCOL" == "radius" ]] || return 0
+    case "$CONFIG_PROTOCOL_SOURCE" in
+        scope)     echo ", protocol: RADIUS — the scope's auth-method" ;;
+        protocols) echo ", protocol: RADIUS — the scope's only protocol" ;;
+        *)         echo ", protocol: RADIUS" ;;
+    esac
+}
+
+# The name of a vendor in messages, and the attribute that carries its
+# privilege over RADIUS.
+radius_vendor_label() {
+    case "$1" in
+        cisco)   echo "Cisco" ;;
+        juniper) echo "Juniper" ;;
+        wti)     echo "WTI" ;;
+    esac
+}
+radius_vendor_attr() {
+    case "$1" in
+        cisco)   echo 'Cisco-AVPair "shell:priv-lvl=N"' ;;
+        juniper) echo "Juniper-Local-User-Name" ;;
+        wti)     echo "WTI-Super" ;;
+    esac
 }
 
 # What a RADIUS device config may carry as a secret. Device CLIs treat
@@ -193,20 +223,25 @@ CONFIG_RADIUS_SECRET_RE='^[A-Za-z0-9._+/=:@%^~-]+$'
 # needs from the RADIUS backend, or an error when the config would not work.
 # Sets RADIUS_AUTH_PORT, RADIUS_ACCT_PORT, RADIUS_SECRET, RADIUS_SERVER_ADDR
 # (an address the listeners are bound to, else empty: the caller keeps the
-# address it found by route) and RADIUS_WARNINGS (text for the summary).
+# address it found by route), RADIUS_VENDOR_SENT (scope: the scope enables the
+# vendor; tagged: only addresses tagged with it get it) and RADIUS_WARNINGS
+# (text for the summary).
 #
 # Refused, rather than warned about, because the output would look like a
 # working configuration and not be one:
 #   - the backend is not enabled: nothing answers on the ports;
 #   - the scope's protocols filter leaves RADIUS out: the daemon loads neither
 #     its clients nor its secret, so its devices are ignored;
+#   - the vendor's attribute is not sent to any device of the scope (neither
+#     enabled with 'scope vendor-attrs' nor an address tagged with it): its
+#     devices would log users in without the privilege their group gives;
 #   - the secret cannot be pasted safely (see CONFIG_RADIUS_SECRET_RE).
 # Advice that does not break the config (a secret longer than some devices
 # take, a listener bound to an address the route lookup would not find) is
 # a warning.
 radius_device_prepare() {
     local vendor="$1" scope="$2"
-    RADIUS_AUTH_PORT="" RADIUS_ACCT_PORT="" RADIUS_SECRET="" RADIUS_SERVER_ADDR="" RADIUS_WARNINGS=""
+    RADIUS_AUTH_PORT="" RADIUS_ACCT_PORT="" RADIUS_SECRET="" RADIUS_SERVER_ADDR="" RADIUS_WARNINGS="" RADIUS_VENDOR_SENT=""
 
     _backends_load || return 1
     if ! _backend_is_enabled radius; then
@@ -219,6 +254,26 @@ radius_device_prepare() {
     if [[ -n "$protocols" && ",${protocols}," != *",radius,"* ]]; then
         error "Scope '${scope}' is limited to ${protocols} (tacctl scope protocols), so the RADIUS backend ignores its devices and does not load its secret; this configuration would not work."
         error "Serve it over RADIUS too: tacctl scope protocols ${scope} set ${protocols},radius   (or 'clear' for every protocol)"
+        return 1
+    fi
+
+    # Vendor attributes are opt-in per scope ('tacctl scope vendor-attrs') or
+    # per address ('tacctl scope devices').
+    local attrs tagged label
+    label=$(radius_vendor_label "$vendor")
+    attrs=$(model_scope "$scope" vendor_attrs | awk 'NF' | paste -sd, || true)
+    tagged=$(model_scope_devices "$scope" | awk -F'|' -v v="$vendor" '$2 == v { print $1 }' | paste -sd' ')
+    if [[ ",${attrs}," == *",${vendor},"* ]]; then
+        RADIUS_VENDOR_SENT="scope"
+    elif [[ -n "$tagged" ]]; then
+        RADIUS_VENDOR_SENT="tagged"
+        RADIUS_WARNINGS+="  - Scope '${scope}' does not enable the ${label} attribute; only its addresses tagged ${vendor} get it: ${tagged}."$'\n'
+        RADIUS_WARNINGS+="    Configure only those devices from this, or enable it: tacctl scope vendor-attrs ${scope} enable ${vendor}"$'\n'
+    else
+        error "Scope '${scope}' sends no ${label} attribute over RADIUS ($(radius_vendor_attr "$vendor")): ${vendor} is not enabled for the scope and no address of it is tagged ${vendor}."
+        error "A ${label} device configured from this would log users in without the privilege level their group gives."
+        error "Enable it for the scope's devices: tacctl scope vendor-attrs ${scope} enable ${vendor}"
+        error "or for one device only:            tacctl scope devices ${scope} set <device-ip> ${vendor}"
         return 1
     fi
 
@@ -295,11 +350,29 @@ radius_device_prepare() {
     return 0
 }
 
-# radius_summary_limits <cisco|juniper> <scope>: what a login over RADIUS
-# does not have, relative to TACACS+, and the warnings radius_device_prepare
-# collected. Printed in the summary under the config, not written into it.
+# radius_summary_accept <cisco|juniper|wti> <scope>: what an Access-Accept
+# for a device of the scope carries, and why (after radius_device_prepare).
+radius_summary_accept() {
+    local vendor="$1" scope="$2" why
+    if [[ "$RADIUS_VENDOR_SENT" == "scope" ]]; then
+        why="the scope enables it (tacctl scope vendor-attrs ${scope}); an address tagged with another vendor gets that one's instead"
+    else
+        why="only to the addresses of the scope tagged ${vendor} (tacctl scope devices ${scope})"
+    fi
+    echo -e "${YELLOW}What an Access-Accept carries for this device:${NC}"
+    echo "  - Service-Type: Administrative-User at privilege 15, else NAS-Prompt-User (always sent)"
+    echo "  - $(radius_vendor_attr "$vendor") from the user's group: ${why}"
+    echo "  - No other vendor's attribute. A reject carries none"
+}
+
+# radius_summary_limits <cisco|juniper> <scope>: what an Access-Accept
+# carries, what a login over RADIUS does not have relative to TACACS+, and
+# the warnings radius_device_prepare collected. Printed in the summary under
+# the config, not written into it.
 radius_summary_limits() {
     local vendor="$1" scope="$2"
+    radius_summary_accept "$vendor" "$scope"
+    echo ""
     echo -e "${YELLOW}What RADIUS does not give you (compared with TACACS+):${NC}"
     if [[ "$vendor" == "cisco" ]]; then
         echo "  - No per-command authorization. The only authorization is what the Access-Accept"
@@ -336,7 +409,7 @@ radius_summary_limits() {
 cmd_config_cisco() {
     # Parse --scope <name>, --legacy and --protocol tacacs|radius
     local scope="" legacy=0 protocol=""
-    local usage="Usage: tacctl config cisco [--scope <name>] [--legacy] [--protocol tacacs|radius]   (without --protocol: the scope's auth-method, else tacacs)"
+    local usage="Usage: tacctl config cisco [--scope <name>] [--legacy] [--protocol tacacs|radius]   (without --protocol: the scope's auth-method, else its only protocol, else tacacs)"
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --scope)
@@ -375,11 +448,15 @@ cmd_config_cisco() {
     elif ! _scope_require "$scope"; then
         exit 1
     fi
-    # No --protocol: the scope's auth-method, else TACACS+.
+    # No --protocol: the scope's auth-method, else its only protocol, else TACACS+.
     config_protocol_resolve "$scope" "$protocol"
     protocol="$CONFIG_PROTOCOL"
     if [[ "$protocol" == "radius" && "$legacy" == 1 ]]; then
-        error "Scope '${scope}' has auth-method radius (tacctl scope auth-method), and --legacy (IOS 12.x syntax) applies to TACACS+ only."
+        if [[ "$CONFIG_PROTOCOL_SOURCE" == "protocols" ]]; then
+            error "Scope '${scope}' is served over RADIUS only (tacctl scope protocols), and --legacy (IOS 12.x syntax) applies to TACACS+ only."
+        else
+            error "Scope '${scope}' has auth-method radius (tacctl scope auth-method), and --legacy (IOS 12.x syntax) applies to TACACS+ only."
+        fi
         error "For the legacy TACACS+ configuration add --protocol tacacs: tacctl config cisco --scope ${scope} --legacy --protocol tacacs"
         exit 1
     fi
@@ -547,10 +624,7 @@ ${mgmt_entries}  deny   any log"
     fi
 
     echo ""
-    local proto_note=""
-    [[ "$protocol" == "radius" ]] && proto_note=", protocol: RADIUS"
-    [[ "$protocol" == "radius" && "$CONFIG_PROTOCOL_SOURCE" == "scope" ]] && proto_note+=" — the scope's auth-method"
-    echo -e "${BOLD}Cisco IOS / IOS-XE Configuration${NC}  (scope: ${scope}${proto_note})"
+    echo -e "${BOLD}Cisco IOS / IOS-XE Configuration${NC}  (scope: ${scope}$(config_protocol_note))"
     if [[ -n "$other_scopes" ]]; then
         echo -e "${YELLOW}(other scopes: ${other_scopes} — use --scope <name> to emit those)${NC}"
     fi
@@ -728,7 +802,7 @@ EOF
 cmd_config_juniper() {
     # Parse --scope <name> and --protocol tacacs|radius
     local scope="" protocol=""
-    local usage="Usage: tacctl config juniper [--scope <name>] [--protocol tacacs|radius]   (without --protocol: the scope's auth-method, else tacacs)"
+    local usage="Usage: tacctl config juniper [--scope <name>] [--protocol tacacs|radius]   (without --protocol: the scope's auth-method, else its only protocol, else tacacs)"
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --scope)
@@ -759,7 +833,7 @@ cmd_config_juniper() {
     elif ! _scope_require "$scope"; then
         exit 1
     fi
-    # No --protocol: the scope's auth-method, else TACACS+.
+    # No --protocol: the scope's auth-method, else its only protocol, else TACACS+.
     config_protocol_resolve "$scope" "$protocol"
     protocol="$CONFIG_PROTOCOL"
     local secret server_ip
@@ -1025,10 +1099,7 @@ set firewall family inet filter ${juniper_acl_name} term default-accept then acc
     fi
 
     echo ""
-    local proto_note=""
-    [[ "$protocol" == "radius" ]] && proto_note=", protocol: RADIUS"
-    [[ "$protocol" == "radius" && "$CONFIG_PROTOCOL_SOURCE" == "scope" ]] && proto_note+=" — the scope's auth-method"
-    echo -e "${BOLD}Juniper Junos Configuration${NC}  (scope: ${scope}${proto_note})"
+    echo -e "${BOLD}Juniper Junos Configuration${NC}  (scope: ${scope}$(config_protocol_note))"
     if [[ -n "$other_scopes" ]]; then
         echo -e "${YELLOW}(other scopes: ${other_scopes} — use --scope <name> to emit those)${NC}"
     fi
@@ -1137,6 +1208,9 @@ set firewall family inet filter ${juniper_acl_name} term default-accept then acc
 # The shipped groups therefore land as readonly(1)→ViewOnly,
 # operator(7)→User, superuser(15)→Administrator; a custom group at
 # priv-lvl 10-14 is the only way to hand out SuperUser.
+# Over RADIUS the same bands decide WTI-Super (wti_super_for_privlvl), which
+# the RADIUS backend renders from WTI_SUPER_BANDS in lib/backends/radius.sh (a
+# unit test pins the tables together).
 wti_access_level_for_privlvl() {
     local privlvl="$1"
     if   (( privlvl >= 15 )); then echo "Administrator"
@@ -1146,12 +1220,23 @@ wti_access_level_for_privlvl() {
     fi
 }
 
+# --- WTI-Super value for a Cisco priv-lvl (RADIUS) ---
+# The unit's four access levels as WTI numbers them in WTI-Super (vendor 24496,
+# attribute 41): 0 ViewOnly, 1 User, 2 SuperUser, 3 Administrator.
+wti_super_for_privlvl() {
+    case "$(wti_access_level_for_privlvl "$1")" in
+        Administrator) echo 3 ;;
+        SuperUser)     echo 2 ;;
+        User)          echo 1 ;;
+        *)             echo 0 ;;
+    esac
+}
+
 # --- CONFIG WTI (step-by-step serial-CLI procedure) ---
-# TACACS+ only: `--protocol radius` is refused. What WTI documents about RADIUS
-# on these units (the vendor dictionary, the RADIUS menu) is recorded in
-# docs/radius-notes.md; no RADIUS walkthrough is rendered from it yet, and the
-# RADIUS backend sends no WTI attribute. A scope whose auth-method is radius
-# therefore still gets this TACACS+ walkthrough, with a warning on stderr.
+# The protocol is resolved as for Cisco and Juniper (config_protocol_resolve):
+# --protocol, else the scope's auth-method, else its only protocol, else
+# TACACS+. RADIUS is the walkthrough of config_wti_radius below; what follows
+# here is the TACACS+ one.
 # WTI units are configured through numbered text menus, not a pasteable
 # config, so this emits an operator walkthrough with the scope's values
 # filled in. No WTI-specific service block is needed in tacquito.yaml: the
@@ -1173,10 +1258,9 @@ wti_access_level_for_privlvl() {
 # SYN-ACK is dropped), and Session Management needs patch 0002 (the unit
 # drops the session on a non-empty accounting server_msg).
 cmd_config_wti() {
-    # Parse --scope <name>. --protocol is accepted so every device command
-    # takes the same flag, but WTI is TACACS+ only (see above).
+    # Parse --scope <name> and --protocol tacacs|radius
     local scope="" protocol=""
-    local usage="Usage: tacctl config wti [--scope <name>] [--protocol tacacs]"
+    local usage="Usage: tacctl config wti [--scope <name>] [--protocol tacacs|radius]   (without --protocol: the scope's auth-method, else its only protocol, else tacacs)"
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --scope)
@@ -1197,12 +1281,6 @@ cmd_config_wti() {
                 ;;
         esac
     done
-    if [[ "$protocol" == "radius" ]]; then
-        error "'config wti' renders TACACS+ only. The walkthrough follows the unit's TACACS Parameters menu (verified on a v8.10 unit). WTI documents RADIUS for these units"
-        error "(docs/radius-notes.md), but no RADIUS walkthrough is rendered yet and this server's RADIUS backend returns no WTI access-level attribute, so no RADIUS procedure is offered."
-        error "Use 'tacctl config wti' for TACACS+, or configure the unit's RADIUS support from WTI's documentation against this server's RADIUS listeners (tacctl config listen --backend radius show)."
-        exit 1
-    fi
     if [[ -z "$scope" ]]; then
         scope=$(read_default_scope)
         if [[ -z "$scope" ]]; then
@@ -1213,11 +1291,11 @@ cmd_config_wti() {
     elif ! _scope_require "$scope"; then
         exit 1
     fi
-    # The scope's auth-method does not select a RADIUS walkthrough (there is
-    # none): say so rather than print TACACS+ steps without a word.
-    if [[ -z "$protocol" && "$(scope_auth_method "$scope")" == "radius" ]]; then
-        warn "Scope '${scope}' has auth-method radius, but 'config wti' renders TACACS+ only: this is the TACACS+ walkthrough." >&2
-        warn "The unit must reach this server over TACACS+ (TCP/49) and the scope must be served over it (tacctl scope protocols ${scope})." >&2
+    # No --protocol: the scope's auth-method, else its only protocol, else TACACS+.
+    config_protocol_resolve "$scope" "$protocol"
+    if [[ "$CONFIG_PROTOCOL" == "radius" ]]; then
+        config_wti_radius "$scope"
+        return
     fi
     local secret server_ip
     secret=$(model_scope "$scope" secret) || secret=""
@@ -1425,6 +1503,197 @@ EOF
     echo "  tacctl config loglevel info           # restore when done"
     echo "  On the WTI (Step 8): with 12. Debug: On the unit echoes each TACACS+ exchange on"
     echo "  the serial session; line up the authen/author/acct replies with the entries above"
+    echo ""
+}
+
+# --- CONFIG WTI over RADIUS (step-by-step serial-CLI procedure) ---
+# NOT verified on a unit. Written from what WTI documents for these units
+# (docs/radius-notes.md, "WTI units over RADIUS"): the RADIUS Parameters menu
+# (/N, item 29 in WTI's user guide), the WTI-Super attribute (vendor 24496,
+# attribute 41: 0 ViewOnly, 1 User, 2 SuperUser, 3 Administrator) the server
+# returns for the user's group in the bands of the TACACS+ mapping, and the
+# unit-side lessons of the TACACS+ walkthrough that are not about TACACS+
+# itself (the firewall must let the replies in, Default User Access On for
+# SSH, the lockout). The TACACS+-only items (Account/Session Management
+# Modules, Service Name, tacquito's patches) have no RADIUS counterpart here.
+# radius_device_prepare refuses a scope that sends no WTI-Super: without it
+# every login gets the unit's Default RADIUS User Access level, which WTI's
+# own documents disagree on.
+# shellcheck disable=SC2089,SC2090
+config_wti_radius() {
+    local scope="$1"
+    local server_ip
+    server_ip=$(ip -4 route get 1.0.0.0 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}')
+    if [[ -z "$server_ip" ]]; then
+        server_ip="<TACQUITO_SERVER_IP>"
+    fi
+    radius_device_prepare wti "$scope" || exit 1
+    local secret="$RADIUS_SECRET" AUTH_PORT="$RADIUS_AUTH_PORT" ACCT_PORT="$RADIUS_ACCT_PORT"
+    [[ -n "$RADIUS_SERVER_ADDR" ]] && server_ip="$RADIUS_SERVER_ADDR"
+
+    local other_scopes
+    other_scopes=$(model_scopes_by_routing | { grep -vxF "$scope" || true; } | paste -sd,)
+
+    local group_info
+    group_info=$(model_group_info | cut -d'|' -f1,2 | awk -F'|' '$2 != ""')
+    local GROUP_SUMMARY="" has_superuser_band="false" gname privlvl wlevel
+    while IFS='|' read -r gname privlvl; do
+        [[ -z "$gname" ]] && continue
+        wlevel=$(wti_access_level_for_privlvl "$privlvl")
+        [[ "$wlevel" == "SuperUser" ]] && has_superuser_band="true"
+        GROUP_SUMMARY+="  ${gname}: priv-lvl ${privlvl} → WTI-Super $(wti_super_for_privlvl "$privlvl") (${wlevel})"$'\n'
+    done <<< "$group_info"
+
+    # Fallback Local follows the scope's aaa-order, as in the TACACS+
+    # walkthrough: "On (Transport Failure)" is the server first, local only
+    # when no server answers; "On (All Failures)" also after a reject. Never
+    # "Off", the factory default: with the server down nobody gets in.
+    local FALLBACK_LOCAL
+    if [[ "$(conf_get "aaa.order.${scope}" tacacs-first)" == "local-first" ]]; then
+        FALLBACK_LOCAL="On (All Failures)"
+    else
+        FALLBACK_LOCAL="On (Transport Failure)"
+    fi
+
+    # Keyed in by hand at a menu prompt; radius_device_prepare has already
+    # refused what a device CLI reads as syntax.
+    local secret_warnings=""
+    if [[ ! "$secret" =~ ^[A-Za-z0-9_-]+$ ]]; then
+        secret_warnings+="  - Secret contains punctuation (e.g. + / =); the WTI menu prompt is untested with those."$'\n'
+        secret_warnings+="    A mismatch shows on the server as rejects or as no answer at all. A hex-only key avoids the"$'\n'
+        secret_warnings+="    question: tacctl scope secret ${scope} set \$(openssl rand -hex 16)   (shared with every device of the scope)"$'\n'
+    fi
+    if [[ "${#secret}" -gt 32 ]]; then
+        secret_warnings+="  - Secret is ${#secret} chars. WTI documents no Secret Word maximum, but its other credential"$'\n'
+        secret_warnings+="    fields cap at 16-32 chars. A 32-char hex key is the safe choice."$'\n'
+    fi
+    local user_warnings="" uname
+    while IFS= read -r uname; do
+        [[ -z "$uname" ]] && continue
+        if [[ "${#uname}" -gt 32 ]]; then
+            user_warnings+="  - User '${uname}' is ${#uname} chars; WTI usernames max out at 32"$'\n'
+        fi
+    done < <(model_scope_users "$scope")
+
+    echo ""
+    echo -e "${BOLD}WTI Console Server Configuration${NC}  (scope: ${scope}$(config_protocol_note), firmware v8.x text interface)"
+    if [[ -n "$other_scopes" ]]; then
+        echo -e "${YELLOW}(other scopes: ${other_scopes} — use --scope <name> to emit those)${NC}"
+    fi
+    echo -e "${RED}NOT VERIFIED ON A UNIT:${NC} this RADIUS walkthrough is written from WTI's documents"
+    echo "(docs/radius-notes.md), not tested on a WTI device. The TACACS+ walkthrough"
+    echo "('tacctl config wti --scope ${scope} --protocol tacacs') was verified on a v8.10 unit."
+    echo -e "${YELLOW}Follow these steps on the WTI serial (SetUp) console:${NC}"
+    echo "--------------------------------------------"
+    echo ""
+
+    local template_file
+    template_file=$(resolve_template "wti-radius")
+    if [[ -n "$template_file" ]]; then
+        export SERVER_IP="$server_ip" SECRET="$secret" SCOPE="$scope" FALLBACK_LOCAL AUTH_PORT ACCT_PORT
+        # shellcheck disable=SC2016
+        envsubst '${SERVER_IP} ${SECRET} ${SCOPE} ${FALLBACK_LOCAL} ${AUTH_PORT} ${ACCT_PORT}' < "$template_file"
+    else
+        cat <<EOT
+Step 1: Log in on the serial SetUp port as an Administrator-level account
+        (factory default: super / super). Keep this session open until Step 7 succeeds.
+
+Step 2: /N [Enter] -> Network Parameters; 29 [Enter] -> RADIUS Parameters
+        (29 in WTI's guide; the number varies by model and firmware).
+
+Step 3: Set each item:
+          Enable                      : On
+          Primary Host/Address        : ${server_ip}
+          Primary Secret Word         : ${secret}
+          Fallback Timer              : 3
+          Fallback Local              : ${FALLBACK_LOCAL}
+          Retries                     : 3
+          Authentication Port         : ${AUTH_PORT}
+          Accounting Port             : ${ACCT_PORT}
+          Default RADIUS User Access  : Enable On, Access Level ViewOnly
+          Debug                       : Off
+
+Step 4: Ping RADIUS Servers -- confirms ${server_ip} answers ICMP (not UDP ${AUTH_PORT}).
+
+Step 5: If the unit's IP Tables (/N) end in DROP, accept these before the DROP:
+          iptables -A INPUT -i lo -j ACCEPT
+          iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+
+Step 6: Press [Esc] repeatedly until "Saving Configuration" is printed.
+
+Step 7: From a SECOND session, log in as a user of scope '${scope}' with
+        'ssh -o PreferredAuthentications=password <user>@<wti-ip>', type /H
+        to see the commands allowed at the assigned access level, and /X to exit.
+
+Step 8: Only if Step 7 fails: set Debug: On, retry, read the unit's log next
+        to 'tacctl log tail 20 --backend radius'. Set Debug back to Off afterwards.
+EOT
+    fi
+
+    echo ""
+    echo "--------------------------------------------"
+    echo -e "${YELLOW}Group → WTI-Super (sent by the server over RADIUS, from priv-lvl):${NC}"
+    echo -n "$GROUP_SUMMARY"
+    echo "  (bands as for TACACS+: 0-4 ViewOnly, 5-9 User, 10-14 SuperUser, 15 Administrator)"
+    if [[ "$has_superuser_band" == "false" ]]; then
+        echo "  No group lands in the SuperUser band; to grant it, add a group at"
+        echo "  priv-lvl 10-14, e.g. 'tacctl group add wtisuper 12 OP-CLASS'."
+    fi
+    echo ""
+    radius_summary_accept wti "$scope"
+    echo ""
+    echo -e "${YELLOW}What RADIUS does not give you here:${NC}"
+    echo "  - Only the access level. The server sends no WTI-Port-Access, WTI-Plug-Access or"
+    echo "    WTI-Group-Access: which ports and plugs a login reaches is the unit's own setting"
+    echo "    for that level (Default RADIUS User Access → Port/Plug Access, Service Access)"
+    echo "  - No per-command authorization: the access level is all the unit is told"
+    echo "  - Accounting is not verified: whether the unit sends any, and what (Session Module"
+    echo "    Type), is not documented"
+    echo "  - Password logins only (PAP; WTI documents nothing else): no CHAP, MS-CHAP or EAP"
+    echo "  - UDP, not TCP/49: the unit sends to ${AUTH_PORT} (authentication) and ${ACCT_PORT} (accounting)"
+    echo "  - The server answers only a unit whose source address lies in a prefix of scope"
+    echo "    '${scope}' ('tacctl scope lookup <wti-ip>' to check)"
+    echo ""
+    echo -e "${YELLOW}Where WTI's documents disagree (not checked on a unit):${NC}"
+    echo "  - The level a login gets when the Access-Accept carries no WTI-Super: the user's guide"
+    echo "    says Default RADIUS User Access hands out its Access Level (factory default User);"
+    echo "    WTI's knowledge base says View only. This walkthrough sets the level to ViewOnly"
+    echo "    explicitly, and tacctl refuses this walkthrough for a scope that sends no WTI-Super"
+    echo "  - Whether a WTI-Super in the reply overrides a same-named LOCAL account on the unit is not"
+    echo "    documented (for TACACS+ the local account wins): keep the two directories disjoint"
+    echo ""
+    if [[ -n "$secret_warnings" || -n "$user_warnings" || -n "$RADIUS_WARNINGS" ]]; then
+        echo -e "${YELLOW}Warnings:${NC}"
+        echo -n "$secret_warnings"
+        echo -n "$user_warnings"
+        echo -n "$RADIUS_WARNINGS"
+        echo ""
+    fi
+    echo -e "${YELLOW}Notes:${NC}"
+    echo "  - Fallback Local '${FALLBACK_LOCAL}' mirrors this scope's aaa-order; keep a local"
+    echo "    Administrator account on the unit as break-glass. With Fallback Local Off (the factory"
+    echo "    default) a unit whose server is unreachable admits nobody over the services RADIUS covers"
+    echo "  - Default RADIUS User Access On (ViewOnly) is the floor, the WTI-Super the server returns"
+    echo "    sets the level. By analogy with TACACS+ (verified there, not here): with it Off the unit's"
+    echo "    OpenSSH treats server-only users as invalid and every SSH login fails"
+    echo "  - A firewall that drops the server's replies (the unit's own IP Tables without"
+    echo "    ESTABLISHED,RELATED -- Step 5) shows on the server as an Access-Accept in the auth log for"
+    echo "    a login that still fails on the unit after the Fallback Timer"
+    echo "  - Repeated failures arm the unit's Invalid Access Lockout: a plain 'ssh' is then closed"
+    echo "    without a password prompt; /UL on the serial session clears it"
+    if [[ -n "$template_file" ]]; then
+        echo "  - Using template: ${template_file}"
+    fi
+    echo ""
+    echo -e "${BOLD}Verify on the server:${NC}"
+    echo "  tacctl log tail 20 --backend radius   # one line per attempt: Access-Accept or Access-Reject,"
+    echo "                                        # scope=${scope}, and nas= -- what the unit sent as its"
+    echo "                                        # NAS-Identifier (else NAS-IP-Address). WTI documents the"
+    echo "                                        # identifier only as starting with the product family"
+    echo "  tacctl log failures --backend radius  # reason= says why a login was refused"
+    echo "  tacctl scope lookup <wti-ip>          # the unit's address must answer scope '${scope}'"
+    echo "  On the WTI (Step 8): with Debug On the unit logs its RADIUS exchanges; line them up with"
+    echo "  the server's auth log above"
     echo ""
 }
 

@@ -4,39 +4,29 @@
 # One entry per user and scope. Tmp-String-0 is set by the policy in tacctl-radius.conf to
 # '<render id>/<scope of the client>': a user matches only from a client of a scope they are in.
 # Disabled users and the accounting sink have no entry.
+# The Tacctl-* items go to the control list, never into a packet: the policy makes a vendor's
+# attribute from them for a client whose scope or tag asks for it. The reply is Service-Type.
 
-alice	Tmp-String-0 == "03fed20b618ae70b/prod", Crypt-Password := "$2b$12$alice......................................................."
+alice	Tmp-String-0 == "ad1f88691bfec116/prod", Crypt-Password := "$2b$12$alice.......................................................", Tacctl-Priv-Lvl := 15, Tacctl-Juniper-Class := "RW-CLASS", Tacctl-WTI-Super := 3
 	Service-Type = Administrative-User,
-	Cisco-AVPair = "shell:priv-lvl=15",
-	Juniper-Local-User-Name = "RW-CLASS",
 	Fall-Through = No
 
-alice	Tmp-String-0 == "03fed20b618ae70b/lab", Crypt-Password := "$2b$12$alice......................................................."
+alice	Tmp-String-0 == "ad1f88691bfec116/lab", Crypt-Password := "$2b$12$alice.......................................................", Tacctl-Priv-Lvl := 15, Tacctl-Juniper-Class := "RW-CLASS", Tacctl-WTI-Super := 3
 	Service-Type = Administrative-User,
-	Cisco-AVPair = "shell:priv-lvl=15",
-	Juniper-Local-User-Name = "RW-CLASS",
 	Fall-Through = No
 
-alice	Tmp-String-0 == "03fed20b618ae70b/wifi", Crypt-Password := "$2b$12$alice......................................................."
+alice	Tmp-String-0 == "ad1f88691bfec116/wifi", Crypt-Password := "$2b$12$alice.......................................................", Tacctl-Priv-Lvl := 15, Tacctl-Juniper-Class := "RW-CLASS", Tacctl-WTI-Super := 3
 	Service-Type = Administrative-User,
-	Cisco-AVPair = "shell:priv-lvl=15",
-	Juniper-Local-User-Name = "RW-CLASS",
 	Fall-Through = No
 
-bob	Tmp-String-0 == "03fed20b618ae70b/lab", Crypt-Password := "$2a$12$bob.........................................................."
+bob	Tmp-String-0 == "ad1f88691bfec116/lab", Crypt-Password := "$2a$12$bob..........................................................", Tacctl-Priv-Lvl := 7, Tacctl-Juniper-Class := "OP-CLASS", Tacctl-WTI-Super := 1
 	Service-Type = NAS-Prompt-User,
-	Cisco-AVPair = "shell:priv-lvl=7",
-	Juniper-Local-User-Name = "OP-CLASS",
 	Fall-Through = No
 
-erin	Tmp-String-0 == "03fed20b618ae70b/wifi", Crypt-Password := "$2b$12$erin........................................................."
+erin	Tmp-String-0 == "ad1f88691bfec116/wifi", Crypt-Password := "$2b$12$erin.........................................................", Tacctl-Priv-Lvl := 10, Tacctl-Juniper-Class := "NETOPS_class-1", Tacctl-WTI-Super := 2
 	Service-Type = NAS-Prompt-User,
-	Cisco-AVPair = "shell:priv-lvl=10",
-	Juniper-Local-User-Name = "NETOPS_class-1",
 	Fall-Through = No
 
-erin	Tmp-String-0 == "03fed20b618ae70b/prod-inner", Crypt-Password := "$2b$12$erin........................................................."
+erin	Tmp-String-0 == "ad1f88691bfec116/prod-inner", Crypt-Password := "$2b$12$erin.........................................................", Tacctl-Priv-Lvl := 10, Tacctl-Juniper-Class := "NETOPS_class-1", Tacctl-WTI-Super := 2
 	Service-Type = NAS-Prompt-User,
-	Cisco-AVPair = "shell:priv-lvl=10",
-	Juniper-Local-User-Name = "NETOPS_class-1",
 	Fall-Through = No

@@ -773,3 +773,35 @@ s[0]['secret']['extra'] = 'side-secret'"
     assert_failure
     assert_output --partial "10.67.0.0/16"
 }
+
+@test "import: never produces vendor fields; --replace keeps them, and drops (with --force) a tag the imported prefixes no longer hold" {
+    load_fixture legacy.import-edge.yaml
+    edge_sidecars
+    store_import > /dev/null
+    ! grep -qE 'vendor_attrs|devices' "$STORE_FILE"
+    local lab_net
+    lab_net=$(model_scope lab prefixes | head -1)
+    store_scope_set lab vendor_attrs=wti,cisco "devices=${lab_net}=juniper"
+    rm -rf "$PASSWORD_DATES_DIR" "${BACKUP_DIR}/disabled"
+    run store_import --replace
+    assert_success
+    assert_output --partial "kept the RADIUS vendor attributes and tagged addresses of 1 scope(s)"
+    run model_scope lab vendor_attrs
+    assert_output "$(printf 'cisco\nwti')"
+    run model_scope lab devices
+    assert_output "${lab_net} juniper"
+
+    # The file to import no longer has that prefix: the tag cannot be kept.
+    sed -i "s#\"${lab_net}\"#\"198.18.99.0/24\"#" "$CONFIG"
+    run store_import --replace
+    assert_failure
+    assert_output --partial "scope 'lab': the vendor tag of ${lab_net} (no prefix of the scope in this file contains it any more)"
+    run model_scope lab devices
+    assert_output "${lab_net} juniper"
+    run store_import --replace --force
+    assert_success
+    run model_scope lab devices
+    assert_output ""
+    run model_scope lab vendor_attrs
+    assert_output "$(printf 'cisco\nwti')"
+}

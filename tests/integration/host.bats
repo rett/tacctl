@@ -600,7 +600,7 @@ _protocols() { "$TACCTL_BIN_SCRIPT" scope protocols "$1" | sed -n "s/.*Scope '$1
     "$TACCTL_BIN_SCRIPT" scope auth-method lab radius > /dev/null
     run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab
     assert_success
-    assert_output --partial "Method radius: the auth-method of scope 'lab'"
+    assert_output --partial "Method radius: scope 'lab' has auth-method radius (tacctl scope auth-method)"
     run _hosts
     assert_output "web1|web1||lab|192.0.2.1||radius"
     grep -q '^TAC_METHOD=radius$' "$PUSHED"
@@ -624,7 +624,7 @@ _protocols() { "$TACCTL_BIN_SCRIPT" scope protocols "$1" | sed -n "s/.*Scope '$1
     "$TACCTL_BIN_SCRIPT" scope auth-method lab radius > /dev/null
     run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab
     assert_success
-    assert_output --partial "web1 is registered with method tacplus and keeps it; scope 'lab' has auth-method radius. To switch the host: --method radius"
+    assert_output --partial "web1 is registered with method tacplus and keeps it; scope 'lab' has auth-method radius (tacctl scope auth-method). To switch the host: --method radius"
     refute_output --partial "Switching"
     run _hosts
     assert_output "web1|web1||lab|192.0.2.1|"
@@ -641,7 +641,7 @@ _protocols() { "$TACCTL_BIN_SCRIPT" scope protocols "$1" | sed -n "s/.*Scope '$1
     "$TACCTL_BIN_SCRIPT" scope auth-method lab tacacs > /dev/null
     run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab
     assert_success
-    assert_output --partial "Method tacplus: the auth-method of scope 'lab'"
+    assert_output --partial "Method tacplus: scope 'lab' has auth-method tacacs (tacctl scope auth-method)"
     run _hosts
     assert_output "web1|web1||lab|192.0.2.1|"
     # A scope without one still takes the default.
@@ -650,6 +650,36 @@ _protocols() { "$TACCTL_BIN_SCRIPT" scope protocols "$1" | sed -n "s/.*Scope '$1
     assert_success
     run _hosts
     assert_line "web2|web1||lab|192.0.2.1||radius"
+}
+
+@test "host enroll: without --method or an auth-method, a scope served over one protocol only decides" {
+    radius_on_rendering
+    "$TACCTL_BIN_SCRIPT" scope protocols lab set radius > /dev/null
+    run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab
+    assert_success
+    assert_output --partial "Method radius: scope 'lab' is served over radius only (tacctl scope protocols)"
+    run _hosts
+    assert_output "web1|web1||lab|192.0.2.1||radius"
+    # Both protocols decide nothing: the default (tacplus) again.
+    "$TACCTL_BIN_SCRIPT" scope protocols lab set tacacs,radius > /dev/null
+    run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab --name web2
+    assert_success
+    refute_output --partial "served over"
+    run _hosts
+    assert_line "web2|web1||lab|192.0.2.1|"
+}
+
+@test "host enroll: an existing linux-<name> scope limited to one protocol is re-enrolled with it after the registration is gone" {
+    radius_on_rendering
+    "$TACCTL_BIN_SCRIPT" host enroll web1 --method radius > /dev/null
+    run _protocols linux-web1
+    assert_output "radius"
+    : > "${TACCTL_STATE_DIR}/linux-hosts"
+    run "$TACCTL_BIN_SCRIPT" host enroll web1
+    assert_success
+    assert_output --partial "Method radius: scope 'linux-web1' is served over radius only"
+    run _hosts
+    assert_output "web1|web1||linux-web1|192.0.2.1||radius"
 }
 
 @test "host enroll: the scope's auth-method names a backend that is off: refused, nothing reaches the host" {
@@ -667,7 +697,7 @@ _protocols() { "$TACCTL_BIN_SCRIPT" scope protocols "$1" | sed -n "s/.*Scope '$1
     "$TACCTL_BIN_SCRIPT" scope auth-method linux-web1 radius > /dev/null
     run "$TACCTL_BIN_SCRIPT" host enroll web1
     assert_success
-    assert_output --partial "Method radius: the auth-method of scope 'linux-web1'"
+    assert_output --partial "Method radius: scope 'linux-web1' has auth-method radius (tacctl scope auth-method)"
     run _hosts
     assert_output "web1|web1||linux-web1|192.0.2.1||radius"
 

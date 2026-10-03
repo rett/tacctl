@@ -2,8 +2,10 @@
 # The RADIUS backend (lib/backends/radius.sh) through the commands, with the
 # package manager, systemd, the daemon binary and ss stubbed: 'backend
 # enable|disable radius' on both distro layouts, what a mutation renders,
-# scope 'protocols' filtering, drift, the daemon's config check, listeners,
-# the status and log sections with two backends, and uninstall.
+# scope 'protocols' filtering, vendor attributes, drift, the daemon's config
+# check, listeners, the status and log sections with two backends, the way
+# from the release before the dictionary (upgrade, or the next mutation),
+# and uninstall.
 #
 # The stubs keep state in $SD (which units are active, which are enabled) so
 # that 'is-active' answers what the commands before it did. Knobs, files in
@@ -32,6 +34,7 @@ setup() {
     OVERRIDES="${TACCTL_STATE_DIR}/tacctl.yaml"
     RCONF="${TACCTL_RADIUS_DIR}/tacctl-radius.conf"
     RUSERS="${TACCTL_RADIUS_DIR}/tacctl-radius.users"
+    RDICT="${TACCTL_RADIUS_DIR}/tacctl-radius-dictionary/dictionary"
 
     stub_cmd chown
     stub_cmd logger
@@ -128,7 +131,7 @@ radius_up() {
 
 state() {
     local f
-    for f in "$STORE" "$OVERRIDES" "$TACCTL_CONFIG" "$RCONF" "$RUSERS" "$RENDERED"; do
+    for f in "$STORE" "$OVERRIDES" "$TACCTL_CONFIG" "$RCONF" "$RUSERS" "$RDICT" "$RENDERED"; do
         if [[ -f "$f" ]]; then
             echo "$(basename "$f") $(sha256sum < "$f")"
         else
@@ -159,27 +162,33 @@ enabled_list() {
     stub_called '^systemctl disable --quiet --now freeradius.service$'
     [[ "$(enabled_list)" == "tacacs radius" ]]
 
-    # Both artifacts, recorded, 0640.
-    [[ -f "$RCONF" && -f "$RUSERS" ]]
-    [[ "$(stat -c %a "$RCONF")" == "640" && "$(stat -c %a "$RUSERS")" == "640" ]]
+    # The three artifacts, recorded, 0640; the dictionary's directory 0750.
+    [[ -f "$RCONF" && -f "$RUSERS" && -f "$RDICT" ]]
+    [[ "$(stat -c %a "$RCONF")" == "640" && "$(stat -c %a "$RUSERS")" == "640" && "$(stat -c %a "$RDICT")" == "640" ]]
+    [[ "$(stat -c %a "${RDICT%/*}")" == "750" ]]
     stub_called "^chown root:freerad ${RCONF}.tacctl-new$"
     stub_called "^chown root:freerad ${RUSERS}.tacctl-new$"
+    stub_called "^chown root:freerad ${RDICT}.tacctl-new$"
+    stub_called "^chown root:freerad ${RDICT%/*}$"
     run "$TACCTL_BIN_SCRIPT" config validate
     assert_success
     grep -q "\"${RCONF}\"" "$RENDERED"
     grep -q "\"${RUSERS}\"" "$RENDERED"
+    grep -q "\"${RDICT}\"" "$RENDERED"
     grep -q '^	user = freerad$' "$RCONF"
+    grep -q "^\\\$INCLUDE ${TACCTL_RADIUS_DICT}$" "$RDICT"
 
     # The daemon's own check ran on a copy beside the live files, readable by
-    # the service account's group, and the copy is gone.
-    stub_called "^radiusd -C -lstdout -d ${TACCTL_RADIUS_DIR}/.tacctl-check\.[A-Za-z0-9]+ -n tacctl-radius$"
+    # the service account's group, with the copy of the dictionary, and the
+    # copy is gone.
+    stub_called "^radiusd -C -lstdout -d ${TACCTL_RADIUS_DIR}/.tacctl-check\.[A-Za-z0-9]+ -D ${TACCTL_RADIUS_DIR}/.tacctl-check\.[A-Za-z0-9]+/dictionary.d -n tacctl-radius$"
     grep -q 'tacctl-radius.conf' "${SD}/check-dir.log"
     grep -q '^-rw-r----- .* tacctl-radius.users$' "${SD}/check-dir.log"
     grep -q '^drwxr-x--- .* \.$' "${SD}/check-dir.log"
 
     # The drop-in, then enable and start, in that order.
     local dropin="${TACCTL_SYSTEMD_DIR}/freeradius.service.d/tacctl.conf"
-    grep -q "^ExecStart=${TACCTL_RADIUS_BIN} -f -d ${TACCTL_RADIUS_DIR} -n tacctl-radius$" "$dropin"
+    grep -q "^ExecStart=${TACCTL_RADIUS_BIN} -f -d ${TACCTL_RADIUS_DIR} -D ${RDICT%/*} -n tacctl-radius$" "$dropin"
     run grep -nE '^systemctl (daemon-reload|enable --quiet freeradius.service|start freeradius.service)$' "$CALLS_LOG"
     assert_line --index 0 --partial "daemon-reload"
     assert_line --index 1 --partial "enable --quiet freeradius.service"
@@ -199,7 +208,7 @@ enabled_list() {
     assert_success
     stub_called '^dnf install -y -q freeradius freeradius-utils$'
     local dropin="${TACCTL_SYSTEMD_DIR}/radiusd.service.d/tacctl.conf"
-    grep -q "^ExecStart=${TACCTL_RADIUS_BIN} -d ${TACCTL_RADIUS_DIR} -n tacctl-radius$" "$dropin"
+    grep -q "^ExecStart=${TACCTL_RADIUS_BIN} -d ${TACCTL_RADIUS_DIR} -D ${RDICT%/*} -n tacctl-radius$" "$dropin"
     grep -q '^ExecStartPre=-/bin/chown -R radiusd:radiusd /var/run/radiusd$' "$dropin"
     stub_called '^systemctl enable --quiet radiusd.service$'
     stub_called '^systemctl start radiusd.service$'
@@ -217,6 +226,7 @@ enabled_list() {
     assert_success
     assert_output --partial "RADIUS does not enforce the command rules (commands.<group>) of: operator."
     assert_output --partial "The secret of scope lab, prod-inner is longer than 63 characters or has a space"
+    assert_output --partial "Over RADIUS no vendor attribute is sent to the devices of scope(s) lab, prod, prod-inner, wifi: an Access-Accept carries Service-Type only."
 }
 
 @test "enable: a FreeRADIUS that is already running is somebody's, and is neither taken nor stopped" {
@@ -668,18 +678,179 @@ EOF
 
 # --- upgrade, uninstall ------------------------------------------------------
 
-@test "upgrade files: a drop-in that is not what this release writes is rewritten; none is not created" {
-    radius_up
+# The state the release before the dictionary leaves: its two files (a real
+# render of that release, recorded as what tacctl rendered), no dictionary,
+# and its drop-in, which starts the daemon without -D.
+pre_vendor_state() {
     local dropin="${TACCTL_SYSTEMD_DIR}/freeradius.service.d/tacctl.conf"
-    echo "# from an older release" > "$dropin"
-    tc backend_radius_upgrade files /nonexistent
+    cp "${TACCTL_SRC}/tests/fixtures/radius.pre-vendor.conf" "$RCONF"
+    cp "${TACCTL_SRC}/tests/fixtures/radius.pre-vendor.users" "$RUSERS"
+    rm -rf "${RDICT%/*}"
+    tc rendered_record "$RCONF"
+    tc rendered_record "$RUSERS"
+    tc rendered_forget "$RDICT"
+    cat > "$dropin" <<EOF
+# Installed by tacctl ('tacctl backend enable radius'), removed by 'tacctl backend disable radius'.
+[Service]
+ExecStartPre=
+ExecStartPre=${TACCTL_RADIUS_BIN} -C -lstdout -d ${TACCTL_RADIUS_DIR} -n tacctl-radius
+ExecStart=
+ExecStart=${TACCTL_RADIUS_BIN} -f -d ${TACCTL_RADIUS_DIR} -n tacctl-radius
+EOF
+    : > "$CALLS_LOG"
+}
+
+# The upgrade phases of this backend, then the closing summary lines.
+upgrade_radius() {
+    run bash -c 'set -euo pipefail; source "$1"; for p in config files finish; do backend_radius_upgrade "$p" /nonexistent; done
+                 printf "SUMMARY %s\n" ${UPGRADE_SUMMARY_NOTES[@]+"${UPGRADE_SUMMARY_NOTES[@]}"}' _ "$TACCTL_BIN_SCRIPT"
+    output=$(sed 's/\x1b\[[0-9;]*m//g' <<< "$output")
+    mapfile -t lines <<< "$output"
+}
+
+@test "upgrade: an install from the release before the dictionary is re-rendered, not taken for drift; the drop-in gains -D, then one restart" {
+    radius_up
+    pre_vendor_state
+    local dropin="${TACCTL_SYSTEMD_DIR}/freeradius.service.d/tacctl.conf"
+    run "$TACCTL_BIN_SCRIPT" config validate
+    refute_output --partial "DRIFT"
+    upgrade_radius
     assert_success
-    grep -q '^ExecStart=' "$dropin"
-    stub_called '^systemctl daemon-reload$'
+    assert_output --partial "RADIUS: re-rendered ${RCONF}, ${RUSERS}, ${RDICT}."
+    assert_output --partial "RADIUS: no scope enables a vendor attribute, so an Access-Accept carries Service-Type only."
+    assert_output --partial "RADIUS: updated ${dropin}."
+    assert_line "SUMMARY RADIUS: config re-rendered for this release, FreeRADIUS restarted"
+    [[ -f "$RDICT" ]]
+    grep -q "\"${RDICT}\"" "$RENDERED"
+    grep -q "^ExecStart=${TACCTL_RADIUS_BIN} -f -d ${TACCTL_RADIUS_DIR} -D ${RDICT%/*} -n tacctl-radius$" "$dropin"
+    ! grep -q 'Cisco-AVPair = ' "$RUSERS"
+    # Artifacts, then the drop-in (daemon-reload), then exactly one restart.
+    run grep -nE '^systemctl (daemon-reload|restart freeradius.service)$' "$CALLS_LOG"
+    assert_line --index 0 --partial "daemon-reload"
+    assert_line --index 1 --partial "restart freeradius.service"
+    [[ "${#lines[@]}" == 2 ]]
+    run "$TACCTL_BIN_SCRIPT" config validate
+    assert_success
+    refute_output --partial "DRIFT"
+    no_leftovers
+}
+
+@test "upgrade: nothing to do when the artifacts and the drop-in are current (no restart, no summary line)" {
+    radius_up
+    upgrade_radius
+    assert_success
+    refute_output --partial "re-rendered"
+    refute_line --partial "SUMMARY RADIUS"
+    ! stub_called '^systemctl restart freeradius'
+}
+
+@test "upgrade: a hand-edited artifact is not replaced, and neither the drop-in nor the daemon is touched" {
+    radius_up
+    pre_vendor_state
+    echo "# hand edit" >> "$RUSERS"
+    local dropin="${TACCTL_SYSTEMD_DIR}/freeradius.service.d/tacctl.conf" before
+    before=$(state; cat "$dropin")
+    upgrade_radius
+    assert_success
+    assert_output --partial "was edited since tacctl rendered it"
+    assert_output --partial "The RADIUS files were not re-rendered; FreeRADIUS keeps serving the previous ones."
+    assert_line --partial "SUMMARY RADIUS: NOT brought in line with this release"
+    [[ "$(state; cat "$dropin")" == "$before" ]]
+    ! stub_called '^systemctl (restart|daemon-reload)'
+}
+
+@test "upgrade: a disabled backend (no drop-in) is left alone" {
+    radius_up
     tacctl backend disable radius -y
-    tc backend_radius_upgrade files /nonexistent
+    : > "$CALLS_LOG"
+    local before
+    before=$(state)
+    upgrade_radius
     assert_success
-    [[ ! -e "$dropin" ]]
+    [[ "$(state)" == "$before" ]]
+    [[ ! -e "${TACCTL_SYSTEMD_DIR}/freeradius.service.d" ]]
+    ! stub_called '^systemctl'
+}
+
+@test "the next mutation after the code changed: all three rendered, the drop-in brought in line before the restart" {
+    radius_up
+    pre_vendor_state
+    local dropin="${TACCTL_SYSTEMD_DIR}/freeradius.service.d/tacctl.conf"
+    tacctl user disable bob
+    assert_success
+    refute_output --partial "edited since"
+    [[ -f "$RDICT" ]]
+    grep -q "\"${RDICT}\"" "$RENDERED"
+    grep -q -- "-D ${RDICT%/*} -n tacctl-radius$" "$dropin"
+    run grep -nE '^systemctl (daemon-reload|restart freeradius.service)$' "$CALLS_LOG"
+    assert_line --index 0 --partial "daemon-reload"
+    assert_line --index 1 --partial "restart freeradius.service"
+    run "$TACCTL_BIN_SCRIPT" config validate
+    assert_success
+    refute_output --partial "DRIFT"
+}
+
+@test "dictionary: a hand edit of it refuses mutations like the other two; a missing package dictionary fails clearly and changes nothing" {
+    radius_up
+    echo "ATTRIBUTE X 3000 string" >> "$RDICT"
+    tacctl user disable bob
+    [[ "$status" == 3 ]]
+    assert_output --partial "${RDICT} was edited since tacctl rendered it"
+    tacctl config render --force
+    assert_success
+    ! grep -q 'ATTRIBUTE X' "$RDICT"
+    ls "${TACCTL_STATE_DIR}/backups/legacy/dictionary.drift."* > /dev/null
+
+    rm -f "$TACCTL_RADIUS_DICT"
+    local before
+    before=$(state)
+    tacctl user disable bob
+    assert_failure
+    assert_output --partial "FreeRADIUS's main dictionary is not at ${TACCTL_RADIUS_DICT}"
+    [[ "$(state)" == "$before" ]]
+}
+
+@test "vendor attributes: a change re-renders and restarts RADIUS only; tacquito.yaml is byte-identical" {
+    radius_up
+    local tq
+    tq=$(sha256sum < "$TACCTL_CONFIG")
+    tacctl scope vendor-attrs lab enable cisco,wti
+    assert_success
+    stub_called '^systemctl restart freeradius.service$'
+    ! stub_called '^systemctl restart tacquito'
+    [[ "$(sha256sum < "$TACCTL_CONFIG")" == "$tq" ]]
+    grep -A7 '^	client lab.1 {' "$RCONF" | grep -q 'tacctl_send_cisco = "yes"'
+    : > "$CALLS_LOG"
+    tacctl scope devices prod set 10.9.9.9 juniper
+    assert_success
+    stub_called '^systemctl restart freeradius.service$'
+    ! stub_called '^systemctl restart tacquito'
+    [[ "$(sha256sum < "$TACCTL_CONFIG")" == "$tq" ]]
+    grep -q '^	client prod.juniper.1 {' "$RCONF"
+    tacctl status
+    assert_output --partial "Vendor attributes:    enabled for 1 of 4 scope(s), 1 tagged address(es)"
+    tacctl backend status radius
+    assert_output --partial "Vendor attributes:    enabled for 1 of 4 scope(s), 1 tagged address(es)"
+}
+
+@test "validate: a scope served over RADIUS that sends no vendor attribute is warned about, unless it is a Linux-host scope" {
+    radius_up
+    tacctl config validate
+    assert_success
+    assert_output --partial "Vendor attributes:    not sent to the devices of scope(s) lab, prod, prod-inner, wifi over RADIUS"
+    tacctl scope vendor-attrs lab enable cisco
+    tacctl scope devices prod set 10.9.9.9 juniper
+    # wifi: the scope of two enrolled hosts, and one /32 of theirs.
+    tacctl scope prefixes wifi add 10.30.0.5/32
+    tacctl scope prefixes wifi remove 10.20.0.0/16
+    printf 'h1|root@10.30.0.5||wifi|10.0.0.42||radius\nh2|root@h2||wifi|10.0.0.42||radius\n' > "${TACCTL_STATE_DIR}/linux-hosts"
+    tacctl config validate
+    assert_success
+    assert_output --partial "not sent to the devices of scope(s) prod-inner over RADIUS"
+    # A host scope with a wider prefix is not told apart: warned about.
+    tacctl scope prefixes wifi add 10.31.0.0/24
+    tacctl config validate
+    assert_output --partial "scope(s) prod-inner, wifi over RADIUS"
 }
 
 @test "uninstall: the unit is stopped and handed back, tacctl's files and logs are removed, the package stays" {
@@ -697,7 +868,7 @@ EOF
     tc backend_radius_uninstall data
     assert_success
     assert_output --partial "is left installed"
-    [[ ! -e "$RCONF" && ! -e "$RUSERS" ]]
+    [[ ! -e "$RCONF" && ! -e "$RUSERS" && ! -e "${RDICT%/*}" ]]
     [[ ! -e "${TACCTL_LOGROTATE_DIR}/tacctl-radius" ]]
     [[ -z "$(find "$TACCTL_RADIUS_LOG" -name 'tacctl-*')" ]]
     [[ -x "$TACCTL_RADIUS_BIN" ]]

@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# Bash completion for the backend, store, log --backend and config listen words
+# Bash completion for the backend, store, log --backend, config listen and
+# scope vendor-attrs / devices / auth-method words
 # (config/tacctl.bash-completion), and the hidden '_completion-names' kinds it
 # asks the sudo bridge for. The completion function runs in a bash of its own
 # with the real bash-completion library; 'sudo' is a stub that answers the
@@ -107,9 +108,13 @@ complete_words() {
     assert_output "$(printf -- '--scope\n--legacy')"
     complete_words tacctl config cisco --protocol radius --scope lab ""
     assert_output "--legacy"
-    # WTI is TACACS+ only: no --protocol offered.
+    # WTI takes --protocol like the others.
     complete_words tacctl config wti ""
-    assert_output "--scope"
+    assert_output "$(printf -- '--scope\n--protocol')"
+    complete_words tacctl config wti --protocol ""
+    assert_output "$(printf 'tacacs\nradius')"
+    complete_words tacctl config wti --scope lab ""
+    assert_output "--protocol"
 }
 
 @test "completion: scope offers radius-group beside tacacs-group" {
@@ -117,11 +122,45 @@ complete_words() {
     assert_output "radius-group"
 }
 
-@test "completion: scope offers auth-method, a scope name, then tacacs, radius or default" {
+@test "completion: scope offers auth-method, a scope name, then tacacs, radius or clear" {
     complete_words tacctl scope auth
     assert_output "auth-method"
     complete_words tacctl scope auth-method lab ""
-    assert_output "$(printf 'tacacs\nradius\ndefault')"
+    assert_output "$(printf 'tacacs\nradius\nclear')"
+}
+
+@test "completion: scope vendor-attrs offers enable and disable (no set, clear or none), then vendors" {
+    complete_words tacctl scope vend
+    assert_output "vendor-attrs"
+    complete_words tacctl scope vendor-attrs lab ""
+    assert_output "$(printf 'enable\ndisable')"
+    complete_words tacctl scope vendor-attrs lab enable ""
+    assert_line "cisco"
+    assert_line "juniper"
+    assert_line "wti"
+    complete_words tacctl scope vendor-attrs lab disable w
+    assert_output "wti"
+}
+
+@test "completion: scope devices offers list, set and unset, and a vendor after set's address" {
+    complete_words tacctl scope dev
+    assert_output "devices"
+    complete_words tacctl scope devices lab ""
+    assert_output "$(printf 'list\nset\nunset')"
+    complete_words tacctl scope devices lab set 10.1.2.3 ""
+    assert_output "$(printf 'cisco\njuniper\nwti')"
+    complete_words tacctl scope devices lab unset 10.1.2.3 ""
+    assert_output ""
+}
+
+@test "completion: scope add offers --protocols and --vendor-attrs, with their values" {
+    complete_words tacctl scope add edge ""
+    assert_output "$(printf -- '--prefixes\n--secret\n--protocols\n--vendor-attrs\n--default')"
+    complete_words tacctl scope add edge --prefixes 10.0.0.0/8 --vendor-attrs ""
+    assert_line "cisco"
+    assert_line "cisco,juniper,wti"
+    complete_words tacctl scope add edge --prefixes 10.0.0.0/8 --vendor-attrs cisco ""
+    assert_output "$(printf -- '--secret\n--protocols\n--default')"
 }
 
 @test "completion: log subcommands take --backend, and its value is a backend id" {

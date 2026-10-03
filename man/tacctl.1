@@ -799,7 +799,9 @@ With
 .B "--protocol radius"
 (default: the scope's auth-method, see
 .BR "scope auth-method" ,
-else
+else the one protocol its
+.B protocols
+filter names, else
 .BR tacacs )
 the configuration is for the RADIUS backend instead (see
 .B RADIUS DEVICE CONFIGURATIONS
@@ -819,7 +821,7 @@ renders the RADIUS configuration (see
 .B RADIUS DEVICE CONFIGURATIONS
 below).
 .TP
-.BI "config wti " [ "--scope " name ]
+.BI "config wti " [ "--scope " name "] [--protocol " tacacs | radius ]
 Print a step-by-step procedure for the serial text interface of a WTI
 console server (DSM/CPM/REM/TSM/RSM, firmware v8.x): the
 .B /N
@@ -849,16 +851,25 @@ overlay, which sends an empty server_msg on accounting success; the
 unit drops the SSH session when it receives upstream's message. Warns when the
 scope secret or a scope member's username is unlikely to survive the
 unit's menu entry (whitespace, punctuation, over 32 characters). Scope
-handling matches
+handling and the protocol (flag, auth-method, the scope's only protocol,
+TACACS+) match
 .BR "config cisco" .
-TACACS+ only:
-.B "--protocol radius"
-is refused; no RADIUS walkthrough is rendered yet (what WTI documents is
-recorded in
-.IR docs/radius-notes.md ).
-On a scope whose auth-method is
-.B radius
-the TACACS+ walkthrough is printed with a warning.
+.IP
+Over RADIUS the walkthrough is for the unit's RADIUS Parameters menu
+.RB ( /N ,
+item 29 in WTI's user guide) and prints the group to
+.B WTI-Super
+table (0 ViewOnly, 1 User, 2 SuperUser, 3 Administrator, in the bands
+above). It has
+.B not
+been verified on a unit: it is written from WTI's documents
+.RI ( docs/radius-notes.md ),
+which disagree on the level a login gets when the reply carries no
+.BR WTI-Super .
+Refused, as for Cisco and Juniper, when the scope sends no
+.B WTI-Super
+(see
+.BR "scope vendor-attrs" ).
 .TP
 .BI "config branch " [ name ]
 Show or change the tacctl repository branch used by
@@ -1099,10 +1110,10 @@ connecting client.
 .TP
 .BI "scope show " name
 Full detail for one scope: prefixes, users that reference it, raw
-shared-secret value with length/posture, and whether the scope is
-the default.
+shared-secret value with length/posture, whether the scope is
+the default, its vendor attributes and tagged addresses (RADIUS).
 .TP
-.B "scope add " \fIname\fR " --prefixes " \fIcidr\fR[,cidr...] " [ --secret \fIvalue\fR | --secret generate ] [ --default ]
+.B "scope add " \fIname\fR " --prefixes " \fIcidr\fR[,cidr...] " [ --secret \fIvalue\fR | --secret generate ] [ --protocols \fIcsv\fR ] [ --vendor-attrs \fIcsv\fR ] [ --default ]
 Create a new scope. Prefixes are required; each must not already
 belong to another scope (overlap with a broader scope's supernet is
 fine — the new scope's narrower prefix will win first-match).
@@ -1111,6 +1122,14 @@ produces a strong key automatically.
 .B --default
 makes the new scope the default for
 .BR "user add" .
+.B --protocols
+and
+.B --vendor-attrs
+set what
+.B "scope protocols set"
+and
+.B "scope vendor-attrs enable"
+would.
 .TP
 .BI "scope remove " "name " [ --force ]
 Remove a scope. Drops every
@@ -1120,7 +1139,18 @@ one entry per prefix). Refuses by default if any user references the
 scope; with
 .BR --force ,
 strips the name from all affected users AND removes the secrets
-entries, with a loud warning.
+entries, with a loud warning. Every
+.I tacctl.yaml
+setting stored under the scope's name
+.RB ( aaa.order ,
+.BR exec_timeout ,
+.BR tacacs_group ,
+.BR radius_group ,
+.BR scope_auth_method ,
+.B scope_mgmt_acl.names.cisco|juniper
+and
+.BR scope_mgmt_acl.permits )
+is removed with it, so a new scope of that name starts from the defaults.
 .TP
 .BI "scope rename " "old new"
 Rename a scope. Rewrites
@@ -1134,7 +1164,10 @@ reference, and
 in
 .I tacctl.yaml
 (if it pointed at
-.IR old ).
+.IR old ),
+and moves every
+.I tacctl.yaml
+setting stored under the old name to the new one.
 .TP
 .BI "scope default " [ name ]
 Show (no arg) or set (with arg) the default scope. Stored under
@@ -1156,7 +1189,10 @@ Resolve an IPv4 / IPv6 address or CIDR to the scope that owns it,
 following the same slice-order walk tacquito's provider selector uses.
 Prints the matching prefix and, if multiple scopes' prefixes cover the
 query (e.g. a supernet/subnet overlap), lists the shadowed scopes
-below the winner for debugging.
+below the winner for debugging. An address the scope has tagged with a
+vendor
+.RB ( "scope devices" )
+is shown with its tag.
 .SS Per-scope prefixes \fB(tacctl scope prefixes)\fR
 .TP
 .BI "scope prefixes " "scope " "list"
@@ -1224,6 +1260,56 @@ grant of it are absent from tacquito.yaml.
 .TP
 .BI "scope protocols " "scope " "clear"
 Remove the filter.
+.SS Per-scope vendor attributes (RADIUS) \fB(tacctl scope vendor-attrs, tacctl scope devices)\fR
+Over RADIUS an Access-Accept always carries
+.B Service-Type
+.RB ( Administrative-User
+at priv-lvl 15, else
+.BR NAS-Prompt-User ).
+A vendor's privilege attribute is added only where the operator opted in:
+.B Cisco-AVPair \(dqshell:priv-lvl=N\(dq
+(cisco),
+.B Juniper-Local-User-Name
+(juniper),
+.B WTI-Super
+0\-3 (wti). An Access-Reject carries none. TACACS+ is not affected.
+.TP
+.BI "scope vendor-attrs " scope
+Show the vendors enabled for the scope, or
+.B "not sent"
+(the state of a new scope).
+.TP
+.BI "scope vendor-attrs " scope " enable|disable " vendor\fR[,vendor...]
+Enable or disable a vendor's attribute for every device of the scope that
+is not tagged. There is no
+.BR set ,
+.B clear
+or
+.BR none :
+nothing is sent until it is enabled. Stored on the scope in
+.I store.yaml
+.RB ( vendor_attrs ),
+so the change re-renders the RADIUS backend and restarts it.
+.TP
+.BI "scope devices " scope " [list]"
+List the scope's tagged addresses.
+.TP
+.BI "scope devices " scope " set " "ip\fR|\fIcidr vendor"
+Tag an address (a bare IP is a /32 or /128) or a range of the scope
+with its vendor: it gets that vendor's attribute and no other, whatever
+the scope enables. The address must be one
+.B "scope lookup"
+answers with this scope: inside a prefix of it, and inside no more
+specific prefix of another scope. Stored on the scope in
+.I store.yaml
+.RB ( devices ).
+.TP
+.BI "scope devices " scope " unset " ip\fR|\fIcidr
+Remove a tag.
+.B "scope prefixes remove"
+refuses to leave a tag outside the scope's prefixes (unset it first, or
+add the new prefix before removing the old one); tags go with the scope
+on rename and remove.
 .SS Per-scope idle-session timeout \fB(tacctl scope exec-timeout)\fR
 .TP
 .BI "scope exec-timeout " scope " [" minutes ]
@@ -1317,11 +1403,12 @@ in
 .IR tacctl.yaml .
 .SS Per-scope default authentication method \fB(tacctl scope auth-method)\fR
 .TP
-.BI "scope auth-method " scope " [" tacacs | radius | default ]
+.BI "scope auth-method " scope " [" tacacs | radius | clear ]
 Show or set the protocol this scope uses when a command names none:
-.B "config cisco"
-and
+.BR "config cisco" ,
 .B "config juniper"
+and
+.B "config wti"
 without
 .BR --protocol ,
 .B "host enroll"
@@ -1332,26 +1419,33 @@ without
 .RB ( tacacs
 is host method
 .BR tacplus ).
-An explicit
+The order is: an explicit
 .B --protocol
 or
-.B --method
-always wins.
-.B default
-clears the setting: device configurations are then TACACS+ and hosts take
-.BR "host default-method" .
+.BR --method ;
+a registered host's own method; this setting; the one protocol the
+scope's
+.B protocols
+filter names, when it names exactly one; the global default (device
+configurations TACACS+, hosts
+.BR "host default-method" ).
+.B clear
+removes the setting
+.RB ( default
+is accepted for it);
+.B tacplus
+is accepted for
+.BR tacacs ,
+which is the one spelling it prints.
 Refused when the scope's
 .B protocols
 filter leaves the protocol out;
 .B "scope protocols"
 in turn refuses a list without the scope's auth-method.
 .B "config cisco --legacy"
-on a scope set to
-.B radius
-needs
-.BR "--protocol tacacs" ;
-.B "config wti"
-stays TACACS+ and warns. Stored as
+on a scope that resolves to RADIUS needs
+.BR "--protocol tacacs" .
+Stored as
 .B scope_auth_method.<scope>
 in
 .IR tacctl.yaml ;
@@ -1387,15 +1481,16 @@ The change takes effect for the next
 render of the named scope — existing device configs are unchanged
 until the new method-list stanzas are pushed.
 .SH RADIUS DEVICE CONFIGURATIONS
-.B "config cisco"
-and
+.BR "config cisco" ,
 .B "config juniper"
+and
+.B "config wti"
 render the configuration for logging in to a device against the RADIUS
 backend when given
 .BR "--protocol radius" ,
-or without the flag for a scope whose auth-method is
-.B radius
-.RB ( "scope auth-method" ).
+or without the flag for a scope that resolves to RADIUS (its auth-method,
+else its only protocol;
+.BR "scope auth-method" ).
 The server address, the authentication and accounting ports (the
 .B auth
 and
@@ -1406,8 +1501,8 @@ and the scope's shared secret are filled in; the management ACL, the
 exec timeout, the scope's
 .B aaa-order
 (the server first, or local first) and the local fallback behave as in
-the TACACS+ output. Without the flag, and for a scope with no
-auth-method, the output is the TACACS+ configuration, unchanged.
+the TACACS+ output. Without the flag, and for a scope that does not
+resolve to RADIUS, the output is the TACACS+ configuration, unchanged.
 .PP
 Cisco output is a
 .B "radius server"
@@ -1418,7 +1513,9 @@ block,
 .BR "aaa authentication login" ,
 .BR "aaa authorization exec"
 (the privilege level comes from the reply's
-.BR "Cisco-AVPair shell:priv-lvl=N" )
+.BR "Cisco-AVPair shell:priv-lvl=N" ,
+which the scope must send: see
+.BR "scope vendor-attrs" )
 and
 .BR "aaa accounting exec" ,
 with the same
@@ -1433,8 +1530,11 @@ selects, with the per-class allow-commands and deny-commands rules,
 which stay in force because the class is local to the device.
 .PP
 RADIUS has no per-command authorization and no command accounting, and
-tacctl's RADIUS accepts PAP only. Each RADIUS output says so under the
-configuration, and tells which TACACS+ features are not available
+tacctl's RADIUS accepts PAP only. Each RADIUS output says under the
+configuration what the Access-Accept carries for the device
+.RB ( Service-Type
+and the vendor's attribute, enabled for the scope or for tagged
+addresses only), and which TACACS+ features are not available
 (rules set with
 .B "group commands"
 are not enforced by the server).
@@ -1446,6 +1546,12 @@ the scope's
 .B "scope protocols"
 filter leaves out
 .BR radius ,
+the scope sends the vendor's attribute to none of its devices (neither
+enabled with
+.B "scope vendor-attrs"
+nor an address tagged with
+.BR "scope devices" ;
+the error prints the command that enables it),
 or the scope secret holds a character that IOS or Junos read as syntax
 (whitespace, quotes, a backtick, a non-ASCII character, or any of
 .BR "? ! # $ \\e ; { } [ ] | & < > , * ( )" ).
@@ -1457,13 +1563,11 @@ makes such a secret. The secret is shared with TACACS+, so changing it
 means changing it on every device of the scope. A secret longer than 63
 characters renders with a warning. A listener bound to one IPv4 address
 supplies the server address; an IPv6 or loopback bind is warned about.
-.B "config wti"
-is TACACS+ only and says so for
-.BR "--protocol radius" .
 Operator overrides
-.I cisco-radius.template
-and
+.IR cisco-radius.template ,
 .I juniper-radius.template
+and
+.I wti-radius.template
 in the templates directory work as for the TACACS+ templates; see
 .BR FILES .
 .SH CONVENTIONS
@@ -1485,6 +1589,8 @@ and every nested dispatcher such as
 .BR "scope tacacs-group" ,
 .BR "scope radius-group" ,
 .BR "scope auth-method" ,
+.BR "scope vendor-attrs" ,
+.BR "scope devices" ,
 .BR "scope mgmt-acl" ,
 .BR "user scope" ,
 or
@@ -1580,6 +1686,29 @@ subcommands always prompt with
 .B [y/N]
 and print a warning about the resulting posture (for example, "no
 clients can connect" or "fails open").
+.TP
+.B "Filters and opt-ins"
+A setting that narrows something down is a filter: its verbs are
+.B set
+and
+.BR clear ,
+and empty (cleared) means everything
+.RB ( "scope protocols" ,
+.BR "config allow" ,
+.BR "config deny" ).
+A setting that turns something on is an opt-in: its verbs are
+.B enable
+and
+.BR disable ,
+and nothing is on until it is enabled
+.RB ( "backend enable|disable" ,
+.BR "scope vendor-attrs" ).
+An opt-in has no
+.BR set ,
+.B clear
+or
+.BR none ,
+so that nothing in it can read as "empty means all".
 .TP
 .B Service restart
 Changes that mutate

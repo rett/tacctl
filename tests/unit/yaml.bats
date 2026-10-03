@@ -316,11 +316,12 @@ zeta|3|Z-CLASS"
 @test "scope-rows and scope-routing views: scope order follows the routing order" {
     run _model_view scope-rows lab
     assert_success
-    assert_output "prod-inner|10.10.99.0/24|0|
-prod|10.0.0.0/8|1|
-lab|192.168.0.0/16|3|yes
-|172.16.0.0/12||
-dmz|203.0.113.0/24|1|"
+    # The fifth field is the scope's vendor attributes (RADIUS; none here).
+    assert_output "prod-inner|10.10.99.0/24|0||
+prod|10.0.0.0/8|1||
+lab|192.168.0.0/16|3|yes|
+|172.16.0.0/12|||
+dmz|203.0.113.0/24|1||"
     run _model_view scope-routing lab
     assert_success
     assert_output "prod-inner|10.10.99.0/24|0|
@@ -336,7 +337,8 @@ prod|10.0.0.0/8|1|"
     hash=$(model_user alice hash)
     for view in "user-rows" "user-info alice" "group-rows" "group-info" "scope-rows lab" \
                 "scope-routing lab" "scope-lookup 10.10.99.1" "config-show" "status 16" \
-                "linux-users lab" "validate full"; do
+                "linux-users lab" "validate full" "scope-devices lab" "vendor-rows" "vendor-gaps" \
+                "device-problems lab 192.168.0.0/16"; do
         # shellcheck disable=SC2086  # view name plus its argument
         run _model_view $view
         assert_success

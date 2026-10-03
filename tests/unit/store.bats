@@ -611,3 +611,105 @@ bench"
     assert_failure
     assert_output --partial "invalid CIDR"
 }
+
+# --- vendor attributes and tagged addresses (RADIUS) --------------------------
+
+@test "store: KNOWN_VENDORS equals SCOPE_VENDORS (lib/scopes.sh)" {
+    local known
+    known=$(python3 -c "$(_store_base_py)
+print(' '.join(KNOWN_VENDORS))")
+    [[ "$known" == "$SCOPE_VENDORS" ]]
+}
+
+@test "store_validate: vendor_attrs must be known vendors, each once; devices a canonical CIDR -> known vendor" {
+    validate_yaml <<YAML
+version: 1
+$BUILTINS
+scopes:
+  a: {prefixes: ["10.1.0.0/16"], secret: "s3cret-s3cret-s3cret", vendor_attrs: [cisco, wti], devices: {10.1.2.3/32: juniper}}
+  b: {prefixes: ["10.2.0.0/16"], secret: "s3cret-s3cret-s3cret", vendor_attrs: [arista]}
+  c: {prefixes: ["10.3.0.0/16"], secret: "s3cret-s3cret-s3cret", vendor_attrs: [cisco, cisco]}
+  d: {prefixes: ["10.4.0.0/16"], secret: "s3cret-s3cret-s3cret", devices: {10.4.0.1: cisco}}
+  e: {prefixes: ["10.5.0.0/16"], secret: "s3cret-s3cret-s3cret", devices: {10.5.0.1/32: arista}}
+  f: {prefixes: ["10.6.0.0/16"], secret: "s3cret-s3cret-s3cret", devices: [10.6.0.1/32]}
+  g: {prefixes: ["10.7.0.0/16"], secret: "s3cret-s3cret-s3cret", vendor_attrs: [], devices: {}}
+YAML
+    assert_failure
+    refute_output --partial "scope 'a'"
+    refute_output --partial "scope 'g'"
+    assert_output --partial "scope 'b': vendor_attrs must be a list drawn from: cisco, juniper, wti"
+    assert_output --partial "scope 'c': vendor_attrs lists the same value twice"
+    assert_output --partial "scope 'd': devices has a non-canonical CIDR ('10.4.0.1', canonical form 10.4.0.1/32)"
+    assert_output --partial "scope 'e': devices 10.5.0.1/32: vendor must be one of: cisco, juniper, wti"
+    assert_output --partial "scope 'f': devices must be a mapping of CIDR to vendor"
+}
+
+@test "store_validate: a tagged address must be one scope lookup answers with its own scope" {
+    validate_yaml <<YAML
+version: 1
+$BUILTINS
+scopes:
+  outer: {prefixes: ["10.0.0.0/8"], secret: "s3cret-s3cret-s3cret",
+          devices: {10.10.99.5/32: cisco, 10.10.0.0/16: wti, 10.99.0.0/16: juniper, 192.0.2.1/32: cisco, 10.20.0.0/24: wti}}
+  inner: {prefixes: ["10.10.99.0/24", "10.20.0.0/24"], secret: "s3cret-s3cret-s3cret", devices: {10.10.99.0/24: juniper}}
+YAML
+    assert_failure
+    # Inside a more specific prefix of another scope; equal to another scope's prefix.
+    assert_output --partial "scope 'outer': devices: 10.10.99.5/32 belongs to scope 'inner' (its prefix 10.10.99.0/24 is the most specific one that contains it)"
+    assert_output --partial "scope 'outer': devices: 10.20.0.0/24 belongs to scope 'inner'"
+    # Outside every prefix of the scope.
+    assert_output --partial "scope 'outer': devices: 192.0.2.1/32 is not inside a prefix of the scope"
+    # A range that holds another scope's more specific prefix is fine, and so
+    # is a tag equal to one of the scope's own prefixes.
+    refute_output --partial "10.10.0.0/16"
+    refute_output --partial "10.99.0.0/16"
+    refute_output --partial "scope 'inner':"
+}
+
+@test "store_scope_set: vendor_attrs and devices replace the whole list or mapping, canonical, in a fixed field order; null removes them" {
+    use_store_fixture store.multiscope.yaml
+    store_scope_set prod "vendor_attrs=wti,cisco,wti" "devices=10.1.2.3=wti,10.2.0.0/16=juniper,10.0.5.5/24=cisco"
+    run model_scope prod vendor_attrs
+    assert_output "$(printf 'cisco\nwti')"
+    run model_scope prod devices
+    assert_output "$(printf '10.0.5.0/24 cisco\n10.1.2.3/32 wti\n10.2.0.0/16 juniper')"
+    run model_scope_devices prod
+    assert_output "$(printf '10.1.2.3/32|wti\n10.0.5.0/24|cisco\n10.2.0.0/16|juniper')"
+    store_scope_set prod protocols=radius
+    run sed -n '/^  prod:/,/^  [a-z]/p' "$STORE_FILE"
+    assert_line --index 1 "    prefixes: [10.0.0.0/8]"
+    assert_line --index 2 --partial "    secret: "
+    assert_line --index 3 "    protocols: [radius]"
+    assert_line --index 4 "    vendor_attrs: [cisco, wti]"
+    assert_line --index 5 "    devices: {10.0.5.0/24: cisco, 10.1.2.3/32: wti, 10.2.0.0/16: juniper}"
+    run store_scope_set prod "devices=10.1.2.3/32"
+    assert_failure
+    assert_output --partial "devices: invalid entry '10.1.2.3/32' (expected <cidr>=<vendor>)"
+    run store_scope_set prod "vendor_attrs=arista"
+    assert_failure
+    store_scope_set prod vendor_attrs=null devices=null
+    ! grep -qE 'vendor_attrs|devices' "$STORE_FILE"
+    run model_scope prod vendor_attrs
+    assert_output ""
+}
+
+@test "model: a scope without vendor fields reads exactly as before they existed" {
+    use_store_fixture store.multiscope.yaml
+    run model_scope lab
+    refute_output --partial "vendor_attrs"
+    refute_output --partial "devices"
+    store_scope_set lab vendor_attrs=cisco
+    store_scope_set lab vendor_attrs=null
+    run model_scope lab
+    refute_output --partial "vendor_attrs"
+}
+
+@test "store_scope_rename and store_scope_del: the vendor fields go with the scope" {
+    use_store_fixture store.multiscope.yaml
+    store_scope_set dmz vendor_attrs=juniper devices=203.0.113.9=wti
+    store_scope_rename dmz edge
+    run model_scope edge devices
+    assert_output "203.0.113.9/32 wti"
+    store_scope_del edge --strip-users
+    ! grep -q '203.0.113.9' "$STORE_FILE"
+}

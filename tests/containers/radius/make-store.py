@@ -6,7 +6,11 @@
 <out dir>/store.yaml is a tacctl store with real bcrypt hashes; sec.<scope>
 holds each scope's secret for 'radclient -S'. The passwords are in cases.sh.
 Needs python3-bcrypt. 10.0.2.0/24 in scope 'prod' and in filters.allow is
-replaced by the container's own network (setup.sh).
+replaced by the container's own network (run.sh, flow.sh).
+
+Vendor attributes (cases.sh): lab enables none and tags 127.0.0.10-12 with
+each vendor; vc, vj, vw enable one vendor each and tag one address with
+another vendor; vall enables all three and tags one address wti.
 """
 import binascii
 import os
@@ -26,6 +30,10 @@ SECRETS = {
     'prod': 'prod-secret-0123456789abcdef',
     'tonly': 'tacacs-only-secret-0123456789',
     'v6': 'v6-secret-0123456789abcdef',
+    'vc': 'vc-secret-0123456789abcdef',
+    'vj': 'vj-secret-0123456789abcdef',
+    'vw': 'vw-secret-0123456789abcdef',
+    'vall': 'vall-secret-0123456789abcdef',
     # Not a scope: the client the FreeRADIUS package ships (localhost).
     'distro': 'testing123',
 }
@@ -44,12 +52,12 @@ groups:
 users:
   '007':
     group: netops
-    scopes: [lab]
+    scopes: [lab, vw]
     hash: {h("Bond-James-Bond-7")}
     disabled: false
   alice:
     group: superuser
-    scopes: [lab, prod, v6]
+    scopes: [lab, prod, v6, vc, vj, vw, vall]
     hash: {h("Correct-Horse-1", 12)}
     disabled: false
   bob:
@@ -64,7 +72,7 @@ users:
     disabled: true
   dave:
     group: readonly
-    scopes: [tonly, bs]
+    scopes: [tonly, bs, vall]
     hash: {h("Dave-Readonly-Pass-1")}
     disabled: false
   root:
@@ -83,6 +91,7 @@ scopes:
   lab:
     prefixes: [127.0.0.0/8]
     secret: {yq(SECRETS['lab'])}
+    devices: {{127.0.0.10/32: cisco, 127.0.0.11/32: juniper, 127.0.0.12/32: wti}}
   prod:
     prefixes: [10.0.2.0/24]
     secret: {SECRETS['prod']}
@@ -93,8 +102,28 @@ scopes:
   v6:
     prefixes: ['::1/128']
     secret: {SECRETS['v6']}
+  vc:
+    prefixes: [127.0.0.16/30]
+    secret: {SECRETS['vc']}
+    vendor_attrs: [cisco]
+    devices: {{127.0.0.17/32: juniper, 127.0.0.18/32: cisco}}
+  vj:
+    prefixes: [127.0.0.20/30]
+    secret: {SECRETS['vj']}
+    vendor_attrs: [juniper]
+    devices: {{127.0.0.21/32: wti}}
+  vw:
+    prefixes: [127.0.0.24/30]
+    secret: {SECRETS['vw']}
+    vendor_attrs: [wti]
+    devices: {{127.0.0.25/32: cisco}}
+  vall:
+    prefixes: [127.0.0.28/30]
+    secret: {SECRETS['vall']}
+    vendor_attrs: [cisco, juniper, wti]
+    devices: {{127.0.0.29/32: wti}}
 filters:
-  allow: [127.0.0.0/29, 127.0.0.64/26, 10.0.2.0/24, '::1/128']
+  allow: [127.0.0.0/29, 127.0.0.10/31, 127.0.0.12/32, 127.0.0.16/28, 127.0.0.64/26, 10.0.2.0/24, '::1/128']
   deny: [127.0.0.66/32]
 '''
 

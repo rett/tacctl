@@ -339,9 +339,9 @@ section "cases (${FIRST})"
 where_secret "$FIRST"
 full_cases "$FIRST"
 if [[ "$FIRST" == "radius" ]]; then
-    expect "[radius] the server's auth log has alice's accept from this host" "Access-Accept scope=linux-c1 client=${CIP} nas=sshd .*user=alice" "$(radius_log)"
-    expect "[radius] and sudo's" "Access-Accept scope=linux-c1 client=${CIP} nas=sudo.* .*user=alice" "$(radius_log)"
-    expect "[radius] and bob's reject for the scope" "Access-Reject scope=linux-c1 client=${CIP} .*user=bob" "$(radius_log)"
+    expect "[radius] the server's auth log has alice's accept from this host" "Access-Accept scope=linux-c1 device=generic client=${CIP} nas=sshd .*user=alice" "$(radius_log)"
+    expect "[radius] and sudo's" "Access-Accept scope=linux-c1 device=generic client=${CIP} nas=sudo.* .*user=alice" "$(radius_log)"
+    expect "[radius] and bob's reject for the scope" "Access-Reject scope=linux-c1 device=generic client=${CIP} .*user=bob" "$(radius_log)"
     if c grep -q pam_radius_auth /etc/pam.d/tacctl-session; then
         expect "[radius] session accounting: Start and Stop records for alice" 'Acct-Status-Type = Start' "$(radius_acct | grep -A8 'User-Name = "alice"')"
         if radius_acct | grep -qE 'Acct-Status-Type = [0-9]'; then bad "[radius] malformed accounting records"; else ok "[radius] no malformed accounting record"; fi

@@ -1,9 +1,10 @@
 #!/usr/bin/env bats
-# `tacctl config cisco|juniper --protocol radius`: goldens for the lab scope,
-# the unchanged default (TACACS+) output, the refusals (backend not enabled,
-# scope not served over RADIUS, a secret that cannot be pasted), warnings,
-# listener-derived ports and address, WTI staying TACACS+-only, and operator
-# template overrides. Set UPDATE_GOLDEN=1 to regenerate the goldens.
+# `tacctl config cisco|juniper|wti --protocol radius`: goldens for the lab
+# scope, the unchanged default (TACACS+) output, the refusals (backend not
+# enabled, scope not served over RADIUS, the vendor's attribute not sent, a
+# secret that cannot be pasted), warnings, listener-derived ports and address,
+# the WTI walkthrough, and operator template overrides. Set UPDATE_GOLDEN=1 to
+# regenerate the goldens.
 
 load ../helpers/setup
 load ../helpers/tmpenv
@@ -23,6 +24,14 @@ setup() {
 
     load_fixture tacquito.multiscope.yaml
     OVERRIDES="${TACCTL_STATE_DIR}/tacctl.yaml"
+    # Every scope sends every vendor's attribute (the opt-in tests below take
+    # it away again): one store write, nothing rendered.
+    bash -c 'source "$1"; store_mutate "for s in store[\"scopes\"].values(): s[\"vendor_attrs\"] = list(KNOWN_VENDORS)"' _ "$TACCTL_BIN_SCRIPT" > /dev/null
+}
+
+# A scope's vendor attributes in the store: set_vendors <scope> <csv|null>.
+set_vendors() {
+    bash -c 'source "$1"; store_scope_set "$2" "vendor_attrs=$3"' _ "$TACCTL_BIN_SCRIPT" "$1" "$2" > /dev/null
 }
 
 # Same normalisation as config_templates.bats.
@@ -130,6 +139,10 @@ radius_listeners() {
     cfg="${output%%Group → Privilege Level Mapping*}"
     summary="${output#*Group → Privilege Level Mapping}"
     [[ "$summary" == *"What RADIUS does not give you (compared with TACACS+)"* ]]
+    [[ "$summary" == *"What an Access-Accept carries for this device:"* ]]
+    [[ "$summary" == *"Service-Type: Administrative-User at privilege 15, else NAS-Prompt-User (always sent)"* ]]
+    [[ "$summary" == *'Cisco-AVPair "shell:priv-lvl=N" from the user'"'"'s group: the scope enables it (tacctl scope vendor-attrs lab)'* ]]
+    [[ "$summary" == *"No other vendor's attribute. A reject carries none"* ]]
     [[ "$summary" == *"No per-command authorization"* ]]
     [[ "$summary" == *"shell:priv-lvl=N"* ]]
     [[ "$summary" == *"No command accounting"* ]]
@@ -403,13 +416,127 @@ radius_listeners() {
     done
 }
 
-@test "config wti --protocol radius: refused, WTI is TACACS+ only" {
+# --- vendor attributes: the scope must send the vendor's ------------------------------
+
+@test "config cisco|juniper|wti --protocol radius: refused, with the command that enables it, when the scope sends that vendor nothing" {
+    set_vendors lab null
     radius_on
-    run --separate-stderr "$TACCTL_BIN_SCRIPT" config wti --scope lab --protocol radius
+    local v label
+    for v in cisco juniper wti; do
+        case "$v" in cisco) label=Cisco ;; juniper) label=Juniper ;; wti) label=WTI ;; esac
+        run --separate-stderr "$TACCTL_BIN_SCRIPT" config "$v" --scope lab --protocol radius
+        assert_failure
+        [[ -z "$output" ]]
+        [[ "$stderr" == *"Scope 'lab' sends no ${label} attribute over RADIUS"* ]]
+        [[ "$stderr" == *"${v} is not enabled for the scope and no address of it is tagged ${v}"* ]]
+        [[ "$stderr" == *"tacctl scope vendor-attrs lab enable ${v}"* ]]
+        [[ "$stderr" == *"tacctl scope devices lab set <device-ip> ${v}"* ]]
+    done
+    # Another vendor's enablement does not count.
+    set_vendors lab juniper,wti
+    run --separate-stderr "$TACCTL_BIN_SCRIPT" config cisco --scope lab --protocol radius
     assert_failure
-    [[ -z "$output" ]]
-    [[ "$stderr" == *"renders TACACS+ only"* ]]
-    [[ "$stderr" == *"no RADIUS walkthrough is rendered yet"* ]]
+    run "$TACCTL_BIN_SCRIPT" config juniper --scope lab --protocol radius
+    assert_success
+}
+
+@test "config cisco --protocol radius: an address tagged with the vendor is enough, with a warning that only it gets the attribute" {
+    set_vendors lab juniper
+    bash -c 'source "$1"; store_scope_set lab devices=192.168.7.7/32=cisco,192.168.8.0/24=wti' _ "$TACCTL_BIN_SCRIPT" > /dev/null
+    radius_on
+    run "$TACCTL_BIN_SCRIPT" config cisco --scope lab --protocol radius
+    assert_success
+    assert_output --partial "Scope 'lab' does not enable the Cisco attribute; only its addresses tagged cisco get it: 192.168.7.7/32."
+    assert_output --partial "tacctl scope vendor-attrs lab enable cisco"
+    assert_output --partial "only to the addresses of the scope tagged cisco (tacctl scope devices lab)"
+    run "$TACCTL_BIN_SCRIPT" config wti --scope lab --protocol radius
+    assert_success
+    assert_output --partial "only its addresses tagged wti get it: 192.168.8.0/24."
+}
+
+@test "config cisco|juniper|wti: TACACS+ output does not depend on the vendor attributes" {
+    local v a b
+    for v in cisco juniper wti; do
+        a=$("$TACCTL_BIN_SCRIPT" config "$v" --scope lab)
+        set_vendors lab null
+        b=$("$TACCTL_BIN_SCRIPT" config "$v" --scope lab)
+        set_vendors lab cisco,juniper,wti
+        [[ -n "$a" && "$a" == "$b" ]]
+    done
+}
+
+# --- WTI over RADIUS ---------------------------------------------------------------
+
+@test "config wti --protocol radius: renders the deterministic walkthrough for the lab scope" {
+    radius_on
+    local out="$BATS_TEST_TMPDIR/wti-radius.conf"
+    "$TACCTL_BIN_SCRIPT" config wti --scope lab --protocol radius | _normalize > "$out"
+    [[ -s "$out" ]]
+    golden_diff "$out" "wti-radius-lab.conf"
+}
+
+@test "config wti --protocol radius: says up front it is not verified on a unit, and where WTI's documents disagree" {
+    radius_on
+    run "$TACCTL_BIN_SCRIPT" config wti --scope lab --protocol radius
+    assert_success
+    output=$(sed 's/\x1b\[[0-9;]*m//g' <<< "$output")
+    [[ "$(grep -n 'NOT VERIFIED ON A UNIT' <<< "$output" | cut -d: -f1)" -lt "$(grep -n 'Step 1:' <<< "$output" | cut -d: -f1)" ]]
+    assert_output --partial "Where WTI's documents disagree (not checked on a unit):"
+    assert_output --partial "factory default User"
+    assert_output --partial "says View only"
+}
+
+@test "config wti --protocol radius: the RADIUS menu with the scope's values, ports from the listeners, Fallback Local from aaa-order" {
+    radius_listeners ':11812' ':11813'
+    radius_on
+    run "$TACCTL_BIN_SCRIPT" config wti --scope lab --protocol radius
+    assert_success
+    assert_output --partial "29 [Enter]              RADIUS Parameters"
+    assert_output --partial "Primary Host/Address (IPv4)   : 10.0.0.42"
+    assert_output --partial "Primary Secret Word           : lab-secret-0123456789abcdef"
+    assert_output --partial "Authentication Port           : 11812"
+    assert_output --partial "Accounting Port               : 11813"
+    assert_output --partial "Fallback Local                : On (Transport Failure)"
+    assert_output --partial "Default RADIUS User Access    : Enable On, Access Level ViewOnly,"
+    assert_output --partial "iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT"
+    assert_output --partial "/UL clears it"
+    # The TACACS+-only items are gone.
+    refute_output --partial "Account Management Module"
+    refute_output --partial "Service Name"
+    refute_output --partial "patch 0002"
+    refute_output --partial "tacquito"
+    "$TACCTL_BIN_SCRIPT" scope aaa-order lab local-first > /dev/null
+    run "$TACCTL_BIN_SCRIPT" config wti --scope lab --protocol radius
+    assert_output --partial "Fallback Local                : On (All Failures)"
+}
+
+@test "config wti --protocol radius: the group to WTI-Super table follows the bands, and the server's auth log is how to see what the unit sends" {
+    "$TACCTL_BIN_SCRIPT" group add wtisuper 12 OP-CLASS > /dev/null
+    radius_on
+    run "$TACCTL_BIN_SCRIPT" config wti --scope lab --protocol radius
+    assert_success
+    assert_output --partial "superuser: priv-lvl 15 → WTI-Super 3 (Administrator)"
+    assert_output --partial "operator: priv-lvl 7 → WTI-Super 1 (User)"
+    assert_output --partial "readonly: priv-lvl 1 → WTI-Super 0 (ViewOnly)"
+    assert_output --partial "wtisuper: priv-lvl 12 → WTI-Super 2 (SuperUser)"
+    assert_output --partial "tacctl log tail 20 --backend radius"
+    assert_output --partial "nas= -- what the unit sent as its"
+    assert_output --partial "WTI-Super from the user's group: the scope enables it"
+}
+
+@test "config wti: without --protocol a scope that resolves to RADIUS gets the RADIUS walkthrough, like cisco and juniper" {
+    "$TACCTL_BIN_SCRIPT" scope auth-method lab radius > /dev/null
+    radius_on
+    local a b
+    a=$("$TACCTL_BIN_SCRIPT" config wti --scope lab --protocol radius)
+    run --separate-stderr "$TACCTL_BIN_SCRIPT" config wti --scope lab
+    assert_success
+    [[ -z "$stderr" ]]
+    [[ "$output" == *"protocol: RADIUS — the scope's auth-method"* ]]
+    b=$(sed "s/ — the scope's auth-method//" <<< "$output")
+    [[ "$a" == "$b" ]]
+    run "$TACCTL_BIN_SCRIPT" config wti --scope lab --protocol tacacs
+    assert_output --partial "TACACS Parameters"
 }
 
 # --- operator template overrides ---------------------------------------------------
@@ -419,6 +546,7 @@ radius_listeners() {
     printf 'MY-CISCO %s\n' '${SERVER_IP} ${AUTH_PORT}/${ACCT_PORT} ${RADIUS_GROUP} ${SECRET} ${AUTHN_METHODS} ${EXEC_TIMEOUT}' \
         > "${TACCTL_STATE_DIR}/templates/cisco-radius.template"
     printf 'MY-JUNOS %s\n' '${SERVER_IP} ${RADIUS_CONFIG}' > "${TACCTL_STATE_DIR}/templates/juniper-radius.template"
+    printf 'MY-WTI %s\n' '${SERVER_IP} ${SECRET} ${AUTH_PORT}/${ACCT_PORT} ${FALLBACK_LOCAL} ${SCOPE}' > "${TACCTL_STATE_DIR}/templates/wti-radius.template"
     radius_on
     run "$TACCTL_BIN_SCRIPT" config cisco --scope lab --protocol radius
     assert_success
@@ -429,6 +557,10 @@ radius_listeners() {
     assert_success
     assert_output --partial "MY-JUNOS 10.0.0.42 delete system authentication-order"
     assert_output --partial "Using template: ${TACCTL_STATE_DIR}/templates/juniper-radius.template"
+    run "$TACCTL_BIN_SCRIPT" config wti --scope lab --protocol radius
+    assert_success
+    assert_output --partial "MY-WTI 10.0.0.42 lab-secret-0123456789abcdef 1812/1813 On (Transport Failure) lab"
+    assert_output --partial "Using template: ${TACCTL_STATE_DIR}/templates/wti-radius.template"
     # The TACACS+ templates are not affected by (or used for) the override.
     run "$TACCTL_BIN_SCRIPT" config cisco --scope lab
     assert_output --partial "tacacs server TACACS"
@@ -459,6 +591,7 @@ radius_listeners() {
 @test "the RADIUS templates ship in config/templates, where install and upgrade copy *.template from" {
     [[ -f "${TACCTL_SRC}/config/templates/cisco-radius.template" ]]
     [[ -f "${TACCTL_SRC}/config/templates/juniper-radius.template" ]]
+    [[ -f "${TACCTL_SRC}/config/templates/wti-radius.template" ]]
     grep -qF 'cp -n "${PROJECT_DIR}/config/templates/"*.template' "${TACCTL_SRC}/lib/lifecycle.sh"
     grep -qF 'for tmpl in "${ACTIVE_DEPLOY_DIR}/config/templates/"*.template; do' "${TACCTL_SRC}/lib/lifecycle.sh"
 }

@@ -1,9 +1,10 @@
 #!/usr/bin/env bats
 # Unit tests for the RADIUS backend's pure pieces (lib/backends/radius.sh):
-# hash conversion, secret quoting, client and user rendering, the filter
-# policy, the render id, golden output for both distro layouts, the notes,
-# the listener model for 'radius', the unit drop-in and the read-only
-# contract verbs. What the commands do with it is in
+# hash conversion, secret quoting, client and user rendering, the vendor
+# attributes (clients per prefix and per tagged address, the control-list
+# values, the policy, the dictionary), the filter policy, the render id,
+# golden output for both distro layouts, the notes, the listener model for
+# 'radius', the unit drop-in and the read-only contract verbs. What the commands do with it is in
 # tests/integration/radius.bats; what real FreeRADIUS does with the output is
 # verified in containers (tests/README.md, docs/radius-notes.md).
 
@@ -50,7 +51,7 @@ render() {
 # Render as a distro family with the production paths (no test overrides).
 render_as() {
     (
-        unset TACCTL_RADIUS_DIR TACCTL_RADIUS_LOG TACCTL_RADIUS_BIN
+        unset TACCTL_RADIUS_DIR TACCTL_RADIUS_LOG TACCTL_RADIUS_BIN TACCTL_RADIUS_DICT
         export TACCTL_RADIUS_FAMILY="$1"
         # shellcheck disable=SC1090
         source "$TACCTL_BIN_SCRIPT"
@@ -206,25 +207,35 @@ EOF
     [[ "$rid" =~ ^[0-9a-f]{16}$ ]]
     run grep -c '^[A-Za-z0-9_-]' "${OUT}/users"
     assert_output "6"
-    run grep -A5 "^bob" "${OUT}/users"
+    run grep -A3 "^bob" "${OUT}/users"
     assert_output "$(cat <<EOF
-bob	Tmp-String-0 == "${rid}/lab", Crypt-Password := "\$2a\$12\$bob.........................................................."
+bob	Tmp-String-0 == "${rid}/lab", Crypt-Password := "\$2a\$12\$bob..........................................................", Tacctl-Priv-Lvl := 7, Tacctl-Juniper-Class := "OP-CLASS", Tacctl-WTI-Super := 1
 	Service-Type = NAS-Prompt-User,
-	Cisco-AVPair = "shell:priv-lvl=7",
-	Juniper-Local-User-Name = "OP-CLASS",
 	Fall-Through = No
 EOF
 )"
     # alice: three served scopes, superuser.
     run grep -c "^alice" "${OUT}/users"
     assert_output "3"
-    run grep -A2 "^alice	Tmp-String-0 == \"${rid}/wifi\"" "${OUT}/users"
+    run grep -A1 "^alice	Tmp-String-0 == \"${rid}/wifi\"" "${OUT}/users"
+    assert_line --index 0 --partial ', Tacctl-Priv-Lvl := 15, Tacctl-Juniper-Class := "RW-CLASS", Tacctl-WTI-Super := 3'
     assert_line --index 1 "	Service-Type = Administrative-User,"
-    assert_line --index 2 '	Cisco-AVPair = "shell:priv-lvl=15",'
-    # erin: a custom group.
-    run grep -A3 "^erin	Tmp-String-0 == \"${rid}/prod-inner\"" "${OUT}/users"
-    assert_line --index 2 '	Cisco-AVPair = "shell:priv-lvl=10",'
-    assert_line --index 3 '	Juniper-Local-User-Name = "NETOPS_class-1",'
+    # erin: a custom group (priv 10: the SuperUser band).
+    run grep "^erin	Tmp-String-0 == \"${rid}/prod-inner\"" "${OUT}/users"
+    assert_output --partial ', Tacctl-Priv-Lvl := 10, Tacctl-Juniper-Class := "NETOPS_class-1", Tacctl-WTI-Super := 2'
+}
+
+@test "users: the reply is Service-Type alone; vendor values are check items for the control list, never reply items" {
+    use_store store.radius.yaml
+    render
+    # Every reply line of every entry: Service-Type or Fall-Through.
+    run bash -c 'grep -E "^\s" "$1" | sed "s/,\$//" | sort -u' _ "${OUT}/users"
+    assert_output "$(printf '\tFall-Through = No\n\tService-Type = Administrative-User\n\tService-Type = NAS-Prompt-User')"
+    run bash -c 'grep -v "^#" "$1" | grep -E "(^|[^-])(Cisco-AVPair|Juniper-Local-User-Name|WTI-Super)"' _ "${OUT}/users"
+    assert_output ""
+    # The values ride on the check line with ':=' (set in the control list).
+    run grep -c ', Tacctl-Priv-Lvl := [0-9]*, Tacctl-Juniper-Class := "[A-Za-z0-9_-]*", Tacctl-WTI-Super := [0-3]$' "${OUT}/users"
+    assert_output "6"
 }
 
 @test "users: disabled users, the accounting sink and users with only TACACS+ scopes have no entry" {
@@ -295,6 +306,178 @@ EOF
 
 # --- the policy and what is not there ----------------------------------------
 
+# --- vendor attributes -------------------------------------------------------
+
+# The client{} block of <name> in the rendered conf, its lines trimmed.
+client_block() {
+    sed -n "/^\tclient $1 {/,/^\t}/p" "${OUT}/conf" | sed 's/^\s*//'
+}
+
+@test "vendor clients: every client says its scope, 'generic', and no for every vendor when nothing is enabled" {
+    use_store store.radius.yaml
+    render
+    run client_block prod.1
+    assert_output "$(cat <<'EOF'
+client prod.1 {
+ipaddr = 10.0.0.0/8
+secret = 'prod-secret-0123456789abcdef'
+tacctl_scope = "prod"
+tacctl_device = "generic"
+tacctl_send_cisco = "no"
+tacctl_send_juniper = "no"
+tacctl_send_wti = "no"
+}
+EOF
+)"
+    run grep -c 'tacctl_send_[a-z]* = "yes"' "${OUT}/conf"
+    assert_output "0"
+}
+
+@test "vendor clients: a scope's enabled vendors are yes on its generic clients only" {
+    edit_model 'm["scopes"]["lab"]["vendor_attrs"] = ["cisco", "wti"]'
+    render
+    local c
+    for c in lab.1 lab.2 lab.3; do
+        run client_block "$c"
+        assert_line 'tacctl_send_cisco = "yes"'
+        assert_line 'tacctl_send_juniper = "no"'
+        assert_line 'tacctl_send_wti = "yes"'
+    done
+    run client_block prod.1
+    assert_line 'tacctl_send_cisco = "no"'
+}
+
+@test "vendor clients: a tagged address is a client of its own, before its prefix, sending its own vendor only" {
+    edit_model 'm["scopes"]["prod"]["vendor_attrs"] = ["cisco", "juniper", "wti"]; m["scopes"]["prod"]["devices"] = {"10.1.2.3/32": "wti", "10.2.0.0/16": "juniper"}'
+    render
+    run client_block prod.wti.1
+    assert_output "$(cat <<'EOF'
+client prod.wti.1 {
+ipaddr = 10.1.2.3/32
+secret = 'prod-secret-0123456789abcdef'
+tacctl_scope = "prod"
+tacctl_device = "wti"
+tacctl_send_cisco = "no"
+tacctl_send_juniper = "no"
+tacctl_send_wti = "yes"
+}
+EOF
+)"
+    run client_block prod.juniper.1
+    assert_line 'ipaddr = 10.2.0.0/16'
+    assert_line 'tacctl_send_cisco = "no"'
+    assert_line 'tacctl_send_juniper = "yes"'
+    assert_line 'tacctl_send_wti = "no"'
+    # Most specific first: the /32 and the /16 before the scope's /8.
+    run awk '$1 == "client" && $2 ~ /^prod\./ { print $2 }' "${OUT}/conf"
+    assert_output "$(printf 'prod.wti.1\nprod.juniper.1\nprod.1')"
+}
+
+@test "vendor clients: a tag on a CIDR that is also a prefix of its scope is one client, the tagged one" {
+    edit_model 'm["scopes"]["prod-inner"]["devices"] = {"10.10.99.0/24": "cisco"}'
+    render
+    run grep -c 'ipaddr = 10.10.99.0/24$' "${OUT}/conf"
+    assert_output "1"
+    run client_block prod-inner.cisco.1
+    assert_line 'tacctl_device = "cisco"'
+    refute grep -q 'client prod-inner.1 ' "${OUT}/conf"
+}
+
+@test "vendor clients: the tags of a scope RADIUS does not serve are not rendered" {
+    edit_model 'm["scopes"]["legacy"]["devices"] = {"198.51.100.7/32": "cisco"}; m["scopes"]["legacy"]["vendor_attrs"] = ["cisco"]'
+    render
+    refute grep -q '198.51.100' "${OUT}/conf"
+}
+
+@test "vendor policy: each vendor's attribute is added only on a client's exact yes, from the control list, inside the accept path" {
+    use_store store.radius.yaml
+    render
+    local body
+    body=$(sed -n '/^\tpost-auth {/,/^\t\tPost-Auth-Type REJECT {/p' "${OUT}/conf")
+    run grep -cE '^\s+if \(\("%\{client:tacctl_send_(cisco|juniper|wti)\}" == "yes"\) && &control:Tacctl-' <<< "$body"
+    assert_output "3"
+    grep -qF '&Cisco-AVPair := "shell:priv-lvl=%{control:Tacctl-Priv-Lvl}"' <<< "$body"
+    grep -qF '&Juniper-Local-User-Name := &control:Tacctl-Juniper-Class' <<< "$body"
+    grep -qF '&WTI-Super := &control:Tacctl-WTI-Super' <<< "$body"
+    # The three are inside the branch a filtered packet does not take, before the auth log.
+    run awk '/if \(!&control:Response-Packet-Type\)/ {in_=1} in_ && /update reply/ {n++} in_ && /tacctl_auth/ {print n; exit}' <<< "$body"
+    assert_output "3"
+    # Nothing tacctl-internal is ever put into the reply, and a reject strips every vendor attribute.
+    run bash -c 'sed -n "/update reply {/,/}/p" "$1" | grep -E "^\s+&Tacctl-"' _ "${OUT}/conf"
+    assert_output ""
+    local reject a
+    reject=$(sed -n '/Post-Auth-Type REJECT {/,/^\t\t}/p' "${OUT}/conf")
+    for a in Service-Type Cisco-AVPair Juniper-Local-User-Name WTI-Super; do
+        grep -qF "&${a} !* ANY" <<< "$reject"
+    done
+}
+
+@test "auth log: one line per accept and reject names the client's device tag" {
+    use_store store.radius.yaml
+    render
+    grep -qF 'scope=%{client:tacctl_scope} device=%{client:tacctl_device} client=' "${OUT}/conf"
+}
+
+@test "dictionary: the package's main dictionary first, then WTI-Super and tacctl's internal attributes" {
+    use_store store.radius.yaml
+    render
+    [[ "$(grep -v '^#' "${OUT}/dictionary" | awk 'NF' | head -1)" == "\$INCLUDE ${TACCTL_RADIUS_DICT}" ]]
+    run cat "${OUT}/dictionary"
+    assert_line "$(printf 'VENDOR\t\tWTI\t\t\t24496')"
+    assert_line "$(printf 'ATTRIBUTE\tWTI-Super\t\t41\tinteger')"
+    local v
+    for v in "ViewOnly	0" "User	1" "SuperUser	2" "Administrator	3"; do
+        assert_line "$(printf 'VALUE\t\tWTI-Super\t\t%s' "$v")"
+    done
+    # Internal attributes: in the site-local range FreeRADIUS never encodes.
+    run awk '$1 == "ATTRIBUTE" && $2 ~ /^Tacctl-/ { print $2, $3, $4 }' "${OUT}/dictionary"
+    assert_output "$(printf 'Tacctl-Priv-Lvl 3990 integer\nTacctl-Juniper-Class 3991 string\nTacctl-WTI-Super 3992 integer')"
+    grep -q 'https://ftp.wti.com/InfoCenter/rsa/dictionary/dictionary.wti' "${OUT}/dictionary"
+    # Nothing of the model is in it.
+    refute grep -qE 'prod|alice|secret-0123' "${OUT}/dictionary"
+}
+
+@test "render id: changes when the dictionary changes, and the dictionary itself does not carry it" {
+    use_store store.radius.yaml
+    render
+    local rid again
+    rid=$(sed -n 's/^# render id: //p' "${OUT}/conf")
+    refute grep -q "$rid" "${OUT}/dictionary"
+    render_as debian
+    again=$(sed -n 's/^# render id: //p' "${OUT}/conf")
+    grep -q '^\$INCLUDE /usr/share/freeradius/dictionary$' "${OUT}/dictionary"
+    ( export TACCTL_RADIUS_FAMILY=debian; unset TACCTL_RADIUS_DIR TACCTL_RADIUS_LOG TACCTL_RADIUS_BIN
+      export TACCTL_RADIUS_DICT=/somewhere/else/dictionary
+      source "$TACCTL_BIN_SCRIPT"; render_radius_config "$MODEL" "$OUT" )
+    grep -q '^\$INCLUDE /somewhere/else/dictionary$' "${OUT}/dictionary"
+    [[ "$(sed -n 's/^# render id: //p' "${OUT}/conf")" != "$again" ]]
+}
+
+@test "WTI-Super: the Python bands equal the bash mapping for every privilege level" {
+    local lvl py name num
+    for lvl in $(seq 0 15); do
+        py=$(_radius_python wti-super "$lvl")
+        name=$(wti_access_level_for_privlvl "$lvl")
+        num=$(wti_super_for_privlvl "$lvl")
+        [[ "$py" == "${num} ${name}" ]] || { echo "priv-lvl ${lvl}: python '${py}', bash '${num} ${name}'"; return 1; }
+    done
+}
+
+@test "notes: how many scopes send a vendor attribute, and how many addresses are tagged" {
+    use_store store.radius.yaml
+    run _radius_notes
+    # Five scopes, four of them served over RADIUS; none enables anything.
+    assert_line "vendors|0|4|0"
+    run _radius_status_summary
+    assert_output --partial "not sent (no scope enables one"
+    store_scope_set lab vendor_attrs=cisco
+    store_scope_set prod devices=10.1.2.3=wti,10.2.0.0/16=juniper
+    run _radius_notes
+    assert_line "vendors|1|4|2"
+    run _radius_status_summary
+    assert_output --partial "enabled for 1 of 4 scope(s), 2 tagged address(es)"
+}
+
 @test "conf: PAP only, own module instances, no proxy, no status server, nothing of the package included" {
     use_store store.radius.yaml
     render
@@ -307,6 +490,7 @@ EOF
     # A reject carries none of the group's reply items.
     grep -qF '&Cisco-AVPair !* ANY' "${OUT}/conf"
     grep -qF '&Juniper-Local-User-Name !* ANY' "${OUT}/conf"
+    grep -qF '&WTI-Super !* ANY' "${OUT}/conf"
     grep -qF '&Service-Type !* ANY' "${OUT}/conf"
 }
 
@@ -323,6 +507,7 @@ EOF
     render_as debian
     golden_diff "${OUT}/conf" radius.debian.conf
     golden_diff "${OUT}/users" radius.debian.users
+    golden_diff "${OUT}/dictionary" radius.dictionary
     grep -q '^logdir = /var/log/freeradius$' "${OUT}/conf"
     grep -q '^pidfile = /run/freeradius/freeradius.pid$' "${OUT}/conf"
     grep -q '^libdir = /usr/lib/freeradius$' "${OUT}/conf"
@@ -334,6 +519,8 @@ EOF
     render_as rhel
     golden_diff "${OUT}/conf" radius.rhel.conf
     golden_diff "${OUT}/users" radius.rhel.users
+    # The same dictionary: both families keep the package's main one in one place.
+    golden_diff "${OUT}/dictionary" radius.dictionary
     grep -q '^logdir = /var/log/radius$' "${OUT}/conf"
     grep -q '^pidfile = /run/radiusd/radiusd.pid$' "${OUT}/conf"
     grep -q '^libdir = /usr/lib64/freeradius$' "${OUT}/conf"
@@ -354,12 +541,13 @@ EOF
 
 layout_of() {
     (
-        unset TACCTL_RADIUS_DIR TACCTL_RADIUS_LOG TACCTL_RADIUS_BIN
+        unset TACCTL_RADIUS_DIR TACCTL_RADIUS_LOG TACCTL_RADIUS_BIN TACCTL_RADIUS_DICT
         export TACCTL_RADIUS_FAMILY="$1"
         # shellcheck disable=SC1090
         source "$TACCTL_BIN_SCRIPT"
         backend_radius_describe
         echo "bin=${RADIUS_BIN}"
+        echo "dict=${RADIUS_SYSTEM_DICT}"
         backend_radius_artifacts
     )
 }
@@ -373,6 +561,8 @@ layout_of() {
     assert_line "bin=/usr/sbin/freeradius"
     assert_line "/etc/freeradius/3.0/tacctl-radius.conf"
     assert_line "/etc/freeradius/3.0/tacctl-radius.users"
+    assert_line "/etc/freeradius/3.0/tacctl-radius-dictionary/dictionary"
+    assert_line "dict=/usr/share/freeradius/dictionary"
 }
 
 @test "layout: RHEL-family paths, unit, account and binary" {
@@ -383,19 +573,22 @@ layout_of() {
     assert_line "log_dir=/var/log/radius"
     assert_line "bin=/usr/sbin/radiusd"
     assert_line "/etc/raddb/tacctl-radius.conf"
+    assert_line "/etc/raddb/tacctl-radius-dictionary/dictionary"
+    assert_line "dict=/usr/share/freeradius/dictionary"
 }
 
-@test "drop-in: Debian runs the daemon in the foreground under the package's unit, RHEL forks; both name tacctl's instance" {
+@test "drop-in: Debian runs the daemon in the foreground under the package's unit, RHEL forks; both name tacctl's instance and dictionary" {
     local dropin_of='unset TACCTL_RADIUS_DIR TACCTL_RADIUS_LOG TACCTL_RADIUS_BIN; source "$1"; _radius_dropin_text'
     run env TACCTL_RADIUS_FAMILY=debian bash -s "$TACCTL_BIN_SCRIPT" <<< "$dropin_of"
     assert_line "ExecStartPre="
     assert_line "ExecStart="
-    assert_line "ExecStartPre=/usr/sbin/freeradius -C -lstdout -d /etc/freeradius/3.0 -n tacctl-radius"
-    assert_line "ExecStart=/usr/sbin/freeradius -f -d /etc/freeradius/3.0 -n tacctl-radius"
+    assert_line "ExecStartPre=/usr/sbin/freeradius -C -lstdout -d /etc/freeradius/3.0 -D /etc/freeradius/3.0/tacctl-radius-dictionary -n tacctl-radius"
+    assert_line "ExecStart=/usr/sbin/freeradius -f -d /etc/freeradius/3.0 -D /etc/freeradius/3.0/tacctl-radius-dictionary -n tacctl-radius"
+    assert_line "ExecReload=/usr/sbin/freeradius -C -lstdout -d /etc/freeradius/3.0 -D /etc/freeradius/3.0/tacctl-radius-dictionary -n tacctl-radius"
     run env TACCTL_RADIUS_FAMILY=rhel bash -s "$TACCTL_BIN_SCRIPT" <<< "$dropin_of"
     assert_line "ExecStartPre=-/bin/chown -R radiusd:radiusd /var/run/radiusd"
-    assert_line "ExecStartPre=/usr/sbin/radiusd -C -lstdout -d /etc/raddb -n tacctl-radius"
-    assert_line "ExecStart=/usr/sbin/radiusd -d /etc/raddb -n tacctl-radius"
+    assert_line "ExecStartPre=/usr/sbin/radiusd -C -lstdout -d /etc/raddb -D /etc/raddb/tacctl-radius-dictionary -n tacctl-radius"
+    assert_line "ExecStart=/usr/sbin/radiusd -d /etc/raddb -D /etc/raddb/tacctl-radius-dictionary -n tacctl-radius"
     assert_line 'ExecReload=/bin/kill -HUP $MAINPID'
 }
 

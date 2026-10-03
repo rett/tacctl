@@ -558,6 +558,19 @@ cmd_config_validate() {
             if (( multi )); then print_drift_lines "$_b" || true; else print_drift_lines || true; fi
             errors=$((errors + 1))
         fi
+        # RADIUS sends a vendor's privilege attribute only where a scope opts
+        # in. A scope that opts into none is right for Linux hosts and wrong
+        # for network devices; the Linux-host scopes are told apart by the
+        # host registry (model_vendor_gaps). A warning, not an error: a
+        # scope of devices that need no attribute is legitimate.
+        if [[ "$mode" == "store" && "$_b" == "radius" ]]; then
+            local gaps
+            gaps=$(model_vendor_gaps 2> /dev/null | paste -sd, || true)
+            if [[ -n "$gaps" ]]; then
+                echo -e "${ind}  ${YELLOW}Vendor attributes:${NC}    not sent to the devices of scope(s) ${gaps//,/, } over RADIUS: Cisco, Juniper and WTI devices there get Service-Type only"
+                echo -e "${ind}                        (Linux hosts need none). Enable what they need: tacctl scope vendor-attrs <scope> enable cisco|juniper|wti"
+            fi
+        fi
     done
     ind=""
 

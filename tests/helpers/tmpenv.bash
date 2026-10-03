@@ -17,10 +17,14 @@ tacctl_tmpenv_init() {
     export TACCTL_RADIUS_LOG="${BATS_TEST_TMPDIR}/radius-log"
     export TACCTL_RADIUS_BIN="${BATS_TEST_TMPDIR}/radius-bin/radiusd"
     export TACCTL_LOGROTATE_DIR="${BATS_TEST_TMPDIR}/logrotate.d"
+    # The package's main dictionary, which tacctl's own includes: present, as
+    # an installed package has it (a test that wants it absent removes it).
+    export TACCTL_RADIUS_DICT="${BATS_TEST_TMPDIR}/radius-share/dictionary"
     # Skip the sudo re-exec so subprocess invocations of tacctl.sh from tests
     # run as the current (non-root) user. Prod never sets this.
     export TACCTL_SKIP_SUDO=1
 
+    mkdir -p "$(dirname "$TACCTL_RADIUS_DICT")" && : > "$TACCTL_RADIUS_DICT"
     mkdir -p "${TACCTL_ETC}" "${TACCTL_LOG}" "${TACCTL_BIN}" \
              "${TACCTL_STATE_DIR}/backups" \
              "${TACCTL_STATE_DIR}/backups/password-dates"

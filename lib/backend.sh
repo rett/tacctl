@@ -93,13 +93,16 @@
 #                       tcp for a network that starts with tcp, udp for one
 #                       that starts with udp, and a network that ends in 6 is
 #                       an IPv6 one.
-#   status <service|config|accounting|activity>
+#   status <service|config|accounting|activity|summary>
 #                       this backend's lines of 'tacctl status', one part
 #                       per place the report has always had them. With more
 #                       than one backend enabled the four parts of a backend
 #                       are printed together, in that order, under its own
 #                       heading (backend_heading), so a part must read well
 #                       after the others and carry no heading of its own.
+#                       'summary' is what 'tacctl backend status' adds after
+#                       the listeners (a line or two; a backend with nothing
+#                       to add returns 2, as for any part it does not have).
 #   log <tail [n]|search <term>|failures|clear [-y]>
 #                       the daemon's log, as 'tacctl log' prints it. 'clear'
 #                       confirms, and covers the accounting log too.
@@ -1177,6 +1180,8 @@ _backend_status() {
             unit="unit ${ustate}"
             echo -e "  ${BOLD}Listener ${name}:${NC} ${net} ${addr} — ${unit}, ${bound}"
         done < <(backend_call "$id" listeners list)
+        # Anything else the backend reports here (a count, never a table).
+        backend_call "$id" status summary 2> /dev/null || true
     done
     echo ""
 }

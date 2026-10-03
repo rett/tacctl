@@ -3,7 +3,9 @@
 # Sourced by bin/tacctl.sh (see the load block there for ordering); not executable.
 #
 # A scope is a named (prefixes, shared secret) bundle in the store, with an
-# optional 'protocols' filter naming the backends that serve it. Users carry
+# optional 'protocols' filter naming the backends that serve it and, for
+# RADIUS, the vendor attributes it opts into ('vendor-attrs', 'devices').
+# Users carry
 # a list of scope names and can authenticate only from devices matching a
 # scope they are a member of. Reads go through the model (lib/model.sh);
 # writes go through store_apply (lib/backend.sh), which re-renders
@@ -13,6 +15,19 @@
 # Protocols a scope's 'protocols' filter may name. Must equal KNOWN_PROTOCOLS
 # in lib/store.sh (a unit test pins the two together).
 SCOPE_PROTOCOLS="tacacs radius"
+
+# Vendors a scope can enable a RADIUS privilege attribute for, or tag an
+# address with. Must equal KNOWN_VENDORS in lib/store.sh (a unit test pins
+# the two together).
+SCOPE_VENDORS="cisco juniper wti"
+
+# Every tacctl.yaml key that is stored under a scope's name: <key>.<scope>.
+# 'scope rename' moves them and 'scope remove' drops them
+# (_scope_conf_keys_move); a per-scope key added to the schema in lib/conf.sh
+# belongs here too. scope.default names a scope by value and is handled by
+# the commands themselves.
+SCOPE_CONF_KEYS=(aaa.order exec_timeout tacacs_group radius_group scope_auth_method
+                 scope_mgmt_acl.names.cisco scope_mgmt_acl.names.juniper scope_mgmt_acl.permits)
 
 # --- Read scope.default from the merged tacctl config ---
 # Returns the configured default scope name (tacctl.yaml's scope.default,
@@ -61,19 +76,66 @@ scope_auth_method() {
     return 0
 }
 
-# Drop the scope's auth-method (the scope is going away). tacctl.yaml is left
-# alone when there is nothing to drop: a write re-dumps the whole file.
-_scope_auth_method_drop() {
-    [[ -n "$(conf_get "scope_auth_method.${1}")" ]] || return 0
-    conf_unset "scope_auth_method.${1}"
+# scope_protocol_choice <scope>: what the scope itself says about the protocol
+# to use when a command names none. Sets SCOPE_CHOICE (tacacs|radius, or empty
+# when the scope does not decide) and SCOPE_CHOICE_SOURCE:
+#   auth-method   'tacctl scope auth-method' is set
+#   protocols     it is not, and the scope's protocols filter names exactly
+#                 one protocol: nothing else serves the scope
+# The callers put this between what the command line (or a registered host)
+# says and the global default (config_protocol_resolve, cmd_host_enroll,
+# cmd_config_linux_script).
+scope_protocol_choice() {
+    local protocols
+    SCOPE_CHOICE=$(scope_auth_method "$1") SCOPE_CHOICE_SOURCE="auth-method"
+    [[ -n "$SCOPE_CHOICE" ]] && return 0
+    SCOPE_CHOICE_SOURCE=""
+    protocols=$(model_scope "$1" protocols 2> /dev/null | awk 'NF') || protocols=""
+    if [[ -n "$protocols" && "$protocols" != *$'\n'* ]]; then
+        SCOPE_CHOICE="$protocols" SCOPE_CHOICE_SOURCE="protocols"
+    fi
+    return 0
+}
+
+# What is in effect for a scope without an auth-method, for 'scope show' and
+# 'scope auth-method': the scope's only protocol, else the global defaults
+# (device configs are TACACS+; hosts take 'host default-method', named here
+# by its protocol).
+_scope_protocol_in_effect() {
+    scope_protocol_choice "$1"
+    if [[ "$SCOPE_CHOICE_SOURCE" == "protocols" ]]; then
+        echo "${SCOPE_CHOICE}: the scope's only protocol"
+    else
+        echo "devices: tacacs; hosts: $(linux_method_backend "$(linux_default_method)")"
+    fi
+}
+
+# _scope_conf_keys_move <old> [<new>]: every per-scope key of tacctl.yaml
+# (SCOPE_CONF_KEYS) stored under <old> goes to <new>; without <new> it is
+# dropped (the scope is going away, and a scope created later under the same
+# name must not inherit it). tacctl.yaml is left alone when it holds nothing
+# under that name: a write re-dumps the whole file. A value the schema does
+# not take (a hand edit) is not carried over.
+_scope_conf_keys_move() {
+    local old="$1" new="${2:-}" key value
+    grep -qsF -- "$old" "$TACCTL_OVERRIDES_FILE" || return 0
+    for key in "${SCOPE_CONF_KEYS[@]}"; do
+        conf_has_override "${key}.${old}" || continue
+        value=$(conf_get_json "${key}.${old}")
+        conf_unset "${key}.${old}" || return 1
+        if [[ -n "$new" ]] && ! conf_set_json "${key}.${new}" "$value" 2> /dev/null; then
+            warn "${key}.${old} holds a value tacctl.yaml does not take; it was not carried over to '${new}'." >&2
+        fi
+    done
+    return 0
 }
 
 # Writer for store_apply: delete the scope (off every user that still has it)
-# and the auth-method stored under its name, so a scope created later with
-# the same name does not inherit it.
+# and every tacctl.yaml key stored under its name. Its vendor attributes and
+# tagged addresses are part of its store entry and go with it.
 _scope_remove_write() {
     store_scope_del "$1" --strip-users || return 1
-    _scope_auth_method_drop "$1"
+    _scope_conf_keys_move "$1"
 }
 
 # --- CONFIG ALLOW/DENY PREFIX FILTERS ---
@@ -240,6 +302,8 @@ cmd_scope() {
         prefixes)          cmd_scope_prefixes_dispatch "$@" ;;
         secret)            cmd_scope_secret_dispatch "$@" ;;
         protocols)         cmd_scope_protocols "$@" ;;
+        vendor-attrs)      cmd_scope_vendor_attrs "$@" ;;
+        devices)           cmd_scope_devices "$@" ;;
         aaa-order)         cmd_scope_aaa_order "$@" ;;
         exec-timeout)      cmd_scope_exec_timeout "$@" ;;
         tacacs-group)      cmd_scope_tacacs_group "$@" ;;
@@ -267,6 +331,8 @@ cmd_scope_usage() {
     echo "  tacctl scope show <name>                                 Detailed view"
     echo "  tacctl scope add <name> --prefixes <cidrs>               Create a new scope"
     echo "                       [--secret <value>|--secret generate]"
+    echo "                       [--protocols <protocol>[,<protocol>...]]"
+    echo "                       [--vendor-attrs <vendor>[,<vendor>...]]"
     echo "                       [--default]"
     echo "  tacctl scope remove <name> [--force]                     Delete a scope (confirms)"
     echo "  tacctl scope rename <old> <new>                          Rename (updates user references)"
@@ -276,11 +342,13 @@ cmd_scope_usage() {
     echo "  tacctl scope prefixes <scope> list|add|remove|clear      Manage a scope's CIDR list"
     echo "  tacctl scope secret   <scope> show|set|generate          Manage a scope's shared secret"
     echo "  tacctl scope protocols <scope> list|set <csv>|clear      Limit a scope to some protocols (${SCOPE_PROTOCOLS// /, }); default: all"
+    echo "  tacctl scope vendor-attrs <scope> [enable|disable <csv>] RADIUS: vendor privilege attributes sent to the scope's devices (${SCOPE_VENDORS// /, }); default: not sent"
+    echo "  tacctl scope devices <scope> [set <ip|cidr> <vendor>|unset <ip|cidr>]  RADIUS: tag an address of the scope with its vendor (it gets that vendor's attribute only)"
     echo "  tacctl scope aaa-order <scope> [tacacs-first|local-first] AAA method-list order in this scope's rendered device configs (default tacacs-first)"
     echo "  tacctl scope exec-timeout <scope> [minutes]              Per-scope idle-session timeout in rendered device configs (0..60 min; default 60; 0 = never expire)"
     echo "  tacctl scope tacacs-group <scope> [name]                 Per-scope Cisco aaa-group-server label (default TACACS-GROUP)"
     echo "  tacctl scope radius-group <scope> [name]                 Per-scope Cisco aaa-group-server label for RADIUS (default RADIUS-GROUP)"
-    echo "  tacctl scope auth-method <scope> [tacacs|radius|default] Protocol this scope's device configs and host enrollments use when the command names none"
+    echo "  tacctl scope auth-method <scope> [tacacs|radius|clear]   Protocol this scope's device configs and host enrollments use when the command names none"
     echo "  tacctl scope mgmt-acl <scope> list|add|remove|clear      Per-scope permit list (fallback: global mgmt_acl.permits)"
     echo "  tacctl scope mgmt-acl <scope> cisco-name|juniper-name [name]  Per-scope ACL / filter name (defaults VTY-ACL / MGMT-ACL)"
     echo ""
@@ -310,9 +378,18 @@ cmd_scope_list() {
         return
     fi
 
-    printf "  ${BOLD}%-18s %-20s %5s  %s${NC}\n" "NAME" "PREFIXES" "USERS" "DEFAULT"
-    echo "  --------------------------------------------------------------"
-    while IFS='|' read -r name cidr users is_default; do
+    # The vendor-attributes column (RADIUS) is there only when a scope has
+    # something to show in it.
+    local with_vendor=0
+    [[ -n "$(cut -s -d'|' -f5 <<< "$rows" | awk 'NF')" ]] && with_vendor=1
+    if (( with_vendor )); then
+        printf "  ${BOLD}%-18s %-20s %5s  %-7s  %s${NC}\n" "NAME" "PREFIXES" "USERS" "DEFAULT" "VENDOR ATTRIBUTES (RADIUS)"
+        echo "  ------------------------------------------------------------------------------------"
+    else
+        printf "  ${BOLD}%-18s %-20s %5s  %s${NC}\n" "NAME" "PREFIXES" "USERS" "DEFAULT"
+        echo "  --------------------------------------------------------------"
+    fi
+    while IFS='|' read -r name cidr users is_default vendor; do
         if [[ -z "$name" ]]; then
             # Continuation row — blank NAME column, prefix only.
             [[ -z "$cidr" ]] && continue
@@ -321,7 +398,11 @@ cmd_scope_list() {
         fi
         local dfl=""
         [[ "$is_default" == "yes" ]] && dfl="${CYAN}yes${NC}"
-        printf "  ${BOLD}%-18s${NC} %-20s %5s  %b\n" "$name" "$cidr" "$users" "$dfl"
+        if (( with_vendor )); then
+            printf "  ${BOLD}%-18s${NC} %-20s %5s  %-7s  %s\n" "$name" "$cidr" "$users" "${is_default}" "${vendor:-not sent}"
+        else
+            printf "  ${BOLD}%-18s${NC} %-20s %5s  %b\n" "$name" "$cidr" "$users" "$dfl"
+        fi
     done <<< "$rows"
     echo ""
 }
@@ -384,8 +465,9 @@ cmd_scope_show() {
     default_val=$(read_default_scope)
     local is_default="no"
     [[ "$name" == "$default_val" ]] && is_default="yes"
-    local protocols
+    local protocols vendor_attrs
     protocols=$(model_scope "$name" protocols | paste -sd, || true)
+    vendor_attrs=$(model_scope "$name" vendor_attrs | paste -sd, || true)
     # Per-scope device-render knobs. Absence of an override falls back
     # through the per-scope -> global -> shipped-default chain,
     # matching what `tacctl config cisco|juniper --scope <name>` emits.
@@ -409,7 +491,8 @@ cmd_scope_show() {
     echo -e "  ${BOLD}Default:${NC}       ${is_default}"
     echo -e "  ${BOLD}Secret:${NC}        ${secret_line}"
     echo -e "  ${BOLD}Protocols:${NC}     ${protocols:-all (no filter)}"
-    echo -e "  ${BOLD}Auth method:${NC}   ${auth_method_val:-not set (devices: tacacs; hosts: $(linux_default_method))}"
+    echo -e "  ${BOLD}Auth method:${NC}   ${auth_method_val:-not set ($(_scope_protocol_in_effect "$name"))}"
+    echo -e "  ${BOLD}Vendor attributes:${NC} ${vendor_attrs:-not sent}   (RADIUS; tacctl scope vendor-attrs ${name})"
     echo -e "  ${BOLD}AAA order:${NC}     ${aaa_order_val}"
     echo -e "  ${BOLD}Exec timeout:${NC}  ${exec_timeout_display}"
     echo -e "  ${BOLD}TACACS group:${NC}  ${tacacs_group_val}"
@@ -426,6 +509,16 @@ cmd_scope_show() {
             [[ -z "$c" ]] && continue
             echo "    - ${c}"
         done
+    fi
+    local devices
+    devices=$(model_scope_devices "$name")
+    if [[ -n "$devices" ]]; then
+        echo -e "  ${BOLD}Tagged addresses:${NC} (RADIUS: each gets its own vendor's attribute only)"
+        local dc dv
+        while IFS='|' read -r dc dv; do
+            [[ -z "$dc" ]] && continue
+            echo "    - ${dc}  ${dv}"
+        done <<< "$devices"
     fi
     echo -e "  ${BOLD}Users:${NC}"
     local users
@@ -455,14 +548,50 @@ _scope_prefix_collisions() {
     done <<< "$1"
 }
 
-# Writer for store_apply: create the scope and, with a 4th argument, point
-# scope.default at it.
-_scope_add_write() {
-    if [[ -n "${5:-}" ]]; then
-        store_scope_set "$1" "prefixes=$2" "secret=$3" "protocols=$5" || return 1
-    else
-        store_scope_set "$1" "prefixes=$2" "secret=$3" || return 1
+# _scope_vendor_list <csv> [<what to call it in the error>]: the vendors of a
+# comma-separated list in the fixed order of SCOPE_VENDORS, each once, as a
+# csv. Returns 1, with an error, for an unknown vendor or an empty list.
+_scope_vendor_list() {
+    local v known out=""
+    for v in ${1//,/ }; do
+        if [[ " ${SCOPE_VENDORS} " != *" ${v} "* ]]; then
+            error "Unknown vendor '${v}'. Known vendors: ${SCOPE_VENDORS// /, }"
+            return 1
+        fi
+    done
+    for known in $SCOPE_VENDORS; do
+        [[ " ${1//,/ } " == *" ${known} "* ]] && out+="${out:+,}${known}"
+    done
+    if [[ -z "$out" ]]; then
+        error "No vendor given. Known vendors: ${SCOPE_VENDORS// /, }"
+        return 1
     fi
+    echo "$out"
+}
+
+# _scope_device_problems <scope> <prefix csv> [<cidr> <vendor>]: would that
+# scope with those prefixes (and that address tagged) leave a tagged address
+# where it cannot be? Prints one error per problem and returns 1. The store
+# refuses the same; this says it before anything is written.
+_scope_device_problems() {
+    local problems pscope pcidr pmsg lead
+    problems=$(_model_view device-problems "$@") && return 0
+    while IFS='|' read -r pscope pcidr pmsg; do
+        [[ -n "$pscope" ]] || continue
+        lead="scope '${pscope}': devices: "
+        error "    - ${pmsg#"$lead"}  (tagged in scope '${pscope}'; to remove the tag: tacctl scope devices ${pscope} unset ${pcidr})"
+    done <<< "$problems"
+    return 1
+}
+
+# Writer for store_apply: create the scope and, with a 4th argument, point
+# scope.default at it. $5 is a protocols filter, $6 the vendor attributes to
+# enable; either may be empty.
+_scope_add_write() {
+    local -a fields=("prefixes=$2" "secret=$3")
+    [[ -n "${5:-}" ]] && fields+=("protocols=$5")
+    [[ -n "${6:-}" ]] && fields+=("vendor_attrs=$6")
+    store_scope_set "$1" "${fields[@]}" || return 1
     if [[ -n "${4:-}" ]]; then
         write_default_scope "$1" || return 1
     fi
@@ -471,7 +600,7 @@ _scope_add_write() {
 cmd_scope_add() {
     local name="${1:-}"
     if [[ -z "$name" ]]; then
-        error "Usage: tacctl scope add <name> --prefixes <cidrs> [--secret <value>|generate] [--protocols <protocol>[,<protocol>...]] [--default]"
+        error "Usage: tacctl scope add <name> --prefixes <cidrs> [--secret <value>|generate] [--protocols <protocol>[,<protocol>...]] [--vendor-attrs <vendor>[,<vendor>...]] [--default]"
         exit 1
     fi
     shift
@@ -485,12 +614,17 @@ cmd_scope_add() {
         exit 1
     fi
 
-    local prefixes="" secret_arg="" make_default="" protocols_arg="" protocols=""
+    local prefixes="" secret_arg="" make_default="" protocols_arg="" protocols="" vendor_arg="" vendor_attrs=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --prefixes) prefixes="${2:-}"; shift 2 ;;
             --secret)   secret_arg="${2:-}"; shift 2 ;;
             --protocols) protocols_arg="${2:-}"; shift 2 ;;
+            --vendor-attrs)
+                vendor_arg="${2:-}"
+                [[ -n "$vendor_arg" ]] || { error "--vendor-attrs needs a list of vendors (${SCOPE_VENDORS// /, })."; exit 1; }
+                shift 2
+                ;;
             --default)  make_default="yes"; shift ;;
             *) error "Unknown flag: '$1'"; exit 1 ;;
         esac
@@ -509,6 +643,11 @@ cmd_scope_add() {
         for known in $SCOPE_PROTOCOLS; do
             [[ ",${protocols_arg}," == *",${known},"* ]] && protocols+="${protocols:+,}${known}"
         done
+    fi
+
+    # --vendor-attrs: what 'scope vendor-attrs <name> enable' would write.
+    if [[ -n "$vendor_arg" ]]; then
+        vendor_attrs=$(_scope_vendor_list "$vendor_arg") || exit 1
     fi
 
     if [[ -z "$prefixes" ]]; then
@@ -534,6 +673,14 @@ cmd_scope_add() {
     local csv
     csv=$(printf '%s\n' "$canon" | paste -sd,)
 
+    # A new prefix inside another scope's range takes the addresses in it
+    # away from that scope; one of them tagged there would be left behind.
+    if ! _model_view device-problems "$name" "$csv" > /dev/null; then
+        error "Cannot create scope '${name}': it would take over an address another scope has tagged with a vendor:"
+        _scope_device_problems "$name" "$csv" || true
+        exit 1
+    fi
+
     local secret_value=""
     if [[ -z "$secret_arg" || "$secret_arg" == "generate" ]]; then
         secret_value=$(openssl rand -base64 24)
@@ -546,7 +693,7 @@ cmd_scope_add() {
         fi
     fi
 
-    store_apply _scope_add_write "$name" "$csv" "$secret_value" "$make_default" "$protocols" || exit $?
+    store_apply _scope_add_write "$name" "$csv" "$secret_value" "$make_default" "$protocols" "$vendor_attrs" || exit $?
 
     if [[ -n "$make_default" ]]; then
         info "Scope '${name}' added and set as default."
@@ -606,16 +753,13 @@ cmd_scope_remove() {
 }
 
 # Writer for store_apply: rename the scope (and every user's reference to
-# it), then scope.default if it pointed at the old name, and the scope's
-# auth-method, which is stored under the scope's name.
+# it; its vendor attributes and tagged addresses are in its store entry),
+# then every tacctl.yaml key stored under its name, and scope.default if it
+# pointed at the old name.
 _scope_rename_write() {
-    local old="$1" new="$2" default_val auth_method
+    local old="$1" new="$2" default_val
     store_scope_rename "$old" "$new" || return 1
-    auth_method=$(scope_auth_method "$old")
-    _scope_auth_method_drop "$old" || return 1
-    if [[ -n "$auth_method" ]]; then
-        conf_set "scope_auth_method.${new}" "$auth_method" || return 1
-    fi
+    _scope_conf_keys_move "$old" "$new" || return 1
     default_val=$(conf_get scope.default)
     if [[ "$default_val" == "$old" ]]; then
         write_default_scope "$new" || return 1
@@ -796,7 +940,24 @@ cmd_scope_prefixes_dispatch() {
                     exit 1
                 fi
             fi
-            store_apply store_scope_set "$scope" "prefixes=$(printf '%s\n' "$current" | awk 'NF' | paste -sd,)" || exit $?
+            # Tagged addresses ('scope devices') must stay inside a prefix of
+            # their scope. Refused rather than dropped: a tag says what a
+            # device is, and losing it without a word (a prefix removed here
+            # and added back wider a moment later) would change what that
+            # device is sent. Add the new prefix first, or unset the tag.
+            local new_csv
+            new_csv=$(printf '%s\n' "$current" | awk 'NF' | paste -sd,)
+            if ! _model_view device-problems "$scope" "$new_csv" > /dev/null; then
+                if [[ "$sub" == "remove" ]]; then
+                    error "Cannot remove the prefix(es) from scope '${scope}': a tagged address would be left outside the scope's prefixes:"
+                else
+                    error "Cannot add the prefix(es) to scope '${scope}': it would take over an address another scope has tagged with a vendor:"
+                fi
+                _scope_device_problems "$scope" "$new_csv" || true
+                error "Nothing was changed. Unset the tag first, or (when moving a range) add the new prefix before removing the old one."
+                exit 1
+            fi
+            store_apply store_scope_set "$scope" "prefixes=${new_csv}" || exit $?
             local n
             n=$(printf '%s\n' "$changed" | wc -l)
             local verb="Added"; [[ "$sub" == "remove" ]] && verb="Removed"
@@ -1005,7 +1166,7 @@ cmd_scope_protocols() {
             auth_method=$(scope_auth_method "$scope")
             if [[ -n "$auth_method" && ",${new_list}," != *",${auth_method},"* ]]; then
                 error "Scope '${scope}' has auth-method ${auth_method}, which protocols '${new_list}' would leave unserved. Nothing was changed."
-                error "Change or clear the auth-method first: tacctl scope auth-method ${scope} <tacacs|radius|default>   (or keep ${auth_method} in the list)"
+                error "Change or clear the auth-method first: tacctl scope auth-method ${scope} <tacacs|radius|clear>   (or keep ${auth_method} in the list)"
                 exit 1
             fi
             store_apply store_scope_set "$scope" "protocols=${new_list}" || exit $?
@@ -1028,6 +1189,249 @@ cmd_scope_protocols() {
         *)
             error "Unknown subcommand: '${sub}'"
             error "Usage: tacctl scope protocols ${scope} [list|set <protocol>[,<protocol>...]|clear]"
+            exit 1
+            ;;
+    esac
+}
+
+# --- Per-scope vendor attributes (RADIUS): tacctl scope vendor-attrs <scope> [enable|disable <vendor>[,<vendor>...]] ---
+# What an Access-Accept carries besides Service-Type is opt-in per scope: a
+# new scope sends no vendor's privilege attribute. A vendor enabled here gets
+# its attribute sent to every device of the scope that is not tagged
+# ('scope devices'); a tagged address gets its own vendor's attribute only,
+# whatever is enabled here.
+#   cisco    Cisco-AVPair "shell:priv-lvl=<N>"
+#   juniper  Juniper-Local-User-Name "<class>"
+#   wti      WTI-Super <0-3>
+# The verbs are enable and disable, as for backends: nothing is sent until it
+# is enabled, and there is no 'set', 'clear' or 'none' whose empty form could
+# be read as "all". Stored on the scope in store.yaml (vendor_attrs), so a
+# change re-renders the RADIUS backend and restarts it. TACACS+ is not
+# affected: a device asks for its own service there.
+_scope_vendor_radius_notes() {
+    local scope="$1" protocols
+    protocols=$(model_scope "$scope" protocols | awk 'NF' | paste -sd, || true)
+    if [[ -n "$protocols" && ",${protocols}," != *",radius,"* ]]; then
+        warn "Scope '${scope}' is limited to ${protocols} (tacctl scope protocols), so it is not served over RADIUS and this has no effect yet."
+    elif _backends_load 2> /dev/null && ! _backend_is_enabled radius; then
+        warn "The RADIUS backend is not enabled on this server, so this has no effect yet: tacctl backend enable radius"
+    fi
+}
+
+cmd_scope_vendor_attrs() {
+    local scope="${1:-}" sub="${2:-}" arg="${3:-}"
+    local usage="tacctl scope vendor-attrs <scope> [enable <vendor>[,<vendor>...]|disable <vendor>[,<vendor>...]]"
+    if [[ -z "$scope" ]]; then
+        error "Usage: ${usage}"
+        error "Vendors: ${SCOPE_VENDORS// /, }"
+        exit 1
+    fi
+    case "$sub" in
+        enable|disable) store_require || exit 1 ;;
+    esac
+    local current
+    if ! current=$(model_scope "$scope" vendor_attrs); then
+        error "Scope '${scope}' does not exist."
+        exit 1
+    fi
+    current=$(printf '%s\n' "$current" | awk 'NF' | paste -sd,)
+
+    case "$sub" in
+        ""|show|list|-h|--help|help)
+            local tagged
+            tagged=$(model_scope_devices "$scope" | awk 'NF' | wc -l)
+            echo ""
+            echo "  Scope '${scope}' vendor attributes: ${current:-not sent}"
+            if (( tagged > 0 )); then
+                echo "  Tagged addresses: ${tagged} (each gets its own vendor's attribute only; tacctl scope devices ${scope})"
+            fi
+            echo ""
+            echo "    Over RADIUS an Access-Accept always carries Service-Type. A vendor's privilege attribute"
+            echo "    is added only when that vendor is enabled here (for every device of the scope that is not"
+            echo "    tagged) or the device's address is tagged with it:"
+            echo "      cisco    Cisco-AVPair \"shell:priv-lvl=<N>\"   (the group's privilege level)"
+            echo "      juniper  Juniper-Local-User-Name            (the group's Juniper class)"
+            echo "      wti      WTI-Super                          (0 ViewOnly, 1 User, 2 SuperUser, 3 Administrator)"
+            echo "    TACACS+ is not affected."
+            echo ""
+            echo "  Usage: tacctl scope vendor-attrs ${scope} enable <vendor>[,<vendor>...]    (vendors: ${SCOPE_VENDORS// /, })"
+            echo "         tacctl scope vendor-attrs ${scope} disable <vendor>[,<vendor>...]"
+            echo ""
+            ;;
+        enable|disable)
+            if [[ -z "$arg" ]]; then
+                error "Usage: tacctl scope vendor-attrs ${scope} ${sub} <vendor>[,<vendor>...]"
+                error "Vendors: ${SCOPE_VENDORS// /, }"
+                exit 1
+            fi
+            local wanted v new_list="" changed=""
+            wanted=$(_scope_vendor_list "$arg") || exit 1
+            for v in $SCOPE_VENDORS; do
+                if [[ ",${wanted}," == *",${v},"* ]]; then
+                    # Named on the command line: on for enable, off for disable.
+                    if [[ "$sub" == "enable" ]]; then
+                        new_list+="${new_list:+,}${v}"
+                        [[ ",${current}," == *",${v},"* ]] || changed+="${changed:+, }${v}"
+                    else
+                        [[ ",${current}," == *",${v},"* ]] && changed+="${changed:+, }${v}"
+                    fi
+                elif [[ ",${current}," == *",${v},"* ]]; then
+                    new_list+="${new_list:+,}${v}"
+                fi
+            done
+            if [[ -z "$changed" ]]; then
+                if [[ "$sub" == "enable" ]]; then
+                    info "Scope '${scope}': ${wanted//,/, } already enabled (vendor attributes: ${current//,/, })."
+                else
+                    info "Scope '${scope}': ${wanted//,/, } not enabled; no change (vendor attributes: ${current:-not sent})."
+                fi
+                echo ""
+                return
+            fi
+            store_apply store_scope_set "$scope" "vendor_attrs=${new_list:-null}" || exit $?
+            if [[ "$sub" == "enable" ]]; then
+                info "Scope '${scope}': vendor attributes enabled: ${changed}. Now sent: ${new_list//,/, }."
+            else
+                info "Scope '${scope}': vendor attributes disabled: ${changed}. Now: ${new_list:-not sent}."
+                local dc dv still=""
+                while IFS='|' read -r dc dv; do
+                    [[ -n "$dc" && ", ${changed}, " == *", ${dv}, "* ]] && still+="${still:+, }${dc}"
+                done < <(model_scope_devices "$scope")
+                if [[ -n "$still" ]]; then
+                    info "Tagged addresses keep their vendor's attribute: ${still} (tacctl scope devices ${scope})."
+                fi
+            fi
+            _scope_vendor_radius_notes "$scope"
+            echo ""
+            ;;
+        *)
+            error "Unknown subcommand: '${sub}'. The verbs are enable and disable: nothing is sent until a vendor is enabled."
+            error "Usage: ${usage}"
+            exit 1
+            ;;
+    esac
+}
+
+# --- Tagged addresses of a scope (RADIUS): tacctl scope devices <scope> [set <ip|cidr> <vendor>|unset <ip|cidr>] ---
+# A device whose vendor is known can be told to the server: its address (or
+# a range) is tagged with the vendor, and over RADIUS it then gets that
+# vendor's attribute and no other vendor's, whether or not the scope enables
+# any ('scope vendor-attrs'). A bare address is a /32 (/128). Stored on the
+# scope in store.yaml (devices: cidr -> vendor); the RADIUS backend renders a
+# client of its own for each, with the scope's secret, which is why a tagged
+# address must be one 'scope lookup' answers with this scope.
+cmd_scope_devices() {
+    local scope="${1:-}" sub="${2:-}" addr="${3:-}" vendor="${4:-}"
+    local usage="tacctl scope devices <scope> [set <ip|cidr> <vendor>|unset <ip|cidr>]"
+    if [[ -z "$scope" ]]; then
+        error "Usage: ${usage}"
+        exit 1
+    fi
+    case "$sub" in
+        set|unset) store_require || exit 1 ;;
+    esac
+    if ! model_scope_exists "$scope"; then
+        error "Scope '${scope}' does not exist."
+        exit 1
+    fi
+    local current
+    current=$(model_scope_devices "$scope") || exit 1
+
+    case "$sub" in
+        ""|list|-h|--help|help)
+            local attrs dc dv
+            attrs=$(model_scope "$scope" vendor_attrs | awk 'NF' | paste -sd, || true)
+            echo ""
+            echo -e "${BOLD}Tagged addresses of scope '${scope}'${NC} (RADIUS)"
+            echo "--------------------------------------------"
+            if [[ -z "$current" ]]; then
+                echo "  (none)"
+            else
+                while IFS='|' read -r dc dv; do
+                    [[ -z "$dc" ]] && continue
+                    printf "  %-24s %s\n" "$dc" "$dv"
+                done <<< "$current"
+            fi
+            echo ""
+            echo "  A tagged address gets its own vendor's attribute and no other vendor's."
+            echo "  Every other device of the scope gets what the scope enables: ${attrs:-not sent} (tacctl scope vendor-attrs ${scope})."
+            echo ""
+            echo "  Usage: tacctl scope devices ${scope} set <ip|cidr> <vendor>    (vendors: ${SCOPE_VENDORS// /, })"
+            echo "         tacctl scope devices ${scope} unset <ip|cidr>"
+            echo ""
+            ;;
+        set|unset)
+            if [[ -z "$addr" || ( "$sub" == "set" && -z "$vendor" ) || ( "$sub" == "unset" && -n "$vendor" ) ]]; then
+                if [[ "$sub" == "set" ]]; then
+                    error "Usage: tacctl scope devices ${scope} set <ip|cidr> <vendor>   (vendors: ${SCOPE_VENDORS// /, })"
+                else
+                    error "Usage: tacctl scope devices ${scope} unset <ip|cidr>"
+                fi
+                exit 1
+            fi
+            local cidr
+            cidr=$(canonicalize_cidr "$addr")
+            if [[ -z "$cidr" ]]; then
+                error "Invalid address or CIDR: '${addr}'"
+                exit 1
+            fi
+            local dc dv had="" new_map=""
+            while IFS='|' read -r dc dv; do
+                [[ -z "$dc" ]] && continue
+                if [[ "$dc" == "$cidr" ]]; then
+                    had="$dv"
+                else
+                    new_map+="${new_map:+,}${dc}=${dv}"
+                fi
+            done <<< "$current"
+
+            if [[ "$sub" == "unset" ]]; then
+                if [[ -z "$had" ]]; then
+                    info "${cidr} is not tagged in scope '${scope}'; no change."
+                    echo ""
+                    return
+                fi
+                store_apply store_scope_set "$scope" "devices=${new_map:-null}" || exit $?
+                info "Scope '${scope}': ${cidr} is no longer tagged (it was ${had}); it gets what the scope enables (tacctl scope vendor-attrs ${scope})."
+                echo ""
+                return
+            fi
+
+            if [[ " ${SCOPE_VENDORS} " != *" ${vendor} "* ]]; then
+                error "Unknown vendor '${vendor}'. Known vendors: ${SCOPE_VENDORS// /, }"
+                exit 1
+            fi
+            if [[ "$had" == "$vendor" ]]; then
+                info "${cidr} is already tagged ${vendor} in scope '${scope}'; no change."
+                echo ""
+                return
+            fi
+            local prefix_csv
+            prefix_csv=$(model_scope "$scope" prefixes | awk 'NF' | paste -sd,)
+            if ! _model_view device-problems "$scope" "$prefix_csv" "$cidr" "$vendor" > /dev/null; then
+                error "Cannot tag ${cidr} in scope '${scope}': a tagged address must be one this scope answers for ('tacctl scope lookup ${addr}')."
+                local problems pscope pcidr pmsg lead
+                problems=$(_model_view device-problems "$scope" "$prefix_csv" "$cidr" "$vendor") || true
+                while IFS='|' read -r pscope pcidr pmsg; do
+                    [[ "$pcidr" == "$cidr" ]] || continue
+                    lead="scope '${pscope}': devices: "
+                    error "    - ${pmsg#"$lead"}"
+                done <<< "$problems"
+                error "Nothing was changed."
+                exit 1
+            fi
+            store_apply store_scope_set "$scope" "devices=${new_map:+${new_map},}${cidr}=${vendor}" || exit $?
+            if [[ -n "$had" ]]; then
+                info "Scope '${scope}': ${cidr} is now tagged ${vendor} (it was ${had})."
+            else
+                info "Scope '${scope}': ${cidr} tagged ${vendor}: over RADIUS it gets that vendor's attribute only."
+            fi
+            _scope_vendor_radius_notes "$scope"
+            echo ""
+            ;;
+        *)
+            error "Unknown subcommand: '${sub}'"
+            error "Usage: ${usage}"
             exit 1
             ;;
     esac
@@ -1230,16 +1634,19 @@ cmd_scope_radius_group() {
     echo ""
 }
 
-# --- Per-scope default authentication method: tacctl scope auth-method <scope> [tacacs|radius|default] ---
+# --- Per-scope default authentication method: tacctl scope auth-method <scope> [tacacs|radius|clear] ---
 # The protocol used for this scope when a command is not told one:
-#   config cisco|juniper   without --protocol (an explicit --protocol wins)
-#   host enroll            without --method, for a host that is not registered
-#                          yet (a registered host keeps its method)
-#   config linux script    without --method
-# Stored as scope_auth_method.<scope> in tacctl.yaml. Without it the commands
-# behave as they did before the setting existed: device configs are TACACS+,
-# hosts take 'host default-method'. 'default' removes the setting; 'tacplus'
-# (the name of the host method) is accepted for 'tacacs'.
+#   config cisco|juniper|wti   without --protocol (an explicit --protocol wins)
+#   host enroll                without --method, for a host that is not registered
+#                              yet (a registered host keeps its method)
+#   config linux script        without --method
+# Stored as scope_auth_method.<scope> in tacctl.yaml. Without it the scope's
+# protocols filter decides when it names exactly one protocol, and otherwise
+# the global default does: device configs are TACACS+, hosts take
+# 'host default-method' (scope_protocol_choice). 'clear' removes the setting,
+# as it does for 'scope protocols' and 'scope mgmt-acl' ('default' is accepted
+# for it); 'tacplus' (the name of the host method) is accepted for 'tacacs',
+# which is the one spelling this command prints.
 # The setting changes nothing on the server and re-renders nothing: it is
 # read when a device config or a host script is produced.
 cmd_scope_auth_method() {
@@ -1247,7 +1654,7 @@ cmd_scope_auth_method() {
     local new_method="${2:-}"
 
     if [[ -z "$scope" ]]; then
-        error "Usage: tacctl scope auth-method <scope> [tacacs|radius|default]"
+        error "Usage: tacctl scope auth-method <scope> [tacacs|radius|clear]"
         exit 1
     fi
     _scope_require "$scope" || exit 1
@@ -1265,14 +1672,16 @@ cmd_scope_auth_method() {
         echo "  Scope '${scope}' auth-method: ${current:-not set}"
         echo "  Source: ${source}"
         if [[ -z "$current" ]]; then
-            echo "  In effect: device configs tacacs; new hosts $(linux_default_method) ('tacctl host default-method')"
+            echo "  In effect: $(_scope_protocol_in_effect "$scope")"
         fi
         echo ""
-        echo "    Used when the command names no protocol: 'tacctl config cisco|juniper' without"
+        echo "    Used when the command names no protocol: 'tacctl config cisco|juniper|wti' without"
         echo "    --protocol, 'tacctl host enroll' (a host not yet registered) and"
-        echo "    'tacctl config linux script' without --method."
+        echo "    'tacctl config linux script' without --method. Without it: the scope's only"
+        echo "    protocol when 'tacctl scope protocols' names exactly one, else tacacs for device"
+        echo "    configs and 'tacctl host default-method' for hosts."
         echo ""
-        echo "  Usage: tacctl scope auth-method ${scope} <tacacs|radius|default>"
+        echo "  Usage: tacctl scope auth-method ${scope} <tacacs|radius|clear>"
         echo ""
         return
     fi
@@ -1280,19 +1689,19 @@ cmd_scope_auth_method() {
     case "$new_method" in
         tacplus) new_method="tacacs" ;;
         tacacs|radius) ;;
-        default)
+        clear|default)
             if [[ -z "$(conf_get "scope_auth_method.${scope}")" ]]; then
                 info "Scope '${scope}' has no auth-method set; no change."
                 echo ""
                 return
             fi
             conf_unset "scope_auth_method.${scope}" || exit 1
-            info "Scope '${scope}' auth-method cleared (device configs: tacacs; new hosts: $(linux_default_method))."
+            info "Scope '${scope}' auth-method cleared (in effect: $(_scope_protocol_in_effect "$scope"))."
             echo ""
             return
             ;;
         *)
-            error "Unknown auth-method '${new_method}'. Use tacacs, radius or default (to clear)."
+            error "Unknown auth-method '${new_method}'. Use tacacs, radius or clear."
             exit 1
             ;;
     esac
@@ -1318,7 +1727,7 @@ cmd_scope_auth_method() {
         warn "The ${new_method} backend is not enabled on this server: tacctl backend enable ${new_method}"
     fi
     echo ""
-    echo "  'tacctl config cisco|juniper --scope ${scope}' and new 'tacctl host enroll --scope ${scope}'"
+    echo "  'tacctl config cisco|juniper|wti --scope ${scope}' and new 'tacctl host enroll --scope ${scope}'"
     echo "  now use ${new_method} unless told otherwise. Devices and hosts already configured are not"
     echo "  changed: push the new device config, or re-enroll a host with --method, to switch them."
     echo ""

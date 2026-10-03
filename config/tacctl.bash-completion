@@ -233,7 +233,7 @@ for u in (d.get('users') or []):
                         COMPREPLY=($(compgen -W "--scope --protocol" -- "$cur"))
                         ;;
                     wti)
-                        COMPREPLY=($(compgen -W "--scope" -- "$cur"))
+                        COMPREPLY=($(compgen -W "--scope --protocol" -- "$cur"))
                         ;;
                     get|get-list)
                         # Dotted paths into the merged config. Offering the
@@ -263,10 +263,10 @@ for u in (d.get('users') or []):
             elif [[ $pos -ge 4 && ( "${words[offset + 2]}" == "cisco" || "${words[offset + 2]}" == "juniper" || "${words[offset + 2]}" == "wti" ) ]]; then
                 if [[ "${words[cword - 1]}" == "--scope" ]]; then
                     COMPREPLY=($(compgen -W "$(_tacctl_scope_names)" -- "$cur"))
-                elif [[ "${words[cword - 1]}" == "--protocol" && "${words[offset + 2]}" != "wti" ]]; then
+                elif [[ "${words[cword - 1]}" == "--protocol" ]]; then
                     COMPREPLY=($(compgen -W "tacacs radius" -- "$cur"))
-                elif [[ "${words[offset + 2]}" == "cisco" || "${words[offset + 2]}" == "juniper" ]]; then
-                    # Offer whichever cisco/juniper flag isn't already on the line.
+                else
+                    # Offer whichever flag isn't already on the line.
                     local cflags=""
                     [[ " ${words[*]} " == *" --scope "* ]]    || cflags+=" --scope"
                     [[ " ${words[*]} " == *" --protocol "* ]] || cflags+=" --protocol"
@@ -287,10 +287,10 @@ for u in (d.get('users') or []):
         scope)
             local ssub="${words[offset + 2]}"
             if [[ $pos -eq 2 ]]; then
-                COMPREPLY=($(compgen -W "list routing show add remove rename default lookup prefixes secret protocols aaa-order exec-timeout tacacs-group radius-group auth-method mgmt-acl" -- "$cur"))
+                COMPREPLY=($(compgen -W "list routing show add remove rename default lookup prefixes secret protocols vendor-attrs devices aaa-order exec-timeout tacacs-group radius-group auth-method mgmt-acl" -- "$cur"))
             elif [[ $pos -eq 3 ]]; then
                 case "$ssub" in
-                    show|remove|rename|default|prefixes|secret|protocols|aaa-order|exec-timeout|tacacs-group|radius-group|auth-method|mgmt-acl)
+                    show|remove|rename|default|prefixes|secret|protocols|vendor-attrs|devices|aaa-order|exec-timeout|tacacs-group|radius-group|auth-method|mgmt-acl)
                         COMPREPLY=($(compgen -W "$(_tacctl_scope_names)" -- "$cur"))
                         ;;
                     lookup)
@@ -302,7 +302,7 @@ for u in (d.get('users') or []):
                 case "$ssub" in
                     add)
                         # `scope add <name> <flag>`
-                        COMPREPLY=($(compgen -W "--prefixes --secret --default" -- "$cur"))
+                        COMPREPLY=($(compgen -W "--prefixes --secret --protocols --vendor-attrs --default" -- "$cur"))
                         ;;
                     prefixes)
                         # `scope prefixes <scope> <list|add|remove|clear>`
@@ -316,13 +316,21 @@ for u in (d.get('users') or []):
                         # `scope protocols <scope> <list|set|clear>`
                         COMPREPLY=($(compgen -W "list set clear" -- "$cur"))
                         ;;
+                    vendor-attrs)
+                        # `scope vendor-attrs <scope> <enable|disable>` (no set/clear: opt-in)
+                        COMPREPLY=($(compgen -W "enable disable" -- "$cur"))
+                        ;;
+                    devices)
+                        # `scope devices <scope> <list|set|unset>`
+                        COMPREPLY=($(compgen -W "list set unset" -- "$cur"))
+                        ;;
                     aaa-order)
                         # `scope aaa-order <scope> <tacacs-first|local-first>`
                         COMPREPLY=($(compgen -W "tacacs-first local-first" -- "$cur"))
                         ;;
                     auth-method)
-                        # `scope auth-method <scope> <tacacs|radius|default>`
-                        COMPREPLY=($(compgen -W "tacacs radius default" -- "$cur"))
+                        # `scope auth-method <scope> <tacacs|radius|clear>`
+                        COMPREPLY=($(compgen -W "tacacs radius clear" -- "$cur"))
                         ;;
                     mgmt-acl)
                         # `scope mgmt-acl <scope> <sub>` — name setters + permit-list ops.
@@ -337,6 +345,14 @@ for u in (d.get('users') or []):
                         COMPREPLY=($(compgen -W "--force" -- "$cur"))
                         ;;
                 esac
+            elif [[ $pos -eq 5 && "$ssub" == "vendor-attrs" ]]; then
+                # `scope vendor-attrs <scope> enable|disable <vendor>[,<vendor>...]`
+                case "${words[offset + 4]}" in
+                    enable|disable) COMPREPLY=($(compgen -W "cisco juniper wti cisco,juniper cisco,juniper,wti" -- "$cur")) ;;
+                esac
+            elif [[ $pos -eq 6 && "$ssub" == "devices" && "${words[offset + 4]}" == "set" ]]; then
+                # `scope devices <scope> set <ip|cidr> <vendor>`
+                COMPREPLY=($(compgen -W "cisco juniper wti" -- "$cur"))
             elif [[ $pos -eq 5 && "$ssub" == "protocols" ]]; then
                 # `scope protocols <scope> set <protocol>[,<protocol>...]`
                 if [[ "${words[offset + 4]}" == "set" ]]; then
@@ -355,17 +371,21 @@ for u in (d.get('users') or []):
                 local w
                 for ((w = offset + 3; w < cword; w++)); do
                     case "${words[w]}" in
-                        --prefixes|--secret|--default) seen_flags+=" ${words[w]}" ;;
+                        --prefixes|--secret|--protocols|--vendor-attrs|--default) seen_flags+=" ${words[w]}" ;;
                     esac
                 done
                 local choices=""
                 [[ "$seen_flags" != *--prefixes* ]] && choices+=" --prefixes"
                 [[ "$seen_flags" != *--secret*   ]] && choices+=" --secret"
+                [[ "$seen_flags" != *--protocols* ]] && choices+=" --protocols"
+                [[ "$seen_flags" != *--vendor-attrs* ]] && choices+=" --vendor-attrs"
                 [[ "$seen_flags" != *--default*  ]] && choices+=" --default"
                 # Flag position: only offer when the cursor is on a new token
                 # (i.e. the previous token is a value, not one of our flags
                 # that still needs a value).
                 case "${words[cword - 1]}" in
+                    --vendor-attrs) COMPREPLY=($(compgen -W "cisco juniper wti cisco,juniper cisco,juniper,wti" -- "$cur")) ;;
+                    --protocols) COMPREPLY=($(compgen -W "tacacs radius tacacs,radius" -- "$cur")) ;;
                     --prefixes|--secret) COMPREPLY=() ;;  # value expected
                     *) COMPREPLY=($(compgen -W "$choices" -- "$cur")) ;;
                 esac

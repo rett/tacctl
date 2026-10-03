@@ -78,10 +78,13 @@ printf 'listeners:\n  radius:\n    auth6: {network: udp6, address: "[::]:1812"}\
 )
 podman cp "${WORK}/out/conf" "${NAME}:/etc/raddb/tacctl-radius.conf"
 podman cp "${WORK}/out/users" "${NAME}:/etc/raddb/tacctl-radius.users"
+podman exec "$NAME" mkdir -p /etc/raddb/tacctl-radius-dictionary
+podman cp "${WORK}/out/dictionary" "${NAME}:/etc/raddb/tacctl-radius-dictionary/dictionary"
 podman exec "$NAME" bash -c '
     rpm -q freeradius libxcrypt; radiusd -v | head -1
-    chown root:radiusd /etc/raddb/tacctl-radius.*; chmod 640 /etc/raddb/tacctl-radius.*
-    radiusd -C -lstdout -d /etc/raddb -n tacctl-radius | tail -1
-    radiusd -d /etc/raddb -n tacctl-radius; sleep 2
+    chown -R root:radiusd /etc/raddb/tacctl-radius*; chmod 640 /etc/raddb/tacctl-radius.* /etc/raddb/tacctl-radius-dictionary/dictionary
+    chmod 750 /etc/raddb/tacctl-radius-dictionary
+    radiusd -C -lstdout -d /etc/raddb -D /etc/raddb/tacctl-radius-dictionary -n tacctl-radius | tail -1
+    radiusd -d /etc/raddb -D /etc/raddb/tacctl-radius-dictionary -n tacctl-radius; sleep 2
     ps -o user=,args= -C radiusd
     /check/cases.sh /data'

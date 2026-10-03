@@ -2,7 +2,10 @@
 # The RADIUS container check, inside a systemd container (see run.sh):
 # 'tacctl backend enable radius' for real -- package install, render, the
 # daemon's config check, the unit drop-in, start -- then the radclient cases,
-# mutations, listeners, drift, disable, re-enable and the uninstall phases.
+# mutations (vendor attributes among them), listeners, drift, disable,
+# re-enable, the uninstall phases, and the way from the release before the
+# vendor attributes (its own 'backend enable radius', then this release's
+# upgrade step, and a mutation).
 #
 #   flow.sh <dir with store.yaml and sec.* files>
 #
@@ -29,6 +32,7 @@ else
     pkg_version() { rpm -q freeradius libxcrypt; }
 fi
 DROPIN="/etc/systemd/system/${UNIT}.service.d/tacctl.conf"
+DICTDIR="${RADDB}/tacctl-radius-dictionary"
 MYIP=$(hostname -I | cut -d' ' -f1)
 rq() { # <user> <password> [<source>] -> Access-Accept | Access-Reject | none
     local out
@@ -36,6 +40,19 @@ rq() { # <user> <password> [<source>] -> Access-Accept | Access-Reject | none
         | radclient -r 1 -t 3 -S "${DATA}/sec.lab" 127.0.0.1 auth 2>&1 | grep -o 'Received Access-[A-Za-z]*' | head -1)
     echo "${out#Received }"
 }
+# rqa <user> <password> [<source>] -> the reply attributes, '; '-separated
+# (no Message-Authenticator), decoded with the dictionary in $DICTDIR when it
+# is there (a release before it has none).
+rqa() {
+    local d=()
+    [[ -r "${DICTDIR}/dictionary" ]] && d=(-D "$DICTDIR")
+    { printf 'User-Name = "%s"\nUser-Password = "%s"\n' "$1" "$2"; [[ -n "${3:-}" ]] && printf 'Packet-Src-IP-Address = %s\n' "$3"; } \
+        | radclient -x -r 1 -t 3 "${d[@]}" -S "${DATA}/sec.lab" 127.0.0.1 auth 2>&1 \
+        | sed -n '/^Received Access-/,$p' | sed '1d' | grep -E '^\s+[A-Za-z]' | grep -v Message-Authenticator \
+        | sed 's/^\s*//' | paste -sd';' | sed 's/;/; /g'
+}
+ADM='Service-Type = Administrative-User'
+OLD_REPLY='Service-Type = Administrative-User; Cisco-AVPair = "shell:priv-lvl=15"; Juniper-Local-User-Name = "RW-CLASS"'
 is() { [[ "$1" == "$2" ]]; }
 
 section "setup: a store, the TACACS+ side rendered (no tacquito in the container)"
@@ -55,9 +72,12 @@ pkg_version
 check "unit is active" systemctl is-active --quiet "$UNIT"
 check "unit is enabled" systemctl is-enabled --quiet "$UNIT"
 check "the daemon runs as ${RUSER} with -n tacctl-radius" bash -c "ps -o user=,args= -C freeradius -C radiusd | grep -q '^${RUSER} .* -n tacctl-radius'"
-check "artifacts are 0640 root:${RUSER}" bash -c "[[ \$(stat -c '%a %U:%G' ${RADDB}/tacctl-radius.conf) == '640 root:${RUSER}' && \$(stat -c '%a %U:%G' ${RADDB}/tacctl-radius.users) == '640 root:${RUSER}' ]]"
-check "the service account can read them, nobody else" bash -c "runuser -u ${RUSER} -- cat ${RADDB}/tacctl-radius.users > /dev/null && ! runuser -u nobody -- cat ${RADDB}/tacctl-radius.users"
+check "artifacts are 0640 root:${RUSER}" bash -c "[[ \$(stat -c '%a %U:%G' ${RADDB}/tacctl-radius.conf) == '640 root:${RUSER}' && \$(stat -c '%a %U:%G' ${RADDB}/tacctl-radius.users) == '640 root:${RUSER}' && \$(stat -c '%a %U:%G' ${DICTDIR}/dictionary) == '640 root:${RUSER}' && \$(stat -c '%a %U:%G' ${DICTDIR}) == '750 root:${RUSER}' ]]"
+check "the service account can read them, nobody else" bash -c "runuser -u ${RUSER} -- cat ${RADDB}/tacctl-radius.users ${DICTDIR}/dictionary > /dev/null && ! runuser -u nobody -- cat ${RADDB}/tacctl-radius.users"
 check "drop-in installed" test -f "$DROPIN"
+check "the unit starts the daemon with tacctl's dictionary (-D), and checks with it" bash -c "systemctl cat $UNIT | grep -q '^ExecStart=.* -D ${DICTDIR} -n tacctl-radius' && systemctl cat $UNIT | grep -q '^ExecStartPre=.* -C -lstdout -d ${RADDB} -D ${DICTDIR} -n tacctl-radius'"
+check "the daemon runs with -D ${DICTDIR}" bash -c "ps -o args= -C freeradius -C radiusd | grep -q -- '-D ${DICTDIR}'"
+check "the three artifacts are recorded in rendered.json" bash -c "grep -q '${RADDB}/tacctl-radius.conf' /etc/tacctl/rendered.json && grep -q '${RADDB}/tacctl-radius.users' /etc/tacctl/rendered.json && grep -q '${DICTDIR}/dictionary' /etc/tacctl/rendered.json"
 check "no scratch directory left in ${RADDB}" bash -c "[[ -z \$(find ${RADDB} -maxdepth 1 -name '.tacctl-check.*') ]]"
 check "the package's own configuration is unmodified" bash -c "[[ -z \"\$($(declare -f pkg_verify); pkg_verify)\" ]]"
 ls -la "${RADDB}"/tacctl-radius.* "$DROPIN"
@@ -92,6 +112,18 @@ check "scope protocols lab clear: served again" is "$(rq alice Correct-Horse-1)"
 tacctl scope secret inner set 'back\slash-and-$dollar-secret' > /tmp/out 2>&1; rc=$?
 check "a secret with a backslash and a dollar sign is refused (exit 1), the store keeps the old one" bash -c "[[ $rc == 1 ]] && grep -q 'backslash and a dollar' /tmp/out && tacctl scope secret inner show | grep -q inner-secret-0123456789abcdef"
 check "still serving after the refused change" is "$(rq alice Correct-Horse-1)" Access-Accept
+
+section "vendor attributes reach the daemon"
+check "lab enables none: alice gets Service-Type only" is "$(rqa alice Correct-Horse-1)" "$ADM"
+tacctl scope vendor-attrs lab enable juniper,cisco > /dev/null 2>&1
+check "vendor-attrs lab enable cisco,juniper: both, in that order" is "$(rqa alice Correct-Horse-1)" "$OLD_REPLY"
+tacctl scope devices lab set 127.0.0.1 wti > /dev/null 2>&1
+check "devices lab set 127.0.0.1 wti: WTI only for that address" is "$(rqa alice Correct-Horse-1)" "${ADM}; WTI-Super = Administrator"
+check "...and the rest of lab keeps cisco and juniper" is "$(rqa alice Correct-Horse-1 127.0.0.5)" "$OLD_REPLY"
+tacctl scope devices lab unset 127.0.0.1 > /dev/null 2>&1
+tacctl scope vendor-attrs lab disable cisco,juniper > /dev/null 2>&1
+check "unset and disable: Service-Type only again" is "$(rqa alice Correct-Horse-1)" "$ADM"
+check "store.yaml has no vendor field of lab left" bash -c "! sed -n '/^  lab:/,/^  [a-z]/p' /etc/tacctl/store.yaml | grep -qE 'vendor_attrs|devices: .*127.0.0.1/'"
 
 section "listeners"
 tacctl config listen --backend radius --listener auth6 udp6 '[::]:1812' 2>&1 | tail -2
@@ -146,6 +178,54 @@ bash -c 'set -euo pipefail; source /opt/tacctl/bin/tacctl.sh; backends_select_pr
 check "unit stopped and not enabled" bash -c "! systemctl is-active --quiet $UNIT && ! systemctl is-enabled --quiet $UNIT"
 check "tacctl's files are gone from ${RADDB}, the systemd directory, logrotate.d and ${LOGS}" bash -c "[[ -z \$(ls ${RADDB} | grep tacctl) && ! -e $DROPIN && ! -e /etc/logrotate.d/tacctl-radius && -z \$(ls ${LOGS} | grep tacctl) ]]"
 check "the package and its configuration are still there, unmodified" bash -c "[[ -f ${RADDB}/radiusd.conf && -z \"\$($(declare -f pkg_verify); pkg_verify)\" ]]"
+
+section "from the release before vendor attributes: its own enable, then this release"
+# The last commit before the dictionary and the vendor attributes. Its tacctl
+# renders two files, its drop-in has no -D, and its Accept carries Cisco and
+# Juniper attributes for everyone. It cannot read a store with vendor_attrs
+# or devices (it refuses one), so it gets the store without them.
+OLD_REF=1b34e77
+if git -C /opt/tacctl cat-file -e "${OLD_REF}^{commit}" 2> /dev/null; then
+    OLD=/tmp/tacctl-old
+    rm -rf "$OLD" && mkdir -p "$OLD" && git -C /opt/tacctl archive "$OLD_REF" | tar -x -C "$OLD"
+    sed "s#10.0.2.0/24#${MYIP%.*}.0/24#" "${DATA}/store.yaml" | grep -vE '^\s+(vendor_attrs|devices):' > /etc/tacctl/store.yaml
+    rm -f /etc/tacctl/tacctl.yaml /etc/tacctl/rendered.json
+    "${OLD}/bin/tacctl.sh" config render --force > /dev/null 2>&1
+    "${OLD}/bin/tacctl.sh" backend enable radius -y > /tmp/out 2>&1; rc=$?
+    check "the old release enables radius (exit 0)" is "$rc" 0
+    check "old: two artifacts, no dictionary, drop-in without -D" bash -c "[[ -f ${RADDB}/tacctl-radius.conf && ! -e ${DICTDIR} ]] && ! grep -q -- ' -D ' $DROPIN"
+    check "old: every Accept carries Cisco and Juniper attributes" is "$(rqa alice Correct-Horse-1)" "$OLD_REPLY"
+
+    # 'tacctl upgrade' runs every enabled backend's 'upgrade config' (and
+    # 'files', 'finish'); the rest of upgrade (git pull, tacquito build) has
+    # nothing to do with this.
+    bash -c 'source /opt/tacctl/bin/tacctl.sh; for p in config files finish; do backend_radius_upgrade "$p" "/opt/tacctl"; done; printf "SUMMARY %s\n" "${UPGRADE_SUMMARY_NOTES[@]}"' > /tmp/out 2>&1; rc=$?
+    sed 's/^/    /' /tmp/out
+    check "upgrade config/files/finish exit 0" is "$rc" 0
+    check "upgrade: dictionary rendered (0640 root:${RUSER}) and recorded" bash -c "[[ \$(stat -c '%a %U:%G' ${DICTDIR}/dictionary) == '640 root:${RUSER}' ]] && grep -q '${DICTDIR}/dictionary' /etc/tacctl/rendered.json"
+    check "upgrade: drop-in has -D, unit active, daemon runs with it" bash -c "grep -q -- '-D ${DICTDIR}' $DROPIN && systemctl is-active --quiet $UNIT && ps -o args= -C freeradius -C radiusd | grep -q -- '-D ${DICTDIR}'"
+    check "upgrade: reported as a re-render, with the summary line" bash -c "grep -q 'RADIUS: re-rendered' /tmp/out && grep -q 'SUMMARY RADIUS: config re-rendered' /tmp/out && grep -q 'Service-Type only' /tmp/out"
+    check "upgrade: config validate is clean (no drift, up to date)" bash -c "tacctl config validate > /tmp/val 2>&1; ! grep -q DRIFT /tmp/val && sed 's/\x1b\[[0-9;]*m//g' /tmp/val | grep -A1 'Backend radius' | grep -q 'up to date'"
+    check "upgrade: lab enables no vendor any more: Service-Type only" is "$(rqa alice Correct-Horse-1)" "$ADM"
+    tacctl scope vendor-attrs lab enable cisco,juniper > /dev/null 2>&1
+    check "upgrade: and enabling cisco,juniper gives the old reply back" is "$(rqa alice Correct-Horse-1)" "$OLD_REPLY"
+
+    # The other way in: the code is replaced and the next command that
+    # changes the store renders. Back to the old release's files first.
+    tacctl scope vendor-attrs lab disable cisco,juniper > /dev/null 2>&1
+    "${OLD}/bin/tacctl.sh" config render --force > /dev/null 2>&1
+    bash -c "source ${OLD}/bin/tacctl.sh; _radius_dropin_install" && systemctl restart "$UNIT"
+    check "old again: drop-in without -D, unit active" bash -c "! grep -q -- ' -D ' $DROPIN && systemctl is-active --quiet $UNIT"
+    check "old again: the old reply" is "$(rqa alice Correct-Horse-1)" "$OLD_REPLY"
+    tacctl user disable bob > /tmp/out 2>&1; rc=$?
+    check "next mutation with this release: exit 0, not refused as drift" bash -c "[[ $rc == 0 ]] && ! grep -qi 'edited since' /tmp/out"
+    check "next mutation: drop-in has -D, unit active" bash -c "grep -q -- '-D ${DICTDIR}' $DROPIN && systemctl is-active --quiet $UNIT"
+    check "next mutation: Service-Type only" is "$(rqa alice Correct-Horse-1)" "$ADM"
+    check "next mutation: bob is rejected" is "$(rq bob "$BOB_PW")" Access-Reject
+    check "next mutation: config validate is clean" bash -c "tacctl config validate > /tmp/val 2>&1; ! grep -q DRIFT /tmp/val"
+else
+    echo "SKIP  ${OLD_REF} is not in this checkout's history; the upgrade section was not run"
+fi
 
 echo
 echo "flow: ${pass} passed, ${fail} failed"

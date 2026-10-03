@@ -300,10 +300,10 @@ remove it with `podman rm -f`.
 
 | File | Does |
 |---|---|
-| `make-store.py <dir>` | writes a store with real bcrypt hashes (six users, six scopes, both filters) and one `sec.<scope>` file per secret |
+| `make-store.py <dir>` | writes a store with real bcrypt hashes (six users, ten scopes, both filters; four scopes enable vendor attributes, five addresses are tagged) and one `sec.<scope>` file per secret |
 | `run.sh <distro>` | builds the image if needed, starts the container, runs the check, removes the container |
-| `flow.sh <data dir>` | inside a systemd container with this checkout mounted read-only at `/opt/tacctl`: `tacctl backend enable radius` for real (package install, render, the daemon's `-C`, the drop-in, start), then the cases, mutations, listeners, drift, reload, disable, re-enable, uninstall phases |
-| `cases.sh <data dir>` | the radclient cases: accept with the group's reply attributes, wrong password, user outside the client's scope, disabled user, sink, overlapping prefixes, a TACACS+-only scope, quoted secrets, both filters, the package's default client, IPv6, CHAP, Status-Server, accounting |
+| `flow.sh <data dir>` | inside a systemd container with this checkout mounted read-only at `/opt/tacctl`: `tacctl backend enable radius` for real (package install, render, the daemon's `-C`, the drop-in with `-D`, start), then the cases, mutations (vendor attributes among them), listeners, drift, reload, disable, re-enable, uninstall phases, and the way from the release before the vendor attributes (commit 1b34e77, taken with `git archive`): its own enable, then this release's `upgrade config` step, then the next mutation |
+| `cases.sh <data dir>` | the radclient cases, every reply decoded with tacctl's dictionary and compared attribute by attribute: Service-Type alone for a scope that enables nothing, each vendor's attribute per scope and per tagged address and never another's, rejects with none, no internal attribute anywhere; wrong password, user outside the client's scope, disabled user, sink, overlapping prefixes, a TACACS+-only scope, quoted secrets, both filters, the package's default client, IPv6, CHAP, Status-Server, accounting |
 
 Notes:
 

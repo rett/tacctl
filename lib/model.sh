@@ -9,8 +9,12 @@
 #     "groups":  { <name>: {priv_lvl, juniper_class, builtin} },
 #     "users":   { <name>: {group, scopes[], hash|null, disabled,
 #                           password_changed|null, accounting_sink} },
-#     "scopes":  { <name>: {prefixes[], secret, protocols[]|null} },
+#     "scopes":  { <name>: {prefixes[], secret, protocols[]|null,
+#                           vendor_attrs[]?, devices{cidr: vendor}?} },
 #     "filters": { "allow": [], "deny": [] } }
+#
+# vendor_attrs and devices are in a scope's entry only when it has any
+# (RADIUS only; see 'tacctl scope vendor-attrs' and 'tacctl scope devices').
 #
 # Two loaders produce it:
 #   store loader   reads store.yaml (normal mode);
@@ -92,7 +96,8 @@ model_groups() { _model_query groups; }
 model_group()  { _model_query groups "$@"; }
 # model_scopes: every scope name.
 model_scopes() { _model_query scopes; }
-# model_scope <name> [prefixes|secret|protocols]
+# model_scope <name> [prefixes|secret|protocols|vendor_attrs|devices]
+# (devices: one '<cidr> <vendor>' line per tagged address, in stored order)
 model_scope()  { _model_query scopes "$@"; }
 # model_filters [allow|deny]: JSON of both lists, or one list a CIDR per line.
 model_filters() { _model_query filters "$@"; }
@@ -157,6 +162,26 @@ model_scope_users() { _model_view scope-users "$1"; }
 # canonicalisation), or nothing.
 model_prefix_owner() { [[ -n "${1:-}" ]] || return 0; _model_view prefix-owner "$1"; }
 
+# model_scope_devices <scope>: its tagged addresses as '<cidr>|<vendor>'
+# lines in display order (longest prefix first). Unknown scope: no output.
+model_scope_devices() { _model_view scope-devices "$1"; }
+
+# model_vendor_gaps: the scopes RADIUS serves that send no vendor attribute
+# and are not Linux-host scopes (see the view), one per line. Reads the host
+# registry (lib/linux_hosts.sh).
+model_vendor_gaps() {
+    local -a counts=()
+    if [[ -s "${LINUX_HOSTS_FILE:-}" ]]; then
+        mapfile -t counts < <(cut -d'|' -f4 "$LINUX_HOSTS_FILE" | awk 'NF { n[$0]++ } END { for (s in n) print s "=" n[s] }')
+    fi
+    _model_view vendor-gaps ${counts[@]+"${counts[@]}"}
+}
+
+# model_vendor_rows: '<scope>|<1 when its protocols let RADIUS serve it, else
+# 0>|<enabled vendors, comma-separated>|<tagged vendors, comma-separated>|
+# <number of tagged addresses>' per scope, by name.
+model_vendor_rows() { _model_view vendor-rows; }
+
 # --- Python: accessors and views --------------------------------------------
 # The read side: needs only _store_base_py. Part of the full program too
 # (_model_py includes it), so 'store show' and the importer see the same code.
@@ -173,6 +198,9 @@ def _emit(value):
     elif isinstance(value, list):
         for item in value:
             print(item)
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            print(key, item)
     else:
         print(value)
 
@@ -246,6 +274,17 @@ def scope_display_order(scopes):
         if name not in order:
             order.append(name)
     return order + sorted(n for n in scopes if n not in order)
+
+
+def vendor_summary(scope):
+    """What 'scope list' shows of a scope's vendor attributes: the enabled
+    vendors and how many addresses are tagged; '' when there is neither."""
+    parts = []
+    if scope.get('vendor_attrs'):
+        parts.append(','.join(scope['vendor_attrs']))
+    if scope.get('devices'):
+        parts.append(f"{len(scope['devices'])} tagged")
+    return ' + '.join(parts)
 
 
 def model_view(model, argv):
@@ -358,16 +397,74 @@ def model_view(model, argv):
         return 0
 
     if view == 'scope-rows':
-        # One line per (scope, prefix): the first carries the user count and
-        # the default marker, the rest leave those columns empty.
+        # One line per (scope, prefix): the first carries the user count, the
+        # default marker and the vendor attributes (see vendor_summary), the
+        # rest leave those columns empty.
         default = args[0] if args else ''
         for name in scope_display_order(scopes):
             pfx = sorted(scopes[name].get('prefixes') or [], key=display_key) or ['(no prefix)']
             for idx, c in enumerate(pfx):
                 if idx == 0:
-                    print(f"{name}|{c}|{len(members(name))}|{'yes' if name == default else ''}")
+                    print(f"{name}|{c}|{len(members(name))}|{'yes' if name == default else ''}"
+                          f"|{vendor_summary(scopes[name])}")
                 else:
-                    print(f'|{c}||')
+                    print(f'|{c}|||')
+        return 0
+
+    if view == 'scope-devices':
+        devices = (scopes.get(args[0]) or {}).get('devices') or {}
+        for c in sorted(devices, key=display_key):
+            print(f'{c}|{devices[c]}')
+        return 0
+
+    if view == 'device-problems':
+        # device-problems <scope> <prefix csv> [<cidr> <vendor>]: what
+        # device_problems (lib/store.sh) would say with that scope's prefixes
+        # replaced (the scope may be new) and, optionally, one address tagged.
+        # One message per line; returns 1 when there is any.
+        trial = {n: dict(s) for n, s in scopes.items()}
+        mine = trial.setdefault(args[0], {})
+        mine['prefixes'] = [c for c in args[1].split(',') if c]
+        if len(args) > 3:
+            mine['devices'] = dict(mine.get('devices') or {}, **{args[2]: args[3]})
+        problems = device_problems(trial)
+        for name, c, msg in problems:
+            print(f'{name}|{c}|{msg}')
+        return 1 if problems else 0
+
+    if view == 'vendor-gaps':
+        # vendor-gaps [<scope>=<enrolled hosts>...]: scopes RADIUS serves that
+        # send no vendor attribute (none enabled, nothing tagged) and are not
+        # Linux-host scopes. A Linux-host scope: enrolled hosts use it, every
+        # prefix is a single address, and there are no more of them than
+        # hosts (what 'host enroll' creates, or a scope shared by hosts
+        # only). pam_radius_auth reads no vendor attribute.
+        hosts = {}
+        for a in args:
+            name, _sep, count = a.rpartition('=')
+            hosts[name] = int(count)
+        for name in sorted(scopes):
+            s = scopes[name]
+            if s.get('protocols') and 'radius' not in s['protocols']:
+                continue
+            if s.get('vendor_attrs') or s.get('devices'):
+                continue
+            pfx = [ipaddress.ip_network(c, strict=False) for c in (s.get('prefixes') or [])
+                   if canonical_cidr(c) is not None]
+            if (hosts.get(name, 0) > 0 and all(n.prefixlen == n.max_prefixlen for n in pfx)
+                    and len(pfx) <= hosts[name]):
+                continue
+            print(name)
+        return 0
+
+    if view == 'vendor-rows':
+        for name in sorted(scopes):
+            s = scopes[name]
+            devices = s.get('devices') or {}
+            served = not s.get('protocols') or 'radius' in s['protocols']
+            print('|'.join([name, '1' if served else '0', ','.join(s.get('vendor_attrs') or []),
+                            ','.join(v for v in KNOWN_VENDORS if v in devices.values()),
+                            str(len(devices))]))
         return 0
 
     if view == 'scope-routing':
@@ -406,6 +503,18 @@ def model_view(model, argv):
                 print(f'No scope owns {q_net} — no prefix covers the full range.')
             return 1
         print(f"  {what} -> scope '{matches[0][0]}' (via prefix {matches[0][1]})")
+        # The vendor tag, if the scope has one for it: the most specific
+        # tagged range that holds the whole query (what its RADIUS client is).
+        tags = []
+        for c, vendor in ((scopes[matches[0][0]].get('devices')) or {}).items():
+            tnet = ipaddress.ip_network(c, strict=False)
+            if tnet.version != what.version:
+                continue
+            if (q_host is not None and q_host in tnet) or (q_net is not None and q_net.subnet_of(tnet)):
+                tags.append((tnet, vendor))
+        if tags:
+            tnet, vendor = max(tags, key=lambda t: t[0].prefixlen)
+            print(f"  Tagged {vendor} (scope devices entry {tnet}): over RADIUS it gets that vendor's attribute only")
         if len(matches) > 1:
             print('')
             print("  Also covered by (shadowed — tacquito's first-match picks the one above):")
@@ -953,12 +1062,23 @@ def _carry_over(model, existing_path, rep):
     except StoreError as e:
         rep['notes'].append(f"existing store could not be read ({e}); nothing carried over")
         return
-    kept = {'protocols': 0, 'password_changed': 0, 'hash': 0}
+    kept = {'protocols': 0, 'password_changed': 0, 'hash': 0, 'vendor': 0}
     for name, s in model['scopes'].items():
         prev = old['scopes'].get(name)
         if isinstance(prev, dict) and prev.get('protocols'):
             s['protocols'] = prev['protocols']
             kept['protocols'] += 1
+        if isinstance(prev, dict) and (prev.get('vendor_attrs') or prev.get('devices')):
+            if prev.get('vendor_attrs'):
+                s['vendor_attrs'] = list(prev['vendor_attrs'])
+            if isinstance(prev.get('devices'), dict) and prev['devices']:
+                s['devices'] = dict(prev['devices'])
+            kept['vendor'] += 1
+    # A tagged address whose prefix the imported file no longer has (or has
+    # given to another scope) cannot be kept: the store refuses it.
+    for name, c, _msg in device_problems(model['scopes']):
+        del model['scopes'][name]['devices'][c]
+        rep['dropped'].append(f"scope '{name}': the vendor tag of {c} (no prefix of the scope in this file contains it any more)")
     for name, u in model['users'].items():
         prev = old['users'].get(name)
         if not isinstance(prev, dict):
@@ -972,6 +1092,8 @@ def _carry_over(model, existing_path, rep):
             kept['hash'] += 1
     if kept['protocols']:
         rep['notes'].append(f"kept the protocols filter of {kept['protocols']} scope(s) from the existing store")
+    if kept['vendor']:
+        rep['notes'].append(f"kept the RADIUS vendor attributes and tagged addresses of {kept['vendor']} scope(s) from the existing store")
     if kept['password_changed']:
         rep['notes'].append(f"kept the password date of {kept['password_changed']} user(s) from the existing store")
     if kept['hash']:
@@ -1064,6 +1186,10 @@ PY
 #            entry per prefix, and unequal whenever some client would get a
 #            different scope or key.
 #   filters  prefix_allow / prefix_deny as sets of parseable CIDRs.
+#
+# A scope's RADIUS-only fields (vendor_attrs, devices) never reach
+# tacquito.yaml, so they have no part here; re-importing over an existing
+# store keeps them (_carry_over above).
 #
 # Two further parts are compared although the daemon ignores them today,
 # because they decide what happens on the next change: groups no user is in,

@@ -35,6 +35,11 @@ tacctl config juniper --scope prod
 tacctl config cisco --scope prod --protocol radius   # the same for the RADIUS backend (default: tacacs)
 tacctl config juniper --scope prod --protocol radius
 tacctl config wti --scope prod        # WTI console server: serial-menu walkthrough
+tacctl config wti --scope prod --protocol radius    # the same over RADIUS (not verified on a unit)
+
+# RADIUS sends a vendor's privilege attribute only where a scope opts in
+tacctl scope vendor-attrs prod enable cisco,juniper
+tacctl scope devices prod set 10.10.0.5 wti        # this address is a WTI unit
 ```
 
 ## Project Structure
@@ -54,6 +59,7 @@ tacctl/
       cisco-radius.template   # ... and the same for `--protocol radius`
       juniper-radius.template
       wti.template          # Default WTI console-server setup walkthrough
+      wti-radius.template   # ... and the same for `--protocol radius`
   README.md
   LICENSE
 ```
@@ -453,10 +459,11 @@ config defaults                             Print canonical tacctl defaults (shi
 config get <path> [fallback]                Read a dotted-path value from the merged config
 config get-list <path>                      Read a list value (one item per line)
 config cisco [--scope <name>] [--legacy] [--protocol tacacs|radius]
-                                            Generate working Cisco device config for a scope (default if omitted). --legacy emits IOS 12.x syntax (tacacs-server host / aaa group server ... / server <ip>) for devices predating the IOS 15.0 'tacacs server' block. --protocol radius (default: the scope's `auth-method`, else tacacs) renders the RADIUS configuration instead (see "RADIUS device configs" below)
+                                            Generate working Cisco device config for a scope (default if omitted). --legacy emits IOS 12.x syntax (tacacs-server host / aaa group server ... / server <ip>) for devices predating the IOS 15.0 'tacacs server' block. --protocol radius (default: the scope's `auth-method`, else the one protocol its `protocols` filter names, else tacacs) renders the RADIUS configuration instead (see "RADIUS device configs" below)
 config juniper [--scope <name>] [--protocol tacacs|radius]
                                             Generate working Juniper device config for a scope (default if omitted); --protocol radius as for cisco
-config wti [--scope <name>]                 Print the step-by-step serial-menu procedure for a WTI console server (firmware v8.x) with the scope's server IP, secret, and group→access-level mapping filled in
+config wti [--scope <name>] [--protocol tacacs|radius]
+                                            Print the step-by-step serial-menu procedure for a WTI console server (firmware v8.x) with the scope's server IP, secret, and group→access-level mapping filled in; --protocol as for cisco (the RADIUS walkthrough is not verified on a unit)
 config render [--force]                     Regenerate tacquito.yaml from the store and tacctl.yaml (needs the store; refuses to overwrite a hand-edited file unless --force, which first saves it under backups/legacy/)
 config validate                             Validate YAML syntax + server-config structure (orphan scope refs, scope.default pointing at a nonexistent scope, reserved usernames, missing accounter:) + schema-walk tacctl.yaml (including commands.<group> / privileges.<group> / mgmt_acl.*)
 config diff [timestamp]                     Alias of `backup diff`
@@ -556,23 +563,28 @@ scope list                                               One row per scope (dedu
 scope routing                                            One row per (scope, prefix) — tacquito first-match order
 scope show <name>                                        Full detail: prefixes, users, raw secret + posture, default-ness
 scope add <name> --prefixes <cidrs>                      Create a new scope
-          [--secret <value>|--secret generate] [--default]
+          [--secret <value>|--secret generate] [--protocols <csv>] [--vendor-attrs <csv>] [--default]
 scope remove <name> [--force]                            Delete. Refuses if users reference it unless --force
 scope rename <old> <new>                                 Rewrites secrets[].name + every user's scopes[] + default marker
 scope default [<name>]                                   Show / set the default scope (tacctl-managed marker file)
 scope lookup <ip|cidr>                                   Resolve an IP/CIDR to the owning scope (+ shadowed overlaps)
 scope prefixes <name> list|add|remove|clear [--force]    Per-scope CIDR list (add/remove accept comma-lists; clear refuses if users reference unless --force)
 scope secret   <name> show|set <value>|generate          Per-scope shared secret (show prints the raw value + length/posture)
+scope protocols <name> list|set <csv>|clear              Limit the scope to some protocols (tacacs, radius). A filter: empty (`clear`) means every enabled backend serves it
+scope vendor-attrs <name> [enable|disable <csv>]         RADIUS: the vendors (cisco, juniper, wti) whose privilege attribute an Access-Accept carries for the scope's devices. Opt-in: a new scope sends none ("not sent"); there is no set/clear. Stored in store.yaml, so a change re-renders and restarts the RADIUS backend. TACACS+ is not affected. See "RADIUS: what an Access-Accept carries"
+scope devices <name> [set <ip|cidr> <vendor>|unset <ip|cidr>]  RADIUS: tag an address (a bare IP is a /32) of the scope with its vendor: it gets that vendor's attribute and no other, whatever the scope enables. The address must be one `scope lookup` answers with this scope. `scope prefixes remove` refuses to leave a tag outside the scope's prefixes; tags go with the scope on rename and remove. Shown by `scope show` and `scope lookup`
 scope aaa-order <name> [tacacs-first|local-first]        Order of TACACS+ vs local in this scope's generated Cisco / Junos AAA lines. Default `tacacs-first` keeps TACACS+ authoritative (local only kicks in on server outage). Set `local-first` when a break-glass local account must authenticate while tacquito is still reachable — any local name that collides with a TACACS+ user wins locally, so scope local accounts to emergency credentials only.
 scope exec-timeout <name> [minutes]                      Per-scope idle-session timeout for this scope's generated device configs. Cisco renders `exec-timeout <n> 0` on `line con 0` / `line vty 0 15`; Junos renders `set system login idle-timeout <n>`. Range 0..60 (Junos's max); `0` disables idle expiry on both vendors. Default 60.
 scope tacacs-group <name> [label]                        Per-scope Cisco `aaa group server tacacs+ <LABEL>` name. Rendered into every AAA group + method-list line for that scope. Must conform to Cisco ACL naming rules (letter-start, letters/digits/_/-). Default `TACACS-GROUP`. Junos has no equivalent.
 scope radius-group <name> [label]                        The RADIUS twin of `tacacs-group`: the Cisco `aaa group server radius <LABEL>` name rendered by `config cisco --protocol radius`. Same naming rules. Default `RADIUS-GROUP`.
-scope auth-method <name> [tacacs|radius|default]         The protocol this scope uses when a command names none: `config cisco|juniper` without `--protocol`, and `host enroll` (a host not registered yet) / `config linux script` without `--method` (`tacacs` is host method `tacplus`). An explicit `--protocol` / `--method` always wins. Unset (`default` clears it): device configs are TACACS+ and hosts take `host default-method`. Refused when the scope's `protocols` filter leaves the protocol out, and `scope protocols <name> set` refuses a list without it. `config cisco --legacy` on a `radius` scope needs `--protocol tacacs`; `config wti` stays TACACS+ and warns. Shown by `scope show`; follows `scope rename`, removed with the scope.
+scope auth-method <name> [tacacs|radius|clear]           The protocol this scope uses when a command names none: `config cisco|juniper|wti` without `--protocol`, and `host enroll` (a host not registered yet) / `config linux script` without `--method` (`tacacs` is host method `tacplus`, which is accepted here too). The order: `--protocol` / `--method`; a registered host's own method; this setting; the one protocol the scope's `protocols` filter names, when it names exactly one; the global default (device configs: TACACS+; hosts: `host default-method`). `clear` removes the setting (`default` is accepted for it). Refused when the scope's `protocols` filter leaves the protocol out, and `scope protocols <name> set` refuses a list without it. `config cisco --legacy` on a scope that resolves to RADIUS needs `--protocol tacacs`. Shown by `scope show`.
 scope mgmt-acl <name> list|add|remove|clear [cidrs]      Per-scope permit list. Mirrors the global `tacctl config mgmt-acl list|add|remove|clear`. Falls back to the global `mgmt_acl.permits` when this scope's list is empty, so per-scope use is reserved for scopes that genuinely need different permits than the house default. `clear` unsets the per-scope override (renders fall back to global).
 scope mgmt-acl <name> cisco-name|juniper-name [label]    Per-scope mgmt-acl / filter name. Mirrors the global `tacctl config mgmt-acl cisco-name|juniper-name`. Cisco renders `ip access-list standard <LABEL>` + `access-class <LABEL> in`; Junos renders `set firewall family inet filter <LABEL>` + lo0 filter apply. Fallback chain: per-scope override → global (`tacctl config mgmt-acl …`) → shipped default (`VTY-ACL` / `MGMT-ACL`).
 ```
 
 **Connection filters:** `deny` takes precedence over `allow`. Both empty = all connections accepted.
+
+**Settings stored under a scope's name** in `tacctl.yaml` (`aaa.order`, `exec_timeout`, `tacacs_group`, `radius_group`, `scope_auth_method`, `scope_mgmt_acl.names.cisco|juniper`, `scope_mgmt_acl.permits`) follow the scope on `scope rename` and are removed with it by `scope remove` (and `scope prefixes clear`), so a new scope of the same name starts from the defaults. Its `vendor-attrs` and `devices` are part of its entry in `store.yaml` and do the same.
 
 ### Log Commands — `tacctl log`
 
@@ -630,16 +642,33 @@ verification commands. All groups and their Juniper classes are included dynamic
 - If a login fails silently after successful TACACS+ auth, the template user is missing
 - Use `config juniper` to regenerate after adding groups
 
+### RADIUS: what an Access-Accept carries
+
+A RADIUS server cannot tell what kind of device is asking, and one vendor's privilege attribute has no business on another vendor's device. So the RADIUS backend sends a vendor attribute only where the operator said so:
+
+| Sent | When |
+|---|---|
+| `Service-Type` (`Administrative-User` at priv-lvl 15, else `NAS-Prompt-User`) | always (a standard attribute) |
+| `Cisco-AVPair = "shell:priv-lvl=N"` | the scope enables `cisco`, or the device's address is tagged `cisco` |
+| `Juniper-Local-User-Name = "<class>"` | the scope enables `juniper`, or the address is tagged `juniper` |
+| `WTI-Super = 0..3` (ViewOnly, User, SuperUser, Administrator; the bands of the TACACS+ WTI mapping) | the scope enables `wti`, or the address is tagged `wti` |
+
+- `tacctl scope vendor-attrs <scope> enable|disable <vendor>[,<vendor>...]` sets what a scope's devices get. A new scope gets none: "Vendor attributes: not sent".
+- `tacctl scope devices <scope> set <ip|cidr> <vendor>` tags an address: it gets its own vendor's attribute and no other, whatever the scope enables (`unset` removes the tag).
+- An Access-Reject carries none of them. Linux hosts (`pam_radius_auth`) read none, so a scope of Linux hosts needs nothing enabled.
+- `tacctl config validate` warns about a scope served over RADIUS that sends nothing and is not a Linux-host scope (one used by enrolled hosts whose prefixes are their single addresses); `tacctl status` counts the scopes that send something.
+- How it is rendered (one FreeRADIUS client per prefix and per tagged address, the group's values in tacctl-internal attributes that never leave the server, a policy that adds a vendor attribute only on an exact match) is in the header of `lib/backends/radius.sh`; what was verified against FreeRADIUS 3.0.20, 3.0.27 and 3.2.5 is in `docs/radius-notes.md`.
+
 ### RADIUS device configs (`--protocol radius`)
 
-`tacctl config cisco|juniper --protocol radius` renders the configuration for logging in to a device against this server's RADIUS backend (`tacctl backend enable radius`). Without the flag the output follows the scope's `auth-method` (`tacctl scope auth-method`), and is the TACACS+ configuration for a scope that has none, as always. The server address, the authentication and accounting ports (the `auth` and `acct` RADIUS listeners; `tacctl config listen --backend radius show`) and the scope's shared secret are filled in; the management ACL, exec timeout, `aaa-order` (the server first, or local first) and the local fallback behave as in the TACACS+ output.
+`tacctl config cisco|juniper|wti --protocol radius` renders the configuration for logging in to a device against this server's RADIUS backend (`tacctl backend enable radius`). Without the flag the output follows the scope's `auth-method` (`tacctl scope auth-method`), else the one protocol its `protocols` filter names, and is the TACACS+ configuration otherwise, as always. The server address, the authentication and accounting ports (the `auth` and `acct` RADIUS listeners; `tacctl config listen --backend radius show`) and the scope's shared secret are filled in; the management ACL, exec timeout, `aaa-order` (the server first, or local first) and the local fallback behave as in the TACACS+ output.
 
-- **Cisco** gets a `radius server RADIUS` block, `aaa group server radius <radius-group>` (see `scope radius-group`), `aaa authentication login`, `aaa authorization exec` (the privilege level comes from `Cisco-AVPair = "shell:priv-lvl=N"`) and `aaa accounting exec`, plus the same `privilege exec level` mappings. `--legacy` (IOS 12.x) is TACACS+ only.
+- **Cisco** gets a `radius server RADIUS` block, `aaa group server radius <radius-group>` (see `scope radius-group`), `aaa authentication login`, `aaa authorization exec` (the privilege level comes from `Cisco-AVPair = "shell:priv-lvl=N"`, which the scope must send: see above) and `aaa accounting exec`, plus the same `privilege exec level` mappings. `--legacy` (IOS 12.x) is TACACS+ only.
 - **Juniper** gets `system radius-server` (explicit ports), `authentication-order radius` (or `[ password radius ]`), `system accounting destination radius`, the template users the server maps logins to with `Juniper-Local-User-Name`, and the same per-class `allow-commands`/`deny-commands` rules, which stay in force because the class is local to the device.
-- **What is lost compared with TACACS+** is printed under every RADIUS config: no per-command authorization (the only authorization is the privilege level or login class in the Access-Accept; `tacctl group commands` rules are not enforced by the server), no command accounting (exec/login events only), PAP only, and UDP instead of TCP/49.
-- **Refused, with an error and no output:** the RADIUS backend not enabled; a scope whose `scope protocols` filter leaves out `radius` (the daemon would ignore its devices); and a scope secret holding a character an IOS or Junos CLI reads as syntax (whitespace, quotes, a backtick, a non-ASCII character, or any of `? ! # $ \ ; { } [ ] | & < > , * ( )`). Letters, digits and `. _ + / = : @ % ^ ~ -` paste as they are, and `scope secret generate` (base64) makes such a secret. The scope secret is shared with TACACS+, so changing it means changing it on every device of the scope. A secret longer than 63 characters renders with a warning (some RADIUS clients take no more).
+- **What the Access-Accept carries for the device, and what is lost compared with TACACS+** is printed under every RADIUS config: `Service-Type` and the vendor's attribute (and whether the scope enables it or only tagged addresses get it); no per-command authorization (the only authorization is the privilege level, login class or access level in the Access-Accept; `tacctl group commands` rules are not enforced by the server), no command accounting (exec/login events only), PAP only, and UDP instead of TCP/49.
+- **Refused, with an error and no output:** the RADIUS backend not enabled; a scope whose `scope protocols` filter leaves out `radius` (the daemon would ignore its devices); a scope that sends the vendor's attribute to none of its devices (neither enabled with `scope vendor-attrs` nor any address tagged with it; the error prints the command that enables it); and a scope secret holding a character an IOS or Junos CLI reads as syntax (whitespace, quotes, a backtick, a non-ASCII character, or any of `? ! # $ \ ; { } [ ] | & < > , * ( )`). Letters, digits and `. _ + / = : @ % ^ ~ -` paste as they are, and `scope secret generate` (base64) makes such a secret. The scope secret is shared with TACACS+, so changing it means changing it on every device of the scope. A secret longer than 63 characters renders with a warning (some RADIUS clients take no more).
 - **A listener bound to one IPv4 address** is used as the server address; IPv6 listeners and a loopback bind are warned about.
-- **WTI** is TACACS+ only: `config wti --protocol radius` is refused. What WTI documents about RADIUS on these units is recorded in `docs/radius-notes.md`; no walkthrough is rendered from it yet and the RADIUS backend returns no WTI attribute.
+- **WTI** gets a walkthrough of the unit's RADIUS Parameters menu (`/N`, item 29 in WTI's user guide) and the group → `WTI-Super` table. **It has not been verified on a unit**: it is written from WTI's documents (`docs/radius-notes.md`), which disagree on the access level a login gets when the reply carries no `WTI-Super`. See the WTI section below.
 
 ### WTI Console Servers (DSM/CPM/REM/TSM/RSM, firmware v8.x)
 
@@ -669,6 +698,8 @@ unit requests exec authorization and reads the standard `priv-lvl` attribute fro
 - The output warns when the scope secret contains whitespace/punctuation or exceeds 32 characters, or when a scope member's username exceeds WTI's 32-character limit — regenerate a hex-only key with `tacctl scope secret <name> set $(openssl rand -hex 16)`
 - Verify with `tacctl config loglevel debug` + `tacctl log tail`: `accepting user [x] using a bcrypt password` (PAP), then `client args [service=shell ...]`, then `authorized user [x] ... [priv-lvl=N]`; accounting (start at login, stop after `/X`) lands in `tacctl log accounting`. On the unit, TACACS Parameters → `12. Debug: On` echoes every exchange on the serial session — turn it back `Off` when done
 
+**Over RADIUS** (`tacctl config wti --protocol radius`, or a scope that resolves to RADIUS) — **not verified on a unit.** The walkthrough follows WTI's documents for the RADIUS Parameters menu (`/N`, item 29 in the user guide; numbers vary by firmware): Enable, Primary Host and Secret Word, Fallback Timer and Retries (factory defaults), Fallback Local from the scope's `aaa-order` as above, the Authentication and Accounting Ports of this server's RADIUS listeners, Default RADIUS User Access `On` at `ViewOnly`, Debug. The server returns the access level in `WTI-Super` (vendor 24496, attribute 41), from the group's priv-lvl in the bands of the table above; the scope must send it (`tacctl scope vendor-attrs <scope> enable wti`, or tag the unit with `tacctl scope devices <scope> set <ip> wti`), or the walkthrough is refused. What carries over from the TACACS+ walkthrough: the unit's IP Tables must let the server's UDP replies in (ESTABLISHED,RELATED), keep a local Administrator, the lockout and `/UL`. Port and plug access is not sent (no `WTI-Port-Access`). WTI's user guide and knowledge base disagree on the level a login gets without `WTI-Super` (User or View), so the walkthrough sets it explicitly. `tacctl log tail --backend radius` shows each attempt, with `nas=` — what the unit sends as its NAS-Identifier.
+
 ### Custom Templates
 
 The generated Cisco, Juniper, and WTI output is rendered from template files using `${VAR}` placeholders (processed by `envsubst`). You can customize the output by editing the templates.
@@ -681,7 +712,7 @@ The generated Cisco, Juniper, and WTI output is rendered from template files usi
 - `cisco.template` — Cisco IOS/IOS-XE device config
 - `juniper.template` — Juniper Junos device config
 - `wti.template` — WTI console-server serial-menu walkthrough
-- `cisco-radius.template`, `juniper-radius.template` — the same for `--protocol radius`
+- `cisco-radius.template`, `juniper-radius.template`, `wti-radius.template` — the same for `--protocol radius`
 
 **Available variables:**
 
@@ -689,7 +720,7 @@ The generated Cisco, Juniper, and WTI output is rendered from template files usi
 |----------|---------|-------------|
 | `${SERVER_IP}` | All | Auto-detected server IP address |
 | `${SECRET}` | All | Shared secret of the scope |
-| `${AUTH_PORT}`, `${ACCT_PORT}` | Cisco RADIUS | UDP ports of the RADIUS `auth` and `acct` listeners |
+| `${AUTH_PORT}`, `${ACCT_PORT}` | Cisco, WTI RADIUS | UDP ports of the RADIUS `auth` and `acct` listeners |
 | `${RADIUS_GROUP}` | Cisco RADIUS | `aaa group server radius` label (`scope radius-group`, default `RADIUS-GROUP`) |
 | `${AUTHN_METHODS}`, `${AUTHZ_EXEC_METHODS}`, `${EXEC_TIMEOUT}`, `${VTY_ACL_BLOCK}`, `${VTY_ACCESS_CLASS}` | Cisco | Method lists (from `aaa-order`), idle timeout and the management-ACL blocks |
 | `${RADIUS_CONFIG}` | Juniper RADIUS | Pre-rendered RADIUS server, authentication-order and accounting commands |

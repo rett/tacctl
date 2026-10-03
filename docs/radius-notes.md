@@ -8,7 +8,10 @@ assumptions marked [A] in `docs/plans/pluggable-backends.md` §5 and answers
 
 Everything below was run on 2026-10-02 in rootless podman 4.9.3 containers
 with `tests/containers/radius/run.sh` (procedure: `tests/README.md`, "RADIUS
-in containers"), against the renderer as it is in this tree.
+in containers"), against the renderer as it is in this tree. The vendor
+attributes (opt-in per scope and per address, tacctl's dictionary) were
+added later the same day and checked the same way, on the same three
+versions: "Vendor attributes and tacctl's dictionary" below.
 
 | Distro image | FreeRADIUS | libcrypt | How |
 |---|---|---|---|
@@ -75,7 +78,8 @@ fails in a pristine container), with or without tacctl.
    tacctl defines its own.
 8. **An Access-Reject carries the reply items the users file added** unless
    they are removed in `Post-Auth-Type REJECT` (the package does it with
-   `attr_filter.access_reject`). tacctl's policy removes its three.
+   `attr_filter.access_reject`). tacctl's policy removes its four
+   (`Service-Type` and the three vendor attributes).
 9. **unlang prefix containment is `<=`, not `<`**
    (`&Packet-Src-IP-Address <= 127.0.0.66/32` is true for that address; `<`
    is false), and comparing an attribute the packet does not have is an
@@ -112,14 +116,25 @@ fails in a pristine container), with or without tacctl.
 
 ## Cases run (all three versions; `tests/containers/radius/cases.sh`)
 
-Store: `tests/containers/radius/make-store.py`. 23 cases, all pass on all
+Store: `tests/containers/radius/make-store.py`. 42 cases, all pass on all
 three. Sources are told apart by address (`Packet-Src-IP-Address` in the
 radclient request file; the container's own address for scope `prod`).
+Every reply is decoded with tacctl's dictionary (`radclient -D`) and
+compared attribute by attribute: an Accept carries exactly the attributes
+named below (the Message-Authenticator aside), a Reject none.
 
 | Case | Result |
 |---|---|
-| right password, user in the client's scope | Access-Accept, `Service-Type = Administrative-User`, `Cisco-AVPair = "shell:priv-lvl=15"`, `Juniper-Local-User-Name = "RW-CLASS"` |
-| operator / custom group (priv 10) / readonly | Accept with `NAS-Prompt-User`, `priv-lvl=7` / `10` / `1`, the group's class |
+| right password, user in the client's scope, a scope that enables no vendor | Access-Accept with `Service-Type = Administrative-User` and nothing else |
+| operator / custom group (priv 10) / readonly | Accept with `Service-Type = NAS-Prompt-User` and nothing else |
+| scope `lab` enables nothing; 127.0.0.10, .11, .12 tagged cisco, juniper, wti | `Cisco-AVPair = "shell:priv-lvl=15"`, `Juniper-Local-User-Name = "RW-CLASS"`, `WTI-Super = Administrator` respectively, each alone after `Service-Type` |
+| scopes enabling one vendor each (cisco, juniper, wti), untagged address | that vendor's attribute only |
+| the same scopes, an address tagged with another vendor (juniper in the cisco scope, wti in the juniper scope, cisco in the wti scope) | the tag's vendor only, not the scope's |
+| a cisco scope, an address tagged cisco | Cisco only |
+| a scope enabling all three, untagged | `Service-Type`, `Cisco-AVPair`, `Juniper-Local-User-Name`, `WTI-Super`, in that order; readonly gets `priv-lvl=1`, `RO-CLASS`, `WTI-Super = ViewOnly` (0), priv 10 gets `SuperUser` (2) |
+| the same scope, an address tagged wti | WTI only |
+| wrong password in the all-vendor scope (untagged and tagged); a user outside the scope | Access-Reject, no attribute |
+| every reply above | no `Tacctl-*`, `Tmp-*` or undecodable (`Attr-*`) attribute |
 | wrong password, empty password | Access-Reject, no reply attributes |
 | user of another scope only | Access-Reject (`not an enabled user of this scope` in the auth log) |
 | disabled user with the right password; `root` sink; unknown user | Access-Reject |
@@ -132,26 +147,88 @@ radclient request file; the container's own address for scope `prod`).
 | CHAP request; Status-Server | Reject; no answer |
 | Accounting Start | Accounting-Response, record in `tacctl-accounting.log` |
 
-With systemd (Ubuntu noble, AlmaLinux 9; `flow.sh`, 47 and 45 checks, all passing):
+With systemd (Ubuntu noble, AlmaLinux 9; `flow.sh`, 73 and 71 checks, all passing):
 package install by `backend enable`, daemon running as the service account
 under the distro unit with the drop-in, artifacts 0640 `root:<group>` and
 unreadable to others, package files unmodified (`dpkg --verify` /
-`rpm -V`), `user disable|enable` and `scope protocols` reaching the daemon,
+`rpm -V`), `user disable|enable`, `scope protocols`, `scope vendor-attrs` and `scope
+devices` reaching the daemon,
 an unrenderable secret refused with the store unchanged, a udp6 listener
 added and removed, an unbindable listener address rolled back, drift
 refusal and `config render --force`, `systemctl reload`, `backend disable`
 (unit stopped, disabled, drop-in gone, package unit as shipped), re-enable
-without the package manager, the uninstall phases. On Ubuntu also: after
+without the package manager, the uninstall phases, and the way from the
+release before the vendor attributes (below). On Ubuntu also: after
 `disable` the package's own configuration starts under the unit, and
 `enable` is then refused and leaves it running.
+
+## Vendor attributes and tacctl's dictionary
+
+The design is in the header of `lib/backends/radius.sh` ("Vendor
+attributes: opt-in per scope, per address"). What it rests on, verified on
+3.0.20, 3.0.27 and 3.2.5 unless noted:
+
+1. **`-D <dir>` with a dictionary of tacctl's own works with a started
+   daemon.** `<raddb>/tacctl-radius-dictionary/dictionary` holds `$INCLUDE
+   /usr/share/freeradius/dictionary` (the package's main dictionary; that
+   path on Ubuntu 24.04 and on AlmaLinux 8 and 9) and then defines the WTI
+   vendor and tacctl's three internal attributes. `radiusd -C` with `-D`, the
+   unit's ExecStartPre and ExecStart with `-D` (Debian: `-f` under
+   `Type=notify`; EL: forking), and Access-Accepts carrying `WTI-Super` all
+   work. Relative `$INCLUDE`s inside the package's dictionary are resolved
+   against its own directory. The package's `<raddb>/dictionary` (for local
+   attributes) is still read after it. No package file is edited
+   (`dpkg --verify` / `rpm -V` clean in `flow.sh`).
+2. **radclient decodes `WTI-Super` only with the same dictionary**
+   (`radclient -D <that directory>`: `WTI-Super = Administrator`); without
+   it the attribute shows as `Attr-26.24496.41 = 0x00000003`. Hence `-D` in
+   `cases.sh`.
+3. **Check items with `:=` on a users entry's first line land in the
+   control list** (`Tacctl-Priv-Lvl := 15, Tacctl-Juniper-Class :=
+   "RW-CLASS", Tacctl-WTI-Super := 3` next to the hash) and are readable in
+   post-auth. `&control:Tacctl-WTI-Super` tests existence: true for the
+   value 0 (the ViewOnly case passes).
+4. **The policy adds attributes as written:** `&Cisco-AVPair :=
+   "shell:priv-lvl=%{control:Tacctl-Priv-Lvl}"`,
+   `&Juniper-Local-User-Name := &control:Tacctl-Juniper-Class` and
+   `&WTI-Super := &control:Tacctl-WTI-Super` (an attribute reference, integer
+   to integer), each inside `if (("%{client:tacctl_send_<vendor>}" == "yes")
+   && &control:...)`. They are added in that order, after the users file's
+   `Service-Type`, and only in the main post-auth section: an Access-Reject
+   runs `Post-Auth-Type REJECT`, which strips all four anyway.
+5. **Attributes numbered 3990-3992 never reach the wire.** Besides the
+   control list never being encoded, a probe that copied the internal
+   attributes into the reply list on purpose (`update reply {
+   &Tacctl-Priv-Lvl := 9, &Tacctl-Juniper-Class := "LEAKTEST" }` in
+   post-auth) got Access-Accepts without them: same length as without the
+   probe, nothing decoded by name or as `Attr-*`. Checked by hand in kept
+   containers on all three versions (it is not part of the rendered policy).
+6. **A tagged address is a client of its own** inside its scope's prefix
+   (127.0.0.10/32 inside 127.0.0.0/8, 127.0.0.17/32 inside 127.0.0.16/30):
+   the longest prefix wins as for overlapping scopes (finding 6), and a
+   request with another scope's secret from that address gets no answer.
+7. **The way from the release before (commit 1b34e77) works both ways it
+   can happen** (`flow.sh`, last section, both systemd containers): that
+   release's own `backend enable radius` (two files, drop-in without `-D`,
+   every Accept with Cisco and Juniper attributes), then this release's
+   `upgrade config` step re-renders all three files as a normal render (no
+   drift reported), installs the drop-in with `-D` and restarts once; and,
+   back on the old files and drop-in, the next mutation with this release's
+   code renders the three files and brings the drop-in in line before its
+   restart. `config validate` is clean afterwards in both. The Accept then
+   carries `Service-Type` only until a scope enables a vendor (the upgrade
+   says so).
 
 ## Not verified
 
 - **Real devices.** That Cisco IOS/IOS-XE honours `Cisco-AVPair =
-  "shell:priv-lvl=N"` with `Service-Type` 6/7 for exec authorization and that
-  Junos maps `Juniper-Local-User-Name` to a template user is documented
-  vendor behaviour, not tested here. `Service-Type = Administrative-User`
-  for priv 15 and `NAS-Prompt-User` otherwise is a choice.
+  "shell:priv-lvl=N"` with `Service-Type` 6/7 for exec authorization, that
+  Junos maps `Juniper-Local-User-Name` to a template user, and that a WTI
+  unit takes its access level from `WTI-Super` is documented vendor
+  behaviour, not tested here; so is what each does with an Accept that
+  carries `Service-Type` alone (the state of a scope that enables nothing).
+  `Service-Type = Administrative-User` for priv 15 and `NAS-Prompt-User`
+  otherwise is a choice.
 - **NAS limits on the shared secret** (§9 item 7). FreeRADIUS takes far
   more than any client. Figures found in vendor documentation (not tested):
   Junos 256 characters, Microsoft NPS 128, Aruba 63; none found for Cisco
@@ -274,6 +351,12 @@ passed in every run listed.
 | Rocky 9.3 | 1.5.1-15.el9 / 9.9p1 / 1.9.17p2 | 57 pass | 50 pass | 82 pass |
 | Rocky 10.2 | 1.6.1-9.el10 / 9.9p1 / 1.9.17p2 | 57 pass | | |
 
+After the vendor attributes changed the server's render (the dictionary,
+`-D` in the drop-in, `device=` in the auth log), `radius` was run again for
+Debian 12 (server Ubuntu 24.04, FreeRADIUS 3.2.5) and AlmaLinux 9.8 (server
+AlmaLinux 9, FreeRADIUS 3.0.27): 57 pass each. pam_radius_auth reads no
+vendor attribute, so a per-host scope needs none enabled.
+
 Servers: Ubuntu 24.04 with FreeRADIUS 3.2.5 and tacquito (the binary of the
 machine that built the image); AlmaLinux 9 with FreeRADIUS 3.0.27 (radius
 only). pam_tacplus 1.7.0 was compiled on the client in every tacplus run
@@ -330,13 +413,15 @@ EL8 (3.14.3-139), EL9 (38.1.75) and EL10 (42.1.18) targeted policies with
   CVE-2024-3596): Debian 12 and Ubuntu 24.04 hosts are in that position,
   and FreeRADIUS logs its "BlastRADIUS check" block for them.
 
-# WTI units over RADIUS: what the vendor documents (research only)
+# WTI units over RADIUS: what the vendor documents
 
-Nothing here is implemented. `tacctl config wti` renders the TACACS+
-walkthrough only (`--protocol radius` is refused; a scope whose auth-method
-is `radius` gets the TACACS+ walkthrough with a warning), the RADIUS backend
-loads no WTI dictionary and sends no WTI attribute. This part records what
-WTI's own documents say, read on 2026-10-02, so that a design can rest on it.
+What is built on it: the RADIUS backend sends `WTI-Super` (from the group's
+priv-lvl, in the bands of the TACACS+ mapping) to the devices of a scope
+that enables `wti`, or to an address tagged `wti`; its dictionary defines
+the attribute; `tacctl config wti --protocol radius` (or a scope that
+resolves to RADIUS) prints a walkthrough of the unit's RADIUS menu written
+from the documents below. **None of it has been tried on a WTI unit.** This
+part records what WTI's own documents say, read on 2026-10-02.
 Each statement is marked **[D]** (in the named document), **[C]** (checked
 here, in a container or on this machine) or **[I]** (inferred; not stated
 anywhere that was read). No WTI unit was involved at any point.
@@ -436,7 +521,9 @@ ATTRIBUTE     WTI-Text            46    string
   S4, View in S3); neither was checked on a unit.
 - **[I]** So an Access-Accept without `WTI-Super` logs the user in at the
   Default User Access level when that item is enabled. This is what a WTI
-  unit pointed at tacctl's RADIUS backend as it is today would do.
+  unit pointed at a scope of tacctl's that sends no `WTI-Super` would do;
+  `config wti --protocol radius` refuses such a scope, and its walkthrough
+  sets the level to ViewOnly explicitly because the documents disagree.
 - Not documented: what happens to such a login with Default User Access
   disabled (**[I]** from "without first defining a RADIUS user account": it
   then needs an account of that name on the unit), whether a `WTI-Super`
@@ -514,7 +601,14 @@ verified.
   need Default User Access enabled, and the Invalid Access Lockout arms on
   repeated failures.
 
-## Loading a vendor dictionary into tacctl's instance (checked, not built)
+## Loading a vendor dictionary into tacctl's instance (built)
+
+The way chosen is the third below (`-D`, a dictionary of tacctl's own);
+"Vendor attributes and tacctl's dictionary" above has what was verified
+with it on all three versions, a started daemon and decoded replies.
+tacctl's file is written from the numbers WTI publishes (vendor 24496,
+attribute 41, integer) with the value names of the user's guide; it is not
+a copy of WTI's file.
 
 - **[C]** A users entry with `WTI-Super = 3` fails the daemon's check without
   a dictionary (`Unknown name "WTI-Super"`, FreeRADIUS 3.0.20).
@@ -530,5 +624,7 @@ verified.
   passes the check too (3.0.20). This is the way that leaves every package
   file alone; it changes the unit's command line (the drop-in) and the
   command of the config check.
-- Not checked: either way on 3.0.27 and 3.2.5, a started daemon, an
-  Access-Accept that carries the attribute, and `radclient` decoding it.
+- **[C]** Since: the `-D` way on 3.0.27 and 3.2.5 as well, with a started
+  daemon, Access-Accepts that carry the attribute, and `radclient -D`
+  decoding it (the cases above). The `<confdir>/dictionary` way was not
+  pursued: that file is the package's.

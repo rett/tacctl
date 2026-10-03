@@ -39,6 +39,12 @@ class StoreError(Exception):
     """A problem to report to the operator as one line, without a traceback."""
 
 
+# Still 1 with the optional scope fields vendor_attrs and devices: a store
+# without them is exactly a store from before they existed, so nothing has to
+# be migrated. A tacctl from before them refuses a store that uses one
+# ("unknown field 'vendor_attrs'") instead of dropping it on its next write;
+# 'scope vendor-attrs <scope> disable' and 'scope devices <scope> unset'
+# remove the fields again.
 STORE_VERSION = 1
 # name -> (default priv-lvl, default Juniper class). Present in every store
 # and never removable.
@@ -48,6 +54,11 @@ BUILTIN_GROUPS = {
     'superuser': (15, 'RW-CLASS'),
 }
 KNOWN_PROTOCOLS = ('tacacs', 'radius')
+# Vendors whose privilege attribute the RADIUS backend can put into an
+# Access-Accept ('tacctl scope vendor-attrs', 'tacctl scope devices'), in the
+# order a scope's list is stored. Must equal SCOPE_VENDORS in lib/scopes.sh
+# (a unit test pins the two together).
+KNOWN_VENDORS = ('cisco', 'juniper', 'wti')
 # 'tacquito' collides with the service user; 'root' may exist only as the
 # accounting sink (see reject_reserved_username in lib/core.sh).
 RESERVED_USERS = ('tacquito',)
@@ -89,6 +100,12 @@ STORE_SCHEMA = {
             'secret':    {'type': 'secret', 'required': True},
             'protocols': {'type': 'enum_list', 'values': KNOWN_PROTOCOLS,
                           'min_items': 1, 'nullable': True},
+            # Opt-in, RADIUS only (TACACS+ ignores both): the vendors whose
+            # privilege attribute an Access-Accept carries for the scope's
+            # devices, and single addresses or ranges of the scope that are
+            # one vendor's devices. Absent = nothing enabled, nothing tagged.
+            'vendor_attrs': {'type': 'enum_list', 'values': KNOWN_VENDORS},
+            'devices':      {'type': 'vendor_map'},
         },
     },
 }
@@ -155,6 +172,37 @@ def canonical_cidr_list(items):
     return sorted(out, key=cidr_key)
 
 
+def device_problems(scopes):
+    """Tagged addresses ('devices') that cannot stand, as (scope, cidr,
+    message). A tagged address becomes a RADIUS client of its own, with the
+    scope's secret. It must therefore be an address 'scope lookup' answers
+    with this scope: inside one of the scope's prefixes, and not inside a
+    more specific prefix of another scope (that scope's devices would be
+    moved to this scope's secret, or one address would have two clients)."""
+    nets, out = [], []
+    for name, s in scopes.items():
+        if isinstance(s, dict) and isinstance(s.get('prefixes'), list):
+            nets.extend((ipaddress.ip_network(canonical_cidr(c)), name)
+                        for c in s['prefixes'] if canonical_cidr(c) is not None)
+    for name, s in scopes.items():
+        if not isinstance(s, dict) or not isinstance(s.get('devices'), dict):
+            continue
+        for c in s['devices']:
+            canon = canonical_cidr(c)
+            if canon is None:
+                continue
+            net = ipaddress.ip_network(canon)
+            covering = [(p, n) for p, n in nets if p.version == net.version and net.subnet_of(p)]
+            if not any(n == name for _p, n in covering):
+                out.append((name, c, f"scope '{name}': devices: {canon} is not inside a prefix of the scope"))
+                continue
+            best = max(covering, key=lambda t: t[0].prefixlen)
+            if best[1] != name:
+                out.append((name, c, f"scope '{name}': devices: {canon} belongs to scope '{best[1]}' "
+                                     f"(its prefix {best[0]} is the most specific one that contains it)"))
+    return out
+
+
 PY
 }
 
@@ -197,6 +245,17 @@ def _check_field(spec, val):
             return 'lists the same value twice'
         if len(val) < spec.get('min_items', 0):
             return 'must not be empty (omit it to mean every enabled backend)'
+    elif t == 'vendor_map':
+        if not isinstance(val, dict):
+            return 'must be a mapping of CIDR to vendor'
+        for c, vendor in val.items():
+            canon = canonical_cidr(c)
+            if canon is None:
+                return f'has an invalid CIDR ({c!r})'
+            if canon != c:
+                return f'has a non-canonical CIDR ({c!r}, canonical form {canon})'
+            if vendor not in KNOWN_VENDORS:
+                return f"{c}: vendor must be one of: {', '.join(KNOWN_VENDORS)}"
     elif t == 'cidr_list':
         if not isinstance(val, list):
             return 'must be a list of CIDRs'
@@ -321,6 +380,8 @@ def store_validate(store):
                 errs.append(f"prefix {canon} is claimed by scopes '{owner[canon]}' and '{name}' (one scope per prefix)")
             owner.setdefault(canon, name)
 
+    errs.extend(msg for _scope, _cidr, msg in device_problems(scopes))
+
     filters = store.get('filters')
     if filters is not None:
         if not isinstance(filters, dict):
@@ -402,9 +463,30 @@ def store_canonicalize(model):
     for s in model['scopes'].values():
         if isinstance(s, dict):
             s['prefixes'] = canonical_cidr_list(s.get('prefixes'))
+            canonical_vendor_fields(s)
     for k in list(model['filters']):
         model['filters'][k] = canonical_cidr_list(model['filters'][k])
     return model
+
+
+def canonical_vendor_fields(scope):
+    """vendor_attrs in the order of KNOWN_VENDORS, each once; devices keyed
+    by canonical CIDR in render order. Both are dropped when empty: absent is
+    the one way to say "nothing". Values the validator will refuse are left
+    as they are."""
+    attrs = scope.get('vendor_attrs')
+    if isinstance(attrs, list) and all(v in KNOWN_VENDORS for v in attrs):
+        scope['vendor_attrs'] = [v for v in KNOWN_VENDORS if v in attrs]
+    if attrs in ([], None) and 'vendor_attrs' in scope:
+        del scope['vendor_attrs']
+    devices = scope.get('devices')
+    if isinstance(devices, dict) and all(canonical_cidr(c) is not None for c in devices):
+        canon = {}
+        for c, vendor in devices.items():
+            canon.setdefault(canonical_cidr(c), vendor)
+        scope['devices'] = {c: canon[c] for c in sorted(canon, key=cidr_key)}
+    if devices in ({}, None) and 'devices' in scope:
+        del scope['devices']
 
 
 def store_disk_form(model):
@@ -433,6 +515,10 @@ def store_disk_form(model):
         ent = {'prefixes': list(s.get('prefixes') or []), 'secret': s.get('secret')}
         if s.get('protocols'):
             ent['protocols'] = list(s['protocols'])
+        if s.get('vendor_attrs'):
+            ent['vendor_attrs'] = list(s['vendor_attrs'])
+        if s.get('devices'):
+            ent['devices'] = dict(s['devices'])
         out['scopes'][name] = ent
     return out
 
@@ -679,6 +765,17 @@ def op_scope_set(store, args):
             s['secret'] = v
         elif k == 'protocols':
             s['protocols'] = None if v in ('', 'null') else _csv(v)
+        elif k == 'vendor_attrs':
+            s['vendor_attrs'] = [] if v in ('', 'null') else _csv(v)
+        elif k == 'devices':
+            # <cidr>=<vendor>[,<cidr>=<vendor>...]; replaces the whole mapping.
+            devices = {}
+            for item in ([] if v in ('', 'null') else _csv(v)):
+                c, sep, vendor = item.partition('=')
+                if not sep or canonical_cidr(c) is None:
+                    raise StoreError(f"scope '{name}': devices: invalid entry {item!r} (expected <cidr>=<vendor>)")
+                devices[canonical_cidr(c)] = vendor
+            s['devices'] = devices
         else:
             raise StoreError(f"scope '{name}': unknown field '{k}'")
 
@@ -988,8 +1085,9 @@ store_group_set() { store_mutate 'op_group_set(store, args)' "$@"; }
 store_group_del() { store_mutate 'op_group_del(store, args)' "$@"; }
 
 # store_scope_set <name> [prefixes=<cidr,cidr>] [secret=<key>] [protocols=<a,b|null>]
-# prefixes= replaces the whole list. prefixes= and secret= are required when
-# the scope is new.
+#                 [vendor_attrs=<a,b|null>] [devices=<cidr>=<vendor>,...|null]
+# prefixes=, vendor_attrs= and devices= each replace the whole list or
+# mapping. prefixes= and secret= are required when the scope is new.
 store_scope_set() { store_mutate 'op_scope_set(store, args)' "$@"; }
 
 # store_scope_del <name> [--strip-users]
@@ -1022,8 +1120,9 @@ store_equiv_check() {
 #   --check    write nothing; report the import, then the equivalence proof
 #              (render, compare, daemon load-smoke) as far as the hooks allow.
 #   --replace  allow overwriting an existing store. Fields the legacy file
-#              cannot carry (scope protocols, password dates, the real hash
-#              of a disabled user) are kept from the existing store.
+#              cannot carry (scope protocols, vendor attributes and tagged
+#              addresses, password dates, the real hash of a disabled user)
+#              are kept from the existing store.
 # Exit: 0 ok; 1 failed; 2 usage; 3 (--check only) import is clean but
 # equivalence was not proven because no renderer is available.
 store_import() {
