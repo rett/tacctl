@@ -23,10 +23,18 @@ var completionKinds = map[string]func(m *model.Model) []string{
 	KindScopes: (*model.Model).ScopeNames,
 }
 
+// completionArgKinds are the native kinds that are not model names: they
+// are answered from the invocation's services, with the words after the
+// kind ('_completion-names listeners [<backend>]').
+var completionArgKinds = map[string]func(inv *invocation, args []string) []string{
+	// _completion_listeners: listener names, every backend's or one's.
+	KindListeners: (*invocation).listenerNames,
+}
+
 // delegatedCompletionKinds are the kinds bash still answers (WP2.4d:
-// backups, backends, enabled-backends; WP2.4c: listeners).
+// backups, backends, enabled-backends).
 var delegatedCompletionKinds = map[string]bool{
-	"backups": true, "backends": true, "enabled-backends": true, "listeners": true,
+	"backups": true, "backends": true, "enabled-backends": true,
 }
 
 func completionNamesCmd(inv *invocation) *cobra.Command {
@@ -36,7 +44,13 @@ func completionNamesCmd(inv *invocation) *cobra.Command {
 		if delegatedCompletionKinds[kind] {
 			return delegate(inv.app)
 		}
-		return inv.native(withPreflight, func([]string) error {
+		return inv.native(withPreflight, func(args []string) error {
+			if names, ok := completionArgKinds[kind]; ok {
+				if l := names(inv, args[1:]); len(l) > 0 {
+					inv.write(strings.Join(l, "\n") + "\n")
+				}
+				return nil
+			}
 			names, ok := completionKinds[kind]
 			if !ok {
 				return nil

@@ -201,3 +201,98 @@ config sudoers tiers remove extra
 config sudoers tiers show extra
 config restore {TS} --bogus
 config diff {TS} extra
+
+# WP2.4c: listener names for completion
+_completion-names listeners
+_completion-names listeners tacacs
+_completion-names listeners radius
+_completion-names listeners ldap
+_completion-names listeners 'tacacs radius'
+config listen tcp 10.1.0.1:49 --listener mgmt ;; _completion-names listeners tacacs ;; _completion-names listeners
+
+# listen: the RADIUS backend and the flag forms
+config listen --backend radius
+config listen --backend=radius --listener=auth
+config listen --backend radius --listener acct show
+config listen --backend radius --listener default
+config listen --backend radius --listener auth reset
+config listen --backend radius --listener auth tcp 10.1.0.1:1812
+config listen --backend ''
+config listen --backend
+config listen --listener ''
+config listen --listener=Bad_Name show
+config listen --listener=
+config listen --backend=ldap
+config listen --bogus
+config listen show extra
+config listen --listener mgmt show
+config listen --listener mgmt reset
+config listen tcp 10.1.0.1:49 --listener mgmt ;; config listen --listener=mgmt show ;; config listen --listener mgmt reset ;; config listen show
+
+# values with backslash escapes reach info/warn/error through echo -e
+config loglevel 'de\tbug'
+config metrics 'sh\tow'
+config password-age '4\t5'
+config get 'a\tb' 'fall\tback'
+config get-list 'a\tb'
+config sudoers 'sh\tow'
+config sudoers install 'bad\tgroup'
+config sudoers tiers 'sh\tow'
+
+# sudoers install: the group, the prompt, closed stdin
+config sudoers install wheel <<< n
+config sudoers install wheel
+config sudoers install %wheel <<< no
+config sudoers install '' <<< n
+config sudoers install 'bad group' <<< y
+config sudoers install wheel extra <<< n
+# Unprivileged, the real 'install -o root' fails; 0.1.16 then exits under errexit and
+# leaves its mktemp copy of the drop-in in TMPDIR, 0.2.0 removes it (proposed 3.9 item).
+@known proposed 3.9 item: a failed sudoers install leaves no temp file
+config sudoers tiers install
+@known proposed 3.9 item: a failed sudoers install leaves no temp file
+config sudoers install wheel <<< y
+
+# the tunables shown and set, and their empty forms
+config bcrypt-cost ''
+config password-age ''
+config secret-min-length 20 ;; config password-min-length 9 ;; config password-age 30 ;; config dump
+config loglevel debug ;; config loglevel debug ;; config validate ;; config show
+config metrics disable ;; config metrics enable ;; config metrics address 10.1.0.1:9090 ;; config metrics reset ;; config metrics
+
+# render --dry-run is new in 0.2.0 (docs/plans/go-rewrite.md 3.9 item 8)
+@known 3.9 item 8: config render --dry-run is new
+config render --dry-run
+@known 3.9 item 8: config render --dry-run is new
+config render --dry-run --out
+config render --out x
+config render --force extra
+
+# show and validate on other states
+@fixture tacquito.multiscope.yaml
+config show
+config validate
+config render ;; config validate ;; config show
+config get-list scope_mgmt_acl.permits
+@fixture store.radius.yaml
+config show
+config validate
+config render ;; config validate
+@fixture legacy.fresh-install.yaml
+config show
+config validate
+config render
+config listen
+@fixture legacy.unrepresentable.yaml
+config validate
+config show
+@fixture none
+config
+config show
+config validate
+config render
+config render --force
+config get bcrypt.cost
+config defaults
+config sudoers
+_completion-names listeners

@@ -102,7 +102,7 @@ func commandPaths(c *cobra.Command, prefix []string, out *[][]string) {
 }
 
 // nativeWords are the first words the Go binary owns (cut over).
-var nativeWords = map[string]bool{"version": true, "user": true, "hash": true, "passwd": true, "_completion-names": true}
+var nativeWords = map[string]bool{"version": true, "user": true, "hash": true, "passwd": true, "_completion-names": true, "config": true}
 
 // The no-sub / help / -h / unknown table of docs/plans/go-rewrite.md 3.2:
 // every command of a family not cut over yet belongs to bash, so each of
@@ -129,10 +129,9 @@ func TestEverythingNotCutOverIsDelegated(t *testing.T) {
 		[]string{}, []string{""}, []string{"help"}, []string{"-h"}, []string{"--help"}, []string{"bogus"},
 		[]string{"completion", "bash"}, []string{"shell"}, []string{"-x", "user", "list"},
 		[]string{"--x=1", "user", "list"}, []string{"--", "version"}, []string{"Version"},
-		[]string{"_completion-names", "backups"}, []string{"_completion-names", "listeners", "tacacs"},
+		[]string{"_completion-names", "backups"},
 		[]string{"help", "version"}, []string{"User", "list"}, []string{"Hash"},
 		[]string{"scope", "user", "list"}, []string{"scope", "prefixes", "lab", "clear"},
-		[]string{"config", "listen", "--backend", "radius", "--listener=auth", "udp", "0.0.0.0:1812"},
 		[]string{"log", "--backend", "tacacs", "tail", "5"},
 	)
 	for _, args := range cases {

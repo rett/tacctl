@@ -15,16 +15,20 @@ tests/integration/config_templates.bats
 tests/integration/group_crud.bats
 tests/integration/group_edit_commands.bats
 tests/integration/host.bats
+tests/integration/listeners.bats
 tests/integration/prompts_closed_stdin.bats
 tests/integration/scope_crud.bats
 tests/integration/scope_prefixes_secret.bats
 tests/integration/scope_vendor_attrs.bats
 tests/integration/status_and_scope_lookup.bats
 tests/integration/tiers.bats
+# White-box in its setup (it drives the unit phases of install/upgrade as bash
+# functions); its CLI tests run the binary (WP2.4c).
+tests/integration/units_convert.bats
 tests/integration/user_crud.bats
 tests/integration/user_lifecycle.bats
 tests/e2e/log.bats
 tests/e2e/smoke.bats
 # Pins the CLI behaviour of verbs no other test covers (WP0.2): against Go, the
 # sections of the packages cut over so far; whole once WP3.3d is done.
-tests/integration/characterisation.bats  # go-tags: cutover:wp0-1 cutover:wp2-4a
+tests/integration/characterisation.bats  # go-tags: cutover:wp0-1 cutover:wp2-4a cutover:wp2-4c

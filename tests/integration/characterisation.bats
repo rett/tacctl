@@ -635,10 +635,11 @@ EOF
 
 # --- config branch ----------------------------------------------------------------
 # The deploy clone is /opt/tacctl in bash (DEPLOY_DIR is not read from the
-# environment), so these call cmd_config_branch with DEPLOY_DIR pointed at a
-# scratch directory and `git` stubbed. The Go port takes the clone from
-# TACCTL_TREE: the package that cuts `config branch` over rewrites these as
-# plain CLI runs against a scratch TACCTL_TREE and drops the bash-only tag.
+# environment), so against bash these call cmd_config_branch with DEPLOY_DIR
+# pointed at a scratch directory; the Go binary takes the clone from
+# TACCTL_TREE, so against Go they are plain CLI runs with TACCTL_TREE pointed
+# at the same scratch directory. `git` is stubbed either way: nothing reaches
+# a real clone.
 
 branch_setup() {
     DEPLOY="${BATS_TEST_TMPDIR}/deploy"
@@ -661,11 +662,15 @@ STUB
 }
 
 config_branch() {
+    if [[ "$TACCTL_IMPL" == go ]]; then
+        TACCTL_TREE="$DEPLOY" "$TACCTL_BIN_SCRIPT" config branch "$@"
+        return
+    fi
     bash -c 'source "$1"; DEPLOY_DIR="$2"; shift 2; cmd_config_branch "$@"' _ \
         "${TACCTL_SRC}/bin/tacctl.sh" "$DEPLOY" "$@"
 }
 
-# bats test_tags=bash-only
+# bats test_tags=cutover:wp2-4c
 @test "config branch: without a clone it says so and exits 1" {
     branch_setup
     rm -rf "$DEPLOY"
@@ -675,7 +680,7 @@ config_branch() {
     refute_called '^git '
 }
 
-# bats test_tags=bash-only
+# bats test_tags=cutover:wp2-4c
 @test "config branch: with no name it shows the current branch and the remote ones, marking the current" {
     branch_setup
     runs config_branch
@@ -698,7 +703,7 @@ config_branch() {
     assert_line "git -C ${DEPLOY} branch -r"
 }
 
-# bats test_tags=bash-only
+# bats test_tags=cutover:wp2-4c
 @test "config branch: naming the current branch changes nothing" {
     branch_setup
     run config_branch develop
@@ -707,7 +712,7 @@ config_branch() {
     refute_called 'checkout'
 }
 
-# bats test_tags=bash-only
+# bats test_tags=cutover:wp2-4c
 @test "config branch: a branch that is not on the remote is an error" {
     branch_setup
     runs config_branch nope
@@ -718,7 +723,7 @@ config_branch() {
     refute_called 'checkout'
 }
 
-# bats test_tags=bash-only
+# bats test_tags=cutover:wp2-4c
 @test "config branch: switching fetches, discards local edits, checks out, pulls, fixes modes" {
     branch_setup
     runs config_branch feature/x
@@ -730,7 +735,7 @@ ${ESC}[0;32m[INFO]${ESC}[0m Run 'tacctl upgrade' to apply any changes."
     assert_equal "$(stat -c %a "${DEPLOY}/bin/tacctl.sh")" 755
 }
 
-# bats test_tags=bash-only
+# bats test_tags=cutover:wp2-4c
 @test "config branch: a branch with no local copy is created from origin" {
     branch_setup
     STUB_GIT_NO_LOCAL=1 run config_branch feature/x
