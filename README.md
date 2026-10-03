@@ -160,7 +160,7 @@ Every change goes one way: check that no generated file was edited by hand → s
 | `/etc/tacctl/tacctl.yaml` | Operator overrides — only keys you've changed. Absent keys inherit from the canonical defaults embedded in `lib/conf.sh`. Inspect with `tacctl config dump`; list canonical defaults with `tacctl config defaults`. |
 | `/etc/tacctl/rendered.json` | Checksums of the generated files (drift detection) |
 | `/etc/tacctl/backups/` | Snapshots (`<timestamp>/`), `legacy/` (old-style backups, pre-store config, displaced files), `password-dates/` (read by the importer) |
-| `/etc/tacctl/templates/` | Custom device config templates (override defaults) |
+| `/etc/tacctl/templates/` | Custom device config templates (override defaults); `.shipped.sha256` records what tacctl wrote there, `<name>.template.new` is a new release's version beside a template you customized (see [Custom Templates](#custom-templates)) |
 | `/etc/tacctl/linux-hosts`, `/etc/tacctl/linux-uids` | Enrolled Linux hosts; the UID/GID each user gets on every host |
 | `/var/lib/tacctl/linux/` | pam_tacplus source tarball and container-built modules |
 | `/etc/sudoers.d/tacctl`, `/etc/sudoers.d/tacctl-tiers` | Optional sudoers rules (`tacctl config sudoers install`, `… tiers install`) |
@@ -936,13 +936,20 @@ The generated Cisco, Juniper, and WTI output is rendered from template files usi
 | `${FALLBACK_LOCAL}` | WTI | `On (Transport Failure)` or `On (All Failures)`, from the scope's `aaa-order` |
 | `${SERVICE_NAME}` | WTI | Authorization service name the unit should send (`shell`) |
 
-**To customize:** copy the default template to the override location and edit it:
+**To customize:** edit the copy in the override location (install puts one there; if it is missing, copy the default first):
 ```bash
 sudo cp /opt/tacctl/config/templates/cisco.template /etc/tacctl/templates/cisco.template
 sudo vi /etc/tacctl/templates/cisco.template
 ```
 
-**To reset to defaults:** remove the override file:
+**On upgrade:** a template in `/etc/tacctl/templates/` that you have not changed is replaced by the new release's. tacctl records what it wrote there in `/etc/tacctl/templates/.shipped.sha256` (`sha256sum` format; `cd /etc/tacctl/templates && sha256sum -c .shipped.sha256` lists which are still as shipped). A template you changed is left as it is: the new release's version is written beside it as `<name>.template.new`, and the upgrade warns, naming both files. A `.new` file is never used for rendering. Compare and merge what you want, or take the new version as it is:
+```bash
+sudo diff /etc/tacctl/templates/cisco.template /etc/tacctl/templates/cisco.template.new
+sudo mv /etc/tacctl/templates/cisco.template.new /etc/tacctl/templates/cisco.template
+```
+Until you do, each upgrade warns again and refreshes the `.new` file. A template with no record there counts as unchanged when it is byte for byte a version tacctl shipped (according to the git history in `/opt/tacctl`).
+
+**To reset to defaults:** remove the override file (and its `.new`, if any). The repo's default is used, and the next upgrade puts a fresh copy of it back:
 ```bash
 sudo rm /etc/tacctl/templates/cisco.template
 ```
@@ -961,12 +968,12 @@ tacctl upgrade --branch develop
 The upgrade command:
 1. Moves tacctl state into `/etc/tacctl` if it is not there yet (idempotent)
 2. Pulls latest tacquito server source and rebuilds the binary (if upstream or the patch overlay changed)
-3. Pulls latest management scripts from `rett/tacctl` on GitHub, and re-executes itself if tacctl was updated
+3. Pulls latest management scripts from `rett/tacctl` on GitHub (after switching to the `--branch` given), and re-executes itself if that changed tacctl's own code
 4. Installs packages a newer tacctl needs
 5. Brings the configuration in line with this release: re-renders each enabled backend from the store (RADIUS: and restarts it when its files or its unit drop-in changed); without a store, runs the in-place migrations of `tacquito.yaml`
-6. Updates system files (unit files and drop-ins, logrotate, completion, man page, templates you have not customized) if changed
+6. Updates system files (unit files and drop-ins, logrotate, completion, man page, templates you have not customized) if changed; a template you customized is kept, with the new release's version beside it as `<name>.template.new` (see [Custom Templates](#custom-templates))
 7. For an install without a store: moves it into the store, behind the gate described below
-8. Restarts tacquito only if something changed, and rolls the binary and unit files back if it does not come up
+8. Restarts tacquito only if what it reads changed (its binary, a unit or drop-in, or `tacquito.yaml`), and rolls the binary and unit files back if it does not come up. A new README, logrotate file, completion or template restarts nothing, and neither does an upgrade with nothing new
 
 Use `--branch` to switch to a different branch (e.g., `develop` for pre-release features). You can also switch branches without upgrading: `tacctl config branch <name>`.
 

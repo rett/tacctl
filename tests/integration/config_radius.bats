@@ -592,8 +592,9 @@ radius_listeners() {
     [[ -f "${TACCTL_SRC}/config/templates/cisco-radius.template" ]]
     [[ -f "${TACCTL_SRC}/config/templates/juniper-radius.template" ]]
     [[ -f "${TACCTL_SRC}/config/templates/wti-radius.template" ]]
-    grep -qF 'cp -n "${PROJECT_DIR}/config/templates/"*.template' "${TACCTL_SRC}/lib/lifecycle.sh"
-    grep -qF 'for tmpl in "${ACTIVE_DEPLOY_DIR}/config/templates/"*.template; do' "${TACCTL_SRC}/lib/lifecycle.sh"
+    grep -qF 'templates_sync "$PROJECT_DIR"' "${TACCTL_SRC}/lib/lifecycle.sh"
+    grep -qF 'templates_sync "$ACTIVE_DEPLOY_DIR"' "${TACCTL_SRC}/lib/lifecycle.sh"
+    grep -qF 'for tmpl in "${src_dir}/"*.template; do' "${TACCTL_SRC}/lib/lifecycle.sh"
 }
 
 @test "scope show lists the RADIUS group label" {

@@ -101,9 +101,15 @@ changed, pull the management scripts (and re-execute when tacctl itself
 changed), install packages the new release needs, bring every enabled
 backend's configuration in line with the release (a re-render from the
 store; RADIUS restarts when its files or unit drop-in changed), refresh
-system files, move an install that has no store yet into the store behind a
-gate, and restart tacquito once if anything changed (rolling the binary and
-unit files back if it does not come up). Listener, log-level and metrics
+system files (a device template you changed is kept; see
+.I /etc/tacctl/templates/
+under
+.BR FILES ),
+move an install that has no store yet into the store behind a
+gate, and restart tacquito once if its binary, a unit or drop-in, or its
+configuration changed (rolling the binary and unit files back if it does not
+come up). A new README, logrotate file, completion or template restarts
+nothing, and neither does an upgrade with nothing new. Listener, log-level and metrics
 settings live in
 .I tacctl.yaml
 and survive. See
@@ -2239,6 +2245,24 @@ A file named
 .I <name>.template
 here is used in place of the one shipped in
 .IR config/templates/ .
+Install puts a copy of each shipped template here, and
+.B "tacctl upgrade"
+replaces one with the new release's only while it is as tacctl wrote it:
+.I .shipped.sha256
+records what tacctl wrote (in
+.BR sha256sum (1)
+format). A template that was changed is kept, the new release's version is
+written beside it as
+.IR <name>.template.new ,
+which is never used for rendering, and the upgrade warns, naming both;
+compare them with
+.BR diff (1),
+or take the new version with
+.BR mv (1).
+A template that has no record there counts
+as unchanged when it is byte for byte a version tacctl shipped, according to
+the git history of
+.IR /opt/tacctl .
 .TP
 .IR /etc/tacctl/linux\-hosts ", " /etc/tacctl/linux\-uids
 The registry of enrolled Linux hosts (with each host's method) and the
