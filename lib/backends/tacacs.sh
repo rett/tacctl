@@ -2254,7 +2254,14 @@ config_sync_existing() {
     # `service=shell`, so authorization silently failed post-auth. Heal in place.
     conf_migrate_exec_service_name
     if [[ ! -f "$STORE_FILE" ]]; then
+        # The legacy migrations edit tacquito.yaml in place; the daemon only
+        # needs a restart when they changed it.
+        local sum_before
+        sum_before=$(sha256sum "$CONFIG" 2>/dev/null | awk '{print $1}')
         regenerate_tacquito_commands
+        if [[ "$(sha256sum "$CONFIG" 2>/dev/null | awk '{print $1}')" != "$sum_before" ]]; then
+            CONFIG_SYNC_RENDERED=1
+        fi
         return 0
     fi
 
@@ -3003,7 +3010,7 @@ _tacacs_upgrade_build() {
 
 # The units and drop-ins on upgrade (_tacacs_units_install, which also
 # converts an install from before the listener model): report, and count in
-# SCRIPTS_UPDATED so that 'finish' restarts. A unit update that stops is not
+# SCRIPTS_UPDATED. 'finish' restarts when TACACS_UNITS_STATE is 'changed'. A unit update that stops is not
 # an upgrade failure: the files in place keep working, and the summary says so.
 _tacacs_upgrade_units() {
     local note
@@ -3055,8 +3062,10 @@ _tacacs_upgrade_finish() {
         *)  STORE_STATE="stopped" ;;
     esac
 
-    # --- Restart service (if binaries, service file or the rendered config changed) ---
-    if [[ "$SKIP_BUILD" == "false" ]] || [[ "$SCRIPTS_UPDATED" -gt 0 ]] \
+    # --- Restart service (if the binary, a unit or drop-in, or the config changed) ---
+    # Only what the daemon reads counts: a new README, logrotate file, template
+    # or completion script is no reason to drop its sessions.
+    if [[ "$SKIP_BUILD" == "false" ]] || [[ "${TACACS_UNITS_STATE:-}" == "changed" ]] \
         || [[ "$STORE_STATE" == "flipped" ]] || [[ "$CONFIG_SYNC_RENDERED" == "1" ]]; then
         info "Restarting tacquito service..."
         systemctl restart tacquito.service

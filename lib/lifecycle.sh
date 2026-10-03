@@ -748,8 +748,8 @@ cmd_upgrade() {
 
     # --- Each backend finishes ---
     # For tacquito: move a legacy install into the store (gated; see
-    # upgrade_store_flip), then one restart if its binary, its unit, a system
-    # file or the rendered config changed. A stopped store migration is not
+    # upgrade_store_flip), then one restart if its binary, a unit or drop-in,
+    # or its config changed (not for README, logrotate, templates). A stopped store migration is not
     # an upgrade failure: the code is installed and the daemon keeps its config.
     UPGRADE_SUMMARY_HEAD=""
     UPGRADE_SUMMARY_NOTES=()

@@ -371,6 +371,15 @@ assert_stopped() {
     [[ "$CONFIG_SYNC_RENDERED" == "0" ]]
 }
 
+@test "legacy: a migration that changes tacquito.yaml asks for a restart; a second run does not" {
+    place_fixture tacquito.legacy-exec.yaml
+    state_migrate
+    config_sync_existing > /dev/null
+    [[ "$CONFIG_SYNC_RENDERED" == "1" ]]
+    config_sync_existing > /dev/null
+    [[ "$CONFIG_SYNC_RENDERED" == "0" ]]
+}
+
 @test "re-run: a store beside a never-rendered config that says something else leaves that config alone" {
     fake_tacquito serve
     place_fixture tacquito.multiscope.yaml

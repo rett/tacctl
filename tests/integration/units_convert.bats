@@ -486,6 +486,39 @@ upgrade_units_and_finish() {
     refute_stub_called '^systemctl (restart|daemon-reload)'
 }
 
+@test "upgrade: other files updated (README, logrotate, templates) do not restart an unchanged unit" {
+    units_install > /dev/null
+    _tacacs_units_keep_discard
+    : > "$CALLS_LOG"
+    upgrade_other_files_and_finish() {
+        SKIP_BUILD=true CURRENT_COMMIT=abc1234 NEW_COMMIT=abc1234 CONFIG_SYNC_RENDERED=0
+        upgrade_units
+        SCRIPTS_UPDATED=$((SCRIPTS_UPDATED + 3))
+        _tacacs_upgrade_finish
+    }
+    run upgrade_other_files_and_finish
+    assert_success
+    refute_output --partial "Restarting"
+    refute_stub_called '^systemctl restart'
+}
+
+@test "upgrade: a re-rendered config restarts an unchanged unit" {
+    units_install > /dev/null
+    _tacacs_units_keep_discard
+    : > "$CALLS_LOG"
+    upgrade_rendered_and_finish() {
+        SKIP_BUILD=true CURRENT_COMMIT=abc1234 NEW_COMMIT=abc1234
+        upgrade_units
+        CONFIG_SYNC_RENDERED=1
+        _tacacs_upgrade_finish
+    }
+    run upgrade_rendered_and_finish
+    assert_success
+    assert_output --partial "Restarting tacquito service..."
+    run grep -c '^systemctl restart tacquito.service$' "$CALLS_LOG"
+    assert_output "1"
+}
+
 @test "upgrade: a unit that will not start gets the old unit, drop-in and settings back, and is restarted on them" {
     old_install TACQUITO_ADDRESS=10.1.0.1:49 TACQUITO_LEVEL=30
     local before
