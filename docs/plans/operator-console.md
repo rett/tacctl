@@ -184,6 +184,31 @@ Absent file = empty registry. `settings` keeps the registry's tunables out of `t
 
 ---
 
+### 3.6 Name notices: generic and duplicate names (decided 2026-10-03)
+
+Requirement (user): when a device or host with a generic or duplicate name is registered, enrolled, or seen authenticating, tacctl shows a notice **with remediation steps**.
+
+**Detection.**
+1. *Duplicate registry name or address* — `device add`/`rename` refuse a name already taken, compared case-insensitively (`Core-SW1` vs `core-sw1`), and an address already registered under another name: `[ERROR] 'core-sw1' is already registered (10.1.2.3); choose another name, or see 'tacctl device show core-sw1'` / `[ERROR] 10.1.2.3 is already registered as 'core-sw1'; rename it with 'tacctl device rename core-sw1 <new>'`. Registry and enrolled-host names share one namespace for this check.
+2. *Generic name at registration/enrolment* — `device add`, `device rename`, `device discover --add` and `host enroll` **refuse** a name matching the generic list (factory and image defaults, case-insensitive: `switch`, `router`, `switch\d*`, `router\d*`, `cisco`, `juniper`, `wti`, `default`, `localhost`, `localhost.localdomain`, `ubuntu`, `debian`, `raspberrypi`, `ip-\d+-\d+-\d+-\d+`, …; the list is data in the package, extensible in `devices.yaml` `generic_names:`) with the remediation steps below; `--allow-generic` registers it anyway, and the device then carries a standing `generic-name` notice. Hosts already enrolled under a generic name before 0.2.1 are not refused retroactively; they get the notice.
+3. *Seen at authentication* (by `device scan`/`discover`, from the seen cache of §3.4):
+   - `ambiguous-nas-id` — one RADIUS NAS-Identifier sent from more than one client address;
+   - `generic-nas-id` — a NAS-Identifier on the generic list (e.g. a device still called `Router` sending that as its identity);
+   - `name-mismatch` — a registered device whose NAS-Identifier differs from its registry name (informational);
+   - `duplicate-address` — one address answering for two registry entries' identities (TACACS+ carries no device name, so this — via patch 0003's NAS address — is the only TACACS+-side name notice).
+
+**Where notices appear.** The output of `device scan`/`discover` (after the scan), a `Device notices` section in `tacctl status` (beside "Password Age Warnings"; counts plus the first five, `tacctl device notices` for all), a `NOTICES` column in `device list`, and `device show <name>` (which also lists acknowledged ones). Notices are computed, not stored, except acknowledgements.
+
+**Remediation text** (per vendor profile; exact device syntax verified in the 0.2.1 lab acceptance, [A] until then):
+- Cisco IOS/IOS-XE: `hostname <name>`, and so RADIUS carries it, `radius-server attribute 32 include-in-access-req format %h`;
+- Junos: `set system host-name <name>` (NAS-Identifier follows the host name [A]);
+- WTI: set the Site ID / unit name in the `/N` network menu [A: menu item varies by firmware];
+- Linux hosts: `hostnamectl set-hostname <name>`, then `tacctl host sync <host>`;
+- then align the registry: `tacctl device rename <old> <new>` (new verb), or `--allow-generic` to keep a lab name deliberately.
+Every notice line ends with the one command that fixes or acknowledges it.
+
+**Acknowledgement.** `tacctl device notice <name> ack <kind>` records an accepted notice in `devices.yaml` (`ack: [<kind>, …]` on the device); `unack <kind>` removes it. Acknowledged notices disappear from `status` and `device list` but stay visible, marked, in `device show`. `ack` is per device and per kind (two units deliberately sharing a NAS-Identifier are acknowledged on each). Superuser only, like other registry writes.
+
 ## 4. Part B — shell mode (go-rewrite §8 and Decision 13, revisited)
 
 ### 4.1 What it is
@@ -571,3 +596,7 @@ Executor suggestion: Opus for the shell loop/tokenizer, `ssh` plumbing and every
 26. **Accounting of console lines.** Recommend **journal-based first (sudo + `logger` lines, session start/end, `ssh` start/end), TACACS+ per-line accounting via the library client as the optional 0.2.3 follow-up** (`console accounting journal|tacacs`). Alternative: build the TACACS+ client in 0.2.2 (+1 session).
 27. **Idle timeout** default 30 min (`console idle-timeout`), paused during `ssh`, with sshd `ClientAlive*` as the safety net. Recommend **as listed**.
 28. **Permissions table** (§8): `ssh`/`device list|show|ssh-config`/`shell` for every tier filtered to own scopes; `check|scan|discover|export|console show` operator+; all writes superuser; tiers sudoers extended with a release-notes reminder to re-run `config sudoers tiers install`. Recommend **as listed**. Alternative: readonly gets nothing from `device` (defeats the console's purpose).
+
+29. **Generic names** (§3.6) — *decided by the user:* **refuse** at registration/enrolment with remediation steps; `--allow-generic` overrides and leaves a standing notice.
+30. **Notice acknowledgement** (§3.6) — *decided by the user:* per device and kind, `tacctl device notice <name> ack|unack <kind>`, stored in `devices.yaml`, hidden from `status`/`device list`, shown marked in `device show`.
+31. **Notice kinds and placement** (§3.6): duplicate name/address refused; generic name refused; `ambiguous-nas-id`, `generic-nas-id`, `name-mismatch`, `duplicate-address` from scans; shown in scan/discover output, `status`, `device list|show`, `device notices`. Recommend **as listed** (accepted with the rest of §12).
