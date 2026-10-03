@@ -111,15 +111,26 @@ func TestWriteRefusesUnsupportedYAMLLikeAParseError(t *testing.T) {
 	}
 }
 
-func TestWriteOfAValueOutsideTheEmittersDomainFailsAndKeepsTheFile(t *testing.T) {
+func TestWriteKeepsNonASCIIWithPyYAMLEscapes(t *testing.T) {
 	c := tempConf(t)
 	writeFile(t, c.Path, "custom: caf\u00e9\n")
+	c.Reload()
+	must(t, c.Set("bcrypt.cost", "13"))
+	if got := readFile(t, c.Path); !strings.Contains(got, "custom: \"caf\\xE9\"\n") {
+		t.Fatalf("got:\n%s", got)
+	}
+}
+
+func TestWriteOfAValueOutsideTheEmittersDomainFailsAndKeepsTheFile(t *testing.T) {
+	c := tempConf(t)
+	const text = "custom: \"a\\x01b\"\n"
+	writeFile(t, c.Path, text)
 	c.Reload()
 	err := c.Set("bcrypt.cost", "13")
 	if err == nil || !strings.Contains(err.Error(), "cannot write") {
 		t.Fatalf("got %v", err)
 	}
-	if readFile(t, c.Path) != "custom: caf\u00e9\n" {
+	if readFile(t, c.Path) != text {
 		t.Fatal("file changed")
 	}
 	matches, _ := filepath.Glob(filepath.Join(filepath.Dir(c.Path), "tmp*"))

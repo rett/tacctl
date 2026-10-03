@@ -194,13 +194,13 @@ func writeValidated(path string, s *Store) (bool, error) {
 
 // writeRefusal is the error for a store that validates but cannot be
 // written: the emitter refuses a value outside the domain it is verified
-// on (yamlpy.ErrUnsupportedScalar: not printable ASCII; 0.1.16 wrote such
-// a value with PyYAML's escapes), or its write-time self-check failed.
+// on (yamlpy.ErrUnsupportedScalar: invalid UTF-8 or a control character),
+// or its write-time self-check failed.
 func writeRefusal(err error) error {
 	where := strings.TrimPrefix(err.Error(), "yamlpy: ")
 	if errors.Is(err, yamlpy.ErrUnsupportedScalar) {
 		where = strings.TrimSuffix(where, ": "+yamlpy.ErrUnsupportedScalar.Error())
-		return &Error{Msg: "cannot write " + where + ": only printable ASCII can be stored; nothing was written"}
+		return &Error{Msg: "cannot write " + where + ": the value is not valid UTF-8 or contains control characters; nothing was written"}
 	}
 	return &Error{Msg: "internal: cannot write the store (" + where + "); nothing was written"}
 }

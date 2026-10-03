@@ -1,6 +1,9 @@
 package yamlpy
 
-import "strings"
+import (
+	"strings"
+	"unicode/utf8"
+)
 
 // scalarAnalysis is emitter.py's ScalarAnalysis.
 type scalarAnalysis struct {
@@ -216,16 +219,23 @@ func analyzeScalar(scalar string) scalarAnalysis {
 }
 
 // checkDomain reports whether s is inside the domain the emitter is
-// verified on (docs/plans/go-rewrite.md 3.3): printable ASCII, tab and
-// newline, no leading or trailing newline. Everything tacctl's validators
-// admit is inside it; anything else is refused rather than guessed at.
+// verified on (docs/plans/go-rewrite.md 3.3): valid UTF-8 made of tab,
+// printable ASCII and any rune from U+0080 up (written with PyYAML's
+// escapes, as allow_unicode=False does), plus newlines that are neither
+// first nor last. Everything else is refused rather than guessed at.
 func checkDomain(s string) bool {
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c == '\t' || (c >= 0x20 && c <= 0x7E) {
+	if !utf8.ValidString(s) {
+		return false
+	}
+	n := utf8.RuneCountInString(s)
+	i := 0
+	for _, c := range s {
+		if c == '\t' || (c >= 0x20 && c <= 0x7E) || c >= 0x80 {
+			i++
 			continue
 		}
-		if c == '\n' && i != 0 && i != len(s)-1 {
+		if c == '\n' && i != 0 && i != n-1 {
+			i++
 			continue
 		}
 		return false

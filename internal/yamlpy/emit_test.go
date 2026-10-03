@@ -14,9 +14,7 @@ import (
 
 func TestEmitRefusesScalarsOutsideTheDomain(t *testing.T) {
 	bad := []string{
-		"caf\u00e9", // non-ASCII (PyYAML would write "caf\xE9")
-		"\u2028",    // unicode line separator
-		"a\rb",      // control characters other than tab and newline
+		"a\rb", // control characters other than tab and newline
 		"a\x00b", "a\x1bb", "a\x7fb",
 		"\nleading", "trailing\n", "\n",
 		string([]byte{0xff}), // not UTF-8
@@ -34,20 +32,21 @@ func TestEmitRefusesScalarsOutsideTheDomain(t *testing.T) {
 		}
 	}
 	// The error names where the value is.
-	_, err := Emit(NewMap("scopes", NewMap("lab", NewMap("secret", "s\u00e9cret"))), StoreOptions)
+	_, err := Emit(NewMap("scopes", NewMap("lab", NewMap("secret", "s\x01cret"))), StoreOptions)
 	if err == nil || !strings.Contains(err.Error(), "scopes.lab.secret") {
 		t.Errorf("error without the path: %v", err)
 	}
-	_, err = Emit(NewMap("l", []string{"ok", "b\u00e4d"}), StoreOptions)
+	_, err = Emit(NewMap("l", []string{"ok", "b\x01d"}), StoreOptions)
 	if err == nil || !strings.Contains(err.Error(), "l[1]") {
 		t.Errorf("error without the path: %v", err)
 	}
-	// Inside the domain: tab, inner newline, every printable ASCII byte.
+	// Inside the domain: tab, inner newline, every printable ASCII byte and
+	// non-ASCII (escaped as PyYAML does; the corpus pins the bytes).
 	var all []byte
 	for c := byte(0x20); c <= 0x7e; c++ {
 		all = append(all, c)
 	}
-	for _, s := range []string{"a\tb", "\t", "a\nb", string(all)} {
+	for _, s := range []string{"a\tb", "\t", "a\nb", string(all), "caf\u00e9", "\u2028", "\U0001F511"} {
 		if _, err := EmitChecked(NewMap(s, s), StoreOptions, ""); err != nil {
 			t.Errorf("EmitChecked(%q): %v", s, err)
 		}

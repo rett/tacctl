@@ -370,14 +370,21 @@ func TestLoadNeverShowsAValue(t *testing.T) {
 	refute(t, out, digits)
 }
 
-func TestWriteRefusesNonASCII(t *testing.T) {
-	// 0.1.16 wrote a non-ASCII secret with PyYAML's "\xFC" escapes; the
-	// yamlpy emitter refuses it, so the write is refused, cleanly.
+func TestWriteNonASCIIAsPyYAML(t *testing.T) {
+	// A non-ASCII secret is written with PyYAML's escapes, as 0.1.16 does.
+	e := newEnv(t)
+	e.useFixture("store.minimal.yaml")
+	e.mustMutate(scopeSet("lab", "secret=s\u00fcper-secret-0123456789"))
+	contains(t, string(readFile(t, e.path)), `secret: "s\xFCper-secret-0123456789"`)
+	equal(t, e.mustGet("scopes", "lab", "secret"), "s\u00fcper-secret-0123456789")
+}
+
+func TestWriteRefusesInvalidUTF8(t *testing.T) {
 	e := newEnv(t)
 	e.useFixture("store.minimal.yaml")
 	before := readFile(t, e.path)
-	msg := e.mutate(scopeSet("lab", "secret=s\u00fcper-secret-0123456789"))
-	equal(t, msg, "tacctl store: cannot write scopes.lab.secret: only printable ASCII can be stored; nothing was written")
+	msg := e.mutate(scopeSet("lab", "secret=s\xffper-secret-0123456789"))
+	equal(t, msg, "tacctl store: cannot write scopes.lab.secret: the value is not valid UTF-8 or contains control characters; nothing was written")
 	if !bytes.Equal(readFile(t, e.path), before) {
 		t.Error("store changed")
 	}

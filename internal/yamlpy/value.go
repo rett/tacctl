@@ -26,9 +26,9 @@ import (
 )
 
 // ErrUnsupportedScalar is returned (wrapped, with the path of the value)
-// for a string outside the domain the emitter is verified on: a character
-// that is not printable ASCII, tab or newline, or a leading or trailing
-// newline. The message never contains the value (it may be a secret).
+// for a string outside the domain the emitter is verified on: invalid
+// UTF-8, a control character other than tab and newline, or a leading or
+// trailing newline (non-ASCII is written with PyYAML's escapes). The message never contains the value (it may be a secret).
 var ErrUnsupportedScalar = errors.New("unsupported scalar")
 
 // ErrUnsupportedValue is returned (wrapped, with the path of the value) for

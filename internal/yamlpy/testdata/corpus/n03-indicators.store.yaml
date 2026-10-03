@@ -1,0 +1,87 @@
+- v: "\xFC: v"
+  l: ["\xFC: v", x, "\xFC: v"]
+  k: {"\xFC: v": "\xFC: v"}
+- v: "- \xFC"
+  l: ["- \xFC", x, "- \xFC"]
+  k: {"- \xFC": "- \xFC"}
+- v: "#\xFC"
+  l: ["#\xFC", x, "#\xFC"]
+  k: {"#\xFC": "#\xFC"}
+- v: "\xFC #x"
+  l: ["\xFC #x", x, "\xFC #x"]
+  k: {"\xFC #x": "\xFC #x"}
+- v: "\xFC\tx"
+  l: ["\xFC\tx", x, "\xFC\tx"]
+  k: {"\xFC\tx": "\xFC\tx"}
+- v: "\xFC\nx"
+  l: ["\xFC\nx", x, "\xFC\nx"]
+  k: {? "\xFC\nx" : "\xFC\nx"}
+- v: "\xFC,x"
+  l: ["\xFC,x", x, "\xFC,x"]
+  k: {"\xFC,x": "\xFC,x"}
+- v: "[\xFC]"
+  l: ["[\xFC]", x, "[\xFC]"]
+  k: {"[\xFC]": "[\xFC]"}
+- v: "{\xFC}"
+  l: ["{\xFC}", x, "{\xFC}"]
+  k: {"{\xFC}": "{\xFC}"}
+- v: "\xFC'"
+  l: ["\xFC'", x, "\xFC'"]
+  k: {"\xFC'": "\xFC'"}
+- v: "'\xFC"
+  l: ["'\xFC", x, "'\xFC"]
+  k: {"'\xFC": "'\xFC"}
+- v: "\xFC\""
+  l: ["\xFC\"", x, "\xFC\""]
+  k: {"\xFC\"": "\xFC\""}
+- v: "?\xFC"
+  l: ["?\xFC", x, "?\xFC"]
+  k: {"?\xFC": "?\xFC"}
+- v: "!\xFC"
+  l: ["!\xFC", x, "!\xFC"]
+  k: {"!\xFC": "!\xFC"}
+- v: "&\xFC"
+  l: ["&\xFC", x, "&\xFC"]
+  k: {"&\xFC": "&\xFC"}
+- v: "*\xFC"
+  l: ["*\xFC", x, "*\xFC"]
+  k: {"*\xFC": "*\xFC"}
+- v: "|\xFC"
+  l: ["|\xFC", x, "|\xFC"]
+  k: {"|\xFC": "|\xFC"}
+- v: ">\xFC"
+  l: [">\xFC", x, ">\xFC"]
+  k: {">\xFC": ">\xFC"}
+- v: "%\xFC"
+  l: ["%\xFC", x, "%\xFC"]
+  k: {"%\xFC": "%\xFC"}
+- v: "@\xFC"
+  l: ["@\xFC", x, "@\xFC"]
+  k: {"@\xFC": "@\xFC"}
+- v: "`\xFC"
+  l: ["`\xFC", x, "`\xFC"]
+  k: {"`\xFC": "`\xFC"}
+- v: "\xFC:"
+  l: ["\xFC:", x, "\xFC:"]
+  k: {"\xFC:": "\xFC:"}
+- v: "\xFC "
+  l: ["\xFC ", x, "\xFC "]
+  k: {"\xFC ": "\xFC "}
+- v: "  \xFC"
+  l: ["  \xFC", x, "  \xFC"]
+  k: {"  \xFC": "  \xFC"}
+- v: " \xFC "
+  l: [" \xFC ", x, " \xFC "]
+  k: {" \xFC ": " \xFC "}
+- v: "1\xE9"
+  l: ["1\xE9", x, "1\xE9"]
+  k: {"1\xE9": "1\xE9"}
+- v: "yes\xE9"
+  l: ["yes\xE9", x, "yes\xE9"]
+  k: {"yes\xE9": "yes\xE9"}
+- v: "null\xE9"
+  l: ["null\xE9", x, "null\xE9"]
+  k: {"null\xE9": "null\xE9"}
+- v: "~\xFC"
+  l: ["~\xFC", x, "~\xFC"]
+  k: {"~\xFC": "~\xFC"}
