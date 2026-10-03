@@ -209,6 +209,44 @@ Every notice line ends with the one command that fixes or acknowledges it.
 
 **Acknowledgement.** `tacctl device notice <name> ack <kind>` records an accepted notice in `devices.yaml` (`ack: [<kind>, …]` on the device); `unack <kind>` removes it. Acknowledged notices disappear from `status` and `device list` but stay visible, marked, in `device show`. `ack` is per device and per kind (two units deliberately sharing a NAS-Identifier are acknowledged on each). Superuser only, like other registry writes.
 
+### 3.7 Identity by IP; host-key pinning and change detection (decided 2026-10-03)
+
+Requirement (user): identify devices by IP, with detection of host and fingerprint changes.
+
+**IP as identity.** An address is registered at most once (§3.6). Everywhere a device name is accepted, its registered address is too: `tacctl ssh 10.1.2.3`, `device show 10.1.2.3`, notices and scans resolve an address to its device. An unregistered address stays refused, because the registry is the allow-list of §5.1/§6.5. Scans keep, per address, the last NAS-Identifier seen in the seen cache (§3.4). When it changes, they raise `identity-changed` (`10.1.2.3 now identifies as 'Router' (was 'core-sw1') — replaced or reset? verify, then 'tacctl device notice core-sw1 ack identity-changed'`), which catches a swapped or factory-reset unit before any ssh.
+
+**Host-key pinning (decided: scan-and-pin at registration).**
+- `device add` runs `ssh-keyscan -T 5 -p <port> -t ed25519,ecdsa,rsa <address>` (through the runner, as root; outbound only, no authentication). It pins every key returned in `devices.yaml` (`host_keys: [<type> <base64>, …]`; public keys are not secret) and prints each `SHA256:` fingerprint with "compare with the device console before first use", plus the per-vendor command below.
+- `--host-key SHA256:<fp>` registers only if a scanned key matches that fingerprint, otherwise it refuses.
+- `--no-host-key` registers unpinned and leaves a standing `hostkey-unpinned` notice. A device that does not answer at registration is refused unless `--no-host-key` is given.
+- Legacy IOS (`legacy-ssh`) is scanned with `ssh-rsa` allowed.
+- Enrolled Linux hosts get their keys pinned at `host enroll`/`sync`, which already connect to the host.
+
+**Enforcement (decided: refuse until re-pinned).**
+- `tacctl ssh` (and the console) connects with `-o UserKnownHostsFile=<tacctl-generated known_hosts> -o StrictHostKeyChecking=yes -o HostKeyAlias=<name> -o UpdateHostKeys=no`. The known_hosts file is root-owned, 0644, regenerated from `devices.yaml` on every registry write, and lists only the pinned keys.
+- A mismatch is refused by ssh itself. tacctl recognises the failure and prints the pinned and offered fingerprints, the verification command for the vendor, and the fix: `tacctl device hostkey <name> accept` (superuser; re-scans and re-pins after the operator has verified on the console) or `… hostkey <name> set SHA256:<fp>`.
+- No in-session override exists, inside or outside the console.
+- `device ssh-config` emits the same `UserKnownHostsFile`/`HostKeyAlias`/`StrictHostKeyChecking yes` lines, so plain `ssh <name>` is protected the same way.
+
+**Change detection at scan time.** `device scan`/`check` re-scan each registered device's keys and compare:
+- `hostkey-changed`: the pinned key is not among the offered ones. This notice **cannot be acknowledged**; only `hostkey accept|set` clears it, and the pin is never updated silently.
+- `hostkey-added`: an additional key type appeared, pinned keys unchanged. Informational, ackable, `hostkey accept` pins it.
+- `hostkey-unpinned`.
+- `hostkey-unreachable`: no answer, carrying the last good scan time.
+
+They appear with the other device notices (§3.6: scan output, `status`, `device list|show`).
+
+**Verification commands in the remediation text** ([A] until the 0.2.1 lab acceptance):
+- Cisco IOS/IOS-XE: `show ip ssh`, `show crypto key mypubkey rsa` (fingerprint form varies by release)
+- Junos: `show system ssh host-key` [A], or `file show /etc/ssh/ssh_host_ed25519_key.pub` from the shell
+- WTI: per firmware [A]
+- Linux: `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`
+
+**Permissions.**
+- `device hostkey … accept|set` and `--no-host-key`: superuser.
+- Scans: operator+, as in §8.
+- Every tier sees the notices for its own scopes.
+
 ## 4. Part B — shell mode (go-rewrite §8 and Decision 13, revisited)
 
 ### 4.1 What it is
@@ -600,3 +638,6 @@ Executor suggestion: Opus for the shell loop/tokenizer, `ssh` plumbing and every
 29. **Generic names** (§3.6) — *decided by the user:* **refuse** at registration/enrolment with remediation steps; `--allow-generic` overrides and leaves a standing notice.
 30. **Notice acknowledgement** (§3.6) — *decided by the user:* per device and kind, `tacctl device notice <name> ack|unack <kind>`, stored in `devices.yaml`, hidden from `status`/`device list`, shown marked in `device show`.
 31. **Notice kinds and placement** (§3.6): duplicate name/address refused; generic name refused; `ambiguous-nas-id`, `generic-nas-id`, `name-mismatch`, `duplicate-address` from scans; shown in scan/discover output, `status`, `device list|show`, `device notices`. Recommend **as listed** (accepted with the rest of §12).
+32. **Identity by IP** (§3.7): addresses accepted wherever names are; `identity-changed` notice when a device's NAS-Identifier changes. Accepted.
+33. **First host key** (§3.7) — *decided by the user:* scan and pin at `device add`, fingerprints printed for console comparison; `--host-key SHA256:<fp>` to check against a known fingerprint, `--no-host-key` to register unpinned with a notice.
+34. **Host-key change** (§3.7) — *decided by the user:* strict; `tacctl ssh` and the console refuse a mismatching key, with verification steps; only a superuser's `device hostkey <name> accept|set` re-pins; `hostkey-changed` cannot be acknowledged.
