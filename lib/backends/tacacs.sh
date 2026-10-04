@@ -2569,6 +2569,43 @@ install_readme() {
 # block the command used to carry inline. <tree> is the tacctl checkout the
 # shipped files come from.
 
+# Where the Go tarball and its published SHA-256 are downloaded from. This
+# host serves the checksum as plain text beside the tarball.
+GO_DL_URL="https://dl.google.com/go"
+
+# _go_tarball_fetch <dir>: download the Go ${GO_VERSION} tarball into <dir>
+# and verify it against the published SHA-256. Returns 0 with the verified
+# tarball in <dir>; otherwise prints why, removes the tarball and returns 1.
+# Go is never installed from a tarball that could not be verified.
+_go_tarball_fetch() {
+    local dir="$1" name="go${GO_VERSION}.linux-amd64.tar.gz"
+    local url="${GO_DL_URL}/${name}"
+    local tarball="${dir}/${name}" want got
+    if ! wget -q -O "$tarball" "$url"; then
+        error "Could not download ${url}; Go was not installed."
+        rm -f "$tarball"
+        return 1
+    fi
+    want=$(wget -qO- "${url}.sha256" 2>/dev/null) || want=""
+    # Trim surrounding whitespace; what is left must be the bare digest.
+    want="${want#"${want%%[![:space:]]*}"}"
+    want="${want%"${want##*[![:space:]]}"}"
+    if [[ ! "$want" =~ ^[0-9a-f]{64}$ ]]; then
+        error "Could not fetch the Go checksum from ${url}.sha256; Go was not installed because it could not be verified."
+        rm -f "$tarball"
+        return 1
+    fi
+    got=$(sha256sum "$tarball" | awk '{print $1}')
+    if [[ "$want" != "$got" ]]; then
+        error "Go tarball checksum mismatch!"
+        error "  Expected: ${want}"
+        error "  Got:      ${got}"
+        rm -f "$tarball"
+        return 1
+    fi
+    info "Go tarball checksum verified."
+}
+
 # install build: Go, the tacquito checkout with the patch overlay, the binaries.
 _tacacs_install_build() {
     # --- Step 1: Install Go ---
@@ -2586,24 +2623,7 @@ _tacacs_install_build() {
     if ! command -v /usr/local/go/bin/go &>/dev/null; then
         info "Installing Go ${GO_VERSION}..."
         cd /tmp
-        wget -q "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz"
-        # Verify checksum
-        local GO_SHA256
-        GO_SHA256=$(wget -qO- "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz.sha256" 2>/dev/null || true)
-        if [[ -n "$GO_SHA256" ]]; then
-            local ACTUAL_SHA256
-            ACTUAL_SHA256=$(sha256sum "go${GO_VERSION}.linux-amd64.tar.gz" | awk '{print $1}')
-            if [[ "$GO_SHA256" != "$ACTUAL_SHA256" ]]; then
-                error "Go tarball checksum mismatch!"
-                error "  Expected: ${GO_SHA256}"
-                error "  Got:      ${ACTUAL_SHA256}"
-                rm -f "go${GO_VERSION}.linux-amd64.tar.gz"
-                exit 1
-            fi
-            info "Go tarball checksum verified."
-        else
-            warn "Could not fetch Go checksum for verification."
-        fi
+        _go_tarball_fetch /tmp || exit 1
         tar -C /usr/local -xzf "go${GO_VERSION}.linux-amd64.tar.gz"
         rm -f "go${GO_VERSION}.linux-amd64.tar.gz"
         info "Go ${GO_VERSION} installed."
