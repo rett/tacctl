@@ -16,12 +16,12 @@ Read this first when resuming, then `docs/plans/go-rewrite.md`: its status notes
   - `make test-go`: green with and without `-tags testknobs`.
 - **Container cross-over rehearsal passed** (rootless podman on the dev server): 0.1.17 → Go on both upgrade paths, then a no-op second upgrade, then back to 0.1.17, plus a fresh Go install. Its scripts are now in `tests/containers/crossover/` (see the README there). The images `localhost/tacctl-rehearsal:{noble,installed-0.1.17}` persist in rootless podman storage.
 - **Released bash versions:**
-  - **0.1.17** (tag on `master` 1614793, pushed): the tacquito `.bak` `cp -p` fix. The dev server runs it.
+  - **0.1.17** (tag on `master` 6ce7a09, pushed): the tacquito `.bak` `cp -p` fix. The dev server runs it.
   - **Production has not been upgraded yet** (the user does that).
 
 ## In flight: hotfix 0.1.18 (NOT released)
 
-- **Branch `hotfix/0.1.18`** (local, from `master`), commit `ea7fe80`.
+- **Branch `hotfix/0.1.18`** (local, from `master`), commit `cf2ebc4`.
 - **What it fixes:** Go now comes from `dl.google.com/go`, and the install is refused unless the checksum is 64 hex characters and matches. `go.dev/dl` now serves the `.sha256` URL as HTML, so a fresh 0.1.17 install on a host without Go fails.
 - **What it contains:** `_go_tarball_fetch` plus `tests/unit/go_fetch.bats`, and the release notes and man page bump.
 - **Checks so far:** lint passes and the new tests pass. **The full suite was interrupted at about 1027 tests with 0 failures, so re-run it before releasing.**

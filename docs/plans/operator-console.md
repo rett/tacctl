@@ -1,6 +1,6 @@
 # tacctl operator console — design proposal (for decision)
 
-> **Status: proposal, not a plan of record.** Written 2026-10-03 against the `feature/go-rewrite` working tree (`858d3ac`, WP2.1 done, Phase 2 in progress) and the 0.1.16 bash code in `lib/`. It supersedes the device-registry draft of the same day and folds it in. Nothing here is scheduled: §12 lists the decisions for the user, each with a recommendation; the size estimates assume every recommendation is accepted. It changes no file, no state and no host; log formats and sshd settings were read on the dev server read-only, and every log line, name and address below is **made up** (documentation ranges, invented names).
+> **Status: proposal, not a plan of record.** Written 2026-10-03 against the `feature/go-rewrite` working tree (`ebb3102`, WP2.1 done, Phase 2 in progress) and the 0.1.16 bash code in `lib/`. It supersedes the device-registry draft of the same day and folds it in. Nothing here is scheduled: §12 lists the decisions for the user, each with a recommendation; the size estimates assume every recommendation is accepted. It changes no file, no state and no host; log formats and sshd settings were read on the dev server read-only, and every log line, name and address below is **made up** (documentation ranges, invented names).
 
 Markers as in the other plans: **[V]** verified by reading code or a read-only command on the dev server; **[I]** inferred from code; **[A]** assumption about external software to confirm before relying on it.
 

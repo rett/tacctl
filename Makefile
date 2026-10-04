@@ -1,3 +1,4 @@
+.PHONY: lint-private hooks
 .PHONY: test test-unit test-integration test-e2e test-blackbox test-go test-diff test-pyyaml build \
 	coverage lint lint-sh lint-go clean bootstrap
 
@@ -117,13 +118,21 @@ coverage:
 		coverage $(BATS) tests/unit tests/integration tests/e2e
 	@echo "Report: coverage/index.html"
 
-# Static analysis: all bash, then all Go.
-lint: lint-sh lint-go
+# Static analysis: all bash, then all Go, then no private names (the repo is
+# public; see tests/tools/no-private.sh).
+lint: lint-sh lint-go lint-private
+
+lint-private:
+	tests/tools/no-private.sh
+
+# Run the same check on every push (local hook; not versioned by git).
+hooks:
+	ln -sf ../../tests/tools/pre-push .git/hooks/pre-push
 
 lint-sh:
 	$(SHELLCHECK) bin/tacctl.sh lib/*.sh lib/backends/*.sh
 	$(SHELLCHECK) bin/tacctl.sh.new tests/containers/crossover/*.sh
-	$(SHELLCHECK) tests/helpers/*.bash tests/tools/*.sh tests/diff/*.sh
+	$(SHELLCHECK) tests/helpers/*.bash tests/tools/*.sh tests/tools/pre-push tests/diff/*.sh
 	$(SHELLCHECK) config/linux/*.sh
 
 lint-go:

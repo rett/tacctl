@@ -4,7 +4,7 @@ Work package WP0.1 of `docs/plans/pluggable-backends.md`. This document is the c
 
 Markers: **[V]** verified by running something; **[R]** established by reading the code only; **[A]** assumed.
 
-Source of truth for every line number below: `bin/tacctl.sh` at git blob `2a00219a9a127ca80050e4be024aebf8c83a924e` (HEAD `ef3fc25`, branch `develop`), 11,283 lines, sha256 `b5a59714f08d911ba2b66807a4fa3b2a1ae8d3a051f219801daa55150b08ef30`. If the file has changed since, stop: the ranges are no longer valid. The split script in §9 refuses to run on any other content.
+Source of truth for every line number below: `bin/tacctl.sh` at git blob `2a00219a9a127ca80050e4be024aebf8c83a924e` (HEAD `c27694f`, branch `develop`), 11,283 lines, sha256 `b5a59714f08d911ba2b66807a4fa3b2a1ae8d3a051f219801daa55150b08ef30`. If the file has changed since, stop: the ranges are no longer valid. The split script in §9 refuses to run on any other content.
 
 ---
 

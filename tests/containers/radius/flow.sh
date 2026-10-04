@@ -183,9 +183,13 @@ section "from the release before vendor attributes: its own enable, then this re
 # The last commit before the dictionary and the vendor attributes. Its tacctl
 # renders two files, its drop-in has no -D, and its Accept carries Cisco and
 # Juniper attributes for everyone. It cannot read a store with vendor_attrs
-# or devices (it refuses one), so it gets the store without them.
-OLD_REF=1b34e77
-if git -C /opt/tacctl cat-file -e "${OLD_REF}^{commit}" 2> /dev/null; then
+# or devices (it refuses one), so it gets the store without them. Found by
+# the subject of the commit that added them, so a history rewrite cannot
+# leave a stale hash here.
+OLD_REF=$(git -C /opt/tacctl log -1 --format=%H --fixed-strings \
+    --grep='feat: per-scope RADIUS vendor attributes, address tags, WTI over RADIUS' 2> /dev/null || true)
+[[ -n "$OLD_REF" ]] && OLD_REF="${OLD_REF}^"
+if [[ -n "$OLD_REF" ]] && git -C /opt/tacctl cat-file -e "${OLD_REF}^{commit}" 2> /dev/null; then
     OLD=/tmp/tacctl-old
     rm -rf "$OLD" && mkdir -p "$OLD" && git -C /opt/tacctl archive "$OLD_REF" | tar -x -C "$OLD"
     sed "s#10.0.2.0/24#${MYIP%.*}.0/24#" "${DATA}/store.yaml" | grep -vE '^\s+(vendor_attrs|devices):' > /etc/tacctl/store.yaml
@@ -224,7 +228,7 @@ if git -C /opt/tacctl cat-file -e "${OLD_REF}^{commit}" 2> /dev/null; then
     check "next mutation: bob is rejected" is "$(rq bob "$BOB_PW")" Access-Reject
     check "next mutation: config validate is clean" bash -c "tacctl config validate > /tmp/val 2>&1; ! grep -q DRIFT /tmp/val"
 else
-    echo "SKIP  ${OLD_REF} is not in this checkout's history; the upgrade section was not run"
+    echo "SKIP  ${OLD_REF:-the release before the vendor attributes} is not in this checkout's history; the upgrade section was not run"
 fi
 
 echo
