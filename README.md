@@ -558,7 +558,7 @@ tacctl hash                     # Show usage
 tacctl hash generate            # Prompt + print a bcrypt hash
 tacctl hash commands            # Print OS-specific client-side recipes
 tacctl version [--long]         # Print tacctl version (--long: commit, build date, Go version)
-tacctl completion bash|zsh|fish # Print the shell completion script (install and upgrade place the bash one)
+tacctl completion bash          # Print the bash completion script (install and upgrade place it)
 ```
 
 Run any command without arguments for detailed help.

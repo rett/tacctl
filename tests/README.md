@@ -142,7 +142,7 @@ setup() {
   `SUMMARY <note>` / `SAVED <line>` for what they leave to the closing
   summaries (`radius.bats` drives the RADIUS upgrade and uninstall phases
   that way; the container drivers drive them in real containers).
-- The completion is the binary's own: `tacctl completion bash|zsh|fish` prints
+- The completion is the binary's own: `tacctl completion bash` prints
   the script and `tacctl __complete <words>` answers it. `completion.bats`
   runs the generated bash script with the real bash-completion library and a
   `sudo` stub for the bridge; the Go tests (`internal/cli/completion_test.go`)

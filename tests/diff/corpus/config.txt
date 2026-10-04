@@ -5,7 +5,9 @@
 # Run: tests/diff/run.sh config
 @fixture tacquito.minimal.yaml
 
+@known 3.9 item 30: the config usage lists render --dry-run --out
 config
+@known 3.9 item 30: the config usage lists render --dry-run --out
 config bogus
 config show
 config validate
@@ -181,7 +183,9 @@ config diff ../../etc/passwd
 config restore nosuchid
 config restore ../../etc/passwd
 config restore a b
+@known 3.9 item 30: the config usage lists render --dry-run --out
 config frobnicate
+@known 3.9 item 30: the config usage lists render --dry-run --out
 config frobnicate extra
 config loglevel bogus
 config password-age abc
@@ -292,6 +296,7 @@ config listen
 config validate
 config show
 @fixture none
+@known 3.9 item 30: the config usage lists render --dry-run --out
 config
 config show
 config validate

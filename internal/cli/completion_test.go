@@ -182,8 +182,7 @@ func TestCompleteOffersNoHiddenOrRemovedWords(t *testing.T) {
 // 'tacctl completion <shell>' prints cobra's script for the binary; a
 // missing or unknown shell is a usage error.
 func TestCompletionCommand(t *testing.T) {
-	for shell, marker := range map[string]string{
-		"bash": "# bash completion V2 for tacctl", "zsh": "#compdef tacctl", "fish": "# fish completion for tacctl"} {
+	for shell, marker := range map[string]string{"bash": "# bash completion V2 for tacctl"} {
 		h := newHarness(t, []string{"completion", shell})
 		if err := h.run(); err != nil {
 			t.Fatal(err)
@@ -195,9 +194,9 @@ func TestCompletionCommand(t *testing.T) {
 			t.Errorf("%s: ran something", shell)
 		}
 	}
-	for _, args := range [][]string{{"completion"}, {"completion", "powershell"}} {
+	for _, args := range [][]string{{"completion"}, {"completion", "powershell"}, {"completion", "zsh"}, {"completion", "fish"}} {
 		h := newHarness(t, args)
-		if code := exitCode(h.run(), h.app.Out); code != 1 || h.out.Len() != 0 || !strings.Contains(h.err.String(), "Usage: tacctl completion bash|zsh|fish") {
+		if code := exitCode(h.run(), h.app.Out); code != 1 || h.out.Len() != 0 || !strings.Contains(h.err.String(), "Usage: tacctl completion bash") {
 			t.Errorf("%q: %d %q %q", args, code, h.out.String(), h.err.String())
 		}
 	}

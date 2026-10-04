@@ -53,15 +53,13 @@ complete_words() {
     assert_line --partial "bash completion V2 for tacctl"
     assert_output --partial "__complete"
     refute_output --partial "/etc/tacquito"
-    run "$TACCTL_BIN_SCRIPT" completion zsh
-    assert_success
-    run "$TACCTL_BIN_SCRIPT" completion fish
-    assert_success
     run "$TACCTL_BIN_SCRIPT" completion
     assert_failure
-    assert_output --partial "Usage: tacctl completion bash|zsh|fish"
-    run "$TACCTL_BIN_SCRIPT" completion powershell
-    assert_failure
+    assert_output --partial "Usage: tacctl completion bash"
+    for shell in zsh fish powershell; do
+        run "$TACCTL_BIN_SCRIPT" completion "$shell"
+        assert_failure
+    done
 }
 
 @test "completion: the top level offers backend and store, and not the hidden words" {

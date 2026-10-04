@@ -16,22 +16,22 @@ var usageBlocks = map[string]string{
 Usage: tacctl <command> [arguments]
 
 Commands:
-  install [--branch <name>]     Install tacctl and the TACACS+ backend (tacquito) from scratch
-  upgrade [--branch <name>]     Pull latest source, rebuild, update scripts and every enabled backend
-  uninstall                     Remove tacctl, its backends' services and all associated files
-  status                        Show service health, stats, and recent errors (per backend)
-  passwd                        Change your own password (asks for the current one)
-  user <subcommand>             User management (list, add, remove, passwd, scope, ...)
-  group <subcommand>            Group management (list, add, edit, remove)
-  scope <subcommand>            Scope management (named CIDR + shared-secret bundles)
-  host <subcommand>             Linux hosts: enroll, sync, unenroll TACACS+ or RADIUS login over SSH
-  backend <subcommand>          Auth backends: list, status, enable <id>, disable <id>
-  store <subcommand>            The canonical store: show, import, rollback
-  config <subcommand>           Configuration (show, render, cisco, juniper, wti, validate, ...)
-  log <subcommand>              Log viewer (tail, search, failures, accounting; --backend <id>)
-  backup <subcommand>           Backup management (list, diff, restore)
-  hash <subcommand>             Bcrypt helper (generate, commands — runs as invoking user, no sudo)
-  version                       Print tacctl version
+  install [--branch <name>] [-y|--yes]  Install tacctl and the TACACS+ backend (tacquito) from scratch
+  upgrade [--branch <name>]             Pull latest source, rebuild, update scripts and every enabled backend
+  uninstall [-y|--yes]                  Remove tacctl, its backends' services and all associated files
+  status                                Show service health, stats, and recent errors (per backend)
+  passwd                                Change your own password (asks for the current one)
+  user <subcommand>                     User management (list, add, remove, passwd, scope, ...)
+  group <subcommand>                    Group management (list, add, edit, remove)
+  scope <subcommand>                    Scope management (named CIDR + shared-secret bundles)
+  host <subcommand>                     Linux hosts: enroll, sync, unenroll TACACS+ or RADIUS login over SSH
+  backend <subcommand>                  Auth backends: list, status, enable <id>, disable <id>
+  store <subcommand>                    The canonical store: show, import, rollback
+  config <subcommand>                   Configuration (show, render, cisco, juniper, wti, validate, ...)
+  log <subcommand>                      Log viewer (tail, search, failures, accounting; --backend <id>)
+  backup <subcommand>                   Backup management (list, diff, restore)
+  hash <subcommand>                     Bcrypt helper (generate, commands — runs as invoking user, no sudo)
+  version [--long]                      Print tacctl version (--long: commit, build date, Go version)
 
 Run any command without arguments for detailed help, e.g.:
   tacctl user
@@ -243,6 +243,7 @@ Subcommands:
   get-list <path>                      Read a list value (one item per line)
   validate                             Validate config syntax and structure
   render [--force]                     Regenerate every enabled backend's config from the store (--force overwrites hand edits)
+  render --dry-run --out <dir>         Render into a new, empty directory at the live paths; nothing live is written
   diff [timestamp]                     Diff store.yaml and tacctl.yaml vs the last snapshot (or named one)
   restore <timestamp> [--legacy]       Restore a snapshot (prompts for confirmation); --legacy for an old-style backup
   loglevel [debug|info|error]          Show or change log level

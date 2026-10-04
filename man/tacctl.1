@@ -176,15 +176,15 @@ adds the commit, the build date, the Go version and whether the test knobs
 are compiled in
 .RB ( "test knobs: off" ).
 .TP
-.B completion bash | zsh | fish
-Print the shell completion script of that shell on stdout. The script asks
+.B completion bash
+Print the bash completion script on stdout. The script asks
 .B "tacctl __complete"
 for the words, so completion always matches the installed binary. Live names
 (users, groups, scopes, backends, listeners, backups) come from
 .BR "sudo -n tacctl" ,
 which needs root or the NOPASSWD rule of
 .BR "config sudoers install" ;
-without it only fixed words are completed. Install and upgrade write the bash
+without it only fixed words are completed. Install and upgrade write the
 script to
 .IR /etc/bash_completion.d/tacctl .
 .SS User management \fB(tacctl user)\fR

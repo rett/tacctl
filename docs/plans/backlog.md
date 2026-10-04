@@ -27,6 +27,8 @@ The design and every decision are in `docs/plans/operator-console.md`.
 
 - **Release binaries:** GitHub release binaries with checksums. The bootstrap shim would then download instead of building (go-rewrite Decision 7, alternative (b)).
 
+- **zsh and fish completion** (0.2.x): `tacctl completion zsh|fish` from cobra's generators (0.2.0 ships bash only).
+
 ## 3. Behaviour kept for parity in 0.2.0, candidates to change later
 
 These come from the go-rewrite plan's §3.9 "Not changed although tempting" list and the package reports. Each would be a deliberate behaviour change in a later release.
