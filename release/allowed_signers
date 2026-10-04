@@ -2,5 +2,4 @@
 # shim installs a release binary only when SHA256SUMS.sig verifies with a key
 # listed here. One line per key:
 #   tacctl-release namespaces="tacctl-release" ssh-ed25519 AAAA...
-# NO RELEASE KEY CONFIGURED YET: with no key line, every install and upgrade
-# builds tacctl from source ("no release key configured").
+tacctl-release namespaces="tacctl-release" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINt8AVl1gHGmaE+8OzheNcv2tebTTZtCpOloLf8Y36V7
