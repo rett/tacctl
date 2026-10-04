@@ -1,8 +1,8 @@
 package cli
 
 // The 'backend' family (lib/backend.sh cmd_backend at 0.1.16). Native since
-// WP2.4d: list and status, which only read. Still bash's, by delegation:
-// enable and disable (WP3.3c, with the lifecycle phases they run).
+// WP2.4d: list and status, which only read; since WP3.3c enable and disable
+// (backend_enable.go, registered with registerFamilyVerb).
 
 import (
 	"io"
@@ -38,7 +38,7 @@ func backendCmd(inv *invocation) *cobra.Command {
 	c := verb("backend <subcommand>", "Auth backends: list, status, enable <id>, disable <id>",
 		withRun(verb("list", "Every backend: protocol, implementation, installed, enabled, service"), n(inv.backendList)),
 		withRun(verb("status [<id>]", "Service and listener state of every backend (or one)"), n(inv.backendStatus)),
-		// Delegated until WP3.3c, which registers them (registerFamilyVerb).
+		// Replaced by backend_enable.go's (registerFamilyVerb).
 		verb("enable", "Install the backend if needed, enable it, render its config, start it"),
 		verb("disable", "Stop and disable it, take it out of backends.enabled (confirms)"),
 	)

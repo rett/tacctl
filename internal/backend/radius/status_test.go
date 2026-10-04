@@ -457,26 +457,6 @@ func TestContract(t *testing.T) {
 	faketest.CheckContract(t, newEnv(t, rhel).m)
 }
 
-// The lifecycle phases are WP3.3c's: a phase of the lifecycle is reported
-// as not implemented; one the module does not know is a no-op.
-func TestLifecyclePlaceholders(t *testing.T) {
-	r := newEnv(t)
-	ctx := context.Background()
-	for _, p := range backend.InstallPhases {
-		if err := r.m.Install(ctx, p, "/tree"); err == nil || !strings.Contains(err.Error(), "WP3.3c") {
-			t.Errorf("install %s: %v", p, err)
-		}
-	}
-	if r.m.Install(ctx, "nope", "/tree") != nil || r.m.Upgrade(ctx, "nope", "/tree") != nil || r.m.Uninstall(ctx, "nope", false) != nil {
-		t.Error("an unknown phase is not a no-op")
-	}
-	// The phases radius has no work in are no-ops.
-	if r.m.Upgrade(ctx, backend.PhasePreflight, "/tree") != nil || r.m.Upgrade(ctx, backend.PhaseBuild, "/tree") != nil ||
-		r.m.Uninstall(ctx, backend.PhaseProgram, false) != nil || r.m.Uninstall(ctx, backend.PhaseAccount, false) != nil {
-		t.Error("a phase without work failed")
-	}
-}
-
 // The factory registered with the default registry makes the module, with
 // the family TACCTL_RADIUS_FAMILY names.
 func TestRegisteredFactory(t *testing.T) {

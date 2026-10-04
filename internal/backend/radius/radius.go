@@ -3,8 +3,8 @@
 // tag, the contract functions backend_radius_*). It implements
 // backend.Backend: the artifacts and their render steps, the unit and its
 // drop-in, the listeners, the status and log sections, last login, secret
-// constraints and device variables. The lifecycle phases (install, upgrade,
-// uninstall) are WP3.3c's; phases.go holds their placeholders until then.
+// constraints, device variables and the lifecycle phases (install, upgrade,
+// uninstall; lifecycle.go).
 //
 // The pure half, the renderer, is internal/render/radius. What this package
 // adds around it is everything that touches the machine: the drift states of
@@ -60,6 +60,11 @@ type Module struct {
 	// L is the FreeRADIUS layout in use: the family's, with the
 	// TACCTL_RADIUS_* overrides applied.
 	L paths.RadiusPaths
+	// family is the family as detected: "" when neither (L is then the
+	// Debian layout, and 'install build' refuses).
+	family string
+	// lc is what the lifecycle phases of this invocation did (lifecycle.go).
+	lc lifecycleState
 
 	// Apply runs a writer through backend.Set.StoreApply (the listener
 	// setters change tacctl.yaml and must render and restart as every
@@ -91,7 +96,7 @@ func New(env *backend.Env) backend.Backend {
 // NewModule is the module for a distribution family ("debian", "rhel" or
 // "" for neither, which selects the Debian layout as in bash).
 func NewModule(env *backend.Env, family string) *Module {
-	m := &Module{env: env, runner: env.Runner, L: rr.Layout(env.Paths, family)}
+	m := &Module{env: env, runner: env.Runner, L: rr.Layout(env.Paths, family), family: family}
 	if m.runner == nil {
 		m.runner = execx.Real{}
 	}

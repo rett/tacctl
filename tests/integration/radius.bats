@@ -14,6 +14,11 @@
 #
 # What real FreeRADIUS does with the rendered files is not tested here: see
 # "RADIUS in containers" in tests/README.md.
+#
+# Against the Go binary (tests/blackbox.list) the commands run the binary;
+# the helpers that call bash functions (tc, enabled_list, pre_vendor_state)
+# keep sourcing the bash library, and the module's lifecycle phases run
+# through the hidden '_phase' command (upgrade_radius, radius_uninstall).
 
 load ../helpers/setup
 load ../helpers/tmpenv
@@ -29,6 +34,8 @@ setup() {
     export TACCTL_SETTLE_SECONDS=0
     export TMPDIR="${BATS_TEST_TMPDIR}/tmp"
     mkdir -p "$SD" "$TACCTL_SYSTEMD_DIR" "$TACCTL_LOGROTATE_DIR" "$TMPDIR"
+    # The bash library, whichever implementation the commands run.
+    TACCTL_LIB="${TACCTL_SRC}/bin/tacctl.sh"
     STORE="${TACCTL_STATE_DIR}/store.yaml"
     RENDERED="${TACCTL_STATE_DIR}/rendered.json"
     OVERRIDES="${TACCTL_STATE_DIR}/tacctl.yaml"
@@ -113,7 +120,7 @@ tacctl() {
 
 # A function of the library under the script's own options.
 tc() {
-    run bash -c 'set -euo pipefail; source "$1"; shift; "$@"' _ "$TACCTL_BIN_SCRIPT" "$@"
+    run bash -c 'set -euo pipefail; source "$1"; shift; "$@"' _ "$TACCTL_LIB" "$@"
     output=$(sed 's/\x1b\[[0-9;]*m//g' <<< "$output")
     mapfile -t lines <<< "$output"
 }
@@ -147,7 +154,7 @@ no_leftovers() {
 }
 
 enabled_list() {
-    bash -c 'source "$1"; backends_enabled' _ "$TACCTL_BIN_SCRIPT" | paste -sd' '
+    bash -c 'source "$1"; backends_enabled' _ "$TACCTL_LIB" | paste -sd' '
 }
 
 # --- enable ------------------------------------------------------------------
@@ -166,10 +173,15 @@ enabled_list() {
     [[ -f "$RCONF" && -f "$RUSERS" && -f "$RDICT" ]]
     [[ "$(stat -c %a "$RCONF")" == "640" && "$(stat -c %a "$RUSERS")" == "640" && "$(stat -c %a "$RDICT")" == "640" ]]
     [[ "$(stat -c %a "${RDICT%/*}")" == "750" ]]
-    stub_called "^chown root:freerad ${RCONF}.tacctl-new$"
-    stub_called "^chown root:freerad ${RUSERS}.tacctl-new$"
-    stub_called "^chown root:freerad ${RDICT}.tacctl-new$"
-    stub_called "^chown root:freerad ${RDICT%/*}$"
+    # The owner is set by 'chown' in bash, natively by the Go binary
+    # (docs/plans/go-rewrite.md 3.9 item 2; internal/backend/radius checks
+    # what it asks for): modes and content are the effect asserted for both.
+    if [[ "$TACCTL_IMPL" == bash ]]; then
+        stub_called "^chown root:freerad ${RCONF}.tacctl-new$"
+        stub_called "^chown root:freerad ${RUSERS}.tacctl-new$"
+        stub_called "^chown root:freerad ${RDICT}.tacctl-new$"
+        stub_called "^chown root:freerad ${RDICT%/*}$"
+    fi
     run "$TACCTL_BIN_SCRIPT" config validate
     assert_success
     grep -q "\"${RCONF}\"" "$RENDERED"
@@ -212,7 +224,9 @@ enabled_list() {
     grep -q '^ExecStartPre=-/bin/chown -R radiusd:radiusd /var/run/radiusd$' "$dropin"
     stub_called '^systemctl enable --quiet radiusd.service$'
     stub_called '^systemctl start radiusd.service$'
-    stub_called "^chown root:radiusd ${RCONF}.tacctl-new$"
+    if [[ "$TACCTL_IMPL" == bash ]]; then
+        stub_called "^chown root:radiusd ${RCONF}.tacctl-new$"
+    fi
     grep -q '^	user = radiusd$' "$RCONF"
     grep -q '^libdir = /usr/lib64/freeradius$' "$RCONF"
     grep -q '^pidfile = /run/radiusd/radiusd.pid$' "$RCONF"
@@ -656,6 +670,7 @@ EOF
     [[ ! -s "${TACCTL_RADIUS_LOG}/tacctl-auth.log" && ! -s "${TACCTL_RADIUS_LOG}/tacctl-accounting.log" && ! -s "${TACCTL_RADIUS_LOG}/tacctl-radius.log" ]]
 }
 
+# bats test_tags=bash-only
 @test "last login: the newest Access-Accept of exactly that user; a longer name ending the same does not count" {
     radius_up
     plant_logs
@@ -700,12 +715,28 @@ EOF
     : > "$CALLS_LOG"
 }
 
-# The upgrade phases of this backend, then the closing summary lines.
+# The upgrade phases of this backend, then the closing summary lines
+# ('SUMMARY <note>', as '_phase' prints them).
 upgrade_radius() {
-    run bash -c 'set -euo pipefail; source "$1"; for p in config files finish; do backend_radius_upgrade "$p" /nonexistent; done
-                 printf "SUMMARY %s\n" ${UPGRADE_SUMMARY_NOTES[@]+"${UPGRADE_SUMMARY_NOTES[@]}"}' _ "$TACCTL_BIN_SCRIPT"
+    if [[ "$TACCTL_IMPL" == go ]]; then
+        run "$TACCTL_BIN_SCRIPT" _phase radius upgrade config,files,finish /nonexistent
+    else
+        run bash -c 'set -euo pipefail; source "$1"; for p in config files finish; do backend_radius_upgrade "$p" /nonexistent; done
+                     printf "SUMMARY %s\n" ${UPGRADE_SUMMARY_NOTES[@]+"${UPGRADE_SUMMARY_NOTES[@]}"}' _ "$TACCTL_LIB"
+    fi
     output=$(sed 's/\x1b\[[0-9;]*m//g' <<< "$output")
     mapfile -t lines <<< "$output"
+}
+
+# One uninstall phase of this backend.
+radius_uninstall() {
+    if [[ "$TACCTL_IMPL" == go ]]; then
+        run "$TACCTL_BIN_SCRIPT" _phase radius uninstall "$@"
+        output=$(sed 's/\x1b\[[0-9;]*m//g' <<< "$output")
+        mapfile -t lines <<< "$output"
+    else
+        tc backend_radius_uninstall "$@"
+    fi
 }
 
 @test "upgrade: an install from the release before the dictionary is re-rendered, not taken for drift; the drop-in gains -D, then one restart" {
@@ -765,6 +796,8 @@ upgrade_radius() {
 # the build and the scripts pull (and so after a self-update's re-exec): its
 # lines must follow the banner and the build, and precede the system files
 # and the summary.
+# cmd_upgrade is bash's until WP3.3d.
+# bats test_tags=bash-only
 @test "upgrade: the output reads in order; the RADIUS re-render and restart come after the banner and the build" {
     radius_up
     pre_vendor_state
@@ -782,7 +815,7 @@ upgrade_radius() {
         ensure_safe_directory() { :; }
         install_man_page() { :; }
         update_if_changed() { :; }
-        cmd_upgrade' _ "$TACCTL_BIN_SCRIPT" "${BATS_TEST_TMPDIR}/deploy"
+        cmd_upgrade' _ "$TACCTL_LIB" "${BATS_TEST_TMPDIR}/deploy"
     assert_success
     output=$(sed 's/\x1b\[[0-9;]*m//g' <<< "$output")
     local order=() pattern n
@@ -902,13 +935,13 @@ upgrade_radius() {
     echo "kept" > "${TACCTL_RADIUS_DIR}/radiusd.conf"
     echo "kept" > "${TACCTL_RADIUS_LOG}/radius.log"
     tc backends_select_present
-    tc backend_radius_uninstall stop
+    radius_uninstall stop
     assert_success
     stub_called '^systemctl stop freeradius.service$'
     [[ ! -e "${SD}/active.freeradius" && ! -e "${SD}/enabled.freeradius" ]]
     [[ ! -e "${TACCTL_SYSTEMD_DIR}/freeradius.service.d" ]]
-    tc backend_radius_uninstall program
-    tc backend_radius_uninstall data
+    radius_uninstall program
+    radius_uninstall data
     assert_success
     assert_output --partial "is left installed"
     [[ ! -e "$RCONF" && ! -e "$RUSERS" && ! -e "${RDICT%/*}" ]]
@@ -916,27 +949,28 @@ upgrade_radius() {
     [[ -z "$(find "$TACCTL_RADIUS_LOG" -name 'tacctl-*')" ]]
     [[ -x "$TACCTL_RADIUS_BIN" ]]
     [[ "$(cat "${TACCTL_RADIUS_DIR}/radiusd.conf")" == "kept" && "$(cat "${TACCTL_RADIUS_LOG}/radius.log")" == "kept" ]]
-    tc backend_radius_uninstall account
+    radius_uninstall account
     assert_success
 }
 
 @test "uninstall: a disabled RADIUS backend is still found (its rendered files hold secrets) and somebody else's running unit is not stopped" {
     radius_up
     tacctl backend disable radius -y
-    run bash -c 'set -euo pipefail; source "$1"; backends_select_present; echo "${BACKENDS_ENABLED[*]}"' _ "$TACCTL_BIN_SCRIPT"
+    run bash -c 'set -euo pipefail; source "$1"; backends_select_present; echo "${BACKENDS_ENABLED[*]}"' _ "$TACCTL_LIB"
     assert_output "tacacs radius"
     : > "${SD}/active.freeradius"
     : > "$CALLS_LOG"
-    tc backend_radius_uninstall stop
+    radius_uninstall stop
     assert_success
     [[ -e "${SD}/active.freeradius" ]]
     ! stub_called '^systemctl (stop|disable)'
-    tc backend_radius_uninstall data
+    radius_uninstall data
     [[ ! -e "$RCONF" && ! -e "$RUSERS" ]]
 }
 
+# bats test_tags=bash-only
 @test "uninstall: a machine that merely has the FreeRADIUS package is not touched" {
     package_present
-    run bash -c 'set -euo pipefail; source "$1"; backends_select_present; echo "${BACKENDS_ENABLED[*]}"' _ "$TACCTL_BIN_SCRIPT"
+    run bash -c 'set -euo pipefail; source "$1"; backends_select_present; echo "${BACKENDS_ENABLED[*]}"' _ "$TACCTL_LIB"
     assert_output "tacacs"
 }

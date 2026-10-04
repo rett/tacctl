@@ -47,6 +47,8 @@ func newRoot(inv *invocation) *cobra.Command {
 		configCmd(inv), logCmd(inv), backupCmd(inv), hashCmd(inv), versionCmd(inv),
 		// Bash completion's bridge to live names (sudo -n tacctl _completion-names <kind>).
 		completionNamesCmd(inv),
+		// One lifecycle phase of one backend, for drivers and tests (phase.go).
+		phaseCmd(inv),
 	)
 	// 'help' is not a command of tacctl ('tacctl help' prints the usage and
 	// exits 1, as any unknown word does); this hidden stand-in only keeps

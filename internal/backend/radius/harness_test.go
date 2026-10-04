@@ -119,8 +119,19 @@ func newEnv(t *testing.T, opts ...option) *renv {
 		"TACCTL_RADIUS_LOG=" + filepath.Join(w, "radius-log"),
 		"TACCTL_RADIUS_BIN=" + filepath.Join(w, "radius-bin", "radiusd"),
 		"TACCTL_RADIUS_DICT=" + filepath.Join(w, "radius-share", "dictionary"),
+		// Not used by the RADIUS module; sandboxed all the same, so that no
+		// path of the environment is a host default (hostDefaults).
+		"TACCTL_SUDOERS_FILE=" + filepath.Join(w, "sudoers.d", "tacctl"),
+		"TACCTL_TIER_SUDOERS_FILE=" + filepath.Join(w, "sudoers.d", "tacctl-tiers"),
+		"TACQUITO_SRC=" + filepath.Join(w, "tacquito-src"),
+		"TACCTL_LINUX_DIR=" + filepath.Join(w, "linux"),
+		"TACCTL_TREE=" + filepath.Join(w, "tree"),
 	})
 	r.p = paths.Resolve(env, "", func(string) bool { return false })
+	// 'uninstall data --keep-logs' archives under /root in production.
+	archive := radius.LogArchiveDir
+	radius.LogArchiveDir = filepath.Join(w, "root")
+	t.Cleanup(func() { radius.LogArchiveDir = archive })
 	r.run = &fake.Runner{}
 	r.script()
 
@@ -154,6 +165,9 @@ func newEnv(t *testing.T, opts ...option) *renv {
 	r.set = backend.NewSet(r.reg, r.env)
 	if _, err := r.set.Get(backend.RADIUS); err != nil {
 		t.Fatal(err)
+	}
+	if bad := hostDefaults(r.p, r.m.L, w); len(bad) != 0 {
+		t.Fatalf("the test environment leaves host paths: %v", bad)
 	}
 	r.packagePresent()
 	return r

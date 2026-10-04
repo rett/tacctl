@@ -135,11 +135,6 @@ func TestBackendListStatusAndUsage(t *testing.T) {
 	if names := sb.run("", []string{"_completion-names", "backends"}); names != "tacacs\nradius\n" {
 		t.Errorf("backends: %q", names)
 	}
-	// enable and disable stay bash's.
-	for _, args := range [][]string{{"backend", "enable", "radius"}, {"backend", "disable", "radius", "-y"}} {
-		h := newHarness(t, args)
-		h.expectDelegated(t, h.run())
-	}
 }
 
 // Every native verb of the families of this file has a Spec, and every
@@ -181,9 +176,9 @@ func TestWP24dSpecs(t *testing.T) {
 }
 
 // A later package makes 'store rollback' or 'backend enable|disable' native
-// from a file of its own; the other stubs stay bash's.
+// from a file of its own (WP3.3a, WP3.3c), in place of the family's stub.
 func TestRegisterFamilyVerbReplacesTheStub(t *testing.T) {
-	for _, c := range []struct{ family, name, other string }{{"store", "rollback", ""}, {"backend", "enable", "disable"}} {
+	for _, c := range []struct{ family, name, other string }{{"store", "rollback", ""}, {"backend", "enable", ""}} {
 		// The real registrations (store rollback: WP3.3a) come back after.
 		prevStore, hadStore := storeVerbs[c.name]
 		prevBackend, hadBackend := backendVerbs[c.name]
