@@ -75,7 +75,7 @@ func TestFieldsRoundTrip(t *testing.T) {
 	f.GenericNames = []string{`lab-\d+`}
 	f.StaleDays = 45
 	f.Devices = []*Device{
-		{Name: "v6-sw", Address: "2001:db8::1", Vendor: "other", Port: 830, Login: "admin", Description: "it's \"quoted\": é",
+		{Name: "v6-sw", Address: "2001:db8::1", Vendor: "other", Port: 830, Description: "it's \"quoted\": é",
 			HostKeys: []string{"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA=="}, Ack: []string{"generic-name"}},
 		{Name: "yes", Address: "192.0.2.1", Vendor: "wti"},
 		{Name: "123", Address: "192.0.2.2", Vendor: "other"},
@@ -115,7 +115,7 @@ func TestLoadRefusals(t *testing.T) {
 		"bad pattern":         "version: 1\ngeneric_names: ['(']\n",
 		"unknown ack":         "version: 1\ndevices:\n  a1: {address: 10.0.0.1, ack: [nonsense]}\n",
 		"bad host key":        "version: 1\ndevices:\n  a1: {address: 10.0.0.1, host_keys: ['x y z']}\n",
-		"login option":        "version: 1\ndevices:\n  a1: {address: 10.0.0.1, login: -oProxyCommand=x}\n",
+		"login key":           "version: 1\ndevices:\n  a1: {address: 10.0.0.1, login: admin}\n",
 		"devices not a map":   "version: 1\ndevices: [a]\n",
 	}
 	for name, text := range cases {

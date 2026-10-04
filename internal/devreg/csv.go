@@ -26,7 +26,7 @@ type Row struct {
 }
 
 // ParseImport reads an import file: the registry's own YAML (a mapping with
-// 'devices:') or CSV 'name,address[,vendor[,port[,login[,description]]]]'
+// 'devices:') or CSV 'name,address[,vendor[,port[,description]]]'
 // (blank lines and '#' lines are skipped, and so is a header that starts
 // 'name,address'). Every problem is returned, with its line for CSV.
 func ParseImport(data []byte) ([]Row, error) {
@@ -67,8 +67,8 @@ func ParseImport(data []byte) ([]Row, error) {
 		if len(rows) == 0 && len(errs) == 0 && len(rec) >= 2 && strings.EqualFold(rec[0], "name") && strings.EqualFold(rec[1], "address") {
 			continue
 		}
-		if len(rec) < 2 || len(rec) > 6 {
-			errs = append(errs, fmt.Sprintf("line %d: expected name,address[,vendor[,port[,login[,description]]]]", line))
+		if len(rec) < 2 || len(rec) > 5 {
+			errs = append(errs, fmt.Sprintf("line %d: expected name,address[,vendor[,port[,description]]]", line))
 			continue
 		}
 		d := Device{Name: rec[0], Address: rec[1], Vendor: VendorOther}
@@ -93,11 +93,7 @@ func ParseImport(data []byte) ([]Row, error) {
 			rowErrs = append(rowErrs, err)
 			d.Port = n
 		}
-		if l := field(4); l != "" {
-			rowErrs = append(rowErrs, ValidateLogin(l))
-			d.Login = l
-		}
-		d.Description = field(5)
+		d.Description = field(4)
 		rowErrs = append(rowErrs, ValidateDescription(d.Description), ValidateName(d.Name))
 		bad := false
 		for _, e := range rowErrs {
@@ -236,13 +232,13 @@ func (f *File) Import(rows []Row, replace, allowGeneric bool, hostEntries []Entr
 func CSV(devs []Device) []byte {
 	var b bytes.Buffer
 	w := csv.NewWriter(&b)
-	_ = w.Write([]string{"name", "address", "vendor", "port", "login", "description"})
+	_ = w.Write([]string{"name", "address", "vendor", "port", "description"})
 	for _, d := range devs {
 		port := ""
 		if d.Port != 0 {
 			port = strconv.Itoa(d.Port)
 		}
-		_ = w.Write([]string{d.Name, d.Address, d.Vendor, port, d.Login, d.Description})
+		_ = w.Write([]string{d.Name, d.Address, d.Vendor, port, d.Description})
 	}
 	w.Flush()
 	return b.Bytes()
@@ -255,7 +251,6 @@ type jsonDevice struct {
 	Hostname    string   `json:"hostname,omitempty"`
 	Vendor      string   `json:"vendor"`
 	Port        int      `json:"port"`
-	Login       string   `json:"login,omitempty"`
 	LegacySSH   bool     `json:"legacy_ssh"`
 	Description string   `json:"description,omitempty"`
 	HostKeys    []string `json:"host_keys,omitempty"`
@@ -265,7 +260,7 @@ type jsonDevice struct {
 // JSONDevice is d as the value 'export --json' and 'list --json' print.
 func JSONDevice(d Device) any {
 	return jsonDevice{Name: d.Name, Address: d.Address, Hostname: d.Hostname, Vendor: d.Vendor, Port: d.SSHPort(),
-		Login: d.Login, LegacySSH: d.LegacySSH, Description: d.Description, HostKeys: d.HostKeys, Ack: d.Ack}
+		LegacySSH: d.LegacySSH, Description: d.Description, HostKeys: d.HostKeys, Ack: d.Ack}
 }
 
 // JSON is the devices as an indented JSON array.

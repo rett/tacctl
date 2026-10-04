@@ -152,6 +152,70 @@ func ParseKeyscan(out []byte) []HostKey {
 	return sortKeys(keys)
 }
 
+// ParsePubKeys reads public key files as 'cat /etc/ssh/ssh_host_*_key.pub'
+// prints them: '<type> <base64> [comment]' lines. Anything else, and key
+// types tacctl does not pin, are skipped; the keys come back in type
+// order, without duplicates.
+func ParsePubKeys(out []byte) []HostKey {
+	var keys []HostKey
+	for _, line := range strings.Split(string(out), "\n") {
+		f := strings.Fields(line)
+		if len(f) < 2 || strings.HasPrefix(f[0], "#") {
+			continue
+		}
+		if k, err := checkKey(f[0], f[1]); err == nil {
+			keys = append(keys, k)
+		}
+	}
+	return sortKeys(keys)
+}
+
+// CrossCheck is what two independent reads of a host's keys agree on: the
+// keys read over the authenticated enrolment session (the host's own .pub
+// files) and the keys ssh-keyscan was offered.
+type CrossCheck struct {
+	// Agreed are the keys both reads hold: the only ones that may be pinned.
+	Agreed []HostKey
+	// Conflict: a key type both reads hold with different keys (Session and
+	// Scan list the two sides' keys of those types).
+	Conflict      bool
+	Session, Scan []HostKey
+	// OnlySession and OnlyScan are key types one read holds and the other
+	// does not: reported, never pinned.
+	OnlySession, OnlyScan []HostKey
+}
+
+// CrossCheckKeys compares the session's keys with the scan's, type by type.
+func CrossCheckKeys(session, scan []HostKey) CrossCheck {
+	var c CrossCheck
+	byType := func(keys []HostKey, t string) (HostKey, bool) {
+		for _, k := range keys {
+			if k.Type == t {
+				return k, true
+			}
+		}
+		return HostKey{}, false
+	}
+	for _, k := range sortKeys(session) {
+		o, ok := byType(scan, k.Type)
+		switch {
+		case !ok:
+			c.OnlySession = append(c.OnlySession, k)
+		case o.Blob == k.Blob:
+			c.Agreed = append(c.Agreed, k)
+		default:
+			c.Conflict = true
+			c.Session, c.Scan = append(c.Session, k), append(c.Scan, o)
+		}
+	}
+	for _, k := range sortKeys(scan) {
+		if _, ok := byType(session, k.Type); !ok {
+			c.OnlyScan = append(c.OnlyScan, k)
+		}
+	}
+	return c
+}
+
 // KeyscanCmd is the ssh-keyscan of a device at address and port. Every key
 // type tacctl pins is asked for; a device with legacy-ssh is asked for the
 // ssh-rsa type by its algorithm name too. ssh-keyscan offers ssh-rsa

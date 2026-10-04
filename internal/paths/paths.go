@@ -51,12 +51,13 @@ type Paths struct {
 	Templates  string // TEMPLATE_DIR_LOCAL: operator template overrides
 
 	// The device registry and the console (0.2.1, 0.2.2); every one is under
-	// StateDir (/etc/tacctl) except the seen cache, which is under VarLib.
+	// StateDir (/etc/tacctl, 0700) except the seen cache and the generated
+	// known_hosts, which are under VarLib: users' own ssh reads known_hosts.
 	DevicesFile string // StateDir/devices.yaml: the device registry
-	KnownHosts  string // StateDir/known_hosts: the generated host-key file
+	KnownHosts  string // VarLib/ssh/known_hosts: the generated host-key file (dir 0755, file 0644)
 	ConsoleFile string // StateDir/console.yaml: the console's settings (0.2.2)
 	ConsoleDir  string // StateDir/console: the console's ssh_config and agent files (0.2.2)
-	VarLib      string // TACCTL_VAR_LIB: tacctl's variable data (/var/lib/tacctl)
+	VarLib      string // TACCTL_VAR_LIB: tacctl's variable data (/var/lib/tacctl, 0711)
 	SeenCache   string // VarLib/devices-seen.json: what the logs showed of each device
 
 	SudoersFile     string // TACCTL_SUDOERS_FILE (SUDOERS_FILE)
@@ -120,11 +121,11 @@ func Resolve(env Env, exe string, exists func(string) bool) Paths {
 	p.LinuxHosts = p.StateDir + "/linux-hosts"
 	p.Templates = p.StateDir + "/templates"
 	p.DevicesFile = p.StateDir + "/devices.yaml"
-	p.KnownHosts = p.StateDir + "/known_hosts"
 	p.ConsoleFile = p.StateDir + "/console.yaml"
 	p.ConsoleDir = p.StateDir + "/console"
 	p.VarLib = env.Or("TACCTL_VAR_LIB", "/var/lib/tacctl")
 	p.SeenCache = p.VarLib + "/devices-seen.json"
+	p.KnownHosts = p.VarLib + "/ssh/known_hosts"
 
 	p.SudoersFile = env.Or("TACCTL_SUDOERS_FILE", "/etc/sudoers.d/tacctl")
 	p.TierSudoersFile = env.Or("TACCTL_TIER_SUDOERS_FILE", "/etc/sudoers.d/tacctl-tiers")
@@ -258,4 +259,25 @@ func (p Paths) Radius(family string) RadiusPaths {
 func statExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+// VarLibMode is VarLib's mode: every user may pass through it (their ssh
+// reads VarLib/ssh/known_hosts) but only root may list it.
+const VarLibMode os.FileMode = 0o711
+
+// MkVarLib creates dir (VarLib) with VarLibMode, or brings the mode of an
+// existing directory to it: wherever tacctl creates or writes under
+// /var/lib/tacctl.
+func MkVarLib(dir string) error {
+	if err := os.MkdirAll(dir, VarLibMode); err != nil {
+		return err
+	}
+	st, err := os.Stat(dir)
+	if err != nil {
+		return err
+	}
+	if st.Mode().Perm() != VarLibMode {
+		return os.Chmod(dir, VarLibMode)
+	}
+	return nil
 }

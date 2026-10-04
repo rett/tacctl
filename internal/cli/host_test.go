@@ -53,6 +53,7 @@ func (hs *hostSandbox) runner() *fake.Runner {
 	r.On([]string{"logger"}, execx.Result{})
 	r.On([]string{"id"}, execx.Result{Stdout: []byte("users\n")})
 	r.On([]string{"getent"}, execx.Result{Stdout: []byte("192.0.2.50 STREAM web1\n192.0.2.50 DGRAM\n")})
+	fakePasswd(r)
 	r.On([]string{"ip"}, execx.Result{Stdout: []byte("192.0.2.50 dev eth0 src 192.0.2.1 uid 0\n")})
 	r.Func(func(c execx.Cmd) bool { return c.Name == "ssh" }, func(c execx.Cmd) (execx.Result, error) {
 		joined := strings.Join(c.Args, " ")
@@ -147,6 +148,14 @@ func TestHostEnrollSyncUnenroll(t *testing.T) {
 	if !strings.HasSuffix(hs.pushed, "exit 0\n") {
 		t.Error("sync pushed the tarball")
 	}
+	// An enrolment whose provisioning account is a tacctl user is synced,
+	// with a warning to re-enrol.
+	hs.write("state/linux-hosts", "web1|carol@web1.example.net||lab|192.0.2.1|\n", 0o600)
+	out = hs.run(nil, "host", "sync", "web1")
+	if hs.code != 0 || !strings.Contains(plain(out)+hs.stderr(), "web1: the provisioning account 'carol' is a tacctl user; re-enrol with a local account") {
+		t.Errorf("sync warning: %d %q %q", hs.code, out, hs.stderr())
+	}
+	hs.write("state/linux-hosts", "web1|admin@web1.example.net||lab|192.0.2.1|\n", 0o600)
 	hs.runFails = true
 	hs.run(nil, "host", "sync", "web1")
 	hs.expect(1, "", "web1: sync failed")
@@ -208,6 +217,8 @@ func TestHostEnrollRefusals(t *testing.T) {
 		{[]string{"web1", "--port", "x"}, 1, "", "Invalid --port 'x'."},
 		{[]string{"web1", "--identity", "/no/such/key"}, 1, "", "Identity file '/no/such/key' not found."},
 		{[]string{"web1", "--scope", "nope"}, 1, "", "Scope 'nope' does not exist."},
+		// The provisioning account is local and never a tacctl user.
+		{[]string{"carol@web1", "--scope", "lab"}, 1, "", "The provisioning account 'carol' (the ssh login for carol@web1) is a tacctl user."},
 		// A value flag at the end of the line: 0.1.16 never returned.
 		{[]string{"web1", "--scope"}, 1, "", ""},
 	} {
@@ -221,6 +232,15 @@ func TestHostEnrollRefusals(t *testing.T) {
 			t.Errorf("%q reached ssh", c.args)
 		}
 	}
+	// ssh's default login is the invoking user: a tacctl user is refused too.
+	env := hs.env
+	hs.env = append(append([]string(nil), env...), "SUDO_USER=alice", "SUDO_UID=1001")
+	hs.run(nil, "host", "enroll", "web1", "--scope", "lab")
+	hs.expect(1, "", "The provisioning account defaults to your username 'alice', which is a tacctl user.")
+	if !strings.Contains(hs.err.String(), "tacctl host enroll <account>@web1") {
+		t.Errorf("no remedy: %q", hs.err.String())
+	}
+	hs.env = env
 	// getent failing: the name cannot be resolved, exit 1.
 	r := hs.runner()
 	r.On([]string{"getent"}, execx.Result{Code: 2})
@@ -459,15 +479,17 @@ func TestConfigLinuxBuildBuildsAndOwner(t *testing.T) {
 	// Under sudo the script is handed to the caller (here: ourselves).
 	uid, gid := os.Getuid(), os.Getgid()
 	p := filepath.Join(hs.dir, "mine.sh")
-	hs.env = append(hs.env, "SUDO_UID="+strconv.Itoa(uid), "SUDO_GID="+strconv.Itoa(gid), "SUDO_USER=root")
-	hs.run(nil, "config", "linux", "script", "--scope", "lab", "--server", "192.0.2.10", "-o", p)
+	hs.env = append(hs.env, "SUDO_UID="+strconv.Itoa(uid), "SUDO_GID="+strconv.Itoa(gid), "SUDO_USER=tester")
+	r = hs.runner()
+	r.On([]string{"getent", "passwd", strconv.Itoa(uid)}, execx.Result{Stdout: []byte("tester:x:" + strconv.Itoa(uid) + ":" + strconv.Itoa(gid) + "::/home/tester:/bin/sh\n")})
+	hs.run(r, "config", "linux", "script", "--scope", "lab", "--server", "192.0.2.10", "-o", p)
 	hs.expect(0, "Wrote "+p, "")
 	// A secret that cannot go on a PAM line: refused, nothing written.
 	if err := os.WriteFile(filepath.Join(hs.dir, "state", "store.yaml"),
 		[]byte(strings.Replace(hs.store(), "lab-secret-0123456789abcdef", "REPLACE_ME_0123456789", 1)), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	hs.run(nil, "config", "linux", "script", "--scope", "lab", "--server", "192.0.2.10", "-o", p+".2")
+	hs.run(r, "config", "linux", "script", "--scope", "lab", "--server", "192.0.2.10", "-o", p+".2")
 	hs.expect(1, "", "Regenerate it: tacctl scope secret lab generate")
 	if _, err := os.Stat(p + ".2"); !os.IsNotExist(err) {
 		t.Error("written anyway")

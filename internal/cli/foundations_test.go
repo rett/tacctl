@@ -14,8 +14,8 @@ import (
 // WP6.0: the shared tables the device registry, 'ssh' and the shell register
 // into (docs/plans/operator-console-wp.md 4.1).
 
-// 'ssh', 'device' and 'host' carry the agent socket across sudo; 'shell'
-// runs as the user.
+// 'host' carries the agent socket across sudo ('ssh' and 'device' do not:
+// sessions log in by password); 'shell' runs as the user.
 func TestReexecTablesForSSHDeviceAndShell(t *testing.T) {
 	env := func(name string) string {
 		if name == "SSH_AUTH_SOCK" {
@@ -23,8 +23,11 @@ func TestReexecTablesForSSHDeviceAndShell(t *testing.T) {
 		}
 		return ""
 	}
-	for _, word := range []string{"host", "ssh", "device"} {
-		want := []string{"sudo", "SSH_AUTH_SOCK=/s", "/x", word, "arg"}
+	if got := sudoArgv("/x", []string{"host", "arg"}, env); !reflect.DeepEqual(got, []string{"sudo", "SSH_AUTH_SOCK=/s", "/x", "host", "arg"}) {
+		t.Errorf("host: %q", got)
+	}
+	for _, word := range []string{"ssh", "device"} {
+		want := []string{"sudo", "/x", word, "arg"}
 		if got := sudoArgv("/x", []string{word, "arg"}, env); !reflect.DeepEqual(got, want) {
 			t.Errorf("%s: %q", word, got)
 		}

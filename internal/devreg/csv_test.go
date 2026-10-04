@@ -17,14 +17,14 @@ func base() *File {
 }
 
 func TestParseImportCSV(t *testing.T) {
-	rows, err := ParseImport([]byte("# devices\nName, Address, Vendor\n\ncore-sw1,10.99.0.1,Cisco\nlab-rtr2, 192.0.2.7 ,juniper,830,admin,\"Lab, router\"\nplain,2001:DB8::9\n"))
+	rows, err := ParseImport([]byte("# devices\nName, Address, Vendor\n\ncore-sw1,10.99.0.1,Cisco\nlab-rtr2, 192.0.2.7 ,juniper,830,\"Lab, router\"\nplain,2001:DB8::9\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(rows) != 3 {
 		t.Fatalf("%+v", rows)
 	}
-	want := Device{Name: "lab-rtr2", Address: "192.0.2.7", Vendor: "juniper", Port: 830, Login: "admin", Description: "Lab, router"}
+	want := Device{Name: "lab-rtr2", Address: "192.0.2.7", Vendor: "juniper", Port: 830, Description: "Lab, router"}
 	if !rows[1].CSV || rows[1].Line != 5 || !reflect.DeepEqual(rows[1].Device, want) {
 		t.Errorf("row 2 = %+v", rows[1])
 	}
@@ -34,7 +34,7 @@ func TestParseImportCSV(t *testing.T) {
 }
 
 func TestParseImportCSVErrorsAreAllReported(t *testing.T) {
-	_, err := ParseImport([]byte("a1,10.0.0.1,arista\nb2,10.0.0.0/24\nonly-name\nc3,10.0.0.3,cisco,99999\n-bad,10.0.0.4\nd4,10.0.0.5,cisco,22,-x\n"))
+	_, err := ParseImport([]byte("a1,10.0.0.1,arista\nb2,10.0.0.0/24\nonly-name\nc3,10.0.0.3,cisco,99999\n-bad,10.0.0.4\nd4,10.0.0.5,cisco,23,admin,extra\n"))
 	if err == nil {
 		t.Fatal("accepted")
 	}
@@ -61,7 +61,7 @@ func TestParseImportYAML(t *testing.T) {
 
 func TestImportMerge(t *testing.T) {
 	f := base()
-	rows, _ := ParseImport([]byte("core-sw1,10.99.0.1,cisco\nOOB-CON1,10.99.0.9,juniper,830,ops,console\nnew-sw,10.99.0.20,cisco\n"))
+	rows, _ := ParseImport([]byte("core-sw1,10.99.0.1,cisco\nOOB-CON1,10.99.0.9,juniper,830,console\nnew-sw,10.99.0.20,cisco\n"))
 	res, err := f.Import(rows, false, false, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -74,7 +74,7 @@ func TestImportMerge(t *testing.T) {
 		t.Errorf("a CSV row cleared what it cannot say: %+v", core)
 	}
 	oob := f.Find("oob-con1")
-	if oob.Name != "oob-con1" || oob.Vendor != "juniper" || oob.Port != 830 || oob.Login != "ops" || oob.Description != "console" {
+	if oob.Name != "oob-con1" || oob.Vendor != "juniper" || oob.Port != 830 || oob.Description != "console" {
 		t.Errorf("oob-con1 = %+v", oob)
 	}
 	if len(f.Devices) != 3 {
@@ -149,7 +149,7 @@ func TestExports(t *testing.T) {
 	f.Devices[0].Description = "DC1 core, east"
 	f.Devices[0].Port = 830
 	csvText := string(CSV([]Device{*f.Devices[0], *f.Devices[1]}))
-	if csvText != "name,address,vendor,port,login,description\ncore-sw1,10.99.0.1,cisco,830,,\"DC1 core, east\"\noob-con1,10.99.0.9,wti,,,\n" {
+	if csvText != "name,address,vendor,port,description\ncore-sw1,10.99.0.1,cisco,830,\"DC1 core, east\"\noob-con1,10.99.0.9,wti,,\n" {
 		t.Errorf("csv:\n%s", csvText)
 	}
 	// The export reads back as an import.

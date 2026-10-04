@@ -123,7 +123,7 @@ func newOhost(t *testing.T) *ohost {
 		"TACCTL_SUDOERS_FILE=" + j("sudoers.d", "tacctl"), "TACCTL_TIER_SUDOERS_FILE=" + j("sudoers.d", "tacctl-tiers"),
 		"TACCTL_SYSTEMD_DIR=" + j("systemd"), "TACCTL_OVERRIDE_DIR=" + j("systemd", "tacquito.service.d"),
 		"TACCTL_LOGROTATE_DIR=" + j("logrotate.d"), "TACQUITO_SRC=" + j("tacquito-src"),
-		"TACCTL_LINUX_DIR=" + j("var-lib-tacctl", "linux"), "TACCTL_TREE=" + j("tree"),
+		"TACCTL_LINUX_DIR=" + j("var-lib-tacctl", "linux"), "TACCTL_VAR_LIB=" + j("var-lib-tacctl"), "TACCTL_TREE=" + j("tree"),
 		"TACCTL_RADIUS_DIR=" + j("raddb"), "TACCTL_RADIUS_LOG=" + j("radius-log"),
 		"TACCTL_RADIUS_BIN=" + j("radius-bin", "radiusd"), "TACCTL_RADIUS_DICT=" + j("radius-share", "dictionary"),
 		"TMPDIR=" + j("tmp"),
@@ -246,8 +246,8 @@ func TestOrchestrationIsSandboxed(t *testing.T) {
 		"Etc": p.Etc, "StateDir": p.StateDir, "Log": p.Log, "Bin": p.Bin, "Config": p.Config, "Templates": p.Templates,
 		"SudoersFile": p.SudoersFile, "TierSudoersFile": p.TierSudoersFile, "SystemdDir": p.SystemdDir,
 		"OverrideDir": p.OverrideDir, "TacacsUnitDir": p.TacacsUnitDir, "LogrotateDir": p.LogrotateDir,
-		"TacquitoSrc": p.TacquitoSrc, "LinuxDir": p.LinuxDir, "Tree": p.Tree, "PatchDir": p.PatchDir,
-		"Deploy": p.Deploy, "Command": p.Command, "GoBin": p.GoBin, "Completion": p.Completion,
+		"TacquitoSrc": p.TacquitoSrc, "LinuxDir": p.LinuxDir, "VarLib": p.VarLib, "KnownHosts": p.KnownHosts,
+		"Tree": p.Tree, "PatchDir": p.PatchDir, "Deploy": p.Deploy, "Command": p.Command, "GoBin": p.GoBin, "Completion": p.Completion,
 		"ManPage": p.ManPage, "ArchiveDir": p.ArchiveDir,
 		"radius Dir": p.Radius("debian").Dir, "radius LogDir": p.Radius("rhel").LogDir,
 		"radius DropIn": p.Radius("debian").DropIn, "radius Logrotate": p.Radius("rhel").Logrotate,
@@ -903,6 +903,7 @@ func TestUninstallYes(t *testing.T) {
 	o := newOhost(t)
 	o.installed()
 	o.rad.SetInstalled(true)
+	o.write(o.p.KnownHosts, "# generated\n")
 	if code := uninstall(o, "-y"); code != 0 {
 		t.Fatalf("exit %d\n%s\n%s", code, o.stdout, o.stderr)
 	}
@@ -921,7 +922,7 @@ func TestUninstallYes(t *testing.T) {
 		"[INFO] Removing management repo...", "PHASE tacacs uninstall account", "  Uninstall Complete",
 		"  Not removed:\n    - Go installation (/usr/local/go)\n    - tacquito source (/opt/tacquito-src)\n    - Go build cache (/root/.cache/go-build)\n")
 	for _, f := range []string{o.p.Command, o.p.Completion, o.p.ManPage, o.p.SudoersFile, o.p.TierSudoersFile, o.p.LinuxDir,
-		filepath.Dir(o.p.LinuxDir), o.p.StateDir, o.p.Deploy} {
+		filepath.Dir(o.p.LinuxDir), o.p.StateDir, o.p.Deploy, o.p.KnownHosts, o.p.VarLib} {
 		if _, err := os.Lstat(f); err == nil {
 			t.Errorf("%s left", f)
 		}
@@ -1037,3 +1038,31 @@ func TestUpgradeAfterConfigBranch(t *testing.T) {
 
 // testCompletion stands for the generated completion script.
 func testCompletion() ([]byte, error) { return []byte("complete -F _tacctl tacctl\n"), nil }
+
+// Install and upgrade bring an existing VarLib (made 0700 by an older
+// build step) to 0711, so users' ssh reaches VarLib/ssh/known_hosts; a
+// missing one is not created.
+func TestInstallUpgradeRepairVarLib(t *testing.T) {
+	o := newOhost(t)
+	o.cloned()
+	if code := upgrade(o); code != 0 {
+		t.Fatalf("exit %d\n%s", code, o.stderr)
+	}
+	if _, err := os.Stat(o.p.VarLib); !os.IsNotExist(err) {
+		t.Errorf("VarLib created: %v", err)
+	}
+	o = newOhost(t)
+	o.cloned()
+	if err := os.MkdirAll(o.p.VarLib, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(o.p.VarLib, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if code := upgrade(o); code != 0 {
+		t.Fatalf("exit %d\n%s", code, o.stderr)
+	}
+	if st, err := os.Stat(o.p.VarLib); err != nil || st.Mode().Perm() != 0o711 {
+		t.Errorf("VarLib mode %v %v", st.Mode().Perm(), err)
+	}
+}

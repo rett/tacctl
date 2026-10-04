@@ -70,6 +70,7 @@ func newTenv(t *testing.T) *tenv {
 		"TACCTL_SYSTEMD_DIR=" + filepath.Join(w, "systemd"),
 		"TACCTL_OVERRIDE_DIR=" + filepath.Join(w, "systemd", "tacquito.service.d"),
 		"TACCTL_SETTLE_SECONDS=0",
+		"TACCTL_VAR_LIB=" + filepath.Join(w, "var-lib"),
 	}
 	e.p = paths.Resolve(paths.NewEnv(vars), "", func(string) bool { return false })
 	e.run.On([]string{"systemctl"}, execx.Result{})

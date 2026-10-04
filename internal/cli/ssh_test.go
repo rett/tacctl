@@ -14,8 +14,9 @@ import (
 )
 
 // 'tacctl ssh' in-process: the argv of the ssh it runs per vendor,
-// legacy-ssh, pin, -l/-p and '--', the refusals, the audit line, the exit
-// status and the host-key diagnosis. ssh (through 'sudo -u <caller>') and
+// legacy-ssh, pin, -p and '--' (always '-l <caller>', by password, no agent,
+// no key), the refusals (who may connect, to what), the audit line, the
+// exit status and the host-key diagnosis. ssh (through 'sudo -u <caller>') and
 // ssh-keyscan are scripted; nothing reaches a host.
 
 const sshTestSock = "/tmp/agent.sock"
@@ -30,8 +31,10 @@ func withTerminal(t *testing.T, tty bool) {
 
 // sshSandbox registers the devices of the table: core-sw1 (cisco, legacy,
 // pinned, prod), lab-rtr2 (juniper, pinned, lab), oob-con1 (wti, unpinned,
-// prod), edge-fw (other, login and port, pinned, dmz), and the enrolled
-// host web1 (lab, port 2222, an identity, unpinned).
+// prod), edge-fw (other, port, pinned, dmz), and the enrolled host web1
+// (lab, port 2222, enrolled as admin with an identity, unpinned). The store
+// (store.multiscope.yaml) has alice (superuser: prod, lab), bob (operator:
+// lab) and carol (readonly: lab, dmz).
 func sshSandbox(t *testing.T) (*sandbox, devreg.HostKey, devreg.HostKey) {
 	t.Helper()
 	sb := newSandbox(t, true)
@@ -43,7 +46,7 @@ func sshSandbox(t *testing.T) (*sandbox, devreg.HostKey, devreg.HostKey) {
 		{[]string{"core-sw1", "10.99.0.1", "--vendor", "cisco", "--legacy-ssh"}, []devreg.HostKey{rsa}},
 		{[]string{"lab-rtr2", "192.168.5.1", "--vendor", "juniper"}, []devreg.HostKey{ed}},
 		{[]string{"oob-con1", "10.99.0.9", "--vendor", "wti", "--no-host-key"}, nil},
-		{[]string{"edge-fw", "203.0.113.5", "--login", "netops", "--port", "2222"}, []devreg.HostKey{ed, rsa}},
+		{[]string{"edge-fw", "203.0.113.5", "--port", "2222"}, []devreg.HostKey{ed, rsa}},
 	} {
 		sb.devScan("", scan("x", add.keys...), append([]string{"add"}, add.args...)...)
 		if sb.code != 0 {
@@ -54,13 +57,19 @@ func sshSandbox(t *testing.T) (*sandbox, devreg.HostKey, devreg.HostKey) {
 	return sb, rsa, ed
 }
 
-// sshRun runs 'tacctl <args>' as user (SUDO_USER; "" for none) with an
-// agent socket; script adds rules to the fake runner.
+// sshRun runs 'tacctl <args>' as user (SUDO_USER, with the SUDO_UID of
+// testPasswd as sudo sets it; "" for none) with an agent socket; script
+// adds rules to the fake runner.
 func (sb *sandbox) sshRun(user string, script func(*fake.Runner), args ...string) string {
 	sb.t.Helper()
 	env := []string{"SSH_AUTH_SOCK=" + sshTestSock}
 	if user != "" {
 		env = append(env, "SUDO_USER="+user)
+		for uid, name := range testPasswd {
+			if name == user {
+				env = append(env, "SUDO_UID="+uid)
+			}
+		}
 	}
 	return plain(sb.cfgRun("", args, script, env...))
 }
@@ -78,30 +87,34 @@ func (sb *sandbox) sshArgv() string {
 func TestSSHArgvTable(t *testing.T) {
 	withTerminal(t, true)
 	sb, _, _ := sshSandbox(t)
-	kh := sb.path("state", "known_hosts")
-	ct := "-o ConnectTimeout=10"
+	kh := sb.path("var-lib", "ssh", "known_hosts")
+	ct := "-o ConnectTimeout=10 -o PubkeyAuthentication=no -o PreferredAuthentications=keyboard-interactive,password"
 	legacy := "-o KexAlgorithms=+diffie-hellman-group14-sha1,diffie-hellman-group1-sha1 -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedAlgorithms=+ssh-rsa"
-	wti := "-o PreferredAuthentications=password -o PubkeyAuthentication=no"
+	wti := "-o ConnectTimeout=10 -o PubkeyAuthentication=no -o PreferredAuthentications=password"
 	pin := func(n string) string {
-		return "-o UserKnownHostsFile=" + kh + " -o StrictHostKeyChecking=yes -o HostKeyAlias=" + n + " -o UpdateHostKeys=no"
+		return "-o UserKnownHostsFile=" + kh + " -o GlobalKnownHostsFile=none -o StrictHostKeyChecking=yes -o HostKeyAlias=" + n + " -o UpdateHostKeys=no"
 	}
-	as := func(u string) string { return "sudo -u " + u + " -H env SSH_AUTH_SOCK=" + sshTestSock + " ssh " }
+	// No agent socket reaches ssh, though the caller has one.
+	as := func(u string) string { return "sudo -u " + u + " -H ssh " }
 	for _, c := range []struct {
 		user string
 		args []string
 		want string
 	}{
-		{"alice", []string{"ssh", "core-sw1"}, as("alice") + ct + " " + legacy + " " + pin("core-sw1") + " 10.99.0.1"},
-		{"alice", []string{"ssh", "10.99.0.1"}, as("alice") + ct + " " + legacy + " " + pin("core-sw1") + " 10.99.0.1"},
-		{"alice", []string{"ssh", "CORE-SW1", "-l", "admin", "-p", "2200", "--", "-v", "show", "version"},
-			as("alice") + ct + " " + legacy + " " + pin("core-sw1") + " -p 2200 -l admin 10.99.0.1 -v show version"},
-		{"alice", []string{"ssh", "lab-rtr2"}, as("alice") + ct + " " + pin("lab-rtr2") + " 192.168.5.1"},
-		{"alice", []string{"ssh", "oob-con1"}, as("alice") + ct + " " + wti + " 10.99.0.9"},
-		{"alice", []string{"ssh", "edge-fw"}, as("alice") + ct + " " + pin("edge-fw") + " -p 2222 -l netops 203.0.113.5"},
-		{"alice", []string{"ssh", "edge-fw", "-l", "root", "-p", "22"}, as("alice") + ct + " " + pin("edge-fw") + " -p 22 -l root 203.0.113.5"},
-		{"alice", []string{"ssh", "web1"}, as("alice") + ct + " -p 2222 -i /k/id_web1 -l admin web1.example.net"},
-		{"alice", []string{"device", "ssh", "core-sw1"}, as("alice") + ct + " " + legacy + " " + pin("core-sw1") + " 10.99.0.1"},
-		{"carol", []string{"ssh", "lab-rtr2"}, as("carol") + ct + " " + pin("lab-rtr2") + " 192.168.5.1"},
+		{"alice", []string{"ssh", "core-sw1"}, as("alice") + ct + " " + legacy + " " + pin("core-sw1") + " -l alice 10.99.0.1"},
+		{"alice", []string{"ssh", "10.99.0.1"}, as("alice") + ct + " " + legacy + " " + pin("core-sw1") + " -l alice 10.99.0.1"},
+		{"alice", []string{"ssh", "CORE-SW1", "-p", "2200", "--", "-v", "show", "version"},
+			as("alice") + ct + " " + legacy + " " + pin("core-sw1") + " -p 2200 -l alice 10.99.0.1 -v show version"},
+		{"alice", []string{"ssh", "lab-rtr2"}, as("alice") + ct + " " + pin("lab-rtr2") + " -l alice 192.168.5.1"},
+		{"alice", []string{"ssh", "oob-con1"}, as("alice") + wti + " -l alice 10.99.0.9"},
+		{"carol", []string{"ssh", "edge-fw"}, as("carol") + ct + " " + pin("edge-fw") + " -p 2222 -l carol 203.0.113.5"},
+		{"carol", []string{"ssh", "edge-fw", "-p", "22"}, as("carol") + ct + " " + pin("edge-fw") + " -p 22 -l carol 203.0.113.5"},
+		// An enrolled host: neither the enrolment's account (admin) nor its
+		// identity; the caller, by password.
+		{"alice", []string{"ssh", "web1"}, as("alice") + ct + " -p 2222 -l alice web1.example.net"},
+		{"alice", []string{"device", "ssh", "core-sw1"}, as("alice") + ct + " " + legacy + " " + pin("core-sw1") + " -l alice 10.99.0.1"},
+		{"carol", []string{"ssh", "lab-rtr2"}, as("carol") + ct + " " + pin("lab-rtr2") + " -l carol 192.168.5.1"},
+		{"carol", []string{"device", "ssh", "web1"}, as("carol") + ct + " -p 2222 -l carol web1.example.net"},
 	} {
 		sb.sshRun(c.user, func(r *fake.Runner) {
 			r.On([]string{"id", "-nG", "--", "carol"}, execx.Result{Stdout: []byte("carol tac-users tac-readonly\n")})
@@ -112,8 +125,10 @@ func TestSSHArgvTable(t *testing.T) {
 		if got := sb.sshArgv(); got != c.want {
 			t.Errorf("%s %v:\n got %s\nwant %s", c.user, c.args, got, c.want)
 		}
-		if strings.Contains(sb.sshArgv(), "BatchMode") {
-			t.Errorf("%v: BatchMode", c.args)
+		for _, bad := range []string{"BatchMode", "SSH_AUTH_SOCK", " -i ", "admin"} {
+			if strings.Contains(sb.sshArgv(), bad) {
+				t.Errorf("%v: %s on argv", c.args, bad)
+			}
 		}
 	}
 }
@@ -121,7 +136,7 @@ func TestSSHArgvTable(t *testing.T) {
 func TestSSHAuditKnownHostsAndNotices(t *testing.T) {
 	withTerminal(t, true)
 	sb, rsa, _ := sshSandbox(t)
-	if err := os.Remove(sb.path("state", "known_hosts")); err != nil {
+	if err := os.Remove(sb.path("var-lib", "ssh", "known_hosts")); err != nil {
 		t.Fatal(err)
 	}
 	sb.sshRun("alice", nil, "ssh", "core-sw1")
@@ -178,10 +193,14 @@ func TestSSHRefusals(t *testing.T) {
 		{"alice", nil, []string{"ssh", "nosuch"}, 1, "Device 'nosuch' not found. List them with: tacctl device list"},
 		{"alice", nil, []string{"ssh", "authsrv"}, 1, "'authsrv' is this server (enrolled with --local)"},
 		{"alice", nil, []string{"ssh", "core-sw1", "-x"}, 1, "Unknown option: '-x' (pass ssh's own options after --)"},
-		{"alice", nil, []string{"ssh", "core-sw1", "-l", "-oProxyCommand=x"}, 1, "Invalid login '-oProxyCommand=x'"},
+		{"alice", nil, []string{"ssh", "core-sw1", "-l", "admin"}, 1, "Unknown option: '-l' (pass ssh's own options after --)"},
 		{"alice", nil, []string{"ssh", "core-sw1", "-p", "0"}, 1, "Invalid port '0'"},
 		{"alice", nil, []string{"ssh", "core-sw1", "extra"}, 1, "Unknown argument: 'extra'"},
-		{"alice", nil, []string{"ssh", "-l", "x"}, 1, "Name the device or host to connect to."},
+		{"alice", nil, []string{"ssh", "-p", "22"}, 1, "Name the device or host to connect to."},
+		// Every tier, superusers included, reaches only its own scopes.
+		{"alice", nil, []string{"ssh", "edge-fw"}, 1, "'alice' has no access to scope 'dmz' (device edge-fw)"},
+		// A local account that is not a tacctl user.
+		{"tester", nil, []string{"ssh", "lab-rtr2"}, 1, "'tester' is not a tacctl user; tacctl ssh logs you in with your tacctl account"},
 		{"carol", carol, []string{"ssh", "core-sw1"}, 1, "'carol' has no access to scope 'prod' (device core-sw1)"},
 		{"carol", carol, []string{"ssh", "10.99.0.9"}, 1, "'carol' has no access to scope 'prod' (device oob-con1)"},
 	} {
@@ -195,8 +214,24 @@ func TestSSHRefusals(t *testing.T) {
 	}
 	// The scope refusal is logged.
 	sb.sshRun("carol", carol, "ssh", "core-sw1")
-	if !sb.runner.Called("logger", "-t", "tacctl", "-p", "auth.warning", "ssh DENY user=carol device=core-sw1 scope=prod") {
+	if !sb.runner.Called("logger", "-t", "tacctl", "-p", "auth.warning", "ssh DENY user=carol device=core-sw1 scope=prod reason=scope") {
 		t.Errorf("no deny line: %q", sb.runner.Argvs())
+	}
+	// A device no scope covers is refused to everyone, superusers included.
+	sb.devScan("", scan("x"), "add", "stray", "100.64.0.9", "--no-host-key")
+	sb.sshRun("alice", nil, "ssh", "stray")
+	if sb.code != 1 || !strings.Contains(sb.stderr(), "'stray' is in no configured scope, so no one may open a session to it.") ||
+		!sb.runner.Called("logger", "-t", "tacctl", "-p", "auth.warning", "ssh DENY user=alice device=stray scope=- reason=unconfigured") {
+		t.Errorf("unconfigured: %d %q %q", sb.code, sb.stderr(), sb.runner.Argvs())
+	}
+	// A disabled tacctl user is refused (the tier gate has no tier for one
+	// either; an unrestricted local admin who is a disabled tacctl user
+	// reaches tacctl ssh and is refused there).
+	sb.run("", []string{"user", "disable", "bob"})
+	sb.sshRun("bob", nil, "ssh", "lab-rtr2")
+	if sb.code != 1 || !strings.Contains(sb.stderr(), "tacctl user 'bob' is disabled") ||
+		!sb.runner.Called("logger", "-t", "tacctl", "-p", "auth.warning", "ssh DENY user=bob device=lab-rtr2 scope=lab reason=disabled") || sb.sshArgv() != "" {
+		t.Errorf("disabled: %d %q %q", sb.code, sb.stderr(), sb.runner.Argvs())
 	}
 	// No terminal.
 	withTerminal(t, false)
@@ -206,7 +241,7 @@ func TestSSHRefusals(t *testing.T) {
 	}
 	// No name: the usage, exit 0.
 	out := sb.sshRun("alice", nil, "ssh")
-	if sb.code != 0 || !strings.Contains(out, "Usage: tacctl ssh <name|address> [-l <login>] [-p <port>] [-- <ssh args>]") {
+	if sb.code != 0 || !strings.Contains(out, "Usage: tacctl ssh <name|address> [-p <port>] [-- <ssh args>]") {
 		t.Errorf("usage: %d %q", sb.code, out)
 	}
 }
@@ -299,19 +334,20 @@ func TestDeviceSSHConfig(t *testing.T) {
 	old := sshConfigServer
 	sshConfigServer = func() string { return "authsrv" }
 	t.Cleanup(func() { sshConfigServer = old })
-	kh := sb.path("state", "known_hosts")
+	kh := sb.path("var-lib", "ssh", "known_hosts")
 	out := sb.sshRun("alice", nil, "device", "ssh-config")
 	if sb.code != 0 {
 		t.Fatalf("ssh-config: %d %q", sb.code, sb.stderr())
 	}
 	for _, want := range []string{
 		"# Generated by tacctl device ssh-config on authsrv, ",
-		"Host core-sw1\n    HostName 10.99.0.1\n    KexAlgorithms +diffie-hellman-group14-sha1,diffie-hellman-group1-sha1\n" +
+		"Host core-sw1\n    HostName 10.99.0.1\n    PubkeyAuthentication no\n    PreferredAuthentications keyboard-interactive,password\n" +
+			"    KexAlgorithms +diffie-hellman-group14-sha1,diffie-hellman-group1-sha1\n" +
 			"    HostKeyAlgorithms +ssh-rsa\n    PubkeyAcceptedAlgorithms +ssh-rsa\n    UserKnownHostsFile " + kh +
-			"\n    StrictHostKeyChecking yes\n    HostKeyAlias core-sw1\n    UpdateHostKeys no\n",
-		"Host oob-con1\n    HostName 10.99.0.9\n    PreferredAuthentications password\n    PubkeyAuthentication no\n    # No host key is pinned",
-		"Host edge-fw\n    HostName 203.0.113.5\n    User netops\n    Port 2222\n    UserKnownHostsFile " + kh,
-		"Host web1\n    HostName web1.example.net\n    User admin\n    Port 2222\n    IdentityFile /k/id_web1\n",
+			"\n    GlobalKnownHostsFile none\n    StrictHostKeyChecking yes\n    HostKeyAlias core-sw1\n    UpdateHostKeys no\n",
+		"Host oob-con1\n    HostName 10.99.0.9\n    PubkeyAuthentication no\n    PreferredAuthentications password\n    # No host key is pinned",
+		"Host edge-fw\n    HostName 203.0.113.5\n    Port 2222\n    PubkeyAuthentication no\n    PreferredAuthentications keyboard-interactive,password\n    UserKnownHostsFile " + kh,
+		"Host web1\n    HostName web1.example.net\n    Port 2222\n    PubkeyAuthentication no\n    PreferredAuthentications keyboard-interactive,password\n",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("ssh-config lacks %q:\n%s", want, out)
@@ -319,6 +355,12 @@ func TestDeviceSSHConfig(t *testing.T) {
 	}
 	if strings.Contains(out, "authsrv\n") || strings.Contains(out, "Host authsrv") {
 		t.Errorf("a --local host has a block:\n%s", out)
+	}
+	// No login (ssh uses the local username) and nothing of the enrolment.
+	for _, bad := range []string{"User ", "IdentityFile", "admin"} {
+		if strings.Contains(out, bad) {
+			t.Errorf("ssh-config has %q:\n%s", bad, out)
+		}
 	}
 	if e := sb.stderr(); !strings.Contains(e, "Save it with: tacctl device ssh-config > ~/.ssh/tacctl.conf") ||
 		!strings.Contains(e, "'Include ~/.ssh/tacctl.conf' at the top of ~/.ssh/config") {

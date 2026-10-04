@@ -189,7 +189,7 @@ func newMatrixHost(t *testing.T) *matrixHost {
 		"TACCTL_CONFIG=" + j("etc", "tacquito.yaml"),
 		"TACCTL_SUDOERS_FILE=" + j("sudoers.d", "tacctl"), "TACCTL_TIER_SUDOERS_FILE=" + j("sudoers.d", "tacctl-tiers"),
 		"TACCTL_SYSTEMD_DIR=" + j("systemd"), "TACCTL_OVERRIDE_DIR=" + j("systemd", "tacquito.service.d"),
-		"TACCTL_LOGROTATE_DIR=" + j("logrotate.d"), "TACQUITO_SRC=" + h.TacquitoSrc, "TACCTL_LINUX_DIR=" + j("linux"),
+		"TACCTL_LOGROTATE_DIR=" + j("logrotate.d"), "TACQUITO_SRC=" + h.TacquitoSrc, "TACCTL_LINUX_DIR=" + j("linux"), "TACCTL_VAR_LIB=" + j("var-lib"),
 		"TACCTL_TREE=" + h.Deploy,
 		"TACCTL_RADIUS_DIR=" + j("raddb"), "TACCTL_RADIUS_LOG=" + j("radius-log"),
 		"TACCTL_RADIUS_BIN=" + j("radius-bin", "radiusd"), "TACCTL_RADIUS_DICT=" + j("radius-share", "dictionary"),
@@ -229,7 +229,7 @@ func matrixHostDefaults(h *matrixHost) []string {
 		"Etc": p.Etc, "StateDir": p.StateDir, "Log": p.Log, "Bin": p.Bin, "Config": p.Config,
 		"SudoersFile": p.SudoersFile, "TierSudoersFile": p.TierSudoersFile, "OverrideDir": p.OverrideDir,
 		"TacacsUnitDir": p.TacacsUnitDir, "SystemdDir": p.SystemdDir, "LogrotateDir": p.LogrotateDir,
-		"paths.TacquitoSrc": p.TacquitoSrc, "LinuxDir": p.LinuxDir, "Tree": p.Tree, "PatchDir": p.PatchDir,
+		"paths.TacquitoSrc": p.TacquitoSrc, "LinuxDir": p.LinuxDir, "VarLib": p.VarLib, "KnownHosts": p.KnownHosts, "Tree": p.Tree, "PatchDir": p.PatchDir,
 	}
 	for _, fam := range []string{"debian", "rhel"} {
 		l := p.Radius(fam)

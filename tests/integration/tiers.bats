@@ -209,19 +209,22 @@ print("" if v is None else v)' "${TACCTL_STATE_DIR}/store.yaml" "$1" "$2"
     run "$TACCTL_BIN_SCRIPT" config sudoers tiers show
     assert_success
     assert_output --partial "not installed"
-    assert_output --partial "%tac-readonly ALL=(root) NOPASSWD:SETENV: TACCTL_RO"
+    assert_output --partial "%tac-readonly ALL=(root) NOPASSWD: TACCTL_RO"
     assert_output --partial "%tac-superuser ALL=(ALL:ALL) ALL"
 }
 
-@test "config sudoers tiers show: ssh and device rows per tier, SETENV on every grant" {
+@test "config sudoers tiers show: ssh and device rows per tier, env_keep for the agent socket, no SETENV" {
     run "$TACCTL_BIN_SCRIPT" config sudoers tiers show
     assert_success
-    refute_output --partial "NOPASSWD: "
+    # SETENV would let a caller set SUDO_USER and pose as someone else.
+    refute_output --partial "SETENV"
+    assert_output --partial 'Defaults!/usr/local/bin/tacctl env_keep += "SSH_AUTH_SOCK"'
+    assert_output --partial "%tac-operator ALL=(root) NOPASSWD: TACCTL_RO, TACCTL_OP"
     local text ro op r
     text=$(sed -n 's/^    //p' <<<"$output" | sed -e ':a' -e '/\\$/N; s/\\\n//; ta')
     ro=$(grep '^Cmnd_Alias TACCTL_RO' <<<"$text")
     op=$(grep '^Cmnd_Alias TACCTL_OP' <<<"$text")
-    for r in 'tacctl ssh \*' 'tacctl device list,' 'tacctl device list \*' 'tacctl device show \*' 'tacctl device ssh-config'; do
+    for r in 'tacctl ssh \*' 'tacctl device list,' 'tacctl device list \*' 'tacctl device show \*' 'tacctl device ssh \*' 'tacctl device ssh-config'; do
         grep -q -- "$r" <<<"$ro" || { echo "readonly lacks $r"; return 1; }
         if grep -q -- "$r" <<<"$op"; then echo "operator alias has $r"; return 1; fi
     done

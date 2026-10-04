@@ -46,20 +46,27 @@ var legacyOptions = []SSHOption{
 	{"PubkeyAcceptedAlgorithms", "+ssh-rsa"},
 }
 
-// vendorOptions are the options a vendor always gets. WTI units hold no
-// user keys and may close the session when a key attempt comes first and
-// their lockout is armed (README, WTI Console Servers), so they get the
-// password method alone. Juniper, Linux and other run a current OpenSSH:
-// nothing.
-var vendorOptions = map[string][]SSHOption{
-	"wti": {{"PreferredAuthentications", "password"}, {"PubkeyAuthentication", "no"}},
-}
+// PasswordAuth is how every session authenticates: by the user's tacctl
+// password, checked by the device against this server, never by a key (no
+// agent, no identity file). keyboard-interactive comes first because that is
+// how PAM-backed servers (Linux hosts, Junos) ask; password is the fallback.
+const PasswordAuth = "keyboard-interactive,password"
 
-// Profile is the entry's vendor options, then the legacy algorithms when the
-// device has legacy-ssh (an opt-in per device; enrolled hosts never have
-// it).
+// vendorAuth overrides PasswordAuth for a vendor. WTI units hold no user
+// keys and may close the session when another method comes first and their
+// lockout is armed (README, WTI Console Servers), so they get the password
+// method alone.
+var vendorAuth = map[string]string{"wti": "password"}
+
+// Profile is the entry's authentication options (public keys off, the
+// password methods), then the legacy algorithms when the device has
+// legacy-ssh (an opt-in per device; enrolled hosts never have it).
 func Profile(e Entry) []SSHOption {
-	out := append([]SSHOption(nil), vendorOptions[e.Vendor]...)
+	methods := PasswordAuth
+	if m, ok := vendorAuth[e.Vendor]; ok {
+		methods = m
+	}
+	out := []SSHOption{{"PubkeyAuthentication", "no"}, {"PreferredAuthentications", methods}}
 	if e.LegacySSH {
 		out = append(out, legacyOptions...)
 	}
@@ -72,10 +79,12 @@ func Pinned(e Entry) bool { return len(e.HostKeys) > 0 }
 
 // PinOptions make ssh check the host key against the generated known_hosts
 // alone, under the entry's name: a key that is not pinned there is refused
-// (no prompt, no learning, no update from the server).
+// (no prompt, no learning, no update from the server), and the system-wide
+// known_hosts (/etc/ssh/ssh_known_hosts) is not consulted either.
 func PinOptions(name, knownHosts string) []SSHOption {
 	return []SSHOption{
 		{"UserKnownHostsFile", knownHosts},
+		{"GlobalKnownHostsFile", "none"},
 		{"StrictHostKeyChecking", "yes"},
 		{"HostKeyAlias", name},
 		{"UpdateHostKeys", "no"},

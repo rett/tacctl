@@ -46,7 +46,7 @@ func multiscope(t *testing.T) *Resolver {
 	f.Devices = []*Device{
 		{Name: "core-sw1", Address: "10.1.2.3", Vendor: "cisco"},
 		{Name: "inner-sw", Address: "10.10.99.7", Vendor: "juniper"},
-		{Name: "lab-rtr2", Address: "192.168.4.4", Vendor: "juniper", Port: 830, Login: "admin"},
+		{Name: "lab-rtr2", Address: "192.168.4.4", Vendor: "juniper", Port: 830},
 		{Name: "dmz-fw", Address: "203.0.113.9", Vendor: "other"},
 		{Name: "stray", Address: "100.64.7.1", Vendor: "wti"},
 		{Name: "v6", Address: "2001:db8::1", Vendor: "other"},
@@ -93,13 +93,13 @@ func TestDerivationOverMultiscope(t *testing.T) {
 func TestHostEntriesAreLinuxDevices(t *testing.T) {
 	r := multiscope(t)
 	e, ok := r.Lookup("web1", ScopeFilter{})
-	if !ok || e.Source != SourceHost || e.Vendor != "linux" || e.Hostname != "192.0.2.10" || e.Login != "root" || e.Port != 2222 || e.Identity != "/keys/id" {
+	if !ok || e.Source != SourceHost || e.Vendor != "linux" || e.Hostname != "192.0.2.10" || e.Port != 2222 || e.Identity != "/keys/id" {
 		t.Errorf("web1 = %+v", e)
 	}
-	if e, _ := r.Lookup("db1", ScopeFilter{}); e.Hostname != "db.example.net" || e.Login != "dba" || e.SSHPort() != 22 {
+	if e, _ := r.Lookup("db1", ScopeFilter{}); e.Hostname != "db.example.net" || e.SSHPort() != 22 {
 		t.Errorf("db1 = %+v", e)
 	}
-	if e, _ := r.Lookup("me", ScopeFilter{}); e.Hostname != "local" || e.Login != "" {
+	if e, _ := r.Lookup("me", ScopeFilter{}); e.Hostname != "local" {
 		t.Errorf("me = %+v", e)
 	}
 }

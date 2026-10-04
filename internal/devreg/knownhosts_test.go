@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/rett/tacctl/internal/paths"
 )
 
 var updateGolden = flag.Bool("update", false, "rewrite the golden files")
@@ -62,11 +64,14 @@ func TestKnownHostsGolden(t *testing.T) {
 
 func TestMutateRegeneratesKnownHosts(t *testing.T) {
 	dir := t.TempDir()
-	p, kh := filepath.Join(dir, "devices.yaml"), filepath.Join(dir, "known_hosts")
+	varLib := filepath.Join(dir, "var-lib")
+	p, kh := filepath.Join(dir, "devices.yaml"), filepath.Join(varLib, "ssh", "known_hosts")
 	reg := pinnedRegistry(t)
 	if _, err := Mutate(p, kh, nil, func(f *File) error { *f = *reg.Clone(); return nil }); err != nil {
 		t.Fatal(err)
 	}
+	assertMode(t, varLib, paths.VarLibMode)
+	assertMode(t, filepath.Dir(kh), KnownHostsDirMode)
 	got, err := os.ReadFile(kh)
 	if err != nil || string(got) != string(reg.KnownHosts()) {
 		t.Fatalf("known_hosts %q %v", got, err)
@@ -103,6 +108,17 @@ func TestMutateRegeneratesKnownHosts(t *testing.T) {
 	if st, _ := os.Stat(kh); st.Mode().Perm() != KnownHostsMode {
 		t.Errorf("mode not repaired: %v", st.Mode())
 	}
+	// So are the directories' (VarLib made 0700 by an older build step).
+	for _, d := range []string{varLib, filepath.Dir(kh)} {
+		if err := os.Chmod(d, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := Mutate(p, kh, nil, func(*File) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	assertMode(t, varLib, paths.VarLibMode)
+	assertMode(t, filepath.Dir(kh), KnownHostsDirMode)
 	_ = os.Remove(kh)
 	if _, err := Mutate(p, kh, nil, func(*File) error { return nil }); err != nil || mustRead(t, kh) != string(reg.KnownHosts()) {
 		t.Errorf("not regenerated: %v", err)
@@ -166,4 +182,28 @@ func mustRead(t *testing.T, p string) string {
 		t.Fatal(err)
 	}
 	return string(b)
+}
+
+func assertMode(t *testing.T, path string, want os.FileMode) {
+	t.Helper()
+	st, err := os.Stat(path)
+	if err != nil || st.Mode().Perm() != want {
+		t.Errorf("%s: mode %v %v, want %v", path, st.Mode().Perm(), err, want)
+	}
+}
+
+// A known_hosts outside a VarLib 'ssh' directory leaves its grandparent
+// alone.
+func TestKnownHostsDirsOnlyVarLib(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	kh := filepath.Join(dir, "other", "known_hosts")
+	if err := WriteKnownHosts(kh, Empty()); err != nil {
+		t.Fatal(err)
+	}
+	assertMode(t, dir, 0o750)
+	assertMode(t, filepath.Dir(kh), KnownHostsDirMode)
+	assertMode(t, kh, KnownHostsMode)
 }

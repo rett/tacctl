@@ -23,6 +23,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/rett/tacctl/internal/execx"
+	"github.com/rett/tacctl/internal/paths"
 	"github.com/rett/tacctl/internal/tier"
 	"github.com/rett/tacctl/internal/ui"
 )
@@ -71,9 +72,10 @@ func MethodLabel(method string) string {
 
 // Paths are the files of Linux-host login.
 type Paths struct {
-	Dir   string // LINUX_DIR (TACCTL_LINUX_DIR, /var/lib/tacctl/linux)
-	UIDs  string // LINUX_UID_FILE
-	Hosts string // LINUX_HOSTS_FILE
+	Dir    string // LINUX_DIR (TACCTL_LINUX_DIR, /var/lib/tacctl/linux)
+	UIDs   string // LINUX_UID_FILE
+	Hosts  string // LINUX_HOSTS_FILE
+	VarLib string // paths.VarLib: made 0711 first when Dir is under it (mkDir)
 }
 
 // Tarball is PAM_TACPLUS_TARBALL.
@@ -106,6 +108,13 @@ type Env struct {
 	// PinHostKeys pins an enrolled host's ssh keys (pin.go); nil pins
 	// nothing.
 	PinHostKeys KeyPinner
+	// ReadKeys makes RunScript read the host's public keys over its
+	// connection after a successful run (ReadKeysCommand), for PinKeys:
+	// 'host enroll' and 'host sync' set it.
+	ReadKeys bool
+
+	sessionKeys []byte
+	sessionErr  error
 }
 
 // ErrFailed is a failure whose messages have been printed: the bash
@@ -236,4 +245,16 @@ func CountLines(s string) int {
 		}
 	}
 	return n
+}
+
+// mkDir creates Dir: its parent VarLib (when Dir is under it) with
+// paths.VarLibMode first, so creating Dir never leaves /var/lib/tacctl
+// unreadable to the users' ssh (VarLib/ssh/known_hosts).
+func (p Paths) mkDir() error {
+	if p.VarLib != "" && strings.HasPrefix(p.Dir, p.VarLib+"/") {
+		if err := paths.MkVarLib(p.VarLib); err != nil {
+			return err
+		}
+	}
+	return os.MkdirAll(p.Dir, 0o700)
 }

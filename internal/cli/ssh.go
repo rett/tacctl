@@ -3,12 +3,13 @@ package cli
 // 'tacctl ssh <name>' (docs/plans/operator-console.md 5, and the plan of
 // record's finding 1.3 a): a session to a registered device or an enrolled
 // host, as the user who asked for it. The registry is root's, so the front
-// door re-execs under sudo as for every root command (keepEnv carries
-// SSH_AUTH_SOCK); the root side resolves the name, applies the scope rule of
-// the tiers, logs the session, and runs ssh as SUDO_USER with the terminal,
-// returning ssh's exit status. The shell and the console run the same line
-// ('sudo -n tacctl ssh <name>'), so there is one path to audit. 'device ssh'
-// is the same command.
+// door re-execs under sudo as for every root command; the root side
+// resolves the name, admits only an active tacctl user whose scopes hold
+// the entry's (every tier, superusers included), logs the session, and runs
+// ssh as SUDO_USER with the terminal, logging in as SUDO_USER by password
+// (no agent, no key, no other login), returning ssh's exit status. The
+// shell and the console run the same line ('sudo -n tacctl ssh <name>'), so
+// there is one path to audit. 'device ssh' is the same command.
 
 import (
 	"errors"
@@ -33,12 +34,11 @@ func init() {
 // sshSpec is the arguments of 'tacctl ssh' before '--' (what follows it is
 // handed to ssh as it is).
 var sshSpec = Spec{MaxArgs: 1, Args: []string{KindDevices}, Flags: []Flag{
-	{Names: []string{"-l"}, Value: true},
 	{Names: []string{"-p"}, Value: true},
 }}
 
 const (
-	sshUse   = "ssh <name|address> [-l <login>] [-p <port>] [-- <ssh args>]"
+	sshUse   = "ssh <name|address> [-p <port>] [-- <ssh args>]"
 	sshShort = "Session to a registered device or enrolled host, as you (never root)"
 )
 
@@ -54,21 +54,22 @@ Usage: tacctl ` + sshUse + `
 
 Opens an ssh session to a registered device or an enrolled Linux host, named
 by its name or its registered address ('tacctl device list'). ssh runs as you,
-with your agent and your own ~/.ssh/config, never as root. The device's vendor
-profile applies (WTI: password only; legacy-ssh: the old IOS algorithms), and a
-device with pinned host keys is held to them: a key that changed is refused,
-with the fingerprints to compare and the command that re-pins it.
+never as root, and logs in as you: your username, your tacctl password (public
+keys and the agent are not used). The device's vendor profile applies
+(legacy-ssh: the old IOS algorithms), and a device with pinned host keys is
+held to them: a key that changed is refused, with the fingerprints to compare
+and the command that re-pins it.
 
-  -l <login>       Log in as <login> (default: the device's login, else your username)
   -p <port>        Connect to <port> (default: the device's port, else 22)
-  -- <ssh args>    Pass the rest to ssh for this session (options, a remote command)
+  -- <ssh args>    Pass the rest to ssh for this session (a remote command)
 
-Users of the read-only and operator tiers reach the devices of their own
-scopes. Every session is logged to syslog (auth.info).
+Only active tacctl users reach a device, and only one in a scope of their own,
+whatever their tier; a device no scope covers is reached by no one. Every
+session is logged to syslog (auth.info).
 
 Examples:
   tacctl ssh core-sw1
-  tacctl ssh 10.99.0.1 -l admin
+  tacctl ssh 10.99.0.1 -p 2222
   tacctl ssh core-sw1 -- show version
 
 `
@@ -113,11 +114,6 @@ func (inv *invocation) ssh(args []string) error {
 	if len(p.Args) == 0 {
 		return inv.usageErr("Name the device or host to connect to.", usage)
 	}
-	if l := p.Value("-l"); p.Has("-l") {
-		if err := devreg.ValidateLogin(l); err != nil {
-			return err
-		}
-	}
 	if p.Has("-p") {
 		if _, err := devreg.ValidatePort(p.Value("-p")); err != nil {
 			return err
@@ -126,6 +122,9 @@ func (inv *invocation) ssh(args []string) error {
 	caller := a.Env.Get("SUDO_USER")
 	if caller == "" || caller == "root" {
 		return inv.usageErr("tacctl ssh runs ssh as the user who invoked it; run it from your own account, not as root")
+	}
+	if err := inv.verifySudoUser("tacctl ssh"); err != nil {
+		return err
 	}
 	if !sshTerminal(a.Stdin) {
 		return inv.usageErr("a terminal is required: tacctl ssh opens an interactive session")
@@ -158,10 +157,10 @@ func (inv *invocation) ssh(args []string) error {
 }
 
 // sshResolve finds the entry (by name or registered address, devices and
-// hosts alike), refuses one outside the caller's scopes, and builds the ssh
-// command: the profile, the pinning options of a pinned entry (whose
-// known_hosts is brought up to date first), then -p, -i, -l, the target
-// and the extra arguments.
+// hosts alike), admits the caller (sshAdmit), and builds the ssh command:
+// the profile, the pinning options of a pinned entry (whose known_hosts is
+// brought up to date first), then -p, '-l <caller>', the target and the
+// extra arguments (after the target: ssh takes them as the remote command).
 func (inv *invocation) sshResolve(p Parsed, caller string, extra []string) (sshPlan, error) {
 	a := inv.app
 	key := p.Args[0]
@@ -177,12 +176,8 @@ func (inv *invocation) sshResolve(p Parsed, caller string, extra []string) (sshP
 		return sshPlan{}, inv.usageErr("Device '"+key+"' not found. List them with: tacctl device list",
 			"tacctl ssh reaches registered devices and enrolled hosts only; register one with: tacctl device add <name> <address>")
 	}
-	if !inv.deviceFilter().Allows(e.Scope) {
-		a.Logger(inv.ctx, "auth.warning", "ssh DENY user="+caller+" device="+e.Name+" scope="+dash(e.Scope))
-		if e.Scope == "" {
-			return sshPlan{}, inv.usageErr("'" + caller + "' has no access to device " + e.Name + " (no scope covers its address)")
-		}
-		return sshPlan{}, inv.usageErr("'" + caller + "' has no access to scope '" + e.Scope + "' (device " + e.Name + ")")
+	if err := inv.sshAdmit(caller, e); err != nil {
+		return sshPlan{}, err
 	}
 	target, ok := devreg.SSHTarget(e)
 	if !ok {
@@ -197,10 +192,6 @@ func (inv *invocation) sshResolve(p Parsed, caller string, extra []string) (sshP
 		port = p.Value("-p")
 		plan.port, _ = strconv.Atoi(port)
 	}
-	login := e.Login
-	if p.Has("-l") {
-		login = p.Value("-l")
-	}
 	if devreg.Pinned(e) {
 		if err := devreg.SyncKnownHosts(a.Paths.DevicesFile, a.Paths.KnownHosts); err != nil {
 			return sshPlan{}, err
@@ -208,18 +199,44 @@ func (inv *invocation) sshResolve(p Parsed, caller string, extra []string) (sshP
 	} else {
 		inv.sshUnpinnedNotice(res, e)
 	}
+	// No agent socket and no identity (an enrolled host's is the
+	// provisioning account's): the session is the caller's, by password.
 	plan.cmd = hosts.SSH{
-		AsUser:   caller,
-		AuthSock: a.Env.Get("SSH_AUTH_SOCK"),
-		Options:  devreg.OptionArgs(devreg.SSHOptions(e, a.Paths.KnownHosts)),
-		Port:     port,
-		Identity: e.Identity,
+		AsUser:  caller,
+		Options: devreg.OptionArgs(devreg.SSHOptions(e, a.Paths.KnownHosts)),
+		Port:    port,
 	}
-	if login != "" {
-		plan.args = append(plan.args, "-l", login)
-	}
-	plan.args = append(append(plan.args, target), extra...)
+	plan.args = append(append(plan.args, "-l", caller, target), extra...)
 	return plan, nil
+}
+
+// sshAdmit is who may open a session: an active tacctl user (in the store,
+// not disabled, with a password) whose scopes hold the entry's, at every
+// tier, superusers included; the device then checks the same password
+// against this server. An entry no scope covers is refused to everyone. A
+// refusal is logged ('ssh DENY user= device= scope= reason=').
+func (inv *invocation) sshAdmit(caller string, e devreg.Entry) error {
+	a := inv.app
+	deny := func(reason, msg string) error {
+		a.Logger(inv.ctx, "auth.warning", "ssh DENY user="+caller+" device="+e.Name+" scope="+dash(e.Scope)+" reason="+reason)
+		return inv.usageErr(msg)
+	}
+	m, err := inv.model()
+	if err != nil {
+		return err
+	}
+	u := m.User(caller)
+	switch {
+	case u == nil:
+		return deny("not-a-tacctl-user", "'"+caller+"' is not a tacctl user; tacctl ssh logs you in with your tacctl account, so only tacctl users may use it.")
+	case u.IsDisabled():
+		return deny("disabled", "tacctl user '"+caller+"' is disabled; tacctl ssh is for active tacctl users.")
+	case e.Scope == "" || !e.Configured:
+		return deny("unconfigured", "'"+e.Name+"' is in no configured scope, so no one may open a session to it.")
+	case !slices.Contains(u.Scopes, e.Scope):
+		return deny("scope", "'"+caller+"' has no access to scope '"+e.Scope+"' (device "+e.Name+")")
+	}
+	return nil
 }
 
 // sshUnpinnedNotice warns, on stderr, that nothing pinned stands between

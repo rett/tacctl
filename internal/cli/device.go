@@ -49,7 +49,6 @@ var deviceSpecs = map[string]Spec{
 		{Names: []string{"--vendor"}, Value: true, Kind: KindVendors},
 		{Names: []string{"--hostname"}, Value: true},
 		{Names: []string{"--port"}, Value: true},
-		{Names: []string{"--login"}, Value: true},
 		{Names: []string{"--description"}, Value: true},
 		{Names: []string{"--legacy-ssh"}},
 		{Names: []string{"--host-key"}, Value: true},
@@ -61,7 +60,6 @@ var deviceSpecs = map[string]Spec{
 	"hostname":    {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, "clear"}},
 	"vendor":      {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, KindVendors + "|clear"}},
 	"port":        {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, "clear"}},
-	"login":       {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, "clear"}},
 	"description": {MinArgs: 1, MaxArgs: -1, Args: []string{KindDevices, "clear"}},
 	"legacy-ssh":  {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, "enable|disable"}},
 	"stale-days":  {MaxArgs: 1, Args: []string{""}},
@@ -87,7 +85,6 @@ var deviceVerbs = [][2]string{
 	{"hostname <name> [<dns>|clear]", "Show, set or clear the DNS name"},
 	{"vendor <name> [cisco|juniper|wti|other]", "Show or set the vendor"},
 	{"port <name> [<n>|clear]", "Show, set or clear the ssh port"},
-	{"login <name> [<user>|clear]", "Show, set or clear the ssh login override"},
 	{"description <name> [<text>|clear]", "Show, set or clear the description"},
 	{"legacy-ssh <name> [enable|disable]", "Opt in to legacy IOS ssh algorithms"},
 	{"stale-days [<n>]", "Show or set the days after which a device counts as stale"},
@@ -96,7 +93,7 @@ var deviceVerbs = [][2]string{
 	{"import [--check] [--replace] [--allow-generic] [-y] <file|->", "Import devices from CSV or the registry's YAML"},
 	{"export [--csv|--json]", "Print the registry (YAML by default)"},
 	{"hostkey <name> [show|accept [-y]|set SHA256:<fp>]", "Show the pinned ssh host keys, or re-pin them after a verified change"},
-	{"ssh <name|address> [-l <login>] [-p <port>] [-- <ssh args>]", "Alias of 'tacctl ssh': a session to the device, as you"},
+	{"ssh <name|address> [-p <port>] [-- <ssh args>]", "Alias of 'tacctl ssh': a session to the device, as you"},
 	{"ssh-config", "Print an ssh_config Include for your devices (Host blocks, pinned keys)"},
 }
 
@@ -136,7 +133,7 @@ func deviceRegUsage() string {
 	}
 	b.WriteString(`
 add options: --vendor cisco|juniper|wti|other (default other), --hostname <dns>,
---port <n>, --login <user>, --description <text>, --legacy-ssh, --allow-generic
+--port <n>, --description <text>, --legacy-ssh, --allow-generic
 (register a generic name such as 'switch' anyway).
 
 Host keys: 'add' reads the device's ssh host keys (ssh-keyscan of the address
@@ -176,7 +173,7 @@ func (inv *invocation) device(args []string) error {
 		"notice": inv.deviceNotice, "notices": inv.deviceNotices, "import": inv.deviceImport, "export": inv.deviceExport,
 		"hostkey": inv.deviceHostkey, "ssh": inv.ssh, "ssh-config": inv.deviceSSHConfig,
 		"address": inv.deviceSetter("address"), "hostname": inv.deviceSetter("hostname"), "vendor": inv.deviceSetter("vendor"),
-		"port": inv.deviceSetter("port"), "login": inv.deviceSetter("login"), "description": inv.deviceSetter("description"),
+		"port": inv.deviceSetter("port"), "description": inv.deviceSetter("description"),
 	}
 	switch sub := arg(args, 0); sub {
 	case "", "-h", "--help", "help":
@@ -319,7 +316,6 @@ type deviceJSON struct {
 	Hostname    string             `json:"hostname,omitempty"`
 	Vendor      string             `json:"vendor"`
 	Port        int                `json:"port"`
-	Login       string             `json:"login,omitempty"`
 	LegacySSH   bool               `json:"legacy_ssh"`
 	Description string             `json:"description,omitempty"`
 	Scope       string             `json:"scope"`
@@ -332,7 +328,7 @@ type deviceJSON struct {
 
 func deviceJSONOf(res *devreg.Resolver, e devreg.Entry) deviceJSON {
 	j := deviceJSON{Name: e.Name, Source: string(e.Source), Address: e.Address, Hostname: e.Hostname, Vendor: e.Vendor,
-		Port: e.SSHPort(), Login: e.Login, LegacySSH: e.LegacySSH, Description: e.Description, Scope: e.Scope, Tag: e.Tag,
+		Port: e.SSHPort(), LegacySSH: e.LegacySSH, Description: e.Description, Scope: e.Scope, Tag: e.Tag,
 		Shadowed: append([]string{}, e.Shadowed...), State: e.State(), HostKeys: append([]string{}, e.HostKeys...),
 		Notices: []deviceNoticeJSON{}}
 	for _, n := range res.NoticesFor(e) {
@@ -470,11 +466,6 @@ func (inv *invocation) deviceShow(args []string) error {
 		row("Target", e.Target)
 		row("Identity", dash(e.Identity))
 	} else {
-		login := "-  (ssh uses your own username)"
-		if e.Login != "" {
-			login = e.Login
-		}
-		row("Login", login)
 		row("Legacy ssh", map[bool]string{true: "enabled", false: "disabled"}[e.LegacySSH])
 		row("Description", dash(e.Description))
 	}
@@ -562,10 +553,6 @@ func (inv *invocation) deviceAdd(args []string) error {
 	if p.Has("--hostname") {
 		d.Hostname = p.Value("--hostname")
 		checks = append(checks, devreg.ValidateHostname(d.Hostname))
-	}
-	if p.Has("--login") {
-		d.Login = p.Value("--login")
-		checks = append(checks, devreg.ValidateLogin(d.Login))
 	}
 	d.Description = p.Value("--description")
 	checks = append(checks, devreg.ValidateDescription(d.Description))
@@ -754,7 +741,7 @@ func (inv *invocation) deviceSetter(field string) func([]string) error {
 			}
 			inv.echo(map[string]string{
 				"address": dash(e.Address), "hostname": dash(e.Hostname), "vendor": e.Vendor,
-				"port": strconv.Itoa(e.SSHPort()), "login": dash(e.Login), "description": dash(e.Description),
+				"port": strconv.Itoa(e.SSHPort()), "description": dash(e.Description),
 			}[field])
 			return nil
 		}
@@ -840,12 +827,6 @@ func setField(d *devreg.Device, field, value string, clearing bool) error {
 			n, err := devreg.ValidatePort(value)
 			d.Port = n
 			return err
-		}
-	case "login":
-		d.Login = ""
-		if !clearing {
-			d.Login = value
-			return devreg.ValidateLogin(value)
 		}
 	case "description":
 		d.Description = ""

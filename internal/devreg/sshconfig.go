@@ -4,8 +4,10 @@ package devreg
 // ssh_config fragment with one Host block per entry the caller may see, for
 // the user to save and Include from ~/.ssh/config, so a plain 'ssh <name>'
 // reaches the device with its profile and is held to its pinned keys the
-// way 'tacctl ssh <name>' is. tacctl only prints it: no root process writes
-// into a user's home.
+// way 'tacctl ssh <name>' is. There is no User line: ssh logs in with the
+// local username, which for tacctl's users is their tacctl name, by
+// password (the profile turns public keys off). tacctl only prints it: no
+// root process writes into a user's home.
 
 import (
 	"bytes"
@@ -34,14 +36,8 @@ func SSHConfig(entries []Entry, knownHosts, server string, now time.Time) []byte
 		}
 		b.WriteString("Host " + e.Name + "\n")
 		line(SSHOption{"HostName", target})
-		if e.Login != "" {
-			line(SSHOption{"User", e.Login})
-		}
 		if e.Port != 0 && e.Port != DefaultPort {
 			line(SSHOption{"Port", strconv.Itoa(e.Port)})
-		}
-		if e.Identity != "" {
-			line(SSHOption{"IdentityFile", e.Identity})
 		}
 		for _, o := range Profile(e) {
 			line(o)

@@ -78,6 +78,9 @@ func hostUsage() string { return Usage("host", nil) }
 // host is cmd_host: no sub-command is the usage (exit 0); an unknown one
 // (help and -h included) is an error, then the usage (exit 1).
 func (inv *invocation) host(args []string) error {
+	if err := inv.verifySudoUser("tacctl host"); err != nil {
+		return err
+	}
 	var rest []string
 	if len(args) > 1 {
 		rest = args[1:]
@@ -250,6 +253,17 @@ func (inv *invocation) hostEnroll(args []string) error {
 		if _, after, ok := strings.Cut(target, "@"); ok {
 			hostPart = after
 		}
+		if login, explicit, isUser, err := inv.provisioningLogin(target); err != nil {
+			return err
+		} else if isUser {
+			msg := "The provisioning account '" + login + "' (the ssh login for " + target + ") is a tacctl user."
+			if !explicit {
+				msg = "The provisioning account defaults to your username '" + login + "', which is a tacctl user."
+			}
+			return inv.usageErr(msg,
+				"Enrolment logs in with a local account on the host that does not authenticate through tacctl (root or a dedicated",
+				"administration account, kept working when this server is unreachable): tacctl host enroll <account>@"+hostPart)
+		}
 		res, err := a.Runner.Run(inv.ctx, execx.Cmd{Name: "getent", Args: []string{"ahostsv4", hostPart}, Stderr: io.Discard})
 		if res.Code != 0 || err != nil {
 			return inv.usageErr("Cannot resolve '" + hostPart + "'")
@@ -338,6 +352,7 @@ func (inv *invocation) hostEnroll(args []string) error {
 	}
 	be, _ := hosts.MethodBackend(method)
 	he := inv.hostsEnv()
+	he.ReadKeys = true // pin from the enrolment session (pinHostKeys)
 	if method == hosts.Tacplus && !isRegularFile(he.Paths.Tarball()) {
 		return inv.usageErr("pam_tacplus tarball not found. Run 'tacctl config linux build' first.")
 	}
@@ -555,6 +570,7 @@ func (inv *invocation) hostSync(args []string) error {
 	}
 
 	he := inv.hostsEnv()
+	he.ReadKeys = true
 	failed := false
 	for _, name := range names {
 		e, _ := reg.Find(name)
@@ -567,6 +583,13 @@ func (inv *invocation) hostSync(args []string) error {
 			a.Out.ErrorE(name + ": scope '" + e.Scope + "' no longer exists; skipped.")
 			failed = true
 			continue
+		}
+		if e.Target != hosts.Local {
+			if login, _, isUser, err := inv.provisioningLogin(e.Target); err != nil {
+				return err
+			} else if isUser {
+				a.Out.Warn(name + ": the provisioning account '" + login + "' is a tacctl user; re-enrol with a local account that does not authenticate through tacctl: tacctl host enroll <account>@<host> --name " + name)
+			}
 		}
 		ok, err := inv.syncOne(he, e, method, scriptArgs)
 		if err != nil {
@@ -581,6 +604,24 @@ func (inv *invocation) hostSync(args []string) error {
 		return exit(1)
 	}
 	return nil
+}
+
+// provisioningLogin is the account 'host' logs in to target with: the
+// target's user, else the invoking user (ssh's default; root without
+// sudo). isUser reports whether it is a tacctl user: provisioning must use a
+// local account that does not authenticate through tacctl ('host enroll'
+// refuses one, 'host sync' warns). 'tacctl ssh' never uses it.
+func (inv *invocation) provisioningLogin(target string) (login string, explicit, isUser bool, err error) {
+	if u, _, ok := strings.Cut(target, "@"); ok {
+		login, explicit = u, true
+	} else {
+		login = inv.sudoUser()
+	}
+	m, err := inv.model()
+	if err != nil {
+		return login, explicit, false, err
+	}
+	return login, explicit, m.User(login) != nil, nil
 }
 
 // syncOne pushes an accounts-only script to one host and runs it; ok is

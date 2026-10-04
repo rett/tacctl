@@ -90,7 +90,7 @@ func (e *Env) BuildTarball(ctx context.Context) error {
 		e.Out.Error("Preparing the pam_tacplus tarball failed.")
 		return ErrFailed
 	}
-	if err := os.MkdirAll(e.Paths.Dir, 0o700); err != nil {
+	if err := e.Paths.mkDir(); err != nil {
 		return err
 	}
 	if err := os.Chmod(e.Paths.Dir, 0o755); err != nil {

@@ -89,7 +89,7 @@ func TestDeviceAddListShow(t *testing.T) {
 		t.Errorf("add: %d %q %q", sb.code, out, sb.stderr())
 	}
 	// A device no scope answers for.
-	sb.dev("", "add", "lab-rtr2", "100.64.0.7", "--vendor", "juniper", "--hostname", "lab-rtr2.lab.example.net", "--port", "830", "--login", "admin", "--no-host-key")
+	sb.dev("", "add", "lab-rtr2", "100.64.0.7", "--vendor", "juniper", "--hostname", "lab-rtr2.lab.example.net", "--port", "830", "--no-host-key")
 	out = sb.dev("", "list")
 	for _, want := range []string{"Registered devices (2) and enrolled hosts (0)", "core-sw1", "10.99.0.1", "prod", "configured",
 		"lab-rtr2", "100.64.0.7", "unconfigured", "hostkey-unpinned", "seen data: none (tacctl device scan)", "2 open notice(s)"} {
@@ -122,7 +122,7 @@ func TestDeviceAddListShow(t *testing.T) {
 		}
 	}
 	out = sb.dev("", "show", "LAB-RTR2")
-	if !strings.Contains(out, "Port:         830") || !strings.Contains(out, "Login:        admin") || !strings.Contains(out, "no scope's prefixes cover 100.64.0.7") {
+	if !strings.Contains(out, "Port:         830") || strings.Contains(out, "Login") || !strings.Contains(out, "no scope's prefixes cover 100.64.0.7") {
 		t.Errorf("show lab-rtr2:\n%s", out)
 	}
 	sb.dev("", "show", "nope")
@@ -180,7 +180,7 @@ func TestDeviceAddRefusals(t *testing.T) {
 		{[]string{"add", "x1", "10.99.0.2", "--vendor", "arista"}, "Invalid vendor"},
 		{[]string{"add", "x1", "10.99.0.2", "--port", "0"}, "Invalid port"},
 		{[]string{"add", "x1", "10.99.0.2", "--hostname", "a b"}, "Invalid hostname"},
-		{[]string{"add", "x1", "10.99.0.2", "--login", "-oProxyCommand=x"}, "Invalid login"},
+		{[]string{"add", "x1", "10.99.0.2", "--login", "admin"}, "Unknown option: '--login'"},
 		{[]string{"add", "x1", "10.99.0.2", "--description", strings.Repeat("d", 121)}, "120 characters"},
 		{[]string{"add", "x1", "10.99.0.2", "--host-key", "SHA256:short"}, "Invalid --host-key"},
 		{[]string{"add", "x1", "10.99.0.2", "--host-key", "SHA256:" + strings.Repeat("A", 43), "--no-host-key"}, "not both"},
@@ -312,7 +312,7 @@ func TestDeviceSetters(t *testing.T) {
 	sb.dev("", "add", "core-sw1", "10.99.0.1", "--vendor", "cisco", "--no-host-key")
 	sb.dev("", "add", "other", "10.99.0.2", "--no-host-key")
 	get := func(field string) string { return strings.TrimSpace(sb.dev("", field, "core-sw1")) }
-	if get("address") != "10.99.0.1" || get("hostname") != "-" || get("vendor") != "cisco" || get("port") != "22" || get("login") != "-" || get("description") != "-" {
+	if get("address") != "10.99.0.1" || get("hostname") != "-" || get("vendor") != "cisco" || get("port") != "22" || get("description") != "-" {
 		t.Error("getters")
 	}
 	steps := []struct{ field, value, shown string }{
@@ -320,7 +320,6 @@ func TestDeviceSetters(t *testing.T) {
 		{"hostname", "core1.example.net", "core1.example.net"},
 		{"vendor", "JUNIPER", "juniper"},
 		{"port", "830", "830"},
-		{"login", "netops", "netops"},
 		{"description", "the core, DC1", ""},
 	}
 	for _, s := range steps {
@@ -344,7 +343,7 @@ func TestDeviceSetters(t *testing.T) {
 	if get("port") != "22" || strings.Contains(sb.devices(), "port:") {
 		t.Errorf("the default port is not stored:\n%s", sb.devices())
 	}
-	for _, f := range []string{"hostname", "login", "description", "port", "vendor"} {
+	for _, f := range []string{"hostname", "description", "port", "vendor"} {
 		sb.dev("", f, "core-sw1", "clear")
 		if sb.code != 0 || !strings.Contains(sb.plainOut(), "cleared") {
 			t.Errorf("clear %s: %d %q", f, sb.code, sb.out.String())
@@ -363,7 +362,7 @@ func TestDeviceSetters(t *testing.T) {
 		{[]string{"vendor", "core-sw1", "linux"}, "enrolled hosts"},
 		{[]string{"port", "core-sw1", "99999"}, "Invalid port"},
 		{[]string{"hostname", "core-sw1", "bad host"}, "Invalid hostname"},
-		{[]string{"login", "core-sw1", "a", "b"}, "Usage: tacctl device login"},
+		{[]string{"login", "core-sw1", "a"}, "Unknown subcommand: 'login'"},
 		{[]string{"port", "nope", "22"}, "not found"},
 		{[]string{"port", "nope"}, "not found"},
 		{[]string{"port"}, "Usage: tacctl device port"},
@@ -456,7 +455,7 @@ func TestDeviceNotices(t *testing.T) {
 func TestDeviceImportExport(t *testing.T) {
 	sb := newSandbox(t, true)
 	sb.dev("", "add", "core-sw1", "10.99.0.1", "--vendor", "cisco", "--legacy-ssh", "--hostname", "core.example.net", "--no-host-key")
-	csvText := "name,address,vendor,port,login,description\ncore-sw1,10.99.0.1,cisco,,,\"DC1, core\"\noob-con1,10.99.0.9,wti\n"
+	csvText := "name,address,vendor,port,description\ncore-sw1,10.99.0.1,cisco,,\"DC1, core\"\noob-con1,10.99.0.9,wti\n"
 	before := sb.devices()
 	out := sb.dev(csvText, "import", "--check", "-")
 	if sb.code != 0 || !strings.Contains(out, "Check passed; nothing written. Would import: 1 added, 1 updated, 0 unchanged, 0 removed.") || sb.devices() != before {
@@ -470,7 +469,7 @@ func TestDeviceImportExport(t *testing.T) {
 		t.Errorf("merge lost something:\n%s", d)
 	}
 	// Export: CSV, JSON and YAML; the YAML imports back with --replace.
-	if out = sb.dev("", "export", "--csv"); !strings.HasPrefix(out, "name,address,vendor,port,login,description\n") || !strings.Contains(out, "oob-con1,10.99.0.9,wti") {
+	if out = sb.dev("", "export", "--csv"); !strings.HasPrefix(out, "name,address,vendor,port,description\n") || !strings.Contains(out, "oob-con1,10.99.0.9,wti") {
 		t.Errorf("csv:\n%s", out)
 	}
 	if out = sb.dev("", "export", "--json"); !strings.Contains(out, `"name": "oob-con1"`) {

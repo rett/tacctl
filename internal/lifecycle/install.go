@@ -85,6 +85,7 @@ func Install(ctx context.Context, h *Host, args []string) error {
 	if err := StateMigrate(StateOptionsFrom(p, out, h.Now, h.IsRoot)); err != nil {
 		return backend.ErrFailed
 	}
+	repairVarLib(out, p.VarLib)
 	h.Conf.Reload()
 	// The device config templates (a customised one already there is
 	// kept).

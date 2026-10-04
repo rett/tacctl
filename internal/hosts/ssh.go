@@ -130,6 +130,7 @@ func (e *Env) RunScript(ctx context.Context, target, port, identity, script stri
 		}
 		return code, nil
 	}
+	e.sessionKeys, e.sessionErr = nil, nil
 	s := e.ssh(port, identity)
 	f, err := os.Open(script)
 	if err != nil {
@@ -159,6 +160,10 @@ func (e *Env) RunScript(ctx context.Context, target, port, identity, script stri
 	code, intr, startErr := Attached(ctx, e.Runner, s.Cmd(flag, target, RemoteCommand(remote, args, tty)), e.Stdin, e.Out)
 	if startErr != nil && code == 0 {
 		code = 1
+	}
+	// The host's own public keys, read over this connection for PinKeys.
+	if e.ReadKeys && code == 0 && !intr {
+		e.readKeys(ctx, s, target)
 	}
 	closer := s.Cmd("-O", "exit", target)
 	closer.Stdout, closer.Stderr = io.Discard, io.Discard

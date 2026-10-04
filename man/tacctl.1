@@ -722,18 +722,43 @@ defaults to the source address of the route to the host.
 .B \-\-local
 enrolls this machine without SSH. ssh runs as the user who invoked
 .BR sudo (8),
-using their keys; the remote login must be root or able to sudo. The
+using their keys; the remote login must be root or able to sudo. That login
+(the provisioning account:
+.I user
+of the target, else the invoking user's name) must be a local account on the
+host that does not authenticate through tacctl, so enrolment and sync keep
+working when this server cannot be reached;
+.B "host enroll"
+refuses a user of tacctl, and
+.B "host sync"
+warns about an existing enrolment that uses one.
+.B "tacctl ssh"
+never uses it. The
 remote copy of the script is deleted after the run. Nothing is registered
 if the remote run fails.
 .IP
-After a successful run the host's ssh host keys are read
+After a successful run the host's public key files are read over the same
+ssh connection
+.RB ( "cat /etc/ssh/ssh_host_*_key.pub" ,
+read-only; the connection is the administrator's own ssh, checked against
+their known_hosts), and the target is scanned
 .RB ( ssh\-keyscan
-of the host and port, as root) and pinned in the device registry for
+of the host and port, as root). Only the keys both reads hold are pinned in
+the device registry for
 .BR "tacctl ssh" ;
 the output lists their
 .B SHA256:
-fingerprints. A host that does not answer the scan is enrolled unpinned,
-with a warning. A host enrolled with
+fingerprints. A key type the two reads give different keys for pins nothing:
+both sets are printed and
+.B "host hostkey\-mismatch"
+is logged to syslog (auth.warning). A type only one read has is reported and
+not pinned. Key files that cannot be read, or a host that does not answer the
+scan, pin nothing, with a warning and the
+.B "device hostkey"
+command; the enrolment succeeds either way.
+.B "host sync"
+of a pinned host compares the key files with the pin and reports a
+difference; it never re-pins. A host enrolled with
 .B \-\-local
 is not pinned.
 .IP
@@ -1373,10 +1398,7 @@ and
 .B completion
 lines run without sudo.
 For
-.BR host ,
-.B ssh
-and
-.B device
+.B host
 lines the agent socket
 .RB ( SSH_AUTH_SOCK )
 is passed as it is when tacctl re-executes itself under sudo.
@@ -1954,9 +1976,9 @@ by
 and
 .BR "host sync" .
 Every registry write regenerates
-.IR /etc/tacctl/known_hosts ,
+.IR /var/lib/tacctl/ssh/known_hosts ,
 which lists exactly the pinned keys under each device's name, for
-.BI "ssh \-o UserKnownHostsFile=/etc/tacctl/known_hosts \-o HostKeyAlias=" name " \-o StrictHostKeyChecking=yes" .
+.BI "ssh \-o UserKnownHostsFile=/var/lib/tacctl/ssh/known_hosts \-o GlobalKnownHostsFile=none \-o HostKeyAlias=" name " \-o StrictHostKeyChecking=yes" .
 A pin changes only through
 .BR "device hostkey accept" " or " "device hostkey set" ,
 never by itself.
@@ -1999,13 +2021,13 @@ and the footer says
 .BR "seen data: none" .
 .TP
 .BI "device show " "name|address " [ \-\-json ]
-One device or host in full: address, hostname, vendor, port, login, legacy ssh,
+One device or host in full: address, hostname, vendor, port, legacy ssh,
 description, the scope that answers the address and the prefix that routes it
 (and the scopes it shadows), the vendor tag that covers it, the pinned host keys,
 and every notice, acknowledged ones marked. It warns when the vendor tag and the
 registered vendor disagree.
 .TP
-.BI "device add " "name address " "[ \-\-vendor cisco|juniper|wti|other ] [ \-\-hostname " dns " ] [ \-\-port " n " ] [ \-\-login " user " ] [ \-\-description " text " ] [ \-\-legacy\-ssh ] [ \-\-host\-key SHA256:" fingerprint " | \-\-no\-host\-key ] [ \-\-allow\-generic ]"
+.BI "device add " "name address " "[ \-\-vendor cisco|juniper|wti|other ] [ \-\-hostname " dns " ] [ \-\-port " n " ] [ \-\-description " text " ] [ \-\-legacy\-ssh ] [ \-\-host\-key SHA256:" fingerprint " | \-\-no\-host\-key ] [ \-\-allow\-generic ]"
 Register a device. The vendor defaults to
 .B other
 (and only drives the ssh profile; it does not tag the address in the scope).
@@ -2064,9 +2086,6 @@ sets
 .BI "device port " "name " [ n | clear ]
 Show, set or clear the ssh port (clear is 22).
 .TP
-.BI "device login " "name " [ user | clear ]
-Show, set or clear the ssh login override; unset, ssh uses your own username.
-.TP
 .BI "device description " "name " [ text | clear ]
 Show, set or clear the description (up to 120 characters).
 With no value these verbs print the current one (\c
@@ -2121,7 +2140,7 @@ that pins it.
 .TP
 .BI "device import " "[ \-\-check ] [ \-\-replace ] [ \-\-allow\-generic ] [ \-y ] " "file|\-"
 Import devices from CSV
-.RB ( name,address[,vendor[,port[,login[,description]]]] ;
+.RB ( name,address[,vendor[,port[,description]]] ;
 blank lines, lines starting with
 .BR # ,
 and a header row starting
@@ -2162,7 +2181,7 @@ reads the keys and pins only the one with that fingerprint, refusing when the
 device offers none. A device that does not answer is refused and the pin stays.
 Administrators only; each change is logged to syslog.
 .TP
-.BI "device ssh " name|address " [ \-l " login " ] [ \-p " port " ] [ \-\- " "ssh args" " ]"
+.BI "device ssh " name|address " [ \-p " port " ] [ \-\- " "ssh args" " ]"
 The same as
 .BR "tacctl ssh" ,
 below.
@@ -2174,12 +2193,17 @@ fragment with one
 .B Host
 block per device and enrolled host the caller may see:
 .BR HostName ,
-the login
-.RB ( User ),
-port and identity when set, the vendor options of
-.BR "tacctl ssh" ,
-and for a pinned entry
-.BI "UserKnownHostsFile /etc/tacctl/known_hosts" ,
+the port when set,
+.B "PubkeyAuthentication no"
+and
+.B "PreferredAuthentications keyboard\-interactive,password"
+(WTI:
+.BR password ),
+the legacy algorithms of a
+.B legacy\-ssh
+device, and for a pinned entry
+.BI "UserKnownHostsFile /var/lib/tacctl/ssh/known_hosts" ,
+.BR "GlobalKnownHostsFile none" ,
 .BR "StrictHostKeyChecking yes" ,
 .BI "HostKeyAlias " name
 and
@@ -2195,7 +2219,10 @@ at the top of
 .B Include
 after a
 .B Host
-block belongs to that block). Then a plain
+block belongs to that block). There is no
+.B User
+line: ssh logs in with your local username, which for a user of tacctl is the
+tacctl name. Then a plain
 .BI "ssh " name
 reaches the device the way
 .B "tacctl ssh"
@@ -2203,18 +2230,29 @@ does. tacctl only prints it; nothing is written into a home directory. Re-run it
 after registry changes.
 .SS SSH to a device \fB(tacctl ssh)\fR
 .TP
-.BI "ssh " name|address " [ \-l " login " ] [ \-p " port " ] [ \-\- " "ssh args" " ]"
+.BI "ssh " name|address " [ \-p " port " ] [ \-\- " "ssh args" " ]"
 Open an ssh session to a registered device or an enrolled host, named by its
 name or its registered address. tacctl resolves the name as root (the registry
-is root's), checks that a read-only or operator caller's scopes include the
-device's, logs
+is root's) and admits only an active tacctl user (in the store, not disabled,
+with a password) whose scopes include the entry's, at every tier, superusers
+included; an entry in no configured scope is refused to everyone, and a local
+account that is not a user of tacctl is refused
+.RI ( "'user' is not a tacctl user" ;
+.IR "'user' has no access to scope 'scope' (device name)" ).
+Each refusal is logged to syslog
+.RB ( "ssh DENY user=" "\fIuser\fR " device= "\fIname\fR " scope= "\fIscope\fR " reason= "\fIreason\fR" ,
+auth.warning). An admitted session is logged as
 .BI "ssh user=" user " device=" name " addr=" address
-to syslog (auth.info), and runs
+(auth.info), and
 .BR ssh (1)
-as the invoking user
-.RB ( "sudo \-u " "\fIuser\fR " "\-H env SSH_AUTH_SOCK=" ...),
-with the terminal, returning its exit status. It never runs ssh as root:
-run by root itself (no
+runs as the invoking user
+.RB ( "sudo \-u " "\fIuser\fR " \-H ),
+with the terminal, returning its exit status. The login is always the invoking
+user's own name
+.RB ( \-l " \fIuser\fR)"
+and the session authenticates by password only: no agent, no key, no other
+login; an enrolled host's enrolment account and identity are never used. It
+never runs ssh as root: run by root itself (no
 .BR SUDO_USER ,
 or
 .BR SUDO_USER=root )
@@ -2224,34 +2262,28 @@ It needs a terminal on stdin
 .RI ( "a terminal is required" ).
 An address that is not registered is refused with the
 .B "device add"
-command to register it; a device outside the caller's scopes with
-.IR "'user' has no access to scope 'scope' (device name)" .
+command to register it.
 .IP
 ssh connects to the device's hostname, else its address (an enrolled host: its
-target), with its login and port unless
-.B \-l
-or
+target's host), with its port unless
 .B \-p
 is given, and always
-.BR "\-o ConnectTimeout=10" .
-The vendor adds options:
-.B wti
-gets
-.B "\-o PreferredAuthentications=password \-o PubkeyAuthentication=no"
-(the units hold no user keys); a device with
+.B "\-o ConnectTimeout=10 \-o PubkeyAuthentication=no \-o PreferredAuthentications=keyboard\-interactive,password"
+.RB ( wti :
+.BR "PreferredAuthentications=password" ,
+which the units need). A device with
 .B legacy\-ssh
 gets
 .B "\-o KexAlgorithms=+diffie\-hellman\-group14\-sha1,diffie\-hellman\-group1\-sha1 \-o HostKeyAlgorithms=+ssh\-rsa \-o PubkeyAcceptedAlgorithms=+ssh\-rsa"
-(old IOS; OpenSSH 8.5 or later); others none. A device with pinned host keys
-adds
-.BI "\-o UserKnownHostsFile=/etc/tacctl/known_hosts \-o StrictHostKeyChecking=yes \-o HostKeyAlias=" name " \-o UpdateHostKeys=no" ,
+(old IOS; OpenSSH 8.5 or later). A device with pinned host keys adds
+.BI "\-o UserKnownHostsFile=/var/lib/tacctl/ssh/known_hosts \-o GlobalKnownHostsFile=none \-o StrictHostKeyChecking=yes \-o HostKeyAlias=" name " \-o UpdateHostKeys=no" ,
 so ssh accepts the pinned key and nothing else. An unpinned device is checked
 against the user's own known_hosts, after its
 .B hostkey\-unpinned
 notice is printed (unless acknowledged). Arguments after
 .B \-\-
-follow the target (more ssh options, or a remote command); ssh keeps the first
-value of an option, so they cannot replace the pinning options.
+follow the target, so ssh takes them as the remote command; they cannot
+replace an option.
 .IP
 When ssh ends with status 255 on a pinned device, tacctl reads the device's
 keys again; if the pinned key is not among them it prints the pinned and the
@@ -2262,10 +2294,9 @@ or
 .BI "set SHA256:" fingerprint
 to re-pin after verifying. The read-only tier may run it (the tiers sudoers
 rules grant
-.BR "tacctl ssh *" ,
-with
-.B SETENV
-so the agent socket passes).
+.B "tacctl ssh *"
+and
+.BR "tacctl device ssh *" ).
 .SH RADIUS DEVICE CONFIGURATIONS
 .BR "config cisco" ,
 .B "config juniper"
@@ -2804,7 +2835,7 @@ re-check the file with
 .I /etc/tacctl/devices.yaml
 The device registry (see
 .BR "DEVICE REGISTRY" ):
-registered device names with address, vendor, port, login, hostname,
+registered device names with address, vendor, port, hostname,
 description, legacy-ssh, pinned host keys and acknowledged notices, and the
 registry's settings
 .RB ( stale_days ,
@@ -2815,7 +2846,7 @@ which locks it, validates the result and replaces it atomically. Snapshots
 include it. The pinned keys of enrolled hosts are kept under
 .BR hosts: .
 .TP
-.I /etc/tacctl/known_hosts
+.I /var/lib/tacctl/ssh/known_hosts
 Generated from
 .I devices.yaml
 on every registry write (and after
@@ -2824,7 +2855,12 @@ one
 .I "name type key"
 line per pinned host key, for ssh's
 .B HostKeyAlias
-lookup. Mode 0644, root-owned; do not edit it.
+lookup. Mode 0644, root-owned, in a directory 0755 under
+.I /var/lib/tacctl
+(0711: users pass through it, only root lists it), so every user's ssh can
+read it;
+.I /etc/tacctl
+is root's alone. Do not edit it.
 .TP
 .I /etc/tacctl/rendered.json
 The checksum of every file tacctl rendered, from which

@@ -222,23 +222,32 @@ func (inv *invocation) deviceHostkey(args []string) error {
 
 // --- enrolled hosts -----------------------------------------------------------------
 
-// pinHostKeys is the hosts.KeyPinner of 'host enroll' and 'host sync': a
-// host with nothing pinned gets every key it offers; a pinned host is only
-// checked (a changed key or a new key type is reported, the pin stays).
-// Every problem is a warning. A first pin only adds to the registry, so it
-// takes no snapshot (a 'host sync --all' would take one per host).
-func (inv *invocation) pinHostKeys(ctx context.Context, name, host string, port int) {
+// pinHostKeys is the hosts.KeyPinner of 'host enroll' and 'host sync'.
+// session is the host's own public keys, read over the enrolment's
+// authenticated ssh connection (the administrator's ssh, which checked the
+// host against their known_hosts). A host with nothing pinned gets only the
+// keys that read and an ssh-keyscan of the target agree on: a key type the
+// two give different keys for refuses the pin (both sets are printed and
+// logged), a type only one of them has is reported and not pinned. A
+// pinned host is only checked against the session's keys (a changed key or
+// a new key type is reported, the pin stays). Every problem is a warning;
+// the enrolment or sync itself has succeeded. A first pin only adds to the
+// registry, so it takes no snapshot (a 'host sync --all' would take one per
+// host).
+func (inv *invocation) pinHostKeys(ctx context.Context, name, host string, port int, session []byte, sessionErr error) {
 	a := inv.app
-	keys, err := devreg.Scan(ctx, a.Runner, host, port, false)
-	if errors.Is(err, devreg.ErrNoAnswer) {
-		a.Out.WarnE(name + ": no ssh host key could be read from " + host + " port " + strconv.Itoa(port) +
-			"; none pinned. Later: tacctl device hostkey " + name + " accept")
-		return
+	fix := "Check on the host (" + devreg.VerifyHint(devreg.VendorLinux) + "), then: tacctl device hostkey " + name + " accept"
+	var own []devreg.HostKey
+	if sessionErr == nil {
+		own = devreg.ParsePubKeys(session)
 	}
-	if err != nil {
-		if ctx.Err() == nil {
-			a.Out.WarnE(name + ": host keys not pinned: " + strings.Join(msgs(err), " "))
+	if len(own) == 0 {
+		why := "no key in /etc/ssh/ssh_host_*_key.pub"
+		if sessionErr != nil {
+			why, _, _ = strings.Cut(sessionErr.Error(), "\n")
 		}
+		a.Out.WarnE(name + ": the host's ssh keys could not be read over the enrolment session (" + why + "); none pinned or checked.")
+		a.Out.WarnE("  " + fix)
 		return
 	}
 	f, err := devreg.Load(a.Paths.DevicesFile)
@@ -247,24 +256,58 @@ func (inv *invocation) pinHostKeys(ctx context.Context, name, host string, port 
 		return
 	}
 	pinned := f.HostKeysOf(name)
-	c := devreg.Compare(pinned, keys)
-	switch devreg.HostPinAction(pinned, keys) {
-	case devreg.PinKeep:
+	if len(pinned) > 0 {
+		c := devreg.Compare(pinned, own)
+		switch devreg.HostPinAction(pinned, own) {
+		case devreg.PinChanged:
+			a.Out.WarnE(name + ": the ssh host key differs from the one pinned; the pin was not changed.")
+			a.Out.WarnE("  Pinned: " + devreg.Displays(devreg.ParseHostKeys(pinned)))
+			a.Out.WarnE("  On the host: " + devreg.Displays(own))
+			a.Out.WarnE("  " + fix)
+		case devreg.PinAdded:
+			a.Out.InfoE(name + ": has host key types that are not pinned (" + devreg.Displays(c.Added) +
+				"); after checking them on the host: tacctl device hostkey " + name + " accept")
+		}
 		return
-	case devreg.PinChanged:
-		a.Out.WarnE(name + ": the ssh host key differs from the one pinned; the pin was not changed.")
-		a.Out.WarnE("  Pinned: " + devreg.Displays(devreg.ParseHostKeys(pinned)))
-		a.Out.WarnE("  Offered: " + devreg.Displays(keys))
-		a.Out.WarnE("  Check on the host (" + devreg.VerifyHint(devreg.VendorLinux) + "), then: tacctl device hostkey " + name + " accept")
+	}
+	scan, err := devreg.Scan(ctx, a.Runner, host, port, false)
+	if errors.Is(err, devreg.ErrNoAnswer) {
+		a.Out.WarnE(name + ": no ssh host key could be read from " + host + " port " + strconv.Itoa(port) +
+			" (ssh-keyscan) to check the session's against; none pinned.")
+		a.Out.WarnE("  " + fix)
 		return
-	case devreg.PinAdded:
-		a.Out.InfoE(name + ": offers host key types that are not pinned (" + devreg.Displays(c.Added) +
-			"); after checking them on the host: tacctl device hostkey " + name + " accept")
+	}
+	if err != nil {
+		if ctx.Err() == nil {
+			a.Out.WarnE(name + ": host keys not pinned: " + strings.Join(msgs(err), " "))
+		}
+		return
+	}
+	c := devreg.CrossCheckKeys(own, scan)
+	if c.Conflict {
+		a.Logger(ctx, "auth.warning", "host hostkey-mismatch name="+name+" host="+host+" port="+strconv.Itoa(port))
+		a.Out.WarnE(name + ": the keys the host holds and the keys offered at " + host + " port " + strconv.Itoa(port) +
+			" differ; nothing was pinned.")
+		a.Out.WarnE("  Read over the enrolment session: " + devreg.Displays(own))
+		a.Out.WarnE("  Offered to ssh-keyscan:          " + devreg.Displays(scan))
+		a.Out.WarnE("  Something may stand between this server and the host. " + fix +
+			" (or: tacctl device hostkey " + name + " set SHA256:<fingerprint>)")
+		return
+	}
+	if len(c.OnlySession) > 0 {
+		a.Out.InfoE(name + ": not offered to ssh-keyscan, not pinned: " + devreg.Displays(c.OnlySession))
+	}
+	if len(c.OnlyScan) > 0 {
+		a.Out.InfoE(name + ": offered but not among the host's key files, not pinned: " + devreg.Displays(c.OnlyScan))
+	}
+	if len(c.Agreed) == 0 {
+		a.Out.WarnE(name + ": the session and ssh-keyscan agree on no key; none pinned.")
+		a.Out.WarnE("  " + fix)
 		return
 	}
 	_, err = devreg.Mutate(a.Paths.DevicesFile, a.Paths.KnownHosts, nil, func(f *devreg.File) error {
 		if len(f.HostKeysOf(name)) == 0 {
-			f.SetHostKeys(name, devreg.KeyStrings(keys))
+			f.SetHostKeys(name, devreg.KeyStrings(c.Agreed))
 		}
 		return nil
 	})
@@ -272,7 +315,7 @@ func (inv *invocation) pinHostKeys(ctx context.Context, name, host string, port 
 		a.Out.WarnE(name + ": host keys not pinned: " + strings.Join(msgs(err), " "))
 		return
 	}
-	a.Out.InfoE(name + ": pinned " + strconv.Itoa(len(keys)) + " ssh host key(s) for 'tacctl ssh': " + devreg.Displays(keys))
+	a.Out.InfoE(name + ": pinned " + strconv.Itoa(len(c.Agreed)) + " ssh host key(s) for 'tacctl ssh': " + devreg.Displays(c.Agreed))
 }
 
 // forgetHostKeys drops the pinned keys of an unenrolled host (no snapshot:

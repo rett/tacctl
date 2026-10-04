@@ -269,3 +269,42 @@ func TestHostKeyDisplay(t *testing.T) {
 		t.Errorf("displays %q", got)
 	}
 }
+
+func TestParsePubKeys(t *testing.T) {
+	ed, rsa := testKey(t, "ed25519"), testKey(t, "rsa")
+	out := "ssh-rsa " + rsa.Blob + " root@web1\n# comment\ncat: /etc/ssh/ssh_host_dsa_key.pub: Permission denied\n\n" +
+		"ssh-ed25519 " + ed.Blob + "\nssh-dss AAAAB3NzaC1kc3M= old\nssh-ed25519 " + ed.Blob + " dup\n"
+	if got := ParsePubKeys([]byte(out)); !reflect.DeepEqual(got, []HostKey{ed, rsa}) {
+		t.Errorf("%v", got)
+	}
+	if got := ParsePubKeys(nil); len(got) != 0 {
+		t.Errorf("empty: %v", got)
+	}
+}
+
+// Only keys both reads hold are pinned; a type with different keys is a
+// conflict; a type one read lacks is reported on its side.
+func TestCrossCheckKeys(t *testing.T) {
+	ed, ec, rsa := testKey(t, "ed25519"), testKey(t, "ecdsa"), testKey(t, "rsa")
+	other := testKeyWithBlob(t, ed, rsa)
+	for _, c := range []struct {
+		name                 string
+		session, scan        []HostKey
+		agreed, only1, only2 []HostKey
+		conflict             bool
+	}{
+		{"match", []HostKey{rsa, ed}, []HostKey{ed, rsa}, []HostKey{ed, rsa}, nil, nil, false},
+		{"partial overlap", []HostKey{ed, ec}, []HostKey{ed, rsa}, []HostKey{ed}, []HostKey{ec}, []HostKey{rsa}, false},
+		{"mismatch", []HostKey{ed, rsa}, []HostKey{other, rsa}, []HostKey{rsa}, nil, nil, true},
+		{"nothing shared", []HostKey{ec}, []HostKey{rsa}, nil, []HostKey{ec}, []HostKey{rsa}, false},
+	} {
+		got := CrossCheckKeys(c.session, c.scan)
+		if !reflect.DeepEqual(got.Agreed, c.agreed) || !reflect.DeepEqual(got.OnlySession, c.only1) ||
+			!reflect.DeepEqual(got.OnlyScan, c.only2) || got.Conflict != c.conflict {
+			t.Errorf("%s: %+v", c.name, got)
+		}
+		if c.conflict && (!reflect.DeepEqual(got.Session, []HostKey{ed}) || !reflect.DeepEqual(got.Scan, []HostKey{other})) {
+			t.Errorf("%s: sides %+v", c.name, got)
+		}
+	}
+}

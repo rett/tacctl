@@ -103,6 +103,7 @@ func Upgrade(ctx context.Context, h *Host, args []string) error {
 	if err := StateMigrate(StateOptionsFrom(p, out, h.Now, h.IsRoot)); err != nil {
 		return backend.ErrFailed
 	}
+	repairVarLib(out, p.VarLib)
 	h.Conf.Reload()
 	if ids, err = h.enabled(); err != nil {
 		return err

@@ -1,14 +1,19 @@
 package cli
 
 import (
+	"bytes"
+	"encoding/base64"
+	"encoding/binary"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/execx/fake"
+	"github.com/rett/tacctl/internal/hosts"
 )
 
 // Host-key pinning end to end, in-process: ssh-keyscan is scripted with the
@@ -52,7 +57,7 @@ func (sb *sandbox) devScan(stdin string, script func(*fake.Runner), args ...stri
 }
 
 func (sb *sandbox) knownHosts() string {
-	data, err := os.ReadFile(sb.path("state", "known_hosts"))
+	data, err := os.ReadFile(sb.path("var-lib", "ssh", "known_hosts"))
 	if os.IsNotExist(err) {
 		return ""
 	}
@@ -93,8 +98,13 @@ func TestDeviceAddPinsHostKeys(t *testing.T) {
 	if got := sb.knownHosts(); got != want {
 		t.Errorf("known_hosts:\n%s\nwant:\n%s", got, want)
 	}
-	if st, err := os.Stat(sb.path("state", "known_hosts")); err != nil || st.Mode().Perm() != 0o644 {
-		t.Errorf("known_hosts mode: %v %v", st, err)
+	// The file 0644 in an 'ssh' directory 0755 under VarLib 0711: every
+	// user's ssh reads it (/etc/tacctl is 0700).
+	for path, mode := range map[string]os.FileMode{sb.path("var-lib", "ssh", "known_hosts"): 0o644,
+		sb.path("var-lib", "ssh"): 0o755, sb.path("var-lib"): 0o711} {
+		if st, err := os.Stat(path); err != nil || st.Mode().Perm() != mode {
+			t.Errorf("%s mode: %v %v, want %v", path, st, err, mode)
+		}
 	}
 	// show lists the fingerprints.
 	out = sb.dev("", "show", "x")
@@ -281,21 +291,45 @@ func TestDeviceHostkeyVerb(t *testing.T) {
 	}
 }
 
-// Enrolled hosts: pinned by host enroll and host sync, re-pinned only by
-// device hostkey, forgotten by host unenroll.
+// Enrolled hosts: pinned by host enroll and host sync from the keys read
+// over the enrolment's own ssh session, cross-checked with ssh-keyscan
+// (only keys both hold are pinned); re-pinned only by device hostkey,
+// forgotten by host unenroll.
 func TestHostEnrollSyncPinHostKeys(t *testing.T) {
 	hs := newHostSandbox(t)
 	ed, ec, rsa := hkKey(t, "ed25519"), hkKey(t, "ecdsa"), hkKey(t, "rsa")
-	offer := func(keys ...devreg.HostKey) *fake.Runner {
+	// hostKeys: the session's 'cat /etc/ssh/ssh_host_*_key.pub' prints own
+	// (nothing and exit 1 when empty), ssh-keyscan offers offered.
+	hostKeys := func(own []devreg.HostKey, offered ...devreg.HostKey) *fake.Runner {
 		r := hs.runner()
-		scan("web1.example.net", keys...)(r)
+		scan("web1.example.net", offered...)(r)
+		r.Func(func(c execx.Cmd) bool { return c.Name == "ssh" && c.Args[len(c.Args)-1] == hosts.ReadKeysCommand },
+			func(execx.Cmd) (execx.Result, error) {
+				if len(own) == 0 {
+					return execx.Result{Code: 1}, nil
+				}
+				var b strings.Builder
+				for _, k := range own {
+					b.WriteString(k.String() + " root@web1\n")
+				}
+				return execx.Result{Stdout: []byte(b.String())}, nil
+			})
 		return r
 	}
-	r := offer(ed, rsa)
+	both := func(keys ...devreg.HostKey) []devreg.HostKey { return keys }
+	r := hostKeys(both(ed, rsa), ed, rsa)
 	hs.run(r, "host", "enroll", "admin@web1.example.net", "--scope", "lab", "--port", "2222", "--build-on-host")
 	hs.expect(0, "Host 'web1' enrolled.", "")
-	if !r.Called("ssh-keyscan", "-T", "5", "-p", "2222", "-t", "ed25519,ecdsa,rsa", "web1.example.net") {
-		t.Errorf("keyscan argv %q", r.Argvs())
+	if !r.CalledRegexp(`^ssh .* -p 2222 -T admin@web1\.example\.net cat /etc/ssh/ssh_host_\*_key\.pub$`) ||
+		!r.Called("ssh-keyscan", "-T", "5", "-p", "2222", "-t", "ed25519,ecdsa,rsa", "web1.example.net") {
+		t.Errorf("reads %q", r.Argvs())
+	}
+	// The session read comes before the connection is closed.
+	argvs := r.Argvs()
+	ri := slices.IndexFunc(argvs, func(s string) bool { return strings.HasSuffix(s, hosts.ReadKeysCommand) })
+	ci := slices.IndexFunc(argvs, func(s string) bool { return strings.HasSuffix(s, "-O exit admin@web1.example.net") })
+	if ri < 0 || ci < 0 || ri > ci {
+		t.Errorf("order %q", argvs)
 	}
 	if e := plain(hs.out.String()); strings.Contains(e, "snapshot") || !strings.Contains(e, "web1: pinned 2 ssh host key(s) for 'tacctl ssh': ED25519 "+ed.Fingerprint()+", RSA "+rsa.Fingerprint()) {
 		t.Errorf("enroll stderr:\n%s", e)
@@ -314,28 +348,30 @@ func TestHostEnrollSyncPinHostKeys(t *testing.T) {
 	if !strings.Contains(out, "Host keys:    ED25519  "+ed.Fingerprint()) {
 		t.Errorf("show web1:\n%s", out)
 	}
-	// sync with the same keys: silent about keys, nothing written.
+	// sync with the same keys: silent about keys, nothing written; a pinned
+	// host is checked against the session's keys, not re-scanned.
 	devBefore := hs.devices()
-	hs.run(offer(rsa, ed), "host", "sync", "web1")
+	r = hostKeys(both(rsa, ed), ec)
+	hs.run(r, "host", "sync", "web1")
 	hs.expect(0, "web1: synced (3 users).", "")
-	if strings.Contains(hs.out.String(), "pinned") || hs.devices() != devBefore {
-		t.Errorf("sync, same keys: %q", hs.out.String())
+	if strings.Contains(hs.out.String(), "pinned") || hs.devices() != devBefore || r.Called("ssh-keyscan") {
+		t.Errorf("sync, same keys: %q %q", hs.out.String(), r.Argvs())
 	}
 	// a new key type: reported, not pinned.
-	hs.run(offer(ed, ec, rsa), "host", "sync", "web1")
-	if e := plain(hs.out.String()); hs.code != 0 || !strings.Contains(e, "web1: offers host key types that are not pinned (ECDSA "+ec.Fingerprint()+")") ||
+	hs.run(hostKeys(both(ed, ec, rsa)), "host", "sync", "web1")
+	if e := plain(hs.out.String()); hs.code != 0 || !strings.Contains(e, "web1: has host key types that are not pinned (ECDSA "+ec.Fingerprint()+")") ||
 		!strings.Contains(e, "tacctl device hostkey web1 accept") || hs.devices() != devBefore {
 		t.Errorf("sync, added: %d\n%s", hs.code, e)
 	}
 	// a changed key: reported, the pin stays, the sync still succeeds.
-	hs.run(offer(ec), "host", "sync", "web1")
+	hs.run(hostKeys(both(ec)), "host", "sync", "web1")
 	if e := plain(hs.out.String()); hs.code != 0 || !strings.Contains(e, "web1: the ssh host key differs from the one pinned; the pin was not changed.") ||
-		!strings.Contains(e, "Pinned: ED25519 "+ed.Fingerprint()) || !strings.Contains(e, "Offered: ECDSA "+ec.Fingerprint()) ||
+		!strings.Contains(e, "Pinned: ED25519 "+ed.Fingerprint()) || !strings.Contains(e, "On the host: ECDSA "+ec.Fingerprint()) ||
 		!strings.Contains(e, "ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub") || hs.devices() != devBefore || hs.knownHosts() != kh {
 		t.Errorf("sync, changed: %d\n%s", hs.code, e)
 	}
 	// device hostkey accept re-pins a host.
-	r = offer(ec)
+	r = hostKeys(nil, ec)
 	hs.run(r, "device", "hostkey", "web1", "accept", "-y")
 	if hs.code != 0 || hs.knownHosts() != devreg.KnownHostsHeader+"web1 "+ec.String()+"\n" {
 		t.Errorf("hostkey accept web1: %d %q\n%s", hs.code, hs.out.String(), hs.knownHosts())
@@ -349,12 +385,70 @@ func TestHostEnrollSyncPinHostKeys(t *testing.T) {
 	if hs.knownHosts() != devreg.KnownHostsHeader || strings.Contains(hs.devices(), "web1") {
 		t.Errorf("after unenroll:\n%s\n%s", hs.knownHosts(), hs.devices())
 	}
+	enroll := func(r *fake.Runner) string {
+		hs.run(r, "host", "enroll", "admin@web1.example.net", "--scope", "lab", "--build-on-host")
+		if hs.code != 0 {
+			t.Errorf("enroll: %d %q", hs.code, hs.stderr())
+		}
+		return plain(hs.out.String())
+	}
+	// Partial overlap: only the agreed key is pinned, the others reported.
+	e := enroll(hostKeys(both(ed, ec), ed, rsa))
+	if !strings.Contains(e, "web1: pinned 1 ssh host key(s) for 'tacctl ssh': ED25519 "+ed.Fingerprint()) ||
+		!strings.Contains(e, "web1: not offered to ssh-keyscan, not pinned: ECDSA "+ec.Fingerprint()) ||
+		!strings.Contains(e, "web1: offered but not among the host's key files, not pinned: RSA "+rsa.Fingerprint()) ||
+		hs.knownHosts() != devreg.KnownHostsHeader+"web1 "+ed.String()+"\n" {
+		t.Errorf("partial:\n%s\n%s", e, hs.knownHosts())
+	}
+	hs.run(nil, "host", "unenroll", "web1")
+	// Mismatch: a type with different keys refuses the pin, both sets shown
+	// and logged; the enrolment itself succeeds.
+	r = hostKeys(both(ed, rsa), otherEd25519(t), rsa)
+	e = enroll(r)
+	if !strings.Contains(e, "web1: the keys the host holds and the keys offered at web1.example.net port 22 differ; nothing was pinned.") ||
+		!strings.Contains(e, "Read over the enrolment session: ED25519 "+ed.Fingerprint()) ||
+		!strings.Contains(e, "tacctl device hostkey web1 accept") || strings.Contains(hs.devices(), "host_keys") {
+		t.Errorf("mismatch:\n%s\n%s", e, hs.devices())
+	}
+	if !r.Called("logger", "-t", "tacctl", "-p", "auth.warning", "host hostkey-mismatch name=web1 host=web1.example.net port=22") {
+		t.Errorf("mismatch not logged: %q", r.Argvs())
+	}
+	hs.run(nil, "host", "unenroll", "web1")
+	// Unreadable key files: nothing pinned, no scan to trust alone.
+	r = hostKeys(nil, ed, rsa)
+	e = enroll(r)
+	if !strings.Contains(e, "web1: the host's ssh keys could not be read over the enrolment session") || r.Called("ssh-keyscan") ||
+		strings.Contains(hs.devices(), "host_keys") {
+		t.Errorf("unreadable:\n%s", e)
+	}
+	hs.run(nil, "host", "unenroll", "web1")
 	// A host that does not answer the scan is enrolled, unpinned, with a warning.
-	hs.run(offer(), "host", "enroll", "admin@web1.example.net", "--scope", "lab", "--build-on-host")
-	if e := plain(hs.out.String()); hs.code != 0 || !strings.Contains(e, "web1: no ssh host key could be read from web1.example.net port 22; none pinned. Later: tacctl device hostkey web1 accept") {
-		t.Errorf("enroll, no answer: %d\n%s", hs.code, e)
+	e = enroll(hostKeys(both(ed)))
+	if !strings.Contains(e, "web1: no ssh host key could be read from web1.example.net port 22 (ssh-keyscan) to check the session's against; none pinned.") {
+		t.Errorf("enroll, no answer:\n%s", e)
 	}
 	if strings.Contains(hs.devices(), "hosts:") {
 		t.Errorf("devices.yaml:\n%s", hs.devices())
 	}
+	hs.run(nil, "host", "unenroll", "web1")
+	// --local: no session, no scan, nothing pinned.
+	r = hostKeys(both(ed), ed)
+	hs.run(r, "host", "enroll", "--local", "--scope", "lab", "--build-on-host")
+	if r.Called("ssh-keyscan") || r.CalledRegexp(`cat /etc/ssh`) || strings.Contains(hs.devices(), "host_keys") {
+		t.Errorf("--local: %d %q", hs.code, r.Argvs())
+	}
+}
+
+// otherEd25519 is a well-formed ed25519 key other than the test key.
+func otherEd25519(t *testing.T) devreg.HostKey {
+	t.Helper()
+	var b []byte
+	put := func(p []byte) { b = binary.BigEndian.AppendUint32(b, uint32(len(p))); b = append(b, p...) }
+	put([]byte("ssh-ed25519"))
+	put(bytes.Repeat([]byte{7}, 32))
+	k, err := devreg.ParseHostKey("ssh-ed25519 " + base64.StdEncoding.EncodeToString(b))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return k
 }

@@ -77,16 +77,6 @@ func TestValidateFields(t *testing.T) {
 			t.Errorf("hostname %q accepted", h)
 		}
 	}
-	for _, l := range []string{"admin", "Admin.User", "DOM\\user", "u@dom"} {
-		if err := ValidateLogin(l); err != nil {
-			t.Errorf("login %q: %v", l, err)
-		}
-	}
-	for _, l := range []string{"", "-oProxyCommand=x", "a b", "a;b"} {
-		if err := ValidateLogin(l); err == nil {
-			t.Errorf("login %q accepted", l)
-		}
-	}
 	if err := ValidateDescription(strings.Repeat("é", 120)); err != nil {
 		t.Errorf("120 characters: %v", err)
 	}

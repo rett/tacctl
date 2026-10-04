@@ -28,7 +28,6 @@ type Device struct {
 	Vendor string
 	// Port is the ssh port; 0 is the default (22).
 	Port        int
-	Login       string
 	Description string
 	LegacySSH   bool
 	// Ack are the acknowledged notice kinds.
@@ -63,7 +62,6 @@ func (d Device) SSHPort() int {
 var (
 	reName     = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$`)
 	reHostname = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*\.?$`)
-	reLogin    = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.@\\-]{0,63}$`)
 )
 
 // ReservedNames are words a device may not be called: the tacctl commands
@@ -138,14 +136,6 @@ func ValidateHostname(s string) error {
 	return nil
 }
 
-// ValidateLogin checks an ssh login override.
-func ValidateLogin(s string) error {
-	if !reLogin.MatchString(s) {
-		return fail("Invalid login '" + s + "'.")
-	}
-	return nil
-}
-
 // ValidateDescription checks the free text: at most 120 characters, no
 // control characters.
 func ValidateDescription(s string) error {
@@ -176,11 +166,6 @@ func (d Device) validate() error {
 	}
 	if d.Hostname != "" {
 		if err := ValidateHostname(d.Hostname); err != nil {
-			return err
-		}
-	}
-	if d.Login != "" {
-		if err := ValidateLogin(d.Login); err != nil {
 			return err
 		}
 	}

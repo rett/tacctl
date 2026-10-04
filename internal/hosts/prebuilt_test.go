@@ -314,3 +314,26 @@ func TestBuildTarball(t *testing.T) {
 		t.Errorf("make dist: %v %q", err, errb.String())
 	}
 }
+
+// Creating the Linux data directory under VarLib makes VarLib 0711 (users'
+// ssh passes through it to VarLib/ssh/known_hosts); outside VarLib the
+// parent is not touched.
+func TestPathsMkDirVarLib(t *testing.T) {
+	w := t.TempDir()
+	p := Paths{Dir: filepath.Join(w, "var-lib", "linux"), VarLib: filepath.Join(w, "var-lib")}
+	if err := p.mkDir(); err != nil {
+		t.Fatal(err)
+	}
+	for path, mode := range map[string]os.FileMode{p.VarLib: 0o711, p.Dir: 0o700} {
+		if st, err := os.Stat(path); err != nil || st.Mode().Perm() != mode {
+			t.Errorf("%s: %v %v, want %v", path, st.Mode().Perm(), err, mode)
+		}
+	}
+	q := Paths{Dir: filepath.Join(w, "elsewhere", "linux"), VarLib: filepath.Join(w, "var-lib2")}
+	if err := q.mkDir(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(q.VarLib); !os.IsNotExist(err) {
+		t.Errorf("VarLib made for a Dir outside it: %v", err)
+	}
+}

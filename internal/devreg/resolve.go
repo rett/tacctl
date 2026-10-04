@@ -93,18 +93,19 @@ func (r *Resolver) derive(e *Entry) {
 	}
 }
 
-// hostEntry is an enrolled host as a vendor=linux entry: hostname, login,
-// port and identity from 'target|port|identity'; the address is the scope's
-// single /32 or /128 when it has one.
+// hostEntry is an enrolled host as a vendor=linux entry: hostname, port
+// and identity from 'target|port|identity' (the target's user is the
+// provisioning account, never a login for 'tacctl ssh'); the address is the
+// scope's single /32 or /128 when it has one.
 func (r *Resolver) hostEntry(h hosts.Entry) Entry {
 	e := Entry{Source: SourceHost, Target: h.Target, Identity: h.Identity}
 	e.Name, e.Vendor, e.Scope = h.Name, VendorLinux, h.Scope
 	e.HostKeys = r.File.HostKeysOf(h.Name)
-	login, host, ok := strings.Cut(h.Target, "@")
-	if !ok {
-		login, host = "", h.Target
+	host := h.Target
+	if _, after, ok := strings.Cut(h.Target, "@"); ok {
+		host = after
 	}
-	e.Hostname, e.Login = host, login
+	e.Hostname = host
 	if n, err := strconv.Atoi(h.Port); err == nil && n != DefaultPort {
 		e.Port = n
 	}

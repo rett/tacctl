@@ -264,7 +264,7 @@ func TestHostLocationsAndReroot(t *testing.T) {
 func TestDeviceAndConsolePaths(t *testing.T) {
 	p := Resolve(NewEnv(nil), "", func(string) bool { return false })
 	want := map[string]string{
-		p.DevicesFile: "/etc/tacctl/devices.yaml", p.KnownHosts: "/etc/tacctl/known_hosts",
+		p.DevicesFile: "/etc/tacctl/devices.yaml", p.KnownHosts: "/var/lib/tacctl/ssh/known_hosts",
 		p.ConsoleFile: "/etc/tacctl/console.yaml", p.ConsoleDir: "/etc/tacctl/console",
 		p.VarLib: "/var/lib/tacctl", p.SeenCache: "/var/lib/tacctl/devices-seen.json",
 	}
@@ -275,7 +275,7 @@ func TestDeviceAndConsolePaths(t *testing.T) {
 	}
 	p = Resolve(NewEnv([]string{"TACCTL_STATE_DIR=/s", "TACCTL_VAR_LIB=/v"}), "", func(string) bool { return false })
 	for got, w := range map[string]string{
-		p.DevicesFile: "/s/devices.yaml", p.KnownHosts: "/s/known_hosts", p.ConsoleFile: "/s/console.yaml",
+		p.DevicesFile: "/s/devices.yaml", p.KnownHosts: "/v/ssh/known_hosts", p.ConsoleFile: "/s/console.yaml",
 		p.ConsoleDir: "/s/console", p.VarLib: "/v", p.SeenCache: "/v/devices-seen.json",
 	} {
 		if got != w {

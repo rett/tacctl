@@ -439,9 +439,11 @@ if shim_current; then
 fi
 
 # Building and installing need root; re-run under sudo as tacctl does
-# ('host', 'ssh' and 'device' keep the agent socket for their ssh).
+# ('host' keeps the agent socket for its ssh: sudo accepts the assignment
+# because the tacctl drop-ins keep SSH_AUTH_SOCK with env_keep, or the rule
+# is ALL).
 if [[ $EUID -ne 0 && "${TACCTL_SKIP_SUDO:-0}" != "1" ]]; then
-    if [[ "${1:-}" =~ ^(host|ssh|device)$ && -n "${SSH_AUTH_SOCK:-}" ]]; then
+    if [[ "${1:-}" == host && -n "${SSH_AUTH_SOCK:-}" ]]; then
         exec sudo SSH_AUTH_SOCK="$SSH_AUTH_SOCK" "$0" "$@"
     fi
     exec sudo "$0" "$@"

@@ -22,6 +22,7 @@ import (
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/hosts"
 	"github.com/rett/tacctl/internal/names"
+	"github.com/rett/tacctl/internal/tier"
 	"github.com/rett/tacctl/internal/ui"
 )
 
@@ -107,7 +108,8 @@ func (inv *invocation) configLinux(args []string) error {
 
 // hostsEnv is the hosts.Env of this invocation. ssh and podman run as the
 // user who invoked sudo (SUDO_USER, when tacctl runs as root for someone
-// other than root), with their agent socket.
+// other than root), with their agent socket. The tier gate before every
+// command has refused a SUDO_USER that is not SUDO_UID's account.
 func (inv *invocation) hostsEnv() *hosts.Env {
 	a := inv.app
 	asUser := ""
@@ -115,7 +117,7 @@ func (inv *invocation) hostsEnv() *hosts.Env {
 		asUser = u
 	}
 	return &hosts.Env{
-		Paths:    hosts.Paths{Dir: a.Paths.LinuxDir, UIDs: a.Paths.LinuxUIDs, Hosts: a.Paths.LinuxHosts},
+		Paths:    hosts.Paths{Dir: a.Paths.LinuxDir, VarLib: a.Paths.VarLib, UIDs: a.Paths.LinuxUIDs, Hosts: a.Paths.LinuxHosts},
 		Runner:   a.Runner,
 		Out:      a.Out,
 		Stdin:    a.Stdin,
@@ -133,6 +135,19 @@ func (inv *invocation) hostsDone(err error) error {
 		return exit(1)
 	}
 	return err
+}
+
+// verifySudoUser refuses a SUDO_USER that is not the account of SUDO_UID
+// (tier.VerifyCaller), for the commands that run programs as SUDO_USER
+// ('host', 'tacctl ssh'). The tier gate has refused one already; this is
+// the same check where the name is acted on.
+func (inv *invocation) verifySudoUser(what string) error {
+	a := inv.app
+	u, uid := a.Env.Get("SUDO_USER"), a.Env.Get("SUDO_UID")
+	if tier.VerifyCaller(inv.ctx, a.Runner, u, uid) != nil {
+		return inv.usageErr("SUDO_USER '" + u + "' is not the account of SUDO_UID " + uid + "; " + what + " will not run ssh as it")
+	}
+	return nil
 }
 
 // sudoUser is ${SUDO_USER:-root}, for the audit lines.

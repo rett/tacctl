@@ -202,6 +202,7 @@ user scope alice set
 # verify: the audit line names the sudo caller
 @env SUDO_USER=ops
 @env SUDO_UID=1234
+@known 0.2.1 item 13: SUDO_UID 1234 is no account named ops, so tacctl refuses SUDO_USER=ops
 user add alice superuser --hash {HASH} --scopes lab ;; user verify alice <<< wrong
 @unenv SUDO_UID
 user add alice superuser --hash {HASH} --scopes lab ;; user verify alice <<< wrong

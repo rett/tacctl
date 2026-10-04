@@ -460,3 +460,17 @@ func stderrLine(out ui.Output, s string) {
 		_, _ = io.WriteString(out.Stderr, s+"\n")
 	}
 }
+
+// repairVarLib brings an existing VarLib (/var/lib/tacctl) to
+// paths.VarLibMode: users' ssh reaches the generated known_hosts through
+// it, and older builds created it 0700. A missing VarLib is left to the
+// first write under it; a symlink is left alone.
+func repairVarLib(o ui.Output, dir string) {
+	st, err := os.Lstat(dir)
+	if err != nil || !st.IsDir() || st.Mode().Perm() == paths.VarLibMode {
+		return
+	}
+	if err := paths.MkVarLib(dir); err != nil {
+		o.Warn("Could not set the mode of " + dir + " to 0711: " + err.Error())
+	}
+}

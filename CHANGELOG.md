@@ -60,15 +60,20 @@ current behaviour; this file is where history lives.
     `[ERROR] '<branch>' is a release of the bash era; install it with its own
     installer: sudo /opt/tacctl/bin/tacctl.sh install`, exit 1, instead of a
     build failure.
-13. **The tiers sudoers rules gain `SETENV:` and rows for `ssh` and
-    `device`.** The grants read `NOPASSWD:SETENV:` (the same for the opt-in
-    group rule of `tacctl config sudoers install`), so an `SSH_AUTH_SOCK=…
-    tacctl ssh|host|device …` line keeps the agent socket through sudo. The
-    read-only tier gets `ssh <name>`, `device list`, `device show` and
-    `device ssh-config`; the operator tier also `device check`, `scan`,
-    `discover` and `export`. `tacctl upgrade` rewrites an installed tiers
-    file that differs (item 4), which is how an installed host picks the
-    rows up.
+13. **The sudoers drop-ins keep the agent socket, and the tiers rules gain
+    rows for `ssh` and `device`.** Both files (`config sudoers install` and
+    `config sudoers tiers install`) carry `Defaults!/usr/local/bin/tacctl
+    env_keep += "SSH_AUTH_SOCK"`, so a `SSH_AUTH_SOCK=… tacctl host …` line
+    keeps the agent socket through sudo; the grants stay `NOPASSWD:` (no
+    `SETENV`), so no caller can set `SUDO_USER`. tacctl also refuses a
+    `SUDO_USER` that is not the account of `SUDO_UID` (`getent passwd
+    <uid>`): `SUDO_USER '<name>' is not the account of SUDO_UID <uid>, so
+    tacctl access is denied.`, exit 1, logged as `tier DENY user=<name>
+    uid=<uid> reason=sudo-user-mismatch`. The read-only tier gets `ssh
+    <name>`, `device ssh <name>`, `device list`, `device show` and `device
+    ssh-config`; the operator tier also `device check`, `scan`, `discover`
+    and `export`. `tacctl upgrade` rewrites an installed tiers file that
+    differs (item 4), which is how an installed host picks the rows up.
 14. **`host sync <TAB>` and `host unenroll <TAB>` complete the enrolled host
     names** (a read-only or operator user is offered the hosts of its own
     scopes).
@@ -102,7 +107,7 @@ current behaviour; this file is where history lives.
     are the same as bash's.
 19. **New: `tacctl device`, the device registry.** It names the network devices
     that authenticate against the server (`device list|show|add|remove|rename`,
-    the field getter/setters `address|hostname|vendor|port|login|description`,
+    the field getter/setters `address|hostname|vendor|port|description`,
     `legacy-ssh`, `stale-days`, `notice`, `notices`, `import`, `export`) in
     `/etc/tacctl/devices.yaml` (0600, `version: 1`, own lock, atomic write). It
     never touches `store.yaml`: scope, state (`configured`/`unconfigured`) and
@@ -146,9 +151,15 @@ current behaviour; this file is where history lives.
     `--no-host-key` is given, which registers it unpinned with a
     `hostkey-unpinned` notice. `--host-key SHA256:<fp>` registers only when
     the device offers a key with that fingerprint, and pins that key alone.
-    `host enroll` and `host sync` pin an enrolled host's keys once (a host
-    that does not answer is enrolled with a warning; `--local` is not
-    pinned); a later key that differs is reported and the pin stays.
+    `host enroll` and `host sync` pin an enrolled host's keys once, from the
+    keys both the host's own `/etc/ssh/ssh_host_*_key.pub` (read over the
+    enrolment's authenticated ssh connection) and an `ssh-keyscan` of the
+    target hold; a key type the two disagree on pins nothing (both sets
+    printed, `host hostkey-mismatch` logged), a type only one has is
+    reported, unreadable key files or a host that does not answer pin
+    nothing (with a warning; the enrolment succeeds); `--local` is not
+    pinned. A later sync compares the key files with the pin: a difference
+    is reported and the pin stays.
     `host unenroll` drops the host's pins. An import never changes an
     existing pin.
 23. **New: `tacctl device hostkey <name> [show|accept [-y]|set SHA256:<fp>]`**
@@ -157,36 +168,56 @@ current behaviour; this file is where history lives.
     the key with that fingerprint. Both work for devices and enrolled hosts,
     and log `device hostkey accept|set name=<name> keys=<n> by=<user>` to
     syslog. Nothing else changes a pin.
-24. **`/etc/tacctl/known_hosts` is generated** (root, 0644) from the pinned
-    keys on every registry write and after `backup restore`: one
-    `<name> <type> <key>` line per key, for ssh's `HostKeyAlias` lookup.
-25. **New: `tacctl ssh <name|address> [-l <login>] [-p <port>] [-- <ssh args>]`**
-    (`device ssh` is the same) opens an ssh session to a registered device or
-    an enrolled host as the invoking user, never root: the name is resolved
-    as root, a read-only or operator caller is refused outside their scopes
-    (`'<user>' has no access to scope '<scope>' (device <name>)`), the session
-    is logged (`ssh user=<user> device=<name> addr=<address>`, auth.info), and
-    ssh runs through `sudo -u <user> -H env SSH_AUTH_SOCK=…` with the
-    terminal; its exit status is tacctl's. Every session gets
-    `-o ConnectTimeout=10`; `wti` devices
-    `-o PreferredAuthentications=password -o PubkeyAuthentication=no`;
-    `legacy-ssh` devices the SHA-1 key exchanges and `ssh-rsa`; pinned devices
-    `-o UserKnownHostsFile=/etc/tacctl/known_hosts -o StrictHostKeyChecking=yes
-    -o HostKeyAlias=<name> -o UpdateHostKeys=no`. An unpinned device prints its
-    `hostkey-unpinned` notice first. Run by root itself it refuses (`tacctl ssh
-    runs ssh as the user who invoked it; run it from your own account, not as
-    root`), without a terminal too (`a terminal is required`); an unregistered
-    address is refused with the `device add` command. After an ssh exit 255 on
-    a pinned device whose key changed, tacctl prints the pinned and offered
-    fingerprints, the vendor's console command and `tacctl device hostkey
-    <name> accept|set`. `tacctl ssh <TAB>` completes the device names of the
-    caller's scopes.
+24. **`/var/lib/tacctl/ssh/known_hosts` is generated** (root, 0644, in a
+    0755 directory) from the pinned keys on every registry write and after
+    `backup restore`: one `<name> <type> <key>` line per key, for ssh's
+    `HostKeyAlias` lookup. `/var/lib/tacctl` is 0711 (every user may pass
+    through it, only root may list it): `install`, `upgrade`, the first
+    write of `known_hosts` and the Linux build cache set it. `uninstall`
+    removes the file and its directory.
+25. **New: `tacctl ssh <name|address> [-p <port>] [-- <ssh args>]`** (`device
+    ssh` is the same) opens an ssh session to a registered device or an
+    enrolled host as the invoking user, never root. Only an active tacctl
+    user (in the store, not disabled) whose scopes include the entry's may
+    connect, at every tier, superusers included; a local account that is not
+    a tacctl user (`'<user>' is not a tacctl user; …`), a disabled user, a
+    caller outside the scope (`'<user>' has no access to scope '<scope>'
+    (device <name>)`) and an entry in no configured scope are refused, each
+    logged as `ssh DENY user= device= scope= reason=` (auth.warning). The
+    session is logged (`ssh user=<user> device=<name> addr=<address>`,
+    auth.info), and ssh runs through `sudo -u <user> -H` with the terminal,
+    logging in as the invoking user (`-l <user>`) by password only: no agent
+    socket, no key, no identity, no other login; an enrolled host's
+    enrolment account is never used. Its exit status is tacctl's. Every
+    session gets `-o ConnectTimeout=10 -o PubkeyAuthentication=no -o
+    PreferredAuthentications=keyboard-interactive,password` (`wti`:
+    `PreferredAuthentications=password`); `legacy-ssh` devices the SHA-1 key
+    exchanges and `ssh-rsa`; pinned devices `-o
+    UserKnownHostsFile=/var/lib/tacctl/ssh/known_hosts -o
+    GlobalKnownHostsFile=none -o StrictHostKeyChecking=yes -o
+    HostKeyAlias=<name> -o UpdateHostKeys=no`. An unpinned device prints its
+    `hostkey-unpinned` notice first. Run by root itself it refuses (`tacctl
+    ssh runs ssh as the user who invoked it; run it from your own account,
+    not as root`), without a terminal too (`a terminal is required`); an
+    unregistered address is refused with the `device add` command. After an
+    ssh exit 255 on a pinned device whose key changed, tacctl prints the
+    pinned and offered fingerprints, the vendor's console command and
+    `tacctl device hostkey <name> accept|set`. `tacctl ssh <TAB>` completes
+    the device names of the caller's scopes.
 26. **New: `tacctl device ssh-config`** prints an `ssh_config` fragment (one
-    `Host` block per device and enrolled host the caller may see, with the
-    vendor options and, for a pinned entry, the same `UserKnownHostsFile`,
-    `StrictHostKeyChecking yes`, `HostKeyAlias` and `UpdateHostKeys no` lines)
-    and on stderr how to Include it from `~/.ssh/config`. Print-only; open to
-    the read-only and operator tiers, filtered to their scopes.
+    `Host` block per device and enrolled host the caller may see, with
+    `PubkeyAuthentication no`, the password methods, the legacy algorithms
+    and, for a pinned entry, the same `UserKnownHostsFile`,
+    `GlobalKnownHostsFile none`, `StrictHostKeyChecking yes`, `HostKeyAlias`
+    and `UpdateHostKeys no` lines; no `User` line, so ssh logs in with the
+    local username) and on stderr how to Include it from `~/.ssh/config`.
+    Print-only; open to the read-only and operator tiers, filtered to their
+    scopes.
+27. **The host provisioning account must not be a tacctl user.** `host
+    enroll` refuses a target whose ssh login (the `user@` of the target, else
+    the invoking user's name) is a tacctl user: enrolment uses a local
+    account that does not authenticate through tacctl. `host sync` warns
+    about an existing enrolment that uses one.
 
 ## 0.2.0 (2026-10-04)
 
