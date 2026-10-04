@@ -162,7 +162,7 @@ setup() {
 
     [[ -f "$TACCTL_SUDOERS_FILE" ]]
     run cat "$TACCTL_SUDOERS_FILE"
-    assert_output --partial "%wheel ALL=(ALL) NOPASSWD: /usr/local/bin/tacctl"
+    assert_output --partial "%wheel ALL=(ALL) NOPASSWD:SETENV: /usr/local/bin/tacctl"
     assert_output --partial "Managed by tacctl"
 }
 
@@ -227,7 +227,7 @@ setup() {
 
 @test "config sudoers remove: deletes the drop-in file" {
     mkdir -p "$(dirname "$TACCTL_SUDOERS_FILE")"
-    echo "%wheel ALL=(ALL) NOPASSWD: /usr/local/bin/tacctl" > "$TACCTL_SUDOERS_FILE"
+    echo "%wheel ALL=(ALL) NOPASSWD:SETENV: /usr/local/bin/tacctl" > "$TACCTL_SUDOERS_FILE"
     [[ -f "$TACCTL_SUDOERS_FILE" ]]
 
     run "$TACCTL_BIN_SCRIPT" config sudoers remove

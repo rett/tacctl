@@ -104,6 +104,12 @@ var Rules = []Rule{
 	{Tier: Readonly, Cmd: "scope", Sub: "list", Sudoers: []string{"scope list"}, Wrap: true},
 	{Tier: Readonly, Cmd: "backend", Sub: "list", Sudoers: []string{"backend list"}},
 	{Tier: Readonly, Cmd: "backend", Sub: "status", Sudoers: []string{"backend status", "backend status *"}, Wrap: true},
+	// 'ssh <name>' and the device registry's reads (0.2.1): the root side
+	// filters them to the caller's own scopes (docs/plans/operator-console.md 8).
+	{Tier: Readonly, Cmd: "ssh", AnySub: true, Sudoers: []string{"ssh *"}},
+	{Tier: Readonly, Cmd: "device", Sub: "list", Sudoers: []string{"device list", "device list *"}},
+	{Tier: Readonly, Cmd: "device", Sub: "show", Sudoers: []string{"device show *"}},
+	{Tier: Readonly, Cmd: "device", Sub: "ssh-config", Sudoers: []string{"device ssh-config"}, Wrap: true},
 	{Tier: Readonly, Cmd: "_completion-names", AnySub: true, Sudoers: []string{"_completion-names *"}},
 	{Tier: Readonly, Cmd: "--version", AnySub: true},
 	{Tier: Readonly, Cmd: "-v", AnySub: true},
@@ -114,7 +120,11 @@ var Rules = []Rule{
 	{Tier: Operator, Cmd: "log", Sub: "failures", Sudoers: []string{"log failures"}},
 	{Tier: Operator, Cmd: "log", Sub: "accounting", Sudoers: []string{"log accounting", "log accounting *"}, Wrap: true},
 	{Tier: Operator, Cmd: "config", Sub: "validate", Sudoers: []string{"config validate"}},
-	{Tier: Operator, Cmd: "backup", Sub: "list", Sudoers: []string{"backup list"}},
+	{Tier: Operator, Cmd: "backup", Sub: "list", Sudoers: []string{"backup list"}, Wrap: true},
+	{Tier: Operator, Cmd: "device", Sub: "check", Sudoers: []string{"device check *"}},
+	{Tier: Operator, Cmd: "device", Sub: "scan", Sudoers: []string{"device scan", "device scan *"}},
+	{Tier: Operator, Cmd: "device", Sub: "discover", Sudoers: []string{"device discover", "device discover *"}},
+	{Tier: Operator, Cmd: "device", Sub: "export", Sudoers: []string{"device export", "device export *"}},
 }
 
 // Permits is tier_permits: whether tier may run 'tacctl cmd sub'.
@@ -183,9 +193,11 @@ func Sudoers() string {
 	}
 	b.WriteString("\n")
 	b.WriteString("%" + SuperuserGroup + " ALL=(ALL:ALL) ALL\n")
-	b.WriteString("%" + SuperuserGroup + " ALL=(root) NOPASSWD: TACCTL_RO, TACCTL_OP\n")
-	b.WriteString("%" + OperatorGroup + " ALL=(root) NOPASSWD: TACCTL_RO, TACCTL_OP\n")
-	b.WriteString("%" + ReadonlyGroup + " ALL=(root) NOPASSWD: TACCTL_RO\n")
+	// SETENV: lets 'SSH_AUTH_SOCK=... tacctl ssh|host|device' carry the
+	// agent socket through sudo's env_reset.
+	b.WriteString("%" + SuperuserGroup + " ALL=(root) NOPASSWD:SETENV: TACCTL_RO, TACCTL_OP\n")
+	b.WriteString("%" + OperatorGroup + " ALL=(root) NOPASSWD:SETENV: TACCTL_RO, TACCTL_OP\n")
+	b.WriteString("%" + ReadonlyGroup + " ALL=(root) NOPASSWD:SETENV: TACCTL_RO\n")
 	return b.String()
 }
 

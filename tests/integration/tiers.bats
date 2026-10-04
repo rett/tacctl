@@ -209,8 +209,26 @@ print("" if v is None else v)' "${TACCTL_STATE_DIR}/store.yaml" "$1" "$2"
     run "$TACCTL_BIN_SCRIPT" config sudoers tiers show
     assert_success
     assert_output --partial "not installed"
-    assert_output --partial "%tac-readonly ALL=(root) NOPASSWD: TACCTL_RO"
+    assert_output --partial "%tac-readonly ALL=(root) NOPASSWD:SETENV: TACCTL_RO"
     assert_output --partial "%tac-superuser ALL=(ALL:ALL) ALL"
+}
+
+@test "config sudoers tiers show: ssh and device rows per tier, SETENV on every grant" {
+    run "$TACCTL_BIN_SCRIPT" config sudoers tiers show
+    assert_success
+    refute_output --partial "NOPASSWD: "
+    local text ro op r
+    text=$(sed -n 's/^    //p' <<<"$output" | sed -e ':a' -e '/\\$/N; s/\\\n//; ta')
+    ro=$(grep '^Cmnd_Alias TACCTL_RO' <<<"$text")
+    op=$(grep '^Cmnd_Alias TACCTL_OP' <<<"$text")
+    for r in 'tacctl ssh \*' 'tacctl device list,' 'tacctl device list \*' 'tacctl device show \*' 'tacctl device ssh-config'; do
+        grep -q -- "$r" <<<"$ro" || { echo "readonly lacks $r"; return 1; }
+        if grep -q -- "$r" <<<"$op"; then echo "operator alias has $r"; return 1; fi
+    done
+    for r in 'tacctl device check \*' 'tacctl device scan,' 'tacctl device discover \*' 'tacctl device export \*'; do
+        grep -q -- "$r" <<<"$op" || { echo "operator lacks $r"; return 1; }
+        if grep -q -- "$r" <<<"$ro"; then echo "readonly alias has $r"; return 1; fi
+    done
 }
 
 @test "config sudoers tiers: generated rules pass a real visudo" {

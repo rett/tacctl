@@ -50,6 +50,15 @@ type Paths struct {
 	LinuxHosts string // LINUX_HOSTS_FILE: the enrolled-host registry
 	Templates  string // TEMPLATE_DIR_LOCAL: operator template overrides
 
+	// The device registry and the console (0.2.1, 0.2.2); every one is under
+	// StateDir (/etc/tacctl) except the seen cache, which is under VarLib.
+	DevicesFile string // StateDir/devices.yaml: the device registry
+	KnownHosts  string // StateDir/known_hosts: the generated host-key file
+	ConsoleFile string // StateDir/console.yaml: the console's settings (0.2.2)
+	ConsoleDir  string // StateDir/console: the console's ssh_config and agent files (0.2.2)
+	VarLib      string // TACCTL_VAR_LIB: tacctl's variable data (/var/lib/tacctl)
+	SeenCache   string // VarLib/devices-seen.json: what the logs showed of each device
+
 	SudoersFile     string // TACCTL_SUDOERS_FILE (SUDOERS_FILE)
 	TierSudoersFile string // TACCTL_TIER_SUDOERS_FILE (TIER_SUDOERS_FILE)
 
@@ -110,6 +119,12 @@ func Resolve(env Env, exe string, exists func(string) bool) Paths {
 	p.LinuxUIDs = p.StateDir + "/linux-uids"
 	p.LinuxHosts = p.StateDir + "/linux-hosts"
 	p.Templates = p.StateDir + "/templates"
+	p.DevicesFile = p.StateDir + "/devices.yaml"
+	p.KnownHosts = p.StateDir + "/known_hosts"
+	p.ConsoleFile = p.StateDir + "/console.yaml"
+	p.ConsoleDir = p.StateDir + "/console"
+	p.VarLib = env.Or("TACCTL_VAR_LIB", "/var/lib/tacctl")
+	p.SeenCache = p.VarLib + "/devices-seen.json"
 
 	p.SudoersFile = env.Or("TACCTL_SUDOERS_FILE", "/etc/sudoers.d/tacctl")
 	p.TierSudoersFile = env.Or("TACCTL_TIER_SUDOERS_FILE", "/etc/sudoers.d/tacctl-tiers")

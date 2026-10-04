@@ -16,6 +16,9 @@ var noSudo = map[string]bool{
 	"completion":       true,
 	"__complete":       true,
 	"__completeNoDesc": true,
+	// The interactive shell (0.2.1) runs as the user and re-enters tacctl
+	// under sudo for each line it executes.
+	"shell": true,
 }
 
 // needsSudo is bin/tacctl.sh's re-exec condition: not root, not
@@ -32,11 +35,13 @@ func needsSudo(a *app.App) bool {
 }
 
 // keepEnv are the first words whose re-exec carries variables of the
-// invoker across sudo's env_reset, as command-line assignments: 'host' runs
-// ssh as the invoking user and needs the agent socket (bin/tacctl.sh). A
-// later word that needs the same (a shell mode, 'ssh <name>') is one entry.
+// invoker across sudo's env_reset, as command-line assignments: 'host',
+// 'ssh' and 'device' run ssh as the invoking user and need the agent socket
+// (bin/tacctl.sh). A later word that needs the same is one entry.
 var keepEnv = map[string][]string{
-	"host": {"SSH_AUTH_SOCK"},
+	"host":   {"SSH_AUTH_SOCK"},
+	"ssh":    {"SSH_AUTH_SOCK"},
+	"device": {"SSH_AUTH_SOCK"},
 }
 
 // sudoArgv is the argv of the re-exec: 'sudo <exe> <args>', with

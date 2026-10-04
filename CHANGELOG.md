@@ -60,6 +60,18 @@ current behaviour; this file is where history lives.
     `[ERROR] '<branch>' is a release of the bash era; install it with its own
     installer: sudo /opt/tacctl/bin/tacctl.sh install`, exit 1, instead of a
     build failure.
+13. **The tiers sudoers rules gain `SETENV:` and rows for `ssh` and
+    `device`.** The grants read `NOPASSWD:SETENV:` (the same for the opt-in
+    group rule of `tacctl config sudoers install`), so an `SSH_AUTH_SOCK=…
+    tacctl ssh|host|device …` line keeps the agent socket through sudo. The
+    read-only tier gets `ssh <name>`, `device list`, `device show` and
+    `device ssh-config`; the operator tier also `device check`, `scan`,
+    `discover` and `export`. `tacctl upgrade` rewrites an installed tiers
+    file that differs (item 4), which is how an installed host picks the
+    rows up.
+14. **`host sync <TAB>` and `host unenroll <TAB>` complete the enrolled host
+    names** (a read-only or operator user is offered the hosts of its own
+    scopes).
 
 ## 0.2.0 (2026-10-04)
 

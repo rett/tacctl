@@ -5,6 +5,7 @@
 tacctl_tmpenv_init() {
     export TACCTL_ETC="${BATS_TEST_TMPDIR}/etc"
     export TACCTL_STATE_DIR="${BATS_TEST_TMPDIR}/state"
+    export TACCTL_VAR_LIB="${BATS_TEST_TMPDIR}/var-lib"
     export TACCTL_LOG="${BATS_TEST_TMPDIR}/log"
     export TACCTL_BIN="${BATS_TEST_TMPDIR}/bin"
     export TACCTL_CONFIG="${TACCTL_ETC}/tacquito.yaml"

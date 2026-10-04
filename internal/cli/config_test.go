@@ -282,7 +282,7 @@ func TestConfigSudoers(t *testing.T) {
 	if !sb.runner.CalledRegexp(`^visudo -cf .*/tmp/tmp\.`) || !sb.runner.CalledRegexp(`^install -m 0440 -o root -g root .*/tmp/tmp\.\S+ `+file+`$`) {
 		t.Errorf("calls: %q", sb.runner.Argvs())
 	}
-	if data, _ := os.ReadFile(file); !strings.Contains(string(data), "%wheel ALL=(ALL) NOPASSWD: /usr/local/bin/tacctl\n") {
+	if data, _ := os.ReadFile(file); !strings.Contains(string(data), "%wheel ALL=(ALL) NOPASSWD:SETENV: /usr/local/bin/tacctl\n") {
 		t.Errorf("drop-in: %q", data)
 	}
 	out := sb.cfgRun("", []string{"config", "sudoers", "show"}, nil, env...)

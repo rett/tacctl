@@ -258,3 +258,28 @@ func TestHostLocationsAndReroot(t *testing.T) {
 		t.Errorf("Deploy with TACCTL_TREE: %q", q.Deploy)
 	}
 }
+
+// The device registry's and the console's paths (0.2.1): under StateDir
+// except the seen cache, which follows TACCTL_VAR_LIB.
+func TestDeviceAndConsolePaths(t *testing.T) {
+	p := Resolve(NewEnv(nil), "", func(string) bool { return false })
+	want := map[string]string{
+		p.DevicesFile: "/etc/tacctl/devices.yaml", p.KnownHosts: "/etc/tacctl/known_hosts",
+		p.ConsoleFile: "/etc/tacctl/console.yaml", p.ConsoleDir: "/etc/tacctl/console",
+		p.VarLib: "/var/lib/tacctl", p.SeenCache: "/var/lib/tacctl/devices-seen.json",
+	}
+	for got, w := range want {
+		if got != w {
+			t.Errorf("default %q, want %q", got, w)
+		}
+	}
+	p = Resolve(NewEnv([]string{"TACCTL_STATE_DIR=/s", "TACCTL_VAR_LIB=/v"}), "", func(string) bool { return false })
+	for got, w := range map[string]string{
+		p.DevicesFile: "/s/devices.yaml", p.KnownHosts: "/s/known_hosts", p.ConsoleFile: "/s/console.yaml",
+		p.ConsoleDir: "/s/console", p.VarLib: "/v", p.SeenCache: "/v/devices-seen.json",
+	} {
+		if got != w {
+			t.Errorf("overridden %q, want %q", got, w)
+		}
+	}
+}

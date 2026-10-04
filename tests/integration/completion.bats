@@ -29,6 +29,8 @@ setup() {
   *"_completion-names scopes")           printf "%s\n" lab prod ;;
   *"_completion-names users")            printf "%s\n" alice bob ;;
   *"_completion-names groups")           printf "%s\n" ops admins ;;
+  *"_completion-names hosts")            printf "%s\n" web1 db1 ;;
+  *"_completion-names devices")          printf "%s\n" db1 sw1 web1 ;;
 esac'
 }
 
@@ -304,6 +306,42 @@ esac'
     run "$TACCTL_BIN_SCRIPT" _completion-names listeners tacacs
     assert_output "$(printf 'default\nmgmt')"
     run "$TACCTL_BIN_SCRIPT" _completion-names listeners nope
+    assert_success
+    assert_output ""
+}
+
+@test "completion: host sync and unenroll offer the enrolled host names" {
+    complete_words tacctl host sync ""
+    assert_output "$(printf 'web1\ndb1\n--all\n--allow-uid-mismatch\n--adopt')"
+    complete_words tacctl host sync w
+    assert_output "web1"
+    complete_words tacctl host unenroll ""
+    assert_output "$(printf 'web1\ndb1')"
+}
+
+@test "completion: __complete host sync offers the names the bridge gives" {
+    run "$TACCTL_BIN_SCRIPT" __complete host sync ""
+    assert_success
+    assert_line "web1"
+    assert_line "db1"
+    run "$TACCTL_BIN_SCRIPT" __complete host unenroll d
+    assert_success
+    assert_line "db1"
+    refute_line "web1"
+}
+
+@test "_completion-names hosts and devices: the registry's names, one per line" {
+    load_fixture tacquito.minimal.yaml
+    printf 'web1|root@192.0.2.10||lab|192.0.2.1|\ndb1|root@192.0.2.11||lab|192.0.2.1|\n' \
+        > "${TACCTL_STATE_DIR}/linux-hosts"
+    run "$TACCTL_BIN_SCRIPT" _completion-names hosts
+    assert_success
+    assert_output "$(printf 'web1\ndb1')"
+    run "$TACCTL_BIN_SCRIPT" _completion-names devices
+    assert_success
+    assert_output "$(printf 'db1\nweb1')"
+    rm "${TACCTL_STATE_DIR}/linux-hosts"
+    run "$TACCTL_BIN_SCRIPT" _completion-names hosts
     assert_success
     assert_output ""
 }

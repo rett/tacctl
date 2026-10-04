@@ -55,6 +55,7 @@ func newSandbox(t *testing.T, withStore bool) *sandbox {
 		"TACCTL_SKIP_SUDO=1",
 		"TACCTL_ETC=" + filepath.Join(w, "etc"),
 		"TACCTL_STATE_DIR=" + filepath.Join(w, "state"),
+		"TACCTL_VAR_LIB=" + filepath.Join(w, "var-lib"),
 		"TACCTL_LOG=" + filepath.Join(w, "log"),
 		"TACCTL_BIN=" + filepath.Join(w, "bin"),
 		"TACCTL_SYSTEMD_DIR=" + filepath.Join(w, "systemd"),

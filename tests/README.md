@@ -224,7 +224,7 @@ Notes:
   `$TACCTL_CONFIG` text for what tacquito is *given* (anchor names, the
   `scopes:`/`groups:` of a user entry, the disabled marker, `secrets[]` order).
   Note the renderer quotes a hash whose hex is all digits.
-- Every mutating command snapshots first: `$TACCTL_STATE_DIR/backups/<ts>/{store.yaml,tacctl.yaml,manifest}`.
+- Every mutating command snapshots first: `$TACCTL_STATE_DIR/backups/<ts>/{store.yaml,tacctl.yaml,devices.yaml,manifest}` (`tacctl.yaml` and `devices.yaml` only when they exist).
   `tests/integration/backup.bats` has helpers for listing snapshots and comparing
   the live state before and after.
 - For legacy read-only mode (no store), use `place_fixture`. Every mutating
@@ -576,7 +576,7 @@ without a value exits 1 without a word.
 ## Isolation guarantees
 
 - Every bats test runs with `$TACCTL_ETC`, `$TACCTL_STATE_DIR`, `$TACCTL_LOG`,
-  `$TACCTL_BIN` and the RADIUS paths pointing at `$BATS_TEST_TMPDIR`. No test
+  `$TACCTL_BIN`, `$TACCTL_VAR_LIB` and the RADIUS paths pointing at `$BATS_TEST_TMPDIR`. No test
   touches `/etc/tacctl`, `/etc/tacquito`, `/var/log/tacquito` or a FreeRADIUS
   directory on the host. A test that reaches `TACQUITO_SRC`, the Linux host
   data, the logrotate directory or the fixed host locations sets those to its

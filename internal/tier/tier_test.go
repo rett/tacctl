@@ -29,6 +29,7 @@ func TestForPrivLvl(t *testing.T) {
 // and a list of command lines ('cmd|sub|readonly|operator|superuser|
 // unrestricted|none'), written by sourcing bin/tacctl.sh, with 0.2.1's
 // change: 'help', '-h' and '--help' alone are open to the lower tiers.
+// The last rows (ssh, device) are the 0.2.1 table of docs/plans/operator-console.md 8.
 func TestPermitsMatchesBash(t *testing.T) {
 	f, err := os.Open("testdata/permits.psv")
 	if err != nil {
@@ -59,7 +60,7 @@ func TestPermitsMatchesBash(t *testing.T) {
 }
 
 // testdata/sudoers.tiers is emit_tier_sudoers of the 0.1.16 tag plus
-// 0.2.1's line for 'help', '-h' and '--help'.
+// 0.2.1's lines for 'help', '-h' and '--help', the ssh and device rows, and SETENV:.
 func TestSudoersMatchesBash(t *testing.T) {
 	want, err := os.ReadFile("testdata/sudoers.tiers")
 	if err != nil {

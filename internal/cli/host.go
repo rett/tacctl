@@ -33,7 +33,7 @@ var (
 )
 
 // hostSpecs are the arguments of each verb, for completion (args.go). Host
-// names complete as free text: a 'hosts' completion kind is 0.2.1 work.
+// names complete from the registry (KindHosts).
 var hostSpecs = map[string]Spec{
 	"list": {},
 	"enroll": {MaxArgs: 1, Args: []string{""}, Flags: []Flag{
@@ -46,8 +46,8 @@ var hostSpecs = map[string]Spec{
 		{Names: []string{"--method"}, Value: true, Kind: methodWords},
 		{Names: []string{"--build-on-host"}},
 		flagAllowUIDMismatch, flagAdopt}},
-	"sync":           {MaxArgs: 1, Args: []string{""}, Flags: []Flag{{Names: []string{"--all"}}, flagAllowUIDMismatch, flagAdopt}},
-	"unenroll":       {MinArgs: 1, MaxArgs: 1, Args: []string{""}, Flags: []Flag{{Names: []string{"--force"}}}},
+	"sync":           {MaxArgs: 1, Args: []string{KindHosts}, Flags: []Flag{{Names: []string{"--all"}}, flagAllowUIDMismatch, flagAdopt}},
+	"unenroll":       {MinArgs: 1, MaxArgs: 1, Args: []string{KindHosts}, Flags: []Flag{{Names: []string{"--force"}}}},
 	"default-method": {MaxArgs: 1, Args: []string{methodWords}},
 }
 

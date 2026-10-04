@@ -127,8 +127,11 @@ func IDs(backupDir string) []string {
 type Snapshotter struct {
 	StoreFile string // STORE_FILE
 	Overrides string // TACCTL_OVERRIDES_FILE (tacctl.yaml)
-	Rendered  string // RENDERED_FILE, copied into the manifest
-	BackupDir string // BACKUP_DIR
+	// DevicesFile is devices.yaml, the device registry: part of a snapshot
+	// when it exists, nothing to do when it does not ("" too).
+	DevicesFile string
+	Rendered    string // RENDERED_FILE, copied into the manifest
+	BackupDir   string // BACKUP_DIR
 	// Version is the tacctl version the manifest records ("unknown" when
 	// empty, as get_version prints when it cannot tell).
 	Version string
@@ -154,14 +157,15 @@ type Snapshotter struct {
 // best-effort chown to the tacquito account.
 func New(p paths.Paths, version string, now func() time.Time, out ui.Output) *Snapshotter {
 	return &Snapshotter{
-		StoreFile: p.StoreFile,
-		Overrides: p.Overrides,
-		Rendered:  p.Rendered,
-		BackupDir: p.BackupDir,
-		Version:   version,
-		Now:       now,
-		Out:       out,
-		Chown:     chownTacquito,
+		StoreFile:   p.StoreFile,
+		Overrides:   p.Overrides,
+		DevicesFile: p.DevicesFile,
+		Rendered:    p.Rendered,
+		BackupDir:   p.BackupDir,
+		Version:     version,
+		Now:         now,
+		Out:         out,
+		Chown:       chownTacquito,
 	}
 }
 
@@ -295,6 +299,13 @@ func (s *Snapshotter) current(dir string) bool {
 	if !sameBytes(s.StoreFile, filepath.Join(dir, "store.yaml")) {
 		return false
 	}
+	if isRegular(s.DevicesFile) {
+		if !sameBytes(s.DevicesFile, filepath.Join(dir, "devices.yaml")) {
+			return false
+		}
+	} else if lexists(filepath.Join(dir, "devices.yaml")) {
+		return false
+	}
 	if isRegular(s.Overrides) {
 		return sameBytes(s.Overrides, filepath.Join(dir, "tacctl.yaml"))
 	}
@@ -314,6 +325,11 @@ func (s *Snapshotter) fill(dir string, now time.Time) error {
 	}
 	if isRegular(s.Overrides) {
 		if err := copyFile(s.Overrides, filepath.Join(dir, "tacctl.yaml")); err != nil {
+			return err
+		}
+	}
+	if isRegular(s.DevicesFile) {
+		if err := copyFile(s.DevicesFile, filepath.Join(dir, "devices.yaml")); err != nil {
 			return err
 		}
 	}
