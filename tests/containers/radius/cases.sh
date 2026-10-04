@@ -36,11 +36,14 @@ reply_attrs() {
 
 # rq <dest> <scope whose secret to use> <user> <password> [<source ip>]
 #   -> 'Accept <reply attributes>' | 'Reject <reply attributes>' | 'None'
+# A request is sent up to three times, 2 s apart, but only while no reply has
+# come (radclient -r 3 -t 2): a lost or late reply is not a failure, and a
+# reject is still reported as soon as it arrives.
 rq() {
     local dest="$1" sec="$2" user="$3" pw="$4" src="${5:-}" out attrs
     out=$( { printf 'User-Name = "%s"\nUser-Password = "%s"\n' "$user" "$pw"
              [[ -n "$src" ]] && printf 'Packet-Src-IP-Address = %s\n' "$src"; } \
-        | radclient -x -r 1 -t 3 -D "$DICT" -S "sec.${sec}" "$dest" auth 2>&1)
+        | radclient -x -r 3 -t 2 -D "$DICT" -S "sec.${sec}" "$dest" auth 2>&1)
     attrs=$(reply_attrs <<< "$out")
     SEEN+="${attrs}"$'\n'
     if grep -q 'Received Access-Accept' <<< "$out"; then
@@ -122,11 +125,11 @@ if ss -uln | grep -qE '\[::1?\]:1812'; then
 else
     echo "SKIP  IPv6 client (no udp6 listener)"
 fi
-out=$(printf 'User-Name = "alice"\nCHAP-Password = "Correct-Horse-1"\n' | radclient -x -r 1 -t 3 -S sec.lab 127.0.0.1 auth 2>&1)
+out=$(printf 'User-Name = "alice"\nCHAP-Password = "Correct-Horse-1"\n' | radclient -x -r 3 -t 2 -S sec.lab 127.0.0.1 auth 2>&1)
 t "CHAP request for alice"                        'Received Access-Reject' "$(grep -o 'Received Access-[A-Za-z]*' <<< "$out" | head -1)"
 out=$(printf 'Message-Authenticator = 0x00\n' | radclient -x -r 1 -t 2 -S sec.lab 127.0.0.1 status 2>&1)
 t "Status-Server is not answered"                 'No reply'   "$(grep -o 'No reply' <<< "$out" | head -1)"
-out=$(printf 'User-Name = "alice"\nAcct-Status-Type = Start\nAcct-Session-Id = "sess-0001"\nNAS-IP-Address = 127.0.0.1\n' | radclient -x -r 1 -t 3 -S sec.lab 127.0.0.1:1813 acct 2>&1)
+out=$(printf 'User-Name = "alice"\nAcct-Status-Type = Start\nAcct-Session-Id = "sess-0001"\nNAS-IP-Address = 127.0.0.1\n' | radclient -x -r 3 -t 2 -S sec.lab 127.0.0.1:1813 acct 2>&1)
 t "accounting Start is acknowledged"              'Accounting-Response' "$(grep -o 'Received Accounting-Response' <<< "$out" | head -1)"
 out=$(printf 'User-Name = "alice"\nAcct-Status-Type = Start\nAcct-Session-Id = "sess-0002"\nPacket-Src-IP-Address = 127.0.0.66\n' | radclient -x -r 1 -t 2 -S sec.lab 127.0.0.1:1813 acct 2>&1)
 t "accounting from a denied address: no answer"   'No reply'   "$(grep -o 'No reply' <<< "$out" | head -1)"

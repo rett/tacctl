@@ -37,10 +37,13 @@ fi
 DROPIN="/etc/systemd/system/${UNIT}.service.d/tacctl.conf"
 DICTDIR="${RADDB}/tacctl-radius-dictionary"
 MYIP=$(hostname -I | cut -d' ' -f1)
+# rq and rqa send a request up to three times, 2 s apart, only while no
+# reply has come (radclient -r 3 -t 2): a lost reply is retried, a reject is
+# reported at once.
 rq() { # <user> <password> [<source>] -> Access-Accept | Access-Reject | none
     local out
     out=$( { printf 'User-Name = "%s"\nUser-Password = "%s"\n' "$1" "$2"; [[ -n "${3:-}" ]] && printf 'Packet-Src-IP-Address = %s\n' "$3"; } \
-        | radclient -r 1 -t 3 -S "${DATA}/sec.lab" 127.0.0.1 auth 2>&1 | grep -o 'Received Access-[A-Za-z]*' | head -1)
+        | radclient -r 3 -t 2 -S "${DATA}/sec.lab" 127.0.0.1 auth 2>&1 | grep -o 'Received Access-[A-Za-z]*' | head -1)
     echo "${out#Received }"
 }
 # rqa <user> <password> [<source>] -> the reply attributes, '; '-separated
@@ -50,7 +53,7 @@ rqa() {
     local d=()
     [[ -r "${DICTDIR}/dictionary" ]] && d=(-D "$DICTDIR")
     { printf 'User-Name = "%s"\nUser-Password = "%s"\n' "$1" "$2"; [[ -n "${3:-}" ]] && printf 'Packet-Src-IP-Address = %s\n' "$3"; } \
-        | radclient -x -r 1 -t 3 "${d[@]}" -S "${DATA}/sec.lab" 127.0.0.1 auth 2>&1 \
+        | radclient -x -r 3 -t 2 "${d[@]}" -S "${DATA}/sec.lab" 127.0.0.1 auth 2>&1 \
         | sed -n '/^Received Access-/,$p' | sed '1d' | grep -E '^\s+[A-Za-z]' | grep -v Message-Authenticator \
         | sed 's/^\s*//' | paste -sd';' | sed 's/;/; /g'
 }
