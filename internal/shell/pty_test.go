@@ -22,19 +22,73 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/testpty"
 	"github.com/rett/tacctl/internal/ui"
 )
 
-const helperArg = "tacctl-shell-pty-helper"
+const (
+	helperArg = "tacctl-shell-pty-helper"
+	childArg  = "tacctl-shell-pty-child"
+)
 
 func TestMain(m *testing.M) {
-	if len(os.Args) > 1 && os.Args[1] == helperArg {
-		ptyHelper(os.Args[2:])
-		return
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case helperArg:
+			ptyHelper(os.Args[2:])
+			return
+		case childArg:
+			ptyChild()
+			return
+		}
 	}
 	m.Run()
+}
+
+// ptyChild is a command for the shell to run: it reports what it inherited
+// and the terminal as it finds it, on one line, then waits 8 s and prints
+// 'finished'. It is one process that does nothing after the report, so the
+// report is the moment from which a Ctrl-C is certain to reach it; it keeps
+// the Go runtime's default for SIGINT (die of it, status 130).
+//
+//	CHILD isig=<b> icanon=<b> echo=<b> foreground=<b> sigign=<hex> sigblk=<hex>
+//
+// A shell script ('sh -c "echo started; sleep 8"') cannot be the command
+// of a Ctrl-C test: dash catches SIGINT under -c and spawns with vfork, and
+// its handler drops SIGINT in the vforked child before the exec, so a
+// Ctrl-C in that window is lost and the sleep runs out.
+func ptyChild() {
+	fd := int(os.Stdin.Fd())
+	tio, err := unix.IoctlGetTermios(fd, unix.TCGETS)
+	if err != nil {
+		fmt.Printf("CHILD error %v\n", err)
+		return
+	}
+	fg, err := unix.IoctlGetInt(fd, unix.TIOCGPGRP)
+	if err != nil {
+		fmt.Printf("CHILD error %v\n", err)
+		return
+	}
+	status, err := os.ReadFile("/proc/self/status")
+	if err != nil {
+		fmt.Printf("CHILD error %v\n", err)
+		return
+	}
+	field := func(name string) string {
+		m := regexp.MustCompile(`(?m)^` + name + `:\s*([0-9a-f]+)$`).FindSubmatch(status)
+		if m == nil {
+			return "none"
+		}
+		return string(m[1])
+	}
+	fmt.Printf("CHILD isig=%t icanon=%t echo=%t foreground=%t sigign=%s sigblk=%s\n",
+		tio.Lflag&unix.ISIG != 0, tio.Lflag&unix.ICANON != 0, tio.Lflag&unix.ECHO != 0,
+		fg == unix.Getpgrp(), field("SigIgn"), field("SigBlk"))
+	time.Sleep(8 * time.Second)
+	fmt.Println("finished")
 }
 
 // ptyHelper is the shell as 'tacctl shell' runs it, with each line run as
@@ -202,10 +256,48 @@ func TestPtyCtrlCAtThePrompt(t *testing.T) {
 	}
 }
 
+// Ctrl-C while a command runs ends the command, not the shell. The command
+// (ptyChild) reports, once it is in place, that the terminal is cooked with
+// ISIG, that it is in the foreground process group and that SIGINT is
+// neither ignored nor blocked; the test checks the terminal again on its
+// side before it sends Ctrl-C.
 func TestPtyCtrlCDuringACommand(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
 	p := startShell(t)
-	p.line("sh -c 'echo started; sleep 8; echo finished'")
-	p.output("started")
+	p.line(exe + " " + childArg)
+	p.expect(`CHILD [^\n]*\n`)
+	m := regexp.MustCompile(`CHILD isig=(\w+) icanon=(\w+) echo=(\w+) foreground=(\w+) sigign=([0-9a-f]+) sigblk=([0-9a-f]+)\r?\n`).FindStringSubmatch(p.Output())
+	if m == nil {
+		t.Fatalf("no report from the command: %q", p.Output())
+	}
+	if m[1] != "true" || m[2] != "true" || m[3] != "true" {
+		t.Errorf("the command got the terminal with isig=%s icanon=%s echo=%s, not cooked", m[1], m[2], m[3])
+	}
+	if m[4] != "true" {
+		t.Error("the command is not in the terminal's foreground process group")
+	}
+	for i, name := range []string{"SigIgn", "SigBlk"} {
+		mask, err := strconv.ParseUint(m[5+i], 16, 64)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if mask&(1<<(uint(syscall.SIGINT)-1)) != 0 {
+			t.Errorf("%s %s: SIGINT set in the command", name, m[5+i])
+		}
+	}
+	tio, err := unix.IoctlGetTermios(int(p.Master.Fd()), unix.TCGETS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tio.Lflag&unix.ISIG == 0 {
+		t.Fatal("ISIG is off on the terminal while the command runs: Ctrl-C would be a byte, not SIGINT")
+	}
+	if t.Failed() {
+		t.FailNow()
+	}
 	start := time.Now()
 	p.send("\x03")
 	p.expect(`\[exit 130\]`)
@@ -217,7 +309,7 @@ func TestPtyCtrlCDuringACommand(t *testing.T) {
 	p.output("alive")
 	p.line("exit")
 	p.exits(0)
-	if regexp.MustCompile(`(?:\n|2004l)finished`).MatchString(p.Output()) {
+	if strings.Contains(p.Output(), "finished") {
 		t.Error("the command was not interrupted")
 	}
 }
