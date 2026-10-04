@@ -67,22 +67,11 @@ func (e *Env) ssh(port, identity string) SSH {
 	}
 }
 
-// Attached runs c with the terminal: stdin, stdout and stderr are tacctl's
-// own, so a program that owns the terminal (ssh -t, a remote sudo prompt)
-// works as it would from the shell. While it runs, a signal that cancels
-// ctx (Ctrl-C reaches the whole foreground process group) is left to the
-// child: it is not killed for it, and its exit status is returned as it
-// ended, as bash's wait does (a remote 'trap ... exit 130' comes back as
-// 130). interrupted reports whether ctx was cancelled meanwhile, so the
-// caller can stop afterwards. err is for a program that could not start.
+// Attached runs c with the terminal (execx.Attached, shared with 'tacctl
+// shell'): a remote 'trap ... exit 130' comes back as 130, and interrupted
+// reports whether ctx was cancelled meanwhile.
 func Attached(ctx context.Context, r execx.Runner, c execx.Cmd, stdin io.Reader, out ui.Output) (code int, interrupted bool, err error) {
-	c.Stdin, c.Stdout, c.Stderr = stdin, out.Stdout, out.Stderr
-	p, err := r.Start(context.WithoutCancel(ctx), c)
-	if err != nil {
-		return 127, ctx.Err() != nil, err
-	}
-	res, err := p.Wait()
-	return res.Code, ctx.Err() != nil, err
+	return execx.Attached(ctx, r, c, stdin, out.Stdout, out.Stderr)
 }
 
 // remoteWord quotes a script argument for the remote shell: as it is when

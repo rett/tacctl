@@ -565,6 +565,7 @@ tacctl hash generate            # Prompt + print a bcrypt hash
 tacctl hash commands            # Print OS-specific client-side recipes
 tacctl version [--long]         # Print tacctl version (--long: commit, build date, Go version)
 tacctl completion bash|zsh|fish # Print the completion script of a shell (install and upgrade place the bash one)
+tacctl shell [--no-history] [--idle min] [-c line]  # Interactive prompt: one tacctl command per line (runs as you; sudo per line)
 ```
 
 Run any command without arguments for detailed help.
@@ -584,6 +585,24 @@ tacctl completion fish > ~/.config/fish/completions/tacctl.fish
 ```
 
 The scripts ask `tacctl __complete` for the words, so they match the installed binary; regenerate them after an upgrade. Live names (users, groups, scopes, ...) need root or the NOPASSWD sudoers rule; without it only fixed words are completed.
+
+### Interactive Shell — `tacctl shell`
+
+```
+tacctl shell                      # Prompt 'tacctl> ': type commands without 'tacctl' (user list, scope show lab)
+tacctl shell --no-history         # Keep this session's history in memory only
+tacctl shell --idle 30            # Leave after 30 minutes at the prompt without input (0, the default: never)
+tacctl shell -c 'user list'       # Run one line and exit with its status
+tacctl shell < commands.txt       # Run the lines in order; stop at the first non-zero status and exit with it
+```
+
+The shell runs as you and holds no privilege: each line runs as `sudo [-n] tacctl <words>` with the terminal attached, so sudo's rules and log, and the tier gate, apply to every line as they do from bash; prompts and password input work as usual. Tier users (members of `tac-users`) get `sudo -n`, and a line their tier's sudoers rules do not cover is reported as not permitted. `hash` and `completion` lines run without sudo; `host`, `ssh` and `device` lines carry `SSH_AUTH_SOCK` as the re-exec does.
+
+A line is split into words at blanks; single and double quotes and backslash quote as in `sh`, and nothing else is special — no variables, globbing, pipes, redirections, `;`, `$(...)`, backticks or `!`. Lines are at most 4096 bytes. The shell's own words are `help` (the top-level usage), `help <command>` (that family's usage), `history`, and `exit`/`quit` (or Ctrl-D). After a non-zero status the shell prints `[exit N]`.
+
+Keys: Tab completes commands, flags and live names (asked of `sudo -n tacctl _completion-names`, kept 5 s); a second Tab lists the choices with descriptions. Up/Down walk the history, Ctrl-R searches it (Ctrl-R again: older; Enter runs; Ctrl-G restores the line). Esc-b/Esc-f (Alt-Left/Right) move by word; Home/End, Ctrl-A/E/K/U/W/T/L as usual. A paste is one line (newlines become blanks, at most 4096 bytes) and runs only on Enter. Ctrl-C discards the line, or ends the running command; Ctrl-Z and Ctrl-\ do nothing (no job control, inherited by the commands).
+
+History lives in `~/.local/state/tacctl/history` (0600, newest 1000 lines). Lines are stored redacted: everything after `--secret`, `--hash`, `--password`, after `set` in `secret … set`, after `import` with a value, and after the word of a `passwd` line becomes `…(redacted)` (`scope secret lab set x` → `scope secret lab set …(redacted)`); a recalled redacted line is refused. Lines ended with Ctrl-C are not stored; batch input is never stored. In a batch (`tacctl shell < file`) the commands get no stdin, so questions cannot be answered from the file — use `-y` where a command has it.
 
 ### User Commands — `tacctl user`
 

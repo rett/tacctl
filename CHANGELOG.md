@@ -125,6 +125,20 @@ current behaviour; this file is where history lives.
     <kind>`). `host enroll` refuses a name that is a registered device or a
     generic name (give another `--name`); a host enrolled under a generic name
     earlier is not refused and carries the notice.
+NN. **New: `tacctl shell [--no-history] [--idle <min>] [-c <line>]`**, an
+    interactive prompt (`tacctl> `) where each line is a tacctl command
+    without the `tacctl`. It runs as the invoking user and runs each line as
+    `sudo [-n] tacctl <words>` with the terminal attached (`-n` for tier
+    users), so sudo's policy and log and the tier gate apply per line. Lines
+    are split with quotes and backslash only (no pipes, redirections,
+    variables or separators); `help [<command>]`, `history`, `exit`/`quit`
+    are the shell's own words. Tab completes commands, flags and live names
+    (a second Tab lists them with descriptions), Ctrl-R searches the history,
+    Esc-b/Esc-f move by word, Ctrl-C cancels the line or the running command,
+    Ctrl-Z is ignored. The history is `~/.local/state/tacctl/history` (0600,
+    1000 lines), with secrets redacted (`scope secret lab set …(redacted)`).
+    With stdin not a terminal (`tacctl shell < file`) the lines run in order
+    and the first non-zero status stops the run and is the exit status.
 
 ## 0.2.0 (2026-10-04)
 
