@@ -1,9 +1,4 @@
-# Changelog
-
-All notable changes to tacctl. The README and the manual page describe only the
-current behaviour; this file is where history lives.
-
-## 0.2.0 (unreleased)
+# tacctl 0.2.0
 
 tacctl is now a single Go program, `/usr/local/bin/tacctl`, built on the server
 from the repository clone in `/opt/tacctl` (dependencies are vendored there;
@@ -14,7 +9,12 @@ hosts and every generated file are byte-for-byte what 0.1.18 reads and writes,
 so going back to 0.1.18 needs nothing to be converted. What differs is listed
 here, and nothing else.
 
-### What changed
+Upgrade with `sudo tacctl upgrade` as always (details below). A new server needs
+only `git` and `wget`; the installer brings Go and builds tacctl on the server:
+
+    sudo bash -c 'git clone https://github.com/rett/tacctl.git /opt/tacctl && /opt/tacctl/bin/tacctl.sh install'
+
+## What changed
 
 1. **`tacctl version --long`** prints the commit, build date and Go version of the
    installed binary, and `test knobs: off`. `tacctl version` prints the same
@@ -155,7 +155,7 @@ here, and nothing else.
     the message gives the command to run:
     `sudo apt-get install -y python3 python3-yaml python3-bcrypt && sudo tacctl upgrade --branch <name>`.
 
-### Upgrading from 0.1.18
+## Upgrading from 0.1.18
 
 Run `sudo tacctl upgrade` as always. Servers on 0.1.16 and 0.1.17 cross over the same
 way; for anything older, upgrade to 0.1.18 first. On a 0.1.18 server this happens:
@@ -188,7 +188,7 @@ was and the bootstrap prints
 Every later `tacctl` command runs the bootstrap again and repeats the message until
 the cause is fixed or the way back is taken.
 
-### Rolling back to 0.1.18
+## Rolling back to 0.1.18
 
 Nothing in `/etc/tacctl` has to change: the files 0.2.0 writes are the files 0.1.18
 reads. Either let `tacctl` do it:
@@ -213,56 +213,44 @@ server follow `master` again. Or by hand, which works without a working binary
 The 0.1.18 upgrade reinstalls its own completion and manual page. The Go build cache
 (`/root/.cache/go-build`) stays behind, as the tacquito build cache does.
 
-### Cost of building on the host
+## Cost of building on the host
 
 A first build compiles the standard library and the vendored dependencies: about 13
 seconds of wall time (54 s of CPU) on an eight-core development machine, leaving about 129 MB
 in the Go build cache; the binary is 10.9 MB. An unchanged tree builds again in under a
 second.
 
-## 0.1.18 (2026-10-03)
+## Verification
 
-- **Installing on a server without Go works again.** `tacctl install` downloads Go and its published checksum from `dl.google.com`, and installs Go only after the download is verified: a checksum that cannot be fetched, or a failed download, stops the install with an error.
+0.2.0 was checked against the 0.1.18 release on every level before it was
+tagged:
 
-## 0.1.17 (2026-10-03)
-
-- **Upgrade rollback works again for the tacquito binary.** The backup `tacctl upgrade` takes before rebuilding tacquito keeps the binary's permissions, so a binary restored after a failed build or a failed restart can be started by the `tacquito` service user.
-
-## 0.1.16 (2026-10-03)
-
-- **Membership lists use `replace` and `remove --all`.** `tacctl user scope <user> replace <scopes>` replaces a user's scopes and `user scope <user> remove --all` removes them all; `tacctl scope prefixes <scope> remove --all [--force]` removes every prefix (and with them the scope). `set` and `clear` on these two lists now fail with a message naming the new verb; update any scripts that call them.
-- **`scope show` no longer prints the scope secret**; it shows whether one is set and its length. `tacctl scope secret <scope> show` prints it.
-- **Customised templates survive upgrades.** A template you edited in `/etc/tacctl/templates/` is kept and the shipped version is written beside it as `<name>.template.new`; see the README section "Custom Templates".
-- **Upgrades restart a service only when it has something new to read**, and a failed restart rolls tacquito back to the previous binary. `tacctl upgrade --branch <name>` runs the new branch's own upgrade when tacctl's code differs.
-- **A `tacctl.yaml` that does not parse is never overwritten**: settings changes refuse with the parse error, and other commands warn and use the defaults.
-- RADIUS-only installs no longer need `tacquito.yaml`.
-
-## 0.1.15 (2026-10-02)
-
-This is a large release; read the notes below before running `tacctl upgrade` on an existing server.
-
-- **A canonical store.** Users, groups, scopes and connection filters live in `/etc/tacctl/store.yaml`; `tacquito.yaml` is generated from it on every change and is no longer the source of truth. Hand edits of a generated file are detected (drift) and never silently overwritten. See the README section "The store and generated configs".
-- **`/etc/tacctl`** holds everything tacctl owns (store, `tacctl.yaml`, snapshots, templates, the Linux host registry). `/etc/tacquito` is the TACACS+ daemon's directory again.
-- **Backups are snapshots** of `store.yaml` and `tacctl.yaml`, taken before every change; `backup restore` re-renders every backend.
-- **Backends.** TACACS+ (tacquito) and RADIUS (FreeRADIUS) behind one contract: `tacctl backend list|status|enable|disable`; `status`, `log` and `config validate` report per backend. See the README section "Backends".
-- **RADIUS**, opt-in: `tacctl backend enable radius`. PAP against the same bcrypt hashes, the same scopes and secrets, `config cisco|juniper|wti --protocol radius`, per-scope vendor attributes. See the README section "RADIUS".
-- **Listeners** in `tacctl.yaml` (`listeners.<backend>.<name>`), from which the systemd drop-ins are rendered; further TACACS+ listeners run as `tacquito@<name>` instances.
-- **Linux hosts over RADIUS**: `tacctl host enroll --method radius` (pam_radius_auth), `host default-method`, switching a host between methods; Rocky Linux joins the tested hosts.
-- **Per-scope settings**: `scope protocols`, `scope auth-method`, `scope vendor-attrs`, `scope devices`, `scope radius-group`; every per-scope `tacctl.yaml` key now follows `scope rename` and is removed by `scope remove`.
-- Confirmation prompts no longer exit silently when standard input is closed; `config validate` exits 1 when it finds structure or scope errors.
-
-### Upgrading to 0.1.15
-
-The first `tacctl upgrade` from 0.1.14 or earlier runs the old release's upgrade, which pulls 0.1.15 and re-executes it; 0.1.15 then does the following on its own. Nothing needs to be prepared, and RADIUS stays off (`tacctl backend enable radius` afterwards, if wanted).
-
-1. **State directory.** `tacctl.yaml`, `linux-hosts`, `linux-uids`, `backups/` and `templates/` move from `/etc/tacquito` to `/etc/tacctl` (0700 root). Each old path becomes a symlink to the new one, for one release, so the previous release still finds its files after a rollback. This runs on every upgrade: if older code has meanwhile replaced a symlink with a regular file, the newer content wins and the other copy is kept under `/etc/tacctl/backups/legacy/`.
-2. **Units.** `tacquito.service` and the template `tacquito@.service` are installed. The listen address, log level and metrics address of the old hand-managed drop-in `tacquito.service.d/tacctl-overrides.conf` are imported once into `tacctl.yaml` (`listeners.tacacs.default`, `backends.tacacs.level`, `backends.tacacs.metrics_address`), the drop-in is replaced by the rendered `tacctl.conf`, and the old file is kept under `backups/legacy/`. The running daemon is not touched until the one restart at the end; if the unit does not come up then, the unit files, drop-ins, `tacctl.yaml` and the binary are restored together.
-3. **The store, behind a gate.** The legacy migrations of `tacquito.yaml` run as in every upgrade, then `tacctl store import --check` with the newly built binary: import (nothing unrepresentable), render, equivalence of what tacquito would load from the two files, and a load test of the rendered file on a loopback port. Only when all of that passes is `/etc/tacctl/store.yaml` written, the old file kept as `/etc/tacctl/backups/legacy/tacquito.yaml.pre-store.<timestamp>`, `tacquito.yaml` rendered from the store (and compared once more with the file it replaced), and tacquito restarted. The summary says `Store: migrated from tacquito.yaml`.
-
-**When the gate stops**, the upgrade still completes: the code is installed, `tacquito.yaml` and the running daemon are left exactly as they were, and tacctl runs in **legacy read-only mode** (read commands work, changes are refused). The report says why: content the store cannot hold (another service on a group, a non-bcrypt authenticator, an unknown top-level key, …), a render that is not equivalent (the differences are printed), the tacquito binary or `timeout` missing. The upgrade **never forces either through**. To proceed, either fix what `tacctl store import --check` lists in `tacquito.yaml` and run `tacctl upgrade` again, or accept the difference yourself: `tacctl store import` (`--force` drops what the store cannot hold, listing each item), then `tacctl config render --force`.
-
-**Rollback.** `tacctl store rollback` returns to the kept pre-store `tacquito.yaml` and legacy read-only mode under 0.1.15 (refused while RADIUS is enabled: `tacctl backend disable radius` first). Run it before putting the previous release's code back (`git -C /opt/tacctl checkout 0.1.14`): that release edits `tacquito.yaml` directly, and with the store still in place its edits would be drift to 0.1.15. It finds `tacctl.yaml`, `linux-*`, `backups` and `templates` through the symlinks in `/etc/tacquito`, and a later upgrade moves whatever it wrote and runs the gate again. Its `config listen|loglevel|metrics` write the old `tacctl-overrides.conf` drop-in, which the rendered `tacctl.conf` beside it overrides (systemd reads drop-ins in name order); remove `tacctl.conf` from `tacquito.service.d` after going back if you change those settings there.
-
-After the upgrade: `tacctl status`, `tacctl config validate` (store, rendered config, drift), and `tacctl backup list` (the pre-store file is under the old-style backups).
-
----
+- **Parity.** The differential runner ran 1378 command lines (the success and
+  error paths of every command family) under 0.1.18 and under 0.2.0 on
+  identical inputs: no difference outside the changes listed above (60 lines
+  differ, each only as one of those items says). The rendered files (device
+  configs, `tacquito.yaml`, the FreeRADIUS files, the drop-ins, the store)
+  match 0.1.18's output byte for byte, apart from the item 3 note line.
+- **Tests.** About 1,280 Go tests (and 454 subtests) under the race detector
+  and 819 black-box tests of the command line pass, none skipped; statement
+  coverage is 87.8 %.
+- **A live server.** A development server crossed over from 0.1.18 with
+  `tacctl upgrade` (19 s, a 12 s first build leaving 129 MB of build cache),
+  ran a full functional round (users, scopes, groups, device configs,
+  listeners, log level, metrics, backups, TACACS+ and RADIUS logins, the masked
+  password prompt over ssh), upgraded again with nothing rebuilt or restarted,
+  went back to 0.1.18 and forward again without manual repair, and survived a
+  rehearsed failed build that left the installed command untouched.
+- **Linux hosts.** A test client was enrolled with RADIUS, switched to TACACS+,
+  unenrolled and enrolled again, with SSH logins, `sudo` for a superuser, none
+  for a read-only user and wrong passwords refused at every step.
+- **Containers.** Real FreeRADIUS on Ubuntu 24.04 (3.2.5), AlmaLinux 9 (3.0.27)
+  and AlmaLinux 8 (3.0.20); 26 runs of the Linux host checks (Ubuntu 24.04,
+  Debian 12 and 13, AlmaLinux and Rocky Linux 8, 9 and 10, enrolled for RADIUS
+  and for TACACS+ and switched between them, with real logins), all passing. A
+  fresh install with the one-liner above on a clean Ubuntu 24.04 container
+  without Go or Python installed Go (verified), built tacctl and passed
+  `user passwd`, `config cisco`, `status` and `config validate`; `uninstall -y`
+  left only Go, the tacquito source, `/root/go` and the build cache. The way
+  back with `tacctl upgrade --branch 0.1.18` and forward again with
+  `--branch master` was rehearsed in the same kind of container.

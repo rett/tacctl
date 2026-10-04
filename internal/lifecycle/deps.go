@@ -22,6 +22,10 @@ var (
 	DepsCore       = []string{"git", "wget"}
 	DepsLinuxHosts = []string{"openssh-client", "autoconf", "automake", "libtool", "gnulib", "gcc", "make",
 		"libpam0g-dev", "podman", "uidmap"}
+	// BashReleaseDeps are what a bash release (0.1.x) needs before its first
+	// line runs; 'upgrade --branch <bash release>' installs them before it
+	// hands over (docs/plans/go-rewrite.md 3.9 item 32).
+	BashReleaseDeps = []string{"python3", "python3-yaml", "python3-bcrypt"}
 )
 
 // EnsureDependencies is ensure_dependencies: install whatever is missing

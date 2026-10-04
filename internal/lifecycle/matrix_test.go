@@ -339,6 +339,8 @@ func (h *matrixHost) git(sub []string) execx.Result {
 			return ok(h.branch + "\n")
 		}
 		return ok(h.head + "\n")
+	case "symbolic-ref":
+		return ok(h.branch + "\n")
 	case "fetch":
 		if h.offline {
 			return execx.Result{Code: 128, Stderr: []byte(fetchOffline)}
@@ -819,6 +821,105 @@ func TestMatrixRollbackToBashRelease(t *testing.T) {
 	}
 	if h.read(filepath.Join(h.Deploy, "lib", "core.sh")) == "" || h.read(filepath.Join(h.Deploy, "go.mod")) != "" {
 		t.Error("the tree is not the bash release")
+	}
+}
+
+// dpkg plays dpkg-query on the matrix host: the packages of have are
+// installed, every other one is not.
+func (h *matrixHost) dpkg(have ...string) {
+	h.Run.Func(func(c execx.Cmd) bool { return c.Name == "dpkg-query" }, func(c execx.Cmd) (execx.Result, error) {
+		if slices.Contains(have, c.Args[len(c.Args)-1]) {
+			return execx.Result{Stdout: []byte("install ok installed")}, nil
+		}
+		return execx.Result{Code: 1}, nil
+	})
+}
+
+// Rollback onto a bash release whose packages are all there: no apt-get,
+// the hand-over as before (3.9 item 32).
+func TestMatrixRollbackBashDepsPresent(t *testing.T) {
+	h := newMatrixHost(t)
+	h.dpkg("python3", "python3-yaml", "python3-bcrypt")
+	if err := h.upgrade("--branch", "master"); err != nil {
+		t.Fatalf("upgrade: %v\n%s", err, h.stderr)
+	}
+	out := stripANSI(h.stdout.String())
+	if !strings.Contains(out, "Packages the bash release needs: all present.") ||
+		!strings.Contains(out, "Target branch is a bash release of tacctl; handing over.") {
+		t.Errorf("stdout:\n%s", out)
+	}
+	if h.Run.Called("apt-get") {
+		t.Error("apt-get ran although every package is installed")
+	}
+	if n := len(h.Run.Execs()); n != 1 {
+		t.Errorf("execs: %d", n)
+	}
+}
+
+// A server installed with 0.2.0 has no python: the packages are installed
+// with apt-get first, then the host is handed over.
+func TestMatrixRollbackInstallsBashDeps(t *testing.T) {
+	h := newMatrixHost(t)
+	h.dpkg("python3")
+	if err := h.upgrade("--branch", "master"); err != nil {
+		t.Fatalf("upgrade: %v\n%s", err, h.stderr)
+	}
+	if !strings.Contains(stripANSI(h.stdout.String()), "Installing packages the bash release needs: python3-yaml python3-bcrypt") {
+		t.Errorf("stdout:\n%s", h.stdout)
+	}
+	if !h.Run.Called("apt-get", "install", "-y", "-qq", "python3-yaml", "python3-bcrypt") {
+		t.Errorf("apt-get install not called: %v", h.Run.Argvs())
+	}
+	for _, r := range h.Run.Records() {
+		if r.Cmd.Name == "apt-get" && !slices.Contains(r.Cmd.Env, "DEBIAN_FRONTEND=noninteractive") {
+			t.Errorf("apt-get without DEBIAN_FRONTEND=noninteractive: %v", r.Cmd.Env)
+		}
+	}
+	entry := filepath.Join(h.Deploy, "bin", "tacctl.sh")
+	execs := h.Run.Execs()
+	if len(execs) != 1 || execs[0].Path != entry {
+		t.Fatalf("execs %+v", execs)
+	}
+	if target, err := os.Readlink(h.Binary); err != nil || target != entry {
+		t.Errorf("the installed command is not the symlink: %q %v", target, err)
+	}
+}
+
+// apt-get cannot install them: no hand-over. The installed command is the
+// Go binary as before, the clone is back on its branch, and the message
+// names the command that fixes it.
+func TestMatrixRollbackRefusedWithoutBashDeps(t *testing.T) {
+	h := newMatrixHost(t)
+	h.dpkg()
+	h.Run.On([]string{"apt-get", "install"}, execx.Result{Code: 100})
+	err := h.upgrade("--branch", "master")
+	if err == nil {
+		t.Fatal("upgrade succeeded")
+	}
+	if n := len(h.Run.Execs()); n != 0 {
+		t.Errorf("exec'd %d times", n)
+	}
+	if st, err := os.Lstat(h.Binary); err != nil || !st.Mode().IsRegular() || h.read(h.Binary) != oldBinary {
+		t.Errorf("the installed command changed: %v %v", st, err)
+	}
+	if h.branch != "develop" || h.head != commitOld {
+		t.Errorf("the clone is on %s at %s", h.branch, h.head)
+	}
+	if h.read(filepath.Join(h.Deploy, "go.mod")) == "" {
+		t.Error("the tree is not the Go tree again")
+	}
+	errs := stripANSI(h.stderr.String())
+	for _, want := range []string{
+		"Could not install: python3 python3-yaml python3-bcrypt. The bash release cannot run without them; not handing over.",
+		h.Deploy + " is back on 'develop'; " + h.Binary + " is unchanged.",
+		"sudo apt-get install -y python3 python3-yaml python3-bcrypt && sudo tacctl upgrade --branch master",
+	} {
+		if !strings.Contains(errs, want) {
+			t.Errorf("stderr lacks %q:\n%s", want, errs)
+		}
+	}
+	if strings.Contains(stripANSI(h.stdout.String()), "handing over") {
+		t.Error("announced a hand-over")
 	}
 }
 

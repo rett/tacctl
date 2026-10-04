@@ -9,7 +9,7 @@ shim (`bin/tacctl.sh`). Its tests come in layers:
 | Goldens | Go tests and bats `golden_diff` over `tests/fixtures/golden/*`, `tests/fixtures/store.*.yaml`, `tests/fixtures/model/*.json` | rendered artifacts byte for byte | both layers |
 | Black-box bats | bats-core against `dist/tacctl` | the command line: output, exit codes, prompts, files and modes, the system commands run (PATH stubs) | `tests/integration`, `tests/e2e` |
 | Differential | `tests/diff/run.sh` | the binary against the last bash release (the `0.1.18` tag) on the same inputs, success and error paths | on demand |
-| Containers | rootless podman | real FreeRADIUS, real PAM logins on enrolled hosts, the cross-over from the bash release | on demand, never by `make test` |
+| Containers | rootless podman | real FreeRADIUS, real PAM logins on enrolled hosts, the cross-over from the bash release, a fresh install on a server without Go | on demand, never by `make test` |
 
 ## Running
 
@@ -23,7 +23,7 @@ make test-e2e
 make build           # dist/tacctl: bin/tacctl.sh --build with the test knobs compiled in
 make coverage        # go test -coverprofile; coverage/go.out, coverage/index.html and the total
 make lint            # shellcheck (bin/tacctl.sh, config/linux, tests/helpers, tests/tools, tests/diff,
-                     #   tests/containers/crossover), gofmt, go vet, golangci-lint (pinned; prints how
+                     #   tests/containers/{crossover,fresh}), gofmt, go vet, golangci-lint (pinned; prints how
                      #   to install it when missing), and tests/tools/no-private.sh
 make test-pyyaml     # the yamlpy and conf PyYAML corpora regenerated with PyYAML and compared
 make test-diff CORPUS=users   # the differential runner on one corpus
@@ -67,7 +67,8 @@ tests/
 ├── tools/               # no-private.sh (lint), pyyaml-corpus.py, usage-goldens.sh, pre-push
 ├── containers/radius/   # real FreeRADIUS in podman
 ├── containers/hosts/    # 'host enroll|sync|unenroll' for real, server and client containers
-└── containers/crossover/ # the upgrade from the bash release to the Go binary, and back
+├── containers/crossover/ # the upgrade from the bash release to the Go binary, and back
+└── containers/fresh/    # a fresh install with the README one-liner on a server without Go
 ```
 
 Go tests live beside their packages; their own inputs are in each package's
@@ -407,6 +408,33 @@ Notes:
 both ways the release hands over, then a second upgrade that must change
 nothing, the way back to the bash release, and a fresh install through the
 shim.
+
+## A fresh install in a container
+
+```sh
+tests/containers/fresh/run.sh                # HEAD; --rev <commit> for another one
+tests/containers/fresh/run.sh --worktree     # the tracked files as they are, uncommitted changes included
+tests/containers/fresh/run.sh --rollback     # also back to the bash release and forward again
+```
+
+An ubuntu:noble container with systemd, `git`, `wget`, `sudo` and
+`iproute2`, no Go and no Python, installs with the README one-liner; its git
+fetches the GitHub URL from a bare clone of this repository whose `master`
+is the commit under test (with `--worktree`, a `git stash create` commit of
+the tracked files; no ref of the repository changes). It checks that the bootstrap
+installs Go (verified download) and builds `/usr/local/bin/tacctl`, `version
+--long`, `user passwd engineer` answered through a pty, `config cisco --scope
+lab`, `status`, `config validate`, and that `uninstall -y` leaves only Go,
+`/opt/tacquito-src`, `/root/go` and the build cache: the filesystem is
+compared with its state before the install and with a second container that
+only installed the same packages. `--rollback` adds `upgrade --branch
+<bash release tag>` (the hand-over, which installs python3, python3-yaml and
+python3-bcrypt first), `upgrade` on the tag, `upgrade --branch
+master` and a second `upgrade` that must build nothing. Needs network access
+(Ubuntu mirrors, `dl.google.com`, GitHub for tacquito, the Go module proxy);
+prints `PASS`/`FAIL` lines and exits non-zero on a `FAIL`. The image
+`localhost/tacctl-fresh:noble` is kept; `--keep` leaves the container
+`tacctl-fresh`.
 
 ## Install, upgrade, uninstall
 

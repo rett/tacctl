@@ -84,7 +84,7 @@ build:
 # coverage/index.html.
 coverage:
 	mkdir -p coverage
-	CGO_ENABLED=1 $(GO) test -tags testknobs -coverprofile=coverage/go.out ./...
+	PATH="$(dir $(GO)):$$PATH" CGO_ENABLED=1 $(GO) test -tags testknobs -coverprofile=coverage/go.out ./...
 	$(GO) tool cover -func=coverage/go.out | tail -1
 	$(GO) tool cover -html=coverage/go.out -o coverage/index.html
 	@echo "Report: coverage/index.html"
@@ -104,7 +104,7 @@ hooks:
 lint-sh:
 	$(SHELLCHECK) bin/tacctl.sh config/linux/*.sh
 	$(SHELLCHECK) tests/helpers/*.bash tests/tools/*.sh tests/tools/pre-push tests/diff/*.sh
-	$(SHELLCHECK) tests/containers/crossover/*.sh
+	$(SHELLCHECK) tests/containers/crossover/*.sh tests/containers/fresh/*.sh
 
 lint-go:
 	@out=$$($(GOFMT) -l cmd internal); if [ -n "$$out" ]; then echo "gofmt -l: not formatted:"; echo "$$out"; exit 1; fi

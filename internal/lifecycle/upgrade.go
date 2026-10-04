@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/rett/tacctl/internal/backend"
 	"github.com/rett/tacctl/internal/paths"
@@ -271,6 +272,13 @@ func (h *Host) updateDeploy(ctx context.Context, ids []string, branch string) (d
 		out.Error("git fetch failed. Check network / credentials.")
 		return true, backend.ErrFailed
 	}
+	// Where the clone was before a branch switch: its branch, or the
+	// commit when detached. A refused hand-over to a bash release goes back
+	// there.
+	origin, code := h.gitOut(ctx, deploy, "symbolic-ref", "-q", "--short", "HEAD")
+	if code != 0 || origin == "" {
+		origin = start
+	}
 	if branch != "" {
 		// --tags --force so force-pushed tags update locally.
 		if h.git(ctx, deploy, "fetch", "--tags", "--force") != 0 {
@@ -311,6 +319,9 @@ func (h *Host) updateDeploy(ctx context.Context, ids []string, branch string) (d
 
 	// A bash release (0.1.x): it takes over from here.
 	if !exists(filepath.Join(deploy, "go.mod")) && exists(filepath.Join(deploy, "lib", "core.sh")) {
+		if err := h.ensureBashReleaseDeps(ctx, branch, origin); err != nil {
+			return true, err
+		}
 		return true, h.handOverToBash(ids)
 	}
 	if h.Environ.Get(ReexecEnv) == "1" {
@@ -346,6 +357,52 @@ func (h *Host) selfUpdate(ctx context.Context, ids []string, start string) error
 		return &backend.Error{Code: 126, Reason: "exec"}
 	}
 	return nil
+}
+
+// ensureBashReleaseDeps makes sure the packages a bash release needs to
+// start at all are installed before the host is handed over to it
+// (docs/plans/go-rewrite.md 3.9 item 32): a bash release runs python3 with
+// yaml and bcrypt from its first line, before its own upgrade could install
+// them, and a server installed with 0.2.0 has none of them. Checked and
+// installed as EnsureDependencies does (dpkg-query, apt-get). When they
+// cannot be installed nothing is handed over: the installed command is
+// left as it is, and after a --branch switch the clone goes back to
+// origin (the branch, or the commit, it was on).
+func (h *Host) ensureBashReleaseDeps(ctx context.Context, branch, origin string) error {
+	out := h.Out
+	if !h.has("apt-get") || !h.has("dpkg-query") {
+		out.Warn("Not a Debian/Ubuntu system; the bash release needs: " + strings.Join(BashReleaseDeps, " "))
+		return nil
+	}
+	var missing []string
+	for _, p := range BashReleaseDeps {
+		if !h.pkgInstalled(ctx, p) {
+			missing = append(missing, p)
+		}
+	}
+	if len(missing) == 0 {
+		out.Info("Packages the bash release needs: all present.")
+		return nil
+	}
+	out.Info("Installing packages the bash release needs: " + strings.Join(missing, " "))
+	if h.aptInstall(ctx, missing) {
+		return nil
+	}
+	deploy := h.Paths.Deploy
+	again := "sudo tacctl upgrade"
+	if branch != "" {
+		again += " --branch " + branch
+	}
+	out.Error("Could not install: " + strings.Join(missing, " ") + ". The bash release cannot run without them; not handing over.")
+	if branch != "" && origin != "" && h.gitQuiet(ctx, deploy, "checkout", "-q", origin) == 0 {
+		out.Error(deploy + " is back on '" + origin + "'; " + h.Paths.Command + " is unchanged.")
+	} else {
+		head, _ := h.gitOut(ctx, deploy, "rev-parse", "--short", "HEAD")
+		out.Error(deploy + " is at " + head + " (the bash release); " + h.Paths.Command + " is unchanged and still works.")
+	}
+	out.Error("Install them, then run the upgrade again:")
+	out.Error("  sudo apt-get install -y " + strings.Join(BashReleaseDeps, " ") + " && " + again)
+	return h.failed("")
 }
 
 // handOverToBash gives the host back to a bash release of tacctl: the
