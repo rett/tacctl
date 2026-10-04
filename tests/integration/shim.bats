@@ -258,7 +258,7 @@ esac'
         assert_failure 1
         assert_output ""
         [[ "$stderr" == *"Could not download https://dl.google.com/go/go1.26.2.linux-amd64.tar.gz."* ]]
-        [[ "$stderr" == *"[ERROR]"*" sudo git -C ${T} checkout 0.1.17 && sudo tacctl config branch develop"* ]]
+        [[ "$stderr" == *"[ERROR]"*" sudo git -C ${T} checkout 0.1.18 && sudo tacctl config branch develop"* ]]
         [[ -L "$B" && "$(readlink "$B")" == "${T}/bin/tacctl.sh" ]]
     done
     [[ ! -e "$GOROOT_DIR" ]]
@@ -274,7 +274,7 @@ esac'
         "go: updates to go.mod needed" \
         $'\e[0;31m[ERROR]\e[0m tacctl could not be built (see above). The installed command is unchanged.' \
         $'\e[0;31m[ERROR]\e[0m Fix the cause and run the command again, or go back to the bash release:' \
-        $'\e[0;31m[ERROR]\e[0m   sudo git -C '"${T}"' checkout 0.1.17 && sudo tacctl config branch develop')
+        $'\e[0;31m[ERROR]\e[0m   sudo git -C '"${T}"' checkout 0.1.18 && sudo tacctl config branch develop')
     [[ "$stderr" == *"$want" ]] || { echo "$stderr"; return 1; }
     run "$B" status
     assert_output "OLD status"
@@ -290,7 +290,7 @@ case "$*" in
 esac'
     run_shim status
     assert_failure 1
-    assert_output --partial "checkout 0.1.17 && sudo tacctl config branch master"
+    assert_output --partial "checkout 0.1.18 && sudo tacctl config branch master"
 }
 
 @test "shim: not root and not current: it re-runs itself under sudo ('host' keeps the agent socket)" {

@@ -30,7 +30,7 @@ set -euo pipefail
 # The Go toolchain this tree is built with, and the bash release the way
 # back leads to.
 GO_VERSION="1.26.2"
-TACCTL_BASH_RELEASE="0.1.17"
+TACCTL_BASH_RELEASE="0.1.18"
 
 # tacctl.sh --build <out> [--tags <tags>]: compile the Go implementation in
 # this script's tree (cmd/tacctl, vendored modules, no network) into <out>,

@@ -6,7 +6,7 @@
 # state, and reports any difference in stdout, stderr, exit code, the calls
 # made to the stubbed system commands and the resulting state tree.
 #
-#   A  the reference: bin/tacctl.sh of a git tag (--against, default 0.1.17,
+#   A  the reference: bin/tacctl.sh of a git tag (--against, default 0.1.18,
 #      the parity baseline), checked out into a temp dir once per run, never
 #      the working tree, so a result does not depend on which bash files a
 #      package touched.
@@ -74,7 +74,7 @@ set -euo pipefail
 here="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 src="$(cd "${here}/../.." && pwd)"
 
-tag=0.1.17 side_b=go go_bin="${src}/dist/tacctl" filter="" colour=0 keep=0 list=0 all=0 selftest=0
+tag=0.1.18 side_b=go go_bin="${src}/dist/tacctl" filter="" colour=0 keep=0 list=0 all=0 selftest=0
 corpora=()
 
 usage() { sed -n '2,/^set -euo/p' "${BASH_SOURCE[0]}" | sed '$d' | sed 's/^# \{0,1\}//'; }
