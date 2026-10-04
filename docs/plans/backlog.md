@@ -46,7 +46,6 @@ These come from the go-rewrite plan's §3.9 "Not changed although tempting" list
 - A failed legacy migration continues during install but aborts during upgrade (0.1.16's errexit difference, kept for parity; WP3.3a).
 - Install over an existing store ignores failures of the backends' `upgrade config` phase silently (WP3.3a).
 - The upgrade summary drops the TACACS+ files phase's "Units: NOT updated" note, because 0.1.16's `cmd_upgrade` empties `UPGRADE_SUMMARY_NOTES` after the files phase; the warning above it is still printed (WP3.3d).
-- The Go tarball is installed without verification when its `.sha256` cannot be fetched (a warning only), in 0.1.16's install and in the 0.2.0 shim alike (WP3.3d).
 - `install`, `upgrade` and `uninstall` accept and ignore unknown arguments; `-y` exists only for `install` and `uninstall` (WP3.3d).
 - `tacctl install --branch <bash release>` from a Go binary builds the installed command with that tree's `bin/tacctl.sh --build`, which a bash release does not have: the install stops with the build failure (an install, unlike an upgrade, has no hand-over to bash; WP3.3d).
 - `tests/diff/run.sh`: normalise the `Using template:` note so the device corpus compares those 38 lines in full; an `@overrides` directive for RADIUS-enabled successes; stub journalctl/ss/curl for a fuller `log` corpus; shellcheck `tests/diff/stubs/` in `make lint`.

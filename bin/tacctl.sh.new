@@ -132,7 +132,7 @@ shim_go_have() {
 # Install Go GO_VERSION in SHIM_GOROOT: the tarball and its published
 # checksum, from the same origin (go.dev/dl redirects the tarball there but
 # answers a .sha256 with a web page), verified before anything installed
-# is touched.
+# is touched. Without a checksum to verify against, nothing is installed.
 SHIM_GO_DL="https://dl.google.com/go"
 shim_install_go() {
     local tarball="go${GO_VERSION}.linux-amd64.tar.gz" want sum
@@ -142,20 +142,25 @@ shim_install_go() {
         shim_error "Could not download ${SHIM_GO_DL}/${tarball}."
         return 1
     fi
+    # Go is installed only verified: no checksum (or anything but one) is a
+    # refusal, as is a mismatch; the Go in place stays as it is.
     want=$(wget -qO- "${SHIM_GO_DL}/${tarball}.sha256" 2> /dev/null || true)
-    [[ "$want" =~ ^[0-9a-f]{64}$ ]] || want=""
-    if [[ -n "$want" ]]; then
-        sum=$(sha256sum "${SHIM_TMP}/${tarball}" | awk '{print $1}')
-        if [[ "$want" != "$sum" ]]; then
-            shim_error "Go tarball checksum mismatch!"
-            shim_error "  Expected: ${want}"
-            shim_error "  Got:      ${sum}"
-            return 1
-        fi
-        shim_info "Go tarball checksum verified."
-    else
-        shim_warn "Could not fetch Go checksum for verification."
+    want="${want#"${want%%[![:space:]]*}"}"
+    want="${want%"${want##*[![:space:]]}"}"
+    if [[ ! "$want" =~ ^[0-9a-f]{64}$ ]]; then
+        rm -f "${SHIM_TMP}/${tarball}"
+        shim_error "Go ${GO_VERSION} was not installed: it could not be verified (no checksum at ${SHIM_GO_DL}/${tarball}.sha256)."
+        return 1
     fi
+    sum=$(sha256sum "${SHIM_TMP}/${tarball}" | awk '{print $1}')
+    if [[ "$want" != "$sum" ]]; then
+        rm -f "${SHIM_TMP}/${tarball}"
+        shim_error "Go tarball checksum mismatch!"
+        shim_error "  Expected: ${want}"
+        shim_error "  Got:      ${sum}"
+        return 1
+    fi
+    shim_info "Go tarball checksum verified."
     rm -rf "$SHIM_GOROOT"
     mkdir -p "$(dirname "$SHIM_GOROOT")"
     tar -C "$(dirname "$SHIM_GOROOT")" -xzf "${SHIM_TMP}/${tarball}" || return 1

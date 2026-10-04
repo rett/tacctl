@@ -187,24 +187,66 @@ refute_called() {
     assert_output "go version go1.25.4 linux/amd64"
     run "$B" status
     assert_output "OLD status"
+    [[ -z "$(ls -A "$TMPDIR")" ]]
 }
 
-@test "shim: a checksum that cannot be had (or a web page in its place) only warns, as 0.1.16 does" {
+# refused_unverified: Go was not installed for want of a checksum; the Go
+# in place (1.25.4) and the installed command are as they were, the
+# download is gone, and Decision 20's way back follows.
+refused_unverified() {
+    assert_failure 1
+    [[ "$stderr" == *$'\e[0;31m[ERROR]\e[0m Go 1.26.2 was not installed: it could not be verified (no checksum at https://dl.google.com/go/go1.26.2.linux-amd64.tar.gz.sha256).'* ]] \
+        || { echo "$stderr"; return 1; }
+    [[ "$stderr" == *"tacctl could not be built (see above). The installed command is unchanged."* ]]
+    [[ "$stderr" != *"checksum verified"* && "$stderr" != *"Go 1.26.2 installed."* ]]
+    run "${GOROOT_DIR}/bin/go" version
+    assert_output "go version go1.25.4 linux/amd64"
+    run "$B" status
+    assert_output "OLD status"
+    [[ -z "$(ls -A "$TMPDIR")" ]]
+}
+
+@test "shim: no checksum to be had: Go is not installed (refused unverified), exit 1" {
+    binary "$OLD_COMMIT" OLD
+    go_toolchain "$GOROOT_DIR" 1.25.4
     go_tarball 1.26.2 none
-    run_shim status
-    assert_success
-    assert_output --partial "Could not fetch Go checksum for verification."
-    assert_line "NEW status"
-    rm -rf "$GOROOT_DIR" "$B"
+    run --separate-stderr "${T}/bin/tacctl.sh" status
+    refused_unverified
+}
+
+@test "shim: a web page (or anything but 64 lowercase hex digits) where the checksum should be is no checksum: refused" {
+    binary "$OLD_COMMIT" OLD
+    go_toolchain "$GOROOT_DIR" 1.25.4
+    go_tarball 1.26.2
+    local real answer
+    real=$(sha256sum "${BATS_TEST_TMPDIR}/go.tgz" | cut -d' ' -f1)
+    for answer in '<!DOCTYPE html>' "${real^^}" "${real}  go1.26.2.linux-amd64.tar.gz" "${real:1}" ''; do
+        printf '%s\n' "$answer" > "${BATS_TEST_TMPDIR}/sha-answer"
+        stub_cmd wget '
+case "$*" in
+  *.sha256*) cat "'"${BATS_TEST_TMPDIR}/sha-answer"'" ;;
+  *) cp "'"${BATS_TEST_TMPDIR}/go.tgz"'" "$3" ;;
+esac'
+        run --separate-stderr "${T}/bin/tacctl.sh" status
+        refused_unverified
+    done
+}
+
+@test "shim: a checksum with blanks or a CRLF around it is trimmed and verified" {
+    binary "$OLD_COMMIT" OLD
+    go_tarball 1.26.2
+    local real
+    real=$(sha256sum "${BATS_TEST_TMPDIR}/go.tgz" | cut -d' ' -f1)
+    printf '  %s \r\n\n' "$real" > "${BATS_TEST_TMPDIR}/sha-answer"
     stub_cmd wget '
 case "$*" in
-  *.sha256*) echo "<!DOCTYPE html>" ;;
+  *.sha256*) cat "'"${BATS_TEST_TMPDIR}/sha-answer"'" ;;
   *) cp "'"${BATS_TEST_TMPDIR}/go.tgz"'" "$3" ;;
 esac'
     run_shim status
     assert_success
-    assert_output --partial "Could not fetch Go checksum for verification."
-    refute_output --partial "mismatch"
+    assert_output --partial "Go tarball checksum verified."
+    assert_line "NEW status"
 }
 
 @test "shim: offline with no Go: it fails loudly on every run and leaves the installed command as it was" {
