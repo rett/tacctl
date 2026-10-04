@@ -1,0 +1,177 @@
+authenticator_type_bcrypt: &authenticator_type_bcrypt 1
+action_deny:  &action_deny  1
+action_permit: &action_permit 2
+accounter_type_file: &accounter_type_file 3
+handler_type_start: &handler_type_start 1
+provider_type_prefix: &provider_type_prefix 1
+file_accounter: &file_accounter
+  name: tacquito_accounter
+  type: *accounter_type_file
+readonly: &readonly
+  name: readonly
+  services:
+    - {name: shell, set_values: [{name: priv-lvl, values: [1]}]}
+    - {name: junos-exec, set_values: [{name: local-user-name, values: [RO-CLASS]}]}
+  accounter: *file_accounter
+operator: &operator
+  name: operator
+  services:
+    - {name: shell, set_values: [{name: priv-lvl, values: [7]}]}
+    - {name: junos-exec, set_values: [{name: local-user-name, values: [OP-CLASS]}]}
+  accounter: *file_accounter
+superuser: &superuser
+  name: superuser
+  services:
+    - {name: shell, set_values: [{name: priv-lvl, values: [15]}]}
+    - {name: junos-exec, set_values: [{name: local-user-name, values: [RW-CLASS]}]}
+  accounter: *file_accounter
+bcrypt_kate: &bcrypt_kate
+  type: *authenticator_type_bcrypt
+  options:
+    hash: DISABLED
+users:
+  - name: a1
+    scopes: [lab]
+    groups: [*readonly]
+    accounter: *file_accounter
+  - name: a2
+    scopes: [lab]
+    groups: [*readonly]
+    authenticator: "just text"
+    accounter: *file_accounter
+  - name: a3
+    scopes: [lab]
+    groups: [*readonly]
+    authenticator: {type: 2, options: {hash: "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141"}}
+    accounter: *file_accounter
+  - name: a4
+    scopes: [lab]
+    groups: [*readonly]
+    authenticator: {type: true, options: {hash: "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141"}}
+    accounter: *file_accounter
+  - name: a5
+    scopes: [lab]
+    groups: [*readonly]
+    authenticator: {type: 1.0, options: {hash: "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141"}}
+    accounter: *file_accounter
+  - name: a6
+    scopes: [lab]
+    groups: [*readonly]
+    authenticator: {type: 1, options: "x"}
+    accounter: *file_accounter
+  - name: a7
+    scopes: [lab]
+    groups: [*readonly]
+    authenticator: {type: 1, options: {hash: "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141", salt: x}, extra: 1}
+    accounter: *file_accounter
+  - name: a8
+    scopes: [lab]
+    groups: [*readonly]
+    authenticator: {type: 1, options: {hash: 12345}}
+    accounter: *file_accounter
+  - name: a9
+    scopes: [lab]
+    groups: [*readonly]
+    authenticator: {type: 1, options: {hash: "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141"}}
+    accounter: *file_accounter
+  - name: b1
+    scopes: [lab]
+    groups: [*readonly]
+    authenticator: {type: 1, options: {hash: "  243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141  "}}
+    accounter: *file_accounter
+  - name: b2
+    scopes: [lab]
+    groups: [*readonly]
+    authenticator: {type: 1, options: {hash: " DISABLED "}}
+    accounter: *file_accounter
+  - name: b3
+    scopes: [lab]
+    groups: [*readonly]
+    authenticator: {type: 1, options: {hash: "243262243132242E2E2E2E2E2E2E2E2E2E2E2E2E2E2E2E2E2E2E2E2E2E2E2E2E2E2E2E2E2E2E2E2E2E2E2E2E2E2E2E2E2E2E2E2E2E2E2E2E2E2E2E2E"}}
+    accounter: *file_accounter
+  - name: b4
+    scopes: [lab]
+    groups: [*readonly]
+    authenticator: {type: 1, options: {hash: null}}
+    accounter: *file_accounter
+  - name: b5
+    scopes: [lab]
+    groups: [*readonly]
+    authenticator: {type: 1, options: {hash: [1, 2]}}
+    accounter: *file_accounter
+  - name: b6
+    scopes: [lab]
+    groups: [*readonly]
+    authenticator: {type: 1}
+    accounter: *file_accounter
+  - name: kate
+    scopes: [lab]
+    groups: [*readonly]
+    authenticator: *bcrypt_kate
+    accounter: *file_accounter
+  - name: root
+    scopes: [lab]
+    groups: [*readonly]
+    authenticator: {type: 1, options: {hash: "243262243132244242424242424242424242424242424242424242424242424242424242424242424242424242424242424242424242424242424242"}}
+    accounter: *file_accounter
+  - name: daemon
+    scopes: [lab]
+    groups: [*readonly]
+    authenticator: {type: 1, options: {hash: "243262243132242e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e"}}
+    accounter: *file_accounter
+  - name: acc1
+    scopes: [lab]
+    groups: [*readonly]
+    authenticator: {type: 1, options: {hash: "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141"}}
+  - name: acc2
+    scopes: [lab]
+    groups: [*readonly]
+    authenticator: {type: 1, options: {hash: "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141"}}
+    accounter: {name: tacquito_accounter, type: 3, options: {path: /x}}
+  - name: acc3
+    scopes: [lab]
+    groups: [*readonly]
+    authenticator: {type: 1, options: {hash: "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141"}}
+    accounter: {name: tacquito_accounter, type: 3, extra: 1}
+  - name: acc4
+    scopes: [lab]
+    groups: [*readonly]
+    authenticator: {type: 1, options: {hash: "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141"}}
+    accounter: {name: tacquito_accounter, type: 3.0}
+  - name: acc5
+    scopes: [lab]
+    groups: [*readonly]
+    authenticator: {type: 1, options: {hash: "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141"}}
+    accounter: "file"
+  - name: sc1
+    groups: [*readonly]
+    authenticator: {type: 1, options: {hash: "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141"}}
+    accounter: *file_accounter
+  - name: sc2
+    scopes: lab
+    groups: [*readonly]
+    authenticator: {type: 1, options: {hash: "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141"}}
+    accounter: *file_accounter
+  - name: sc3
+    scopes: [lab, 7, lab, null]
+    groups: [*readonly]
+    authenticator: {type: 1, options: {hash: "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141"}}
+    accounter: *file_accounter
+  - name: sc4
+    scopes: []
+    groups: [*readonly]
+    authenticator: {type: 1, options: {hash: "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141"}}
+    accounter: *file_accounter
+  - name: sc5
+    scopes: ~
+    groups: [*readonly]
+    authenticator: {type: 1, options: {hash: "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141"}}
+    accounter: *file_accounter
+secrets:
+  - name: lab
+    secret: {group: tacquito, key: "lab-secret-0123456789abcdef"}
+    handler: {type: *handler_type_start}
+    type: *provider_type_prefix
+    options:
+      prefixes: |
+        ["192.168.0.0/16"]

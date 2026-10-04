@@ -42,6 +42,12 @@ mk_snapshot() {
     chmod 600 "${BACKUPS}/$1/store.yaml"
 }
 
+# fixed_clock: every snapshot id is 19990101_000000_000, through the
+# TACCTL_TEST_NOW knob (local midnight).
+fixed_clock() {
+    export TACCTL_TEST_NOW="1999-01-01T00:00:00$(date -d '1999-01-01 00:00:00' +%:z)"
+}
+
 add_user() {
     "$TACCTL_BIN_SCRIPT" user add "$1" "${2:-operator}" --hash "$TEST_HASH" --scopes lab > /dev/null
 }
@@ -142,7 +148,7 @@ PY
 # --- Naming: same-second mutations never collide ------------------------------
 
 @test "snapshot: names taken by an earlier snapshot get a numeric suffix" {
-    stub_cmd date 'echo 19990101_000000_000'
+    fixed_clock
     add_user alice
     add_user bob
     add_user carol
@@ -163,39 +169,6 @@ PY
 }
 
 # --- No-op mutations -----------------------------------------------------------
-
-@test "snapshot: nothing is added while the files equal the newest snapshot" {
-    tacctl_source_lib
-    backup_snapshot > /dev/null
-    backup_snapshot > /dev/null
-    backup_snapshot > /dev/null
-    [[ "$(snapshots | wc -l)" -eq 1 ]]
-    # A change to either canonical file makes the next one real.
-    printf '# note\n' >> "${TACCTL_STATE_DIR}/store.yaml"
-    backup_snapshot > /dev/null
-    [[ "$(snapshots | wc -l)" -eq 2 ]]
-    printf 'bcrypt:\n  cost: 11\n' > "${TACCTL_STATE_DIR}/tacctl.yaml"
-    backup_snapshot > /dev/null
-    [[ "$(snapshots | wc -l)" -eq 3 ]]
-    backup_snapshot > /dev/null
-    [[ "$(snapshots | wc -l)" -eq 3 ]]
-}
-
-@test "snapshot: one command with several store writes takes one snapshot" {
-    tacctl_source_lib
-    two_writes() {
-        store_user_set alice "group=operator" "hash=${TEST_HASH}" "scopes=lab" || return 1
-        store_user_set bob "group=operator" "hash=${TEST_HASH}" "scopes=lab"
-    }
-    store_apply two_writes > /dev/null
-    [[ "$(snapshots | wc -l)" -eq 1 ]]
-    # It holds the state before either write.
-    run grep -c 'alice\|bob' "${BACKUPS}/$(newest_snapshot)/store.yaml"
-    assert_output "0"
-    run "$TACCTL_BIN_SCRIPT" user list
-    assert_output --partial "alice"
-    assert_output --partial "bob"
-}
 
 # --- Retention ------------------------------------------------------------------
 
@@ -237,7 +210,7 @@ PY
         mk_snapshot "20300101_000000_0${i}"
     done
     # A name older than every existing one.
-    stub_cmd date 'echo 19990101_000000_000'
+    fixed_clock
     add_user alice
     [[ -d "${BACKUPS}/19990101_000000_000" ]]
     [[ -f "${BACKUPS}/19990101_000000_000/store.yaml" ]]
@@ -347,8 +320,9 @@ drift.20250301_000000
 }
 
 @test "backup diff: says so when nothing differs" {
-    tacctl_source_lib
-    backup_snapshot > /dev/null
+    # A snapshot of the live state, as backup_snapshot would take it.
+    mkdir -m 700 "${BACKUPS}/20260101_000000_000"
+    cp "${TACCTL_STATE_DIR}/store.yaml" "${BACKUPS}/20260101_000000_000/store.yaml"
     run "$TACCTL_BIN_SCRIPT" backup diff
     assert_success
     assert_output --partial "store.yaml: no differences"
@@ -555,40 +529,6 @@ drift.20250301_000000
     [[ "$(state_files)" == "$before" ]]
 }
 
-@test "backup restore: a render that fails partway puts all four files back" {
-    add_user alice
-    add_user bob
-    local snap before
-    snap="${BACKUPS}/$(oldest_snapshot)"
-    "$TACCTL_BIN_SCRIPT" config bcrypt-cost 11 > /dev/null
-    before=$(state_files)
-    tacctl_source_lib
-    # A backend whose commit gets as far as replacing tacquito.yaml and
-    # rendered.json, then fails: the worst case for consistency.
-    # backends_render_all puts the rendered config and its record back,
-    # _backup_apply the store and tacctl.yaml.
-    backend_tacacs_render_commit() {
-        printf '# half a render\n' > "$TACCTL_CONFIG"
-        printf '{}\n' > "$RENDERED_FILE"
-        return 1
-    }
-    run _backup_apply _backup_install_snapshot "$snap"
-    assert_failure
-    [[ "$(state_files)" == "$before" ]]
-    [[ -z "$(find "$TACCTL_STATE_DIR" -maxdepth 1 -name '.restore.*')" ]]
-}
-
-@test "backup restore: a failing writer also puts the files back" {
-    add_user alice
-    local before
-    before=$(state_files)
-    tacctl_source_lib
-    half_writer() { printf 'garbage\n' > "$STORE_FILE"; rm -f "$TACCTL_OVERRIDES_FILE"; return 1; }
-    run _backup_apply half_writer
-    assert_failure
-    [[ "$(state_files)" == "$before" ]]
-}
-
 @test "backup restore: rejects an unknown timestamp, extra arguments and unknown options" {
     run "$TACCTL_BIN_SCRIPT" backup restore 19990101_000000 <<< "y"
     assert_failure
@@ -663,19 +603,6 @@ drift.20250301_000000
     run "$TACCTL_BIN_SCRIPT" backup restore 19990101_000000 --legacy <<< "y"
     assert_failure
     assert_output --partial "not equivalent"
-    [[ "$(state_files)" == "$before" ]]
-}
-
-@test "backup restore --legacy: a failing render after the import puts everything back" {
-    add_user alice
-    cp "${TACCTL_SRC}/tests/fixtures/golden/tacquito.minimal.rendered.yaml" \
-        "${BACKUPS}/tacquito.yaml.20250101_000000"
-    local before
-    before=$(state_files)
-    tacctl_source_lib
-    backend_tacacs_render_stage() { return 1; }
-    run _backup_apply _backup_import_legacy "${BACKUPS}/tacquito.yaml.20250101_000000"
-    assert_failure
     [[ "$(state_files)" == "$before" ]]
 }
 

@@ -1,0 +1,73 @@
+filters:
+  allow: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 'fd00:10::/64']
+  deny: [10.66.0.0/16, 'fd00:10::bad/128']
+groups:
+  netops: {builtin: false, juniper_class: NETOPS_class-1, priv_lvl: 10}
+  operator: {builtin: true, juniper_class: OP-CLASS, priv_lvl: 7}
+  readonly: {builtin: true, juniper_class: RO-CLASS, priv_lvl: 1}
+  superuser: {builtin: true, juniper_class: RW-CLASS, priv_lvl: 15}
+scopes:
+  lab:
+    prefixes: [172.16.0.0/12, 192.168.0.0/16, 'fd00:10::/64']
+    protocols: null
+    secret: 'it''s a "lab" secret ${confdir} #1'
+  legacy:
+    prefixes: [198.51.100.0/24]
+    protocols: [tacacs]
+    secret: legacy-tacacs-only-0123456789
+  prod:
+    prefixes: [10.0.0.0/8]
+    protocols: null
+    secret: prod-secret-0123456789abcdef
+  prod-inner:
+    prefixes: [10.10.99.0/24]
+    protocols: null
+    secret: inner\secret "quoted" 0123456789
+  wifi:
+    prefixes: [10.20.0.0/16]
+    protocols: [radius]
+    secret: wifi-radius-only-0123456789
+users:
+  alice:
+    accounting_sink: false
+    disabled: false
+    group: superuser
+    hash: 24326224313224616c6963652e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e
+    password_changed: null
+    scopes: [prod, lab, wifi]
+  bob:
+    accounting_sink: false
+    disabled: false
+    group: operator
+    hash: 24326124313224626f622e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e
+    password_changed: null
+    scopes: [lab, legacy]
+  carol:
+    accounting_sink: false
+    disabled: true
+    group: readonly
+    hash: 243262243132246361726f6c2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e
+    password_changed: null
+    scopes: [lab]
+  dave:
+    accounting_sink: false
+    disabled: false
+    group: netops
+    hash: 24326224313224646176652e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e
+    password_changed: null
+    scopes: [legacy]
+  erin:
+    accounting_sink: false
+    disabled: false
+    group: netops
+    hash: 243262243132246572696e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e
+    password_changed: null
+    scopes: [wifi, prod-inner]
+  root:
+    accounting_sink: true
+    disabled: true
+    group: readonly
+    hash: null
+    password_changed: null
+    scopes: [lab]
+version: 1

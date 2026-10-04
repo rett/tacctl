@@ -1,0 +1,36 @@
+{
+ "z": 1,
+ "a": {
+  "nested": {
+   "deeper": [
+    1,
+    2
+   ]
+  },
+  "list": [
+   "a",
+   {
+    "b": "c",
+    "d": [
+     "e"
+    ]
+   },
+   null,
+   [
+    "inner",
+    2
+   ]
+  ]
+ },
+ "dup": "second",
+ "m": {},
+ "l": [],
+ "literal": "line one\nline two\n",
+ "folded": "folded text\n",
+ "stripped": "no newline",
+ "quoted key": "v",
+ "single key": "w",
+ "=": "value-key",
+ "multi plain": "this is continued",
+ "k": "2026-10-01"
+}

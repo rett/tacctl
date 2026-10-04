@@ -1,0 +1,17 @@
+version: 1
+groups:
+  readonly: {priv_lvl: 1, juniper_class: RO-CLASS, builtin: true}
+  operator: {priv_lvl: 7, juniper_class: OP-CLASS, builtin: true}
+  superuser: {priv_lvl: 15, juniper_class: RW-CLASS, builtin: true}
+users:
+  alice: {group: superuser, scopes: [lab], hash: null, disabled: true, password_changed: '2025-01-01'}
+  dave: {group: readonly, scopes: [], hash: '2432622431322444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444', disabled: true, password_changed: '2024-02-02'}
+  engineer: {group: superuser, scopes: [], hash: '2432622431322445454545454545454545454545454545454545454545454545454545454545454545454545454545454545454545454545454545', disabled: true}
+  erin: {group: operator, scopes: [], hash: null, disabled: true}
+  root: {group: readonly, scopes: [], hash: '2432622431322445454545454545454545454545454545454545454545454545454545454545454545454545454545454545454545454545454545', disabled: true, accounting_sink: true}
+scopes:
+  lab: {prefixes: [10.1.0.0/16], secret: other, protocols: [tacacs], vendor_attrs: [wti, cisco], devices: {10.1.2.3/32: juniper, 172.16.0.5/32: cisco, 10.0.0.9/32: wti}}
+  prod: {prefixes: [10.0.0.0/8], secret: x, protocols: [], devices: {192.168.5.1/32: wti}}
+  v6: {prefixes: ['2001:db8::/32'], secret: y, vendor_attrs: [cisco]}
+  gone: {prefixes: [10.99.0.0/16], secret: z, protocols: [radius]}
+filters: {allow: [], deny: []}

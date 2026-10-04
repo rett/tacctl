@@ -1,0 +1,3 @@
+web1|admin@web1||lab|192.0.2.1|
+web2|web2|2222|lab|192.0.2.1||radius
+old1|admin@old1||gone|192.0.2.1|

@@ -1,0 +1,307 @@
+# tacctl config ... (the non-device verbs: the device configs are devices.txt, WP3.1):
+# config_setters, config_render, config_mgmt_acl, config_metrics_sudoers command lines
+# plus the error paths. 'config branch' and 'config linux' are left out: the first
+# reaches the live deploy clone, the second belongs to the hosts corpus.
+# Run: tests/diff/run.sh config
+@fixture tacquito.minimal.yaml
+
+@known 3.9 item 30: the config usage lists render --dry-run --out
+config
+@known 3.9 item 30: the config usage lists render --dry-run --out
+config bogus
+config show
+config validate
+@known 3.9 item 28: the comment headers of config defaults and config dump name tacctl, not lib/conf.sh
+config dump
+@known 3.9 item 28: the comment headers of config defaults and config dump name tacctl, not lib/conf.sh
+config defaults
+@known 3.9 item 28: the comment headers of config defaults and config dump name tacctl, not lib/conf.sh
+config defaults extra
+
+# get / get-list
+config get
+config get bcrypt.cost
+config get bcrypt.cost 99
+config get no.such.key
+config get no.such.key fallback
+config get scope.default
+config get-list
+config get-list commands
+config get-list prefix_allow
+config get-list no.such.key
+config get bcrypt.cost ;; config bcrypt-cost 11 ;; config get bcrypt.cost
+
+# setters: bcrypt-cost, password-age, password-min-length, secret-min-length
+config bcrypt-cost
+config bcrypt-cost 10
+config bcrypt-cost 10 ;; config bcrypt-cost
+config bcrypt-cost 9
+config bcrypt-cost 15
+config bcrypt-cost twelve
+config password-age
+config password-age 45 ;; config password-age
+config password-age 0
+config password-age forever
+config password-min-length
+config password-min-length 8 ;; config password-min-length
+config password-min-length 7
+config password-min-length 65
+config password-min-length bad
+config secret-min-length
+config secret-min-length 20 ;; config secret-min-length
+config secret-min-length 15
+config secret-min-length 129
+config secret-min-length bad
+@known 3.9 item 28: the comment headers of config defaults and config dump name tacctl, not lib/conf.sh
+config bcrypt-cost 10 ;; config dump
+config bcrypt-cost 10 ;; config validate
+
+# loglevel, listen, metrics
+config loglevel
+config loglevel debug ;; config loglevel
+config loglevel info ;; config loglevel
+config loglevel trace
+config listen
+config listen show
+config listen tcp
+config listen tcp 10.1.0.1:49 ;; config listen show
+config listen tcp6 [::]:49 ;; config listen show
+config listen tcp 10.1.0.1:49 ;; config listen reset ;; config listen show
+config listen bogus
+config listen tcp notanaddress
+config listen tcp 10.1.0.1:49 --listener mgmt ;; config listen show
+config listen show --listener nosuch
+config listen --backend nosuch
+config metrics
+config metrics show
+config metrics enable ;; config metrics show
+config metrics disable ;; config metrics show
+config metrics address
+config metrics address 10.1.0.1:9090 ;; config metrics show
+config metrics address 127.0.0.1
+config metrics address :9090
+config metrics address 127.0.0.1:8080 ;; config metrics reset ;; config metrics show
+config metrics bogus
+
+# connection and management ACLs
+config allow
+config allow list
+config allow bogus
+config allow add
+config allow add notacidr
+config allow add 10.0.0.0/8,192.168.0.0/16,2001:db8::/32 ;; config allow list
+config allow add 192.168.0.0/16,10.0.0.0/8 ;; config allow list
+config allow add 10.0.0.0/8 ;; config allow remove 10.0.0.0/8 ;; config allow list
+config allow remove 10.0.0.0/8
+config allow clear <<< y
+config allow add 10.0.0.0/8 ;; config allow clear <<< y ;; config allow list
+config allow add 10.0.0.0/8 ;; config allow clear <<< n ;; config allow list
+config allow add 10.0.0.0/8 ;; config allow clear
+config deny list
+config deny add 10.66.0.0/16 ;; config deny list
+config deny add 10.66.0.9/16 ;; config deny list
+config deny add 10.66.0.0/16 ;; config allow add 10.0.0.0/8 ;; config validate
+config deny add notacidr
+config deny remove 10.66.0.0/16
+config mgmt-acl
+config mgmt-acl list
+config mgmt-acl bogus
+config mgmt-acl add
+config mgmt-acl add not-a-cidr
+config mgmt-acl add 10.0.0.0/8 ;; config mgmt-acl list
+config mgmt-acl add 10.0.0.0/8,192.168.0.0/16 ;; config mgmt-acl list
+config mgmt-acl add 192.168.5.5/24,10.0.0.0/8 ;; config mgmt-acl list
+config mgmt-acl add 10.0.0.0/8 ;; config mgmt-acl remove 10.0.0.0/8 ;; config mgmt-acl list
+config mgmt-acl remove 203.0.113.0/24
+config mgmt-acl clear <<< y
+config mgmt-acl add 10.0.0.0/8 ;; config mgmt-acl clear <<< y ;; config mgmt-acl list
+config mgmt-acl add 10.0.0.0/8 ;; config mgmt-acl clear <<< n ;; config mgmt-acl list
+config mgmt-acl cisco-name
+config mgmt-acl cisco-name MY-VTY-ACL ;; config mgmt-acl cisco-name
+config mgmt-acl cisco-name 1bad
+config mgmt-acl cisco-name ''
+config mgmt-acl juniper-name
+config mgmt-acl juniper-name CUSTOM-MGMT-ACL ;; config mgmt-acl juniper-name
+
+# sudoers (show and remove only: install writes root-owned files, which a non-root run cannot)
+config sudoers
+config sudoers show
+config sudoers bogus
+config sudoers remove
+config sudoers tiers
+config sudoers tiers show
+config sudoers tiers bogus
+
+# render
+config render
+config render --force
+config render --now
+config render ;; config validate
+config bcrypt-cost 10 ;; config render ;; config validate
+
+# diff / restore aliases of the backup verbs
+config diff
+config diff {TS}
+config restore
+config restore {TS}
+
+# more error paths: bad values and missing arguments after a good state
+config get ''
+config get-list ''
+config bcrypt-cost 10 11
+config bcrypt-cost -1
+config bcrypt-cost 12.5
+config password-age -1
+config password-age 1 2
+config password-min-length 7.5
+config secret-min-length 0
+config loglevel debug info
+config loglevel ''
+config listen tcp6
+config listen tcp6 10.1.0.1:49
+config listen tcp ''
+config listen reset extra
+config metrics address 127.0.0.1:99999
+config metrics address 127.0.0.1:0
+config metrics enable extra
+config allow add ''
+config allow add 10.0.0.0/8,notacidr
+config allow remove ''
+config allow remove 10.9.9.0/24
+config deny add ''
+config deny remove 10.9.9.0/24
+config deny clear
+config mgmt-acl add ''
+config mgmt-acl add 10.0.0.0/8,notacidr
+config mgmt-acl remove ''
+config mgmt-acl cisco-name 'has space'
+config mgmt-acl juniper-name '1bad'
+config mgmt-acl juniper-name ''
+config render --bogus
+config diff nosuchid
+config diff ../../etc/passwd
+config restore nosuchid
+config restore ../../etc/passwd
+config restore a b
+@known 3.9 item 30: the config usage lists render --dry-run --out
+config frobnicate
+@known 3.9 item 30: the config usage lists render --dry-run --out
+config frobnicate extra
+config loglevel bogus
+config password-age abc
+config bcrypt-cost 1
+config bcrypt-cost 100
+config password-min-length 1
+config password-min-length 0
+config secret-min-length 1
+config secret-min-length 500
+config deny bogus
+config allow bogus x
+config mgmt-acl bogus x
+config metrics address bad
+config metrics address ''
+config listen tcp 1.2.3.4
+config listen tcp6 1.2.3.4:49
+config get-list a b c
+config sudoers show extra
+config sudoers remove extra
+config sudoers tiers remove extra
+config sudoers tiers show extra
+config restore {TS} --bogus
+config diff {TS} extra
+
+# WP2.4c: listener names for completion
+_completion-names listeners
+_completion-names listeners tacacs
+_completion-names listeners radius
+_completion-names listeners ldap
+_completion-names listeners 'tacacs radius'
+config listen tcp 10.1.0.1:49 --listener mgmt ;; _completion-names listeners tacacs ;; _completion-names listeners
+
+# listen: the RADIUS backend and the flag forms
+config listen --backend radius
+config listen --backend=radius --listener=auth
+config listen --backend radius --listener acct show
+config listen --backend radius --listener default
+config listen --backend radius --listener auth reset
+config listen --backend radius --listener auth tcp 10.1.0.1:1812
+config listen --backend ''
+config listen --backend
+config listen --listener ''
+config listen --listener=Bad_Name show
+config listen --listener=
+config listen --backend=ldap
+config listen --bogus
+config listen show extra
+config listen --listener mgmt show
+config listen --listener mgmt reset
+config listen tcp 10.1.0.1:49 --listener mgmt ;; config listen --listener=mgmt show ;; config listen --listener mgmt reset ;; config listen show
+
+# values with backslash escapes reach info/warn/error through echo -e
+config loglevel 'de\tbug'
+config metrics 'sh\tow'
+config password-age '4\t5'
+config get 'a\tb' 'fall\tback'
+config get-list 'a\tb'
+config sudoers 'sh\tow'
+config sudoers install 'bad\tgroup'
+config sudoers tiers 'sh\tow'
+
+# sudoers install: the group, the prompt, closed stdin
+config sudoers install wheel <<< n
+config sudoers install wheel
+config sudoers install %wheel <<< no
+config sudoers install '' <<< n
+config sudoers install 'bad group' <<< y
+config sudoers install wheel extra <<< n
+# Unprivileged, the real 'install -o root' fails; 0.1.16 then exits under errexit and
+# leaves its mktemp copy of the drop-in in TMPDIR, 0.2.0 removes it (3.9 item 18).
+@known 3.9 item 18: a failed 'config sudoers [tiers] install' leaves no temp file behind
+config sudoers tiers install
+@known 3.9 item 18: a failed 'config sudoers [tiers] install' leaves no temp file behind
+config sudoers install wheel <<< y
+
+# the tunables shown and set, and their empty forms
+config bcrypt-cost ''
+config password-age ''
+@known 3.9 item 28: the comment headers of config defaults and config dump name tacctl, not lib/conf.sh
+config secret-min-length 20 ;; config password-min-length 9 ;; config password-age 30 ;; config dump
+config loglevel debug ;; config loglevel debug ;; config validate ;; config show
+config metrics disable ;; config metrics enable ;; config metrics address 10.1.0.1:9090 ;; config metrics reset ;; config metrics
+
+# render --dry-run is new in 0.2.0 (docs/plans/go-rewrite.md 3.9 item 8)
+@known 3.9 item 8: config render --dry-run is new
+config render --dry-run
+@known 3.9 item 8: config render --dry-run is new
+config render --dry-run --out
+config render --out x
+config render --force extra
+
+# show and validate on other states
+@fixture tacquito.multiscope.yaml
+config show
+config validate
+config render ;; config validate ;; config show
+config get-list scope_mgmt_acl.permits
+@fixture store.radius.yaml
+config show
+config validate
+config render ;; config validate
+@fixture legacy.fresh-install.yaml
+config show
+config validate
+config render
+config listen
+@fixture legacy.unrepresentable.yaml
+config validate
+config show
+@fixture none
+config
+config show
+config validate
+config render
+config render --force
+config get bcrypt.cost
+config defaults
+config sudoers
+_completion-names listeners

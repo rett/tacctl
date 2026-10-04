@@ -1,0 +1,13 @@
+
+[1mtacctl scope mgmt-acl lab[0m — per-scope Cisco VTY-ACL + Juniper lo0-filter
+
+Usage:
+  tacctl scope mgmt-acl lab list                          Show effective permits for this scope
+  tacctl scope mgmt-acl lab add    <cidr>[,<cidr>...]     Add one or more CIDRs to the per-scope list
+  tacctl scope mgmt-acl lab remove <cidr>[,<cidr>...]     Remove one or more CIDRs from the per-scope list
+  tacctl scope mgmt-acl lab clear                         Wipe the per-scope list (confirms; render falls back to global)
+  tacctl scope mgmt-acl lab cisco-name   [label]          Per-scope Cisco VTY-ACL name
+  tacctl scope mgmt-acl lab juniper-name [label]          Per-scope Junos filter name
+
+Current entries: 0 (per-scope) / 0 (global fallback)
+

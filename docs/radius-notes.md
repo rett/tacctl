@@ -207,7 +207,7 @@ attributes: opt-in per scope, per address"). What it rests on, verified on
    (127.0.0.10/32 inside 127.0.0.0/8, 127.0.0.17/32 inside 127.0.0.16/30):
    the longest prefix wins as for overlapping scopes (finding 6), and a
    request with another scope's secret from that address gets no answer.
-7. **The way from the release before (commit 1b34e77) works both ways it
+7. **The way from the release before (commit e9142d5) works both ways it
    can happen** (`flow.sh`, last section, both systemd containers): that
    release's own `backend enable radius` (two files, drop-in without `-D`,
    every Accept with Cisco and Juniper attributes), then this release's

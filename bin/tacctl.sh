@@ -1,210 +1,226 @@
 #!/usr/bin/env bash
 #
-# tacctl — management CLI for network-device AAA servers
+# tacctl — bootstrap shim (docs/plans/go-rewrite.md 5.2).
 #
-# Manages users, groups, scopes and filters once, and serves them over
-# TACACS+ (tacquito) and, when enabled, RADIUS (FreeRADIUS).
-# Users, groups, scopes and filters live in /etc/tacctl/store.yaml; every
-# change is rendered into each enabled backend's config (for TACACS+
-# /etc/tacquito/tacquito.yaml) and the backends whose files changed restarted.
+# tacctl is a Go program; this script makes sure the installed command
+# (/usr/local/bin/tacctl) is the binary of this tree, then runs it with the
+# arguments given:
 #
-# Usage (every command prints its own help when run without arguments):
-#   ./tacctl.sh user list
-#   ./tacctl.sh user add <username> <group> [--scopes <name>[,<name>...]]
-#   ./tacctl.sh user remove <username>
-#   ./tacctl.sh user passwd <username>
-#   ./tacctl.sh user disable <username>
-#   ./tacctl.sh user enable <username>
-#   ./tacctl.sh user verify <username>
-#   ./tacctl.sh user scope <username> {list|add|remove|replace|remove --all}
-#   ./tacctl.sh scope {list|show|add|remove|rename|default}
-#   ./tacctl.sh scope prefixes <name> {list|add|remove|remove --all [--force]}
-#   ./tacctl.sh scope secret   <name> {show|set|generate}
-#   ./tacctl.sh backend {list|status [<id>]|enable <id>|disable <id>}
-#   ./tacctl.sh store {show|import|rollback}
-#   ./tacctl.sh host {list|enroll|sync|unenroll|default-method}
-#   ./tacctl.sh config show
-#   ./tacctl.sh config cisco   [--scope <name>] [--legacy] [--protocol tacacs|radius]
-#   ./tacctl.sh config juniper [--scope <name>] [--protocol tacacs|radius]
-#   ./tacctl.sh config wti     [--scope <name>] [--protocol tacacs|radius]
+#   1. As root (it re-runs itself under sudo otherwise), umask 022.
+#   2. The binary is current (a regular file built from this tree's HEAD):
+#      run it, nothing else.
+#   3. Otherwise the Go toolchain is checked (go.mod's go line) and, when it
+#      is missing or older, Go GO_VERSION is installed in /usr/local/go; a
+#      newer Go is never replaced.
+#   4. The binary is built from this tree (the recipe below) and installed
+#      in one rename; on failure the installed command is left as it was
+#      and the way back to the bash release is printed (exit 1).
+#   5. The new binary runs with the arguments.
+#   6. '--build <out> [--tags <tags>]' only builds (no root, nothing
+#      installed): 'make build' and 'tacctl upgrade' use it.
 #
+# It runs when the README one-liner installs tacctl, when the bash release
+# hands an upgrade over to this tree, and whenever /usr/local/bin/tacctl
+# still points here; it is idempotent.
+#
+# TACCTL_TEST_ROOT (tests only) moves /usr/local/bin/tacctl and
+# /usr/local/go under that directory.
 set -euo pipefail
 
-# Re-exec under sudo only when invoked as a script. When sourced (e.g. by bats
-# tests), skip re-exec so tests can call functions directly as any user.
-# TACCTL_SKIP_SUDO=1 is a test-only escape for subprocess invocations from
-# integration tests; prod never sets it.
-if [[ "${BASH_SOURCE[0]}" == "$0" \
-    && "${TACCTL_SKIP_SUDO:-0}" != "1" \
-    && $EUID -ne 0 \
-    && "${1:-}" != "hash" ]]; then
-    # 'host' runs ssh as the invoking user; carry their agent socket across
-    # sudo's environment reset so agent-held keys work.
+# The Go toolchain this tree is built with, and the bash release the way
+# back leads to.
+GO_VERSION="1.26.2"
+TACCTL_BASH_RELEASE="0.1.18"
+
+# tacctl.sh --build <out> [--tags <tags>]: compile the Go implementation in
+# this script's tree (cmd/tacctl, vendored modules, no network) into <out>,
+# atomically, and exit. Needs no root and installs nothing: 'make build' uses
+# it, and the 0.2.0 bootstrap shim and upgrade share the same recipe
+# (docs/plans/go-rewrite.md 5.1). The version stamped in is 'git describe'
+# of the tree; GOCACHE as root defaults to /root/.cache/go-build.
+tacctl_go_build() {
+    local out="${1:-}" tags="" tree version commit date
+    local go_bin="${TACCTL_TEST_ROOT:-}/usr/local/go/bin/go"
+    if [[ -z "$out" || "$out" == -* ]]; then
+        echo "Usage: tacctl.sh --build <out> [--tags <tags>]" >&2
+        return 1
+    fi
+    shift
+    if [[ "${1:-}" == "--tags" ]]; then
+        tags="${2:-}"
+        [[ -n "$tags" ]] || { echo "Usage: tacctl.sh --build <out> [--tags <tags>]" >&2; return 1; }
+        shift 2
+    fi
+    if [[ $# -gt 0 ]]; then
+        echo "Usage: tacctl.sh --build <out> [--tags <tags>]" >&2
+        return 1
+    fi
+    tree="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)" || return 1
+    if [[ ! -f "${tree}/go.mod" ]]; then
+        echo -e "\033[0;31m[ERROR]\033[0m No Go module in ${tree} (go.mod missing)." >&2
+        return 1
+    fi
+    if [[ ! -x "$go_bin" ]]; then
+        echo -e "\033[0;31m[ERROR]\033[0m Go toolchain not found at ${go_bin}." >&2
+        return 1
+    fi
+    [[ "$out" == /* ]] || out="${PWD}/${out}"
+    mkdir -p "$(dirname "$out")" || return 1
+    version=$(git -C "$tree" describe --tags --always --dirty 2> /dev/null) || version="unknown"
+    commit=$(git -C "$tree" rev-parse HEAD 2> /dev/null) || commit="unknown"
+    date=$(git -C "$tree" log -1 --format=%cI 2> /dev/null) || date="unknown"
+    if [[ -z "${GOCACHE:-}" && $EUID -eq 0 ]]; then
+        export GOCACHE=/root/.cache/go-build
+    fi
+    local -a build=(build -trimpath -buildvcs=false)
+    [[ -z "$tags" ]] || build+=(-tags "$tags")
+    build+=(-ldflags "-s -w -X main.version=${version} -X main.commit=${commit} -X main.date=${date}")
+    build+=(-o "${out}.new" ./cmd/tacctl)
+    # A subshell for cd and umask; the trap drops a half-written binary on
+    # failure or Ctrl-C. <out> itself changes only by the final rename.
+    (
+        trap 'rm -f "${out}.new"' EXIT
+        cd "$tree" \
+            && umask 022 \
+            && GOTOOLCHAIN=local GOFLAGS=-mod=vendor CGO_ENABLED=0 "$go_bin" "${build[@]}" \
+            && chmod 755 "${out}.new" \
+            && mv -f "${out}.new" "$out"
+    )
+}
+# Sourced (by the tests): the recipe only.
+[[ "${BASH_SOURCE[0]}" == "$0" ]] || return 0
+if [[ "${1:-}" == "--build" ]]; then
+    shift
+    tacctl_go_build "$@" || exit 1
+    exit 0
+fi
+
+umask 022
+SHIM_TREE="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
+SHIM_CMD="${TACCTL_TEST_ROOT:-}/usr/local/bin/tacctl"
+SHIM_GOROOT="${TACCTL_TEST_ROOT:-}/usr/local/go"
+SHIM_TMP=""
+trap '[[ -z "$SHIM_TMP" ]] || rm -rf "$SHIM_TMP"' EXIT
+
+shim_info() { echo -e "\033[0;32m[INFO]\033[0m $*" >&2; }
+shim_warn() { echo -e "\033[1;33m[WARN]\033[0m $*" >&2; }
+shim_error() { echo -e "\033[0;31m[ERROR]\033[0m $*" >&2; }
+
+# The installed command is the binary of this tree's HEAD.
+shim_current() {
+    local head have
+    [[ -f "$SHIM_CMD" && ! -L "$SHIM_CMD" && -x "$SHIM_CMD" ]] || return 1
+    head=$(git -C "$SHIM_TREE" rev-parse HEAD 2> /dev/null) || return 1
+    have=$(TACCTL_SKIP_SUDO=1 "$SHIM_CMD" version --long 2> /dev/null | sed -n 's/^commit:[[:space:]]*//p') || return 1
+    [[ -n "$head" && "$have" == "$head" ]]
+}
+
+# shim_version_ge <a> <b>: version a is b or newer.
+shim_version_ge() {
+    [[ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -n 1)" == "$2" ]]
+}
+
+# The Go this tree needs (go.mod's go line) and the one installed ("" for
+# none).
+shim_go_need() { sed -n 's/^go[[:space:]]\{1,\}\([0-9][0-9.]*\).*/\1/p' "${SHIM_TREE}/go.mod" | head -n 1; }
+shim_go_have() {
+    local v
+    v=$("${SHIM_GOROOT}/bin/go" version 2> /dev/null | awk '{print $3}') || return 0
+    echo "${v#go}"
+}
+
+# Install Go GO_VERSION in SHIM_GOROOT: the tarball and its published
+# checksum, from the same origin (go.dev/dl redirects the tarball there but
+# answers a .sha256 with a web page), verified before anything installed
+# is touched. Without a checksum to verify against, nothing is installed.
+SHIM_GO_DL="https://dl.google.com/go"
+shim_install_go() {
+    local tarball="go${GO_VERSION}.linux-amd64.tar.gz" want sum
+    SHIM_TMP=$(mktemp -d)
+    shim_info "Installing Go ${GO_VERSION}..."
+    if ! wget -q -O "${SHIM_TMP}/${tarball}" "${SHIM_GO_DL}/${tarball}"; then
+        shim_error "Could not download ${SHIM_GO_DL}/${tarball}."
+        return 1
+    fi
+    # Go is installed only verified: no checksum (or anything but one) is a
+    # refusal, as is a mismatch; the Go in place stays as it is.
+    want=$(wget -qO- "${SHIM_GO_DL}/${tarball}.sha256" 2> /dev/null || true)
+    want="${want#"${want%%[![:space:]]*}"}"
+    want="${want%"${want##*[![:space:]]}"}"
+    if [[ ! "$want" =~ ^[0-9a-f]{64}$ ]]; then
+        rm -f "${SHIM_TMP}/${tarball}"
+        shim_error "Go ${GO_VERSION} was not installed: it could not be verified (no checksum at ${SHIM_GO_DL}/${tarball}.sha256)."
+        return 1
+    fi
+    sum=$(sha256sum "${SHIM_TMP}/${tarball}" | awk '{print $1}')
+    if [[ "$want" != "$sum" ]]; then
+        rm -f "${SHIM_TMP}/${tarball}"
+        shim_error "Go tarball checksum mismatch!"
+        shim_error "  Expected: ${want}"
+        shim_error "  Got:      ${sum}"
+        return 1
+    fi
+    shim_info "Go tarball checksum verified."
+    rm -rf "$SHIM_GOROOT"
+    mkdir -p "$(dirname "$SHIM_GOROOT")"
+    tar -C "$(dirname "$SHIM_GOROOT")" -xzf "${SHIM_TMP}/${tarball}" || return 1
+    rm -rf "$SHIM_TMP"
+    SHIM_TMP=""
+    shim_info "Go ${GO_VERSION} installed."
+}
+
+# The toolchain: go.mod's version or newer is there, or Go GO_VERSION is
+# installed over an older one. A newer Go is never replaced.
+shim_toolchain() {
+    local need have
+    need=$(shim_go_need)
+    have=$(shim_go_have)
+    if [[ -n "$have" && -n "$need" ]] && shim_version_ge "$have" "$need"; then
+        return 0
+    fi
+    if [[ -n "$have" ]]; then
+        if shim_version_ge "$have" "$GO_VERSION"; then
+            shim_error "Go ${have} at ${SHIM_GOROOT} is older than this tree needs (${need}); install Go ${need} or newer."
+            return 1
+        fi
+        shim_warn "Go ${have} found, upgrading to ${GO_VERSION}..."
+    fi
+    shim_install_go || return 1
+    have=$(shim_go_have)
+    if [[ -z "$have" || -z "$need" ]] || ! shim_version_ge "$have" "$need"; then
+        shim_error "Go ${GO_VERSION} is older than this tree needs (${need:-unknown})."
+        return 1
+    fi
+}
+
+# Decision 20: say so, leave the installed command as it is, print the way
+# back to the bash release, exit 1. Every later run of the command comes
+# here again until the cause is fixed or the way back taken.
+shim_fail() {
+    local prev
+    prev=$(git -C "$SHIM_TREE" rev-parse --abbrev-ref '@{-1}' 2> /dev/null) || prev=""
+    [[ -n "$prev" && "$prev" != "HEAD" ]] || prev="master"
+    shim_error "tacctl could not be built (see above). The installed command is unchanged."
+    shim_error "Fix the cause and run the command again, or go back to the bash release:"
+    shim_error "  sudo git -C ${SHIM_TREE} checkout ${TACCTL_BASH_RELEASE} && sudo tacctl config branch ${prev}"
+    exit 1
+}
+
+if shim_current; then
+    exec "$SHIM_CMD" "$@"
+fi
+
+# Building and installing need root; re-run under sudo as tacctl does
+# ('host' keeps the agent socket for its ssh).
+if [[ $EUID -ne 0 && "${TACCTL_SKIP_SUDO:-0}" != "1" ]]; then
     if [[ "${1:-}" == "host" && -n "${SSH_AUTH_SOCK:-}" ]]; then
         exec sudo SSH_AUTH_SOCK="$SSH_AUTH_SOCK" "$0" "$@"
     fi
     exec sudo "$0" "$@"
 fi
-umask 077
 
-# tacquito source patches (git-apply diffs) re-applied on install/upgrade after
-# the upstream pull; see patches/README.md. Derived from the script's own
-# location so it works for both the deployed clone and a dev checkout.
-PATCH_DIR="${TACCTL_PATCH_DIR:-$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../patches}"
-# Use BASH_SOURCE so the path resolves to tacctl.sh itself even when sourced
-# (e.g. by bats tests), not to the sourcing binary.
-SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
-
-# --- Load the library ---
-# SCRIPT_DIR (above) is this file's real directory with symlinks resolved, so
-# lib/ is found the same way through the /usr/local/bin/tacctl symlink, under
-# the sudo re-exec, from a dev checkout, and when sourced by the test harness.
-# Order: core.sh must come before conf.sh (conf.sh's source-time tunables
-# overwrite the built-in defaults core.sh assigns and need
-# TACCTL_OVERRIDES_FILE); render_devices.sh and linux_hosts.sh read SCRIPT_DIR.
-# model.sh and store.sh define functions plus STORE_FILE, which depend on
-# nothing in the later files, so their position is not load-bearing.
-# backend.sh must come before every lib/backends/*.sh: it declares
-# BACKEND_IDS, to which each module appends itself when sourced. A module
-# may use TACCTL_BIN and the other base paths of core.sh at source time.
-# shellcheck source=lib/core.sh
-source "${SCRIPT_DIR}/../lib/core.sh"
-# shellcheck source=lib/conf.sh
-source "${SCRIPT_DIR}/../lib/conf.sh"
-# shellcheck source=lib/model.sh
-source "${SCRIPT_DIR}/../lib/model.sh"
-# shellcheck source=lib/store.sh
-source "${SCRIPT_DIR}/../lib/store.sh"
-# shellcheck source=lib/policy.sh
-source "${SCRIPT_DIR}/../lib/policy.sh"
-# shellcheck source=lib/users.sh
-source "${SCRIPT_DIR}/../lib/users.sh"
-# shellcheck source=lib/groups.sh
-source "${SCRIPT_DIR}/../lib/groups.sh"
-# shellcheck source=lib/scopes.sh
-source "${SCRIPT_DIR}/../lib/scopes.sh"
-# shellcheck source=lib/render_devices.sh
-source "${SCRIPT_DIR}/../lib/render_devices.sh"
-# shellcheck source=lib/linux_hosts.sh
-source "${SCRIPT_DIR}/../lib/linux_hosts.sh"
-# shellcheck source=lib/backend.sh
-source "${SCRIPT_DIR}/../lib/backend.sh"
-# shellcheck source=lib/backends/tacacs.sh
-source "${SCRIPT_DIR}/../lib/backends/tacacs.sh"
-# shellcheck source=lib/backends/radius.sh
-source "${SCRIPT_DIR}/../lib/backends/radius.sh"
-# shellcheck source=lib/service.sh
-source "${SCRIPT_DIR}/../lib/service.sh"
-# shellcheck source=lib/lifecycle.sh
-source "${SCRIPT_DIR}/../lib/lifecycle.sh"
-# shellcheck source=lib/dispatch.sh
-source "${SCRIPT_DIR}/../lib/dispatch.sh"
-
-# Dispatch runs only when invoked as a script. Sourced imports (tests) get
-# function definitions without triggering CLI dispatch.
-if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
-    COMMAND="${1:-}"
-    shift || true
-
-    enforce_tier "$COMMAND" "${1:-}"
-
-    case "$COMMAND" in
-        passwd)
-            preflight
-            cmd_passwd_self "$@"
-            ;;
-        install)
-            cmd_install "$@"
-            ;;
-        upgrade)
-            cmd_upgrade "$@"
-            ;;
-        uninstall)
-            cmd_uninstall "$@"
-            ;;
-        status)
-            preflight
-            cmd_status
-            ;;
-        user)
-            preflight
-            cmd_user "$@"
-            ;;
-        group)
-            preflight
-            cmd_group "$@"
-            ;;
-        config)
-            # 'config render' rebuilds tacquito.yaml from the store: with a
-            # store it skips preflight, which would warn that the file it is
-            # about to write is missing.
-            if [[ "${1:-}" != "render" || ! -f "$STORE_FILE" ]]; then
-                preflight
-            fi
-            cmd_config "$@"
-            ;;
-        scope)
-            preflight
-            cmd_scope "$@"
-            ;;
-        host)
-            preflight
-            cmd_host "$@"
-            ;;
-        log)
-            preflight
-            cmd_log "$@"
-            ;;
-        backup)
-            preflight
-            cmd_backup "$@"
-            ;;
-        backend)
-            preflight
-            cmd_backend "$@"
-            ;;
-        store)
-            # No preflight: 'store import <file>' and 'store show' must work
-            # on a file other than the live config, and need no bcrypt.
-            cmd_store "$@"
-            ;;
-        hash)
-            cmd_hash "$@"
-            ;;
-        _completion-names)
-            # Hidden helper used by bash completion to enumerate scope, user,
-            # group, or backup-timestamp names (the first three from the
-            # model). Completion runs in the user's shell where the store and
-            # the config are unreadable; `sudo -n tacctl
-            # _completion-names <kind>` bridges that when a NOPASSWD sudoers
-            # rule for tacctl is installed. Not shown in `tacctl` help or the
-            # man page — deliberate low-surface interface, behavior subject to
-            # change.
-            preflight
-            case "${1:-}" in
-                scopes) model_scopes 2>/dev/null ;;
-                users)  model_users 2>/dev/null ;;
-                groups) model_groups 2>/dev/null ;;
-                # Backup timestamps: snapshots newest first, then old-style
-                # backups, capped at 50 so the completion menu stays usable
-                # on hosts with hundreds of backups. `config diff` /
-                # `backup diff|restore` take one.
-                backups) backup_names | head -50 || true ;;
-                # Backend ids: every registered one ('backend enable <id>',
-                # '--backend <id>'), or only the enabled ones ('backend
-                # disable <id>'). 'listeners [<backend>]' is the listener
-                # names of that backend (every backend's without one).
-                backends) printf '%s\n' "${BACKEND_IDS[@]}" ;;
-                enabled-backends) backends_enabled 2>/dev/null || true ;;
-                listeners) _completion_listeners "${2:-}" ;;
-            esac
-            ;;
-        version|--version|-v)
-            echo "tacctl $(get_version)"
-            ;;
-        *)
-            usage
-            exit 1
-            ;;
-    esac
-fi
+shim_toolchain || shim_fail
+shim_info "Building ${SHIM_CMD} from ${SHIM_TREE}..."
+mkdir -p "$(dirname "$SHIM_CMD")"
+tacctl_go_build "$SHIM_CMD" || shim_fail
+exec "$SHIM_CMD" "$@"

@@ -1,0 +1,15 @@
+version: 1
+groups:
+  readonly:  {priv_lvl: 1,  juniper_class: RO-CLASS, builtin: true}
+  operator:  {priv_lvl: 7,  juniper_class: OP-CLASS, builtin: true}
+  superuser: {priv_lvl: 15, juniper_class: RW-CLASS, builtin: true}
+  odd: {priv_lvl: "9", juniper_class: null}
+users:
+  alice: {group: nope, scopes: [lab, gone], hash: 'ABCD', disabled: false, password_changed: 2026-01-02}
+  bob: {group: odd, scopes: [lab], hash: '2432622431322441414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141', disabled: false}
+  tacquito: {group: readonly, scopes: [], hash: null, disabled: true}
+scopes:
+  lab: {prefixes: [10.0.0.0/8, 10.0.0.5/8, junk], secret: REPLACE_ME, devices: {10.1.0.0/16: cisco, 10.1.0.0/24: wti}}
+  empty: {prefixes: [], secret: ""}
+filters:
+  allow: ['::/0']

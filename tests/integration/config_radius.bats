@@ -22,16 +22,27 @@ setup() {
     # Freeze server-IP discovery so rendered output is deterministic.
     stub_cmd ip 'if [[ "$*" == *"route get 1.0.0.0"* ]]; then echo "1.0.0.0 via 10.0.0.1 dev eth0 src 10.0.0.42 uid 0"; fi'
 
+    # The setup and set_vendors change the store through the CLI, which
+    # renders and may restart (systemctl is stubbed): no settling pause.
+    export TACCTL_SETTLE_SECONDS=0
+
     load_fixture tacquito.multiscope.yaml
     OVERRIDES="${TACCTL_STATE_DIR}/tacctl.yaml"
     # Every scope sends every vendor's attribute (the opt-in tests below take
-    # it away again): one store write, nothing rendered.
-    bash -c 'source "$1"; store_mutate "for s in store[\"scopes\"].values(): s[\"vendor_attrs\"] = list(KNOWN_VENDORS)"' _ "$TACCTL_BIN_SCRIPT" > /dev/null
+    # it away again).
+    local s
+    for s in dmz lab prod prod-inner; do
+        "$TACCTL_BIN_SCRIPT" scope vendor-attrs "$s" enable cisco,juniper,wti > /dev/null
+    done
 }
 
-# A scope's vendor attributes in the store: set_vendors <scope> <csv|null>.
+# A scope's vendor attributes in the store: set_vendors <scope> <csv|null>
+# (call it before radius_on: with the backend enabled it would render it).
 set_vendors() {
-    bash -c 'source "$1"; store_scope_set "$2" "vendor_attrs=$3"' _ "$TACCTL_BIN_SCRIPT" "$1" "$2" > /dev/null
+    "$TACCTL_BIN_SCRIPT" scope vendor-attrs "$1" disable cisco,juniper,wti > /dev/null
+    if [[ "$2" != null ]]; then
+        "$TACCTL_BIN_SCRIPT" scope vendor-attrs "$1" enable "$2" > /dev/null
+    fi
 }
 
 # Same normalisation as config_templates.bats.
@@ -39,11 +50,16 @@ _normalize() {
     sed -E 's/\x1b\[[0-9;]*m//g' \
         | sed -E 's/^hostname .*/hostname TACQUITO-HOSTNAME/' \
         | awk '{
-            p = "Using template: " ENVIRON["TACCTL_SRC"] "/"
+            p = "Using template: " ENVIRON["TACCTL_SRC"] "/config/templates/"
             i = index($0, p)
-            if (i) $0 = substr($0, 1, i - 1) "Using template: <TACCTL_SRC>/" substr($0, i + length(p))
+            if (i) $0 = substr($0, 1, i - 1) "Using template: built-in " substr($0, i + length(p))
             print
         }'
+}
+
+# The 'Using template:' note of a shipped template: its embedded copy.
+shipped_template_note() {
+    echo "Using template: built-in $1.template"
 }
 
 # Enable the RADIUS backend the way tacctl.yaml records it. Call it after the
@@ -114,7 +130,7 @@ radius_listeners() {
     assert_output --partial "aaa authentication login default group RADIUS-GROUP local"
     assert_output --partial "aaa authorization exec default group RADIUS-GROUP local if-authenticated"
     assert_output --partial "aaa accounting exec default start-stop group RADIUS-GROUP"
-    assert_output --partial "Using template: ${TACCTL_SRC}/config/templates/cisco-radius.template"
+    assert_output --partial "$(shipped_template_note cisco-radius)"
 }
 
 @test "config cisco --protocol radius: nothing RADIUS cannot do is configured" {
@@ -209,7 +225,7 @@ radius_listeners() {
     assert_output --partial "show configuration system radius-server"
     local cfg="${output%%Group → Juniper Class Mapping*}"
     [[ "$cfg" != *tacplus* && "$cfg" != *TACACS* ]]
-    assert_output --partial "Using template: ${TACCTL_SRC}/config/templates/juniper-radius.template"
+    assert_output --partial "$(shipped_template_note juniper-radius)"
 }
 
 @test "config juniper --protocol radius: the summary says what RADIUS loses and that the class rules stay" {
@@ -442,7 +458,8 @@ radius_listeners() {
 
 @test "config cisco --protocol radius: an address tagged with the vendor is enough, with a warning that only it gets the attribute" {
     set_vendors lab juniper
-    bash -c 'source "$1"; store_scope_set lab devices=192.168.7.7/32=cisco,192.168.8.0/24=wti' _ "$TACCTL_BIN_SCRIPT" > /dev/null
+    "$TACCTL_BIN_SCRIPT" scope devices lab set 192.168.7.7/32 cisco > /dev/null
+    "$TACCTL_BIN_SCRIPT" scope devices lab set 192.168.8.0/24 wti > /dev/null
     radius_on
     run "$TACCTL_BIN_SCRIPT" config cisco --scope lab --protocol radius
     assert_success
@@ -567,34 +584,20 @@ radius_listeners() {
     refute_output --partial "MY-CISCO"
 }
 
-@test "config cisco|juniper --protocol radius: without any template file the built-in text renders the same config" {
-    local alt="$BATS_TEST_TMPDIR/alt/bin" v
-    mkdir -p "$alt"
-    cp "$TACCTL_BIN_SCRIPT" "$alt/tacctl.sh"
-    cp -r "${TACCTL_SRC}/lib" "$BATS_TEST_TMPDIR/alt/lib"
-    radius_on
-    for v in cisco juniper; do
-        run "$alt/tacctl.sh" config "$v" --scope lab --protocol radius
-        assert_success
-        refute_output --partial "Using template:"
-        local fallback="$output"
-        run "$TACCTL_BIN_SCRIPT" config "$v" --scope lab --protocol radius
-        # Same output apart from the template line and the blank-line spacing
-        # of the fallback; compare the device lines only.
-        diff <(grep -vE '^(Using template|  - Using template|$)' <<< "$fallback" | grep -vE '^(#|!)( |$)' | sed 's/ *$//') \
-             <(grep -vE '^(  - Using template|$)' <<< "$output" | grep -vE '^(#|!)( |$)' | sed 's/ *$//')
-    done
-}
-
 # --- shipping -----------------------------------------------------------------------
 
-@test "the RADIUS templates ship in config/templates, where install and upgrade copy *.template from" {
+@test "the RADIUS templates ship in config/templates, which the binary embeds" {
     [[ -f "${TACCTL_SRC}/config/templates/cisco-radius.template" ]]
     [[ -f "${TACCTL_SRC}/config/templates/juniper-radius.template" ]]
     [[ -f "${TACCTL_SRC}/config/templates/wti-radius.template" ]]
-    grep -qF 'templates_sync "$PROJECT_DIR"' "${TACCTL_SRC}/lib/lifecycle.sh"
-    grep -qF 'templates_sync "$ACTIVE_DEPLOY_DIR"' "${TACCTL_SRC}/lib/lifecycle.sh"
-    grep -qF 'for tmpl in "${src_dir}/"*.template; do' "${TACCTL_SRC}/lib/lifecycle.sh"
+    # The binary carries config/templates/*.template (the set install and
+    # upgrade keep in the state directory): a render with no override names
+    # the embedded copy.
+    grep -qxF '//go:embed config/templates/*.template' "${TACCTL_SRC}/assets.go"
+    radius_on
+    run "$TACCTL_BIN_SCRIPT" config wti --scope lab --protocol radius
+    assert_success
+    assert_output --partial "$(shipped_template_note wti-radius)"
 }
 
 @test "scope show lists the RADIUS group label" {

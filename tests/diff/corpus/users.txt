@@ -1,0 +1,275 @@
+# tacctl user ... and passwd/hash: the command lines of tests/integration/user_crud.bats,
+# user_lifecycle.bats and prompts_closed_stdin.bats, plus the error paths (unknown
+# subcommand, missing argument, bad value, closed stdin, 'n' to a prompt).
+# Run: tests/diff/run.sh users     (docs/plans/go-rewrite.md 2.5)
+@fixture tacquito.minimal.yaml
+
+# usage and unknown subcommands
+user
+user bogus
+user list
+hash
+hash bogus
+hash commands
+
+# add: arguments and values
+user add
+user add alice
+user add alice nosuchgroup --hash {HASH} --scopes lab
+user add 'bad name' superuser --hash {HASH} --scopes lab
+user add root superuser --hash {HASH} --scopes lab
+user add alice superuser --hash notahash --scopes lab
+user add alice superuser --hash
+user add alice superuser --scopes
+user add alice superuser --scopes nosuchscope --hash {HASH}
+user add alice superuser --bogus
+user add alice superuser --hash {HASH} --scopes lab
+user add alice superuser --hash {HASH} --scopes lab ;; user show alice
+user add alice superuser --hash {HASH} --scopes lab ;; user list
+user add alice superuser --hash {HASH} ;; user show alice
+user add alice superuser --hash '$2b$12$abcdefghijklmnopqrstuvABCDEFGHIJKLMNOPQRSTUVWXYZ01234' ;; user show alice
+user add alice superuser --hash {HASH} --scopes lab ;; user add alice operator --hash {HASH} --scopes lab
+user add alice superuser --hash {HASH} --scopes lab ;; user add Alice operator --hash {HASH} --scopes lab
+user add alice superuser --hash {HASH} --scopes lab ;; user add bob operator --hash {HASH} --scopes lab ;; user list
+
+# add: the password prompt (typed, generated, closed stdin, rejected)
+user add bob operator --scopes lab <<<
+user add bob operator --scopes lab
+user add bob operator --scopes lab <<< CorrectHorse99\nCorrectHorse99
+user add bob operator --scopes lab <<< short
+user add bob operator --scopes lab <<< qwerty123456
+user add bob operator --scopes lab <<< CorrectHorse99\nOther
+user add bob operator --scopes lab <<< CorrectHorse99
+user add bob operator --scopes lab <<< bob\nbob
+
+# passwd
+user passwd
+user passwd ghost
+user passwd 'bad name'
+user passwd root
+user passwd alice --hash {HASH}
+user add alice superuser --hash {HASH} --scopes lab ;; user passwd alice --hash
+user add alice superuser --hash {HASH} --scopes lab ;; user passwd alice --hash notahash
+user add alice superuser --hash {HASH} --scopes lab ;; user passwd alice --hash {HASH} ;; user show alice
+user add alice superuser --hash {HASH} --scopes lab ;; user passwd alice <<< CorrectHorse99\nCorrectHorse99
+user add alice superuser --hash {HASH} --scopes lab ;; user passwd alice <<<
+user add alice superuser --hash {HASH} --scopes lab ;; user passwd alice
+user add alice superuser --hash {HASH} --scopes lab ;; user passwd alice <<< short
+user add alice superuser --hash {HASH} --scopes lab ;; user disable alice <<< y ;; user passwd alice --hash {HASH} ;; user show alice
+
+# disable / enable
+user disable
+user disable ghost
+user enable
+user enable ghost
+user add alice superuser --hash {HASH} --scopes lab ;; user enable alice
+user add alice superuser --hash {HASH} --scopes lab ;; user disable alice <<< y ;; user list
+user add alice superuser --hash {HASH} --scopes lab ;; user disable alice <<< n ;; user list
+user add alice superuser --hash {HASH} --scopes lab ;; user disable alice ;; user list
+user add alice superuser --hash {HASH} --scopes lab ;; user disable alice <<< y ;; user disable alice <<< y
+user add alice superuser --hash {HASH} --scopes lab ;; user disable alice <<< y ;; user enable alice ;; user show alice
+
+# remove
+user remove
+user remove ghost
+user remove root
+user add alice superuser --hash {HASH} --scopes lab ;; user remove alice <<< y ;; user list
+user add alice superuser --hash {HASH} --scopes lab ;; user remove alice <<< n ;; user list
+user add alice superuser --hash {HASH} --scopes lab ;; user remove alice ;; user list
+
+# rename / move
+user rename
+user rename alice
+user rename ghost newname
+user rename alice 'bad name'
+user add alice superuser --hash {HASH} --scopes lab ;; user rename alice alicia ;; user list
+user add alice superuser --hash {HASH} --scopes lab ;; user add bob operator --hash {HASH} --scopes lab ;; user rename alice bob
+user add alice superuser --hash {HASH} --scopes lab ;; user rename alice root
+@known 3.9 item 5: the usage line names 'tacctl user move' (0.1.16: 'tacctl move')
+user move
+@known 3.9 item 5: the usage line names 'tacctl user move' (0.1.16: 'tacctl move')
+user move alice
+user move ghost operator
+user add alice superuser --hash {HASH} --scopes lab ;; user move alice nosuchgroup
+user add alice superuser --hash {HASH} --scopes lab ;; user move alice operator ;; user show alice
+user add alice superuser --hash {HASH} --scopes lab ;; user move alice superuser
+
+# show
+user show
+user show ghost
+user show 'bad name'
+
+# verify (a correct password needs a hash we know: here only the failing and error paths)
+user verify
+user verify ghost
+user verify 'bad name'
+user add alice superuser --hash {HASH} --scopes lab ;; user verify alice <<< wrong
+user add alice superuser --hash {HASH} --scopes lab ;; user verify alice
+user add alice superuser --hash {HASH} --scopes lab ;; user disable alice <<< y ;; user verify alice <<< wrong
+user add alice superuser --hash {HASH} --scopes lab ;; user passwd alice <<< CorrectHorse99\nCorrectHorse99 ;; user verify alice <<< CorrectHorse99
+user add alice superuser --hash {HASH} --scopes lab ;; user passwd alice <<< CorrectHorse99\nCorrectHorse99 ;; user verify alice <<< CorrectHorse98
+
+# scope membership: add / remove / replace / remove --all, and the removed set / clear
+user scope
+user scope alice
+user scope ghost list
+user scope alice list
+user add alice superuser --hash {HASH} --scopes lab ;; user scope alice list
+user add alice superuser --hash {HASH} --scopes lab ;; user scope alice add
+user add alice superuser --hash {HASH} --scopes lab ;; user scope alice add nosuchscope
+user add alice superuser --hash {HASH} --scopes lab ;; user scope alice add lab
+user add alice superuser --hash {HASH} --scopes lab ;; scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; user scope alice add prod ;; user scope alice list ;; user show alice
+user add alice superuser --hash {HASH} --scopes lab ;; scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; user scope alice replace prod ;; user scope alice list
+user add alice superuser --hash {HASH} --scopes lab ;; user scope alice replace
+user add alice superuser --hash {HASH} --scopes lab ;; user scope alice replace nosuchscope
+user add alice superuser --hash {HASH} --scopes lab ;; user scope alice remove lab ;; user show alice
+user add alice superuser --hash {HASH} --scopes lab ;; user scope alice remove nosuchscope
+user add alice superuser --hash {HASH} --scopes lab ;; user scope alice remove
+user add alice superuser --hash {HASH} --scopes lab ;; user scope alice remove --all <<< y ;; user show alice
+user add alice superuser --hash {HASH} --scopes lab ;; user scope alice remove --all <<< n ;; user show alice
+user add alice superuser --hash {HASH} --scopes lab ;; user scope alice remove --all
+user add alice superuser --hash {HASH} --scopes lab ;; user scope alice remove --all extra
+user add alice superuser --hash {HASH} --scopes lab ;; user scope alice set lab
+user add alice superuser --hash {HASH} --scopes lab ;; user scope alice clear
+user add alice superuser --hash {HASH} --scopes lab ;; user scope alice bogus
+
+# hash generate
+hash generate <<< CorrectHorse99\nCorrectHorse99
+hash generate <<<
+hash generate
+hash generate <<< short
+hash generate <<< CorrectHorse99\nOther
+
+# passwd (self-service): needs a sudo caller; without one it is refused
+passwd
+passwd extra
+
+# --- WP2.4a: more argument and error paths -----------------------------------
+
+# usage words
+user help
+user -h
+user --help
+user Bogus list
+hash help
+hash -h
+hash --help
+hash bogus extra
+hash generate extra <<< CorrectHorse99\nCorrectHorse99
+
+# add: flags and scope lists
+user add alice superuser --hash {HASH} --hash
+user add alice superuser --hash {HASH} --scopes lab extra
+user add alice superuser --hash {HASH} --scopes ' lab , lab '
+user add alice superuser --hash {HASH} --scopes ,
+user add alice superuser --hash {HASH} --scopes "it's"
+user add alice superuser --hash {HASH} --scopes lab --hash notahash
+user add alice superuser --hash notahash --scopes nosuchscope
+user add tacquito superuser --hash {HASH}
+user add alice '' --hash {HASH}
+user add 'a\tb' superuser --hash {HASH}
+user add alice superuser --hash '$2b$10$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' --scopes lab ;; user show alice
+user add alice superuser --hash 2432622431302461616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161 --scopes lab ;; user list
+scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; user add alice superuser --hash {HASH}
+scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; user add alice superuser --hash {HASH} --scopes prod,lab,prod ;; user show alice
+@known 3.9 item 10: a password over 72 bytes is refused (0.1.16 hashed its first 72 bytes)
+user add bob operator --scopes lab <<< AbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbc\nAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbc
+user add bob operator --scopes lab <<< AbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAb\nAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAb ;; user verify bob <<< AbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAb
+
+# remove / passwd odd arguments
+user remove alice extra
+user add alice superuser --hash {HASH} --scopes lab ;; user remove alice extra <<< Y
+user add alice superuser --hash {HASH} --scopes lab ;; user remove alice <<< yes
+user add alice superuser --hash {HASH} --scopes lab ;; user passwd alice extra --hash {HASH} <<<
+user add alice superuser --hash {HASH} --scopes lab ;; user passwd alice --hash {HASH} extra
+
+# scope: help words, odd lists
+user add alice superuser --hash {HASH} --scopes lab ;; user scope alice help
+user add alice superuser --hash {HASH} --scopes lab ;; user scope alice -h
+user add alice superuser --hash {HASH} --scopes lab ;; user scope alice --help
+user add alice superuser --hash {HASH} --scopes lab ;; user scope alice add lab,lab
+user add alice superuser --hash {HASH} --scopes lab ;; user scope alice add ' , '
+user add alice superuser --hash {HASH} --scopes lab ;; user scope alice remove lab,nosuch
+user add alice superuser --hash {HASH} --scopes lab ;; scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; user scope alice add prod,lab ;; user scope alice remove nosuch
+user add alice superuser --hash {HASH} --scopes lab ;; scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; user scope alice remove lab,prod
+user add alice superuser --hash {HASH} --scopes lab ;; user scope alice remove --all yes
+user add alice superuser --hash {HASH} --scopes lab ;; user scope alice remove --all <<< yes
+user add alice superuser --hash {HASH} --scopes lab ;; user scope alice add --all
+user scope 'bad name' list
+user scope ghost bogus
+user scope alice set
+
+# verify: the audit line names the sudo caller
+@env SUDO_USER=ops
+@env SUDO_UID=1234
+user add alice superuser --hash {HASH} --scopes lab ;; user verify alice <<< wrong
+@unenv SUDO_UID
+user add alice superuser --hash {HASH} --scopes lab ;; user verify alice <<< wrong
+@unenv SUDO_USER
+
+# passwd (self-service): SUDO_USER names the tacctl user ('id' answers that
+# it is no tac-users member, so the tier gate lets it through)
+@env SUDO_USER=alice
+user add alice superuser --scopes lab <<< CorrectHorse99\nCorrectHorse99 ;; passwd <<< CorrectHorse99\nNewHorse123456\nNewHorse123456 ;; user verify alice <<< NewHorse123456
+user add alice superuser --scopes lab <<< CorrectHorse99\nCorrectHorse99 ;; passwd <<< wrong
+user add alice superuser --scopes lab <<< CorrectHorse99\nCorrectHorse99 ;; passwd <<< CorrectHorse99\nCorrectHorse99\nCorrectHorse99
+user add alice superuser --scopes lab <<< CorrectHorse99\nCorrectHorse99 ;; passwd <<< CorrectHorse99\nshort
+user add alice superuser --scopes lab <<< CorrectHorse99\nCorrectHorse99 ;; passwd <<< CorrectHorse99\n
+user add alice superuser --scopes lab <<< CorrectHorse99\nCorrectHorse99 ;; user disable alice ;; passwd <<< CorrectHorse99
+passwd <<< CorrectHorse99
+@unenv SUDO_USER
+@env SUDO_USER=root
+passwd
+@unenv SUDO_USER
+@env SUDO_USER=bad.name
+passwd
+@unenv SUDO_USER
+
+# completion names, version
+_completion-names users
+_completion-names groups
+_completion-names scopes
+_completion-names bogus
+_completion-names
+user add alice superuser --hash {HASH} --scopes lab ;; _completion-names users
+version
+--version
+-v
+@known 3.9 item 1: 'version --long' adds commit, build date, Go version and the test knobs
+version --long
+
+# the tunables come from tacctl.yaml
+config bcrypt-cost 11 ;; hash generate <<< CorrectHorse99\nCorrectHorse99
+config password-min-length 8 ;; user add bob operator --scopes lab <<< Horse123\nHorse123
+@fixture tacquito.multiscope.yaml
+user list
+user show alice
+user show carol
+user verify alice <<< wrong
+user scope carol list
+user scope alice remove prod <<< y ;; user list
+user rename bob robert ;; user list
+user move carol operator ;; user show carol
+_completion-names scopes
+
+# legacy read-only mode: tacquito.yaml and no store
+@fixture legacy.fresh-install.yaml
+user list
+user show engineer
+user verify viewer <<< x
+user add alice superuser --hash {HASH} --scopes lab
+user remove engineer <<< y
+user scope engineer list
+user scope engineer add lab
+_completion-names users
+
+# no store, no tacquito.yaml
+@fixture none
+user
+user list
+user add alice superuser --hash {HASH}
+hash commands
+hash generate <<< CorrectHorse99\nCorrectHorse99
+passwd
+_completion-names users
+version

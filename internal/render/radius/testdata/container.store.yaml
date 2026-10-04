@@ -1,0 +1,85 @@
+# Snapshot of the store tests/containers/radius/make-store.py writes (real bcrypt hashes of the
+# passwords in cases.sh, placeholder secrets). The container.* goldens were rendered from it by the
+# 0.1.16 bash renderer; regenerate them only from that tag.
+version: 1
+groups:
+  operator: {priv_lvl: 7, juniper_class: OP-CLASS, builtin: true}
+  readonly: {priv_lvl: 1, juniper_class: RO-CLASS, builtin: true}
+  superuser: {priv_lvl: 15, juniper_class: RW-CLASS, builtin: true}
+  netops: {priv_lvl: 10, juniper_class: NETOPS_class-1}
+users:
+  '007':
+    group: netops
+    scopes: [lab, vw]
+    hash: 24326224313024436c464768586b56585a6d5830717a35716f4e373375594c74305479687074474649664c415256576c65614c494a54465a4f674743
+    disabled: false
+  alice:
+    group: superuser
+    scopes: [lab, prod, v6, vc, vj, vw, vall]
+    hash: 24326224313224634f774b3733675a716c36707634745965496137412e666b4f475656553750576e4d744345583678564d336a775861776a5167716d
+    disabled: false
+  bob:
+    group: operator
+    scopes: [lab, tonly]
+    hash: 2432612431302430684a73377741417575664d646b51567247575550754f6f77574e322e48304a74335a366b482f41433763486f666d2e7465596465
+    disabled: false
+  carol:
+    group: readonly
+    scopes: [lab]
+    hash: 2432622431302430754b4d6967704a664758752f53594445456a6868757652616153534536654479454b52596f735350426e7378425271445534704f
+    disabled: true
+  dave:
+    group: readonly
+    scopes: [tonly, bs, vall]
+    hash: 2432622431302466535a6f504f62354c357350464272444a6436582e656e366b426a456f6e6b486e7638352e4f376c715a6b676a4d476e324a6b6179
+    disabled: false
+  root:
+    group: readonly
+    scopes: [lab]
+    hash: null
+    disabled: true
+    accounting_sink: true
+scopes:
+  bs:
+    prefixes: [127.0.0.4/32]
+    secret: 'back\slash "and" quote''s-secret'
+  inner:
+    prefixes: [127.0.0.2/32]
+    secret: inner-secret-0123456789abcdef
+  lab:
+    prefixes: [127.0.0.0/8]
+    secret: 'it''s a "lab" secret #1 ${confdir} %{User-Name}'
+    devices: {127.0.0.10/32: cisco, 127.0.0.11/32: juniper, 127.0.0.12/32: wti}
+  prod:
+    prefixes: [10.0.2.0/24]
+    secret: prod-secret-0123456789abcdef
+  tonly:
+    prefixes: [127.0.0.3/32]
+    secret: tacacs-only-secret-0123456789
+    protocols: [tacacs]
+  v6:
+    prefixes: ['::1/128']
+    secret: v6-secret-0123456789abcdef
+  vc:
+    prefixes: [127.0.0.16/30]
+    secret: vc-secret-0123456789abcdef
+    vendor_attrs: [cisco]
+    devices: {127.0.0.17/32: juniper, 127.0.0.18/32: cisco}
+  vj:
+    prefixes: [127.0.0.20/30]
+    secret: vj-secret-0123456789abcdef
+    vendor_attrs: [juniper]
+    devices: {127.0.0.21/32: wti}
+  vw:
+    prefixes: [127.0.0.24/30]
+    secret: vw-secret-0123456789abcdef
+    vendor_attrs: [wti]
+    devices: {127.0.0.25/32: cisco}
+  vall:
+    prefixes: [127.0.0.28/30]
+    secret: vall-secret-0123456789abcdef
+    vendor_attrs: [cisco, juniper, wti]
+    devices: {127.0.0.29/32: wti}
+filters:
+  allow: [127.0.0.0/29, 127.0.0.10/31, 127.0.0.12/32, 127.0.0.16/28, 127.0.0.64/26, 10.0.2.0/24, '::1/128']
+  deny: [127.0.0.66/32]

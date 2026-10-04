@@ -1,0 +1,30 @@
+== dump-legacy
+{"filters": {"allow": [], "deny": []}, "groups": {"operator": {"builtin": true, "juniper_class": "OP-CLASS", "priv_lvl": 7}, "readonly": {"builtin": true, "juniper_class": "RO-CLASS", "priv_lvl": 1}, "superuser": {"builtin": true, "juniper_class": "RW-CLASS", "priv_lvl": 15}}, "scopes": {"lab": {"prefixes": ["192.168.0.0/16"], "protocols": null, "secret": "lab-secret-0123456789abcdef"}}, "users": {"a": {"accounting_sink": false, "disabled": false, "group": "readonly", "hash": "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141", "password_changed": null, "scopes": ["lab"]}, "b": {"accounting_sink": false, "disabled": false, "group": "readonly", "hash": "243262243132244242424242424242424242424242424242424242424242424242424242424242424242424242424242424242424242424242424242", "password_changed": null, "scopes": ["lab"]}}, "version": 1}
+rc=0
+== import-load force=0
+  Source:   cases/shared-alias.yaml
+  Groups:   3
+  Users:    2 (0 disabled)
+  Scopes:   1
+  Filters:  allow 0, deny 0
+
+  Cannot be represented in the store:
+    - unknown top-level key 'shared_scopes'
+    - prefix_deny: invalid prefix 'lab'
+-- stderr
+
+tacctl store: 2 item(s) cannot be represented in the store. Fix them, or re-run with --force to drop them.
+rc=1
+== import-load force=1
+  Source:   cases/shared-alias.yaml
+  Groups:   3
+  Users:    2 (0 disabled)
+  Scopes:   1
+  Filters:  allow 0, deny 0
+
+  Dropped (--force):
+    - unknown top-level key 'shared_scopes'
+    - prefix_deny: invalid prefix 'lab'
+-- stderr
+rc=0
+{"filters": {"allow": [], "deny": []}, "groups": {"operator": {"builtin": true, "juniper_class": "OP-CLASS", "priv_lvl": 7}, "readonly": {"builtin": true, "juniper_class": "RO-CLASS", "priv_lvl": 1}, "superuser": {"builtin": true, "juniper_class": "RW-CLASS", "priv_lvl": 15}}, "scopes": {"lab": {"prefixes": ["192.168.0.0/16"], "protocols": null, "secret": "lab-secret-0123456789abcdef"}}, "users": {"a": {"accounting_sink": false, "disabled": false, "group": "readonly", "hash": "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141", "password_changed": null, "scopes": ["lab"]}, "b": {"accounting_sink": false, "disabled": false, "group": "readonly", "hash": "243262243132244242424242424242424242424242424242424242424242424242424242424242424242424242424242424242424242424242424242", "password_changed": null, "scopes": ["lab"]}}, "version": 1}

@@ -1,0 +1,25 @@
+
+[1mGroup Commands[0m
+
+Usage: tacctl group <subcommand> [arguments]
+
+Subcommands:
+  list                                                List all groups
+  add <name> <priv-lvl> <juniper-class>               Add a new group
+  edit <name> priv-lvl <0-15>                         Change Cisco privilege level
+  edit <name> juniper-class <CLASS>                   Change Juniper class name
+  remove <name>                                       Remove a custom group
+  commands list|default|add|remove|clear|seed <group> ...  Per-group authorized commands
+  privilege list|add|remove|clear|seed <group> ...         Per-group Cisco priv-exec mappings
+
+Examples:
+  tacctl group list
+  tacctl group add helpdesk 5 HELPDESK-CLASS
+  tacctl group edit operator priv-lvl 10
+  tacctl group edit operator juniper-class NEW-CLASS
+  tacctl group remove helpdesk
+  tacctl group commands default operator deny
+  tacctl group commands add operator show --action permit
+  tacctl group privilege list operator
+  tacctl group privilege add operator 'show running-config'
+

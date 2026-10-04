@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# tacctl Linux client installer for scope 'lab'. Generated 2026-10-03T12:00:00Z.
+# CONTAINS THE SCOPE'S SHARED SECRET. Delete after use.
+set -euo pipefail
+umask 077
+TAC_METHOD=radius
+TAC_SERVER=192.0.2.10
+TAC_PORT=1812
+TAC_ACCT_PORT=1813
+TAC_SECRET=0123456789abcdef0123456789abcdef
+TAC_SCOPE=lab
+TAC_USERS=$'alice:superuser:20000\nbob:readonly:20001'

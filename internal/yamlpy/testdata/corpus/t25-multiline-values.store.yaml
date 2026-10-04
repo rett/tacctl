@@ -1,0 +1,21 @@
+a: 'one
+
+  two'
+b: ['x
+
+    y', 'p
+
+
+    q']
+c: {k: 'l
+
+    m'}
+d: 'it''s
+
+  multi'
+e: "tab\tand\nnewline"
+f: "sp \nbrk"
+g: "brk\n sp"
+h: ' lead
+
+  trail'

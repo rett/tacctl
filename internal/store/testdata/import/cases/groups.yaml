@@ -1,0 +1,172 @@
+authenticator_type_bcrypt: &authenticator_type_bcrypt 1
+action_deny:  &action_deny  1
+action_permit: &action_permit 2
+accounter_type_file: &accounter_type_file 3
+handler_type_start: &handler_type_start 1
+provider_type_prefix: &provider_type_prefix 1
+file_accounter: &file_accounter
+  name: tacquito_accounter
+  type: *accounter_type_file
+readonly: &readonly
+  name: readonly
+  services:
+    - {name: shell, set_values: [{name: priv-lvl, values: [1]}]}
+    - {name: junos-exec, set_values: [{name: local-user-name, values: [RO-CLASS]}]}
+  accounter: *file_accounter
+operator: &operator
+  name: operator
+  services:
+    - {name: shell, set_values: [{name: priv-lvl, values: [7]}]}
+    - {name: junos-exec, set_values: [{name: local-user-name, values: [OP-CLASS]}]}
+  accounter: *file_accounter
+superuser: &superuser
+  name: superuser
+  services:
+    - {name: shell, set_values: [{name: priv-lvl, values: [15]}]}
+    - {name: junos-exec, set_values: [{name: local-user-name, values: [RW-CLASS]}]}
+  accounter: *file_accounter
+svc_shell9: &svc_shell9 {name: shell, set_values: [{name: priv-lvl, values: [9]}]}
+g1: &g1
+  name: g1
+  services:
+    - *svc_shell9
+    - {name: junos-exec, set_values: [{name: local-user-name, values: [G1]}]}
+  accounter: {name: syslog, type: 2}
+  authenticator: {type: 1, options: {hash: x}}
+  commands: [{name: show, action: 2}]
+  description: hi
+g2: &g2
+  name: g2
+  services: {name: shell}
+g3: &g3
+  name: g3
+  services:
+    - just-a-string
+    - {name: ppp, set_values: []}
+    - {set_values: [{name: priv-lvl, values: [3]}]}
+    - {name: null}
+    - {name: " shell ", set_values: [{name: priv-lvl, values: ["07"]}], match: [x], is_optional: true, foo: 1}
+    - {name: exec, set_values: [{name: priv-lvl, values: [8]}]}
+    - {name: junos-exec, set_values: "nope"}
+    - {name: junos-exec, set_values: [x, {name: local-user-name, values: [A, B], is_optional: 1, bar: 2}, {name: local-user-name, values: [C]}, {name: other, values: [1]}, {values: [1]}]}
+g4: &g4
+  name: g4
+  services:
+    - {name: shell, set_values: [{name: priv-lvl, values: [" 12 "]}]}
+    - {name: junos-exec, set_values: [{name: local-user-name, values: 2026-01-01}]}
+g5: &g5
+  name: g5
+  services:
+    - {name: shell, set_values: [{name: priv-lvl, values: [x]}]}
+    - {name: junos-exec, set_values: [{name: local-user-name, values: [17]}]}
+g6: &g6
+  name: g6
+  services:
+    - {name: shell, set_values: [{name: priv-lvl, values: [true]}]}
+g7: &g7
+  name: g7
+  services:
+    - {name: shell, set_values: [{name: priv-lvl, values: [null]}, {name: priv-lvl, values: 0}, {name: priv-lvl, values: [3]}]}
+    - {name: junos-exec, set_values: [{name: local-user-name, values: [" spaced "]}]}
+g8: &g8
+  name: g8
+  services:
+    - {name: exec, set_values: [{name: priv-lvl, values: [0x0f]}]}
+    - {name: junos-exec, set_values: [{name: local-user-name, values: [yes]}]}
+g9: &g9
+  name: g9
+  services: []
+g10: &g10
+  name: g10
+  services:
+    - {name: shell, set_values: [{name: priv-lvl, values: [1.5]}]}
+    - {name: junos-exec, set_values: [{name: local-user-name, values: [1.5]}]}
+g11: &g11
+  name: g11
+  services:
+    - {name: shell, set_values: [{name: priv-lvl, values: ["0099"]}]}
+    - {name: junos-exec, set_values: [{name: local-user-name, values: [X]}]}
+users:
+  - name: u1
+    scopes: [lab]
+    groups: [*g1]
+    authenticator: {type: 1, options: {hash: "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141"}}
+    accounter: *file_accounter
+  - name: u2
+    scopes: [lab]
+    groups: [*g2]
+    authenticator: {type: 1, options: {hash: "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141"}}
+    accounter: *file_accounter
+  - name: u3
+    scopes: [lab]
+    groups: [*g3]
+    authenticator: {type: 1, options: {hash: "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141"}}
+    accounter: *file_accounter
+  - name: u4
+    scopes: [lab]
+    groups: [*g4]
+    authenticator: {type: 1, options: {hash: "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141"}}
+    accounter: *file_accounter
+  - name: u5
+    scopes: [lab]
+    groups: [*g5]
+    authenticator: {type: 1, options: {hash: "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141"}}
+    accounter: *file_accounter
+  - name: u6
+    scopes: [lab]
+    groups: [*g6]
+    authenticator: {type: 1, options: {hash: "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141"}}
+    accounter: *file_accounter
+  - name: u7
+    scopes: [lab]
+    groups: [*g7]
+    authenticator: {type: 1, options: {hash: "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141"}}
+    accounter: *file_accounter
+  - name: u8
+    scopes: [lab]
+    groups: [*g8]
+    authenticator: {type: 1, options: {hash: "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141"}}
+    accounter: *file_accounter
+  - name: u9
+    scopes: [lab]
+    groups: [*g9]
+    authenticator: {type: 1, options: {hash: "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141"}}
+    accounter: *file_accounter
+  - name: u10
+    scopes: [lab]
+    groups: [*g10]
+    authenticator: {type: 1, options: {hash: "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141"}}
+    accounter: *file_accounter
+  - name: u11
+    scopes: [lab]
+    groups: [*g11]
+    authenticator: {type: 1, options: {hash: "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141"}}
+    accounter: *file_accounter
+  - name: dup1
+    scopes: [lab]
+    groups: [{name: twin, services: [{name: shell, set_values: [{name: priv-lvl, values: [2]}]}, {name: junos-exec, set_values: [{name: local-user-name, values: [T]}]}]}]
+    authenticator: {type: 1, options: {hash: "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141"}}
+    accounter: *file_accounter
+  - name: dup2
+    scopes: [lab]
+    groups: [{name: twin, services: [{name: shell, set_values: [{name: priv-lvl, values: [2]}]}, {name: junos-exec, set_values: [{name: local-user-name, values: [T]}]}]}]
+    authenticator: {type: 1, options: {hash: "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141"}}
+    accounter: *file_accounter
+  - name: dup3
+    scopes: [lab]
+    groups: [{name: twin, services: [{name: shell, set_values: [{name: priv-lvl, values: [3]}]}, {name: junos-exec, set_values: [{name: local-user-name, values: [T]}]}]}]
+    authenticator: {type: 1, options: {hash: "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141"}}
+    accounter: *file_accounter
+  - name: dup4
+    scopes: [lab]
+    groups: [{name: readonly, services: [{name: shell, set_values: [{name: priv-lvl, values: [1.0]}]}, {name: junos-exec, set_values: [{name: local-user-name, values: [RO-CLASS]}]}], accounter: {name: tacquito_accounter, type: 3}}]
+    authenticator: {type: 1, options: {hash: "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141"}}
+    accounter: *file_accounter
+secrets:
+  - name: lab
+    secret: {group: tacquito, key: "lab-secret-0123456789abcdef"}
+    handler: {type: *handler_type_start}
+    type: *provider_type_prefix
+    options:
+      prefixes: |
+        ["192.168.0.0/16"]

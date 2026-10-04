@@ -1,0 +1,27 @@
+- v: "s\xFCper\u2026"
+  l: ["s\xFCper\u2026", x, "s\xFCper\u2026"]
+  k: {"s\xFCper\u2026": "s\xFCper\u2026"}
+- v: "caf\xE9"
+  l: ["caf\xE9", x, "caf\xE9"]
+  k: {"caf\xE9": "caf\xE9"}
+- v: "s\xFCper-secret-0123456789"
+  l: ["s\xFCper-secret-0123456789", x, "s\xFCper-secret-0123456789"]
+  k: {"s\xFCper-secret-0123456789": "s\xFCper-secret-0123456789"}
+- v: "\xFF\xFE"
+  l: ["\xFF\xFE", x, "\xFF\xFE"]
+  k: {"\xFF\xFE": "\xFF\xFE"}
+- v: "\_nbsp"
+  l: ["\_nbsp", x, "\_nbsp"]
+  k: {"\_nbsp": "\_nbsp"}
+- v: "x\_y"
+  l: ["x\_y", x, "x\_y"]
+  k: {"x\_y": "x\_y"}
+- v: "\N"
+  l: ["\N", x, "\N"]
+  k: {? "\N" : "\N"}
+- v: "a\Nb"
+  l: ["a\Nb", x, "a\Nb"]
+  k: {? "a\Nb" : "a\Nb"}
+- v: "\xE9"
+  l: ["\xE9", x, "\xE9"]
+  k: {"\xE9": "\xE9"}

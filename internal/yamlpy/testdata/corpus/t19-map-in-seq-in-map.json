@@ -1,0 +1,16 @@
+{
+ "top": [
+  {
+   "name": "show",
+   "action": "permit",
+   "match": [
+    "^run",
+    "^start"
+   ]
+  },
+  {
+   "name": "*",
+   "action": "deny"
+  }
+ ]
+}

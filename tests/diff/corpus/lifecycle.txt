@@ -1,0 +1,86 @@
+# tacctl backend enable|disable, install and uninstall (WP4.3): the paths that
+# stop before they change anything, which are the only ones a sandboxed run may
+# take. install and uninstall stop at their confirmation prompt (a closed stdin
+# or 'n' is a no); anything past it would install packages, write /opt, /etc
+# and /usr/local or remove them. Never add -y|--yes to these lines, nor a 'y'
+# answer.
+#
+# Left out on purpose:
+#   upgrade        its first steps (the backends' upgrade preflight, then
+#                  'git config --system' for the deploy clone) touch the host
+#                  before any prompt; it is covered by internal/lifecycle's
+#                  tests, the lifecycle bats files (TACCTL_TEST_ROOT) and the
+#                  container cross-over rehearsal (tests/containers/crossover).
+#   config branch  it reads and fetches the deploy clone /opt/tacctl, which
+#                  no variable moves for the bash release; it is covered by
+#                  characterisation.bats (six tests, on a scratch clone).
+#   backend enable radius with a yes: it installs FreeRADIUS.
+# Run: tests/diff/run.sh lifecycle
+@fixture tacquito.minimal.yaml
+
+# --- backend enable ------------------------------------------------------------
+backend enable
+backend enable bogus
+backend enable -x
+backend enable --force radius
+backend enable radius tacacs
+backend enable tacacs
+backend enable tacacs -y
+backend enable radius
+backend enable radius <<< n
+backend enable radius <<< N\n
+backend enable radius <<< yes
+backend enable ""
+backend enable --yes
+backend enable radius -z
+backend enable radius --yes=1
+backend enable Radius
+backend enable tacacs radius -y
+
+# --- backend disable -----------------------------------------------------------
+backend disable
+backend disable bogus
+backend disable -x
+backend disable radius tacacs
+backend disable radius
+backend disable radius --yes
+backend disable tacacs
+backend disable tacacs -y
+backend disable ""
+backend disable -y
+backend disable tacacs --force
+backend disable TACACS
+backend disable tacacs tacacs
+
+# legacy read-only mode: no store yet
+@fixture legacy.fresh-install.yaml
+backend enable tacacs
+backend disable tacacs
+backend disable radius
+backend enable radius <<< n
+
+# no store and no tacquito.yaml: preflight refuses
+@fixture none
+backend enable radius
+backend disable tacacs
+backend enable
+backend disable bogus
+@fixture tacquito.minimal.yaml
+
+# --- install: up to the confirmation ---------------------------------------------
+install
+install <<< n
+install <<< no
+install --branch develop <<< n
+install --branch develop extra <<< n
+install bogus <<< n
+
+# --- uninstall: up to the confirmation -------------------------------------------
+uninstall
+uninstall <<< n
+uninstall <<< N
+uninstall bogus <<< n
+@fixture tacquito.multiscope.yaml
+uninstall <<< n
+@fixture none
+uninstall <<< n

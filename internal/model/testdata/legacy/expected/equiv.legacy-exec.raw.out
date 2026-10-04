@@ -1,0 +1,88 @@
+note: FIXTURES/tacquito.legacy-exec.yaml: scope 'lab' has no users; tacquito does not load it
+--- live (normalised)
++++ rendered (normalised)
+@@ -5,10 +5,32 @@
+         "name": "tacquito_accounter",
+         "type": "3"
+       },
++      "commands": [
++        {
++          "action": "2",
++          "name": "show"
++        },
++        {
++          "action": "2",
++          "name": "ping"
++        },
++        {
++          "action": "2",
++          "name": "traceroute"
++        },
++        {
++          "action": "2",
++          "name": "terminal"
++        },
++        {
++          "action": "1",
++          "name": "*"
++        }
++      ],
+       "name": "operator",
+       "services": [
+         {
+-          "name": "exec",
++          "name": "shell",
+           "set_values": [
+             {
+               "name": "priv-lvl",
+@@ -36,10 +58,28 @@
+         "name": "tacquito_accounter",
+         "type": "3"
+       },
++      "commands": [
++        {
++          "action": "2",
++          "name": "show"
++        },
++        {
++          "action": "2",
++          "name": "ping"
++        },
++        {
++          "action": "2",
++          "name": "traceroute"
++        },
++        {
++          "action": "1",
++          "name": "*"
++        }
++      ],
+       "name": "readonly",
+       "services": [
+         {
+-          "name": "exec",
++          "name": "shell",
+           "set_values": [
+             {
+               "name": "priv-lvl",
+@@ -67,10 +107,16 @@
+         "name": "tacquito_accounter",
+         "type": "3"
+       },
++      "commands": [
++        {
++          "action": "2",
++          "name": "*"
++        }
++      ],
+       "name": "superuser",
+       "services": [
+         {
+-          "name": "exec",
++          "name": "shell",
+           "set_values": [
+             {
+               "name": "priv-lvl",
+note: the two differ only in groups without users or scopes without users. tacquito answers today's clients identically, but the difference takes effect as soon as such a group or scope gets a user.
+NOT EQUIVALENT
+rc=1

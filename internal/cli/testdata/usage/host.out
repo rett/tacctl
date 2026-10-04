@@ -1,0 +1,27 @@
+
+[1mHost Commands[0m (TACACS+ or RADIUS login for Linux hosts)
+
+Usage: tacctl host <subcommand> [arguments]
+
+  list                                 Show enrolled hosts
+  enroll <[user@]host> [options]       Install TACACS+ or RADIUS login on a host over SSH and register it
+  enroll --local [options]             Same, for this machine
+      --method tacplus|radius          pam_tacplus against the TACACS+ backend, or the host's pam_radius_auth
+                                       package against the RADIUS backend (default: the host's current
+                                       method, else the scope's auth-method, else its only protocol,
+                                       else 'host default-method').
+                                       Re-enroll with the other to switch
+      --scope <name>                   Use an existing scope (default: create linux-<name> for the host's /32)
+      --server <address>               Address the host should use for this server (default: detected)
+      --name <name>                    Registry name (default: short hostname)
+      --port <n>, --identity <file>    SSH port and key
+      --build-on-host                  (tacplus) Compile pam_tacplus on the host instead of in a container here
+  sync <name> | --all                  Push account adds, removals and tier changes
+      --allow-uid-mismatch             (enroll and sync) accept a UID/GID conflict on the host instead of stopping
+      --adopt <name>[,<name>...]       (enroll and sync) take over accounts that already exist on the host
+  unenroll <name> [--force]            Remove the login method from the host (accounts and homes are kept)
+  default-method [tacplus|radius]      Show or set the method for hosts enrolled without --method
+                                       (a scope's own choice comes first: tacctl scope auth-method)
+
+ssh runs as the user who invoked sudo; the remote login must be root or able to sudo.
+

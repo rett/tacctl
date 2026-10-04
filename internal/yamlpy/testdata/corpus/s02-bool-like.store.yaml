@@ -1,0 +1,72 @@
+- v: 'yes'
+  l: ['yes']
+  k: {'yes': 'yes'}
+- v: 'no'
+  l: ['no']
+  k: {'no': 'no'}
+- v: 'on'
+  l: ['on']
+  k: {'on': 'on'}
+- v: 'off'
+  l: ['off']
+  k: {'off': 'off'}
+- v: y
+  l: [y]
+  k: {y: y}
+- v: n
+  l: [n]
+  k: {n: n}
+- v: Y
+  l: [Y]
+  k: {Y: Y}
+- v: N
+  l: [N]
+  k: {N: N}
+- v: 'Yes'
+  l: ['Yes']
+  k: {'Yes': 'Yes'}
+- v: 'NO'
+  l: ['NO']
+  k: {'NO': 'NO'}
+- v: 'On'
+  l: ['On']
+  k: {'On': 'On'}
+- v: 'OFF'
+  l: ['OFF']
+  k: {'OFF': 'OFF'}
+- v: oN
+  l: [oN]
+  k: {oN: oN}
+- v: yEs
+  l: [yEs]
+  k: {yEs: yEs}
+- v: 'true'
+  l: ['true']
+  k: {'true': 'true'}
+- v: 'false'
+  l: ['false']
+  k: {'false': 'false'}
+- v: 'TRUE'
+  l: ['TRUE']
+  k: {'TRUE': 'TRUE'}
+- v: 'False'
+  l: ['False']
+  k: {'False': 'False'}
+- v: tRue
+  l: [tRue]
+  k: {tRue: tRue}
+- v: enabled
+  l: [enabled]
+  k: {enabled: enabled}
+- v: disabled
+  l: [disabled]
+  k: {disabled: disabled}
+- v: onoff
+  l: [onoff]
+  k: {onoff: onoff}
+- v: 'yes '
+  l: ['yes ']
+  k: {'yes ': 'yes '}
+- v: ' no'
+  l: [' no']
+  k: {' no': ' no'}

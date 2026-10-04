@@ -1,0 +1,33 @@
+
+[1mtacctl scope[0m — named (CIDR-prefixes, shared-secret) bundles
+
+Usage:
+  tacctl scope list                                        One row per scope (aggregated prefix list)
+  tacctl scope routing                                     One row per (scope, prefix) — first-match order
+  tacctl scope show <name>                                 Detailed view
+  tacctl scope add <name> --prefixes <cidrs>               Create a new scope
+                       [--secret <value>|--secret generate]
+                       [--protocols <protocol>[,<protocol>...]]
+                       [--vendor-attrs <vendor>[,<vendor>...]]
+                       [--default]
+  tacctl scope remove <name> [--force]                     Delete a scope (confirms)
+  tacctl scope rename <old> <new>                          Rename (updates user references)
+  tacctl scope default [<name>]                            Show or set the default scope
+  tacctl scope lookup <ip|cidr>                            Show which scope owns an address
+
+  tacctl scope prefixes <scope> list|add|remove            Manage a scope's CIDR list
+  tacctl scope secret   <scope> show|set|generate          Manage a scope's shared secret
+  tacctl scope protocols <scope> list|set <csv>|clear      Limit a scope to some protocols (tacacs, radius); default: all
+  tacctl scope vendor-attrs <scope> [enable|disable <csv>] RADIUS: vendor privilege attributes sent to the scope's devices (cisco, juniper, wti); default: not sent
+  tacctl scope devices <scope> [set <ip|cidr> <vendor>|unset <ip|cidr>]  RADIUS: tag an address of the scope with its vendor (it gets that vendor's attribute only)
+  tacctl scope aaa-order <scope> [tacacs-first|local-first] AAA method-list order in this scope's rendered device configs (default tacacs-first)
+  tacctl scope exec-timeout <scope> [minutes]              Per-scope idle-session timeout in rendered device configs (0..60 min; default 60; 0 = never expire)
+  tacctl scope tacacs-group <scope> [name]                 Per-scope Cisco aaa-group-server label (default TACACS-GROUP)
+  tacctl scope radius-group <scope> [name]                 Per-scope Cisco aaa-group-server label for RADIUS (default RADIUS-GROUP)
+  tacctl scope auth-method <scope> [tacacs|radius|clear]   Protocol this scope's device configs and host enrollments use when the command names none
+  tacctl scope mgmt-acl <scope> list|add|remove|clear      Per-scope permit list (fallback: global mgmt_acl.permits)
+  tacctl scope mgmt-acl <scope> cisco-name|juniper-name [name]  Per-scope ACL / filter name (defaults VTY-ACL / MGMT-ACL)
+
+Current scopes: 1
+Default scope:  lab
+

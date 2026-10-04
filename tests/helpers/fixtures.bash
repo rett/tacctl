@@ -145,3 +145,54 @@ golden_diff() {
     fi
     diff -u "${golden}" "${actual}"
 }
+
+# rendered_record <file>...: record each file in $TACCTL_STATE_DIR/rendered.json
+# as tacctl rendered it (its sha256), the way a render does; rendered_forget
+# <file>... drops the records. For tests that plant a state an earlier
+# release left. The file is written as tacctl writes it: indent 2, keys
+# sorted, mode 0600.
+rendered_record() {
+    local f
+    for f in "$@"; do
+        _rendered_edit "$f" "$(sha256sum < "$f" | cut -d' ' -f1)" || return 1
+    done
+}
+
+rendered_forget() {
+    local f
+    for f in "$@"; do
+        _rendered_edit "$f" "" || return 1
+    done
+}
+
+_rendered_edit() {
+    local json="${TACCTL_STATE_DIR}/rendered.json" key="$1" val="$2" line k n=0
+    local -A rec=()
+    local re='^  "(.*)": "([0-9a-f]*)",?$'
+    if [[ -f "$json" ]]; then
+        while IFS= read -r line; do
+            [[ "$line" =~ $re ]] && rec["${BASH_REMATCH[1]}"]="${BASH_REMATCH[2]}"
+        done < "$json"
+    fi
+    if [[ -n "$val" ]]; then
+        rec["$key"]="$val"
+    else
+        unset 'rec[$key]'
+    fi
+    {
+        if [[ ${#rec[@]} -eq 0 ]]; then
+            echo '{}'
+        else
+            echo '{'
+            while IFS= read -r k; do
+                n=$((n + 1))
+                if [[ $n -lt ${#rec[@]} ]]; then
+                    printf '  "%s": "%s",\n' "$k" "${rec[$k]}"
+                else
+                    printf '  "%s": "%s"\n' "$k" "${rec[$k]}"
+                fi
+            done < <(printf '%s\n' "${!rec[@]}" | LC_ALL=C sort)
+            echo '}'
+        fi
+    } > "${json}.new" && chmod 600 "${json}.new" && mv -f "${json}.new" "$json"
+}

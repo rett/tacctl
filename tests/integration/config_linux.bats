@@ -1157,10 +1157,10 @@ _epel_stubs() {
 }
 
 @test "config linux script: a scope served over one protocol only picks the method when it has no auth-method" {
+    # Limited before the RADIUS backend is enabled: with the backend on,
+    # 'scope protocols' would render it, which needs the daemon's stand-in.
+    "$TACCTL_BIN_SCRIPT" scope protocols lab set radius > /dev/null
     radius_on
-    # Written into the store directly: with the backend enabled 'scope
-    # protocols' would render it, which needs the daemon's stand-in.
-    bash -c 'source "$1"; store_scope_set lab protocols=radius' _ "$TACCTL_BIN_SCRIPT" > /dev/null
     run _gen
     assert_success
     assert_output --partial "Method radius: scope 'lab' is served over radius only (tacctl scope protocols)"

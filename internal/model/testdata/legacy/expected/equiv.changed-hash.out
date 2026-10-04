@@ -1,0 +1,15 @@
+note: FIXTURES/tacquito.multiscope.yaml: scope 'prod-inner' has no users; tacquito does not load it
+note: FIXTURES/tacquito.multiscope.yaml: secrets[1] 'prod-inner': 10.10.99.0/24 never matches a client (an earlier entry already covers it with 10.0.0.0/8) once every scope has a user
+--- live (normalised)
++++ rendered (normalised)
+@@ -56,7 +56,7 @@
+       },
+       "authenticator": {
+         "options": {
+-          "hash": "<redacted:1>"
++          "hash": "<redacted:2>"
+         },
+         "type": "1"
+       },
+NOT EQUIVALENT
+rc=1

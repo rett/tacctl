@@ -1,0 +1,271 @@
+# Importer fixture: everything a real install can legitimately contain that
+# the store must represent without --force. Sidecar files (password dates,
+# the saved hash of a disabled user) are created by the tests.
+#
+#   alice     active, two scopes in non-alphabetical order
+#   dave      disabled by 'user disable' (marker hash; real hash in a sidecar)
+#   erin      disabled with the literal DISABLED (tolerated by 'user list')
+#   engineer  seeded, never given a password (marker, no sidecar)
+#   frank     no scopes key at all
+#   root      accounting sink
+#   readonly  still carries the legacy service name 'exec'
+#   helpdesk  custom group with a commands: block (rendered from tacctl.yaml)
+#   auditors  custom group no user references
+#   bcrypt_user / exec_retired: anchors nothing references (old templates)
+#   lab       two flat secrets[] entries sharing a key
+#   prod      one multi-prefix entry, one prefix not in canonical form
+#   v6        IPv6 prefix in upper case
+
+authenticator_type_bcrypt: &authenticator_type_bcrypt 1
+action_deny:  &action_deny  1
+action_permit: &action_permit 2
+accounter_type_file: &accounter_type_file 3
+handler_type_start: &handler_type_start 1
+provider_type_prefix: &provider_type_prefix 1
+
+# --- Accounting ---
+file_accounter: &file_accounter
+  name: tacquito_accounter
+  type: *accounter_type_file
+
+bcrypt_alice: &bcrypt_alice
+  type: *authenticator_type_bcrypt
+  options:
+    hash: 243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141
+
+bcrypt_dave: &bcrypt_dave
+  type: *authenticator_type_bcrypt
+  options:
+    hash: 243262243132242e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e
+
+bcrypt_erin: &bcrypt_erin
+  type: *authenticator_type_bcrypt
+  options:
+    hash: DISABLED
+
+bcrypt_engineer: &bcrypt_engineer
+  type: *authenticator_type_bcrypt
+  options:
+    hash: 243262243132242e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e
+
+bcrypt_frank: &bcrypt_frank
+  type: *authenticator_type_bcrypt
+  options:
+    hash: 243262243132244646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646
+
+bcrypt_root: &bcrypt_root
+  type: *authenticator_type_bcrypt
+  options:
+    hash: 243262243132242e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e
+
+bcrypt_user: &bcrypt_user
+  type: *authenticator_type_bcrypt
+  options:
+    hash: REPLACE_ME
+
+# --- Services ---
+exec_readonly: &exec_readonly
+  name: shell
+  set_values:
+    - name: priv-lvl
+      values: [1]
+
+junos_exec_readonly: &junos_exec_readonly
+  name: junos-exec
+  set_values:
+    - name: local-user-name
+      values: ["RO-CLASS"]
+
+exec_operator: &exec_operator
+  name: shell
+  set_values:
+    - name: priv-lvl
+      values: [7]
+
+junos_exec_operator: &junos_exec_operator
+  name: junos-exec
+  set_values:
+    - name: local-user-name
+      values: ["OP-CLASS"]
+
+exec_superuser: &exec_superuser
+  name: shell
+  set_values:
+    - name: priv-lvl
+      values: [15]
+
+junos_exec_superuser: &junos_exec_superuser
+  name: junos-exec
+  set_values:
+    - name: local-user-name
+      values: ["RW-CLASS"]
+
+exec_helpdesk: &exec_helpdesk
+  name: shell
+  set_values:
+    - name: priv-lvl
+      values: [5]
+
+junos_exec_helpdesk: &junos_exec_helpdesk
+  name: junos-exec
+  set_values:
+    - name: local-user-name
+      values: ["HELPDESK-CLASS"]
+
+exec_auditors: &exec_auditors
+  name: shell
+  set_values:
+    - name: priv-lvl
+      values: [3]
+
+junos_exec_auditors: &junos_exec_auditors
+  name: junos-exec
+  set_values:
+    - name: local-user-name
+      values: ["AUDIT-CLASS"]
+
+exec_retired: &exec_retired
+  name: shell
+  set_values:
+    - name: priv-lvl
+      values: [9]
+
+# --- Groups ---
+readonly: &readonly
+  name: readonly
+  services:
+    - *exec_readonly
+    - *junos_exec_readonly
+  accounter: *file_accounter
+
+operator: &operator
+  name: operator
+  services:
+    - *exec_operator
+    - *junos_exec_operator
+  accounter: *file_accounter
+
+superuser: &superuser
+  name: superuser
+  services:
+    - *exec_superuser
+    - *junos_exec_superuser
+  accounter: *file_accounter
+
+helpdesk: &helpdesk
+  name: helpdesk
+  services:
+    - *exec_helpdesk
+    - *junos_exec_helpdesk
+  commands:
+    - name: "show"
+      action: *action_permit
+    - name: "*"
+      action: *action_deny
+  accounter: *file_accounter
+
+auditors: &auditors
+  name: auditors
+  services:
+    - *exec_auditors
+    - *junos_exec_auditors
+  accounter: *file_accounter
+
+# --- Users ---
+users:
+
+  # alice
+  - name: alice
+    scopes: ["prod", "lab"]
+    groups: [*superuser]
+    authenticator: *bcrypt_alice
+    accounter: *file_accounter
+
+  # dave
+  - name: dave
+    scopes: ["lab"]
+    groups: [*helpdesk]
+    authenticator: *bcrypt_dave
+    accounter: *file_accounter
+
+  # erin
+  - name: erin
+    scopes: ["lab"]
+    groups: [*operator]
+    authenticator: *bcrypt_erin
+    accounter: *file_accounter
+
+  # engineer
+  - name: engineer
+    scopes: ["lab"]
+    groups: [*superuser]
+    authenticator: *bcrypt_engineer
+    accounter: *file_accounter
+
+  # frank
+  - name: frank
+    groups: [*readonly]
+    authenticator: *bcrypt_frank
+    accounter: *file_accounter
+
+  # root
+  - name: root
+    scopes: ["lab"]
+    groups: [*readonly]
+    authenticator: *bcrypt_root
+    accounter: *file_accounter
+
+# --- Secret Providers ---
+secrets:
+  - name: lab
+    secret:
+      group: tacquito
+      key: "edge-lab-secret-0123456789"
+    handler:
+      type: *handler_type_start
+    type: *provider_type_prefix
+    options:
+      prefixes: |
+        [
+          "10.1.0.0/16"
+        ]
+  - name: prod
+    secret:
+      group: tacquito
+      key: "edge-prod-secret-0123456789"
+    handler:
+      type: *handler_type_start
+    type: *provider_type_prefix
+    options:
+      prefixes: |
+        [
+          "10.0.0.0/8",
+          "192.168.5.77/24"
+        ]
+  - name: lab
+    secret:
+      group: tacquito
+      key: "edge-lab-secret-0123456789"
+    handler:
+      type: *handler_type_start
+    type: *provider_type_prefix
+    options:
+      prefixes: |
+        [
+          "172.16.0.0/12"
+        ]
+  - name: v6
+    secret:
+      group: tacquito
+      key: "edge-v6-secret-0123456789"
+    handler:
+      type: *handler_type_start
+    type: *provider_type_prefix
+    options:
+      prefixes: |
+        [
+          "2001:DB8::/32"
+        ]
+
+prefix_allow: ["10.0.0.0/8", "192.168.0.0/16"]
+prefix_deny: ["10.66.0.0/16"]

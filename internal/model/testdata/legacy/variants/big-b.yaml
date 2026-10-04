@@ -1,0 +1,1142 @@
+secrets:
+- handler:
+    type: 1
+  name: site0
+  options:
+    prefixes: '["10.0.0.0/16", "10.0.128.0/17"]'
+  secret:
+    group: tacquito
+    key: site-secret-0
+  type: 1
+- handler:
+    type: 1
+  name: site1
+  options:
+    prefixes: '["10.1.0.0/16", "10.1.128.0/17"]'
+  secret:
+    group: tacquito
+    key: site-secret-1
+  type: 1
+- handler:
+    type: 1
+  name: site3
+  options:
+    prefixes: '["10.3.0.0/16", "10.3.128.0/17"]'
+  secret:
+    group: tacquito
+    key: site-secret-3
+  type: 1
+- handler:
+    type: 1
+  name: site2
+  options:
+    prefixes: '["10.2.0.0/16", "10.2.128.0/17"]'
+  secret:
+    group: tacquito
+    key: site-secret-2
+  type: 1
+- handler:
+    type: 1
+  name: site4
+  options:
+    prefixes: '["10.4.0.0/16", "10.4.128.0/17"]'
+  secret:
+    group: tacquito
+    key: site-secret-4
+  type: 1
+- handler:
+    type: 1
+  name: site5
+  options:
+    prefixes: '["10.5.0.0/16", "10.5.128.0/17"]'
+  secret:
+    group: tacquito
+    key: site-secret-5
+  type: 1
+- handler:
+    type: 1
+  name: site6
+  options:
+    prefixes: '["10.6.0.0/16", "10.6.128.0/17"]'
+  secret:
+    group: tacquito
+    key: site-secret-6
+  type: 1
+- handler:
+    type: 1
+  name: core
+  options:
+    prefixes: '["10.0.0.0/8", "172.16.0.0/12"]'
+  secret:
+    group: tacquito
+    key: core-secret
+  type: 1
+users:
+- accounter: &id001
+    name: tacquito_accounter
+    type: 3
+  authenticator: &id002
+    options:
+      hash: '24326224313224410000'
+    type: 1
+  groups: &id003
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user000
+  scopes: &id004
+  - site0
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410001'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user001
+  scopes:
+  - site1
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410002'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user002
+  scopes:
+  - site2
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: DISABLED
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user003
+  scopes:
+  - site3
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410004'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user004
+  scopes:
+  - site4
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410005'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user005
+  scopes:
+  - site5
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410006'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user006
+  scopes:
+  - site6
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410007'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user007
+  scopes:
+  - site0
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410008'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user008
+  scopes:
+  - site1
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410009'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user009
+  scopes:
+  - site2
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410014'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user014
+  scopes:
+  - site0
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410015'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user015
+  scopes:
+  - site1
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410016'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user016
+  scopes:
+  - site2
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410017'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user017
+  scopes:
+  - site3
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410018'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user018
+  scopes:
+  - site4
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410019'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user019
+  scopes:
+  - site5
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410020'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user020
+  scopes:
+  - site6
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410021'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user021
+  scopes:
+  - site0
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410022'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user022
+  scopes:
+  - site1
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410023'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user023
+  scopes:
+  - site2
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410024'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user024
+  scopes:
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410025'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user025
+  scopes:
+  - site4
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410026'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user026
+  scopes:
+  - site5
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410027'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user027
+  scopes:
+  - site6
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410028'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user028
+  scopes:
+  - site0
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410029'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user029
+  scopes:
+  - site1
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410030'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user030
+  scopes:
+  - site2
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410031'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user031
+  scopes:
+  - site3
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410032'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user032
+  scopes:
+  - site4
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410033'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user033
+  scopes:
+  - site5
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410034'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user034
+  scopes:
+  - site6
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410035'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user035
+  scopes:
+  - site0
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410036'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user036
+  scopes:
+  - site1
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410037'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user037
+  scopes:
+  - site2
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410038'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user038
+  scopes:
+  - site3
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410039'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user039
+  scopes:
+  - site4
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410040'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user040
+  scopes:
+  - site5
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410041'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user041
+  scopes:
+  - site6
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410042'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user042
+  scopes:
+  - site0
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410043'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user043
+  scopes:
+  - site1
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410044'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 15
+  name: user044
+  scopes:
+  - site2
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410045'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user045
+  scopes:
+  - site3
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410046'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user046
+  scopes:
+  - site4
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410047'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user047
+  scopes:
+  - site5
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410048'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user048
+  scopes:
+  - site6
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410049'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user049
+  scopes:
+  - site0
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410050'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user050
+  scopes:
+  - site1
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410051'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user051
+  scopes:
+  - site2
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410052'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user052
+  scopes:
+  - site3
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410053'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user053
+  scopes:
+  - site4
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410054'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user054
+  scopes:
+  - site5
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410055'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user055
+  scopes:
+  - site6
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410056'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user056
+  scopes:
+  - site0
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410057'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user057
+  scopes:
+  - site1
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410058'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user058
+  scopes:
+  - site2
+  - core
+- accounter:
+    name: tacquito_accounter
+    type: 3
+  authenticator:
+    options:
+      hash: '24326224313224410059'
+    type: 1
+  groups:
+  - name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+  name: user059
+  scopes:
+  - site3
+  - core
+- accounter: *id001
+  authenticator: *id002
+  groups: *id003
+  name: zed
+  scopes: *id004

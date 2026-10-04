@@ -50,7 +50,8 @@ saved_copies() {
     cmp "$TACCTL_CONFIG" "$GOLDEN"
     [[ "$(stat -c %a "$TACCTL_CONFIG")" == "640" ]]
     [[ "$(stat -c %a "$RENDERED")" == "600" ]]
-    stub_called 'chown tacquito:tacquito'
+    # The owner (tacquito:tacquito, set natively, best effort) cannot be
+    # checked unprivileged: mode and content above are the effect asserted.
     stub_called 'systemctl restart tacquito'
     run find "$TACCTL_ETC" -mindepth 1
     assert_output "$TACCTL_CONFIG"

@@ -1,0 +1,240 @@
+--- live (normalised)
++++ rendered (normalised)
+@@ -78,11 +78,6 @@
+         "key": "<redacted:1>",
+         "prefix": "10.0.0.0/8",
+         "scope": "core"
+-      },
+-      {
+-        "key": "<redacted:1>",
+-        "prefix": "172.16.0.0/12",
+-        "scope": "core"
+       }
+     ],
+     "routes_if_every_scope_had_users": [
+@@ -159,11 +154,6 @@
+       {
+         "key": "<redacted:1>",
+         "prefix": "10.0.0.0/8",
+-        "scope": "core"
+-      },
+-      {
+-        "key": "<redacted:1>",
+-        "prefix": "172.16.0.0/12",
+         "scope": "core"
+       }
+     ]
+@@ -278,7 +268,7 @@
+       },
+       "authenticator": {
+         "options": {
+-          "hash": "<redacted:2>"
++          "hash": "<redacted:3>"
+         },
+         "type": "1"
+       },
+@@ -509,6 +499,142 @@
+         "site2"
+       ]
+     },
++    "user010": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:4>"
++        },
++        "type": "1"
++      },
++      "groups": [
++        {
++          "name": "operator",
++          "services": [
++            {
++              "name": "shell",
++              "set_values": [
++                {
++                  "name": "priv-lvl",
++                  "values": [
++                    "7"
++                  ]
++                }
++              ]
++            }
++          ]
++        }
++      ],
++      "scopes": [
++        "core",
++        "site3"
++      ]
++    },
++    "user011": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:5>"
++        },
++        "type": "1"
++      },
++      "groups": [
++        {
++          "name": "operator",
++          "services": [
++            {
++              "name": "shell",
++              "set_values": [
++                {
++                  "name": "priv-lvl",
++                  "values": [
++                    "7"
++                  ]
++                }
++              ]
++            }
++          ]
++        }
++      ],
++      "scopes": [
++        "core",
++        "site4"
++      ]
++    },
++    "user012": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:6>"
++        },
++        "type": "1"
++      },
++      "groups": [
++        {
++          "name": "operator",
++          "services": [
++            {
++              "name": "shell",
++              "set_values": [
++                {
++                  "name": "priv-lvl",
++                  "values": [
++                    "7"
++                  ]
++                }
++              ]
++            }
++          ]
++        }
++      ],
++      "scopes": [
++        "core",
++        "site5"
++      ]
++    },
++    "user013": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:7>"
++        },
++        "type": "1"
++      },
++      "groups": [
++        {
++          "name": "operator",
++          "services": [
++            {
++              "name": "shell",
++              "set_values": [
++                {
++                  "name": "priv-lvl",
++                  "values": [
++                    "7"
++                  ]
++                }
++              ]
++            }
++          ]
++        }
++      ],
++      "scopes": [
++        "core",
++        "site6"
++      ]
++    },
+     "user014": {
+       "accounter": {
+         "name": "tacquito_accounter",
+@@ -879,7 +1005,8 @@
+         }
+       ],
+       "scopes": [
+-        "core"
++        "core",
++        "site3"
+       ]
+     },
+     "user025": {
+@@ -1549,7 +1676,7 @@
+                 {
+                   "name": "priv-lvl",
+                   "values": [
+-                    "15"
++                    "7"
+                   ]
+                 }
+               ]
+@@ -2070,40 +2197,6 @@
+       "scopes": [
+         "core",
+         "site3"
+-      ]
+-    },
+-    "zed": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:8>"
+-        },
+-        "type": "1"
+-      },
+-      "groups": [
+-        {
+-          "name": "operator",
+-          "services": [
+-            {
+-              "name": "shell",
+-              "set_values": [
+-                {
+-                  "name": "priv-lvl",
+-                  "values": [
+-                    "7"
+-                  ]
+-                }
+-              ]
+-            }
+-          ]
+-        }
+-      ],
+-      "scopes": [
+-        "core",
+-        "site0"
+       ]
+     }
+   }
+NOT EQUIVALENT
+rc=1

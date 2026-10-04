@@ -1,0 +1,443 @@
+--- live (normalised)
++++ rendered (normalised)
+@@ -1,67 +1,113 @@
+ {
+-  "groups_without_users": {},
+-  "prefix_allow": [],
+-  "prefix_deny": [],
++  "groups_without_users": {
++    "auditors": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "name": "auditors",
++      "services": [
++        {
++          "name": "shell",
++          "set_values": [
++            {
++              "name": "priv-lvl",
++              "values": [
++                "3"
++              ]
++            }
++          ]
++        },
++        {
++          "name": "junos-exec",
++          "set_values": [
++            {
++              "name": "local-user-name",
++              "values": [
++                "AUDIT-CLASS"
++              ]
++            }
++          ]
++        }
++      ]
++    }
++  },
++  "prefix_allow": [
++    "10.0.0.0/8",
++    "192.168.0.0/16"
++  ],
++  "prefix_deny": [
++    "10.66.0.0/16"
++  ],
+   "secrets": {
+     "routes": [
+       {
+-        "key": "<redacted:1>",
++        "key": "<redacted:2>",
++        "prefix": "10.1.0.0/16",
++        "scope": "lab"
++      },
++      {
++        "key": "<redacted:3>",
+         "prefix": "10.0.0.0/8",
+-        "scope": "lab"
+-      },
+-      {
+-        "key": "<redacted:1>",
++        "scope": "prod"
++      },
++      {
++        "key": "<redacted:2>",
+         "prefix": "172.16.0.0/12",
+         "scope": "lab"
+       },
+       {
+-        "key": "<redacted:1>",
+-        "prefix": "192.168.0.0/16",
+-        "scope": "lab"
++        "key": "<redacted:3>",
++        "prefix": "192.168.5.0/24",
++        "scope": "prod"
+       }
+     ],
+     "routes_if_every_scope_had_users": [
+       {
+-        "key": "<redacted:1>",
++        "key": "<redacted:2>",
++        "prefix": "10.1.0.0/16",
++        "scope": "lab"
++      },
++      {
++        "key": "<redacted:3>",
+         "prefix": "10.0.0.0/8",
+-        "scope": "lab"
+-      },
+-      {
+-        "key": "<redacted:1>",
++        "scope": "prod"
++      },
++      {
++        "key": "<redacted:2>",
+         "prefix": "172.16.0.0/12",
+         "scope": "lab"
+       },
+       {
+-        "key": "<redacted:1>",
+-        "prefix": "192.168.0.0/16",
+-        "scope": "lab"
++        "key": "<redacted:3>",
++        "prefix": "192.168.5.0/24",
++        "scope": "prod"
++      },
++      {
++        "key": "<redacted:4>",
++        "prefix": "2001:db8::/32",
++        "scope": "v6"
+       }
+     ]
+   },
+   "users": {
+-    "engineer": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:5>"
+-        },
+-        "type": "1"
+-      },
+-      "groups": [
+-        {
+-          "accounter": {
+-            "name": "tacquito_accounter",
+-            "type": "3"
+-          },
+-          "commands": [
+-            {
+-              "action": "2",
+-              "name": "*"
+-            }
+-          ],
++    "alice": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:6>"
++        },
++        "type": "1"
++      },
++      "groups": [
++        {
++          "accounter": {
++            "name": "tacquito_accounter",
++            "type": "3"
++          },
+           "name": "superuser",
+           "services": [
+             {
+@@ -90,10 +136,11 @@
+         }
+       ],
+       "scopes": [
+-        "lab"
+-      ]
+-    },
+-    "operator": {
++        "lab",
++        "prod"
++      ]
++    },
++    "dave": {
+       "accounter": {
+         "name": "tacquito_accounter",
+         "type": "3"
+@@ -116,22 +163,106 @@
+               "name": "show"
+             },
+             {
+-              "action": "2",
+-              "name": "ping"
+-            },
+-            {
+-              "action": "2",
+-              "name": "traceroute"
+-            },
+-            {
+-              "action": "2",
+-              "name": "terminal"
+-            },
+-            {
+               "action": "1",
+               "name": "*"
+             }
+           ],
++          "name": "helpdesk",
++          "services": [
++            {
++              "name": "shell",
++              "set_values": [
++                {
++                  "name": "priv-lvl",
++                  "values": [
++                    "5"
++                  ]
++                }
++              ]
++            },
++            {
++              "name": "junos-exec",
++              "set_values": [
++                {
++                  "name": "local-user-name",
++                  "values": [
++                    "HELPDESK-CLASS"
++                  ]
++                }
++              ]
++            }
++          ]
++        }
++      ],
++      "scopes": [
++        "lab"
++      ]
++    },
++    "engineer": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:5>"
++        },
++        "type": "1"
++      },
++      "groups": [
++        {
++          "accounter": {
++            "name": "tacquito_accounter",
++            "type": "3"
++          },
++          "name": "superuser",
++          "services": [
++            {
++              "name": "shell",
++              "set_values": [
++                {
++                  "name": "priv-lvl",
++                  "values": [
++                    "15"
++                  ]
++                }
++              ]
++            },
++            {
++              "name": "junos-exec",
++              "set_values": [
++                {
++                  "name": "local-user-name",
++                  "values": [
++                    "RW-CLASS"
++                  ]
++                }
++              ]
++            }
++          ]
++        }
++      ],
++      "scopes": [
++        "lab"
++      ]
++    },
++    "erin": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:5>"
++        },
++        "type": "1"
++      },
++      "groups": [
++        {
++          "accounter": {
++            "name": "tacquito_accounter",
++            "type": "3"
++          },
+           "name": "operator",
+           "services": [
+             {
+@@ -163,6 +294,51 @@
+         "lab"
+       ]
+     },
++    "frank": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:7>"
++        },
++        "type": "1"
++      },
++      "groups": [
++        {
++          "accounter": {
++            "name": "tacquito_accounter",
++            "type": "3"
++          },
++          "name": "readonly",
++          "services": [
++            {
++              "name": "exec",
++              "set_values": [
++                {
++                  "name": "priv-lvl",
++                  "values": [
++                    "1"
++                  ]
++                }
++              ]
++            },
++            {
++              "name": "junos-exec",
++              "set_values": [
++                {
++                  "name": "local-user-name",
++                  "values": [
++                    "RO-CLASS"
++                  ]
++                }
++              ]
++            }
++          ]
++        }
++      ]
++    },
+     "root": {
+       "accounter": {
+         "name": "tacquito_accounter",
+@@ -180,94 +356,10 @@
+             "name": "tacquito_accounter",
+             "type": "3"
+           },
+-          "commands": [
+-            {
+-              "action": "2",
+-              "name": "show"
+-            },
+-            {
+-              "action": "2",
+-              "name": "ping"
+-            },
+-            {
+-              "action": "2",
+-              "name": "traceroute"
+-            },
+-            {
+-              "action": "1",
+-              "name": "*"
+-            }
+-          ],
+           "name": "readonly",
+           "services": [
+             {
+-              "name": "shell",
+-              "set_values": [
+-                {
+-                  "name": "priv-lvl",
+-                  "values": [
+-                    "1"
+-                  ]
+-                }
+-              ]
+-            },
+-            {
+-              "name": "junos-exec",
+-              "set_values": [
+-                {
+-                  "name": "local-user-name",
+-                  "values": [
+-                    "RO-CLASS"
+-                  ]
+-                }
+-              ]
+-            }
+-          ]
+-        }
+-      ],
+-      "scopes": [
+-        "lab"
+-      ]
+-    },
+-    "viewer": {
+-      "accounter": {
+-        "name": "tacquito_accounter",
+-        "type": "3"
+-      },
+-      "authenticator": {
+-        "options": {
+-          "hash": "<redacted:5>"
+-        },
+-        "type": "1"
+-      },
+-      "groups": [
+-        {
+-          "accounter": {
+-            "name": "tacquito_accounter",
+-            "type": "3"
+-          },
+-          "commands": [
+-            {
+-              "action": "2",
+-              "name": "show"
+-            },
+-            {
+-              "action": "2",
+-              "name": "ping"
+-            },
+-            {
+-              "action": "2",
+-              "name": "traceroute"
+-            },
+-            {
+-              "action": "1",
+-              "name": "*"
+-            }
+-          ],
+-          "name": "readonly",
+-          "services": [
+-            {
+-              "name": "shell",
++              "name": "exec",
+               "set_values": [
+                 {
+                   "name": "priv-lvl",
+NOT EQUIVALENT
+rc=1

@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Stand-in for getent in the hosts corpus: 'ahostsv4 <name>' answers
+# 192.0.2.50 (an address answers itself); names starting with 'ghost' are
+# not found (exit 2).
+echo "getent $*" >> "${TACCTL_STATE_DIR}/../../calls.log"
+case "$2" in
+    ghost*) exit 2 ;;
+    [0-9]*) echo "$2 STREAM $2" ;;
+    *) echo "192.0.2.50 STREAM $2" ;;
+esac

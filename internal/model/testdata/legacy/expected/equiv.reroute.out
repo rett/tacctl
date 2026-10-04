@@ -1,0 +1,29 @@
+note: variants/reroute-a.yaml: secrets[1] 'prod-inner': 10.10.99.0/24 never matches a client (an earlier entry already covers it with 10.0.0.0/8)
+--- live (normalised)
++++ rendered (normalised)
+@@ -5,6 +5,11 @@
+   "secrets": {
+     "routes": [
+       {
++        "key": "<redacted:1>",
++        "prefix": "10.10.99.0/24",
++        "scope": "prod-inner"
++      },
++      {
+         "key": "<redacted:2>",
+         "prefix": "10.0.0.0/8",
+         "scope": "prod"
+@@ -26,6 +31,11 @@
+       }
+     ],
+     "routes_if_every_scope_had_users": [
++      {
++        "key": "<redacted:1>",
++        "prefix": "10.10.99.0/24",
++        "scope": "prod-inner"
++      },
+       {
+         "key": "<redacted:2>",
+         "prefix": "10.0.0.0/8",
+NOT EQUIVALENT
+rc=1

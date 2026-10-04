@@ -1,0 +1,437 @@
+== view user-rows
+alice|superuser|active|unknown|prod,lab,wifi
+bob|operator|active|unknown|lab,legacy
+carol|readonly|disabled|unknown|lab
+dave|netops|active|unknown|legacy
+erin|netops|active|unknown|wifi,prod-inner
+rc=0
+== view user-info alice
+group=superuser
+status=active
+password_changed=unknown
+priv_lvl=15
+juniper_class=RW-CLASS
+hash_type=$2b$12$
+has_hash=1
+scope=prod|1
+scope=lab|1
+scope=wifi|1
+rc=0
+== view user-info carol
+group=readonly
+status=disabled
+password_changed=unknown
+priv_lvl=1
+juniper_class=RO-CLASS
+hash_type=
+has_hash=1
+scope=lab|1
+rc=0
+== view user-info root
+group=readonly
+status=disabled
+password_changed=unknown
+priv_lvl=1
+juniper_class=RO-CLASS
+hash_type=
+has_hash=0
+scope=lab|1
+rc=0
+== view user-info zed
+rc=1
+== view user-info amy
+rc=1
+== view user-info bob
+group=operator
+status=active
+password_changed=unknown
+priv_lvl=7
+juniper_class=OP-CLASS
+hash_type=$2a$12$
+has_hash=1
+scope=lab|1
+scope=legacy|1
+rc=0
+== view user-info nobody
+rc=1
+== view user-privlvl alice
+15
+rc=0
+== view user-privlvl bob
+7
+rc=0
+== view user-privlvl carol
+rc=0
+== view user-privlvl root
+rc=0
+== view user-privlvl nobody
+rc=0
+== view group-rows
+superuser|15|RW-CLASS|1
+netops|10|NETOPS_class-1|2
+operator|7|OP-CLASS|1
+readonly|1|RO-CLASS|1
+rc=0
+== view group-users readonly
+carol
+root
+rc=0
+== view group-users netops
+dave
+erin
+rc=0
+== view group-users nosuch
+rc=0
+== view group-info
+readonly|1|RO-CLASS
+operator|7|OP-CLASS
+superuser|15|RW-CLASS
+netops|10|NETOPS_class-1
+rc=0
+== view scope-names
+prod-inner
+wifi
+prod
+lab
+legacy
+rc=0
+== view scope-prefixes lab
+fd00:10::/64
+192.168.0.0/16
+172.16.0.0/12
+rc=0
+== view scope-prefixes b
+rc=0
+== view scope-prefixes nope
+rc=0
+== view scope-users lab
+alice
+bob
+carol
+root
+rc=0
+== view scope-users a
+rc=0
+== view prefix-owner 10.10.99.5/24
+prod-inner
+rc=0
+== view prefix-owner 10.0.0.0/8
+prod
+rc=0
+== view prefix-owner fd00:10::1/64
+lab
+rc=0
+== view prefix-owner 10.10.0.0/16
+rc=0
+== view prefix-owner junk
+rc=0
+== view scope-rows lab
+prod-inner|10.10.99.0/24|1||
+wifi|10.20.0.0/16|2||
+prod|10.0.0.0/8|1||
+lab|fd00:10::/64|4|yes|
+|192.168.0.0/16|||
+|172.16.0.0/12|||
+legacy|198.51.100.0/24|2||
+rc=0
+== view scope-rows a
+prod-inner|10.10.99.0/24|1||
+wifi|10.20.0.0/16|2||
+prod|10.0.0.0/8|1||
+lab|fd00:10::/64|4||
+|192.168.0.0/16|||
+|172.16.0.0/12|||
+legacy|198.51.100.0/24|2||
+rc=0
+== view scope-rows
+prod-inner|10.10.99.0/24|1||
+wifi|10.20.0.0/16|2||
+prod|10.0.0.0/8|1||
+lab|fd00:10::/64|4||
+|192.168.0.0/16|||
+|172.16.0.0/12|||
+legacy|198.51.100.0/24|2||
+rc=0
+== view scope-devices lab
+rc=0
+== view scope-devices a
+rc=0
+== view scope-devices b
+rc=0
+== view device-problems lab 192.168.0.0/16
+rc=0
+== view device-problems lab 192.168.0.0/16 10.0.0.1/32 cisco
+lab|10.0.0.1/32|scope 'lab': devices: 10.0.0.1/32 is not inside a prefix of the scope
+rc=1
+== view device-problems new 10.10.0.0/16 10.10.99.1/32 wti
+new|10.10.99.1/32|scope 'new': devices: 10.10.99.1/32 belongs to scope 'prod-inner' (its prefix 10.10.99.0/24 is the most specific one that contains it)
+rc=1
+== view device-problems prod 10.0.0.0/8 10.10.99.1/32 wti
+prod|10.10.99.1/32|scope 'prod': devices: 10.10.99.1/32 belongs to scope 'prod-inner' (its prefix 10.10.99.0/24 is the most specific one that contains it)
+rc=1
+== view device-problems a 10.0.0.0/8
+rc=0
+== view device-problems c 10.9.0.0/16 10.9.0.1/32 wti
+rc=0
+== view device-problems empty 10.0.0.0/8
+rc=0
+== view vendor-gaps
+lab
+prod
+prod-inner
+wifi
+rc=0
+== view vendor-gaps lab=3 prod=1 h=2
+lab
+prod
+prod-inner
+wifi
+rc=0
+== view vendor-gaps h=1
+lab
+prod
+prod-inner
+wifi
+rc=0
+== view vendor-rows
+lab|1|||0
+legacy|0|||0
+prod|1|||0
+prod-inner|1|||0
+wifi|1|||0
+rc=0
+== view scope-routing lab
+lab|fd00:10::/64|4|yes
+prod-inner|10.10.99.0/24|1|
+legacy|198.51.100.0/24|2|
+wifi|10.20.0.0/16|2|
+lab|192.168.0.0/16|4|yes
+lab|172.16.0.0/12|4|yes
+prod|10.0.0.0/8|1|
+rc=0
+== view scope-routing
+lab|fd00:10::/64|4|
+prod-inner|10.10.99.0/24|1|
+legacy|198.51.100.0/24|2|
+wifi|10.20.0.0/16|2|
+lab|192.168.0.0/16|4|
+lab|172.16.0.0/12|4|
+prod|10.0.0.0/8|1|
+rc=0
+== view scope-lookup 10.10.99.42
+  10.10.99.42 -> scope 'prod-inner' (via prefix 10.10.99.0/24)
+
+  Also covered by (shadowed — the more specific prefix above wins):
+    - scope 'prod' via prefix 10.0.0.0/8
+rc=0
+== view scope-lookup 192.168.1.1
+  192.168.1.1 -> scope 'lab' (via prefix 192.168.0.0/16)
+rc=0
+== view scope-lookup 192.168.0.0/24
+  192.168.0.0/24 -> scope 'lab' (via prefix 192.168.0.0/16)
+rc=0
+== view scope-lookup 8.8.8.8
+No scope owns 8.8.8.8 — no prefix in any scope contains it.
+rc=1
+== view scope-lookup 8.8.0.0/16
+No scope owns 8.8.0.0/16 — no prefix covers the full range.
+rc=1
+== view scope-lookup not-an-address
+ERROR: invalid address or CIDR: 'not-an-address' does not appear to be an IPv4 or IPv6 address
+rc=2
+== view scope-lookup 10.0.0.0/33
+ERROR: invalid address or CIDR: '10.0.0.0/33' does not appear to be an IPv4 or IPv6 network
+rc=2
+== view scope-lookup it's
+ERROR: invalid address or CIDR: "it's" does not appear to be an IPv4 or IPv6 address
+rc=2
+== view scope-lookup fd00:10::5
+  fd00:10::5 -> scope 'lab' (via prefix fd00:10::/64)
+rc=0
+== view scope-lookup fd00:10::/48
+No scope owns fd00:10::/48 — no prefix covers the full range.
+rc=1
+== view scope-lookup 10.0.0.0/7
+No scope owns 10.0.0.0/7 — no prefix covers the full range.
+rc=1
+== view scope-lookup 10.9.0.1
+  10.9.0.1 -> scope 'prod' (via prefix 10.0.0.0/8)
+rc=0
+== view scope-lookup 10.10.1.5
+  10.10.1.5 -> scope 'prod' (via prefix 10.0.0.0/8)
+rc=0
+== view scope-lookup 10.1.0.5
+  10.1.0.5 -> scope 'prod' (via prefix 10.0.0.0/8)
+rc=0
+== view config-show
+scope=prod-inner|32|1
+prefix=10.10.99.0/24
+scope=wifi|27|2
+prefix=10.20.0.0/16
+scope=prod|28|1
+prefix=10.0.0.0/8
+scope=lab|33|4
+prefix=fd00:10::/64
+prefix=192.168.0.0/16
+prefix=172.16.0.0/12
+scope=legacy|29|2
+prefix=198.51.100.0/24
+cisco_ro=1
+cisco_op=7
+cisco_rw=15
+juniper_ro=RO-CLASS
+juniper_op=OP-CLASS
+juniper_rw=RW-CLASS
+allow=10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, fd00:10::/64
+deny=10.66.0.0/16, fd00:10::bad/128
+rc=0
+== view linux-users lab
+alice|15
+bob|7
+rc=0
+== view linux-users wifi
+alice|15
+erin|10
+rc=0
+== view linux-users a
+rc=0
+== view status 16
+user_count=6
+scope_count=5
+prefix_count=7
+prefix_unrestricted=0
+prefix_has_v6=1
+allow_has_v6=1
+placeholder_scopes=
+weak_scopes=
+empty_prefix_scopes=
+total_refs=10
+empty_scopes=
+rc=0
+== view status 30
+user_count=6
+scope_count=5
+prefix_count=7
+prefix_unrestricted=0
+prefix_has_v6=1
+allow_has_v6=1
+placeholder_scopes=
+weak_scopes=legacy:29,prod:28,wifi:27
+empty_prefix_scopes=
+total_refs=10
+empty_scopes=
+rc=0
+== view validate
+COUNT:users=6
+COUNT:groups=4
+COUNT:scopes=5
+rc=0
+== view validate full
+COUNT:users=6
+COUNT:groups=4
+COUNT:scopes=5
+rc=0
+== view has users alice
+rc=0
+== view has users nobody
+rc=1
+== view has scopes lab
+rc=0
+== view no-such-view
+tacctl store: internal: unknown view 'no-such-view'
+rc=1
+== get users
+alice
+bob
+carol
+dave
+erin
+root
+rc=0
+== get groups
+netops
+operator
+readonly
+superuser
+rc=0
+== get scopes
+lab
+legacy
+prod
+prod-inner
+wifi
+rc=0
+== get filters
+{"allow": ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fd00:10::/64"], "deny": ["10.66.0.0/16", "fd00:10::bad/128"]}
+rc=0
+== get filters allow
+10.0.0.0/8
+172.16.0.0/12
+192.168.0.0/16
+fd00:10::/64
+rc=0
+== get filters deny
+10.66.0.0/16
+fd00:10::bad/128
+rc=0
+== get filters maybe
+tacctl store: filters: unknown list 'maybe'
+rc=1
+== get users alice
+{"accounting_sink": false, "disabled": false, "group": "superuser", "hash": "24326224313224616c6963652e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e", "name": "alice", "password_changed": null, "scopes": ["prod", "lab", "wifi"]}
+rc=0
+== get users root
+{"accounting_sink": true, "disabled": true, "group": "readonly", "hash": null, "name": "root", "password_changed": null, "scopes": ["lab"]}
+rc=0
+== get users carol disabled
+true
+rc=0
+== get users alice scopes
+prod
+lab
+wifi
+rc=0
+== get users alice hash
+24326224313224616c6963652e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e
+rc=0
+== get users alice shoe_size
+tacctl store: user: unknown field 'shoe_size'
+rc=1
+== get users nobody
+rc=1
+== get users nobody group
+rc=1
+== get groups superuser
+{"builtin": true, "juniper_class": "RW-CLASS", "name": "superuser", "priv_lvl": 15}
+rc=0
+== get groups netops priv_lvl
+10
+rc=0
+== get groups operator builtin
+true
+rc=0
+== get groups odd
+rc=1
+== get scopes lab
+{"name": "lab", "prefixes": ["172.16.0.0/12", "192.168.0.0/16", "fd00:10::/64"], "protocols": null, "secret": "it's a \"lab\" secret ${confdir} #1"}
+rc=0
+== get scopes lab prefixes
+172.16.0.0/12
+192.168.0.0/16
+fd00:10::/64
+rc=0
+== get scopes lab secret
+it's a "lab" secret ${confdir} #1
+rc=0
+== get scopes legacy protocols
+tacacs
+rc=0
+== get scopes prod-inner
+{"name": "prod-inner", "prefixes": ["10.10.99.0/24"], "protocols": null, "secret": "inner\\secret \"quoted\" 0123456789"}
+rc=0
+== get scopes wifi devices
+rc=0
+== get scopes a devices
+rc=1
+== get scopes b
+rc=1

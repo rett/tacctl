@@ -1,0 +1,15 @@
+{
+ "a": "one\ntwo",
+ "b": [
+  "x\ny",
+  "p\n\nq"
+ ],
+ "c": {
+  "k": "l\nm"
+ },
+ "d": "it's\nmulti",
+ "e": "tab\tand\nnewline",
+ "f": "sp \nbrk",
+ "g": "brk\n sp",
+ "h": " lead\ntrail"
+}

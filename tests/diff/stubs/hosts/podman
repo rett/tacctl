@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Stand-in for podman in the hosts corpus: 'build' exits PODMAN_STUB_RC
+# (default 0); 'run' reads the source from stdin and writes a module bundle
+# with fixed bytes (the same on both sides of the comparison); 'image
+# inspect' prints a digest.
+echo "podman $*" >> "${TACCTL_STATE_DIR}/../../calls.log"
+case "$1" in
+    build) exit "${PODMAN_STUB_RC:-0}" ;;
+    run)
+        cat > /dev/null
+        d=$(mktemp -d)
+        echo lib > "$d/libtac.so.5.0.0"
+        echo mod > "$d/pam_tacplus.so"
+        tar --mtime=@0 --owner=0 --group=0 --numeric-owner -C "$d" -cf - libtac.so.5.0.0 pam_tacplus.so | gzip -n
+        rm -rf "$d"
+        ;;
+    image) echo "sha256:feedface" ;;
+esac

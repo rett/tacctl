@@ -23,11 +23,18 @@ setup() {
     # Freeze server-IP discovery so rendered output is deterministic.
     stub_cmd ip 'if [[ "$*" == *"route get 1.0.0.0"* ]]; then echo "1.0.0.0 via 10.0.0.1 dev eth0 src 10.0.0.42 uid 0"; fi'
 
+    # The setup below changes the store through the CLI, which renders and
+    # may restart (systemctl is stubbed): no settling pause.
+    export TACCTL_SETTLE_SECONDS=0
+
     load_fixture tacquito.multiscope.yaml
     OVERRIDES="${TACCTL_STATE_DIR}/tacctl.yaml"
     # Every scope sends every vendor's attribute, so a RADIUS device config
-    # renders (config_radius.bats has the refusal): one store write.
-    bash -c 'source "$1"; store_mutate "for s in store[\"scopes\"].values(): s[\"vendor_attrs\"] = list(KNOWN_VENDORS)"' _ "$TACCTL_BIN_SCRIPT" > /dev/null
+    # renders (config_radius.bats has the refusal).
+    local s
+    for s in dmz lab prod prod-inner; do
+        "$TACCTL_BIN_SCRIPT" scope vendor-attrs "$s" enable cisco,juniper,wti > /dev/null
+    done
 }
 
 # Enable the RADIUS backend the way tacctl.yaml records it. Call it after the

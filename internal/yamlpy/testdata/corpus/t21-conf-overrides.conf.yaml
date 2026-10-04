@@ -1,0 +1,53 @@
+password:
+  max_age_days: 30
+  min_length: 14
+bcrypt:
+  cost: 14
+scope:
+  default: prod
+mgmt_acl:
+  names:
+    cisco: VTY-ACL
+    juniper: MGMT-ACL
+  permits:
+  - 10.0.0.0/8
+  - 192.168.0.0/16
+  - fd00::/8
+privileges:
+  operator:
+  - show running-config
+  - show tech-support
+commands:
+  superuser:
+  - name: '*'
+    action: permit
+  operator:
+  - name: show
+    action: permit
+    match:
+    - ^run.*
+    - ^ver
+  - name: configure
+    action: deny
+    match: []
+  - name: '*'
+    action: deny
+backends:
+  tacacs:
+    enabled: true
+    level: 30
+  radius:
+    enabled: false
+    listen:
+    - address: 0.0.0.0
+      port: 1812
+    - address: '::'
+      port: 1812
+listeners:
+  tacacs:
+  - network: tcp
+    address: :49
+  - network: tcp6
+    address: '[::]:49'
+host:
+  default_method: tacplus

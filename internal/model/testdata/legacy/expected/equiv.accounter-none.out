@@ -1,0 +1,75 @@
+note: variants/no-accounter.yaml: scope 'prod-inner' has no users; tacquito does not load it
+note: variants/no-accounter.yaml: secrets[1] 'prod-inner': 10.10.99.0/24 never matches a client (an earlier entry already covers it with 10.0.0.0/8) once every scope has a user
+--- live (normalised)
++++ rendered (normalised)
+@@ -50,7 +50,10 @@
+   },
+   "users": {
+     "alice": {
+-      "accounter": null,
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
+       "authenticator": {
+         "options": {
+           "hash": "<redacted:1>"
+@@ -59,6 +62,10 @@
+       },
+       "groups": [
+         {
++          "accounter": {
++            "name": "tacquito_accounter",
++            "type": "3"
++          },
+           "name": "superuser",
+           "services": [
+             {
+@@ -92,7 +99,10 @@
+       ]
+     },
+     "bob": {
+-      "accounter": null,
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
+       "authenticator": {
+         "options": {
+           "hash": "<redacted:1>"
+@@ -101,6 +111,10 @@
+       },
+       "groups": [
+         {
++          "accounter": {
++            "name": "tacquito_accounter",
++            "type": "3"
++          },
+           "name": "operator",
+           "services": [
+             {
+@@ -133,7 +147,10 @@
+       ]
+     },
+     "carol": {
+-      "accounter": null,
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
+       "authenticator": {
+         "options": {
+           "hash": "<redacted:1>"
+@@ -142,6 +159,10 @@
+       },
+       "groups": [
+         {
++          "accounter": {
++            "name": "tacquito_accounter",
++            "type": "3"
++          },
+           "name": "readonly",
+           "services": [
+             {
+NOT EQUIVALENT
+rc=1

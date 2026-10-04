@@ -1,0 +1,33 @@
+note: FIXTURES/tacquito.legacy-exec.yaml: scope 'lab' has no users; tacquito does not load it
+--- live (normalised)
++++ rendered (normalised)
+@@ -8,7 +8,7 @@
+       "name": "operator",
+       "services": [
+         {
+-          "name": "exec",
++          "name": "shell",
+           "set_values": [
+             {
+               "name": "priv-lvl",
+@@ -39,7 +39,7 @@
+       "name": "readonly",
+       "services": [
+         {
+-          "name": "exec",
++          "name": "shell",
+           "set_values": [
+             {
+               "name": "priv-lvl",
+@@ -70,7 +70,7 @@
+       "name": "superuser",
+       "services": [
+         {
+-          "name": "exec",
++          "name": "shell",
+           "set_values": [
+             {
+               "name": "priv-lvl",
+note: the two differ only in groups without users or scopes without users. tacquito answers today's clients identically, but the difference takes effect as soon as such a group or scope gets a user.
+NOT EQUIVALENT
+rc=1

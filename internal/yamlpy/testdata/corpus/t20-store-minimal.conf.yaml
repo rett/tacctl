@@ -1,0 +1,51 @@
+version: 1
+groups:
+  operator:
+    priv_lvl: 7
+    juniper_class: OP-CLASS
+    builtin: true
+  readonly:
+    priv_lvl: 1
+    juniper_class: RO-CLASS
+    builtin: true
+  superuser:
+    priv_lvl: 15
+    juniper_class: RW-CLASS
+    builtin: true
+users:
+  admin:
+    group: superuser
+    scopes:
+    - lab
+    hash: $2b$12$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ01234
+    disabled: false
+    password_changed: '2026-10-01'
+  nohash:
+    group: readonly
+    scopes: []
+    hash: null
+    disabled: true
+    accounting_sink: true
+scopes:
+  lab:
+    prefixes:
+    - 172.16.0.0/12
+    - fd00:10::/64
+    secret: 'it''s #1'
+    protocols:
+    - tacacs
+    - radius
+    vendor_attrs:
+    - cisco
+    - juniper
+    devices:
+      172.16.1.1/32: cisco
+      fd00:10::1/128: juniper
+  empty:
+    prefixes: []
+    secret: ''
+filters:
+  allow: []
+  deny:
+  - 10.66.0.0/16
+  - fd00:10::bad/128

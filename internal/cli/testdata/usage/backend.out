@@ -1,0 +1,14 @@
+
+[1mBackend Commands[0m
+
+Usage: tacctl backend <subcommand> [arguments]
+
+Subcommands:
+  list                    Every backend: protocol, implementation, installed, enabled, service
+  status [<id>]           Service and listener state of every backend (or one)
+  enable <id> [-y]        Install the backend if needed, enable it, render its config, start it
+  disable <id> [-y]       Stop and disable it, take it out of backends.enabled (confirms);
+                          its package and rendered files stay
+
+Backends: tacacs radius
+

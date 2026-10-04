@@ -1,0 +1,9 @@
+{
+  "/etc/freeradius/3.0/tacctl-radius-dictionary/dictionary": "84c8bb545d38897c3c3084f98bd5b4b36ba1dfc8af4acd931b213301ec1bda5d",
+  "/etc/freeradius/3.0/tacctl-radius.conf": "49d03d3f82315f19781491f89668490fccd607147816a93cf61998fa867e5d09",
+  "/etc/freeradius/3.0/tacctl-radius.users": "f3f8bc6ef5c10a68d409db8f9b30630dc0c5578b042f75c3f86e3bf7e62719c0",
+  "/etc/systemd/system/tacquito.service.d/tacctl.conf": "4dcd27b9f6cc7f5b4d312b85ecea255dacb9190d6502ee11f27c2d38ec9aa7fc",
+  "/etc/systemd/system/tacquito@alt6.service.d/tacctl.conf": "dd8c6f2aa932e311922373bde75fa8c459f9fa497686389eeb7a89eab962e18b",
+  "/etc/systemd/system/tacquito@mgmt.service.d/tacctl.conf": "477d42318e7cd0be3eea563d655183fd2bddc24e59b3c7674d26c1bb4637504d",
+  "/etc/tacquito/tacquito.yaml": "c4460848a020e658a9a8893b95b137a35466595ba836f5d53a5cf27e2226d0dd"
+}

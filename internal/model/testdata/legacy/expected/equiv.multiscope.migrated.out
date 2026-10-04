@@ -1,0 +1,19 @@
+note: migrated/multiscope.yaml: scope 'prod-inner' has no users; tacquito does not load it
+note: migrated/multiscope.yaml: secrets[1] 'prod-inner': 10.10.99.0/24 never matches a client (an earlier entry already covers it with 10.0.0.0/8) once every scope has a user
+--- live (normalised)
++++ rendered (normalised)
+@@ -26,6 +26,11 @@
+       }
+     ],
+     "routes_if_every_scope_had_users": [
++      {
++        "key": "<redacted:1>",
++        "prefix": "10.10.99.0/24",
++        "scope": "prod-inner"
++      },
+       {
+         "key": "<redacted:2>",
+         "prefix": "10.0.0.0/8",
+note: the two differ only in groups without users or scopes without users. tacquito answers today's clients identically, but the difference takes effect as soon as such a group or scope gets a user.
+NOT EQUIVALENT
+rc=1

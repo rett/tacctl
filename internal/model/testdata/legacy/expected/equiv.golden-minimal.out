@@ -1,0 +1,3 @@
+note: FIXTURES/golden/tacquito.minimal.rendered.yaml: scope 'lab' has no users; tacquito does not load it
+EQUIVALENT
+rc=0

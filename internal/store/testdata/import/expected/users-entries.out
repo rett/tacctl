@@ -1,0 +1,69 @@
+== dump-legacy
+{"filters": {"allow": [], "deny": []}, "groups": {"readonly": {"builtin": true, "juniper_class": "RO-CLASS", "priv_lvl": 1}, "superuser": {"builtin": true, "juniper_class": "RW-CLASS", "priv_lvl": 15}}, "scopes": {"lab": {"prefixes": ["192.168.0.0/16"], "protocols": null, "secret": "lab-secret-0123456789abcdef"}}, "users": {"alice": {"accounting_sink": false, "disabled": false, "group": "readonly", "hash": "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141", "password_changed": "2026-08-15", "scopes": ["lab"]}, "bob": {"accounting_sink": false, "disabled": false, "group": "readonly", "hash": "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141", "password_changed": null, "scopes": ["lab"]}, "erin": {"accounting_sink": false, "disabled": false, "group": "readonly", "hash": "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141", "password_changed": null, "scopes": ["lab"]}, "frank": {"accounting_sink": false, "disabled": false, "group": "readonly", "hash": "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141", "password_changed": null, "scopes": ["lab"]}}, "version": 1}
+rc=0
+== import-load force=0
+  Source:   cases/users-entries.yaml
+  Groups:   2
+  Users:    4 (0 disabled)
+  Scopes:   1
+  Filters:  allow 0, deny 0
+
+  Notes:
+    - user 'erin': password-date file does not hold a YYYY-MM-DD date; ignored
+
+  Cannot be represented in the store:
+    - user 'bob': unsupported key 'shell'
+    - user 'bob': unsupported key 'comment'
+    - user 'bob': user-level services override
+    - user 'bob': user-level commands override
+    - user 'carol': no group, so the user itself cannot be stored (exactly one group is required)
+    - user 'dave': no group, so the user itself cannot be stored (exactly one group is required)
+    - user 'frank': 3 groups (only the first is kept)
+
+  Errors:
+    - users[0]: not a mapping
+    - users[1]: no usable name (quote names that YAML reads as numbers or booleans)
+    - users[2]: no usable name (quote names that YAML reads as numbers or booleans)
+    - users[3]: no usable name (quote names that YAML reads as numbers or booleans)
+    - users[4]: no usable name (quote names that YAML reads as numbers or booleans)
+    - user 'alice': defined more than once
+    - user 'gina': group entry without a usable name (quote names that YAML reads as numbers or booleans)
+    - user 'hank': group entry without a usable name (quote names that YAML reads as numbers or booleans)
+    - user 'ivan': group entry without a usable name (quote names that YAML reads as numbers or booleans)
+-- stderr
+
+tacctl store: 9 error(s) must be fixed in cases/users-entries.yaml before it can be imported.
+rc=1
+== import-load force=1
+  Source:   cases/users-entries.yaml
+  Groups:   2
+  Users:    4 (0 disabled)
+  Scopes:   1
+  Filters:  allow 0, deny 0
+
+  Notes:
+    - user 'erin': password-date file does not hold a YYYY-MM-DD date; ignored
+
+  Dropped (--force):
+    - user 'bob': unsupported key 'shell'
+    - user 'bob': unsupported key 'comment'
+    - user 'bob': user-level services override
+    - user 'bob': user-level commands override
+    - user 'carol': no group, so the user itself cannot be stored (exactly one group is required)
+    - user 'dave': no group, so the user itself cannot be stored (exactly one group is required)
+    - user 'frank': 3 groups (only the first is kept)
+
+  Errors:
+    - users[0]: not a mapping
+    - users[1]: no usable name (quote names that YAML reads as numbers or booleans)
+    - users[2]: no usable name (quote names that YAML reads as numbers or booleans)
+    - users[3]: no usable name (quote names that YAML reads as numbers or booleans)
+    - users[4]: no usable name (quote names that YAML reads as numbers or booleans)
+    - user 'alice': defined more than once
+    - user 'gina': group entry without a usable name (quote names that YAML reads as numbers or booleans)
+    - user 'hank': group entry without a usable name (quote names that YAML reads as numbers or booleans)
+    - user 'ivan': group entry without a usable name (quote names that YAML reads as numbers or booleans)
+-- stderr
+
+tacctl store: 9 error(s) must be fixed in cases/users-entries.yaml before it can be imported (--force does not override these).
+rc=1
