@@ -19,11 +19,13 @@ import (
 const (
 	stringyDir = "cmds/server/config/authorizers/stringy"
 	acctDir    = "cmds/server/config/accounters"
+	authenDir  = "cmds/server/config/authenticators"
 )
 
 type patchEnv struct {
 	*ltenv
 	session, local, syslog string
+	bcrypt                 string
 }
 
 func newPatchEnv(t *testing.T) *patchEnv {
@@ -47,6 +49,7 @@ func newPatchEnv(t *testing.T) *patchEnv {
 		session: filepath.Join(src, stringyDir, "session.go"),
 		local:   filepath.Join(src, acctDir, "local", "local.go"),
 		syslog:  filepath.Join(src, acctDir, "syslog", "syslog.go"),
+		bcrypt:  filepath.Join(src, authenDir, "bcrypt", "bcrypt.go"),
 	}
 	pe.git("init", "-q")
 	pe.git("add", "-A")
@@ -99,6 +102,28 @@ func TestPatchesApplyTheEmptyAccountingServerMsgPatch(t *testing.T) {
 		}
 	}
 	mustContain(t, readFile(t, p.local), `SetAcctReplyServerMsg("unexpected accounting flag")`)
+}
+
+func TestPatchesApplyTheAuthenticationNASAddressPatch(t *testing.T) {
+	p := newPatchEnv(t)
+	if _, err := p.apply(); err != nil {
+		t.Fatal(err)
+	}
+	mustContain(t, p.out(), "Applied tacquito patch: 0003")
+	src := readFile(t, p.bcrypt)
+	mustContain(t, src, `"accepting user [%v] from [%v] using a bcrypt password"`)
+	mustContain(t, src, `"failed to validate the user [%v] from [%v] using a bcrypt password"`)
+	mustContain(t, src, "tq.ContextConnRemoteAddr")
+	mustContain(t, src, `nasAddr := "unknown"`)
+	// Idempotent: the reverse check sees it applied and nothing is re-applied.
+	p.reset()
+	if ok, err := p.apply(); err != nil || ok {
+		t.Fatal(ok, err)
+	}
+	mustNotContain(t, p.out(), "Applied tacquito patch")
+	if n := strings.Count(readFile(t, p.bcrypt), `nasAddr := "unknown"`); n != 1 {
+		t.Fatal(n)
+	}
 }
 
 func TestPatchesApplyIsIdempotent(t *testing.T) {

@@ -88,6 +88,13 @@ NN. **arm64 hosts.** The bootstrap shim installs the Go toolchain for the
     on x86_64); on any other architecture it cannot download Go, and says so
     naming the architecture.
     `bin/tacctl.sh --build <out> --goarch <arch>` cross-builds.
+NN. **The tacquito authentication lines name the device.** A new source patch
+    (`patches/0003-authen-log-conn-remote-addr.patch`, applied by `install`
+    and `upgrade`) makes tacquito log `accepting user [<user>] from [<address>]
+    using a bcrypt password` and `failed to validate the user [<user>] from
+    [<address>] using a bcrypt password`; `tacctl log search <user>` and
+    `tacctl log failures` lines gain `from [address]`, the address the device
+    connected from (`unknown` when the server has none).
 
 ## 0.2.0 (2026-10-04)
 

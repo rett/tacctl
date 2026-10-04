@@ -1,0 +1,29 @@
+diff --git a/cmds/server/config/authenticators/bcrypt/bcrypt.go b/cmds/server/config/authenticators/bcrypt/bcrypt.go
+index 48568bb..e9da563 100644
+--- a/cmds/server/config/authenticators/bcrypt/bcrypt.go
++++ b/cmds/server/config/authenticators/bcrypt/bcrypt.go
+@@ -139,8 +139,14 @@ func (a Authenticator) Handle(response tq.Response, request tq.Request) {
+ 		expectedHash = secret
+ 	}
+ 
++	// The NAS address, as the server saw the connection (tacctl patch 0003).
++	nasAddr := "unknown"
++	if v := request.Context.Value(tq.ContextConnRemoteAddr); v != nil {
++		nasAddr = fmt.Sprint(v)
++	}
++
+ 	if err := bcrypt.CompareHashAndPassword(expectedHash, []byte(password)); err == nil {
+-		a.Infof(request.Context, "accepting user [%v] using a bcrypt password", a.username)
++		a.Infof(request.Context, "accepting user [%v] from [%v] using a bcrypt password", a.username, nasAddr)
+ 		response.Reply(
+ 			tq.NewAuthenReply(
+ 				tq.SetAuthenReplyStatus(tq.AuthenStatusPass),
+@@ -149,7 +155,7 @@ func (a Authenticator) Handle(response tq.Response, request tq.Request) {
+ 		return
+ 	}
+ 
+-	a.Errorf(request.Context, "failed to validate the user [%v] using a bcrypt password", a.username)
++	a.Errorf(request.Context, "failed to validate the user [%v] from [%v] using a bcrypt password", a.username, nasAddr)
+ 	response.Reply(
+ 		tq.NewAuthenReply(
+ 			tq.SetAuthenReplyStatus(tq.AuthenStatusFail),
