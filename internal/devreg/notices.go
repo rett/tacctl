@@ -73,11 +73,17 @@ func GenericRefusal(name, vendor, keep string) error {
 	return fail(lines...)
 }
 
-// NoticesFor are the notices the registry itself raises for e, in a fixed
-// order, with the acknowledged ones marked. Host entries (vendor linux)
-// get the generic-name notice only: 'host enroll' and 'host sync' pin
+// NoticesFor are the notices of e, in a fixed order, with the
+// acknowledged ones marked: the ones the registry itself raises, then the
+// scan-time ones of the seen cache (notices_scan.go). Host entries (vendor
+// linux) get no hostkey-unpinned notice: 'host enroll' and 'host sync' pin
 // their keys.
 func (r *Resolver) NoticesFor(e Entry) []Notice {
+	return append(r.registryNotices(e), r.scanNotices(e)...)
+}
+
+// registryNotices are the notices the registry raises by itself.
+func (r *Resolver) registryNotices(e Entry) []Notice {
 	var out []Notice
 	add := func(kind, text string) {
 		out = append(out, Notice{Kind: kind, Text: text, Acked: slices.Contains(e.Ack, kind)})

@@ -116,8 +116,7 @@ current behaviour; this file is where history lives.
     entries in one namespace. Writes are administrator-only and take a
     snapshot first; snapshots, `backup diff` and `backup restore` include the
     file. `list` and `show` (read-only tier and up) and `export` (operator
-    tier and up) show a tier user only the entries of its own scopes. The
-    last seen, by and via columns print `-`.
+    tier and up) show a tier user only the entries of its own scopes.
 20. **Device and host names are checked for duplicates and generic names.**
     `device add` and `device rename` refuse a name already taken (compared
     without regard to case, across the registry and the enrolled hosts) or an
@@ -218,6 +217,40 @@ current behaviour; this file is where history lives.
     the invoking user's name) is a tacctl user: enrolment uses a local
     account that does not authenticate through tacctl. `host sync` warns
     about an existing enrolment that uses one.
+28. **New: `tacctl device scan [--full] [--since <dur>] [--backend <id>]`**
+    (operator tier and up) reads which devices talked to the server into the
+    seen cache `/var/lib/tacctl/devices-seen.json` (0600, derived, not
+    snapshotted): the tacquito journal (`journalctl <units> -o json`,
+    resuming after its cursor; the patched `accepting user`/`failed to
+    validate the user … from [address]` lines, `bad secret detected for ip`,
+    `no matching prefix secret provider found`, and at log level 30 `prefix
+    secret provider matches remote`) and FreeRADIUS's `tacctl-auth.log` with
+    its rotations (resuming by inode and offset, following copytruncate and
+    gzip). The first scan reads the last `stale-days` days, `--full`
+    everything the logs hold, `--since` that stretch. It prints each
+    backend's window, re-scans the pinned host keys (never re-pinning), and
+    lists the open notices. Records unseen for twice `stale-days` are dropped.
+29. **New: `tacctl device discover [--all] [--backend <id>]`** scans, then
+    lists the addresses that authenticated without being registered (scope,
+    vendor tag, first/last seen, count, last user, outcome, NAS-Identifier)
+    with a ready `tacctl device add <name> <address>` line each; `--all`
+    adds the addresses only ever refused.
+30. **New: `tacctl device check <name>|--all`**: scope, vendor tag, last seen,
+    reachability (a 3-second TCP connect to the ssh port) and the offered host
+    keys against the pin, then the notices.
+31. **`device list` and `device show` print the seen data**: LAST SEEN (`<time>`,
+    `rejected <time> (bad secret)`, `never`), BY, VIA, `stale` after
+    `stale-days`, and `seen data as of <time> (tacctl device scan to refresh)`;
+    `--json` gains a `seen` object. `list --scan` scans first, `list --probe`
+    adds a REACH column (operator tier and up).
+32. **Scan-time device notices**: `ambiguous-nas-id`, `generic-nas-id`,
+    `name-mismatch`, `duplicate-address`, `identity-changed`, and from the
+    host-key re-scan `hostkey-changed` (not acknowledgeable; only `device
+    hostkey accept|set` clears it), `hostkey-added` and `hostkey-unreachable`.
+    They appear in the scan output, `device list|notices|show` and a new
+    `Device notices: <n> (tacctl device notices)` section of `tacctl status`
+    (the first five; `none` when every notice is acknowledged; no section
+    without registered devices or enrolled hosts).
 
 ## 0.2.0 (2026-10-04)
 

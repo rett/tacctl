@@ -66,6 +66,10 @@ type Resolver struct {
 	File  *File
 	Hosts []hosts.Entry
 	Model *model.Model
+	// Seen is the seen cache the scan-time notices come from (nil: none).
+	Seen *Seen
+
+	idx *noticeIndex
 }
 
 // NewResolver joins the three; hostReg and m may be nil.

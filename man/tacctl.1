@@ -1983,6 +1983,69 @@ A pin changes only through
 .BR "device hostkey accept" " or " "device hostkey set" ,
 never by itself.
 .PP
+What the daemons saw of each device is kept in the
+.I seen cache
+.RI ( /var/lib/tacctl/devices\-seen.json ),
+which
+.B "device scan"
+fills from the logs: the tacquito journal (the
+.BI "accepting user [" user "] from [" address "]"
+and
+.B "failed to validate the user"
+lines, the
+.B "bad secret detected for ip"
+and
+.B "no matching prefix secret provider found"
+errors, and at log level 30 the
+.B "prefix secret provider matches remote"
+lines) and FreeRADIUS's
+.I tacctl\-auth.log
+with its rotations. For each address it keeps the first and last sighting,
+the count, the last user, outcome and backend, and the last NAS-Identifier.
+.B list
+and
+.B show
+read the cache only, and say how old it is.
+.PP
+Notices are computed each time they are shown; only acknowledgements are
+stored. Besides the registry's own
+.RB ( generic-name ,
+.BR hostkey-unpinned ),
+the seen cache raises
+.B ambiguous-nas-id
+(one NAS-Identifier sent from several addresses),
+.B generic-nas-id
+(a device identifying itself by a generic name),
+.B name-mismatch
+(a NAS-Identifier other than the registry name; informational),
+.B duplicate-address
+(two entries at one address, or an address identifying as another entry),
+.B identity-changed
+(the NAS-Identifier an address sends changed: a replaced or reset unit), and
+the host-key re-scan of
+.B "device scan"
+and
+.B "device check"
+raises
+.B hostkey-changed
+(no pinned key offered, or another key of a pinned type; it cannot be
+acknowledged, only
+.B "device hostkey accept"
+or
+.B set
+clears it),
+.B hostkey-added
+(a new key type, the pins unchanged) and
+.B hostkey-unreachable
+(no key could be read; with the last good scan). A scan never changes a pin.
+Notices appear in the scan output,
+.BR "tacctl status" ,
+.BR "device list" ,
+.B "device notices"
+and
+.B "device show"
+(which also lists the acknowledged ones).
+.PP
 Reading verbs
 .RB ( list ,
 .BR show ,
@@ -1993,9 +2056,15 @@ and
 are open to the read-only and operator tiers, which see only the devices and
 hosts whose scope is one of their own; an entry no scope covers is seen by
 administrators only.
-.B export
-is operator-level, filtered the same way. Everything else needs an
-administrator.
+.BR export ,
+.BR scan ,
+.BR discover ,
+.B check
+and
+.B "list \-\-scan" | "\-\-probe"
+are operator-level (the scan output's notices are filtered the same way;
+.B discover
+lists every address). Everything else needs an administrator.
 .SS Device registry \fB(tacctl device)\fR
 .TP
 .B device
@@ -2003,7 +2072,7 @@ With no subcommand (or with
 .BR help ),
 prints a usage summary and exits 0.
 .TP
-.BI "device list " "[ \-\-stale ] [ \-\-unconfigured ] [ \-\-json ]"
+.BI "device list " "[ \-\-stale ] [ \-\-unconfigured ] [ \-\-scan ] [ \-\-probe ] [ \-\-json ]"
 One row per registered device, then per enrolled host: name, address, vendor,
 scope, state, last seen, by, via, and the open notices. The state is
 .B configured
@@ -2014,18 +2083,42 @@ otherwise.
 lists only those;
 .B \-\-stale
 lists the devices whose last sighting is older than
-.BR stale\-days .
-There is no seen data yet: the last seen, by and via columns print
-.B \-
-and the footer says
-.BR "seen data: none" .
+.BR stale\-days ,
+which are also marked
+.BR stale .
+The last seen column is the time of the last sighting,
+.BI "rejected " time
+when the last exchange was a refusal (with
+.B "(bad secret)"
+or
+.B "(no scope)"
+when the device's packets could not be read or no scope covers it), and
+.B never
+for an address no scan has seen; with no seen data at all the columns print
+.BR \- .
+The footer says when the seen data was read.
+.B \-\-scan
+runs
+.B "device scan"
+first.
+.B \-\-probe
+adds a
+.B REACH
+column: a TCP connect to each entry's ssh port, 3 seconds, all at once
+.RB ( open ,
+.BR closed ,
+.BR timeout ,
+.BR unreachable ).
+This server often has no route to the devices' management ports, so a timeout
+may be a false alarm.
 .TP
 .BI "device show " "name|address " [ \-\-json ]
 One device or host in full: address, hostname, vendor, port, legacy ssh,
 description, the scope that answers the address and the prefix that routes it
 (and the scopes it shadows), the vendor tag that covers it, the pinned host keys,
-and every notice, acknowledged ones marked. It warns when the vendor tag and the
-registered vendor disagree.
+the last and first sighting with the sighting count and the NAS-Identifier the
+device sends, and every notice, acknowledged ones marked. It warns when the
+vendor tag and the registered vendor disagree.
 .TP
 .BI "device add " "name address " "[ \-\-vendor cisco|juniper|wti|other ] [ \-\-hostname " dns " ] [ \-\-port " n " ] [ \-\-description " text " ] [ \-\-legacy\-ssh ] [ \-\-host\-key SHA256:" fingerprint " | \-\-no\-host\-key ] [ \-\-allow\-generic ]"
 Register a device. The vendor defaults to
@@ -2228,6 +2321,51 @@ reaches the device the way
 .B "tacctl ssh"
 does. tacctl only prints it; nothing is written into a home directory. Re-run it
 after registry changes.
+.TP
+.BI "device scan " "[ \-\-full ] [ \-\-since " duration " ] [ \-\-backend " id " ]"
+Read each enabled backend's log (or only
+.IR id 's)
+into the seen cache, from where the previous scan stopped (a journal cursor;
+the auth log's inode and offset, following a rotation); the first scan reads
+the last
+.B stale\-days
+days.
+.B \-\-full
+re-reads everything the logs still hold (journald's retention, twelve weeks
+of rotated RADIUS logs), and
+.B \-\-since
+the given stretch
+.RB ( 7d ,
+.BR 12h ,
+.BR 30m ,
+.BR 2w ),
+each replacing what the cache held of that backend. Then the host keys of
+every entry with a pinned key are read again with
+.B ssh\-keyscan
+and compared with the pins (nothing is pinned). The report prints, per backend,
+the stretch of log read and what it found, the host-key results, how many seen
+addresses are registered, and the open notices. Records not seen for twice
+.B stale\-days
+are dropped. A cache that cannot be read is rebuilt.
+.TP
+.BI "device discover " "[ \-\-all ] [ \-\-backend " id " ]"
+Scan, then list the addresses that authenticated but are not registered, with
+the scope and vendor tag that answer them, first and last sighting, count,
+last user, outcome, backend and NAS-Identifier, and a ready
+.BI "tacctl device add " "name address"
+line for each (the NAS-Identifier as the name when it is a valid, free,
+non-generic one, else
+.BR <name> ).
+.B \-\-all
+includes the addresses that were only ever refused.
+.TP
+.BI "device check " name | \-\-all
+A checklist per entry: the scope that answers the address, the vendor tag, the
+last sighting (from the seen cache), whether its ssh port accepts a TCP
+connection (3 seconds; a timeout may be a false alarm, as for
+.BR "list \-\-probe" ),
+the host keys it offers now against the pinned ones (kept for the notices;
+nothing is pinned), and its notices.
 .SS SSH to a device \fB(tacctl ssh)\fR
 .TP
 .BI "ssh " name|address " [ \-p " port " ] [ \-\- " "ssh args" " ]"
@@ -2917,6 +3055,14 @@ UID/GID each user gets on every host.
 .TP
 .I /var/lib/tacctl/linux/
 The pam_tacplus source tarball and the modules built in containers.
+.TP
+.I /var/lib/tacctl/devices\-seen.json
+The seen cache of
+.BR "device scan" :
+what the logs showed of each address, where each backend's next scan starts,
+and the last host-key re-scan of each entry. Mode 0600, root only; derived
+from the logs, not snapshotted, rebuilt by
+.BR "device scan \-\-full" .
 .TP
 .IR /etc/sudoers.d/tacctl ", " /etc/sudoers.d/tacctl\-tiers
 Optional sudoers rules. Installed only via

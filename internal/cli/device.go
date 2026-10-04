@@ -7,9 +7,8 @@ package cli
 // completion.go know nothing of it. The registry never writes store.yaml:
 // scope and vendor tag are looked up per display, and every write takes a
 // snapshot first. Host-key pinning is device_hostkey.go ('add' scans and
-// pins, 'hostkey' re-pins); the seen cache and 'device scan|discover|check'
-// belong to a later package; the hooks it fills are deviceSeenCols and
-// deviceSeenFooter, and registryNotices.
+// pins, 'hostkey' re-pins); the seen cache, the seen columns and 'device
+// scan|discover|check' are device_scan.go.
 
 import (
 	"encoding/json"
@@ -43,7 +42,8 @@ var (
 // deviceSpecs are the arguments of each verb, for the parser and for
 // completion (args.go).
 var deviceSpecs = map[string]Spec{
-	"list": {MaxArgs: 0, Flags: []Flag{{Names: []string{"--stale"}}, {Names: []string{"--unconfigured"}}, flagJSON}},
+	"list": {MaxArgs: 0, Flags: []Flag{{Names: []string{"--stale"}}, {Names: []string{"--unconfigured"}},
+		{Names: []string{"--scan"}}, {Names: []string{"--probe"}}, flagJSON}},
 	"show": {MinArgs: 1, MaxArgs: 1, Args: []string{KindDevices}, Flags: []Flag{flagJSON}},
 	"add": {MinArgs: 2, MaxArgs: 2, Args: []string{"", ""}, Flags: []Flag{
 		{Names: []string{"--vendor"}, Value: true, Kind: KindVendors},
@@ -72,11 +72,15 @@ var deviceSpecs = map[string]Spec{
 	// 'device ssh' is 'tacctl ssh' (ssh.go); ssh-config is device_sshconfig.go.
 	"ssh":        sshSpec,
 	"ssh-config": {MaxArgs: 0},
+	"scan": {MaxArgs: 0, Flags: []Flag{{Names: []string{"--full"}}, {Names: []string{"--since"}, Value: true},
+		{Names: []string{"--backend"}, Value: true, Kind: KindBackends}}},
+	"discover": {MaxArgs: 0, Flags: []Flag{{Names: []string{"--all"}}, {Names: []string{"--backend"}, Value: true, Kind: KindBackends}}},
+	"check":    {MaxArgs: 1, Args: []string{KindDevices}, Flags: []Flag{{Names: []string{"--all"}, Alone: true}}},
 }
 
 // deviceVerbs are the verbs ({Use, Short}), in usage order.
 var deviceVerbs = [][2]string{
-	{"list [--stale] [--unconfigured] [--json]", "Registered devices and enrolled hosts: scope, state, notices"},
+	{"list [--stale] [--unconfigured] [--scan] [--probe] [--json]", "Registered devices and enrolled hosts: scope, state, last seen, notices"},
 	{"show <name|address> [--json]", "One device or host in full"},
 	{"add <name> <address> [options]", "Register a device"},
 	{"remove <name>[,<name>...] | --all [-y]", "Remove devices from the registry (confirms)"},
@@ -95,17 +99,10 @@ var deviceVerbs = [][2]string{
 	{"hostkey <name> [show|accept [-y]|set SHA256:<fp>]", "Show the pinned ssh host keys, or re-pin them after a verified change"},
 	{"ssh <name|address> [-p <port>] [-- <ssh args>]", "Alias of 'tacctl ssh': a session to the device, as you"},
 	{"ssh-config", "Print an ssh_config Include for your devices (Host blocks, pinned keys)"},
+	{"scan [--full] [--since <dur>] [--backend <id>]", "Read the logs for the devices seen; re-scan pinned host keys"},
+	{"discover [--all] [--backend <id>]", "Scan, then list the addresses that authenticated unregistered"},
+	{"check <name>|--all", "Checklist: scope, tag, seen, reachable, host key"},
 }
-
-// deviceSeenCols are the LAST SEEN, BY and VIA columns of an entry, and
-// whether it is stale. Until the seen cache exists (device scan) every
-// column prints '-'.
-var deviceSeenCols = func(*invocation, devreg.Entry) (last, by, via string, stale bool) {
-	return "-", "-", "-", false
-}
-
-// deviceSeenFooter is the line under 'device list' about the seen data.
-var deviceSeenFooter = func(*invocation) string { return "seen data: none (tacctl device scan)" }
 
 func deviceCmd(inv *invocation) *cobra.Command {
 	c := verb("device <subcommand>", "Device registry: names, addresses and notices for the devices that authenticate here")
@@ -145,6 +142,17 @@ refused unless --no-host-key is given. Only 'hostkey <name> accept' (re-scan,
 confirm, pin) or 'hostkey <name> set SHA256:<fp>' changes a pin; 'tacctl ssh'
 refuses a device whose key no longer matches.
 
+Seen data: 'scan' reads each enabled backend's log (the tacquito journal,
+FreeRADIUS's tacctl-auth.log) from where the last scan stopped into
+/var/lib/tacctl/devices-seen.json, and re-scans the pinned host keys (a scan
+never changes a pin). 'list' and 'show' read that cache only; 'list --scan'
+scans first. --full re-reads everything the logs still hold, --since <dur>
+(7d, 12h, 2w) that stretch. 'discover' lists the addresses that authenticated
+without being registered, each with its 'device add' line (--all: those only
+refused too). 'check' and 'list --probe' connect to each ssh port (3 s): this
+server often has no path to management ports, so a timeout may be a false
+alarm. Scans, discover and check are for the operator tier and up.
+
 A device is found by name or by its registered address. Enrolled Linux hosts
 ('tacctl host') are listed and found too, read-only. The registry is
 /etc/tacctl/devices.yaml; scope and vendor tag are looked up, never stored.
@@ -152,6 +160,8 @@ A device is found by name or by its registered address. Enrolled Linux hosts
 Examples:
   tacctl device add core-sw1 10.99.0.1 --vendor cisco --no-host-key
   tacctl device list
+  tacctl device scan
+  tacctl device discover
   tacctl device rename core-sw1 dc1-core1
   tacctl device export --csv > devices.csv
   tacctl device ssh-config > ~/.ssh/tacctl.conf
@@ -172,6 +182,7 @@ func (inv *invocation) device(args []string) error {
 		"rename": inv.deviceRename, "legacy-ssh": inv.deviceLegacySSH, "stale-days": inv.deviceStaleDays,
 		"notice": inv.deviceNotice, "notices": inv.deviceNotices, "import": inv.deviceImport, "export": inv.deviceExport,
 		"hostkey": inv.deviceHostkey, "ssh": inv.ssh, "ssh-config": inv.deviceSSHConfig,
+		"scan": inv.deviceScan, "discover": inv.deviceDiscover, "check": inv.deviceCheck,
 		"address": inv.deviceSetter("address"), "hostname": inv.deviceSetter("hostname"), "vendor": inv.deviceSetter("vendor"),
 		"port": inv.deviceSetter("port"), "description": inv.deviceSetter("description"),
 	}
@@ -232,7 +243,9 @@ func (inv *invocation) deviceLoad() (*devreg.File, *devreg.Resolver, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	return f, devreg.NewResolver(f, reg, m), nil
+	res := devreg.NewResolver(f, reg, m)
+	res.Seen = inv.seenLoad()
+	return f, res, nil
 }
 
 // deviceWrite changes the registry: fn runs first on a copy, so every
@@ -324,15 +337,34 @@ type deviceJSON struct {
 	State       string             `json:"state"`
 	HostKeys    []string           `json:"host_keys"`
 	Notices     []deviceNoticeJSON `json:"notices"`
+	Seen        *deviceSeenJSON    `json:"seen,omitempty"`
 }
 
-func deviceJSONOf(res *devreg.Resolver, e devreg.Entry) deviceJSON {
+// deviceSeenJSON is what the seen cache knows of an entry's address.
+type deviceSeenJSON struct {
+	First       string `json:"first"`
+	Last        string `json:"last"`
+	Count       int    `json:"count"`
+	LastUser    string `json:"last_user"`
+	LastOutcome string `json:"last_outcome"`
+	Via         string `json:"via"`
+	NASID       string `json:"nas_id"`
+	Stale       bool   `json:"stale"`
+}
+
+func deviceJSONOf(inv *invocation, res *devreg.Resolver, e devreg.Entry) deviceJSON {
 	j := deviceJSON{Name: e.Name, Source: string(e.Source), Address: e.Address, Hostname: e.Hostname, Vendor: e.Vendor,
 		Port: e.SSHPort(), LegacySSH: e.LegacySSH, Description: e.Description, Scope: e.Scope, Tag: e.Tag,
 		Shadowed: append([]string{}, e.Shadowed...), State: e.State(), HostKeys: append([]string{}, e.HostKeys...),
 		Notices: []deviceNoticeJSON{}}
 	for _, n := range res.NoticesFor(e) {
 		j.Notices = append(j.Notices, deviceNoticeJSON{Kind: n.Kind, Text: n.Text, Acked: n.Acked})
+	}
+	if x, ok := res.Seen.Of(e.Address); ok && e.Address != "" {
+		_, _, _, stale := deviceSeenCols(inv, res, e)
+		const layout = "2006-01-02T15:04:05Z07:00"
+		j.Seen = &deviceSeenJSON{First: x.First.Format(layout), Last: x.Last.Format(layout), Count: x.Count,
+			LastUser: x.LastUser, LastOutcome: x.LastOutcome, Via: x.Via, NASID: x.LastNASID, Stale: stale}
 	}
 	return j
 }
@@ -351,14 +383,25 @@ func (inv *invocation) deviceList(args []string) error {
 	if err != nil {
 		return err
 	}
-	f, res, err := inv.deviceLoad()
-	if err != nil {
+	if (p.Has("--scan") || p.Has("--probe")) && !inv.scanAllowed() {
+		return inv.usageErr("--scan and --probe are for the operator tier and up.")
+	}
+	var res *devreg.Resolver
+	if p.Has("--scan") {
+		sr, err := inv.runScan(scanRequest{})
+		if err != nil {
+			return err
+		}
+		if !p.Has("--json") {
+			inv.printScan(sr)
+		}
+		res = sr.res
+	} else if _, res, err = inv.deviceLoad(); err != nil {
 		return err
 	}
-	_ = f
 	var shown []devreg.Entry
 	for _, e := range res.Visible(inv.deviceFilter()) {
-		_, _, _, stale := deviceSeenCols(inv, e)
+		_, _, _, stale := deviceSeenCols(inv, res, e)
 		if (p.Has("--unconfigured") && e.Configured) || (p.Has("--stale") && !stale) {
 			continue
 		}
@@ -367,7 +410,7 @@ func (inv *invocation) deviceList(args []string) error {
 	if p.Has("--json") {
 		out := []deviceJSON{}
 		for _, e := range shown {
-			out = append(out, deviceJSONOf(res, e))
+			out = append(out, deviceJSONOf(inv, res, e))
 		}
 		return inv.printJSON(out)
 	}
@@ -389,17 +432,26 @@ func (inv *invocation) deviceList(args []string) error {
 		return nil
 	}
 	cols := []string{"NAME", "ADDRESS", "VENDOR", "SCOPE", "STATE", "LAST SEEN", "BY", "VIA", "NOTICES"}
+	var reach []string
+	if p.Has("--probe") {
+		cols = slices.Insert(cols, 8, "REACH")
+		reach = inv.probeEntries(shown)
+	}
 	rows := [][]string{}
 	open := 0
-	for _, e := range shown {
-		last, by, via, stale := deviceSeenCols(inv, e)
+	for i, e := range shown {
+		last, by, via, stale := deviceSeenCols(inv, res, e)
 		state := e.State()
 		if stale {
 			state += " stale"
 		}
 		ns := res.NoticesFor(e)
 		open += len(devreg.Open(ns))
-		rows = append(rows, []string{e.Name, dash(e.Address), e.Vendor, dash(e.Scope), state, last, by, via, dash(kinds(ns))})
+		row := []string{e.Name, dash(e.Address), e.Vendor, dash(e.Scope), state, last, by, via, dash(kinds(ns))}
+		if reach != nil {
+			row = slices.Insert(row, 8, reach[i])
+		}
+		rows = append(rows, row)
 	}
 	w := make([]int, len(cols))
 	for i, c := range cols {
@@ -425,7 +477,10 @@ func (inv *invocation) deviceList(args []string) error {
 		line(r, "", "")
 	}
 	inv.echo("")
-	inv.echo("  " + deviceSeenFooter(inv))
+	inv.echo("  " + deviceSeenFooter(res))
+	if reach != nil {
+		inv.echo("  REACH: a TCP connect to the ssh port; this server often has no path to management ports, so a timeout may be a false alarm")
+	}
 	if open > 0 {
 		inv.echo(fmt.Sprintf("  %d open notice(s): tacctl device notices", open))
 	}
@@ -447,7 +502,7 @@ func (inv *invocation) deviceShow(args []string) error {
 		return err
 	}
 	if p.Has("--json") {
-		return inv.printJSON(deviceJSONOf(res, e))
+		return inv.printJSON(deviceJSONOf(inv, res, e))
 	}
 	kind := "Device"
 	if e.Source == devreg.SourceHost {
@@ -503,10 +558,19 @@ func (inv *invocation) deviceShow(args []string) error {
 			row(map[bool]string{true: "Host keys", false: ""}[i == 0], k.Display())
 		}
 	}
-	last, by, via, _ := deviceSeenCols(inv, e)
+	last, by, via, stale := deviceSeenCols(inv, res, e)
+	if stale {
+		last += "  (stale: older than " + strconv.Itoa(res.File.StaleDays) + " days)"
+	}
 	row("Last seen", last)
 	if by != "-" || via != "-" {
 		row("Seen by", by+" via "+via)
+	}
+	if x, ok := res.Seen.Of(e.Address); ok && e.Address != "" {
+		row("First seen", seenTime(x.First)+"  ("+howMany(x.Count, "sighting")+")")
+		if x.LastNASID != "" {
+			row("Identifies", "as '"+x.LastNASID+"' (NAS-Identifier)")
+		}
 	}
 	ns := res.NoticesFor(e)
 	if len(ns) == 0 {
