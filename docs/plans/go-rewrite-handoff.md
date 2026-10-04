@@ -17,25 +17,14 @@ Read this first when resuming, then `docs/plans/go-rewrite.md`: its status notes
 - **Container cross-over rehearsal passed** (rootless podman on the dev server): 0.1.17 → Go on both upgrade paths, then a no-op second upgrade, then back to 0.1.17, plus a fresh Go install. Its scripts are now in `tests/containers/crossover/` (see the README there). The images `localhost/tacctl-rehearsal:{noble,installed-0.1.17}` persist in rootless podman storage.
 - **Released bash versions:**
   - **0.1.17** (tag on `master` 6ce7a09, pushed): the tacquito `.bak` `cp -p` fix. The dev server runs it.
-  - **Production has not been upgraded yet** (the user does that).
+  - **Production has not been upgraded yet** (the user does that; see below).
 
-## In flight: hotfix 0.1.18 (NOT released)
+## Done since: 0.1.18 and the private-names scrub (2026-10-03 evening)
 
-- **Branch `hotfix/0.1.18`** (local, from `master`), commit `cf2ebc4`.
-- **What it fixes:** Go now comes from `dl.google.com/go`, and the install is refused unless the checksum is 64 hex characters and matches. `go.dev/dl` now serves the `.sha256` URL as HTML, so a fresh 0.1.17 install on a host without Go fails.
-- **What it contains:** `_go_tarball_fetch` plus `tests/unit/go_fetch.bats`, and the release notes and man page bump.
-- **Checks so far:** lint passes and the new tests pass. **The full suite was interrupted at about 1027 tests with 0 failures, so re-run it before releasing.**
-- To finish it:
-  1. Check out `hotfix/0.1.18` (a worktree is easiest) and run `git submodule update --init --recursive`.
-  2. Run `make lint` and `make test BATS_FLAGS="--print-output-on-failure --jobs 4"`. Expect about 1441 tests, all ok.
-  3. `GIT_MERGE_AUTOEDIT=no git flow hotfix finish -m "Release 0.1.18" 0.1.18`.
-  4. git-flow doubles the tag message, so fix it with `git tag -f -a 0.1.18 -m "Release 0.1.18" master`.
-  5. Push: `git push origin develop master 0.1.18`. The user authorised this release ("Hotfix 0.1.18").
-  6. On the dev server, run `sudo tacctl upgrade` and check that nothing restarted.
-  7. On `feature/go-rewrite`, merge develop: `git merge --no-ff develop`.
-  8. Set the parity baseline to 0.1.18: update `tests/diff/run.sh` (`tag=` and its comment), the plan's baseline note, and `TACCTL_BASH_RELEASE="0.1.17"` → `"0.1.18"` in `bin/tacctl.sh.new`.
-  9. Re-run the Go black-box suite and a corpus or two.
-  10. Tell the user to upgrade production to **0.1.18**.
+- **0.1.18 released:** the full suite passed (1441/1441), and the release is tagged, pushed and merged into `feature/go-rewrite`. The parity baseline is now the `0.1.18` tag (`tests/diff/run.sh`, `TACCTL_BASH_RELEASE` in `bin/tacctl.sh.new`). The dev server runs it with no restarts.
+- **History rewritten again** to replace personal host names, home paths and user names with roles and `example.*` placeholders. `master`, `develop` and the release tags were force-pushed; the dev server's clone was reset to `origin/develop`. Commit references in the docs name the rewritten commits.
+- **Guard:** `make lint` runs `tests/tools/no-private.sh`, which uses generic checks plus an untracked `~/.config/tacctl/private-patterns`. `make hooks` installs it as a pre-push hook.
+- **Production** has not crossed the history rewrites (its clone holds the old SHAs). Before `sudo tacctl upgrade`, the user resets its clone: `sudo git -C /opt/tacctl status` (expect clean), `sudo git -C /opt/tacctl fetch --tags --force origin`, `sudo git -C /opt/tacctl reset --hard origin/master`.
 
 ## Next work packages (Phase 4, then 5): one at a time
 
@@ -69,6 +58,6 @@ Read this first when resuming, then `docs/plans/go-rewrite.md`: its status notes
 ## After the reboot
 
 - Run `git worktree prune` in `/home/user/tacctl`; the scratch worktrees under `/tmp` are gone.
-- Branches to keep: `feature/go-rewrite` and `hotfix/0.1.18`.
+- Branch to keep: `feature/go-rewrite`.
 - `ps` should show no tacctl test processes.
 - The dev server services: `systemctl is-active tacquito freeradius`.
