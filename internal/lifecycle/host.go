@@ -45,6 +45,10 @@ type Host struct {
 	// Commit is the commit the running binary was built from ("" or
 	// "unknown": not known, so never current).
 	Commit string
+	// Completion is the bash completion script this binary generates
+	// (tacctl completion bash); install and upgrade write it to
+	// paths.Completion. Nil: no completion is installed.
+	Completion func() ([]byte, error)
 }
 
 // Handover is a backend that carries something across the self-update
@@ -242,27 +246,16 @@ func (h *Host) chmod(path string, mode fs.FileMode) error {
 	return nil
 }
 
-// cp is 'cp <src> <dst>' under 'set -e': an existing dst keeps its mode, a
-// new one gets src's less the umask.
-func (h *Host) cp(src, dst string) error {
-	if err := copyFile(src, dst); err != nil {
-		return h.failed("cp: cannot create regular file '" + dst + "': " + errno(err))
+// writeFile writes data to path with mode, creating its directory: an
+// existing file keeps its mode until the chmod, as a redirection does.
+func (h *Host) writeFile(path string, data []byte, mode fs.FileMode) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return h.failed("cannot create '" + path + "': " + errno(err))
 	}
-	return nil
-}
-
-// copyFile is cp's copy: the bytes of src into dst (created with src's
-// mode, under the umask, when it is new).
-func copyFile(src, dst string) error {
-	st, err := os.Stat(src)
-	if err != nil {
-		return err
+	if err := writeKeepMode(path, data, mode); err != nil {
+		return h.failed("cannot create '" + path + "': " + errno(err))
 	}
-	data, err := os.ReadFile(src)
-	if err != nil {
-		return err
-	}
-	return writeKeepMode(dst, data, st.Mode().Perm())
+	return h.chmod(path, mode)
 }
 
 // writeKeepMode writes data to path as a redirection or cp does: an

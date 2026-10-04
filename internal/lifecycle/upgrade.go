@@ -5,6 +5,7 @@ package lifecycle
 // 5.2).
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -158,12 +159,11 @@ func Upgrade(ctx context.Context, h *Host, args []string) error {
 	if err := h.upgrade(ctx, ids, backend.PhaseFiles, active); err != nil {
 		return err
 	}
-	n, err := h.updateIfChanged(filepath.Join(active, "config", "tacctl.bash-completion"), p.Completion, "bash completion")
+	n, err := h.updateCompletion()
 	if err != nil {
 		return err
 	}
 	updated += n
-	_ = os.Chmod(p.Completion, 0o644)
 	// Unconditional re-gzip (cheap) also heals a host where it is missing.
 	if err := h.installManPage(ctx, filepath.Join(active, "man", "tacctl.1")); err != nil {
 		return err
@@ -376,20 +376,23 @@ func (h *Host) handOverToBash(ids []string) error {
 	return nil
 }
 
-// updateIfChanged is update_if_changed <src> <dest> <label>: dest becomes
-// a copy of src when they differ, reported; it returns 1 when it wrote. No
-// src: nothing.
-func (h *Host) updateIfChanged(src, dest, label string) (int, error) {
-	if !isRegular(src) {
+// updateCompletion writes the completion this binary generates when the
+// installed one differs: "Updated: bash completion", else "Unchanged:".
+func (h *Host) updateCompletion() (int, error) {
+	if h.Completion == nil {
 		return 0, nil
 	}
-	if sameBytes(src, dest) {
-		h.Out.Info("  Unchanged: " + label)
-		return 0, nil
-	}
-	if err := h.cp(src, dest); err != nil {
+	script, err := h.Completion()
+	if err != nil {
 		return 0, err
 	}
-	h.Out.Info("  Updated: " + label)
+	if cur, err := os.ReadFile(h.Paths.Completion); err == nil && bytes.Equal(cur, script) {
+		h.Out.Info("  Unchanged: bash completion")
+		return 0, nil
+	}
+	if err := h.writeFile(h.Paths.Completion, script, 0o644); err != nil {
+		return 0, err
+	}
+	h.Out.Info("  Updated: bash completion")
 	return 1, nil
 }

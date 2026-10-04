@@ -9,8 +9,11 @@ config
 config bogus
 config show
 config validate
+@known 3.9 item 28: the comment headers of config defaults and config dump name tacctl, not lib/conf.sh
 config dump
+@known 3.9 item 28: the comment headers of config defaults and config dump name tacctl, not lib/conf.sh
 config defaults
+@known 3.9 item 28: the comment headers of config defaults and config dump name tacctl, not lib/conf.sh
 config defaults extra
 
 # get / get-list
@@ -47,6 +50,7 @@ config secret-min-length 20 ;; config secret-min-length
 config secret-min-length 15
 config secret-min-length 129
 config secret-min-length bad
+@known 3.9 item 28: the comment headers of config defaults and config dump name tacctl, not lib/conf.sh
 config bcrypt-cost 10 ;; config dump
 config bcrypt-cost 10 ;; config validate
 
@@ -256,6 +260,7 @@ config sudoers install wheel <<< y
 # the tunables shown and set, and their empty forms
 config bcrypt-cost ''
 config password-age ''
+@known 3.9 item 28: the comment headers of config defaults and config dump name tacctl, not lib/conf.sh
 config secret-min-length 20 ;; config password-min-length 9 ;; config password-age 30 ;; config dump
 config loglevel debug ;; config loglevel debug ;; config validate ;; config show
 config metrics disable ;; config metrics enable ;; config metrics address 10.1.0.1:9090 ;; config metrics reset ;; config metrics
@@ -293,6 +298,7 @@ config validate
 config render
 config render --force
 config get bcrypt.cost
+@known 3.9 item 28: the comment headers of config defaults and config dump name tacctl, not lib/conf.sh
 config defaults
 config sudoers
 _completion-names listeners

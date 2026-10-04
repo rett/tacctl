@@ -831,7 +831,7 @@ type realUpgrade struct{}
 func (realUpgrade) Upgrade(ctx context.Context, h *matrixHost, args []string) error {
 	be := h.Set.Env
 	be.Paths = matrixPaths(h)
-	host := &lifecycle.Host{Env: lifecycle.NewEnv(be, nil, false), Environ: paths.NewEnv(h.Env), Commit: h.BinaryCommit}
+	host := &lifecycle.Host{Env: lifecycle.NewEnv(be, nil, false), Environ: paths.NewEnv(h.Env), Commit: h.BinaryCommit, Completion: testCompletion}
 	return lifecycle.Upgrade(ctx, host, args)
 }
 

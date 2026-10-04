@@ -141,7 +141,13 @@ setup() {
   which runs lifecycle phases of one backend on their own and prints
   `SUMMARY <note>` / `SAVED <line>` for what they leave to the closing
   summaries (`radius.bats` drives the RADIUS upgrade and uninstall phases
-  that way).
+  that way; the container drivers drive them in real containers).
+- The completion is the binary's own: `tacctl completion bash|zsh|fish` prints
+  the script and `tacctl __complete <words>` answers it. `completion.bats`
+  runs the generated bash script with the real bash-completion library and a
+  `sudo` stub for the bridge; the Go tests (`internal/cli/completion_test.go`)
+  check the words per verb, and `internal/cli/man_test.go` checks that
+  `man/tacctl.1` names every command of the tree and none that is not in it.
 
 ## Goldens
 
@@ -299,9 +305,12 @@ files is checked in containers (next section).
 
 The one check that runs real FreeRADIUS: rootless podman, one container per
 distro, nothing on the host touched outside podman and a temp directory.
-Needs podman and `python3-bcrypt`; the first run of a distro builds an image
-(`localhost/tacctl-radius-check:<distro>`, kept) and needs the package
-mirrors.
+Needs podman and `python3-bcrypt` (and, for `almalinux-8`, Go in
+`/usr/local/go`: the files are rendered on this machine); the first run of a
+distro builds an image (`localhost/tacctl-radius-check:<distro>`, kept) and
+needs the package mirrors. Inside the systemd containers tacctl is built by
+its own bootstrap (`bin/tacctl.sh` downloads Go, verified, and builds from
+the vendored sources), so they need network access to `dl.google.com`.
 
 ```sh
 tests/containers/radius/run.sh ubuntu-noble     # FreeRADIUS 3.2.x, Debian layout
@@ -316,8 +325,8 @@ remove it with `podman rm -f`.
 | File | Does |
 |---|---|
 | `make-store.py <dir>` | writes a store with real bcrypt hashes (six users, ten scopes, both filters; four scopes enable vendor attributes, five addresses are tagged) and one `sec.<scope>` file per secret |
-| `run.sh <distro>` | builds the image if needed, starts the container, runs the check, removes the container |
-| `flow.sh <data dir>` | inside a systemd container with this checkout mounted read-only at `/opt/tacctl`: `tacctl backend enable radius` for real (package install, render, the daemon's `-C`, the drop-in with `-D`, start), then the cases, mutations, listeners, drift, reload, disable, re-enable, uninstall phases, and the way from the release before the vendor attributes |
+| `run.sh <distro>` | builds the image if needed, starts the container, runs the check, removes the container; for `almalinux-8` it renders with `tacctl config render --dry-run --out <dir>` (`TACCTL_RADIUS_FAMILY=rhel`) and serves the files with `radiusd` started by hand |
+| `flow.sh <data dir>` | inside a systemd container with this checkout mounted read-only at `/opt/tacctl`: `tacctl backend enable radius` for real (package install, render, the daemon's `-C`, the drop-in with `-D`, start), then the cases, mutations, listeners, drift, reload, disable, re-enable, the uninstall phases (`tacctl _phase radius uninstall ...`), and the way from the release before the vendor attributes (that old bash release runs from a `git archive` of its commit; its upgrade step is `tacctl _phase radius upgrade config,files,finish`) |
 | `cases.sh <data dir>` | the radclient cases, every reply decoded with tacctl's dictionary and compared attribute by attribute: Service-Type alone for a scope that enables nothing, each vendor's attribute per scope and per tagged address and never another's, rejects with none, no internal attribute anywhere; wrong password, user outside the client's scope, disabled user, sink, overlapping prefixes, a TACACS+-only scope, quoted secrets, both filters, the package's default client, IPv6, CHAP, Status-Server, accounting |
 
 Notes:
@@ -363,9 +372,9 @@ Each run prints `PASS`/`FAIL`/`NOTE` lines and exits non-zero on a `FAIL`;
 
 | File | Does |
 |---|---|
-| `run.sh` | builds the two images if needed (`localhost/tacctl-host-check:{server,client}-<distro>`, kept), starts the containers, runs the cycle |
+| `run.sh` | builds the two images if needed (`localhost/tacctl-host-check:{server,client}-<distro>`, kept; the server image gets tacctl built from this checkout by its bootstrap, and the pinned pam_tacplus source through `tacctl config linux build`), starts the containers, runs the cycle |
 | `matrix.sh` | the runs recorded in `docs/radius-notes.md`, one after another, a log per run |
-| `server-setup.sh` | in the server: a store with three users (real bcrypt hashes), tacquito under its unit through the backend's own install phases, `backend enable radius` |
+| `server-setup.sh` | in the server: a store with three users (real bcrypt hashes), tacquito under its unit through the backend's own install phases (`tacctl _phase tacacs install account|start`), `backend enable radius` |
 | `client-prep.sh` | at client image build: sshd, sudo, a local administrator `ladm`, a pre-existing account `carl`, a stand-in `gdm-password` service file, and what a rootless container needs (below). No PAM module, no EPEL: enrollment brings those |
 | `sshtry.sh` | one SSH password login to the container's own sshd (via `SSH_ASKPASS`; `sshpass` is not in every base repository) |
 | `pamprobe.py` | a PAM client: runs the phases of a service for a user and prints each return code and how long it took |

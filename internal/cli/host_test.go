@@ -391,7 +391,7 @@ func TestHostAndLinuxSpecs(t *testing.T) {
 				kinds = append(kinds, f.Kind)
 			}
 			for _, k := range kinds {
-				if _, native := completionKinds[k]; k != "" && !native && !strings.Contains(k, "|") {
+				if _, native := completionKinds[k]; k != "" && !native && !strings.Contains(k, "|") && k != KindFile {
 					t.Errorf("%s %s: kind %q is no completion kind", family, c.Name(), k)
 				}
 			}

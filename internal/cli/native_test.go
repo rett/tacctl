@@ -388,7 +388,7 @@ func TestUserSpecs(t *testing.T) {
 		}
 		for _, k := range kinds {
 			k = strings.TrimSuffix(k, KindList)
-			if _, native := completionKinds[k]; k != "" && !native && !strings.Contains(k, "|") {
+			if _, native := completionKinds[k]; k != "" && !native && !strings.Contains(k, "|") && k != KindFile {
 				t.Errorf("user %s: kind %q is no completion kind", c.Name(), k)
 			}
 		}

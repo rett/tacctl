@@ -2,44 +2,13 @@
 
 Management toolkit for network-device AAA. Users, groups and scopes are kept once, in tacctl's own store, and served over **TACACS+** by [tacquito](https://github.com/facebookincubator/tacquito) (RFC 8907, by Facebook Incubator) and, when enabled, over **RADIUS** by a tacctl-owned FreeRADIUS instance. Provides a CLI for user, group, and configuration management with multi-vendor support for Cisco IOS/IOS-XE and Juniper Junos devices, plus WTI console servers and Linux hosts.
 
-## What's new in 0.1.18
-
-- **Installing on a server without Go works again.** `tacctl install` downloads Go and its published checksum from `dl.google.com`, and installs Go only after the download is verified: a checksum that cannot be fetched, or a failed download, stops the install with an error.
-
-## What's new in 0.1.17
-
-- **Upgrade rollback works again for the tacquito binary.** The backup `tacctl upgrade` takes before rebuilding tacquito keeps the binary's permissions, so a binary restored after a failed build or a failed restart can be started by the `tacquito` service user.
-
-## What's new in 0.1.16
-
-- **Membership lists use `replace` and `remove --all`.** `tacctl user scope <user> replace <scopes>` replaces a user's scopes and `user scope <user> remove --all` removes them all; `tacctl scope prefixes <scope> remove --all [--force]` removes every prefix (and with them the scope). `set` and `clear` on these two lists now fail with a message naming the new verb; update any scripts that call them.
-- **`scope show` no longer prints the scope secret**; it shows whether one is set and its length. `tacctl scope secret <scope> show` prints it.
-- **Customised templates survive upgrades.** A template you edited in `/etc/tacctl/templates/` is kept and the shipped version is written beside it as `<name>.template.new`; see [Custom Templates](#custom-templates).
-- **Upgrades restart a service only when it has something new to read**, and a failed restart rolls tacquito back to the previous binary. `tacctl upgrade --branch <name>` runs the new branch's own upgrade when tacctl's code differs.
-- **A `tacctl.yaml` that does not parse is never overwritten**: settings changes refuse with the parse error, and other commands warn and use the defaults.
-- RADIUS-only installs no longer need `tacquito.yaml`.
-
-## What's new in 0.1.15
-
-This is a large release; read [Upgrading to 0.1.15](#upgrading-to-0115) before running `tacctl upgrade` on an existing server.
-
-- **A canonical store.** Users, groups, scopes and connection filters live in `/etc/tacctl/store.yaml`; `tacquito.yaml` is generated from it on every change and is no longer the source of truth. Hand edits of a generated file are detected (drift) and never silently overwritten. See [The store and generated configs](#the-store-and-generated-configs).
-- **`/etc/tacctl`** holds everything tacctl owns (store, `tacctl.yaml`, snapshots, templates, the Linux host registry). `/etc/tacquito` is the TACACS+ daemon's directory again.
-- **Backups are snapshots** of `store.yaml` and `tacctl.yaml`, taken before every change; `backup restore` re-renders every backend.
-- **Backends.** TACACS+ (tacquito) and RADIUS (FreeRADIUS) behind one contract: `tacctl backend list|status|enable|disable`; `status`, `log` and `config validate` report per backend. See [Backends](#backends).
-- **RADIUS**, opt-in: `tacctl backend enable radius`. PAP against the same bcrypt hashes, the same scopes and secrets, `config cisco|juniper|wti --protocol radius`, per-scope vendor attributes. See [RADIUS](#radius).
-- **Listeners** in `tacctl.yaml` (`listeners.<backend>.<name>`), from which the systemd drop-ins are rendered; further TACACS+ listeners run as `tacquito@<name>` instances.
-- **Linux hosts over RADIUS**: `tacctl host enroll --method radius` (pam_radius_auth), `host default-method`, switching a host between methods; Rocky Linux joins the tested hosts.
-- **Per-scope settings**: `scope protocols`, `scope auth-method`, `scope vendor-attrs`, `scope devices`, `scope radius-group`; every per-scope `tacctl.yaml` key now follows `scope rename` and is removed by `scope remove`.
-- Confirmation prompts no longer exit silently when standard input is closed; `config validate` exits 1 when it finds structure or scope errors.
-
 ## Quick Start
 
 ```bash
 # Install on a new server (TACACS+; RADIUS is added later, if wanted)
-sudo bash -c 'git clone https://github.com/rett/tacctl.git /opt/tacctl && ln -sf /opt/tacctl/bin/tacctl.sh /usr/local/bin/tacctl && tacctl install'
+sudo bash -c 'git clone https://github.com/rett/tacctl.git /opt/tacctl && /opt/tacctl/bin/tacctl.sh install'
 
-# Or upgrade an existing server (pulls latest from GitHub)
+# Or upgrade an existing server (pulls latest from GitHub, rebuilds tacctl if needed)
 tacctl upgrade
 
 # Fresh installs seed four built-ins: engineer/superuser, operator/operator,
@@ -73,17 +42,28 @@ tacctl config juniper --scope prod --protocol radius
 tacctl config wti --scope prod --protocol radius      # not verified on a unit
 ```
 
+### Requirements and how tacctl is built
+
+A server needs `git` and `wget`; everything else is installed by tacctl. tacctl is a single Go binary, `/usr/local/bin/tacctl`, **built on the server** from the clone in `/opt/tacctl`: the dependencies are vendored in the clone, so building needs no network and no module proxy. `/opt/tacctl/bin/tacctl.sh` is the bootstrap: it installs the Go toolchain (`/usr/local/go`) when it is missing, after verifying the download against its published SHA-256, builds the binary when it is missing or out of date, and runs it. The first build compiles the standard library and the dependencies (about 15 seconds on an eight-core machine, about 130 MB in root's Go build cache, `/root/.cache/go-build`); later builds reuse the cache. `tacctl version --long` shows the commit, build date and Go version of the installed binary:
+
+```bash
+tacctl version          # tacctl 0.2.0
+tacctl version --long   # adds the commit, the build date, the Go version and "test knobs: off"
+```
+
+`install` and `upgrade` say `Building /usr/local/bin/tacctl from /opt/tacctl...` whenever they build, so the installed binary always matches the commit of the clone. Passwords, YAML, rendering and checksums are handled inside the binary; no helper program (Python, OpenSSL) is needed on the server.
+
 ## Project Structure
 
 ```
 tacctl/
   bin/
-    tacctl.sh               # CLI entrypoint (symlinked to /usr/local/bin/tacctl); sources lib/
-  lib/                      # core, conf, model, store, policy, users, groups, scopes, render_devices,
-                            # linux_hosts, backend, service, lifecycle, dispatch
-    backends/
-      tacacs.sh             # TACACS+ backend (tacquito): build, render, units, logs, legacy mode
-      radius.sh             # RADIUS backend (FreeRADIUS): render, config check, drop-in, logs
+    tacctl.sh               # bootstrap: installs Go if needed, builds the binary, runs it
+  cmd/tacctl/               # main package
+  internal/                 # the implementation: cli, store, model, conf, render, devices, hosts,
+                            # lifecycle, backend (and backend/tacacs, backend/radius), ...
+  vendor/                   # vendored Go dependencies (builds need no network)
+  go.mod, go.sum
   config/
     backends/tacacs/
       tacquito.yaml         # Reference layout of the rendered TACACS+ config
@@ -93,11 +73,11 @@ tacctl/
     templates/              # Device config templates: cisco, cisco-legacy, juniper, wti,
                             # and cisco-radius, juniper-radius, wti-radius for --protocol radius
     linux/                  # client-install.sh, client-remove.sh (Linux host enrollment)
-    tacctl.bash-completion
   man/tacctl.1              # `man tacctl`
   patches/                  # tacquito source patch overlay (patches/README.md)
   docs/                     # radius-notes.md (what was verified against real FreeRADIUS and pam_radius_auth)
-  tests/                    # bats suite (tests/README.md)
+  tests/                    # Go and bats suites, containers (tests/README.md)
+  CHANGELOG.md
   README.md
   LICENSE
 ```
@@ -160,7 +140,7 @@ The TACACS+ default listener stays in `tacquito.service`; every further one is a
 Every change goes one way: check that no generated file was edited by hand → snapshot → write the store (and `tacctl.yaml`) → render every enabled backend into a staging area and prove it (read back, the daemon's own config check) → replace the files → restart the backends whose files changed. If any step fails, the store, `tacctl.yaml` and every generated file are put back.
 
 - **Drift.** A generated file whose checksum no longer matches was edited by hand. `tacctl status` and `tacctl config validate` show a red `DRIFT` line, and every change is refused (exit 3) rather than overwrite it. To keep a hand edit of `tacquito.yaml`: `tacctl store import --replace`, then `tacctl config render --force`. To discard it: `tacctl config render --force` (the edited file is kept under `/etc/tacctl/backups/legacy/` first). RADIUS files cannot be adopted, only re-rendered.
-- **`tacctl config render [--force]`** regenerates every enabled backend's files from the store and restarts the ones that changed; needed after restoring files by hand or when `config validate` says a file is missing or out of date.
+- **`tacctl config render [--force]`** regenerates every enabled backend's files from the store and restarts the ones that changed; needed after restoring files by hand or when `config validate` says a file is missing or out of date. **`tacctl config render --dry-run --out <dir>`** renders the same artifacts into a new, empty directory at their live paths (`<dir>/etc/tacquito/tacquito.yaml`, ...) and touches nothing else: no render record, no restart. The directory is private to root, since the artifacts hold secrets.
 - **`tacctl store import [--check|--force] [--replace] [<file>]`** reads an old-style `tacquito.yaml` (default: the live one) into the store. `--check` writes nothing: it imports, renders, compares what tacquito would load from both files (users, groups and their services and command rules, the prefix-to-secret routing in order, filters) and load-tests the rendered file with the tacquito binary on a loopback port; it prints `EQUIVALENT` or the differences. Content the store cannot represent (other services, other authenticators or accounters, unknown keys, …) fails the import and is listed; `--force` drops it. `--replace` overwrites an existing store.
 - **Legacy read-only mode.** Without a store (an upgrade whose gate stopped, or after `store rollback`) tacctl reads `tacquito.yaml` directly: every read command works, every command that would change users, groups, scopes or filters is refused with `store not initialised — review 'tacctl store import --check' and run 'tacctl store import [--force]'`. Only TACACS+ exists in this mode; `backend enable` needs a store.
 - **`tacctl store rollback`** undoes the move into the store: it restores the pre-store `tacquito.yaml` (`/etc/tacctl/backups/legacy/tacquito.yaml.pre-store.<timestamp>`), removes the store and `rendered.json`, and restarts tacquito: legacy read-only mode under the new code. Refused while another backend is enabled (disable it first).
@@ -174,16 +154,18 @@ Every change goes one way: check that no generated file was edited by hand → s
 |------|---------|
 | `/etc/tacctl/` | State directory (0700 root) |
 | `/etc/tacctl/store.yaml` | Users, groups, scopes, filters (0600) |
-| `/etc/tacctl/tacctl.yaml` | Operator overrides — only keys you've changed. Absent keys inherit from the canonical defaults embedded in `lib/conf.sh`. Inspect with `tacctl config dump`; list canonical defaults with `tacctl config defaults`. |
+| `/etc/tacctl/tacctl.yaml` | Operator overrides — only keys you've changed. Absent keys inherit from the canonical defaults built into tacctl. Inspect with `tacctl config dump`; list canonical defaults with `tacctl config defaults`. |
 | `/etc/tacctl/rendered.json` | Checksums of the generated files (drift detection) |
 | `/etc/tacctl/backups/` | Snapshots (`<timestamp>/`), `legacy/` (old-style backups, pre-store config, displaced files), `password-dates/` (read by the importer) |
-| `/etc/tacctl/templates/` | Custom device config templates (override defaults); `.shipped.sha256` records what tacctl wrote there, `<name>.template.new` is a new release's version beside a template you customized (see [Custom Templates](#custom-templates)) |
+| `/etc/tacctl/templates/` | Device config templates: a copy of each shipped one, which you may customize (a file here overrides the built-in one); `.shipped.sha256` is the manifest of what tacctl wrote there, `<name>.template.new` is a new release's version beside a template you customized (see [Custom Templates](#custom-templates)) |
 | `/etc/tacctl/linux-hosts`, `/etc/tacctl/linux-uids` | Enrolled Linux hosts; the UID/GID each user gets on every host |
 | `/var/lib/tacctl/linux/` | pam_tacplus source tarball and container-built modules |
 | `/etc/sudoers.d/tacctl`, `/etc/sudoers.d/tacctl-tiers` | Optional sudoers rules (`tacctl config sudoers install`, `… tiers install`) |
-| `/usr/local/bin/tacctl` | Symlink to management CLI |
-| `/opt/tacctl/` | Git clone of this repo (used by upgrade) |
-| `/etc/bash_completion.d/tacctl`, `/usr/share/man/man1/tacctl.1.gz` | Completion, man page |
+| `/usr/local/bin/tacctl` | The tacctl binary, built on the server from `/opt/tacctl` by `install` and `upgrade` |
+| `/opt/tacctl/` | Git clone of this repo: what the binary is built from, and what `upgrade` pulls. Holds the shipped templates, units, patches and man page |
+| `/opt/tacctl/bin/tacctl.sh` | Bootstrap: installs Go if needed, builds the binary when it is missing or out of date, runs it |
+| `/etc/bash_completion.d/tacctl`, `/usr/share/man/man1/tacctl.1.gz` | Completion (generated by `tacctl completion bash`), man page |
+| `/usr/local/go/` | The Go toolchain tacctl builds with (installed once, never replaced by an older one) |
 
 **TACACS+ (tacquito)**
 
@@ -198,7 +180,7 @@ Every change goes one way: check that no generated file was edited by hand → s
 | `/usr/local/bin/tacquito`, `/usr/local/bin/tacquito-hashgen` | Server binary, password hash generator |
 | `/opt/tacquito-src/` | Tacquito server source code |
 
-`/etc/tacquito/` also holds a copy of this README and, for one release, symlinks from the old locations of `tacctl.yaml`, `linux-hosts`, `linux-uids`, `backups/` and `templates/` into `/etc/tacctl/`, so that the previous release still finds them after a rollback.
+`/etc/tacquito/` also holds a copy of this README, and the old locations of `tacctl.yaml`, `linux-hosts`, `linux-uids`, `backups/` and `templates/` lead into `/etc/tacctl/`.
 
 **RADIUS (FreeRADIUS)**, where enabled. `<raddb>` is `/etc/freeradius/3.0` on Debian/Ubuntu and `/etc/raddb` on the RHEL family; the unit is `freeradius.service` or `radiusd.service`, the logs are in `/var/log/freeradius` or `/var/log/radius`.
 
@@ -303,7 +285,7 @@ Restrict which commands a group can run, enforced live by Cisco IOS via TACACS+ 
 
 View the shipped defaults with `tacctl config defaults`; inspect a single group with `tacctl group commands list <group>`. Rules live under `commands.<group>` in `/etc/tacctl/tacctl.yaml`; tacquito.yaml's per-group `commands:` block is rendered from that source on every change.
 
-The `tacctl group commands seed` command is retained as a recovery tool — it re-applies the legacy seed rule set (with `enable`, `clear`, `monitor`, etc.) and should only be needed if you've customized and want to start over. On a fresh install, the shipped defaults above are already in effect.
+The `tacctl group commands seed` command is retained as a recovery tool — it re-applies the original seed rules (with `enable`, `clear`, `monitor`, etc.) and should only be needed if you've customized and want to start over. On a fresh install, the shipped defaults above are already in effect.
 
 Or build rules manually:
 ```
@@ -481,7 +463,7 @@ A RADIUS server cannot tell what kind of device is asking, and one vendor's priv
 | `Juniper-Local-User-Name = "<class>"` | the scope enables `juniper`, or the address is tagged `juniper` |
 | `WTI-Super = 0..3` (ViewOnly, User, SuperUser, Administrator; the bands of the TACACS+ WTI mapping) | the scope enables `wti`, or the address is tagged `wti` |
 
-- `tacctl scope vendor-attrs <scope> enable|disable <vendor>[,<vendor>...]` sets what a scope's devices get. It is an opt-in: **a new scope sends none** ("Vendor attributes: not sent"), and there is no `set` or `clear`.
+- `tacctl scope vendor-attrs <scope> enable|disable <vendor>[,<vendor>...]` sets what a scope's devices get. It is an opt-in: **a new scope sends none** ("Vendor attributes: not sent"), and its verbs are `enable` and `disable`.
 - `tacctl scope devices <scope> set <ip|cidr> <vendor>` tags an address: it gets its own vendor's attribute and no other, whatever the scope enables (`unset` removes the tag). The address must be one `scope lookup` answers with this scope; `scope prefixes remove` refuses to leave a tag outside the scope.
 - An Access-Reject carries none of them. Linux hosts (`pam_radius_auth`) read none, so a scope of Linux hosts needs nothing enabled.
 - `tacctl config validate` warns about a scope served over RADIUS that sends nothing and is not a Linux-host scope (one used by enrolled hosts whose prefixes are their single addresses); `tacctl status` counts the scopes that send something.
@@ -546,21 +528,21 @@ The same hash serves TACACS+ and RADIUS.
 These patterns apply uniformly across every subcommand family:
 
 - **No arguments** — dispatcher commands (`user`, `group`, `config`, `scope`, `host`, `backend`, `store`, `log`, `backup`, `hash`, and nested dispatchers like `scope prefixes` / `scope secret` / `scope aaa-order` / `scope exec-timeout` / `scope tacacs-group` / `scope radius-group` / `scope auth-method` / `scope vendor-attrs` / `scope devices` / `scope mgmt-acl` / `user scope` / `group privilege` / `config linux`) print their own usage and exit without side effects. Scalar getter/setters (`config loglevel`, `config listen`, `config metrics`, `config password-age`, `config bcrypt-cost`, `config password-min-length`, `config secret-min-length`, `config branch`, `scope default`, `host default-method`) print the current value when called with no arguments.
-- **Filters and opt-ins** — a setting that narrows something down is a *filter*: its verbs are `set` and `clear`, and empty (cleared) means everything (`scope protocols`, `config allow`, `config deny`). A setting that turns something on is an *opt-in*: its verbs are `enable` and `disable`, and nothing is on until it is enabled (`backend enable|disable`, `scope vendor-attrs`). An opt-in has no `set`, `clear` or `none`, so that nothing in it can read as "empty means all".
+- **Filters and opt-ins** — a setting that narrows something down is a *filter*: its verbs are `set` and `clear`, and empty (cleared) means everything (`scope protocols`, `config allow`, `config deny`). A setting that turns something on is an *opt-in*: its verbs are `enable` and `disable`, and nothing is on until it is enabled (`backend enable|disable`, `scope vendor-attrs`). An opt-in has no verb that could read as "empty means all".
 - **Membership lists** — a list that names exactly what is in is a *membership list*, and empty means nothing, not everything (`user scope`, the scopes a user can authenticate from: none means nowhere; `scope prefixes`, the clients a scope serves: emptying it removes the scope). Its verbs are `add` and `remove`: `remove --all` empties it, and `user scope` replaces its whole list with `replace`.
 - **Multi-item input** — every `add` / `remove` that takes a CIDR, a scope name, or a Cisco exec command accepts either a single value or a comma-separated list (`a,b,c`). Every input is validated first; a bad entry aborts the entire operation without writing anything.
 - **CIDR semantics** — every CIDR-list subcommand (`scope prefixes`, `config allow`, `config deny`, `config mgmt-acl`) canonicalizes input before storage: `10.1.5.5/24` becomes `10.1.5.0/24`, `2001:DB8::/32` becomes `2001:db8::/32`. Exact duplicates (after canonicalization) are rejected as no-ops on `add`. Overlapping CIDRs of different prefix lengths coexist (`10.0.0.0/8` and `10.99.0.0/16` can both be present). Stored order is by broadcast-address ascending (IPv4 before IPv6): disjoint ranges sort by their end address, and an overlapping subnet falls immediately above its containing supernet (the subnet's range ends before the supernet's). This groups related CIDRs together and gives tacquito's provider selector the "most-specific first among overlaps" ordering it needs so a narrower scope wins a first-match lookup over a broader scope that contains it.
 - **Scope prefix invariants** — every CIDR belongs to **exactly one** scope after canonicalization. Adding a prefix already claimed by a different scope is rejected with a message naming the owner; you must `tacctl scope prefixes <owner> remove <cidr>` before re-adding it elsewhere. Overlapping prefixes *across* scopes are allowed and routed correctly (e.g. `10.5.0.0/16` in `staging` coexists with `10.0.0.0/8` in `lab`). In the rendered `tacquito.yaml` a scope with N prefixes becomes N `secrets:` entries sharing the same `name:` and `secret.key`, sorted globally by prefix specificity (v4 before v6, smaller broadcast first), so tacquito's slice-ordered walk picks the narrowest scope. The CLI shows the logical one-bundle-per-scope view.
 - **`clear` and `remove --all`** — `clear` and `remove --all` subcommands always prompt with `[y/N]` and print a warning describing the resulting posture (e.g. "no clients can connect" or "fails open"). Every prompt cancels, with a message, when standard input is closed.
 - **Service restart** — changes to the store, and to the `tacctl.yaml` settings a backend renders (command rules, listeners, `backends.*`), re-render every enabled backend and restart the ones whose files changed. Settings only device configs read (mgmt-acl permits + names, priv-exec mappings, per-scope AAA order, exec timeout, group labels) and tacctl's own tunables (bcrypt cost, password age, …) restart nothing.
-- **Flags** — long-form flags (`--hash`, `--scopes`, `--scope`, `--prefixes`, `--secret`, `--protocols`, `--vendor-attrs`, `--match`, `--action`, `--branch`, `--protocol`, `--method`, `--backend`, `--listener`) take a single argument; `--default`, `--force`, `--legacy`, `--check`, `--replace`, `--json`, `--local`, `--all` and `-y` take none. Required positional args come before flags.
+- **Flags** — long-form flags (`--hash`, `--scopes`, `--scope`, `--prefixes`, `--secret`, `--protocols`, `--vendor-attrs`, `--match`, `--action`, `--branch`, `--protocol`, `--method`, `--backend`, `--listener`, `--out`) take a single argument; `--default`, `--force`, `--legacy`, `--check`, `--replace`, `--json`, `--local`, `--all`, `--dry-run`, `--long` and `-y`/`--yes` take none. Required positional args come before flags.
 
 ### Top-Level Commands
 
 ```
-tacctl install [--branch name]  # Install tacctl and the TACACS+ backend from scratch
-tacctl upgrade [--branch name]  # Pull latest source, rebuild, update scripts and every enabled backend
-tacctl uninstall                # Remove tacctl, its backends' services and all associated files
+tacctl install [--branch name] [-y|--yes]  # Install tacctl and the TACACS+ backend from scratch (-y: no confirmation)
+tacctl upgrade [--branch name]  # Pull latest source, rebuild, update system files and every enabled backend
+tacctl uninstall [-y|--yes]     # Remove tacctl, its backends' services and all associated files (-y: no confirmation, keeps no archive)
 tacctl status                   # Service health, stats, errors, password age warnings (per backend)
 tacctl passwd                   # Change your own password (asks for the current one; all tiers)
 tacctl user <subcommand>        # User management (incl. per-user scope membership)
@@ -575,7 +557,8 @@ tacctl backup <subcommand>      # Backup management
 tacctl hash                     # Show usage
 tacctl hash generate            # Prompt + print a bcrypt hash
 tacctl hash commands            # Print OS-specific client-side recipes
-tacctl version                  # Print tacctl version
+tacctl version [--long]         # Print tacctl version (--long: commit, build date, Go version)
+tacctl completion bash|zsh|fish # Print the shell completion script (install and upgrade place the bash one)
 ```
 
 Run any command without arguments for detailed help.
@@ -641,7 +624,7 @@ The WTI column is derived from the Cisco priv-lvl (WTI bands: 0-4 ViewOnly, 5-9 
 ```
 config show                                 Show current configuration summary incl. per-scope breakdown and each backend's listeners
 config dump                                 Show tacctl defaults + overrides + merged view
-config defaults                             Print canonical tacctl defaults (shipped, embedded in lib/conf.sh)
+config defaults                             Print canonical tacctl defaults (built into tacctl)
 config get <path> [fallback]                Read a dotted-path value from the merged config
 config get-list <path>                      Read a list value (one item per line)
 config cisco [--scope <name>] [--legacy] [--protocol tacacs|radius]
@@ -651,6 +634,7 @@ config juniper [--scope <name>] [--protocol tacacs|radius]
 config wti [--scope <name>] [--protocol tacacs|radius]
                                             Print the step-by-step serial-menu procedure for a WTI console server (firmware v8.x) with the scope's server IP, secret, and group→access-level mapping filled in; --protocol as for cisco (the RADIUS walkthrough is not verified on a unit)
 config render [--force]                     Regenerate every enabled backend's config from the store and tacctl.yaml, all or none, and restart the ones that changed (needs the store; refuses to overwrite a hand-edited file unless --force, which first saves it under backups/legacy/)
+config render --dry-run --out <dir>         Render every enabled backend into a new, empty directory at the live paths; nothing live is written, no restart
 config validate                             Validate the store, tacctl.yaml (schema walk, incl. commands.<group> / privileges.<group> / mgmt_acl.* / listeners) and the server-config structure (orphan scope refs, scope.default pointing at a nonexistent scope, reserved usernames, missing accounter:), then each enabled backend: rendered config up to date, drift; RADIUS scopes that send no vendor attribute. Exits 1 on errors
 config diff [timestamp]                     Alias of `backup diff`
 config restore <timestamp> [--legacy]       Alias of `backup restore`
@@ -680,7 +664,7 @@ config branch [name]                        Show or change the tacctl repo branc
 
 #### Configuration tunables — `tacctl.yaml`
 
-tacctl ships canonical tunable defaults embedded in `lib/conf.sh` (dumped on demand via `tacctl config defaults`). Operator overrides live in a single file: `/etc/tacctl/tacctl.yaml`. Only list keys you want to change; missing keys inherit from the defaults. Setting a key back to the default value removes it (revert-to-default) and an empty overrides file is pruned.
+tacctl ships canonical tunable defaults, built into the binary (printed by `tacctl config defaults`). Operator overrides live in a single file: `/etc/tacctl/tacctl.yaml`. Only list keys you want to change; missing keys inherit from the defaults. Setting a key back to the default value removes it (revert-to-default) and an empty overrides file is pruned.
 
 Schema (what `tacctl config defaults` prints):
 
@@ -742,11 +726,11 @@ Merge semantics:
 - Lists replace wholesale (an override list does not concatenate with the default list).
 - Scalars replace.
 
-**Write-time validation.** Every `tacctl config <setter>` invocation (and direct `conf_set` / `conf_set_list` calls) check the value against a schema table defined next to the defaults. Out-of-range numbers, bad ACL names, malformed CIDRs, invalid Cisco command strings, colliding or malformed listeners, and typo'd keys are rejected with a clear error before anything is written. `tacctl config validate` runs the same schema over `tacctl.yaml` to catch hand-edits.
+**Write-time validation.** Every `tacctl config <setter>` invocation checks the value against a schema table defined next to the defaults. Out-of-range numbers, bad ACL names, malformed CIDRs, invalid Cisco command strings, colliding or malformed listeners, and typo'd keys are rejected with a clear error before anything is written. `tacctl config validate` runs the same schema over `tacctl.yaml` to catch hand-edits.
 
 **A `tacctl.yaml` that does not parse** is never written into: every setter refuses with `tacctl.yaml: could not parse <path>: line L, column C: <problem>` and exits non-zero, leaving the file and every setting in it as they are. Commands that only read carry on with the defaults and say so once, on stderr. Fix or remove the file; `tacctl config validate` reports the same line. A change to users, groups or scopes is refused as well, since every backend's config is rendered from the file.
 
-**Read path caching.** Every read merges defaults + overrides and walks the dotted path, but the merged view is cached per script invocation (`_TACCTL_CFG_CACHE`). Commands that touch many tunables (`config cisco`, `status`, `config show`) load the merged YAML once and then answer from memory. Writes invalidate the cache.
+**Read path caching.** Every read merges defaults + overrides and walks the dotted path, but the merged view is cached for the duration of one command. Commands that touch many tunables (`config cisco`, `status`, `config show`) load the merged YAML once and then answer from memory. Writes invalidate the cache.
 
 View effective posture with `tacctl config dump`; read individual values with `tacctl config get <path>` / `tacctl config get-list <path>`.
 
@@ -766,7 +750,7 @@ scope prefixes <name> list|add|remove <cidrs>            Per-scope CIDR list (ad
 scope prefixes <name> remove --all [--force]             Remove every prefix, which removes the scope (confirms; refuses if users reference it unless --force, which strips it from them)
 scope secret   <name> show|set <value>|generate          Per-scope shared secret (show prints the raw value + length/posture)
 scope protocols <name> list|set <csv>|clear              Limit the scope to some protocols (tacacs, radius). A filter: empty (`clear`) means every enabled backend serves it
-scope vendor-attrs <name> [enable|disable <csv>]         RADIUS: the vendors (cisco, juniper, wti) whose privilege attribute an Access-Accept carries for the scope's devices. Opt-in: a new scope sends none ("not sent"); there is no set/clear. Stored in store.yaml, so a change re-renders and restarts the RADIUS backend. TACACS+ is not affected. See "What an Access-Accept carries"
+scope vendor-attrs <name> [enable|disable <csv>]         RADIUS: the vendors (cisco, juniper, wti) whose privilege attribute an Access-Accept carries for the scope's devices. Opt-in: a new scope sends none ("not sent"); its verbs are enable and disable. Stored in store.yaml, so a change re-renders and restarts the RADIUS backend. TACACS+ is not affected. See "What an Access-Accept carries"
 scope devices <name> [list|set <ip|cidr> <vendor>|unset <ip|cidr>]  RADIUS: tag an address (a bare IP is a /32) of the scope with its vendor: it gets that vendor's attribute and no other, whatever the scope enables. The address must be one `scope lookup` answers with this scope. `scope prefixes remove` refuses to leave a tag outside the scope's prefixes; tags go with the scope on rename and remove. Shown by `scope show` and `scope lookup`
 scope aaa-order <name> [tacacs-first|local-first]        Order of the server vs local in this scope's generated Cisco / Junos AAA lines (TACACS+ and RADIUS). Default `tacacs-first` keeps the server authoritative (local only kicks in on server outage). Set `local-first` when a break-glass local account must authenticate while the server is still reachable — any local name that collides with a server user wins locally, so scope local accounts to emergency credentials only.
 scope exec-timeout <name> [minutes]                      Per-scope idle-session timeout for this scope's generated device configs. Cisco renders `exec-timeout <n> 0` on `line con 0` / `line vty 0 15`; Junos renders `set system login idle-timeout <n>`. Range 0..60 (Junos's max); `0` disables idle expiry on both vendors. Default 60.
@@ -985,30 +969,22 @@ tacctl upgrade --branch develop
 The upgrade command:
 1. Moves tacctl state into `/etc/tacctl` if it is not there yet (idempotent)
 2. Pulls latest tacquito server source and rebuilds the binary (if upstream or the patch overlay changed)
-3. Pulls latest management scripts from `rett/tacctl` on GitHub (after switching to the `--branch` given), and re-executes itself if that changed tacctl's own code
+3. Pulls the latest tacctl repository into `/opt/tacctl` (after switching to the `--branch` given). If the installed binary was not built from the commit now checked out, it builds it again from the clone (`Building /usr/local/bin/tacctl from /opt/tacctl...`) and re-executes itself once, so the binary always matches the clone
 4. Installs packages a newer tacctl needs
 5. Brings the configuration in line with this release: re-renders each enabled backend from the store (RADIUS: and restarts it when its files or its unit drop-in changed); without a store, runs the in-place migrations of `tacquito.yaml`
-6. Updates system files (unit files and drop-ins, logrotate, completion, man page, templates you have not customized) if changed; a template you customized is kept, with the new release's version beside it as `<name>.template.new` (see [Custom Templates](#custom-templates))
+6. Updates system files (unit files and drop-ins, logrotate, the completion `tacctl completion bash` generates, the man page, templates you have not customized) if changed, and reports each one as `Updated:` or `Unchanged:`; a template you customized is kept, with the new release's version beside it as `<name>.template.new` (see [Custom Templates](#custom-templates))
 7. For an install without a store: moves it into the store, behind the gate described below
 8. Restarts tacquito only if what it reads changed (its binary, a unit or drop-in, or `tacquito.yaml`), and rolls the binary and unit files back if it does not come up. A new README, logrotate file, completion or template restarts nothing, and neither does an upgrade with nothing new
 
-Use `--branch` to switch to a different branch (e.g., `develop` for pre-release features). You can also switch branches without upgrading: `tacctl config branch <name>`.
+Running `tacctl upgrade` again right after an upgrade changes nothing. Use `--branch` to switch to a different branch (e.g., `develop` for pre-release features). You can also switch branches without upgrading: `tacctl config branch <name>`.
 
-`/usr/local/bin/tacctl` is symlinked to `/opt/tacctl/bin/tacctl.sh`, so git pulls update it instantly.
+**The store gate.** An install that has no store yet runs the legacy migrations of `tacquito.yaml`, then `tacctl store import --check` with the running binary: import (nothing unrepresentable), render, equivalence of what tacquito would load from the two files, and a load test of the rendered file on a loopback port. Only when all of that passes is `/etc/tacctl/store.yaml` written, the old file kept as `/etc/tacctl/backups/legacy/tacquito.yaml.pre-store.<timestamp>`, `tacquito.yaml` rendered from the store and tacquito restarted.
 
-### Upgrading to 0.1.15
+**When the gate stops**, the upgrade still completes: the code is installed, `tacquito.yaml` and the running daemon are left exactly as they were, and tacctl runs in **legacy read-only mode** (read commands work, changes are refused). The report says why: content the store cannot hold (another service on a group, a non-bcrypt authenticator, an unknown top-level key, ...), a render that is not equivalent, or a failed load test. It never forces either through. Fix what `tacctl store import --check` reports and upgrade again, or accept the difference: `tacctl store import --force`, then `tacctl config render --force`.
 
-The first `tacctl upgrade` from 0.1.14 or earlier runs the old release's upgrade, which pulls 0.1.15 and re-executes it; 0.1.15 then does the following on its own. Nothing needs to be prepared, and RADIUS stays off (`tacctl backend enable radius` afterwards, if wanted).
+**Undoing the move into the store.** `tacctl store rollback` restores the kept pre-store `tacquito.yaml` and legacy read-only mode (refused while RADIUS is enabled: `tacctl backend disable radius` first).
 
-1. **State directory.** `tacctl.yaml`, `linux-hosts`, `linux-uids`, `backups/` and `templates/` move from `/etc/tacquito` to `/etc/tacctl` (0700 root). Each old path becomes a symlink to the new one, for one release, so the previous release still finds its files after a rollback. This runs on every upgrade: if older code has meanwhile replaced a symlink with a regular file, the newer content wins and the other copy is kept under `/etc/tacctl/backups/legacy/`.
-2. **Units.** `tacquito.service` and the template `tacquito@.service` are installed. The listen address, log level and metrics address of the old hand-managed drop-in `tacquito.service.d/tacctl-overrides.conf` are imported once into `tacctl.yaml` (`listeners.tacacs.default`, `backends.tacacs.level`, `backends.tacacs.metrics_address`), the drop-in is replaced by the rendered `tacctl.conf`, and the old file is kept under `backups/legacy/`. The running daemon is not touched until the one restart at the end; if the unit does not come up then, the unit files, drop-ins, `tacctl.yaml` and the binary are restored together.
-3. **The store, behind a gate.** The legacy migrations of `tacquito.yaml` run as in every upgrade, then `tacctl store import --check` with the newly built binary: import (nothing unrepresentable), render, equivalence of what tacquito would load from the two files, and a load test of the rendered file on a loopback port. Only when all of that passes is `/etc/tacctl/store.yaml` written, the old file kept as `/etc/tacctl/backups/legacy/tacquito.yaml.pre-store.<timestamp>`, `tacquito.yaml` rendered from the store (and compared once more with the file it replaced), and tacquito restarted. The summary says `Store: migrated from tacquito.yaml`.
-
-**When the gate stops**, the upgrade still completes: the code is installed, `tacquito.yaml` and the running daemon are left exactly as they were, and tacctl runs in **legacy read-only mode** (read commands work, changes are refused). The report says why: content the store cannot hold (another service on a group, a non-bcrypt authenticator, an unknown top-level key, …), a render that is not equivalent (the differences are printed), the tacquito binary or `timeout` missing. The upgrade **never forces either through**. To proceed, either fix what `tacctl store import --check` lists in `tacquito.yaml` and run `tacctl upgrade` again, or accept the difference yourself: `tacctl store import` (`--force` drops what the store cannot hold, listing each item), then `tacctl config render --force`.
-
-**Rollback.** `tacctl store rollback` returns to the kept pre-store `tacquito.yaml` and legacy read-only mode under 0.1.15 (refused while RADIUS is enabled: `tacctl backend disable radius` first). Run it before putting the previous release's code back (`git -C /opt/tacctl checkout 0.1.14`): that release edits `tacquito.yaml` directly, and with the store still in place its edits would be drift to 0.1.15. It finds `tacctl.yaml`, `linux-*`, `backups` and `templates` through the symlinks in `/etc/tacquito`, and a later upgrade moves whatever it wrote and runs the gate again. Its `config listen|loglevel|metrics` write the old `tacctl-overrides.conf` drop-in, which the rendered `tacctl.conf` beside it overrides (systemd reads drop-ins in name order); remove `tacctl.conf` from `tacquito.service.d` after going back if you change those settings there.
-
-After the upgrade: `tacctl status`, `tacctl config validate` (store, rendered config, drift), and `tacctl backup list` (the pre-store file is under the old-style backups).
+After an upgrade: `tacctl status`, `tacctl config validate` (store, rendered config, drift), and `tacctl backup list` (the pre-store file is under the old-style backups).
 
 ---
 
@@ -1035,7 +1011,7 @@ After the upgrade: `tacctl status`, `tacctl config validate` (store, rendered co
 - A generated file was edited by hand; tacctl will not overwrite it. `tacctl config validate` names the file and both ways out: keep the edit (`tacctl store import --replace`, then `tacctl config render --force`; TACACS+ only) or discard it (`tacctl config render --force`, the edited copy is kept under `/etc/tacctl/backups/legacy/`)
 
 **`store not initialised`**
-- The install is in legacy read-only mode (the upgrade's store gate stopped, or after `store rollback`). See [Upgrading to 0.1.15](#upgrading-to-0115)
+- The install is in legacy read-only mode (the upgrade's store gate stopped, or after `store rollback`). See [Upgrading](#upgrading)
 
 **RADIUS: no answer, or `Access-Reject`**
 - `tacctl log failures --backend radius` gives the reason per reject (`not an enabled user of this scope`: the user lacks the scope the device's address falls in, or is disabled; `Crypt digest does not match`: wrong password)

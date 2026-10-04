@@ -98,11 +98,12 @@ func Install(ctx context.Context, h *Host, args []string) error {
 	if err := h.install(ctx, ids, backend.PhaseFiles, tree); err != nil {
 		return err
 	}
-	if src := filepath.Join(tree, "config", "tacctl.bash-completion"); isRegular(src) {
-		if err := h.cp(src, p.Completion); err != nil {
+	if h.Completion != nil {
+		script, err := h.Completion()
+		if err != nil {
 			return err
 		}
-		if err := h.chmod(p.Completion, 0o644); err != nil {
+		if err := h.writeFile(p.Completion, script, 0o644); err != nil {
 			return err
 		}
 		out.Info("Bash completion installed: " + p.Completion)

@@ -153,6 +153,7 @@ with open(sys.argv[1]) as f:
 @test "scope usage and completion mention the protocols verb" {
     run "$TACCTL_BIN_SCRIPT" scope
     assert_output --partial "tacctl scope protocols <scope> list|set <csv>|clear"
-    grep -q 'prefixes secret protocols vendor-attrs devices aaa-order' "${TACCTL_SRC}/config/tacctl.bash-completion"
+    run "$TACCTL_BIN_SCRIPT" __complete scope ""
+    assert_output --partial "vendor-attrs"
     grep -q 'scope protocols' "${TACCTL_SRC}/man/tacctl.1"
 }

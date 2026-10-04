@@ -76,7 +76,8 @@ SCHEMA_PY = heredoc('_conf_schema_py', "<<'PY'", 'PY').replace('@BACKEND_IDS@', 
 OVERRIDES_PY = heredoc('_conf_overrides_py', "<<'PY'", 'PY')
 
 with open(os.path.join(HERE, '..', 'defaults.yaml'), encoding='utf-8') as f:
-    if f.read() != DEFAULTS:
+    # The header names tacctl, not lib/conf.sh (plan 3.9 item 28).
+    if f.read().replace('`tacctl config defaults`\n# (built into tacctl).', 'conf_emit_defaults() in\n# lib/conf.sh.') != DEFAULTS:
         sys.exit('gen.py: internal/conf/defaults.yaml differs from conf_emit_defaults at ' + TAG)
 
 NS = {}

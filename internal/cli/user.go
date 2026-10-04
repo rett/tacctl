@@ -33,7 +33,7 @@ var userSpecs = map[string]Spec{
 	"move":    {MinArgs: 2, MaxArgs: 2, Args: []string{KindUsers, KindGroups}},
 	"verify":  {MinArgs: 1, MaxArgs: 1, Args: []string{KindUsers}},
 	"scope": {MinArgs: 1, MaxArgs: 3, Args: []string{KindUsers, "list|add|remove|replace", KindScopes + KindList},
-		Flags: []Flag{{Names: []string{"--all"}}}},
+		Flags: []Flag{{Names: []string{"--all"}, Only: "remove", Alone: true}}},
 }
 
 func userCmd(inv *invocation) *cobra.Command {

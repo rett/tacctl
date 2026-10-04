@@ -9,9 +9,12 @@
 #
 #   flow.sh <dir with store.yaml and sec.* files>
 #
-# The tacctl checkout is mounted read-only at /opt/tacctl. tacquito is not in
-# the container: the TACACS+ backend renders its config and fails to restart,
-# which is what its warnings in the output are.
+# The tacctl checkout is mounted read-only at /opt/tacctl. tacctl is built in
+# the container by its own bootstrap (bin/tacctl.sh installs Go, verified,
+# and builds /usr/local/bin/tacctl from the vendored sources). tacquito is not
+# in the container: the TACACS+ backend renders its config and fails to
+# restart, which is what its warnings in the output are. The old release of
+# the last section is bash and runs from a 'git archive' of its commit.
 set -u
 DATA="${1:?usage: flow.sh <data dir>}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -61,7 +64,9 @@ mkdir -p /etc/tacctl /etc/tacquito /var/log/tacquito
 chmod 700 /etc/tacctl
 sed "s#10.0.2.0/24#${MYIP%.*}.0/24#" "${DATA}/store.yaml" > /etc/tacctl/store.yaml
 chmod 600 /etc/tacctl/store.yaml
-ln -sf /opt/tacctl/bin/tacctl.sh /usr/local/bin/tacctl
+# The bootstrap needs wget and tar for Go (the cached image may predate wget).
+command -v wget > /dev/null 2>&1 || { apt-get install -y -qq wget ca-certificates > /dev/null 2>&1 || dnf install -y -q wget > /dev/null 2>&1; }
+/opt/tacctl/bin/tacctl.sh version 2>&1 | tail -3
 tacctl config render 2>&1 | tail -2
 
 section "backend enable radius"
@@ -174,7 +179,7 @@ check "active and enabled" bash -c "systemctl is-active --quiet $UNIT && systemc
 check "cases pass again" "${HERE}/cases.sh" "$DATA"
 
 section "uninstall phases (stop, program, data, account)"
-bash -c 'set -euo pipefail; source /opt/tacctl/bin/tacctl.sh; backends_select_present; echo "selected: ${BACKENDS_ENABLED[*]}"; for p in stop program data account; do backend_radius_uninstall "$p"; done'
+tacctl _phase radius uninstall stop,program,data,account
 check "unit stopped and not enabled" bash -c "! systemctl is-active --quiet $UNIT && ! systemctl is-enabled --quiet $UNIT"
 check "tacctl's files are gone from ${RADDB}, the systemd directory, logrotate.d and ${LOGS}" bash -c "[[ -z \$(ls ${RADDB} | grep tacctl) && ! -e $DROPIN && ! -e /etc/logrotate.d/tacctl-radius && -z \$(ls ${LOGS} | grep tacctl) ]]"
 check "the package and its configuration are still there, unmodified" bash -c "[[ -f ${RADDB}/radiusd.conf && -z \"\$($(declare -f pkg_verify); pkg_verify)\" ]]"
@@ -202,8 +207,10 @@ if [[ -n "$OLD_REF" ]] && git -C /opt/tacctl cat-file -e "${OLD_REF}^{commit}" 2
 
     # 'tacctl upgrade' runs every enabled backend's 'upgrade config' (and
     # 'files', 'finish'); the rest of upgrade (git pull, tacquito build) has
-    # nothing to do with this.
-    bash -c 'source /opt/tacctl/bin/tacctl.sh; for p in config files finish; do backend_radius_upgrade "$p" "/opt/tacctl"; done; printf "SUMMARY %s\n" "${UPGRADE_SUMMARY_NOTES[@]}"' > /tmp/out 2>&1; rc=$?
+    # nothing to do with this. '_phase' runs the three in one process and
+    # prints one 'SUMMARY <note>' line per note the backend leaves for the
+    # closing summary.
+    tacctl _phase radius upgrade config,files,finish /opt/tacctl > /tmp/out 2>&1; rc=$?
     sed 's/^/    /' /tmp/out
     check "upgrade config/files/finish exit 0" is "$rc" 0
     check "upgrade: dictionary rendered (0640 root:${RUSER}) and recorded" bash -c "[[ \$(stat -c '%a %U:%G' ${DICTDIR}/dictionary) == '640 root:${RUSER}' ]] && grep -q '${DICTDIR}/dictionary' /etc/tacctl/rendered.json"

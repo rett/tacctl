@@ -22,7 +22,7 @@ func (c *Config) Dump(w io.Writer) error {
 	b.WriteString("\n")
 	b.WriteString(ui.Bold + "tacctl configuration" + ui.NC + "\n")
 	b.WriteString("--------------------------------------------\n")
-	b.WriteString("  Defaults:  embedded in lib/conf.sh (conf_emit_defaults)\n")
+	b.WriteString("  Defaults:  built into tacctl (tacctl config defaults)\n")
 	b.WriteString(echoE("  Overrides: "+c.Path) + "\n")
 	b.WriteString("\n")
 	b.WriteString(ui.Bold + "--- Defaults (canonical) ---" + ui.NC + "\n")

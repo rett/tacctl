@@ -44,6 +44,8 @@ func newRoot(inv *invocation) *cobra.Command {
 		configCmd(inv), logCmd(inv), backupCmd(inv), hashCmd(inv), versionCmd(inv),
 		// Bash completion's bridge to live names (sudo -n tacctl _completion-names <kind>).
 		completionNamesCmd(inv),
+		// The generated shell completion script (completion.go).
+		completionCmd(inv),
 		// One lifecycle phase of one backend, for drivers and tests (phase.go).
 		phaseCmd(inv),
 	)
@@ -63,6 +65,7 @@ func newRoot(inv *invocation) *cobra.Command {
 		return exit(1)
 	})
 	root.RunE, help.RunE = topUsage, topUsage
+	attachCompletion(inv, root)
 	configure(root)
 	configure(help)
 	return root
@@ -107,8 +110,9 @@ func isComplete(args []string) bool {
 	return len(args) > 0 && (args[0] == cobra.ShellCompRequestCmd || args[0] == cobra.ShellCompNoDescRequestCmd)
 }
 
-// complete runs cobra's __complete over the tree. It never reads tacctl's state; live names will come through
-// 'sudo -n tacctl _completion-names' from ValidArgsFunction (Decision 3).
+// complete runs cobra's __complete over the tree. It never reads tacctl's
+// state; live names come through 'sudo -n tacctl _completion-names' from
+// the verbs' ValidArgsFunction (completion.go).
 func complete(ctx context.Context, a *app.App, root *cobra.Command) error {
 	var buf bytes.Buffer
 	root.SetArgs(a.Args)
@@ -118,8 +122,7 @@ func complete(ctx context.Context, a *app.App, root *cobra.Command) error {
 	err := root.ExecuteContext(ctx)
 	out := buf.String()
 	// cobra offers its help command among the top-level words even when it
-	// is hidden; tacctl has no 'help' command (the hand-written completion
-	// does not offer it either).
+	// is hidden; tacctl has no 'help' command.
 	if len(a.Args) == 2 {
 		var kept []string
 		for _, l := range strings.SplitAfter(out, "\n") {

@@ -42,7 +42,7 @@ var hostSpecs = map[string]Spec{
 		{Names: []string{"--server"}, Value: true},
 		{Names: []string{"--name"}, Value: true},
 		{Names: []string{"--port"}, Value: true},
-		{Names: []string{"--identity"}, Value: true},
+		{Names: []string{"--identity"}, Value: true, Kind: KindFile},
 		{Names: []string{"--method"}, Value: true, Kind: methodWords},
 		{Names: []string{"--build-on-host"}},
 		flagAllowUIDMismatch, flagAdopt}},

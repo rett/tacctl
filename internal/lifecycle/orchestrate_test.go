@@ -136,7 +136,6 @@ func newOhost(t *testing.T) *ohost {
 	}
 	t.Setenv("TMPDIR", j("tmp"))
 	o.write(j("tree", "bin", "tacctl.sh"), "#!/bin/bash\n# the shim\n")
-	o.write(j("tree", "config", "tacctl.bash-completion"), "complete -F _tacctl tacctl\n")
 	o.write(j("tree", "man", "tacctl.1"), ".TH TACCTL 1\n")
 	o.write(j("tree", "go.mod"), "module github.com/rett/tacctl\n")
 
@@ -203,7 +202,7 @@ func (o *ohost) host() *lifecycle.Host {
 	o.be.Prompter = ui.NewPrompter(strings.NewReader(o.stdin), o.out)
 	env := lifecycle.NewEnv(o.be, bytes.NewReader(bytes.Repeat([]byte{0xab}, 64)), false)
 	env.Chown = func(string) {}
-	return &lifecycle.Host{Env: env, Environ: paths.NewEnv(o.environ), Commit: o.commit}
+	return &lifecycle.Host{Env: env, Environ: paths.NewEnv(o.environ), Commit: o.commit, Completion: testCompletion}
 }
 
 // do runs one command; the exit status.
@@ -598,7 +597,6 @@ func upgrade(o *ohost, args ...string) int { return o.do(lifecycle.Upgrade, args
 func (o *ohost) cloned() {
 	o.write(filepath.Join(o.p.Deploy, "bin", "tacctl.sh"), "#!/bin/bash\n")
 	o.write(filepath.Join(o.p.Deploy, "go.mod"), "module github.com/rett/tacctl\n")
-	o.write(filepath.Join(o.p.Deploy, "config", "tacctl.bash-completion"), "complete -F _tacctl tacctl\n")
 	o.write(filepath.Join(o.p.Deploy, "man", "tacctl.1"), ".TH TACCTL 1\n")
 	_ = os.MkdirAll(filepath.Join(o.p.Deploy, ".git"), 0o755)
 	o.write(o.p.Command, "binary\n")
@@ -654,6 +652,35 @@ func TestUpgradeOrderAndSummary(t *testing.T) {
 	o.rad.summary = backend.UpgradeSummary{}
 	upgrade(o)
 	inOrder(t, o.text(), "[INFO]   Unchanged: bash completion", "[INFO] 0 file(s) updated.", "  Upgrade Complete\n  Managed scripts: 0 updated\n  Templates: kept 1")
+}
+
+// The completion is the binary's own output, written only when the
+// installed one differs: a stale file is "Updated" and replaced, a current
+// one "Unchanged", and a host with no completion directory gets it.
+func TestUpgradeCompletionIsRewrittenOnlyWhenItDiffers(t *testing.T) {
+	o := newOhost(t)
+	o.cloned()
+	o.write(o.p.Completion, "complete -F _old tacctl\n")
+	if code := upgrade(o); code != 0 {
+		t.Fatalf("exit %d\n%s\n%s", code, o.stdout, o.stderr)
+	}
+	if !strings.Contains(o.text(), "[INFO]   Updated: bash completion") || readFile(t, o.p.Completion) != "complete -F _tacctl tacctl\n" {
+		t.Errorf("not updated: %q\n%s", readFile(t, o.p.Completion), o.text())
+	}
+	if st, err := os.Stat(o.p.Completion); err != nil || st.Mode().Perm() != 0o644 {
+		t.Errorf("mode %v %v", st, err)
+	}
+	o.stdout.Reset()
+	upgrade(o)
+	if !strings.Contains(o.text(), "[INFO]   Unchanged: bash completion") {
+		t.Errorf("rewritten again:\n%s", o.text())
+	}
+	_ = os.RemoveAll(filepath.Dir(o.p.Completion))
+	o.stdout.Reset()
+	upgrade(o)
+	if !strings.Contains(o.text(), "[INFO]   Updated: bash completion") || readFile(t, o.p.Completion) != "complete -F _tacctl tacctl\n" {
+		t.Errorf("a missing directory:\n%s", o.text())
+	}
 }
 
 // No clone (radius.bats's order test): no git in it, nothing built or
@@ -891,3 +918,6 @@ func TestUpgradeAfterConfigBranch(t *testing.T) {
 		t.Errorf("command %q %v", target, err)
 	}
 }
+
+// testCompletion stands for the generated completion script.
+func testCompletion() ([]byte, error) { return []byte("complete -F _tacctl tacctl\n"), nil }

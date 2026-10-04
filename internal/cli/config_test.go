@@ -128,7 +128,7 @@ func TestConfigSpecs(t *testing.T) {
 			k = strings.TrimSuffix(k, KindList)
 			_, model := completionKinds[k]
 			_, other := completionArgKinds[k]
-			if k != "" && !model && !other && !strings.Contains(k, "|") {
+			if k != "" && !model && !other && !strings.Contains(k, "|") && k != KindFile {
 				t.Errorf("config %s: kind %q is no completion kind", c.Name(), k)
 			}
 		}

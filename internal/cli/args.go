@@ -22,6 +22,11 @@ type Flag struct {
 	Value bool
 	// Repeat: the flag may be given more than once (each value is kept).
 	Repeat bool
+	// Only: completion offers the flag only after this positional word
+	// ('remove --all'). Alone: no positional is offered once the flag is on
+	// the line. Neither changes how the verb parses its arguments.
+	Only  string
+	Alone bool
 	// Kind is what the value is, for completion: a _completion-names kind
 	// (KindUsers, ...), KindList for a comma list of one, or "" for free
 	// text.
@@ -34,9 +39,15 @@ const (
 	KindUsers  = "users"
 	KindGroups = "groups"
 	KindScopes = "scopes"
+	// KindFile is a file or directory name: the shell completes paths.
+	KindFile = "file"
 	// KindList marks a comma list: "<kind>,list" completes after each comma.
 	KindList = ",list"
 )
+
+// After is the kind of a positional that completion offers only when the
+// word is among the positionals typed before it ('set <ip> <vendor>').
+func After(word, kind string) string { return "@" + word + ":" + kind }
 
 // Spec describes a verb's arguments.
 type Spec struct {

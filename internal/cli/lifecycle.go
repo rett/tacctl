@@ -35,8 +35,9 @@ func (inv *invocation) lifecycleHost() *lifecycle.Host {
 	a := inv.app
 	a.Backends()
 	return &lifecycle.Host{
-		Env:     lifecycle.NewEnv(a.BackendEnv(), a.Knobs.Rand(), a.EUID == 0),
-		Environ: a.Env,
-		Commit:  inv.build.Commit,
+		Env:        lifecycle.NewEnv(a.BackendEnv(), a.Knobs.Rand(), a.EUID == 0),
+		Environ:    a.Env,
+		Commit:     inv.build.Commit,
+		Completion: BashCompletion,
 	}
 }

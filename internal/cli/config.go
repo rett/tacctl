@@ -54,11 +54,11 @@ var configSpecs = map[string]Spec{
 	"show":     {MaxArgs: -1},
 	"validate": {MaxArgs: -1},
 	"render": {MaxArgs: 0, Flags: []Flag{
-		{Names: []string{"--force"}}, {Names: []string{"--dry-run"}}, {Names: []string{"--out"}, Value: true}}},
+		{Names: []string{"--force"}}, {Names: []string{"--dry-run"}}, {Names: []string{"--out"}, Value: true, Kind: KindFile}}},
 	"dump":     {MaxArgs: -1},
 	"defaults": {MaxArgs: -1},
-	"get":      {MinArgs: 1, MaxArgs: 2},
-	"get-list": {MinArgs: 1, MaxArgs: 1},
+	"get":      {MinArgs: 1, MaxArgs: 2, Args: []string{configPaths}},
+	"get-list": {MinArgs: 1, MaxArgs: 1, Args: []string{configPaths}},
 	"loglevel": {MaxArgs: 1, Args: []string{"debug|info|error"}},
 	"listen": {MaxArgs: 2, Args: []string{"show|reset|tcp|tcp6|udp|udp6", ""}, Flags: []Flag{
 		{Names: []string{"--backend"}, Value: true, Kind: "backends"},

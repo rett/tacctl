@@ -43,8 +43,8 @@ var configLinuxSpecs = map[string]Spec{
 		{Names: []string{"--scope"}, Value: true, Kind: KindScopes},
 		{Names: []string{"--server"}, Value: true},
 		{Names: []string{"--method"}, Value: true, Kind: methodWords},
-		{Names: []string{"--output", "-o"}, Value: true}}},
-	"remove-script": {Flags: []Flag{{Names: []string{"--output", "-o"}, Value: true}}},
+		{Names: []string{"--output", "-o"}, Value: true, Kind: KindFile}}},
+	"remove-script": {Flags: []Flag{{Names: []string{"--output", "-o"}, Value: true, Kind: KindFile}}},
 	"uid":           {MaxArgs: 2, Args: []string{KindUsers, ""}},
 	"builds":        {MaxArgs: 1, Args: []string{"list|clear"}},
 }

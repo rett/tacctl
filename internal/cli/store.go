@@ -27,7 +27,7 @@ import (
 // storeSpecs are the arguments of each verb, for completion (args.go).
 var storeSpecs = map[string]Spec{
 	"show": {MaxArgs: 1, Flags: []Flag{{Names: []string{"--json"}}}},
-	"import": {MaxArgs: 1, Flags: []Flag{
+	"import": {MaxArgs: 1, Args: []string{KindFile}, Flags: []Flag{
 		{Names: []string{"--check"}}, {Names: []string{"--force"}}, {Names: []string{"--replace"}}}},
 	"rollback": {},
 }

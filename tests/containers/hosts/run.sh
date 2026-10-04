@@ -21,7 +21,9 @@
 # built once and kept (localhost/tacctl-host-check:{server,client}-<distro>).
 # tacquito is not built here: the server image takes /usr/local/bin/tacquito
 # from this machine, and without it only radius and probe can run. Needs
-# python3-bcrypt in the server image (installed there), nothing else here.
+# python3-bcrypt in the server image (installed there), nothing else here. The
+# server image builds tacctl from this checkout with its bootstrap
+# (bin/tacctl.sh installs Go, verified, and builds /usr/local/bin/tacctl).
 # shellcheck disable=SC2016  # the single-quoted scripts run inside the containers
 set -uo pipefail
 CLIENT="${1:?usage: run.sh <client> <radius|tacplus|switch|probe> [--server <distro>] [--keep]}"
@@ -58,10 +60,10 @@ case "$CYCLE" in
 esac
 case "$SERVER" in
     ubuntu-noble) SBASE=docker.io/library/ubuntu:noble
-        SSETUP='export DEBIAN_FRONTEND=noninteractive; apt-get update -qq && apt-get install -y -qq systemd systemd-sysv dbus python3 python3-yaml python3-bcrypt iproute2 procps logrotate git diffutils openssh-client nftables autoconf automake libtool gnulib libpam0g-dev build-essential > /dev/null' ;;
+        SSETUP='export DEBIAN_FRONTEND=noninteractive; apt-get update -qq && apt-get install -y -qq systemd systemd-sysv dbus python3 python3-yaml python3-bcrypt iproute2 procps logrotate git diffutils openssh-client nftables autoconf automake libtool gnulib libpam0g-dev build-essential wget ca-certificates > /dev/null' ;;
     almalinux-9) SBASE=docker.io/library/almalinux:9
         [[ "$WANT" == "radius" ]] || { echo "--server almalinux-9 runs the radius and probe cycles only" >&2; exit 2; }
-        SSETUP='dnf install -y -q systemd python3 python3-pyyaml python3-pip iproute procps-ng logrotate git findutils diffutils openssh-clients nftables > /dev/null && pip3 install -q bcrypt' ;;
+        SSETUP='dnf install -y -q systemd python3 python3-pyyaml python3-pip iproute procps-ng logrotate git findutils diffutils openssh-clients nftables wget > /dev/null && pip3 install -q bcrypt' ;;
     *) echo "unknown server: ${SERVER}" >&2; exit 2 ;;
 esac
 SIMAGE="localhost/tacctl-host-check:server-${SERVER}"
@@ -99,10 +101,17 @@ if ! podman image exists "$SIMAGE"; then
     podman rm -f -t 0 "${S}-build" > /dev/null 2>&1 || true
     podman run -d --name "${S}-build" -v "${REPO}:/opt/tacctl:ro" "$SBASE" sleep infinity > /dev/null
     podman exec "${S}-build" bash -c "$SSETUP" || exit 1
+    # tacctl itself, built from this checkout by its bootstrap.
+    podman exec "${S}-build" bash -c 'git config --global --add safe.directory /opt/tacctl
+        /opt/tacctl/bin/tacctl.sh version' | tail -1 || exit 1
     if [[ "$SERVER" == "ubuntu-noble" ]]; then
         # The pinned pam_tacplus source, prepared as 'tacctl install' would.
-        podman exec "${S}-build" bash -c 'git config --global --add safe.directory /opt/tacctl
-            set -euo pipefail; source /opt/tacctl/bin/tacctl.sh; cmd_config_linux_build' | tail -1 || exit 1
+        # Every command but 'version' wants a store (it says "Is tacctl
+        # installed?" otherwise): an empty one is enough here, and goes again
+        # (server-setup.sh writes the real one).
+        podman exec "${S}-build" bash -c 'set -euo pipefail
+            mkdir -p /etc/tacctl && printf "version: 1\n" > /etc/tacctl/store.yaml
+            tacctl config linux build; rm -rf /etc/tacctl' | tail -1 || exit 1
         if [[ -x /usr/local/bin/tacquito ]]; then
             podman cp /usr/local/bin/tacquito "${S}-build:/usr/local/bin/tacquito"
         else
