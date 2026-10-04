@@ -60,6 +60,19 @@ no_sidecars() {
 
 # --- user passwd --------------------------------------------------------------
 
+@test "user verify: a stored bcrypt cost above 16 is refused before the password is asked (exit 1)" {
+    # HASH_A with its cost 10 made 31: a check would run for days.
+    local hash31="24326224333124${HASH_A#24326224313024}"
+    "$TACCTL_BIN_SCRIPT" user add bob readonly --hash "$hash31" --scopes lab > /dev/null
+    run timeout 30 "$TACCTL_BIN_SCRIPT" user verify bob <<< "whatever-password"
+    assert_failure 1
+    assert_output --partial "bcrypt cost 31 exceeds the verify limit (16); tacquito still authenticates it"
+    refute_output --partial "Enter password"
+    # A cost tacctl writes is checked as before.
+    run timeout 30 "$TACCTL_BIN_SCRIPT" user verify alice <<< "whatever-password"
+    assert_output --partial "Password does not match."
+}
+
 @test "user passwd --hash: swaps the stored bcrypt hash" {
     local before; before=$(_alice_hash)
     [[ "$before" == "$HASH_A" ]]

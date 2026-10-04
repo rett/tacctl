@@ -23,12 +23,15 @@ import (
 // completion, the man page, the state directory (the backups archived
 // first under /root when asked), each backend's data (logs archived when
 // asked), the deploy clone and its safe.directory entry, each backend's
-// account; and the summary. Every other argument is ignored, as 0.1.16
-// ignores all of them.
+// account; and the summary. Any other argument is refused before anything
+// is done.
 //
 // Go, tacquito's source and the Go build cache stay.
 func Uninstall(ctx context.Context, h *Host, args []string) error {
-	yes := slices.Contains(args, "-y") || slices.Contains(args, "--yes")
+	yes := false
+	if err := parseLifecycleArgs(h, args, nil, &yes, uninstallUsage); err != nil {
+		return err
+	}
 	out, p := h.Out, h.Paths
 	// Every backend that is enabled or still installed is removed.
 	ids := h.Set.Present()

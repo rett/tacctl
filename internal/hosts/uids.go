@@ -17,9 +17,8 @@ import (
 type UIDs struct{ Path string }
 
 // Touch is 'touch "$LINUX_UID_FILE"': the file is created (0600) when it is
-// missing, and its times are set to now either way. 0.1.16 does this on
-// every 'config linux uid', even a read (docs/plans/go-rewrite.md 3.9 "Not
-// changed although tempting").
+// missing, and its times are set to now either way. 'config linux uid' does
+// it only before a change; a read leaves the file alone.
 func (u UIDs) Touch() error {
 	f, err := os.OpenFile(u.Path, os.O_WRONLY|os.O_CREATE, 0o600)
 	if err != nil {

@@ -27,7 +27,8 @@ func TestForPrivLvl(t *testing.T) {
 
 // testdata/permits.psv is tier_permits of the 0.1.16 tag for every tier
 // and a list of command lines ('cmd|sub|readonly|operator|superuser|
-// unrestricted|none'), written by sourcing bin/tacctl.sh.
+// unrestricted|none'), written by sourcing bin/tacctl.sh, with 0.2.1's
+// change: 'help', '-h' and '--help' alone are open to the lower tiers.
 func TestPermitsMatchesBash(t *testing.T) {
 	f, err := os.Open("testdata/permits.psv")
 	if err != nil {
@@ -57,7 +58,8 @@ func TestPermitsMatchesBash(t *testing.T) {
 	}
 }
 
-// testdata/sudoers.tiers is emit_tier_sudoers of the 0.1.16 tag.
+// testdata/sudoers.tiers is emit_tier_sudoers of the 0.1.16 tag plus
+// 0.2.1's line for 'help', '-h' and '--help'.
 func TestSudoersMatchesBash(t *testing.T) {
 	want, err := os.ReadFile("testdata/sudoers.tiers")
 	if err != nil {
@@ -202,10 +204,23 @@ func TestEnforce(t *testing.T) {
 	}
 	// No sub: the bash's trailing blank stays.
 	g = newGate("op", "tac-users", lv)
-	_ = g.gate.Enforce(context.Background(), "help", "")
-	if !strings.Contains(g.err.String(), "'tacctl help ' is not permitted for the operator tier.") ||
-		!g.run.Called("logger", "-t", "tacctl", "-p", "auth.warning", "tier DENY user=op tier=operator cmd=help ") {
-		t.Errorf("help: %q %q", g.err.String(), g.run.Argvs())
+	_ = g.gate.Enforce(context.Background(), "bogus", "")
+	if !strings.Contains(g.err.String(), "'tacctl bogus ' is not permitted for the operator tier.") ||
+		!g.run.Called("logger", "-t", "tacctl", "-p", "auth.warning", "tier DENY user=op tier=operator cmd=bogus ") {
+		t.Errorf("bogus: %q %q", g.err.String(), g.run.Argvs())
+	}
+	// The usage is open to both lower tiers; a word after it is not.
+	for _, cmd := range []string{"help", "-h", "--help"} {
+		for _, u := range []string{"ro", "op"} {
+			g = newGate(u, "tac-users", lv)
+			if err := g.gate.Enforce(context.Background(), cmd, ""); err != nil || g.err.Len() != 0 {
+				t.Errorf("%s %s: %v %q", u, cmd, err, g.err.String())
+			}
+		}
+		g = newGate("ro", "tac-users", lv)
+		if err := g.gate.Enforce(context.Background(), cmd, "user"); err != ErrDenied {
+			t.Errorf("%s user: %v", cmd, err)
+		}
 	}
 	g = newGate("ghost", "tac-users", lv)
 	if err := g.gate.Enforce(context.Background(), "version", ""); err != ErrDenied ||

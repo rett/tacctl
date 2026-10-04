@@ -7,6 +7,7 @@ package lifecycle
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/rett/tacctl/internal/backend"
 	"github.com/rett/tacctl/internal/paths"
+	"github.com/rett/tacctl/internal/tier"
 )
 
 // selfUpdatePaths are the parts of the tree the binary is built from: a
@@ -21,25 +23,33 @@ import (
 // one it pulled means the installed command is out of date.
 var selfUpdatePaths = []string{"cmd", "internal", "vendor", "go.mod", "go.sum", "bin", "config", "patches"}
 
-// parseBranch reads '--branch <name>' out of an install or upgrade command
-// line, as 0.1.16's loop does: any other argument is ignored (and '-y' or
-// '--yes' noted when yes is not nil); '--branch' with no value after it is
-// the silent exit 1 of a failed 'shift 2' under 'set -e'.
-func parseBranch(args []string, yes *bool) (string, error) {
-	branch := ""
+// The one-line usages a refused argument is followed by.
+const (
+	installUsage   = "Usage: tacctl install [--branch <name>] [-y|--yes]"
+	upgradeUsage   = "Usage: tacctl upgrade [--branch <name>]"
+	uninstallUsage = "Usage: tacctl uninstall [-y|--yes]"
+)
+
+// parseLifecycleArgs reads an install, upgrade or uninstall command line:
+// '--branch <name>' when branch is not nil, '-y' or '--yes' when yes is
+// not nil. Anything else, or a '--branch' with no value after it, is
+// refused ("Unknown argument: '<x>'" and the usage, exit 1) before
+// anything is done.
+func parseLifecycleArgs(h *Host, args []string, branch *string, yes *bool, usage string) error {
 	for i := 0; i < len(args); i++ {
 		switch a := args[i]; {
-		case a == "--branch":
-			if i+1 >= len(args) {
-				return "", backend.ErrFailed
-			}
-			branch = args[i+1]
+		case branch != nil && a == "--branch" && i+1 < len(args):
+			*branch = args[i+1]
 			i++
 		case yes != nil && (a == "-y" || a == "--yes"):
 			*yes = true
+		default:
+			h.Out.Error("Unknown argument: '" + a + "'")
+			h.Out.Error(usage)
+			return backend.ErrFailed
 		}
 	}
-	return branch, nil
+	return nil
 }
 
 // Upgrade is 'tacctl upgrade [--branch <name>]' (cmd_upgrade): every
@@ -65,8 +75,8 @@ func parseBranch(args []string, yes *bool) (string, error) {
 // The error is the failing step's, its messages written (a
 // *backend.Error: ExitCode is the status).
 func Upgrade(ctx context.Context, h *Host, args []string) error {
-	branch, err := parseBranch(args, nil)
-	if err != nil {
+	branch := ""
+	if err := parseLifecycleArgs(h, args, &branch, nil, upgradeUsage); err != nil {
 		return err
 	}
 	out, p := h.Out, h.Paths
@@ -165,6 +175,7 @@ func Upgrade(ctx context.Context, h *Host, args []string) error {
 		return err
 	}
 	updated += n
+	updated += h.updateTierSudoers(ctx)
 	// Unconditional re-gzip (cheap) also heals a host where it is missing.
 	if err := h.installManPage(ctx, filepath.Join(active, "man", "tacctl.1")); err != nil {
 		return err
@@ -452,4 +463,34 @@ func (h *Host) updateCompletion() (int, error) {
 	}
 	h.Out.Info("  Updated: bash completion")
 	return 1, nil
+}
+
+// updateTierSudoers refreshes the tiers sudoers drop-in an administrator
+// installed ('config sudoers tiers install') when this release's rules
+// differ from it, so tier users can run the verbs this release opens to
+// them: "Updated: tiers sudoers", else "Unchanged:". The file is never
+// created here, and it is rewritten only through tier.InstallSudoers
+// (visudo -cf, then install); a refused or failed rewrite leaves the old
+// file and warns, and the upgrade carries on.
+func (h *Host) updateTierSudoers(ctx context.Context) int {
+	file := h.Paths.TierSudoersFile
+	cur, err := os.ReadFile(file)
+	if err != nil {
+		return 0
+	}
+	body := tier.Sudoers()
+	if string(cur) == body {
+		h.Out.Info("  Unchanged: tiers sudoers")
+		return 0
+	}
+	if err := tier.InstallSudoers(ctx, h.Runner, h.Out.Stdout, h.Out.Stderr, body, file); err != nil {
+		why := "install failed"
+		if errors.Is(err, tier.ErrVisudo) {
+			why = "visudo validation failed"
+		}
+		h.Out.Warn("  Not updated: tiers sudoers (" + why + "; " + file + " is unchanged)")
+		return 0
+	}
+	h.Out.Info("  Updated: tiers sudoers")
+	return 1
 }

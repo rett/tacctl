@@ -8,7 +8,7 @@ shim (`bin/tacctl.sh`). Its tests come in layers:
 | Go unit tests | `go test -race ./...` with the fake runner, temp dirs and the test knobs | every package on its own: the PyYAML-compatible reader and writer, the store, the model, the renderers, the backend contract (with a stand-in backend), the lifecycle phases, the CLI's argument handling, exit codes and usage blocks | `internal/*/..._test.go` |
 | Goldens | Go tests and bats `golden_diff` over `tests/fixtures/golden/*`, `tests/fixtures/store.*.yaml`, `tests/fixtures/model/*.json` | rendered artifacts byte for byte | both layers |
 | Black-box bats | bats-core against `dist/tacctl` | the command line: output, exit codes, prompts, files and modes, the system commands run (PATH stubs) | `tests/integration`, `tests/e2e` |
-| Differential | `tests/diff/run.sh` | the binary against the last bash release (the `0.1.18` tag) on the same inputs, success and error paths | on demand |
+| Differential | `tests/diff/run.sh` | the binary against a release tag (default the last bash release, `0.1.18`; `--against 0.2.0` for the last Go release) on the same inputs, success and error paths | on demand |
 | Containers | rootless podman | real FreeRADIUS, real PAM logins on enrolled hosts, the cross-over from the bash release, a fresh install on a server without Go | on demand, never by `make test` |
 
 ## Running
@@ -22,7 +22,7 @@ make test-integration
 make test-e2e
 make build           # dist/tacctl: bin/tacctl.sh --build with the test knobs compiled in
 make coverage        # go test -coverprofile; coverage/go.out, coverage/index.html and the total
-make lint            # shellcheck (bin/tacctl.sh, config/linux, tests/helpers, tests/tools, tests/diff,
+make lint            # shellcheck (bin/tacctl.sh, config/linux, tests/helpers, tests/tools, tests/diff and its stubs,
                      #   tests/containers/{crossover,fresh}), gofmt, go vet, golangci-lint (pinned; prints how
                      #   to install it when missing), and tests/tools/no-private.sh
 make test-pyyaml     # the yamlpy and conf PyYAML corpora regenerated with PyYAML and compared
@@ -520,7 +520,9 @@ tests/diff/run.sh --self-test                # the runner against itself and aga
 
 - **A is always a tag** (`--against`, default `0.1.18`, the last bash
   release): a shared clone of this repository checked out at the tag into a
-  temp dir, run from there; nothing of the working tree is used for A. B is
+  temp dir, run from there; nothing of the working tree is used for A. A tag
+  of the Go era (`0.2.0` on) runs as its own binary, built from that checkout
+  with the test knobs (as `make build` builds `dist/tacctl`). B is
   `go` (`dist/tacctl`, started with `TACCTL_TREE` pointing at this tree, as
   the bats harness does), `bash`, or any executable.
 - **Corpora** are `tests/diff/corpus/<name>.txt`: `users`, `scopes`, `groups`,
@@ -550,11 +552,14 @@ tests/diff/run.sh --self-test                # the runner against itself and aga
   generated password, secret or hash is the same on both sides; the Go code must
   draw its salts and secrets from `app.Knobs.Rand()` for that to hold. What is still
   normalised: ANSI colours (`--colour` keeps them), timestamps (`<TS>`, `<ISO>`), the
-  version, the sandbox and tree paths, and generated bcrypt hashes (not the ones
-  the command line itself carries).
+  version (and the commit and build date `version --long` prints), the sandbox and tree paths, the shipped template a device config's
+  `Using template:` note names (`<SHIPPED>/<name>.template`, whether the side
+  prints its path in the checkout or `built-in <name>.template`), and generated
+  bcrypt hashes (not the ones the command line itself carries).
 - Exit status: 0 no unexplained difference, 1 a difference, 2 a usage or setup
-  error. A line marked `@known` (an intended change listed in
-  `docs/plans/go-rewrite.md` 3.9) is reported as `known`, not a failure; the
+  error. A line marked `@known` (an intended change: an item of
+  `docs/plans/go-rewrite.md` 3.9, or a numbered item of the CHANGELOG's 0.2.1
+  list) is reported as `known`, not a failure; the
   runner says so when the marked line no longer differs.
 
 ## Characterisation tests: `tests/integration/characterisation.bats`

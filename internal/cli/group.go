@@ -469,6 +469,13 @@ func (inv *invocation) groupCommandsAdd(group string, args []string) error {
 			if err := names.ValidateRegex(rx); err != nil {
 				return inv.validated(err)
 			}
+			// The rule line form ('name|action|m1,m2') joins the matches
+			// with commas, so a comma inside one would split it on the
+			// next write. (Printed without echo -e: the hint is literal.)
+			if strings.Contains(rx, ",") {
+				a.Out.Error(`A comma cannot be used in --match (the rule line form splits on it); use \x2c`)
+				return exit(1)
+			}
 			if names.CommandMatchIsDead(name, rx) {
 				return inv.usageErr("--match '"+rx+"' can never match for rule '"+name+"'.",
 					"tacquito tests --match against the command's ARGUMENTS only (the",

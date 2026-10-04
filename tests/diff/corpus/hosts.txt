@@ -75,8 +75,10 @@ host enroll web1 --scope nope
 host enroll web1 --name 9x
 host enroll web1 --port 123456
 host enroll web1 --identity /no/such/key
+@known 0.2.1 item 8: a name that does not resolve is '[ERROR] Cannot resolve', exit 1
 host enroll ghost.example.net --scope lab
 @env IP_STUB_RC=2
+@known 0.2.1 item 8: a failing ip route lookup names --server <address>
 host enroll web1 --scope lab
 @unenv IP_STUB_RC
 @env SSH_STUB_RC=1
@@ -129,6 +131,7 @@ host default-method radius ;; host default-method ;; config get host.default_met
 config linux script --scope lab --server 192.0.2.10
 config linux script --scope lab
 config linux script --scope lab --server 192.0.2.10 --output lab.sh
+@known 0.2.1 item 8: an output that cannot be written is '[ERROR] Cannot write', exit 1
 config linux script --scope lab --server 192.0.2.10 -o nodir/lab.sh
 config linux script --scope dmz --server 192.0.2.10
 config linux script --server 192.0.2.10
@@ -139,6 +142,7 @@ config linux script --scope lab --method ldap
 config linux script --bogus
 config linux script extra
 @env IP_STUB_RC=2
+@known 0.2.1 item 8: a failing ip route lookup is an error naming --server, exit 1
 config linux script --scope lab
 @unenv IP_STUB_RC
 scope protocols lab set radius ;; config linux script --scope lab --server 192.0.2.10
@@ -147,8 +151,11 @@ config linux remove-script
 config linux remove-script -o rm.sh
 config linux remove-script --output nodir/rm.sh
 config linux remove-script bogus
+@known 0.2.1 item 1: a listing does not create the UID file
 config linux uid
+@known 0.2.1 item 1: a lookup does not create the UID file
 config linux uid alice
+@known 0.2.1 item 1: a refused lookup does not create the UID file
 config linux uid 'bad name'
 config linux uid bob 1001
 config linux script --scope lab --server 192.0.2.10 ;; config linux uid ;; config linux uid bob ;; config linux uid bob 1001 ;; config linux uid bob 20000 ;; config linux uid bob 500 ;; config linux uid bob 65534 ;; config linux uid ghost 30000 ;; config linux uid ;; config linux script --scope lab --server 192.0.2.10

@@ -749,6 +749,10 @@ func TestUpgradeStoppedConversionDoesNotFailTheUpgrade(t *testing.T) {
 		[]string{"Units: NOT updated — the previous unit files are in place (see 'Unit update stopped' above)"}) {
 		t.Fatal(u.b.UpgradeReport())
 	}
+	// The closing summary of 'tacctl upgrade' keeps the note.
+	if n := u.b.UpgradeSummary().Notes; len(n) == 0 || n[0] != "Units: NOT updated — the previous unit files are in place (see 'Unit update stopped' above)" {
+		t.Fatalf("summary notes %q", n)
+	}
 	if u.treeState() != before {
 		t.Fatal("changed")
 	}

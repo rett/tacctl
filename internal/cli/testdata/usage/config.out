@@ -28,6 +28,8 @@ Subcommands:
   allow list|add|remove|clear          Manage connection allow list (IP ACL; add/remove accept comma-lists)
   deny list|add|remove|clear           Manage connection deny list (IP ACL; add/remove accept comma-lists)
   mgmt-acl list|add|remove|clear       Manage Cisco VTY-ACL + Juniper lo0-filter permits
+  mgmt-acl cisco-name [name]           Show or set the emitted Cisco ACL name (default VTY-ACL)
+  mgmt-acl juniper-name [name]         Show or set the emitted Juniper filter name (default MGMT-ACL)
   cisco   [--scope <name>] [--legacy] [--protocol tacacs|radius]  Show working Cisco device configuration for a scope (--legacy = IOS 12.x syntax; --protocol radius = RADIUS backend, default tacacs)
   juniper [--scope <name>] [--protocol tacacs|radius]             Show working Juniper device configuration for a scope
   wti     [--scope <name>] [--protocol tacacs|radius]             Show step-by-step WTI console-server (v8.x serial menu) setup for a scope (RADIUS: not verified on a unit)

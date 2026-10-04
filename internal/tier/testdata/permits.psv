@@ -16,8 +16,11 @@ hash|generate|1|1|1|1|0
 hash|commands|1|1|1|1|0
 _completion-names|users|1|1|1|1|0
 _completion-names|backups|1|1|1|1|0
-help||0|0|1|1|0
--h||0|0|1|1|0
+help||1|1|1|1|0
+help|user|0|0|1|1|0
+-h||1|1|1|1|0
+--help||1|1|1|1|0
+-h|user|0|0|1|1|0
 bogus||0|0|1|1|0
 user||0|0|1|1|0
 user|list|1|1|1|1|0

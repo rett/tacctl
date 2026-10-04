@@ -9,7 +9,9 @@
 #   A  the reference: bin/tacctl.sh of a git tag (--against, default 0.1.18,
 #      the parity baseline), checked out into a temp dir once per run, never
 #      the working tree, so a result does not depend on which bash files a
-#      package touched.
+#      package touched. For a tag of the Go era (0.2.0 on) A is that tag's
+#      binary, built from the checkout with the test knobs as 'make build'
+#      builds dist/tacctl.
 #   B  what is being checked (--b): go (default; dist/tacctl, which 'make
 #      build' writes, with TACCTL_TREE pointing at this tree the way
 #      tests/helpers/setup.bash does), bash (the tag again: the self-test, a
@@ -62,9 +64,12 @@
 # of 'make build') where it does not call the commands. Because the random
 # bytes and the clock are fixed, a generated password or secret is the same
 # on both sides and needs no masking. What is still normalised: ANSI colours
-# (unless --colour), timestamps (<TS>, <ISO>), mktemp names (<RAND>), the version, the sandbox and
-# tree paths, and bcrypt hashes the commands generated (not the ones given
-# in the command line), whose salt is random. The 'systemctl reset-failed'
+# (unless --colour), timestamps (<TS>, <ISO>), mktemp names (<RAND>), the version (and the
+# commit and build date of 'version --long'), the sandbox and
+# tree paths, the shipped template a device config's 'Using template:' note
+# names (a path in the checkout, or 'built-in <name>' since 0.2.0: both
+# <SHIPPED>/<name>), and bcrypt hashes the commands generated (not the ones
+# given in the command line), whose salt is random. The 'systemctl reset-failed'
 # calls of 0.2.0 (plan 3.9 item 31) are dropped from the recorded calls.
 #
 # Options: --against <tag>  --b <go|bash|path>  --go <path>  --filter <regex>
@@ -147,15 +152,25 @@ bash_tag="${tag_tree}/bin/tacctl.sh"
 src_version="$(git -C "$src" describe --tags --always --dirty 2> /dev/null || echo unknown)"
 tag_version="$(git -C "$tag_tree" describe --tags --always --dirty 2> /dev/null || echo unknown)"
 
-bin_a="$bash_tag"
+bin_a="$bash_tag" label_a="${tag} (bin/tacctl.sh)"
 declare -a impl_env_a=() impl_env_b=()
+# A tag of the Go era (0.2.0 on): its bin/tacctl.sh is the bootstrap shim,
+# so A is the tag's own binary, built from the tag tree the way 'make build'
+# builds dist/tacctl (the test knobs compiled in), with TACCTL_TREE at it.
+if [[ -f "${tag_tree}/go.mod" ]]; then
+    mkdir -p "${work}/tag-bin"
+    (cd "$tag_tree" && bin/tacctl.sh --build "${work}/tag-bin/tacctl" --tags testknobs) > "${work}/tag-build.log" 2>&1 \
+        || die "${tag}: building its binary failed: $(cat "${work}/tag-build.log")"
+    bin_a="${work}/tag-bin/tacctl" label_a="${tag} (its binary)"
+    impl_env_a=("TACCTL_TREE=${tag_tree}")
+fi
 case "$side_b" in
     go)
         bin_b="$go_bin"
         [[ -x "$bin_b" ]] || die "no Go binary at ${bin_b} (make build, or --go <path>)"
         impl_env_b=("TACCTL_TREE=${src}")
         ;;
-    bash) bin_b="$bash_tag" ;;
+    bash) bin_b="$bin_a"; impl_env_b=("${impl_env_a[@]}") ;;
     *) bin_b="$side_b"; [[ -x "$bin_b" ]] || die "--b ${side_b}: not an executable" ;;
 esac
 label_b="$side_b"
@@ -331,7 +346,7 @@ build_fixture() {
             RUN_STDIN=/dev/null RUN_OUT="${fixture_dir}/${name}/import.out" RUN_ERR="${fixture_dir}/${name}/import.err" RUN_RC="${fixture_dir}/${name}/import.rc"
             export RUN_STDIN RUN_OUT RUN_ERR RUN_RC
             make_stubs "${fixture_dir}/${name}/stubs" "${fixture_dir}/${name}/calls.log"
-            exec_in "$scratch" "${fixture_dir}/${name}/stubs" "$bash_tag" -- store import "$f"
+            exec_in "$scratch" "${fixture_dir}/${name}/stubs" "$bin_a" "${impl_env_a[@]}" -- store import "$f"
             if [[ "$(cat "$RUN_RC")" != 0 || ! -f "${scratch}/state/store.yaml" ]]; then
                 out="$(cat "$RUN_OUT" "$RUN_ERR")"
                 die "fixture ${name}: store import failed: ${out}"
@@ -367,8 +382,15 @@ normalise_script() {
         # commits since the tag) is replaced whole.
         printf '%s\n' "$src_version" "$b_version" "$tag_version" | awk 'NF { print length($0) "\t" $0 }' \
             | sort -rn | cut -f2- | while IFS= read -r v; do printf 's|%s|<VERSION>|g\n' "$v"; done
+        # The 'Using template:' note of a device config names a shipped
+        # template by its path in the checkout under bash and as
+        # 'built-in <name>' since 0.2.0 (plan 3.9 item 3): one form for both.
+        printf 's#Using template: (<SIDE>/tag-tree/config/templates/|<TREE>/config/templates/|built-in )#Using template: <SHIPPED>/#g\n'
         printf 's/(tacctl(\\x1b\\[0m)?) \\((unknown|<VERSION>)\\) /\\1 (<VERSION>) /\n'
         printf 's/^tacctl (unknown|<VERSION>)$/tacctl <VERSION>/\n'
+        # 'version --long': the commit and build date of the binary itself.
+        printf 's/^commit: +[0-9a-f]{7,40}(-dirty)?$/commit:     <COMMIT>/\n'
+        printf 's/^built: +[0-9]{4}-[0-9]{2}-[0-9]{2}T.*$/built:      <BUILT>/\n'
         printf 's/[0-9]{8}[_-][0-9]{6}(_[0-9]{3})?/<TS>/g\n'
         printf 's/tmp\\.[A-Za-z0-9]{10}/tmp.<RAND>/g\n'
         printf 's/[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z/<ISO>/g\n'
@@ -591,7 +613,7 @@ run_corpus() {
 
 summary() {
     echo
-    echo "A: ${tag} (bin/tacctl.sh)    B: ${label_b}    ${total} command lines: ${same} same, ${differ} differ, ${known} known"
+    echo "A: ${label_a}    B: ${label_b}    ${total} command lines: ${same} same, ${differ} differ, ${known} known"
     echo "lines whose last command fails under A: ${failing} of ${total} (a corpus wants at least as many failing lines as succeeding ones)"
     if ((differ)); then
         echo "unexplained differences:"
@@ -609,7 +631,7 @@ if ((selftest)); then
     mutant="${work}/mutant.sh"
     cat > "$mutant" <<MUT
 #!/bin/sh
-"${bash_tag}" "\$@"; rc=\$?
+${impl_env_a[*]:+env ${impl_env_a[*]}} "${bin_a}" "\$@"; rc=\$?
 case "\$1 \$2" in
     "user list") echo MUTANT-OUTPUT ;;
     "scope list") touch "\$TACCTL_STATE_DIR/stray-file" ;;

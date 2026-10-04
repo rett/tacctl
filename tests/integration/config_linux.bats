@@ -177,6 +177,20 @@ _client_env() {
     assert_output --partial "Invalid server address"
 }
 
+@test "config linux script: an output it cannot write, or a failing route lookup, is an error (exit 1, no 'Wrote')" {
+    local bad="${BATS_TEST_TMPDIR}/no/such/dir/x.sh"
+    run "$TACCTL_BIN_SCRIPT" config linux script --scope lab --server 192.0.2.10 -o "$bad"
+    assert_failure 1
+    assert_output --partial "[ERROR]"
+    assert_output --partial "Cannot write ${bad}: No such file or directory"
+    refute_output --partial "Wrote"
+    stub_cmd ip 'exit 2'
+    run "$TACCTL_BIN_SCRIPT" config linux script --scope lab --output "$OUT"
+    assert_failure 1
+    assert_output --partial "Could not determine this server's address (ip route failed); pass --server <address>"
+    [[ ! -e "$OUT" ]]
+}
+
 @test "config linux remove-script: carries no secret" {
     run "$TACCTL_BIN_SCRIPT" config linux remove-script --output "$BATS_TEST_TMPDIR/remove.sh"
     assert_success
@@ -285,6 +299,32 @@ _client_env() {
     _gen > /dev/null
     run "$TACCTL_BIN_SCRIPT" config linux uid carol
     assert_output "20001"
+}
+
+@test "config linux uid: a listing or a lookup does not create or rewrite the UID file" {
+    local f="${TACCTL_STATE_DIR}/linux-uids"
+    rm -f "$f"
+    run "$TACCTL_BIN_SCRIPT" config linux uid
+    assert_success
+    assert_output --partial "None yet."
+    run "$TACCTL_BIN_SCRIPT" config linux uid bob
+    assert_failure
+    assert_output --partial "No UID assigned to 'bob' yet."
+    [ ! -e "$f" ]
+    # A refused change does not create it either.
+    run "$TACCTL_BIN_SCRIPT" config linux uid bob 500
+    assert_failure
+    [ ! -e "$f" ]
+
+    _gen > /dev/null
+    touch -d '2001-01-01 00:00:00' "$f"
+    local before
+    before="$(stat -c '%Y %s' "$f"):$(cat "$f")"
+    run "$TACCTL_BIN_SCRIPT" config linux uid
+    assert_success
+    run "$TACCTL_BIN_SCRIPT" config linux uid bob
+    assert_output "20001"
+    [ "$(stat -c '%Y %s' "$f"):$(cat "$f")" = "$before" ]
 }
 
 @test "client install: a pre-existing account stops the run unless named with --adopt" {

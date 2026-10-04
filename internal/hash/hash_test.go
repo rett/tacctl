@@ -297,3 +297,25 @@ func TestTypePrefix(t *testing.T) {
 		}
 	}
 }
+
+// 'user verify' refuses a stored cost above 16 before hashing anything (a
+// hand-edited $2b$31$ hash would take days); 16 and below, and hashes
+// Verify itself rejects quickly, are not refused here.
+func TestVerifyCostError(t *testing.T) {
+	hx := func(raw string) string { return hex.EncodeToString([]byte(raw)) }
+	at := func(cost string) string { return hx("$2b$" + cost + interopRaw04[6:]) }
+	for _, c := range []struct {
+		hash, want string
+	}{
+		{at("31"), "bcrypt cost 31 exceeds the verify limit (16); tacquito still authenticates it"},
+		{at("17"), "bcrypt cost 17 exceeds the verify limit (16); tacquito still authenticates it"},
+		{hx("$2y$20" + interopRaw04[6:]), "bcrypt cost 20 exceeds the verify limit (16); tacquito still authenticates it"},
+		{at("16"), ""}, {at("12"), ""}, {hx(interopRaw04), ""},
+		{at("32"), ""}, {"zz", ""}, {hx("$2b$31$short"), ""}, {"", ""}, {DisabledMarkerHex, ""},
+	} {
+		err := VerifyCostError(c.hash)
+		if (err == nil) != (c.want == "") || (err != nil && err.Error() != c.want) {
+			t.Errorf("VerifyCostError(%q) = %v, want %q", c.hash, err, c.want)
+		}
+	}
+}

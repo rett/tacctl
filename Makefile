@@ -103,7 +103,7 @@ hooks:
 
 lint-sh:
 	$(SHELLCHECK) bin/tacctl.sh config/linux/*.sh
-	$(SHELLCHECK) tests/helpers/*.bash tests/tools/*.sh tests/tools/pre-push tests/diff/*.sh
+	$(SHELLCHECK) tests/helpers/*.bash tests/tools/*.sh tests/tools/pre-push tests/diff/*.sh tests/diff/stubs/*/*
 	$(SHELLCHECK) tests/containers/crossover/*.sh tests/containers/fresh/*.sh
 
 lint-go:

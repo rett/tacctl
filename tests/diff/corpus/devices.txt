@@ -3,13 +3,10 @@
 # Run: tests/diff/run.sh devices
 #
 # Every config that renders ends in its 'Using template:' note, which names
-# the shipped template as 'built-in <name>.template' in 0.2.0 where 0.1.16
-# printed its path in the checkout (plan 3.9 item 3): those lines are
-# @known. To check them in full, make B a wrapper script that runs dist/tacctl
-# (with TACCTL_TREE set as for --b go) through
-#   sed 's#Using template: built-in #Using template: <SIDE>/tag-tree/config/templates/#'
-# (what A's path normalises to), and run a copy of this corpus without the
-# @known lines with --b <wrapper>: at WP3.1 every line was then the same.
+# the shipped template as 'built-in <name>.template' since 0.2.0 where
+# 0.1.18 printed its path in the checkout (plan 3.9 item 3); the runner
+# normalises both to '<SHIPPED>/<name>.template', so those lines compare in
+# full.
 #
 # The runner cannot write tacctl.yaml, so the RADIUS backend is never enabled
 # here: a RADIUS config is always the 'not enabled' refusal (after the
@@ -58,91 +55,53 @@ scope protocols lab set radius ;; config wti --scope lab
 scope protocols lab set tacacs ;; config cisco --scope lab --protocol radius
 scope vendor-attrs lab enable cisco,juniper,wti ;; config juniper --scope lab --protocol radius
 
-# --- TACACS+ configs (the 'Using template:' note differs, see the header) --------------
-@known 3.9 item 3: the 'Using template:' note names the built-in template
+# --- TACACS+ configs -------------------------------------------------------------------------
 config cisco --scope lab
-@known 3.9 item 3: the 'Using template:' note names the built-in template
 config cisco --scope prod
-@known 3.9 item 3: the 'Using template:' note names the built-in template
 config cisco --legacy --scope lab
-@known 3.9 item 3: the 'Using template:' note names the built-in template
 config cisco --scope lab --legacy --protocol tacacs
-@known 3.9 item 3: the 'Using template:' note names the built-in template
 config cisco
-@known 3.9 item 3: the 'Using template:' note names the built-in template
 config juniper --scope lab
-@known 3.9 item 3: the 'Using template:' note names the built-in template
 config juniper --scope prod-inner --protocol tacacs
-@known 3.9 item 3: the 'Using template:' note names the built-in template
 config wti --scope lab
-@known 3.9 item 3: the 'Using template:' note names the built-in template
 config wti --scope dmz
-@known 3.9 item 3: the 'Using template:' note names the built-in template
 scope default prod ;; config juniper ;; config wti
-@known 3.9 item 3: the 'Using template:' note names the built-in template
 scope auth-method lab tacacs ;; config cisco --scope lab ;; config wti --scope lab
-@known 3.9 item 3: the 'Using template:' note names the built-in template
 scope auth-method lab radius ;; config cisco --scope lab --legacy --protocol tacacs
-@known 3.9 item 3: the 'Using template:' note names the built-in template
 scope protocols lab set tacacs,radius ;; config cisco --scope lab ;; config juniper --scope lab
-@known 3.9 item 3: the 'Using template:' note names the built-in template
 scope aaa-order lab local-first ;; config cisco --scope lab ;; config juniper --scope lab ;; config wti --scope lab ;; config cisco --scope prod
-@known 3.9 item 3: the 'Using template:' note names the built-in template
 scope exec-timeout lab 15 ;; config cisco --scope lab ;; config juniper --scope lab
-@known 3.9 item 3: the 'Using template:' note names the built-in template
 scope exec-timeout lab 0 ;; config cisco --legacy --scope lab
-@known 3.9 item 3: the 'Using template:' note names the built-in template
 scope tacacs-group lab TACACS_PROD ;; config cisco --scope lab ;; config cisco --scope lab --legacy
-@known 3.9 item 3: the 'Using template:' note names the built-in template
 scope radius-group lab RADIUS_LAB ;; config cisco --scope lab
 
 # management ACL: global, per scope, IPv6 skipped, names
-@known 3.9 item 3: the 'Using template:' note names the built-in template
 config mgmt-acl add 10.0.0.0/8,192.168.1.0/24,fd00::/64 ;; config cisco --scope lab ;; config juniper --scope lab
-@known 3.9 item 3: the 'Using template:' note names the built-in template
 config mgmt-acl cisco-name GLOBAL-VTY ;; scope mgmt-acl lab cisco-name LAB-VTY-ACL ;; config mgmt-acl add 10.0.0.0/8 ;; config cisco --scope lab ;; config cisco --scope prod
-@known 3.9 item 3: the 'Using template:' note names the built-in template
 config mgmt-acl juniper-name GLOBAL-MGMT ;; scope mgmt-acl lab juniper-name LAB-MGMT-FILTER ;; scope mgmt-acl lab add 172.16.5.0/24 ;; config juniper --scope lab ;; config juniper --scope prod
-@known 3.9 item 3: the 'Using template:' note names the built-in template
 scope mgmt-acl lab add fd00:1::/64 ;; config cisco --scope lab ;; config juniper --scope lab
 
 # groups: privilege mappings, command rules, the WTI bands
-@known 3.9 item 3: the 'Using template:' note names the built-in template
 group add wtisuper 12 OP-CLASS ;; config wti --scope lab ;; config cisco --scope lab ;; config juniper --scope lab
-@known 3.9 item 3: the 'Using template:' note names the built-in template
 group add netadmin 15 RW-CLASS ;; group add readers 3 RO-CLASS ;; config juniper --scope lab ;; config cisco --scope lab
-@known 3.9 item 3: the 'Using template:' note names the built-in template
 group privilege add operator 'show interfaces','show version' ;; config cisco --scope lab
-@known 3.9 item 3: the 'Using template:' note names the built-in template
 group add helpdesk 7 OP-CLASS ;; group privilege add helpdesk 'show running-config','show clock' ;; config cisco --scope lab
-@known 3.9 item 3: the 'Using template:' note names the built-in template
 group commands add readonly dir --action permit ;; group commands add operator reload --action deny ;; config juniper --scope lab
-@known 3.9 item 3: the 'Using template:' note names the built-in template
 group commands default readonly deny ;; group commands remove readonly show ;; group commands remove readonly ping ;; group commands remove readonly traceroute ;; config juniper --scope lab
 
 # secrets and users the WTI walkthrough warns about
-@known 3.9 item 3: the 'Using template:' note names the built-in template
 scope secret lab set 'ab+cd/ef=0123456789xyz' ;; config wti --scope lab
-@known 3.9 item 3: the 'Using template:' note names the built-in template
 scope secret lab set 'abcdefghij0123456789ABCDEFGHIJ0123456789' ;; config wti --scope lab
-@known 3.9 item 3: the 'Using template:' note names the built-in template
 scope secret lab set 'has space in the secret-0123' ;; config wti --scope lab ;; config cisco --scope lab ;; config juniper --scope lab
-@known 3.9 item 3: the 'Using template:' note names the built-in template
 scope secret lab set 'back\slash-in-the-secret-0123' ;; config wti --scope lab
-@known 3.9 item 3: the 'Using template:' note names the built-in template
 scope secret lab set 'café-in-the-secret-0123456' ;; config wti --scope lab
-@known 3.9 item 3: the 'Using template:' note names the built-in template
 scope secret lab set 'ideographic　space-0123456789' ;; config wti --scope lab
-@known 3.9 item 3: the 'Using template:' note names the built-in template
 scope secret lab set 'nbsp space-0123456789abcdef' ;; config wti --scope lab
-@known 3.9 item 3: the 'Using template:' note names the built-in template
 user add abcdefghij0123456789abcdefghij012 readonly --scopes lab --hash {HASH} ;; config wti --scope lab ;; config wti --scope prod
 
 # --- no store, no default scope -------------------------------------------------------
 @fixture tacquito.minimal.yaml
-@known 3.9 item 3: the 'Using template:' note names the built-in template
 config cisco
-@known 3.9 item 3: the 'Using template:' note names the built-in template
 config wti
 config juniper --scope nosuch
 @fixture none

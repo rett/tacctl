@@ -104,6 +104,21 @@ _hosts() { cat "${TACCTL_STATE_DIR}/linux-hosts" 2>/dev/null; }
     assert_output "0"
 }
 
+@test "host enroll: a name that does not resolve, or a failing route lookup, is an error naming the way out" {
+    stub_cmd getent 'exit 2'
+    run "$TACCTL_BIN_SCRIPT" host enroll ghost --scope lab
+    assert_failure 1
+    assert_output --partial "[ERROR]"
+    assert_output --partial "Cannot resolve 'ghost'"
+    stub_cmd getent 'echo "192.0.2.50 STREAM web1"'
+    stub_cmd ip 'exit 2'
+    run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab
+    assert_failure 1
+    assert_output --partial "Could not determine this server's address for web1 (ip route failed); pass --server <address>"
+    [[ -z "$(_hosts)" ]]
+    if stub_called '^ssh '; then stub_calls; return 1; fi
+}
+
 @test "host enroll: needs the prepared tarball and an existing scope" {
     run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope nope
     assert_failure
