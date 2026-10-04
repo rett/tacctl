@@ -1,0 +1,416 @@
+== view user-rows
+amy|alpha|active|unknown|a
+zed|zeta|disabled|2026-01-01|b,a
+rc=0
+== view user-info alice
+rc=1
+== view user-info carol
+rc=1
+== view user-info root
+group=readonly
+status=disabled
+password_changed=unknown
+priv_lvl=1
+juniper_class=RO-CLASS
+hash_type=
+has_hash=0
+scope=a|1
+rc=0
+== view user-info zed
+group=zeta
+status=disabled
+password_changed=2026-01-01
+priv_lvl=7
+juniper_class=Z
+hash_type=
+has_hash=0
+scope=b|1
+scope=a|1
+rc=0
+== view user-info amy
+group=alpha
+status=active
+password_changed=unknown
+priv_lvl=7
+juniper_class=A
+hash_type=$2b$12$
+has_hash=1
+scope=a|1
+rc=0
+== view user-info bob
+rc=1
+== view user-info nobody
+rc=1
+== view user-privlvl alice
+rc=0
+== view user-privlvl bob
+rc=0
+== view user-privlvl carol
+rc=0
+== view user-privlvl root
+rc=0
+== view user-privlvl nobody
+rc=0
+== view group-rows
+superuser|15|RW-CLASS|0
+zeta|7|Z|1
+operator|7|OP-CLASS|0
+alpha|7|A|1
+readonly|1|RO-CLASS|0
+rc=0
+== view group-users readonly
+root
+rc=0
+== view group-users netops
+rc=0
+== view group-users nosuch
+rc=0
+== view group-info
+readonly|1|RO-CLASS
+operator|7|OP-CLASS
+superuser|15|RW-CLASS
+alpha|7|A
+zeta|7|Z
+rc=0
+== view scope-names
+b
+a
+h
+rc=0
+== view scope-prefixes lab
+rc=0
+== view scope-prefixes b
+10.9.0.0/16
+10.0.0.0/8
+fd00::/8
+rc=0
+== view scope-prefixes nope
+rc=0
+== view scope-users lab
+rc=0
+== view scope-users a
+amy
+root
+zed
+rc=0
+== view prefix-owner 10.10.99.5/24
+rc=0
+== view prefix-owner 10.0.0.0/8
+a
+rc=0
+== view prefix-owner fd00:10::1/64
+rc=0
+== view prefix-owner 10.10.0.0/16
+rc=0
+== view prefix-owner junk
+rc=0
+== view scope-rows lab
+b|10.9.0.0/16|1||2 tagged
+|10.0.0.0/8|||
+|fd00::/8|||
+a|192.168.1.0/24|3||juniper + 3 tagged
+|10.0.0.0/8|||
+h|192.0.2.1/32|0||
+|192.0.2.2/32|||
+rc=0
+== view scope-rows a
+b|10.9.0.0/16|1||2 tagged
+|10.0.0.0/8|||
+|fd00::/8|||
+a|192.168.1.0/24|3|yes|juniper + 3 tagged
+|10.0.0.0/8|||
+h|192.0.2.1/32|0||
+|192.0.2.2/32|||
+rc=0
+== view scope-rows
+b|10.9.0.0/16|1||2 tagged
+|10.0.0.0/8|||
+|fd00::/8|||
+a|192.168.1.0/24|3||juniper + 3 tagged
+|10.0.0.0/8|||
+h|192.0.2.1/32|0||
+|192.0.2.2/32|||
+rc=0
+== view scope-devices lab
+rc=0
+== view scope-devices a
+192.168.1.7/32|wti
+10.10.1.0/24|cisco
+10.9.0.0/16|juniper
+rc=0
+== view scope-devices b
+10.9.0.1/32|wti
+10.10.0.0/16|cisco
+rc=0
+== view device-problems lab 192.168.0.0/16
+a|10.9.0.0/16|scope 'a': devices: 10.9.0.0/16 belongs to scope 'b' (its prefix 10.9.0.0/16 is the most specific one that contains it)
+b|10.10.0.0/16|scope 'b': devices: 10.10.0.0/16 belongs to scope 'a' (its prefix 10.0.0.0/8 is the most specific one that contains it)
+rc=1
+== view device-problems lab 192.168.0.0/16 10.0.0.1/32 cisco
+a|10.9.0.0/16|scope 'a': devices: 10.9.0.0/16 belongs to scope 'b' (its prefix 10.9.0.0/16 is the most specific one that contains it)
+b|10.10.0.0/16|scope 'b': devices: 10.10.0.0/16 belongs to scope 'a' (its prefix 10.0.0.0/8 is the most specific one that contains it)
+lab|10.0.0.1/32|scope 'lab': devices: 10.0.0.1/32 is not inside a prefix of the scope
+rc=1
+== view device-problems new 10.10.0.0/16 10.10.99.1/32 wti
+a|10.10.1.0/24|scope 'a': devices: 10.10.1.0/24 belongs to scope 'new' (its prefix 10.10.0.0/16 is the most specific one that contains it)
+a|10.9.0.0/16|scope 'a': devices: 10.9.0.0/16 belongs to scope 'b' (its prefix 10.9.0.0/16 is the most specific one that contains it)
+b|10.10.0.0/16|scope 'b': devices: 10.10.0.0/16 belongs to scope 'new' (its prefix 10.10.0.0/16 is the most specific one that contains it)
+rc=1
+== view device-problems prod 10.0.0.0/8 10.10.99.1/32 wti
+a|10.9.0.0/16|scope 'a': devices: 10.9.0.0/16 belongs to scope 'b' (its prefix 10.9.0.0/16 is the most specific one that contains it)
+b|10.10.0.0/16|scope 'b': devices: 10.10.0.0/16 belongs to scope 'a' (its prefix 10.0.0.0/8 is the most specific one that contains it)
+prod|10.10.99.1/32|scope 'prod': devices: 10.10.99.1/32 belongs to scope 'a' (its prefix 10.0.0.0/8 is the most specific one that contains it)
+rc=1
+== view device-problems a 10.0.0.0/8
+a|10.9.0.0/16|scope 'a': devices: 10.9.0.0/16 belongs to scope 'b' (its prefix 10.9.0.0/16 is the most specific one that contains it)
+a|192.168.1.7/32|scope 'a': devices: 192.168.1.7/32 is not inside a prefix of the scope
+b|10.10.0.0/16|scope 'b': devices: 10.10.0.0/16 belongs to scope 'a' (its prefix 10.0.0.0/8 is the most specific one that contains it)
+rc=1
+== view device-problems c 10.9.0.0/16 10.9.0.1/32 wti
+a|10.9.0.0/16|scope 'a': devices: 10.9.0.0/16 belongs to scope 'b' (its prefix 10.9.0.0/16 is the most specific one that contains it)
+b|10.10.0.0/16|scope 'b': devices: 10.10.0.0/16 belongs to scope 'a' (its prefix 10.0.0.0/8 is the most specific one that contains it)
+c|10.9.0.1/32|scope 'c': devices: 10.9.0.1/32 belongs to scope 'b' (its prefix 10.9.0.0/16 is the most specific one that contains it)
+rc=1
+== view device-problems empty 10.0.0.0/8
+a|10.9.0.0/16|scope 'a': devices: 10.9.0.0/16 belongs to scope 'b' (its prefix 10.9.0.0/16 is the most specific one that contains it)
+b|10.10.0.0/16|scope 'b': devices: 10.10.0.0/16 belongs to scope 'a' (its prefix 10.0.0.0/8 is the most specific one that contains it)
+rc=1
+== view vendor-gaps
+h
+rc=0
+== view vendor-gaps lab=3 prod=1 h=2
+rc=0
+== view vendor-gaps h=1
+h
+rc=0
+== view vendor-rows
+a|1|juniper|cisco,juniper,wti|3
+b|0||cisco,wti|2
+h|1|||0
+rc=0
+== view scope-routing lab
+h|192.0.2.1/32|0|
+h|192.0.2.2/32|0|
+a|192.168.1.0/24|3|
+b|10.9.0.0/16|1|
+a|10.0.0.0/8|3|
+b|10.0.0.0/8|1|
+b|fd00::/8|1|
+rc=0
+== view scope-routing
+h|192.0.2.1/32|0|
+h|192.0.2.2/32|0|
+a|192.168.1.0/24|3|
+b|10.9.0.0/16|1|
+a|10.0.0.0/8|3|
+b|10.0.0.0/8|1|
+b|fd00::/8|1|
+rc=0
+== view scope-lookup 10.10.99.42
+  10.10.99.42 -> scope 'a' (via prefix 10.0.0.0/8)
+
+  Also covered by (shadowed — the more specific prefix above wins):
+    - scope 'b' via prefix 10.0.0.0/8
+rc=0
+== view scope-lookup 192.168.1.1
+  192.168.1.1 -> scope 'a' (via prefix 192.168.1.0/24)
+rc=0
+== view scope-lookup 192.168.0.0/24
+No scope owns 192.168.0.0/24 — no prefix covers the full range.
+rc=1
+== view scope-lookup 8.8.8.8
+No scope owns 8.8.8.8 — no prefix in any scope contains it.
+rc=1
+== view scope-lookup 8.8.0.0/16
+No scope owns 8.8.0.0/16 — no prefix covers the full range.
+rc=1
+== view scope-lookup not-an-address
+ERROR: invalid address or CIDR: 'not-an-address' does not appear to be an IPv4 or IPv6 address
+rc=2
+== view scope-lookup 10.0.0.0/33
+ERROR: invalid address or CIDR: '10.0.0.0/33' does not appear to be an IPv4 or IPv6 network
+rc=2
+== view scope-lookup it's
+ERROR: invalid address or CIDR: "it's" does not appear to be an IPv4 or IPv6 address
+rc=2
+== view scope-lookup fd00:10::5
+  fd00:10::5 -> scope 'b' (via prefix fd00::/8)
+rc=0
+== view scope-lookup fd00:10::/48
+  fd00:10::/48 -> scope 'b' (via prefix fd00::/8)
+rc=0
+== view scope-lookup 10.0.0.0/7
+No scope owns 10.0.0.0/7 — no prefix covers the full range.
+rc=1
+== view scope-lookup 10.9.0.1
+  10.9.0.1 -> scope 'b' (via prefix 10.9.0.0/16)
+  Tagged wti (scope devices entry 10.9.0.1/32): over RADIUS it gets that vendor's attribute only
+
+  Also covered by (shadowed — the more specific prefix above wins):
+    - scope 'a' via prefix 10.0.0.0/8
+    - scope 'b' via prefix 10.0.0.0/8
+rc=0
+== view scope-lookup 10.10.1.5
+  10.10.1.5 -> scope 'a' (via prefix 10.0.0.0/8)
+  Tagged cisco (scope devices entry 10.10.1.0/24): over RADIUS it gets that vendor's attribute only
+
+  Also covered by (shadowed — the more specific prefix above wins):
+    - scope 'b' via prefix 10.0.0.0/8
+rc=0
+== view scope-lookup 10.1.0.5
+  10.1.0.5 -> scope 'a' (via prefix 10.0.0.0/8)
+
+  Also covered by (shadowed — the more specific prefix above wins):
+    - scope 'b' via prefix 10.0.0.0/8
+rc=0
+== view config-show
+scope=b|20|1
+prefix=10.9.0.0/16
+prefix=10.0.0.0/8
+prefix=fd00::/8
+scope=a|5|3
+prefix=192.168.1.0/24
+prefix=10.0.0.0/8
+scope=h|23|0
+prefix=192.0.2.1/32
+prefix=192.0.2.2/32
+cisco_ro=1
+cisco_op=7
+cisco_rw=15
+juniper_ro=RO-CLASS
+juniper_op=OP-CLASS
+juniper_rw=RW-CLASS
+allow=10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+deny=
+rc=0
+== view linux-users lab
+rc=0
+== view linux-users wifi
+rc=0
+== view linux-users a
+amy|7
+rc=0
+== view status 16
+user_count=3
+scope_count=3
+prefix_count=7
+prefix_unrestricted=0
+prefix_has_v6=1
+allow_has_v6=0
+placeholder_scopes=
+weak_scopes=a:5
+empty_prefix_scopes=
+total_refs=4
+empty_scopes=h
+pwdate=zed|2026-01-01
+rc=0
+== view status 30
+user_count=3
+scope_count=3
+prefix_count=7
+prefix_unrestricted=0
+prefix_has_v6=1
+allow_has_v6=0
+placeholder_scopes=
+weak_scopes=a:5,b:20,h:23
+empty_prefix_scopes=
+total_refs=4
+empty_scopes=h
+pwdate=zed|2026-01-01
+rc=0
+== view validate
+COUNT:users=3
+COUNT:groups=5
+COUNT:scopes=3
+rc=0
+== view validate full
+COUNT:users=3
+COUNT:groups=5
+COUNT:scopes=3
+rc=0
+== view has users alice
+rc=1
+== view has users nobody
+rc=1
+== view has scopes lab
+rc=1
+== view no-such-view
+tacctl store: internal: unknown view 'no-such-view'
+rc=1
+== get users
+amy
+root
+zed
+rc=0
+== get groups
+alpha
+operator
+readonly
+superuser
+zeta
+rc=0
+== get scopes
+a
+b
+h
+rc=0
+== get filters
+{"allow": ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"], "deny": []}
+rc=0
+== get filters allow
+10.0.0.0/8
+172.16.0.0/12
+192.168.0.0/16
+rc=0
+== get filters deny
+rc=0
+== get filters maybe
+tacctl store: filters: unknown list 'maybe'
+rc=1
+== get users alice
+rc=1
+== get users root
+{"accounting_sink": true, "disabled": true, "group": "readonly", "hash": null, "name": "root", "password_changed": null, "scopes": ["a"]}
+rc=0
+== get users carol disabled
+rc=1
+== get users alice scopes
+rc=1
+== get users alice hash
+rc=1
+== get users alice shoe_size
+rc=1
+== get users nobody
+rc=1
+== get users nobody group
+rc=1
+== get groups superuser
+{"builtin": true, "juniper_class": "RW-CLASS", "name": "superuser", "priv_lvl": 15}
+rc=0
+== get groups netops priv_lvl
+rc=1
+== get groups operator builtin
+true
+rc=0
+== get groups odd
+rc=1
+== get scopes lab
+rc=1
+== get scopes lab prefixes
+rc=1
+== get scopes lab secret
+rc=1
+== get scopes legacy protocols
+rc=1
+== get scopes prod-inner
+rc=1
+== get scopes wifi devices
+rc=1
+== get scopes a devices
+10.10.1.0/24 cisco
+10.9.0.0/16 juniper
+192.168.1.7/32 wti
+rc=0
+== get scopes b
+{"devices": {"10.10.0.0/16": "cisco", "10.9.0.1/32": "wti"}, "name": "b", "prefixes": ["10.0.0.0/8", "fd00::/8", "10.9.0.0/16"], "protocols": ["tacacs"], "secret": "bbbbbbbbbbbbbbbbbbbb"}
+rc=0

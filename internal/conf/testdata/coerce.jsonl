@@ -1,0 +1,48 @@
+{"in": "", "type": "str", "repr": "''"}
+{"in": " ", "type": "str", "repr": "' '"}
+{"in": "14", "type": "int", "repr": "14"}
+{"in": " 14 ", "type": "int", "repr": "14"}
+{"in": "+14", "type": "int", "repr": "14"}
+{"in": "-1", "type": "int", "repr": "-1"}
+{"in": "1_4", "type": "int", "repr": "14"}
+{"in": "1__4", "type": "str", "repr": "'1__4'"}
+{"in": "_14", "type": "str", "repr": "'_14'"}
+{"in": "14_", "type": "str", "repr": "'14_'"}
+{"in": "0x10", "type": "str", "repr": "'0x10'"}
+{"in": "012", "type": "int", "repr": "12"}
+{"in": "\u0661\u0664", "type": "int", "repr": "14"}
+{"in": "1.5", "type": "float", "repr": "1.5"}
+{"in": " 1.5 ", "type": "float", "repr": "1.5"}
+{"in": "1.", "type": "float", "repr": "1.0"}
+{"in": ".5", "type": "float", "repr": "0.5"}
+{"in": "1.2.3", "type": "str", "repr": "'1.2.3'"}
+{"in": "10.0.0.1", "type": "str", "repr": "'10.0.0.1'"}
+{"in": "1e5", "type": "str", "repr": "'1e5'"}
+{"in": "1.5e3", "type": "float", "repr": "1500.0"}
+{"in": "nan", "type": "str", "repr": "'nan'"}
+{"in": "nan.", "type": "str", "repr": "'nan.'"}
+{"in": "inf", "type": "str", "repr": "'inf'"}
+{"in": "inf.", "type": "str", "repr": "'inf.'"}
+{"in": "Infinity.", "type": "str", "repr": "'Infinity.'"}
+{"in": "true", "type": "bool", "repr": "True"}
+{"in": "True", "type": "bool", "repr": "True"}
+{"in": "TRUE", "type": "bool", "repr": "True"}
+{"in": "tRuE", "type": "bool", "repr": "True"}
+{"in": "false", "type": "bool", "repr": "False"}
+{"in": "null", "type": "NoneType", "repr": "None"}
+{"in": "NULL", "type": "NoneType", "repr": "None"}
+{"in": "None", "type": "str", "repr": "'None'"}
+{"in": "yes", "type": "str", "repr": "'yes'"}
+{"in": "no", "type": "str", "repr": "'no'"}
+{"in": "~", "type": "str", "repr": "'~'"}
+{"in": "lab", "type": "str", "repr": "'lab'"}
+{"in": "lab ", "type": "str", "repr": "'lab '"}
+{"in": "127.0.0.1:8080", "type": "str", "repr": "'127.0.0.1:8080'"}
+{"in": "99999999999999999999999", "type": "int", "repr": "99999999999999999999999"}
+{"in": "-0", "type": "int", "repr": "0"}
+{"in": "\u0663.\u0665", "type": "float", "repr": "3.5"}
+{"in": "1_000.5", "type": "float", "repr": "1000.5"}
+{"in": "1_.5", "type": "str", "repr": "'1_.5'"}
+{"in": "1._5", "type": "str", "repr": "'1._5'"}
+{"in": "0.0", "type": "float", "repr": "0.0"}
+{"in": "x.y", "type": "str", "repr": "'x.y'"}

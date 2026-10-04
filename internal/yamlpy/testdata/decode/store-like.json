@@ -1,0 +1,37 @@
+{
+ "version": 1,
+ "groups": {
+  "operator": {
+   "priv_lvl": 7,
+   "juniper_class": "OP-CLASS",
+   "builtin": true
+  }
+ },
+ "users": {
+  "alice": {
+   "group": "superuser",
+   "scopes": [
+    "prod",
+    "lab"
+   ],
+   "hash": "24326224313224616c696365",
+   "disabled": false,
+   "password_changed": {
+    "$date": "2026-10-01"
+   }
+  },
+  "bob": {
+   "hash": null,
+   "scopes": []
+  }
+ },
+ "scopes": {
+  "lab": {
+   "prefixes": [
+    "172.16.0.0/12",
+    "fd00:10::/64"
+   ],
+   "secret": "it's a \"lab\" secret ${confdir} #1"
+  }
+ }
+}

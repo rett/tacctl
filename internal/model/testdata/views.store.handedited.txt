@@ -1,0 +1,382 @@
+== view user-rows
+alice|nope|active|2026-01-02|lab,gone
+bob|odd|active|unknown|lab
+tacquito|readonly|disabled|unknown|
+rc=0
+== view user-info alice
+group=nope
+status=active
+password_changed=2026-01-02
+priv_lvl=
+juniper_class=
+hash_type=
+has_hash=1
+scope=lab|1
+scope=gone|0
+rc=0
+== view user-info carol
+rc=1
+== view user-info root
+rc=1
+== view user-info zed
+rc=1
+== view user-info amy
+rc=1
+== view user-info bob
+group=odd
+status=active
+password_changed=unknown
+priv_lvl=9
+juniper_class=
+hash_type=$2b$12$
+has_hash=1
+scope=lab|1
+rc=0
+== view user-info nobody
+rc=1
+== view user-privlvl alice
+rc=0
+== view user-privlvl bob
+9
+rc=0
+== view user-privlvl carol
+rc=0
+== view user-privlvl root
+rc=0
+== view user-privlvl nobody
+rc=0
+== view group-rows
+superuser|15|RW-CLASS|0
+operator|7|OP-CLASS|0
+readonly|1|RO-CLASS|1
+odd|9|n/a|1
+rc=0
+== view group-users readonly
+tacquito
+rc=0
+== view group-users netops
+rc=0
+== view group-users nosuch
+rc=0
+== view group-info
+readonly|1|RO-CLASS
+operator|7|OP-CLASS
+superuser|15|RW-CLASS
+odd|9|
+rc=0
+== view scope-names
+lab
+empty
+rc=0
+== view scope-prefixes lab
+10.0.0.0/8
+10.0.0.5/8
+junk
+rc=0
+== view scope-prefixes b
+rc=0
+== view scope-prefixes nope
+rc=0
+== view scope-users lab
+alice
+bob
+rc=0
+== view scope-users a
+rc=0
+== view prefix-owner 10.10.99.5/24
+rc=0
+== view prefix-owner 10.0.0.0/8
+lab
+rc=0
+== view prefix-owner fd00:10::1/64
+rc=0
+== view prefix-owner 10.10.0.0/16
+rc=0
+== view prefix-owner junk
+rc=0
+== view scope-rows lab
+lab|10.0.0.0/8|2|yes|2 tagged
+|10.0.0.5/8|||
+|junk|||
+empty|(no prefix)|0||
+rc=0
+== view scope-rows a
+lab|10.0.0.0/8|2||2 tagged
+|10.0.0.5/8|||
+|junk|||
+empty|(no prefix)|0||
+rc=0
+== view scope-rows
+lab|10.0.0.0/8|2||2 tagged
+|10.0.0.5/8|||
+|junk|||
+empty|(no prefix)|0||
+rc=0
+== view scope-devices lab
+10.1.0.0/24|wti
+10.1.0.0/16|cisco
+rc=0
+== view scope-devices a
+rc=0
+== view scope-devices b
+rc=0
+== view device-problems lab 192.168.0.0/16
+lab|10.1.0.0/16|scope 'lab': devices: 10.1.0.0/16 is not inside a prefix of the scope
+lab|10.1.0.0/24|scope 'lab': devices: 10.1.0.0/24 is not inside a prefix of the scope
+rc=1
+== view device-problems lab 192.168.0.0/16 10.0.0.1/32 cisco
+lab|10.1.0.0/16|scope 'lab': devices: 10.1.0.0/16 is not inside a prefix of the scope
+lab|10.1.0.0/24|scope 'lab': devices: 10.1.0.0/24 is not inside a prefix of the scope
+lab|10.0.0.1/32|scope 'lab': devices: 10.0.0.1/32 is not inside a prefix of the scope
+rc=1
+== view device-problems new 10.10.0.0/16 10.10.99.1/32 wti
+rc=0
+== view device-problems prod 10.0.0.0/8 10.10.99.1/32 wti
+prod|10.10.99.1/32|scope 'prod': devices: 10.10.99.1/32 belongs to scope 'lab' (its prefix 10.0.0.0/8 is the most specific one that contains it)
+rc=1
+== view device-problems a 10.0.0.0/8
+rc=0
+== view device-problems c 10.9.0.0/16 10.9.0.1/32 wti
+rc=0
+== view device-problems empty 10.0.0.0/8
+lab|10.1.0.0/16|scope 'lab': devices: 10.1.0.0/16 belongs to scope 'empty' (its prefix 10.0.0.0/8 is the most specific one that contains it)
+lab|10.1.0.0/24|scope 'lab': devices: 10.1.0.0/24 belongs to scope 'empty' (its prefix 10.0.0.0/8 is the most specific one that contains it)
+rc=1
+== view vendor-gaps
+empty
+rc=0
+== view vendor-gaps lab=3 prod=1 h=2
+empty
+rc=0
+== view vendor-gaps h=1
+empty
+rc=0
+== view vendor-rows
+empty|1|||0
+lab|1||cisco,wti|2
+rc=0
+== view scope-routing lab
+lab|10.0.0.0/8|2|yes
+lab|10.0.0.5/8|2|yes
+empty|(no prefix)|0|
+lab|junk|2|yes
+rc=0
+== view scope-routing
+lab|10.0.0.0/8|2|
+lab|10.0.0.5/8|2|
+empty|(no prefix)|0|
+lab|junk|2|
+rc=0
+== view scope-lookup 10.10.99.42
+  10.10.99.42 -> scope 'lab' (via prefix 10.0.0.0/8)
+
+  Also covered by (shadowed — the more specific prefix above wins):
+    - scope 'lab' via prefix 10.0.0.0/8
+rc=0
+== view scope-lookup 192.168.1.1
+No scope owns 192.168.1.1 — no prefix in any scope contains it.
+rc=1
+== view scope-lookup 192.168.0.0/24
+No scope owns 192.168.0.0/24 — no prefix covers the full range.
+rc=1
+== view scope-lookup 8.8.8.8
+No scope owns 8.8.8.8 — no prefix in any scope contains it.
+rc=1
+== view scope-lookup 8.8.0.0/16
+No scope owns 8.8.0.0/16 — no prefix covers the full range.
+rc=1
+== view scope-lookup not-an-address
+ERROR: invalid address or CIDR: 'not-an-address' does not appear to be an IPv4 or IPv6 address
+rc=2
+== view scope-lookup 10.0.0.0/33
+ERROR: invalid address or CIDR: '10.0.0.0/33' does not appear to be an IPv4 or IPv6 network
+rc=2
+== view scope-lookup it's
+ERROR: invalid address or CIDR: "it's" does not appear to be an IPv4 or IPv6 address
+rc=2
+== view scope-lookup fd00:10::5
+No scope owns fd00:10::5 — no prefix in any scope contains it.
+rc=1
+== view scope-lookup fd00:10::/48
+No scope owns fd00:10::/48 — no prefix covers the full range.
+rc=1
+== view scope-lookup 10.0.0.0/7
+No scope owns 10.0.0.0/7 — no prefix covers the full range.
+rc=1
+== view scope-lookup 10.9.0.1
+  10.9.0.1 -> scope 'lab' (via prefix 10.0.0.0/8)
+
+  Also covered by (shadowed — the more specific prefix above wins):
+    - scope 'lab' via prefix 10.0.0.0/8
+rc=0
+== view scope-lookup 10.10.1.5
+  10.10.1.5 -> scope 'lab' (via prefix 10.0.0.0/8)
+
+  Also covered by (shadowed — the more specific prefix above wins):
+    - scope 'lab' via prefix 10.0.0.0/8
+rc=0
+== view scope-lookup 10.1.0.5
+  10.1.0.5 -> scope 'lab' (via prefix 10.0.0.0/8)
+  Tagged wti (scope devices entry 10.1.0.0/24): over RADIUS it gets that vendor's attribute only
+
+  Also covered by (shadowed — the more specific prefix above wins):
+    - scope 'lab' via prefix 10.0.0.0/8
+rc=0
+== view config-show
+scope=lab|10|2
+prefix=10.0.0.0/8
+prefix=10.0.0.5/8
+prefix=junk
+scope=empty|0|0
+cisco_ro=1
+cisco_op=7
+cisco_rw=15
+juniper_ro=RO-CLASS
+juniper_op=OP-CLASS
+juniper_rw=RW-CLASS
+allow=::/0
+deny=
+rc=0
+== view linux-users lab
+alice|
+bob|9
+rc=0
+== view linux-users wifi
+rc=0
+== view linux-users a
+rc=0
+== view status 16
+user_count=3
+scope_count=2
+prefix_count=3
+prefix_unrestricted=0
+prefix_has_v6=0
+allow_has_v6=1
+placeholder_scopes=lab
+weak_scopes=empty:0
+empty_prefix_scopes=empty
+total_refs=3
+empty_scopes=empty
+orphan=alice:gone
+pwdate=alice|2026-01-02
+rc=0
+== view status 30
+user_count=3
+scope_count=2
+prefix_count=3
+prefix_unrestricted=0
+prefix_has_v6=0
+allow_has_v6=1
+placeholder_scopes=lab
+weak_scopes=empty:0
+empty_prefix_scopes=empty
+total_refs=3
+empty_scopes=empty
+orphan=alice:gone
+pwdate=alice|2026-01-02
+rc=0
+== view validate
+COUNT:users=3
+COUNT:groups=4
+COUNT:scopes=2
+ERROR:Shared secret contains placeholder value (scope 'lab')
+rc=0
+== view validate full
+COUNT:users=3
+COUNT:groups=4
+COUNT:scopes=2
+ERROR:Scope 'empty' has no shared secret
+ERROR:Scope 'empty' has no prefixes
+ERROR:Shared secret contains placeholder value (scope 'lab')
+ERROR:User 'alice' is in nonexistent group 'nope'
+ERROR:User 'alice' references nonexistent scope 'gone'
+ERROR:User "tacquito" uses a reserved name (remove with: tacctl user remove tacquito)
+rc=0
+== view has users alice
+rc=0
+== view has users nobody
+rc=1
+== view has scopes lab
+rc=0
+== view no-such-view
+tacctl store: internal: unknown view 'no-such-view'
+rc=1
+== get users
+alice
+bob
+tacquito
+rc=0
+== get groups
+odd
+operator
+readonly
+superuser
+rc=0
+== get scopes
+empty
+lab
+rc=0
+== get filters
+{"allow": ["::/0"], "deny": []}
+rc=0
+== get filters allow
+::/0
+rc=0
+== get filters deny
+rc=0
+== get filters maybe
+tacctl store: filters: unknown list 'maybe'
+rc=1
+== get users alice
+{"accounting_sink": false, "disabled": false, "group": "nope", "hash": "ABCD", "name": "alice", "password_changed": "2026-01-02", "scopes": ["lab", "gone"]}
+rc=0
+== get users root
+rc=1
+== get users carol disabled
+rc=1
+== get users alice scopes
+lab
+gone
+rc=0
+== get users alice hash
+ABCD
+rc=0
+== get users alice shoe_size
+tacctl store: user: unknown field 'shoe_size'
+rc=1
+== get users nobody
+rc=1
+== get users nobody group
+rc=1
+== get groups superuser
+{"builtin": true, "juniper_class": "RW-CLASS", "name": "superuser", "priv_lvl": 15}
+rc=0
+== get groups netops priv_lvl
+rc=1
+== get groups operator builtin
+true
+rc=0
+== get groups odd
+{"builtin": false, "juniper_class": null, "name": "odd", "priv_lvl": "9"}
+rc=0
+== get scopes lab
+{"devices": {"10.1.0.0/16": "cisco", "10.1.0.0/24": "wti"}, "name": "lab", "prefixes": ["10.0.0.0/8", "10.0.0.5/8", "junk"], "protocols": null, "secret": "REPLACE_ME"}
+rc=0
+== get scopes lab prefixes
+10.0.0.0/8
+10.0.0.5/8
+junk
+rc=0
+== get scopes lab secret
+REPLACE_ME
+rc=0
+== get scopes legacy protocols
+rc=1
+== get scopes prod-inner
+rc=1
+== get scopes wifi devices
+rc=1
+== get scopes a devices
+rc=1
+== get scopes b
+rc=1

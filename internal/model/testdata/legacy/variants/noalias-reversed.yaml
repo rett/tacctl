@@ -1,0 +1,109 @@
+secrets:
+- handler:
+    type: 1
+  name: prod
+  options:
+    prefixes: "[\n  \"10.0.0.0/8\"\n]\n"
+  secret:
+    group: tacquito
+    key: prod-secret-0123456789abcdef
+  type: 1
+- handler:
+    type: 1
+  name: prod-inner
+  options:
+    prefixes: "[\n  \"10.10.99.0/24\"\n]\n"
+  secret:
+    group: tacquito
+    key: inner-secret-0123456789abcdef
+  type: 1
+- handler:
+    type: 1
+  name: lab
+  options:
+    prefixes: "[\n  \"192.168.0.0/16\",\n  \"172.16.0.0/12\"\n]\n"
+  secret:
+    group: tacquito
+    key: lab-secret-0123456789abcdef
+  type: 1
+- handler:
+    type: 1
+  name: dmz
+  options:
+    prefixes: "[\n  \"203.0.113.0/24\"\n]\n"
+  secret:
+    group: tacquito
+    key: dmz-secret-0123456789abcdef
+  type: 1
+users:
+- authenticator:
+    options:
+      hash: 24326224313224646f6e74636172652e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e
+    type: 1
+  groups:
+  - accounter:
+      name: tacquito_accounter
+      type: 3
+    name: superuser
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 15
+    - name: junos-exec
+      set_values:
+      - name: local-user-name
+        values:
+        - RW-CLASS
+  name: alice
+  scopes:
+  - lab
+  - prod
+- authenticator:
+    options:
+      hash: 24326224313224646f6e74636172652e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e
+    type: 1
+  groups:
+  - accounter:
+      name: tacquito_accounter
+      type: 3
+    name: operator
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 7
+    - name: junos-exec
+      set_values:
+      - name: local-user-name
+        values:
+        - OP-CLASS
+  name: bob
+  scopes:
+  - lab
+- authenticator:
+    options:
+      hash: 24326224313224646f6e74636172652e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e
+    type: 1
+  groups:
+  - accounter:
+      name: tacquito_accounter
+      type: 3
+    name: readonly
+    services:
+    - name: shell
+      set_values:
+      - name: priv-lvl
+        values:
+        - 1
+    - name: junos-exec
+      set_values:
+      - name: local-user-name
+        values:
+        - RO-CLASS
+  name: carol
+  scopes:
+  - dmz
+  - lab

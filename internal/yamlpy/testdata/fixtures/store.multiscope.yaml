@@ -1,0 +1,37 @@
+version: 1
+groups:
+  operator: {priv_lvl: 7, juniper_class: OP-CLASS, builtin: true}
+  readonly: {priv_lvl: 1, juniper_class: RO-CLASS, builtin: true}
+  superuser: {priv_lvl: 15, juniper_class: RW-CLASS, builtin: true}
+users:
+  alice:
+    group: superuser
+    scopes: [prod, lab]
+    hash: 24326224313224646f6e74636172652e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e
+    disabled: false
+  bob:
+    group: operator
+    scopes: [lab]
+    hash: 24326224313224646f6e74636172652e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e
+    disabled: false
+  carol:
+    group: readonly
+    scopes: [lab, dmz]
+    hash: 24326224313224646f6e74636172652e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e
+    disabled: false
+scopes:
+  dmz:
+    prefixes: [203.0.113.0/24]
+    secret: dmz-secret-0123456789abcdef
+  lab:
+    prefixes: [172.16.0.0/12, 192.168.0.0/16]
+    secret: lab-secret-0123456789abcdef
+  prod:
+    prefixes: [10.0.0.0/8]
+    secret: prod-secret-0123456789abcdef
+  prod-inner:
+    prefixes: [10.10.99.0/24]
+    secret: inner-secret-0123456789abcdef
+filters:
+  allow: []
+  deny: []

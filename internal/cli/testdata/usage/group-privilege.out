@@ -1,0 +1,15 @@
+
+[1mtacctl group privilege[0m — per-group Cisco priv-exec command mappings
+
+Usage:
+  tacctl group privilege list <group>                              Show mappings (explicit or default)
+  tacctl group privilege add <group>    '<cmd>'[,'<cmd>'...]       Move one or more commands to the priv-lvl
+  tacctl group privilege remove <group> '<cmd>'[,'<cmd>'...]       Remove mapping(s)
+  tacctl group privilege clear <group>                             Wipe explicit mappings (revert to defaults)
+  tacctl group privilege seed [<group>] [--force]                  Populate built-ins with safe defaults
+
+Drives 'privilege exec level <lvl> <cmd>' lines emitted by
+'tacctl config cisco'. Pure device-side; tacquito does not read
+these. When no explicit mappings exist for a group, a conservative
+default set is used (only commands moved DOWN from priv 15).
+

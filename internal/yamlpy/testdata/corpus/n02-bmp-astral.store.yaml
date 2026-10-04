@@ -1,0 +1,30 @@
+- v: "\L"
+  l: ["\L", x, "\L"]
+  k: {? "\L" : "\L"}
+- v: "a\Lb"
+  l: ["a\Lb", x, "a\Lb"]
+  k: {? "a\Lb" : "a\Lb"}
+- v: "\P"
+  l: ["\P", x, "\P"]
+  k: {? "\P" : "\P"}
+- v: "\uFEFF"
+  l: ["\uFEFF", x, "\uFEFF"]
+  k: {"\uFEFF": "\uFEFF"}
+- v: "x\uFEFFy"
+  l: ["x\uFEFFy", x, "x\uFEFFy"]
+  k: {"x\uFEFFy": "x\uFEFFy"}
+- v: "\U0001F511"
+  l: ["\U0001F511", x, "\U0001F511"]
+  k: {"\U0001F511": "\U0001F511"}
+- v: "key\U0001F511"
+  l: ["key\U0001F511", x, "key\U0001F511"]
+  k: {"key\U0001F511": "key\U0001F511"}
+- v: "\u043F\u0430\u0440\u043E\u043B\u044C"
+  l: ["\u043F\u0430\u0440\u043E\u043B\u044C", x, "\u043F\u0430\u0440\u043E\u043B\u044C"]
+  k: {"\u043F\u0430\u0440\u043E\u043B\u044C": "\u043F\u0430\u0440\u043E\u043B\u044C"}
+- v: "\u5BC6\u7801"
+  l: ["\u5BC6\u7801", x, "\u5BC6\u7801"]
+  k: {"\u5BC6\u7801": "\u5BC6\u7801"}
+- v: "a\"b\\c: #d \xE9\L\U0001F511 {e}"
+  l: ["a\"b\\c: #d \xE9\L\U0001F511 {e}", x, "a\"b\\c: #d \xE9\L\U0001F511 {e}"]
+  k: {? "a\"b\\c: #d \xE9\L\U0001F511 {e}" : "a\"b\\c: #d \xE9\L\U0001F511 {e}"}

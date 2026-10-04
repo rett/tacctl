@@ -6,13 +6,15 @@
 # ubuntu-noble, almalinux-9: a systemd container with this checkout mounted
 #   read-only; flow.sh runs 'tacctl backend enable radius' and everything
 #   after it for real.
-# almalinux-8: its python (3.6) cannot run tacctl, so the files are rendered
-#   here for the RHEL layout, copied in, checked with 'radiusd -C' and served
-#   by 'radiusd -n tacctl-radius' started by hand; then cases.sh.
+# almalinux-8: tacctl is not run in the container; the files are rendered
+#   here for the RHEL layout ('tacctl config render --dry-run --out'), copied
+#   in, checked with 'radiusd -C' and served by 'radiusd -n tacctl-radius'
+#   started by hand; then cases.sh.
 #
 # Nothing on this machine is touched outside podman and a temp directory.
 # Images are built once (tacctl-radius-check:<distro>) and kept; the
-# container is removed unless --keep is given. Needs python3-bcrypt here.
+# container is removed unless --keep is given. Needs Go in /usr/local/go (the
+# binary is built here from this checkout) and python3-bcrypt (make-store.py).
 set -euo pipefail
 DISTRO="${1:?usage: run.sh <ubuntu-noble|almalinux-9|almalinux-8> [--keep]}"
 KEEP="${2:-}"
@@ -66,20 +68,20 @@ mkdir -p "$STATE" "${WORK}/out"
 podman run -d --name "$NAME" -v "${HERE}:/check:ro" -v "${WORK}/data:/data:ro" "$IMAGE" sleep infinity > /dev/null
 MYIP=$(podman exec "$NAME" hostname -I | cut -d' ' -f1)
 sed "s#10.0.2.0/24#${MYIP%.*}.0/24#" "${WORK}/data/store.yaml" > "${STATE}/store.yaml"
-printf 'listeners:\n  radius:\n    auth6: {network: udp6, address: "[::]:1812"}\n' > "${STATE}/tacctl.yaml"
+"${REPO}/bin/tacctl.sh" --build "${WORK}/tacctl" > /dev/null
+printf 'backends:\n  enabled: [radius]\nlisteners:\n  radius:\n    auth6: {network: udp6, address: "[::]:1812"}\n' > "${STATE}/tacctl.yaml"
 (
     export TACCTL_STATE_DIR="$STATE" TACCTL_ETC="${WORK}/etc" TACCTL_LOG="${WORK}/log" TACCTL_SKIP_SUDO=1
     export TACCTL_RADIUS_FAMILY=rhel
     unset TACCTL_RADIUS_DIR TACCTL_RADIUS_LOG TACCTL_RADIUS_BIN
-    # shellcheck disable=SC1091
-    source "${REPO}/bin/tacctl.sh"
-    model_dump > "${WORK}/model.json"
-    render_radius_config "${WORK}/model.json" "${WORK}/out"
+    # The artifacts land under ${WORK}/out at the paths they have on the
+    # server (etc/raddb/...); nothing live is touched.
+    "${WORK}/tacctl" config render --dry-run --out "${WORK}/out" > /dev/null
 )
-podman cp "${WORK}/out/conf" "${NAME}:/etc/raddb/tacctl-radius.conf"
-podman cp "${WORK}/out/users" "${NAME}:/etc/raddb/tacctl-radius.users"
+podman cp "${WORK}/out/etc/raddb/tacctl-radius.conf" "${NAME}:/etc/raddb/tacctl-radius.conf"
+podman cp "${WORK}/out/etc/raddb/tacctl-radius.users" "${NAME}:/etc/raddb/tacctl-radius.users"
 podman exec "$NAME" mkdir -p /etc/raddb/tacctl-radius-dictionary
-podman cp "${WORK}/out/dictionary" "${NAME}:/etc/raddb/tacctl-radius-dictionary/dictionary"
+podman cp "${WORK}/out/etc/raddb/tacctl-radius-dictionary/dictionary" "${NAME}:/etc/raddb/tacctl-radius-dictionary/dictionary"
 podman exec "$NAME" bash -c '
     rpm -q freeradius libxcrypt; radiusd -v | head -1
     chown -R root:radiusd /etc/raddb/tacctl-radius*; chmod 640 /etc/raddb/tacctl-radius.* /etc/raddb/tacctl-radius-dictionary/dictionary

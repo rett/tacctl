@@ -1,0 +1,31 @@
+# Structure: order, nesting, duplicate keys (last value, first position),
+# block scalars, comments, the = key.
+z: 1
+a:
+  nested:
+    deeper: [1, 2]
+  list:
+  - a
+  - b: c
+    d: [e]
+  -
+  - - inner
+    - 2
+dup: first
+m: {}
+l: []
+dup: second
+literal: |
+  line one
+  line two
+folded: >
+  folded
+  text
+stripped: |-
+  no newline
+"quoted key": v
+'single key': w
+=: value-key
+multi plain: this is
+  continued
+k: !!str 2026-10-01

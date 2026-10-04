@@ -162,15 +162,3 @@ PY
     refute_output --partial "prod-inner"
     grep -q 'prod-inner' "$TACCTL_CONFIG"
 }
-
-@test "store: tier gate keeps store commands superuser-only" {
-    tacctl_source_lib
-    run tier_permits readonly store show
-    assert_failure
-    run tier_permits operator store show
-    assert_failure
-    run tier_permits operator store import
-    assert_failure
-    run tier_permits superuser store show
-    assert_success
-}

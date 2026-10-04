@@ -1,23 +1,50 @@
 # tacctl tests
 
-Test suite for `bin/tacctl.sh` (the entrypoint) and `lib/*.sh` plus `lib/backends/*.sh` (the code it loads), built on [bats-core](https://github.com/bats-core/bats-core).
+tacctl is a Go program (`cmd/tacctl`, `internal/...`) with a bash bootstrap
+shim (`bin/tacctl.sh`). Its tests come in layers:
+
+| Layer | Tool | What it proves | Where |
+|---|---|---|---|
+| Go unit tests | `go test -race ./...` with the fake runner, temp dirs and the test knobs | every package on its own: the PyYAML-compatible reader and writer, the store, the model, the renderers, the backend contract (with a stand-in backend), the lifecycle phases, the CLI's argument handling, exit codes and usage blocks | `internal/*/..._test.go` |
+| Goldens | Go tests and bats `golden_diff` over `tests/fixtures/golden/*`, `tests/fixtures/store.*.yaml`, `tests/fixtures/model/*.json` | rendered artifacts byte for byte | both layers |
+| Black-box bats | bats-core against `dist/tacctl` | the command line: output, exit codes, prompts, files and modes, the system commands run (PATH stubs) | `tests/integration`, `tests/e2e` |
+| Differential | `tests/diff/run.sh` | the binary against the last bash release (the `0.1.18` tag) on the same inputs, success and error paths | on demand |
+| Containers | rootless podman | real FreeRADIUS, real PAM logins on enrolled hosts, the cross-over from the bash release, a fresh install on a server without Go | on demand, never by `make test` |
 
 ## Running
 
 ```sh
-make bootstrap       # first time: pull bats submodules
-make test            # all tiers (unit → integration → e2e)
-make test-unit       # pure-logic only, <5s
+make bootstrap       # first time: pull the bats submodules
+make test            # make test-go, then the bats suite against dist/tacctl
+make test-go         # go test -race ./..., with and without -tags testknobs
+make test-bats       # make build, then the bats suite (integration, then e2e)
 make test-integration
 make test-e2e
-make coverage        # produces coverage/index.html (requires: apt install kcov)
-make lint            # shellcheck (bin/tacctl.sh, lib/*.sh, lib/backends/*.sh, tests/helpers, config/linux)
+make build           # dist/tacctl: bin/tacctl.sh --build with the test knobs compiled in
+make coverage        # go test -coverprofile; coverage/go.out, coverage/index.html and the total
+make lint            # shellcheck (bin/tacctl.sh, config/linux, tests/helpers, tests/tools, tests/diff,
+                     #   tests/containers/{crossover,fresh}), gofmt, go vet, golangci-lint (pinned; prints how
+                     #   to install it when missing), and tests/tools/no-private.sh
+make test-pyyaml     # the yamlpy and conf PyYAML corpora regenerated with PyYAML and compared
+make test-diff CORPUS=users   # the differential runner on one corpus
 ```
 
-Run a single file:
+The bats files run in parallel (`bats --jobs`, one file per job, the tests of
+a file in order) when GNU `parallel` is installed: `BATS_JOBS` sets the number
+of jobs (default: the CPU count), `BATS_JOBS=1` runs serially. `BATS_FLAGS`
+is passed to bats (default `--print-output-on-failure`).
+
+Run a single file or test (after `make build`):
+
 ```sh
-tests/bats/bats-core/bin/bats tests/unit/validators.bats
+tests/bats/bats-core/bin/bats tests/integration/user_crud.bats
+tests/bats/bats-core/bin/bats --filter 'user add' tests/integration/user_crud.bats
+go test -run TestStoreApply ./internal/backend
 ```
+
+Test-time tools: bash, GNU coreutils, `parallel` (optional), and `python3`
+for a few bats assertions that read JSON and for the generators below. The
+binary itself runs no python3.
 
 ## Layout
 
@@ -29,50 +56,47 @@ tests/
 │   ├── tacquito.*.yaml  # tacquito.yaml fixtures (every one must import into the store without --force)
 │   ├── legacy.*.yaml    # tacquito.yaml inputs for the importer and the upgrade gate (edge cases, unrepresentable content, the old installer's output)
 │   ├── store.*.yaml     # store.yaml fixtures; store.X.yaml is exactly what importing tacquito.X.yaml writes
-│   ├── model/           # golden model JSON (what model_dump returns for a fixture)
-│   ├── templates/       # device config templates
-│   └── golden/          # expected rendered output: device configs (M3; `--protocol radius` ones are `*-radius-lab.conf`), tacquito.X.rendered.yaml
-│                        #   (what the TACACS+ renderer produces from store.X.yaml) and radius.<family>.*
-├── containers/radius/   # the check against real FreeRADIUS in podman (not run by make test)
-├── containers/hosts/    # 'host enroll|sync|unenroll' for real, server and client containers (not run by make test)
-├── unit/                # pure-logic, no I/O, no mocks
-├── integration/         # real file I/O into $TACCTL_ETC tmpdir
-└── e2e/                 # stubbed systemctl/git/etc.
+│   ├── model/           # golden model JSON (what 'store show --json' prints for a fixture)
+│   ├── systemd/         # unit files of earlier releases
+│   └── golden/          # expected rendered output: device configs, tacquito.X.rendered.yaml,
+│                        #   radius.<family>.*, drop-ins, rendered.json, the templates manifest,
+│                        #   the Linux installer headers, tacctl.overrides.yaml
+├── integration/         # the command line against real files in the test's tmpdir
+├── e2e/                 # whole command flows with stubbed system commands
+├── diff/                # the differential runner, its corpora, stubs and state roots
+├── tools/               # no-private.sh (lint), pyyaml-corpus.py, usage-goldens.sh, pre-push
+├── containers/radius/   # real FreeRADIUS in podman
+├── containers/hosts/    # 'host enroll|sync|unenroll' for real, server and client containers
+├── containers/crossover/ # the upgrade from the bash release to the Go binary, and back
+└── containers/fresh/    # a fresh install with the README one-liner on a server without Go
 ```
 
-The code under test is `bin/tacctl.sh` (entrypoint) plus `lib/*.sh` and the
-backend modules in `lib/backends/*.sh`. Tests keep sourcing `bin/tacctl.sh`
-through `tacctl_source_lib`; it loads the lib files. `tests/unit/sanity.bats`
-enumerates both directories.
+Go tests live beside their packages; their own inputs are in each package's
+`testdata/`.
 
-## Writing a test
+## The bats harness
 
-**Unit test** (direct function call):
+`tests/helpers/setup.bash` points `TACCTL_BIN_SCRIPT` at `dist/tacctl` (it
+stops with a message when the binary is missing: run `make build`) and sets
+`TACCTL_TREE` to this checkout, the tree the binary treats as its own
+(templates, patches, the deploy clone of `config branch`).
+`tacctl_tmpenv_init` (`tests/helpers/tmpenv.bash`) points every `TACCTL_*`
+path into `$BATS_TEST_TMPDIR` and sets `TACCTL_SKIP_SUDO=1`;
+`tests/integration/fixtures.bats` checks that it does.
+
+**Writing a test:**
+
 ```bash
 #!/usr/bin/env bats
 load ../helpers/setup
 load ../helpers/tmpenv
-
-setup() {
-    tacctl_tmpenv_init
-    tacctl_source_lib
-}
-
-@test "validate_username rejects empty" {
-    run validate_username ""
-    assert_failure
-}
-```
-
-**Integration test** (subprocess):
-```bash
-#!/usr/bin/env bats
-load ../helpers/setup
-load ../helpers/tmpenv
+load ../helpers/mocks
 load ../helpers/fixtures
 
 setup() {
     tacctl_tmpenv_init
+    tacctl_mocks_init
+    stub_cmd systemctl
     load_fixture tacquito.minimal.yaml
 }
 
@@ -81,49 +105,79 @@ setup() {
     assert_success
     assert_output --partial 'alice'
 }
-```
 
-**E2E test** (with stubbed commands):
-```bash
-#!/usr/bin/env bats
-load ../helpers/setup
-load ../helpers/tmpenv
-load ../helpers/mocks
-
-setup() {
-    tacctl_tmpenv_init
-    tacctl_mocks_init
-    stub_cmd systemctl
-    stub_cmd git 'echo "ok"'
-}
-
-@test "restarting the TACACS+ backend calls systemctl restart tacquito" {
-    tacctl_source_lib
-    backend_call tacacs service restart
+@test "a mutation restarts tacquito" {
+    run "$TACCTL_BIN_SCRIPT" user disable alice
+    assert_success
     stub_called 'systemctl restart tacquito'
 }
 ```
 
-## Golden-file workflow
+- `tacctl_mocks_init` prepends `$BATS_TEST_TMPDIR/stubs` to `PATH`;
+  `stub_cmd <name> [body]` shadows a system command there and records each
+  call in `$CALLS_LOG`; `stub_called`, `refute_called` and `stub_calls`
+  check it. The binary finds programs through PATH, so the stubs work for it
+  exactly as for a shell script. What it still runs: `systemctl`,
+  `journalctl`, `ss`, `ps`, `visudo`, `install` (sudoers only), `ssh`,
+  `podman`, `git`, `go`, `wget`, the package managers, `useradd`/`userdel`,
+  `id`, `getent`, `logger`, `ip`, `tar`, `mandb`, `diff`, `tacquito` and the
+  FreeRADIUS daemon's `-C`. File work, hashing, randomness, dates and YAML
+  are native: there is nothing to stub for `chown`, `openssl`, `date`,
+  `sleep`, `curl` or `python3`, so tests assert the effect (modes, contents,
+  the knobs below fixing the clock and the random bytes).
+- Ownership (`tacquito:tacquito`, `root:freerad`) is set natively and best
+  effort; unprivileged it cannot be checked, so tests assert mode and content.
+- Every scratch directory goes under `TMPDIR`; tests that care set `TMPDIR`
+  to a directory of their own and assert it is empty afterwards.
+- `config listen|loglevel|metrics` restart a unit and check that it stayed
+  up after `TACCTL_SETTLE_SECONDS` (default 0.5): export
+  `TACCTL_SETTLE_SECONDS=0` in a file that runs many of them.
+- `TACCTL_SYSTEMD_DIR` (unit files and the instances' drop-in directories)
+  defaults to the parent of `TACCTL_OVERRIDE_DIR`, which tmpenv puts in the
+  test's tmpdir. A test that needs the real layout exports both.
+- The hidden commands are part of the contract the tests use:
+  `_completion-names <kind>` (the completion bridge: users, groups, scopes,
+  backups, backends, enabled-backends, listeners) and `_phase <backend>
+  <install|upgrade|uninstall> <phase>[,<phase>...] [<tree>|--keep-logs]`,
+  which runs lifecycle phases of one backend on their own and prints
+  `SUMMARY <note>` / `SAVED <line>` for what they leave to the closing
+  summaries (`radius.bats` drives the RADIUS upgrade and uninstall phases
+  that way; the container drivers drive them in real containers).
+- The completion is the binary's own: `tacctl completion bash` prints
+  the script and `tacctl __complete <words>` answers it. `completion.bats`
+  runs the generated bash script with the real bash-completion library and a
+  `sudo` stub for the bridge; the Go tests (`internal/cli/completion_test.go`)
+  check the words per verb, and `internal/cli/man_test.go` checks that
+  `man/tacctl.1` names every command of the tree and none that is not in it.
 
-Template-rendering tests (M3) compare produced output against `tests/fixtures/golden/*.conf`.
-Regenerate the golden files after intentional output changes:
+## Goldens
+
+Device configs (`config cisco|juniper|wti`, with `--protocol radius` as
+`*-radius-lab.conf`) are compared through the CLI; regenerate them after an
+intended change and review the diff:
 
 ```sh
 UPDATE_GOLDEN=1 make test-integration
-git diff tests/fixtures/golden/   # review the delta
+git diff tests/fixtures/golden/
 ```
 
-The store tests use the same switch for `tests/fixtures/model/*.json` and
-`tests/fixtures/store.*.yaml`:
+The other goldens come from the last bash release, never from the Go code
+they check. Their generators need git (the release tag), bash and PyYAML,
+and write nothing outside a temp directory:
 
-```sh
-UPDATE_GOLDEN=1 tests/bats/bats-core/bin/bats tests/unit/store_import.bats
-git diff tests/fixtures/model/ tests/fixtures/store.*.yaml
-```
+| Files | Generator |
+|---|---|
+| `golden/dropin.*.conf`, `golden/rendered.json`, `internal/render/tacacs/testdata/corpus.jsonl` | `python3 internal/render/tacacs/testdata/gen.py` |
+| `internal/conf/testdata/*` (defaults, the schema's acceptance and messages, writes) | `python3 internal/conf/testdata/gen.py` |
+| `internal/store/testdata/load/*`, `internal/store/testdata/import/*` | the `gen.py` beside them |
+| `internal/cidr/testdata/*` | `python3 internal/cidr/testdata/gen.py` |
+| `internal/yamlpy/testdata/*`, `internal/conf/testdata/pyyaml/*` | `tests/tools/pyyaml-corpus.py` (`make test-pyyaml` checks them) |
+| `internal/cli/testdata/usage/*` (every usage block) | `tests/tools/usage-goldens.sh` |
 
-`tacctl_tmpenv_init` points `TACCTL_STATE_DIR` at `$BATS_TEST_TMPDIR/state`, so
-the store never resolves to `/etc/tacctl`; tests need no setup of their own for it.
+The store fixtures (`tests/fixtures/store.*.yaml`) and model JSON
+(`tests/fixtures/model/*.json`) are PyYAML and Python output of the bash
+release; `internal/store` and `internal/model` compare the Go output with
+them byte for byte.
 
 ## Fixtures and the store
 
@@ -137,6 +191,11 @@ helpers in `tests/helpers/fixtures.bash` put a fixture in place:
 | `load_store_fixture store.X.yaml` | Copies `tests/fixtures/store.X.yaml` to `$TACCTL_STATE_DIR/store.yaml` (0600). Does not touch `tacquito.yaml`. |
 | `place_fixture <name>` | Copy only: no seeding. For tests of the importer and of the no-store (legacy) read path, which need an empty state dir. |
 
+Two more plant state an earlier release left: `rendered_record <file>...`
+records files in `rendered.json` as rendered by tacctl, `rendered_forget
+<file>...` drops their records. `golden_diff <actual> <golden>` compares with
+`tests/fixtures/golden/` (or rewrites it under `UPDATE_GOLDEN=1`).
+
 Notes:
 
 - `load_fixture` of a directory fixture, or of a `legacy.*.yaml` file, copies and
@@ -144,10 +203,11 @@ Notes:
 - A second `load_fixture tacquito.*.yaml` in the same test replaces both the file
   and the store.
 - Seeding is cheap: the importer runs once per distinct fixture per bats run (in a
-  scratch directory, cached under `$BATS_RUN_TMPDIR/store-seed`) and later loads
-  copy the cached store. The seed is the `store.yaml` file only: no lock file,
-  snapshot or output. If a test planted password-date or disabled-hash sidecars
-  before loading, the helper imports directly instead, because the importer reads them.
+  scratch directory, cached under `$BATS_RUN_TMPDIR/store-seed`, safe for parallel
+  jobs) and later loads copy the cached store. The seed is the `store.yaml` file
+  only: no lock file, snapshot or output. If a test planted password-date or
+  disabled-hash sidecars before loading, the helper imports directly instead,
+  because the importer reads them.
 - Commands read and write the store. `tacquito.yaml` is what tacctl renders from
   it, so after `load_fixture` the hand-built fixture file is only the starting
   artifact: a test that edits `$TACCTL_CONFIG`, or writes its own, changes
@@ -164,24 +224,14 @@ Notes:
   `$TACCTL_CONFIG` text for what tacquito is *given* (anchor names, the
   `scopes:`/`groups:` of a user entry, the disabled marker, `secrets[]` order).
   Note the renderer quotes a hash whose hex is all digits.
-- Every mutating command snapshots first: `$TACCTL_STATE_DIR/backups/<ts>/{store.yaml,tacctl.yaml,manifest}`
-  (not `tacquito.yaml.<ts>`; those exist only as old-style backups a test plants, or
-  the `backups/legacy/` copies the renderer makes). `tests/integration/backup.bats`
-  has helpers for listing snapshots and comparing the live state before and after.
+- Every mutating command snapshots first: `$TACCTL_STATE_DIR/backups/<ts>/{store.yaml,tacctl.yaml,manifest}`.
+  `tests/integration/backup.bats` has helpers for listing snapshots and comparing
+  the live state before and after.
 - For legacy read-only mode (no store), use `place_fixture`. Every mutating
   command must refuse there; `tests/integration/store_mutations.bats` holds the
   list of verbs and is where a new mutating verb gets added.
-- The legacy `tacquito.yaml` migrations (`conf_migrate_command_rules`,
-  `conf_migrate_exec_service_name`, and the legacy half of
-  `regenerate_tacquito_commands`) are no-ops once a store exists, so
-  their tests place fixtures with `place_fixture`.
-
-The renderer goldens work the same way:
-
-```sh
-UPDATE_GOLDEN=1 tests/bats/bats-core/bin/bats tests/unit/render_tacacs.bats
-git diff tests/fixtures/golden/tacquito.*.rendered.yaml
-```
+- The daemon load-smoke is skipped in tests (`$TACCTL_BIN` holds no `tacquito`);
+  tests that exercise it install a stand-in script there.
 
 ### Which fixtures pass `store import --check`
 
@@ -193,102 +243,75 @@ install and upgrade), `tacquito.legacy-exec.yaml` still names the Cisco
 service `exec`, and `tacquito.multiscope.yaml` lists `prod` before the
 narrower `prod-inner`, an order no pre-store release left on disk. All but
 multiscope pass once the migrations every upgrade runs on a legacy file have
-run on them (`config_sync_existing`: `conf_migrate_exec_service_name`,
-`regenerate_tacquito_commands`). Multiscope does not: upgrade never sorted
-`secrets`, and the gate does not rewrite a file to make it pass, so it is the
-fixture for a clean import that is not equivalent. `tests/unit/render_tacacs.bats`
-pins these verdicts. A test that needs a config which passes the check as-is
-should load `legacy.fresh-install.yaml` (what the template-editing installer
-wrote: old layout, four disabled seed users, scope `lab`),
-`golden/tacquito.minimal.rendered.yaml` or `golden/tacquito.multiscope.rendered.yaml`.
-
-The daemon load-smoke is skipped in tests (`$TACCTL_BIN` holds no `tacquito`);
-tests that exercise it install a stand-in script there.
+run on them (the exec service-name migration and the regeneration of the
+command rules). Multiscope does not: upgrade never sorted `secrets`, and the
+gate does not rewrite a file to make it pass, so it is the fixture for a
+clean import that is not equivalent. `internal/model`'s
+`TestImportCheckGoldens` pins these verdicts. A test that needs a config
+which passes the check as-is should load `legacy.fresh-install.yaml` (what
+the template-editing installer wrote: old layout, four disabled seed users,
+scope `lab`), `golden/tacquito.minimal.rendered.yaml` or
+`golden/tacquito.multiscope.rendered.yaml`.
 
 ## Backends
 
 Generic code reaches a daemon only through the backend contract
-(`lib/backend.sh`); TACACS+ (tacquito) is the module `lib/backends/tacacs.sh`,
-RADIUS (FreeRADIUS) `lib/backends/radius.sh` (see "The RADIUS backend").
+(`internal/backend`); TACACS+ (tacquito) is `internal/backend/tacacs`,
+RADIUS (FreeRADIUS) `internal/backend/radius`, both registered by
+`internal/backend/all`.
 
-- `tests/unit/backend.bats` checks the contract itself: every registered
-  backend defines every verb in `BACKEND_VERBS` (and no `backend_<id>_*`
-  function that is not one), every file in `lib/backends/` is sourced and
-  registers under its file name, `backends.enabled` and its schema, and the
-  TACACS+ module's read-only verbs. A new module needs no new test to be held
-  to the contract; a new verb goes into `BACKEND_VERBS`.
-- `tests/integration/backend_mutation.bats` covers what a mutation does with
-  two backends, using a stand-in backend defined in the test shell
-  (`BACKEND_IDS+=(fake)`, a few `backend_fake_*` functions, and
-  `backends: {enabled: [tacacs, fake]}` written to `tacctl.yaml` by hand; the
-  schema accepts whatever `BACKEND_IDS` holds when it is read, so
-  `conf_set_list backends.enabled` takes the id too). It can refuse at its
-  gate, fail while staging, or fail in its commit after damaging its
-  artifact. Copy that pattern to test generic code against a backend that
-  misbehaves.
-- `tests/integration/backend_cli.bats` covers `tacctl backend
-  list|status|enable|disable` and the per-backend sections of `status`,
-  `config validate`, `config show`, `log` and `backup restore`, with a fuller
-  stand-in (`fake_backend_write`: every verb, and environment knobs to make
-  one step fail: `FAKE_GATE`, `FAKE_FAIL`, `FAKE_PHASE_FAIL`, `FAKE_START`,
-  `FAKE_STOP_FAIL`). The stand-in is a file sourced after `bin/tacctl.sh` in a
-  bash of its own under `set -euo pipefail` (`tc <function> [args]`), because
-  a module's install phases `exit` on failure and errexit is ignored inside
-  bats' `run`. Every failure of `enable` asserts the same thing: `state()`
-  (store, tacctl.yaml, both artifacts, rendered.json) is byte-identical to
-  before and no `.apply.*`, `.enable.*` or staging directory is left.
-- `tests/integration/completion.bats` runs the real completion function with
-  the real bash-completion library and a stub `sudo` that plays the
-  `_completion-names` bridge (the only source of user, group, scope, backup,
-  backend and listener names: the completion reads no file);
-  `tests/integration/tiers.bats` holds the check that `tier_permits` and
-  `emit_tier_sudoers` agree on every verb.
-- To make a render fail in a test, override the contract function
-  (`backend_tacacs_render_stage() { return 1; }`), not `tacacs_render_apply`:
-  commands render through `backends_render_all`. `tacacs_render_apply` is
-  still what the legacy-mode code calls (the upgrade gate, `config_sync_existing`).
-- Results of `backends_render_all`, `backends_gate` and `_backends_load` are
-  shell variables (`BACKENDS_CHANGED`, `BACKENDS_ADOPT`, `BACKENDS_ENABLED`):
-  call them, and `store_apply`, in the test shell rather than under `run` when
-  the test reads those.
+- `internal/backend/faketest` is a stand-in backend with a knob for every
+  failure point (gate refusing or adopting, stage or commit failing, an
+  install phase failing, a start leaving the service down, a stop failing).
+  `internal/backend` tests the one mutation path (`StoreApply`: gate,
+  snapshot, store write, render of every enabled backend, commit all or
+  restore all, restart what changed) with two backends;
+  `internal/cli` tests `backend enable|disable`, the per-backend sections of
+  `status`, `config validate`, `config show`, `log` and `backup restore` with
+  it. `faketest.CheckContract` is the contract test each module runs on
+  itself.
+- `TACCTL_FAULT=<point>[,...]` (test builds only, below) makes a named step
+  fail through the CLI: `render-stage:<id>`, `render-commit:<id>`,
+  `snapshot`.
+- `tests/integration/backend_cli.bats` drives `backend list|status` and the
+  multi-backend sections through the command line with the two shipped
+  backends; `tests/integration/radius.bats` drives `backend enable|disable
+  radius` with the real module.
+- Tests that need an id tacctl does not have use `ldap`.
 
 ## The RADIUS backend
 
-`lib/backends/radius.sh` (FreeRADIUS from the distro package). The tests never
-run FreeRADIUS; what the real daemon does with the rendered files is checked
-in containers (next section).
+The tests never run FreeRADIUS; what the real daemon does with the rendered
+files is checked in containers (next section).
 
 - `tacctl_tmpenv_init` points the module at the test's tmpdir:
   `TACCTL_RADIUS_DIR` (the raddb), `TACCTL_RADIUS_LOG`, `TACCTL_RADIUS_BIN`
   (the daemon binary; absent unless a test installs a stand-in, and then the
-  module's config check runs it) and `TACCTL_LOGROTATE_DIR`. The unit
-  drop-in goes to `TACCTL_SYSTEMD_DIR`. `TACCTL_RADIUS_FAMILY=debian|rhel`
-  selects the distro layout (unit, account, paths) instead of detection.
+  module's config check runs it), `TACCTL_RADIUS_DICT` and
+  `TACCTL_LOGROTATE_DIR`. The unit drop-in goes to `TACCTL_SYSTEMD_DIR`.
+  `TACCTL_RADIUS_FAMILY=debian|rhel` selects the distro layout (unit,
+  account, paths) instead of detection.
 - `tests/fixtures/store.radius.yaml` has what the renderer must handle: a
   TACACS+-only and a RADIUS-only scope, an IPv6 prefix, overlapping prefixes,
   secrets that need each quoting form, a disabled user, the sink, a custom
-  group and both filters.
-- `unit/render_radius.bats`: hash conversion, secret quoting, clients, users,
-  the filter policy, the render id, notes, listeners, the drop-in, and the
-  goldens `golden/radius.{debian,rhel}.{conf,users}`, rendered with the
-  production paths of each layout
-  (`UPDATE_GOLDEN=1 tests/bats/bats-core/bin/bats tests/unit/render_radius.bats`).
+  group and both filters. `internal/render/radius` renders it against the
+  goldens `golden/radius.{debian,rhel}.{conf,users}` and `radius.dictionary`.
 - `integration/radius.bats`: the commands, with stubs written in the file
   itself: a `systemctl` that remembers which units are active and enabled
   (in `$SD`), `apt-get`/`dnf` that "install" a stand-in daemon, `ss`, `id`.
   `$SD/fail-start` makes a start or restart leave the unit inactive,
-  `$SD/fail-check` makes the daemon's `-C` reject the config. No stub was
-  added to `tests/helpers/`; `tmpenv.bash` gained the four variables above.
-- 'radius' is a registered backend now. Tests that need an id tacctl does
-  not have use `ldap`.
+  `$SD/fail-check` makes the daemon's `-C` reject the config.
 
 ## RADIUS in containers
 
 The one check that runs real FreeRADIUS: rootless podman, one container per
 distro, nothing on the host touched outside podman and a temp directory.
-Needs podman and `python3-bcrypt`; the first run of a distro builds an image
-(`localhost/tacctl-radius-check:<distro>`, kept) and needs the package
-mirrors.
+Needs podman and `python3-bcrypt` (and, for `almalinux-8`, Go in
+`/usr/local/go`: the files are rendered on this machine); the first run of a
+distro builds an image (`localhost/tacctl-radius-check:<distro>`, kept) and
+needs the package mirrors. Inside the systemd containers tacctl is built by
+its own bootstrap (`bin/tacctl.sh` downloads Go, verified, and builds from
+the vendored sources), so they need network access to `dl.google.com`.
 
 ```sh
 tests/containers/radius/run.sh ubuntu-noble     # FreeRADIUS 3.2.x, Debian layout
@@ -303,17 +326,12 @@ remove it with `podman rm -f`.
 | File | Does |
 |---|---|
 | `make-store.py <dir>` | writes a store with real bcrypt hashes (six users, ten scopes, both filters; four scopes enable vendor attributes, five addresses are tagged) and one `sec.<scope>` file per secret |
-| `run.sh <distro>` | builds the image if needed, starts the container, runs the check, removes the container |
-| `flow.sh <data dir>` | inside a systemd container with this checkout mounted read-only at `/opt/tacctl`: `tacctl backend enable radius` for real (package install, render, the daemon's `-C`, the drop-in with `-D`, start), then the cases, mutations (vendor attributes among them), listeners, drift, reload, disable, re-enable, uninstall phases, and the way from the release before the vendor attributes (commit 1b34e77, taken with `git archive`): its own enable, then this release's `upgrade config` step, then the next mutation |
+| `run.sh <distro>` | builds the image if needed, starts the container, runs the check, removes the container; for `almalinux-8` it renders with `tacctl config render --dry-run --out <dir>` (`TACCTL_RADIUS_FAMILY=rhel`) and serves the files with `radiusd` started by hand |
+| `flow.sh <data dir>` | inside a systemd container with this checkout mounted read-only at `/opt/tacctl`: `tacctl backend enable radius` for real (package install, render, the daemon's `-C`, the drop-in with `-D`, start), then the cases, mutations, listeners, drift, reload, disable, re-enable, the uninstall phases (`tacctl _phase radius uninstall ...`), and the way from the release before the vendor attributes (that old bash release runs from a `git archive` of its commit; its upgrade step is `tacctl _phase radius upgrade config,files,finish`) |
 | `cases.sh <data dir>` | the radclient cases, every reply decoded with tacctl's dictionary and compared attribute by attribute: Service-Type alone for a scope that enables nothing, each vendor's attribute per scope and per tagged address and never another's, rejects with none, no internal attribute anywhere; wrong password, user outside the client's scope, disabled user, sink, overlapping prefixes, a TACACS+-only scope, quoted secrets, both filters, the package's default client, IPv6, CHAP, Status-Server, accounting |
 
 Notes:
 
-- `ubuntu-noble` and `almalinux-9` run tacctl itself in the container.
-  `almalinux-8` has python 3.6, which cannot: there the two files are
-  rendered on the host for the RHEL layout (`TACCTL_RADIUS_FAMILY=rhel`,
-  `render_radius_config`), copied in and served by a daemon started by hand,
-  and only `cases.sh` runs.
 - tacquito is not in the containers. The TACACS+ backend renders its config
   there and warns that its service did not restart; that is expected.
 - The systemd containers run with `--cap-add SYS_ADMIN`: the Debian unit's
@@ -355,9 +373,9 @@ Each run prints `PASS`/`FAIL`/`NOTE` lines and exits non-zero on a `FAIL`;
 
 | File | Does |
 |---|---|
-| `run.sh` | builds the two images if needed (`localhost/tacctl-host-check:{server,client}-<distro>`, kept), starts the containers, runs the cycle |
+| `run.sh` | builds the two images if needed (`localhost/tacctl-host-check:{server,client}-<distro>`, kept; the server image gets tacctl built from this checkout by its bootstrap, and the pinned pam_tacplus source through `tacctl config linux build`), starts the containers, runs the cycle |
 | `matrix.sh` | the runs recorded in `docs/radius-notes.md`, one after another, a log per run |
-| `server-setup.sh` | in the server: a store with three users (real bcrypt hashes), tacquito under its unit through the backend's own install phases, `backend enable radius` |
+| `server-setup.sh` | in the server: a store with three users (real bcrypt hashes), tacquito under its unit through the backend's own install phases (`tacctl _phase tacacs install account|start`), `backend enable radius` |
 | `client-prep.sh` | at client image build: sshd, sudo, a local administrator `ladm`, a pre-existing account `carl`, a stand-in `gdm-password` service file, and what a rootless container needs (below). No PAM module, no EPEL: enrollment brings those |
 | `sshtry.sh` | one SSH password login to the container's own sshd (via `SSH_ASKPASS`; `sshpass` is not in every base repository) |
 | `pamprobe.py` | a PAM client: runs the phases of a service for a user and prints each return code and how long it took |
@@ -366,9 +384,8 @@ Notes:
 
 - **tacquito is not built here.** The server image takes
   `/usr/local/bin/tacquito` from the machine that builds it; without one,
-  only `radius` and `probe` can run. The pinned pam_tacplus source is
-  prepared in the image by `config linux build`'s own function. With
-  `--server almalinux-9` (FreeRADIUS 3.0.27) only `radius` and `probe` run.
+  only `radius` and `probe` can run. With `--server almalinux-9`
+  (FreeRADIUS 3.0.27) only `radius` and `probe` run.
 - No podman in the server container, so pam_tacplus is compiled on the
   client (the `--build-on-host` path), with the build packages enrollment
   installs.
@@ -384,123 +401,187 @@ Notes:
   package lists in `run.sh`: `podman rmi $(podman images -q localhost/tacctl-host-check)`.
 - Record what a run showed, with package versions, in `docs/radius-notes.md`.
 
-## Listeners and units
+## The cross-over in containers
 
-A listener of a backend is `listeners.<backend>.<name>` in `tacctl.yaml`
-(schema and reader: `lib/conf.sh` `_listener_py`, `backend_listeners`). The
-TACACS+ backend runs each in a systemd unit of its own (`tacquito.service`
-for `default`, `tacquito@<name>.service` for any other) and renders one
-drop-in per unit, `<unit>.d/tacctl.conf`, an artifact recorded in
-`rendered.json` like `tacquito.yaml`.
+`tests/containers/crossover/` (see its README) rehearses `tacctl upgrade
+--branch <Go tree>` from an installed bash release in a systemd container,
+both ways the release hands over, then a second upgrade that must change
+nothing, the way back to the bash release, and a fresh install through the
+shim.
 
-- Where the files land in a test: `tacctl_tmpenv_init` sets
-  `TACCTL_OVERRIDE_DIR=$BATS_TEST_TMPDIR/systemd-dropin`, the default
-  listener's drop-in directory. Unit files and the instances' drop-in
-  directories go to `TACCTL_SYSTEMD_DIR`, which defaults to the parent of
-  that directory (`$BATS_TEST_TMPDIR`), never to `/etc/systemd/system`. A test
-  that needs the real layout (drop-in directory beside the unit file) exports
-  both before sourcing, as `integration/units_convert.bats` does.
-- Any mutating command now also writes `systemd-dropin/tacctl.conf` and
-  records it, and `backend_call tacacs artifacts` lists it after
-  `tacquito.yaml`; messages that name the artifacts name both. With no unit
-  file in the test's unit directory a render makes no `systemctl` call for it.
-- `config listen|loglevel|metrics` restart a unit and then check that it
-  stayed up after `TACCTL_SETTLE_SECONDS` (default 0.5). Export
-  `TACCTL_SETTLE_SECONDS=0` in a file that runs many of them. To make the
-  unit "not come up", stub `systemctl` so that `is-active` fails.
-- An install "not converted" is one whose hand-managed
-  `tacctl-overrides.conf` still exists in the default drop-in directory:
-  write that file to get one (`old_install` in `units_convert.bats`).
-  `tests/fixtures/systemd/` holds the unit files of earlier releases.
+## A fresh install in a container
 
-| File | Covers |
-|---|---|
-| `unit/listeners.bats` | the schema and its rejections (reserved TLS, collisions), `backends.tacacs.*`, `backend_listeners`, the shipped unit files |
-| `integration/listeners.bats` | `config listen` with and without `--listener`/`--backend`, the `listeners` and `service` verbs, drop-in rendering and its place in the render machinery, `status` and logs with several listeners |
-| `integration/units_convert.bats` | `_tacacs_units_install` (fresh, conversion, already converted, interrupted, failures), the restart and rollback of `_tacacs_upgrade_finish`, commands on an install that is not converted, uninstall of both layouts |
+```sh
+tests/containers/fresh/run.sh                # HEAD; --rev <commit> for another one
+tests/containers/fresh/run.sh --worktree     # the tracked files as they are, uncommitted changes included
+tests/containers/fresh/run.sh --rollback     # also back to the bash release and forward again
+```
+
+An ubuntu:noble container with systemd, `git`, `wget`, `sudo` and
+`iproute2`, no Go and no Python, installs with the README one-liner; its git
+fetches the GitHub URL from a bare clone of this repository whose `master`
+is the commit under test (with `--worktree`, a `git stash create` commit of
+the tracked files; no ref of the repository changes). It checks that the bootstrap
+installs Go (verified download) and builds `/usr/local/bin/tacctl`, `version
+--long`, `user passwd engineer` answered through a pty, `config cisco --scope
+lab`, `status`, `config validate`, and that `uninstall -y` leaves only Go,
+`/opt/tacquito-src`, `/root/go` and the build cache: the filesystem is
+compared with its state before the install and with a second container that
+only installed the same packages. `--rollback` adds `upgrade --branch
+<bash release tag>` (the hand-over, which installs python3, python3-yaml and
+python3-bcrypt first), `upgrade` on the tag, `upgrade --branch
+master` and a second `upgrade` that must build nothing. Needs network access
+(Ubuntu mirrors, `dl.google.com`, GitHub for tacquito, the Go module proxy);
+prints `PASS`/`FAIL` lines and exits non-zero on a `FAIL`. The image
+`localhost/tacctl-fresh:noble` is kept; `--keep` leaves the container
+`tacctl-fresh`.
 
 ## Install, upgrade, uninstall
 
-`cmd_install`, `cmd_upgrade` and `cmd_uninstall` shell out to git, go, apt,
-useradd and systemd and write fixed system paths, so they are not run by the
-suite as they are (one test runs `cmd_upgrade` with those steps replaced, for
-the order of its output). The daemon's own steps are the TACACS+ backend's lifecycle phases
-(`backend_tacacs_install|upgrade|uninstall <phase>`, the `_tacacs_install_*`,
-`_tacacs_upgrade_*` and `_tacacs_uninstall_*` functions); those write fixed
-system paths too and are not run either. What the commands do to the
-configuration is in functions the tests drive directly, in the order the
-commands call them (the config ones live in `lib/backends/tacacs.sh`):
+These write fixed host paths (`/opt/tacctl`, `/usr/local/bin/tacctl`,
+`/usr/local/go`, the bash completion, the man page, `/root`), so they run
+only in test builds with `TACCTL_TEST_ROOT` (below), which moves all of them
+under one directory:
 
-| Function | Called by | Tests |
-|---|---|---|
-| `state_migrate` | install, upgrade | `integration/state_migrate.bats` |
-| `install_seed_config` (fresh store + first render; existing data is kept) | install | `e2e/install_seed.bats` |
-| `config_sync_existing` (legacy migrations, or a re-render with a store; the backend's `upgrade config` phase) | upgrade, install over existing data | `integration/upgrade_store_flip.bats` |
-| `upgrade_store_flip` (the import gate: 0 flipped, 10 store present, 20 stopped; part of the backend's `upgrade finish` phase) | upgrade, install over a legacy config | `integration/upgrade_store_flip.bats` |
-| `cmd_store_rollback` (`tacctl store rollback`) | operator | `integration/upgrade_store_flip.bats` |
-| `install_readme`, `uninstall_remove_access` | install, uninstall | `e2e/install_seed.bats` |
-| `_tacacs_units_install` (unit, template unit, drop-ins; converts the hand-managed drop-in) | install (`start` phase), upgrade (`files` phase, through `_tacacs_upgrade_units`) | `integration/units_convert.bats` |
-| `_tacacs_upgrade_finish` (the restart; unit files, settings and binary go back when the unit does not come up) | upgrade | `integration/units_convert.bats` |
-| `_tacacs_uninstall_stop`, `_tacacs_uninstall_units` | uninstall | `integration/units_convert.bats` |
-| `_radius_upgrade_config` (re-render, drop-in, restart; the RADIUS backend's `upgrade config` phase) | upgrade, install over an existing store | `integration/radius.bats` |
-| `cmd_upgrade` itself, with the build, the system files and the package step replaced by stand-ins and no management repo: the order of its output (banner, build, then the `config` phase with the RADIUS re-render, then system files and summary) | upgrade | `integration/radius.bats` ("upgrade: the output reads in order") |
+- `internal/lifecycle`: state migration, seeding, the legacy migrations, the
+  store gate and rollback, install, upgrade (self-update, the hand-over to a
+  bash release, the offline and partial-failure matrix), uninstall, the
+  template manifest; with the fake runner.
+- `internal/backend/tacacs` and `internal/backend/radius`: each module's
+  lifecycle phases (units and drop-ins, the conversion of a hand-managed
+  drop-in, the restart and rollback of an upgrade, the tacquito patches).
+- `tests/integration/shim.bats`: the bootstrap shim's own rows (a copy of
+  `bin/tacctl.sh` in a scratch tree, Go and git stand-ins).
+- `tests/integration/characterisation.bats` and `radius.bats` run
+  `install|upgrade` argument handling and one whole `upgrade` under
+  `TACCTL_TEST_ROOT`.
 
-Notes:
+## Test knobs (`internal/app/knobs*.go`)
 
-- `cmd_upgrade` runs the backends' phases in the order of
-  `BACKEND_UPGRADE_PHASES` (`preflight build config files finish`;
-  `tests/unit/backend.bats` checks it): `config` comes after the build and
-  the scripts pull, so after a self-update it runs once, with the new code.
-- The gate refuses to run without the daemon binary (a skipped load-smoke is
-  not a pass), so a test that expects a flip installs a stand-in `tacquito`
-  in `$TACCTL_BIN` first.
-- `e2e/install_seed.bats` sets `TACCTL_TIER_SUDOERS_FILE` and `TACCTL_LINUX_DIR`
-  before sourcing, because `uninstall_remove_access` deletes those paths; a
-  test that calls it must do the same.
-- `_tacacs_upgrade_files` and `_tacacs_uninstall_program|data` themselves
-  write fixed paths (`/etc/logrotate.d`, `/usr/local/bin`): do not call them
-  from a test; call the functions in the table.
-- The suite runs unprivileged with `chown` stubbed. Real ownership (the store
-  0600 root, `tacquito.yaml` 0640 `tacquito:tacquito`, `config_service_access`)
-  is only exercised by a run as root on a real host.
+Four environment variables let a test fix what a command takes from the world.
+They are read **only** by a binary built with `-tags testknobs` (`make build`,
+which the bats harness and the differential runner use); the installed binary
+and the bootstrap shim do not read them at all, whatever the variables hold,
+and `tacctl version --long` prints `test knobs: on|off`. `TACCTL_SKIP_SUDO` is
+not a knob: it stays an ordinary environment check.
 
-## Coverage baseline
-
-Measured via `make coverage` (kcov v42, full suite of 335 tests). This table predates
-the split of `bin/tacctl.sh` into `bin/` + `lib/*.sh`; the `bin/tacctl.sh` figure now
-spreads over the entrypoint and eleven lib files and has not been re-measured:
-
-| Target | Coverage |
+| Variable | Effect (test builds only) |
 |---|---|
-| `bin/tacctl.sh` | 52.14% (2283 / 4379 lines) |
-| `tests/helpers/*` (tmpenv, setup, mocks) | 92%+ |
-| Overall | 52.41% (2319 / 4425 lines) |
+| `TACCTL_TEST_NOW=<RFC 3339>` | `Knobs.Now()` returns that instant, in the local zone, instead of the clock |
+| `TACCTL_TEST_RANDOM=<hex>` | `Knobs.Rand()` yields those bytes, repeated as often as needed, each call starting at the first byte |
+| `TACCTL_FAULT=<point>[,<point>...]` | `Knobs.Fault(point)` returns an error for each named point |
+| `TACCTL_TEST_ROOT=<dir>` | tacctl's fixed host locations, which no `TACCTL_*` variable moves (the deploy clone `/opt/tacctl`, `/usr/local/bin/tacctl`, `/usr/local/go`, the bash completion, the man page, `/root`), move under `<dir>` (`paths.Paths.Reroot`), so a test can run `install`, `upgrade` and `uninstall` |
 
-Uncovered territory is dominated by the bodies of `cmd_install` / `cmd_upgrade` /
-`cmd_uninstall` (heavy shell-outs to git, apt, go, systemctl, useradd — see
-"Install, upgrade, uninstall" above for the parts that are covered)
-plus a smattering of defensive error branches. Filling these in is a follow-up
-milestone, not a blocker.
+A malformed value is an error naming the variable; an empty one is the same as
+unset. The bootstrap shim honours `TACCTL_TEST_ROOT` for the installed command
+and Go as well, and so does its build recipe (`bin/tacctl.sh --build`).
+Run the Go tests of the knobs both ways: `go test ./internal/app` (the off
+build: the variables are ignored) and `go test -tags testknobs ./internal/app`;
+`make test-go` and `make lint` do both for every package.
 
-On a platform without apt-kcov (e.g. KDE Neon, some Debian variants), build from
-source:
+## The fake runner (`internal/execx/fake`)
+
+The Go counterpart of `mocks.bash`: `stub_cmd systemctl 'exit 3'` is
+`r.On([]string{"systemctl"}, execx.Result{Code: 3})`, `stub_called 'systemctl restart tacquito'`
+is `r.Called("systemctl", "restart", "tacquito")` (or `r.CalledRegexp` for the
+bats pattern). Scripting: `On` (argv prefix, newest rule wins), `When`/`Func`/`OnFunc`
+(by predicate or function), `Seq` (a different answer per call, the last repeats),
+`Fail`, `Missing`/`Install` (what `LookPath` finds), `ExecErr`, `Strict` (an
+unscripted call is an error). Asserting: `Calls`, `Records` (with the stdin each
+call got), `Argvs`, `Called`, `Count`, `ArgvContains` (a secret must never reach an
+argv), `Signals`, `Execs`, `Reset`.
+
+## Coverage
+
 ```sh
-git clone --depth 1 --branch v42 https://github.com/SimonKagstrom/kcov.git /tmp/kcov
-cd /tmp/kcov && mkdir build && cd build && cmake .. && make -j && sudo make install
+make coverage        # coverage/go.out, coverage/index.html, the total on stdout
+go tool cover -func=coverage/go.out | sort -k3 -n | head    # the least covered functions
 ```
-Required build deps: `cmake binutils-dev libssl-dev libcurl4-openssl-dev libelf-dev zlib1g-dev libdw-dev libiberty-dev build-essential`.
 
-Known quirk: kcov instruments bash via `BASH_ENV`, which breaks `bash -c 'source ...'`
-subshells used in tests (results in "BASH_SOURCE: unbound variable"). Use heredocs
-or `run <cmd> <<< "..."` in tests that need to feed stdin to a library function —
-not `bash -c`.
+The bats suite is not instrumented; what it covers shows as the black-box
+contract, not as line coverage.
+
+## Differential runner: `tests/diff/run.sh`
+
+Runs every command of a corpus under two implementations of tacctl, each against
+its own copy of the same fixture state, and reports any difference in stdout,
+stderr, exit code, the calls made to the stubbed system commands (`systemctl`,
+`logger`) and the resulting state tree (modes, sizes and contents of every file
+under the sandbox root, an empty `TMPDIR` included).
+
+```sh
+make test-diff CORPUS=users                  # builds dist/tacctl first; A = the 0.1.18 tag, B = the binary
+tests/diff/run.sh users groups store         # several corpora
+tests/diff/run.sh --all                      # every corpus
+tests/diff/run.sh --b bash users             # B = the tag again: a difference here is a runner bug
+tests/diff/run.sh --filter 'user add' users  # only the lines matching a regex; --keep keeps the work dir
+tests/diff/run.sh --self-test                # the runner against itself and against a deliberately wrong B
+```
+
+- **A is always a tag** (`--against`, default `0.1.18`, the last bash
+  release): a shared clone of this repository checked out at the tag into a
+  temp dir, run from there; nothing of the working tree is used for A. B is
+  `go` (`dist/tacctl`, started with `TACCTL_TREE` pointing at this tree, as
+  the bats harness does), `bash`, or any executable.
+- **Corpora** are `tests/diff/corpus/<name>.txt`: `users`, `scopes`, `groups`,
+  `config`, `backup`, `store`, `log`, `devices`, `hosts`, `lifecycle`. One command per line,
+  program name left out; `<<< text` is stdin (`\n` a line break; no `<<<` means
+  a closed stdin); ` ;; ` chains commands that share one state; `@fixture`,
+  `@env`, `@unenv`, `@stub <cmd> <rc>`, `@known <why>`, `@path <dir>` (more
+  stand-ins on PATH: the hosts corpus stubs ssh, podman, getent, ip and
+  `git clone` from `tests/diff/stubs/hosts`, so nothing leaves the machine) and
+  `@root <dir>` (files copied into the state root, such as the stand-in
+  pam_tacplus tarball) are directives; `{HASH}`, `{FIXTURES}`, `{DATE}`, `{TS}`
+  are placeholders. Commands run in the state root, so a file written to a
+  relative path is compared with the rest of the state. The header of `run.sh`
+  is the full syntax. Every corpus has at least as many failing lines as
+  succeeding ones (the summary prints the count); add the error paths (unknown
+  verb, missing argument, bad value, closed stdin, `n` to a prompt) with every
+  success path.
+- **Both sides run the same sandbox** (`env -i`; `TACCTL_*` paths under one root;
+  `LANG=C.UTF-8`, `TZ=UTC`; `TACCTL_SKIP_SUDO=1`; PATH stubs). The two sides run one
+  after the other in the same place, so a path a command writes into a file is the
+  same on both. The fixture is built once, with A's implementation.
+- **Determinism** comes from the stubs on the bash side and the test knobs on the Go
+  side, fixed to the same values: the clock is today at 12:00:00 UTC (`date` stub;
+  `TACCTL_TEST_NOW`), randomness is the bytes `a1b2c3d4e5f60718293a4b5c6d7e8f90`
+  repeated (`openssl rand` stub; a `sitecustomize` that replaces python's
+  `os.urandom`, which is where bcrypt takes its salt; `TACCTL_TEST_RANDOM`). So a
+  generated password, secret or hash is the same on both sides; the Go code must
+  draw its salts and secrets from `app.Knobs.Rand()` for that to hold. What is still
+  normalised: ANSI colours (`--colour` keeps them), timestamps (`<TS>`, `<ISO>`), the
+  version, the sandbox and tree paths, and generated bcrypt hashes (not the ones
+  the command line itself carries).
+- Exit status: 0 no unexplained difference, 1 a difference, 2 a usage or setup
+  error. A line marked `@known` (an intended change listed in
+  `docs/plans/go-rewrite.md` 3.9) is reported as `known`, not a failure; the
+  runner says so when the marked line no longer differs.
+
+## Characterisation tests: `tests/integration/characterisation.bats`
+
+CLI behaviour no other test pins: `hash generate|commands`, `user verify`,
+the generated-password path of `user add|passwd`, `config defaults|branch`,
+the argument handling of `install|upgrade --branch`, the top-level usage
+(`help`, `-h`, no command, an unknown word, `version`), and every usage
+block of `internal/cli/testdata/usage/` compared with the real output.
+Quirks they pin on purpose: `user verify` exits 0 on a wrong password, a
+closed stdin is a blank password (one is generated), `upgrade --branch`
+without a value exits 1 without a word.
 
 ## Isolation guarantees
 
-- Every test runs with `$TACCTL_ETC`, `$TACCTL_STATE_DIR`, `$TACCTL_LOG`, `$TACCTL_BIN` and the
-  RADIUS paths (`$TACCTL_RADIUS_DIR`, `$TACCTL_RADIUS_LOG`, `$TACCTL_RADIUS_BIN`,
-  `$TACCTL_LOGROTATE_DIR`) pointing at `$BATS_TEST_TMPDIR`. No test touches `/etc/tacctl`,
-  `/etc/tacquito`, `/var/log/tacquito` or a FreeRADIUS directory on the host.
-- `tacctl_mocks_init` prepends `$BATS_TEST_TMPDIR/stubs` to `PATH`, so stubs shadow real
-  `systemctl`, `git`, `journalctl`, `openssl`. Stubs record calls to `$CALLS_LOG`.
-- bats isolates each `@test` in its own process, so global state doesn't leak between tests.
+- Every bats test runs with `$TACCTL_ETC`, `$TACCTL_STATE_DIR`, `$TACCTL_LOG`,
+  `$TACCTL_BIN` and the RADIUS paths pointing at `$BATS_TEST_TMPDIR`. No test
+  touches `/etc/tacctl`, `/etc/tacquito`, `/var/log/tacquito` or a FreeRADIUS
+  directory on the host. A test that reaches `TACQUITO_SRC`, the Linux host
+  data, the logrotate directory or the fixed host locations sets those to its
+  tmpdir (`TACQUITO_SRC`, `TACCTL_LINUX_DIR`, `TACCTL_LOGROTATE_DIR`,
+  `TACCTL_TEST_ROOT`).
+- Go tests build their paths with `paths.Resolve` over a sandbox environment
+  and `Paths.Reroot` for the fixed locations; the fake runner stands in for
+  every program.
+- `tacctl_mocks_init` prepends `$BATS_TEST_TMPDIR/stubs` to `PATH`, so stubs
+  shadow real `systemctl`, `git`, `journalctl` and the rest. Stubs record
+  calls to `$CALLS_LOG`.
+- bats isolates each `@test` in its own process, so global state doesn't leak
+  between tests.

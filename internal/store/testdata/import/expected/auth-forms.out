@@ -1,0 +1,73 @@
+== dump-legacy
+{"filters": {"allow": [], "deny": []}, "groups": {"operator": {"builtin": true, "juniper_class": "OP-CLASS", "priv_lvl": 7}, "readonly": {"builtin": true, "juniper_class": "RO-CLASS", "priv_lvl": 1}, "superuser": {"builtin": true, "juniper_class": "RW-CLASS", "priv_lvl": 15}}, "scopes": {"lab": {"prefixes": ["192.168.0.0/16"], "protocols": null, "secret": "lab-secret-0123456789abcdef"}}, "users": {"a1": {"accounting_sink": false, "disabled": true, "group": "readonly", "hash": null, "password_changed": null, "scopes": ["lab"]}, "a2": {"accounting_sink": false, "disabled": true, "group": "readonly", "hash": null, "password_changed": null, "scopes": ["lab"]}, "a3": {"accounting_sink": false, "disabled": true, "group": "readonly", "hash": null, "password_changed": null, "scopes": ["lab"]}, "a4": {"accounting_sink": false, "disabled": false, "group": "readonly", "hash": "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141", "password_changed": null, "scopes": ["lab"]}, "a5": {"accounting_sink": false, "disabled": false, "group": "readonly", "hash": "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141", "password_changed": null, "scopes": ["lab"]}, "a6": {"accounting_sink": false, "disabled": true, "group": "readonly", "hash": null, "password_changed": null, "scopes": ["lab"]}, "a7": {"accounting_sink": false, "disabled": false, "group": "readonly", "hash": "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141", "password_changed": null, "scopes": ["lab"]}, "a8": {"accounting_sink": false, "disabled": true, "group": "readonly", "hash": null, "password_changed": null, "scopes": ["lab"]}, "a9": {"accounting_sink": false, "disabled": false, "group": "readonly", "hash": "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141", "password_changed": null, "scopes": ["lab"]}, "acc1": {"accounting_sink": false, "disabled": false, "group": "readonly", "hash": "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141", "password_changed": null, "scopes": ["lab"]}, "acc2": {"accounting_sink": false, "disabled": false, "group": "readonly", "hash": "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141", "password_changed": null, "scopes": ["lab"]}, "acc3": {"accounting_sink": false, "disabled": false, "group": "readonly", "hash": "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141", "password_changed": null, "scopes": ["lab"]}, "acc4": {"accounting_sink": false, "disabled": false, "group": "readonly", "hash": "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141", "password_changed": null, "scopes": ["lab"]}, "acc5": {"accounting_sink": false, "disabled": false, "group": "readonly", "hash": "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141", "password_changed": null, "scopes": ["lab"]}, "b1": {"accounting_sink": false, "disabled": false, "group": "readonly", "hash": "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141", "password_changed": null, "scopes": ["lab"]}, "b2": {"accounting_sink": false, "disabled": true, "group": "readonly", "hash": null, "password_changed": null, "scopes": ["lab"]}, "b3": {"accounting_sink": false, "disabled": true, "group": "readonly", "hash": null, "password_changed": null, "scopes": ["lab"]}, "b4": {"accounting_sink": false, "disabled": true, "group": "readonly", "hash": null, "password_changed": null, "scopes": ["lab"]}, "b5": {"accounting_sink": false, "disabled": true, "group": "readonly", "hash": null, "password_changed": null, "scopes": ["lab"]}, "b6": {"accounting_sink": false, "disabled": true, "group": "readonly", "hash": null, "password_changed": null, "scopes": ["lab"]}, "daemon": {"accounting_sink": false, "disabled": true, "group": "readonly", "hash": null, "password_changed": null, "scopes": ["lab"]}, "kate": {"accounting_sink": false, "disabled": true, "group": "readonly", "hash": null, "password_changed": null, "scopes": ["lab"]}, "root": {"accounting_sink": true, "disabled": true, "group": "readonly", "hash": null, "password_changed": null, "scopes": ["lab"]}, "sc1": {"accounting_sink": false, "disabled": false, "group": "readonly", "hash": "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141", "password_changed": null, "scopes": []}, "sc2": {"accounting_sink": false, "disabled": false, "group": "readonly", "hash": "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141", "password_changed": null, "scopes": []}, "sc3": {"accounting_sink": false, "disabled": false, "group": "readonly", "hash": "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141", "password_changed": null, "scopes": ["lab"]}, "sc4": {"accounting_sink": false, "disabled": false, "group": "readonly", "hash": "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141", "password_changed": null, "scopes": []}, "sc5": {"accounting_sink": false, "disabled": false, "group": "readonly", "hash": "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141", "password_changed": null, "scopes": []}}, "version": 1}
+rc=0
+== import-load force=0
+  Source:   cases/auth-forms.yaml
+  Groups:   3
+  Users:    28 (12 disabled, 1 accounting sink)
+  Scopes:   1
+  Filters:  allow 0, deny 0
+
+  Notes:
+    - user 'acc1': has no accounter of its own; the rendered config always attaches the file accounter
+    - user 'sc1': has no scopes and can authenticate from nowhere
+    - user 'sc5': has no scopes and can authenticate from nowhere
+
+  Cannot be represented in the store:
+    - user 'a1': no authenticator of its own; stored as disabled with no password
+    - user 'a2': non-bcrypt authenticator; stored as disabled with no password
+    - user 'a3': non-bcrypt authenticator; stored as disabled with no password
+    - user 'a6': password hash is not a bcrypt hash; stored as disabled with no password
+    - user 'a7': authenticator: unsupported key 'extra'
+    - user 'a7': authenticator: unsupported key 'salt'
+    - user 'a8': password hash is not a bcrypt hash; stored as disabled with no password
+    - user 'b4': password hash is not a bcrypt hash; stored as disabled with no password
+    - user 'b5': password hash is not a bcrypt hash; stored as disabled with no password
+    - user 'b6': password hash is not a bcrypt hash; stored as disabled with no password
+    - user 'root': carries a real password hash; the accounting sink is stored without one and stays disabled
+    - user 'acc2': accounter other than the file accounter
+    - user 'acc3': accounter other than the file accounter
+    - user 'acc5': accounter other than the file accounter
+
+  Errors:
+    - user 'sc2': scopes is not a list of names (quote names that YAML reads as numbers or booleans)
+    - user 'sc3': scopes is not a list of names (quote names that YAML reads as numbers or booleans)
+-- stderr
+
+tacctl store: 2 error(s) must be fixed in cases/auth-forms.yaml before it can be imported.
+rc=1
+== import-load force=1
+  Source:   cases/auth-forms.yaml
+  Groups:   3
+  Users:    28 (12 disabled, 1 accounting sink)
+  Scopes:   1
+  Filters:  allow 0, deny 0
+
+  Notes:
+    - user 'acc1': has no accounter of its own; the rendered config always attaches the file accounter
+    - user 'sc1': has no scopes and can authenticate from nowhere
+    - user 'sc5': has no scopes and can authenticate from nowhere
+
+  Dropped (--force):
+    - user 'a1': no authenticator of its own; stored as disabled with no password
+    - user 'a2': non-bcrypt authenticator; stored as disabled with no password
+    - user 'a3': non-bcrypt authenticator; stored as disabled with no password
+    - user 'a6': password hash is not a bcrypt hash; stored as disabled with no password
+    - user 'a7': authenticator: unsupported key 'extra'
+    - user 'a7': authenticator: unsupported key 'salt'
+    - user 'a8': password hash is not a bcrypt hash; stored as disabled with no password
+    - user 'b4': password hash is not a bcrypt hash; stored as disabled with no password
+    - user 'b5': password hash is not a bcrypt hash; stored as disabled with no password
+    - user 'b6': password hash is not a bcrypt hash; stored as disabled with no password
+    - user 'root': carries a real password hash; the accounting sink is stored without one and stays disabled
+    - user 'acc2': accounter other than the file accounter
+    - user 'acc3': accounter other than the file accounter
+    - user 'acc5': accounter other than the file accounter
+
+  Errors:
+    - user 'sc2': scopes is not a list of names (quote names that YAML reads as numbers or booleans)
+    - user 'sc3': scopes is not a list of names (quote names that YAML reads as numbers or booleans)
+-- stderr
+
+tacctl store: 2 error(s) must be fixed in cases/auth-forms.yaml before it can be imported (--force does not override these).
+rc=1

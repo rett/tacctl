@@ -1,0 +1,14 @@
+note: FIXTURES/legacy.import-edge.yaml: scope 'v6' has no users; tacquito does not load it
+--- live (normalised)
++++ rendered (normalised)
+@@ -37,7 +37,7 @@
+     "192.168.0.0/16"
+   ],
+   "prefix_deny": [
+-    "10.66.0.0/16"
++    "10.67.0.0/16"
+   ],
+   "secrets": {
+     "routes": [
+NOT EQUIVALENT
+rc=1

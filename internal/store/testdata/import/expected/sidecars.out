@@ -1,0 +1,51 @@
+== dump-legacy
+{"filters": {"allow": [], "deny": []}, "groups": {"operator": {"builtin": true, "juniper_class": "OP-CLASS", "priv_lvl": 7}, "readonly": {"builtin": true, "juniper_class": "RO-CLASS", "priv_lvl": 1}, "superuser": {"builtin": true, "juniper_class": "RW-CLASS", "priv_lvl": 15}}, "scopes": {"lab": {"prefixes": ["192.168.0.0/16"], "protocols": null, "secret": "lab-secret-0123456789abcdef"}}, "users": {"Dup.per": {"accounting_sink": false, "disabled": true, "group": "readonly", "hash": null, "password_changed": null, "scopes": ["lab"]}, "dbad": {"accounting_sink": false, "disabled": true, "group": "readonly", "hash": null, "password_changed": null, "scopes": ["lab"]}, "ddir": {"accounting_sink": false, "disabled": true, "group": "readonly", "hash": null, "password_changed": null, "scopes": ["lab"]}, "dempty": {"accounting_sink": false, "disabled": true, "group": "readonly", "hash": null, "password_changed": null, "scopes": ["lab"]}, "dgood": {"accounting_sink": false, "disabled": true, "group": "readonly", "hash": "243262243132244242424242424242424242424242424242424242424242424242424242424242424242424242424242424242424242424242424242", "password_changed": null, "scopes": ["lab"]}, "dmark": {"accounting_sink": false, "disabled": true, "group": "readonly", "hash": null, "password_changed": null, "scopes": ["lab"]}, "dnone": {"accounting_sink": false, "disabled": true, "group": "readonly", "hash": null, "password_changed": null, "scopes": ["lab"]}, "draw": {"accounting_sink": false, "disabled": true, "group": "readonly", "hash": "243262243132244343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343434343", "password_changed": null, "scopes": ["lab"]}, "root": {"accounting_sink": true, "disabled": true, "group": "readonly", "hash": null, "password_changed": null, "scopes": ["lab"]}, "tbad": {"accounting_sink": false, "disabled": false, "group": "readonly", "hash": "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141", "password_changed": null, "scopes": ["lab"]}, "tdir": {"accounting_sink": false, "disabled": false, "group": "readonly", "hash": "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141", "password_changed": null, "scopes": ["lab"]}, "tempty": {"accounting_sink": false, "disabled": false, "group": "readonly", "hash": "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141", "password_changed": null, "scopes": ["lab"]}, "tfeb": {"accounting_sink": false, "disabled": false, "group": "readonly", "hash": "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141", "password_changed": null, "scopes": ["lab"]}, "tgood": {"accounting_sink": false, "disabled": false, "group": "readonly", "hash": "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141", "password_changed": "2026-08-15", "scopes": ["lab"]}, "tspace": {"accounting_sink": false, "disabled": false, "group": "readonly", "hash": "243262243132244141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141", "password_changed": "2025-12-31", "scopes": ["lab"]}}, "version": 1}
+rc=0
+== import-load force=0
+  Source:   cases/sidecars.yaml
+  Groups:   3
+  Users:    15 (8 disabled, 1 accounting sink)
+  Scopes:   1
+  Filters:  allow 0, deny 0
+
+  Notes:
+    - ddir.hash: sidecar file not readable (Is a directory); ignored
+    - user 'tbad': password-date file does not hold a YYYY-MM-DD date; ignored
+    - user 'tfeb': password-date file does not hold a YYYY-MM-DD date; ignored
+    - tdir.date: sidecar file not readable (Is a directory); ignored
+
+  Cannot be represented in the store:
+    - user 'dbad': saved hash of the disabled account is not a bcrypt hash ('user enable' would have nothing to restore)
+    - user 'dempty': saved hash of the disabled account is not a bcrypt hash ('user enable' would have nothing to restore)
+    - user 'dmark': saved hash of the disabled account is not a bcrypt hash ('user enable' would have nothing to restore)
+
+  Errors:
+    - user 'Dup.per': invalid name
+-- stderr
+
+tacctl store: 1 error(s) must be fixed in cases/sidecars.yaml before it can be imported.
+rc=1
+== import-load force=1
+  Source:   cases/sidecars.yaml
+  Groups:   3
+  Users:    15 (8 disabled, 1 accounting sink)
+  Scopes:   1
+  Filters:  allow 0, deny 0
+
+  Notes:
+    - ddir.hash: sidecar file not readable (Is a directory); ignored
+    - user 'tbad': password-date file does not hold a YYYY-MM-DD date; ignored
+    - user 'tfeb': password-date file does not hold a YYYY-MM-DD date; ignored
+    - tdir.date: sidecar file not readable (Is a directory); ignored
+
+  Dropped (--force):
+    - user 'dbad': saved hash of the disabled account is not a bcrypt hash ('user enable' would have nothing to restore)
+    - user 'dempty': saved hash of the disabled account is not a bcrypt hash ('user enable' would have nothing to restore)
+    - user 'dmark': saved hash of the disabled account is not a bcrypt hash ('user enable' would have nothing to restore)
+
+  Errors:
+    - user 'Dup.per': invalid name
+-- stderr
+
+tacctl store: 1 error(s) must be fixed in cases/sidecars.yaml before it can be imported (--force does not override these).
+rc=1

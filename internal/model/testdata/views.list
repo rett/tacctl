@@ -1,0 +1,101 @@
+view user-rows
+view user-info alice
+view user-info carol
+view user-info root
+view user-info zed
+view user-info amy
+view user-info bob
+view user-info nobody
+view user-privlvl alice
+view user-privlvl bob
+view user-privlvl carol
+view user-privlvl root
+view user-privlvl nobody
+view group-rows
+view group-users readonly
+view group-users netops
+view group-users nosuch
+view group-info
+view scope-names
+view scope-prefixes lab
+view scope-prefixes b
+view scope-prefixes nope
+view scope-users lab
+view scope-users a
+view prefix-owner 10.10.99.5/24
+view prefix-owner 10.0.0.0/8
+view prefix-owner fd00:10::1/64
+view prefix-owner 10.10.0.0/16
+view prefix-owner junk
+view scope-rows lab
+view scope-rows a
+view scope-rows
+view scope-devices lab
+view scope-devices a
+view scope-devices b
+view device-problems lab 192.168.0.0/16
+view device-problems lab 192.168.0.0/16 10.0.0.1/32 cisco
+view device-problems new 10.10.0.0/16 10.10.99.1/32 wti
+view device-problems prod 10.0.0.0/8 10.10.99.1/32 wti
+view device-problems a 10.0.0.0/8
+view device-problems c 10.9.0.0/16 10.9.0.1/32 wti
+view device-problems empty 10.0.0.0/8
+view vendor-gaps
+view vendor-gaps lab=3 prod=1 h=2
+view vendor-gaps h=1
+view vendor-rows
+view scope-routing lab
+view scope-routing
+view scope-lookup 10.10.99.42
+view scope-lookup 192.168.1.1
+view scope-lookup 192.168.0.0/24
+view scope-lookup 8.8.8.8
+view scope-lookup 8.8.0.0/16
+view scope-lookup not-an-address
+view scope-lookup 10.0.0.0/33
+view scope-lookup it's
+view scope-lookup fd00:10::5
+view scope-lookup fd00:10::/48
+view scope-lookup 10.0.0.0/7
+view scope-lookup 10.9.0.1
+view scope-lookup 10.10.1.5
+view scope-lookup 10.1.0.5
+view config-show
+view linux-users lab
+view linux-users wifi
+view linux-users a
+view status 16
+view status 30
+view validate
+view validate full
+view has users alice
+view has users nobody
+view has scopes lab
+view no-such-view
+get users
+get groups
+get scopes
+get filters
+get filters allow
+get filters deny
+get filters maybe
+get users alice
+get users root
+get users carol disabled
+get users alice scopes
+get users alice hash
+get users alice shoe_size
+get users nobody
+get users nobody group
+get groups superuser
+get groups netops priv_lvl
+get groups operator builtin
+get groups odd
+get scopes lab
+get scopes lab prefixes
+get scopes lab secret
+get scopes legacy protocols
+get scopes prod-inner
+get scopes wifi devices
+get scopes a devices
+get scopes b

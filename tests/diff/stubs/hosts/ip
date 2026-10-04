@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Stand-in for ip in the hosts corpus: 'ip -4 route get <addr>' says this
+# machine reaches it from 192.0.2.1, or exits IP_STUB_RC when that is set.
+echo "ip $*" >> "${TACCTL_STATE_DIR}/../../calls.log"
+[[ -z "${IP_STUB_RC:-}" ]] || exit "$IP_STUB_RC"
+echo "$4 dev eth0 src 192.0.2.1 uid 0"

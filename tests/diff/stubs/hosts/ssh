@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Stand-in for ssh in the hosts corpus (tests/diff/corpus/hosts.txt): it
+# records its argv in the runner's calls log and never connects anywhere.
+# The copy step keeps the pushed script in the state root (compared like
+# any other file) and names the remote copy; the probe answers with
+# SSH_STUB_OS (os-release lines, \n escapes) on SSH_STUB_ARCH; the run step
+# exits SSH_STUB_RC (default 0).
+echo "ssh $*" >> "${TACCTL_STATE_DIR}/../../calls.log"
+case "$*" in
+    *mktemp*) cat > "${TACCTL_STATE_DIR}/../pushed"; echo /tmp/tacctl.AbCd1234 ;;
+    *os-release*)
+        printf '%b\n\n' "${SSH_STUB_OS:-ID=ubuntu\nVERSION_CODENAME=noble}"
+        echo "TACCTL_ARCH=${SSH_STUB_ARCH:-$(uname -m)}"
+        ;;
+    *"-O exit"*) ;;
+    *) exit "${SSH_STUB_RC:-0}" ;;
+esac

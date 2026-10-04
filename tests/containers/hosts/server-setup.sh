@@ -13,7 +13,9 @@ WANT="${1:?usage: server-setup.sh <tacplus|radius|both>}"
 git config --global --add safe.directory /opt/tacctl 2> /dev/null
 mkdir -p /etc/tacctl
 chmod 700 /etc/tacctl
-ln -sf /opt/tacctl/bin/tacctl.sh /usr/local/bin/tacctl
+# The bootstrap builds /usr/local/bin/tacctl from the checkout when the one
+# in the image is not from this commit.
+/opt/tacctl/bin/tacctl.sh version > /dev/null 2>&1 || { echo "FAIL  tacctl could not be built from /opt/tacctl"; exit 1; }
 
 python3 - > /etc/tacctl/store.yaml <<'PY'
 import binascii, bcrypt
@@ -42,10 +44,9 @@ if [[ "$WANT" != "radius" ]]; then
         exit 1
     fi
     # The TACACS+ backend's own install phases, minus the Go build.
-    bash -c 'set -euo pipefail; source /opt/tacctl/bin/tacctl.sh
-        backend_tacacs_install account /opt/tacctl
-        "$0" config render > /dev/null 2>&1 || true
-        backend_tacacs_install start /opt/tacctl' /usr/local/bin/tacctl 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | tail -3
+    { tacctl _phase tacacs install account /opt/tacctl \
+        && { tacctl config render > /dev/null 2>&1 || true; tacctl _phase tacacs install start /opt/tacctl; }; } 2>&1 \
+        | sed 's/\x1b\[[0-9;]*m//g' | tail -3
     systemctl is-active --quiet tacquito || { echo "FAIL  tacquito did not start"; journalctl -u tacquito -n 20 --no-pager; exit 1; }
     echo "tacquito: $(sha256sum /usr/local/bin/tacquito | cut -c1-12) (the binary of the machine that built the image), listening on $(ss -tlnH | awk '$4 ~ /:49$/ {print $4}' | head -1)"
 else

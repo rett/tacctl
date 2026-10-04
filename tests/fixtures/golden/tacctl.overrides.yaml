@@ -1,0 +1,79 @@
+# tacctl overrides. Hand-edits are fine as long as the YAML stays
+# valid. View effective posture: 'tacctl config dump'.
+
+password:
+  max_age_days: 180
+  min_length: 14
+secret:
+  min_length: 24
+bcrypt:
+  cost: 13
+scope:
+  default: prod
+host:
+  default_method: radius
+mgmt_acl:
+  names:
+    juniper: MGMT-LO0
+    cisco: CUSTOM-VTY
+  permits:
+  - 10.0.0.0/8
+  - 192.168.1.0/24
+  - fd00:10::/64
+backends:
+  enabled:
+  - tacacs
+  - radius
+  tacacs:
+    level: 30
+    metrics_address: 127.0.0.1:9090
+privileges:
+  operator:
+  - show running-config
+  - show version
+commands:
+  operator:
+  - name: show
+    action: permit
+    match:
+    - ^running-config$
+    - ^version$
+  - name: ping
+    action: permit
+  - name: '*'
+    action: deny
+aaa:
+  order:
+    lab: local-first
+    'on': local-first
+exec_timeout:
+  lab: 15
+tacacs_group:
+  lab: TACACS_PROD
+radius_group:
+  lab: RADIUS_PROD
+scope_auth_method:
+  lab: radius
+scope_mgmt_acl:
+  names:
+    cisco:
+      lab: LAB-VTY
+    juniper:
+      lab: LAB-MGMT
+  permits:
+    lab:
+    - 10.99.0.0/16
+listeners:
+  tacacs:
+    mgmt:
+      network: tcp
+      address: 10.1.0.1:4949
+      metrics_address: 127.0.0.1:9100
+      tls:
+        cert: /etc/tacctl/tls/cert.pem
+        require_client_cert: true
+  radius:
+    acct:
+      network: udp
+      address: :1814
+      role: acct

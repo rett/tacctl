@@ -1,0 +1,28 @@
+
+[1mUser Commands[0m
+
+Usage: tacctl user <subcommand> [arguments]
+
+Subcommands:
+  list                                        List all users (name, group, status, pw age, scopes)
+  show <username>                             Show user details incl. scope membership
+  add <username> <group>                      Add a new user; lands in default scope
+  add <username> <group> --scopes <s>[,s...]  Grant specific scopes at creation
+  add <username> <group> --hash <hash>        Add with pre-generated bcrypt hash
+  remove <username>                           Remove a user
+  passwd <username>                           Change a user's password
+  passwd <username> --hash <hash>             Change with pre-generated bcrypt hash
+  disable <username>                          Disable a user (preserves hash)
+  enable <username>                           Re-enable a disabled user
+  rename <old> <new>                          Rename a user
+  move <user> <group>                         Move user to a different group
+  verify <username>                           Verify password and show user details
+  scope <user> list|add|remove|replace        Manage which scopes the user can auth from
+
+Examples:
+  tacctl user list
+  tacctl user add jsmith superuser
+  tacctl user add jsmith superuser --scopes prod,lab
+  tacctl user scope jsmith add prod
+  tacctl user verify jsmith
+

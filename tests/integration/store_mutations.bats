@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # How every mutating command applies a change: gate, backup, store write,
-# render, restart (store_apply in lib/backend.sh).
+# render, restart (the store apply path).
 #
 #   - legacy mode (no store): every mutating verb refuses and changes nothing,
 #     every read verb still works from tacquito.yaml;
@@ -18,6 +18,8 @@ load ../helpers/fixtures
 
 HASH="24326224313024616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161"
 HASH_B="24326224313024626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262"
+# The disabled marker (DISABLED_MARKER_HEX): '$2b$12$' and 53 dots, hex-encoded.
+DISABLED_MARKER="24326224313224$(printf '2e%.0s' {1..53})"
 
 setup() {
     tacctl_tmpenv_init
@@ -471,11 +473,6 @@ carol"
     run "$TACCTL_BIN_SCRIPT" scope add clash --prefixes 10.10.99.0/24 --secret clash-secret-0123456789abcdef
     assert_failure
     assert_output --partial "already in scope 'prod-inner'"
-    # Past the command's own check, the writer refuses too.
-    tacctl_source_lib
-    run store_scope_set clash prefixes=10.10.99.0/24 secret=clash-secret-0123456789abcdef
-    assert_failure
-    assert_output --partial "one scope per prefix"
     run store_get scopes clash
     assert_failure
 }
@@ -649,9 +646,8 @@ PY
 @test "a missing tacquito.yaml does not block a change that recreates it" {
     rendered_install
     rm "$TACCTL_CONFIG"
-    # preflight needs the config for most commands; the writer itself does not.
-    tacctl_source_lib
-    run store_apply store_user_set bob disabled=true
+    # With a store, preflight only warns that the config is missing.
+    run "$TACCTL_BIN_SCRIPT" user disable bob
     assert_success
     [[ -f "$TACCTL_CONFIG" ]]
     [[ "$(store_get users bob disabled)" == "true" ]]
@@ -715,10 +711,12 @@ PY
 @test "a store write the schema refuses changes nothing and renders nothing" {
     rendered_install
     snapshot_state
-    tacctl_source_lib
-    run store_apply store_user_set bob group=nosuchgroup
+    # The command's own checks pass; the store's schema refuses the disabled
+    # marker as a password hash.
+    run "$TACCTL_BIN_SCRIPT" user add dave operator --hash "$DISABLED_MARKER" --scopes lab
     assert_failure 1
-    assert_output --partial "group 'nosuchgroup' does not exist"
+    assert_output --partial "the disabled marker is not a password hash"
+    refute_output --partial "User 'dave' added"
     assert_state_unchanged
 }
 
@@ -744,42 +742,6 @@ PY
     refute_output --partial "rotated-secret-0123456789abc"
     refute_output --partial "not-a-hash-value"
     refute_output --partial "lab-secret-0123456789abcdef"
-}
-
-@test "hashes and secrets do not reach any process's argv" {
-    rendered_install
-    # Record the command line of every python3 the commands start.
-    local real_python
-    real_python=$(command -v python3)
-    cat > "${STUB_BIN}/python3" <<STUB
-#!/usr/bin/env bash
-printf '%s\n' "\$*" >> "${BATS_TEST_TMPDIR}/python-argv.log"
-exec "${real_python}" "\$@"
-STUB
-    chmod +x "${STUB_BIN}/python3"
-
-    run "$TACCTL_BIN_SCRIPT" user add dave operator --hash "$HASH" --scopes lab
-    assert_success
-    run "$TACCTL_BIN_SCRIPT" user passwd dave --hash "$HASH_B"
-    assert_success
-    run "$TACCTL_BIN_SCRIPT" scope add edge --prefixes 192.168.40.0/24 --secret edge-secret-0123456789abcdef
-    assert_success
-    run "$TACCTL_BIN_SCRIPT" scope secret edge set rotated-secret-0123456789abc
-    assert_success
-    run "$TACCTL_BIN_SCRIPT" user disable dave
-    assert_success
-    run "$TACCTL_BIN_SCRIPT" user show dave
-    assert_success
-    run "$TACCTL_BIN_SCRIPT" scope show edge
-    assert_success
-
-    [[ -s "${BATS_TEST_TMPDIR}/python-argv.log" ]]
-    local needle
-    for needle in "$HASH" "$HASH_B" "edge-secret-0123456789abcdef" "rotated-secret-0123456789abc" \
-                  "lab-secret-0123456789abcdef"; do
-        run grep -cF -- "$needle" "${BATS_TEST_TMPDIR}/python-argv.log"
-        assert_output "0"
-    done
 }
 
 @test "the store stays 0600 and tacquito.yaml 0640 through a mutation" {

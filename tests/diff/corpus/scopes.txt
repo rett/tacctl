@@ -1,0 +1,325 @@
+# tacctl scope ...: scope_crud, scope_prefixes_secret, scope_vendor_attrs,
+# status_and_scope_lookup, config_mgmt_acl (per-scope) command lines, plus the error paths.
+# Run: tests/diff/run.sh scopes
+@fixture tacquito.minimal.yaml
+
+scope
+scope bogus
+scope list
+scope routing
+scope show
+scope show nosuch
+scope show lab
+scope lookup
+scope lookup 10.1.2.3
+scope lookup notanip
+scope lookup 10.0.0.0/8
+
+# add
+scope add
+scope add prod
+scope add prod --prefixes
+scope add prod --prefixes 10.0.0.0/8
+scope add prod --prefixes 10.0.0.0/8 --secret short
+scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef
+scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope list ;; scope routing
+scope add prod --prefixes 10.0.0.0/8 --secret generate ;; scope show prod
+scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef --default ;; scope default ;; scope list
+scope add '1bad' --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef
+scope add prod --prefixes 10.0.0.0/33 --secret prod-secret-1234567890abcdef
+scope add prod --prefixes notacidr --secret prod-secret-1234567890abcdef
+scope add prod --prefixes 10.0.0.0/8,172.16.0.0/12 --secret prod-secret-1234567890abcdef ;; scope show prod
+scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope add prod --prefixes 172.16.0.0/12 --secret another-prod-1234567890abc
+scope add prod --prefixes 192.168.0.0/16 --secret prod-secret-1234567890abcdef ;; scope add dup --prefixes 192.168.0.0/16 --secret dup-secret-1234567890abcdef
+scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef --bogus
+scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef --protocols tacacs ;; scope protocols prod list
+scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef --protocols bogus
+scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef --protocols radius --vendor-attrs cisco,juniper ;; scope vendor-attrs prod
+scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef --vendor-attrs bogus
+
+# remove / rename / default
+scope remove
+scope remove nosuch
+scope remove lab <<< y
+scope remove lab <<< n
+scope remove lab
+scope remove lab --force <<< y
+scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope remove prod <<< y ;; scope list
+scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope remove prod <<< n ;; scope list
+scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; user add alice superuser --hash {HASH} --scopes prod ;; scope remove prod <<< y
+scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; user add alice superuser --hash {HASH} --scopes prod ;; scope remove prod --force <<< y ;; user show alice
+scope rename
+scope rename lab
+scope rename nosuch other
+scope rename lab 'bad name'
+scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope rename prod production ;; scope list
+scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope rename prod lab
+scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; user add alice superuser --hash {HASH} --scopes prod ;; scope rename prod production ;; user show alice
+scope default
+scope default nosuch
+scope default lab
+scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope default prod ;; scope default ;; scope list
+
+# prefixes
+scope prefixes
+scope prefixes lab
+scope prefixes nosuch list
+scope prefixes lab list
+scope prefixes lab bogus
+scope prefixes lab add
+scope prefixes lab add notacidr
+scope prefixes lab add 10.1.0.0/16 ;; scope prefixes lab list
+scope prefixes lab add 10.1.0.0/16,10.2.0.0/16 ;; scope prefixes lab list ;; scope routing
+scope prefixes lab add 10.1.0.0/16 ;; scope prefixes lab add 10.1.0.0/16
+scope prefixes lab remove
+scope prefixes lab remove 10.1.0.0/16
+scope prefixes lab add 10.1.0.0/16 ;; scope prefixes lab remove 10.1.0.0/16 ;; scope prefixes lab list
+scope prefixes lab remove --all <<< y
+scope prefixes lab remove --all <<< n
+scope prefixes lab remove --all --force <<< y
+scope prefixes lab clear
+scope prefixes lab set 10.0.0.0/8
+scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope prefixes lab add 10.0.0.0/8
+
+# secret
+scope secret
+scope secret lab
+scope secret nosuch show
+scope secret lab show
+scope secret lab bogus
+scope secret lab set
+scope secret lab set short
+scope secret lab set new-secret-1234567890abcdef ;; scope secret lab show ;; scope show lab
+scope secret lab generate ;; scope secret lab show
+scope secret lab generate ;; scope show lab
+
+# protocols, vendor-attrs, devices
+scope protocols
+scope protocols lab
+scope protocols nosuch list
+scope protocols lab list
+scope protocols lab set
+scope protocols lab set tacacs ;; scope protocols lab list
+scope protocols lab set tacacs,radius ;; scope protocols lab list
+scope protocols lab set bogus
+scope protocols lab clear ;; scope protocols lab list
+scope vendor-attrs
+scope vendor-attrs lab
+scope vendor-attrs nosuch
+scope vendor-attrs lab enable cisco ;; scope vendor-attrs lab
+scope vendor-attrs lab enable bogus
+scope vendor-attrs lab enable
+scope vendor-attrs lab enable cisco,juniper ;; scope vendor-attrs lab disable cisco ;; scope vendor-attrs lab
+scope vendor-attrs lab bogus
+scope devices
+scope devices lab
+scope devices nosuch
+scope devices lab set 10.0.0.5 cisco
+scope devices lab set 10.0.0.5 cisco ;; scope devices lab
+scope devices lab set 10.0.0.5 bogus
+scope devices lab set notanip cisco
+scope devices lab unset 10.0.0.5
+scope devices lab set 10.0.0.5 cisco ;; scope devices lab unset 10.0.0.5 ;; scope devices lab
+
+# aaa-order, exec-timeout, tacacs-group, radius-group, auth-method
+scope aaa-order
+scope aaa-order nosuch
+scope aaa-order lab
+scope aaa-order lab local-first ;; scope aaa-order lab
+scope aaa-order lab sideways
+scope exec-timeout
+scope exec-timeout nosuch
+scope exec-timeout lab
+scope exec-timeout lab 15 ;; scope exec-timeout lab
+scope exec-timeout lab 0 ;; scope exec-timeout lab
+scope exec-timeout lab 90
+scope exec-timeout lab forever
+scope tacacs-group
+scope tacacs-group nosuch
+scope tacacs-group lab
+scope tacacs-group lab TACACS_PROD ;; scope tacacs-group lab
+scope tacacs-group lab 9-digit-start
+scope tacacs-group lab 'has spaces'
+scope radius-group
+scope radius-group nosuch
+scope radius-group lab
+scope radius-group lab RADIUS_PROD ;; scope radius-group lab
+scope radius-group lab 9-digit-start
+scope radius-group lab 'has spaces'
+scope auth-method
+scope auth-method nosuch
+scope auth-method lab
+scope auth-method lab radius ;; scope auth-method lab
+scope auth-method lab tacacs ;; scope auth-method lab clear ;; scope auth-method lab
+scope auth-method lab bogus
+
+# per-scope management ACL
+scope mgmt-acl
+scope mgmt-acl lab
+scope mgmt-acl nosuch list
+scope mgmt-acl lab list
+scope mgmt-acl lab add
+scope mgmt-acl lab add notacidr
+scope mgmt-acl lab add 10.1.0.0/16,10.2.0.0/16 ;; scope mgmt-acl lab list
+scope mgmt-acl lab add 10.1.0.0/16,10.2.0.0/16 ;; scope mgmt-acl lab remove 10.1.0.0/16 ;; scope mgmt-acl lab list
+scope mgmt-acl lab remove 10.1.0.0/16
+scope mgmt-acl lab clear <<< y
+scope mgmt-acl lab clear <<< n
+scope mgmt-acl lab add 10.1.0.0/16 ;; scope mgmt-acl lab clear <<< y ;; scope mgmt-acl lab list
+scope mgmt-acl lab cisco-name
+scope mgmt-acl lab cisco-name MY-VTY ;; scope mgmt-acl lab cisco-name
+scope mgmt-acl lab cisco-name '1bad'
+scope mgmt-acl lab juniper-name
+scope mgmt-acl lab juniper-name MY-FILTER ;; scope mgmt-acl lab juniper-name
+scope mgmt-acl nosuch cisco-name
+scope mgmt-acl lab ios-name
+
+# WP2.4b: more of the usage, flag and value handling
+scope -h
+scope --help
+scope help
+scope list extra
+scope show lab extra
+scope add prod --prefixes 10.0.0.0/8 --secret
+scope add prod --prefixes 10.0.0.0/8 --protocols
+scope add prod --prefixes 10.0.0.0/8 --vendor-attrs
+scope add prod --prefixes 10.0.0.0/8 --vendor-attrs ''
+scope add prod --prefixes '' --secret prod-secret-1234567890abcdef
+scope add prod --prefixes ' , ' --secret prod-secret-1234567890abcdef
+scope add prod --prefixes "10.0.0.0/8,'bad" --secret prod-secret-1234567890abcdef
+scope add prod --prefixes 10.0.0.9/8,10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope show prod
+scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef extra
+scope add prod --prefixes 10.0.0.0/8 --secret 'äöüäöüäöüäöüäöü'
+scope add prod --prefixes 10.0.0.0/8 --secret 'äöüäöüäöüäöüäöüß' ;; scope show prod ;; scope secret prod show
+scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef --protocols 'tacacs, radius' ;; scope protocols prod
+scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef --protocols , ;; scope protocols prod
+scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef --vendor-attrs ,
+scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef --vendor-attrs wti,cisco,wti ;; scope list ;; scope show prod
+scope add prod --prefixes 10.0.0.0/8 --secret generate --protocols radius ;; scope show prod ;; scope auth-method prod
+scope add prod --prefixes 10.0.0.0/8 --default --secret prod-secret-1234567890abcdef ;; scope remove prod <<< y
+scope add prod --prefixes 192.168.5.0/24 --secret prod-secret-1234567890abcdef ;; scope routing ;; scope lookup 192.168.5.5 ;; scope lookup 192.168.6.6
+scope lookup 2001:db8::1
+scope lookup 192.168.1.1 extra
+scope lookup 192.168.0.0/16
+scope lookup 192.168.0.0/8
+scope lookup 300.1.1.1
+scope remove lab foo --force <<< y
+scope remove lab --bogus <<< y
+scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope remove prod --force <<< n
+scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope remove prod <<< yes ;; scope list
+scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope remove prod <<< Y
+
+# per-scope tacctl.yaml keys follow rename and remove (SCOPE_CONF_KEYS)
+scope aaa-order lab local-first ;; scope exec-timeout lab 15 ;; scope mgmt-acl lab add 10.9.0.0/16 ;; scope rename lab lab2 ;; scope show lab2 ;; scope mgmt-acl lab2 list ;; scope default
+scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope tacacs-group prod TG ;; scope radius-group prod RG ;; scope auth-method prod radius ;; scope mgmt-acl prod cisco-name P-VTY ;; scope mgmt-acl prod juniper-name P-MGMT ;; scope rename prod production ;; scope show production
+scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope aaa-order prod local-first ;; scope remove prod <<< y ;; scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope aaa-order prod
+scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope exec-timeout prod 5 ;; scope prefixes prod remove --all <<< y ;; scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope exec-timeout prod
+scope rename lab LAB2 ;; scope list
+scope rename lab ''
+scope rename lab 9lab
+
+# prefixes: --all / --force handling, the last prefix, tagged addresses
+scope prefixes lab -h
+scope prefixes lab help extra
+scope prefixes lab remove --all --all
+scope prefixes lab remove --force
+scope prefixes lab remove 10.0.0.0/8 --all
+scope prefixes lab remove --all 10.0.0.0/8
+scope prefixes lab remove --all --force --force
+scope prefixes lab add --all
+scope prefixes lab remove 192.168.0.0/16
+scope prefixes lab add 10.1.0.0/16 ;; scope prefixes lab remove 192.168.0.0/16 ;; scope prefixes lab list ;; scope show lab
+scope prefixes lab add 192.168.0.0/16,10.1.0.0/16
+scope prefixes lab add ' 10.1.0.0/16 , 10.1.0.9/16 '
+scope prefixes lab add "10.1.0.0/16,'x"
+scope prefixes lab remove 10.1.0.0/16,192.168.0.0/16
+scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; user add alice superuser --hash {HASH} --scopes prod ;; scope prefixes prod remove --all <<< y
+scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; user add alice superuser --hash {HASH} --scopes prod ;; scope prefixes prod remove --all --force <<< y ;; user show alice ;; scope list
+scope devices lab set 192.168.7.7 cisco ;; scope add prod --prefixes 192.168.7.0/24 --secret prod-secret-1234567890abcdef
+scope devices lab set 192.168.7.7 cisco ;; scope add prod --prefixes 192.168.8.0/24 --secret prod-secret-1234567890abcdef ;; scope prefixes prod add 192.168.7.0/24
+scope devices lab set 192.168.7.7 cisco ;; scope prefixes lab add 192.168.7.0/24 ;; scope prefixes lab remove 192.168.0.0/16
+scope devices lab set 192.168.7.7 cisco ;; scope prefixes lab add 10.0.0.0/8 ;; scope prefixes lab remove 192.168.0.0/16
+
+# secret: the checks on a value, posture lines
+scope secret lab set abcdefghijklmnopqrstuvwxyz
+scope secret lab set ABCDEFGHIJKLMNOPQRSTUVWXYZ
+scope secret lab set 12345678901234567890
+scope secret lab set 'äöüäöüäöüäöüäöü'
+scope secret lab set 'with\tescape-1234567890ab' ;; scope secret lab show
+scope secret lab set REPLACE-ME-1234567890abcdef ;; scope show lab ;; scope secret lab show
+scope secret lab show extra
+scope secret lab generate extra
+
+# protocols / vendor-attrs / devices: more paths
+scope protocols lab set "tacacs,'bad"
+scope protocols lab set ,
+scope protocols lab set ' tacacs , radius '
+scope protocols lab set tacacs ;; scope protocols lab set tacacs
+scope protocols lab clear
+scope protocols lab set radius ;; scope auth-method lab ;; scope show lab
+scope auth-method lab tacacs ;; scope protocols lab set radius
+scope protocols lab set tacacs ;; scope auth-method lab radius
+scope protocols lab set radius ;; scope vendor-attrs lab enable cisco
+scope vendor-attrs lab disable cisco
+scope vendor-attrs lab enable cisco ;; scope vendor-attrs lab enable cisco
+scope vendor-attrs lab enable cisco,juniper,wti ;; scope vendor-attrs lab disable juniper,cisco ;; scope list
+scope vendor-attrs lab enable cisco ;; scope devices lab set 192.168.7.7 cisco ;; scope vendor-attrs lab disable cisco ;; scope vendor-attrs lab ;; scope list
+scope vendor-attrs lab show
+scope vendor-attrs lab enable 'cisco juniper'
+scope devices lab set notanip bogus
+scope devices lab unset 192.168.7.7 cisco
+scope devices lab set 192.168.7.7
+scope devices lab set 8.8.8.8 cisco
+scope devices lab set 192.168.7.7 cisco ;; scope devices lab set 192.168.7.7 cisco
+scope devices lab set 192.168.7.7 cisco ;; scope devices lab set 192.168.7.7/32 juniper ;; scope devices lab ;; scope show lab
+scope devices lab set 192.168.7.0/24 wti ;; scope devices lab set 192.168.7.7 cisco ;; scope devices lab ;; scope lookup 192.168.7.7
+scope devices lab bogus
+
+# aaa-order, exec-timeout, groups, auth-method: back to the default, edges
+scope aaa-order lab tacacs-first ;; scope aaa-order lab
+scope aaa-order lab local-first ;; scope aaa-order lab tacacs-first ;; scope aaa-order lab
+scope exec-timeout lab -1
+scope exec-timeout lab 60 ;; scope exec-timeout lab
+scope tacacs-group lab TACACS-GROUP ;; scope tacacs-group lab
+scope auth-method lab tacplus ;; scope auth-method lab
+scope auth-method lab default
+scope auth-method lab radius ;; scope auth-method lab radius
+scope auth-method lab radius ;; scope auth-method lab default ;; scope auth-method lab
+scope auth-method lab clear extra
+
+# mgmt-acl: global fallback and sources
+scope mgmt-acl lab remove 10.1.0.0/16
+scope mgmt-acl lab add 10.1.0.0/16 ;; scope mgmt-acl lab remove 10.2.0.0/16
+scope mgmt-acl lab add 10.1.0.0/16 ;; scope mgmt-acl lab add 10.1.0.9/16,10.3.0.0/16
+scope mgmt-acl lab clear
+config mgmt-acl add 10.0.0.0/8 ;; scope mgmt-acl lab list ;; scope mgmt-acl lab
+config mgmt-acl cisco-name GLOBAL-ACL ;; scope mgmt-acl lab cisco-name ;; scope show lab
+scope mgmt-acl lab cisco-name 'has space'
+scope mgmt-acl lab add 10.1.0.0/16 ;; scope mgmt-acl lab clear <<< yes ;; scope mgmt-acl lab
+scope mgmt-acl lab bogus extra
+
+# more refusals
+scope show ''
+scope add ''
+scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef --protocols tacacs,ldap
+scope prefixes '' list
+scope secret lab set ''
+scope protocols lab set ''
+scope devices lab set '' cisco
+scope mgmt-acl lab add ''
+scope exec-timeout lab 1.5
+
+# no store: legacy read-only mode answers the reads, refuses the writes
+@fixture legacy.fresh-install.yaml
+scope list
+scope show lab
+scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef
+scope secret lab set new-secret-1234567890abcdef
+scope prefixes lab add 10.1.0.0/16
+scope remove lab <<< y
+
+# nothing at all: preflight
+@fixture none
+scope
+scope list
+scope bogus

@@ -1,0 +1,94 @@
+# tacctl store ...: store_cli and store_mutations command lines plus the error paths.
+# The import fixtures are the repository's tests/fixtures.
+# Run: tests/diff/run.sh store
+@fixture tacquito.minimal.yaml
+
+store
+store bogus
+store show
+store show --json
+store show --bogus
+store frobnicate
+store help
+store -h
+store --help
+store show --json extra
+store show "" --json
+store import -
+store import --check -x
+store import "" --check
+store import --check --check {FIXTURES}/tacquito.minimal.yaml
+
+# import
+store import
+store import --check
+store import --check {FIXTURES}/tacquito.minimal.yaml
+store import --check {FIXTURES}/tacquito.multiscope.yaml
+store import --check {FIXTURES}/tacquito.dead-matches.yaml
+store import --check {FIXTURES}/tacquito.legacy-exec.yaml
+store import --check {FIXTURES}/legacy.unrepresentable.yaml
+store import --check {FIXTURES}/legacy.import-edge.yaml
+store import --check {FIXTURES}/legacy.fresh-install.yaml
+store import --check {FIXTURES}/no-such-file.yaml
+store import {FIXTURES}/no-such-file.yaml
+store import {FIXTURES}/tacquito.minimal.yaml
+store import {FIXTURES}/tacquito.minimal.yaml --replace
+store import --replace {FIXTURES}/tacquito.minimal.yaml
+store import --replace {FIXTURES}/tacquito.multiscope.yaml ;; store show
+store import --replace {FIXTURES}/tacquito.multiscope.yaml ;; store show --json
+store import --replace {FIXTURES}/legacy.unrepresentable.yaml
+store import --replace --force {FIXTURES}/legacy.unrepresentable.yaml ;; store show
+store import --force {FIXTURES}/legacy.unrepresentable.yaml
+store import --replace {FIXTURES}/store.minimal.yaml
+store import --bogus
+store import --check --force
+store import --check {FIXTURES}/tacquito.minimal.yaml extra
+
+# a store-only state and an empty one
+@fixture store.minimal.yaml
+store show
+store show --json
+store import --check
+store rollback
+user list
+@fixture store.multiscope.yaml
+store show
+scope list
+@fixture none
+store show
+store import --check
+store import
+store rollback
+user list
+
+# rollback
+@fixture tacquito.minimal.yaml
+store rollback
+store rollback <<< y
+store rollback <<< n
+user add alice superuser --hash {HASH} --scopes lab ;; store rollback <<< y ;; user list
+user add alice superuser --hash {HASH} --scopes lab ;; store rollback <<< n ;; user list
+store rollback ;; store show
+store rollback ;; store rollback
+
+# rollback of a real flip: the live legacy config imported (the import keeps
+# the pre-store copy), then rolled back (WP3.3a)
+@fixture legacy.fresh-install.yaml
+store rollback
+store import ;; store rollback <<< n ;; store show
+store import ;; store rollback <<< y ;; user list ;; store show
+store import ;; store rollback <<< yes
+store import ;; config render --force ;; store rollback <<< y ;; user list ;; backup list
+store import ;; config render --force ;; user add alice superuser --hash {HASH} --scopes lab ;; store rollback <<< y ;; user list
+store import ;; config render --force ;; store rollback extra
+store import ;; config render --force ;; store rollback ""
+store import ;; config render --force ;; store rollback <<< y ;; store rollback <<< y ;; store import ;; store rollback <<< y
+store import ;; config render --force ;; store rollback <<< Y ;; config validate
+# a pre-store copy beside a store that never had a live legacy file
+@fixture store.minimal.yaml
+@root tests/diff/roots/store-prestore
+store rollback <<< n
+store rollback <<< y ;; user list ;; store show
+@root tests/diff/roots/store-prestore-broken
+@known 3.9 item 22: a legacy tacquito.yaml that is not valid YAML is reported in yaml.v3's words (the legacy importer reads it as tacquito does, plan 3.3), not PyYAML's
+store rollback <<< y

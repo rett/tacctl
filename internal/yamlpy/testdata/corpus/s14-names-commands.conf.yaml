@@ -1,0 +1,165 @@
+- v: OP-CLASS
+  l:
+  - OP-CLASS
+  k:
+    OP-CLASS: OP-CLASS
+- v: NETOPS_class-1
+  l:
+  - NETOPS_class-1
+  k:
+    NETOPS_class-1: NETOPS_class-1
+- v: superuser
+  l:
+  - superuser
+  k:
+    superuser: superuser
+- v: prod-inner
+  l:
+  - prod-inner
+  k:
+    prod-inner: prod-inner
+- v: show running-config
+  l:
+  - show running-config
+  k:
+    show running-config: show running-config
+- v: show
+  l:
+  - show
+  k:
+    show: show
+- v: ^show .*$
+  l:
+  - ^show .*$
+  k:
+    ^show .*$: ^show .*$
+- v: .*
+  l:
+  - .*
+  k:
+    .*: .*
+- v: ^(conf|config)
+  l:
+  - ^(conf|config)
+  k:
+    ^(conf|config): ^(conf|config)
+- v: terminal length 0
+  l:
+  - terminal length 0
+  k:
+    terminal length 0: terminal length 0
+- v: '"*"'
+  l:
+  - '"*"'
+  k:
+    '"*"': '"*"'
+- v: ^ip route .*
+  l:
+  - ^ip route .*
+  k:
+    ^ip route .*: ^ip route .*
+- v: '[0-9]+'
+  l:
+  - '[0-9]+'
+  k:
+    '[0-9]+': '[0-9]+'
+- v: (foo)
+  l:
+  - (foo)
+  k:
+    (foo): (foo)
+- v: \d+
+  l:
+  - \d+
+  k:
+    \d+: \d+
+- v: ^$
+  l:
+  - ^$
+  k:
+    ^$: ^$
+- v: $
+  l:
+  - $
+  k:
+    $: $
+- v: ^
+  l:
+  - ^
+  k:
+    ^: ^
+- v: '{1,3}'
+  l:
+  - '{1,3}'
+  k:
+    '{1,3}': '{1,3}'
+- v: a{1,3}
+  l:
+  - a{1,3}
+  k:
+    a{1,3}: a{1,3}
+- v: ^[a-z]+$
+  l:
+  - ^[a-z]+$
+  k:
+    ^[a-z]+$: ^[a-z]+$
+- v: .+
+  l:
+  - .+
+  k:
+    .+: .+
+- v: permit
+  l:
+  - permit
+  k:
+    permit: permit
+- v: deny
+  l:
+  - deny
+  k:
+    deny: deny
+- v: VTY-ACL
+  l:
+  - VTY-ACL
+  k:
+    VTY-ACL: VTY-ACL
+- v: MGMT-ACL
+  l:
+  - MGMT-ACL
+  k:
+    MGMT-ACL: MGMT-ACL
+- v: tacplus
+  l:
+  - tacplus
+  k:
+    tacplus: tacplus
+- v: radius
+  l:
+  - radius
+  k:
+    radius: radius
+- v: cisco
+  l:
+  - cisco
+  k:
+    cisco: cisco
+- v: juniper
+  l:
+  - juniper
+  k:
+    juniper: juniper
+- v: wti
+  l:
+  - wti
+  k:
+    wti: wti
+- v: lab
+  l:
+  - lab
+  k:
+    lab: lab
+- v: gotest1
+  l:
+  - gotest1
+  k:
+    gotest1: gotest1

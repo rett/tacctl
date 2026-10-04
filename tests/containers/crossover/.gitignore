@@ -1,0 +1,5 @@
+tacctl.git/
+work/
+logs/
+*.out
+*.log

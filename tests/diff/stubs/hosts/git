@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Stand-in for 'git clone' in the hosts corpus: 'config linux build' must
+# not reach the network, so a clone fails as it would offline. Every other
+# git command is the real git.
+if [[ "${1:-}" != clone ]]; then
+    here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    PATH="${PATH//${here}:/}"
+    PATH="${PATH//:${here}/}"
+    exec git "$@"
+fi
+echo "git $*" >> "${TACCTL_STATE_DIR}/../../calls.log"
+echo "fatal: unable to access the network (tests/diff/stubs/hosts/git)" >&2
+exit 128

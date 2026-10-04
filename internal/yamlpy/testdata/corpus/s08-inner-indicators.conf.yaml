@@ -1,0 +1,390 @@
+- v: a,b
+  l:
+  - a,b
+  k:
+    a,b: a,b
+- v: a?b
+  l:
+  - a?b
+  k:
+    a?b: a?b
+- v: a[b
+  l:
+  - a[b
+  k:
+    a[b: a[b
+- v: a]b
+  l:
+  - a]b
+  k:
+    a]b: a]b
+- v: a{b
+  l:
+  - a{b
+  k:
+    a{b: a{b
+- v: a}b
+  l:
+  - a}b
+  k:
+    a}b: a}b
+- v: a:b
+  l:
+  - a:b
+  k:
+    a:b: a:b
+- v: a#b
+  l:
+  - a#b
+  k:
+    a#b: a#b
+- v: a'b
+  l:
+  - a'b
+  k:
+    a'b: a'b
+- v: a"b
+  l:
+  - a"b
+  k:
+    a"b: a"b
+- v: a\b
+  l:
+  - a\b
+  k:
+    a\b: a\b
+- v: a!b
+  l:
+  - a!b
+  k:
+    a!b: a!b
+- v: a&b
+  l:
+  - a&b
+  k:
+    a&b: a&b
+- v: a*b
+  l:
+  - a*b
+  k:
+    a*b: a*b
+- v: a%b
+  l:
+  - a%b
+  k:
+    a%b: a%b
+- v: a@b
+  l:
+  - a@b
+  k:
+    a@b: a@b
+- v: a`b
+  l:
+  - a`b
+  k:
+    a`b: a`b
+- v: a=b
+  l:
+  - a=b
+  k:
+    a=b: a=b
+- v: a|b
+  l:
+  - a|b
+  k:
+    a|b: a|b
+- v: a>b
+  l:
+  - a>b
+  k:
+    a>b: a>b
+- v: a~b
+  l:
+  - a~b
+  k:
+    a~b: a~b
+- v: a^b
+  l:
+  - a^b
+  k:
+    a^b: a^b
+- v: a$b
+  l:
+  - a$b
+  k:
+    a$b: a$b
+- v: a(b
+  l:
+  - a(b
+  k:
+    a(b: a(b
+- v: a)b
+  l:
+  - a)b
+  k:
+    a)b: a)b
+- v: a<b
+  l:
+  - a<b
+  k:
+    a<b: a<b
+- v: a;b
+  l:
+  - a;b
+  k:
+    a;b: a;b
+- v: a/b
+  l:
+  - a/b
+  k:
+    a/b: a/b
+- v: a+b
+  l:
+  - a+b
+  k:
+    a+b: a+b
+- v: a.b
+  l:
+  - a.b
+  k:
+    a.b: a.b
+- v: a-b
+  l:
+  - a-b
+  k:
+    a-b: a-b
+- v: a_b
+  l:
+  - a_b
+  k:
+    a_b: a_b
+- v: a,
+  l:
+  - a,
+  k:
+    a,: a,
+- v: a?
+  l:
+  - a?
+  k:
+    a?: a?
+- v: a[
+  l:
+  - a[
+  k:
+    a[: a[
+- v: a]
+  l:
+  - a]
+  k:
+    a]: a]
+- v: a{
+  l:
+  - a{
+  k:
+    a{: a{
+- v: a}
+  l:
+  - a}
+  k:
+    a}: a}
+- v: 'a:'
+  l:
+  - 'a:'
+  k:
+    'a:': 'a:'
+- v: a#
+  l:
+  - a#
+  k:
+    a#: a#
+- v: a'
+  l:
+  - a'
+  k:
+    a': a'
+- v: a"
+  l:
+  - a"
+  k:
+    a": a"
+- v: a\
+  l:
+  - a\
+  k:
+    a\: a\
+- v: a!
+  l:
+  - a!
+  k:
+    a!: a!
+- v: a&
+  l:
+  - a&
+  k:
+    a&: a&
+- v: a*
+  l:
+  - a*
+  k:
+    a*: a*
+- v: a%
+  l:
+  - a%
+  k:
+    a%: a%
+- v: a@
+  l:
+  - a@
+  k:
+    a@: a@
+- v: a`
+  l:
+  - a`
+  k:
+    a`: a`
+- v: a=
+  l:
+  - a=
+  k:
+    a=: a=
+- v: a|
+  l:
+  - a|
+  k:
+    a|: a|
+- v: a>
+  l:
+  - a>
+  k:
+    a>: a>
+- v: a~
+  l:
+  - a~
+  k:
+    a~: a~
+- v: a^
+  l:
+  - a^
+  k:
+    a^: a^
+- v: a$
+  l:
+  - a$
+  k:
+    a$: a$
+- v: a(
+  l:
+  - a(
+  k:
+    a(: a(
+- v: a)
+  l:
+  - a)
+  k:
+    a): a)
+- v: a<
+  l:
+  - a<
+  k:
+    a<: a<
+- v: a;
+  l:
+  - a;
+  k:
+    a;: a;
+- v: a/
+  l:
+  - a/
+  k:
+    a/: a/
+- v: a+
+  l:
+  - a+
+  k:
+    a+: a+
+- v: a.
+  l:
+  - a.
+  k:
+    a.: a.
+- v: a-
+  l:
+  - a-
+  k:
+    a-: a-
+- v: a_
+  l:
+  - a_
+  k:
+    a_: a_
+- v: 'a: b'
+  l:
+  - 'a: b'
+  k:
+    'a: b': 'a: b'
+- v: a :b
+  l:
+  - a :b
+  k:
+    a :b: a :b
+- v: 'a #b'
+  l:
+  - 'a #b'
+  k:
+    'a #b': 'a #b'
+- v: a# b
+  l:
+  - a# b
+  k:
+    a# b: a# b
+- v: 'a #'
+  l:
+  - 'a #'
+  k:
+    'a #': 'a #'
+- v: a ?b
+  l:
+  - a ?b
+  k:
+    a ?b: a ?b
+- v: a ? b
+  l:
+  - a ? b
+  k:
+    a ? b: a ? b
+- v: a - b
+  l:
+  - a - b
+  k:
+    a - b: a - b
+- v: a -b
+  l:
+  - a -b
+  k:
+    a -b: a -b
+- v: 'key: value'
+  l:
+  - 'key: value'
+  k:
+    'key: value': 'key: value'
+- v: a::b
+  l:
+  - a::b
+  k:
+    a::b: a::b
+- v: http://x.example/y?z=1&w=2#frag
+  l:
+  - http://x.example/y?z=1&w=2#frag
+  k:
+    http://x.example/y?z=1&w=2#frag: http://x.example/y?z=1&w=2#frag
+- v: user@host
+  l:
+  - user@host
+  k:
+    user@host: user@host
+- v: a , b
+  l:
+  - a , b
+  k:
+    a , b: a , b

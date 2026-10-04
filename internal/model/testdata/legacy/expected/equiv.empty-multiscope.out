@@ -1,0 +1,204 @@
+--- live (normalised)
++++ rendered (normalised)
+@@ -3,8 +3,197 @@
+   "prefix_allow": [],
+   "prefix_deny": [],
+   "secrets": {
+-    "routes": [],
+-    "routes_if_every_scope_had_users": []
++    "routes": [
++      {
++        "key": "<redacted:1>",
++        "prefix": "10.0.0.0/8",
++        "scope": "prod"
++      },
++      {
++        "key": "<redacted:2>",
++        "prefix": "172.16.0.0/12",
++        "scope": "lab"
++      },
++      {
++        "key": "<redacted:2>",
++        "prefix": "192.168.0.0/16",
++        "scope": "lab"
++      },
++      {
++        "key": "<redacted:3>",
++        "prefix": "203.0.113.0/24",
++        "scope": "dmz"
++      }
++    ],
++    "routes_if_every_scope_had_users": [
++      {
++        "key": "<redacted:1>",
++        "prefix": "10.0.0.0/8",
++        "scope": "prod"
++      },
++      {
++        "key": "<redacted:2>",
++        "prefix": "172.16.0.0/12",
++        "scope": "lab"
++      },
++      {
++        "key": "<redacted:2>",
++        "prefix": "192.168.0.0/16",
++        "scope": "lab"
++      },
++      {
++        "key": "<redacted:3>",
++        "prefix": "203.0.113.0/24",
++        "scope": "dmz"
++      }
++    ]
+   },
+-  "users": {}
++  "users": {
++    "alice": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:4>"
++        },
++        "type": "1"
++      },
++      "groups": [
++        {
++          "accounter": {
++            "name": "tacquito_accounter",
++            "type": "3"
++          },
++          "name": "superuser",
++          "services": [
++            {
++              "name": "shell",
++              "set_values": [
++                {
++                  "name": "priv-lvl",
++                  "values": [
++                    "15"
++                  ]
++                }
++              ]
++            },
++            {
++              "name": "junos-exec",
++              "set_values": [
++                {
++                  "name": "local-user-name",
++                  "values": [
++                    "RW-CLASS"
++                  ]
++                }
++              ]
++            }
++          ]
++        }
++      ],
++      "scopes": [
++        "lab",
++        "prod"
++      ]
++    },
++    "bob": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:4>"
++        },
++        "type": "1"
++      },
++      "groups": [
++        {
++          "accounter": {
++            "name": "tacquito_accounter",
++            "type": "3"
++          },
++          "name": "operator",
++          "services": [
++            {
++              "name": "shell",
++              "set_values": [
++                {
++                  "name": "priv-lvl",
++                  "values": [
++                    "7"
++                  ]
++                }
++              ]
++            },
++            {
++              "name": "junos-exec",
++              "set_values": [
++                {
++                  "name": "local-user-name",
++                  "values": [
++                    "OP-CLASS"
++                  ]
++                }
++              ]
++            }
++          ]
++        }
++      ],
++      "scopes": [
++        "lab"
++      ]
++    },
++    "carol": {
++      "accounter": {
++        "name": "tacquito_accounter",
++        "type": "3"
++      },
++      "authenticator": {
++        "options": {
++          "hash": "<redacted:4>"
++        },
++        "type": "1"
++      },
++      "groups": [
++        {
++          "accounter": {
++            "name": "tacquito_accounter",
++            "type": "3"
++          },
++          "name": "readonly",
++          "services": [
++            {
++              "name": "shell",
++              "set_values": [
++                {
++                  "name": "priv-lvl",
++                  "values": [
++                    "1"
++                  ]
++                }
++              ]
++            },
++            {
++              "name": "junos-exec",
++              "set_values": [
++                {
++                  "name": "local-user-name",
++                  "values": [
++                    "RO-CLASS"
++                  ]
++                }
++              ]
++            }
++          ]
++        }
++      ],
++      "scopes": [
++        "dmz",
++        "lab"
++      ]
++    }
++  }
+ }NOT EQUIVALENT
+rc=1

@@ -1,0 +1,11 @@
+# Installed by tacctl: the logs of its FreeRADIUS instance.
+/var/log/freeradius/tacctl-radius.log /var/log/freeradius/tacctl-auth.log /var/log/freeradius/tacctl-accounting.log {
+	weekly
+	rotate 12
+	missingok
+	notifempty
+	compress
+	delaycompress
+	copytruncate
+	su freerad freerad
+}

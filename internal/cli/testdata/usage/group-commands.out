@@ -1,0 +1,32 @@
+
+[1mtacctl group commands[0m — per-group authorized commands
+
+Usage:
+  tacctl group commands list <group>                              Show rules + default action
+  tacctl group commands default <group> <permit|deny>             Set default action (catchall)
+  tacctl group commands add <group> <name> [--match <regex>]...   Add a rule
+                                            [--action permit|deny]
+  tacctl group commands remove <group> <name>                     Drop a rule
+  tacctl group commands clear <group>                             Drop overrides — revert to shipped defaults (confirms)
+  tacctl group commands seed [<group>] [--force]                  Re-apply legacy seed set (recovery tool)
+
+<name> is compared literally to the TACACS+ cmd= word. --match
+regexes are tested against the command's ARGUMENTS only (the
+cmd-arg values after the word: 'running-config' for 'show
+running-config'), never the full line -- so '^show .*$' can
+never match and is rejected. Omit --match to cover any args.
+
+Rules live under commands.<group> in /etc/tacctl/tacctl.yaml;
+tacquito.yaml's per-group commands: block is a regenerated
+artifact (do not hand-edit). RADIUS does not enforce them
+(no per-command authorization). Built-ins ship with defaults:
+   superuser: permit *   |   operator: show/ping/traceroute/
+                              terminal + deny *   |   readonly:
+                              show/ping/traceroute + deny *
+
+Cisco devices ask tacquito per command (live enforcement) when
+'aaa authorization commands <level>' is in the device config —
+tacctl auto-emits these lines in 'tacctl config cisco'. Juniper
+enforcement is LOCAL via class allow/deny-commands, rendered
+from the same tacctl-authored rules by 'tacctl config juniper'.
+

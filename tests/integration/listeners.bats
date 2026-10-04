@@ -76,22 +76,6 @@ systemctl_fails_for() {
     assert_line "Environment=\"TACQUITO_ACCT_LOG=${TACCTL_LOG}/accounting.log\""
 }
 
-@test "drop-in: a listener's own metrics_address is rendered; the default listener's is refused for it" {
-    "$TACCTL_BIN_SCRIPT" config render --force > /dev/null
-    "$TACCTL_BIN_SCRIPT" config listen --listener mgmt tcp 127.0.0.1:4949
-    tacctl_source_lib
-    conf_set_json listeners.tacacs.mgmt '{"network": "tcp", "address": "127.0.0.1:4949", "metrics_address": "127.0.0.1:9100"}'
-    run "$TACCTL_BIN_SCRIPT" config render
-    assert_success
-    grep -qxF 'Environment="TACQUITO_METRICS_ADDRESS=127.0.0.1:9100"' "$(instance_dropin mgmt)"
-
-    conf_set_json listeners.tacacs.mgmt '{"network": "tcp", "address": "127.0.0.1:4949", "metrics_address": "127.0.0.1:8080"}'
-    run "$TACCTL_BIN_SCRIPT" config render
-    assert_failure
-    assert_output --partial "metrics_address 127.0.0.1:8080 is the default listener's"
-    grep -qxF 'Environment="TACQUITO_METRICS_ADDRESS=127.0.0.1:9100"' "$(instance_dropin mgmt)"
-}
-
 @test "drop-in: rendering is deterministic, and a second render changes nothing" {
     "$TACCTL_BIN_SCRIPT" config render --force > /dev/null
     local before
@@ -105,20 +89,6 @@ systemctl_fails_for() {
 }
 
 # --- The drop-in in the render machinery -------------------------------------
-
-@test "render: the drop-in is an artifact of the backend, staged and recorded with tacquito.yaml" {
-    tacctl_source_lib
-    run backend_call tacacs artifacts
-    assert_line --index 0 "$TACCTL_CONFIG"
-    assert_line --index 1 "$DROPIN"
-    run "$TACCTL_BIN_SCRIPT" config render --force
-    assert_success
-    assert_output --partial "Rendered ${TACCTL_CONFIG}, ${DROPIN}."
-    [[ -f "$DROPIN" ]]
-    run "$TACCTL_BIN_SCRIPT" config validate
-    assert_success
-    assert_line --regexp 'Rendered config:.* up to date$'
-}
 
 @test "render: a tacctl.yaml changed by hand is applied by 'config render': reload, restart, instance started" {
     "$TACCTL_BIN_SCRIPT" config render --force > /dev/null
@@ -154,29 +124,6 @@ systemctl_fails_for() {
     assert_failure
     stub_called '^systemctl daemon-reload$'
     stub_called '^systemctl disable --quiet --now tacquito@mgmt.service$'
-}
-
-@test "render: a hand-edited drop-in is reported as drift, never refuses a command, and is replaced with a copy kept" {
-    "$TACCTL_BIN_SCRIPT" config render --force > /dev/null
-    echo 'Environment="TACQUITO_LEVEL=30"' >> "$DROPIN"
-    run "$TACCTL_BIN_SCRIPT" status
-    assert_output --partial "DRIFT:"
-    assert_output --partial "${DROPIN}"
-    assert_output --partial "'tacctl config render' rewrites it from tacctl.yaml"
-    refute_output --partial "store import --replace"
-
-    run "$TACCTL_BIN_SCRIPT" config password-age 45
-    assert_success
-    tacctl_source_lib
-    run store_apply true
-    assert_success
-    assert_output --partial "Previous ${DROPIN} saved to"
-    run grep -c 'TACQUITO_LEVEL' "$DROPIN"
-    assert_output "1"
-    run bash -c 'ls "$1"/legacy/tacctl.conf.drift.*' _ "$BACKUP_DIR"
-    assert_success
-    run backends_check_drift
-    assert_success
 }
 
 @test "render: a listener model that cannot be served fails the render and changes nothing" {
@@ -476,59 +423,6 @@ systemctl_fails_for() {
 
 # --- The contract verbs ------------------------------------------------------
 
-@test "listeners verb: list, show, set and reset" {
-    tacctl_source_lib
-    run backend_call tacacs listeners list
-    assert_output "default tcp :49"
-    run backend_call tacacs listeners set mgmt tcp 127.0.0.1:4949
-    assert_success
-    run backend_call tacacs listeners set default tcp 10.1.0.1:49
-    assert_success
-    run backend_call tacacs listeners list
-    assert_line --index 0 "default tcp 10.1.0.1:49"
-    assert_line --index 1 "mgmt tcp 127.0.0.1:4949"
-    run backend_call tacacs listeners show
-    assert_line "  Current listener: tcp 10.1.0.1:49"
-    run backend_call tacacs listeners show mgmt
-    assert_line "  Listener 'mgmt': tcp 127.0.0.1:4949"
-    run backend_call tacacs listeners reset mgmt
-    assert_success
-    run backend_call tacacs listeners reset
-    assert_success
-    run backend_call tacacs listeners list
-    assert_output "default tcp :49"
-    run backend_call tacacs listeners frobnicate
-    assert_failure 2
-    run backend_call tacacs describe
-    assert_line "units=tacquito.service"
-}
-
-@test "service verb: an optional listener addresses its unit; none is the whole backend" {
-    "$TACCTL_BIN_SCRIPT" config listen --listener mgmt tcp 127.0.0.1:4949
-    tacctl_source_lib
-    : > "$CALLS_LOG"
-    run backend_call tacacs service restart mgmt
-    assert_success
-    assert_output --partial "Service restarted."
-    stub_called '^systemctl restart tacquito@mgmt.service$'
-    refute_stub_called '^systemctl restart tacquito$'
-    backend_call tacacs service is-active mgmt
-    stub_called '^systemctl is-active tacquito@mgmt.service$'
-    backend_call tacacs service stop mgmt
-    stub_called '^systemctl stop tacquito@mgmt.service$'
-
-    : > "$CALLS_LOG"
-    run backend_call tacacs service restart
-    stub_called '^systemctl restart tacquito$'
-    stub_called '^systemctl enable --quiet --now tacquito@mgmt.service$'
-    run backend_call tacacs service restart default
-    stub_called '^systemctl restart tacquito$'
-    run backend_describe tacacs units
-    assert_output "tacquito.service tacquito@mgmt.service"
-    run backend_call tacacs artifacts
-    assert_line --index 2 "$(instance_dropin mgmt)"
-}
-
 @test "a user mutation still restarts tacquito once and touches no instance or drop-in" {
     "$TACCTL_BIN_SCRIPT" config render --force > /dev/null
     local before
@@ -537,7 +431,10 @@ systemctl_fails_for() {
     run "$TACCTL_BIN_SCRIPT" user disable alice
     assert_success
     run grep '^systemctl' "$CALLS_LOG"
-    assert_output "systemctl restart tacquito"
+    # The restart is preceded by a reset-failed of tacquito and its
+    # instances (plan 3.9 item 31); no instance is restarted on its own.
+    assert_output "systemctl reset-failed tacquito tacquito@*.service
+systemctl restart tacquito"
     [[ "$(sha256sum "$DROPIN")" == "$before" ]]
 }
 
@@ -613,16 +510,4 @@ esac'
     "$TACCTL_BIN_SCRIPT" config listen --listener mgmt tcp 127.0.0.1:4949
     run "$TACCTL_BIN_SCRIPT" log tail 5
     stub_called '^journalctl -u tacquito -u tacquito@mgmt.service --no-pager -n 5$'
-}
-
-@test "last login and 'log accounting' read every listener's accounting log" {
-    printf '2026/04/21 10:11:12 {"User":"alice","Args":["cmd=login"]}\n' > "${TACCTL_LOG}/accounting.log"
-    printf '2026/05/02 08:00:00 {"User":"alice","Args":["cmd=login"]}\n' > "${TACCTL_LOG}/accounting-mgmt.log"
-    tacctl_source_lib
-    run backend_call tacacs last_login alice
-    assert_output "2026-05-02 08:00:00"
-    run "$TACCTL_BIN_SCRIPT" log accounting 5
-    assert_output --partial "2026/04/21 10:11:12"
-    assert_output --partial "${TACCTL_LOG}/accounting-mgmt.log"
-    assert_output --partial "2026/05/02 08:00:00"
 }

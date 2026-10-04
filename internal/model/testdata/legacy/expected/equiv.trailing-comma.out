@@ -1,0 +1,31 @@
+note: variants/trailing-comma.yaml: secrets[3] 'dmz': prefixes is not a non-empty JSON list of strings; tacquito builds nothing for it
+note: variants/trailing-comma.yaml: scope 'prod-inner' has no users; tacquito does not load it
+note: variants/trailing-comma.yaml: secrets[1] 'prod-inner': 10.10.99.0/24 never matches a client (an earlier entry already covers it with 10.0.0.0/8) once every scope has a user
+--- live (normalised)
++++ rendered (normalised)
+@@ -18,6 +18,11 @@
+         "key": "<redacted:1>",
+         "prefix": "192.168.0.0/16",
+         "scope": "lab"
++      },
++      {
++        "key": "<redacted:2>",
++        "prefix": "203.0.113.0/24",
++        "scope": "dmz"
+       }
+     ],
+     "routes_if_every_scope_had_users": [
+@@ -35,6 +40,11 @@
+         "key": "<redacted:1>",
+         "prefix": "192.168.0.0/16",
+         "scope": "lab"
++      },
++      {
++        "key": "<redacted:2>",
++        "prefix": "203.0.113.0/24",
++        "scope": "dmz"
+       }
+     ]
+   },
+NOT EQUIVALENT
+rc=1
