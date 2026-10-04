@@ -434,7 +434,7 @@ tacctl config sudoers tiers install   # write /etc/sudoers.d/tacctl-tiers
 ```
 | Local group | Tier (priv-lvl) | tacctl access |
 |---|---|---|
-| `tac-readonly` | read-only (below 7) | `passwd`, `status`, `version`, `help` (also `-h`, `--help`), `user list`, `user show`, `group list`, `scope list`, `backend list`, `backend status`, `device list`, `device show` (their own scopes' devices only) |
+| `tac-readonly` | read-only (below 7) | `passwd`, `status`, `version`, `help` (also `-h`, `--help`), `user list`, `user show`, `group list`, `scope list`, `backend list`, `backend status`, `device list`, `device show`, `device notices` (their own scopes' devices only) |
 | `tac-operator` | operator (7-14) | read-only set plus `log tail/search/failures/accounting`, `config validate`, `backup list`, `device export` (their own scopes' devices only) |
 | `tac-superuser` | superuser (15) | everything, plus full `sudo` |
 
@@ -828,7 +828,7 @@ device import [--check] [--replace] [--allow-generic] [-y] <file|->   CSV (name,
 device export [--csv|--json]                      The registry (YAML by default), only the devices of your own scopes below the administrator tier
 ```
 
-A device is found by name (any case) or by its registered address; an unregistered address is not found, even when a scope covers it. An address is registered once. Enrolled Linux hosts share the namespace and appear in `list` and `show` as `linux` entries, read-only. `list` and `show` are open to the read-only and operator tiers, limited to the entries of their own scopes; `export` is operator-level, filtered the same way.
+A device is found by name (any case) or by its registered address; an unregistered address is not found, even when a scope covers it. An address is registered once. Enrolled Linux hosts share the namespace and appear in `list` and `show` as `linux` entries, read-only. `list`, `show` and `notices` are open to the read-only and operator tiers, limited to the entries of their own scopes; `export` is operator-level, filtered the same way.
 
 A name that is a factory or image default is refused with the command that names the device on the device itself (`hostname`, `set system host-name`, ...); a host enrolled under such a name before the registry existed is not refused and carries a `generic-name` notice. `host enroll --name` follows the same rules. Add your own patterns with `generic_names:` (regular expressions, whole-name, case-insensitive) in `devices.yaml`. There is no seen data yet, so the last seen, by and via columns print `-`.
 

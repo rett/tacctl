@@ -557,7 +557,7 @@ func TestDeviceTierFilteringAndGate(t *testing.T) {
 	}
 	// Registry writes and the operator-level verbs are superuser-only for her.
 	for _, args := range [][]string{{"add", "x1", "10.99.0.5"}, {"remove", "lab-sw", "-y"}, {"rename", "lab-sw", "x1"}, {"port", "lab-sw", "22"},
-		{"import", "-"}, {"export"}, {"stale-days"}, {"notices"}, {"notice", "lab-sw", "ack", "generic-name"}} {
+		{"import", "-"}, {"export"}, {"stale-days"}, {"notice", "lab-sw", "ack", "generic-name"}} {
 		asUser("carol", "tac-readonly", args...)
 		if sb.code != 1 || !strings.Contains(sb.stderr(), "is not permitted for the readonly tier") {
 			t.Errorf("carol %v: %d %q", args, sb.code, sb.stderr())
@@ -565,6 +565,16 @@ func TestDeviceTierFilteringAndGate(t *testing.T) {
 	}
 	if !strings.Contains(sb.devices(), "lab-sw") {
 		t.Error("carol changed the registry")
+	}
+	// notices is open to her, filtered to her own scopes like list and show.
+	out = asUser("carol", "tac-readonly", "notices")
+	if sb.code != 0 {
+		t.Errorf("carol notices: %d %q", sb.code, sb.stderr())
+	}
+	for _, hidden := range []string{"prod-sw", "stray", "db1"} {
+		if strings.Contains(out, hidden) {
+			t.Errorf("carol's notices show %s:\n%s", hidden, out)
+		}
 	}
 	// bob (operator; lab) may export, filtered to his scope.
 	out = asUser("bob", "tac-operator", "export", "--csv")

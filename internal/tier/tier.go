@@ -109,6 +109,7 @@ var Rules = []Rule{
 	{Tier: Readonly, Cmd: "ssh", AnySub: true, Sudoers: []string{"ssh *"}},
 	{Tier: Readonly, Cmd: "device", Sub: "list", Sudoers: []string{"device list", "device list *"}},
 	{Tier: Readonly, Cmd: "device", Sub: "show", Sudoers: []string{"device show *"}},
+	{Tier: Readonly, Cmd: "device", Sub: "notices", Sudoers: []string{"device notices", "device notices *"}},
 	{Tier: Readonly, Cmd: "device", Sub: "ssh-config", Sudoers: []string{"device ssh-config"}, Wrap: true},
 	{Tier: Readonly, Cmd: "_completion-names", AnySub: true, Sudoers: []string{"_completion-names *"}},
 	{Tier: Readonly, Cmd: "--version", AnySub: true},
