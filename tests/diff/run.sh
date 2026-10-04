@@ -11,10 +11,10 @@
 #      the working tree, so a result does not depend on which bash files a
 #      package touched.
 #   B  what is being checked (--b): go (default; dist/tacctl, which 'make
-#      build' writes, with TACCTL_BASH_IMPL/TACCTL_TREE pointing at this tree
-#      the way tests/helpers/setup.bash does), bash (the tag again: the
-#      self-test, a runner that reports a difference here is broken), tree
-#      (bin/tacctl.sh of the working tree), or the path of any executable.
+#      build' writes, with TACCTL_TREE pointing at this tree the way
+#      tests/helpers/setup.bash does), bash (the tag again: the self-test, a
+#      runner that reports a difference here is broken), or the path of any
+#      executable.
 #
 # A corpus is tests/diff/corpus/<name>.txt (or a path). One command per
 # line; the program name is left out:
@@ -66,7 +66,7 @@
 # tree paths, and bcrypt hashes the commands generated (not the ones given
 # in the command line), whose salt is random.
 #
-# Options: --against <tag>  --b <go|bash|tree|path>  --go <path>  --filter <regex>
+# Options: --against <tag>  --b <go|bash|path>  --go <path>  --filter <regex>
 #          --colour  --keep (keep the work dir)  --list  --all  --self-test  -h
 # Exit: 0 no unexplained difference, 1 a difference, 2 usage or setup error.
 set -euo pipefail
@@ -83,7 +83,7 @@ die() { echo "diff/run.sh: $*" >&2; exit 2; }
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --against) tag="${2:?--against needs a tag}"; shift 2 ;;
-        --b) side_b="${2:?--b needs go, bash, tree or a path}"; shift 2 ;;
+        --b) side_b="${2:?--b needs go, bash or a path}"; shift 2 ;;
         --go) go_bin="${2:?--go needs a path}"; shift 2 ;;
         --filter) filter="${2:?--filter needs a regex}"; shift 2 ;;
         --colour|--color) colour=1; shift ;;
@@ -152,10 +152,9 @@ case "$side_b" in
     go)
         bin_b="$go_bin"
         [[ -x "$bin_b" ]] || die "no Go binary at ${bin_b} (make build, or --go <path>)"
-        impl_env_b=("TACCTL_BASH_IMPL=${src}/bin/tacctl.sh" "TACCTL_TREE=${src}")
+        impl_env_b=("TACCTL_TREE=${src}")
         ;;
     bash) bin_b="$bash_tag" ;;
-    tree) bin_b="${src}/bin/tacctl.sh" ;;
     *) bin_b="$side_b"; [[ -x "$bin_b" ]] || die "--b ${side_b}: not an executable" ;;
 esac
 label_b="$side_b"

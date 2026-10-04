@@ -8,7 +8,7 @@ package cli
 // show and validate; config_admin.go: sudoers, branch, render --dry-run).
 //
 // Registered from other files with registerConfigVerb (below), which
-// replaces the delegated stub of the same name: diff and restore
+// replaces the declared word of the same name: diff and restore
 // (backup.go), allow, deny and mgmt-acl (config_policy_register.go),
 // cisco, juniper and wti (devices.go), linux (linux.go). Every config verb
 // is native; the family node, its usage and its preflight rule stay here.
@@ -36,7 +36,7 @@ const KindListeners = "listeners"
 var configVerbs = map[string]func(inv *invocation) *cobra.Command{}
 
 // registerConfigVerb makes 'config <name>' native with the command mk
-// builds, in place of the delegated stub of that name (or as a new verb),
+// builds, in place of the declared word of that name (or as a new verb),
 // and spec its arguments for completion (configSpecs). Call it from an
 // init function of the file that implements the verb; mk gives the command
 // (and its sub-commands) RunEs made with inv.native (withPreflight:
@@ -165,7 +165,7 @@ func configCmd(inv *invocation) *cobra.Command {
 		),
 		withRun(verb("branch [name]", "Show or change the tacctl repo branch"), n(inv.configBranch)),
 	)
-	// The verbs other files register replace the delegated stubs.
+	// The verbs other files register replace the declared words.
 	names := make([]string, 0, len(configVerbs))
 	for name := range configVerbs {
 		names = append(names, name)

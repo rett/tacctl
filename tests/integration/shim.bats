@@ -1,18 +1,17 @@
 #!/usr/bin/env bats
-# The 0.2.0 bootstrap shim (bin/tacctl.sh.new; bin/tacctl.sh from WP4.1;
-# docs/plans/go-rewrite.md 5.2): its own rows of the offline and
+# The bootstrap shim (bin/tacctl.sh; docs/plans/go-rewrite.md 5.2): its own rows of the offline and
 # partial-failure matrix, which the Go tests of internal/lifecycle cannot
 # reach because they are bash. A copy of the shim runs from a scratch tree
 # with TACCTL_TEST_ROOT, so /usr/local/bin/tacctl and /usr/local/go are
 # under the test's directory; git, wget and the Go toolchain are stand-ins.
-# Nothing here needs the Go binary: the file runs the same in both modes.
+# Nothing here runs the Go binary.
 
 load ../helpers/setup
 load ../helpers/mocks
 
 bats_require_minimum_version 1.5.0
 
-SHIM="${TACCTL_SRC}/bin/tacctl.sh.new"
+SHIM="${TACCTL_SRC}/bin/tacctl.sh"
 HEAD_COMMIT="2222222222222222222222222222222222222222"
 OLD_COMMIT="1111111111111111111111111111111111111111"
 
@@ -322,8 +321,13 @@ esac'
     stub_called '^go build -trimpath -buildvcs=false -tags testknobs '
 }
 
-@test "shim: the build recipe is the one bin/tacctl.sh and 'make build' use, byte for byte" {
-    diff <(sed -n '/^tacctl_go_build() {/,/^}/p' "${TACCTL_SRC}/bin/tacctl.sh") \
-        <(sed -n '/^tacctl_go_build() {/,/^}/p' "$SHIM")
-    [[ -n "$(sed -n '/^tacctl_go_build() {/,/^}/p' "$SHIM")" ]]
+@test "shim: one build recipe: --build, the install path, 'make build' and the Go upgrade use it" {
+    # Defined once, called by '--build' and by the install path.
+    [[ "$(grep -c '^tacctl_go_build() {$' "$SHIM")" -eq 1 ]]
+    [[ "$(grep -cE '^[[:space:]]*tacctl_go_build ' "$SHIM")" -eq 2 ]]
+    # 'make build' is '--build' with the test knobs.
+    grep -qE '^[[:space:]]+bin/tacctl\.sh --build dist/tacctl --tags testknobs$' "${TACCTL_SRC}/Makefile"
+    # The Go upgrade and install rebuild the command with '<deploy>/bin/tacctl.sh --build <command>'.
+    grep -qE 'filepath\.Join\([^)]*"bin", "tacctl\.sh"\)' "${TACCTL_SRC}/internal/lifecycle/build.go"
+    grep -q '"--build"' "${TACCTL_SRC}/internal/lifecycle/build.go"
 }

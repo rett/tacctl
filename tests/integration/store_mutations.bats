@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # How every mutating command applies a change: gate, backup, store write,
-# render, restart (store_apply in lib/backend.sh).
+# render, restart (the store apply path).
 #
 #   - legacy mode (no store): every mutating verb refuses and changes nothing,
 #     every read verb still works from tacquito.yaml;
@@ -18,7 +18,7 @@ load ../helpers/fixtures
 
 HASH="24326224313024616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161"
 HASH_B="24326224313024626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262"
-# DISABLED_MARKER_HEX of lib/users.sh: '$2b$12$' and 53 dots, hex-encoded.
+# The disabled marker (DISABLED_MARKER_HEX): '$2b$12$' and 53 dots, hex-encoded.
 DISABLED_MARKER="24326224313224$(printf '2e%.0s' {1..53})"
 
 setup() {
@@ -477,19 +477,6 @@ carol"
     assert_failure
 }
 
-# Calls the bash store writer directly; the Go store's validator has the
-# same check in its unit tests (internal/store).
-# bats test_tags=bash-only
-@test "the one-prefix-one-scope rule: past the command's own check, the store writer refuses too" {
-    rendered_install
-    tacctl_source_lib
-    run store_scope_set clash prefixes=10.10.99.0/24 secret=clash-secret-0123456789abcdef
-    assert_failure
-    assert_output --partial "one scope per prefix"
-    run store_get scopes clash
-    assert_failure
-}
-
 @test "each mutation snapshots the store and tacctl.yaml it changes" {
     rendered_install
     cp "$STORE" "${BATS_TEST_TMPDIR}/store.before"
@@ -755,45 +742,6 @@ PY
     refute_output --partial "rotated-secret-0123456789abc"
     refute_output --partial "not-a-hash-value"
     refute_output --partial "lab-secret-0123456789abcdef"
-}
-
-# Wraps python3, which the Go binary does not run; its Go counterpart checks
-# the argv of every program the commands run (internal/cli scope_test.go).
-# bats test_tags=bash-only
-@test "hashes and secrets do not reach any process's argv" {
-    rendered_install
-    # Record the command line of every python3 the commands start.
-    local real_python
-    real_python=$(command -v python3)
-    cat > "${STUB_BIN}/python3" <<STUB
-#!/usr/bin/env bash
-printf '%s\n' "\$*" >> "${BATS_TEST_TMPDIR}/python-argv.log"
-exec "${real_python}" "\$@"
-STUB
-    chmod +x "${STUB_BIN}/python3"
-
-    run "$TACCTL_BIN_SCRIPT" user add dave operator --hash "$HASH" --scopes lab
-    assert_success
-    run "$TACCTL_BIN_SCRIPT" user passwd dave --hash "$HASH_B"
-    assert_success
-    run "$TACCTL_BIN_SCRIPT" scope add edge --prefixes 192.168.40.0/24 --secret edge-secret-0123456789abcdef
-    assert_success
-    run "$TACCTL_BIN_SCRIPT" scope secret edge set rotated-secret-0123456789abc
-    assert_success
-    run "$TACCTL_BIN_SCRIPT" user disable dave
-    assert_success
-    run "$TACCTL_BIN_SCRIPT" user show dave
-    assert_success
-    run "$TACCTL_BIN_SCRIPT" scope show edge
-    assert_success
-
-    [[ -s "${BATS_TEST_TMPDIR}/python-argv.log" ]]
-    local needle
-    for needle in "$HASH" "$HASH_B" "edge-secret-0123456789abcdef" "rotated-secret-0123456789abc" \
-                  "lab-secret-0123456789abcdef"; do
-        run grep -cF -- "$needle" "${BATS_TEST_TMPDIR}/python-argv.log"
-        assert_output "0"
-    done
 }
 
 @test "the store stays 0600 and tacquito.yaml 0640 through a mutation" {

@@ -15,17 +15,10 @@ import (
 	"github.com/rett/tacctl/internal/yamlpy"
 )
 
-func TestDefaultsTextIsConfEmitDefaults(t *testing.T) {
-	src, err := os.ReadFile("../../lib/conf.sh")
-	if err != nil {
-		t.Skip("lib/conf.sh is gone (the bash tree is retired); testdata/gen.py checks the tag")
-	}
-	text := string(src)
-	start := strings.Index(text, "    cat <<'YAML'\n") + len("    cat <<'YAML'\n")
-	end := strings.Index(text[start:], "\nYAML\n")
-	if text[start:start+end+1] != DefaultsText {
-		t.Fatal("internal/conf/defaults.yaml differs from conf_emit_defaults in lib/conf.sh")
-	}
+// DefaultsText is conf_emit_defaults of the bash release gen.py reads
+// (testdata/gen.py compares the two when it regenerates the corpus); here
+// the top-level keys and their order.
+func TestDefaultsTextKeys(t *testing.T) {
 	keys := Defaults().Keys()
 	if strings.Join(keys, " ") != "password secret bcrypt scope host mgmt_acl privileges commands" {
 		t.Fatalf("keys %v", keys)

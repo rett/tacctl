@@ -21,7 +21,7 @@ type Stdio struct {
 // App is one invocation. The fields are set by New; the services a native
 // command works with (tacctl.yaml, the prompter, the snapshots, the backend
 // set, the model) are made on first use by the methods in services.go, so a
-// command that is delegated to bash, or never needs one, never builds it.
+// command that never needs one never builds it.
 type App struct {
 	Args   []string // the arguments after the program name, unchanged
 	Env    paths.Env

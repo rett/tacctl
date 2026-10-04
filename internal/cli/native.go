@@ -1,13 +1,9 @@
 package cli
 
-// Native commands: the cut-over foundation (docs/plans/go-rewrite.md 4).
+// Native commands: what runs before every command.
 //
-// A command of the tree runs in Go when its cobra command has a RunE made
-// with inv.native; every command without a RunE of its own is delegated to
-// bash (delegate.go), which then does its own tacctl.yaml warning, tier gate
-// and preflight. A native command does what bin/tacctl.sh does before its
-// dispatch, in the same order, and nothing of it happens for a delegated
-// one, so no command is gated twice or not at all:
+// Every command of the tree has a RunE made with inv.native, which does
+// what the 0.1.x entrypoint did before its dispatch, in the same order:
 //
 //  1. the test knobs must have been readable (a malformed TACCTL_TEST_* is
 //     reported; only a -tags testknobs binary reads them);
@@ -19,11 +15,10 @@ package cli
 //  5. the command, which returns an error that exit.go maps to the exit
 //     status (printing what has not been printed).
 //
-// To cut a family over: give its family node and its verbs RunEs made with
-// inv.native (nativeOpts{Preflight: true} when bin/tacctl.sh dispatches the
-// family with 'preflight'), add its bats files to tests/blackbox.list and
-// its corpus to tests/diff/corpus. Nothing else changes: the App's services
-// (Conf, Prompter, Snapshots, Backends, LoadModel) are made on first use.
+// A new family gives its node and its verbs RunEs made with inv.native
+// (withPreflight when the command needs the store or tacquito.yaml).
+// Nothing else changes: the App's services (Conf, Prompter, Snapshots,
+// Backends, LoadModel) are made on first use.
 
 import (
 	"io"

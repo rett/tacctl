@@ -9,10 +9,6 @@ import (
 const (
 	// DeployDir is the clone install and upgrade manage (DEPLOY_DIR).
 	DeployDir = "/opt/tacctl"
-	// DefaultBashImpl is the bash entrypoint of the installed tree, which the
-	// Go front door delegates to during the rewrite when TACCTL_BASH_IMPL is
-	// not set.
-	DefaultBashImpl = DeployDir + "/bin/tacctl.sh"
 	// GoBin is the toolchain tacctl installs for tacquito (GO_BIN).
 	GoBin = "/usr/local/go/bin/go"
 	// GoVersion is GO_VERSION, the toolchain tacctl installs (the bootstrap
@@ -71,9 +67,6 @@ type Paths struct {
 	Tree string
 	// PatchDir holds the tacquito patches: TACCTL_PATCH_DIR, else Tree/patches.
 	PatchDir string
-	// BashImpl is the bash entrypoint delegated to during the rewrite:
-	// TACCTL_BASH_IMPL, else DefaultBashImpl.
-	BashImpl string
 
 	// tacctl's own fixed host locations, which 0.1.16 hard-codes (no
 	// variable overrides them; Reroot moves them for tests).
@@ -132,7 +125,6 @@ func Resolve(env Env, exe string, exists func(string) bool) Paths {
 
 	p.Tree = Tree(env, exe, exists)
 	p.PatchDir = env.Or("TACCTL_PATCH_DIR", p.Tree+"/patches")
-	p.BashImpl = env.Or("TACCTL_BASH_IMPL", DefaultBashImpl)
 
 	p.Deploy, p.Command, p.GoBin, p.Completion, p.ManPage, p.ArchiveDir = DeployDir, Command, GoBin, Completion, ManPage, ArchiveDir
 

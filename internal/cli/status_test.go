@@ -170,15 +170,12 @@ func TestWP24dSpecs(t *testing.T) {
 			}
 		}
 	}
-	if len(delegatedCompletionKinds) != 0 {
-		t.Errorf("completion kinds still delegated: %v", delegatedCompletionKinds)
-	}
 }
 
-// A later package makes 'store rollback' or 'backend enable|disable' native
-// from a file of its own (WP3.3a, WP3.3c), in place of the family's stub.
+// 'store rollback' and 'backend enable|disable' come from files of their
+// own, in place of the family's declared word.
 func TestRegisterFamilyVerbReplacesTheStub(t *testing.T) {
-	for _, c := range []struct{ family, name, other string }{{"store", "rollback", ""}, {"backend", "enable", ""}} {
+	for _, c := range []struct{ family, name string }{{"store", "rollback"}, {"backend", "enable"}} {
 		// The real registrations (store rollback: WP3.3a) come back after.
 		prevStore, hadStore := storeVerbs[c.name]
 		prevBackend, hadBackend := backendVerbs[c.name]
@@ -199,10 +196,6 @@ func TestRegisterFamilyVerbReplacesTheStub(t *testing.T) {
 		}
 		if hadBackend {
 			backendVerbs[c.name] = prevBackend
-		}
-		if c.other != "" {
-			h := newHarness(t, []string{c.family, c.other})
-			h.expectDelegated(t, h.run())
 		}
 	}
 	defer func() {

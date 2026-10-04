@@ -12,8 +12,7 @@ import (
 )
 
 // The command tree. Each family has a file (user.go, scope.go, ...) that
-// declares its verbs; a verb without a RunE of its own is delegated to the
-// bash implementation (delegate.go) until its cut-over package gives it one.
+// declares its verbs and gives each one a RunE (native.go).
 //
 // Dispatch is bash's, not cobra's: the first argument is the command word,
 // the next ones name sub-commands only while they match one exactly
@@ -35,10 +34,8 @@ func hidden(name string) *cobra.Command {
 	return &cobra.Command{Use: name, Hidden: true}
 }
 
-// newRoot builds the tree for one invocation; commands without a RunE of
-// their own delegate to bash, those with one are native (native.go).
+// newRoot builds the tree for one invocation.
 func newRoot(inv *invocation) *cobra.Command {
-	run := func(*cobra.Command, []string) error { return delegate(inv.app) }
 	root := &cobra.Command{Use: "tacctl", Short: "TACACS+ (tacquito) and RADIUS (FreeRADIUS) from one store"}
 	root.AddCommand(lifecycleCmds(inv)...)
 	root.AddCommand(passwdCmd(inv), statusCmd(inv))
@@ -66,33 +63,21 @@ func newRoot(inv *invocation) *cobra.Command {
 		return exit(1)
 	})
 	root.RunE, help.RunE = topUsage, topUsage
-	configure(root, run)
-	configure(help, run)
+	configure(root)
+	configure(help)
 	return root
 }
 
-// configure switches cobra's parsing and output off on every command and
-// gives every command without one the default handler (delegation, marked
-// with the annotation delegatedKey).
-func configure(c *cobra.Command, run func(*cobra.Command, []string) error) {
+// configure switches cobra's parsing and output off on every command.
+func configure(c *cobra.Command) {
 	c.DisableFlagParsing = true
 	c.Args = cobra.ArbitraryArgs
 	c.SilenceErrors = true
 	c.SilenceUsage = true
-	if c.RunE == nil && c.Run == nil {
-		c.RunE = run
-		if c.Annotations == nil {
-			c.Annotations = map[string]string{}
-		}
-		c.Annotations[delegatedKey] = "true"
-	}
 	for _, sub := range c.Commands() {
-		configure(sub, run)
+		configure(sub)
 	}
 }
-
-// delegatedKey marks a command that is handed to bash (delegate.go).
-const delegatedKey = "tacctl-delegated"
 
 // resolve finds the command args name, bash style: walk down while the next
 // argument is exactly a sub-command's name, return it and the rest.
@@ -122,8 +107,7 @@ func isComplete(args []string) bool {
 	return len(args) > 0 && (args[0] == cobra.ShellCompRequestCmd || args[0] == cobra.ShellCompNoDescRequestCmd)
 }
 
-// complete runs cobra's __complete over the tree. It never delegates and
-// never reads tacctl's state; live names will come through
+// complete runs cobra's __complete over the tree. It never reads tacctl's state; live names will come through
 // 'sudo -n tacctl _completion-names' from ValidArgsFunction (Decision 3).
 func complete(ctx context.Context, a *app.App, root *cobra.Command) error {
 	var buf bytes.Buffer

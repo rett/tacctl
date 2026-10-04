@@ -69,9 +69,8 @@ func storeCmd(inv *invocation) *cobra.Command {
 var storeVerbs = map[string]func(inv *invocation) *cobra.Command{}
 
 // registerFamilyVerb makes '<family> <name>' native with the command mk
-// builds, in place of the delegated stub of that name, for the families
-// whose remaining verbs a later package cuts over from a file of its own
-// (store rollback: WP3.3a; backend enable|disable: WP3.3c). Call it from an
+// builds, in place of the declared word of that name, for the verbs that
+// live in a file of their own (store rollback, backend enable|disable). Call it from an
 // init function; the family's spec table (storeSpecs, backendSpecs) already
 // lists the verb's arguments.
 func registerFamilyVerb(family, name string, mk func(inv *invocation) *cobra.Command) {
@@ -86,7 +85,7 @@ func registerFamilyVerb(family, name string, mk func(inv *invocation) *cobra.Com
 }
 
 // replaceRegistered puts the registered verbs of a family in place of its
-// delegated stubs.
+// declared words.
 func replaceRegistered(inv *invocation, c *cobra.Command, verbs map[string]func(inv *invocation) *cobra.Command) {
 	names := make([]string, 0, len(verbs))
 	for name := range verbs {

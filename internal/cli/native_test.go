@@ -53,7 +53,6 @@ func newSandbox(t *testing.T, withStore bool) *sandbox {
 	}
 	sb.env = []string{
 		"TACCTL_SKIP_SUDO=1",
-		"TACCTL_BASH_IMPL=" + bashTree(t),
 		"TACCTL_ETC=" + filepath.Join(w, "etc"),
 		"TACCTL_STATE_DIR=" + filepath.Join(w, "state"),
 		"TACCTL_LOG=" + filepath.Join(w, "log"),
@@ -83,7 +82,7 @@ func (sb *sandbox) run(stdin string, args []string, extraEnv ...string) string {
 	a.Paths = a.Paths.Reroot(sb.dir)
 	sb.code = exitCode(Run(context.Background(), a, BuildInfo{Version: "0.2.0-test", Commit: "c", Date: "d"}), a.Out)
 	if n := len(sb.runner.Execs()); n != 0 {
-		sb.t.Errorf("%q: delegated (%d execs)", args, n)
+		sb.t.Errorf("%q: exec'd (%d execs)", args, n)
 	}
 	return sb.out.String()
 }
@@ -337,11 +336,6 @@ func TestCompletionNames(t *testing.T) {
 	}
 	if got := sb.run("", []string{"_completion-names", "bogus"}); got != "" || sb.code != 0 {
 		t.Errorf("bogus: %d %q", sb.code, got)
-	}
-	for kind := range delegatedCompletionKinds {
-		if _, native := completionKinds[kind]; native {
-			t.Errorf("kind %q is both native and delegated", kind)
-		}
 	}
 }
 

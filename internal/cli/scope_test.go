@@ -52,7 +52,7 @@ func (sb *sandbox) runFamily(stdin string, mk func(*invocation) *cobra.Command, 
 	cmd, rest := resolve(mk(inv), args[2:])
 	sb.code = exitCode(cmd.RunE(cmd, rest), a.Out)
 	if len(sb.runner.Execs()) != 0 {
-		sb.t.Errorf("%q: delegated", args)
+		sb.t.Errorf("%q: exec'd", args)
 	}
 	return sb.out.String()
 }
@@ -379,7 +379,7 @@ func TestScopeGroupConfigSpecs(t *testing.T) {
 }
 
 // config_policy_register.go hands the three config families to config.go,
-// so they are native, not delegated.
+// so they are native.
 func TestConfigPolicyRegistered(t *testing.T) {
 	for _, name := range []string{"allow", "deny", "mgmt-acl"} {
 		if configVerbs[name] == nil {

@@ -5,7 +5,7 @@ package cli
 // arguments, the scope and the protocol are settled here, in 0.1.16's
 // order, so the same wrong command line gets the same first complaint;
 // internal/devices builds and writes the config. The verbs replace
-// config.go's delegated stubs through registerConfigVerb; bin/tacctl.sh
+// config.go's declared words through registerConfigVerb; bin/tacctl.sh
 // runs preflight before them.
 
 import (

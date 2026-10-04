@@ -1,4 +1,4 @@
-// registerConfigVerb (config.go) replaces the delegated stubs of
+// registerConfigVerb (config.go) replaces the declared words of
 // 'config allow|deny|mgmt-acl' with the native families of
 // config_policy.go.
 package cli

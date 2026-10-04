@@ -22,21 +22,11 @@ setup() {
 
 # Strip ANSI color codes and the dynamic hostname line that can vary across
 # machines / test runs, so the golden file is reproducible. The "Using
-# template:" note names the shipped template the Go binary rendered as
-# 'built-in <name>.template'; 0.1.16 printed the path of the file in its
-# checkout instead (docs/plans/go-rewrite.md 3.9 item 3), so that path is
-# rewritten to the built-in form (literal match via index(), so any
-# checkout path is safe) and one golden serves both implementations while
-# still pinning which template was picked.
+# template:" note stays: it pins which template was picked ('built-in
+# <name>.template' for a shipped one).
 _normalize() {
     sed -E 's/\x1b\[[0-9;]*m//g' \
-        | sed -E 's/^hostname .*/hostname TACQUITO-HOSTNAME/' \
-        | awk '{
-            p = "Using template: " ENVIRON["TACCTL_SRC"] "/config/templates/"
-            i = index($0, p)
-            if (i) $0 = substr($0, 1, i - 1) "Using template: built-in " substr($0, i + length(p))
-            print
-        }'
+        | sed -E 's/^hostname .*/hostname TACQUITO-HOSTNAME/'
 }
 
 @test "config cisco: renders deterministic IOS config from fixture + lab scope" {
@@ -253,27 +243,6 @@ _normalize() {
     run "$TACCTL_BIN_SCRIPT" config wti --legacy
     assert_failure
     assert_output --partial "Unknown argument"
-}
-
-# bats test_tags=bash-only
-@test "config wti: falls back to the inline walkthrough when no template resolves" {
-    # Point both template dirs at nowhere: TACCTL_STATE_DIR is already the tmp
-    # state dir (no templates/ dir), and the repo dir is derived from the script's own
-    # location, so run a copy of the script from an empty directory.
-    local alt="$BATS_TEST_TMPDIR/alt/bin"
-    mkdir -p "$alt"
-    cp "$TACCTL_BIN_SCRIPT" "$alt/tacctl.sh"
-    cp -r "${TACCTL_SRC}/lib" "$BATS_TEST_TMPDIR/alt/lib"
-    run "$alt/tacctl.sh" config wti --scope lab
-    assert_success
-    refute_output --partial "Using template:"
-    assert_output --partial "Secret Word                : lab-secret-0123456789abcdef"
-    assert_output --partial "Service Name               : shell"
-    # The inline fallback carries the same load-bearing settings and
-    # troubleshooting step as the template.
-    assert_output --partial "Default User Access        : Enable On, Access Level ViewOnly"
-    assert_output --partial "ESTABLISHED,RELATED -j ACCEPT"
-    assert_output --partial "Step 8: Only if Step 7 fails"
 }
 
 @test "config validate: succeeds on a valid config" {

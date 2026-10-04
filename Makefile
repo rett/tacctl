@@ -1,18 +1,9 @@
-.PHONY: lint-private hooks
-.PHONY: test test-unit test-integration test-e2e test-blackbox test-go test-diff test-pyyaml build \
-	coverage lint lint-sh lint-go clean bootstrap
+.PHONY: test test-go test-bats test-integration test-e2e test-diff test-pyyaml build \
+	coverage lint lint-sh lint-go lint-private hooks clean bootstrap
 
 BATS := tests/bats/bats-core/bin/bats
 BATS_FLAGS ?= --print-output-on-failure
-KCOV ?= kcov
 SHELLCHECK ?= shellcheck
-
-# --- Which implementation the bats suite drives (tests/helpers/setup.bash) ---
-# bash: bin/tacctl.sh. go: dist/tacctl (built first), which hands what it
-# does not implement yet to bin/tacctl.sh. Until the Go rewrite's Phase 4 only
-# the files in tests/blackbox.list run against go (make test-blackbox).
-TACCTL_IMPL ?= bash
-export TACCTL_IMPL
 
 # --- bats --jobs: test files run in parallel, the tests of one file in order ---
 # Needs GNU parallel; without it bats runs serially (and says why below).
@@ -51,41 +42,19 @@ endif
 endif
 endif
 
-# Default: run all tests (unit → integration → e2e).
-test: test-unit test-integration test-e2e
+# Default: the Go tests, then the bats suite against dist/tacctl.
+test: test-go test-bats
 
-test-unit test-integration test-e2e: impl-check
-test-unit:
-	$(call bats_run,tests/unit)
+# The bats suite (integration, then e2e) against the binary 'make build'
+# writes.
+test-bats: build
+	$(call bats_run,tests/integration tests/e2e)
 
-test-integration:
+test-integration: build
 	$(call bats_run,tests/integration)
 
-test-e2e:
+test-e2e: build
 	$(call bats_run,tests/e2e)
-
-.PHONY: impl-check
-impl-check:
-	@if [ "$(TACCTL_IMPL)" = go ]; then \
-		echo "make: TACCTL_IMPL=go runs the whole suite only from Phase 4 of the Go rewrite; use make test-blackbox"; exit 1; fi
-
-# The black-box files (tests/blackbox.list) against TACCTL_IMPL. With go, the
-# binary is built first, list entries marked '# go-after: <package>' are
-# skipped, and so are tests tagged bash-only (they run a copy of the bash
-# script from another directory, or similar). An entry marked
-# '# go-tags: <tag> [<tag>...]' runs in full with bash, and with go only its
-# tests carrying one of those tags (the cut-over tags of
-# characterisation.bats), in a bats run of its own.
-test-blackbox: $(if $(filter go,$(TACCTL_IMPL)),build)
-	$(call bats_run,$$(awk -v impl="$(TACCTL_IMPL)" '/^[[:space:]]*(#|$$)/ { next } impl == "go" && /#[[:space:]]*go-(after|tags):/ { next } { print $$1 }' tests/blackbox.list),$(if $(filter go,$(TACCTL_IMPL)),--filter-tags '!bash-only'))
-	@if [ "$(TACCTL_IMPL)" = go ]; then \
-		awk '/^[[:space:]]*#/ { next } /#[[:space:]]*go-tags:/ { f = $$1; sub(/.*go-tags:[[:space:]]*/, ""); print f, $$0 }' tests/blackbox.list | \
-		while read -r file tags; do \
-			set --; for t in $$tags; do set -- "$$@" --filter-tags "$$t,!bash-only"; done; \
-			echo "$(BATS) $(BATS_FLAGS) $$* $$file"; \
-			$(BATS) $(BATS_FLAGS) "$$@" "$$file" || exit 1; \
-		done; \
-	fi
 
 # Go unit tests (-race needs cgo).
 test-go:
@@ -110,16 +79,19 @@ test-diff: build
 build:
 	bin/tacctl.sh --build dist/tacctl --tags testknobs
 
-# Line coverage via kcov. Requires kcov installed (apt install kcov).
+# Statement coverage of the Go tests (with the test knobs, which the bats
+# suite's binary has too): coverage/go.out, a per-function summary and
+# coverage/index.html.
 coverage:
-	@command -v $(KCOV) >/dev/null || { echo "kcov not found. apt install kcov"; exit 1; }
-	rm -rf coverage
-	$(KCOV) --include-path=bin,lib,tests/helpers --bash-dont-parse-binary-dir \
-		coverage $(BATS) tests/unit tests/integration tests/e2e
+	mkdir -p coverage
+	CGO_ENABLED=1 $(GO) test -tags testknobs -coverprofile=coverage/go.out ./...
+	$(GO) tool cover -func=coverage/go.out | tail -1
+	$(GO) tool cover -html=coverage/go.out -o coverage/index.html
 	@echo "Report: coverage/index.html"
 
-# Static analysis: all bash, then all Go, then no private names (the repo is
-# public; see tests/tools/no-private.sh).
+# Static analysis: the shell that remains (the bootstrap shim, the Linux
+# client scripts, the test helpers and tools), then all Go, then no private
+# names (the repo is public; see tests/tools/no-private.sh).
 lint: lint-sh lint-go lint-private
 
 lint-private:
@@ -130,10 +102,9 @@ hooks:
 	ln -sf ../../tests/tools/pre-push .git/hooks/pre-push
 
 lint-sh:
-	$(SHELLCHECK) bin/tacctl.sh lib/*.sh lib/backends/*.sh
-	$(SHELLCHECK) bin/tacctl.sh.new tests/containers/crossover/*.sh
+	$(SHELLCHECK) bin/tacctl.sh config/linux/*.sh
 	$(SHELLCHECK) tests/helpers/*.bash tests/tools/*.sh tests/tools/pre-push tests/diff/*.sh
-	$(SHELLCHECK) config/linux/*.sh
+	$(SHELLCHECK) tests/containers/crossover/*.sh
 
 lint-go:
 	@out=$$($(GOFMT) -l cmd internal); if [ -n "$$out" ]; then echo "gofmt -l: not formatted:"; echo "$$out"; exit 1; fi

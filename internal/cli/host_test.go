@@ -82,7 +82,7 @@ func (hs *hostSandbox) run(r *fake.Runner, args ...string) string {
 		app.Stdio{Stdin: strings.NewReader(""), Stdout: &hs.out, Stderr: &hs.err}, r)
 	hs.code = exitCode(Run(context.Background(), a, BuildInfo{Version: "0.2.0-test"}), a.Out)
 	if n := len(r.Execs()); n != 0 {
-		hs.t.Errorf("%q: delegated", args)
+		hs.t.Errorf("%q: exec'd", args)
 	}
 	return hs.out.String()
 }

@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"os"
-	"path/filepath"
 	"reflect"
 	"runtime"
 	"runtime/debug"
@@ -27,75 +25,25 @@ import (
 	"github.com/rett/tacctl/internal/ui"
 )
 
-// bashTree makes a stand-in bash release tree (bin/tacctl.sh, lib/core.sh)
-// and returns its entrypoint.
-func bashTree(t *testing.T) string {
-	t.Helper()
-	dir := t.TempDir()
-	for _, f := range []string{"bin/tacctl.sh", "lib/core.sh"} {
-		p := filepath.Join(dir, f)
-		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(p, []byte("#!/bin/sh\n"), 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-	return filepath.Join(dir, "bin", "tacctl.sh")
-}
-
 type harness struct {
 	app      *app.App
 	runner   *fake.Runner
 	out, err bytes.Buffer
-	// delegate: run hands the command to bash (delegate.go) instead of
-	// dispatching it; nothing is delegated by the tree since WP3.3d.
-	delegate bool
 }
 
 // newHarness is an invocation as the bats suite makes it: TACCTL_SKIP_SUDO=1,
-// TACCTL_BASH_IMPL set, not root.
+// not root.
 func newHarness(t *testing.T, args []string, extraEnv ...string) *harness {
 	t.Helper()
 	h := &harness{runner: &fake.Runner{}}
-	env := append([]string{"TACCTL_SKIP_SUDO=1", "TACCTL_BASH_IMPL=" + bashTree(t), "PATH=/usr/bin"}, extraEnv...)
+	env := append([]string{"TACCTL_SKIP_SUDO=1", "PATH=/usr/bin"}, extraEnv...)
 	h.app = app.New(args, paths.NewEnv(env), "/opt/x/dist/tacctl", 1000,
 		app.Stdio{Stdin: strings.NewReader(""), Stdout: &h.out, Stderr: &h.err}, h.runner)
 	return h
 }
 
 func (h *harness) run() error {
-	if h.delegate {
-		return delegate(h.app)
-	}
 	return Run(context.Background(), h.app, BuildInfo{Version: "0.2.0-test", Commit: "abc123", Date: "2026-10-03T00:00:00Z"})
-}
-
-// expectDelegated: args went to bash unchanged, by exec, with the
-// environment untouched, and nothing was printed on the way.
-func (h *harness) expectDelegated(t *testing.T, err error) {
-	t.Helper()
-	if err != nil {
-		t.Errorf("%q: error %v", h.app.Args, err)
-	}
-	execs := h.runner.Execs()
-	if len(execs) != 1 {
-		t.Fatalf("%q: %d execs, want 1", h.app.Args, len(execs))
-	}
-	impl := h.app.Paths.BashImpl
-	want := append([]string{impl}, h.app.Args...)
-	if execs[0].Path != impl || !reflect.DeepEqual(execs[0].Argv, want) {
-		t.Errorf("%q: exec %s %q, want %s %q", h.app.Args, execs[0].Path, execs[0].Argv, impl, want)
-	}
-	if !reflect.DeepEqual(execs[0].Env, h.app.Env.Environ()) {
-		t.Errorf("%q: environment changed: %q", h.app.Args, execs[0].Env)
-	}
-	if h.out.Len() != 0 || h.err.Len() != 0 {
-		t.Errorf("%q: printed %q / %q before delegating", h.app.Args, h.out.String(), h.err.String())
-	}
-	if calls := h.runner.Calls(); len(calls) != 0 {
-		t.Errorf("%q: ran %q before delegating", h.app.Args, h.runner.Argvs())
-	}
 }
 
 // commandPaths lists every command of the tree as its argv words.
@@ -107,10 +55,9 @@ func commandPaths(c *cobra.Command, prefix []string, out *[][]string) {
 	}
 }
 
-// Since WP3.3d nothing is handed to bash any more: every command of the
-// tree has a Go handler (WP4.1 deletes delegate.go). A command left
-// without one would be marked by configure.
-func TestNothingIsDelegated(t *testing.T) {
+// Every command of the tree has a Go handler: dispatch calls the RunE of
+// the command it resolves.
+func TestEveryCommandHasAHandler(t *testing.T) {
 	var all [][]string
 	root := newRoot(&invocation{app: newHarness(t, nil).app})
 	commandPaths(root, nil, &all)
@@ -119,8 +66,8 @@ func TestNothingIsDelegated(t *testing.T) {
 	}
 	for _, p := range append(all, nil) {
 		c, _ := resolve(root, p)
-		if c.Annotations[delegatedKey] != "" {
-			t.Errorf("%q is delegated to bash", p)
+		if c.RunE == nil {
+			t.Errorf("%q has no handler", p)
 		}
 	}
 }
@@ -199,7 +146,7 @@ func TestVersionTierCaller(t *testing.T) {
 func TestReexecUnderSudo(t *testing.T) {
 	mk := func(args []string, euid int, env ...string) *harness {
 		h := &harness{runner: &fake.Runner{}}
-		h.app = app.New(args, paths.NewEnv(append([]string{"TACCTL_BASH_IMPL=" + bashTree(t)}, env...)), "/usr/local/bin/tacctl", euid,
+		h.app = app.New(args, paths.NewEnv(env), "/usr/local/bin/tacctl", euid,
 			app.Stdio{Stdout: &h.out, Stderr: &h.err}, h.runner)
 		return h
 	}
@@ -263,50 +210,6 @@ func TestReexecUnderSudo(t *testing.T) {
 	}
 }
 
-func TestDelegateRefusesNonBashTargets(t *testing.T) {
-	check := func(name string, h *harness, wantCode int, wantErr string) {
-		t.Helper()
-		code := exitCode(h.run(), h.app.Out)
-		if code != wantCode || !strings.Contains(h.err.String(), wantErr) || h.out.Len() != 0 {
-			t.Errorf("%s: exit %d stderr %q", name, code, h.err.String())
-		}
-	}
-	h := newHarness(t, []string{"upgrade"}, "TACCTL_BASH_IMPL=/nonexistent/bin/tacctl.sh")
-	h.delegate = true
-	check("missing", h, 1, "\033[0;31m[ERROR]\033[0m command not available in this build\n")
-	if len(h.runner.Execs()) != 0 {
-		t.Error("exec'd a missing file")
-	}
-
-	shim := filepath.Join(t.TempDir(), "bin", "tacctl.sh") // a 0.2.0 tree: no lib/core.sh
-	if err := os.MkdirAll(filepath.Dir(shim), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(shim, []byte("#!/bin/sh\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	h = newHarness(t, []string{"upgrade"}, "TACCTL_BASH_IMPL="+shim)
-	h.delegate = true
-	check("shim", h, 1, "No bash implementation of tacctl at "+shim)
-
-	impl := bashTree(t)
-	h = newHarness(t, []string{"upgrade"}, "TACCTL_BASH_IMPL="+impl)
-	h.delegate = true
-	h.app.Exe = impl // TACCTL_BASH_IMPL pointing back at this binary
-	check("self", h, 1, "command not available in this build")
-
-	h = newHarness(t, []string{"upgrade"})
-	h.delegate = true
-	h.runner.ExecErr = errors.New("permission denied")
-	check("exec failure", h, 126, "Cannot run ")
-
-	// And a bash tree is exec'd with the arguments and the environment
-	// unchanged.
-	h = newHarness(t, []string{"user", "list", "--x"})
-	h.delegate = true
-	h.expectDelegated(t, h.run())
-}
-
 func TestComplete(t *testing.T) {
 	h := newHarness(t, []string{"__complete", ""})
 	if err := h.run(); err != nil {
@@ -327,7 +230,7 @@ func TestComplete(t *testing.T) {
 		}
 	}
 	if len(h.runner.Execs()) != 0 || len(h.runner.Calls()) != 0 {
-		t.Error("completion ran or delegated something")
+		t.Error("completion ran something")
 	}
 
 	h = newHarness(t, []string{"__completeNoDesc", "config", "sudoers", ""})
@@ -354,7 +257,9 @@ func TestCompleteReachesValidArgsWithFlagParsingOff(t *testing.T) {
 	root.AddCommand(&cobra.Command{Use: "user"})
 	root.Commands()[0].AddCommand(leaf)
 	root.CompletionOptions.DisableDefaultCmd = true
-	configure(root, func(*cobra.Command, []string) error { return errors.New("ran") })
+	ran := func(*cobra.Command, []string) error { return errors.New("ran") }
+	root.RunE, root.Commands()[0].RunE, leaf.RunE = ran, ran, ran
+	configure(root)
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&bytes.Buffer{})

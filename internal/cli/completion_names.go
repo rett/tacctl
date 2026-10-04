@@ -11,10 +11,8 @@ import (
 // '_completion-names <kind>' is bash completion's bridge to live names
 // ('sudo -n tacctl _completion-names <kind>', bin/tacctl.sh at 0.1.16): it
 // runs the tier gate and preflight, then prints the names one per line.
-// A kind is native when completionKinds has it; a kind in
-// delegatedCompletionKinds is still bash's; any other kind prints nothing
-// (exit 0), as in bash. Cutting a kind over is moving it from the second
-// table to the first; a new kind is one entry.
+// A kind is answered when completionKinds or completionArgKinds has it; any
+// other kind prints nothing (exit 0). A new kind is one entry.
 var completionKinds = map[string]func(m *model.Model) []string{
 	// model_users: every user, the accounting sink included, sorted.
 	KindUsers: (*model.Model).UserNames,
@@ -36,17 +34,10 @@ var completionArgKinds = map[string]func(inv *invocation, args []string) []strin
 	KindEnabledBackends: (*invocation).enabledBackendNames,
 }
 
-// delegatedCompletionKinds are the kinds bash still answers (none since
-// WP2.4d).
-var delegatedCompletionKinds = map[string]bool{}
-
 func completionNamesCmd(inv *invocation) *cobra.Command {
 	c := hidden("_completion-names")
 	c.RunE = func(cmd *cobra.Command, args []string) error {
 		kind := arg(args, 0)
-		if delegatedCompletionKinds[kind] {
-			return delegate(inv.app)
-		}
 		return inv.native(withPreflight, func(args []string) error {
 			if names, ok := completionArgKinds[kind]; ok {
 				if l := names(inv, args[1:]); len(l) > 0 {

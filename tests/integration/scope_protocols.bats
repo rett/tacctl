@@ -82,17 +82,6 @@ with open(sys.argv[1]) as f:
     cmp "$STORE" "${BATS_TEST_TMPDIR}/before.yaml"
 }
 
-# Calls the bash store writer directly; the Go store's validator has the
-# same check in its unit tests (internal/store).
-# bats test_tags=bash-only
-@test "scope protocols: the store's own schema refuses an unknown protocol" {
-    tacctl_source_lib
-    run store_scope_set dmz protocols=ldap
-    assert_failure
-    assert_output --partial "protocols must be a list drawn from: tacacs, radius"
-    [[ -z "$(stored_protocols dmz)" ]]
-}
-
 @test "scope protocols set radius: TACACS+ stops serving the scope and its users' grant of it" {
     [[ "$(rendered_scopes)" == *"dmz"* ]]
     run "$TACCTL_BIN_SCRIPT" scope protocols dmz set radius
@@ -159,19 +148,6 @@ with open(sys.argv[1]) as f:
     run "$TACCTL_BIN_SCRIPT" scope protocols lab frobnicate
     assert_failure
     assert_output --partial "Unknown subcommand"
-}
-
-# Calls the bash tier table directly; internal/tier's tests check the Go one
-# (and tiers.bats the gate through the command line).
-# bats test_tags=bash-only
-@test "scope protocols: mutating it is superuser-only under the tier gate" {
-    tacctl_source_lib
-    run tier_permits operator scope protocols
-    assert_failure
-    run tier_permits readonly scope protocols
-    assert_failure
-    run tier_permits superuser scope protocols
-    assert_success
 }
 
 @test "scope usage and completion mention the protocols verb" {

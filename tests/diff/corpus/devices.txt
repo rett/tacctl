@@ -6,7 +6,7 @@
 # the shipped template as 'built-in <name>.template' in 0.2.0 where 0.1.16
 # printed its path in the checkout (plan 3.9 item 3): those lines are
 # @known. To check them in full, make B a wrapper script that runs dist/tacctl
-# (with TACCTL_BASH_IMPL and TACCTL_TREE set as for --b go) through
+# (with TACCTL_TREE set as for --b go) through
 #   sed 's#Using template: built-in #Using template: <SIDE>/tag-tree/config/templates/#'
 # (what A's path normalises to), and run a copy of this corpus without the
 # @known lines with --b <wrapper>: at WP3.1 every line was then the same.
@@ -14,7 +14,7 @@
 # The runner cannot write tacctl.yaml, so the RADIUS backend is never enabled
 # here: a RADIUS config is always the 'not enabled' refusal (after the
 # argument, scope and --legacy checks that come first). The rendered RADIUS
-# configs are pinned by config_radius.bats in both modes and by the goldens.
+# configs are pinned by config_radius.bats and by the goldens.
 @fixture tacquito.multiscope.yaml
 
 # --- arguments ------------------------------------------------------------------

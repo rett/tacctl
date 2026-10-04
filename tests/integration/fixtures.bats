@@ -1,6 +1,7 @@
 #!/usr/bin/env bats
-# The fixture helpers themselves: load_fixture seeding, load_store_fixture,
-# place_fixture. See tests/README.md "Fixtures and the store".
+# The test helpers themselves: tacctl_tmpenv_init's sandbox, load_fixture
+# seeding, load_store_fixture, place_fixture. See tests/README.md "Fixtures
+# and the store".
 
 load ../helpers/setup
 load ../helpers/tmpenv
@@ -11,6 +12,19 @@ bats_require_minimum_version 1.5.0   # run --separate-stderr
 setup() {
     tacctl_tmpenv_init
     STORE="${TACCTL_STATE_DIR}/store.yaml"
+}
+
+@test "tmpenv: every tacctl path points into the test's tmpdir, never at the host" {
+    [[ "$TACCTL_ETC" == "${BATS_TEST_TMPDIR}/etc" ]]
+    [[ "$TACCTL_STATE_DIR" == "${BATS_TEST_TMPDIR}/state" ]]
+    [[ "$TACCTL_CONFIG" != "/etc/tacquito/tacquito.yaml" ]]
+    local v
+    for v in TACCTL_ETC TACCTL_STATE_DIR TACCTL_LOG TACCTL_BIN TACCTL_CONFIG TACCTL_OVERRIDE_DIR \
+             TACCTL_SUDOERS_FILE TACCTL_RADIUS_DIR TACCTL_RADIUS_LOG TACCTL_RADIUS_BIN \
+             TACCTL_LOGROTATE_DIR TACCTL_RADIUS_DICT; do
+        [[ "${!v}" == "${BATS_TEST_TMPDIR}/"* ]] || { echo "${v}=${!v}"; return 1; }
+    done
+    [[ "$TACCTL_SKIP_SUDO" == 1 ]]
 }
 
 @test "load_fixture: tacquito.X.yaml is placed and seeds the store the importer would write" {
@@ -83,12 +97,11 @@ setup() {
     assert_failure
 }
 
-@test "load_store_fixture: the library reads the placed store, even after an earlier read" {
-    tacctl_source_lib
+@test "load_store_fixture: commands read the placed store, also after an earlier one" {
     load_store_fixture store.multiscope.yaml
-    run model_scopes
+    run --separate-stderr "$TACCTL_BIN_SCRIPT" _completion-names scopes
     assert_line "dmz"
     load_store_fixture store.minimal.yaml
-    run model_scopes
+    run --separate-stderr "$TACCTL_BIN_SCRIPT" _completion-names scopes
     assert_output "lab"
 }

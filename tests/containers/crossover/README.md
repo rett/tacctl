@@ -9,7 +9,7 @@ touched outside podman and this directory. Used by WP3.3d (passed
 2. `git clone --bare /home/user/tacctl tacctl.git` — the scratch clone the
    containers fetch from (`url.insteadOf`, set inside each container only).
 3. `./make-branch.sh <tree> [<base-branch>]` — pushes `go-rehearsal` (the Go
-   tree, with the shim as `bin/tacctl.sh`) into the scratch clone.
+   tree) into the scratch clone.
 4. `./rehearse.sh install` — the bash release from its tag via the README
    one-liner, committed as `localhost/tacctl-rehearsal:installed-0.1.17`.
    0.1.17 needs Go pre-placed (its go.dev checksum URL is broken; 0.1.18

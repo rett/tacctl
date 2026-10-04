@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -70,11 +71,11 @@ func TestConfirmPrefix(t *testing.T) {
 
 // --- Password: read_password_masked, compared with the bash function ---
 
-// bashFunc returns the source of the named function of lib/users.sh (the
-// 0.1.16 text; lib/ is unchanged on this branch).
+// bashFunc returns the source of the named function of lib/users.sh as the
+// 0.1.18 tag has it (testdata/users-0.1.18.sh, copied from the tag).
 func bashFunc(t *testing.T, file, name string) string {
 	t.Helper()
-	data, err := os.ReadFile("../../lib/" + file)
+	data, err := os.ReadFile(filepath.Join("testdata", strings.TrimSuffix(file, ".sh")+"-0.1.18.sh"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +94,7 @@ func bashFunc(t *testing.T, file, name string) string {
 		}
 	}
 	if len(out) == 0 {
-		t.Fatalf("function %s not found in lib/%s", name, file)
+		t.Fatalf("function %s not found in testdata for %s", name, file)
 	}
 	return strings.Join(out, "\n") + "\n"
 }

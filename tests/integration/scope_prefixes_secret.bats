@@ -261,9 +261,8 @@ setup() {
 
 # --- scopes secret generate --------------------------------------------------
 
-# 0.1.16 ran 'openssl rand -base64 24'; 0.2.0 draws the same 24 random bytes
-# itself (docs/plans/go-rewrite.md 3.9 item 2). Either way: a fresh
-# 32-character base64 value, printed once and stored.
+# 24 random bytes: a fresh 32-character base64 value, printed once and
+# stored.
 @test "scopes secret generate: prints a fresh 32-character base64 secret and persists it" {
     run "$TACCTL_BIN_SCRIPT" scope secret prod generate
     assert_success

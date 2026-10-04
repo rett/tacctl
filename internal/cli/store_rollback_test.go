@@ -175,11 +175,17 @@ func TestStoreRollbackRefusals(t *testing.T) {
 	sb = newSandbox(t, true)
 	sb.run("", []string{"config", "render"})
 	storeBefore := fileSHA(t, sb.path("state", "store.yaml"))
+	// (upgrade_store_flip.bats "rollback: refuses on an install that never
+	// had a legacy file": the rendered config and its record stay too.)
+	cfg0, rec0 := fileSHA(t, sb.path("etc", "tacquito.yaml")), fileSHA(t, sb.path("state", "rendered.json"))
 	sb.run("y\n", []string{"store", "rollback"})
 	sb.expect(1, "", "[ERROR] No pre-store config (tacquito.yaml.pre-store.<timestamp>) under "+sb.path("state", "backups", "legacy")+
 		"/: there is nothing to roll back to.\n[ERROR] A fresh install starts with its store and never had a legacy tacquito.yaml. The store was left untouched.\n")
 	if fileSHA(t, sb.path("state", "store.yaml")) != storeBefore || sb.runner.Called("systemctl") {
 		t.Error("touched")
+	}
+	if fileSHA(t, sb.path("etc", "tacquito.yaml")) != cfg0 || fileSHA(t, sb.path("state", "rendered.json")) != rec0 {
+		t.Error("the rendered config or its record changed")
 	}
 
 	// Another backend enabled: legacy mode serves TACACS+ only.

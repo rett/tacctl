@@ -57,15 +57,9 @@ _normalize() {
         }'
 }
 
-# The 'Using template:' note of a shipped template: 0.1.16 names the file in
-# its checkout, the Go binary its embedded copy (docs/plans/go-rewrite.md
-# 3.9 item 3).
+# The 'Using template:' note of a shipped template: its embedded copy.
 shipped_template_note() {
-    if [[ "$TACCTL_IMPL" == go ]]; then
-        echo "Using template: built-in $1.template"
-    else
-        echo "Using template: ${TACCTL_SRC}/config/templates/$1.template"
-    fi
+    echo "Using template: built-in $1.template"
 }
 
 # Enable the RADIUS backend the way tacctl.yaml records it. Call it after the
@@ -590,37 +584,20 @@ radius_listeners() {
     refute_output --partial "MY-CISCO"
 }
 
-# Runs a copy of the bash script from another directory (no config/templates
-# there): bash only; the Go binary embeds its templates (docs/plans/go-rewrite.md 3.7).
-# bats test_tags=bash-only
-@test "config cisco|juniper --protocol radius: without any template file the built-in text renders the same config" {
-    local alt="$BATS_TEST_TMPDIR/alt/bin" v
-    mkdir -p "$alt"
-    cp "$TACCTL_BIN_SCRIPT" "$alt/tacctl.sh"
-    cp -r "${TACCTL_SRC}/lib" "$BATS_TEST_TMPDIR/alt/lib"
-    radius_on
-    for v in cisco juniper; do
-        run "$alt/tacctl.sh" config "$v" --scope lab --protocol radius
-        assert_success
-        refute_output --partial "Using template:"
-        local fallback="$output"
-        run "$TACCTL_BIN_SCRIPT" config "$v" --scope lab --protocol radius
-        # Same output apart from the template line and the blank-line spacing
-        # of the fallback; compare the device lines only.
-        diff <(grep -vE '^(Using template|  - Using template|$)' <<< "$fallback" | grep -vE '^(#|!)( |$)' | sed 's/ *$//') \
-             <(grep -vE '^(  - Using template|$)' <<< "$output" | grep -vE '^(#|!)( |$)' | sed 's/ *$//')
-    done
-}
-
 # --- shipping -----------------------------------------------------------------------
 
-@test "the RADIUS templates ship in config/templates, where install and upgrade copy *.template from" {
+@test "the RADIUS templates ship in config/templates, which the binary embeds" {
     [[ -f "${TACCTL_SRC}/config/templates/cisco-radius.template" ]]
     [[ -f "${TACCTL_SRC}/config/templates/juniper-radius.template" ]]
     [[ -f "${TACCTL_SRC}/config/templates/wti-radius.template" ]]
-    grep -qF 'templates_sync "$PROJECT_DIR"' "${TACCTL_SRC}/lib/lifecycle.sh"
-    grep -qF 'templates_sync "$ACTIVE_DEPLOY_DIR"' "${TACCTL_SRC}/lib/lifecycle.sh"
-    grep -qF 'for tmpl in "${src_dir}/"*.template; do' "${TACCTL_SRC}/lib/lifecycle.sh"
+    # The binary carries config/templates/*.template (the set install and
+    # upgrade keep in the state directory): a render with no override names
+    # the embedded copy.
+    grep -qxF '//go:embed config/templates/*.template' "${TACCTL_SRC}/assets.go"
+    radius_on
+    run "$TACCTL_BIN_SCRIPT" config wti --scope lab --protocol radius
+    assert_success
+    assert_output --partial "$(shipped_template_note wti-radius)"
 }
 
 @test "scope show lists the RADIUS group label" {

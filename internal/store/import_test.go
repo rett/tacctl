@@ -1072,3 +1072,18 @@ func TestImportCheckAHookThatReportedItselfIsNotPrintedAgain(t *testing.T) {
 	contains(t, out, "    EQUIVALENT\n  daemon load-smoke:   FAILED\n")
 	refute(t, out, "[ERROR]")
 }
+
+func TestImportCLIReplaceKeepsNoPreStoreCopy(t *testing.T) {
+	// upgrade_store_flip.bats "import: --check, another file, and --replace
+	// keep no pre-store copy" (the --replace half; --check and a named file
+	// are TestImportCLICheckNothingWritten and TestImportCLINamedFile): with
+	// a store in place, '--replace' of the live file is not the flip.
+	e := newImportEnv(t)
+	e.place("legacy.fresh-install.yaml")
+	e.mustImport(fixtures + "tacquito.minimal.yaml")
+	out := e.mustImport("--replace")
+	refute(t, out, "Pre-store")
+	if _, err := os.Stat(e.legacyDir); err == nil {
+		t.Error("a pre-store copy was kept")
+	}
+}

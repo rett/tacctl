@@ -38,39 +38,30 @@ func (sb *sandbox) cfgRun(stdin string, args []string, script func(*fake.Runner)
 		app.Stdio{Stdin: strings.NewReader(stdin), Stdout: &sb.out, Stderr: &sb.err}, sb.runner)
 	sb.code = exitCode(Run(context.Background(), a, BuildInfo{Version: "0.2.0-test", Commit: "c", Date: "d"}), a.Out)
 	if n := len(sb.runner.Execs()); n != 0 {
-		sb.t.Errorf("%q: delegated (%d execs)", args, n)
+		sb.t.Errorf("%q: exec'd (%d execs)", args, n)
 	}
 	return sb.out.String()
 }
 
 func (sb *sandbox) path(p ...string) string { return filepath.Join(append([]string{sb.dir}, p...)...) }
 
-// Every config verb without a RunE of its own (and every word below it) is
-// still bash's; a verb registered with registerConfigVerb replaces its
-// stub; the family itself is native (usage, exit 1).
+// Every config verb has a handler; the family itself prints its usage and
+// exits 1.
 func TestConfigVerbsAllNative(t *testing.T) {
 	inv := &invocation{app: newHarness(t, nil).app}
 	native := map[string]bool{}
-	var delegated [][]string
 	for _, c := range configCmd(inv).Commands() {
-		if c.RunE != nil {
-			native[c.Name()] = true
-			continue
+		if c.RunE == nil {
+			t.Errorf("config %s has no handler", c.Name())
 		}
-		var all [][]string
-		commandPaths(c, []string{"config", c.Name()}, &all)
-		delegated = append(delegated, []string{"config", c.Name()})
-		delegated = append(delegated, all...)
+		native[c.Name()] = true
 	}
 	for _, w := range []string{"show", "validate", "render", "dump", "defaults", "get", "get-list", "loglevel", "listen",
 		"metrics", "sudoers", "password-age", "bcrypt-cost", "password-min-length", "secret-min-length", "branch",
 		"diff", "restore", "allow", "deny", "mgmt-acl", "cisco", "juniper", "wti", "linux"} {
 		if !native[w] {
-			t.Errorf("config %s is not native", w)
+			t.Errorf("config %s is missing", w)
 		}
-	}
-	if len(delegated) != 0 {
-		t.Errorf("config verbs still delegated: %v", delegated)
 	}
 	for _, args := range [][]string{{"config"}, {"config", "help"}, {"config", "-h"}, {"config", "--help"}, {"config", "bogus", "x"}} {
 		sb := newSandbox(t, true)
@@ -81,21 +72,14 @@ func TestConfigVerbsAllNative(t *testing.T) {
 	}
 }
 
-// registerConfigVerb is the hook for a family file of its own (WP2.4b's
-// allow, deny, mgmt-acl): the registered command replaces the delegated
-// stub, runs natively, keeps the family's preflight and brings its Spec.
+// registerConfigVerb is the hook for a family file of its own (allow, deny,
+// mgmt-acl, the device verbs): the registered command joins the family (or
+// replaces a declared word of the same name), keeps the family's preflight
+// and brings its Spec.
 func TestRegisterConfigVerb(t *testing.T) {
 	inv := &invocation{app: newHarness(t, nil).app}
-	var stubs []string
-	for _, c := range configCmd(inv).Commands() {
-		if c.RunE == nil {
-			stubs = append(stubs, c.Name())
-		}
-	}
-	if len(stubs) == 0 {
-		t.Skip("no delegated config verb left")
-	}
-	name := stubs[0]
+	before := len(configCmd(inv).Commands())
+	const name = "test-verb"
 	registerConfigVerb(name, Spec{MaxArgs: 1, Args: []string{"list|add"}}, func(inv *invocation) *cobra.Command {
 		c := verb(name, "a test verb")
 		c.RunE = inv.native(withPreflight, func(args []string) error {
@@ -108,6 +92,9 @@ func TestRegisterConfigVerb(t *testing.T) {
 		delete(configVerbs, name)
 		delete(configSpecs, name)
 	})
+	if n := len(configCmd(inv).Commands()); n != before+1 {
+		t.Errorf("%d config verbs after registering one, %d before", n, before)
+	}
 	sb := newSandbox(t, true)
 	if out := sb.run("", []string{"config", name, "list"}); out != name+" list\n" || sb.code != 0 {
 		t.Errorf("registered verb: %d %q %q", sb.code, out, sb.err.String())
@@ -116,15 +103,10 @@ func TestRegisterConfigVerb(t *testing.T) {
 	sb = newSandbox(t, false)
 	sb.run("", []string{"config", name, "list"})
 	sb.expect(1, "", "Config not found")
-	// The other stubs are untouched.
-	for _, other := range stubs[1:] {
-		h := newHarness(t, []string{"config", other, "list"})
-		h.expectDelegated(t, h.run())
-	}
 }
 
 // Every native config verb has a Spec, and every kind it names is one
-// completion can answer (natively or, for now, through bash).
+// completion can answer.
 func TestConfigSpecs(t *testing.T) {
 	inv := &invocation{app: newHarness(t, nil).app}
 	n := 0
@@ -146,7 +128,7 @@ func TestConfigSpecs(t *testing.T) {
 			k = strings.TrimSuffix(k, KindList)
 			_, model := completionKinds[k]
 			_, other := completionArgKinds[k]
-			if k != "" && !model && !other && !delegatedCompletionKinds[k] && !strings.Contains(k, "|") {
+			if k != "" && !model && !other && !strings.Contains(k, "|") {
 				t.Errorf("config %s: kind %q is no completion kind", c.Name(), k)
 			}
 		}

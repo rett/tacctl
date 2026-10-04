@@ -73,7 +73,6 @@ func TestResolveDefaults(t *testing.T) {
 		"LinuxDir":        "/var/lib/tacctl/linux",
 		"Tree":            "/opt/tacctl",
 		"PatchDir":        "/opt/tacctl/patches",
-		"BashImpl":        "/opt/tacctl/bin/tacctl.sh",
 	}
 	checkFields(t, p, want)
 	if p.SkipSudo {
@@ -87,7 +86,7 @@ func TestResolveOverrides(t *testing.T) {
 		"TACCTL_SUDOERS_FILE=/t/sudoers", "TACCTL_TIER_SUDOERS_FILE=/t/tiers",
 		"TACCTL_OVERRIDE_DIR=/t/dropin", "TACCTL_LOGROTATE_DIR=/t/lr", "TACCTL_SETTLE_SECONDS=0",
 		"TACQUITO_SRC=/t/src", "TACCTL_LINUX_DIR=/t/linux", "TACCTL_TREE=/t/tree",
-		"TACCTL_PATCH_DIR=/t/patches", "TACCTL_BASH_IMPL=/t/tree/bin/tacctl.sh", "TACCTL_SKIP_SUDO=1",
+		"TACCTL_PATCH_DIR=/t/patches", "TACCTL_SKIP_SUDO=1",
 	})
 	p := Resolve(env, "", none)
 	checkFields(t, p, map[string]string{
@@ -109,7 +108,6 @@ func TestResolveOverrides(t *testing.T) {
 		"LinuxDir":        "/t/linux",
 		"Tree":            "/t/tree",
 		"PatchDir":        "/t/patches",
-		"BashImpl":        "/t/tree/bin/tacctl.sh",
 	})
 	if !p.SkipSudo {
 		t.Error("SkipSudo not set by TACCTL_SKIP_SUDO=1")

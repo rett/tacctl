@@ -683,7 +683,7 @@ func TestBackendDisabledIsNotRendered(t *testing.T) {
 	}
 }
 
-// The CLI: the verbs are registered native (not delegated), their argument
+// The CLI: the verbs are registered native, their argument
 // errors are those of the command, and a backends.enabled naming no module
 // is refused.
 func TestBackendEnableDisableCLI(t *testing.T) {

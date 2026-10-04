@@ -42,7 +42,7 @@ var configPolicyFamilySpecs = map[string]Spec{
 // families, native: the family word runs its dispatcher with the
 // arguments, and each verb runs it with the verb put back in front, so
 // 'config allow add x' and the family given 'add x' are the same call.
-// config.go replaces its delegated stubs of these words with them
+// config.go replaces its declared words of these names with them
 // (registerConfigVerb, config_policy_register.go).
 func configAllowCmd(inv *invocation) *cobra.Command {
 	return configPolicyFamily(inv, "allow", "Manage connection allow list",

@@ -855,10 +855,7 @@ const rule = "============================================"
 // The bootstrap shim installs the Go that tacctl names (paths.GoVersion,
 // which the banner of install prints), and go.mod asks for no newer one.
 func TestShimGoVersionIsTacctls(t *testing.T) {
-	shim := filepath.Join("..", "..", "bin", "tacctl.sh.new")
-	if _, err := os.Stat(shim); err != nil {
-		shim = filepath.Join("..", "..", "bin", "tacctl.sh") // after WP4.1's swap
-	}
+	shim := filepath.Join("..", "..", "bin", "tacctl.sh")
 	if !strings.Contains(readFile(t, shim), "\nGO_VERSION=\""+paths.GoVersion+"\"\n") {
 		t.Errorf("%s does not install Go %s", shim, paths.GoVersion)
 	}

@@ -10,7 +10,7 @@ tacctl_tmpenv_init() {
     export TACCTL_CONFIG="${TACCTL_ETC}/tacquito.yaml"
     export TACCTL_OVERRIDE_DIR="${BATS_TEST_TMPDIR}/systemd-dropin"
     export TACCTL_SUDOERS_FILE="${BATS_TEST_TMPDIR}/sudoers.d/tacctl"
-    # The RADIUS backend's paths (lib/backends/radius.sh): its raddb, log
+    # The RADIUS backend's paths: its raddb, log
     # directory, daemon binary and logrotate directory. The systemd directory
     # is TACCTL_SYSTEMD_DIR, shared with the TACACS+ backend.
     export TACCTL_RADIUS_DIR="${BATS_TEST_TMPDIR}/raddb"
@@ -20,23 +20,14 @@ tacctl_tmpenv_init() {
     # The package's main dictionary, which tacctl's own includes: present, as
     # an installed package has it (a test that wants it absent removes it).
     export TACCTL_RADIUS_DICT="${BATS_TEST_TMPDIR}/radius-share/dictionary"
-    # Skip the sudo re-exec so subprocess invocations of tacctl.sh from tests
-    # run as the current (non-root) user. Prod never sets this.
+    # Skip the sudo re-exec so tacctl runs as the current (non-root) user.
+    # Prod never sets this.
     export TACCTL_SKIP_SUDO=1
 
     mkdir -p "$(dirname "$TACCTL_RADIUS_DICT")" && : > "$TACCTL_RADIUS_DICT"
     mkdir -p "${TACCTL_ETC}" "${TACCTL_LOG}" "${TACCTL_BIN}" \
              "${TACCTL_STATE_DIR}/backups" \
              "${TACCTL_STATE_DIR}/backups/password-dates"
-    # Canonical defaults ship embedded in lib/conf.sh (conf_emit_defaults);
-    # no fixture file to seed.
-}
-
-# Source tacctl.sh so unit tests can call its functions directly.
-# Depends on the main-gate (BASH_SOURCE==$0) introduced for testability.
-# Always the bash entrypoint, whichever implementation TACCTL_BIN_SCRIPT
-# runs: the functions exist only there.
-tacctl_source_lib() {
-    # shellcheck disable=SC1091,SC2153  # TACCTL_SRC: set by setup.bash
-    source "${TACCTL_SRC}/bin/tacctl.sh"
+    # The tacctl.yaml defaults are embedded in the binary; no fixture file to
+    # seed.
 }
