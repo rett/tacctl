@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -290,11 +291,21 @@ func TestUpgradeBuildFailureRestoresThePreviousBinary(t *testing.T) {
 	repo.setRemote(commit2)
 	bin := e.b.tacquitoBin()
 	writeFile(t, bin, "old\n")
+	if err := os.Chmod(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// tacctl runs with umask 077; the restored binary must stay executable
+	// for the tacquito user.
+	old := syscall.Umask(0o077)
+	defer syscall.Umask(old)
 	e.run.On([]string{"go", "build", "-o", bin}, execx.Result{Code: 1})
 	wantCode(t, e.b.Upgrade(context.Background(), backend.PhaseBuild, ""), 1)
 	mustContain(t, e.stderr.String(), "Build failed. Restoring previous binary.")
 	if readFile(t, bin) != "old\n" || exists(bin+".bak") {
 		t.Fatal("not restored")
+	}
+	if st, err := os.Stat(bin); err != nil || st.Mode().Perm() != 0o755 {
+		t.Fatalf("restored binary mode %v (%v), want 0755", st.Mode().Perm(), err)
 	}
 	if e.called(`^go build -o ` + e.b.hashgenBin()) {
 		t.Fatal(e.run.Argvs())

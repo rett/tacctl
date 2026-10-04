@@ -205,7 +205,10 @@ func (b *Backend) upgradeBuild(ctx context.Context) error {
 	// A .bak already there is the binary from before a build the daemon
 	// was not restarted on (above): the one to go back to, so it stays.
 	if isRegular(bin) && !isRegular(bak) {
-		if err := cpFile(bin, bak); err != nil {
+		// cp -p: keep the binary's mode. Under tacctl's umask 077 a plain
+		// cp made a 0700 root copy that the tacquito user could not
+		// execute once it was moved back (fixed in 0.1.17 too).
+		if err := copyPreserve(bin, bak); err != nil {
 			return b.fileError("cp", err)
 		}
 		out.InfoE("Backed up current binary to " + bak)
