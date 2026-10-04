@@ -2,6 +2,7 @@ package radius
 
 import (
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,6 +17,7 @@ import (
 // commands that are only asked for their answer). It returns the exit
 // status, 127 or 126 when systemctl could not be run.
 func (m *Module) systemctl(ctx context.Context, quiet bool, args ...string) int {
+	m.resetFailed(ctx, args...)
 	c := execx.Cmd{Name: "systemctl", Args: args}
 	if !quiet {
 		c.Stdout, c.Stderr = m.env.Out.Stdout, m.env.Out.Stderr
@@ -25,6 +27,16 @@ func (m *Module) systemctl(ctx context.Context, quiet bool, args ...string) int 
 		return 1
 	}
 	return res.Code
+}
+
+// resetFailed runs 'systemctl reset-failed <unit>' silently before a
+// systemctl command that starts the unit, so systemd's start limit does not
+// refuse it after a burst of changes (plan 3.9 item 31). Its outcome is
+// ignored.
+func (m *Module) resetFailed(ctx context.Context, args ...string) {
+	if rf := backend.ResetFailedArgs(args, nil); rf != nil {
+		_, _ = m.runner.Run(ctx, execx.Cmd{Name: "systemctl", Args: rf, Stdout: io.Discard, Stderr: io.Discard})
+	}
 }
 
 // systemctlOut is 'systemctl args... 2>/dev/null': its standard output

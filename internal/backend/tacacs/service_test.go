@@ -121,6 +121,25 @@ func TestServiceSinceAndPID(t *testing.T) {
 // _tacacs_instances_sync: a listener's instance that cannot be started is
 // warned about; an enabled instance without a listener is stopped and
 // disabled; a wants entry that is not a link is not an instance.
+// Plan 3.9 item 31: the restart is preceded by a silent reset-failed of the
+// unit and its instances, and a reset-failed that fails changes nothing.
+func TestServiceRestartResetsTheStartLimitFirst(t *testing.T) {
+	e := newTenv(t)
+	ctx := context.Background()
+	e.run.Fail([]string{"systemctl", "reset-failed"}, 1, "Unit tacquito.service not loaded.")
+	if _, err := e.b.Service(ctx, backend.ServiceRestart, ""); err != nil {
+		t.Fatal(err)
+	}
+	got := e.run.Argvs()
+	if len(got) < 2 || got[0] != "systemctl reset-failed tacquito tacquito@*.service" || got[1] != "systemctl restart tacquito" {
+		t.Fatal(got)
+	}
+	mustContain(t, e.stdout.String(), "Service restarted.")
+	if e.stderr.Len() != 0 {
+		t.Fatalf("stderr: %q", e.stderr.String())
+	}
+}
+
 func TestInstancesSync(t *testing.T) {
 	e := newTenv(t)
 	e.writeOverrides("listeners:\n  tacacs:\n    mgmt: {network: tcp, address: \"127.0.0.1:4949\"}\n")
@@ -135,7 +154,7 @@ func TestInstancesSync(t *testing.T) {
 	e.run.Fail([]string{"systemctl", "enable"}, 1, "no")
 	e.b.instancesSync(context.Background())
 	mustContain(t, e.stdout.String(), "Could not enable and start tacquito@mgmt.service — check: systemctl status tacquito@mgmt.service")
-	if got := e.run.Argvs(); !slices.Equal(got, []string{"systemctl enable --quiet --now tacquito@mgmt.service",
+	if got := e.run.Argvs(); !slices.Equal(got, []string{"systemctl reset-failed tacquito@mgmt.service", "systemctl enable --quiet --now tacquito@mgmt.service",
 		"systemctl disable --quiet --now tacquito@old.service"}) {
 		t.Fatal(got)
 	}

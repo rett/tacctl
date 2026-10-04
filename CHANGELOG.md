@@ -137,6 +137,12 @@ here, and nothing else.
 30. **The usage text shows the current options**: `install [--branch <name>]
     [-y|--yes]`, `uninstall [-y|--yes]`, `version [--long]`, and `config render
     --dry-run --out <dir>`.
+31. **A restart is no longer refused by systemd's start limit.** Before every
+    start or restart of tacquito (and its listener instances) or FreeRADIUS,
+    tacctl runs `systemctl reset-failed` on the unit. systemd refuses a sixth
+    start within ten seconds, so a quick series of changes, each ending in a
+    restart, could leave the service stopped (`start-limit-hit`) until someone
+    ran `systemctl reset-failed` by hand. The units themselves are unchanged.
 
 ### Upgrading from 0.1.18
 

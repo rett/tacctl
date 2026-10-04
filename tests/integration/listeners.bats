@@ -431,7 +431,10 @@ systemctl_fails_for() {
     run "$TACCTL_BIN_SCRIPT" user disable alice
     assert_success
     run grep '^systemctl' "$CALLS_LOG"
-    assert_output "systemctl restart tacquito"
+    # The restart is preceded by a reset-failed of tacquito and its
+    # instances (plan 3.9 item 31); no instance is restarted on its own.
+    assert_output "systemctl reset-failed tacquito tacquito@*.service
+systemctl restart tacquito"
     [[ "$(sha256sum "$DROPIN")" == "$before" ]]
 }
 

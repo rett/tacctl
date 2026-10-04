@@ -60,6 +60,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
+	"strings"
 )
 
 // Phase is one step of a lifecycle command at which the generic command
@@ -168,6 +170,43 @@ const (
 	ServiceSince    ServiceAction = "since"
 	ServicePID      ServiceAction = "pid"
 )
+
+// ResetFailedArgs is the 'systemctl reset-failed <units>' that goes before
+// a systemctl command that starts units ('start', 'restart', 'enable
+// --now'), or nil for any other command. systemd refuses a sixth start of a
+// unit within ten seconds (StartLimitBurst, StartLimitIntervalSec), and a
+// burst of quick tacctl changes, each ending in a restart, reaches that;
+// clearing the counter first keeps the restart from being refused. The
+// caller runs it silently and ignores its outcome. extra(unit) may add units
+// that start with it (instances that are PartOf= it).
+func ResetFailedArgs(args []string, extra func(unit string) []string) []string {
+	if len(args) == 0 {
+		return nil
+	}
+	switch args[0] {
+	case "start", "restart":
+	case "enable":
+		if !slices.Contains(args[1:], "--now") {
+			return nil
+		}
+	default:
+		return nil
+	}
+	var units []string
+	for _, a := range args[1:] {
+		if strings.HasPrefix(a, "-") {
+			continue
+		}
+		units = append(units, a)
+		if extra != nil {
+			units = append(units, extra(a)...)
+		}
+	}
+	if len(units) == 0 {
+		return nil
+	}
+	return append([]string{"reset-failed"}, units...)
+}
 
 // StatusPart is a part of 'tacctl status' a backend prints (status <part>).
 type StatusPart string

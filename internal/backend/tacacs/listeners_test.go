@@ -498,7 +498,7 @@ func TestUserMutationRestartsTacquitoOnce(t *testing.T) {
 			sys = append(sys, a)
 		}
 	}
-	if !slices.Equal(sys, []string{"systemctl restart tacquito"}) || state(e.dropIn("default")) != before {
+	if !slices.Equal(sys, []string{"systemctl reset-failed tacquito tacquito@*.service", "systemctl restart tacquito"}) || state(e.dropIn("default")) != before {
 		t.Fatal(sys)
 	}
 }

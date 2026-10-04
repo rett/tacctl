@@ -21,6 +21,12 @@ import (
 // '2>/dev/null'). It returns the exit status (127 when systemctl could not
 // be run) and what was captured of stdout when stdout is nil.
 func (b *Backend) systemctl(ctx context.Context, stdout, stderr io.Writer, args ...string) (int, string) {
+	// A start or restart first clears systemd's start-limit counter (plan
+	// 3.9 item 31); restarting tacquito.service restarts its listener
+	// instances too, so theirs is cleared with it.
+	if rf := backend.ResetFailedArgs(args, tacquitoInstances); rf != nil {
+		_, _ = b.env.Runner.Run(ctx, execx.Cmd{Name: "systemctl", Args: rf, Stdout: io.Discard, Stderr: io.Discard})
+	}
 	c := execx.Cmd{Name: "systemctl", Args: args, Stdout: stdout, Stderr: stderr}
 	if stderr == nil {
 		c.Stderr = io.Discard
@@ -30,6 +36,15 @@ func (b *Backend) systemctl(ctx context.Context, stdout, stderr io.Writer, args 
 		res.Code = 127
 	}
 	return res.Code, string(res.Stdout)
+}
+
+// tacquitoInstances is what starts with a unit besides itself: the listener
+// instances, for tacquito.service (they are PartOf= it).
+func tacquitoInstances(unit string) []string {
+	if unit == Service || unit == rtacacs.UnitName {
+		return []string{"tacquito@*.service"}
+	}
+	return nil
 }
 
 // run runs a program with stdout passed through to the invocation's Stdout

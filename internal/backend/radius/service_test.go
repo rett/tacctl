@@ -35,7 +35,7 @@ func TestServiceEnableDebianDropIn(t *testing.T) {
 	if got := r.mode(l.DropIn); got != 0o644 {
 		t.Errorf("drop-in is %o", got)
 	}
-	want := []string{"systemctl daemon-reload", "systemctl enable --quiet freeradius.service", "systemctl start freeradius.service"}
+	want := []string{"systemctl daemon-reload", "systemctl enable --quiet freeradius.service", "systemctl reset-failed freeradius.service", "systemctl start freeradius.service"}
 	var got []string
 	for _, c := range r.calls() {
 		if strings.HasPrefix(c, "systemctl is-") {
@@ -281,7 +281,7 @@ func TestRestartBringsTheDropInInLine(t *testing.T) {
 	}
 	contains(t, r.read(l.DropIn), " -D "+l.DictDir+" ")
 	got := r.calls()
-	if len(got) < 2 || got[0] != "systemctl daemon-reload" || got[1] != "systemctl restart freeradius.service" {
+	if len(got) < 3 || got[0] != "systemctl daemon-reload" || got[1] != "systemctl reset-failed freeradius.service" || got[2] != "systemctl restart freeradius.service" {
 		t.Errorf("calls %v", got)
 	}
 }

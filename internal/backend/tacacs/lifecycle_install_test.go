@@ -228,7 +228,7 @@ func TestInstallStart(t *testing.T) {
 		}
 	}
 	if !slices.Equal(order, []string{"systemctl daemon-reload", "systemctl daemon-reload", "systemctl enable tacquito.service",
-		"systemctl start tacquito.service", "systemctl is-active --quiet tacquito.service"}) {
+		"systemctl reset-failed tacquito.service tacquito@*.service", "systemctl start tacquito.service", "systemctl is-active --quiet tacquito.service"}) {
 		t.Fatal(order)
 	}
 	if !sd.enabled["tacquito"] || !exists(e.b.serviceFile()) || !exists(e.dropIn("default")) {

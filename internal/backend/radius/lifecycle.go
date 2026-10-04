@@ -300,6 +300,7 @@ func (m *Module) upgradeConfig(ctx context.Context) {
 	}
 	out.Info("Restarting " + m.unitName() + "...")
 	// 'systemctl restart ... 2>/dev/null || true'
+	m.resetFailed(ctx, "restart", m.L.Unit)
 	_, _ = m.runner.Run(ctx, execx.Cmd{Name: "systemctl", Args: []string{"restart", m.L.Unit}, Stdout: out.Stdout})
 	m.sleep(ctx, startWait)
 	if m.systemctl(ctx, true, "is-active", "--quiet", m.L.Unit) == 0 {

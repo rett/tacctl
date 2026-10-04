@@ -64,7 +64,8 @@
 # on both sides and needs no masking. What is still normalised: ANSI colours
 # (unless --colour), timestamps (<TS>, <ISO>), mktemp names (<RAND>), the version, the sandbox and
 # tree paths, and bcrypt hashes the commands generated (not the ones given
-# in the command line), whose salt is random.
+# in the command line), whose salt is random. The 'systemctl reset-failed'
+# calls of 0.2.0 (plan 3.9 item 31) are dropped from the recorded calls.
 #
 # Options: --against <tag>  --b <go|bash|path>  --go <path>  --filter <regex>
 #          --colour  --keep (keep the work dir)  --list  --all  --self-test  -h
@@ -504,7 +505,10 @@ run_line() {
         {
             echo "### after the last command"
             echo "--- system commands called"
-            norm "$nscript" < "${work}/side/calls.log"
+            # 'systemctl reset-failed <units>' before each start or restart
+            # is new in 0.2.0 (plan 3.9 item 31) and is left out on both
+            # sides; the Go tests pin where it is called.
+            sed -E '/^systemctl reset-failed /d' "${work}/side/calls.log" | norm "$nscript"
             echo "--- state"
             state_dump "${work}/side" "$nscript"
         } >> "${work}/cmp-${s}.txt"
