@@ -289,6 +289,20 @@ older_render() {
     [[ "${#lines[@]}" == 2 ]]
 }
 
+# tacctl runs with umask 077: the backup of the binary must keep its mode,
+# or the binary moved back after a failed restart cannot be executed by the
+# tacquito user (User=tacquito).
+@test "a binary rolled back after a failed restart keeps its mode" {
+    chmod 0755 "${TACCTL_BIN}/tacquito"
+    echo "2222222222222222222222222222222222222222" > "$SD/remote"
+    echo 1 > "$SD/fail-restart.tacquito"
+    upgrade
+    assert_failure
+    assert_output --partial "Rolled back to the previous binary. Service is running."
+    run stat -c %a "${TACCTL_BIN}/tacquito"
+    assert_output "755"
+}
+
 @test "a rollback restart that fails with an exit status ends in its error message" {
     echo "2222222222222222222222222222222222222222" > "$SD/remote"
     echo 2 > "$SD/fail-restart.tacquito"

@@ -2993,7 +2993,7 @@ _tacacs_upgrade_build() {
         # A .bak already there is the binary from before a build the daemon
         # was not restarted on (above): the one to go back to, so it stays.
         if [[ -f "$TACQUITO_BIN" && ! -f "${TACQUITO_BIN}.bak" ]]; then
-            cp "$TACQUITO_BIN" "${TACQUITO_BIN}.bak"
+            cp -p "$TACQUITO_BIN" "${TACQUITO_BIN}.bak"
             info "Backed up current binary to ${TACQUITO_BIN}.bak"
         fi
         export TACCTL_UPGRADE_TACQUITO_FROM="${TACCTL_UPGRADE_TACQUITO_FROM:-$CURRENT_COMMIT}"
