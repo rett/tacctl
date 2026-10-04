@@ -5,7 +5,7 @@
 #
 #   server-setup.sh <tacplus|radius|both>
 #
-# Writes a store with three users (real bcrypt hashes; passwords below),
+# Writes a store with five users (real bcrypt hashes; passwords below),
 # brings up tacquito under its unit when the image has the binary, and runs
 # 'tacctl backend enable radius' for real. Prints the versions of what serves.
 set -u
@@ -16,6 +16,11 @@ chmod 700 /etc/tacctl
 # The bootstrap builds /usr/local/bin/tacctl from the checkout when the one
 # in the image is not from this commit.
 /opt/tacctl/bin/tacctl.sh version > /dev/null 2>&1 || { echo "FAIL  tacctl could not be built from /opt/tacctl"; exit 1; }
+# A checkout with changes not committed yet carries its HEAD's commit, which
+# the bootstrap takes as current: build the working tree as it is.
+if [[ -n "$(git -C /opt/tacctl status --porcelain 2> /dev/null)" ]]; then
+    /opt/tacctl/bin/tacctl.sh --build /usr/local/bin/tacctl || { echo "FAIL  tacctl could not be built from the working tree in /opt/tacctl"; exit 1; }
+fi
 
 python3 - > /etc/tacctl/store.yaml <<'PY'
 import binascii, bcrypt
@@ -30,6 +35,8 @@ users:
   alice: {{group: superuser, scopes: [lab], hash: {h("Alice-Net-Pw-1")}, disabled: false}}
   bob: {{group: operator, scopes: [lab], hash: {h("Bob-Net-Pw-1")}, disabled: false}}
   carl: {{group: readonly, scopes: [lab], hash: {h("Carl-Net-Pw-1")}, disabled: false}}
+  dave: {{group: readonly, scopes: [lab], hash: {h("Dave-Net-Pw-1")}, disabled: false}}
+  erin: {{group: readonly, scopes: [lab], hash: {h("Erin-Net-Pw-1")}, disabled: false}}
 scopes:
   lab:
     prefixes: [192.0.2.0/24]

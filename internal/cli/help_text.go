@@ -344,9 +344,10 @@ Usage: tacctl host <subcommand> [arguments]
       --name <name>                    Registry name (default: short hostname)
       --port <n>, --identity <file>    SSH port and key
       --build-on-host                  (tacplus) Compile pam_tacplus on the host instead of in a container here
-  sync <name> | --all                  Push account adds, removals and tier changes
+  sync <name> | --all                  Push account adds, deletions and tier changes
       --allow-uid-mismatch             (enroll and sync) accept a UID/GID conflict on the host instead of stopping
-      --adopt <name>[,<name>...]       (enroll and sync) take over accounts that already exist on the host
+      --remove-home                    (enroll and sync) delete removed users' home directories without asking
+                                       (on a terminal each one is asked; without one they are kept)
   unenroll <name> [--force]            Remove the login method from the host (accounts and homes are kept)
   default-method [tacplus|radius]      Show or set the method for hosts enrolled without --method
                                        (a scope's own choice comes first: tacctl scope auth-method)

@@ -27,7 +27,9 @@ import (
 //	tacctl host enroll web1 --scope lab --server 192.0.2.10                        (prebuilt)
 //
 // with 'date' stubbed to that instant, and for the prebuilt one a cached
-// module "not really a module\n" for docker.io/library/ubuntu:noble.
+// module "not really a module\n" for docker.io/library/ubuntu:noble. The
+// three lines after TAC_USERS (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL)
+// are 0.2.1's account lifecycle, added by hand.
 
 var goldenWhen = time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
 

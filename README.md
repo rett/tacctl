@@ -365,11 +365,12 @@ tacctl config linux remove-script -o unenroll.sh           # removal script (no 
 ```
 Copy the install script to the host and run it as root from a session you keep open. It:
 - installs the PAM module before creating any account (`tacplus`: builds and installs `pam_tacplus`, installing `gcc`, `make` and `libpam0g-dev` with apt if missing, and leaving a host that already has the module from the same source alone; `radius`: installs the package, and stops before any account or PAM change when it cannot);
-- creates a local account for each user in the scope, with a locked password and a UID that is the same on every host, in `tac-users` plus `tac-readonly`, `tac-operator` or `tac-superuser`;
+- creates a local account for each user in the scope, with a locked password and a UID that is the same on every host (20000-29999), in `tac-users` plus `tac-readonly`, `tac-operator` or `tac-superuser`;
+- deletes the accounts it created for users who are no longer in the scope (see [Account lifecycle on a host](#account-lifecycle-on-a-host));
 - sends `sshd`, `sudo` (including `sudo -i`), console `login` and the graphical logins `sddm` and `gdm-password` (where present) to the server for members of `tac-users` only (the shared `common-*` files, or `system-auth`/`password-auth` on the RHEL family, and every other local account are untouched);
 - grants `%tac-superuser` full sudo, authenticated with the network password.
 
-A reject from the server is final. If the server is unreachable, login falls through to the local password, which only pre-existing (adopted) accounts have; local administrators (not in `tac-users`) are never sent to the server and see no delay. With the server silent, measured in containers: a user without a local password is refused after 5-6 s (`tacplus`) or 8-9 s (`radius`); an adopted account's local password is accepted after 7-8 s or 6-9 s (`docs/radius-notes.md`). A wrong shared secret on the host behaves like a silent server. The script refuses to run unless a local administrator with a usable password exists outside the user list, and restores the PAM files if any step fails. Re-run it with `--accounts-only` after adding, removing or moving users.
+A reject from the server is final. If the server is unreachable, login falls through to the local password, which tacctl's accounts do not have; local administrators and every other local account (not in `tac-users`) are never sent to the server and see no delay. With the server silent, measured in containers: a tacctl user is refused after 5-6 s (`tacplus`) or 8-9 s (`radius`) (`docs/radius-notes.md`). A wrong shared secret on the host behaves like a silent server. The script refuses to run unless a local administrator with a usable password exists outside the user list, and restores the PAM files if any step fails. Re-run it with `--accounts-only` after adding, removing or moving users.
 
 The install script contains the scope's shared secret, and so do the root-only files it writes (`/etc/pam.d/tacctl-*` for `tacplus`; `/etc/tacctl-pam_radius.conf`, 0600, for `radius`): use a dedicated scope per host or host group, and keep TACACS+ and RADIUS traffic on a management network or tunnel (no Linux PAM client supports TACACS+ over TLS). `passwd` does not work for these users; they change passwords with `tacctl passwd` on the server.
 
@@ -395,7 +396,7 @@ tacctl host default-method radius             # what hosts enrolled without --me
 ```
 The method of a host is, in order: `--method`; the method the host is registered with; the scope's `auth-method` (`tacctl scope auth-method`); the one protocol the scope's `protocols` filter names; `host default-method` (default `tacplus`). Its backend must be enabled and the scope must allow its protocol; an auto-created `linux-<name>` scope gets `protocols` set to that one protocol. **Switching:** re-enrolling a registered host with the other `--method` removes the first method's module, secret file and SELinux module and installs the other; re-enrolling without `--method` keeps the host's method.
 
-`ssh` runs as the user who invoked `sudo`, with their keys; the remote login must be root or able to `sudo` (a password prompt works when run from a terminal). That login (the provisioning account: the target's `user@`, else your own username) must be a local account on the host that does not authenticate through tacctl, so enrolment and sync keep working when this server cannot be reached: `host enroll` refuses a tacctl user, and `host sync` warns about an existing enrolment that uses one. `tacctl ssh` never uses it. Without a terminal, a host whose sudo needs a password is reported as such rather than attempted. The steps of one command share a single ssh connection per host, so a login without a key asks for its ssh password once, followed by one sudo prompt; with a key (or agent) and passwordless sudo or a root login there is no prompt at all. `--scope` enrolls into an existing scope instead of creating one, `--server` overrides the detected server address, `--name` the registry name, and `--port` / `--identity` are passed to ssh. Account changes are not pushed automatically: run `host sync` after `user add`, `remove`, `move` or `scope` changes. Until then a removed user is already refused at password login by the server, but an SSH key on the host keeps working.
+`ssh` runs as the user who invoked `sudo`, with their keys; the remote login must be root or able to `sudo` (a password prompt works when run from a terminal). That login (the provisioning account: the target's `user@`, else your own username) must be a local account on the host that does not authenticate through tacctl, so enrolment and sync keep working when this server cannot be reached: `host enroll` refuses a tacctl user, and `host sync` warns about an existing enrolment that uses one. `tacctl ssh` never uses it. Without a terminal, a host whose sudo needs a password is reported as such rather than attempted. The steps of one command share a single ssh connection per host, so a login without a key asks for its ssh password once, followed by one sudo prompt; with a key (or agent) and passwordless sudo or a root login there is no prompt at all. `--scope` enrolls into an existing scope instead of creating one, `--server` overrides the detected server address, `--name` the registry name, and `--port` / `--identity` are passed to ssh. Account changes are not pushed automatically: run `host sync` after `user add`, `remove`, `move`, `disable` or `scope` changes. Until then a removed user is already refused at password login by the server, but an SSH key on the host keeps working.
 
 #### Where the module is built (`tacplus`)
 `host enroll` reads the host's `/etc/os-release` and architecture, builds `pam_tacplus` once for that OS release in a rootless `podman` container on the server (base image plus compiler pulled with network access; the compile itself runs with no network and no capabilities), caches it under `/var/lib/tacctl/linux/builds/`, and ships the binary. The host installs it without a compiler, headers or package repository, after checking its checksum and that it loads against the host's libraries.
@@ -409,25 +410,31 @@ The host compiles from the embedded source instead when there is no image for it
 `tacctl install` and every `tacctl upgrade` install the packages this needs if they are missing (`podman`, `uidmap`, the autotools set for `config linux build`, `openssh-client`), along with tacctl's core requirements.
 
 #### Consistent UIDs and GIDs
-Each user gets one number, used as both UID and primary GID on every host this server enrolls. It is assigned the first time the user is sent to a host (from 20000 up, never reused) and stored in `/etc/tacctl/linux-uids`.
+Each user gets one number, used as both UID and primary GID on every host this server enrolls. It is assigned the first time the user is sent to a host, from the range **20000-29999** only (after the highest one given so far, never into a gap), and stored in `/etc/tacctl/linux-uids`. A number is never reused: a removed user's entry stays in the file, so a later user never inherits its files on a host. When the range is used up, the next user is refused with `No UID left for '<user>'` until it is given a free number of the range by hand.
 ```
 tacctl config linux uid                  # list assignments
 tacctl config linux uid jsmith           # print one
-tacctl config linux uid jsmith 20500     # change it
+tacctl config linux uid jsmith 20500     # change it (20000-29999 only)
 ```
+An entry outside the range (from a release that allowed it) is listed as `outside 20000-29999: not used on hosts`, and its user gets no account on any host until it is given a number in the range.
+
 If the number is already taken on a host, by a user or by a group, the install or sync **stops before changing anything** and lists the options:
 1. free the number on the host by renumbering whatever holds it (`usermod -u` / `groupmod -g`, then `chown` its files);
-2. assign the tacctl user a number that is free everywhere (`tacctl config linux uid <user> <uid>`) and re-run;
-3. accept a different number on that host only: `tacctl host enroll|sync ... --allow-uid-mismatch`.
+2. assign the tacctl user another free number of the range (`tacctl config linux uid <user> <uid>`) and re-run;
+3. accept a different number on that host only: `tacctl host enroll|sync ... --allow-uid-mismatch`, which takes the highest number of the range that is free there.
 
-Accounts that existed before enrollment are adopted with the UID they already have; every sync reports the difference and how to fix it. Changing an assignment does not renumber accounts already created on hosts. Two tacctl servers assign independently, so copy `linux-uids` between them if their hosts must agree.
+An account tacctl created whose UID on a host differs from the assignment (but is in the range) is kept as it is; every sync reports the difference and how to fix it. Changing an assignment does not renumber accounts already created on hosts. Two tacctl servers assign independently, so copy `linux-uids` between them if their hosts must agree.
 
-#### Accounts that already exist on a host
-If a host already has a local account with the same name as a tacctl user, the install or sync stops before changing anything: a matching name does not prove it is the same person. The message lists the options: confirm it with `--adopt <name>[,<name>...]` on `tacctl host enroll` or `sync`, rename the tacctl user or keep it off that host, or remove the local account.
+#### Account lifecycle on a host
+tacctl changes an account on a host only when it created it (the host's `/var/lib/tacctl-client/created`) **and** its UID there is in 20000-29999. Every other account, whatever its name, is never created, changed, expired or deleted.
 
-An adopted account keeps its UID, local password, files and groups; tacctl only adds it to `tac-users` and its tier group. Two consequences are reported when they apply:
-- at adoption, if the account is in a privileged local group (`sudo`, `wheel`, `adm`, `docker`, ...), since those rights hold whatever the tier is;
-- when the user is later removed from the scope or disabled, since an adopted account is **not** locked or expired (accounts tacctl created are): it goes back to being a plain local account, and the sync says whether its local password or an SSH key still works and how to block it (`usermod -L -e 1 <name>`).
+- **New user in the scope:** the install or sync creates the account.
+- **Local account with the same name:** if the host already has an account named like a tacctl user that tacctl did not create, that user gets no account on that host, with a warning; the local account stays exactly as it is (an emergency login that does not depend on this server), and the rest of the install or sync goes on. A matching name does not prove it is the same person: rename the tacctl user, keep it off that host, or remove or rename the local account. If the local account is in `tac-users` (an account an earlier release adopted), the warning says so: its logins go to the server first until it is taken out with `gpasswd -d <name> tac-users`.
+- **Disabled user** (`tacctl user disable`): the account is expired (no login, SSH keys included) and its files are kept; `tacctl user enable` and the next sync restore it.
+- **Removed user** (no longer in the scope, or no longer a tacctl user): the account is deleted (`userdel`), and its per-user group when that is now empty; its UID stays reserved on the server. Its home directory is deleted only when asked for: on a terminal, `host sync` and `host enroll` ask `Delete /home/<user> of removed user '<user>'? [y/N]` for each removed user (the list is read from the host's `getent passwd` over the same ssh connection before anything runs there); `--remove-home` deletes them without asking; with no terminal and no flag every home is kept and the host prints `home kept: /home/<user>`. A home is never deleted when it is not a directory directly under `/home`, is or sits behind a symbolic link, is not owned by the account, or is also another account's home. A removed user who is still logged in cannot be deleted: the account is expired and deleted at the next sync.
+- **Accounts an earlier release adopted:** reported once (`Accounts an earlier tacctl adopted are no longer tracked`), then never changed or tracked.
+
+`host unenroll` does not touch any account.
 
 ### Tiered access for tacctl users (opt-in)
 tacctl users who have a local account on the server can be given tacctl access that follows their group:
@@ -821,9 +828,9 @@ host enroll <[user@]host>|--local [opts]    Install TACACS+ or RADIUS login on a
       --name <name>                         Registry name (default: short hostname)
       --port <n>, --identity <file>         SSH port and key
       --build-on-host                       (tacplus) compile pam_tacplus on the host instead of in a container here
-host sync <name>|--all                      Push account adds, removals and tier changes; pins the host's ssh keys if none are (enroll pins them too)
+host sync <name>|--all                      Push account adds, deletions, expiries and tier changes; pins the host's ssh keys if none are (enroll pins them too)
       --allow-uid-mismatch                  (enroll and sync) accept a UID/GID conflict on the host instead of stopping
-      --adopt <name>[,<name>...]            (enroll and sync) take over accounts that already exist on the host
+      --remove-home                         (enroll and sync) delete removed users' home directories without asking (on a terminal each is asked; without one they are kept)
 host unenroll <name> [--force]              Remove the login method from the host (accounts are kept) and its pinned host keys; --force drops it from the registry even if the removal fails
 host default-method [tacplus|radius]        Show or set the method for hosts enrolled without --method (host.default_method)
 ```

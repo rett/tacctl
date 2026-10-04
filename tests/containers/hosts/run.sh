@@ -215,6 +215,7 @@ fi
 
 # --- the login cases, for the method the host has now -------------------------
 A_PW='Alice-Net-Pw-1'; B_PW='Bob-Net-Pw-1'; CN_PW='Carl-Net-Pw-1'; CL_PW='Carl-Local-Pw-1'; L_PW='Local-Admin-Pw-1'
+D_PW='Dave-Net-Pw-1'
 
 # basic_cases <method>: the short set, also run after each switch.
 basic_cases() {
@@ -232,9 +233,10 @@ full_cases() {
     basic_cases "$m"
     expect "[$m] alice: sudo with a wrong password is refused" 'rc=1' "$(login alice "$A_PW" "printf '%s\n' 'wrong' | sudo -S -k -p '' id -u")"
     expect "[$m] alice: sudo -i with the network password gives root" '^0$' "$(login alice "$A_PW" "printf '%s\n' '$A_PW' | sudo -S -k -p '' -i id -u")"
-    expect "[$m] carl (readonly, adopted) logs in with the network password" '^carl$' "$(login carl "$CN_PW" 'id -un')"
-    expect "[$m] carl with his local password is refused while the server answers (a reject is final)" 'rc=255' "$(login carl "$CL_PW" true)"
-    expect "[$m] carl (readonly) may not sudo" 'not (allowed|in the sudoers)|rc=1' "$(login carl "$CN_PW" "printf '%s\n' '$CN_PW' | sudo -S -k -p '' id -u")"
+    expect "[$m] carl (a local account named like a tacctl user) logs in with his local password" '^carl$' "$(login carl "$CL_PW" 'id -un')"
+    expect "[$m] carl's network password is refused: no tacctl account for him here" 'rc=255' "$(login carl "$CN_PW" true)"
+    expect "[$m] dave (readonly) logs in with the network password" '^dave$' "$(login dave "$D_PW" 'id -un')"
+    expect "[$m] dave (readonly) may not sudo" 'not (allowed|in the sudoers)|rc=1' "$(login dave "$D_PW" "printf '%s\n' '$D_PW' | sudo -S -k -p '' id -u")"
     expect "[$m] ladm: sudo with the local password gives root" '^0$' "$(login ladm "$L_PW" "printf '%s\n' '$L_PW' | sudo -S -k -p '' id -u")"
 
     # The other services, through a PAM client run as root (what login and
@@ -258,7 +260,28 @@ full_cases() {
     expect "[$m] bob, removed from the scope on the server (no sync yet), is refused" 'rc=255' "$(login bob "$B_PW" true)"
     check "[$m] bob's account is still on the host until the sync" c id bob
     tacctl host sync c1 > "${WORK}/sync.out"; rc=$?
-    check "[$m] host sync succeeds and expires bob's account" bash -c "[[ $rc == 0 ]] && grep -q \"'bob' is no longer\" '${WORK}/sync.out' && podman exec '$C' getent shadow bob | cut -d: -f8 | grep -qx 1"
+    check "[$m] host sync succeeds and deletes bob's account (userdel), with his group" bash -c "[[ $rc == 0 ]] && grep -q \"Deleted account 'bob'\" '${WORK}/sync.out' && ! podman exec '$C' id bob && ! podman exec '$C' getent group bob"
+    check "[$m] no terminal and no --remove-home: bob's home is kept and reported" bash -c "grep -q 'home kept: /home/bob' '${WORK}/sync.out' && podman exec '$C' test -d /home/bob"
+    expect "[$m] bob is refused after the sync too" 'rc=255' "$(login bob "$B_PW" true)"
+
+    # A disabled user: expired, kept; enabled again: back.
+    tacctl user disable dave > /dev/null
+    tacctl host sync c1 > "${WORK}/sync.out"; rc=$?
+    check "[$m] host sync expires disabled dave's account and keeps it" bash -c "[[ $rc == 0 ]] && grep -q \"'dave' has no\" '${WORK}/sync.out' && podman exec '$C' id dave && podman exec '$C' getent shadow dave | cut -d: -f8 | grep -qx 1 && podman exec '$C' test -d /home/dave"
+    expect "[$m] disabled dave is refused" 'rc=255' "$(login dave "$D_PW" true)"
+    tacctl user enable dave > /dev/null
+    tacctl host sync c1 > "${WORK}/sync.out"; rc=$?
+    check "[$m] enabled again, dave's account is re-activated" bash -c "[[ $rc == 0 ]] && grep -q \"Re-activated account 'dave'\" '${WORK}/sync.out'"
+    expect "[$m] dave logs in again" '^dave$' "$(login dave "$D_PW" 'id -un')"
+
+    # A removed user with --remove-home: the home goes too.
+    if c id erin > /dev/null 2>&1; then
+        c bash -c 'cd /home/erin && echo note > file && ln -s /etc etc-link'
+        tacctl user scope erin remove linux-c1 > /dev/null
+        tacctl host sync c1 --remove-home > "${WORK}/sync.out"; rc=$?
+        check "[$m] host sync --remove-home deletes erin's account and home (not what a link in it points to)" bash -c "[[ $rc == 0 ]] && grep -q 'Deleted home /home/erin.' '${WORK}/sync.out' && ! podman exec '$C' id erin && ! podman exec '$C' test -e /home/erin && podman exec '$C' test -f /etc/passwd"
+        check "[$m] erin's UID stays reserved on the server" bash -c "podman exec '$S' grep -qx 'erin:20004' /etc/tacctl/linux-uids"
+    fi
 
     # Server unreachable.
     block > /dev/null || bad "could not block the server"
@@ -271,14 +294,13 @@ full_cases() {
     expect "[$m] server unreachable: alice (no local password) is refused" 'rc=255' "$out"
     note "[$m] server unreachable: alice's refusal took ${t}s"
     out=$(login carl "$CL_PW" 'id -un'); t=$(secs "$out")
-    expect "[$m] server unreachable: carl falls back to his local password" '^carl$' "$out"
-    note "[$m] server unreachable: carl's fallback login took ${t}s"
-    expect "[$m] server unreachable: carl's network password is no use" 'rc=255' "$(login carl "$CN_PW" true)"
+    expect "[$m] server unreachable: carl (not in tac-users) logs in with his local password" '^carl$' "$out"
+    check "[$m] server unreachable: carl is not delayed (${t}s)" test "${t:-99}" -le 2
     unblock > /dev/null || bad "could not unblock the server"
     expect "[$m] server back: alice logs in again" '^alice$' "$(login alice "$A_PW" 'id -un')"
 
-    # A wrong shared secret on the host. Not a PASS/FAIL matter for carl:
-    # what happens is recorded.
+    # A wrong shared secret on the host: tacctl users are refused, local
+    # accounts outside tac-users are not affected.
     secret=$(host_secret)
     if [[ "$m" == "radius" ]]; then
         c sed -i "s|${secret}|wrong-secret-wrong-secret-wrong|" /etc/tacctl-pam_radius.conf
@@ -287,12 +309,8 @@ full_cases() {
     fi
     out=$(login alice "$A_PW" true); t=$(secs "$out")
     expect "[$m] wrong shared secret on the host: alice is refused" 'rc=255' "$out"
-    out=$(login carl "$CL_PW" 'id -un')
-    if grep -q '^carl$' <<< "$out"; then
-        note "[$m] wrong shared secret: alice refused after ${t}s; carl's LOCAL password is accepted after $(secs "$out")s (treated as an unreachable server)"
-    else
-        note "[$m] wrong shared secret: alice refused after ${t}s; carl's local password is refused too after $(secs "$out")s (treated as a reject)"
-    fi
+    note "[$m] wrong shared secret: alice refused after ${t}s"
+    expect "[$m] wrong shared secret: carl's local account is unaffected" '^carl$' "$(login carl "$CL_PW" 'id -un')"
     expect "[$m] wrong shared secret: ladm is unaffected" '^ladm$' "$(login ladm "$L_PW" 'id -un')"
     # Re-enrolling (no --method: the host keeps the one it has) repairs it.
     tacctl host enroll "root@${CIP}" --name c1 > "${WORK}/reenroll.out"; rc=$?
@@ -335,12 +353,13 @@ enroll "$FIRST"; check "host enroll --method ${FIRST} exits 0" test $? -eq 0
 [[ "$FIRST" == "radius" ]] && note "installed by the enrollment: $(pkg_versions)"
 check "enroll said there are no users in the scope yet" grep -q "No users are in scope 'linux-c1' yet" "${WORK}/enroll.out"
 
-section "users: alice (superuser), bob (operator), carl (readonly, pre-existing account)"
-for u in alice bob carl; do tacctl user scope "$u" add linux-c1 > /dev/null; done
+section "users: alice (superuser), bob (operator), dave and erin (readonly), carl (readonly; the host has a local carl)"
+carl_before=$(c getent passwd carl)
+for u in alice bob carl dave erin; do tacctl user scope "$u" add linux-c1 > /dev/null; done
 tacctl host sync c1 > "${WORK}/sync.out"; rc=$?
-check "host sync stops at carl's pre-existing account and changes nothing" bash -c "[[ $rc != 0 ]] && grep -q 'already have a local account on this host that tacctl did not create: carl' '${WORK}/sync.out' && ! podman exec '$C' id alice"
-tacctl host sync c1 --adopt carl > "${WORK}/sync.out"; rc=$?
-check "host sync --adopt carl succeeds (3 users)" bash -c "[[ $rc == 0 ]] && grep -q 'c1: synced (3 users)' '${WORK}/sync.out'"
+check "host sync refuses carl (a local account tacctl did not create) and goes on" bash -c "[[ $rc == 0 ]] && grep -q \"'carl': this host has a local account of that name that tacctl did not create\" '${WORK}/sync.out' && grep -q 'c1: synced (5 users)' '${WORK}/sync.out'"
+check "carl's local account is untouched (same passwd line, not in tac-users)" bash -c "[[ \"\$(podman exec '$C' getent passwd carl)\" == '${carl_before}' ]] && ! podman exec '$C' id -nG carl | grep -qw tac-users"
+check "every account tacctl created has a UID in 20000-29999" bash -c "for u in alice bob dave erin; do id=\$(podman exec '$C' id -u \$u) && (( id >= 20000 && id <= 29999 )) || exit 1; done"
 LABEL="TACACS+"; [[ "$FIRST" == "radius" ]] && LABEL="RADIUS"
 check "alice's account: UID 20000, locked password, named 'alice (${LABEL})'" c bash -c "[[ \$(id -u alice) == 20000 && \$(getent passwd alice | cut -d: -f5) == 'alice (${LABEL})' ]] && getent shadow alice | cut -d: -f2 | grep -q '^!'"
 
@@ -374,7 +393,7 @@ if [[ "$CYCLE" == "switch" ]]; then
     before=$(radius_log | grep -c 'Access-Accept.*user=alice')
     basic_cases radius
     check "[radius] those logins were answered by FreeRADIUS" test "$(( $(radius_log | grep -c 'Access-Accept.*user=alice') - before ))" -ge 2
-    expect "[radius] carl falls back the same way when the server is unreachable" '^carl$' "$(block > /dev/null; login carl "$CL_PW" 'id -un'; unblock > /dev/null)"
+    expect "[radius] carl still logs in with his local password while the server is unreachable" '^carl$' "$(block > /dev/null; login carl "$CL_PW" 'id -un'; unblock > /dev/null)"
 
     section "switch: radius -> tacplus"
     enroll tacplus; check "host enroll --method tacplus exits 0" test $? -eq 0
@@ -400,7 +419,7 @@ fi
 check "no secret file, no tacctl PAM file, no method file" c bash -c '[[ ! -e /etc/tacctl-pam_radius.conf && ! -e /etc/pam.d/tacctl-auth && ! -e /var/lib/tacctl-client/method && ! -e /var/lib/tacctl-client/installed ]]'
 check "the secret is nowhere on the host" c bash -c "! grep -rqF '$(cat "${WORK}/secret")' /etc /var/lib/tacctl-client"
 expect "alice can no longer log in" 'rc=255' "$(login alice "$A_PW" true)"
-expect "carl is a local account again" '^carl$' "$(login carl "$CL_PW" 'id -un')"
+expect "carl's local account still works" '^carl$' "$(login carl "$CL_PW" 'id -un')"
 expect "ladm logs in and can sudo" '^0$' "$(login ladm "$L_PW" "printf '%s\n' '$L_PW' | sudo -S -k -p '' id -u")"
 check "the registry is empty" bash -c "[[ -z \"\$(podman exec '$S' cat /etc/tacctl/linux-hosts)\" ]]"
 note "left on the host by design: accounts and groups ($(c bash -c 'getent group tac-users | cut -d: -f4')), /var/lib/tacctl-client ($(c ls /var/lib/tacctl-client | paste -sd' ')), packages ($(pkg_versions))"

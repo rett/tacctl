@@ -321,7 +321,7 @@ esac'
 
 @test "completion: host sync and unenroll offer the enrolled host names" {
     complete_words tacctl host sync ""
-    assert_output "$(printf 'web1\ndb1\n--all\n--allow-uid-mismatch\n--adopt')"
+    assert_output "$(printf 'web1\ndb1\n--all\n--allow-uid-mismatch\n--remove-home')"
     complete_words tacctl host sync w
     assert_output "web1"
     complete_words tacctl host unenroll ""

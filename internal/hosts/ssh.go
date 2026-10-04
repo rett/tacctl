@@ -76,7 +76,7 @@ func Attached(ctx context.Context, r execx.Runner, c execx.Cmd, stdin io.Reader,
 
 // remoteWord quotes a script argument for the remote shell: as it is when
 // it holds only characters no shell treats specially, else in single
-// quotes. The arguments tacctl passes (--accounts-only, --adopt <names>,
+// quotes. The arguments tacctl passes (--accounts-only, --allow-uid-mismatch,
 // ...) are validated to the first kind, so the command reads as 0.1.16's.
 func remoteWord(w string) string {
 	if w != "" && strings.Trim(w, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_./,:=+@%-") == "" {

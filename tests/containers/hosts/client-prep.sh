@@ -6,8 +6,8 @@
 #
 # - sshd, an ssh client and sudo;
 # - 'ladm', a local administrator (sudo/wheel) with a local password, and
-#   'carl', an ordinary pre-existing account with a local password that the
-#   check has tacctl adopt;
+#   'carl', an ordinary pre-existing account with a local password whose name
+#   is also a tacctl user's (tacctl must leave it alone);
 # - /etc/pam.d/gdm-password, a stand-in with the lines the distribution's GDM
 #   package has around its includes (no GDM is installed), so the graphical
 #   login's service file is edited and can be driven by a PAM client;

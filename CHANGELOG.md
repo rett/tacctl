@@ -255,6 +255,68 @@ current behaviour; this file is where history lives.
     longer sends a server message with a failed TACACS+ authentication (source
     patch 0004). sshd could not show it during password login and printed one
     `login failure` per wrong password after the next successful login.
+34. **Linux UIDs come from 20000-29999 only.** tacctl gives out UIDs (and the
+    matching primary GIDs) from that range, after the highest one given so
+    far; a removed user's number stays reserved and is never reused. Past
+    29999 the script is refused: `[ERROR] No UID left for '<user>': every
+    number of 20000-29999 has been given out (UIDs are never reused).` and
+    `Give it a free number of the range by hand: tacctl config linux uid
+    <user> <uid>`, exit 1. `config linux uid <user> <uid>` refuses any other
+    value: `UID must be a number from 20000 to 29999: tacctl gives out UIDs
+    (and the matching GIDs) in that range only.` (it took 1000 and up). An
+    entry of `/etc/tacctl/linux-uids` outside the range is listed as
+    `outside 20000-29999: not used on hosts`, and its user is left out of the
+    scripts with `Skipping '<user>': its UID <uid> is outside 20000-29999, so
+    no host gets an account for it.` `--allow-uid-mismatch` takes the highest
+    number of the range that is free on the host (it took the host's next
+    free UID, outside any range).
+35. **The client script never touches an account outside 20000-29999, and
+    changes an account only when it created it.** Before any change it reads
+    the account's UID on the host: an account tacctl created whose UID is
+    outside the range is left alone (`'<user>' has UID <uid>, outside
+    20000-29999: tacctl leaves it as it is, although it created it.`, or for
+    a current user `'<user>': its account has UID <uid>, outside
+    20000-29999; tacctl leaves it as it is.`). A member of `tac-users` that
+    tacctl did not create is no longer taken out of the tac-* groups; the
+    sync says so and how (`gpasswd -d <user> tac-users`).
+36. **`--adopt` is gone** (`host enroll`, `host sync` and the client script:
+    `Unknown option: '--adopt'`). A local account named like a tacctl user
+    that tacctl did not create no longer stops the install or sync: that user
+    gets no account on that host (`'<user>': this host has a local account of
+    that name that tacctl did not create, so '<user>' gets no TACACS+
+    account here. The local account is left as it is.`), and the rest goes
+    on. Accounts an earlier release adopted are reported once (`Accounts an
+    earlier tacctl adopted are no longer tracked: <names>. They are left
+    exactly as they are.`), then never changed or tracked.
+37. **Removed users' accounts are deleted.** `host sync`, `host enroll` and
+    the client script delete (`userdel`) the accounts tacctl created for
+    users no longer in the host's scope or no longer tacctl users, and their
+    per-user group when it is now empty: `Deleted account '<user>': no longer
+    a TACACS+ user here (its UID <uid> stays reserved on the tacctl server,
+    never reused).` (they were expired). Accounts expired that way by an
+    earlier release are deleted at the first sync. A disabled user's account
+    is still only expired (`'<user>' has no TACACS+ login here now
+    (disabled): account expired, files kept.`) and re-activated when the
+    user is enabled; so are the accounting sink's. A user still logged in is
+    expired and deleted at the next sync (`Could not delete '<user>' (userdel
+    failed; still logged in?): …`).
+38. **Home directories of removed users: asked, forced or kept.** On a
+    terminal, `host sync` and `host enroll` read the host's `getent passwd`
+    over the same ssh connection before anything runs there (read-only, no
+    sudo), print `<host>: removed users with an account there (deleted by
+    this run): <users>` and ask `Delete /home/<user> of removed user
+    '<user>'? [y/N] ` for each; `--remove-home` (both verbs, and the client
+    script) deletes them without asking; with no terminal and no flag
+    nothing is asked and the host prints `home kept: /home/<user>`. The host
+    deletes a home only when it is a directory directly under `/home`, not a
+    symbolic link, owned by the account and no other account's home (else
+    `home kept: <home> (<reason>)`), and never follows a link inside it.
+39. **The install script's header has a protocol.** After `TAC_USERS` it sets
+    `TAC_INACTIVE` (the scope's disabled users and the accounting sink),
+    `TAC_REMOVE_HOMES` (names, or `*`) and `TAC_PROTOCOL=2`; the script body
+    refuses a header of another protocol before changing anything (`This
+    script's header speaks protocol <n> and its body protocol 2: they were
+    not written by the same tacctl. …`).
 
 ## 0.2.0 (2026-10-04)
 

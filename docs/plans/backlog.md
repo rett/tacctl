@@ -45,7 +45,11 @@ Deferred:
 
 - `config render --dry-run` does not report the drop-ins a real render would remove (open question from WP2.4c): it needs a removal report from each backend's staging step, for little value.
 
-## 4. State-format changes (0.3.0 at the earliest)
+## 4. Linux hosts: considered, not pursued
+
+- **nss_tacplus** (shared template accounts, no per-user local accounts) — considered 2026-10-04, not pursued; revisit if per-user accounts become a burden. 0.2.1 keeps one local account per user (UIDs 20000-29999, created, expired and deleted by `host enroll|sync`).
+
+## 5. State-format changes (0.3.0 at the earliest)
 
 - Drop the regex migrations of a legacy `tacquito.yaml` once no supported host can be older than the store release.
 

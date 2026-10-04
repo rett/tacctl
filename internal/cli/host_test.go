@@ -117,18 +117,19 @@ func TestHostFamilyUsage(t *testing.T) {
 func TestHostEnrollSyncUnenroll(t *testing.T) {
 	hs := newHostSandbox(t)
 	r := hs.runner()
-	hs.run(r, "host", "enroll", "admin@web1.example.net", "--scope", "lab", "--adopt", "alice,bob", "--build-on-host")
+	hs.run(r, "host", "enroll", "admin@web1.example.net", "--scope", "lab", "--allow-uid-mismatch", "--remove-home", "--build-on-host")
 	hs.expect(0, "Host 'web1' enrolled.", "")
 	if got := hs.registry(); got != "web1|admin@web1.example.net||lab|192.0.2.1|\n" {
 		t.Errorf("registry %q", got)
 	}
 	for _, w := range []string{"TAC_METHOD=tacplus\n", "TAC_SERVER=192.0.2.1\n", "TAC_SECRET=lab-secret-0123456789abcdef\n",
-		"TAC_USERS=$'alice:superuser:20000\\nbob:operator:20001\\ncarol:readonly:20002'\n", "# tacctl Linux client installer for scope 'lab'. Generated "} {
+		"TAC_USERS=$'alice:superuser:20000\\nbob:operator:20001\\ncarol:readonly:20002'\nTAC_INACTIVE=''\nTAC_REMOVE_HOMES=\\*\nTAC_PROTOCOL=2\n",
+		"# tacctl Linux client installer for scope 'lab'. Generated "} {
 		if !strings.Contains(hs.pushed, w) {
 			t.Errorf("pushed script lacks %q", w)
 		}
 	}
-	if !r.CalledRegexp(`^ssh .*-T admin@web1.example.net .*rm -f /tmp/tacctl.AbCd1234.*sudo -n bash /tmp/tacctl.AbCd1234 --adopt alice,bob;`) ||
+	if !r.CalledRegexp(`^ssh .*-T admin@web1.example.net .*rm -f /tmp/tacctl.AbCd1234.*sudo -n bash /tmp/tacctl.AbCd1234 --allow-uid-mismatch;`) ||
 		!r.CalledRegexp(`^ssh .*-O exit admin@web1.example.net$`) {
 		t.Errorf("ssh calls %q", r.Argvs())
 	}
@@ -138,16 +139,31 @@ func TestHostEnrollSyncUnenroll(t *testing.T) {
 	if r.Called("getent") && r.CalledRegexp(`os-release`) {
 		t.Error("--build-on-host probed the host")
 	}
+	// --remove-home: nothing to ask, so the host's accounts are not read.
+	if r.CalledRegexp(`^ssh .*getent passwd`) {
+		t.Errorf("--remove-home read the host's accounts: %q", r.Argvs())
+	}
 
 	out := hs.run(nil, "host", "list")
 	if !strings.Contains(plain(out), "web1                 admin@web1.example.net       lab                  192.0.2.1        tacplus  3") {
 		t.Errorf("list %q", plain(out))
 	}
-	hs.run(nil, "host", "sync", "--all")
-	hs.expect(0, "web1: synced (3 users).", "")
+	// A disabled user is inactive (expired on the host, never deleted).
+	// Without a terminal nothing is asked and no home is deleted.
+	hs.run(nil, "user", "disable", "carol")
+	r = hs.runner()
+	hs.run(r, "host", "sync", "--all")
+	hs.expect(0, "web1: synced (2 users).", "")
 	if !strings.HasSuffix(hs.pushed, "exit 0\n") {
 		t.Error("sync pushed the tarball")
 	}
+	if !strings.Contains(hs.pushed, "TAC_USERS=$'alice:superuser:20000\\nbob:operator:20001'\nTAC_INACTIVE=carol\nTAC_REMOVE_HOMES=''\nTAC_PROTOCOL=2\n") {
+		t.Errorf("sync header:\n%s", strings.SplitN(hs.pushed, "# --- tacctl", 2)[0])
+	}
+	if r.CalledRegexp(`getent passwd`) {
+		t.Errorf("no terminal, but the host's accounts were read: %q", r.Argvs())
+	}
+	hs.run(nil, "user", "enable", "carol")
 	// An enrolment whose provisioning account is a tacctl user is synced,
 	// with a warning to re-enrol.
 	hs.write("state/linux-hosts", "web1|carol@web1.example.net||lab|192.0.2.1|\n", 0o600)
@@ -209,7 +225,7 @@ func TestHostEnrollRefusals(t *testing.T) {
 		{[]string{"-oProxyCommand=x"}, 1, "Host Commands", "Unknown option: '-oProxyCommand=x'"},
 		{[]string{"web1", "web2"}, 1, "", "Only one host per enroll."},
 		{[]string{"--local", "web1"}, 1, "", "--local takes no host argument."},
-		{[]string{"web1", "--adopt", "x;y"}, 1, "", "--adopt needs a comma-separated list of account names."},
+		{[]string{"web1", "--adopt", "bob"}, 1, "Host Commands", "Unknown option: '--adopt'"},
 		{[]string{"web1", "--method"}, 1, "", "--method needs a method: tacplus, radius"},
 		{[]string{"web1", "--method", "ldap"}, 1, "", "Unknown method 'ldap'. Methods: tacplus, radius"},
 		{[]string{"web1", "--method", "radius"}, 1, "", "needs the RADIUS backend, which is not enabled"},
@@ -266,7 +282,8 @@ func TestHostEnrollRefusals(t *testing.T) {
 		args  []string
 		errIs string
 	}{
-		{[]string{"sync"}, "Usage: tacctl host sync <name> | --all  [--allow-uid-mismatch] [--adopt <name>[,<name>...]]"},
+		{[]string{"sync"}, "Usage: tacctl host sync <name> | --all  [--allow-uid-mismatch] [--remove-home]"},
+		{[]string{"sync", "web1", "--adopt", "bob"}, "Unknown option: '--adopt'"},
 		{[]string{"sync", "--bogus"}, "Unknown option: '--bogus'"},
 		{[]string{"sync", "ghost"}, "No enrolled host named 'ghost'. See 'tacctl host list'."},
 		{[]string{"unenroll"}, "Usage: tacctl host unenroll <name> [--force]"},
@@ -389,17 +406,53 @@ func TestConfigLinuxScriptAndUID(t *testing.T) {
 	hs.expect(1, "", "Username must contain only letters")
 	hs.run(nil, "config", "linux", "uid", "dave", "30000")
 	hs.expect(1, "", "User 'dave' does not exist.")
-	for _, bad := range []string{"500", "65534", "01000", "x1000"} {
+	// Only the range: 20000-29999.
+	for _, bad := range []string{"500", "1001", "19999", "30000", "65534", "020000", "x20000"} {
 		hs.run(nil, "config", "linux", "uid", "bob", bad)
-		hs.expect(1, "", "UID must be a number from 1000 up (not 65534).")
+		hs.expect(1, "", "UID must be a number from 20000 to 29999: tacctl gives out UIDs (and the matching GIDs) in that range only.")
 	}
 	hs.run(nil, "config", "linux", "uid", "bob", "20000")
 	hs.expect(1, "", "UID 20000 is already assigned to 'alice'.")
-	hs.run(nil, "config", "linux", "uid", "bob", "1001")
-	hs.expect(0, "usermod -u 1001 bob && groupmod -g 1001 bob", "")
-	// bash reads 09999 as a broken octal number, which passes.
-	hs.run(nil, "config", "linux", "uid", "carol", "09999")
-	hs.expect(0, "'carol' is now assigned UID/GID 09999.", "")
+	hs.run(nil, "config", "linux", "uid", "bob", "29999")
+	hs.expect(0, "usermod -u 29999 bob && groupmod -g 29999 bob", "")
+	// A legacy entry outside the range (before 0.2.1) is listed as unused
+	// on hosts, and its user is left out of the script (expired there, not
+	// deleted).
+	uids := filepath.Join(hs.dir, "state", "linux-uids")
+	data, _ := os.ReadFile(uids)
+	if err := os.WriteFile(uids, []byte(strings.Replace(string(data), "carol:20002", "carol:1500", 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	hs.run(nil, "config", "linux", "uid")
+	hs.expect(0, "  carol                    1500   outside 20000-29999: not used on hosts\n", "")
+	hs.run(nil, "config", "linux", "script", "--scope", "lab", "--server", "192.0.2.10", "-o", out)
+	hs.expect(0, "", "Skipping 'carol': its UID 1500 is outside 20000-29999, so no host gets an account for it. Assign one in the range: tacctl config linux uid carol <uid>")
+	script, _ := os.ReadFile(out)
+	if !strings.Contains(string(script), "TAC_USERS=$'alice:superuser:20000\\nbob:operator:29999'\nTAC_INACTIVE=carol\n") {
+		t.Errorf("script header:\n%s", strings.SplitN(string(script), "# --- tacctl", 2)[0])
+	}
+}
+
+// The range runs out at 29999: the next user is refused with the way out,
+// and nothing is written.
+func TestConfigLinuxScriptUIDRangeFull(t *testing.T) {
+	hs := newHostSandbox(t)
+	uids := filepath.Join(hs.dir, "state", "linux-uids")
+	if err := os.WriteFile(uids, []byte("alice:29999\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(hs.dir, "x.sh")
+	hs.run(nil, "config", "linux", "script", "--scope", "lab", "--server", "192.0.2.10", "-o", out)
+	hs.expect(1, "", "[ERROR] No UID left for 'bob': every number of 20000-29999 has been given out (UIDs are never reused).")
+	if !strings.Contains(hs.err.String(), "Give it a free number of the range by hand: tacctl config linux uid bob <uid>") {
+		t.Errorf("stderr %q", hs.err.String())
+	}
+	if _, err := os.Stat(out); !os.IsNotExist(err) {
+		t.Error("a script was written")
+	}
+	if data, _ := os.ReadFile(uids); string(data) != "alice:29999\n" {
+		t.Errorf("uid file %q", data)
+	}
 }
 
 func TestHostAndLinuxSpecs(t *testing.T) {
@@ -438,12 +491,7 @@ func TestHostAndLinuxSpecs(t *testing.T) {
 	}
 }
 
-func TestUIDRefused(t *testing.T) {
-	for uid, refused := range map[string]bool{"1000": false, "999": true, "65534": true, "01000": true, "0012345": false, "09999": false, "20000": false} {
-		if uidRefused(uid) != refused {
-			t.Errorf("uidRefused(%s)", uid)
-		}
-	}
+func TestHostHelpers(t *testing.T) {
 	if got := srcAddresses("a src 1.2.3.4 x\nb src 5.6.7.8\nsrc"); strings.Join(got, ",") != "1.2.3.4,5.6.7.8," {
 		t.Errorf("srcAddresses %q", got)
 	}

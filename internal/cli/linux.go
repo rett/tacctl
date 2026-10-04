@@ -12,7 +12,6 @@ import (
 	"errors"
 	"io"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -245,6 +244,7 @@ func (inv *invocation) scriptRequest(scope, server, method, output string) (host
 		req.Secret = m.Scope(scope).Secret
 	}
 	req.Rows = m.LinuxUsers(scope)
+	req.Inactive = m.LinuxInactive(scope)
 	id := backend.TACACS
 	if method == hosts.Radius {
 		id = "radius"
@@ -452,26 +452,9 @@ func (inv *invocation) configLinuxRemoveScript(args []string) error {
 
 // --- uid -----------------------------------------------------------------------
 
-var reUID = regexp.MustCompile(`^[0-9]{4,9}$`)
-
-// uidRefused is '(( uid < 1000 || uid == 65534 ))' for a uid of 4-9 digits:
-// bash reads a leading 0 as octal, and a number that is not valid octal
-// makes the arithmetic fail, which reads as false (0.1.16 also printed
-// bash's own complaint about it, which is not reproduced).
-func uidRefused(uid string) bool {
-	base := 10
-	if len(uid) > 1 && uid[0] == '0' {
-		base = 8
-	}
-	n, err := strconv.ParseInt(uid, base, 64)
-	if err != nil {
-		return false
-	}
-	return n < 1000 || n == 65534
-}
-
 // configLinuxUID is cmd_config_linux_uid: list, show or change the number
-// a user gets as UID and primary GID on every host. Only a change writes
+// a user gets as UID and primary GID on every host, one of
+// hosts.UIDBase..hosts.UIDMax. Only a change writes
 // the UID file; a listing or a lookup leaves it as it is (absent stays
 // absent). Changing it does not renumber accounts that already exist on
 // enrolled hosts; the next sync reports them.
@@ -518,8 +501,8 @@ func (inv *invocation) configLinuxUID(args []string) error {
 	if !m.Exists("users", username) {
 		return inv.usageErr("User '" + username + "' does not exist.")
 	}
-	if !reUID.MatchString(uid) || uidRefused(uid) {
-		return inv.usageErr("UID must be a number from 1000 up (not 65534).")
+	if !hosts.UIDInRange(uid) {
+		return inv.usageErr("UID must be a number from " + strconv.Itoa(hosts.UIDBase) + " to " + strconv.Itoa(hosts.UIDMax) + ": tacctl gives out UIDs (and the matching GIDs) in that range only.")
 	}
 	holder, err := uids.Holder(uid)
 	if err != nil {
