@@ -32,7 +32,7 @@ pathspec=(-- . ':!vendor' ':!go.sum' ':!internal/conf/testdata')
 
 home_re='/home/[a-z_][a-z0-9_-]*/'
 mail_re='[a-z0-9._%+-]+@([a-z0-9-]+\.)+(com|net|org|io|us|uk|de|dev|app|co|me|info|biz|edu|gov|ca|au|nz|eu|ai|cloud|xyz|tech|online|site|is)\b'
-allow_re='/home/(user|u)/|@([a-z0-9-]+\.)*example\.(com|net|org)\b|git@github\.com|noreply'
+allow_re='/home/(user|u)/|@openssh\.com\b|@([a-z0-9-]+\.)*example\.(com|net|org)\b|git@github\.com|noreply'
 
 patterns_file="${TACCTL_PRIVATE_PATTERNS:-${XDG_CONFIG_HOME:-$HOME/.config}/tacctl/private-patterns}"
 private=()
