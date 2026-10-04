@@ -95,6 +95,9 @@ var Rules = []Rule{
 	{Tier: Readonly, Cmd: "passwd", AnySub: true, Sudoers: []string{"passwd"}},
 	{Tier: Readonly, Cmd: "status", AnySub: true, Sudoers: []string{"status"}},
 	{Tier: Readonly, Cmd: "version", AnySub: true, Sudoers: []string{"version"}, Wrap: true},
+	{Tier: Readonly, Cmd: "help", Sudoers: []string{"help"}},
+	{Tier: Readonly, Cmd: "-h", Sudoers: []string{"-h"}},
+	{Tier: Readonly, Cmd: "--help", Sudoers: []string{"--help"}, Wrap: true},
 	{Tier: Readonly, Cmd: "user", Sub: "list", Sudoers: []string{"user list"}},
 	{Tier: Readonly, Cmd: "user", Sub: "show", Sudoers: []string{"user show *"}},
 	{Tier: Readonly, Cmd: "group", Sub: "list", Sudoers: []string{"group list"}},
@@ -116,8 +119,8 @@ var Rules = []Rule{
 
 // Permits is tier_permits: whether tier may run 'tacctl cmd sub'.
 // Unrestricted and superuser may run anything, none nothing; readonly the
-// Readonly rows, operator both kinds. ('help' is in no row: a tier user
-// running 'tacctl help' is denied before the usage, as in 0.1.16.)
+// Readonly rows, operator both kinds. 'help', '-h' and '--help' with
+// nothing after them are Readonly rows: the usage is no secret.
 func Permits(t Tier, cmd, sub string) bool {
 	switch t {
 	case Unrestricted, Superuser:

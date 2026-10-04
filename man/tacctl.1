@@ -261,7 +261,10 @@ Rename a user.
 Move a user to a different group without changing the password.
 .TP
 .BI "user verify " name
-Show user details and verify the password interactively.
+Show user details and verify the password interactively. A stored hash
+with a bcrypt cost above 16 (tacctl writes 10\-14) is refused before the
+password is asked, since checking it would take hours; tacquito still
+authenticates it.
 .TP
 .B "user scope " \fIname\fR " " [ "list " | " add " \fIs\fR[,s...] | " remove " \fIs\fR[,s...] | " replace " \fIs\fR[,s...] | " remove \-\-all" ]
 Manage which scopes
@@ -342,7 +345,10 @@ the string tested is
 .BR running-config ,
 never the full line, so a regex that repeats the command word
 .RB ( "^show .*$" )
-can never match and is rejected. Omit
+can never match and is rejected. A regex may not contain a comma (the
+rule's stored line form separates matches with commas); write
+.B \ex2c
+for one. Omit
 .B --match
 to cover any arguments.
 The first matching rule wins; tacquito returns FAIL if no rule
@@ -822,7 +828,8 @@ Re-run it with
 to sync users after changes on the server.
 .TP
 .B "config linux uid " "[ " username " [ " uid " ] ]"
-List the UID assigned to each user, print one user's UID, or change it.
+List the UID assigned to each user, print one user's UID, or change it
+(only a change writes the file).
 Each user has one number, used as both UID and primary GID on every
 enrolled host; it is assigned the first time the user is sent to a host
 and kept in
@@ -869,7 +876,7 @@ which grants tacctl by tier to tacctl users that have local accounts.
 Members of
 .B tac-readonly
 may run
-.BR passwd ", " status ", " version ", " "user list" ", " "user show" ", "
+.BR passwd ", " status ", " version ", " help " (also " \-h ", " \-\-help "), " "user list" ", " "user show" ", "
 .BR "group list" ", " "scope list" ", " "backend list" " and " "backend status" .
 Members of
 .B tac-operator
@@ -888,6 +895,12 @@ in the store
 outside the local group
 .B tac-users
 are not tier-restricted.
+.B "tacctl upgrade"
+rewrites an installed
+.I /etc/sudoers.d/tacctl\-tiers
+that differs from the release's rules (after
+.B visudo \-cf
+accepts them); it never creates the file.
 .TP
 .BI "config password-age " [ days ]
 Show or set the password age warning threshold. Default 90 days.

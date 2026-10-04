@@ -221,16 +221,18 @@ func TestHostEnrollRefusals(t *testing.T) {
 			t.Errorf("%q reached ssh", c.args)
 		}
 	}
-	// getent failing ends the command with its status, silently.
+	// getent failing: the name cannot be resolved, exit 1.
 	r := hs.runner()
 	r.On([]string{"getent"}, execx.Result{Code: 2})
 	hs.run(r, "host", "enroll", "ghost", "--scope", "lab")
-	hs.expect(2, "", "")
-	if hs.out.Len()+hs.err.Len() != 0 {
-		t.Errorf("getent failure printed %q %q", hs.out.String(), hs.err.String())
-	}
+	hs.expect(1, "", "[ERROR] Cannot resolve 'ghost'\n")
 	r = hs.runner()
 	r.On([]string{"ip"}, execx.Result{Code: 2})
+	hs.run(r, "host", "enroll", "web1", "--scope", "lab")
+	hs.expect(1, "", "Could not determine this server's address for web1 (ip route failed); pass --server <address>")
+	// ip answering without a source address.
+	r = hs.runner()
+	r.On([]string{"ip"}, execx.Result{Stdout: []byte("unreachable\n")})
 	hs.run(r, "host", "enroll", "web1", "--scope", "lab")
 	hs.expect(1, "", "Could not work out which address web1 should use for this server. Pass --server.")
 	// No tarball.
@@ -327,14 +329,21 @@ func TestConfigLinuxScriptAndUID(t *testing.T) {
 	if st, _ := os.Stat(out); st.Mode().Perm() != 0o600 {
 		t.Errorf("mode %v", st.Mode())
 	}
-	// No --server: ip's source address; ip failing ends the command with its status.
+	// No --server: ip's source address; ip failing is an error naming --server.
 	r := hs.runner()
 	hs.run(r, "config", "linux", "script", "--scope", "lab", "-o", out)
 	hs.expect(0, "Server:  192.0.2.1 port 49", "")
 	r = hs.runner()
 	r.On([]string{"ip"}, execx.Result{Code: 2})
 	hs.run(r, "config", "linux", "script", "--scope", "lab", "-o", out)
-	hs.expect(2, "", "")
+	hs.expect(1, "", "Could not determine this server's address (ip route failed); pass --server <address>")
+	// An output that cannot be written: an error, no "Wrote".
+	bad := filepath.Join(hs.dir, "no", "such", "x.sh")
+	hs.run(nil, "config", "linux", "script", "--scope", "lab", "--server", "192.0.2.10", "-o", bad)
+	hs.expect(1, "", "[ERROR] Cannot write "+bad+": No such file or directory\n")
+	if strings.Contains(hs.out.String(), "Wrote") {
+		t.Errorf("reported as written: %q", hs.out.String())
+	}
 	hs.run(nil, "config", "linux", "script", "--bogus")
 	hs.expect(1, "", "Unknown argument: '--bogus'")
 	hs.run(nil, "config", "linux", "script", "--scope")

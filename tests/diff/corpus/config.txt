@@ -5,9 +5,9 @@
 # Run: tests/diff/run.sh config
 @fixture tacquito.minimal.yaml
 
-@known 3.9 item 30: the config usage lists render --dry-run --out
+@known 3.9 item 30: the config usage lists render --dry-run --out; 0.2.1 item 5: the config usage lists mgmt-acl cisco-name|juniper-name
 config
-@known 3.9 item 30: the config usage lists render --dry-run --out
+@known 3.9 item 30: the config usage lists render --dry-run --out; 0.2.1 item 5: the config usage lists mgmt-acl cisco-name|juniper-name
 config bogus
 config show
 config validate
@@ -128,7 +128,9 @@ config sudoers
 config sudoers show
 config sudoers bogus
 config sudoers remove
+@known 0.2.1 item 2: the tiers rules grant help, -h and --help
 config sudoers tiers
+@known 0.2.1 item 2: the tiers rules grant help, -h and --help
 config sudoers tiers show
 config sudoers tiers bogus
 
@@ -183,9 +185,9 @@ config diff ../../etc/passwd
 config restore nosuchid
 config restore ../../etc/passwd
 config restore a b
-@known 3.9 item 30: the config usage lists render --dry-run --out
+@known 3.9 item 30: the config usage lists render --dry-run --out; 0.2.1 item 5: the config usage lists mgmt-acl cisco-name|juniper-name
 config frobnicate
-@known 3.9 item 30: the config usage lists render --dry-run --out
+@known 3.9 item 30: the config usage lists render --dry-run --out; 0.2.1 item 5: the config usage lists mgmt-acl cisco-name|juniper-name
 config frobnicate extra
 config loglevel bogus
 config password-age abc
@@ -206,6 +208,7 @@ config get-list a b c
 config sudoers show extra
 config sudoers remove extra
 config sudoers tiers remove extra
+@known 0.2.1 item 2: the tiers rules grant help, -h and --help
 config sudoers tiers show extra
 config restore {TS} --bogus
 config diff {TS} extra
@@ -256,7 +259,7 @@ config sudoers install 'bad group' <<< y
 config sudoers install wheel extra <<< n
 # Unprivileged, the real 'install -o root' fails; 0.1.16 then exits under errexit and
 # leaves its mktemp copy of the drop-in in TMPDIR, 0.2.0 removes it (3.9 item 18).
-@known 3.9 item 18: a failed 'config sudoers [tiers] install' leaves no temp file behind
+@known 3.9 item 18: a failed 'config sudoers [tiers] install' leaves no temp file behind; 0.2.1 item 2: the tiers rules grant help, -h and --help
 config sudoers tiers install
 @known 3.9 item 18: a failed 'config sudoers [tiers] install' leaves no temp file behind
 config sudoers install wheel <<< y

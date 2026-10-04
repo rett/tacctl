@@ -661,6 +661,10 @@ func (inv *invocation) userVerify(args []string) error {
 
 	m, _ := inv.model()
 	stored := m.User(username).Hash
+	if err := hash.VerifyCostError(stored); err != nil {
+		a.Out.Error(err.Error())
+		return exit(1)
+	}
 	pw, err := a.Prompter().Password("  Enter password to verify: ")
 	if err != nil {
 		return err

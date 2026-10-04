@@ -118,9 +118,7 @@ type UpgradeReport struct {
 	// Notes are the UPGRADE_SUMMARY_NOTES lines finish added, in order.
 	Notes []string
 	// FilesNotes are the lines the files phase added (a unit update that
-	// stopped). 0.1.16's cmd_upgrade empties UPGRADE_SUMMARY_NOTES after
-	// the files phase, so its summary never shows them; the orchestrator
-	// drops them too, for parity.
+	// stopped); the summary shows them before Notes.
 	FilesNotes []string
 	// FilesUpdated is what the files phase added to SCRIPTS_UPDATED.
 	FilesUpdated int
@@ -462,9 +460,9 @@ func globSorted(pattern string) []string {
 }
 
 // UpgradeSummary is backend.Summarizer's view of UpgradeReport: the head,
-// the notes of 'finish' and the files 'files' replaced. FilesNotes are
-// left out, as 0.1.16's summary drops them.
+// the notes of 'files' then those of 'finish', and the files 'files'
+// replaced.
 func (b *Backend) UpgradeSummary() backend.UpgradeSummary {
 	r := b.UpgradeReport()
-	return backend.UpgradeSummary{Head: r.Head, Notes: r.Notes, FilesUpdated: r.FilesUpdated}
+	return backend.UpgradeSummary{Head: r.Head, Notes: append(r.FilesNotes, r.Notes...), FilesUpdated: r.FilesUpdated}
 }

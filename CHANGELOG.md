@@ -3,6 +3,64 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.1 (unreleased)
+
+### What changed
+
+1. **`tacctl config linux uid` and `config linux uid <user>` only read.** The
+   listing and the lookup leave `/etc/tacctl/linux-uids` as it is (a missing
+   file stays missing); only `config linux uid <user> <uid>` writes it.
+2. **`help`, `-h` and `--help` are open to the read-only and operator tiers.**
+   A tier user gets the usage (exit 1, as for everyone) instead of a denial;
+   the tiers sudoers rules grant `tacctl help`, `tacctl -h` and
+   `tacctl --help`. A word after them is still denied.
+3. **`install`, `upgrade` and `uninstall` refuse an argument they do not
+   know**, and a `--branch` with no value, before doing anything:
+   `Unknown argument: '<x>'` and the usage line (`Usage: tacctl install
+   [--branch <name>] [-y|--yes]`, `Usage: tacctl upgrade [--branch <name>]`,
+   `Usage: tacctl uninstall [-y|--yes]`), exit 1. `upgrade` has no `-y`
+   (it does not ask).
+4. **`tacctl upgrade` refreshes the tiers sudoers rules** when
+   `/etc/sudoers.d/tacctl-tiers` is installed and differs from this
+   release's rules: the file is rewritten after `visudo -cf` accepts the new
+   rules (`  Updated: tiers sudoers`, else `  Unchanged: tiers sudoers`).
+   The file is never created by an upgrade; when `visudo` refuses the new
+   rules the old file stays, a warning names it, and the upgrade goes on.
+5. **The `tacctl config` usage lists `mgmt-acl cisco-name [name]` and
+   `mgmt-acl juniper-name [name]`.**
+6. **`group commands add … --match` refuses a regex with a comma**: `A comma
+   cannot be used in --match (the rule line form splits on it); use \x2c`,
+   exit 1. A comma used to be split into two matches the next time the rules
+   were written.
+7. **`user verify` refuses a stored hash with a bcrypt cost above 16**, before
+   asking for the password: `bcrypt cost 31 exceeds the verify limit (16);
+   tacquito still authenticates it`, exit 1. Such a hash (tacctl writes 10 to
+   14) made the check run for hours or days.
+8. **`config linux script` and `host enroll` report what stopped them.**
+   `config linux script -o <file>` that cannot write the file prints
+   `[ERROR] Cannot write <file>: <reason>` and exits 1 (it said `Wrote …` and
+   exited 0); without `--server`, a failing `ip route` lookup prints `[ERROR]
+   Could not determine this server's address (ip route failed); pass --server
+   <address>`, exit 1. `host enroll <host>` prints `[ERROR] Cannot resolve
+   '<host>'` for a name that does not resolve and `[ERROR] Could not determine
+   this server's address for <host> (ip route failed); pass --server
+   <address>` when the route lookup fails, exit 1; both used to end silently
+   with the tool's status.
+9. **The store migration's stop message no longer names `timeout`**: `the
+   daemon load-smoke cannot run (<tacquito binary> is missing), so the
+   rendered config cannot be proven to load`.
+10. **`tacctl install` over an existing store names a backend whose
+    configuration step failed**: `[WARN] <backend>: configuration step failed
+    (see above); run 'tacctl upgrade' after the install`, and the install
+    goes on.
+11. **The upgrade summary keeps the TACACS+ unit note**: `Units: NOT updated —
+    the previous unit files are in place (see 'Unit update stopped' above)`
+    when the unit update stopped.
+12. **`tacctl install --branch <bash release>` stops before building** with
+    `[ERROR] '<branch>' is a release of the bash era; install it with its own
+    installer: sudo /opt/tacctl/bin/tacctl.sh install`, exit 1, instead of a
+    build failure.
+
 ## 0.2.0 (2026-10-04)
 
 tacctl is now a single Go program, `/usr/local/bin/tacctl`, built on the server

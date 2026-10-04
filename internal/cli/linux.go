@@ -346,13 +346,8 @@ func (inv *invocation) configLinuxScript(args []string) error {
 	}
 	if server == "" {
 		res, err := a.Runner.Run(inv.ctx, execx.Cmd{Name: "ip", Args: []string{"-4", "route", "get", "1.0.0.0"}, Stderr: io.Discard})
-		if code := res.Code; code != 0 || err != nil {
-			// 'server=$(ip ... | awk ...)' under pipefail and errexit: a
-			// failing ip ends the command with its status, silently.
-			if code == 0 {
-				code = 1
-			}
-			return exit(code)
+		if res.Code != 0 || err != nil {
+			return inv.usageErr("Could not determine this server's address (ip route failed); pass --server <address>")
 		}
 		server = strings.TrimRight(strings.Join(srcAddresses(string(res.Stdout)), "\n"), "\n")
 		if server == "" {
@@ -459,17 +454,14 @@ func uidRefused(uid string) bool {
 }
 
 // configLinuxUID is cmd_config_linux_uid: list, show or change the number
-// a user gets as UID and primary GID on every host. Changing it does not
-// renumber accounts that already exist on enrolled hosts; the next sync
-// reports them.
+// a user gets as UID and primary GID on every host. Only a change writes
+// the UID file; a listing or a lookup leaves it as it is (absent stays
+// absent). Changing it does not renumber accounts that already exist on
+// enrolled hosts; the next sync reports them.
 func (inv *invocation) configLinuxUID(args []string) error {
 	a := inv.app
 	username, uid := arg(args, 0), arg(args, 1)
 	uids := hosts.UIDs{Path: a.Paths.LinuxUIDs}
-	if err := uids.Touch(); err != nil {
-		inv.stderrLine("touch: cannot touch '" + uids.Path + "': " + errnoText(err))
-		return exit(1)
-	}
 	if username == "" {
 		inv.echo("")
 		inv.echoE(ui.Bold + "Assigned Linux UIDs" + ui.NC + " (same number is the primary GID)")
@@ -518,6 +510,10 @@ func (inv *invocation) configLinuxUID(args []string) error {
 	}
 	if holder != "" && holder != username {
 		return inv.usageErr("UID " + uid + " is already assigned to '" + holder + "'.")
+	}
+	if err := uids.Touch(); err != nil {
+		inv.stderrLine("touch: cannot touch '" + uids.Path + "': " + errnoText(err))
+		return exit(1)
 	}
 	if err := uids.Assign(username, uid); err != nil {
 		return err

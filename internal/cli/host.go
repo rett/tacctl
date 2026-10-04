@@ -252,13 +252,7 @@ func (inv *invocation) hostEnroll(args []string) error {
 		}
 		res, err := a.Runner.Run(inv.ctx, execx.Cmd{Name: "getent", Args: []string{"ahostsv4", hostPart}, Stderr: io.Discard})
 		if res.Code != 0 || err != nil {
-			// 'host_ip=$(getent ... | awk ...)' under pipefail and errexit:
-			// a failed lookup ends the command with getent's status, silently.
-			code := res.Code
-			if code == 0 {
-				code = 1
-			}
-			return exit(code)
+			return inv.usageErr("Cannot resolve '" + hostPart + "'")
 		}
 		if lines := strings.SplitN(string(res.Stdout), "\n", 2); len(lines) > 0 {
 			if f := strings.Fields(lines[0]); len(f) > 0 {
@@ -283,7 +277,10 @@ func (inv *invocation) hostEnroll(args []string) error {
 			}
 		}
 		if server == "" {
-			res, _ := a.Runner.Run(inv.ctx, execx.Cmd{Name: "ip", Args: []string{"-4", "route", "get", hostIP}, Stderr: io.Discard})
+			res, err := a.Runner.Run(inv.ctx, execx.Cmd{Name: "ip", Args: []string{"-4", "route", "get", hostIP}, Stderr: io.Discard})
+			if res.Code != 0 || err != nil {
+				return inv.usageErr("Could not determine this server's address for " + hostPart + " (ip route failed); pass --server <address>")
+			}
 			if addrs := srcAddresses(string(res.Stdout)); len(addrs) > 0 {
 				server = addrs[0]
 			}

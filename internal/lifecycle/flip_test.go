@@ -205,7 +205,8 @@ func TestFlipStopsWithoutTheDaemonBinary(t *testing.T) {
 	before := sha(t, e.p.Config)
 	e.assertStopped(e.flip(), before)
 	has(t, e.output(), "Store migration stopped: the daemon load-smoke cannot run ("+filepath.Join(e.p.Bin, "tacquito")+
-		" or 'timeout' is missing), so the rendered config cannot be proven to load.")
+		" is missing), so the rendered config cannot be proven to load.")
+	hasNot(t, e.output(), "timeout")
 	if len(e.run.Calls()) != 0 {
 		t.Error(e.run.Argvs())
 	}

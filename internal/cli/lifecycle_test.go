@@ -20,21 +20,35 @@ func lifecycleSandbox(t *testing.T) *sandbox {
 }
 
 // install, upgrade and uninstall are native: the plan and the prompt, a
-// closed stdin cancels with exit 0, nothing run; -y is accepted; --branch
-// without a value is the silent exit 1 of 0.1.16.
+// closed stdin cancels with exit 0, nothing run; -y is accepted where it
+// exists; an unknown argument, or --branch without a value, is refused with
+// the usage before anything runs.
 func TestLifecycleVerbsThroughTheCLI(t *testing.T) {
 	sb := lifecycleSandbox(t)
-	out := sb.run("", []string{"install", "--branch", "feature/x", "extra"})
+	out := sb.run("", []string{"install", "--branch", "feature/x"})
 	sb.expect(0, "  tacctl Installer", "")
 	deploy, command := filepath.Join(sb.dir, "opt", "tacctl"), filepath.Join(sb.dir, "usr", "local", "bin", "tacctl")
 	if !strings.Contains(out, "Install tacctl ("+deploy+", "+command+") and its state directory ("+sb.path("state")+")") ||
 		!strings.HasSuffix(plain(out), "[INFO] Cancelled.\n") || len(sb.runner.Calls()) != 0 {
 		t.Errorf("install: %q calls %q", out, sb.runner.Argvs())
 	}
-	for _, args := range [][]string{{"install", "--branch"}, {"upgrade", "--branch"}, {"upgrade", "--branch", "x", "--branch"}} {
-		sb.run("", args)
-		if sb.code != 1 || sb.out.Len() != 0 || sb.err.Len() != 0 || len(sb.runner.Calls()) != 0 {
-			t.Errorf("%q: exit %d %q %q %q", args, sb.code, sb.out.String(), sb.err.String(), sb.runner.Argvs())
+	for _, c := range []struct {
+		args       []string
+		bad, usage string
+	}{
+		{[]string{"install", "--branch"}, "--branch", "Usage: tacctl install [--branch <name>] [-y|--yes]"},
+		{[]string{"install", "-y", "extra", "--branch", "x"}, "extra", "Usage: tacctl install [--branch <name>] [-y|--yes]"},
+		{[]string{"upgrade", "--branch"}, "--branch", "Usage: tacctl upgrade [--branch <name>]"},
+		{[]string{"upgrade", "--branch", "x", "--branch"}, "--branch", "Usage: tacctl upgrade [--branch <name>]"},
+		{[]string{"upgrade", "-y"}, "-y", "Usage: tacctl upgrade [--branch <name>]"},
+		{[]string{"upgrade", "--yes"}, "--yes", "Usage: tacctl upgrade [--branch <name>]"},
+		{[]string{"uninstall", "--branch", "x"}, "--branch", "Usage: tacctl uninstall [-y|--yes]"},
+		{[]string{"uninstall", "-y", "now"}, "now", "Usage: tacctl uninstall [-y|--yes]"},
+	} {
+		sb.run("", c.args)
+		want := "[ERROR] Unknown argument: '" + c.bad + "'\n[ERROR] " + c.usage + "\n"
+		if sb.code != 1 || sb.out.Len() != 0 || plain(sb.err.String()) != want || len(sb.runner.Calls()) != 0 {
+			t.Errorf("%q: exit %d %q %q %q", c.args, sb.code, sb.out.String(), sb.err.String(), sb.runner.Argvs())
 		}
 	}
 	out = sb.run("n\n", []string{"uninstall"})

@@ -156,6 +156,23 @@ setup() {
     refute_output --partial '^show'
 }
 
+@test "group commands add: refuses a comma in --match (the rule line form would split it); \\x2c works" {
+    local before
+    before=$("$TACCTL_BIN_SCRIPT" group commands list operator)
+    run "$TACCTL_BIN_SCRIPT" group commands add operator show --match 'a{1,3}' --action permit
+    assert_failure 1
+    assert_output --partial 'A comma cannot be used in --match (the rule line form splits on it); use \x2c'
+    run "$TACCTL_BIN_SCRIPT" group commands add operator show --match 'ok' --match 'x,y'
+    assert_failure 1
+    assert_output --partial "A comma cannot be used in --match"
+    [[ "$("$TACCTL_BIN_SCRIPT" group commands list operator)" == "$before" ]]
+
+    run "$TACCTL_BIN_SCRIPT" group commands add operator show --match 'a\x2cb' --action permit
+    assert_success
+    run "$TACCTL_BIN_SCRIPT" group commands list operator
+    assert_output --partial 'a\x2cb'
+}
+
 @test "group commands add: rejects '*' (must use default)" {
     run "$TACCTL_BIN_SCRIPT" group commands add operator '*' --action permit
     assert_failure

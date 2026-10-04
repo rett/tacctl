@@ -232,12 +232,13 @@ func (e *Env) WriteScript(req ScriptRequest) (ScriptResult, error) {
 	if req.Temp {
 		return res, replaceFile(req.Output, data, 0o600)
 	}
-	if _, err := installAs(tempName(os.TempDir()), data, req.Output, 0o600); err != nil {
+	if target, err := installAs(tempName(os.TempDir()), data, req.Output, 0o600); err != nil {
 		var ie *InstallError
 		if !errors.As(err, &ie) {
 			return res, err
 		}
-		_, _ = io.WriteString(e.Out.Stderr, ie.Msg+"\n")
+		e.Out.Error("Cannot write " + target + ": " + strerror(ie.Err))
+		return res, ErrFailed
 	}
 	return res, nil
 }

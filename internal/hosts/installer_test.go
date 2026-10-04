@@ -249,7 +249,7 @@ func TestWriteScriptOutputLikeInstall(t *testing.T) {
 	}
 	req := ScriptRequest{Scope: "lab", Server: "192.0.2.10", Secret: "abcdefabcdefabcdef"}
 	// A directory receives the file under the temp name; a missing
-	// directory is install's complaint, and not a failure.
+	// directory is "Cannot write <path>: <reason>" and a failure.
 	dir := t.TempDir()
 	req.Output = dir
 	if _, err := e.WriteScript(req); err != nil {
@@ -260,10 +260,10 @@ func TestWriteScriptOutputLikeInstall(t *testing.T) {
 		t.Errorf("dir output: %v", ents)
 	}
 	req.Output = filepath.Join(dir, "no", "such.sh")
-	if _, err := e.WriteScript(req); err != nil {
-		t.Fatal(err)
+	if _, err := e.WriteScript(req); !errors.Is(err, ErrFailed) {
+		t.Fatalf("missing directory: %v", err)
 	}
-	want := "install: cannot create regular file '" + req.Output + "': No such file or directory\n"
+	want := "\033[0;31m[ERROR]\033[0m Cannot write " + req.Output + ": No such file or directory\n"
 	if errb.String() != want {
 		t.Errorf("stderr %q, want %q", errb.String(), want)
 	}

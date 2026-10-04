@@ -33,9 +33,8 @@ var installPrereqs = []string{"git", "wget"}
 // units, logrotate and README.md) come from paths.Tree, the checkout this
 // binary belongs to, as 0.1.16 takes them from its own PROJECT_DIR.
 func Install(ctx context.Context, h *Host, args []string) error {
-	yes := false
-	branch, err := parseBranch(args, &yes)
-	if err != nil {
+	yes, branch := false, ""
+	if err := parseLifecycleArgs(h, args, &branch, &yes, installUsage); err != nil {
 		return err
 	}
 	out, p := h.Out, h.Paths
@@ -144,7 +143,8 @@ func Install(ctx context.Context, h *Host, args []string) error {
 // installDeploy is the "Clone management repo" step: the deploy clone
 // pulled (on --branch's branch when it names one) or cloned, readable by
 // everyone and safe for git as any user, its entrypoint executable; then
-// the installed command made the clone's binary.
+// the installed command made the clone's binary. A clone of a bash-era
+// release is refused before anything is built.
 func (h *Host) installDeploy(ctx context.Context, branch string) error {
 	out, p := h.Out, h.Paths
 	deploy := p.Deploy
@@ -176,6 +176,18 @@ func (h *Host) installDeploy(ctx context.Context, branch string) error {
 	// 755 so non-root users can exec into sudo through it.
 	if err := h.chmod(filepath.Join(deploy, "bin", "tacctl.sh"), 0o755); err != nil {
 		return err
+	}
+	// A release of the bash era has no Go sources to build; its own
+	// installer installs it (an install, unlike an upgrade, has nothing
+	// to hand over).
+	if !exists(filepath.Join(deploy, "go.mod")) && exists(filepath.Join(deploy, "lib", "core.sh")) {
+		what := "The tree in " + deploy
+		if branch != "" {
+			what = "'" + branch + "'"
+		}
+		out.Error(what + " is a release of the bash era; install it with its own installer: sudo " +
+			filepath.Join(deploy, "bin", "tacctl.sh") + " install")
+		return backend.ErrFailed
 	}
 	return h.installCommand(ctx)
 }

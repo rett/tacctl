@@ -27,6 +27,7 @@ import (
 	"github.com/rett/tacctl/internal/lifecycle"
 	"github.com/rett/tacctl/internal/paths"
 	"github.com/rett/tacctl/internal/snapshot"
+	"github.com/rett/tacctl/internal/tier"
 	"github.com/rett/tacctl/internal/ui"
 )
 
@@ -482,13 +483,14 @@ func readFile(t *testing.T, p string) string {
 func install(o *ohost, args ...string) int { return o.do(lifecycle.Install, args...) }
 
 // The plan, then a closed stdin (or any answer but y/Y) cancels with exit
-// 0 before anything runs; --branch without a value is a silent exit 1;
-// git and wget are required first.
+// 0 before anything runs; an unknown argument or --branch without a value
+// is refused with the usage, exit 1, before anything runs; git and wget
+// are required first.
 func TestInstallCancelPrereqsAndBranchUsage(t *testing.T) {
 	o := newOhost(t)
 	for _, answer := range []string{"", "n\n", "yes\n", "Y1\n"} {
 		o.stdin = answer
-		if code := install(o, "whatever", "--branch", "feature/x", "extra"); code != 0 {
+		if code := install(o, "--branch", "feature/x"); code != 0 {
 			t.Fatalf("exit %d", code)
 		}
 		inOrder(t, o.text(), "  tacctl Installer", "Install tacctl ("+o.p.Deploy+", "+o.p.Command+") and its state directory ("+o.p.StateDir+")",
@@ -498,8 +500,13 @@ func TestInstallCancelPrereqsAndBranchUsage(t *testing.T) {
 		}
 	}
 	o.stdin = ""
-	if code := install(o, "--branch"); code != 1 || o.stdout.Len() != 0 || o.stderr.Len() != 0 {
-		t.Errorf("--branch: exit %d %q %q", code, o.stdout, o.stderr)
+	for bad, args := range map[string][]string{"--branch": {"--branch"}, "whatever": {"whatever", "--branch", "feature/x"},
+		"extra": {"-y", "extra"}} {
+		want := "[ERROR] Unknown argument: '" + bad + "'\n[ERROR] Usage: tacctl install [--branch <name>] [-y|--yes]\n"
+		if code := install(o, args...); code != 1 || o.stdout.Len() != 0 || stripANSI(o.stderr.String()) != want ||
+			len(o.phases) != 0 || len(o.run.Calls()) != 0 {
+			t.Errorf("%q: exit %d %q %q", args, code, o.stdout, o.stderr)
+		}
 	}
 	o.run.Missing("wget")
 	if code := install(o, "-y"); code != 1 || stripANSI(o.stderr.String()) != "[ERROR] Required command 'wget' not found. Install it first.\n" ||
@@ -576,6 +583,53 @@ func TestInstallOverExistingCloneAndStore(t *testing.T) {
 	}
 	if readFile(t, o.p.Command) != "the shim built this\n" || strings.Contains(o.text(), "Shared Secret:") {
 		t.Errorf("rebuilt, or a secret shown:\n%s", o.text())
+	}
+}
+
+// Over an existing store, a backend's 'upgrade config' phase that fails is
+// named with the way to finish (after its own messages), and the install
+// carries on to the start phase and the summary, exit 0.
+func TestInstallOverAStoreWarnsWhenABackendsConfigStepFails(t *testing.T) {
+	o := newOhost(t)
+	o.enableBoth()
+	o.write(o.p.StoreFile, fixture(t, "store.minimal.yaml"))
+	o.tac.failAt = "upgrade config"
+	if code := install(o, "-y"); code != 0 {
+		t.Fatalf("exit %d\n%s\n%s", code, o.stdout, o.stderr)
+	}
+	inOrder(t, o.text(), "Existing store found at", "PHASE tacacs upgrade config",
+		"[WARN] tacacs: configuration step failed (see above); run 'tacctl upgrade' after the install",
+		"PHASE radius upgrade config", "PHASE tacacs install start", "  Installation Complete")
+	if strings.Contains(o.text(), "radius: configuration step failed") {
+		t.Errorf("a backend that did not fail is named:\n%s", o.text())
+	}
+}
+
+// 'install --branch <bash release>': the clone is a tree of the bash era
+// (lib/core.sh, no go.mod), which has nothing to build; the install stops
+// before building, with the release's own installer to run, exit 1.
+func TestInstallBranchOfABashReleaseStopsBeforeBuilding(t *testing.T) {
+	o := newOhost(t)
+	o.commit = "something-else"
+	o.run.Func(func(c execx.Cmd) bool { return c.Name == "git" && len(c.Args) > 0 && c.Args[0] == "clone" },
+		func(c execx.Cmd) (execx.Result, error) {
+			dst := c.Args[len(c.Args)-1]
+			o.write(filepath.Join(dst, "bin", "tacctl.sh"), "#!/bin/bash\n")
+			o.write(filepath.Join(dst, "lib", "core.sh"), "# bash era\n")
+			_ = os.MkdirAll(filepath.Join(dst, ".git"), 0o755)
+			return execx.Result{}, nil
+		})
+	if code := install(o, "--branch", "0.1.18", "-y"); code != 1 {
+		t.Fatalf("exit %d\n%s\n%s", code, o.stdout, o.stderr)
+	}
+	want := "[ERROR] '0.1.18' is a release of the bash era; install it with its own installer: sudo " +
+		filepath.Join(o.p.Deploy, "bin", "tacctl.sh") + " install\n"
+	if got := stripANSI(o.stderr.String()); got != want {
+		t.Errorf("stderr %q, want %q", got, want)
+	}
+	if o.run.Called(filepath.Join(o.p.Deploy, "bin", "tacctl.sh"), "--build") || strings.Contains(o.text(), "Building ") ||
+		slices.Contains(o.phases, "tacacs install files "+o.p.Tree) {
+		t.Errorf("went on: %v %v\n%s", o.phases, o.run.Argvs(), o.text())
 	}
 }
 
@@ -680,6 +734,68 @@ func TestUpgradeCompletionIsRewrittenOnlyWhenItDiffers(t *testing.T) {
 	upgrade(o)
 	if !strings.Contains(o.text(), "[INFO]   Updated: bash completion") || readFile(t, o.p.Completion) != "complete -F _tacctl tacctl\n" {
 		t.Errorf("a missing directory:\n%s", o.text())
+	}
+}
+
+// The tiers sudoers drop-in an administrator installed is brought to this
+// release's rules: rewritten (visudo -cf, then install) only when it
+// differs, "Unchanged" when it does not, never created, and a rewrite that
+// visudo refuses leaves the old file with a warning while the upgrade
+// carries on.
+func TestUpgradeRefreshesTheTiersSudoersOnlyWhenInstalledAndDifferent(t *testing.T) {
+	o := newOhost(t)
+	o.cloned()
+	installs := func() int { return o.run.Count("install") }
+	o.run.Func(func(c execx.Cmd) bool { return c.Name == "install" }, func(c execx.Cmd) (execx.Result, error) {
+		data, err := os.ReadFile(c.Args[len(c.Args)-2])
+		if err != nil {
+			return execx.Result{Code: 1}, nil
+		}
+		return execx.Result{}, os.WriteFile(c.Args[len(c.Args)-1], data, 0o440)
+	})
+	file := o.p.TierSudoersFile
+
+	// Absent: never created, not mentioned.
+	if code := upgrade(o); code != 0 {
+		t.Fatalf("exit %d\n%s\n%s", code, o.stdout, o.stderr)
+	}
+	if exists(file) || strings.Contains(o.text(), "tiers sudoers") || o.run.Called("visudo") {
+		t.Fatalf("absent file touched:\n%s", o.text())
+	}
+
+	// Stale: rewritten through visudo and install, counted.
+	o.write(file, "# an older release's rules\n")
+	if code := upgrade(o); code != 0 {
+		t.Fatalf("exit %d\n%s\n%s", code, o.stdout, o.stderr)
+	}
+	inOrder(t, o.text(), "[INFO] Updating system files...", "[INFO]   Updated: tiers sudoers", "file(s) updated.", "Managed scripts:")
+	if readFile(t, file) != tier.Sudoers() || installs() != 1 || o.run.Count("visudo") != 1 {
+		t.Fatalf("not rewritten: %q %v", readFile(t, file), o.run.Argvs())
+	}
+	for _, c := range o.run.Calls() {
+		if c.Name == "install" && !slices.Equal(c.Args[:6], []string{"-m", "0440", "-o", "root", "-g", "root"}) {
+			t.Errorf("install %v", c.Args)
+		}
+	}
+
+	// Current: left alone.
+	if code := upgrade(o); code != 0 || !strings.Contains(o.text(), "[INFO]   Unchanged: tiers sudoers") ||
+		installs() != 0 || o.run.Called("visudo") {
+		t.Fatalf("exit %d, rewritten again:\n%s", code, o.text())
+	}
+
+	// visudo refuses: the old file stays, a warning, the upgrade finishes.
+	o.write(file, "# an older release's rules\n")
+	o.run.Fail([]string{"visudo"}, 1, "")
+	if code := upgrade(o); code != 0 {
+		t.Fatalf("exit %d\n%s\n%s", code, o.stdout, o.stderr)
+	}
+	inOrder(t, o.text(), "[WARN]   Not updated: tiers sudoers (visudo validation failed; "+file+" is unchanged)", "Managed scripts:")
+	if readFile(t, file) != "# an older release's rules\n" || installs() != 0 {
+		t.Errorf("replaced although visudo refused: %q", readFile(t, file))
+	}
+	if left, _ := filepath.Glob(filepath.Join(o.w, "tmp", "tmp.*")); len(left) != 0 {
+		t.Errorf("temporary files left: %v", left)
 	}
 }
 

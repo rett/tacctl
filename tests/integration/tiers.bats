@@ -111,6 +111,23 @@ print("" if v is None else v)' "${TACCTL_STATE_DIR}/store.yaml" "$1" "$2"
     assert_output --partial "readonly tier"
 }
 
+@test "tier: help, -h and --help print the usage to both lower tiers (exit 1, as for everyone)" {
+    local who word
+    for who in ro op; do
+        for word in help -h --help; do
+            as_user "$who" yes -- "$word"
+            assert_failure 1
+            assert_output --partial "Usage:"
+            refute_output --partial "not permitted"
+        done
+    done
+    as_user ro yes -- help user
+    assert_failure
+    assert_output --partial "'tacctl help user' is not permitted for the readonly tier."
+    run "$TACCTL_BIN_SCRIPT" config sudoers tiers show
+    assert_output --partial "/usr/local/bin/tacctl help, /usr/local/bin/tacctl -h, /usr/local/bin/tacctl --help"
+}
+
 @test "tier: managed caller with no tacctl user is denied everything" {
     as_user ghost yes -- status
     assert_failure
@@ -284,4 +301,62 @@ print("" if v is None else v)' "${TACCTL_STATE_DIR}/store.yaml" "$1" "$2"
     ! grep -qE 'backend (enable|disable)' "$BATS_TEST_TMPDIR/tiers"
     run "$visudo_bin" -cf "$BATS_TEST_TMPDIR/tiers"
     assert_success
+}
+
+# --- the upgrade's refresh of the tiers drop-in ------------------------------------
+
+# 'tacctl upgrade' with git, go and apt stubbed and no management repo to
+# pull (radius.bats "upgrade: the output reads in order" has the recipe):
+# tacctl's fixed host paths under TACCTL_TEST_ROOT, tacquito current.
+_upgrade() {
+    local root="${BATS_TEST_TMPDIR}/hostroot"
+    mkdir -p "${root}/opt/tacctl/bin" "${root}/usr/local/go/bin" "${BATS_TEST_TMPDIR}/tacquito-src"
+    : > "${root}/opt/tacctl/bin/tacctl.sh"
+    printf '#!/bin/sh\n' > "${root}/usr/local/go/bin/go"
+    chmod 755 "${root}/usr/local/go/bin/go"
+    printf '#!/bin/sh\n' > "${TACCTL_BIN}/tacquito"
+    stub_cmd git 'case "$*" in *"rev-parse --short HEAD"*) echo abc1234 ;; *"rev-parse"*) echo abc1234abc1234 ;; esac'
+    stub_cmd dpkg-query 'echo "install ok installed"'
+    stub_cmd apt-get
+    stub_cmd ln
+    run env TACCTL_TEST_ROOT="$root" TACQUITO_SRC="${BATS_TEST_TMPDIR}/tacquito-src" "$TACCTL_BIN_SCRIPT" upgrade
+}
+
+@test "upgrade: an installed tiers drop-in that differs is rewritten through visudo; a current one is left; none is never created" {
+    mkdir -p "$(dirname "$TACCTL_TIER_SUDOERS_FILE")"
+    stub_cmd visudo
+    stub_cmd install 'cp "${@: -2:1}" "${@: -1}"'
+    _upgrade
+    assert_success
+    refute_output --partial "tiers sudoers"
+    [[ ! -e "$TACCTL_TIER_SUDOERS_FILE" ]]
+    if stub_called '^visudo '; then stub_calls; return 1; fi
+
+    printf '# an older release\n' > "$TACCTL_TIER_SUDOERS_FILE"
+    : > "$CALLS_LOG"
+    _upgrade
+    assert_success
+    assert_output --partial "  Updated: tiers sudoers"
+    stub_called '^visudo -cf '
+    stub_called "^install -m 0440 -o root -g root .* ${TACCTL_TIER_SUDOERS_FILE}$"
+    diff <("$TACCTL_BIN_SCRIPT" config sudoers tiers show | sed -n 's/^    //p') "$TACCTL_TIER_SUDOERS_FILE"
+
+    : > "$CALLS_LOG"
+    _upgrade
+    assert_success
+    assert_output --partial "  Unchanged: tiers sudoers"
+    if stub_called '^(visudo|install) '; then stub_calls; return 1; fi
+}
+
+@test "upgrade: visudo refusing the new tiers rules leaves the old drop-in and warns; the upgrade finishes" {
+    mkdir -p "$(dirname "$TACCTL_TIER_SUDOERS_FILE")"
+    printf '# an older release\n' > "$TACCTL_TIER_SUDOERS_FILE"
+    stub_cmd visudo 'exit 1'
+    stub_cmd install 'cp "${@: -2:1}" "${@: -1}"'
+    _upgrade
+    assert_success
+    assert_output --partial "Not updated: tiers sudoers (visudo validation failed; ${TACCTL_TIER_SUDOERS_FILE} is unchanged)"
+    assert_output --partial "Managed scripts:"
+    [[ "$(cat "$TACCTL_TIER_SUDOERS_FILE")" == "# an older release" ]]
+    if stub_called '^install '; then stub_calls; return 1; fi
 }

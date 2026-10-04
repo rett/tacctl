@@ -8,8 +8,7 @@
 #
 # Quirks worth knowing before "fixing" one: `user verify` exits 0 on a wrong
 # password (it only prints an error), a closed stdin is the same as a blank
-# password line (a password is generated), `upgrade --branch` with no value
-# exits 1 without a word.
+# password line (a password is generated).
 #
 # The `cutover:<package>` tags name the work package that moved each verb to
 # Go; `--filter-tags cutover:wp2-4a` runs one package's tests.
@@ -723,35 +722,61 @@ ${ESC}[0;32m[INFO]${ESC}[0m Run 'tacctl upgrade' to apply any changes."
 # anything. `upgrade --branch <name>` is not run at all: past its parsing it
 # builds the TACACS+ daemon, so a test of it needs the lifecycle harness.
 
+# _refused <usage> <bad word>: the refusal of an argument, on stderr only.
+_refused() {
+    assert_failure 1
+    assert_output ""
+    assert_equal "$stderr" "${ESC}[0;31m[ERROR]${ESC}[0m Unknown argument: '$2'
+${ESC}[0;31m[ERROR]${ESC}[0m $1"
+}
+
 # bats test_tags=cutover:wp3-3d
-@test "upgrade --branch: no value exits 1 with no output at all, before running git" {
+@test "upgrade --branch: no value is refused with the usage, before running git" {
     stub_cmd git
     runs "$TACCTL_BIN_SCRIPT" upgrade --branch < /dev/null
-    assert_failure 1
-    assert_output ""
-    assert_equal "$stderr" ""
+    _refused "Usage: tacctl upgrade [--branch <name>]" --branch
     refute_called '^git '
 }
 
 # bats test_tags=cutover:wp3-3d
-@test "upgrade --branch: a trailing --branch with no value fails the same way, after a good one" {
+@test "upgrade --branch: a trailing --branch with no value is refused the same way, after a good one" {
     stub_cmd git
     runs "$TACCTL_BIN_SCRIPT" upgrade --branch feature/x --branch < /dev/null
-    assert_failure 1
-    assert_output ""
-    assert_equal "$stderr" ""
+    _refused "Usage: tacctl upgrade [--branch <name>]" --branch
     refute_called '^git '
 }
 
 # bats test_tags=cutover:wp3-3d
-@test "install --branch: no value exits 1 with no output at all" {
+@test "upgrade: an unknown argument, -y included, is refused before anything runs" {
+    stub_cmd git
+    local word
+    for word in -y --yes extra; do
+        runs "$TACCTL_BIN_SCRIPT" upgrade --branch feature/x "$word" < /dev/null
+        _refused "Usage: tacctl upgrade [--branch <name>]" "$word"
+    done
+    [[ ! -s "$CALLS_LOG" || -z "$(grep -vE '^(chown|logger|sleep) ' "$CALLS_LOG")" ]]
+}
+
+# bats test_tags=cutover:wp3-3d
+@test "install --branch: no value is refused with the usage" {
     stub_cmd git
     stub_cmd wget
     runs "$TACCTL_BIN_SCRIPT" install --branch < /dev/null
-    assert_failure 1
-    assert_output ""
-    assert_equal "$stderr" ""
+    _refused "Usage: tacctl install [--branch <name>] [-y|--yes]" --branch
     refute_called '^(git|wget) '
+}
+
+# bats test_tags=cutover:wp3-3d
+@test "install and uninstall: an unknown argument is refused before the plan" {
+    stub_cmd git
+    stub_cmd wget
+    runs "$TACCTL_BIN_SCRIPT" install -y whatever --branch feature/x < /dev/null
+    _refused "Usage: tacctl install [--branch <name>] [-y|--yes]" whatever
+    runs "$TACCTL_BIN_SCRIPT" uninstall --branch feature/x < /dev/null
+    _refused "Usage: tacctl uninstall [-y|--yes]" --branch
+    runs "$TACCTL_BIN_SCRIPT" uninstall -y extra < /dev/null
+    _refused "Usage: tacctl uninstall [-y|--yes]" extra
+    [[ ! -s "$CALLS_LOG" || -z "$(grep -vE '^(chown|logger|sleep) ' "$CALLS_LOG")" ]]
 }
 
 # bats test_tags=cutover:wp3-3d
@@ -772,12 +797,12 @@ ${ESC}[0;32m[INFO]${ESC}[0m Run 'tacctl upgrade' to apply any changes."
 }
 
 # bats test_tags=cutover:wp3-3d
-@test "install: anything but y or Y at the prompt cancels; unknown arguments are ignored" {
+@test "install: anything but y or Y at the prompt cancels" {
     stub_cmd git
     stub_cmd wget
     local answer
     for answer in n N yes Y1 ''; do
-        runs "$TACCTL_BIN_SCRIPT" install whatever --branch feature/x extra <<< "$answer"
+        runs "$TACCTL_BIN_SCRIPT" install --branch feature/x <<< "$answer"
         assert_success
         assert_equal "${lines[-1]}" "${ESC}[0;32m[INFO]${ESC}[0m Cancelled."
     done
