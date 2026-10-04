@@ -3,7 +3,7 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
-## 0.2.0 (unreleased)
+## 0.2.0 (2026-10-04)
 
 tacctl is now a single Go program, `/usr/local/bin/tacctl`, built on the server
 from the repository clone in `/opt/tacctl` (dependencies are vendored there;
