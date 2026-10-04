@@ -87,3 +87,17 @@ and the journal names the device only at debug level or on errors. With the
 address on the authentication lines, `tacctl log search` shows which device a
 login came from, and `tacctl device scan` reads these lines to learn which
 devices use the server.
+
+### `0004-authen-fail-no-server-msg.patch`
+Drops the server message from the bcrypt authenticator's failure replies
+(`cmds/server/config/authenticators/bcrypt/bcrypt.go`): a wrong password, an
+undecodable stored hash or a failed keychain lookup still answers `FAIL`, but
+without the text `login failure`. Nothing else in the behavior changes.
+
+Why: pam_tacplus hands a reply's server message to sshd as a PAM message. With
+password authentication (`KbdInteractiveAuthentication no`, the default on
+Ubuntu and Debian) sshd cannot show a PAM message during the login, so it keeps
+every one and prints them all after the next successful login: two wrong
+passwords, then the right one, greet the user with `login failure` twice. The
+message carries nothing that `Permission denied` has not already said, and
+network devices print their own failure text without it.

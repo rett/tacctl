@@ -126,6 +126,27 @@ func TestPatchesApplyTheAuthenticationNASAddressPatch(t *testing.T) {
 	}
 }
 
+func TestPatchesApplyTheFailureWithoutServerMsgPatch(t *testing.T) {
+	p := newPatchEnv(t)
+	if _, err := p.apply(); err != nil {
+		t.Fatal(err)
+	}
+	mustContain(t, p.out(), "Applied tacquito patch: 0004")
+	src := readFile(t, p.bcrypt)
+	// No failure reply names a server message any more: pam_tacplus would hand
+	// it to sshd, which prints them all after the next successful login.
+	mustNotContain(t, src, `SetAuthenReplyServerMsg("login failure")`)
+	mustContain(t, src, "tacctl patch 0004")
+	if n := strings.Count(src, "tq.SetAuthenReplyStatus(tq.AuthenStatusFail)"); n != 3 {
+		t.Fatalf("%d failure replies, want 3", n)
+	}
+	p.reset()
+	if ok, err := p.apply(); err != nil || ok {
+		t.Fatal(ok, err)
+	}
+	mustNotContain(t, p.out(), "Applied tacquito patch")
+}
+
 func TestPatchesApplyIsIdempotent(t *testing.T) {
 	p := newPatchEnv(t)
 	if _, err := p.apply(); err != nil {

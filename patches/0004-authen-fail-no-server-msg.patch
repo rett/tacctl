@@ -1,0 +1,39 @@
+diff --git a/cmds/server/config/authenticators/bcrypt/bcrypt.go b/cmds/server/config/authenticators/bcrypt/bcrypt.go
+index e9da563..7715f5f 100644
+--- a/cmds/server/config/authenticators/bcrypt/bcrypt.go
++++ b/cmds/server/config/authenticators/bcrypt/bcrypt.go
+@@ -99,6 +99,10 @@ func (a Authenticator) New(username string, options map[string]string) (tq.Handl
+ }
+ 
+ // Handle handles all authenticate message types, scoped to the uid
++//
++// Failure replies carry no server_msg (tacctl patch 0004): pam_tacplus hands a
++// non-empty msg to sshd, which cannot show it during password authentication
++// and prints every one after the next successful login.
+ func (a Authenticator) Handle(response tq.Response, request tq.Request) {
+ 	password, err := a.GetPassword(request)
+ 	if err != nil {
+@@ -119,7 +123,6 @@ func (a Authenticator) Handle(response tq.Response, request tq.Request) {
+ 			response.Reply(
+ 				tq.NewAuthenReply(
+ 					tq.SetAuthenReplyStatus(tq.AuthenStatusFail),
+-					tq.SetAuthenReplyServerMsg("login failure"),
+ 				),
+ 			)
+ 			return
+@@ -132,7 +135,6 @@ func (a Authenticator) Handle(response tq.Response, request tq.Request) {
+ 			response.Reply(
+ 				tq.NewAuthenReply(
+ 					tq.SetAuthenReplyStatus(tq.AuthenStatusFail),
+-					tq.SetAuthenReplyServerMsg("login failure"),
+ 				),
+ 			)
+ 		}
+@@ -159,7 +161,6 @@ func (a Authenticator) Handle(response tq.Response, request tq.Request) {
+ 	response.Reply(
+ 		tq.NewAuthenReply(
+ 			tq.SetAuthenReplyStatus(tq.AuthenStatusFail),
+-			tq.SetAuthenReplyServerMsg("login failure"),
+ 		),
+ 	)
+ }

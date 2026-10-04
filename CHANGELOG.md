@@ -251,6 +251,10 @@ current behaviour; this file is where history lives.
     `Device notices: <n> (tacctl device notices)` section of `tacctl status`
     (the first five; `none` when every notice is acknowledged; no section
     without registered devices or enrolled hosts).
+33. **No `login failure` lines after a successful Linux login.** tacquito no
+    longer sends a server message with a failed TACACS+ authentication (source
+    patch 0004). sshd could not show it during password login and printed one
+    `login failure` per wrong password after the next successful login.
 
 ## 0.2.0 (2026-10-04)
 
