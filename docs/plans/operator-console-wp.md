@@ -4,6 +4,8 @@
 >
 > Numbering continues the rewrite's: **WP6.x = 0.2.1**, **WP7.x = 0.2.2**, WP8.1 = the optional 0.2.3.
 
+> **Decided 2026-10-04 (user):** Open decision 1 → **(b)**, `ssh <name>` in the shell and console is an ordinary `sudo -n tacctl ssh <name>` line (`SETENV:` on the tiers and opt-in sudoers lines). 2 and 3 → **`ssh-keygen -Y` (ed25519, `release/allowed_signers`, namespace `tacctl-release`), assets built and signed locally by the user, uploaded with `gh`**. 4 → **print-only** zsh/fish completion; `zsh` and `fish` are installed on the dev server (the auth server the suite runs on) so the functional tests run there. 5 → **the readline rule as written**; the user confirms the `go.mod` change before WP6.5 vendors it. 6 and §7.2 → **every recommendation accepted**: fix rows 1, 3, 4+16, 5, 7, 8, 9, 11, 12, 14, 15, 17, 18; keep 2, 6, 13; defer 10.
+
 ## 0. Summary
 
 1. **The rewrite delivered every §9.3 door-opener but one** (the `hosts` completion kind, deferred on purpose). The plan's package names and signatures are stale in detail (§1 lists each); nothing in the architecture needs undoing.
