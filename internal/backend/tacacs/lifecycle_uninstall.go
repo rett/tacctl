@@ -118,6 +118,9 @@ func (b *Backend) uninstallData(ctx context.Context, keepLogs bool) error {
 	if keepLogs && isDir(logDir) {
 		dir := b.life.archiveDir
 		if dir == "" {
+			dir = b.env.Paths.ArchiveDir
+		}
+		if dir == "" {
 			dir = defaultArchiveDir
 		}
 		archive = dir + "/tacquito-logs-" + b.now().Format("20060102_150405") + ".tar.gz"

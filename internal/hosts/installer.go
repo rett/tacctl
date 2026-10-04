@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	clientscripts "github.com/rett/tacctl/config/linux"
+	"github.com/rett/tacctl/internal/assets"
 	"github.com/rett/tacctl/internal/backend"
 	"github.com/rett/tacctl/internal/shellquote"
 )
@@ -106,7 +106,7 @@ func (s Script) Bytes() []byte {
 	b.WriteString(s.Header())
 	body := s.Body
 	if body == nil {
-		body = clientscripts.InstallScript
+		body = assets.LinuxInstallScript
 	}
 	b.Write(body)
 	if s.Tarball != "" {
@@ -261,12 +261,12 @@ func isRegular(path string) bool {
 // is a directory). A failed install is an *InstallError carrying the line
 // install prints.
 func WriteRemoveScript(output string) error {
-	_, err := installAs("client-remove.sh", clientscripts.RemoveScript, output, 0o644)
+	_, err := installAs("client-remove.sh", assets.LinuxRemoveScript, output, 0o644)
 	return err
 }
 
 // WriteRemoveScriptTo writes client-remove.sh to a scratch file of
 // tacctl's own (mode 0600), the copy 'host unenroll' pushes.
 func WriteRemoveScriptTo(path string) error {
-	return replaceFile(path, clientscripts.RemoveScript, 0o600)
+	return replaceFile(path, assets.LinuxRemoveScript, 0o600)
 }

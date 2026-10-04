@@ -17,6 +17,11 @@ import (
 //	TACCTL_TEST_RANDOM=<hex>     the random source: Rand yields these bytes,
 //	                             repeated from the start when more are read
 //	TACCTL_FAULT=<point>[,...]   the named steps fail: Fault(point) errors
+//	TACCTL_TEST_ROOT=<dir>       tacctl's fixed host locations (the deploy
+//	                             clone, /usr/local/bin/tacctl, Go, the
+//	                             completion, the man page, /root) move
+//	                             under <dir> (paths.Paths.Reroot), so a test
+//	                             can run install, upgrade and uninstall
 //
 // They are read from the environment only by a binary built with
 // -tags testknobs ('make build', which the bats harness and the differential
@@ -34,6 +39,7 @@ const (
 	EnvTestNow    = "TACCTL_TEST_NOW"
 	EnvTestRandom = "TACCTL_TEST_RANDOM"
 	EnvFault      = "TACCTL_FAULT"
+	EnvTestRoot   = "TACCTL_TEST_ROOT"
 )
 
 // Knobs is the resolved set of test knobs.
@@ -41,7 +47,12 @@ type Knobs struct {
 	now    time.Time // zero: the real clock
 	random []byte    // empty: crypto/rand
 	faults map[string]bool
+	root   string // "": the host's own locations
 }
+
+// Root is the directory TACCTL_TEST_ROOT names ("" when unset): App.New
+// moves tacctl's fixed host locations under it.
+func (k Knobs) Root() string { return k.root }
 
 // LoadKnobs reads the knobs from env. Without -tags testknobs it reads
 // nothing and returns the zero Knobs. With it, a variable that is set and

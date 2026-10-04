@@ -86,6 +86,7 @@ type Backend struct {
 }
 
 var _ backend.Backend = (*Backend)(nil)
+var _ backend.Summarizer = (*Backend)(nil)
 
 // New is the TACACS+ backend over env. env.Conf is read on every use, never
 // copied: a rollback that reloads it is seen at once.

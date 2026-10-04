@@ -14,6 +14,7 @@ import (
 
 	"github.com/rett/tacctl/internal/backend"
 	"github.com/rett/tacctl/internal/execx"
+	"github.com/rett/tacctl/internal/lifecycle"
 	"github.com/rett/tacctl/internal/paths"
 	rtacacs "github.com/rett/tacctl/internal/render/tacacs"
 	"github.com/rett/tacctl/internal/shellquote"
@@ -321,7 +322,7 @@ func (inv *invocation) configBranch(args []string) error {
 		}
 	}
 	git(true, "pull", "--quiet")
-	cfgReadableTree(dir)
+	lifecycle.NormalizeDeployPerms(dir)
 	script := filepath.Join(dir, "bin", "tacctl.sh")
 	if err := os.Chmod(script, 0o755); err != nil {
 		inv.stderrLine("chmod: cannot access '" + script + "': " + cfgErrno(err))
@@ -331,33 +332,6 @@ func (inv *invocation) configBranch(args []string) error {
 	a.Out.Info("Run 'tacctl upgrade' to apply any changes.")
 	inv.echo("")
 	return nil
-}
-
-// cfgReadableTree is normalize_deploy_perms, 'chmod -R a+rX <dir>': read
-// for everyone on every file and directory, and search (x) for everyone on
-// directories and on files that are executable for someone. Symbolic links
-// are not followed; errors are ignored.
-func cfgReadableTree(dir string) {
-	if !cfgIsDir(dir) {
-		return
-	}
-	_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.Type()&fs.ModeSymlink != 0 {
-			return nil // chmod -R goes on past what it cannot read
-		}
-		info, err := d.Info()
-		if err != nil {
-			return nil // as above
-		}
-		mode := info.Mode().Perm() | 0o444
-		if d.IsDir() || info.Mode().Perm()&0o111 != 0 {
-			mode |= 0o111
-		}
-		if mode != info.Mode().Perm() {
-			_ = os.Chmod(p, mode|(info.Mode()&(fs.ModeSetuid|fs.ModeSetgid|fs.ModeSticky)))
-		}
-		return nil
-	})
 }
 
 // --- render --dry-run -----------------------------------------------------------

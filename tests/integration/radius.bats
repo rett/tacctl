@@ -795,27 +795,43 @@ radius_uninstall() {
 # pull. The RADIUS re-render runs in the 'config' phase, which comes after
 # the build and the scripts pull (and so after a self-update's re-exec): its
 # lines must follow the banner and the build, and precede the system files
-# and the summary.
-# cmd_upgrade is bash's until WP3.3d.
-# bats test_tags=bash-only
+# and the summary. Against bash the TACACS+ phases are overridden functions;
+# against Go the binary's real TACACS+ phases run with tacctl's fixed host
+# paths under TACCTL_TEST_ROOT (a -tags testknobs build): Go there, a
+# tacquito checkout that is current, a deploy directory with no clone.
 @test "upgrade: the output reads in order; the RADIUS re-render and restart come after the banner and the build" {
     radius_up
     pre_vendor_state
     mkdir -p "${BATS_TEST_TMPDIR}/deploy/bin"
     : > "${BATS_TEST_TMPDIR}/deploy/bin/tacctl.sh"
     stub_cmd ln
-    stub_cmd git
-    run bash -c 'set -euo pipefail; source "$1"
-        DEPLOY_DIR="$2"
-        _tacacs_upgrade_preflight() { :; }
-        _tacacs_upgrade_build() { info "Current commit: abc1234"; SKIP_BUILD=true; CURRENT_COMMIT=abc1234; NEW_COMMIT=abc1234; }
-        _tacacs_upgrade_files() { :; }
-        _tacacs_upgrade_finish() { UPGRADE_SUMMARY_HEAD="Scripts Updated"; }
-        ensure_dependencies() { :; }
-        ensure_safe_directory() { :; }
-        install_man_page() { :; }
-        update_if_changed() { :; }
-        cmd_upgrade' _ "$TACCTL_LIB" "${BATS_TEST_TMPDIR}/deploy"
+    if [[ "$TACCTL_IMPL" == go ]]; then
+        local root="${BATS_TEST_TMPDIR}/hostroot"
+        mkdir -p "${root}/opt/tacctl/bin" "${root}/usr/local/go/bin" "${BATS_TEST_TMPDIR}/tacquito-src"
+        : > "${root}/opt/tacctl/bin/tacctl.sh"
+        printf '#!/bin/sh\n' > "${root}/usr/local/go/bin/go"
+        chmod 755 "${root}/usr/local/go/bin/go"
+        printf '#!/bin/sh\n' > "${TACCTL_BIN}/tacquito"
+        stub_cmd git 'case "$*" in *"rev-parse --short HEAD"*) echo abc1234 ;; *"rev-parse"*) echo abc1234abc1234 ;; esac'
+        stub_cmd dpkg-query 'echo "install ok installed"'
+        stub_cmd apt-get
+        run env TACCTL_TEST_ROOT="$root" TACQUITO_SRC="${BATS_TEST_TMPDIR}/tacquito-src" "$TACCTL_BIN_SCRIPT" upgrade
+        ! stub_called '^(apt-get|ln) ' || { stub_calls; return 1; }
+        [[ ! -e "${root}/usr/local/bin/tacctl" ]]
+    else
+        stub_cmd git
+        run bash -c 'set -euo pipefail; source "$1"
+            DEPLOY_DIR="$2"
+            _tacacs_upgrade_preflight() { :; }
+            _tacacs_upgrade_build() { info "Current commit: abc1234"; SKIP_BUILD=true; CURRENT_COMMIT=abc1234; NEW_COMMIT=abc1234; }
+            _tacacs_upgrade_files() { :; }
+            _tacacs_upgrade_finish() { UPGRADE_SUMMARY_HEAD="Scripts Updated"; }
+            ensure_dependencies() { :; }
+            ensure_safe_directory() { :; }
+            install_man_page() { :; }
+            update_if_changed() { :; }
+            cmd_upgrade' _ "$TACCTL_LIB" "${BATS_TEST_TMPDIR}/deploy"
+    fi
     assert_success
     output=$(sed 's/\x1b\[[0-9;]*m//g' <<< "$output")
     local order=() pattern n

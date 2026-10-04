@@ -35,11 +35,6 @@ const Packages = "freeradius freeradius-utils"
 // asked whether it runs ('sleep 2').
 const startWait = 2 * time.Second
 
-// LogArchiveDir is where 'uninstall data --keep-logs' saves the logs, as
-// in 0.1.16 (a fixed /root, not the invoking user's home). Tests point it
-// into their sandbox; nothing else changes it.
-var LogArchiveDir = "/root"
-
 // The upgrade's notes for the closing summary.
 const (
 	noteRendered = "RADIUS: config re-rendered for this release, FreeRADIUS restarted"
@@ -65,6 +60,12 @@ const (
 // of 'tacctl upgrade' (UPGRADE_SUMMARY_NOTES), in order; none when there is
 // nothing to say.
 func (m *Module) UpgradeNotes() []string { return append([]string(nil), m.lc.notes...) }
+
+// UpgradeSummary is backend.Summarizer's view: the notes of 'upgrade
+// finish' (RADIUS sets no headline and replaces no counted file).
+func (m *Module) UpgradeSummary() backend.UpgradeSummary {
+	return backend.UpgradeSummary{Notes: m.UpgradeNotes()}
+}
 
 // UninstallSaved are the lines 'uninstall data' added to the "Removed:"
 // list of 'tacctl uninstall' (UNINSTALL_SAVED): where the logs were saved.
@@ -405,7 +406,9 @@ func (m *Module) uninstallData(ctx context.Context, keepLogs bool) {
 		return
 	}
 	if keepLogs {
-		archive := LogArchiveDir + "/tacctl-radius-logs-" + m.now().Format("20060102_150405") + ".tar.gz"
+		// paths.Paths.ArchiveDir: a fixed /root, as in 0.1.16, not the
+		// invoking user's home.
+		archive := m.env.Paths.ArchiveDir + "/tacctl-radius-logs-" + m.now().Format("20060102_150405") + ".tar.gz"
 		// 'tar czf ... 2>/dev/null || true'
 		_, _ = m.runner.Run(ctx, execx.Cmd{Name: "tar",
 			Args: append([]string{"czf", archive, "-C", m.L.LogDir}, names...), Stdout: out.Stdout})

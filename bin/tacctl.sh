@@ -33,12 +33,13 @@ set -euo pipefail
 # tacctl.sh --build <out> [--tags <tags>]: compile the Go implementation in
 # this script's tree (cmd/tacctl, vendored modules, no network) into <out>,
 # atomically, and exit. Needs no root and installs nothing: 'make build' uses
-# it, and the 0.2.0 bootstrap shim and upgrade will share the same recipe
-# (docs/plans/go-rewrite.md 5.1). The version stamped in is 'git describe'
+# it, and the 0.2.0 bootstrap shim and upgrade share the same recipe
+# (docs/plans/go-rewrite.md 5.1; bin/tacctl.sh.new holds the shim, and
+# tests/integration/shim.bats keeps the two copies identical). The version stamped in is 'git describe'
 # of the tree; GOCACHE as root defaults to /root/.cache/go-build.
 tacctl_go_build() {
     local out="${1:-}" tags="" tree version commit date
-    local go_bin="/usr/local/go/bin/go"
+    local go_bin="${TACCTL_TEST_ROOT:-}/usr/local/go/bin/go"
     if [[ -z "$out" || "$out" == -* ]]; then
         echo "Usage: tacctl.sh --build <out> [--tags <tags>]" >&2
         return 1

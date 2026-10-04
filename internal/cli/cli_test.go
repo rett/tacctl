@@ -48,6 +48,9 @@ type harness struct {
 	app      *app.App
 	runner   *fake.Runner
 	out, err bytes.Buffer
+	// delegate: run hands the command to bash (delegate.go) instead of
+	// dispatching it; nothing is delegated by the tree since WP3.3d.
+	delegate bool
 }
 
 // newHarness is an invocation as the bats suite makes it: TACCTL_SKIP_SUDO=1,
@@ -62,6 +65,9 @@ func newHarness(t *testing.T, args []string, extraEnv ...string) *harness {
 }
 
 func (h *harness) run() error {
+	if h.delegate {
+		return delegate(h.app)
+	}
 	return Run(context.Background(), h.app, BuildInfo{Version: "0.2.0-test", Commit: "abc123", Date: "2026-10-03T00:00:00Z"})
 }
 
@@ -101,41 +107,39 @@ func commandPaths(c *cobra.Command, prefix []string, out *[][]string) {
 	}
 }
 
-// nativeWords are the first words the Go binary owns (cut over).
-var nativeWords = map[string]bool{"version": true, "user": true, "hash": true, "passwd": true, "_completion-names": true,
-	"config": true, "scope": true, "group": true, "host": true,
-	"status": true, "log": true, "backup": true, "backend": true, "store": true, "_phase": true}
-
-// The no-sub / help / -h / unknown table of docs/plans/go-rewrite.md 3.2:
-// every command of a family not cut over yet belongs to bash, so each of
-// these must reach bash exactly as typed. The test fails the moment a cobra
-// default (help command, -h/--help, suggestions, argument validation)
-// intercepts.
-func TestEverythingNotCutOverIsDelegated(t *testing.T) {
+// Since WP3.3d nothing is handed to bash any more: every command of the
+// tree has a Go handler (WP4.1 deletes delegate.go). A command left
+// without one would be marked by configure.
+func TestNothingIsDelegated(t *testing.T) {
 	var all [][]string
-	commandPaths(newRoot(&invocation{app: newHarness(t, nil).app}), nil, &all)
+	root := newRoot(&invocation{app: newHarness(t, nil).app})
+	commandPaths(root, nil, &all)
 	if len(all) < 100 {
 		t.Fatalf("tree has %d commands; the families of 1.2 are missing", len(all))
 	}
-	var cases [][]string
-	for _, p := range all {
-		if nativeWords[p[0]] {
-			continue
-		}
-		cases = append(cases, p)
-		for _, extra := range [][]string{{"help"}, {"-h"}, {"--help"}, {"bogus"}, {"--bogus=1", "list"}, {"a", "--hash", "b"}} {
-			cases = append(cases, append(append([]string(nil), p...), extra...))
+	for _, p := range append(all, nil) {
+		c, _ := resolve(root, p)
+		if c.Annotations[delegatedKey] != "" {
+			t.Errorf("%q is delegated to bash", p)
 		}
 	}
-	cases = append(cases,
-		[]string{}, []string{""}, []string{"help"}, []string{"-h"}, []string{"--help"}, []string{"bogus"},
-		[]string{"completion", "bash"}, []string{"shell"}, []string{"-x", "user", "list"},
-		[]string{"--x=1", "user", "list"}, []string{"--", "version"}, []string{"Version"},
-		[]string{"help", "version"}, []string{"User", "list"}, []string{"Hash"},
-	)
-	for _, args := range cases {
+}
+
+// The top-level dispatch of bin/tacctl.sh ('*) usage; exit 1'): no
+// command, help, -h, --help and any word that is no command print the
+// top-level usage on stdout and exit 1; cobra's defaults (help command,
+// -h/--help, suggestions, completion) never intercept.
+func TestTopLevelUsage(t *testing.T) {
+	want := Usage("top", UsageVars{"version": "0.2.0-test"})
+	for _, args := range [][]string{
+		{}, {""}, {"help"}, {"-h"}, {"--help"}, {"bogus"}, {"completion", "bash"}, {"shell"}, {"-x", "user", "list"},
+		{"--x=1", "user", "list"}, {"--", "version"}, {"Version"}, {"help", "version"}, {"User", "list"}, {"Hash"},
+	} {
 		h := newHarness(t, args)
-		h.expectDelegated(t, h.run())
+		if code := exitCode(h.run(), h.app.Out); code != 1 || h.out.String() != want || h.err.Len() != 0 ||
+			len(h.runner.Execs()) != 0 || len(h.runner.Calls()) != 0 {
+			t.Errorf("%q: exit %d stdout %q stderr %q calls %q", args, code, h.out.String(), h.err.String(), h.runner.Argvs())
+		}
 	}
 }
 
@@ -237,8 +241,8 @@ func TestReexecUnderSudo(t *testing.T) {
 		}
 	}
 	// Root never re-execs.
-	h := mk([]string{"upgrade"}, 0)
-	if err := h.run(); err != nil || h.runner.Execs()[0].Argv[0] == "sudo" {
+	h := mk([]string{"version"}, 0)
+	if err := h.run(); err != nil || len(h.runner.Execs()) != 0 || h.out.String() != "tacctl 0.2.0-test\n" {
 		t.Errorf("root re-exec'd: %v %+v", err, h.runner.Execs())
 	}
 	// No sudo on PATH; exec failure; unknown executable.
@@ -268,6 +272,7 @@ func TestDelegateRefusesNonBashTargets(t *testing.T) {
 		}
 	}
 	h := newHarness(t, []string{"upgrade"}, "TACCTL_BASH_IMPL=/nonexistent/bin/tacctl.sh")
+	h.delegate = true
 	check("missing", h, 1, "\033[0;31m[ERROR]\033[0m command not available in this build\n")
 	if len(h.runner.Execs()) != 0 {
 		t.Error("exec'd a missing file")
@@ -280,16 +285,26 @@ func TestDelegateRefusesNonBashTargets(t *testing.T) {
 	if err := os.WriteFile(shim, []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	check("shim", newHarness(t, []string{"upgrade"}, "TACCTL_BASH_IMPL="+shim), 1, "No bash implementation of tacctl at "+shim)
+	h = newHarness(t, []string{"upgrade"}, "TACCTL_BASH_IMPL="+shim)
+	h.delegate = true
+	check("shim", h, 1, "No bash implementation of tacctl at "+shim)
 
 	impl := bashTree(t)
 	h = newHarness(t, []string{"upgrade"}, "TACCTL_BASH_IMPL="+impl)
+	h.delegate = true
 	h.app.Exe = impl // TACCTL_BASH_IMPL pointing back at this binary
 	check("self", h, 1, "command not available in this build")
 
 	h = newHarness(t, []string{"upgrade"})
+	h.delegate = true
 	h.runner.ExecErr = errors.New("permission denied")
 	check("exec failure", h, 126, "Cannot run ")
+
+	// And a bash tree is exec'd with the arguments and the environment
+	// unchanged.
+	h = newHarness(t, []string{"user", "list", "--x"})
+	h.delegate = true
+	h.expectDelegated(t, h.run())
 }
 
 func TestComplete(t *testing.T) {
@@ -468,8 +483,9 @@ func TestMain(t *testing.T) {
 		t.Errorf("Main: %d %q %q", code, out.String(), errb.String())
 	}
 	out.Reset()
-	code = Main([]string{"tacctl", "upgrade"}, []string{"TACCTL_SKIP_SUDO=1", "TACCTL_BASH_IMPL=/nonexistent/tacctl.sh"}, app.Stdio{Stdout: &out, Stderr: &errb}, BuildInfo{})
-	if code != 1 || !strings.Contains(errb.String(), "command not available in this build") {
-		t.Errorf("Main delegation failure: %d %q", code, errb.String())
+	// (A word that runs nothing: Main runs programs for real.)
+	code = Main([]string{"tacctl", "bogus"}, []string{"TACCTL_SKIP_SUDO=1"}, app.Stdio{Stdout: &out, Stderr: &errb}, BuildInfo{Version: "9.9.9"})
+	if code != 1 || out.String() != Usage("top", UsageVars{"version": "9.9.9"}) || errb.Len() != 0 {
+		t.Errorf("Main usage: %d %q", code, errb.String())
 	}
 }

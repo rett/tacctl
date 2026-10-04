@@ -127,11 +127,9 @@ func newEnv(t *testing.T, opts ...option) *renv {
 		"TACCTL_LINUX_DIR=" + filepath.Join(w, "linux"),
 		"TACCTL_TREE=" + filepath.Join(w, "tree"),
 	})
-	r.p = paths.Resolve(env, "", func(string) bool { return false })
-	// 'uninstall data --keep-logs' archives under /root in production.
-	archive := radius.LogArchiveDir
-	radius.LogArchiveDir = filepath.Join(w, "root")
-	t.Cleanup(func() { radius.LogArchiveDir = archive })
+	// Reroot: 'uninstall data --keep-logs' archives under /root in
+	// production.
+	r.p = paths.Resolve(env, "", func(string) bool { return false }).Reroot(w)
 	r.run = &fake.Runner{}
 	r.script()
 

@@ -122,6 +122,7 @@ lint: lint-sh lint-go
 
 lint-sh:
 	$(SHELLCHECK) bin/tacctl.sh lib/*.sh lib/backends/*.sh
+	$(SHELLCHECK) bin/tacctl.sh.new
 	$(SHELLCHECK) tests/helpers/*.bash tests/tools/*.sh tests/diff/*.sh
 	$(SHELLCHECK) config/linux/*.sh
 

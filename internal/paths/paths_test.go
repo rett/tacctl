@@ -225,3 +225,38 @@ func checkFields(t *testing.T, v any, want map[string]string) {
 		}
 	}
 }
+
+// tacctl's own host locations: the 0.1.16 literals, and Reroot moving them (not the TACCTL_* ones) under a root.
+func TestHostLocationsAndReroot(t *testing.T) {
+	p := Resolve(NewEnv(nil), "", func(string) bool { return false })
+	want := map[string]string{
+		"Deploy": "/opt/tacctl", "Command": "/usr/local/bin/tacctl", "GoBin": "/usr/local/go/bin/go",
+		"Completion": "/etc/bash_completion.d/tacctl", "ManPage": "/usr/share/man/man1/tacctl.1.gz", "ArchiveDir": "/root",
+	}
+	got := func(p Paths) map[string]string {
+		return map[string]string{"Deploy": p.Deploy, "Command": p.Command, "GoBin": p.GoBin,
+			"Completion": p.Completion, "ManPage": p.ManPage, "ArchiveDir": p.ArchiveDir}
+	}
+	for k, v := range got(p) {
+		if want[k] != v {
+			t.Errorf("%s = %q, want %q", k, v, want[k])
+		}
+	}
+	if p.Reroot("") != p {
+		t.Error("Reroot(\"\") changed something")
+	}
+	r := p.Reroot("/sb")
+	for k, v := range got(r) {
+		if v != "/sb"+want[k] {
+			t.Errorf("rerooted %s = %q", k, v)
+		}
+	}
+	if r.Etc != p.Etc || r.StateDir != p.StateDir || r.Bin != p.Bin {
+		t.Error("Reroot moved a TACCTL_* location")
+	}
+	// The deploy clone is /opt/tacctl whatever tree the binary runs from
+	// (bash's DEPLOY_DIR is not read from the environment).
+	if q := Resolve(NewEnv([]string{"TACCTL_TREE=/scratch/clone"}), "", nil); q.Deploy != "/opt/tacctl" {
+		t.Errorf("Deploy with TACCTL_TREE: %q", q.Deploy)
+	}
+}

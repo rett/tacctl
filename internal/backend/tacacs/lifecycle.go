@@ -56,7 +56,7 @@ import (
 // The build constants of lib/backends/tacacs.sh.
 const (
 	// GoVersion is GO_VERSION, the toolchain tacctl installs for tacquito.
-	GoVersion = "1.26.2"
+	GoVersion = paths.GoVersion
 	// TacquitoRepo is TACQUITO_REPO.
 	TacquitoRepo = "https://github.com/facebookincubator/tacquito.git"
 	// Share is TACACS_SHARE: where a tacctl tree keeps this backend's
@@ -64,7 +64,7 @@ const (
 	Share = "config/backends/tacacs"
 	// UpgradeFromEnv carries the tacquito commit an upgrade started from
 	// across its self-update re-exec (TACCTL_UPGRADE_TACQUITO_FROM).
-	UpgradeFromEnv = "TACCTL_UPGRADE_TACQUITO_FROM"
+	UpgradeFromEnv = lifecycle.UpgradeFromEnv
 )
 
 // The words of TACACS_UNITS_STATE.
@@ -219,6 +219,9 @@ func (b *Backend) hashgenBin() string { return filepath.Join(b.env.Paths.Bin, "t
 func (b *Backend) goBin() string {
 	if b.life.goBin != "" {
 		return b.life.goBin
+	}
+	if b.env.Paths.GoBin != "" {
+		return b.env.Paths.GoBin
 	}
 	return paths.GoBin
 }
@@ -456,4 +459,12 @@ func globSorted(pattern string) []string {
 	m, _ := filepath.Glob(pattern)
 	sort.Strings(m)
 	return m
+}
+
+// UpgradeSummary is backend.Summarizer's view of UpgradeReport: the head,
+// the notes of 'finish' and the files 'files' replaced. FilesNotes are
+// left out, as 0.1.16's summary drops them.
+func (b *Backend) UpgradeSummary() backend.UpgradeSummary {
+	r := b.UpgradeReport()
+	return backend.UpgradeSummary{Head: r.Head, Notes: r.Notes, FilesUpdated: r.FilesUpdated}
 }

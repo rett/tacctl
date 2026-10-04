@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	clientscripts "github.com/rett/tacctl/config/linux"
+	"github.com/rett/tacctl/internal/assets"
 	"github.com/rett/tacctl/internal/backend"
 	"github.com/rett/tacctl/internal/ui"
 )
@@ -99,7 +99,7 @@ func TestScriptMatchesBashGolden(t *testing.T) {
 		if got := s.Header(); got != want {
 			t.Errorf("%s: header differs\n--- got\n%s--- want\n%s", tc.golden, got, want)
 		}
-		full := want + string(clientscripts.InstallScript) + tc.tail
+		full := want + string(assets.LinuxInstallScript) + tc.tail
 		if got := string(s.Bytes()); got != full {
 			t.Errorf("%s: script differs from header + client-install.sh + sections", tc.golden)
 		}
@@ -223,7 +223,7 @@ func TestWriteScriptChecksAndPorts(t *testing.T) {
 		t.Fatalf("radius: %+v %v", res, err)
 	}
 	data, _ = os.ReadFile(out)
-	if !strings.Contains(string(data), "TAC_ACCT_PORT=11899\n") || !bytes.HasSuffix(data, clientscripts.InstallScript) {
+	if !strings.Contains(string(data), "TAC_ACCT_PORT=11899\n") || !bytes.HasSuffix(data, assets.LinuxInstallScript) {
 		t.Errorf("radius script")
 	}
 	r.Listeners = nil
@@ -237,7 +237,7 @@ func TestWriteScriptChecksAndPorts(t *testing.T) {
 		t.Fatal(err)
 	}
 	data, _ = os.ReadFile(out)
-	if !bytes.HasSuffix(data, clientscripts.InstallScript) || strings.Contains(string(data), "\nTARBALL_SHA256=") {
+	if !bytes.HasSuffix(data, assets.LinuxInstallScript) || strings.Contains(string(data), "\nTARBALL_SHA256=") {
 		t.Errorf("accounts-only carries the tarball")
 	}
 }
@@ -288,7 +288,7 @@ func TestWriteRemoveScript(t *testing.T) {
 		t.Fatal(err)
 	}
 	data, _ := os.ReadFile(p)
-	if !bytes.Equal(data, clientscripts.RemoveScript) {
+	if !bytes.Equal(data, assets.LinuxRemoveScript) {
 		t.Error("content")
 	}
 	if st, _ := os.Stat(p); st.Mode().Perm() != 0o644 {

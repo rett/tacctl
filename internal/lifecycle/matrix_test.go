@@ -11,8 +11,7 @@ package lifecycle_test
 // network call of an upgrade). It then runs 'tacctl upgrade [args]' through
 // subject and checks where the upgrade stopped and what it left.
 //
-// # The contract (what lifecycle.Upgrade must do; stubUpgrade below is the
-// reference)
+// # The contract (what lifecycle.Upgrade must do)
 //
 // The order is 0.1.16's cmd_upgrade (lib/lifecycle.sh at the tag):
 //
@@ -58,16 +57,16 @@ package lifecycle_test
 // anything the shim (bash) does: its own rows (toolchain install, step 3)
 // are WP3.3d's bats tests.
 //
-// # Switching to the real implementation
+// # The implementation
 //
-// Replace stubUpgrade by an adapter that maps a matrixHost to
-// lifecycle.Upgrade's inputs: the runner (h.Run), the backend set (h.Set,
-// whose Env carries the paths, tacctl.yaml and the output), the deploy
-// clone (h.Deploy), the installed command (h.Binary), the running binary's
-// commit (h.BinaryCommit), the environment (h.Env), stdout and stderr
-// (h.Out), the context; then set 'subject = realUpgrade{}' and delete the
-// stub. No test changes are needed for an implementation that follows the
-// contract above.
+// realUpgrade (below) maps a matrixHost onto lifecycle.Upgrade's inputs:
+// the runner (h.Run), the backend set (h.Set, whose Env carries the paths,
+// tacctl.yaml and the output), the deploy clone (h.Deploy), the installed
+// command (h.Binary), the running binary's commit (h.BinaryCommit), the
+// environment (h.Env), the context. WP3.3c's reference stub, written
+// against the contract above, was replaced by it in WP3.3d with one change
+// to the host: the deploy clone has a '.git' directory, as 0.1.16 updates
+// the clone only then.
 
 import (
 	"bytes"
@@ -86,6 +85,7 @@ import (
 	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/execx/fake"
+	"github.com/rett/tacctl/internal/lifecycle"
 	"github.com/rett/tacctl/internal/paths"
 	"github.com/rett/tacctl/internal/ui"
 )
@@ -97,9 +97,9 @@ type upgradeSubject interface {
 	Upgrade(ctx context.Context, h *matrixHost, args []string) error
 }
 
-// subject is what the matrix runs: the reference stub until WP3.3d swaps
-// in the real implementation.
-var subject upgradeSubject = stubUpgrade{}
+// subject is what the matrix runs: lifecycle.Upgrade (WP3.3d; WP3.3c's
+// reference stub, written against the contract above, is gone).
+var subject upgradeSubject = realUpgrade{}
 
 // The commits of the deploy clone the matrix knows.
 const (
@@ -167,7 +167,9 @@ func newMatrixHost(t *testing.T) *matrixHost {
 		remote: map[string]string{"develop": commitOld, "master": commitBash, "feature/x": commitNew},
 	}
 	h.Out = ui.Output{Stdout: h.stdout, Stderr: h.stderr}
-	for _, d := range []string{"state", "etc", filepath.Dir(h.Binary), h.TacquitoSrc, "tac", "tmp"} {
+	// The deploy clone is a git clone (0.1.16 updates it only then: a
+	// '.git' directory).
+	for _, d := range []string{"state", "etc", filepath.Dir(h.Binary), h.TacquitoSrc, "tac", "tmp", filepath.Join(h.Deploy, ".git")} {
 		if !filepath.IsAbs(d) {
 			d = filepath.Join(w, d)
 		}
@@ -213,14 +215,17 @@ func newMatrixHost(t *testing.T) *matrixHost {
 }
 
 // matrixHostDefaults names every path of the host (the deploy clone, the
-// installed command, the paths of its environment, both RADIUS layouts)
+// installed command, the paths of its environment, tacctl's fixed host
+// locations as realUpgrade passes them, both RADIUS layouts)
 // that is not under its sandbox: an implementation run by the matrix must
 // not be able to reach the machine the tests run on.
 func matrixHostDefaults(h *matrixHost) []string {
 	root := filepath.Clean(h.root) + string(filepath.Separator)
-	p := paths.Resolve(paths.NewEnv(h.Env), h.Binary, nil)
+	p := matrixPaths(h)
 	check := map[string]string{
 		"Deploy": h.Deploy, "Binary": h.Binary, "TacquitoSrc": h.TacquitoSrc,
+		"paths.Deploy": p.Deploy, "Command": p.Command, "GoBin": p.GoBin, "Completion": p.Completion,
+		"ManPage": p.ManPage, "ArchiveDir": p.ArchiveDir, "Templates": p.Templates, "BackupDir": p.BackupDir,
 		"Etc": p.Etc, "StateDir": p.StateDir, "Log": p.Log, "Bin": p.Bin, "Config": p.Config,
 		"SudoersFile": p.SudoersFile, "TierSudoersFile": p.TierSudoersFile, "OverrideDir": p.OverrideDir,
 		"TacacsUnitDir": p.TacacsUnitDir, "SystemdDir": p.SystemdDir, "LogrotateDir": p.LogrotateDir,
@@ -817,127 +822,24 @@ func TestMatrixRollbackToBashRelease(t *testing.T) {
 	}
 }
 
-// --- the reference implementation ---------------------------------------------
+// --- the implementation ------------------------------------------------------
 
-// stubUpgrade is the expected behaviour, written against the matrix host
-// only: what the contract at the top of this file says, in the order
-// 0.1.16 does it. It is not tacctl's upgrade (no state migration, no
-// dependencies, no system files, no summary).
-type stubUpgrade struct{}
+// realUpgrade is lifecycle.Upgrade on the matrix host: its paths
+// (matrixPaths), runner, backend set, environment and binary commit.
+type realUpgrade struct{}
 
-func (stubUpgrade) Upgrade(ctx context.Context, h *matrixHost, args []string) error {
-	out := h.Out
-	branch := ""
-	for i := 0; i < len(args); i++ {
-		if args[i] == "--branch" && i+1 < len(args) {
-			branch = args[i+1]
-			i++
-		}
-	}
-	guarded := slices.Contains(h.Env, reexecGuard)
-	ids, err := h.Set.Enabled()
-	if err != nil {
-		return err
-	}
-	phase := func(p backend.Phase) error {
-		for _, id := range ids {
-			b, err := h.Set.Get(id)
-			if err != nil {
-				return err
-			}
-			if err := b.Upgrade(ctx, p, h.Deploy); err != nil {
-				out.Error("Backend '" + id + "': upgrade step '" + string(p) + "' failed.")
-				return err
-			}
-		}
-		return nil
-	}
-	git := func(sub ...string) (string, int) {
-		res, err := h.Run.Run(ctx, execx.Cmd{Name: "git", Args: append([]string{"-C", h.Deploy}, sub...), Stderr: out.Stderr})
-		if err != nil && res.Code == 0 {
-			res.Code = 1
-		}
-		return strings.TrimSpace(string(res.Stdout)), res.Code
-	}
-	fetchFailed := func() error {
-		out.Error("git fetch failed. Check network / credentials.")
-		return backend.ErrFailed
-	}
-
-	for _, p := range []backend.Phase{backend.PhasePreflight, backend.PhaseBuild} {
-		if err := phase(p); err != nil {
-			return err
-		}
-	}
-	if _, c := git("checkout", "--", "."); c != 0 {
-		out.Error("Failed to discard local modifications in " + h.Deploy + ".")
-		return backend.ErrFailed
-	}
-	start, _ := git("rev-parse", "HEAD")
-	if branch != "" {
-		if _, c := git("fetch", "--tags", "--force"); c != 0 {
-			return fetchFailed()
-		}
-		if _, c := git("checkout", branch); c != 0 {
-			if _, c := git("checkout", "-b", branch, "origin/"+branch); c != 0 {
-				out.Error("Could not switch " + h.Deploy + " to branch '" + branch + "' (does it exist on the remote?).")
-				return backend.ErrFailed
-			}
-		}
-		out.Info("Switched to branch '" + branch + "'.")
-	}
-	if _, c := git("fetch", "--tags", "--force"); c != 0 {
-		return fetchFailed()
-	}
-	local, _ := git("rev-parse", "HEAD")
-	remote, rc := git("rev-parse", "@{u}")
-	if rc == 0 && remote != "" && local != remote {
-		if _, c := git("pull", "--ff-only"); c != 0 {
-			out.Error("git pull failed.")
-			return backend.ErrFailed
-		}
-	}
-	entry := filepath.Join(h.Deploy, "bin", "tacctl.sh")
-	if !pathExists(filepath.Join(h.Deploy, "go.mod")) && pathExists(filepath.Join(h.Deploy, "lib", "core.sh")) {
-		out.Info("Target branch is a bash release of tacctl; handing over.")
-		if err := os.Chmod(entry, 0o755); err != nil {
-			return err
-		}
-		tmp := h.Binary + ".tacctl-link"
-		_ = os.Remove(tmp)
-		if err := os.Symlink(entry, tmp); err != nil {
-			return err
-		}
-		if err := os.Rename(tmp, h.Binary); err != nil {
-			return err
-		}
-		return h.Run.Exec(entry, []string{entry, "upgrade"}, h.Env)
-	}
-	head, _ := git("rev-parse", "HEAD")
-	_, dc := git(append([]string{"diff", "--quiet", start, "HEAD", "--"}, "cmd", "internal", "vendor", "go.mod", "go.sum", "bin", "config", "patches")...)
-	if (dc != 0 || h.BinaryCommit != head) && !guarded {
-		out.Info("tacctl updated — rebuilding, then restarting the upgrade with the new version...")
-		res, err := h.Run.Run(ctx, execx.Cmd{Name: entry, Args: []string{"--build", h.Binary}, Stderr: out.Stderr})
-		if err != nil || res.Code != 0 {
-			_ = os.Remove(h.Binary + ".new")
-			out.Error("tacctl could not be built (see above). The installed command is unchanged.")
-			out.Error("To go back to the code it was built from: sudo git -C " + h.Deploy + " checkout " + start)
-			if ctx.Err() != nil {
-				return &backend.Error{Code: 130, Reason: "interrupted"}
-			}
-			return backend.ErrFailed
-		}
-		return h.Run.Exec(h.Binary, []string{h.Binary, "upgrade"}, append(slices.Clone(h.Env), reexecGuard))
-	}
-	for _, p := range []backend.Phase{backend.PhaseConfig, backend.PhaseFiles, backend.PhaseFinish} {
-		if err := phase(p); err != nil {
-			return err
-		}
-	}
-	return nil
+func (realUpgrade) Upgrade(ctx context.Context, h *matrixHost, args []string) error {
+	be := h.Set.Env
+	be.Paths = matrixPaths(h)
+	host := &lifecycle.Host{Env: lifecycle.NewEnv(be, nil, false), Environ: paths.NewEnv(h.Env), Commit: h.BinaryCommit}
+	return lifecycle.Upgrade(ctx, host, args)
 }
 
-func pathExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
+// matrixPaths are the paths an upgrade on h works with: those of its
+// environment, tacctl's fixed host locations moved into the sandbox, the
+// deploy clone and the installed command h's.
+func matrixPaths(h *matrixHost) paths.Paths {
+	p := paths.Resolve(paths.NewEnv(h.Env), "", func(string) bool { return false }).Reroot(h.root)
+	p.Deploy, p.Command = h.Deploy, h.Binary
+	return p
 }

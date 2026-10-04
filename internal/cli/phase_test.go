@@ -12,7 +12,7 @@ import (
 // radiusSandbox is a sandbox where tacctl has set up FreeRADIUS (the
 // daemon binary and a rendered config exist: backend_radius_installed),
 // the family given, every path a phase can write under the sandbox
-// (sandboxPathEnv; /root of --keep-logs too).
+// (sandboxPathEnv; /root of --keep-logs too: sandbox.run reroots).
 func radiusSandbox(t *testing.T, family string) *sandbox {
 	t.Helper()
 	sb := newSandbox(t, true)
@@ -22,7 +22,6 @@ func radiusSandbox(t *testing.T, family string) *sandbox {
 		t.Fatal(err)
 	}
 	sb.env = append(append(sb.env, sandboxPathEnv(sb.dir)...), "TACCTL_RADIUS_FAMILY="+family)
-	sandboxArchive(t, sb.dir)
 	return sb
 }
 

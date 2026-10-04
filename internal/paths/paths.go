@@ -15,6 +15,21 @@ const (
 	DefaultBashImpl = DeployDir + "/bin/tacctl.sh"
 	// GoBin is the toolchain tacctl installs for tacquito (GO_BIN).
 	GoBin = "/usr/local/go/bin/go"
+	// GoVersion is GO_VERSION, the toolchain tacctl installs (the bootstrap
+	// shim's GO_VERSION; go.mod's go line).
+	GoVersion = "1.26.2"
+	// Command is the installed tacctl command: the binary from 0.2.0 on,
+	// a symlink to the bash entrypoint before.
+	Command = "/usr/local/bin/tacctl"
+	// Completion is the installed bash completion.
+	Completion = "/etc/bash_completion.d/tacctl"
+	// ManPage is the installed man page.
+	ManPage = "/usr/share/man/man1/tacctl.1.gz"
+	// ArchiveDir is where uninstall keeps what it was asked to preserve
+	// (a fixed /root, as in 0.1.16).
+	ArchiveDir = "/root"
+	// ManageRepo is the repository install clones (MANAGE_REPO).
+	ManageRepo = "https://github.com/rett/tacctl.git"
 	// DefaultSettleSeconds is how long a restarted unit must stay up before a
 	// settings change counts as applied (TACACS_SETTLE_SECONDS,
 	// RADIUS_SETTLE_SECONDS), as the bash text "0.5".
@@ -59,6 +74,16 @@ type Paths struct {
 	// BashImpl is the bash entrypoint delegated to during the rewrite:
 	// TACCTL_BASH_IMPL, else DefaultBashImpl.
 	BashImpl string
+
+	// tacctl's own fixed host locations, which 0.1.16 hard-codes (no
+	// variable overrides them; Reroot moves them for tests).
+	//
+	Deploy     string // DEPLOY_DIR, the clone install and upgrade manage (/opt/tacctl)
+	Command    string // the installed command (/usr/local/bin/tacctl)
+	GoBin      string // GO_BIN (/usr/local/go/bin/go)
+	Completion string // /etc/bash_completion.d/tacctl
+	ManPage    string // /usr/share/man/man1/tacctl.1.gz
+	ArchiveDir string // where uninstall archives what it keeps (/root)
 
 	// RADIUS overrides as given; the family decides the defaults (Radius).
 	RadiusFamily string // TACCTL_RADIUS_FAMILY
@@ -109,6 +134,8 @@ func Resolve(env Env, exe string, exists func(string) bool) Paths {
 	p.PatchDir = env.Or("TACCTL_PATCH_DIR", p.Tree+"/patches")
 	p.BashImpl = env.Or("TACCTL_BASH_IMPL", DefaultBashImpl)
 
+	p.Deploy, p.Command, p.GoBin, p.Completion, p.ManPage, p.ArchiveDir = DeployDir, Command, GoBin, Completion, ManPage, ArchiveDir
+
 	p.RadiusFamily = env.Get("TACCTL_RADIUS_FAMILY")
 	p.radiusDir = env.Get("TACCTL_RADIUS_DIR")
 	p.radiusBin = env.Get("TACCTL_RADIUS_BIN")
@@ -136,6 +163,22 @@ func Tree(env Env, exe string, exists func(string) bool) string {
 		}
 	}
 	return DeployDir
+}
+
+// Reroot moves tacctl's fixed host locations (Deploy, Command, GoBin,
+// Completion, ManPage, ArchiveDir) under root,
+// keeping their paths below it: /usr/local/bin/tacctl becomes
+// <root>/usr/local/bin/tacctl. It is for tests (the -tags testknobs knob
+// TACCTL_TEST_ROOT, and Go tests), so that install, upgrade and uninstall
+// can run without reaching the machine's own; root "" changes nothing.
+func (p Paths) Reroot(root string) Paths {
+	if root == "" {
+		return p
+	}
+	under := func(path string) string { return filepath.Join(root, path) }
+	p.Deploy, p.Command, p.GoBin, p.Completion = under(p.Deploy), under(p.Command), under(p.GoBin), under(p.Completion)
+	p.ManPage, p.ArchiveDir = under(p.ManPage), under(p.ArchiveDir)
+	return p
 }
 
 // RadiusPaths is the FreeRADIUS layout of one distribution family

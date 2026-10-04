@@ -46,3 +46,16 @@ func TestTemplateUnknown(t *testing.T) {
 		}
 	}
 }
+
+// The embedded client scripts are the files of config/linux, byte for byte.
+func TestLinuxScriptsAreTheTreesFiles(t *testing.T) {
+	for file, got := range map[string][]byte{"client-install.sh": LinuxInstallScript, "client-remove.sh": LinuxRemoveScript} {
+		disk, err := os.ReadFile(filepath.Join("../../config/linux", file))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != string(disk) || len(got) == 0 {
+			t.Errorf("%s: embedded copy differs from the tree", file)
+		}
+	}
+}

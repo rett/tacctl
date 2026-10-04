@@ -43,13 +43,14 @@ type App struct {
 }
 
 // New builds an App; paths are resolved from env and exe, the knobs read
-// from env.
+// from env (TACCTL_TEST_ROOT, in a -tags testknobs build, moves tacctl's
+// fixed host locations: paths.Paths.Reroot).
 func New(args []string, env paths.Env, exe string, euid int, stdio Stdio, runner execx.Runner) *App {
 	k, kerr := LoadKnobs(env)
 	return &App{
 		Args:     append([]string(nil), args...),
 		Env:      env,
-		Paths:    paths.Resolve(env, exe, nil),
+		Paths:    paths.Resolve(env, exe, nil).Reroot(k.Root()),
 		Runner:   runner,
 		Stdin:    stdio.Stdin,
 		Out:      ui.Output{Stdout: stdio.Stdout, Stderr: stdio.Stderr},

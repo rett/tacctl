@@ -65,8 +65,7 @@ func newSwEnv(t *testing.T) *swEnv {
 	}
 	e.tmp = filepath.Join(w, "tmp")
 	t.Setenv("TMPDIR", e.tmp)
-	e.p = paths.Resolve(paths.NewEnv(sandboxPathEnv(w)), "", func(string) bool { return false })
-	sandboxArchive(t, w)
+	e.p = paths.Resolve(paths.NewEnv(sandboxPathEnv(w)), "", func(string) bool { return false }).Reroot(w)
 	e.fakeConf = filepath.Join(w, "etc", "fake.conf")
 	e.reg = backend.NewRegistry(backend.TACACS, backend.RADIUS)
 	e.tac = faketest.New(backend.TACACS, e.p.Config, filepath.Join(w, "tac"))
@@ -690,7 +689,6 @@ func TestBackendDisabledIsNotRendered(t *testing.T) {
 func TestBackendEnableDisableCLI(t *testing.T) {
 	sb := newSandbox(t, true)
 	sb.env = append(sb.env, sandboxPathEnv(sb.dir)...)
-	sandboxArchive(t, sb.dir)
 	sb.run("", []string{"backend", "enable", "ldap"})
 	sb.expect(1, "", "[ERROR] Unknown backend 'ldap' (known: tacacs radius).")
 	sb.run("", []string{"backend", "enable"})

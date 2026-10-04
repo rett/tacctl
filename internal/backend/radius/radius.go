@@ -80,6 +80,7 @@ type Module struct {
 }
 
 var _ backend.Backend = (*Module)(nil)
+var _ backend.Summarizer = (*Module)(nil)
 
 // New is the module's factory: the family is detected once, here
 // (TACCTL_RADIUS_FAMILY decides; else the raddb directory, else the package

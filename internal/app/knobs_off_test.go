@@ -20,6 +20,7 @@ func TestKnobsIgnoredWithoutTag(t *testing.T) {
 		EnvTestNow + "=2001-02-03T04:05:06Z",
 		EnvTestRandom + "=00ff",
 		EnvFault + "=render,commit",
+		EnvTestRoot + "=/sb",
 	})
 	k, err := LoadKnobs(env)
 	if err != nil {
@@ -35,6 +36,9 @@ func TestKnobsIgnoredWithoutTag(t *testing.T) {
 	}
 	if k.Fault("render") != nil || len(k.Faults()) != 0 {
 		t.Error("the fault knob took effect")
+	}
+	if k.Root() != "" || New(nil, env, "", 0, Stdio{}, nil).Paths.Command != paths.Command {
+		t.Error("the root knob took effect")
 	}
 	if _, err := LoadKnobs(paths.NewEnv([]string{EnvTestNow + "=garbage"})); err != nil {
 		t.Errorf("malformed knob must be ignored, got %v", err)

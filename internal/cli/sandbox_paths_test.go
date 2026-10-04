@@ -5,7 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rett/tacctl/internal/backend/radius"
 	"github.com/rett/tacctl/internal/paths"
 )
 
@@ -26,17 +25,11 @@ func sandboxPathEnv(dir string) []string {
 	}
 }
 
-// sandboxArchive points 'uninstall data --keep-logs' (/root) under dir for
-// the test.
-func sandboxArchive(t *testing.T, dir string) {
-	old := radius.LogArchiveDir
-	radius.LogArchiveDir = filepath.Join(dir, "root")
-	t.Cleanup(func() { radius.LogArchiveDir = old })
-}
-
-// hostDefaults names every path a lifecycle phase, a render or 'backend
-// enable|disable' can write (or remove) that does not resolve under root,
-// for both RADIUS layouts. PIDFile and LibDir are only written into the
+// hostDefaults names every path a lifecycle phase, a render, 'backend
+// enable|disable', or install, upgrade and uninstall can write (or remove)
+// that does not resolve under root, for both RADIUS layouts: the TACCTL_*
+// locations and tacctl's fixed host ones (the deploy clone, the installed
+// command, Go, the completion, the man page, /root; paths.Paths.Reroot). PIDFile and LibDir are only written into the
 // rendered config, never touched.
 func hostDefaults(p paths.Paths, root string) []string {
 	root = filepath.Clean(root) + string(filepath.Separator)
@@ -47,7 +40,9 @@ func hostDefaults(p paths.Paths, root string) []string {
 		"SudoersFile": p.SudoersFile, "TierSudoersFile": p.TierSudoersFile,
 		"OverrideDir": p.OverrideDir, "TacacsUnitDir": p.TacacsUnitDir, "SystemdDir": p.SystemdDir,
 		"LogrotateDir": p.LogrotateDir, "TacquitoSrc": p.TacquitoSrc, "LinuxDir": p.LinuxDir,
-		"Tree": p.Tree, "PatchDir": p.PatchDir, "radius.LogArchiveDir": radius.LogArchiveDir,
+		"Tree": p.Tree, "PatchDir": p.PatchDir,
+		"Deploy": p.Deploy, "Command": p.Command, "GoBin": p.GoBin, "Completion": p.Completion,
+		"ManPage": p.ManPage, "ArchiveDir": p.ArchiveDir,
 	}
 	for _, fam := range []string{"debian", "rhel"} {
 		l := p.Radius(fam)
@@ -68,13 +63,19 @@ func hostDefaults(p paths.Paths, root string) []string {
 	return bad
 }
 
-// The environments of the tests that run lifecycle phases or 'backend
-// enable|disable' (radiusSandbox, newSwEnv) leave no path at a host
-// default; and the guard does see one.
+// The environments of the tests that run lifecycle phases, 'backend
+// enable|disable', or install, upgrade and uninstall (radiusSandbox,
+// lifecycleSandbox, newSwEnv) leave no path at a host default: sandbox.run
+// reroots tacctl's fixed host locations under the sandbox as the guard
+// does here. And the guard does see one.
 func TestLifecycleTestsAreSandboxed(t *testing.T) {
 	sb := radiusSandbox(t, "debian")
-	if bad := hostDefaults(paths.Resolve(paths.NewEnv(sb.env), "/opt/x/dist/tacctl", nil), sb.dir); len(bad) != 0 {
+	if bad := hostDefaults(paths.Resolve(paths.NewEnv(sb.env), "/opt/x/dist/tacctl", nil).Reroot(sb.dir), sb.dir); len(bad) != 0 {
 		t.Errorf("radiusSandbox: %v", bad)
+	}
+	lc := lifecycleSandbox(t)
+	if bad := hostDefaults(paths.Resolve(paths.NewEnv(lc.env), "/opt/x/dist/tacctl", nil).Reroot(lc.dir), lc.dir); len(bad) != 0 {
+		t.Errorf("lifecycleSandbox: %v", bad)
 	}
 	e := newSwEnv(t)
 	if bad := hostDefaults(e.p, e.w); len(bad) != 0 {

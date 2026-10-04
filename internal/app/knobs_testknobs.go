@@ -5,6 +5,7 @@ package app
 import (
 	"encoding/hex"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -13,11 +14,11 @@ import (
 
 // TestKnobs reports whether this binary was built with -tags testknobs
 // ('make build'), which compiles in the test-only environment knobs
-// (TACCTL_TEST_NOW, TACCTL_TEST_RANDOM, TACCTL_FAULT; docs/plans/go-rewrite.md
+// (TACCTL_TEST_NOW, TACCTL_TEST_RANDOM, TACCTL_FAULT, TACCTL_TEST_ROOT; docs/plans/go-rewrite.md
 // 3.6, Decision 17). 'tacctl version --long' prints it.
 const TestKnobs = true
 
-// loadKnobs is the only place the three knob variables are read.
+// loadKnobs is the only place the knob variables are read.
 func loadKnobs(env paths.Env) (Knobs, error) {
 	var k Knobs
 	if v := env.Get(EnvTestNow); v != "" {
@@ -41,6 +42,12 @@ func loadKnobs(env paths.Env) (Knobs, error) {
 				k.faults[p] = true
 			}
 		}
+	}
+	if v := env.Get(EnvTestRoot); v != "" {
+		if !filepath.IsAbs(v) {
+			return Knobs{}, fmt.Errorf("%s=%q: not an absolute path", EnvTestRoot, v)
+		}
+		k.root = v
 	}
 	return k, nil
 }

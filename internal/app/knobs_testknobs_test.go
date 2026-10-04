@@ -70,6 +70,7 @@ func TestLoadKnobsMalformed(t *testing.T) {
 		{EnvTestNow + "=2025-06-07", EnvTestNow},
 		{EnvTestRandom + "=xyz", EnvTestRandom},
 		{EnvTestRandom + "=abc", EnvTestRandom},
+		{EnvTestRoot + "=relative/dir", EnvTestRoot},
 	} {
 		_, err := load(t, tc.kv)
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
@@ -81,5 +82,15 @@ func TestLoadKnobsMalformed(t *testing.T) {
 func TestTestKnobsTrue(t *testing.T) {
 	if !TestKnobs {
 		t.Fatal("TestKnobs is false in a build with -tags testknobs")
+	}
+}
+
+// TACCTL_TEST_ROOT moves tacctl's fixed host locations under it, and only
+// those.
+func TestTestRootReroots(t *testing.T) {
+	a := New(nil, paths.NewEnv([]string{EnvTestRoot + "=/sb"}), "", 0, Stdio{}, nil)
+	if a.Paths.Command != "/sb/usr/local/bin/tacctl" || a.Paths.GoBin != "/sb/usr/local/go/bin/go" ||
+		a.Paths.Deploy != "/sb/opt/tacctl" || a.Paths.ArchiveDir != "/sb/root" || a.Paths.Etc != "/etc/tacquito" {
+		t.Errorf("paths %+v", a.Paths)
 	}
 }

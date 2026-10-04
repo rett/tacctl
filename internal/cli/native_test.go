@@ -78,6 +78,9 @@ func (sb *sandbox) run(stdin string, args []string, extraEnv ...string) string {
 	sb.runner.On([]string{"id"}, execx.Result{Stdout: []byte("users\n")})
 	a := app.New(args, paths.NewEnv(append(append([]string(nil), sb.env...), extraEnv...)), "/opt/x/dist/tacctl", 1000,
 		app.Stdio{Stdin: strings.NewReader(stdin), Stdout: &sb.out, Stderr: &sb.err}, sb.runner)
+	// tacctl's fixed host locations (the installed command, /root, ...)
+	// stay in the sandbox too.
+	a.Paths = a.Paths.Reroot(sb.dir)
 	sb.code = exitCode(Run(context.Background(), a, BuildInfo{Version: "0.2.0-test", Commit: "c", Date: "d"}), a.Out)
 	if n := len(sb.runner.Execs()); n != 0 {
 		sb.t.Errorf("%q: delegated (%d execs)", args, n)
@@ -313,10 +316,14 @@ func TestNativePrelude(t *testing.T) {
 	sb.expect(0, "prod-inner", "")
 	ro("scope", "show", "lab")
 	sb.expect(1, "", "[ERROR] 'tacctl scope show' is not permitted for the readonly tier.")
-	// A delegated family is not gated by Go: bash gates it.
-	ro("upgrade")
-	if len(sb.runner.Execs()) != 1 || sb.err.Len() != 0 || sb.runner.Called("id") {
-		t.Errorf("delegated command gated by Go: %q %q", sb.err.String(), sb.runner.Argvs())
+	// install, upgrade and uninstall are superuser commands (and native
+	// since WP3.3d): denied before anything runs.
+	for _, c := range []string{"install", "upgrade", "uninstall"} {
+		ro(c, "-y")
+		sb.expect(1, "", "[ERROR] 'tacctl "+c+" -y' is not permitted for the readonly tier.")
+		if len(sb.runner.Execs()) != 0 || sb.runner.Called("git") || sb.runner.Called("systemctl") {
+			t.Errorf("%s: ran %q", c, sb.runner.Argvs())
+		}
 	}
 }
 

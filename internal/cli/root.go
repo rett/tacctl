@@ -40,7 +40,7 @@ func hidden(name string) *cobra.Command {
 func newRoot(inv *invocation) *cobra.Command {
 	run := func(*cobra.Command, []string) error { return delegate(inv.app) }
 	root := &cobra.Command{Use: "tacctl", Short: "TACACS+ (tacquito) and RADIUS (FreeRADIUS) from one store"}
-	root.AddCommand(lifecycleCmds()...)
+	root.AddCommand(lifecycleCmds(inv)...)
 	root.AddCommand(passwdCmd(inv), statusCmd(inv))
 	root.AddCommand(
 		userCmd(inv), groupCmd(inv), scopeCmd(inv), hostCmd(inv), backendCmd(inv), storeCmd(inv),
@@ -58,13 +58,22 @@ func newRoot(inv *invocation) *cobra.Command {
 	root.CompletionOptions.DisableDefaultCmd = true
 	root.DisableSuggestions = true
 	root.DisableAutoGenTag = true
+	// No command, 'help', '-h', '--help' or a word that is no command: the
+	// top-level usage on stdout, exit 1 (bin/tacctl.sh's '*) usage; exit 1',
+	// after the tier gate as every command).
+	topUsage := inv.native(noPreflight, func([]string) error {
+		inv.write(Usage("top", UsageVars{"version": inv.build.Version}))
+		return exit(1)
+	})
+	root.RunE, help.RunE = topUsage, topUsage
 	configure(root, run)
 	configure(help, run)
 	return root
 }
 
 // configure switches cobra's parsing and output off on every command and
-// gives every command without one the default handler.
+// gives every command without one the default handler (delegation, marked
+// with the annotation delegatedKey).
 func configure(c *cobra.Command, run func(*cobra.Command, []string) error) {
 	c.DisableFlagParsing = true
 	c.Args = cobra.ArbitraryArgs
@@ -72,11 +81,18 @@ func configure(c *cobra.Command, run func(*cobra.Command, []string) error) {
 	c.SilenceUsage = true
 	if c.RunE == nil && c.Run == nil {
 		c.RunE = run
+		if c.Annotations == nil {
+			c.Annotations = map[string]string{}
+		}
+		c.Annotations[delegatedKey] = "true"
 	}
 	for _, sub := range c.Commands() {
 		configure(sub, run)
 	}
 }
+
+// delegatedKey marks a command that is handed to bash (delegate.go).
+const delegatedKey = "tacctl-delegated"
 
 // resolve finds the command args name, bash style: walk down while the next
 // argument is exactly a sub-command's name, return it and the rest.

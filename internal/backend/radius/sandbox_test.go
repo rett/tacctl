@@ -5,7 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rett/tacctl/internal/backend/radius"
 	"github.com/rett/tacctl/internal/paths"
 )
 
@@ -29,7 +28,7 @@ func hostDefaults(p paths.Paths, l paths.RadiusPaths, root string) []string {
 		"radius Conf": l.Conf, "radius Users": l.Users, "radius DictDir": l.DictDir, "radius Dict": l.Dict,
 		"radius DaemonLog": l.DaemonLog, "radius AuthLog": l.AuthLog, "radius AcctLog": l.AcctLog,
 		"radius DropIn": l.DropIn, "radius Logrotate": l.Logrotate,
-		"radius.LogArchiveDir": radius.LogArchiveDir,
+		"ArchiveDir": p.ArchiveDir,
 	} {
 		if !strings.HasPrefix(filepath.Clean(path)+string(filepath.Separator), root) {
 			bad = append(bad, name+"="+path)

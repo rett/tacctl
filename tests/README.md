@@ -599,7 +599,7 @@ tests/diff/run.sh --self-test                # the runner against itself and aga
 
 ### Test knobs (`internal/app/knobs*.go`)
 
-Three environment variables let a test fix what a command takes from the world.
+Four environment variables let a test fix what a command takes from the world.
 They are read **only** by a binary built with `-tags testknobs` (`make build`, which
 the bats harness and the differential runner use); the installed binary and the
 bootstrap shim do not read them at all, whatever the variables hold, and
@@ -611,9 +611,14 @@ knob: it stays an ordinary environment check.
 | `TACCTL_TEST_NOW=<RFC 3339>` | `Knobs.Now()` returns that instant, in the local zone, instead of the clock |
 | `TACCTL_TEST_RANDOM=<hex>` | `Knobs.Rand()` yields those bytes, repeated as often as needed, each call starting at the first byte; the bash stubs do the same |
 | `TACCTL_FAULT=<point>[,<point>...]` | `Knobs.Fault(point)` returns an error for each named point; it replaces the function-override fault injection of the bash tests |
+| `TACCTL_TEST_ROOT=<dir>` | tacctl's fixed host locations, which no `TACCTL_*` variable moves (the deploy clone `/opt/tacctl`, `/usr/local/bin/tacctl`, `/usr/local/go`, the bash completion, the man page, `/root`), move under `<dir>` (`paths.Paths.Reroot`), so a test can run `install`, `upgrade` and `uninstall` |
 
 A malformed value is an error naming the variable; an empty one is the same as
-unset. Run the Go tests of the knobs both ways: `go test ./internal/app` (the
+unset. The bootstrap shim (`bin/tacctl.sh.new`, bash) honours `TACCTL_TEST_ROOT`
+for the installed command and Go as well, and so does the build recipe it shares
+with `bin/tacctl.sh --build`; `tests/integration/shim.bats` runs the shim's own
+rows of the upgrade matrix (Go installed or kept, Decision 20's way back) that
+way. Run the Go tests of the knobs both ways: `go test ./internal/app` (the
 off build: the variables are ignored) and `go test -tags testknobs ./internal/app`.
 
 ### The fake runner (`internal/execx/fake`)
@@ -645,10 +650,9 @@ TACCTL_IMPL=go tests/bats/bats-core/bin/bats --filter-tags cutover:wp2-4a \
     tests/integration/characterisation.bats
 ```
 
-`tests/blackbox.list` runs it against Go with
-`# go-tags: cutover:wp0-1 cutover:wp2-4a ...`: each cut-over package adds its
-tag there, and `WP3.3d`, the last cut-over it needs, replaces the marker so
-the whole file runs. Tests tagged `bash-only` cannot move as they are: the
+`tests/blackbox.list` ran it against Go with
+`# go-tags: cutover:wp0-1 cutover:wp2-4a ...` while the families were cut over;
+since `WP3.3d`, the last of them, the whole file runs. Tests tagged `bash-only` cannot move as they are: the
 `config branch` tests call `cmd_config_branch` with `DEPLOY_DIR` pointed at a scratch
 directory (bash has no environment variable for the deploy clone; the Go
 port takes it from `TACCTL_TREE`), and the missing-`python3-bcrypt` test has no Go
