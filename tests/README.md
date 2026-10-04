@@ -496,7 +496,7 @@ tests/diff/run.sh --self-test                # the runner against itself and aga
   `go` (`dist/tacctl`, started with `TACCTL_TREE` pointing at this tree, as
   the bats harness does), `bash`, or any executable.
 - **Corpora** are `tests/diff/corpus/<name>.txt`: `users`, `scopes`, `groups`,
-  `config`, `backup`, `store`, `log`, `devices`, `hosts`. One command per line,
+  `config`, `backup`, `store`, `log`, `devices`, `hosts`, `lifecycle`. One command per line,
   program name left out; `<<< text` is stdin (`\n` a line break; no `<<<` means
   a closed stdin); ` ;; ` chains commands that share one state; `@fixture`,
   `@env`, `@unenv`, `@stub <cmd> <rc>`, `@known <why>`, `@path <dir>` (more

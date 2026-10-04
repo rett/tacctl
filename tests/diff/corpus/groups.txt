@@ -134,7 +134,7 @@ group commands list operator extra
 group commands default operator permit extra
 group commands default nosuchgroup deny
 group commands add operator show
-@known 3.9 item 16 (proposed extension): 0.1.16 crashed here with bash's 'unbound variable' diagnostic; 0.2.0 exits 1 the same way, without it
+@known 3.9 item 19: 'group commands add --match' with no value exits 1 silently (0.1.16 died with bash's 'unbound variable')
 group commands add operator show --match
 group commands add operator show --action
 group commands add operator show --match 'run.*' --match 'start.*' ;; group commands list operator
@@ -155,7 +155,7 @@ group add helpdesk 7 HELPDESK-CLASS ;; group commands list helpdesk ;; group com
 group add helpdesk 7 HELPDESK-CLASS ;; group commands seed helpdesk
 group commands remove operator '*'
 group commands remove operator 'sh.w' ;; group commands list operator
-@known 3.9 item 16 (proposed extension): 0.1.16 leaked grep's and python's error noise for a name that is no valid regex; same outcome without it
+@known 3.9 item 19: 'group commands remove' of a name that is no valid regex, same outcome without 0.1.16's leaked grep/python noise
 group commands remove operator 'sh[' ;; group commands list operator
 group commands remove operator ping ;; group commands remove operator ping
 group commands clear operator <<< yes

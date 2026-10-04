@@ -63,7 +63,9 @@ tacctl/
   internal/                 # the implementation: cli, store, model, conf, render, devices, hosts,
                             # lifecycle, backend (and backend/tacacs, backend/radius), ...
   vendor/                   # vendored Go dependencies (builds need no network)
-  go.mod, go.sum
+  go.mod, go.sum            # dependencies: github.com/spf13/cobra (with spf13/pflag and
+                            # inconshreveable/mousetrap), golang.org/x/crypto (bcrypt),
+                            # golang.org/x/sys, golang.org/x/term, gopkg.in/yaml.v3
   config/
     backends/tacacs/
       tacquito.yaml         # Reference layout of the rendered TACACS+ config

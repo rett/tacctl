@@ -90,5 +90,5 @@ store import ;; config render --force ;; store rollback <<< Y ;; config validate
 store rollback <<< n
 store rollback <<< y ;; user list ;; store show
 @root tests/diff/roots/store-prestore-broken
-@known proposed 3.9 item: a tacquito.yaml that is not YAML is reported in yaml.v3's words (the legacy importer reads it as tacquito does, plan 3.3), not PyYAML's
+@known 3.9 item 22: a legacy tacquito.yaml that is not valid YAML is reported in yaml.v3's words (the legacy importer reads it as tacquito does, plan 3.3), not PyYAML's
 store rollback <<< y

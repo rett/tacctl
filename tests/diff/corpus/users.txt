@@ -85,9 +85,9 @@ user rename alice 'bad name'
 user add alice superuser --hash {HASH} --scopes lab ;; user rename alice alicia ;; user list
 user add alice superuser --hash {HASH} --scopes lab ;; user add bob operator --hash {HASH} --scopes lab ;; user rename alice bob
 user add alice superuser --hash {HASH} --scopes lab ;; user rename alice root
-@known plan 3.9 item 5: the usage line names 'tacctl user move' (0.1.16: 'tacctl move')
+@known 3.9 item 5: the usage line names 'tacctl user move' (0.1.16: 'tacctl move')
 user move
-@known plan 3.9 item 5: the usage line names 'tacctl user move' (0.1.16: 'tacctl move')
+@known 3.9 item 5: the usage line names 'tacctl user move' (0.1.16: 'tacctl move')
 user move alice
 user move ghost operator
 user add alice superuser --hash {HASH} --scopes lab ;; user move alice nosuchgroup
@@ -172,7 +172,7 @@ user add alice superuser --hash '$2b$10$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 user add alice superuser --hash 2432622431302461616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161 --scopes lab ;; user list
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; user add alice superuser --hash {HASH}
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; user add alice superuser --hash {HASH} --scopes prod,lab,prod ;; user show alice
-@known plan 3.9 item 10: a password over 72 bytes is refused (0.1.16 hashed its first 72 bytes)
+@known 3.9 item 10: a password over 72 bytes is refused (0.1.16 hashed its first 72 bytes)
 user add bob operator --scopes lab <<< AbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbc\nAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbc
 user add bob operator --scopes lab <<< AbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAb\nAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAb ;; user verify bob <<< AbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAb
 
@@ -235,7 +235,7 @@ user add alice superuser --hash {HASH} --scopes lab ;; _completion-names users
 version
 --version
 -v
-@known plan 3.9 item 1: 'version --long' adds commit, build date, Go version and the test knobs
+@known 3.9 item 1: 'version --long' adds commit, build date, Go version and the test knobs
 version --long
 
 # the tunables come from tacctl.yaml

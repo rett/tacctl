@@ -158,6 +158,13 @@ case "$side_b" in
     *) bin_b="$side_b"; [[ -x "$bin_b" ]] || die "--b ${side_b}: not an executable" ;;
 esac
 label_b="$side_b"
+# The version B prints: the binary's own build stamp, which is not the working
+# tree's 'git describe' once the tree has changed since 'make build' (a
+# -dirty suffix, or a commit since).
+b_version=""
+if [[ "$side_b" == go ]]; then
+    b_version="$(env -i TACCTL_SKIP_SUDO=1 PATH=/usr/bin:/bin "$bin_b" version 2> /dev/null | sed -n '1s/^tacctl //p')"
+fi
 
 # The fixed inputs of both sides.
 test_now="$("$real_date" -u +%Y-%m-%dT12:00:00Z)"
@@ -355,7 +362,10 @@ normalise_script() {
         printf 's|%s|<ROOT>|g\n' "${sidedir}/root"
         printf 's|%s|<SIDE>|g\n' "$work"
         printf 's|%s|<TREE>|g\n' "$tag_tree" "$src"
-        printf 's|%s|<VERSION>|g\n' "$src_version" "$tag_version"
+        # Longest first, so a version that extends another (a -dirty suffix,
+        # commits since the tag) is replaced whole.
+        printf '%s\n' "$src_version" "$b_version" "$tag_version" | awk 'NF { print length($0) "\t" $0 }' \
+            | sort -rn | cut -f2- | while IFS= read -r v; do printf 's|%s|<VERSION>|g\n' "$v"; done
         printf 's/(tacctl(\\x1b\\[0m)?) \\((unknown|<VERSION>)\\) /\\1 (<VERSION>) /\n'
         printf 's/^tacctl (unknown|<VERSION>)$/tacctl <VERSION>/\n'
         printf 's/[0-9]{8}[_-][0-9]{6}(_[0-9]{3})?/<TS>/g\n'

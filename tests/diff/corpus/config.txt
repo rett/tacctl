@@ -255,10 +255,10 @@ config sudoers install '' <<< n
 config sudoers install 'bad group' <<< y
 config sudoers install wheel extra <<< n
 # Unprivileged, the real 'install -o root' fails; 0.1.16 then exits under errexit and
-# leaves its mktemp copy of the drop-in in TMPDIR, 0.2.0 removes it (proposed 3.9 item).
-@known proposed 3.9 item: a failed sudoers install leaves no temp file
+# leaves its mktemp copy of the drop-in in TMPDIR, 0.2.0 removes it (3.9 item 18).
+@known 3.9 item 18: a failed 'config sudoers [tiers] install' leaves no temp file behind
 config sudoers tiers install
-@known proposed 3.9 item: a failed sudoers install leaves no temp file
+@known 3.9 item 18: a failed 'config sudoers [tiers] install' leaves no temp file behind
 config sudoers install wheel <<< y
 
 # the tunables shown and set, and their empty forms
@@ -296,14 +296,12 @@ config listen
 config validate
 config show
 @fixture none
-@known 3.9 item 30: the config usage lists render --dry-run --out
 config
 config show
 config validate
 config render
 config render --force
 config get bcrypt.cost
-@known 3.9 item 28: the comment headers of config defaults and config dump name tacctl, not lib/conf.sh
 config defaults
 config sudoers
 _completion-names listeners

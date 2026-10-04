@@ -152,7 +152,7 @@ config linux uid alice
 config linux uid 'bad name'
 config linux uid bob 1001
 config linux script --scope lab --server 192.0.2.10 ;; config linux uid ;; config linux uid bob ;; config linux uid bob 1001 ;; config linux uid bob 20000 ;; config linux uid bob 500 ;; config linux uid bob 65534 ;; config linux uid ghost 30000 ;; config linux uid ;; config linux script --scope lab --server 192.0.2.10
-@known proposed 3.9 item 20: bash's arithmetic complaint about 09999 (a broken octal number) is not printed; the outcome is the same
+@known 3.9 item 21: 'config linux uid <u> 09999' no longer prints bash's 'value too great for base' line; the same values are accepted
 config linux script --scope lab --server 192.0.2.10 ;; config linux uid alice 09999
 config linux script --scope lab --server 192.0.2.10 ;; config linux uid alice 01000
 config linux builds
