@@ -2,7 +2,7 @@
 
 Companion to `docs/plans/go-rewrite.md` (WP0.1). The plan cites `lib/users.sh`, `lib/scopes.sh`, `lib/core.sh`, `lib/conf.sh` and `lib/lifecycle.sh` by **0.1.15** line numbers and marks those citations **[refresh @0.1.16]**. This file gives the same constructs at the **`0.1.16` tag**, the parity baseline. Read the code with `git show 0.1.16:lib/<file>`, never from a working tree.
 
-**Method.** Each 0.1.15 range was mapped line by line onto 0.1.16 with a diff of the two versions of the file (`git show 0.1.15:lib/<f>` against `git show 0.1.16:lib/<f>`; unchanged lines map exactly). Every range whose ends fell on a changed line was located by hand, and every function range was checked against the function's first line and closing brace at 0.1.16. Line counts: `users.sh` 1060 → 1096, `scopes.sh` 1937 → 1977, `core.sh` 188 → 199, `conf.sh` 1193 → 1245, `lifecycle.sh` 926 → 1021. The other lib files are not marked in the plan; the `0.1.16` tag's `lib/` is identical to `lib/` on `feature/go-rewrite` at `62adc79`.
+**Method.** Each 0.1.15 range was mapped line by line onto 0.1.16 with a diff of the two versions of the file (`git show 0.1.15:lib/<f>` against `git show 0.1.16:lib/<f>`; unchanged lines map exactly). Every range whose ends fell on a changed line was located by hand, and every function range was checked against the function's first line and closing brace at 0.1.16. Line counts: `users.sh` 1060 → 1096, `scopes.sh` 1937 → 1977, `core.sh` 188 → 199, `conf.sh` 1193 → 1245, `lifecycle.sh` 926 → 1021. The other lib files are not marked in the plan; the `0.1.16` tag's `lib/` is identical to `lib/` on `feature/go-rewrite` at `c69c251`.
 
 "Where" names the plan's section; "0.1.15" is the citation as the plan has it.
 
