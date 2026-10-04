@@ -1,6 +1,6 @@
 package cli
 
-// Shell completion. 'tacctl completion bash' prints cobra's
+// Shell completion. 'tacctl completion bash|zsh|fish' prints cobra's
 // generated script; the script asks the binary itself ('tacctl __complete
 // <words>', cobra's protocol) what can come next. The binary answers from
 // the command tree (sub-commands) and from the verbs' Specs (flags and
@@ -37,11 +37,11 @@ var topSpecs = map[string]Spec{
 }
 
 // completionShells are the shells 'tacctl completion' writes a script for.
-var completionShells = []string{"bash"}
+var completionShells = []string{"bash", "zsh", "fish"}
 
 // completionUsage is what 'tacctl completion' prints for a missing or an
 // unknown shell.
-const completionUsage = "Usage: tacctl completion bash"
+const completionUsage = "Usage: tacctl completion bash|zsh|fish"
 
 // completionCmd is 'tacctl completion <shell>': the generated script on
 // stdout. It runs as the invoking user (reexec.go), reads no state and has
@@ -63,7 +63,12 @@ func completionCmd(inv *invocation) *cobra.Command {
 // GenCompletion writes the completion script of shell to w.
 func GenCompletion(w io.Writer, shell string) error {
 	root := newRoot(&invocation{})
-	_ = shell // only bash is supported (the command refuses the rest)
+	switch shell {
+	case "zsh":
+		return root.GenZshCompletion(w)
+	case "fish":
+		return root.GenFishCompletion(w, true)
+	}
 	return root.GenBashCompletionV2(w, true)
 }
 

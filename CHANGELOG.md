@@ -72,7 +72,7 @@ current behaviour; this file is where history lives.
 14. **`host sync <TAB>` and `host unenroll <TAB>` complete the enrolled host
     names** (a read-only or operator user is offered the hosts of its own
     scopes).
-NN. **Release binaries.** A release tag publishes `tacctl-<tag>-linux-amd64`,
+15. **Release binaries.** A release tag publishes `tacctl-<tag>-linux-amd64`,
     `tacctl-<tag>-linux-arm64`, `SHA256SUMS` and `SHA256SUMS.sig` (an
     `ssh-keygen -Y` signature by the release key, whose public half is
     `release/allowed_signers`). When the clone is exactly at a release tag,
@@ -83,18 +83,23 @@ NN. **Release binaries.** A release tag publishes `tacctl-<tag>-linux-amd64`,
     `Release binary for <tag> not used (<reason>); building from source.` and
     build as before. A branch never downloads. `docs/releasing.md` is the
     release procedure (`make release-assets`, `make release-verify`).
-NN. **arm64 hosts.** The bootstrap shim installs the Go toolchain for the
+16. **arm64 hosts.** The bootstrap shim installs the Go toolchain for the
     host's architecture (`go<version>.linux-arm64.tar.gz` on aarch64, amd64
     on x86_64); on any other architecture it cannot download Go, and says so
     naming the architecture.
     `bin/tacctl.sh --build <out> --goarch <arch>` cross-builds.
-NN. **The tacquito authentication lines name the device.** A new source patch
+17. **The tacquito authentication lines name the device.** A new source patch
     (`patches/0003-authen-log-conn-remote-addr.patch`, applied by `install`
     and `upgrade`) makes tacquito log `accepting user [<user>] from [<address>]
     using a bcrypt password` and `failed to validate the user [<user>] from
     [<address>] using a bcrypt password`; `tacctl log search <user>` and
     `tacctl log failures` lines gain `from [address]`, the address the device
     connected from (`unknown` when the server has none).
+18. **`tacctl completion zsh` and `tacctl completion fish`** print the zsh and
+    fish completion scripts (`tacctl completion bash|zsh|fish`; other shells
+    are refused with that usage line). They are print-only: `install` and
+    `upgrade` still write only the bash script. The words and the live names
+    are the same as bash's.
 
 ## 0.2.0 (2026-10-04)
 
