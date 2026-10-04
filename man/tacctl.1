@@ -49,10 +49,11 @@ are deliberate exceptions: they run as the invoking user.
 Install tacctl and the TACACS+ backend. Builds the tacquito binary with the
 Go toolchain (installed by
 .I /opt/tacctl/bin/tacctl.sh
-when it is missing), builds the
+when it is missing), installs the
 .I /usr/local/bin/tacctl
-binary from the clone in
-.IR /opt/tacctl ,
+binary (the verified release binary when the clone in
+.I /opt/tacctl
+is at a release tag, otherwise built from the clone),
 installs the shell completion and this manual, creates the
 .B tacquito
 service user and the state directory
@@ -115,7 +116,8 @@ changed, pull the tacctl repository in
 (after switching to
 .BI --branch " name"
 when given) and, when the installed binary was not built from the commit
-now checked out, build it again from the clone and re-execute it once, install
+now checked out, replace it (the verified release binary at a release tag,
+otherwise built from the clone) and re-execute it once, install
 packages the new release needs, bring every enabled
 backend's configuration in line with the release (a re-render from the
 store; RADIUS restarts when its files or unit drop-in changed), refresh

@@ -74,6 +74,11 @@ tests/
 Go tests live beside their packages; their own inputs are in each package's
 `testdata/`.
 
+No private key is kept in the repository, not even a test one: the release
+binary tests of `tests/integration/shim.bats` generate an ed25519 key pair
+and its `allowed_signers` line in `setup_file`, under the file's tmpdir, and
+sign their release assets with it at test time.
+
 ## The bats harness
 
 `tests/helpers/setup.bash` points `TACCTL_BIN_SCRIPT` at `dist/tacctl` (it

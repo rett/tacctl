@@ -194,9 +194,9 @@ func (h *Host) installDeploy(ctx context.Context, branch string) error {
 
 // installCommand makes the installed command the binary of the deploy
 // clone's HEAD: when it is not a binary yet (missing, or 0.1.16's symlink)
-// or this binary was not built from that commit, it is built from the
-// clone (Build). Run from the bootstrap shim, which built it from the
-// clone a moment ago, it is already. 0.1.16 symlinked its entrypoint
+// or this binary was not built from that commit, the clone's shim installs
+// it (Build: the verified release binary, or one built from the clone).
+// Run from the bootstrap shim, which did that a moment ago, it is already. 0.1.16 symlinked its entrypoint
 // instead.
 func (h *Host) installCommand(ctx context.Context) error {
 	p := h.Paths
@@ -207,7 +207,6 @@ func (h *Host) installCommand(ctx context.Context) error {
 	if err := os.MkdirAll(filepath.Dir(p.Command), 0o755); err != nil {
 		return h.failed("mkdir: cannot create directory '" + filepath.Dir(p.Command) + "': " + errno(err))
 	}
-	h.Out.Info("Building " + p.Command + " from " + p.Deploy + "...")
 	if err := h.Build(ctx, p.Deploy, p.Command); err != nil {
 		return h.buildFailed(err, "")
 	}

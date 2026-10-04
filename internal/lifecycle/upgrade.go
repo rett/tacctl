@@ -351,11 +351,11 @@ func (h *Host) updateDeploy(ctx context.Context, ids []string, branch string) (d
 	return true, h.selfUpdate(ctx, ids, start)
 }
 
-// selfUpdate rebuilds the installed command from the deploy clone and
+// selfUpdate replaces the installed command with the deploy clone's binary
+// (Build: the verified release binary, or one built from the clone) and
 // re-executes 'upgrade' with it.
 func (h *Host) selfUpdate(ctx context.Context, ids []string, start string) error {
 	out, p := h.Out, h.Paths
-	out.Info("Building " + p.Command + " from " + p.Deploy + "...")
 	if err := h.Build(ctx, p.Deploy, p.Command); err != nil {
 		return h.buildFailed(err, start)
 	}

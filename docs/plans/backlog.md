@@ -27,6 +27,8 @@ The design and every decision are in `docs/plans/operator-console.md`.
 
 - **Release binaries (0.2.1, user 2026-10-04):** tagged releases publish linux/amd64 and linux/arm64 binaries; install and upgrade download the binary for the host's architecture and verify it, and build from source as today for branch builds or when the download fails or cannot be verified. Verification: a `SHA256SUMS` release asset signed with a key whose public half is committed in the repo (minisign or `ssh-keygen -Y`; chosen in the refresh), the private key held by the user, who signs at release time.
 
+- **Release reproducibility check in CI** (candidate, filed by WP6.8): a GitHub Actions workflow that, on a release, rebuilds both `tacctl-<tag>-linux-<arch>` assets from the tag with `make release-assets` and compares their sums with the published `SHA256SUMS`. It only re-builds and compares; signing stays on the release manager's machine (no key in CI).
+
 - **zsh and fish completion** (0.2.1, user 2026-10-04): `tacctl completion zsh|fish` from cobra's generators (0.2.0 ships bash only).
 
 ## 3. Behaviour kept for parity in 0.2.0, candidates to change later

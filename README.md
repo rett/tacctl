@@ -51,7 +51,9 @@ tacctl version          # tacctl 0.2.0
 tacctl version --long   # adds the commit, the build date, the Go version and "test knobs: off"
 ```
 
-`install` and `upgrade` say `Building /usr/local/bin/tacctl from /opt/tacctl...` whenever they build, so the installed binary always matches the commit of the clone. Passwords, YAML, rendering and checksums are handled inside the binary; no helper program (Python, OpenSSL) is needed on the server.
+`install` and `upgrade` say `Building /usr/local/bin/tacctl from /opt/tacctl...` whenever they build, so the installed binary always matches the commit of the clone.
+
+When the clone is at a release tag (as `master` is right after a release), the bootstrap downloads that release's binary for the host (linux/amd64 or linux/arm64) instead of building it, and installs it only if its `SHA256SUMS` carries a valid signature by the key in `/opt/tacctl/release/allowed_signers` (`ssh-keygen -Y verify`, from `openssh-client`), its checksum matches and it was built from the clone's commit: `Installing the <tag> release binary (linux/amd64, verified)`; otherwise it says `Release binary for <tag> not used (<reason>); building from source.` and builds as above. To check the release assets by hand: `ssh-keygen -Y verify -f /opt/tacctl/release/allowed_signers -I tacctl-release -n tacctl-release -s SHA256SUMS.sig < SHA256SUMS`, then `sha256sum -c --ignore-missing SHA256SUMS` ([docs/releasing.md](docs/releasing.md)). Passwords, YAML, rendering and checksums are handled inside the binary; no helper program (Python, OpenSSL) is needed on the server.
 
 ## Project Structure
 
@@ -971,7 +973,7 @@ tacctl upgrade --branch develop
 The upgrade command:
 1. Moves tacctl state into `/etc/tacctl` if it is not there yet (idempotent)
 2. Pulls latest tacquito server source and rebuilds the binary (if upstream or the patch overlay changed)
-3. Pulls the latest tacctl repository into `/opt/tacctl` (after switching to the `--branch` given). If the installed binary was not built from the commit now checked out, it builds it again from the clone (`Building /usr/local/bin/tacctl from /opt/tacctl...`) and re-executes itself once, so the binary always matches the clone
+3. Pulls the latest tacctl repository into `/opt/tacctl` (after switching to the `--branch` given). If the installed binary was not built from the commit now checked out, it replaces it, with the verified release binary when the clone is at a release tag (`Installing the <tag> release binary (linux/<arch>, verified)`), otherwise built from the clone (`Building /usr/local/bin/tacctl from /opt/tacctl...`), and re-executes itself once, so the binary always matches the clone
 4. Installs packages a newer tacctl needs
 5. Brings the configuration in line with this release: re-renders each enabled backend from the store (RADIUS: and restarts it when its files or its unit drop-in changed); without a store, runs the in-place migrations of `tacquito.yaml`
 6. Updates system files (unit files and drop-ins, logrotate, the completion `tacctl completion bash` generates, the man page, templates you have not customized) if changed, and reports each one as `Updated:` or `Unchanged:`; a template you customized is kept, with the new release's version beside it as `<name>.template.new` (see [Custom Templates](#custom-templates))

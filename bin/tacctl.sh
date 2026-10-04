@@ -12,19 +12,31 @@
 #   3. Otherwise the Go toolchain is checked (go.mod's go line) and, when it
 #      is missing or older, Go GO_VERSION is installed in /usr/local/go; a
 #      newer Go is never replaced.
-#   4. The binary is built from this tree (the recipe below) and installed
-#      in one rename; on failure the installed command is left as it was
-#      and the way back to the bash release is printed (exit 1).
+#   4. The binary is obtained (shim_obtain): when this tree is checked out at
+#      a release tag, the release binary for this machine is downloaded and
+#      installed if its signature, its checksum and the commit it was built
+#      from all check out (docs/releasing.md); otherwise (a branch, or any of
+#      those failing, which is said in one line) it is built from this tree
+#      (the recipe below). It is installed in one rename; on failure the
+#      installed command is left as it was and the way back to the bash
+#      release is printed (exit 1).
 #   5. The new binary runs with the arguments.
-#   6. '--build <out> [--tags <tags>]' only builds (no root, nothing
-#      installed): 'make build' and 'tacctl upgrade' use it.
+#   6. '--build <out> [--tags <tags>] [--goarch <arch>]' only builds (no
+#      root, nothing installed): 'make build' and 'make release-assets' use
+#      it.
+#   7. '--install-binary <out>' only obtains (step 4) into <out>, without
+#      sudo and without the toolchain step: 'tacctl install' and 'tacctl
+#      upgrade' use it.
+#   8. '--verify-release <dir> [<allowed_signers>]' checks release assets
+#      before they are uploaded ('make release-verify').
 #
 # It runs when the README one-liner installs tacctl, when the bash release
 # hands an upgrade over to this tree, and whenever /usr/local/bin/tacctl
 # still points here; it is idempotent.
 #
 # TACCTL_TEST_ROOT (tests only) moves /usr/local/bin/tacctl and
-# /usr/local/go under that directory.
+# /usr/local/go under that directory; TACCTL_RELEASE_BASE_URL (tests only)
+# replaces the GitHub releases URL the release assets are fetched from.
 set -euo pipefail
 
 # The Go toolchain this tree is built with, and the bash release the way
@@ -32,29 +44,31 @@ set -euo pipefail
 GO_VERSION="1.26.2"
 TACCTL_BASH_RELEASE="0.1.18"
 
-# tacctl.sh --build <out> [--tags <tags>]: compile the Go implementation in
-# this script's tree (cmd/tacctl, vendored modules, no network) into <out>,
-# atomically, and exit. Needs no root and installs nothing: 'make build' uses
-# it, and the 0.2.0 bootstrap shim and upgrade share the same recipe
-# (docs/plans/go-rewrite.md 5.1). The version stamped in is 'git describe'
-# of the tree; GOCACHE as root defaults to /root/.cache/go-build.
+# tacctl.sh --build <out> [--tags <tags>] [--goarch <arch>]: compile the Go
+# implementation in this script's tree (cmd/tacctl, vendored modules, no
+# network) into <out>, atomically, and exit. Needs no root and installs
+# nothing: 'make build' uses it, and the bootstrap shim and upgrade share
+# the same recipe (docs/plans/go-rewrite.md 5.1). --goarch cross-builds for
+# linux/<arch> ('make release-assets'); the default is this machine's. The
+# version stamped in is 'git describe' of the tree; GOCACHE as root
+# defaults to /root/.cache/go-build.
 tacctl_go_build() {
-    local out="${1:-}" tags="" tree version commit date
+    local out="${1:-}" tags="" goarch="" tree version commit date
     local go_bin="${TACCTL_TEST_ROOT:-}/usr/local/go/bin/go"
+    local usage="Usage: tacctl.sh --build <out> [--tags <tags>] [--goarch <arch>]"
     if [[ -z "$out" || "$out" == -* ]]; then
-        echo "Usage: tacctl.sh --build <out> [--tags <tags>]" >&2
+        echo "$usage" >&2
         return 1
     fi
     shift
-    if [[ "${1:-}" == "--tags" ]]; then
-        tags="${2:-}"
-        [[ -n "$tags" ]] || { echo "Usage: tacctl.sh --build <out> [--tags <tags>]" >&2; return 1; }
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --tags) tags="${2:-}"; [[ -n "$tags" ]] || { echo "$usage" >&2; return 1; } ;;
+            --goarch) goarch="${2:-}"; [[ "$goarch" =~ ^[a-z0-9]+$ ]] || { echo "$usage" >&2; return 1; } ;;
+            *) echo "$usage" >&2; return 1 ;;
+        esac
         shift 2
-    fi
-    if [[ $# -gt 0 ]]; then
-        echo "Usage: tacctl.sh --build <out> [--tags <tags>]" >&2
-        return 1
-    fi
+    done
     tree="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)" || return 1
     if [[ ! -f "${tree}/go.mod" ]]; then
         echo -e "\033[0;31m[ERROR]\033[0m No Go module in ${tree} (go.mod missing)." >&2
@@ -76,13 +90,15 @@ tacctl_go_build() {
     [[ -z "$tags" ]] || build+=(-tags "$tags")
     build+=(-ldflags "-s -w -X main.version=${version} -X main.commit=${commit} -X main.date=${date}")
     build+=(-o "${out}.new" ./cmd/tacctl)
+    local -a goenv=(GOTOOLCHAIN=local GOFLAGS=-mod=vendor CGO_ENABLED=0)
+    [[ -z "$goarch" ]] || goenv+=(GOOS=linux GOARCH="$goarch")
     # A subshell for cd and umask; the trap drops a half-written binary on
     # failure or Ctrl-C. <out> itself changes only by the final rename.
     (
         trap 'rm -f "${out}.new"' EXIT
         cd "$tree" \
             && umask 022 \
-            && GOTOOLCHAIN=local GOFLAGS=-mod=vendor CGO_ENABLED=0 "$go_bin" "${build[@]}" \
+            && env "${goenv[@]}" "$go_bin" "${build[@]}" \
             && chmod 755 "${out}.new" \
             && mv -f "${out}.new" "$out"
     )
@@ -102,7 +118,10 @@ SHIM_GOROOT="${TACCTL_TEST_ROOT:-}/usr/local/go"
 SHIM_TMP=""
 trap '[[ -z "$SHIM_TMP" ]] || rm -rf "$SHIM_TMP"' EXIT
 
-shim_info() { echo -e "\033[0;32m[INFO]\033[0m $*" >&2; }
+# [INFO] goes to stderr, or to stdout for '--install-binary' (tacctl's own
+# INFO lines are on stdout, and the shim's then read as part of them).
+SHIM_INFO_FD=2
+shim_info() { echo -e "\033[0;32m[INFO]\033[0m $*" >&"$SHIM_INFO_FD"; }
 shim_warn() { echo -e "\033[1;33m[WARN]\033[0m $*" >&2; }
 shim_error() { echo -e "\033[0;31m[ERROR]\033[0m $*" >&2; }
 
@@ -120,6 +139,16 @@ shim_version_ge() {
     [[ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -n 1)" == "$2" ]]
 }
 
+# shim_arch: this machine as a Go architecture (the Go download and the
+# release binary), "" for any other.
+shim_arch() {
+    case "$(uname -m 2> /dev/null)" in
+        x86_64 | amd64) echo amd64 ;;
+        aarch64 | arm64) echo arm64 ;;
+        *) echo "" ;;
+    esac
+}
+
 # The Go this tree needs (go.mod's go line) and the one installed ("" for
 # none).
 shim_go_need() { sed -n 's/^go[[:space:]]\{1,\}\([0-9][0-9.]*\).*/\1/p' "${SHIM_TREE}/go.mod" | head -n 1; }
@@ -135,7 +164,13 @@ shim_go_have() {
 # is touched. Without a checksum to verify against, nothing is installed.
 SHIM_GO_DL="https://dl.google.com/go"
 shim_install_go() {
-    local tarball="go${GO_VERSION}.linux-amd64.tar.gz" want sum
+    local arch tarball want sum
+    arch=$(shim_arch)
+    if [[ -z "$arch" ]]; then
+        shim_error "Go ${GO_VERSION} cannot be installed on this machine: no Go download for $(uname -m 2> /dev/null || echo 'an unknown architecture') (amd64 and arm64 only). Install Go ${GO_VERSION} or newer in ${SHIM_GOROOT} by hand."
+        return 1
+    fi
+    tarball="go${GO_VERSION}.linux-${arch}.tar.gz"
     SHIM_TMP=$(mktemp -d)
     shim_info "Installing Go ${GO_VERSION}..."
     if ! wget -q -O "${SHIM_TMP}/${tarball}" "${SHIM_GO_DL}/${tarball}"; then
@@ -206,6 +241,199 @@ shim_fail() {
     exit 1
 }
 
+# --- release binaries (docs/releasing.md) ------------------------------------
+# A release tag publishes tacctl-<tag>-linux-{amd64,arm64}, SHA256SUMS and
+# SHA256SUMS.sig, a signature by 'ssh-keygen -Y sign' with the release key
+# whose public half is release/allowed_signers (identity and namespace
+# tacctl-release).
+SHIM_RELEASE_URL="${TACCTL_RELEASE_BASE_URL:-https://github.com/rett/tacctl/releases/download}"
+SHIM_RELEASE_ID="tacctl-release"
+
+# shim_has_key <allowed_signers>: the file names at least one key (a line
+# that is not blank and not a comment).
+shim_has_key() { [[ -f "$1" ]] && grep -qE '^[[:space:]]*[^#[:space:]]' "$1"; }
+
+# shim_verify_sig <dir> <allowed_signers>: <dir>/SHA256SUMS.sig is a good
+# signature of <dir>/SHA256SUMS by the release identity.
+shim_verify_sig() {
+    ssh-keygen -Y verify -f "$2" -I "$SHIM_RELEASE_ID" -n "$SHIM_RELEASE_ID" \
+        -s "${1}/SHA256SUMS.sig" < "${1}/SHA256SUMS" > /dev/null 2>&1
+}
+
+# shim_verify_sum <dir> <file>: SHA256SUMS has exactly one line for <file>,
+# and <dir>/<file> matches it.
+shim_verify_sum() {
+    local lines
+    lines=$(awk -v f="$2" '($2 == f || $2 == "*" f) && $1 ~ /^[0-9a-f]{64}$/' "${1}/SHA256SUMS") || return 1
+    [[ -n "$lines" && "$(wc -l <<< "$lines")" -eq 1 ]] || return 1
+    (cd "$1" && sha256sum -c --quiet --status <<< "$lines")
+}
+
+# shim_commit_of <binary>: the commit a tacctl binary says it was built from.
+shim_commit_of() {
+    TACCTL_SKIP_SUDO=1 "$1" version --long 2> /dev/null | sed -n 's/^commit:[[:space:]]*//p'
+}
+
+# shim_download <tmp> <tag> <asset>: the three release files into <tmp>;
+# the name of the first that could not be fetched on failure.
+shim_download() {
+    local f
+    for f in SHA256SUMS SHA256SUMS.sig "$3"; do
+        if ! wget -q --timeout=30 --tries=2 -O "${1}/${f}" "${SHIM_RELEASE_URL}/${2}/${f}" 2> /dev/null; then
+            echo "$f"
+            return 1
+        fi
+    done
+}
+
+# shim_release <dst> <tmp>: when this tree is at a release tag, the release
+# binary for this machine into <dst>, verified. Silent (status 2) on a
+# branch; otherwise prints the INFO line and returns 0, or sets
+# SHIM_RELEASE_WHY and returns 1.
+SHIM_RELEASE_TAG=""
+SHIM_RELEASE_WHY=""
+shim_release() {
+    local dst="$1" tmp="$2" tag arch asset head have missing
+    local signers="${SHIM_TREE}/release/allowed_signers"
+    tag=$(git -C "$SHIM_TREE" describe --tags --exact-match --match '[0-9]*' HEAD 2> /dev/null) || return 2
+    [[ "$tag" =~ ^[0-9][0-9A-Za-z.+-]*$ ]] || return 2
+    SHIM_RELEASE_TAG="$tag"
+    if ! git -C "$SHIM_TREE" diff --quiet HEAD -- 2> /dev/null; then
+        SHIM_RELEASE_WHY="the tree has local changes"
+        return 1
+    fi
+    if ! shim_has_key "$signers"; then
+        SHIM_RELEASE_WHY="no release key configured"
+        return 1
+    fi
+    arch=$(shim_arch)
+    if [[ -z "$arch" ]]; then
+        SHIM_RELEASE_WHY="no release binary for linux/$(uname -m 2> /dev/null || echo unknown)"
+        return 1
+    fi
+    if ! command -v wget > /dev/null 2>&1; then
+        SHIM_RELEASE_WHY="wget is not installed"
+        return 1
+    fi
+    if ! command -v ssh-keygen > /dev/null 2>&1; then
+        SHIM_RELEASE_WHY="ssh-keygen is not installed"
+        return 1
+    fi
+    asset="tacctl-${tag}-linux-${arch}"
+    if ! missing=$(shim_download "$tmp" "$tag" "$asset"); then
+        SHIM_RELEASE_WHY="could not download ${missing}"
+        return 1
+    fi
+    if ! shim_verify_sig "$tmp" "$signers"; then
+        SHIM_RELEASE_WHY="the signature of SHA256SUMS does not verify"
+        return 1
+    fi
+    if ! shim_verify_sum "$tmp" "$asset"; then
+        SHIM_RELEASE_WHY="${asset} does not match SHA256SUMS"
+        return 1
+    fi
+    chmod 755 "${tmp}/${asset}"
+    head=$(git -C "$SHIM_TREE" rev-parse HEAD 2> /dev/null) || head=""
+    have=$(shim_commit_of "${tmp}/${asset}") || have=""
+    if [[ -z "$head" || "$have" != "$head" ]]; then
+        SHIM_RELEASE_WHY="it was built from commit ${have:-unknown}, not ${head:-unknown}"
+        return 1
+    fi
+    # Into place in one rename on dst's own filesystem.
+    if ! mkdir -p "$(dirname "$dst")" || ! cp "${tmp}/${asset}" "${dst}.new" \
+        || ! chmod 755 "${dst}.new" || ! mv -f "${dst}.new" "$dst"; then
+        rm -f "${dst}.new"
+        SHIM_RELEASE_WHY="it could not be installed as ${dst}"
+        return 1
+    fi
+    shim_info "Installing the ${tag} release binary (linux/${arch}, verified)"
+}
+
+# shim_obtain <dst>: the release binary (shim_release), else the binary
+# built from this tree, as <dst>. Any reason the release binary was not
+# used is one INFO line; only a failed build is an error.
+shim_obtain() {
+    local dst="$1" rc=0
+    [[ "$dst" == /* ]] || dst="${PWD}/${dst}"
+    SHIM_TMP=$(mktemp -d)
+    shim_release "$dst" "$SHIM_TMP" || rc=$?
+    rm -rf "$SHIM_TMP"
+    SHIM_TMP=""
+    [[ $rc -ne 0 ]] || return 0
+    if [[ $rc -eq 1 ]]; then
+        shim_info "Release binary for ${SHIM_RELEASE_TAG} not used (${SHIM_RELEASE_WHY}); building from source."
+    fi
+    shim_info "Building ${dst} from ${SHIM_TREE}..."
+    tacctl_go_build "$dst"
+}
+
+# shim_verify_release <dir> [<allowed_signers>]: the release assets in <dir>
+# before they are uploaded: SHA256SUMS.sig verifies, every file SHA256SUMS
+# lists is there and matches, and the binary for this machine was built
+# from this tree's HEAD.
+shim_verify_release() {
+    local dir="${1:-}" signers="${2:-${SHIM_TREE}/release/allowed_signers}" arch head have f n=0
+    if [[ -z "$dir" || ! -d "$dir" ]]; then
+        echo "Usage: tacctl.sh --verify-release <dir> [<allowed_signers>]" >&2
+        return 1
+    fi
+    if ! shim_has_key "$signers"; then
+        shim_error "No release key in ${signers} (docs/releasing.md says how to add it)."
+        return 1
+    fi
+    if ! command -v ssh-keygen > /dev/null 2>&1; then
+        shim_error "ssh-keygen is not installed."
+        return 1
+    fi
+    for f in SHA256SUMS SHA256SUMS.sig; do
+        [[ -f "${dir}/${f}" ]] || { shim_error "${dir}/${f} is missing."; return 1; }
+    done
+    if ! shim_verify_sig "$dir" "$signers"; then
+        shim_error "The signature ${dir}/SHA256SUMS.sig does not verify with ${signers}."
+        return 1
+    fi
+    shim_info "SHA256SUMS: good signature by ${SHIM_RELEASE_ID}."
+    if ! (cd "$dir" && sha256sum -c --strict SHA256SUMS); then
+        shim_error "A file does not match SHA256SUMS (or is missing)."
+        return 1
+    fi
+    head=$(git -C "$SHIM_TREE" rev-parse HEAD 2> /dev/null) || head=""
+    arch=$(shim_arch)
+    while read -r _ f; do
+        f="${f#\*}"
+        n=$((n + 1))
+        [[ -n "$arch" && "$f" == tacctl-*-linux-"$arch" ]] || continue
+        have=$(shim_commit_of "${dir}/${f}") || have=""
+        if [[ -z "$head" || "$have" != "$head" ]]; then
+            shim_error "${f} was built from commit ${have:-unknown}, not this tree's HEAD (${head:-unknown})."
+            return 1
+        fi
+        shim_info "${f}: built from ${head}."
+    done < "${dir}/SHA256SUMS"
+    if [[ $n -eq 0 ]]; then
+        shim_error "SHA256SUMS lists no file."
+        return 1
+    fi
+    shim_info "Release assets in ${dir} verified."
+}
+
+case "${1:-}" in
+    --install-binary)
+        if [[ $# -ne 2 || -z "$2" || "$2" == -* ]]; then
+            echo "Usage: tacctl.sh --install-binary <out>" >&2
+            exit 1
+        fi
+        SHIM_INFO_FD=1
+        shim_obtain "$2" || exit 1
+        exit 0
+        ;;
+    --verify-release)
+        shift
+        shim_verify_release "$@" || exit 1
+        exit 0
+        ;;
+esac
+
 if shim_current; then
     exec "$SHIM_CMD" "$@"
 fi
@@ -220,7 +448,6 @@ if [[ $EUID -ne 0 && "${TACCTL_SKIP_SUDO:-0}" != "1" ]]; then
 fi
 
 shim_toolchain || shim_fail
-shim_info "Building ${SHIM_CMD} from ${SHIM_TREE}..."
 mkdir -p "$(dirname "$SHIM_CMD")"
-tacctl_go_build "$SHIM_CMD" || shim_fail
+shim_obtain "$SHIM_CMD" || shim_fail
 exec "$SHIM_CMD" "$@"

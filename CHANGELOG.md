@@ -72,6 +72,22 @@ current behaviour; this file is where history lives.
 14. **`host sync <TAB>` and `host unenroll <TAB>` complete the enrolled host
     names** (a read-only or operator user is offered the hosts of its own
     scopes).
+NN. **Release binaries.** A release tag publishes `tacctl-<tag>-linux-amd64`,
+    `tacctl-<tag>-linux-arm64`, `SHA256SUMS` and `SHA256SUMS.sig` (an
+    `ssh-keygen -Y` signature by the release key, whose public half is
+    `release/allowed_signers`). When the clone is exactly at a release tag,
+    the bootstrap shim, `tacctl install` and `tacctl upgrade` download the
+    binary for the host, verify the signature, the checksum and the commit
+    the binary was built from, and install it (`Installing the <tag> release
+    binary (linux/<arch>, verified)`); when any of that fails they print
+    `Release binary for <tag> not used (<reason>); building from source.` and
+    build as before. A branch never downloads. `docs/releasing.md` is the
+    release procedure (`make release-assets`, `make release-verify`).
+NN. **arm64 hosts.** The bootstrap shim installs the Go toolchain for the
+    host's architecture (`go<version>.linux-arm64.tar.gz` on aarch64, amd64
+    on x86_64); on any other architecture it cannot download Go, and says so
+    naming the architecture.
+    `bin/tacctl.sh --build <out> --goarch <arch>` cross-builds.
 
 ## 0.2.0 (2026-10-04)
 

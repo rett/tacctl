@@ -1,7 +1,8 @@
 package lifecycle
 
-// The tacctl binary: built from the deploy clone with the one recipe the
-// Makefile and the bootstrap shim use, and the man page.
+// The tacctl binary: obtained by the deploy clone's bootstrap shim (the
+// verified release binary, or built with the one recipe the Makefile and
+// the shim use), and the man page.
 
 import (
 	"bytes"
@@ -15,17 +16,28 @@ import (
 	"github.com/rett/tacctl/internal/execx"
 )
 
-// Build runs the build recipe of tree, '<tree>/bin/tacctl.sh --build
-// <dst>' (docs/plans/go-rewrite.md 5.1: vendored, no network, -trimpath,
-// the version stamped from git; the recipe writes <dst>.new and renames it
-// over dst, so dst is replaced atomically or not at all), with its output
-// passed through. On failure <dst>.new is removed (a build that was
-// cancelled is killed before its own cleanup can run), dst is as it was,
-// and the error says so: ErrFailed, or exit status 130 when ctx was
-// cancelled (Ctrl-C). Nothing is printed here.
+// Build makes dst the tacctl binary of tree with tree's own bootstrap shim,
+// '<tree>/bin/tacctl.sh --install-binary <dst>': the verified release
+// binary when tree is at a release tag, otherwise (or when it cannot be
+// verified, which the shim says in one line) the binary built with the
+// recipe of docs/plans/go-rewrite.md 5.1 (vendored, no network, -trimpath,
+// the version stamped from git). The shim prints what it does ('Installing
+// the <tag> release binary …' or 'Building <dst> from <tree>...'). A tree
+// whose shim predates --install-binary (0.2.0) is built with its
+// '--build <dst>', and the 'Building' line is printed here. Either way
+// <dst>.new is written and renamed over dst, so dst is replaced atomically
+// or not at all, and the shim's output is passed through. On failure
+// <dst>.new is removed (a build that was cancelled is killed before its own
+// cleanup can run), dst is as it was, and the error says so: ErrFailed, or
+// exit status 130 when ctx was cancelled (Ctrl-C).
 func (h *Host) Build(ctx context.Context, tree, dst string) error {
 	recipe := filepath.Join(tree, "bin", "tacctl.sh")
-	res, err := h.Runner.Run(ctx, execx.Cmd{Name: recipe, Args: []string{"--build", dst},
+	args := []string{"--install-binary", dst}
+	if !shimInstallsBinaries(recipe) {
+		h.Out.Info("Building " + dst + " from " + tree + "...")
+		args = []string{"--build", dst}
+	}
+	res, err := h.Runner.Run(ctx, execx.Cmd{Name: recipe, Args: args,
 		Stdout: h.Out.Stdout, Stderr: h.Out.Stderr})
 	if err == nil && res.Code == 0 {
 		return nil
@@ -35,6 +47,13 @@ func (h *Host) Build(ctx context.Context, tree, dst string) error {
 		return &backend.Error{Code: 130, Reason: "build interrupted"}
 	}
 	return backend.ErrFailed
+}
+
+// shimInstallsBinaries: the shim at path has the '--install-binary' mode
+// (0.2.1 and later). An unreadable shim is taken for one that has not.
+func shimInstallsBinaries(path string) bool {
+	data, err := os.ReadFile(path)
+	return err == nil && bytes.Contains(data, []byte("--install-binary"))
 }
 
 // buildFailed prints Decision 20's text after a failed Build of the
