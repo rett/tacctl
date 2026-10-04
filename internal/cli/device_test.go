@@ -47,7 +47,7 @@ func TestDeviceUsageAndUnknown(t *testing.T) {
 	sb.run("", []string{"device", "frobnicate"})
 	sb.expect(1, "Usage: tacctl device", "Unknown subcommand: 'frobnicate'")
 	// Verbs that belong to later packages do not exist yet.
-	for _, w := range []string{"scan", "discover", "check", "ssh-config"} {
+	for _, w := range []string{"scan", "discover", "check"} {
 		sb.run("", []string{"device", w})
 		sb.expect(1, "Usage: tacctl device", "Unknown subcommand: '"+w+"'")
 	}

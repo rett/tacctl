@@ -4,7 +4,7 @@
 # Fails when a tracked file names someone's own infrastructure: a home
 # directory (/home/<name>/, bar the /home/user/ and /home/u/ placeholders),
 # or an address user@host under a real-world TLD (example.com/net/org,
-# git@github.com and noreply addresses are allowed). The repository is public; documentation
+# git@github.com, noreply addresses and ssh algorithm names are allowed). The repository is public; documentation
 # says "the dev server", "the production host", admin@client.example.net.
 #
 # Extra extended regexes, one per line ('#' starts a comment), are read from
@@ -32,7 +32,9 @@ pathspec=(-- . ':!vendor' ':!go.sum' ':!internal/conf/testdata')
 
 home_re='/home/[a-z_][a-z0-9_-]*/'
 mail_re='[a-z0-9._%+-]+@([a-z0-9-]+\.)+(com|net|org|io|us|uk|de|dev|app|co|me|info|biz|edu|gov|ca|au|nz|eu|ai|cloud|xyz|tech|online|site|is)\b'
-allow_re='/home/(user|u)/|@openssh\.com\b|@([a-z0-9-]+\.)*example\.(com|net|org)\b|git@github\.com|noreply'
+# ssh algorithm names (sk-ssh-ed25519@openssh.com, curve25519-sha256@libssh.org)
+# have an address's shape and name no one.
+allow_re='/home/(user|u)/|@([a-z0-9-]+\.)*example\.(com|net|org)\b|git@github\.com|noreply|@openssh\.com\b|@libssh\.org\b'
 
 patterns_file="${TACCTL_PRIVATE_PATTERNS:-${XDG_CONFIG_HOME:-$HOME/.config}/tacctl/private-patterns}"
 private=()

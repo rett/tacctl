@@ -71,6 +71,9 @@ var deviceSpecs = map[string]Spec{
 		{Names: []string{"--check"}}, {Names: []string{"--replace"}}, flagAllowGeneric, flagYes}},
 	"export":  {MaxArgs: 0, Flags: []Flag{{Names: []string{"--csv"}}, flagJSON}},
 	"hostkey": {MinArgs: 1, MaxArgs: 3, Args: []string{KindDevices, "show|accept|set", ""}, Flags: []Flag{flagYes}},
+	// 'device ssh' is 'tacctl ssh' (ssh.go); ssh-config is device_sshconfig.go.
+	"ssh":        sshSpec,
+	"ssh-config": {MaxArgs: 0},
 }
 
 // deviceVerbs are the verbs ({Use, Short}), in usage order.
@@ -93,6 +96,8 @@ var deviceVerbs = [][2]string{
 	{"import [--check] [--replace] [--allow-generic] [-y] <file|->", "Import devices from CSV or the registry's YAML"},
 	{"export [--csv|--json]", "Print the registry (YAML by default)"},
 	{"hostkey <name> [show|accept [-y]|set SHA256:<fp>]", "Show the pinned ssh host keys, or re-pin them after a verified change"},
+	{"ssh <name|address> [-l <login>] [-p <port>] [-- <ssh args>]", "Alias of 'tacctl ssh': a session to the device, as you"},
+	{"ssh-config", "Print an ssh_config Include for your devices (Host blocks, pinned keys)"},
 }
 
 // deviceSeenCols are the LAST SEEN, BY and VIA columns of an entry, and
@@ -152,6 +157,7 @@ Examples:
   tacctl device list
   tacctl device rename core-sw1 dc1-core1
   tacctl device export --csv > devices.csv
+  tacctl device ssh-config > ~/.ssh/tacctl.conf
 
 `)
 	return b.String()
@@ -168,7 +174,7 @@ func (inv *invocation) device(args []string) error {
 		"list": inv.deviceList, "show": inv.deviceShow, "add": inv.deviceAdd, "remove": inv.deviceRemove,
 		"rename": inv.deviceRename, "legacy-ssh": inv.deviceLegacySSH, "stale-days": inv.deviceStaleDays,
 		"notice": inv.deviceNotice, "notices": inv.deviceNotices, "import": inv.deviceImport, "export": inv.deviceExport,
-		"hostkey": inv.deviceHostkey,
+		"hostkey": inv.deviceHostkey, "ssh": inv.ssh, "ssh-config": inv.deviceSSHConfig,
 		"address": inv.deviceSetter("address"), "hostname": inv.deviceSetter("hostname"), "vendor": inv.deviceSetter("vendor"),
 		"port": inv.deviceSetter("port"), "login": inv.deviceSetter("login"), "description": inv.deviceSetter("description"),
 	}

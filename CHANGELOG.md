@@ -160,6 +160,33 @@ current behaviour; this file is where history lives.
 24. **`/etc/tacctl/known_hosts` is generated** (root, 0644) from the pinned
     keys on every registry write and after `backup restore`: one
     `<name> <type> <key>` line per key, for ssh's `HostKeyAlias` lookup.
+25. **New: `tacctl ssh <name|address> [-l <login>] [-p <port>] [-- <ssh args>]`**
+    (`device ssh` is the same) opens an ssh session to a registered device or
+    an enrolled host as the invoking user, never root: the name is resolved
+    as root, a read-only or operator caller is refused outside their scopes
+    (`'<user>' has no access to scope '<scope>' (device <name>)`), the session
+    is logged (`ssh user=<user> device=<name> addr=<address>`, auth.info), and
+    ssh runs through `sudo -u <user> -H env SSH_AUTH_SOCK=…` with the
+    terminal; its exit status is tacctl's. Every session gets
+    `-o ConnectTimeout=10`; `wti` devices
+    `-o PreferredAuthentications=password -o PubkeyAuthentication=no`;
+    `legacy-ssh` devices the SHA-1 key exchanges and `ssh-rsa`; pinned devices
+    `-o UserKnownHostsFile=/etc/tacctl/known_hosts -o StrictHostKeyChecking=yes
+    -o HostKeyAlias=<name> -o UpdateHostKeys=no`. An unpinned device prints its
+    `hostkey-unpinned` notice first. Run by root itself it refuses (`tacctl ssh
+    runs ssh as the user who invoked it; run it from your own account, not as
+    root`), without a terminal too (`a terminal is required`); an unregistered
+    address is refused with the `device add` command. After an ssh exit 255 on
+    a pinned device whose key changed, tacctl prints the pinned and offered
+    fingerprints, the vendor's console command and `tacctl device hostkey
+    <name> accept|set`. `tacctl ssh <TAB>` completes the device names of the
+    caller's scopes.
+26. **New: `tacctl device ssh-config`** prints an `ssh_config` fragment (one
+    `Host` block per device and enrolled host the caller may see, with the
+    vendor options and, for a pinned entry, the same `UserKnownHostsFile`,
+    `StrictHostKeyChecking yes`, `HostKeyAlias` and `UpdateHostKeys no` lines)
+    and on stderr how to Include it from `~/.ssh/config`. Print-only; open to
+    the read-only and operator tiers, filtered to their scopes.
 
 ## 0.2.0 (2026-10-04)
 

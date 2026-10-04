@@ -1963,7 +1963,11 @@ never by itself.
 .PP
 Reading verbs
 .RB ( list ,
-.BR show )
+.BR show ,
+.BR notices ,
+.BR ssh\-config )
+and
+.B "tacctl ssh"
 are open to the read-only and operator tiers, which see only the devices and
 hosts whose scope is one of their own; an entry no scope covers is seen by
 administrators only.
@@ -2157,6 +2161,111 @@ device console.
 reads the keys and pins only the one with that fingerprint, refusing when the
 device offers none. A device that does not answer is refused and the pin stays.
 Administrators only; each change is logged to syslog.
+.TP
+.BI "device ssh " name|address " [ \-l " login " ] [ \-p " port " ] [ \-\- " "ssh args" " ]"
+The same as
+.BR "tacctl ssh" ,
+below.
+.TP
+.B device ssh\-config
+Print an
+.BR ssh_config (5)
+fragment with one
+.B Host
+block per device and enrolled host the caller may see:
+.BR HostName ,
+the login
+.RB ( User ),
+port and identity when set, the vendor options of
+.BR "tacctl ssh" ,
+and for a pinned entry
+.BI "UserKnownHostsFile /etc/tacctl/known_hosts" ,
+.BR "StrictHostKeyChecking yes" ,
+.BI "HostKeyAlias " name
+and
+.BR "UpdateHostKeys no" .
+An unpinned entry gets a comment instead, and checks against the user's own
+known_hosts. The install hint goes to stderr: save the output with
+.B "tacctl device ssh\-config > ~/.ssh/tacctl.conf"
+and put
+.B "Include ~/.ssh/tacctl.conf"
+at the top of
+.I ~/.ssh/config
+(an
+.B Include
+after a
+.B Host
+block belongs to that block). Then a plain
+.BI "ssh " name
+reaches the device the way
+.B "tacctl ssh"
+does. tacctl only prints it; nothing is written into a home directory. Re-run it
+after registry changes.
+.SS SSH to a device \fB(tacctl ssh)\fR
+.TP
+.BI "ssh " name|address " [ \-l " login " ] [ \-p " port " ] [ \-\- " "ssh args" " ]"
+Open an ssh session to a registered device or an enrolled host, named by its
+name or its registered address. tacctl resolves the name as root (the registry
+is root's), checks that a read-only or operator caller's scopes include the
+device's, logs
+.BI "ssh user=" user " device=" name " addr=" address
+to syslog (auth.info), and runs
+.BR ssh (1)
+as the invoking user
+.RB ( "sudo \-u " "\fIuser\fR " "\-H env SSH_AUTH_SOCK=" ...),
+with the terminal, returning its exit status. It never runs ssh as root:
+run by root itself (no
+.BR SUDO_USER ,
+or
+.BR SUDO_USER=root )
+it refuses with
+.IR "tacctl ssh runs ssh as the user who invoked it; run it from your own account, not as root" .
+It needs a terminal on stdin
+.RI ( "a terminal is required" ).
+An address that is not registered is refused with the
+.B "device add"
+command to register it; a device outside the caller's scopes with
+.IR "'user' has no access to scope 'scope' (device name)" .
+.IP
+ssh connects to the device's hostname, else its address (an enrolled host: its
+target), with its login and port unless
+.B \-l
+or
+.B \-p
+is given, and always
+.BR "\-o ConnectTimeout=10" .
+The vendor adds options:
+.B wti
+gets
+.B "\-o PreferredAuthentications=password \-o PubkeyAuthentication=no"
+(the units hold no user keys); a device with
+.B legacy\-ssh
+gets
+.B "\-o KexAlgorithms=+diffie\-hellman\-group14\-sha1,diffie\-hellman\-group1\-sha1 \-o HostKeyAlgorithms=+ssh\-rsa \-o PubkeyAcceptedAlgorithms=+ssh\-rsa"
+(old IOS; OpenSSH 8.5 or later); others none. A device with pinned host keys
+adds
+.BI "\-o UserKnownHostsFile=/etc/tacctl/known_hosts \-o StrictHostKeyChecking=yes \-o HostKeyAlias=" name " \-o UpdateHostKeys=no" ,
+so ssh accepts the pinned key and nothing else. An unpinned device is checked
+against the user's own known_hosts, after its
+.B hostkey\-unpinned
+notice is printed (unless acknowledged). Arguments after
+.B \-\-
+follow the target (more ssh options, or a remote command); ssh keeps the first
+value of an option, so they cannot replace the pinning options.
+.IP
+When ssh ends with status 255 on a pinned device, tacctl reads the device's
+keys again; if the pinned key is not among them it prints the pinned and the
+offered fingerprints, the console command that shows the key on the device,
+and
+.BI "tacctl device hostkey " name " accept"
+or
+.BI "set SHA256:" fingerprint
+to re-pin after verifying. The read-only tier may run it (the tiers sudoers
+rules grant
+.BR "tacctl ssh *" ,
+with
+.B SETENV
+so the agent socket passes).
 .SH RADIUS DEVICE CONFIGURATIONS
 .BR "config cisco" ,
 .B "config juniper"

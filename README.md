@@ -556,6 +556,7 @@ tacctl group <subcommand>       # Group management
 tacctl scope <subcommand>       # Scope management (CIDR+secret bundles)
 tacctl host <subcommand>        # Linux hosts: enroll, sync, unenroll, default-method
 tacctl device <subcommand>      # Device registry: names, addresses and notices for the devices that authenticate here
+tacctl ssh <name|address> [-l login] [-p port] [-- ssh args]  # ssh session to a registered device or enrolled host, as you (never root)
 tacctl backend <subcommand>     # Backends: list, status, enable, disable
 tacctl store <subcommand>       # The canonical store: show, import, rollback
 tacctl config <subcommand>      # Configuration
@@ -850,13 +851,29 @@ device export [--csv|--json]                      The registry (YAML by default)
 device hostkey <name> [show]                      The pinned ssh host-key fingerprints of a device or enrolled host (administrators)
 device hostkey <name> accept [-y]                 Re-scan and pin every key it offers, after confirmation (verify on the console first)
 device hostkey <name> set SHA256:<fp>             Re-scan and pin only the key with this fingerprint
+device ssh <name|address> [-l <login>] [-p <port>] [-- <ssh args>]   Same as tacctl ssh
+device ssh-config                                 Print an ssh_config Include for your devices (Host blocks with the vendor options and the pin)
 ```
 
-A device is found by name (any case) or by its registered address; an unregistered address is not found, even when a scope covers it. An address is registered once. Enrolled Linux hosts share the namespace and appear in `list` and `show` as `linux` entries, read-only. `list`, `show` and `notices` are open to the read-only and operator tiers, limited to the entries of their own scopes; `export` is operator-level, filtered the same way.
+A device is found by name (any case) or by its registered address; an unregistered address is not found, even when a scope covers it. An address is registered once. Enrolled Linux hosts share the namespace and appear in `list` and `show` as `linux` entries, read-only. `list`, `show`, `notices`, `ssh-config` and `tacctl ssh` are open to the read-only and operator tiers, limited to the entries of their own scopes; `export` is operator-level, filtered the same way.
 
 A name that is a factory or image default is refused with the command that names the device on the device itself (`hostname`, `set system host-name`, ...); a host enrolled under such a name before the registry existed is not refused and carries a `generic-name` notice. `host enroll --name` follows the same rules. Add your own patterns with `generic_names:` (regular expressions, whole-name, case-insensitive) in `devices.yaml`. There is no seen data yet, so the last seen, by and via columns print `-`.
 
 **Host keys.** `device add` reads the keys the device offers (`ssh-keyscan -T 5 -p <port> -t ed25519,ecdsa,rsa <address>`, as root; `legacy-ssh` devices are asked for `ssh-rsa` by name too), pins them in `devices.yaml` and prints each `SHA256:` fingerprint with the command that shows it on the device console (Cisco `show ip ssh`, Junos `show system ssh host-key`, Linux `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`); compare them before connecting. A device that does not answer is refused unless `--no-host-key` is given. `host enroll` and `host sync` pin an enrolled host's keys the first time; a sync that finds a different key reports it and keeps the pin. Only `device hostkey <name> accept|set` changes a pin. Every registry write regenerates `/etc/tacctl/known_hosts` (0644), one `<name> <type> <key>` line per pinned key, for `ssh -o UserKnownHostsFile=/etc/tacctl/known_hosts -o HostKeyAlias=<name> -o StrictHostKeyChecking=yes`.
+
+**`tacctl ssh <name|address>`** opens an ssh session to a registered device or an enrolled host, as you: the name is resolved as root (the registry is root's), a read-only or operator caller is held to the devices of their own scopes (`'jdoe' has no access to scope 'prod' (device core-sw1)`), the session is logged (`ssh user=<you> device=<name> addr=<address>`, syslog auth.info), and ssh runs as the invoking user (`sudo -u <you> -H env SSH_AUTH_SOCK=… ssh …`) with your agent and your own `~/.ssh/config`, its exit status passed back. Run as root itself it refuses (`tacctl ssh runs ssh as the user who invoked it; run it from your own account, not as root`); it needs a terminal. An unregistered address is refused with the `device add` command that registers it. The options per device:
+
+| Device | ssh options |
+|---|---|
+| every one | `-o ConnectTimeout=10`; the device's hostname, else its address; its login (`-l`) and port (`-p`) unless given |
+| `wti` | `-o PreferredAuthentications=password -o PubkeyAuthentication=no` (see WTI Console Servers) |
+| `legacy-ssh` | `-o KexAlgorithms=+diffie-hellman-group14-sha1,diffie-hellman-group1-sha1 -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedAlgorithms=+ssh-rsa` (old IOS; OpenSSH 8.5 or later) |
+| pinned keys | `-o UserKnownHostsFile=/etc/tacctl/known_hosts -o StrictHostKeyChecking=yes -o HostKeyAlias=<name> -o UpdateHostKeys=no` |
+| enrolled host | its target, port and identity (`-i`) |
+
+An unpinned device is checked against your own known_hosts, after its `hostkey-unpinned` notice. Arguments after `--` follow the target (`tacctl ssh core-sw1 -- show version`); ssh keeps the first value of an option, so they cannot replace the pin. When ssh fails with 255 on a pinned device whose key changed, tacctl prints the pinned and offered fingerprints, the console command that shows the key, and `tacctl device hostkey <name> accept|set`.
+
+`tacctl device ssh-config > ~/.ssh/tacctl.conf`, with `Include ~/.ssh/tacctl.conf` at the top of `~/.ssh/config`, gives a plain `ssh <name>` the same options and pin (one `Host` block per device you may see; print-only, re-run after registry changes).
 
 ```yaml
 # /etc/tacctl/devices.yaml
@@ -981,7 +998,7 @@ unit requests exec authorization and reads the standard `priv-lvl` attribute fro
 - **Fallback Local** follows the scope's `aaa-order`: `tacacs-first` → `On (Transport Failure)`, `local-first` → `On (All Failures)`. Keep a local Administrator account on the unit as break-glass
 - **Default User Access must be `On`** (Access Level `ViewOnly` as the least-privilege floor; the returned `priv-lvl` still sets the effective level). SSH logins go through the unit's OpenSSH, which has to resolve the account locally: with it `Off`, a TACACS-only user is invalid to sshd, which forwards a junk password (`\b\n\r\177INCORRECT…`), so tacquito logs `failed to validate the user` on every attempt no matter what was typed
 - If the unit's **IP Tables** (`/N`) end in `DROP`, they must accept `-i lo` and `-m conntrack --ctstate ESTABLISHED,RELATED` before the final DROP. Otherwise the unit's TACACS+ SYN leaves but tacquito's SYN-ACK is dropped: every login waits out the Fallback Timer, and tacquito logs nothing (only SYNs in tcpdump, half-open sockets in `ss`). The unit's Ping Test passes regardless — it is ICMP only
-- Test the first login with `ssh -o PreferredAuthentications=password <user>@<wti>`. If a plain `ssh` is closed without a password prompt while the password method works, the unit's Invalid Access Lockout is armed from earlier failures — `/UL` clears it
+- Test the first login with `ssh -o PreferredAuthentications=password <user>@<wti>` (`tacctl ssh <name>` uses the password method for every `wti` device). If a plain `ssh` is closed without a password prompt while the password method works, the unit's Invalid Access Lockout is armed from earlier failures — `/UL` clears it
 - Port and service access for User/ViewOnly-level logins is defined only under Default TACACS User Access → Configure Port Access / Service Access (factory: Administrator and SuperUser get all ports, User and ViewOnly get none). A same-named local account on the unit overrides the server-assigned level, so keep the two directories disjoint
 - The output warns when the scope secret contains whitespace/punctuation or exceeds 32 characters, or when a scope member's username exceeds WTI's 32-character limit — regenerate a hex-only key with `tacctl scope secret <name> set $(openssl rand -hex 16)`
 - Verify with `tacctl config loglevel debug` + `tacctl log tail`: `accepting user [x] using a bcrypt password` (PAP), then `client args [service=shell ...]`, then `authorized user [x] ... [priv-lvl=N]`; accounting (start at login, stop after `/X`) lands in `tacctl log accounting`. On the unit, TACACS Parameters → `12. Debug: On` echoes every exchange on the serial session — turn it back `Off` when done
