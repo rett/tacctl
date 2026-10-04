@@ -47,7 +47,7 @@ func TestDeviceUsageAndUnknown(t *testing.T) {
 	sb.run("", []string{"device", "frobnicate"})
 	sb.expect(1, "Usage: tacctl device", "Unknown subcommand: 'frobnicate'")
 	// Verbs that belong to later packages do not exist yet.
-	for _, w := range []string{"scan", "discover", "check", "ssh-config", "hostkey"} {
+	for _, w := range []string{"scan", "discover", "check", "ssh-config"} {
 		sb.run("", []string{"device", w})
 		sb.expect(1, "Usage: tacctl device", "Unknown subcommand: '"+w+"'")
 	}
@@ -89,7 +89,7 @@ func TestDeviceAddListShow(t *testing.T) {
 		t.Errorf("add: %d %q %q", sb.code, out, sb.stderr())
 	}
 	// A device no scope answers for.
-	sb.dev("", "add", "lab-rtr2", "100.64.0.7", "--vendor", "juniper", "--hostname", "lab-rtr2.lab.example.net", "--port", "830", "--login", "admin")
+	sb.dev("", "add", "lab-rtr2", "100.64.0.7", "--vendor", "juniper", "--hostname", "lab-rtr2.lab.example.net", "--port", "830", "--login", "admin", "--no-host-key")
 	out = sb.dev("", "list")
 	for _, want := range []string{"Registered devices (2) and enrolled hosts (0)", "core-sw1", "10.99.0.1", "prod", "configured",
 		"lab-rtr2", "100.64.0.7", "unconfigured", "hostkey-unpinned", "seen data: none (tacctl device scan)", "2 open notice(s)"} {
@@ -144,7 +144,7 @@ func TestDeviceAddListShow(t *testing.T) {
 
 func TestDeviceJSON(t *testing.T) {
 	sb := newSandbox(t, true)
-	sb.dev("", "add", "core-sw1", "10.99.0.1", "--vendor", "cisco")
+	sb.dev("", "add", "core-sw1", "10.99.0.1", "--vendor", "cisco", "--no-host-key")
 	out := sb.dev("", "list", "--json")
 	for _, want := range []string{`"name": "core-sw1"`, `"scope": "prod"`, `"state": "configured"`, `"source": "device"`, `"kind": "hostkey-unpinned"`, `"port": 22`} {
 		if !strings.Contains(out, want) {
@@ -161,7 +161,7 @@ func TestDeviceJSON(t *testing.T) {
 
 func TestDeviceAddRefusals(t *testing.T) {
 	sb := newSandbox(t, true)
-	sb.dev("", "add", "core-sw1", "10.99.0.1", "--vendor", "cisco")
+	sb.dev("", "add", "core-sw1", "10.99.0.1", "--vendor", "cisco", "--no-host-key")
 	want := sb.devices()
 	for _, c := range []struct {
 		args []string
@@ -196,24 +196,19 @@ func TestDeviceAddRefusals(t *testing.T) {
 		}
 	}
 	// --allow-generic registers it, and the standing notice follows.
-	out := sb.dev("", "add", "switch", "10.99.0.2", "--allow-generic")
+	out := sb.dev("", "add", "switch", "10.99.0.2", "--allow-generic", "--no-host-key")
 	if sb.code != 0 || !strings.Contains(out, "generic-name") {
 		t.Errorf("--allow-generic: %d %q %q", sb.code, out, sb.stderr())
 	}
 	if out = sb.dev("", "notices"); !strings.Contains(out, "switch  generic-name: 'switch' is a generic name") {
 		t.Errorf("notices:\n%s", out)
 	}
-	// --host-key is parsed but not checked: it says so.
-	out = sb.dev("", "add", "kept", "10.99.0.3", "--host-key", "SHA256:"+strings.Repeat("A", 43))
-	if sb.code != 0 || !strings.Contains(out, "--host-key was not checked") {
-		t.Errorf("--host-key: %d %q", sb.code, out)
-	}
 }
 
 func TestDeviceWritesTakeASnapshotFirst(t *testing.T) {
 	sb := newSandbox(t, true)
-	sb.dev("", "add", "core-sw1", "10.99.0.1")
-	sb.dev("", "add", "oob-con1", "10.99.0.9", "--vendor", "wti")
+	sb.dev("", "add", "core-sw1", "10.99.0.1", "--no-host-key")
+	sb.dev("", "add", "oob-con1", "10.99.0.9", "--vendor", "wti", "--no-host-key")
 	snaps, _ := filepath.Glob(sb.path("state", "backups", "2*"))
 	if len(snaps) != 2 {
 		t.Fatalf("%d snapshots: %v", len(snaps), snaps)
@@ -227,7 +222,7 @@ func TestDeviceWritesTakeASnapshotFirst(t *testing.T) {
 		t.Error("the first snapshot has a registry that did not exist")
 	}
 	// A refused command takes none.
-	sb.dev("", "add", "core-sw1", "10.99.0.50")
+	sb.dev("", "add", "core-sw1", "10.99.0.50", "--no-host-key")
 	if again, _ := filepath.Glob(sb.path("state", "backups", "2*")); len(again) != 2 {
 		t.Errorf("a refused add took a snapshot: %d", len(again))
 	}
@@ -240,9 +235,9 @@ func TestDeviceWritesTakeASnapshotFirst(t *testing.T) {
 
 func TestDeviceRemove(t *testing.T) {
 	sb := newSandbox(t, true)
-	sb.dev("", "add", "core-sw1", "10.99.0.1")
-	sb.dev("", "add", "oob-con1", "10.99.0.9")
-	sb.dev("", "add", "edge-fw", "10.99.3.1")
+	sb.dev("", "add", "core-sw1", "10.99.0.1", "--no-host-key")
+	sb.dev("", "add", "oob-con1", "10.99.0.9", "--no-host-key")
+	sb.dev("", "add", "edge-fw", "10.99.3.1", "--no-host-key")
 	before := sb.devices()
 	// Closed stdin is a no.
 	out := sb.dev("", "remove", "oob-con1")
@@ -261,7 +256,7 @@ func TestDeviceRemove(t *testing.T) {
 	if sb.code != 0 || !strings.Contains(out, "Removed 2 device(s).") || strings.Contains(sb.devices(), "oob-con1") || !strings.Contains(sb.devices(), "core-sw1") {
 		t.Errorf("remove: %d %q\n%s", sb.code, out, sb.devices())
 	}
-	sb.dev("", "add", "a1", "10.99.0.5")
+	sb.dev("", "add", "a1", "10.99.0.5", "--no-host-key")
 	if out = sb.dev("", "remove", "--all", "-y"); !strings.Contains(out, "Removed 2 device(s).") || strings.Contains(sb.devices(), "core-sw1: ") {
 		t.Errorf("--all: %q\n%s", out, sb.devices())
 	}
@@ -276,8 +271,8 @@ func TestDeviceRemove(t *testing.T) {
 
 func TestDeviceRename(t *testing.T) {
 	sb := newSandbox(t, true)
-	sb.dev("", "add", "core-sw1", "10.99.0.1")
-	sb.dev("", "add", "other", "10.99.0.2")
+	sb.dev("", "add", "core-sw1", "10.99.0.1", "--no-host-key")
+	sb.dev("", "add", "other", "10.99.0.2", "--no-host-key")
 	sb.dev("", "notice", "core-sw1", "ack", "hostkey-unpinned")
 	for _, c := range []struct {
 		args []string
@@ -314,8 +309,8 @@ func TestDeviceRename(t *testing.T) {
 
 func TestDeviceSetters(t *testing.T) {
 	sb := newSandbox(t, true)
-	sb.dev("", "add", "core-sw1", "10.99.0.1", "--vendor", "cisco")
-	sb.dev("", "add", "other", "10.99.0.2")
+	sb.dev("", "add", "core-sw1", "10.99.0.1", "--vendor", "cisco", "--no-host-key")
+	sb.dev("", "add", "other", "10.99.0.2", "--no-host-key")
 	get := func(field string) string { return strings.TrimSpace(sb.dev("", field, "core-sw1")) }
 	if get("address") != "10.99.0.1" || get("hostname") != "-" || get("vendor") != "cisco" || get("port") != "22" || get("login") != "-" || get("description") != "-" {
 		t.Error("getters")
@@ -403,8 +398,8 @@ func (sb *sandbox) plainOut() string { return plain(sb.out.String()) }
 
 func TestDeviceNotices(t *testing.T) {
 	sb := newSandbox(t, true)
-	sb.dev("", "add", "core-sw1", "10.99.0.1", "--vendor", "cisco")
-	sb.dev("", "add", "router", "10.99.0.2", "--vendor", "juniper", "--allow-generic")
+	sb.dev("", "add", "core-sw1", "10.99.0.1", "--vendor", "cisco", "--no-host-key")
+	sb.dev("", "add", "router", "10.99.0.2", "--vendor", "juniper", "--allow-generic", "--no-host-key")
 	out := sb.dev("", "notices")
 	if !strings.Contains(out, "core-sw1  hostkey-unpinned") || !strings.Contains(out, "router  generic-name") ||
 		!strings.Contains(out, "set system host-name <name>") || !strings.Contains(out, "tacctl device rename router <new>") {
@@ -460,7 +455,7 @@ func TestDeviceNotices(t *testing.T) {
 
 func TestDeviceImportExport(t *testing.T) {
 	sb := newSandbox(t, true)
-	sb.dev("", "add", "core-sw1", "10.99.0.1", "--vendor", "cisco", "--legacy-ssh", "--hostname", "core.example.net")
+	sb.dev("", "add", "core-sw1", "10.99.0.1", "--vendor", "cisco", "--legacy-ssh", "--hostname", "core.example.net", "--no-host-key")
 	csvText := "name,address,vendor,port,login,description\ncore-sw1,10.99.0.1,cisco,,,\"DC1, core\"\noob-con1,10.99.0.9,wti\n"
 	before := sb.devices()
 	out := sb.dev(csvText, "import", "--check", "-")
@@ -524,10 +519,10 @@ func TestDeviceImportExport(t *testing.T) {
 
 func TestDeviceTierFilteringAndGate(t *testing.T) {
 	sb := newSandbox(t, true)
-	sb.dev("", "add", "prod-sw", "10.99.0.1", "--vendor", "cisco")
-	sb.dev("", "add", "lab-sw", "192.168.1.1", "--vendor", "cisco")
-	sb.dev("", "add", "dmz-fw", "203.0.113.9")
-	sb.dev("", "add", "stray", "100.64.0.1")
+	sb.dev("", "add", "prod-sw", "10.99.0.1", "--vendor", "cisco", "--no-host-key")
+	sb.dev("", "add", "lab-sw", "192.168.1.1", "--vendor", "cisco", "--no-host-key")
+	sb.dev("", "add", "dmz-fw", "203.0.113.9", "--no-host-key")
+	sb.dev("", "add", "stray", "100.64.0.1", "--no-host-key")
 	sb.write("state/linux-hosts", "web1|root@192.0.2.10||lab|192.0.2.1|\ndb1|root@192.0.2.11||prod|192.0.2.1|\n", 0o600)
 	asUser := func(user, group string, args ...string) string {
 		return plain(sb.cfgRun("", append([]string{"device"}, args...), func(r *fake.Runner) {
@@ -614,7 +609,7 @@ func TestDeviceListShowsEnrolledHosts(t *testing.T) {
 		sb.dev("", args...)
 		sb.expect(1, "", "is an enrolled host")
 	}
-	if sb.dev("", "add", "WEB1", "10.99.0.1"); sb.code != 1 || !strings.Contains(sb.stderr(), "'WEB1' is an enrolled host") {
+	if sb.dev("", "add", "WEB1", "10.99.0.1", "--no-host-key"); sb.code != 1 || !strings.Contains(sb.stderr(), "'WEB1' is an enrolled host") {
 		t.Errorf("add over a host name: %d %q", sb.code, sb.stderr())
 	}
 	if sb.devices() != "" {
@@ -626,7 +621,7 @@ func TestDeviceListShowsEnrolledHosts(t *testing.T) {
 // ones (docs/plans/operator-console.md 3.6).
 func TestHostEnrollRefusesRegistryAndGenericNames(t *testing.T) {
 	sb := newSandbox(t, true)
-	sb.dev("", "add", "core-sw1", "10.99.0.1", "--vendor", "cisco")
+	sb.dev("", "add", "core-sw1", "10.99.0.1", "--vendor", "cisco", "--no-host-key")
 	for _, c := range []struct{ name, err string }{
 		{"Core-SW1", "'core-sw1' is already registered as a device (10.99.0.1)"},
 		{"switch", "'switch' is a generic name"},

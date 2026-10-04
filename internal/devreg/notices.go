@@ -75,7 +75,8 @@ func GenericRefusal(name, vendor, keep string) error {
 
 // NoticesFor are the notices the registry itself raises for e, in a fixed
 // order, with the acknowledged ones marked. Host entries (vendor linux)
-// get the generic-name notice only: their keys are pinned elsewhere.
+// get the generic-name notice only: 'host enroll' and 'host sync' pin
+// their keys.
 func (r *Resolver) NoticesFor(e Entry) []Notice {
 	var out []Notice
 	add := func(kind, text string) {
@@ -91,8 +92,9 @@ func (r *Resolver) NoticesFor(e Entry) []Notice {
 		}
 	}
 	if e.Source == SourceDevice && len(e.HostKeys) == 0 {
-		add(NoticeHostKeyUnpinned, "no host key is pinned for '"+e.Name+"', so ssh trusts the first key the device offers; "+
-			"acknowledge it: 'tacctl device notice "+e.Name+" ack hostkey-unpinned'")
+		add(NoticeHostKeyUnpinned, "no host key is pinned for '"+e.Name+"', so tacctl cannot tell the device from an impostor; "+
+			"compare its fingerprint on the console ("+VerifyHint(e.Vendor)+"), then pin it: 'tacctl device hostkey "+e.Name+" accept', "+
+			"or acknowledge it: 'tacctl device notice "+e.Name+" ack hostkey-unpinned'")
 	}
 	return out
 }

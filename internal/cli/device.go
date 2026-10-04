@@ -6,9 +6,9 @@ package cli
 // registerFamily, registerSpecs and registerDeviceNames; root.go and
 // completion.go know nothing of it. The registry never writes store.yaml:
 // scope and vendor tag are looked up per display, and every write takes a
-// snapshot first. Host-key pinning (the 'add' flags --host-key and
-// --no-host-key), the seen cache and 'device scan|discover|check' belong to
-// later packages; the hooks they fill are deviceSeenCols and
+// snapshot first. Host-key pinning is device_hostkey.go ('add' scans and
+// pins, 'hostkey' re-pins); the seen cache and 'device scan|discover|check'
+// belong to a later package; the hooks it fills are deviceSeenCols and
 // deviceSeenFooter, and registryNotices.
 
 import (
@@ -17,7 +17,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -70,7 +69,8 @@ var deviceSpecs = map[string]Spec{
 	"notices":     {MaxArgs: 1, Args: []string{KindDevices}},
 	"import": {MinArgs: 1, MaxArgs: 1, Args: []string{KindFile}, Flags: []Flag{
 		{Names: []string{"--check"}}, {Names: []string{"--replace"}}, flagAllowGeneric, flagYes}},
-	"export": {MaxArgs: 0, Flags: []Flag{{Names: []string{"--csv"}}, flagJSON}},
+	"export":  {MaxArgs: 0, Flags: []Flag{{Names: []string{"--csv"}}, flagJSON}},
+	"hostkey": {MinArgs: 1, MaxArgs: 3, Args: []string{KindDevices, "show|accept|set", ""}, Flags: []Flag{flagYes}},
 }
 
 // deviceVerbs are the verbs ({Use, Short}), in usage order.
@@ -92,6 +92,7 @@ var deviceVerbs = [][2]string{
 	{"notices [<name>]", "The open notices, with what to do about each"},
 	{"import [--check] [--replace] [--allow-generic] [-y] <file|->", "Import devices from CSV or the registry's YAML"},
 	{"export [--csv|--json]", "Print the registry (YAML by default)"},
+	{"hostkey <name> [show|accept [-y]|set SHA256:<fp>]", "Show the pinned ssh host keys, or re-pin them after a verified change"},
 }
 
 // deviceSeenCols are the LAST SEEN, BY and VIA columns of an entry, and
@@ -131,9 +132,16 @@ func deviceRegUsage() string {
 	b.WriteString(`
 add options: --vendor cisco|juniper|wti|other (default other), --hostname <dns>,
 --port <n>, --login <user>, --description <text>, --legacy-ssh, --allow-generic
-(register a generic name such as 'switch' anyway), and --host-key SHA256:<fp> or
---no-host-key (accepted; no host key is pinned yet and the device carries a
-hostkey-unpinned notice).
+(register a generic name such as 'switch' anyway).
+
+Host keys: 'add' reads the device's ssh host keys (ssh-keyscan of the address
+and port) and pins them; compare the fingerprints it prints with the device
+console. --host-key SHA256:<fp> registers only when the device offers a key
+with that fingerprint, and pins that key alone. --no-host-key registers without
+a pinned key (a hostkey-unpinned notice). A device that does not answer is
+refused unless --no-host-key is given. Only 'hostkey <name> accept' (re-scan,
+confirm, pin) or 'hostkey <name> set SHA256:<fp>' changes a pin; 'tacctl ssh'
+refuses a device whose key no longer matches.
 
 A device is found by name or by its registered address. Enrolled Linux hosts
 ('tacctl host') are listed and found too, read-only. The registry is
@@ -160,6 +168,7 @@ func (inv *invocation) device(args []string) error {
 		"list": inv.deviceList, "show": inv.deviceShow, "add": inv.deviceAdd, "remove": inv.deviceRemove,
 		"rename": inv.deviceRename, "legacy-ssh": inv.deviceLegacySSH, "stale-days": inv.deviceStaleDays,
 		"notice": inv.deviceNotice, "notices": inv.deviceNotices, "import": inv.deviceImport, "export": inv.deviceExport,
+		"hostkey": inv.deviceHostkey,
 		"address": inv.deviceSetter("address"), "hostname": inv.deviceSetter("hostname"), "vendor": inv.deviceSetter("vendor"),
 		"port": inv.deviceSetter("port"), "login": inv.deviceSetter("login"), "description": inv.deviceSetter("description"),
 	}
@@ -241,7 +250,7 @@ func (inv *invocation) deviceWrite(fn func(*devreg.File, *devreg.Resolver) error
 	if _, err := trial.Text(); err != nil {
 		return nil, err
 	}
-	_, err = devreg.Mutate(inv.app.Paths.DevicesFile, inv.snapshotFirst, func(live *devreg.File) error {
+	_, err = devreg.Mutate(inv.app.Paths.DevicesFile, inv.app.Paths.KnownHosts, inv.snapshotFirst, func(live *devreg.File) error {
 		r := devreg.NewResolver(live, nil, res.Model)
 		r.Hosts = res.Hosts
 		return fn(live, r)
@@ -489,10 +498,12 @@ func (inv *invocation) deviceShow(args []string) error {
 		if e.Tag != "" && e.Vendor != devreg.VendorOther && e.Tag != e.Vendor {
 			inv.app.Out.Warn("The vendor tag (" + e.Tag + ") and the registered vendor (" + e.Vendor + ") disagree.")
 		}
-		if len(e.HostKeys) == 0 {
-			row("Host keys", "none pinned")
-		} else {
-			row("Host keys", strconv.Itoa(len(e.HostKeys))+" pinned")
+	}
+	if keys := devreg.ParseHostKeys(e.HostKeys); len(keys) == 0 {
+		row("Host keys", "none pinned")
+	} else {
+		for i, k := range keys {
+			row(map[bool]string{true: "Host keys", false: ""}[i == 0], k.Display())
 		}
 	}
 	last, by, via, _ := deviceSeenCols(inv, e)
@@ -522,8 +533,6 @@ func (inv *invocation) deviceShow(args []string) error {
 func sortedVendors() []string { return []string{"cisco", "juniper", "wti"} }
 
 // --- add -------------------------------------------------------------------------
-
-var reFingerprint = regexp.MustCompile(`^SHA256:[A-Za-z0-9+/]{43}$`)
 
 func (inv *invocation) deviceAdd(args []string) error {
 	p, err := inv.deviceParse("add", args)
@@ -562,15 +571,35 @@ func (inv *invocation) deviceAdd(args []string) error {
 	if p.Has("--host-key") && p.Has("--no-host-key") {
 		return inv.usageErr("Give --host-key or --no-host-key, not both.")
 	}
-	if fp := p.Value("--host-key"); p.Has("--host-key") && !reFingerprint.MatchString(fp) {
+	if fp := p.Value("--host-key"); p.Has("--host-key") && !devreg.ValidFingerprint(fp) {
 		return inv.usageErr("Invalid --host-key '" + fp + "': expected SHA256:<fingerprint> as ssh prints it.")
 	}
 	keep := "tacctl device add " + d.Name + " " + d.Address + " --allow-generic"
-	after, err := inv.deviceWrite(func(f *devreg.File, r *devreg.Resolver) error {
+	check := func(r *devreg.Resolver) error {
 		if err := r.CheckName(d.Name, d.Vendor, p.Has("--allow-generic"), keep); err != nil {
 			return err
 		}
-		if err := r.CheckAddress(d.Address, ""); err != nil {
+		return r.CheckAddress(d.Address, "")
+	}
+	// The refusals that need no device come before the scan.
+	_, res, err := inv.deviceLoad()
+	if err != nil {
+		return err
+	}
+	if err := check(res); err != nil {
+		return err
+	}
+	retry := "tacctl device add " + d.Name + " " + d.Address
+	if p.Has("--allow-generic") {
+		retry += " --allow-generic"
+	}
+	pin, offered, err := inv.deviceAddKeys(d, p, retry)
+	if err != nil {
+		return err
+	}
+	d.HostKeys = devreg.KeyStrings(pin)
+	after, err := inv.deviceWrite(func(f *devreg.File, r *devreg.Resolver) error {
+		if err := check(r); err != nil {
 			return err
 		}
 		nd := d.Clone()
@@ -582,9 +611,7 @@ func (inv *invocation) deviceAdd(args []string) error {
 	}
 	a := inv.app
 	a.Out.Info("Device '" + d.Name + "' registered: " + d.Address + ", " + d.Vendor + ".")
-	if p.Has("--host-key") {
-		a.Out.Warn("--host-key was not checked: no host key is scanned or pinned yet.")
-	}
+	inv.deviceAddReport(d, p, pin, offered)
 	e, _ := after.Lookup(d.Name, devreg.ScopeFilter{})
 	if e.Configured {
 		inv.echo("  Scope: " + e.Scope + " (via prefix " + e.Prefix + ")")
@@ -1044,7 +1071,7 @@ func (inv *invocation) deviceExport(args []string) error {
 		return err
 	}
 	vis := f.Clone()
-	vis.Devices = nil
+	vis.Devices, vis.Hosts = nil, nil
 	filter := inv.deviceFilter()
 	var devs []devreg.Device
 	for _, e := range res.Visible(filter) {

@@ -280,7 +280,7 @@ func TestNotices(t *testing.T) {
 	f := Empty()
 	f.Devices = []*Device{
 		{Name: "router", Address: "10.0.0.1", Vendor: "cisco", Ack: []string{"generic-name"}},
-		{Name: "pinned", Address: "10.0.0.2", Vendor: "juniper", HostKeys: []string{"ssh-ed25519 AAAA"}},
+		{Name: "pinned", Address: "10.0.0.2", Vendor: "juniper", HostKeys: []string{"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA=="}},
 		{Name: "bare", Address: "10.0.0.3", Vendor: "wti"},
 		{Name: "Switch2", Address: "10.0.0.4", Vendor: "other"},
 	}

@@ -33,6 +33,34 @@ type File struct {
 	StaleDays    int
 	GenericNames []string
 	Devices      []*Device
+	// Hosts are the pinned host keys of enrolled hosts ('hosts:'), by host
+	// name: linux-hosts itself is never written (host enroll and sync pin).
+	Hosts []HostPin
+}
+
+// HostPin is the pinned keys of one enrolled host.
+type HostPin struct {
+	Name string
+	Keys []string
+}
+
+// HostKeysOf are the keys pinned for the enrolled host name.
+func (f *File) HostKeysOf(name string) []string {
+	for _, h := range f.Hosts {
+		if strings.EqualFold(h.Name, name) {
+			return slices.Clone(h.Keys)
+		}
+	}
+	return nil
+}
+
+// SetHostKeys pins keys for the enrolled host name; no keys forgets it.
+func (f *File) SetHostKeys(name string, keys []string) {
+	f.Hosts = slices.DeleteFunc(f.Hosts, func(h HostPin) bool { return strings.EqualFold(h.Name, name) })
+	if len(keys) > 0 {
+		f.Hosts = append(f.Hosts, HostPin{Name: name, Keys: slices.Clone(keys)})
+		slices.SortFunc(f.Hosts, func(a, b HostPin) int { return strings.Compare(a.Name, b.Name) })
+	}
 }
 
 // Empty is a registry with no device.
@@ -44,6 +72,9 @@ func (f *File) Clone() *File {
 	for _, d := range f.Devices {
 		dc := d.Clone()
 		c.Devices = append(c.Devices, &dc)
+	}
+	for _, h := range f.Hosts {
+		c.Hosts = append(c.Hosts, HostPin{Name: h.Name, Keys: slices.Clone(h.Keys)})
 	}
 	return c
 }
@@ -109,6 +140,21 @@ func (f *File) validate() error {
 			return fail(d.Address + " is registered as both '" + other + "' and '" + d.Name + "'.")
 		}
 		addrs[d.Address] = d.Name
+	}
+	hostNames := map[string]bool{}
+	for _, h := range f.Hosts {
+		if !reName.MatchString(h.Name) || hostNames[strings.ToLower(h.Name)] {
+			return fail("hosts: invalid or repeated host name '" + h.Name + "'.")
+		}
+		hostNames[strings.ToLower(h.Name)] = true
+		if len(h.Keys) == 0 {
+			return fail("hosts: '" + h.Name + "' has no host_keys.")
+		}
+		for _, k := range h.Keys {
+			if _, err := ParseHostKey(k); err != nil {
+				return fail("hosts: '" + h.Name + "': " + strings.Join(msgs(err), " "))
+			}
+		}
 	}
 	return nil
 }
@@ -196,6 +242,29 @@ func parse(data []byte) (*File, error) {
 					return nil, err
 				}
 				f.Devices = append(f.Devices, d)
+			}
+		case "hosts":
+			if val == nil {
+				continue
+			}
+			m, ok := val.(*yamlpy.Map)
+			if !ok {
+				return nil, fail("hosts must be a mapping of host name to entry.")
+			}
+			for name, hv := range m.All() {
+				hm, ok := hv.(*yamlpy.Map)
+				if !ok {
+					return nil, fail("hosts: '" + name + "' must be a mapping.")
+				}
+				pin := HostPin{Name: name}
+				for hk, kv := range hm.All() {
+					l, ok := strList(kv)
+					if hk != "host_keys" || !ok {
+						return nil, fail("hosts: '" + name + "': unknown or invalid key '" + hk + "'.")
+					}
+					pin.Keys = l
+				}
+				f.Hosts = append(f.Hosts, pin)
 			}
 		default:
 			return nil, fail("unknown key '" + k + "'.")
@@ -311,6 +380,13 @@ func (f *File) doc() *yamlpy.Map {
 		root.Set("generic_names", slices.Clone(f.GenericNames))
 	}
 	root.Set("devices", devs)
+	if len(f.Hosts) > 0 {
+		hs := yamlpy.NewMap()
+		for _, h := range f.Hosts {
+			hs.Set(h.Name, yamlpy.NewMap("host_keys", slices.Clone(h.Keys)))
+		}
+		root.Set("hosts", hs)
+	}
 	return root
 }
 
@@ -356,8 +432,10 @@ func Lock(path string) (unlock func(), err error) {
 // it, and the result is validated, rendered, read back and written through
 // a temporary file (0600, fsync, rename). Nothing is written when fn or the
 // validation fails, or when the bytes would not change. changed reports
-// whether the file was replaced.
-func Mutate(path string, before func() error, fn func(*File) error) (changed bool, err error) {
+// whether the file was replaced. knownHosts, when set, is the generated
+// known_hosts (knownhosts.go): it is brought up to date under the same
+// lock after every Mutate, so it always lists exactly the pinned keys.
+func Mutate(path, knownHosts string, before func() error, fn func(*File) error) (changed bool, err error) {
 	if before != nil {
 		if err := before(); err != nil {
 			return false, err
@@ -379,18 +457,23 @@ func Mutate(path string, before func() error, fn func(*File) error) (changed boo
 	if err != nil {
 		return false, err
 	}
-	if cur, err := os.ReadFile(path); err == nil && bytes.Equal(cur, text) {
-		return false, nil
+	if cur, err := os.ReadFile(path); err != nil || !bytes.Equal(cur, text) {
+		if err := atomicWrite(path, text, 0o600); err != nil {
+			return false, err
+		}
+		changed = true
 	}
-	if err := atomicWrite(path, text); err != nil {
-		return false, err
+	if knownHosts != "" {
+		if err := WriteKnownHosts(knownHosts, f); err != nil {
+			return changed, err
+		}
 	}
-	return true, nil
+	return changed, nil
 }
 
-func atomicWrite(path string, data []byte) error {
+func atomicWrite(path string, data []byte, mode os.FileMode) error {
 	d := filepath.Dir(path)
-	tf, err := os.CreateTemp(d, ".devices.*.tmp")
+	tf, err := os.CreateTemp(d, "."+filepath.Base(path)+".*.tmp")
 	if err != nil {
 		return fail("Cannot write " + path + ": " + errText(err))
 	}
@@ -400,7 +483,7 @@ func atomicWrite(path string, data []byte) error {
 		_ = os.Remove(tmp)
 		return fail("Cannot write " + path + ": " + errText(err))
 	}
-	if err := tf.Chmod(0o600); err != nil {
+	if err := tf.Chmod(mode); err != nil {
 		return cleanup(err)
 	}
 	if _, err := tf.Write(data); err != nil {

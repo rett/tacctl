@@ -29,6 +29,7 @@ import (
 
 	"github.com/rett/tacctl/internal/backend"
 	"github.com/rett/tacctl/internal/conf"
+	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/lifecycle"
 	"github.com/rett/tacctl/internal/model"
@@ -488,6 +489,10 @@ func (inv *invocation) restoreSnapshot(id string) error {
 		if err := backupPut(snapDev, a.Paths.DevicesFile, 0o600); err != nil {
 			inv.stderrLine(err.Error())
 			return err
+		}
+		// The generated known_hosts follows the restored pins.
+		if err := devreg.SyncKnownHosts(a.Paths.DevicesFile, a.Paths.KnownHosts); err != nil {
+			a.Out.WarnE("known_hosts was not regenerated: " + strings.Join(msgs(err), " "))
 		}
 	}
 	inv.reconcileBackends(before)

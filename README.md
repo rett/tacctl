@@ -163,6 +163,7 @@ Every change goes one way: check that no generated file was edited by hand → s
 | `/etc/tacctl/backups/` | Snapshots (`<timestamp>/`), `legacy/` (old-style backups, pre-store config, displaced files), `password-dates/` (read by the importer) |
 | `/etc/tacctl/templates/` | Device config templates: a copy of each shipped one, which you may customize (a file here overrides the built-in one); `.shipped.sha256` is the manifest of what tacctl wrote there, `<name>.template.new` is a new release's version beside a template you customized (see [Custom Templates](#custom-templates)) |
 | `/etc/tacctl/devices.yaml` | The device registry (`tacctl device`): names, addresses and settings of the network devices; 0600 root, absent means none. Snapshots include it |
+| `/etc/tacctl/known_hosts` | Generated from the pinned host keys in `devices.yaml` on every registry write; 0644 root. Do not edit |
 | `/etc/tacctl/linux-hosts`, `/etc/tacctl/linux-uids` | Enrolled Linux hosts; the UID/GID each user gets on every host |
 | `/var/lib/tacctl/linux/` | pam_tacplus source tarball and container-built modules |
 | `/etc/sudoers.d/tacctl`, `/etc/sudoers.d/tacctl-tiers` | Optional sudoers rules (`tacctl config sudoers install`, `… tiers install`) |
@@ -817,10 +818,10 @@ host enroll <[user@]host>|--local [opts]    Install TACACS+ or RADIUS login on a
       --name <name>                         Registry name (default: short hostname)
       --port <n>, --identity <file>         SSH port and key
       --build-on-host                       (tacplus) compile pam_tacplus on the host instead of in a container here
-host sync <name>|--all                      Push account adds, removals and tier changes
+host sync <name>|--all                      Push account adds, removals and tier changes; pins the host's ssh keys if none are (enroll pins them too)
       --allow-uid-mismatch                  (enroll and sync) accept a UID/GID conflict on the host instead of stopping
       --adopt <name>[,<name>...]            (enroll and sync) take over accounts that already exist on the host
-host unenroll <name> [--force]              Remove the login method from the host (accounts are kept); --force drops it from the registry even if the removal fails
+host unenroll <name> [--force]              Remove the login method from the host (accounts are kept) and its pinned host keys; --force drops it from the registry even if the removal fails
 host default-method [tacplus|radius]        Show or set the method for hosts enrolled without --method (host.default_method)
 ```
 
@@ -834,7 +835,8 @@ device show <name|address> [--json]               One entry in full (scope and r
 device add <name> <address>                       Register a device (writes: administrators only)
       --vendor cisco|juniper|wti|other            Default other; drives the ssh profile, never tags the address in the scope
       --hostname <dns>, --port <n>, --login <user>, --description <text>, --legacy-ssh
-      --host-key SHA256:<fp> | --no-host-key      Accepted; no host key is pinned yet and the device carries a hostkey-unpinned notice
+      --host-key SHA256:<fp>                      Register only if the device offers a key with this fingerprint; pin that key alone
+      --no-host-key                               Register without scanning: unpinned, with a hostkey-unpinned notice
       --allow-generic                             Register a generic name (switch, router, cisco, ubuntu, ...) anyway
 device remove <name>[,<name>...] | --all [-y]     Remove from the registry (confirms; hosts, scopes and vendor tags are not touched)
 device rename <old> <new> [--allow-generic]
@@ -845,11 +847,16 @@ device notice <name> ack|unack <kind>             Acknowledge or reopen a notice
 device notices [<name>]                           The open notices, each with the command that fixes or acknowledges it
 device import [--check] [--replace] [--allow-generic] [-y] <file|->   CSV (name,address[,vendor[,port[,login[,description]]]]) or the registry's YAML; merges by default
 device export [--csv|--json]                      The registry (YAML by default), only the devices of your own scopes below the administrator tier
+device hostkey <name> [show]                      The pinned ssh host-key fingerprints of a device or enrolled host (administrators)
+device hostkey <name> accept [-y]                 Re-scan and pin every key it offers, after confirmation (verify on the console first)
+device hostkey <name> set SHA256:<fp>             Re-scan and pin only the key with this fingerprint
 ```
 
 A device is found by name (any case) or by its registered address; an unregistered address is not found, even when a scope covers it. An address is registered once. Enrolled Linux hosts share the namespace and appear in `list` and `show` as `linux` entries, read-only. `list`, `show` and `notices` are open to the read-only and operator tiers, limited to the entries of their own scopes; `export` is operator-level, filtered the same way.
 
 A name that is a factory or image default is refused with the command that names the device on the device itself (`hostname`, `set system host-name`, ...); a host enrolled under such a name before the registry existed is not refused and carries a `generic-name` notice. `host enroll --name` follows the same rules. Add your own patterns with `generic_names:` (regular expressions, whole-name, case-insensitive) in `devices.yaml`. There is no seen data yet, so the last seen, by and via columns print `-`.
+
+**Host keys.** `device add` reads the keys the device offers (`ssh-keyscan -T 5 -p <port> -t ed25519,ecdsa,rsa <address>`, as root; `legacy-ssh` devices are asked for `ssh-rsa` by name too), pins them in `devices.yaml` and prints each `SHA256:` fingerprint with the command that shows it on the device console (Cisco `show ip ssh`, Junos `show system ssh host-key`, Linux `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`); compare them before connecting. A device that does not answer is refused unless `--no-host-key` is given. `host enroll` and `host sync` pin an enrolled host's keys the first time; a sync that finds a different key reports it and keeps the pin. Only `device hostkey <name> accept|set` changes a pin. Every registry write regenerates `/etc/tacctl/known_hosts` (0644), one `<name> <type> <key>` line per pinned key, for `ssh -o UserKnownHostsFile=/etc/tacctl/known_hosts -o HostKeyAlias=<name> -o StrictHostKeyChecking=yes`.
 
 ```yaml
 # /etc/tacctl/devices.yaml

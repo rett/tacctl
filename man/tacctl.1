@@ -726,6 +726,17 @@ using their keys; the remote login must be root or able to sudo. The
 remote copy of the script is deleted after the run. Nothing is registered
 if the remote run fails.
 .IP
+After a successful run the host's ssh host keys are read
+.RB ( ssh\-keyscan
+of the host and port, as root) and pinned in the device registry for
+.BR "tacctl ssh" ;
+the output lists their
+.B SHA256:
+fingerprints. A host that does not answer the scan is enrolled unpinned,
+with a warning. A host enrolled with
+.B \-\-local
+is not pinned.
+.IP
 For
 .BR tacplus ,
 pam_tacplus is built on this server, in a rootless
@@ -779,10 +790,16 @@ warning is printed if it belongs to a privileged local group, and again
 when the user is later removed or disabled: adopted accounts are not
 locked or expired, so the account stays usable locally until blocked by
 hand.
+.IP
+A host with no pinned host key gets the keys it offers pinned, as at
+enrollment. A pin is never changed by a sync: a key that differs from the
+pinned one is reported, with the pinned and offered fingerprints, and new key
+types are reported; both are fixed with
+.BI "device hostkey " name " accept" R.
 .TP
 .B "host unenroll " name " [ \-\-force ]"
-Run the removal script on the host and drop it from the registry. Local
-accounts and home directories are left in place. If the removal fails the
+Run the removal script on the host and drop it from the registry, with its
+pinned host keys. Local accounts and home directories are left in place. If the removal fails the
 host stays registered unless
 .B \-\-force
 is given.
@@ -1924,6 +1941,26 @@ refused, and carries the notice. The built-in list can be extended with
 (regular expressions matched against the whole name) in
 .IR devices.yaml .
 .PP
+Host keys are pinned when a device is registered: tacctl reads the keys the
+device offers with
+.BR ssh\-keyscan (1)
+(as root, outbound, without logging in), keeps them in
+.IR devices.yaml ,
+and prints their
+.B SHA256:
+fingerprints to be compared with the device console. Enrolled hosts are pinned
+by
+.B "host enroll"
+and
+.BR "host sync" .
+Every registry write regenerates
+.IR /etc/tacctl/known_hosts ,
+which lists exactly the pinned keys under each device's name, for
+.BI "ssh \-o UserKnownHostsFile=/etc/tacctl/known_hosts \-o HostKeyAlias=" name " \-o StrictHostKeyChecking=yes" .
+A pin changes only through
+.BR "device hostkey accept" " or " "device hostkey set" ,
+never by itself.
+.PP
 Reading verbs
 .RB ( list ,
 .BR show )
@@ -1973,10 +2010,29 @@ carry no prefix length. A name or address that is taken, a reserved word (a
 tacctl command, \c
 .BR local ,
 .BR all ),
-and a generic name are refused. Both host-key options are accepted: no host key
-is scanned or pinned, and the device carries a
+and a generic name are refused. The host keys the device offers at its address
+and ssh port are read with
+.B "ssh\-keyscan \-T 5 \-p"
+.I port
+.B "\-t ed25519,ecdsa,rsa"
+(with
+.BR \-\-legacy\-ssh ,
+the
+.B ssh\-rsa
+type is asked for by name too) and pinned, and their
+.B SHA256:
+fingerprints are printed with the command that shows them on the device's
+console; compare them before the first connection. With
+.BI "\-\-host\-key SHA256:" fingerprint
+the device is registered only when it offers a key with that fingerprint, and
+only that key is pinned (the other keys it offers are listed, unpinned). With
+.B \-\-no\-host\-key
+nothing is scanned: the device is registered unpinned and carries a
 .B hostkey-unpinned
-notice. The output says which scope, if any, answers the address.
+notice. A device that does not answer the scan, or offers no key matching
+.BR \-\-host\-key ,
+is refused and nothing is written. The output says which scope, if any, answers
+the address.
 .TP
 .BI "device remove " "name[,name...] | \-\-all " [ \-y ]
 Remove devices from the registry, after confirmation (\c
@@ -2054,7 +2110,10 @@ that sets a name on the device and the
 .B device rename
 that follows, and
 .BR hostkey-unpinned ,
-for a device with no pinned host key.
+for a device with no pinned host key, with the console command that shows its
+fingerprint and the
+.B device hostkey accept
+that pins it.
 .TP
 .BI "device import " "[ \-\-check ] [ \-\-replace ] [ \-\-allow\-generic ] [ \-y ] " "file|\-"
 Import devices from CSV
@@ -2081,6 +2140,23 @@ Print the registry: as YAML (the
 .I devices.yaml
 format, the default), as CSV in the import's columns with a header row, or as a
 JSON array. A reduced-scope caller gets only the devices of its own scopes.
+.TP
+.BI "device hostkey " name " [ show | accept [ \-y ] | set SHA256:" fingerprint " ]"
+The pinned ssh host keys of a device or an enrolled host, and the only way to
+change them. With no action (or
+.BR show )
+prints the pinned keys' fingerprints and the console command that shows them on
+the device.
+.B accept
+reads the keys the device offers now, prints them beside the pinned ones, and
+pins them all after confirmation (\c
+.B \-y
+skips it; a closed stdin cancels): run it only after comparing them with the
+device console.
+.BI "set SHA256:" fingerprint
+reads the keys and pins only the one with that fingerprint, refusing when the
+device offers none. A device that does not answer is refused and the pin stays.
+Administrators only; each change is logged to syslog.
 .SH RADIUS DEVICE CONFIGURATIONS
 .BR "config cisco" ,
 .B "config juniper"
@@ -2627,7 +2703,19 @@ registry's settings
 Mode 0600, root only; absent means no devices. Edit it with
 .BR "tacctl device" ,
 which locks it, validates the result and replaces it atomically. Snapshots
-include it.
+include it. The pinned keys of enrolled hosts are kept under
+.BR hosts: .
+.TP
+.I /etc/tacctl/known_hosts
+Generated from
+.I devices.yaml
+on every registry write (and after
+.BR "backup restore" ):
+one
+.I "name type key"
+line per pinned host key, for ssh's
+.B HostKeyAlias
+lookup. Mode 0644, root-owned; do not edit it.
 .TP
 .I /etc/tacctl/rendered.json
 The checksum of every file tacctl rendered, from which

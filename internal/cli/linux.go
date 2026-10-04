@@ -122,6 +122,8 @@ func (inv *invocation) hostsEnv() *hosts.Env {
 		AsUser:   asUser,
 		AuthSock: a.Env.Get("SSH_AUTH_SOCK"),
 		Now:      a.Knobs.Now,
+		// host enroll and host sync pin the host's ssh keys in the registry.
+		PinHostKeys: inv.pinHostKeys,
 	}
 }
 

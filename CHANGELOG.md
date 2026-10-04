@@ -111,10 +111,8 @@ current behaviour; this file is where history lives.
     entries in one namespace. Writes are administrator-only and take a
     snapshot first; snapshots, `backup diff` and `backup restore` include the
     file. `list` and `show` (read-only tier and up) and `export` (operator
-    tier and up) show a tier user only the entries of its own scopes. Until
-    host-key pinning exists, `device add` accepts `--host-key` and
-    `--no-host-key` but pins nothing, and the device carries a
-    `hostkey-unpinned` notice; the last seen, by and via columns print `-`.
+    tier and up) show a tier user only the entries of its own scopes. The
+    last seen, by and via columns print `-`.
 20. **Device and host names are checked for duplicates and generic names.**
     `device add` and `device rename` refuse a name already taken (compared
     without regard to case, across the registry and the enrolled hosts) or an
@@ -125,7 +123,7 @@ current behaviour; this file is where history lives.
     <kind>`). `host enroll` refuses a name that is a registered device or a
     generic name (give another `--name`); a host enrolled under a generic name
     earlier is not refused and carries the notice.
-NN. **New: `tacctl shell [--no-history] [--idle <min>] [-c <line>]`**, an
+21. **New: `tacctl shell [--no-history] [--idle <min>] [-c <line>]`**, an
     interactive prompt (`tacctl> `) where each line is a tacctl command
     without the `tacctl`. It runs as the invoking user and runs each line as
     `sudo [-n] tacctl <words>` with the terminal attached (`-n` for tier
@@ -139,6 +137,29 @@ NN. **New: `tacctl shell [--no-history] [--idle <min>] [-c <line>]`**, an
     1000 lines), with secrets redacted (`scope secret lab set …(redacted)`).
     With stdin not a terminal (`tacctl shell < file`) the lines run in order
     and the first non-zero status stops the run and is the exit status.
+22. **Host keys are pinned.** `device add` reads the device's ssh host keys
+    (`ssh-keyscan -T 5 -p <port> -t ed25519,ecdsa,rsa <address>`, as root),
+    pins them in `devices.yaml` (`host_keys:`) and prints each `SHA256:`
+    fingerprint with the console command that shows it on the device. A
+    device that does not answer is refused (`No ssh host key could be read
+    from <address> port <port> (ssh-keyscan); nothing was changed.`) unless
+    `--no-host-key` is given, which registers it unpinned with a
+    `hostkey-unpinned` notice. `--host-key SHA256:<fp>` registers only when
+    the device offers a key with that fingerprint, and pins that key alone.
+    `host enroll` and `host sync` pin an enrolled host's keys once (a host
+    that does not answer is enrolled with a warning; `--local` is not
+    pinned); a later key that differs is reported and the pin stays.
+    `host unenroll` drops the host's pins. An import never changes an
+    existing pin.
+23. **New: `tacctl device hostkey <name> [show|accept [-y]|set SHA256:<fp>]`**
+    (administrators only) shows the pinned fingerprints, or re-pins: `accept`
+    re-scans and pins every offered key after confirmation, `set` pins only
+    the key with that fingerprint. Both work for devices and enrolled hosts,
+    and log `device hostkey accept|set name=<name> keys=<n> by=<user>` to
+    syslog. Nothing else changes a pin.
+24. **`/etc/tacctl/known_hosts` is generated** (root, 0644) from the pinned
+    keys on every registry write and after `backup restore`: one
+    `<name> <type> <key>` line per key, for ssh's `HostKeyAlias` lookup.
 
 ## 0.2.0 (2026-10-04)
 

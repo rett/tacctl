@@ -103,6 +103,9 @@ type Env struct {
 	TTY      func() bool
 	StdinTTY func() bool
 	Machine  func() string
+	// PinHostKeys pins an enrolled host's ssh keys (pin.go); nil pins
+	// nothing.
+	PinHostKeys KeyPinner
 }
 
 // ErrFailed is a failure whose messages have been printed: the bash

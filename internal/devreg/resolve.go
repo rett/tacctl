@@ -99,6 +99,7 @@ func (r *Resolver) derive(e *Entry) {
 func (r *Resolver) hostEntry(h hosts.Entry) Entry {
 	e := Entry{Source: SourceHost, Target: h.Target, Identity: h.Identity}
 	e.Name, e.Vendor, e.Scope = h.Name, VendorLinux, h.Scope
+	e.HostKeys = r.File.HostKeysOf(h.Name)
 	login, host, ok := strings.Cut(h.Target, "@")
 	if !ok {
 		login, host = "", h.Target

@@ -186,7 +186,10 @@ func (f *File) Import(rows []Row, replace, allowGeneric bool, hostEntries []Entr
 		if len(merged.Ack) == 0 {
 			merged.Ack = slices.Clone(old.Ack)
 		}
-		if len(merged.HostKeys) == 0 && merged.Address == old.Address {
+		// An import never changes a pin: a device keeps its pinned keys while
+		// its address stays (only 'device hostkey accept|set' re-pins), and
+		// pins from the file only where none was.
+		if merged.Address == old.Address && len(old.HostKeys) > 0 {
 			merged.HostKeys = slices.Clone(old.HostKeys)
 		}
 		if reflect.DeepEqual(merged, *old) {

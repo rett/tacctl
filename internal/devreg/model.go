@@ -33,8 +33,8 @@ type Device struct {
 	LegacySSH   bool
 	// Ack are the acknowledged notice kinds.
 	Ack []string
-	// HostKeys are the pinned host keys ('<type> <base64>'); host-key
-	// pinning fills them (the registry keeps them across every write).
+	// HostKeys are the pinned host keys ('<type> <base64>', hostkey.go),
+	// in type order; known_hosts is generated from them.
 	HostKeys []string
 }
 
@@ -64,7 +64,6 @@ var (
 	reName     = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$`)
 	reHostname = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*\.?$`)
 	reLogin    = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.@\\-]{0,63}$`)
-	reKey      = regexp.MustCompile(`^[a-z0-9-]+ [A-Za-z0-9+/]+=*$`)
 )
 
 // ReservedNames are words a device may not be called: the tacctl commands
@@ -189,8 +188,8 @@ func (d Device) validate() error {
 		return err
 	}
 	for _, k := range d.HostKeys {
-		if !reKey.MatchString(k) {
-			return fail("Invalid host key '" + k + "'.")
+		if _, err := ParseHostKey(k); err != nil {
+			return err
 		}
 	}
 	for _, k := range d.Ack {

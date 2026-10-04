@@ -134,7 +134,7 @@ func TestMutateWritesAtomically(t *testing.T) {
 	p := filepath.Join(dir, "state", "devices.yaml")
 	snapshots := 0
 	before := func() error { snapshots++; return nil }
-	changed, err := Mutate(p, before, func(f *File) error {
+	changed, err := Mutate(p, "", before, func(f *File) error {
 		f.Devices = append(f.Devices, &Device{Name: "a1", Address: "10.0.0.1", Vendor: "other"})
 		return nil
 	})
@@ -153,7 +153,7 @@ func TestMutateWritesAtomically(t *testing.T) {
 	}
 	// No change: the file keeps its inode.
 	before1, _ := os.Stat(p)
-	changed, err = Mutate(p, nil, func(*File) error { return nil })
+	changed, err = Mutate(p, "", nil, func(*File) error { return nil })
 	after1, _ := os.Stat(p)
 	if err != nil || changed || !os.SameFile(before1, after1) {
 		t.Errorf("a no-op write replaced the file (changed %v, %v)", changed, err)
@@ -167,7 +167,7 @@ func TestMutateWritesAtomically(t *testing.T) {
 			return nil
 		},
 	} {
-		if _, err := Mutate(p, nil, fn); err == nil {
+		if _, err := Mutate(p, "", nil, fn); err == nil {
 			t.Errorf("%s: no error", name)
 		}
 		if got, _ := os.ReadFile(p); string(got) != string(want) {
@@ -175,7 +175,7 @@ func TestMutateWritesAtomically(t *testing.T) {
 		}
 	}
 	// A failing snapshot blocks the write.
-	if _, err := Mutate(p, func() error { return os.ErrPermission }, func(f *File) error { f.StaleDays = 5; return nil }); err == nil {
+	if _, err := Mutate(p, "", func() error { return os.ErrPermission }, func(f *File) error { f.StaleDays = 5; return nil }); err == nil {
 		t.Error("a failed snapshot did not stop the write")
 	}
 	if got, _ := os.ReadFile(p); string(got) != string(want) {

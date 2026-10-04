@@ -10,7 +10,7 @@ func base() *File {
 	f := Empty()
 	f.Devices = []*Device{
 		{Name: "core-sw1", Address: "10.99.0.1", Vendor: "cisco", Hostname: "core.example.net", LegacySSH: true, Ack: []string{"generic-name"},
-			HostKeys: []string{"ssh-ed25519 AAAA"}},
+			HostKeys: []string{"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA=="}},
 		{Name: "oob-con1", Address: "10.99.0.9", Vendor: "wti"},
 	}
 	return f

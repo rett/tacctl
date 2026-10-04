@@ -486,6 +486,7 @@ func (inv *invocation) hostEnroll(args []string) error {
 	}
 	a.Logger(inv.ctx, "auth.info", "host enroll name="+name+" target="+target+" scope="+scope+" method="+method+" by="+inv.sudoUser())
 	a.Out.InfoE("Host '" + name + "' enrolled.")
+	he.PinKeys(inv.ctx, hosts.Entry{Name: name, Target: target, Port: port})
 	if res.Users == "" {
 		inv.echo("")
 		inv.echo("  No users are in scope '" + scope + "' yet. To give someone a login on this host:")
@@ -610,6 +611,7 @@ func (inv *invocation) syncOne(he *hosts.Env, e hosts.Entry, method string, scri
 		return false, nil
 	}
 	inv.app.Out.InfoE(e.Name + ": synced (" + strconv.Itoa(hosts.CountLines(res.Users)) + " users).")
+	he.PinKeys(inv.ctx, e)
 	return true, nil
 }
 
@@ -664,6 +666,7 @@ func (inv *invocation) hostUnenroll(args []string) error {
 	if err := reg.Forget(name); err != nil {
 		return err
 	}
+	inv.forgetHostKeys(name)
 	a.Logger(inv.ctx, "auth.info", "host unenroll name="+name+" target="+e.Target+" by="+inv.sudoUser())
 	a.Out.InfoE("Host '" + name + "' unenrolled. Local accounts and home directories were left in place.")
 	if !reg.ScopeInUse(e.Scope) {
