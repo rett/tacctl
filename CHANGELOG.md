@@ -100,6 +100,31 @@ current behaviour; this file is where history lives.
     are refused with that usage line). They are print-only: `install` and
     `upgrade` still write only the bash script. The words and the live names
     are the same as bash's.
+19. **New: `tacctl device`, the device registry.** It names the network devices
+    that authenticate against the server (`device list|show|add|remove|rename`,
+    the field getter/setters `address|hostname|vendor|port|login|description`,
+    `legacy-ssh`, `stale-days`, `notice`, `notices`, `import`, `export`) in
+    `/etc/tacctl/devices.yaml` (0600, `version: 1`, own lock, atomic write). It
+    never touches `store.yaml`: scope, state (`configured`/`unconfigured`) and
+    vendor tag are looked up per display. A device is found by name or by its
+    registered address; enrolled Linux hosts appear read-only as `linux`
+    entries in one namespace. Writes are administrator-only and take a
+    snapshot first; snapshots, `backup diff` and `backup restore` include the
+    file. `list` and `show` (read-only tier and up) and `export` (operator
+    tier and up) show a tier user only the entries of its own scopes. Until
+    host-key pinning exists, `device add` accepts `--host-key` and
+    `--no-host-key` but pins nothing, and the device carries a
+    `hostkey-unpinned` notice; the last seen, by and via columns print `-`.
+20. **Device and host names are checked for duplicates and generic names.**
+    `device add` and `device rename` refuse a name already taken (compared
+    without regard to case, across the registry and the enrolled hosts) or an
+    address already registered, and a generic name (`switch`, `router`,
+    `cisco`, `ubuntu`, `ip-10-0-0-1`, ...) with the command that names the
+    device; `--allow-generic` registers it anyway and the device carries a
+    `generic-name` notice (`device notices`, `device notice <name> ack|unack
+    <kind>`). `host enroll` refuses a name that is a registered device or a
+    generic name (give another `--name`); a host enrolled under a generic name
+    earlier is not refused and carries the notice.
 
 ## 0.2.0 (2026-10-04)
 

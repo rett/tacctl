@@ -292,6 +292,10 @@ func (inv *invocation) hostEnroll(args []string) error {
 	if !reHostName.MatchString(name) {
 		return inv.usageErr("Invalid host name '" + name + "'. Pass --name <letters, digits, _ or -, starting with a letter, max 26>.")
 	}
+	_, enrolled := reg.Find(name)
+	if err := inv.hostNameCheck(name, enrolled); err != nil {
+		return err
+	}
 	if port != "" && !rePort.MatchString(port) {
 		return inv.usageErr("Invalid --port '" + port + "'.")
 	}

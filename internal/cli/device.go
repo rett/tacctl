@@ -1,0 +1,1111 @@
+package cli
+
+// The 'device' family (docs/plans/operator-console.md 3 and 7): the registry
+// of the network devices that authenticate against this server, in
+// /etc/tacctl/devices.yaml (internal/devreg). It registers itself with
+// registerFamily, registerSpecs and registerDeviceNames; root.go and
+// completion.go know nothing of it. The registry never writes store.yaml:
+// scope and vendor tag are looked up per display, and every write takes a
+// snapshot first. Host-key pinning (the 'add' flags --host-key and
+// --no-host-key), the seen cache and 'device scan|discover|check' belong to
+// later packages; the hooks they fill are deviceSeenCols and
+// deviceSeenFooter, and registryNotices.
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"regexp"
+	"slices"
+	"strconv"
+	"strings"
+
+	"github.com/spf13/cobra"
+
+	"github.com/rett/tacctl/internal/devreg"
+	"github.com/rett/tacctl/internal/ui"
+)
+
+func init() {
+	registerFamily(deviceCmd)
+	registerSpecs("device", deviceSpecs)
+	registerDeviceNames(deviceRegistryNames)
+}
+
+var (
+	flagYes          = Flag{Names: []string{"-y", "--yes"}}
+	flagJSON         = Flag{Names: []string{"--json"}}
+	flagAllowGeneric = Flag{Names: []string{"--allow-generic"}}
+	noticeWords      = strings.Join(devreg.AckableKinds, "|")
+)
+
+// deviceSpecs are the arguments of each verb, for the parser and for
+// completion (args.go).
+var deviceSpecs = map[string]Spec{
+	"list": {MaxArgs: 0, Flags: []Flag{{Names: []string{"--stale"}}, {Names: []string{"--unconfigured"}}, flagJSON}},
+	"show": {MinArgs: 1, MaxArgs: 1, Args: []string{KindDevices}, Flags: []Flag{flagJSON}},
+	"add": {MinArgs: 2, MaxArgs: 2, Args: []string{"", ""}, Flags: []Flag{
+		{Names: []string{"--vendor"}, Value: true, Kind: KindVendors},
+		{Names: []string{"--hostname"}, Value: true},
+		{Names: []string{"--port"}, Value: true},
+		{Names: []string{"--login"}, Value: true},
+		{Names: []string{"--description"}, Value: true},
+		{Names: []string{"--legacy-ssh"}},
+		{Names: []string{"--host-key"}, Value: true},
+		{Names: []string{"--no-host-key"}},
+		flagAllowGeneric}},
+	"remove":      {MaxArgs: -1, Args: []string{KindDevices + KindList}, Flags: []Flag{{Names: []string{"--all"}, Alone: true}, flagYes}},
+	"rename":      {MinArgs: 2, MaxArgs: 2, Args: []string{KindDevices, ""}, Flags: []Flag{flagAllowGeneric}},
+	"address":     {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, ""}},
+	"hostname":    {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, "clear"}},
+	"vendor":      {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, KindVendors + "|clear"}},
+	"port":        {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, "clear"}},
+	"login":       {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, "clear"}},
+	"description": {MinArgs: 1, MaxArgs: -1, Args: []string{KindDevices, "clear"}},
+	"legacy-ssh":  {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, "enable|disable"}},
+	"stale-days":  {MaxArgs: 1, Args: []string{""}},
+	"notice":      {MinArgs: 3, MaxArgs: 3, Args: []string{KindDevices, "ack|unack", noticeWords}},
+	"notices":     {MaxArgs: 1, Args: []string{KindDevices}},
+	"import": {MinArgs: 1, MaxArgs: 1, Args: []string{KindFile}, Flags: []Flag{
+		{Names: []string{"--check"}}, {Names: []string{"--replace"}}, flagAllowGeneric, flagYes}},
+	"export": {MaxArgs: 0, Flags: []Flag{{Names: []string{"--csv"}}, flagJSON}},
+}
+
+// deviceVerbs are the verbs ({Use, Short}), in usage order.
+var deviceVerbs = [][2]string{
+	{"list [--stale] [--unconfigured] [--json]", "Registered devices and enrolled hosts: scope, state, notices"},
+	{"show <name|address> [--json]", "One device or host in full"},
+	{"add <name> <address> [options]", "Register a device"},
+	{"remove <name>[,<name>...] | --all [-y]", "Remove devices from the registry (confirms)"},
+	{"rename <old> <new> [--allow-generic]", "Rename a device"},
+	{"address <name> [<address>]", "Show or set the address"},
+	{"hostname <name> [<dns>|clear]", "Show, set or clear the DNS name"},
+	{"vendor <name> [cisco|juniper|wti|other]", "Show or set the vendor"},
+	{"port <name> [<n>|clear]", "Show, set or clear the ssh port"},
+	{"login <name> [<user>|clear]", "Show, set or clear the ssh login override"},
+	{"description <name> [<text>|clear]", "Show, set or clear the description"},
+	{"legacy-ssh <name> [enable|disable]", "Opt in to legacy IOS ssh algorithms"},
+	{"stale-days [<n>]", "Show or set the days after which a device counts as stale"},
+	{"notice <name> ack|unack <kind>", "Acknowledge or reopen a notice"},
+	{"notices [<name>]", "The open notices, with what to do about each"},
+	{"import [--check] [--replace] [--allow-generic] [-y] <file|->", "Import devices from CSV or the registry's YAML"},
+	{"export [--csv|--json]", "Print the registry (YAML by default)"},
+}
+
+// deviceSeenCols are the LAST SEEN, BY and VIA columns of an entry, and
+// whether it is stale. Until the seen cache exists (device scan) every
+// column prints '-'.
+var deviceSeenCols = func(*invocation, devreg.Entry) (last, by, via string, stale bool) {
+	return "-", "-", "-", false
+}
+
+// deviceSeenFooter is the line under 'device list' about the seen data.
+var deviceSeenFooter = func(*invocation) string { return "seen data: none (tacctl device scan)" }
+
+func deviceCmd(inv *invocation) *cobra.Command {
+	c := verb("device <subcommand>", "Device registry: names, addresses and notices for the devices that authenticate here")
+	c.RunE = inv.native(withPreflight, inv.device)
+	for _, v := range deviceVerbs {
+		word := strings.Fields(v[0])[0]
+		c.AddCommand(withRun(verb(v[0], v[1]), inv.native(withPreflight, func(args []string) error {
+			return inv.device(append([]string{word}, args...))
+		})))
+	}
+	return c
+}
+
+// deviceRegUsage is the usage of the family.
+func deviceRegUsage() string {
+	var b strings.Builder
+	b.WriteString("\n" + ui.Bold + "Device Registry" + ui.NC + "\n\nUsage: tacctl device <subcommand> [arguments]\n\nSubcommands:\n")
+	for _, v := range deviceVerbs {
+		use, short := v[0], v[1]
+		if len(use) > 56 {
+			b.WriteString("  " + use + "\n  " + strings.Repeat(" ", 56) + "  " + short + "\n")
+			continue
+		}
+		fmt.Fprintf(&b, "  %-56s  %s\n", use, short)
+	}
+	b.WriteString(`
+add options: --vendor cisco|juniper|wti|other (default other), --hostname <dns>,
+--port <n>, --login <user>, --description <text>, --legacy-ssh, --allow-generic
+(register a generic name such as 'switch' anyway), and --host-key SHA256:<fp> or
+--no-host-key (accepted; no host key is pinned yet and the device carries a
+hostkey-unpinned notice).
+
+A device is found by name or by its registered address. Enrolled Linux hosts
+('tacctl host') are listed and found too, read-only. The registry is
+/etc/tacctl/devices.yaml; scope and vendor tag are looked up, never stored.
+
+Examples:
+  tacctl device add core-sw1 10.99.0.1 --vendor cisco --no-host-key
+  tacctl device list
+  tacctl device rename core-sw1 dc1-core1
+  tacctl device export --csv > devices.csv
+
+`)
+	return b.String()
+}
+
+// device dispatches: no sub-command, help, -h and --help are the usage
+// (exit 0); anything else unknown is an error, then the usage (exit 1).
+func (inv *invocation) device(args []string) error {
+	var rest []string
+	if len(args) > 1 {
+		rest = args[1:]
+	}
+	run := map[string]func([]string) error{
+		"list": inv.deviceList, "show": inv.deviceShow, "add": inv.deviceAdd, "remove": inv.deviceRemove,
+		"rename": inv.deviceRename, "legacy-ssh": inv.deviceLegacySSH, "stale-days": inv.deviceStaleDays,
+		"notice": inv.deviceNotice, "notices": inv.deviceNotices, "import": inv.deviceImport, "export": inv.deviceExport,
+		"address": inv.deviceSetter("address"), "hostname": inv.deviceSetter("hostname"), "vendor": inv.deviceSetter("vendor"),
+		"port": inv.deviceSetter("port"), "login": inv.deviceSetter("login"), "description": inv.deviceSetter("description"),
+	}
+	switch sub := arg(args, 0); sub {
+	case "", "-h", "--help", "help":
+		inv.write(deviceRegUsage())
+		return nil
+	default:
+		if f, ok := run[sub]; ok {
+			return f(rest)
+		}
+		inv.app.Out.ErrorE("Unknown subcommand: '" + sub + "'")
+		inv.write(deviceRegUsage())
+		return exit(1)
+	}
+}
+
+// --- shared ----------------------------------------------------------------------
+
+// deviceParse parses a verb's arguments with its Spec; a bad one is the
+// error line and the verb's usage, exit 1.
+func (inv *invocation) deviceParse(verbName string, args []string) (Parsed, error) {
+	p, err := Parse(deviceSpecs[verbName], args)
+	if err == nil {
+		return p, nil
+	}
+	var use string
+	for _, v := range deviceVerbs {
+		if strings.Fields(v[0])[0] == verbName {
+			use = v[0]
+		}
+	}
+	msg := err.Error()
+	var uf *UnknownFlagError
+	if errors.As(err, &uf) {
+		msg = "Unknown option: '" + uf.Flag + "'"
+	}
+	return p, inv.usageErr(msg, "Usage: tacctl device "+use)
+}
+
+func (inv *invocation) deviceFilter() devreg.ScopeFilter {
+	f := inv.callerScopes()
+	return devreg.ScopeFilter{Restricted: f.restricted, Scopes: f.scopes}
+}
+
+// deviceLoad reads the registry, the enrolled hosts and the store, and
+// joins them.
+func (inv *invocation) deviceLoad() (*devreg.File, *devreg.Resolver, error) {
+	f, err := devreg.Load(inv.app.Paths.DevicesFile)
+	if err != nil {
+		return nil, nil, err
+	}
+	reg, err := inv.registry()
+	if err != nil {
+		return nil, nil, err
+	}
+	m, err := inv.model()
+	if err != nil {
+		return nil, nil, err
+	}
+	return f, devreg.NewResolver(f, reg, m), nil
+}
+
+// deviceWrite changes the registry: fn runs first on a copy, so every
+// refusal comes before the snapshot; then, under the lock and after a
+// snapshot of the current state, on the file itself. The resolver it
+// returns is the state after the change.
+func (inv *invocation) deviceWrite(fn func(*devreg.File, *devreg.Resolver) error) (*devreg.Resolver, error) {
+	f, res, err := inv.deviceLoad()
+	if err != nil {
+		return nil, err
+	}
+	trial := f.Clone()
+	after := devreg.NewResolver(trial, nil, res.Model)
+	after.Hosts = res.Hosts
+	if err := fn(trial, after); err != nil {
+		return nil, err
+	}
+	if _, err := trial.Text(); err != nil {
+		return nil, err
+	}
+	_, err = devreg.Mutate(inv.app.Paths.DevicesFile, inv.snapshotFirst, func(live *devreg.File) error {
+		r := devreg.NewResolver(live, nil, res.Model)
+		r.Hosts = res.Hosts
+		return fn(live, r)
+	})
+	return after, err
+}
+
+// deviceFind finds the device a verb names (by name or address; hosts
+// too) among what the caller may see.
+func (inv *invocation) deviceFind(res *devreg.Resolver, key string) (devreg.Entry, error) {
+	e, ok := res.Lookup(key, inv.deviceFilter())
+	if !ok {
+		return e, inv.usageErr("Device '" + key + "' not found. List them with: tacctl device list")
+	}
+	return e, nil
+}
+
+// deviceEditable is the registry device a write names: an enrolled host
+// is refused, with where to change it.
+func (inv *invocation) deviceEditable(res *devreg.Resolver, f *devreg.File, key string) (*devreg.Device, error) {
+	if d := f.Find(key); d != nil {
+		return d, nil
+	}
+	if d := f.FindAddress(key); d != nil {
+		return d, nil
+	}
+	if e, ok := res.NameTaken(key); ok && e.Source == devreg.SourceHost {
+		return nil, inv.usageErr("'" + e.Name + "' is an enrolled host; 'tacctl host' manages it.")
+	}
+	return nil, inv.usageErr("Device '" + key + "' not found. List them with: tacctl device list")
+}
+
+func dash(s string) string {
+	if s == "" {
+		return "-"
+	}
+	return s
+}
+
+func kinds(ns []devreg.Notice) string {
+	var k []string
+	for _, n := range devreg.Open(ns) {
+		k = append(k, n.Kind)
+	}
+	return strings.Join(k, ",")
+}
+
+// --- list and show ---------------------------------------------------------------
+
+type deviceNoticeJSON struct {
+	Kind  string `json:"kind"`
+	Text  string `json:"text"`
+	Acked bool   `json:"acked"`
+}
+
+type deviceJSON struct {
+	Name        string             `json:"name"`
+	Source      string             `json:"source"`
+	Address     string             `json:"address"`
+	Hostname    string             `json:"hostname,omitempty"`
+	Vendor      string             `json:"vendor"`
+	Port        int                `json:"port"`
+	Login       string             `json:"login,omitempty"`
+	LegacySSH   bool               `json:"legacy_ssh"`
+	Description string             `json:"description,omitempty"`
+	Scope       string             `json:"scope"`
+	Tag         string             `json:"tag"`
+	Shadowed    []string           `json:"shadowed_by"`
+	State       string             `json:"state"`
+	HostKeys    []string           `json:"host_keys"`
+	Notices     []deviceNoticeJSON `json:"notices"`
+}
+
+func deviceJSONOf(res *devreg.Resolver, e devreg.Entry) deviceJSON {
+	j := deviceJSON{Name: e.Name, Source: string(e.Source), Address: e.Address, Hostname: e.Hostname, Vendor: e.Vendor,
+		Port: e.SSHPort(), Login: e.Login, LegacySSH: e.LegacySSH, Description: e.Description, Scope: e.Scope, Tag: e.Tag,
+		Shadowed: append([]string{}, e.Shadowed...), State: e.State(), HostKeys: append([]string{}, e.HostKeys...),
+		Notices: []deviceNoticeJSON{}}
+	for _, n := range res.NoticesFor(e) {
+		j.Notices = append(j.Notices, deviceNoticeJSON{Kind: n.Kind, Text: n.Text, Acked: n.Acked})
+	}
+	return j
+}
+
+func (inv *invocation) printJSON(v any) error {
+	b, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return err
+	}
+	inv.write(string(b) + "\n")
+	return nil
+}
+
+func (inv *invocation) deviceList(args []string) error {
+	p, err := inv.deviceParse("list", args)
+	if err != nil {
+		return err
+	}
+	f, res, err := inv.deviceLoad()
+	if err != nil {
+		return err
+	}
+	_ = f
+	var shown []devreg.Entry
+	for _, e := range res.Visible(inv.deviceFilter()) {
+		_, _, _, stale := deviceSeenCols(inv, e)
+		if (p.Has("--unconfigured") && e.Configured) || (p.Has("--stale") && !stale) {
+			continue
+		}
+		shown = append(shown, e)
+	}
+	if p.Has("--json") {
+		out := []deviceJSON{}
+		for _, e := range shown {
+			out = append(out, deviceJSONOf(res, e))
+		}
+		return inv.printJSON(out)
+	}
+	nd, nh := 0, 0
+	for _, e := range shown {
+		if e.Source == devreg.SourceHost {
+			nh++
+		} else {
+			nd++
+		}
+	}
+	head := fmt.Sprintf("Registered devices (%d) and enrolled hosts (%d)", nd, nh)
+	inv.echo("")
+	inv.echoE(ui.Bold + head + ui.NC)
+	inv.echo(strings.Repeat("-", len(head)))
+	if len(shown) == 0 {
+		inv.echo("  None. Register one with: tacctl device add <name> <address>")
+		inv.echo("")
+		return nil
+	}
+	cols := []string{"NAME", "ADDRESS", "VENDOR", "SCOPE", "STATE", "LAST SEEN", "BY", "VIA", "NOTICES"}
+	rows := [][]string{}
+	open := 0
+	for _, e := range shown {
+		last, by, via, stale := deviceSeenCols(inv, e)
+		state := e.State()
+		if stale {
+			state += " stale"
+		}
+		ns := res.NoticesFor(e)
+		open += len(devreg.Open(ns))
+		rows = append(rows, []string{e.Name, dash(e.Address), e.Vendor, dash(e.Scope), state, last, by, via, dash(kinds(ns))})
+	}
+	w := make([]int, len(cols))
+	for i, c := range cols {
+		w[i] = len(c)
+		for _, r := range rows {
+			w[i] = max(w[i], len(r[i]))
+		}
+	}
+	line := func(r []string, pre, post string) {
+		var b strings.Builder
+		b.WriteString("  " + pre)
+		for i, c := range r {
+			if i == len(r)-1 {
+				b.WriteString(c)
+			} else {
+				fmt.Fprintf(&b, "%-*s  ", w[i], c)
+			}
+		}
+		inv.write(b.String() + post + "\n")
+	}
+	line(cols, ui.Bold, ui.NC)
+	for _, r := range rows {
+		line(r, "", "")
+	}
+	inv.echo("")
+	inv.echo("  " + deviceSeenFooter(inv))
+	if open > 0 {
+		inv.echo(fmt.Sprintf("  %d open notice(s): tacctl device notices", open))
+	}
+	inv.echo("")
+	return nil
+}
+
+func (inv *invocation) deviceShow(args []string) error {
+	p, err := inv.deviceParse("show", args)
+	if err != nil {
+		return err
+	}
+	_, res, err := inv.deviceLoad()
+	if err != nil {
+		return err
+	}
+	e, err := inv.deviceFind(res, p.Args[0])
+	if err != nil {
+		return err
+	}
+	if p.Has("--json") {
+		return inv.printJSON(deviceJSONOf(res, e))
+	}
+	kind := "Device"
+	if e.Source == devreg.SourceHost {
+		kind = "Enrolled host"
+	}
+	inv.echo("")
+	inv.echoE(ui.Bold + kind + " " + e.Name + ui.NC)
+	inv.echo(strings.Repeat("-", len(kind)+1+len(e.Name)))
+	row := func(k, v string) { inv.write(fmt.Sprintf("  %-13s %s\n", k+":", v)) }
+	row("Name", e.Name)
+	row("Address", dash(e.Address))
+	row("Hostname", dash(e.Hostname))
+	row("Vendor", e.Vendor)
+	row("Port", strconv.Itoa(e.SSHPort()))
+	if e.Source == devreg.SourceHost {
+		row("Target", e.Target)
+		row("Identity", dash(e.Identity))
+	} else {
+		login := "-  (ssh uses your own username)"
+		if e.Login != "" {
+			login = e.Login
+		}
+		row("Login", login)
+		row("Legacy ssh", map[bool]string{true: "enabled", false: "disabled"}[e.LegacySSH])
+		row("Description", dash(e.Description))
+	}
+	switch {
+	case e.Source == devreg.SourceHost && e.Configured:
+		row("Scope", e.Scope)
+	case e.Source == devreg.SourceHost:
+		row("Scope", dash(e.Scope)+"  (no such scope)")
+	case e.Configured:
+		row("Scope", e.Scope+"  (via prefix "+e.Prefix+")")
+	default:
+		row("Scope", "-  (no scope's prefixes cover "+e.Address+")")
+	}
+	if len(e.Shadowed) > 0 {
+		row("Shadowed", "also covered by "+strings.Join(e.Shadowed, ", ")+" (the more specific prefix wins)")
+	}
+	row("State", e.State())
+	if e.Source == devreg.SourceDevice {
+		switch {
+		case e.Tag != "":
+			row("Vendor tag", e.Tag)
+		case slices.Contains(sortedVendors(), e.Vendor) && e.Configured:
+			row("Vendor tag", "none  (over RADIUS: tacctl scope devices "+e.Scope+" set "+e.Address+" "+e.Vendor+")")
+		default:
+			row("Vendor tag", "none")
+		}
+		if e.Tag != "" && e.Vendor != devreg.VendorOther && e.Tag != e.Vendor {
+			inv.app.Out.Warn("The vendor tag (" + e.Tag + ") and the registered vendor (" + e.Vendor + ") disagree.")
+		}
+		if len(e.HostKeys) == 0 {
+			row("Host keys", "none pinned")
+		} else {
+			row("Host keys", strconv.Itoa(len(e.HostKeys))+" pinned")
+		}
+	}
+	last, by, via, _ := deviceSeenCols(inv, e)
+	row("Last seen", last)
+	if by != "-" || via != "-" {
+		row("Seen by", by+" via "+via)
+	}
+	ns := res.NoticesFor(e)
+	if len(ns) == 0 {
+		row("Notices", "none")
+	}
+	for i, n := range ns {
+		k := "Notices"
+		if i > 0 {
+			k = ""
+		}
+		mark := ""
+		if n.Acked {
+			mark = " (acknowledged)"
+		}
+		row(k, n.Kind+mark+": "+n.Text)
+	}
+	inv.echo("")
+	return nil
+}
+
+func sortedVendors() []string { return []string{"cisco", "juniper", "wti"} }
+
+// --- add -------------------------------------------------------------------------
+
+var reFingerprint = regexp.MustCompile(`^SHA256:[A-Za-z0-9+/]{43}$`)
+
+func (inv *invocation) deviceAdd(args []string) error {
+	p, err := inv.deviceParse("add", args)
+	if err != nil {
+		return err
+	}
+	d := devreg.Device{Name: p.Args[0], Vendor: devreg.VendorOther, LegacySSH: p.Has("--legacy-ssh")}
+	checks := []error{devreg.ValidateName(d.Name)}
+	if d.Address, err = devreg.NormalizeAddress(p.Args[1]); err != nil {
+		checks = append(checks, err)
+	}
+	if p.Has("--vendor") {
+		d.Vendor = strings.ToLower(p.Value("--vendor"))
+		checks = append(checks, devreg.ValidateVendor(d.Vendor))
+	}
+	if p.Has("--port") {
+		var perr error
+		d.Port, perr = devreg.ValidatePort(p.Value("--port"))
+		checks = append(checks, perr)
+	}
+	if p.Has("--hostname") {
+		d.Hostname = p.Value("--hostname")
+		checks = append(checks, devreg.ValidateHostname(d.Hostname))
+	}
+	if p.Has("--login") {
+		d.Login = p.Value("--login")
+		checks = append(checks, devreg.ValidateLogin(d.Login))
+	}
+	d.Description = p.Value("--description")
+	checks = append(checks, devreg.ValidateDescription(d.Description))
+	for _, e := range checks {
+		if e != nil {
+			return e
+		}
+	}
+	if p.Has("--host-key") && p.Has("--no-host-key") {
+		return inv.usageErr("Give --host-key or --no-host-key, not both.")
+	}
+	if fp := p.Value("--host-key"); p.Has("--host-key") && !reFingerprint.MatchString(fp) {
+		return inv.usageErr("Invalid --host-key '" + fp + "': expected SHA256:<fingerprint> as ssh prints it.")
+	}
+	keep := "tacctl device add " + d.Name + " " + d.Address + " --allow-generic"
+	after, err := inv.deviceWrite(func(f *devreg.File, r *devreg.Resolver) error {
+		if err := r.CheckName(d.Name, d.Vendor, p.Has("--allow-generic"), keep); err != nil {
+			return err
+		}
+		if err := r.CheckAddress(d.Address, ""); err != nil {
+			return err
+		}
+		nd := d.Clone()
+		f.Devices = append(f.Devices, &nd)
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	a := inv.app
+	a.Out.Info("Device '" + d.Name + "' registered: " + d.Address + ", " + d.Vendor + ".")
+	if p.Has("--host-key") {
+		a.Out.Warn("--host-key was not checked: no host key is scanned or pinned yet.")
+	}
+	e, _ := after.Lookup(d.Name, devreg.ScopeFilter{})
+	if e.Configured {
+		inv.echo("  Scope: " + e.Scope + " (via prefix " + e.Prefix + ")")
+	} else {
+		inv.echo("  Scope: none yet; no scope's prefixes cover " + d.Address + " ('tacctl scope prefixes <scope> add <cidr>').")
+	}
+	for _, n := range devreg.Open(after.NoticesFor(e)) {
+		a.Out.Warn(n.Kind + ": " + n.Text)
+	}
+	inv.echo("")
+	return nil
+}
+
+// --- remove and rename -----------------------------------------------------------
+
+func (inv *invocation) deviceRemove(args []string) error {
+	p, err := inv.deviceParse("remove", args)
+	if err != nil {
+		return err
+	}
+	f, res, err := inv.deviceLoad()
+	if err != nil {
+		return err
+	}
+	var targets []string
+	switch {
+	case p.Has("--all") && len(p.Args) > 0:
+		return inv.usageErr("--all takes no names.", "Usage: tacctl device remove <name>[,<name>...] | --all [-y]")
+	case p.Has("--all"):
+		for _, d := range f.Devices {
+			targets = append(targets, d.Name)
+		}
+		if len(targets) == 0 {
+			inv.app.Out.Info("The registry is empty.")
+			return nil
+		}
+	case len(p.Args) == 0:
+		return inv.usageErr("Usage: tacctl device remove <name>[,<name>...] | --all [-y]")
+	default:
+		for _, a := range p.Args {
+			for _, n := range strings.Split(a, ",") {
+				if n == "" {
+					continue
+				}
+				d, err := inv.deviceEditable(res, f, n)
+				if err != nil {
+					return err
+				}
+				if !slices.Contains(targets, d.Name) {
+					targets = append(targets, d.Name)
+				}
+			}
+		}
+	}
+	a := inv.app
+	a.Out.Warn(fmt.Sprintf("About to remove %d device(s) from the registry: %s.", len(targets), strings.Join(targets, ", ")))
+	a.Out.Warn("Enrolled hosts, scopes and vendor tags are not touched.")
+	if !p.Has("-y") && !a.Prompter().ConfirmPrefix("  Confirm removal? [y/N]: ") {
+		a.Out.Info("Aborted.")
+		return nil
+	}
+	if _, err := inv.deviceWrite(func(f *devreg.File, _ *devreg.Resolver) error {
+		for _, n := range targets {
+			f.Remove(n)
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	a.Out.Info(fmt.Sprintf("Removed %d device(s).", len(targets)))
+	inv.echo("")
+	return nil
+}
+
+func (inv *invocation) deviceRename(args []string) error {
+	p, err := inv.deviceParse("rename", args)
+	if err != nil {
+		return err
+	}
+	f, res, err := inv.deviceLoad()
+	if err != nil {
+		return err
+	}
+	old, err := inv.deviceEditable(res, f, p.Args[0])
+	if err != nil {
+		return err
+	}
+	oldName, newName := old.Name, p.Args[1]
+	if err := devreg.ValidateName(newName); err != nil {
+		return err
+	}
+	keep := "tacctl device rename " + oldName + " " + newName + " --allow-generic"
+	if _, err := inv.deviceWrite(func(f *devreg.File, r *devreg.Resolver) error {
+		d := f.Find(oldName)
+		if d == nil {
+			return inv.usageErr("Device '" + oldName + "' not found.")
+		}
+		// Changing only the spelling of a name is a rename too.
+		if !strings.EqualFold(oldName, newName) {
+			if err := r.CheckName(newName, d.Vendor, p.Has("--allow-generic"), keep); err != nil {
+				return err
+			}
+		} else if oldName == newName {
+			return inv.usageErr("'" + oldName + "' already has that name.")
+		}
+		d.Name = newName
+		return nil
+	}); err != nil {
+		return err
+	}
+	inv.app.Out.Info("Device '" + oldName + "' renamed to '" + newName + "'.")
+	inv.echo("")
+	return nil
+}
+
+// --- scalar setters ---------------------------------------------------------------
+
+// deviceSetter is the getter/setter of one field: no value shows it, 'clear'
+// unsets an optional one, anything else sets it.
+func (inv *invocation) deviceSetter(field string) func([]string) error {
+	return func(args []string) error {
+		p, err := inv.deviceParse(field, args)
+		if err != nil {
+			return err
+		}
+		f, res, err := inv.deviceLoad()
+		if err != nil {
+			return err
+		}
+		if len(p.Args) == 1 {
+			e, err := inv.deviceFind(res, p.Args[0])
+			if err != nil {
+				return err
+			}
+			inv.echo(map[string]string{
+				"address": dash(e.Address), "hostname": dash(e.Hostname), "vendor": e.Vendor,
+				"port": strconv.Itoa(e.SSHPort()), "login": dash(e.Login), "description": dash(e.Description),
+			}[field])
+			return nil
+		}
+		d, err := inv.deviceEditable(res, f, p.Args[0])
+		if err != nil {
+			return err
+		}
+		name := d.Name
+		value := strings.Join(p.Args[1:], " ")
+		if field != "description" && len(p.Args) > 2 {
+			return inv.usageErr("Usage: tacctl device " + field + " <name> [<value>|clear]")
+		}
+		clearing := value == "clear"
+		set := func(d *devreg.Device) error { return setField(d, field, value, clearing) }
+		// Validate before the snapshot, on a copy.
+		probe := d.Clone()
+		if err := set(&probe); err != nil {
+			return err
+		}
+		warnKeys := false
+		if _, err := inv.deviceWrite(func(f *devreg.File, r *devreg.Resolver) error {
+			live := f.Find(name)
+			if live == nil {
+				return inv.usageErr("Device '" + name + "' not found.")
+			}
+			if field == "address" && !clearing {
+				a, _ := devreg.NormalizeAddress(value)
+				if err := r.CheckAddress(a, name); err != nil {
+					return err
+				}
+			}
+			if err := set(live); err != nil {
+				return err
+			}
+			if field == "address" {
+				warnKeys = len(d.HostKeys) > 0 && live.Address != d.Address
+				if live.Address != d.Address {
+					live.HostKeys = nil
+				}
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+		verbText := "set to " + value
+		if clearing {
+			verbText = "cleared"
+		}
+		inv.app.Out.Info("Device '" + name + "' " + field + " " + verbText + ".")
+		if warnKeys {
+			inv.app.Out.Warn("The pinned host keys belonged to the old address and were dropped.")
+		}
+		return nil
+	}
+}
+
+func setField(d *devreg.Device, field, value string, clearing bool) error {
+	switch field {
+	case "address":
+		if clearing {
+			return fail1("The address is required; to drop the device: tacctl device remove " + d.Name)
+		}
+		a, err := devreg.NormalizeAddress(value)
+		if err != nil {
+			return err
+		}
+		d.Address = a
+	case "hostname":
+		d.Hostname = ""
+		if !clearing {
+			d.Hostname = value
+			return devreg.ValidateHostname(value)
+		}
+	case "vendor":
+		d.Vendor = devreg.VendorOther
+		if !clearing {
+			d.Vendor = strings.ToLower(value)
+			return devreg.ValidateVendor(d.Vendor)
+		}
+	case "port":
+		d.Port = 0
+		if !clearing {
+			n, err := devreg.ValidatePort(value)
+			d.Port = n
+			return err
+		}
+	case "login":
+		d.Login = ""
+		if !clearing {
+			d.Login = value
+			return devreg.ValidateLogin(value)
+		}
+	case "description":
+		d.Description = ""
+		if !clearing {
+			d.Description = value
+			return devreg.ValidateDescription(value)
+		}
+	}
+	return nil
+}
+
+func fail1(msg string) error { return &ExitError{Code: 1, Err: errors.New(msg)} }
+
+func (inv *invocation) deviceLegacySSH(args []string) error {
+	p, err := inv.deviceParse("legacy-ssh", args)
+	if err != nil {
+		return err
+	}
+	f, res, err := inv.deviceLoad()
+	if err != nil {
+		return err
+	}
+	if len(p.Args) == 1 {
+		e, err := inv.deviceFind(res, p.Args[0])
+		if err != nil {
+			return err
+		}
+		inv.echo(map[bool]string{true: "enabled", false: "disabled"}[e.LegacySSH])
+		return nil
+	}
+	on := p.Args[1] == "enable"
+	if !on && p.Args[1] != "disable" {
+		return inv.usageErr("Usage: tacctl device legacy-ssh <name> [enable|disable]")
+	}
+	d, err := inv.deviceEditable(res, f, p.Args[0])
+	if err != nil {
+		return err
+	}
+	name := d.Name
+	if _, err := inv.deviceWrite(func(f *devreg.File, _ *devreg.Resolver) error {
+		f.Find(name).LegacySSH = on
+		return nil
+	}); err != nil {
+		return err
+	}
+	inv.app.Out.Info("Device '" + name + "' legacy-ssh " + p.Args[1] + "d.")
+	return nil
+}
+
+func (inv *invocation) deviceStaleDays(args []string) error {
+	p, err := inv.deviceParse("stale-days", args)
+	if err != nil {
+		return err
+	}
+	f, _, err := inv.deviceLoad()
+	if err != nil {
+		return err
+	}
+	if len(p.Args) == 0 {
+		inv.echo(strconv.Itoa(f.StaleDays))
+		return nil
+	}
+	n, err := strconv.Atoi(p.Args[0])
+	if err != nil || n < 1 || n > devreg.MaxStaleDays || strconv.Itoa(n) != p.Args[0] {
+		return inv.usageErr("Invalid number of days '" + p.Args[0] + "': expected 1-" + strconv.Itoa(devreg.MaxStaleDays) + ".")
+	}
+	if _, err := inv.deviceWrite(func(f *devreg.File, _ *devreg.Resolver) error { f.StaleDays = n; return nil }); err != nil {
+		return err
+	}
+	inv.app.Out.Info("Devices count as stale after " + p.Args[0] + " day(s) without a sighting.")
+	return nil
+}
+
+// --- notices ---------------------------------------------------------------------
+
+func (inv *invocation) deviceNotice(args []string) error {
+	p, err := inv.deviceParse("notice", args)
+	if err != nil {
+		return err
+	}
+	f, res, err := inv.deviceLoad()
+	if err != nil {
+		return err
+	}
+	d, err := inv.deviceEditable(res, f, p.Args[0])
+	if err != nil {
+		return err
+	}
+	name, action, kind := d.Name, p.Args[1], p.Args[2]
+	if action != "ack" && action != "unack" {
+		return inv.usageErr("Usage: tacctl device notice <name> ack|unack <kind>")
+	}
+	if kind == devreg.NoticeHostKeyChanged {
+		return inv.usageErr("'" + kind + "' cannot be acknowledged: it stays until the host key is verified and pinned again.")
+	}
+	if !slices.Contains(devreg.AckableKinds, kind) {
+		return inv.usageErr("Unknown notice kind '"+kind+"'.", "Kinds: "+strings.Join(devreg.AckableKinds, ", ")+".")
+	}
+	had := slices.Contains(d.Ack, kind)
+	if (action == "ack") == had {
+		inv.app.Out.Info("Notice '" + kind + "' of '" + name + "' is " + map[bool]string{true: "already", false: "not"}[had] + " acknowledged.")
+		return nil
+	}
+	if _, err := inv.deviceWrite(func(f *devreg.File, _ *devreg.Resolver) error {
+		live := f.Find(name)
+		if action == "ack" {
+			live.Ack = append(live.Ack, kind)
+		} else {
+			live.Ack = slices.DeleteFunc(live.Ack, func(k string) bool { return k == kind })
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	inv.app.Out.Info("Notice '" + kind + "' of '" + name + "' " + map[string]string{"ack": "acknowledged", "unack": "reopened"}[action] + ".")
+	return nil
+}
+
+func (inv *invocation) deviceNotices(args []string) error {
+	p, err := inv.deviceParse("notices", args)
+	if err != nil {
+		return err
+	}
+	_, res, err := inv.deviceLoad()
+	if err != nil {
+		return err
+	}
+	entries := res.Visible(inv.deviceFilter())
+	if len(p.Args) == 1 {
+		e, err := inv.deviceFind(res, p.Args[0])
+		if err != nil {
+			return err
+		}
+		entries = []devreg.Entry{e}
+	}
+	n := 0
+	inv.echo("")
+	for _, e := range entries {
+		for _, no := range devreg.Open(res.NoticesFor(e)) {
+			inv.echo("  " + e.Name + "  " + no.Kind + ": " + no.Text)
+			n++
+		}
+	}
+	if n == 0 {
+		inv.echo("  No open notices.")
+	}
+	inv.echo("")
+	return nil
+}
+
+// --- import and export -----------------------------------------------------------
+
+func (inv *invocation) deviceImport(args []string) error {
+	p, err := inv.deviceParse("import", args)
+	if err != nil {
+		return err
+	}
+	var data []byte
+	if p.Args[0] == "-" {
+		data, err = io.ReadAll(inv.app.Stdin)
+	} else {
+		data, err = os.ReadFile(p.Args[0])
+	}
+	if err != nil {
+		return inv.usageErr("Cannot read '" + p.Args[0] + "'.")
+	}
+	rows, err := devreg.ParseImport(data)
+	if err != nil {
+		return err
+	}
+	f, res, err := inv.deviceLoad()
+	if err != nil {
+		return err
+	}
+	var hostEntries []devreg.Entry
+	for _, e := range res.All() {
+		if e.Source == devreg.SourceHost {
+			hostEntries = append(hostEntries, e)
+		}
+	}
+	plan, err := f.Clone().Import(rows, p.Has("--replace"), p.Has("--allow-generic"), hostEntries)
+	if err != nil {
+		return err
+	}
+	a := inv.app
+	summary := fmt.Sprintf("%d added, %d updated, %d unchanged, %d removed.", len(plan.Added), len(plan.Updated), len(plan.Unchanged), len(plan.Removed))
+	if p.Has("--check") {
+		a.Out.Info("Check passed; nothing written. Would import: " + summary)
+		return nil
+	}
+	if len(plan.Removed) > 0 {
+		a.Out.Warn(fmt.Sprintf("--replace removes %d device(s) the file does not name: %s.", len(plan.Removed), strings.Join(plan.Removed, ", ")))
+		if !p.Has("-y") && !a.Prompter().ConfirmPrefix("  Confirm import? [y/N]: ") {
+			a.Out.Info("Aborted.")
+			return nil
+		}
+	}
+	if _, err := inv.deviceWrite(func(f *devreg.File, r *devreg.Resolver) error {
+		var hs []devreg.Entry
+		for _, e := range r.All() {
+			if e.Source == devreg.SourceHost {
+				hs = append(hs, e)
+			}
+		}
+		_, err := f.Import(rows, p.Has("--replace"), p.Has("--allow-generic"), hs)
+		return err
+	}); err != nil {
+		return err
+	}
+	a.Out.Info("Imported: " + summary)
+	for _, n := range plan.Added {
+		if devreg.IsGeneric(n, f.GenericNames) {
+			a.Out.Warn("'" + n + "' is a generic name: 'tacctl device notices'.")
+		}
+	}
+	return nil
+}
+
+func (inv *invocation) deviceExport(args []string) error {
+	p, err := inv.deviceParse("export", args)
+	if err != nil {
+		return err
+	}
+	if p.Has("--csv") && p.Has("--json") {
+		return inv.usageErr("Give --csv or --json, not both.")
+	}
+	f, res, err := inv.deviceLoad()
+	if err != nil {
+		return err
+	}
+	vis := f.Clone()
+	vis.Devices = nil
+	filter := inv.deviceFilter()
+	var devs []devreg.Device
+	for _, e := range res.Visible(filter) {
+		if e.Source == devreg.SourceDevice {
+			devs = append(devs, e.Device)
+			d := e.Clone()
+			vis.Devices = append(vis.Devices, &d)
+		}
+	}
+	switch {
+	case p.Has("--csv"):
+		inv.write(string(devreg.CSV(devs)))
+	case p.Has("--json"):
+		b, err := devreg.JSON(devs)
+		if err != nil {
+			return err
+		}
+		inv.write(string(b))
+	default:
+		b, err := vis.Text()
+		if err != nil {
+			return err
+		}
+		inv.write(string(b))
+	}
+	return nil
+}
+
+// --- names for completion and for 'host enroll' ------------------------------------
+
+// deviceRegistryNames are the registry's device names the caller may see
+// (the 'devices' completion kind adds the enrolled hosts').
+func deviceRegistryNames(inv *invocation, f scopeFilter) []string {
+	file, err := devreg.Load(inv.app.Paths.DevicesFile)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	if !f.restricted {
+		for _, d := range file.Devices {
+			out = append(out, d.Name)
+		}
+		return out
+	}
+	m, err := inv.model()
+	if err != nil {
+		return nil
+	}
+	res := devreg.NewResolver(file, nil, m)
+	for _, e := range res.Visible(devreg.ScopeFilter{Restricted: true, Scopes: f.scopes}) {
+		out = append(out, e.Name)
+	}
+	return out
+}
+
+// hostNameCheck is what 'host enroll' asks before it takes a name: the
+// registry's namespace and its generic-name rule (devreg.CheckHostName).
+func (inv *invocation) hostNameCheck(name string, enrolled bool) error {
+	f, err := devreg.Load(inv.app.Paths.DevicesFile)
+	if err != nil {
+		return err
+	}
+	return devreg.CheckHostName(f, name, enrolled)
+}

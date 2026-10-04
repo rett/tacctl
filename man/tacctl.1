@@ -1758,6 +1758,203 @@ The change takes effect for the next
 .B "config juniper"
 render of the named scope — existing device configs are unchanged
 until the new method-list stanzas are pushed.
+.SH DEVICE REGISTRY
+The
+.I device registry
+gives names to the network devices that authenticate against this server, so
+that they can be listed, looked up and acknowledged by name. It is kept in
+.I /etc/tacctl/devices.yaml
+(mode 0600, root only) and never touches
+.IR store.yaml :
+a device's scope and vendor tag are looked up from the store each time they are
+shown, not stored, and registering a device renders nothing and restarts
+nothing. Every write takes a snapshot first (see
+.BR "backup list" ).
+.PP
+A device is found by name or by its registered address; names are compared
+without regard to case. Enrolled Linux hosts
+.RB ( "tacctl host" )
+share the namespace: they are listed and shown as
+.B linux
+devices, read-only, and a device cannot take a host's name (nor
+.B "host enroll \-\-name"
+a device's). An address is registered at most once. An address that is not
+registered is not found, even when a scope covers it.
+.PP
+A name that is a factory or image default (\c
+.BR switch ,
+.BR router ,
+.BR cisco ,
+.BR ubuntu ,
+.B ip\-10\-0\-0\-1
+and the like; matched without regard to case) is refused with the command that
+gives the device a name of its own, unless
+.B \-\-allow\-generic
+is given; the device then carries a
+.B generic-name
+notice. A host enrolled under such a name before the registry existed is not
+refused, and carries the notice. The built-in list can be extended with
+.B generic_names:
+(regular expressions matched against the whole name) in
+.IR devices.yaml .
+.PP
+Reading verbs
+.RB ( list ,
+.BR show )
+are open to the read-only and operator tiers, which see only the devices and
+hosts whose scope is one of their own; an entry no scope covers is seen by
+administrators only.
+.B export
+is operator-level, filtered the same way. Everything else needs an
+administrator.
+.SS Device registry \fB(tacctl device)\fR
+.TP
+.B device
+With no subcommand (or with
+.BR help ),
+prints a usage summary and exits 0.
+.TP
+.BI "device list " "[ \-\-stale ] [ \-\-unconfigured ] [ \-\-json ]"
+One row per registered device, then per enrolled host: name, address, vendor,
+scope, state, last seen, by, via, and the open notices. The state is
+.B configured
+when a scope's prefixes cover the address (a host: when its scope exists) and
+.B unconfigured
+otherwise.
+.B \-\-unconfigured
+lists only those;
+.B \-\-stale
+lists the devices whose last sighting is older than
+.BR stale\-days .
+There is no seen data yet: the last seen, by and via columns print
+.B \-
+and the footer says
+.BR "seen data: none" .
+.TP
+.BI "device show " "name|address " [ \-\-json ]
+One device or host in full: address, hostname, vendor, port, login, legacy ssh,
+description, the scope that answers the address and the prefix that routes it
+(and the scopes it shadows), the vendor tag that covers it, the pinned host keys,
+and every notice, acknowledged ones marked. It warns when the vendor tag and the
+registered vendor disagree.
+.TP
+.BI "device add " "name address " "[ \-\-vendor cisco|juniper|wti|other ] [ \-\-hostname " dns " ] [ \-\-port " n " ] [ \-\-login " user " ] [ \-\-description " text " ] [ \-\-legacy\-ssh ] [ \-\-host\-key SHA256:" fingerprint " | \-\-no\-host\-key ] [ \-\-allow\-generic ]"
+Register a device. The vendor defaults to
+.B other
+(and only drives the ssh profile; it does not tag the address in the scope).
+The address is stored canonically (IPv6 in compressed lower-case form) and may
+carry no prefix length. A name or address that is taken, a reserved word (a
+tacctl command, \c
+.BR local ,
+.BR all ),
+and a generic name are refused. Both host-key options are accepted: no host key
+is scanned or pinned, and the device carries a
+.B hostkey-unpinned
+notice. The output says which scope, if any, answers the address.
+.TP
+.BI "device remove " "name[,name...] | \-\-all " [ \-y ]
+Remove devices from the registry, after confirmation (\c
+.B \-y
+skips it; a closed stdin cancels). Enrolled hosts, scopes and vendor tags are
+not touched.
+.TP
+.BI "device rename " "old new " [ \-\-allow\-generic ]
+Rename a device; acknowledgements stay with it.
+.TP
+.BI "device address " "name " [ address ]
+Show or set the address: the AAA identity of the device, stored canonically. It
+cannot be cleared and may not be one another device holds. Pinned host keys belong
+to the old address and are dropped.
+.TP
+.BI "device hostname " "name " [ dns | clear ]
+Show, set or clear the DNS name (display, and the ssh target when set).
+.TP
+.BI "device vendor " "name " [ cisco | juniper | wti | other ]
+Show or set the vendor;
+.B clear
+sets
+.BR other .
+.TP
+.BI "device port " "name " [ n | clear ]
+Show, set or clear the ssh port (clear is 22).
+.TP
+.BI "device login " "name " [ user | clear ]
+Show, set or clear the ssh login override; unset, ssh uses your own username.
+.TP
+.BI "device description " "name " [ text | clear ]
+Show, set or clear the description (up to 120 characters).
+With no value these verbs print the current one (\c
+.B \-
+when unset).
+.TP
+.BI "device legacy\-ssh " "name " "[ enable | disable ]"
+Show or set the opt-in for the legacy key-exchange and host-key algorithms
+older IOS releases need (off by default).
+.TP
+.BI "device stale\-days " [ n ]
+Show or set the number of days (1 to 3650, default 30) after which a device
+without a sighting counts as stale.
+.TP
+.BI "device notice " "name " "{ ack | unack } " kind
+Acknowledge an accepted notice, or reopen it. Acknowledgements are kept per
+device and per kind in
+.IR devices.yaml ;
+acknowledged notices leave
+.B list
+and
+.B notices
+and stay in
+.B show
+marked as acknowledged. The kinds are
+.BR generic-name ,
+.BR hostkey-unpinned ,
+.BR hostkey-added ,
+.BR hostkey-unreachable ,
+.BR ambiguous-nas-id ,
+.BR generic-nas-id ,
+.BR name-mismatch ,
+.B duplicate-address
+and
+.BR identity-changed ;
+.B hostkey-changed
+cannot be acknowledged.
+.TP
+.BI "device notices " [ name ]
+The open notices (all devices, or one), each with the command that fixes or
+acknowledges it. The notices the registry raises are
+.BR generic-name ,
+for a device or host whose name is a generic one, with the per-vendor command
+that sets a name on the device and the
+.B device rename
+that follows, and
+.BR hostkey-unpinned ,
+for a device with no pinned host key.
+.TP
+.BI "device import " "[ \-\-check ] [ \-\-replace ] [ \-\-allow\-generic ] [ \-y ] " "file|\-"
+Import devices from CSV
+.RB ( name,address[,vendor[,port[,login[,description]]]] ;
+blank lines, lines starting with
+.BR # ,
+and a header row starting
+.B name,address
+are skipped) or from the registry's own YAML, from a file or from stdin
+.RB ( \- ).
+Devices of the file are added, or update the registered device of the same name
+(a CSV row leaves the hostname and the legacy-ssh setting alone; a changed address
+drops the pinned host keys); the rest stay. With
+.B \-\-replace
+the registry becomes exactly the file, after confirmation (\c
+.B \-y
+skips it). Every problem is reported with its line, and nothing is written when
+there is one.
+.B \-\-check
+validates and reports what would change without writing or taking a snapshot.
+.TP
+.BI "device export " "[ \-\-csv | \-\-json ]"
+Print the registry: as YAML (the
+.I devices.yaml
+format, the default), as CSV in the import's columns with a header row, or as a
+JSON array. A reduced-scope caller gets only the devices of its own scopes.
 .SH RADIUS DEVICE CONFIGURATIONS
 .BR "config cisco" ,
 .B "config juniper"
@@ -2292,6 +2489,19 @@ view with
 .BR "tacctl config dump" ;
 re-check the file with
 .BR "tacctl config validate" .
+.TP
+.I /etc/tacctl/devices.yaml
+The device registry (see
+.BR "DEVICE REGISTRY" ):
+registered device names with address, vendor, port, login, hostname,
+description, legacy-ssh, pinned host keys and acknowledged notices, and the
+registry's settings
+.RB ( stale_days ,
+.BR generic_names ).
+Mode 0600, root only; absent means no devices. Edit it with
+.BR "tacctl device" ,
+which locks it, validates the result and replaces it atomically. Snapshots
+include it.
 .TP
 .I /etc/tacctl/rendered.json
 The checksum of every file tacctl rendered, from which

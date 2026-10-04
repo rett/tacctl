@@ -162,6 +162,7 @@ Every change goes one way: check that no generated file was edited by hand → s
 | `/etc/tacctl/rendered.json` | Checksums of the generated files (drift detection) |
 | `/etc/tacctl/backups/` | Snapshots (`<timestamp>/`), `legacy/` (old-style backups, pre-store config, displaced files), `password-dates/` (read by the importer) |
 | `/etc/tacctl/templates/` | Device config templates: a copy of each shipped one, which you may customize (a file here overrides the built-in one); `.shipped.sha256` is the manifest of what tacctl wrote there, `<name>.template.new` is a new release's version beside a template you customized (see [Custom Templates](#custom-templates)) |
+| `/etc/tacctl/devices.yaml` | The device registry (`tacctl device`): names, addresses and settings of the network devices; 0600 root, absent means none. Snapshots include it |
 | `/etc/tacctl/linux-hosts`, `/etc/tacctl/linux-uids` | Enrolled Linux hosts; the UID/GID each user gets on every host |
 | `/var/lib/tacctl/linux/` | pam_tacplus source tarball and container-built modules |
 | `/etc/sudoers.d/tacctl`, `/etc/sudoers.d/tacctl-tiers` | Optional sudoers rules (`tacctl config sudoers install`, `… tiers install`) |
@@ -433,8 +434,8 @@ tacctl config sudoers tiers install   # write /etc/sudoers.d/tacctl-tiers
 ```
 | Local group | Tier (priv-lvl) | tacctl access |
 |---|---|---|
-| `tac-readonly` | read-only (below 7) | `passwd`, `status`, `version`, `help` (also `-h`, `--help`), `user list`, `user show`, `group list`, `scope list`, `backend list`, `backend status` |
-| `tac-operator` | operator (7-14) | read-only set plus `log tail/search/failures/accounting`, `config validate`, `backup list` |
+| `tac-readonly` | read-only (below 7) | `passwd`, `status`, `version`, `help` (also `-h`, `--help`), `user list`, `user show`, `group list`, `scope list`, `backend list`, `backend status`, `device list`, `device show` (their own scopes' devices only) |
+| `tac-operator` | operator (7-14) | read-only set plus `log tail/search/failures/accounting`, `config validate`, `backup list`, `device export` (their own scopes' devices only) |
 | `tac-superuser` | superuser (15) | everything, plus full `sudo` |
 
 Lower-tier rules are `NOPASSWD`. Anything that prints a shared secret or a password hash (`config cisco|juniper|wti`, `scope secret`, `backup diff`, `config dump`, `store show`) stays superuser-only, as does `scope show`, and so does everything that changes anything. tacctl also checks the tier itself on every run, taking it from the user's group in the store rather than from local group membership, and logs denials to syslog. Callers who are not in the local group `tac-users` (root, local admins) are not restricted. `tacctl upgrade` rewrites an installed `/etc/sudoers.d/tacctl-tiers` that differs from the release's rules (after `visudo -cf` accepts them), so a new release's read-only verbs reach the tiers; it never creates the file.
@@ -531,7 +532,7 @@ The same hash serves TACACS+ and RADIUS.
 
 These patterns apply uniformly across every subcommand family:
 
-- **No arguments** — dispatcher commands (`user`, `group`, `config`, `scope`, `host`, `backend`, `store`, `log`, `backup`, `hash`, and nested dispatchers like `scope prefixes` / `scope secret` / `scope aaa-order` / `scope exec-timeout` / `scope tacacs-group` / `scope radius-group` / `scope auth-method` / `scope vendor-attrs` / `scope devices` / `scope mgmt-acl` / `user scope` / `group privilege` / `config linux`) print their own usage and exit without side effects. Scalar getter/setters (`config loglevel`, `config listen`, `config metrics`, `config password-age`, `config bcrypt-cost`, `config password-min-length`, `config secret-min-length`, `config branch`, `scope default`, `host default-method`) print the current value when called with no arguments.
+- **No arguments** — dispatcher commands (`user`, `group`, `config`, `scope`, `host`, `device`, `backend`, `store`, `log`, `backup`, `hash`, and nested dispatchers like `scope prefixes` / `scope secret` / `scope aaa-order` / `scope exec-timeout` / `scope tacacs-group` / `scope radius-group` / `scope auth-method` / `scope vendor-attrs` / `scope devices` / `scope mgmt-acl` / `user scope` / `group privilege` / `config linux`) print their own usage and exit without side effects. Scalar getter/setters (`config loglevel`, `config listen`, `config metrics`, `config password-age`, `config bcrypt-cost`, `config password-min-length`, `config secret-min-length`, `config branch`, `scope default`, `host default-method`, `device address|hostname|vendor|port|login|description|legacy-ssh|stale-days`) print the current value when called with no arguments.
 - **Filters and opt-ins** — a setting that narrows something down is a *filter*: its verbs are `set` and `clear`, and empty (cleared) means everything (`scope protocols`, `config allow`, `config deny`). A setting that turns something on is an *opt-in*: its verbs are `enable` and `disable`, and nothing is on until it is enabled (`backend enable|disable`, `scope vendor-attrs`). An opt-in has no verb that could read as "empty means all".
 - **Membership lists** — a list that names exactly what is in is a *membership list*, and empty means nothing, not everything (`user scope`, the scopes a user can authenticate from: none means nowhere; `scope prefixes`, the clients a scope serves: emptying it removes the scope). Its verbs are `add` and `remove`: `remove --all` empties it, and `user scope` replaces its whole list with `replace`.
 - **Multi-item input** — every `add` / `remove` that takes a CIDR, a scope name, or a Cisco exec command accepts either a single value or a comma-separated list (`a,b,c`). Every input is validated first; a bad entry aborts the entire operation without writing anything.
@@ -553,6 +554,7 @@ tacctl user <subcommand>        # User management (incl. per-user scope membersh
 tacctl group <subcommand>       # Group management
 tacctl scope <subcommand>       # Scope management (CIDR+secret bundles)
 tacctl host <subcommand>        # Linux hosts: enroll, sync, unenroll, default-method
+tacctl device <subcommand>      # Device registry: names, addresses and notices for the devices that authenticate here
 tacctl backend <subcommand>     # Backends: list, status, enable, disable
 tacctl store <subcommand>       # The canonical store: show, import, rollback
 tacctl config <subcommand>      # Configuration
@@ -801,6 +803,42 @@ host sync <name>|--all                      Push account adds, removals and tier
       --adopt <name>[,<name>...]            (enroll and sync) take over accounts that already exist on the host
 host unenroll <name> [--force]              Remove the login method from the host (accounts are kept); --force drops it from the registry even if the removal fails
 host default-method [tacplus|radius]        Show or set the method for hosts enrolled without --method (host.default_method)
+```
+
+### Device Commands — `tacctl device`
+
+The device registry gives names to the network devices that authenticate here. It lives in `/etc/tacctl/devices.yaml` and never touches `store.yaml`: a device's scope and vendor tag are looked up from the store when shown, so registering a device renders nothing and restarts nothing. Every write takes a snapshot first.
+
+```
+device list [--stale] [--unconfigured] [--json]   Registered devices, then enrolled hosts: scope, STATE (configured: a scope's prefixes cover the address; unconfigured), last seen / by / via, open notices
+device show <name|address> [--json]               One entry in full (scope and routing prefix, shadowed scopes, vendor tag, pinned keys, notices)
+device add <name> <address>                       Register a device (writes: administrators only)
+      --vendor cisco|juniper|wti|other            Default other; drives the ssh profile, never tags the address in the scope
+      --hostname <dns>, --port <n>, --login <user>, --description <text>, --legacy-ssh
+      --host-key SHA256:<fp> | --no-host-key      Accepted; no host key is pinned yet and the device carries a hostkey-unpinned notice
+      --allow-generic                             Register a generic name (switch, router, cisco, ubuntu, ...) anyway
+device remove <name>[,<name>...] | --all [-y]     Remove from the registry (confirms; hosts, scopes and vendor tags are not touched)
+device rename <old> <new> [--allow-generic]
+device address|hostname|vendor|port|login|description <name> [<value>|clear]   Show, set or clear one field
+device legacy-ssh <name> [enable|disable]         Opt in to the legacy IOS ssh algorithms
+device stale-days [<n>]                           Days without a sighting after which a device is stale (default 30)
+device notice <name> ack|unack <kind>             Acknowledge or reopen a notice
+device notices [<name>]                           The open notices, each with the command that fixes or acknowledges it
+device import [--check] [--replace] [--allow-generic] [-y] <file|->   CSV (name,address[,vendor[,port[,login[,description]]]]) or the registry's YAML; merges by default
+device export [--csv|--json]                      The registry (YAML by default), only the devices of your own scopes below the administrator tier
+```
+
+A device is found by name (any case) or by its registered address; an unregistered address is not found, even when a scope covers it. An address is registered once. Enrolled Linux hosts share the namespace and appear in `list` and `show` as `linux` entries, read-only. `list` and `show` are open to the read-only and operator tiers, limited to the entries of their own scopes; `export` is operator-level, filtered the same way.
+
+A name that is a factory or image default is refused with the command that names the device on the device itself (`hostname`, `set system host-name`, ...); a host enrolled under such a name before the registry existed is not refused and carries a `generic-name` notice. `host enroll --name` follows the same rules. Add your own patterns with `generic_names:` (regular expressions, whole-name, case-insensitive) in `devices.yaml`. There is no seen data yet, so the last seen, by and via columns print `-`.
+
+```yaml
+# /etc/tacctl/devices.yaml
+version: 1
+settings: {stale_days: 30}
+devices:
+  core-sw1: {address: 10.99.0.1, vendor: cisco, legacy_ssh: true, description: DC1 core}
+  lab-rtr2: {address: 192.0.2.7, vendor: juniper, hostname: lab-rtr2.lab.example.net}
 ```
 
 ### Backend Commands — `tacctl backend`
