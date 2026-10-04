@@ -2,6 +2,10 @@
 
 Management toolkit for network-device AAA. Users, groups and scopes are kept once, in tacctl's own store, and served over **TACACS+** by [tacquito](https://github.com/facebookincubator/tacquito) (RFC 8907, by Facebook Incubator) and, when enabled, over **RADIUS** by a tacctl-owned FreeRADIUS instance. Provides a CLI for user, group, and configuration management with multi-vendor support for Cisco IOS/IOS-XE and Juniper Junos devices, plus WTI console servers and Linux hosts.
 
+## What's new in 0.1.18
+
+- **Installing on a server without Go works again.** `tacctl install` downloads Go and its published checksum from `dl.google.com`, and installs Go only after the download is verified: a checksum that cannot be fetched, or a failed download, stops the install with an error.
+
 ## What's new in 0.1.17
 
 - **Upgrade rollback works again for the tacquito binary.** The backup `tacctl upgrade` takes before rebuilding tacquito keeps the binary's permissions, so a binary restored after a failed build or a failed restart can be started by the `tacquito` service user.
