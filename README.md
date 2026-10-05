@@ -459,10 +459,10 @@ Each of tacctl's groups has a fixed GID, the same on every host: the first numbe
 | Group | GID | Where | Used for |
 |---|---|---|---|
 | `tac-users` | 80000 | every host | primary group of every account tacctl manages; PAM sends only its members to the server; the server's tier check |
-| `tac-readonly` | 80001 | the tacctl server | its tiers sudoers |
-| `tac-operator` | 80002 | the tacctl server | its tiers sudoers |
-| `tac-superuser` | 80003 | every host | `%tac-superuser` sudo (and the tiers sudoers on the server) |
-| `tac-console` | 80004 | the tacctl server | sshd's login-console drop-in |
+| `tac-console` | 80001 | the tacctl server | sshd's login-console drop-in |
+| `tac-superuser` | 80002 | every host | `%tac-superuser` sudo (and the tiers sudoers on the server) |
+| `tac-operator` | 80003 | the tacctl server | its tiers sudoers |
+| `tac-readonly` | 80004 | the tacctl server | its tiers sudoers |
 
 Accounts have no group of their own; with a shared primary group, each home is made 0700 when the account is created or moved. The first enroll or sync with this release moves what an earlier one made, once: each managed account's primary group becomes `tac-users` (`usermod -g` re-groups the files in its home) and its own group is removed when it has no members; each group moves to its fixed GID (`groupmod -g`; files in the managed homes that carried `tac-users`' old number follow it); on a host other than the tacctl server, `tac-readonly`, `tac-operator` and `tac-console` are removed when only tacctl's accounts are in them (otherwise kept, and said). A fixed GID that another group already holds on the host is left to it: tacctl's group keeps or gets another number, with a warning (`Group 'tac-users' keeps GID 1001, not 80000: GID 80000 belongs to group '<other>' here.`).
 

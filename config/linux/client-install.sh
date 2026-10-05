@@ -832,8 +832,8 @@ renumber_previous() {
 
 # --- tacctl's groups -----------------------------------------------------------
 # Each has a fixed GID, the same on every host: the first numbers of the
-# server's range (tac-users first, tac-readonly +1, tac-operator +2,
-# tac-superuser +3, tac-console +4). Every host has tac-users (the primary
+# server's range (tac-users first, tac-console +1, tac-superuser +2,
+# tac-operator +3, tac-readonly +4). Every host has tac-users (the primary
 # group of every account tacctl manages, and the PAM gate) and
 # tac-superuser (sudo); the tacctl server itself (TAC_LOCAL=1) also has the
 # other two tiers' groups (its tiers sudoers) and tac-console (sshd's
@@ -847,7 +847,7 @@ TAC_GROUPS="${G_USERS} tac-readonly tac-operator tac-superuser tac-console"
 # group_gid <group>: the fixed GID of one of tacctl's groups.
 group_gid() {
     local i=0 g
-    for g in $TAC_GROUPS; do
+    for g in "$G_USERS" tac-console tac-superuser tac-operator tac-readonly; do
         if [[ "$g" == "$1" ]]; then echo $((TAC_UID_FIRST + i)); return 0; fi
         i=$((i + 1))
     done
@@ -946,6 +946,31 @@ fix_gid() {
     info "Group '${g}' is now GID ${want} (was ${cur})."
 }
 
+# park_groups: one of tacctl's groups that holds another one's fixed GID
+# (an earlier build numbered them in another order) moves to a free GID
+# first, so that each can then take its own.
+park_groups() {
+    local g cur want spare name home
+    for g in $TAC_GROUPS; do
+        cur=$(getent group "$g" | cut -d: -f3 || true)
+        want=$(group_gid "$g")
+        [[ -n "$cur" && "$cur" != "$want" ]] || continue
+        (( cur >= TAC_UID_FIRST && cur < TAC_UID_FIRST + 5 )) || continue
+        for ((spare = TAC_UID_LAST; spare > TAC_UID_FIRST + 4; spare--)); do
+            getent group "$spare" >/dev/null || break
+        done
+        groupmod -g "$spare" "$g" || continue
+        if [[ "$g" == "$G_USERS" ]]; then
+            while IFS= read -r name; do
+                home=$(getent passwd "$name" | cut -d: -f6)
+                if [[ -n "$home" && "$home" != "/" && -d "$home" && ! -L "$home" ]]; then
+                    find "$home" -xdev -gid "$cur" -exec chgrp -h "$spare" {} + 2>/dev/null || true
+                fi
+            done < <(managed_accounts)
+        fi
+    done
+}
+
 # drop_group <group>: a group this host does not use goes, unless an
 # account tacctl does not manage is in it or has it as primary group.
 drop_group() {
@@ -981,6 +1006,7 @@ fix_groups() {
     while IFS= read -r name; do
         shared_primary "$name"
     done < <(managed_accounts)
+    park_groups
     for g in $(host_groups); do
         fix_gid "$g"
     done

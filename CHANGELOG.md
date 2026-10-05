@@ -719,8 +719,8 @@ current behaviour; this file is where history lives.
     longer raises notices for it.
 62. **Fixed tacctl groups; `tac-users` is every account's primary group.**
     tacctl's groups now have the same GID on every host, the first numbers
-    of the UID range: `tac-users` 80000, `tac-readonly` 80001,
-    `tac-operator` 80002, `tac-superuser` 80003, `tac-console` 80004 (they
+    of the UID range: `tac-users` 80000, `tac-console` 80001,
+    `tac-superuser` 80002, `tac-operator` 80003, `tac-readonly` 80004 (they
     follow `config linux uid-range`). A host has only the groups it uses:
     every host `tac-users` (the PAM gate) and `tac-superuser` (sudo); the
     tacctl server itself also `tac-readonly`, `tac-operator` (its tiers

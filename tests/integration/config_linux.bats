@@ -262,7 +262,7 @@ _client_env() {
     assert_success
     # tacctl's groups of a host other than the server, at their fixed GIDs.
     stub_called "groupadd -g 80000 tac-users"
-    stub_called "groupadd -g 80003 tac-superuser"
+    stub_called "groupadd -g 80002 tac-superuser"
     run grep -cE "^groupadd .*(tac-readonly|tac-operator|tac-console|alice|bob)" "$CALLS_LOG"
     assert_output "0"
     stub_called "useradd -m -u 80000 -g tac-users -s /bin/bash .* alice"
@@ -288,10 +288,10 @@ bob"
     run bash "$OUT" --accounts-only
     assert_success
     stub_called "groupadd -g 80000 tac-users"
-    stub_called "groupadd -g 80001 tac-readonly"
-    stub_called "groupadd -g 80002 tac-operator"
-    stub_called "groupadd -g 80003 tac-superuser"
-    stub_called "groupadd -g 80004 tac-console"
+    stub_called "groupadd -g 80001 tac-console"
+    stub_called "groupadd -g 80002 tac-superuser"
+    stub_called "groupadd -g 80003 tac-operator"
+    stub_called "groupadd -g 80004 tac-readonly"
     stub_called "usermod -aG tac-users,tac-superuser alice"
     stub_called "usermod -aG tac-users,tac-readonly bob"
 }
@@ -313,14 +313,14 @@ bob"
     stub_called "groupdel bob"
     assert_output --partial "[INFO] 'alice': primary group is now tac-users (was GID 80000)."
     stub_called "groupmod -g 80000 tac-users"
-    stub_called "groupmod -g 80003 tac-superuser"
+    stub_called "groupmod -g 80002 tac-superuser"
     assert_output --partial "[INFO] Group 'tac-users' is now GID 80000 (was 1001)."
     # Only tacctl's accounts in them: removed. admin keeps tac-console.
     stub_called "groupdel tac-readonly"
     stub_called "groupdel tac-operator"
     assert_output --partial "[INFO] Group 'tac-console' is not used by tacctl on this host, but is kept: admin."
     run grep -E "^(alice|bob|tac-[a-z]+):" "$FAKE_DB/group"
-    assert_output $'tac-users:x:80000:alice,bob\ntac-superuser:x:80003:alice\ntac-console:x:20002:alice,admin'
+    assert_output $'tac-users:x:80000:alice,bob\ntac-superuser:x:80002:alice\ntac-console:x:20002:alice,admin'
     run grep -E "^(alice|bob):" "$FAKE_DB/passwd"
     assert_line --partial "alice:x:80000:80000:"
     assert_line --partial "bob:x:80001:80000:"
@@ -351,13 +351,26 @@ bob"
     assert_output --partial "alice:x:80000:80000:"
 }
 
+@test "client install: tacctl's groups numbered in an earlier build's order swap to their fixed GIDs" {
+    _gen > /dev/null
+    _client_env
+    _local_header
+    printf '%s\n' "tac-users:x:80000:" "tac-readonly:x:80001:" "tac-operator:x:80002:" \
+        "tac-superuser:x:80003:" "tac-console:x:80004:" >> "$FAKE_DB/group"
+    run bash "$OUT" --accounts-only
+    assert_success
+    refute_output --partial "[WARN] Group"
+    run grep -E "^tac-" "$FAKE_DB/group"
+    assert_output $'tac-users:x:80000:\ntac-readonly:x:80004:\ntac-operator:x:80003:\ntac-superuser:x:80002:\ntac-console:x:80001:'
+}
+
 @test "client install: a fixed GID held by another group is left to it, and said" {
     _gen > /dev/null
     _client_env
-    echo 'staff9:x:80003:' >> "$FAKE_DB/group"
+    echo 'staff9:x:80002:' >> "$FAKE_DB/group"
     run bash "$OUT" --accounts-only
     assert_success
-    assert_output --partial "[WARN] Group 'tac-superuser' was created with GID 900, not 80003: GID 80003 belongs to group 'staff9' here."
+    assert_output --partial "[WARN] Group 'tac-superuser' was created with GID 900, not 80002: GID 80002 belongs to group 'staff9' here."
     stub_called "groupadd -g 80000 tac-users"
 }
 
@@ -894,7 +907,7 @@ CONSOLE=/usr/local/bin/tacctl-console
     _console_header "$CONSOLE" /bin/bash
     run bash "$OUT" --accounts-only
     assert_success
-    stub_called "groupadd -g 80004 tac-console"
+    stub_called "groupadd -g 80001 tac-console"
     stub_called "useradd -m -u 80000 -g tac-users -s ${CONSOLE} -K UID_MIN=80000 -K UID_MAX=89999 -c alice \\(TACACS\\+\\) alice"
     stub_called "useradd -m -u 80001 -g tac-users -s /bin/bash -K UID_MIN=80000 -K UID_MAX=89999 -c bob \\(TACACS\\+\\) bob"
     stub_called "usermod -aG tac-users,tac-superuser,tac-console alice"

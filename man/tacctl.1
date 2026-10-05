@@ -838,14 +838,14 @@ changes.
 tacctl's groups have fixed GIDs, the first numbers of the range:
 .B tac\-users
 (+0, every host: every managed account's primary group and the PAM gate),
-.B tac\-readonly
-(+1) and
-.B tac\-operator
-(+2) (the tacctl server only: its tiers sudoers),
-.B tac\-superuser
-(+3, every host: sudo) and
 .B tac\-console
-(+4, the tacctl server only: sshd's console drop-in). Accounts have no group
+(+1, the tacctl server only: sshd's console drop-in),
+.B tac\-superuser
+(+2, every host: sudo),
+.B tac\-operator
+(+3) and
+.B tac\-readonly
+(+4) (the tacctl server only: its tiers sudoers). Accounts have no group
 of their own and get a 0700 home. A sync moves what an earlier release made:
 primary groups to
 .BR tac\-users ;
