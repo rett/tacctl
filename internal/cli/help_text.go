@@ -28,6 +28,7 @@ Commands:
   device <subcommand>                   Device registry: list, add, scan, discover, check, host keys (ssh-config)
   ssh <name|address> [-p <port>]        Open an ssh session to a registered device or enrolled host, as you
   shell [--idle <min>] [-c <line>]      An interactive tacctl prompt with history and completion
+  console <subcommand>                  Login console: tiers, per-user overrides, settings (show, tiers, user, ...)
   backend <subcommand>                  Auth backends: list, status, enable <id>, disable <id>
   store <subcommand>                    The canonical store: show, import, rollback
   config <subcommand>                   Configuration (show, render, cisco, juniper, wti, validate, ...)

@@ -130,6 +130,9 @@ type Snapshotter struct {
 	// DevicesFile is devices.yaml, the device registry: part of a snapshot
 	// when it exists, nothing to do when it does not ("" too).
 	DevicesFile string
+	// ConsoleFile is console.yaml, the login console's settings: part of a
+	// snapshot the same way.
+	ConsoleFile string
 	Rendered    string // RENDERED_FILE, copied into the manifest
 	BackupDir   string // BACKUP_DIR
 	// Version is the tacctl version the manifest records ("unknown" when
@@ -160,6 +163,7 @@ func New(p paths.Paths, version string, now func() time.Time, out ui.Output) *Sn
 		StoreFile:   p.StoreFile,
 		Overrides:   p.Overrides,
 		DevicesFile: p.DevicesFile,
+		ConsoleFile: p.ConsoleFile,
 		Rendered:    p.Rendered,
 		BackupDir:   p.BackupDir,
 		Version:     version,
@@ -306,6 +310,13 @@ func (s *Snapshotter) current(dir string) bool {
 	} else if lexists(filepath.Join(dir, "devices.yaml")) {
 		return false
 	}
+	if isRegular(s.ConsoleFile) {
+		if !sameBytes(s.ConsoleFile, filepath.Join(dir, "console.yaml")) {
+			return false
+		}
+	} else if lexists(filepath.Join(dir, "console.yaml")) {
+		return false
+	}
 	if isRegular(s.Overrides) {
 		return sameBytes(s.Overrides, filepath.Join(dir, "tacctl.yaml"))
 	}
@@ -330,6 +341,11 @@ func (s *Snapshotter) fill(dir string, now time.Time) error {
 	}
 	if isRegular(s.DevicesFile) {
 		if err := copyFile(s.DevicesFile, filepath.Join(dir, "devices.yaml")); err != nil {
+			return err
+		}
+	}
+	if isRegular(s.ConsoleFile) {
+		if err := copyFile(s.ConsoleFile, filepath.Join(dir, "console.yaml")); err != nil {
 			return err
 		}
 	}

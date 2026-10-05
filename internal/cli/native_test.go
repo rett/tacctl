@@ -62,6 +62,8 @@ func newSandbox(t *testing.T, withStore bool) *sandbox {
 		"TACCTL_OVERRIDE_DIR=" + filepath.Join(w, "systemd", "tacquito.service.d"),
 		"TACCTL_SETTLE_SECONDS=0",
 		"TACCTL_LOGIN_DEFS=" + filepath.Join(w, "login.defs"),
+		"TACCTL_SSHD_DROPIN=" + filepath.Join(w, "sshd_config.d", "tacctl-console.conf"),
+		"TACCTL_SHELLS_FILE=" + filepath.Join(w, "shells"),
 		"TMPDIR=" + filepath.Join(w, "tmp"),
 	}
 	return sb

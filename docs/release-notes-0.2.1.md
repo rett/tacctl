@@ -43,7 +43,7 @@ What to expect:
   host's address in the device registry (item 41) and warns when the host's
   `/etc/login.defs` lets local `useradd` give out UIDs of 80000-89999
   (item 42; keep `UID_MAX` below 80000 there, as the default 60000 is).
-- **UIDs move to 80000-89999, once** (items 35 and 46). The first `config
+- **UIDs move to 80000-89999, once** (items 35 and 52). The first `config
   linux uid`, `config linux script`, `host enroll` or `host sync` after the
   upgrade renumbers `/etc/tacctl/linux-uids` from 20000-29999 to the same
   offset in 80000-89999 (20005 becomes 80005), keeps the old file as
@@ -365,7 +365,7 @@ What to expect:
     (65536-524287) and below the usual `/etc/subuid` start (100000). tacctl
     gives out UIDs (and the matching primary GIDs) from that range, after
     the highest one given so far; a removed user's number stays reserved and
-    is never reused. Existing numbers are moved once (item 46). Past 89999
+    is never reused. Existing numbers are moved once (item 52). Past 89999
     the script is refused: `[ERROR] No UID left for '<user>': every number
     of 80000-89999 has been given out (UIDs are never reused).` and `Give it
     a free number of the range by hand: tacctl config linux uid <user>
@@ -390,7 +390,7 @@ What to expect:
     again.` An out-of-range account tacctl created is reported (`'<user>' has
     UID <uid>, outside 80000-89999: tacctl changes nothing on it but its
     membership in tacctl's groups, although it created it.`); one it created
-    in 20000-29999 is renumbered first (item 46).
+    in 20000-29999 is renumbered first (item 52).
 37. **`--adopt` is gone** (`host enroll`, `host sync` and the client script:
     `Unknown option: '--adopt'`). A local account named like a tacctl user
     that tacctl did not create no longer stops the install or sync: that user
@@ -494,7 +494,7 @@ What to expect:
     after a snapshot, and `host target name= target= port= by=` is logged
     (auth.info). No script runs on the host. `host target <TAB>` completes
     the enrolled names.
-46. **UIDs given out from 20000 up are renumbered once to 80000-89999**, at
+52. **UIDs given out from 20000 up are renumbered once to 80000-89999**, at
     the same offset (20005 becomes 80005). On the server, the first `config
     linux uid`, `config linux script`, `host enroll` or `host sync` rewrites
     every entry of `/etc/tacctl/linux-uids` in 20000-29999 (users and

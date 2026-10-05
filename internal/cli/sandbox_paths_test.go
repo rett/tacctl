@@ -21,6 +21,7 @@ func sandboxPathEnv(dir string) []string {
 		"TACCTL_LOGROTATE_DIR=" + j("logrotate.d"), "TACQUITO_SRC=" + j("tacquito-src"), "TACCTL_LINUX_DIR=" + j("linux"),
 		"TACCTL_LOGIN_DEFS=" + j("login.defs"),
 		"TACCTL_VAR_LIB=" + j("var-lib"),
+		"TACCTL_SSHD_DROPIN=" + j("sshd_config.d", "tacctl-console.conf"), "TACCTL_SHELLS_FILE=" + j("shells"),
 		"TACCTL_TREE=" + j("tree"),
 		"TACCTL_RADIUS_DIR=" + j("raddb"), "TACCTL_RADIUS_LOG=" + j("radius-log"),
 		"TACCTL_RADIUS_BIN=" + j("radius-bin", "radiusd"), "TACCTL_RADIUS_DICT=" + j("radius-share", "dictionary"),
@@ -40,12 +41,12 @@ func hostDefaults(p paths.Paths, root string) []string {
 		"BackupDir": p.BackupDir, "Overrides": p.Overrides, "StoreFile": p.StoreFile, "Rendered": p.Rendered,
 		"LinuxUIDs": p.LinuxUIDs, "LinuxHosts": p.LinuxHosts, "Templates": p.Templates,
 		"DevicesFile": p.DevicesFile, "KnownHosts": p.KnownHosts, "ConsoleFile": p.ConsoleFile,
-		"ConsoleDir": p.ConsoleDir, "VarLib": p.VarLib, "SeenCache": p.SeenCache,
+		"SSHDDropIn": p.SSHDDropIn, "ShellsFile": p.ShellsFile, "VarLib": p.VarLib, "SeenCache": p.SeenCache,
 		"SudoersFile": p.SudoersFile, "TierSudoersFile": p.TierSudoersFile,
 		"OverrideDir": p.OverrideDir, "TacacsUnitDir": p.TacacsUnitDir, "SystemdDir": p.SystemdDir,
 		"LogrotateDir": p.LogrotateDir, "TacquitoSrc": p.TacquitoSrc, "LinuxDir": p.LinuxDir, "LoginDefs": p.LoginDefs,
 		"Tree": p.Tree, "PatchDir": p.PatchDir,
-		"Deploy": p.Deploy, "Command": p.Command, "GoBin": p.GoBin, "Completion": p.Completion,
+		"Deploy": p.Deploy, "Command": p.Command, "ConsoleCommand": p.ConsoleCommand, "GoBin": p.GoBin, "Completion": p.Completion,
 		"ManPage": p.ManPage, "ArchiveDir": p.ArchiveDir,
 	}
 	for _, fam := range []string{"debian", "rhel"} {

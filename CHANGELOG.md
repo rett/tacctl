@@ -302,7 +302,7 @@ current behaviour; this file is where history lives.
     (65536-524287) and below the usual `/etc/subuid` start (100000). tacctl
     gives out UIDs (and the matching primary GIDs) from that range, after
     the highest one given so far; a removed user's number stays reserved and
-    is never reused. Existing numbers are moved once (item 46). Past 89999
+    is never reused. Existing numbers are moved once (item 52). Past 89999
     the script is refused: `[ERROR] No UID left for '<user>': every number
     of 80000-89999 has been given out (UIDs are never reused).` and `Give it
     a free number of the range by hand: tacctl config linux uid <user>
@@ -327,7 +327,7 @@ current behaviour; this file is where history lives.
     again.` An out-of-range account tacctl created is reported (`'<user>' has
     UID <uid>, outside 80000-89999: tacctl changes nothing on it but its
     membership in tacctl's groups, although it created it.`); one it created
-    in 20000-29999 is renumbered first (item 46).
+    in 20000-29999 is renumbered first (item 52).
 37. **`--adopt` is gone** (`host enroll`, `host sync` and the client script:
     `Unknown option: '--adopt'`). A local account named like a tacctl user
     that tacctl did not create no longer stops the install or sync: that user
@@ -431,7 +431,78 @@ current behaviour; this file is where history lives.
     after a snapshot, and `host target name= target= port= by=` is logged
     (auth.info). No script runs on the host. `host target <TAB>` completes
     the enrolled names.
-46. **UIDs given out from 20000 up are renumbered once to 80000-89999**, at
+46. **New: `tacctl console show|tiers|user|idle-timeout|agent-forwarding|
+    ssh-escape|system-shell`** with `/etc/tacctl/console.yaml` (0600,
+    snapshotted, in `backup diff` and `restore`; absent means the defaults:
+    the console on for every tier, `system-shell` for superusers only,
+    `/bin/bash`, idle timeout 30 minutes, agent forwarding and ssh escape
+    off). `show` (operator tier and up) prints the switch per tier, the
+    settings, each user of this server's scope with its effective shell and
+    why (`console (user override)`, `bash (tier readonly disabled)`), and
+    the server's pieces: the `tacctl-console` symlink, the `/etc/shells`
+    line, sshd's drop-in and what `sshd -T -C user=<user>` reports, with a
+    red warning when the drop-in is missing or sshd still allows TCP
+    forwarding for a console user. Changes to the tier switches, a user
+    override and agent forwarding print `Apply to the accounts: tacctl host
+    sync <name>`; the commands change `console.yaml` only. The top-level
+    usage lists `console`. New paths:
+    `TACCTL_SSHD_DROPIN` (default
+    `/etc/ssh/sshd_config.d/tacctl-console.conf`) and `TACCTL_SHELLS_FILE`
+    (default `/etc/shells`).
+47. **Tiers sudoers:** rows `_console-policy` (every tier: the console
+    reads its settings with it), `console show` and `console check`
+    (operator); the `Defaults!` line is now `env_keep += "SSH_AUTH_SOCK
+    TACCTL_CONSOLE"` in both generated sudoers files (the console's
+    session marker). Picked up by `tacctl upgrade` (item 4);
+    administrators using the opt-in drop-in re-run `tacctl config sudoers
+    install`.
+48. **New: the login console `tacctl-console`.** Started under that name
+    (a symlink to `tacctl`; as a login shell, `-tacctl-console`) tacctl is
+    `tacctl shell` with a `<host>> ` prompt and a banner, runs each line as
+    `sudo [-n] TACCTL_CONSOLE=<session> /usr/local/bin/tacctl <words>`,
+    starts nothing else, and discards the login environment but `TERM`,
+    `LANG`/`LC_*`, `HOME`, `USER`, `LOGNAME` and `SSH_CONNECTION`,
+    `SSH_CLIENT`, `SSH_TTY` (`PATH=/usr/local/bin:/usr/bin:/bin`). It asks
+    the server for its settings once per session (`_console-policy`).
+    `-c '<line>'` (sshd's remote command: `ssh <server> 'user list'`) runs
+    one tacctl line; `scp`, `sftp`, `rsync` and every other program are
+    refused with `the tacctl console does not run programs; file transfer
+    is not available`, exit 126, and any other argument with `the tacctl
+    console takes no options`. Standard input that is not a terminal runs
+    as a batch. The session ends after the idle timeout at the prompt
+    (`tacctl console idle-timeout`, default 30 minutes). Sessions and
+    refusals are logged to syslog (tag `tacctl-console`: `console start`,
+    `console end … reason= lines= status=`, `console DENY … first=`), each
+    line in sudo's log as well. The test knob `TACCTL_TEST_CONSOLE_ENV=1`
+    (`-tags testknobs` builds) keeps `TACCTL_*` and `PATH` for the test
+    sandbox.
+49. **New console word `system-shell`:** starts the user's system shell
+    (`/bin/bash`, `console system-shell path`) as themselves, without
+    arguments, with the console's environment and `SHELL=<path>`, logged
+    with start, end, status and duration (`console system-shell
+    start|end`); superusers only by default (`console system-shell tiers
+    <csv>|none`); refused for other tiers with the command that enables it
+    (`console system-shell DENY`); not available through `-c` or in a
+    batch (exit 126); the idle timer does not run while it does; `help`
+    and Tab name it only in the console.
+50. **`tacctl ssh` inside a console session** runs ssh with `-F /dev/null`
+    (no `~/.ssh/config` or `/etc/ssh/ssh_config`), `-o
+    PermitLocalCommand=no -o ControlMaster=no -o ClearAllForwardings=yes -o
+    ForwardAgent=no`, `-o EscapeChar=none` (`console ssh-escape enable`
+    keeps `~.`/`~C`), and the target after `--`, so words after the name's
+    `--` are only the remote command (one starting with `-` is refused); it
+    refuses a device or host with no pinned host key (`'<name>' has no
+    pinned host key, so the console does not connect to it; an
+    administrator pins it: tacctl device hostkey <name> accept`, logged
+    `reason=unpinned`). Every `tacctl ssh` now also logs `ssh end user=
+    device= status= duration=` when the session ends; from a console
+    session its log lines end with `console=<session>`.
+51. **`tacctl shell`: a superuser's lines run `sudo` without `-n`**, so
+    sudo asks for the network password on the terminal when a line needs
+    it (once; sudo's cache applies) and superusers' write verbs work from
+    the shell and the console; readonly and operator lines (and those of a
+    `tac-users` member in no tier group) keep `-n`.
+52. **UIDs given out from 20000 up are renumbered once to 80000-89999**, at
     the same offset (20005 becomes 80005). On the server, the first `config
     linux uid`, `config linux script`, `host enroll` or `host sync` rewrites
     every entry of `/etc/tacctl/linux-uids` in 20000-29999 (users and

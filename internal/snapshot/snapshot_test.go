@@ -528,3 +528,34 @@ func TestSnapshotHoldsDevicesYAMLWhenItExists(t *testing.T) {
 		t.Fatal("a removed devices.yaml made no snapshot")
 	}
 }
+
+func TestSnapshotHoldsConsoleYAMLWhenItExists(t *testing.T) {
+	e := newEnv(t)
+	first := e.take()
+	if _, err := os.Lstat(filepath.Join(e.backups(), first, "console.yaml")); err == nil {
+		t.Fatal("console.yaml in a snapshot taken without one")
+	}
+	e.write("console.yaml", "version: 1\n")
+	second := e.take()
+	if second == "" {
+		t.Fatal("a new console.yaml did not make a snapshot")
+	}
+	snap := filepath.Join(e.backups(), second, "console.yaml")
+	if m := mode(t, snap); m != 0o600 {
+		t.Fatalf("console.yaml mode %v", m)
+	}
+	if got, _ := os.ReadFile(snap); string(got) != "version: 1\n" {
+		t.Fatalf("console.yaml %q", got)
+	}
+	if id := e.take(); id != "" {
+		t.Fatalf("took %q", id)
+	}
+	e.appendTo("console.yaml", "# note\n")
+	if id := e.take(); id == "" {
+		t.Fatal("a changed console.yaml made no snapshot")
+	}
+	_ = os.Remove(filepath.Join(e.state, "console.yaml"))
+	if id := e.take(); id == "" {
+		t.Fatal("a removed console.yaml made no snapshot")
+	}
+}

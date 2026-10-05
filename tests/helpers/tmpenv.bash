@@ -13,6 +13,9 @@ tacctl_tmpenv_init() {
     export TACCTL_SUDOERS_FILE="${BATS_TEST_TMPDIR}/sudoers.d/tacctl"
     # This server's login.defs, read by 'host enroll --local' (absent: not read).
     export TACCTL_LOGIN_DEFS="${BATS_TEST_TMPDIR}/login.defs"
+    # The login console's server pieces: sshd's drop-in and /etc/shells.
+    export TACCTL_SSHD_DROPIN="${BATS_TEST_TMPDIR}/sshd_config.d/tacctl-console.conf"
+    export TACCTL_SHELLS_FILE="${BATS_TEST_TMPDIR}/shells"
     # The RADIUS backend's paths: its raddb, log
     # directory, daemon binary and logrotate directory. The systemd directory
     # is TACCTL_SYSTEMD_DIR, shared with the TACACS+ backend.

@@ -100,7 +100,7 @@ func TestPtyShellHelp(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := strings.ReplaceAll(s.Output(), "\r\n", "\n")
-	if want := shellTop("0.2.1-pty"); !strings.Contains(out, want) {
+	if want := shellTop("0.2.1-pty", false); !strings.Contains(out, want) {
 		t.Errorf("help is not the usage block:\n%q\nwant\n%q", out, want)
 	}
 	// The command list is the one of 'tacctl' itself.

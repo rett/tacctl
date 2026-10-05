@@ -57,3 +57,7 @@ func loadKnobs(env paths.Env) (Knobs, error) {
 	}
 	return k, nil
 }
+
+// ConsoleTestEnv reports whether env sets TACCTL_TEST_CONSOLE_ENV=1: the
+// console then keeps TACCTL_* and PATH (console.Scrub's keepTest).
+func ConsoleTestEnv(env paths.Env) bool { return env.Get(EnvTestConsoleEnv) == "1" }
