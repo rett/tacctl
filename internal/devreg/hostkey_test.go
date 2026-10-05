@@ -248,7 +248,7 @@ func testKeyWithBlob(t *testing.T, k, from HostKey) HostKey {
 
 func TestVerifyHint(t *testing.T) {
 	for v, want := range map[string]string{
-		"cisco": "show ip ssh", "juniper": "show system ssh host-key", "wti": "verify on the device console",
+		"cisco": "show ip ssh", "juniper": "file show /etc/ssh/ssh_host_ed25519_key.pub", "wti": "verify on the device console",
 		"linux": "ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub", "other": "fingerprint of its ssh host key", "": "fingerprint of its ssh host key",
 	} {
 		if !strings.Contains(VerifyHint(v), want) {

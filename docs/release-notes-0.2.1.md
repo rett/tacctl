@@ -1,11 +1,57 @@
-# Changelog
+# tacctl 0.2.1
 
-All notable changes to tacctl. The README and the manual page describe only the
-current behaviour; this file is where history lives.
+0.2.1 adds a device registry and ssh by name: `tacctl device` names the network
+devices that authenticate against the server, shows which of them have been
+seen and which addresses authenticate without being registered, and pins their
+ssh host keys; `tacctl ssh <name>` opens a session to one as the invoking user,
+by password. It also adds `tacctl shell` (an interactive prompt with completion
+and history), zsh and fish completion, signed release binaries (amd64 and
+arm64), and a stricter account lifecycle for Linux hosts. The numbered list
+below is everything that differs from 0.2.0, and nothing else.
 
-## 0.2.1 (unreleased)
+## Upgrading from 0.2.0
 
-### What changed
+Upgrade with `sudo tacctl upgrade` as always. A new server needs only `git` and
+`wget`; the installer brings Go and builds tacctl on the server:
+
+    sudo bash -c 'git clone https://github.com/rett/tacctl.git /opt/tacctl && /opt/tacctl/bin/tacctl.sh install'
+
+What to expect:
+
+- **tacquito is rebuilt once** and restarted, with two new source patches
+  (`patches/0003` logs the address a device connected from, `patches/0004`
+  stops the server message after a failed authentication); items 18 and 34.
+- **The tiers sudoers file is refreshed by the upgrade** when
+  `/etc/sudoers.d/tacctl-tiers` is installed and differs (`Updated: tiers
+  sudoers`), so read-only and operator users get the new `ssh`, `device` and
+  `help` rows; the upgrade never creates the file, and a file `visudo`
+  refuses is left as it is, with a warning. The opt-in drop-in of `config
+  sudoers install` is not touched by an upgrade: run `tacctl config sudoers
+  install <group>` again to give it the `env_keep` line for the agent socket
+  (item 14).
+- **The first `host sync` (or `host enroll`) of each host after the upgrade
+  deletes the accounts of removed users.** Accounts that earlier releases only
+  expired for users no longer in the host's scope are deleted (`userdel`, their
+  group too); their UIDs stay reserved on the server. Home directories are
+  kept unless you say otherwise: on a terminal each is asked about, and
+  `--remove-home` deletes them without asking (items 38 and 39). Accounts
+  tacctl did not create (including ones an earlier release adopted) are never
+  deleted or changed, except that they are taken out of tacctl's own groups
+  (item 36); `--adopt` is gone (item 37).
+- **New UIDs come from 20000-29999 only** (item 35); a user whose recorded UID
+  is outside that range gets no account on hosts until it is given a number
+  in the range.
+- **Release binaries.** When a clone is at a release tag, `install` and
+  `upgrade` download the binary for the host, verify its signature against the
+  public key committed in the clone (`release/allowed_signers`), its checksum
+  and the commit it was built from, and install it; otherwise they build from
+  source as before. To check the assets by hand:
+
+      ssh-keygen -Y verify -f /opt/tacctl/release/allowed_signers -I tacctl-release \
+          -n tacctl-release -s SHA256SUMS.sig < SHA256SUMS
+      sha256sum -c --ignore-missing SHA256SUMS
+
+## What changed
 
 1. **`tacctl config linux uid` and `config linux uid <user>` only read.** The
    listing and the lookup leave `/etc/tacctl/linux-uids` as it is (a missing
@@ -332,267 +378,3 @@ current behaviour; this file is where history lives.
     refuses a header of another protocol before changing anything (`This
     script's header speaks protocol <n> and its body protocol 2: they were
     not written by the same tacctl. …`).
-
-## 0.2.0 (2026-10-04)
-
-tacctl is now a single Go program, `/usr/local/bin/tacctl`, built on the server
-from the repository clone in `/opt/tacctl` (dependencies are vendored there;
-nothing is downloaded to build it). The command line, the output, the exit
-codes, the files tacctl writes and every state format are unchanged: users,
-groups, scopes, `store.yaml`, `tacctl.yaml`, snapshots, the registry of Linux
-hosts and every generated file are byte-for-byte what 0.1.18 reads and writes,
-so going back to 0.1.18 needs nothing to be converted. What differs is listed
-here, and nothing else.
-
-### What changed
-
-1. **`tacctl version --long`** prints the commit, build date and Go version of the
-   installed binary, and `test knobs: off`. `tacctl version` prints the same
-   first line as before (`tacctl 0.2.0`).
-2. **tacctl runs no helper programs for its own work any more**: not `python3`,
-   `openssl`, `date`, `sha256sum`, `envsubst`, `awk`/`sed`/`grep`, `curl`,
-   `timeout`, `gzip`, `sleep`, and not `chown`, `chmod`, `cp`, `mv` or `install`
-   (except `install` for the sudoers drop-ins). Hashing, YAML, rendering, file
-   handling and checksums are done by the binary itself.
-3. **Device configs name the built-in template** when `/etc/tacctl/templates/`
-   has no copy of it: the `Notes:` line of `config cisco|juniper|wti` then reads
-   `  - Using template: built-in cisco.template` instead of a path under
-   `/opt/tacctl/config/templates/`. `install` and `upgrade` put the shipped
-   templates in `/etc/tacctl/templates/`, so on an installed server the line
-   names that copy, as before.
-4. **Python is not needed.** The preflight no longer checks that Python's
-   `bcrypt` module imports.
-5. **`user move` usage line** now reads `Usage: tacctl user move <user> <group>`;
-   the word `user` was missing.
-6. **Install dependencies.** `python3`, `python3-yaml` and `python3-bcrypt` are
-   no longer installed or required (`git` and `wget` stay: the repository and the
-   Go toolchain download). Nothing is uninstalled from hosts that have them.
-   `tacctl hash commands` still prints the Python recipe, for operators who
-   generate a hash on their own machine.
-7. **Shell completion is generated by the binary.** `tacctl completion bash`
-   prints the script; `install` and `upgrade` write the bash script to
-   `/etc/bash_completion.d/tacctl` (the upgrade says `Updated:` or `Unchanged:
-   bash completion`, and rewrites the file only when it differs). The words are
-   the same as before and live names still come from `sudo -n tacctl
-   _completion-names`. `completion` and `__complete` run without sudo. Only bash
-   is supported; zsh and fish are not offered.
-8. **New options for non-interactive use.**
-   `tacctl config render --dry-run --out <dir>` renders every enabled backend
-   into a new, empty directory at the files' live paths and touches nothing
-   else (no render record, no restart); `tacctl install -y|--yes` and
-   `tacctl uninstall -y|--yes` skip the confirmation (the prompts stay the
-   default). `uninstall -y` answers *no* to the two "preserve" questions, so
-   nothing is archived.
-9. **The `tacctl.yaml` write path takes the store's precautions** (the file and
-   its directory are synced, and a lock is held while it is rewritten); the
-   bytes written are unchanged.
-10. **Passwords longer than 72 bytes are refused** with a message. Before, the
-    bcrypt library silently used only the first 72 bytes.
-11. **`tacctl upgrade` rebuilds the binary** whenever the Go sources of the
-    clone changed, and `tacctl upgrade --branch <name>` onto a release of the
-    bash era hands the host over to that release's own upgrade (see "Rolling
-    back").
-12. **Test knobs.** The `TACCTL_TEST_NOW`, `TACCTL_TEST_RANDOM`, `TACCTL_FAULT`
-    and `TACCTL_TEST_ROOT` variables used by the test suite work only in a binary
-    built with `-tags testknobs`; the installed binary ignores them.
-13. **A stored value that is not valid UTF-8 is refused** (for example a secret
-    passed as raw bytes): `tacctl store: cannot write scopes.<s>.secret: the value
-    is not valid UTF-8 or contains control characters; nothing was written`.
-    Such a value was stored in a form tacquito could not reproduce, so no working
-    configuration changes.
-14. **Command-rule regexes are checked with Go's RE2**, the engine tacquito uses,
-    not Python's `re`. Python-only syntax (lookarounds, backreferences) is
-    refused when you enter it, and the `invalid regex (<reason>)` text is Go's.
-    This applies to `group commands add --match` and to `commands.<group>[].match`
-    in `tacctl.yaml`.
-15. **YAML constructs tacctl never writes are refused in `store.yaml` and
-    `tacctl.yaml`**: anchors and aliases, merge keys, non-string keys,
-    `!!set`/`!!omap`/`!!pairs`/`!!binary`, timestamps with a time of day and
-    integers beyond 64 bits. The message is `line L, column C: ... is not supported
-    in this file`; setters refuse, readers warn and use the defaults, as for any
-    `tacctl.yaml` that does not parse.
-16. **Inputs that used to end in a Python traceback** (invalid tagged scalars such
-    as `!!int abc`, impossible dates, out-of-range `\U` escapes, a date value in
-    `tacctl.yaml`) are reported as a parse problem with its position, or read
-    normally (the date).
-17. **A store that cannot be loaded is reported once** and the command stops
-    there; before, the error could print several times and be followed by a
-    misleading "does not exist". `status` and `config validate` print it once and
-    carry on with zero counts.
-18. **`config validate` with a `tacquito.yaml` that does not parse** (legacy
-    mode) prints the first lines of the YAML error, finishes the report and
-    exits 1; it died with exit 120 and a traceback fragment. A failed `config
-    sudoers [tiers] install` no longer leaves a temporary file behind.
-19. **`group commands add <group> <name> --match` with no value** exits 1
-    silently instead of dying with bash's `unbound variable`, and `group commands
-    remove <group> 'sh['` ends without stray `grep`/`python` messages.
-20. **WTI secret warnings** classify characters the same way whatever your locale
-    (C.UTF-8 rules). Under a locale such as `en_US.UTF-8`, an accented letter used
-    to suppress the punctuation warning.
-21. **`host enroll x --scope`** (a value flag at the end of the line) exits 1
-    instead of looping forever, and `config linux uid <user> 09999` no longer
-    prints a `value too great for base` line (the value is accepted as before).
-22. **A `tacquito.yaml` that is not valid YAML** is reported in the YAML library's
-    words (for example by `store rollback` with a broken pre-store file), and one
-    that is not UTF-8 makes the migrations skip it silently instead of ending in a
-    Python traceback.
-23. **`tacctl install` no longer downloads Go.** The bootstrap script
-    (`bin/tacctl.sh`) installs it when it is missing; `install` needs
-    `/usr/local/go/bin/go` and says `Go <version> already installed, skipping.`.
-24. **The upgrade's `tacquito.bak` keeps the binary's mode**, so a binary restored
-    after a failed build or restart can be started by the `tacquito` user. (This
-    is the 0.1.17 fix, listed because it is part of the baseline.)
-25. **`/usr/local/bin/tacctl` is a real binary**, built from the clone, not a link
-    to `bin/tacctl.sh`. `install` and `upgrade` print `Building /usr/local/bin/tacctl
-    from /opt/tacctl...`, and `upgrade` no longer relinks the command. `uninstall`
-    lists the Go build cache (`/root/.cache/go-build`) among what it does not
-    remove, instead of the `python3-bcrypt` package.
-26. **Go is installed only after its download is verified.** `bin/tacctl.sh` fetches
-    Go 1.26.2 from `https://dl.google.com/go/` with its published SHA-256 and
-    refuses to install it if the checksum cannot be fetched or does not match.
-    (The same rule shipped in 0.1.18.)
-27. **`upgrade` rebuilds and re-executes whenever the installed binary was not built
-    from the clone's current commit**, so a pull that changes only documentation
-    also causes one (cached, so quick) rebuild. The version the binary reports
-    therefore always matches the clone. 0.1.x re-executed only when `bin/` or `lib/`
-    changed.
-28. **`config defaults` and `config dump` headers** say the defaults are built into
-    tacctl (`it is generated by tacctl config defaults`, `Defaults:  built into tacctl`)
-    instead of naming `lib/conf.sh`, which no longer exists. Comment lines only; the
-    data is unchanged.
-
-29. **Completion candidates differ in form from the hand-written script's.** Words
-    come in command order rather than hand-ordered, a lone candidate is shell-quoted
-    (`lab\,prod` is the word `lab,prod`), `scope prefixes <scope> remove` offers
-    `--force` beside `--all`, and `config get` completes only the shipped top-level
-    keys.
-30. **The usage text shows the current options**: `install [--branch <name>]
-    [-y|--yes]`, `uninstall [-y|--yes]`, `version [--long]`, and `config render
-    --dry-run --out <dir>`.
-31. **A restart is no longer refused by systemd's start limit.** Before every
-    start or restart of tacquito (and its listener instances) or FreeRADIUS,
-    tacctl runs `systemctl reset-failed` on the unit. systemd refuses a sixth
-    start within ten seconds, so a quick series of changes, each ending in a
-    restart, could leave the service stopped (`start-limit-hit`) until someone
-    ran `systemctl reset-failed` by hand. The units themselves are unchanged.
-32. **Going back to a bash release installs the packages it needs first.**
-    `tacctl upgrade --branch <bash release>` checks for `python3`,
-    `python3-yaml` and `python3-bcrypt` (0.1.x cannot start without them, and a
-    server installed with 0.2.0 does not have them) and installs any that are
-    missing before it hands over (`Installing packages the bash release needs:
-    ...`). If they cannot be installed it does not hand over: the installed
-    command stays as it was, the clone goes back to the branch it was on, and
-    the message gives the command to run:
-    `sudo apt-get install -y python3 python3-yaml python3-bcrypt && sudo tacctl upgrade --branch <name>`.
-
-### Upgrading from 0.1.18
-
-Run `sudo tacctl upgrade` as always. Servers on 0.1.16 and 0.1.17 cross over the same
-way; for anything older, upgrade to 0.1.18 first. On a 0.1.18 server this happens:
-
-1. The 0.1.18 `tacctl upgrade` rebuilds tacquito if its sources or the patch
-   overlay changed, pulls the new tree and, because `bin/` and `lib/` changed,
-   re-executes `bin/tacctl.sh upgrade`, which is now the bootstrap script.
-2. The bootstrap checks for a Go toolchain at `/usr/local/go/bin/go` that is new
-   enough for the tree. A 0.1.x server has one, since tacquito is built with it;
-   if it is missing or older it installs Go 1.26.2, after verifying the published
-   checksum, and never replaces a newer one.
-3. It builds the binary from the vendored sources with `GOTOOLCHAIN=local` and no
-   network, prints `Building /usr/local/bin/tacctl from /opt/tacctl...`, replaces
-   the old link `/usr/local/bin/tacctl` in one rename and runs `tacctl upgrade` with
-   the new binary.
-4. The Go upgrade continues where the bash one stopped: state migration, tacquito
-   "up to date" (a tacquito rebuilt just before is restarted, and can be rolled
-   back, exactly as in 0.1.18), packages, the config phase, then system files: the
-   completion is regenerated (`Updated: bash completion`, once), the manual page,
-   templates you have not customised, logrotate, and finally one restart of what
-   changed. Running `tacctl upgrade` again afterwards changes nothing.
-
-If the build fails (full disk, no usable Go), the installed command is left as it
-was and the bootstrap prints
-
-    [ERROR] tacctl could not be built (see above). The installed command is unchanged.
-    [ERROR] Fix the cause and run the command again, or go back to the bash release:
-    [ERROR]   sudo git -C /opt/tacctl checkout 0.1.18 && sudo tacctl config branch <previous branch>
-
-Every later `tacctl` command runs the bootstrap again and repeats the message until
-the cause is fixed or the way back is taken.
-
-### Rolling back to 0.1.18
-
-Nothing in `/etc/tacctl` has to change: the files 0.2.0 writes are the files 0.1.18
-reads. Either let `tacctl` do it:
-
-    sudo tacctl upgrade --branch 0.1.18
-
-(the Go upgrade checks out the tag, installs `python3`, `python3-yaml` and
-`python3-bcrypt` if they are missing, which is the case on a server installed
-with 0.2.0, prints `Target branch is a bash release of tacctl; handing over.`,
-turns `/usr/local/bin/tacctl` back into a link to `/opt/tacctl/bin/tacctl.sh` and
-runs that release's `upgrade`). The clone then stays on the tag: `sudo tacctl
-upgrade` keeps it there, and `sudo tacctl upgrade --branch master` makes the
-server follow `master` again. Or by hand, which works without a working binary
-(on a server installed with 0.2.0, first
-`sudo apt-get install -y python3 python3-yaml python3-bcrypt`):
-
-    sudo git -C /opt/tacctl fetch --tags --force origin
-    sudo git -C /opt/tacctl checkout 0.1.18
-    sudo ln -sf /opt/tacctl/bin/tacctl.sh /usr/local/bin/tacctl
-    sudo tacctl upgrade
-
-The 0.1.18 upgrade reinstalls its own completion and manual page. The Go build cache
-(`/root/.cache/go-build`) stays behind, as the tacquito build cache does.
-
-### Cost of building on the host
-
-A first build compiles the standard library and the vendored dependencies: about 13
-seconds of wall time (54 s of CPU) on an eight-core development machine, leaving about 129 MB
-in the Go build cache; the binary is 10.9 MB. An unchanged tree builds again in under a
-second.
-
-## 0.1.18 (2026-10-03)
-
-- **Installing on a server without Go works again.** `tacctl install` downloads Go and its published checksum from `dl.google.com`, and installs Go only after the download is verified: a checksum that cannot be fetched, or a failed download, stops the install with an error.
-
-## 0.1.17 (2026-10-03)
-
-- **Upgrade rollback works again for the tacquito binary.** The backup `tacctl upgrade` takes before rebuilding tacquito keeps the binary's permissions, so a binary restored after a failed build or a failed restart can be started by the `tacquito` service user.
-
-## 0.1.16 (2026-10-03)
-
-- **Membership lists use `replace` and `remove --all`.** `tacctl user scope <user> replace <scopes>` replaces a user's scopes and `user scope <user> remove --all` removes them all; `tacctl scope prefixes <scope> remove --all [--force]` removes every prefix (and with them the scope). `set` and `clear` on these two lists now fail with a message naming the new verb; update any scripts that call them.
-- **`scope show` no longer prints the scope secret**; it shows whether one is set and its length. `tacctl scope secret <scope> show` prints it.
-- **Customised templates survive upgrades.** A template you edited in `/etc/tacctl/templates/` is kept and the shipped version is written beside it as `<name>.template.new`; see the README section "Custom Templates".
-- **Upgrades restart a service only when it has something new to read**, and a failed restart rolls tacquito back to the previous binary. `tacctl upgrade --branch <name>` runs the new branch's own upgrade when tacctl's code differs.
-- **A `tacctl.yaml` that does not parse is never overwritten**: settings changes refuse with the parse error, and other commands warn and use the defaults.
-- RADIUS-only installs no longer need `tacquito.yaml`.
-
-## 0.1.15 (2026-10-02)
-
-This is a large release; read the notes below before running `tacctl upgrade` on an existing server.
-
-- **A canonical store.** Users, groups, scopes and connection filters live in `/etc/tacctl/store.yaml`; `tacquito.yaml` is generated from it on every change and is no longer the source of truth. Hand edits of a generated file are detected (drift) and never silently overwritten. See the README section "The store and generated configs".
-- **`/etc/tacctl`** holds everything tacctl owns (store, `tacctl.yaml`, snapshots, templates, the Linux host registry). `/etc/tacquito` is the TACACS+ daemon's directory again.
-- **Backups are snapshots** of `store.yaml` and `tacctl.yaml`, taken before every change; `backup restore` re-renders every backend.
-- **Backends.** TACACS+ (tacquito) and RADIUS (FreeRADIUS) behind one contract: `tacctl backend list|status|enable|disable`; `status`, `log` and `config validate` report per backend. See the README section "Backends".
-- **RADIUS**, opt-in: `tacctl backend enable radius`. PAP against the same bcrypt hashes, the same scopes and secrets, `config cisco|juniper|wti --protocol radius`, per-scope vendor attributes. See the README section "RADIUS".
-- **Listeners** in `tacctl.yaml` (`listeners.<backend>.<name>`), from which the systemd drop-ins are rendered; further TACACS+ listeners run as `tacquito@<name>` instances.
-- **Linux hosts over RADIUS**: `tacctl host enroll --method radius` (pam_radius_auth), `host default-method`, switching a host between methods; Rocky Linux joins the tested hosts.
-- **Per-scope settings**: `scope protocols`, `scope auth-method`, `scope vendor-attrs`, `scope devices`, `scope radius-group`; every per-scope `tacctl.yaml` key now follows `scope rename` and is removed by `scope remove`.
-- Confirmation prompts no longer exit silently when standard input is closed; `config validate` exits 1 when it finds structure or scope errors.
-
-### Upgrading to 0.1.15
-
-The first `tacctl upgrade` from 0.1.14 or earlier runs the old release's upgrade, which pulls 0.1.15 and re-executes it; 0.1.15 then does the following on its own. Nothing needs to be prepared, and RADIUS stays off (`tacctl backend enable radius` afterwards, if wanted).
-
-1. **State directory.** `tacctl.yaml`, `linux-hosts`, `linux-uids`, `backups/` and `templates/` move from `/etc/tacquito` to `/etc/tacctl` (0700 root). Each old path becomes a symlink to the new one, for one release, so the previous release still finds its files after a rollback. This runs on every upgrade: if older code has meanwhile replaced a symlink with a regular file, the newer content wins and the other copy is kept under `/etc/tacctl/backups/legacy/`.
-2. **Units.** `tacquito.service` and the template `tacquito@.service` are installed. The listen address, log level and metrics address of the old hand-managed drop-in `tacquito.service.d/tacctl-overrides.conf` are imported once into `tacctl.yaml` (`listeners.tacacs.default`, `backends.tacacs.level`, `backends.tacacs.metrics_address`), the drop-in is replaced by the rendered `tacctl.conf`, and the old file is kept under `backups/legacy/`. The running daemon is not touched until the one restart at the end; if the unit does not come up then, the unit files, drop-ins, `tacctl.yaml` and the binary are restored together.
-3. **The store, behind a gate.** The legacy migrations of `tacquito.yaml` run as in every upgrade, then `tacctl store import --check` with the newly built binary: import (nothing unrepresentable), render, equivalence of what tacquito would load from the two files, and a load test of the rendered file on a loopback port. Only when all of that passes is `/etc/tacctl/store.yaml` written, the old file kept as `/etc/tacctl/backups/legacy/tacquito.yaml.pre-store.<timestamp>`, `tacquito.yaml` rendered from the store (and compared once more with the file it replaced), and tacquito restarted. The summary says `Store: migrated from tacquito.yaml`.
-
-**When the gate stops**, the upgrade still completes: the code is installed, `tacquito.yaml` and the running daemon are left exactly as they were, and tacctl runs in **legacy read-only mode** (read commands work, changes are refused). The report says why: content the store cannot hold (another service on a group, a non-bcrypt authenticator, an unknown top-level key, …), a render that is not equivalent (the differences are printed), the tacquito binary or `timeout` missing. The upgrade **never forces either through**. To proceed, either fix what `tacctl store import --check` lists in `tacquito.yaml` and run `tacctl upgrade` again, or accept the difference yourself: `tacctl store import` (`--force` drops what the store cannot hold, listing each item), then `tacctl config render --force`.
-
-**Rollback.** `tacctl store rollback` returns to the kept pre-store `tacquito.yaml` and legacy read-only mode under 0.1.15 (refused while RADIUS is enabled: `tacctl backend disable radius` first). Run it before putting the previous release's code back (`git -C /opt/tacctl checkout 0.1.14`): that release edits `tacquito.yaml` directly, and with the store still in place its edits would be drift to 0.1.15. It finds `tacctl.yaml`, `linux-*`, `backups` and `templates` through the symlinks in `/etc/tacquito`, and a later upgrade moves whatever it wrote and runs the gate again. Its `config listen|loglevel|metrics` write the old `tacctl-overrides.conf` drop-in, which the rendered `tacctl.conf` beside it overrides (systemd reads drop-ins in name order); remove `tacctl.conf` from `tacquito.service.d` after going back if you change those settings there.
-
-After the upgrade: `tacctl status`, `tacctl config validate` (store, rendered config, drift), and `tacctl backup list` (the pre-store file is under the old-style backups).
-
----

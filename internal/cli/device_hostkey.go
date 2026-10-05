@@ -152,7 +152,10 @@ func (inv *invocation) deviceHostkey(args []string) error {
 			inv.echo("  Pin what it offers after checking on its console: tacctl device hostkey " + e.Name + " accept")
 		} else {
 			inv.echo("  Host keys pinned for '" + e.Name + "':")
-			inv.echoKeys("    ", pinned)
+			for _, k := range pinned {
+				inv.echo("    " + k.Display())
+				inv.echo("             " + k.String())
+			}
 		}
 		inv.echo("  On the device: " + devreg.VerifyHint(e.Vendor) + ".")
 		inv.echo("")

@@ -37,9 +37,11 @@ and brings arm64 hosts a tested binary; it removes no dependency.
 The key is the one in the tree being installed: every tag carries its own
 `release/allowed_signers`.
 
-## Once: the release key
+## The release key
 
-The private key stays on the release manager's machine; only the public
+The release key is already generated and its public half committed
+(`release/allowed_signers`); this section is how it was made, and how to
+replace it. The private key stays on the release manager's machine; only the public
 half is committed.
 
 ```sh
@@ -135,6 +137,13 @@ git push origin develop master 0.2.1
 gh release create 0.2.1 --verify-tag --title "tacctl 0.2.1" --notes-file docs/release-notes-0.2.1.md \
     dist/release/tacctl-0.2.1-linux-amd64 dist/release/tacctl-0.2.1-linux-arm64 \
     dist/release/SHA256SUMS dist/release/SHA256SUMS.sig
+```
+
+Once, for discoverability, set the repository topics:
+
+```sh
+gh repo edit --add-topic tacacs-plus --add-topic tacacs --add-topic radius --add-topic aaa \
+    --add-topic freeradius --add-topic network-automation --add-topic cisco --add-topic junos --add-topic golang
 ```
 
 (For a release that already exists: `gh release upload 0.2.1` with the same

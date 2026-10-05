@@ -25,12 +25,16 @@ Commands:
   group <subcommand>                    Group management (list, add, edit, remove)
   scope <subcommand>                    Scope management (named CIDR + shared-secret bundles)
   host <subcommand>                     Linux hosts: enroll, sync, unenroll TACACS+ or RADIUS login over SSH
+  device <subcommand>                   Device registry: list, add, scan, discover, check, host keys (ssh-config)
+  ssh <name|address> [-p <port>]        Open an ssh session to a registered device or enrolled host, as you
+  shell [--idle <min>] [-c <line>]      An interactive tacctl prompt with history and completion
   backend <subcommand>                  Auth backends: list, status, enable <id>, disable <id>
   store <subcommand>                    The canonical store: show, import, rollback
   config <subcommand>                   Configuration (show, render, cisco, juniper, wti, validate, ...)
   log <subcommand>                      Log viewer (tail, search, failures, accounting; --backend <id>)
   backup <subcommand>                   Backup management (list, diff, restore)
   hash <subcommand>                     Bcrypt helper (generate, commands — runs as invoking user, no sudo)
+  completion bash|zsh|fish              Print the shell completion script
   version [--long]                      Print tacctl version (--long: commit, build date, Go version)
 
 Run any command without arguments for detailed help, e.g.:

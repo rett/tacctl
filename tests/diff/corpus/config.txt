@@ -128,9 +128,9 @@ config sudoers
 config sudoers show
 config sudoers bogus
 config sudoers remove
-@known 0.2.1 item 2: the tiers rules grant help, -h and --help; 0.2.1 item 13: the tiers rules gain ssh and device rows and an env_keep line for SSH_AUTH_SOCK
+@known 0.2.1 item 2: the tiers rules grant help, -h and --help; 0.2.1 item 14: the tiers rules gain ssh and device rows and an env_keep line for SSH_AUTH_SOCK
 config sudoers tiers
-@known 0.2.1 item 2: the tiers rules grant help, -h and --help; 0.2.1 item 13: the tiers rules gain ssh and device rows and an env_keep line for SSH_AUTH_SOCK
+@known 0.2.1 item 2: the tiers rules grant help, -h and --help; 0.2.1 item 14: the tiers rules gain ssh and device rows and an env_keep line for SSH_AUTH_SOCK
 config sudoers tiers show
 config sudoers tiers bogus
 
@@ -208,7 +208,7 @@ config get-list a b c
 config sudoers show extra
 config sudoers remove extra
 config sudoers tiers remove extra
-@known 0.2.1 item 2: the tiers rules grant help, -h and --help; 0.2.1 item 13: the tiers rules gain ssh and device rows and an env_keep line for SSH_AUTH_SOCK
+@known 0.2.1 item 2: the tiers rules grant help, -h and --help; 0.2.1 item 14: the tiers rules gain ssh and device rows and an env_keep line for SSH_AUTH_SOCK
 config sudoers tiers show extra
 config restore {TS} --bogus
 config diff {TS} extra
@@ -259,7 +259,7 @@ config sudoers install 'bad group' <<< y
 config sudoers install wheel extra <<< n
 # Unprivileged, the real 'install -o root' fails; 0.1.16 then exits under errexit and
 # leaves its mktemp copy of the drop-in in TMPDIR, 0.2.0 removes it (3.9 item 18).
-@known 3.9 item 18: a failed 'config sudoers [tiers] install' leaves no temp file behind; 0.2.1 item 2: the tiers rules grant help, -h and --help; 0.2.1 item 13: the tiers rules gain ssh and device rows and an env_keep line for SSH_AUTH_SOCK
+@known 3.9 item 18: a failed 'config sudoers [tiers] install' leaves no temp file behind; 0.2.1 item 2: the tiers rules grant help, -h and --help; 0.2.1 item 14: the tiers rules gain ssh and device rows and an env_keep line for SSH_AUTH_SOCK
 config sudoers tiers install
 @known 3.9 item 18: a failed 'config sudoers [tiers] install' leaves no temp file behind
 config sudoers install wheel <<< y

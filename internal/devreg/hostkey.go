@@ -321,13 +321,12 @@ func Compare(pinned []string, offered []HostKey) Comparison {
 }
 
 // verifyHints are the commands that show a device's host-key fingerprint
-// on its own console, per vendor. The Cisco, Junos and WTI texts are the
-// design's and are to be confirmed on hardware in the 0.2.1 lab acceptance
-// (WP6.11: Junos live, Cisco and WTI remain to be verified on a unit); the
-// Linux one is ssh-keygen's own.
+// on its own console, per vendor. The Junos text was verified on an EX4300
+// (Junos 25.4; there is no 'show system ssh host-key'); the Cisco and WTI
+// texts are still unconfirmed on a unit; the Linux one is ssh-keygen's own.
 var verifyHints = map[string]string{
 	"cisco":     "Cisco IOS/IOS-XE: 'show ip ssh' and 'show crypto key mypubkey rsa' (the fingerprint form varies by release)",
-	"juniper":   "Junos: 'show system ssh host-key', or from the shell 'ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub'",
+	"juniper":   "Junos: 'file show /etc/ssh/ssh_host_ed25519_key.pub' (also the ecdsa and rsa .pub files beside it; compare with 'tacctl device hostkey <name> show'), or from 'start shell' 'ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub'",
 	"wti":       "WTI: verify on the device console (where the host key is shown varies by firmware)",
 	VendorLinux: "Linux: 'ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub' (and the ecdsa and rsa .pub files beside it)",
 	VendorOther: "on the device console, the fingerprint of its ssh host key ('ssh-keygen -lf <key>.pub' where a shell is available)",

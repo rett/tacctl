@@ -115,7 +115,7 @@ func TestScanNoticeTable(t *testing.T) {
 			},
 			check: "sw1", want: []string{NoticeHostKeyChanged},
 			text: []string{"the host key of 'sw1' changed (scan 2026-10-01 12:00): pinned ED25519 " + ed.Fingerprint(),
-				"'tacctl ssh' refuses it until it is pinned again", "show system ssh host-key", "'tacctl device hostkey sw1 accept'"}},
+				"'tacctl ssh' refuses it until it is pinned again", "file show /etc/ssh/ssh_host_ed25519_key.pub", "'tacctl device hostkey sw1 accept'"}},
 		{name: "hostkey-added, acknowledged",
 			dev: []*Device{{Name: "sw1", Address: "192.0.2.1", Vendor: "cisco", HostKeys: []string{ed.String()}, Ack: []string{NoticeHostKeyAdded}}},
 			seen: func(s *Seen) {

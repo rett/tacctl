@@ -962,12 +962,16 @@ Members of
 .B tac-readonly
 may run
 .BR passwd ", " status ", " version ", " help " (also " \-h ", " \-\-help "), " "user list" ", " "user show" ", "
-.BR "group list" ", " "scope list" ", " "backend list" " and " "backend status" .
+.BR "group list" ", " "scope list" ", " "backend list" ", " "backend status" ", "
+.BR "device list" ", " "device show" ", " "device notices" ", " "device ssh\-config" ", "
+.BR "ssh " \fIname\fR " and " "device ssh " \fIname\fR
+(the devices of their own scopes only).
 Members of
 .B tac-operator
 may additionally run
 .BR "log tail" ", " "log search" ", " "log failures" ", " "log accounting" ", "
-.BR "config validate" " and " "backup list" .
+.BR "config validate" ", " "backup list" ", " "device check" ", " "device scan" ", "
+.BR "device discover" " and " "device export" .
 Members of
 .B tac-superuser
 get full
@@ -985,7 +989,15 @@ rewrites an installed
 .I /etc/sudoers.d/tacctl\-tiers
 that differs from the release's rules (after
 .B visudo \-cf
-accepts them); it never creates the file.
+accepts them), so a release's new verbs reach the tiers; it never creates the
+file. Both sudoers files carry
+.B Defaults!/usr/local/bin/tacctl env_keep += "SSH_AUTH_SOCK"
+(the agent socket for
+.BR "tacctl host" )
+and nothing else of the caller's environment; tacctl also refuses a
+.B SUDO_USER
+that is not the account of
+.BR SUDO_UID .
 .TP
 .BI "config password-age " [ days ]
 Show or set the password age warning threshold. Default 90 days.
@@ -2293,7 +2305,9 @@ JSON array. A reduced-scope caller gets only the devices of its own scopes.
 The pinned ssh host keys of a device or an enrolled host, and the only way to
 change them. With no action (or
 .BR show )
-prints the pinned keys' fingerprints and the console command that shows them on
+prints each pinned key's fingerprint and its public-key line (\fBssh\-ed25519 AAAA\|...\fR, as a
+.B file show
+of the device's key file prints it) and the console command that shows them on
 the device.
 .B accept
 reads the keys the device offers now, prints them beside the pinned ones, and
@@ -2419,7 +2433,6 @@ runs as the invoking user
 .RB ( "sudo \-u " "\fIuser\fR " \-H ),
 with the terminal, returning its exit status. The login is always the invoking
 user's own name
-.RB ( \-l " \fIuser\fR)"
 and the session authenticates by password only: no agent, no key, no other
 login; an enrolled host's enrolment account and identity are never used. It
 never runs ssh as root: run by root itself (no
@@ -2444,9 +2457,12 @@ is given, and always
 which the units need). A device with
 .B legacy\-ssh
 gets
-.B "\-o KexAlgorithms=+diffie\-hellman\-group14\-sha1,diffie\-hellman\-group1\-sha1 \-o HostKeyAlgorithms=+ssh\-rsa \-o PubkeyAcceptedAlgorithms=+ssh\-rsa"
+\fB\-o KexAlgorithms=\:+diffie\-hellman\-group14\-sha1,\:diffie\-hellman\-group1\-sha1
+\-o HostKeyAlgorithms=\:+ssh\-rsa \-o PubkeyAcceptedAlgorithms=\:+ssh\-rsa\fR
 (old IOS; OpenSSH 8.5 or later). A device with pinned host keys adds
-.BI "\-o UserKnownHostsFile=/var/lib/tacctl/ssh/known_hosts \-o GlobalKnownHostsFile=none \-o StrictHostKeyChecking=yes \-o HostKeyAlias=" name " \-o UpdateHostKeys=no" ,
+\fB\-o UserKnownHostsFile=\:/var/lib/tacctl/\:ssh/known_hosts
+\-o GlobalKnownHostsFile=none \-o StrictHostKeyChecking=yes
+\-o HostKeyAlias=\fR\fIname\fR\fB \-o UpdateHostKeys=no\fR,
 so ssh accepts the pinned key and nothing else. An unpinned device is checked
 against the user's own known_hosts, after its
 .B hostkey\-unpinned
@@ -2954,9 +2970,7 @@ it passes is the store written, the old file kept as
 rendered and tacquito restarted.
 .PP
 When the gate stops (unrepresentable content, a render that is not
-equivalent, the binary or
-.B timeout
-missing) the upgrade still completes, leaves
+equivalent, the tacquito binary missing) the upgrade still completes, leaves
 .I tacquito.yaml
 and the daemon as they were, and tacctl is in legacy read-only mode. It never
 forces either through. Fix what

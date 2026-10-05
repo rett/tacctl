@@ -221,7 +221,7 @@ on_tty() {
     assert_output --partial "The ssh host key of 'lab-rtr2' (192.0.2.7 port 22) is not the one pinned for it; ssh refused the connection."
     assert_output --partial "Pinned:  ED25519 $(fp ed25519)"
     assert_output --partial "Offered: ECDSA $(fp ecdsa)"
-    assert_output --partial "Compare on the device console: Junos: 'show system ssh host-key'"
+    assert_output --partial "Compare on the device console: Junos: 'file show /etc/ssh/ssh_host_ed25519_key.pub'"
     assert_output --partial "tacctl device hostkey lab-rtr2 accept"
     assert_output --partial "tacctl device hostkey lab-rtr2 set SHA256:<fingerprint>"
     called "logger -t tacctl -p auth.warning ssh hostkey-mismatch user=alice device=lab-rtr2 addr=192.0.2.7"

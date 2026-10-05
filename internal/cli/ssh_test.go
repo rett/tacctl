@@ -274,7 +274,7 @@ func TestSSHExitStatusAndHostKeyDiagnosis(t *testing.T) {
 		"The ssh host key of 'lab-rtr2' (192.168.5.1 port 2200) is not the one pinned for it; ssh refused the connection.",
 		"  Pinned:  ED25519 " + ed.Fingerprint(),
 		"Offered: ECDSA",
-		"Compare on the device console: Junos: 'show system ssh host-key'",
+		"Compare on the device console: Junos: 'file show /etc/ssh/ssh_host_ed25519_key.pub'",
 		"tacctl device hostkey lab-rtr2 accept",
 		"tacctl device hostkey lab-rtr2 set SHA256:<fingerprint>",
 	} {

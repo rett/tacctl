@@ -1,11 +1,10 @@
 #!/usr/bin/env bats
-# bats file_tags=requires-zsh-fish
 # zsh and fish completion, in a real zsh and a real fish: the scripts
 # 'tacctl completion zsh|fish' print must parse and must answer with the words
 # the binary gives ('tacctl __complete'). These tests do not skip: without the
 # shell they fail and name the package to install ('apt install zsh fish').
-# The Makefile leaves the tag out of 'make test-bats' until the shells are on
-# the machine (BATS_TAG_FLAGS).
+# 'make test-bats' runs them with the rest, so zsh and fish are test-time
+# tools (tests/README.md).
 
 load ../helpers/setup
 load ../helpers/tmpenv

@@ -188,7 +188,7 @@ func TestDeviceAddHostKeyRefusals(t *testing.T) {
 		t.Errorf("--no-host-key: %d %q", sb.code, sb.runner.Argvs())
 	}
 	if all := out + sb.stderr(); !strings.Contains(all, "hostkey-unpinned: no host key is pinned for 'y'") ||
-		!strings.Contains(all, "'show system ssh host-key'") || !strings.Contains(all, "then pin it: 'tacctl device hostkey y accept'") ||
+		!strings.Contains(all, "'file show /etc/ssh/ssh_host_ed25519_key.pub'") || !strings.Contains(all, "then pin it: 'tacctl device hostkey y accept'") ||
 		!strings.Contains(all, "or acknowledge it: 'tacctl device notice y ack hostkey-unpinned'") {
 		t.Errorf("--no-host-key notice:\n%s", all)
 	}
@@ -232,7 +232,7 @@ func TestDeviceHostkeyVerb(t *testing.T) {
 	}
 	// show, pinned.
 	out = sb.dev("", "hostkey", "core-sw1", "show")
-	if !strings.Contains(out, "Host keys pinned for 'core-sw1':\n    ED25519  "+ed.Fingerprint()+"\n    RSA      "+rsa.Fingerprint()) {
+	if !strings.Contains(out, "Host keys pinned for 'core-sw1':\n    ED25519  "+ed.Fingerprint()+"\n             "+ed.String()+"\n    RSA      "+rsa.Fingerprint()+"\n             "+rsa.String()) {
 		t.Errorf("show pinned:\n%s", out)
 	}
 	// A changed device: accept -y shows both and re-pins.
