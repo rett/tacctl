@@ -86,7 +86,7 @@ func TestCompleteScenarios(t *testing.T) {
 		{[]string{"scope", "add", "edge", ""}, []string{"--prefixes", "--secret", "--protocols", "--vendor-attrs", "--default"}},
 		{[]string{"scope", "add", "edge", "--prefixes", "10.0.0.0/8", "--vendor-attrs", "cisco,"}, []string{"cisco,juniper", "cisco,wti"}},
 		{[]string{"scope", "add", "edge", "--prefixes", "10.0.0.0/8", "--vendor-attrs", "cisco", ""}, []string{"--secret", "--protocols", "--default"}},
-		{[]string{"log", "tail", "--"}, []string{"--backend"}},
+		{[]string{"log", "tail", "--"}, []string{"--backend", "--follow"}},
 		{[]string{"log", "tail", "--backend", ""}, []string{"tacacs", "radius"}},
 		{[]string{"log", "clear", ""}, []string{"--backend", "--force", "-y", "--yes"}},
 		{[]string{"log", "clear", "--backend", "tacacs", ""}, []string{"--force", "-y", "--yes"}},

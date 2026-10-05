@@ -1060,7 +1060,7 @@ store rollback                               Restore the pre-store tacquito.yaml
 ### Log Commands — `tacctl log`
 
 ```
-log tail [n] [--backend <id>]       Last N entries (default 20): TACACS+ journal; RADIUS auth log and daemon log
+log tail [-f] [n] [--backend <id>]  Last N entries (default 20): TACACS+ journal; RADIUS auth log and daemon log; -f follows new ones until Ctrl-C
 log search <term> [--backend <id>]  Search the logs for a username or keyword (TACACS+: last 7 days)
 log failures [--backend <id>]       Auth failures from the last 24 hours
 log accounting [n] [--backend <id>] Last N accounting records

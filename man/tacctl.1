@@ -1484,10 +1484,14 @@ and
 .I tacctl\-radius.log
 in the package's log directory.
 .TP
-.BI "log tail " [ n ]
+.BI "log tail " "[ \-f | \-\-follow ] [ " n " ]"
 Show the last
 .I n
 entries (default 20): the tacquito journal; the RADIUS auth log and daemon log.
+With
+.BR \-f ,
+then print new entries of every backend as they arrive (each line behind
+its backend's id when more than one is enabled) until Ctrl-C.
 .TP
 .BI "log search " term
 Search logs for a username or keyword (TACACS+: over the last 7 days).

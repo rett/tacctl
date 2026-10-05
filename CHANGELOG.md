@@ -762,6 +762,13 @@ current behaviour; this file is where history lives.
     another scope for a registered host is a move: it says so, names the
     users whose accounts the move deletes, and asks on a terminal (`[y/N]`);
     without one it stops, nothing changed, unless given the new `--yes`.
+65. **`log tail -f` follows the logs.** `-f` was taken for the line count:
+    the TACACS+ section passed it to `journalctl -n` and the RADIUS one
+    stopped with `tail: invalid number of lines: '-f'`. `log tail [-f|
+    --follow] [n]` now prints each backend's tail, then follows every
+    enabled backend at once (`journalctl -f` for tacquito's units, `tail -F`
+    on the RADIUS auth and daemon logs), each line behind its backend's id
+    when more than one is enabled, until Ctrl-C, which ends it normally.
 
 ## 0.2.0 (2026-10-04)
 

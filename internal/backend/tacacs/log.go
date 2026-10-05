@@ -16,6 +16,12 @@ import (
 
 const rule = "--------------------------------------------"
 
+// FollowArgv is backend.Follower: the journal of every listener's unit,
+// new entries only.
+func (b *Backend) FollowArgv() [][]string {
+	return [][]string{append(append([]string{"journalctl"}, b.journalUnits()...), "--no-pager", "-f", "-n", "0")}
+}
+
 // Log is backend_tacacs_log: 'tacctl log tail [n]', 'search <term>',
 // 'failures' and 'clear [-y|--yes|--force]' over the journal of every
 // listener's unit (just 'tacquito' with only the default listener), written

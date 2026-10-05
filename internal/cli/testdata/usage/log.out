@@ -4,7 +4,8 @@
 Usage: tacctl log <subcommand> [--backend <id>] [arguments]
 
 Subcommands:
-  tail [n]              Show the last N log entries (default 20; TACACS+: journal, RADIUS: auth and daemon log)
+  tail [-f] [n]         Show the last N log entries (default 20; TACACS+: journal, RADIUS: auth and daemon log)
+      -f, --follow      (tail) Then print new entries as they arrive, until Ctrl-C
   search <term>         Search the logs for a username or keyword
   failures              Show auth failures from the last 24 hours
   accounting [n]        Show last N accounting log entries
