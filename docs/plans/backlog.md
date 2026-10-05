@@ -114,6 +114,11 @@ Deferred:
   - Several devices sending the same short NAS-Identifier raise the ambiguous-NAS-ID notice; it is correct, and the remedy is a fully qualified host name on the device (or the notice acknowledged).
   - `host enroll` defaults `--name` to the short host name.
 
+## 3e. Automatic device discovery: considered, not pursued (2026-10-05)
+
+- **Considered:** a systemd timer running `tacctl device scan` every few minutes, optionally registering new addresses as unpinned entries for someone to verify.
+- **Decision (user, 2026-10-05):** discovery stays manual (`device scan`, `device discover`, `device list --scan`). Registration pins host keys, which needs a person to compare fingerprints, and devices often report generic names or none (TACACS+). Revisit if the manual scans become a burden.
+
 ## 4. Linux hosts: considered, not pursued
 
 - **nss_tacplus** (shared template accounts, no per-user local accounts) — considered 2026-10-04, not pursued; revisit if per-user accounts become a burden. 0.2.1 keeps one local account per user (UIDs 20000-29999, created, expired and deleted by `host enroll|sync`).
