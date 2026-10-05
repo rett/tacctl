@@ -68,7 +68,7 @@ Deferred:
   - Still open: whether a server value replaces or joins a class's own allow/deny lines (the lab classes have none); whether Junos accepts the same attribute twice (splitting long rule sets); RADIUS (VSAs 2-5) not yet run.
 - **Not in 0.2.1:** it changes what devices are told at login; 0.2.1 is at its release gate.
 
-## 3c. Device authorization from the server: Cisco, Junos and WTI (0.2.2 candidate, filed 2026-10-05)
+## 3c. Device authorization from the server: Cisco, Junos and WTI (0.2.2, filed 2026-10-05; planned in `0.2.2-plan.md`)
 
 **Request (user, 2026-10-05):** one interface for command permissions across vendors, with no permissions hardcoded on devices; Cisco keeps its privilege levels. Extends §3b. A worked scheme for four roles (viewer, operator, engineer, superuser) on all three vendors, and the lab run sheet that tests it, are kept outside the repo.
 
