@@ -72,6 +72,10 @@ What to expect:
   enroll moved a host out of its scope into a `linux-<name>` `/32`,
   re-enroll it with `--scope <its scope>` and remove the `linux-<name>`
   scope.
+  `host sync`, `host list` and `config validate` now warn about any host
+  whose registered scope no longer answers its address (item 64); moving
+  one (`host enroll ... --scope <scope>`) asks first when it deletes
+  accounts, or wants `--yes` without a terminal.
 - **UIDs move to 80000-89999, once** (items 35 and 52). The first `config
   linux uid`, `config linux script`, `host enroll` or `host sync` after the
   upgrade renumbers `/etc/tacctl/linux-uids` from 20000-29999 to the same
@@ -860,3 +864,14 @@ What to expect:
     add linux-<name> --prefixes <address>/32 --secret generate`). A host's
     own scope from an earlier release is still opened to both protocols
     for a method switch and narrowed afterwards.
+64. **A host whose scope no longer answers it is reported, never moved.**
+    `host sync` (each host), `host list` and `config validate` compare an
+    enrolled host's registered scope with the scope that answers the
+    address recorded at its last enroll or sync, and warn when they differ
+    (a prefix change, a new address, the wrong scope at enroll): its logins
+    are checked against the other scope's users and secret and refused. The
+    warning gives the enroll that moves it. Re-enrolling without `--scope`
+    says the same, with `--scope <the answering scope>`. An enroll naming
+    another scope for a registered host is a move: it says so, names the
+    users whose accounts the move deletes, and asks on a terminal (`[y/N]`);
+    without one it stops, nothing changed, unless given the new `--yes`.

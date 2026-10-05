@@ -786,15 +786,3 @@ func padTo(s string, n int) string {
 	}
 	return s
 }
-
-// discardStdout runs fn with everything it writes to stdout dropped ('>
-// /dev/null'): the command's own lines, the pre-change snapshot's and the
-// backend modules' (a render and restart inside a store change).
-func (inv *invocation) discardStdout(fn func() error) error {
-	a := inv.app
-	env, snaps := a.BackendEnv(), a.Snapshots()
-	saved, savedEnv, savedSnaps := a.Out, env.Out, snaps.Out
-	a.Out.Stdout, env.Out.Stdout, snaps.Out.Stdout = io.Discard, io.Discard, io.Discard
-	defer func() { a.Out, env.Out, snaps.Out = saved, savedEnv, savedSnaps }()
-	return fn()
-}

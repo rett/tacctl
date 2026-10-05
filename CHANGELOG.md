@@ -751,6 +751,17 @@ current behaviour; this file is where history lives.
     add linux-<name> --prefixes <address>/32 --secret generate`). A host's
     own scope from an earlier release is still opened to both protocols
     for a method switch and narrowed afterwards.
+64. **A host whose scope no longer answers it is reported, never moved.**
+    `host sync` (each host), `host list` and `config validate` compare an
+    enrolled host's registered scope with the scope that answers the
+    address recorded at its last enroll or sync, and warn when they differ
+    (a prefix change, a new address, the wrong scope at enroll): its logins
+    are checked against the other scope's users and secret and refused. The
+    warning gives the enroll that moves it. Re-enrolling without `--scope`
+    says the same, with `--scope <the answering scope>`. An enroll naming
+    another scope for a registered host is a move: it says so, names the
+    users whose accounts the move deletes, and asks on a terminal (`[y/N]`);
+    without one it stops, nothing changed, unless given the new `--yes`.
 
 ## 0.2.0 (2026-10-04)
 

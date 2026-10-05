@@ -246,8 +246,15 @@ func TestHostEnrollScopeChoice(t *testing.T) {
 	if hs.registry() != "web1|web1||lab|198.51.100.7|\n" {
 		t.Errorf("registry %q", hs.registry())
 	}
-	// Named: its own scope.
+	// Named: another scope. The move deletes the accounts of lab's users,
+	// so without a terminal it wants --yes; nothing changes before.
+	hs.pushed = ""
 	hs.run(nil, "host", "enroll", "web1", "--scope", "linux-web1", "--build-on-host")
+	hs.expect(1, "Moving web1 from scope 'lab' to scope 'linux-web1': it gets that scope's secret and users.", "Moving web1 to scope 'linux-web1' deletes accounts; nothing was changed. Confirm with --yes.")
+	if !strings.Contains(hs.out.String(), "their accounts on web1 are deleted: alice, bob") || hs.pushed != "" {
+		t.Errorf("move: %q pushed %d", hs.out.String(), len(hs.pushed))
+	}
+	hs.run(nil, "host", "enroll", "web1", "--scope", "linux-web1", "--yes", "--build-on-host")
 	hs.expect(0, "Host 'web1' enrolled", "")
 	if hs.registry() != "web1|web1||linux-web1|198.51.100.7|\n" {
 		t.Errorf("registry %q", hs.registry())

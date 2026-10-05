@@ -317,6 +317,21 @@ func (inv *invocation) configValidate([]string) error {
 		inv.echoE("  " + G + "Scopes integrity:" + NC + "     valid")
 	}
 
+	// Enrolled Linux hosts: is each one's registered scope the one that
+	// answers its address? A warning: the host is not moved.
+	if reg, err := inv.registry(); err == nil && merr == nil && !reg.Empty() {
+		drift := 0
+		for _, e := range reg.Entries() {
+			if msg := inv.hostScopeDrift(e, inv.hostAddress(e)); msg != "" {
+				inv.echoE("  " + Y + "Linux hosts:" + NC + "          " + msg)
+				drift++
+			}
+		}
+		if drift == 0 {
+			inv.echoE("  " + G + "Linux hosts:" + NC + "          each answered by its scope")
+		}
+	}
+
 	// Rendered artifacts: can the store be rendered, and are the live files
 	// that render? A hand-edited file is reported by the DRIFT line
 	// instead, and counted once. With one enabled backend these are plain

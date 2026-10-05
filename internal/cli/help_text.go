@@ -381,6 +381,7 @@ Usage: tacctl host <subcommand> [arguments]
       --name <name>                    Registry name (default: short hostname)
       --port <n>, --identity <file>    SSH port and key
       --build-on-host                  (tacplus) Compile pam_tacplus on the host instead of in a container here
+      --yes                            Move a registered host to the --scope named even when that deletes accounts
   sync <name> | --all                  Push account adds, deletions and tier changes
       --all                            Every enrolled host
       --allow-uid-mismatch             (enroll and sync) accept a UID conflict on the host instead of stopping

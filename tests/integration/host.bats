@@ -297,6 +297,48 @@ on_tty() {
     assert_output --partial "No enrolled host named 'ghost'"
 }
 
+@test "host sync, list, validate: a host another scope now answers is reported, not moved; a move is confirmed" {
+    _own_scope web1 192.0.2.50
+    "$TACCTL_BIN_SCRIPT" host enroll web1 > /dev/null
+    run "$TACCTL_BIN_SCRIPT" host sync web1
+    refute_output --partial "registered in scope"
+    # The prefixes change: linux-web1 no longer holds the address, lab does.
+    "$TACCTL_BIN_SCRIPT" scope prefixes linux-web1 add 192.0.2.99/32 > /dev/null
+    "$TACCTL_BIN_SCRIPT" scope prefixes linux-web1 remove 192.0.2.50/32 > /dev/null
+    "$TACCTL_BIN_SCRIPT" scope prefixes lab add 192.0.2.0/24 > /dev/null
+    want="web1: registered in scope 'linux-web1', but 192.0.2.50 is answered by scope 'lab' (prefix 192.0.2.0/24): its logins are checked against that scope's users and secret, so they are refused. To move it: tacctl host enroll web1 --name web1 --scope lab"
+    run "$TACCTL_BIN_SCRIPT" host sync web1
+    assert_success
+    assert_output --partial "$want"
+    run _hosts
+    assert_output "web1|web1||linux-web1|192.0.2.1|"
+    run "$TACCTL_BIN_SCRIPT" host list
+    assert_output --partial "$want"
+    run "$TACCTL_BIN_SCRIPT" config validate
+    assert_line --regexp "Linux hosts:.* web1: registered in scope 'linux-web1', but 192\.0\.2\.50 is answered by scope 'lab'"
+    assert_output --partial "$want"
+    # Re-enrolling without --scope keeps it, and points at the move.
+    run "$TACCTL_BIN_SCRIPT" host enroll web1
+    assert_success
+    assert_output --partial "(or enroll it in that scope: --scope lab)"
+    # The move: linux-web1 has no users, so nothing is deleted and nothing asked.
+    run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab
+    assert_success
+    assert_output --partial "Moving web1 from scope 'linux-web1' to scope 'lab': it gets that scope's secret and users."
+    refute_output --partial "are deleted"
+    run "$TACCTL_BIN_SCRIPT" config validate
+    assert_line --regexp "Linux hosts:.* each answered by its scope"
+    # Back: lab's users would lose their accounts; no terminal, no --yes.
+    rm -f "$PUSHED"
+    run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope linux-web1
+    assert_failure
+    assert_output --partial "their accounts on web1 are deleted: alice"
+    assert_output --partial "Moving web1 to scope 'linux-web1' deletes accounts; nothing was changed. Confirm with --yes."
+    [[ ! -e "$PUSHED" ]]
+    run _hosts
+    assert_output "web1|web1||lab|192.0.2.1|"
+}
+
 @test "host unenroll: pushes the secret-free removal script and forgets the host" {
     _own_scope web1 192.0.2.50
     "$TACCTL_BIN_SCRIPT" host enroll web1 > /dev/null

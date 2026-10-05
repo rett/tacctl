@@ -719,7 +719,18 @@ host whose address no scope covers is refused before anything changes,
 with the commands that add the address to a scope or give the host a scope
 of its own
 .RB ( "scope add linux\-" "name " "\-\-prefixes " addr "/32 \-\-secret generate" ,
-so a secret read off one host is useless from another). The scope must be the
+so a secret read off one host is useless from another). Naming another
+scope for a registered host moves it: enroll first names the users whose
+accounts the move deletes and asks on a terminal; without one it stops
+unless given
+.BR \-\-yes .
+tacctl never moves a host itself:
+.BR "host sync" ,
+.B "host list"
+and
+.B "config validate"
+warn, with the enroll that moves it, when another scope answers the
+address recorded for a host. The scope must be the
 one that answers the host's requests (the first prefix that holds the
 address they come from): for
 .B \-\-local

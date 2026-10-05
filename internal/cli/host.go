@@ -14,11 +14,13 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/hosts"
 	"github.com/rett/tacctl/internal/store"
@@ -44,6 +46,7 @@ var hostSpecs = map[string]Spec{
 		{Names: []string{"--identity"}, Value: true, Kind: KindFile},
 		{Names: []string{"--method"}, Value: true, Kind: methodWords},
 		{Names: []string{"--build-on-host"}},
+		{Names: []string{"--yes"}},
 		flagAllowUIDMismatch, flagRemoveHome}},
 	"sync":     {MaxArgs: 1, Args: []string{KindHosts}, Flags: []Flag{{Names: []string{"--all"}}, flagAllowUIDMismatch, flagRemoveHome}},
 	"unenroll": {MinArgs: 1, MaxArgs: 1, Args: []string{KindHosts}, Flags: []Flag{{Names: []string{"--force"}}}},
@@ -147,6 +150,11 @@ func (inv *invocation) hostList() error {
 	}
 	inv.write(t.String())
 	inv.echo("")
+	for _, e := range reg.Entries() {
+		if msg := inv.hostScopeDrift(e, inv.hostAddress(e)); msg != "" {
+			inv.app.Out.WarnE(msg)
+		}
+	}
 	return nil
 }
 
@@ -188,7 +196,7 @@ func (inv *invocation) reportOnly(err error) { _ = exitCode(err, inv.app.Out) }
 func (inv *invocation) hostEnroll(args []string) error {
 	a := inv.app
 	var target, scope, server, name, port, identity, method string
-	isLocal, buildOnHost, removeHome := false, false, false
+	isLocal, buildOnHost, removeHome, yes := false, false, false, false
 	var scriptArgs []string
 	for i := 0; i < len(args); {
 		w := args[i]
@@ -204,6 +212,9 @@ func (inv *invocation) hostEnroll(args []string) error {
 			i++
 		case "--remove-home":
 			removeHome = true
+			i++
+		case "--yes":
+			yes = true
 			i++
 		case "--scope", "--server", "--name", "--port", "--identity":
 			if i+1 >= len(args) {
@@ -418,6 +429,14 @@ func (inv *invocation) hostEnroll(args []string) error {
 	if !inv.hostScopeCovers(name, target, hostIP, scope, true) {
 		return exit(1)
 	}
+	// Moving a registered host to another scope gives it that scope's
+	// secret and users: the accounts of the users it loses are deleted
+	// there, so that is confirmed first.
+	if e, ok := reg.Find(name); ok && e.Scope != "" && e.Scope != scope {
+		if err := inv.confirmScopeMove(name, e.Scope, scope, yes); err != nil {
+			return err
+		}
+	}
 	// The UID file numbered for the range, and a host that can hold the
 	// range, before anything changes here or there.
 	if err := inv.renumberUIDs(true); err != nil {
@@ -630,8 +649,111 @@ func (inv *invocation) hostScopeCovers(name, target, addr, scope string, unchang
 		return false
 	}
 	a.Out.WarnE("Scope '" + scope + "' does not cover " + addr + ", the address '" + name + "' resolves to (" + answered + "). If its requests come from that address, its logins are refused.")
+	if found {
+		fix += "   (or enroll it in that scope: --scope " + info.Scope + ")"
+	}
 	a.Out.WarnE(fix)
 	return true
+}
+
+// hostAddress is the address a registered host's logins come from, as
+// recorded at its last enroll or sync (127.0.0.1 for this server); "" when
+// none is recorded.
+func (inv *invocation) hostAddress(e hosts.Entry) string {
+	if e.Target == hosts.Local {
+		return "127.0.0.1"
+	}
+	f, err := devreg.Load(inv.app.Paths.DevicesFile)
+	if err != nil {
+		return ""
+	}
+	return f.HostAddressOf(e.Name)
+}
+
+// hostScopeDrift is what is wrong with where a registered host's logins
+// are answered: "" when its scope answers addr (or addr is unknown). The
+// host is never moved here: a move changes its secret and deletes the
+// accounts of the users it loses, so it is left to an enroll that names
+// the scope.
+func (inv *invocation) hostScopeDrift(e hosts.Entry, addr string) string {
+	if addr == "" {
+		return ""
+	}
+	m, err := inv.model()
+	if err != nil {
+		return ""
+	}
+	info, found := m.LookupAddr(addr)
+	switch {
+	case found && info.Scope == e.Scope:
+		return ""
+	case !found:
+		return e.Name + ": registered in scope '" + e.Scope + "', but no scope covers " + addr + ", so its logins are refused. Add it: tacctl scope prefixes " + e.Scope + " add " + addr + "/32"
+	}
+	return e.Name + ": registered in scope '" + e.Scope + "', but " + addr + " is answered by scope '" + info.Scope + "' (prefix " + info.Prefix +
+		"): its logins are checked against that scope's users and secret, so they are refused. To move it: " + hostMoveCommand(e, info.Scope) +
+		"   (or answer it from its own scope again: tacctl scope prefixes " + e.Scope + " add " + addr + "/32)"
+}
+
+// hostMoveCommand is the enroll that moves a registered host to scope.
+func hostMoveCommand(e hosts.Entry, scope string) string {
+	if e.Target == hosts.Local {
+		return "tacctl host enroll --local --name " + e.Name + " --scope " + scope
+	}
+	cmd := "tacctl host enroll " + e.Target + " --name " + e.Name
+	if e.Port != "" {
+		cmd += " --port " + e.Port
+	}
+	if e.Identity != "" {
+		cmd += " --identity " + e.Identity
+	}
+	return cmd + " --scope " + scope
+}
+
+// confirmScopeMove says what moving a registered host from one scope to
+// another does to its accounts and, when it deletes any, asks (a terminal)
+// or wants --yes. Nothing has changed yet.
+func (inv *invocation) confirmScopeMove(name, from, to string, yes bool) error {
+	a := inv.app
+	m, err := inv.model()
+	if err != nil {
+		return err
+	}
+	members := func(scope string) map[string]bool {
+		set := map[string]bool{}
+		for _, r := range m.LinuxUsers(scope) {
+			n, _, _ := strings.Cut(r, "|")
+			set[n] = true
+		}
+		for _, n := range m.LinuxInactive(scope) {
+			set[n] = true
+		}
+		return set
+	}
+	before, after := members(from), members(to)
+	var lose []string
+	for n := range before {
+		if !after[n] {
+			lose = append(lose, n)
+		}
+	}
+	sort.Strings(lose)
+	a.Out.InfoE("Moving " + name + " from scope '" + from + "' to scope '" + to + "': it gets that scope's secret and users.")
+	if len(lose) == 0 {
+		return nil
+	}
+	a.Out.WarnE("These users of '" + from + "' are not users of '" + to + "'; their accounts on " + name + " are deleted: " + strings.Join(lose, ", "))
+	if yes {
+		return nil
+	}
+	if p := a.Prompter(); p.Interactive() {
+		if p.Confirm("Move " + name + " to '" + to + "' and delete those accounts? [y/N] ") {
+			return nil
+		}
+		a.Out.InfoE("Nothing was changed.")
+		return exit(1)
+	}
+	return inv.usageErr("Moving " + name + " to scope '" + to + "' deletes accounts; nothing was changed. Confirm with --yes.")
 }
 
 // localScopeWarning is the sync's word on this server's own scope: when
@@ -813,6 +935,11 @@ func (inv *invocation) syncOne(he *hosts.Env, e hosts.Entry, method string, scri
 		resolved = inv.resolveV4(host)
 	}
 	inv.hostFacts(he, e.Name, e.Target, resolved)
+	if e.Target != hosts.Local {
+		if msg := inv.hostScopeDrift(e, inv.hostAddress(e)); msg != "" {
+			inv.app.Out.WarnE(msg)
+		}
+	}
 	if consoleCheck {
 		inv.consoleAfterLocal()
 	}
