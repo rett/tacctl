@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 
@@ -72,23 +71,28 @@ func (inv *invocation) consoleUsersTable(pol *console.Policy) (users []string, l
 	if err != nil {
 		return nil, false, err
 	}
-	inv.echo("Users of " + e.Name + " (scope " + e.Scope + "):")
+	title := "Users of " + e.Name + " (scope " + e.Scope + ")"
+	tb := ui.NewTable(title, ui.Left("USERNAME"), ui.Left("TIER"), ui.Left("SHELL"), ui.Left("WHY"))
 	seen := map[string]bool{}
 	rows := m.LinuxUsers(e.Scope)
-	if len(rows) == 0 {
-		inv.echo("  none")
-	}
 	for _, r := range rows {
 		name, lvl, _ := strings.Cut(r, "|")
-		t := tier.ForPrivLvl(lvl)
-		d := pol.Decide(name, t)
+		tr := tier.ForPrivLvl(lvl)
+		d := pol.Decide(name, tr)
 		seen[name] = true
 		shell := "bash"
 		if d.Console {
 			shell = "console"
 			users = append(users, name)
 		}
-		inv.echo(fmt.Sprintf("  %-20s %-10s %s (%s)", name, t, shell, d.Why))
+		tb.Add(name, string(tr), shell, d.Why)
+	}
+	if tb.Len() == 0 {
+		inv.echoE(ui.Bold + title + ui.NC)
+		inv.echo(ui.Rule(title))
+		inv.echo("  none")
+	} else {
+		inv.write(tb.String())
 	}
 	var stray []string
 	for _, u := range pol.File.UserNames() {

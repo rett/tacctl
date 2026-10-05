@@ -86,10 +86,11 @@ func TestConsoleShowDefaults(t *testing.T) {
 		"Login console", "  readonly: enable\n  operator: enable\n  superuser: enable\n",
 		"  idle-timeout: 30 min\n", "  agent-forwarding: disabled\n", "  ssh-escape: disabled\n",
 		"  system-shell tiers: superuser\n", "  system-shell path: /bin/bash\n", "  list-max: 40",
-		"Users of authsrv (scope lab):\n",
-		"  alice                superuser  console (tier superuser)\n",
-		"  bob                  operator   console (tier operator)\n",
-		"  carol                readonly   console (tier readonly)\n",
+		"Users of authsrv (scope lab)\n",
+		"  USERNAME  TIER       SHELL    WHY\n",
+		"  alice     superuser  console  tier superuser\n",
+		"  bob       operator   console  tier operator\n",
+		"  carol     readonly   console  tier readonly\n",
 		"/usr/local/bin/tacctl-console: missing", "does not list the console", "sshd drop-in " + sb.path("sshd_config.d", "tacctl-console.conf") + ": missing",
 	} {
 		if !strings.Contains(out, want) {
@@ -183,7 +184,7 @@ func TestConsoleWritesTiersAndUsers(t *testing.T) {
 		t.Errorf("user alice: %q", got)
 	}
 	out = sb.con("show")
-	for _, want := range []string{"  bob                  operator   console (user override)\n", "  carol                readonly   bash (user override)\n", "  alice                superuser  console (tier superuser)\n"} {
+	for _, want := range []string{"  bob       operator   console  user override\n", "  carol     readonly   bash     user override\n", "  alice     superuser  console  tier superuser\n"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("show lacks %q:\n%s", want, out)
 		}
@@ -191,7 +192,7 @@ func TestConsoleWritesTiersAndUsers(t *testing.T) {
 	// A readonly tier switched off, no override: bash for its users.
 	sb.con("user", "carol", "clear")
 	out = sb.con("show")
-	if !strings.Contains(out, "  carol                readonly   bash (tier readonly disabled)\n") {
+	if !strings.Contains(out, "  carol     readonly   bash     tier readonly disabled\n") {
 		t.Errorf("after clear:\n%s", out)
 	}
 	if out = sb.con("user", "carol", "clear"); !strings.Contains(out, "'carol' has no override.") {

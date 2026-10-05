@@ -112,10 +112,10 @@ LIST
     run "$TACCTL_BIN_SCRIPT" console show
     assert_success
     plain
-    assert_output --partial "Users of authsrv (scope lab):"
-    assert_output --regexp "alice +superuser +console \(tier superuser\)"
-    assert_output --regexp "bob +operator +console \(user override\)"
-    assert_output --regexp "carol +readonly +bash \(tier readonly disabled\)"
+    assert_output --partial "Users of authsrv (scope lab)"
+    assert_output --regexp "alice +superuser +console +tier superuser"
+    assert_output --regexp "bob +operator +console +user override"
+    assert_output --regexp "carol +readonly +bash +tier readonly disabled"
     run "$TACCTL_BIN_SCRIPT" console user bob
     assert_output "enable"
     run "$TACCTL_BIN_SCRIPT" console user alice
@@ -124,7 +124,7 @@ LIST
     run "$TACCTL_BIN_SCRIPT" console user carol enable
     run "$TACCTL_BIN_SCRIPT" console show
     plain
-    assert_output --regexp "carol +readonly +console \(user override\)"
+    assert_output --regexp "carol +readonly +console +user override"
 }
 
 @test "console writes: console.yaml is 0600 with the documented shape, snapshotted, in backup diff" {

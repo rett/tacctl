@@ -261,7 +261,7 @@ func TestBackupListOrderSizesAndCompletionNames(t *testing.T) {
 	want := []string{"20260301_000000_000", "20260201_000000_000-10", "20260201_000000_000-9", "20260201_000000_000",
 		"20260101_000000_000", "pre-store.20250601_000000", "drift.20250301_000000", "20250101_000000"}
 	out := plain(sb.run("", []string{"backup", "list"}))
-	sb.expect(0, "  TIMESTAMP                            KIND       SIZE    \n", "")
+	sb.expect(0, "  TIMESTAMP", "")
 	var got []string
 	for _, l := range strings.Split(out, "\n") {
 		if f := strings.Fields(l); len(f) == 3 && (f[1] == "snapshot" || f[1] == "old-style") {

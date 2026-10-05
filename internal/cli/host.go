@@ -11,7 +11,6 @@ package cli
 
 import (
 	"errors"
-	"fmt"
 	"io"
 	"os"
 	"regexp"
@@ -127,14 +126,14 @@ func (inv *invocation) hostList() error {
 		return err
 	}
 	inv.echo("")
-	inv.echoE(ui.Bold + "Enrolled Linux hosts" + ui.NC)
-	inv.echo("--------------------------------------------")
 	if reg.Empty() {
+		inv.echoE(ui.Bold + "Enrolled Linux hosts" + ui.NC)
+		inv.echo(ui.Rule("Enrolled Linux hosts"))
 		inv.echo("  None. Enroll one with: tacctl host enroll <[user@]host>")
 		inv.echo("")
 		return nil
 	}
-	inv.write(fmt.Sprintf("  "+ui.Bold+"%-20s %-28s %-20s %-16s %-8s %s"+ui.NC+"\n", "NAME", "TARGET", "SCOPE", "SERVER", "METHOD", "USERS"))
+	t := ui.NewTable("Enrolled Linux hosts", ui.Left("NAME"), ui.Left("TARGET"), ui.Left("SCOPE"), ui.Left("SERVER"), ui.Left("METHOD"), ui.Left("USERS"))
 	for _, e := range reg.Entries() {
 		target := e.Target
 		if e.Port != "" {
@@ -144,8 +143,9 @@ func (inv *invocation) hostList() error {
 		if m, err := inv.model(); err == nil {
 			users = hosts.UserCount(m.LinuxUsers(e.Scope))
 		}
-		inv.write(fmt.Sprintf("  %-20s %-28s %-20s %-16s %-8s %s\n", e.Name, target, e.Scope, e.Server, reg.Method(e.Name), strconv.Itoa(users)))
+		t.Add(e.Name, target, e.Scope, e.Server, reg.Method(e.Name), strconv.Itoa(users))
 	}
+	inv.write(t.String())
 	inv.echo("")
 	return nil
 }

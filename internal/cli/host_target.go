@@ -218,7 +218,7 @@ func (inv *invocation) hostTargetShow(e hosts.Entry) error {
 	}
 	inv.echo("")
 	inv.echoE(ui.Bold + "Host " + e.Name + ui.NC)
-	inv.echo(strings.Repeat("-", 5+len(e.Name)))
+	inv.echo(ui.Rule("Host " + e.Name))
 	row := func(k, v string) { inv.echo("  " + padTo(k+":", 13) + " " + v) }
 	row("Target", e.Target)
 	row("Port", port)

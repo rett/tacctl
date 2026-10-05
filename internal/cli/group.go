@@ -110,17 +110,11 @@ func privLvlOK(v string) bool {
 // --- list / add / remove / edit ---------------------------------------------
 
 func (inv *invocation) groupList([]string) error {
-	b, nc := ui.Bold, ui.NC
-	inv.echo("")
-	inv.echoE(b + "Groups" + nc)
-	inv.echo("--------------------------------------------")
-	inv.write("  " + b + ui.Pad("GROUP", 20) + " " + ui.Pad("CISCO PRIV-LVL", 15) + " " + ui.Pad("JUNIPER CLASS", 20) + " " +
-		ui.Pad("USERS", 10) + nc + "\n")
-	inv.echo("  -------------------------------------------------------------------")
 	m, err := inv.model()
 	if err != nil {
 		return err
 	}
+	t := ui.NewTable("Groups", ui.Left("GROUP"), ui.Left("CISCO PRIV-LVL"), ui.Left("JUNIPER CLASS"), ui.Left("USERS"))
 	for _, row := range m.GroupRows() {
 		f := strings.SplitN(row, "|", 4)
 		for len(f) < 4 {
@@ -129,8 +123,10 @@ func (inv *invocation) groupList([]string) error {
 		if f[0] == "" {
 			continue
 		}
-		inv.write("  " + ui.Pad(f[0], 20) + " " + ui.Pad(f[1], 15) + " " + ui.Pad(f[2], 20) + " " + ui.Pad(f[3], 10) + "\n")
+		t.Add(f[0], f[1], f[2], f[3])
 	}
+	inv.echo("")
+	inv.write(t.String())
 	inv.echo("")
 	return nil
 }
@@ -347,18 +343,18 @@ func (inv *invocation) groupCommands(args []string) error {
 	case "list":
 		rules := policy.Lines(c, group)
 		b, nc := ui.Bold, ui.NC
-		inv.echo("")
-		inv.echoE(b + "Command rules for group '" + group + "'" + nc)
-		inv.echo("--------------------------------------------")
-		inv.echoE("  Default action: " + b + policy.DefaultAction(c, group) + nc)
+		title := "Command rules for group '" + group + "'"
 		inv.echo("")
 		if len(rules) == 0 {
+			inv.echoE(b + title + nc)
+			inv.echo(ui.Rule(title))
+			inv.echoE("  Default action: " + b + policy.DefaultAction(c, group) + nc)
+			inv.echo("")
 			inv.echo("  (no commands — custom group with no rules; all commands permitted)")
 			inv.echo("")
 			return nil
 		}
-		inv.write("  " + b + ui.Pad("NAME", 20) + " " + ui.Pad("ACTION", 8) + " " + "MATCH" + nc + "\n")
-		inv.echo("  -------------------------------------------------")
+		t := ui.NewTable(title, ui.Left("NAME"), ui.Left("ACTION"), ui.Left("MATCH"))
 		catchall := false
 		for _, r := range rules {
 			name, action, match := policy.Field(r, 1), policy.Field(r, 2), ruleMatch(r)
@@ -374,8 +370,11 @@ func (inv *invocation) groupCommands(args []string) error {
 				catchall = true
 				shown = name + " (catchall)"
 			}
-			inv.write("  " + ui.Pad(shown, 20) + " " + color + ui.Pad(action, 8) + nc + " " + match + "\n")
+			t.Add(shown, ui.Styled(color, action), match)
 		}
+		inv.write(t.String())
+		inv.echo("")
+		inv.echoE("  Default action: " + b + policy.DefaultAction(c, group) + nc)
 		if !catchall {
 			a.Out.Warn("No '*' catchall — tacquito will FAIL any unmatched command.")
 			a.Out.Warn("Set the default explicitly with 'tacctl group commands default " + group + " permit|deny'.")
@@ -695,7 +694,7 @@ func (inv *invocation) groupPrivilege(args []string) error {
 		b, nc := ui.Bold, ui.NC
 		inv.echo("")
 		inv.echoE(b + "Cisco priv-exec mappings for group '" + group + "' (priv-lvl " + privlvl + ")" + nc)
-		inv.echo("--------------------------------------------")
+		inv.echo(ui.Rule("Cisco priv-exec mappings for group '" + group + "' (priv-lvl " + privlvl + ")"))
 		switch {
 		case captured(merged) == "":
 			inv.echo("  (no mappings — group's priv-lvl uses Cisco defaults)")

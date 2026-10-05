@@ -477,9 +477,9 @@ func (inv *invocation) scopeUsage() error {
 
 func (inv *invocation) scopeListView([]string) error {
 	b, nc, cy := ui.Bold, ui.NC, ui.Cyan
+	title := "Scopes"
+	hint := cy + "(one block per scope; see 'tacctl scope routing' for first-match prefix order)" + nc
 	inv.echo("")
-	inv.echoE(b + "Scopes" + nc + " " + cy + "(one block per scope; see 'tacctl scope routing' for first-match prefix order)" + nc)
-	inv.echo("--------------------------------------------------------------")
 	def, err := inv.defaultScope()
 	if err != nil {
 		return err
@@ -490,6 +490,8 @@ func (inv *invocation) scopeListView([]string) error {
 	}
 	rows := m.ScopeRows(def)
 	if len(rows) == 0 {
+		inv.echoE(b + title + nc + " " + hint)
+		inv.echo(ui.Rule(title + " " + hint))
 		inv.echo("  (no scopes configured)")
 		inv.echo("")
 		return nil
@@ -507,14 +509,12 @@ func (inv *invocation) scopeListView([]string) error {
 			withVendor = true
 		}
 	}
+	cols := []ui.Col{ui.Left("NAME"), ui.Left("PREFIXES"), ui.Right("USERS"), ui.Left("DEFAULT")}
 	if withVendor {
-		inv.write("  " + b + ui.Pad("NAME", 18) + " " + ui.Pad("PREFIXES", 20) + " " + ui.PadLeft("USERS", 5) + "  " +
-			ui.Pad("DEFAULT", 7) + "  " + "VENDOR ATTRIBUTES (RADIUS)" + nc + "\n")
-		inv.echo("  ------------------------------------------------------------------------------------")
-	} else {
-		inv.write("  " + b + ui.Pad("NAME", 18) + " " + ui.Pad("PREFIXES", 20) + " " + ui.PadLeft("USERS", 5) + "  " + "DEFAULT" + nc + "\n")
-		inv.echo("  --------------------------------------------------------------")
+		cols = append(cols, ui.Left("VENDOR ATTRIBUTES (RADIUS)"))
 	}
+	t := ui.NewTable(title, cols...)
+	t.Hint = hint
 	for _, r := range rows {
 		f := split(r)
 		name, c, users, isDefault, vendor := f[0], f[1], f[2], f[3], f[4]
@@ -522,32 +522,32 @@ func (inv *invocation) scopeListView([]string) error {
 			if c == "" {
 				continue
 			}
-			inv.write("  " + ui.Pad("", 18) + " " + ui.Pad(c, 20) + "\n")
+			t.Add("", c)
 			continue
 		}
 		if withVendor {
 			if vendor == "" {
 				vendor = "not sent"
 			}
-			inv.write("  " + b + ui.Pad(name, 18) + nc + " " + ui.Pad(c, 20) + " " + ui.PadLeft(users, 5) + "  " +
-				ui.Pad(isDefault, 7) + "  " + vendor + "\n")
+			t.Add(ui.Styled(ui.Bold, name), c, users, isDefault, vendor)
 		} else {
-			dfl := ""
+			dfl := ui.Cell{}
 			if isDefault == "yes" {
-				dfl = cy + "yes" + nc
+				dfl = ui.Styled(cy, "yes")
 			}
-			inv.write("  " + b + ui.Pad(name, 18) + nc + " " + ui.Pad(c, 20) + " " + ui.PadLeft(users, 5) + "  " + dfl + "\n")
+			t.Add(ui.Styled(ui.Bold, name), c, users, dfl)
 		}
 	}
+	inv.write(t.String())
 	inv.echo("")
 	return nil
 }
 
 func (inv *invocation) scopeRouting([]string) error {
 	b, nc, cy := ui.Bold, ui.NC, ui.Cyan
+	title := "Scope routing"
+	hint := cy + "(first-match order — narrower prefixes win)" + nc
 	inv.echo("")
-	inv.echoE(b + "Scope routing" + nc + " " + cy + "(first-match order — narrower prefixes win)" + nc)
-	inv.echo("--------------------------------------------------------------")
 	def, err := inv.defaultScope()
 	if err != nil {
 		return err
@@ -558,13 +558,14 @@ func (inv *invocation) scopeRouting([]string) error {
 	}
 	rows := m.ScopeRouting(def)
 	if len(rows) == 0 {
+		inv.echoE(b + title + nc + " " + hint)
+		inv.echo(ui.Rule(title + " " + hint))
 		inv.echo("  (no scopes configured)")
 		inv.echo("")
 		return nil
 	}
-	inv.write("  " + b + ui.PadLeft("#", 3) + "  " + ui.Pad("NAME", 18) + " " + ui.Pad("PREFIX", 20) + " " +
-		ui.PadLeft("USERS", 5) + "  " + "DEFAULT" + nc + "\n")
-	inv.echo("  --------------------------------------------------------------")
+	t := ui.NewTable(title, ui.Right("#"), ui.Left("NAME"), ui.Left("PREFIX"), ui.Right("USERS"), ui.Left("DEFAULT"))
+	t.Hint = hint
 	i := 0
 	for _, r := range rows {
 		f := strings.SplitN(r, "|", 4)
@@ -575,13 +576,13 @@ func (inv *invocation) scopeRouting([]string) error {
 			continue
 		}
 		i++
-		dfl := ""
+		dfl := ui.Cell{}
 		if f[3] == "yes" {
-			dfl = cy + "yes" + nc
+			dfl = ui.Styled(cy, "yes")
 		}
-		inv.write("  " + ui.PadLeft(fmt.Sprint(i), 3) + "  " + b + ui.Pad(f[0], 18) + nc + " " + ui.Pad(f[1], 20) + " " +
-			ui.PadLeft(f[2], 5) + "  " + dfl + "\n")
+		t.Add(fmt.Sprint(i), ui.Styled(ui.Bold, f[0]), f[1], f[2], dfl)
 	}
+	inv.write(t.String())
 	inv.echo("")
 	return nil
 }
@@ -1136,7 +1137,7 @@ func (inv *invocation) scopePrefixes(args []string) error {
 	case "list":
 		inv.echo("")
 		inv.echoE(ui.Bold + "Prefixes for scope '" + scope + "'" + ui.NC)
-		inv.echo("--------------------------------------------")
+		inv.echo(ui.Rule("Prefixes for scope '" + scope + "'"))
 		if len(current) == 0 {
 			inv.echo("  (empty — no clients can match this scope)")
 		} else {
@@ -1325,7 +1326,7 @@ func (inv *invocation) scopeSecret(args []string) error {
 	case "show":
 		inv.echo("")
 		inv.echoE(b + "Scope '" + scope + "' — shared secret" + nc)
-		inv.echo("--------------------------------------------")
+		inv.echo(ui.Rule("Scope '" + scope + "' — shared secret"))
 		switch {
 		case cur == "":
 			inv.echoE("  " + ui.Red + "(unset)" + nc)
@@ -1645,17 +1646,21 @@ func (inv *invocation) scopeDevices(args []string) error {
 			attrs = "not sent"
 		}
 		inv.echo("")
-		inv.echoE(ui.Bold + "Tagged addresses of scope '" + scope + "'" + ui.NC + " (RADIUS)")
-		inv.echo("--------------------------------------------")
+		title := "Tagged addresses of scope '" + scope + "'"
 		if len(current) == 0 {
+			inv.echoE(ui.Bold + title + ui.NC + " (RADIUS)")
+			inv.echo(ui.Rule(title + " (RADIUS)"))
 			inv.echo("  (none)")
 		} else {
+			t := ui.NewTable(title, ui.Left("ADDRESS"), ui.Left("VENDOR"))
+			t.Hint = "(RADIUS)"
 			for _, d := range current {
 				dc, dv, _ := strings.Cut(d, "|")
 				if dc != "" {
-					inv.write("  " + ui.Pad(dc, 24) + " " + dv + "\n")
+					t.Add(dc, dv)
 				}
 			}
+			inv.write(t.String())
 		}
 		inv.echo("")
 		inv.echo("  A tagged address gets its own vendor's attribute and no other vendor's.")
@@ -1988,7 +1993,7 @@ func (inv *invocation) scopeMgmtACL(args []string) error {
 		scopeEntries, globalEntries := c.GetList(path), c.GetList("mgmt_acl.permits")
 		inv.echo("")
 		inv.echoE(ui.Bold + "Management ACL for scope '" + scope + "'" + ui.NC)
-		inv.echo("--------------------------------------------")
+		inv.echo(ui.Rule("Management ACL for scope '" + scope + "'"))
 		switch {
 		case captured(scopeEntries) != "":
 			inv.echo("  Source: per-scope override (scope_mgmt_acl.permits." + scope + ")")
