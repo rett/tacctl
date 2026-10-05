@@ -136,7 +136,14 @@ podman rm -f -t 0 "$S" "$C" > /dev/null 2>&1 || true
 # container. NET_ADMIN: the check makes the server unreachable with nft.
 podman run -d --name "$S" --network "$NET" --systemd=always --cap-add SYS_ADMIN --cap-add NET_ADMIN \
     -v "${REPO}:/opt/tacctl:ro" "$SIMAGE" /sbin/init > /dev/null || exit 1
-podman run -d --name "$C" --network "$NET" --cap-add AUDIT_WRITE -v "${HERE}:/check:ro" \
+# The client's IDs: rootless podman has 65536 subordinate IDs to give, and
+# the default map (0-65535) leaves out tacctl's 80000-89999. This one keeps
+# 0-55533 (the system's accounts, useradd's range and tacctl's earlier
+# 20000-29999), nobody/nogroup (65534, sshd's privilege separation) and
+# 65535, and maps 80000-89999 too.
+CLIENT_IDMAP=()
+for m in 0:1:55534 65534:55535:2 80000:55537:10000; do CLIENT_IDMAP+=(--uidmap "$m" --gidmap "$m"); done
+podman run -d --name "$C" --network "$NET" --cap-add AUDIT_WRITE "${CLIENT_IDMAP[@]}" -v "${HERE}:/check:ro" \
     "$CIMAGE" /usr/sbin/sshd -D -e > /dev/null || exit 1
 sleep 4
 PY=$(c bash -c 'command -v python3 || echo /usr/libexec/platform-python')
@@ -292,7 +299,7 @@ full_cases() {
         tacctl user scope erin remove linux-c1 > /dev/null
         tacctl host sync c1 --remove-home > "${WORK}/sync.out"; rc=$?
         check "[$m] host sync --remove-home deletes erin's account and home (not what a link in it points to)" bash -c "[[ $rc == 0 ]] && grep -q 'Deleted home /home/erin.' '${WORK}/sync.out' && ! podman exec '$C' id erin && ! podman exec '$C' test -e /home/erin && podman exec '$C' test -f /etc/passwd"
-        check "[$m] erin's UID stays reserved on the server" bash -c "podman exec '$S' grep -qx 'erin:20004' /etc/tacctl/linux-uids"
+        check "[$m] erin's UID stays reserved on the server" bash -c "podman exec '$S' grep -qx 'erin:80004' /etc/tacctl/linux-uids"
     fi
 
     # Server unreachable.
@@ -361,17 +368,20 @@ FIRST="$CYCLE"; [[ "$CYCLE" == "switch" ]] && FIRST="tacplus"
 section "before: snapshot, then enroll with --method ${FIRST}"
 snapshot > "${WORK}/before"
 check "nothing of tacctl on the host yet" c bash -c '[[ ! -e /var/lib/tacctl-client && ! -e /etc/pam.d/tacctl-auth ]]'
+# A login.defs whose useradd range reaches tacctl's (the default UID_MAX
+# 60000 does not): enroll warns.
+c cp /etc/login.defs /root/login.defs.orig
+c sed -i 's/^UID_MAX[[:space:]].*/UID_MAX\t\t\t85000/' /etc/login.defs
 enroll "$FIRST"; check "host enroll --method ${FIRST} exits 0" test $? -eq 0
 [[ "$FIRST" == "radius" ]] && note "installed by the enrollment: $(pkg_versions)"
 check "enroll said there are no users in the scope yet" grep -q "No users are in scope 'linux-c1' yet" "${WORK}/enroll.out"
-check "enroll warns that the host's login.defs lets useradd give out UIDs of 20000-29999" grep -q "c1: local useradd there gives out UIDs 1000-60000 (/etc/login.defs UID_MIN/UID_MAX), which overlaps tacctl's 20000-29999:" "${WORK}/enroll.out"
+check "enroll warns that the host's login.defs lets useradd give out UIDs of 80000-89999" grep -q "c1: local useradd there gives out UIDs 1000-85000 (/etc/login.defs UID_MIN/UID_MAX), which overlaps tacctl's 80000-89999:" "${WORK}/enroll.out"
 check "enroll recorded the address its ssh connection reached" bash -c "podman exec '$S' grep -A1 '^  c1:' /etc/tacctl/devices.yaml | grep -qF 'address: ${CIP}'"
 expect "device show finds the host by that address" "Enrolled host c1" "$(tacctl device show "$CIP")"
 expect "device add refuses that address" "${CIP} belongs to the enrolled host 'c1'." "$(tacctl device add c1copy "$CIP" --no-host-key)"
-# The fix the warning suggests: no warning on the next sync, and local
-# useradd stays below the range.
-c cp /etc/login.defs /root/login.defs.orig
-c sed -i 's/^UID_MAX[[:space:]].*/UID_MAX\t\t\t19999/' /etc/login.defs
+# The distribution's own login.defs (UID_MAX 60000): no warning on the next
+# sync, and local useradd stays below the range.
+c cp /root/login.defs.orig /etc/login.defs
 
 section "users: alice (superuser), bob (operator), dave and erin (readonly), carl (readonly; the host has a local carl)"
 # carl as an earlier release left an adopted account: in tacctl's groups
@@ -383,14 +393,35 @@ tacctl host sync c1 > "${WORK}/sync.out"; rc=$?
 check "host sync refuses carl (a local account tacctl did not create), goes on, and says so in its summary" bash -c "[[ $rc == 0 ]] && grep -q \"'carl': this host has a local account of that name that tacctl did not create\" '${WORK}/sync.out' && grep -q 'c1: synced (4 users; 1 refused: carl)' '${WORK}/sync.out'"
 check "the adopted carl is reported once, taken out of tacctl's groups, and forgotten" bash -c "grep -q 'adopted are no longer tracked: carl' '${WORK}/sync.out' && grep -q \"'carl': removed from tacctl's groups (tac-users, tac-readonly); it is a plain local account again.\" '${WORK}/sync.out' && ! podman exec '$C' test -e /var/lib/tacctl-client/adopted"
 check "nothing else of carl's account changed (passwd and shadow lines, other groups)" bash -c "[[ \"\$(podman exec '$C' getent passwd carl)\" == '${carl_before}' && \"\$(podman exec '$C' getent shadow carl)\" == '${carl_shadow}' && \"\$(podman exec '$C' id -nG carl | tr ' ' '\\n' | sort | paste -sd' ')\" == '${carl_groups}' ]]"
-check "with UID_MAX 19999 the sync does not warn about login.defs" bash -c "! grep -q 'local useradd there' '${WORK}/sync.out'"
+check "with the default UID_MAX 60000 the sync does not warn about login.defs" bash -c "! grep -q 'local useradd there' '${WORK}/sync.out'"
 c useradd -m localx > /dev/null 2>&1
-check "local useradd with UID_MAX 19999 gives a UID below 20000" bash -c "id=\$(podman exec '$C' id -u localx) && (( id < 20000 ))"
+check "local useradd with the default login.defs gives a UID below 80000" bash -c "id=\$(podman exec '$C' id -u localx) && (( id < 80000 ))"
 c userdel -r localx > /dev/null 2>&1
-c cp /root/login.defs.orig /etc/login.defs
-check "every account tacctl created has a UID in 20000-29999" bash -c "for u in alice bob dave erin; do id=\$(podman exec '$C' id -u \$u) && (( id >= 20000 && id <= 29999 )) || exit 1; done"
+check "every account tacctl created has a UID in 80000-89999" bash -c "for u in alice bob dave erin; do id=\$(podman exec '$C' id -u \$u) && (( id >= 80000 && id <= 89999 )) || exit 1; done"
 LABEL="TACACS+"; [[ "$FIRST" == "radius" ]] && LABEL="RADIUS"
-check "alice's account: UID 20000, locked password, named 'alice (${LABEL})'" c bash -c "[[ \$(id -u alice) == 20000 && \$(getent passwd alice | cut -d: -f5) == 'alice (${LABEL})' ]] && getent shadow alice | cut -d: -f2 | grep -q '^!'"
+check "alice's account: UID 80000, locked password, named 'alice (${LABEL})'" c bash -c "[[ \$(id -u alice) == 80000 && \$(getent passwd alice | cut -d: -f5) == 'alice (${LABEL})' ]] && getent shadow alice | cut -d: -f2 | grep -q '^!'"
+
+section "renumbering: dave as an earlier release left him (UID and map entry in 20000-29999)"
+# The host's account at the legacy number tacctl gave out before (state
+# 'created', own group, home owned by it), a file outside the home with that
+# number, and the server's map entry at the legacy number.
+dave_new=$(s sed -n 's/^dave://p' /etc/tacctl/linux-uids)
+dave_old=$((dave_new - 60000))
+c bash -c "usermod -u ${dave_old} dave && groupmod -g ${dave_old} dave && usermod -g ${dave_old} dave > /dev/null
+    chown -R ${dave_old}:${dave_old} ~dave && echo note > ~dave/note && chown ${dave_old}:${dave_old} ~dave/note
+    echo x > /var/tmp/dave-stray && chown ${dave_old}:${dave_old} /var/tmp/dave-stray"
+s sed -i "s/^dave:${dave_new}\$/dave:${dave_old}/" /etc/tacctl/linux-uids
+check "dave starts at UID/GID ${dave_old}, the map at ${dave_old}" bash -c "[[ \$(podman exec '$C' id -u dave) == ${dave_old} && \$(podman exec '$C' id -g dave) == ${dave_old} ]] && podman exec '$S' grep -qx 'dave:${dave_old}' /etc/tacctl/linux-uids"
+tacctl host sync c1 > "${WORK}/sync.out"; rc=$?
+sed 's/^/    | /' "${WORK}/sync.out" | grep -iE 'renumber|stray|carry'
+check "the sync renumbers the server's map once, keeps the old one and logs it" bash -c "[[ $rc == 0 ]] && grep -q 'Renumbered 1 entry of /etc/tacctl/linux-uids from 20000-29999 to 80000-89999' '${WORK}/sync.out' && podman exec '$S' grep -qx 'dave:${dave_new}' /etc/tacctl/linux-uids && podman exec '$S' bash -c 'grep -qx dave:${dave_old} /etc/tacctl/linux-uids.pre-renumber-*' && podman exec '$S' journalctl -t tacctl --no-pager | grep -q 'uid-map renumbered 1 entries'"
+check "the host renumbers dave ${dave_old} -> ${dave_new} and the summary counts it" bash -c "grep -q \"'dave': renumbered ${dave_old} -> ${dave_new} (home re-owned)\" '${WORK}/sync.out' && grep -q 'c1: synced (4 users; 1 renumbered; 1 refused: carl)' '${WORK}/sync.out'"
+check "dave's UID, group and primary GID are ${dave_new}" c bash -c "[[ \$(id -u dave) == ${dave_new} && \$(id -g dave) == ${dave_new} && \$(getent group dave | cut -d: -f3) == ${dave_new} ]]"
+check "dave's home and the files in it are ${dave_new}:${dave_new}" c bash -c "[[ \$(stat -c %u:%g ~dave) == ${dave_new}:${dave_new} && \$(stat -c %u:%g ~dave/note) == ${dave_new}:${dave_new} ]]"
+check "the stray file outside the home is reported and left as it was" bash -c "grep -q '/var/tmp/dave-stray' '${WORK}/sync.out' && [[ \$(podman exec '$C' stat -c %u:%g /var/tmp/dave-stray) == ${dave_old}:${dave_old} ]]"
+c rm -f /var/tmp/dave-stray
+tacctl host sync c1 > "${WORK}/sync.out"; rc=$?
+check "a second sync renumbers nothing" bash -c "[[ $rc == 0 ]] && ! grep -qi 'renumbered' '${WORK}/sync.out' && grep -q 'c1: synced (4 users; 1 refused: carl)' '${WORK}/sync.out'"
 
 section "cases (${FIRST})"
 where_secret "$FIRST"

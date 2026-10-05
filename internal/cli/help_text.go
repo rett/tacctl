@@ -327,6 +327,7 @@ Usage: tacctl config linux <subcommand>
                                           Write the install script for hosts in a scope (contains the secret)
   remove-script [--output <file>]         Write the removal script (no secrets; accounts are left in place)
   uid [<username> [<uid>]]                Show or change the UID/GID a user gets on every host
+  uid-range [<min>-<max>]                 Show or change the UID range of all hosts (default 80000-89999)
   builds [list|clear]                     Show or drop the modules 'host enroll' built in containers
 
 `,

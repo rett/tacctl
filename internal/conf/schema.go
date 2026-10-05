@@ -72,12 +72,16 @@ type wildcard struct {
 func NewSchema(backends []string) *Schema {
 	return &Schema{
 		exact: map[string]Rule{
-			"password.max_age_days":  {Type: TypeInt, Min: intp(1)},
-			"password.min_length":    {Type: TypeInt, Min: intp(8), Max: intp(64)},
-			"secret.min_length":      {Type: TypeInt, Min: intp(16), Max: intp(128)},
-			"bcrypt.cost":            {Type: TypeInt, Min: intp(10), Max: intp(14)},
-			"scope.default":          {Type: TypeNullableString, Pattern: scopePattern},
-			"host.default_method":    {Type: TypeEnum, Values: []string{"tacplus", "radius"}},
+			"password.max_age_days": {Type: TypeInt, Min: intp(1)},
+			"password.min_length":   {Type: TypeInt, Min: intp(8), Max: intp(64)},
+			"secret.min_length":     {Type: TypeInt, Min: intp(16), Max: intp(128)},
+			"bcrypt.cost":           {Type: TypeInt, Min: intp(10), Max: intp(14)},
+			"scope.default":         {Type: TypeNullableString, Pattern: scopePattern},
+			"host.default_method":   {Type: TypeEnum, Values: []string{"tacplus", "radius"}},
+			// The Linux UID range ('tacctl config linux uid-range'); the pair
+			// is checked as a whole where it is used (hosts.RangeProblem).
+			"linux.uid_min":          {Type: TypeInt, Min: intp(1000), Max: intp(4294967293)},
+			"linux.uid_max":          {Type: TypeInt, Min: intp(1000), Max: intp(4294967293)},
 			"mgmt_acl.names.cisco":   {Type: TypeACLName},
 			"mgmt_acl.names.juniper": {Type: TypeACLName},
 			"mgmt_acl.permits":       {Type: TypeCIDRList},

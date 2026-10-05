@@ -100,31 +100,31 @@ func TestHostAddressRecordedAndChanged(t *testing.T) {
 // 127.0.0.1 and reads this server's own login.defs.
 func TestHostFactsFallbackAndLoginDefs(t *testing.T) {
 	hs := newHostSandbox(t)
-	hs.run(hs.factsRunner("ssh_connection=\nlogin_defs=present\nUID_MIN 1000\nUID_MAX 60000\n"),
+	hs.run(hs.factsRunner("ssh_connection=\nlogin_defs=present\nUID_MIN 1000\nUID_MAX 85000\n"),
 		"host", "enroll", "admin@web1.example.net", "--scope", "lab", "--build-on-host")
 	all := plain(hs.out.String() + hs.err.String())
 	if hs.code != 0 || !strings.Contains(all, "web1: the session did not report the address it reached (SSH_CONNECTION); recorded 192.0.2.50, which 'web1.example.net' resolves to.") ||
-		strings.Count(all, "web1: local useradd there gives out UIDs 1000-60000 (/etc/login.defs UID_MIN/UID_MAX), which overlaps tacctl's 20000-29999:") != 1 ||
-		!strings.Contains(all, "Set 'UID_MAX 19999' in /etc/login.defs on web1 (tacctl does not change it).") {
+		strings.Count(all, "web1: local useradd there gives out UIDs 1000-85000 (/etc/login.defs UID_MIN/UID_MAX), which overlaps tacctl's 80000-89999:") != 1 ||
+		!strings.Contains(all, "Keep UID_MAX below 80000 in /etc/login.defs on web1 (the default is 60000; tacctl does not change it).") {
 		t.Errorf("enroll: %d\n%s", hs.code, all)
 	}
 	if !strings.Contains(hs.devices(), "web1: {address: 192.0.2.50}") {
 		t.Errorf("devices.yaml:\n%s", hs.devices())
 	}
-	hs.run(hs.factsRunner("ssh_connection=1 2 192.0.2.50 22\nlogin_defs=present\nUID_MAX 19999\n"), "host", "sync", "web1")
+	hs.run(hs.factsRunner("ssh_connection=1 2 192.0.2.50 22\nlogin_defs=present\nUID_MAX 60000\n"), "host", "sync", "web1")
 	if all := hs.out.String() + hs.err.String(); hs.code != 0 || strings.Contains(all, "useradd") {
-		t.Errorf("sync, UID_MAX 19999: %d\n%s", hs.code, all)
+		t.Errorf("sync, UID_MAX 60000: %d\n%s", hs.code, all)
 	}
 	hs.run(nil, "host", "unenroll", "web1")
 
-	if err := os.WriteFile(filepath.Join(hs.dir, "login.defs"), []byte("UID_MIN\t\t 1000\nUID_MAX\t\t60000\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(hs.dir, "login.defs"), []byte("UID_MIN\t\t 1000\nUID_MAX\t\t99999\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	r := hs.runner()
 	r.On([]string{"bash"}, execx.Result{Stdout: []byte("[INFO] Accounts: 1 managed by tacctl here.\n")})
 	hs.run(r, "host", "enroll", "--local", "--name", "authsrv", "--scope", "lab", "--build-on-host")
 	all = plain(hs.out.String() + hs.err.String())
-	if hs.code != 0 || !strings.Contains(all, "Host 'authsrv' enrolled (1 user).") || !strings.Contains(all, "authsrv: local useradd there gives out UIDs 1000-60000") {
+	if hs.code != 0 || !strings.Contains(all, "Host 'authsrv' enrolled (1 user).") || !strings.Contains(all, "authsrv: local useradd there gives out UIDs 1000-99999") {
 		t.Errorf("--local: %d\n%s", hs.code, all)
 	}
 	if !strings.Contains(hs.devices(), "authsrv: {address: 127.0.0.1}") {

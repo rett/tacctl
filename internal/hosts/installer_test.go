@@ -29,7 +29,8 @@ import (
 // with 'date' stubbed to that instant, and for the prebuilt one a cached
 // module "not really a module\n" for docker.io/library/ubuntu:noble. The
 // three lines after TAC_USERS (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL)
-// are 0.2.1's account lifecycle, added by hand.
+// are 0.2.1's account lifecycle, added by hand. goldenUsers are the UIDs
+// 0.1.16 gave out; the header carries whatever it is given.
 
 var goldenWhen = time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
 
@@ -200,7 +201,7 @@ func TestWriteScriptChecksAndPorts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Port != "4949" || res.Users != "alice:superuser:20000\nbob:readonly:20001" {
+	if res.Port != "4949" || res.Users != "alice:superuser:80000\nbob:readonly:80001" {
 		t.Errorf("result %+v", res)
 	}
 	for _, w := range []string{"Skipping 'Dave': not a valid Linux account name", "Skipping 'nopriv': its group has no priv-lvl", "Skipping 'sink'"} {
