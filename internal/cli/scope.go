@@ -1778,7 +1778,8 @@ func (inv *invocation) scopeKnob(k scopeKnob, args []string) error {
 	}
 	if value == "" {
 		inv.echo("")
-		inv.echo("  Scope '" + scope + "' " + k.shown(current))
+		inv.echo("  Scope '" + scope + "'")
+		inv.echo("  " + k.shown(current))
 		inv.echo("  Source: " + source)
 		inv.echo("")
 		for _, l := range k.help {

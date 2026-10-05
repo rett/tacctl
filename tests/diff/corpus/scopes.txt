@@ -138,25 +138,34 @@ scope devices lab set 10.0.0.5 cisco ;; scope devices lab unset 10.0.0.5 ;; scop
 # aaa-order, exec-timeout, tacacs-group, radius-group, auth-method
 scope aaa-order
 scope aaa-order nosuch
+@known 0.2.1 item 58: the scope on a line of its own
 scope aaa-order lab
+@known 0.2.1 item 58: the scope on a line of its own
 scope aaa-order lab local-first ;; scope aaa-order lab
 scope aaa-order lab sideways
 scope exec-timeout
 scope exec-timeout nosuch
+@known 0.2.1 item 58: the scope on a line of its own
 scope exec-timeout lab
+@known 0.2.1 item 58: the scope on a line of its own
 scope exec-timeout lab 15 ;; scope exec-timeout lab
+@known 0.2.1 item 58: the scope on a line of its own
 scope exec-timeout lab 0 ;; scope exec-timeout lab
 scope exec-timeout lab 90
 scope exec-timeout lab forever
 scope tacacs-group
 scope tacacs-group nosuch
+@known 0.2.1 item 58: the scope on a line of its own
 scope tacacs-group lab
+@known 0.2.1 item 58: the scope on a line of its own
 scope tacacs-group lab TACACS_PROD ;; scope tacacs-group lab
 scope tacacs-group lab 9-digit-start
 scope tacacs-group lab 'has spaces'
 scope radius-group
 scope radius-group nosuch
+@known 0.2.1 item 58: the scope on a line of its own
 scope radius-group lab
+@known 0.2.1 item 58: the scope on a line of its own
 scope radius-group lab RADIUS_PROD ;; scope radius-group lab
 scope radius-group lab 9-digit-start
 scope radius-group lab 'has spaces'
@@ -233,7 +242,9 @@ scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; sc
 # per-scope tacctl.yaml keys follow rename and remove (SCOPE_CONF_KEYS)
 scope aaa-order lab local-first ;; scope exec-timeout lab 15 ;; scope mgmt-acl lab add 10.9.0.0/16 ;; scope rename lab lab2 ;; scope show lab2 ;; scope mgmt-acl lab2 list ;; scope default
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope tacacs-group prod TG ;; scope radius-group prod RG ;; scope auth-method prod radius ;; scope mgmt-acl prod cisco-name P-VTY ;; scope mgmt-acl prod juniper-name P-MGMT ;; scope rename prod production ;; scope show production
+@known 0.2.1 item 58: the scope on a line of its own
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope aaa-order prod local-first ;; scope remove prod <<< y ;; scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope aaa-order prod
+@known 0.2.1 item 58: the scope on a line of its own
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope exec-timeout prod 5 ;; scope prefixes prod remove --all <<< y ;; scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope exec-timeout prod
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope rename lab LAB2 ;; scope list
@@ -305,10 +316,14 @@ scope devices lab set 192.168.7.0/24 wti ;; scope devices lab set 192.168.7.7 ci
 scope devices lab bogus
 
 # aaa-order, exec-timeout, groups, auth-method: back to the default, edges
+@known 0.2.1 item 58: the scope on a line of its own
 scope aaa-order lab tacacs-first ;; scope aaa-order lab
+@known 0.2.1 item 58: the scope on a line of its own
 scope aaa-order lab local-first ;; scope aaa-order lab tacacs-first ;; scope aaa-order lab
 scope exec-timeout lab -1
+@known 0.2.1 item 58: the scope on a line of its own
 scope exec-timeout lab 60 ;; scope exec-timeout lab
+@known 0.2.1 item 58: the scope on a line of its own
 scope tacacs-group lab TACACS-GROUP ;; scope tacacs-group lab
 scope auth-method lab tacplus ;; scope auth-method lab
 scope auth-method lab default

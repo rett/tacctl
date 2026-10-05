@@ -673,6 +673,10 @@ current behaviour; this file is where history lives.
     `useradd` for that call (`-K UID_MIN=<first> -K UID_MAX=<last>`), so a
     host whose `/etc/login.defs` stops at 60000 prints no `useradd warning:
     … outside of the UID_MIN … range` line; `login.defs` is not changed.
+58. **`scope aaa-order|exec-timeout|tacacs-group|radius-group <scope>`
+    print the scope on a line of its own** (`  Scope 'lab'`, then `  Cisco
+    aaa-group-server name: TACACS-GROUP`, then `  Source: …`) instead of
+    one line `  Scope 'lab' Cisco aaa-group-server name: …`.
 
 ## 0.2.0 (2026-10-04)
 
