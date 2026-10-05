@@ -167,3 +167,22 @@ exec "$@"'
     run grep -F "logger -t tacctl -p auth.info console policy user=" "$CALLS_LOG"
     assert_output --partial "session=0123456789ab"
 }
+
+@test "console under sshd's ForceCommand: the client's command comes from SSH_ORIGINAL_COMMAND; sftp is refused" {
+    # sshd runs '<shell> -c <ForceCommand>' with the client's command aside.
+    SSH_ORIGINAL_COMMAND="user list" run "$CONSOLE_BIN" -c "$CONSOLE_BIN"
+    assert_success
+    assert_output --partial "USERNAME"
+    run sudo_lines
+    assert_line --index 1 "sudo -n TACCTL_CONSOLE=0123456789ab ${EXE} user list"
+    : > "$CALLS_LOG"
+    for sub in internal-sftp /usr/lib/openssh/sftp-server "scp -t /tmp"; do
+        SSH_ORIGINAL_COMMAND="$sub" run "$CONSOLE_BIN" -c "$CONSOLE_BIN"
+        assert_failure 126
+        assert_output --partial "the tacctl console does not run programs; file transfer is not available"
+    done
+    run sudo_lines
+    refute_output --partial " ${EXE} "
+    run console_log
+    assert_line --partial "console DENY session=0123456789ab user=carol reason=command first=internal-sftp"
+}

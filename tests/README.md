@@ -100,6 +100,9 @@ argv, so nothing leaves the machine and no secret may appear in one.
 | `integration/completion_shells.bats` | `tacctl completion zsh\|fish` in a real zsh (`compinit`, `compadd` captured) and a real fish: the scripts parse and answer with the words `tacctl __complete` gives |
 | `integration/tiers.bats` | extended with the `ssh` and `device` rows per tier, the `env_keep` line (no other environment is let through) and the refusal of a `SUDO_USER` that is not the account of `SUDO_UID` |
 | `integration/shim.bats` | extended with the release-binary tests (below) |
+| `integration/console_cli.bats` | `tacctl console`: `console.yaml` (0600, snapshots, `backup diff`/`restore`), the tier switches, user overrides and settings, `console show` with a stubbed `sshd -T` (the red warning when sshd does not force the console, still forwards or allows key logins), `console install\|remove\|check` |
+| `integration/console.bats` | the login console run as `tacctl-console` (a symlink to `dist/tacctl`): `-c` and its guard, sshd's `ForceCommand` form with `SSH_ORIGINAL_COMMAND`, batches, the per-line `sudo [-n] TACCTL_CONSOLE=<session>` argv, the session log lines, `system-shell`'s refusals. The terminal side is `internal/cli/console_pty_test.go` |
+| `integration/config_linux.bats` | extended with the server's own accounts: the fourth `TAC_USERS` field (`useradd -s`, `usermod -s`, `tac-console` following the shell, the summary's `console:` count) and the remove script giving `/bin/bash` back |
 
 **Terminal tests.** `internal/testpty` runs a program on a pseudo-terminal
 (no cgo, no new module: `golang.org/x/sys/unix`): the program gets a new
@@ -125,6 +128,14 @@ building with the one-line reason, that a branch never downloads, and that arm64
 release download URL) is read by the shim only, for these tests;
 `make release-verify` and `bin/tacctl.sh --verify-release` check real assets
 (`ALLOWED_SIGNERS=<file>` for a trial key, see `docs/releasing.md`).
+
+**`TACCTL_SSHD_DROPIN`** (sshd's drop-in for the console,
+`/etc/ssh/sshd_config.d/tacctl-console.conf`; the `Include` check reads
+`sshd_config` beside its directory) and **`TACCTL_SHELLS_FILE`**
+(`/etc/shells`) are pointed into the test's tmpdir by `tmpenv.bash`, the Go
+sandboxes and the lifecycle tests alike; `sshd` and `systemctl` are always
+stubs. The console's own path (`/usr/local/bin/tacctl-console`) moves only
+with `TACCTL_TEST_ROOT`.
 
 **`TACCTL_VAR_LIB`** is the root of tacctl's variable data (`/var/lib/tacctl`:
 `ssh/known_hosts`, `devices-seen.json`, `linux/`); `tmpenv.bash` points it
