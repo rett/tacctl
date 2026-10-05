@@ -136,7 +136,7 @@ host enroll web1 ;; host unenroll web1 ;; host list
 # with three hosts enrolled already (web2 a radius host, old1 on a scope
 # that is gone)
 @root tests/diff/roots/hosts-enrolled
-@known 0.2.1 item 48: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 host list
 @known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted)
 host sync --all
@@ -157,7 +157,7 @@ host sync web1
 @known 0.2.1 items 37-39: the script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted)
 host sync --all
 host unenroll web1
-@known 0.2.1 item 48: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 host unenroll web1 --force ;; host list
 @unenv SSH_STUB_RC
 @root tests/diff/roots/hosts
@@ -211,9 +211,9 @@ config linux script --scope lab --server 192.0.2.10 ;; config linux uid ;; confi
 config linux script --scope lab --server 192.0.2.10 ;; config linux uid alice 09999
 @known 0.2.1 item 34: UIDs come from 20000-29999 only; 0.2.1 items 37-39: the script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted)
 config linux script --scope lab --server 192.0.2.10 ;; config linux uid alice 01000
-@known 0.2.1 item 48: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 config linux builds
-@known 0.2.1 item 48: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 config linux builds list
 config linux builds clear
 config linux builds bogus

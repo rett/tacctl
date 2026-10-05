@@ -57,6 +57,13 @@ func TestShellArgv(t *testing.T) {
 			"sudo SSH_AUTH_SOCK=/tmp/agent.1 " + testExe + " host list"},
 		{"user does not", "user list", "", []string{"SSH_AUTH_SOCK=/tmp/agent.1"}, "sudo " + testExe + " user list"},
 		{"hash runs without sudo", "hash commands", "u tac-users", nil, testExe + " hash commands"},
+		// A superuser's lines may ask for the network password (their
+		// write verbs are '(ALL:ALL) ALL'); readonly, operator and a
+		// tac-users member with no tier group keep -n.
+		{"superuser asks", "user add bob ops", "u tac-users tac-superuser", nil, "sudo " + testExe + " user add bob ops"},
+		{"operator -n", "log tail", "u tac-users tac-operator", nil, "sudo -n " + testExe + " log tail"},
+		{"no tier -n", "user list", "u tac-users", nil, "sudo -n " + testExe + " user list"},
+		{"superuser not managed", "user list", "u tac-superuser", nil, "sudo " + testExe + " user list"},
 	}
 	for _, c := range cases {
 		h := shellHarness(t, "", []string{"-c", c.line}, c.env...)
@@ -276,12 +283,12 @@ func TestNamesCacheExpires(t *testing.T) {
 
 func TestShellHelp(t *testing.T) {
 	inv, root, _ := shellTestInv(t)
-	help := inv.shellHelp(root)
+	help := inv.shellHelp(root, false)
 	cases := []struct {
 		words []string
 		want  string
 	}{
-		{nil, shellTop("0.2.1-test")},
+		{nil, shellTop("0.2.1-test", false)},
 		{[]string{"user"}, userUsage()},
 		{[]string{"user", "add"}, userUsage()},
 		{[]string{"group", "commands", "list"}, groupCommandsUsage(inv.app.Paths.Overrides)},
@@ -324,7 +331,7 @@ func TestShellHelp(t *testing.T) {
 // that prints a block with no arguments.
 func TestShellHelpIsTheCLIUsage(t *testing.T) {
 	inv, root, _ := shellTestInv(t)
-	help := inv.shellHelp(root)
+	help := inv.shellHelp(root, false)
 	for _, fam := range []string{"user", "group", "host", "device", "backend", "store", "config", "log", "backup", "hash", "ssh"} {
 		h := newHarness(t, []string{fam})
 		_ = h.run()
@@ -341,7 +348,7 @@ func TestShellHelpIsTheCLIUsage(t *testing.T) {
 // The shell's top-level help is the usage of 'tacctl' with the program's
 // name left out of its usage line, hint and examples, and a Shell section.
 func TestShellTopHelp(t *testing.T) {
-	got := shellTop("v")
+	got := shellTop("v", false)
 	top := Usage("top", UsageVars{"version": "v"})
 	for _, want := range []string{
 		top[:strings.Index(top, "Usage:")],

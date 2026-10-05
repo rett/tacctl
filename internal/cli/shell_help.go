@@ -115,8 +115,8 @@ func (inv *invocation) familyRows(family string) []usageRow {
 
 // shellTop is the top-level usage as 'help' prints it in the shell: the
 // block of 'tacctl' with the words that name the program left out, and the
-// Shell section after it.
-func shellTop(version string) string {
+// Shell section after it (with system-shell in the console).
+func shellTop(version string, console bool) string {
 	text := Usage("top", UsageVars{"version": version})
 	text = strings.Replace(text, "Usage: tacctl <command> [arguments]", "Usage: <command> [arguments]", 1)
 	text = strings.Replace(text, "Run any command without arguments for detailed help, e.g.:\n  tacctl user\n  tacctl config\n  tacctl backend",
@@ -125,7 +125,7 @@ func shellTop(version string) string {
 	if ok {
 		text = head + "\nExamples:\n" + strings.ReplaceAll("\n"+examples, "\n  tacctl ", "\n  ")[1:]
 	}
-	return text + shellSection()
+	return text + shellSection(console)
 }
 
 // keyRows are the rows of the Shell section for the keys.
@@ -138,24 +138,25 @@ var keyRows = [][2]string{
 }
 
 // shellRows are the rows of the Shell section: the shell's own words
-// (the rows the Tab listing shows) and the keys.
-func shellRows() [][2]string {
+// (the rows the Tab listing shows; system-shell in the console) and the
+// keys.
+func shellRows(console bool) [][2]string {
 	var rows [][2]string
-	for _, r := range shell.BuiltinRows {
+	for _, r := range shell.Rows(console) {
 		rows = append(rows, [2]string{r.Left, r.Desc})
 	}
 	return append(rows, keyRows...)
 }
 
 // shellSection is the Shell section, in the columns of the command list.
-func shellSection() string {
+func shellSection(console bool) string {
 	width := 0
 	for _, r := range topRows() {
 		width = max(width, len(r.Left))
 	}
 	var b strings.Builder
 	b.WriteString("Shell:\n")
-	for _, r := range shellRows() {
+	for _, r := range shellRows(console) {
 		b.WriteString("  " + r[0] + strings.Repeat(" ", max(width-len(r[0]), 0)) + "  " + r[1] + "\n")
 	}
 	return b.String() + "\n"

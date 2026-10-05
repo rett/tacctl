@@ -34,7 +34,12 @@ const (
 	DescHelp    = "Show the usage of tacctl, or of a command"
 	DescHistory = "List the lines entered (secrets redacted)"
 	DescExit    = "Leave the shell"
+	// DescSystemShell is the console's system-shell (Options.SystemShell).
+	DescSystemShell = "Start your system shell as yourself; superusers only unless enabled for your tier"
 )
+
+// SystemShellWord is the word of Options.SystemShell.
+const SystemShellWord = "system-shell"
 
 // Completer answers what can come after words (the complete words before
 // the cursor) for the word being typed, partial. The shell filters the
@@ -60,10 +65,20 @@ var BuiltinRows = []Row{
 	{"exit | quit", DescExit, []string{"exit", "quit"}},
 }
 
-// builtins are the shell's own words, offered at the start of a line.
-var builtins = func() []Candidate {
+// Rows are the shell's own words: BuiltinRows, with system-shell before
+// exit when the shell has one (the console).
+func Rows(systemShell bool) []Row {
+	if !systemShell {
+		return BuiltinRows
+	}
+	rows := slices.Clone(BuiltinRows)
+	return slices.Insert(rows, len(rows)-1, Row{SystemShellWord, DescSystemShell, []string{SystemShellWord}})
+}
+
+// builtinCandidates are the words of rows, offered at the start of a line.
+func builtinCandidates(rows []Row) []Candidate {
 	var out []Candidate
-	for _, r := range BuiltinRows {
+	for _, r := range rows {
 		for _, w := range r.Words {
 			c := Candidate{Word: w, Desc: r.Desc, Unlisted: true}
 			if r.Left != w {
@@ -73,7 +88,7 @@ var builtins = func() []Candidate {
 		}
 	}
 	return out
-}()
+}
 
 // editor is the state of the line editor's key callback (term.Terminal's
 // AutoCompleteCallback, which gets every key the Terminal does not handle
@@ -84,6 +99,8 @@ type editor struct {
 	hist     *History
 	complete Completer
 	explain  Explainer
+	// systemShell: the shell has the system-shell word (Rows).
+	systemShell bool
 	// width and height are the terminal's size (setSize; 0: unknown).
 	width, height atomic.Int32
 	// out writes to the terminal past the Terminal, and readKey reads one
@@ -318,7 +335,7 @@ func (e *editor) candidates(words []string, partial string) []Candidate {
 	var all []Candidate
 	switch {
 	case len(words) == 0:
-		all = append(all, builtins...)
+		all = append(all, builtinCandidates(Rows(e.systemShell))...)
 		if e.complete != nil {
 			all = append(all, e.complete(nil, partial)...)
 		}
@@ -330,7 +347,7 @@ func (e *editor) candidates(words []string, partial string) []Candidate {
 				}
 			}
 		}
-	case words[0] == "history" || words[0] == "exit" || words[0] == "quit":
+	case words[0] == "history" || words[0] == "exit" || words[0] == "quit" || (e.systemShell && words[0] == SystemShellWord):
 	default:
 		if e.complete != nil {
 			all = e.complete(words, partial)

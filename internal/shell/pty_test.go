@@ -99,6 +99,7 @@ func ptyHelper(args []string) {
 	idle := fs.Duration("idle", 0, "")
 	hist := fs.String("hist", "", "")
 	listMax := fs.Int("listmax", 0, "")
+	sysShell := fs.String("syssh", "", "")
 	if err := fs.Parse(args); err != nil {
 		return
 	}
@@ -120,8 +121,22 @@ func ptyHelper(args []string) {
 			return code
 		},
 	})
+	if *sysShell != "" {
+		// The console's system-shell: the program -syssh names, with the
+		// terminal (as the console runs the user's shell).
+		sh.o.SystemShell = func(ctx context.Context, interactive bool) int {
+			if !interactive {
+				return 126
+			}
+			code, _, _ := execx.Attached(ctx, execx.Real{}, execx.Cmd{Name: *sysShell, Args: []string{"--norc", "--noprofile", "-i"}},
+				os.Stdin, os.Stdout, os.Stderr)
+			fmt.Printf("SYSTEM-SHELL %d\n", code)
+			return code
+		}
+	}
 	status := sh.Interactive(ctx, os.Stdin)
-	fmt.Printf("STATUS %d\n", status)
+	reason, lines := sh.End()
+	fmt.Printf("STATUS %d REASON %s LINES %d\n", status, reason, lines)
 }
 
 type ptySession struct {
@@ -187,7 +202,14 @@ func (p *ptySession) output(line string) {
 // exits waits for the shell to end with status.
 func (p *ptySession) exits(status int) {
 	p.t.Helper()
-	p.expect(`STATUS ` + strconv.Itoa(status) + `\r\n`)
+	p.endsWith(status, `\w+`)
+}
+
+// endsWith waits for the shell to end with status and the reason (a
+// regular expression) that Shell.End reports.
+func (p *ptySession) endsWith(status int, reason string) {
+	p.t.Helper()
+	p.expect(`STATUS ` + strconv.Itoa(status) + ` REASON ` + reason + ` LINES \d+\r\n`)
 	if _, err := p.Wait(5 * time.Second); err != nil {
 		p.t.Fatal(err)
 	}
@@ -542,6 +564,83 @@ func TestPtyZeroSize(t *testing.T) {
 	p.expect(`echo abc`)
 	p.send("\r")
 	p.output("abc")
+	p.line("exit")
+	p.exits(0)
+}
+
+// The session's end says why: exit, Ctrl-D, the idle time, SIGHUP.
+func TestPtyEndReasons(t *testing.T) {
+	p := startShell(t)
+	p.line("true")
+	p.expect(`tacctl> `)
+	p.line("exit")
+	p.expect(`STATUS 0 REASON exit LINES 2\r\n`)
+
+	p = startShell(t)
+	p.send("\x04")
+	p.endsWith(0, "eof")
+
+	p = startShell(t, "-idle", "300ms")
+	p.endsWith(0, "idle")
+
+	p = startShell(t)
+	if err := syscall.Kill(p.Pid(), syscall.SIGHUP); err != nil {
+		t.Fatal(err)
+	}
+	p.endsWith(128+int(syscall.SIGHUP), "hangup")
+}
+
+// system-shell runs the console's system shell on the terminal; the shell
+// gets the terminal back even when the system shell was killed without
+// handing it back (an interactive bash takes it for job control).
+func TestPtySystemShell(t *testing.T) {
+	bash, err := execx.Real{}.LookPath("bash")
+	if err != nil {
+		t.Fatalf("bash is required for this test: %v", err)
+	}
+	p := startShell(t, "-syssh", bash)
+	p.line("system-shell now")
+	p.expect(`system-shell takes no arguments`)
+	p.expect(`tacctl> `)
+	p.line("system-shell")
+	p.Settle(300 * time.Millisecond)
+	p.line("echo inside-$((6*7))")
+	p.expect(`inside-42\r\n`)
+	p.line("exit 5")
+	p.expect(`SYSTEM-SHELL 5\r\n`)
+	p.expect(`\[exit 5\]`)
+	p.expect(`tacctl> `)
+	// Killed: bash cannot give the terminal back; the shell takes it.
+	p.line("system-shell")
+	p.Settle(300 * time.Millisecond)
+	p.line("kill -9 $$")
+	p.expect(`SYSTEM-SHELL 137\r\n`)
+	p.expect(`tacctl> `)
+	p.line("echo back")
+	p.output("back")
+	p.expect(`tacctl> `)
+	p.line("exit")
+	p.endsWith(0, "exit")
+	b, _ := os.ReadFile(p.hist)
+	if !strings.Contains(string(b), "system-shell\n") {
+		t.Errorf("history %q", b)
+	}
+}
+
+// Tab offers system-shell only in a shell that has it.
+func TestPtySystemShellCompletes(t *testing.T) {
+	p := startShell(t, "-syssh", "/bin/true")
+	p.send("syst\t")
+	p.expect(`system-shell `)
+	p.send("\x15")
+	p.line("exit")
+	p.exits(0)
+	p = startShell(t)
+	p.send("syst\t\t")
+	if out := p.Settle(300 * time.Millisecond); strings.Contains(out, "system-shell") {
+		t.Errorf("system-shell offered without it: %q", out)
+	}
+	p.send("\x15")
 	p.line("exit")
 	p.exits(0)
 }

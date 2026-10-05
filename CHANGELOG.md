@@ -448,7 +448,53 @@ current behaviour; this file is where history lives.
     session marker). Picked up by `tacctl upgrade` (item 4);
     administrators using the opt-in drop-in re-run `tacctl config sudoers
     install`.
-48. **List tables: rules as wide as the table; `user list` shows the UID.**
+48. **New: the login console `tacctl-console`.** Started under that name
+    (a symlink to `tacctl`; as a login shell, `-tacctl-console`) tacctl is
+    `tacctl shell` with a `<host>> ` prompt and a banner, runs each line as
+    `sudo [-n] TACCTL_CONSOLE=<session> /usr/local/bin/tacctl <words>`,
+    starts nothing else, and discards the login environment but `TERM`,
+    `LANG`/`LC_*`, `HOME`, `USER`, `LOGNAME` and `SSH_CONNECTION`,
+    `SSH_CLIENT`, `SSH_TTY` (`PATH=/usr/local/bin:/usr/bin:/bin`). It asks
+    the server for its settings once per session (`_console-policy`).
+    `-c '<line>'` (sshd's remote command: `ssh <server> 'user list'`) runs
+    one tacctl line; `scp`, `sftp`, `rsync` and every other program are
+    refused with `the tacctl console does not run programs; file transfer
+    is not available`, exit 126, and any other argument with `the tacctl
+    console takes no options`. Standard input that is not a terminal runs
+    as a batch. The session ends after the idle timeout at the prompt
+    (`tacctl console idle-timeout`, default 30 minutes). Sessions and
+    refusals are logged to syslog (tag `tacctl-console`: `console start`,
+    `console end … reason= lines= status=`, `console DENY … first=`), each
+    line in sudo's log as well. The test knob `TACCTL_TEST_CONSOLE_ENV=1`
+    (`-tags testknobs` builds) keeps `TACCTL_*` and `PATH` for the test
+    sandbox.
+49. **New console word `system-shell`:** starts the user's system shell
+    (`/bin/bash`, `console system-shell path`) as themselves, without
+    arguments, with the console's environment and `SHELL=<path>`, logged
+    with start, end, status and duration (`console system-shell
+    start|end`); superusers only by default (`console system-shell tiers
+    <csv>|none`); refused for other tiers with the command that enables it
+    (`console system-shell DENY`); not available through `-c` or in a
+    batch (exit 126); the idle timer does not run while it does; `help`
+    and Tab name it only in the console.
+50. **`tacctl ssh` inside a console session** runs ssh with `-F /dev/null`
+    (no `~/.ssh/config` or `/etc/ssh/ssh_config`), `-o
+    PermitLocalCommand=no -o ControlMaster=no -o ClearAllForwardings=yes -o
+    ForwardAgent=no`, `-o EscapeChar=none` (`console ssh-escape enable`
+    keeps `~.`/`~C`), and the target after `--`, so words after the name's
+    `--` are only the remote command (one starting with `-` is refused); it
+    refuses a device or host with no pinned host key (`'<name>' has no
+    pinned host key, so the console does not connect to it; an
+    administrator pins it: tacctl device hostkey <name> accept`, logged
+    `reason=unpinned`). Every `tacctl ssh` now also logs `ssh end user=
+    device= status= duration=` when the session ends; from a console
+    session its log lines end with `console=<session>`.
+51. **`tacctl shell`: a superuser's lines run `sudo` without `-n`**, so
+    sudo asks for the network password on the terminal when a line needs
+    it (once; sudo's cache applies) and superusers' write verbs work from
+    the shell and the console; readonly and operator lines (and those of a
+    `tac-users` member in no tier group) keep `-n`.
+54. **List tables: rules as wide as the table; `user list` shows the UID.**
     Every list (`user`, `group`, `scope`, `backend`, `backup`, `host`,
     `device` lists, `device discover`, `console show`'s users,
     `config linux uid` and `builds`, `group commands list`, `scope devices`)

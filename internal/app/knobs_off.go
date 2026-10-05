@@ -13,3 +13,6 @@ const TestKnobs = false
 func loadKnobs(paths.Env) (Knobs, error) {
 	return Knobs{}, nil
 }
+
+// ConsoleTestEnv is false: a production console keeps no TACCTL_* variable.
+func ConsoleTestEnv(paths.Env) bool { return false }

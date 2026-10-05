@@ -62,9 +62,9 @@ config metrics disable ;; status
 backend
 backend bogus
 backend help
-@known 0.2.1 item 48: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 backend list
-@known 0.2.1 item 48: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 backend list extra
 backend status
 backend status tacacs
@@ -95,7 +95,7 @@ log clear -y --backend
 # legacy read-only mode: no store yet
 @fixture legacy.fresh-install.yaml
 config metrics disable ;; status
-@known 0.2.1 item 48: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 backend list
 log accounting
 
