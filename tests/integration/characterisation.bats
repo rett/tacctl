@@ -447,6 +447,8 @@ EOF
     fast_bcrypt
     make_user alice 'CorrectHorse99'
     : > "$CALLS_LOG"
+    # sudo sets SUDO_UID to the account of SUDO_USER; tacctl checks the pair.
+    stub_cmd getent 'case "$*" in "passwd 1234") echo "ops:x:1234:1234::/home/ops:/bin/sh" ;; *) exit 2 ;; esac'
     SUDO_USER=ops SUDO_UID=1234 "$TACCTL_BIN_SCRIPT" user verify alice > /dev/null 2>&1 <<< 'CorrectHorse99'
     SUDO_USER=ops SUDO_UID=1234 "$TACCTL_BIN_SCRIPT" user verify alice > /dev/null 2>&1 <<< 'wrong'
     grep -qxF 'logger -t tacctl -p auth.info verify OK user=alice by=ops(uid=1234)' "$CALLS_LOG"

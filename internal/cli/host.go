@@ -29,11 +29,11 @@ import (
 // hostFlags are the options of enroll and sync, for completion.
 var (
 	flagAllowUIDMismatch = Flag{Names: []string{"--allow-uid-mismatch"}}
-	flagAdopt            = Flag{Names: []string{"--adopt"}, Value: true}
+	flagRemoveHome       = Flag{Names: []string{"--remove-home"}}
 )
 
 // hostSpecs are the arguments of each verb, for completion (args.go). Host
-// names complete as free text: a 'hosts' completion kind is 0.2.1 work.
+// names complete from the registry (KindHosts).
 var hostSpecs = map[string]Spec{
 	"list": {},
 	"enroll": {MaxArgs: 1, Args: []string{""}, Flags: []Flag{
@@ -45,9 +45,9 @@ var hostSpecs = map[string]Spec{
 		{Names: []string{"--identity"}, Value: true, Kind: KindFile},
 		{Names: []string{"--method"}, Value: true, Kind: methodWords},
 		{Names: []string{"--build-on-host"}},
-		flagAllowUIDMismatch, flagAdopt}},
-	"sync":           {MaxArgs: 1, Args: []string{""}, Flags: []Flag{{Names: []string{"--all"}}, flagAllowUIDMismatch, flagAdopt}},
-	"unenroll":       {MinArgs: 1, MaxArgs: 1, Args: []string{""}, Flags: []Flag{{Names: []string{"--force"}}}},
+		flagAllowUIDMismatch, flagRemoveHome}},
+	"sync":           {MaxArgs: 1, Args: []string{KindHosts}, Flags: []Flag{{Names: []string{"--all"}}, flagAllowUIDMismatch, flagRemoveHome}},
+	"unenroll":       {MinArgs: 1, MaxArgs: 1, Args: []string{KindHosts}, Flags: []Flag{{Names: []string{"--force"}}}},
 	"default-method": {MaxArgs: 1, Args: []string{methodWords}},
 }
 
@@ -55,7 +55,7 @@ var hostSpecs = map[string]Spec{
 var hostVerbs = [][2]string{
 	{"list", "Show enrolled hosts"},
 	{"enroll <[user@]host> | --local [options]", "Install TACACS+ or RADIUS login on a host over SSH and register it"},
-	{"sync <name> | --all [options]", "Push account adds, removals and tier changes"},
+	{"sync <name> | --all [options]", "Push account adds, deletions and tier changes"},
 	{"unenroll <name> [--force]", "Remove the login method from the host (accounts and homes are kept)"},
 	{"default-method [tacplus|radius]", "Show or set the method for hosts enrolled without --method"},
 }
@@ -78,6 +78,9 @@ func hostUsage() string { return Usage("host", nil) }
 // host is cmd_host: no sub-command is the usage (exit 0); an unknown one
 // (help and -h included) is an error, then the usage (exit 1).
 func (inv *invocation) host(args []string) error {
+	if err := inv.verifySudoUser("tacctl host"); err != nil {
+		return err
+	}
 	var rest []string
 	if len(args) > 1 {
 		rest = args[1:]
@@ -143,7 +146,6 @@ func (inv *invocation) hostList() error {
 // --- enroll ----------------------------------------------------------------------
 
 var (
-	reAdopt      = regexp.MustCompile(`^[a-z_][a-z0-9_-]*(,[a-z_][a-z0-9_-]*)*$`)
 	reTarget     = regexp.MustCompile(`^([a-z_][a-z0-9_-]*@)?[A-Za-z0-9][A-Za-z0-9.:-]*$`)
 	reBareIPv4   = regexp.MustCompile(`^[0-9.]+$`)
 	reHostName   = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]{0,25}$`)
@@ -179,7 +181,7 @@ func (inv *invocation) reportOnly(err error) { _ = exitCode(err, inv.app.Out) }
 func (inv *invocation) hostEnroll(args []string) error {
 	a := inv.app
 	var target, scope, server, name, port, identity, method string
-	isLocal, buildOnHost := false, false
+	isLocal, buildOnHost, removeHome := false, false, false
 	var scriptArgs []string
 	for i := 0; i < len(args); {
 		w := args[i]
@@ -193,12 +195,9 @@ func (inv *invocation) hostEnroll(args []string) error {
 		case "--allow-uid-mismatch":
 			scriptArgs = append(scriptArgs, w)
 			i++
-		case "--adopt":
-			if !reAdopt.MatchString(arg(args, i+1)) {
-				return inv.usageErr("--adopt needs a comma-separated list of account names.")
-			}
-			scriptArgs = append(scriptArgs, "--adopt", args[i+1])
-			i += 2
+		case "--remove-home":
+			removeHome = true
+			i++
 		case "--scope", "--server", "--name", "--port", "--identity":
 			if i+1 >= len(args) {
 				// 0.1.16 spins forever here ('shift 2 || true' cannot shift).
@@ -250,6 +249,17 @@ func (inv *invocation) hostEnroll(args []string) error {
 		if _, after, ok := strings.Cut(target, "@"); ok {
 			hostPart = after
 		}
+		if login, explicit, isUser, err := inv.provisioningLogin(target); err != nil {
+			return err
+		} else if isUser {
+			msg := "The provisioning account '" + login + "' (the ssh login for " + target + ") is a tacctl user."
+			if !explicit {
+				msg = "The provisioning account defaults to your username '" + login + "', which is a tacctl user."
+			}
+			return inv.usageErr(msg,
+				"Enrolment logs in with a local account on the host that does not authenticate through tacctl (root or a dedicated",
+				"administration account, kept working when this server is unreachable): tacctl host enroll <account>@"+hostPart)
+		}
 		res, err := a.Runner.Run(inv.ctx, execx.Cmd{Name: "getent", Args: []string{"ahostsv4", hostPart}, Stderr: io.Discard})
 		if res.Code != 0 || err != nil {
 			return inv.usageErr("Cannot resolve '" + hostPart + "'")
@@ -291,6 +301,10 @@ func (inv *invocation) hostEnroll(args []string) error {
 	}
 	if !reHostName.MatchString(name) {
 		return inv.usageErr("Invalid host name '" + name + "'. Pass --name <letters, digits, _ or -, starting with a letter, max 26>.")
+	}
+	_, enrolled := reg.Find(name)
+	if err := inv.hostNameCheck(name, enrolled); err != nil {
+		return err
 	}
 	if port != "" && !rePort.MatchString(port) {
 		return inv.usageErr("Invalid --port '" + port + "'.")
@@ -334,6 +348,7 @@ func (inv *invocation) hostEnroll(args []string) error {
 	}
 	be, _ := hosts.MethodBackend(method)
 	he := inv.hostsEnv()
+	he.ReadKeys = true // pin from the enrolment session (pinHostKeys)
 	if method == hosts.Tacplus && !isRegularFile(he.Paths.Tarball()) {
 		return inv.usageErr("pam_tacplus tarball not found. Run 'tacctl config linux build' first.")
 	}
@@ -439,6 +454,9 @@ func (inv *invocation) hostEnroll(args []string) error {
 		return err
 	}
 	req.Temp, req.Prebuilt = true, prebuilt
+	if err := inv.homesToDelete(he, &req, name, target, port, identity, removeHome); err != nil {
+		return err
+	}
 	res, err := he.WriteScript(req)
 	if err != nil {
 		return inv.hostsDone(err)
@@ -481,7 +499,12 @@ func (inv *invocation) hostEnroll(args []string) error {
 		}
 	}
 	a.Logger(inv.ctx, "auth.info", "host enroll name="+name+" target="+target+" scope="+scope+" method="+method+" by="+inv.sudoUser())
-	a.Out.InfoE("Host '" + name + "' enrolled.")
+	if he.Summary != nil {
+		a.Out.InfoE("Host '" + name + "' enrolled (" + he.Summary.Counts() + ").")
+	} else {
+		a.Out.InfoE("Host '" + name + "' enrolled.")
+	}
+	he.PinKeys(inv.ctx, hosts.Entry{Name: name, Target: target, Port: port})
 	if res.Users == "" {
 		inv.echo("")
 		inv.echo("  No users are in scope '" + scope + "' yet. To give someone a login on this host:")
@@ -503,19 +526,16 @@ func isRegularFile(path string) bool {
 // hostSync is cmd_host_sync.
 func (inv *invocation) hostSync(args []string) error {
 	a := inv.app
-	which := ""
+	which, removeHome := "", false
 	scriptArgs := []string{"--accounts-only"}
 	for i := 0; i < len(args); {
 		switch w := args[i]; {
 		case w == "--allow-uid-mismatch":
 			scriptArgs = append(scriptArgs, w)
 			i++
-		case w == "--adopt":
-			if !reAdopt.MatchString(arg(args, i+1)) {
-				return inv.usageErr("--adopt needs a comma-separated list of account names.")
-			}
-			scriptArgs = append(scriptArgs, "--adopt", args[i+1])
-			i += 2
+		case w == "--remove-home":
+			removeHome = true
+			i++
 		case w == "--all":
 			which = "--all"
 			i++
@@ -527,7 +547,7 @@ func (inv *invocation) hostSync(args []string) error {
 		}
 	}
 	if which == "" {
-		return inv.usageErr("Usage: tacctl host sync <name> | --all  [--allow-uid-mismatch] [--adopt <name>[,<name>...]]")
+		return inv.usageErr("Usage: tacctl host sync <name> | --all  [--allow-uid-mismatch] [--remove-home]")
 	}
 	reg, err := inv.registry()
 	if err != nil {
@@ -550,6 +570,7 @@ func (inv *invocation) hostSync(args []string) error {
 	}
 
 	he := inv.hostsEnv()
+	he.ReadKeys = true
 	failed := false
 	for _, name := range names {
 		e, _ := reg.Find(name)
@@ -563,7 +584,14 @@ func (inv *invocation) hostSync(args []string) error {
 			failed = true
 			continue
 		}
-		ok, err := inv.syncOne(he, e, method, scriptArgs)
+		if e.Target != hosts.Local {
+			if login, _, isUser, err := inv.provisioningLogin(e.Target); err != nil {
+				return err
+			} else if isUser {
+				a.Out.Warn(name + ": the provisioning account '" + login + "' is a tacctl user; re-enrol with a local account that does not authenticate through tacctl: tacctl host enroll <account>@<host> --name " + name)
+			}
+		}
+		ok, err := inv.syncOne(he, e, method, scriptArgs, removeHome)
 		if err != nil {
 			return err
 		}
@@ -578,9 +606,27 @@ func (inv *invocation) hostSync(args []string) error {
 	return nil
 }
 
+// provisioningLogin is the account 'host' logs in to target with: the
+// target's user, else the invoking user (ssh's default; root without
+// sudo). isUser reports whether it is a tacctl user: provisioning must use a
+// local account that does not authenticate through tacctl ('host enroll'
+// refuses one, 'host sync' warns). 'tacctl ssh' never uses it.
+func (inv *invocation) provisioningLogin(target string) (login string, explicit, isUser bool, err error) {
+	if u, _, ok := strings.Cut(target, "@"); ok {
+		login, explicit = u, true
+	} else {
+		login = inv.sudoUser()
+	}
+	m, err := inv.model()
+	if err != nil {
+		return login, explicit, false, err
+	}
+	return login, explicit, m.User(login) != nil, nil
+}
+
 // syncOne pushes an accounts-only script to one host and runs it; ok is
 // false when the script could not be written or failed there.
-func (inv *invocation) syncOne(he *hosts.Env, e hosts.Entry, method string, scriptArgs []string) (bool, error) {
+func (inv *invocation) syncOne(he *hosts.Env, e hosts.Entry, method string, scriptArgs []string, removeHome bool) (bool, error) {
 	script, err := hosts.TempFile()
 	if err != nil {
 		return false, err
@@ -591,6 +637,9 @@ func (inv *invocation) syncOne(he *hosts.Env, e hosts.Entry, method string, scri
 		return false, err
 	}
 	req.Temp, req.AccountsOnly = true, true
+	if err := inv.homesToDelete(he, &req, e.Name, e.Target, e.Port, e.Identity, removeHome); err != nil {
+		return false, err
+	}
 	res, err := he.WriteScript(req)
 	if errors.Is(err, hosts.ErrFailed) {
 		return false, nil
@@ -605,8 +654,39 @@ func (inv *invocation) syncOne(he *hosts.Env, e hosts.Entry, method string, scri
 	if code != 0 {
 		return false, nil
 	}
-	inv.app.Out.InfoE(e.Name + ": synced (" + strconv.Itoa(hosts.CountLines(res.Users)) + " users).")
+	counts := strconv.Itoa(hosts.CountLines(res.Users)) + " users"
+	if he.Summary != nil {
+		counts = he.Summary.Counts()
+	}
+	inv.app.Out.InfoE(e.Name + ": synced (" + counts + ").")
+	he.PinKeys(inv.ctx, e)
 	return true, nil
+}
+
+// homesToDelete fills in which removed users' home directories the script
+// deletes: every one with --remove-home; else the ones the operator answers
+// yes for on the terminal (stdin), one question per removed user of the
+// host; with no terminal none (the script keeps them and says so).
+func (inv *invocation) homesToDelete(he *hosts.Env, req *hosts.ScriptRequest, name, target, port, identity string, removeHome bool) error {
+	if removeHome {
+		req.RemoveAllHomes = true
+		return nil
+	}
+	var ask func(string) string
+	if p := inv.app.Prompter(); p.Interactive() {
+		ask = p.Ask
+	}
+	current := map[string]bool{}
+	for _, r := range req.Rows {
+		n, _, _ := strings.Cut(r, "|")
+		current[n] = true
+	}
+	for _, n := range req.Inactive {
+		current[n] = true
+	}
+	homes, err := he.HomesToDelete(inv.ctx, name, target, port, identity, current, ask)
+	req.RemoveHomes = homes
+	return err
 }
 
 // --- unenroll ------------------------------------------------------------------------
@@ -660,6 +740,7 @@ func (inv *invocation) hostUnenroll(args []string) error {
 	if err := reg.Forget(name); err != nil {
 		return err
 	}
+	inv.forgetHostKeys(name)
 	a.Logger(inv.ctx, "auth.info", "host unenroll name="+name+" target="+e.Target+" by="+inv.sudoUser())
 	a.Out.InfoE("Host '" + name + "' unenrolled. Local accounts and home directories were left in place.")
 	if !reg.ScopeInUse(e.Scope) {

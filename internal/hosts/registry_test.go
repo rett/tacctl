@@ -1,6 +1,7 @@
 package hosts
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -125,11 +126,10 @@ func TestUIDs(t *testing.T) {
 	if st, _ := os.Stat(p); st.Mode().Perm() != 0o600 {
 		t.Errorf("mode %v", st.Mode())
 	}
-	// A reassignment below the others: the next user still goes after the
-	// highest number, never into the gap.
-	if err := u.Assign("bob", "1001"); err != nil {
-		t.Fatal(err)
-	}
+	// A legacy entry outside the range (before 0.2.1 'config linux uid'
+	// took any number from 1000): not counted, the next user still goes
+	// after the highest number of the range, never into a gap.
+	writeFile(t, p, "alice:20000\nbob:1001\n")
 	if got, _ := u.For("carol"); got != "20001" {
 		t.Errorf("carol %q", got)
 	}
@@ -152,20 +152,33 @@ func TestUIDs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "  bob                      1001\n  alice                    20000\n  carol                    20001\n"
+	want := "  bob                      1001   outside 20000-29999: not used on hosts\n  alice                    20000\n  carol                    20001\n"
 	if l != want {
 		t.Errorf("listing\n%q\n%q", l, want)
 	}
-	// Above the base, a hand-edited number counts too; garbage does not
-	// break the allocation.
-	writeFile(t, p, "x:30000\ny\nz:abc\n")
-	if got, _ := (UIDs{Path: p}).next(); got != "1" {
-		// awk compares "abc" > "30000" as strings and prints "abc"+1.
+	// Garbage and numbers above the range do not count.
+	writeFile(t, p, "x:30000\ny\nz:abc\nw:20005\n")
+	if got, _ := (UIDs{Path: p}).next(); got != "20006" {
 		t.Errorf("next after garbage %q", got)
 	}
-	writeFile(t, p, "x:30000\ny\n")
-	if got, _ := (UIDs{Path: p}).next(); got != "30001" {
-		t.Errorf("next %q", got)
+	// The last number of the range is given out; after it, nothing.
+	writeFile(t, p, "x:29998\n")
+	if got, err := u.For("last"); got != "29999" || err != nil {
+		t.Errorf("last %q %v", got, err)
+	}
+	if got, err := u.For("past"); got != "" || !errors.Is(err, ErrUIDRangeFull) {
+		t.Errorf("past %q %v", got, err)
+	}
+	if got := readFile(t, p); got != "x:29998\nlast:29999\n" {
+		t.Errorf("a refused allocation wrote %q", got)
+	}
+	for _, c := range []struct {
+		uid string
+		in  bool
+	}{{"20000", true}, {"29999", true}, {"19999", false}, {"30000", false}, {"", false}, {"2e4", false}, {"-20000", false}, {"0020000", false}, {"020000", false}} {
+		if UIDInRange(c.uid) != c.in {
+			t.Errorf("UIDInRange(%q)", c.uid)
+		}
 	}
 	// Touch creates.
 	q := filepath.Join(t.TempDir(), "new")
@@ -186,12 +199,6 @@ func TestAwkHelpers(t *testing.T) {
 			t.Errorf("awkEqual(%q, %q)", c.a, c.b)
 		}
 	}
-	if awkPrefixNumber("12abc") != 12 || awkPrefixNumber("abc") != 0 {
-		t.Error("prefix number")
-	}
-	if awkString(3) != "3" || awkString(2.5) != "2.5" {
-		t.Error("awkString")
-	}
 	if sortNumber("20000") != 20000 || sortNumber("x") != 0 || sortNumber(" -5.5:z") != -5.5 {
 		t.Error("sortNumber")
 	}
@@ -199,16 +206,16 @@ func TestAwkHelpers(t *testing.T) {
 
 func TestScopeUsersAndCounts(t *testing.T) {
 	e, _, errb := testEnv(t)
-	got, err := e.ScopeUsers(nil)
-	if err != nil || got != "" {
+	got, keep, err := e.ScopeUsers(nil)
+	if err != nil || got != "" || keep != nil {
 		t.Fatalf("empty %q %v", got, err)
 	}
 	if _, err := os.Stat(e.Paths.UIDs); !os.IsNotExist(err) {
 		t.Error("no users, but the UID file was made")
 	}
-	got, _ = e.ScopeUsers([]string{"op|7", "x|0", "root|15", "Bad|1"})
-	if got != "op:operator:20000\nx:readonly:20001" {
-		t.Errorf("users %q", got)
+	got, keep, _ = e.ScopeUsers([]string{"op|7", "x|0", "root|15", "Bad|1", "np|"})
+	if got != "op:operator:20000\nx:readonly:20001" || strings.Join(keep, ",") != "np" {
+		t.Errorf("users %q keep %q", got, keep)
 	}
 	if !strings.Contains(errb.String(), "\033[1;33m[WARN]\033[0m Skipping 'Bad'") {
 		t.Errorf("warn %q", errb.String())

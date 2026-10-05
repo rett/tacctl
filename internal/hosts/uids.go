@@ -11,9 +11,11 @@ import (
 )
 
 // UIDs is the UID file (LINUX_UID_FILE): one "name:uid" line per user ever
-// sent to a host. A number is allocated once, after the highest one given
-// so far (never into a gap), and never reused; it is the user's UID and
-// primary GID on every host.
+// sent to a host. A number is allocated once, from UIDBase..UIDMax, after
+// the highest one given so far (never into a gap), and never reused, not
+// even when the user is removed; it is the user's UID and primary GID on
+// every host. Entries outside the range (set by hand before 0.2.1) are
+// reported, never sent to a host.
 type UIDs struct{ Path string }
 
 // Touch is 'touch "$LINUX_UID_FILE"': the file is created (0600) when it is
@@ -74,43 +76,37 @@ func (u UIDs) Holder(uid string) (string, error) {
 	return "", nil
 }
 
-// next is the number after the highest one in the file, UIDBase at least
-// ("BEGIN { m = base - 1 } $2 > m { m = $2 } END { print m + 1 }").
+// ErrUIDRangeFull is an allocation past UIDMax: every number of the
+// range has been given out (numbers are never reused).
+var ErrUIDRangeFull = errors.New("hosts: the UID range " + UIDRange + " is used up")
+
+// next is the number after the highest one of the range in the file,
+// UIDBase when there is none; never into a gap. Entries outside the range
+// (set by hand before 0.2.1) are not counted. Past UIDMax it is
+// ErrUIDRangeFull.
 func (u UIDs) next() (string, error) {
 	recs, err := u.records()
 	if err != nil {
 		return "", err
 	}
-	m, mStr, mIsNum := float64(UIDBase-1), "", true
+	m := UIDBase - 1
 	for _, r := range recs {
 		v := awkField(awkFields(r, ":"), 2)
-		n, isNum := awkNumber(v)
-		var greater bool
-		if isNum && mIsNum {
-			greater = n > m
-		} else {
-			cur := mStr
-			if mIsNum {
-				cur = awkString(m)
-			}
-			greater = v > cur
+		if !UIDInRange(v) {
+			continue
 		}
-		if greater {
-			if isNum {
-				m, mIsNum = n, true
-			} else {
-				mStr, mIsNum = v, false
-			}
+		if n, _ := strconv.Atoi(v); n > m {
+			m = n
 		}
 	}
-	if !mIsNum {
-		m = awkPrefixNumber(mStr)
+	if m+1 > UIDMax {
+		return "", ErrUIDRangeFull
 	}
-	return awkString(m + 1), nil
+	return strconv.Itoa(m + 1), nil
 }
 
 // For is linux_uid_for: the user's number, allocated (and appended to the
-// file) the first time.
+// file) the first time; ErrUIDRangeFull when there is none left.
 func (u UIDs) For(name string) (string, error) {
 	if err := u.Touch(); err != nil {
 		return "", err
@@ -151,7 +147,8 @@ func (u UIDs) Assign(name, uid string) error {
 }
 
 // Listing is the body of 'config linux uid' with no user:
-// "sort -t: -k2 -n | awk -F: '{ printf "  %-24s %s\n", $1, $2 }'".
+// "sort -t: -k2 -n | awk -F: '{ printf "  %-24s %s\n", $1, $2 }'", an
+// entry outside the range (from before 0.2.1) marked as not used on hosts.
 func (u UIDs) Listing() (string, error) {
 	recs, err := u.records()
 	if err != nil {
@@ -172,7 +169,11 @@ func (u UIDs) Listing() (string, error) {
 	var b strings.Builder
 	for _, r := range sorted {
 		f := awkFields(r, ":")
-		b.WriteString("  " + padRight(awkField(f, 1), 24) + " " + awkField(f, 2) + "\n")
+		b.WriteString("  " + padRight(awkField(f, 1), 24) + " " + awkField(f, 2))
+		if !UIDInRange(awkField(f, 2)) {
+			b.WriteString("   outside " + UIDRange + ": not used on hosts")
+		}
+		b.WriteString("\n")
 	}
 	return b.String(), nil
 }

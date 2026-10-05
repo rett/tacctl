@@ -33,8 +33,8 @@ func TestSSHCmd(t *testing.T) {
 
 func TestRemoteCommand(t *testing.T) {
 	r := "/tmp/tacctl.AbCd1234"
-	got := RemoteCommand(r, []string{"--accounts-only", "--adopt", "alice,bob"}, false)
-	want := `trap 'rm -f /tmp/tacctl.AbCd1234' EXIT; trap 'exit 130' HUP INT TERM; if [ "$(id -u)" = 0 ]; then bash /tmp/tacctl.AbCd1234 --accounts-only --adopt alice,bob; else if sudo -n true 2>/dev/null; then sudo -n bash /tmp/tacctl.AbCd1234 --accounts-only --adopt alice,bob; else echo '[ERROR] sudo on this host needs a password and there is no terminal to ask on. Run tacctl host from a terminal, allow passwordless sudo for this login, or log in as root.' >&2; false; fi; fi`
+	got := RemoteCommand(r, []string{"--accounts-only", "--allow-uid-mismatch", "--remove-home"}, false)
+	want := `trap 'rm -f /tmp/tacctl.AbCd1234' EXIT; trap 'exit 130' HUP INT TERM; if [ "$(id -u)" = 0 ]; then bash /tmp/tacctl.AbCd1234 --accounts-only --allow-uid-mismatch --remove-home; else if sudo -n true 2>/dev/null; then sudo -n bash /tmp/tacctl.AbCd1234 --accounts-only --allow-uid-mismatch --remove-home; else echo '[ERROR] sudo on this host needs a password and there is no terminal to ask on. Run tacctl host from a terminal, allow passwordless sudo for this login, or log in as root.' >&2; false; fi; fi`
 	if got != want {
 		t.Errorf("no tty\n got %s\nwant %s", got, want)
 	}

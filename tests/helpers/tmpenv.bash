@@ -5,6 +5,7 @@
 tacctl_tmpenv_init() {
     export TACCTL_ETC="${BATS_TEST_TMPDIR}/etc"
     export TACCTL_STATE_DIR="${BATS_TEST_TMPDIR}/state"
+    export TACCTL_VAR_LIB="${BATS_TEST_TMPDIR}/var-lib"
     export TACCTL_LOG="${BATS_TEST_TMPDIR}/log"
     export TACCTL_BIN="${BATS_TEST_TMPDIR}/bin"
     export TACCTL_CONFIG="${TACCTL_ETC}/tacquito.yaml"
@@ -23,6 +24,9 @@ tacctl_tmpenv_init() {
     # Skip the sudo re-exec so tacctl runs as the current (non-root) user.
     # Prod never sets this.
     export TACCTL_SKIP_SUDO=1
+    # A sudo caller's SUDO_UID would make tacctl check SUDO_USER against it
+    # (getent passwd); a test that wants the check sets both.
+    unset SUDO_UID
 
     mkdir -p "$(dirname "$TACCTL_RADIUS_DICT")" && : > "$TACCTL_RADIUS_DICT"
     mkdir -p "${TACCTL_ETC}" "${TACCTL_LOG}" "${TACCTL_BIN}" \

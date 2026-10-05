@@ -1,9 +1,12 @@
 # --- tacctl Linux client: install / account sync -------------------------------
 # Body of the script emitted by 'tacctl config linux script'. tacctl prepends
-# a header that sets TAC_METHOD, TAC_SERVER, TAC_PORT, TAC_SECRET, TAC_SCOPE
-# and TAC_USERS. TAC_METHOD picks the PAM module the host authenticates
-# through; accounts, tiers, sudo and the fallback to local passwords are the
-# same for both:
+# a header that sets TAC_METHOD, TAC_SERVER, TAC_PORT, TAC_SECRET, TAC_SCOPE,
+# TAC_USERS (name:tier:uid lines), TAC_INACTIVE (users of the scope with no
+# login now: disabled, the accounting sink), TAC_REMOVE_HOMES (the removed
+# users whose home directories go too, or "*" for all) and TAC_PROTOCOL
+# (the contract between header and body, 2). TAC_METHOD picks the PAM
+# module the host authenticates through; accounts, tiers, sudo and the
+# fallback to local passwords are the same for both:
 #
 #   tacplus  pam_tacplus, which tacctl ships itself. The header also sets
 #            TARBALL_SHA256 (plus PREBUILT_SHA256 and PREBUILT_FOR when a
@@ -20,7 +23,7 @@
 #   bash tacctl-linux-<scope>.sh                  full install (or re-install)
 #   bash tacctl-linux-<scope>.sh --accounts-only  sync accounts and groups only
 #   --allow-uid-mismatch (either form)            accept UID/GID conflicts on this host
-#   --adopt <name>[,<name>...] (either form)      take over pre-existing accounts
+#   --remove-home (either form)                   delete removed users' home directories too
 #
 # TACCTL_FORCE=1 skips the local-administrator (lockout) check.
 # shellcheck shell=bash disable=SC2154,SC2317
@@ -42,18 +45,24 @@ die()  { echo "[ERROR] $*" >&2; exit 1; }
 
 ACCOUNTS_ONLY=0
 ALLOW_UID_MISMATCH=0
-ADOPT=""    # comma-separated names of pre-existing accounts to take over
+REMOVE_HOMES="${TAC_REMOVE_HOMES:-}"
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --accounts-only)      ACCOUNTS_ONLY=1; shift ;;
         --allow-uid-mismatch) ALLOW_UID_MISMATCH=1; shift ;;
-        --adopt)
-            [[ -n "${2:-}" ]] || die "--adopt needs a comma-separated list of account names."
-            ADOPT+="${ADOPT:+,}$2"; shift 2
-            ;;
-        *) die "Unknown argument '$1'. Usage: $0 [--accounts-only] [--allow-uid-mismatch] [--adopt <name>[,<name>...]]" ;;
+        --remove-home)        REMOVE_HOMES="*"; shift ;;
+        *) die "Unknown argument '$1'. Usage: $0 [--accounts-only] [--allow-uid-mismatch] [--remove-home]" ;;
     esac
 done
+
+# The header and this body are one contract. A header of another protocol
+# was not written together with this body: stop before anything changes.
+if [[ "${TAC_PROTOCOL:-1}" != "2" ]]; then
+    die "This script's header speaks protocol ${TAC_PROTOCOL:-1} and its body protocol 2: they were not written by
+        the same tacctl. Nothing was changed. Write a new script with 'tacctl config linux script', or use
+        'tacctl host enroll|sync'."
+fi
+TAC_INACTIVE="${TAC_INACTIVE:-}"
 
 # TACCTL_CLIENT_TEST=1 is for the bats suite only: it skips the root check
 # and fakes the module build so the account and PAM logic can run unprivileged
@@ -122,7 +131,31 @@ fi
 
 mkdir -p "$STATE_DIR/backup"
 chmod 700 "$STATE_DIR"
-touch "$STATE_DIR/created" "$STATE_DIR/adopted" "$STATE_DIR/expired"
+touch "$STATE_DIR/created" "$STATE_DIR/expired"
+
+# --- Which accounts are tacctl's -------------------------------------------------
+# tacctl gives its accounts UIDs, and the matching primary GIDs, from
+# TAC_UID_FIRST to TAC_UID_LAST only. It changes an existing account (groups,
+# expiry, deletion, home) only when it created the account (the 'created'
+# state file) AND the account's UID on this host is in that range; any other
+# account, whatever its name, is left exactly as it is.
+TAC_UID_FIRST=20000
+TAC_UID_LAST=29999
+TAC_UID_RANGE="${TAC_UID_FIRST}-${TAC_UID_LAST}"
+uid_in_range() { [[ "$1" =~ ^[1-9][0-9]{0,8}$ ]] && (( $1 >= TAC_UID_FIRST && $1 <= TAC_UID_LAST )); }
+account_uid() { getent passwd "$1" | cut -d: -f3; }
+is_created() { grep -qxF "$1" "$STATE_DIR/created"; }
+
+# account_state <name>: what this host has under the name.
+#   none     no account (tacctl creates one)
+#   managed  created by tacctl, UID in the range
+#   foreign  an account tacctl did not create (refused, left alone)
+#   outside  created by tacctl, but its UID is outside the range (left alone)
+account_state() {
+    getent passwd "$1" >/dev/null || { echo none; return 0; }
+    is_created "$1" || { echo foreign; return 0; }
+    if uid_in_range "$(account_uid "$1")"; then echo managed; else echo outside; fi
+}
 
 # id_is_free <name> <id>: the number is unused as a UID, and as a GID is
 # either unused or already the group named <name>.
@@ -136,21 +169,35 @@ id_is_free() {
     return 0
 }
 
+# free_id_in_range <name>: the highest number of the range that is free for
+# <name> here (--allow-uid-mismatch), from the top so it stays clear of the
+# numbers tacctl gives out next; fails when there is none.
+free_id_in_range() {
+    local id
+    for ((id = TAC_UID_LAST; id >= TAC_UID_FIRST; id--)); do
+        if id_is_free "$1" "$id"; then echo "$id"; return 0; fi
+    done
+    return 1
+}
+
 # --- UID/GID consistency -------------------------------------------------------
 # tacctl gives each user one number, used as both UID and primary GID on
-# every host. Nothing is created or changed until every user in the list
-# can have that number here, unless --allow-uid-mismatch was given.
+# every host. Nothing is created or changed until every new account in the
+# list can have that number here, unless --allow-uid-mismatch was given.
 check_ids() {
     local name _tier uid cur owner conflicts="" mismatches=""
     while IFS=: read -r name _tier uid; do
         [[ -n "$name" ]] || continue
-        if getent passwd "$name" >/dev/null; then
-            cur=$(getent passwd "$name" | cut -d: -f3)
-            if [[ "$cur" != "$uid" ]]; then
-                mismatches+="    ${name}: UID ${cur} on this host, ${uid} assigned by tacctl"$'\n'
-            fi
-            continue
-        fi
+        uid_in_range "$uid" || continue
+        case "$(account_state "$name")" in
+            managed)
+                cur=$(account_uid "$name")
+                if [[ "$cur" != "$uid" ]]; then
+                    mismatches+="    ${name}: UID ${cur} on this host, ${uid} assigned by tacctl"$'\n'
+                fi
+                continue ;;
+            foreign|outside) continue ;;
+        esac
         owner=$(getent passwd "$uid" | cut -d: -f1 || true)
         if [[ -n "$owner" ]]; then
             conflicts+="    ${name}: UID ${uid} already belongs to user '${owner}'"$'\n'
@@ -166,10 +213,10 @@ check_ids() {
     done <<< "$TAC_USERS"
 
     if [[ -n "$mismatches" ]]; then
-        warn "Existing accounts whose UID differs from the one tacctl assigned:"
+        warn "Accounts tacctl created whose UID differs from the one tacctl assigned:"
         printf '%s' "$mismatches" >&2
         cat >&2 <<'TXT'
-  They are adopted as they are. To make them consistent, either
+  They are kept as they are. To make them consistent, either
     - renumber the account on this host (user logged out, as root):
         usermod -u <uid> <user> && groupmod -g <uid> <user>
         find / -xdev \( -uid <old> -o -gid <old> \) -exec chown -h <user>:<user> {} +
@@ -180,7 +227,7 @@ TXT
 
     [[ -n "$conflicts" ]] || return 0
     if [[ "$ALLOW_UID_MISMATCH" == "1" ]]; then
-        warn "UID/GID conflicts accepted (--allow-uid-mismatch); these users get this host's next free number:"
+        warn "UID/GID conflicts accepted (--allow-uid-mismatch); these users get a free number of ${TAC_UID_RANGE} on this host:"
         printf '%s' "$conflicts" >&2
         return 0
     fi
@@ -191,57 +238,16 @@ TXT
     1. Free the number on this host by renumbering the account or group that holds it:
          usermod -u <new-uid> <other-user>     (or: groupmod -g <new-gid> <other-group>)
          find / -xdev \( -uid <old> -o -gid <old> \) -exec chown -h <other-user> {} +
-    2. Assign the tacctl user a number that is free on every host, then re-run:
+    2. Assign the tacctl user another free number of 20000-29999, then re-run:
          tacctl config linux uid <user> <new-uid>
        (hosts that already have the account keep the old number until renumbered)
-    3. Accept a different number on this host only:
+    3. Accept a different number of 20000-29999 on this host only:
          tacctl host enroll|sync ... --allow-uid-mismatch
        (or run this script with --allow-uid-mismatch)
 TXT
     exit 1
 }
 
-# --- Adoption ------------------------------------------------------------------
-# An account that already exists under a tacctl user's name is only taken
-# over when the operator names it with --adopt: a matching name does not
-# prove it is the same person. Accounts this script created or adopted on
-# an earlier run need no flag.
-PRIVILEGED_GROUPS="sudo wheel admin adm root docker lxd libvirt disk shadow"
-
-check_adoption() {
-    local name _rest unconfirmed=""
-    while IFS=: read -r name _rest; do
-        [[ -n "$name" ]] || continue
-        getent passwd "$name" >/dev/null || continue
-        if grep -qxF "$name" "$STATE_DIR/created" "$STATE_DIR/adopted"; then continue; fi
-        if [[ ",${ADOPT}," == *",${name},"* ]]; then continue; fi
-        unconfirmed+=" ${name}"
-    done <<< "$TAC_USERS"
-    [[ -n "$unconfirmed" ]] || return 0
-    echo "[ERROR] These ${PROTO} users already have a local account on this host that tacctl did not create:${unconfirmed}" >&2
-    cat >&2 <<'TXT'
-  Nothing was changed. A matching name does not prove it is the same person. Options:
-    1. It is the same person: take the account over, keeping its UID, password, files and groups:
-         tacctl host enroll|sync ... --adopt <name>[,<name>...]
-       (or run this script with --adopt <name>[,<name>...])
-    2. It is someone or something else: rename the tacctl user (tacctl user rename <old> <new>),
-       or keep the user off this host (tacctl user scope <name> remove <scope>).
-    3. The local account is obsolete: remove or rename it on this host, then re-run.
-TXT
-    exit 1
-}
-
-# Local groups that grant rights regardless of the tier.
-privileged_groups_of() {
-    local g found="" groups
-    groups=" $(id -nG "$1" 2>/dev/null) "
-    for g in $PRIVILEGED_GROUPS; do
-        if [[ "$groups" == *" $g "* ]]; then found+="${found:+, }$g"; fi
-    done
-    echo "$found"
-}
-
-check_adoption
 check_ids
 
 # --- PAM module ----------------------------------------------------------------
@@ -578,54 +584,165 @@ if [[ "$ACCOUNTS_ONLY" != "1" ]]; then
 fi
 
 # --- Accounts and groups -------------------------------------------------------
+# Home directories of removed users are deleted only directly under /home.
+# (The test suite points HOME_ROOT at a scratch directory, and names the
+# owner its files have there.)
+HOME_ROOT="/home"
+HOME_OWNER=""
+if [[ "$CLIENT_TEST" == "1" ]]; then
+    HOME_ROOT="${TACCTL_CLIENT_HOME_ROOT:-/home}"
+    HOME_OWNER="${TACCTL_CLIENT_HOME_OWNER:-}"
+fi
+
+# forget_account <name>: out of tacctl's state files.
+forget_account() {
+    sed -i "/^${1}\$/d" "$STATE_DIR/created" "$STATE_DIR/expired"
+}
+
+# expire_account <name>: a login is refused from now on (SSH keys too).
+expire_account() {
+    grep -qxF "$1" "$STATE_DIR/expired" && return 0
+    usermod -e 1 "$1"
+    echo "$1" >> "$STATE_DIR/expired"
+}
+
+# home_refusal <name> <uid> <home>: why the home directory must stay ("" when
+# it may go): it must be a real directory directly under /home (no symbolic
+# link on the way), owned by the account, and no other account's home.
+home_refusal() {
+    local name="$1" uid="$2" home="$3" other
+    if [[ "$home" != "${HOME_ROOT}/"* || "${home#"${HOME_ROOT}"/}" == */* || "${home#"${HOME_ROOT}"/}" == "" || "${home#"${HOME_ROOT}"/}" == .* ]]; then
+        echo "not a directory directly under ${HOME_ROOT}"; return 0
+    fi
+    if [[ -L "$HOME_ROOT" ]]; then echo "${HOME_ROOT} is a symbolic link"; return 0; fi
+    if [[ -L "$home" ]]; then echo "it is a symbolic link"; return 0; fi
+    if [[ ! -d "$home" ]]; then echo "not a directory"; return 0; fi
+    other=$(getent passwd | awk -F: -v n="$name" -v h="$home" '$1 != n && ($6 == h || index($6, h "/") == 1) { print $1; exit }')
+    if [[ -n "$other" ]]; then echo "also the home of '${other}'"; return 0; fi
+    if [[ "$(stat -c %u "$home")" != "${HOME_OWNER:-$uid}" ]]; then echo "owned by UID $(stat -c %u "$home"), not ${uid}"; return 0; fi
+    return 0
+}
+
+# delete_account <name> <uid>: a removed user's account goes, with its
+# per-user group when that is now empty; the home directory too when the
+# operator said so (TAC_REMOVE_HOMES, --remove-home), else it is kept.
+delete_account() {
+    local name="$1" uid="$2" home refusal="" want=0 group gid members
+    home=$(getent passwd "$name" | cut -d: -f6)
+    if [[ "$REMOVE_HOMES" == "*" || " ${REMOVE_HOMES} " == *" ${name} "* ]]; then
+        want=1
+        refusal=$(home_refusal "$name" "$uid" "$home")
+    fi
+    # Expired first: if userdel cannot run (the user is logged in), the
+    # account is at least closed.
+    expire_account "$name"
+    if ! userdel "$name"; then
+        warn "Could not delete '${name}' (userdel failed; still logged in?): account expired, deleted at the next sync."
+        return 0
+    fi
+    group=$(getent group "$name" || true)
+    if [[ -n "$group" ]]; then
+        gid=$(cut -d: -f3 <<< "$group"); members=$(cut -d: -f4 <<< "$group")
+        if [[ "$gid" == "$uid" && -z "$members" ]] \
+            && [[ -z "$(getent passwd | awk -F: -v g="$gid" '$4 == g { print $1; exit }')" ]]; then
+            groupdel "$name"
+        fi
+    fi
+    forget_account "$name"
+    info "Deleted account '${name}': no longer a ${PROTO} user here (its UID ${uid} stays reserved on the tacctl server, never reused)."
+    if [[ -z "$home" || "$home" == "/" ]]; then return 0; fi
+    if [[ "$want" == "1" && -z "$refusal" ]]; then
+        rm -rf --one-file-system -- "$home"
+        info "Deleted home ${home}."
+    elif [[ "$want" == "1" ]]; then
+        warn "home kept: ${home} (${refusal})"
+    elif [[ -e "$home" || -L "$home" ]]; then
+        info "home kept: ${home}"
+    fi
+}
+
+# tacctl's own groups. An account tacctl does not manage here (not created
+# by it, or with a UID outside the range) is taken out of these and nothing
+# else is changed on it: the one change tacctl makes to such an account.
+TAC_GROUPS="${G_USERS} tac-readonly tac-operator tac-superuser tac-console"
+
 sync_accounts() {
-    local g name tier uid managed member priv pw home still gecos
+    local g name tier uid id listed=" " inactive=" " managed=" " refused="" member legacy groups
     for g in "$G_USERS" tac-readonly tac-operator tac-superuser; do
         getent group "$g" >/dev/null || groupadd "$g"
     done
 
+    # Earlier releases took pre-existing accounts over ('adopted'). They are
+    # not tacctl's: reported once and no longer tracked; the group cleanup
+    # below (in this same run) takes them out of tacctl's groups.
+    if [[ -s "$STATE_DIR/adopted" ]]; then
+        legacy=$(sort -u "$STATE_DIR/adopted" | paste -sd' ')
+        warn "Accounts an earlier tacctl adopted are no longer tracked: ${legacy}. Only their membership in tacctl's groups is removed."
+    fi
+    rm -f "$STATE_DIR/adopted"
+
+    while IFS= read -r name; do
+        if [[ -n "$name" ]]; then inactive+="${name} "; fi
+    done <<< "$TAC_INACTIVE"
+
     while IFS=: read -r name tier uid; do
         [[ -n "$name" ]] || continue
-        if getent passwd "$name" >/dev/null; then
-            if ! grep -qxF "$name" "$STATE_DIR/created" "$STATE_DIR/adopted"; then
-                echo "$name" >> "$STATE_DIR/adopted"
-                info "Adopted existing account '${name}' (UID, local password, files and groups left as they are)."
-                priv=$(privileged_groups_of "$name")
-                if [[ -n "$priv" ]]; then
-                    warn "'${name}' is in local group(s): ${priv}. Those rights stay whatever the ${PROTO} tier (${tier}) is."
-                fi
-            elif grep -qxF "$name" "$STATE_DIR/created"; then
+        listed+="${name} "
+        if ! uid_in_range "$uid"; then
+            warn "'${name}': UID ${uid} from the server is outside ${TAC_UID_RANGE}; no account for it here."
+            refused+="${refused:+, }${name}"
+            continue
+        fi
+        case "$(account_state "$name")" in
+            foreign)
+                warn "'${name}': this host has a local account of that name that tacctl did not create, so '${name}' gets no ${PROTO} account here. The local account is left as it is."
+                refused+="${refused:+, }${name}"
+                continue ;;
+            outside)
+                warn "'${name}': its account has UID $(account_uid "$name"), outside ${TAC_UID_RANGE}; tacctl changes nothing on it but its membership in tacctl's groups."
+                refused+="${refused:+, }${name}"
+                continue ;;
+            managed)
                 # Earlier versions gave every account the same full name,
                 # which is all a graphical login screen shows; and a host
                 # that switched methods carries the other method's name.
-                gecos=$(getent passwd "$name" | cut -d: -f5)
-                case "$gecos" in
+                case "$(getent passwd "$name" | cut -d: -f5)" in
                     "${name} (${PROTO})") ;;
                     "TACACS+ user (tacctl)"|"${name} (TACACS+)"|"${name} (RADIUS)")
                         usermod -c "${name} (${PROTO})" "$name" ;;
                 esac
-            fi
-        else
-            # New accounts get a locked password: the server's is their only
-            # password. The full name carries the login name, since graphical
-            # login screens list accounts by full name.
-            # UID and primary GID are the same number on every host. The
-            # fallback is only reachable with --allow-uid-mismatch.
-            if id_is_free "$name" "$uid"; then
-                getent group "$name" >/dev/null || groupadd -g "$uid" "$name"
-                useradd -m -u "$uid" -g "$name" -s /bin/bash -c "${name} (${PROTO})" "$name"
-            else
-                useradd -m -s /bin/bash -c "${name} (${PROTO})" "$name"
-            fi
-            echo "$name" >> "$STATE_DIR/created"
-            info "Created account '${name}' (${tier})."
-        fi
+                ;;
+            none)
+                # New accounts get a locked password: the server's is their
+                # only password. The full name carries the login name, since
+                # graphical login screens list accounts by full name. UID and
+                # primary GID are the same number on every host; another free
+                # number of the range only with --allow-uid-mismatch.
+                id="$uid"
+                if ! id_is_free "$name" "$uid"; then
+                    if ! id=$(free_id_in_range "$name"); then
+                        warn "'${name}': no number of ${TAC_UID_RANGE} is free here for both its UID and its group; no account created."
+                        refused+="${refused:+, }${name}"
+                        continue
+                    fi
+                fi
+                getent group "$name" >/dev/null || groupadd -g "$id" "$name"
+                useradd -m -u "$id" -g "$name" -s /bin/bash -c "${name} (${PROTO})" "$name"
+                is_created "$name" || echo "$name" >> "$STATE_DIR/created"
+                if [[ "$id" != "$uid" ]]; then
+                    info "Created account '${name}' (${tier}) with UID ${id} (tacctl assigned ${uid}; --allow-uid-mismatch)."
+                else
+                    info "Created account '${name}' (${tier})."
+                fi
+                ;;
+        esac
         for g in tac-readonly tac-operator tac-superuser; do
             if [[ "$g" != "tac-${tier}" && " $(id -nG "$name") " == *" $g "* ]]; then
                 gpasswd -d "$name" "$g" >/dev/null
             fi
         done
         usermod -aG "${G_USERS},tac-${tier}" "$name"
+        managed+="${name} "
         if grep -qxF "$name" "$STATE_DIR/expired"; then
             usermod -e '' "$name"
             sed -i "/^${name}\$/d" "$STATE_DIR/expired"
@@ -633,32 +750,57 @@ sync_accounts() {
         fi
     done <<< "$TAC_USERS"
 
-    # Users no longer in the scope: drop the tier groups. Accounts this
-    # script created are also expired, which blocks SSH-key logins too;
-    # adopted accounts go back to being plain local accounts.
-    managed=$(tac_user_names)
-    for member in $(getent group "$G_USERS" | cut -d: -f4 | tr ',' ' '); do
-        grep -qxF "$member" <<< "$managed" && continue
-        for g in "$G_USERS" tac-readonly tac-operator tac-superuser; do
-            gpasswd -d "$member" "$g" >/dev/null 2>&1 || true
-        done
-        if grep -qxF "$member" "$STATE_DIR/created"; then
-            usermod -e 1 "$member"
-            echo "$member" >> "$STATE_DIR/expired"
-            info "'${member}' is no longer a ${PROTO} user here: account expired, files kept."
-        else
-            # Adopted (or hand-added) account: not tacctl's to lock.
-            pw=$(getent shadow "$member" 2>/dev/null | cut -d: -f2 || true)
-            home=$(getent passwd "$member" | cut -d: -f6 || true)
-            still="no local password"
-            if [[ -n "$pw" && "$pw" != '!'* && "$pw" != '*'* ]]; then still="local password works"; fi
-            if [[ -s "$home/.ssh/authorized_keys" ]]; then still+=", SSH key present"; fi
-            priv=$(privileged_groups_of "$member")
-            warn "'${member}' is no longer a ${PROTO} user here but its local account was NOT disabled (${still}${priv:+; groups: $priv})."
-            warn "  To block it: usermod -L -e 1 ${member}"
-            sed -i "/^${member}\$/d" "$STATE_DIR/adopted"
+    # Accounts tacctl created whose user is not in the list: a user of the
+    # scope without a login now (disabled) keeps the account, expired; a
+    # user no longer in the scope (or no longer a tacctl user) loses it.
+    while IFS= read -r name; do
+        [[ -n "$name" && "$listed" != *" ${name} "* ]] || continue
+        if ! getent passwd "$name" >/dev/null; then
+            forget_account "$name"
+            info "'${name}' no longer has an account here; tacctl stops tracking it."
+            continue
         fi
+        uid=$(account_uid "$name")
+        if ! uid_in_range "$uid"; then
+            warn "'${name}' has UID ${uid}, outside ${TAC_UID_RANGE}: tacctl changes nothing on it but its membership in tacctl's groups, although it created it."
+            continue
+        fi
+        for g in $TAC_GROUPS; do
+            gpasswd -d "$name" "$g" >/dev/null 2>&1 || true
+        done
+        if [[ "$inactive" == *" ${name} "* ]]; then
+            if ! grep -qxF "$name" "$STATE_DIR/expired"; then
+                expire_account "$name"
+                info "'${name}' has no ${PROTO} login here now (disabled): account expired, files kept."
+            fi
+        else
+            delete_account "$name" "$uid"
+        fi
+    done < <(sort -u "$STATE_DIR/created")
+
+    # Anyone else in tacctl's groups (an account an earlier release adopted,
+    # one added by hand, one of tacctl's with a UID outside the range) is
+    # taken out of them, and nothing else on it changes: it is a plain local
+    # account, never sent to the server.
+    for member in $(for g in $TAC_GROUPS; do getent group "$g" | cut -d: -f4 | tr ',' '\n'; done | sort -u); do
+        [[ -n "$member" && "$managed" != *" ${member} "* ]] || continue
+        if is_created "$member" && uid_in_range "$(account_uid "$member")"; then continue; fi
+        groups=""
+        for g in $TAC_GROUPS; do
+            if getent group "$g" | cut -d: -f4 | tr ',' '\n' | grep -qxF "$member"; then
+                gpasswd -d "$member" "$g" >/dev/null
+                groups+="${groups:+, }${g}"
+            fi
+        done
+        info "'${member}': removed from tacctl's groups (${groups}); it is a plain local account again."
     done
+
+    # The summary 'tacctl host enroll|sync' reads back.
+    if [[ -n "$refused" ]]; then
+        info "Accounts: $(wc -w <<< "$managed") managed by tacctl here; refused: ${refused}."
+    else
+        info "Accounts: $(wc -w <<< "$managed") managed by tacctl here."
+    fi
 }
 
 sync_accounts
@@ -671,7 +813,7 @@ fi
 # Only members of tac-users are sent to the server; everyone else skips
 # straight to the distribution's own stack. A reject from the server is
 # final. An unreachable server falls through to the local password, which
-# only adopted accounts have.
+# tacctl's accounts do not have.
 #
 # Each method sets the module lines of the three tacctl files: pam_auth,
 # pam_account and pam_session; an empty one leaves that phase to the

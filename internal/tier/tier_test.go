@@ -29,6 +29,7 @@ func TestForPrivLvl(t *testing.T) {
 // and a list of command lines ('cmd|sub|readonly|operator|superuser|
 // unrestricted|none'), written by sourcing bin/tacctl.sh, with 0.2.1's
 // change: 'help', '-h' and '--help' alone are open to the lower tiers.
+// The last rows (ssh, device) are the 0.2.1 table of docs/plans/operator-console.md 8.
 func TestPermitsMatchesBash(t *testing.T) {
 	f, err := os.Open("testdata/permits.psv")
 	if err != nil {
@@ -59,7 +60,9 @@ func TestPermitsMatchesBash(t *testing.T) {
 }
 
 // testdata/sudoers.tiers is emit_tier_sudoers of the 0.1.16 tag plus
-// 0.2.1's line for 'help', '-h' and '--help'.
+// 0.2.1's lines for 'help', '-h' and '--help', the ssh and device rows, and
+// the env_keep line for SSH_AUTH_SOCK (no SETENV tag: it would let a caller
+// set SUDO_USER).
 func TestSudoersMatchesBash(t *testing.T) {
 	want, err := os.ReadFile("testdata/sudoers.tiers")
 	if err != nil {
@@ -232,5 +235,85 @@ func TestEnforce(t *testing.T) {
 	g.run.Fail([]string{"logger"}, 1, "")
 	if err := g.gate.Enforce(context.Background(), "store", "show"); err != ErrDenied {
 		t.Errorf("logger failure: %v", err)
+	}
+}
+
+func TestSudoersNoSetenv(t *testing.T) {
+	text := Sudoers()
+	if strings.Contains(text, "SETENV") || !strings.Contains(text, "\n"+EnvKeep) {
+		t.Errorf("SETENV or no env_keep line:\n%s", text)
+	}
+	if EnvKeep != "Defaults!/usr/local/bin/tacctl env_keep += \"SSH_AUTH_SOCK\"\n" {
+		t.Errorf("EnvKeep %q", EnvKeep)
+	}
+}
+
+func TestVerifyCaller(t *testing.T) {
+	ctx := context.Background()
+	for _, c := range []struct {
+		name, user, uid, passwd string
+		code                    int
+		ok                      bool
+		lookups                 int
+	}{
+		{"no uid: not checked", "anyone", "", "", 0, true, 0},
+		{"match", "ro", "1001", "ro:x:1001:1001::/home/ro:/bin/bash\n", 0, true, 1},
+		{"another account", "su", "1001", "ro:x:1001:1001::/home/ro:/bin/bash\n", 0, false, 1},
+		{"root claimed by a user", "root", "1001", "ro:x:1001:1001::/home/ro:/bin/bash\n", 0, false, 1},
+		{"empty user", "", "1001", "ro:x:1001:1001::/home/ro:/bin/bash\n", 0, false, 1},
+		{"uid field differs", "ro", "1001", "ro:x:1002:1002::/home/ro:/bin/bash\n", 0, false, 1},
+		{"no such uid", "ro", "1001", "", 2, false, 1},
+		{"garbage", "ro", "1001", "garbage\n", 0, false, 1},
+		{"uid not a number", "ro", "10x", "", 0, false, 0},
+		{"root under sudo", "root", "0", "root:x:0:0:root:/root:/bin/bash\n", 0, true, 1},
+	} {
+		r := &fake.Runner{}
+		r.On([]string{"getent", "passwd"}, execx.Result{Stdout: []byte(c.passwd), Code: c.code})
+		err := VerifyCaller(ctx, r, c.user, c.uid)
+		if (err == nil) != c.ok {
+			t.Errorf("%s: %v", c.name, err)
+		}
+		if n := r.Count("getent", "passwd", c.uid); n != c.lookups || r.Count("getent") != c.lookups {
+			t.Errorf("%s: %d lookups %q", c.name, n, r.Argvs())
+		}
+	}
+}
+
+// A SUDO_USER that is not SUDO_UID's account is denied everything, root
+// included, before the tier is asked; the refusal is logged.
+func TestGateRefusesSpoofedSudoUser(t *testing.T) {
+	ctx := context.Background()
+	lv := map[string]string{"ro": "1", "su": "15"}
+	for _, claimed := range []string{"su", "root", "ops"} {
+		g := newGate(claimed, "tac-users", lv)
+		g.gate.SudoUID = "1001"
+		g.run.On([]string{"getent", "passwd", "1001"}, execx.Result{Stdout: []byte("ro:x:1001:1001::/home/ro:/bin/bash\n")})
+		if got := g.gate.Caller(ctx); got != None {
+			t.Errorf("%s: Caller %s", claimed, got)
+		}
+		g.err.Reset()
+		if err := g.gate.Enforce(ctx, "version", ""); err != ErrDenied {
+			t.Fatalf("%s: %v", claimed, err)
+		}
+		want := "\033[0;31m[ERROR]\033[0m SUDO_USER '" + claimed + "' is not the account of SUDO_UID 1001, so tacctl access is denied.\n"
+		if g.err.String() != want {
+			t.Errorf("%s: %q", claimed, g.err.String())
+		}
+		if !g.run.Called("logger", "-t", "tacctl", "-p", "auth.warning", "tier DENY user="+claimed+" uid=1001 reason=sudo-user-mismatch cmd=version ") {
+			t.Errorf("%s: not logged %q", claimed, g.run.Argvs())
+		}
+		if g.run.Called("id") {
+			t.Errorf("%s: the tier was asked", claimed)
+		}
+	}
+	// The genuine pair passes and the tier applies.
+	g := newGate("ro", "tac-users", lv)
+	g.gate.SudoUID = "1001"
+	g.run.On([]string{"getent", "passwd", "1001"}, execx.Result{Stdout: []byte("ro:x:1001:1001::/home/ro:/bin/bash\n")})
+	if err := g.gate.Enforce(ctx, "device", "ssh"); err != nil {
+		t.Errorf("device ssh: %v %q", err, g.err.String())
+	}
+	if err := g.gate.Enforce(ctx, "user", "remove"); err != ErrDenied {
+		t.Errorf("user remove: %v", err)
 	}
 }

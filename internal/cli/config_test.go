@@ -31,6 +31,7 @@ func (sb *sandbox) cfgRun(stdin string, args []string, script func(*fake.Runner)
 	sb.runner.On([]string{"systemctl"}, execx.Result{})
 	sb.runner.On([]string{"logger"}, execx.Result{})
 	sb.runner.On([]string{"id"}, execx.Result{Stdout: []byte("users\n")})
+	fakePasswd(sb.runner)
 	if script != nil {
 		script(sb.runner)
 	}
@@ -282,7 +283,7 @@ func TestConfigSudoers(t *testing.T) {
 	if !sb.runner.CalledRegexp(`^visudo -cf .*/tmp/tmp\.`) || !sb.runner.CalledRegexp(`^install -m 0440 -o root -g root .*/tmp/tmp\.\S+ `+file+`$`) {
 		t.Errorf("calls: %q", sb.runner.Argvs())
 	}
-	if data, _ := os.ReadFile(file); !strings.Contains(string(data), "%wheel ALL=(ALL) NOPASSWD: /usr/local/bin/tacctl\n") {
+	if data, _ := os.ReadFile(file); !strings.Contains(string(data), "Defaults!/usr/local/bin/tacctl env_keep += \"SSH_AUTH_SOCK\"\n%wheel ALL=(ALL) NOPASSWD: /usr/local/bin/tacctl\n") {
 		t.Errorf("drop-in: %q", data)
 	}
 	out := sb.cfgRun("", []string{"config", "sudoers", "show"}, nil, env...)

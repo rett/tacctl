@@ -1,6 +1,6 @@
 # tacctl
 
-Management toolkit for network-device AAA. Users, groups and scopes are kept once, in tacctl's own store, and served over **TACACS+** by [tacquito](https://github.com/facebookincubator/tacquito) (RFC 8907, by Facebook Incubator) and, when enabled, over **RADIUS** by a tacctl-owned FreeRADIUS instance. Provides a CLI for user, group, and configuration management with multi-vendor support for Cisco IOS/IOS-XE and Juniper Junos devices, plus WTI console servers and Linux hosts.
+Management toolkit for network-device AAA. Users, groups and scopes are kept once, in tacctl's own store, and served over **TACACS+** by [tacquito](https://github.com/facebookincubator/tacquito) (RFC 8907, by Facebook Incubator) and, when enabled, over **RADIUS** by a tacctl-owned FreeRADIUS instance. Provides a CLI for user, group, and configuration management with multi-vendor support for Cisco IOS/IOS-XE and Juniper Junos devices, plus WTI console servers and Linux hosts. A device registry names the devices that authenticate here, shows which of them have been seen, and opens ssh sessions to them by name.
 
 ## Quick Start
 
@@ -40,6 +40,13 @@ tacctl scope vendor-attrs prod enable cisco,juniper   # RADIUS sends a vendor's 
 tacctl config cisco --scope prod --protocol radius
 tacctl config juniper --scope prod --protocol radius
 tacctl config wti --scope prod --protocol radius      # not verified on a unit
+
+# Name your devices, then connect to them by name (see "Connecting to Devices by Name")
+tacctl device add core-sw1 10.10.0.1 --vendor cisco
+tacctl ssh core-sw1
+
+# Work from a prompt instead of retyping "tacctl"
+tacctl shell
 ```
 
 ### Requirements and how tacctl is built
@@ -51,7 +58,9 @@ tacctl version          # tacctl 0.2.0
 tacctl version --long   # adds the commit, the build date, the Go version and "test knobs: off"
 ```
 
-`install` and `upgrade` say `Building /usr/local/bin/tacctl from /opt/tacctl...` whenever they build, so the installed binary always matches the commit of the clone. Passwords, YAML, rendering and checksums are handled inside the binary; no helper program (Python, OpenSSL) is needed on the server.
+`install` and `upgrade` say `Building /usr/local/bin/tacctl from /opt/tacctl...` whenever they build, so the installed binary always matches the commit of the clone.
+
+When the clone is at a release tag (as `master` is right after a release), the bootstrap downloads that release's binary for the host (linux/amd64 or linux/arm64) instead of building it, and installs it only if its `SHA256SUMS` carries a valid signature by the key in `/opt/tacctl/release/allowed_signers` (`ssh-keygen -Y verify`, from `openssh-client`), its checksum matches and it was built from the clone's commit: `Installing the <tag> release binary (linux/amd64, verified)`; otherwise it says `Release binary for <tag> not used (<reason>); building from source.` and builds as above. To check the release assets by hand: `ssh-keygen -Y verify -f /opt/tacctl/release/allowed_signers -I tacctl-release -n tacctl-release -s SHA256SUMS.sig < SHA256SUMS`, then `sha256sum -c --ignore-missing SHA256SUMS` ([docs/releasing.md](docs/releasing.md)). Passwords, YAML, rendering and checksums are handled inside the binary; no helper program (Python, OpenSSL) is needed on the server.
 
 ## Project Structure
 
@@ -77,7 +86,10 @@ tacctl/
     linux/                  # client-install.sh, client-remove.sh (Linux host enrollment)
   man/tacctl.1              # `man tacctl`
   patches/                  # tacquito source patch overlay (patches/README.md)
-  docs/                     # radius-notes.md (what was verified against real FreeRADIUS and pam_radius_auth)
+  release/allowed_signers   # the public key that signs release binaries
+  docs/                     # releasing.md (the release procedure and how hosts verify a release binary),
+                            # radius-notes.md (what was verified against real FreeRADIUS and pam_radius_auth),
+                            # release notes
   tests/                    # Go and bats suites, containers (tests/README.md)
   CHANGELOG.md
   README.md
@@ -160,13 +172,17 @@ Every change goes one way: check that no generated file was edited by hand → s
 | `/etc/tacctl/rendered.json` | Checksums of the generated files (drift detection) |
 | `/etc/tacctl/backups/` | Snapshots (`<timestamp>/`), `legacy/` (old-style backups, pre-store config, displaced files), `password-dates/` (read by the importer) |
 | `/etc/tacctl/templates/` | Device config templates: a copy of each shipped one, which you may customize (a file here overrides the built-in one); `.shipped.sha256` is the manifest of what tacctl wrote there, `<name>.template.new` is a new release's version beside a template you customized (see [Custom Templates](#custom-templates)) |
+| `/etc/tacctl/devices.yaml` | The device registry (`tacctl device`): names, addresses and settings of the network devices; 0600 root, absent means none. Snapshots include it |
 | `/etc/tacctl/linux-hosts`, `/etc/tacctl/linux-uids` | Enrolled Linux hosts; the UID/GID each user gets on every host |
+| `/var/lib/tacctl/` | tacctl's variable data; 0711 (every user may pass through, only root may list it) |
+| `/var/lib/tacctl/ssh/known_hosts` | Generated from the pinned host keys in `devices.yaml` on every registry write; 0644 root in a 0755 directory, so every user's ssh reads it (`/etc/tacctl` is root's alone). Do not edit |
+| `/var/lib/tacctl/devices-seen.json` | The seen cache of `tacctl device scan`: what the logs showed of each device address, where each backend's next scan resumes, the last host-key re-scans; 0600 root, derived, not snapshotted |
 | `/var/lib/tacctl/linux/` | pam_tacplus source tarball and container-built modules |
 | `/etc/sudoers.d/tacctl`, `/etc/sudoers.d/tacctl-tiers` | Optional sudoers rules (`tacctl config sudoers install`, `… tiers install`) |
 | `/usr/local/bin/tacctl` | The tacctl binary, built on the server from `/opt/tacctl` by `install` and `upgrade` |
 | `/opt/tacctl/` | Git clone of this repo: what the binary is built from, and what `upgrade` pulls. Holds the shipped templates, units, patches and man page |
 | `/opt/tacctl/bin/tacctl.sh` | Bootstrap: installs Go if needed, builds the binary when it is missing or out of date, runs it |
-| `/etc/bash_completion.d/tacctl`, `/usr/share/man/man1/tacctl.1.gz` | Completion (generated by `tacctl completion bash`), man page |
+| `/etc/bash_completion.d/tacctl`, `/usr/share/man/man1/tacctl.1.gz` | Completion (bash, generated by `tacctl completion bash`), man page |
 | `/usr/local/go/` | The Go toolchain tacctl builds with (installed once, never replaced by an older one) |
 
 **TACACS+ (tacquito)**
@@ -341,7 +357,7 @@ By default, `tacctl` requires `sudo` authentication. To let a group run it witho
 ```
 tacctl config sudoers install adm     # or: wheel, ops, etc.
 ```
-This writes `/etc/sudoers.d/tacctl` (validated with `visudo -cf`) granting `%adm ALL=(ALL) NOPASSWD: /usr/local/bin/tacctl`. Because `tacctl` can modify system config and restart services, this is effectively passwordless root for members of that group — the command prompts for confirmation before installing. Remove with `tacctl config sudoers remove`.
+This writes `/etc/sudoers.d/tacctl` (validated with `visudo -cf`) granting `%adm ALL=(ALL) NOPASSWD: /usr/local/bin/tacctl`, with `Defaults!/usr/local/bin/tacctl env_keep += "SSH_AUTH_SOCK"` so `tacctl host` keeps your agent socket through sudo. Because `tacctl` can modify system config and restart services, this is effectively passwordless root for members of that group — the command prompts for confirmation before installing. Remove with `tacctl config sudoers remove`.
 
 ### Login for Linux hosts
 Linux hosts log in against this server by one of two methods. Accounts, tiers, sudo and the fallback to local passwords are the same for both; the PAM module differs:
@@ -359,11 +375,12 @@ tacctl config linux remove-script -o unenroll.sh           # removal script (no 
 ```
 Copy the install script to the host and run it as root from a session you keep open. It:
 - installs the PAM module before creating any account (`tacplus`: builds and installs `pam_tacplus`, installing `gcc`, `make` and `libpam0g-dev` with apt if missing, and leaving a host that already has the module from the same source alone; `radius`: installs the package, and stops before any account or PAM change when it cannot);
-- creates a local account for each user in the scope, with a locked password and a UID that is the same on every host, in `tac-users` plus `tac-readonly`, `tac-operator` or `tac-superuser`;
+- creates a local account for each user in the scope, with a locked password and a UID that is the same on every host (20000-29999), in `tac-users` plus `tac-readonly`, `tac-operator` or `tac-superuser`;
+- deletes the accounts it created for users who are no longer in the scope (see [Account lifecycle on a host](#account-lifecycle-on-a-host));
 - sends `sshd`, `sudo` (including `sudo -i`), console `login` and the graphical logins `sddm` and `gdm-password` (where present) to the server for members of `tac-users` only (the shared `common-*` files, or `system-auth`/`password-auth` on the RHEL family, and every other local account are untouched);
 - grants `%tac-superuser` full sudo, authenticated with the network password.
 
-A reject from the server is final. If the server is unreachable, login falls through to the local password, which only pre-existing (adopted) accounts have; local administrators (not in `tac-users`) are never sent to the server and see no delay. With the server silent, measured in containers: a user without a local password is refused after 5-6 s (`tacplus`) or 8-9 s (`radius`); an adopted account's local password is accepted after 7-8 s or 6-9 s (`docs/radius-notes.md`). A wrong shared secret on the host behaves like a silent server. The script refuses to run unless a local administrator with a usable password exists outside the user list, and restores the PAM files if any step fails. Re-run it with `--accounts-only` after adding, removing or moving users.
+A reject from the server is final. If the server is unreachable, login falls through to the local password, which tacctl's accounts do not have; local administrators and every other local account (not in `tac-users`) are never sent to the server and see no delay. With the server silent, measured in containers: a tacctl user is refused after 5-6 s (`tacplus`) or 8-9 s (`radius`) (`docs/radius-notes.md`). A wrong shared secret on the host behaves like a silent server. The script refuses to run unless a local administrator with a usable password exists outside the user list, and restores the PAM files if any step fails. Re-run it with `--accounts-only` after adding, removing or moving users.
 
 The install script contains the scope's shared secret, and so do the root-only files it writes (`/etc/pam.d/tacctl-*` for `tacplus`; `/etc/tacctl-pam_radius.conf`, 0600, for `radius`): use a dedicated scope per host or host group, and keep TACACS+ and RADIUS traffic on a management network or tunnel (no Linux PAM client supports TACACS+ over TLS). `passwd` does not work for these users; they change passwords with `tacctl passwd` on the server.
 
@@ -389,7 +406,7 @@ tacctl host default-method radius             # what hosts enrolled without --me
 ```
 The method of a host is, in order: `--method`; the method the host is registered with; the scope's `auth-method` (`tacctl scope auth-method`); the one protocol the scope's `protocols` filter names; `host default-method` (default `tacplus`). Its backend must be enabled and the scope must allow its protocol; an auto-created `linux-<name>` scope gets `protocols` set to that one protocol. **Switching:** re-enrolling a registered host with the other `--method` removes the first method's module, secret file and SELinux module and installs the other; re-enrolling without `--method` keeps the host's method.
 
-`ssh` runs as the user who invoked `sudo`, with their keys; the remote login must be root or able to `sudo` (a password prompt works when run from a terminal). Without a terminal, a host whose sudo needs a password is reported as such rather than attempted. The steps of one command share a single ssh connection per host, so a login without a key asks for its ssh password once, followed by one sudo prompt; with a key (or agent) and passwordless sudo or a root login there is no prompt at all. `--scope` enrolls into an existing scope instead of creating one, `--server` overrides the detected server address, `--name` the registry name, and `--port` / `--identity` are passed to ssh. Account changes are not pushed automatically: run `host sync` after `user add`, `remove`, `move` or `scope` changes. Until then a removed user is already refused at password login by the server, but an SSH key on the host keeps working.
+`ssh` runs as the user who invoked `sudo`, with their keys; the remote login must be root or able to `sudo` (a password prompt works when run from a terminal). That login (the provisioning account: the target's `user@`, else your own username) must be a local account on the host that does not authenticate through tacctl, so enrolment and sync keep working when this server cannot be reached: `host enroll` refuses a tacctl user, and `host sync` warns about an existing enrolment that uses one. `tacctl ssh` never uses it. Without a terminal, a host whose sudo needs a password is reported as such rather than attempted. The steps of one command share a single ssh connection per host, so a login without a key asks for its ssh password once, followed by one sudo prompt; with a key (or agent) and passwordless sudo or a root login there is no prompt at all. `--scope` enrolls into an existing scope instead of creating one, `--server` overrides the detected server address, `--name` the registry name, and `--port` / `--identity` are passed to ssh. Account changes are not pushed automatically: run `host sync` after `user add`, `remove`, `move`, `disable` or `scope` changes. Until then a removed user is already refused at password login by the server, but an SSH key on the host keeps working.
 
 #### Where the module is built (`tacplus`)
 `host enroll` reads the host's `/etc/os-release` and architecture, builds `pam_tacplus` once for that OS release in a rootless `podman` container on the server (base image plus compiler pulled with network access; the compile itself runs with no network and no capabilities), caches it under `/var/lib/tacctl/linux/builds/`, and ships the binary. The host installs it without a compiler, headers or package repository, after checking its checksum and that it loads against the host's libraries.
@@ -403,25 +420,31 @@ The host compiles from the embedded source instead when there is no image for it
 `tacctl install` and every `tacctl upgrade` install the packages this needs if they are missing (`podman`, `uidmap`, the autotools set for `config linux build`, `openssh-client`), along with tacctl's core requirements.
 
 #### Consistent UIDs and GIDs
-Each user gets one number, used as both UID and primary GID on every host this server enrolls. It is assigned the first time the user is sent to a host (from 20000 up, never reused) and stored in `/etc/tacctl/linux-uids`.
+Each user gets one number, used as both UID and primary GID on every host this server enrolls. It is assigned the first time the user is sent to a host, from the range **20000-29999** only (after the highest one given so far, never into a gap), and stored in `/etc/tacctl/linux-uids`. A number is never reused: a removed user's entry stays in the file, so a later user never inherits its files on a host. When the range is used up, the next user is refused with `No UID left for '<user>'` until it is given a free number of the range by hand.
 ```
 tacctl config linux uid                  # list assignments
 tacctl config linux uid jsmith           # print one
-tacctl config linux uid jsmith 20500     # change it
+tacctl config linux uid jsmith 20500     # change it (20000-29999 only)
 ```
+An entry outside the range (from a release that allowed it) is listed as `outside 20000-29999: not used on hosts`, and its user gets no account on any host until it is given a number in the range.
+
 If the number is already taken on a host, by a user or by a group, the install or sync **stops before changing anything** and lists the options:
 1. free the number on the host by renumbering whatever holds it (`usermod -u` / `groupmod -g`, then `chown` its files);
-2. assign the tacctl user a number that is free everywhere (`tacctl config linux uid <user> <uid>`) and re-run;
-3. accept a different number on that host only: `tacctl host enroll|sync ... --allow-uid-mismatch`.
+2. assign the tacctl user another free number of the range (`tacctl config linux uid <user> <uid>`) and re-run;
+3. accept a different number on that host only: `tacctl host enroll|sync ... --allow-uid-mismatch`, which takes the highest number of the range that is free there.
 
-Accounts that existed before enrollment are adopted with the UID they already have; every sync reports the difference and how to fix it. Changing an assignment does not renumber accounts already created on hosts. Two tacctl servers assign independently, so copy `linux-uids` between them if their hosts must agree.
+An account tacctl created whose UID on a host differs from the assignment (but is in the range) is kept as it is; every sync reports the difference and how to fix it. Changing an assignment does not renumber accounts already created on hosts. Two tacctl servers assign independently, so copy `linux-uids` between them if their hosts must agree.
 
-#### Accounts that already exist on a host
-If a host already has a local account with the same name as a tacctl user, the install or sync stops before changing anything: a matching name does not prove it is the same person. The message lists the options: confirm it with `--adopt <name>[,<name>...]` on `tacctl host enroll` or `sync`, rename the tacctl user or keep it off that host, or remove the local account.
+#### Account lifecycle on a host
+tacctl manages an account on a host only when it created it (the host's `/var/lib/tacctl-client/created`) **and** its UID there is in 20000-29999. Every other account, whatever its name, is never created, expired, deleted or otherwise changed, with one exception: it is taken out of tacctl's own groups (`tac-users`, `tac-readonly`, `tac-operator`, `tac-superuser`, `tac-console`), so it is a plain local account that is never sent to the server; nothing else on it changes (UID, home, password, shell, expiry, full name). The host reports each one: `'<user>': removed from tacctl's groups (tac-users, tac-<tier>); it is a plain local account again.`
 
-An adopted account keeps its UID, local password, files and groups; tacctl only adds it to `tac-users` and its tier group. Two consequences are reported when they apply:
-- at adoption, if the account is in a privileged local group (`sudo`, `wheel`, `adm`, `docker`, ...), since those rights hold whatever the tier is;
-- when the user is later removed from the scope or disabled, since an adopted account is **not** locked or expired (accounts tacctl created are): it goes back to being a plain local account, and the sync says whether its local password or an SSH key still works and how to block it (`usermod -L -e 1 <name>`).
+- **New user in the scope:** the install or sync creates the account.
+- **Local account with the same name:** if the host already has an account named like a tacctl user that tacctl did not create, that user gets no account on that host, with a warning; the local account stays exactly as it is (an emergency login that does not depend on this server), and the rest of the install or sync goes on. A matching name does not prove it is the same person: rename the tacctl user, keep it off that host, or remove or rename the local account. The sync summary names such users: `web1: synced (4 users; 1 refused: carl).`
+- **Disabled user** (`tacctl user disable`): the account is expired (no login, SSH keys included) and its files are kept; `tacctl user enable` and the next sync restore it.
+- **Removed user** (no longer in the scope, or no longer a tacctl user): the account is deleted (`userdel`), and its per-user group when that is now empty; its UID stays reserved on the server. Its home directory is deleted only when asked for: on a terminal, `host sync` and `host enroll` ask `Delete /home/<user> of removed user '<user>'? [y/N]` for each removed user (the list is read from the host's `getent passwd` over the same ssh connection before anything runs there); `--remove-home` deletes them without asking; with no terminal and no flag every home is kept and the host prints `home kept: /home/<user>`. A home is never deleted when it is not a directory directly under `/home`, is or sits behind a symbolic link, is not owned by the account, or is also another account's home. A removed user who is still logged in cannot be deleted: the account is expired and deleted at the next sync.
+- **Accounts an earlier release adopted:** reported once (`Accounts an earlier tacctl adopted are no longer tracked`), taken out of tacctl's groups in that same run, and not tracked after that.
+
+`host unenroll` does not touch any account.
 
 ### Tiered access for tacctl users (opt-in)
 tacctl users who have a local account on the server can be given tacctl access that follows their group:
@@ -431,13 +454,22 @@ tacctl config sudoers tiers install   # write /etc/sudoers.d/tacctl-tiers
 ```
 | Local group | Tier (priv-lvl) | tacctl access |
 |---|---|---|
-| `tac-readonly` | read-only (below 7) | `passwd`, `status`, `version`, `help` (also `-h`, `--help`), `user list`, `user show`, `group list`, `scope list`, `backend list`, `backend status` |
-| `tac-operator` | operator (7-14) | read-only set plus `log tail/search/failures/accounting`, `config validate`, `backup list` |
+| `tac-readonly` | read-only (below 7) | `passwd`, `status`, `version`, `help` (also `-h`, `--help`), `user list`, `user show`, `group list`, `scope list`, `backend list`, `backend status`, `device list`, `device show`, `device notices`, `device ssh-config`, `ssh` and `device ssh` (their own scopes' devices only) |
+| `tac-operator` | operator (7-14) | read-only set plus `log tail/search/failures/accounting`, `config validate`, `backup list`, `device export`, `device scan`, `device discover`, `device check`, `device list --scan` and `--probe` (their own scopes' devices only; `discover` lists every unregistered address) |
 | `tac-superuser` | superuser (15) | everything, plus full `sudo` |
 
-Lower-tier rules are `NOPASSWD`. Anything that prints a shared secret or a password hash (`config cisco|juniper|wti`, `scope secret`, `backup diff`, `config dump`, `store show`) stays superuser-only, as does `scope show`, and so does everything that changes anything. tacctl also checks the tier itself on every run, taking it from the user's group in the store rather than from local group membership, and logs denials to syslog. Callers who are not in the local group `tac-users` (root, local admins) are not restricted. `tacctl upgrade` rewrites an installed `/etc/sudoers.d/tacctl-tiers` that differs from the release's rules (after `visudo -cf` accepts them), so a new release's read-only verbs reach the tiers; it never creates the file.
+Lower-tier rules are plain `NOPASSWD` lines. The only thing the file lets through from the caller's environment is the agent socket (`Defaults!/usr/local/bin/tacctl env_keep += "SSH_AUTH_SOCK"`, for `tacctl host`), so a caller cannot hand tacctl another `SUDO_USER`; tacctl also refuses a `SUDO_USER` that is not the account of `SUDO_UID`. Anything that prints a shared secret or a password hash (`config cisco|juniper|wti`, `scope secret`, `backup diff`, `config dump`, `store show`) stays superuser-only, as does `scope show`, and so does everything that changes anything. tacctl also checks the tier itself on every run, taking it from the user's group in the store rather than from local group membership, and logs denials to syslog. Callers who are not in the local group `tac-users` (root, local admins) are not restricted. `tacctl upgrade` rewrites an installed `/etc/sudoers.d/tacctl-tiers` that differs from the release's rules (after `visudo -cf` accepts them), so a new release's verbs reach the tiers (the upgrade says `Updated: tiers sudoers`, or `Unchanged:`); it never creates the file, and when `visudo` refuses the new rules the old file stays and a warning says so. Without that refresh a tier user could not run the verbs a release adds until an administrator re-ran `tacctl config sudoers tiers install`.
 
 `tacctl passwd` (no arguments) lets any tier change their own password: it acts only on the user who invoked sudo and asks for the current password first.
+
+### Host keys of devices and hosts (pinning)
+`tacctl ssh` signs users in to devices with their tacctl password, so a device that is not the one registered would be handed that password. The registry therefore pins each device's ssh host keys, and ssh is made to accept those keys and nothing else:
+
+- **Pinning.** `tacctl device add` reads the keys the device offers (`ssh-keyscan`, as root) and prints each `SHA256:` fingerprint with the command that shows it on the device's console; compare them before the first connection, because the scan itself trusts what answers. `--host-key SHA256:<fp>` registers only when the device offers that key. A device that does not answer is refused unless `--no-host-key` registers it unpinned, which leaves a standing `hostkey-unpinned` notice (ssh then uses the user's own `known_hosts`).
+- **Enrolled hosts** are not pinned from a scan alone: `host enroll` and `host sync` read the host's own `/etc/ssh/ssh_host_*_key.pub` over the enrolment's authenticated ssh connection and pin only the keys an `ssh-keyscan` of the target holds too. A key type on which the two reads disagree pins nothing and is logged (`host hostkey-mismatch`).
+- **No silent change.** Only `tacctl device hostkey <name> accept|set` (administrators, after verifying on the console) changes a pin; it is logged to syslog. A scan that finds a different key raises a `hostkey-changed` notice that cannot be acknowledged away, and ssh refuses the connection to that device, after which `tacctl ssh` prints the pinned and offered fingerprints.
+- **How it reaches ssh.** tacctl writes `/var/lib/tacctl/ssh/known_hosts` (0644, root-owned, in a 0755 directory: the registry itself is root's alone) from the pins on every registry write, and runs ssh with `UserKnownHostsFile` on it, `GlobalKnownHostsFile=none`, `StrictHostKeyChecking=yes`, `HostKeyAlias=<name>` and `UpdateHostKeys=no`. User-supplied ssh arguments come after those options and cannot replace them. `tacctl device ssh-config` gives plain `ssh` the same options.
+- **Passwords only.** Sessions never use an agent, a key or another login: `PubkeyAuthentication=no`, the login is the caller's own name, and only an active tacctl user with a scope that includes the device's may connect, whatever the tier.
 
 ## RADIUS
 
@@ -521,6 +553,25 @@ The same hash serves TACACS+ and RADIUS.
 
 ---
 
+## Connecting to Devices by Name
+
+The device registry (`/etc/tacctl/devices.yaml`) gives the network devices that authenticate against this server a name, and `tacctl ssh <name>` opens a session to one. Enrolled Linux hosts are in the same namespace.
+
+```
+tacctl device add core-sw1 10.99.0.1 --vendor cisco --legacy-ssh   # register; pins the ssh host keys and prints their fingerprints
+tacctl device check core-sw1        # scope, vendor tag, last seen, reachable, host key against the pin
+tacctl ssh core-sw1                 # a session, as you
+tacctl ssh core-sw1 -- show version # one remote command
+```
+
+1. **Register.** A device whose address a scope's prefixes cover is `configured` in that scope (`tacctl device list`); one that no scope covers registers as `unconfigured`, and no one may connect to it. `--legacy-ssh` is for old IOS that offers only SHA-1 key exchange and `ssh-rsa`; `--vendor wti` selects the password-only method order. `device add` pins the host keys the device offers: **compare the printed fingerprints with the device's console** (Cisco `show ip ssh`, Junos `file show /etc/ssh/ssh_host_ed25519_key.pub` from the CLI, or `ssh-keygen -lf` on the same file from `start shell`, Linux `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`). Names that are factory defaults (`switch`, `router`) are refused; name the device on the device too. Devices that already authenticate but are not registered are listed by `tacctl device discover`, each with a ready `device add` line. See [Host keys of devices and hosts (pinning)](#host-keys-of-devices-and-hosts-pinning).
+2. **Who may connect.** An active tacctl user (in the store, not disabled) whose scopes include the device's scope, at every tier, superusers included. A local account that is not a tacctl user, a disabled user and a device in no configured scope are refused, and each refusal is logged to syslog (`ssh DENY`). A read-only or operator user (a member of `tac-users` with the [tiers file](#tiered-access-for-tacctl-users-opt-in) installed) may run `tacctl ssh` and sees only the devices of its own scopes.
+3. **How it logs in.** ssh runs as you, never as root, and logs in with your own username and your tacctl password (which the device checks against this server): no agent, no key, no other login. Run it from your own account; as root it refuses. It needs a terminal.
+4. **Plain `ssh`.** `tacctl device ssh-config > ~/.ssh/tacctl.conf` and `Include ~/.ssh/tacctl.conf` at the top of `~/.ssh/config` give a plain `ssh core-sw1` (and `scp`) the same options and the same pin. The fragment has one `Host` block per device you may see and no `User` line, so ssh logs in with your local username: a tacctl user whose local account has another name adds `User <tacctl name>` to its own `~/.ssh/config`. Re-run it after the registry changes.
+5. **A key that changed.** When a device was replaced or reset, ssh is refused and tacctl prints the pinned and offered fingerprints and the console command that shows the key. After verifying on the console, an administrator re-pins with `tacctl device hostkey core-sw1 accept` (or `set SHA256:<fp>`).
+
+From `tacctl shell`, `ssh core-sw1` is the same line. Every verb is in [Device Commands](#device-commands--tacctl-device).
+
 ## CLI Reference
 
 > For a single-page reference, run `man tacctl` after install.
@@ -529,7 +580,7 @@ The same hash serves TACACS+ and RADIUS.
 
 These patterns apply uniformly across every subcommand family:
 
-- **No arguments** — dispatcher commands (`user`, `group`, `config`, `scope`, `host`, `backend`, `store`, `log`, `backup`, `hash`, and nested dispatchers like `scope prefixes` / `scope secret` / `scope aaa-order` / `scope exec-timeout` / `scope tacacs-group` / `scope radius-group` / `scope auth-method` / `scope vendor-attrs` / `scope devices` / `scope mgmt-acl` / `user scope` / `group privilege` / `config linux`) print their own usage and exit without side effects. Scalar getter/setters (`config loglevel`, `config listen`, `config metrics`, `config password-age`, `config bcrypt-cost`, `config password-min-length`, `config secret-min-length`, `config branch`, `scope default`, `host default-method`) print the current value when called with no arguments.
+- **No arguments** — dispatcher commands (`user`, `group`, `config`, `scope`, `host`, `device`, `backend`, `store`, `log`, `backup`, `hash`, and nested dispatchers like `scope prefixes` / `scope secret` / `scope aaa-order` / `scope exec-timeout` / `scope tacacs-group` / `scope radius-group` / `scope auth-method` / `scope vendor-attrs` / `scope devices` / `scope mgmt-acl` / `user scope` / `group privilege` / `config linux`) print their own usage and exit without side effects. Scalar getter/setters (`config loglevel`, `config listen`, `config metrics`, `config password-age`, `config bcrypt-cost`, `config password-min-length`, `config secret-min-length`, `config branch`, `scope default`, `host default-method`, `device address|hostname|vendor|port|description|legacy-ssh|stale-days`) print the current value when called with no arguments.
 - **Filters and opt-ins** — a setting that narrows something down is a *filter*: its verbs are `set` and `clear`, and empty (cleared) means everything (`scope protocols`, `config allow`, `config deny`). A setting that turns something on is an *opt-in*: its verbs are `enable` and `disable`, and nothing is on until it is enabled (`backend enable|disable`, `scope vendor-attrs`). An opt-in has no verb that could read as "empty means all".
 - **Membership lists** — a list that names exactly what is in is a *membership list*, and empty means nothing, not everything (`user scope`, the scopes a user can authenticate from: none means nowhere; `scope prefixes`, the clients a scope serves: emptying it removes the scope). Its verbs are `add` and `remove`: `remove --all` empties it, and `user scope` replaces its whole list with `replace`.
 - **Multi-item input** — every `add` / `remove` that takes a CIDR, a scope name, or a Cisco exec command accepts either a single value or a comma-separated list (`a,b,c`). Every input is validated first; a bad entry aborts the entire operation without writing anything.
@@ -551,6 +602,8 @@ tacctl user <subcommand>        # User management (incl. per-user scope membersh
 tacctl group <subcommand>       # Group management
 tacctl scope <subcommand>       # Scope management (CIDR+secret bundles)
 tacctl host <subcommand>        # Linux hosts: enroll, sync, unenroll, default-method
+tacctl device <subcommand>      # Device registry: names, addresses and notices for the devices that authenticate here
+tacctl ssh <name|address> [-p port] [-- ssh args]  # ssh session to a registered device or enrolled host, as you, by password (never root)
 tacctl backend <subcommand>     # Backends: list, status, enable, disable
 tacctl store <subcommand>       # The canonical store: show, import, rollback
 tacctl config <subcommand>      # Configuration
@@ -560,10 +613,45 @@ tacctl hash                     # Show usage
 tacctl hash generate            # Prompt + print a bcrypt hash
 tacctl hash commands            # Print OS-specific client-side recipes
 tacctl version [--long]         # Print tacctl version (--long: commit, build date, Go version)
-tacctl completion bash          # Print the bash completion script (install and upgrade place it)
+tacctl completion bash|zsh|fish # Print the completion script of a shell (install and upgrade place the bash one)
+tacctl shell [--no-history] [--idle min] [-c line]  # Interactive prompt: one tacctl command per line (runs as you; sudo per line)
 ```
 
 Run any command without arguments for detailed help.
+
+### Shell Completion
+
+`install` and `upgrade` place the bash script in `/etc/bash_completion.d/tacctl`. zsh and fish are print-only: write the script where the shell looks for it, as the user who will use it.
+
+```bash
+# zsh: any directory on fpath, then compinit
+mkdir -p ~/.zfunc
+tacctl completion zsh > ~/.zfunc/_tacctl
+# in ~/.zshrc, before compinit:  fpath=(~/.zfunc $fpath); autoload -Uz compinit && compinit
+
+# fish
+tacctl completion fish > ~/.config/fish/completions/tacctl.fish
+```
+
+The scripts ask `tacctl __complete` for the words, so they match the installed binary; regenerate them after an upgrade. Live names (users, groups, scopes, ...) need root or the NOPASSWD sudoers rule; without it only fixed words are completed.
+
+### Interactive Shell — `tacctl shell`
+
+```
+tacctl shell                      # Prompt 'tacctl> ': type commands without 'tacctl' (user list, scope show lab)
+tacctl shell --no-history         # Keep this session's history in memory only
+tacctl shell --idle 30            # Leave after 30 minutes at the prompt without input (0, the default: never)
+tacctl shell -c 'user list'       # Run one line and exit with its status
+tacctl shell < commands.txt       # Run the lines in order; stop at the first non-zero status and exit with it
+```
+
+The shell runs as you and holds no privilege: each line runs as `sudo [-n] tacctl <words>` with the terminal attached, so sudo's rules and log, and the tier gate, apply to every line as they do from bash; prompts and password input work as usual. Tier users (members of `tac-users`) get `sudo -n`, and a line their tier's sudoers rules do not cover is reported as not permitted. `hash` and `completion` lines run without sudo; `host` lines carry `SSH_AUTH_SOCK` as the re-exec does.
+
+A line is split into words at blanks; single and double quotes and backslash quote as in `sh`, and nothing else is special — no variables, globbing, pipes, redirections, `;`, `$(...)`, backticks or `!`. Lines are at most 4096 bytes. The shell's own words are `help` (the top-level usage), `help <command>` (that family's usage), `history`, and `exit`/`quit` (or Ctrl-D). After a non-zero status the shell prints `[exit N]`.
+
+Keys: Tab completes commands, flags and live names (asked of `sudo -n tacctl _completion-names`, kept 5 s); a second Tab lists the choices with descriptions. Up/Down walk the history, Ctrl-R searches it (Ctrl-R again: older; Enter runs; Ctrl-G restores the line). Esc-b/Esc-f (Alt-Left/Right) move by word; Home/End, Ctrl-A/E/K/U/W/T/L as usual. A paste is one line (newlines become blanks, at most 4096 bytes) and runs only on Enter. Ctrl-C discards the line, or ends the running command; Ctrl-Z and Ctrl-\ do nothing (no job control, inherited by the commands).
+
+History lives in `~/.local/state/tacctl/history` (0600, newest 1000 lines). Lines are stored redacted: everything after `--secret`, `--hash`, `--password`, after `set` in `secret … set`, after `import` with a value, and after the word of a `passwd` line becomes `…(redacted)` (`scope secret lab set x` → `scope secret lab set …(redacted)`); a recalled redacted line is refused. Lines ended with Ctrl-C are not stored; batch input is never stored. In a batch (`tacctl shell < file`) the commands get no stdin, so questions cannot be answered from the file — use `-y` where a command has it.
 
 ### User Commands — `tacctl user`
 
@@ -778,11 +866,76 @@ host enroll <[user@]host>|--local [opts]    Install TACACS+ or RADIUS login on a
       --name <name>                         Registry name (default: short hostname)
       --port <n>, --identity <file>         SSH port and key
       --build-on-host                       (tacplus) compile pam_tacplus on the host instead of in a container here
-host sync <name>|--all                      Push account adds, removals and tier changes
+host sync <name>|--all                      Push account adds, deletions, expiries and tier changes; pins the host's ssh keys if none are (enroll pins them too)
       --allow-uid-mismatch                  (enroll and sync) accept a UID/GID conflict on the host instead of stopping
-      --adopt <name>[,<name>...]            (enroll and sync) take over accounts that already exist on the host
-host unenroll <name> [--force]              Remove the login method from the host (accounts are kept); --force drops it from the registry even if the removal fails
+      --remove-home                         (enroll and sync) delete removed users' home directories without asking (on a terminal each is asked; without one they are kept)
+host unenroll <name> [--force]              Remove the login method from the host (accounts are kept) and its pinned host keys; --force drops it from the registry even if the removal fails
 host default-method [tacplus|radius]        Show or set the method for hosts enrolled without --method (host.default_method)
+```
+
+### Device Commands — `tacctl device`
+
+The device registry gives names to the network devices that authenticate here. It lives in `/etc/tacctl/devices.yaml` and never touches `store.yaml`: a device's scope and vendor tag are looked up from the store when shown, so registering a device renders nothing and restarts nothing. Every write takes a snapshot first.
+
+```
+device list [--stale] [--unconfigured] [--scan] [--probe] [--json]   Registered devices, then enrolled hosts: scope, STATE (configured: a scope's prefixes cover the address; unconfigured; stale), last seen / by / via from the seen cache, open notices; --scan scans first, --probe adds REACH (TCP connect to the ssh port, 3 s)
+device show <name|address> [--json]               One entry in full (scope and routing prefix, shadowed scopes, vendor tag, pinned keys, sightings and NAS-Identifier, notices with the acknowledged ones marked)
+device add <name> <address>                       Register a device (writes: administrators only)
+      --vendor cisco|juniper|wti|other            Default other; drives the ssh profile, never tags the address in the scope
+      --hostname <dns>, --port <n>, --description <text>, --legacy-ssh
+      --host-key SHA256:<fp>                      Register only if the device offers a key with this fingerprint; pin that key alone
+      --no-host-key                               Register without scanning: unpinned, with a hostkey-unpinned notice
+      --allow-generic                             Register a generic name (switch, router, cisco, ubuntu, ...) anyway
+device remove <name>[,<name>...] | --all [-y]     Remove from the registry (confirms; hosts, scopes and vendor tags are not touched)
+device rename <old> <new> [--allow-generic]
+device address|hostname|vendor|port|description <name> [<value>|clear]   Show, set or clear one field
+device legacy-ssh <name> [enable|disable]         Opt in to the legacy IOS ssh algorithms
+device stale-days [<n>]                           Days without a sighting after which a device is stale (default 30)
+device notice <name> ack|unack <kind>             Acknowledge or reopen a notice
+device notices [<name>]                           The open notices, each with the command that fixes or acknowledges it
+device import [--check] [--replace] [--allow-generic] [-y] <file|->   CSV (name,address[,vendor[,port[,description]]]) or the registry's YAML; merges by default
+device export [--csv|--json]                      The registry (YAML by default), only the devices of your own scopes below the administrator tier
+device hostkey <name> [show]                      The pinned ssh host-key fingerprints of a device or enrolled host (administrators)
+device hostkey <name> accept [-y]                 Re-scan and pin every key it offers, after confirmation (verify on the console first)
+device hostkey <name> set SHA256:<fp>             Re-scan and pin only the key with this fingerprint
+device ssh <name|address> [-p <port>] [-- <ssh args>]   Same as tacctl ssh
+device ssh-config                                 Print an ssh_config Include for your devices (Host blocks with the vendor options and the pin)
+device scan [--full] [--since <dur>] [--backend <id>]   Read the backends' logs into the seen cache from where the last scan stopped; re-scan pinned host keys (never re-pins); print each log's window and the notices
+device discover [--all] [--backend <id>]          Scan, then list the addresses that authenticated unregistered, each with a ready 'tacctl device add' line; --all adds those only refused
+device check <name>|--all                         Checklist: scope, vendor tag, last seen, reachable (TCP connect, 3 s), host key against the pin, notices
+```
+
+A device is found by name (any case) or by its registered address; an unregistered address is not found, even when a scope covers it. An address is registered once. Enrolled Linux hosts share the namespace and appear in `list` and `show` as `linux` entries, read-only. `list`, `show`, `notices`, `ssh-config` and `tacctl ssh` are open to the read-only and operator tiers, limited to the entries of their own scopes (`tacctl ssh` is limited so for every tier); `export` is operator-level, filtered the same way.
+
+A name that is a factory or image default is refused with the command that names the device on the device itself (`hostname`, `set system host-name`, ...); a host enrolled under such a name before the registry existed is not refused and carries a `generic-name` notice. `host enroll --name` follows the same rules. Add your own patterns with `generic_names:` (regular expressions, whole-name, case-insensitive) in `devices.yaml`.
+
+**Seen data.** `device scan` reads what the daemons logged about each device into `/var/lib/tacctl/devices-seen.json` (0600, a cache: never snapshotted, `--full` rebuilds it): the tacquito journal (`journalctl -u tacquito … -o json`, resuming at its cursor; the `accepting user [u] from [address]` / `failed to validate the user [u] from [address]` lines, `bad secret detected for ip [address:port]`, `no matching prefix secret provider found`, and at log level 30 `prefix secret provider matches remote [address]`) and FreeRADIUS's `tacctl-auth.log` with its rotations (`client=`, `nas=`, `user=`, resuming by inode and offset). The first scan reads the last `stale-days` days; `--full` everything the logs hold, `--since 7d` that stretch. Per address it keeps the first and last sighting, the count, the last user, outcome and backend and the NAS-Identifier; records unseen for twice `stale-days` are dropped. `list` and `show` read the cache only (`seen data as of <time>`); LAST SEEN is `rejected <time> (bad secret)` when the last exchange was refused. `check` and `list --probe` connect to the ssh port: the server often has no route to management ports, so a timeout may be a false alarm. `scan`, `discover` and `check` are operator-level.
+
+**Notices** are computed when shown (only acknowledgements are stored) and appear in `scan`/`discover` output, a `Device notices` section of `tacctl status` (count and the first five), `device list` (NOTICES), `device notices`, and `device show` (acknowledged ones marked). Besides `generic-name` and `hostkey-unpinned`, a scan raises `ambiguous-nas-id` (one NAS-Identifier from several addresses), `generic-nas-id`, `name-mismatch` (informational), `duplicate-address` (two entries at one address, or an address identifying as another entry), `identity-changed` (an address's NAS-Identifier changed: replaced or reset?), and from the host-key re-scan `hostkey-changed` (cannot be acknowledged; only `device hostkey <name> accept|set` clears it), `hostkey-added` and `hostkey-unreachable`. Each line ends with the command that fixes or acknowledges it.
+
+**Host keys.** `device add` reads the keys the device offers (`ssh-keyscan -T 5 -p <port> -t ed25519,ecdsa,rsa <address>`, as root; `legacy-ssh` devices are asked for `ssh-rsa` by name too), pins them in `devices.yaml` and prints each `SHA256:` fingerprint with the command that shows it on the device console (Cisco `show ip ssh`, Junos `file show /etc/ssh/ssh_host_ed25519_key.pub` from the CLI, or `ssh-keygen -lf` on the same file from `start shell`, Linux `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`); compare them before connecting (`tacctl device hostkey <name> show` prints each pinned key as an `ssh-ed25519 AAAA…` line as well, so a `file show` output can be compared by eye). A device that does not answer is refused unless `--no-host-key` is given. `host enroll` and `host sync` pin an enrolled host's keys the first time from two independent reads: the host's own public key files (`cat /etc/ssh/ssh_host_*_key.pub`, read-only, over the enrolment's ssh connection, which your own ssh checked against your known_hosts) and an `ssh-keyscan` of the target. Only keys both reads hold are pinned; a key type they disagree on refuses the pin (both sets are shown and `host hostkey-mismatch` is logged), a type only one of them has is reported and not pinned, and key files that cannot be read pin nothing. The enrolment or sync succeeds either way. A sync of a pinned host compares the session's keys with the pin, reports a difference and keeps the pin. Only `device hostkey <name> accept|set` changes a pin. Every registry write regenerates `/var/lib/tacctl/ssh/known_hosts` (0644), one `<name> <type> <key>` line per pinned key, for `ssh -o UserKnownHostsFile=/var/lib/tacctl/ssh/known_hosts -o GlobalKnownHostsFile=none -o HostKeyAlias=<name> -o StrictHostKeyChecking=yes`.
+
+**`tacctl ssh <name|address>`** opens an ssh session to a registered device or an enrolled host, as you: the name is resolved as root (the registry is root's), and only an active tacctl user (in the store, not disabled) whose scopes include the entry's may connect, at every tier, superusers included (`'jdoe' has no access to scope 'prod' (device core-sw1)`; a local account that is not a tacctl user, and an entry in no configured scope, are refused to everyone; each refusal is logged as `ssh DENY … reason=`). The session is logged (`ssh user=<you> device=<name> addr=<address>`, syslog auth.info), and ssh runs as the invoking user (`sudo -u <you> -H ssh …`), logging in as you by password: your tacctl password, checked by the device against this server; no agent, no key, no other login. An enrolled host's enrolment account and identity are never used. Its exit status is passed back. Run as root itself it refuses (`tacctl ssh runs ssh as the user who invoked it; run it from your own account, not as root`); it needs a terminal. An unregistered address is refused with the `device add` command that registers it. The options per device:
+
+| Device | ssh options |
+|---|---|
+| every one | `-o ConnectTimeout=10 -o PubkeyAuthentication=no -o PreferredAuthentications=keyboard-interactive,password`; your username as the login; the device's hostname, else its address; its port (`-p`) unless given |
+| `wti` | `PreferredAuthentications=password` instead (see WTI Console Servers) |
+| `legacy-ssh` | `-o KexAlgorithms=+diffie-hellman-group14-sha1,diffie-hellman-group1-sha1 -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedAlgorithms=+ssh-rsa` (old IOS; OpenSSH 8.5 or later) |
+| pinned keys | `-o UserKnownHostsFile=/var/lib/tacctl/ssh/known_hosts -o GlobalKnownHostsFile=none -o StrictHostKeyChecking=yes -o HostKeyAlias=<name> -o UpdateHostKeys=no` |
+| enrolled host | its target's host and its port |
+
+An unpinned device is checked against your own known_hosts, after its `hostkey-unpinned` notice. Arguments after `--` follow the target, so ssh takes them as the remote command (`tacctl ssh core-sw1 -- show version`); they cannot replace an option. When ssh fails with 255 on a pinned device whose key changed, tacctl prints the pinned and offered fingerprints, the console command that shows the key, and `tacctl device hostkey <name> accept|set`.
+
+`tacctl device ssh-config > ~/.ssh/tacctl.conf`, with `Include ~/.ssh/tacctl.conf` at the top of `~/.ssh/config`, gives a plain `ssh <name>` the same options and pin (one `Host` block per device you may see, with `PubkeyAuthentication no` and the password methods and no `User` line: ssh logs in with your local username, which for a tacctl user is the tacctl name; print-only, re-run after registry changes).
+
+```yaml
+# /etc/tacctl/devices.yaml
+version: 1
+settings: {stale_days: 30}
+devices:
+  core-sw1: {address: 10.99.0.1, vendor: cisco, legacy_ssh: true, description: DC1 core}
+  lab-rtr2: {address: 192.0.2.7, vendor: juniper, hostname: lab-rtr2.lab.example.net}
 ```
 
 ### Backend Commands — `tacctl backend`
@@ -899,7 +1052,7 @@ unit requests exec authorization and reads the standard `priv-lvl` attribute fro
 - **Fallback Local** follows the scope's `aaa-order`: `tacacs-first` → `On (Transport Failure)`, `local-first` → `On (All Failures)`. Keep a local Administrator account on the unit as break-glass
 - **Default User Access must be `On`** (Access Level `ViewOnly` as the least-privilege floor; the returned `priv-lvl` still sets the effective level). SSH logins go through the unit's OpenSSH, which has to resolve the account locally: with it `Off`, a TACACS-only user is invalid to sshd, which forwards a junk password (`\b\n\r\177INCORRECT…`), so tacquito logs `failed to validate the user` on every attempt no matter what was typed
 - If the unit's **IP Tables** (`/N`) end in `DROP`, they must accept `-i lo` and `-m conntrack --ctstate ESTABLISHED,RELATED` before the final DROP. Otherwise the unit's TACACS+ SYN leaves but tacquito's SYN-ACK is dropped: every login waits out the Fallback Timer, and tacquito logs nothing (only SYNs in tcpdump, half-open sockets in `ss`). The unit's Ping Test passes regardless — it is ICMP only
-- Test the first login with `ssh -o PreferredAuthentications=password <user>@<wti>`. If a plain `ssh` is closed without a password prompt while the password method works, the unit's Invalid Access Lockout is armed from earlier failures — `/UL` clears it
+- Test the first login with `ssh -o PreferredAuthentications=password <user>@<wti>` (`tacctl ssh <name>` uses the password method for every `wti` device). If a plain `ssh` is closed without a password prompt while the password method works, the unit's Invalid Access Lockout is armed from earlier failures — `/UL` clears it
 - Port and service access for User/ViewOnly-level logins is defined only under Default TACACS User Access → Configure Port Access / Service Access (factory: Administrator and SuperUser get all ports, User and ViewOnly get none). A same-named local account on the unit overrides the server-assigned level, so keep the two directories disjoint
 - The output warns when the scope secret contains whitespace/punctuation or exceeds 32 characters, or when a scope member's username exceeds WTI's 32-character limit — regenerate a hex-only key with `tacctl scope secret <name> set $(openssl rand -hex 16)`
 - Verify with `tacctl config loglevel debug` + `tacctl log tail`: `accepting user [x] using a bcrypt password` (PAP), then `client args [service=shell ...]`, then `authorized user [x] ... [priv-lvl=N]`; accounting (start at login, stop after `/X`) lands in `tacctl log accounting`. On the unit, TACACS Parameters → `12. Debug: On` echoes every exchange on the serial session — turn it back `Off` when done
@@ -970,11 +1123,11 @@ tacctl upgrade --branch develop
 
 The upgrade command:
 1. Moves tacctl state into `/etc/tacctl` if it is not there yet (idempotent)
-2. Pulls latest tacquito server source and rebuilds the binary (if upstream or the patch overlay changed)
-3. Pulls the latest tacctl repository into `/opt/tacctl` (after switching to the `--branch` given). If the installed binary was not built from the commit now checked out, it builds it again from the clone (`Building /usr/local/bin/tacctl from /opt/tacctl...`) and re-executes itself once, so the binary always matches the clone
+2. Pulls latest tacquito server source and rebuilds the binary (if upstream or the patch overlay changed) (the overlay's `0003` makes tacquito log the address a device connected from, which `tacctl log` and `device scan` read; `0004` stops it sending a server message with a failed login; a server upgraded from 0.2.0 rebuilds tacquito once for them, see `patches/README.md`)
+3. Pulls the latest tacctl repository into `/opt/tacctl` (after switching to the `--branch` given). If the installed binary was not built from the commit now checked out, it replaces it, with the verified release binary when the clone is at a release tag (`Installing the <tag> release binary (linux/<arch>, verified)`), otherwise built from the clone (`Building /usr/local/bin/tacctl from /opt/tacctl...`), and re-executes itself once, so the binary always matches the clone
 4. Installs packages a newer tacctl needs
 5. Brings the configuration in line with this release: re-renders each enabled backend from the store (RADIUS: and restarts it when its files or its unit drop-in changed); without a store, runs the in-place migrations of `tacquito.yaml`
-6. Updates system files (unit files and drop-ins, logrotate, the completion `tacctl completion bash` generates, the man page, templates you have not customized) if changed, and reports each one as `Updated:` or `Unchanged:`; a template you customized is kept, with the new release's version beside it as `<name>.template.new` (see [Custom Templates](#custom-templates))
+6. Updates system files (unit files and drop-ins, logrotate, the tiers sudoers rules if that file is installed, the completion `tacctl completion bash` generates, the man page, templates you have not customized) if changed, and reports each one as `Updated:` or `Unchanged:`; a template you customized is kept, with the new release's version beside it as `<name>.template.new` (see [Custom Templates](#custom-templates))
 7. For an install without a store: moves it into the store, behind the gate described below
 8. Restarts tacquito only if what it reads changed (its binary, a unit or drop-in, or `tacquito.yaml`), and rolls the binary and unit files back if it does not come up. A new README, logrotate file, completion or template restarts nothing, and neither does an upgrade with nothing new
 

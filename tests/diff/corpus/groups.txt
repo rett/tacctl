@@ -138,7 +138,7 @@ group commands add operator show
 group commands add operator show --match
 group commands add operator show --action
 group commands add operator show --match 'run.*' --match 'start.*' ;; group commands list operator
-@known 0.2.1 item 6: a comma in --match is refused
+@known 0.2.1 item 7: a comma in --match is refused
 group commands add operator show --match 'a{1,3}' ;; group commands list operator ;; group commands add operator ping ;; group commands list operator
 @known 3.9 item 14: --match regexes are checked with RE2, which has no lookarounds
 group commands add operator show --match '(?=x)'

@@ -22,7 +22,7 @@ func hostDefaults(p paths.Paths, l paths.RadiusPaths, root string) []string {
 		"LinuxUIDs": p.LinuxUIDs, "LinuxHosts": p.LinuxHosts, "Templates": p.Templates,
 		"SudoersFile": p.SudoersFile, "TierSudoersFile": p.TierSudoersFile,
 		"OverrideDir": p.OverrideDir, "TacacsUnitDir": p.TacacsUnitDir, "SystemdDir": p.SystemdDir,
-		"LogrotateDir": p.LogrotateDir, "TacquitoSrc": p.TacquitoSrc, "LinuxDir": p.LinuxDir,
+		"LogrotateDir": p.LogrotateDir, "TacquitoSrc": p.TacquitoSrc, "LinuxDir": p.LinuxDir, "VarLib": p.VarLib, "KnownHosts": p.KnownHosts,
 		"Tree": p.Tree, "PatchDir": p.PatchDir,
 		"radius Dir": l.Dir, "radius Bin": l.Bin, "radius LogDir": l.LogDir, "radius SystemDict": l.SystemDict,
 		"radius Conf": l.Conf, "radius Users": l.Users, "radius DictDir": l.DictDir, "radius Dict": l.Dict,

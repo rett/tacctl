@@ -12,7 +12,6 @@ import (
 	"errors"
 	"io"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -22,6 +21,7 @@ import (
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/hosts"
 	"github.com/rett/tacctl/internal/names"
+	"github.com/rett/tacctl/internal/tier"
 	"github.com/rett/tacctl/internal/ui"
 )
 
@@ -107,7 +107,8 @@ func (inv *invocation) configLinux(args []string) error {
 
 // hostsEnv is the hosts.Env of this invocation. ssh and podman run as the
 // user who invoked sudo (SUDO_USER, when tacctl runs as root for someone
-// other than root), with their agent socket.
+// other than root), with their agent socket. The tier gate before every
+// command has refused a SUDO_USER that is not SUDO_UID's account.
 func (inv *invocation) hostsEnv() *hosts.Env {
 	a := inv.app
 	asUser := ""
@@ -115,13 +116,15 @@ func (inv *invocation) hostsEnv() *hosts.Env {
 		asUser = u
 	}
 	return &hosts.Env{
-		Paths:    hosts.Paths{Dir: a.Paths.LinuxDir, UIDs: a.Paths.LinuxUIDs, Hosts: a.Paths.LinuxHosts},
+		Paths:    hosts.Paths{Dir: a.Paths.LinuxDir, VarLib: a.Paths.VarLib, UIDs: a.Paths.LinuxUIDs, Hosts: a.Paths.LinuxHosts},
 		Runner:   a.Runner,
 		Out:      a.Out,
 		Stdin:    a.Stdin,
 		AsUser:   asUser,
 		AuthSock: a.Env.Get("SSH_AUTH_SOCK"),
 		Now:      a.Knobs.Now,
+		// host enroll and host sync pin the host's ssh keys in the registry.
+		PinHostKeys: inv.pinHostKeys,
 	}
 }
 
@@ -131,6 +134,19 @@ func (inv *invocation) hostsDone(err error) error {
 		return exit(1)
 	}
 	return err
+}
+
+// verifySudoUser refuses a SUDO_USER that is not the account of SUDO_UID
+// (tier.VerifyCaller), for the commands that run programs as SUDO_USER
+// ('host', 'tacctl ssh'). The tier gate has refused one already; this is
+// the same check where the name is acted on.
+func (inv *invocation) verifySudoUser(what string) error {
+	a := inv.app
+	u, uid := a.Env.Get("SUDO_USER"), a.Env.Get("SUDO_UID")
+	if tier.VerifyCaller(inv.ctx, a.Runner, u, uid) != nil {
+		return inv.usageErr("SUDO_USER '" + u + "' is not the account of SUDO_UID " + uid + "; " + what + " will not run ssh as it")
+	}
+	return nil
 }
 
 // sudoUser is ${SUDO_USER:-root}, for the audit lines.
@@ -228,6 +244,7 @@ func (inv *invocation) scriptRequest(scope, server, method, output string) (host
 		req.Secret = m.Scope(scope).Secret
 	}
 	req.Rows = m.LinuxUsers(scope)
+	req.Inactive = m.LinuxInactive(scope)
 	id := backend.TACACS
 	if method == hosts.Radius {
 		id = "radius"
@@ -435,26 +452,9 @@ func (inv *invocation) configLinuxRemoveScript(args []string) error {
 
 // --- uid -----------------------------------------------------------------------
 
-var reUID = regexp.MustCompile(`^[0-9]{4,9}$`)
-
-// uidRefused is '(( uid < 1000 || uid == 65534 ))' for a uid of 4-9 digits:
-// bash reads a leading 0 as octal, and a number that is not valid octal
-// makes the arithmetic fail, which reads as false (0.1.16 also printed
-// bash's own complaint about it, which is not reproduced).
-func uidRefused(uid string) bool {
-	base := 10
-	if len(uid) > 1 && uid[0] == '0' {
-		base = 8
-	}
-	n, err := strconv.ParseInt(uid, base, 64)
-	if err != nil {
-		return false
-	}
-	return n < 1000 || n == 65534
-}
-
 // configLinuxUID is cmd_config_linux_uid: list, show or change the number
-// a user gets as UID and primary GID on every host. Only a change writes
+// a user gets as UID and primary GID on every host, one of
+// hosts.UIDBase..hosts.UIDMax. Only a change writes
 // the UID file; a listing or a lookup leaves it as it is (absent stays
 // absent). Changing it does not renumber accounts that already exist on
 // enrolled hosts; the next sync reports them.
@@ -501,8 +501,8 @@ func (inv *invocation) configLinuxUID(args []string) error {
 	if !m.Exists("users", username) {
 		return inv.usageErr("User '" + username + "' does not exist.")
 	}
-	if !reUID.MatchString(uid) || uidRefused(uid) {
-		return inv.usageErr("UID must be a number from 1000 up (not 65534).")
+	if !hosts.UIDInRange(uid) {
+		return inv.usageErr("UID must be a number from " + strconv.Itoa(hosts.UIDBase) + " to " + strconv.Itoa(hosts.UIDMax) + ": tacctl gives out UIDs (and the matching GIDs) in that range only.")
 	}
 	holder, err := uids.Holder(uid)
 	if err != nil {

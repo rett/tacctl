@@ -47,7 +47,7 @@ func Uninstall(ctx context.Context, h *Host, args []string) error {
 	h.echo("  - Management CLI (tacctl), its state directory (" + p.StateDir + ": store, tacctl.yaml, backups)")
 	h.echo("  - Sudoers rules (" + p.SudoersFile + ", " + p.TierSudoersFile + ")")
 	h.echo("  - Bash completion (" + p.Completion + ") and man page")
-	h.echo("  - Linux host build data (" + p.LinuxDir + ")")
+	h.echo("  - Linux host build data (" + p.LinuxDir + ") and the generated known_hosts (" + p.KnownHosts + ")")
 	h.echo("  - Management repo (" + p.Deploy + ")")
 	h.echo("  - TACACS+ (tacquito): service and units, binary, password hash generator (tacquito-hashgen),")
 	h.echo("    configuration directory (/etc/tacquito), log directory (/var/log/tacquito), logrotate config,")
@@ -192,7 +192,8 @@ func Uninstall(ctx context.Context, h *Host, args []string) error {
 // through a tacctl about to be gone. Both sudoers drop-ins go (the tier
 // rules allow commands of the removed binary to the tier groups, and must
 // not outlive it), and so does the Linux host data (pam_tacplus source and
-// prebuilt modules), with its parent directory when that leaves it empty.
+// prebuilt modules) and the generated known_hosts (with its directory),
+// with their parent directory when that leaves it empty.
 func (h *Host) removeAccess() error {
 	p := h.Paths
 	if err := h.rmF(p.SudoersFile, p.TierSudoersFile); err != nil {
@@ -201,7 +202,12 @@ func (h *Host) removeAccess() error {
 	if err := h.rmRF(p.LinuxDir); err != nil {
 		return err
 	}
-	_ = os.Remove(filepath.Dir(p.LinuxDir)) // rmdir: only when empty
+	if err := h.rmRF(filepath.Dir(p.KnownHosts)); err != nil {
+		return err
+	}
+	// rmdir: only when empty.
+	_ = os.Remove(p.VarLib)
+	_ = os.Remove(filepath.Dir(p.LinuxDir))
 	return nil
 }
 

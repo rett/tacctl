@@ -125,6 +125,7 @@ func newEnv(t *testing.T, opts ...option) *renv {
 		"TACCTL_TIER_SUDOERS_FILE=" + filepath.Join(w, "sudoers.d", "tacctl-tiers"),
 		"TACQUITO_SRC=" + filepath.Join(w, "tacquito-src"),
 		"TACCTL_LINUX_DIR=" + filepath.Join(w, "linux"),
+		"TACCTL_VAR_LIB=" + filepath.Join(w, "var-lib"),
 		"TACCTL_TREE=" + filepath.Join(w, "tree"),
 	})
 	// Reroot: 'uninstall data --keep-logs' archives under /root in

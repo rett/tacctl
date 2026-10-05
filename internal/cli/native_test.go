@@ -55,6 +55,7 @@ func newSandbox(t *testing.T, withStore bool) *sandbox {
 		"TACCTL_SKIP_SUDO=1",
 		"TACCTL_ETC=" + filepath.Join(w, "etc"),
 		"TACCTL_STATE_DIR=" + filepath.Join(w, "state"),
+		"TACCTL_VAR_LIB=" + filepath.Join(w, "var-lib"),
 		"TACCTL_LOG=" + filepath.Join(w, "log"),
 		"TACCTL_BIN=" + filepath.Join(w, "bin"),
 		"TACCTL_SYSTEMD_DIR=" + filepath.Join(w, "systemd"),
@@ -75,6 +76,7 @@ func (sb *sandbox) run(stdin string, args []string, extraEnv ...string) string {
 	sb.runner.On([]string{"systemctl"}, execx.Result{})
 	sb.runner.On([]string{"logger"}, execx.Result{})
 	sb.runner.On([]string{"id"}, execx.Result{Stdout: []byte("users\n")})
+	fakePasswd(sb.runner)
 	a := app.New(args, paths.NewEnv(append(append([]string(nil), sb.env...), extraEnv...)), "/opt/x/dist/tacctl", 1000,
 		app.Stdio{Stdin: strings.NewReader(stdin), Stdout: &sb.out, Stderr: &sb.err}, sb.runner)
 	// tacctl's fixed host locations (the installed command, /root, ...)
@@ -395,5 +397,45 @@ func TestUserSpecs(t *testing.T) {
 	}
 	if len(userSpecs) != len(userCmd(inv).Commands()) {
 		t.Errorf("%d specs for %d verbs", len(userSpecs), len(userCmd(inv).Commands()))
+	}
+}
+
+// testPasswd is the passwd database of the sandboxes ('getent passwd
+// <uid>'): tier.VerifyCaller checks SUDO_USER against SUDO_UID's entry.
+var testPasswd = map[string]string{"0": "root", "7": "ops", "1000": "tester", "1001": "alice", "1002": "carol", "1003": "bob"}
+
+// fakePasswd answers 'getent passwd <uid>' from testPasswd (exit 2 for an
+// unknown uid, as getent does).
+func fakePasswd(r *fake.Runner) {
+	r.Func(func(c execx.Cmd) bool { return c.Name == "getent" && len(c.Args) == 2 && c.Args[0] == "passwd" },
+		func(c execx.Cmd) (execx.Result, error) {
+			name, ok := testPasswd[c.Args[1]]
+			if !ok {
+				return execx.Result{Code: 2}, nil
+			}
+			return execx.Result{Stdout: []byte(name + ":x:" + c.Args[1] + ":" + c.Args[1] + "::/home/" + name + ":/bin/bash\n")}, nil
+		})
+}
+
+// A SUDO_USER that is not SUDO_UID's account (a sudoers rule elsewhere with
+// SETENV) is refused before any command, root claimed or not; the genuine
+// pair runs.
+func TestSpoofedSudoUserRefused(t *testing.T) {
+	sb := newSandbox(t, true)
+	for _, args := range [][]string{{"user", "list"}, {"version"}, {"passwd"}, {"host", "list"}, {"ssh", "core-sw1"}, {"device", "list"}} {
+		for _, claimed := range []string{"root", "alice", ""} {
+			sb.run("", args, "SUDO_USER="+claimed, "SUDO_UID=1003")
+			if sb.code != 1 || !strings.Contains(sb.stderr(), "SUDO_USER '"+claimed+"' is not the account of SUDO_UID 1003, so tacctl access is denied.") {
+				t.Errorf("%v as %q: exit %d %q", args, claimed, sb.code, sb.stderr())
+			}
+			if !sb.runner.Called("logger", "-t", "tacctl", "-p", "auth.warning") || sb.runner.Called("ssh") {
+				t.Errorf("%v as %q: %q", args, claimed, sb.runner.Argvs())
+			}
+		}
+	}
+	// The genuine pair (bob is 1003) passes the gate.
+	sb.run("", []string{"version"}, "SUDO_USER=bob", "SUDO_UID=1003")
+	if sb.code != 0 {
+		t.Errorf("bob: exit %d %q", sb.code, sb.stderr())
 	}
 }

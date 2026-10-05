@@ -17,19 +17,41 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
 	"golang.org/x/sys/unix"
 
 	"github.com/rett/tacctl/internal/execx"
+	"github.com/rett/tacctl/internal/paths"
 	"github.com/rett/tacctl/internal/tier"
 	"github.com/rett/tacctl/internal/ui"
 )
 
+// UIDBase..UIDMax is the range tacctl assigns UIDs (and the matching
+// primary GIDs) from: it never gives out a number outside it, and the
+// client script never touches an account whose UID is outside it.
+const (
+	UIDBase = 20000
+	UIDMax  = 29999
+)
+
+// UIDRange is the range in words ("20000-29999").
+var UIDRange = strconv.Itoa(UIDBase) + "-" + strconv.Itoa(UIDMax)
+
+// UIDInRange reports whether uid is a decimal number from UIDBase to UIDMax
+// written without leading zeros.
+func UIDInRange(uid string) bool {
+	if uid == "" || uid[0] == '0' || strings.Trim(uid, "0123456789") != "" || len(uid) > 9 {
+		return false
+	}
+	n, _ := strconv.Atoi(uid)
+	return n >= UIDBase && n <= UIDMax
+}
+
 // The pinned pam_tacplus (LINUX_* and PAM_TACPLUS_* of lib/linux_hosts.sh).
 const (
-	UIDBase          = 20000
 	PamTacplusRepo   = "https://github.com/kravietz/pam_tacplus.git"
 	PamTacplusTag    = "v1.7.0"
 	PamTacplusCommit = "b1b7f5351eca07f1bf2f6184602bdfb73d10a155"
@@ -71,9 +93,10 @@ func MethodLabel(method string) string {
 
 // Paths are the files of Linux-host login.
 type Paths struct {
-	Dir   string // LINUX_DIR (TACCTL_LINUX_DIR, /var/lib/tacctl/linux)
-	UIDs  string // LINUX_UID_FILE
-	Hosts string // LINUX_HOSTS_FILE
+	Dir    string // LINUX_DIR (TACCTL_LINUX_DIR, /var/lib/tacctl/linux)
+	UIDs   string // LINUX_UID_FILE
+	Hosts  string // LINUX_HOSTS_FILE
+	VarLib string // paths.VarLib: made 0711 first when Dir is under it (mkDir)
 }
 
 // Tarball is PAM_TACPLUS_TARBALL.
@@ -103,6 +126,20 @@ type Env struct {
 	TTY      func() bool
 	StdinTTY func() bool
 	Machine  func() string
+	// PinHostKeys pins an enrolled host's ssh keys (pin.go); nil pins
+	// nothing.
+	PinHostKeys KeyPinner
+	// ReadKeys makes RunScript read the host's public keys over its
+	// connection after a successful run (ReadKeysCommand), for PinKeys:
+	// 'host enroll' and 'host sync' set it.
+	ReadKeys bool
+
+	// Summary is the account summary the last RunScript's script printed
+	// (nil when it printed none).
+	Summary *AccountSummary
+
+	sessionKeys []byte
+	sessionErr  error
 }
 
 // ErrFailed is a failure whose messages have been printed: the bash
@@ -193,11 +230,15 @@ func UserCount(rows []string) int {
 }
 
 // ScopeUsers is linux_scope_users: "name:tier:uid" lines for the rows of
-// the linux-users view that can be Linux accounts, a UID assigned to each
-// on first use. Names useradd would reject, and users whose group has no
-// priv-lvl, are skipped with a warning on stderr. The lines are joined by
-// newlines ('$(...)': no trailing one).
-func (e *Env) ScopeUsers(rows []string) (string, error) {
+// the linux-users view that can be Linux accounts, a UID of UIDBase..UIDMax
+// assigned to each on first use, joined by newlines ('$(...)': no trailing
+// one). Names useradd would reject are skipped with a warning on stderr.
+// Users whose group has no priv-lvl, and users whose UID file entry is
+// outside the range (set by hand before 0.2.1), are skipped with a warning
+// too and returned in keep: they are still users of the scope, so a host
+// expires their accounts rather than deleting them. No UID left in the
+// range is printed and ErrFailed.
+func (e *Env) ScopeUsers(rows []string) (users string, keep []string, err error) {
 	uids := UIDs{Path: e.Paths.UIDs}
 	var out []string
 	for _, r := range rows {
@@ -212,15 +253,26 @@ func (e *Env) ScopeUsers(rows []string) (string, error) {
 		t := TierOf(privlvl)
 		if t == string(tier.None) {
 			e.stderrOut().WarnE("Skipping '" + name + "': its group has no priv-lvl.")
+			keep = append(keep, name)
 			continue
 		}
 		uid, err := uids.For(name)
+		if errors.Is(err, ErrUIDRangeFull) {
+			e.Out.ErrorE("No UID left for '" + name + "': every number of " + UIDRange + " has been given out (UIDs are never reused).")
+			e.Out.ErrorE("Give it a free number of the range by hand: tacctl config linux uid " + name + " <uid>")
+			return "", nil, ErrFailed
+		}
 		if err != nil {
-			return "", err
+			return "", nil, err
+		}
+		if !UIDInRange(uid) {
+			e.stderrOut().WarnE("Skipping '" + name + "': its UID " + uid + " is outside " + UIDRange + ", so no host gets an account for it. Assign one in the range: tacctl config linux uid " + name + " <uid>")
+			keep = append(keep, name)
+			continue
 		}
 		out = append(out, name+":"+t+":"+uid)
 	}
-	return strings.Join(out, "\n"), nil
+	return strings.Join(out, "\n"), keep, nil
 }
 
 // CountLines is "awk -F: 'NF { n++ } END { print n + 0 }'": the lines of
@@ -233,4 +285,16 @@ func CountLines(s string) int {
 		}
 	}
 	return n
+}
+
+// mkDir creates Dir: its parent VarLib (when Dir is under it) with
+// paths.VarLibMode first, so creating Dir never leaves /var/lib/tacctl
+// unreadable to the users' ssh (VarLib/ssh/known_hosts).
+func (p Paths) mkDir() error {
+	if p.VarLib != "" && strings.HasPrefix(p.Dir, p.VarLib+"/") {
+		if err := paths.MkVarLib(p.VarLib); err != nil {
+			return err
+		}
+	}
+	return os.MkdirAll(p.Dir, 0o700)
 }

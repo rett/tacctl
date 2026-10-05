@@ -25,12 +25,16 @@ Commands:
   group <subcommand>                    Group management (list, add, edit, remove)
   scope <subcommand>                    Scope management (named CIDR + shared-secret bundles)
   host <subcommand>                     Linux hosts: enroll, sync, unenroll TACACS+ or RADIUS login over SSH
+  device <subcommand>                   Device registry: list, add, scan, discover, check, host keys (ssh-config)
+  ssh <name|address> [-p <port>]        Open an ssh session to a registered device or enrolled host, as you
+  shell [--idle <min>] [-c <line>]      An interactive tacctl prompt with history and completion
   backend <subcommand>                  Auth backends: list, status, enable <id>, disable <id>
   store <subcommand>                    The canonical store: show, import, rollback
   config <subcommand>                   Configuration (show, render, cisco, juniper, wti, validate, ...)
   log <subcommand>                      Log viewer (tail, search, failures, accounting; --backend <id>)
   backup <subcommand>                   Backup management (list, diff, restore)
   hash <subcommand>                     Bcrypt helper (generate, commands — runs as invoking user, no sudo)
+  completion bash|zsh|fish              Print the shell completion script
   version [--long]                      Print tacctl version (--long: commit, build date, Go version)
 
 Run any command without arguments for detailed help, e.g.:
@@ -344,9 +348,10 @@ Usage: tacctl host <subcommand> [arguments]
       --name <name>                    Registry name (default: short hostname)
       --port <n>, --identity <file>    SSH port and key
       --build-on-host                  (tacplus) Compile pam_tacplus on the host instead of in a container here
-  sync <name> | --all                  Push account adds, removals and tier changes
+  sync <name> | --all                  Push account adds, deletions and tier changes
       --allow-uid-mismatch             (enroll and sync) accept a UID/GID conflict on the host instead of stopping
-      --adopt <name>[,<name>...]       (enroll and sync) take over accounts that already exist on the host
+      --remove-home                    (enroll and sync) delete removed users' home directories without asking
+                                       (on a terminal each one is asked; without one they are kept)
   unenroll <name> [--force]            Remove the login method from the host (accounts and homes are kept)
   default-method [tacplus|radius]      Show or set the method for hosts enrolled without --method
                                        (a scope's own choice comes first: tacctl scope auth-method)

@@ -410,3 +410,40 @@ func TestStoreShowAndImportArguments(t *testing.T) {
 	sb.run("", []string{"store", "rollback"})
 	sb.expect(1, "", "There is no store at ")
 }
+
+// devices.yaml (0.2.1) rides along: a snapshot that holds one brings it
+// back, one that does not (a 0.2.0 snapshot) leaves the live registry
+// alone, and 'backup diff' names it only when either side has one.
+func TestBackupDiffAndRestoreHandleDevicesYAML(t *testing.T) {
+	sb := renderedSandbox(t)
+	minimal := fixture(t, "store.minimal.yaml")
+	sb.mkSnapshot("20200101_000000_001", minimal, "")
+	sb.mkSnapshot("20200101_000000_002", minimal, "")
+	sb.write("state/backups/20200101_000000_002/devices.yaml", "version: 1\ndevices:\n  a: {}\n", 0o600)
+
+	// No registry anywhere: the diff does not mention it.
+	out := sb.run("", []string{"backup", "diff", "20200101_000000_001"})
+	if strings.Contains(plain(out), "devices.yaml") {
+		t.Errorf("diff names devices.yaml with none on either side:\n%s", out)
+	}
+	// A snapshot without one leaves the live registry alone.
+	sb.write("state/devices.yaml", "version: 1\ndevices:\n  live: {}\n", 0o600)
+	out = sb.run("", []string{"backup", "diff", "20200101_000000_001"})
+	if !strings.Contains(plain(out), "devices.yaml") {
+		t.Errorf("diff does not name the live devices.yaml:\n%s", out)
+	}
+	sb.run("y\n", []string{"backup", "restore", "20200101_000000_001"})
+	sb.expect(0, "Restored snapshot 20200101_000000_001.", "")
+	if got := sb.read("state/devices.yaml"); !strings.Contains(got, "live") {
+		t.Errorf("a snapshot without devices.yaml changed the registry: %q", got)
+	}
+	// A snapshot with one replaces it, 0600.
+	sb.run("y\n", []string{"backup", "restore", "20200101_000000_002"})
+	sb.expect(0, "Restored snapshot 20200101_000000_002.", "")
+	if got := sb.read("state/devices.yaml"); !strings.Contains(got, "  a: {}") {
+		t.Errorf("devices.yaml not restored: %q", got)
+	}
+	if st, err := os.Stat(sb.path("state/devices.yaml")); err != nil || st.Mode().Perm() != 0o600 {
+		t.Errorf("devices.yaml mode: %v %v", st, err)
+	}
+}

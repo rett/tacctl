@@ -13,6 +13,8 @@
 //	StopFails  'service stop' fails (FAKE_STOP_FAIL)
 //	Check      what its RenderCheck returns (FAKE_CHECK; default current)
 //	Listen6    its auth listener is udp6 (FAKE_LISTEN6)
+//	Sights     the sightings its log holds (backend.Sighter), in order;
+//	           SightErr fails the read
 //
 // CheckContract runs the checks every module must pass (the contract test
 // of tests/unit/backend.bats) over any Backend.
@@ -27,8 +29,10 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/rett/tacctl/internal/backend"
 	"github.com/rett/tacctl/internal/rendered"
@@ -60,6 +64,10 @@ type Backend struct {
 	Listen6    bool
 	// LastLoginAt is what LastLogin returns ("" is "never").
 	LastLoginAt string
+	// Sights are the sightings its log holds, in log order; Sightings
+	// resumes after the ones it returned before. SightErr fails it.
+	Sights   []backend.Sighting
+	SightErr error
 
 	// Render, when set, replaces the rendering of the artifact (default:
 	// the user names).
@@ -416,4 +424,35 @@ func (b *Backend) SecretConstraints() backend.Constraints { return backend.Const
 // DeviceVars implements backend.Backend.
 func (b *Backend) DeviceVars(context.Context, string, string) (map[string]string, error) {
 	return nil, nil
+}
+
+var _ backend.Sighter = (*Backend)(nil)
+
+// Sightings implements backend.Sighter over Sights: from resume ('n=<k>',
+// the k sightings returned before) or, without one, those at or after
+// since (every one when since is zero). It logs "sightings <resume>".
+func (b *Backend) Sightings(_ context.Context, since time.Time, resume string) ([]backend.Sighting, string, string, error) {
+	b.note("sightings %s", resume)
+	if b.SightErr != nil {
+		return nil, resume, "", b.SightErr
+	}
+	b.mu.Lock()
+	all := append([]backend.Sighting(nil), b.Sights...)
+	b.mu.Unlock()
+	from := 0
+	if k, err := strconv.Atoi(strings.TrimPrefix(resume, "n=")); err == nil && strings.HasPrefix(resume, "n=") && k <= len(all) {
+		from = k
+	}
+	var out []backend.Sighting
+	for _, s := range all[from:] {
+		if resume == "" && !since.IsZero() && s.Time.Before(since) {
+			continue
+		}
+		out = append(out, s)
+	}
+	var first, last time.Time
+	if len(out) > 0 {
+		first, last = out[0].Time, out[len(out)-1].Time
+	}
+	return out, "n=" + strconv.Itoa(len(all)), backend.TimeWindow("fake log", first, last, len(out)), nil
 }

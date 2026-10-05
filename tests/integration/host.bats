@@ -162,16 +162,101 @@ _hosts() { cat "${TACCTL_STATE_DIR}/linux-hosts" 2>/dev/null; }
     stub_called "ssh .*bash /tmp/tacctl.AbCd1234 --accounts-only --allow-uid-mismatch;"
 }
 
-@test "host enroll/sync: --adopt is validated and passed through" {
-    run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab --adopt alice,bob
-    assert_success
-    stub_called "ssh .*bash /tmp/tacctl.AbCd1234 --adopt alice,bob;"
-    run "$TACCTL_BIN_SCRIPT" host sync web1 --adopt alice
-    assert_success
-    stub_called "ssh .*bash /tmp/tacctl.AbCd1234 --accounts-only --adopt alice;"
-    run "$TACCTL_BIN_SCRIPT" host sync web1 --adopt 'x;reboot'
+@test "host enroll/sync: --adopt is not an option" {
+    run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab --adopt alice
     assert_failure
-    assert_output --partial "comma-separated list"
+    assert_output --partial "Unknown option: '--adopt'"
+    "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab > /dev/null
+    : > "$CALLS_LOG"
+    run "$TACCTL_BIN_SCRIPT" host sync web1 --adopt alice
+    assert_failure
+    assert_output --partial "Unknown option: '--adopt'"
+    if stub_called '^ssh '; then stub_calls; return 1; fi
+}
+
+# Users who leave the scope: the host deletes their accounts; their homes
+# go with --remove-home, or when the operator says so on the terminal.
+_removed_users() {
+    "$TACCTL_BIN_SCRIPT" user add dave readonly --hash "$HASH" --scopes lab > /dev/null
+    "$TACCTL_BIN_SCRIPT" user add erin readonly --hash "$HASH" --scopes lab > /dev/null
+    "$TACCTL_BIN_SCRIPT" user add fred readonly --hash "$HASH" --scopes lab > /dev/null
+    "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab > /dev/null
+    "$TACCTL_BIN_SCRIPT" user remove dave <<< "y" > /dev/null
+    "$TACCTL_BIN_SCRIPT" user scope erin remove lab > /dev/null
+    "$TACCTL_BIN_SCRIPT" user disable fred > /dev/null
+    # What 'getent passwd' says on the host: dave and erin are tacctl's
+    # accounts of removed users, fred's is disabled (expired, never deleted),
+    # gus is a local account in the range that tacctl did not name, carl a
+    # local account outside it.
+    export PASSWD_ON_HOST="${BATS_TEST_TMPDIR}/host-passwd"
+    printf '%s\n' 'root:x:0:0:root:/root:/bin/bash' \
+        'alice:x:20000:20000:alice (TACACS+):/home/alice:/bin/bash' \
+        'dave:x:20001:20001:dave (TACACS+):/home/dave:/bin/bash' \
+        'erin:x:20002:20002:erin (TACACS+):/home/erin:/bin/bash' \
+        'fred:x:20003:20003:fred (TACACS+):/home/fred:/bin/bash' \
+        'gus:x:20009:20009:gus (TACACS+):/home/gus:/bin/bash' \
+        'carl:x:1001:1001:Carl:/home/carl:/bin/bash' > "$PASSWD_ON_HOST"
+    stub_cmd ssh 'case "$*" in
+        *mktemp*) cat > "$PUSHED"; echo /tmp/tacctl.AbCd1234 ;;
+        *"getent passwd") cat "$PASSWD_ON_HOST" ;;
+    esac'
+    : > "$CALLS_LOG"
+}
+
+# on_tty <stdin text> <args...>: tacctl on a pseudo-terminal fed the text.
+on_tty() {
+    local input="$1" cmd
+    shift
+    printf -v cmd '%q ' "$TACCTL_BIN_SCRIPT" "$@"
+    run bash -c "printf '%b' '$input' | script -qec '$cmd' /dev/null"
+    output=${output//$'\r'/}
+    output=$(sed 's/\x1b\[[0-9;]*m//g' <<< "$output")
+}
+
+@test "host sync: on a terminal, asks per removed user whether its home goes too" {
+    _removed_users
+    on_tty 'y\nn\n' host sync web1
+    assert_success
+    assert_output --partial "[INFO] web1: removed users with an account there (deleted by this run): dave, erin"
+    assert_output --partial "Delete /home/dave of removed user 'dave'? [y/N]"
+    assert_output --partial "Delete /home/erin of removed user 'erin'? [y/N]"
+    refute_output --partial "/home/fred"
+    refute_output --partial "/home/gus"
+    run sed '/^__TARBALL__$/,$d' "$PUSHED"
+    assert_line "TAC_USERS=alice:superuser:20000"
+    assert_line "TAC_INACTIVE=fred"
+    assert_line "TAC_REMOVE_HOMES=dave"
+    assert_line "TAC_PROTOCOL=2"
+    # The accounts were read over the shared connection, read-only, before the copy.
+    stub_called "^ssh -o ConnectTimeout=10 -o ControlMaster=auto -o ControlPath=~/.ssh/tacctl-%C -o ControlPersist=60 -T web1 getent passwd$"
+    run bash -c "grep -n '^ssh' '$CALLS_LOG' | head -2"
+    assert_line --index 0 --partial "getent passwd"
+    assert_line --index 1 --partial "mktemp"
+}
+
+@test "host sync: without a terminal nothing is asked and every home is kept; --remove-home deletes them all" {
+    _removed_users
+    run "$TACCTL_BIN_SCRIPT" host sync web1
+    assert_success
+    refute_output --partial "Delete /home"
+    run sed '/^__TARBALL__$/,$d' "$PUSHED"
+    assert_line "TAC_REMOVE_HOMES=''"
+    if stub_called "getent passwd"; then stub_calls; return 1; fi
+    run "$TACCTL_BIN_SCRIPT" host sync web1 --remove-home
+    assert_success
+    run sed '/^__TARBALL__$/,$d' "$PUSHED"
+    assert_line 'TAC_REMOVE_HOMES=\*'
+    # On a terminal too, --remove-home asks nothing.
+    on_tty '' host sync --all --remove-home
+    assert_success
+    refute_output --partial "Delete /home"
+    if stub_called "getent passwd"; then stub_calls; return 1; fi
+    # enroll asks the same way.
+    on_tty 'n\ny\n' host enroll web1 --scope lab --build-on-host
+    assert_success
+    assert_output --partial "Delete /home/erin of removed user 'erin'? [y/N]"
+    run sed '/^__TARBALL__$/,$d' "$PUSHED"
+    assert_line "TAC_REMOVE_HOMES=erin"
 }
 
 @test "host list: counts only users that get accounts" {

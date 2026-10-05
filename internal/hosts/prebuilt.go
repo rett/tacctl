@@ -190,6 +190,9 @@ func (e *Env) Prebuilt(ctx context.Context, image string) (string, error) {
 		return "", ErrFailed
 	}
 
+	if err := e.Paths.mkDir(); err != nil {
+		return "", err
+	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}

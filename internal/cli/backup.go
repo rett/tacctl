@@ -29,6 +29,7 @@ import (
 
 	"github.com/rett/tacctl/internal/backend"
 	"github.com/rett/tacctl/internal/conf"
+	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/lifecycle"
 	"github.com/rett/tacctl/internal/model"
@@ -294,6 +295,10 @@ func (inv *invocation) diffSnapshot(id string) {
 	inv.echo("--------------------------------------------")
 	inv.diffFile("store.yaml", filepath.Join(dir, "store.yaml"), p.StoreFile, id)
 	inv.diffFile("tacctl.yaml", filepath.Join(dir, "tacctl.yaml"), p.Overrides, id)
+	// The device registry joins the diff only where there is one to compare.
+	if snap := filepath.Join(dir, "devices.yaml"); cfgIsFile(snap) || cfgIsFile(p.DevicesFile) {
+		inv.diffFile("devices.yaml", snap, p.DevicesFile, id)
+	}
 }
 
 // diffLegacy is _backup_diff_legacy: the live tacquito.yaml against
@@ -477,6 +482,19 @@ func (inv *invocation) restoreSnapshot(id string) error {
 		names := set.AllArtifactNames()
 		return inv.usageErr("Snapshot " + id + " was not restored: " + names + " could not be rendered from it. Store, tacctl.yaml and " + names + " are as they were.")
 	}
+	// The device registry comes back with the snapshot that holds one, after
+	// the render that can still be rolled back; a snapshot without it (a
+	// 0.2.0 one) leaves the live registry alone.
+	if snapDev := filepath.Join(dir, "devices.yaml"); cfgIsFile(snapDev) {
+		if err := backupPut(snapDev, a.Paths.DevicesFile, 0o600); err != nil {
+			inv.stderrLine(err.Error())
+			return err
+		}
+		// The generated known_hosts follows the restored pins.
+		if err := devreg.SyncKnownHosts(a.Paths.DevicesFile, a.Paths.KnownHosts); err != nil {
+			a.Out.WarnE("known_hosts was not regenerated: " + strings.Join(msgs(err), " "))
+		}
+	}
 	inv.reconcileBackends(before)
 	if err := set.RestartAll(inv.ctx); err != nil {
 		return err
@@ -502,9 +520,7 @@ func (inv *invocation) installSnapshot(dir string) error {
 			return err
 		}
 		rtacacs.ChownTacquito(p.Overrides)
-		return nil
-	}
-	if err := os.Remove(p.Overrides); err != nil && !errors.Is(err, fs.ErrNotExist) {
+	} else if err := os.Remove(p.Overrides); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
 	return nil

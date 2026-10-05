@@ -81,10 +81,21 @@ func (inv *invocation) gate() error {
 	if len(a.Args) > 1 {
 		sub = a.Args[1]
 	}
-	g := tier.Gate{
+	return inv.tierGate().Enforce(inv.ctx, cmd, sub)
+}
+
+// tierGate is the gate of this invocation: the caller is SUDO_USER, which
+// must name the account of SUDO_UID (tier.VerifyCaller). The gate runs
+// before every command (prelude), so a SUDO_USER that does not match never
+// reaches what acts on it: 'tacctl ssh' and 'host' running ssh as that
+// user, 'passwd', the scope filters.
+func (inv *invocation) tierGate() tier.Gate {
+	a := inv.app
+	return tier.Gate{
 		Runner:   a.Runner,
 		Out:      a.Out,
 		SudoUser: a.Env.Get("SUDO_USER"),
+		SudoUID:  a.Env.Get("SUDO_UID"),
 		PrivLvl: func(user string) string {
 			m, err := inv.model()
 			if err != nil {
@@ -93,7 +104,6 @@ func (inv *invocation) gate() error {
 			return m.UserPrivLvl(user)
 		},
 	}
-	return g.Enforce(inv.ctx, cmd, sub)
 }
 
 // model is the model as this invocation first read it (model_load's

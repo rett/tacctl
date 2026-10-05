@@ -69,3 +69,35 @@ The patch only removes the message; the reply status is still
 `AcctReplyStatusSuccess`, and error replies (`accounting failure`,
 `unexpected accounting flag`, ...) keep their messages. Clients that ignore the
 message (Cisco, Juniper, ...) see no difference.
+
+### `0003-authen-log-conn-remote-addr.patch`
+Names the device on the bcrypt authenticator's log lines
+(`cmds/server/config/authenticators/bcrypt/bcrypt.go`): `accepting user [u]
+using a bcrypt password` becomes `accepting user [u] from [addr] using a bcrypt
+password`, and `failed to validate the user [u] using a bcrypt password`
+becomes `failed to validate the user [u] from [addr] using a bcrypt password`.
+
+`addr` is the address of the TACACS+ client (the network device) as the server
+saw the connection: the value tacquito's server stores in the request context
+under `tq.ContextConnRemoteAddr` for every packet of a connection. It reads
+`unknown` when the context carries none. Nothing else in the behavior changes.
+
+Why: the accounting log's `RemAddr` is the user's address, not the device's,
+and the journal names the device only at debug level or on errors. With the
+address on the authentication lines, `tacctl log search` shows which device a
+login came from, and `tacctl device scan` reads these lines to learn which
+devices use the server.
+
+### `0004-authen-fail-no-server-msg.patch`
+Drops the server message from the bcrypt authenticator's failure replies
+(`cmds/server/config/authenticators/bcrypt/bcrypt.go`): a wrong password, an
+undecodable stored hash or a failed keychain lookup still answers `FAIL`, but
+without the text `login failure`. Nothing else in the behavior changes.
+
+Why: pam_tacplus hands a reply's server message to sshd as a PAM message. With
+password authentication (`KbdInteractiveAuthentication no`, the default on
+Ubuntu and Debian) sshd cannot show a PAM message during the login, so it keeps
+every one and prints them all after the next successful login: two wrong
+passwords, then the right one, greet the user with `login failure` twice. The
+message carries nothing that `Permission denied` has not already said, and
+network devices print their own failure text without it.
