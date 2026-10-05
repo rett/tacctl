@@ -37,6 +37,11 @@ setup() {
 }
 
 _hosts() { cat "${TACCTL_STATE_DIR}/linux-hosts" 2>/dev/null; }
+# _own_scope <name> <address> [protocols]: a scope of the host's own (its
+# address as a /32, its own secret), as an administrator makes one.
+_own_scope() {
+    "$TACCTL_BIN_SCRIPT" scope add "linux-$1" --prefixes "$2/32" --secret generate ${3:+--protocols "$3"} > /dev/null
+}
 
 @test "host enroll: pushes the install script and registers the host" {
     run "$TACCTL_BIN_SCRIPT" host enroll admin@web1.example.net --scope lab
@@ -53,18 +58,32 @@ _hosts() { cat "${TACCTL_STATE_DIR}/linux-hosts" 2>/dev/null; }
     stub_called "ssh .*admin@web1.example.net .*rm -f /tmp/tacctl.AbCd1234.*sudo -n bash /tmp/tacctl.AbCd1234"
 }
 
-@test "host enroll: without --scope creates a per-host /32 scope with its own secret" {
+@test "host enroll: without --scope, the scope that covers the host; none is refused, no scope is made" {
+    run "$TACCTL_BIN_SCRIPT" host enroll web1
+    assert_failure
+    assert_output --partial "No scope covers 192.0.2.50 (web1), so the server would refuse every login of 'web1'. Nothing was changed."
+    assert_output --partial "tacctl scope add linux-web1 --prefixes 192.0.2.50/32 --secret generate"
+    [[ ! -e "$PUSHED" ]]
+    [[ -z "$(_hosts)" ]]
+    run "$TACCTL_BIN_SCRIPT" scope show linux-web1
+    assert_failure
+
+    _own_scope web1 192.0.2.50
     run "$TACCTL_BIN_SCRIPT" host enroll web1
     assert_success
-    run "$TACCTL_BIN_SCRIPT" scope lookup 192.0.2.50
-    assert_output --partial "linux-web1"
+    assert_output --partial "192.0.2.50 (web1) is answered by scope 'linux-web1' (prefix 192.0.2.50/32); enrolling web1 there"
     run _hosts
     assert_output "web1|web1||linux-web1|192.0.2.1|"
     run grep -c "TAC_SECRET=0123456789abcdef0123456789abcdef" "$PUSHED"
     assert_output "0"
+    # Registered: it stays in its scope, even once a broader prefix of
+    # another scope comes first.
+    "$TACCTL_BIN_SCRIPT" scope prefixes lab add 192.0.2.0/24 > /dev/null
     run "$TACCTL_BIN_SCRIPT" host enroll web1
     assert_success
-    assert_output --partial "Using existing scope"
+    assert_output --partial "web1 is registered in scope 'linux-web1' and stays in it"
+    run _hosts
+    assert_output "web1|web1||linux-web1|192.0.2.1|"
 }
 
 @test "host enroll: passes port and identity to ssh and names bare IPs" {
@@ -279,6 +298,7 @@ on_tty() {
 }
 
 @test "host unenroll: pushes the secret-free removal script and forgets the host" {
+    _own_scope web1 192.0.2.50
     "$TACCTL_BIN_SCRIPT" host enroll web1 > /dev/null
     run "$TACCTL_BIN_SCRIPT" host unenroll web1
     assert_success
@@ -540,14 +560,10 @@ _protocols() { "$TACCTL_BIN_SCRIPT" scope protocols "$1" | sed -n "s/.*Scope '$1
     assert_output "0"
 }
 
-@test "host enroll: a scope created for the host serves the method's protocol only" {
-    run "$TACCTL_BIN_SCRIPT" host enroll web1
-    assert_success
-    run _protocols linux-web1
-    assert_output "tacacs"
-
+@test "host enroll: a host's own scope served over RADIUS only is a RADIUS client, not a TACACS+ one" {
     radius_on_rendering
     stub_cmd getent 'echo "192.0.2.51 STREAM web2"'
+    _own_scope web2 192.0.2.51 radius
     run "$TACCTL_BIN_SCRIPT" host enroll web2 --method radius
     assert_success
     run _protocols linux-web2
@@ -562,6 +578,7 @@ _protocols() { "$TACCTL_BIN_SCRIPT" scope protocols "$1" | sed -n "s/.*Scope '$1
 
 @test "host enroll: re-enrolling with the other method switches the host and its own scope" {
     radius_on_rendering
+    _own_scope web1 192.0.2.50 tacacs
     "$TACCTL_BIN_SCRIPT" host enroll web1 > /dev/null
     run _hosts
     assert_output "web1|web1||linux-web1|192.0.2.1|"
@@ -597,6 +614,7 @@ _protocols() { "$TACCTL_BIN_SCRIPT" scope protocols "$1" | sed -n "s/.*Scope '$1
 
 @test "host enroll: a failed switch leaves the registration, and the scope open to both" {
     radius_on_rendering
+    _own_scope web1 192.0.2.50 tacacs
     "$TACCTL_BIN_SCRIPT" host enroll web1 > /dev/null
     SSH_RUN_FAILS=1 run "$TACCTL_BIN_SCRIPT" host enroll web1 --method radius
     assert_failure
@@ -609,6 +627,7 @@ _protocols() { "$TACCTL_BIN_SCRIPT" scope protocols "$1" | sed -n "s/.*Scope '$1
 
 @test "host enroll: a per-host scope other hosts use is not opened to another protocol" {
     radius_on_rendering
+    _own_scope web1 192.0.2.50 tacacs
     "$TACCTL_BIN_SCRIPT" host enroll web1 > /dev/null
     "$TACCTL_BIN_SCRIPT" host enroll web1 --name web9 --scope linux-web1 > /dev/null
     run "$TACCTL_BIN_SCRIPT" host enroll web1 --method radius
@@ -776,6 +795,7 @@ _protocols() { "$TACCTL_BIN_SCRIPT" scope protocols "$1" | sed -n "s/.*Scope '$1
 
 @test "host enroll: an existing linux-<name> scope limited to one protocol is re-enrolled with it after the registration is gone" {
     radius_on_rendering
+    _own_scope web1 192.0.2.50 radius
     "$TACCTL_BIN_SCRIPT" host enroll web1 --method radius > /dev/null
     run _protocols linux-web1
     assert_output "radius"
@@ -796,7 +816,7 @@ _protocols() { "$TACCTL_BIN_SCRIPT" scope protocols "$1" | sed -n "s/.*Scope '$1
     assert_output "0"
 }
 
-@test "host enroll: an existing linux-<name> scope's auth-method is used; one created by enroll has none" {
+@test "host enroll: the host's scope's auth-method is used" {
     radius_on_rendering
     "$TACCTL_BIN_SCRIPT" scope add linux-web1 --prefixes 192.0.2.50/32 --secret generate > /dev/null
     "$TACCTL_BIN_SCRIPT" scope auth-method linux-web1 radius > /dev/null
@@ -805,19 +825,11 @@ _protocols() { "$TACCTL_BIN_SCRIPT" scope protocols "$1" | sed -n "s/.*Scope '$1
     assert_output --partial "Method radius: scope 'linux-web1' has auth-method radius (tacctl scope auth-method)"
     run _hosts
     assert_output "web1|web1||linux-web1|192.0.2.1||radius"
-
-    stub_cmd getent 'echo "192.0.2.51 STREAM web2"'
-    run "$TACCTL_BIN_SCRIPT" host enroll web2
-    assert_success
-    refute_output --partial "auth-method"
-    run _hosts
-    assert_line "web2|web2||linux-web2|192.0.2.1|"
-    run "$TACCTL_BIN_SCRIPT" scope auth-method linux-web2
-    assert_output --partial "auth-method: not set"
 }
 
 @test "host enroll: switching a host does not limit its scope away from the scope's auth-method" {
     radius_on_rendering
+    _own_scope web1 192.0.2.50 tacacs
     "$TACCTL_BIN_SCRIPT" host enroll web1 > /dev/null
     "$TACCTL_BIN_SCRIPT" scope auth-method linux-web1 tacacs > /dev/null
     run "$TACCTL_BIN_SCRIPT" host enroll web1 --method radius

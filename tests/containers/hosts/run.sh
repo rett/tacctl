@@ -372,6 +372,9 @@ check "nothing of tacctl on the host yet" c bash -c '[[ ! -e /var/lib/tacctl-cli
 # 60000 does not): enroll warns.
 c cp /etc/login.defs /root/login.defs.orig
 c sed -i 's/^UID_MAX[[:space:]].*/UID_MAX\t\t\t85000/' /etc/login.defs
+# The host's own scope (enroll uses the scope covering its address; it
+# makes none).
+tacctl scope add linux-c1 --prefixes "${CIP}/32" --secret generate --protocols "$([[ $FIRST == radius ]] && echo radius || echo tacacs)" > /dev/null
 enroll "$FIRST"; check "host enroll --method ${FIRST} exits 0" test $? -eq 0
 [[ "$FIRST" == "radius" ]] && note "installed by the enrollment: $(pkg_versions)"
 check "enroll said there are no users in the scope yet" grep -q "No users are in scope 'linux-c1' yet" "${WORK}/enroll.out"

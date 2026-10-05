@@ -399,10 +399,10 @@ The removal script undoes the PAM edits and deletes the secret, module, SELinux 
 #### Enrolling hosts over SSH
 `tacctl host` does the copy-and-run for you and keeps a registry of enrolled hosts:
 ```
-tacctl host enroll admin@web1.example.net     # creates scope linux-web1 (the host's /32, own secret), installs, registers
+tacctl host enroll admin@web1.example.net     # into the scope that covers web1's address; installs, registers
 tacctl host enroll admin@web2 --method radius # the same with pam_radius_auth against the RADIUS backend
 tacctl host enroll --local                    # this machine
-tacctl user scope jsmith add linux-web1       # give a user a login on that host...
+tacctl user scope jsmith add <scope>          # give a user a login on hosts of that scope...
 tacctl host sync web1                         # ...and push the account (or: tacctl host sync --all)
 tacctl host list                              # with each host's METHOD
 tacctl host target web1                       # how web1 is reached (target, port, identity, addresses)
@@ -410,7 +410,9 @@ tacctl host target web1 root@web1-mgmt.example.net --port 2222   # change it, te
 tacctl host unenroll web1                     # remove the login method; accounts and home directories stay
 tacctl host default-method radius             # what hosts enrolled without --method get (host.default_method)
 ```
-The method of a host is, in order: `--method`; the method the host is registered with; the scope's `auth-method` (`tacctl scope auth-method`); the one protocol the scope's `protocols` filter names; `host default-method` (default `tacplus`). Its backend must be enabled and the scope must allow its protocol; an auto-created `linux-<name>` scope gets `protocols` set to that one protocol. **Switching:** re-enrolling a registered host with the other `--method` removes the first method's module, secret file and SELinux module and installs the other; re-enrolling without `--method` keeps the host's method.
+The method of a host is, in order: `--method`; the method the host is registered with; the scope's `auth-method` (`tacctl scope auth-method`); the one protocol the scope's `protocols` filter names; `host default-method` (default `tacplus`). Its backend must be enabled and the scope must allow its protocol.
+
+The scope of a host is, in order: `--scope`; the scope the host is registered in (re-enrolling never moves a host); the scope that answers its address (the first prefix that holds it, see `tacctl scope routing`), which enroll names: `10.1.2.3 (web1.example.net) is answered by scope 'lab' (prefix 10.0.0.0/8); enrolling web1 there`. A host whose address no scope covers is refused before anything changes, since the server would refuse its every login; enroll prints how to add the address to a scope (`tacctl scope prefixes <scope> add <address>/32`) or give the host a scope of its own, whose secret is useless from any other host (`tacctl scope add linux-web1 --prefixes <address>/32 --secret generate`, then `--scope linux-web1`). Enroll never creates a scope: a `/32` scope made for a host takes its address from any broader prefix, and that scope's users lose their accounts there. **Switching:** re-enrolling a registered host with the other `--method` removes the first method's module, secret file and SELinux module and installs the other; re-enrolling without `--method` keeps the host's method.
 
 `ssh` runs as the user who invoked `sudo`, with their keys; the remote login must be root or able to `sudo` (a password prompt works when run from a terminal). That login (the provisioning account: the target's `user@`, else your own username) must be a local account on the host that does not authenticate through tacctl, so enrolment and sync keep working when this server cannot be reached: `host enroll` refuses a tacctl user, and `host sync` warns about an existing enrolment that uses one. `tacctl ssh` never uses it. Without a terminal, a host whose sudo needs a password is reported as such rather than attempted. The steps of one command share a single ssh connection per host, so a login without a key asks for its ssh password once, followed by one sudo prompt; with a key (or agent) and passwordless sudo or a root login there is no prompt at all. `--scope` enrolls into an existing scope instead of creating one (the scope must answer the host's requests: `--local` is refused, nothing changed, when the scope does not cover 127.0.0.1, the address this server's own logins come from; another host gets a warning when the scope does not cover the address its name resolves to, and `host sync` of this server warns when its scope stops covering 127.0.0.1), `--server` overrides the detected server address, `--name` the registry name, and `--port` / `--identity` are passed to ssh. `host target <name> [<[user@]host>] [--port <n>] [--identity <file>|--no-identity]` changes how a host is reached without re-enrolling it: it logs in to the new target the same way first, checks that the login is root or may use sudo, compares the host's ssh keys read over that session with the pinned ones (a host whose keys differ is refused: it is not the same machine), records the address reached, and only then rewrites the registry line (scope, server and method kept), after a snapshot. Account changes are not pushed automatically: run `host sync` after `user add`, `remove`, `move`, `disable` or `scope` changes. Until then a removed user is already refused at password login by the server, but an SSH key on the host keeps working.
 
@@ -904,7 +906,7 @@ scope mgmt-acl <name> cisco-name|juniper-name [label]    Per-scope mgmt-acl / fi
 host list                                   Show enrolled Linux hosts (target, scope, server, METHOD, users)
 host enroll <[user@]host>|--local [opts]    Install TACACS+ or RADIUS login on a host over SSH and register it
       --method tacplus|radius               pam_tacplus (TACACS+) or pam_radius_auth (RADIUS); re-enroll with the other to switch
-      --scope <name>                        Use an existing scope (default: create linux-<name> for the host's /32)
+      --scope <name>                        The host's scope (default: its registered one, else the scope covering its address)
       --server <address>                    Address the host should use for this server (default: detected)
       --name <name>                         Registry name (default: short hostname)
       --port <n>, --identity <file>         SSH port and key

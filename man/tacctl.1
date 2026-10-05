@@ -713,12 +713,13 @@ protocol. Re-enrolling a registered host with the other method switches it:
 the first method's module, secret file and SELinux module are removed
 (packages stay). Without
 .B \-\-scope
-a scope named
-.BI linux\- name
-is created for the host's own address (/32) with a generated secret and
-.B protocols
-set to the method's protocol, so a
-secret read off one host is useless from another. The scope must be the
+a registered host keeps the scope it is registered in, and any other host
+goes into the scope that answers its address (said, with the prefix); a
+host whose address no scope covers is refused before anything changes,
+with the commands that add the address to a scope or give the host a scope
+of its own
+.RB ( "scope add linux\-" "name " "\-\-prefixes " addr "/32 \-\-secret generate" ,
+so a secret read off one host is useless from another). The scope must be the
 one that answers the host's requests (the first prefix that holds the
 address they come from): for
 .B \-\-local

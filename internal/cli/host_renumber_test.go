@@ -205,14 +205,12 @@ func TestHostIDMapRefusal(t *testing.T) {
 		return r
 	}
 	want := "'web1' cannot hold UIDs 80000-89999: its user namespace maps only 0-65535 (an unprivileged container). Give it an ID map that covers 80000-89999, run it privileged, or choose a range it can hold: tacctl config linux uid-range <min>-<max> (one range for all hosts)."
+	hs.run(nil, "scope", "add", "linux-web1", "--prefixes", "192.0.2.50/32", "--secret", "generate")
 	r := idmap(container)
 	hs.run(r, "host", "enroll", "admin@web1.example.net", "--build-on-host")
 	hs.expect(1, "", want)
 	if !strings.Contains(hs.err.String(), "Enrollment of web1 refused; nothing was changed.") || hs.pushed != "" || hs.registry() != "" {
 		t.Errorf("enroll went on: %q pushed %d", hs.err.String(), len(hs.pushed))
-	}
-	if out := hs.run(nil, "scope", "list"); strings.Contains(out, "linux-web1") {
-		t.Error("a scope was created")
 	}
 	// A plain host passes; then it turns out to be a container at sync.
 	hs.run(idmap("uid_map\n0 0 4294967295\ngid_map\n0 0 4294967295\n"), "host", "enroll", "admin@web1.example.net", "--build-on-host")

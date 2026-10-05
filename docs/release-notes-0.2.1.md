@@ -64,6 +64,14 @@ What to expect:
   their `tac-readonly`, `tac-operator` and `tac-console` go when only
   tacctl's accounts are in them. A fixed GID another group already holds
   is left to it, with a warning: renumber that group and sync again.
+- **`host enroll` without `--scope` no longer creates `linux-<name>`**
+  (item 63). A registered host keeps its scope; a new host goes into the
+  scope that covers its address; a host no scope covers is refused. To
+  give a new host a scope of its own, create it first (`tacctl scope add
+  linux-<name> --prefixes <address>/32 --secret generate`). If an earlier
+  enroll moved a host out of its scope into a `linux-<name>` `/32`,
+  re-enroll it with `--scope <its scope>` and remove the `linux-<name>`
+  scope.
 - **UIDs move to 80000-89999, once** (items 35 and 52). The first `config
   linux uid`, `config linux script`, `host enroll` or `host sync` after the
   upgrade renumbers `/etc/tacctl/linux-uids` from 20000-29999 to the same
@@ -837,3 +845,18 @@ What to expect:
     A fixed GID that another group holds is left to it, with a warning.
     UID checks no longer look at GIDs. The script header gains
     `TAC_LOCAL=1` for the server's own script; `TAC_PROTOCOL` is 5.
+63. **`host enroll` uses the host's scope; it no longer makes one.**
+    Without `--scope`, enroll created a `linux-<name>` scope for the host's
+    address as a `/32`, even when a scope already covered the address, and
+    on a re-enroll even when the host was registered in another scope. The
+    `/32` answered first, so the host left its scope, and its users' accounts
+    there were deleted as removed users. Now, without `--scope`: a
+    registered host stays in the scope it is registered in; any other host
+    goes into the scope that answers its address, named with the prefix
+    (`10.125.0.222 (dev.example.net) is answered by scope 'lab' (prefix
+    10.0.0.0/8); enrolling dev there`); a host whose address no scope covers
+    is refused before anything changes, with the commands that add the
+    address to a scope or make the host a scope of its own (`tacctl scope
+    add linux-<name> --prefixes <address>/32 --secret generate`). A host's
+    own scope from an earlier release is still opened to both protocols
+    for a method switch and narrowed afterwards.

@@ -376,7 +376,7 @@ Usage: tacctl host <subcommand> [arguments]
                                        method, else the scope's auth-method, else its only protocol,
                                        else 'host default-method').
                                        Re-enroll with the other to switch
-      --scope <name>                   Use an existing scope (default: create linux-<name> for the host's /32)
+      --scope <name>                   The host's scope (default: its registered one, else the scope covering its address)
       --server <address>               Address the host should use for this server (default: detected)
       --name <name>                    Registry name (default: short hostname)
       --port <n>, --identity <file>    SSH port and key

@@ -322,20 +322,47 @@ func (inv *invocation) hostEnroll(args []string) error {
 		}
 	}
 
+	// The scope: the one named with --scope; else the one a registered host
+	// has (re-enrolling never moves a host to another scope); else the scope
+	// that answers the host's address, which its logins reach the server
+	// from. A host no scope covers is not enrolled: nothing would answer its
+	// logins, and a scope made for it here would take the address from any
+	// broader prefix, and with it that scope's users from the host.
+	scopeGiven := scope != ""
+	if !scopeGiven {
+		if e, ok := reg.Find(name); ok && e.Scope != "" {
+			exists, err := inv.scopeExists(e.Scope)
+			if err != nil {
+				return err
+			}
+			if exists {
+				scope = e.Scope
+				a.Out.InfoE(name + " is registered in scope '" + scope + "' and stays in it (another one: --scope <name>).")
+			}
+		}
+	}
+	if scope == "" {
+		m, err := inv.model()
+		if err != nil {
+			return err
+		}
+		info, found := m.LookupAddr(hostIP)
+		if !found {
+			return inv.hostNoScope(name, target, hostPart, hostIP)
+		}
+		scope = info.Scope
+		a.Out.InfoE(hostScopeOrigin(name, target, hostPart, hostIP) + " is answered by scope '" + scope + "' (prefix " + info.Prefix + "); enrolling " + name + " there (another one: --scope <name>).")
+	}
+
 	// The method: the one asked for; else the one a registered host has (so
-	// re-enrolling never switches a host by accident); else what the scope
-	// the host will use says (the one named with --scope, or an existing
-	// linux-<name>; a scope created below says nothing): its auth-method,
-	// else the one protocol its protocols filter names; else the default.
-	// Re-enrolling with the other method is how a host switches.
+	// re-enrolling never switches a host by accident); else what the host's
+	// scope says: its auth-method, else the one protocol its protocols
+	// filter names; else the default. Re-enrolling with the other method is
+	// how a host switches.
 	prevMethod := reg.Method(name)
 	var scopeMethod, scopeWhy string
-	lookAt := scope
-	if lookAt == "" {
-		lookAt = "linux-" + name
-	}
-	if exists, err := inv.scopeExists(lookAt); err == nil && exists {
-		scopeMethod, scopeWhy = inv.linuxScopeMethod(lookAt)
+	if exists, err := inv.scopeExists(scope); err == nil && exists {
+		scopeMethod, scopeWhy = inv.linuxScopeMethod(scope)
 	}
 	switch {
 	case method == "" && prevMethod != "":
@@ -360,25 +387,36 @@ func (inv *invocation) hostEnroll(args []string) error {
 		return inv.usageErr("pam_tacplus tarball not found. Run 'tacctl config linux build' first.")
 	}
 
-	// Each host gets its own scope (its address as a /32, its own secret)
-	// unless told to share one, so a secret read off one host is useless
-	// from any other. A scope created here serves the method's protocol
-	// only. One found from an earlier enroll of this host with the other
-	// method is opened to both for the switch and narrowed to the new one
-	// once the host has switched; a scope other hosts use, or one named with
-	// --scope, is never changed here.
-	if scope != "" {
+	// The scope must serve the method's protocol. The host's own scope
+	// (linux-<name>, which earlier releases made for it and no other host
+	// uses), when found here rather than named with --scope and limited to
+	// the other protocol, is opened to both for the switch and narrowed to
+	// the new one once the host has switched. Any other scope is never
+	// changed here.
+	both := strings.Join(scopeProtocols, ",")
+	openScope := false
+	if !scopeGiven && scope == "linux-"+name && !reg.OtherHostsUse(scope, name) {
+		protocols, err := inv.linuxScopeProtocols(scope)
+		if err != nil {
+			return err
+		}
+		openScope = protocols != "" && !strings.Contains(","+protocols+",", ","+be+",")
+	}
+	if !openScope {
 		if err := inv.scopeRequire(scope); err != nil {
 			return err
 		} else if ok, err := inv.linuxScopeServes(scope, method); err != nil {
 			return err
 		} else if !ok {
+			if !scopeGiven && scope == "linux-"+name && reg.OtherHostsUse(scope, name) {
+				a.Out.ErrorE("Other enrolled hosts use scope '" + scope + "', so it is not changed here.")
+			}
 			return exit(1)
 		}
-		// The scope must be the one that answers the host's requests.
-		if !inv.hostScopeCovers(name, target, hostIP, scope, true) {
-			return exit(1)
-		}
+	}
+	// The scope must be the one that answers the host's requests.
+	if !inv.hostScopeCovers(name, target, hostIP, scope, true) {
+		return exit(1)
 	}
 	// The UID file numbered for the range, and a host that can hold the
 	// range, before anything changes here or there.
@@ -392,50 +430,19 @@ func (inv *invocation) hostEnroll(args []string) error {
 		return inv.hostsDone(err)
 	}
 
-	both := strings.Join(scopeProtocols, ",")
 	narrowScope := false
-	scopeGiven := scope != ""
-	if scope == "" {
-		scope = "linux-" + name
-		exists, err := inv.scopeExists(scope)
+	if openScope {
+		protocols, err := inv.linuxScopeProtocols(scope)
 		if err != nil {
 			return err
 		}
-		if exists {
-			a.Out.InfoE("Using existing scope '" + scope + "'.")
-			protocols, err := inv.linuxScopeProtocols(scope)
-			if err != nil {
-				return err
-			}
-			if protocols != "" && !strings.Contains(","+protocols+",", ","+be+",") {
-				if reg.OtherHostsUse(scope, name) {
-					if _, err := inv.linuxScopeServes(scope, method); err != nil {
-						return err
-					}
-					return inv.usageErr("Other enrolled hosts use scope '" + scope + "', so it is not changed here.")
-				}
-				a.Out.InfoE("Scope '" + scope + "' was limited to " + protocols + "; opening it to " + be + " for this host.")
-				if err := inv.applyStore(func(st *store.Store) error { return st.ScopeSet(scope, "protocols="+both) }); err != nil {
-					// 'store_apply ... || return 1'.
-					inv.reportOnly(err)
-					return exit(1)
-				}
-				narrowScope = true
-			}
-		} else {
-			a.Out.InfoE("Creating scope '" + scope + "' for " + hostIP + "/32...")
-			if err := inv.discardStdout(func() error {
-				return inv.scopeAdd([]string{scope, "--prefixes", hostIP + "/32", "--secret", "generate", "--protocols", be})
-			}); err != nil {
-				return err
-			}
+		a.Out.InfoE("Scope '" + scope + "' was limited to " + protocols + "; opening it to " + be + " for this host.")
+		if err := inv.applyStore(func(st *store.Store) error { return st.ScopeSet(scope, "protocols="+both) }); err != nil {
+			// 'store_apply ... || return 1'.
+			inv.reportOnly(err)
+			return exit(1)
 		}
-	}
-
-	// linux-<name> holds the host's /32, but an earlier prefix of another
-	// scope can still answer it.
-	if !scopeGiven && !inv.hostScopeCovers(name, target, hostIP, scope, false) {
-		return exit(1)
+		narrowScope = true
 	}
 
 	// tacplus only: build the module here for the host's OS release when we
@@ -567,6 +574,33 @@ func (inv *invocation) hostEnroll(args []string) error {
 // for the refusal; an address that cannot be read is not checked.
 // unchanged says whether nothing has been changed yet (the refusal says
 // so).
+// hostScopeOrigin names the address a host's logins come from: the one
+// its name resolves to, or 127.0.0.1 for this server's own.
+func hostScopeOrigin(name, target, hostPart, addr string) string {
+	if target == hosts.Local {
+		return addr + " (where this server's own logins come from)"
+	}
+	if hostPart == addr {
+		return addr + " (" + name + ")"
+	}
+	return addr + " (" + hostPart + ")"
+}
+
+// hostNoScope refuses a host whose address no scope covers: every login of
+// it would be refused. Nothing has changed yet.
+func (inv *invocation) hostNoScope(name, target, hostPart, addr string) error {
+	a := inv.app
+	a.Out.ErrorE("No scope covers " + hostScopeOrigin(name, target, hostPart, addr) + ", so the server would refuse every login of '" + name + "'. Nothing was changed.")
+	a.Out.ErrorE("Add the address to the scope the host belongs in:   tacctl scope prefixes <scope> add " + addr + "/32")
+	a.Out.ErrorE("or give it a scope of its own (its own secret):    tacctl scope add linux-" + name + " --prefixes " + addr + "/32 --secret generate")
+	again := "tacctl host enroll " + target
+	if target == hosts.Local {
+		again = "tacctl host enroll --local"
+	}
+	a.Out.ErrorE("then enroll it again:   " + again + " [--scope <scope>]")
+	return exit(1)
+}
+
 func (inv *invocation) hostScopeCovers(name, target, addr, scope string, unchanged bool) bool {
 	if addr == "" {
 		return true
@@ -587,7 +621,7 @@ func (inv *invocation) hostScopeCovers(name, target, addr, scope string, unchang
 	fix := "Add it to the scope: tacctl scope prefixes " + scope + " add " + addr + "/32"
 	if target == hosts.Local {
 		a.Out.ErrorE("Scope '" + scope + "' does not cover " + addr + ", the address this server's own logins reach TACACS+ and RADIUS from (" + answered + "), so every login of '" + name + "' would be refused.")
-		a.Out.ErrorE(fix + "   (or enroll without --scope: scope linux-" + name + ")")
+		a.Out.ErrorE(fix)
 		if unchanged {
 			a.Out.ErrorE("Nothing was changed.")
 		} else {

@@ -736,6 +736,21 @@ current behaviour; this file is where history lives.
     A fixed GID that another group holds is left to it, with a warning.
     UID checks no longer look at GIDs. The script header gains
     `TAC_LOCAL=1` for the server's own script; `TAC_PROTOCOL` is 5.
+63. **`host enroll` uses the host's scope; it no longer makes one.**
+    Without `--scope`, enroll created a `linux-<name>` scope for the host's
+    address as a `/32`, even when a scope already covered the address, and
+    on a re-enroll even when the host was registered in another scope. The
+    `/32` answered first, so the host left its scope, and its users' accounts
+    there were deleted as removed users. Now, without `--scope`: a
+    registered host stays in the scope it is registered in; any other host
+    goes into the scope that answers its address, named with the prefix
+    (`10.125.0.222 (dev.example.net) is answered by scope 'lab' (prefix
+    10.0.0.0/8); enrolling dev there`); a host whose address no scope covers
+    is refused before anything changes, with the commands that add the
+    address to a scope or make the host a scope of its own (`tacctl scope
+    add linux-<name> --prefixes <address>/32 --secret generate`). A host's
+    own scope from an earlier release is still opened to both protocols
+    for a method switch and narrowed afterwards.
 
 ## 0.2.0 (2026-10-04)
 

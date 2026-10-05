@@ -206,25 +206,49 @@ func TestHostEnrollSyncUnenroll(t *testing.T) {
 	}
 }
 
-func TestHostEnrollCreatesScopeQuietly(t *testing.T) {
+// Without --scope: a registered host keeps its scope; any other goes into
+// the scope that answers its address; one no scope covers is refused, and
+// no scope is ever created.
+func TestHostEnrollScopeChoice(t *testing.T) {
 	hs := newHostSandbox(t)
-	out := hs.run(nil, "host", "enroll", "web1", "--build-on-host")
-	hs.expect(0, "Creating scope 'linux-web1' for 192.0.2.50/32...", "")
-	if strings.Contains(out, "Generated secret") || strings.Contains(out, "added.") {
-		t.Errorf("scope add was not silenced: %q", out)
+	hs.run(nil, "host", "enroll", "admin@web1.example.net", "--build-on-host")
+	hs.expect(1, "", "No scope covers 192.0.2.50 (web1.example.net), so the server would refuse every login of 'web1'. Nothing was changed.")
+	for _, want := range []string{"tacctl scope prefixes <scope> add 192.0.2.50/32",
+		"tacctl scope add linux-web1 --prefixes 192.0.2.50/32 --secret generate",
+		"tacctl host enroll admin@web1.example.net [--scope <scope>]"} {
+		if !strings.Contains(hs.err.String(), want) {
+			t.Errorf("no %q in %q", want, hs.err.String())
+		}
 	}
-	if !strings.Contains(hs.store(), "linux-web1:\n    prefixes: [192.0.2.50/32]") || !strings.Contains(hs.store(), "protocols: [tacacs]") {
-		t.Errorf("store:\n%s", hs.store())
+	if hs.registry() != "" || hs.pushed != "" || strings.Contains(hs.store(), "linux-web1") {
+		t.Error("the refused enrolment changed something")
 	}
-	if !strings.Contains(out, "No users are in scope 'linux-web1' yet.") {
-		t.Errorf("no-users hint: %q", out)
+
+	// A scope answers the address: enrolled there, and said so.
+	hs.run(nil, "scope", "prefixes", "lab", "add", "192.0.2.0/24")
+	hs.run(nil, "host", "enroll", "admin@web1.example.net", "--build-on-host")
+	hs.expect(0, "192.0.2.50 (web1.example.net) is answered by scope 'lab' (prefix 192.0.2.0/24); enrolling web1 there (another one: --scope <name>).", "")
+	if !strings.HasPrefix(hs.registry(), "web1|admin@web1.example.net||lab|") {
+		t.Errorf("registry %q", hs.registry())
 	}
-	// The registered server address is kept on a re-enroll.
-	if err := os.WriteFile(filepath.Join(hs.dir, "state", "linux-hosts"), []byte("web1|web1||linux-web1|198.51.100.7|\n"), 0o600); err != nil {
+
+	// Registered: a re-enroll keeps its scope and server address, even when
+	// a more specific prefix of another scope now answers the address.
+	if err := os.WriteFile(filepath.Join(hs.dir, "state", "linux-hosts"), []byte("web1|web1||lab|198.51.100.7|\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	hs.run(nil, "scope", "add", "linux-web1", "--prefixes", "192.0.2.50/32", "--secret", "generate")
 	hs.run(nil, "host", "enroll", "web1", "--build-on-host")
-	hs.expect(0, "Using existing scope 'linux-web1'.", "")
+	hs.expect(0, "web1 is registered in scope 'lab' and stays in it (another one: --scope <name>).", "")
+	if !strings.Contains(hs.out.String(), "Scope 'lab' does not cover 192.0.2.50") {
+		t.Errorf("no warning: %q", hs.out.String())
+	}
+	if hs.registry() != "web1|web1||lab|198.51.100.7|\n" {
+		t.Errorf("registry %q", hs.registry())
+	}
+	// Named: its own scope.
+	hs.run(nil, "host", "enroll", "web1", "--scope", "linux-web1", "--build-on-host")
+	hs.expect(0, "Host 'web1' enrolled", "")
 	if hs.registry() != "web1|web1||linux-web1|198.51.100.7|\n" {
 		t.Errorf("registry %q", hs.registry())
 	}
@@ -243,8 +267,8 @@ func TestHostEnrollRefusals(t *testing.T) {
 		{[]string{"--local", "web1"}, 1, "", "--local takes no host argument."},
 		{[]string{"web1", "--adopt", "bob"}, 1, "Host Commands", "Unknown option: '--adopt'"},
 		{[]string{"web1", "--method"}, 1, "", "--method needs a method: tacplus, radius"},
-		{[]string{"web1", "--method", "ldap"}, 1, "", "Unknown method 'ldap'. Methods: tacplus, radius"},
-		{[]string{"web1", "--method", "radius"}, 1, "", "needs the RADIUS backend, which is not enabled"},
+		{[]string{"web1", "--method", "ldap", "--scope", "lab"}, 1, "", "Unknown method 'ldap'. Methods: tacplus, radius"},
+		{[]string{"web1", "--method", "radius", "--scope", "lab"}, 1, "", "needs the RADIUS backend, which is not enabled"},
 		{[]string{"web1", "--name", "9x"}, 1, "", "Invalid host name '9x'."},
 		{[]string{"web1", "--port", "x"}, 1, "", "Invalid --port 'x'."},
 		{[]string{"web1", "--identity", "/no/such/key"}, 1, "", "Identity file '/no/such/key' not found."},
@@ -596,7 +620,7 @@ func TestHostEnrollScopeMustCoverTheHost(t *testing.T) {
 	before := hs.registry()
 	hs.run(nil, "host", "enroll", "--local", "--name", "authsrv", "--scope", "lab", "--build-on-host")
 	hs.expect(1, "", "Scope 'lab' does not cover 127.0.0.1, the address this server's own logins reach TACACS+ and RADIUS from (no scope covers it), so every login of 'authsrv' would be refused.")
-	for _, want := range []string{"tacctl scope prefixes lab add 127.0.0.1/32", "(or enroll without --scope: scope linux-authsrv)", "Nothing was changed."} {
+	for _, want := range []string{"tacctl scope prefixes lab add 127.0.0.1/32", "Nothing was changed."} {
 		if !strings.Contains(hs.err.String(), want) {
 			t.Errorf("no %q in %q", want, hs.err.String())
 		}
@@ -604,7 +628,14 @@ func TestHostEnrollScopeMustCoverTheHost(t *testing.T) {
 	if hs.registry() != before || hs.sandbox.runner.Called("bash") {
 		t.Error("the refused enrolment changed something")
 	}
-	// Without --scope, linux-authsrv is made for 127.0.0.1/32: accepted.
+	// Without --scope and no scope covering 127.0.0.1: refused too.
+	hs.run(nil, "host", "enroll", "--local", "--name", "authsrv", "--build-on-host")
+	hs.expect(1, "", "No scope covers 127.0.0.1 (where this server's own logins come from), so the server would refuse every login of 'authsrv'.")
+	if !strings.Contains(hs.err.String(), "tacctl host enroll --local [--scope <scope>]") {
+		t.Errorf("hint: %q", hs.err.String())
+	}
+	// Its own scope for 127.0.0.1/32: found without --scope.
+	hs.run(nil, "scope", "add", "linux-authsrv", "--prefixes", "127.0.0.1/32", "--secret", "generate")
 	hs.run(nil, "host", "enroll", "--local", "--name", "authsrv", "--build-on-host")
 	hs.expect(0, "Host 'authsrv' enrolled", "")
 
