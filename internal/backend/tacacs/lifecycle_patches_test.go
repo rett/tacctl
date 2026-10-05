@@ -26,6 +26,7 @@ type patchEnv struct {
 	*ltenv
 	session, local, syslog string
 	bcrypt                 string
+	acct                   string
 }
 
 func newPatchEnv(t *testing.T) *patchEnv {
@@ -50,6 +51,7 @@ func newPatchEnv(t *testing.T) *patchEnv {
 		local:   filepath.Join(src, acctDir, "local", "local.go"),
 		syslog:  filepath.Join(src, acctDir, "syslog", "syslog.go"),
 		bcrypt:  filepath.Join(src, authenDir, "bcrypt", "bcrypt.go"),
+		acct:    filepath.Join(src, "cmds", "server", "handlers", "acct.go"),
 	}
 	pe.git("init", "-q")
 	pe.git("add", "-A")
@@ -123,6 +125,23 @@ func TestPatchesApplyTheAuthenticationNASAddressPatch(t *testing.T) {
 	mustNotContain(t, p.out(), "Applied tacquito patch")
 	if n := strings.Count(readFile(t, p.bcrypt), `nasAddr := "unknown"`); n != 1 {
 		t.Fatal(n)
+	}
+}
+
+func TestPatchesApplyTheAccountingSinkPatch(t *testing.T) {
+	p := newPatchEnv(t)
+	if _, err := p.apply(); err != nil {
+		t.Fatal(err)
+	}
+	mustContain(t, p.out(), "Applied tacquito patch: 0005")
+	src := readFile(t, p.acct)
+	// A user the scope does not know is recorded through the scope's
+	// accounter before the lookup failure is reported.
+	mustContain(t, src, "tacctl patch 0005")
+	sink := strings.Index(src, "c = sinkAccounter(a.configProvider)")
+	fail := strings.Index(src, "does not have an accounter associated")
+	if sink < 0 || fail < 0 || sink > fail {
+		t.Fatalf("sink fallback at %d, failure at %d", sink, fail)
 	}
 }
 

@@ -915,3 +915,14 @@ What to expect:
     of its own addresses), naming the host and the two ways out
     (re-enroll under its registered name, or `host target`). `host target`
     refuses to point a host at another's address.
+69. **Accounting from accounts tacctl does not know is recorded (tacquito
+    patch 0005).** tacquito refused accounting for a user the device's
+    scope does not know, so a device's local account (a Junos `admin`
+    logging in or committing) or a daemon got an error reply and the device
+    discarded the record (Junos: `AUDITD_TACPLUS_START_NO_RESPONSE:
+    Discarded Accounting-Request message; no positive response from
+    TACACS+ servers`). The patch records it through the scope's accounter
+    (`root`, the accounting sink, when the scope has it, else any of its
+    users: they share one), keeping the user the device sent, and replies
+    success. Authentication and authorization of unknown users are
+    unchanged. `tacctl upgrade` rebuilds tacquito with it.
