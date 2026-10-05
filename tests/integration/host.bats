@@ -47,7 +47,7 @@ _hosts() { cat "${TACCTL_STATE_DIR}/linux-hosts" 2>/dev/null; }
     run sed '/^__TARBALL__$/,$d' "$PUSHED"
     assert_output --partial "TAC_SERVER=192.0.2.1"
     assert_output --partial "TAC_SECRET=0123456789abcdef0123456789abcdef"
-    assert_output --partial "alice:superuser:20000"
+    assert_output --partial "alice:superuser:80000"
     grep -q '^__TARBALL__$' "$PUSHED"
     # Ran as root or via sudo on the host, then removed the copy.
     stub_called "ssh .*admin@web1.example.net .*rm -f /tmp/tacctl.AbCd1234.*sudo -n bash /tmp/tacctl.AbCd1234"
@@ -136,7 +136,7 @@ _hosts() { cat "${TACCTL_STATE_DIR}/linux-hosts" 2>/dev/null; }
     assert_success
     assert_output --partial "web1: synced (2 users)"
     run cat "$PUSHED"
-    assert_output --partial "bob:readonly:20001"
+    assert_output --partial "bob:readonly:80001"
     refute_line "__TARBALL__"
     stub_called "ssh .*bash /tmp/tacctl.AbCd1234 --accounts-only"
 }
@@ -190,11 +190,11 @@ _removed_users() {
     # local account outside it.
     export PASSWD_ON_HOST="${BATS_TEST_TMPDIR}/host-passwd"
     printf '%s\n' 'root:x:0:0:root:/root:/bin/bash' \
-        'alice:x:20000:20000:alice (TACACS+):/home/alice:/bin/bash' \
-        'dave:x:20001:20001:dave (TACACS+):/home/dave:/bin/bash' \
-        'erin:x:20002:20002:erin (TACACS+):/home/erin:/bin/bash' \
-        'fred:x:20003:20003:fred (TACACS+):/home/fred:/bin/bash' \
-        'gus:x:20009:20009:gus (TACACS+):/home/gus:/bin/bash' \
+        'alice:x:80000:80000:alice (TACACS+):/home/alice:/bin/bash' \
+        'dave:x:80001:80001:dave (TACACS+):/home/dave:/bin/bash' \
+        'erin:x:80002:80002:erin (TACACS+):/home/erin:/bin/bash' \
+        'fred:x:80003:80003:fred (TACACS+):/home/fred:/bin/bash' \
+        'gus:x:80009:80009:gus (TACACS+):/home/gus:/bin/bash' \
         'carl:x:1001:1001:Carl:/home/carl:/bin/bash' > "$PASSWD_ON_HOST"
     stub_cmd ssh 'case "$*" in
         *mktemp*) cat > "$PUSHED"; echo /tmp/tacctl.AbCd1234 ;;
@@ -223,15 +223,20 @@ on_tty() {
     refute_output --partial "/home/fred"
     refute_output --partial "/home/gus"
     run sed '/^__TARBALL__$/,$d' "$PUSHED"
-    assert_line "TAC_USERS=alice:superuser:20000"
+    assert_line "TAC_USERS=alice:superuser:80000"
     assert_line "TAC_INACTIVE=fred"
     assert_line "TAC_REMOVE_HOMES=dave"
-    assert_line "TAC_PROTOCOL=2"
-    # The accounts were read over the shared connection, read-only, before the copy.
+    assert_line "TAC_UID_FIRST=80000"
+    assert_line "TAC_UID_LAST=89999"
+    assert_line "TAC_UID_PREVIOUS=''"
+    assert_line "TAC_PROTOCOL=3"
+    # The ID maps, then the accounts, were read over the shared connection,
+    # read-only, before the copy.
     stub_called "^ssh -o ConnectTimeout=10 -o ControlMaster=auto -o ControlPath=~/.ssh/tacctl-%C -o ControlPersist=60 -T web1 getent passwd$"
-    run bash -c "grep -n '^ssh' '$CALLS_LOG' | head -2"
-    assert_line --index 0 --partial "getent passwd"
-    assert_line --index 1 --partial "mktemp"
+    run bash -c "grep -n '^ssh' '$CALLS_LOG' | head -3"
+    assert_line --index 0 --partial "cat /proc/self/uid_map"
+    assert_line --index 1 --partial "getent passwd"
+    assert_line --index 2 --partial "mktemp"
 }
 
 @test "host sync: without a terminal nothing is asked and every home is kept; --remove-home deletes them all" {
@@ -493,7 +498,7 @@ _protocols() { "$TACCTL_BIN_SCRIPT" scope protocols "$1" | sed -n "s/.*Scope '$1
     assert_line "TAC_PORT=1812"
     assert_line "TAC_ACCT_PORT=1813"
     assert_line "TAC_SECRET=0123456789abcdef0123456789abcdef"
-    assert_output --partial "alice:superuser:20000"
+    assert_output --partial "alice:superuser:80000"
     refute_line "__TARBALL__"
     refute_output --partial "TARBALL_SHA256="
     run bash -n "$PUSHED"
@@ -822,4 +827,54 @@ _protocols() { "$TACCTL_BIN_SCRIPT" scope protocols "$1" | sed -n "s/.*Scope '$1
     assert_output "tacacs,radius"
     run _hosts
     assert_output "web1|web1||linux-web1|192.0.2.1||radius"
+}
+
+# --- hosts that cannot hold the UID range ---------------------------------------
+
+# An unprivileged container: its user namespace maps 0-65535 only.
+_container_ssh() {
+    stub_cmd ssh 'case "$*" in
+        *uid_map*) printf "%s\n" uid_map "0 100000 65536" gid_map "0 100000 65536" ;;
+        *mktemp*) cat > "$PUSHED"; echo /tmp/tacctl.AbCd1234 ;;
+        *) true ;;
+    esac'
+}
+
+@test "host enroll|sync: a host whose user namespace cannot hold the UID range is refused before anything changes" {
+    _container_ssh
+    run "$TACCTL_BIN_SCRIPT" host enroll admin@web1.example.net --scope lab
+    assert_failure 1
+    assert_output --partial "'web1' cannot hold UIDs 80000-89999: its user namespace maps only 0-65535 (an unprivileged container)."
+    assert_output --partial "Enrollment of web1 refused; nothing was changed."
+    [[ ! -e "$PUSHED" ]]
+    [[ -z "$(_hosts)" ]]
+    # Enrolled from a host that could, then synced as a container: refused.
+    stub_cmd ssh 'case "$*" in
+        *mktemp*) cat > "$PUSHED"; echo /tmp/tacctl.AbCd1234 ;;
+        *) true ;;
+    esac'
+    "$TACCTL_BIN_SCRIPT" host enroll admin@web1.example.net --scope lab > /dev/null
+    rm -f "$PUSHED"
+    _container_ssh
+    run "$TACCTL_BIN_SCRIPT" host sync web1
+    assert_failure 1
+    assert_output --partial "'web1' cannot hold UIDs 80000-89999"
+    [[ ! -e "$PUSHED" ]]
+    # A range it can hold.
+    "$TACCTL_BIN_SCRIPT" config linux uid-range 40000-49999 > /dev/null
+    run "$TACCTL_BIN_SCRIPT" host sync web1
+    assert_success
+    run sed '/^__TARBALL__$/,$d' "$PUSHED"
+    assert_line "TAC_USERS=alice:superuser:40000"
+    assert_line "TAC_UID_FIRST=40000"
+}
+
+@test "host enroll --local: this machine's own ID maps are checked" {
+    mkdir -p "$BATS_TEST_TMPDIR/proc"
+    echo "0 100000 65536" > "$BATS_TEST_TMPDIR/proc/uid_map"
+    echo "0 100000 65536" > "$BATS_TEST_TMPDIR/proc/gid_map"
+    TACCTL_TEST_PROC="$BATS_TEST_TMPDIR/proc" run "$TACCTL_BIN_SCRIPT" host enroll --local --name authsrv --scope lab
+    assert_failure 1
+    assert_output --partial "'authsrv' cannot hold UIDs 80000-89999: its user namespace maps only 0-65535"
+    [[ -z "$(_hosts)" ]]
 }

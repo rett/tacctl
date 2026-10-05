@@ -46,7 +46,7 @@ func (inv *invocation) hostFacts(he *hosts.Env, name, target, resolved string) {
 	if facts == nil {
 		facts = &hosts.Facts{}
 	}
-	for _, l := range facts.UIDWarning(name) {
+	for _, l := range facts.UIDWarning(name, he.UIDRange()) {
 		a.Out.WarnE(l)
 	}
 	host := target

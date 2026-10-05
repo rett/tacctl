@@ -155,6 +155,13 @@ func (inv *invocation) hostTarget(args []string) error {
 	a.Logger(inv.ctx, "auth.info", "host target name="+name+" target="+next.Target+" port="+dash(next.Port)+" by="+inv.sudoUser())
 	a.Out.InfoE("Host '" + name + "' is now reached at " + targetText(next) + " (scope, server and method unchanged).")
 	inv.hostFacts(he, name, next.Target, resolved)
+	// A host that cannot hold the UID range: 'host sync' will refuse it.
+	if m, err := he.ReadIDMaps(inv.ctx, next.Target, next.Port, next.Identity); err == nil {
+		if lacks := m.Lacks(he.UIDRange()); lacks != "" {
+			a.Out.WarnE(hosts.IDMapRefusal(name, he.UIDRange(), lacks))
+			a.Out.WarnE("'tacctl host sync " + name + "' refuses it until then.")
+		}
+	}
 	return nil
 }
 

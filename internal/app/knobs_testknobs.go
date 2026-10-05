@@ -49,6 +49,12 @@ func loadKnobs(env paths.Env) (Knobs, error) {
 		}
 		k.root = v
 	}
+	if v := env.Get(EnvTestProc); v != "" {
+		if !filepath.IsAbs(v) {
+			return Knobs{}, fmt.Errorf("%s=%q: not an absolute path", EnvTestProc, v)
+		}
+		k.proc = v
+	}
 	return k, nil
 }
 

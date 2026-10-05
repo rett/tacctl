@@ -5,7 +5,7 @@ package hosts
 // the address the ssh connection reached, which tacctl records as the
 // host's address in the device registry, and the local useradd UID range
 // of /etc/login.defs, which is warned about when it overlaps tacctl's own
-// (UIDBase-UIDMax): a local account created by hand could then be given a
+// range: a local account created by hand could then be given a
 // UID tacctl has handed out. tacctl never edits login.defs.
 
 import (
@@ -104,23 +104,27 @@ func LocalFacts(path string) Facts {
 	return f
 }
 
-// UIDOverlap reports whether local useradd can hand out a UID of
-// UIDBase-UIDMax on the host.
-func (f Facts) UIDOverlap() bool {
-	return f.LoginDefs && f.UIDMin <= UIDMax && f.UIDMax >= UIDBase && f.UIDMin <= f.UIDMax
+// UIDOverlap reports whether local useradd can hand out a UID of r on the
+// host.
+func (f Facts) UIDOverlap(r Range) bool {
+	return f.LoginDefs && f.UIDMin <= r.Max && f.UIDMax >= r.Min && f.UIDMin <= f.UIDMax
 }
 
-// UIDWarning is the warning for a host whose useradd range overlaps
-// tacctl's ("" when it does not).
-func (f Facts) UIDWarning(name string) []string {
-	if !f.UIDOverlap() {
+// UIDWarning is the warning for a host whose useradd range overlaps r
+// (nil when it does not).
+func (f Facts) UIDWarning(name string, r Range) []string {
+	if !f.UIDOverlap(r) {
 		return nil
+	}
+	fix := "  Keep UID_MIN-UID_MAX in /etc/login.defs on " + name + " clear of " + r.String() + " (tacctl does not change it)."
+	if r.Min > defaultUIDMax {
+		fix = "  Keep UID_MAX below " + strconv.Itoa(r.Min) + " in /etc/login.defs on " + name + " (the default is 60000; tacctl does not change it)."
 	}
 	return []string{
 		name + ": local useradd there gives out UIDs " + strconv.Itoa(f.UIDMin) + "-" + strconv.Itoa(f.UIDMax) +
-			" (/etc/login.defs UID_MIN/UID_MAX), which overlaps tacctl's " + UIDRange + ":",
+			" (/etc/login.defs UID_MIN/UID_MAX), which overlaps tacctl's " + r.String() + ":",
 		"  an account created there by hand could take a UID tacctl has given out (and a home tacctl kept).",
-		"  Set 'UID_MAX 19999' in /etc/login.defs on " + name + " (tacctl does not change it).",
+		fix,
 	}
 }
 

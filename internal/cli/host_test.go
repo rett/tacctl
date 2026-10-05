@@ -123,7 +123,7 @@ func TestHostEnrollSyncUnenroll(t *testing.T) {
 		t.Errorf("registry %q", got)
 	}
 	for _, w := range []string{"TAC_METHOD=tacplus\n", "TAC_SERVER=192.0.2.1\n", "TAC_SECRET=lab-secret-0123456789abcdef\n",
-		"TAC_USERS=$'alice:superuser:20000\\nbob:operator:20001\\ncarol:readonly:20002'\nTAC_INACTIVE=''\nTAC_REMOVE_HOMES=\\*\nTAC_PROTOCOL=2\n",
+		"TAC_USERS=$'alice:superuser:80000\\nbob:operator:80001\\ncarol:readonly:80002'\nTAC_INACTIVE=''\nTAC_REMOVE_HOMES=\\*\nTAC_UID_FIRST=80000\nTAC_UID_LAST=89999\nTAC_UID_PREVIOUS=''\nTAC_PROTOCOL=3\n",
 		"# tacctl Linux client installer for scope 'lab'. Generated "} {
 		if !strings.Contains(hs.pushed, w) {
 			t.Errorf("pushed script lacks %q", w)
@@ -157,7 +157,7 @@ func TestHostEnrollSyncUnenroll(t *testing.T) {
 	if !strings.HasSuffix(hs.pushed, "exit 0\n") {
 		t.Error("sync pushed the tarball")
 	}
-	if !strings.Contains(hs.pushed, "TAC_USERS=$'alice:superuser:20000\\nbob:operator:20001'\nTAC_INACTIVE=carol\nTAC_REMOVE_HOMES=''\nTAC_PROTOCOL=2\n") {
+	if !strings.Contains(hs.pushed, "TAC_USERS=$'alice:superuser:80000\\nbob:operator:80001'\nTAC_INACTIVE=carol\nTAC_REMOVE_HOMES=''\nTAC_UID_FIRST=80000\nTAC_UID_LAST=89999\nTAC_UID_PREVIOUS=''\nTAC_PROTOCOL=3\n") {
 		t.Errorf("sync header:\n%s", strings.SplitN(hs.pushed, "# --- tacctl", 2)[0])
 	}
 	if r.CalledRegexp(`getent passwd`) {
@@ -397,60 +397,60 @@ func TestConfigLinuxScriptAndUID(t *testing.T) {
 	hs.expect(1, "", "Usage: tacctl config linux remove-script [--output <file>]")
 
 	hs.run(nil, "config", "linux", "uid")
-	hs.expect(0, "  alice     20000\n", "")
+	hs.expect(0, "  alice     80000\n", "")
 	hs.run(nil, "config", "linux", "uid", "bob")
-	hs.expect(0, "20001\n", "")
+	hs.expect(0, "80001\n", "")
 	hs.run(nil, "config", "linux", "uid", "dave")
 	hs.expect(1, "", "No UID assigned to 'dave' yet.")
 	hs.run(nil, "config", "linux", "uid", "bad name")
 	hs.expect(1, "", "Username must contain only letters")
-	hs.run(nil, "config", "linux", "uid", "dave", "30000")
+	hs.run(nil, "config", "linux", "uid", "dave", "90000")
 	hs.expect(1, "", "User 'dave' does not exist.")
-	// Only the range: 20000-29999.
-	for _, bad := range []string{"500", "1001", "19999", "30000", "65534", "020000", "x20000"} {
+	// Only the range: 80000-89999 (the legacy range is not it).
+	for _, bad := range []string{"500", "1001", "20000", "29999", "79999", "90000", "65534", "080000", "x80000"} {
 		hs.run(nil, "config", "linux", "uid", "bob", bad)
-		hs.expect(1, "", "UID must be a number from 20000 to 29999: tacctl gives out UIDs (and the matching GIDs) in that range only.")
+		hs.expect(1, "", "UID must be a number from 80000 to 89999: tacctl gives out UIDs (and the matching GIDs) in that range only.")
 	}
-	hs.run(nil, "config", "linux", "uid", "bob", "20000")
-	hs.expect(1, "", "UID 20000 is already assigned to 'alice'.")
-	hs.run(nil, "config", "linux", "uid", "bob", "29999")
-	hs.expect(0, "usermod -u 29999 bob && groupmod -g 29999 bob", "")
+	hs.run(nil, "config", "linux", "uid", "bob", "80000")
+	hs.expect(1, "", "UID 80000 is already assigned to 'alice'.")
+	hs.run(nil, "config", "linux", "uid", "bob", "89999")
+	hs.expect(0, "usermod -u 89999 bob && groupmod -g 89999 bob", "")
 	// A legacy entry outside the range (before 0.2.1) is listed as unused
 	// on hosts, and its user is left out of the script (expired there, not
 	// deleted).
 	uids := filepath.Join(hs.dir, "state", "linux-uids")
 	data, _ := os.ReadFile(uids)
-	if err := os.WriteFile(uids, []byte(strings.Replace(string(data), "carol:20002", "carol:1500", 1)), 0o600); err != nil {
+	if err := os.WriteFile(uids, []byte(strings.Replace(string(data), "carol:80002", "carol:1500", 1)), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	hs.run(nil, "config", "linux", "uid")
-	hs.expect(0, "  carol     1500   outside 20000-29999: not used on hosts\n", "")
+	hs.expect(0, "  carol     1500   outside 80000-89999: not used on hosts\n", "")
 	hs.run(nil, "config", "linux", "script", "--scope", "lab", "--server", "192.0.2.10", "-o", out)
-	hs.expect(0, "", "Skipping 'carol': its UID 1500 is outside 20000-29999, so no host gets an account for it. Assign one in the range: tacctl config linux uid carol <uid>")
+	hs.expect(0, "", "Skipping 'carol': its UID 1500 is outside 80000-89999, so no host gets an account for it. Assign one in the range: tacctl config linux uid carol <uid>")
 	script, _ := os.ReadFile(out)
-	if !strings.Contains(string(script), "TAC_USERS=$'alice:superuser:20000\\nbob:operator:29999'\nTAC_INACTIVE=carol\n") {
+	if !strings.Contains(string(script), "TAC_USERS=$'alice:superuser:80000\\nbob:operator:89999'\nTAC_INACTIVE=carol\n") {
 		t.Errorf("script header:\n%s", strings.SplitN(string(script), "# --- tacctl", 2)[0])
 	}
 }
 
-// The range runs out at 29999: the next user is refused with the way out,
+// The range runs out at 89999: the next user is refused with the way out,
 // and nothing is written.
 func TestConfigLinuxScriptUIDRangeFull(t *testing.T) {
 	hs := newHostSandbox(t)
 	uids := filepath.Join(hs.dir, "state", "linux-uids")
-	if err := os.WriteFile(uids, []byte("alice:29999\n"), 0o600); err != nil {
+	if err := os.WriteFile(uids, []byte("alice:89999\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	out := filepath.Join(hs.dir, "x.sh")
 	hs.run(nil, "config", "linux", "script", "--scope", "lab", "--server", "192.0.2.10", "-o", out)
-	hs.expect(1, "", "[ERROR] No UID left for 'bob': every number of 20000-29999 has been given out (UIDs are never reused).")
+	hs.expect(1, "", "[ERROR] No UID left for 'bob': every number of 80000-89999 has been given out (UIDs are never reused).")
 	if !strings.Contains(hs.err.String(), "Give it a free number of the range by hand: tacctl config linux uid bob <uid>") {
 		t.Errorf("stderr %q", hs.err.String())
 	}
 	if _, err := os.Stat(out); !os.IsNotExist(err) {
 		t.Error("a script was written")
 	}
-	if data, _ := os.ReadFile(uids); string(data) != "alice:29999\n" {
+	if data, _ := os.ReadFile(uids); string(data) != "# range 80000-89999\nalice:89999\n" {
 		t.Errorf("uid file %q", data)
 	}
 }

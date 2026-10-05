@@ -367,6 +367,27 @@ func (inv *invocation) hostEnroll(args []string) error {
 	// method is opened to both for the switch and narrowed to the new one
 	// once the host has switched; a scope other hosts use, or one named with
 	// --scope, is never changed here.
+	if scope != "" {
+		if err := inv.scopeRequire(scope); err != nil {
+			return err
+		} else if ok, err := inv.linuxScopeServes(scope, method); err != nil {
+			return err
+		} else if !ok {
+			return exit(1)
+		}
+	}
+	// The UID file numbered for the range, and a host that can hold the
+	// range, before anything changes here or there.
+	if err := inv.renumberUIDs(true); err != nil {
+		return err
+	}
+	if err := he.CheckIDMap(inv.ctx, name, target, port, identity); err != nil {
+		if errors.Is(err, hosts.ErrFailed) {
+			a.Out.ErrorE("Enrollment of " + name + " refused; nothing was changed.")
+		}
+		return inv.hostsDone(err)
+	}
+
 	both := strings.Join(scopeProtocols, ",")
 	narrowScope := false
 	if scope == "" {
@@ -404,12 +425,6 @@ func (inv *invocation) hostEnroll(args []string) error {
 				return err
 			}
 		}
-	} else if err := inv.scopeRequire(scope); err != nil {
-		return err
-	} else if ok, err := inv.linuxScopeServes(scope, method); err != nil {
-		return err
-	} else if !ok {
-		return exit(1)
 	}
 
 	// tacplus only: build the module here for the host's OS release when we
@@ -577,6 +592,9 @@ func (inv *invocation) hostSync(args []string) error {
 		names = []string{which}
 	}
 
+	if err := inv.renumberUIDs(true); err != nil {
+		return err
+	}
 	he := inv.hostsEnv()
 	he.ReadKeys = true
 	failed := false
@@ -635,6 +653,12 @@ func (inv *invocation) provisioningLogin(target string) (login string, explicit,
 // syncOne pushes an accounts-only script to one host and runs it; ok is
 // false when the script could not be written or failed there.
 func (inv *invocation) syncOne(he *hosts.Env, e hosts.Entry, method string, scriptArgs []string, removeHome bool) (bool, error) {
+	// A host that cannot hold the range gets no account changes.
+	if err := he.CheckIDMap(inv.ctx, e.Name, e.Target, e.Port, e.Identity); errors.Is(err, hosts.ErrFailed) {
+		return false, nil
+	} else if err != nil {
+		return false, err
+	}
 	script, err := hosts.TempFile()
 	if err != nil {
 		return false, err

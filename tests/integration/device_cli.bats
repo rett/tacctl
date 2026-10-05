@@ -522,13 +522,13 @@ hostfacts() {
 
 @test "host enroll and sync record the address the session reached; a changed one raises address-changed" {
     host_setup
-    hostfacts 192.0.2.50 'UID_MIN 1000\nUID_MAX 60000'
+    hostfacts 192.0.2.50 'UID_MIN 1000\nUID_MAX 85000'
     run "$TACCTL_BIN_SCRIPT" host enroll admin@web1.example.net --scope lab --build-on-host
     assert_success
     plain
     stub_called "ssh .* -T admin@web1.example.net printf"
-    assert_output --partial "web1: local useradd there gives out UIDs 1000-60000 (/etc/login.defs UID_MIN/UID_MAX), which overlaps tacctl's 20000-29999:"
-    assert_output --partial "Set 'UID_MAX 19999' in /etc/login.defs on web1 (tacctl does not change it)."
+    assert_output --partial "web1: local useradd there gives out UIDs 1000-85000 (/etc/login.defs UID_MIN/UID_MAX), which overlaps tacctl's 80000-89999:"
+    assert_output --partial "Keep UID_MAX below 80000 in /etc/login.defs on web1 (the default is 60000; tacctl does not change it)."
     run grep -c "useradd there" <<< "$output"
     assert_output "1"
     run grep -A1 "^  web1:" "$DEVICES"
@@ -541,7 +541,7 @@ hostfacts() {
     assert_success
     assert_output --partial "Enrolled host web1"
     # A sync that reaches another address records it, and says so.
-    hostfacts 192.0.2.51 'UID_MAX 19999'
+    hostfacts 192.0.2.51 'UID_MAX 60000'
     run "$TACCTL_BIN_SCRIPT" host sync web1
     assert_success
     plain
