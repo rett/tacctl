@@ -42,7 +42,7 @@ func TestShellPtyHelper(t *testing.T) {
 		f := &fake.Runner{}
 		f.OnFunc([]string{"sudo", "-n", "tacctl", "_completion-names"}, func(c execx.Cmd) (execx.Result, error) {
 			if slices.Contains(c.Args, "devices") && slices.Contains(c.Args, "--desc") {
-				return execx.Result{Stdout: []byte("acs\tcisco 10.0.0.1 prod\ndev\tjuniper 10.20.0.22 lab\nweb1\tlinux h.example lab\n")}, nil
+				return execx.Result{Stdout: []byte("ar1\tcisco 10.0.0.1 prod\ndev\tjuniper 10.20.0.22 lab\nweb1\tlinux h.example lab\n")}, nil
 			}
 			return execx.Result{}, nil
 		})
@@ -173,7 +173,7 @@ func TestPtyShellNamesListing(t *testing.T) {
 	}
 	// The line is printed again, ending the line, before the first name.
 	const list = "tacctl> ssh \r\n" +
-		"  acs   cisco   10.0.0.1   prod\r\n" +
+		"  ar1   cisco   10.0.0.1   prod\r\n" +
 		"  dev   juniper 10.20.0.22 lab\r\n" +
 		"  web1  linux   h.example  lab\r\n" +
 		"tacctl> ssh "
@@ -200,7 +200,7 @@ func TestPtyShellListingWrapped(t *testing.T) {
 	if err := s.Send("ssh \t\t"); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Expect(regexp.QuoteMeta("tacctl> ssh \r\n  acs ")+`(?s:.*)`+regexp.QuoteMeta("web1  linux   h.example  lab\r\ntacctl> ss\r\nh "), 5*time.Second); err != nil {
+	if err := s.Expect(regexp.QuoteMeta("tacctl> ssh \r\n  ar1 ")+`(?s:.*)`+regexp.QuoteMeta("web1  linux   h.example  lab\r\ntacctl> ss\r\nh "), 5*time.Second); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Resize(60, 40); err != nil {
@@ -209,7 +209,7 @@ func TestPtyShellListingWrapped(t *testing.T) {
 	if err := s.Send("\t\t"); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Expect(regexp.QuoteMeta("tacctl> ssh \r\n  acs ")+`(?s:.*)`+regexp.QuoteMeta("web1  linux   h.example  lab\r\ntacctl> ssh "), 5*time.Second); err != nil {
+	if err := s.Expect(regexp.QuoteMeta("tacctl> ssh \r\n  ar1 ")+`(?s:.*)`+regexp.QuoteMeta("web1  linux   h.example  lab\r\ntacctl> ssh "), 5*time.Second); err != nil {
 		t.Fatal(err)
 	}
 }

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/execx/fake"
+	"github.com/rett/tacctl/internal/paths"
 	"github.com/rett/tacctl/internal/shell"
 )
 
@@ -405,5 +407,38 @@ func TestShellVerbDescriptionsFromUsage(t *testing.T) {
 	}
 	if order["list"] != 1 || order["show"] != 2 || order["add"] != 3 {
 		t.Errorf("user verb order: %v", order)
+	}
+}
+
+func TestSSHWithoutTerminal(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = r.Close() }()
+	defer func() { _ = w.Close() }()
+	file, err := os.CreateTemp(t.TempDir(), "cmds")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = file.Close() }()
+	over := paths.NewEnv([]string{"SSH_CONNECTION=192.0.2.1 50000 192.0.2.2 22"})
+	withTTY := paths.NewEnv([]string{"SSH_CONNECTION=192.0.2.1 50000 192.0.2.2 22", "SSH_TTY=/dev/pts/3"})
+	local := paths.NewEnv(nil)
+	for _, c := range []struct {
+		name  string
+		env   paths.Env
+		stdin io.Reader
+		want  bool
+	}{
+		{"ssh, no terminal, a pipe", over, r, true},
+		{"ssh with a terminal", withTTY, r, false},
+		{"not over ssh", local, r, false},
+		{"commands redirected from a file", over, file, false},
+		{"not a file at all", over, strings.NewReader("user list\n"), false},
+	} {
+		if got := sshWithoutTerminal(c.env, c.stdin); got != c.want {
+			t.Errorf("%s: %v, want %v", c.name, got, c.want)
+		}
 	}
 }

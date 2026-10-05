@@ -16,6 +16,7 @@ package cli
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -121,6 +122,12 @@ func (inv *invocation) shell(args []string) error {
 		o.History = shell.NewHistory(path, a.Out.Stderr)
 	}
 	sh := shell.New(o)
+	if !interactive && !p.Has("-c") && sshWithoutTerminal(a.Env, a.Stdin) {
+		// 'ssh host tacctl shell' runs without a terminal unless ssh is given
+		// -t; batch mode then waits on stdin, which looks like a hang.
+		_, _ = fmt.Fprintln(a.Out.Stderr, "tacctl shell: no terminal, so commands are read from standard input, one per line (Ctrl-D ends).\n"+
+			"For the interactive shell over ssh, ask for a terminal: ssh -t <host> tacctl shell")
+	}
 	var status int
 	switch {
 	case p.Has("-c"):
@@ -417,4 +424,19 @@ func (c *namesCache) Run(ctx context.Context, cmd execx.Cmd) (execx.Result, erro
 	c.m[key] = cachedNames{at: c.now(), res: res, err: err}
 	c.mu.Unlock()
 	return res, err
+}
+
+// sshWithoutTerminal reports whether this process came in over ssh with no
+// terminal allocated (SSH_CONNECTION set, SSH_TTY not) and reads its commands
+// from a pipe or socket rather than a file someone redirected on purpose.
+func sshWithoutTerminal(env interface{ Get(string) string }, stdin io.Reader) bool {
+	if env.Get("SSH_CONNECTION") == "" || env.Get("SSH_TTY") != "" {
+		return false
+	}
+	f, ok := stdin.(*os.File)
+	if !ok {
+		return false
+	}
+	st, err := f.Stat()
+	return err == nil && !st.Mode().IsRegular()
 }

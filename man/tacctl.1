@@ -1534,6 +1534,12 @@ exiting with that status. The commands of such a batch get no standard input
 from it: use its
 .B \-y
 flag where it has one.
+Over ssh, ask for a terminal to get the interactive shell:
+.BR "ssh \-t " "host tacctl shell" ;
+without
+.B \-t
+ssh allocates none, and the shell reads commands from standard input and
+says so on standard error.
 Bare
 .B tacctl
 on a terminal still prints the usage and exits 1.
