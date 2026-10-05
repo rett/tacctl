@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"regexp"
 	"sort"
@@ -337,6 +338,22 @@ func (inv *invocation) hostEnroll(args []string) error {
 	if port != "" && !rePort.MatchString(port) {
 		return inv.usageErr("Invalid --port '" + port + "'.")
 	}
+	// One machine, one registration: a new name for a machine already
+	// enrolled under another one would hold a second scope's secret and
+	// users on it, and each sync would undo the other's.
+	if other := inv.hostDuplicate(reg, name, target, hostIP, port); other != nil {
+		how := other.Target
+		if other.Target == hosts.Local {
+			how = "--local"
+		}
+		again := "tacctl host enroll " + target + " --name " + other.Name
+		if isLocal {
+			again = "tacctl host enroll --local --name " + other.Name
+		}
+		return inv.usageErr("'"+name+"' is the enrolled host '"+other.Name+"' (enrolled as "+how+"): both reach "+hostIP+". Nothing was changed.",
+			"Re-enroll it under its registered name: "+again,
+			"or change how tacctl reaches it: tacctl host target "+other.Name+" "+target)
+	}
 	if identity != "" {
 		if st, err := os.Stat(identity); err != nil || !st.Mode().IsRegular() {
 			return inv.usageErr("Identity file '" + identity + "' not found.")
@@ -621,6 +638,62 @@ func (inv *invocation) hostEnroll(args []string) error {
 // for the refusal; an address that cannot be read is not checked.
 // unchanged says whether nothing has been changed yet (the refusal says
 // so).
+// hostDuplicate is the registered host, other than name, that addr (on
+// port) already reaches: its recorded address, the address its target
+// resolves to, or, for this server's own registration (--local), any of
+// this machine's addresses. nil when there is none.
+func (inv *invocation) hostDuplicate(reg *hosts.Registry, name, target, addr, port string) *hosts.Entry {
+	if addr == "" {
+		return nil
+	}
+	local := target == hosts.Local || isLocalAddress(addr)
+	for _, e := range reg.Entries() {
+		if e.Name == name {
+			continue
+		}
+		if e.Target == hosts.Local {
+			if local {
+				e := e
+				return &e
+			}
+			continue
+		}
+		if target == hosts.Local || e.Port != port {
+			continue
+		}
+		if inv.hostAddress(e) == addr {
+			e := e
+			return &e
+		}
+		if host, _, ok := hosts.ScanTarget(e.Target, e.Port); ok && inv.resolveV4(host) == addr {
+			e := e
+			return &e
+		}
+	}
+	return nil
+}
+
+// isLocalAddress is an address of this machine (loopback included).
+func isLocalAddress(addr string) bool {
+	ip := net.ParseIP(addr)
+	if ip == nil {
+		return false
+	}
+	if ip.IsLoopback() {
+		return true
+	}
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return false
+	}
+	for _, a := range addrs {
+		if n, ok := a.(*net.IPNet); ok && n.IP.Equal(ip) {
+			return true
+		}
+	}
+	return false
+}
+
 // hostScopeOrigin names the address a host's logins come from: the one
 // its name resolves to, or 127.0.0.1 for this server's own.
 func hostScopeOrigin(name, target, hostPart, addr string) string {

@@ -120,6 +120,9 @@ func (inv *invocation) hostTarget(args []string) error {
 	if resolved == "" {
 		return inv.usageErr("Cannot resolve '" + hostPart + "'")
 	}
+	if other := inv.hostDuplicate(reg, name, next.Target, resolved, next.Port); other != nil {
+		return inv.usageErr("'" + next.Target + "' reaches " + resolved + ", the enrolled host '" + other.Name + "'; one machine has one registration. Nothing was changed.")
+	}
 
 	// The test connection.
 	he := inv.hostsEnv()

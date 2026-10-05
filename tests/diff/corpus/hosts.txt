@@ -154,6 +154,7 @@ host unenroll old1
 host unenroll web1 -x
 @known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999; 0.2.1 item 62: TAC_PROTOCOL=5
 host enroll admin@web1 --scope lab
+@known 0.2.1 item 68: web2 reaches the address of the enrolled web1 (the corpus resolves every name to 192.0.2.50): refused as the same machine
 host enroll web2 --scope lab
 @known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999; 0.2.1 item 62: TAC_PROTOCOL=5
 host enroll web2 --scope lab --method tacplus ;; host list

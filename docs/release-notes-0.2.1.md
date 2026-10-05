@@ -906,3 +906,12 @@ What to expect:
     seen at another address the scope covers; `scope staging remove
     <address>` removes one by hand. A device configuration's own output
     stays clean: the staging lines go to stderr.
+68. **One machine, one registration.** `host enroll` checked only the
+    name, so a host enrolled as `rett@dev.example.net` could be enrolled again
+    by its address (as `h10-125-0-222`): two registrations, two scopes'
+    secrets and users fighting over one machine. Enroll now refuses a new
+    name whose address another enrolled host reaches (its recorded address
+    or its target's resolution, on the same ssh port; for this server, any
+    of its own addresses), naming the host and the two ways out
+    (re-enroll under its registered name, or `host target`). `host target`
+    refuses to point a host at another's address.

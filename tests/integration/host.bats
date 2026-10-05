@@ -26,7 +26,13 @@ setup() {
     mkdir -p "$TACCTL_LINUX_DIR"
     echo "not really a tarball" > "$TACCTL_LINUX_DIR/pam_tacplus-1.7.0.tar.gz"
 
-    stub_cmd getent 'echo "192.0.2.50 STREAM web1"'
+    # One address per host name (enroll refuses a second name for an
+    # address another enrolled host reaches).
+    stub_cmd getent 'case "$2" in
+        web2*) echo "192.0.2.51 STREAM $2" ;;
+        web9*) echo "192.0.2.59 STREAM $2" ;;
+        *) echo "192.0.2.50 STREAM web1" ;;
+    esac'
     stub_cmd ip 'echo "192.0.2.50 dev eth0 src 192.0.2.1 uid 0"'
     # Copy step (remote command contains mktemp): keep stdin, print a path.
     # Run step: succeed unless SSH_RUN_FAILS is set.
@@ -468,6 +474,25 @@ on_tty() {
     refute_output --partial "203.0.113.10/32"
 }
 
+@test "host enroll: a machine already enrolled under another name is refused, by address" {
+    "$TACCTL_BIN_SCRIPT" host enroll admin@web1.example.net --scope lab > /dev/null
+    rm -f "$PUSHED"
+    # The same machine by its address: h192-0-2-50 would be a second registration.
+    run "$TACCTL_BIN_SCRIPT" host enroll admin@192.0.2.50 --scope lab
+    assert_failure
+    assert_output --partial "'h192-0-2-50' is the enrolled host 'web1' (enrolled as admin@web1.example.net): both reach 192.0.2.50. Nothing was changed."
+    assert_output --partial "Re-enroll it under its registered name: tacctl host enroll admin@192.0.2.50 --name web1"
+    assert_output --partial "tacctl host target web1 admin@192.0.2.50"
+    [[ ! -e "$PUSHED" ]]
+    run _hosts
+    assert_output "web1|admin@web1.example.net||lab|192.0.2.1|"
+    # Under its own name it is a re-enroll; another port is another machine.
+    run "$TACCTL_BIN_SCRIPT" host enroll admin@192.0.2.50 --scope lab --name web1
+    assert_success
+    run "$TACCTL_BIN_SCRIPT" host enroll admin@192.0.2.50 --scope lab --name web7 --port 2222
+    assert_success
+}
+
 @test "host unenroll: pushes the secret-free removal script and forgets the host" {
     _own_scope web1 192.0.2.50
     "$TACCTL_BIN_SCRIPT" host enroll web1 > /dev/null
@@ -553,7 +578,7 @@ _prebuilt_env() {
     [[ "$want" == "$got" ]]
 
     # A second host of the same OS reuses the cached build.
-    run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab --name web2
+    run "$TACCTL_BIN_SCRIPT" host enroll web2 --scope lab
     assert_success
     refute_output --partial "in a container"
     run grep -c "^podman run" "$CALLS_LOG"
@@ -800,7 +825,8 @@ _protocols() { "$TACCTL_BIN_SCRIPT" scope protocols "$1" | sed -n "s/.*Scope '$1
     radius_on_rendering
     _own_scope web1 192.0.2.50 tacacs
     "$TACCTL_BIN_SCRIPT" host enroll web1 > /dev/null
-    "$TACCTL_BIN_SCRIPT" host enroll web1 --name web9 --scope linux-web1 > /dev/null
+    "$TACCTL_BIN_SCRIPT" scope prefixes linux-web1 add 192.0.2.59/32 > /dev/null
+    "$TACCTL_BIN_SCRIPT" host enroll web9 --scope linux-web1 > /dev/null
     run "$TACCTL_BIN_SCRIPT" host enroll web1 --method radius
     assert_failure
     assert_output --partial "Scope 'linux-web1' is not served over RADIUS"
@@ -812,7 +838,7 @@ _protocols() { "$TACCTL_BIN_SCRIPT" scope protocols "$1" | sed -n "s/.*Scope '$1
 @test "host sync and unenroll: use the method the host was enrolled with" {
     radius_on
     "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab --method radius > /dev/null
-    "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab --name web2 > /dev/null
+    "$TACCTL_BIN_SCRIPT" host enroll web2 --scope lab > /dev/null
     run "$TACCTL_BIN_SCRIPT" host sync web1
     assert_success
     run cat "$PUSHED"
@@ -826,7 +852,7 @@ _protocols() { "$TACCTL_BIN_SCRIPT" scope protocols "$1" | sed -n "s/.*Scope '$1
 
     run "$TACCTL_BIN_SCRIPT" host list
     assert_line --regexp "web1 +web1 +lab +192\.0\.2\.1 +radius +1$"
-    assert_line --regexp "web2 +web1 +lab +192\.0\.2\.1 +tacplus +1$"
+    assert_line --regexp "web2 +web2 +lab +192\.0\.2\.1 +tacplus +1$"
 
     run "$TACCTL_BIN_SCRIPT" host unenroll web1
     assert_success
@@ -871,11 +897,11 @@ _protocols() { "$TACCTL_BIN_SCRIPT" scope protocols "$1" | sed -n "s/.*Scope '$1
     run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab --method tacplus
     assert_success
     radius_on
-    run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab --name web2
+    run "$TACCTL_BIN_SCRIPT" host enroll web2 --scope lab
     assert_success
     run _hosts
     assert_line "web1|web1||lab|192.0.2.1|"
-    assert_line "web2|web1||lab|192.0.2.1||radius"
+    assert_line "web2|web2||lab|192.0.2.1||radius"
     run "$TACCTL_BIN_SCRIPT" host default-method tacplus
     assert_success
     run "$TACCTL_BIN_SCRIPT" config get host.default_method
@@ -941,10 +967,10 @@ _protocols() { "$TACCTL_BIN_SCRIPT" scope protocols "$1" | sed -n "s/.*Scope '$1
     assert_output "web1|web1||lab|192.0.2.1|"
     # A scope without one still takes the default.
     "$TACCTL_BIN_SCRIPT" scope auth-method lab default > /dev/null
-    run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab --name web2
+    run "$TACCTL_BIN_SCRIPT" host enroll web2 --scope lab
     assert_success
     run _hosts
-    assert_line "web2|web1||lab|192.0.2.1||radius"
+    assert_line "web2|web2||lab|192.0.2.1||radius"
 }
 
 @test "host enroll: without --method or an auth-method, a scope served over one protocol only decides" {
@@ -957,11 +983,11 @@ _protocols() { "$TACCTL_BIN_SCRIPT" scope protocols "$1" | sed -n "s/.*Scope '$1
     assert_output "web1|web1||lab|192.0.2.1||radius"
     # Both protocols decide nothing: the default (tacplus) again.
     "$TACCTL_BIN_SCRIPT" scope protocols lab set tacacs,radius > /dev/null
-    run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab --name web2
+    run "$TACCTL_BIN_SCRIPT" host enroll web2 --scope lab
     assert_success
     refute_output --partial "served over"
     run _hosts
-    assert_line "web2|web1||lab|192.0.2.1|"
+    assert_line "web2|web2||lab|192.0.2.1|"
 }
 
 @test "host enroll: an existing linux-<name> scope limited to one protocol is re-enrolled with it after the registration is gone" {
