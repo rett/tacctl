@@ -32,22 +32,62 @@ import (
 // UIDBase..UIDMax is the range tacctl assigns UIDs (and the matching
 // primary GIDs) from: it never gives out a number outside it, and the
 // client script never touches an account whose UID is outside it.
+//
+// 80000-89999 is clear of everything else that hands out numbers on a
+// Linux host: above the distributions' useradd range (UID_MAX 60000 on
+// Debian/Ubuntu and the RHEL family) and above systemd's reserved ones
+// (60001-60513 container UIDs, 61184-65519 DynamicUser, 65534/65535),
+// inside the range systemd leaves unused (65536-524287), and below the
+// conventional start of /etc/subuid (100000). config/linux/client-install.sh
+// carries the same numbers (TAC_UID_FIRST, TAC_UID_LAST; a test holds them
+// to these).
 const (
-	UIDBase = 20000
-	UIDMax  = 29999
+	UIDBase = 80000
+	UIDMax  = 89999
 )
 
-// UIDRange is the range in words ("20000-29999").
+// UIDRange is the range in words ("80000-89999").
 var UIDRange = strconv.Itoa(UIDBase) + "-" + strconv.Itoa(UIDMax)
+
+// LegacyUIDBase..LegacyUIDMax is where releases up to 0.2.0 gave out UIDs
+// (from 20000 up), inside local useradd's default range (up to 60000).
+// Its numbers are renumbered once to the same offset in UIDBase..UIDMax:
+// the server's UID file by RenumberLegacy, the accounts a host's script
+// created by the script itself (TAC_LEGACY_FIRST, TAC_LEGACY_LAST).
+const (
+	LegacyUIDBase = 20000
+	LegacyUIDMax  = 29999
+)
+
+// LegacyUIDRange is the legacy range in words ("20000-29999").
+var LegacyUIDRange = strconv.Itoa(LegacyUIDBase) + "-" + strconv.Itoa(LegacyUIDMax)
+
+// LegacyUID reports whether uid is a number of the legacy range, written
+// as UIDInRange wants it.
+func LegacyUID(uid string) bool {
+	n, ok := uidNumber(uid)
+	return ok && n >= LegacyUIDBase && n <= LegacyUIDMax
+}
+
+// Renumbered is the number a legacy UID becomes: the same offset in
+// UIDBase..UIDMax.
+func Renumbered(legacy int) int { return legacy - LegacyUIDBase + UIDBase }
 
 // UIDInRange reports whether uid is a decimal number from UIDBase to UIDMax
 // written without leading zeros.
 func UIDInRange(uid string) bool {
+	n, ok := uidNumber(uid)
+	return ok && n >= UIDBase && n <= UIDMax
+}
+
+// uidNumber is uid as a number when it is decimal digits without a leading
+// zero (at most 9, as the client script's check).
+func uidNumber(uid string) (int, bool) {
 	if uid == "" || uid[0] == '0' || strings.Trim(uid, "0123456789") != "" || len(uid) > 9 {
-		return false
+		return 0, false
 	}
-	n, _ := strconv.Atoi(uid)
-	return n >= UIDBase && n <= UIDMax
+	n, err := strconv.Atoi(uid)
+	return n, err == nil
 }
 
 // The pinned pam_tacplus (LINUX_* and PAM_TACPLUS_* of lib/linux_hosts.sh).

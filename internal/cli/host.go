@@ -461,6 +461,9 @@ func (inv *invocation) hostEnroll(args []string) error {
 		return err
 	}
 	req.Temp, req.Prebuilt = true, prebuilt
+	if err := inv.renumberUIDs(true); err != nil {
+		return err
+	}
 	if err := inv.homesToDelete(he, &req, name, target, port, identity, removeHome); err != nil {
 		return err
 	}
@@ -577,6 +580,9 @@ func (inv *invocation) hostSync(args []string) error {
 		names = []string{which}
 	}
 
+	if err := inv.renumberUIDs(true); err != nil {
+		return err
+	}
 	he := inv.hostsEnv()
 	he.ReadKeys = true
 	failed := false

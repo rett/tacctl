@@ -53,12 +53,14 @@ type Script struct {
 }
 
 // ScriptProtocol is the contract between the header and client-install.sh
-// (TAC_PROTOCOL): 2 is the 0.2.1 account lifecycle (TAC_INACTIVE,
-// TAC_REMOVE_HOMES, removed users deleted, UIDs in UIDBase..UIDMax only).
-// The body refuses a header of another protocol, and a body of an earlier
-// release has no TAC_PROTOCOL check but never sees this header (both are
-// written into one file by one tacctl).
-const ScriptProtocol = "2"
+// (TAC_PROTOCOL): 2 was the 0.2.1 account lifecycle (TAC_INACTIVE,
+// TAC_REMOVE_HOMES, removed users deleted, UIDs of one range only); 3 moves
+// that range to UIDBase..UIDMax, with the header's UIDs renumbered on the
+// server (RenumberLegacy) and the accounts the script created in the legacy
+// range renumbered on the host. The body refuses a header of another
+// protocol, and a body of an earlier release has no TAC_PROTOCOL check but
+// never sees this header (both are written into one file by one tacctl).
+const ScriptProtocol = "3"
 
 // fileSHA256 is "sha256sum <f> | awk '{print $1}'": "" when the file
 // cannot be read.

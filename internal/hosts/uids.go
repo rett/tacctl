@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -14,7 +15,8 @@ import (
 // sent to a host. A number is allocated once, from UIDBase..UIDMax, after
 // the highest one given so far (never into a gap), and never reused, not
 // even when the user is removed; it is the user's UID and primary GID on
-// every host. Entries outside the range (set by hand before 0.2.1) are
+// every host. Entries of the legacy range are renumbered once
+// (RenumberLegacy); entries outside the range (set by hand) are
 // reported, never sent to a host.
 type UIDs struct{ Path string }
 
@@ -212,4 +214,94 @@ func padRight(s string, n int) string {
 		return s
 	}
 	return s + strings.Repeat(" ", n-len(s))
+}
+
+// UIDCollision is a renumbering RenumberLegacy refuses: the number a legacy
+// entry would become is already another name's.
+type UIDCollision struct {
+	Name, Old, New, Holder string
+}
+
+func (c *UIDCollision) Error() string {
+	return "hosts: " + c.Name + ":" + c.Old + " would become " + c.New + ", which is " + c.Holder + "'s"
+}
+
+// RenumberLegacy rewrites every entry of LegacyUIDBase..LegacyUIDMax to
+// Renumbered (the same offset in UIDBase..UIDMax), users and removed users
+// alike, and returns how many it rewrote. Before anything is written the old
+// file is copied to backup (0600); the new one replaces it by a rename, so
+// the file is never seen half written. Nothing to renumber (a missing file,
+// a second call) changes nothing and makes no copy. A number another name
+// already has (a line not being renumbered) is a *UIDCollision, and nothing
+// is changed. Lines are otherwise kept as they are, in order.
+func (u UIDs) RenumberLegacy(backup string) (int, error) {
+	data, err := os.ReadFile(u.Path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	recs := awkRecords(string(data))
+	held := map[string]string{} // number -> name, of the lines that stay
+	for _, r := range recs {
+		f := awkFields(r, ":")
+		if v := awkField(f, 2); !LegacyUID(v) {
+			if _, ok := held[v]; !ok {
+				held[v] = awkField(f, 1)
+			}
+		}
+	}
+	n := 0
+	out := make([]string, len(recs))
+	for i, r := range recs {
+		f := awkFields(r, ":")
+		out[i] = r
+		old := awkField(f, 2)
+		if !LegacyUID(old) {
+			continue
+		}
+		o, _ := strconv.Atoi(old)
+		nu := strconv.Itoa(Renumbered(o))
+		if h, ok := held[nu]; ok && h != awkField(f, 1) {
+			return 0, &UIDCollision{Name: awkField(f, 1), Old: old, New: nu, Holder: h}
+		}
+		f[1] = nu
+		out[i] = strings.Join(f, ":")
+		n++
+	}
+	if n == 0 {
+		return 0, nil
+	}
+	if err := writeAtomic(backup, data, 0o600); err != nil {
+		return 0, err
+	}
+	return n, writeAtomic(u.Path, []byte(strings.Join(out, "\n")+"\n"), 0o600)
+}
+
+// writeAtomic writes data to a new file next to path and renames it over
+// path: a reader sees the old content or the new, never a part.
+func writeAtomic(path string, data []byte, mode os.FileMode) error {
+	f, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	_, err = f.Write(data)
+	if err == nil {
+		err = f.Sync()
+	}
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = os.Chmod(tmp, mode)
+	}
+	if err == nil {
+		err = os.Rename(tmp, path)
+	}
+	if err != nil {
+		_ = os.Remove(tmp)
+	}
+	return err
 }

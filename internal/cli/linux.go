@@ -128,6 +128,53 @@ func (inv *invocation) hostsEnv() *hosts.Env {
 	}
 }
 
+// renumberUIDs is the one-time move of the UID file from the legacy range
+// to hosts.UIDBase..hosts.UIDMax (hosts.UIDs.RenumberLegacy), run by every
+// command that reads or writes the file: 'config linux uid', 'config linux
+// script', 'host enroll' and 'host sync'. A script must never carry a
+// legacy number (its body renumbers the host's accounts to the server's
+// numbers, which therefore must be renumbered first), and a listing must
+// show the numbers hosts get; so it happens at the first of them, not at
+// one chosen verb. It is idempotent: once no entry is left in the legacy
+// range it changes nothing. The old file is kept next to it
+// (<file>.pre-renumber-<UTC time>) and the change is logged ('uid-map
+// renumbered <n> entries'). A number that would collide with another
+// name's refuses the renumbering, nothing changed: printed as errors and
+// exit 1 when refuse is set, as warnings (and the command goes on) when
+// not, so 'config linux uid' can still give the other name a new number.
+func (inv *invocation) renumberUIDs(refuse bool) error {
+	a := inv.app
+	uids := hosts.UIDs{Path: a.Paths.LinuxUIDs}
+	backup := uids.Path + ".pre-renumber-" + a.Knobs.Now().UTC().Format("20060102-150405")
+	n, err := uids.RenumberLegacy(backup)
+	var c *hosts.UIDCollision
+	if errors.As(err, &c) {
+		say := a.Out.WarnE
+		if refuse {
+			say = a.Out.ErrorE
+		}
+		say("Cannot renumber " + uids.Path + " from " + hosts.LegacyUIDRange + " to " + hosts.UIDRange + ": '" + c.Name + "' (" + c.Old + ") would become " + c.New + ", which is already assigned to '" + c.Holder + "'. Nothing was changed.")
+		say("Give '" + c.Holder + "' another number first: tacctl config linux uid " + c.Holder + " <uid>")
+		if refuse {
+			return exit(1)
+		}
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return nil
+	}
+	entries := strconv.Itoa(n) + " entries"
+	if n == 1 {
+		entries = "1 entry"
+	}
+	a.Out.InfoE("Renumbered " + entries + " of " + uids.Path + " from " + hosts.LegacyUIDRange + " to " + hosts.UIDRange + " (the same offset; the old file is kept as " + backup + "). Hosts renumber the accounts tacctl created at their next enroll or sync.")
+	a.Logger(inv.ctx, "auth.info", "uid-map renumbered "+strconv.Itoa(n)+" entries from="+hosts.LegacyUIDRange+" to="+hosts.UIDRange+" backup="+backup)
+	return nil
+}
+
 // hostsDone maps a hosts error: ErrFailed (printed) is exit 1.
 func (inv *invocation) hostsDone(err error) error {
 	if errors.Is(err, hosts.ErrFailed) {
@@ -379,6 +426,9 @@ func (inv *invocation) configLinuxScript(args []string) error {
 	if err != nil {
 		return err
 	}
+	if err := inv.renumberUIDs(true); err != nil {
+		return err
+	}
 	res, err := inv.hostsEnv().WriteScript(req)
 	if err != nil {
 		return inv.hostsDone(err)
@@ -454,14 +504,18 @@ func (inv *invocation) configLinuxRemoveScript(args []string) error {
 
 // configLinuxUID is cmd_config_linux_uid: list, show or change the number
 // a user gets as UID and primary GID on every host, one of
-// hosts.UIDBase..hosts.UIDMax. Only a change writes
-// the UID file; a listing or a lookup leaves it as it is (absent stays
-// absent). Changing it does not renumber accounts that already exist on
-// enrolled hosts; the next sync reports them.
+// hosts.UIDBase..hosts.UIDMax. Only a change (and the one-time
+// renumbering of legacy entries, renumberUIDs) writes the UID file; a
+// listing or a lookup leaves it as it is (absent stays absent). Changing it
+// does not renumber accounts that already exist on enrolled hosts; the next
+// sync reports them.
 func (inv *invocation) configLinuxUID(args []string) error {
 	a := inv.app
 	username, uid := arg(args, 0), arg(args, 1)
 	uids := hosts.UIDs{Path: a.Paths.LinuxUIDs}
+	if err := inv.renumberUIDs(false); err != nil {
+		return err
+	}
 	if username == "" {
 		inv.echo("")
 		inv.echoE(ui.Bold + "Assigned Linux UIDs" + ui.NC + " (same number is the primary GID)")

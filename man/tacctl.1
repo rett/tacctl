@@ -814,7 +814,7 @@ server. Run after
 changes.
 .IP
 tacctl manages an account only when it created it on that host and its UID
-there is in 20000\(en29999. Any other account is never created, expired,
+there is in 80000\(en89999. Any other account is never created, expired,
 deleted or otherwise changed, with one exception: it is taken out of
 tacctl's own groups
 .RB ( tac\-users ", " tac\-readonly ", " tac\-operator ", " tac\-superuser ", " tac\-console )
@@ -824,6 +824,21 @@ left as it is, and that user gets no account on that host (a warning says
 so); the rest of the sync goes on. The summary counts the accounts tacctl
 manages on the host and names the refused users, as in
 .RB \(lq "c1: synced (4 users; 1 refused: carl)." \(rq.
+.IP
+An account tacctl created with a UID in 20000\(en29999 (where releases up to
+0.2.0 gave them out) is renumbered first, to the same offset in
+80000\(en89999: its UID
+.RB ( "usermod \-u" ,
+which re-owns the home directory tree), its own group's GID and its primary
+GID
+.RI "(\(lq'" user "': renumbered " old " \-> " new " (home re\-owned)\(rq;"
+the summary counts them, as in
+.RB \(lq "c1: synced (3 users; 1 renumbered)." \(rq).
+Files under
+.IR /home ", " /tmp ", " /var/tmp ", " /var/spool/cron " and " /var/mail
+that still carry the old number are listed (at most 20), never changed. An
+account whose user is logged in, or whose new UID or GID is taken on the
+host, is left as it is and named as refused until a later sync.
 .IP
 A removed user's home directory is deleted only when asked for. From a
 terminal, enroll and sync read the host's
@@ -850,11 +865,13 @@ Enroll and sync also read the host's
 .I /etc/login.defs
 (read-only) and warn when its
 .BR UID_MIN \(en UID_MAX
-range overlaps 20000\(en29999, where local
+range overlaps 80000\(en89999, where local
 .BR useradd (8)
-could give out a UID tacctl has assigned; set
-.B "UID_MAX 19999"
-there. tacctl never edits the file.
+could give out a UID tacctl has assigned (the default
+.B "UID_MAX 60000"
+does not); keep
+.B UID_MAX
+below 80000 there. tacctl never edits the file.
 .IP
 Enroll and sync record the address the ssh connection reached (the host's
 side of
@@ -965,9 +982,21 @@ List the UID assigned to each user, print one user's UID, or change it
 (only a change writes the file).
 Each user has one number, used as both UID and primary GID on every
 enrolled host; it is assigned the first time the user is sent to a host,
-from 20000\(en29999 only (after the highest one given, never reused, not
+from 80000\(en89999 only (after the highest one given, never reused, not
 even after the user is removed), and kept in
 .IR /etc/tacctl/linux\-uids .
+The range lies above the distributions'
+.BR useradd (8)
+range and systemd's reserved UIDs, and below the usual
+.I /etc/subuid
+start (100000).
+Entries in 20000\(en29999 (given out by releases up to 0.2.0) are renumbered
+once to the same offset in 80000\(en89999 by the first
+.BR "config linux uid" ", " "config linux script" ", " "host enroll" " or " "host sync" ;
+the old file is kept as
+.IR linux\-uids.pre\-renumber\- time ,
+and a new number already held by another name refuses the renumbering,
+changing nothing, until that name is given another number.
 A value outside that range is refused; an entry outside it from an earlier
 release is listed as not used on hosts, and its user gets no account until
 given a number in the range. When the range is used up, the script refuses

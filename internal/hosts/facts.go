@@ -120,7 +120,7 @@ func (f Facts) UIDWarning(name string) []string {
 		name + ": local useradd there gives out UIDs " + strconv.Itoa(f.UIDMin) + "-" + strconv.Itoa(f.UIDMax) +
 			" (/etc/login.defs UID_MIN/UID_MAX), which overlaps tacctl's " + UIDRange + ":",
 		"  an account created there by hand could take a UID tacctl has given out (and a home tacctl kept).",
-		"  Set 'UID_MAX 19999' in /etc/login.defs on " + name + " (tacctl does not change it).",
+		"  Keep UID_MAX below " + strconv.Itoa(UIDBase) + " in /etc/login.defs on " + name + " (the default is 60000; tacctl does not change it).",
 	}
 }
 

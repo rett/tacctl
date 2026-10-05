@@ -114,13 +114,13 @@ func TestRunScriptReadsKeysOverTheSession(t *testing.T) {
 // The facts: the host's side of SSH_CONNECTION, and the useradd range of
 // login.defs with useradd's own defaults for what it does not set.
 func TestParseFactsAndUIDWarning(t *testing.T) {
-	f := ParseFacts([]byte("ssh_connection=198.51.100.9 50022 192.0.2.50 22\nlogin_defs=present\nUID_MIN\t1000\nUID_MAX   60000\n"))
-	if f.Address != "192.0.2.50" || !f.LoginDefs || f.UIDMin != 1000 || f.UIDMax != 60000 || !f.UIDOverlap() {
+	f := ParseFacts([]byte("ssh_connection=198.51.100.9 50022 192.0.2.50 22\nlogin_defs=present\nUID_MIN\t1000\nUID_MAX   85000\n"))
+	if f.Address != "192.0.2.50" || !f.LoginDefs || f.UIDMin != 1000 || f.UIDMax != 85000 || !f.UIDOverlap() {
 		t.Errorf("%+v", f)
 	}
 	w := f.UIDWarning("web1")
-	if len(w) != 3 || w[0] != "web1: local useradd there gives out UIDs 1000-60000 (/etc/login.defs UID_MIN/UID_MAX), which overlaps tacctl's 20000-29999:" ||
-		!strings.Contains(w[2], "Set 'UID_MAX 19999' in /etc/login.defs on web1 (tacctl does not change it).") {
+	if len(w) != 3 || w[0] != "web1: local useradd there gives out UIDs 1000-85000 (/etc/login.defs UID_MIN/UID_MAX), which overlaps tacctl's 80000-89999:" ||
+		!strings.Contains(w[2], "Keep UID_MAX below 80000 in /etc/login.defs on web1 (the default is 60000; tacctl does not change it).") {
 		t.Errorf("%q", w)
 	}
 	for _, c := range []struct {
@@ -128,11 +128,13 @@ func TestParseFactsAndUIDWarning(t *testing.T) {
 		addr    string
 		overlap bool
 	}{
-		{"ssh_connection=2001:db8::1 1 2001:db8::50 22\nlogin_defs=present\nUID_MAX 19999\n", "2001:db8::50", false},
-		{"ssh_connection=::ffff:192.0.2.1 1 ::ffff:192.0.2.50 22\nlogin_defs=present\n", "192.0.2.50", true}, // defaults: 1000-60000
+		{"ssh_connection=2001:db8::1 1 2001:db8::50 22\nlogin_defs=present\nUID_MAX 79999\n", "2001:db8::50", false},
+		{"ssh_connection=::ffff:192.0.2.1 1 ::ffff:192.0.2.50 22\nlogin_defs=present\n", "192.0.2.50", false}, // defaults: 1000-60000
 		{"ssh_connection=\n", "", false},                                         // no login.defs: nothing to say
-		{"ssh_connection=x y z\nlogin_defs=present\nUID_MIN 30000\n", "", false}, // starts above the range
-		{"login_defs=present\n#UID_MAX 19999\nUID_MAX 19999\n", "", false},
+		{"ssh_connection=x y z\nlogin_defs=present\nUID_MIN 90000\n", "", false}, // starts above the range
+		{"login_defs=present\nUID_MAX 80000\n", "", true},                        // reaches its first number
+		{"login_defs=present\nUID_MIN 89999\nUID_MAX 99999\n", "", true},         // starts at its last
+		{"login_defs=present\n#UID_MAX 99999\nUID_MAX 60000\n", "", false},
 	} {
 		f := ParseFacts([]byte(c.in))
 		if f.Address != c.addr || f.UIDOverlap() != c.overlap {
@@ -147,10 +149,10 @@ func TestParseFactsAndUIDWarning(t *testing.T) {
 	if f := LocalFacts(dir + "/none"); f.Address != "127.0.0.1" || f.LoginDefs {
 		t.Errorf("%+v", f)
 	}
-	if err := os.WriteFile(dir+"/login.defs", []byte("UID_MIN 1000\nUID_MAX 19999\n"), 0o644); err != nil {
+	if err := os.WriteFile(dir+"/login.defs", []byte("UID_MIN 1000\nUID_MAX 60000\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if f := LocalFacts(dir + "/login.defs"); !f.LoginDefs || f.UIDMax != 19999 || f.UIDOverlap() {
+	if f := LocalFacts(dir + "/login.defs"); !f.LoginDefs || f.UIDMax != 60000 || f.UIDOverlap() {
 		t.Errorf("%+v", f)
 	}
 }

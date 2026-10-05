@@ -14,4 +14,4 @@ PREBUILT_FOR=docker.io/library/ubuntu:noble
 TAC_USERS=$'alice:superuser:20000\nbob:readonly:20001'
 TAC_INACTIVE=''
 TAC_REMOVE_HOMES=''
-TAC_PROTOCOL=2
+TAC_PROTOCOL=3

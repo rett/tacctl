@@ -41,11 +41,25 @@ What to expect:
   `/home/.tacctl-removed/` and made root's, so a local account that later
   gets the same UID does not inherit it (item 39). The same run records the
   host's address in the device registry (item 41) and warns when the host's
-  `/etc/login.defs` lets local `useradd` give out UIDs of 20000-29999
-  (item 42; set `UID_MAX 19999` there).
-- **New UIDs come from 20000-29999 only** (item 35); a user whose recorded UID
-  is outside that range gets no account on hosts until it is given a number
-  in the range.
+  `/etc/login.defs` lets local `useradd` give out UIDs of 80000-89999
+  (item 42; keep `UID_MAX` below 80000 there, as the default 60000 is).
+- **UIDs move to 80000-89999, once** (items 35 and 46). The first `config
+  linux uid`, `config linux script`, `host enroll` or `host sync` after the
+  upgrade renumbers `/etc/tacctl/linux-uids` from 20000-29999 to the same
+  offset in 80000-89999 (20005 becomes 80005), keeps the old file as
+  `linux-uids.pre-renumber-<time>` and logs `uid-map renumbered <n>
+  entries`. **The first sync (or enroll) of each host then renumbers the
+  accounts tacctl created there**: UID, own group and primary GID, the home
+  directory re-owned (`'<user>': renumbered <old> -> <new> (home re-owned)`;
+  the summary says `synced (<n> users; <k> renumbered)`). Files outside the
+  home that keep the old number (in `/home`, `/tmp`, `/var/tmp`,
+  `/var/spool/cron`, `/var/mail`) are listed, never changed: give them back
+  with `chown -h <new>:<new> <file>`. A user who is logged in, or whose new
+  number is taken on the host, keeps the account as it is and is named as
+  refused; log the user out (or free the number) and sync again. Accounts in
+  20000-29999 that tacctl did not create are not touched. New users get
+  80000-89999 only; a user whose recorded UID is outside it gets no account
+  on hosts until it is given a number in the range.
 - **Release binaries.** When a clone is at a release tag, `install` and
   `upgrade` download the binary for the host, verify its signature against the
   public key committed in the clone (`release/allowed_signers`), its checksum
@@ -343,23 +357,29 @@ What to expect:
     longer sends a server message with a failed TACACS+ authentication (source
     patch 0004). sshd could not show it during password login and printed one
     `login failure` per wrong password after the next successful login.
-35. **Linux UIDs come from 20000-29999 only.** tacctl gives out UIDs (and the
-    matching primary GIDs) from that range, after the highest one given so
-    far; a removed user's number stays reserved and is never reused. Past
-    29999 the script is refused: `[ERROR] No UID left for '<user>': every
-    number of 20000-29999 has been given out (UIDs are never reused).` and
-    `Give it a free number of the range by hand: tacctl config linux uid
-    <user> <uid>`, exit 1. `config linux uid <user> <uid>` refuses any other
-    value: `UID must be a number from 20000 to 29999: tacctl gives out UIDs
-    (and the matching GIDs) in that range only.` (it took 1000 and up). An
-    entry of `/etc/tacctl/linux-uids` outside the range is listed as
-    `outside 20000-29999: not used on hosts`, and its user is left out of the
-    scripts with `Skipping '<user>': its UID <uid> is outside 20000-29999, so
-    no host gets an account for it.` `--allow-uid-mismatch` takes the highest
-    number of the range that is free on the host (it took the host's next
-    free UID, outside any range).
+35. **Linux UIDs come from 80000-89999 only** (they were given out from
+    20000 up, inside local `useradd`'s default range). 80000-89999 is above
+    the distributions' `useradd` range (`UID_MAX 60000` on Debian, Ubuntu
+    and the RHEL family) and systemd's reserved numbers (60001-60513,
+    61184-65519, 65534/65535), inside the range systemd leaves unused
+    (65536-524287) and below the usual `/etc/subuid` start (100000). tacctl
+    gives out UIDs (and the matching primary GIDs) from that range, after
+    the highest one given so far; a removed user's number stays reserved and
+    is never reused. Existing numbers are moved once (item 46). Past 89999
+    the script is refused: `[ERROR] No UID left for '<user>': every number
+    of 80000-89999 has been given out (UIDs are never reused).` and `Give it
+    a free number of the range by hand: tacctl config linux uid <user>
+    <uid>`, exit 1. `config linux uid <user> <uid>` refuses any other value:
+    `UID must be a number from 80000 to 89999: tacctl gives out UIDs (and
+    the matching GIDs) in that range only.` (it took 1000 and up). An entry
+    of `/etc/tacctl/linux-uids` outside the range is listed as `outside
+    80000-89999: not used on hosts`, and its user is left out of the scripts
+    with `Skipping '<user>': its UID <uid> is outside 80000-89999, so no host
+    gets an account for it.` `--allow-uid-mismatch` takes the highest number
+    of the range that is free on the host (it took the host's next free UID,
+    outside any range).
 36. **The client script manages an account only when it created it and its
-    UID is in 20000-29999.** Before any change it reads the account's UID on
+    UID is in 80000-89999.** Before any change it reads the account's UID on
     the host. Any other account (one tacctl did not create, or one it created
     whose UID is outside the range) is never created, expired, deleted or
     otherwise changed, with one exception: it is taken out of tacctl's own
@@ -368,8 +388,9 @@ What to expect:
     home, password, shell, expiry, full name): `'<user>': removed from
     tacctl's groups (tac-users, tac-<tier>); it is a plain local account
     again.` An out-of-range account tacctl created is reported (`'<user>' has
-    UID <uid>, outside 20000-29999: tacctl changes nothing on it but its
-    membership in tacctl's groups, although it created it.`).
+    UID <uid>, outside 80000-89999: tacctl changes nothing on it but its
+    membership in tacctl's groups, although it created it.`); one it created
+    in 20000-29999 is renumbered first (item 46).
 37. **`--adopt` is gone** (`host enroll`, `host sync` and the client script:
     `Unknown option: '--adopt'`). A local account named like a tacctl user
     that tacctl did not create no longer stops the install or sync: that user
@@ -417,9 +438,9 @@ What to expect:
     with a warning.
 40. **The install script's header has a protocol.** After `TAC_USERS` it sets
     `TAC_INACTIVE` (the scope's disabled users and the accounting sink),
-    `TAC_REMOVE_HOMES` (names, or `*`) and `TAC_PROTOCOL=2`; the script body
+    `TAC_REMOVE_HOMES` (names, or `*`) and `TAC_PROTOCOL=3`; the script body
     refuses a header of another protocol before changing anything (`This
-    script's header speaks protocol <n> and its body protocol 2: they were
+    script's header speaks protocol <n> and its body protocol 3: they were
     not written by the same tacctl. …`).
 41. **Enrolled hosts have a recorded address.** `host enroll` and `host
     sync` record the address the enrolment's ssh connection reached (the
@@ -443,10 +464,11 @@ What to expect:
 42. **`host enroll` and `host sync` warn when the host's local `useradd` can
     give out tacctl's UIDs**: they read `/etc/login.defs` (`UID_MIN`,
     `UID_MAX`; read-only, over the same connection) and, when the range
-    overlaps 20000-29999 (as the default `UID_MAX 60000` does), print
-    `<host>: local useradd there gives out UIDs <min>-<max> (/etc/login.defs
-    UID_MIN/UID_MAX), which overlaps tacctl's 20000-29999:` and suggest
-    `UID_MAX 19999`, once per host and run. tacctl never edits the file.
+    overlaps 80000-89999 (the default `UID_MAX 60000` does not; one raised
+    to 80000 or more does), print `<host>: local useradd there gives out
+    UIDs <min>-<max> (/etc/login.defs UID_MIN/UID_MAX), which overlaps
+    tacctl's 80000-89999:` and suggest keeping `UID_MAX` below 80000, once
+    per host and run. tacctl never edits the file.
 43. **An upgrade that changed nothing says so**: when no file was updated,
     no unit, binary or config changed and no backend has a note, the summary
     head is `Already Up to Date (source unchanged at <commit>)` instead of
@@ -472,3 +494,45 @@ What to expect:
     after a snapshot, and `host target name= target= port= by=` is logged
     (auth.info). No script runs on the host. `host target <TAB>` completes
     the enrolled names.
+46. **UIDs given out from 20000 up are renumbered once to 80000-89999**, at
+    the same offset (20005 becomes 80005). On the server, the first `config
+    linux uid`, `config linux script`, `host enroll` or `host sync` rewrites
+    every entry of `/etc/tacctl/linux-uids` in 20000-29999 (users and
+    removed users alike), keeps the old file as
+    `linux-uids.pre-renumber-<UTC time>`, replaces it by a rename, prints
+    `Renumbered <n> entries of /etc/tacctl/linux-uids from 20000-29999 to
+    80000-89999 (the same offset; the old file is kept as …).` and logs
+    `uid-map renumbered <n> entries from=20000-29999 to=80000-89999
+    backup=<file>` (auth.info); after that there is nothing left to do and
+    nothing is said. A number that is already another name's refuses it,
+    nothing changed: `Cannot renumber /etc/tacctl/linux-uids from
+    20000-29999 to 80000-89999: '<user>' (<old>) would become <new>, which
+    is already assigned to '<other>'. Nothing was changed.` and `Give
+    '<other>' another number first: tacctl config linux uid <other> <uid>`
+    (exit 1 for the commands that write a script; a warning for `config
+    linux uid`, so it can make that change). On a host, the next enroll or
+    sync renumbers each account tacctl created there with a UID in
+    20000-29999, listed, disabled or removed (a removed user's account is
+    then deleted as before): `usermod -u <new>` (which re-owns the home
+    directory tree), `groupmod -g <new>` for its own group (named like it,
+    GID the old UID, no other member), `usermod -g <new>` when the primary
+    GID still is the old one, and the home's files that kept only the old
+    group follow it: `'<user>': renumbered <old> -> <new> (home re-owned)`
+    (`(home not fully re-owned)`, with the `chown -hR --from=<old> <new>
+    <home>` to finish it, when usermod changed the UID but failed on the
+    home).
+    Files outside the home that keep the old UID or GID are listed, never
+    changed (a scan of `/home`, `/tmp`, `/var/tmp`, `/var/spool/cron` and
+    `/var/mail`, at most 20 paths): `'<user>': these files still carry its
+    old number <old> and were left as they are (chown -h <new>:<new> <file>
+    gives them back):`. The account is left exactly as it is for that run,
+    and named as refused in the summary, when the new UID or GID belongs to
+    another account or group there (`'<user>': not renumbered from <old> to
+    <new>: UID <new> belongs to '<other>' here. …`) or the user has
+    processes (`… processes run as UID <old> (still logged in?). The account
+    is left as it is until the next sync.`; `pgrep -u`, or `/proc` without
+    pgrep). Accounts in 20000-29999 that tacctl did not create are never
+    touched. The summaries count them: `<host>: synced (3 users; 1
+    renumbered).`, from the script's `[INFO] Accounts: <n> managed by tacctl
+    here; <k> renumbered[; refused: <names>].` Kept homes under
+    `/home/.tacctl-removed` are root's already and stay as they are.

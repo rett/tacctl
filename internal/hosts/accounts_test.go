@@ -17,15 +17,16 @@ import (
 // are tacctl's accounts of removed users; fred is a current user; gus has a
 // tacctl full name but no UID from this server; carl is a local account;
 // olaf has a UID outside the range; hank's home is not under /home; ivy was
-// named by a release before 0.1.16.
+// named by a release before 0.1.16 and still has the legacy UID it was
+// given (the script renumbers it, then deletes it).
 const hostPasswd = `root:x:0:0:root:/root:/bin/bash
-dave:x:20001:20001:dave (TACACS+):/home/dave:/bin/bash
-erin:x:20002:20002:erin (RADIUS):/home/erin:/bin/bash
-fred:x:20003:20003:fred (TACACS+):/home/fred:/bin/bash
-gus:x:20009:20009:gus (TACACS+):/home/gus:/bin/bash
+dave:x:80001:80001:dave (TACACS+):/home/dave:/bin/bash
+erin:x:80002:80002:erin (RADIUS):/home/erin:/bin/bash
+fred:x:80003:80003:fred (TACACS+):/home/fred:/bin/bash
+gus:x:80009:80009:gus (TACACS+):/home/gus:/bin/bash
 carl:x:1001:1001:Carl:/home/carl:/bin/bash
 olaf:x:1500:1500:olaf (TACACS+):/home/olaf:/bin/bash
-hank:x:20004:20004:hank (TACACS+):/srv/hank:/bin/bash
+hank:x:80004:80004:hank (TACACS+):/srv/hank:/bin/bash
 ivy:x:20005:20005:TACACS+ user (tacctl):/home/ivy:/bin/bash
 not a passwd line
 `
@@ -33,7 +34,7 @@ not a passwd line
 func accountsEnv(t *testing.T) (*Env, *fake.Runner) {
 	t.Helper()
 	e, _, _ := testEnv(t)
-	writeFile(t, e.Paths.UIDs, "dave:20001\nerin:20002\nfred:20003\nolaf:1500\nhank:20004\nivy:20005\n")
+	writeFile(t, e.Paths.UIDs, "dave:80001\nerin:80002\nfred:80003\nolaf:1500\nhank:80004\nivy:80005\n")
 	f := &fake.Runner{}
 	f.Func(func(c execx.Cmd) bool {
 		return strings.HasSuffix(strings.Join(c.Args, " "), "getent passwd") || c.Name == "getent"
@@ -45,7 +46,7 @@ func accountsEnv(t *testing.T) (*Env, *fake.Runner) {
 
 func TestParsePasswdAndRemoved(t *testing.T) {
 	accts := ParsePasswd(hostPasswd)
-	if len(accts) != 9 || accts[1] != (Account{Name: "dave", UID: "20001", GECOS: "dave (TACACS+)", Home: "/home/dave"}) {
+	if len(accts) != 9 || accts[1] != (Account{Name: "dave", UID: "80001", GECOS: "dave (TACACS+)", Home: "/home/dave"}) {
 		t.Fatalf("parsed %+v", accts)
 	}
 	e, _ := accountsEnv(t)
@@ -130,7 +131,7 @@ func TestWriteScriptLifecycleHeader(t *testing.T) {
 		t.Fatal(err)
 	}
 	head := strings.SplitN(readFile(t, out), "# --- tacctl", 2)[0]
-	if !strings.HasSuffix(head, "TAC_USERS=alice:superuser:20000\nTAC_INACTIVE=$'bob\\nnopriv'\nTAC_REMOVE_HOMES=dave\\ erin\nTAC_PROTOCOL=2\n") {
+	if !strings.HasSuffix(head, "TAC_USERS=alice:superuser:80000\nTAC_INACTIVE=$'bob\\nnopriv'\nTAC_REMOVE_HOMES=dave\\ erin\nTAC_PROTOCOL=3\n") {
 		t.Errorf("header\n%s", head)
 	}
 	req.RemoveAllHomes = true
@@ -147,6 +148,7 @@ func TestScriptBodyAgreesOnRangeAndProtocol(t *testing.T) {
 	body := string(assets.LinuxInstallScript)
 	for _, w := range []string{
 		"TAC_UID_FIRST=" + strconv.Itoa(UIDBase) + "\n", "TAC_UID_LAST=" + strconv.Itoa(UIDMax) + "\n",
+		"TAC_LEGACY_FIRST=" + strconv.Itoa(LegacyUIDBase) + "\n", "TAC_LEGACY_LAST=" + strconv.Itoa(LegacyUIDMax) + "\n",
 		`if [[ "${TAC_PROTOCOL:-1}" != "` + ScriptProtocol + `" ]]; then`,
 	} {
 		if !strings.Contains(body, w) {
@@ -157,10 +159,12 @@ func TestScriptBodyAgreesOnRangeAndProtocol(t *testing.T) {
 
 func TestAccountSummary(t *testing.T) {
 	for line, want := range map[string]string{
-		"[INFO] Accounts: 4 managed by tacctl here; refused: carl.":         "4 users; 1 refused: carl",
-		"[INFO] Accounts: 2 managed by tacctl here; refused: carl, olaf.\r": "2 users; 2 refused: carl, olaf",
-		"[INFO] Accounts: 0 managed by tacctl here.":                        "0 users",
-		"[INFO] Accounts: 1 managed by tacctl here.":                        "1 user",
+		"[INFO] Accounts: 4 managed by tacctl here; refused: carl.":               "4 users; 1 refused: carl",
+		"[INFO] Accounts: 2 managed by tacctl here; refused: carl, olaf.\r":       "2 users; 2 refused: carl, olaf",
+		"[INFO] Accounts: 0 managed by tacctl here.":                              "0 users",
+		"[INFO] Accounts: 1 managed by tacctl here.":                              "1 user",
+		"[INFO] Accounts: 3 managed by tacctl here; 1 renumbered.":                "3 users; 1 renumbered",
+		"[INFO] Accounts: 3 managed by tacctl here; 2 renumbered; refused: carl.": "3 users; 2 renumbered; 1 refused: carl",
 	} {
 		s, ok := ParseAccountSummary(line)
 		if !ok || s.Counts() != want {
