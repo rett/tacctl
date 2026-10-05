@@ -173,6 +173,7 @@ Every change goes one way: check that no generated file was edited by hand → s
 | `/etc/tacctl/backups/` | Snapshots (`<timestamp>/`), `legacy/` (old-style backups, pre-store config, displaced files), `password-dates/` (read by the importer) |
 | `/etc/tacctl/templates/` | Device config templates: a copy of each shipped one, which you may customize (a file here overrides the built-in one); `.shipped.sha256` is the manifest of what tacctl wrote there, `<name>.template.new` is a new release's version beside a template you customized (see [Custom Templates](#custom-templates)) |
 | `/etc/tacctl/devices.yaml` | The device registry (`tacctl device`): names, addresses and settings of the network devices; 0600 root, absent means none. Snapshots include it |
+| `/etc/tacctl/console.yaml` | The login console's settings (`tacctl console`): per-tier switches, per-user overrides, idle timeout, system shell; 0600 root, absent means the defaults (the console on for every tier). Snapshots include it |
 | `/etc/tacctl/linux-hosts`, `/etc/tacctl/linux-uids` | Enrolled Linux hosts; the UID/GID each user gets on every host |
 | `/var/lib/tacctl/` | tacctl's variable data; 0711 (every user may pass through, only root may list it) |
 | `/var/lib/tacctl/ssh/known_hosts` | Generated from the pinned host keys in `devices.yaml` on every registry write; 0644 root in a 0755 directory, so every user's ssh reads it (`/etc/tacctl` is root's alone). Do not edit |
@@ -357,7 +358,7 @@ By default, `tacctl` requires `sudo` authentication. To let a group run it witho
 ```
 tacctl config sudoers install adm     # or: wheel, ops, etc.
 ```
-This writes `/etc/sudoers.d/tacctl` (validated with `visudo -cf`) granting `%adm ALL=(ALL) NOPASSWD: /usr/local/bin/tacctl`, with `Defaults!/usr/local/bin/tacctl env_keep += "SSH_AUTH_SOCK"` so `tacctl host` keeps your agent socket through sudo. Because `tacctl` can modify system config and restart services, this is effectively passwordless root for members of that group — the command prompts for confirmation before installing. Remove with `tacctl config sudoers remove`.
+This writes `/etc/sudoers.d/tacctl` (validated with `visudo -cf`) granting `%adm ALL=(ALL) NOPASSWD: /usr/local/bin/tacctl`, with `Defaults!/usr/local/bin/tacctl env_keep += "SSH_AUTH_SOCK TACCTL_CONSOLE"` so `tacctl host` keeps your agent socket through sudo (the second name is the login console's session marker). Because `tacctl` can modify system config and restart services, this is effectively passwordless root for members of that group — the command prompts for confirmation before installing. Remove with `tacctl config sudoers remove`.
 
 ### Login for Linux hosts
 Linux hosts log in against this server by one of two methods. Accounts, tiers, sudo and the fallback to local passwords are the same for both; the PAM module differs:
@@ -457,11 +458,11 @@ tacctl config sudoers tiers install   # write /etc/sudoers.d/tacctl-tiers
 ```
 | Local group | Tier (priv-lvl) | tacctl access |
 |---|---|---|
-| `tac-readonly` | read-only (below 7) | `passwd`, `status`, `version`, `help` (also `-h`, `--help`), `user list`, `user show`, `group list`, `scope list`, `backend list`, `backend status`, `device list`, `device show`, `device notices`, `device ssh-config`, `ssh` and `device ssh` (their own scopes' devices only) |
-| `tac-operator` | operator (7-14) | read-only set plus `log tail/search/failures/accounting`, `config validate`, `backup list`, `device export`, `device scan`, `device discover`, `device check`, `device list --scan` and `--probe` (their own scopes' devices only; `discover` lists every unregistered address) |
+| `tac-readonly` | read-only (below 7) | `passwd`, `status`, `version`, `help` (also `-h`, `--help`), `user list`, `user show`, `group list`, `scope list`, `backend list`, `backend status`, `device list`, `device show`, `device notices`, `device ssh-config`, `ssh` and `device ssh` (their own scopes' devices only), `_console-policy` (the login console reads its settings with it) |
+| `tac-operator` | operator (7-14) | read-only set plus `log tail/search/failures/accounting`, `config validate`, `backup list`, `device export`, `device scan`, `device discover`, `device check`, `console show`, `device list --scan` and `--probe` (their own scopes' devices only; `discover` lists every unregistered address) |
 | `tac-superuser` | superuser (15) | everything, plus full `sudo` |
 
-Lower-tier rules are plain `NOPASSWD` lines. The only thing the file lets through from the caller's environment is the agent socket (`Defaults!/usr/local/bin/tacctl env_keep += "SSH_AUTH_SOCK"`, for `tacctl host`), so a caller cannot hand tacctl another `SUDO_USER`; tacctl also refuses a `SUDO_USER` that is not the account of `SUDO_UID`. Anything that prints a shared secret or a password hash (`config cisco|juniper|wti`, `scope secret`, `backup diff`, `config dump`, `store show`) stays superuser-only, as does `scope show`, and so does everything that changes anything. tacctl also checks the tier itself on every run, taking it from the user's group in the store rather than from local group membership, and logs denials to syslog. Callers who are not in the local group `tac-users` (root, local admins) are not restricted. `tacctl upgrade` rewrites an installed `/etc/sudoers.d/tacctl-tiers` that differs from the release's rules (after `visudo -cf` accepts them), so a new release's verbs reach the tiers (the upgrade says `Updated: tiers sudoers`, or `Unchanged:`); it never creates the file, and when `visudo` refuses the new rules the old file stays and a warning says so. Without that refresh a tier user could not run the verbs a release adds until an administrator re-ran `tacctl config sudoers tiers install`.
+Lower-tier rules are plain `NOPASSWD` lines. The only thing the file lets through from the caller's environment is the agent socket (`Defaults!/usr/local/bin/tacctl env_keep += "SSH_AUTH_SOCK TACCTL_CONSOLE"`: the agent socket for `tacctl host`, and the login console's session marker), so a caller cannot hand tacctl another `SUDO_USER`; tacctl also refuses a `SUDO_USER` that is not the account of `SUDO_UID`. Anything that prints a shared secret or a password hash (`config cisco|juniper|wti`, `scope secret`, `backup diff`, `config dump`, `store show`) stays superuser-only, as does `scope show`, and so does everything that changes anything. tacctl also checks the tier itself on every run, taking it from the user's group in the store rather than from local group membership, and logs denials to syslog. Callers who are not in the local group `tac-users` (root, local admins) are not restricted. `tacctl upgrade` rewrites an installed `/etc/sudoers.d/tacctl-tiers` that differs from the release's rules (after `visudo -cf` accepts them), so a new release's verbs reach the tiers (the upgrade says `Updated: tiers sudoers`, or `Unchanged:`); it never creates the file, and when `visudo` refuses the new rules the old file stays and a warning says so. Without that refresh a tier user could not run the verbs a release adds until an administrator re-ran `tacctl config sudoers tiers install`.
 
 `tacctl passwd` (no arguments) lets any tier change their own password: it acts only on the user who invoked sudo and asks for the current password first.
 
@@ -583,7 +584,7 @@ From `tacctl shell`, `ssh core-sw1` is the same line. Every verb is in [Device C
 
 These patterns apply uniformly across every subcommand family:
 
-- **No arguments** — dispatcher commands (`user`, `group`, `config`, `scope`, `host`, `device`, `backend`, `store`, `log`, `backup`, `hash`, and nested dispatchers like `scope prefixes` / `scope secret` / `scope aaa-order` / `scope exec-timeout` / `scope tacacs-group` / `scope radius-group` / `scope auth-method` / `scope vendor-attrs` / `scope devices` / `scope mgmt-acl` / `user scope` / `group privilege` / `config linux`) print their own usage and exit without side effects. Scalar getter/setters (`config loglevel`, `config listen`, `config metrics`, `config password-age`, `config bcrypt-cost`, `config password-min-length`, `config secret-min-length`, `config branch`, `scope default`, `host default-method`, `device address|hostname|vendor|port|description|legacy-ssh|stale-days`) print the current value when called with no arguments.
+- **No arguments** — dispatcher commands (`user`, `group`, `config`, `scope`, `host`, `device`, `console`, `backend`, `store`, `log`, `backup`, `hash`, and nested dispatchers like `scope prefixes` / `scope secret` / `scope aaa-order` / `scope exec-timeout` / `scope tacacs-group` / `scope radius-group` / `scope auth-method` / `scope vendor-attrs` / `scope devices` / `scope mgmt-acl` / `user scope` / `group privilege` / `config linux`) print their own usage and exit without side effects. Scalar getter/setters (`config loglevel`, `config listen`, `config metrics`, `config password-age`, `config bcrypt-cost`, `config password-min-length`, `config secret-min-length`, `config branch`, `scope default`, `host default-method`, `device address|hostname|vendor|port|description|legacy-ssh|stale-days`, `console idle-timeout|agent-forwarding|ssh-escape`) print the current value when called with no arguments.
 - **Filters and opt-ins** — a setting that narrows something down is a *filter*: its verbs are `set` and `clear`, and empty (cleared) means everything (`scope protocols`, `config allow`, `config deny`). A setting that turns something on is an *opt-in*: its verbs are `enable` and `disable`, and nothing is on until it is enabled (`backend enable|disable`, `scope vendor-attrs`). An opt-in has no verb that could read as "empty means all".
 - **Membership lists** — a list that names exactly what is in is a *membership list*, and empty means nothing, not everything (`user scope`, the scopes a user can authenticate from: none means nowhere; `scope prefixes`, the clients a scope serves: emptying it removes the scope). Its verbs are `add` and `remove`: `remove --all` empties it, and `user scope` replaces its whole list with `replace`.
 - **Multi-item input** — every `add` / `remove` that takes a CIDR, a scope name, or a Cisco exec command accepts either a single value or a comma-separated list (`a,b,c`). Every input is validated first; a bad entry aborts the entire operation without writing anything.
@@ -607,6 +608,7 @@ tacctl scope <subcommand>       # Scope management (CIDR+secret bundles)
 tacctl host <subcommand>        # Linux hosts: enroll, sync, unenroll, default-method
 tacctl device <subcommand>      # Device registry: names, addresses and notices for the devices that authenticate here
 tacctl ssh <name|address> [-p port] [-- ssh args]  # ssh session to a registered device or enrolled host, as you, by password (never root)
+tacctl console <subcommand>     # Login console: tiers, per-user overrides, settings
 tacctl backend <subcommand>     # Backends: list, status, enable, disable
 tacctl store <subcommand>       # The canonical store: show, import, rollback
 tacctl config <subcommand>      # Configuration
@@ -940,6 +942,36 @@ devices:
   core-sw1: {address: 10.99.0.1, vendor: cisco, legacy_ssh: true, description: DC1 core}
   lab-rtr2: {address: 192.0.2.7, vendor: juniper, hostname: lab-rtr2.lab.example.net}
 ```
+
+### Console Commands — `tacctl console`
+
+The login console is the login shell of tacctl users on the tacctl server: tacctl commands and ssh to registered devices, nothing else. Its model is `/etc/tacctl/console.yaml` (0600, snapshotted, in `backup diff` and `restore`; absent means the defaults): the console is on for every tier, a user override wins over the tier's switch, and local accounts that are not tacctl users are never touched. These commands change that file only (after a snapshot); they never change an account or sshd. The accounts' login shells and sshd's drop-in follow it when this server's accounts are synced (`tacctl host sync <name of the host enrolled with --local>`), which every change to a tier switch, a user override or agent forwarding prints. The idle timeout, the ssh escape and the system shell are read by each console session when it starts.
+
+```yaml
+version: 1
+tiers: {readonly: enable, operator: enable, superuser: enable}
+users: {jdoe: disable}            # per-user override: enable or disable
+settings:
+  idle_timeout: 30                # minutes at the prompt; 0 = never
+  agent_forwarding: false
+  ssh_escape: false
+  system_shell: /bin/bash
+  system_shell_tiers: [superuser]
+  list_max: 40                    # completions the shell lists without asking
+```
+
+```
+console show                                      Tiers, settings, each user of this server's scope with its effective shell and why, and the server's pieces (operator tier and up)
+console tiers [<tier> enable|disable]             Show or switch the console for readonly, operator or superuser
+console user <name> [enable|disable|clear]        Show or set one user's override (clear: the tier decides)
+console idle-timeout [<min>]                      Minutes idle before the session ends, 0-1440 (default 30, 0 = never)
+console agent-forwarding [enable|disable]         Opt in to agent forwarding for console users (default disabled)
+console ssh-escape [enable|disable]               Opt in to ssh's ~. and ~C in the console's ssh (default disabled)
+console system-shell tiers [<csv>|none]           Tiers that may start their system shell from the console (default superuser)
+console system-shell path [<path>]                The system shell (default /bin/bash; absolute, executable, listed in /etc/shells)
+```
+
+`console show` lists the users of the scope of the host enrolled with `--local` with `console (user override)`, `console (tier readonly)` or `bash (tier readonly disabled)`, then the server's pieces: the `/usr/local/bin/tacctl-console` symlink, the `/etc/shells` line, sshd's drop-in and what `sshd -T -C user=<user>` reports for a console user. It warns in red when the drop-in is missing or sshd still allows TCP forwarding, because a console user could then forward ports and bypass the device registry. A server that is not enrolled with `--local` says so.
 
 ### Backend Commands — `tacctl backend`
 

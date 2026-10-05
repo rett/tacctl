@@ -423,6 +423,31 @@ current behaviour; this file is where history lives.
     after a snapshot, and `host target name= target= port= by=` is logged
     (auth.info). No script runs on the host. `host target <TAB>` completes
     the enrolled names.
+46. **New: `tacctl console show|tiers|user|idle-timeout|agent-forwarding|
+    ssh-escape|system-shell`** with `/etc/tacctl/console.yaml` (0600,
+    snapshotted, in `backup diff` and `restore`; absent means the defaults:
+    the console on for every tier, `system-shell` for superusers only,
+    `/bin/bash`, idle timeout 30 minutes, agent forwarding and ssh escape
+    off). `show` (operator tier and up) prints the switch per tier, the
+    settings, each user of this server's scope with its effective shell and
+    why (`console (user override)`, `bash (tier readonly disabled)`), and
+    the server's pieces: the `tacctl-console` symlink, the `/etc/shells`
+    line, sshd's drop-in and what `sshd -T -C user=<user>` reports, with a
+    red warning when the drop-in is missing or sshd still allows TCP
+    forwarding for a console user. Changes to the tier switches, a user
+    override and agent forwarding print `Apply to the accounts: tacctl host
+    sync <name>`; the commands change `console.yaml` only. The top-level
+    usage lists `console`. New paths:
+    `TACCTL_SSHD_DROPIN` (default
+    `/etc/ssh/sshd_config.d/tacctl-console.conf`) and `TACCTL_SHELLS_FILE`
+    (default `/etc/shells`).
+47. **Tiers sudoers:** rows `_console-policy` (every tier: the console
+    reads its settings with it), `console show` and `console check`
+    (operator); the `Defaults!` line is now `env_keep += "SSH_AUTH_SOCK
+    TACCTL_CONSOLE"` in both generated sudoers files (the console's
+    session marker). Picked up by `tacctl upgrade` (item 4);
+    administrators using the opt-in drop-in re-run `tacctl config sudoers
+    install`.
 
 ## 0.2.0 (2026-10-04)
 

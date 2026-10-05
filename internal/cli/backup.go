@@ -299,6 +299,10 @@ func (inv *invocation) diffSnapshot(id string) {
 	if snap := filepath.Join(dir, "devices.yaml"); cfgIsFile(snap) || cfgIsFile(p.DevicesFile) {
 		inv.diffFile("devices.yaml", snap, p.DevicesFile, id)
 	}
+	// The same for the login console's settings.
+	if snap := filepath.Join(dir, "console.yaml"); cfgIsFile(snap) || cfgIsFile(p.ConsoleFile) {
+		inv.diffFile("console.yaml", snap, p.ConsoleFile, id)
+	}
 }
 
 // diffLegacy is _backup_diff_legacy: the live tacquito.yaml against
@@ -493,6 +497,14 @@ func (inv *invocation) restoreSnapshot(id string) error {
 		// The generated known_hosts follows the restored pins.
 		if err := devreg.SyncKnownHosts(a.Paths.DevicesFile, a.Paths.KnownHosts); err != nil {
 			a.Out.WarnE("known_hosts was not regenerated: " + strings.Join(msgs(err), " "))
+		}
+	}
+	// So do the console's settings: a snapshot without console.yaml leaves
+	// the live file alone.
+	if snapCon := filepath.Join(dir, "console.yaml"); cfgIsFile(snapCon) {
+		if err := backupPut(snapCon, a.Paths.ConsoleFile, 0o600); err != nil {
+			inv.stderrLine(err.Error())
+			return err
 		}
 	}
 	inv.reconcileBackends(before)

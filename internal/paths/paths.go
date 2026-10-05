@@ -17,6 +17,8 @@ const (
 	// Command is the installed tacctl command: the binary from 0.2.0 on,
 	// a symlink to the bash entrypoint before.
 	Command = "/usr/local/bin/tacctl"
+	// ConsoleCommand is the login console: a symlink to Command.
+	ConsoleCommand = "/usr/local/bin/tacctl-console"
 	// Completion is the installed bash completion.
 	Completion = "/etc/bash_completion.d/tacctl"
 	// ManPage is the installed man page.
@@ -55,8 +57,9 @@ type Paths struct {
 	// known_hosts, which are under VarLib: users' own ssh reads known_hosts.
 	DevicesFile string // StateDir/devices.yaml: the device registry
 	KnownHosts  string // VarLib/ssh/known_hosts: the generated host-key file (dir 0755, file 0644)
-	ConsoleFile string // StateDir/console.yaml: the console's settings (0.2.2)
-	ConsoleDir  string // StateDir/console: the console's ssh_config and agent files (0.2.2)
+	ConsoleFile string // StateDir/console.yaml: the login console's settings
+	SSHDDropIn  string // TACCTL_SSHD_DROPIN: sshd's drop-in for the console group
+	ShellsFile  string // TACCTL_SHELLS_FILE: /etc/shells
 	VarLib      string // TACCTL_VAR_LIB: tacctl's variable data (/var/lib/tacctl, 0711)
 	SeenCache   string // VarLib/devices-seen.json: what the logs showed of each device
 
@@ -82,12 +85,13 @@ type Paths struct {
 	// tacctl's own fixed host locations, which 0.1.16 hard-codes (no
 	// variable overrides them; Reroot moves them for tests).
 	//
-	Deploy     string // DEPLOY_DIR, the clone install and upgrade manage (/opt/tacctl)
-	Command    string // the installed command (/usr/local/bin/tacctl)
-	GoBin      string // GO_BIN (/usr/local/go/bin/go)
-	Completion string // /etc/bash_completion.d/tacctl
-	ManPage    string // /usr/share/man/man1/tacctl.1.gz
-	ArchiveDir string // where uninstall archives what it keeps (/root)
+	Deploy         string // DEPLOY_DIR, the clone install and upgrade manage (/opt/tacctl)
+	Command        string // the installed command (/usr/local/bin/tacctl)
+	ConsoleCommand string // the login console, a symlink to Command (/usr/local/bin/tacctl-console)
+	GoBin          string // GO_BIN (/usr/local/go/bin/go)
+	Completion     string // /etc/bash_completion.d/tacctl
+	ManPage        string // /usr/share/man/man1/tacctl.1.gz
+	ArchiveDir     string // where uninstall archives what it keeps (/root)
 
 	// RADIUS overrides as given; the family decides the defaults (Radius).
 	RadiusFamily string // TACCTL_RADIUS_FAMILY
@@ -123,7 +127,8 @@ func Resolve(env Env, exe string, exists func(string) bool) Paths {
 	p.Templates = p.StateDir + "/templates"
 	p.DevicesFile = p.StateDir + "/devices.yaml"
 	p.ConsoleFile = p.StateDir + "/console.yaml"
-	p.ConsoleDir = p.StateDir + "/console"
+	p.SSHDDropIn = env.Or("TACCTL_SSHD_DROPIN", "/etc/ssh/sshd_config.d/tacctl-console.conf")
+	p.ShellsFile = env.Or("TACCTL_SHELLS_FILE", "/etc/shells")
 	p.VarLib = env.Or("TACCTL_VAR_LIB", "/var/lib/tacctl")
 	p.SeenCache = p.VarLib + "/devices-seen.json"
 	p.KnownHosts = p.VarLib + "/ssh/known_hosts"
@@ -145,6 +150,7 @@ func Resolve(env Env, exe string, exists func(string) bool) Paths {
 	p.PatchDir = env.Or("TACCTL_PATCH_DIR", p.Tree+"/patches")
 
 	p.Deploy, p.Command, p.GoBin, p.Completion, p.ManPage, p.ArchiveDir = DeployDir, Command, GoBin, Completion, ManPage, ArchiveDir
+	p.ConsoleCommand = ConsoleCommand
 
 	p.RadiusFamily = env.Get("TACCTL_RADIUS_FAMILY")
 	p.radiusDir = env.Get("TACCTL_RADIUS_DIR")
@@ -175,8 +181,8 @@ func Tree(env Env, exe string, exists func(string) bool) string {
 	return DeployDir
 }
 
-// Reroot moves tacctl's fixed host locations (Deploy, Command, GoBin,
-// Completion, ManPage, ArchiveDir) under root,
+// Reroot moves tacctl's fixed host locations (Deploy, Command, ConsoleCommand,
+// GoBin, Completion, ManPage, ArchiveDir) under root,
 // keeping their paths below it: /usr/local/bin/tacctl becomes
 // <root>/usr/local/bin/tacctl. It is for tests (the -tags testknobs knob
 // TACCTL_TEST_ROOT, and Go tests), so that install, upgrade and uninstall
@@ -187,7 +193,7 @@ func (p Paths) Reroot(root string) Paths {
 	}
 	under := func(path string) string { return filepath.Join(root, path) }
 	p.Deploy, p.Command, p.GoBin, p.Completion = under(p.Deploy), under(p.Command), under(p.GoBin), under(p.Completion)
-	p.ManPage, p.ArchiveDir = under(p.ManPage), under(p.ArchiveDir)
+	p.ManPage, p.ArchiveDir, p.ConsoleCommand = under(p.ManPage), under(p.ArchiveDir), under(p.ConsoleCommand)
 	return p
 }
 

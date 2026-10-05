@@ -218,7 +218,7 @@ print("" if v is None else v)' "${TACCTL_STATE_DIR}/store.yaml" "$1" "$2"
     assert_success
     # SETENV would let a caller set SUDO_USER and pose as someone else.
     refute_output --partial "SETENV"
-    assert_output --partial 'Defaults!/usr/local/bin/tacctl env_keep += "SSH_AUTH_SOCK"'
+    assert_output --partial 'Defaults!/usr/local/bin/tacctl env_keep += "SSH_AUTH_SOCK TACCTL_CONSOLE"'
     assert_output --partial "%tac-operator ALL=(root) NOPASSWD: TACCTL_RO, TACCTL_OP"
     local text ro op r
     text=$(sed -n 's/^    //p' <<<"$output" | sed -e ':a' -e '/\\$/N; s/\\\n//; ta')
@@ -228,10 +228,13 @@ print("" if v is None else v)' "${TACCTL_STATE_DIR}/store.yaml" "$1" "$2"
         grep -q -- "$r" <<<"$ro" || { echo "readonly lacks $r"; return 1; }
         if grep -q -- "$r" <<<"$op"; then echo "operator alias has $r"; return 1; fi
     done
-    for r in 'tacctl device check \*' 'tacctl device scan,' 'tacctl device discover \*' 'tacctl device export \*'; do
+    for r in 'tacctl device check \*' 'tacctl device scan,' 'tacctl device discover \*' 'tacctl device export \*' 'tacctl console show,' 'tacctl console check'; do
         grep -q -- "$r" <<<"$op" || { echo "operator lacks $r"; return 1; }
         if grep -q -- "$r" <<<"$ro"; then echo "readonly alias has $r"; return 1; fi
     done
+    # The login console reads its settings with _console-policy, at every tier.
+    grep -q -- 'tacctl _console-policy' <<<"$ro" || { echo "readonly lacks _console-policy"; return 1; }
+    if grep -q -- '_console-policy' <<<"$op"; then echo "operator alias has _console-policy"; return 1; fi
 }
 
 @test "config sudoers tiers: generated rules pass a real visudo" {

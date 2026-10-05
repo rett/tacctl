@@ -1017,13 +1017,14 @@ may run
 .BR "group list" ", " "scope list" ", " "backend list" ", " "backend status" ", "
 .BR "device list" ", " "device show" ", " "device notices" ", " "device ssh\-config" ", "
 .BR "ssh " \fIname\fR " and " "device ssh " \fIname\fR
-(the devices of their own scopes only).
+(the devices of their own scopes only), and the console's own
+.BR _console\-policy .
 Members of
 .B tac-operator
 may additionally run
 .BR "log tail" ", " "log search" ", " "log failures" ", " "log accounting" ", "
 .BR "config validate" ", " "backup list" ", " "device check" ", " "device scan" ", "
-.BR "device discover" " and " "device export" .
+.BR "device discover" ", " "device export" " and " "console show" .
 Members of
 .B tac-superuser
 get full
@@ -2556,6 +2557,95 @@ rules grant
 .B "tacctl ssh *"
 and
 .BR "tacctl device ssh *" ).
+.SS Login console \fB(tacctl console)\fR
+The login console
+.RB ( tacctl\-console )
+is the login shell of tacctl users on the tacctl server: tacctl commands and
+ssh to registered devices, nothing else. It is on for every tier by default
+(the defaults apply while
+.I /etc/tacctl/console.yaml
+is absent); local accounts that are not tacctl users are never touched. These
+commands change
+.I console.yaml
+only, after a snapshot (mode 0600; backup diff and restore include it), and
+never an account or sshd: the accounts' login shells and sshd's drop-in follow
+it when the provisioning of this server applies it
+.RB ( "host sync" " of the host enrolled with " \-\-local ).
+Every change to the tier switches, a user override or agent forwarding prints
+.BI "Apply to the accounts: tacctl host sync " name\fR.
+The idle timeout, the ssh escape and the system shell are read by each console
+session when it starts.
+.TP
+.B console
+With no subcommand (or with
+.BR help ),
+prints a usage summary and exits 0.
+.TP
+.B console show
+The tiers' switches, the settings, and for each user of the scope of the host
+enrolled with
+.B \-\-local
+the tier, the effective shell
+.RB ( console
+or
+.BR bash )
+and why
+.RI ( "user override" ", " "tier readonly" ", " "tier readonly disabled" ).
+Then the state of the server's pieces: the
+.I /usr/local/bin/tacctl\-console
+symlink, the
+.I /etc/shells
+line, sshd's drop-in, and what
+.B "sshd \-T \-C user="\fIuser\fR
+reports for a console user
+.RB ( allowtcpforwarding ,
+.BR allowagentforwarding ).
+A red warning says so when the drop-in is missing or sshd still allows
+forwarding, because a console user could then forward ports and bypass the
+device registry. A server not enrolled with
+.B \-\-local
+says so and lists no users. Operator tier and up.
+.TP
+.BI "console tiers " "[ " tier " " "{ enable | disable }" " ]"
+Show the switches, or one, or set the console for a tier
+.RB ( readonly ,
+.BR operator ,
+.BR superuser ).
+.TP
+.BI "console user " "name " "[ { enable | disable | clear } ]"
+Show or set one user's override, which wins over the tier's switch;
+.B clear
+returns the user to the tier rule. The user must exist in the store to be
+given an override.
+.TP
+.BI "console idle\-timeout " "[ " min " ]"
+Minutes idle at the prompt before the session ends, 0 to 1440 (0: never;
+default 30).
+.TP
+.BI "console agent\-forwarding " "[ { enable | disable } ]"
+Opt in to ssh agent forwarding for console users (default disabled).
+.TP
+.BI "console ssh\-escape " "[ { enable | disable } ]"
+Opt in to ssh's escape character (\fB~.\fR, \fB~C\fR) in the console's ssh
+sessions (default disabled).
+.TP
+.BI "console system\-shell tiers " "[ " csv "|none ]"
+The tiers that may start their system shell from the console (default
+.BR superuser ).
+.TP
+.BI "console system\-shell path " "[ " path " ]"
+The system shell, default
+.IR /bin/bash .
+It must be an absolute path to an executable file listed in
+.IR /etc/shells .
+.PP
+Only the operator tier and up may run
+.BR "console show" ;
+everything else needs an administrator.
+.PP
+The console asks tacctl for its settings with the hidden
+.BR _console\-policy ,
+which the tiers sudoers rules grant to every tier.
 .SH RADIUS DEVICE CONFIGURATIONS
 .BR "config cisco" ,
 .B "config juniper"
@@ -3102,6 +3192,21 @@ Mode 0600, root only; absent means no devices. Edit it with
 which locks it, validates the result and replaces it atomically. Snapshots
 include it. The pinned keys of enrolled hosts are kept under
 .BR hosts: .
+.TP
+.I /etc/tacctl/console.yaml
+The login console's switches per tier, per-user overrides and settings
+.RB ( idle_timeout ,
+.BR agent_forwarding ,
+.BR ssh_escape ,
+.BR system_shell ,
+.BR system_shell_tiers ,
+.BR list_max ,
+the number of completions the shell lists without asking).
+Mode 0600, root only; absent means the defaults (the console on for every
+tier). Edit it with
+.BR "tacctl console" ,
+which locks it, validates the result and replaces it atomically. Snapshots
+include it.
 .TP
 .I /var/lib/tacctl/ssh/known_hosts
 Generated from

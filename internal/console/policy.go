@@ -1,0 +1,141 @@
+package console
+
+import (
+	"bufio"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/rett/tacctl/internal/paths"
+	"github.com/rett/tacctl/internal/tier"
+)
+
+// SystemLoginShell is what a user without the console gets as a login shell.
+const SystemLoginShell = "/bin/bash"
+
+// Policy is console.yaml read as decisions. The console's own process asks
+// it through 'tacctl _console-policy' (it cannot read root's file); the
+// provisioning and 'console show' ask it directly.
+type Policy struct {
+	File *File
+	// Command is the console's path (paths.ConsoleCommand), ShellsFile the
+	// /etc/shells the system shell must be listed in.
+	Command, ShellsFile string
+}
+
+// NewPolicy is the policy of f on the host whose locations are p.
+func NewPolicy(f *File, p paths.Paths) *Policy {
+	return &Policy{File: f, Command: p.ConsoleCommand, ShellsFile: p.ShellsFile}
+}
+
+// Decision is whether a user gets the console, and why.
+type Decision struct {
+	Console bool
+	// Why is the reason in words: "user override", "tier readonly",
+	// "tier readonly disabled", "no tier".
+	Why string
+}
+
+// Decide is the console decision for user at tier t: the user's override
+// wins, then the tier's switch. A caller with no tier (none, unrestricted)
+// gets no console: it has no account the console provisions.
+func (p *Policy) Decide(user string, t tier.Tier) Decision {
+	switch t {
+	case tier.Readonly, tier.Operator, tier.Superuser:
+	default:
+		return Decision{false, "no tier"}
+	}
+	if on, ok := p.File.Users[user]; ok {
+		return Decision{on, "user override"}
+	}
+	if p.File.TierOn[t] {
+		return Decision{true, "tier " + string(t)}
+	}
+	return Decision{false, "tier " + string(t) + " disabled"}
+}
+
+// Shell is the login shell of user at tier t: the console's command, or
+// /bin/bash.
+func (p *Policy) Shell(user string, t tier.Tier) string {
+	if p.Decide(user, t).Console {
+		return p.Command
+	}
+	return SystemLoginShell
+}
+
+// SystemShell reports whether the console's system-shell word is open to
+// tier t. A caller with no tier restriction is open to it; none is not.
+func (p *Policy) SystemShell(t tier.Tier) bool {
+	switch t {
+	case tier.Unrestricted:
+		return true
+	case tier.None:
+		return false
+	}
+	for _, s := range p.File.SystemShellTiers {
+		if s == t {
+			return true
+		}
+	}
+	return false
+}
+
+// Idle is the idle timeout (0: none).
+func (p *Policy) Idle() time.Duration { return time.Duration(p.File.Idle) * time.Minute }
+
+// ListMax is the number of completions the shell lists without asking.
+func (p *Policy) ListMax() int { return p.File.ListMax }
+
+// SSHEscape reports whether the console's ssh keeps its escape character.
+func (p *Policy) SSHEscape() bool { return p.File.SSHEscape }
+
+// AgentForwarding reports whether the sshd drop-in lets the console's
+// users forward an agent.
+func (p *Policy) AgentForwarding() bool { return p.File.AgentForwarding }
+
+// SystemShellPath is the system shell, checked: see CheckShell.
+func (p *Policy) SystemShellPath() (string, error) {
+	return p.File.SystemShell, CheckShell(p.File.SystemShell, p.ShellsFile)
+}
+
+// CheckShell checks that path may be the system shell: absolute, an
+// existing executable file, listed in shellsFile (/etc/shells).
+func CheckShell(path, shellsFile string) error {
+	if err := ValidShellPath(path); err != nil {
+		return err
+	}
+	st, err := os.Stat(path)
+	if err != nil || !st.Mode().IsRegular() {
+		return fail("'" + path + "' is not an existing file.")
+	}
+	if st.Mode().Perm()&0o111 == 0 {
+		return fail("'" + path + "' is not executable.")
+	}
+	listed, err := ShellListed(shellsFile, path)
+	if err != nil {
+		return fail("Cannot read " + shellsFile + ": " + errText(err))
+	}
+	if !listed {
+		return fail("'" + path + "' is not listed in " + shellsFile + ".")
+	}
+	return nil
+}
+
+// ShellListed reports whether shellsFile has a line that is exactly path
+// (comments and blank lines are skipped, as getusershell(3) does).
+func ShellListed(shellsFile, path string) (bool, error) {
+	f, err := os.Open(filepath.Clean(shellsFile))
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = f.Close() }()
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		l := strings.TrimSpace(sc.Text())
+		if l != "" && !strings.HasPrefix(l, "#") && l == path {
+			return true, nil
+		}
+	}
+	return false, sc.Err()
+}

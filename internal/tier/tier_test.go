@@ -243,7 +243,7 @@ func TestSudoersNoSetenv(t *testing.T) {
 	if strings.Contains(text, "SETENV") || !strings.Contains(text, "\n"+EnvKeep) {
 		t.Errorf("SETENV or no env_keep line:\n%s", text)
 	}
-	if EnvKeep != "Defaults!/usr/local/bin/tacctl env_keep += \"SSH_AUTH_SOCK\"\n" {
+	if EnvKeep != "Defaults!/usr/local/bin/tacctl env_keep += \"SSH_AUTH_SOCK TACCTL_CONSOLE\"\n" {
 		t.Errorf("EnvKeep %q", EnvKeep)
 	}
 }
@@ -315,5 +315,47 @@ func TestGateRefusesSpoofedSudoUser(t *testing.T) {
 	}
 	if err := g.gate.Enforce(ctx, "user", "remove"); err != ErrDenied {
 		t.Errorf("user remove: %v", err)
+	}
+}
+
+// The login console's rows: every tier reads its policy, the operator tier
+// shows the console and checks it, and nothing else of 'console' is open
+// below the superuser.
+func TestConsoleRows(t *testing.T) {
+	for _, c := range []struct {
+		t        Tier
+		cmd, sub string
+		want     bool
+	}{
+		{Readonly, "_console-policy", "", true},
+		{Operator, "_console-policy", "", true},
+		{None, "_console-policy", "", false},
+		{Readonly, "console", "show", false},
+		{Operator, "console", "show", true},
+		{Operator, "console", "check", true},
+		{Operator, "console", "tiers", false},
+		{Operator, "console", "user", false},
+		{Operator, "console", "system-shell", false},
+		{Operator, "console", "", false},
+		{Readonly, "console", "check", false},
+		{Superuser, "console", "tiers", true},
+		{Unrestricted, "console", "tiers", true},
+	} {
+		if got := Permits(c.t, c.cmd, c.sub); got != c.want {
+			t.Errorf("Permits(%s, %s %s) = %v", c.t, c.cmd, c.sub, got)
+		}
+	}
+	text := Sudoers()
+	for _, want := range []string{
+		"Cmnd_Alias TACCTL_RO = ", "/usr/local/bin/tacctl _console-policy",
+		"/usr/local/bin/tacctl console show, /usr/local/bin/tacctl console check",
+		`env_keep += "SSH_AUTH_SOCK TACCTL_CONSOLE"`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("sudoers lacks %q", want)
+		}
+	}
+	if ro, _, _ := strings.Cut(text, "Cmnd_Alias TACCTL_OP"); strings.Contains(ro, "console show") {
+		t.Error("console show is in the read-only alias")
 	}
 }
