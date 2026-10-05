@@ -90,8 +90,11 @@ func Uninstall(ctx context.Context, h *Host, args []string) error {
 	}
 	h.echo("")
 
+	// No account may keep the console as its shell once it is gone.
+	h.removeConsole(ctx)
+
 	out.Info("Removing binaries and symlinks...")
-	if err := h.rmF(p.Command); err != nil {
+	if err := h.rmF(p.Command, p.ConsoleCommand); err != nil {
 		return err
 	}
 	if err := h.phase(ids, func(b backend.Backend) error { return b.Uninstall(ctx, backend.PhaseProgram, false) }); err != nil {

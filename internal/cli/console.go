@@ -34,6 +34,9 @@ var consoleSpecs = map[string]Spec{
 	"agent-forwarding": {MaxArgs: 1, Args: []string{"enable|disable"}},
 	"ssh-escape":       {MaxArgs: 1, Args: []string{"enable|disable"}},
 	"system-shell":     {MinArgs: 1, MaxArgs: 2, Args: []string{"tiers|path", After("path", KindFile)}},
+	"install":          {MaxArgs: 0},
+	"remove":           {MaxArgs: 0},
+	"check":            {MaxArgs: 0},
 }
 
 // consoleVerbs are the verbs ({Use, Short}), in usage order.
@@ -46,6 +49,9 @@ var consoleVerbs = [][2]string{
 	{"ssh-escape [enable|disable]", "Opt in to ssh's escape character (~. and ~C) inside the console's ssh"},
 	{"system-shell tiers [<csv>|none]", "Show or set the tiers that may start their system shell from the console"},
 	{"system-shell path [<path>]", "Show or set the system shell (default /bin/bash; must be listed in /etc/shells)"},
+	{"install", "Put the /etc/shells line and sshd's drop-in for console users in place (host sync of this server does too)"},
+	{"remove", "Take them away again (refused while an account has the console as its shell)"},
+	{"check", "Check that sshd applies the console's settings to its users (exit 1 when not)"},
 }
 
 func consoleCmd(inv *invocation) *cobra.Command {
@@ -77,10 +83,12 @@ tacctl commands and ssh to registered devices, nothing else. It is on for every
 tier by default; 'tiers' switches a tier, 'user' overrides one user. Local
 accounts that are not tacctl users are never touched.
 
-These commands change /etc/tacctl/console.yaml only. The accounts' login shells
-and sshd's drop-in follow it when this server's accounts are synced
+The settings commands change /etc/tacctl/console.yaml only. The accounts' login
+shells and sshd's drop-in follow it when this server's accounts are synced
 ('tacctl host sync <name of this server>'); idle-timeout, ssh-escape and
-system-shell are read by each console session when it starts.
+system-shell are read by each console session when it starts. sshd's drop-in
+makes the console the only program a console user's login runs (no scp, sftp
+or remote programs), closes every forwarding and turns key logins off.
 
 'system-shell' starts the user's system shell from the console, as themselves,
 logged. Superusers only by default; 'system-shell tiers' opens or closes it
@@ -108,6 +116,7 @@ func (inv *invocation) console(args []string) error {
 		"show": inv.consoleShow, "tiers": inv.consoleTiers, "user": inv.consoleUser,
 		"idle-timeout": inv.consoleIdle, "system-shell": inv.consoleSystemShell,
 		"agent-forwarding": inv.consoleSwitch("agent-forwarding"), "ssh-escape": inv.consoleSwitch("ssh-escape"),
+		"install": inv.consoleInstall, "remove": inv.consoleRemove, "check": inv.consoleCheck,
 	}
 	switch sub := arg(args, 0); sub {
 	case "", "-h", "--help", "help":

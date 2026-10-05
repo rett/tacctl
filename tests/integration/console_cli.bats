@@ -24,7 +24,7 @@ setup() {
     export TACCTL_TEST_ROOT="$ROOT"
     mkdir -p "$ROOT/usr/local/bin"
     # A closed sshd by default; tests that want otherwise stub it again.
-    stub_cmd sshd 'printf "port 22\nallowtcpforwarding no\nallowagentforwarding no\n"'
+    stub_cmd sshd 'printf "port 22\nallowtcpforwarding no\nallowagentforwarding no\nforcecommand /usr/local/bin/tacctl-console\npubkeyauthentication no\n"'
 }
 
 # plain: the last output with colours stripped.
@@ -187,21 +187,21 @@ LIST
 
 @test "console show: sshd still forwarding warns in red, a missing drop-in too; a closed server is quiet" {
     enrol_local
-    stub_cmd sshd 'printf "port 22\nallowtcpforwarding yes\nallowagentforwarding no\n"'
+    stub_cmd sshd 'printf "port 22\nallowtcpforwarding yes\nallowagentforwarding no\nforcecommand /usr/local/bin/tacctl-console\npubkeyauthentication no\n"'
     run "$TACCTL_BIN_SCRIPT" console show
     assert_success
     stub_called '^sshd -T -C user=alice,host=localhost,addr=127.0.0.1$'
     [[ "$output" == *$'\033[0;31mWARNING'* ]]
     plain
     assert_output --partial "sshd for alice: allowtcpforwarding yes, allowagentforwarding no"
-    assert_output --partial "WARNING: a console user can forward ports through this server"
+    assert_output --partial "WARNING: a console user can do more over ssh than the console allows"
     assert_output --partial "is missing"
     assert_output --partial "tacctl host sync authsrv"
 
     # With the drop-in present and sshd closed: no warning.
     mkdir -p "$(dirname "$TACCTL_SSHD_DROPIN")"
     printf 'Match Group tac-console\n    AllowTcpForwarding no\n' > "$TACCTL_SSHD_DROPIN"
-    stub_cmd sshd 'printf "port 22\nallowtcpforwarding no\nallowagentforwarding no\n"'
+    stub_cmd sshd 'printf "port 22\nallowtcpforwarding no\nallowagentforwarding no\nforcecommand /usr/local/bin/tacctl-console\npubkeyauthentication no\n"'
     run "$TACCTL_BIN_SCRIPT" console show
     assert_success
     plain
@@ -209,7 +209,7 @@ LIST
     assert_output --partial "tacctl-console.conf: present"
 
     # Drop-in present but sshd (an include missing) still forwards: warned.
-    stub_cmd sshd 'printf "allowtcpforwarding yes\nallowagentforwarding no\n"'
+    stub_cmd sshd 'printf "allowtcpforwarding yes\nallowagentforwarding no\nforcecommand /usr/local/bin/tacctl-console\npubkeyauthentication no\n"'
     run "$TACCTL_BIN_SCRIPT" console show
     plain
     assert_output --partial "WARNING"

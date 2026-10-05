@@ -7,8 +7,9 @@
 # pam_radius_auth server file with the shared secret, the SELinux modules
 # and the sudoers drop-in. Local accounts, home directories and the tac-*
 # groups are left in place, and so are packages the install added
-# (pam_radius_auth, EPEL, build tools). Contains no secrets. Run as root on
-# the target host.
+# (pam_radius_auth, EPEL, build tools); tacctl's accounts whose login shell
+# is the tacctl console get /bin/bash back. Contains no secrets. Run as root
+# on the target host.
 #
 # TACCTL_FORCE=1 skips the local-administrator (lockout) check.
 set -euo pipefail
@@ -58,6 +59,20 @@ if [[ "${TACCTL_FORCE:-0}" != "1" && -z "$admins" ]]; then
     die "No administrator has a usable local password. Removing ${PROTO} would lock
         everyone out of sudo. Set a local password first, or re-run with TACCTL_FORCE=1."
 fi
+
+# Accounts tacctl created whose login shell is the tacctl console (the
+# tacctl server's own) get /bin/bash back before anything else: the console
+# needs this server's tacctl, which may be the next thing to go. Any other
+# account with that shell is named and left as it is.
+while IFS=: read -r name _ _ _ _ _ shell; do
+    [[ "${shell##*/}" == "tacctl-console" ]] || continue
+    if grep -qxF "$name" "$STATE_DIR/created" 2>/dev/null; then
+        usermod -s /bin/bash "$name"
+        info "'${name}': login shell is /bin/bash again (it was the tacctl console)."
+    else
+        warn "'${name}' has the tacctl console (${shell}) as its login shell, but tacctl did not create it; left as it is."
+    fi
+done < <(getent passwd)
 
 # Undo the edits rather than copying the backups back, so package updates
 # made to these files since the install are kept.

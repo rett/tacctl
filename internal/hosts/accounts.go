@@ -175,15 +175,21 @@ func (e *Env) HomesToDelete(ctx context.Context, name, target, port, identity st
 type AccountSummary struct {
 	Managed    int
 	Renumbered int
-	Refused    []string
+	// Console is how many of them have the login console as their shell
+	// (the tacctl server's own accounts only).
+	Console int
+	Refused []string
 }
 
-// Counts is the summary in words: "<n> users", plus "; <k> renumbered"
-// and "; <k> refused: <names>" when there are any.
+// Counts is the summary in words: "<n> users", plus "; <k> renumbered",
+// "; <k> with the console" and "; <k> refused: <names>" when there are any.
 func (s AccountSummary) Counts() string {
 	out := UsersText(s.Managed)
 	if s.Renumbered > 0 {
 		out += "; " + strconv.Itoa(s.Renumbered) + " renumbered"
+	}
+	if s.Console > 0 {
+		out += "; " + strconv.Itoa(s.Console) + " with the console"
 	}
 	if len(s.Refused) > 0 {
 		out += "; " + strconv.Itoa(len(s.Refused)) + " refused: " + strings.Join(s.Refused, ", ")
@@ -199,7 +205,7 @@ func UsersText(n int) string {
 	return strconv.Itoa(n) + " users"
 }
 
-var reAccountSummary = regexp.MustCompile(`^\[INFO\] Accounts: ([0-9]+) managed by tacctl here(?:; ([0-9]+) renumbered)?(?:; refused: (.*))?\.\r?$`)
+var reAccountSummary = regexp.MustCompile(`^\[INFO\] Accounts: ([0-9]+) managed by tacctl here(?:; ([0-9]+) renumbered)?(?:; console: ([0-9]+))?(?:; refused: (.*))?\.\r?$`)
 
 // ParseAccountSummary reads the summary line; ok is false for any other.
 func ParseAccountSummary(line string) (AccountSummary, bool) {
@@ -216,7 +222,10 @@ func ParseAccountSummary(line string) (AccountSummary, bool) {
 		s.Renumbered, _ = strconv.Atoi(m[2])
 	}
 	if m[3] != "" {
-		s.Refused = strings.Split(m[3], ", ")
+		s.Console, _ = strconv.Atoi(m[3])
+	}
+	if m[4] != "" {
+		s.Refused = strings.Split(m[4], ", ")
 	}
 	return s, true
 }

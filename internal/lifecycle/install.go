@@ -198,12 +198,14 @@ func (h *Host) installDeploy(ctx context.Context, branch string) error {
 // or this binary was not built from that commit, the clone's shim installs
 // it (Build: the verified release binary, or one built from the clone).
 // Run from the bootstrap shim, which did that a moment ago, it is already. 0.1.16 symlinked its entrypoint
-// instead.
+// instead. The login console's symlink (paths.ConsoleCommand) is made
+// either way.
 func (h *Host) installCommand(ctx context.Context) error {
 	p := h.Paths
 	head, _ := h.gitOut(ctx, p.Deploy, "rev-parse", "HEAD")
 	if st, err := os.Lstat(p.Command); err == nil && st.Mode().IsRegular() && head != "" && head == h.Commit {
-		return nil
+		_, err := h.ensureConsoleLink()
+		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(p.Command), 0o755); err != nil {
 		return h.failed("mkdir: cannot create directory '" + filepath.Dir(p.Command) + "': " + errno(err))
@@ -211,7 +213,8 @@ func (h *Host) installCommand(ctx context.Context) error {
 	if err := h.Build(ctx, p.Deploy, p.Command); err != nil {
 		return h.buildFailed(err, "")
 	}
-	return nil
+	_, err := h.ensureConsoleLink()
+	return err
 }
 
 // installSummary is the closing summary of install.

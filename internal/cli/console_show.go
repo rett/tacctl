@@ -133,11 +133,12 @@ func (inv *invocation) consoleServerSection(pol *console.Policy, consoleUsers []
 	if err != nil {
 		inv.echo("  sshd for " + u + ": could not be checked: " + strings.Join(msgs(err), " "))
 	} else {
-		inv.echo("  sshd for " + u + ": allowtcpforwarding " + st.TCPForwarding + ", allowagentforwarding " + st.AgentForwarding)
-		problems = append(problems, st.Problems(pol.AgentForwarding())...)
+		inv.echo("  sshd for " + u + ": allowtcpforwarding " + st.TCPForwarding + ", allowagentforwarding " + st.AgentForwarding +
+			", forcecommand " + dash(st.ForceCommand) + ", pubkeyauthentication " + dash(st.PubkeyAuth))
+		problems = append(problems, st.Problems(pol.AgentForwarding(), inv.app.Paths.ConsoleCommand)...)
 	}
 	if len(problems) > 0 {
-		inv.echoE(ui.Red + "WARNING: a console user can forward ports through this server and reach what the registry does not allow: " +
+		inv.echoE(ui.Red + "WARNING: a console user can do more over ssh than the console allows (forward ports past the registry, run programs or sftp, log in by key): " +
 			strings.Join(problems, "; ") + "." + ui.NC)
 		if e, ok, _ := inv.localHost(); ok {
 			inv.echoE(ui.Red + "Apply the console's sshd settings: tacctl host sync " + e.Name + ui.NC)

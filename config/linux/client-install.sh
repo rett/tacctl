@@ -1,12 +1,13 @@
 # --- tacctl Linux client: install / account sync -------------------------------
 # Body of the script emitted by 'tacctl config linux script'. tacctl prepends
 # a header that sets TAC_METHOD, TAC_SERVER, TAC_PORT, TAC_SECRET, TAC_SCOPE,
-# TAC_USERS (name:tier:uid lines), TAC_INACTIVE (users of the scope with no
+# TAC_USERS (name:tier:uid lines; name:tier:uid:shell for the tacctl server
+# itself, whose tacctl users get the login console), TAC_INACTIVE (users of the scope with no
 # login now: disabled, the accounting sink), TAC_REMOVE_HOMES (the removed
 # users whose home directories go too, or "*" for all), TAC_UID_FIRST and
 # TAC_UID_LAST (the server's UID range), TAC_UID_PREVIOUS (ranges it used
 # before, "<min>-<max> ..."), and TAC_PROTOCOL (the contract between header
-# and body, 3). TAC_METHOD picks the PAM
+# and body, 4). TAC_METHOD picks the PAM
 # module the host authenticates through; accounts, tiers, sudo and the
 # fallback to local passwords are the same for both:
 #
@@ -59,8 +60,8 @@ done
 
 # The header and this body are one contract. A header of another protocol
 # was not written together with this body: stop before anything changes.
-if [[ "${TAC_PROTOCOL:-1}" != "3" ]]; then
-    die "This script's header speaks protocol ${TAC_PROTOCOL:-1} and its body protocol 3: they were not written by
+if [[ "${TAC_PROTOCOL:-1}" != "4" ]]; then
+    die "This script's header speaks protocol ${TAC_PROTOCOL:-1} and its body protocol 4: they were not written by
         the same tacctl. Nothing was changed. Write a new script with 'tacctl config linux script', or use
         'tacctl host enroll|sync'."
 fi
@@ -207,8 +208,8 @@ free_id_in_range() {
 # every host. Nothing is created or changed until every new account in the
 # list can have that number here, unless --allow-uid-mismatch was given.
 check_ids() {
-    local name _tier uid cur owner conflicts="" mismatches=""
-    while IFS=: read -r name _tier uid; do
+    local name _tier uid _shell cur owner conflicts="" mismatches=""
+    while IFS=: read -r name _tier uid _shell; do
         [[ -n "$name" ]] || continue
         uid_in_range "$uid" || continue
         case "$(account_state "$name")" in
@@ -869,9 +870,28 @@ renumber_previous() {
 # else is changed on it: the one change tacctl makes to such an account.
 TAC_GROUPS="${G_USERS} tac-readonly tac-operator tac-superuser tac-console"
 
+# is_console <shell>: the shell is tacctl's login console (the tacctl
+# server's own accounts only; the shell field is empty everywhere else).
+is_console() { [[ "${1##*/}" == "tacctl-console" ]]; }
+
+# set_shell <name> <shell>: the login shell of a managed account follows the
+# server's field (empty: left as it is), reported.
+set_shell() {
+    local name="$1" shell="$2" cur
+    [[ -n "$shell" ]] || return 0
+    cur=$(getent passwd "$name" | cut -d: -f7)
+    [[ "$cur" != "$shell" ]] || return 0
+    usermod -s "$shell" "$name"
+    if is_console "$shell"; then
+        info "'${name}': login shell is now the tacctl console."
+    else
+        info "'${name}': login shell is now ${shell}."
+    fi
+}
+
 sync_accounts() {
-    local g name tier uid id listed=" " inactive=" " managed=" " refused="" member legacy groups
-    for g in "$G_USERS" tac-readonly tac-operator tac-superuser; do
+    local g name tier uid shell id listed=" " inactive=" " managed=" " refused="" member legacy groups console=0
+    for g in "$G_USERS" tac-readonly tac-operator tac-superuser tac-console; do
         getent group "$g" >/dev/null || groupadd "$g"
     done
 
@@ -890,7 +910,7 @@ sync_accounts() {
         if [[ -n "$name" ]]; then inactive+="${name} "; fi
     done <<< "$TAC_INACTIVE"
 
-    while IFS=: read -r name tier uid; do
+    while IFS=: read -r name tier uid shell; do
         [[ -n "$name" ]] || continue
         listed+="${name} "
         if [[ "$DEFERRED" == *" ${name} "* ]]; then
@@ -936,7 +956,7 @@ sync_accounts() {
                     fi
                 fi
                 getent group "$name" >/dev/null || groupadd -g "$id" "$name"
-                useradd -m -u "$id" -g "$name" -s /bin/bash -c "${name} (${PROTO})" "$name"
+                useradd -m -u "$id" -g "$name" -s "${shell:-/bin/bash}" -c "${name} (${PROTO})" "$name"
                 is_created "$name" || echo "$name" >> "$STATE_DIR/created"
                 if [[ "$id" != "$uid" ]]; then
                     info "Created account '${name}' (${tier}) with UID ${id} (tacctl assigned ${uid}; --allow-uid-mismatch)."
@@ -945,12 +965,19 @@ sync_accounts() {
                 fi
                 ;;
         esac
-        for g in tac-readonly tac-operator tac-superuser; do
-            if [[ "$g" != "tac-${tier}" && " $(id -nG "$name") " == *" $g "* ]]; then
+        set_shell "$name" "$shell"
+        # tac-console (sshd's drop-in for console users) follows the shell.
+        local want="tac-${tier}"
+        if is_console "$shell"; then
+            want+=" tac-console"
+            console=$((console + 1))
+        fi
+        for g in tac-readonly tac-operator tac-superuser tac-console; do
+            if [[ " ${want} " != *" $g "* && " $(id -nG "$name") " == *" $g "* ]]; then
                 gpasswd -d "$name" "$g" >/dev/null
             fi
         done
-        usermod -aG "${G_USERS},tac-${tier}" "$name"
+        usermod -aG "${G_USERS},${want// /,}" "$name"
         managed+="${name} "
         if grep -qxF "$name" "$STATE_DIR/expired"; then
             usermod -e '' "$name"
@@ -1008,6 +1035,7 @@ sync_accounts() {
     local summary
     summary="Accounts: $(wc -w <<< "$managed") managed by tacctl here"
     if (( RENUMBERED > 0 )); then summary+="; ${RENUMBERED} renumbered"; fi
+    if (( console > 0 )); then summary+="; console: ${console}"; fi
     if [[ -n "$refused" ]]; then summary+="; refused: ${refused}"; fi
     info "${summary}."
 }

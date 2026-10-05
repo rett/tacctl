@@ -324,3 +324,39 @@ func TestConsoleMainScrubsAndExecutes(t *testing.T) {
 		t.Errorf("execs %+v out %q", r.Execs(), out.String())
 	}
 }
+
+// sshd's ForceCommand starts the console as '<shell> -c <console>' with
+// the client's command in SSH_ORIGINAL_COMMAND: the re-exec carries that
+// command as the -c line (or none: a login), and the variable is gone.
+func TestConsoleMainForcedCommand(t *testing.T) {
+	var out, errb bytes.Buffer
+	stdio := app.Stdio{Stdin: strings.NewReader(""), Stdout: &out, Stderr: &errb}
+	forced := []string{"tacctl-console", "-c", paths.ConsoleCommand}
+	for _, c := range []struct {
+		env  []string
+		want []string
+	}{
+		{[]string{"USER=carol", "SSH_ORIGINAL_COMMAND=internal-sftp"}, []string{"tacctl-console", "-c", "internal-sftp"}},
+		{[]string{"USER=carol", "SSH_ORIGINAL_COMMAND=user list"}, []string{"tacctl-console", "-c", "user list"}},
+		{[]string{"USER=carol", "MAIL=/var/mail/carol"}, []string{"tacctl-console"}},
+	} {
+		r := &fake.Runner{}
+		if code := consoleMain(context.Background(), forced, c.env, stdio, BuildInfo{}, testExe, 1000, r); code != 0 {
+			t.Fatalf("status %d %q", code, errb.String())
+		}
+		ex := r.Execs()
+		if len(ex) != 1 || !slices.Equal(ex[0].Argv, c.want) || slices.ContainsFunc(ex[0].Env, func(kv string) bool { return strings.HasPrefix(kv, "SSH_ORIGINAL_COMMAND=") }) {
+			t.Errorf("env %q: execs %+v", c.env, ex)
+		}
+	}
+	// After the re-exec (a clean environment) a forced sftp is refused.
+	r := &fake.Runner{}
+	errb.Reset()
+	clean := []string{"USER=carol", "PATH=" + console.ConsolePath, "SHELL=" + paths.ConsoleCommand}
+	if code := consoleMain(context.Background(), []string{"tacctl-console", "-c", "internal-sftp"}, clean, stdio, BuildInfo{}, testExe, 1000, r); code != console.RefusedStatus {
+		t.Errorf("sftp: status %d", code)
+	}
+	if !strings.Contains(errb.String(), console.RefusedText) {
+		t.Errorf("sftp: %q", errb.String())
+	}
+}

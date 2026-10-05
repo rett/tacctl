@@ -130,9 +130,24 @@ func TestWriteScriptLifecycleHeader(t *testing.T) {
 		t.Fatal(err)
 	}
 	head := strings.SplitN(readFile(t, out), "# --- tacctl", 2)[0]
-	if !strings.HasSuffix(head, "TAC_USERS=alice:superuser:80000\nTAC_INACTIVE=$'bob\\nnopriv'\nTAC_REMOVE_HOMES=dave\\ erin\nTAC_UID_FIRST=80000\nTAC_UID_LAST=89999\nTAC_UID_PREVIOUS=''\nTAC_PROTOCOL=3\n") {
+	if !strings.HasSuffix(head, "TAC_USERS=alice:superuser:80000\nTAC_INACTIVE=$'bob\\nnopriv'\nTAC_REMOVE_HOMES=dave\\ erin\nTAC_UID_FIRST=80000\nTAC_UID_LAST=89999\nTAC_UID_PREVIOUS=''\nTAC_PROTOCOL=4\n") {
 		t.Errorf("header\n%s", head)
 	}
+	// The tacctl server's own accounts: the shell as a fourth field.
+	req.ConsoleShell = func(name, tier string) string {
+		if name == "alice" && tier == "superuser" {
+			return "/usr/local/bin/tacctl-console"
+		}
+		return "/bin/bash"
+	}
+	req.Rows = []string{"alice|15", "carl|1"}
+	if _, err := e.WriteScript(req); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(readFile(t, out), "\nTAC_USERS=$'alice:superuser:80000:/usr/local/bin/tacctl-console\\ncarl:readonly:80001:/bin/bash'\n") {
+		t.Errorf("console header\n%s", strings.SplitN(readFile(t, out), "# --- tacctl", 2)[0])
+	}
+	req.ConsoleShell, req.Rows = nil, []string{"alice|15", "nopriv|"}
 	req.RemoveAllHomes = true
 	if _, err := e.WriteScript(req); err != nil {
 		t.Fatal(err)
@@ -169,12 +184,14 @@ func TestScriptRangeAndProtocol(t *testing.T) {
 
 func TestAccountSummary(t *testing.T) {
 	for line, want := range map[string]string{
-		"[INFO] Accounts: 4 managed by tacctl here; refused: carl.":               "4 users; 1 refused: carl",
-		"[INFO] Accounts: 2 managed by tacctl here; refused: carl, olaf.\r":       "2 users; 2 refused: carl, olaf",
-		"[INFO] Accounts: 0 managed by tacctl here.":                              "0 users",
-		"[INFO] Accounts: 1 managed by tacctl here.":                              "1 user",
-		"[INFO] Accounts: 3 managed by tacctl here; 1 renumbered.":                "3 users; 1 renumbered",
-		"[INFO] Accounts: 3 managed by tacctl here; 2 renumbered; refused: carl.": "3 users; 2 renumbered; 1 refused: carl",
+		"[INFO] Accounts: 4 managed by tacctl here; refused: carl.":                        "4 users; 1 refused: carl",
+		"[INFO] Accounts: 2 managed by tacctl here; refused: carl, olaf.\r":                "2 users; 2 refused: carl, olaf",
+		"[INFO] Accounts: 0 managed by tacctl here.":                                       "0 users",
+		"[INFO] Accounts: 1 managed by tacctl here.":                                       "1 user",
+		"[INFO] Accounts: 3 managed by tacctl here; 1 renumbered.":                         "3 users; 1 renumbered",
+		"[INFO] Accounts: 3 managed by tacctl here; 2 renumbered; refused: carl.":          "3 users; 2 renumbered; 1 refused: carl",
+		"[INFO] Accounts: 3 managed by tacctl here; console: 2.":                           "3 users; 2 with the console",
+		"[INFO] Accounts: 3 managed by tacctl here; 1 renumbered; console: 3; refused: x.": "3 users; 1 renumbered; 3 with the console; 1 refused: x",
 	} {
 		s, ok := ParseAccountSummary(line)
 		if !ok || s.Counts() != want {

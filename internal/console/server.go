@@ -45,6 +45,11 @@ func Inspect(p paths.Paths) Pieces {
 type SSHD struct {
 	TCPForwarding   string // allowtcpforwarding: yes, all, local, remote or no
 	AgentForwarding string // allowagentforwarding: yes or no
+	// ForceCommand is forcecommand (none, or the console's drop-in's
+	// command); PubkeyAuth is pubkeyauthentication. "" when sshd did not
+	// print them.
+	ForceCommand string
+	PubkeyAuth   string
 }
 
 // SSHDCheck runs 'sshd -T -C user=<user>,host=localhost,addr=127.0.0.1'
@@ -71,6 +76,10 @@ func SSHDCheck(ctx context.Context, r execx.Runner, user string) (SSHD, error) {
 			s.TCPForwarding = v
 		case "allowagentforwarding":
 			s.AgentForwarding = v
+		case "forcecommand":
+			s.ForceCommand = v
+		case "pubkeyauthentication":
+			s.PubkeyAuth = v
 		}
 	}
 	if s.TCPForwarding == "" || s.AgentForwarding == "" {
@@ -80,15 +89,28 @@ func SSHDCheck(ctx context.Context, r execx.Runner, user string) (SSHD, error) {
 }
 
 // Problems are the ways the connection could still do more than the console
-// intends: TCP forwarding is anything but no, or agent forwarding is on
-// while the policy does not allow it. Empty: as designed.
-func (s SSHD) Problems(agentAllowed bool) []string {
+// intends: sshd does not force the console (command) on it, so a remote
+// command or the sftp subsystem would run without it; TCP forwarding is
+// anything but no; agent forwarding is on while the policy does not allow
+// it; or a key login (which bypasses TACACS+) is allowed. Empty: as
+// designed.
+func (s SSHD) Problems(agentAllowed bool, command string) []string {
 	var out []string
+	if s.ForceCommand != command {
+		v := s.ForceCommand
+		if v == "" {
+			v = "none"
+		}
+		out = append(out, "forcecommand is '"+v+"'")
+	}
 	if s.TCPForwarding != "no" {
 		out = append(out, "allowtcpforwarding is '"+s.TCPForwarding+"'")
 	}
 	if s.AgentForwarding != "no" && !agentAllowed {
 		out = append(out, "allowagentforwarding is '"+s.AgentForwarding+"'")
+	}
+	if s.PubkeyAuth != "" && s.PubkeyAuth != "no" {
+		out = append(out, "pubkeyauthentication is '"+s.PubkeyAuth+"'")
 	}
 	return out
 }

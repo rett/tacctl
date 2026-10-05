@@ -191,6 +191,7 @@ func newMatrixHost(t *testing.T) *matrixHost {
 		"TACCTL_SYSTEMD_DIR=" + j("systemd"), "TACCTL_OVERRIDE_DIR=" + j("systemd", "tacquito.service.d"),
 		"TACCTL_LOGROTATE_DIR=" + j("logrotate.d"), "TACQUITO_SRC=" + h.TacquitoSrc, "TACCTL_LINUX_DIR=" + j("linux"), "TACCTL_VAR_LIB=" + j("var-lib"),
 		"TACCTL_TREE=" + h.Deploy,
+		"TACCTL_SSHD_DROPIN=" + j("sshd_config.d", "tacctl-console.conf"), "TACCTL_SHELLS_FILE=" + j("shells"),
 		"TACCTL_RADIUS_DIR=" + j("raddb"), "TACCTL_RADIUS_LOG=" + j("radius-log"),
 		"TACCTL_RADIUS_BIN=" + j("radius-bin", "radiusd"), "TACCTL_RADIUS_DICT=" + j("radius-share", "dictionary"),
 	}

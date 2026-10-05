@@ -177,6 +177,12 @@ func Upgrade(ctx context.Context, h *Host, args []string) error {
 	}
 	updated += n
 	updated += h.updateTierSudoers(ctx)
+	n, err = h.updateConsoleLink()
+	if err != nil {
+		return err
+	}
+	updated += n
+	updated += h.updateConsoleDropIn(ctx)
 	// Unconditional re-gzip (cheap) also heals a host where it is missing.
 	if err := h.installManPage(ctx, filepath.Join(active, "man", "tacctl.1")); err != nil {
 		return err

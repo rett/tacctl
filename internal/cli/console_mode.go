@@ -32,13 +32,15 @@ import (
 	"github.com/rett/tacctl/internal/tier"
 )
 
-// consoleMain is Main for the console: the environment is scrubbed first
-// (console.Scrub) and, when that changes it, the console executes itself
-// again with the scrubbed one, so that neither it nor anything it starts
-// (sudo, logger, id, the system shell) ever sees the login environment.
+// consoleMain is Main for the console: sshd's ForceCommand is resolved
+// (console.Forced), the environment is scrubbed (console.Scrub) and, when
+// that changes it, the console executes itself again with the scrubbed one,
+// so that neither it nor anything it starts (sudo, logger, id, the system
+// shell) ever sees the login environment.
 func consoleMain(ctx context.Context, argv, environ []string, stdio app.Stdio, build BuildInfo, exe string, euid int, runner execx.Runner) int {
 	env := paths.NewEnv(environ)
 	a := app.New(nil, env, exe, euid, stdio, runner)
+	argv = console.Forced(argv, environ, a.Paths.ConsoleCommand)
 	clean := console.Scrub(environ, a.Paths.ConsoleCommand, app.ConsoleTestEnv(env))
 	if !slices.Equal(clean, environ) {
 		if exe == "" || !strings.HasPrefix(exe, "/") {

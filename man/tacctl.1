@@ -2700,10 +2700,13 @@ line, sshd's drop-in, and what
 .B "sshd \-T \-C user="\fIuser\fR
 reports for a console user
 .RB ( allowtcpforwarding ,
-.BR allowagentforwarding ).
-A red warning says so when the drop-in is missing or sshd still allows
-forwarding, because a console user could then forward ports and bypass the
-device registry. A server not enrolled with
+.BR allowagentforwarding ,
+.BR forcecommand ,
+.BR pubkeyauthentication ).
+A red warning says so when the drop-in is missing, sshd does not force the
+console, still allows forwarding, or allows key logins, because a console
+user could then forward ports past the device registry, run programs or sftp,
+or log in without TACACS+. A server not enrolled with
 .B \-\-local
 says so and lists no users. Operator tier and up.
 .TP
@@ -2739,9 +2742,84 @@ The system shell, default
 .IR /bin/bash .
 It must be an absolute path to an executable file listed in
 .IR /etc/shells .
+.TP
+.B console install
+Puts the server's pieces in place, as
+.B host sync
+of the host enrolled with
+.B \-\-local
+does: the line
+.I /usr/local/bin/tacctl\-console
+in
+.IR /etc/shells ,
+and sshd's drop-in
+.I /etc/ssh/sshd_config.d/tacctl\-console.conf
+for the members of
+.BR tac\-console :
+.B "ForceCommand /usr/local/bin/tacctl\-console"
+(every login, remote command and subsystem, sftp included, reaches the
+console, which reads the client's command from
+.BR SSH_ORIGINAL_COMMAND ),
+.B "DisableForwarding yes"
+(left out, with
+.BR "AllowAgentForwarding yes" ,
+when
+.B console agent\-forwarding
+is enabled),
+.BR "AllowTcpForwarding no" ,
+.BR "AllowStreamLocalForwarding no" ,
+.BR "X11Forwarding no" ,
+.BR "PermitTunnel no" ,
+.BR "PermitTTY yes" ,
+.B "PubkeyAuthentication no"
+(a key login would bypass TACACS+),
+.B ClientAliveInterval 300
+and
+.BR "ClientAliveCountMax 2" .
+Each change of the drop-in is checked with
+.BR "sshd \-t" ;
+when sshd refuses it the previous file comes back and the command exits 1,
+otherwise sshd is reloaded
+.RB ( "systemctl reload ssh.service" ,
+or
+.BR sshd.service ).
+Each piece is reported
+.BR Installed: ,
+.B Updated:
+or
+.BR Unchanged: ,
+then the check below runs. Refused when
+.I /usr/local/bin/tacctl\-console
+is missing
+.RB ( "tacctl upgrade" " makes it)."
+.TP
+.B console remove
+Takes the drop-in (checked with
+.BR "sshd \-t" ,
+sshd reloaded) and the
+.I /etc/shells
+line away. Refused, nothing changed, while an account still has the console
+as its login shell; they are named, with the way to give them
+.I /bin/bash
+back.
+.TP
+.B console check
+Whether sshd applies the console's settings: the drop-in present and this
+release's, the
+.B Include
+of
+.I sshd_config.d/*.conf
+in
+.IR /etc/ssh/sshd_config ,
+and
+.B "sshd \-T"
+for the first account whose shell is the console. Exit 1, with the red
+warning, when anything is off. Operator tier and up.
 .PP
 Only the operator tier and up may run
-.BR "console show" ;
+.B "console show"
+and
+.BR "console check" ;
 everything else needs an administrator.
 .PP
 The console asks tacctl for its settings with the hidden

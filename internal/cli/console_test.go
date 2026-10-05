@@ -8,6 +8,7 @@ import (
 
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/execx/fake"
+	"github.com/rett/tacctl/internal/paths"
 )
 
 // 'tacctl console' end to end, in-process, on the sandbox of native_test.go
@@ -119,7 +120,8 @@ func TestConsoleShowSSHDWarning(t *testing.T) {
 	sb := consoleSandbox(t)
 	sshd := func(tcp string) func(*fake.Runner) {
 		return func(r *fake.Runner) {
-			r.On([]string{"sshd", "-T"}, execx.Result{Stdout: []byte("port 22\nallowtcpforwarding " + tcp + "\nallowagentforwarding no\n")})
+			r.On([]string{"sshd", "-T"}, execx.Result{Stdout: []byte("port 22\nallowtcpforwarding " + tcp + "\nallowagentforwarding no\n" +
+				"forcecommand " + paths.ConsoleCommand + "\npubkeyauthentication no\n")})
 		}
 	}
 	raw := sb.cfgRun("", []string{"console", "show"}, sshd("yes"))
@@ -128,7 +130,7 @@ func TestConsoleShowSSHDWarning(t *testing.T) {
 		t.Errorf("calls: %q", sb.runner.Argvs())
 	}
 	for _, want := range []string{"sshd for alice: allowtcpforwarding yes, allowagentforwarding no",
-		"WARNING: a console user can forward ports", "drop-in", "is missing", "allowtcpforwarding is 'yes'", "tacctl host sync authsrv"} {
+		"WARNING: a console user can do more over ssh than the console allows", "drop-in", "is missing", "allowtcpforwarding is 'yes'", "tacctl host sync authsrv"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("no %q:\n%s", want, out)
 		}

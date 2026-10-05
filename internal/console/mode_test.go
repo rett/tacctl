@@ -181,3 +181,28 @@ func TestParseRemote(t *testing.T) {
 		t.Errorf("defaults %+v", d)
 	}
 }
+
+func TestForced(t *testing.T) {
+	const cmd = "/usr/local/bin/tacctl-console"
+	orig := func(v string) []string { return []string{"TERM=xterm", OriginalCommand + "=" + v} }
+	for _, c := range []struct {
+		argv, env, want []string
+	}{
+		// ForceCommand, no command: a login.
+		{[]string{"tacctl-console", "-c", cmd}, []string{"TERM=xterm"}, []string{"tacctl-console"}},
+		{[]string{"tacctl-console", "-c", "tacctl-console"}, nil, []string{"tacctl-console"}},
+		// ForceCommand with the client's command, a subsystem, scp.
+		{[]string{"tacctl-console", "-c", cmd}, orig("user list"), []string{"tacctl-console", "-c", "user list"}},
+		{[]string{"tacctl-console", "-c", cmd}, orig("internal-sftp"), []string{"tacctl-console", "-c", "internal-sftp"}},
+		{[]string{"tacctl-console", "-c", cmd}, orig(""), []string{"tacctl-console", "-c", ""}},
+		// Anything else is left as it is.
+		{[]string{"tacctl-console", "-c", "user list"}, orig("scp -t /"), []string{"tacctl-console", "-c", "user list"}},
+		{[]string{"-tacctl-console"}, orig("x"), []string{"-tacctl-console"}},
+		{[]string{"tacctl-console", "-c", cmd, "extra"}, nil, []string{"tacctl-console", "-c", cmd, "extra"}},
+		{[]string{"tacctl-console", "-x", cmd}, nil, []string{"tacctl-console", "-x", cmd}},
+	} {
+		if got := Forced(c.argv, c.env, cmd); !slices.Equal(got, c.want) {
+			t.Errorf("Forced(%q, %q) = %q, want %q", c.argv, c.env, got, c.want)
+		}
+	}
+}

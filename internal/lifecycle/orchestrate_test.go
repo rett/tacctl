@@ -22,6 +22,7 @@ import (
 	"github.com/rett/tacctl/internal/backend"
 	"github.com/rett/tacctl/internal/backend/faketest"
 	"github.com/rett/tacctl/internal/conf"
+	"github.com/rett/tacctl/internal/console"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/execx/fake"
 	"github.com/rett/tacctl/internal/lifecycle"
@@ -124,6 +125,7 @@ func newOhost(t *testing.T) *ohost {
 		"TACCTL_SYSTEMD_DIR=" + j("systemd"), "TACCTL_OVERRIDE_DIR=" + j("systemd", "tacquito.service.d"),
 		"TACCTL_LOGROTATE_DIR=" + j("logrotate.d"), "TACQUITO_SRC=" + j("tacquito-src"),
 		"TACCTL_LINUX_DIR=" + j("var-lib-tacctl", "linux"), "TACCTL_VAR_LIB=" + j("var-lib-tacctl"), "TACCTL_TREE=" + j("tree"),
+		"TACCTL_SSHD_DROPIN=" + j("sshd_config.d", "tacctl-console.conf"), "TACCTL_SHELLS_FILE=" + j("shells"),
 		"TACCTL_RADIUS_DIR=" + j("raddb"), "TACCTL_RADIUS_LOG=" + j("radius-log"),
 		"TACCTL_RADIUS_BIN=" + j("radius-bin", "radiusd"), "TACCTL_RADIUS_DICT=" + j("radius-share", "dictionary"),
 		"TMPDIR=" + j("tmp"),
@@ -660,8 +662,9 @@ func (o *ohost) cloned() {
 // The order of radius.bats "upgrade: the output reads in order" with both
 // backends: banner, backends, preflight before it, build, the clone, the
 // config phase, the system files with the count, finish, and the summary:
-// the head a backend set, its count of files plus the completion and
-// templates, the backends' notes in order, then the templates note.
+// the head a backend set, its count of files plus the completion, the
+// console's symlink and templates, the backends' notes in order, then the
+// templates note.
 func TestUpgradeOrderAndSummary(t *testing.T) {
 	o := newOhost(t)
 	o.cloned()
@@ -679,9 +682,10 @@ func TestUpgradeOrderAndSummary(t *testing.T) {
 		"PHASE radius upgrade build", "[INFO] Pulling latest management scripts...", "[INFO] Management scripts already up to date.",
 		"[INFO] Required packages: all present.", "PHASE tacacs upgrade config", "PHASE radius upgrade config",
 		"[INFO] Updating system files...", "PHASE tacacs upgrade files "+o.p.Deploy, "PHASE radius upgrade files "+o.p.Deploy,
-		"[INFO]   Updated: bash completion", "Customised template kept:", "[INFO] 9 file(s) updated.",
+		"[INFO]   Updated: bash completion", "[INFO]   Updated: "+o.p.ConsoleCommand+" -> "+o.p.Command,
+		"Customised template kept:", "[INFO] 10 file(s) updated.",
 		"PHASE tacacs upgrade finish", "PHASE radius upgrade finish",
-		rule+"\n  Scripts Updated (source unchanged at abc1234)\n  Managed scripts: 9 updated\n"+
+		rule+"\n  Scripts Updated (source unchanged at abc1234)\n  Managed scripts: 10 updated\n"+
 			"  Units: tacquito.service and its listener drop-in are current (settings in x)\n"+
 			"  RADIUS: config re-rendered for this release, FreeRADIUS restarted\n"+
 			"  Templates: kept 1 customised (wti.template); this release's version of each is beside it as <name>.template.new (see above)\n"+
@@ -1073,5 +1077,110 @@ func TestInstallUpgradeRepairVarLib(t *testing.T) {
 	}
 	if st, err := os.Stat(o.p.VarLib); err != nil || st.Mode().Perm() != 0o711 {
 		t.Errorf("VarLib mode %v %v", st.Mode().Perm(), err)
+	}
+}
+
+// The login console's symlink: made by install, refreshed by upgrade when
+// it points elsewhere.
+func TestConsoleLinkInstallAndUpgrade(t *testing.T) {
+	o := newOhost(t)
+	o.commit = "something-else"
+	if code := install(o, "-y"); code != 0 {
+		t.Fatalf("exit %d\n%s\n%s", code, o.stdout, o.stderr)
+	}
+	if target, err := os.Readlink(o.p.ConsoleCommand); err != nil || target != o.p.Command {
+		t.Fatalf("install: %q %v", target, err)
+	}
+	o = newOhost(t)
+	o.cloned()
+	o.write(o.p.Command, "binary\n")
+	if err := os.Symlink("/elsewhere", o.p.ConsoleCommand); err != nil {
+		t.Fatal(err)
+	}
+	if code := upgrade(o); code != 0 {
+		t.Fatalf("exit %d\n%s\n%s", code, o.stdout, o.stderr)
+	}
+	if target, _ := os.Readlink(o.p.ConsoleCommand); target != o.p.Command || !strings.Contains(o.text(), "Updated: "+o.p.ConsoleCommand) {
+		t.Errorf("upgrade: %q\n%s", target, o.text())
+	}
+	o.stdout.Reset()
+	if code := upgrade(o); code != 0 || strings.Contains(o.text(), "Updated: "+o.p.ConsoleCommand) {
+		t.Errorf("a current link was rewritten: %d\n%s", code, o.text())
+	}
+}
+
+// An installed sshd drop-in that differs from this release's is rewritten
+// through 'sshd -t' and sshd reloaded; a current one is left; none is
+// never created; one sshd refuses stays as it was.
+func TestUpgradeRefreshesConsoleDropIn(t *testing.T) {
+	o := newOhost(t)
+	o.cloned()
+	o.run.On([]string{"sshd", "-t"}, execx.Result{})
+	if code := upgrade(o); code != 0 {
+		t.Fatalf("exit %d\n%s", code, o.stderr)
+	}
+	if _, err := os.Stat(o.p.SSHDDropIn); err == nil || strings.Contains(o.text(), "sshd drop-in") || o.run.Called("sshd") {
+		t.Errorf("a drop-in was created or checked:\n%s", o.text())
+	}
+	o.write(o.p.SSHDDropIn, "Match Group tac-console\n    AllowTcpForwarding no\n")
+	o.stdout.Reset()
+	if code := upgrade(o); code != 0 {
+		t.Fatalf("exit %d\n%s", code, o.stderr)
+	}
+	if readFile(t, o.p.SSHDDropIn) != console.DropIn(o.p.ConsoleCommand, false) || !strings.Contains(o.text(), "[INFO]   Updated: sshd drop-in") ||
+		!o.run.Called("sshd", "-t") || !o.run.Called("systemctl", "reload", "ssh.service") {
+		t.Errorf("not refreshed:\n%s\n%q", o.text(), o.run.Argvs())
+	}
+	o.stdout.Reset()
+	upgrade(o)
+	if !strings.Contains(o.text(), "[INFO]   Unchanged: sshd drop-in") {
+		t.Errorf("second run:\n%s", o.text())
+	}
+	old := "Match Group tac-console\n"
+	o.write(o.p.SSHDDropIn, old)
+	o.run.Fail([]string{"sshd", "-t"}, 255, "Bad configuration option: DisableForwarding")
+	o.stdout.Reset()
+	o.stderr.Reset()
+	if code := upgrade(o); code != 0 {
+		t.Fatalf("a refused drop-in failed the upgrade: %d", code)
+	}
+	if readFile(t, o.p.SSHDDropIn) != old || !strings.Contains(o.text(), "Not updated: sshd drop-in (sshd -t refused the configuration") {
+		t.Errorf("refused:\n%s", o.text())
+	}
+}
+
+// Uninstall leaves no account with the console as its shell: each gets
+// /bin/bash back (named), then sshd's drop-in, the /etc/shells line and the
+// symlink go.
+func TestUninstallRestoresConsoleShells(t *testing.T) {
+	o := newOhost(t)
+	o.installed()
+	o.write(o.p.SSHDDropIn, console.DropIn(o.p.ConsoleCommand, false))
+	o.write(o.p.ShellsFile, "/bin/sh\n/bin/bash\n"+o.p.ConsoleCommand+"\n")
+	if err := os.Symlink(o.p.Command, o.p.ConsoleCommand); err != nil {
+		t.Fatal(err)
+	}
+	o.run.On([]string{"getent", "passwd"}, execx.Result{Stdout: []byte("root:x:0:0:root:/root:/bin/bash\n" +
+		"alice:x:80000:80000:alice (TACACS+):/home/alice:" + o.p.ConsoleCommand + "\n" +
+		"bob:x:80001:80001:bob (TACACS+):/home/bob:/bin/bash\n" +
+		"carol:x:80002:80002:carol (TACACS+):/home/carol:" + o.p.ConsoleCommand + "\n")})
+	o.run.Fail([]string{"usermod", "-s", "/bin/bash", "carol"}, 8, "usermod: user carol is currently used by process 1")
+	o.run.On([]string{"sshd", "-t"}, execx.Result{})
+	if code := uninstall(o, "-y"); code != 0 {
+		t.Fatalf("exit %d\n%s\n%s", code, o.stdout, o.stderr)
+	}
+	if !o.run.Called("usermod", "-s", "/bin/bash", "alice") || o.run.Called("usermod", "-s", "/bin/bash", "bob") {
+		t.Errorf("calls %q", o.run.Argvs())
+	}
+	inOrder(t, o.text(), "[INFO] Login shell /bin/bash restored for: alice", "Could not give these accounts /bin/bash back",
+		"carol", "[INFO] Removed sshd drop-in "+o.p.SSHDDropIn, "[INFO] Removed "+o.p.ConsoleCommand+" from "+o.p.ShellsFile,
+		"[INFO] Removing binaries and symlinks...")
+	for _, f := range []string{o.p.SSHDDropIn, o.p.ConsoleCommand} {
+		if _, err := os.Lstat(f); err == nil {
+			t.Errorf("%s left", f)
+		}
+	}
+	if readFile(t, o.p.ShellsFile) != "/bin/sh\n/bin/bash\n" {
+		t.Errorf("shells %q", readFile(t, o.p.ShellsFile))
 	}
 }

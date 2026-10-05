@@ -3,8 +3,10 @@ package console
 // Console mode (docs/plans/operator-console-wp-console.md 5.2): the tacctl
 // binary started as 'tacctl-console' (the symlink paths.ConsoleCommand) is
 // a login shell. sshd starts it as '-tacctl-console' for a login and as
-// 'tacctl-console -c <command>' for a remote command, scp, sftp and rsync;
-// the -c guard lets one tacctl line through and refuses everything else.
+// 'tacctl-console -c <command>' for a remote command, scp, sftp and rsync
+// (with the console's sshd drop-in, ForceCommand, always as the latter:
+// Forced); the -c guard lets one tacctl line through and refuses
+// everything else.
 
 import (
 	"path/filepath"
@@ -56,6 +58,35 @@ func Guard(line string, isCommand func(string) bool) (first string, ok bool) {
 		return first, false
 	}
 	return first, isCommand != nil && isCommand(first)
+}
+
+// OriginalCommand is the variable in which sshd hands a ForceCommand the
+// command the client asked for.
+const OriginalCommand = "SSH_ORIGINAL_COMMAND"
+
+// Forced resolves sshd's ForceCommand. sshd's drop-in for tac-console
+// forces the console (ForceCommand <command>), so sshd starts every login
+// of a console user, with or without a command, and every subsystem
+// (sftp, internal-sftp) as '<shell> -c <command>', the client's own command
+// in SSH_ORIGINAL_COMMAND. Forced turns such an argv into what the console
+// would have got without the drop-in: argv0 alone (a login: interactive or
+// a batch) when environ has no SSH_ORIGINAL_COMMAND, else argv0 -c <that
+// command>, which the -c guard then decides. Any other argv is returned as
+// it is.
+func Forced(argv, environ []string, command string) []string {
+	if len(argv) != 3 || argv[1] != "-c" || (argv[2] != command && !IsConsole(argv[2])) {
+		return argv
+	}
+	orig, ok := "", false
+	for _, kv := range environ {
+		if v, found := strings.CutPrefix(kv, OriginalCommand+"="); found {
+			orig, ok = v, true
+		}
+	}
+	if !ok {
+		return argv[:1]
+	}
+	return []string{argv[0], "-c", orig}
 }
 
 // SystemShellWord is the console's word that starts the system shell.

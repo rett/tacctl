@@ -235,7 +235,9 @@ func UserCount(rows []string) int {
 	return n
 }
 
-// ScopeUsers is linux_scope_users: "name:tier:uid" lines for the rows of
+// ScopeUsers is linux_scope_users: "name:tier:uid" lines (with shell set,
+// "name:tier:uid:<shell(name, tier)>": the tacctl server's own accounts)
+// for the rows of
 // the linux-users view that can be Linux accounts, a UID of the range
 // assigned to each on first use, joined by newlines ('$(...)': no trailing
 // one). Names useradd would reject are skipped with a warning on stderr.
@@ -244,7 +246,7 @@ func UserCount(rows []string) int {
 // too and returned in keep: they are still users of the scope, so a host
 // expires their accounts rather than deleting them. No UID left in the
 // range is printed and ErrFailed.
-func (e *Env) ScopeUsers(rows []string) (users string, keep []string, err error) {
+func (e *Env) ScopeUsers(rows []string, shell func(name, tier string) string) (users string, keep []string, err error) {
 	uids := e.UIDs()
 	rng := uids.rng()
 	var out []string
@@ -277,7 +279,11 @@ func (e *Env) ScopeUsers(rows []string) (users string, keep []string, err error)
 			keep = append(keep, name)
 			continue
 		}
-		out = append(out, name+":"+t+":"+uid)
+		line := name + ":" + t + ":" + uid
+		if shell != nil {
+			line += ":" + shell(name, t)
+		}
+		out = append(out, line)
 	}
 	return strings.Join(out, "\n"), keep, nil
 }

@@ -314,22 +314,29 @@ func TestSSHDCheck(t *testing.T) {
 		s, err := SSHDCheck(ctx, r, "jdoe")
 		return s, r, err
 	}
-	s, r, err := run(execx.Result{Stdout: []byte("port 22\nallowtcpforwarding no\nallowagentforwarding no\nx11forwarding no\n")})
-	if err != nil || s != (SSHD{"no", "no"}) || !r.Called("sshd", "-T", "-C", "user=jdoe,host=localhost,addr=127.0.0.1") {
+	const fc = "forcecommand /usr/local/bin/tacctl-console\npubkeyauthentication no\n"
+	s, r, err := run(execx.Result{Stdout: []byte("port 22\nallowtcpforwarding no\nallowagentforwarding no\nx11forwarding no\n" + fc)})
+	if err != nil || s != (SSHD{"no", "no", "/usr/local/bin/tacctl-console", "no"}) || !r.Called("sshd", "-T", "-C", "user=jdoe,host=localhost,addr=127.0.0.1") {
 		t.Errorf("closed: %+v %v %q", s, err, r.Argvs())
 	}
-	if p := s.Problems(false); len(p) != 0 {
+	if p := s.Problems(false, testConsole); len(p) != 0 {
 		t.Errorf("problems: %v", p)
 	}
-	s, _, _ = run(execx.Result{Stdout: []byte("allowtcpforwarding yes\nallowagentforwarding yes\n")})
-	if p := s.Problems(false); !reflect.DeepEqual(p, []string{"allowtcpforwarding is 'yes'", "allowagentforwarding is 'yes'"}) {
+	s, _, _ = run(execx.Result{Stdout: []byte("allowtcpforwarding yes\nallowagentforwarding yes\n" + fc)})
+	if p := s.Problems(false, testConsole); !reflect.DeepEqual(p, []string{"allowtcpforwarding is 'yes'", "allowagentforwarding is 'yes'"}) {
 		t.Errorf("open: %v", p)
 	}
-	if p := s.Problems(true); !reflect.DeepEqual(p, []string{"allowtcpforwarding is 'yes'"}) {
+	// Without the drop-in: nothing forced, key logins on.
+	s, _, _ = run(execx.Result{Stdout: []byte("allowtcpforwarding no\nallowagentforwarding no\nforcecommand none\npubkeyauthentication yes\n")})
+	if p := s.Problems(false, testConsole); !reflect.DeepEqual(p, []string{"forcecommand is 'none'", "pubkeyauthentication is 'yes'"}) {
+		t.Errorf("no drop-in: %v", p)
+	}
+	s, _, _ = run(execx.Result{Stdout: []byte("allowtcpforwarding yes\nallowagentforwarding yes\n" + fc)})
+	if p := s.Problems(true, testConsole); !reflect.DeepEqual(p, []string{"allowtcpforwarding is 'yes'"}) {
 		t.Errorf("agent allowed: %v", p)
 	}
 	for _, v := range []string{"local", "remote", "all"} {
-		if p := (SSHD{v, "no"}).Problems(false); len(p) != 1 {
+		if p := (SSHD{v, "no", testConsole, "no"}).Problems(false, testConsole); len(p) != 1 {
 			t.Errorf("allowtcpforwarding %s: %v", v, p)
 		}
 	}

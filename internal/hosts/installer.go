@@ -64,10 +64,12 @@ type Script struct {
 // TAC_REMOVE_HOMES, removed users deleted, UIDs of one range only); 3 adds
 // the range to the header (TAC_UID_FIRST, TAC_UID_LAST) with the ranges the
 // server numbered for before (TAC_UID_PREVIOUS), whose accounts the host
-// renumbers. The body refuses a header of another protocol, and a body of
+// renumbers; 4 adds a fourth TAC_USERS field, the login shell, for the
+// tacctl server's own accounts (the login console, ScriptRequest's
+// ConsoleShell), and the tac-console group. The body refuses a header of another protocol, and a body of
 // an earlier release has no TAC_PROTOCOL check but never sees this header
 // (both are written into one file by one tacctl).
-const ScriptProtocol = "3"
+const ScriptProtocol = "4"
 
 // fileSHA256 is "sha256sum <f> | awk '{print $1}'": "" when the file
 // cannot be read.
@@ -198,6 +200,11 @@ type ScriptRequest struct {
 	// their accounts; RemoveAllHomes is --remove-home (every one).
 	RemoveHomes    []string
 	RemoveAllHomes bool
+	// ConsoleShell, for the tacctl server's own accounts only ('host
+	// enroll --local' and its sync), is each user's login shell (the
+	// console or /bin/bash): TAC_USERS lines get it as a fourth field. Nil
+	// for every other host and for 'config linux script': three fields.
+	ConsoleShell func(name, tier string) string
 }
 
 // ScriptResult is what the script was written with (LINUX_SCRIPT_USERS,
@@ -262,7 +269,7 @@ func (e *Env) WriteScript(req ScriptRequest) (ScriptResult, error) {
 	}
 	port := afterLastColon(listen)
 
-	users, keep, err := e.ScopeUsers(req.Rows)
+	users, keep, err := e.ScopeUsers(req.Rows, req.ConsoleShell)
 	if err != nil {
 		return ScriptResult{}, err
 	}
