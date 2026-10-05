@@ -178,6 +178,7 @@ func TestConsoleInstallRefusals(t *testing.T) {
 func TestHostLocalConsole(t *testing.T) {
 	hs := newHostSandbox(t)
 	hs.reroot = true
+	hs.loopback()
 	hs.write("shells", "/bin/sh\n/bin/bash\n", 0o644)
 	link := hs.path("usr", "local", "bin", "tacctl-console")
 	dropin := hs.path("sshd_config.d", "tacctl-console.conf")

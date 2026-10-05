@@ -94,6 +94,16 @@ func (hs *hostSandbox) run(r *fake.Runner, args ...string) string {
 	return hs.out.String()
 }
 
+// loopback gives scope lab the address this server's own logins come from,
+// so 'host enroll --local --scope lab' is accepted.
+func (hs *hostSandbox) loopback() {
+	hs.t.Helper()
+	hs.run(nil, "scope", "prefixes", "lab", "add", "127.0.0.1/32")
+	if hs.code != 0 {
+		hs.t.Fatalf("scope prefixes lab add: %d %s", hs.code, hs.err.String())
+	}
+}
+
 func (hs *hostSandbox) registry() string {
 	data, _ := os.ReadFile(filepath.Join(hs.dir, "state", "linux-hosts"))
 	return string(data)
@@ -576,4 +586,40 @@ func TestHostSyncReportsTheHostsSummary(t *testing.T) {
 	summary = ""
 	hs.run(r(), "host", "enroll", "web1", "--scope", "lab", "--build-on-host")
 	hs.expect(0, "Host 'web1' enrolled.\n", "")
+}
+
+// The scope must answer the host's requests: for this server (127.0.0.1)
+// another scope or none is refused before anything changes; for another
+// host (its resolved address) it is a warning.
+func TestHostEnrollScopeMustCoverTheHost(t *testing.T) {
+	hs := newHostSandbox(t)
+	before := hs.registry()
+	hs.run(nil, "host", "enroll", "--local", "--name", "authsrv", "--scope", "lab", "--build-on-host")
+	hs.expect(1, "", "Scope 'lab' does not cover 127.0.0.1, the address this server's own logins reach TACACS+ and RADIUS from (no scope covers it), so every login of 'authsrv' would be refused.")
+	for _, want := range []string{"tacctl scope prefixes lab add 127.0.0.1/32", "(or enroll without --scope: scope linux-authsrv)", "Nothing was changed."} {
+		if !strings.Contains(hs.err.String(), want) {
+			t.Errorf("no %q in %q", want, hs.err.String())
+		}
+	}
+	if hs.registry() != before || hs.sandbox.runner.Called("bash") {
+		t.Error("the refused enrolment changed something")
+	}
+	// Without --scope, linux-authsrv is made for 127.0.0.1/32: accepted.
+	hs.run(nil, "host", "enroll", "--local", "--name", "authsrv", "--build-on-host")
+	hs.expect(0, "Host 'authsrv' enrolled", "")
+
+	// Another host whose address lab does not hold: enrolled, with a warning.
+	hs.run(nil, "host", "enroll", "admin@web1.example.net", "--scope", "lab", "--build-on-host")
+	hs.expect(0, "Scope 'lab' does not cover 192.0.2.50, the address 'web1' resolves to (no scope covers it). If its requests come from that address, its logins are refused.", "")
+	if !strings.Contains(hs.out.String(), "Host 'web1' enrolled") {
+		t.Errorf("not enrolled: %q", hs.out.String())
+	}
+	// A sync of this server whose scope no longer covers 127.0.0.1 warns.
+	hs.run(nil, "host", "enroll", "--local", "--name", "authsrv", "--build-on-host")
+	hs.run(nil, "scope", "prefixes", "linux-authsrv", "add", "10.99.0.0/16")
+	hs.run(nil, "scope", "prefixes", "linux-authsrv", "remove", "127.0.0.1/32")
+	hs.run(nil, "host", "sync", "authsrv")
+	if !strings.Contains(hs.out.String()+hs.err.String(), "authsrv: scope 'linux-authsrv' does not cover 127.0.0.1") {
+		t.Errorf("sync: %q %q", hs.out.String(), hs.err.String())
+	}
 }

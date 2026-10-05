@@ -718,7 +718,16 @@ a scope named
 is created for the host's own address (/32) with a generated secret and
 .B protocols
 set to the method's protocol, so a
-secret read off one host is useless from another. The server address
+secret read off one host is useless from another. The scope must be the
+one that answers the host's requests (the first prefix that holds the
+address they come from): for
+.B \-\-local
+that address is 127.0.0.1, and a scope that does not cover it is refused
+before anything changes; for another host, a scope that does not cover the
+address its name resolves to is a warning (NAT may change it).
+.B "host sync"
+of this machine warns when its scope no longer covers 127.0.0.1.
+The server address
 defaults to the source address of the route to the host.
 .B \-\-local
 enrolls this machine without SSH. ssh runs as the user who invoked

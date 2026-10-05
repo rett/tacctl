@@ -492,7 +492,7 @@ bob"
     _client_env
     run bash "$OUT" --accounts-only
     assert_success
-    stub_called "useradd -m -u 80000 -g alice -s /bin/bash -c alice .TACACS.. alice"
+    stub_called "useradd -m -u 80000 -g alice -s /bin/bash -K UID_MIN=80000 -K UID_MAX=89999 -c alice .TACACS.. alice"
 
     # An account created by an earlier version carries the generic name.
     sed -i 's/^alice:x:80000:80000:alice (TACACS+):/alice:x:80000:80000:TACACS+ user (tacctl):/' "$FAKE_DB/passwd"
@@ -802,8 +802,8 @@ CONSOLE=/usr/local/bin/tacctl-console
     run bash "$OUT" --accounts-only
     assert_success
     stub_called "groupadd tac-console"
-    stub_called "useradd -m -u 80000 -g alice -s ${CONSOLE} -c alice \\(TACACS\\+\\) alice"
-    stub_called "useradd -m -u 80001 -g bob -s /bin/bash -c bob \\(TACACS\\+\\) bob"
+    stub_called "useradd -m -u 80000 -g alice -s ${CONSOLE} -K UID_MIN=80000 -K UID_MAX=89999 -c alice \\(TACACS\\+\\) alice"
+    stub_called "useradd -m -u 80001 -g bob -s /bin/bash -K UID_MIN=80000 -K UID_MAX=89999 -c bob \\(TACACS\\+\\) bob"
     stub_called "usermod -aG tac-users,tac-superuser,tac-console alice"
     stub_called "usermod -aG tac-users,tac-readonly bob"
     assert_output --partial "[INFO] Accounts: 2 managed by tacctl here; console: 1."
@@ -1497,7 +1497,7 @@ RCONF_LINE="192.0.2.10:1812 0123456789abcdef0123456789abcdef 3"
     run cat "$TACCTL_CLIENT_SUDOERS"
     assert_line "%tac-superuser ALL=(ALL:ALL) ALL"
     assert_output --partial "RADIUS superusers"
-    stub_called "useradd -m -u 80000 -g alice -s /bin/bash -c alice .RADIUS. alice"
+    stub_called "useradd -m -u 80000 -g alice -s /bin/bash -K UID_MIN=80000 -K UID_MAX=89999 -c alice .RADIUS. alice"
 
     # A second run finds the module and installs nothing.
     : > "$CALLS_LOG"

@@ -122,6 +122,7 @@ func TestHostFactsFallbackAndLoginDefs(t *testing.T) {
 	}
 	r := hs.runner()
 	r.On([]string{"bash"}, execx.Result{Stdout: []byte("[INFO] Accounts: 1 managed by tacctl here.\n")})
+	hs.loopback()
 	hs.run(r, "host", "enroll", "--local", "--name", "authsrv", "--scope", "lab", "--build-on-host")
 	all = plain(hs.out.String() + hs.err.String())
 	if hs.code != 0 || !strings.Contains(all, "Host 'authsrv' enrolled (1 user).") || !strings.Contains(all, "authsrv: local useradd there gives out UIDs 1000-99999") {

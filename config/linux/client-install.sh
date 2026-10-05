@@ -956,7 +956,10 @@ sync_accounts() {
                     fi
                 fi
                 getent group "$name" >/dev/null || groupadd -g "$id" "$name"
-                useradd -m -u "$id" -g "$name" -s "${shell:-/bin/bash}" -c "${name} (${PROTO})" "$name"
+                # The range for this call only (login.defs is never edited):
+                # useradd warns about a UID outside its own UID_MIN-UID_MAX.
+                useradd -m -u "$id" -g "$name" -s "${shell:-/bin/bash}" -K UID_MIN="$TAC_UID_FIRST" -K UID_MAX="$TAC_UID_LAST" \
+                    -c "${name} (${PROTO})" "$name"
                 is_created "$name" || echo "$name" >> "$STATE_DIR/created"
                 if [[ "$id" != "$uid" ]]; then
                     info "Created account '${name}' (${tier}) with UID ${id} (tacctl assigned ${uid}; --allow-uid-mismatch)."

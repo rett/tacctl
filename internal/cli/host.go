@@ -375,6 +375,10 @@ func (inv *invocation) hostEnroll(args []string) error {
 		} else if !ok {
 			return exit(1)
 		}
+		// The scope must be the one that answers the host's requests.
+		if !inv.hostScopeCovers(name, target, hostIP, scope, true) {
+			return exit(1)
+		}
 	}
 	// The UID file numbered for the range, and a host that can hold the
 	// range, before anything changes here or there.
@@ -390,6 +394,7 @@ func (inv *invocation) hostEnroll(args []string) error {
 
 	both := strings.Join(scopeProtocols, ",")
 	narrowScope := false
+	scopeGiven := scope != ""
 	if scope == "" {
 		scope = "linux-" + name
 		exists, err := inv.scopeExists(scope)
@@ -425,6 +430,12 @@ func (inv *invocation) hostEnroll(args []string) error {
 				return err
 			}
 		}
+	}
+
+	// linux-<name> holds the host's /32, but an earlier prefix of another
+	// scope can still answer it.
+	if !scopeGiven && !inv.hostScopeCovers(name, target, hostIP, scope, false) {
+		return exit(1)
 	}
 
 	// tacplus only: build the module here for the host's OS release when we
@@ -545,6 +556,61 @@ func (inv *invocation) hostEnroll(args []string) error {
 		inv.echo("")
 	}
 	return nil
+}
+
+// hostScopeCovers checks that scope answers the requests of a host whose
+// requests come from addr (127.0.0.1 for this server itself, which talks
+// to its own daemons over loopback). For this server the address is
+// certain, so another scope (or none) answering it is refused, printed:
+// every login would be refused. For another host it is the address its name
+// resolves to, which NAT may change, so it is a warning. ok is false only
+// for the refusal; an address that cannot be read is not checked.
+// unchanged says whether nothing has been changed yet (the refusal says
+// so).
+func (inv *invocation) hostScopeCovers(name, target, addr, scope string, unchanged bool) bool {
+	if addr == "" {
+		return true
+	}
+	m, err := inv.model()
+	if err != nil {
+		return true
+	}
+	info, found := m.LookupAddr(addr)
+	if found && info.Scope == scope {
+		return true
+	}
+	a := inv.app
+	answered := "no scope covers it"
+	if found {
+		answered = "scope '" + info.Scope + "' answers it (prefix " + info.Prefix + ")"
+	}
+	fix := "Add it to the scope: tacctl scope prefixes " + scope + " add " + addr + "/32"
+	if target == hosts.Local {
+		a.Out.ErrorE("Scope '" + scope + "' does not cover " + addr + ", the address this server's own logins reach TACACS+ and RADIUS from (" + answered + "), so every login of '" + name + "' would be refused.")
+		a.Out.ErrorE(fix + "   (or enroll without --scope: scope linux-" + name + ")")
+		if unchanged {
+			a.Out.ErrorE("Nothing was changed.")
+		} else {
+			a.Out.ErrorE("Enrollment of " + name + " stopped; scope '" + scope + "' is kept, nothing ran on the host.")
+		}
+		return false
+	}
+	a.Out.WarnE("Scope '" + scope + "' does not cover " + addr + ", the address '" + name + "' resolves to (" + answered + "). If its requests come from that address, its logins are refused.")
+	a.Out.WarnE(fix)
+	return true
+}
+
+// localScopeWarning is the sync's word on this server's own scope: when
+// it no longer covers 127.0.0.1 (a prefix removed, another scope shadowing
+// it), the accounts are synced but nobody can log in.
+func (inv *invocation) localScopeWarning(e hosts.Entry) {
+	m, err := inv.model()
+	if err != nil {
+		return
+	}
+	if info, found := m.LookupAddr("127.0.0.1"); !found || info.Scope != e.Scope {
+		inv.app.Out.WarnE(e.Name + ": scope '" + e.Scope + "' does not cover 127.0.0.1, where this server's own logins come from, so they are refused. Add it: tacctl scope prefixes " + e.Scope + " add 127.0.0.1/32")
+	}
 }
 
 // isRegularFile is '[[ -f <path> ]]'.
@@ -683,6 +749,7 @@ func (inv *invocation) syncOne(he *hosts.Env, e hosts.Entry, method string, scri
 	}
 	consoleCheck := false
 	if e.Target == hosts.Local {
+		inv.localScopeWarning(e)
 		if consoleCheck, err = inv.consoleForLocal(&req); err != nil {
 			return false, err
 		}

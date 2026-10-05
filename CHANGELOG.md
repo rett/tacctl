@@ -657,6 +657,22 @@ current behaviour; this file is where history lives.
     after a dash now shows a description for every flag: option lines
     indented deeper than a row were not read, and a line naming two flags
     (`--port <n>, --identity <file>`) described only the first.
+57. **`host enroll` checks that the scope answers the host.** tacquito and
+    FreeRADIUS pick a scope by the address a request comes from; this
+    server's own logins come from 127.0.0.1. `host enroll --local --scope
+    <scope>` with a scope that does not cover 127.0.0.1 is refused before
+    anything changes: `Scope '<scope>' does not cover 127.0.0.1, the address
+    this server's own logins reach TACACS+ and RADIUS from (<scope '<other>'
+    answers it (prefix …)|no scope covers it>), so every login of '<host>'
+    would be refused.`, with `tacctl scope prefixes <scope> add
+    127.0.0.1/32` and the alternative of enrolling without `--scope`, exit
+    1. For another host the same finding for the address its name resolves
+    to is a warning (`If its requests come from that address, its logins are
+    refused.`); `host sync` of this server warns when its scope no longer
+    covers 127.0.0.1. The install script passes the server's UID range to
+    `useradd` for that call (`-K UID_MIN=<first> -K UID_MAX=<last>`), so a
+    host whose `/etc/login.defs` stops at 60000 prints no `useradd warning:
+    … outside of the UID_MIN … range` line; `login.defs` is not changed.
 
 ## 0.2.0 (2026-10-04)
 

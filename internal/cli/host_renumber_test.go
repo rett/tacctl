@@ -248,6 +248,7 @@ func TestHostIDMapRefusal(t *testing.T) {
 	}
 	env := hs.env
 	hs.env = append(append([]string(nil), env...), "TACCTL_TEST_PROC="+proc)
+	hs.loopback()
 	hs.run(nil, "host", "enroll", "--local", "--name", "authsrv", "--scope", "lab", "--build-on-host")
 	hs.expect(1, "", "'authsrv' cannot hold UIDs 100000-109999: its user namespace maps only 0-65535 (an unprivileged container).")
 	hs.env = env
