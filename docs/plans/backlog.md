@@ -59,6 +59,13 @@ Deferred:
   1. How Junos combines server-sent values with the class's own: override or merge, for allow and deny, commands and configuration; what `show cli authorization` reports.
   2. Length: a TACACS+ value is at most 255 bytes, a RADIUS VSA 253; today's per-class regex joins every rule into one expression. Which Junos releases accept the `*-regexps` (list) variants.
   3. Behaviour over both protocols, and the Junos release on the lab switch.
+- **Live check on the lab Juniper switch (2026-10-05; EX4300, Junos 25.4R1), TACACS+:**
+  - Junos applies server-sent values: after a new login `show cli authorization` lists them under "Individual command authorization" (allow/deny regular expression, allow/deny configuration regular expression).
+  - `deny-configuration "^system"` blocked system edits for a class with `permissions all`.
+  - `allow-commands-regexps` (the list form) is accepted on 25.4.
+  - **A value longer than 255 bytes makes the login fail**: an oversized value locks the group out of every Juniper device of the scope. tacctl must check each rendered value's length and refuse the change (naming the group and the length), never send it.
+  - The switch's classes carry only `permissions view` / `permissions all`, no local regexes: on such devices the server is the only source of command rules, and the permission bits decide which commands exist at all (an operator without `view-configuration` has no `show configuration`, whatever the regex says).
+  - Still open: whether a server value replaces or joins a class's own allow/deny lines (the lab classes have none); whether Junos accepts the same attribute twice (splitting long rule sets); RADIUS (VSAs 2-5) not yet run.
 - **Not in 0.2.1:** it changes what devices are told at login; 0.2.1 is at its release gate.
 
 ## 4. Linux hosts: considered, not pursued
