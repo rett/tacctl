@@ -8,11 +8,12 @@ package tacacs
 //     password' and 'failed to validate the user [u] from [A] using a bcrypt
 //     password', at the default level: address, user and outcome;
 //   - error, at any level: 'bad secret detected for ip [A:port]' (wrong
-//     shared secret) and 'no matching prefix secret provider found' (no
-//     scope covers the address). Whether the latter names the address
-//     depends on the line that wraps it; when it carries 'for ip [..]' or
-//     'remote [..]' the address is taken, otherwise the sighting has no
-//     address and is only counted (to be confirmed on a live server, WP6.11);
+//     shared secret) and 'ignoring request: remote [A:port] has no secret
+//     providers' (no scope covers the address: tacquito's loader tried
+//     every secret provider). The loader's debug line 'remote [A:port], no
+//     matching prefix secret provider found' is not a sighting: it is
+//     logged for each provider that does not match, also when a later one
+//     does (every connection on a server with several scopes);
 //   - debug (level 30 only): 'prefix secret provider matches remote [A]
 //     against prefix [P]': the address, no user.
 //
@@ -38,8 +39,7 @@ var (
 	reSightAccept   = regexp.MustCompile(`accepting user \[(.*?)\] from \[([^\]]*)\] using a bcrypt password`)
 	reSightReject   = regexp.MustCompile(`failed to validate the user \[(.*?)\] from \[([^\]]*)\] using a bcrypt password`)
 	reSightBad      = regexp.MustCompile(`bad secret detected for ip \[(\[[0-9A-Fa-f:.%a-z]+\]:\d+|[^\]\s]+)\]`)
-	reSightNoScope  = regexp.MustCompile(`no matching prefix secret provider found`)
-	reSightForIP    = regexp.MustCompile(`(?:for ip|remote) \[(\[[0-9A-Fa-f:.%a-z]+\]:\d+|[^\]\s]+)\]`)
+	reSightNoScope  = regexp.MustCompile(`remote \[(\[[0-9A-Fa-f:.%a-z]+\]:\d+|[^\]\s]+)\] has no secret providers`)
 	reSightDebug    = regexp.MustCompile(`prefix secret provider matches remote \[([^\]]+)\] against prefix \[[^\]]*\]`)
 	journalTimeForm = "2006-01-02 15:04:05"
 )
@@ -58,10 +58,7 @@ func ParseSightingLine(msg string, at time.Time) (backend.Sighting, bool) {
 	case reSightBad.MatchString(msg):
 		s.Address, s.Outcome = backend.CanonHostPort(reSightBad.FindStringSubmatch(msg)[1]), backend.SightBadSecret
 	case reSightNoScope.MatchString(msg):
-		s.Outcome = backend.SightNoScope
-		if m := reSightForIP.FindStringSubmatch(msg); m != nil {
-			s.Address = backend.CanonHostPort(m[1])
-		}
+		s.Address, s.Outcome = backend.CanonHostPort(reSightNoScope.FindStringSubmatch(msg)[1]), backend.SightNoScope
 	case reSightDebug.MatchString(msg):
 		s.Address, s.Outcome = backend.CanonAddr(reSightDebug.FindStringSubmatch(msg)[1]), backend.SightSeen
 	default:
@@ -97,43 +94,88 @@ func (e journalEntry) message() string {
 // the cursor of the last record, the time of the first and last record and
 // how many records were read. A line that is not a JSON record is skipped.
 func ParseJournal(out []byte) (ss []backend.Sighting, cursor string, first, last time.Time, n int) {
-	for _, line := range bytes.Split(out, []byte("\n")) {
-		line = bytes.TrimSpace(line)
-		if len(line) == 0 || line[0] != '{' {
-			continue
-		}
-		var e journalEntry
-		if json.Unmarshal(line, &e) != nil {
-			continue
-		}
-		us, err := strconv.ParseInt(e.Realtime, 10, 64)
-		if err != nil {
-			continue
-		}
-		at := time.UnixMicro(us)
-		n++
-		if first.IsZero() {
-			first = at
-		}
-		last = at
-		if e.Cursor != "" {
-			cursor = e.Cursor
-		}
-		if s, ok := ParseSightingLine(e.message(), at); ok {
-			ss = append(ss, s)
-		}
+	var p journalParser
+	_, _ = p.Write(out)
+	p.flush()
+	return p.ss, p.cursor, p.first, p.last, p.n
+}
+
+// journalParser is ParseJournal as an io.Writer: the journal is parsed as
+// journalctl writes it, so only the sightings are held in memory, never the
+// whole output (hundreds of megabytes at log level 30).
+type journalParser struct {
+	partial     []byte
+	ss          []backend.Sighting
+	cursor      string
+	first, last time.Time
+	n           int
+}
+
+func (p *journalParser) Write(b []byte) (int, error) {
+	data := b
+	if len(p.partial) > 0 {
+		data = append(p.partial, b...)
+		p.partial = nil
 	}
-	return ss, cursor, first, last, n
+	for {
+		i := bytes.IndexByte(data, '\n')
+		if i < 0 {
+			break
+		}
+		p.line(data[:i])
+		data = data[i+1:]
+	}
+	p.partial = append(p.partial, data...)
+	return len(b), nil
+}
+
+// flush parses an unterminated last line.
+func (p *journalParser) flush() {
+	if len(p.partial) > 0 {
+		p.line(p.partial)
+		p.partial = nil
+	}
+}
+
+func (p *journalParser) line(line []byte) {
+	line = bytes.TrimSpace(line)
+	if len(line) == 0 || line[0] != '{' {
+		return
+	}
+	var e journalEntry
+	if json.Unmarshal(line, &e) != nil {
+		return
+	}
+	us, err := strconv.ParseInt(e.Realtime, 10, 64)
+	if err != nil {
+		return
+	}
+	at := time.UnixMicro(us)
+	p.n++
+	if p.first.IsZero() {
+		p.first = at
+	}
+	p.last = at
+	if e.Cursor != "" {
+		p.cursor = e.Cursor
+	}
+	if s, ok := ParseSightingLine(e.message(), at); ok {
+		p.ss = append(p.ss, s)
+	}
 }
 
 // Sightings implements backend.Sighter over the journal of every
-// listener's unit: 'journalctl <units> -o json --no-pager' after the
-// cursor resume, or since since (everything when since is zero). A cursor
-// journald no longer knows falls back to since.
+// listener's unit: 'journalctl <units> -o json --output-fields=MESSAGE
+// --no-pager' (MESSAGE alone: the journal of a server at log level 30 is
+// large, and the other fields more than double it) after the cursor
+// resume, or since since (everything when since is zero), parsed as it is
+// read. A cursor journald no longer knows falls back to since.
 func (b *Backend) Sightings(ctx context.Context, since time.Time, resume string) ([]backend.Sighting, string, string, error) {
+	var p *journalParser
 	run := func(extra ...string) (execx.Result, error) {
-		args := append(b.journalUnits(), "-o", "json", "--no-pager")
-		return b.env.Runner.Run(ctx, execx.Cmd{Name: "journalctl", Args: append(args, extra...)})
+		p = &journalParser{}
+		args := append(b.journalUnits(), "-o", "json", "--output-fields=MESSAGE", "--no-pager")
+		return b.env.Runner.Run(ctx, execx.Cmd{Name: "journalctl", Args: append(args, extra...), Stdout: p})
 	}
 	var res execx.Result
 	var err error
@@ -160,11 +202,13 @@ func (b *Backend) Sightings(ctx context.Context, since time.Time, resume string)
 		}
 		return nil, resume, "", &journalError{msg: msg}
 	}
-	ss, cursor, first, last, n := ParseJournal(res.Stdout)
+	_, _ = p.Write(res.Stdout) // a runner that did not stream
+	p.flush()
+	cursor := p.cursor
 	if cursor == "" {
 		cursor = resume
 	}
-	return ss, cursor, backend.TimeWindow("journal", first, last, n), nil
+	return p.ss, cursor, backend.TimeWindow("journal", p.first, p.last, p.n), nil
 }
 
 type journalError struct{ msg string }

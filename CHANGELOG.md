@@ -226,11 +226,12 @@ current behaviour; this file is where history lives.
 29. **New: `tacctl device scan [--full] [--since <dur>] [--backend <id>]`**
     (operator tier and up) reads which devices talked to the server into the
     seen cache `/var/lib/tacctl/devices-seen.json` (0600, derived, not
-    snapshotted): the tacquito journal (`journalctl <units> -o json`,
-    resuming after its cursor; the patched `accepting user`/`failed to
-    validate the user … from [address]` lines, `bad secret detected for ip`,
-    `no matching prefix secret provider found`, and at log level 30 `prefix
-    secret provider matches remote`) and FreeRADIUS's `tacctl-auth.log` with
+    snapshotted): the tacquito journal (`journalctl <units> -o json
+    --output-fields=MESSAGE`, resuming after its cursor; the patched
+    `accepting user`/`failed to validate the user … from [address]` lines,
+    `bad secret detected for ip`, `has no secret providers` (no scope covers
+    the address), and at log level 30 `prefix secret provider matches
+    remote`) and FreeRADIUS's `tacctl-auth.log` with
     its rotations (resuming by inode and offset, following copytruncate and
     gzip). The first scan reads the last `stale-days` days, `--full`
     everything the logs hold, `--since` that stretch. It prints each

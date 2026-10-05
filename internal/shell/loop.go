@@ -202,9 +202,7 @@ func (s *Shell) Interactive(ctx context.Context, tty *os.File) int {
 		for sig := range sigs {
 			switch sig {
 			case syscall.SIGWINCH:
-				if w, h, err := term.GetSize(fd); err == nil {
-					_ = t.SetSize(w, h)
-				}
+				setSize(t, fd)
 			case syscall.SIGTERM, syscall.SIGHUP:
 				stop.CompareAndSwap(0, int32(sig.(syscall.Signal)))
 				_, _ = unix.Write(p[1], []byte{1})
@@ -226,9 +224,7 @@ func (s *Shell) Interactive(ctx context.Context, tty *os.File) int {
 			s.errorf("cannot set up the terminal: %v", err)
 			return 1
 		}
-		if w, h, err := term.GetSize(fd); err == nil {
-			_ = t.SetSize(w, h)
-		}
+		setSize(t, fd)
 		ed.interrupted = false
 		t.SetBracketedPasteMode(true)
 		line, err := t.ReadLine()
@@ -267,4 +263,14 @@ func idleText(d time.Duration) string {
 		return fmt.Sprintf("%d min", int(d/time.Minute))
 	}
 	return d.String()
+}
+
+// setSize gives the line editor the terminal's size. A terminal that
+// reports no size (0x0: a pty nobody sized, as expect(1) and some serial
+// consoles leave it) keeps the editor's 80x24: a width of 0 would wrap the
+// line after every character.
+func setSize(t *term.Terminal, fd int) {
+	if w, h, err := term.GetSize(fd); err == nil && w > 0 && h > 0 {
+		_ = t.SetSize(w, h)
+	}
 }

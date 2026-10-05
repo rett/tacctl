@@ -77,15 +77,15 @@ two_scans() {
     assert_success
     plain
     # Two sources, each with the window it read.
-    assert_output --partial "  tacacs  journal 2026-10-02 14:03:00 to 2026-10-03 16:07:00 (8 entries): 6 sightings of 5 addresses (1 without an address)"
+    assert_output --partial "  tacacs  journal 2026-10-02 14:03:00 to 2026-10-03 16:07:00 (8 entries): 6 sightings of 5 addresses"
     assert_output --partial "  radius  tacctl-auth.log 2026-10-03 07:40:00 to 2026-10-03 08:00:00 (2 entries): 2 sightings of 2 addresses"
     assert_output --partial "  Host keys: 5 entries re-scanned: 5 unchanged"
     assert_output --partial "  Seen: 8 addresses, 4 registered, 4 not (tacctl device discover)"
     assert_output --partial "  Notices (2):"
     assert_output --partial "    oob-con1  name-mismatch: 203.0.113.9 identifies itself as 'oob-con-01', not 'oob-con1' (informational)"
     assert_output --partial "    access-sw2  generic-nas-id: 203.0.113.12 identifies itself as 'Switch' (NAS-Identifier), a generic name"
-    stub_called "^journalctl -u tacquito -o json --no-pager --since 2026-07-22 12:00:00$"
-    stub_called "^journalctl -u tacquito -o json --no-pager --after-cursor s=f00d;i=101$"
+    stub_called "^journalctl -u tacquito -o json --output-fields=MESSAGE --no-pager --since 2026-07-22 12:00:00$"
+    stub_called "^journalctl -u tacquito -o json --output-fields=MESSAGE --no-pager --after-cursor s=f00d;i=101$"
     stub_called "^ssh-keyscan -T 5 -p 22 -t ed25519,ecdsa,rsa 203.0.113.1$"
 
     # discover: the unregistered addresses that authenticated, each with
@@ -194,7 +194,8 @@ two_scans() {
     assert_success
     plain
     assert_output --partial "Unregistered addresses seen (4)"
-    assert_output --regexp "192\.0\.2\.66 +- +- +2026-10-03 15:10 +2026-10-03 15:10 +1 +- +bad-secret +tacacs +-"
+    # A bad secret, then no scope (tacquito: 'remote [..] has no secret providers').
+    assert_output --regexp "192\.0\.2\.66 +- +- +2026-10-03 15:10 +2026-10-03 16:06 +2 +- +no-scope +tacacs +-"
     assert_output --regexp "2001:db8::5 +- +- +2026-10-03 16:00 +2026-10-03 16:00 +1 +mallory +reject +tacacs +-"
     assert_output --partial "    tacctl device add <name> 2001:db8::5"
 }

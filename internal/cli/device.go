@@ -511,7 +511,12 @@ func (inv *invocation) deviceShow(args []string) error {
 	inv.echo("")
 	inv.echoE(ui.Bold + kind + " " + e.Name + ui.NC)
 	inv.echo(strings.Repeat("-", len(kind)+1+len(e.Name)))
-	row := func(k, v string) { inv.write(fmt.Sprintf("  %-13s %s\n", k+":", v)) }
+	row := func(k, v string) {
+		if k != "" {
+			k += ":"
+		}
+		inv.write(fmt.Sprintf("  %-13s %s\n", k, v))
+	}
 	row("Name", e.Name)
 	row("Address", dash(e.Address))
 	row("Hostname", dash(e.Hostname))

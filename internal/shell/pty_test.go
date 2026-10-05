@@ -455,3 +455,23 @@ func TestPtyResize(t *testing.T) {
 	p.line("exit")
 	p.exits(0)
 }
+
+// A terminal that reports no size (0x0, as expect(1) leaves its pty) keeps
+// the editor's default width: the prompt and the line are not wrapped
+// after every character.
+func TestPtyZeroSize(t *testing.T) {
+	p := startShell(t)
+	if err := p.Resize(0, 0); err != nil {
+		t.Fatal(err)
+	}
+	p.Settle(200 * time.Millisecond)
+	p.line("echo zero")
+	p.output("zero")
+	p.expect(`tacctl> `)
+	p.send("echo abc")
+	p.expect(`echo abc`)
+	p.send("\r")
+	p.output("abc")
+	p.line("exit")
+	p.exits(0)
+}
