@@ -499,7 +499,11 @@ func (inv *invocation) hostEnroll(args []string) error {
 		}
 	}
 	a.Logger(inv.ctx, "auth.info", "host enroll name="+name+" target="+target+" scope="+scope+" method="+method+" by="+inv.sudoUser())
-	a.Out.InfoE("Host '" + name + "' enrolled.")
+	if he.Summary != nil {
+		a.Out.InfoE("Host '" + name + "' enrolled (" + he.Summary.Counts() + ").")
+	} else {
+		a.Out.InfoE("Host '" + name + "' enrolled.")
+	}
 	he.PinKeys(inv.ctx, hosts.Entry{Name: name, Target: target, Port: port})
 	if res.Users == "" {
 		inv.echo("")
@@ -650,7 +654,11 @@ func (inv *invocation) syncOne(he *hosts.Env, e hosts.Entry, method string, scri
 	if code != 0 {
 		return false, nil
 	}
-	inv.app.Out.InfoE(e.Name + ": synced (" + strconv.Itoa(hosts.CountLines(res.Users)) + " users).")
+	counts := strconv.Itoa(hosts.CountLines(res.Users)) + " users"
+	if he.Summary != nil {
+		counts = he.Summary.Counts()
+	}
+	inv.app.Out.InfoE(e.Name + ": synced (" + counts + ").")
 	he.PinKeys(inv.ctx, e)
 	return true, nil
 }

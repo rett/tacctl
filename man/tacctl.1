@@ -813,11 +813,17 @@ server. Run after
 .BR "user add" ", " "user remove" ", " "user move" ", " "user disable" " or " "user scope"
 changes.
 .IP
-tacctl changes an account only when it created it on that host and its UID
-there is in 20000\(en29999; any other account is never created, changed,
-expired or deleted. A local account named like a user of tacctl that tacctl
-did not create is left as it is, and that user gets no account on that
-host (a warning says so); the rest of the sync goes on.
+tacctl manages an account only when it created it on that host and its UID
+there is in 20000\(en29999. Any other account is never created, expired,
+deleted or otherwise changed, with one exception: it is taken out of
+tacctl's own groups
+.RB ( tac\-users ", " tac\-readonly ", " tac\-operator ", " tac\-superuser ", " tac\-console )
+and nothing else on it changes, so it is a plain local account. A local
+account named like a user of tacctl that tacctl did not create is otherwise
+left as it is, and that user gets no account on that host (a warning says
+so); the rest of the sync goes on. The summary counts the accounts tacctl
+manages on the host and names the refused users, as in
+.RB \(lq "c1: synced (4 users; 1 refused: carl)." \(rq.
 .IP
 A removed user's home directory is deleted only when asked for. From a
 terminal, enroll and sync read the host's

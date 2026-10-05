@@ -16,6 +16,7 @@ import (
 	"errors"
 	"io"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/rett/tacctl/internal/execx"
@@ -148,4 +149,68 @@ func (e *Env) HomesToDelete(ctx context.Context, name, target, port, identity st
 		}
 	}
 	return del, nil
+}
+
+// AccountSummary is what the client script reports at the end of its
+// account sync ("[INFO] Accounts: <n> managed by tacctl here[; refused:
+// <names>]."): the users of the list that have an account tacctl manages
+// on the host, and the ones it refused there (a local account of that name
+// tacctl did not create, a UID outside the range, no free number).
+type AccountSummary struct {
+	Managed int
+	Refused []string
+}
+
+// Counts is the summary in words: "<n> users", plus "; <k> refused:
+// <names>" when the host refused some.
+func (s AccountSummary) Counts() string {
+	out := strconv.Itoa(s.Managed) + " users"
+	if len(s.Refused) > 0 {
+		out += "; " + strconv.Itoa(len(s.Refused)) + " refused: " + strings.Join(s.Refused, ", ")
+	}
+	return out
+}
+
+var reAccountSummary = regexp.MustCompile(`^\[INFO\] Accounts: ([0-9]+) managed by tacctl here(?:; refused: (.*))?\.\r?$`)
+
+// ParseAccountSummary reads the summary line; ok is false for any other.
+func ParseAccountSummary(line string) (AccountSummary, bool) {
+	m := reAccountSummary.FindStringSubmatch(line)
+	if m == nil {
+		return AccountSummary{}, false
+	}
+	n, err := strconv.Atoi(m[1])
+	if err != nil {
+		return AccountSummary{}, false
+	}
+	s := AccountSummary{Managed: n}
+	if m[2] != "" {
+		s.Refused = strings.Split(m[2], ", ")
+	}
+	return s, true
+}
+
+// summaryWriter passes everything to w unchanged and as it comes, and
+// keeps the last summary line seen.
+type summaryWriter struct {
+	w    io.Writer
+	line []byte
+	sum  *AccountSummary
+}
+
+func (s *summaryWriter) Write(p []byte) (int, error) {
+	n, err := s.w.Write(p)
+	for _, b := range p[:n] {
+		if b != '\n' {
+			if len(s.line) < 4096 {
+				s.line = append(s.line, b)
+			}
+			continue
+		}
+		if sum, ok := ParseAccountSummary(string(s.line)); ok {
+			s.sum = &sum
+		}
+		s.line = s.line[:0]
+	}
+	return n, err
 }

@@ -270,15 +270,18 @@ current behaviour; this file is where history lives.
     no host gets an account for it.` `--allow-uid-mismatch` takes the highest
     number of the range that is free on the host (it took the host's next
     free UID, outside any range).
-35. **The client script never touches an account outside 20000-29999, and
-    changes an account only when it created it.** Before any change it reads
-    the account's UID on the host: an account tacctl created whose UID is
-    outside the range is left alone (`'<user>' has UID <uid>, outside
-    20000-29999: tacctl leaves it as it is, although it created it.`, or for
-    a current user `'<user>': its account has UID <uid>, outside
-    20000-29999; tacctl leaves it as it is.`). A member of `tac-users` that
-    tacctl did not create is no longer taken out of the tac-* groups; the
-    sync says so and how (`gpasswd -d <user> tac-users`).
+35. **The client script manages an account only when it created it and its
+    UID is in 20000-29999.** Before any change it reads the account's UID on
+    the host. Any other account (one tacctl did not create, or one it created
+    whose UID is outside the range) is never created, expired, deleted or
+    otherwise changed, with one exception: it is taken out of tacctl's own
+    groups (`tac-users`, `tac-readonly`, `tac-operator`, `tac-superuser`,
+    `tac-console`) with `gpasswd -d`, and nothing else on it changes (UID,
+    home, password, shell, expiry, full name): `'<user>': removed from
+    tacctl's groups (tac-users, tac-<tier>); it is a plain local account
+    again.` An out-of-range account tacctl created is reported (`'<user>' has
+    UID <uid>, outside 20000-29999: tacctl changes nothing on it but its
+    membership in tacctl's groups, although it created it.`).
 36. **`--adopt` is gone** (`host enroll`, `host sync` and the client script:
     `Unknown option: '--adopt'`). A local account named like a tacctl user
     that tacctl did not create no longer stops the install or sync: that user
@@ -286,8 +289,14 @@ current behaviour; this file is where history lives.
     that name that tacctl did not create, so '<user>' gets no TACACS+
     account here. The local account is left as it is.`), and the rest goes
     on. Accounts an earlier release adopted are reported once (`Accounts an
-    earlier tacctl adopted are no longer tracked: <names>. They are left
-    exactly as they are.`), then never changed or tracked.
+    earlier tacctl adopted are no longer tracked: <names>. Only their
+    membership in tacctl's groups is removed.`) and, in that same run, taken
+    out of tacctl's groups (item 35); they are not tracked after that. The
+    summary counts the accounts tacctl manages on the host and names the
+    users it refused there: `<host>: synced (4 users; 1 refused: carl).` and
+    `Host '<host>' enrolled (4 users; 1 refused: carl).` (with none refused,
+    `synced (<n> users).`), read from the script's last line `[INFO]
+    Accounts: <n> managed by tacctl here[; refused: <names>].`
 37. **Removed users' accounts are deleted.** `host sync`, `host enroll` and
     the client script delete (`userdel`) the accounts tacctl created for
     users no longer in the host's scope or no longer tacctl users, and their

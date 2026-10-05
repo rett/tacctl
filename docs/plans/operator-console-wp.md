@@ -246,6 +246,10 @@ Release steps for the user (recorded by WP6.10 in `docs/releasing.md`): `git flo
 
 ---
 
+### 4.15 WP6.14 — Linux account lifecycle rules (user, 2026-10-04)
+
+UIDs (and matching primary GIDs) only from 20000-29999, never reused; the client script manages an account only when it created it AND its UID is in the range; `--adopt` removed (a name clash refuses that user on that host, the rest proceeds); removed users' accounts deleted (homes: asked on the terminal, `--remove-home`, else kept), disabled users expired. **Exception (user decision):** any account tacctl does not manage (legacy adopted, hand-added to `tac-users`, created but out of range) is taken out of tacctl's own groups (`tac-users`, `tac-<tier>`, `tac-console`) and nothing else on it changes. Sync/enroll summaries count managed accounts and name refused users (`synced (4 users; 1 refused: carl)`). CHANGELOG 0.2.1 items 34-39.
+
 ## 5. 0.2.2 work packages (Part D — the login console)
 
 ### 5.1 WP7.1 — Console core: mode, policy file, guard, `console` verbs, session logging

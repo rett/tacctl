@@ -390,17 +390,22 @@ bob"
     run bash "$OUT" --accounts-only
     assert_success
     assert_output --partial "[WARN] 'bob': this host has a local account of that name that tacctl did not create, so 'bob' gets no TACACS+ account here. The local account is left as it is."
+    assert_output --partial "[INFO] Accounts: 1 managed by tacctl here; refused: bob."
     stub_called "useradd -m -u 20000 -g alice .* alice"
     run grep -cE "^(useradd|groupadd|usermod|gpasswd|userdel|groupdel) .*bob" "$CALLS_LOG"
     assert_output "0"
     run cat "$TACCTL_CLIENT_STATE/created"
     assert_output "alice"
-    # In tac-users (an account an earlier release adopted): said how to
-    # make it a plain local account, still not touched.
-    FAKE_ID_GROUPS="tac-users tac-readonly" run bash "$OUT" --accounts-only
+    # In tacctl's groups (an account an earlier release adopted): taken out
+    # of them, and only that.
+    printf '%s\n' "tac-users:x:900:bob" "tac-readonly:x:901:bob" >> "$FAKE_DB/group"
+    : > "$CALLS_LOG"
+    run bash "$OUT" --accounts-only
     assert_success
-    assert_output --partial "It is in tac-users, so its logins go to the TACACS+ server first. To make it a plain local account: gpasswd -d bob tac-users"
-    run grep -cE "^(usermod|gpasswd|userdel) .*bob" "$CALLS_LOG"
+    assert_output --partial "[INFO] 'bob': removed from tacctl's groups (tac-users, tac-readonly); it is a plain local account again."
+    stub_called "gpasswd -d bob tac-users"
+    stub_called "gpasswd -d bob tac-readonly"
+    run grep -cE "^(useradd|usermod|userdel|groupdel|chage|passwd) .*bob" "$CALLS_LOG"
     assert_output "0"
 }
 
@@ -441,10 +446,13 @@ bob"
     echo 'olduser:$y$hash:1::::::' >> "$FAKE_DB/shadow"
     run bash "$OUT" --accounts-only
     assert_success
-    assert_output --partial "[WARN] Accounts an earlier tacctl adopted are no longer tracked: bob olduser. They are left exactly as they are."
-    assert_output --partial "'olduser' is in tac-users but tacctl did not create it: left as it is."
-    assert_output --partial "gpasswd -d olduser tac-users"
-    run grep -cE "^(usermod|gpasswd|userdel|groupdel) .*(olduser|bob)" "$CALLS_LOG"
+    assert_output --partial "[WARN] Accounts an earlier tacctl adopted are no longer tracked: bob olduser. Only their membership in tacctl's groups is removed."
+    # Cleaned up in the same run that forgets them, and nothing else changes.
+    assert_output --partial "[INFO] 'olduser': removed from tacctl's groups (tac-users); it is a plain local account again."
+    assert_output --partial "[INFO] 'bob': removed from tacctl's groups (tac-users); it is a plain local account again."
+    stub_called "gpasswd -d olduser tac-users"
+    stub_called "gpasswd -d bob tac-users"
+    run grep -cE "^(useradd|usermod|userdel|groupdel) .*(olduser|bob)" "$CALLS_LOG"
     assert_output "0"
     [[ ! -e "$TACCTL_CLIENT_STATE/adopted" ]]
     run bash "$OUT" --accounts-only
@@ -492,8 +500,9 @@ bob"
     stub_called "groupdel olduser"
     assert_output --partial "[INFO] Deleted account 'olduser': no longer a TACACS+ user here (its UID 20005 stays reserved on the tacctl server, never reused)."
     assert_output --partial "[INFO] home kept: ${TACCTL_CLIENT_HOME_ROOT}/olduser"
-    # A local account in tac-users that tacctl did not create: said, not touched.
-    assert_output --partial "'localguy' is in tac-users but tacctl did not create it: left as it is."
+    # A local account in tac-users that tacctl did not create: out of
+    # tacctl's groups, nothing else.
+    assert_output --partial "[INFO] 'localguy': removed from tacctl's groups (tac-users); it is a plain local account again."
     [[ -d "$TACCTL_CLIENT_HOME_ROOT/olduser" ]]
     run grep -c olduser "$TACCTL_CLIENT_STATE/created" "$TACCTL_CLIENT_STATE/expired"
     assert_output "${TACCTL_CLIENT_STATE}/created:0
@@ -501,7 +510,8 @@ ${TACCTL_CLIENT_STATE}/expired:0"
     # Not userdel -r: the home is the operator's call.
     run grep -c "userdel -r" "$CALLS_LOG"
     assert_output "0"
-    run grep -cE "^(usermod|gpasswd|userdel) .*localguy" "$CALLS_LOG"
+    stub_called "gpasswd -d localguy tac-users"
+    run grep -cE "^(usermod|userdel) .*localguy" "$CALLS_LOG"
     assert_output "0"
 }
 
@@ -573,9 +583,12 @@ ${TACCTL_CLIENT_STATE}/expired:0"
     echo "tac-users:x:900:legacy,bob" >> "$FAKE_DB/group"
     run bash "$OUT" --accounts-only --remove-home
     assert_success
-    assert_output --partial "[WARN] 'legacy' has UID 1500, outside 20000-29999: tacctl leaves it as it is, although it created it."
-    assert_output --partial "[WARN] 'bob': its account has UID 1001, outside 20000-29999; tacctl leaves it as it is."
-    run grep -cE "^(usermod|gpasswd|userdel|groupdel|useradd) .*(legacy|bob)" "$CALLS_LOG"
+    assert_output --partial "[WARN] 'legacy' has UID 1500, outside 20000-29999: tacctl changes nothing on it but its membership in tacctl's groups, although it created it."
+    assert_output --partial "[WARN] 'bob': its account has UID 1001, outside 20000-29999; tacctl changes nothing on it but its membership in tacctl's groups."
+    assert_output --partial "[INFO] 'legacy': removed from tacctl's groups (tac-users); it is a plain local account again."
+    assert_output --partial "[INFO] 'bob': removed from tacctl's groups (tac-users); it is a plain local account again."
+    assert_output --partial "[INFO] Accounts: 1 managed by tacctl here; refused: bob."
+    run grep -cE "^(usermod|userdel|groupdel|useradd) .*(legacy|bob)" "$CALLS_LOG"
     assert_output "0"
     [[ -d "$TACCTL_CLIENT_HOME_ROOT/legacy" ]]
 }

@@ -661,17 +661,23 @@ delete_account() {
     fi
 }
 
+# tacctl's own groups. An account tacctl does not manage here (not created
+# by it, or with a UID outside the range) is taken out of these and nothing
+# else is changed on it: the one change tacctl makes to such an account.
+TAC_GROUPS="${G_USERS} tac-readonly tac-operator tac-superuser tac-console"
+
 sync_accounts() {
-    local g name tier uid id listed=" " inactive=" " member legacy
+    local g name tier uid id listed=" " inactive=" " managed=" " refused="" member legacy groups
     for g in "$G_USERS" tac-readonly tac-operator tac-superuser; do
         getent group "$g" >/dev/null || groupadd "$g"
     done
 
     # Earlier releases took pre-existing accounts over ('adopted'). They are
-    # not tacctl's: reported once, never changed, no longer tracked.
+    # not tacctl's: reported once and no longer tracked; the group cleanup
+    # below (in this same run) takes them out of tacctl's groups.
     if [[ -s "$STATE_DIR/adopted" ]]; then
         legacy=$(sort -u "$STATE_DIR/adopted" | paste -sd' ')
-        warn "Accounts an earlier tacctl adopted are no longer tracked: ${legacy}. They are left exactly as they are."
+        warn "Accounts an earlier tacctl adopted are no longer tracked: ${legacy}. Only their membership in tacctl's groups is removed."
     fi
     rm -f "$STATE_DIR/adopted"
 
@@ -684,17 +690,17 @@ sync_accounts() {
         listed+="${name} "
         if ! uid_in_range "$uid"; then
             warn "'${name}': UID ${uid} from the server is outside ${TAC_UID_RANGE}; no account for it here."
+            refused+="${refused:+, }${name}"
             continue
         fi
         case "$(account_state "$name")" in
             foreign)
                 warn "'${name}': this host has a local account of that name that tacctl did not create, so '${name}' gets no ${PROTO} account here. The local account is left as it is."
-                if [[ " $(id -nG "$name" 2>/dev/null) " == *" ${G_USERS} "* ]]; then
-                    warn "  It is in ${G_USERS}, so its logins go to the ${PROTO} server first. To make it a plain local account: gpasswd -d ${name} ${G_USERS}"
-                fi
+                refused+="${refused:+, }${name}"
                 continue ;;
             outside)
-                warn "'${name}': its account has UID $(account_uid "$name"), outside ${TAC_UID_RANGE}; tacctl leaves it as it is."
+                warn "'${name}': its account has UID $(account_uid "$name"), outside ${TAC_UID_RANGE}; tacctl changes nothing on it but its membership in tacctl's groups."
+                refused+="${refused:+, }${name}"
                 continue ;;
             managed)
                 # Earlier versions gave every account the same full name,
@@ -716,6 +722,7 @@ sync_accounts() {
                 if ! id_is_free "$name" "$uid"; then
                     if ! id=$(free_id_in_range "$name"); then
                         warn "'${name}': no number of ${TAC_UID_RANGE} is free here for both its UID and its group; no account created."
+                        refused+="${refused:+, }${name}"
                         continue
                     fi
                 fi
@@ -735,6 +742,7 @@ sync_accounts() {
             fi
         done
         usermod -aG "${G_USERS},tac-${tier}" "$name"
+        managed+="${name} "
         if grep -qxF "$name" "$STATE_DIR/expired"; then
             usermod -e '' "$name"
             sed -i "/^${name}\$/d" "$STATE_DIR/expired"
@@ -754,10 +762,10 @@ sync_accounts() {
         fi
         uid=$(account_uid "$name")
         if ! uid_in_range "$uid"; then
-            warn "'${name}' has UID ${uid}, outside ${TAC_UID_RANGE}: tacctl leaves it as it is, although it created it."
+            warn "'${name}' has UID ${uid}, outside ${TAC_UID_RANGE}: tacctl changes nothing on it but its membership in tacctl's groups, although it created it."
             continue
         fi
-        for g in "$G_USERS" tac-readonly tac-operator tac-superuser; do
+        for g in $TAC_GROUPS; do
             gpasswd -d "$name" "$g" >/dev/null 2>&1 || true
         done
         if [[ "$inactive" == *" ${name} "* ]]; then
@@ -770,12 +778,29 @@ sync_accounts() {
         fi
     done < <(sort -u "$STATE_DIR/created")
 
-    # Anyone else in tac-users is not tacctl's to change: said, not touched.
-    for member in $(getent group "$G_USERS" | cut -d: -f4 | tr ',' ' '); do
-        [[ "$listed" != *" ${member} "* ]] || continue
-        is_created "$member" && continue
-        warn "'${member}' is in ${G_USERS} but tacctl did not create it: left as it is. Its logins go to the ${PROTO} server first; to make it a plain local account: gpasswd -d ${member} ${G_USERS}"
+    # Anyone else in tacctl's groups (an account an earlier release adopted,
+    # one added by hand, one of tacctl's with a UID outside the range) is
+    # taken out of them, and nothing else on it changes: it is a plain local
+    # account, never sent to the server.
+    for member in $(for g in $TAC_GROUPS; do getent group "$g" | cut -d: -f4 | tr ',' '\n'; done | sort -u); do
+        [[ -n "$member" && "$managed" != *" ${member} "* ]] || continue
+        if is_created "$member" && uid_in_range "$(account_uid "$member")"; then continue; fi
+        groups=""
+        for g in $TAC_GROUPS; do
+            if getent group "$g" | cut -d: -f4 | tr ',' '\n' | grep -qxF "$member"; then
+                gpasswd -d "$member" "$g" >/dev/null
+                groups+="${groups:+, }${g}"
+            fi
+        done
+        info "'${member}': removed from tacctl's groups (${groups}); it is a plain local account again."
     done
+
+    # The summary 'tacctl host enroll|sync' reads back.
+    if [[ -n "$refused" ]]; then
+        info "Accounts: $(wc -w <<< "$managed") managed by tacctl here; refused: ${refused}."
+    else
+        info "Accounts: $(wc -w <<< "$managed") managed by tacctl here."
+    fi
 }
 
 sync_accounts

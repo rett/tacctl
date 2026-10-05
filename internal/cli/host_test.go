@@ -546,3 +546,28 @@ func TestConfigLinuxBuildBuildsAndOwner(t *testing.T) {
 		t.Error("helpers")
 	}
 }
+
+// The host's account summary is what enroll and sync report: the accounts
+// tacctl manages there and the users it refused; without one, the count
+// of users sent.
+func TestHostSyncReportsTheHostsSummary(t *testing.T) {
+	hs := newHostSandbox(t)
+	summary := ""
+	r := func() *fake.Runner {
+		r := hs.runner()
+		r.Func(func(c execx.Cmd) bool { return c.Name == "ssh" && strings.Contains(strings.Join(c.Args, " "), "rm -f") },
+			func(execx.Cmd) (execx.Result, error) { return execx.Result{Stdout: []byte(summary)}, nil })
+		return r
+	}
+	summary = "[INFO] Accounts: 2 managed by tacctl here; refused: carol.\n"
+	hs.run(r(), "host", "enroll", "web1", "--scope", "lab", "--build-on-host")
+	hs.expect(0, "Host 'web1' enrolled (2 users; 1 refused: carol).", "")
+	hs.run(r(), "host", "sync", "web1")
+	hs.expect(0, "web1: synced (2 users; 1 refused: carol).", "")
+	summary = "[INFO] Accounts: 3 managed by tacctl here.\n"
+	hs.run(r(), "host", "sync", "web1")
+	hs.expect(0, "web1: synced (3 users).", "")
+	summary = ""
+	hs.run(r(), "host", "enroll", "web1", "--scope", "lab", "--build-on-host")
+	hs.expect(0, "Host 'web1' enrolled.\n", "")
+}

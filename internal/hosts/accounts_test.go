@@ -154,3 +154,50 @@ func TestScriptBodyAgreesOnRangeAndProtocol(t *testing.T) {
 		}
 	}
 }
+
+func TestAccountSummary(t *testing.T) {
+	for line, want := range map[string]string{
+		"[INFO] Accounts: 4 managed by tacctl here; refused: carl.":         "4 users; 1 refused: carl",
+		"[INFO] Accounts: 2 managed by tacctl here; refused: carl, olaf.\r": "2 users; 2 refused: carl, olaf",
+		"[INFO] Accounts: 0 managed by tacctl here.":                        "0 users",
+	} {
+		s, ok := ParseAccountSummary(line)
+		if !ok || s.Counts() != want {
+			t.Errorf("%q: %+v %v", line, s, ok)
+		}
+	}
+	for _, bad := range []string{"[INFO] Accounts: x managed by tacctl here.", "Accounts: 4 managed by tacctl here.", "[INFO] Created account 'a' (readonly)."} {
+		if _, ok := ParseAccountSummary(bad); ok {
+			t.Errorf("parsed %q", bad)
+		}
+	}
+	// Passed through as it comes; a line split across writes is read whole,
+	// the last summary wins.
+	var out strings.Builder
+	w := &summaryWriter{w: &out}
+	for _, chunk := range []string{"[INFO] Created account 'a'.\n[INFO] Accounts: 1 man", "aged by tacctl here.\r\n", "[INFO] Accounts: 3 managed by tacctl here; refused: x.\n"} {
+		if n, err := w.Write([]byte(chunk)); err != nil || n != len(chunk) {
+			t.Fatal(n, err)
+		}
+	}
+	if !strings.HasPrefix(out.String(), "[INFO] Created account 'a'.\n[INFO] Accounts: 1 managed") || w.sum == nil || w.sum.Counts() != "3 users; 1 refused: x" {
+		t.Errorf("out %q sum %+v", out.String(), w.sum)
+	}
+}
+
+func TestRunScriptKeepsTheSummary(t *testing.T) {
+	e, out, _ := testEnv(t)
+	f := &fake.Runner{}
+	e.Runner = f
+	f.On([]string{"bash"}, execx.Result{Stdout: []byte("[INFO] Accounts: 2 managed by tacctl here; refused: carl.\n")})
+	if code, err := e.RunScript(context.Background(), Local, "", "", "/x.sh", nil); code != 0 || err != nil {
+		t.Fatal(code, err)
+	}
+	if e.Summary == nil || e.Summary.Counts() != "2 users; 1 refused: carl" || !strings.Contains(out.String(), "refused: carl.") {
+		t.Errorf("summary %+v out %q", e.Summary, out.String())
+	}
+	f.On([]string{"bash"}, execx.Result{})
+	if _, err := e.RunScript(context.Background(), Local, "", "", "/x.sh", nil); err != nil || e.Summary != nil {
+		t.Errorf("a run without a summary kept the last one: %+v", e.Summary)
+	}
+}

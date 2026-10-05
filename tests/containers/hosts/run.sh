@@ -354,11 +354,15 @@ enroll "$FIRST"; check "host enroll --method ${FIRST} exits 0" test $? -eq 0
 check "enroll said there are no users in the scope yet" grep -q "No users are in scope 'linux-c1' yet" "${WORK}/enroll.out"
 
 section "users: alice (superuser), bob (operator), dave and erin (readonly), carl (readonly; the host has a local carl)"
-carl_before=$(c getent passwd carl)
+# carl as an earlier release left an adopted account: in tacctl's groups
+# and listed in the 'adopted' state file.
+c bash -c 'usermod -aG tac-users,tac-readonly carl && echo carl > /var/lib/tacctl-client/adopted'
+carl_before=$(c getent passwd carl); carl_shadow=$(c getent shadow carl); carl_groups=$(c id -nG carl | tr ' ' '\n' | grep -v '^tac-' | sort | paste -sd' ')
 for u in alice bob carl dave erin; do tacctl user scope "$u" add linux-c1 > /dev/null; done
 tacctl host sync c1 > "${WORK}/sync.out"; rc=$?
-check "host sync refuses carl (a local account tacctl did not create) and goes on" bash -c "[[ $rc == 0 ]] && grep -q \"'carl': this host has a local account of that name that tacctl did not create\" '${WORK}/sync.out' && grep -q 'c1: synced (5 users)' '${WORK}/sync.out'"
-check "carl's local account is untouched (same passwd line, not in tac-users)" bash -c "[[ \"\$(podman exec '$C' getent passwd carl)\" == '${carl_before}' ]] && ! podman exec '$C' id -nG carl | grep -qw tac-users"
+check "host sync refuses carl (a local account tacctl did not create), goes on, and says so in its summary" bash -c "[[ $rc == 0 ]] && grep -q \"'carl': this host has a local account of that name that tacctl did not create\" '${WORK}/sync.out' && grep -q 'c1: synced (4 users; 1 refused: carl)' '${WORK}/sync.out'"
+check "the adopted carl is reported once, taken out of tacctl's groups, and forgotten" bash -c "grep -q 'adopted are no longer tracked: carl' '${WORK}/sync.out' && grep -q \"'carl': removed from tacctl's groups (tac-users, tac-readonly); it is a plain local account again.\" '${WORK}/sync.out' && ! podman exec '$C' test -e /var/lib/tacctl-client/adopted"
+check "nothing else of carl's account changed (passwd and shadow lines, other groups)" bash -c "[[ \"\$(podman exec '$C' getent passwd carl)\" == '${carl_before}' && \"\$(podman exec '$C' getent shadow carl)\" == '${carl_shadow}' && \"\$(podman exec '$C' id -nG carl | tr ' ' '\\n' | sort | paste -sd' ')\" == '${carl_groups}' ]]"
 check "every account tacctl created has a UID in 20000-29999" bash -c "for u in alice bob dave erin; do id=\$(podman exec '$C' id -u \$u) && (( id >= 20000 && id <= 29999 )) || exit 1; done"
 LABEL="TACACS+"; [[ "$FIRST" == "radius" ]] && LABEL="RADIUS"
 check "alice's account: UID 20000, locked password, named 'alice (${LABEL})'" c bash -c "[[ \$(id -u alice) == 20000 && \$(getent passwd alice | cut -d: -f5) == 'alice (${LABEL})' ]] && getent shadow alice | cut -d: -f2 | grep -q '^!'"

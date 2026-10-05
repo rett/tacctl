@@ -134,6 +134,10 @@ type Env struct {
 	// 'host enroll' and 'host sync' set it.
 	ReadKeys bool
 
+	// Summary is the account summary the last RunScript's script printed
+	// (nil when it printed none).
+	Summary *AccountSummary
+
 	sessionKeys []byte
 	sessionErr  error
 }

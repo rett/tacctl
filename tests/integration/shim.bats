@@ -521,7 +521,9 @@ not_used() {
 
 @test "shim: with no key in release/allowed_signers the release binary is not used (nothing downloaded); built from source" {
     release_tree
-    cp "${TACCTL_SRC}/release/allowed_signers" "${T}/release/allowed_signers"
+    # An allowed_signers file with comments only, as a tree with no key has.
+    printf '# The public half of the tacctl release key\n#   tacctl-release namespaces="tacctl-release" ssh-ed25519 AAAA...\n' \
+        > "${T}/release/allowed_signers"
     go_toolchain "$GOROOT_DIR" 1.26.2
     fake_release_binary "${BATS_TEST_TMPDIR}/rel" "$HEAD_COMMIT"
     release_assets amd64 "${BATS_TEST_TMPDIR}/rel"
@@ -635,9 +637,15 @@ not_used() {
     # The allowed_signers file given.
     run_shim --verify-release "$RELDIR" "$TEST_SIGNERS"
     assert_success
+    # Another key (the project's real one did not sign these test assets).
     run_shim --verify-release "$RELDIR" "${TACCTL_SRC}/release/allowed_signers"
     assert_failure 1
-    assert_output --partial "No release key in ${TACCTL_SRC}/release/allowed_signers"
+    assert_output --partial "SHA256SUMS.sig does not verify"
+    # No key at all.
+    printf '# comments only\n' > "${BATS_TEST_TMPDIR}/nokey_signers"
+    run_shim --verify-release "$RELDIR" "${BATS_TEST_TMPDIR}/nokey_signers"
+    assert_failure 1
+    assert_output --partial "No release key in ${BATS_TEST_TMPDIR}/nokey_signers"
     # A flipped byte in the binary.
     local f="${RELDIR}/tacctl-${REL_TAG}-linux-amd64"
     printf '\x01' | dd of="$f" bs=1 seek=40 count=1 conv=notrunc status=none

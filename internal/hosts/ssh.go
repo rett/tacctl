@@ -120,8 +120,14 @@ var reRemoteCopy = regexp.MustCompile(`^/tmp/tacctl\.[A-Za-z0-9]+$`)
 // script's exit status (a failed copy is 1, its error printed). A signal
 // during the run ends the command: ui.ErrInterrupted.
 func (e *Env) RunScript(ctx context.Context, target, port, identity, script string, args []string) (int, error) {
+	// The script's output goes through as it comes; its account summary is
+	// kept for the caller.
+	e.Summary = nil
+	sw := &summaryWriter{w: e.Out.Stdout}
+	out := ui.Output{Stdout: sw, Stderr: e.Out.Stderr}
+	defer func() { e.Summary = sw.sum }()
 	if target == Local {
-		code, intr, err := Attached(ctx, e.Runner, execx.Cmd{Name: "bash", Args: append([]string{script}, args...)}, e.Stdin, e.Out)
+		code, intr, err := Attached(ctx, e.Runner, execx.Cmd{Name: "bash", Args: append([]string{script}, args...)}, e.Stdin, out)
 		if intr {
 			return code, ui.ErrInterrupted
 		}
@@ -157,7 +163,7 @@ func (e *Env) RunScript(ctx context.Context, target, port, identity, script stri
 	if tty {
 		flag = "-t"
 	}
-	code, intr, startErr := Attached(ctx, e.Runner, s.Cmd(flag, target, RemoteCommand(remote, args, tty)), e.Stdin, e.Out)
+	code, intr, startErr := Attached(ctx, e.Runner, s.Cmd(flag, target, RemoteCommand(remote, args, tty)), e.Stdin, out)
 	if startErr != nil && code == 0 {
 		code = 1
 	}
