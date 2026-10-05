@@ -220,6 +220,8 @@ Usage:
   tacctl scope prefixes {{scope}} add    <cidr>[,<cidr>...]    Add one or more
   tacctl scope prefixes {{scope}} remove <cidr>[,<cidr>...]    Remove one or more
   tacctl scope prefixes {{scope}} remove --all [--force]       Remove all, which removes the scope (confirms; --force also strips it from users)
+  tacctl scope prefixes {{scope}} move <cidr>[,<cidr>...] <scope>
+                                                            Move them to another scope in one change; names the hosts that then belong elsewhere
       --all                                                 (remove) Every prefix
       --force                                               (remove --all) Also take the scope out of the users that have it
 
@@ -381,12 +383,14 @@ Usage: tacctl host <subcommand> [arguments]
       --name <name>                    Registry name (default: short hostname)
       --port <n>, --identity <file>    SSH port and key
       --build-on-host                  (tacplus) Compile pam_tacplus on the host instead of in a container here
-      --yes                            Move a registered host to the --scope named even when that deletes accounts
+      --yes                            (enroll and move) Move a registered host to another scope even when that deletes accounts
   sync <name> | --all                  Push account adds, deletions and tier changes
       --all                            Every enrolled host
       --allow-uid-mismatch             (enroll and sync) accept a UID conflict on the host instead of stopping
       --remove-home                    (enroll and sync) delete removed users' home directories without asking
                                        (on a terminal each one is asked; without one they are kept)
+  move <name> [<scope>] | --all        Move an enrolled host to another scope (default: the one answering its address);
+                                       --all: every host another scope answers. Asks before deleting accounts
   target <name> [<[user@]host>]        Show, or change and test, how tacctl reaches an enrolled host over ssh
       --port <n>, --identity <file>    SSH port and key; tested first, and the host's ssh keys must match the pin
       --no-identity                    No key file (ssh's default keys and the agent)

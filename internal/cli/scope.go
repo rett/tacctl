@@ -42,7 +42,7 @@ var scopeSpecs = map[string]Spec{
 	"rename":       {MinArgs: 2, MaxArgs: 2, Args: []string{KindScopes, ""}},
 	"default":      {MaxArgs: 1, Args: []string{KindScopes}},
 	"lookup":       {MinArgs: 1, MaxArgs: 1, Args: []string{""}},
-	"prefixes":     {MinArgs: 1, MaxArgs: 3, Args: []string{KindScopes, "list|add|remove", ""}, Flags: []Flag{{Names: []string{"--all"}, Only: "remove", Alone: true}, {Names: []string{"--force"}, Only: "remove"}}},
+	"prefixes":     {MinArgs: 1, MaxArgs: 4, Args: []string{KindScopes, "list|add|remove|move", "", KindScopes}, Flags: []Flag{{Names: []string{"--all"}, Only: "remove", Alone: true}, {Names: []string{"--force"}, Only: "remove"}}},
 	"secret":       {MinArgs: 1, MaxArgs: 3, Args: []string{KindScopes, "show|set|generate", ""}},
 	"protocols":    {MinArgs: 1, MaxArgs: 3, Args: []string{KindScopes, "list|set|clear", "tacacs|radius" + KindList}},
 	"vendor-attrs": {MinArgs: 1, MaxArgs: 3, Args: []string{KindScopes, "show|enable|disable", "cisco|juniper|wti" + KindList}},
@@ -945,6 +945,9 @@ func (inv *invocation) scopeRemove(args []string) error {
 	if !m.Exists("scopes", name) {
 		return inv.usageErr("Scope '" + name + "' does not exist.")
 	}
+	if err := inv.scopeHostsRefusal(name, "Cannot remove '"+name+"'"); err != nil {
+		return err
+	}
 	members := m.Members(name)
 	if len(members) > 0 && !force {
 		return inv.scopeMembersRefusal(name, members, []string{
@@ -1087,6 +1090,7 @@ func (inv *invocation) scopePrefixes(args []string) error {
 	scope, sub, argv := arg(args, 0), arg(args, 1), arg(args, 2)
 	if scope == "" {
 		return inv.usageErr("Usage: tacctl scope prefixes <scope> {list|add|remove} [<cidrs>]",
+			"       tacctl scope prefixes <scope> move <cidrs> <other-scope>",
 			"       tacctl scope prefixes <scope> remove --all [--force]")
 	}
 	// A membership list: emptying it is 'remove --all'; the old 'clear'
@@ -1116,7 +1120,7 @@ func (inv *invocation) scopePrefixes(args []string) error {
 			return inv.usageErr("Usage: tacctl scope prefixes " + scope + " remove --all --force   ('--force' is only valid with --all)")
 		}
 	}
-	if sub == "add" || sub == "remove" {
+	if sub == "add" || sub == "remove" || sub == "move" {
 		if err := inv.requireStore(); err != nil {
 			return err
 		}
@@ -1150,6 +1154,8 @@ func (inv *invocation) scopePrefixes(args []string) error {
 		inv.echo("")
 		return nil
 	case "add", "remove":
+	case "move":
+		return inv.scopePrefixesMove(m, scope, argv, arg(args, 3))
 	default:
 		return inv.usageErr("Unknown subcommand: '"+sub+"'", "Run 'tacctl scope prefixes "+scope+"' for usage.")
 	}
@@ -1242,6 +1248,94 @@ func (inv *invocation) scopePrefixes(args []string) error {
 	return nil
 }
 
+// scopePrefixesMove is 'scope prefixes <from> move <cidrs> <to>': the
+// prefixes leave one scope and join another in one change, so the
+// addresses they hold are never answered by neither. The enrolled hosts
+// whose addresses another scope then answers are named, with the move
+// that follows them; none is moved here.
+func (inv *invocation) scopePrefixesMove(m *model.Model, from, list, to string) error {
+	a := inv.app
+	if list == "" || to == "" {
+		return inv.usageErr("Usage: tacctl scope prefixes " + from + " move <cidr>[,<cidr>...] <other-scope>")
+	}
+	if !m.Exists("scopes", to) {
+		return inv.usageErr("Scope '" + to + "' does not exist.")
+	}
+	if to == from {
+		return inv.usageErr("The prefixes are already in scope '" + from + "'.")
+	}
+	requested, err := inv.parseCIDRList(list)
+	if err != nil {
+		return err
+	}
+	if len(requested) == 0 {
+		return inv.usageErr("No valid CIDRs provided.")
+	}
+	src, dst := m.ScopePrefixes(from), m.ScopePrefixes(to)
+	var missing []string
+	for _, c := range requested {
+		if !contains(src, c) {
+			missing = append(missing, c)
+		}
+	}
+	if len(missing) > 0 {
+		return inv.usageErr("Not prefixes of scope '" + from + "': " + strings.Join(missing, " ") + ". Nothing was changed.")
+	}
+	for _, c := range requested {
+		src = without(src, c)
+		if !contains(dst, c) {
+			dst = append(dst, c)
+		}
+	}
+	if joinNonEmpty(src, "") == "" {
+		return inv.usageErr("Cannot move every prefix of scope '"+from+"': a scope needs at least one. Nothing was changed.",
+			"Add another prefix to it first, or move its users and hosts and remove it: tacctl scope remove "+from)
+	}
+	srcCSV, dstCSV := joinNonEmpty(src, ","), joinNonEmpty(dst, ",")
+	if problems, ok := m.DeviceProblems(from, srcCSV, "", ""); !ok {
+		a.Out.ErrorE("Cannot move the prefix(es) out of scope '" + from + "': a tagged address would be left outside the scope's prefixes:")
+		inv.scopeDeviceProblems(problems)
+		return inv.usageErr("Nothing was changed. Unset the tag first.")
+	}
+	if problems, ok := m.DeviceProblems(to, dstCSV, "", ""); !ok {
+		a.Out.ErrorE("Cannot move the prefix(es) into scope '" + to + "': it would take over an address another scope has tagged with a vendor:")
+		inv.scopeDeviceProblems(problems)
+		return inv.usageErr("Nothing was changed. Unset the tag first.")
+	}
+	if err := inv.applyStore(func(s *store.Store) error {
+		if err := s.ScopeSet(from, "prefixes="+srcCSV); err != nil {
+			return err
+		}
+		return s.ScopeSet(to, "prefixes="+dstCSV)
+	}); err != nil {
+		return err
+	}
+	a.Out.Info(fmt.Sprintf("Moved %d prefix(es) from scope '%s' to '%s': %s", len(requested), from, to, strings.Join(requested, " ")))
+	inv.hostDriftReport()
+	inv.echo("")
+	return nil
+}
+
+// scopeHostsRefusal refuses to remove a scope enrolled hosts use: they
+// hold its secret, so their logins would fail. Moving them is the way.
+func (inv *invocation) scopeHostsRefusal(scope, what string) error {
+	reg, err := inv.registry()
+	if err != nil {
+		return err
+	}
+	var used []string
+	for _, e := range reg.Entries() {
+		if e.Scope == scope {
+			used = append(used, e.Name)
+		}
+	}
+	if len(used) == 0 {
+		return nil
+	}
+	return inv.usageErr(what+": enrolled hosts use it: "+strings.Join(used, ", ")+". Nothing was changed.",
+		"Move each one to another scope first: tacctl host move <host> [<scope>]   (or: tacctl host unenroll <host>)")
+}
+
 // without is list minus every entry equal to s ('grep -vxF').
 func without(list []string, s string) []string {
 	var out []string
@@ -1264,6 +1358,9 @@ func (inv *invocation) scopePrefixesRemoveAll(scope string, current []string, fo
 	}
 	m, err := inv.model()
 	if err != nil {
+		return err
+	}
+	if err := inv.scopeHostsRefusal(scope, "Cannot remove every prefix of '"+scope+"' (that removes the scope)"); err != nil {
 		return err
 	}
 	members := m.Members(scope)

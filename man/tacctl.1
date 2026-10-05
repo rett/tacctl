@@ -824,6 +824,17 @@ Session accounting over RADIUS is sent only when the RADIUS
 listener is on the authentication port plus one, and never from Ubuntu
 24.04 (malformed records).
 .TP
+.B "host move " "{ " name " [ " scope " ] | \-\-all } [ \-\-yes ] [ \-\-remove\-home ] [ \-\-allow\-uid\-mismatch ]"
+Move an enrolled host to another scope: an enroll with its registered
+target, port, identity, server and method, into
+.I scope
+or, without one, the scope that answers its address. Like an enroll naming
+the scope, it names the users whose accounts the move deletes and asks
+first (without a terminal it stops unless given
+.BR \-\-yes ).
+.B \-\-all
+moves every host another scope answers.
+.TP
 .B "host sync " "{ " name " | \-\-all } [ \-\-allow\-uid\-mismatch ] [ \-\-remove\-home ]"
 Push the scope's current user list to the host: new users get accounts,
 tier changes move group membership, disabled users' accounts are expired
@@ -1900,7 +1911,20 @@ is given, which strips the scope from those users.
 .B \-\-all
 takes no CIDRs, and
 .B \-\-force
-is only valid with it.
+is only valid with it. A scope enrolled Linux hosts use is not removed
+(move them first:
+.BR "host move" ).
+.TP
+.B "scope prefixes " \fIscope\fR " move " \fIcidr\fR[,cidr...] " " \fIother\fR
+Move the CIDRs from
+.I scope
+to
+.I other
+in one change, so no address they hold is left unanswered. The same checks
+as remove and add apply. Enrolled hosts whose addresses another scope then
+answers are named, with the
+.B "host move"
+that follows them; none is moved.
 .SS Per-scope secret \fB(tacctl scope secret)\fR
 .TP
 .BI "scope secret " "scope " "show"

@@ -306,7 +306,7 @@ on_tty() {
     "$TACCTL_BIN_SCRIPT" scope prefixes linux-web1 add 192.0.2.99/32 > /dev/null
     "$TACCTL_BIN_SCRIPT" scope prefixes linux-web1 remove 192.0.2.50/32 > /dev/null
     "$TACCTL_BIN_SCRIPT" scope prefixes lab add 192.0.2.0/24 > /dev/null
-    want="web1: registered in scope 'linux-web1', but 192.0.2.50 is answered by scope 'lab' (prefix 192.0.2.0/24): its logins are checked against that scope's users and secret, so they are refused. To move it: tacctl host enroll web1 --name web1 --scope lab"
+    want="web1: registered in scope 'linux-web1', but 192.0.2.50 is answered by scope 'lab' (prefix 192.0.2.0/24): its logins are checked against that scope's users and secret, so they are refused. To move it: tacctl host move web1"
     run "$TACCTL_BIN_SCRIPT" host sync web1
     assert_success
     assert_output --partial "$want"
@@ -337,6 +337,71 @@ on_tty() {
     [[ ! -e "$PUSHED" ]]
     run _hosts
     assert_output "web1|web1||lab|192.0.2.1|"
+}
+
+@test "host move, scope prefixes move, scope remove: hosts follow their prefixes only when moved" {
+    _own_scope web1 192.0.2.50
+    "$TACCTL_BIN_SCRIPT" host enroll web1 > /dev/null
+    # A scope a host uses is not removed, --force or not.
+    run "$TACCTL_BIN_SCRIPT" scope remove linux-web1 --force <<< y
+    assert_failure
+    assert_output --partial "Cannot remove 'linux-web1': enrolled hosts use it: web1. Nothing was changed."
+    assert_output --partial "tacctl host move <host> [<scope>]"
+    run "$TACCTL_BIN_SCRIPT" scope prefixes linux-web1 remove --all --force <<< y
+    assert_failure
+    assert_output --partial "enrolled hosts use it: web1"
+
+    # Prefixes move in one change; the host is named, not moved.
+    "$TACCTL_BIN_SCRIPT" scope prefixes linux-web1 add 192.0.2.99/32 > /dev/null
+    run "$TACCTL_BIN_SCRIPT" scope prefixes linux-web1 move 192.0.2.50/32 lab
+    assert_success
+    assert_output --partial "Moved 1 prefix(es) from scope 'linux-web1' to 'lab': 192.0.2.50/32"
+    assert_output --partial "web1: registered in scope 'linux-web1', but 192.0.2.50 is answered by scope 'lab'"
+    assert_output --partial "To move it: tacctl host move web1"
+    run "$TACCTL_BIN_SCRIPT" scope prefixes lab list
+    assert_output --partial "192.0.2.50/32"
+    run "$TACCTL_BIN_SCRIPT" scope prefixes linux-web1 list
+    refute_output --partial "192.0.2.50/32"
+    run _hosts
+    assert_output "web1|web1||linux-web1|192.0.2.1|"
+    # Refusals: not its prefix; the last one; unknown target.
+    run "$TACCTL_BIN_SCRIPT" scope prefixes linux-web1 move 10.9.9.0/24 lab
+    assert_failure
+    assert_output --partial "Not prefixes of scope 'linux-web1': 10.9.9.0/24. Nothing was changed."
+    run "$TACCTL_BIN_SCRIPT" scope prefixes linux-web1 move 192.0.2.99/32 lab
+    assert_failure
+    assert_output --partial "Cannot move every prefix of scope 'linux-web1'"
+    run "$TACCTL_BIN_SCRIPT" scope prefixes linux-web1 move 192.0.2.99/32 nope
+    assert_failure
+    assert_output --partial "Scope 'nope' does not exist."
+
+    # host move without a scope: the one answering its address.
+    run "$TACCTL_BIN_SCRIPT" host move web1
+    assert_success
+    assert_output --partial "Moving web1 from scope 'linux-web1' to scope 'lab'"
+    assert_output --partial "Host 'web1' enrolled"
+    run _hosts
+    assert_output "web1|web1||lab|192.0.2.1|"
+    grep -q "TAC_SCOPE=lab" "$PUSHED"
+    run "$TACCTL_BIN_SCRIPT" host move web1
+    assert_success
+    assert_output --partial "web1 is already in scope 'lab'."
+    run "$TACCTL_BIN_SCRIPT" host move --all
+    assert_success
+    assert_output --partial "Every enrolled host is answered by its scope; nothing to move."
+    # Named: back to its own scope, which deletes lab's users' accounts.
+    run "$TACCTL_BIN_SCRIPT" host move web1 linux-web1
+    assert_failure
+    assert_output --partial "Confirm with --yes"
+    run "$TACCTL_BIN_SCRIPT" host move web1 linux-web1 --yes
+    assert_success
+    run _hosts
+    assert_output "web1|web1||linux-web1|192.0.2.1|"
+    # Now unused: removable.
+    run "$TACCTL_BIN_SCRIPT" host move web1 lab --yes
+    assert_success
+    run "$TACCTL_BIN_SCRIPT" scope remove linux-web1 <<< y
+    assert_success
 }
 
 @test "host unenroll: pushes the secret-free removal script and forgets the host" {

@@ -11,6 +11,7 @@ package cli
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"regexp"
@@ -48,7 +49,9 @@ var hostSpecs = map[string]Spec{
 		{Names: []string{"--build-on-host"}},
 		{Names: []string{"--yes"}},
 		flagAllowUIDMismatch, flagRemoveHome}},
-	"sync":     {MaxArgs: 1, Args: []string{KindHosts}, Flags: []Flag{{Names: []string{"--all"}}, flagAllowUIDMismatch, flagRemoveHome}},
+	"sync": {MaxArgs: 1, Args: []string{KindHosts}, Flags: []Flag{{Names: []string{"--all"}}, flagAllowUIDMismatch, flagRemoveHome}},
+	"move": {MaxArgs: 2, Args: []string{KindHosts, KindScopes}, Flags: []Flag{{Names: []string{"--all"}, Alone: true},
+		{Names: []string{"--yes"}}, flagAllowUIDMismatch, flagRemoveHome}},
 	"unenroll": {MinArgs: 1, MaxArgs: 1, Args: []string{KindHosts}, Flags: []Flag{{Names: []string{"--force"}}}},
 	"target": {MinArgs: 1, MaxArgs: 2, Args: []string{KindHosts, ""}, Flags: []Flag{
 		{Names: []string{"--port"}, Value: true},
@@ -62,6 +65,7 @@ var hostVerbs = [][2]string{
 	{"list", "Show enrolled hosts"},
 	{"enroll <[user@]host> | --local [options]", "Install TACACS+ or RADIUS login on a host over SSH and register it"},
 	{"sync <name> | --all [options]", "Push account adds, deletions and tier changes"},
+	{"move <name> [<scope>] | --all [options]", "Move an enrolled host to another scope (default: the scope answering its address)"},
 	{"target <name> [<[user@]host>] [options]", "Show or change how tacctl reaches an enrolled host over ssh"},
 	{"unenroll <name> [--force]", "Remove the login method from the host (accounts and homes are kept)"},
 	{"default-method [tacplus|radius]", "Show or set the method for hosts enrolled without --method"},
@@ -97,6 +101,8 @@ func (inv *invocation) host(args []string) error {
 		return inv.hostList()
 	case "enroll":
 		return inv.hostEnroll(rest)
+	case "move":
+		return inv.hostMove(rest)
 	case "sync":
 		return inv.hostSync(rest)
 	case "target":
@@ -702,23 +708,139 @@ func (inv *invocation) hostScopeDrift(e hosts.Entry, addr string) string {
 		return e.Name + ": registered in scope '" + e.Scope + "', but no scope covers " + addr + ", so its logins are refused. Add it: tacctl scope prefixes " + e.Scope + " add " + addr + "/32"
 	}
 	return e.Name + ": registered in scope '" + e.Scope + "', but " + addr + " is answered by scope '" + info.Scope + "' (prefix " + info.Prefix +
-		"): its logins are checked against that scope's users and secret, so they are refused. To move it: " + hostMoveCommand(e, info.Scope) +
+		"): its logins are checked against that scope's users and secret, so they are refused. To move it: tacctl host move " + e.Name +
 		"   (or answer it from its own scope again: tacctl scope prefixes " + e.Scope + " add " + addr + "/32)"
 }
 
-// hostMoveCommand is the enroll that moves a registered host to scope.
-func hostMoveCommand(e hosts.Entry, scope string) string {
-	if e.Target == hosts.Local {
-		return "tacctl host enroll --local --name " + e.Name + " --scope " + scope
+// hostDriftReport warns about every enrolled host another scope answers
+// (after a prefix change), and names the move for them all.
+func (inv *invocation) hostDriftReport() {
+	reg, err := inv.registry()
+	if err != nil {
+		return
 	}
-	cmd := "tacctl host enroll " + e.Target + " --name " + e.Name
+	n := 0
+	for _, e := range reg.Entries() {
+		if msg := inv.hostScopeDrift(e, inv.hostAddress(e)); msg != "" {
+			inv.app.Out.WarnE(msg)
+			n++
+		}
+	}
+	if n > 1 {
+		inv.app.Out.WarnE("To move them all: tacctl host move --all")
+	}
+}
+
+// hostMove is 'host move <name> [<scope>] | --all': an enroll of the
+// registered host (its target, port, identity, server and method) into
+// scope, by default the scope that answers its address. The enroll says
+// what the move does to its accounts and asks before deleting any
+// (--yes). --all moves every host whose address another scope answers.
+func (inv *invocation) hostMove(args []string) error {
+	a := inv.app
+	var name, scope string
+	all := false
+	var pass []string
+	for _, w := range args {
+		switch {
+		case w == "--all":
+			all = true
+		case w == "--yes" || w == "--remove-home" || w == "--allow-uid-mismatch":
+			pass = append(pass, w)
+		case strings.HasPrefix(w, "-"):
+			return inv.usageErr("Unknown option: '"+w+"'", "Usage: tacctl host move <name> [<scope>] | --all  [--yes] [--remove-home] [--allow-uid-mismatch]")
+		case name == "":
+			name = w
+		case scope == "":
+			scope = w
+		default:
+			return inv.usageErr("Usage: tacctl host move <name> [<scope>] | --all  [--yes] [--remove-home] [--allow-uid-mismatch]")
+		}
+	}
+	if all == (name != "") {
+		return inv.usageErr("Usage: tacctl host move <name> [<scope>] | --all  [--yes] [--remove-home] [--allow-uid-mismatch]")
+	}
+	reg, err := inv.registry()
+	if err != nil {
+		return err
+	}
+	if all {
+		failed, moved := 0, 0
+		for _, e := range reg.Entries() {
+			if inv.hostScopeDrift(e, inv.hostAddress(e)) == "" {
+				continue
+			}
+			if err := inv.hostMoveOne(reg, e, "", pass); err != nil {
+				if !isExit(err) {
+					return err
+				}
+				failed++
+				continue
+			}
+			moved++
+		}
+		if moved+failed == 0 {
+			a.Out.InfoE("Every enrolled host is answered by its scope; nothing to move.")
+			return nil
+		}
+		if failed > 0 {
+			a.Out.ErrorE(fmt.Sprintf("%d host(s) moved, %d not.", moved, failed))
+			return exit(1)
+		}
+		return nil
+	}
+	e, ok := reg.Find(name)
+	if !ok {
+		return inv.usageErr("No enrolled host named '" + name + "'. See 'tacctl host list'.")
+	}
+	return inv.hostMoveOne(reg, e, scope, pass)
+}
+
+// isExit is an error that only carries an exit status (its message, if
+// any, already printed).
+func isExit(err error) bool {
+	var x *ExitError
+	return errors.As(err, &x)
+}
+
+// hostMoveOne moves one registered host (see hostMove).
+func (inv *invocation) hostMoveOne(reg *hosts.Registry, e hosts.Entry, scope string, pass []string) error {
+	a := inv.app
+	if scope == "" {
+		addr := inv.hostAddress(e)
+		m, err := inv.model()
+		if err != nil {
+			return err
+		}
+		info, found := m.LookupAddr(addr)
+		if addr == "" {
+			return inv.usageErr(e.Name + ": its address is not known; name the scope: tacctl host move " + e.Name + " <scope>")
+		}
+		if !found {
+			return inv.usageErr(e.Name + ": no scope covers " + addr + "; add it to one, or name the scope: tacctl host move " + e.Name + " <scope>")
+		}
+		scope = info.Scope
+	} else if exists, err := inv.scopeExists(scope); err != nil {
+		return err
+	} else if !exists {
+		return inv.usageErr("Scope '" + scope + "' does not exist.")
+	}
+	if scope == e.Scope {
+		a.Out.InfoE(e.Name + " is already in scope '" + scope + "'.")
+		return nil
+	}
+	args := []string{e.Target}
+	if e.Target == hosts.Local {
+		args = []string{"--local"}
+	}
+	args = append(args, "--name", e.Name, "--scope", scope, "--server", e.Server, "--method", reg.Method(e.Name))
 	if e.Port != "" {
-		cmd += " --port " + e.Port
+		args = append(args, "--port", e.Port)
 	}
 	if e.Identity != "" {
-		cmd += " --identity " + e.Identity
+		args = append(args, "--identity", e.Identity)
 	}
-	return cmd + " --scope " + scope
+	return inv.hostEnroll(append(args, pass...))
 }
 
 // confirmScopeMove says what moving a registered host from one scope to

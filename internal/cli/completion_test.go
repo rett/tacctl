@@ -92,7 +92,7 @@ func TestCompleteScenarios(t *testing.T) {
 		{[]string{"log", "clear", "--backend", "tacacs", ""}, []string{"--force", "-y", "--yes"}},
 		{[]string{"scope", "protocols", "lab", ""}, []string{"list", "set", "clear"}},
 		{[]string{"scope", "protocols", "lab", "set", ""}, []string{"tacacs", "radius"}},
-		{[]string{"scope", "prefixes", "lab", ""}, []string{"list", "add", "remove"}},
+		{[]string{"scope", "prefixes", "lab", ""}, []string{"list", "add", "remove", "move"}},
 		{[]string{"scope", "prefixes", "lab", "remove", ""}, []string{"--all", "--force"}},
 		{[]string{"scope", "prefixes", "lab", "remove", "--all", ""}, []string{"--force"}},
 		{[]string{"user", "scope", "alice", ""}, []string{"list", "add", "remove", "replace"}},

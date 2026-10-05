@@ -882,3 +882,15 @@ What to expect:
     enabled backend at once (`journalctl -f` for tacquito's units, `tail -F`
     on the RADIUS auth and daemon logs), each line behind its backend's id
     when more than one is enabled, until Ctrl-C, which ends it normally.
+66. **Moving hosts and prefixes between scopes.** `host move <name>
+    [<scope>]` moves an enrolled host to another scope: an enroll with its
+    registered target, port, identity, server and method, into the scope
+    named or, without one, the scope that answers its address; it names the
+    users whose accounts the move deletes and asks first (`--yes` without a
+    terminal). `host move --all` moves every host another scope answers.
+    `scope prefixes <scope> move <cidr>[,<cidr>...] <other>` moves prefixes
+    in one change (the same checks as remove and add) and names the
+    enrolled hosts that then belong elsewhere, with `host move`; none is
+    moved. `scope remove` (and `scope prefixes <scope> remove --all`) refuse
+    a scope that enrolled hosts use, `--force` or not, since they hold its
+    secret. The warnings of item 64 now give `tacctl host move <name>`.
