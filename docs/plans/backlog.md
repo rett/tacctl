@@ -45,6 +45,22 @@ Deferred:
 
 - `config render --dry-run` does not report the drop-ins a real render would remove (open question from WP2.4c): it needs a removal report from each backend's staging step, for little value.
 
+## 3b. Juniper authorization from the server (0.2.2 candidate, filed 2026-10-05)
+
+**Request (user, 2026-10-05):** send Juniper users' command and configuration permissions from the server, as attributes, instead of only the login class.
+
+- **Today:** a Juniper login gets only its class: `local-user-name` in tacquito's `junos-exec` service (TACACS+), `Juniper-Local-User-Name` (RADIUS). `tacctl group commands` rules reach Junos only as the class's `allow-commands`/`deny-commands` lines that `tacctl config juniper` prints for each device (`internal/devices/juniper.go`).
+- **Proposal:**
+  - TACACS+: the same `junos-exec` service also carries `allow-commands`, `deny-commands`, `allow-configuration`, `deny-configuration` (or the `*-regexps` variants where Junos has them).
+  - RADIUS: the matching Juniper VSAs (Juniper-Allow-Commands 2, Juniper-Deny-Commands 3, Juniper-Allow-Configuration 4, Juniper-Deny-Configuration 5), set in post-auth beside `Juniper-Local-User-Name`, only for scopes that send Juniper attributes.
+  - Rendered from the group's command rules (the same regexes `config juniper` builds), and from a new per-group configuration rule set (`tacctl group config-access <group> allow|deny <regex>`, stored like the command rules), which tacctl does not have yet.
+  - The device-side class lines stay as the fallback for logins when the server is unreachable; `config juniper` says which source is authoritative.
+- **Open, to settle by a live check on the lab Juniper switch first** (run sheet kept outside the repo):
+  1. How Junos combines server-sent values with the class's own: override or merge, for allow and deny, commands and configuration; what `show cli authorization` reports.
+  2. Length: a TACACS+ value is at most 255 bytes, a RADIUS VSA 253; today's per-class regex joins every rule into one expression. Which Junos releases accept the `*-regexps` (list) variants.
+  3. Behaviour over both protocols, and the Junos release on the lab switch.
+- **Not in 0.2.1:** it changes what devices are told at login; 0.2.1 is at its release gate.
+
 ## 4. Linux hosts: considered, not pursued
 
 - **nss_tacplus** (shared template accounts, no per-user local accounts) — considered 2026-10-04, not pursued; revisit if per-user accounts become a burden. 0.2.1 keeps one local account per user (UIDs 20000-29999, created, expired and deleted by `host enroll|sync`).
