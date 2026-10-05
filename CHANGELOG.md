@@ -706,6 +706,17 @@ current behaviour; this file is where history lives.
       session other tiers are refused (`ssh DENY ... reason=forward`).
     - `_console-policy` reports `forward=yes|no`; `console show` lists the
       forwarding tiers.
+61. **A RADIUS Linux host names itself, not the PAM service.**
+    pam_radius_auth sends the PAM service's name (`sshd`, `sudo`) as its
+    NAS-Identifier unless it is given `client_id=`, so `device scan` saw an
+    enrolled host as `sshd`, then `sudo` (`identity-changed`,
+    `name-mismatch`). The client script now passes `client_id=<the host's
+    fully qualified name>` (`hostname -f`; left out when the name cannot be
+    one PAM argument) on the auth and session lines. A RADIUS host still
+    sending a service's name gets one `name-mismatch` notice that says to
+    enrol it again; a host enrolled with pam_tacplus sends no
+    NAS-Identifier, so a name recorded from an earlier RADIUS enrolment no
+    longer raises notices for it.
 
 ## 0.2.0 (2026-10-04)
 

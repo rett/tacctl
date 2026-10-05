@@ -38,6 +38,8 @@ type Entry struct {
 	// PrevAddress and AddressChanged: a host's address before the last
 	// change 'host sync' recorded, and when ('' when none).
 	PrevAddress, AddressChanged string
+	// Method is a host's login method (tacplus or radius; '' for a device).
+	Method string
 }
 
 // State is 'configured' or 'unconfigured'.
@@ -106,7 +108,7 @@ func (r *Resolver) derive(e *Entry) {
 // one 'host enroll'/'host sync' recorded, else (a host not synced since
 // addresses were recorded) the scope's single /32 or /128 when it has one.
 func (r *Resolver) hostEntry(h hosts.Entry) Entry {
-	e := Entry{Source: SourceHost, Target: h.Target, Identity: h.Identity}
+	e := Entry{Source: SourceHost, Target: h.Target, Identity: h.Identity, Method: h.EffectiveMethod()}
 	e.Name, e.Vendor, e.Scope = h.Name, VendorLinux, h.Scope
 	if rec := r.File.Host(h.Name); rec != nil {
 		e.HostKeys, e.Ack = slices.Clone(rec.Keys), slices.Clone(rec.Ack)

@@ -1107,6 +1107,12 @@ pam_lines_tacplus() {
 # with the Access-Accept; removed or disabled users are handled by account
 # sync.
 #
+# NAS-Identifier: without client_id= the module sends the PAM service's
+# name ('sshd', 'sudo', 'login'), so the server's log would name the host
+# after whichever service asked. client_id= sends the host's own name (the
+# fully qualified name, 'hostname -f') instead; a name that cannot be one
+# PAM argument is left out, and the module falls back to the service.
+#
 # session: accounting goes to the authentication port plus one, which the
 # module cannot be told otherwise, and 2.0.1 (Ubuntu 24.04) sends
 # Acct-Status-Type and its other integer attributes as garbage. In both
@@ -1128,15 +1134,25 @@ EOF
     if [[ "$CLIENT_TEST" != "1" ]]; then chown root:root "$tmp"; fi
     mv -f "$tmp" "$RADIUS_CONF"
 }
+# radius_client_id: this host's fully qualified name for client_id= (its
+# short name when it has no domain), or nothing.
+radius_client_id() {
+    local name
+    name=$(timeout 5 hostname -f 2>/dev/null) || name=""
+    [[ -n "$name" ]] || name=$(hostname 2>/dev/null) || name=""
+    if [[ "$name" =~ ^[A-Za-z0-9][A-Za-z0-9.-]{0,252}$ ]]; then echo "$name"; fi
+}
 pam_lines_radius() {
-    local module version rad_args="conf=${RADIUS_CONF} retry=${RADIUS_RETRY}"
+    local module version client_id rad_args="conf=${RADIUS_CONF} retry=${RADIUS_RETRY}"
     module=$(radius_module_path)
+    client_id=$(radius_client_id)
     # Builds with the BlastRADIUS fix can insist that every answer carries a
     # Message-Authenticator, which FreeRADIUS 3.0.27 / 3.2.5 and later always
     # send. A module without the option would only log that it is unknown.
     if grep -q require_message_authenticator "$module" 2>/dev/null; then
         rad_args+=" require_message_authenticator"
     fi
+    if [[ -n "$client_id" ]]; then rad_args+=" client_id=${client_id}"; fi
     write_radius_conf
     pam_auth="auth    [success=done authinfo_unavail=ignore default=die]   pam_radius_auth.so ${rad_args}"
     pam_account=""
@@ -1147,7 +1163,7 @@ pam_lines_radius() {
     elif [[ "$version" == 2.0.1* ]]; then
         info "No session accounting from this host: pam_radius_auth ${version} sends malformed accounting records. Logins are still in the server's authentication log."
     else
-        pam_session="session optional                                             pam_radius_auth.so conf=${RADIUS_CONF}"
+        pam_session="session optional                                             pam_radius_auth.so conf=${RADIUS_CONF}${client_id:+ client_id=${client_id}}"
     fi
 }
 

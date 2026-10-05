@@ -1452,6 +1452,8 @@ RCONF_LINE="192.0.2.10:1812 0123456789abcdef0123456789abcdef 3"
 @test "client install (radius): package, root-only server file, PAM lines; remove restores everything" {
     _gen_radius > /dev/null
     _client_env
+    # The NAS-Identifier is the host's name (client_id=), not the PAM service's.
+    stub_cmd hostname 'echo web1.example.net'
     run bash "$OUT"
     assert_success
     assert_output --partial "Installing the RADIUS PAM module: libpam-radius-auth"
@@ -1477,7 +1479,7 @@ RCONF_LINE="192.0.2.10:1812 0123456789abcdef0123456789abcdef 3"
     # The same control line as pam_tacplus has; the local stack behind it.
     run cat "$TACCTL_CLIENT_PAM_DIR/tacctl-auth"
     assert_line --index 1 "auth    [success=ok default=1]                               pam_succeed_if.so quiet user ingroup tac-users"
-    assert_line --index 2 "auth    [success=done authinfo_unavail=ignore default=die]   pam_radius_auth.so conf=${TACCTL_CLIENT_RADIUS_CONF} retry=1"
+    assert_line --index 2 "auth    [success=done authinfo_unavail=ignore default=die]   pam_radius_auth.so conf=${TACCTL_CLIENT_RADIUS_CONF} retry=1 client_id=web1.example.net"
     assert_line --index 3 "@include common-auth"
     # No account step: only the distribution's.
     run grep -v '^#' "$TACCTL_CLIENT_PAM_DIR/tacctl-account"
@@ -1485,7 +1487,7 @@ RCONF_LINE="192.0.2.10:1812 0123456789abcdef0123456789abcdef 3"
     # Accounting at session start and end, for tac-users only.
     run grep -v '^#' "$TACCTL_CLIENT_PAM_DIR/tacctl-session"
     assert_line --index 0 "session [success=ok default=1]                               pam_succeed_if.so quiet user ingroup tac-users"
-    assert_line --index 1 "session optional                                             pam_radius_auth.so conf=${TACCTL_CLIENT_RADIUS_CONF}"
+    assert_line --index 1 "session optional                                             pam_radius_auth.so conf=${TACCTL_CLIENT_RADIUS_CONF} client_id=web1.example.net"
     [[ "${#lines[@]}" == "2" ]]
 
     # The service files are edited exactly as for tacplus.
@@ -1571,9 +1573,20 @@ RCONF_LINE="192.0.2.10:1812 0123456789abcdef0123456789abcdef 3"
     run bash "$OUT"
     assert_success
     run cat "$TACCTL_CLIENT_PAM_DIR/tacctl-auth"
-    assert_line --regexp "pam_radius_auth.so conf=[^ ]+ retry=1 require_message_authenticator$"
+    assert_line --regexp "pam_radius_auth.so conf=[^ ]+ retry=1 require_message_authenticator( client_id=[^ ]+)?$"
     run grep -v '^#' "$TACCTL_CLIENT_RADIUS_CONF"
     assert_output "[2001:db8::10]:1812 0123456789abcdef0123456789abcdef 3"
+}
+
+@test "client install (radius): a hostname that is not one PAM argument sends no client_id" {
+    _gen_radius > /dev/null
+    _client_env
+    stub_cmd hostname 'echo "bad name"'
+    run bash "$OUT"
+    assert_success
+    run cat "$TACCTL_CLIENT_PAM_DIR/tacctl-auth"
+    assert_line --regexp "pam_radius_auth.so conf=[^ ]+ retry=1$"
+    refute_output --partial "client_id"
 }
 
 @test "client install (radius): a failure after PAM edits begin rolls them back and removes the server file" {
