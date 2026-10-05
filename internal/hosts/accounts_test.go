@@ -130,7 +130,7 @@ func TestWriteScriptLifecycleHeader(t *testing.T) {
 		t.Fatal(err)
 	}
 	head := strings.SplitN(readFile(t, out), "# --- tacctl", 2)[0]
-	if !strings.HasSuffix(head, "TAC_USERS=alice:superuser:80000\nTAC_INACTIVE=$'bob\\nnopriv'\nTAC_REMOVE_HOMES=dave\\ erin\nTAC_UID_FIRST=80000\nTAC_UID_LAST=89999\nTAC_UID_PREVIOUS=''\nTAC_PROTOCOL=4\n") {
+	if !strings.HasSuffix(head, "TAC_USERS=alice:superuser:80000\nTAC_INACTIVE=$'bob\\nnopriv'\nTAC_REMOVE_HOMES=dave\\ erin\nTAC_UID_FIRST=80000\nTAC_UID_LAST=89999\nTAC_UID_PREVIOUS=''\nTAC_PROTOCOL=5\n") {
 		t.Errorf("header\n%s", head)
 	}
 	// The tacctl server's own accounts: the shell as a fourth field.
@@ -179,6 +179,13 @@ func TestScriptRangeAndProtocol(t *testing.T) {
 	}
 	if !strings.HasSuffix(Script{}.Header(), "TAC_UID_FIRST=80000\nTAC_UID_LAST=89999\nTAC_UID_PREVIOUS=''\nTAC_PROTOCOL="+ScriptProtocol+"\n") {
 		t.Error("default range")
+	}
+	// The tacctl server's own script keeps all of tacctl's groups.
+	if !strings.HasSuffix(Script{Local: true}.Header(), "TAC_UID_PREVIOUS=''\nTAC_LOCAL=1\nTAC_PROTOCOL="+ScriptProtocol+"\n") {
+		t.Error("local header")
+	}
+	if strings.Contains(Script{}.Header(), "TAC_LOCAL") {
+		t.Error("TAC_LOCAL in a host's header")
 	}
 }
 

@@ -54,18 +54,27 @@ What to expect:
   host's address in the device registry (item 41) and warns when the host's
   `/etc/login.defs` lets local `useradd` give out UIDs of 80000-89999
   (item 42; keep `UID_MAX` below 80000 there, as the default 60000 is).
+- **tacctl's groups get fixed GIDs; `tac-users` becomes every account's
+  primary group** (item 62). The first sync (or enroll) of each host moves
+  each account tacctl manages to primary group `tac-users`, removes its
+  own group when empty, makes its home 0700, and moves the groups to the
+  first numbers of the range (`tac-users` 80000, `tac-readonly` 80001,
+  `tac-operator` 80002, `tac-superuser` 80003, `tac-console` 80004). Hosts
+  other than the tacctl server keep only `tac-users` and `tac-superuser`;
+  their `tac-readonly`, `tac-operator` and `tac-console` go when only
+  tacctl's accounts are in them. A fixed GID another group already holds
+  is left to it, with a warning: renumber that group and sync again.
 - **UIDs move to 80000-89999, once** (items 35 and 52). The first `config
   linux uid`, `config linux script`, `host enroll` or `host sync` after the
   upgrade renumbers `/etc/tacctl/linux-uids` from 20000-29999 to the same
   offset in 80000-89999 (20005 becomes 80005), keeps the old file as
   `linux-uids.pre-renumber-<time>` and logs `uid-map renumbered <n>
   entries`. **The first sync (or enroll) of each host then renumbers the
-  accounts tacctl created there**: UID, own group and primary GID, the home
-  directory re-owned (`'<user>': renumbered <old> -> <new> (home re-owned)`;
+  accounts tacctl created there**: UID, the home directory re-owned (`'<user>': renumbered <old> -> <new> (home re-owned)`;
   the summary says `synced (<n> users; <k> renumbered)`). Files outside the
   home that keep the old number (in `/home`, `/tmp`, `/var/tmp`,
   `/var/spool/cron`, `/var/mail`) are listed, never changed: give them back
-  with `chown -h <new>:<new> <file>`. A user who is logged in, or whose new
+  with `chown -h <new>:tac-users <file>`. A user who is logged in, or whose new
   number is taken on the host, keeps the account as it is and is named as
   refused; log the user out (or free the number) and sync again. Accounts in
   20000-29999 that tacctl did not create are not touched. New users get
@@ -626,7 +635,7 @@ What to expect:
     Files outside the home that keep the old UID or GID are listed, never
     changed (a scan of `/home`, `/tmp`, `/var/tmp`, `/var/spool/cron` and
     `/var/mail`, at most 20 paths): `'<user>': these files still carry its
-    old number <old> and were left as they are (chown -h <new>:<new> <file>
+    old number <old> and were left as they are (chown -h <new>:tac-users <file>
     gives them back):`. The account is left exactly as it is for that run,
     and named as refused in the summary, when the new UID or GID belongs to
     another account or group there (`'<user>': not renumbered from <old> to
@@ -809,3 +818,22 @@ What to expect:
     enrol it again; a host enrolled with pam_tacplus sends no
     NAS-Identifier, so a name recorded from an earlier RADIUS enrolment no
     longer raises notices for it.
+62. **Fixed tacctl groups; `tac-users` is every account's primary group.**
+    tacctl's groups now have the same GID on every host, the first numbers
+    of the UID range: `tac-users` 80000, `tac-readonly` 80001,
+    `tac-operator` 80002, `tac-superuser` 80003, `tac-console` 80004 (they
+    follow `config linux uid-range`). A host has only the groups it uses:
+    every host `tac-users` (the PAM gate) and `tac-superuser` (sudo); the
+    tacctl server itself also `tac-readonly`, `tac-operator` (its tiers
+    sudoers) and `tac-console` (sshd's console drop-in). New accounts get
+    `tac-users` as primary group instead of a group of their own, and their
+    home is made 0700. The next enroll or sync of a host moves what an
+    earlier release made: each managed account's primary group becomes
+    `tac-users` (`usermod -g`, which re-groups the files in its home) and
+    its own group goes when it is empty; the groups move to their fixed
+    GIDs (`groupmod -g`; files in the managed homes that carried
+    `tac-users`' old number follow it); the tier and console groups of a
+    host other than the server go when only tacctl's accounts are in them.
+    A fixed GID that another group holds is left to it, with a warning.
+    UID checks no longer look at GIDs. The script header gains
+    `TAC_LOCAL=1` for the server's own script; `TAC_PROTOCOL` is 5.

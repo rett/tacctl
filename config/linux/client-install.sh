@@ -25,7 +25,7 @@
 #
 #   bash tacctl-linux-<scope>.sh                  full install (or re-install)
 #   bash tacctl-linux-<scope>.sh --accounts-only  sync accounts and groups only
-#   --allow-uid-mismatch (either form)            accept UID/GID conflicts on this host
+#   --allow-uid-mismatch (either form)            accept UID conflicts on this host
 #   --remove-home (either form)                   delete removed users' home directories too
 #
 # TACCTL_FORCE=1 skips the local-administrator (lockout) check.
@@ -60,8 +60,8 @@ done
 
 # The header and this body are one contract. A header of another protocol
 # was not written together with this body: stop before anything changes.
-if [[ "${TAC_PROTOCOL:-1}" != "4" ]]; then
-    die "This script's header speaks protocol ${TAC_PROTOCOL:-1} and its body protocol 4: they were not written by
+if [[ "${TAC_PROTOCOL:-1}" != "5" ]]; then
+    die "This script's header speaks protocol ${TAC_PROTOCOL:-1} and its body protocol 5: they were not written by
         the same tacctl. Nothing was changed. Write a new script with 'tacctl config linux script', or use
         'tacctl host enroll|sync'."
 fi
@@ -142,7 +142,7 @@ chmod 700 "$STATE_DIR"
 touch "$STATE_DIR/created" "$STATE_DIR/expired"
 
 # --- Which accounts are tacctl's -------------------------------------------------
-# tacctl gives its accounts UIDs, and the matching primary GIDs, from the
+# tacctl gives its accounts UIDs from the
 # server's range, TAC_UID_FIRST to TAC_UID_LAST (tacctl.yaml linux.uid_min
 # and linux.uid_max; 80000-89999 by default) only. It changes an existing
 # account (groups, expiry, deletion, home) only when it created the account
@@ -180,19 +180,13 @@ account_state() {
     if uid_in_range "$(account_uid "$1")"; then echo managed; else echo outside; fi
 }
 
-# id_is_free <name> <id>: the number is unused as a UID, and as a GID is
-# either unused or already the group named <name>.
+# id_is_free <name> <id>: the number is unused as a UID (the account's
+# primary group is tac-users, so it needs no GID of its own).
 id_is_free() {
-    local name="$1" id="$2" gname ggid
-    if getent passwd "$id" >/dev/null; then return 1; fi
-    gname=$(getent group "$id" | cut -d: -f1 || true)
-    if [[ -n "$gname" && "$gname" != "$name" ]]; then return 1; fi
-    ggid=$(getent group "$name" | cut -d: -f3 || true)
-    if [[ -n "$ggid" && "$ggid" != "$id" ]]; then return 1; fi
-    return 0
+    ! getent passwd "$2" >/dev/null
 }
 
-# free_id_in_range <name>: the highest number of the range that is free for
+# free_id_in_range <name>: the highest UID of the range that is free for
 # <name> here (--allow-uid-mismatch), from the top so it stays clear of the
 # numbers tacctl gives out next; fails when there is none.
 free_id_in_range() {
@@ -203,10 +197,11 @@ free_id_in_range() {
     return 1
 }
 
-# --- UID/GID consistency -------------------------------------------------------
-# tacctl gives each user one number, used as both UID and primary GID on
-# every host. Nothing is created or changed until every new account in the
-# list can have that number here, unless --allow-uid-mismatch was given.
+# --- UID consistency -----------------------------------------------------------
+# tacctl gives each user one number, its UID on every host; its primary
+# group is tac-users (see "tacctl's groups"). Nothing is created or changed
+# until every new account in the list can have that number here, unless
+# --allow-uid-mismatch was given.
 check_ids() {
     local name _tier uid _shell cur owner conflicts="" mismatches=""
     while IFS=: read -r name _tier uid _shell; do
@@ -225,14 +220,6 @@ check_ids() {
         if [[ -n "$owner" ]]; then
             conflicts+="    ${name}: UID ${uid} already belongs to user '${owner}'"$'\n'
         fi
-        owner=$(getent group "$uid" | cut -d: -f1 || true)
-        if [[ -n "$owner" && "$owner" != "$name" ]]; then
-            conflicts+="    ${name}: GID ${uid} already belongs to group '${owner}'"$'\n'
-        fi
-        cur=$(getent group "$name" | cut -d: -f3 || true)
-        if [[ -n "$cur" && "$cur" != "$uid" ]]; then
-            conflicts+="    ${name}: a group named '${name}' exists with GID ${cur}, not ${uid}"$'\n'
-        fi
     done <<< "$TAC_USERS"
 
     if [[ -n "$mismatches" ]]; then
@@ -241,8 +228,8 @@ check_ids() {
         cat >&2 <<'TXT'
   They are kept as they are. To make them consistent, either
     - renumber the account on this host (user logged out, as root):
-        usermod -u <uid> <user> && groupmod -g <uid> <user>
-        find / -xdev \( -uid <old> -o -gid <old> \) -exec chown -h <user>:<user> {} +
+        usermod -u <uid> <user>
+        find / -xdev -uid <old> -exec chown -h <user> {} +
     - or make this host's number the assigned one (if no other host has the user yet):
         tacctl config linux uid <user> <uid-on-this-host>
 TXT
@@ -250,17 +237,17 @@ TXT
 
     [[ -n "$conflicts" ]] || return 0
     if [[ "$ALLOW_UID_MISMATCH" == "1" ]]; then
-        warn "UID/GID conflicts accepted (--allow-uid-mismatch); these users get a free number of ${TAC_UID_RANGE} on this host:"
+        warn "UID conflicts accepted (--allow-uid-mismatch); these users get a free number of ${TAC_UID_RANGE} on this host:"
         printf '%s' "$conflicts" >&2
         return 0
     fi
-    echo "[ERROR] Cannot give these users their assigned UID/GID on this host:" >&2
+    echo "[ERROR] Cannot give these users their assigned UID on this host:" >&2
     printf '%s' "$conflicts" >&2
     cat >&2 <<'TXT'
   Nothing was changed. Options:
-    1. Free the number on this host by renumbering the account or group that holds it:
-         usermod -u <new-uid> <other-user>     (or: groupmod -g <new-gid> <other-group>)
-         find / -xdev \( -uid <old> -o -gid <old> \) -exec chown -h <other-user> {} +
+    1. Free the number on this host by renumbering the account that holds it:
+         usermod -u <new-uid> <other-user>
+         find / -xdev -uid <old> -exec chown -h <other-user> {} +
     2. Assign the tacctl user another free number of its range, then re-run:
          tacctl config linux uid <user> <new-uid>
        (hosts that already have the account keep the old number until renumbered)
@@ -734,8 +721,9 @@ delete_account() {
 # offset (releases up to 0.2.0 gave them out from 20000 up; tacctl.yaml can
 # name another range). An account tacctl created here with a UID of a
 # previous range moves the same way, once, before anything else looks at it:
-# its UID, the GID of its own group (named like it, GID == old UID, no other
-# member) and its primary GID. usermod re-owns the home directory tree.
+# its UID; usermod re-owns the home directory tree. Its primary group is
+# tac-users (fix_groups, after this, moves an account of an earlier release
+# there and removes its own group).
 # Files elsewhere that still carry the old number are listed (a bounded
 # scan), never changed. The offset, not the header's UID, decides the
 # number, so an account whose UID already differed from the assigned one
@@ -772,25 +760,15 @@ uid_has_processes() {
 # renumber_account <name> <old> <new>: fails (account untouched) when it
 # cannot be renumbered now.
 renumber_account() {
-    local name="$1" old="$2" new="$3" other group own=0 home strays r roots=() n how="home re-owned"
+    local name="$1" old="$2" new="$3" other home strays r roots=() n how="home re-owned"
     other=$(getent passwd "$new" | cut -d: -f1 || true)
     if [[ -n "$other" ]]; then
         warn "'${name}': not renumbered from ${old} to ${new}: UID ${new} belongs to '${other}' here. The account is left as it is until ${new} is free here."
         return 1
     fi
-    other=$(getent group "$new" | cut -d: -f1 || true)
-    if [[ -n "$other" && "$other" != "$name" ]]; then
-        warn "'${name}': not renumbered from ${old} to ${new}: GID ${new} belongs to group '${other}' here. The account is left as it is until ${new} is free here."
-        return 1
-    fi
     if uid_has_processes "$old"; then
         warn "'${name}': not renumbered from ${old} to ${new}: processes run as UID ${old} (still logged in?). The account is left as it is until the next sync."
         return 1
-    fi
-    group=$(getent group "$name" || true)
-    if [[ -n "$group" && "$(cut -d: -f3 <<< "$group")" == "$old" ]] \
-        && [[ -z "$(cut -d: -f4 <<< "$group")" || "$(cut -d: -f4 <<< "$group")" == "$name" ]]; then
-        own=1
     fi
     home=$(getent passwd "$name" | cut -d: -f6)
     if ! usermod -u "$new" "$name"; then
@@ -803,19 +781,6 @@ renumber_account() {
         warn "'${name}': its UID is now ${new}, but usermod could not re-own all of ${home:-its home}; finish it by hand: chown -hR --from=${old} ${new} ${home:-<home>}"
         how="home not fully re-owned"
     fi
-    if [[ "$own" == "1" ]]; then
-        groupmod -g "$new" "$name" || warn "'${name}': its group '${name}' kept GID ${old} (groupmod failed); renumber it by hand: groupmod -g ${new} ${name}"
-        if [[ "$(getent passwd "$name" | cut -d: -f4)" == "$old" ]]; then
-            usermod -g "$new" "$name" || true
-        fi
-        # usermod re-owned the files of the old UID; those that kept only
-        # the old group follow it.
-        if [[ -n "$home" && "$home" != "/" && -d "$home" && ! -L "$home" ]]; then
-            find "$home" -xdev -gid "$old" -exec chgrp -h "$new" {} + 2>/dev/null || true
-        fi
-    else
-        warn "'${name}': its primary group stays as it is (no group '${name}' with GID ${old} and no other member)."
-    fi
     if [[ -n "$home" && "$home" != "/" && -d "$home" ]]; then
         info "'${name}': renumbered ${old} -> ${new} (${how})"
     else
@@ -827,7 +792,7 @@ renumber_account() {
     [[ ${#roots[@]} -gt 0 ]] || return 0
     strays=$(find "${roots[@]}" -xdev \( -uid "$old" -o -gid "$old" \) -print 2>/dev/null | head -n $((RENUMBER_SCAN_MAX + 1)) || true)
     [[ -n "$strays" ]] || return 0
-    warn "'${name}': these files still carry its old number ${old} and were left as they are (chown -h ${new}:${new} <file> gives them back):"
+    warn "'${name}': these files still carry its old number ${old} and were left as they are (chown -h ${new}:${G_USERS} <file> gives them back):"
     n=0
     while IFS= read -r r; do
         n=$((n + 1))
@@ -865,10 +830,166 @@ renumber_previous() {
     done < <(sort -u "$STATE_DIR/created")
 }
 
-# tacctl's own groups. An account tacctl does not manage here (not created
-# by it, or with a UID outside the range) is taken out of these and nothing
-# else is changed on it: the one change tacctl makes to such an account.
+# --- tacctl's groups -----------------------------------------------------------
+# Each has a fixed GID, the same on every host: the first numbers of the
+# server's range (tac-users first, tac-readonly +1, tac-operator +2,
+# tac-superuser +3, tac-console +4). Every host has tac-users (the primary
+# group of every account tacctl manages, and the PAM gate) and
+# tac-superuser (sudo); the tacctl server itself (TAC_LOCAL=1) also has the
+# other two tiers' groups (its tiers sudoers) and tac-console (sshd's
+# drop-in). Elsewhere those three are removed, once only tacctl's accounts
+# are in them. An account tacctl does not manage here (not created by it,
+# or with a UID outside the range) is taken out of these and nothing else
+# is changed on it: the one change tacctl makes to such an account.
+TAC_LOCAL="${TAC_LOCAL:-0}"
 TAC_GROUPS="${G_USERS} tac-readonly tac-operator tac-superuser tac-console"
+
+# group_gid <group>: the fixed GID of one of tacctl's groups.
+group_gid() {
+    local i=0 g
+    for g in $TAC_GROUPS; do
+        if [[ "$g" == "$1" ]]; then echo $((TAC_UID_FIRST + i)); return 0; fi
+        i=$((i + 1))
+    done
+    return 1
+}
+
+# host_groups: the groups this host has.
+host_groups() {
+    if [[ "$TAC_LOCAL" == "1" ]]; then echo "$TAC_GROUPS"; else echo "${G_USERS} tac-superuser"; fi
+}
+
+# managed_accounts: the accounts tacctl created here that it manages now
+# (UID in the range, not left alone for this run), one per line.
+managed_accounts() {
+    local name
+    [[ -s "$STATE_DIR/created" ]] || return 0
+    while IFS= read -r name; do
+        [[ -n "$name" && "$DEFERRED" != *" ${name} "* ]] || continue
+        if [[ "$(account_state "$name")" == "managed" ]]; then echo "$name"; fi
+    done < <(sort -u "$STATE_DIR/created")
+}
+
+# private_home <name>: the home of a managed account is its owner's alone
+# (0700 at the top; its primary group is shared). A home that is a link,
+# missing, or not the account's own is left as it is.
+private_home() {
+    local name="$1" home uid mode
+    home=$(getent passwd "$name" | cut -d: -f6)
+    uid=$(account_uid "$name")
+    [[ -n "$home" && "$home" != "/" && -d "$home" && ! -L "$home" ]] || return 0
+    [[ "$(stat -c %u "$home")" == "${HOME_OWNER:-$uid}" ]] || return 0
+    mode=$(stat -c %a "$home")
+    if (( (8#$mode & 8#077) != 0 )); then
+        chmod go-rwx "$home" && info "'${name}': home ${home} is now 0$(stat -c %a "$home") (its primary group is shared)."
+    fi
+}
+
+# shared_primary <name>: the account's primary group becomes tac-users;
+# usermod gives the files in its home that had the old group the new one.
+# Its own group (named like it, the old GID, no member) goes.
+shared_primary() {
+    local name="$1" old shared group
+    shared=$(getent group "$G_USERS" | cut -d: -f3)
+    old=$(getent passwd "$name" | cut -d: -f4)
+    if [[ "$old" != "$shared" ]]; then
+        if ! usermod -g "$G_USERS" "$name"; then
+            warn "'${name}': its primary group stays GID ${old} (usermod -g ${G_USERS} failed; logged in?); tried again at the next sync."
+            return 0
+        fi
+        group=$(getent group "$name" || true)
+        if [[ -n "$group" && "$(cut -d: -f3 <<< "$group")" == "$old" ]] && [[ -z "$(cut -d: -f4 <<< "$group")" ]] \
+            && [[ -z "$(getent passwd | awk -F: -v g="$old" '$4 == g { print $1; exit }')" ]]; then
+            groupdel "$name" || warn "'${name}': its own group '${name}' (GID ${old}) could not be removed; remove it by hand: groupdel ${name}"
+        fi
+        info "'${name}': primary group is now ${G_USERS} (was GID ${old})."
+    fi
+    private_home "$name"
+}
+
+# fix_gid <group>: the group exists with its fixed GID. A GID held by
+# another group here is left to it: the group then gets or keeps another
+# number, reported. When tac-users moves, the files of the managed homes
+# that carried its old number follow (groupmod moves the accounts' primary
+# GIDs, not files).
+fix_gid() {
+    local g="$1" want cur holder name home
+    want=$(group_gid "$g")
+    cur=$(getent group "$g" | cut -d: -f3 || true)
+    holder=$(getent group "$want" | cut -d: -f1 || true)
+    if [[ -z "$cur" ]]; then
+        if [[ -z "$holder" ]]; then
+            groupadd -g "$want" "$g"
+        else
+            groupadd "$g"
+            warn "Group '${g}' was created with GID $(getent group "$g" | cut -d: -f3), not ${want}: GID ${want} belongs to group '${holder}' here."
+        fi
+        return 0
+    fi
+    [[ "$cur" != "$want" ]] || return 0
+    if [[ -n "$holder" ]]; then
+        warn "Group '${g}' keeps GID ${cur}, not ${want}: GID ${want} belongs to group '${holder}' here."
+        return 0
+    fi
+    if ! groupmod -g "$want" "$g"; then
+        warn "Group '${g}' keeps GID ${cur} (groupmod failed)."
+        return 0
+    fi
+    if [[ "$g" == "$G_USERS" ]]; then
+        while IFS= read -r name; do
+            home=$(getent passwd "$name" | cut -d: -f6)
+            if [[ -n "$home" && "$home" != "/" && -d "$home" && ! -L "$home" ]]; then
+                find "$home" -xdev -gid "$cur" -exec chgrp -h "$want" {} + 2>/dev/null || true
+            fi
+        done < <(managed_accounts)
+    fi
+    info "Group '${g}' is now GID ${want} (was ${cur})."
+}
+
+# drop_group <group>: a group this host does not use goes, unless an
+# account tacctl does not manage is in it or has it as primary group.
+drop_group() {
+    local g="$1" line gid m others=""
+    line=$(getent group "$g" || true)
+    [[ -n "$line" ]] || return 0
+    gid=$(cut -d: -f3 <<< "$line")
+    for m in $(cut -d: -f4 <<< "$line" | tr ',' ' '); do
+        is_created "$m" || others+="${others:+, }${m}"
+    done
+    if [[ -n "$(getent passwd | awk -F: -v g="$gid" '$4 == g { print $1; exit }')" ]]; then
+        others+="${others:+, }an account's primary group"
+    fi
+    if [[ -n "$others" ]]; then
+        info "Group '${g}' is not used by tacctl on this host, but is kept: ${others}."
+        return 0
+    fi
+    groupdel "$g" && info "Group '${g}' removed (used by tacctl on its own server only)."
+}
+
+# fix_groups: tacctl's groups as this host has them, every managed account
+# with tac-users as primary group. Its own groups go first, so that their
+# GIDs (the numbers of the range) are free for tacctl's.
+fix_groups() {
+    local g name want
+    # tac-users first, for the accounts below; its fixed GID may still be
+    # an own group's (an earlier release), which goes below: fix_gid then
+    # moves it.
+    if ! getent group "$G_USERS" >/dev/null; then
+        want=$(group_gid "$G_USERS")
+        if getent group "$want" >/dev/null; then groupadd "$G_USERS"; else groupadd -g "$want" "$G_USERS"; fi
+    fi
+    while IFS= read -r name; do
+        shared_primary "$name"
+    done < <(managed_accounts)
+    for g in $(host_groups); do
+        fix_gid "$g"
+    done
+    if [[ "$TAC_LOCAL" != "1" ]]; then
+        for g in tac-readonly tac-operator tac-console; do
+            drop_group "$g"
+        done
+    fi
+}
 
 # is_console <shell>: the shell is tacctl's login console (the tacctl
 # server's own accounts only; the shell field is empty everywhere else).
@@ -890,10 +1011,7 @@ set_shell() {
 }
 
 sync_accounts() {
-    local g name tier uid shell id listed=" " inactive=" " managed=" " refused="" member legacy groups console=0
-    for g in "$G_USERS" tac-readonly tac-operator tac-superuser tac-console; do
-        getent group "$g" >/dev/null || groupadd "$g"
-    done
+    local g name tier uid shell id listed=" " inactive=" " managed=" " refused="" member legacy groups console=0 want
 
     # Earlier releases took pre-existing accounts over ('adopted'). They are
     # not tacctl's: reported once and no longer tracked; the group cleanup
@@ -905,6 +1023,7 @@ sync_accounts() {
     rm -f "$STATE_DIR/adopted"
 
     renumber_previous
+    fix_groups
 
     while IFS= read -r name; do
         if [[ -n "$name" ]]; then inactive+="${name} "; fi
@@ -950,17 +1069,18 @@ sync_accounts() {
                 id="$uid"
                 if ! id_is_free "$name" "$uid"; then
                     if ! id=$(free_id_in_range "$name"); then
-                        warn "'${name}': no number of ${TAC_UID_RANGE} is free here for both its UID and its group; no account created."
+                        warn "'${name}': no UID of ${TAC_UID_RANGE} is free here; no account created."
                         refused+="${refused:+, }${name}"
                         continue
                     fi
                 fi
-                getent group "$name" >/dev/null || groupadd -g "$id" "$name"
                 # The range for this call only (login.defs is never edited):
                 # useradd warns about a UID outside its own UID_MIN-UID_MAX.
-                useradd -m -u "$id" -g "$name" -s "${shell:-/bin/bash}" -K UID_MIN="$TAC_UID_FIRST" -K UID_MAX="$TAC_UID_LAST" \
+                # No group of its own: tac-users is its primary group.
+                useradd -m -u "$id" -g "$G_USERS" -s "${shell:-/bin/bash}" -K UID_MIN="$TAC_UID_FIRST" -K UID_MAX="$TAC_UID_LAST" \
                     -c "${name} (${PROTO})" "$name"
                 is_created "$name" || echo "$name" >> "$STATE_DIR/created"
+                private_home "$name"
                 if [[ "$id" != "$uid" ]]; then
                     info "Created account '${name}' (${tier}) with UID ${id} (tacctl assigned ${uid}; --allow-uid-mismatch)."
                 else
@@ -969,18 +1089,27 @@ sync_accounts() {
                 ;;
         esac
         set_shell "$name" "$shell"
+        # The tier's group: every tier on the tacctl server (its tiers
+        # sudoers), elsewhere tac-superuser only (the host's sudo).
         # tac-console (sshd's drop-in for console users) follows the shell.
-        local want="tac-${tier}"
-        if is_console "$shell"; then
-            want+=" tac-console"
-            console=$((console + 1))
+        want=""
+        if [[ "$TAC_LOCAL" == "1" ]]; then
+            want="tac-${tier}"
+            if is_console "$shell"; then
+                want+=" tac-console"
+                console=$((console + 1))
+            fi
+        elif [[ "$tier" == "superuser" ]]; then
+            want="tac-superuser"
         fi
         for g in tac-readonly tac-operator tac-superuser tac-console; do
             if [[ " ${want} " != *" $g "* && " $(id -nG "$name") " == *" $g "* ]]; then
                 gpasswd -d "$name" "$g" >/dev/null
             fi
         done
-        usermod -aG "${G_USERS},${want// /,}" "$name"
+        want="${G_USERS} ${want}"
+        want="${want% }"
+        usermod -aG "${want// /,}" "$name"
         managed+="${name} "
         if grep -qxF "$name" "$STATE_DIR/expired"; then
             usermod -e '' "$name"

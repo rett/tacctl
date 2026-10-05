@@ -201,7 +201,8 @@ func TestHostLocalConsole(t *testing.T) {
 	hs.run(runner(""), "host", "enroll", "--local", "--name", "authsrv", "--scope", "lab", "--build-on-host")
 	all := plain(hs.out.String() + hs.err.String())
 	if hs.code != 0 || !strings.Contains(all, link+" is missing, so no account gets the login console now") ||
-		!strings.Contains(script, "TAC_USERS=$'alice:superuser:80000:/bin/bash\\nbob:operator:80001:/bin/bash\\ncarol:readonly:80002:/bin/bash'") {
+		!strings.Contains(script, "TAC_USERS=$'alice:superuser:80000:/bin/bash\\nbob:operator:80001:/bin/bash\\ncarol:readonly:80002:/bin/bash'") ||
+		!strings.Contains(script, "\nTAC_LOCAL=1\nTAC_PROTOCOL=") {
 		t.Fatalf("no symlink: %d\n%s\n%s", hs.code, all, head(script))
 	}
 	if _, err := os.Stat(dropin); err == nil {

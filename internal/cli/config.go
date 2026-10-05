@@ -160,7 +160,7 @@ func configCmd(inv *invocation) *cobra.Command {
 			verb("build", "Fetch and prepare the pinned pam_tacplus source"),
 			verb("script", "Write the install script for hosts in a scope"),
 			verb("remove-script", "Write the removal script"),
-			verb("uid", "Show or change the UID/GID a user gets on every host"),
+			verb("uid", "Show or change the UID a user gets on every host"),
 			verb("uid-range", "Show or change the UID range of all hosts (default 80000-89999)"),
 			verb("builds", "Show or drop the modules 'host enroll' built in containers"),
 		),

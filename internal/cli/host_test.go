@@ -139,7 +139,7 @@ func TestHostEnrollSyncUnenroll(t *testing.T) {
 		t.Errorf("registry %q", got)
 	}
 	for _, w := range []string{"TAC_METHOD=tacplus\n", "TAC_SERVER=192.0.2.1\n", "TAC_SECRET=lab-secret-0123456789abcdef\n",
-		"TAC_USERS=$'alice:superuser:80000\\nbob:operator:80001\\ncarol:readonly:80002'\nTAC_INACTIVE=''\nTAC_REMOVE_HOMES=\\*\nTAC_UID_FIRST=80000\nTAC_UID_LAST=89999\nTAC_UID_PREVIOUS=''\nTAC_PROTOCOL=4\n",
+		"TAC_USERS=$'alice:superuser:80000\\nbob:operator:80001\\ncarol:readonly:80002'\nTAC_INACTIVE=''\nTAC_REMOVE_HOMES=\\*\nTAC_UID_FIRST=80000\nTAC_UID_LAST=89999\nTAC_UID_PREVIOUS=''\nTAC_PROTOCOL=5\n",
 		"# tacctl Linux client installer for scope 'lab'. Generated "} {
 		if !strings.Contains(hs.pushed, w) {
 			t.Errorf("pushed script lacks %q", w)
@@ -173,7 +173,7 @@ func TestHostEnrollSyncUnenroll(t *testing.T) {
 	if !strings.HasSuffix(hs.pushed, "exit 0\n") {
 		t.Error("sync pushed the tarball")
 	}
-	if !strings.Contains(hs.pushed, "TAC_USERS=$'alice:superuser:80000\\nbob:operator:80001'\nTAC_INACTIVE=carol\nTAC_REMOVE_HOMES=''\nTAC_UID_FIRST=80000\nTAC_UID_LAST=89999\nTAC_UID_PREVIOUS=''\nTAC_PROTOCOL=4\n") {
+	if !strings.Contains(hs.pushed, "TAC_USERS=$'alice:superuser:80000\\nbob:operator:80001'\nTAC_INACTIVE=carol\nTAC_REMOVE_HOMES=''\nTAC_UID_FIRST=80000\nTAC_UID_LAST=89999\nTAC_UID_PREVIOUS=''\nTAC_PROTOCOL=5\n") {
 		t.Errorf("sync header:\n%s", strings.SplitN(hs.pushed, "# --- tacctl", 2)[0])
 	}
 	if r.CalledRegexp(`getent passwd`) {
@@ -425,12 +425,12 @@ func TestConfigLinuxScriptAndUID(t *testing.T) {
 	// Only the range: 80000-89999 (the legacy range is not it).
 	for _, bad := range []string{"500", "1001", "20000", "29999", "79999", "90000", "65534", "080000", "x80000"} {
 		hs.run(nil, "config", "linux", "uid", "bob", bad)
-		hs.expect(1, "", "UID must be a number from 80000 to 89999: tacctl gives out UIDs (and the matching GIDs) in that range only.")
+		hs.expect(1, "", "UID must be a number from 80000 to 89999: tacctl gives out UIDs in that range only.")
 	}
 	hs.run(nil, "config", "linux", "uid", "bob", "80000")
 	hs.expect(1, "", "UID 80000 is already assigned to 'alice'.")
 	hs.run(nil, "config", "linux", "uid", "bob", "89999")
-	hs.expect(0, "usermod -u 89999 bob && groupmod -g 89999 bob", "")
+	hs.expect(0, "usermod -u 89999 bob", "")
 	// A legacy entry outside the range (before 0.2.1) is listed as unused
 	// on hosts, and its user is left out of the script (expired there, not
 	// deleted).

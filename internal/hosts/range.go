@@ -1,6 +1,7 @@
 package hosts
 
-// The range tacctl gives out Linux UIDs (and the matching primary GIDs)
+// The range tacctl gives out Linux UIDs (its first five numbers are also
+// the GIDs of its groups)
 // from, one per server: tacctl.yaml's linux.uid_min and linux.uid_max,
 // DefaultRange when they are not set. tacctl never gives out a number
 // outside it, and the client script never touches an account whose UID is

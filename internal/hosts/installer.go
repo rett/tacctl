@@ -55,6 +55,10 @@ type Script struct {
 	// Prebuilt is a directory of the build cache whose module.tar.gz is
 	// embedded as well ("" for none; only with Tarball).
 	Prebuilt string
+	// Local is the tacctl server's own script (TAC_LOCAL=1): it keeps all
+	// of tacctl's groups (the tiers sudoers, sshd's console drop-in);
+	// every other host has tac-users and tac-superuser only.
+	Local bool
 	// Body is client-install.sh; nil means the embedded copy.
 	Body []byte
 }
@@ -66,10 +70,14 @@ type Script struct {
 // server numbered for before (TAC_UID_PREVIOUS), whose accounts the host
 // renumbers; 4 adds a fourth TAC_USERS field, the login shell, for the
 // tacctl server's own accounts (the login console, ScriptRequest's
-// ConsoleShell), and the tac-console group. The body refuses a header of another protocol, and a body of
+// ConsoleShell), and the tac-console group; 5 gives tacctl's groups fixed
+// GIDs (the first numbers of the range), makes tac-users every managed
+// account's primary group (no group per user) and adds TAC_LOCAL, the
+// tacctl server's own script (all groups; elsewhere tac-users and
+// tac-superuser only). The body refuses a header of another protocol, and a body of
 // an earlier release has no TAC_PROTOCOL check but never sees this header
 // (both are written into one file by one tacctl).
-const ScriptProtocol = "4"
+const ScriptProtocol = "5"
 
 // fileSHA256 is "sha256sum <f> | awk '{print $1}'": "" when the file
 // cannot be read.
@@ -138,6 +146,9 @@ func (s Script) Header() string {
 		prev[i] = p.String()
 	}
 	q("TAC_UID_PREVIOUS", strings.Join(prev, " "))
+	if s.Local {
+		q("TAC_LOCAL", "1")
+	}
 	q("TAC_PROTOCOL", ScriptProtocol)
 	return b.String()
 }
@@ -285,6 +296,7 @@ func (e *Env) WriteScript(req ScriptRequest) (ScriptResult, error) {
 		Scope: req.Scope, Method: method, Server: req.Server, Port: port, AcctPort: acctPort,
 		Secret: req.Secret, Users: users, Generated: e.now(), Range: e.rng(), Previous: previous,
 		Inactive: strings.Join(linuxNames(append(append([]string(nil), req.Inactive...), keep...)), "\n"), RemoveHomes: homes,
+		Local: req.ConsoleShell != nil,
 	}
 	if embed {
 		s.Tarball = tarball

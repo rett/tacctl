@@ -56,7 +56,7 @@ var configLinuxVerbs = [][2]string{
 	{"script [--scope <name>] [--server <address>] [--method tacplus|radius] [--output <file>]",
 		"Write the install script for hosts in a scope (contains the secret)"},
 	{"remove-script [--output <file>]", "Write the removal script (no secrets; accounts are left in place)"},
-	{"uid [<username> [<uid>]]", "Show or change the UID/GID a user gets on every host"},
+	{"uid [<username> [<uid>]]", "Show or change the UID a user gets on every host"},
 	{"uid-range [<min>-<max>]", "Show or change the UID range of all hosts (default 80000-89999)"},
 	{"builds [list|clear]", "Show or drop the modules 'host enroll' built in containers"},
 }
@@ -703,7 +703,7 @@ func (inv *invocation) configLinuxUID(args []string) error {
 		return inv.usageErr("User '" + username + "' does not exist.")
 	}
 	if !rng.Contains(uid) {
-		return inv.usageErr("UID must be a number from " + strconv.Itoa(rng.Min) + " to " + strconv.Itoa(rng.Max) + ": tacctl gives out UIDs (and the matching GIDs) in that range only.")
+		return inv.usageErr("UID must be a number from " + strconv.Itoa(rng.Min) + " to " + strconv.Itoa(rng.Max) + ": tacctl gives out UIDs in that range only.")
 	}
 	holder, err := uids.Holder(uid)
 	if err != nil {
@@ -719,10 +719,10 @@ func (inv *invocation) configLinuxUID(args []string) error {
 	if err := uids.Assign(username, uid); err != nil {
 		return err
 	}
-	a.Out.InfoE("'" + username + "' is now assigned UID/GID " + uid + ".")
+	a.Out.InfoE("'" + username + "' is now assigned UID " + uid + ".")
 	a.Out.Warn("Hosts that already have the account keep its old number until it is renumbered there:")
-	inv.echo("    usermod -u " + uid + " " + username + " && groupmod -g " + uid + " " + username)
-	inv.echo("    find / -xdev \\( -uid <old> -o -gid <old> \\) -exec chown -h " + username + ":" + username + " {} +")
+	inv.echo("    usermod -u " + uid + " " + username)
+	inv.echo("    find / -xdev -uid <old> -exec chown -h " + username + " {} +")
 	inv.echo("  'tacctl host sync' lists the hosts where the number still differs.")
 	return nil
 }

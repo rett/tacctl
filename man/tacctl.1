@@ -818,10 +818,30 @@ tier changes move group membership, disabled users' accounts are expired
 (files kept; enabling the user restores the account), and the accounts of
 users no longer in the scope (or no longer tacctl users) are deleted with
 .BR userdel (8),
-with their per-user group when it is empty. Their UIDs stay reserved on the
-server. Run after
+with an own group an earlier release made when it is empty. Their UIDs stay
+reserved on the server. Run after
 .BR "user add" ", " "user remove" ", " "user move" ", " "user disable" " or " "user scope"
 changes.
+.IP
+tacctl's groups have fixed GIDs, the first numbers of the range:
+.B tac\-users
+(+0, every host: every managed account's primary group and the PAM gate),
+.B tac\-readonly
+(+1) and
+.B tac\-operator
+(+2) (the tacctl server only: its tiers sudoers),
+.B tac\-superuser
+(+3, every host: sudo) and
+.B tac\-console
+(+4, the tacctl server only: sshd's console drop-in). Accounts have no group
+of their own and get a 0700 home. A sync moves what an earlier release made:
+primary groups to
+.BR tac\-users ;
+own groups removed when empty; groups moved to their fixed GIDs
+.RB ( "groupmod \-g" );
+on a host other than the server, the tier and console groups removed when
+only tacctl's accounts are in them. A fixed GID another group holds is left
+to it, with a warning.
 .IP
 tacctl manages an account only when it created it on that host and its UID
 there is in the server's range (80000\(en89999 by default; see
@@ -841,15 +861,14 @@ An account tacctl created with a UID of a range the server used before
 .BR "config linux uid\-range" )
 is renumbered first, to the same offset in the current range: its UID
 .RB ( "usermod \-u" ,
-which re-owns the home directory tree), its own group's GID and its primary
-GID
+which re-owns the home directory tree)
 .RI "(\(lq'" user "': renumbered " old " \-> " new " (home re\-owned)\(rq;"
 the summary counts them, as in
 .RB \(lq "c1: synced (3 users; 1 renumbered)." \(rq).
 Files under
 .IR /home ", " /tmp ", " /var/tmp ", " /var/spool/cron " and " /var/mail
 that still carry the old number are listed (at most 20), never changed. An
-account whose user is logged in, or whose new UID or GID is taken on the
+account whose user is logged in, or whose new UID is taken on the
 host, is left as it is and named as refused until a later sync.
 .IP
 A removed user's home directory is deleted only when asked for. From a
@@ -997,8 +1016,9 @@ to sync users after changes on the server.
 .B "config linux uid " "[ " username " [ " uid " ] ]"
 List the UID assigned to each user, print one user's UID, or change it
 (only a change writes the file).
-Each user has one number, used as both UID and primary GID on every
-enrolled host; it is assigned the first time the user is sent to a host,
+Each user has one number, its UID on every enrolled host (its primary
+group is
+.BR tac\-users ); it is assigned the first time the user is sent to a host,
 from the server's range only (see
 .BR "config linux uid-range" ;
 after the highest one given, never reused, not even after the user is
@@ -1010,7 +1030,7 @@ release is listed as not used on hosts, and its user gets no account until
 given a number in the range. When the range is used up, the script refuses
 the next user.
 The install and sync scripts stop before changing anything if that number
-is already used on a host by another user or group, and print the ways to
+is already used on a host by another account, and print the ways to
 resolve it: renumber the conflicting account on the host, assign the
 user a different number with this command, or accept another free number
 of the range on that host with
@@ -1019,8 +1039,8 @@ Changing a UID does not renumber accounts that already exist on hosts; a
 difference from the assigned one is reported on every sync.
 .TP
 .B "config linux uid\-range " "[ " min \- max " ]"
-Show or change the range Linux host accounts get their UIDs (and the
-matching primary GIDs) from: one range for all hosts, kept in
+Show or change the range Linux host accounts get their UIDs from (its
+first five numbers are also the GIDs of tacctl's groups): one range for all hosts, kept in
 .I tacctl.yaml
 as
 .B linux.uid_min
@@ -3661,7 +3681,7 @@ the git history of
 .TP
 .IR /etc/tacctl/linux\-hosts ", " /etc/tacctl/linux\-uids
 The registry of enrolled Linux hosts (with each host's method) and the
-UID/GID each user gets on every host.
+UID each user gets on every host.
 .TP
 .I /var/lib/tacctl/linux/
 The pam_tacplus source tarball and the modules built in containers.

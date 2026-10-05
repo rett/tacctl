@@ -354,7 +354,7 @@ Usage: tacctl config linux <subcommand>
       --method tacplus|radius             (script) pam_tacplus, or the host's pam_radius_auth (default: host default-method)
       --output, -o <file>                 Where the script goes (default: tacctl-linux-<scope>.sh, remove-script: tacctl-linux-remove.sh)
   remove-script [--output <file>]         Write the removal script (no secrets; accounts are left in place)
-  uid [<username> [<uid>]]                Show or change the UID/GID a user gets on every host
+  uid [<username> [<uid>]]                Show or change the UID a user gets on every host
   uid-range [<min>-<max>]                 Show or change the UID range of all hosts (default 80000-89999)
   builds [list|clear]                     Show or drop the modules 'host enroll' built in containers
 
@@ -383,7 +383,7 @@ Usage: tacctl host <subcommand> [arguments]
       --build-on-host                  (tacplus) Compile pam_tacplus on the host instead of in a container here
   sync <name> | --all                  Push account adds, deletions and tier changes
       --all                            Every enrolled host
-      --allow-uid-mismatch             (enroll and sync) accept a UID/GID conflict on the host instead of stopping
+      --allow-uid-mismatch             (enroll and sync) accept a UID conflict on the host instead of stopping
       --remove-home                    (enroll and sync) delete removed users' home directories without asking
                                        (on a terminal each one is asked; without one they are kept)
   target <name> [<[user@]host>]        Show, or change and test, how tacctl reaches an enrolled host over ssh

@@ -34,54 +34,54 @@ config linux bogus
 config linux help
 
 # --- enroll ------------------------------------------------------------------------
-@known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999, TAC_PROTOCOL=4
+@known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999; 0.2.1 item 62: TAC_PROTOCOL=5
 host enroll admin@web1.example.net --scope lab
-@known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999, TAC_PROTOCOL=4
+@known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999; 0.2.1 item 62: TAC_PROTOCOL=5
 host enroll web1 --scope lab ;; host list
-@known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999, TAC_PROTOCOL=4
+@known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999; 0.2.1 item 62: TAC_PROTOCOL=5
 host enroll web1
-@known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999, TAC_PROTOCOL=4
+@known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999; 0.2.1 item 62: TAC_PROTOCOL=5
 host enroll web1 ;; host enroll web1 ;; host list
-@known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999, TAC_PROTOCOL=4
+@known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999; 0.2.1 item 62: TAC_PROTOCOL=5
 host enroll root@192.0.2.50 --scope lab --port 2222 --identity /etc/passwd ;; host list
-@known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999, TAC_PROTOCOL=4
+@known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999; 0.2.1 item 62: TAC_PROTOCOL=5
 host enroll web1 --scope lab --build-on-host
-@known 0.2.1 items 23 and 38-40 (--remove-home: TAC_REMOVE_HOMES=*): the host's ssh keys are read and pinned after the run; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999, TAC_PROTOCOL=4
+@known 0.2.1 items 23 and 38-40 (--remove-home: TAC_REMOVE_HOMES=*): the host's ssh keys are read and pinned after the run; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999; 0.2.1 item 62: TAC_PROTOCOL=5
 host enroll web1 --scope lab --allow-uid-mismatch --remove-home
-@known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999, TAC_PROTOCOL=4
+@known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999; 0.2.1 item 62: TAC_PROTOCOL=5
 host enroll web1 --scope lab --server 198.51.100.7 ;; host enroll web1 --scope lab ;; host list
-@known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999, TAC_PROTOCOL=4
+@known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999; 0.2.1 item 62: TAC_PROTOCOL=5
 host enroll web1 --scope lab --name web2 ;; host enroll web1 --scope dmz --name web3 ;; host list
-@known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999, TAC_PROTOCOL=4
+@known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999; 0.2.1 item 62: TAC_PROTOCOL=5
 host enroll web1 --scope prod --method tacplus
 host enroll --local --name 9x
 host enroll --local --port x
 @env SSH_STUB_OS=ID=fedora
-@known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999, TAC_PROTOCOL=4
+@known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999; 0.2.1 item 62: TAC_PROTOCOL=5
 host enroll web1 --scope lab
 @unenv SSH_STUB_OS
 @env SSH_STUB_ARCH=riscv64
-@known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999, TAC_PROTOCOL=4
+@known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999; 0.2.1 item 62: TAC_PROTOCOL=5
 host enroll web1 --scope lab
 @unenv SSH_STUB_ARCH
 @env PODMAN_STUB_RC=125
-@known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999, TAC_PROTOCOL=4
+@known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999; 0.2.1 item 62: TAC_PROTOCOL=5
 host enroll web1 --scope lab
 @unenv PODMAN_STUB_RC
 @env SSH_STUB_OS=ID=debian\nVERSION_CODENAME=bookworm
-@known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999, TAC_PROTOCOL=4
+@known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999; 0.2.1 item 62: TAC_PROTOCOL=5
 host enroll web1 --scope lab ;; config linux builds ;; host enroll web1 --scope lab --name web2
 @unenv SSH_STUB_OS
 @env SSH_STUB_OS=ID="rocky"\nID_LIKE="rhel centos fedora"\nVERSION_ID="9.4"
-@known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999, TAC_PROTOCOL=4
+@known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999; 0.2.1 item 62: TAC_PROTOCOL=5
 host enroll web1 --scope lab ;; config linux builds ;; config linux builds clear ;; config linux builds
 @unenv SSH_STUB_OS
 scope protocols lab set radius ;; host enroll web1 --scope lab
 scope auth-method lab radius ;; host enroll web1 --scope lab
-@known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999, TAC_PROTOCOL=4
+@known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999; 0.2.1 item 62: TAC_PROTOCOL=5
 scope auth-method lab radius ;; host enroll web1 --scope lab --method tacplus ;; host list
 host default-method radius ;; host enroll web1 --scope lab
-@known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999, TAC_PROTOCOL=4
+@known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999; 0.2.1 item 62: TAC_PROTOCOL=5
 host default-method radius ;; host enroll web1 --scope lab --method tacplus ;; host list
 
 # enroll refused
@@ -109,9 +109,9 @@ host enroll ghost.example.net --scope lab
 host enroll web1 --scope lab
 @unenv IP_STUB_RC
 @env SSH_STUB_RC=1
-@known 0.2.1 items 37-39: the script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999, TAC_PROTOCOL=4
+@known 0.2.1 items 37-39: the script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999; 0.2.1 item 62: TAC_PROTOCOL=5
 host enroll web1 --scope lab
-@known 0.2.1 items 37-39: the script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999, TAC_PROTOCOL=4
+@known 0.2.1 items 37-39: the script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999; 0.2.1 item 62: TAC_PROTOCOL=5
 host enroll web1
 @unenv SSH_STUB_RC
 
@@ -123,17 +123,17 @@ host sync ghost
 host sync --all
 host unenroll
 host unenroll ghost
-@known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999, TAC_PROTOCOL=4
+@known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999; 0.2.1 item 62: TAC_PROTOCOL=5
 host enroll web1 --scope lab ;; host sync web1
-@known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999, TAC_PROTOCOL=4
+@known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999; 0.2.1 item 62: TAC_PROTOCOL=5
 host enroll web1 --scope lab ;; user add dave readonly --hash {HASH} --scopes lab ;; host sync web1 ;; config linux uid
-@known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999, TAC_PROTOCOL=4
+@known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999; 0.2.1 item 62: TAC_PROTOCOL=5
 host enroll web1 --scope lab ;; host enroll web1 --scope lab --name web2 ;; host sync --all
-@known 0.2.1 items 23 and 38-40 (--remove-home: TAC_REMOVE_HOMES=*): the host's ssh keys are read and pinned after the run; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999, TAC_PROTOCOL=4
+@known 0.2.1 items 23 and 38-40 (--remove-home: TAC_REMOVE_HOMES=*): the host's ssh keys are read and pinned after the run; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999; 0.2.1 item 62: TAC_PROTOCOL=5
 host enroll web1 --scope lab ;; host sync web1 --allow-uid-mismatch --remove-home
 @known 0.2.1 item 37: --adopt is gone (Unknown option)
 host enroll web1 --scope lab ;; host sync web1 --adopt alice
-@known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999, TAC_PROTOCOL=4
+@known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999; 0.2.1 item 62: TAC_PROTOCOL=5
 host enroll web1 ;; host unenroll web1 ;; host list
 
 # with three hosts enrolled already (web2 a radius host, old1 on a scope
@@ -141,9 +141,9 @@ host enroll web1 ;; host unenroll web1 ;; host list
 @root tests/diff/roots/hosts-enrolled
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 host list
-@known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999, TAC_PROTOCOL=4
+@known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999; 0.2.1 item 62: TAC_PROTOCOL=5
 host sync --all
-@known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999, TAC_PROTOCOL=4
+@known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999; 0.2.1 item 62: TAC_PROTOCOL=5
 host sync web2
 @known 0.2.1 item 55: the removal script gives tacctl's console accounts /bin/bash back
 host unenroll web1
@@ -152,15 +152,15 @@ host unenroll web2
 @known 0.2.1 item 55: the removal script gives tacctl's console accounts /bin/bash back
 host unenroll old1
 host unenroll web1 -x
-@known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999, TAC_PROTOCOL=4
+@known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999; 0.2.1 item 62: TAC_PROTOCOL=5
 host enroll admin@web1 --scope lab
 host enroll web2 --scope lab
-@known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999, TAC_PROTOCOL=4
+@known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999; 0.2.1 item 62: TAC_PROTOCOL=5
 host enroll web2 --scope lab --method tacplus ;; host list
 @env SSH_STUB_RC=1
-@known 0.2.1 items 37-39: the script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999, TAC_PROTOCOL=4
+@known 0.2.1 items 37-39: the script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999; 0.2.1 item 62: TAC_PROTOCOL=5
 host sync web1
-@known 0.2.1 items 37-39: the script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999, TAC_PROTOCOL=4
+@known 0.2.1 items 37-39: the script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999; 0.2.1 item 62: TAC_PROTOCOL=5
 host sync --all
 @known 0.2.1 item 55: the removal script gives tacctl's console accounts /bin/bash back
 host unenroll web1
@@ -176,17 +176,17 @@ host default-method ldap
 host default-method radius ;; host default-method ;; config get host.default_method
 
 # --- config linux ----------------------------------------------------------------------
-@known 0.2.1 items 37-39: the script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999, TAC_PROTOCOL=4
+@known 0.2.1 items 37-39: the script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999; 0.2.1 item 62: TAC_PROTOCOL=5
 config linux script --scope lab --server 192.0.2.10
-@known 0.2.1 items 37-39: the script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999, TAC_PROTOCOL=4
+@known 0.2.1 items 37-39: the script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999; 0.2.1 item 62: TAC_PROTOCOL=5
 config linux script --scope lab
-@known 0.2.1 items 37-39: the script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999, TAC_PROTOCOL=4
+@known 0.2.1 items 37-39: the script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999; 0.2.1 item 62: TAC_PROTOCOL=5
 config linux script --scope lab --server 192.0.2.10 --output lab.sh
 @known 0.2.1 item 9: an output that cannot be written is '[ERROR] Cannot write', exit 1
 config linux script --scope lab --server 192.0.2.10 -o nodir/lab.sh
-@known 0.2.1 items 37-39: the script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999, TAC_PROTOCOL=4
+@known 0.2.1 items 37-39: the script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999; 0.2.1 item 62: TAC_PROTOCOL=5
 config linux script --scope dmz --server 192.0.2.10
-@known 0.2.1 items 37-39: the script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999, TAC_PROTOCOL=4
+@known 0.2.1 items 37-39: the script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999; 0.2.1 item 62: TAC_PROTOCOL=5
 config linux script --server 192.0.2.10
 config linux script --scope nope
 config linux script --scope lab --server 'x;reboot'
