@@ -3,7 +3,9 @@
 # Run: tests/diff/run.sh scopes
 @fixture tacquito.minimal.yaml
 
+@known 0.2.1 item 56: the usage has one line per option
 scope
+@known 0.2.1 item 56: the usage has one line per option
 scope bogus
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope list
@@ -72,6 +74,7 @@ scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; sc
 
 # prefixes
 scope prefixes
+@known 0.2.1 item 56: the usage has one line per option
 scope prefixes lab
 scope prefixes nosuch list
 scope prefixes lab list
@@ -186,8 +189,11 @@ scope mgmt-acl nosuch cisco-name
 scope mgmt-acl lab ios-name
 
 # WP2.4b: more of the usage, flag and value handling
+@known 0.2.1 item 56: the usage has one line per option
 scope -h
+@known 0.2.1 item 56: the usage has one line per option
 scope --help
+@known 0.2.1 item 56: the usage has one line per option
 scope help
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope list extra
@@ -235,7 +241,9 @@ scope rename lab ''
 scope rename lab 9lab
 
 # prefixes: --all / --force handling, the last prefix, tagged addresses
+@known 0.2.1 item 56: the usage has one line per option
 scope prefixes lab -h
+@known 0.2.1 item 56: the usage has one line per option
 scope prefixes lab help extra
 scope prefixes lab remove --all --all
 scope prefixes lab remove --force

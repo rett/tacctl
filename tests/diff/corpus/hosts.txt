@@ -26,8 +26,11 @@ host help
 @known 0.2.1 items 37, 39 and 45: the host usage names --remove-home, not --adopt, and lists target
 host -h
 host list
+@known 0.2.1 items 53, 55 and 56: config linux usage has uid-range, the console note and one line per option
 config linux
+@known 0.2.1 items 53, 55 and 56: config linux usage has uid-range, the console note and one line per option
 config linux bogus
+@known 0.2.1 items 53, 55 and 56: config linux usage has uid-range, the console note and one line per option
 config linux help
 
 # --- enroll ------------------------------------------------------------------------
@@ -142,8 +145,11 @@ host list
 host sync --all
 @known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999, TAC_PROTOCOL=4
 host sync web2
+@known 0.2.1 item 55: the removal script gives tacctl's console accounts /bin/bash back
 host unenroll web1
+@known 0.2.1 item 55: the removal script gives tacctl's console accounts /bin/bash back
 host unenroll web2
+@known 0.2.1 item 55: the removal script gives tacctl's console accounts /bin/bash back
 host unenroll old1
 host unenroll web1 -x
 @known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999, TAC_PROTOCOL=4
@@ -156,6 +162,7 @@ host enroll web2 --scope lab --method tacplus ;; host list
 host sync web1
 @known 0.2.1 items 37-39: the script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999, TAC_PROTOCOL=4
 host sync --all
+@known 0.2.1 item 55: the removal script gives tacctl's console accounts /bin/bash back
 host unenroll web1
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 host unenroll web1 --force ;; host list
@@ -193,7 +200,9 @@ config linux script --scope lab
 @unenv IP_STUB_RC
 scope protocols lab set radius ;; config linux script --scope lab --server 192.0.2.10
 scope auth-method lab radius ;; config linux script --scope lab --server 192.0.2.10
+@known 0.2.1 item 55: the removal script gives tacctl's console accounts /bin/bash back
 config linux remove-script
+@known 0.2.1 item 55: the removal script gives tacctl's console accounts /bin/bash back
 config linux remove-script -o rm.sh
 config linux remove-script --output nodir/rm.sh
 config linux remove-script bogus

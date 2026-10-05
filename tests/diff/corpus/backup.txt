@@ -4,7 +4,9 @@
 # Run: tests/diff/run.sh backup
 @fixture tacquito.minimal.yaml
 
+@known 0.2.1 item 56: the usage has one line per option
 backup
+@known 0.2.1 item 56: the usage has one line per option
 backup bogus
 backup list
 backup diff

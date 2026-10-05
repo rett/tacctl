@@ -3,14 +3,20 @@
 # Run: tests/diff/run.sh store
 @fixture tacquito.minimal.yaml
 
+@known 0.2.1 item 56: the usage has one line per option
 store
+@known 0.2.1 item 56: the usage has one line per option
 store bogus
 store show
 store show --json
 store show --bogus
+@known 0.2.1 item 56: the usage has one line per option
 store frobnicate
+@known 0.2.1 item 56: the usage has one line per option
 store help
+@known 0.2.1 item 56: the usage has one line per option
 store -h
+@known 0.2.1 item 56: the usage has one line per option
 store --help
 store show --json extra
 store show "" --json

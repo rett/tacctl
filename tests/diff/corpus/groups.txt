@@ -53,7 +53,9 @@ group add helpdesk 5 HELPDESK-CLASS ;; group remove helpdesk ;; group list
 group add helpdesk 5 HELPDESK-CLASS ;; user add alice helpdesk --hash {HASH} --scopes lab ;; group remove helpdesk <<< y
 
 # commands
+@known 0.2.1 item 56: the usage has one line per option
 group commands
+@known 0.2.1 item 56: the usage has one line per option
 group commands bogus operator
 group commands list
 group commands list nosuchgroup
@@ -104,7 +106,9 @@ group commands seed nosuchgroup
 group commands seed --force
 
 # privilege
+@known 0.2.1 item 56: the usage has one line per option
 group privilege
+@known 0.2.1 item 56: the usage has one line per option
 group privilege bogus operator
 group privilege list
 group privilege list nosuchgroup
@@ -141,9 +145,13 @@ group -h
 group help
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 group list extra
+@known 0.2.1 item 56: the usage has one line per option
 group commands -h
+@known 0.2.1 item 56: the usage has one line per option
 group commands help
+@known 0.2.1 item 56: the usage has one line per option
 group privilege --help
+@known 0.2.1 item 56: the usage has one line per option
 group privilege help
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 group add helpdesk 05 HELPDESK-CLASS ;; group list
@@ -204,7 +212,9 @@ group commands clear operator <<< yes
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 group commands clear superuser <<< y ;; group commands list superuser
 group commands seed operator extra
+@known 0.2.1 item 56: the usage has one line per option
 group commands seed --bogus
+@known 0.2.1 item 56: the usage has one line per option
 group commands seed - 
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 group commands seed superuser --force ;; group commands list superuser
@@ -239,6 +249,7 @@ group privilege add operator 'show version' ;; group privilege clear operator <<
 group privilege seed superuser ;; group privilege list superuser
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 group privilege seed operator ;; group privilege seed operator --force ;; group privilege list operator
+@known 0.2.1 item 56: the usage has one line per option
 group privilege seed --bogus
 group privilege seed operator readonly
 group privilege add operator 'show version' ;; group privilege seed

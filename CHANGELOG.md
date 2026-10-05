@@ -646,6 +646,17 @@ current behaviour; this file is where history lives.
     restored for: …`), then removes the drop-in, the `/etc/shells` line and
     the symlink. Nothing changes for anyone at the upgrade itself: the
     accounts follow at the next `host sync` of the server.
+56. **Usage: one line per option, and `?` describes every flag.** The usage
+    blocks that named a command's flags only in its row or in running text
+    (`install`, `upgrade`, `uninstall`, `ssh`, `shell`, `version`, `config
+    render|restore|listen|cisco|juniper|wti`, `config linux script|remove-script`,
+    `scope add|remove|prefixes`, `group commands add|seed`, `group privilege
+    seed`, `host sync|unenroll`, `backend enable|disable`, `store show|import`,
+    `log`, `backup restore`, and `device`'s verbs) have an indented line per
+    option with its description. In `tacctl shell` (and the console), `?`
+    after a dash now shows a description for every flag: option lines
+    indented deeper than a row were not read, and a line naming two flags
+    (`--port <n>, --identity <file>`) described only the first.
 
 ## 0.2.0 (2026-10-04)
 
