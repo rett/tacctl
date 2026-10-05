@@ -49,8 +49,14 @@ type Options struct {
 	// History records the lines of an interactive session and of -c (nil:
 	// none; a History without a file is kept in memory only).
 	History *History
-	// Complete answers Tab.
+	// Complete answers Tab and '?'.
 	Complete Completer
+	// Explain answers '?' where Complete offers no word.
+	Explain Explainer
+	// ListMax is the longest list Tab or '?' shows without asking 'Show
+	// all <n> <kind>?' first: 0 is DefaultListMax, a negative number never
+	// asks.
+	ListMax int
 	// Help is the text of 'help <words>'; false when there is none.
 	Help func(words []string) (string, bool)
 	// Exec runs a tacctl command with the terminal's stdout and stderr and
@@ -187,8 +193,12 @@ func (s *Shell) Interactive(ctx context.Context, tty *os.File) int {
 	if hist == nil {
 		hist = NewHistory("", nil)
 	}
-	ed := &editor{prompt: s.o.Prompt, hist: hist, complete: s.o.Complete}
+	ed := &editor{prompt: s.o.Prompt, hist: hist, complete: s.o.Complete, explain: s.o.Explain, listMax: s.o.ListMax}
+	if ed.listMax == 0 {
+		ed.listMax = DefaultListMax
+	}
 	in := &input{fd: fd, out: s.o.Out.Stdout, idle: s.o.Idle, wake: p[0], ed: ed}
+	ed.out, ed.readKey = in, in.key
 	t := term.NewTerminal(in, s.o.Prompt)
 	ed.t = t
 	t.AutoCompleteCallback = ed.key
@@ -202,7 +212,7 @@ func (s *Shell) Interactive(ctx context.Context, tty *os.File) int {
 		for sig := range sigs {
 			switch sig {
 			case syscall.SIGWINCH:
-				setSize(t, fd)
+				setSize(t, ed, fd)
 			case syscall.SIGTERM, syscall.SIGHUP:
 				stop.CompareAndSwap(0, int32(sig.(syscall.Signal)))
 				_, _ = unix.Write(p[1], []byte{1})
@@ -224,7 +234,7 @@ func (s *Shell) Interactive(ctx context.Context, tty *os.File) int {
 			s.errorf("cannot set up the terminal: %v", err)
 			return 1
 		}
-		setSize(t, fd)
+		setSize(t, ed, fd)
 		ed.interrupted = false
 		t.SetBracketedPasteMode(true)
 		line, err := t.ReadLine()
@@ -269,8 +279,10 @@ func idleText(d time.Duration) string {
 // reports no size (0x0: a pty nobody sized, as expect(1) and some serial
 // consoles leave it) keeps the editor's 80x24: a width of 0 would wrap the
 // line after every character.
-func setSize(t *term.Terminal, fd int) {
+func setSize(t *term.Terminal, ed *editor, fd int) {
 	if w, h, err := term.GetSize(fd); err == nil && w > 0 && h > 0 {
 		_ = t.SetSize(w, h)
+		ed.width.Store(int32(min(w, 1<<15)))
+		ed.height.Store(int32(min(h, 1<<15)))
 	}
 }

@@ -23,6 +23,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/rett/tacctl/internal/devreg"
+	"github.com/rett/tacctl/internal/shellquote"
 	"github.com/rett/tacctl/internal/ui"
 )
 
@@ -596,6 +597,26 @@ func (inv *invocation) deviceShow(args []string) error {
 	return nil
 }
 
+// retyped is the command line prefix args, as the user typed it (each
+// word quoted for the shell where it needs it), without the value flag
+// drop and with the switch add once at the end: the command a refusal
+// suggests keeps every other flag.
+func retyped(prefix string, args []string, drop, add string) string {
+	words := []string{prefix}
+	for i := 0; i < len(args); i++ {
+		w := args[i]
+		switch {
+		case w == drop:
+			i++
+			continue
+		case strings.HasPrefix(w, drop+"="), w == add:
+			continue
+		}
+		words = append(words, shellquote.Q(w))
+	}
+	return strings.Join(append(words, add), " ")
+}
+
 func sortedVendors() []string { return []string{"cisco", "juniper", "wti"} }
 
 // --- add -------------------------------------------------------------------------
@@ -636,7 +657,7 @@ func (inv *invocation) deviceAdd(args []string) error {
 	if fp := p.Value("--host-key"); p.Has("--host-key") && !devreg.ValidFingerprint(fp) {
 		return inv.usageErr("Invalid --host-key '" + fp + "': expected SHA256:<fingerprint> as ssh prints it.")
 	}
-	keep := "tacctl device add " + d.Name + " " + d.Address + " --allow-generic"
+	keep := retyped("tacctl device add", args, "--host-key", "--allow-generic")
 	check := func(r *devreg.Resolver) error {
 		if err := r.CheckName(d.Name, d.Vendor, p.Has("--allow-generic"), keep); err != nil {
 			return err
@@ -651,10 +672,7 @@ func (inv *invocation) deviceAdd(args []string) error {
 	if err := check(res); err != nil {
 		return err
 	}
-	retry := "tacctl device add " + d.Name + " " + d.Address
-	if p.Has("--allow-generic") {
-		retry += " --allow-generic"
-	}
+	retry := retyped("tacctl device add", args, "--host-key", "--no-host-key")
 	pin, offered, err := inv.deviceAddKeys(d, p, retry)
 	if err != nil {
 		return err
@@ -980,11 +998,7 @@ func (inv *invocation) deviceNotice(args []string) error {
 	if err != nil {
 		return err
 	}
-	d, err := inv.deviceEditable(res, f, p.Args[0])
-	if err != nil {
-		return err
-	}
-	name, action, kind := d.Name, p.Args[1], p.Args[2]
+	action, kind := p.Args[1], p.Args[2]
 	if action != "ack" && action != "unack" {
 		return inv.usageErr("Usage: tacctl device notice <name> ack|unack <kind>")
 	}
@@ -994,6 +1008,14 @@ func (inv *invocation) deviceNotice(args []string) error {
 	if !slices.Contains(devreg.AckableKinds, kind) {
 		return inv.usageErr("Unknown notice kind '"+kind+"'.", "Kinds: "+strings.Join(devreg.AckableKinds, ", ")+".")
 	}
+	if e, ok := res.Lookup(p.Args[0], inv.deviceFilter()); ok && e.Source == devreg.SourceHost {
+		return inv.hostNotice(e, action, kind)
+	}
+	d, err := inv.deviceEditable(res, f, p.Args[0])
+	if err != nil {
+		return err
+	}
+	name := d.Name
 	had := slices.Contains(d.Ack, kind)
 	if (action == "ack") == had {
 		inv.app.Out.Info("Notice '" + kind + "' of '" + name + "' is " + map[bool]string{true: "already", false: "not"}[had] + " acknowledged.")
@@ -1005,6 +1027,41 @@ func (inv *invocation) deviceNotice(args []string) error {
 			live.Ack = append(live.Ack, kind)
 		} else {
 			live.Ack = slices.DeleteFunc(live.Ack, func(k string) bool { return k == kind })
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	inv.app.Out.Info("Notice '" + kind + "' of '" + name + "' " + map[string]string{"ack": "acknowledged", "unack": "reopened"}[action] + ".")
+	return nil
+}
+
+// hostNotice acknowledges or reopens a notice of the enrolled host e: only
+// the kinds an enrolled host may acknowledge (its other notices are
+// cleared on the host).
+func (inv *invocation) hostNotice(e devreg.Entry, action, kind string) error {
+	if !slices.Contains(devreg.HostAckableKinds, kind) {
+		return inv.usageErr("'"+e.Name+"' is an enrolled host; its '"+kind+"' notice is cleared on the host, not acknowledged.",
+			"An enrolled host can acknowledge: "+strings.Join(devreg.HostAckableKinds, ", ")+".")
+	}
+	name := e.Name
+	had := slices.Contains(e.Ack, kind)
+	if (action == "ack") == had {
+		inv.app.Out.Info("Notice '" + kind + "' of '" + name + "' is " + map[bool]string{true: "already", false: "not"}[had] + " acknowledged.")
+		return nil
+	}
+	if action == "ack" && kind == devreg.NoticeAddressChanged && e.PrevAddress == "" {
+		return inv.usageErr("'" + name + "' has no " + kind + " notice.")
+	}
+	if _, err := inv.deviceWrite(func(f *devreg.File, _ *devreg.Resolver) error {
+		h := f.Host(name)
+		if h == nil {
+			return inv.usageErr("'" + name + "' has no " + kind + " notice.")
+		}
+		if action == "ack" {
+			h.Ack = append(h.Ack, kind)
+		} else {
+			h.Ack = slices.DeleteFunc(h.Ack, func(k string) bool { return k == kind })
 		}
 		return nil
 	}); err != nil {

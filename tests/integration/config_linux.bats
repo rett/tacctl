@@ -102,6 +102,8 @@ _client_env() {
     stub_cmd sshd 'printf "usepam yes\npasswordauthentication yes\n"'
     stub_cmd install 'cp "${@: -2:1}" "${@: -1}"'
     stub_cmd ldconfig
+    # A kept home is made root's: recorded, not run (the tests are not root).
+    stub_cmd chown
 }
 
 # --- generation ---------------------------------------------------------------
@@ -499,11 +501,15 @@ bob"
     stub_called "userdel olduser"
     stub_called "groupdel olduser"
     assert_output --partial "[INFO] Deleted account 'olduser': no longer a TACACS+ user here (its UID 20005 stays reserved on the tacctl server, never reused)."
-    assert_output --partial "[INFO] home kept: ${TACCTL_CLIENT_HOME_ROOT}/olduser"
+    # The kept home moves out of reach of a later account with the same UID.
+    assert_output --regexp "\[INFO\] home kept: ${TACCTL_CLIENT_HOME_ROOT}/\.tacctl-removed/olduser-[0-9]{8}-[0-9]{6}"$'\n'
+    moved=("$TACCTL_CLIENT_HOME_ROOT"/.tacctl-removed/olduser-*)
+    [[ ${#moved[@]} == 1 && -d "${moved[0]}" && ! -e "$TACCTL_CLIENT_HOME_ROOT/olduser" ]]
+    stub_called "chown root:root ${TACCTL_CLIENT_HOME_ROOT}/.tacctl-removed"
+    stub_called "chown -hR root:root -- ${moved[0]}"
     # A local account in tac-users that tacctl did not create: out of
     # tacctl's groups, nothing else.
     assert_output --partial "[INFO] 'localguy': removed from tacctl's groups (tac-users); it is a plain local account again."
-    [[ -d "$TACCTL_CLIENT_HOME_ROOT/olduser" ]]
     run grep -c olduser "$TACCTL_CLIENT_STATE/created" "$TACCTL_CLIENT_STATE/expired"
     assert_output "${TACCTL_CLIENT_STATE}/created:0
 ${TACCTL_CLIENT_STATE}/expired:0"
@@ -513,6 +519,9 @@ ${TACCTL_CLIENT_STATE}/expired:0"
     stub_called "gpasswd -d localguy tac-users"
     run grep -cE "^(usermod|userdel) .*localguy" "$CALLS_LOG"
     assert_output "0"
+    run stat -c %a "$TACCTL_CLIENT_HOME_ROOT/.tacctl-removed" "${moved[0]}"
+    assert_output "700
+700"
 }
 
 @test "client install: removed users' homes go only when named (TAC_REMOVE_HOMES) or with --remove-home" {
@@ -533,8 +542,10 @@ ${TACCTL_CLIENT_STATE}/expired:0"
     run bash "$OUT" --accounts-only
     assert_success
     assert_output --partial "[INFO] Deleted home ${TACCTL_CLIENT_HOME_ROOT}/old1."
-    assert_output --partial "[INFO] home kept: ${TACCTL_CLIENT_HOME_ROOT}/old2"
-    [[ ! -e "$TACCTL_CLIENT_HOME_ROOT/old1" && -d "$TACCTL_CLIENT_HOME_ROOT/old2" && -d "$BATS_TEST_TMPDIR/precious" ]]
+    assert_output --partial "[INFO] home kept: ${TACCTL_CLIENT_HOME_ROOT}/.tacctl-removed/old2-"
+    moved=("$TACCTL_CLIENT_HOME_ROOT"/.tacctl-removed/old2-*)
+    [[ ! -e "$TACCTL_CLIENT_HOME_ROOT/old1" && ! -e "$TACCTL_CLIENT_HOME_ROOT/old2" && -d "$BATS_TEST_TMPDIR/precious" ]]
+    [[ -f "${moved[0]}/.ssh/authorized_keys" ]]
 
     # --remove-home (TAC_REMOVE_HOMES='*' from 'host sync --remove-home'): every one.
     echo old3 >> "$TACCTL_CLIENT_STATE/created"
@@ -560,17 +571,37 @@ ${TACCTL_CLIENT_STATE}/expired:0"
         "mate:x:1700:1700::${TACCTL_CLIENT_HOME_ROOT}/team:/bin/bash" >> "$FAKE_DB/passwd"
     run bash "$OUT" --accounts-only --remove-home
     assert_success
-    assert_output --partial "[WARN] home kept: ${BATS_TEST_TMPDIR}/elsewhere/h1 (not a directory directly under ${TACCTL_CLIENT_HOME_ROOT})"
-    assert_output --partial "[WARN] home kept: ${TACCTL_CLIENT_HOME_ROOT}/h2 (it is a symbolic link)"
-    assert_output --partial "[WARN] home kept: ${TACCTL_CLIENT_HOME_ROOT}/team (also the home of 'mate')"
+    assert_output --partial "[WARN] home kept in place: ${BATS_TEST_TMPDIR}/elsewhere/h1 (not a directory directly under ${TACCTL_CLIENT_HOME_ROOT})"
+    assert_output --partial "[WARN] home kept in place: ${TACCTL_CLIENT_HOME_ROOT}/h2 (it is a symbolic link)"
+    assert_output --partial "[WARN] home kept in place: ${TACCTL_CLIENT_HOME_ROOT}/team (also the home of 'mate')"
     [[ -d "$BATS_TEST_TMPDIR/elsewhere/h1" && -L "$TACCTL_CLIENT_HOME_ROOT/h2" && -d "$BATS_TEST_TMPDIR/real" && -d "$TACCTL_CLIENT_HOME_ROOT/team" ]]
     # Owned by another UID than the account's.
     echo "h4:x:20014:20014:h4 (TACACS+):${TACCTL_CLIENT_HOME_ROOT}/h4:/bin/bash" >> "$FAKE_DB/passwd"
     echo h4 >> "$TACCTL_CLIENT_STATE/created"
     TACCTL_CLIENT_HOME_OWNER=4242 run bash "$OUT" --accounts-only --remove-home
     assert_success
-    assert_output --partial "home kept: ${TACCTL_CLIENT_HOME_ROOT}/h4 (owned by UID $(stat -c %u "$TACCTL_CLIENT_HOME_ROOT/h4"), not 20014)"
+    assert_output --partial "home kept in place: ${TACCTL_CLIENT_HOME_ROOT}/h4 (owned by UID $(stat -c %u "$TACCTL_CLIENT_HOME_ROOT/h4"), not 20014)"
     [[ -d "$TACCTL_CLIENT_HOME_ROOT/h4" ]]
+}
+
+@test "client install: a kept home is not moved through a removed-homes directory that is a link" {
+    _gen > /dev/null
+    _client_env
+    mkdir -p "$TACCTL_CLIENT_STATE" "$TACCTL_CLIENT_HOME_ROOT/k1" "$TACCTL_CLIENT_HOME_ROOT/k2" "$BATS_TEST_TMPDIR/elsewhere"
+    printf '%s\n' k1 k2 > "$TACCTL_CLIENT_STATE/created"
+    printf '%s\n' "k1:x:20021:20021:k1 (TACACS+):${TACCTL_CLIENT_HOME_ROOT}/k1:/bin/bash" \
+        "k2:x:20022:20022:k2 (TACACS+):${TACCTL_CLIENT_HOME_ROOT}/k2:/bin/bash" >> "$FAKE_DB/passwd"
+    # .tacctl-removed is a link to somewhere else: nothing is moved through it.
+    ln -s "$BATS_TEST_TMPDIR/elsewhere" "$TACCTL_CLIENT_HOME_ROOT/.tacctl-removed"
+    run bash "$OUT" --accounts-only
+    assert_success
+    assert_output --partial "[WARN] home kept in place: ${TACCTL_CLIENT_HOME_ROOT}/k1 (${TACCTL_CLIENT_HOME_ROOT}/.tacctl-removed is not a real directory)"
+    assert_output --partial "[WARN] home kept in place: ${TACCTL_CLIENT_HOME_ROOT}/k2 (${TACCTL_CLIENT_HOME_ROOT}/.tacctl-removed is not a real directory)"
+    [[ -d "$TACCTL_CLIENT_HOME_ROOT/k1" && -d "$TACCTL_CLIENT_HOME_ROOT/k2" ]]
+    run ls -A "$BATS_TEST_TMPDIR/elsewhere"
+    assert_output ""
+    run grep -c "^chown -hR" "$CALLS_LOG"
+    assert_output "0"
 }
 
 @test "client install: an account outside 20000-29999 is never touched, even when listed as created" {

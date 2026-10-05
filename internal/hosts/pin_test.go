@@ -3,6 +3,7 @@ package hosts
 import (
 	"context"
 	"errors"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -73,7 +74,8 @@ func TestRunScriptReadsKeysOverTheSession(t *testing.T) {
 	}
 	argvs := f.Argvs()
 	opts := "ssh -o ConnectTimeout=10 -o ControlMaster=auto -o ControlPath=~/.ssh/tacctl-%C -o ControlPersist=60 -o BatchMode=yes "
-	if len(argvs) != 4 || argvs[2] != opts+"-T admin@web1 "+ReadKeysCommand || argvs[3] != opts+"-O exit admin@web1" {
+	if len(argvs) != 5 || argvs[2] != opts+"-T admin@web1 "+ReadKeysCommand || argvs[3] != opts+"-T admin@web1 "+FactsCommand ||
+		argvs[4] != opts+"-O exit admin@web1" {
 		t.Fatalf("calls %q", argvs)
 	}
 	e.PinKeys(context.Background(), Entry{Name: "web1", Target: "admin@web1"})
@@ -96,7 +98,7 @@ func TestRunScriptReadsKeysOverTheSession(t *testing.T) {
 	})
 	f.Func(func(c execx.Cmd) bool { return contains(c.Args, "-T") }, func(execx.Cmd) (execx.Result, error) { return execx.Result{Code: 3}, nil })
 	_, _ = e.RunScript(context.Background(), "admin@web1", "", "", scriptFile(t), nil)
-	if f.CalledRegexp(`cat /etc/ssh`) {
+	if f.CalledRegexp(`cat /etc/ssh`) || f.CalledRegexp(`SSH_CONNECTION`) || e.Facts != nil {
 		t.Errorf("read after a failed run: %q", f.Argvs())
 	}
 	// Without ReadKeys: the three calls of before.
@@ -106,5 +108,49 @@ func TestRunScriptReadsKeysOverTheSession(t *testing.T) {
 	_, _ = e.RunScript(context.Background(), "admin@web1", "", "", scriptFile(t), nil)
 	if len(f.Argvs()) != 3 {
 		t.Errorf("calls %q", f.Argvs())
+	}
+}
+
+// The facts: the host's side of SSH_CONNECTION, and the useradd range of
+// login.defs with useradd's own defaults for what it does not set.
+func TestParseFactsAndUIDWarning(t *testing.T) {
+	f := ParseFacts([]byte("ssh_connection=198.51.100.9 50022 192.0.2.50 22\nlogin_defs=present\nUID_MIN\t1000\nUID_MAX   60000\n"))
+	if f.Address != "192.0.2.50" || !f.LoginDefs || f.UIDMin != 1000 || f.UIDMax != 60000 || !f.UIDOverlap() {
+		t.Errorf("%+v", f)
+	}
+	w := f.UIDWarning("web1")
+	if len(w) != 3 || w[0] != "web1: local useradd there gives out UIDs 1000-60000 (/etc/login.defs UID_MIN/UID_MAX), which overlaps tacctl's 20000-29999:" ||
+		!strings.Contains(w[2], "Set 'UID_MAX 19999' in /etc/login.defs on web1 (tacctl does not change it).") {
+		t.Errorf("%q", w)
+	}
+	for _, c := range []struct {
+		in      string
+		addr    string
+		overlap bool
+	}{
+		{"ssh_connection=2001:db8::1 1 2001:db8::50 22\nlogin_defs=present\nUID_MAX 19999\n", "2001:db8::50", false},
+		{"ssh_connection=::ffff:192.0.2.1 1 ::ffff:192.0.2.50 22\nlogin_defs=present\n", "192.0.2.50", true}, // defaults: 1000-60000
+		{"ssh_connection=\n", "", false},                                         // no login.defs: nothing to say
+		{"ssh_connection=x y z\nlogin_defs=present\nUID_MIN 30000\n", "", false}, // starts above the range
+		{"login_defs=present\n#UID_MAX 19999\nUID_MAX 19999\n", "", false},
+	} {
+		f := ParseFacts([]byte(c.in))
+		if f.Address != c.addr || f.UIDOverlap() != c.overlap {
+			t.Errorf("%q: %+v", c.in, f)
+		}
+	}
+	if (Facts{}).UIDWarning("x") != nil {
+		t.Error("warning without login.defs")
+	}
+	// --local: 127.0.0.1 and this server's own file.
+	dir := t.TempDir()
+	if f := LocalFacts(dir + "/none"); f.Address != "127.0.0.1" || f.LoginDefs {
+		t.Errorf("%+v", f)
+	}
+	if err := os.WriteFile(dir+"/login.defs", []byte("UID_MIN 1000\nUID_MAX 19999\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if f := LocalFacts(dir + "/login.defs"); !f.LoginDefs || f.UIDMax != 19999 || f.UIDOverlap() {
+		t.Errorf("%+v", f)
 	}
 }

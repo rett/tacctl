@@ -116,7 +116,7 @@ func (inv *invocation) hostsEnv() *hosts.Env {
 		asUser = u
 	}
 	return &hosts.Env{
-		Paths:    hosts.Paths{Dir: a.Paths.LinuxDir, VarLib: a.Paths.VarLib, UIDs: a.Paths.LinuxUIDs, Hosts: a.Paths.LinuxHosts},
+		Paths:    hosts.Paths{Dir: a.Paths.LinuxDir, VarLib: a.Paths.VarLib, UIDs: a.Paths.LinuxUIDs, Hosts: a.Paths.LinuxHosts, LoginDefs: a.Paths.LoginDefs},
 		Runner:   a.Runner,
 		Out:      a.Out,
 		Stdin:    a.Stdin,

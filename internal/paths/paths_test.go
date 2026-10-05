@@ -71,6 +71,7 @@ func TestResolveDefaults(t *testing.T) {
 		"SettleSeconds":   "0.5",
 		"TacquitoSrc":     "/opt/tacquito-src",
 		"LinuxDir":        "/var/lib/tacctl/linux",
+		"LoginDefs":       "/etc/login.defs",
 		"Tree":            "/opt/tacctl",
 		"PatchDir":        "/opt/tacctl/patches",
 	}
@@ -85,7 +86,7 @@ func TestResolveOverrides(t *testing.T) {
 		"TACCTL_ETC=/t/etc", "TACCTL_STATE_DIR=/t/state", "TACCTL_LOG=/t/log", "TACCTL_BIN=/t/bin",
 		"TACCTL_SUDOERS_FILE=/t/sudoers", "TACCTL_TIER_SUDOERS_FILE=/t/tiers",
 		"TACCTL_OVERRIDE_DIR=/t/dropin", "TACCTL_LOGROTATE_DIR=/t/lr", "TACCTL_SETTLE_SECONDS=0",
-		"TACQUITO_SRC=/t/src", "TACCTL_LINUX_DIR=/t/linux", "TACCTL_TREE=/t/tree",
+		"TACQUITO_SRC=/t/src", "TACCTL_LINUX_DIR=/t/linux", "TACCTL_TREE=/t/tree", "TACCTL_LOGIN_DEFS=/t/login.defs",
 		"TACCTL_PATCH_DIR=/t/patches", "TACCTL_SKIP_SUDO=1",
 	})
 	p := Resolve(env, "", none)
@@ -106,6 +107,7 @@ func TestResolveOverrides(t *testing.T) {
 		"SettleSeconds":   "0",
 		"TacquitoSrc":     "/t/src",
 		"LinuxDir":        "/t/linux",
+		"LoginDefs":       "/t/login.defs",
 		"Tree":            "/t/tree",
 		"PatchDir":        "/t/patches",
 	})

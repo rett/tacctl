@@ -128,8 +128,9 @@ current behaviour; this file is where history lives.
     without regard to case, across the registry and the enrolled hosts) or an
     address already registered, and a generic name (`switch`, `router`,
     `cisco`, `ubuntu`, `ip-10-0-0-1`, ...) with the command that names the
-    device; `--allow-generic` registers it anyway and the device carries a
-    `generic-name` notice (`device notices`, `device notice <name> ack|unack
+    device and the same `device add` line with `--allow-generic` (every other
+    flag as given); `--allow-generic` registers it anyway and the device
+    carries a `generic-name` notice (`device notices`, `device notice <name> ack|unack
     <kind>`). `host enroll` refuses a name that is a registered device or a
     generic name (give another `--name`); a host enrolled under a generic name
     earlier is not refused and carries the notice.
@@ -142,14 +143,33 @@ current behaviour; this file is where history lives.
     variables or separators); `help [<command>]`, `history`, `exit`/`quit`
     are the shell's own words. `help` prints the usage of `tacctl` (with a
     Shell section for the keys), `help <command>` the block `tacctl <command>`
-    prints. Tab completes commands, flags and live names (a second Tab lists
-    them as the command rows of `help` (argument column and descriptions),
-    alphabetical, without the shell's own words; `shell` is not offered inside the
-    shell, and typing it says so). The list starts below the line typed (the
-    line stays, as in bash) and the prompt comes back with it; flags are
-    listed only after a `-`; device and host names come with `<vendor>
-    <address> <scope>` (from `_completion-names <kind> --desc`, filtered to
-    the caller's scopes as the names are). Ctrl-R searches the history,
+    prints. Tab completes commands, flags and live names; a second Tab lists the
+    matching words alone, alphabetical, in columns that fit the terminal
+    (as bash does), without the shell's own words; `shell` is not offered
+    inside the shell, and typing it says so. `?` inserts nothing and shows
+    help for the cursor's position (Junos style): where words can come,
+    `Possible completions:` with one row per word, alphabetical, with its
+    argument column and description (commands as the rows of `help`, a
+    family's verbs as its usage rows, flags with their description from the
+    usage, device and host names with `<vendor> <address> <scope>` from
+    `_completion-names <kind> --desc`, filtered to the caller's scopes as
+    the names are); after a command that takes arguments, its usage lines,
+    its options not yet on the line, and what comes next (`Next: <username>
+    <group>`, `Next: <Enter> to run`). Inside quotes, or after a backslash
+    (`\?`), `?` is typed as a character. A list of more than 40 entries (Tab's or `?`'s) asks first, as bash
+    does: `Show all 45 devices? [y/N]` (the kind of the entries: devices,
+    hosts, users, scopes, commands, options, choices, ...); `y` shows it,
+    any other key or Ctrl-C prints how to narrow it (`type more letters to
+    narrow it (e.g. core0…<Tab>)`) and gives the line back. Help from `?`
+    taller than the terminal is paged inside the shell (no external pager):
+    a screenful, then `-- more (Space: page, Enter: line, q: quit) --`;
+    `q` or Ctrl-C stops and gives the prompt and the line back. Tab's
+    column lists are not paged. Lists and help start below the
+    line typed (the line stays, as in bash) and the prompt comes back with
+    it; flags are completed only after a `-`. When a tier user's line is
+    refused by the tier, the shell prints the tier denial without sudo's
+    own `a password is required` line. Ctrl-R
+    searches the history,
     Esc-b/Esc-f move by word, Ctrl-C cancels the line or the running command,
     Ctrl-Z is ignored. The history is `~/.local/state/tacctl/history` (0600,
     1000 lines), with secrets redacted (`scope secret lab set …(redacted)`).
@@ -193,10 +213,14 @@ current behaviour; this file is where history lives.
     enrolled host as the invoking user, never root. Only an active tacctl
     user (in the store, not disabled) whose scopes include the entry's may
     connect, at every tier, superusers included; a local account that is not
-    a tacctl user (`'<user>' is not a tacctl user; …`), a disabled user, a
-    caller outside the scope (`'<user>' has no access to scope '<scope>'
-    (device <name>)`) and an entry in no configured scope are refused, each
-    logged as `ssh DENY user= device= scope= reason=` (auth.warning). The
+    a tacctl user (`'<user>' is not a tacctl user; …`), a caller outside the
+    scope (`'<user>' has no access to scope '<scope>' (device <name>)`) and
+    an entry in no configured scope are refused, each logged as `ssh DENY
+    user= device= scope= reason=` (auth.warning). A disabled user has no
+    tier, so the tier gate refuses it first (`'<user>' has no active tacctl
+    user, so tacctl access is denied.`, logged as `tier DENY user=<user>
+    tier=none cmd=ssh <name>`); a disabled superuser, whom no tier gate
+    stops, is refused by `tacctl ssh` itself (`ssh DENY … reason=disabled`). The
     session is logged (`ssh user=<user> device=<name> addr=<address>`,
     auth.info), and ssh runs through `sudo -u <user> -H` with the terminal,
     logging in as the invoking user, by password only: no agent socket, no
@@ -310,7 +334,7 @@ current behaviour; this file is where history lives.
     summary counts the accounts tacctl manages on the host and names the
     users it refused there: `<host>: synced (4 users; 1 refused: carl).` and
     `Host '<host>' enrolled (4 users; 1 refused: carl).` (with none refused,
-    `synced (<n> users).`), read from the script's last line `[INFO]
+    `synced (<n> users).`, and `1 user` for one), read from the script's last line `[INFO]
     Accounts: <n> managed by tacctl here[; refused: <names>].`
 38. **Removed users' accounts are deleted.** `host sync`, `host enroll` and
     the client script delete (`userdel`) the accounts tacctl created for
@@ -331,16 +355,74 @@ current behaviour; this file is where history lives.
     this run): <users>` and ask `Delete /home/<user> of removed user
     '<user>'? [y/N] ` for each; `--remove-home` (both verbs, and the client
     script) deletes them without asking; with no terminal and no flag
-    nothing is asked and the host prints `home kept: /home/<user>`. The host
-    deletes a home only when it is a directory directly under `/home`, not a
-    symbolic link, owned by the account and no other account's home (else
-    `home kept: <home> (<reason>)`), and never follows a link inside it.
+    nothing is asked. A home that is kept is moved out of reach of a later
+    local account with the same UID: to `/home/.tacctl-removed/<user>-<YYYYmmdd-HHMMSS>`
+    (`/home/.tacctl-removed` is root's, 0700; the moved tree is made
+    root:root with `chown -hR`, never following a link, its top 0700), and
+    the host prints `home kept: /home/.tacctl-removed/<user>-<time>`. The
+    host deletes or moves a home only when it is a directory directly under
+    `/home`, not a symbolic link, owned by the account and no other account's
+    home (else `home kept in place: <home> (<reason>)`), and never follows a
+    link inside it; a home on another file system than `/home`, or a
+    `/home/.tacctl-removed` that is not a real directory, keeps it in place
+    with a warning.
 40. **The install script's header has a protocol.** After `TAC_USERS` it sets
     `TAC_INACTIVE` (the scope's disabled users and the accounting sink),
     `TAC_REMOVE_HOMES` (names, or `*`) and `TAC_PROTOCOL=2`; the script body
     refuses a header of another protocol before changing anything (`This
     script's header speaks protocol <n> and its body protocol 2: they were
     not written by the same tacctl. …`).
+41. **Enrolled hosts have a recorded address.** `host enroll` and `host
+    sync` record the address the enrolment's ssh connection reached (the
+    host's side of sshd's `SSH_CONNECTION`, read over the same connection
+    after the script) in `devices.yaml`'s `hosts:` section (`address:`),
+    cross-checked with what the target's name resolves to (`<host>: the
+    enrolment session reached <a>, but '<name>' resolves to <b>; recorded <a>
+    …` when they differ; the resolution is recorded when sshd reports
+    nothing); `--local` records `127.0.0.1`, the address its own logins
+    reach the server from. The device registry uses it: `device add` and
+    `device address` refuse it (`<address> belongs to the enrolled host
+    '<name>'.`), `device show <address>` and `tacctl ssh <address>` find the
+    host, sightings (TACACS+ `from [address]`, RADIUS clients) are attributed
+    to it, and `device discover` no longer lists it as unregistered. A sync
+    that finds another address records it, logs `host address-changed name=
+    old= new=` (auth.warning), says `<host>: its address changed from <old>
+    to <new>; …` and raises the `address-changed` notice (with the scope
+    prefix to add when the host's scope does not cover the new address),
+    which `device notice <host> ack address-changed` acknowledges.
+    `host unenroll` forgets the address with the pins.
+42. **`host enroll` and `host sync` warn when the host's local `useradd` can
+    give out tacctl's UIDs**: they read `/etc/login.defs` (`UID_MIN`,
+    `UID_MAX`; read-only, over the same connection) and, when the range
+    overlaps 20000-29999 (as the default `UID_MAX 60000` does), print
+    `<host>: local useradd there gives out UIDs <min>-<max> (/etc/login.defs
+    UID_MIN/UID_MAX), which overlaps tacctl's 20000-29999:` and suggest
+    `UID_MAX 19999`, once per host and run. tacctl never edits the file.
+43. **An upgrade that changed nothing says so**: when no file was updated,
+    no unit, binary or config changed and no backend has a note, the summary
+    head is `Already Up to Date (source unchanged at <commit>)` instead of
+    `Scripts Updated (source unchanged at <commit>)`.
+44. **`host enroll` and `host sync` on a terminal no longer end each host
+    with ssh's `Shared connection to <host> closed.`** (the script run uses
+    `-o LogLevel=ERROR`; ssh's errors still show).
+45. **New: `tacctl host target <name> [<[user@]host>] [--port <n>]
+    [--identity <file>|--no-identity]`** (administrators only). With only a
+    name it shows how the enrolled host is reached: target, port, identity,
+    server address, recorded address, scope and method. A change is tested
+    before anything is written: tacctl logs in to the new target as `host
+    enroll` and `host sync` do (the invoking user's ssh, agent, port and
+    key), checks that the login is root or may use sudo (sudo that asks for
+    a password is refused without a terminal, and warned about with one),
+    reads the host's ssh keys over that session and compares them with the
+    pinned ones (`The host reached is not '<name>' as pinned: its ssh keys
+    differ; nothing was changed.`, with both fingerprint sets), and records
+    the address it reached (item 41). A login that is a tacctl user is
+    refused as at enrollment, and a host enrolled with `--local` has no
+    target (`'<name>' is this server (enrolled with --local); …`). Then the
+    registry line is rewritten in place (scope, server and method kept)
+    after a snapshot, and `host target name= target= port= by=` is logged
+    (auth.info). No script runs on the host. `host target <TAB>` completes
+    the enrolled names.
 
 ## 0.2.0 (2026-10-04)
 

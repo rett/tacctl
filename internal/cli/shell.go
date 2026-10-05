@@ -111,6 +111,7 @@ func (inv *invocation) shell(args []string) error {
 		Out:      a.Out,
 		Idle:     time.Duration(idle) * time.Minute,
 		Complete: inv.shellCompleter(root),
+		Explain:  inv.shellExplain(root),
 		Help:     inv.shellHelp(root),
 		Exec:     inv.shellExec(exe, managed, sudoTier(groups)),
 	}
@@ -210,7 +211,20 @@ func (inv *invocation) shellExec(exe string, managed bool, t tier.Tier) func(con
 		}
 		argv := shellArgv(exe, words, managed, a.Env.Get)
 		c := execx.Cmd{Name: argv[0], Args: argv[1:]}
-		code, _, err := execx.Attached(ctx, a.Runner, c, stdin, a.Out.Stdout, a.Out.Stderr)
+		// A line the tier's sudoers rules do not cover is refused by sudo,
+		// and the shell says why; sudo's own 'a password is required' line
+		// is held back then (and put back if the denial is not printed).
+		mayDeny := managed && (t == tier.Readonly || t == tier.Operator) && !sudoGrants(t, words) && !noSudo[words[0]]
+		stderr := a.Out.Stderr
+		var filter *sudoLineFilter
+		if mayDeny {
+			filter = &sudoLineFilter{w: a.Out.Stderr}
+			stderr = filter
+		}
+		code, _, err := execx.Attached(ctx, a.Runner, c, stdin, a.Out.Stdout, stderr)
+		if filter != nil {
+			filter.flush()
+		}
 		if err != nil {
 			if code == 0 {
 				code = 1
@@ -219,7 +233,10 @@ func (inv *invocation) shellExec(exe string, managed bool, t tier.Tier) func(con
 				a.Out.Error("cannot run " + argv[0] + ": " + err.Error())
 			}
 		}
-		if code == 1 && managed && (t == tier.Readonly || t == tier.Operator) && !sudoGrants(t, words) {
+		if filter != nil && code != 1 {
+			filter.restore()
+		}
+		if code == 1 && mayDeny {
 			sub := ""
 			if len(words) > 1 {
 				sub = " " + words[1]
@@ -230,28 +247,21 @@ func (inv *invocation) shellExec(exe string, managed bool, t tier.Tier) func(con
 	}
 }
 
-// shellCompleter completes from the command tree (sub-commands with their
-// descriptions) and the verbs' Specs (inv.completeSpec: flags, fixed words
-// and live names).
+// shellCompleter completes from the command tree (sub-commands with the
+// argument column and description of their usage rows) and the verbs'
+// Specs (inv.completeSpec: flags, fixed words and live names; a flag with
+// its description from the verb's usage block).
 func (inv *invocation) shellCompleter(root *cobra.Command) shell.Completer {
 	inv.shellMode = true
 	return func(words []string, partial string) []shell.Candidate {
-		cmd, rest := root, words
-		var path []string
-		for len(rest) > 0 {
-			next := child(cmd, rest[0])
-			if next == nil {
-				break
-			}
-			cmd, rest, path = next, rest[1:], append(path, next.Name())
-		}
+		cmd, path, rest := shellCommand(root, words)
 		var out []shell.Candidate
 		if len(rest) == 0 && cmd == root {
-			// The rows of the usage (argument column and description);
-			// the list is alphabetical. 'shell' is not offered in the shell.
+			// The rows of the usage (argument column and description).
+			// 'shell' is not offered in the shell.
 			for _, r := range topRows() {
 				if r.Name != "shell" && child(root, r.Name) != nil {
-					out = append(out, shell.Candidate{Word: r.Name, Label: r.Left, Desc: r.Desc})
+					out = append(out, shell.Candidate{Word: r.Name, Label: r.Left, Desc: r.Desc, Kind: "commands"})
 				}
 			}
 			return out
@@ -265,10 +275,10 @@ func (inv *invocation) shellCompleter(root *cobra.Command) shell.Completer {
 				if sub.Hidden {
 					continue
 				}
-				c := shell.Candidate{Word: sub.Name(), Desc: sub.Short}
-				for i, r := range rows {
+				c := shell.Candidate{Word: sub.Name(), Desc: sub.Short, Kind: "commands"}
+				for _, r := range rows {
 					if r.Name == sub.Name() {
-						c.Desc, c.Order = r.Desc, i+1
+						c.Desc, c.Label = r.Desc, reProg.ReplaceAllString(r.Left, "")
 						break
 					}
 				}
@@ -285,9 +295,18 @@ func (inv *invocation) shellCompleter(root *cobra.Command) shell.Completer {
 		}
 		comps, dir := inv.completeSpec(spec, rest, partial)
 		noSpace := dir&cobra.ShellCompDirectiveNoSpace != 0
+		descs := inv.flagDescs(cmd, path, spec, comps)
+		kind := listKindName(spec, rest)
 		for _, c := range comps {
 			w, d, _ := strings.Cut(c, "\t")
-			out = append(out, shell.Candidate{Word: w, Desc: d, NoSpace: noSpace})
+			k := kind
+			if fd, ok := descs[w]; ok && strings.HasPrefix(w, "-") {
+				k = "options"
+				if d == "" {
+					d = fd
+				}
+			}
+			out = append(out, shell.Candidate{Word: w, Desc: d, NoSpace: noSpace, Kind: k})
 		}
 		return out
 	}
@@ -439,4 +458,50 @@ func sshWithoutTerminal(env interface{ Get(string) string }, stdin io.Reader) bo
 	}
 	st, err := f.Stat()
 	return err == nil && !st.Mode().IsRegular()
+}
+
+// sudoNoPassword is what 'sudo -n' prints when a line needs a password.
+const sudoNoPassword = "sudo: a password is required\n"
+
+// sudoLineFilter passes stderr through as it comes, except a line that is
+// exactly sudo's 'a password is required': that one is held back (dropped
+// when the shell prints the tier denial, restore()d otherwise). Bytes that
+// may still become that line wait for the rest of it.
+type sudoLineFilter struct {
+	w       io.Writer
+	pending []byte
+	held    int
+}
+
+func (f *sudoLineFilter) Write(p []byte) (int, error) {
+	for _, b := range p {
+		f.pending = append(f.pending, b)
+		switch {
+		case string(f.pending) == sudoNoPassword:
+			f.held++
+			f.pending = f.pending[:0]
+		case !strings.HasPrefix(sudoNoPassword, string(f.pending)):
+			if _, err := f.w.Write(f.pending); err != nil {
+				return 0, err
+			}
+			f.pending = f.pending[:0]
+		}
+	}
+	return len(p), nil
+}
+
+// flush writes what is still waiting (the start of a line that never
+// became sudo's).
+func (f *sudoLineFilter) flush() {
+	if len(f.pending) > 0 {
+		_, _ = f.w.Write(f.pending)
+		f.pending = nil
+	}
+}
+
+// restore writes the held-back lines: no tier denial was printed for them.
+func (f *sudoLineFilter) restore() {
+	for ; f.held > 0; f.held-- {
+		_, _ = io.WriteString(f.w, sudoNoPassword)
+	}
 }

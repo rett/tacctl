@@ -130,7 +130,8 @@ func shellTop(version string) string {
 
 // keyRows are the rows of the Shell section for the keys.
 var keyRows = [][2]string{
-	{"Tab", "Complete the word; twice: list the choices"},
+	{"Tab", "Complete the word; twice: list the names"},
+	{"?", "Show the choices with descriptions, or the usage of the command typed so far"},
 	{"Ctrl-R", "Search the history"},
 	{"Ctrl-C", "Cancel the line, or stop the running command"},
 	{"Ctrl-D", "Leave the shell"},

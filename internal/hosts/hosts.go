@@ -97,6 +97,9 @@ type Paths struct {
 	UIDs   string // LINUX_UID_FILE
 	Hosts  string // LINUX_HOSTS_FILE
 	VarLib string // paths.VarLib: made 0711 first when Dir is under it (mkDir)
+	// LoginDefs is this server's login.defs, read for a host enrolled with
+	// --local (paths.LoginDefs).
+	LoginDefs string
 }
 
 // Tarball is PAM_TACPLUS_TARBALL.
@@ -129,10 +132,15 @@ type Env struct {
 	// PinHostKeys pins an enrolled host's ssh keys (pin.go); nil pins
 	// nothing.
 	PinHostKeys KeyPinner
-	// ReadKeys makes RunScript read the host's public keys over its
-	// connection after a successful run (ReadKeysCommand), for PinKeys:
-	// 'host enroll' and 'host sync' set it.
+	// ReadKeys makes RunScript read the host's public keys and its facts
+	// over its connection after a successful run (ReadKeysCommand,
+	// FactsCommand), for PinKeys and Facts: 'host enroll' and 'host sync'
+	// set it.
 	ReadKeys bool
+
+	// Facts are what the last RunScript with ReadKeys read of the host
+	// (nil when nothing was read).
+	Facts *Facts
 
 	// Summary is the account summary the last RunScript's script printed
 	// (nil when it printed none).

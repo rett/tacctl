@@ -44,6 +44,21 @@ sudo_lines() { grep '^sudo ' "$CALLS_LOG" || true; }
     assert_output --regexp '^sudo -n /[^ ]*/dist/tacctl user list$'
 }
 
+@test "shell -c: a tier denial replaces sudo's password message; other refusals keep it" {
+    bats_require_minimum_version 1.5.0
+    stub_cmd id 'echo tester tac-users tac-readonly'
+    stub_cmd sudo 'echo "sudo: a password is required" >&2; exit 1'
+    run --separate-stderr "$TACCTL_BIN_SCRIPT" shell -c "user add bob ops"
+    assert_failure 1
+    [[ "$stderr" == *"'tacctl user add' is not permitted for the readonly tier."* ]]
+    [[ "$stderr" != *"a password is required"* ]]
+    # A line the readonly rules cover: sudo's own message stays.
+    run --separate-stderr "$TACCTL_BIN_SCRIPT" shell -c "user list"
+    assert_failure 1
+    [[ "$stderr" == *"sudo: a password is required"* ]]
+    [[ "$stderr" != *"not permitted"* ]]
+}
+
 @test "shell -c: the line's exit status is the shell's" {
     run "$TACCTL_BIN_SCRIPT" user show nosuchuser
     local direct=$status

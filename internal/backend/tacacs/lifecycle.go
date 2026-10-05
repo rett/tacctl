@@ -122,6 +122,9 @@ type UpgradeReport struct {
 	FilesNotes []string
 	// FilesUpdated is what the files phase added to SCRIPTS_UPDATED.
 	FilesUpdated int
+	// UpToDate is the head when no file of the whole upgrade was updated
+	// either: set by finish when nothing of tacquito changed.
+	UpToDate string
 }
 
 // SetUpgradeFrom gives the backend the value of UpgradeFromEnv this
@@ -464,5 +467,5 @@ func globSorted(pattern string) []string {
 // replaced.
 func (b *Backend) UpgradeSummary() backend.UpgradeSummary {
 	r := b.UpgradeReport()
-	return backend.UpgradeSummary{Head: r.Head, Notes: append(r.FilesNotes, r.Notes...), FilesUpdated: r.FilesUpdated}
+	return backend.UpgradeSummary{Head: r.Head, Notes: append(r.FilesNotes, r.Notes...), FilesUpdated: r.FilesUpdated, UpToDate: r.UpToDate}
 }

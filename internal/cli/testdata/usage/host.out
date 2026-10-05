@@ -20,6 +20,9 @@ Usage: tacctl host <subcommand> [arguments]
       --allow-uid-mismatch             (enroll and sync) accept a UID/GID conflict on the host instead of stopping
       --remove-home                    (enroll and sync) delete removed users' home directories without asking
                                        (on a terminal each one is asked; without one they are kept)
+  target <name> [<[user@]host>]        Show, or change and test, how tacctl reaches an enrolled host over ssh
+      --port <n>, --identity <file>    SSH port and key; tested first, and the host's ssh keys must match the pin
+      --no-identity                    No key file (ssh's default keys and the agent)
   unenroll <name> [--force]            Remove the login method from the host (accounts and homes are kept)
   default-method [tacplus|radius]      Show or set the method for hosts enrolled without --method
                                        (a scope's own choice comes first: tacctl scope auth-method)

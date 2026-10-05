@@ -164,11 +164,19 @@ type AccountSummary struct {
 // Counts is the summary in words: "<n> users", plus "; <k> refused:
 // <names>" when the host refused some.
 func (s AccountSummary) Counts() string {
-	out := strconv.Itoa(s.Managed) + " users"
+	out := UsersText(s.Managed)
 	if len(s.Refused) > 0 {
 		out += "; " + strconv.Itoa(len(s.Refused)) + " refused: " + strings.Join(s.Refused, ", ")
 	}
 	return out
+}
+
+// UsersText is n users ('1 user', '2 users').
+func UsersText(n int) string {
+	if n == 1 {
+		return "1 user"
+	}
+	return strconv.Itoa(n) + " users"
 }
 
 var reAccountSummary = regexp.MustCompile(`^\[INFO\] Accounts: ([0-9]+) managed by tacctl here(?:; refused: (.*))?\.\r?$`)

@@ -833,18 +833,70 @@ over the same ssh connection (read-only, before anything runs there) and ask
 for each removed user;
 .B \-\-remove\-home
 deletes them all without asking; with no terminal and no flag every home is
-kept (the host prints
-.RI "\(lqhome kept: /home/" user \(rq).
+kept. A kept home is moved to
+.IR /home/.tacctl\-removed/ user \- YYYYmmdd \- HHMMSS
+(the directory is root's, mode 0700; the moved tree is made root:root with
+.BR "chown \-hR" ,
+never following a link), so a local account that later gets the same UID
+does not inherit it; the host prints
+.RI "\(lqhome kept: /home/.tacctl\-removed/" user \- time \(rq.
 A home that is not a directory directly under
 .IR /home ,
-is a symbolic link, is not owned by the account or is also another
-account's home is never deleted.
+is a symbolic link, is not owned by the account, is also another
+account's home or is on another file system is neither deleted nor moved
+.RI "(\(lqhome kept in place: " home " (" reason ")\(rq)."
+.IP
+Enroll and sync also read the host's
+.I /etc/login.defs
+(read-only) and warn when its
+.BR UID_MIN \(en UID_MAX
+range overlaps 20000\(en29999, where local
+.BR useradd (8)
+could give out a UID tacctl has assigned; set
+.B "UID_MAX 19999"
+there. tacctl never edits the file.
+.IP
+Enroll and sync record the address the ssh connection reached (the host's
+side of
+.BR SSH_CONNECTION ;
+.B \-\-local
+records 127.0.0.1) as the host's address in the device registry:
+.B "device add"
+refuses it, sightings from it are the host's, and
+.B "device discover"
+does not list it. A sync that finds another address records it, logs
+.BR "host address\-changed" ,
+and raises the
+.B address\-changed
+notice
+.RB ( "device notice " \fIname\fP " ack address\-changed" ).
 .IP
 A host with no pinned host key gets the keys it offers pinned, as at
 enrollment. A pin is never changed by a sync: a key that differs from the
 pinned one is reported, with the pinned and offered fingerprints, and new key
 types are reported; both are fixed with
 .BI "device hostkey " name " accept" R.
+.TP
+.B "host target " name " [ " "\fR[\fPuser@\fR]\fPhost" " ] [ \-\-port " n " ] [ \-\-identity " file " | \-\-no\-identity ]"
+With only a name, show how tacctl reaches the enrolled host: its ssh target,
+port, identity file, the server address the host uses, the address recorded
+for it, its scope and method. With a new target, port or identity
+(administrators only; not for a host enrolled with
+.BR \-\-local ),
+test the change first: log in as
+.B "host enroll"
+and
+.B "host sync"
+do (the invoking user's ssh, agent, port and key), check that the login is
+root or may use sudo (sudo that asks for a password is refused without a
+terminal), read the host's ssh keys over that session and compare them with
+the pinned ones (another key refuses the change, with both fingerprint sets:
+the host must be the same machine), and record the address reached. A
+provisioning login that is a user of tacctl is refused, as at enrollment. Only
+then is the registry line rewritten (scope, server and method kept), after a
+snapshot, and logged
+.RB ( "host target name= target= port= by=" ).
+No script runs on the host.
 .TP
 .B "host unenroll " name " [ \-\-force ]"
 Run the removal script on the host and drop it from the registry, with its
@@ -1482,9 +1534,19 @@ runs the match; Ctrl-G gives the line back). Tab completes commands,
 sub-commands, flags and names (users, groups, scopes, hosts, devices, ...,
 asked of
 .B sudo \-n tacctl _completion-names
-and kept for 5 seconds); a second Tab lists the choices with their
-descriptions. A paste is inserted as one line (its newlines become blanks, at
-most 4096 bytes) and runs only on Enter. Ctrl-C at the prompt discards the
+and kept for 5 seconds); a second Tab lists the matching words alone, in
+columns that fit the terminal. ? inserts nothing and shows help for the
+cursor's position: where words can come, \(lqPossible completions:\(rq with
+each one's argument column and description (a device or host with its
+vendor, address and scope); after a command that takes arguments, its usage
+lines, its options and what comes next (\(lqNext: <username> <group>\(rq,
+\(lqNext: <Enter> to run\(rq). Inside quotes, or after a backslash, ? is
+typed as a character. A list of more than 40 entries asks first
+(\(lqShow all 45 devices? [y/N]\(rq): y shows it, any other key (or
+Ctrl-C) prints how to narrow it and gives the line back. Help from ? taller
+than the terminal is shown a screenful at a time (\(lq\-\- more (Space:
+page, Enter: line, q: quit) \-\-\(rq; q or Ctrl-C stops). A paste is inserted as one line (its newlines become
+blanks, at most 4096 bytes) and runs only on Enter. Ctrl-C at the prompt discards the
 line; Ctrl-C while a command runs ends the command, and the shell carries on.
 Ctrl-Z and Ctrl-\e do nothing: there is no job control, and the commands
 inherit that. Ctrl-D on an empty line, like
@@ -2060,7 +2122,10 @@ read the cache only, and say how old it is.
 Notices are computed each time they are shown; only acknowledgements are
 stored. Besides the registry's own
 .RB ( generic-name ,
-.BR hostkey-unpinned ),
+.BR hostkey-unpinned ,
+and for an enrolled host
+.BR address\-changed :
+its address changed between two enrolments or syncs),
 the seen cache raises
 .B ambiguous-nas-id
 (one NAS-Identifier sent from several addresses),
@@ -2261,11 +2326,13 @@ marked as acknowledged. The kinds are
 .BR ambiguous-nas-id ,
 .BR generic-nas-id ,
 .BR name-mismatch ,
-.B duplicate-address
+.BR duplicate-address ,
+.B identity-changed
 and
-.BR identity-changed ;
+.BR address\-changed ;
 .B hostkey-changed
-cannot be acknowledged.
+cannot be acknowledged, and an enrolled host acknowledges only
+.BR address\-changed .
 .TP
 .BI "device notices " [ name ]
 The open notices (all devices, or one), each with the command that fixes or

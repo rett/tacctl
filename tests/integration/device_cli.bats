@@ -392,7 +392,7 @@ x $(key rsa)"
     assert_failure 1
     plain
     assert_output --partial "No ssh host key could be read from 192.0.2.1 port 2222 (ssh-keyscan); nothing was changed."
-    assert_output --partial "register it without a pinned key: tacctl device add x 192.0.2.1 --no-host-key"
+    assert_output --partial "register it without a pinned key: tacctl device add x 192.0.2.1 --port 2222 --no-host-key"
     [[ ! -e "$DEVICES" ]]
     stub_cmd ssh-keyscan
     run "$TACCTL_BIN_SCRIPT" device add x 192.0.2.1 --no-host-key
@@ -509,4 +509,124 @@ host_setup() {
     assert_failure
     run grep -c "host_keys" "$DEVICES"
     assert_failure
+}
+
+# hostfacts <address> [login.defs lines]: the session's facts read prints
+# sshd's SSH_CONNECTION with <address> as the host's side, and login.defs.
+hostfacts() {
+    echo "ssh_connection=198.51.100.9 50022 $1 22" > "${BATS_TEST_TMPDIR}/facts"
+    if [[ -n "${2:-}" ]]; then printf 'login_defs=present\n%b\n' "$2" >> "${BATS_TEST_TMPDIR}/facts"; fi
+    stub_cmd ssh 'case "$*" in *mktemp*) cat > "$PUSHED"; echo /tmp/tacctl.AbCd1234 ;;
+        *SSH_CONNECTION*) cat "'"${BATS_TEST_TMPDIR}"'/facts" ;; esac'
+}
+
+@test "host enroll and sync record the address the session reached; a changed one raises address-changed" {
+    host_setup
+    hostfacts 192.0.2.50 'UID_MIN 1000\nUID_MAX 60000'
+    run "$TACCTL_BIN_SCRIPT" host enroll admin@web1.example.net --scope lab --build-on-host
+    assert_success
+    plain
+    stub_called "ssh .* -T admin@web1.example.net printf"
+    assert_output --partial "web1: local useradd there gives out UIDs 1000-60000 (/etc/login.defs UID_MIN/UID_MAX), which overlaps tacctl's 20000-29999:"
+    assert_output --partial "Set 'UID_MAX 19999' in /etc/login.defs on web1 (tacctl does not change it)."
+    run grep -c "useradd there" <<< "$output"
+    assert_output "1"
+    run grep -A1 "^  web1:" "$DEVICES"
+    assert_output --partial "web1: {address: 192.0.2.50}"
+    # The registry holds it: refused to device add, found by it, not discovered.
+    run "$TACCTL_BIN_SCRIPT" device add web9 192.0.2.50 --no-host-key
+    assert_failure 1
+    assert_output --partial "192.0.2.50 belongs to the enrolled host 'web1'."
+    run "$TACCTL_BIN_SCRIPT" device show 192.0.2.50
+    assert_success
+    assert_output --partial "Enrolled host web1"
+    # A sync that reaches another address records it, and says so.
+    hostfacts 192.0.2.51 'UID_MAX 19999'
+    run "$TACCTL_BIN_SCRIPT" host sync web1
+    assert_success
+    plain
+    assert_output --partial "web1: the enrolment session reached 192.0.2.51, but 'web1.example.net' resolves to 192.0.2.50; recorded 192.0.2.51"
+    assert_output --partial "web1: its address changed from 192.0.2.50 to 192.0.2.51; recorded 192.0.2.51 (notice address-changed: tacctl device show web1)."
+    refute_output --partial "useradd there"
+    stub_called "logger -t tacctl -p auth.warning host address-changed name=web1 old=192.0.2.50 new=192.0.2.51 by="
+    run "$TACCTL_BIN_SCRIPT" device notices
+    assert_output --partial "web1  address-changed: the address of 'web1' changed from 192.0.2.50 to 192.0.2.51"
+    run "$TACCTL_BIN_SCRIPT" device notice web1 ack address-changed
+    assert_success
+    assert_output --partial "Notice 'address-changed' of 'web1' acknowledged."
+    run "$TACCTL_BIN_SCRIPT" device notices
+    refute_output --partial "address-changed"
+    run "$TACCTL_BIN_SCRIPT" host unenroll web1
+    assert_success
+    run grep -c "web1" "$DEVICES"
+    assert_output "0"
+}
+
+# targetssh <root|sudo|sudo-password> <key>...: the test connection of
+# 'host target' answers how it reaches root and prints these host keys; the
+# facts are hostfacts' file.
+targetssh() {
+    local root="$1" lines="" k; shift
+    for k in "$@"; do lines+="echo \"$(key "$k") root@web1\"; "; done
+    [[ -n "$lines" ]] || lines="exit 1"
+    stub_cmd ssh 'case "$*" in *mktemp*) cat > "$PUSHED"; echo /tmp/tacctl.AbCd1234 ;;
+        *"sudo -n true"*) echo '"$root"' ;;
+        *"cat /etc/ssh/ssh_host_*_key.pub") '"${lines}"' ;;
+        *SSH_CONNECTION*) cat "'"${BATS_TEST_TMPDIR}"'/facts" ;; esac'
+}
+
+@test "host target: shows the target; a change is tested (login, root, keys against the pin) before it is written" {
+    host_setup
+    hostfacts 192.0.2.50
+    targetssh root ed25519
+    offer ed25519
+    "$TACCTL_BIN_SCRIPT" host enroll admin@web1.example.net --scope lab --build-on-host > /dev/null
+    run "$TACCTL_BIN_SCRIPT" host target web1
+    assert_success
+    assert_output --partial "Target:       admin@web1.example.net"
+    assert_output --partial "Address:      192.0.2.50"
+    before=$(cat "$TACCTL_STATE_DIR/linux-hosts")
+    # Refused: a tacctl user as the login, sudo with a password and no
+    # terminal, other keys, a --local host.
+    "$TACCTL_BIN_SCRIPT" user add opx operator --hash "24326224313024616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161" --scopes lab > /dev/null
+    run "$TACCTL_BIN_SCRIPT" host target web1 opx@web1.example.net
+    assert_failure 1
+    assert_output --partial "The provisioning account 'opx' (the ssh login for opx@web1.example.net) is a tacctl user."
+    targetssh sudo-password ed25519
+    run "$TACCTL_BIN_SCRIPT" host target web1 admin@web1b.example.net < /dev/null
+    assert_failure 1
+    assert_output --partial "sudo there needs a password (or the login may not sudo)"
+    targetssh root rsa
+    run "$TACCTL_BIN_SCRIPT" host target web1 admin@web1b.example.net
+    assert_failure 1
+    assert_output --partial "The host reached is not 'web1' as pinned: its ssh keys differ; nothing was changed."
+    assert_output --partial "On the host: RSA $(fp rsa)"
+    [[ "$(cat "$TACCTL_STATE_DIR/linux-hosts")" == "$before" ]]
+    # Accepted: written in place, logged, the address it reached recorded.
+    hostfacts 192.0.2.60
+    targetssh sudo ed25519
+    run "$TACCTL_BIN_SCRIPT" host target web1 root@web1b.example.net --port 2200
+    assert_success
+    plain
+    assert_output --partial "Host 'web1' is now reached at root@web1b.example.net port 2200 (scope, server and method unchanged)."
+    assert_output --partial "web1: its address changed from 192.0.2.50 to 192.0.2.60"
+    stub_called "logger -t tacctl -p auth.info host target name=web1 target=root@web1b.example.net port=2200 by="
+    run cat "$TACCTL_STATE_DIR/linux-hosts"
+    assert_output "web1|root@web1b.example.net|2200|lab|192.0.2.1|"
+    # A tier user may not.
+    stub_cmd id 'echo "users tac-users"'
+    SUDO_USER=opx run "$TACCTL_BIN_SCRIPT" host target web1
+    assert_failure
+    assert_output --partial "not permitted"
+}
+
+@test "host target: a host enrolled with --local has no target to change" {
+    host_setup
+    echo "authsrv|local||lab|127.0.0.1|" > "$TACCTL_STATE_DIR/linux-hosts"
+    run "$TACCTL_BIN_SCRIPT" host target authsrv
+    assert_success
+    assert_output --partial "Target:       local"
+    run "$TACCTL_BIN_SCRIPT" host target authsrv root@x
+    assert_failure 1
+    assert_output --partial "'authsrv' is this server (enrolled with --local)"
 }

@@ -259,9 +259,21 @@ full_cases() {
     tacctl user scope bob remove linux-c1 > /dev/null
     expect "[$m] bob, removed from the scope on the server (no sync yet), is refused" 'rc=255' "$(login bob "$B_PW" true)"
     check "[$m] bob's account is still on the host until the sync" c id bob
+    c bash -c 'echo note > ~bob/note && chown bob: ~bob/note && touch ~ladm/keepme && chown ladm: ~ladm/keepme && ln -s ~ladm/keepme ~bob/lnk && chown -h bob: ~bob/lnk'
     tacctl host sync c1 > "${WORK}/sync.out"; rc=$?
     check "[$m] host sync succeeds and deletes bob's account (userdel), with his group" bash -c "[[ $rc == 0 ]] && grep -q \"Deleted account 'bob'\" '${WORK}/sync.out' && ! podman exec '$C' id bob && ! podman exec '$C' getent group bob"
-    check "[$m] no terminal and no --remove-home: bob's home is kept and reported" bash -c "grep -q 'home kept: /home/bob' '${WORK}/sync.out' && podman exec '$C' test -d /home/bob"
+    check "[$m] no terminal and no --remove-home: bob's home is kept, moved out of /home and reported" bash -c "grep -q 'home kept: /home/.tacctl-removed/bob-[0-9]\{8\}-[0-9]\{6\}' '${WORK}/sync.out' && ! podman exec '$C' test -e /home/bob"
+    moved=$(c bash -c 'ls -d /home/.tacctl-removed/bob-*' | head -1)
+    expect "[$m] /home/.tacctl-removed is root's, 0700" '^root:root 700$' "$(c stat -c '%U:%G %a' /home/.tacctl-removed)"
+    expect "[$m] bob's moved home is root's, 0700" '^root:root 700$' "$(c stat -c '%U:%G %a' "$moved")"
+    expect "[$m] the files in it are root's" '^root:root$' "$(c stat -c '%U:%G' "${moved}/note")"
+    check "[$m] the link in it is still a link (made root's itself), and what it points to is untouched" bash -c "[[ \$(podman exec '$C' stat -c '%U %F' '${moved}/lnk') == 'root symbolic link' && \$(podman exec '$C' bash -c 'stat -c %U ~ladm/keepme') == ladm ]]"
+    # A local account later given bob's old UID (useradd may hand out a
+    # number of the range) gets nothing of his.
+    bob_uid=$(s sed -n 's/^bob://p' /etc/tacctl/linux-uids)
+    c useradd -m -u "$bob_uid" newbob > /dev/null 2>&1
+    check "[$m] a local account with bob's old UID ${bob_uid} cannot read his kept home" bash -c "! podman exec '$C' runuser -u newbob -- ls '${moved}'"
+    c userdel -r newbob > /dev/null 2>&1
     expect "[$m] bob is refused after the sync too" 'rc=255' "$(login bob "$B_PW" true)"
 
     # A disabled user: expired, kept; enabled again: back.
@@ -352,6 +364,14 @@ check "nothing of tacctl on the host yet" c bash -c '[[ ! -e /var/lib/tacctl-cli
 enroll "$FIRST"; check "host enroll --method ${FIRST} exits 0" test $? -eq 0
 [[ "$FIRST" == "radius" ]] && note "installed by the enrollment: $(pkg_versions)"
 check "enroll said there are no users in the scope yet" grep -q "No users are in scope 'linux-c1' yet" "${WORK}/enroll.out"
+check "enroll warns that the host's login.defs lets useradd give out UIDs of 20000-29999" grep -q "c1: local useradd there gives out UIDs 1000-60000 (/etc/login.defs UID_MIN/UID_MAX), which overlaps tacctl's 20000-29999:" "${WORK}/enroll.out"
+check "enroll recorded the address its ssh connection reached" bash -c "podman exec '$S' grep -A1 '^  c1:' /etc/tacctl/devices.yaml | grep -qF 'address: ${CIP}'"
+expect "device show finds the host by that address" "Enrolled host c1" "$(tacctl device show "$CIP")"
+expect "device add refuses that address" "${CIP} belongs to the enrolled host 'c1'." "$(tacctl device add c1copy "$CIP" --no-host-key)"
+# The fix the warning suggests: no warning on the next sync, and local
+# useradd stays below the range.
+c cp /etc/login.defs /root/login.defs.orig
+c sed -i 's/^UID_MAX[[:space:]].*/UID_MAX\t\t\t19999/' /etc/login.defs
 
 section "users: alice (superuser), bob (operator), dave and erin (readonly), carl (readonly; the host has a local carl)"
 # carl as an earlier release left an adopted account: in tacctl's groups
@@ -363,6 +383,11 @@ tacctl host sync c1 > "${WORK}/sync.out"; rc=$?
 check "host sync refuses carl (a local account tacctl did not create), goes on, and says so in its summary" bash -c "[[ $rc == 0 ]] && grep -q \"'carl': this host has a local account of that name that tacctl did not create\" '${WORK}/sync.out' && grep -q 'c1: synced (4 users; 1 refused: carl)' '${WORK}/sync.out'"
 check "the adopted carl is reported once, taken out of tacctl's groups, and forgotten" bash -c "grep -q 'adopted are no longer tracked: carl' '${WORK}/sync.out' && grep -q \"'carl': removed from tacctl's groups (tac-users, tac-readonly); it is a plain local account again.\" '${WORK}/sync.out' && ! podman exec '$C' test -e /var/lib/tacctl-client/adopted"
 check "nothing else of carl's account changed (passwd and shadow lines, other groups)" bash -c "[[ \"\$(podman exec '$C' getent passwd carl)\" == '${carl_before}' && \"\$(podman exec '$C' getent shadow carl)\" == '${carl_shadow}' && \"\$(podman exec '$C' id -nG carl | tr ' ' '\\n' | sort | paste -sd' ')\" == '${carl_groups}' ]]"
+check "with UID_MAX 19999 the sync does not warn about login.defs" bash -c "! grep -q 'local useradd there' '${WORK}/sync.out'"
+c useradd -m localx > /dev/null 2>&1
+check "local useradd with UID_MAX 19999 gives a UID below 20000" bash -c "id=\$(podman exec '$C' id -u localx) && (( id < 20000 ))"
+c userdel -r localx > /dev/null 2>&1
+c cp /root/login.defs.orig /etc/login.defs
 check "every account tacctl created has a UID in 20000-29999" bash -c "for u in alice bob dave erin; do id=\$(podman exec '$C' id -u \$u) && (( id >= 20000 && id <= 29999 )) || exit 1; done"
 LABEL="TACACS+"; [[ "$FIRST" == "radius" ]] && LABEL="RADIUS"
 check "alice's account: UID 20000, locked password, named 'alice (${LABEL})'" c bash -c "[[ \$(id -u alice) == 20000 && \$(getent passwd alice | cut -d: -f5) == 'alice (${LABEL})' ]] && getent shadow alice | cut -d: -f2 | grep -q '^!'"

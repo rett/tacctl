@@ -160,6 +160,7 @@ func TestAccountSummary(t *testing.T) {
 		"[INFO] Accounts: 4 managed by tacctl here; refused: carl.":         "4 users; 1 refused: carl",
 		"[INFO] Accounts: 2 managed by tacctl here; refused: carl, olaf.\r": "2 users; 2 refused: carl, olaf",
 		"[INFO] Accounts: 0 managed by tacctl here.":                        "0 users",
+		"[INFO] Accounts: 1 managed by tacctl here.":                        "1 user",
 	} {
 		s, ok := ParseAccountSummary(line)
 		if !ok || s.Counts() != want {

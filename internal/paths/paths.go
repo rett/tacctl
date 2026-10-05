@@ -71,6 +71,7 @@ type Paths struct {
 
 	TacquitoSrc string // TACQUITO_SRC: the tacquito source checkout
 	LinuxDir    string // TACCTL_LINUX_DIR (LINUX_DIR)
+	LoginDefs   string // TACCTL_LOGIN_DEFS: this server's login.defs, read (never written) for 'host enroll --local'
 
 	// Tree is the source/deploy tree this binary treats as its checkout
 	// (bash: PROJECT_DIR, the parent of the script's own directory).
@@ -138,6 +139,7 @@ func Resolve(env Env, exe string, exists func(string) bool) Paths {
 
 	p.TacquitoSrc = env.Or("TACQUITO_SRC", "/opt/tacquito-src")
 	p.LinuxDir = env.Or("TACCTL_LINUX_DIR", "/var/lib/tacctl/linux")
+	p.LoginDefs = env.Or("TACCTL_LOGIN_DEFS", "/etc/login.defs")
 
 	p.Tree = Tree(env, exe, exists)
 	p.PatchDir = env.Or("TACCTL_PATCH_DIR", p.Tree+"/patches")

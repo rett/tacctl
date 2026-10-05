@@ -96,13 +96,18 @@ func TestRunScriptThreeCalls(t *testing.T) {
 		t.Errorf("stderr %q", errb.String())
 	}
 
-	// A terminal: -t, the sudo prompt that names the host, no BatchMode.
+	if strings.Contains(argvs[1], "LogLevel") {
+		t.Errorf("LogLevel without a terminal: %s", argvs[1])
+	}
+
+	// A terminal: -t (with LogLevel=ERROR: no 'Shared connection to web1
+	// closed.'), the sudo prompt that names the host, no BatchMode.
 	e.TTY, e.StdinTTY = func() bool { return true }, func() bool { return true }
 	f.Reset()
 	if code, _ := e.RunScript(context.Background(), "web1", "", "", scriptFile(t), nil); code != 0 {
 		t.Errorf("tty code %d", code)
 	}
-	if a := f.Argvs()[1]; !strings.Contains(a, " -t web1 ") || !strings.Contains(a, "sudo -p '[sudo] password for %u on %H: '") || strings.Contains(a, "BatchMode") {
+	if a := f.Argvs()[1]; !strings.Contains(a, " -o LogLevel=ERROR -t web1 ") || !strings.Contains(a, "sudo -p '[sudo] password for %u on %H: '") || strings.Contains(a, "BatchMode") {
 		t.Errorf("tty run %s", a)
 	}
 }

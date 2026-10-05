@@ -19,6 +19,7 @@ const (
 	NoticeNameMismatch     = "name-mismatch"
 	NoticeDuplicateAddress = "duplicate-address"
 	NoticeIdentityChanged  = "identity-changed"
+	NoticeAddressChanged   = "address-changed"
 )
 
 // AckableKinds are the notices an operator may acknowledge per device.
@@ -26,7 +27,12 @@ const (
 var AckableKinds = []string{
 	NoticeGenericName, NoticeHostKeyUnpinned, NoticeHostKeyAdded, NoticeHostKeyUnreach,
 	NoticeAmbiguousNASID, NoticeGenericNASID, NoticeNameMismatch, NoticeDuplicateAddress, NoticeIdentityChanged,
+	NoticeAddressChanged,
 }
+
+// HostAckableKinds are the notices an operator may acknowledge for an
+// enrolled host (its other notices are cleared on the host).
+var HostAckableKinds = []string{NoticeAddressChanged}
 
 // Notice is one finding about an entry: its kind, a line of text that ends
 // in the command that fixes or acknowledges it, and whether it has been
@@ -96,6 +102,16 @@ func (r *Resolver) registryNotices(e Entry) []Notice {
 			add(NoticeGenericName, "'"+e.Name+"' is a generic name. "+strings.Join(RenameHints(e.Vendor), "; ")+
 				"; then 'tacctl device rename "+e.Name+" <new>', or acknowledge it: 'tacctl device notice "+e.Name+" ack generic-name'")
 		}
+	}
+	if e.Source == SourceHost && e.PrevAddress != "" {
+		text := "the address of '" + e.Name + "' changed from " + e.PrevAddress + " to " + e.Address + " (" + e.AddressChanged +
+			", seen by host enroll or sync) — readdressed, or replaced? verify on the host"
+		if r.Model != nil && e.Scope != "" {
+			if info, ok := r.Model.LookupAddr(e.Address); !ok || info.Scope != e.Scope {
+				text += "; scope '" + e.Scope + "' does not answer " + e.Address + ": 'tacctl scope prefixes " + e.Scope + " add " + e.Address + "/32'"
+			}
+		}
+		add(NoticeAddressChanged, text+", then acknowledge it: 'tacctl device notice "+e.Name+" ack "+NoticeAddressChanged+"'")
 	}
 	if e.Source == SourceDevice && len(e.HostKeys) == 0 {
 		add(NoticeHostKeyUnpinned, "no host key is pinned for '"+e.Name+"', so tacctl cannot tell the device from an impostor; "+

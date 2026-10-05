@@ -706,6 +706,15 @@ func TestUpgradeOrderAndSummary(t *testing.T) {
 	o.rad.summary = backend.UpgradeSummary{}
 	upgrade(o)
 	inOrder(t, o.text(), "[INFO]   Unchanged: bash completion", "[INFO] 0 file(s) updated.", "  Upgrade Complete\n  Managed scripts: 0 updated\n  Templates: kept 1")
+	// Nothing updated and the backend says it changed nothing: the head
+	// says the installation was current; a backend note keeps its head.
+	o.tac.summary = backend.UpgradeSummary{Head: "Scripts Updated (source unchanged at abc1234)",
+		UpToDate: "Already Up to Date (source unchanged at abc1234)"}
+	upgrade(o)
+	inOrder(t, o.text(), "[INFO] 0 file(s) updated.", "  Already Up to Date (source unchanged at abc1234)\n  Managed scripts: 0 updated\n")
+	o.rad.summary = backend.UpgradeSummary{Notes: []string{"RADIUS: config re-rendered for this release, FreeRADIUS restarted"}}
+	upgrade(o)
+	inOrder(t, o.text(), "[INFO] 0 file(s) updated.", "  Scripts Updated (source unchanged at abc1234)\n  Managed scripts: 0 updated\n")
 }
 
 // The completion is the binary's own output, written only when the

@@ -68,7 +68,7 @@ func (inv *invocation) deviceAddKeys(d devreg.Device, p Parsed, retry string) (p
 		return nil, nil, nil
 	}
 	offered, err = inv.scanKeys(d.Address, d.SSHPort(), d.LegacySSH,
-		"Check the address and the port, or register it without a pinned key: "+retry+" --no-host-key")
+		"Check the address and the port, or register it without a pinned key: "+retry)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -321,18 +321,19 @@ func (inv *invocation) pinHostKeys(ctx context.Context, name, host string, port 
 	a.Out.InfoE(name + ": pinned " + strconv.Itoa(len(c.Agreed)) + " ssh host key(s) for 'tacctl ssh': " + devreg.Displays(c.Agreed))
 }
 
-// forgetHostKeys drops the pinned keys of an unenrolled host (no snapshot:
-// the pins mean nothing without the host).
+// forgetHostKeys drops what the registry holds of an unenrolled host: its
+// pinned keys and its address (no snapshot: they mean nothing without the
+// host).
 func (inv *invocation) forgetHostKeys(name string) {
 	a := inv.app
 	f, err := devreg.Load(a.Paths.DevicesFile)
-	if err != nil || len(f.HostKeysOf(name)) == 0 {
+	if err != nil || f.Host(name) == nil {
 		return
 	}
 	if _, err := devreg.Mutate(a.Paths.DevicesFile, a.Paths.KnownHosts, nil, func(f *devreg.File) error {
-		f.SetHostKeys(name, nil)
+		f.ForgetHost(name)
 		return nil
 	}); err != nil {
-		a.Out.WarnE(name + ": its pinned host keys could not be removed: " + strings.Join(msgs(err), " "))
+		a.Out.WarnE(name + ": its pinned host keys and address could not be removed: " + strings.Join(msgs(err), " "))
 	}
 }

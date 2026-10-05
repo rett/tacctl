@@ -2,6 +2,8 @@ package shell
 
 import (
 	"bytes"
+	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -27,6 +29,12 @@ func testCompleter(words []string, partial string) []Candidate {
 		return []Candidate{{Word: "alice"}, {Word: "albert"}, {Word: "bob"}, {Word: "o'neil"}}
 	case "user add bob":
 		return []Candidate{{Word: "lab,", NoSpace: true}}
+	case "many":
+		var out []Candidate
+		for i := 1; i <= 45; i++ {
+			out = append(out, Candidate{Word: fmt.Sprintf("n%02d", i), Desc: "device", Kind: "devices"})
+		}
+		return out
 	}
 	return nil
 }
@@ -85,18 +93,16 @@ func TestTabInTheMiddle(t *testing.T) {
 func TestSecondTabLists(t *testing.T) {
 	e, sc := newTestEditor()
 	e.key("user ", 5, '\t')
-	if strings.Contains(sc.String(), "List all users") {
+	if strings.Contains(sc.String(), "show") {
 		t.Fatal("the first Tab listed")
 	}
 	got, _, _ := e.key("user ", 5, '\t')
 	if got != "user " {
 		t.Errorf("line changed: %q", got)
 	}
-	out := sc.String()
-	for _, want := range []string{"  list  List all users", "  show  Show a user"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("listing %q lacks %q", out, want)
-		}
+	// The words alone, in columns.
+	if out := sc.String(); !strings.Contains(out, "\r\nlist  show\r\n") || strings.Contains(out, "List all users") {
+		t.Errorf("listing %q", out)
 	}
 	// The top level lists the shell's own words too.
 	e, sc = newTestEditor()
@@ -105,6 +111,42 @@ func TestSecondTabLists(t *testing.T) {
 	for _, want := range []string{"user", "group"} {
 		if !strings.Contains(sc.String(), want) {
 			t.Errorf("top listing lacks %q: %q", want, sc.String())
+		}
+	}
+}
+
+// '?' lists the words with descriptions where words can come; where none
+// can it prints the Explainer's text, or says there is nothing; inside
+// quotes and after a backslash it is a character. It never changes the line.
+func TestQuestionKey(t *testing.T) {
+	e, sc := newTestEditor()
+	got, pos, ok := e.key("user ", 5, '?')
+	if !ok || got != "user " || pos != 5 {
+		t.Errorf("got %q,%d,%v", got, pos, ok)
+	}
+	if out := sc.String(); !strings.Contains(out, "Possible completions:\r\n  list  List all users\r\n  show  Show a user\r\n") {
+		t.Errorf("? listing %q", out)
+	}
+	var asked []string
+	e, sc = newTestEditor()
+	e.explain = func(words []string) (string, bool) {
+		asked = words
+		return "Usage:\n  add <username> <group>\nNext: <username> <group>\n", true
+	}
+	if got, _, _ := e.key("user add ", 9, '?'); got != "user add " {
+		t.Errorf("line changed: %q", got)
+	}
+	if !slices.Equal(asked, []string{"user", "add"}) || !strings.Contains(sc.String(), "Next: <username> <group>") {
+		t.Errorf("explain asked %q, printed %q", asked, sc.String())
+	}
+	e, sc = newTestEditor()
+	e.key("bogus ", 6, '?')
+	if !strings.Contains(sc.String(), "No valid completions") {
+		t.Errorf("no completion: %q", sc.String())
+	}
+	for _, line := range []string{`echo "a `, "echo 'a ", `echo a\`} {
+		if _, _, ok := e.key(line, len(line), '?'); ok {
+			t.Errorf("%q: '?' was taken", line)
 		}
 	}
 }
@@ -254,20 +296,42 @@ func TestCommonPrefix(t *testing.T) {
 	}
 }
 
-// A list is in the order the completer gave (Order) then alphabetical, a
-// Label standing for the word; the shell's own words are not listed with
-// others, and are when alone.
+// The Tab list is the words alone, down then across in as many columns as
+// fit, as bash lists them; one column when none fit.
+func TestColumns(t *testing.T) {
+	var cs []Candidate
+	for _, w := range []string{"ar1", "dev", "web1", "core-sw1", "edge"} {
+		cs = append(cs, Candidate{Word: w, Desc: "ignored", Label: w + " <x>"})
+	}
+	// Width 10 per column (8 + 2): 3 columns in 30, 2 rows.
+	if got, want := columns(cs, 30), "ar1       web1      edge\ndev       core-sw1\n"; got != want {
+		t.Errorf("columns(30) = %q, want %q", got, want)
+	}
+	if got, want := columns(cs, 5), "ar1\ndev\nweb1\ncore-sw1\nedge\n"; got != want {
+		t.Errorf("columns(5) = %q, want %q", got, want)
+	}
+	cs = append(cs, Candidate{Word: "quit", Unlisted: true})
+	if strings.Contains(columns(cs, 80), "quit") {
+		t.Error("an unlisted word was listed with others")
+	}
+	if got := columns(nil, 80); got != "" {
+		t.Errorf("columns(nil) = %q", got)
+	}
+}
+
+// The '?' list is alphabetical, a Label standing for the word; the
+// shell's own words are not listed with others, and are when alone.
 func TestListingOrderLabels(t *testing.T) {
 	e, _ := newTestEditor()
 	e.complete = func([]string, string) []Candidate {
 		return []Candidate{
-			{Word: "zed", Label: "zed [-x]", Desc: "Last", Order: 2},
-			{Word: "amy", Desc: "First", Order: 1},
-			{Word: "bob", Desc: "Unordered"},
+			{Word: "zed", Label: "zed [-x]", Desc: "Last"},
+			{Word: "amy", Desc: "First"},
+			{Word: "bob", Desc: "Middle"},
 		}
 	}
 	lines := strings.Split(listing(e.candidates(nil, "")), "\n")
-	for i, p := range []string{"  amy ", "  zed [-x] ", "  bob "} {
+	for i, p := range []string{"  amy ", "  bob ", "  zed [-x] "} {
 		if !strings.HasPrefix(lines[i], p) {
 			t.Errorf("line %d %q, want prefix %q", i, lines[i], p)
 		}
@@ -277,5 +341,32 @@ func TestListingOrderLabels(t *testing.T) {
 	}
 	if got := listing(e.candidates(nil, "hi")); !strings.HasPrefix(got, "  history ") {
 		t.Errorf("alone: %q", got)
+	}
+}
+
+func TestLongListHelpers(t *testing.T) {
+	if got := wrapRows("abcde\n\nxy\n", 2); !slices.Equal(got, []string{"ab", "cd", "e", "", "xy"}) {
+		t.Errorf("wrapRows = %q", got)
+	}
+	for s, want := range map[string]int{"": 0, "abc": 0, "abcd": 1, "abcdefgh": 2} {
+		if got := cursorRow(s, 4); got != want {
+			t.Errorf("cursorRow(%q) = %d, want %d", s, got, want)
+		}
+	}
+	cs := []Candidate{{Word: "core01", Kind: "devices"}, {Word: "core02", Kind: "devices"}}
+	if got := narrowExample("", cs); got != "core0" {
+		t.Errorf("narrowExample common = %q", got)
+	}
+	if got := narrowExample("core0", cs); got != "core01" {
+		t.Errorf("narrowExample next letter = %q", got)
+	}
+	if got := listKind(cs); got != "devices" {
+		t.Errorf("listKind = %q", got)
+	}
+	if got := listKind(append(cs, Candidate{Word: "x", Kind: "hosts"})); got != "choices" {
+		t.Errorf("mixed listKind = %q", got)
+	}
+	if got := listKind([]Candidate{{Word: "x"}}); got != "choices" {
+		t.Errorf("no kind = %q", got)
 	}
 }

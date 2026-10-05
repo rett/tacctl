@@ -623,14 +623,59 @@ home_refusal() {
     return 0
 }
 
+# Kept homes of removed users are moved here, out of reach of a local
+# account that is later given the same UID (local useradd may hand out
+# numbers of tacctl's range): root's alone, the tree owned by root.
+REMOVED_DIR="${HOME_ROOT}/.tacctl-removed"
+
+# keep_home <name> <home>: the kept home of a removed user moves to
+# REMOVED_DIR/<name>-<YYYYmmdd-HHMMSS>, owned by root:root (links changed,
+# never followed), its top 0700. It stays where it is (and says why) when
+# REMOVED_DIR is not a real directory of root's, the home is on another
+# file system than ${HOME_ROOT} (a move would copy it across), or the name
+# is taken.
+keep_home() {
+    local name="$1" home="$2" dest
+    dest="${REMOVED_DIR}/${name}-$(date +%Y%m%d-%H%M%S)"
+    if [[ -L "$REMOVED_DIR" || ( -e "$REMOVED_DIR" && ! -d "$REMOVED_DIR" ) ]]; then
+        warn "home kept in place: ${home} (${REMOVED_DIR} is not a real directory); move it out of reach of new accounts by hand."
+        return 0
+    fi
+    if [[ "$(stat -c %d "$home")" != "$(stat -c %d "$HOME_ROOT")" ]]; then
+        warn "home kept in place: ${home} (a separate file system); make it root's by hand: chown -hR root:root ${home}"
+        return 0
+    fi
+    if [[ -e "$dest" || -L "$dest" ]]; then
+        warn "home kept in place: ${home} (${dest} exists)."
+        return 0
+    fi
+    if ! { { [[ -d "$REMOVED_DIR" ]] || mkdir -m 0700 "$REMOVED_DIR"; } && chown root:root "$REMOVED_DIR" && chmod 0700 "$REMOVED_DIR"; }; then
+        warn "home kept in place: ${home} (${REMOVED_DIR} could not be prepared)."
+        return 0
+    fi
+    if ! mv -T -- "$home" "$dest"; then
+        warn "home kept in place: ${home} (it could not be moved to ${REMOVED_DIR})."
+        return 0
+    fi
+    if ! { chown -hR root:root -- "$dest" && chmod 0700 "$dest"; }; then
+        warn "home kept: ${dest}, but it could not all be made root's; check it: chown -hR root:root ${dest}"
+        return 0
+    fi
+    info "home kept: ${dest}"
+}
+
 # delete_account <name> <uid>: a removed user's account goes, with its
 # per-user group when that is now empty; the home directory too when the
-# operator said so (TAC_REMOVE_HOMES, --remove-home), else it is kept.
+# operator said so (TAC_REMOVE_HOMES, --remove-home), else it is kept and
+# moved out of reach (keep_home). Either needs the home to pass
+# home_refusal.
 delete_account() {
     local name="$1" uid="$2" home refusal="" want=0 group gid members
     home=$(getent passwd "$name" | cut -d: -f6)
     if [[ "$REMOVE_HOMES" == "*" || " ${REMOVE_HOMES} " == *" ${name} "* ]]; then
         want=1
+    fi
+    if [[ -n "$home" && "$home" != "/" ]] && [[ -e "$home" || -L "$home" ]]; then
         refusal=$(home_refusal "$name" "$uid" "$home")
     fi
     # Expired first: if userdel cannot run (the user is logged in), the
@@ -651,13 +696,13 @@ delete_account() {
     forget_account "$name"
     info "Deleted account '${name}': no longer a ${PROTO} user here (its UID ${uid} stays reserved on the tacctl server, never reused)."
     if [[ -z "$home" || "$home" == "/" ]]; then return 0; fi
-    if [[ "$want" == "1" && -z "$refusal" ]]; then
+    if [[ "$want" == "1" && -z "$refusal" && -d "$home" ]]; then
         rm -rf --one-file-system -- "$home"
         info "Deleted home ${home}."
-    elif [[ "$want" == "1" ]]; then
-        warn "home kept: ${home} (${refusal})"
+    elif [[ -n "$refusal" ]]; then
+        warn "home kept in place: ${home} (${refusal})"
     elif [[ -e "$home" || -L "$home" ]]; then
-        info "home kept: ${home}"
+        keep_home "$name" "$home"
     fi
 }
 

@@ -46,8 +46,12 @@ var hostSpecs = map[string]Spec{
 		{Names: []string{"--method"}, Value: true, Kind: methodWords},
 		{Names: []string{"--build-on-host"}},
 		flagAllowUIDMismatch, flagRemoveHome}},
-	"sync":           {MaxArgs: 1, Args: []string{KindHosts}, Flags: []Flag{{Names: []string{"--all"}}, flagAllowUIDMismatch, flagRemoveHome}},
-	"unenroll":       {MinArgs: 1, MaxArgs: 1, Args: []string{KindHosts}, Flags: []Flag{{Names: []string{"--force"}}}},
+	"sync":     {MaxArgs: 1, Args: []string{KindHosts}, Flags: []Flag{{Names: []string{"--all"}}, flagAllowUIDMismatch, flagRemoveHome}},
+	"unenroll": {MinArgs: 1, MaxArgs: 1, Args: []string{KindHosts}, Flags: []Flag{{Names: []string{"--force"}}}},
+	"target": {MinArgs: 1, MaxArgs: 2, Args: []string{KindHosts, ""}, Flags: []Flag{
+		{Names: []string{"--port"}, Value: true},
+		{Names: []string{"--identity"}, Value: true, Kind: KindFile},
+		{Names: []string{"--no-identity"}}}},
 	"default-method": {MaxArgs: 1, Args: []string{methodWords}},
 }
 
@@ -56,6 +60,7 @@ var hostVerbs = [][2]string{
 	{"list", "Show enrolled hosts"},
 	{"enroll <[user@]host> | --local [options]", "Install TACACS+ or RADIUS login on a host over SSH and register it"},
 	{"sync <name> | --all [options]", "Push account adds, deletions and tier changes"},
+	{"target <name> [<[user@]host>] [options]", "Show or change how tacctl reaches an enrolled host over ssh"},
 	{"unenroll <name> [--force]", "Remove the login method from the host (accounts and homes are kept)"},
 	{"default-method [tacplus|radius]", "Show or set the method for hosts enrolled without --method"},
 }
@@ -92,6 +97,8 @@ func (inv *invocation) host(args []string) error {
 		return inv.hostEnroll(rest)
 	case "sync":
 		return inv.hostSync(rest)
+	case "target":
+		return inv.hostTarget(rest)
 	case "unenroll":
 		return inv.hostUnenroll(rest)
 	case "default-method":
@@ -505,6 +512,7 @@ func (inv *invocation) hostEnroll(args []string) error {
 		a.Out.InfoE("Host '" + name + "' enrolled.")
 	}
 	he.PinKeys(inv.ctx, hosts.Entry{Name: name, Target: target, Port: port})
+	inv.hostFacts(he, name, target, hostIP)
 	if res.Users == "" {
 		inv.echo("")
 		inv.echo("  No users are in scope '" + scope + "' yet. To give someone a login on this host:")
@@ -654,12 +662,17 @@ func (inv *invocation) syncOne(he *hosts.Env, e hosts.Entry, method string, scri
 	if code != 0 {
 		return false, nil
 	}
-	counts := strconv.Itoa(hosts.CountLines(res.Users)) + " users"
+	counts := hosts.UsersText(hosts.CountLines(res.Users))
 	if he.Summary != nil {
 		counts = he.Summary.Counts()
 	}
 	inv.app.Out.InfoE(e.Name + ": synced (" + counts + ").")
 	he.PinKeys(inv.ctx, e)
+	resolved := "127.0.0.1"
+	if host, _, ok := hosts.ScanTarget(e.Target, e.Port); ok {
+		resolved = inv.resolveV4(host)
+	}
+	inv.hostFacts(he, e.Name, e.Target, resolved)
 	return true, nil
 }
 

@@ -121,6 +121,26 @@ func TestShellTierDenial(t *testing.T) {
 		if got != c.denied {
 			t.Errorf("%q %q: denial printed %v, want %v (%q)", c.groups, c.line, got, c.denied, h.err.String())
 		}
+		// sudo's own message goes only when the shell prints the denial.
+		if sudoMsg := strings.Contains(h.err.String(), "sudo: a password is required"); sudoMsg == c.denied {
+			t.Errorf("%q %q: sudo's message printed %v with the denial %v (%q)", c.groups, c.line, sudoMsg, c.denied, h.err.String())
+		}
+	}
+}
+
+func TestSudoLineFilter(t *testing.T) {
+	var b strings.Builder
+	f := &sudoLineFilter{w: &b}
+	for _, chunk := range []string{"sudo: a pass", "word is required\n", "sudo: a", "nother\n", "sudo: a password is required too\n", "tail"} {
+		_, _ = f.Write([]byte(chunk))
+	}
+	f.flush()
+	if want := "sudo: another\nsudo: a password is required too\ntail"; b.String() != want {
+		t.Errorf("filtered %q, want %q", b.String(), want)
+	}
+	f.restore()
+	if !strings.HasSuffix(b.String(), "tail"+sudoNoPassword) {
+		t.Errorf("restored %q", b.String())
 	}
 }
 
@@ -331,7 +351,7 @@ func TestShellTopHelp(t *testing.T) {
 		"\nExamples:\n  install\n  upgrade\n  user add jsmith superuser\n",
 		"\nShell:\n  help [<command>]  ",
 		"\n  exit | quit ",
-		"\n  Tab ", "\n  Ctrl-R ", "\n  Ctrl-C ", "\n  Ctrl-D ",
+		"\n  Tab ", "\n  ? ", "\n  Ctrl-R ", "\n  Ctrl-C ", "\n  Ctrl-D ",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("shell help lacks %q:\n%s", want, got)
@@ -394,19 +414,70 @@ func TestTopShortsAreTheUsage(t *testing.T) {
 	}
 }
 
-// The Tab listing of a family's verbs takes its descriptions and its order
-// from the family's usage.
+// The '?' listing of a family's verbs takes its argument column and its
+// descriptions from the family's usage.
 func TestShellVerbDescriptionsFromUsage(t *testing.T) {
 	inv, root, _ := shellTestInv(t)
-	order := map[string]int{}
+	got := map[string]shell.Candidate{}
 	for _, c := range inv.shellCompleter(root)([]string{"user"}, "") {
-		order[c.Word] = c.Order
-		if c.Word == "list" && c.Desc != "List all users (name, group, status, pw age, scopes)" {
-			t.Errorf("user list: %q", c.Desc)
+		got[c.Word] = c
+	}
+	if c := got["list"]; c.Desc != "List all users (name, group, status, pw age, scopes)" || c.Label != "list" {
+		t.Errorf("user list: %+v", c)
+	}
+	if c := got["add"]; c.Label != "add <username> <group>" || c.Desc != "Add a new user; lands in default scope" {
+		t.Errorf("user add: %+v", c)
+	}
+}
+
+// '?' after a command that takes arguments: its usage rows, its flags with
+// their descriptions from the usage block, and what comes next.
+func TestShellExplain(t *testing.T) {
+	inv, root, _ := shellTestInv(t)
+	explain := inv.shellExplain(root)
+	cases := []struct {
+		words []string
+		want  []string
+	}{
+		{[]string{"user", "add"}, []string{
+			"Usage:\n  add <username> <group>  ",
+			"\n  add <username> <group> --hash <hash>  ",
+			"Options:\n",
+			"\n  --hash <hash>  ", "Add with pre-generated bcrypt hash\n",
+			"Next: <username> <group>\n",
+		}},
+		{[]string{"user", "add", "bob"}, []string{"Next: <group>\n"}},
+		{[]string{"user", "add", "bob", "ops"}, []string{"Next: <Enter> to run\n"}},
+		{[]string{"ssh", "core1"}, []string{
+			"Usage:\n  ssh <name|address> [-p <port>] [-- <ssh args>]\n",
+			"\n  -p <port>  ", "Connect to <port>",
+			"Next: <Enter> to run\n",
+		}},
+		{[]string{"device", "add", "x"}, []string{"Usage:\n  add <name> <address> [options]", "  --vendor cisco|juniper|wti|other", "  --port <n>\n", "  --host-key SHA256:<fp>\n", "Next: <address>\n"}},
+		{[]string{"device", "address", "x"}, []string{"Next: [<address>], or <Enter> to run\n"}},
+		{[]string{"version"}, []string{"Usage:\n  version [--long]\n", "Next: <Enter> to run\n"}},
+	}
+	for _, c := range cases {
+		got, ok := explain(c.words)
+		if !ok {
+			t.Errorf("%q: no explanation", c.words)
+			continue
+		}
+		for _, w := range c.want {
+			if !strings.Contains(got, w) {
+				t.Errorf("%q: lacks %q:\n%s", c.words, w, got)
+			}
 		}
 	}
-	if order["list"] != 1 || order["show"] != 2 || order["add"] != 3 {
-		t.Errorf("user verb order: %v", order)
+	// A flag already on the line is not offered again.
+	if got, _ := explain([]string{"user", "add", "--hash", "x"}); strings.Contains(got[strings.Index(got, "Options:"):], "--hash") {
+		t.Errorf("a typed flag offered again:\n%s", got)
+	}
+	// Words that name a family, or no command, have no explanation.
+	for _, w := range [][]string{nil, {"user"}, {"bogus"}} {
+		if got, ok := explain(w); ok {
+			t.Errorf("%q: %q", w, got)
+		}
 	}
 }
 
@@ -439,6 +510,46 @@ func TestSSHWithoutTerminal(t *testing.T) {
 	} {
 		if got := sshWithoutTerminal(c.env, c.stdin); got != c.want {
 			t.Errorf("%s: %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+// The kind a long list asks about: the next positional's or a pending
+// flag value's, plural; options for flags, commands for verbs.
+func TestShellListKinds(t *testing.T) {
+	inv, root, _ := shellTestInv(t)
+	complete := inv.shellCompleter(root)
+	kindOf := func(words []string, partial string) string {
+		cs := complete(words, partial)
+		if len(cs) == 0 {
+			return ""
+		}
+		return cs[0].Kind
+	}
+	if got := kindOf(nil, ""); got != "commands" {
+		t.Errorf("top: %q", got)
+	}
+	if got := kindOf([]string{"user"}, ""); got != "commands" {
+		t.Errorf("verbs: %q", got)
+	}
+	if got := kindOf([]string{"user", "add", "bob"}, "--"); got != "options" {
+		t.Errorf("flags: %q", got)
+	}
+	for _, c := range []struct {
+		spec Spec
+		rest []string
+		want string
+	}{
+		{Spec{Args: []string{KindDevices}}, nil, "devices"},
+		{Spec{Args: []string{"", KindScopes + KindList}}, []string{"x"}, "scopes"},
+		{Spec{Args: []string{"a|b"}}, nil, "choices"},
+		{Spec{Args: []string{""}, Flags: []Flag{{Names: []string{"--scope"}, Value: true, Kind: KindScopes}}}, []string{"--scope"}, "scopes"},
+		{Spec{Args: []string{KindUsers}, Flags: []Flag{{Names: []string{"--scope"}, Value: true, Kind: KindScopes}}}, []string{"--scope", "lab"}, "users"},
+		{Spec{Args: []string{"", After("set", KindHosts)}}, []string{"set"}, "hosts"},
+		{Spec{Args: []string{KindEnabledBackends}}, nil, "backends"},
+	} {
+		if got := listKindName(c.spec, c.rest); got != c.want {
+			t.Errorf("%+v %q: %q, want %q", c.spec, c.rest, got, c.want)
 		}
 	}
 }

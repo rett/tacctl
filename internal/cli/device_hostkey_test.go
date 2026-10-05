@@ -338,7 +338,7 @@ func TestHostEnrollSyncPinHostKeys(t *testing.T) {
 	if kh != devreg.KnownHostsHeader+"web1 "+ed.String()+"\nweb1 "+rsa.String()+"\n" {
 		t.Errorf("known_hosts:\n%s", kh)
 	}
-	if !strings.Contains(hs.devices(), "hosts:\n  web1:\n    host_keys: [ssh-ed25519 ") {
+	if !strings.Contains(hs.devices(), "hosts:\n  web1:\n    address: 192.0.2.50\n    host_keys: [ssh-ed25519 ") {
 		t.Errorf("devices.yaml:\n%s", hs.devices())
 	}
 	if !strings.Contains(hs.registry(), "web1|admin@web1.example.net|2222|lab|") {
@@ -427,7 +427,7 @@ func TestHostEnrollSyncPinHostKeys(t *testing.T) {
 	if !strings.Contains(e, "web1: no ssh host key could be read from web1.example.net port 22 (ssh-keyscan) to check the session's against; none pinned.") {
 		t.Errorf("enroll, no answer:\n%s", e)
 	}
-	if strings.Contains(hs.devices(), "hosts:") {
+	if strings.Contains(hs.devices(), "host_keys") || !strings.Contains(hs.devices(), "web1: {address: 192.0.2.50}") {
 		t.Errorf("devices.yaml:\n%s", hs.devices())
 	}
 	hs.run(nil, "host", "unenroll", "web1")

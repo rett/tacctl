@@ -33,34 +33,99 @@ type File struct {
 	StaleDays    int
 	GenericNames []string
 	Devices      []*Device
-	// Hosts are the pinned host keys of enrolled hosts ('hosts:'), by host
-	// name: linux-hosts itself is never written (host enroll and sync pin).
+	// Hosts are what tacctl records of enrolled hosts ('hosts:'), by host
+	// name: the address and the pinned host keys. linux-hosts itself is
+	// never written here (host enroll and sync record and pin).
 	Hosts []HostPin
 }
 
-// HostPin is the pinned keys of one enrolled host.
+// HostPin is the record of one enrolled host: the address its enrolment
+// or last sync reached, the address before that when it changed (and
+// when), its pinned keys and its acknowledged notices.
 type HostPin struct {
 	Name string
 	Keys []string
+	// Address is the host's address as 'host enroll'/'host sync' saw it
+	// (normalized); PrevAddress and Changed ('2006-01-02 15:04') are set
+	// when a sync found another one (the address-changed notice).
+	Address, PrevAddress, Changed string
+	Ack                           []string
 }
 
-// HostKeysOf are the keys pinned for the enrolled host name.
-func (f *File) HostKeysOf(name string) []string {
-	for _, h := range f.Hosts {
-		if strings.EqualFold(h.Name, name) {
-			return slices.Clone(h.Keys)
+func (h HostPin) clone() HostPin {
+	c := h
+	c.Keys, c.Ack = slices.Clone(h.Keys), slices.Clone(h.Ack)
+	return c
+}
+
+func (h HostPin) empty() bool { return len(h.Keys) == 0 && h.Address == "" }
+
+// Host is the record of the enrolled host name (nil when there is none).
+func (f *File) Host(name string) *HostPin {
+	for i := range f.Hosts {
+		if strings.EqualFold(f.Hosts[i].Name, name) {
+			return &f.Hosts[i]
 		}
 	}
 	return nil
 }
 
-// SetHostKeys pins keys for the enrolled host name; no keys forgets it.
-func (f *File) SetHostKeys(name string, keys []string) {
-	f.Hosts = slices.DeleteFunc(f.Hosts, func(h HostPin) bool { return strings.EqualFold(h.Name, name) })
-	if len(keys) > 0 {
-		f.Hosts = append(f.Hosts, HostPin{Name: name, Keys: slices.Clone(keys)})
-		slices.SortFunc(f.Hosts, func(a, b HostPin) int { return strings.Compare(a.Name, b.Name) })
+// host is the record of name, created when there is none.
+func (f *File) host(name string) *HostPin {
+	if h := f.Host(name); h != nil {
+		return h
 	}
+	f.Hosts = append(f.Hosts, HostPin{Name: name})
+	slices.SortFunc(f.Hosts, func(a, b HostPin) int { return strings.Compare(a.Name, b.Name) })
+	return f.Host(name)
+}
+
+// tidyHosts drops records that hold nothing.
+func (f *File) tidyHosts() {
+	f.Hosts = slices.DeleteFunc(f.Hosts, func(h HostPin) bool { return h.empty() })
+}
+
+// HostKeysOf are the keys pinned for the enrolled host name.
+func (f *File) HostKeysOf(name string) []string {
+	if h := f.Host(name); h != nil {
+		return slices.Clone(h.Keys)
+	}
+	return nil
+}
+
+// SetHostKeys pins keys for the enrolled host name; no keys unpins it.
+func (f *File) SetHostKeys(name string, keys []string) {
+	f.host(name).Keys = slices.Clone(keys)
+	f.tidyHosts()
+}
+
+// HostAddressOf is the address recorded for the enrolled host name.
+func (f *File) HostAddressOf(name string) string {
+	if h := f.Host(name); h != nil {
+		return h.Address
+	}
+	return ""
+}
+
+// SetHostAddress records address (normalized by the caller) for the
+// enrolled host name. A different address than the recorded one keeps the
+// old one as PrevAddress with the time of the change (at) and reopens the
+// address-changed notice; it reports the address it replaced ("" when
+// there was none or it is the same).
+func (f *File) SetHostAddress(name, address, at string) (previous string) {
+	h := f.host(name)
+	if h.Address != "" && h.Address != address {
+		previous = h.Address
+		h.PrevAddress, h.Changed = h.Address, at
+		h.Ack = slices.DeleteFunc(h.Ack, func(k string) bool { return k == NoticeAddressChanged })
+	}
+	h.Address = address
+	return previous
+}
+
+// ForgetHost drops everything recorded of the enrolled host name.
+func (f *File) ForgetHost(name string) {
+	f.Hosts = slices.DeleteFunc(f.Hosts, func(h HostPin) bool { return strings.EqualFold(h.Name, name) })
 }
 
 // Empty is a registry with no device.
@@ -74,7 +139,7 @@ func (f *File) Clone() *File {
 		c.Devices = append(c.Devices, &dc)
 	}
 	for _, h := range f.Hosts {
-		c.Hosts = append(c.Hosts, HostPin{Name: h.Name, Keys: slices.Clone(h.Keys)})
+		c.Hosts = append(c.Hosts, h.clone())
 	}
 	return c
 }
@@ -147,8 +212,18 @@ func (f *File) validate() error {
 			return fail("hosts: invalid or repeated host name '" + h.Name + "'.")
 		}
 		hostNames[strings.ToLower(h.Name)] = true
-		if len(h.Keys) == 0 {
-			return fail("hosts: '" + h.Name + "' has no host_keys.")
+		if h.empty() {
+			return fail("hosts: '" + h.Name + "' has neither an address nor host_keys.")
+		}
+		for _, a := range []string{h.Address, h.PrevAddress} {
+			if n, err := NormalizeAddress(a); a != "" && (err != nil || n != a) {
+				return fail("hosts: '" + h.Name + "': invalid address '" + a + "'.")
+			}
+		}
+		for _, k := range h.Ack {
+			if !slices.Contains(HostAckableKinds, k) {
+				return fail("hosts: '" + h.Name + "': ack: '" + k + "' cannot be acknowledged for an enrolled host.")
+			}
 		}
 		for _, k := range h.Keys {
 			if _, err := ParseHostKey(k); err != nil {
@@ -258,11 +333,23 @@ func parse(data []byte) (*File, error) {
 				}
 				pin := HostPin{Name: name}
 				for hk, kv := range hm.All() {
-					l, ok := strList(kv)
-					if hk != "host_keys" || !ok {
-						return nil, fail("hosts: '" + name + "': unknown or invalid key '" + hk + "'.")
+					bad := fail("hosts: '" + name + "': unknown or invalid key '" + hk + "'.")
+					switch hk {
+					case "host_keys", "ack":
+						l, ok := strList(kv)
+						if !ok {
+							return nil, bad
+						}
+						*map[string]*[]string{"host_keys": &pin.Keys, "ack": &pin.Ack}[hk] = l
+					case "address", "previous_address", "address_changed":
+						v, ok := kv.(string)
+						if !ok {
+							return nil, bad
+						}
+						*map[string]*string{"address": &pin.Address, "previous_address": &pin.PrevAddress, "address_changed": &pin.Changed}[hk] = v
+					default:
+						return nil, bad
 					}
-					pin.Keys = l
 				}
 				f.Hosts = append(f.Hosts, pin)
 			}
@@ -380,7 +467,23 @@ func (f *File) doc() *yamlpy.Map {
 	if len(f.Hosts) > 0 {
 		hs := yamlpy.NewMap()
 		for _, h := range f.Hosts {
-			hs.Set(h.Name, yamlpy.NewMap("host_keys", slices.Clone(h.Keys)))
+			m := yamlpy.NewMap()
+			if h.Address != "" {
+				m.Set("address", h.Address)
+			}
+			if h.PrevAddress != "" {
+				m.Set("previous_address", h.PrevAddress)
+			}
+			if h.Changed != "" {
+				m.Set("address_changed", h.Changed)
+			}
+			if len(h.Keys) > 0 {
+				m.Set("host_keys", slices.Clone(h.Keys))
+			}
+			if len(h.Ack) > 0 {
+				m.Set("ack", slices.Clone(h.Ack))
+			}
+			hs.Set(h.Name, m)
 		}
 		root.Set("hosts", hs)
 	}

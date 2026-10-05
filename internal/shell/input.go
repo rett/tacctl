@@ -84,6 +84,27 @@ func (in *input) Read(p []byte) (int, error) {
 	return n, nil
 }
 
+// key reads one key for the editor's own questions (the long-list
+// question and the pager), unrewritten: what the editor has not read yet
+// first, else the first byte the terminal sends next (the rest of that
+// read is dropped). It fails as a read does (idle, stop, end of input).
+func (in *input) key() (byte, error) {
+	if len(in.pending) > 0 {
+		k := in.pending[0]
+		in.pending = in.pending[1:]
+		return k, nil
+	}
+	for {
+		raw, err := in.wait()
+		if err != nil {
+			return 0, err
+		}
+		if len(raw) > 0 {
+			return raw[0], nil
+		}
+	}
+}
+
 // wait polls the terminal (and the wake pipe) for at most the idle time and
 // reads what is there.
 func (in *input) wait() ([]byte, error) {
