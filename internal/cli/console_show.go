@@ -32,6 +32,7 @@ func (inv *invocation) consoleShow(args []string) error {
 	inv.echo("  idle-timeout: " + idleText(f.Idle))
 	inv.echo("  agent-forwarding: " + map[bool]string{true: "enabled", false: "disabled"}[f.AgentForwarding])
 	inv.echo("  ssh-escape: " + map[bool]string{true: "enabled", false: "disabled"}[f.SSHEscape])
+	inv.echo("  forwarding tiers: " + tierCSV(f.ForwardingTiers) + " (X11 and TCP ports)")
 	inv.echo("  system-shell tiers: " + tierCSV(f.SystemShellTiers))
 	inv.echo("  system-shell path: " + f.SystemShell)
 	inv.echo("  list-max: " + strconv.Itoa(f.ListMax) + " (completions listed without asking; set in " + inv.app.Paths.ConsoleFile + ")")
@@ -139,7 +140,7 @@ func (inv *invocation) consoleServerSection(pol *console.Policy, consoleUsers []
 	} else {
 		inv.echo("  sshd for " + u + ": allowtcpforwarding " + st.TCPForwarding + ", allowagentforwarding " + st.AgentForwarding +
 			", forcecommand " + dash(st.ForceCommand) + ", pubkeyauthentication " + dash(st.PubkeyAuth))
-		problems = append(problems, st.Problems(pol.AgentForwarding(), inv.app.Paths.ConsoleCommand)...)
+		problems = append(problems, st.Problems(pol.AgentForwarding(), inv.userForwards(pol, u), inv.app.Paths.ConsoleCommand)...)
 	}
 	if len(problems) > 0 {
 		inv.echoE(ui.Red + "WARNING: a console user can do more over ssh than the console allows (forward ports past the registry, run programs or sftp, log in by key): " +

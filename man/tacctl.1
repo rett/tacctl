@@ -1124,10 +1124,12 @@ that differs from the release's rules (after
 .B visudo \-cf
 accepts them), so a release's new verbs reach the tiers; it never creates the
 file. Both sudoers files carry
-.B Defaults!/usr/local/bin/tacctl env_keep += "SSH_AUTH_SOCK"
+.B Defaults!/usr/local/bin/tacctl env_keep += "SSH_AUTH_SOCK TACCTL_CONSOLE DISPLAY"
 (the agent socket for
-.BR "tacctl host" )
-and nothing else of the caller's environment; tacctl also refuses a
+.BR "tacctl host" ,
+the login console's session marker, and the X11 display
+.B "tacctl ssh \-X"
+hands on) and nothing else of the caller's environment; tacctl also refuses a
 .B SUDO_USER
 that is not the account of
 .BR SUDO_UID .
@@ -2576,7 +2578,7 @@ the host keys it offers now against the pinned ones (kept for the notices;
 nothing is pinned), and its notices.
 .SS SSH to a device \fB(tacctl ssh)\fR
 .TP
-.BI "ssh " name|address " [ \-p " port " ] [ \-\- " "ssh args" " ]"
+.BI "ssh " name|address " [ \-p " port " ] [ \-X | \-Y ] [ { \-L | \-R | \-D } " spec " ]... [ \-\- " "ssh args" " ]"
 Open an ssh session to a registered device or an enrolled host, named by its
 name or its registered address. tacctl resolves the name as root (the registry
 is root's) and admits only an active tacctl user (in the store, not disabled,
@@ -2634,12 +2636,37 @@ notice is printed (unless acknowledged). Arguments after
 follow the target, so ssh takes them as the remote command; they cannot
 replace an option.
 .IP
+.BR \-X " and " \-Y
+forward X11 (untrusted, trusted) to this server's display
+.RB ( DISPLAY ,
+which sudo keeps for tacctl; without one the command says to log in with
+.BR "ssh \-X" );
+.BR \-L ,
+.B \-R
+and
+.B \-D
+(each repeatable) are ssh's local, remote and dynamic port forwardings, with a
+.I spec
+of addresses, ports, host names or socket paths only. The session's log line
+then carries
+.BR forward= \fIkinds\fR
+.RB ( x11 ", " local ", " remote ", " dynamic ).
+In the login console they are for the tiers of
+.B "console forwarding tiers"
+only (default
+.BR superuser );
+any other tier is refused
+.RI ( "Forwarding (\-X, \-Y, \-L, \-R, \-D) is not available to the tier tier in the console" ;
+logged as
+.BR "ssh DENY ... reason=forward" ).
+.IP
 From a session of the login console (the console marks each line with
 .BR TACCTL_CONSOLE= \fIsession\fR),
 ssh reads no configuration file and opens nothing but the session: it starts
 with
 .B "\-F /dev/null \-o PermitLocalCommand=no \-o ControlMaster=no \-o ClearAllForwardings=yes \-o ForwardAgent=no"
-and
+.RB ( ClearAllForwardings
+left out when the session forwards) and
 .B "\-o EscapeChar=none"
 (unless
 .BR "console ssh\-escape enable" ),
@@ -2682,7 +2709,8 @@ only, after a snapshot (mode 0600; backup diff and restore include it), and
 never an account or sshd: the accounts' login shells and sshd's drop-in follow
 it when the provisioning of this server applies it
 .RB ( "host sync" " of the host enrolled with " \-\-local ).
-Every change to the tier switches, a user override or agent forwarding prints
+Every change to the tier switches, a user override, agent forwarding or the
+forwarding tiers prints
 .BI "Apply to the accounts: tacctl host sync " name\fR.
 The idle timeout, the ssh escape and the system shell are read by each console
 session when it starts.
@@ -2739,6 +2767,34 @@ default 30).
 .BI "console agent\-forwarding " "[ { enable | disable } ]"
 Opt in to ssh agent forwarding for console users (default disabled).
 .TP
+.BI "console forwarding tiers " "[ " csv "|none ]"
+The tiers whose console logins may forward X11 and TCP ports (default
+.BR superuser ):
+sshd's drop-in gives the members of
+.B tac\-console
+and of the tier's group
+.RB ( tac\-superuser ", " tac\-operator ", " tac\-readonly )
+.B "X11Forwarding yes"
+and
+.B "AllowTcpForwarding yes"
+in a block of their own before the console's
+.RB ( "ssh \-X" ,
+.BR \-L ,
+.BR \-R ,
+.B \-D
+and
+.B \-J
+through this server), and the console's
+.B ssh
+to a device accepts
+.BR \-X ,
+.BR \-Y ,
+.BR \-L ,
+.B \-R
+and
+.BR \-D .
+Agent, stream-local and tunnel forwarding stay as for every console user.
+.TP
 .BI "console ssh\-escape " "[ { enable | disable } ]"
 Opt in to ssh's escape character (\fB~.\fR, \fB~C\fR) in the console's ssh
 sessions (default disabled).
@@ -2775,7 +2831,13 @@ console, which reads the client's command from
 .BR "AllowAgentForwarding yes" ,
 when
 .B console agent\-forwarding
-is enabled),
+is enabled; for the tiers of
+.B "console forwarding tiers"
+a block before it sets
+.BR "DisableForwarding no" ,
+.B "AllowTcpForwarding yes"
+and
+.BR "X11Forwarding yes" ),
 .BR "AllowTcpForwarding no" ,
 .BR "AllowStreamLocalForwarding no" ,
 .BR "X11Forwarding no" ,
@@ -3489,6 +3551,7 @@ The login console's switches per tier, per-user overrides and settings
 .BR ssh_escape ,
 .BR system_shell ,
 .BR system_shell_tiers ,
+.BR forwarding_tiers ,
 .BR list_max ,
 the number of completions the shell lists without asking).
 Mode 0600, root only; absent means the defaults (the console on for every

@@ -168,8 +168,10 @@ const Binary = "/usr/local/bin/tacctl"
 // among them, and so pose as someone else to the tier gate. The second
 // name is the login console's marker (TACCTL_CONSOLE=<session>, a command-
 // line assignment on each of its lines); it is only ever read by tacctl, to
-// tighten what it does, never to widen it.
-const EnvKeep = "Defaults!" + Binary + " env_keep += \"SSH_AUTH_SOCK TACCTL_CONSOLE\"\n"
+// tighten what it does, never to widen it. The third is the X11 display
+// sshd's forwarding sets ('tacctl ssh -X' hands it to the ssh it runs as
+// the caller; tacctl checks its shape first).
+const EnvKeep = "Defaults!" + Binary + " env_keep += \"SSH_AUTH_SOCK TACCTL_CONSOLE DISPLAY\"\n"
 
 // Sudoers is emit_tier_sudoers: the per-tier drop-in, byte for byte.
 func Sudoers() string {

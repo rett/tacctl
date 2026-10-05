@@ -218,7 +218,7 @@ print("" if v is None else v)' "${TACCTL_STATE_DIR}/store.yaml" "$1" "$2"
     assert_success
     # SETENV would let a caller set SUDO_USER and pose as someone else.
     refute_output --partial "SETENV"
-    assert_output --partial 'Defaults!/usr/local/bin/tacctl env_keep += "SSH_AUTH_SOCK TACCTL_CONSOLE"'
+    assert_output --partial 'Defaults!/usr/local/bin/tacctl env_keep += "SSH_AUTH_SOCK TACCTL_CONSOLE DISPLAY"'
     assert_output --partial "%tac-operator ALL=(root) NOPASSWD: TACCTL_RO, TACCTL_OP"
     local text ro op r
     text=$(sed -n 's/^    //p' <<<"$output" | sed -e ':a' -e '/\\$/N; s/\\\n//; ta')

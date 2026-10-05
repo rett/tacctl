@@ -243,7 +243,7 @@ func TestSudoersNoSetenv(t *testing.T) {
 	if strings.Contains(text, "SETENV") || !strings.Contains(text, "\n"+EnvKeep) {
 		t.Errorf("SETENV or no env_keep line:\n%s", text)
 	}
-	if EnvKeep != "Defaults!/usr/local/bin/tacctl env_keep += \"SSH_AUTH_SOCK TACCTL_CONSOLE\"\n" {
+	if EnvKeep != "Defaults!/usr/local/bin/tacctl env_keep += \"SSH_AUTH_SOCK TACCTL_CONSOLE DISPLAY\"\n" {
 		t.Errorf("EnvKeep %q", EnvKeep)
 	}
 }
@@ -349,7 +349,7 @@ func TestConsoleRows(t *testing.T) {
 	for _, want := range []string{
 		"Cmnd_Alias TACCTL_RO = ", "/usr/local/bin/tacctl _console-policy",
 		"/usr/local/bin/tacctl console show, /usr/local/bin/tacctl console check",
-		`env_keep += "SSH_AUTH_SOCK TACCTL_CONSOLE"`,
+		`env_keep += "SSH_AUTH_SOCK TACCTL_CONSOLE DISPLAY"`,
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("sudoers lacks %q", want)

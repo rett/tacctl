@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -80,6 +81,22 @@ func (p *Policy) SystemShell(t tier.Tier) bool {
 	}
 	return false
 }
+
+// Forwarding reports whether tier t's console logins may forward X11 and
+// TCP ports (settings.forwarding_tiers). A caller with no tier restriction
+// may; none may not.
+func (p *Policy) Forwarding(t tier.Tier) bool {
+	switch t {
+	case tier.Unrestricted:
+		return true
+	case tier.None:
+		return false
+	}
+	return slices.Contains(p.File.ForwardingTiers, t)
+}
+
+// ForwardingTiers are the tiers of settings.forwarding_tiers.
+func (p *Policy) ForwardingTiers() []tier.Tier { return p.File.ForwardingTiers }
 
 // Idle is the idle timeout (0: none).
 func (p *Policy) Idle() time.Duration { return time.Duration(p.File.Idle) * time.Minute }

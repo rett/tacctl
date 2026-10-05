@@ -40,7 +40,7 @@ func (inv *invocation) consoleProvision(pol *console.Policy) error {
 	}
 	a.Out.InfoE("  " + shells.String() + ": " + p.ShellsFile + " lists " + p.ConsoleCommand)
 	d := console.DropInFile{Runner: a.Runner, Path: p.SSHDDropIn}
-	ch, err := d.Install(inv.ctx, console.DropIn(p.ConsoleCommand, pol.AgentForwarding()))
+	ch, err := d.Install(inv.ctx, console.DropIn(p.ConsoleCommand, pol.AgentForwarding(), pol.ForwardingTiers()))
 	switch {
 	case errors.Is(err, console.ErrSSHD):
 		a.Out.ErrorE("sshd refused the console's drop-in; " + p.SSHDDropIn + " was put back as it was:")
@@ -140,7 +140,7 @@ func (inv *invocation) consoleDeprovision() error {
 func (inv *invocation) consoleCheckProblems(pol *console.Policy, user string) []string {
 	p := inv.app.Paths
 	var problems []string
-	want := console.DropIn(p.ConsoleCommand, pol.AgentForwarding())
+	want := console.DropIn(p.ConsoleCommand, pol.AgentForwarding(), pol.ForwardingTiers())
 	switch data, err := os.ReadFile(p.SSHDDropIn); {
 	case err != nil:
 		inv.echo("  sshd drop-in " + p.SSHDDropIn + ": missing")
@@ -172,7 +172,18 @@ func (inv *invocation) consoleCheckProblems(pol *console.Policy, user string) []
 	}
 	inv.echo("  sshd for " + user + ": allowtcpforwarding " + st.TCPForwarding + ", allowagentforwarding " + st.AgentForwarding +
 		", forcecommand " + dash(st.ForceCommand) + ", pubkeyauthentication " + dash(st.PubkeyAuth))
-	return append(problems, st.Problems(pol.AgentForwarding(), p.ConsoleCommand)...)
+	return append(problems, st.Problems(pol.AgentForwarding(), inv.userForwards(pol, user), p.ConsoleCommand)...)
+}
+
+// userForwards reports whether user's tier (from the account's local
+// groups) may forward X11 and TCP ports through sshd (console forwarding
+// tiers); an account whose groups cannot be read may not.
+func (inv *invocation) userForwards(pol *console.Policy, user string) bool {
+	res, err := inv.app.Runner.Run(inv.ctx, execx.Cmd{Name: "id", Args: []string{"-nG", "--", user}})
+	if err != nil || res.Code != 0 {
+		return false
+	}
+	return pol.Forwarding(sudoTier(strings.Fields(string(res.Stdout))))
 }
 
 // consoleInstall is 'console install': consoleProvision, then the check.

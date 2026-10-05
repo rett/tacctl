@@ -778,3 +778,23 @@ What to expect:
     Default User Access, and a new "Port access" section names the groups
     those lists apply to (or says no group needs them). Administrator and
     SuperUser logins reach every port, as before.
+60. **Superusers may forward X11 and TCP ports through the login console.**
+    A new setting, `tacctl console forwarding tiers [<csv>|none]`
+    (`forwarding_tiers` in console.yaml, default `superuser`), names the
+    tiers that may:
+    - sshd's drop-in gives the console users of those tiers (`Match Group
+      tac-console Group tac-<tier>`, before the console's own block)
+      `X11Forwarding yes` and `AllowTcpForwarding yes`, so `ssh -X`, `-L`,
+      `-R`, `-D` and `-J` through the server work for them, still into the
+      console and by password only; everyone else stays closed, and agent,
+      stream-local and tunnel forwarding are unchanged. `console check` and
+      `console show` expect TCP forwarding for those users only. An
+      installed drop-in is refreshed by `upgrade` or the next sync.
+    - `tacctl ssh` (and `device ssh`) take `-X`, `-Y`, `-L`, `-R` and `-D`;
+      the log line names them (`forward=x11,local,...`). `-X` uses the
+      display of an `ssh -X` login to the server: the console hands
+      `DISPLAY` on, and both sudoers files keep it for tacctl
+      (`env_keep += "SSH_AUTH_SOCK TACCTL_CONSOLE DISPLAY"`). In a console
+      session other tiers are refused (`ssh DENY ... reason=forward`).
+    - `_console-policy` reports `forward=yes|no`; `console show` lists the
+      forwarding tiers.

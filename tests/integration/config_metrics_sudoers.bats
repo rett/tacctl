@@ -163,7 +163,7 @@ setup() {
     [[ -f "$TACCTL_SUDOERS_FILE" ]]
     run cat "$TACCTL_SUDOERS_FILE"
     assert_output --partial "%wheel ALL=(ALL) NOPASSWD: /usr/local/bin/tacctl"
-    assert_output --partial 'Defaults!/usr/local/bin/tacctl env_keep += "SSH_AUTH_SOCK TACCTL_CONSOLE"'
+    assert_output --partial 'Defaults!/usr/local/bin/tacctl env_keep += "SSH_AUTH_SOCK TACCTL_CONSOLE DISPLAY"'
     refute_output --partial "SETENV"
     assert_output --partial "Managed by tacctl"
 }

@@ -35,6 +35,8 @@ type SSH struct {
 	Batch bool
 	// Port and Identity, when set, are -p and -i.
 	Port, Identity string
+	// Env is more KEY=value for ssh run as AsUser (DISPLAY for -X).
+	Env []string
 }
 
 // Cmd is the ssh command with args after the options.
@@ -55,6 +57,7 @@ func (s SSH) Cmd(args ...string) execx.Cmd {
 		if s.AuthSock != "" {
 			c.UserEnv = []string{"SSH_AUTH_SOCK=" + s.AuthSock}
 		}
+		c.UserEnv = append(c.UserEnv, s.Env...)
 	}
 	return c
 }

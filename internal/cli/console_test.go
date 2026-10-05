@@ -215,6 +215,7 @@ settings:
   ssh_escape: false
   system_shell: /bin/bash
   system_shell_tiers: [superuser]
+  forwarding_tiers: [superuser]
   list_max: 40
 `
 	if y := sb.consoleYAML(); y != want {
@@ -398,9 +399,9 @@ func TestConsolePolicyLinePerTier(t *testing.T) {
 	}
 	const tail = " ssh_escape=no agent=no"
 	for _, c := range []struct{ user, group, want string }{
-		{"alice", "superuser", "shell=console idle=30 system_shell=yes system_shell_path=/bin/bash" + tail + " tier=superuser list_max=40"},
-		{"bob", "operator", "shell=console idle=30 system_shell=no system_shell_path=/bin/bash" + tail + " tier=operator list_max=40"},
-		{"carol", "readonly", "shell=console idle=30 system_shell=no system_shell_path=/bin/bash" + tail + " tier=readonly list_max=40"},
+		{"alice", "superuser", "shell=console idle=30 system_shell=yes system_shell_path=/bin/bash" + tail + " forward=yes tier=superuser list_max=40"},
+		{"bob", "operator", "shell=console idle=30 system_shell=no system_shell_path=/bin/bash" + tail + " forward=no tier=operator list_max=40"},
+		{"carol", "readonly", "shell=console idle=30 system_shell=no system_shell_path=/bin/bash" + tail + " forward=no tier=readonly list_max=40"},
 	} {
 		if got := policy(c.user, c.group); got != c.want {
 			t.Errorf("%s:\n got %q\nwant %q", c.user, got, c.want)
@@ -412,7 +413,7 @@ func TestConsolePolicyLinePerTier(t *testing.T) {
 		t.Errorf("none: %d %q %q", sb.code, got, sb.stderr())
 	}
 	// Not in tac-users: unrestricted, system shell yes.
-	if got := policy("tester", ""); got != "shell=system idle=30 system_shell=yes system_shell_path=/bin/bash"+tail+" tier=unrestricted list_max=40" {
+	if got := policy("tester", ""); got != "shell=system idle=30 system_shell=yes system_shell_path=/bin/bash"+tail+" forward=yes tier=unrestricted list_max=40" {
 		t.Errorf("unrestricted: %q", got)
 	}
 	// The logged line (auth.info) carries the session marker.
@@ -426,7 +427,7 @@ func TestConsolePolicyLinePerTier(t *testing.T) {
 	sb.con("idle-timeout", "5")
 	sb.con("ssh-escape", "enable")
 	sb.con("agent-forwarding", "enable")
-	if got := policy("carol", "readonly"); got != "shell=system idle=5 system_shell=yes system_shell_path=/bin/bash ssh_escape=yes agent=yes tier=readonly list_max=40" {
+	if got := policy("carol", "readonly"); got != "shell=system idle=5 system_shell=yes system_shell_path=/bin/bash ssh_escape=yes agent=yes forward=no tier=readonly list_max=40" {
 		t.Errorf("carol after changes: %q", got)
 	}
 	if got := policy("alice", "superuser"); !strings.Contains(got, "system_shell=no") {

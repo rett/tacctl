@@ -17,8 +17,11 @@ type Remote struct {
 	SystemShellPath string
 	SSHEscape       bool
 	Agent           bool
-	Tier            tier.Tier
-	ListMax         int
+	// Forward reports whether the caller's tier may forward X11 and TCP
+	// ports (console forwarding tiers): the console then hands DISPLAY on.
+	Forward bool
+	Tier    tier.Tier
+	ListMax int
 	// Known reports whether the answer was read (false: the defaults).
 	Known bool
 }
@@ -65,6 +68,10 @@ func ParseRemote(out string) (r Remote, ok bool) {
 			if b, good := yesNoValue(v); good {
 				r.Agent, ok = b, true
 			}
+		case "forward":
+			if b, good := yesNoValue(v); good {
+				r.Forward, ok = b, true
+			}
 		case "tier":
 			switch t := tier.Tier(v); t {
 			case tier.Unrestricted, tier.Superuser, tier.Operator, tier.Readonly, tier.None:
@@ -80,6 +87,23 @@ func ParseRemote(out string) (r Remote, ok bool) {
 	}
 	r.Known = ok
 	return r, ok
+}
+
+// ValidDisplay reports whether v looks like an X11 display name (such as
+// localhost:10.0, the one sshd's X11 forwarding sets): the only DISPLAY the
+// console hands on to tacctl.
+func ValidDisplay(v string) bool {
+	if v == "" || len(v) > 255 {
+		return false
+	}
+	for _, c := range v {
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9', strings.ContainsRune("._:/-", c):
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func yesNoValue(v string) (bool, bool) {

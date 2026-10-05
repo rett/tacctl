@@ -142,9 +142,15 @@ func (inv *invocation) runConsoleSession(args []string) error {
 	if cs.pol.Known {
 		cs.tier = cs.pol.Tier
 	}
+	extra := []string{marker}
+	if d := a.Env.Get("DISPLAY"); cs.pol.Forward && console.ValidDisplay(d) {
+		// sshd's X11 forwarding, for 'ssh -X <device>' (the tiers sudoers
+		// keeps DISPLAY for tacctl).
+		extra = append(extra, "DISPLAY="+d)
+	}
 	r := shellRun{
 		exe: exe, mode: shellBatch, listMax: cs.pol.ListMax,
-		extraEnv: []string{marker}, console: true, systemShell: cs.systemShell, groups: groups,
+		extraEnv: extra, console: true, systemShell: cs.systemShell, groups: groups,
 	}
 	if groups == nil {
 		r.groups = []string{}

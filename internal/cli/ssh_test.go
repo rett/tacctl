@@ -241,7 +241,7 @@ func TestSSHRefusals(t *testing.T) {
 	}
 	// No name: the usage, exit 0.
 	out := sb.sshRun("alice", nil, "ssh")
-	if sb.code != 0 || !strings.Contains(out, "Usage: tacctl ssh <name|address> [-p <port>] [-- <ssh args>]") {
+	if sb.code != 0 || !strings.Contains(out, "Usage: tacctl ssh <name|address> [-p <port>] [-X|-Y] [-L|-R|-D <spec>]... [-- <ssh args>]") {
 		t.Errorf("usage: %d %q", sb.code, out)
 	}
 }
@@ -456,5 +456,77 @@ func TestSSHConsoleSession(t *testing.T) {
 	if sb.code != 4 || strings.Contains(sb.sshArgv(), "/dev/null") ||
 		!sb.runner.CalledRegexp(`^logger -t tacctl -p auth\.info ssh end user=alice device=lab-rtr2 status=4 duration=\d+$`) {
 		t.Errorf("plain: %d %q", sb.code, sb.runner.Argvs())
+	}
+}
+
+// Forwarding: -X/-Y need a display and pass DISPLAY to the ssh run as the
+// caller; -L/-R/-D come before the login and are checked for shape; the log
+// line names the kinds. In a console session only the tiers of console
+// forwarding tiers (default superuser) may, ClearAllForwardings is left out
+// for them, and anyone else is refused and logged.
+func TestSSHForwarding(t *testing.T) {
+	withTerminal(t, true)
+	sb, _, _ := sshSandbox(t)
+	groups := func(r *fake.Runner) {
+		r.On([]string{"id", "-nG", "--", "alice"}, execx.Result{Stdout: []byte("alice tac-users tac-superuser\n")})
+		r.On([]string{"id", "-nG", "--", "carol"}, execx.Result{Stdout: []byte("carol tac-users tac-readonly\n")})
+	}
+	env := func(user string, extra ...string) []string {
+		e := []string{"SUDO_USER=" + user}
+		for uid, name := range testPasswd {
+			if name == user {
+				e = append(e, "SUDO_UID="+uid)
+			}
+		}
+		return append(e, extra...)
+	}
+	// Outside the console: ports, in order, before the login.
+	sb.cfgRun("", []string{"ssh", "lab-rtr2", "-L", "8443:localhost:443", "-D", "1080", "-L", "127.0.0.1:2222:[2001:db8::1]:22"}, groups, env("alice")...)
+	if sb.code != 0 || !strings.HasSuffix(sb.sshArgv(), " -L 8443:localhost:443 -L 127.0.0.1:2222:[2001:db8::1]:22 -D 1080 -l alice 192.168.5.1") {
+		t.Errorf("ports (%d %q): %s", sb.code, sb.stderr(), sb.sshArgv())
+	}
+	if !sb.runner.Called("logger", "-t", "tacctl", "-p", "auth.info", "ssh user=alice device=lab-rtr2 addr=192.168.5.1 forward=local,dynamic") {
+		t.Errorf("log: %q", sb.runner.Argvs())
+	}
+	// A spec ssh could read as something else is refused.
+	for _, bad := range []string{"8443:host;id", "-oProxyCommand=x", "a b"} {
+		sb.cfgRun("", []string{"ssh", "lab-rtr2", "-R", bad}, groups, env("alice")...)
+		if sb.code != 1 || sb.sshArgv() != "" || !strings.Contains(sb.stderr(), "is not a forwarding spec for -R") {
+			t.Errorf("%q: %d %q", bad, sb.code, sb.stderr())
+		}
+	}
+	// X11 needs a display, which goes to ssh through env(1).
+	sb.cfgRun("", []string{"ssh", "lab-rtr2", "-X"}, groups, env("alice")...)
+	if sb.code != 1 || sb.sshArgv() != "" || !strings.Contains(sb.stderr(), "-X needs an X11 display") {
+		t.Errorf("no display: %d %q", sb.code, sb.stderr())
+	}
+	sb.cfgRun("", []string{"ssh", "lab-rtr2", "-Y"}, groups, env("alice", "DISPLAY=localhost:10.0")...)
+	if sb.code != 0 || !strings.HasPrefix(sb.sshArgv(), "sudo -u alice -H env DISPLAY=localhost:10.0 ssh ") ||
+		!strings.HasSuffix(sb.sshArgv(), " -Y -l alice 192.168.5.1") {
+		t.Errorf("-Y (%d %q): %s", sb.code, sb.stderr(), sb.sshArgv())
+	}
+	// In the console: a superuser forwards, without ClearAllForwardings.
+	session := "TACCTL_CONSOLE=0123456789ab"
+	sb.cfgRun("", []string{"ssh", "lab-rtr2", "-X", "-L", "8443:localhost:443"}, groups, env("alice", session, "DISPLAY=localhost:10.0")...)
+	argv := sb.sshArgv()
+	if sb.code != 0 || !strings.HasPrefix(argv, "sudo -u alice -H env DISPLAY=localhost:10.0 ssh -F /dev/null -o PermitLocalCommand=no -o ControlMaster=no -o ForwardAgent=no -o EscapeChar=none ") ||
+		strings.Contains(argv, "ClearAllForwardings") || !strings.HasSuffix(argv, " -X -L 8443:localhost:443 -l alice -- 192.168.5.1") {
+		t.Errorf("console superuser (%d %q): %s", sb.code, sb.stderr(), argv)
+	}
+	if !sb.runner.Called("logger", "-t", "tacctl", "-p", "auth.info", "ssh user=alice device=lab-rtr2 addr=192.168.5.1 forward=x11,local console=0123456789ab") {
+		t.Errorf("console log: %q", sb.runner.Argvs())
+	}
+	// A readonly user is refused, with the fix, and logged.
+	sb.cfgRun("", []string{"ssh", "lab-rtr2", "-L", "8443:localhost:443"}, groups, env("carol", session)...)
+	if sb.code != 1 || sb.sshArgv() != "" ||
+		!strings.Contains(sb.stderr(), "Forwarding (-X, -Y, -L, -R, -D) is not available to the readonly tier in the console") ||
+		!sb.runner.Called("logger", "-t", "tacctl", "-p", "auth.warning", "ssh DENY user=carol reason=forward tier=readonly console=0123456789ab") {
+		t.Errorf("console readonly: %d %q %q", sb.code, sb.stderr(), sb.runner.Argvs())
+	}
+	// Opened to readonly by console forwarding tiers.
+	sb.run("", []string{"console", "forwarding", "tiers", "readonly,superuser"})
+	sb.cfgRun("", []string{"ssh", "lab-rtr2", "-L", "8443:localhost:443"}, groups, env("carol", session)...)
+	if sb.code != 0 || !strings.HasSuffix(sb.sshArgv(), " -L 8443:localhost:443 -l carol -- 192.168.5.1") {
+		t.Errorf("readonly opened (%d %q): %s", sb.code, sb.stderr(), sb.sshArgv())
 	}
 }

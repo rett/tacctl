@@ -98,7 +98,7 @@ var deviceVerbs = [][2]string{
 	{"import [--check] [--replace] [--allow-generic] [-y] <file|->", "Import devices from CSV or the registry's YAML"},
 	{"export [--csv|--json]", "Print the registry (YAML by default)"},
 	{"hostkey <name> [show|accept [-y]|set SHA256:<fp>]", "Show the pinned ssh host keys, or re-pin them after a verified change"},
-	{"ssh <name|address> [-p <port>] [-- <ssh args>]", "Alias of 'tacctl ssh': a session to the device, as you"},
+	{"ssh <name|address> [-p <port>] [-X|-Y] [-L|-R|-D <spec>]... [-- <ssh args>]", "Alias of 'tacctl ssh': a session to the device, as you"},
 	{"ssh-config", "Print an ssh_config Include for your devices (Host blocks, pinned keys)"},
 	{"scan [--full] [--since <dur>] [--backend <id>]", "Read the logs for the devices seen; re-scan pinned host keys"},
 	{"discover [--all] [--backend <id>]", "Scan, then list the addresses that authenticated unregistered"},
@@ -138,6 +138,10 @@ var deviceOptions = map[string][][2]string{
 	},
 	"ssh": {
 		{"-p <port>", "Connect to this port instead of the registered one"},
+		{"-X, -Y", "Forward X11 (untrusted, trusted) to this server's display"},
+		{"-L <spec>", "Forward a local port, as ssh -L (repeatable)"},
+		{"-R <spec>", "Forward a remote port, as ssh -R (repeatable)"},
+		{"-D <spec>", "Open a SOCKS proxy, as ssh -D (repeatable)"},
 	},
 	"scan": {
 		{"--full", "Re-read everything the logs still hold"},

@@ -43,6 +43,7 @@ snapshot_count() { find "${TACCTL_STATE_DIR}/backups" -mindepth 1 -maxdepth 1 -n
         plain
         assert_output --partial "Usage: tacctl console <subcommand>"
         assert_output --partial "system-shell tiers [<csv>|none]"
+        assert_output --partial "forwarding tiers [<csv>|none]"
     done
     run "$TACCTL_BIN_SCRIPT" console frobnicate
     assert_failure 1
@@ -74,6 +75,10 @@ system-shell tiers root
 system-shell path bash
 system-shell path /no/such/shell
 system-shell path /bin/ls
+forwarding
+forwarding mode
+forwarding tiers root
+forwarding tiers superuser,superuser
 show extra
 LIST
     [[ ! -e "$CONSOLE" ]]
@@ -88,6 +93,7 @@ LIST
     assert_output --partial "  operator: enable"
     assert_output --partial "  superuser: enable"
     assert_output --partial "system-shell tiers: superuser"
+    assert_output --partial "forwarding tiers: superuser (X11 and TCP ports)"
     assert_output --partial "system-shell path: /bin/bash"
     assert_output --partial "idle-timeout: 30 min"
     assert_output --partial "agent-forwarding: disabled"
@@ -173,6 +179,18 @@ LIST
     run "$TACCTL_BIN_SCRIPT" console system-shell tiers none
     run "$TACCTL_BIN_SCRIPT" console system-shell tiers
     assert_output "none"
+    run "$TACCTL_BIN_SCRIPT" console forwarding tiers
+    assert_output "superuser"
+    run "$TACCTL_BIN_SCRIPT" console forwarding tiers operator,superuser
+    assert_success
+    assert_output --partial "X11 and TCP forwarding is open to: operator,superuser."
+    run "$TACCTL_BIN_SCRIPT" console forwarding tiers
+    assert_output "operator,superuser"
+    run "$TACCTL_BIN_SCRIPT" console forwarding tiers none
+    run "$TACCTL_BIN_SCRIPT" console forwarding tiers
+    assert_output "none"
+    run cat "$CONSOLE"
+    assert_output --partial "  forwarding_tiers: []"
     # The path must be listed in /etc/shells (the sandbox's copy).
     printf '/bin/bash\n' > "$TACCTL_SHELLS_FILE"
     run "$TACCTL_BIN_SCRIPT" console system-shell path /bin/sh
@@ -215,6 +233,26 @@ LIST
     assert_output --partial "WARNING"
     assert_output --partial "allowtcpforwarding is 'yes'"
     refute_output --partial "is missing"
+}
+
+@test "console show: TCP forwarding is as designed for a user of a forwarding tier, and warned for others" {
+    enrol_local
+    mkdir -p "$(dirname "$TACCTL_SSHD_DROPIN")"
+    printf 'Match Group tac-console\n    AllowTcpForwarding no\n' > "$TACCTL_SSHD_DROPIN"
+    stub_cmd id 'echo "$3 tac-users tac-console tac-superuser"'
+    stub_cmd sshd 'printf "allowtcpforwarding yes\nallowagentforwarding no\nforcecommand ${TACCTL_TEST_ROOT:-}/usr/local/bin/tacctl-console\npubkeyauthentication no\n"'
+    run "$TACCTL_BIN_SCRIPT" console show
+    assert_success
+    plain
+    assert_output --partial "sshd for alice: allowtcpforwarding yes"
+    refute_output --partial "WARNING"
+    stub_called '^id -nG -- alice$'
+    # Closed to every tier: the same answer is a warning.
+    "$TACCTL_BIN_SCRIPT" console forwarding tiers none
+    run "$TACCTL_BIN_SCRIPT" console show
+    plain
+    assert_output --partial "WARNING"
+    assert_output --partial "allowtcpforwarding is 'yes'"
 }
 
 @test "console show: the server's pieces as they are" {
@@ -260,18 +298,18 @@ LIST
     # Root (no SUDO_USER): unrestricted, system shell yes.
     run "$TACCTL_BIN_SCRIPT" _console-policy
     assert_success
-    assert_output "shell=system idle=30 system_shell=yes system_shell_path=/bin/bash ssh_escape=no agent=no tier=unrestricted list_max=40"
+    assert_output "shell=system idle=30 system_shell=yes system_shell_path=/bin/bash ssh_escape=no agent=no forward=yes tier=unrestricted list_max=40"
     stub_called '^logger -t tacctl -p auth.info console policy user=root tier=unrestricted system_shell=yes session=$'
 
     # A tier user: the id stub puts the caller in tac-users and its tier group.
     stub_cmd id 'echo "$3 tac-users"'
     SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" _console-policy
-    assert_output "shell=console idle=30 system_shell=yes system_shell_path=/bin/bash ssh_escape=no agent=no tier=superuser list_max=40"
+    assert_output "shell=console idle=30 system_shell=yes system_shell_path=/bin/bash ssh_escape=no agent=no forward=yes tier=superuser list_max=40"
     SUDO_USER=bob TACCTL_CONSOLE=0123456789ab run "$TACCTL_BIN_SCRIPT" _console-policy
-    assert_output "shell=console idle=30 system_shell=no system_shell_path=/bin/bash ssh_escape=no agent=no tier=operator list_max=40"
+    assert_output "shell=console idle=30 system_shell=no system_shell_path=/bin/bash ssh_escape=no agent=no forward=no tier=operator list_max=40"
     stub_called '^logger -t tacctl -p auth.info console policy user=bob tier=operator system_shell=no session=0123456789ab$'
     SUDO_USER=carol run "$TACCTL_BIN_SCRIPT" _console-policy
-    assert_output "shell=console idle=30 system_shell=no system_shell_path=/bin/bash ssh_escape=no agent=no tier=readonly list_max=40"
+    assert_output "shell=console idle=30 system_shell=no system_shell_path=/bin/bash ssh_escape=no agent=no forward=no tier=readonly list_max=40"
 
     # A tier user with no tacctl user is denied by the gate.
     SUDO_USER=mallory run "$TACCTL_BIN_SCRIPT" _console-policy
@@ -282,8 +320,9 @@ LIST
     "$TACCTL_BIN_SCRIPT" console system-shell tiers readonly
     "$TACCTL_BIN_SCRIPT" console idle-timeout 5
     "$TACCTL_BIN_SCRIPT" console ssh-escape enable
+    "$TACCTL_BIN_SCRIPT" console forwarding tiers readonly
     SUDO_USER=carol run "$TACCTL_BIN_SCRIPT" _console-policy
-    assert_output "shell=system idle=5 system_shell=yes system_shell_path=/bin/bash ssh_escape=yes agent=no tier=readonly list_max=40"
+    assert_output "shell=system idle=5 system_shell=yes system_shell_path=/bin/bash ssh_escape=yes agent=no forward=yes tier=readonly list_max=40"
 }
 
 @test "console verbs are gated by tier: show for operators, the rest for superusers" {

@@ -6,7 +6,8 @@ package console
 // console the only program such a login runs (ForceCommand: a remote
 // command, scp, sftp and the internal-sftp subsystem all reach the console,
 // which reads the client's command from SSH_ORIGINAL_COMMAND), closes every
-// forwarding, and turns key logins off (they would bypass TACACS+). Every
+// forwarding but X11 and TCP for the tiers of 'console forwarding tiers',
+// and turns key logins off (they would bypass TACACS+). Every
 // change of the drop-in is checked with 'sshd -t' and undone when sshd
 // refuses it; sshd is reloaded only after a change it accepted.
 
@@ -16,26 +17,60 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/rett/tacctl/internal/execx"
+	"github.com/rett/tacctl/internal/tier"
 )
 
 // Group is the local group whose members sshd's drop-in applies to: the
 // accounts whose login shell is the console.
 const Group = "tac-console"
 
+// TierGroup is the local group of a tier ("" for none).
+func TierGroup(t tier.Tier) string {
+	switch t {
+	case tier.Readonly:
+		return tier.ReadonlyGroup
+	case tier.Operator:
+		return tier.OperatorGroup
+	case tier.Superuser:
+		return tier.SuperuserGroup
+	}
+	return ""
+}
+
 // DropIn is the text of sshd's drop-in for the console at command (the
 // console's path). Agent forwarding stays possible only when agent is set
 // (console agent-forwarding enable): DisableForwarding, which closes every
-// kind at once, is then replaced by the single switches.
-func DropIn(command string, agent bool) string {
+// kind at once, is then replaced by the single switches. The members of
+// the tiers in forward (console forwarding tiers) may forward X11 and TCP
+// ports: a block for each comes first, matching tac-console and the tier's
+// group together, and sshd takes the first value it finds for each
+// keyword; agent, stream-local and tunnel forwarding stay as for every
+// console user.
+func DropIn(command string, agent bool, forward []tier.Tier) string {
 	var b strings.Builder
 	b.WriteString("# Managed by tacctl (tacctl console install|remove, host sync of this server); do not edit.\n")
 	b.WriteString("# The members of " + Group + " are tacctl users whose login shell is the console:\n")
-	b.WriteString("# the console is the only program their logins run, nothing is forwarded, and\n")
+	if len(forward) == 0 {
+		b.WriteString("# the console is the only program their logins run, nothing is forwarded, and\n")
+	} else {
+		b.WriteString("# the console is the only program their logins run, nothing is forwarded but\n")
+		b.WriteString("# what the tier blocks allow, and\n")
+	}
 	b.WriteString("# they log in with their TACACS+ password only.\n")
+	for _, t := range Tiers {
+		if g := TierGroup(t); g != "" && slices.Contains(forward, t) {
+			b.WriteString("# Console users of the " + string(t) + " tier may forward X11 and TCP ports (console forwarding tiers).\n")
+			b.WriteString("Match Group " + Group + " Group " + g + "\n")
+			b.WriteString("    DisableForwarding no\n")
+			b.WriteString("    AllowTcpForwarding yes\n")
+			b.WriteString("    X11Forwarding yes\n")
+		}
+	}
 	b.WriteString("Match Group " + Group + "\n")
 	b.WriteString("    ForceCommand " + command + "\n")
 	if !agent {

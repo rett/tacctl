@@ -34,6 +34,7 @@ var consoleSpecs = map[string]Spec{
 	"agent-forwarding": {MaxArgs: 1, Args: []string{"enable|disable"}},
 	"ssh-escape":       {MaxArgs: 1, Args: []string{"enable|disable"}},
 	"system-shell":     {MinArgs: 1, MaxArgs: 2, Args: []string{"tiers|path", After("path", KindFile)}},
+	"forwarding":       {MinArgs: 1, MaxArgs: 2, Args: []string{"tiers"}},
 	"install":          {MaxArgs: 0},
 	"remove":           {MaxArgs: 0},
 	"check":            {MaxArgs: 0},
@@ -47,6 +48,7 @@ var consoleVerbs = [][2]string{
 	{"idle-timeout [<min>]", "Show or set the minutes idle at the prompt before the session ends (0-1440, 0: never)"},
 	{"agent-forwarding [enable|disable]", "Opt in to ssh agent forwarding for console users"},
 	{"ssh-escape [enable|disable]", "Opt in to ssh's escape character (~. and ~C) inside the console's ssh"},
+	{"forwarding tiers [<csv>|none]", "Show or set the tiers that may forward X11 and TCP ports (sshd, and the console's ssh -X/-L/-R/-D; default superuser)"},
 	{"system-shell tiers [<csv>|none]", "Show or set the tiers that may start their system shell from the console"},
 	{"system-shell path [<path>]", "Show or set the system shell (default /bin/bash; must be listed in /etc/shells)"},
 	{"install", "Put the /etc/shells line and sshd's drop-in for console users in place (host sync of this server does too)"},
@@ -88,7 +90,10 @@ shells and sshd's drop-in follow it when this server's accounts are synced
 ('tacctl host sync <name of this server>'); idle-timeout, ssh-escape and
 system-shell are read by each console session when it starts. sshd's drop-in
 makes the console the only program a console user's login runs (no scp, sftp
-or remote programs), closes every forwarding and turns key logins off.
+or remote programs), closes every forwarding but X11 and TCP ports for the
+tiers of 'forwarding tiers' (superusers by default: 'ssh -X', -L, -R, -D and
+-J through this server, and 'ssh -X|-L|-R|-D <device>' in the console), and
+turns key logins off.
 
 'system-shell' starts the user's system shell from the console, as themselves,
 logged. Superusers only by default; 'system-shell tiers' opens or closes it
@@ -114,7 +119,7 @@ func (inv *invocation) console(args []string) error {
 	}
 	run := map[string]func([]string) error{
 		"show": inv.consoleShow, "tiers": inv.consoleTiers, "user": inv.consoleUser,
-		"idle-timeout": inv.consoleIdle, "system-shell": inv.consoleSystemShell,
+		"idle-timeout": inv.consoleIdle, "system-shell": inv.consoleSystemShell, "forwarding": inv.consoleForwarding,
 		"agent-forwarding": inv.consoleSwitch("agent-forwarding"), "ssh-escape": inv.consoleSwitch("ssh-escape"),
 		"install": inv.consoleInstall, "remove": inv.consoleRemove, "check": inv.consoleCheck,
 	}
@@ -426,6 +431,36 @@ func (inv *invocation) consoleSystemShell(args []string) error {
 	return inv.usageErr("Usage: tacctl console " + consoleUse("system-shell"))
 }
 
+// consoleForwarding is 'console forwarding tiers [<csv>|none]': the tiers
+// whose console logins may forward X11 and TCP ports. A change is applied
+// to sshd's drop-in like agent-forwarding.
+func (inv *invocation) consoleForwarding(args []string) error {
+	p, err := inv.consoleParse("forwarding", args)
+	if err != nil {
+		return err
+	}
+	if p.Args[0] != "tiers" {
+		return inv.usageErr("Usage: tacctl console " + consoleUse("forwarding"))
+	}
+	pol, err := inv.consolePolicy()
+	if err != nil {
+		return err
+	}
+	if len(p.Args) == 1 {
+		inv.echo(tierCSV(pol.File.ForwardingTiers))
+		return nil
+	}
+	l, err := console.ParseTiers(p.Args[1])
+	if err != nil {
+		return err
+	}
+	if err := inv.consoleWrite(func(f *console.File) error { f.ForwardingTiers = l; return nil }); err != nil {
+		return err
+	}
+	inv.app.Out.Info("X11 and TCP forwarding is open to: " + tierCSV(l) + ". The sshd drop-in follows it at the next sync.")
+	return inv.consoleApply()
+}
+
 func tierCSV(l []tier.Tier) string {
 	if len(l) == 0 {
 		return "none"
@@ -482,6 +517,6 @@ func (inv *invocation) consolePolicyLine([]string) error {
 	a.Logger(inv.ctx, "auth.info", "console policy user="+who+" tier="+string(t)+" system_shell="+yesNo(sys)+" session="+a.Env.Get("TACCTL_CONSOLE"))
 	inv.echo("shell=" + shell + " idle=" + strconv.Itoa(pol.File.Idle) + " system_shell=" + yesNo(sys) +
 		" system_shell_path=" + path + " ssh_escape=" + yesNo(pol.SSHEscape()) + " agent=" + yesNo(pol.AgentForwarding()) +
-		" tier=" + string(t) + " list_max=" + strconv.Itoa(pol.ListMax()))
+		" forward=" + yesNo(pol.Forwarding(t)) + " tier=" + string(t) + " list_max=" + strconv.Itoa(pol.ListMax()))
 	return nil
 }

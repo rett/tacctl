@@ -199,11 +199,11 @@ func TestPtyShellNamesListing(t *testing.T) {
 	if got := s.Settle(100 * time.Millisecond); strings.Contains(got, "-p") || strings.Contains(got, "cisco") {
 		t.Errorf("a flag or a description was listed: %q", got)
 	}
-	// A '-' asks for the flags.
-	if err := s.Send("-\t"); err != nil {
+	// A '-' asks for the flags (Tab twice: there are several).
+	if err := s.Send("-\t\t"); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Expect(`ssh -p `, 5*time.Second); err != nil {
+	if err := s.Expect(`-D\s+-L\s+-R\s+-X\s+-Y\s+-p`, 5*time.Second); err != nil {
 		t.Fatal(err)
 	}
 }

@@ -71,6 +71,9 @@ type File struct {
 	SystemShell string
 	// SystemShellTiers are the tiers that may use it.
 	SystemShellTiers []tier.Tier
+	// ForwardingTiers are the tiers whose console logins may forward X11
+	// and TCP ports (sshd's drop-in, and the console's ssh to a device).
+	ForwardingTiers []tier.Tier
 	// ListMax is the number of completions the shell lists without asking.
 	ListMax int
 }
@@ -83,6 +86,7 @@ func Defaults() *File {
 		Idle:             DefaultIdle,
 		SystemShell:      DefaultSystemShell,
 		SystemShellTiers: []tier.Tier{tier.Superuser},
+		ForwardingTiers:  []tier.Tier{tier.Superuser},
 		ListMax:          DefaultListMax,
 	}
 }
@@ -99,6 +103,7 @@ func (f *File) Clone() *File {
 		c.Users[k] = v
 	}
 	c.SystemShellTiers = slices.Clone(f.SystemShellTiers)
+	c.ForwardingTiers = slices.Clone(f.ForwardingTiers)
 	return &c
 }
 
@@ -165,12 +170,14 @@ func (f *File) validate() error {
 	if err := ValidShellPath(f.SystemShell); err != nil {
 		return fail("settings.system_shell: " + strings.Join(msgs(err), " "))
 	}
-	seen := map[tier.Tier]bool{}
-	for _, t := range f.SystemShellTiers {
-		if _, ok := ParseTier(string(t)); !ok || seen[t] {
-			return fail("settings.system_shell_tiers: invalid or repeated tier '" + string(t) + "'.")
+	for key, l := range map[string][]tier.Tier{"system_shell_tiers": f.SystemShellTiers, "forwarding_tiers": f.ForwardingTiers} {
+		seen := map[tier.Tier]bool{}
+		for _, t := range l {
+			if _, ok := ParseTier(string(t)); !ok || seen[t] {
+				return fail("settings." + key + ": invalid or repeated tier '" + string(t) + "'.")
+			}
+			seen[t] = true
 		}
-		seen[t] = true
 	}
 	for _, t := range Tiers {
 		if _, ok := f.TierOn[t]; !ok {
@@ -325,7 +332,7 @@ func parseSettings(f *File, m *yamlpy.Map) error {
 				return bad
 			}
 			f.SystemShell = s
-		case "system_shell_tiers":
+		case "system_shell_tiers", "forwarding_tiers":
 			var l []tier.Tier
 			switch x := v.(type) {
 			case nil:
@@ -340,7 +347,11 @@ func parseSettings(f *File, m *yamlpy.Map) error {
 			default:
 				return bad
 			}
-			f.SystemShellTiers = l
+			if k == "system_shell_tiers" {
+				f.SystemShellTiers = l
+			} else {
+				f.ForwardingTiers = l
+			}
 		default:
 			return fail("settings: unknown key '" + k + "'.")
 		}
@@ -364,9 +375,12 @@ func (f *File) doc() *yamlpy.Map {
 	for _, u := range f.UserNames() {
 		users.Set(u, word(f.Users[u]))
 	}
-	st := make([]string, 0, len(f.SystemShellTiers))
-	for _, t := range f.SystemShellTiers {
-		st = append(st, string(t))
+	words := func(l []tier.Tier) []string {
+		out := make([]string, 0, len(l))
+		for _, t := range l {
+			out = append(out, string(t))
+		}
+		return out
 	}
 	return yamlpy.NewMap(
 		"version", Version,
@@ -377,7 +391,8 @@ func (f *File) doc() *yamlpy.Map {
 			"agent_forwarding", f.AgentForwarding,
 			"ssh_escape", f.SSHEscape,
 			"system_shell", f.SystemShell,
-			"system_shell_tiers", st,
+			"system_shell_tiers", words(f.SystemShellTiers),
+			"forwarding_tiers", words(f.ForwardingTiers),
 			"list_max", f.ListMax,
 		),
 	)

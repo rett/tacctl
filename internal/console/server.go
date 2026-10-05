@@ -91,10 +91,11 @@ func SSHDCheck(ctx context.Context, r execx.Runner, user string) (SSHD, error) {
 // Problems are the ways the connection could still do more than the console
 // intends: sshd does not force the console (command) on it, so a remote
 // command or the sftp subsystem would run without it; TCP forwarding is
-// anything but no; agent forwarding is on while the policy does not allow
-// it; or a key login (which bypasses TACACS+) is allowed. Empty: as
-// designed.
-func (s SSHD) Problems(agentAllowed bool, command string) []string {
+// anything but no for a user whose tier may not forward (console
+// forwarding tiers: tcpAllowed); agent forwarding is on while the policy
+// does not allow it; or a key login (which bypasses TACACS+) is allowed.
+// Empty: as designed.
+func (s SSHD) Problems(agentAllowed, tcpAllowed bool, command string) []string {
 	var out []string
 	if s.ForceCommand != command {
 		v := s.ForceCommand
@@ -103,7 +104,7 @@ func (s SSHD) Problems(agentAllowed bool, command string) []string {
 		}
 		out = append(out, "forcecommand is '"+v+"'")
 	}
-	if s.TCPForwarding != "no" {
+	if s.TCPForwarding != "no" && !tcpAllowed {
 		out = append(out, "allowtcpforwarding is '"+s.TCPForwarding+"'")
 	}
 	if s.AgentForwarding != "no" && !agentAllowed {

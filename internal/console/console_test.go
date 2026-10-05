@@ -37,7 +37,8 @@ func TestAbsentFileIsTheDefaults(t *testing.T) {
 		}
 	}
 	if len(f.Users) != 0 || f.Idle != 30 || f.AgentForwarding || f.SSHEscape || f.SystemShell != "/bin/bash" ||
-		!reflect.DeepEqual(f.SystemShellTiers, []tier.Tier{tier.Superuser}) || f.ListMax != 40 {
+		!reflect.DeepEqual(f.SystemShellTiers, []tier.Tier{tier.Superuser}) ||
+		!reflect.DeepEqual(f.ForwardingTiers, []tier.Tier{tier.Superuser}) || f.ListMax != 40 {
 		t.Errorf("defaults: %+v", f)
 	}
 }
@@ -55,6 +56,7 @@ func TestMutateRoundTripAndMode(t *testing.T) {
 		f.SSHEscape = true
 		f.SystemShell = "/bin/sh"
 		f.SystemShellTiers = []tier.Tier{tier.Operator, tier.Superuser}
+		f.ForwardingTiers = nil
 		f.ListMax = 100
 		return nil
 	})
@@ -73,6 +75,7 @@ settings:
   ssh_escape: true
   system_shell: /bin/sh
   system_shell_tiers: [operator, superuser]
+  forwarding_tiers: []
   list_max: 100
 `
 	if got, _ := os.ReadFile(p); string(got) != want {
@@ -83,7 +86,8 @@ settings:
 		t.Fatal(err)
 	}
 	if f.TierOn[tier.Readonly] || !f.Users["jdoe"] || f.Users["asmith"] || f.Idle != 0 || !f.AgentForwarding || !f.SSHEscape ||
-		f.SystemShell != "/bin/sh" || !reflect.DeepEqual(f.SystemShellTiers, []tier.Tier{tier.Operator, tier.Superuser}) || f.ListMax != 100 {
+		f.SystemShell != "/bin/sh" || !reflect.DeepEqual(f.SystemShellTiers, []tier.Tier{tier.Operator, tier.Superuser}) ||
+		len(f.ForwardingTiers) != 0 || f.ListMax != 100 {
 		t.Errorf("round trip: %+v", f)
 	}
 	// The same change again writes nothing; a refusal writes nothing and
@@ -319,24 +323,28 @@ func TestSSHDCheck(t *testing.T) {
 	if err != nil || s != (SSHD{"no", "no", "/usr/local/bin/tacctl-console", "no"}) || !r.Called("sshd", "-T", "-C", "user=jdoe,host=localhost,addr=127.0.0.1") {
 		t.Errorf("closed: %+v %v %q", s, err, r.Argvs())
 	}
-	if p := s.Problems(false, testConsole); len(p) != 0 {
+	if p := s.Problems(false, false, testConsole); len(p) != 0 {
 		t.Errorf("problems: %v", p)
 	}
 	s, _, _ = run(execx.Result{Stdout: []byte("allowtcpforwarding yes\nallowagentforwarding yes\n" + fc)})
-	if p := s.Problems(false, testConsole); !reflect.DeepEqual(p, []string{"allowtcpforwarding is 'yes'", "allowagentforwarding is 'yes'"}) {
+	if p := s.Problems(false, false, testConsole); !reflect.DeepEqual(p, []string{"allowtcpforwarding is 'yes'", "allowagentforwarding is 'yes'"}) {
 		t.Errorf("open: %v", p)
+	}
+	// A user of a forwarding tier (console forwarding tiers): TCP forwarding is as designed.
+	if p := s.Problems(false, true, testConsole); !reflect.DeepEqual(p, []string{"allowagentforwarding is 'yes'"}) {
+		t.Errorf("forwarding tier: %v", p)
 	}
 	// Without the drop-in: nothing forced, key logins on.
 	s, _, _ = run(execx.Result{Stdout: []byte("allowtcpforwarding no\nallowagentforwarding no\nforcecommand none\npubkeyauthentication yes\n")})
-	if p := s.Problems(false, testConsole); !reflect.DeepEqual(p, []string{"forcecommand is 'none'", "pubkeyauthentication is 'yes'"}) {
+	if p := s.Problems(false, false, testConsole); !reflect.DeepEqual(p, []string{"forcecommand is 'none'", "pubkeyauthentication is 'yes'"}) {
 		t.Errorf("no drop-in: %v", p)
 	}
 	s, _, _ = run(execx.Result{Stdout: []byte("allowtcpforwarding yes\nallowagentforwarding yes\n" + fc)})
-	if p := s.Problems(true, testConsole); !reflect.DeepEqual(p, []string{"allowtcpforwarding is 'yes'"}) {
+	if p := s.Problems(true, false, testConsole); !reflect.DeepEqual(p, []string{"allowtcpforwarding is 'yes'"}) {
 		t.Errorf("agent allowed: %v", p)
 	}
 	for _, v := range []string{"local", "remote", "all"} {
-		if p := (SSHD{v, "no", testConsole, "no"}).Problems(false, testConsole); len(p) != 1 {
+		if p := (SSHD{v, "no", testConsole, "no"}).Problems(false, false, testConsole); len(p) != 1 {
 			t.Errorf("allowtcpforwarding %s: %v", v, p)
 		}
 	}

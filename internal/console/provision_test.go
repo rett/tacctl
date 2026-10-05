@@ -11,12 +11,13 @@ import (
 
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/execx/fake"
+	"github.com/rett/tacctl/internal/tier"
 )
 
 const testConsole = "/usr/local/bin/tacctl-console"
 
 func TestDropInText(t *testing.T) {
-	off := DropIn(testConsole, false)
+	off := DropIn(testConsole, false, nil)
 	for _, l := range []string{
 		"Match Group tac-console\n", "    ForceCommand " + testConsole + "\n", "    DisableForwarding yes\n",
 		"    AllowTcpForwarding no\n", "    AllowStreamLocalForwarding no\n", "    X11Forwarding no\n",
@@ -31,10 +32,25 @@ func TestDropInText(t *testing.T) {
 		t.Errorf("no header:\n%s", off)
 	}
 	// Agent forwarding on: DisableForwarding would close it too.
-	on := DropIn(testConsole, true)
+	on := DropIn(testConsole, true, nil)
 	if strings.Contains(on, "DisableForwarding") || !strings.Contains(on, "    AllowAgentForwarding yes\n") ||
 		!strings.Contains(on, "    AllowTcpForwarding no\n") {
 		t.Errorf("agent on:\n%s", on)
+	}
+	if strings.Contains(off, "Group tac-superuser") || strings.Contains(off, "but\n") {
+		t.Errorf("no forwarding tier, yet a tier block:\n%s", off)
+	}
+	// Forwarding tiers: a block per tier before the console's, matching both
+	// groups (sshd takes the first value of each keyword), in tier order.
+	fwd := DropIn(testConsole, false, []tier.Tier{tier.Superuser, tier.Operator})
+	op := strings.Index(fwd, "Match Group tac-console Group tac-operator\n    DisableForwarding no\n    AllowTcpForwarding yes\n    X11Forwarding yes\n")
+	su := strings.Index(fwd, "Match Group tac-console Group tac-superuser\n    DisableForwarding no\n    AllowTcpForwarding yes\n    X11Forwarding yes\n")
+	all := strings.Index(fwd, "Match Group tac-console\n")
+	if op < 0 || su < 0 || all < 0 || op >= su || su >= all || strings.Contains(fwd, "tac-readonly") {
+		t.Errorf("forwarding tiers:\n%s", fwd)
+	}
+	if !strings.Contains(fwd, "    DisableForwarding yes\n") || !strings.Contains(fwd, "    AllowAgentForwarding no\n") {
+		t.Errorf("the console's own block changed:\n%s", fwd)
 	}
 }
 
@@ -91,7 +107,7 @@ func TestDropInInstallRemove(t *testing.T) {
 	r.On([]string{"sshd", "-t"}, execx.Result{})
 	r.On([]string{"systemctl", "reload"}, execx.Result{})
 	d := DropInFile{Runner: r, Path: path}
-	text := DropIn(testConsole, false)
+	text := DropIn(testConsole, false, nil)
 
 	if ch, err := d.Install(ctx, text); ch != Installed || err != nil {
 		t.Fatalf("install: %v %v", ch, err)
@@ -113,7 +129,7 @@ func TestDropInInstallRemove(t *testing.T) {
 	// sshd refuses a change: the old text comes back, no reload.
 	r.Fail([]string{"sshd", "-t"}, 255, "/etc/ssh/sshd_config.d/tacctl-console.conf line 7: Bad configuration option: DisableForwarding")
 	r.Reset()
-	ch, err := d.Install(ctx, DropIn(testConsole, true))
+	ch, err := d.Install(ctx, DropIn(testConsole, true, nil))
 	if ch != Unchanged || !errors.Is(err, ErrSSHD) || !strings.Contains(err.Error(), "Bad configuration option: DisableForwarding") {
 		t.Fatalf("refused: %v %v", ch, err)
 	}
@@ -138,7 +154,7 @@ func TestDropInInstallRemove(t *testing.T) {
 	r.Fail([]string{"systemctl", "reload", "ssh.service"}, 5, "Failed to reload ssh.service: Unit ssh.service not found.")
 	r.On([]string{"systemctl", "reload", "sshd.service"}, execx.Result{})
 	d.Runner = r
-	if ch, err := d.Install(ctx, DropIn(testConsole, true)); ch != Updated || err != nil {
+	if ch, err := d.Install(ctx, DropIn(testConsole, true, nil)); ch != Updated || err != nil {
 		t.Fatalf("update: %v %v", ch, err)
 	}
 	if got := r.Argvs(); !slices.Equal(got, []string{"sshd -t", "systemctl reload ssh.service", "systemctl reload sshd.service"}) {
@@ -192,5 +208,35 @@ func TestIncludesDropIns(t *testing.T) {
 		if got := IncludesDropIns(text, dir); got != want {
 			t.Errorf("IncludesDropIns(%q) = %t", text, got)
 		}
+	}
+}
+
+// Forwarding: the policy per tier, the _console-policy field, the display
+// the console hands on, and the scrub that keeps it.
+func TestForwardingPolicyAndDisplay(t *testing.T) {
+	p := &Policy{File: Defaults()}
+	for _, c := range []struct {
+		t    tier.Tier
+		want bool
+	}{{tier.Superuser, true}, {tier.Operator, false}, {tier.Readonly, false}, {tier.Unrestricted, true}, {tier.None, false}} {
+		if got := p.Forwarding(c.t); got != c.want {
+			t.Errorf("%s: %v", c.t, got)
+		}
+	}
+	if r, ok := ParseRemote("shell=console forward=yes tier=superuser"); !ok || !r.Forward {
+		t.Errorf("forward=yes: %+v", r)
+	}
+	if r, _ := ParseRemote("shell=console forward=maybe"); r.Forward {
+		t.Errorf("forward=maybe: %+v", r)
+	}
+	for v, want := range map[string]bool{"localhost:10.0": true, ":0": true, "unix/:0": true, "": false,
+		"localhost:10.0 ;id": false, "a\nb": false, strings.Repeat("a", 256): false} {
+		if ValidDisplay(v) != want {
+			t.Errorf("ValidDisplay(%q) != %v", v, want)
+		}
+	}
+	env := Scrub([]string{"DISPLAY=localhost:10.0", "XAUTHORITY=/tmp/x", "TERM=xterm"}, "/bin/bash", false)
+	if !slices.Contains(env, "DISPLAY=localhost:10.0") || slices.Contains(env, "XAUTHORITY=/tmp/x") {
+		t.Errorf("scrub: %q", env)
 	}
 }
