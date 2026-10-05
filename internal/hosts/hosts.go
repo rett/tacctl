@@ -17,7 +17,6 @@ import (
 	"io"
 	"os"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -28,67 +27,6 @@ import (
 	"github.com/rett/tacctl/internal/tier"
 	"github.com/rett/tacctl/internal/ui"
 )
-
-// UIDBase..UIDMax is the range tacctl assigns UIDs (and the matching
-// primary GIDs) from: it never gives out a number outside it, and the
-// client script never touches an account whose UID is outside it.
-//
-// 80000-89999 is clear of everything else that hands out numbers on a
-// Linux host: above the distributions' useradd range (UID_MAX 60000 on
-// Debian/Ubuntu and the RHEL family) and above systemd's reserved ones
-// (60001-60513 container UIDs, 61184-65519 DynamicUser, 65534/65535),
-// inside the range systemd leaves unused (65536-524287), and below the
-// conventional start of /etc/subuid (100000). config/linux/client-install.sh
-// carries the same numbers (TAC_UID_FIRST, TAC_UID_LAST; a test holds them
-// to these).
-const (
-	UIDBase = 80000
-	UIDMax  = 89999
-)
-
-// UIDRange is the range in words ("80000-89999").
-var UIDRange = strconv.Itoa(UIDBase) + "-" + strconv.Itoa(UIDMax)
-
-// LegacyUIDBase..LegacyUIDMax is where releases up to 0.2.0 gave out UIDs
-// (from 20000 up), inside local useradd's default range (up to 60000).
-// Its numbers are renumbered once to the same offset in UIDBase..UIDMax:
-// the server's UID file by RenumberLegacy, the accounts a host's script
-// created by the script itself (TAC_LEGACY_FIRST, TAC_LEGACY_LAST).
-const (
-	LegacyUIDBase = 20000
-	LegacyUIDMax  = 29999
-)
-
-// LegacyUIDRange is the legacy range in words ("20000-29999").
-var LegacyUIDRange = strconv.Itoa(LegacyUIDBase) + "-" + strconv.Itoa(LegacyUIDMax)
-
-// LegacyUID reports whether uid is a number of the legacy range, written
-// as UIDInRange wants it.
-func LegacyUID(uid string) bool {
-	n, ok := uidNumber(uid)
-	return ok && n >= LegacyUIDBase && n <= LegacyUIDMax
-}
-
-// Renumbered is the number a legacy UID becomes: the same offset in
-// UIDBase..UIDMax.
-func Renumbered(legacy int) int { return legacy - LegacyUIDBase + UIDBase }
-
-// UIDInRange reports whether uid is a decimal number from UIDBase to UIDMax
-// written without leading zeros.
-func UIDInRange(uid string) bool {
-	n, ok := uidNumber(uid)
-	return ok && n >= UIDBase && n <= UIDMax
-}
-
-// uidNumber is uid as a number when it is decimal digits without a leading
-// zero (at most 9, as the client script's check).
-func uidNumber(uid string) (int, bool) {
-	if uid == "" || uid[0] == '0' || strings.Trim(uid, "0123456789") != "" || len(uid) > 9 {
-		return 0, false
-	}
-	n, err := strconv.Atoi(uid)
-	return n, err == nil
-}
 
 // The pinned pam_tacplus (LINUX_* and PAM_TACPLUS_* of lib/linux_hosts.sh).
 const (
@@ -140,6 +78,9 @@ type Paths struct {
 	// LoginDefs is this server's login.defs, read for a host enrolled with
 	// --local (paths.LoginDefs).
 	LoginDefs string
+	// ProcSelf stands for /proc/self, whose uid_map and gid_map are read
+	// for a host enrolled with --local ("" is /proc/self).
+	ProcSelf string
 }
 
 // Tarball is PAM_TACPLUS_TARBALL.
@@ -163,6 +104,9 @@ type Env struct {
 	AuthSock string
 	// Now is the clock (the knob clock in tests).
 	Now func() time.Time
+	// Range is the server's UID range (tacctl.yaml linux.uid_min and
+	// linux.uid_max); the zero Range is DefaultRange.
+	Range Range
 	// TTY reports whether a terminal can be opened (': > /dev/tty');
 	// StdinTTY whether stdin is one ('[[ -t 0 ]]'); Machine is 'uname -m'.
 	// Nil means the real checks.
@@ -193,6 +137,20 @@ type Env struct {
 // ErrFailed is a failure whose messages have been printed: the bash
 // function's 'return 1'.
 var ErrFailed = errors.New("hosts: failed (reported)")
+
+// rng is the UID range: Range, DefaultRange when it is not set.
+func (e *Env) rng() Range {
+	if e.Range.IsZero() {
+		return DefaultRange
+	}
+	return e.Range
+}
+
+// UIDRange is the UID range (Range, DefaultRange when it is not set).
+func (e *Env) UIDRange() Range { return e.rng() }
+
+// UIDs is the UID file numbered for the range.
+func (e *Env) UIDs() UIDs { return UIDs{Path: e.Paths.UIDs, Range: e.rng()} }
 
 func (e *Env) now() time.Time {
 	if e.Now != nil {
@@ -278,7 +236,7 @@ func UserCount(rows []string) int {
 }
 
 // ScopeUsers is linux_scope_users: "name:tier:uid" lines for the rows of
-// the linux-users view that can be Linux accounts, a UID of UIDBase..UIDMax
+// the linux-users view that can be Linux accounts, a UID of the range
 // assigned to each on first use, joined by newlines ('$(...)': no trailing
 // one). Names useradd would reject are skipped with a warning on stderr.
 // Users whose group has no priv-lvl, and users whose UID file entry is
@@ -287,7 +245,8 @@ func UserCount(rows []string) int {
 // expires their accounts rather than deleting them. No UID left in the
 // range is printed and ErrFailed.
 func (e *Env) ScopeUsers(rows []string) (users string, keep []string, err error) {
-	uids := UIDs{Path: e.Paths.UIDs}
+	uids := e.UIDs()
+	rng := uids.rng()
 	var out []string
 	for _, r := range rows {
 		name, privlvl := splitRow(r)
@@ -306,15 +265,15 @@ func (e *Env) ScopeUsers(rows []string) (users string, keep []string, err error)
 		}
 		uid, err := uids.For(name)
 		if errors.Is(err, ErrUIDRangeFull) {
-			e.Out.ErrorE("No UID left for '" + name + "': every number of " + UIDRange + " has been given out (UIDs are never reused).")
+			e.Out.ErrorE("No UID left for '" + name + "': every number of " + rng.String() + " has been given out (UIDs are never reused).")
 			e.Out.ErrorE("Give it a free number of the range by hand: tacctl config linux uid " + name + " <uid>")
 			return "", nil, ErrFailed
 		}
 		if err != nil {
 			return "", nil, err
 		}
-		if !UIDInRange(uid) {
-			e.stderrOut().WarnE("Skipping '" + name + "': its UID " + uid + " is outside " + UIDRange + ", so no host gets an account for it. Assign one in the range: tacctl config linux uid " + name + " <uid>")
+		if !rng.Contains(uid) {
+			e.stderrOut().WarnE("Skipping '" + name + "': its UID " + uid + " is outside " + rng.String() + ", so no host gets an account for it. Assign one in the range: tacctl config linux uid " + name + " <uid>")
 			keep = append(keep, name)
 			continue
 		}

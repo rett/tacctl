@@ -226,12 +226,17 @@ on_tty() {
     assert_line "TAC_USERS=alice:superuser:80000"
     assert_line "TAC_INACTIVE=fred"
     assert_line "TAC_REMOVE_HOMES=dave"
+    assert_line "TAC_UID_FIRST=80000"
+    assert_line "TAC_UID_LAST=89999"
+    assert_line "TAC_UID_PREVIOUS=''"
     assert_line "TAC_PROTOCOL=3"
-    # The accounts were read over the shared connection, read-only, before the copy.
+    # The ID maps, then the accounts, were read over the shared connection,
+    # read-only, before the copy.
     stub_called "^ssh -o ConnectTimeout=10 -o ControlMaster=auto -o ControlPath=~/.ssh/tacctl-%C -o ControlPersist=60 -T web1 getent passwd$"
-    run bash -c "grep -n '^ssh' '$CALLS_LOG' | head -2"
-    assert_line --index 0 --partial "getent passwd"
-    assert_line --index 1 --partial "mktemp"
+    run bash -c "grep -n '^ssh' '$CALLS_LOG' | head -3"
+    assert_line --index 0 --partial "cat /proc/self/uid_map"
+    assert_line --index 1 --partial "getent passwd"
+    assert_line --index 2 --partial "mktemp"
 }
 
 @test "host sync: without a terminal nothing is asked and every home is kept; --remove-home deletes them all" {

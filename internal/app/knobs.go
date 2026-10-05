@@ -22,6 +22,9 @@ import (
 //	                             completion, the man page, /root) move
 //	                             under <dir> (paths.Paths.Reroot), so a test
 //	                             can run install, upgrade and uninstall
+//	TACCTL_TEST_PROC=<dir>       stands for /proc/self where 'host enroll
+//	                             --local' reads this machine's user
+//	                             namespace maps (uid_map, gid_map)
 //
 // They are read from the environment only by a binary built with
 // -tags testknobs ('make build', which the bats harness and the differential
@@ -40,6 +43,7 @@ const (
 	EnvTestRandom = "TACCTL_TEST_RANDOM"
 	EnvFault      = "TACCTL_FAULT"
 	EnvTestRoot   = "TACCTL_TEST_ROOT"
+	EnvTestProc   = "TACCTL_TEST_PROC"
 )
 
 // Knobs is the resolved set of test knobs.
@@ -48,7 +52,12 @@ type Knobs struct {
 	random []byte    // empty: crypto/rand
 	faults map[string]bool
 	root   string // "": the host's own locations
+	proc   string // "": /proc/self
 }
+
+// ProcSelf is the directory TACCTL_TEST_PROC names ("" when unset: the
+// real /proc/self).
+func (k Knobs) ProcSelf() string { return k.proc }
 
 // Root is the directory TACCTL_TEST_ROOT names ("" when unset): App.New
 // moves tacctl's fixed host locations under it.

@@ -3,7 +3,6 @@ package hosts
 import (
 	"context"
 	"errors"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -34,7 +33,7 @@ not a passwd line
 func accountsEnv(t *testing.T) (*Env, *fake.Runner) {
 	t.Helper()
 	e, _, _ := testEnv(t)
-	writeFile(t, e.Paths.UIDs, "dave:80001\nerin:80002\nfred:80003\nolaf:1500\nhank:80004\nivy:80005\n")
+	writeFile(t, e.Paths.UIDs, "# range 80000-89999\n# previous 20000-29999\ndave:80001\nerin:80002\nfred:80003\nolaf:1500\nhank:80004\nivy:80005\n")
 	f := &fake.Runner{}
 	f.Func(func(c execx.Cmd) bool {
 		return strings.HasSuffix(strings.Join(c.Args, " "), "getent passwd") || c.Name == "getent"
@@ -50,7 +49,7 @@ func TestParsePasswdAndRemoved(t *testing.T) {
 		t.Fatalf("parsed %+v", accts)
 	}
 	e, _ := accountsEnv(t)
-	got, err := Removed(accts, UIDs{Path: e.Paths.UIDs}, map[string]bool{"fred": true})
+	got, err := Removed(accts, e.UIDs(), map[string]bool{"fred": true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +130,7 @@ func TestWriteScriptLifecycleHeader(t *testing.T) {
 		t.Fatal(err)
 	}
 	head := strings.SplitN(readFile(t, out), "# --- tacctl", 2)[0]
-	if !strings.HasSuffix(head, "TAC_USERS=alice:superuser:80000\nTAC_INACTIVE=$'bob\\nnopriv'\nTAC_REMOVE_HOMES=dave\\ erin\nTAC_PROTOCOL=3\n") {
+	if !strings.HasSuffix(head, "TAC_USERS=alice:superuser:80000\nTAC_INACTIVE=$'bob\\nnopriv'\nTAC_REMOVE_HOMES=dave\\ erin\nTAC_UID_FIRST=80000\nTAC_UID_LAST=89999\nTAC_UID_PREVIOUS=''\nTAC_PROTOCOL=3\n") {
 		t.Errorf("header\n%s", head)
 	}
 	req.RemoveAllHomes = true
@@ -143,17 +142,28 @@ func TestWriteScriptLifecycleHeader(t *testing.T) {
 	}
 }
 
-// The client script's range and protocol are this package's.
-func TestScriptBodyAgreesOnRangeAndProtocol(t *testing.T) {
+// The client script takes its range from the header, and speaks this
+// package's protocol; the header carries the range and the earlier ones.
+func TestScriptRangeAndProtocol(t *testing.T) {
 	body := string(assets.LinuxInstallScript)
 	for _, w := range []string{
-		"TAC_UID_FIRST=" + strconv.Itoa(UIDBase) + "\n", "TAC_UID_LAST=" + strconv.Itoa(UIDMax) + "\n",
-		"TAC_LEGACY_FIRST=" + strconv.Itoa(LegacyUIDBase) + "\n", "TAC_LEGACY_LAST=" + strconv.Itoa(LegacyUIDMax) + "\n",
+		`if ! { uid_number "${TAC_UID_FIRST:-}" && uid_number "${TAC_UID_LAST:-}" && (( TAC_UID_FIRST < TAC_UID_LAST )); }; then`,
+		`TAC_UID_PREVIOUS="${TAC_UID_PREVIOUS:-}"`,
 		`if [[ "${TAC_PROTOCOL:-1}" != "` + ScriptProtocol + `" ]]; then`,
 	} {
 		if !strings.Contains(body, w) {
 			t.Errorf("client-install.sh lacks %q", w)
 		}
+	}
+	if strings.Contains(body, "TAC_UID_FIRST=") {
+		t.Error("client-install.sh sets its own range")
+	}
+	h := Script{Range: Range{40000, 49999}, Previous: []Range{LegacyRange, DefaultRange}}.Header()
+	if !strings.HasSuffix(h, "TAC_UID_FIRST=40000\nTAC_UID_LAST=49999\nTAC_UID_PREVIOUS=20000-29999\\ 80000-89999\nTAC_PROTOCOL="+ScriptProtocol+"\n") {
+		t.Errorf("header\n%s", h)
+	}
+	if !strings.HasSuffix(Script{}.Header(), "TAC_UID_FIRST=80000\nTAC_UID_LAST=89999\nTAC_UID_PREVIOUS=''\nTAC_PROTOCOL="+ScriptProtocol+"\n") {
+		t.Error("default range")
 	}
 }
 

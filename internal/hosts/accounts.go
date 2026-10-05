@@ -83,15 +83,27 @@ var reHomeDir = regexp.MustCompile(`^/home/[^/]+$`)
 
 // Removed are the accounts of a host that the script will delete, as far
 // as tacctl can tell from here: a name tacctl gave a UID (uids), a UID of
-// the range on the host (or of the legacy range: the script renumbers such
-// an account before it deletes it), a full name the script writes, and a
+// the range on the host (or of a range the UID file was numbered for
+// before: the script renumbers such an account before it deletes it), a full name the script writes, and a
 // user that is not current (current: the scope's users, active or not). Only those
 // whose home is a directory directly under /home are returned: any other
 // home is kept by the script whatever the answer.
 func Removed(accts []Account, uids UIDs, current map[string]bool) ([]Account, error) {
+	_, prev, err := uids.Recorded()
+	if err != nil {
+		return nil, err
+	}
+	ours := func(uid string) bool {
+		for _, r := range append([]Range{uids.rng()}, prev...) {
+			if r.Contains(uid) {
+				return true
+			}
+		}
+		return false
+	}
 	var out []Account
 	for _, a := range accts {
-		if current[a.Name] || (!UIDInRange(a.UID) && !LegacyUID(a.UID)) || !tacctlGECOS(a.Name, a.GECOS) || !reHomeDir.MatchString(a.Home) {
+		if current[a.Name] || !ours(a.UID) || !tacctlGECOS(a.Name, a.GECOS) || !reHomeDir.MatchString(a.Home) {
 			continue
 		}
 		uid, err := uids.Lookup(a.Name)
@@ -134,7 +146,7 @@ func (e *Env) HomesToDelete(ctx context.Context, name, target, port, identity st
 		e.Out.WarnE(name + ": could not list the host's accounts; the home directories of removed users are kept.")
 		return nil, nil
 	}
-	removed, err := Removed(accts, UIDs{Path: e.Paths.UIDs}, current)
+	removed, err := Removed(accts, e.UIDs(), current)
 	if err != nil || len(removed) == 0 {
 		return nil, err
 	}

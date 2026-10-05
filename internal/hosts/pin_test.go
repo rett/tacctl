@@ -115,10 +115,10 @@ func TestRunScriptReadsKeysOverTheSession(t *testing.T) {
 // login.defs with useradd's own defaults for what it does not set.
 func TestParseFactsAndUIDWarning(t *testing.T) {
 	f := ParseFacts([]byte("ssh_connection=198.51.100.9 50022 192.0.2.50 22\nlogin_defs=present\nUID_MIN\t1000\nUID_MAX   85000\n"))
-	if f.Address != "192.0.2.50" || !f.LoginDefs || f.UIDMin != 1000 || f.UIDMax != 85000 || !f.UIDOverlap() {
+	if f.Address != "192.0.2.50" || !f.LoginDefs || f.UIDMin != 1000 || f.UIDMax != 85000 || !f.UIDOverlap(DefaultRange) {
 		t.Errorf("%+v", f)
 	}
-	w := f.UIDWarning("web1")
+	w := f.UIDWarning("web1", DefaultRange)
 	if len(w) != 3 || w[0] != "web1: local useradd there gives out UIDs 1000-85000 (/etc/login.defs UID_MIN/UID_MAX), which overlaps tacctl's 80000-89999:" ||
 		!strings.Contains(w[2], "Keep UID_MAX below 80000 in /etc/login.defs on web1 (the default is 60000; tacctl does not change it).") {
 		t.Errorf("%q", w)
@@ -137,11 +137,14 @@ func TestParseFactsAndUIDWarning(t *testing.T) {
 		{"login_defs=present\n#UID_MAX 99999\nUID_MAX 60000\n", "", false},
 	} {
 		f := ParseFacts([]byte(c.in))
-		if f.Address != c.addr || f.UIDOverlap() != c.overlap {
+		if f.Address != c.addr || f.UIDOverlap(DefaultRange) != c.overlap {
 			t.Errorf("%q: %+v", c.in, f)
 		}
 	}
-	if (Facts{}).UIDWarning("x") != nil {
+	if w := f.UIDWarning("web1", Range{40000, 49999}); len(w) != 3 || w[2] != "  Keep UID_MIN-UID_MAX in /etc/login.defs on web1 clear of 40000-49999 (tacctl does not change it)." {
+		t.Errorf("%q", w)
+	}
+	if (Facts{}).UIDWarning("x", DefaultRange) != nil {
 		t.Error("warning without login.defs")
 	}
 	// --local: 127.0.0.1 and this server's own file.
@@ -152,7 +155,7 @@ func TestParseFactsAndUIDWarning(t *testing.T) {
 	if err := os.WriteFile(dir+"/login.defs", []byte("UID_MIN 1000\nUID_MAX 60000\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if f := LocalFacts(dir + "/login.defs"); !f.LoginDefs || f.UIDMax != 60000 || f.UIDOverlap() {
+	if f := LocalFacts(dir + "/login.defs"); !f.LoginDefs || f.UIDMax != 60000 || f.UIDOverlap(DefaultRange) {
 		t.Errorf("%+v", f)
 	}
 }

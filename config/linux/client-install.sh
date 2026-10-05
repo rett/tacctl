@@ -3,8 +3,10 @@
 # a header that sets TAC_METHOD, TAC_SERVER, TAC_PORT, TAC_SECRET, TAC_SCOPE,
 # TAC_USERS (name:tier:uid lines), TAC_INACTIVE (users of the scope with no
 # login now: disabled, the accounting sink), TAC_REMOVE_HOMES (the removed
-# users whose home directories go too, or "*" for all) and TAC_PROTOCOL
-# (the contract between header and body, 3). TAC_METHOD picks the PAM
+# users whose home directories go too, or "*" for all), TAC_UID_FIRST and
+# TAC_UID_LAST (the server's UID range), TAC_UID_PREVIOUS (ranges it used
+# before, "<min>-<max> ..."), and TAC_PROTOCOL (the contract between header
+# and body, 3). TAC_METHOD picks the PAM
 # module the host authenticates through; accounts, tiers, sudo and the
 # fallback to local passwords are the same for both:
 #
@@ -63,6 +65,11 @@ if [[ "${TAC_PROTOCOL:-1}" != "3" ]]; then
         'tacctl host enroll|sync'."
 fi
 TAC_INACTIVE="${TAC_INACTIVE:-}"
+# The server's UID range (see "Which accounts are tacctl's" below).
+uid_number() { [[ "$1" =~ ^[1-9][0-9]{0,9}$ ]]; }
+if ! { uid_number "${TAC_UID_FIRST:-}" && uid_number "${TAC_UID_LAST:-}" && (( TAC_UID_FIRST < TAC_UID_LAST )); }; then
+    die "The header has no valid UID range (TAC_UID_FIRST, TAC_UID_LAST). Nothing was changed."
+fi
 
 # TACCTL_CLIENT_TEST=1 is for the bats suite only: it skips the root check
 # and fakes the module build so the account and PAM logic can run unprivileged
@@ -134,22 +141,30 @@ chmod 700 "$STATE_DIR"
 touch "$STATE_DIR/created" "$STATE_DIR/expired"
 
 # --- Which accounts are tacctl's -------------------------------------------------
-# tacctl gives its accounts UIDs, and the matching primary GIDs, from
-# TAC_UID_FIRST to TAC_UID_LAST only. It changes an existing account (groups,
-# expiry, deletion, home) only when it created the account (the 'created'
-# state file) AND the account's UID on this host is in that range; any other
-# account, whatever its name, is left exactly as it is. 80000-89999 is above
-# useradd's default range (UID_MAX 60000) and systemd's reserved numbers,
-# and below the usual /etc/subuid start (100000).
-TAC_UID_FIRST=80000
-TAC_UID_LAST=89999
+# tacctl gives its accounts UIDs, and the matching primary GIDs, from the
+# server's range, TAC_UID_FIRST to TAC_UID_LAST (tacctl.yaml linux.uid_min
+# and linux.uid_max; 80000-89999 by default) only. It changes an existing
+# account (groups, expiry, deletion, home) only when it created the account
+# (the 'created' state file) AND the account's UID on this host is in that
+# range; any other account, whatever its name, is left exactly as it is.
 TAC_UID_RANGE="${TAC_UID_FIRST}-${TAC_UID_LAST}"
-uid_in_range() { [[ "$1" =~ ^[1-9][0-9]{0,8}$ ]] && (( $1 >= TAC_UID_FIRST && $1 <= TAC_UID_LAST )); }
-# The range of earlier releases. Only renumber_legacy looks at it: an account
-# tacctl created there is moved to the same offset in the range above.
-TAC_LEGACY_FIRST=20000
-TAC_LEGACY_LAST=29999
-uid_is_legacy() { [[ "$1" =~ ^[1-9][0-9]{0,8}$ ]] && (( $1 >= TAC_LEGACY_FIRST && $1 <= TAC_LEGACY_LAST )); }
+uid_in_range() { uid_number "$1" && (( $1 >= TAC_UID_FIRST && $1 <= TAC_UID_LAST )); }
+# The ranges the server used before (TAC_UID_PREVIOUS). Only renumber_previous
+# looks at them: an account tacctl created there is moved to the same offset
+# in the range above.
+TAC_UID_PREVIOUS="${TAC_UID_PREVIOUS:-}"
+# previous_first <uid>: the first number of the previous range holding <uid>;
+# fails when none does.
+previous_first() {
+    local r lo hi
+    uid_number "$1" || return 1
+    for r in $TAC_UID_PREVIOUS; do
+        lo="${r%-*}" hi="${r#*-}"
+        if ! { uid_number "$lo" && uid_number "$hi"; }; then continue; fi
+        if (( $1 >= lo && $1 <= hi )); then echo "$lo"; return 0; fi
+    done
+    return 1
+}
 account_uid() { getent passwd "$1" | cut -d: -f3; }
 is_created() { grep -qxF "$1" "$STATE_DIR/created"; }
 
@@ -245,10 +260,10 @@ TXT
     1. Free the number on this host by renumbering the account or group that holds it:
          usermod -u <new-uid> <other-user>     (or: groupmod -g <new-gid> <other-group>)
          find / -xdev \( -uid <old> -o -gid <old> \) -exec chown -h <other-user> {} +
-    2. Assign the tacctl user another free number of 80000-89999, then re-run:
+    2. Assign the tacctl user another free number of its range, then re-run:
          tacctl config linux uid <user> <new-uid>
        (hosts that already have the account keep the old number until renumbered)
-    3. Accept a different number of 80000-89999 on this host only:
+    3. Accept a different number of the range on this host only:
          tacctl host enroll|sync ... --allow-uid-mismatch
        (or run this script with --allow-uid-mismatch)
 TXT
@@ -713,20 +728,21 @@ delete_account() {
     fi
 }
 
-# --- Renumbering from the legacy range ------------------------------------------
-# Earlier releases gave out 20000-29999. The server has moved every number to
-# the same offset in 80000-89999 (TAC_PROTOCOL 3), and an account tacctl
-# created here with a UID of the old range moves the same way, once, before
-# anything else looks at it: its UID, the GID of its own group (named like
-# it, GID == old UID, no other member) and its primary GID. usermod re-owns
-# the home directory tree. Files elsewhere that still carry the old number
-# are listed (a bounded scan), never changed. The offset, not the header's
-# UID, decides the number, so an account whose UID already differed from the
-# assigned one (--allow-uid-mismatch) keeps differing and is reported as
-# before. An account is left exactly as it is, for this run, when the new
-# number is taken here or the user has processes (logged in); it is named
-# as refused in the summary and tried again at the next sync. Accounts
-# tacctl did not create are never looked at.
+# --- Renumbering from a previous range ------------------------------------------
+# The server moved its UIDs from a previous range to the current one by
+# offset (releases up to 0.2.0 gave them out from 20000 up; tacctl.yaml can
+# name another range). An account tacctl created here with a UID of a
+# previous range moves the same way, once, before anything else looks at it:
+# its UID, the GID of its own group (named like it, GID == old UID, no other
+# member) and its primary GID. usermod re-owns the home directory tree.
+# Files elsewhere that still carry the old number are listed (a bounded
+# scan), never changed. The offset, not the header's UID, decides the
+# number, so an account whose UID already differed from the assigned one
+# (--allow-uid-mismatch) keeps differing and is reported as before. An
+# account is left exactly as it is, for this run, when the new number is
+# outside the range or taken here, or the user has processes (logged in);
+# it is named as refused in the summary and tried again at the next sync.
+# Accounts tacctl did not create are never looked at.
 RENUMBER_SCAN_ROOTS="/home /tmp /var/tmp /var/spool/cron /var/mail"
 RENUMBER_SCAN_MAX=20
 if [[ "$CLIENT_TEST" == "1" ]]; then
@@ -823,16 +839,24 @@ renumber_account() {
     return 0
 }
 
-# renumber_legacy: every account tacctl created here whose UID is in the
-# legacy range (listed, disabled or removed alike).
-renumber_legacy() {
-    local name old
+# renumber_previous: every account tacctl created here whose UID is in a
+# previous range (listed, disabled or removed alike).
+renumber_previous() {
+    local name old first new
+    [[ -n "$TAC_UID_PREVIOUS" ]] || return 0
     while IFS= read -r name; do
         [[ -n "$name" ]] || continue
         getent passwd "$name" >/dev/null || continue
         old=$(account_uid "$name")
-        uid_is_legacy "$old" || continue
-        if renumber_account "$name" "$old" "$((old - TAC_LEGACY_FIRST + TAC_UID_FIRST))"; then
+        uid_in_range "$old" && continue
+        first=$(previous_first "$old") || continue
+        new=$((old - first + TAC_UID_FIRST))
+        if ! uid_in_range "$new"; then
+            warn "'${name}': not renumbered from ${old}: ${new} would be outside ${TAC_UID_RANGE}. The account is left as it is."
+            DEFERRED+="${name} "
+            continue
+        fi
+        if renumber_account "$name" "$old" "$new"; then
             RENUMBERED=$((RENUMBERED + 1))
         else
             DEFERRED+="${name} "
@@ -860,7 +884,7 @@ sync_accounts() {
     fi
     rm -f "$STATE_DIR/adopted"
 
-    renumber_legacy
+    renumber_previous
 
     while IFS= read -r name; do
         if [[ -n "$name" ]]; then inactive+="${name} "; fi

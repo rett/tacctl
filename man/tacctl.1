@@ -814,7 +814,8 @@ server. Run after
 changes.
 .IP
 tacctl manages an account only when it created it on that host and its UID
-there is in 80000\(en89999. Any other account is never created, expired,
+there is in the server's range (80000\(en89999 by default; see
+.BR "config linux uid\-range" ). Any other account is never created, expired,
 deleted or otherwise changed, with one exception: it is taken out of
 tacctl's own groups
 .RB ( tac\-users ", " tac\-readonly ", " tac\-operator ", " tac\-superuser ", " tac\-console )
@@ -825,9 +826,10 @@ so); the rest of the sync goes on. The summary counts the accounts tacctl
 manages on the host and names the refused users, as in
 .RB \(lq "c1: synced (4 users; 1 refused: carl)." \(rq.
 .IP
-An account tacctl created with a UID in 20000\(en29999 (where releases up to
-0.2.0 gave them out) is renumbered first, to the same offset in
-80000\(en89999: its UID
+An account tacctl created with a UID of a range the server used before
+(20000\(en29999, where releases up to 0.2.0 gave them out, or the range before a
+.BR "config linux uid\-range" )
+is renumbered first, to the same offset in the current range: its UID
 .RB ( "usermod \-u" ,
 which re-owns the home directory tree), its own group's GID and its primary
 GID
@@ -865,13 +867,18 @@ Enroll and sync also read the host's
 .I /etc/login.defs
 (read-only) and warn when its
 .BR UID_MIN \(en UID_MAX
-range overlaps 80000\(en89999, where local
+range overlaps the server's range, where local
 .BR useradd (8)
 could give out a UID tacctl has assigned (the default
 .B "UID_MAX 60000"
-does not); keep
-.B UID_MAX
-below 80000 there. tacctl never edits the file.
+does not overlap 80000\(en89999); keep it clear of the range there. tacctl
+never edits the file. Before anything runs there, enroll and sync read the
+host's
+.I /proc/self/uid_map
+and
+.IR gid_map ,
+and refuse a host whose user namespace cannot hold the range
+.RI "(\(lq'" host "' cannot hold UIDs " min \- max ": its user namespace maps only " ranges " (an unprivileged container). \&...\(rq)."
 .IP
 Enroll and sync record the address the ssh connection reached (the host's
 side of
@@ -982,21 +989,12 @@ List the UID assigned to each user, print one user's UID, or change it
 (only a change writes the file).
 Each user has one number, used as both UID and primary GID on every
 enrolled host; it is assigned the first time the user is sent to a host,
-from 80000\(en89999 only (after the highest one given, never reused, not
-even after the user is removed), and kept in
-.IR /etc/tacctl/linux\-uids .
-The range lies above the distributions'
-.BR useradd (8)
-range and systemd's reserved UIDs, and below the usual
-.I /etc/subuid
-start (100000).
-Entries in 20000\(en29999 (given out by releases up to 0.2.0) are renumbered
-once to the same offset in 80000\(en89999 by the first
-.BR "config linux uid" ", " "config linux script" ", " "host enroll" " or " "host sync" ;
-the old file is kept as
-.IR linux\-uids.pre\-renumber\- time ,
-and a new number already held by another name refuses the renumbering,
-changing nothing, until that name is given another number.
+from the server's range only (see
+.BR "config linux uid-range" ;
+after the highest one given, never reused, not even after the user is
+removed), and kept in
+.IR /etc/tacctl/linux\-uids ,
+whose first line records the range it is numbered for.
 A value outside that range is refused; an entry outside it from an earlier
 release is listed as not used on hosts, and its user gets no account until
 given a number in the range. When the range is used up, the script refuses
@@ -1009,6 +1007,49 @@ of the range on that host with
 .BR \-\-allow\-uid\-mismatch .
 Changing a UID does not renumber accounts that already exist on hosts; a
 difference from the assigned one is reported on every sync.
+.TP
+.B "config linux uid\-range " "[ " min \- max " ]"
+Show or change the range Linux host accounts get their UIDs (and the
+matching primary GIDs) from: one range for all hosts, kept in
+.I tacctl.yaml
+as
+.B linux.uid_min
+and
+.BR linux.uid_max ,
+80000\(en89999 by default. The default lies above the distributions'
+.BR useradd (8)
+range (UID_MAX 60000) and systemd's reserved UIDs, inside the range systemd
+leaves unused (65536\(en524287), and below the usual
+.I /etc/subuid
+start (100000). A range is refused when it holds fewer than 1000 numbers,
+starts below 1000, ends above 4294967293, or overlaps what systemd reserves
+(60001\(en60513, 61184\(en65519, 65534\(en65535, 524288 and up); one that
+overlaps useradd's default 1000\(en60000 is accepted with a warning (every
+host's
+.I /etc/login.defs
+must then keep clear of it).
+A change renumbers
+.I linux\-uids
+at once by offset (the first number of the old range becomes the first of
+the new one; the old file is kept as
+.IR linux\-uids.pre\-renumber\- time ),
+and every host renumbers the accounts tacctl created there at its next
+enroll or sync. It is refused, changing nothing, when an entry would land
+past the new range's end, when a number would be another name's, or when
+the new range overlaps one the file was numbered for before (unless it
+starts at the same number: a range grown or shrunk at its end moves
+nothing). A file numbered by a release that gave out UIDs from 20000 up
+(no record, entries in 20000\(en29999) is renumbered the same way by the
+first
+.BR "config linux uid" ", " "config linux script" ", " "host enroll" " or " "host sync" .
+A host that is an unprivileged container whose user namespace does not map
+the whole range (rootless podman or LXC usually map 0\(en65535) is refused
+by
+.B "host enroll"
+and
+.BR "host sync" ;
+give it an ID map that covers the range, run it privileged, or choose a
+range every host can hold.
 .TP
 .B "config linux builds " "[ list | clear ]"
 List or delete the pam_tacplus modules that

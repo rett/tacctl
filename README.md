@@ -737,11 +737,12 @@ config loglevel [debug|info|error]          Show or change the TACACS+ log level
 config listen [--backend <id>] [--listener <name>] [show|tcp|tcp6|udp|udp6|reset] [addr]
                                             Show, change, or reset a listen address (default: the TACACS+ listener 'default'; see "Listeners")
 config metrics <show|enable|disable|address <host:port>|reset>   Prometheus exporter control (TACACS+). Default: loopback-only 127.0.0.1:8080. `disable` sinks to 127.0.0.1:0 (unreachable ephemeral port) since tacquito's own disable flag would crash the server.
-config linux build|script|remove-script|uid|builds   Login for Linux hosts (see "Host Commands")
+config linux build|script|remove-script|uid|uid-range|builds   Login for Linux hosts (see "Host Commands")
 config linux script [--scope <name>] [--server <address>] [--method tacplus|radius] [--output <file>]
                                             Write the install script for hosts in a scope (contains the secret)
 config linux remove-script [--output <file>]  Write the removal script (no secrets; removes either method)
 config linux uid [<user> [<uid>]]           Show or change the UID/GID a user gets on every host
+config linux uid-range [<min>-<max>]        Show or change the UID range of all hosts (default 80000-89999)
 config linux builds [list|clear]            Show or drop the pam_tacplus modules 'host enroll' built in containers
 config sudoers [show|install|remove] [grp]  Manage NOPASSWD sudoers drop-in for tacctl
 config sudoers tiers [show|install|remove]  Manage per-tier (RO/OP/SU) sudoers rules for tacctl users with local accounts

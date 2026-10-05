@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -33,6 +34,12 @@ type Script struct {
 	AcctPort string // radius only
 	Secret   string
 	Users    string // "name:tier:uid" lines, joined by newlines
+	// Range is the server's UID range (TAC_UID_FIRST, TAC_UID_LAST; the
+	// zero Range is DefaultRange), Previous the ranges the UID file was
+	// numbered for before (TAC_UID_PREVIOUS): the host renumbers the
+	// accounts tacctl created there into Range.
+	Range    Range
+	Previous []Range
 	// Inactive are users of the scope that get no login now (disabled, the
 	// accounting sink, a group without priv-lvl, a UID outside the range),
 	// joined by newlines: a host expires their accounts, never deletes them.
@@ -54,12 +61,12 @@ type Script struct {
 
 // ScriptProtocol is the contract between the header and client-install.sh
 // (TAC_PROTOCOL): 2 was the 0.2.1 account lifecycle (TAC_INACTIVE,
-// TAC_REMOVE_HOMES, removed users deleted, UIDs of one range only); 3 moves
-// that range to UIDBase..UIDMax, with the header's UIDs renumbered on the
-// server (RenumberLegacy) and the accounts the script created in the legacy
-// range renumbered on the host. The body refuses a header of another
-// protocol, and a body of an earlier release has no TAC_PROTOCOL check but
-// never sees this header (both are written into one file by one tacctl).
+// TAC_REMOVE_HOMES, removed users deleted, UIDs of one range only); 3 adds
+// the range to the header (TAC_UID_FIRST, TAC_UID_LAST) with the ranges the
+// server numbered for before (TAC_UID_PREVIOUS), whose accounts the host
+// renumbers. The body refuses a header of another protocol, and a body of
+// an earlier release has no TAC_PROTOCOL check but never sees this header
+// (both are written into one file by one tacctl).
 const ScriptProtocol = "3"
 
 // fileSHA256 is "sha256sum <f> | awk '{print $1}'": "" when the file
@@ -118,6 +125,17 @@ func (s Script) Header() string {
 	q("TAC_USERS", s.Users)
 	q("TAC_INACTIVE", s.Inactive)
 	q("TAC_REMOVE_HOMES", s.RemoveHomes)
+	r := s.Range
+	if r.IsZero() {
+		r = DefaultRange
+	}
+	q("TAC_UID_FIRST", strconv.Itoa(r.Min))
+	q("TAC_UID_LAST", strconv.Itoa(r.Max))
+	prev := make([]string, len(s.Previous))
+	for i, p := range s.Previous {
+		prev[i] = p.String()
+	}
+	q("TAC_UID_PREVIOUS", strings.Join(prev, " "))
 	q("TAC_PROTOCOL", ScriptProtocol)
 	return b.String()
 }
@@ -248,13 +266,17 @@ func (e *Env) WriteScript(req ScriptRequest) (ScriptResult, error) {
 	if err != nil {
 		return ScriptResult{}, err
 	}
+	_, previous, err := e.UIDs().Recorded()
+	if err != nil {
+		return ScriptResult{}, err
+	}
 	homes := strings.Join(req.RemoveHomes, " ")
 	if req.RemoveAllHomes {
 		homes = "*"
 	}
 	s := Script{
 		Scope: req.Scope, Method: method, Server: req.Server, Port: port, AcctPort: acctPort,
-		Secret: req.Secret, Users: users, Generated: e.now(),
+		Secret: req.Secret, Users: users, Generated: e.now(), Range: e.rng(), Previous: previous,
 		Inactive: strings.Join(linuxNames(append(append([]string(nil), req.Inactive...), keep...)), "\n"), RemoveHomes: homes,
 	}
 	if embed {

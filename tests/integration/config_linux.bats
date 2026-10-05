@@ -376,7 +376,7 @@ bob"
     assert_output --partial "Give it a free number of the range by hand: tacctl config linux uid bob <uid>"
     [[ ! -e "$OUT" ]]
     run cat "${TACCTL_STATE_DIR}/linux-uids"
-    assert_output "alice:89999"
+    assert_output $'# range 80000-89999\nalice:89999'
 }
 
 @test "config linux uid: a listing or a lookup does not create or rewrite the UID file" {
@@ -668,7 +668,7 @@ _legacy_host() {
     # The server's map was renumbered by the script's generation, logged,
     # the old one kept.
     run cat "${TACCTL_STATE_DIR}/linux-uids"
-    assert_output $'alice:80000\nbob:80001\ngone:80002'
+    assert_output $'# range 80000-89999\n# previous 20000-29999\nalice:80000\nbob:80001\ngone:80002'
     run cat "${TACCTL_STATE_DIR}"/linux-uids.pre-renumber-*
     assert_output $'alice:20000\nbob:20001\ngone:20002'
     stub_called "logger -t tacctl -p auth.info uid-map renumbered 3 entries from=20000-29999 to=80000-89999 backup=${TACCTL_STATE_DIR}/linux-uids.pre-renumber-"
