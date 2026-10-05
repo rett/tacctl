@@ -339,6 +339,13 @@ func (inv *invocation) hostEnroll(args []string) error {
 	// from. A host no scope covers is not enrolled: nothing would answer its
 	// logins, and a scope made for it here would take the address from any
 	// broader prefix, and with it that scope's users from the host.
+	// A method named on the command line is checked first: its problem is
+	// the operator's own, whatever the scope.
+	if method != "" {
+		if err := inv.linuxMethodRequire(method); err != nil {
+			return err
+		}
+	}
 	scopeGiven := scope != ""
 	if !scopeGiven {
 		if e, ok := reg.Find(name); ok && e.Scope != "" {
