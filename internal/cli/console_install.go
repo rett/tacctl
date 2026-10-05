@@ -15,6 +15,8 @@ import (
 
 	"github.com/rett/tacctl/internal/console"
 	"github.com/rett/tacctl/internal/execx"
+	"github.com/rett/tacctl/internal/hosts"
+	"github.com/rett/tacctl/internal/tier"
 	"github.com/rett/tacctl/internal/ui"
 )
 
@@ -231,4 +233,56 @@ func (inv *invocation) consoleCheckReport(pol *console.Policy) error {
 		strings.Join(problems, "; ") + "." + ui.NC)
 	inv.echoE(ui.Red + "Put the drop-in in place: tacctl console install" + ui.NC)
 	return exit(1)
+}
+
+// consoleForLocal prepares the script of the tacctl server's own accounts
+// ('host enroll --local' and the sync of that host): every user's login
+// shell goes into the script (req.ConsoleShell, from console.yaml), and,
+// when any user of the scope gets the console, the server's pieces are put
+// in place first (consoleProvision). Without the console's symlink nobody
+// gets the console (it would be a shell that does not exist) and the
+// command says so; a drop-in sshd refuses is reported and the accounts are
+// synced anyway (the console still runs nothing but tacctl lines; the
+// check after the script says what sshd allows). It returns whether the
+// check is due after the script.
+func (inv *invocation) consoleForLocal(req *hosts.ScriptRequest) (bool, error) {
+	a := inv.app
+	pol, err := inv.consolePolicy()
+	if err != nil {
+		return false, err
+	}
+	anyConsole := false
+	for _, r := range req.Rows {
+		name, lvl, _ := strings.Cut(r, "|")
+		if pol.Decide(name, tier.ForPrivLvl(lvl)).Console {
+			anyConsole = true
+		}
+	}
+	if !anyConsole {
+		req.ConsoleShell = func(string, string) string { return console.SystemLoginShell }
+		return false, nil
+	}
+	if target, err := os.Readlink(a.Paths.ConsoleCommand); err != nil || target == "" {
+		a.Out.WarnE(a.Paths.ConsoleCommand + " is missing, so no account gets the login console now (all keep or get " +
+			console.SystemLoginShell + "). Run 'tacctl upgrade', then sync this host again.")
+		req.ConsoleShell = func(string, string) string { return console.SystemLoginShell }
+		return false, nil
+	}
+	req.ConsoleShell = func(name, t string) string { return pol.Shell(name, tier.Tier(t)) }
+	a.Out.InfoE("Console pieces on this server:")
+	if err := inv.consoleProvision(pol); err != nil {
+		a.Out.WarnE("The accounts are synced anyway; until sshd's drop-in is in place a console user can still forward ports or use sftp. Fix it, then: tacctl console install")
+	}
+	return true, nil
+}
+
+// consoleAfterLocal is the check after the server's own script ran: the
+// red warning when sshd does not apply the console's settings. It never
+// fails the command.
+func (inv *invocation) consoleAfterLocal() {
+	pol, err := inv.consolePolicy()
+	if err != nil {
+		return
+	}
+	_ = inv.consoleCheckReport(pol)
 }

@@ -124,6 +124,7 @@ func init() {
 		var s Spec
 		var ok bool
 		switch {
+		case len(path) < 2:
 		case len(path) == 2:
 			s, ok = configSpecs[path[1]]
 		case path[1] == "linux":

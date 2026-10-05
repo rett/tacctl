@@ -171,3 +171,96 @@ func TestConsoleInstallRefusals(t *testing.T) {
 		t.Errorf("shells changed: %q", data)
 	}
 }
+
+// 'host enroll --local', its sync and unenroll: the shell field, the
+// server's pieces before the script, the check after it, and the pieces
+// gone at unenroll once the accounts have bash again.
+func TestHostLocalConsole(t *testing.T) {
+	hs := newHostSandbox(t)
+	hs.reroot = true
+	hs.write("shells", "/bin/sh\n/bin/bash\n", 0o644)
+	link := hs.path("usr", "local", "bin", "tacctl-console")
+	dropin := hs.path("sshd_config.d", "tacctl-console.conf")
+	script := ""
+	runner := func(passwd string) *fake.Runner {
+		r := hs.runner()
+		sshdOK(link)(r)
+		r.OnFunc([]string{"bash"}, func(c execx.Cmd) (execx.Result, error) {
+			b, _ := os.ReadFile(c.Args[0])
+			script = string(b)
+			return execx.Result{Stdout: []byte("[INFO] Accounts: 3 managed by tacctl here; console: 2.\n")}, nil
+		})
+		r.On([]string{"getent", "passwd"}, execx.Result{Stdout: []byte(passwd)})
+		return r
+	}
+	consoleUsers := "root:x:0:0::/root:/bin/bash\nalice:x:80000:80000:alice (TACACS+):/home/alice:" + link + "\n"
+
+	// No symlink: nobody gets the console, and the command says so.
+	hs.run(runner(""), "host", "enroll", "--local", "--name", "authsrv", "--scope", "lab", "--build-on-host")
+	all := plain(hs.out.String() + hs.err.String())
+	if hs.code != 0 || !strings.Contains(all, link+" is missing, so no account gets the login console now") ||
+		!strings.Contains(script, "TAC_USERS=$'alice:superuser:80000:/bin/bash\\nbob:operator:80001:/bin/bash\\ncarol:readonly:80002:/bin/bash'") {
+		t.Fatalf("no symlink: %d\n%s\n%s", hs.code, all, head(script))
+	}
+	if _, err := os.Stat(dropin); err == nil {
+		t.Error("a drop-in without the console")
+	}
+
+	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(hs.path("usr", "local", "bin", "tacctl"), link); err != nil {
+		t.Fatal(err)
+	}
+	hs.cfgRun("", []string{"console", "user", "bob", "disable"}, nil)
+	r := runner(consoleUsers)
+	hs.run(r, "host", "sync", "authsrv")
+	all = plain(hs.out.String() + hs.err.String())
+	if hs.code != 0 || !strings.Contains(script, "TAC_USERS=$'alice:superuser:80000:"+link+"\\nbob:operator:80001:/bin/bash\\ncarol:readonly:80002:"+link+"'") {
+		t.Fatalf("sync: %d\n%s\n%s", hs.code, all, head(script))
+	}
+	for _, want := range []string{"Installed: " + hs.path("shells") + " lists " + link, "Installed: sshd drop-in " + dropin,
+		"authsrv: synced (3 users; 2 with the console).", "sshd for alice:", "The console's sshd settings are in effect."} {
+		if !strings.Contains(all, want) {
+			t.Errorf("sync lacks %q:\n%s", want, all)
+		}
+	}
+	// The pieces before the script: sshd -t, the reload, then bash.
+	order := []string{}
+	for _, c := range r.Argvs() {
+		if strings.HasPrefix(c, "sshd -t") || strings.HasPrefix(c, "systemctl reload") || strings.HasPrefix(c, "bash ") {
+			order = append(order, strings.Fields(c)[0])
+		}
+	}
+	if strings.Join(order, " ") != "sshd systemctl bash" {
+		t.Errorf("order %v", order)
+	}
+	// Other hosts keep three fields.
+	hs.run(nil, "host", "enroll", "admin@web1.example.net", "--scope", "lab", "--build-on-host")
+	if !strings.Contains(hs.pushed, "TAC_USERS=$'alice:superuser:80000\\nbob:operator:80001\\ncarol:readonly:80002'") {
+		t.Errorf("remote host: %s", head(hs.pushed))
+	}
+
+	// Unenroll: the remove script ran; while an account keeps the console the
+	// pieces stay (said); once none does, they go.
+	r = runner(consoleUsers)
+	hs.run(r, "host", "unenroll", "authsrv")
+	all = plain(hs.out.String() + hs.err.String())
+	if !strings.Contains(all, "These accounts still have the console as their login shell: alice") {
+		t.Errorf("unenroll with a console account:\n%s", all)
+	}
+	if _, err := os.Stat(dropin); err != nil {
+		t.Error("drop-in removed while alice has the console")
+	}
+	hs.run(runner(""), "host", "enroll", "--local", "--name", "authsrv", "--scope", "lab", "--build-on-host")
+	hs.run(runner("root:x:0:0::/root:/bin/bash\n"), "host", "unenroll", "authsrv")
+	all = plain(hs.out.String() + hs.err.String())
+	if hs.code != 0 || !strings.Contains(all, "Removed: sshd drop-in") {
+		t.Errorf("unenroll: %d\n%s", hs.code, all)
+	}
+	if _, err := os.Stat(dropin); err == nil {
+		t.Error("drop-in left")
+	}
+}
+
+func head(script string) string { return strings.SplitN(script, "# --- tacctl", 2)[0] }

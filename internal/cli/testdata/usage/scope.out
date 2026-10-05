@@ -10,7 +10,13 @@ Usage:
                        [--protocols <protocol>[,<protocol>...]]
                        [--vendor-attrs <vendor>[,<vendor>...]]
                        [--default]
+      --prefixes <cidrs>                                   (add) The scope's CIDRs, comma-separated
+      --secret <value>|generate                            (add) The shared secret, or a generated one
+      --protocols <csv>                                    (add) Limit it to tacacs, radius (default: all)
+      --vendor-attrs <csv>                                 (add) RADIUS vendor attributes to send (cisco, juniper, wti)
+      --default                                            (add) Make it the default scope
   tacctl scope remove <name> [--force]                     Delete a scope (confirms)
+      --force                                              (remove) Also take it out of the users that have it
   tacctl scope rename <old> <new>                          Rename (updates user references)
   tacctl scope default [<name>]                            Show or set the default scope
   tacctl scope lookup <ip|cidr>                            Show which scope owns an address

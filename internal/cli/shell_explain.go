@@ -131,7 +131,17 @@ func flagHelp(block string, rows []usageRow, f Flag) (value, desc string) {
 			continue
 		}
 		left, d, ok := splitRow(line)
-		if first, _, _ := strings.Cut(left, " "); ok && slices.Contains(f.Names, first) {
+		// An option line is indented deeper than a row, and may name more
+		// than one flag ('--port <n>, --identity <file>'): each is the first
+		// word of a comma-separated part.
+		left = strings.TrimSpace(left)
+		names := false
+		for _, part := range strings.Split(left, ", ") {
+			if first, _, _ := strings.Cut(part, " "); slices.Contains(f.Names, first) {
+				names = true
+			}
+		}
+		if ok && names {
 			desc = d
 			if f.Value {
 				value = findValue(left)
@@ -293,6 +303,12 @@ func (inv *invocation) flagDescs(cmd *cobra.Command, path []string, spec Spec, c
 	out := map[string]string{}
 	for _, f := range spec.Flags {
 		_, desc := flagHelp(block, rows, f)
+		if desc == "" && len(path) == 1 {
+			// A top-level command without a block of its own: the option
+			// lines of tacctl's usage.
+			top := Usage("top", UsageVars{"version": inv.build.Version})
+			_, desc = flagHelp(top, verbRows(top, path[0]), f)
+		}
 		for _, n := range f.Names {
 			out[n] = desc
 		}

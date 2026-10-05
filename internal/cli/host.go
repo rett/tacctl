@@ -479,6 +479,12 @@ func (inv *invocation) hostEnroll(args []string) error {
 	if err := inv.homesToDelete(he, &req, name, target, port, identity, removeHome); err != nil {
 		return err
 	}
+	consoleCheck := false
+	if target == hosts.Local {
+		if consoleCheck, err = inv.consoleForLocal(&req); err != nil {
+			return err
+		}
+	}
 	res, err := he.WriteScript(req)
 	if err != nil {
 		return inv.hostsDone(err)
@@ -528,6 +534,9 @@ func (inv *invocation) hostEnroll(args []string) error {
 	}
 	he.PinKeys(inv.ctx, hosts.Entry{Name: name, Target: target, Port: port})
 	inv.hostFacts(he, name, target, hostIP)
+	if consoleCheck {
+		inv.consoleAfterLocal()
+	}
 	if res.Users == "" {
 		inv.echo("")
 		inv.echo("  No users are in scope '" + scope + "' yet. To give someone a login on this host:")
@@ -672,6 +681,12 @@ func (inv *invocation) syncOne(he *hosts.Env, e hosts.Entry, method string, scri
 	if err := inv.homesToDelete(he, &req, e.Name, e.Target, e.Port, e.Identity, removeHome); err != nil {
 		return false, err
 	}
+	consoleCheck := false
+	if e.Target == hosts.Local {
+		if consoleCheck, err = inv.consoleForLocal(&req); err != nil {
+			return false, err
+		}
+	}
 	res, err := he.WriteScript(req)
 	if errors.Is(err, hosts.ErrFailed) {
 		return false, nil
@@ -697,6 +712,9 @@ func (inv *invocation) syncOne(he *hosts.Env, e hosts.Entry, method string, scri
 		resolved = inv.resolveV4(host)
 	}
 	inv.hostFacts(he, e.Name, e.Target, resolved)
+	if consoleCheck {
+		inv.consoleAfterLocal()
+	}
 	return true, nil
 }
 
@@ -778,6 +796,12 @@ func (inv *invocation) hostUnenroll(args []string) error {
 		return err
 	}
 	inv.forgetHostKeys(name)
+	if e.Target == hosts.Local {
+		// The remove script gave tacctl's accounts /bin/bash back; the
+		// console's pieces go now (refused, and said, while an account
+		// still has the console).
+		_ = inv.consoleDeprovision()
+	}
 	a.Logger(inv.ctx, "auth.info", "host unenroll name="+name+" target="+e.Target+" by="+inv.sudoUser())
 	a.Out.InfoE("Host '" + name + "' unenrolled. Local accounts and home directories were left in place.")
 	if !reg.ScopeInUse(e.Scope) {

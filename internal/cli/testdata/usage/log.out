@@ -9,6 +9,8 @@ Subcommands:
   failures              Show auth failures from the last 24 hours
   accounting [n]        Show last N accounting log entries
   clear [--force|-y]    Purge each backend's logs: journal or auth log, accounting log (confirms)
+      --backend <id>    Only that backend's log (every subcommand)
+      --force, -y       (clear) Purge without asking
 
 With more than one backend enabled each subcommand shows every backend's log in a
 section of its own; --backend <id> shows only that backend's.

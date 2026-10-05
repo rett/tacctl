@@ -17,6 +17,8 @@ Usage: tacctl <command> [arguments]
 
 Commands:
   install [--branch <name>] [-y|--yes]  Install tacctl and the TACACS+ backend (tacquito) from scratch
+      --branch <name>                   The tacctl repo branch to install or upgrade from (default: the current one)
+      -y, --yes                         Answer yes to the confirmations
   upgrade [--branch <name>]             Pull latest source, rebuild, update scripts and every enabled backend
   uninstall [-y|--yes]                  Remove tacctl, its backends' services and all associated files
   status                                Show service health, stats, and recent errors (per backend)
@@ -27,7 +29,11 @@ Commands:
   host <subcommand>                     Linux hosts: enroll, sync, unenroll TACACS+ or RADIUS login over SSH
   device <subcommand>                   Device registry: list, add, scan, discover, check, host keys (ssh-config)
   ssh <name|address> [-p <port>]        Open an ssh session to a registered device or enrolled host, as you
+      -p <port>                         Connect to this port instead of the registered one
   shell [--idle <min>] [-c <line>]      An interactive tacctl prompt with history and completion
+      --idle <min>                      End the session after this many idle minutes at the prompt
+      -c <line>                         Run one line and exit
+      --no-history                      Keep no history file for this session
   console <subcommand>                  Login console: tiers, per-user overrides, settings (show, tiers, user, ...)
   backend <subcommand>                  Auth backends: list, status, enable <id>, disable <id>
   store <subcommand>                    The canonical store: show, import, rollback
@@ -37,6 +43,7 @@ Commands:
   hash <subcommand>                     Bcrypt helper (generate, commands — runs as invoking user, no sudo)
   completion bash|zsh|fish              Print the shell completion script
   version [--long]                      Print tacctl version (--long: commit, build date, Go version)
+      --long                            Also the commit, build date, Go version and whether test knobs are on
 
 Run any command without arguments for detailed help, e.g.:
   tacctl user
@@ -118,9 +125,12 @@ Usage:
   tacctl group commands default <group> <permit|deny>             Set default action (catchall)
   tacctl group commands add <group> <name> [--match <regex>]...   Add a rule
                                             [--action permit|deny]
+      --match <regex>                                             (add) A regex the command's arguments must match (repeatable)
+      --action permit|deny                                        (add) What the rule does (default permit)
   tacctl group commands remove <group> <name>                     Drop a rule
   tacctl group commands clear <group>                             Drop overrides — revert to shipped defaults (confirms)
   tacctl group commands seed [<group>] [--force]                  Re-apply legacy seed set (recovery tool)
+      --force                                                     (seed) Overwrite a group that already has rules
 
 <name> is compared literally to the TACACS+ cmd= word. --match
 regexes are tested against the command's ARGUMENTS only (the
@@ -153,6 +163,7 @@ Usage:
   tacctl group privilege remove <group> '<cmd>'[,'<cmd>'...]       Remove mapping(s)
   tacctl group privilege clear <group>                             Wipe explicit mappings (revert to defaults)
   tacctl group privilege seed [<group>] [--force]                  Populate built-ins with safe defaults
+      --force                                                      (seed) Overwrite a group that already has mappings
 
 Drives 'privilege exec level <lvl> <cmd>' lines emitted by
 'tacctl config cisco'. Pure device-side; tacquito does not read
@@ -173,7 +184,13 @@ Usage:
                        [--protocols <protocol>[,<protocol>...]]
                        [--vendor-attrs <vendor>[,<vendor>...]]
                        [--default]
+      --prefixes <cidrs>                                   (add) The scope's CIDRs, comma-separated
+      --secret <value>|generate                            (add) The shared secret, or a generated one
+      --protocols <csv>                                    (add) Limit it to tacacs, radius (default: all)
+      --vendor-attrs <csv>                                 (add) RADIUS vendor attributes to send (cisco, juniper, wti)
+      --default                                            (add) Make it the default scope
   tacctl scope remove <name> [--force]                     Delete a scope (confirms)
+      --force                                              (remove) Also take it out of the users that have it
   tacctl scope rename <old> <new>                          Rename (updates user references)
   tacctl scope default [<name>]                            Show or set the default scope
   tacctl scope lookup <ip|cidr>                            Show which scope owns an address
@@ -203,6 +220,8 @@ Usage:
   tacctl scope prefixes {{scope}} add    <cidr>[,<cidr>...]    Add one or more
   tacctl scope prefixes {{scope}} remove <cidr>[,<cidr>...]    Remove one or more
   tacctl scope prefixes {{scope}} remove --all [--force]       Remove all, which removes the scope (confirms; --force also strips it from users)
+      --all                                                 (remove) Every prefix
+      --force                                               (remove --all) Also take the scope out of the users that have it
 
 {{current}}
 
@@ -248,13 +267,15 @@ Subcommands:
   get-list <path>                      Read a list value (one item per line)
   validate                             Validate config syntax and structure
   render [--force]                     Regenerate every enabled backend's config from the store (--force overwrites hand edits)
+      --force                          Overwrite a generated file that was edited by hand
   render --dry-run --out <dir>         Render into a new, empty directory at the live paths; nothing live is written
   diff [timestamp]                     Diff store.yaml and tacctl.yaml vs the last snapshot (or named one)
   restore <timestamp> [--legacy]       Restore a snapshot (prompts for confirmation); --legacy for an old-style backup
+      --legacy                         The timestamp names an old-style backup (backups/legacy)
   loglevel [debug|info|error]          Show or change log level
   listen [show|tcp|tcp6|reset] [addr]  Show, change, or reset a listen address (default: tacacs, listener 'default')
-         [--listener <name>]           ...of another listener (its own tacquito@<name> unit; reset removes it)
-         [--backend <id>]              ...of another backend (see 'tacctl backend list'); radius: --listener auth|acct <udp|udp6> <addr>
+      --listener <name>                ...of another listener (its own tacquito@<name> unit; reset removes it)
+      --backend <id>                   ...of another backend (see 'tacctl backend list'); radius: --listener auth|acct <udp|udp6> <addr>
   metrics <show|enable|disable|address <host:port>|reset>  Prometheus exporter control
   sudoers [show|install|remove] [grp]  Manage NOPASSWD sudoers drop-in for tacctl
   sudoers tiers [show|install|remove]  Manage per-tier (RO/OP/SU) sudoers rules for tacctl users with local accounts
@@ -270,6 +291,9 @@ Subcommands:
   cisco   [--scope <name>] [--legacy] [--protocol tacacs|radius]  Show working Cisco device configuration for a scope (--legacy = IOS 12.x syntax; --protocol radius = RADIUS backend, default tacacs)
   juniper [--scope <name>] [--protocol tacacs|radius]             Show working Juniper device configuration for a scope
   wti     [--scope <name>] [--protocol tacacs|radius]             Show step-by-step WTI console-server (v8.x serial menu) setup for a scope (RADIUS: not verified on a unit)
+      --scope <name>                   (cisco, juniper, wti) The scope whose server address and secret go in (default: the default scope)
+      --protocol tacacs|radius         (cisco, juniper, wti) The backend the device uses (default: the scope's auth-method, else its only protocol, else tacacs)
+      --legacy                         (cisco) IOS 12.x syntax
   linux   build|script|remove-script|uid|builds  TACACS+ or RADIUS login for Linux hosts (install/removal scripts)
   branch [name]                        Show or change the tacctl repo branch
 
@@ -325,10 +349,17 @@ Usage: tacctl config linux <subcommand>
   build                                   Fetch and prepare the pinned pam_tacplus source (once, and after upgrades)
   script [--scope <name>] [--server <address>] [--method tacplus|radius] [--output <file>]
                                           Write the install script for hosts in a scope (contains the secret)
+      --scope <name>                      (script) The scope whose users and secret it carries (default: the default scope)
+      --server <address>                  (script) The address hosts use for this server (default: detected)
+      --method tacplus|radius             (script) pam_tacplus, or the host's pam_radius_auth (default: host default-method)
+      --output, -o <file>                 Where the script goes (default: tacctl-linux-<scope>.sh, remove-script: tacctl-linux-remove.sh)
   remove-script [--output <file>]         Write the removal script (no secrets; accounts are left in place)
   uid [<username> [<uid>]]                Show or change the UID/GID a user gets on every host
   uid-range [<min>-<max>]                 Show or change the UID range of all hosts (default 80000-89999)
   builds [list|clear]                     Show or drop the modules 'host enroll' built in containers
+
+Scripts written here give every account /bin/bash. The login console of this
+server's own tacctl users comes with 'host enroll --local' and 'host sync'.
 
 `,
 	// lib/linux_hosts.sh cmd_host_usage
@@ -339,7 +370,7 @@ Usage: tacctl host <subcommand> [arguments]
 
   list                                 Show enrolled hosts
   enroll <[user@]host> [options]       Install TACACS+ or RADIUS login on a host over SSH and register it
-  enroll --local [options]             Same, for this machine
+  enroll --local [options]             Same, for this machine (its tacctl users get the login console)
       --method tacplus|radius          pam_tacplus against the TACACS+ backend, or the host's pam_radius_auth
                                        package against the RADIUS backend (default: the host's current
                                        method, else the scope's auth-method, else its only protocol,
@@ -351,6 +382,7 @@ Usage: tacctl host <subcommand> [arguments]
       --port <n>, --identity <file>    SSH port and key
       --build-on-host                  (tacplus) Compile pam_tacplus on the host instead of in a container here
   sync <name> | --all                  Push account adds, deletions and tier changes
+      --all                            Every enrolled host
       --allow-uid-mismatch             (enroll and sync) accept a UID/GID conflict on the host instead of stopping
       --remove-home                    (enroll and sync) delete removed users' home directories without asking
                                        (on a terminal each one is asked; without one they are kept)
@@ -358,6 +390,7 @@ Usage: tacctl host <subcommand> [arguments]
       --port <n>, --identity <file>    SSH port and key; tested first, and the host's ssh keys must match the pin
       --no-identity                    No key file (ssh's default keys and the agent)
   unenroll <name> [--force]            Remove the login method from the host (accounts and homes are kept)
+      --force                          Forget the host even when the removal there failed
   default-method [tacplus|radius]      Show or set the method for hosts enrolled without --method
                                        (a scope's own choice comes first: tacctl scope auth-method)
 
@@ -376,6 +409,7 @@ Subcommands:
   enable <id> [-y]        Install the backend if needed, enable it, render its config, start it
   disable <id> [-y]       Stop and disable it, take it out of backends.enabled (confirms);
                           its package and rendered files stay
+      -y, --yes           Answer yes to the confirmation
 
 Backends: {{backends}}
 
@@ -386,11 +420,12 @@ Backends: {{backends}}
 
   show [--json]                          Print the model (YAML by default).
                                          Includes shared secrets and password hashes.
+      --json                             Print JSON instead
   import [--check|--force] [--replace] [<file>]
                                          Import a legacy tacquito.yaml (default: the live one).
-      --check     write nothing; report what an import would do
-      --force     drop content the store cannot represent (each item is listed)
-      --replace   overwrite an existing store
+      --check                            write nothing; report what an import would do
+      --force                            drop content the store cannot represent (each item is listed)
+      --replace                          overwrite an existing store
   rollback                               Undo the import: restore the pre-store tacquito.yaml, remove
                                          the store, restart (back to legacy read-only mode).
 
@@ -407,6 +442,8 @@ Subcommands:
   failures              Show auth failures from the last 24 hours
   accounting [n]        Show last N accounting log entries
   clear [--force|-y]    Purge each backend's logs: journal or auth log, accounting log (confirms)
+      --backend <id>    Only that backend's log (every subcommand)
+      --force, -y       (clear) Purge without asking
 
 With more than one backend enabled each subcommand shows every backend's log in a
 section of its own; --backend <id> shows only that backend's.
@@ -422,6 +459,7 @@ Subcommands:
   list                           Show snapshots, then old-style backups
   diff [timestamp]               Diff store.yaml and tacctl.yaml against a snapshot (default: most recent)
   restore <timestamp> [--legacy] Restore a snapshot (with confirmation); --legacy for an old-style backup
+      --legacy                   The timestamp names an old-style backup (backups/legacy)
 
 `,
 	// lib/users.sh cmd_hash_usage

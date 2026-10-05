@@ -375,10 +375,12 @@ current behaviour; this file is where history lives.
     with a warning.
 40. **The install script's header has a protocol.** After `TAC_USERS` it sets
     `TAC_INACTIVE` (the scope's disabled users and the accounting sink),
-    `TAC_REMOVE_HOMES` (names, or `*`) and `TAC_PROTOCOL=3`; the script body
-    refuses a header of another protocol before changing anything (`This
-    script's header speaks protocol <n> and its body protocol 3: they were
-    not written by the same tacctl. …`).
+    `TAC_REMOVE_HOMES` (names, or `*`), the UID range (item 53) and
+    `TAC_PROTOCOL=4`; the script body refuses a header of another protocol
+    before changing anything (`This script's header speaks protocol <n> and
+    its body protocol 4: they were not written by the same tacctl. …`).
+    `TAC_USERS` lines are `name:tier:uid` for every host, and
+    `name:tier:uid:shell` for the tacctl server's own accounts (item 55).
 41. **Enrolled hosts have a recorded address.** `host enroll` and `host
     sync` record the address the enrolment's ssh connection reached (the
     host's side of sshd's `SSH_CONNECTION`, read over the same connection
@@ -586,6 +588,54 @@ current behaviour; this file is where history lives.
     leaves that host alone and exits 1). `host target` warns about such a
     host. The test knob `TACCTL_TEST_PROC` (`-tags testknobs` builds)
     stands for `/proc/self`.
+55. **The login console is provisioned on the tacctl server.** `host
+    enroll --local` and `host sync` of that host give each tacctl user of
+    its scope the login shell `console.yaml` decides (`useradd -s`, `usermod
+    -s`: `'<user>': login shell is now the tacctl console.` or `… now
+    /bin/bash.`) and put console users in `tac-console` (taken out of it
+    when they get bash); the summary counts them (`authsrv: synced (3 users;
+    2 with the console).`). Before the script runs, when any user gets the
+    console, `/etc/shells` gets the line `/usr/local/bin/tacctl-console` and
+    sshd gets the drop-in `/etc/ssh/sshd_config.d/tacctl-console.conf`
+    (`Match Group tac-console`: `ForceCommand /usr/local/bin/tacctl-console`,
+    `DisableForwarding yes` (left out, with `AllowAgentForwarding yes`, under
+    `console agent-forwarding enable`), `AllowTcpForwarding no`,
+    `AllowStreamLocalForwarding no`, `X11Forwarding no`, `PermitTunnel no`,
+    `PermitTTY yes`, `PubkeyAuthentication no`, `ClientAliveInterval 300`,
+    `ClientAliveCountMax 2`), each reported `Installed:`, `Updated:` or
+    `Unchanged:`. Every change of the drop-in is checked with `sshd -t`;
+    when sshd refuses it the previous file comes back (`sshd refused the
+    console's drop-in; … was put back as it was:` and sshd's words), else
+    sshd is reloaded (`systemctl reload ssh.service`, or `sshd.service`).
+    After the script the check of `console check` runs. Without
+    `/usr/local/bin/tacctl-console` nobody gets the console (`… is missing,
+    so no account gets the login console now`). Every other host, and
+    `config linux script`, keep three fields and never touch a shell.
+    `host unenroll` of the server gives tacctl's accounts `/bin/bash` back
+    (the remove script, for every account it created with the console
+    shell; any other account with that shell is named and left) and removes
+    the drop-in and the `/etc/shells` line. With `ForceCommand` every login,
+    remote command and subsystem of a console user (sftp and
+    `internal-sftp` included) reaches the console as `tacctl-console -c
+    /usr/local/bin/tacctl-console`; the console takes the client's command
+    from `SSH_ORIGINAL_COMMAND` (none: a login) and the `-c` guard decides
+    it as before. New: `tacctl console install` (the pieces, then the
+    check), `console remove` (refused while an account has the console:
+    `These accounts still have the console as their login shell: … Nothing
+    was removed.`) and `console check` (operator tier and up: the drop-in
+    present and current, `/etc/ssh/sshd_config` including
+    `sshd_config.d/*.conf`, and `sshd -T` for a console user; exit 1 with
+    the red warning). `console show` and `console check` also report
+    `forcecommand` and `pubkeyauthentication` and warn when sshd does not
+    force the console or allows key logins. `install` makes the symlink
+    `/usr/local/bin/tacctl-console`, `upgrade` refreshes it (`Updated:
+    /usr/local/bin/tacctl-console -> /usr/local/bin/tacctl`) and rewrites an
+    installed drop-in that differs from the release's (`Updated:|Unchanged:
+    sshd drop-in`; never creates one), and `uninstall` first gives every
+    account whose shell is the console `/bin/bash` (`Login shell /bin/bash
+    restored for: …`), then removes the drop-in, the `/etc/shells` line and
+    the symlink. Nothing changes for anyone at the upgrade itself: the
+    accounts follow at the next `host sync` of the server.
 
 ## 0.2.0 (2026-10-04)
 

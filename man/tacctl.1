@@ -3487,6 +3487,40 @@ tier). Edit it with
 which locks it, validates the result and replaces it atomically. Snapshots
 include it.
 .TP
+.I /usr/local/bin/tacctl\-console
+The login console: a symbolic link to
+.IR /usr/local/bin/tacctl ,
+made by
+.B install
+and refreshed by
+.BR upgrade .
+.TP
+.I /etc/ssh/sshd_config.d/tacctl\-console.conf
+sshd's drop-in for the members of
+.B tac\-console
+(the accounts whose shell is the console): the console forced, every
+forwarding closed, key logins off. Written by
+.B host sync
+of the host enrolled with
+.B \-\-local
+and
+.BR "console install" ,
+checked with
+.BR "sshd \-t" ,
+refreshed by
+.BR upgrade ,
+removed by
+.BR "console remove" ,
+.B host unenroll
+of that host and
+.BR uninstall .
+Do not edit.
+.TP
+.I /etc/shells
+Gets the line
+.I /usr/local/bin/tacctl\-console
+with the drop-in, and loses it with it.
+.TP
 .I /var/lib/tacctl/ssh/known_hosts
 Generated from
 .I devices.yaml

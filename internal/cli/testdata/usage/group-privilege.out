@@ -7,6 +7,7 @@ Usage:
   tacctl group privilege remove <group> '<cmd>'[,'<cmd>'...]       Remove mapping(s)
   tacctl group privilege clear <group>                             Wipe explicit mappings (revert to defaults)
   tacctl group privilege seed [<group>] [--force]                  Populate built-ins with safe defaults
+      --force                                                      (seed) Overwrite a group that already has mappings
 
 Drives 'privilege exec level <lvl> <cmd>' lines emitted by
 'tacctl config cisco'. Pure device-side; tacquito does not read

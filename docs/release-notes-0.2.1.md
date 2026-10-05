@@ -6,8 +6,19 @@ seen and which addresses authenticate without being registered, and pins their
 ssh host keys; `tacctl ssh <name>` opens a session to one as the invoking user,
 by password. It also adds `tacctl shell` (an interactive prompt with completion
 and history), zsh and fish completion, signed release binaries (amd64 and
-arm64), and a stricter account lifecycle for Linux hosts. The numbered list
-below is everything that differs from 0.2.0, and nothing else.
+arm64), and a stricter account lifecycle for Linux hosts.
+
+**The login console is on by default.** Once the server's own accounts are
+synced (`tacctl host sync <server>`, the host enrolled with `--local`), every
+tacctl user's login shell on the tacctl server is the console: tacctl
+commands and ssh to registered devices, no system shell, no file transfer, no
+forwarding (sshd's drop-in forces the console on them). Nothing changes for
+anyone at the upgrade itself. Local administrators, and every local account
+that is not a tacctl user, are never touched: they keep their shells and
+their local passwords. One tacctl user gets bash back with `tacctl console
+user <name> disable` and a `host sync`; a whole tier with `tacctl console
+tiers <tier> disable`. The numbered list below is everything that differs
+from 0.2.0, and nothing else.
 
 ## Upgrading from 0.2.0
 
@@ -66,6 +77,16 @@ What to expect:
   another range for all hosts with `tacctl config linux uid-range
   <min>-<max>`, which moves `linux-uids` and, at their next sync, every
   host's accounts by the same offset.
+- **The login console** (items 46-51 and 55). The upgrade makes
+  `/usr/local/bin/tacctl-console` and changes no account. At the next `host
+  sync` of the server (or `host enroll --local`), every tacctl user of its
+  scope gets the console as login shell and joins `tac-console`, `/etc/shells`
+  lists the console, and sshd gets `/etc/ssh/sshd_config.d/tacctl-console.conf`
+  (checked with `sshd -t`, then reloaded). Install the tiers sudoers rules
+  first (`tacctl config sudoers tiers install`; the upgrade refreshes an
+  installed file), or readonly and operator users can run nothing from the
+  console. To keep everyone on bash, disable the tiers before that sync:
+  `tacctl console tiers readonly|operator|superuser disable`.
 - **Release binaries.** When a clone is at a release tag, `install` and
   `upgrade` download the binary for the host, verify its signature against the
   public key committed in the clone (`release/allowed_signers`), its checksum
@@ -444,10 +465,12 @@ What to expect:
     with a warning.
 40. **The install script's header has a protocol.** After `TAC_USERS` it sets
     `TAC_INACTIVE` (the scope's disabled users and the accounting sink),
-    `TAC_REMOVE_HOMES` (names, or `*`) and `TAC_PROTOCOL=3`; the script body
-    refuses a header of another protocol before changing anything (`This
-    script's header speaks protocol <n> and its body protocol 3: they were
-    not written by the same tacctl. …`).
+    `TAC_REMOVE_HOMES` (names, or `*`), the UID range (item 53) and
+    `TAC_PROTOCOL=4`; the script body refuses a header of another protocol
+    before changing anything (`This script's header speaks protocol <n> and
+    its body protocol 4: they were not written by the same tacctl. …`).
+    `TAC_USERS` lines are `name:tier:uid` for every host, and
+    `name:tier:uid:shell` for the tacctl server's own accounts (item 55).
 41. **Enrolled hosts have a recorded address.** `host enroll` and `host
     sync` record the address the enrolment's ssh connection reached (the
     host's side of sshd's `SSH_CONNECTION`, read over the same connection

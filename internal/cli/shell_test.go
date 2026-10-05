@@ -460,7 +460,7 @@ func TestShellExplain(t *testing.T) {
 			"\n  -p <port>  ", "Connect to <port>",
 			"Next: <Enter> to run\n",
 		}},
-		{[]string{"device", "add", "x"}, []string{"Usage:\n  add <name> <address> [options]", "  --vendor cisco|juniper|wti|other", "  --port <n>\n", "  --host-key SHA256:<fp>\n", "Next: <address>\n"}},
+		{[]string{"device", "add", "x"}, []string{"Usage:\n  add <name> <address> [options]", "  --vendor cisco|juniper|wti|other", "  --port <n>                        Its ssh port (default 22)\n", "  --host-key SHA256:<fp>            Register only if the device offers this key; pin it alone\n", "Next: <address>\n"}},
 		{[]string{"device", "address", "x"}, []string{"Next: [<address>], or <Enter> to run\n"}},
 		{[]string{"version"}, []string{"Usage:\n  version [--long]\n", "Next: <Enter> to run\n"}},
 	}
@@ -557,6 +557,26 @@ func TestShellListKinds(t *testing.T) {
 	} {
 		if got := listKindName(c.spec, c.rest); got != c.want {
 			t.Errorf("%+v %q: %q, want %q", c.spec, c.rest, got, c.want)
+		}
+	}
+}
+
+// '?' after a dash describes every flag of every command: each flag has an
+// option line (or a row) in its usage block.
+func TestEveryFlagHasADescription(t *testing.T) {
+	inv, root, _ := shellTestInv(t)
+	complete := inv.shellCompleter(root)
+	var all [][]string
+	commandPaths(root, nil, &all)
+	for _, p := range all {
+		c, _ := resolve(root, p)
+		if len(c.Commands()) > 0 {
+			continue
+		}
+		for _, cand := range complete(p, "-") {
+			if strings.HasPrefix(cand.Word, "-") && cand.Desc == "" {
+				t.Errorf("tacctl %s %s: no description for '?'", strings.Join(p, " "), cand.Word)
+			}
 		}
 	}
 }

@@ -105,6 +105,50 @@ var deviceVerbs = [][2]string{
 	{"check <name>|--all", "Checklist: scope, tag, seen, reachable, host key"},
 }
 
+// deviceOptions are the option lines under a verb's row in the usage, one
+// per flag ({flag, description}), so the shell's '?' describes each.
+var deviceOptions = map[string][][2]string{
+	"list": {
+		{"--stale", "Only the devices not seen for stale-days"},
+		{"--unconfigured", "Only the devices no scope's prefixes cover"},
+		{"--scan", "Scan the logs first (as 'device scan')"},
+		{"--probe", "Add REACH: a TCP connect to each ssh port (3 s)"},
+		{"--json", "(list, show, export) Print JSON"},
+	},
+	"add": {
+		{"--vendor cisco|juniper|wti|other", "The vendor (default other)"},
+		{"--hostname <dns>", "Its DNS name"},
+		{"--port <n>", "Its ssh port (default 22)"},
+		{"--description <text>", "A description"},
+		{"--legacy-ssh", "Old IOS: SHA-1 key exchange and ssh-rsa"},
+		{"--host-key SHA256:<fp>", "Register only if the device offers this key; pin it alone"},
+		{"--no-host-key", "Register without a pinned key (a hostkey-unpinned notice)"},
+		{"--allow-generic", "(add, rename, import) Allow a generic name such as 'switch'"},
+	},
+	"remove": {
+		{"--all", "(remove, check) Every device"},
+		{"-y, --yes", "(remove, import, hostkey) Answer yes to the confirmation"},
+	},
+	"import": {
+		{"--check", "Write nothing; say what the import would do"},
+		{"--replace", "Replace the registry instead of merging into it"},
+	},
+	"export": {
+		{"--csv", "Print CSV instead of YAML"},
+	},
+	"ssh": {
+		{"-p <port>", "Connect to this port instead of the registered one"},
+	},
+	"scan": {
+		{"--full", "Re-read everything the logs still hold"},
+		{"--since <dur>", "Read this stretch of the logs (7d, 12h, 2w)"},
+		{"--backend <id>", "(scan, discover) Only that backend's log"},
+	},
+	"discover": {
+		{"--all", "Also list the addresses that were only refused"},
+	},
+}
+
 func deviceCmd(inv *invocation) *cobra.Command {
 	c := verb("device <subcommand>", "Device registry: names, addresses and notices for the devices that authenticate here")
 	c.RunE = inv.native(withPreflight, inv.device)
@@ -125,15 +169,14 @@ func deviceRegUsage() string {
 		use, short := v[0], v[1]
 		if len(use) > 56 {
 			b.WriteString("  " + use + "\n  " + strings.Repeat(" ", 56) + "  " + short + "\n")
-			continue
+		} else {
+			fmt.Fprintf(&b, "  %-56s  %s\n", use, short)
 		}
-		fmt.Fprintf(&b, "  %-56s  %s\n", use, short)
+		for _, o := range deviceOptions[strings.Fields(use)[0]] {
+			fmt.Fprintf(&b, "      %-52s  %s\n", o[0], o[1])
+		}
 	}
 	b.WriteString(`
-add options: --vendor cisco|juniper|wti|other (default other), --hostname <dns>,
---port <n>, --description <text>, --legacy-ssh, --allow-generic
-(register a generic name such as 'switch' anyway).
-
 Host keys: 'add' reads the device's ssh host keys (ssh-keyscan of the address
 and port) and pins them; compare the fingerprints it prints with the device
 console. --host-key SHA256:<fp> registers only when the device offers a key

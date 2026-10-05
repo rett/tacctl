@@ -81,29 +81,33 @@ _client_env() {
         echo "$1:x:$gid:" >> "$FAKE_DB/group"'
     # The account database is kept up to date: useradd adds the account
     # (and its home), userdel and groupdel take them out again.
-    stub_cmd useradd 'uid=""; gid=""; gecos=""
+    stub_cmd useradd 'uid=""; gid=""; gecos=""; sh=/bin/bash
         while [[ $# -gt 1 ]]; do case "$1" in
             -u) uid="$2"; shift 2 ;;
             -g) gid=$(getent group "$2" | cut -d: -f3); shift 2 ;;
             -c) gecos="$2"; shift 2 ;;
-            -s) shift 2 ;;
+            -s) sh="$2"; shift 2 ;;
             *) shift ;;
         esac; done
-        echo "$1:x:${uid:-1500}:${gid:-1500}:${gecos}:${TACCTL_CLIENT_HOME_ROOT}/$1:/bin/bash" >> "$FAKE_DB/passwd"
+        echo "$1:x:${uid:-1500}:${gid:-1500}:${gecos}:${TACCTL_CLIENT_HOME_ROOT}/$1:${sh}" >> "$FAKE_DB/passwd"
         mkdir -p "${TACCTL_CLIENT_HOME_ROOT}/$1"'
     stub_cmd userdel '[[ -z "${USERDEL_FAILS:-}" ]] || exit 8
         sed -i "/^$1:/d" "$FAKE_DB/passwd" "$FAKE_DB/shadow"'
     stub_cmd groupdel 'sed -i "/^$1:/d" "$FAKE_DB/group"'
     # usermod -u/-g and groupmod -g renumber in the database (groupmod moves
-    # the primary GID of the group's users too, as shadow-utils does); the
-    # rest of usermod is recorded only.
-    stub_cmd usermod 'u=""; g=""
+    # the primary GID of the group's users too, as shadow-utils does), and
+    # usermod -s changes the shell; the rest of usermod is recorded only.
+    stub_cmd usermod 'u=""; g=""; sh=""
         while [[ $# -gt 1 ]]; do case "$1" in
             -u) u="$2"; shift 2 ;;
             -g) g=$(getent group "$2" | cut -d: -f3); shift 2 ;;
+            -s) sh="$2"; shift 2 ;;
             -c|-e|-aG|-G) shift 2 ;;
             *) shift ;;
         esac; done
+        if [[ -n "$sh" ]]; then
+            awk -F: -v OFS=: -v n="$1" -v v="$sh" "\$1 == n { \$7 = v } 1" "$FAKE_DB/passwd" > "$FAKE_DB/p.new" && mv "$FAKE_DB/p.new" "$FAKE_DB/passwd"
+        fi
         if [[ -n "$u" ]]; then
             awk -F: -v OFS=: -v n="$1" -v v="$u" "\$1 == n { \$3 = v } 1" "$FAKE_DB/passwd" > "$FAKE_DB/p.new" && mv "$FAKE_DB/p.new" "$FAKE_DB/passwd"
         fi
@@ -445,10 +449,10 @@ bob"
 @test "client install: a header of another protocol stops the run before anything changes" {
     _gen > /dev/null
     _client_env
-    sed -i 's/^TAC_PROTOCOL=3$/TAC_PROTOCOL=2/' "$OUT"
+    sed -i 's/^TAC_PROTOCOL=4$/TAC_PROTOCOL=2/' "$OUT"
     run bash "$OUT" --accounts-only
     assert_failure
-    assert_output --partial "This script's header speaks protocol 2 and its body protocol 3"
+    assert_output --partial "This script's header speaks protocol 2 and its body protocol 4"
     sed -i '/^TAC_PROTOCOL=/d' "$OUT"
     run bash "$OUT" --accounts-only
     assert_failure
@@ -780,6 +784,77 @@ _legacy_host() {
     stub_called "find ${TACCTL_CLIENT_HOME_ROOT} -xdev \\( -uid 20000 -o -gid 20000 \\) -print"
     run grep -cE "^(chown|chgrp) .*stray" "$CALLS_LOG"
     assert_output "0"
+}
+
+# --- the tacctl server's own accounts: the login shell field --------------------
+
+# _console_header: the script's TAC_USERS with a shell per user, as 'host
+# enroll --local' writes it (config linux script writes three fields).
+_console_header() {
+    sed -i "s|^TAC_USERS=.*|TAC_USERS=\$'alice:superuser:80000:$1\\\\nbob:readonly:80001:$2'|" "$OUT"
+}
+CONSOLE=/usr/local/bin/tacctl-console
+
+@test "client install: the shell field makes console accounts, tac-console follows it, the summary counts them" {
+    _gen > /dev/null
+    _client_env
+    _console_header "$CONSOLE" /bin/bash
+    run bash "$OUT" --accounts-only
+    assert_success
+    stub_called "groupadd tac-console"
+    stub_called "useradd -m -u 80000 -g alice -s ${CONSOLE} -c alice \\(TACACS\\+\\) alice"
+    stub_called "useradd -m -u 80001 -g bob -s /bin/bash -c bob \\(TACACS\\+\\) bob"
+    stub_called "usermod -aG tac-users,tac-superuser,tac-console alice"
+    stub_called "usermod -aG tac-users,tac-readonly bob"
+    assert_output --partial "[INFO] Accounts: 2 managed by tacctl here; console: 1."
+    # Switched: alice back to bash (out of tac-console), bob to the console.
+    _console_header /bin/bash "$CONSOLE"
+    : > "$CALLS_LOG"
+    FAKE_ID_GROUPS="tac-users tac-superuser tac-console" run bash "$OUT" --accounts-only
+    assert_success
+    assert_output --partial "[INFO] 'alice': login shell is now /bin/bash."
+    assert_output --partial "[INFO] 'bob': login shell is now the tacctl console."
+    stub_called "usermod -s /bin/bash alice"
+    stub_called "usermod -s ${CONSOLE} bob"
+    stub_called "gpasswd -d alice tac-console"
+    stub_called "usermod -aG tac-users,tac-readonly,tac-console bob"
+    run grep -E "^(alice|bob):" "$FAKE_DB/passwd"
+    assert_line --partial "alice:x:80000:80000:alice (TACACS+):${TACCTL_CLIENT_HOME_ROOT}/alice:/bin/bash"
+    assert_line --partial "bob:x:80001:80001:bob (TACACS+):${TACCTL_CLIENT_HOME_ROOT}/bob:${CONSOLE}"
+    # Unchanged shells: nothing to do.
+    : > "$CALLS_LOG"
+    run bash "$OUT" --accounts-only
+    assert_success
+    refute_output --partial "login shell is now"
+    if stub_called "^usermod -s "; then stub_calls; return 1; fi
+}
+
+@test "client install: three fields (every other host) leave the shell alone" {
+    _gen > /dev/null
+    _client_env
+    bash "$OUT" --accounts-only > /dev/null
+    awk -F: -v OFS=: -v c="$CONSOLE" '$1 == "alice" { $7 = c } 1' "$FAKE_DB/passwd" > "$FAKE_DB/p.new" && mv "$FAKE_DB/p.new" "$FAKE_DB/passwd"
+    : > "$CALLS_LOG"
+    run bash "$OUT" --accounts-only
+    assert_success
+    if stub_called "^usermod -s "; then stub_calls; return 1; fi
+    refute_output --partial "console:"
+}
+
+@test "client remove: tacctl's accounts with the console get /bin/bash back; others are named and left" {
+    _gen > /dev/null
+    _client_env
+    _console_header "$CONSOLE" /bin/bash
+    bash "$OUT" --accounts-only > /dev/null
+    echo "ext:x:1200:1200::/home/ext:${CONSOLE}" >> "$FAKE_DB/passwd"
+    "$TACCTL_BIN_SCRIPT" config linux remove-script --output "$BATS_TEST_TMPDIR/remove.sh" > /dev/null
+    : > "$CALLS_LOG"
+    run bash "$BATS_TEST_TMPDIR/remove.sh"
+    assert_success
+    assert_output --partial "[INFO] 'alice': login shell is /bin/bash again (it was the tacctl console)."
+    assert_output --partial "[WARN] 'ext' has the tacctl console (${CONSOLE}) as its login shell, but tacctl did not create it; left as it is."
+    stub_called "usermod -s /bin/bash alice"
+    if stub_called "^usermod .* (bob|ext)$"; then stub_calls; return 1; fi
 }
 
 # --- another UID range (tacctl.yaml linux.uid_min, linux.uid_max) --------------
