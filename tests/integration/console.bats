@@ -27,6 +27,8 @@ case \" \$* \" in *' _console-policy '*) echo 'shell=console idle=30 system_shel
 exec \"\$@\""
     stub_cmd id 'echo carol tac-users tac-readonly'
     export HOME="${BATS_TEST_TMPDIR}/home"
+    # Who the session is logged as (not whoever runs the suite).
+    export USER=carol LOGNAME=carol
     # Not over ssh unless a test says so.
     unset SSH_CLIENT SSH_CONNECTION SSH_TTY
     mkdir -p "$HOME"
