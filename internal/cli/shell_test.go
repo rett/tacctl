@@ -332,15 +332,15 @@ func TestShellHelp(t *testing.T) {
 func TestShellHelpIsTheCLIUsage(t *testing.T) {
 	inv, root, _ := shellTestInv(t)
 	help := inv.shellHelp(root, false)
+	sb := newSandbox(t, true)
 	for _, fam := range []string{"user", "group", "host", "device", "backend", "store", "config", "log", "backup", "hash", "ssh"} {
-		h := newHarness(t, []string{fam})
-		_ = h.run()
-		if h.out.Len() == 0 {
-			t.Fatalf("tacctl %s printed nothing (stderr %q)", fam, h.err.String())
+		out := sb.run("", []string{fam})
+		if out == "" {
+			t.Fatalf("tacctl %s printed nothing (stderr %q)", fam, sb.err.String())
 		}
 		got, ok := help([]string{fam})
-		if !ok || got != h.out.String() {
-			t.Errorf("help %s differs from 'tacctl %s':\n%q\n%q", fam, fam, got, h.out.String())
+		if !ok || got != out {
+			t.Errorf("help %s differs from 'tacctl %s':\n%q\n%q", fam, fam, got, out)
 		}
 	}
 }
