@@ -180,6 +180,26 @@ _normalize() {
     refute_output --partial "No group lands in the SuperUser band"
 }
 
+@test "config wti: Port access names the User and ViewOnly groups, which need ports turned On" {
+    "$TACCTL_BIN_SCRIPT" group add wtisuper 12 OP-CLASS > /dev/null
+    run "$TACCTL_BIN_SCRIPT" config wti --scope lab
+    assert_success
+    assert_output --partial "Port Access: the serial ports User- and"
+    assert_output --partial "Port access (8. Default User Access → Port Access, Step 3):"
+    assert_output --partial "    readonly: ViewOnly"
+    assert_output --partial "    operator: User"
+    refute_output --partial "    wtisuper: SuperUser"
+    refute_output --partial "    superuser: Administrator"
+}
+
+@test "config wti: Port access says the list is unused when no group is below SuperUser" {
+    "$TACCTL_BIN_SCRIPT" group edit readonly priv-lvl 12 > /dev/null
+    "$TACCTL_BIN_SCRIPT" group edit operator priv-lvl 12 > /dev/null
+    run "$TACCTL_BIN_SCRIPT" config wti --scope lab
+    assert_success
+    assert_output --partial "No group lands at User or ViewOnly, so the Port Access list is not used."
+}
+
 @test "config wti: default tacacs-first renders Fallback Local 'On (Transport Failure)'" {
     run "$TACCTL_BIN_SCRIPT" config wti --scope lab
     assert_success

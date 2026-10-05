@@ -363,7 +363,9 @@ func templatesSync(o *ohost) (lifecycle.TemplateSync, int) {
 //	    bash -c 'set -euo pipefail; source "$1"; templates_sync "$2" >/dev/null' _ "$T/bin/tacctl.sh" "$T"
 //	cp "$D/state/templates/.shipped.sha256" tests/fixtures/golden/templates.manifest
 //
-// A second sync writes nothing.
+// with the hashes of the templates changed since then put in by hand (0.2.1
+// item 59: wti.template and wti-radius.template; 'sha256sum' of each). The
+// format is still 0.1.16's. A second sync writes nothing.
 func TestTemplatesSyncFreshAndManifestGolden(t *testing.T) {
 	o := newOhost(t)
 	res, code := templatesSync(o)
@@ -375,7 +377,7 @@ func TestTemplatesSyncFreshAndManifestGolden(t *testing.T) {
 		"Installed: template: juniper.template", "Installed: template: wti-radius.template", "Installed: template: wti.template")
 	manifest := filepath.Join(o.p.Templates, lifecycle.TemplateManifest)
 	if got, want := readFile(t, manifest), fixture(t, "golden/templates.manifest"); got != want {
-		t.Errorf("manifest differs from the 0.1.17 golden:\n%s\nwant\n%s", got, want)
+		t.Errorf("manifest differs from the golden:\n%s\nwant\n%s", got, want)
 	}
 	for _, f := range []string{manifest, filepath.Join(o.p.Templates, "cisco.template")} {
 		if st, _ := os.Stat(f); st.Mode().Perm() != 0o600 {

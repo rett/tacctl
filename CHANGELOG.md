@@ -677,6 +677,15 @@ current behaviour; this file is where history lives.
     print the scope on a line of its own** (`  Scope 'lab'`, then `  Cisco
     aaa-group-server name: TACACS-GROUP`, then `  Source: …`) instead of
     one line `  Scope 'lab' Cisco aaa-group-server name: …`.
+59. **`config wti` says which ports User- and ViewOnly-level logins
+    reach.** A WTI unit lets those logins reach only the serial ports (and,
+    on a power unit, the plugs and plug groups) turned On under Default User
+    Access, and none from the factory: an operator (priv-lvl 7, User) logged
+    in and saw no ports. Step 3 of both walkthroughs (TACACS+ and RADIUS) now
+    sets Port Access, Plug Access and Plug Group Access with the rest of
+    Default User Access, and a new "Port access" section names the groups
+    those lists apply to (or says no group needs them). Administrator and
+    SuperUser logins reach every port, as before.
 
 ## 0.2.0 (2026-10-04)
 

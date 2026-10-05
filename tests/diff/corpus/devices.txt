@@ -63,12 +63,17 @@ config cisco --scope lab --legacy --protocol tacacs
 config cisco
 config juniper --scope lab
 config juniper --scope prod-inner --protocol tacacs
+@known 0.2.1 item 59: config wti sets Port Access in Step 3 and names the groups it applies to
 config wti --scope lab
+@known 0.2.1 item 59: config wti sets Port Access in Step 3 and names the groups it applies to
 config wti --scope dmz
+@known 0.2.1 item 59: config wti sets Port Access in Step 3 and names the groups it applies to
 scope default prod ;; config juniper ;; config wti
+@known 0.2.1 item 59: config wti sets Port Access in Step 3 and names the groups it applies to
 scope auth-method lab tacacs ;; config cisco --scope lab ;; config wti --scope lab
 scope auth-method lab radius ;; config cisco --scope lab --legacy --protocol tacacs
 scope protocols lab set tacacs,radius ;; config cisco --scope lab ;; config juniper --scope lab
+@known 0.2.1 item 59: config wti sets Port Access in Step 3 and names the groups it applies to
 scope aaa-order lab local-first ;; config cisco --scope lab ;; config juniper --scope lab ;; config wti --scope lab ;; config cisco --scope prod
 scope exec-timeout lab 15 ;; config cisco --scope lab ;; config juniper --scope lab
 scope exec-timeout lab 0 ;; config cisco --legacy --scope lab
@@ -82,6 +87,7 @@ config mgmt-acl juniper-name GLOBAL-MGMT ;; scope mgmt-acl lab juniper-name LAB-
 scope mgmt-acl lab add fd00:1::/64 ;; config cisco --scope lab ;; config juniper --scope lab
 
 # groups: privilege mappings, command rules, the WTI bands
+@known 0.2.1 item 59: config wti sets Port Access in Step 3 and names the groups it applies to
 group add wtisuper 12 OP-CLASS ;; config wti --scope lab ;; config cisco --scope lab ;; config juniper --scope lab
 group add netadmin 15 RW-CLASS ;; group add readers 3 RO-CLASS ;; config juniper --scope lab ;; config cisco --scope lab
 group privilege add operator 'show interfaces','show version' ;; config cisco --scope lab
@@ -90,18 +96,27 @@ group commands add readonly dir --action permit ;; group commands add operator r
 group commands default readonly deny ;; group commands remove readonly show ;; group commands remove readonly ping ;; group commands remove readonly traceroute ;; config juniper --scope lab
 
 # secrets and users the WTI walkthrough warns about
+@known 0.2.1 item 59: config wti sets Port Access in Step 3 and names the groups it applies to
 scope secret lab set 'ab+cd/ef=0123456789xyz' ;; config wti --scope lab
+@known 0.2.1 item 59: config wti sets Port Access in Step 3 and names the groups it applies to
 scope secret lab set 'abcdefghij0123456789ABCDEFGHIJ0123456789' ;; config wti --scope lab
+@known 0.2.1 item 59: config wti sets Port Access in Step 3 and names the groups it applies to
 scope secret lab set 'has space in the secret-0123' ;; config wti --scope lab ;; config cisco --scope lab ;; config juniper --scope lab
+@known 0.2.1 item 59: config wti sets Port Access in Step 3 and names the groups it applies to
 scope secret lab set 'back\slash-in-the-secret-0123' ;; config wti --scope lab
+@known 0.2.1 item 59: config wti sets Port Access in Step 3 and names the groups it applies to
 scope secret lab set 'café-in-the-secret-0123456' ;; config wti --scope lab
+@known 0.2.1 item 59: config wti sets Port Access in Step 3 and names the groups it applies to
 scope secret lab set 'ideographic　space-0123456789' ;; config wti --scope lab
+@known 0.2.1 item 59: config wti sets Port Access in Step 3 and names the groups it applies to
 scope secret lab set 'nbsp space-0123456789abcdef' ;; config wti --scope lab
+@known 0.2.1 item 59: config wti sets Port Access in Step 3 and names the groups it applies to
 user add abcdefghij0123456789abcdefghij012 readonly --scopes lab --hash {HASH} ;; config wti --scope lab ;; config wti --scope prod
 
 # --- no store, no default scope -------------------------------------------------------
 @fixture tacquito.minimal.yaml
 config cisco
+@known 0.2.1 item 59: config wti sets Port Access in Step 3 and names the groups it applies to
 config wti
 config juniper --scope nosuch
 @fixture none
