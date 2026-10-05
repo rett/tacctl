@@ -91,6 +91,9 @@ Deferred:
   - `group commands add` always appends before the catch-all; a rule cannot be placed before an existing one.
   - `group privilege add` emits `privilege exec level N <cmd>` only; `privilege exec all level N <cmd>` (a whole command tree) and `privilege configure level N <cmd>` cannot be expressed.
   - `--match` regexes cannot contain a comma (the rule line form splits on it).
+- **Lab results so far (2026-10-05):**
+  - Junos (TACACS+): logins with `deny-commands` and `deny-configuration` values sent from the server work for permission-only classes once each `name=value` argument is at most 255 bytes (the largest tried: 251); at 257 and 261 bytes the login failed.
+  - WTI (TACACS+): User-level logins reach the ports turned On under Default User Access, as `config wti` now instructs (0.2.1 item 59).
 - **To settle on lab devices before building:** that tacquito's denies hold for priv-lvl 15 commands and in configuration mode (IOS-XE); how IOS reports `do <cmd>` in configuration mode; the Junos deny sets with permission-only classes (including `set groups ... system login`); that a WTI unit with Service Name `wti` sends `service=wti` and takes the priv-lvl of a `wti` service (SuperUser from 12 while Cisco gets 15).
 
 ## 3d. Fully qualified device names (filed 2026-10-05)
