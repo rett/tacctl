@@ -2,6 +2,8 @@
 
 > Amends `docs/plans/operator-console-wp.md` for the user decisions of 2026-10-04: the console ships in 0.2.1, is on by default for every tier, and gains a `system-shell` builtin (superusers only by default). Where this document and the base plan disagree, this one wins. Written by Fable against `feature/0.2.1` at `7cca787`.
 
+> **Open questions decided (user, 2026-10-04):** (1) the builtin is `system-shell`; (2) superuser lines in `tacctl shell` and the console run plain `sudo` (readonly/operator keep `-n`); (3) the `tac-console` drop-in sets `PubkeyAuthentication no`; (4) the console refuses `tacctl ssh` to an unpinned entry; (5) `console tiers|user` writes print the `host sync <local>` command and do not sync; (6) the console case joins the hosts container matrix if the server image runs sshd, else WP7.4 is the only sshd proof, recorded in the gate.
+
 ## Replacement text for `docs/plans/operator-console-wp.md`
 
 ### A. Header: add after the "enrolled-host pinning" note (line 13)
