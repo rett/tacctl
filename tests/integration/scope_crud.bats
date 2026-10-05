@@ -89,7 +89,7 @@ setup() {
 
 # --- scopes list / show / lookup --------------------------------------------
 
-@test "scope list: one block per scope; prefixes rendered line-by-line" {
+@test "scope list: each scope's prefixes listed under its name, one per line" {
     "$TACCTL_BIN_SCRIPT" scope add prod \
         --prefixes 10.0.0.0/8,10.10.0.0/16 \
         --secret "prod-secret-1234567890abcdef"

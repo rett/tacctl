@@ -478,7 +478,7 @@ func (inv *invocation) scopeUsage() error {
 func (inv *invocation) scopeListView([]string) error {
 	b, nc, cy := ui.Bold, ui.NC, ui.Cyan
 	title := "Scopes"
-	hint := cy + "(one block per scope; see 'tacctl scope routing' for first-match prefix order)" + nc
+	hint := cy + "(each scope's prefixes are listed under its name; 'tacctl scope routing' shows the order addresses are matched in)" + nc
 	inv.echo("")
 	def, err := inv.defaultScope()
 	if err != nil {

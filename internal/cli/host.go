@@ -664,17 +664,21 @@ func (inv *invocation) hostScopeCovers(name, target, addr, scope string, unchang
 }
 
 // hostAddress is the address a registered host's logins come from, as
-// recorded at its last enroll or sync (127.0.0.1 for this server); "" when
-// none is recorded.
+// recorded at its last enroll or sync (127.0.0.1 for this server); else the
+// address its target resolves to; "" when neither is known.
 func (inv *invocation) hostAddress(e hosts.Entry) string {
 	if e.Target == hosts.Local {
 		return "127.0.0.1"
 	}
-	f, err := devreg.Load(inv.app.Paths.DevicesFile)
-	if err != nil {
-		return ""
+	if f, err := devreg.Load(inv.app.Paths.DevicesFile); err == nil {
+		if addr := f.HostAddressOf(e.Name); addr != "" {
+			return addr
+		}
 	}
-	return f.HostAddressOf(e.Name)
+	if host, _, ok := hosts.ScanTarget(e.Target, e.Port); ok {
+		return inv.resolveV4(host)
+	}
+	return ""
 }
 
 // hostScopeDrift is what is wrong with where a registered host's logins
@@ -943,7 +947,11 @@ func (inv *invocation) syncOne(he *hosts.Env, e hosts.Entry, method string, scri
 	}
 	inv.hostFacts(he, e.Name, e.Target, resolved)
 	if e.Target != hosts.Local {
-		if msg := inv.hostScopeDrift(e, inv.hostAddress(e)); msg != "" {
+		addr := inv.hostAddress(e)
+		if addr == "" {
+			addr = resolved
+		}
+		if msg := inv.hostScopeDrift(e, addr); msg != "" {
 			inv.app.Out.WarnE(msg)
 		}
 	}
