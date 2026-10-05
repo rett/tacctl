@@ -139,3 +139,82 @@ func TestBuiltins(t *testing.T) {
 		t.Errorf("a builtin ran a command: %q", f.ran)
 	}
 }
+
+func TestSystemShellWord(t *testing.T) {
+	// Without Options.SystemShell the word is a command like any other.
+	f := newFakeShell(nil)
+	f.sh.Command(context.Background(), "system-shell", nil)
+	if len(f.ran) != 1 || f.ran[0][0] != "system-shell" {
+		t.Errorf("ran %q", f.ran)
+	}
+	// With it, the callback runs (not interactive here) and nothing else.
+	f = newFakeShell(nil)
+	var calls []bool
+	f.sh.o.SystemShell = func(_ context.Context, interactive bool) int {
+		calls = append(calls, interactive)
+		return 126
+	}
+	if got := f.sh.Command(context.Background(), "system-shell", nil); got != 126 {
+		t.Errorf("status %d", got)
+	}
+	if got := f.sh.Command(context.Background(), "system-shell now", nil); got != 2 || !strings.Contains(f.err.String(), "system-shell takes no arguments") {
+		t.Errorf("with an argument: %d %q", got, f.err.String())
+	}
+	if got := f.sh.Batch(context.Background(), strings.NewReader("user list\nsystem-shell\nuser list\n")); got != 126 {
+		t.Errorf("batch status %d", got)
+	}
+	if !slices.Equal(calls, []bool{false, false}) || len(f.ran) != 1 {
+		t.Errorf("calls %v, ran %q", calls, f.ran)
+	}
+	if reason, lines := f.sh.End(); reason != EndFailed || lines != 4 {
+		t.Errorf("End = %s %d", reason, lines)
+	}
+}
+
+func TestEndReasons(t *testing.T) {
+	cases := []struct {
+		script, reason string
+		lines          int
+	}{
+		{"user list\n\nuser list\n", EndEOF, 2},
+		{"user list\nexit\nuser list\n", EndExit, 2},
+		{"status 2\n", EndFailed, 1},
+		{"user list " + strings.Repeat("x", LineMax+10) + "\n", EndFailed, 0},
+	}
+	for _, c := range cases {
+		f := newFakeShell(nil)
+		f.sh.Batch(context.Background(), strings.NewReader(c.script))
+		if reason, lines := f.sh.End(); reason != c.reason || lines != c.lines {
+			t.Errorf("%.30q: End = %s %d, want %s %d", c.script, reason, lines, c.reason, c.lines)
+		}
+	}
+	f := newFakeShell(nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	f.sh.o.Exec = func(context.Context, []string, io.Reader) int { cancel(); return 0 }
+	f.sh.Batch(ctx, strings.NewReader("user list\nuser list\n"))
+	if reason, _ := f.sh.End(); reason != EndSignal {
+		t.Errorf("cancelled batch: %s", reason)
+	}
+	f = newFakeShell(nil)
+	f.sh.Command(context.Background(), "user list", nil)
+	if reason, lines := f.sh.End(); reason != EndCommand || lines != 1 {
+		t.Errorf("command: %s %d", reason, lines)
+	}
+}
+
+func TestRows(t *testing.T) {
+	if got := Rows(false); !slices.EqualFunc(got, BuiltinRows, func(a, b Row) bool { return a.Left == b.Left }) {
+		t.Errorf("Rows(false) = %v", got)
+	}
+	got := Rows(true)
+	var left []string
+	for _, r := range got {
+		left = append(left, r.Left)
+	}
+	if !slices.Equal(left, []string{"help [<command>]", "history", "system-shell", "exit | quit"}) {
+		t.Errorf("Rows(true) = %q", left)
+	}
+	if len(BuiltinRows) != 3 {
+		t.Error("Rows(true) changed BuiltinRows")
+	}
+}

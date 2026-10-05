@@ -44,6 +44,19 @@ sudo_lines() { grep '^sudo ' "$CALLS_LOG" || true; }
     assert_output --regexp '^sudo -n /[^ ]*/dist/tacctl user list$'
 }
 
+@test "shell -c: a superuser's line runs plain sudo (asks for the network password once, sudo's cache applies)" {
+    stub_cmd id 'echo tester tac-users tac-superuser'
+    run "$TACCTL_BIN_SCRIPT" shell -c "user list"
+    assert_success
+    run sudo_lines
+    assert_output --regexp '^sudo /[^ ]*/dist/tacctl user list$'
+    : > "$CALLS_LOG"
+    stub_cmd id 'echo tester tac-users tac-operator'
+    run "$TACCTL_BIN_SCRIPT" shell -c "user list"
+    run sudo_lines
+    assert_output --regexp '^sudo -n /[^ ]*/dist/tacctl user list$'
+}
+
 @test "shell -c: a tier denial replaces sudo's password message; other refusals keep it" {
     bats_require_minimum_version 1.5.0
     stub_cmd id 'echo tester tac-users tac-readonly'

@@ -22,6 +22,9 @@ import (
 //	                             completion, the man page, /root) move
 //	                             under <dir> (paths.Paths.Reroot), so a test
 //	                             can run install, upgrade and uninstall
+//	TACCTL_TEST_CONSOLE_ENV=1    the console (tacctl-console) keeps TACCTL_*
+//	                             and PATH from its environment, so the bats
+//	                             sandbox's paths and stubs reach it
 //
 // They are read from the environment only by a binary built with
 // -tags testknobs ('make build', which the bats harness and the differential
@@ -40,6 +43,8 @@ const (
 	EnvTestRandom = "TACCTL_TEST_RANDOM"
 	EnvFault      = "TACCTL_FAULT"
 	EnvTestRoot   = "TACCTL_TEST_ROOT"
+	// EnvTestConsoleEnv is the console's knob (ConsoleTestEnv).
+	EnvTestConsoleEnv = "TACCTL_TEST_CONSOLE_ENV"
 )
 
 // Knobs is the resolved set of test knobs.

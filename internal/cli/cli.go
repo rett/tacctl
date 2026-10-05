@@ -13,6 +13,7 @@ import (
 	"github.com/rett/tacctl/internal/app"
 	// The shipped backend modules register themselves.
 	_ "github.com/rett/tacctl/internal/backend/all"
+	"github.com/rett/tacctl/internal/console"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/model"
 	"github.com/rett/tacctl/internal/paths"
@@ -36,6 +37,8 @@ type invocation struct {
 
 // Main runs tacctl with argv (os.Args: argv[0] is the program) and environ
 // (os.Environ()) and returns the exit status. cmd/tacctl is its only caller.
+// Started as tacctl-console (the login console's symlink, argv[0] with or
+// without the login shell's '-'), it is the console (console_mode.go).
 func Main(argv, environ []string, stdio app.Stdio, build BuildInfo) int {
 	// SIGINT, SIGTERM and SIGHUP cancel ctx, so commands clean up their
 	// staging directories as bash's 'trap ... EXIT' does (docs/plans/go-rewrite.md 3.5).
@@ -44,6 +47,9 @@ func Main(argv, environ []string, stdio app.Stdio, build BuildInfo) int {
 	exe, err := os.Executable()
 	if err != nil {
 		exe = ""
+	}
+	if len(argv) > 0 && console.IsConsole(argv[0]) {
+		return consoleMain(ctx, argv, environ, stdio, build.resolved(debug.ReadBuildInfo), exe, os.Geteuid(), execx.Real{})
 	}
 	var args []string
 	if len(argv) > 1 {

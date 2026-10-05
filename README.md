@@ -650,7 +650,7 @@ tacctl shell -c 'user list'       # Run one line and exit with its status
 tacctl shell < commands.txt       # Run the lines in order; stop at the first non-zero status and exit with it
 ```
 
-The shell runs as you and holds no privilege: each line runs as `sudo [-n] tacctl <words>` with the terminal attached, so sudo's rules and log, and the tier gate, apply to every line as they do from bash; prompts and password input work as usual. Tier users (members of `tac-users`) get `sudo -n`, and a line their tier's sudoers rules do not cover is reported as not permitted. `hash` and `completion` lines run without sudo; `host` lines carry `SSH_AUTH_SOCK` as the re-exec does.
+The shell runs as you and holds no privilege: each line runs as `sudo [-n] tacctl <words>` with the terminal attached, so sudo's rules and log, and the tier gate, apply to every line as they do from bash; prompts and password input work as usual. Tier users of the readonly and operator tiers (members of `tac-users`, who have no local password) get `sudo -n`, and a line their tier's sudoers rules do not cover is reported as not permitted; superusers (`tac-superuser`) get plain `sudo`, which asks for their network password on the terminal when a line needs it (once; sudo's cache applies), so their write verbs work from the shell. `hash` and `completion` lines run without sudo; `host` lines carry `SSH_AUTH_SOCK` as the re-exec does.
 
 A line is split into words at blanks; single and double quotes and backslash quote as in `sh`, and nothing else is special — no variables, globbing, pipes, redirections, `;`, `$(...)`, backticks or `!`. Lines are at most 4096 bytes. The shell's own words are `help` (the top-level usage), `help <command>` (that family's usage), `history`, and `exit`/`quit` (or Ctrl-D). After a non-zero status the shell prints `[exit N]`.
 
@@ -930,7 +930,9 @@ A name that is a factory or image default is refused with the command that names
 | pinned keys | `-o UserKnownHostsFile=/var/lib/tacctl/ssh/known_hosts -o GlobalKnownHostsFile=none -o StrictHostKeyChecking=yes -o HostKeyAlias=<name> -o UpdateHostKeys=no` |
 | enrolled host | its target's host and its port |
 
-An unpinned device is checked against your own known_hosts, after its `hostkey-unpinned` notice. Arguments after `--` follow the target, so ssh takes them as the remote command (`tacctl ssh core-sw1 -- show version`); they cannot replace an option. When ssh fails with 255 on a pinned device whose key changed, tacctl prints the pinned and offered fingerprints, the console command that shows the key, and `tacctl device hostkey <name> accept|set`.
+An unpinned device is checked against your own known_hosts, after its `hostkey-unpinned` notice. Arguments after `--` follow the target, so ssh takes them as the remote command (`tacctl ssh core-sw1 -- show version`); they cannot replace an option. Each session is logged when it starts (`ssh user= device= addr=`) and when it ends (`ssh end user= device= status= duration=`).
+
+From a login console session (each of its lines carries `TACCTL_CONSOLE=<session>`), `tacctl ssh` reads no ssh configuration file and opens nothing but the session: it adds `-F /dev/null -o PermitLocalCommand=no -o ControlMaster=no -o ClearAllForwardings=yes -o ForwardAgent=no`, `-o EscapeChar=none` unless `tacctl console ssh-escape enable`, and puts the target after `--`, so the words after the name's `--` are only ever the remote command (a first word starting with `-` is refused). A device or host with no pinned host key is refused: `'<name>' has no pinned host key, so the console does not connect to it; an administrator pins it: tacctl device hostkey <name> accept`. Its log lines end with `console=<session>`. When ssh fails with 255 on a pinned device whose key changed, tacctl prints the pinned and offered fingerprints, the console command that shows the key, and `tacctl device hostkey <name> accept|set`.
 
 `tacctl device ssh-config > ~/.ssh/tacctl.conf`, with `Include ~/.ssh/tacctl.conf` at the top of `~/.ssh/config`, gives a plain `ssh <name>` the same options and pin (one `Host` block per device you may see, with `PubkeyAuthentication no` and the password methods and no `User` line: ssh logs in with your local username, which for a tacctl user is the tacctl name; print-only, re-run after registry changes).
 
@@ -972,6 +974,22 @@ console system-shell path [<path>]                The system shell (default /bin
 ```
 
 `console show` lists the users of the scope of the host enrolled with `--local` with `console (user override)`, `console (tier readonly)` or `bash (tier readonly disabled)`, then the server's pieces: the `/usr/local/bin/tacctl-console` symlink, the `/etc/shells` line, sshd's drop-in and what `sshd -T -C user=<user>` reports for a console user. It warns in red when the drop-in is missing or sshd still allows TCP forwarding, because a console user could then forward ports and bypass the device registry. A server that is not enrolled with `--local` says so.
+
+#### The console session — `tacctl-console`
+
+`/usr/local/bin/tacctl-console` is a symlink to the tacctl binary; started under that name (sshd starts a login shell as `-tacctl-console`) it is the console: `tacctl shell` with the prompt `<host>> ` and the banner `tacctl console on <host> — type 'help'. Devices: device list. This session is logged.`, running every line as `sudo [-n] TACCTL_CONSOLE=<session> /usr/local/bin/tacctl <words>` (`-n` by the shell's rule: readonly and operator; superusers are asked for their network password) and starting nothing else. The login environment is discarded except `TERM`, `LANG`, `LC_*`, `HOME`, `USER`, `LOGNAME`, `SSH_CONNECTION`, `SSH_CLIENT` and `SSH_TTY`; `PATH` is `/usr/local/bin:/usr/bin:/bin`. The session asks the server for its settings once (`sudo -n tacctl _console-policy`; without an answer: 30 minutes idle, no system shell) and ends after the idle timeout at the prompt (not while a line runs).
+
+```
+ssh carol@authsrv                 # The console: prompt 'authsrv> ', Tab, ?, history, help
+ssh carol@authsrv 'user list'     # One tacctl line (sshd passes it as -c), logged; no terminal needed
+ssh carol@authsrv < lines.txt     # The lines as a batch; stops at the first failure
+```
+
+`-c` accepts one line that starts with a tacctl command or `help`. Everything else — `scp`, `sftp`, `rsync`, any program, the shell's own words, an empty string — is refused with `the tacctl console does not run programs; file transfer is not available` (exit 126) and nothing runs; so is any other argument (`the tacctl console takes no options`).
+
+`system-shell` (the console's own word, at the prompt only) starts the user's system shell (`console system-shell path`, default `/bin/bash`) as the user, without arguments, with the console's environment and `SHELL=<path>`; the idle timer does not run meanwhile and sshd's drop-in still applies; `exit` returns to the console (`back in the tacctl console`). It is open to the tiers of `console system-shell tiers` (default: superusers only); for anyone else it is refused with `system-shell is not available for the <tier> tier on this console. An administrator enables it with: tacctl console system-shell tiers …` (status 1), and through `-c` or in a batch with status 126.
+
+Logged to syslog with the tag `tacctl-console`: `console start session= user= from= tty= mode=interactive|command|batch`, `console end session= user= reason=exit|eof|idle|hangup|signal|command|failed lines= status=`, `console DENY session= user= reason=command first=<word>` (auth.warning), `console system-shell start|end|DENY` (with `status=` and `duration=` at the end). Every line is in sudo's own log too, and `tacctl ssh` logs `console=<session>`.
 
 ### Backend Commands — `tacctl backend`
 

@@ -10,6 +10,13 @@ package cli
 // (no agent, no key, no other login), returning ssh's exit status. The
 // shell and the console run the same line ('sudo -n tacctl ssh <name>'), so
 // there is one path to audit. 'device ssh' is the same command.
+//
+// From a console session (TACCTL_CONSOLE set: the console puts it on every
+// line) ssh reads no configuration file and can open nothing but the
+// session: '-F /dev/null', no local command, no control master, no
+// forwardings, no agent, no escape character unless console.yaml's
+// ssh_escape, the target after '--' (so no word after it is an option), and
+// an entry with no pinned host key is refused.
 
 import (
 	"errors"
@@ -17,10 +24,12 @@ import (
 	"os"
 	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
+	"github.com/rett/tacctl/internal/console"
 	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/hosts"
 	"github.com/rett/tacctl/internal/ui"
@@ -129,6 +138,9 @@ func (inv *invocation) ssh(args []string) error {
 	if !sshTerminal(a.Stdin) {
 		return inv.usageErr("a terminal is required: tacctl ssh opens an interactive session")
 	}
+	if inv.sshConsole() && len(extra) > 0 && strings.HasPrefix(extra[0], "-") {
+		return inv.usageErr("In the tacctl console the words after -- are the remote command; ssh's own options are not available.")
+	}
 	plan, err := inv.sshResolve(p, caller, extra)
 	if err != nil {
 		return err
@@ -138,13 +150,16 @@ func (inv *invocation) ssh(args []string) error {
 	if addr == "" {
 		addr = plan.target
 	}
-	a.Logger(inv.ctx, "auth.info", "ssh user="+caller+" device="+e.Name+" addr="+addr)
+	a.Logger(inv.ctx, "auth.info", "ssh user="+caller+" device="+e.Name+" addr="+addr+inv.sshConsoleField())
+	start := a.Knobs.Now()
 	code, _, startErr := hosts.Attached(inv.ctx, a.Runner, plan.cmd.Cmd(plan.args...), a.Stdin, a.Out)
+	if startErr != nil && code == 0 {
+		code = 127
+	}
+	a.Logger(inv.ctx, "auth.info", "ssh end user="+caller+" device="+e.Name+" status="+strconv.Itoa(code)+
+		" duration="+console.Seconds(a.Knobs.Now().Sub(start))+inv.sshConsoleField())
 	if startErr != nil {
 		a.Out.Error("ssh could not be run (" + startErr.Error() + "); it comes with the openssh-client package.")
-		if code == 0 {
-			code = 127
-		}
 		return exit(code)
 	}
 	if code == 255 && devreg.Pinned(e) {
@@ -183,6 +198,11 @@ func (inv *invocation) sshResolve(p Parsed, caller string, extra []string) (sshP
 	if !ok {
 		return sshPlan{}, inv.usageErr("'" + e.Name + "' is this server (enrolled with --local); there is no ssh session to open.")
 	}
+	inConsole := inv.sshConsole()
+	if inConsole && !devreg.Pinned(e) {
+		a.Logger(inv.ctx, "auth.warning", "ssh DENY user="+caller+" device="+e.Name+" scope="+dash(e.Scope)+" reason=unpinned"+inv.sshConsoleField())
+		return sshPlan{}, inv.usageErr("'" + e.Name + "' has no pinned host key, so the console does not connect to it; an administrator pins it: tacctl device hostkey " + e.Name + " accept")
+	}
 	plan := sshPlan{entry: e, target: target, port: e.SSHPort()}
 	port := ""
 	if e.Port != 0 {
@@ -201,13 +221,49 @@ func (inv *invocation) sshResolve(p Parsed, caller string, extra []string) (sshP
 	}
 	// No agent socket and no identity (an enrolled host's is the
 	// provisioning account's): the session is the caller's, by password.
-	plan.cmd = hosts.SSH{
-		AsUser:  caller,
-		Options: devreg.OptionArgs(devreg.SSHOptions(e, a.Paths.KnownHosts)),
-		Port:    port,
+	opts := devreg.OptionArgs(devreg.SSHOptions(e, a.Paths.KnownHosts))
+	plan.args = append(plan.args, "-l", caller)
+	if inConsole {
+		opts = append(sshConsoleOptions(inv.sshEscape()), opts...)
+		plan.args = append(plan.args, "--")
 	}
-	plan.args = append(append(plan.args, "-l", caller, target), extra...)
+	plan.cmd = hosts.SSH{AsUser: caller, Options: opts, Port: port}
+	plan.args = append(append(plan.args, target), extra...)
 	return plan, nil
+}
+
+// sshConsoleOptions are the options a console session's ssh starts with:
+// no configuration file (no ~/.ssh/config, no /etc/ssh/ssh_config: no
+// ProxyCommand, LocalCommand, Match exec or Include), no local command, no
+// control master, no forwardings, no agent, and no escape character unless
+// escape (console.yaml's ssh_escape: '~.' for a hung session, at the cost
+// of '~C').
+func sshConsoleOptions(escape bool) []string {
+	o := []string{"-F", "/dev/null", "-o", "PermitLocalCommand=no", "-o", "ControlMaster=no",
+		"-o", "ClearAllForwardings=yes", "-o", "ForwardAgent=no"}
+	if !escape {
+		o = append(o, "-o", "EscapeChar=none")
+	}
+	return o
+}
+
+// sshConsole reports whether this 'tacctl ssh' comes from a console
+// session (TACCTL_CONSOLE set, whatever its value).
+func (inv *invocation) sshConsole() bool { return inv.app.Env.Get(console.EnvMarker) != "" }
+
+// sshConsoleField is ' console=<session>' for the log lines of a console
+// session's ssh, else "".
+func (inv *invocation) sshConsoleField() string {
+	if !inv.sshConsole() {
+		return ""
+	}
+	return " console=" + console.MarkerValue(inv.app.Env.Get(console.EnvMarker))
+}
+
+// sshEscape is console.yaml's ssh_escape (false when it cannot be read).
+func (inv *invocation) sshEscape() bool {
+	f, err := console.Load(inv.app.Paths.ConsoleFile)
+	return err == nil && f.SSHEscape
 }
 
 // sshAdmit is who may open a session: an active tacctl user (in the store,
@@ -218,7 +274,7 @@ func (inv *invocation) sshResolve(p Parsed, caller string, extra []string) (sshP
 func (inv *invocation) sshAdmit(caller string, e devreg.Entry) error {
 	a := inv.app
 	deny := func(reason, msg string) error {
-		a.Logger(inv.ctx, "auth.warning", "ssh DENY user="+caller+" device="+e.Name+" scope="+dash(e.Scope)+" reason="+reason)
+		a.Logger(inv.ctx, "auth.warning", "ssh DENY user="+caller+" device="+e.Name+" scope="+dash(e.Scope)+" reason="+reason+inv.sshConsoleField())
 		return inv.usageErr(msg)
 	}
 	m, err := inv.model()

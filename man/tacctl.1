@@ -1488,8 +1488,16 @@ input and Ctrl-C work as they do there.
 .B \-n
 is used for members of
 .B tac-users
-(who have no password for sudo); a line that sudo refuses them and that their
-tier's sudoers rules do not cover is reported as not permitted for the tier.
+in the readonly or operator tier, or in no tier group (they have no local
+password and their rules are NOPASSWD); a line that sudo refuses them and
+that their tier's sudoers rules do not cover is reported as not permitted for
+the tier. A member of
+.B tac-superuser
+runs plain
+.BR sudo ,
+which asks for the network password on the terminal when a line needs it
+(once; sudo's cache then applies), so superusers' write verbs work from the
+shell.
 .B hash
 and
 .B completion
@@ -2501,7 +2509,8 @@ Each refusal is logged to syslog
 .RB ( "ssh DENY user=" "\fIuser\fR " device= "\fIname\fR " scope= "\fIscope\fR " reason= "\fIreason\fR" ,
 auth.warning). An admitted session is logged as
 .BI "ssh user=" user " device=" name " addr=" address
-(auth.info), and
+(auth.info) and, when ssh ends, as
+.BI "ssh end user=" user " device=" name " status=" n " duration=" seconds\fR;
 .BR ssh (1)
 runs as the invoking user
 .RB ( "sudo \-u " "\fIuser\fR " \-H ),
@@ -2544,6 +2553,28 @@ notice is printed (unless acknowledged). Arguments after
 .B \-\-
 follow the target, so ssh takes them as the remote command; they cannot
 replace an option.
+.IP
+From a session of the login console (the console marks each line with
+.BR TACCTL_CONSOLE= \fIsession\fR),
+ssh reads no configuration file and opens nothing but the session: it starts
+with
+.B "\-F /dev/null \-o PermitLocalCommand=no \-o ControlMaster=no \-o ClearAllForwardings=yes \-o ForwardAgent=no"
+and
+.B "\-o EscapeChar=none"
+(unless
+.BR "console ssh\-escape enable" ),
+the target follows
+.B \-\-
+so no word after it is an option, and words after the name's
+.B \-\-
+that start with
+.B \-
+are refused. An entry with no pinned host key is refused
+.RI ( "'name' has no pinned host key, so the console does not connect to it; an administrator pins it: tacctl device hostkey name accept" ;
+logged with
+.BR reason=unpinned ).
+Its log lines end with
+.BI console= session\fR.
 .IP
 When ssh ends with status 255 on a pinned device, tacctl reads the device's
 keys again; if the pinned key is not among them it prints the pinned and the
@@ -2646,6 +2677,106 @@ everything else needs an administrator.
 The console asks tacctl for its settings with the hidden
 .BR _console\-policy ,
 which the tiers sudoers rules grant to every tier.
+.SS Console sessions \fB(tacctl\-console)\fR
+.I /usr/local/bin/tacctl\-console
+is a symbolic link to the tacctl binary; started under that name (as a login
+shell,
+.BR \-tacctl\-console )
+tacctl is the console: the interactive shell
+.RB ( "tacctl shell" )
+with the prompt
+.IB host "> "
+(the server's short host name) and the banner
+.IR "tacctl\~console on host \(em type 'help'. Devices: device list. This session is logged." ,
+whose lines run as
+.PP
+.RS
+.B sudo
+.RB [ \-n ]
+.BI TACCTL_CONSOLE= session
+.B /usr/local/bin/tacctl
+.I words
+.RE
+.PP
+with the rule of
+.B tacctl shell
+for
+.BR \-n .
+It starts nothing else. The login environment is discarded except
+.BR TERM ,
+.BR LANG ,
+.BR LC_* ,
+.BR HOME ,
+.BR USER ,
+.BR LOGNAME ,
+.BR SSH_CONNECTION ,
+.B SSH_CLIENT
+and
+.BR SSH_TTY ;
+.B PATH
+is
+.I /usr/local/bin:/usr/bin:/bin
+and
+.B SHELL
+the console. At the start it asks the root side for its settings
+.RB ( "sudo \-n tacctl _console\-policy" );
+without an answer the defaults apply (30 minutes idle, no system shell). The
+session ends after the idle timeout at the prompt
+.RB ( "console idle\-timeout" ;
+not while a line runs).
+.PP
+.BI "\-c " line
+(the remote command sshd passes:
+.BR "ssh " "\fIserver\fR " "'user list'" )
+runs one tacctl line, with the connection as its standard input. A string
+that is not one line beginning with a tacctl command or
+.B help
+\(em
+.BR scp ,
+.BR sftp ,
+.BR rsync ,
+any program, the shell's own words, an empty string \(em is refused with
+.I "the tacctl\~console does not run programs; file transfer is not available"
+and exit status 126, and nothing runs. Any other argument is refused the same
+way
+.RI ( "the tacctl\~console takes no options" ).
+With standard input not a terminal and no
+.BR \-c ,
+the lines of the input run as a batch, as in
+.BR "tacctl shell" .
+.PP
+.B system\-shell
+(the console's own word; interactive sessions only) starts the user's system
+shell
+.RB ( "console system\-shell path" ,
+default
+.IR /bin/bash )
+as the user, without arguments, with the console's environment and
+.BR SHELL= \fIpath\fR;
+the console's idle timer does not run meanwhile, and sshd's drop-in still
+governs the connection. It is open to the tiers
+.B "console system\-shell tiers"
+names (default: superusers only); otherwise it is refused with
+.IR "system-shell is not available for the tier tier on this console. An administrator enables it with: tacctl console system-shell tiers ..."
+(status 1). In a batch or through
+.B \-c
+it is refused with status 126.
+.PP
+Syslog (tag
+.BR tacctl\-console ):
+.BI "console start session=" id " user=" user " from=" address " tty=" tty " mode=" interactive|command|batch\fR,
+.BI "console end session=" id " user=" user " reason=" exit|eof|idle|hangup|signal|command|failed " lines=" n " status=" n\fR,
+.BI "console DENY session=" id " user=" user " reason=command first=" word
+(auth.warning),
+.BI "console system\-shell start" \fR,
+.B end
+.RB ( status= ", " duration= )
+and
+.BR DENY .
+Each line is also in sudo's log, and
+.B tacctl ssh
+logs
+.BI console= id\fR.
 .SH RADIUS DEVICE CONFIGURATIONS
 .BR "config cisco" ,
 .B "config juniper"

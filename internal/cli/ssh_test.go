@@ -385,3 +385,76 @@ func TestDeviceSSHConfig(t *testing.T) {
 	sb.sshRun("alice", nil, "device", "ssh-config", "x")
 	sb.expect(1, "", "Usage: tacctl device ssh-config")
 }
+
+// From a console session (TACCTL_CONSOLE): no configuration file, no local
+// command, no control master, no forwardings, no agent, no escape character
+// unless console.yaml's ssh_escape, the target after '--'; an unpinned
+// entry is refused; the log lines carry console=<session>; every session
+// logs its end.
+func TestSSHConsoleSession(t *testing.T) {
+	withTerminal(t, true)
+	sb, _, _ := sshSandbox(t)
+	kh := sb.path("var-lib", "ssh", "known_hosts")
+	ct := "-o ConnectTimeout=10 -o PubkeyAuthentication=no -o PreferredAuthentications=keyboard-interactive,password"
+	pin := "-o UserKnownHostsFile=" + kh + " -o GlobalKnownHostsFile=none -o StrictHostKeyChecking=yes -o HostKeyAlias=lab-rtr2 -o UpdateHostKeys=no"
+	hard := "-F /dev/null -o PermitLocalCommand=no -o ControlMaster=no -o ClearAllForwardings=yes -o ForwardAgent=no"
+	session := "TACCTL_CONSOLE=0123456789ab"
+	run := func(args ...string) {
+		t.Helper()
+		env := []string{"SSH_AUTH_SOCK=" + sshTestSock, "SUDO_USER=alice", session}
+		for uid, name := range testPasswd {
+			if name == "alice" {
+				env = append(env, "SUDO_UID="+uid)
+			}
+		}
+		sb.cfgRun("", args, nil, env...)
+	}
+	run("ssh", "lab-rtr2", "-p", "2200", "--", "show", "version")
+	want := "sudo -u alice -H ssh " + hard + " -o EscapeChar=none " + ct + " " + pin + " -p 2200 -l alice -- 192.168.5.1 show version"
+	if sb.code != 0 || sb.sshArgv() != want {
+		t.Errorf("console argv (%d %q):\n got %s\nwant %s", sb.code, sb.stderr(), sb.sshArgv(), want)
+	}
+	if !sb.runner.Called("logger", "-t", "tacctl", "-p", "auth.info", "ssh user=alice device=lab-rtr2 addr=192.168.5.1 console=0123456789ab") ||
+		!sb.runner.CalledRegexp(`^logger -t tacctl -p auth\.info ssh end user=alice device=lab-rtr2 status=0 duration=\d+ console=0123456789ab$`) {
+		t.Errorf("log: %q", sb.runner.Argvs())
+	}
+	// ssh_escape keeps the escape character.
+	sb.run("", []string{"console", "ssh-escape", "enable"})
+	run("ssh", "lab-rtr2")
+	if want := "sudo -u alice -H ssh " + hard + " " + ct + " " + pin + " -l alice -- 192.168.5.1"; sb.sshArgv() != want {
+		t.Errorf("ssh_escape:\n got %s\nwant %s", sb.sshArgv(), want)
+	}
+	// Unpinned: a device and an enrolled host are refused, with the fix.
+	for _, name := range []string{"oob-con1", "web1"} {
+		run("ssh", name)
+		if sb.code != 1 || sb.sshArgv() != "" || !strings.Contains(sb.stderr(),
+			"'"+name+"' has no pinned host key, so the console does not connect to it; an administrator pins it: tacctl device hostkey "+name+" accept") {
+			t.Errorf("%s: %d %q %q", name, sb.code, sb.stderr(), sb.sshArgv())
+		}
+		if !sb.runner.CalledRegexp(`^logger -t tacctl -p auth\.warning ssh DENY user=alice device=` + name + ` scope=\S+ reason=unpinned console=0123456789ab$`) {
+			t.Errorf("%s: no deny line: %q", name, sb.runner.Argvs())
+		}
+	}
+	// Words after -- are the remote command: a leading option is refused.
+	run("ssh", "lab-rtr2", "--", "-o", "ProxyCommand=sh")
+	if sb.code != 1 || sb.sshArgv() != "" || !strings.Contains(sb.stderr(), "ssh's own options are not available") {
+		t.Errorf("option after --: %d %q", sb.code, sb.stderr())
+	}
+	// A refusal of admission carries the session too.
+	sb.cfgRun("", []string{"ssh", "edge-fw"}, nil, "SUDO_USER=alice", session)
+	if !sb.runner.CalledRegexp(`ssh DENY user=alice device=edge-fw scope=dmz reason=scope console=0123456789ab$`) {
+		t.Errorf("deny: %q", sb.runner.Argvs())
+	}
+	// A marker that is not a session id is logged as '?', and still hardens.
+	sb.cfgRun("", []string{"ssh", "lab-rtr2"}, nil, "SUDO_USER=alice", "TACCTL_CONSOLE=x y")
+	if !strings.HasPrefix(sb.sshArgv(), "sudo -u alice -H ssh -F /dev/null") ||
+		!sb.runner.CalledRegexp(`ssh user=alice device=lab-rtr2 addr=192\.168\.5\.1 console=\?$`) {
+		t.Errorf("bad marker: %q", sb.runner.Argvs())
+	}
+	// Outside the console: the end line too, no console field, no hardening.
+	sb.sshRun("alice", func(r *fake.Runner) { r.On([]string{"sudo", "-u", "alice"}, execx.Result{Code: 4}) }, "ssh", "lab-rtr2")
+	if sb.code != 4 || strings.Contains(sb.sshArgv(), "/dev/null") ||
+		!sb.runner.CalledRegexp(`^logger -t tacctl -p auth\.info ssh end user=alice device=lab-rtr2 status=4 duration=\d+$`) {
+		t.Errorf("plain: %d %q", sb.code, sb.runner.Argvs())
+	}
+}
