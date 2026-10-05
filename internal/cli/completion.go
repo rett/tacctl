@@ -239,7 +239,7 @@ func (inv *invocation) completeSpec(spec Spec, args []string, toComplete string)
 	if !alone {
 		out, dir = inv.completeKind(kind, toComplete, values)
 	}
-	if strings.HasPrefix(toComplete, "-") || (kind != KindFile && pos >= spec.MinArgs) {
+	if strings.HasPrefix(toComplete, "-") || (!inv.shellMode && kind != KindFile && pos >= spec.MinArgs) {
 		for i := range spec.Flags {
 			f := &spec.Flags[i]
 			if seen[f.Names[0]] || (f.Only != "" && !slices.Contains(words, f.Only)) {
@@ -277,6 +277,7 @@ func (inv *invocation) completeKind(kind, toComplete string, values map[string]s
 		cur := strings.TrimPrefix(toComplete, prefix)
 		var out []cobra.Completion
 		for _, w := range inv.kindWords(base, values) {
+			w, _, _ = strings.Cut(w, "\t")
 			if strings.HasPrefix(w, cur) && !slices.Contains(have, w) {
 				out = append(out, prefix+w)
 			}
@@ -298,6 +299,9 @@ func (inv *invocation) kindWords(kind string, values map[string]string) []string
 	if strings.Contains(kind, "|") {
 		return strings.Split(kind, "|")
 	}
+	if _, ok := completionDescKinds[kind]; ok && inv.shellMode {
+		return inv.liveLines(inv.ctx, kind, "--desc")
+	}
 	switch kind {
 	case KindUsers, KindGroups, KindScopes, KindHosts, KindDevices, KindBackups, KindBackends, KindEnabledBackends:
 		return inv.liveNames(inv.ctx, kind)
@@ -309,6 +313,54 @@ func (inv *invocation) kindWords(kind string, values map[string]string) []string
 	}
 	// A single fixed word ('1|2' lists have the bar; one word has none).
 	return []string{kind}
+}
+
+// liveLines is liveNames with one entry per line ('name<TAB>description').
+func (inv *invocation) liveLines(ctx context.Context, kind string, extra ...string) []string {
+	if inv.app == nil || inv.app.Runner == nil {
+		return nil
+	}
+	res, err := inv.app.Runner.Run(ctx, execx.Cmd{
+		Name: "sudo", Args: append([]string{"-n", "tacctl", "_completion-names", kind}, extra...)})
+	if err != nil || res.Code != 0 {
+		return nil
+	}
+	var lines []string
+	for _, l := range strings.Split(string(res.Stdout), "\n") {
+		if l != "" {
+			lines = append(lines, l)
+		}
+	}
+	return alignDescs(lines)
+}
+
+// alignDescs pads the words of the descriptions of 'name<TAB>a b c' lines
+// to columns (the last word stays as it is).
+func alignDescs(lines []string) []string {
+	var width []int
+	for _, l := range lines {
+		_, d, _ := strings.Cut(l, "\t")
+		for i, w := range strings.Fields(d) {
+			if i == len(width) {
+				width = append(width, 0)
+			}
+			width[i] = max(width[i], len(w))
+		}
+	}
+	out := make([]string, len(lines))
+	for i, l := range lines {
+		name, d, ok := strings.Cut(l, "\t")
+		if !ok {
+			out[i] = l
+			continue
+		}
+		ws := strings.Fields(d)
+		for j := 0; j < len(ws)-1; j++ {
+			ws[j] += strings.Repeat(" ", width[j]-len(ws[j]))
+		}
+		out[i] = name + "\t" + strings.Join(ws, " ")
+	}
+	return out
 }
 
 // liveNames asks 'sudo -n tacctl _completion-names <kind> [arg]' for the

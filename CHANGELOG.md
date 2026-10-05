@@ -140,8 +140,16 @@ current behaviour; this file is where history lives.
     users), so sudo's policy and log and the tier gate apply per line. Lines
     are split with quotes and backslash only (no pipes, redirections,
     variables or separators); `help [<command>]`, `history`, `exit`/`quit`
-    are the shell's own words. Tab completes commands, flags and live names
-    (a second Tab lists them with descriptions), Ctrl-R searches the history,
+    are the shell's own words. `help` prints the usage of `tacctl` (with a
+    Shell section for the keys), `help <command>` the block `tacctl <command>`
+    prints. Tab completes commands, flags and live names (a second Tab lists
+    them as the command rows of `help` (argument column and descriptions),
+    alphabetical, without the shell's own words; `shell` is not offered inside the
+    shell, and typing it says so). The list starts below the line typed (the
+    line stays, as in bash) and the prompt comes back with it; flags are
+    listed only after a `-`; device and host names come with `<vendor>
+    <address> <scope>` (from `_completion-names <kind> --desc`, filtered to
+    the caller's scopes as the names are). Ctrl-R searches the history,
     Esc-b/Esc-f move by word, Ctrl-C cancels the line or the running command,
     Ctrl-Z is ignored. The history is `~/.local/state/tacctl/history` (0600,
     1000 lines), with secrets redacted (`scope secret lab set …(redacted)`).

@@ -192,7 +192,7 @@ func TestShellCompletion(t *testing.T) {
 		has     []string
 		hasNot  []string
 	}{
-		{nil, "", []string{"user", "scope", "device", "shell", "version"}, []string{"help", "_completion-names", "completion", "__complete"}},
+		{nil, "", []string{"user", "scope", "device", "completion", "version"}, []string{"help", "shell", "_completion-names", "__complete"}},
 		{[]string{"user"}, "", []string{"list", "show", "add"}, nil},
 		{[]string{"user", "show"}, "al", []string{"alice", "albert"}, []string{"bob"}},
 		{[]string{"user", "add", "x", "ops"}, "--", []string{"--hash", "--scopes"}, nil},
@@ -259,7 +259,7 @@ func TestShellHelp(t *testing.T) {
 		words []string
 		want  string
 	}{
-		{nil, Usage("top", UsageVars{"version": "0.2.1-test"}) + shellHelpNote},
+		{nil, shellTop("0.2.1-test")},
 		{[]string{"user"}, userUsage()},
 		{[]string{"user", "add"}, userUsage()},
 		{[]string{"group", "commands", "list"}, groupCommandsUsage(inv.app.Paths.Overrides)},
@@ -295,5 +295,115 @@ func TestShellHelp(t *testing.T) {
 		if _, ok := help(w); ok {
 			t.Errorf("help %q answered", w)
 		}
+	}
+}
+
+// 'help <command>' prints what 'tacctl <command>' prints, for every family
+// that prints a block with no arguments.
+func TestShellHelpIsTheCLIUsage(t *testing.T) {
+	inv, root, _ := shellTestInv(t)
+	help := inv.shellHelp(root)
+	for _, fam := range []string{"user", "group", "host", "device", "backend", "store", "config", "log", "backup", "hash", "ssh"} {
+		h := newHarness(t, []string{fam})
+		_ = h.run()
+		if h.out.Len() == 0 {
+			t.Fatalf("tacctl %s printed nothing (stderr %q)", fam, h.err.String())
+		}
+		got, ok := help([]string{fam})
+		if !ok || got != h.out.String() {
+			t.Errorf("help %s differs from 'tacctl %s':\n%q\n%q", fam, fam, got, h.out.String())
+		}
+	}
+}
+
+// The shell's top-level help is the usage of 'tacctl' with the program's
+// name left out of its usage line, hint and examples, and a Shell section.
+func TestShellTopHelp(t *testing.T) {
+	got := shellTop("v")
+	top := Usage("top", UsageVars{"version": "v"})
+	for _, want := range []string{
+		top[:strings.Index(top, "Usage:")],
+		top[strings.Index(top, "Commands:\n"):strings.Index(top, "\nRun any command")],
+		"Usage: <command> [arguments]\n",
+		"Type help <command> for detailed help, e.g.:\n  help user\n",
+		"\nExamples:\n  install\n  upgrade\n  user add jsmith superuser\n",
+		"\nShell:\n  help [<command>]  ",
+		"\n  exit | quit ",
+		"\n  Tab ", "\n  Ctrl-R ", "\n  Ctrl-C ", "\n  Ctrl-D ",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("shell help lacks %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "tacctl user") || strings.Contains(got, "tacctl install") {
+		t.Errorf("shell help names the program in a command:\n%s", got)
+	}
+	// The Shell section's descriptions start in the usage's column.
+	col := strings.Index(got, "Install tacctl") - strings.Index(got, "  install")
+	if i := strings.Index(got, "Leave the shell"); i-strings.LastIndex(got[:i], "\n")-1 != col {
+		t.Errorf("Shell section column: %d, usage column %d", i-strings.LastIndex(got[:i], "\n")-1, col)
+	}
+}
+
+// Every command's description, in the cobra tree (bash, zsh and fish
+// completion; the shell) and in 'tacctl' with no arguments, is one text.
+func TestTopShortsAreTheUsage(t *testing.T) {
+	inv, root, _ := shellTestInv(t)
+	rows := topRows()
+	if len(rows) < 20 {
+		t.Fatalf("top usage has %d command rows", len(rows))
+	}
+	top := Usage("top", UsageVars{"version": "x"})
+	for _, r := range rows {
+		c := child(root, r.Name)
+		if c == nil {
+			t.Errorf("usage lists %q, the tree has no such command", r.Name)
+			continue
+		}
+		if c.Short != r.Desc {
+			t.Errorf("%s: Short %q, usage %q", r.Name, c.Short, r.Desc)
+		}
+		ok := false
+		for _, line := range strings.Split(top, "\n") {
+			ok = ok || (strings.HasPrefix(line, "  "+r.Left+" ") && strings.HasSuffix(line, "  "+r.Desc))
+		}
+		if !ok {
+			t.Errorf("%s: row %q not in the usage", r.Name, r.Left)
+		}
+	}
+	for _, c := range root.Commands() {
+		if c.Hidden && c.Name() != "completion" {
+			continue
+		}
+		found := false
+		for _, r := range rows {
+			found = found || r.Name == c.Name()
+		}
+		if !found {
+			t.Errorf("command %q has no row in the usage", c.Name())
+		}
+	}
+	// 'tacctl shell' completes nothing of its own descriptions: the tree
+	// and the usage agree for the whole shell listing.
+	for _, cand := range inv.shellCompleter(root)(nil, "") {
+		if c := child(root, cand.Word); c == nil || c.Short != cand.Desc {
+			t.Errorf("listing %q: %q", cand.Word, cand.Desc)
+		}
+	}
+}
+
+// The Tab listing of a family's verbs takes its descriptions and its order
+// from the family's usage.
+func TestShellVerbDescriptionsFromUsage(t *testing.T) {
+	inv, root, _ := shellTestInv(t)
+	order := map[string]int{}
+	for _, c := range inv.shellCompleter(root)([]string{"user"}, "") {
+		order[c.Word] = c.Order
+		if c.Word == "list" && c.Desc != "List all users (name, group, status, pw age, scopes)" {
+			t.Errorf("user list: %q", c.Desc)
+		}
+	}
+	if order["list"] != 1 || order["show"] != 2 || order["add"] != 3 {
+		t.Errorf("user verb order: %v", order)
 	}
 }

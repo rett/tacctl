@@ -24,6 +24,10 @@ type invocation struct {
 	app   *app.App
 	build BuildInfo
 
+	// shellMode: completion is for the tacctl shell's lists (live names
+	// with descriptions; flags only after a '-').
+	shellMode bool
+
 	// The model as first read (native.go: model).
 	loaded bool
 	m      *model.Model

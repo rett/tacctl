@@ -11,23 +11,60 @@ import (
 
 // Candidate is one completion: the word, a description shown in the list
 // (may be empty), and NoSpace when no blank is to follow it (a comma list).
+// Label is what the list shows in the word's place (the usage's argument
+// column: 'version [--long]'); empty for the word. Unlisted keeps a word
+// out of the list when another candidate shows the same row ('quit' under
+// 'exit | quit'). The list is ordered by Order (0: after those with an
+// order), then the word. Unlisted words are listed only when no other
+// candidate is.
 type Candidate struct {
 	Word, Desc string
+	Label      string
 	NoSpace    bool
+	Unlisted   bool
+	Order      int
 }
+
+// The descriptions of the shell's own words, also used by the 'help' text.
+const (
+	DescHelp    = "Show the usage of tacctl, or of a command"
+	DescHistory = "List the lines entered (secrets redacted)"
+	DescExit    = "Leave the shell"
+)
 
 // Completer answers what can come after words (the complete words before
 // the cursor) for the word being typed, partial. The shell filters the
 // answer by partial again.
 type Completer func(words []string, partial string) []Candidate
 
-// builtins are the shell's own words, offered at the start of a line.
-var builtins = []Candidate{
-	{Word: "help", Desc: "Show the usage of tacctl or of a command (help <command>)"},
-	{Word: "history", Desc: "List the lines entered (redacted as stored)"},
-	{Word: "exit", Desc: "Leave the shell"},
-	{Word: "quit", Desc: "Leave the shell"},
+// Row is a row of the shell's own words in the help and in the list: the
+// left column, the description and the words it stands for.
+type Row struct {
+	Left, Desc string
+	Words      []string
 }
+
+// BuiltinRows are the shell's own words.
+var BuiltinRows = []Row{
+	{"help [<command>]", DescHelp, []string{"help"}},
+	{"history", DescHistory, []string{"history"}},
+	{"exit | quit", DescExit, []string{"exit", "quit"}},
+}
+
+// builtins are the shell's own words, offered at the start of a line.
+var builtins = func() []Candidate {
+	var out []Candidate
+	for _, r := range BuiltinRows {
+		for _, w := range r.Words {
+			c := Candidate{Word: w, Desc: r.Desc, Unlisted: true}
+			if r.Left != w {
+				c.Label = r.Left
+			}
+			out = append(out, c)
+		}
+	}
+	return out
+}()
 
 // editor is the state of the line editor's key callback (term.Terminal's
 // AutoCompleteCallback, which gets every key the Terminal does not handle
@@ -201,7 +238,15 @@ func (e *editor) tab(line string, pos int) (string, int, bool) {
 		return line[:start] + ins + line[pos:], start + len(ins), true
 	}
 	if e.lastTab {
-		_, _ = e.t.Write([]byte(listing(cands)))
+		// Terminal.Write clears the prompt and the line before it prints
+		// and redraws them after; the line is printed again at the start of
+		// what is written, so it stays above the list (as in bash), and
+		// the redraw puts the cursor back where it was, wrapped or not.
+		p := e.shown
+		if p == "" {
+			p = e.prompt
+		}
+		_, _ = e.t.Write([]byte(p + line + "\n" + listing(cands)))
 	}
 	e.lastTab = true
 	return line, pos, true
@@ -238,24 +283,46 @@ func (e *editor) candidates(words []string, partial string) []Candidate {
 			out = append(out, c)
 		}
 	}
-	slices.SortStableFunc(out, func(a, b Candidate) int { return strings.Compare(a.Word, b.Word) })
+	slices.SortStableFunc(out, func(a, b Candidate) int {
+		if (a.Order == 0) != (b.Order == 0) {
+			if a.Order == 0 {
+				return 1
+			}
+			return -1
+		}
+		if a.Order != b.Order {
+			return a.Order - b.Order
+		}
+		return strings.Compare(a.Word, b.Word)
+	})
 	return out
 }
 
 // listing is the candidates one per line, descriptions aligned.
 func listing(cands []Candidate) string {
+	label := func(c Candidate) string {
+		if c.Label != "" {
+			return c.Label
+		}
+		return c.Word
+	}
 	width := 0
 	for _, c := range cands {
-		width = max(width, utf8.RuneCountInString(c.Word))
+		width = max(width, utf8.RuneCountInString(label(c)))
 	}
+	anyListed := slices.ContainsFunc(cands, func(c Candidate) bool { return !c.Unlisted })
 	var b strings.Builder
 	for _, c := range cands {
-		if c.Desc == "" {
-			b.WriteString("  " + c.Word + "\n")
+		if c.Unlisted && anyListed {
 			continue
 		}
-		pad := width - utf8.RuneCountInString(c.Word)
-		b.WriteString("  " + c.Word + strings.Repeat(" ", pad) + "  " + c.Desc + "\n")
+		l := label(c)
+		if c.Desc == "" {
+			b.WriteString("  " + l + "\n")
+			continue
+		}
+		pad := width - utf8.RuneCountInString(l)
+		b.WriteString("  " + l + strings.Repeat(" ", pad) + "  " + c.Desc + "\n")
 	}
 	return b.String()
 }

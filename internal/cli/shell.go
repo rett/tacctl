@@ -197,6 +197,10 @@ func shellArgv(exe string, words []string, managed bool, env func(string) string
 func (inv *invocation) shellExec(exe string, managed bool, t tier.Tier) func(context.Context, []string, io.Reader) int {
 	a := inv.app
 	return func(ctx context.Context, words []string, stdin io.Reader) int {
+		if words[0] == "shell" {
+			a.Out.Error("already in the tacctl shell")
+			return 1
+		}
 		argv := shellArgv(exe, words, managed, a.Env.Get)
 		c := execx.Cmd{Name: argv[0], Args: argv[1:]}
 		code, _, err := execx.Attached(ctx, a.Runner, c, stdin, a.Out.Stdout, a.Out.Stderr)
@@ -223,6 +227,7 @@ func (inv *invocation) shellExec(exe string, managed bool, t tier.Tier) func(con
 // descriptions) and the verbs' Specs (inv.completeSpec: flags, fixed words
 // and live names).
 func (inv *invocation) shellCompleter(root *cobra.Command) shell.Completer {
+	inv.shellMode = true
 	return func(words []string, partial string) []shell.Candidate {
 		cmd, rest := root, words
 		var path []string
@@ -234,11 +239,33 @@ func (inv *invocation) shellCompleter(root *cobra.Command) shell.Completer {
 			cmd, rest, path = next, rest[1:], append(path, next.Name())
 		}
 		var out []shell.Candidate
-		if len(rest) == 0 && len(cmd.Commands()) > 0 {
-			for _, sub := range cmd.Commands() {
-				if !sub.Hidden {
-					out = append(out, shell.Candidate{Word: sub.Name(), Desc: sub.Short})
+		if len(rest) == 0 && cmd == root {
+			// The rows of the usage (argument column and description);
+			// the list is alphabetical. 'shell' is not offered in the shell.
+			for _, r := range topRows() {
+				if r.Name != "shell" && child(root, r.Name) != nil {
+					out = append(out, shell.Candidate{Word: r.Name, Label: r.Left, Desc: r.Desc})
 				}
+			}
+			return out
+		}
+		if len(rest) == 0 && len(cmd.Commands()) > 0 {
+			var rows []usageRow
+			if len(path) == 1 {
+				rows = inv.familyRows(path[0])
+			}
+			for _, sub := range cmd.Commands() {
+				if sub.Hidden {
+					continue
+				}
+				c := shell.Candidate{Word: sub.Name(), Desc: sub.Short}
+				for i, r := range rows {
+					if r.Name == sub.Name() {
+						c.Desc, c.Order = r.Desc, i+1
+						break
+					}
+				}
+				out = append(out, c)
 			}
 			return out
 		}
@@ -258,13 +285,6 @@ func (inv *invocation) shellCompleter(root *cobra.Command) shell.Completer {
 		return out
 	}
 }
-
-// shellHelpNote follows the top-level usage in the shell.
-const shellHelpNote = `In the shell: type a command without 'tacctl'. Shell words: help [<command>],
-history, exit (or quit, Ctrl-D). Tab completes (twice: lists), Ctrl-R searches
-the history, Ctrl-C cancels the line or the running command.
-
-`
 
 // shellHelpBlocks are the usage blocks 'help <command>' prints, by command
 // path. The blocks whose command fills in a value from the store get a
@@ -290,6 +310,7 @@ var shellHelpBlocks = map[string]func(inv *invocation) string{
 	"backup":          func(*invocation) string { return Usage("backup", nil) },
 	"hash":            func(*invocation) string { return hashUsage() },
 	"device":          func(*invocation) string { return deviceRegUsage() },
+	"ssh":             func(*invocation) string { return sshUsage() },
 }
 
 // usageNoCurrent is a usage block with its {{current}} line left out.
@@ -311,7 +332,7 @@ func usageNoCurrent(id string, vars UsageVars) string {
 func (inv *invocation) shellHelp(root *cobra.Command) func([]string) (string, bool) {
 	return func(words []string) (string, bool) {
 		if len(words) == 0 {
-			return Usage("top", UsageVars{"version": inv.build.Version}) + shellHelpNote, true
+			return shellTop(inv.build.Version), true
 		}
 		cmd, _ := resolve(root, words)
 		if cmd == root || cmd.Hidden {

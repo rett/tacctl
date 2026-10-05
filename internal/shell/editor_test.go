@@ -102,7 +102,7 @@ func TestSecondTabLists(t *testing.T) {
 	e, sc = newTestEditor()
 	e.key("", 0, '\t')
 	e.key("", 0, '\t')
-	for _, want := range []string{"help", "history", "exit", "quit", "user", "Leave the shell"} {
+	for _, want := range []string{"user", "group"} {
 		if !strings.Contains(sc.String(), want) {
 			t.Errorf("top listing lacks %q: %q", want, sc.String())
 		}
@@ -251,5 +251,31 @@ func TestCommonPrefix(t *testing.T) {
 	}
 	if got := listing([]Candidate{{Word: "a", Desc: "x"}, {Word: "bbb"}}); got != "  a    x\n  bbb\n" {
 		t.Errorf("listing = %q", got)
+	}
+}
+
+// A list is in the order the completer gave (Order) then alphabetical, a
+// Label standing for the word; the shell's own words are not listed with
+// others, and are when alone.
+func TestListingOrderLabels(t *testing.T) {
+	e, _ := newTestEditor()
+	e.complete = func([]string, string) []Candidate {
+		return []Candidate{
+			{Word: "zed", Label: "zed [-x]", Desc: "Last", Order: 2},
+			{Word: "amy", Desc: "First", Order: 1},
+			{Word: "bob", Desc: "Unordered"},
+		}
+	}
+	lines := strings.Split(listing(e.candidates(nil, "")), "\n")
+	for i, p := range []string{"  amy ", "  zed [-x] ", "  bob "} {
+		if !strings.HasPrefix(lines[i], p) {
+			t.Errorf("line %d %q, want prefix %q", i, lines[i], p)
+		}
+	}
+	if len(lines) != 4 {
+		t.Errorf("lines %q", lines)
+	}
+	if got := listing(e.candidates(nil, "hi")); !strings.HasPrefix(got, "  history ") {
+		t.Errorf("alone: %q", got)
 	}
 }
