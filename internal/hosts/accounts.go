@@ -84,10 +84,11 @@ var reHomeDir = regexp.MustCompile(`^/home/[^/]+$`)
 // Removed are the accounts of a host that the script will delete, as far
 // as tacctl can tell from here: a name tacctl gave a UID (uids), a UID of
 // the range on the host (or of a range the UID file was numbered for
-// before: the script renumbers such an account before it deletes it), a full name the script writes, and a
-// user that is not current (current: the scope's users, active or not). Only those
-// whose home is a directory directly under /home are returned: any other
-// home is kept by the script whatever the answer.
+// before: the script renumbers such an account before it deletes it), a
+// full name the script writes, and a user that is not current (current: the
+// scope's users, active or not). Only those whose home is a directory
+// directly under /home are returned: any other home is kept by the script
+// whatever the answer.
 func Removed(accts []Account, uids UIDs, current map[string]bool) ([]Account, error) {
 	_, prev, err := uids.Recorded()
 	if err != nil {

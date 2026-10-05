@@ -226,6 +226,10 @@ func (u UIDs) Assign(name, uid string) error {
 		return err
 	}
 	var b strings.Builder
+	if len(comments) == 0 && len(recs) == 0 {
+		// A new file records its range first, as For's does.
+		comments = recordLines(u.rng(), nil)
+	}
 	for _, c := range comments {
 		b.WriteString(c + "\n")
 	}
@@ -343,11 +347,32 @@ type Renumbering struct {
 	Changed bool
 }
 
+// unrecorded is the range a file with no record was numbered for:
+// LegacyRange when it has entries there (a release up to 0.2.0), else
+// DefaultRange when it has entries there and to is another range (the
+// range was set in tacctl.yaml before anything recorded one), else to.
+func unrecorded(recs []string, to Range) Range {
+	in := func(r Range) bool {
+		for _, rec := range recs {
+			if r.Contains(awkField(awkFields(rec, ":"), 2)) {
+				return true
+			}
+		}
+		return false
+	}
+	switch {
+	case in(LegacyRange):
+		return LegacyRange
+	case to != DefaultRange && in(DefaultRange):
+		return DefaultRange
+	}
+	return to
+}
+
 // RenumberTo numbers the file for the range: an entry of the range it was
-// numbered for (From: its record; for a file with no record LegacyRange
-// when it has entries there, else none) moves by the offset of the two
-// ranges' starts, users and removed users alike, and the record names the
-// new range, From joining the earlier ones. The same start (a range grown
+// numbered for (From: its record; for a file with no record, unrecorded)
+// moves by the offset of the two ranges' starts, users and removed users
+// alike, and the record names the new range, From joining the earlier ones. The same start (a range grown
 // or shrunk) moves nothing. Refused, with nothing changed: a new range
 // that overlaps one the file was numbered for (*RangeOverlap; unless the
 // start is the same), an entry that would land past its end
@@ -368,13 +393,7 @@ func (u UIDs) RenumberTo(backup string, dry bool) (Renumbering, error) {
 	comments, recs, _ := u.read()
 	from, prev := parseRecord(comments)
 	if from.IsZero() {
-		from = to
-		for _, r := range recs {
-			if LegacyRange.Contains(awkField(awkFields(r, ":"), 2)) {
-				from = LegacyRange
-				break
-			}
-		}
+		from = unrecorded(recs, to)
 	}
 	res := Renumbering{From: from}
 	offset := to.Min - from.Min

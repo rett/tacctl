@@ -60,6 +60,12 @@ What to expect:
   20000-29999 that tacctl did not create are not touched. New users get
   80000-89999 only; a user whose recorded UID is outside it gets no account
   on hosts until it is given a number in the range.
+- **A host that is an unprivileged container is refused** (item 53): its
+  user namespace usually maps only 0-65535, so it cannot hold 80000-89999.
+  Give it an ID map that covers the range, run it privileged, or choose
+  another range for all hosts with `tacctl config linux uid-range
+  <min>-<max>`, which moves `linux-uids` and, at their next sync, every
+  host's accounts by the same offset.
 - **Release binaries.** When a clone is at a release tag, `install` and
   `upgrade` download the binary for the host, verify its signature against the
   public key committed in the clone (`release/allowed_signers`), its checksum
@@ -536,3 +542,45 @@ What to expect:
     renumbered).`, from the script's `[INFO] Accounts: <n> managed by tacctl
     here; <k> renumbered[; refused: <names>].` Kept homes under
     `/home/.tacctl-removed` are root's already and stay as they are.
+53. **New: `tacctl config linux uid-range [<min>-<max>]`**, and hosts that
+    cannot hold the range are refused. The UID range is `linux.uid_min` and
+    `linux.uid_max` in `tacctl.yaml` (default 80000-89999, one range for all
+    hosts). `uid-range` with no argument prints `Linux UID range:
+    <min>-<max> (default|tacctl.yaml; one range for all hosts)` and the
+    range `linux-uids` is numbered for. A new range is refused, nothing
+    changed, when it holds fewer than 1000 numbers, starts below 1000, ends
+    above 4294967293, or overlaps systemd's reserved numbers (60001-60513,
+    61184-65519, 65534-65535, 524288 and up): `Cannot use UID range
+    <range>: <reason>.`, exit 1; one that overlaps `useradd`'s default
+    1000-60000 is accepted with a warning. A change moves every entry of
+    `linux-uids` by the offset between the two starts (the old file kept as
+    `linux-uids.pre-renumber-<UTC time>`, `uid-map renumbered <n> entries
+    from= to= backup=` logged as in item 52) and logs `uid-range set
+    from=<old> to=<new>` (auth.info); it is refused, nothing changed, when
+    the new range overlaps one the file was numbered for (`… it overlaps
+    <range>, a range the file was numbered for (hosts may still have
+    accounts there). Nothing was changed.`), when an entry would land past
+    its end, or when a number is another name's. A range grown or shrunk at
+    the same start moves nothing. `linux-uids` records its range in a first
+    line `# range <min>-<max>` and the earlier ones in `# previous <min>-<max>
+    …`; a file without the record is taken as numbered for 20000-29999 when
+    it has entries there, else for 80000-89999 when it has entries there.
+    A range set by hand in `tacctl.yaml` is applied by the next command
+    that reads the file, and one that cannot be used stops those commands:
+    `The Linux UID range in tacctl.yaml (<range>) cannot be used: <reason>.`
+    The script header carries the range (`TAC_UID_FIRST`, `TAC_UID_LAST`)
+    and the earlier ones (`TAC_UID_PREVIOUS`); the script refuses a header
+    without a valid range (`The header has no valid UID range …`) and
+    moves accounts it created in any earlier range by offset (item 52's
+    rules), an account whose new number would fall outside the range being
+    left as it is and refused. Before anything runs on a host, `host
+    enroll` and `host sync` read its `/proc/self/uid_map` and `gid_map`
+    (this server's for `--local`) and refuse a host whose user namespace
+    cannot hold the range: `'<host>' cannot hold UIDs <range>: its user
+    namespace maps only <ranges> (an unprivileged container). Give it an
+    ID map that covers <range>, run it privileged, or choose a range it can
+    hold: tacctl config linux uid-range <min>-<max> (one range for all
+    hosts).` (`Enrollment of <host> refused; nothing was changed.`; a sync
+    leaves that host alone and exits 1). `host target` warns about such a
+    host. The test knob `TACCTL_TEST_PROC` (`-tags testknobs` builds)
+    stands for `/proc/self`.

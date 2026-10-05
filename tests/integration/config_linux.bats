@@ -782,6 +782,138 @@ _legacy_host() {
     assert_output "0"
 }
 
+# --- another UID range (tacctl.yaml linux.uid_min, linux.uid_max) --------------
+
+@test "config linux uid-range: shows the range, refuses one that cannot be used, nothing changed" {
+    _gen > /dev/null
+    local before
+    before=$(cat "${TACCTL_STATE_DIR}/linux-uids")
+    run "$TACCTL_BIN_SCRIPT" config linux uid-range
+    assert_success
+    assert_line "  Linux UID range: 80000-89999 (default; one range for all hosts)"
+    assert_line "  ${TACCTL_STATE_DIR}/linux-uids is numbered for 80000-89999"
+    run "$TACCTL_BIN_SCRIPT" config linux uid-range 500-5000
+    assert_failure 1
+    assert_output --partial "Cannot use UID range 500-5000: it starts below 1000 (system accounts)."
+    run "$TACCTL_BIN_SCRIPT" config linux uid-range 61000-62999
+    assert_failure 1
+    assert_output --partial "it overlaps 61184-65519, which systemd reserves."
+    run "$TACCTL_BIN_SCRIPT" config linux uid-range 100000
+    assert_failure 1
+    assert_output --partial "Usage: tacctl config linux uid-range <min>-<max>"
+    [[ "$(cat "${TACCTL_STATE_DIR}/linux-uids")" == "$before" ]]
+    run "$TACCTL_BIN_SCRIPT" config get linux.uid_min
+    assert_output "80000"
+    # A range in useradd's is allowed, with a warning.
+    run "$TACCTL_BIN_SCRIPT" config linux uid-range 40000-49999
+    assert_success
+    assert_output --partial "UID range 40000-49999 overlaps 1000-60000, where local useradd gives out UIDs by default"
+    # A range set by hand in tacctl.yaml that cannot be used stops the
+    # commands that give out numbers.
+    sed -i "s/^\\( *uid_max:\\).*/\\1 40500/" "${TACCTL_STATE_DIR}/tacctl.yaml"
+    run _gen
+    assert_failure 1
+    assert_output --partial "The Linux UID range in tacctl.yaml (40000-40500) cannot be used: it holds 501 numbers"
+    assert_output --partial "Set one that can: tacctl config linux uid-range <min>-<max>"
+}
+
+@test "config linux uid-range: the map moves by offset, scripts carry the range and the earlier ones" {
+    _gen > /dev/null
+    run "$TACCTL_BIN_SCRIPT" config linux uid-range 100000-109999
+    assert_success
+    assert_output --partial "Renumbered 2 entries of ${TACCTL_STATE_DIR}/linux-uids from 80000-89999 to 100000-109999"
+    assert_output --partial "Linux UID range set to 100000-109999 (was 80000-89999)."
+    stub_called "logger -t tacctl -p auth.info uid-range set from=80000-89999 to=100000-109999"
+    run cat "${TACCTL_STATE_DIR}/linux-uids"
+    assert_output $'# range 100000-109999\n# previous 80000-89999\nalice:100000\nbob:100001'
+    _gen > /dev/null
+    run sed '/^__TARBALL__$/,$d' "$OUT"
+    assert_line "TAC_USERS=\$'alice:superuser:100000\\nbob:readonly:100001'"
+    assert_line "TAC_UID_FIRST=100000"
+    assert_line "TAC_UID_LAST=109999"
+    assert_line "TAC_UID_PREVIOUS=80000-89999"
+    run "$TACCTL_BIN_SCRIPT" config linux uid bob 85000
+    assert_failure
+    assert_output --partial "UID must be a number from 100000 to 109999"
+    # Back into a range the map was numbered for: refused.
+    run "$TACCTL_BIN_SCRIPT" config linux uid-range 85000-95000
+    assert_failure 1
+    assert_output --partial "it overlaps 80000-89999, a range the file was numbered for (hosts may still have accounts there). Nothing was changed."
+    run "$TACCTL_BIN_SCRIPT" config get linux.uid_min
+    assert_output "100000"
+}
+
+@test "client install: a header without a valid UID range stops the run before anything changes" {
+    _gen > /dev/null
+    _client_env
+    cp "$OUT" "$BATS_TEST_TMPDIR/good.sh"
+    sed -i '/^TAC_UID_FIRST=/d' "$OUT"
+    run bash "$OUT" --accounts-only
+    assert_failure
+    assert_output --partial "The header has no valid UID range (TAC_UID_FIRST, TAC_UID_LAST). Nothing was changed."
+    sed 's/^TAC_UID_LAST=.*/TAC_UID_LAST=70000/; s/^TAC_UID_FIRST=.*/TAC_UID_FIRST=080000/' "$BATS_TEST_TMPDIR/good.sh" > "$OUT"
+    run bash "$OUT" --accounts-only
+    assert_failure
+    assert_output --partial "The header has no valid UID range"
+    run grep -cE "^(useradd|groupadd|usermod)" "$CALLS_LOG"
+    assert_output "0"
+    [[ ! -e "$TACCTL_CLIENT_STATE/created" ]]
+}
+
+@test "client install: after a range change, accounts it created in any earlier range move by offset, once" {
+    _legacy_host
+    "$TACCTL_BIN_SCRIPT" config linux uid-range 100000-109999 > /dev/null
+    _gen > /dev/null
+    run sed '/^__TARBALL__$/,$d' "$OUT"
+    assert_line "TAC_UID_PREVIOUS=20000-29999\\ 80000-89999"
+    # The host still has alice and gone at legacy UIDs: the offsets add up.
+    run bash "$OUT" --accounts-only
+    assert_success
+    assert_output --partial "[INFO] 'alice': renumbered 20000 -> 100000 (home re-owned)"
+    assert_output --partial "[INFO] 'gone': renumbered 20002 -> 100002 (home re-owned)"
+    assert_output --partial "[INFO] Accounts: 2 managed by tacctl here; 2 renumbered."
+    stub_called "useradd -m -u 100001 -g bob"
+    run grep "^alice:" "$FAKE_DB/passwd"
+    assert_output "alice:x:100000:100000:alice (TACACS+):${TACCTL_CLIENT_HOME_ROOT}/alice:/bin/bash"
+    # pat (not tacctl's) is left as it is.
+    run grep -c "^pat:x:20005:20005:Pat:" "$FAKE_DB/passwd"
+    assert_output "1"
+
+    # Again: 100000-109999 -> 120000-129999.
+    "$TACCTL_BIN_SCRIPT" config linux uid-range 120000-129999 > /dev/null
+    _gen > /dev/null
+    : > "$CALLS_LOG"
+    run bash "$OUT" --accounts-only
+    assert_success
+    assert_output --partial "[INFO] 'alice': renumbered 100000 -> 120000 (home re-owned)"
+    assert_output --partial "[INFO] 'bob': renumbered 100001 -> 120001 (home re-owned)"
+    stub_called "usermod -u 120000 alice"
+    stub_called "groupmod -g 120001 bob"
+    # Once.
+    : > "$CALLS_LOG"
+    run bash "$OUT" --accounts-only
+    assert_success
+    refute_output --partial "renumbered"
+    run grep -cE "^(usermod -u|groupmod)" "$CALLS_LOG"
+    assert_output "0"
+}
+
+@test "client install: an account whose new number would fall outside the range is left as it is and refused" {
+    _gen > /dev/null
+    _client_env
+    bash "$OUT" --accounts-only > /dev/null
+    # A header whose earlier range is larger than its current one (written
+    # by hand: the server refuses such a range).
+    sed -i 's/^TAC_UID_FIRST=.*/TAC_UID_FIRST=100000/; s/^TAC_UID_LAST=.*/TAC_UID_LAST=100001/; s/^TAC_UID_PREVIOUS=.*/TAC_UID_PREVIOUS=79999-89999/' "$OUT"
+    sed -i "s/^TAC_USERS=.*/TAC_USERS=alice:superuser:100000/" "$OUT"
+    : > "$CALLS_LOG"
+    run bash "$OUT" --accounts-only
+    assert_success
+    assert_output --partial "[WARN] 'bob': not renumbered from 80001: 100002 would be outside 100000-100001. The account is left as it is."
+    run grep -cE "^usermod -u .* bob" "$CALLS_LOG"
+    assert_output "0"
+}
+
 @test "client install: a disabled user's account is expired, not deleted; re-enabling restores it" {
     _gen > /dev/null
     _client_env

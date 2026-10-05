@@ -323,6 +323,18 @@ func TestUIDsRenumberTo(t *testing.T) {
 	if res, err := u.RenumberTo(p+".bak8", false); res.N != 0 || res.From != DefaultRange || err != nil || readFile(t, p) != "# range 80000-89999\nann:80004\n" {
 		t.Errorf("unrecorded %+v %v %q", res, err, readFile(t, p))
 	}
+	// ... and one numbered for 80000-89999 before anything recorded it
+	// moves when another range is configured.
+	writeFile(t, p, "ann:80004\n")
+	if res, err := (UIDs{Path: p, Range: Range{100000, 109999}}).RenumberTo(p+".bak9", false); res.N != 1 || res.From != DefaultRange || err != nil ||
+		readFile(t, p) != "# range 100000-109999\n# previous 80000-89999\nann:100004\n" {
+		t.Errorf("unrecorded default %+v %v %q", res, err, readFile(t, p))
+	}
+	// A new file written by Assign records its range too.
+	q := filepath.Join(dir, "assigned")
+	if err := (UIDs{Path: q, Range: Range{40000, 49999}}).Assign("ann", "40007"); err != nil || readFile(t, q) != "# range 40000-49999\nann:40007\n" {
+		t.Errorf("assign to a new file: %v %q", err, readFile(t, q))
+	}
 }
 
 // The range rules and words.

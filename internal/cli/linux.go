@@ -642,9 +642,9 @@ func (inv *invocation) configLinuxRemoveScript(args []string) error {
 
 // configLinuxUID is cmd_config_linux_uid: list, show or change the number
 // a user gets as UID and primary GID on every host, one of the configured
-// range. Only a change (and the one-time
-// renumbering of legacy entries, renumberUIDs) writes the UID file; a
-// listing or a lookup leaves it as it is (absent stays absent). Changing it
+// range. Only a change (and the renumbering for a new range, renumberUIDs)
+// writes the UID file; a listing or a lookup leaves it as it is (absent
+// stays absent). Changing it
 // does not renumber accounts that already exist on enrolled hosts; the next
 // sync reports them.
 func (inv *invocation) configLinuxUID(args []string) error {

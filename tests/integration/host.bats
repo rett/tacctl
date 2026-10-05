@@ -828,3 +828,53 @@ _protocols() { "$TACCTL_BIN_SCRIPT" scope protocols "$1" | sed -n "s/.*Scope '$1
     run _hosts
     assert_output "web1|web1||linux-web1|192.0.2.1||radius"
 }
+
+# --- hosts that cannot hold the UID range ---------------------------------------
+
+# An unprivileged container: its user namespace maps 0-65535 only.
+_container_ssh() {
+    stub_cmd ssh 'case "$*" in
+        *uid_map*) printf "%s\n" uid_map "0 100000 65536" gid_map "0 100000 65536" ;;
+        *mktemp*) cat > "$PUSHED"; echo /tmp/tacctl.AbCd1234 ;;
+        *) true ;;
+    esac'
+}
+
+@test "host enroll|sync: a host whose user namespace cannot hold the UID range is refused before anything changes" {
+    _container_ssh
+    run "$TACCTL_BIN_SCRIPT" host enroll admin@web1.example.net --scope lab
+    assert_failure 1
+    assert_output --partial "'web1' cannot hold UIDs 80000-89999: its user namespace maps only 0-65535 (an unprivileged container)."
+    assert_output --partial "Enrollment of web1 refused; nothing was changed."
+    [[ ! -e "$PUSHED" ]]
+    [[ -z "$(_hosts)" ]]
+    # Enrolled from a host that could, then synced as a container: refused.
+    stub_cmd ssh 'case "$*" in
+        *mktemp*) cat > "$PUSHED"; echo /tmp/tacctl.AbCd1234 ;;
+        *) true ;;
+    esac'
+    "$TACCTL_BIN_SCRIPT" host enroll admin@web1.example.net --scope lab > /dev/null
+    rm -f "$PUSHED"
+    _container_ssh
+    run "$TACCTL_BIN_SCRIPT" host sync web1
+    assert_failure 1
+    assert_output --partial "'web1' cannot hold UIDs 80000-89999"
+    [[ ! -e "$PUSHED" ]]
+    # A range it can hold.
+    "$TACCTL_BIN_SCRIPT" config linux uid-range 40000-49999 > /dev/null
+    run "$TACCTL_BIN_SCRIPT" host sync web1
+    assert_success
+    run sed '/^__TARBALL__$/,$d' "$PUSHED"
+    assert_line "TAC_USERS=alice:superuser:40000"
+    assert_line "TAC_UID_FIRST=40000"
+}
+
+@test "host enroll --local: this machine's own ID maps are checked" {
+    mkdir -p "$BATS_TEST_TMPDIR/proc"
+    echo "0 100000 65536" > "$BATS_TEST_TMPDIR/proc/uid_map"
+    echo "0 100000 65536" > "$BATS_TEST_TMPDIR/proc/gid_map"
+    TACCTL_TEST_PROC="$BATS_TEST_TMPDIR/proc" run "$TACCTL_BIN_SCRIPT" host enroll --local --name authsrv --scope lab
+    assert_failure 1
+    assert_output --partial "'authsrv' cannot hold UIDs 80000-89999: its user namespace maps only 0-65535"
+    [[ -z "$(_hosts)" ]]
+}
