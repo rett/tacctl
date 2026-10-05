@@ -439,8 +439,8 @@ current behaviour; this file is where history lives.
     the console on for every tier, `system-shell` for superusers only,
     `/bin/bash`, idle timeout 30 minutes, agent forwarding and ssh escape
     off). `show` (operator tier and up) prints the switch per tier, the
-    settings, each user of this server's scope with its effective shell and
-    why (`console (user override)`, `bash (tier readonly disabled)`), and
+    settings, a table of each user of this server's scope with its tier,
+    effective shell and why (`user override`, `tier readonly disabled`), and
     the server's pieces: the `tacctl-console` symlink, the `/etc/shells`
     line, sshd's drop-in and what `sshd -T -C user=<user>` reports, with a
     red warning when the drop-in is missing or sshd still allows TCP
@@ -588,6 +588,16 @@ current behaviour; this file is where history lives.
     leaves that host alone and exits 1). `host target` warns about such a
     host. The test knob `TACCTL_TEST_PROC` (`-tags testknobs` builds)
     stands for `/proc/self`.
+54. **List tables: rules as wide as the table; `user list` shows the UID.**
+    Every list (`user`, `group`, `scope`, `backend`, `backup`, `host`,
+    `device` lists, `device discover`, `console show`'s users,
+    `config linux uid` and `builds`, `group commands list`, `scope devices`)
+    is one table: the title, a rule as wide as the table, the column header,
+    a rule as wide as the table, the rows. Column widths follow the content;
+    no line ends in a space. `user list` has a UID column after USERNAME, read
+    from `/etc/tacctl/linux-uids` (`-` for a user with none; a listing never
+    assigns one), and `user show <user>` has a `UID:` line. A detail view's
+    underline is 44 dashes, or the width of its title when that is longer.
 55. **The login console is provisioned on the tacctl server.** `host
     enroll --local` and `host sync` of that host give each tacctl user of
     its scope the login shell `console.yaml` decides (`useradd -s`, `usermod

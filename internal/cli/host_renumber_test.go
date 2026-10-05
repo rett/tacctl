@@ -26,7 +26,7 @@ func TestUIDFileRenumberedOnce(t *testing.T) {
 	r := hs.runner()
 	hs.run(r, "config", "linux", "uid")
 	hs.expect(0, "Renumbered 3 entries of "+uids+" from 20000-29999 to 80000-89999 (the same offset; the old file is kept as "+uids+".pre-renumber-", "")
-	if !strings.Contains(hs.out.String(), "  alice                    80000\n  bob                      80001\n  gone                     80002\n") {
+	if !strings.Contains(hs.out.String(), "  alice     80000\n  bob       80001\n  gone      80002\n") {
 		t.Errorf("listing %q", hs.out.String())
 	}
 	if data, _ := os.ReadFile(uids); string(data) != "# range 80000-89999\n# previous 20000-29999\nalice:80000\nbob:80001\ngone:80002\nodd:1500\n" {
@@ -251,4 +251,14 @@ func TestHostIDMapRefusal(t *testing.T) {
 	hs.run(nil, "host", "enroll", "--local", "--name", "authsrv", "--scope", "lab", "--build-on-host")
 	hs.expect(1, "", "'authsrv' cannot hold UIDs 100000-109999: its user namespace maps only 0-65535 (an unprivileged container).")
 	hs.env = env
+}
+
+// A UID file that holds its range record and no entry lists as empty.
+func TestConfigLinuxUIDRecordOnly(t *testing.T) {
+	hs := newHostSandbox(t)
+	if err := os.WriteFile(filepath.Join(hs.dir, "state", "linux-uids"), []byte("# range 80000-89999\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	hs.run(nil, "config", "linux", "uid")
+	hs.expect(0, "  None yet. A UID is assigned the first time a user is sent to a host.", "")
 }

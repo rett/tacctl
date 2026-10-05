@@ -78,34 +78,6 @@ func (inv *invocation) scanAllowed() bool {
 	return tier.Permits(inv.tierGate().Caller(inv.ctx), "device", "scan")
 }
 
-// printTable prints rows under the bold header cols, two spaces apart,
-// the last column unpadded.
-func (inv *invocation) printTable(cols []string, rows [][]string) {
-	w := make([]int, len(cols))
-	for i, c := range cols {
-		w[i] = len(c)
-		for _, r := range rows {
-			w[i] = max(w[i], len(r[i]))
-		}
-	}
-	line := func(r []string, pre, post string) {
-		var b strings.Builder
-		b.WriteString("  " + pre)
-		for i, c := range r {
-			if i == len(r)-1 {
-				b.WriteString(c)
-			} else {
-				fmt.Fprintf(&b, "%-*s  ", w[i], c)
-			}
-		}
-		inv.write(strings.TrimRight(b.String(), " ") + post + "\n")
-	}
-	line(cols, ui.Bold, ui.NC)
-	for _, r := range rows {
-		line(r, "", "")
-	}
-}
-
 // --- the scan ------------------------------------------------------------------------
 
 // scanRequest is what a scan reads: --full, --since, --backend.
@@ -217,7 +189,7 @@ func (inv *invocation) printScan(sr *scanResult) {
 	a := inv.app
 	inv.echo("")
 	inv.echoE(ui.Bold + "Device scan" + ui.NC)
-	inv.echo("-----------")
+	inv.echo(ui.Rule("Device scan"))
 	if sr.rebuilt {
 		a.Out.Warn("The seen cache could not be read; it was rebuilt from the logs.")
 	}
@@ -392,22 +364,22 @@ func (inv *invocation) deviceDiscover(args []string) error {
 		head = "Unregistered addresses seen (" + strconv.Itoa(len(us)) + ")"
 	}
 	inv.echo("")
-	inv.echoE(ui.Bold + head + ui.NC)
-	inv.echo(strings.Repeat("-", len(head)))
 	if len(us) == 0 {
+		inv.echoE(ui.Bold + head + ui.NC)
+		inv.echo(ui.Rule(head))
 		if p.Has("--all") {
 			inv.echo("  None: every address in the seen cache is registered.")
 		} else {
 			inv.echo("  None. 'tacctl device discover --all' adds the addresses that were only refused.")
 		}
 	} else {
-		cols := []string{"ADDRESS", "SCOPE", "TAG", "FIRST SEEN", "LAST SEEN", "COUNT", "LAST USER", "RESULT", "VIA", "NAS-ID"}
-		var rows [][]string
+		t := ui.NewTable(head, ui.Left("ADDRESS"), ui.Left("SCOPE"), ui.Left("TAG"), ui.Left("FIRST SEEN"), ui.Left("LAST SEEN"),
+			ui.Left("COUNT"), ui.Left("LAST USER"), ui.Left("RESULT"), ui.Left("VIA"), ui.Left("NAS-ID"))
 		for _, u := range us {
-			rows = append(rows, []string{u.Address, dash(u.Scope), dash(u.Tag), seenTime(u.First), seenTime(u.Last),
-				strconv.Itoa(u.Count), dash(u.LastUser), u.LastOutcome, u.Via, dash(u.LastNASID)})
+			t.Add(u.Address, dash(u.Scope), dash(u.Tag), seenTime(u.First), seenTime(u.Last),
+				strconv.Itoa(u.Count), dash(u.LastUser), u.LastOutcome, u.Via, dash(u.LastNASID))
 		}
-		inv.printTable(cols, rows)
+		inv.write(t.String())
 		inv.echo("")
 		inv.echo("  Register them with:")
 		for _, u := range us {
@@ -520,7 +492,7 @@ func (inv *invocation) printCheck(res *devreg.Resolver, e devreg.Entry, reach st
 	head := "Check " + e.Name + " (" + dashAddrText(e.Address) + ", " + e.Vendor + ")"
 	inv.echo("")
 	inv.echoE(ui.Bold + head + ui.NC)
-	inv.echo(strings.Repeat("-", len(head)))
+	inv.echo(ui.Rule(head))
 	row := func(k, v string) { inv.write(fmt.Sprintf("  %-12s %s\n", k+":", v)) }
 	switch {
 	case e.Source == devreg.SourceHost && e.Configured:

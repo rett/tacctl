@@ -233,7 +233,9 @@ What to expect:
     users), so sudo's policy and log and the tier gate apply per line. Lines
     are split with quotes and backslash only (no pipes, redirections,
     variables or separators); `help [<command>]`, `history`, `exit`/`quit`
-    are the shell's own words. Tab completes commands, flags and live names; a second Tab lists the
+    are the shell's own words. `help` prints the usage of `tacctl` (with a
+    Shell section for the keys), `help <command>` the block `tacctl <command>`
+    prints. Tab completes commands, flags and live names; a second Tab lists the
     matching words alone, alphabetical, in columns that fit the terminal
     (as bash does), without the shell's own words; `shell` is not offered
     inside the shell, and typing it says so. `?` inserts nothing and shows
@@ -523,6 +525,77 @@ What to expect:
     after a snapshot, and `host target name= target= port= by=` is logged
     (auth.info). No script runs on the host. `host target <TAB>` completes
     the enrolled names.
+46. **New: `tacctl console show|tiers|user|idle-timeout|agent-forwarding|
+    ssh-escape|system-shell`** with `/etc/tacctl/console.yaml` (0600,
+    snapshotted, in `backup diff` and `restore`; absent means the defaults:
+    the console on for every tier, `system-shell` for superusers only,
+    `/bin/bash`, idle timeout 30 minutes, agent forwarding and ssh escape
+    off). `show` (operator tier and up) prints the switch per tier, the
+    settings, a table of each user of this server's scope with its tier,
+    effective shell and why (`user override`, `tier readonly disabled`), and
+    the server's pieces: the `tacctl-console` symlink, the `/etc/shells`
+    line, sshd's drop-in and what `sshd -T -C user=<user>` reports, with a
+    red warning when the drop-in is missing or sshd still allows TCP
+    forwarding for a console user. Changes to the tier switches, a user
+    override and agent forwarding print `Apply to the accounts: tacctl host
+    sync <name>`; the commands change `console.yaml` only. The top-level
+    usage lists `console`. New paths:
+    `TACCTL_SSHD_DROPIN` (default
+    `/etc/ssh/sshd_config.d/tacctl-console.conf`) and `TACCTL_SHELLS_FILE`
+    (default `/etc/shells`).
+47. **Tiers sudoers:** rows `_console-policy` (every tier: the console
+    reads its settings with it), `console show` and `console check`
+    (operator); the `Defaults!` line is now `env_keep += "SSH_AUTH_SOCK
+    TACCTL_CONSOLE"` in both generated sudoers files (the console's
+    session marker). Picked up by `tacctl upgrade` (item 4);
+    administrators using the opt-in drop-in re-run `tacctl config sudoers
+    install`.
+48. **New: the login console `tacctl-console`.** Started under that name
+    (a symlink to `tacctl`; as a login shell, `-tacctl-console`) tacctl is
+    `tacctl shell` with a `<host>> ` prompt and a banner, runs each line as
+    `sudo [-n] TACCTL_CONSOLE=<session> /usr/local/bin/tacctl <words>`,
+    starts nothing else, and discards the login environment but `TERM`,
+    `LANG`/`LC_*`, `HOME`, `USER`, `LOGNAME` and `SSH_CONNECTION`,
+    `SSH_CLIENT`, `SSH_TTY` (`PATH=/usr/local/bin:/usr/bin:/bin`). It asks
+    the server for its settings once per session (`_console-policy`).
+    `-c '<line>'` (sshd's remote command: `ssh <server> 'user list'`) runs
+    one tacctl line; `scp`, `sftp`, `rsync` and every other program are
+    refused with `the tacctl console does not run programs; file transfer
+    is not available`, exit 126, and any other argument with `the tacctl
+    console takes no options`. Standard input that is not a terminal runs
+    as a batch. The session ends after the idle timeout at the prompt
+    (`tacctl console idle-timeout`, default 30 minutes). Sessions and
+    refusals are logged to syslog (tag `tacctl-console`: `console start`,
+    `console end … reason= lines= status=`, `console DENY … first=`), each
+    line in sudo's log as well. The test knob `TACCTL_TEST_CONSOLE_ENV=1`
+    (`-tags testknobs` builds) keeps `TACCTL_*` and `PATH` for the test
+    sandbox.
+49. **New console word `system-shell`:** starts the user's system shell
+    (`/bin/bash`, `console system-shell path`) as themselves, without
+    arguments, with the console's environment and `SHELL=<path>`, logged
+    with start, end, status and duration (`console system-shell
+    start|end`); superusers only by default (`console system-shell tiers
+    <csv>|none`); refused for other tiers with the command that enables it
+    (`console system-shell DENY`); not available through `-c` or in a
+    batch (exit 126); the idle timer does not run while it does; `help`
+    and Tab name it only in the console.
+50. **`tacctl ssh` inside a console session** runs ssh with `-F /dev/null`
+    (no `~/.ssh/config` or `/etc/ssh/ssh_config`), `-o
+    PermitLocalCommand=no -o ControlMaster=no -o ClearAllForwardings=yes -o
+    ForwardAgent=no`, `-o EscapeChar=none` (`console ssh-escape enable`
+    keeps `~.`/`~C`), and the target after `--`, so words after the name's
+    `--` are only the remote command (one starting with `-` is refused); it
+    refuses a device or host with no pinned host key (`'<name>' has no
+    pinned host key, so the console does not connect to it; an
+    administrator pins it: tacctl device hostkey <name> accept`, logged
+    `reason=unpinned`). Every `tacctl ssh` now also logs `ssh end user=
+    device= status= duration=` when the session ends; from a console
+    session its log lines end with `console=<session>`.
+51. **`tacctl shell`: a superuser's lines run `sudo` without `-n`**, so
+    sudo asks for the network password on the terminal when a line needs
+    it (once; sudo's cache applies) and superusers' write verbs work from
+    the shell and the console; readonly and operator lines (and those of a
+    `tac-users` member in no tier group) keep `-n`.
 52. **UIDs given out from 20000 up are renumbered once to 80000-89999**, at
     the same offset (20005 becomes 80005). On the server, the first `config
     linux uid`, `config linux script`, `host enroll` or `host sync` rewrites
@@ -607,3 +680,61 @@ What to expect:
     leaves that host alone and exits 1). `host target` warns about such a
     host. The test knob `TACCTL_TEST_PROC` (`-tags testknobs` builds)
     stands for `/proc/self`.
+54. **List tables: rules as wide as the table; `user list` shows the UID.**
+    Every list (`user`, `group`, `scope`, `backend`, `backup`, `host`,
+    `device` lists, `device discover`, `console show`'s users,
+    `config linux uid` and `builds`, `group commands list`, `scope devices`)
+    is one table: the title, a rule as wide as the table, the column header,
+    a rule as wide as the table, the rows. Column widths follow the content;
+    no line ends in a space. `user list` has a UID column after USERNAME, read
+    from `/etc/tacctl/linux-uids` (`-` for a user with none; a listing never
+    assigns one), and `user show <user>` has a `UID:` line. A detail view's
+    underline is 44 dashes, or the width of its title when that is longer.
+55. **The login console is provisioned on the tacctl server.** `host
+    enroll --local` and `host sync` of that host give each tacctl user of
+    its scope the login shell `console.yaml` decides (`useradd -s`, `usermod
+    -s`: `'<user>': login shell is now the tacctl console.` or `… now
+    /bin/bash.`) and put console users in `tac-console` (taken out of it
+    when they get bash); the summary counts them (`authsrv: synced (3 users;
+    2 with the console).`). Before the script runs, when any user gets the
+    console, `/etc/shells` gets the line `/usr/local/bin/tacctl-console` and
+    sshd gets the drop-in `/etc/ssh/sshd_config.d/tacctl-console.conf`
+    (`Match Group tac-console`: `ForceCommand /usr/local/bin/tacctl-console`,
+    `DisableForwarding yes` (left out, with `AllowAgentForwarding yes`, under
+    `console agent-forwarding enable`), `AllowTcpForwarding no`,
+    `AllowStreamLocalForwarding no`, `X11Forwarding no`, `PermitTunnel no`,
+    `PermitTTY yes`, `PubkeyAuthentication no`, `ClientAliveInterval 300`,
+    `ClientAliveCountMax 2`), each reported `Installed:`, `Updated:` or
+    `Unchanged:`. Every change of the drop-in is checked with `sshd -t`;
+    when sshd refuses it the previous file comes back (`sshd refused the
+    console's drop-in; … was put back as it was:` and sshd's words), else
+    sshd is reloaded (`systemctl reload ssh.service`, or `sshd.service`).
+    After the script the check of `console check` runs. Without
+    `/usr/local/bin/tacctl-console` nobody gets the console (`… is missing,
+    so no account gets the login console now`). Every other host, and
+    `config linux script`, keep three fields and never touch a shell.
+    `host unenroll` of the server gives tacctl's accounts `/bin/bash` back
+    (the remove script, for every account it created with the console
+    shell; any other account with that shell is named and left) and removes
+    the drop-in and the `/etc/shells` line. With `ForceCommand` every login,
+    remote command and subsystem of a console user (sftp and
+    `internal-sftp` included) reaches the console as `tacctl-console -c
+    /usr/local/bin/tacctl-console`; the console takes the client's command
+    from `SSH_ORIGINAL_COMMAND` (none: a login) and the `-c` guard decides
+    it as before. New: `tacctl console install` (the pieces, then the
+    check), `console remove` (refused while an account has the console:
+    `These accounts still have the console as their login shell: … Nothing
+    was removed.`) and `console check` (operator tier and up: the drop-in
+    present and current, `/etc/ssh/sshd_config` including
+    `sshd_config.d/*.conf`, and `sshd -T` for a console user; exit 1 with
+    the red warning). `console show` and `console check` also report
+    `forcecommand` and `pubkeyauthentication` and warn when sshd does not
+    force the console or allows key logins. `install` makes the symlink
+    `/usr/local/bin/tacctl-console`, `upgrade` refreshes it (`Updated:
+    /usr/local/bin/tacctl-console -> /usr/local/bin/tacctl`) and rewrites an
+    installed drop-in that differs from the release's (`Updated:|Unchanged:
+    sshd drop-in`; never creates one), and `uninstall` first gives every
+    account whose shell is the console `/bin/bash` (`Login shell /bin/bash
+    restored for: …`), then removes the drop-in, the `/etc/shells` line and
+    the symlink. Nothing changes for anyone at the upgrade itself: the
+    accounts follow at the next `host sync` of the server.

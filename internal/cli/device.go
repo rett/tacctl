@@ -468,20 +468,20 @@ func (inv *invocation) deviceList(args []string) error {
 	}
 	head := fmt.Sprintf("Registered devices (%d) and enrolled hosts (%d)", nd, nh)
 	inv.echo("")
-	inv.echoE(ui.Bold + head + ui.NC)
-	inv.echo(strings.Repeat("-", len(head)))
 	if len(shown) == 0 {
+		inv.echoE(ui.Bold + head + ui.NC)
+		inv.echo(ui.Rule(head))
 		inv.echo("  None. Register one with: tacctl device add <name> <address>")
 		inv.echo("")
 		return nil
 	}
-	cols := []string{"NAME", "ADDRESS", "VENDOR", "SCOPE", "STATE", "LAST SEEN", "BY", "VIA", "NOTICES"}
+	cols := []ui.Col{ui.Left("NAME"), ui.Left("ADDRESS"), ui.Left("VENDOR"), ui.Left("SCOPE"), ui.Left("STATE"), ui.Left("LAST SEEN"), ui.Left("BY"), ui.Left("VIA"), ui.Left("NOTICES")}
 	var reach []string
 	if p.Has("--probe") {
-		cols = slices.Insert(cols, 8, "REACH")
+		cols = slices.Insert(cols, 8, ui.Left("REACH"))
 		reach = inv.probeEntries(shown)
 	}
-	rows := [][]string{}
+	tb := ui.NewTable(head, cols...)
 	open := 0
 	for i, e := range shown {
 		last, by, via, stale := deviceSeenCols(inv, res, e)
@@ -491,35 +491,13 @@ func (inv *invocation) deviceList(args []string) error {
 		}
 		ns := res.NoticesFor(e)
 		open += len(devreg.Open(ns))
-		row := []string{e.Name, dash(e.Address), e.Vendor, dash(e.Scope), state, last, by, via, dash(kinds(ns))}
+		row := []any{e.Name, dash(e.Address), e.Vendor, dash(e.Scope), state, last, by, via, dash(kinds(ns))}
 		if reach != nil {
-			row = slices.Insert(row, 8, reach[i])
+			row = slices.Insert(row, 8, any(reach[i]))
 		}
-		rows = append(rows, row)
+		tb.Add(row...)
 	}
-	w := make([]int, len(cols))
-	for i, c := range cols {
-		w[i] = len(c)
-		for _, r := range rows {
-			w[i] = max(w[i], len(r[i]))
-		}
-	}
-	line := func(r []string, pre, post string) {
-		var b strings.Builder
-		b.WriteString("  " + pre)
-		for i, c := range r {
-			if i == len(r)-1 {
-				b.WriteString(c)
-			} else {
-				fmt.Fprintf(&b, "%-*s  ", w[i], c)
-			}
-		}
-		inv.write(b.String() + post + "\n")
-	}
-	line(cols, ui.Bold, ui.NC)
-	for _, r := range rows {
-		line(r, "", "")
-	}
+	inv.write(tb.String())
 	inv.echo("")
 	inv.echo("  " + deviceSeenFooter(res))
 	if reach != nil {
@@ -554,7 +532,7 @@ func (inv *invocation) deviceShow(args []string) error {
 	}
 	inv.echo("")
 	inv.echoE(ui.Bold + kind + " " + e.Name + ui.NC)
-	inv.echo(strings.Repeat("-", len(kind)+1+len(e.Name)))
+	inv.echo(ui.Rule(kind + " " + e.Name))
 	row := func(k, v string) {
 		if k != "" {
 			k += ":"

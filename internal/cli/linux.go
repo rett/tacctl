@@ -657,15 +657,23 @@ func (inv *invocation) configLinuxUID(args []string) error {
 	uids := hosts.UIDs{Path: a.Paths.LinuxUIDs, Range: rng}
 	if username == "" {
 		inv.echo("")
-		inv.echoE(ui.Bold + "Assigned Linux UIDs" + ui.NC + " (same number is the primary GID)")
-		inv.echo("--------------------------------------------")
-		if st, err := os.Stat(uids.Path); err == nil && st.Size() > 0 {
-			listing, err := uids.Listing()
-			if err != nil {
-				return err
+		const title, hint = "Assigned Linux UIDs", "(same number is the primary GID)"
+		listing, err := uids.Listing()
+		if err != nil {
+			return err
+		}
+		if strings.TrimSpace(listing) != "" {
+			t := ui.NewTable(title, ui.Left("USERNAME"), ui.Left("UID"), ui.Left("NOTE"))
+			t.Hint = hint
+			for _, l := range strings.Split(strings.TrimSpace(listing), "\n") {
+				if f := strings.Fields(l); len(f) >= 2 {
+					t.Add(f[0], f[1], strings.Join(f[2:], " "))
+				}
 			}
-			inv.write(listing)
+			inv.write(t.String())
 		} else {
+			inv.echoE(ui.Bold + title + ui.NC + " " + hint)
+			inv.echo(ui.Rule(title + " " + hint))
 			inv.echo("  None yet. A UID is assigned the first time a user is sent to a host.")
 		}
 		inv.echo("")
@@ -745,14 +753,19 @@ func (inv *invocation) configLinuxBuilds(args []string) error {
 	switch sub {
 	case "list":
 		inv.echo("")
-		inv.echoE(ui.Bold + "Prebuilt pam_tacplus modules" + ui.NC + " (" + he.Paths.Builds() + ")")
-		inv.echo("--------------------------------------------")
 		builds := he.Builds()
-		for _, b := range builds {
-			inv.write("  " + padTo(b.Image, 28) + " " + padTo(b.Arch, 8) + " built " + b.Built + "\n      base image " + b.Digest + "\n")
-		}
 		if len(builds) == 0 {
+			title := "Prebuilt pam_tacplus modules (" + he.Paths.Builds() + ")"
+			inv.echoE(ui.Bold + "Prebuilt pam_tacplus modules" + ui.NC + " (" + he.Paths.Builds() + ")")
+			inv.echo(ui.Rule(title))
 			inv.echo("  None yet. 'tacctl host enroll' builds one the first time it meets an OS release.")
+		} else {
+			t := ui.NewTable("Prebuilt pam_tacplus modules", ui.Left("IMAGE"), ui.Left("ARCH"), ui.Left("BUILT"), ui.Left("BASE IMAGE"))
+			t.Hint = "(" + he.Paths.Builds() + ")"
+			for _, b := range builds {
+				t.Add(b.Image, b.Arch, b.Built, b.Digest)
+			}
+			inv.write(t.String())
 		}
 		inv.echo("")
 		return nil

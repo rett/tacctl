@@ -81,8 +81,8 @@ run_plain() {
     run_plain backend list
     assert_success
     assert_line --regexp '^  ID +PROTOCOL +IMPLEMENTATION +INSTALLED +ENABLED +SERVICE'
-    assert_line --regexp '^  tacacs +tacacs +tacquito +yes +yes +active +$'
-    assert_line --regexp '^  radius +radius +freeradius +no +no +- +$'
+    assert_line --regexp '^  tacacs +tacacs +tacquito +yes +yes +active$'
+    assert_line --regexp '^  radius +radius +freeradius +no +no +-$'
 }
 
 # bats test_tags=cutover:wp2-4d

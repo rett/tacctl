@@ -174,32 +174,34 @@ func (inv *invocation) storeMode() bool { return model.Mode(inv.app.Paths.StoreF
 
 // --- list -----------------------------------------------------------------------
 
-var backupTable = ui.NewTable(ui.L(36), ui.L(10), ui.L(8))
-
 // backupList is _backup_list: the snapshots, then the old-style backups,
 // with their sizes (du -sh).
 func (inv *invocation) backupList([]string) error {
 	ids, entries := inv.snapshotIDs(), inv.legacyBackups()
 	inv.echo("")
-	inv.echoE(ui.Bold + "Config Backups" + ui.NC)
-	inv.echo("--------------------------------------------")
-	if !inv.storeMode() {
-		inv.echo("  No store yet: 'backup diff' and 'backup restore' work on old-style backups only.")
+	noStore := func() {
+		if !inv.storeMode() {
+			inv.echo("  No store yet: 'backup diff' and 'backup restore' work on old-style backups only.")
+		}
 	}
 	if len(ids)+len(entries) == 0 {
+		inv.echoE(ui.Bold + "Config Backups" + ui.NC)
+		inv.echo(ui.Rule("Config Backups"))
+		noStore()
 		inv.echo("  No backups found.")
 		inv.echo("")
 		return nil
 	}
-	inv.write(backupTable.Header("TIMESTAMP", "KIND", "SIZE"))
-	inv.echo("  ------------------------------------------------------")
+	t := ui.NewTable("Config Backups", ui.Left("TIMESTAMP"), ui.Left("KIND"), ui.Left("SIZE"))
 	for _, id := range ids {
-		inv.write(backupTable.Row(id, "snapshot", duSH(filepath.Join(inv.app.Paths.BackupDir, id))))
+		t.Add(id, "snapshot", duSH(filepath.Join(inv.app.Paths.BackupDir, id)))
 	}
 	for _, e := range entries {
-		inv.write(backupTable.Row(e.id, "old-style", duSH(e.path)))
+		t.Add(e.id, "old-style", duSH(e.path))
 	}
+	inv.write(t.String())
 	inv.echo("")
+	noStore()
 	inv.echo("  Old-style entries restore with 'tacctl backup restore <timestamp> --legacy'.")
 	inv.echo("")
 	return nil
@@ -292,7 +294,7 @@ func (inv *invocation) diffSnapshot(id string) {
 	dir := filepath.Join(p.BackupDir, id)
 	inv.echo("")
 	inv.echoE(ui.Bold + "Diff: current store and tacctl.yaml vs snapshot " + id + ui.NC)
-	inv.echo("--------------------------------------------")
+	inv.echo(ui.Rule("Diff: current store and tacctl.yaml vs snapshot " + id))
 	inv.diffFile("store.yaml", filepath.Join(dir, "store.yaml"), p.StoreFile, id)
 	inv.diffFile("tacctl.yaml", filepath.Join(dir, "tacctl.yaml"), p.Overrides, id)
 	// The device registry joins the diff only where there is one to compare.
@@ -310,7 +312,7 @@ func (inv *invocation) diffSnapshot(id string) {
 func (inv *invocation) diffLegacy(id, file string) {
 	inv.echo("")
 	inv.echoE(ui.Bold + "Diff: current config vs backup " + id + ui.NC)
-	inv.echo("--------------------------------------------")
+	inv.echo(ui.Rule("Diff: current config vs backup " + id))
 	inv.diffU("backup/"+id, "current", file, inv.app.Paths.Config)
 }
 

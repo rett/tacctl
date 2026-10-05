@@ -50,9 +50,11 @@ store show
 store show --json
 store import --check
 store rollback
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 user list
 @fixture store.multiscope.yaml
 store show
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope list
 @fixture none
 store show
@@ -66,7 +68,9 @@ user list
 store rollback
 store rollback <<< y
 store rollback <<< n
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 user add alice superuser --hash {HASH} --scopes lab ;; store rollback <<< y ;; user list
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 user add alice superuser --hash {HASH} --scopes lab ;; store rollback <<< n ;; user list
 store rollback ;; store show
 store rollback ;; store rollback
@@ -76,9 +80,12 @@ store rollback ;; store rollback
 @fixture legacy.fresh-install.yaml
 store rollback
 store import ;; store rollback <<< n ;; store show
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 store import ;; store rollback <<< y ;; user list ;; store show
 store import ;; store rollback <<< yes
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 store import ;; config render --force ;; store rollback <<< y ;; user list ;; backup list
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 store import ;; config render --force ;; user add alice superuser --hash {HASH} --scopes lab ;; store rollback <<< y ;; user list
 store import ;; config render --force ;; store rollback extra
 store import ;; config render --force ;; store rollback ""
@@ -88,6 +95,7 @@ store import ;; config render --force ;; store rollback <<< Y ;; config validate
 @fixture store.minimal.yaml
 @root tests/diff/roots/store-prestore
 store rollback <<< n
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 store rollback <<< y ;; user list ;; store show
 @root tests/diff/roots/store-prestore-broken
 @known 3.9 item 22: a legacy tacquito.yaml that is not valid YAML is reported in yaml.v3's words (the legacy importer reads it as tacquito does, plan 3.3), not PyYAML's

@@ -83,8 +83,6 @@ func (inv *invocation) backendKnown(id string) error {
 	return nil
 }
 
-var backendTable = ui.NewTable(ui.L(12), ui.L(10), ui.L(16), ui.L(10), ui.L(8), ui.L(10))
-
 // backendList is _backend_list: every registered backend with its
 // protocol, implementation, whether it is installed and enabled, and its
 // service state when installed.
@@ -94,11 +92,7 @@ func (inv *invocation) backendList([]string) error {
 		return err
 	}
 	set := inv.app.Backends()
-	inv.echo("")
-	inv.echoE(ui.Bold + "Backends" + ui.NC)
-	inv.echo("--------------------------------------------")
-	inv.write(backendTable.Header("ID", "PROTOCOL", "IMPLEMENTATION", "INSTALLED", "ENABLED", "SERVICE"))
-	inv.echo("  ------------------------------------------------------------------")
+	t := ui.NewTable("Backends", ui.Left("ID"), ui.Left("PROTOCOL"), ui.Left("IMPLEMENTATION"), ui.Left("INSTALLED"), ui.Left("ENABLED"), ui.Left("SERVICE"))
 	for _, id := range set.IDs() {
 		b, err := set.Get(id)
 		if err != nil {
@@ -115,8 +109,10 @@ func (inv *invocation) backendList([]string) error {
 		if slices.Contains(enabled, id) {
 			enab = "yes"
 		}
-		inv.write(backendTable.Row(id, proto, impl, inst, enab, svc))
+		t.Add(id, proto, impl, inst, enab, svc)
 	}
+	inv.echo("")
+	inv.write(t.String())
 	inv.echo("")
 	return nil
 }

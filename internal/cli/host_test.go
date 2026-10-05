@@ -151,7 +151,7 @@ func TestHostEnrollSyncUnenroll(t *testing.T) {
 	}
 
 	out := hs.run(nil, "host", "list")
-	if !strings.Contains(plain(out), "web1                 admin@web1.example.net       lab                  192.0.2.1        tacplus  3") {
+	if !strings.Contains(plain(out), "  web1  admin@web1.example.net  lab    192.0.2.1  tacplus  3\n") {
 		t.Errorf("list %q", plain(out))
 	}
 	// A disabled user is inactive (expired on the host, never deleted).
@@ -403,7 +403,7 @@ func TestConfigLinuxScriptAndUID(t *testing.T) {
 	hs.expect(1, "", "Usage: tacctl config linux remove-script [--output <file>]")
 
 	hs.run(nil, "config", "linux", "uid")
-	hs.expect(0, "alice                    80000", "")
+	hs.expect(0, "  alice     80000\n", "")
 	hs.run(nil, "config", "linux", "uid", "bob")
 	hs.expect(0, "80001\n", "")
 	hs.run(nil, "config", "linux", "uid", "dave")
@@ -430,7 +430,7 @@ func TestConfigLinuxScriptAndUID(t *testing.T) {
 		t.Fatal(err)
 	}
 	hs.run(nil, "config", "linux", "uid")
-	hs.expect(0, "  carol                    1500   outside 80000-89999: not used on hosts\n", "")
+	hs.expect(0, "  carol     1500   outside 80000-89999: not used on hosts\n", "")
 	hs.run(nil, "config", "linux", "script", "--scope", "lab", "--server", "192.0.2.10", "-o", out)
 	hs.expect(0, "", "Skipping 'carol': its UID 1500 is outside 80000-89999, so no host gets an account for it. Assign one in the range: tacctl config linux uid carol <uid>")
 	script, _ := os.ReadFile(out)
@@ -526,7 +526,7 @@ func TestConfigLinuxBuildBuildsAndOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := hs.run(nil, "config", "linux", "builds")
-	if !strings.Contains(out, "  debian:bookworm              x86_64   built 2026-10-03T12:00:00Z\n      base image sha256:feedface\n") {
+	if !strings.Contains(out, "  debian:bookworm  x86_64  2026-10-03T12:00:00Z  sha256:feedface\n") {
 		t.Errorf("builds %q", out)
 	}
 
