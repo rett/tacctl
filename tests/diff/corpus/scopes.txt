@@ -73,6 +73,7 @@ scope default lab
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope default prod ;; scope default ;; scope list
 
 # prefixes
+@known 0.2.1 item 66: the scope prefixes usage names move <cidrs> <scope>
 scope prefixes
 @known 0.2.1 item 56: the usage has one line per option
 scope prefixes lab
@@ -346,6 +347,7 @@ scope mgmt-acl lab bogus extra
 scope show ''
 scope add ''
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef --protocols tacacs,ldap
+@known 0.2.1 item 66: the scope prefixes usage names move <cidrs> <scope>
 scope prefixes '' list
 scope secret lab set ''
 scope protocols lab set ''

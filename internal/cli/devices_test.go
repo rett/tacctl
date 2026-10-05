@@ -35,9 +35,9 @@ func TestDeviceVerbsAreNative(t *testing.T) {
 			t.Errorf("config %s: Use %q Short %q", v, sub.Use, sub.Short)
 		}
 		spec := configSpecs[v]
-		want := 2
+		want := 4
 		if v == "cisco" {
-			want = 3
+			want = 5
 		}
 		if len(spec.Flags) != want || spec.Flags[0].Kind != KindScopes || spec.Flags[1].Kind != "tacacs|radius" {
 			t.Errorf("config %s: spec %+v", v, spec)
@@ -77,7 +77,7 @@ func TestDeviceConfigRenders(t *testing.T) {
 
 func TestDeviceConfigArguments(t *testing.T) {
 	sb := newSandbox(t, true)
-	usage := "Usage: tacctl config juniper [--scope <name>] [--protocol tacacs|radius]   (without --protocol: the scope's auth-method, else its only protocol, else tacacs)"
+	usage := "Usage: tacctl config juniper [--scope <name>] [--protocol tacacs|radius] [--staging <bench-ip> [--name <device>]]   (without --protocol: the scope's auth-method, else its only protocol, else tacacs)"
 	for _, c := range []struct {
 		args []string
 		err  string

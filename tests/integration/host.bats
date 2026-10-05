@@ -404,6 +404,70 @@ on_tty() {
     assert_success
 }
 
+@test "host enroll --staging: the bench address joins the scope until the host is seen in place" {
+    run "$TACCTL_BIN_SCRIPT" host enroll web1 --staging
+    assert_failure
+    assert_output --partial "--staging provisions a host off-site for the scope it will be installed in"
+    run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab --staging
+    assert_success
+    assert_output --partial "Staging address 192.0.2.50/32 added to scope 'lab' (its secret and users) for host 'web1'"
+    refute_output --partial "does not cover"
+    grep -q "TAC_SCOPE=lab" "$PUSHED"
+    grep -q "TAC_SECRET=0123456789abcdef0123456789abcdef" "$PUSHED"
+    run _hosts
+    assert_output "web1|web1||lab|192.0.2.1|"
+    run "$TACCTL_BIN_SCRIPT" scope lookup 192.0.2.50
+    assert_output --partial "lab"
+    run "$TACCTL_BIN_SCRIPT" scope staging
+    assert_success
+    assert_output --regexp "192\.0\.2\.50/32 +lab +host web1"
+    # Still on the bench: a sync keeps it.
+    "$TACCTL_BIN_SCRIPT" host sync web1 > /dev/null
+    run "$TACCTL_BIN_SCRIPT" scope prefixes lab list
+    assert_output --partial "192.0.2.50/32"
+    # Installed: it now resolves into lab's prefixes; the next sync ends it.
+    "$TACCTL_BIN_SCRIPT" scope prefixes lab add 198.51.100.0/24 > /dev/null
+    stub_cmd getent 'echo "198.51.100.77 STREAM web1"'
+    run "$TACCTL_BIN_SCRIPT" host sync web1
+    assert_success
+    assert_output --partial "Staging address 192.0.2.50/32 removed from scope 'lab': web1 is now seen at 198.51.100.77 (prefix 198.51.100.0/24)."
+    run "$TACCTL_BIN_SCRIPT" scope prefixes lab list
+    refute_output --partial "192.0.2.50/32"
+    run "$TACCTL_BIN_SCRIPT" scope staging
+    assert_output --partial "None."
+}
+
+@test "config cisco --staging: the bench address joins the scope; the configuration stays clean; removed when the device moves" {
+    run "$TACCTL_BIN_SCRIPT" config cisco --staging 203.0.113.9
+    assert_failure
+    assert_output --partial "--staging provisions a device off-site"
+    run "$TACCTL_BIN_SCRIPT" config cisco --scope lab --staging 203.0.113.0/24
+    assert_failure
+    assert_output --partial "--staging takes the device's bench IPv4 address"
+    "$TACCTL_BIN_SCRIPT" config cisco --scope lab --staging 203.0.113.9 --name sw1 > "$BATS_TEST_TMPDIR/cfg" 2> "$BATS_TEST_TMPDIR/err"
+    grep -q "Staging address 203.0.113.9/32 added to scope 'lab' (its secret and users) for device 'sw1'" "$BATS_TEST_TMPDIR/err"
+    ! grep -q "Staging" "$BATS_TEST_TMPDIR/cfg"
+    grep -q "tacacs" "$BATS_TEST_TMPDIR/cfg"
+    run "$TACCTL_BIN_SCRIPT" scope staging
+    assert_output --regexp "203\.0\.113\.9/32 +lab +device sw1"
+    # Registered on the bench: kept; moved to lab's prefixes: removed.
+    "$TACCTL_BIN_SCRIPT" device add sw1 203.0.113.9 --vendor cisco --no-host-key > /dev/null
+    run "$TACCTL_BIN_SCRIPT" scope prefixes lab list
+    assert_output --partial "203.0.113.9/32"
+    run "$TACCTL_BIN_SCRIPT" device address sw1 192.168.5.9
+    assert_success
+    assert_output --partial "Staging address 203.0.113.9/32 removed from scope 'lab': sw1 is now seen at 192.168.5.9 (prefix 192.168.0.0/16)."
+    run "$TACCTL_BIN_SCRIPT" scope prefixes lab list
+    refute_output --partial "203.0.113.9/32"
+    # Without a name it is removed by hand.
+    "$TACCTL_BIN_SCRIPT" config juniper --scope lab --staging 203.0.113.10 > /dev/null 2>&1
+    run "$TACCTL_BIN_SCRIPT" scope staging remove 203.0.113.10
+    assert_success
+    assert_output --partial "Staging address 203.0.113.10/32 removed from scope 'lab'."
+    run "$TACCTL_BIN_SCRIPT" scope prefixes lab list
+    refute_output --partial "203.0.113.10/32"
+}
+
 @test "host unenroll: pushes the secret-free removal script and forgets the host" {
     _own_scope web1 192.0.2.50
     "$TACCTL_BIN_SCRIPT" host enroll web1 > /dev/null

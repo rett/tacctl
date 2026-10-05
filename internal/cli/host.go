@@ -48,6 +48,7 @@ var hostSpecs = map[string]Spec{
 		{Names: []string{"--method"}, Value: true, Kind: methodWords},
 		{Names: []string{"--build-on-host"}},
 		{Names: []string{"--yes"}},
+		{Names: []string{"--staging"}},
 		flagAllowUIDMismatch, flagRemoveHome}},
 	"sync": {MaxArgs: 1, Args: []string{KindHosts}, Flags: []Flag{{Names: []string{"--all"}}, flagAllowUIDMismatch, flagRemoveHome}},
 	"move": {MaxArgs: 2, Args: []string{KindHosts, KindScopes}, Flags: []Flag{{Names: []string{"--all"}, Alone: true},
@@ -202,7 +203,7 @@ func (inv *invocation) reportOnly(err error) { _ = exitCode(err, inv.app.Out) }
 func (inv *invocation) hostEnroll(args []string) error {
 	a := inv.app
 	var target, scope, server, name, port, identity, method string
-	isLocal, buildOnHost, removeHome, yes := false, false, false, false
+	isLocal, buildOnHost, removeHome, yes, staging := false, false, false, false, false
 	var scriptArgs []string
 	for i := 0; i < len(args); {
 		w := args[i]
@@ -221,6 +222,9 @@ func (inv *invocation) hostEnroll(args []string) error {
 			i++
 		case "--yes":
 			yes = true
+			i++
+		case "--staging":
+			staging = true
 			i++
 		case "--scope", "--server", "--name", "--port", "--identity":
 			if i+1 >= len(args) {
@@ -353,6 +357,9 @@ func (inv *invocation) hostEnroll(args []string) error {
 		}
 	}
 	scopeGiven := scope != ""
+	if staging && (!scopeGiven || isLocal) {
+		return inv.usageErr("--staging provisions a host off-site for the scope it will be installed in: tacctl host enroll <[user@]host> --scope <scope> --staging")
+	}
 	if !scopeGiven {
 		if e, ok := reg.Find(name); ok && e.Scope != "" {
 			exists, err := inv.scopeExists(e.Scope)
@@ -438,8 +445,9 @@ func (inv *invocation) hostEnroll(args []string) error {
 			return exit(1)
 		}
 	}
-	// The scope must be the one that answers the host's requests.
-	if !inv.hostScopeCovers(name, target, hostIP, scope, true) {
+	// The scope must be the one that answers the host's requests (with
+	// --staging it will: its bench address is added to it below).
+	if !staging && !inv.hostScopeCovers(name, target, hostIP, scope, true) {
 		return exit(1)
 	}
 	// Moving a registered host to another scope gives it that scope's
@@ -462,6 +470,13 @@ func (inv *invocation) hostEnroll(args []string) error {
 		return inv.hostsDone(err)
 	}
 
+	// Off-site: the bench address answered by the scope's own secret and
+	// users until the host is seen in the scope's prefixes.
+	if staging {
+		if err := inv.stagingAdd(scope, hostIP, "host", name); err != nil {
+			return err
+		}
+	}
 	narrowScope := false
 	if openScope {
 		protocols, err := inv.linuxScopeProtocols(scope)

@@ -1925,6 +1925,23 @@ as remove and add apply. Enrolled hosts whose addresses another scope then
 answers are named, with the
 .B "host move"
 that follows them; none is moved.
+.SS Staging addresses \fB(tacctl scope staging)\fR
+.TP
+.BI "scope staging " "[ list | remove " address " ]"
+A host or network device provisioned off-site for a scope, at a bench
+address the scope does not cover
+.RB ( "host enroll ... \-\-scope " "scope " "\-\-staging" ,
+.BR "config cisco" | juniper | wti " \-\-scope " "scope " "\-\-staging " "ip " [ "\-\-name " device ]),
+has that address added to the scope as a /32: the scope's own secret and
+users answer it there, so nothing changes on the device when it is
+installed in the scope's prefixes. The /32 is removed once the host (its
+enroll or sync) or the registered device
+.RB ( "device set" )
+is seen at another address the scope covers.
+.B list
+(the default) shows them with where each is seen now;
+.B remove
+takes one out by hand.
 .SS Per-scope secret \fB(tacctl scope secret)\fR
 .TP
 .BI "scope secret " "scope " "show"

@@ -319,6 +319,11 @@ func (inv *invocation) deviceWrite(fn func(*devreg.File, *devreg.Resolver) error
 		r.Hosts = res.Hosts
 		return fn(live, r)
 	})
+	if err == nil {
+		// A device registered at, or moved to, its scope's prefixes ends
+		// its staging address.
+		inv.stagingSweep()
+	}
 	return after, err
 }
 

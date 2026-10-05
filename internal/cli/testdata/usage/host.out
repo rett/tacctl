@@ -17,6 +17,8 @@ Usage: tacctl host <subcommand> [arguments]
       --port <n>, --identity <file>    SSH port and key
       --build-on-host                  (tacplus) Compile pam_tacplus on the host instead of in a container here
       --yes                            (enroll and move) Move a registered host to another scope even when that deletes accounts
+      --staging                        (enroll, with --scope) Provisioned off-site: the host's bench address joins the scope as a
+                                       /32 (its secret and users) until the host is seen in place (tacctl scope staging)
   sync <name> | --all                  Push account adds, deletions and tier changes
       --all                            Every enrolled host
       --allow-uid-mismatch             (enroll and sync) accept a UID conflict on the host instead of stopping

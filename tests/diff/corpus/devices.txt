@@ -15,26 +15,40 @@
 @fixture tacquito.multiscope.yaml
 
 # --- arguments ------------------------------------------------------------------
+@known 0.2.1 item 67: the config usage line names --staging <bench-ip> [--name <device>]
 config cisco --scope
+@known 0.2.1 item 67: the config usage line names --staging <bench-ip> [--name <device>]
 config cisco --protocol
 config cisco --protocol ldap
 config cisco --protocol ldap --scope nosuch
+@known 0.2.1 item 67: the config usage line names --staging <bench-ip> [--name <device>]
 config cisco --bogus
+@known 0.2.1 item 67: the config usage line names --staging <bench-ip> [--name <device>]
 config cisco extra
+@known 0.2.1 item 67: the config usage line names --staging <bench-ip> [--name <device>]
 config cisco --scope=lab
+@known 0.2.1 item 67: the config usage line names --staging <bench-ip> [--name <device>]
 config cisco -h
+@known 0.2.1 item 67: the config usage line names --staging <bench-ip> [--name <device>]
 config cisco help
+@known 0.2.1 item 67: the config usage line names --staging <bench-ip> [--name <device>]
 config juniper --legacy
+@known 0.2.1 item 67: the config usage line names --staging <bench-ip> [--name <device>]
 config juniper --scope lab --protocol
 config juniper --protocol ldap
+@known 0.2.1 item 67: the config usage line names --staging <bench-ip> [--name <device>]
 config juniper --bogus --scope lab
+@known 0.2.1 item 67: the config usage line names --staging <bench-ip> [--name <device>]
 config wti --legacy
 config wti --protocol ldap --scope lab
+@known 0.2.1 item 67: the config usage line names --staging <bench-ip> [--name <device>]
 config wti --scope
+@known 0.2.1 item 67: the config usage line names --staging <bench-ip> [--name <device>]
 config wti --scope lab extra
 config cisco --scope nosuchscope
 config juniper --scope nosuchscope
 config wti --scope nosuchscope
+@known 0.2.1 item 67: the config usage line names --staging <bench-ip> [--name <device>]
 config cisco --scope ''
 config cisco --legacy --protocol radius
 config cisco --legacy --protocol radius --scope nosuchscope

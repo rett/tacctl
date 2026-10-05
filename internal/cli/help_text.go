@@ -195,7 +195,8 @@ Usage:
   tacctl scope default [<name>]                            Show or set the default scope
   tacctl scope lookup <ip|cidr>                            Show which scope owns an address
 
-  tacctl scope prefixes <scope> list|add|remove            Manage a scope's CIDR list
+  tacctl scope prefixes <scope> list|add|remove|move       Manage a scope's CIDR list
+  tacctl scope staging [list | remove <address>]           Bench addresses of devices provisioned off-site (--staging), until seen in place
   tacctl scope secret   <scope> show|set|generate          Manage a scope's shared secret
   tacctl scope protocols <scope> list|set <csv>|clear      Limit a scope to some protocols (tacacs, radius); default: all
   tacctl scope vendor-attrs <scope> [enable|disable <csv>] RADIUS: vendor privilege attributes sent to the scope's devices (cisco, juniper, wti); default: not sent
@@ -296,6 +297,9 @@ Subcommands:
       --scope <name>                   (cisco, juniper, wti) The scope whose server address and secret go in (default: the default scope)
       --protocol tacacs|radius         (cisco, juniper, wti) The backend the device uses (default: the scope's auth-method, else its only protocol, else tacacs)
       --legacy                         (cisco) IOS 12.x syntax
+      --staging <bench-ip>             (cisco, juniper, wti, with --scope) Provisioned off-site: the bench address joins the scope as a
+                                       /32 (its secret and users) until the device is seen in place (tacctl scope staging)
+      --name <device>                  (with --staging) The registered device whose move ends the staging (default: the one at the bench address)
   linux   build|script|remove-script|uid|builds  TACACS+ or RADIUS login for Linux hosts (install/removal scripts)
   branch [name]                        Show or change the tacctl repo branch
 
@@ -384,6 +388,8 @@ Usage: tacctl host <subcommand> [arguments]
       --port <n>, --identity <file>    SSH port and key
       --build-on-host                  (tacplus) Compile pam_tacplus on the host instead of in a container here
       --yes                            (enroll and move) Move a registered host to another scope even when that deletes accounts
+      --staging                        (enroll, with --scope) Provisioned off-site: the host's bench address joins the scope as a
+                                       /32 (its secret and users) until the host is seen in place (tacctl scope staging)
   sync <name> | --all                  Push account adds, deletions and tier changes
       --all                            Every enrolled host
       --allow-uid-mismatch             (enroll and sync) accept a UID conflict on the host instead of stopping

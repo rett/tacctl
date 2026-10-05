@@ -21,7 +21,8 @@ Usage:
   tacctl scope default [<name>]                            Show or set the default scope
   tacctl scope lookup <ip|cidr>                            Show which scope owns an address
 
-  tacctl scope prefixes <scope> list|add|remove            Manage a scope's CIDR list
+  tacctl scope prefixes <scope> list|add|remove|move       Manage a scope's CIDR list
+  tacctl scope staging [list | remove <address>]           Bench addresses of devices provisioned off-site (--staging), until seen in place
   tacctl scope secret   <scope> show|set|generate          Manage a scope's shared secret
   tacctl scope protocols <scope> list|set <csv>|clear      Limit a scope to some protocols (tacacs, radius); default: all
   tacctl scope vendor-attrs <scope> [enable|disable <csv>] RADIUS: vendor privilege attributes sent to the scope's devices (cisco, juniper, wti); default: not sent

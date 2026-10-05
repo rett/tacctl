@@ -781,6 +781,18 @@ current behaviour; this file is where history lives.
     moved. `scope remove` (and `scope prefixes <scope> remove --all`) refuse
     a scope that enrolled hosts use, `--force` or not, since they hold its
     secret. The warnings of item 64 now give `tacctl host move <name>`.
+67. **Off-site provisioning (`--staging`).** `host enroll ... --scope
+    <scope> --staging` and `config cisco|juniper|wti --scope <scope>
+    --staging <bench-ip> [--name <device>]` provision a host or device at a
+    bench address its scope does not cover: the address joins the scope as
+    a `/32`, so the scope's own secret and users answer it there and nothing
+    changes on the device once it is installed in the scope's prefixes. The
+    staging addresses are recorded (`StateDir/staging`; `tacctl scope
+    staging` lists them) and each is removed once its host (enroll, sync,
+    `host target`) or registered device (`device add`, `device address`) is
+    seen at another address the scope covers; `scope staging remove
+    <address>` removes one by hand. A device configuration's own output
+    stays clean: the staging lines go to stderr.
 
 ## 0.2.0 (2026-10-04)
 

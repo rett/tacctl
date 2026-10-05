@@ -41,6 +41,7 @@ func (inv *invocation) resolveV4(host string) string {
 // shown. Without it, the resolution is recorded. Every problem is a
 // warning: the enrolment or sync itself has succeeded.
 func (inv *invocation) hostFacts(he *hosts.Env, name, target, resolved string) {
+	defer inv.stagingSweep()
 	a := inv.app
 	facts := he.Facts
 	if facts == nil {
