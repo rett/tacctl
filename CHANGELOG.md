@@ -869,10 +869,11 @@ current behaviour; this file is where history lives.
     (tacquito patch 0005).** Junos opens short `root` CLI and junoscript
     sessions with no terminal for its process and health checks, several a
     minute, and every login and logout of them filled the accounting log.
-    tacquito now answers a `root` record from a port that is not a terminal
-    (anything but `tty*`, `pts*`, `vty*`, `con*`, `aux*` or a `/dev/`
-    path) with success and does not record it; a `root` login on the
-    console or over ssh is recorded as before. The device still logs
+    tacquito now answers a `root` record with no terminal (port `non-tty`,
+    which Junos sends for them, `unknown`, or empty) with success and does
+    not record it; a `root` login on the console or over ssh (port `0` or a
+    tty name) is recorded as before, its commands included. The skip was
+    verified live on a Junos device. The device still logs
     `AUDITD_TACPLUS_MSG_SENT` for each record it sends; only its syslog
     configuration can drop that line. `tacctl upgrade` rebuilds tacquito.
 

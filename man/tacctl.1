@@ -105,12 +105,15 @@ as root and generate accounting packets; without a
 .B root
 entry tacquito logs an error for every packet. Records of
 .B root
-on a port that is not a terminal (anything but
-.BR tty* ", " pts* ", " vty* ", " con* ", " aux*
-or a
-.B /dev/
-path) are answered with success and not recorded: those are the device's
-own sessions, several a minute on Junos.
+with no terminal (port
+.BR non\-tty ,
+which Junos sends for them,
+.B unknown
+or empty) are answered with success and not recorded: those are the
+device's own sessions, several a minute on Junos. A
+.B root
+login on the console or over ssh has a port and is recorded, its commands
+included.
 .B "tacctl user passwd root"
 is rejected — root is a Junos built-in intended for local/console use
 only and must never authenticate via TACACS+.

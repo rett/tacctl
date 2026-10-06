@@ -1,5 +1,5 @@
 diff --git a/cmds/server/handlers/acct.go b/cmds/server/handlers/acct.go
-index 23105ce..2c647a4 100644
+index 23105ce..6a6977e 100644
 --- a/cmds/server/handlers/acct.go
 +++ b/cmds/server/handlers/acct.go
 @@ -9,8 +9,11 @@ package handlers
@@ -47,26 +47,25 @@ index 23105ce..2c647a4 100644
  	if c == nil {
  		a.Errorf(request.Context, "[%v] user [%v] does not have an accounter associated", request.Header.SessionID, body.User)
  		accountingHandleAccounterNil.Inc()
-@@ -63,3 +90,43 @@ func (a *AccountingRequest) Handle(response tq.Response, request tq.Request) {
+@@ -63,3 +90,42 @@ func (a *AccountingRequest) Handle(response tq.Response, request tq.Request) {
  
  	NewResponseLogger(a.Context(), a.loggerProvider, c.Accounting).Handle(response, request)
  }
 +
-+// internalSession reports whether the record is for 'root' on a port that
-+// is not a terminal (tty*, pts*, vty*, con*, aux*, console*, /dev/...):
-+// a device's own sessions, which nobody typed (tacctl patch 0005). A root
-+// login on the console or over ssh has a terminal and is recorded.
++// internalSession reports whether the record is for 'root' on no terminal:
++// the port is 'non-tty' (what Junos sends for its own sessions), 'unknown'
++// or empty. Those are a device's own sessions, which nobody typed (tacctl
++// patch 0005). A root login on the console or over ssh has a port (Junos:
++// a tty name, or '0' over ssh) and is recorded.
 +func internalSession(body tq.AcctRequest) bool {
 +	if string(body.User) != "root" {
 +		return false
 +	}
-+	port := strings.ToLower(strings.TrimSpace(string(body.Port)))
-+	for _, p := range []string{"tty", "pts", "vty", "con", "aux", "/dev/"} {
-+		if strings.HasPrefix(port, p) {
-+			return false
-+		}
++	switch strings.ToLower(strings.TrimSpace(string(body.Port))) {
++	case "non-tty", "unknown", "":
++		return true
 +	}
-+	return true
++	return false
 +}
 +
 +// sinkAccounter is a user of the scope with an accounter: 'root' when it has

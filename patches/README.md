@@ -124,13 +124,14 @@ user the device sent, and the device gets a success reply. Only accounting
 changes: an unknown user still fails authentication and authorization, and
 a scope with no users at all still refuses the record.
 
-Records of `root` on a port that is not a terminal (anything but `tty*`,
-`pts*`, `vty*`, `con*`, `aux*` or a `/dev/` path, an empty port included)
-are answered with success and not recorded, with a debug line. Junos opens
+Records of `root` with no terminal (port `non-tty`, which Junos sends for
+them, `unknown`, or empty) are answered with success and not recorded, with
+a debug line. Junos opens
 short `root` CLI and junoscript sessions with no terminal for its own
 process and health checks (`show system processes extensive`, several a
 minute), and every login and logout of them is an accounting record. A
-`root` login on the console or over ssh has a terminal and is recorded.
+`root` login on the console or over ssh has a port (Junos: a tty name, or
+`0` over ssh) and is recorded, its commands included.
 The device still logs `AUDITD_TACPLUS_MSG_SENT` for each one it sends:
 that line is the device's, and only its syslog configuration can drop it.
 

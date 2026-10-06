@@ -149,7 +149,7 @@ func TestPatchesApplyTheAccountingSinkPatch(t *testing.T) {
 	if skip < 0 || skip > sink || !strings.Contains(src[skip:sink], "tq.AcctReplyStatusSuccess") {
 		t.Fatalf("internal-session skip at %d, sink at %d", skip, sink)
 	}
-	mustContain(t, src, `for _, p := range []string{"tty", "pts", "vty", "con", "aux", "/dev/"}`)
+	mustContain(t, src, `case "non-tty", "unknown", "":`)
 }
 
 func TestPatchesApplyTheFailureWithoutServerMsgPatch(t *testing.T) {
