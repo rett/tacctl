@@ -419,7 +419,10 @@ users_gid=$(c getent group tac-users | cut -d: -f3)
 c bash -c "groupadd -g ${dave_old} dave && usermod -u ${dave_old} -g dave dave > /dev/null
     chown -R ${dave_old}:${dave_old} ~dave && echo note > ~dave/note && chown ${dave_old}:${dave_old} ~dave/note
     echo x > /var/tmp/dave-stray && chown ${dave_old}:${dave_old} /var/tmp/dave-stray"
-s sed -i "s/^dave:${dave_new}\$/dave:${dave_old}/" /etc/tacctl/linux-uids
+# The map as 0.2.0 left it: no '# range' record (0.2.1 item 52 adds it),
+# so the entry at a legacy number is renumbered, not taken for one outside
+# the range.
+s sed -i -e '/^#/d' -e "s/^dave:${dave_new}\$/dave:${dave_old}/" /etc/tacctl/linux-uids
 check "dave starts at UID/GID ${dave_old}, the map at ${dave_old}" bash -c "[[ \$(podman exec '$C' id -u dave) == ${dave_old} && \$(podman exec '$C' id -g dave) == ${dave_old} ]] && podman exec '$S' grep -qx 'dave:${dave_old}' /etc/tacctl/linux-uids"
 tacctl host sync c1 > "${WORK}/sync.out"; rc=$?
 sed 's/^/    | /' "${WORK}/sync.out" | grep -iE 'renumber|stray|carry'
