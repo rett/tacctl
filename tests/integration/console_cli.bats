@@ -271,6 +271,10 @@ LIST
     assert_output --partial "WARNING"
     assert_output --partial "allowtcpforwarding is 'yes'; x11forwarding is 'yes'"
     assert_output --partial "sshd keeps the first value it reads"
+    # console check prints the drop-in and sshd_config lines once.
+    run "$TACCTL_BIN_SCRIPT" console check
+    plain
+    [[ $(grep -c 'sshd drop-in' <<< "$output") == 1 ]]
 }
 
 @test "console show: the server's pieces as they are" {

@@ -36,6 +36,8 @@ in the last section.**
 - OpenSSH 9.6p1 (Ubuntu 24.04) accepts `DisableForwarding` (`sshd -t`).
 - New accounts get UIDs in 80000-89999. Removed accounts' homes are kept under `/home/.tacctl-removed` when the sync has no terminal to ask.
 
+- Forwarding tiers (CHANGELOG 60, 71), 2026-10-06 on the dev server: `sshd -T` gives the superuser `x11forwarding yes`, `allowtcpforwarding yes`, `disableforwarding no` and the operator `no`, `no`, `yes`, both with `forcecommand /usr/local/bin/tacctl-console`; `ssh -L` through the server worked for the superuser and was refused for the operator (`channel 3: open failed: administratively prohibited`); `console check` asks about both and reports the settings in effect. A superuser's write in the console (`user passwd …`) asked sudo's password once.
+
 ## Left to do by hand (interactive)
 
 From a workstation, with a test user that has the console:
@@ -43,7 +45,6 @@ From a workstation, with a test user that has the console:
 - `ssh <user>@<server>`: the prompt `<host>> `, the banner, Tab twice, `?`, `history`, `help`, `exit`.
 - In the console, `ssh <device>`: `~C` does nothing; after `exit` the journal has `ssh end ... status=0`.
 - As a superuser, a write (for example `user passwd ...`) asks the network password once, then uses sudo's cache.
-- Forwarding tiers (CHANGELOG 60), after `upgrade` or a sync of the server: `sshd -T -C user=<superuser>,host=localhost,addr=127.0.0.1` shows `x11forwarding yes`, `allowtcpforwarding yes`, `disableforwarding no` and still `forcecommand`; the same for an operator shows them closed. As a superuser: `ssh -X <server>` gives a `DISPLAY` and `ssh -X <device>` in the console runs an X client; `ssh -L 8443:<device>:443 <server>` and `ssh -J <server> <device>` work. As an operator: `ssh -L` is refused by sshd, and `ssh -L ... <device>` in the console is refused (`reason=forward`).
 
 ## Residual risks
 

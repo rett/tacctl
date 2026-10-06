@@ -946,4 +946,5 @@ What to expect:
     tiers open unnoticed. Now the first user of a tier that may not forward
     and the first of one that may are both checked, `x11forwarding` too
     (`disableforwarding yes` closes all), and an open non-forwarding tier is
-    warned with the likely cause and where to look.
+    warned with the likely cause and where to look. Verified on the dev
+    server: the operator's `ssh -L` is refused, the superuser's works.

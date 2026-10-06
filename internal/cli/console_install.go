@@ -138,6 +138,11 @@ func (inv *invocation) consoleDeprovision() error {
 // about ("": no account has the console, sshd is not asked). The lines
 // describing what was found are printed as they are learnt.
 func (inv *invocation) consoleCheckProblems(pol *console.Policy, user string) []string {
+	return append(inv.consoleCheckFiles(pol), inv.consoleCheckUser(pol, user)...)
+}
+
+// consoleCheckFiles is the drop-in and sshd_config part of the check.
+func (inv *invocation) consoleCheckFiles(pol *console.Policy) []string {
 	p := inv.app.Paths
 	var problems []string
 	want := console.DropIn(p.ConsoleCommand, pol.AgentForwarding(), pol.ForwardingTiers())
@@ -161,6 +166,14 @@ func (inv *invocation) consoleCheckProblems(pol *console.Policy, user string) []
 			problems = append(problems, main+" does not include "+dir+"/*.conf, so sshd never reads the drop-in")
 		}
 	}
+	return problems
+}
+
+// consoleCheckUser is what sshd applies to user ("": no account has the
+// console).
+func (inv *invocation) consoleCheckUser(pol *console.Policy, user string) []string {
+	p := inv.app.Paths
+	var problems []string
 	if user == "" {
 		inv.echo("  sshd: not checked (no account has the console as its shell)")
 		return problems
@@ -194,17 +207,6 @@ func (inv *invocation) consoleProbeUsers(pol *console.Policy, users []string) []
 	for _, u := range []string{closed, open} {
 		if u != "" {
 			out = append(out, u)
-		}
-	}
-	return out
-}
-
-// sshdOnly drops the drop-in and sshd_config lines a second probe repeats.
-func sshdOnly(problems []string) []string {
-	var out []string
-	for _, p := range problems {
-		if !strings.Contains(p, "drop-in") && !strings.Contains(p, "sshd_config") {
-			out = append(out, p)
 		}
 	}
 	return out
@@ -280,17 +282,13 @@ func (inv *invocation) consoleCheckReport(pol *console.Policy) error {
 		inv.app.Out.WarnE(err.Error())
 	}
 	inv.echo("Console sshd check:")
-	var problems []string
+	problems := inv.consoleCheckFiles(pol)
 	probe := inv.consoleProbeUsers(pol, users)
 	if len(probe) == 0 {
-		problems = inv.consoleCheckProblems(pol, "")
+		problems = append(problems, inv.consoleCheckUser(pol, "")...)
 	}
-	for i, u := range probe {
-		got := inv.consoleCheckProblems(pol, u)
-		if i > 0 {
-			got = sshdOnly(got)
-		}
-		problems = append(problems, got...)
+	for _, u := range probe {
+		problems = append(problems, inv.consoleCheckUser(pol, u)...)
 	}
 	problems = append(problems, inv.consoleFirstValueHint(pol, probe, problems)...)
 	if len(problems) == 0 {
