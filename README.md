@@ -14,7 +14,8 @@ tacctl upgrade
 # Fresh installs seed four built-ins: engineer/superuser, operator/operator,
 # viewer/readonly (all disabled — set a password to activate), plus
 # root/readonly as a permanent accounting-only sink (Junos internal daemons
-# emit accounting packets as root; tacctl user passwd root is rejected).
+# emit accounting packets as root; tacctl user passwd root is rejected;
+# root's records without a terminal are answered but not recorded).
 tacctl user passwd engineer
 
 # Or add your own (lands in the default 'lab' scope)

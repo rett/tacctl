@@ -143,6 +143,13 @@ func TestPatchesApplyTheAccountingSinkPatch(t *testing.T) {
 	if sink < 0 || fail < 0 || sink > fail {
 		t.Fatalf("sink fallback at %d, failure at %d", sink, fail)
 	}
+	// root's records without a terminal are answered before the lookup,
+	// with success, and not recorded.
+	skip := strings.Index(src, "if internalSession(body) {")
+	if skip < 0 || skip > sink || !strings.Contains(src[skip:sink], "tq.AcctReplyStatusSuccess") {
+		t.Fatalf("internal-session skip at %d, sink at %d", skip, sink)
+	}
+	mustContain(t, src, `for _, p := range []string{"tty", "pts", "vty", "con", "aux", "/dev/"}`)
 }
 
 func TestPatchesApplyTheFailureWithoutServerMsgPatch(t *testing.T) {

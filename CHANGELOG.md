@@ -865,6 +865,16 @@ current behaviour; this file is where history lives.
     minutes at the prompt)`). `tacctl shell -c <Tab>` offers the commands.
     The `user` usage lists `scope <user> remove --all`, and `device show
     --all` is described as what it does there.
+75. **A device's own `root` sessions stay out of the accounting log
+    (tacquito patch 0005).** Junos opens short `root` CLI and junoscript
+    sessions with no terminal for its process and health checks, several a
+    minute, and every login and logout of them filled the accounting log.
+    tacquito now answers a `root` record from a port that is not a terminal
+    (anything but `tty*`, `pts*`, `vty*`, `con*`, `aux*` or a `/dev/`
+    path) with success and does not record it; a `root` login on the
+    console or over ssh is recorded as before. The device still logs
+    `AUDITD_TACPLUS_MSG_SENT` for each record it sends; only its syslog
+    configuration can drop that line. `tacctl upgrade` rebuilds tacquito.
 
 ## 0.2.0 (2026-10-04)
 

@@ -103,7 +103,14 @@ disabled for the lifetime of the install. It exists because Junos
 internal daemons (mgd, jsd, op-script probes) run non-tty CLI commands
 as root and generate accounting packets; without a
 .B root
-entry tacquito logs an error for every packet.
+entry tacquito logs an error for every packet. Records of
+.B root
+on a port that is not a terminal (anything but
+.BR tty* ", " pts* ", " vty* ", " con* ", " aux*
+or a
+.B /dev/
+path) are answered with success and not recorded: those are the device's
+own sessions, several a minute on Junos.
 .B "tacctl user passwd root"
 is rejected — root is a Junos built-in intended for local/console use
 only and must never authenticate via TACACS+.
