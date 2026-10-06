@@ -388,29 +388,35 @@ c cp /root/login.defs.orig /etc/login.defs
 
 section "users: alice (superuser), bob (operator), dave and erin (readonly), carl (readonly; the host has a local carl)"
 # carl as an earlier release left an adopted account: in tacctl's groups
-# and listed in the 'adopted' state file.
-c bash -c 'usermod -aG tac-users,tac-readonly carl && echo carl > /var/lib/tacctl-client/adopted'
+# (those a host other than the server has: tac-users, tac-superuser) and
+# listed in the 'adopted' state file.
+c bash -c 'usermod -aG tac-users,tac-superuser carl && echo carl > /var/lib/tacctl-client/adopted'
 carl_before=$(c getent passwd carl); carl_shadow=$(c getent shadow carl); carl_groups=$(c id -nG carl | tr ' ' '\n' | grep -v '^tac-' | sort | paste -sd' ')
 for u in alice bob carl dave erin; do tacctl user scope "$u" add linux-c1 > /dev/null; done
 tacctl host sync c1 > "${WORK}/sync.out"; rc=$?
 check "host sync refuses carl (a local account tacctl did not create), goes on, and says so in its summary" bash -c "[[ $rc == 0 ]] && grep -q \"'carl': this host has a local account of that name that tacctl did not create\" '${WORK}/sync.out' && grep -q 'c1: synced (4 users; 1 refused: carl)' '${WORK}/sync.out'"
-check "the adopted carl is reported once, taken out of tacctl's groups, and forgotten" bash -c "grep -q 'adopted are no longer tracked: carl' '${WORK}/sync.out' && grep -q \"'carl': removed from tacctl's groups (tac-users, tac-readonly); it is a plain local account again.\" '${WORK}/sync.out' && ! podman exec '$C' test -e /var/lib/tacctl-client/adopted"
+check "the adopted carl is reported once, taken out of tacctl's groups, and forgotten" bash -c "grep -q 'adopted are no longer tracked: carl' '${WORK}/sync.out' && grep -q \"'carl': removed from tacctl's groups (tac-users, tac-superuser); it is a plain local account again.\" '${WORK}/sync.out' && ! podman exec '$C' test -e /var/lib/tacctl-client/adopted"
 check "nothing else of carl's account changed (passwd and shadow lines, other groups)" bash -c "[[ \"\$(podman exec '$C' getent passwd carl)\" == '${carl_before}' && \"\$(podman exec '$C' getent shadow carl)\" == '${carl_shadow}' && \"\$(podman exec '$C' id -nG carl | tr ' ' '\\n' | sort | paste -sd' ')\" == '${carl_groups}' ]]"
 check "with the default UID_MAX 60000 the sync does not warn about login.defs" bash -c "! grep -q 'local useradd there' '${WORK}/sync.out'"
 c useradd -m localx > /dev/null 2>&1
 check "local useradd with the default login.defs gives a UID below 80000" bash -c "id=\$(podman exec '$C' id -u localx) && (( id < 80000 ))"
 c userdel -r localx > /dev/null 2>&1
 check "every account tacctl created has a UID in 80000-89999" bash -c "for u in alice bob dave erin; do id=\$(podman exec '$C' id -u \$u) && (( id >= 80000 && id <= 89999 )) || exit 1; done"
+check "tacctl's groups here are tac-users 80000 and tac-superuser 80002 only; accounts have tac-users as primary group and a 0700 home" c bash -c "[[ \$(getent group | grep '^tac-' | cut -d: -f1,3 | sort | paste -sd' ') == 'tac-superuser:80002 tac-users:80000' ]] && for u in alice dave erin; do [[ \$(id -gn \$u) == tac-users && \$(stat -c %a /home/\$u) == 700 ]] || exit 1; done"
 LABEL="TACACS+"; [[ "$FIRST" == "radius" ]] && LABEL="RADIUS"
 check "alice's account: UID 80000, locked password, named 'alice (${LABEL})'" c bash -c "[[ \$(id -u alice) == 80000 && \$(getent passwd alice | cut -d: -f5) == 'alice (${LABEL})' ]] && getent shadow alice | cut -d: -f2 | grep -q '^!'"
 
 section "renumbering: dave as an earlier release left him (UID and map entry in 20000-29999)"
 # The host's account at the legacy number tacctl gave out before (state
-# 'created', own group, home owned by it), a file outside the home with that
-# number, and the server's map entry at the legacy number.
+# 'created', an own group named like it with that number as its primary
+# group, home owned by it), a file outside the home with that number, and
+# the server's map entry at the legacy number. The sync renumbers the UID
+# and, as for every account of an earlier release, makes tac-users its
+# primary group and removes the own group (item 62).
 dave_new=$(s sed -n 's/^dave://p' /etc/tacctl/linux-uids)
 dave_old=$((dave_new - 60000))
-c bash -c "usermod -u ${dave_old} dave && groupmod -g ${dave_old} dave && usermod -g ${dave_old} dave > /dev/null
+users_gid=$(c getent group tac-users | cut -d: -f3)
+c bash -c "groupadd -g ${dave_old} dave && usermod -u ${dave_old} -g dave dave > /dev/null
     chown -R ${dave_old}:${dave_old} ~dave && echo note > ~dave/note && chown ${dave_old}:${dave_old} ~dave/note
     echo x > /var/tmp/dave-stray && chown ${dave_old}:${dave_old} /var/tmp/dave-stray"
 s sed -i "s/^dave:${dave_new}\$/dave:${dave_old}/" /etc/tacctl/linux-uids
@@ -419,8 +425,8 @@ tacctl host sync c1 > "${WORK}/sync.out"; rc=$?
 sed 's/^/    | /' "${WORK}/sync.out" | grep -iE 'renumber|stray|carry'
 check "the sync renumbers the server's map once, keeps the old one and logs it" bash -c "[[ $rc == 0 ]] && grep -q 'Renumbered 1 entry of /etc/tacctl/linux-uids from 20000-29999 to 80000-89999' '${WORK}/sync.out' && podman exec '$S' grep -qx 'dave:${dave_new}' /etc/tacctl/linux-uids && podman exec '$S' bash -c 'grep -qx dave:${dave_old} /etc/tacctl/linux-uids.pre-renumber-*' && podman exec '$S' journalctl -t tacctl --no-pager | grep -q 'uid-map renumbered 1 entries'"
 check "the host renumbers dave ${dave_old} -> ${dave_new} and the summary counts it" bash -c "grep -q \"'dave': renumbered ${dave_old} -> ${dave_new} (home re-owned)\" '${WORK}/sync.out' && grep -q 'c1: synced (4 users; 1 renumbered; 1 refused: carl)' '${WORK}/sync.out'"
-check "dave's UID, group and primary GID are ${dave_new}" c bash -c "[[ \$(id -u dave) == ${dave_new} && \$(id -g dave) == ${dave_new} && \$(getent group dave | cut -d: -f3) == ${dave_new} ]]"
-check "dave's home and the files in it are ${dave_new}:${dave_new}" c bash -c "[[ \$(stat -c %u:%g ~dave) == ${dave_new}:${dave_new} && \$(stat -c %u:%g ~dave/note) == ${dave_new}:${dave_new} ]]"
+check "dave's UID is ${dave_new}, his primary group tac-users (${users_gid}), his own group gone" c bash -c "[[ \$(id -u dave) == ${dave_new} && \$(id -g dave) == ${users_gid} ]] && ! getent group dave > /dev/null"
+check "dave's home and the files in it are ${dave_new}:${users_gid}, the home 0700" c bash -c "[[ \$(stat -c %u:%g ~dave) == ${dave_new}:${users_gid} && \$(stat -c %u:%g ~dave/note) == ${dave_new}:${users_gid} && \$(stat -c %a ~dave) == 700 ]]"
 check "the stray file outside the home is reported and left as it was" bash -c "grep -q '/var/tmp/dave-stray' '${WORK}/sync.out' && [[ \$(podman exec '$C' stat -c %u:%g /var/tmp/dave-stray) == ${dave_old}:${dave_old} ]]"
 c rm -f /var/tmp/dave-stray
 tacctl host sync c1 > "${WORK}/sync.out"; rc=$?
