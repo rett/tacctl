@@ -320,7 +320,7 @@ func TestSSHDCheck(t *testing.T) {
 	}
 	const fc = "forcecommand /usr/local/bin/tacctl-console\npubkeyauthentication no\n"
 	s, r, err := run(execx.Result{Stdout: []byte("port 22\nallowtcpforwarding no\nallowagentforwarding no\nx11forwarding no\n" + fc)})
-	if err != nil || s != (SSHD{"no", "no", "/usr/local/bin/tacctl-console", "no"}) || !r.Called("sshd", "-T", "-C", "user=jdoe,host=localhost,addr=127.0.0.1") {
+	if err != nil || s != (SSHD{"no", "no", "/usr/local/bin/tacctl-console", "no", "no", ""}) || !r.Called("sshd", "-T", "-C", "user=jdoe,host=localhost,addr=127.0.0.1") {
 		t.Errorf("closed: %+v %v %q", s, err, r.Argvs())
 	}
 	if p := s.Problems(false, false, testConsole); len(p) != 0 {
@@ -334,6 +334,16 @@ func TestSSHDCheck(t *testing.T) {
 	if p := s.Problems(false, true, testConsole); !reflect.DeepEqual(p, []string{"allowagentforwarding is 'yes'"}) {
 		t.Errorf("forwarding tier: %v", p)
 	}
+	// X11 open for a tier that may not forward (a value read before the
+	// drop-in): a problem; DisableForwarding yes closes it all anyway.
+	s, _, _ = run(execx.Result{Stdout: []byte("allowtcpforwarding no\nallowagentforwarding no\nx11forwarding yes\ndisableforwarding no\n" + fc)})
+	if p := s.Problems(false, false, testConsole); !reflect.DeepEqual(p, []string{"x11forwarding is 'yes'"}) {
+		t.Errorf("x11 open: %v", p)
+	}
+	s, _, _ = run(execx.Result{Stdout: []byte("allowtcpforwarding yes\nallowagentforwarding no\nx11forwarding yes\ndisableforwarding yes\n" + fc)})
+	if p := s.Problems(false, false, testConsole); len(p) != 0 {
+		t.Errorf("disableforwarding yes: %v", p)
+	}
 	// Without the drop-in: nothing forced, key logins on.
 	s, _, _ = run(execx.Result{Stdout: []byte("allowtcpforwarding no\nallowagentforwarding no\nforcecommand none\npubkeyauthentication yes\n")})
 	if p := s.Problems(false, false, testConsole); !reflect.DeepEqual(p, []string{"forcecommand is 'none'", "pubkeyauthentication is 'yes'"}) {
@@ -344,7 +354,7 @@ func TestSSHDCheck(t *testing.T) {
 		t.Errorf("agent allowed: %v", p)
 	}
 	for _, v := range []string{"local", "remote", "all"} {
-		if p := (SSHD{v, "no", testConsole, "no"}).Problems(false, false, testConsole); len(p) != 1 {
+		if p := (SSHD{TCPForwarding: v, AgentForwarding: "no", ForceCommand: testConsole, PubkeyAuth: "no"}).Problems(false, false, testConsole); len(p) != 1 {
 			t.Errorf("allowtcpforwarding %s: %v", v, p)
 		}
 	}

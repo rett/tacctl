@@ -175,6 +175,55 @@ func (inv *invocation) consoleCheckProblems(pol *console.Policy, user string) []
 	return append(problems, st.Problems(pol.AgentForwarding(), inv.userForwards(pol, user), p.ConsoleCommand)...)
 }
 
+// consoleProbeUsers are the console accounts sshd is asked about: the
+// first whose tier may not forward and the first whose tier may, so that a
+// setting read before the drop-in (which sshd keeps over the tier blocks)
+// shows whichever way it opens or closes.
+func (inv *invocation) consoleProbeUsers(pol *console.Policy, users []string) []string {
+	var closed, open string
+	for _, u := range users {
+		if inv.userForwards(pol, u) {
+			if open == "" {
+				open = u
+			}
+		} else if closed == "" {
+			closed = u
+		}
+	}
+	var out []string
+	for _, u := range []string{closed, open} {
+		if u != "" {
+			out = append(out, u)
+		}
+	}
+	return out
+}
+
+// sshdOnly drops the drop-in and sshd_config lines a second probe repeats.
+func sshdOnly(problems []string) []string {
+	var out []string
+	for _, p := range problems {
+		if !strings.Contains(p, "drop-in") && !strings.Contains(p, "sshd_config") {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// consoleFirstValueHint names the likely cause when a user whose tier may
+// not forward can: sshd keeps the first value it reads.
+func (inv *invocation) consoleFirstValueHint(pol *console.Policy, probe, problems []string) []string {
+	for _, p := range problems {
+		if strings.Contains(p, "forwarding is") {
+			dir := filepath.Dir(inv.app.Paths.SSHDDropIn)
+			return []string{"sshd keeps the first value it reads, so an X11Forwarding, AllowTcpForwarding or DisableForwarding line read before " +
+				inv.app.Paths.SSHDDropIn + " overrides it: look in " + filepath.Join(filepath.Dir(dir), "sshd_config") +
+				" above its Include line and in the files of " + dir + " sorted before " + filepath.Base(inv.app.Paths.SSHDDropIn)}
+		}
+	}
+	return nil
+}
+
 // userForwards reports whether user's tier (from the account's local
 // groups) may forward X11 and TCP ports through sshd (console forwarding
 // tiers); an account whose groups cannot be read may not.
@@ -230,12 +279,20 @@ func (inv *invocation) consoleCheckReport(pol *console.Policy) error {
 	if err != nil {
 		inv.app.Out.WarnE(err.Error())
 	}
-	user := ""
-	if len(users) > 0 {
-		user = users[0]
-	}
 	inv.echo("Console sshd check:")
-	problems := inv.consoleCheckProblems(pol, user)
+	var problems []string
+	probe := inv.consoleProbeUsers(pol, users)
+	if len(probe) == 0 {
+		problems = inv.consoleCheckProblems(pol, "")
+	}
+	for i, u := range probe {
+		got := inv.consoleCheckProblems(pol, u)
+		if i > 0 {
+			got = sshdOnly(got)
+		}
+		problems = append(problems, got...)
+	}
+	problems = append(problems, inv.consoleFirstValueHint(pol, probe, problems)...)
 	if len(problems) == 0 {
 		inv.app.Out.InfoE("The console's sshd settings are in effect.")
 		return nil

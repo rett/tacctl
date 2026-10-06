@@ -938,3 +938,12 @@ What to expect:
     with the `host move` that fixes it. The client script's GID messages
     after a reorder name the GID a group had (`now GID 80002 (was 80003)`),
     not the spare one it waited on.
+71. **`console show` and `console check` ask sshd about a user of each
+    kind.** They asked only about the first console user, often a superuser
+    who may forward, and compared TCP forwarding only: a setting read before
+    the drop-in (sshd keeps the first value, so a global `X11Forwarding yes`
+    or `AllowTcpForwarding yes` there beats every tier block) left the other
+    tiers open unnoticed. Now the first user of a tier that may not forward
+    and the first of one that may are both checked, `x11forwarding` too
+    (`disableforwarding yes` closes all), and an open non-forwarding tier is
+    warned with the likely cause and where to look.

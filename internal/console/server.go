@@ -50,6 +50,10 @@ type SSHD struct {
 	// print them.
 	ForceCommand string
 	PubkeyAuth   string
+	// X11Forwarding and DisableForwarding are x11forwarding and
+	// disableforwarding ("" when sshd did not print them).
+	X11Forwarding     string
+	DisableForwarding string
 }
 
 // SSHDCheck runs 'sshd -T -C user=<user>,host=localhost,addr=127.0.0.1'
@@ -80,6 +84,10 @@ func SSHDCheck(ctx context.Context, r execx.Runner, user string) (SSHD, error) {
 			s.ForceCommand = v
 		case "pubkeyauthentication":
 			s.PubkeyAuth = v
+		case "x11forwarding":
+			s.X11Forwarding = v
+		case "disableforwarding":
+			s.DisableForwarding = v
 		}
 	}
 	if s.TCPForwarding == "" || s.AgentForwarding == "" {
@@ -104,8 +112,14 @@ func (s SSHD) Problems(agentAllowed, tcpAllowed bool, command string) []string {
 		}
 		out = append(out, "forcecommand is '"+v+"'")
 	}
-	if s.TCPForwarding != "no" && !tcpAllowed {
-		out = append(out, "allowtcpforwarding is '"+s.TCPForwarding+"'")
+	// DisableForwarding yes closes every forwarding, whatever the others say.
+	if !tcpAllowed && s.DisableForwarding != "yes" {
+		if s.TCPForwarding != "no" {
+			out = append(out, "allowtcpforwarding is '"+s.TCPForwarding+"'")
+		}
+		if s.X11Forwarding == "yes" {
+			out = append(out, "x11forwarding is 'yes'")
+		}
 	}
 	if s.AgentForwarding != "no" && !agentAllowed {
 		out = append(out, "allowagentforwarding is '"+s.AgentForwarding+"'")

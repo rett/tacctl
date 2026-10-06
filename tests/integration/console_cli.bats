@@ -255,6 +255,24 @@ LIST
     assert_output --partial "allowtcpforwarding is 'yes'"
 }
 
+@test "console show: a user of a tier that may not forward is checked too; a value read before the drop-in is named as the cause" {
+    enrol_local
+    mkdir -p "$(dirname "$TACCTL_SSHD_DROPIN")"
+    printf 'Match Group tac-console\n    AllowTcpForwarding no\n' > "$TACCTL_SSHD_DROPIN"
+    # alice is a superuser (forwards); everyone else is not.
+    stub_cmd id 'if [[ "$3" == alice ]]; then echo "alice tac-users tac-console tac-superuser"; else echo "$3 tac-users tac-console tac-operator"; fi'
+    # sshd answers the superuser block's values for everyone (a global
+    # X11Forwarding/AllowTcpForwarding read before the drop-in).
+    stub_cmd sshd 'printf "allowtcpforwarding yes\nallowagentforwarding no\nx11forwarding yes\ndisableforwarding no\nforcecommand ${TACCTL_TEST_ROOT:-}/usr/local/bin/tacctl-console\npubkeyauthentication no\n"'
+    run "$TACCTL_BIN_SCRIPT" console show
+    assert_success
+    plain
+    [[ $(grep -c '^  sshd for ' <<< "$output") == 2 ]]
+    assert_output --partial "WARNING"
+    assert_output --partial "allowtcpforwarding is 'yes'; x11forwarding is 'yes'"
+    assert_output --partial "sshd keeps the first value it reads"
+}
+
 @test "console show: the server's pieces as they are" {
     enrol_local
     run "$TACCTL_BIN_SCRIPT" console show

@@ -133,15 +133,18 @@ func (inv *invocation) consoleServerSection(pol *console.Policy, consoleUsers []
 	if !pc.DropIn {
 		problems = append(problems, "sshd's drop-in "+p.SSHDDropIn+" is missing")
 	}
-	u := consoleUsers[0]
-	st, err := console.SSHDCheck(inv.ctx, inv.app.Runner, u)
-	if err != nil {
-		inv.echo("  sshd for " + u + ": could not be checked: " + strings.Join(msgs(err), " "))
-	} else {
+	probe := inv.consoleProbeUsers(pol, consoleUsers)
+	for _, u := range probe {
+		st, err := console.SSHDCheck(inv.ctx, inv.app.Runner, u)
+		if err != nil {
+			inv.echo("  sshd for " + u + ": could not be checked: " + strings.Join(msgs(err), " "))
+			continue
+		}
 		inv.echo("  sshd for " + u + ": allowtcpforwarding " + st.TCPForwarding + ", allowagentforwarding " + st.AgentForwarding +
 			", forcecommand " + dash(st.ForceCommand) + ", pubkeyauthentication " + dash(st.PubkeyAuth))
 		problems = append(problems, st.Problems(pol.AgentForwarding(), inv.userForwards(pol, u), inv.app.Paths.ConsoleCommand)...)
 	}
+	problems = append(problems, inv.consoleFirstValueHint(pol, probe, problems)...)
 	if len(problems) > 0 {
 		inv.echoE(ui.Red + "WARNING: a console user can do more over ssh than the console allows (forward ports past the registry, run programs or sftp, log in by key): " +
 			strings.Join(problems, "; ") + "." + ui.NC)
