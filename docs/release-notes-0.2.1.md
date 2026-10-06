@@ -12,7 +12,8 @@ arm64), and a stricter account lifecycle for Linux hosts.
 synced (`tacctl host sync <server>`, the host enrolled with `--local`), every
 tacctl user's login shell on the tacctl server is the console: tacctl
 commands and ssh to registered devices, no system shell, no file transfer, no
-forwarding (sshd's drop-in forces the console on them). Nothing changes for
+forwarding except for superusers (`console forwarding tiers`; sshd's drop-in
+forces the console on them). Nothing changes for
 anyone at the upgrade itself. Local administrators, and every local account
 that is not a tacctl user, are never touched: they keep their shells and
 their local passwords. One tacctl user gets bash back with `tacctl console
