@@ -439,8 +439,11 @@ section "cases (${FIRST})"
 where_secret "$FIRST"
 full_cases "$FIRST"
 if [[ "$FIRST" == "radius" ]]; then
-    expect "[radius] the server's auth log has alice's accept from this host" "Access-Accept scope=linux-c1 device=generic client=${CIP} nas=sshd .*user=alice" "$(radius_log)"
-    expect "[radius] and sudo's" "Access-Accept scope=linux-c1 device=generic client=${CIP} nas=sudo.* .*user=alice" "$(radius_log)"
+    # The host names itself as the NAS (client_id=, its FQDN; 0.2.1 item
+    # 61), never the PAM service (sshd, sudo) pam_radius_auth sends without it.
+    cname=$(c bash -c 'hostname -f 2> /dev/null || hostname')
+    expect "[radius] the server's auth log has alice's accepts from this host, named by its hostname (${cname})" "Access-Accept scope=linux-c1 device=generic client=${CIP} nas=${cname} .*user=alice" "$(radius_log)"
+    if radius_log | grep -qE 'nas=(sshd|sudo|sudo-i|login|gdm-password) '; then bad "[radius] a record names a PAM service as the NAS"; else ok "[radius] no record names a PAM service as the NAS"; fi
     expect "[radius] and bob's reject for the scope" "Access-Reject scope=linux-c1 device=generic client=${CIP} .*user=bob" "$(radius_log)"
     if c grep -q pam_radius_auth /etc/pam.d/tacctl-session; then
         expect "[radius] session accounting: Start and Stop records for alice" 'Acct-Status-Type = Start' "$(radius_acct | grep -A8 'User-Name = "alice"')"
