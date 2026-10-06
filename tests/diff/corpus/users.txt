@@ -5,7 +5,9 @@
 @fixture tacquito.minimal.yaml
 
 # usage and unknown subcommands
+@known 0.2.1 item 74: the user usage lists 'scope <user> remove --all'
 user
+@known 0.2.1 item 74: the user usage lists 'scope <user> remove --all'
 user bogus
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 user list
@@ -168,9 +170,13 @@ passwd extra
 # --- WP2.4a: more argument and error paths -----------------------------------
 
 # usage words
+@known 0.2.1 item 74: the user usage lists 'scope <user> remove --all'
 user help
+@known 0.2.1 item 74: the user usage lists 'scope <user> remove --all'
 user -h
+@known 0.2.1 item 74: the user usage lists 'scope <user> remove --all'
 user --help
+@known 0.2.1 item 74: the user usage lists 'scope <user> remove --all'
 user Bogus list
 hash help
 hash -h

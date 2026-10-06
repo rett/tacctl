@@ -296,21 +296,31 @@ func (inv *invocation) shellExplain(root *cobra.Command) func([]string) (string,
 // flagDescs gives the flag candidates of a verb their descriptions from
 // the verb's usage block.
 func (inv *invocation) flagDescs(cmd *cobra.Command, path []string, spec Spec, cands []string) map[string]string {
+	out := map[string]string{}
+	for n, h := range inv.flagHelps(cmd, path, spec, cands) {
+		out[n] = h[1]
+	}
+	return out
+}
+
+// flagHelps is flagDescs with the value each flag takes ("" for a switch):
+// {value, description} by flag name.
+func (inv *invocation) flagHelps(cmd *cobra.Command, path []string, spec Spec, cands []string) map[string][2]string {
 	if !slices.ContainsFunc(cands, func(c string) bool { return strings.HasPrefix(c, "-") }) {
 		return nil
 	}
 	rows, block := inv.shellUsage(cmd, path)
-	out := map[string]string{}
+	out := map[string][2]string{}
 	for _, f := range spec.Flags {
-		_, desc := flagHelp(block, rows, f)
+		value, desc := flagHelp(block, rows, f)
 		if desc == "" && len(path) == 1 {
 			// A top-level command without a block of its own: the option
 			// lines of tacctl's usage.
 			top := Usage("top", UsageVars{"version": inv.build.Version})
-			_, desc = flagHelp(top, verbRows(top, path[0]), f)
+			value, desc = flagHelp(top, verbRows(top, path[0]), f)
 		}
 		for _, n := range f.Names {
-			out[n] = desc
+			out[n] = [2]string{value, desc}
 		}
 	}
 	return out

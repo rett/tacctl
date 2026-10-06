@@ -683,7 +683,7 @@ tacctl completion zsh > ~/.zfunc/_tacctl
 tacctl completion fish > ~/.config/fish/completions/tacctl.fish
 ```
 
-The scripts ask `tacctl __complete` for the words, so they match the installed binary; regenerate them after an upgrade. Live names (users, groups, scopes, ...) need root or the NOPASSWD sudoers rule; without it only fixed words are completed.
+The scripts ask `tacctl __complete` for the words, so they match the installed binary; a second Tab lists each flag with the value it takes and what it does; regenerate them after an upgrade. Live names (users, groups, scopes, ...) need root or the NOPASSWD sudoers rule; without it only fixed words are completed.
 
 ### Interactive Shell — `tacctl shell`
 

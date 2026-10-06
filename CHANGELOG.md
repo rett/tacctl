@@ -858,6 +858,13 @@ current behaviour; this file is where history lives.
     show` lists the setting, and `console show`/`console check` print
     sshd's `gatewayports` for each user they probe and warn when it is
     anything but `no` for a user it is not meant for.
+74. **Completion lists what each flag does.** `tacctl <verb> -<Tab><Tab>`
+    listed bare flag names (`-c  --idle  --no-history`); bash, zsh and fish
+    now show each with the value it takes and its description, the text the
+    shell's `?` shows (`--idle  (<min>: End the session after this many idle
+    minutes at the prompt)`). `tacctl shell -c <Tab>` offers the commands.
+    The `user` usage lists `scope <user> remove --all`, and `device show
+    --all` is described as what it does there.
 
 ## 0.2.0 (2026-10-04)
 

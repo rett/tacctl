@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/rett/tacctl/internal/execx"
+	"github.com/spf13/cobra"
 )
 
 // completeWords runs 'tacctl __completeNoDesc <words>' with the bridge answering
@@ -120,11 +121,61 @@ func TestCompleteScenarios(t *testing.T) {
 		{[]string{"upgrade", ""}, []string{"--branch"}},
 		{[]string{"uninstall", ""}, []string{"-y", "--yes"}},
 		{[]string{"version", ""}, []string{"--long"}},
+		{[]string{"shell", "-c", "sta"}, []string{"status"}},
+		{[]string{"shell", "-c", "status", ""}, []string{"--no-history", "--idle"}},
 	}
 	for _, c := range cases {
 		got, _ := completeWords(t, liveNames, c.words...)
 		if !reflect.DeepEqual(got, c.want) && (len(got) != 0 || len(c.want) != 0) {
 			t.Errorf("%q: offered %q, want %q", c.words, got, c.want)
+		}
+	}
+}
+
+// With descriptions (what bash, zsh and fish ask for), each flag carries
+// the '?' text of the shell, after the value it takes; other words none.
+func TestCompleteDescribesFlags(t *testing.T) {
+	cases := map[string][]string{
+		"shell -": {
+			"--no-history\tKeep no history file for this session",
+			"--idle\t<min>: End the session after this many idle minutes at the prompt",
+			"-c\t<line>: Run one line and exit",
+		},
+		"backend enable ": {"tacacs", "radius"},
+	}
+	for line, want := range cases {
+		words := strings.Split(line, " ")
+		h := newHarness(t, append([]string{"__complete"}, words...))
+		h.runner.OnFunc([]string{"sudo"}, func(c execx.Cmd) (execx.Result, error) {
+			return execx.Result{Stdout: []byte(liveNames[strings.Join(c.Args[3:], " ")])}, nil
+		})
+		if err := h.run(); err != nil {
+			t.Fatal(err)
+		}
+		got := strings.Split(strings.TrimSuffix(h.out.String(), "\n"), "\n")
+		got = slices.DeleteFunc(got[:len(got)-1], func(s string) bool { return strings.HasPrefix(s, "Completion ended") })
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("%q: %q, want %q", line, got, want)
+		}
+	}
+	// Every flag of every verb is described.
+	inv, root, _ := shellTestInv(t)
+	var all [][]string
+	commandPaths(root, nil, &all)
+	for _, p := range all {
+		c, _ := resolve(root, p)
+		spec, ok := specFor(p)
+		if len(c.Commands()) > 0 || !ok {
+			continue
+		}
+		var flags []cobra.Completion
+		for _, f := range spec.Flags {
+			flags = append(flags, f.Names...)
+		}
+		for _, d := range inv.describeFlags(c, p, spec, flags) {
+			if !strings.Contains(d, "\t") {
+				t.Errorf("tacctl %s %s: no description", strings.Join(p, " "), d)
+			}
 		}
 	}
 }

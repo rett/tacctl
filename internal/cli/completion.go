@@ -156,8 +156,9 @@ func attachCompletion(inv *invocation, root *cobra.Command) {
 	walk = func(c *cobra.Command, path []string) {
 		if len(c.Commands()) == 0 {
 			if spec, ok := specFor(path); ok {
-				c.ValidArgsFunction = func(_ *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
-					return inv.completeSpec(spec, args, toComplete)
+				c.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
+					comps, dir := inv.completeSpec(spec, args, toComplete)
+					return inv.describeFlags(cmd, path, spec, comps), dir
 				}
 			}
 			return
@@ -169,6 +170,28 @@ func attachCompletion(inv *invocation, root *cobra.Command) {
 	for _, sub := range root.Commands() {
 		walk(sub, []string{sub.Name()})
 	}
+}
+
+// describeFlags gives each flag among comps the description the shell's
+// '?' shows for it, after the value it takes ('--idle' → '<min>: End the
+// session after ...'): bash, zsh and fish list it beside the flag when
+// there is more than one candidate. The other words are left as they are.
+func (inv *invocation) describeFlags(cmd *cobra.Command, path []string, spec Spec, comps []cobra.Completion) []cobra.Completion {
+	helps := inv.flagHelps(cmd, path, spec, comps)
+	out := make([]cobra.Completion, 0, len(comps))
+	for _, c := range comps {
+		h, ok := helps[c]
+		if !ok || h[1] == "" || strings.Contains(c, "\t") {
+			out = append(out, c)
+			continue
+		}
+		desc := h[1]
+		if h[0] != "" {
+			desc = h[0] + ": " + desc
+		}
+		out = append(out, cobra.CompletionWithDesc(c, desc))
+	}
+	return out
 }
 
 // completeSpec answers cobra's __complete for a leaf: args are the words
@@ -304,6 +327,14 @@ func (inv *invocation) kindWords(kind string, values map[string]string) []string
 		return inv.liveLines(inv.ctx, kind, "--desc")
 	}
 	switch kind {
+	case KindLine:
+		var out []string
+		for _, r := range topRows() {
+			if r.Name != "shell" && !slices.ContainsFunc(out, func(w string) bool { return strings.HasPrefix(w, r.Name+"\t") }) {
+				out = append(out, r.Name+"\t"+r.Desc)
+			}
+		}
+		return out
 	case KindUsers, KindGroups, KindScopes, KindHosts, KindDevices, KindBackups, KindBackends, KindEnabledBackends:
 		return inv.liveNames(inv.ctx, kind)
 	case KindListeners:

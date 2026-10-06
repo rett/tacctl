@@ -49,7 +49,7 @@ func init() {
 var shellSpec = Spec{MaxArgs: 0, Flags: []Flag{
 	{Names: []string{"--no-history"}},
 	{Names: []string{"--idle"}, Value: true},
-	{Names: []string{"-c"}, Value: true, Alone: true},
+	{Names: []string{"-c"}, Value: true, Alone: true, Kind: KindLine},
 }}
 
 const shellUsage = "Usage: tacctl shell [--no-history] [--idle <min>] [-c <line>]"

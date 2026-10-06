@@ -127,7 +127,7 @@ var deviceOptions = map[string][][2]string{
 		{"--allow-generic", "(add, rename, import) Allow a generic name such as 'switch'"},
 	},
 	"remove": {
-		{"--all", "(remove, check) Every device"},
+		{"--all", "(remove, check) Every device; (show, notices) the acknowledged notices too"},
 		{"-y, --yes", "(remove, import, hostkey) Answer yes to the confirmation"},
 	},
 	"import": {
