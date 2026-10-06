@@ -556,6 +556,10 @@ hostfacts() {
     assert_output --partial "Notice 'address-changed' of 'web1' acknowledged."
     run "$TACCTL_BIN_SCRIPT" device notices
     refute_output --partial "address-changed"
+    # Still on record in device show, without what was asked to be done.
+    run "$TACCTL_BIN_SCRIPT" device show web1
+    assert_output --regexp "address-changed \(acknowledged\): the address of 'web1' changed from 192\.0\.2\.50 to 192\.0\.2\.51 \([0-9-]+ [0-9:]+, seen by host enroll or sync\)$"
+    refute_output --partial "acknowledge it"
     run "$TACCTL_BIN_SCRIPT" host unenroll web1
     assert_success
     run grep -c "web1" "$DEVICES"

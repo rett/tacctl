@@ -948,3 +948,9 @@ What to expect:
     (`disableforwarding yes` closes all), and an open non-forwarding tier is
     warned with the likely cause and where to look. Verified on the dev
     server: the operator's `ssh -L` is refused, the superuser's works.
+72. **An acknowledged notice no longer asks to be acknowledged.** `device
+    show` keeps acknowledged notices on record, marked `(acknowledged)`, but
+    printed their full text, including the check to make and the
+    `tacctl device notice … ack …` command already run. It now prints only
+    what happened (`address-changed (acknowledged): the address of 'dev'
+    changed from 10.0.0.1 to 10.0.0.2 (<time>, seen by host enroll or sync)`).

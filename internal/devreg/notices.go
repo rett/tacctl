@@ -85,7 +85,24 @@ func GenericRefusal(name, vendor, keep string) error {
 // linux) get no hostkey-unpinned notice: 'host enroll' and 'host sync' pin
 // their keys.
 func (r *Resolver) NoticesFor(e Entry) []Notice {
-	return append(r.registryNotices(e), r.scanNotices(e)...)
+	ns := append(r.registryNotices(e), r.scanNotices(e)...)
+	for i := range ns {
+		if ns[i].Acked {
+			ns[i].Text = settled(ns[i].Text)
+		}
+	}
+	return ns
+}
+
+// settled is an acknowledged notice's text: what happened, without what
+// to do about it (the check to make and the acknowledgement asked for).
+func settled(text string) string {
+	for _, cut := range []string{" — readdressed, or replaced?", ", then acknowledge it:", ", or acknowledge it:", "; or acknowledge it:"} {
+		if i := strings.Index(text, cut); i >= 0 {
+			text = text[:i]
+		}
+	}
+	return strings.TrimRight(text, " ;,")
 }
 
 // registryNotices are the notices the registry raises by itself.
