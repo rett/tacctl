@@ -986,7 +986,8 @@ What to expect:
     tacquito now answers a `root` record with no terminal (port `non-tty`,
     which Junos sends for them, `unknown`, or empty) with success and does
     not record it; a `root` login on the console or over ssh (port `0` or a
-    tty name) is recorded as before, its commands included. The skip was
-    verified live on a Junos device. The device still logs
+    tty name) is recorded as before, its commands included. Verified live on
+    a Junos device: its `non-tty` root sessions are no longer recorded, and
+    a `root` ssh login and its commands are. The device still logs
     `AUDITD_TACPLUS_MSG_SENT` for each record it sends; only its syslog
     configuration can drop that line. `tacctl upgrade` rebuilds tacquito.
