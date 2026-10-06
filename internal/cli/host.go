@@ -789,6 +789,13 @@ func (inv *invocation) hostScopeDrift(e hosts.Entry, addr string) string {
 		return ""
 	}
 	info, found := m.LookupAddr(addr)
+	if !m.Exists("scopes", e.Scope) {
+		msg := e.Name + ": registered in scope '" + e.Scope + "', which no longer exists"
+		if found {
+			return msg + "; " + addr + " is answered by scope '" + info.Scope + "' (prefix " + info.Prefix + "). To move it there: tacctl host move " + e.Name
+		}
+		return msg + ", and no scope covers " + addr + ". Add the address to a scope, then: tacctl host move " + e.Name + " <scope>"
+	}
 	switch {
 	case found && info.Scope == e.Scope:
 		return ""

@@ -493,6 +493,22 @@ on_tty() {
     assert_success
 }
 
+@test "scope rename: enrolled hosts follow the scope; a host whose scope is gone is said so" {
+    _own_scope web1 192.0.2.50
+    "$TACCTL_BIN_SCRIPT" host enroll web1 > /dev/null
+    run "$TACCTL_BIN_SCRIPT" scope rename linux-web1 web1-scope
+    assert_success
+    assert_output --partial "Enrolled hosts registered in 'linux-web1' now name 'web1-scope': 1."
+    run _hosts
+    assert_output "web1|web1||web1-scope|192.0.2.1|"
+    run "$TACCTL_BIN_SCRIPT" host list
+    refute_output --partial "registered in scope"
+    # A registry line naming a scope that is gone (an earlier release's rename).
+    sed -i 's/|web1-scope|/|gone-scope|/' "${TACCTL_STATE_DIR}/linux-hosts"
+    run "$TACCTL_BIN_SCRIPT" host list
+    assert_output --partial "web1: registered in scope 'gone-scope', which no longer exists; 192.0.2.50 is answered by scope 'web1-scope' (prefix 192.0.2.50/32). To move it there: tacctl host move web1"
+}
+
 @test "host unenroll: pushes the secret-free removal script and forgets the host" {
     _own_scope web1 192.0.2.50
     "$TACCTL_BIN_SCRIPT" host enroll web1 > /dev/null

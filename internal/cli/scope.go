@@ -1020,11 +1020,20 @@ func (inv *invocation) scopeRename(args []string) error {
 	}); err != nil {
 		return err
 	}
+	// Enrolled hosts and staging addresses name the scope too: they follow
+	// it (the hosts keep its secret, which the rename does not change).
+	hostsMoved, err := inv.scopeRenameHosts(old, newName)
+	if err != nil {
+		return err
+	}
 	m, err = inv.model()
 	if err != nil {
 		return err
 	}
 	a.Out.Info(fmt.Sprintf("Scope renamed: %s -> %s (%d user(s) updated).", old, newName, len(m.Members(newName))))
+	if hostsMoved > 0 {
+		a.Out.Info(fmt.Sprintf("Enrolled hosts registered in '%s' now name '%s': %d.", old, newName, hostsMoved))
+	}
 	inv.echo("")
 	return nil
 }
@@ -1316,6 +1325,39 @@ func (inv *invocation) scopePrefixesMove(m *model.Model, from, list, to string) 
 	inv.hostDriftReport()
 	inv.echo("")
 	return nil
+}
+
+// scopeRenameHosts names the new scope in every registry line and staging
+// entry that named the old one; the number of hosts changed.
+func (inv *invocation) scopeRenameHosts(old, newName string) (int, error) {
+	reg, err := inv.registry()
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, e := range reg.Entries() {
+		if e.Scope != old {
+			continue
+		}
+		e.Scope = newName
+		if err := reg.Replace(e); err != nil {
+			return n, err
+		}
+		n++
+	}
+	entries := inv.stagingLoad()
+	changed := false
+	for i := range entries {
+		if entries[i].Scope == old {
+			entries[i].Scope, changed = newName, true
+		}
+	}
+	if changed {
+		if err := inv.stagingSave(entries); err != nil {
+			return n, err
+		}
+	}
+	return n, nil
 }
 
 // scopeHostsRefusal refuses to remove a scope enrolled hosts use: they

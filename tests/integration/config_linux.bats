@@ -360,6 +360,9 @@ bob"
     run bash "$OUT" --accounts-only
     assert_success
     refute_output --partial "[WARN] Group"
+    # The GID each had, not the spare one it waited on.
+    assert_output --partial "[INFO] Group 'tac-superuser' is now GID 80002 (was 80003)."
+    assert_output --partial "[INFO] Group 'tac-console' is now GID 80001 (was 80004)."
     run grep -E "^tac-" "$FAKE_DB/group"
     assert_output $'tac-users:x:80000:\ntac-readonly:x:80004:\ntac-operator:x:80003:\ntac-superuser:x:80002:\ntac-console:x:80001:'
 }

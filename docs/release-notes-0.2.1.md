@@ -929,3 +929,12 @@ What to expect:
     unchanged. `tacctl upgrade` rebuilds tacquito with it. Verified live
     on a Junos device: a local `admin` login and commit are recorded and
     answered with success, as are a tacctl user's.
+70. **`scope rename` carries enrolled hosts.** A rename updated the users of
+    the scope but left the host registry (and staging addresses) naming the
+    old one, so the hosts kept working on the unchanged secret but were
+    reported against a scope that no longer existed. The rename now updates
+    them and says how many; a host still registered in a scope that is gone
+    is reported as such (`registered in scope 'x', which no longer exists`)
+    with the `host move` that fixes it. The client script's GID messages
+    after a reorder name the GID a group had (`now GID 80002 (was 80003)`),
+    not the spare one it waited on.

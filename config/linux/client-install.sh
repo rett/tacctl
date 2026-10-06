@@ -943,12 +943,13 @@ fix_gid() {
             fi
         done < <(managed_accounts)
     fi
-    info "Group '${g}' is now GID ${want} (was ${cur})."
+    info "Group '${g}' is now GID ${want} (was ${PARKED[$g]:-$cur})."
 }
 
 # park_groups: one of tacctl's groups that holds another one's fixed GID
 # (an earlier build numbered them in another order) moves to a free GID
 # first, so that each can then take its own.
+declare -A PARKED=()
 park_groups() {
     local g cur want spare name home
     for g in $TAC_GROUPS; do
@@ -960,6 +961,7 @@ park_groups() {
             getent group "$spare" >/dev/null || break
         done
         groupmod -g "$spare" "$g" || continue
+        PARKED[$g]=$cur
         if [[ "$g" == "$G_USERS" ]]; then
             while IFS= read -r name; do
                 home=$(getent passwd "$name" | cut -d: -f6)
