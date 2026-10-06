@@ -925,4 +925,6 @@ What to expect:
     (`root`, the accounting sink, when the scope has it, else any of its
     users: they share one), keeping the user the device sent, and replies
     success. Authentication and authorization of unknown users are
-    unchanged. `tacctl upgrade` rebuilds tacquito with it.
+    unchanged. `tacctl upgrade` rebuilds tacquito with it. Verified live
+    on a Junos device: a local `admin` login and commit are recorded and
+    answered with success, as are a tacctl user's.
