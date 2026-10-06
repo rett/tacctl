@@ -413,7 +413,13 @@ func TestDeviceNotices(t *testing.T) {
 	if out = sb.dev("", "list"); !strings.Contains(out, "hostkey-unpinned") || strings.Contains(out, "generic-name") {
 		t.Errorf("list:\n%s", out)
 	}
-	if out = sb.dev("", "show", "router"); !strings.Contains(out, "generic-name (acknowledged):") {
+	if out = sb.dev("", "notices", "router", "--all"); !strings.Contains(out, "generic-name (acknowledged):") {
+		t.Errorf("notices --all:\n%s", out)
+	}
+	if out = sb.dev("", "show", "router"); strings.Contains(out, "generic-name") || !strings.Contains(out, "1 acknowledged notice not shown") {
+		t.Errorf("show:\n%s", out)
+	}
+	if out = sb.dev("", "show", "router", "--all"); !strings.Contains(out, "generic-name (acknowledged):") {
 		t.Errorf("show:\n%s", out)
 	}
 	sb.dev("", "notice", "router", "unack", "generic-name")

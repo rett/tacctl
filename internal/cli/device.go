@@ -37,6 +37,7 @@ var (
 	flagYes          = Flag{Names: []string{"-y", "--yes"}}
 	flagJSON         = Flag{Names: []string{"--json"}}
 	flagAllowGeneric = Flag{Names: []string{"--allow-generic"}}
+	flagAllNotices   = Flag{Names: []string{"--all"}}
 	noticeWords      = strings.Join(devreg.AckableKinds, "|")
 )
 
@@ -45,7 +46,7 @@ var (
 var deviceSpecs = map[string]Spec{
 	"list": {MaxArgs: 0, Flags: []Flag{{Names: []string{"--stale"}}, {Names: []string{"--unconfigured"}},
 		{Names: []string{"--scan"}}, {Names: []string{"--probe"}}, flagJSON}},
-	"show": {MinArgs: 1, MaxArgs: 1, Args: []string{KindDevices}, Flags: []Flag{flagJSON}},
+	"show": {MinArgs: 1, MaxArgs: 1, Args: []string{KindDevices}, Flags: []Flag{flagJSON, flagAllNotices}},
 	"add": {MinArgs: 2, MaxArgs: 2, Args: []string{"", ""}, Flags: []Flag{
 		{Names: []string{"--vendor"}, Value: true, Kind: KindVendors},
 		{Names: []string{"--hostname"}, Value: true},
@@ -65,7 +66,7 @@ var deviceSpecs = map[string]Spec{
 	"legacy-ssh":  {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, "enable|disable"}},
 	"stale-days":  {MaxArgs: 1, Args: []string{""}},
 	"notice":      {MinArgs: 3, MaxArgs: 3, Args: []string{KindDevices, "ack|unack", noticeWords}},
-	"notices":     {MaxArgs: 1, Args: []string{KindDevices}},
+	"notices":     {MaxArgs: 1, Args: []string{KindDevices}, Flags: []Flag{flagAllNotices}},
 	"import": {MinArgs: 1, MaxArgs: 1, Args: []string{KindFile}, Flags: []Flag{
 		{Names: []string{"--check"}}, {Names: []string{"--replace"}}, flagAllowGeneric, flagYes}},
 	"export":  {MaxArgs: 0, Flags: []Flag{{Names: []string{"--csv"}}, flagJSON}},
@@ -82,7 +83,7 @@ var deviceSpecs = map[string]Spec{
 // deviceVerbs are the verbs ({Use, Short}), in usage order.
 var deviceVerbs = [][2]string{
 	{"list [--stale] [--unconfigured] [--scan] [--probe] [--json]", "Registered devices and enrolled hosts: scope, state, last seen, notices"},
-	{"show <name|address> [--json]", "One device or host in full"},
+	{"show <name|address> [--all] [--json]", "One device or host in full (--all: the acknowledged notices too)"},
 	{"add <name> <address> [options]", "Register a device"},
 	{"remove <name>[,<name>...] | --all [-y]", "Remove devices from the registry (confirms)"},
 	{"rename <old> <new> [--allow-generic]", "Rename a device"},
@@ -94,7 +95,7 @@ var deviceVerbs = [][2]string{
 	{"legacy-ssh <name> [enable|disable]", "Opt in to legacy IOS ssh algorithms"},
 	{"stale-days [<n>]", "Show or set the days after which a device counts as stale"},
 	{"notice <name> ack|unack <kind>", "Acknowledge or reopen a notice"},
-	{"notices [<name>]", "The open notices, with what to do about each"},
+	{"notices [<name>] [--all]", "The open notices, with what to do about each (--all: the acknowledged ones too)"},
 	{"import [--check] [--replace] [--allow-generic] [-y] <file|->", "Import devices from CSV or the registry's YAML"},
 	{"export [--csv|--json]", "Print the registry (YAML by default)"},
 	{"hostkey <name> [show|accept [-y]|set SHA256:<fp>]", "Show the pinned ssh host keys, or re-pin them after a verified change"},
@@ -609,7 +610,18 @@ func (inv *invocation) deviceShow(args []string) error {
 		}
 	}
 	ns := res.NoticesFor(e)
-	if len(ns) == 0 {
+	acked := len(ns) - len(devreg.Open(ns))
+	if !p.Has("--all") {
+		ns = devreg.Open(ns)
+	}
+	hidden := ""
+	if acked > 0 && !p.Has("--all") {
+		hidden = howMany(acked, "acknowledged notice") + " not shown: tacctl device show " + e.Name + " --all"
+	}
+	if len(ns) == 0 && hidden != "" {
+		row("Notices", "none open; "+hidden)
+		hidden = ""
+	} else if len(ns) == 0 {
 		row("Notices", "none")
 	}
 	for i, n := range ns {
@@ -622,6 +634,9 @@ func (inv *invocation) deviceShow(args []string) error {
 			mark = " (acknowledged)"
 		}
 		row(k, n.Kind+mark+": "+n.Text)
+	}
+	if hidden != "" {
+		row("", hidden)
 	}
 	inv.echo("")
 	return nil
@@ -1121,12 +1136,22 @@ func (inv *invocation) deviceNotices(args []string) error {
 	n := 0
 	inv.echo("")
 	for _, e := range entries {
-		for _, no := range devreg.Open(res.NoticesFor(e)) {
-			inv.echo("  " + e.Name + "  " + no.Kind + ": " + no.Text)
+		ns := res.NoticesFor(e)
+		if !p.Has("--all") {
+			ns = devreg.Open(ns)
+		}
+		for _, no := range ns {
+			mark := ""
+			if no.Acked {
+				mark = " (acknowledged)"
+			}
+			inv.echo("  " + e.Name + "  " + no.Kind + mark + ": " + no.Text)
 			n++
 		}
 	}
-	if n == 0 {
+	if n == 0 && p.Has("--all") {
+		inv.echo("  No notices.")
+	} else if n == 0 {
 		inv.echo("  No open notices.")
 	}
 	inv.echo("")

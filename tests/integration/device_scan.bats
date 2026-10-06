@@ -215,7 +215,7 @@ two_scans() {
     [[ "$(sha256sum < "${TACCTL_STATE_DIR}/devices.yaml")" == "$before" ]]
 
     "$TACCTL_BIN_SCRIPT" device notice edge-fw ack hostkey-added
-    run at 2026-10-04T12:00:00Z device show edge-fw
+    run at 2026-10-04T12:00:00Z device show edge-fw --all
     plain
     assert_output --partial "hostkey-added (acknowledged): 'edge-fw' offers a new host key type"
     run at 2026-10-04T12:00:00Z device list

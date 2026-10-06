@@ -834,12 +834,15 @@ current behaviour; this file is where history lives.
     (`disableforwarding yes` closes all), and an open non-forwarding tier is
     warned with the likely cause and where to look. Verified on the dev
     server: the operator's `ssh -L` is refused, the superuser's works.
-72. **An acknowledged notice no longer asks to be acknowledged.** `device
-    show` keeps acknowledged notices on record, marked `(acknowledged)`, but
-    printed their full text, including the check to make and the
-    `tacctl device notice … ack …` command already run. It now prints only
-    what happened (`address-changed (acknowledged): the address of 'dev'
-    changed from 10.0.0.1 to 10.0.0.2 (<time>, seen by host enroll or sync)`).
+72. **Acknowledged notices are out of the way, and `--all` shows them.**
+    `device show` listed acknowledged notices with their full text, including
+    the check to make and the `tacctl device notice … ack …` command already
+    run. It now lists only the open notices and counts the acknowledged ones
+    (`1 acknowledged notice not shown: tacctl device show dev --all`).
+    `--all` on `device show` and on `device notices` lists them too, marked
+    `(acknowledged)`, with only what happened (`address-changed
+    (acknowledged): the address of 'dev' changed from 10.0.0.1 to 10.0.0.2
+    (<time>, seen by host enroll or sync)`). `--json` is unchanged.
 
 ## 0.2.0 (2026-10-04)
 

@@ -141,7 +141,10 @@ func TestDeviceScanDiscoverListAndStatus(t *testing.T) {
 	if out = sb.dev("", "list"); strings.Contains(out, "name-mismatch") {
 		t.Errorf("acked notice listed:\n%s", out)
 	}
-	if out = sb.dev("", "show", "oob-con1"); !strings.Contains(out, "name-mismatch (acknowledged): 203.0.113.9 identifies") {
+	if out = sb.dev("", "show", "oob-con1"); !strings.Contains(out, "none open; 1 acknowledged notice not shown: tacctl device show oob-con1 --all") {
+		t.Errorf("show:\n%s", out)
+	}
+	if out = sb.dev("", "show", "oob-con1", "--all"); !strings.Contains(out, "name-mismatch (acknowledged): 203.0.113.9 identifies") {
 		t.Errorf("show:\n%s", out)
 	}
 	out = plain(sb.run("", []string{"status"}))

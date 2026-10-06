@@ -2327,7 +2327,9 @@ Notices appear in the scan output,
 .B "device notices"
 and
 .B "device show"
-(which also lists the acknowledged ones).
+(which counts the acknowledged ones;
+.B \-\-all
+on either lists them, marked).
 .PP
 Reading verbs
 .RB ( list ,
@@ -2395,12 +2397,14 @@ column: a TCP connect to each entry's ssh port, 3 seconds, all at once
 This server often has no route to the devices' management ports, so a timeout
 may be a false alarm.
 .TP
-.BI "device show " "name|address " [ \-\-json ]
+.BI "device show " "name|address " [ \-\-all ] " " [ \-\-json ]
 One device or host in full: address, hostname, vendor, port, legacy ssh,
 description, the scope that answers the address and the prefix that routes it
 (and the scopes it shadows), the vendor tag that covers it, the pinned host keys,
 the last and first sighting with the sighting count and the NAS-Identifier the
-device sends, and every notice, acknowledged ones marked. It warns when the
+device sends, and the open notices with a count of the acknowledged ones
+.RB ( \-\-all
+lists them too, marked). It warns when the
 vendor tag and the registered vendor disagree.
 .TP
 .BI "device add " "name address " "[ \-\-vendor cisco|juniper|wti|other ] [ \-\-hostname " dns " ] [ \-\-port " n " ] [ \-\-description " text " ] [ \-\-legacy\-ssh ] [ \-\-host\-key SHA256:" fingerprint " | \-\-no\-host\-key ] [ \-\-allow\-generic ]"
@@ -2502,9 +2506,11 @@ and
 cannot be acknowledged, and an enrolled host acknowledges only
 .BR address\-changed .
 .TP
-.BI "device notices " [ name ]
+.BI "device notices " "" [ name ] " " [ \-\-all ]
 The open notices (all devices, or one), each with the command that fixes or
-acknowledges it. The notices the registry raises are
+acknowledges it;
+.B \-\-all
+lists the acknowledged ones too, marked. The notices the registry raises are
 .BR generic-name ,
 for a device or host whose name is a generic one, with the per-vendor command
 that sets a name on the device and the
