@@ -8,9 +8,9 @@ steps in brackets as in `operator-console-wp-console.md` §5.5). Nothing here
 was done against the production host.
 
 Status: **automated tests done; live acceptance done (51 checks passed); the
-interactive checks of the last section are left to be done by hand. The
-forwarding tiers (CHANGELOG 60) came after the live run: their live check is
-in the last section.**
+interactive checks done by hand on 2026-10-06 (below). The forwarding tiers
+(CHANGELOG 60) came after the live run: their live check is recorded under
+the observations.**
 
 | Avenue (design §6.5) | How it is closed | Automated | Live (WP7.4) |
 |---|---|---|---|
@@ -21,7 +21,7 @@ in the last section.**
 | Agent forwarding | `AllowAgentForwarding no` (and `DisableForwarding`) unless `console agent-forwarding enable` | `TestDropInText` | [2] `allowagentforwarding no`; [4] passed: no forwarded agent inside `system-shell` with `ssh -A` |
 | Key logins bypassing TACACS+ | Drop-in: `PubkeyAuthentication no`; the check flags `pubkeyauthentication yes` | `TestDropInText`, `TestSSHDCheck` | [2] `pubkeyauthentication no`; [5] passed: a key in `authorized_keys` does not log in |
 | What `ssh` may reach | Registered devices and enrolled hosts of the user's scopes only; in a console session `-F /dev/null`, no forwardings, no agent, `EscapeChar=none`, target after `--`, unpinned entries refused | `ssh_cli.bats` (console case), `internal/cli/ssh_test.go` | By hand (below) |
-| ssh client escapes (`~C`) | `-o EscapeChar=none` unless `console ssh-escape enable` | `ssh_cli.bats` | By hand (below) |
+| ssh client escapes (`~C`) | `-o EscapeChar=none` unless `console ssh-escape enable` | `ssh_cli.bats` | Passed by hand (2026-10-06): `~C` in the console's `ssh js1` did nothing |
 | `system-shell` | Superusers only by default; refused through `-c` and in a batch (126); logged start, end, DENY | `TestConsoleSystemShell*`, `console.bats` | [4] passed: refused for readonly at the prompt, refused through `-c` (126), works for the superuser |
 | Local privilege | Each line is `sudo` with the tiers rules; readonly and operator `sudo -n`; the tier gate on every run | `tiers.bats`, `TestConsoleLineArgv` | [3] passed: readonly `user show` works and `log failures` is refused; operator `log failures` and superuser `user list` work |
 | Resource abuse | Line cap 4 KiB, one child at a time, idle timeout at the prompt, `ClientAliveInterval 300` / `ClientAliveCountMax 2` | `internal/shell` tests, pty tests | [2] `clientaliveinterval 300`, `clientalivecountmax 2`; [6] with `console idle-timeout 1` the session printed `idle timeout after 1 min` and ended (the script's elapsed time, 100 s, measured its own `sleep 100` feeding the session, not the console) |
@@ -38,13 +38,14 @@ in the last section.**
 
 - Forwarding tiers (CHANGELOG 60, 71), 2026-10-06 on the dev server: `sshd -T` gives the superuser `x11forwarding yes`, `allowtcpforwarding yes`, `disableforwarding no` and the operator `no`, `no`, `yes`, both with `forcecommand /usr/local/bin/tacctl-console`; `ssh -L` through the server worked for the superuser and was refused for the operator (`channel 3: open failed: administratively prohibited`); `console check` asks about both and reports the settings in effect. A superuser's write in the console (`user passwd …`) asked sudo's password once.
 
-## Left to do by hand (interactive)
+## Checked by hand (interactive), 2026-10-06 on the dev server
 
-From a workstation, with a test user that has the console:
+With a tacctl superuser that has the console, from a workstation and from a
+Junos switch (`ssh` from the switch's CLI to the server):
 
-- `ssh <user>@<server>`: the prompt `<host>> `, the banner, Tab twice, `?`, `history`, `help`, `exit`.
-- In the console, `ssh <device>`: `~C` does nothing; after `exit` the journal has `ssh end ... status=0`.
-- As a superuser, a write (for example `user passwd ...`) asks the network password once, then uses sudo's cache.
+- `ssh <user>@<server>`: the banner (`tacctl console on <host> — type 'help'. Devices: device list. This session is logged.`), the prompt `<host>> `; Tab twice, `?`, `history`, `help`, `log tail -f` (until Ctrl-C), Ctrl-C at the prompt (a new prompt), `exit` (`Connection to <server> closed.`). Passed.
+- In the console, `ssh <device>` to the switch: logged in as the user; `~C` did nothing; after `exit` the journal has `ssh end user=<user> device=<device> status=0 duration=40 console=<session id>`. Passed.
+- As a superuser, a write (`user passwd ...`) asked sudo's password once, then used sudo's cache (recorded with the forwarding tiers above). Passed.
 
 ## Residual risks
 
