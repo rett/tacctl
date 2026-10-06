@@ -133,15 +133,10 @@ func (inv *invocation) consoleDeprovision() error {
 	return nil
 }
 
-// consoleCheckProblems are the reasons the console's sshd settings do not
-// hold on this server (none: they do). user is a console user to ask sshd
-// about ("": no account has the console, sshd is not asked). The lines
+// consoleCheckFiles and consoleCheckUser are the reasons the console's
+// sshd settings do not hold on this server (none: they do): the drop-in and
+// sshd_config, then what sshd applies to one console user. The lines
 // describing what was found are printed as they are learnt.
-func (inv *invocation) consoleCheckProblems(pol *console.Policy, user string) []string {
-	return append(inv.consoleCheckFiles(pol), inv.consoleCheckUser(pol, user)...)
-}
-
-// consoleCheckFiles is the drop-in and sshd_config part of the check.
 func (inv *invocation) consoleCheckFiles(pol *console.Policy) []string {
 	p := inv.app.Paths
 	var problems []string
