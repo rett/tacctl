@@ -21,6 +21,7 @@ package cli
 import (
 	"errors"
 	"io"
+	"net"
 	"os"
 	"regexp"
 	"slices"
@@ -45,7 +46,7 @@ func init() {
 // handed to ssh as it is).
 var sshSpec = Spec{MaxArgs: 1, Args: []string{KindDevices}, Flags: []Flag{
 	{Names: []string{"-p"}, Value: true},
-	{Names: []string{"-X"}}, {Names: []string{"-Y"}},
+	{Names: []string{"-X"}}, {Names: []string{"-Y"}}, {Names: []string{"-g"}},
 	{Names: []string{"-L"}, Value: true, Repeat: true},
 	{Names: []string{"-R"}, Value: true, Repeat: true},
 	{Names: []string{"-D"}, Value: true, Repeat: true},
@@ -56,7 +57,7 @@ var sshSpec = Spec{MaxArgs: 1, Args: []string{KindDevices}, Flags: []Flag{
 var reForwardSpec = regexp.MustCompile(`^[A-Za-z0-9.:/\[\]_*-]+$`)
 
 const (
-	sshUse   = "ssh <name|address> [-p <port>] [-X|-Y] [-L|-R|-D <spec>]... [-- <ssh args>]"
+	sshUse   = "ssh <name|address> [-p <port>] [-X|-Y] [-g] [-L|-R|-D <spec>]... [-- <ssh args>]"
 	sshShort = "Session to a registered device or enrolled host, as you (never root)"
 )
 
@@ -83,6 +84,7 @@ and the command that re-pins it.
   -L <spec>        Forward a local port, as ssh -L (repeatable)
   -R <spec>        Forward a remote port, as ssh -R (repeatable)
   -D <spec>        Open a SOCKS proxy, as ssh -D (repeatable)
+  -g               Let -L and -D ports listen on every address, as ssh -g
   -- <ssh args>    Pass the rest to ssh for this session (a remote command)
 
 Only active tacctl users reach a device, and only one in a scope of their own,
@@ -90,6 +92,9 @@ whatever their tier; a device no scope covers is reached by no one. Every
 session is logged to syslog (auth.info). In the login console, forwarding
 (-X, -Y, -L, -R, -D) is for the tiers of 'tacctl console forwarding tiers'
 (default: superuser); -X uses the display of an 'ssh -X' login to this server.
+There, -L and -D ports listen on loopback only, unless 'tacctl console
+forwarding gateway-ports' is enabled (then -g and a bind address such as
+0.0.0.0:8443:localhost:443 open them to the network).
 
 Examples:
   tacctl ssh core-sw1
@@ -284,7 +289,11 @@ func sshConsoleOptions(escape, forwarding bool) []string {
 // log (x11, local, remote, dynamic). Every argument must look like a
 // forwarding spec. In a console session they are for the tiers of console
 // forwarding tiers only; a refusal is logged ('ssh DENY ... reason=forward').
-// -X/-Y need an X11 display (an 'ssh -X' login to this server).
+// There, -g and an -L or -D that listens on another address than loopback
+// need console forwarding gateway-ports too ('reason=gateway'): ssh binds
+// an explicit bind address (0.0.0.0, *, or an empty one) on this server
+// even without -g. -X/-Y need an X11 display (an 'ssh -X' login to this
+// server).
 func (inv *invocation) sshForwarding(p Parsed, caller string) (args, kinds []string, err error) {
 	for _, f := range []string{"-X", "-Y"} {
 		if p.Has(f) {
@@ -305,6 +314,12 @@ func (inv *invocation) sshForwarding(p Parsed, caller string) (args, kinds []str
 			}
 		}
 	}
+	if p.Has("-g") {
+		if len(p.Values("-L")) == 0 && len(p.Values("-D")) == 0 {
+			return nil, nil, inv.usageErr("-g only matters with -L or -D.")
+		}
+		args = append([]string{"-g"}, args...)
+	}
 	if len(args) == 0 {
 		return nil, nil, nil
 	}
@@ -318,8 +333,71 @@ func (inv *invocation) sshForwarding(p Parsed, caller string) (args, kinds []str
 			inv.app.Logger(inv.ctx, "auth.warning", "ssh DENY user="+caller+" reason=forward tier="+string(t)+inv.sshConsoleField())
 			return nil, nil, inv.usageErr("Forwarding (-X, -Y, -L, -R, -D) is not available to the " + string(t) + " tier in the console; an administrator allows it with: tacctl console forwarding tiers <tiers>")
 		}
+		if !pol.GatewayPorts() {
+			var open []string
+			if p.Has("-g") {
+				open = append(open, "-g")
+			}
+			for _, f := range []string{"-L", "-D"} {
+				for _, v := range p.Values(f) {
+					if b, ok := forwardBind(f, v); ok && !loopbackBind(b) {
+						open = append(open, f+" "+v)
+					}
+				}
+			}
+			if len(open) > 0 {
+				inv.app.Logger(inv.ctx, "auth.warning", "ssh DENY user="+caller+" reason=gateway tier="+string(t)+inv.sshConsoleField())
+				return nil, nil, inv.usageErr("In the console, forwarded ports listen on loopback only ("+strings.Join(open, ", ")+" would listen on other addresses of this server).",
+					"An administrator allows it with: tacctl console forwarding gateway-ports enable")
+			}
+		}
 	}
 	return args, kinds, nil
+}
+
+// forwardBind is the bind address of an -L or -D spec as ssh reads it
+// ([bind:]port:host:hostport, [bind:]port:/socket, /socket:..., or
+// [bind:]port for -D), with ok false when it names none (ssh then listens
+// on loopback) or listens on a local socket. A bracketed IPv6 address is
+// one field.
+func forwardBind(flag, spec string) (bind string, ok bool) {
+	if strings.HasPrefix(spec, "/") {
+		return "", false
+	}
+	var fields []string
+	cur, depth := "", 0
+	for _, r := range spec {
+		switch {
+		case r == '[':
+			depth++
+		case r == ']':
+			depth--
+		case r == ':' && depth == 0:
+			fields = append(fields, cur)
+			cur = ""
+			continue
+		}
+		cur += string(r)
+	}
+	fields = append(fields, cur)
+	n := len(fields)
+	switch {
+	case flag == "-D" && n == 2:
+	case flag == "-L" && n == 4:
+	case flag == "-L" && n == 3 && strings.HasPrefix(fields[2], "/"):
+	default:
+		return "", false
+	}
+	return strings.Trim(fields[0], "[]"), true
+}
+
+// loopbackBind reports whether ssh binds bind on loopback only.
+func loopbackBind(bind string) bool {
+	if bind == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(bind)
+	return ip != nil && ip.IsLoopback()
 }
 
 // sshConsole reports whether this 'tacctl ssh' comes from a console

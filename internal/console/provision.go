@@ -50,8 +50,11 @@ func TierGroup(t tier.Tier) string {
 // ports: a block for each comes first, matching tac-console and the tier's
 // group together, and sshd takes the first value it finds for each
 // keyword; agent, stream-local and tunnel forwarding stay as for every
-// console user.
-func DropIn(command string, agent bool, forward []tier.Tier) string {
+// console user. With gateway (console forwarding gateway-ports) the tier
+// blocks set GatewayPorts clientspecified: their remote forwards listen on
+// the address the client names (loopback when it names none); every other
+// console login keeps GatewayPorts no.
+func DropIn(command string, agent, gateway bool, forward []tier.Tier) string {
 	var b strings.Builder
 	b.WriteString("# Managed by tacctl (tacctl console install|remove, host sync of this server); do not edit.\n")
 	b.WriteString("# The members of " + Group + " are tacctl users whose login shell is the console:\n")
@@ -65,10 +68,16 @@ func DropIn(command string, agent bool, forward []tier.Tier) string {
 	for _, t := range Tiers {
 		if g := TierGroup(t); g != "" && slices.Contains(forward, t) {
 			b.WriteString("# Console users of the " + string(t) + " tier may forward X11 and TCP ports (console forwarding tiers).\n")
+			if gateway {
+				b.WriteString("# Their remote forwards may listen on any address they name (console forwarding gateway-ports).\n")
+			}
 			b.WriteString("Match Group " + Group + " Group " + g + "\n")
 			b.WriteString("    DisableForwarding no\n")
 			b.WriteString("    AllowTcpForwarding yes\n")
 			b.WriteString("    X11Forwarding yes\n")
+			if gateway {
+				b.WriteString("    GatewayPorts clientspecified\n")
+			}
 		}
 	}
 	b.WriteString("Match Group " + Group + "\n")
@@ -79,6 +88,7 @@ func DropIn(command string, agent bool, forward []tier.Tier) string {
 	b.WriteString("    AllowTcpForwarding no\n")
 	b.WriteString("    AllowStreamLocalForwarding no\n")
 	b.WriteString("    X11Forwarding no\n")
+	b.WriteString("    GatewayPorts no\n")
 	b.WriteString("    AllowAgentForwarding " + map[bool]string{true: "yes", false: "no"}[agent] + "\n")
 	b.WriteString("    PermitTunnel no\n")
 	b.WriteString("    PermitTTY yes\n")

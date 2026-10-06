@@ -2661,7 +2661,7 @@ the host keys it offers now against the pinned ones (kept for the notices;
 nothing is pinned), and its notices.
 .SS SSH to a device \fB(tacctl ssh)\fR
 .TP
-.BI "ssh " name|address " [ \-p " port " ] [ \-X | \-Y ] [ { \-L | \-R | \-D } " spec " ]... [ \-\- " "ssh args" " ]"
+.BI "ssh " name|address " [ \-p " port " ] [ \-X | \-Y ] [ \-g ] [ { \-L | \-R | \-D } " spec " ]... [ \-\- " "ssh args" " ]"
 Open an ssh session to a registered device or an enrolled host, named by its
 name or its registered address. tacctl resolves the name as root (the registry
 is root's) and admits only an active tacctl user (in the store, not disabled,
@@ -2742,6 +2742,26 @@ any other tier is refused
 .RI ( "Forwarding (\-X, \-Y, \-L, \-R, \-D) is not available to the tier tier in the console" ;
 logged as
 .BR "ssh DENY ... reason=forward" ).
+There,
+.B \-L
+and
+.B \-D
+listen on loopback only:
+.B \-g
+and a bind address other than loopback
+.RB ( 0.0.0.0:8443:localhost:443 ", " *:1080 ,
+or an empty one) are refused
+.RB ( "ssh DENY ... reason=gateway" )
+unless
+.B "console forwarding gateway\-ports"
+is enabled.
+.B \-g
+lets
+.B \-L
+and
+.B \-D
+ports listen on every address, as ssh's
+.BR \-g .
 .IP
 From a session of the login console (the console marks each line with
 .BR TACCTL_CONSOLE= \fIsession\fR),
@@ -2877,6 +2897,31 @@ to a device accepts
 and
 .BR \-D .
 Agent, stream-local and tunnel forwarding stay as for every console user.
+.TP
+.BI "console forwarding gateway\-ports " "[ { enable | disable } ]"
+Opt in to forwarded ports that listen on other addresses than loopback, for
+the tiers of
+.B "console forwarding tiers"
+(default disabled). Enabled, their blocks in sshd's drop-in set
+.BR "GatewayPorts clientspecified" :
+an
+.B "ssh \-R"
+to this server listens on the address the client names
+.RB ( "\-R 0.0.0.0:8080:host:80"
+on every address; none named: loopback), and the console's
+.B ssh
+takes
+.B \-g
+and a bind address on
+.B \-L
+and
+.BR \-D .
+Anyone who reaches this server can then connect to those ports. Every other
+console login keeps
+.BR "GatewayPorts no" ,
+and
+.B "console check"
+warns when sshd applies anything else to it.
 .TP
 .BI "console ssh\-escape " "[ { enable | disable } ]"
 Opt in to ssh's escape character (\fB~.\fR, \fB~C\fR) in the console's ssh

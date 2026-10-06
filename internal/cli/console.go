@@ -34,7 +34,7 @@ var consoleSpecs = map[string]Spec{
 	"agent-forwarding": {MaxArgs: 1, Args: []string{"enable|disable"}},
 	"ssh-escape":       {MaxArgs: 1, Args: []string{"enable|disable"}},
 	"system-shell":     {MinArgs: 1, MaxArgs: 2, Args: []string{"tiers|path", After("path", KindFile)}},
-	"forwarding":       {MinArgs: 1, MaxArgs: 2, Args: []string{"tiers"}},
+	"forwarding":       {MinArgs: 1, MaxArgs: 2, Args: []string{"tiers|gateway-ports", After("gateway-ports", "enable|disable")}},
 	"install":          {MaxArgs: 0},
 	"remove":           {MaxArgs: 0},
 	"check":            {MaxArgs: 0},
@@ -49,6 +49,7 @@ var consoleVerbs = [][2]string{
 	{"agent-forwarding [enable|disable]", "Opt in to ssh agent forwarding for console users"},
 	{"ssh-escape [enable|disable]", "Opt in to ssh's escape character (~. and ~C) inside the console's ssh"},
 	{"forwarding tiers [<csv>|none]", "Show or set the tiers that may forward X11 and TCP ports (sshd, and the console's ssh -X/-L/-R/-D; default superuser)"},
+	{"forwarding gateway-ports [enable|disable]", "Opt in to forwarded ports on other addresses than loopback for those tiers (sshd's GatewayPorts for ssh -R, and the console's ssh -g and -L/-D bind addresses)"},
 	{"system-shell tiers [<csv>|none]", "Show or set the tiers that may start their system shell from the console"},
 	{"system-shell path [<path>]", "Show or set the system shell (default /bin/bash; must be listed in /etc/shells)"},
 	{"install", "Put the /etc/shells line and sshd's drop-in for console users in place (host sync of this server does too)"},
@@ -432,19 +433,42 @@ func (inv *invocation) consoleSystemShell(args []string) error {
 }
 
 // consoleForwarding is 'console forwarding tiers [<csv>|none]': the tiers
-// whose console logins may forward X11 and TCP ports. A change is applied
-// to sshd's drop-in like agent-forwarding.
+// whose console logins may forward X11 and TCP ports, and 'console
+// forwarding gateway-ports [enable|disable]': whether their forwarded ports
+// may listen on other addresses than loopback. A change is applied to
+// sshd's drop-in like agent-forwarding.
 func (inv *invocation) consoleForwarding(args []string) error {
 	p, err := inv.consoleParse("forwarding", args)
 	if err != nil {
 		return err
 	}
-	if p.Args[0] != "tiers" {
+	if p.Args[0] != "tiers" && p.Args[0] != "gateway-ports" {
 		return inv.usageErr("Usage: tacctl console " + consoleUse("forwarding"))
 	}
 	pol, err := inv.consolePolicy()
 	if err != nil {
 		return err
+	}
+	if p.Args[0] == "gateway-ports" {
+		if len(p.Args) == 1 {
+			inv.echo(map[bool]string{true: "enabled", false: "disabled"}[pol.File.GatewayPorts])
+			return nil
+		}
+		on, err := inv.enableWord(p.Args[1], "forwarding")
+		if err != nil {
+			return err
+		}
+		if err := inv.consoleWrite(func(f *console.File) error { f.GatewayPorts = on; return nil }); err != nil {
+			return err
+		}
+		if on {
+			inv.app.Out.Info("Forwarded ports of the forwarding tiers (" + tierCSV(pol.File.ForwardingTiers) + ") may listen on other addresses than loopback: " +
+				"ssh -R to this server binds the address the client names (ssh -R 0.0.0.0:8080:host:80 binds every address), and the console's ssh takes -g and a bind address on -L and -D. " +
+				"Anyone who reaches this server can then connect to those ports. The sshd drop-in follows it at the next sync.")
+		} else {
+			inv.app.Out.Info("Forwarded ports listen on loopback only. The sshd drop-in follows it at the next sync.")
+		}
+		return inv.consoleApply()
 	}
 	if len(p.Args) == 1 {
 		inv.echo(tierCSV(pol.File.ForwardingTiers))

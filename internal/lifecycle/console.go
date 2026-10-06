@@ -123,7 +123,7 @@ func (h *Host) updateConsoleDropIn(ctx context.Context) int {
 		return 0
 	}
 	d := console.DropInFile{Runner: h.Runner, Path: p.SSHDDropIn}
-	ch, err := d.Install(ctx, console.DropIn(p.ConsoleCommand, f.AgentForwarding, f.ForwardingTiers))
+	ch, err := d.Install(ctx, console.DropIn(p.ConsoleCommand, f.AgentForwarding, f.GatewayPorts, f.ForwardingTiers))
 	switch {
 	case err != nil && ch == console.Unchanged:
 		out.Warn("  Not updated: sshd drop-in (" + strings.Join(lines(err), " ") + "; " + p.SSHDDropIn + " is unchanged)")

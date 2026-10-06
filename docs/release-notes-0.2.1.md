@@ -957,3 +957,18 @@ What to expect:
     `(acknowledged)`, with only what happened (`address-changed
     (acknowledged): the address of 'dev' changed from 10.0.0.1 to 10.0.0.2
     (<time>, seen by host enroll or sync)`). `--json` is unchanged.
+73. **Gateway ports for the forwarding tiers, and loopback for everyone
+    else.** `tacctl console forwarding gateway-ports enable` (default
+    disabled) lets the tiers of `console forwarding tiers` open forwarded
+    ports on other addresses than loopback: their blocks in sshd's drop-in
+    set `GatewayPorts clientspecified`, so an `ssh -R 0.0.0.0:8080:host:80`
+    to the server listens on every address, and the console's `tacctl ssh`
+    takes `-g` (new) and a bind address on `-L` and `-D`. Disabled, the
+    console's `tacctl ssh` now refuses `-g` and an `-L` or `-D` bind address
+    other than loopback (`0.0.0.0:…`, `*:…` or an empty one, which ssh binds
+    on every address even without `-g`; `ssh DENY … reason=gateway`): until
+    now a superuser could open a port on every address of the server that
+    way. The console's block of the drop-in sets `GatewayPorts no`, `console
+    show` lists the setting, and `console show`/`console check` print
+    sshd's `gatewayports` for each user they probe and warn when it is
+    anything but `no` for a user it is not meant for.

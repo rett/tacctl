@@ -40,7 +40,7 @@ func (inv *invocation) consoleProvision(pol *console.Policy) error {
 	}
 	a.Out.InfoE("  " + shells.String() + ": " + p.ShellsFile + " lists " + p.ConsoleCommand)
 	d := console.DropInFile{Runner: a.Runner, Path: p.SSHDDropIn}
-	ch, err := d.Install(inv.ctx, console.DropIn(p.ConsoleCommand, pol.AgentForwarding(), pol.ForwardingTiers()))
+	ch, err := d.Install(inv.ctx, console.DropIn(p.ConsoleCommand, pol.AgentForwarding(), pol.GatewayPorts(), pol.ForwardingTiers()))
 	switch {
 	case errors.Is(err, console.ErrSSHD):
 		a.Out.ErrorE("sshd refused the console's drop-in; " + p.SSHDDropIn + " was put back as it was:")
@@ -140,7 +140,7 @@ func (inv *invocation) consoleDeprovision() error {
 func (inv *invocation) consoleCheckFiles(pol *console.Policy) []string {
 	p := inv.app.Paths
 	var problems []string
-	want := console.DropIn(p.ConsoleCommand, pol.AgentForwarding(), pol.ForwardingTiers())
+	want := console.DropIn(p.ConsoleCommand, pol.AgentForwarding(), pol.GatewayPorts(), pol.ForwardingTiers())
 	switch data, err := os.ReadFile(p.SSHDDropIn); {
 	case err != nil:
 		inv.echo("  sshd drop-in " + p.SSHDDropIn + ": missing")
@@ -179,8 +179,16 @@ func (inv *invocation) consoleCheckUser(pol *console.Policy, user string) []stri
 		return append(problems, "sshd could not be asked what it applies to "+user)
 	}
 	inv.echo("  sshd for " + user + ": allowtcpforwarding " + st.TCPForwarding + ", allowagentforwarding " + st.AgentForwarding +
-		", forcecommand " + dash(st.ForceCommand) + ", pubkeyauthentication " + dash(st.PubkeyAuth))
-	return append(problems, st.Problems(pol.AgentForwarding(), inv.userForwards(pol, user), p.ConsoleCommand)...)
+		", forcecommand " + dash(st.ForceCommand) + ", pubkeyauthentication " + dash(st.PubkeyAuth) + sshdGatewayPorts(st))
+	return append(problems, st.Problems(pol.AgentForwarding(), inv.userForwards(pol, user), pol.GatewayPorts(), p.ConsoleCommand)...)
+}
+
+// sshdGatewayPorts is ', gatewayports <value>' when sshd printed it.
+func sshdGatewayPorts(st console.SSHD) string {
+	if st.GatewayPorts == "" {
+		return ""
+	}
+	return ", gatewayports " + st.GatewayPorts
 }
 
 // consoleProbeUsers are the console accounts sshd is asked about: the
@@ -211,9 +219,9 @@ func (inv *invocation) consoleProbeUsers(pol *console.Policy, users []string) []
 // not forward can: sshd keeps the first value it reads.
 func (inv *invocation) consoleFirstValueHint(pol *console.Policy, probe, problems []string) []string {
 	for _, p := range problems {
-		if strings.Contains(p, "forwarding is") {
+		if strings.Contains(p, "forwarding is") || strings.Contains(p, "gatewayports is") {
 			dir := filepath.Dir(inv.app.Paths.SSHDDropIn)
-			return []string{"sshd keeps the first value it reads, so an X11Forwarding, AllowTcpForwarding or DisableForwarding line read before " +
+			return []string{"sshd keeps the first value it reads, so an X11Forwarding, AllowTcpForwarding, GatewayPorts or DisableForwarding line read before " +
 				inv.app.Paths.SSHDDropIn + " overrides it: look in " + filepath.Join(filepath.Dir(dir), "sshd_config") +
 				" above its Include line and in the files of " + dir + " sorted before " + filepath.Base(inv.app.Paths.SSHDDropIn)}
 		}

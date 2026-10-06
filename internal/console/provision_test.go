@@ -17,7 +17,7 @@ import (
 const testConsole = "/usr/local/bin/tacctl-console"
 
 func TestDropInText(t *testing.T) {
-	off := DropIn(testConsole, false, nil)
+	off := DropIn(testConsole, false, false, nil)
 	for _, l := range []string{
 		"Match Group tac-console\n", "    ForceCommand " + testConsole + "\n", "    DisableForwarding yes\n",
 		"    AllowTcpForwarding no\n", "    AllowStreamLocalForwarding no\n", "    X11Forwarding no\n",
@@ -32,7 +32,7 @@ func TestDropInText(t *testing.T) {
 		t.Errorf("no header:\n%s", off)
 	}
 	// Agent forwarding on: DisableForwarding would close it too.
-	on := DropIn(testConsole, true, nil)
+	on := DropIn(testConsole, true, false, nil)
 	if strings.Contains(on, "DisableForwarding") || !strings.Contains(on, "    AllowAgentForwarding yes\n") ||
 		!strings.Contains(on, "    AllowTcpForwarding no\n") {
 		t.Errorf("agent on:\n%s", on)
@@ -42,7 +42,7 @@ func TestDropInText(t *testing.T) {
 	}
 	// Forwarding tiers: a block per tier before the console's, matching both
 	// groups (sshd takes the first value of each keyword), in tier order.
-	fwd := DropIn(testConsole, false, []tier.Tier{tier.Superuser, tier.Operator})
+	fwd := DropIn(testConsole, false, false, []tier.Tier{tier.Superuser, tier.Operator})
 	op := strings.Index(fwd, "Match Group tac-console Group tac-operator\n    DisableForwarding no\n    AllowTcpForwarding yes\n    X11Forwarding yes\n")
 	su := strings.Index(fwd, "Match Group tac-console Group tac-superuser\n    DisableForwarding no\n    AllowTcpForwarding yes\n    X11Forwarding yes\n")
 	all := strings.Index(fwd, "Match Group tac-console\n")
@@ -51,6 +51,20 @@ func TestDropInText(t *testing.T) {
 	}
 	if !strings.Contains(fwd, "    DisableForwarding yes\n") || !strings.Contains(fwd, "    AllowAgentForwarding no\n") {
 		t.Errorf("the console's own block changed:\n%s", fwd)
+	}
+	// Gateway ports: clientspecified in each tier block only; every other
+	// console login keeps no.
+	if strings.Contains(fwd, "clientspecified") || !strings.Contains(fwd[all:], "    GatewayPorts no\n") {
+		t.Errorf("gateway ports off:\n%s", fwd)
+	}
+	gw := DropIn(testConsole, false, true, []tier.Tier{tier.Superuser})
+	su = strings.Index(gw, "Match Group tac-console Group tac-superuser\n    DisableForwarding no\n    AllowTcpForwarding yes\n    X11Forwarding yes\n    GatewayPorts clientspecified\n")
+	all = strings.Index(gw, "Match Group tac-console\n")
+	if su < 0 || su >= all || strings.Count(gw, "clientspecified") != 1 || !strings.Contains(gw[all:], "    GatewayPorts no\n") {
+		t.Errorf("gateway ports on:\n%s", gw)
+	}
+	if DropIn(testConsole, false, true, nil) != DropIn(testConsole, false, false, nil) {
+		t.Errorf("gateway ports without a forwarding tier changed the drop-in")
 	}
 }
 
@@ -107,7 +121,7 @@ func TestDropInInstallRemove(t *testing.T) {
 	r.On([]string{"sshd", "-t"}, execx.Result{})
 	r.On([]string{"systemctl", "reload"}, execx.Result{})
 	d := DropInFile{Runner: r, Path: path}
-	text := DropIn(testConsole, false, nil)
+	text := DropIn(testConsole, false, false, nil)
 
 	if ch, err := d.Install(ctx, text); ch != Installed || err != nil {
 		t.Fatalf("install: %v %v", ch, err)
@@ -129,7 +143,7 @@ func TestDropInInstallRemove(t *testing.T) {
 	// sshd refuses a change: the old text comes back, no reload.
 	r.Fail([]string{"sshd", "-t"}, 255, "/etc/ssh/sshd_config.d/tacctl-console.conf line 7: Bad configuration option: DisableForwarding")
 	r.Reset()
-	ch, err := d.Install(ctx, DropIn(testConsole, true, nil))
+	ch, err := d.Install(ctx, DropIn(testConsole, true, false, nil))
 	if ch != Unchanged || !errors.Is(err, ErrSSHD) || !strings.Contains(err.Error(), "Bad configuration option: DisableForwarding") {
 		t.Fatalf("refused: %v %v", ch, err)
 	}
@@ -154,7 +168,7 @@ func TestDropInInstallRemove(t *testing.T) {
 	r.Fail([]string{"systemctl", "reload", "ssh.service"}, 5, "Failed to reload ssh.service: Unit ssh.service not found.")
 	r.On([]string{"systemctl", "reload", "sshd.service"}, execx.Result{})
 	d.Runner = r
-	if ch, err := d.Install(ctx, DropIn(testConsole, true, nil)); ch != Updated || err != nil {
+	if ch, err := d.Install(ctx, DropIn(testConsole, true, false, nil)); ch != Updated || err != nil {
 		t.Fatalf("update: %v %v", ch, err)
 	}
 	if got := r.Argvs(); !slices.Equal(got, []string{"sshd -t", "systemctl reload ssh.service", "systemctl reload sshd.service"}) {

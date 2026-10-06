@@ -54,6 +54,9 @@ type SSHD struct {
 	// disableforwarding ("" when sshd did not print them).
 	X11Forwarding     string
 	DisableForwarding string
+	// GatewayPorts is gatewayports: no, yes or clientspecified ("" when
+	// sshd did not print it).
+	GatewayPorts string
 }
 
 // SSHDCheck runs 'sshd -T -C user=<user>,host=localhost,addr=127.0.0.1'
@@ -88,6 +91,8 @@ func SSHDCheck(ctx context.Context, r execx.Runner, user string) (SSHD, error) {
 			s.X11Forwarding = v
 		case "disableforwarding":
 			s.DisableForwarding = v
+		case "gatewayports":
+			s.GatewayPorts = v
 		}
 	}
 	if s.TCPForwarding == "" || s.AgentForwarding == "" {
@@ -101,9 +106,11 @@ func SSHDCheck(ctx context.Context, r execx.Runner, user string) (SSHD, error) {
 // command or the sftp subsystem would run without it; TCP forwarding is
 // anything but no for a user whose tier may not forward (console
 // forwarding tiers: tcpAllowed); agent forwarding is on while the policy
-// does not allow it; or a key login (which bypasses TACACS+) is allowed.
-// Empty: as designed.
-func (s SSHD) Problems(agentAllowed, tcpAllowed bool, command string) []string {
+// does not allow it; remote forwards may listen on other addresses than
+// loopback (gatewayports) while the user may not forward or console
+// forwarding gateway-ports is off (gatewayAllowed); or a key login (which
+// bypasses TACACS+) is allowed. Empty: as designed.
+func (s SSHD) Problems(agentAllowed, tcpAllowed, gatewayAllowed bool, command string) []string {
 	var out []string
 	if s.ForceCommand != command {
 		v := s.ForceCommand
@@ -120,6 +127,9 @@ func (s SSHD) Problems(agentAllowed, tcpAllowed bool, command string) []string {
 		if s.X11Forwarding == "yes" {
 			out = append(out, "x11forwarding is 'yes'")
 		}
+	}
+	if s.GatewayPorts != "" && s.GatewayPorts != "no" && s.DisableForwarding != "yes" && s.TCPForwarding != "no" && (!tcpAllowed || !gatewayAllowed) {
+		out = append(out, "gatewayports is '"+s.GatewayPorts+"'")
 	}
 	if s.AgentForwarding != "no" && !agentAllowed {
 		out = append(out, "allowagentforwarding is '"+s.AgentForwarding+"'")

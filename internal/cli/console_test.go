@@ -216,6 +216,7 @@ settings:
   system_shell: /bin/bash
   system_shell_tiers: [superuser]
   forwarding_tiers: [superuser]
+  gateway_ports: false
   list_max: 40
 `
 	if y := sb.consoleYAML(); y != want {

@@ -111,6 +111,10 @@ func (p *Policy) SSHEscape() bool { return p.File.SSHEscape }
 // users forward an agent.
 func (p *Policy) AgentForwarding() bool { return p.File.AgentForwarding }
 
+// GatewayPorts reports whether the forwarding tiers may bind forwarded
+// ports to an address other than loopback.
+func (p *Policy) GatewayPorts() bool { return p.File.GatewayPorts }
+
 // SystemShellPath is the system shell, checked: see CheckShell.
 func (p *Policy) SystemShellPath() (string, error) {
 	return p.File.SystemShell, CheckShell(p.File.SystemShell, p.ShellsFile)

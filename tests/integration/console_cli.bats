@@ -79,6 +79,8 @@ forwarding
 forwarding mode
 forwarding tiers root
 forwarding tiers superuser,superuser
+forwarding gateway-ports on
+forwarding gateway-ports enable extra
 show extra
 LIST
     [[ ! -e "$CONSOLE" ]]
@@ -94,6 +96,7 @@ LIST
     assert_output --partial "  superuser: enable"
     assert_output --partial "system-shell tiers: superuser"
     assert_output --partial "forwarding tiers: superuser (X11 and TCP ports)"
+    assert_output --partial "forwarding gateway-ports: disabled"
     assert_output --partial "system-shell path: /bin/bash"
     assert_output --partial "idle-timeout: 30 min"
     assert_output --partial "agent-forwarding: disabled"
@@ -191,6 +194,18 @@ LIST
     assert_output "none"
     run cat "$CONSOLE"
     assert_output --partial "  forwarding_tiers: []"
+    run "$TACCTL_BIN_SCRIPT" console forwarding gateway-ports
+    assert_output "disabled"
+    run "$TACCTL_BIN_SCRIPT" console forwarding gateway-ports enable
+    assert_success
+    assert_output --partial "may listen on other addresses than loopback"
+    run "$TACCTL_BIN_SCRIPT" console forwarding gateway-ports
+    assert_output "enabled"
+    run cat "$CONSOLE"
+    assert_output --partial "  gateway_ports: true"
+    run "$TACCTL_BIN_SCRIPT" console forwarding gateway-ports disable
+    assert_success
+    assert_output --partial "Forwarded ports listen on loopback only."
     # The path must be listed in /etc/shells (the sandbox's copy).
     printf '/bin/bash\n' > "$TACCTL_SHELLS_FILE"
     run "$TACCTL_BIN_SCRIPT" console system-shell path /bin/sh

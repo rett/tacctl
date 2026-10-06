@@ -1129,7 +1129,7 @@ func TestUpgradeRefreshesConsoleDropIn(t *testing.T) {
 	if code := upgrade(o); code != 0 {
 		t.Fatalf("exit %d\n%s", code, o.stderr)
 	}
-	if readFile(t, o.p.SSHDDropIn) != console.DropIn(o.p.ConsoleCommand, false, []tier.Tier{tier.Superuser}) || !strings.Contains(o.text(), "[INFO]   Updated: sshd drop-in") ||
+	if readFile(t, o.p.SSHDDropIn) != console.DropIn(o.p.ConsoleCommand, false, false, []tier.Tier{tier.Superuser}) || !strings.Contains(o.text(), "[INFO]   Updated: sshd drop-in") ||
 		!o.run.Called("sshd", "-t") || !o.run.Called("systemctl", "reload", "ssh.service") {
 		t.Errorf("not refreshed:\n%s\n%q", o.text(), o.run.Argvs())
 	}
@@ -1157,7 +1157,7 @@ func TestUpgradeRefreshesConsoleDropIn(t *testing.T) {
 func TestUninstallRestoresConsoleShells(t *testing.T) {
 	o := newOhost(t)
 	o.installed()
-	o.write(o.p.SSHDDropIn, console.DropIn(o.p.ConsoleCommand, false, []tier.Tier{tier.Superuser}))
+	o.write(o.p.SSHDDropIn, console.DropIn(o.p.ConsoleCommand, false, false, []tier.Tier{tier.Superuser}))
 	o.write(o.p.ShellsFile, "/bin/sh\n/bin/bash\n"+o.p.ConsoleCommand+"\n")
 	if err := os.Symlink(o.p.Command, o.p.ConsoleCommand); err != nil {
 		t.Fatal(err)

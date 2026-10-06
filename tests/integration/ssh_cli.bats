@@ -212,7 +212,7 @@ on_tty() {
     called "sudo -u carol -H ssh ${CT} ${PIN_RTR} -l carol 192.0.2.7"
     run "$TACCTL_BIN_SCRIPT" ssh
     assert_success
-    assert_output --partial "Usage: tacctl ssh <name|address> [-p <port>] [-X|-Y] [-L|-R|-D <spec>]... [-- <ssh args>]"
+    assert_output --partial "Usage: tacctl ssh <name|address> [-p <port>] [-X|-Y] [-g] [-L|-R|-D <spec>]... [-- <ssh args>]"
 }
 
 @test "ssh: exit 255 on a pinned device whose key changed names both fingerprints and the fix" {

@@ -92,7 +92,7 @@ func TestConsoleInstallRemoveCheck(t *testing.T) {
 			t.Errorf("no %q:\n%s", want, out)
 		}
 	}
-	if data, _ := os.ReadFile(dropin); string(data) != console.DropIn(link, false, []tier.Tier{tier.Superuser}) {
+	if data, _ := os.ReadFile(dropin); string(data) != console.DropIn(link, false, false, []tier.Tier{tier.Superuser}) {
 		t.Errorf("drop-in %q", data)
 	}
 	if data, _ := os.ReadFile(sb.path("shells")); string(data) != "# /etc/shells\n/bin/sh\n/bin/bash\n"+link+"\n" {

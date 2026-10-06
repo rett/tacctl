@@ -76,6 +76,7 @@ settings:
   system_shell: /bin/sh
   system_shell_tiers: [operator, superuser]
   forwarding_tiers: []
+  gateway_ports: false
   list_max: 100
 `
 	if got, _ := os.ReadFile(p); string(got) != want {
@@ -320,41 +321,54 @@ func TestSSHDCheck(t *testing.T) {
 	}
 	const fc = "forcecommand /usr/local/bin/tacctl-console\npubkeyauthentication no\n"
 	s, r, err := run(execx.Result{Stdout: []byte("port 22\nallowtcpforwarding no\nallowagentforwarding no\nx11forwarding no\n" + fc)})
-	if err != nil || s != (SSHD{"no", "no", "/usr/local/bin/tacctl-console", "no", "no", ""}) || !r.Called("sshd", "-T", "-C", "user=jdoe,host=localhost,addr=127.0.0.1") {
+	if err != nil || s != (SSHD{"no", "no", "/usr/local/bin/tacctl-console", "no", "no", "", ""}) || !r.Called("sshd", "-T", "-C", "user=jdoe,host=localhost,addr=127.0.0.1") {
 		t.Errorf("closed: %+v %v %q", s, err, r.Argvs())
 	}
-	if p := s.Problems(false, false, testConsole); len(p) != 0 {
+	if p := s.Problems(false, false, false, testConsole); len(p) != 0 {
 		t.Errorf("problems: %v", p)
 	}
 	s, _, _ = run(execx.Result{Stdout: []byte("allowtcpforwarding yes\nallowagentforwarding yes\n" + fc)})
-	if p := s.Problems(false, false, testConsole); !reflect.DeepEqual(p, []string{"allowtcpforwarding is 'yes'", "allowagentforwarding is 'yes'"}) {
+	if p := s.Problems(false, false, false, testConsole); !reflect.DeepEqual(p, []string{"allowtcpforwarding is 'yes'", "allowagentforwarding is 'yes'"}) {
 		t.Errorf("open: %v", p)
 	}
 	// A user of a forwarding tier (console forwarding tiers): TCP forwarding is as designed.
-	if p := s.Problems(false, true, testConsole); !reflect.DeepEqual(p, []string{"allowagentforwarding is 'yes'"}) {
+	if p := s.Problems(false, true, false, testConsole); !reflect.DeepEqual(p, []string{"allowagentforwarding is 'yes'"}) {
 		t.Errorf("forwarding tier: %v", p)
 	}
 	// X11 open for a tier that may not forward (a value read before the
 	// drop-in): a problem; DisableForwarding yes closes it all anyway.
 	s, _, _ = run(execx.Result{Stdout: []byte("allowtcpforwarding no\nallowagentforwarding no\nx11forwarding yes\ndisableforwarding no\n" + fc)})
-	if p := s.Problems(false, false, testConsole); !reflect.DeepEqual(p, []string{"x11forwarding is 'yes'"}) {
+	if p := s.Problems(false, false, false, testConsole); !reflect.DeepEqual(p, []string{"x11forwarding is 'yes'"}) {
 		t.Errorf("x11 open: %v", p)
 	}
 	s, _, _ = run(execx.Result{Stdout: []byte("allowtcpforwarding yes\nallowagentforwarding no\nx11forwarding yes\ndisableforwarding yes\n" + fc)})
-	if p := s.Problems(false, false, testConsole); len(p) != 0 {
+	if p := s.Problems(false, false, false, testConsole); len(p) != 0 {
 		t.Errorf("disableforwarding yes: %v", p)
 	}
 	// Without the drop-in: nothing forced, key logins on.
 	s, _, _ = run(execx.Result{Stdout: []byte("allowtcpforwarding no\nallowagentforwarding no\nforcecommand none\npubkeyauthentication yes\n")})
-	if p := s.Problems(false, false, testConsole); !reflect.DeepEqual(p, []string{"forcecommand is 'none'", "pubkeyauthentication is 'yes'"}) {
+	if p := s.Problems(false, false, false, testConsole); !reflect.DeepEqual(p, []string{"forcecommand is 'none'", "pubkeyauthentication is 'yes'"}) {
 		t.Errorf("no drop-in: %v", p)
 	}
 	s, _, _ = run(execx.Result{Stdout: []byte("allowtcpforwarding yes\nallowagentforwarding yes\n" + fc)})
-	if p := s.Problems(true, false, testConsole); !reflect.DeepEqual(p, []string{"allowtcpforwarding is 'yes'"}) {
+	if p := s.Problems(true, false, false, testConsole); !reflect.DeepEqual(p, []string{"allowtcpforwarding is 'yes'"}) {
 		t.Errorf("agent allowed: %v", p)
 	}
+	// Gateway ports: only for a user who may forward, with gateway-ports on;
+	// moot when forwarding is closed.
+	gw := SSHD{TCPForwarding: "yes", AgentForwarding: "no", ForceCommand: testConsole, PubkeyAuth: "no", GatewayPorts: "clientspecified"}
+	if p := gw.Problems(false, true, false, testConsole); !reflect.DeepEqual(p, []string{"gatewayports is 'clientspecified'"}) {
+		t.Errorf("gatewayports, gateway-ports off: %v", p)
+	}
+	if p := gw.Problems(false, true, true, testConsole); len(p) != 0 {
+		t.Errorf("gatewayports, gateway-ports on: %v", p)
+	}
+	gw.TCPForwarding = "no"
+	if p := gw.Problems(false, false, true, testConsole); len(p) != 0 {
+		t.Errorf("gatewayports with forwarding closed: %v", p)
+	}
 	for _, v := range []string{"local", "remote", "all"} {
-		if p := (SSHD{TCPForwarding: v, AgentForwarding: "no", ForceCommand: testConsole, PubkeyAuth: "no"}).Problems(false, false, testConsole); len(p) != 1 {
+		if p := (SSHD{TCPForwarding: v, AgentForwarding: "no", ForceCommand: testConsole, PubkeyAuth: "no"}).Problems(false, false, false, testConsole); len(p) != 1 {
 			t.Errorf("allowtcpforwarding %s: %v", v, p)
 		}
 	}

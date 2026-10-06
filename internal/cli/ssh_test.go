@@ -241,7 +241,7 @@ func TestSSHRefusals(t *testing.T) {
 	}
 	// No name: the usage, exit 0.
 	out := sb.sshRun("alice", nil, "ssh")
-	if sb.code != 0 || !strings.Contains(out, "Usage: tacctl ssh <name|address> [-p <port>] [-X|-Y] [-L|-R|-D <spec>]... [-- <ssh args>]") {
+	if sb.code != 0 || !strings.Contains(out, "Usage: tacctl ssh <name|address> [-p <port>] [-X|-Y] [-g] [-L|-R|-D <spec>]... [-- <ssh args>]") {
 		t.Errorf("usage: %d %q", sb.code, out)
 	}
 }
@@ -528,5 +528,67 @@ func TestSSHForwarding(t *testing.T) {
 	sb.cfgRun("", []string{"ssh", "lab-rtr2", "-L", "8443:localhost:443"}, groups, env("carol", session)...)
 	if sb.code != 0 || !strings.HasSuffix(sb.sshArgv(), " -L 8443:localhost:443 -l carol -- 192.168.5.1") {
 		t.Errorf("readonly opened (%d %q): %s", sb.code, sb.stderr(), sb.sshArgv())
+	}
+	// Gateway ports: in the console, -g and a bind address other than
+	// loopback are refused until console forwarding gateway-ports is on.
+	for _, words := range [][]string{
+		{"-g", "-L", "8443:localhost:443"},
+		{"-L", "0.0.0.0:8443:localhost:443"},
+		{"-L", ":8443:localhost:443"},
+		{"-D", "*:1080"},
+	} {
+		sb.cfgRun("", append([]string{"ssh", "lab-rtr2"}, words...), groups, env("alice", session)...)
+		if sb.code != 1 || sb.sshArgv() != "" || !strings.Contains(sb.stderr(), "forwarded ports listen on loopback only") ||
+			!strings.Contains(sb.stderr(), "tacctl console forwarding gateway-ports enable") ||
+			!sb.runner.Called("logger", "-t", "tacctl", "-p", "auth.warning", "ssh DENY user=alice reason=gateway tier=superuser console=0123456789ab") {
+			t.Errorf("gateway %q off: %d %q", words, sb.code, sb.stderr())
+		}
+	}
+	sb.cfgRun("", []string{"ssh", "lab-rtr2", "-L", "127.0.0.1:8443:localhost:443", "-R", "0.0.0.0:8080:localhost:80"}, groups, env("alice", session)...)
+	if sb.code != 0 || !strings.HasSuffix(sb.sshArgv(), " -L 127.0.0.1:8443:localhost:443 -R 0.0.0.0:8080:localhost:80 -l alice -- 192.168.5.1") {
+		t.Errorf("loopback bind, -R (%d %q): %s", sb.code, sb.stderr(), sb.sshArgv())
+	}
+	sb.cfgRun("", []string{"ssh", "lab-rtr2", "-g"}, groups, env("alice", session)...)
+	if sb.code != 1 || !strings.Contains(sb.stderr(), "-g only matters with -L or -D") {
+		t.Errorf("-g alone: %d %q", sb.code, sb.stderr())
+	}
+	sb.run("", []string{"console", "forwarding", "gateway-ports", "enable"})
+	sb.cfgRun("", []string{"ssh", "lab-rtr2", "-g", "-L", "0.0.0.0:8443:localhost:443"}, groups, env("alice", session)...)
+	if sb.code != 0 || !strings.HasSuffix(sb.sshArgv(), " -g -L 0.0.0.0:8443:localhost:443 -l alice -- 192.168.5.1") {
+		t.Errorf("gateway on (%d %q): %s", sb.code, sb.stderr(), sb.sshArgv())
+	}
+	// Still only for the forwarding tiers.
+	sb.run("", []string{"console", "forwarding", "tiers", "superuser"})
+	sb.cfgRun("", []string{"ssh", "lab-rtr2", "-g", "-L", "8443:localhost:443"}, groups, env("carol", session)...)
+	if sb.code != 1 || !strings.Contains(sb.stderr(), "Forwarding (-X, -Y, -L, -R, -D) is not available") {
+		t.Errorf("gateway on, readonly: %d %q", sb.code, sb.stderr())
+	}
+}
+
+func TestForwardBind(t *testing.T) {
+	for _, c := range []struct {
+		flag, spec, bind string
+		ok               bool
+	}{
+		{"-L", "8443:localhost:443", "", false},
+		{"-L", "0.0.0.0:8443:h:443", "0.0.0.0", true},
+		{"-L", "*:8443:h:443", "*", true},
+		{"-L", ":8443:h:443", "", true},
+		{"-L", "[::1]:8443:h:443", "::1", true},
+		{"-L", "[2001:db8::1]:8443:[2001:db8::2]:443", "2001:db8::1", true},
+		{"-L", "127.0.0.1:8443:/run/s.sock", "127.0.0.1", true},
+		{"-L", "8443:/run/s.sock", "", false},
+		{"-L", "/tmp/l.sock:h:443", "", false},
+		{"-D", "1080", "", false},
+		{"-D", "192.0.2.1:1080", "192.0.2.1", true},
+	} {
+		if b, ok := forwardBind(c.flag, c.spec); b != c.bind || ok != c.ok {
+			t.Errorf("forwardBind(%s %s) = %q %v, want %q %v", c.flag, c.spec, b, ok, c.bind, c.ok)
+		}
+	}
+	for b, want := range map[string]bool{"localhost": true, "127.0.0.1": true, "127.0.0.2": true, "::1": true, "": false, "*": false, "0.0.0.0": false, "192.0.2.1": false} {
+		if loopbackBind(b) != want {
+			t.Errorf("loopbackBind(%q) != %v", b, want)
+		}
 	}
 }

@@ -203,7 +203,7 @@ func TestPtyShellNamesListing(t *testing.T) {
 	if err := s.Send("-\t\t"); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Expect(`-D\s+-L\s+-R\s+-X\s+-Y\s+-p`, 5*time.Second); err != nil {
+	if err := s.Expect(`-D\s+-L\s+-R\s+-X\s+-Y\s+-g\s+-p`, 5*time.Second); err != nil {
 		t.Fatal(err)
 	}
 }

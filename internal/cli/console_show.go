@@ -33,6 +33,7 @@ func (inv *invocation) consoleShow(args []string) error {
 	inv.echo("  agent-forwarding: " + map[bool]string{true: "enabled", false: "disabled"}[f.AgentForwarding])
 	inv.echo("  ssh-escape: " + map[bool]string{true: "enabled", false: "disabled"}[f.SSHEscape])
 	inv.echo("  forwarding tiers: " + tierCSV(f.ForwardingTiers) + " (X11 and TCP ports)")
+	inv.echo("  forwarding gateway-ports: " + map[bool]string{true: "enabled", false: "disabled"}[f.GatewayPorts] + " (forwarded ports on other addresses than loopback)")
 	inv.echo("  system-shell tiers: " + tierCSV(f.SystemShellTiers))
 	inv.echo("  system-shell path: " + f.SystemShell)
 	inv.echo("  list-max: " + strconv.Itoa(f.ListMax) + " (completions listed without asking; set in " + inv.app.Paths.ConsoleFile + ")")
@@ -141,8 +142,8 @@ func (inv *invocation) consoleServerSection(pol *console.Policy, consoleUsers []
 			continue
 		}
 		inv.echo("  sshd for " + u + ": allowtcpforwarding " + st.TCPForwarding + ", allowagentforwarding " + st.AgentForwarding +
-			", forcecommand " + dash(st.ForceCommand) + ", pubkeyauthentication " + dash(st.PubkeyAuth))
-		problems = append(problems, st.Problems(pol.AgentForwarding(), inv.userForwards(pol, u), inv.app.Paths.ConsoleCommand)...)
+			", forcecommand " + dash(st.ForceCommand) + ", pubkeyauthentication " + dash(st.PubkeyAuth) + sshdGatewayPorts(st))
+		problems = append(problems, st.Problems(pol.AgentForwarding(), inv.userForwards(pol, u), pol.GatewayPorts(), inv.app.Paths.ConsoleCommand)...)
 	}
 	problems = append(problems, inv.consoleFirstValueHint(pol, probe, problems)...)
 	if len(problems) > 0 {

@@ -74,6 +74,11 @@ type File struct {
 	// ForwardingTiers are the tiers whose console logins may forward X11
 	// and TCP ports (sshd's drop-in, and the console's ssh to a device).
 	ForwardingTiers []tier.Tier
+	// GatewayPorts lets the forwarding tiers bind forwarded ports to an
+	// address other than loopback: sshd's GatewayPorts clientspecified for
+	// their remote forwards, and -g and a bind address on the console's
+	// ssh -L/-D.
+	GatewayPorts bool
 	// ListMax is the number of completions the shell lists without asking.
 	ListMax int
 }
@@ -316,15 +321,18 @@ func parseSettings(f *File, m *yamlpy.Map) error {
 			} else {
 				f.ListMax = n
 			}
-		case "agent_forwarding", "ssh_escape":
+		case "agent_forwarding", "ssh_escape", "gateway_ports":
 			b, ok := v.(bool)
 			if !ok {
 				return bad
 			}
-			if k == "agent_forwarding" {
+			switch k {
+			case "agent_forwarding":
 				f.AgentForwarding = b
-			} else {
+			case "ssh_escape":
 				f.SSHEscape = b
+			default:
+				f.GatewayPorts = b
 			}
 		case "system_shell":
 			s, ok := v.(string)
@@ -393,6 +401,7 @@ func (f *File) doc() *yamlpy.Map {
 			"system_shell", f.SystemShell,
 			"system_shell_tiers", words(f.SystemShellTiers),
 			"forwarding_tiers", words(f.ForwardingTiers),
+			"gateway_ports", f.GatewayPorts,
 			"list_max", f.ListMax,
 		),
 	)
