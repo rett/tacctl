@@ -46,6 +46,7 @@ Junos switch (`ssh` from the switch's CLI to the server):
 - `ssh <user>@<server>`: the banner (`tacctl console on <host> — type 'help'. Devices: device list. This session is logged.`), the prompt `<host>> `; Tab twice, `?`, `history`, `help`, `log tail -f` (until Ctrl-C), Ctrl-C at the prompt (a new prompt), `exit` (`Connection to <server> closed.`). Passed.
 - In the console, `ssh <device>` to the switch: logged in as the user; `~C` did nothing; after `exit` the journal has `ssh end user=<user> device=<device> status=0 duration=40 console=<session id>`. Passed.
 - As a superuser, a write (`user passwd ...`) asked sudo's password once, then used sudo's cache (recorded with the forwarding tiers above). Passed.
+- Gateway ports (CHANGELOG 73): enabled and synced, `sshd -T` gives the superuser `gatewayports clientspecified` and the operator `no`, and `console check` reports the settings in effect; `ssh -R 0.0.0.0:18080:localhost:22` from a workstation listened on `0.0.0.0:18080`. Disabled and synced, the same `-R` listened on `127.0.0.1:18080` only, and the console refused `ssh <device> -L 0.0.0.0:8443:localhost:443` before connecting (`forwarded ports listen on loopback only`). Passed; left disabled.
 
 ## Residual risks
 
