@@ -858,7 +858,7 @@ What to expect:
     there were deleted as removed users. Now, without `--scope`: a
     registered host stays in the scope it is registered in; any other host
     goes into the scope that answers its address, named with the prefix
-    (`10.125.0.222 (dev.example.net) is answered by scope 'lab' (prefix
+    (`192.0.2.22 (dev.example.net) is answered by scope 'lab' (prefix
     10.0.0.0/8); enrolling dev there`); a host whose address no scope covers
     is refused before anything changes, with the commands that add the
     address to a scope or make the host a scope of its own (`tacctl scope
@@ -909,7 +909,7 @@ What to expect:
     stays clean: the staging lines go to stderr.
 68. **One machine, one registration.** `host enroll` checked only the
     name, so a host enrolled as `rett@dev.example.net` could be enrolled again
-    by its address (as `h10-125-0-222`): two registrations, two scopes'
+    by its address (as `h192-0-2-22`): two registrations, two scopes'
     secrets and users fighting over one machine. Enroll now refuses a new
     name whose address another enrolled host reaches (its recorded address
     or its target's resolution, on the same ssh port; for this server, any
