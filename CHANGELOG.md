@@ -3,7 +3,7 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
-## 0.2.2 (unreleased)
+## 0.2.2 (2026-10-07)
 
 ### What changed
 
