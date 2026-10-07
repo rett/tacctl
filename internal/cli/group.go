@@ -49,11 +49,15 @@ var groupSpecs = map[string]Spec{
 	"commands seed":  {MaxArgs: 1, Args: []string{"readonly|operator|superuser"}, Flags: []Flag{{Names: []string{"--force"}}}},
 
 	"privilege list":   {MinArgs: 1, MaxArgs: 1, Args: []string{KindGroups}},
-	"privilege add":    {MinArgs: 2, MaxArgs: 2, Args: []string{KindGroups, ""}},
+	"privilege add":    {MinArgs: 2, MaxArgs: 2, Args: []string{KindGroups, privModeWords}},
 	"privilege remove": {MinArgs: 2, MaxArgs: 2, Args: []string{KindGroups, ""}},
 	"privilege clear":  {MinArgs: 1, MaxArgs: 1, Args: []string{KindGroups}},
 	"privilege seed":   {MaxArgs: 1, Args: []string{"readonly|operator|superuser"}, Flags: []Flag{{Names: []string{"--force"}}}},
 }
+
+// privModeWords are what completion offers for the entry of 'privilege
+// add': the mode prefixes an entry may start with (names.PrivModes).
+var privModeWords = "exec:|exec all:|configure:|configure all:"
 
 func groupCmd(inv *invocation) *cobra.Command {
 	n := func(run func([]string) error) func(*cobra.Command, []string) error {
@@ -745,10 +749,17 @@ func (inv *invocation) privList(input string, check bool) ([]string, error) {
 		if w == "" {
 			continue
 		}
+		// An entry may start with a mode (exec:, exec all:, configure:,
+		// configure all:); it is kept in its stored form, so 'exec: x' and
+		// 'x' are the same mapping.
 		if check {
-			if err := names.ValidatePrivCommandString(w); err != nil {
+			entry, err := names.ValidatePrivEntry(w)
+			if err != nil {
 				return nil, inv.validated(err)
 			}
+			w = entry
+		} else if mode, cmd, ok := names.SplitPrivEntry(w); ok {
+			w = names.PrivEntry(mode, cmd)
 		}
 		out = append(out, w)
 	}
@@ -804,15 +815,11 @@ func (inv *invocation) groupPrivilege(args []string) error {
 		case c.HasOverride(path):
 			inv.echoE("  Source: " + b + "explicit" + nc + " (tacctl.yaml: " + path + ")")
 			inv.echo("")
-			inv.listLines(merged)
+			inv.privLines(merged, "")
 		default:
 			inv.echoE("  Source: " + b + "default" + nc + " (built-in safe defaults; override via 'tacctl group privilege add')")
 			inv.echo("")
-			for _, x := range strings.Split(captured(merged), "\n") {
-				if x != "" {
-					inv.echo("  - " + x + "  (default)")
-				}
-			}
+			inv.privLines(merged, "  (default)")
 		}
 		inv.echo("")
 	case "add", "remove":
@@ -887,6 +894,18 @@ func (inv *invocation) groupPrivilege(args []string) error {
 		inv.echo("")
 	}
 	return nil
+}
+
+// privLines lists privilege mappings with their mode in a column (exec,
+// exec all, configure, configure all), each line ended by suffix.
+func (inv *invocation) privLines(entries []string, suffix string) {
+	for _, e := range strings.Split(captured(entries), "\n") {
+		if e == "" {
+			continue
+		}
+		mode, cmd, _ := names.SplitPrivEntry(e)
+		inv.echo(fmt.Sprintf("  - %-13s  %s%s", mode, cmd, suffix))
+	}
 }
 
 // groupField is the priv-lvl and class text of group in model_group_info's

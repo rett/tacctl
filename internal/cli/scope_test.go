@@ -320,7 +320,20 @@ func TestGroupFamily(t *testing.T) {
 	sb.run("", []string{"group", "privilege", "add", "operator", "show version"})
 	sb.expect(0, "Added 1 priv-exec mapping(s) for group 'operator' (level 7):\n    - show version\n", "")
 	sb.run("", []string{"group", "privilege", "list", "operator"})
-	sb.expect(0, "  - show version\n", "")
+	sb.expect(0, "  - exec           show version\n", "")
+	// A mode prefix (0.2.2): stored as typed, listed in its column, and
+	// 'exec:' is the same mapping as none.
+	sb.run("", []string{"group", "privilege", "add", "operator", "configure all:  router bgp,exec: show version,exec all: show ip"})
+	sb.expect(0, "Added 2 priv-exec mapping(s) for group 'operator' (level 7):\n    - configure all: router bgp\n    - exec all: show ip\n", "")
+	sb.run("", []string{"group", "privilege", "list", "operator"})
+	sb.expect(0, "  - configure all  router bgp\n  - exec all       show ip\n", "")
+	if o := sb.overrides(); !strings.Contains(o, "- 'configure all: router bgp'\n") {
+		t.Errorf("tacctl.yaml:\n%s", o)
+	}
+	sb.run("", []string{"group", "privilege", "add", "operator", "config: router bgp"})
+	sb.expect(1, "", "Unknown privilege mode 'config' in 'config: router bgp'.")
+	sb.run("", []string{"group", "privilege", "remove", "operator", "configure all: router bgp,exec all:show ip"})
+	sb.expect(0, "Removed 2 priv-exec mapping(s) for group 'operator':", "")
 	sb.run("y\n", []string{"group", "remove", "helpdesk"})
 	sb.expect(0, "Group 'helpdesk' removed.", "")
 	sb.run("y\n", []string{"group", "remove", "operator"})

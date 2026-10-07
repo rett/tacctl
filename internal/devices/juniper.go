@@ -1,9 +1,12 @@
 package devices
 
 import (
+	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 
+	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/policy"
 	"github.com/rett/tacctl/internal/ui"
 )
@@ -34,9 +37,20 @@ var (
 // suggested from its name.
 type juniperGroup struct{ name, class, junos string }
 
+// EngineerClass is the least-privilege class of the engineer role (D20),
+// the one the role preset gives it: a group using it gets engineerBits as
+// its template user's permissions.
+const EngineerClass = policy.EngineerClass
+
+// engineerBits are ENG-CLASS's permission bits (D20).
+var engineerBits = []string{"view", "view-configuration", "network", "clear", "trace", "reset", "configure", "rollback",
+	"interface", "interface-control", "routing", "routing-control", "firewall", "firewall-control",
+	"system", "system-control", "snmp"}
+
 // juniperGroups is the awk over model_group_info: the groups with a
 // Juniper class, the login class 'super-user' for a name with super or
-// admin in it, 'read-only' for one with read, else 'operator'.
+// admin in it, 'read-only' for one with read, else 'operator'; a group
+// whose class is ENG-CLASS gets the engineer bits whatever its name.
 func juniperGroups(d Data) []juniperGroup {
 	var out []juniperGroup
 	for _, g := range groupInfo(d.Model) {
@@ -44,7 +58,9 @@ func juniperGroups(d Data) []juniperGroup {
 			continue
 		}
 		cls := "operator"
-		if reSuperAdmin.MatchString(g.name) {
+		if g.class == EngineerClass {
+			cls = "engineer"
+		} else if reSuperAdmin.MatchString(g.name) {
 			cls = "super-user"
 		} else if reRead.MatchString(g.name) {
 			cls = "read-only"
@@ -52,6 +68,51 @@ func juniperGroups(d Data) []juniperGroup {
 		out = append(out, juniperGroup{g.name, g.class, cls})
 	}
 	return out
+}
+
+// juniperServerRules is Step 3 (D6): for each class, the deny-commands and
+// deny-configuration values the server sends at login with the class name
+// (TACACS+ service junos-exec; RADIUS Juniper-Deny-Commands and
+// Juniper-Deny-Configuration), with their sizes. All comments: the
+// classes keep their permission bits and nothing here is pasted.
+func juniperServerRules(c *conf.Config, groups []juniperGroup, protocol string) string {
+	var b strings.Builder
+	b.WriteString("# The classes in Step 1 carry permission bits only. At each login the server\n")
+	if protocol == RADIUS {
+		b.WriteString("# sends the group's deny values with its class (Juniper-Deny-Commands and\n" +
+			"# Juniper-Deny-Configuration, next to Juniper-Local-User-Name), and Junos\n")
+	} else {
+		b.WriteString("# sends the group's deny values with its class (TACACS+ service junos-exec:\n" +
+			"# deny-commands and deny-configuration, next to local-user-name), and Junos\n")
+	}
+	b.WriteString("# applies them on top of the class's permissions. Nothing to paste here: they\n" +
+		"# are set on the tacctl server ('tacctl group junos <group> ...') and apply at\n" +
+		"# the next login.\n")
+	for _, g := range groups {
+		b.WriteString("# class '" + g.class + "' (group '" + g.name + "')\n")
+		sent := false
+		for _, attr := range conf.JunosAttrs {
+			items := policy.JunosSet(c, g.name, attr)
+			if len(items) == 0 {
+				continue
+			}
+			sent = true
+			v := conf.JunosValue(items)
+			fmt.Fprintf(&b, "#   %-19s %d/%d bytes: %s\n", conf.JunosArg(attr), len(v), conf.JunosLimit(attr), v)
+		}
+		if !sent {
+			b.WriteString("#   none: tacctl group junos " + g.name + " deny-commands add '<regex>'\n")
+		}
+	}
+	b.WriteString("# A class set up from the walkthrough of tacctl 0.2.1 or earlier may still hold\n" +
+		"# 'tacctl group commands' rules translated into allow-commands/deny-commands.\n" +
+		"# Those rules are Cisco's; delete them so only the permission bits and the\n" +
+		"# server's values apply, e.g.:\n")
+	for _, g := range groups {
+		b.WriteString("#   delete system login class " + g.class + " allow-commands\n" +
+			"#   delete system login class " + g.class + " deny-commands\n")
+	}
+	return strings.TrimSuffix(b.String(), "\n")
 }
 
 // juniperAuthnOrder is the authentication-order of the scope's aaa-order
@@ -89,6 +150,8 @@ func JuniperVars(req Request, d Data) map[string]string {
 			for _, p := range []string{"clear", "network", "reset", "trace", "view", "view-configuration"} {
 				users.WriteString("set system login class " + j + " permissions " + p + "\n")
 			}
+		case "engineer":
+			users.WriteString("set system login class " + j + " permissions [ " + strings.Join(engineerBits, " ") + " ]\n")
 		case "super-user":
 			users.WriteString("set system login class " + j + " permissions all\n")
 		default:
@@ -180,6 +243,11 @@ func JuniperVars(req Request, d Data) map[string]string {
 	for _, g := range groups {
 		verify += "\n  show configuration system login user " + g.class
 	}
+	if req.Protocol == RADIUS {
+		verify += "\n  show cli authorization    (after a RADIUS login: lists the server's deny values)"
+	} else {
+		verify += "\n  show cli authorization    (after a TACACS+ login: lists the server's deny values)"
+	}
 
 	var summary strings.Builder
 	for _, g := range groups {
@@ -189,65 +257,27 @@ func JuniperVars(req Request, d Data) map[string]string {
 			desc = "local: view + view-configuration"
 		case "operator":
 			desc = "local: clear/network/reset/trace/view + view-configuration"
+		case "engineer":
+			desc = "local: operator bits + configure/rollback and interface, routing, firewall, system, snmp"
 		case "super-user":
 			desc = "local: all"
 		}
-		summary.WriteString("  " + g.name + ": " + g.class + " (" + desc + ")\n")
+		var sets []string
+		for _, attr := range conf.JunosAttrs {
+			if items := policy.JunosSet(c, g.name, attr); len(items) > 0 {
+				sets = append(sets, conf.JunosArg(attr)+" "+strconv.Itoa(len(conf.JunosValue(items)))+"/"+strconv.Itoa(conf.JunosLimit(attr)))
+			}
+		}
+		line := "  " + g.name + ": " + g.class + " (" + desc + ")"
+		if len(sets) > 0 {
+			line += ", junos: " + strings.Join(sets, ", ")
+		}
+		summary.WriteString(line + "\n")
 	}
 
-	// The command rules as the class's allow-commands / deny-commands,
-	// enforced by Junos itself: each rule's name joins an alternation (its
-	// match regexes are not carried over).
-	var rules strings.Builder
-	if anyGroupHasCommands(c) {
-		if req.Protocol == RADIUS {
-			rules.WriteString("# Per-command rules (enforced LOCALLY by Junos on the class, not by the RADIUS server).\n" +
-				"# Push these on every device after 'tacctl group commands' changes.\n")
-		} else {
-			rules.WriteString("# Per-command authorization (enforced LOCALLY by Junos, not via TACACS+).\n" +
-				"# Push these on every device after 'tacctl group commands' changes.\n")
-		}
-		for _, g := range groups {
-			ls := lines(policy.Lines(c, g.name))
-			if len(ls) == 0 {
-				continue
-			}
-			def := policy.DefaultAction(c, g.name)
-			var permit, deny []string
-			for _, l := range ls {
-				f := strings.SplitN(l, "|", 3)
-				name, action := f[0], ""
-				if len(f) > 1 {
-					action = f[1]
-				}
-				if name == "" || name == "*" {
-					continue
-				}
-				if action == "permit" {
-					permit = append(permit, name)
-				} else {
-					deny = append(deny, name)
-				}
-			}
-			rules.WriteString("# class '" + g.class + "' (group '" + g.name + "', default " + def + ")\n")
-			if len(permit) > 0 {
-				rules.WriteString("set system login class " + g.class + ` allow-commands "^(` + strings.Join(permit, "|") + `)( .*)?$"` + "\n")
-			}
-			if len(deny) > 0 {
-				rules.WriteString("set system login class " + g.class + ` deny-commands "^(` + strings.Join(deny, "|") + `)( .*)?$"` + "\n")
-			}
-			if def == "deny" && len(permit) == 0 {
-				rules.WriteString("# Default action is 'deny' but no allow-commands set —\n")
-				rules.WriteString("# this class will be unable to run anything. Add explicit\n")
-				rules.WriteString("# permits with 'tacctl group commands add " + g.name + " <name> --action permit'.\n")
-			}
-		}
-	}
-	classRules := strings.TrimSuffix(rules.String(), "\n")
-	if !anyGroupHasCommands(c) {
-		classRules = "# Per-command authorization not configured.\n" +
-			"# To restrict commands per group, use 'tacctl group commands' on the tacctl server."
-	}
+	// Step 3: what the server sends per class at login (D6). The classes
+	// keep their permission bits; nothing here is pasted.
+	classRules := juniperServerRules(c, groups, req.Protocol)
 
 	return map[string]string{
 		"SERVER_IP":           serverIP,

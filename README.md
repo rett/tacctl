@@ -295,12 +295,15 @@ Cisco IOS gates command **availability** by privilege level (`privilege exec lev
 tacctl group privilege seed                  # built-in defaults (only verified move-DOWNs)
 tacctl group privilege list operator         # show current mappings + source (explicit / default)
 tacctl group privilege add operator 'show ip route'
+tacctl group privilege add operator 'configure: router bgp','exec all: show ip'
 tacctl group privilege remove operator 'show running-config'
 ```
+An entry may start with a mode: `exec:` (the default when there is none), `exec all:`, `configure:` or `configure all:`. `config cisco` renders it as `privilege <mode> [all] level <N> <command>` (`privilege configure level 7 router bgp`), and `group privilege list` shows the mode in its own column. An entry is stored as typed in its mode's form (`exec: show ip` and `show ip` are the same mapping).
+
 Defaults move only verified priv-15 commands DOWN to lower groups (e.g. `show running-config` → priv 7 for `operator`); they never move commands UP from a lower default level (which would silently restrict them from `readonly` users). Mappings live under `privileges.<group>` in `/etc/tacctl/tacctl.yaml` and survive `tacctl upgrade`. They are emitted by `config cisco` for both protocols.
 
 ### Per-command authorization
-Restrict which commands a group can run, enforced live by Cisco IOS via TACACS+ and mirrored into Junos class `allow-commands`/`deny-commands` by `tacctl config juniper`. **RADIUS has no per-command authorization**: over RADIUS a group's users are limited only by the privilege level, login class or access level the Access-Accept carries (`tacctl status`, `config render` and `backend enable` name the groups whose rules RADIUS does not enforce; the Junos class rules are local to the device and stay in force). Tacctl ships sensible defaults — no seed step needed for fresh installs:
+Restrict which commands a group can run on Cisco devices, enforced live by Cisco IOS via TACACS+. Junos devices do not use these rules: the server sends them each group's own `deny-commands` and `deny-configuration` sets at login (`tacctl group junos`; see [Juniper Junos](#juniper-junos)). **RADIUS has no per-command authorization on Cisco**: over RADIUS a group's users are limited only by the privilege level, login class or access level the Access-Accept carries (`tacctl status`, `config render` and `backend enable` name the groups whose rules RADIUS does not enforce). Tacctl ships sensible defaults — no seed step needed for fresh installs:
 
 - `superuser`: unrestricted `*` catch-all (permit).
 - `operator`: permits `show`, `ping`, `traceroute`, `terminal`; default **deny** catch-all.
@@ -323,7 +326,7 @@ Rules are tried in order, the order `tacctl group commands list <group>` numbers
 tacctl group commands add operator show --match '^crypto( .*)?' --action deny --before show
 ```
 `tacctl group commands remove <group> <name>` refuses when several rules share the name; pick one with `--match` (the rule's regexes, all of them, in order) and `--action`, or pass `--all` to drop them all.
-The trailing `*` catchall encodes the default action. Once any group has rules, `tacctl config cisco` emits `aaa authorization commands 1/7/15 default group TACACS-GROUP local` so IOS asks tacquito per command. Juniper enforcement is local via class `allow-commands`/`deny-commands` regex — `tacctl config juniper` emits the equivalent `set system login class …` lines, but you must push them to each device.
+The trailing `*` catchall encodes the default action. Once any group has rules, `tacctl config cisco` emits `aaa authorization commands <level> default group TACACS-GROUP local` for every privilege level a group uses, and `aaa authorization config-commands`, so IOS asks tacquito per command, configuration commands included. A level where some group has no rules gets the line commented out instead, naming the group and the fix (`tacctl group commands default <group> permit`): emitted, it would have the server deny that group every command.
 
 When you add the first rule to a group, tacctl auto-seeds a `* permit` catchall onto sibling groups at the same Cisco priv-lvl so their users aren't accidentally locked out.
 
@@ -750,8 +753,9 @@ group commands remove <group> <name> [--all]              Drop a rule (--match/-
                                   [--match <regex>]... [--action permit|deny]
 group commands clear <group>                              Wipe rules for a group
 group commands seed [<group>] [--force]                   Populate built-ins with sensible defaults
-group privilege list <group>                              Show Cisco priv-exec mappings
-group privilege add <group> '<cmd>'[,'<cmd>'...]          Move one or more commands to the group's priv-lvl
+group privilege list <group>                              Show Cisco privilege mappings and their modes
+group privilege add <group> '<cmd>'[,'<cmd>'...]          Move one or more commands to the group's priv-lvl ('<mode>: <cmd>'
+                                                          for exec all, configure or configure all; exec without one)
 group privilege remove <group> '<cmd>'[,'<cmd>'...]       Remove one or more mappings
 group privilege clear <group>                             Wipe explicit mappings (revert to defaults)
 group privilege seed [<group>] [--force]                  Populate built-ins with safe priv-exec defaults
@@ -1114,9 +1118,10 @@ privilege level command mappings. All groups and their privilege levels are incl
 dynamically.
 
 **Key points:**
-- `local` fallback ensures access if TACACS+ is unreachable
-- Custom privilege levels (2-14) require `privilege exec level` command mappings
-- Use `config cisco` to regenerate after adding groups
+- `local` fallback ensures access if TACACS+ is unreachable. A group at priv-lvl 15 is kept apart from the superusers only by the server's rules, so with the server unreachable the fallback lets it run everything
+- Per-command authorization and command accounting: `aaa accounting commands <level>` for every privilege level a group uses, always; once any group has command rules also `aaa authorization commands <level>` per level (commented out, with the group named, for a level where a group has no rules), `aaa authorization config-commands`, and `aaa authorization console` commented out (uncomment it to have commands typed on the console line authorized by the server too)
+- Custom privilege levels (2-14) require `privilege exec level` command mappings (or another mode: see [Cisco priv-exec mappings](#cisco-priv-exec-mappings))
+- Use `config cisco` to regenerate after adding groups, and re-paste the AAA block after a group's level changes
 - By default the output uses the modern IOS 15.0+ `tacacs server <name>` block. For older devices
   (e.g. IOS 12.4), add `--legacy` to emit the global `tacacs-server host` / `aaa group server ... / server <ip>`
   syntax instead. Only the server-definition block changes; the AAA, privilege, and line config are identical.
@@ -1129,6 +1134,9 @@ verification commands. All groups and their Juniper classes are included dynamic
 **Key points:**
 - Template users MUST exist before TACACS+ logins will work
 - If a login fails silently after successful TACACS+ auth, the template user is missing
+- The classes carry permission bits only. A group whose class is `ENG-CLASS` gets the engineer bits (`view view-configuration network clear trace reset configure rollback interface interface-control routing routing-control firewall firewall-control system system-control snmp`) and its template user
+- Step 3 lists, per class, what the server sends at login: the group's `deny-commands` and `deny-configuration` values with their sizes against the 241 and 236 byte limits, or `none`. Nothing in it is pasted; the sets are changed on the tacctl server with `tacctl group junos` and apply at the next login. `show cli authorization` after a login shows the values the device received
+- The `tacctl group commands` rules are Cisco's and are no longer translated into class `allow-commands`/`deny-commands`; Step 3 lists the `delete system login class <class> allow-commands` lines that remove what an earlier walkthrough put there
 - Use `config juniper` to regenerate after adding groups
 
 ### RADIUS device configs (`--protocol radius`)
@@ -1136,7 +1144,7 @@ verification commands. All groups and their Juniper classes are included dynamic
 `tacctl config cisco|juniper|wti --protocol radius` renders the configuration for logging in to a device against this server's RADIUS backend (`tacctl backend enable radius`). The server address, the authentication and accounting ports (the `auth` and `acct` RADIUS listeners; `tacctl config listen --backend radius show`) and the scope's shared secret are filled in; the management ACL, exec timeout, `aaa-order` (the server first, or local first) and the local fallback behave as in the TACACS+ output.
 
 - **Cisco** gets a `radius server RADIUS` block, `aaa group server radius <radius-group>` (see `scope radius-group`), `aaa authentication login`, `aaa authorization exec` (the privilege level comes from `Cisco-AVPair = "shell:priv-lvl=N"`, which the scope must send: see [What an Access-Accept carries](#what-an-access-accept-carries)) and `aaa accounting exec`, plus the same `privilege exec level` mappings. `--legacy` (IOS 12.x) is TACACS+ only.
-- **Juniper** gets `system radius-server` (explicit ports), `authentication-order radius` (or `[ password radius ]`), `system accounting destination radius`, the template users the server maps logins to with `Juniper-Local-User-Name`, and the same per-class `allow-commands`/`deny-commands` rules, which stay in force because the class is local to the device.
+- **Juniper** gets `system radius-server` (explicit ports), `authentication-order radius` (or `[ password radius ]`), `system accounting destination radius`, the template users the server maps logins to with `Juniper-Local-User-Name`, and the same Step 3: with the class the server sends the group's `Juniper-Deny-Commands` and `Juniper-Deny-Configuration` where it has a set, which Junos enforces as it does over TACACS+.
 - **What the Access-Accept carries for the device, and what is lost compared with TACACS+** is printed under every RADIUS config: `Service-Type` and the vendor's attribute (and whether the scope enables it or only tagged addresses get it); no per-command authorization (the only authorization is the privilege level, login class or access level in the Access-Accept; `tacctl group commands` rules are not enforced by the server), no command accounting (exec/login events only), PAP only, and UDP instead of TCP/49.
 - **Refused, with an error and no output:** the RADIUS backend not enabled; a scope whose `scope protocols` filter leaves out `radius` (the daemon would ignore its devices); a scope that sends the vendor's attribute to none of its devices (neither enabled with `scope vendor-attrs` nor any address tagged with it; the error prints the command that enables it); and a scope secret holding a character an IOS or Junos CLI reads as syntax (whitespace, quotes, a backtick, a non-ASCII character, or any of `? ! # $ \ ; { } [ ] | & < > , * ( )`). Letters, digits and `. _ + / = : @ % ^ ~ -` paste as they are, and `scope secret generate` (base64) makes such a secret. The scope secret is shared with TACACS+, so changing it means changing it on every device of the scope. A secret longer than 63 characters renders with a warning (some RADIUS clients take no more).
 - **A listener bound to one IPv4 address** is used as the server address; IPv6 listeners and a loopback bind are warned about.
@@ -1149,30 +1157,33 @@ Nothing here was tested against Cisco, Juniper or WTI hardware: the device synta
 WTI units are configured through numbered text menus on the serial SetUp port, so
 `tacctl config wti` prints a walkthrough instead of a pasteable config: `/N` → the
 **TACACS** entry (item 28 on recent firmware) → one value per menu item, then `[Esc]`
-until "Saving Configuration". No WTI-specific service is added to `tacquito.yaml` — the
-unit requests exec authorization and reads the standard `priv-lvl` attribute from the same
-`shell` service Cisco uses. WTI maps priv-lvl bands to its four access levels:
+until "Saving Configuration". The unit asks for the `wti` service (its factory Service
+Name) and reads the standard `priv-lvl` attribute from the answer. A group with a WTI level
+of its own (`tacctl group edit <group> wti-level ...`) is answered from its `wti` service in
+`tacquito.yaml`; any other group gets the `priv-lvl` of its `shell` service, through the
+default-service-permit patch (`patches/0001`). WTI maps priv-lvl bands to its four access levels:
 
 | priv-lvl | WTI access level | Shipped group |
 |----------|------------------|---------------|
 | 0-4 | ViewOnly (only the ports/services granted under Default TACACS User Access; factory: none) | `readonly` (1) |
 | 5-9 | User (only the ports/services granted under Default TACACS User Access; factory: none) | `operator` (7) |
-| 10-14 | SuperUser (all ports/plugs; no configuration menus) | *(add a group at 10-14)* |
+| 10-14 | SuperUser (all ports/plugs; no configuration menus) | *(set a group's `wti-level superuser`)* |
 | 15 | Administrator | `superuser` (15) |
 
 **Key points:**
 - WTI authenticates with **PAP**; tacquito's bcrypt authenticator handles PAP, nothing to change server-side
 - **Account Management Module = Enabled** is the authorization request that carries `priv-lvl`; **Session Management Module = Enabled** is accounting (the unit's client uses PAM terminology). Accounting needs tacquito built with `patches/0002` (empty `server_msg` on accounting success): given upstream's `success, logging started` message, the unit drops the SSH session right after login. `tacctl install` / `tacctl upgrade` apply the patch overlay
-- **Service Name** is set to `shell` so the unit's request matches tacquito's configured service directly. The factory default `wti` also works, but only through the default-service-permit patch in `patches/` (an unmatched service is answered with the group's `shell` priv-lvl)
+- **Service Name** stays at the factory `wti`, which per-group WTI levels need. A unit set to `shell` by the walkthrough of tacctl 0.2.1 or earlier still logs every group in at its priv-lvl band, but it ignores the WTI levels set on groups until its Service Name is set back to `wti`
+- The summary shows each group's level: its priv-lvl band, or the level set on it (`engineer: priv-lvl 15 → SuperUser (wti-level override; auto: Administrator)`)
 - **Fallback Local** follows the scope's `aaa-order`: `tacacs-first` → `On (Transport Failure)`, `local-first` → `On (All Failures)`. Keep a local Administrator account on the unit as break-glass
 - **Default User Access must be `On`** (Access Level `ViewOnly` as the least-privilege floor; the returned `priv-lvl` still sets the effective level). SSH logins go through the unit's OpenSSH, which has to resolve the account locally: with it `Off`, a TACACS-only user is invalid to sshd, which forwards a junk password (`\b\n\r\177INCORRECT…`), so tacquito logs `failed to validate the user` on every attempt no matter what was typed
 - If the unit's **IP Tables** (`/N`) end in `DROP`, they must accept `-i lo` and `-m conntrack --ctstate ESTABLISHED,RELATED` before the final DROP. Otherwise the unit's TACACS+ SYN leaves but tacquito's SYN-ACK is dropped: every login waits out the Fallback Timer, and tacquito logs nothing (only SYNs in tcpdump, half-open sockets in `ss`). The unit's Ping Test passes regardless — it is ICMP only
 - Test the first login with `ssh -o PreferredAuthentications=password <user>@<wti>` (`tacctl ssh <name>` uses the password method for every `wti` device). If a plain `ssh` is closed without a password prompt while the password method works, the unit's Invalid Access Lockout is armed from earlier failures — `/UL` clears it
 - Port and service access for User/ViewOnly-level logins is defined only under Default TACACS User Access → Port Access / Service Access (factory: Administrator and SuperUser get all ports, User and ViewOnly get none), so an operator (User) sees no ports until they are turned On there; on a power unit Plug Access and Plug Group Access work the same way. The lists are per unit and shared by every such login. Step 3 of `tacctl config wti` sets them, and its "Port access" section names the groups they apply to. A same-named local account on the unit overrides the server-assigned level, so keep the two directories disjoint
 - The output warns when the scope secret contains whitespace/punctuation or exceeds 32 characters, or when a scope member's username exceeds WTI's 32-character limit — regenerate a hex-only key with `tacctl scope secret <name> set $(openssl rand -hex 16)`
-- Verify with `tacctl config loglevel debug` + `tacctl log tail`: `accepting user [x] using a bcrypt password` (PAP), then `client args [service=shell ...]`, then `authorized user [x] ... [priv-lvl=N]`; accounting (start at login, stop after `/X`) lands in `tacctl log accounting`. On the unit, TACACS Parameters → `12. Debug: On` echoes every exchange on the serial session — turn it back `Off` when done
+- Verify with `tacctl config loglevel debug` + `tacctl log tail`: `accepting user [x] using a bcrypt password` (PAP), then `client args [service=wti ...]`, then `authorized user [x] ... [priv-lvl=N]`; accounting (start at login, stop after `/X`) lands in `tacctl log accounting`. On the unit, TACACS Parameters → `12. Debug: On` echoes every exchange on the serial session — turn it back `Off` when done
 
-**Over RADIUS** (`tacctl config wti --protocol radius`, or a scope that resolves to RADIUS) — **not verified on a unit.** The walkthrough follows WTI's documents for the RADIUS Parameters menu (`/N`, item 29 in the user guide; numbers vary by firmware): Enable, Primary Host and Secret Word, Fallback Timer and Retries (factory defaults), Fallback Local from the scope's `aaa-order` as above, the Authentication and Accounting Ports of this server's RADIUS listeners, Default RADIUS User Access `On` at `ViewOnly`, Debug. The server returns the access level in `WTI-Super` (vendor 24496, attribute 41), from the group's priv-lvl in the bands of the table above; the scope must send it (`tacctl scope vendor-attrs <scope> enable wti`, or tag the unit with `tacctl scope devices <scope> set <ip> wti`), or the walkthrough is refused. What carries over from the TACACS+ walkthrough: the unit's IP Tables must let the server's UDP replies in (ESTABLISHED,RELATED), keep a local Administrator, the lockout and `/UL`. Port and plug access is not sent (no `WTI-Port-Access`). WTI's user guide and knowledge base disagree on the level a login gets without `WTI-Super` (User or View), so the walkthrough sets it explicitly. `tacctl log tail --backend radius` shows each attempt, with `nas=` — what the unit sends as its NAS-Identifier.
+**Over RADIUS** (`tacctl config wti --protocol radius`, or a scope that resolves to RADIUS) — **not verified on a unit.** The walkthrough follows WTI's documents for the RADIUS Parameters menu (`/N`, item 29 in the user guide; numbers vary by firmware): Enable, Primary Host and Secret Word, Fallback Timer and Retries (factory defaults), Fallback Local from the scope's `aaa-order` as above, the Authentication and Accounting Ports of this server's RADIUS listeners, Default RADIUS User Access `On` at `ViewOnly`, Debug. The server returns the access level in `WTI-Super` (vendor 24496, attribute 41), from the group's WTI level, or its priv-lvl in the bands of the table above; the scope must send it (`tacctl scope vendor-attrs <scope> enable wti`, or tag the unit with `tacctl scope devices <scope> set <ip> wti`), or the walkthrough is refused. What carries over from the TACACS+ walkthrough: the unit's IP Tables must let the server's UDP replies in (ESTABLISHED,RELATED), keep a local Administrator, the lockout and `/UL`. Port and plug access is not sent (no `WTI-Port-Access`). WTI's user guide and knowledge base disagree on the level a login gets without `WTI-Super` (User or View), so the walkthrough sets it explicitly. `tacctl log tail --backend radius` shows each attempt, with `nas=` — what the unit sends as its NAS-Identifier.
 
 ### Custom Templates
 
@@ -1199,13 +1210,16 @@ The generated Cisco, Juniper, and WTI output is rendered from template files usi
 | `${AUTHN_METHODS}`, `${AUTHZ_EXEC_METHODS}`, `${EXEC_TIMEOUT}`, `${VTY_ACL_BLOCK}`, `${VTY_ACCESS_CLASS}` | Cisco | Method lists (from `aaa-order`), idle timeout and the management-ACL blocks |
 | `${RADIUS_CONFIG}` | Juniper RADIUS | Pre-rendered RADIUS server, authentication-order and accounting commands |
 | `${PRIVILEGE_COMMANDS}` | Cisco | Pre-rendered privilege level command mappings |
+| `${AUTHZ_COMMANDS_BLOCK}` | Cisco TACACS+ | Per-level `aaa authorization commands` lines, `config-commands` and the commented `console` line |
+| `${ACCT_COMMANDS_BLOCK}` | Cisco TACACS+ | One `aaa accounting commands <level>` line per privilege level in use (a template copied before 0.2.2 has the 1/7/15 lines written out) |
+| `${CLASS_COMMAND_RULES}` | Juniper | Step 3: what the server sends per class (comments only) |
 | `${TEMPLATE_USERS}` | Juniper | Pre-rendered `set system login user` lines |
 | `${TACPLUS_CONFIG}` | Juniper | Pre-rendered TACACS+ server setup commands |
 | `${VERIFY_COMMANDS}` | Juniper | Pre-rendered `show configuration` commands |
 | `${GROUP_SUMMARY}` | All | Human-readable group mapping table |
 | `${SCOPE}` | WTI | Name of the scope being rendered |
 | `${FALLBACK_LOCAL}` | WTI | `On (Transport Failure)` or `On (All Failures)`, from the scope's `aaa-order` |
-| `${SERVICE_NAME}` | WTI | Authorization service name the unit should send (`shell`) |
+| `${SERVICE_NAME}` | WTI | Authorization service name the unit should send (`wti`) |
 
 **To customize:** edit the copy in the override location (install puts one there; if it is missing, copy the default first):
 ```bash
@@ -1289,7 +1303,7 @@ After an upgrade: `tacctl status`, `tacctl config validate` (store, rendered con
 - Logged in at the wrong level, or without one: the scope does not send that vendor's attribute (`tacctl scope vendor-attrs <scope>`, `tacctl scope devices <scope>`)
 
 **WTI login refused, or lands at the wrong access level**
-- `tacctl config loglevel debug`, retry, then `tacctl log tail 50`: the `client args [...]` line shows the service name the unit sent. If it is not `shell`, set TACACS Parameters → Service Name to `shell` (or confirm the default-service-permit patch is applied: `tacctl status`)
+- `tacctl config loglevel debug`, retry, then `tacctl log tail 50`: the `client args [...]` line shows the service name the unit sent. If it is not `wti`, set TACACS Parameters → Service Name back to `wti` (with `shell` the WTI levels set on groups are ignored); a group without one is answered through the default-service-permit patch (`tacctl status` shows whether it is applied)
 - No authorization request at all → Account Management Module is Disabled on the unit
 - `failed to validate the user [x] using a bcrypt password` on every attempt although `tacctl user verify` accepts the password → Default User Access is `Off` on the unit (its sshd sends a junk password for users it cannot resolve); set it `On` / Access Level `ViewOnly`
 - Nothing in the tacquito log while the unit waits the Fallback Timer, SYNs visible in tcpdump → the unit's IP Tables drop tacquito's replies; add the `ESTABLISHED,RELATED` accept rule before the final DROP

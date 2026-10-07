@@ -54,6 +54,58 @@ current behaviour; this file is where history lives.
    `group commands` usage says how tacquito tests a `--match` (anchored at
    both ends, against the arguments joined by spaces).
 
+5. **`config cisco`, `config juniper` and `config wti` say what the server
+   now sends and what stays on the device.**
+   - **Cisco:** `aaa accounting commands <level>` is printed for every
+     privilege level a group uses, not for 1, 7 and 15 only. Once any group
+     has command rules, `aaa authorization commands <level>` follows for
+     every level in use, with `aaa authorization config-commands` and a
+     commented `aaa authorization console` to uncomment for the console
+     line. A level where a group has no rules gets its line commented out,
+     naming the group and the fix (`tacctl group commands default <group>
+     permit`), since the server would deny that group every command. The
+     notes say that a group at priv-lvl 15 is kept apart from the
+     superusers only by the server's rules, so the `local` fallback lets it
+     run everything while the server is unreachable. The shipped
+     `cisco.template` and `cisco-legacy.template` take the accounting lines
+     from the new `${ACCT_COMMANDS_BLOCK}`; a template copied to
+     `/etc/tacctl/templates` before 0.2.2 keeps the 1/7/15 lines it has
+     (`tacctl upgrade` writes this release's version beside it as
+     `<name>.template.new`). Re-paste the AAA block on Cisco devices.
+   - **Junos:** Step 3 no longer turns the `group commands` rules, which
+     are Cisco's, into class `allow-commands`/`deny-commands` lines. It is
+     a read-only summary of what the server sends per class at login: the
+     group's `deny-commands` and `deny-configuration` values with their
+     sizes against the 241 and 236 byte limits, or `none`, over TACACS+ and
+     over RADIUS (`Juniper-Deny-Commands`, `Juniper-Deny-Configuration`).
+     The classes keep their permission bits, and Step 3 lists the `delete
+     system login class <class> allow-commands` lines that remove what an
+     earlier walkthrough put there. A group whose class is `ENG-CLASS` gets
+     the engineer permission bits and its template user. The verify list
+     gains `show cli authorization`, and the group summary shows each set's
+     size.
+   - **WTI:** the Service Name is the factory `wti` again, which per-group
+     WTI levels need. A unit set to `shell` by an earlier walkthrough still
+     logs every group in at its priv-lvl band but ignores the WTI levels set
+     on groups until its Service Name is set back to `wti`. The summary
+     shows a group's level set with `wti-level` next to its band
+     (`priv-lvl 15 → SuperUser (wti-level override; auto: Administrator)`),
+     over TACACS+ and RADIUS, and the hint for an empty SuperUser band
+     points at `tacctl group edit <group> wti-level superuser`.
+   - The `group commands` usage says that Junos devices do not use these
+     rules.
+6. **`tacctl group privilege` entries may name a mode.** An entry may start
+   with `exec:` (the default when there is none), `exec all:`, `configure:`
+   or `configure all:` (`tacctl group privilege add operator 'configure:
+   router bgp','exec all: show ip'`); `config cisco` renders it as
+   `privilege <mode> [all] level <N> <command>`. `group privilege list`
+   shows each mapping's mode in a column, and an unknown mode is refused
+   (`Unknown privilege mode 'config' in 'config: router bgp'.`). Entries
+   stay in `privileges.<group>` of `tacctl.yaml`. A 0.2.1 binary reports an
+   entry with a mode as invalid in `config validate` and prints it after
+   `privilege exec level <N>` as it is, so remove such entries before
+   rolling back.
+
 ## 0.2.1 (2026-10-07)
 
 ### What changed

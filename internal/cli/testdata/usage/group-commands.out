@@ -46,7 +46,7 @@ artifact (do not hand-edit). RADIUS does not enforce them
 
 Cisco devices ask tacquito per command (live enforcement) when
 'aaa authorization commands <level>' is in the device config —
-tacctl auto-emits these lines in 'tacctl config cisco'. Juniper
-enforcement is LOCAL via class allow/deny-commands, rendered
-from the same tacctl-authored rules by 'tacctl config juniper'.
+tacctl auto-emits these lines in 'tacctl config cisco'. Junos
+devices do not use these rules: the server sends them the
+group's own deny sets ('tacctl group junos').
 

@@ -70,68 +70,94 @@ scope protocols lab set tacacs ;; config cisco --scope lab --protocol radius
 scope vendor-attrs lab enable cisco,juniper,wti ;; config juniper --scope lab --protocol radius
 
 # --- TACACS+ configs -------------------------------------------------------------------------
+@known 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device
 config cisco --scope lab
+@known 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device
 config cisco --scope prod
+@known 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device
 config cisco --legacy --scope lab
+@known 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device
 config cisco --scope lab --legacy --protocol tacacs
+@known 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device
 config cisco
+@known 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device
 config juniper --scope lab
+@known 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device
 config juniper --scope prod-inner --protocol tacacs
-@known 0.2.1 item 59: config wti sets Port Access in Step 3 and names the groups it applies to
+@known 0.2.1 item 59: config wti sets Port Access in Step 3 and names the groups it applies to; 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device
 config wti --scope lab
-@known 0.2.1 item 59: config wti sets Port Access in Step 3 and names the groups it applies to
+@known 0.2.1 item 59: config wti sets Port Access in Step 3 and names the groups it applies to; 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device
 config wti --scope dmz
-@known 0.2.1 item 59: config wti sets Port Access in Step 3 and names the groups it applies to
+@known 0.2.1 item 59: config wti sets Port Access in Step 3 and names the groups it applies to; 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device
 scope default prod ;; config juniper ;; config wti
-@known 0.2.1 item 59: config wti sets Port Access in Step 3 and names the groups it applies to
+@known 0.2.1 item 59: config wti sets Port Access in Step 3 and names the groups it applies to; 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device
 scope auth-method lab tacacs ;; config cisco --scope lab ;; config wti --scope lab
+@known 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device
 scope auth-method lab radius ;; config cisco --scope lab --legacy --protocol tacacs
+@known 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device
 scope protocols lab set tacacs,radius ;; config cisco --scope lab ;; config juniper --scope lab
-@known 0.2.1 item 59: config wti sets Port Access in Step 3 and names the groups it applies to
+@known 0.2.1 item 59: config wti sets Port Access in Step 3 and names the groups it applies to; 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device
 scope aaa-order lab local-first ;; config cisco --scope lab ;; config juniper --scope lab ;; config wti --scope lab ;; config cisco --scope prod
+@known 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device
 scope exec-timeout lab 15 ;; config cisco --scope lab ;; config juniper --scope lab
+@known 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device
 scope exec-timeout lab 0 ;; config cisco --legacy --scope lab
+@known 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device
 scope tacacs-group lab TACACS_PROD ;; config cisco --scope lab ;; config cisco --scope lab --legacy
+@known 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device
 scope radius-group lab RADIUS_LAB ;; config cisco --scope lab
 
 # management ACL: global, per scope, IPv6 skipped, names
+@known 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device
 config mgmt-acl add 10.0.0.0/8,192.168.1.0/24,fd00::/64 ;; config cisco --scope lab ;; config juniper --scope lab
+@known 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device
 config mgmt-acl cisco-name GLOBAL-VTY ;; scope mgmt-acl lab cisco-name LAB-VTY-ACL ;; config mgmt-acl add 10.0.0.0/8 ;; config cisco --scope lab ;; config cisco --scope prod
+@known 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device
 config mgmt-acl juniper-name GLOBAL-MGMT ;; scope mgmt-acl lab juniper-name LAB-MGMT-FILTER ;; scope mgmt-acl lab add 172.16.5.0/24 ;; config juniper --scope lab ;; config juniper --scope prod
+@known 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device
 scope mgmt-acl lab add fd00:1::/64 ;; config cisco --scope lab ;; config juniper --scope lab
 
 # groups: privilege mappings, command rules, the WTI bands
-@known 0.2.1 item 59: config wti sets Port Access in Step 3 and names the groups it applies to
+@known 0.2.1 item 59: config wti sets Port Access in Step 3 and names the groups it applies to; 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device
 group add wtisuper 12 OP-CLASS ;; config wti --scope lab ;; config cisco --scope lab ;; config juniper --scope lab
+@known 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device
 group add netadmin 15 RW-CLASS ;; group add readers 3 RO-CLASS ;; config juniper --scope lab ;; config cisco --scope lab
+@known 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device
 group privilege add operator 'show interfaces','show version' ;; config cisco --scope lab
+@known 0.2.2 item 6: group privilege entries may start with a mode
+group privilege add operator 'configure: router bgp','exec all: show ip' ;; config cisco --scope lab
+@known 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device
+group add helpdesk 5 HELPDESK-CLASS ;; config cisco --scope lab ;; config cisco --legacy --scope lab
+@known 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device
 group add helpdesk 7 OP-CLASS ;; group privilege add helpdesk 'show running-config','show clock' ;; config cisco --scope lab
+@known 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device
 group commands add readonly dir --action permit ;; group commands add operator reload --action deny ;; config juniper --scope lab
-@known 0.2.2 item 4: a removal names the rule's position, action and match
+@known 0.2.2 item 4: a removal names the rule's position, action and match; 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device
 group commands default readonly deny ;; group commands remove readonly show ;; group commands remove readonly ping ;; group commands remove readonly traceroute ;; config juniper --scope lab
 
 # secrets and users the WTI walkthrough warns about
-@known 0.2.1 item 59: config wti sets Port Access in Step 3 and names the groups it applies to
+@known 0.2.1 item 59: config wti sets Port Access in Step 3 and names the groups it applies to; 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device
 scope secret lab set 'ab+cd/ef=0123456789xyz' ;; config wti --scope lab
-@known 0.2.1 item 59: config wti sets Port Access in Step 3 and names the groups it applies to
+@known 0.2.1 item 59: config wti sets Port Access in Step 3 and names the groups it applies to; 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device
 scope secret lab set 'abcdefghij0123456789ABCDEFGHIJ0123456789' ;; config wti --scope lab
-@known 0.2.1 item 59: config wti sets Port Access in Step 3 and names the groups it applies to
+@known 0.2.1 item 59: config wti sets Port Access in Step 3 and names the groups it applies to; 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device
 scope secret lab set 'has space in the secret-0123' ;; config wti --scope lab ;; config cisco --scope lab ;; config juniper --scope lab
-@known 0.2.1 item 59: config wti sets Port Access in Step 3 and names the groups it applies to
+@known 0.2.1 item 59: config wti sets Port Access in Step 3 and names the groups it applies to; 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device
 scope secret lab set 'back\slash-in-the-secret-0123' ;; config wti --scope lab
-@known 0.2.1 item 59: config wti sets Port Access in Step 3 and names the groups it applies to
+@known 0.2.1 item 59: config wti sets Port Access in Step 3 and names the groups it applies to; 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device
 scope secret lab set 'café-in-the-secret-0123456' ;; config wti --scope lab
-@known 0.2.1 item 59: config wti sets Port Access in Step 3 and names the groups it applies to
+@known 0.2.1 item 59: config wti sets Port Access in Step 3 and names the groups it applies to; 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device
 scope secret lab set 'ideographic　space-0123456789' ;; config wti --scope lab
-@known 0.2.1 item 59: config wti sets Port Access in Step 3 and names the groups it applies to
+@known 0.2.1 item 59: config wti sets Port Access in Step 3 and names the groups it applies to; 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device
 scope secret lab set 'nbsp space-0123456789abcdef' ;; config wti --scope lab
-@known 0.2.1 item 59: config wti sets Port Access in Step 3 and names the groups it applies to
+@known 0.2.1 item 59: config wti sets Port Access in Step 3 and names the groups it applies to; 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device
 user add abcdefghij0123456789abcdefghij012 readonly --scopes lab --hash {HASH} ;; config wti --scope lab ;; config wti --scope prod
 
 # --- no store, no default scope -------------------------------------------------------
 @fixture tacquito.minimal.yaml
+@known 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device
 config cisco
-@known 0.2.1 item 59: config wti sets Port Access in Step 3 and names the groups it applies to
+@known 0.2.1 item 59: config wti sets Port Access in Step 3 and names the groups it applies to; 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device
 config wti
 config juniper --scope nosuch
 @fixture none

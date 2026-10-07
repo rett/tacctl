@@ -304,6 +304,12 @@ func (s *Schema) Validate(path string, value any, isList bool) string {
 			if !isStr {
 				return fmt.Sprintf("element %d: must be a string", i)
 			}
+			// 0.2.2: an entry may start with a mode (exec:, exec all:,
+			// configure:, configure all:); the command after it is checked.
+			// Any other ':' is an invalid character, as before.
+			if _, cmd, ok := names.SplitPrivEntry(str); ok {
+				str = cmd
+			}
 			if !pyMatch(reCmd, str) {
 				return fmt.Sprintf("element %d: %s has invalid characters (letters/digits/spaces/_/- only)", i, py.ReprString(str))
 			}

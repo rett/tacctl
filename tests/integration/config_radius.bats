@@ -209,7 +209,7 @@ radius_listeners() {
 
 # --- Juniper content ----------------------------------------------------------
 
-@test "config juniper --protocol radius: server, order, accounting, template users, local class rules" {
+@test "config juniper --protocol radius: server, order, accounting, template users, the server's class rules" {
     radius_on
     run "$TACCTL_BIN_SCRIPT" config juniper --scope lab --protocol radius
     assert_success
@@ -219,22 +219,26 @@ radius_listeners() {
     assert_output --partial "set system authentication-order radius"
     assert_output --partial "set system accounting destination radius"
     assert_output --partial "set system login user RW-CLASS class RW-CLASS"
-    # The class is local to the device: the allow/deny rules stay meaningful.
-    assert_output --partial 'set system login class RO-CLASS allow-commands "^(show|ping|traceroute)( .*)?$"'
-    assert_output --partial "enforced LOCALLY by Junos on the class, not by the RADIUS server"
+    # Step 3 says what the server sends; the Cisco rules are not translated (D6).
+    refute_output --partial 'set system login class RO-CLASS allow-commands'
+    assert_output --partial "# Step 3: Per-class rules sent by the server at login (read-only summary)"
+    assert_output --partial "(Juniper-Deny-Commands and"
+    assert_output --partial "show cli authorization    (after a RADIUS login: lists the server's deny values)"
     assert_output --partial "show configuration system radius-server"
     local cfg="${output%%Group → Juniper Class Mapping*}"
     [[ "$cfg" != *tacplus* && "$cfg" != *TACACS* ]]
     assert_output --partial "$(shipped_template_note juniper-radius)"
 }
 
-@test "config juniper --protocol radius: the summary says what RADIUS loses and that the class rules stay" {
+@test "config juniper --protocol radius: the summary says what RADIUS loses and that the deny values come with the class" {
     radius_on
     run "$TACCTL_BIN_SCRIPT" config juniper --scope lab --protocol radius
     assert_success
     assert_output --partial "What RADIUS does not give you (compared with TACACS+)"
     assert_output --partial "Juniper-Local-User-Name"
-    assert_output --partial "the allow-commands/deny-commands"
+    assert_output --partial "  - With it, Juniper-Deny-Commands and Juniper-Deny-Configuration where the group has"
+    assert_output --partial "Juniper-Deny-Configuration (Step 3), which Junos"
+    refute_output --partial "the allow-commands/deny-commands"
     assert_output --partial "No command accounting"
     assert_output --partial "Password logins only (PAP)"
 }
@@ -539,6 +543,25 @@ radius_listeners() {
     assert_output --partial "tacctl log tail 20 --backend radius"
     assert_output --partial "nas= -- what the unit sent as its"
     assert_output --partial "WTI-Super from the user's group: the scope enables it"
+}
+
+@test "config wti --protocol radius: a group's wti-level sets its WTI-Super, the band is shown beside it" {
+    printf 'wti_level:\n  superuser: superuser\n' >> "$OVERRIDES"
+    radius_on
+    run "$TACCTL_BIN_SCRIPT" config wti --scope lab --protocol radius
+    assert_success
+    assert_output --partial "superuser: priv-lvl 15 → WTI-Super 2 (SuperUser; wti-level override, auto: Administrator)"
+    assert_output --partial "operator: priv-lvl 7 → WTI-Super 1 (User)"
+    refute_output --partial "No group lands in the SuperUser band"
+}
+
+@test "config juniper --protocol radius: a group's deny sets are listed in Step 3 with their sizes" {
+    printf 'junos:\n  operator:\n    deny_commands: ["^(request|start)( .*)?$"]\n' >> "$OVERRIDES"
+    radius_on
+    run "$TACCTL_BIN_SCRIPT" config juniper --scope lab --protocol radius
+    assert_success
+    assert_output --partial "#   deny-commands       25/241 bytes: (^(request|start)( .*)?$)"
+    assert_output --partial "operator: OP-CLASS (local: clear/network/reset/trace/view + view-configuration), junos: deny-commands 25/241"
 }
 
 @test "config wti: without --protocol a scope that resolves to RADIUS gets the RADIUS walkthrough, like cisco and juniper" {

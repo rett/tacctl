@@ -489,7 +489,8 @@ catchall.
 .BI "group privilege list " group
 Show the Cisco
 .B "privilege exec level"
-mappings for a group. Reports whether the source is an explicit
+mappings for a group, each with its mode (exec, exec all, configure,
+configure all) in a column. Reports whether the source is an explicit
 override (in
 .I /etc/tacctl/tacctl.yaml
 under
@@ -500,7 +501,23 @@ or the built-in default set (move-DOWN commands only).
 Move one or more Cisco commands to the group's priv-lvl. Quote
 multi-word commands (e.g.
 .RB ' "show running-config" ' );
-separate multiple commands with commas. On first
+separate multiple commands with commas. An entry may start with a mode:
+.B exec:
+(the default when there is none),
+.BR "exec all:" ,
+.B configure:
+or
+.BR "configure all:" ,
+e.g.
+.RB ' "configure: router bgp" ',' "exec all: show ip" ';
+.B config cisco
+renders it as
+.BR "privilege " \fImode\fR " [all] level " \fIN\fR " " \fIcmd\fR .
+An entry is stored in its mode's form, so
+.B "exec: show ip"
+and
+.B "show ip"
+are the same mapping. On first
 .B add
 the group's defaults are inherited; subsequent adds extend that set.
 Every command is validated before anything is written — a bad command
@@ -535,16 +552,19 @@ ships a priv-15 read/diagnostic family moved DOWN to priv-7
 .B superuser
 none (priv-15 is the ceiling).
 .PP
-Cisco devices enforce these rules LIVE over TACACS+ — once any group has rules,
+Cisco devices enforce these rules LIVE over TACACS+. Once any group has rules,
 .B tacctl config cisco
 emits
-.B aaa authorization commands 1/7/15 default group TACACS-GROUP local
-and IOS asks tacquito for every command. Juniper enforces locally via
-class
-.B allow-commands
-/
-.B deny-commands
-regex; a per-device config push is required after every change. RADIUS
+.B aaa authorization commands \fIlevel\fB default group TACACS-GROUP local
+for every privilege level a group uses, and
+.BR "aaa authorization config-commands" ,
+and IOS asks tacquito for every command. A level where some group has no
+rules gets the line commented out, naming the group and the fix
+.RB ( "group commands default \fIgroup\fB permit" ),
+since the server would deny that group every command. Junos devices do
+not use these rules: the server sends them each group's own deny sets
+.RB ( "group junos" ).
+RADIUS
 has no per-command authorization: the server does not enforce these rules
 for logins over RADIUS
 .RB ( status ,
@@ -1070,7 +1090,7 @@ A host with no pinned host key gets the keys it offers pinned, as at
 enrollment. A pin is never changed by a sync: a key that differs from the
 pinned one is reported, with the pinned and offered fingerprints, and new key
 types are reported; both are fixed with
-.BI "device hostkey " name " accept" R.
+.BI "device hostkey " name " accept" \fR.
 .TP
 .B "host target " name " [ " "\fR[\fPuser@\fR]\fPhost" " ] [ \-\-port " n " ] [ \-\-identity " file " | \-\-no\-identity ]"
 With only a name, show how tacctl reaches the enrolled host: its ssh target,
@@ -1398,7 +1418,17 @@ Print a ready-to-paste Cisco IOS/IOS-XE configuration with the
 server IP, shared secret, current group-to-privilege mappings, and
 the VTY-ACL built from
 .B config mgmt-acl
-pre-filled. Without
+pre-filled. Over TACACS+ it has one
+.B aaa accounting commands
+line per privilege level a group uses and, once any group has command
+rules, the per-level
+.B aaa authorization commands
+lines (see
+.BR "group commands" ),
+.B aaa authorization config-commands
+and a commented
+.B aaa authorization console
+line to uncomment for authorization on the console line. Without
 .BR --scope ,
 emits the default scope's secret (header names the scope and lists
 sibling scopes as a hint). With
@@ -1428,7 +1458,18 @@ Print a ready-to-paste Juniper Junos configuration with template
 users, TACACS+ server setup, verification commands, and a commented
 lo0 firewall-filter example built from
 .B config mgmt-acl
-pre-filled. Scope handling matches
+pre-filled. The classes carry permission bits only (a class named
+.B ENG-CLASS
+gets the engineer bits). Step 3 is a read-only summary of what the
+server sends per class at login: the group's
+.B deny-commands
+and
+.B deny-configuration
+values (from
+.BR "group junos" )
+with their sizes, or none; nothing in it is pasted. The
+.B "group commands"
+rules are not translated into class rules. Scope handling matches
 .BR "config cisco" .
 .B "--protocol radius"
 renders the RADIUS configuration (see
@@ -1448,17 +1489,28 @@ Default User Access
 with Access Level ViewOnly (required: with it Off the unit's OpenSSH
 treats TACACS-only users as invalid and sends a junk password),
 Account/Session Management Modules, Service Name
-.BR shell ),
+.BR wti ,
+the factory default, which per-group WTI levels need),
 an IP Tables check (the unit must accept ESTABLISHED,RELATED traffic or
 tacquito's replies are dropped),
 followed by the group-to-access-level mapping, a troubleshooting step
 that turns on the unit's TACACS Debug echo, and the matching tacquito
 log lines to look for. WTI reads the standard
 .B priv-lvl
-attribute from the same
+attribute from the answer to its
+.B wti
+service: a group with a WTI level of its own
+.RB ( "group edit \fIgroup\fB wti-level" )
+gets that level, any other group its priv-lvl band (0\-4 ViewOnly, 5\-9
+User, 10\-14 SuperUser, 15 Administrator) through the
+default-service-permit patch
+.RI ( patches/0001 ).
+A unit set to Service Name
 .B shell
-service Cisco uses (0\-4 ViewOnly, 5\-9 User, 10\-14 SuperUser, 15
-Administrator), so no extra service block is needed. The unit's
+by an earlier walkthrough ignores the WTI levels set on groups until it
+is set back to
+.BR wti .
+The unit's
 accounting (Session Management Module) needs tacquito built with the
 .I patches/0002
 overlay, which sends an empty server_msg on accounting success; the

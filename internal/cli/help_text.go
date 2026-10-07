@@ -182,9 +182,9 @@ artifact (do not hand-edit). RADIUS does not enforce them
 
 Cisco devices ask tacquito per command (live enforcement) when
 'aaa authorization commands <level>' is in the device config —
-tacctl auto-emits these lines in 'tacctl config cisco'. Juniper
-enforcement is LOCAL via class allow/deny-commands, rendered
-from the same tacctl-authored rules by 'tacctl config juniper'.
+tacctl auto-emits these lines in 'tacctl config cisco'. Junos
+devices do not use these rules: the server sends them the
+group's own deny sets ('tacctl group junos').
 
 `,
 	// lib/groups.sh cmd_group_privilege_usage
@@ -199,8 +199,12 @@ Usage:
   tacctl group privilege seed [<group>] [--force]                  Populate built-ins with safe defaults
       --force                                                      (seed) Overwrite a group that already has mappings
 
-Drives 'privilege exec level <lvl> <cmd>' lines emitted by
-'tacctl config cisco'. Pure device-side; tacquito does not read
+Each '<cmd>' may start with a mode: 'exec:' (the default when
+there is none), 'exec all:', 'configure:' or 'configure all:',
+e.g. 'configure: router bgp','exec all: show ip'.
+
+Drives the 'privilege <mode> [all] level <lvl> <cmd>' lines emitted
+by 'tacctl config cisco'. Pure device-side; tacquito does not read
 these. When no explicit mappings exist for a group, a conservative
 default set is used (only commands moved DOWN from priv 15).
 
