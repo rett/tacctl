@@ -7,50 +7,50 @@
 # The Tacctl-* items go to the control list, never into a packet: the policy makes a vendor's
 # attribute from them for a client whose scope or tag asks for it. The reply is Service-Type.
 
-007	Tmp-String-0 == "9d84fd94c3c41ac4/lab", Crypt-Password := "$2b$10$ClFGhXkVXZmX0qz5qoN73uYLt0TyhptGFIfLARVWleaLIJTFZOgGC", Tacctl-Priv-Lvl := 10, Tacctl-Juniper-Class := "NETOPS_class-1", Tacctl-WTI-Super := 2
+007	Tmp-String-0 == "2181e5fc5a49fe2b/lab", Crypt-Password := "$2b$10$ClFGhXkVXZmX0qz5qoN73uYLt0TyhptGFIfLARVWleaLIJTFZOgGC", Tacctl-Priv-Lvl := 10, Tacctl-Juniper-Class := "NETOPS_class-1", Tacctl-WTI-Super := 2
 	Service-Type = NAS-Prompt-User,
 	Fall-Through = No
 
-007	Tmp-String-0 == "9d84fd94c3c41ac4/vw", Crypt-Password := "$2b$10$ClFGhXkVXZmX0qz5qoN73uYLt0TyhptGFIfLARVWleaLIJTFZOgGC", Tacctl-Priv-Lvl := 10, Tacctl-Juniper-Class := "NETOPS_class-1", Tacctl-WTI-Super := 2
+007	Tmp-String-0 == "2181e5fc5a49fe2b/vw", Crypt-Password := "$2b$10$ClFGhXkVXZmX0qz5qoN73uYLt0TyhptGFIfLARVWleaLIJTFZOgGC", Tacctl-Priv-Lvl := 10, Tacctl-Juniper-Class := "NETOPS_class-1", Tacctl-WTI-Super := 2
 	Service-Type = NAS-Prompt-User,
 	Fall-Through = No
 
-alice	Tmp-String-0 == "9d84fd94c3c41ac4/lab", Crypt-Password := "$2b$12$cOwK73gZql6pv4tYeIa7A.fkOGVVU7PWnMtCEX6xVM3jwXawjQgqm", Tacctl-Priv-Lvl := 15, Tacctl-Juniper-Class := "RW-CLASS", Tacctl-WTI-Super := 3
+alice	Tmp-String-0 == "2181e5fc5a49fe2b/lab", Crypt-Password := "$2b$12$cOwK73gZql6pv4tYeIa7A.fkOGVVU7PWnMtCEX6xVM3jwXawjQgqm", Tacctl-Priv-Lvl := 15, Tacctl-Juniper-Class := "RW-CLASS", Tacctl-WTI-Super := 3
 	Service-Type = Administrative-User,
 	Fall-Through = No
 
-alice	Tmp-String-0 == "9d84fd94c3c41ac4/prod", Crypt-Password := "$2b$12$cOwK73gZql6pv4tYeIa7A.fkOGVVU7PWnMtCEX6xVM3jwXawjQgqm", Tacctl-Priv-Lvl := 15, Tacctl-Juniper-Class := "RW-CLASS", Tacctl-WTI-Super := 3
+alice	Tmp-String-0 == "2181e5fc5a49fe2b/prod", Crypt-Password := "$2b$12$cOwK73gZql6pv4tYeIa7A.fkOGVVU7PWnMtCEX6xVM3jwXawjQgqm", Tacctl-Priv-Lvl := 15, Tacctl-Juniper-Class := "RW-CLASS", Tacctl-WTI-Super := 3
 	Service-Type = Administrative-User,
 	Fall-Through = No
 
-alice	Tmp-String-0 == "9d84fd94c3c41ac4/v6", Crypt-Password := "$2b$12$cOwK73gZql6pv4tYeIa7A.fkOGVVU7PWnMtCEX6xVM3jwXawjQgqm", Tacctl-Priv-Lvl := 15, Tacctl-Juniper-Class := "RW-CLASS", Tacctl-WTI-Super := 3
+alice	Tmp-String-0 == "2181e5fc5a49fe2b/v6", Crypt-Password := "$2b$12$cOwK73gZql6pv4tYeIa7A.fkOGVVU7PWnMtCEX6xVM3jwXawjQgqm", Tacctl-Priv-Lvl := 15, Tacctl-Juniper-Class := "RW-CLASS", Tacctl-WTI-Super := 3
 	Service-Type = Administrative-User,
 	Fall-Through = No
 
-alice	Tmp-String-0 == "9d84fd94c3c41ac4/vc", Crypt-Password := "$2b$12$cOwK73gZql6pv4tYeIa7A.fkOGVVU7PWnMtCEX6xVM3jwXawjQgqm", Tacctl-Priv-Lvl := 15, Tacctl-Juniper-Class := "RW-CLASS", Tacctl-WTI-Super := 3
+alice	Tmp-String-0 == "2181e5fc5a49fe2b/vc", Crypt-Password := "$2b$12$cOwK73gZql6pv4tYeIa7A.fkOGVVU7PWnMtCEX6xVM3jwXawjQgqm", Tacctl-Priv-Lvl := 15, Tacctl-Juniper-Class := "RW-CLASS", Tacctl-WTI-Super := 3
 	Service-Type = Administrative-User,
 	Fall-Through = No
 
-alice	Tmp-String-0 == "9d84fd94c3c41ac4/vj", Crypt-Password := "$2b$12$cOwK73gZql6pv4tYeIa7A.fkOGVVU7PWnMtCEX6xVM3jwXawjQgqm", Tacctl-Priv-Lvl := 15, Tacctl-Juniper-Class := "RW-CLASS", Tacctl-WTI-Super := 3
+alice	Tmp-String-0 == "2181e5fc5a49fe2b/vj", Crypt-Password := "$2b$12$cOwK73gZql6pv4tYeIa7A.fkOGVVU7PWnMtCEX6xVM3jwXawjQgqm", Tacctl-Priv-Lvl := 15, Tacctl-Juniper-Class := "RW-CLASS", Tacctl-WTI-Super := 3
 	Service-Type = Administrative-User,
 	Fall-Through = No
 
-alice	Tmp-String-0 == "9d84fd94c3c41ac4/vw", Crypt-Password := "$2b$12$cOwK73gZql6pv4tYeIa7A.fkOGVVU7PWnMtCEX6xVM3jwXawjQgqm", Tacctl-Priv-Lvl := 15, Tacctl-Juniper-Class := "RW-CLASS", Tacctl-WTI-Super := 3
+alice	Tmp-String-0 == "2181e5fc5a49fe2b/vw", Crypt-Password := "$2b$12$cOwK73gZql6pv4tYeIa7A.fkOGVVU7PWnMtCEX6xVM3jwXawjQgqm", Tacctl-Priv-Lvl := 15, Tacctl-Juniper-Class := "RW-CLASS", Tacctl-WTI-Super := 3
 	Service-Type = Administrative-User,
 	Fall-Through = No
 
-alice	Tmp-String-0 == "9d84fd94c3c41ac4/vall", Crypt-Password := "$2b$12$cOwK73gZql6pv4tYeIa7A.fkOGVVU7PWnMtCEX6xVM3jwXawjQgqm", Tacctl-Priv-Lvl := 15, Tacctl-Juniper-Class := "RW-CLASS", Tacctl-WTI-Super := 3
+alice	Tmp-String-0 == "2181e5fc5a49fe2b/vall", Crypt-Password := "$2b$12$cOwK73gZql6pv4tYeIa7A.fkOGVVU7PWnMtCEX6xVM3jwXawjQgqm", Tacctl-Priv-Lvl := 15, Tacctl-Juniper-Class := "RW-CLASS", Tacctl-WTI-Super := 3
 	Service-Type = Administrative-User,
 	Fall-Through = No
 
-bob	Tmp-String-0 == "9d84fd94c3c41ac4/lab", Crypt-Password := "$2a$10$0hJs7wAAuufMdkQVrGWUPuOowWN2.H0Jt3Z6kH/AC7cHofm.teYde", Tacctl-Priv-Lvl := 7, Tacctl-Juniper-Class := "OP-CLASS", Tacctl-WTI-Super := 1
+bob	Tmp-String-0 == "2181e5fc5a49fe2b/lab", Crypt-Password := "$2a$10$0hJs7wAAuufMdkQVrGWUPuOowWN2.H0Jt3Z6kH/AC7cHofm.teYde", Tacctl-Priv-Lvl := 7, Tacctl-Juniper-Class := "OP-CLASS", Tacctl-WTI-Super := 1
 	Service-Type = NAS-Prompt-User,
 	Fall-Through = No
 
-dave	Tmp-String-0 == "9d84fd94c3c41ac4/bs", Crypt-Password := "$2b$10$fSZoPOb5L5sPFBrDJd6X.en6kBjEonkHnv85.O7lqZkgjMGn2Jkay", Tacctl-Priv-Lvl := 1, Tacctl-Juniper-Class := "RO-CLASS", Tacctl-WTI-Super := 0
+dave	Tmp-String-0 == "2181e5fc5a49fe2b/bs", Crypt-Password := "$2b$10$fSZoPOb5L5sPFBrDJd6X.en6kBjEonkHnv85.O7lqZkgjMGn2Jkay", Tacctl-Priv-Lvl := 1, Tacctl-Juniper-Class := "RO-CLASS", Tacctl-WTI-Super := 0
 	Service-Type = NAS-Prompt-User,
 	Fall-Through = No
 
-dave	Tmp-String-0 == "9d84fd94c3c41ac4/vall", Crypt-Password := "$2b$10$fSZoPOb5L5sPFBrDJd6X.en6kBjEonkHnv85.O7lqZkgjMGn2Jkay", Tacctl-Priv-Lvl := 1, Tacctl-Juniper-Class := "RO-CLASS", Tacctl-WTI-Super := 0
+dave	Tmp-String-0 == "2181e5fc5a49fe2b/vall", Crypt-Password := "$2b$10$fSZoPOb5L5sPFBrDJd6X.en6kBjEonkHnv85.O7lqZkgjMGn2Jkay", Tacctl-Priv-Lvl := 1, Tacctl-Juniper-Class := "RO-CLASS", Tacctl-WTI-Super := 0
 	Service-Type = NAS-Prompt-User,
 	Fall-Through = No

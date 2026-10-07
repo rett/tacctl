@@ -98,18 +98,32 @@ Usage: tacctl group <subcommand> [arguments]
 
 Subcommands:
   list                                                List all groups
+  show <name>                                         Every setting and where it comes from
   add <name> <priv-lvl> <juniper-class>               Add a new group
+      --wti-level <level>                             (add) Its WTI level instead of the priv-lvl's
   edit <name> priv-lvl <0-15>                         Change Cisco privilege level
   edit <name> juniper-class <CLASS>                   Change Juniper class name
+  edit <name> wti-level auto|<level>                  WTI access level (viewonly, user, superuser, administrator)
   remove <name>                                       Remove a custom group
   commands list|default|add|remove|clear|seed <group> ...  Per-group authorized commands
   privilege list|add|remove|clear|seed <group> ...         Per-group Cisco priv-exec mappings
+  junos <group> list|clear|deny-commands|deny-configuration ...  Per-group Junos deny rules
+  preset roles                                        Starting values for viewer, operator, engineer, superuser (confirms)
+      --dry-run                                       (preset) Show what would change; write nothing
+      --force                                         (preset) Replace values that differ from the preset's
+      --mgmt-filter <name>                            (preset) Deny engineers that Junos firewall filter too
+
+'auto' (the default) takes the WTI level from the priv-lvl. The tacctl
+tier comes from the priv-lvl: below 7 readonly, 7-14 operator, 15 superuser.
 
 Examples:
   tacctl group list
   tacctl group add helpdesk 5 HELPDESK-CLASS
   tacctl group edit operator priv-lvl 10
   tacctl group edit operator juniper-class NEW-CLASS
+  tacctl group edit engineer wti-level superuser
+  tacctl group show engineer
+  tacctl group preset roles --dry-run
   tacctl group remove helpdesk
   tacctl group commands default operator deny
   tacctl group commands add operator show --action permit
@@ -126,9 +140,14 @@ Usage:
   tacctl group commands default <group> <permit|deny>             Set default action (catchall)
   tacctl group commands add <group> <name> [--match <regex>]...   Add a rule
                                             [--action permit|deny]
-      --match <regex>                                             (add) A regex the command's arguments must match (repeatable)
-      --action permit|deny                                        (add) What the rule does (default permit)
-  tacctl group commands remove <group> <name>                     Drop a rule
+                                            [--before <name>|--first]
+      --match <regex>                                             (add, remove) A regex the command's arguments must match (repeatable; remove: the rule's, in order)
+      --action permit|deny                                        (add, remove) What the rule does (add: default permit)
+      --before <name>                                             (add) Put the rule before the first rule named <name> (default: before the catchall)
+      --first                                                     (add) Put the rule first
+  tacctl group commands remove <group> <name> [--all]             Drop a rule
+                                            [--match <regex>]... [--action permit|deny]
+      --all                                                       (remove) Drop every rule named <name>
   tacctl group commands clear <group>                             Drop overrides — revert to shipped defaults (confirms)
   tacctl group commands seed [<group>] [--force]                  Re-apply legacy seed set (recovery tool)
       --force                                                     (seed) Overwrite a group that already has rules
@@ -138,6 +157,18 @@ regexes are tested against the command's ARGUMENTS only (the
 cmd-arg values after the word: 'running-config' for 'show
 running-config'), never the full line -- so '^show .*$' can
 never match and is rejected. Omit --match to cover any args.
+A --match is anchored at both ends and tested against the
+arguments joined by spaces, without <cr>: '^crypto' matches
+'show crypto' only; write '^crypto( .*)?' to cover 'show
+crypto pki certificates' too.
+
+Rules are tried in order ('#' in 'list'): a rule without
+--match decides, one whose regexes all miss falls through.
+'add' puts a rule before the catchall, before the first rule
+of the --before name, or first (--first). 'remove' refuses
+when several rules share the name: pick one with --match
+(all of the rule's regexes, in order) and --action, or pass
+--all.
 
 Rules live under commands.<group> in {{overrides}};
 tacquito.yaml's per-group commands: block is a regenerated
@@ -149,9 +180,9 @@ artifact (do not hand-edit). RADIUS does not enforce them
 
 Cisco devices ask tacquito per command (live enforcement) when
 'aaa authorization commands <level>' is in the device config —
-tacctl auto-emits these lines in 'tacctl config cisco'. Juniper
-enforcement is LOCAL via class allow/deny-commands, rendered
-from the same tacctl-authored rules by 'tacctl config juniper'.
+tacctl auto-emits these lines in 'tacctl config cisco'. Junos
+devices do not use these rules: the server sends them the
+group's own deny sets ('tacctl group junos').
 
 `,
 	// lib/groups.sh cmd_group_privilege_usage
@@ -166,10 +197,40 @@ Usage:
   tacctl group privilege seed [<group>] [--force]                  Populate built-ins with safe defaults
       --force                                                      (seed) Overwrite a group that already has mappings
 
-Drives 'privilege exec level <lvl> <cmd>' lines emitted by
-'tacctl config cisco'. Pure device-side; tacquito does not read
+Each '<cmd>' may start with a mode: 'exec:' (the default when
+there is none), 'exec all:', 'configure:' or 'configure all:',
+e.g. 'configure: router bgp','exec all: show ip'.
+
+Drives the 'privilege <mode> [all] level <lvl> <cmd>' lines emitted
+by 'tacctl config cisco'. Pure device-side; tacquito does not read
 these. When no explicit mappings exist for a group, a conservative
 default set is used (only commands moved DOWN from priv 15).
+
+`,
+	// 0.2.2 (docs/plans/0.2.2-plan.md §5.1)
+	"group-junos": `
+<b>tacctl group junos</b> — per-group Junos rules the server sends at login
+
+Usage:
+  tacctl group junos <group> list                                    Show both sets and their sizes
+  tacctl group junos <group> deny-commands list                      Show the set
+  tacctl group junos <group> deny-commands add '<regex>'             Add a pattern
+  tacctl group junos <group> deny-commands remove '<regex>'          Remove a pattern (exact text)
+  tacctl group junos <group> deny-commands clear                     Drop the set (confirms)
+  tacctl group junos <group> deny-configuration list|add|remove|clear
+  tacctl group junos <group> clear                                   Drop both sets (confirms)
+
+Each pattern is a POSIX extended regular expression Junos tests against
+the whole command line (deny-commands) or the configuration path
+(deny-configuration). The set is sent as one value, the patterns joined
+with '|'; a set may not exceed 241 bytes (deny-commands) or 236
+(deny-configuration), the TACACS+ argument limit. deny-commands does not
+cover 'show configuration <path>': put paths in deny-configuration, which
+also hides them from reading. The class on the device keeps only its
+permission bits ('tacctl config juniper').
+
+Sets live under junos.<group> in {{overrides}}; tacquito.yaml's
+junos-exec service and the RADIUS policy are regenerated from them.
 
 `,
 	// lib/scopes.sh cmd_scope_usage
@@ -302,6 +363,7 @@ Subcommands:
                                        /32 (its secret and users) until the device is seen in place (tacctl scope staging)
       --name <device>                  (with --staging) The registered device whose move ends the staging (default: the one at the bench address)
   linux   build|script|remove-script|uid|builds  TACACS+ or RADIUS login for Linux hosts (install/removal scripts)
+  snmp    show|community|v3-user|port|timeout|clear|test  SNMP for the name hint of 'device add' (sysName)
   branch [name]                        Show or change the tacctl repo branch
 
 Examples:
@@ -376,6 +438,12 @@ server's own tacctl users comes with 'host enroll --local' and 'host sync'.
 Usage: tacctl host <subcommand> [arguments]
 
   list                                 Show enrolled hosts
+  show <name> [--all] [--json]         One enrolled host in full: connection, scope, address, host keys, sightings,
+                                       notices, accounts, last sync and host facts
+      --all                            (show) The acknowledged notices too
+      --json                           (show) Print JSON: every field, and --check's findings under 'check'
+      --check                          (show) Log in read-only and compare the host with what tacctl would make it:
+                                       one line per difference with the command that fixes it; exit 1 when there is one
   enroll <[user@]host> [options]       Install TACACS+ or RADIUS login on a host over SSH and register it
   enroll --local [options]             Same, for this machine (its tacctl users get the login console)
       --method tacplus|radius          pam_tacplus against the TACACS+ backend, or the host's pam_radius_auth

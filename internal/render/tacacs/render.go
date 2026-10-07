@@ -26,9 +26,12 @@ import (
 	"strings"
 
 	"github.com/rett/tacctl/internal/cidr"
+	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/hash"
 	"github.com/rett/tacctl/internal/model"
+	"github.com/rett/tacctl/internal/policy"
 	"github.com/rett/tacctl/internal/py"
+	"github.com/rett/tacctl/internal/render/radius"
 	"github.com/rett/tacctl/internal/rendered"
 	"github.com/rett/tacctl/internal/store"
 	"github.com/rett/tacctl/internal/yamlpy"
@@ -54,7 +57,7 @@ var (
 	LegacyTopKeys   = []string{"users", "secrets", "prefix_allow", "prefix_deny"}
 	LegacyConstants = []string{"authenticator_type_bcrypt", "action_deny", "action_permit",
 		"accounter_type_file", "handler_type_start", "provider_type_prefix"}
-	renderKeyPrefixes = []string{"exec_", "junos_exec_", "bcrypt_", "group_"}
+	renderKeyPrefixes = []string{"exec_", "junos_exec_", "wti_exec_", "bcrypt_", "group_"}
 )
 
 // Actions are the values tacquito gives a command rule's action.
@@ -308,6 +311,24 @@ func Render(st *store.Store, view *yamlpy.Map) ([]byte, error) {
 		"# Juniper requests service=junos-exec and expects local-user-name.\n" +
 		"# Each device type only requests its own service; the other is ignored.\n")
 	order := GroupOrder(m.GroupNames())
+	cfg := conf.View(view)
+	sets := make(map[string]string, len(order))
+	devauth := false
+	for _, name := range order {
+		v, err := junosSetValues(cfg, name)
+		if err != nil {
+			return nil, err
+		}
+		sets[name] = v
+		_, over := policy.WTILevel(cfg, name, 0)
+		devauth = devauth || v != "" || over
+	}
+	// Only when a group uses them, so a model without these settings
+	// renders byte-identically to 0.2.1.
+	if devauth {
+		w.WriteString("# A WTI unit with Service Name 'wti' requests service=wti (a group with a\n" +
+			"# WTI level of its own); deny-* are the Junos deny sets of the group.\n")
+	}
 	for _, name := range order {
 		g := m.Group(name)
 		p := privText(g)
@@ -323,8 +344,19 @@ func Render(st *store.Store, view *yamlpy.Map) ([]byte, error) {
 			"  name: junos-exec\n"+
 			"  set_values:\n"+
 			"    - name: local-user-name\n"+
-			"      values: [%s]\n",
-			name, p, name, name, p, name, g.JuniperClass, name, name, YQ(g.JuniperClass))
+			"      values: [%s]\n%s",
+			name, p, name, name, p, name, g.JuniperClass, name, name, YQ(g.JuniperClass), sets[name])
+		if level, over := policy.WTILevel(cfg, name, 0); over {
+			lv := policy.WTIPrivLvl(level)
+			_, label := radius.WTISuper(lv)
+			fmt.Fprintf(&w, "\n# WTI wti - %s (priv-lvl %d, %s; 'tacctl group edit %s wti-level')\n"+
+				"wti_exec_%s: &wti_exec_%s\n"+
+				"  name: wti\n"+
+				"  set_values:\n"+
+				"    - name: priv-lvl\n"+
+				"      values: [%d]\n",
+				name, lv, label, name, name, name, lv)
+		}
 	}
 
 	w.WriteString("\n# --- Groups ---\n" +
@@ -339,6 +371,9 @@ func Render(st *store.Store, view *yamlpy.Map) ([]byte, error) {
 			"  services:\n"+
 			"    - *exec_%s\n"+
 			"    - *junos_exec_%s\n", YName(key), key, YName(name), name, name)
+		if _, over := policy.WTILevel(cfg, name, 0); over {
+			fmt.Fprintf(&w, "    - *wti_exec_%s\n", name)
+		}
 		rules, err := GroupCommands(view, name)
 		if err != nil {
 			return nil, err
@@ -444,6 +479,25 @@ func Render(st *store.Store, view *yamlpy.Map) ([]byte, error) {
 		w.WriteString("\n# --- Connection filters ---\n" + strings.Join(lines, ""))
 	}
 	return []byte(w.String()), nil
+}
+
+// junosSetValues is the set_values lines the group's Junos deny sets add
+// to its junos-exec service ("" for a group without any). A set whose
+// value would not fit in one TACACS+ argument stops the render: Junos
+// would refuse every login of the group.
+func junosSetValues(cfg *conf.Config, group string) (string, error) {
+	var b strings.Builder
+	for _, attr := range conf.JunosAttrs {
+		items := policy.JunosSet(cfg, group, attr)
+		if len(items) == 0 {
+			continue
+		}
+		if p := policy.JunosProblem(group, attr, items); p != nil {
+			return "", &rendered.Error{Msg: "cannot render tacquito.yaml: " + strings.Join(p, "\n  ")}
+		}
+		fmt.Fprintf(&b, "    - name: %s\n      values: [%s]\n", conf.JunosArg(attr), YQ(conf.JunosValue(items)))
+	}
+	return b.String(), nil
 }
 
 // isLevel is is_int(level) and 0 <= level <= 100.

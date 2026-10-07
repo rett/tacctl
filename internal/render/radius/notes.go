@@ -6,13 +6,16 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/model"
 	"github.com/rett/tacctl/internal/yamlpy"
 )
 
 // Note is one line of radius_notes: what the rendered state means for an
 // operator. Kind is commands (groups with RADIUS users whose command rules
-// restrict something; Detail is their names, ", "-joined), secret (scopes
+// restrict something; Detail is their names, ", "-joined), junos (groups
+// with RADIUS users that have a Junos deny set, sent with the login class;
+// Detail as for commands), secret (scopes
 // whose secret is beyond the advice of the secret constraints, by name),
 // filters (Detail "<n> allow, <n> deny") or vendors (Detail
 // "<scopes that send a vendor attribute>|<scopes served>|<tagged addresses>").
@@ -79,6 +82,18 @@ func Notes(m *model.Model, merged *yamlpy.Map) []Note {
 	}
 	if len(limited) > 0 {
 		notes = append(notes, Note{"commands", strings.Join(limited, ", ")})
+	}
+	var junos []string
+	for _, g := range groups {
+		for _, attr := range conf.JunosAttrs {
+			if len(junosSet(merged, g, attr)) > 0 {
+				junos = append(junos, g)
+				break
+			}
+		}
+	}
+	if len(junos) > 0 {
+		notes = append(notes, Note{"junos", strings.Join(junos, ", ")})
 	}
 	var odd []string
 	for _, s := range scopes { // by name

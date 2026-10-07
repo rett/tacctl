@@ -2,18 +2,24 @@
 # Run: tests/diff/run.sh groups
 @fixture tacquito.minimal.yaml
 
+@known 0.2.2 item 9: the group usage lists show, junos, preset and wti-level
 group
+@known 0.2.2 item 9: the group usage lists show, junos, preset and wti-level
 group bogus
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 group list
 
 # add
+@known 0.2.2 item 9: the add usage line names --wti-level
 group add
+@known 0.2.2 item 9: the add usage line names --wti-level
 group add name
+@known 0.2.2 item 9: the add usage line names --wti-level
 group add name 5
 group add 1bad 5 HELPDESK
 group add HelpDesk 5 HELPDESK
 group add netops 16 NETOPS
+@known 0.2.2 item 9: the add usage line names --wti-level
 group add netops -1 NETOPS
 group add netops 7 'bad class'
 group add superuser 14 RW-CLASS
@@ -25,15 +31,20 @@ group add helpdesk 5 HELPDESK-CLASS ;; group add helpdesk 6 OTHER-CLASS
 group add helpdesk 5 HELPDESK-CLASS ;; user add alice helpdesk --hash {HASH} --scopes lab ;; user show alice
 
 # edit
+@known 0.2.2 item 9: the edit usage line and refusal name wti-level
 group edit
+@known 0.2.2 item 9: the edit usage line and refusal name wti-level
 group edit operator
+@known 0.2.2 item 9: the edit usage line and refusal name wti-level
 group edit operator foo bar
 group edit nosuchgroup priv-lvl 5
+@known 0.2.2 item 9: the edit usage line and refusal name wti-level
 group edit operator priv-lvl
 group edit operator priv-lvl 99
 group edit operator priv-lvl ten
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 group edit operator priv-lvl 10 ;; group list
+@known 0.2.2 item 9: the edit usage line and refusal name wti-level
 group edit operator juniper-class
 group edit operator juniper-class 'bad class'
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
@@ -53,24 +64,25 @@ group add helpdesk 5 HELPDESK-CLASS ;; group remove helpdesk ;; group list
 group add helpdesk 5 HELPDESK-CLASS ;; user add alice helpdesk --hash {HASH} --scopes lab ;; group remove helpdesk <<< y
 
 # commands
-@known 0.2.1 item 56: the usage has one line per option
+@known 0.2.1 item 56: the usage has one line per option; 0.2.2 item 4: the group commands usage lists --before/--first and remove's --match/--action/--all, and says how a --match is tested; 0.2.2 item 5: the commands usage says Junos devices get their own deny sets
 group commands
-@known 0.2.1 item 56: the usage has one line per option
+@known 0.2.1 item 56: the usage has one line per option; 0.2.2 item 4: the group commands usage lists --before/--first and remove's --match/--action/--all, and says how a --match is tested; 0.2.2 item 5: the commands usage says Junos devices get their own deny sets
 group commands bogus operator
 group commands list
 group commands list nosuchgroup
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.2 item 4: group commands list has a # column
 group commands list operator
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.2 item 4: group commands list has a # column
 group commands list superuser
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.2 item 4: group commands list has a # column
 group commands list readonly
 group commands default operator
 group commands default operator maybe
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.2 item 4: group commands list has a # column
 group commands default operator deny ;; group commands list operator
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.2 item 4: group commands list has a # column
 group commands default operator permit ;; group commands list operator
+@known 0.2.2 item 4: the add usage line lists --before|--first
 group commands add operator
 group commands add operator '1bad' --action permit
 group commands add operator '*' --action permit
@@ -78,80 +90,83 @@ group commands add operator show --bogus foo
 group commands add operator show --match '(' --action permit
 group commands add operator show --match 'run.*' --action maybe
 group commands add operator show --match '^show .*$' --action permit
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.2 item 4: group commands list has a # column
 group commands add operator show --match 'run.*' --action permit ;; group commands list operator
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.2 item 4: group commands list has a # column
 group commands add operator ping --match '^ping( .*)?$' --action permit ;; group commands list operator
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.2 item 4: group commands list has a # column
 group commands add operator show --match 'running-config.*' --action permit ;; group commands add operator show --match 'version.*' --action permit ;; group commands list operator
 group commands add nosuchgroup show --action permit
+@known 0.2.2 item 4: the remove usage line lists --match, --action and --all
 group commands remove operator
 group commands remove operator missing
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.2 item 4: group commands list has a # column
 group commands remove operator show ;; group commands list operator
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.2 item 4: remove refuses the two rules named show (pick one with --match/--action, or --all); group commands list has a # column
 group commands add operator show --match 'run.*' --action permit ;; group commands remove operator show ;; group commands list operator
 group commands remove nosuchgroup show
 group commands clear
 group commands clear nosuchgroup
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.2 item 4: group commands list has a # column
 group commands clear operator <<< y ;; group commands list operator
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.2 item 4: group commands list has a # column
 group commands clear operator <<< n ;; group commands list operator
 group commands clear operator
 group commands seed
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.2 item 4: group commands list has a # column
 group commands seed operator ;; group commands list operator
 group commands seed nosuchgroup
 group commands seed --force
 
 # privilege
-@known 0.2.1 item 56: the usage has one line per option
+@known 0.2.1 item 56: the usage has one line per option; 0.2.2 item 6: the privilege usage names the modes
 group privilege
-@known 0.2.1 item 56: the usage has one line per option
+@known 0.2.1 item 56: the usage has one line per option; 0.2.2 item 6: the privilege usage names the modes
 group privilege bogus operator
 group privilege list
 group privilege list nosuchgroup
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.2 item 6: group privilege list shows each mapping's mode
 group privilege list operator
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.2 item 6: group privilege list shows each mapping's mode
 group privilege list readonly
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.2 item 6: group privilege list shows each mapping's mode
 group privilege list superuser
 group privilege add
 group privilege add operator
 group privilege add nosuchgroup 'show version'
 group privilege add operator 'show; rm -rf /'
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.2 item 6: group privilege list shows each mapping's mode
 group privilege add operator 'show version' ;; group privilege list operator
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.2 item 6: group privilege list shows each mapping's mode
 group privilege add operator 'show version,show ip interface brief' ;; group privilege list operator
 group privilege remove operator
 group privilege remove operator 'show users'
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.2 item 6: group privilege list shows each mapping's mode
 group privilege add operator 'show version' ;; group privilege remove operator 'show version' ;; group privilege list operator
 group privilege remove nosuchgroup 'show version'
 group privilege clear
 group privilege clear nosuchgroup
 group privilege clear operator
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.2 item 6: group privilege list shows each mapping's mode
 group privilege add operator 'show version' ;; group privilege clear operator ;; group privilege list operator
 group privilege seed
 group privilege seed operator
 group privilege seed nosuchgroup
 
 # WP2.4b: more usage, argument and value paths
+@known 0.2.2 item 9: the group usage lists show, junos, preset and wti-level
 group -h
+@known 0.2.2 item 9: the group usage lists show, junos, preset and wti-level
 group help
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 group list extra
-@known 0.2.1 item 56: the usage has one line per option
+@known 0.2.1 item 56: the usage has one line per option; 0.2.2 item 4: the group commands usage lists --before/--first and remove's --match/--action/--all, and says how a --match is tested; 0.2.2 item 5: the commands usage says Junos devices get their own deny sets
 group commands -h
-@known 0.2.1 item 56: the usage has one line per option
+@known 0.2.1 item 56: the usage has one line per option; 0.2.2 item 4: the group commands usage lists --before/--first and remove's --match/--action/--all, and says how a --match is tested; 0.2.2 item 5: the commands usage says Junos devices get their own deny sets
 group commands help
-@known 0.2.1 item 56: the usage has one line per option
+@known 0.2.1 item 56: the usage has one line per option; 0.2.2 item 6: the privilege usage names the modes
 group privilege --help
-@known 0.2.1 item 56: the usage has one line per option
+@known 0.2.1 item 56: the usage has one line per option; 0.2.2 item 6: the privilege usage names the modes
 group privilege help
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 group add helpdesk 05 HELPDESK-CLASS ;; group list
@@ -171,7 +186,7 @@ group add helpdesk 5 HELPDESK-CLASS ;; group remove helpdesk <<< yes ;; group li
 group add helpdesk 5 HELPDESK-CLASS ;; group remove helpdesk <<< Y
 
 # commands: rule shapes, siblings, catchall
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.2 item 4: group commands list has a # column
 group commands list operator extra
 group commands default operator permit extra
 group commands default nosuchgroup deny
@@ -179,89 +194,108 @@ group commands add operator show
 @known 3.9 item 19: 'group commands add --match' with no value exits 1 silently (0.1.16 died with bash's 'unbound variable')
 group commands add operator show --match
 group commands add operator show --action
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.2 item 4: group commands list has a # column
 group commands add operator show --match 'run.*' --match 'start.*' ;; group commands list operator
-@known 0.2.1 item 7: a comma in --match is refused
+@known 0.2.1 item 7: a comma in --match is refused; 0.2.2 item 4: group commands list has a # column
 group commands add operator show --match 'a{1,3}' ;; group commands list operator ;; group commands add operator ping ;; group commands list operator
 @known 3.9 item 14: --match regexes are checked with RE2, which has no lookarounds
 group commands add operator show --match '(?=x)'
 group commands add operator show --match 'show .*'
 group commands add operator show --match '^show$'
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.2 item 4: group commands list has a # column
 group commands add operator show --match 'version' --action deny ;; group commands list operator
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.2 item 4: group commands list has a # column
 group commands add operator show ;; group commands list operator
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.2 item 4: group commands list has a # column
 group commands add operator configure --action deny ;; group commands list operator
 group commands add operator configure ;; group commands add operator configure
 group commands add operator configure --match 'x' ;; group commands add operator configure --match 'x'
 group commands add helpdesk show
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.2 item 4: group commands list has a # column
 group add helpdesk 7 HELPDESK-CLASS ;; group commands add helpdesk show ;; group commands list operator ;; group commands list helpdesk
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.2 item 4: group commands list has a # column
 group add helpdesk 7 HELPDESK-CLASS ;; group commands default helpdesk deny ;; group commands list helpdesk
 group add helpdesk 7 HELPDESK-CLASS ;; group commands list helpdesk ;; group commands clear helpdesk
 group add helpdesk 7 HELPDESK-CLASS ;; group commands seed helpdesk
 group commands remove operator '*'
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.2 item 4: remove compares the name literally ('sh.w' is no rule); group commands list has a # column
 group commands remove operator 'sh.w' ;; group commands list operator
-@known 3.9 item 19: 'group commands remove' of a name that is no valid regex, same outcome without 0.1.16's leaked grep/python noise
+@known 3.9 item 19: 'group commands remove' of a name that is no valid regex, same outcome without 0.1.16's leaked grep/python noise; 0.2.2 item 4: group commands list has a # column
 group commands remove operator 'sh[' ;; group commands list operator
+@known 0.2.2 item 4: a removal names the rule's position, action and match
 group commands remove operator ping ;; group commands remove operator ping
+@known 0.2.2 item 4: remove --all drops every rule of the name (0.2.1 has no --all)
+group commands add operator show --match 'run.*' --action permit ;; group commands remove operator show --all ;; group commands list operator
+@known 0.2.2 item 4: remove --match/--action pick one rule of several (0.2.1 has no selector)
+group commands add operator show --match 'run.*' --action deny ;; group commands remove operator show --match 'run.*' ;; group commands remove operator show --action permit ;; group commands list operator
+@known 0.2.2 item 4: add --first and --before place a rule (0.2.1 has neither)
+group commands add operator configure --action deny --first ;; group commands add operator show --match '^crypto( .*)?' --action deny --before show ;; group commands list operator
+@known 0.2.2 item 4: add --before a name with no rule is refused (0.2.1 has no --before)
+group commands add operator configure --before missing
+@known 0.2.2 item 4: add --before and --first together are refused (0.2.1 has neither)
+group commands add operator configure --before show --first
 group commands clear operator <<< yes
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.2 item 4: group commands list has a # column
 group commands clear superuser <<< y ;; group commands list superuser
 group commands seed operator extra
-@known 0.2.1 item 56: the usage has one line per option
+@known 0.2.1 item 56: the usage has one line per option; 0.2.2 item 4: the group commands usage lists --before/--first and remove's --match/--action/--all, and says how a --match is tested; 0.2.2 item 5: the commands usage says Junos devices get their own deny sets
 group commands seed --bogus
-@known 0.2.1 item 56: the usage has one line per option
+@known 0.2.1 item 56: the usage has one line per option; 0.2.2 item 4: the group commands usage lists --before/--first and remove's --match/--action/--all, and says how a --match is tested
 group commands seed - 
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.2 item 4: group commands list has a # column
 group commands seed superuser --force ;; group commands list superuser
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.2 item 4: group commands list has a # column
 group commands seed --force readonly ;; group commands list readonly
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.2 item 4: group commands list has a # column
 group commands add operator configure ;; group commands seed operator ;; group commands seed operator --force ;; group commands list operator
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.2 item 4: group commands list has a # column
 group commands default readonly permit ;; group commands list readonly
 
 # privilege: lists, defaults, validation
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.2 item 6: group privilege list shows each mapping's mode
 group privilege list operator extra
 group privilege add operator 'show version, show users'
 group privilege add operator ' , '
 group privilege add operator "show version,'x"
 group privilege add operator ' show version'
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.2 item 6: group privilege list shows each mapping's mode
 group privilege add operator 'show running-config' ;; group privilege list operator
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.2 item 6: group privilege list shows each mapping's mode
 group privilege add readonly 'show version' ;; group privilege list readonly
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.2 item 6: group privilege list shows each mapping's mode
 group privilege remove operator 'show running-config,show nothing' ;; group privilege list operator
 group privilege remove readonly 'show version'
 group privilege add operator 'a2345678901234567890123456789012345678901234567890123456789012345'
 group privilege add operator '9show'
 group privilege clear operator <<< y
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.2 item 6: group privilege list shows each mapping's mode
 group privilege add operator 'show version' ;; group privilege clear operator <<< y ;; group privilege list operator
 group privilege add operator 'show version' ;; group privilege clear operator <<< n
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.2 item 6: group privilege list shows each mapping's mode
 group privilege seed superuser ;; group privilege list superuser
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.2 item 6: group privilege list shows each mapping's mode
 group privilege seed operator ;; group privilege seed operator --force ;; group privilege list operator
-@known 0.2.1 item 56: the usage has one line per option
+@known 0.2.1 item 56: the usage has one line per option; 0.2.2 item 6: the privilege usage names the modes
 group privilege seed --bogus
 group privilege seed operator readonly
 group privilege add operator 'show version' ;; group privilege seed
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.2 item 6: group privilege list shows each mapping's mode
 group add helpdesk 5 HELPDESK-CLASS ;; group privilege list helpdesk ;; group privilege add helpdesk 'show version' ;; group privilege list helpdesk
 group add helpdesk 5 HELPDESK-CLASS ;; group privilege seed helpdesk
+# privilege modes (0.2.2): exec all, configure, configure all; an unknown one
+@known 0.2.2 item 6: group privilege entries may start with a mode
+group privilege add operator 'configure: router bgp','exec all: show ip','exec: show version' ;; group privilege list operator ;; group privilege remove operator 'configure:router bgp'
+@known 0.2.2 item 6: group privilege entries may start with a mode
+group privilege add operator 'config: router bgp'
 
 # more refusals
+@known 0.2.2 item 9: the add usage line names --wti-level
 group add '' 5 HD
+@known 0.2.2 item 9: the edit usage line and refusal name wti-level
 group edit '' priv-lvl 5
 group commands list ''
 group commands default operator ''
+@known 0.2.2 item 4: the add usage line lists --before|--first
 group commands add operator ''
 group privilege add '' 'show version'
 group privilege remove operator ''
@@ -270,9 +304,9 @@ group privilege remove operator ''
 @fixture legacy.fresh-install.yaml
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 group list
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.2 item 4: group commands list has a # column
 group commands list operator
-@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.2 item 6: group privilege list shows each mapping's mode
 group privilege list operator
 group add helpdesk 5 HELPDESK-CLASS
 group commands default operator deny

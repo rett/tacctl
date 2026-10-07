@@ -211,6 +211,10 @@ func (o *out) summaryAccept(vendor, scope string, r *Radius) {
 	o.heading(ui.Yellow, "What an Access-Accept carries for this device:")
 	o.echo("  - Service-Type: Administrative-User at privilege 15, else NAS-Prompt-User (always sent)")
 	o.echo("  - " + vendorAttr(vendor) + " from the user's group: " + why)
+	if vendor == "juniper" {
+		o.echo("  - With it, Juniper-Deny-Commands and Juniper-Deny-Configuration where the group has")
+		o.echo("    a set ('tacctl group junos <group> list')")
+	}
 	o.echo("  - No other vendor's attribute. A reject carries none")
 }
 
@@ -227,12 +231,12 @@ func (o *out) summaryLimits(vendor, scope string, r *Radius) {
 		o.echo("    'tacctl group commands' rules are not enforced; a user may run whatever their")
 		o.echo("    privilege level allows, so review the 'privilege exec level' mappings above")
 		o.echo("  - No command accounting. Only exec session start/stop records are sent")
-		o.echo("    (TACACS+ also records every command at privilege 1, 7 and 15)")
+		o.echo("    (TACACS+ also records every command at each privilege level in use)")
 	} else {
 		o.echo("  - No per-command authorization from the server. The only authorization is what the")
-		o.echo("    Access-Accept carries: the login class (Juniper-Local-User-Name). 'tacctl group")
-		o.echo("    commands' rules are not enforced by the server; the allow-commands/deny-commands")
-		o.echo("    lines above are, because the class is local to the device, and stay in force")
+		o.echo("    Access-Accept carries: the login class (Juniper-Local-User-Name) and the group's")
+		o.echo("    Juniper-Deny-Commands and Juniper-Deny-Configuration (Step 3), which Junos")
+		o.echo("    enforces itself, as it does over TACACS+")
 		o.echo("  - No command accounting. Only login and change-log events are sent")
 		o.echo("    (TACACS+ also records commands)")
 	}

@@ -4,6 +4,8 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -318,11 +320,81 @@ func TestGroupFamily(t *testing.T) {
 	sb.run("", []string{"group", "privilege", "add", "operator", "show version"})
 	sb.expect(0, "Added 1 priv-exec mapping(s) for group 'operator' (level 7):\n    - show version\n", "")
 	sb.run("", []string{"group", "privilege", "list", "operator"})
-	sb.expect(0, "  - show version\n", "")
+	sb.expect(0, "  - exec           show version\n", "")
+	// A mode prefix (0.2.2): stored as typed, listed in its column, and
+	// 'exec:' is the same mapping as none.
+	sb.run("", []string{"group", "privilege", "add", "operator", "configure all:  router bgp,exec: show version,exec all: show ip"})
+	sb.expect(0, "Added 2 priv-exec mapping(s) for group 'operator' (level 7):\n    - configure all: router bgp\n    - exec all: show ip\n", "")
+	sb.run("", []string{"group", "privilege", "list", "operator"})
+	sb.expect(0, "  - configure all  router bgp\n  - exec all       show ip\n", "")
+	if o := sb.overrides(); !strings.Contains(o, "- 'configure all: router bgp'\n") {
+		t.Errorf("tacctl.yaml:\n%s", o)
+	}
+	sb.run("", []string{"group", "privilege", "add", "operator", "config: router bgp"})
+	sb.expect(1, "", "Unknown privilege mode 'config' in 'config: router bgp'.")
+	sb.run("", []string{"group", "privilege", "remove", "operator", "configure all: router bgp,exec all:show ip"})
+	sb.expect(0, "Removed 2 priv-exec mapping(s) for group 'operator':", "")
 	sb.run("y\n", []string{"group", "remove", "helpdesk"})
 	sb.expect(0, "Group 'helpdesk' removed.", "")
 	sb.run("y\n", []string{"group", "remove", "operator"})
 	sb.expect(1, "", "Cannot remove built-in group 'operator'.")
+}
+
+// 'group commands add --before/--first' place a rule, 'list' numbers the
+// rules, and 'remove' takes one of several rules of a name only with a
+// selector (or all of them with --all).
+func TestGroupCommandsPositionAndSelector(t *testing.T) {
+	sb := newSandbox(t, true)
+	names := func() []string {
+		out := plain(sb.run("", []string{"group", "commands", "list", "operator"}))
+		var got []string
+		for _, l := range strings.Split(out, "\n") {
+			if f := strings.Fields(l); len(f) >= 3 && f[0] != "#" {
+				if _, err := strconv.Atoi(f[0]); err == nil {
+					got = append(got, f[0]+":"+f[1]+":"+f[2])
+				}
+			}
+		}
+		return got
+	}
+	if got := names(); !reflect.DeepEqual(got, []string{"1:show:permit", "2:ping:permit", "3:traceroute:permit", "4:terminal:permit", "5:*:(catchall)"}) {
+		t.Errorf("shipped: %q", got)
+	}
+	sb.run("", []string{"group", "commands", "add", "operator", "show", "--match", "^crypto( .*)?", "--action", "deny", "--before", "show"})
+	sb.expect(0, "Added rule 'show' (action=deny, match=[^crypto( .*)?])", "")
+	sb.run("", []string{"group", "commands", "add", "operator", "configure", "--action", "deny", "--first"})
+	sb.expect(0, "Added rule 'configure'", "")
+	sb.run("", []string{"group", "commands", "add", "operator", "reload", "--action", "deny", "--before", "*"})
+	sb.expect(0, "Added rule 'reload'", "")
+	want := []string{"1:configure:deny", "2:show:deny", "3:show:permit", "4:ping:permit", "5:traceroute:permit", "6:terminal:permit", "7:reload:deny", "8:*:(catchall)"}
+	if got := names(); !reflect.DeepEqual(got, want) {
+		t.Errorf("after the adds: %q", got)
+	}
+	sb.run("", []string{"group", "commands", "add", "operator", "x", "--before", "missing"})
+	sb.expect(1, "", "[ERROR] No rule named 'missing' in group 'operator'.")
+	sb.run("", []string{"group", "commands", "add", "operator", "x", "--before", "show", "--first"})
+	sb.expect(1, "", "--before and --first cannot be used together.")
+
+	sb.run("", []string{"group", "commands", "remove", "operator", "show"})
+	sb.expect(1, "", "[ERROR] Group 'operator' has 2 rules named 'show'; select one with --match/--action (see 'tacctl group commands list operator'), or pass --all.")
+	sb.run("", []string{"group", "commands", "remove", "operator", "show", "--match", "^nope"})
+	sb.expect(0, "", "")
+	if got := names(); !reflect.DeepEqual(got, want) {
+		t.Errorf("after the refusals: %q", got)
+	}
+	sb.run("", []string{"group", "commands", "remove", "operator", "show", "--match", "^crypto( .*)?"})
+	sb.expect(0, "Removed rule #2 'show' (deny, match=[^crypto( .*)?]) from group 'operator'.", "")
+	sb.run("", []string{"group", "commands", "add", "operator", "show", "--match", "a", "--action", "deny"})
+	sb.run("", []string{"group", "commands", "remove", "operator", "show", "--action", "permit"})
+	sb.expect(0, "Removed rule #2 'show' (permit, match=[]) from group 'operator'.", "")
+	sb.run("", []string{"group", "commands", "add", "operator", "show", "--match", "b", "--action", "deny"})
+	sb.run("", []string{"group", "commands", "remove", "operator", "show", "--all"})
+	sb.expect(0, "Removed rule #6 'show' (deny, match=[a]) from group 'operator'.\n[INFO] Removed rule #7 'show' (deny, match=[b])", "")
+	if got := names(); !reflect.DeepEqual(got, []string{"1:configure:deny", "2:ping:permit", "3:traceroute:permit", "4:terminal:permit", "5:reload:deny", "6:*:(catchall)"}) {
+		t.Errorf("after the removals: %q", got)
+	}
+	sb.run("", []string{"group", "commands", "remove", "operator", "ping", "--bogus"})
+	sb.expect(1, "", "Unknown flag: '--bogus'")
 }
 
 // Every verb has a Spec (its arguments for completion), and every kind a

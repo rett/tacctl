@@ -1,0 +1,24 @@
+
+[1mtacctl group junos[0m — per-group Junos rules the server sends at login
+
+Usage:
+  tacctl group junos <group> list                                    Show both sets and their sizes
+  tacctl group junos <group> deny-commands list                      Show the set
+  tacctl group junos <group> deny-commands add '<regex>'             Add a pattern
+  tacctl group junos <group> deny-commands remove '<regex>'          Remove a pattern (exact text)
+  tacctl group junos <group> deny-commands clear                     Drop the set (confirms)
+  tacctl group junos <group> deny-configuration list|add|remove|clear
+  tacctl group junos <group> clear                                   Drop both sets (confirms)
+
+Each pattern is a POSIX extended regular expression Junos tests against
+the whole command line (deny-commands) or the configuration path
+(deny-configuration). The set is sent as one value, the patterns joined
+with '|'; a set may not exceed 241 bytes (deny-commands) or 236
+(deny-configuration), the TACACS+ argument limit. deny-commands does not
+cover 'show configuration <path>': put paths in deny-configuration, which
+also hides them from reading. The class on the device keeps only its
+permission bits ('tacctl config juniper').
+
+Sets live under junos.<group> in /etc/tacctl/tacctl.yaml; tacquito.yaml's
+junos-exec service and the RADIUS policy are regenerated from them.
+

@@ -21,6 +21,7 @@ var goldenCases = []struct {
 	{"group", "group", nil},
 	{"group-commands", "group-commands", UsageVars{"overrides": "/etc/tacctl/tacctl.yaml"}},
 	{"group-privilege", "group-privilege", nil},
+	{"group-junos", "group-junos", UsageVars{"overrides": "/etc/tacctl/tacctl.yaml"}},
 	{"scope", "scope", UsageVars{"current": "Current scopes: 1\nDefault scope:  lab"}},
 	{"scope-prefixes", "scope-prefixes", UsageVars{"scope": "lab", "current": "Current entries: 1"}},
 	{"scope-secret", "scope-secret", UsageVars{"scope": "lab", "current": "Current length: 30 chars (min 16)"}},

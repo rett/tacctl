@@ -24,6 +24,8 @@ END-VENDOR	WTI
 # tacctl-radius.conf makes the vendor attributes of a reply from them. They are numbered in
 # the range FreeRADIUS reserves for site-local attributes (3000-3999), which it never puts
 # into a RADIUS packet.
-ATTRIBUTE	Tacctl-Priv-Lvl     	3990	integer
-ATTRIBUTE	Tacctl-Juniper-Class	3991	string
-ATTRIBUTE	Tacctl-WTI-Super    	3992	integer
+ATTRIBUTE	Tacctl-Priv-Lvl                  	3990	integer
+ATTRIBUTE	Tacctl-Juniper-Class             	3991	string
+ATTRIBUTE	Tacctl-WTI-Super                 	3992	integer
+ATTRIBUTE	Tacctl-Juniper-Deny-Commands     	3993	string
+ATTRIBUTE	Tacctl-Juniper-Deny-Configuration	3994	string

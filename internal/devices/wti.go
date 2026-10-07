@@ -5,6 +5,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/rett/tacctl/internal/policy"
 	rr "github.com/rett/tacctl/internal/render/radius"
 	"github.com/rett/tacctl/internal/ui"
 )
@@ -25,8 +26,10 @@ func WTITemplate(protocol string) string {
 }
 
 // wtiServiceName is the authorization service the walkthrough has the unit
-// send: the name of every exec_<group> service of tacquito.yaml.
-const wtiServiceName = "shell"
+// send: the factory 'wti' (D4, D25), which tacquito.yaml answers with a
+// group's wti service where it has a WTI level of its own, and with its
+// shell priv-lvl otherwise (patch 0001).
+const wtiServiceName = "wti"
 
 // wtiLevel is wti_access_level_for_privlvl and wti_super_for_privlvl: the
 // unit's access level for a priv-lvl (as bash's arithmetic reads it: a
@@ -38,6 +41,34 @@ func wtiLevel(priv string) (super int, level string) {
 		n = 0
 	}
 	return rr.WTISuper(n)
+}
+
+// wtiGroup is a group's WTI access level: the one set on it (override;
+// 'tacctl group edit <group> wti-level'), else its priv-lvl band (auto).
+type wtiGroup struct {
+	name, priv string
+	super      int    // the WTI-Super number of level
+	level      string // ViewOnly, User, SuperUser, Administrator
+	override   bool
+	auto       string // the band's level, shown next to an override
+}
+
+// wtiGroups are the groups with a priv-lvl and their WTI levels.
+func wtiGroups(d Data) []wtiGroup {
+	var out []wtiGroup
+	for _, g := range privGroups(d.Model) {
+		autoSuper, auto := wtiLevel(g.priv)
+		w := wtiGroup{name: g.name, priv: g.priv, super: autoSuper, level: auto, auto: auto}
+		if d.Conf != nil {
+			n, _ := strconv.Atoi(strings.TrimSpace(g.priv))
+			if lvl, ok := policy.WTILevel(d.Conf, g.name, n); ok {
+				w.super, w.level = rr.WTISuper(policy.WTIPrivLvl(lvl))
+				w.override = true
+			}
+		}
+		out = append(out, w)
+	}
+	return out
 }
 
 // wtiUnsafe is what 0.1.16's [[ "$secret" =~ [[:space:]] ]] ||
@@ -81,12 +112,16 @@ func WTIVars(req Request, d Data) map[string]string {
 		"SERVICE_NAME":   wtiServiceName,
 	}
 	var summary strings.Builder
-	for _, g := range privGroups(d.Model) {
-		super, level := wtiLevel(g.priv)
-		if req.Protocol == RADIUS {
-			summary.WriteString("  " + g.name + ": priv-lvl " + g.priv + " → WTI-Super " + strconv.Itoa(super) + " (" + level + ")\n")
-		} else {
-			summary.WriteString("  " + g.name + ": priv-lvl " + g.priv + " → " + level + "\n")
+	for _, g := range wtiGroups(d) {
+		switch {
+		case req.Protocol == RADIUS && g.override:
+			summary.WriteString("  " + g.name + ": priv-lvl " + g.priv + " → WTI-Super " + strconv.Itoa(g.super) + " (" + g.level + "; wti-level override, auto: " + g.auto + ")\n")
+		case req.Protocol == RADIUS:
+			summary.WriteString("  " + g.name + ": priv-lvl " + g.priv + " → WTI-Super " + strconv.Itoa(g.super) + " (" + g.level + ")\n")
+		case g.override:
+			summary.WriteString("  " + g.name + ": priv-lvl " + g.priv + " → " + g.level + " (wti-level override; auto: " + g.auto + ")\n")
+		default:
+			summary.WriteString("  " + g.name + ": priv-lvl " + g.priv + " → " + g.level + "\n")
 		}
 	}
 	vars["GROUP_SUMMARY"] = summary.String()
@@ -102,8 +137,8 @@ func WTIVars(req Request, d Data) map[string]string {
 
 // superUserBand reports whether a group lands in the SuperUser band.
 func superUserBand(d Data) bool {
-	for _, g := range privGroups(d.Model) {
-		if _, level := wtiLevel(g.priv); level == "SuperUser" {
+	for _, g := range wtiGroups(d) {
+		if g.level == "SuperUser" {
 			return true
 		}
 	}
@@ -116,9 +151,9 @@ func superUserBand(d Data) bool {
 func portAccess(o *out, d Data, menu string) {
 	o.heading(ui.Yellow, "Port access ("+menu+" → Port Access, Step 3):")
 	var limited []string
-	for _, g := range privGroups(d.Model) {
-		if _, level := wtiLevel(g.priv); level == "User" || level == "ViewOnly" {
-			limited = append(limited, "    "+g.name+": "+level)
+	for _, g := range wtiGroups(d) {
+		if g.level == "User" || g.level == "ViewOnly" {
+			limited = append(limited, "    "+g.name+": "+g.level)
 		}
 	}
 	if len(limited) == 0 {
@@ -177,12 +212,12 @@ func renderWTI(o *out, req Request, d Data) error {
 	o.echo("")
 	o.write(Expand(t.Text, wtiTacacsVars, vars))
 	o.rule()
-	o.heading(ui.Yellow, "Group → WTI Access Level Mapping (from priv-lvl):")
+	o.heading(ui.Yellow, "Group → WTI Access Level Mapping (from priv-lvl, or the group's wti-level):")
 	o.write(vars["GROUP_SUMMARY"])
 	o.echo("  (WTI bands: 0-4 ViewOnly, 5-9 User, 10-14 SuperUser, 15 Administrator)")
 	if !superUserBand(d) {
-		o.echo("  No group lands in the SuperUser band; to grant it, add a group at")
-		o.echo("  priv-lvl 10-14, e.g. 'tacctl group add wtisuper 12 OP-CLASS'.")
+		o.echo("  No group lands in the SuperUser band; to grant it, set a group's WTI level,")
+		o.echo("  e.g. 'tacctl group edit <group> wti-level superuser'.")
 	}
 	o.echo("")
 	portAccess(o, d, "8. Default User Access")
@@ -203,10 +238,14 @@ func renderWTI(o *out, req Request, d Data) error {
 		"    client is pam_tacplus-style): 'Account' is the TACACS+ authorization",
 		"    request that carries priv-lvl back — without it every login gets the",
 		"    'Default User Access' level; 'Session' is accounting start/stop",
-		"  - Service Name '" + wtiServiceName + "' makes the unit's authorization request match",
-		"    tacquito's configured service directly. Leaving the factory 'wti' also",
-		"    works, but only via the default-service-permit patch (patches/0001),",
+		"  - Service Name '" + wtiServiceName + "' (the factory default) has the unit ask for the wti",
+		"    service: a group with a WTI level of its own ('tacctl group edit <group>",
+		"    wti-level ...') is answered with that level; any other group gets its",
+		"    priv-lvl band through the default-service-permit patch (patches/0001),",
 		"    which answers an unmatched service with the group's shell priv-lvl",
+		"  - A unit set to Service Name 'shell' by the walkthrough of tacctl 0.2.1 or",
+		"    earlier still logs every group in at its priv-lvl band, but it ignores the",
+		"    WTI levels set on groups until its Service Name is set back to 'wti'",
 		"  - Default User Access must be On (Access Level ViewOnly is only the floor;",
 		"    the priv-lvl tacquito returns sets the effective level). SSH logins go",
 		"    through the unit's OpenSSH, which must resolve the account locally: with",
@@ -295,12 +334,12 @@ func renderWTIRadius(o *out, req Request, d Data) error {
 	o.echo("")
 	o.write(Expand(t.Text, wtiRadiusVars, vars))
 	o.rule()
-	o.heading(ui.Yellow, "Group → WTI-Super (sent by the server over RADIUS, from priv-lvl):")
+	o.heading(ui.Yellow, "Group → WTI-Super (sent by the server over RADIUS, from priv-lvl or the group's wti-level):")
 	o.write(vars["GROUP_SUMMARY"])
 	o.echo("  (bands as for TACACS+: 0-4 ViewOnly, 5-9 User, 10-14 SuperUser, 15 Administrator)")
 	if !superUserBand(d) {
-		o.echo("  No group lands in the SuperUser band; to grant it, add a group at")
-		o.echo("  priv-lvl 10-14, e.g. 'tacctl group add wtisuper 12 OP-CLASS'.")
+		o.echo("  No group lands in the SuperUser band; to grant it, set a group's WTI level,")
+		o.echo("  e.g. 'tacctl group edit <group> wti-level superuser'.")
 	}
 	o.echo("")
 	portAccess(o, d, "Default RADIUS User Access")

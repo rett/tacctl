@@ -8,11 +8,13 @@ package cli
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/names"
 	"github.com/rett/tacctl/internal/policy"
 	"github.com/rett/tacctl/internal/shellquote"
@@ -24,25 +26,37 @@ import (
 // verbs of 'commands' and 'privilege' are under "commands <verb>" and
 // "privilege <verb>".
 var groupSpecs = map[string]Spec{
-	"list":   {},
-	"add":    {MinArgs: 3, MaxArgs: 3, Args: []string{"", "", ""}},
+	"list": {},
+	"add": {MinArgs: 3, MaxArgs: 3, Args: []string{"", "", ""}, Flags: []Flag{
+		{Names: []string{"--wti-level"}, Value: true, Kind: "viewonly|user|superuser|administrator"}}},
 	"remove": {MinArgs: 1, MaxArgs: 1, Args: []string{KindGroups}},
-	"edit":   {MinArgs: 3, MaxArgs: 3, Args: []string{KindGroups, "priv-lvl|juniper-class", ""}},
+	"edit":   {MinArgs: 3, MaxArgs: 3, Args: []string{KindGroups, "priv-lvl|juniper-class|wti-level", ""}},
+	"show":   {MinArgs: 1, MaxArgs: 1, Args: []string{KindGroups}},
+	"preset roles": {Flags: []Flag{
+		{Names: []string{"--dry-run"}}, {Names: []string{"--force"}}, {Names: []string{"--mgmt-filter"}, Value: true}}},
+	"junos": {MinArgs: 2, MaxArgs: 4, Args: []string{KindGroups, "list|clear|deny-commands|deny-configuration", "list|add|remove|clear", ""}},
 
 	"commands list":    {MinArgs: 1, MaxArgs: 1, Args: []string{KindGroups}},
 	"commands default": {MinArgs: 2, MaxArgs: 2, Args: []string{KindGroups, "permit|deny"}},
 	"commands add": {MinArgs: 2, MaxArgs: 2, Args: []string{KindGroups, ""}, Flags: []Flag{
-		{Names: []string{"--match"}, Value: true, Repeat: true}, {Names: []string{"--action"}, Value: true, Kind: "permit|deny"}}},
-	"commands remove": {MinArgs: 2, MaxArgs: 2, Args: []string{KindGroups, ""}},
-	"commands clear":  {MinArgs: 1, MaxArgs: 1, Args: []string{KindGroups}},
-	"commands seed":   {MaxArgs: 1, Args: []string{"readonly|operator|superuser"}, Flags: []Flag{{Names: []string{"--force"}}}},
+		{Names: []string{"--match"}, Value: true, Repeat: true}, {Names: []string{"--action"}, Value: true, Kind: "permit|deny"},
+		{Names: []string{"--before"}, Value: true}, {Names: []string{"--first"}}}},
+	"commands remove": {MinArgs: 2, MaxArgs: 2, Args: []string{KindGroups, ""}, Flags: []Flag{
+		{Names: []string{"--match"}, Value: true, Repeat: true}, {Names: []string{"--action"}, Value: true, Kind: "permit|deny"},
+		{Names: []string{"--all"}}}},
+	"commands clear": {MinArgs: 1, MaxArgs: 1, Args: []string{KindGroups}},
+	"commands seed":  {MaxArgs: 1, Args: []string{"readonly|operator|superuser"}, Flags: []Flag{{Names: []string{"--force"}}}},
 
 	"privilege list":   {MinArgs: 1, MaxArgs: 1, Args: []string{KindGroups}},
-	"privilege add":    {MinArgs: 2, MaxArgs: 2, Args: []string{KindGroups, ""}},
+	"privilege add":    {MinArgs: 2, MaxArgs: 2, Args: []string{KindGroups, privModeWords}},
 	"privilege remove": {MinArgs: 2, MaxArgs: 2, Args: []string{KindGroups, ""}},
 	"privilege clear":  {MinArgs: 1, MaxArgs: 1, Args: []string{KindGroups}},
 	"privilege seed":   {MaxArgs: 1, Args: []string{"readonly|operator|superuser"}, Flags: []Flag{{Names: []string{"--force"}}}},
 }
+
+// privModeWords are what completion offers for the entry of 'privilege
+// add': the mode prefixes an entry may start with (names.PrivModes).
+var privModeWords = "exec:|exec all:|configure:|configure all:"
 
 func groupCmd(inv *invocation) *cobra.Command {
 	n := func(run func([]string) error) func(*cobra.Command, []string) error {
@@ -70,12 +84,18 @@ func groupCmd(inv *invocation) *cobra.Command {
 		withRun(verb("seed [<group>] [--force]", "Populate built-ins with safe defaults"), sub(inv.groupPrivilege, "seed")),
 	)
 	priv.RunE = n(inv.groupPrivilege)
+	preset := verb("preset roles [--dry-run] [--force] [--mgmt-filter <name>]", "Starting values for the roles",
+		withRun(verb("roles [--dry-run] [--force] [--mgmt-filter <name>]", "Starting values for viewer, operator, engineer and superuser"), sub(inv.groupPreset, "roles")),
+	)
+	preset.RunE = n(inv.groupPreset)
 	c := verb("group <subcommand>", "Group management (list, add, edit, remove)",
 		withRun(verb("list", "List all groups"), n(inv.groupList)),
-		withRun(verb("add <name> <priv-lvl> <juniper-class>", "Add a new group"), n(inv.groupAdd)),
+		withRun(verb("show <name>", "Every setting of a group and where it comes from"), n(inv.groupShow)),
+		withRun(verb("add <name> <priv-lvl> <juniper-class> [--wti-level <level>]", "Add a new group"), n(inv.groupAdd)),
 		withRun(verb("remove <name>", "Remove a custom group"), n(inv.groupRemove)),
-		withRun(verb("edit <name> {priv-lvl <0-15>|juniper-class <class>}", "Change a group's priv-lvl or juniper-class"), n(inv.groupEdit)),
-		cmds, priv,
+		withRun(verb("edit <name> {priv-lvl <0-15>|juniper-class <class>|wti-level <level>}", "Change one setting of a group"), n(inv.groupEdit)),
+		withRun(verb("junos <group> {list|clear|deny-commands|deny-configuration} ...", "Per-group Junos deny rules"), n(inv.groupJunos)),
+		cmds, priv, preset,
 	)
 	// No sub-command, help or an unknown word: the usage, exit 1.
 	c.RunE = n(func([]string) error {
@@ -133,9 +153,17 @@ func (inv *invocation) groupList([]string) error {
 
 func (inv *invocation) groupAdd(args []string) error {
 	a := inv.app
+	spec := groupSpecs["add"]
+	spec.MinArgs = 0
+	p, err := Parse(spec, args)
+	if err != nil {
+		return inv.usageErr(err.Error(), "Usage: tacctl group add <name> <cisco-priv-lvl> <juniper-class> [--wti-level <level>]")
+	}
+	args = p.Args
+	wtiV := p.Value("--wti-level")
 	group, privlvl, class := arg(args, 0), arg(args, 1), arg(args, 2)
 	if group == "" || privlvl == "" || class == "" {
-		a.Out.Error("Usage: tacctl group add <name> <cisco-priv-lvl> <juniper-class>")
+		a.Out.Error("Usage: tacctl group add <name> <cisco-priv-lvl> <juniper-class> [--wti-level <level>]")
 		inv.stderrLine("  Example: tacctl group add helpdesk 5 HELPDESK-CLASS")
 		return exit(1)
 	}
@@ -156,12 +184,28 @@ func (inv *invocation) groupAdd(args []string) error {
 	if err := names.ValidateClassName(class); err != nil {
 		return inv.validated(err)
 	}
-	if err := inv.applyStore(func(s *store.Store) error {
-		return s.GroupSet(group, "priv_lvl="+privlvl, "juniper_class="+class)
-	}); err != nil {
+	if p.Has("--wti-level") && !slices.Contains(conf.WTILevels, wtiV) {
+		return inv.usageErr("Unknown WTI level '" + wtiV + "'. Use: " + strings.Join(conf.WTILevels, ", "))
+	}
+	add := func(s *store.Store) error { return s.GroupSet(group, "priv_lvl="+privlvl, "juniper_class="+class) }
+	if wtiV == "" {
+		err = inv.applyStore(add)
+	} else {
+		// One apply, so the backends render the group with its settings once.
+		err = inv.applyWith(func() error {
+			if err := inv.mutate(add); err != nil {
+				return err
+			}
+			return policy.WriteWTILevel(a.Conf(), group, wtiV)
+		})
+	}
+	if err != nil {
 		return err
 	}
 	a.Out.Info("Group '" + group + "' added (Cisco priv-lvl " + privlvl + ", Juniper " + class + ").")
+	if wtiV != "" {
+		a.Out.Info("WTI level: " + wtiV + " (units must send Service Name 'wti').")
+	}
 	a.Out.Warn("On Juniper devices, create the template user: set system login user " + class + " class <junos-class>")
 	inv.echo("")
 	return nil
@@ -195,7 +239,19 @@ func (inv *invocation) groupRemove(args []string) error {
 		a.Out.Info("Cancelled.")
 		return nil
 	}
-	if err := inv.applyStore(func(s *store.Store) error { return s.GroupDel(group) }); err != nil {
+	del := func(s *store.Store) error { return s.GroupDel(group) }
+	if !groupHasSettings(a.Conf(), group) {
+		err = inv.applyStore(del)
+	} else {
+		// Its device settings in tacctl.yaml go with it (0.2.2).
+		err = inv.applyWith(func() error {
+			if err := inv.mutate(del); err != nil {
+				return err
+			}
+			return policy.ForgetGroup(a.Conf(), group)
+		})
+	}
+	if err != nil {
 		return err
 	}
 	a.Out.Info("Group '" + group + "' removed.")
@@ -207,9 +263,10 @@ func (inv *invocation) groupEdit(args []string) error {
 	a := inv.app
 	group, field, value := arg(args, 0), arg(args, 1), arg(args, 2)
 	if group == "" || field == "" || value == "" {
-		a.Out.Error("Usage: tacctl group edit <name> <priv-lvl|juniper-class> <value>")
+		a.Out.Error("Usage: tacctl group edit <name> <priv-lvl|juniper-class|wti-level> <value>")
 		inv.stderrLine("  Example: tacctl group edit operator priv-lvl 10")
 		inv.stderrLine("  Example: tacctl group edit operator juniper-class NEW-CLASS")
+		inv.stderrLine("  Example: tacctl group edit engineer wti-level superuser")
 		return exit(1)
 	}
 	if err := inv.requireStore(); err != nil {
@@ -238,8 +295,21 @@ func (inv *invocation) groupEdit(args []string) error {
 		}
 		a.Out.Info("Group '" + group + "' Juniper class changed to " + value + ".")
 		a.Out.Warn("On Juniper devices: set system login user " + value + " class <junos-class>")
+	case "wti-level", "tier":
+		m, err := inv.model()
+		if err != nil {
+			return err
+		}
+		if field == "tier" {
+			err = inv.groupEditTier(m.Group(group), value)
+		} else {
+			err = inv.groupEditWTILevel(m.Group(group), value)
+		}
+		if err != nil {
+			return err
+		}
 	default:
-		return inv.usageErr("Unknown field '" + field + "'. Use: priv-lvl or juniper-class")
+		return inv.usageErr("Unknown field '" + field + "'. Use: priv-lvl, juniper-class or wti-level")
 	}
 	inv.echo("")
 	return nil
@@ -262,49 +332,6 @@ func (inv *invocation) groupSeedSiblings(group string) error {
 		inv.app.Out.Info("(prevents lockout once Cisco 'aaa authorization commands " + privlvl + "' is applied.)")
 	}
 	return nil
-}
-
-// greps is 'read_group_commands "$group" | grep -q "^${name}|"' for a name
-// the command line gave unchecked: a basic regular expression, as grep
-// takes it (one that does not compile matches nothing).
-func greps(lines []string, name string) bool {
-	re, err := regexp.Compile("^" + breToRE2(name) + `\|`)
-	if err != nil {
-		return false
-	}
-	for _, l := range lines {
-		if re.MatchString(l) {
-			return true
-		}
-	}
-	return false
-}
-
-// breToRE2 translates a POSIX basic regular expression (GNU flavour) to
-// Go's syntax: '+ ? ( ) { } |' are literal unless escaped, '\+ \? \( \)
-// \{ \} \|' are the operators.
-func breToRE2(bre string) string {
-	var b strings.Builder
-	for i := 0; i < len(bre); i++ {
-		c := bre[i]
-		switch {
-		case c == '\\' && i+1 < len(bre):
-			i++
-			switch d := bre[i]; d {
-			case '+', '?', '(', ')', '{', '}', '|':
-				b.WriteByte(d)
-			default:
-				b.WriteByte('\\')
-				b.WriteByte(d)
-			}
-		case strings.IndexByte("+?(){}|", c) >= 0:
-			b.WriteByte('\\')
-			b.WriteByte(c)
-		default:
-			b.WriteByte(c)
-		}
-	}
-	return b.String()
 }
 
 func (inv *invocation) groupCommands(args []string) error {
@@ -354,9 +381,11 @@ func (inv *invocation) groupCommands(args []string) error {
 			inv.echo("")
 			return nil
 		}
-		t := ui.NewTable(title, ui.Left("NAME"), ui.Left("ACTION"), ui.Left("MATCH"))
+		// '#' is the rule's position (what 'add --before/--first' and the
+		// 'remove' messages count), so a skipped line still takes a number.
+		t := ui.NewTable(title, ui.Right("#"), ui.Left("NAME"), ui.Left("ACTION"), ui.Left("MATCH"))
 		catchall := false
-		for _, r := range rules {
+		for i, r := range rules {
 			name, action, match := policy.Field(r, 1), policy.Field(r, 2), ruleMatch(r)
 			if name == "" {
 				continue
@@ -370,7 +399,7 @@ func (inv *invocation) groupCommands(args []string) error {
 				catchall = true
 				shown = name + " (catchall)"
 			}
-			t.Add(shown, ui.Styled(color, action), match)
+			t.Add(strconv.Itoa(i+1), shown, ui.Styled(color, action), match)
 		}
 		inv.write(t.String())
 		inv.echo("")
@@ -398,23 +427,7 @@ func (inv *invocation) groupCommands(args []string) error {
 	case "add":
 		return inv.groupCommandsAdd(group, rest)
 	case "remove":
-		name := arg(rest, 0)
-		if name == "" {
-			return inv.usageErr("Usage: tacctl group commands remove <group> <name>")
-		}
-		if name == policy.Catchall {
-			return inv.usageErr("Cannot remove the '*' catchall. Use 'tacctl group commands default' to change its action,",
-				"or 'tacctl group commands clear "+group+"' to revert this group to shipped defaults.")
-		}
-		if !greps(policy.Lines(c, group), name) {
-			a.Out.WarnE("No rule named '" + name + "' in group '" + group + "'.")
-			return nil
-		}
-		if err := inv.applyWith(func() error { return policy.RemoveRule(a.Conf(), group, name) }); err != nil {
-			return err
-		}
-		a.Out.InfoE("Removed rule '" + name + "' from group '" + group + "'.")
-		inv.echo("")
+		return inv.groupCommandsRemove(group, rest)
 	case "clear":
 		if len(policy.Lines(c, group)) == 0 {
 			a.Out.Info("Group '" + group + "' has no command rules; nothing to clear.")
@@ -447,11 +460,78 @@ func ruleMatch(line string) string {
 	return f[2]
 }
 
+// groupCommandsRemove is 'group commands remove <group> <name>': --match
+// (repeatable, the rule's list as stored) and --action narrow the rules of
+// that name to one; several are refused unless --all.
+func (inv *invocation) groupCommandsRemove(group string, args []string) error {
+	a := inv.app
+	name := arg(args, 0)
+	if name == "" {
+		return inv.usageErr("Usage: tacctl group commands remove <group> <name> [--match <regex>]... [--action permit|deny] [--all]")
+	}
+	if name == policy.Catchall {
+		return inv.usageErr("Cannot remove the '*' catchall. Use 'tacctl group commands default' to change its action,",
+			"or 'tacctl group commands clear "+group+"' to revert this group to shipped defaults.")
+	}
+	var matches []string
+	action, all := "", false
+	rest := args[1:]
+	for len(rest) > 0 {
+		switch rest[0] {
+		case "--match":
+			if len(rest) < 2 {
+				return inv.usageErr("--match needs a regex.")
+			}
+			matches = append(matches, rest[1])
+			rest = rest[2:]
+		case "--action":
+			action = arg(rest, 1)
+			if action != "permit" && action != "deny" {
+				return inv.usageErr("--action must be 'permit' or 'deny'.")
+			}
+			rest = rest[2:]
+		case "--all":
+			all = true
+			rest = rest[1:]
+		default:
+			return inv.usageErr("Unknown flag: '" + rest[0] + "'")
+		}
+	}
+	c := a.Conf()
+	if len(policy.RulesWhere(c, group, name, nil, "")) == 0 {
+		a.Out.WarnE("No rule named '" + name + "' in group '" + group + "'.")
+		return nil
+	}
+	switch n := len(policy.RulesWhere(c, group, name, matches, action)); {
+	case n == 0:
+		a.Out.WarnE("No rule named '" + name + "' in group '" + group + "' has that --match/--action.")
+		return nil
+	case n > 1 && !all:
+		a.Out.ErrorE((&policy.AmbiguousError{Group: group, Name: name, Count: n}).Error())
+		return exit(1)
+	}
+	var gone []policy.Numbered
+	if err := inv.applyWith(func() error {
+		var err error
+		gone, err = policy.RemoveRuleWhere(a.Conf(), group, name, matches, action, all)
+		return err
+	}); err != nil {
+		return err
+	}
+	for _, r := range gone {
+		// Info, not InfoE: a match such as a\x2cb is printed as given.
+		a.Out.Info("Removed rule #" + strconv.Itoa(r.Pos) + " '" + name + "' (" + policy.Field(r.Line, 2) +
+			", match=[" + ruleMatch(r.Line) + "]) from group '" + group + "'.")
+	}
+	inv.echo("")
+	return nil
+}
+
 func (inv *invocation) groupCommandsAdd(group string, args []string) error {
 	a := inv.app
 	name := arg(args, 0)
 	if name == "" {
-		return inv.usageErr("Usage: tacctl group commands add <group> <name> [--match <regex>]... [--action permit|deny]")
+		return inv.usageErr("Usage: tacctl group commands add <group> <name> [--match <regex>]... [--action permit|deny] [--before <name>|--first]")
 	}
 	if err := names.ValidateCommandName(name); err != nil {
 		return inv.validated(err)
@@ -460,6 +540,7 @@ func (inv *invocation) groupCommandsAdd(group string, args []string) error {
 		return inv.usageErr("Use 'tacctl group commands default " + group + " permit|deny' to change the catchall.")
 	}
 	action, matches := "permit", ""
+	var where policy.Where
 	rest := args[1:]
 	for len(rest) > 0 {
 		switch rest[0] {
@@ -498,9 +579,24 @@ func (inv *invocation) groupCommandsAdd(group string, args []string) error {
 				return inv.usageErr("--action must be 'permit' or 'deny'.")
 			}
 			rest = rest[2:]
+		case "--before":
+			where.Before = arg(rest, 1)
+			if where.Before == "" {
+				return inv.usageErr("--before needs the name of a rule.")
+			}
+			rest = rest[2:]
+		case "--first":
+			where.First = true
+			rest = rest[1:]
 		default:
 			return inv.usageErr("Unknown flag: '" + rest[0] + "'")
 		}
+	}
+	if where.First && where.Before != "" {
+		return inv.usageErr("--before and --first cannot be used together.")
+	}
+	if where.Before != "" && where.Before != policy.Catchall && len(policy.RulesWhere(a.Conf(), group, where.Before, nil, "")) == 0 {
+		return inv.usageErr((&policy.NoRuleError{Group: group, Name: where.Before}).Error())
 	}
 	// The same name with the same matches is a no-op; the same name with
 	// other matches is another rule.
@@ -515,7 +611,7 @@ func (inv *invocation) groupCommandsAdd(group string, args []string) error {
 		if err := inv.groupSeedSiblings(group); err != nil {
 			return err
 		}
-		return policy.InsertRule(a.Conf(), group, name, action, matches)
+		return policy.InsertRuleAt(a.Conf(), group, name, action, matches, where)
 	}); err != nil {
 		return err
 	}
@@ -642,10 +738,17 @@ func (inv *invocation) privList(input string, check bool) ([]string, error) {
 		if w == "" {
 			continue
 		}
+		// An entry may start with a mode (exec:, exec all:, configure:,
+		// configure all:); it is kept in its stored form, so 'exec: x' and
+		// 'x' are the same mapping.
 		if check {
-			if err := names.ValidatePrivCommandString(w); err != nil {
+			entry, err := names.ValidatePrivEntry(w)
+			if err != nil {
 				return nil, inv.validated(err)
 			}
+			w = entry
+		} else if mode, cmd, ok := names.SplitPrivEntry(w); ok {
+			w = names.PrivEntry(mode, cmd)
 		}
 		out = append(out, w)
 	}
@@ -701,15 +804,11 @@ func (inv *invocation) groupPrivilege(args []string) error {
 		case c.HasOverride(path):
 			inv.echoE("  Source: " + b + "explicit" + nc + " (tacctl.yaml: " + path + ")")
 			inv.echo("")
-			inv.listLines(merged)
+			inv.privLines(merged, "")
 		default:
 			inv.echoE("  Source: " + b + "default" + nc + " (built-in safe defaults; override via 'tacctl group privilege add')")
 			inv.echo("")
-			for _, x := range strings.Split(captured(merged), "\n") {
-				if x != "" {
-					inv.echo("  - " + x + "  (default)")
-				}
-			}
+			inv.privLines(merged, "  (default)")
 		}
 		inv.echo("")
 	case "add", "remove":
@@ -784,6 +883,18 @@ func (inv *invocation) groupPrivilege(args []string) error {
 		inv.echo("")
 	}
 	return nil
+}
+
+// privLines lists privilege mappings with their mode in a column (exec,
+// exec all, configure, configure all), each line ended by suffix.
+func (inv *invocation) privLines(entries []string, suffix string) {
+	for _, e := range strings.Split(captured(entries), "\n") {
+		if e == "" {
+			continue
+		}
+		mode, cmd, _ := names.SplitPrivEntry(e)
+		inv.echo(fmt.Sprintf("  - %-13s  %s%s", mode, cmd, suffix))
+	}
 }
 
 // groupField is the priv-lvl and class text of group in model_group_info's

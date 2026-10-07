@@ -67,6 +67,9 @@ mkdir -p /etc/tacctl /etc/tacquito /var/log/tacquito
 chmod 700 /etc/tacctl
 sed "s#10.0.2.0/24#${MYIP%.*}.0/24#" "${DATA}/store.yaml" > /etc/tacctl/store.yaml
 chmod 600 /etc/tacctl/store.yaml
+# netops's Junos deny sets and WTI level (cases.sh: 007).
+cp "${DATA}/tacctl.yaml" /etc/tacctl/tacctl.yaml
+chmod 600 /etc/tacctl/tacctl.yaml
 # The bootstrap needs wget and tar for Go (the cached image may predate wget).
 command -v wget > /dev/null 2>&1 || { apt-get install -y -qq wget ca-certificates > /dev/null 2>&1 || dnf install -y -q wget > /dev/null 2>&1; }
 /opt/tacctl/bin/tacctl.sh version 2>&1 | tail -3

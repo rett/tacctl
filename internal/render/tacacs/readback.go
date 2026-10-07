@@ -3,13 +3,16 @@ package tacacs
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 
+	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/hash"
 	"github.com/rett/tacctl/internal/model"
+	"github.com/rett/tacctl/internal/policy"
 	"github.com/rett/tacctl/internal/py"
 	"github.com/rett/tacctl/internal/pyyaml"
 	"github.com/rett/tacctl/internal/rendered"
@@ -24,6 +27,9 @@ type LegacyResult struct {
 	Model   *model.Model
 	Errors  []string // the report's 'errors'
 	Dropped []string // the report's 'dropped'
+	// Extras are the per-group device settings the importer found (the
+	// Junos set_values and the wti service), by group name.
+	Extras map[string]*store.GroupExtras
 }
 
 // LegacyLoader reads a tacquito.yaml with the importer, without the
@@ -247,6 +253,11 @@ func Readback(path string, m *model.Model, view *yamlpy.Map, load LegacyLoader) 
 	if err != nil {
 		return err
 	}
+	devauth, err := devauthProblems(path, m, view, load)
+	if err != nil {
+		return err
+	}
+	problems = append(problems, devauth...)
 	byName, err := groupsByName(path)
 	if err != nil {
 		return err
@@ -377,4 +388,39 @@ func yamlProblem(path string, err error) string {
 		return path + ": " + why.Why()
 	}
 	return path + ": " + err.Error()
+}
+
+// devauthProblems checks the per-group device settings of 0.2.2 read back
+// as tacctl.yaml says them: each group's Junos deny values and the
+// priv-lvl of its wti service (none for a group without a WTI level).
+func devauthProblems(path string, m *model.Model, view *yamlpy.Map, load LegacyLoader) ([]string, error) {
+	back, err := load(path)
+	if err != nil {
+		return nil, err
+	}
+	cfg := conf.View(view)
+	var problems []string
+	for _, g := range m.Groups {
+		got := back.Extras[g.Name]
+		if got == nil {
+			got = &store.GroupExtras{}
+		}
+		want := map[string]string{}
+		for _, attr := range conf.JunosAttrs {
+			if items := policy.JunosSet(cfg, g.Name, attr); len(items) > 0 {
+				want[conf.JunosArg(attr)] = conf.JunosValue(items)
+			}
+		}
+		if !maps.Equal(want, got.Junos) && (len(want) > 0 || len(got.Junos) > 0) {
+			problems = append(problems, fmt.Sprintf("junos values of group '%s' differ", g.Name))
+		}
+		level, over := policy.WTILevel(cfg, g.Name, 0)
+		switch {
+		case !over && got.WTI != nil:
+			problems = append(problems, fmt.Sprintf("wti service of group '%s' differs", g.Name))
+		case over && !py.Equal(policy.WTIPrivLvl(level), got.WTI):
+			problems = append(problems, fmt.Sprintf("wti service of group '%s' differs", g.Name))
+		}
+	}
+	return problems, nil
 }

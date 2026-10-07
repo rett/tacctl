@@ -267,8 +267,11 @@ _client_env() {
     assert_output "0"
     stub_called "useradd -m -u 80000 -g tac-users -s /bin/bash .* alice"
     stub_called "useradd -m -u 80001 -g tac-users -s /bin/bash .* bob"
-    stub_called "usermod -aG tac-users,tac-superuser alice"
-    stub_called "usermod -aG tac-users bob"
+    stub_called "usermod -aG tac-superuser alice"
+    # tac-users is their primary group, so never a supplementary one too;
+    # bob (readonly) is in no other group of a host other than the server.
+    run grep -cE "^usermod -aG .*tac-users|^usermod -aG .*bob" "$CALLS_LOG"
+    assert_output "0"
     run grep -E "^(alice|bob):" "$FAKE_DB/passwd"
     assert_line --partial "alice:x:80000:80000:"
     assert_line --partial "bob:x:80001:80000:"
@@ -279,6 +282,10 @@ _client_env() {
 bob"
     [[ ! -e "$TACCTL_CLIENT_STATE/adopted" ]]
     [[ ! -f "$TACCTL_CLIENT_PAM_DIR/tacctl-auth" ]]
+    # The protocol it ran, for 'host show --check'; no PAM file was written.
+    run cat "$TACCTL_CLIENT_STATE/protocol"
+    assert_output "$(sed -n 's/^TAC_PROTOCOL=//p' "$OUT")"
+    [[ ! -e "$TACCTL_CLIENT_STATE/pam.sha256" ]]
 }
 
 @test "client install: the tacctl server's own script keeps every tier group, at fixed GIDs" {
@@ -292,8 +299,8 @@ bob"
     stub_called "groupadd -g 80002 tac-superuser"
     stub_called "groupadd -g 80003 tac-operator"
     stub_called "groupadd -g 80004 tac-readonly"
-    stub_called "usermod -aG tac-users,tac-superuser alice"
-    stub_called "usermod -aG tac-users,tac-readonly bob"
+    stub_called "usermod -aG tac-superuser alice"
+    stub_called "usermod -aG tac-readonly bob"
 }
 
 @test "client install: an earlier release's groups move to the fixed GIDs; own groups go; unused tier groups go" {
@@ -331,6 +338,39 @@ bob"
     assert_success
     run grep -cE "^(groupadd|groupmod|groupdel|usermod -g)" "$CALLS_LOG"
     assert_output "0"
+}
+
+@test "client install: an account with tac-users as primary group is no longer listed in it as well, once" {
+    _gen > /dev/null
+    _client_env
+    # gpasswd -d takes the member out of the group in the database.
+    stub_cmd gpasswd '[[ "$1" == "-d" ]] || exit 0
+        awk -F: -v OFS=: -v u="$2" -v g="$3" "\$1 == g { n = split(\$4, m, \",\"); \$4 = \"\"; for (i = 1; i <= n; i++) if (m[i] != u) \$4 = \$4 (\$4 == \"\" ? \"\" : \",\") m[i] } 1" "$FAKE_DB/group" > "$FAKE_DB/g.new" && mv "$FAKE_DB/g.new" "$FAKE_DB/group"'
+    mkdir -p "$TACCTL_CLIENT_STATE" "$TACCTL_CLIENT_HOME_ROOT/alice" "$TACCTL_CLIENT_HOME_ROOT/bob"
+    chmod 700 "$TACCTL_CLIENT_HOME_ROOT/alice" "$TACCTL_CLIENT_HOME_ROOT/bob"
+    printf '%s\n' alice bob > "$TACCTL_CLIENT_STATE/created"
+    # As 0.2.1 leaves a 0.2.0 host: tac-users is the primary group of both,
+    # and alice is still listed in it as a supplementary group; bob is not.
+    printf '%s\n' "alice:x:80000:80000:alice (TACACS+):${TACCTL_CLIENT_HOME_ROOT}/alice:/bin/bash" \
+        "bob:x:80001:80000:bob (TACACS+):${TACCTL_CLIENT_HOME_ROOT}/bob:/bin/bash" >> "$FAKE_DB/passwd"
+    printf '%s\n' "tac-users:x:80000:alice" "tac-superuser:x:80002:alice" >> "$FAKE_DB/group"
+    run bash "$OUT" --accounts-only
+    assert_success
+    assert_output --partial "[INFO] 'alice': no longer listed in tac-users as a supplementary group (it is the primary group)."
+    refute_output --partial "'bob': no longer listed"
+    [[ $(grep -c "supplementary" <<< "$output") == 1 ]]
+    stub_called "gpasswd -d alice tac-users"
+    run grep -c "^gpasswd -d bob tac-users" "$CALLS_LOG"
+    assert_output "0"
+    # Once: a second run changes nothing.
+    : > "$CALLS_LOG"
+    run bash "$OUT" --accounts-only
+    assert_success
+    refute_output --partial "supplementary"
+    run grep -cE "^(gpasswd|usermod -aG .*tac-users)" "$CALLS_LOG"
+    assert_output "0"
+    run grep -E "^tac-" "$FAKE_DB/group"
+    assert_output $'tac-users:x:80000:\ntac-superuser:x:80002:alice'
 }
 
 @test "client install: an own group at tac-users' fixed GID (an earlier build) gives way to it" {
@@ -430,7 +470,9 @@ bob"
     assert_output --partial "usermod -u <uid> <user>"
     refute_output --partial "groupmod"
     assert_output --partial "tacctl config linux uid <user> <uid-on-this-host>"
-    stub_called "usermod -aG tac-users bob"
+    stub_called "usermod -g tac-users bob"
+    run grep -cE "^usermod -aG .*bob" "$CALLS_LOG"
+    assert_output "0"
 }
 
 @test "config linux uid: lists, shows and reassigns within 80000-89999; refuses duplicates and other values" {
@@ -790,7 +832,7 @@ _legacy_host() {
     # under its new number; bob is created.
     assert_output --partial "Deleted account 'gone': no longer a TACACS+ user here (its UID 80002 stays reserved"
     assert_output --partial "[INFO] Accounts: 2 managed by tacctl here; 2 renumbered."
-    stub_called "usermod -aG tac-users,tac-superuser alice"
+    stub_called "usermod -aG tac-superuser alice"
     stub_called "useradd -m -u 80001 -g tac-users"
     stub_called "pgrep -u 20000"
     stub_called "usermod -u 80000 alice"
@@ -913,8 +955,8 @@ CONSOLE=/usr/local/bin/tacctl-console
     stub_called "groupadd -g 80001 tac-console"
     stub_called "useradd -m -u 80000 -g tac-users -s ${CONSOLE} -K UID_MIN=80000 -K UID_MAX=89999 -c alice \\(TACACS\\+\\) alice"
     stub_called "useradd -m -u 80001 -g tac-users -s /bin/bash -K UID_MIN=80000 -K UID_MAX=89999 -c bob \\(TACACS\\+\\) bob"
-    stub_called "usermod -aG tac-users,tac-superuser,tac-console alice"
-    stub_called "usermod -aG tac-users,tac-readonly bob"
+    stub_called "usermod -aG tac-superuser,tac-console alice"
+    stub_called "usermod -aG tac-readonly bob"
     assert_output --partial "[INFO] Accounts: 2 managed by tacctl here; console: 1."
     # Switched: alice back to bash (out of tac-console), bob to the console.
     _console_header /bin/bash "$CONSOLE"
@@ -926,7 +968,7 @@ CONSOLE=/usr/local/bin/tacctl-console
     stub_called "usermod -s /bin/bash alice"
     stub_called "usermod -s ${CONSOLE} bob"
     stub_called "gpasswd -d alice tac-console"
-    stub_called "usermod -aG tac-users,tac-readonly,tac-console bob"
+    stub_called "usermod -aG tac-readonly,tac-console bob"
     run grep -E "^(alice|bob):" "$FAKE_DB/passwd"
     assert_line --partial "alice:x:80000:80000:alice (TACACS+):${TACCTL_CLIENT_HOME_ROOT}/alice:/bin/bash"
     assert_line --partial "bob:x:80001:80000:bob (TACACS+):${TACCTL_CLIENT_HOME_ROOT}/bob:${CONSOLE}"
@@ -1126,7 +1168,9 @@ CONSOLE=/usr/local/bin/tacctl-console
     assert_success
     assert_output --partial "Re-activated account 'bob'."
     stub_called "usermod -e  bob"
-    stub_called "usermod -aG tac-users bob"
+    # tac-users is its primary group: not added again as a supplementary one.
+    run grep -cE "^usermod -aG .*bob" "$CALLS_LOG"
+    assert_output "0"
 }
 
 @test "client install: a removed user still logged in (userdel fails) is expired and deleted at the next sync" {
@@ -1207,6 +1251,11 @@ CONSOLE=/usr/local/bin/tacctl-console
     assert_line "@include common-auth"
     run cat "$TACCTL_CLIENT_SUDOERS"
     assert_output --partial "%tac-superuser ALL=(ALL:ALL) ALL"
+    # What it wrote is recorded, for 'host show --check'.
+    run bash -c 'cd "$TACCTL_CLIENT_PAM_DIR" && sha256sum -c "$TACCTL_CLIENT_STATE/pam.sha256"'
+    assert_success
+    assert_line "tacctl-auth: OK"
+    assert_line "tacctl-session: OK"
 
     # Re-running must not stack a second session include.
     run bash "$OUT"
@@ -1224,6 +1273,7 @@ CONSOLE=/usr/local/bin/tacctl-console
     cmp "$TACCTL_CLIENT_PAM_DIR/sddm" "$BATS_TEST_TMPDIR/sddm.orig"
     [[ ! -f "$TACCTL_CLIENT_PAM_DIR/tacctl-auth" ]]
     [[ ! -f "$TACCTL_CLIENT_SUDOERS" ]]
+    [[ ! -e "$TACCTL_CLIENT_STATE/pam.sha256" && ! -e "$TACCTL_CLIENT_STATE/protocol" ]]
     run grep -cE "userdel|groupdel" "$CALLS_LOG"
     assert_output "0"
 }
@@ -1501,13 +1551,15 @@ _rhel_env() {
 
 @test "client remove: reports accounts left without a way to log in" {
     _client_env
+    # ghost is listed in tac-users (an earlier release), shade has it as its
+    # primary group only.
     echo "tac-users:x:900:ghost" >> "$FAKE_DB/group"
-    echo 'ghost:x:80009:80009::/nonexistent:/bin/bash' >> "$FAKE_DB/passwd"
-    echo 'ghost:!:1::::::' >> "$FAKE_DB/shadow"
+    printf '%s\n' 'ghost:x:80009:80009::/nonexistent:/bin/bash' 'shade:x:80010:900::/nonexistent:/bin/bash' >> "$FAKE_DB/passwd"
+    printf '%s\n' 'ghost:!:1::::::' 'shade:!:1::::::' >> "$FAKE_DB/shadow"
     "$TACCTL_BIN_SCRIPT" config linux remove-script --output "$BATS_TEST_TMPDIR/remove.sh" > /dev/null
     run bash "$BATS_TEST_TMPDIR/remove.sh"
     assert_success
-    assert_output --partial "cannot log in: ghost"
+    assert_output --partial "cannot log in: ghost shade"
 }
 
 # --- method radius --------------------------------------------------------------

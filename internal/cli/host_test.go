@@ -152,7 +152,7 @@ func TestHostEnrollSyncUnenroll(t *testing.T) {
 	if !r.Called("logger", "-t", "tacctl", "-p", "auth.info", "host enroll name=web1 target=admin@web1.example.net scope=lab method=tacplus by=root") {
 		t.Errorf("no audit line: %q", r.Argvs())
 	}
-	if r.Called("getent") && r.CalledRegexp(`os-release`) {
+	if r.Called("getent") && r.CalledRegexp(`TACCTL_ARCH`) {
 		t.Error("--build-on-host probed the host")
 	}
 	// --remove-home: nothing to ask, so the host's accounts are not read.

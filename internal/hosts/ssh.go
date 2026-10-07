@@ -101,13 +101,19 @@ func RemoteCommand(remote string, args []string, tty bool) string {
 		q[i] = remoteWord(a)
 	}
 	run := "bash " + remote + " " + strings.Join(q, " ")
+	return "trap 'rm -f " + remote + "' EXIT; " + asRoot(run, tty)
+}
+
+// asRoot is the remote command that runs run as root: directly when the
+// login is root, else through sudo (see RemoteCommand).
+func asRoot(run string, tty bool) string {
 	inner := ""
 	if tty {
 		inner = "sudo -p '[sudo] password for %u on %H: ' " + run
 	} else {
 		inner = "if sudo -n true 2>/dev/null; then sudo -n " + run + "; else echo '[ERROR] sudo on this host needs a password and there is no terminal to ask on. Run tacctl host from a terminal, allow passwordless sudo for this login, or log in as root.' >&2; false; fi"
 	}
-	return "trap 'rm -f " + remote + "' EXIT; trap 'exit 130' HUP INT TERM; if [ \"$(id -u)\" = 0 ]; then " + run + "; else " + inner + "; fi"
+	return "trap 'exit 130' HUP INT TERM; if [ \"$(id -u)\" = 0 ]; then " + run + "; else " + inner + "; fi"
 }
 
 // copyCommand makes a private temp file on the host, fills it from stdin
@@ -121,14 +127,16 @@ var reRemoteCopy = regexp.MustCompile(`^/tmp/tacctl\.[A-Za-z0-9]+$`)
 // end; the copy is deleted afterwards (an install script holds the scope
 // secret). For target 'local' it runs the script here. It returns the
 // script's exit status (a failed copy is 1, its error printed). A signal
-// during the run ends the command: ui.ErrInterrupted.
+// during the run ends the command: ui.ErrInterrupted. The script's account
+// summary and the accounts it reported changing are kept (Summary,
+// Changes).
 func (e *Env) RunScript(ctx context.Context, target, port, identity, script string, args []string) (int, error) {
 	// The script's output goes through as it comes; its account summary is
 	// kept for the caller.
-	e.Summary = nil
+	e.Summary, e.Changes = nil, nil
 	sw := &summaryWriter{w: e.Out.Stdout}
 	out := ui.Output{Stdout: sw, Stderr: e.Out.Stderr}
-	defer func() { e.Summary = sw.sum }()
+	defer func() { e.Summary, e.Changes = sw.sum, &sw.changes }()
 	e.Facts = nil
 	if target == Local {
 		code, intr, err := Attached(ctx, e.Runner, execx.Cmd{Name: "bash", Args: append([]string{script}, args...)}, e.Stdin, out)
@@ -140,6 +148,7 @@ func (e *Env) RunScript(ctx context.Context, target, port, identity, script stri
 		}
 		if e.ReadKeys && code == 0 {
 			f := LocalFacts(e.Paths.LoginDefs)
+			e.readLocalSystem(ctx, &f)
 			e.Facts = &f
 		}
 		return code, nil

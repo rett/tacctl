@@ -388,11 +388,17 @@ func TestGolden(t *testing.T) {
 		if strings.HasPrefix(k, "linux.") {
 			continue // 0.2.1's Linux UID range: not in 0.1.16's golden
 		}
+		if strings.HasPrefix(k, "snmp.") {
+			continue // 0.2.2's SNMP name hint: not in 0.1.16's golden
+		}
 		if _, ok := walk(m, k, false); !ok {
 			t.Errorf("golden lacks %s", k)
 		}
 	}
 	for _, prefix := range s.Wildcards() {
+		if prefix == "junos." || prefix == "wti_level." || prefix == "tier." {
+			continue // 0.2.2's per-group device settings: not in 0.1.16's golden
+		}
 		v, ok := walk(m, strings.TrimSuffix(prefix, "."), false)
 		if sub, isMap := v.(*yamlpy.Map); !ok || !isMap || sub.Len() == 0 {
 			t.Errorf("golden lacks a %s<name> key", prefix)

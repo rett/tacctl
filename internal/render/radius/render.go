@@ -38,15 +38,24 @@ var internalAttrs = []struct {
 	{"Tacctl-Priv-Lvl", 3990, "integer"},
 	{"Tacctl-Juniper-Class", 3991, "string"},
 	{"Tacctl-WTI-Super", 3992, "integer"},
+	{"Tacctl-Juniper-Deny-Commands", 3993, "string"},
+	{"Tacctl-Juniper-Deny-Configuration", 3994, "string"},
 }
 
 // vendorReply is VENDOR_REPLY: per vendor, the attribute an Access-Accept
 // gets, the control attribute that must be there and the value as unlang
-// writes it.
-var vendorReply = map[string]struct{ attr, control, value string }{
-	"cisco":   {"Cisco-AVPair", "Tacctl-Priv-Lvl", `"shell:priv-lvl=%{control:Tacctl-Priv-Lvl}"`},
-	"juniper": {"Juniper-Local-User-Name", "Tacctl-Juniper-Class", "&control:Tacctl-Juniper-Class"},
-	"wti":     {"WTI-Super", "Tacctl-WTI-Super", "&control:Tacctl-WTI-Super"},
+// writes it; extra are the vendor's further attributes, each added with
+// the first one when its control attribute (the same name with Tacctl- in
+// front) is there too.
+var vendorReply = map[string]struct {
+	attr, control, value string
+	extra                []string
+}{
+	"cisco": {"Cisco-AVPair", "Tacctl-Priv-Lvl", `"shell:priv-lvl=%{control:Tacctl-Priv-Lvl}"`, nil},
+	// The Junos deny sets go only where the login class goes (D17).
+	"juniper": {"Juniper-Local-User-Name", "Tacctl-Juniper-Class", "&control:Tacctl-Juniper-Class",
+		[]string{"Juniper-Deny-Commands", "Juniper-Deny-Configuration"}},
+	"wti": {"WTI-Super", "Tacctl-WTI-Super", "&control:Tacctl-WTI-Super", nil},
 }
 
 // Output is a rendered state: the three files and what goes with them.
@@ -107,7 +116,7 @@ func Render(m *model.Model, merged *yamlpy.Map, p Params) (*Output, error) {
 	if err != nil {
 		return nil, err
 	}
-	usersText, err := renderUsers(m)
+	usersText, err := renderUsers(m, merged)
 	if err != nil {
 		return nil, err
 	}
@@ -182,8 +191,12 @@ func groupOf(m *model.Model, u *model.User) (*model.Group, int, error) {
 	return g, *g.PrivLvl, nil
 }
 
-// renderUsers is render_users_text: one entry per (user, scope).
-func renderUsers(m *model.Model) (string, error) {
+// renderUsers is render_users_text: one entry per (user, scope). merged
+// gives the groups' WTI levels and Junos deny sets.
+func renderUsers(m *model.Model, merged *yamlpy.Map) (string, error) {
+	if err := checkJunosValues(m, merged); err != nil {
+		return "", err
+	}
 	var w strings.Builder
 	w.WriteString(header)
 	w.WriteString("#\n" +
@@ -211,9 +224,11 @@ func renderUsers(m *model.Model) (string, error) {
 		if lvl == 15 {
 			serviceType = "Administrative-User"
 		}
-		wti, _ := WTISuper(lvl)
-		control := fmt.Sprintf(", Tacctl-Priv-Lvl := %d, Tacctl-Juniper-Class := %s, Tacctl-WTI-Super := %d",
-			lvl, frDQ(g.JuniperClass), wti)
+		device, err := deviceControl(merged, g, lvl)
+		if err != nil {
+			return "", err
+		}
+		control := fmt.Sprintf(", Tacctl-Priv-Lvl := %d, Tacctl-Juniper-Class := %s", lvl, frDQ(g.JuniperClass)) + device
 		for _, scope := range e.scopes {
 			fmt.Fprintf(&w, "\n%s\tTmp-String-0 == \"%s/%s\", Crypt-Password := %s%s\n",
 				u.Name, ridPlaceholder, scope, frDQ(raw), control)
@@ -525,8 +540,15 @@ func renderConf(m *model.Model, merged *yamlpy.Map, p Params) (string, error) {
 		fmt.Fprintf(&vendorPolicy, "\t\t\tif ((\"%%{client:tacctl_send_%s}\" == \"yes\") && &control:%s) {\n"+
 			"\t\t\t\tupdate reply {\n"+
 			"\t\t\t\t\t&%s := %s\n"+
-			"\t\t\t\t}\n"+
-			"\t\t\t}\n", v, r.control, r.attr, r.value)
+			"\t\t\t\t}\n", v, r.control, r.attr, r.value)
+		for _, a := range r.extra {
+			fmt.Fprintf(&vendorPolicy, "\t\t\t\tif (&control:Tacctl-%s) {\n"+
+				"\t\t\t\t\tupdate reply {\n"+
+				"\t\t\t\t\t\t&%s := &control:Tacctl-%s\n"+
+				"\t\t\t\t\t}\n"+
+				"\t\t\t\t}\n", a, a, a)
+		}
+		vendorPolicy.WriteString("\t\t\t}\n")
 	}
 	useFilter := ""
 	if filt != "" {
@@ -555,6 +577,7 @@ func renderConf(m *model.Model, merged *yamlpy.Map, p Params) (string, error) {
 		"\t\t\t# Vendor attributes: only for a client whose scope enables the vendor\n" +
 		"\t\t\t# ('tacctl scope vendor-attrs') or whose address is tagged with it\n" +
 		"\t\t\t# ('tacctl scope devices'). The values come from the control list.\n" +
+		"\t\t\t# A group's Junos deny sets ('tacctl group junos') go with its login class.\n" +
 		vendorPolicy.String() +
 		"\t\t\ttacctl_auth\n" +
 		"\t\t}\n" +
@@ -563,6 +586,8 @@ func renderConf(m *model.Model, merged *yamlpy.Map, p Params) (string, error) {
 		"\t\t\t\t&Service-Type !* ANY\n" +
 		"\t\t\t\t&Cisco-AVPair !* ANY\n" +
 		"\t\t\t\t&Juniper-Local-User-Name !* ANY\n" +
+		"\t\t\t\t&Juniper-Deny-Commands !* ANY\n" +
+		"\t\t\t\t&Juniper-Deny-Configuration !* ANY\n" +
 		"\t\t\t\t&WTI-Super !* ANY\n" +
 		"\t\t\t}\n" +
 		"\t\t\ttacctl_auth\n" +

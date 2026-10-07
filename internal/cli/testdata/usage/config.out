@@ -42,6 +42,7 @@ Subcommands:
                                        /32 (its secret and users) until the device is seen in place (tacctl scope staging)
       --name <device>                  (with --staging) The registered device whose move ends the staging (default: the one at the bench address)
   linux   build|script|remove-script|uid|builds  TACACS+ or RADIUS login for Linux hosts (install/removal scripts)
+  snmp    show|community|v3-user|port|timeout|clear|test  SNMP for the name hint of 'device add' (sysName)
   branch [name]                        Show or change the tacctl repo branch
 
 Examples:

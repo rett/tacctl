@@ -5,6 +5,7 @@
 
 <out dir>/store.yaml is a tacctl store with real bcrypt hashes; sec.<scope>
 holds each scope's secret for 'radclient -S'. The passwords are in cases.sh.
+<out dir>/tacctl.yaml holds the per-group device settings (run.sh, flow.sh).
 Needs python3-bcrypt. 10.0.2.0/24 in scope 'prod' and in filters.allow is
 replaced by the container's own network (run.sh, flow.sh).
 
@@ -127,10 +128,23 @@ filters:
   deny: [127.0.0.66/32]
 '''
 
+# The per-group device settings of tacctl.yaml (0.2.2) for netops (cases.sh:
+# 007): Junos deny sets, sent with the login class only, and a WTI level
+# below the SuperUser band of its priv-lvl 10.
+TACCTL_YAML = '''junos:
+  netops:
+    deny_commands: ['^request system', '^start shell']
+    deny_configuration: ['^system login']
+wti_level:
+  netops: user
+'''
+
 out = sys.argv[1]
 os.makedirs(out, exist_ok=True)
 with open(os.path.join(out, 'store.yaml'), 'w') as f:
     f.write(STORE)
+with open(os.path.join(out, 'tacctl.yaml'), 'w') as f:
+    f.write(TACCTL_YAML)
 for name, secret in SECRETS.items():
     with open(os.path.join(out, 'sec.' + name), 'w') as f:
         f.write(secret)

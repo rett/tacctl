@@ -401,6 +401,7 @@ var shellHelpBlocks = map[string]func(inv *invocation) string{
 	"scope mgmt-acl":  func(*invocation) string { return usageNoCurrent("scope-mgmt-acl", UsageVars{"scope": "<scope>"}) },
 	"config":          func(*invocation) string { return configUsage() },
 	"config linux":    func(*invocation) string { return configLinuxUsage() },
+	"config snmp":     func(*invocation) string { return configSNMPUsage() },
 	"config allow":    func(*invocation) string { return usageNoCurrent("config-filter", UsageVars{"label": "allow"}) },
 	"config deny":     func(*invocation) string { return usageNoCurrent("config-filter", UsageVars{"label": "deny"}) },
 	"config mgmt-acl": func(*invocation) string { return usageNoCurrent("config-mgmt-acl", nil) },

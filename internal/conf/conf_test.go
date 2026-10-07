@@ -283,6 +283,17 @@ func TestConfSetListRejectsMalformedCiscoPrivExecStrings(t *testing.T) {
 	refused(t, err, "invalid characters")
 }
 
+// 0.2.2: an entry may start with a privilege mode; the command after it is
+// checked as before, and an unknown prefix is an invalid character.
+func TestConfSetListCiscoPrivModes(t *testing.T) {
+	c := tempConf(t)
+	must(t, c.SetList("privileges.operator", ListItems("configure: router bgp\nexec all: show ip\nconfigure all:interface\nshow version\n")))
+	assertLines(t, c.GetList("privileges.operator"), "configure: router bgp", "exec all: show ip", "configure all:interface", "show version")
+	refused(t, tempConf(t).SetList("privileges.operator", ListItems("config: router bgp\n")), "element 0: 'config: router bgp' has invalid characters")
+	refused(t, tempConf(t).SetList("privileges.operator", ListItems("exec: show; rm\n")), "element 0: 'show; rm' has invalid characters")
+	refused(t, tempConf(t).SetList("privileges.operator", ListItems("configure: "+strings.Repeat("a", 65)+"\n")), "element 0: too long (65 chars; max 64)")
+}
+
 func TestConfSetListRejectsScalarMisCallOnListPath(t *testing.T) {
 	refused(t, tempConf(t).Set("mgmt_acl.permits", "10.0.0.0/8"), "requires list input")
 }
