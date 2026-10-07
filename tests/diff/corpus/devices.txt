@@ -107,6 +107,7 @@ group add netadmin 15 RW-CLASS ;; group add readers 3 RO-CLASS ;; config juniper
 group privilege add operator 'show interfaces','show version' ;; config cisco --scope lab
 group add helpdesk 7 OP-CLASS ;; group privilege add helpdesk 'show running-config','show clock' ;; config cisco --scope lab
 group commands add readonly dir --action permit ;; group commands add operator reload --action deny ;; config juniper --scope lab
+@known 0.2.2 item 4: a removal names the rule's position, action and match
 group commands default readonly deny ;; group commands remove readonly show ;; group commands remove readonly ping ;; group commands remove readonly traceroute ;; config juniper --scope lab
 
 # secrets and users the WTI walkthrough warns about

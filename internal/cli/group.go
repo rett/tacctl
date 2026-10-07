@@ -40,10 +40,13 @@ var groupSpecs = map[string]Spec{
 	"commands list":    {MinArgs: 1, MaxArgs: 1, Args: []string{KindGroups}},
 	"commands default": {MinArgs: 2, MaxArgs: 2, Args: []string{KindGroups, "permit|deny"}},
 	"commands add": {MinArgs: 2, MaxArgs: 2, Args: []string{KindGroups, ""}, Flags: []Flag{
-		{Names: []string{"--match"}, Value: true, Repeat: true}, {Names: []string{"--action"}, Value: true, Kind: "permit|deny"}}},
-	"commands remove": {MinArgs: 2, MaxArgs: 2, Args: []string{KindGroups, ""}},
-	"commands clear":  {MinArgs: 1, MaxArgs: 1, Args: []string{KindGroups}},
-	"commands seed":   {MaxArgs: 1, Args: []string{"readonly|operator|superuser"}, Flags: []Flag{{Names: []string{"--force"}}}},
+		{Names: []string{"--match"}, Value: true, Repeat: true}, {Names: []string{"--action"}, Value: true, Kind: "permit|deny"},
+		{Names: []string{"--before"}, Value: true}, {Names: []string{"--first"}}}},
+	"commands remove": {MinArgs: 2, MaxArgs: 2, Args: []string{KindGroups, ""}, Flags: []Flag{
+		{Names: []string{"--match"}, Value: true, Repeat: true}, {Names: []string{"--action"}, Value: true, Kind: "permit|deny"},
+		{Names: []string{"--all"}}}},
+	"commands clear": {MinArgs: 1, MaxArgs: 1, Args: []string{KindGroups}},
+	"commands seed":  {MaxArgs: 1, Args: []string{"readonly|operator|superuser"}, Flags: []Flag{{Names: []string{"--force"}}}},
 
 	"privilege list":   {MinArgs: 1, MaxArgs: 1, Args: []string{KindGroups}},
 	"privilege add":    {MinArgs: 2, MaxArgs: 2, Args: []string{KindGroups, ""}},
@@ -338,49 +341,6 @@ func (inv *invocation) groupSeedSiblings(group string) error {
 	return nil
 }
 
-// greps is 'read_group_commands "$group" | grep -q "^${name}|"' for a name
-// the command line gave unchecked: a basic regular expression, as grep
-// takes it (one that does not compile matches nothing).
-func greps(lines []string, name string) bool {
-	re, err := regexp.Compile("^" + breToRE2(name) + `\|`)
-	if err != nil {
-		return false
-	}
-	for _, l := range lines {
-		if re.MatchString(l) {
-			return true
-		}
-	}
-	return false
-}
-
-// breToRE2 translates a POSIX basic regular expression (GNU flavour) to
-// Go's syntax: '+ ? ( ) { } |' are literal unless escaped, '\+ \? \( \)
-// \{ \} \|' are the operators.
-func breToRE2(bre string) string {
-	var b strings.Builder
-	for i := 0; i < len(bre); i++ {
-		c := bre[i]
-		switch {
-		case c == '\\' && i+1 < len(bre):
-			i++
-			switch d := bre[i]; d {
-			case '+', '?', '(', ')', '{', '}', '|':
-				b.WriteByte(d)
-			default:
-				b.WriteByte('\\')
-				b.WriteByte(d)
-			}
-		case strings.IndexByte("+?(){}|", c) >= 0:
-			b.WriteByte('\\')
-			b.WriteByte(c)
-		default:
-			b.WriteByte(c)
-		}
-	}
-	return b.String()
-}
-
 func (inv *invocation) groupCommands(args []string) error {
 	a := inv.app
 	sub := arg(args, 0)
@@ -428,9 +388,11 @@ func (inv *invocation) groupCommands(args []string) error {
 			inv.echo("")
 			return nil
 		}
-		t := ui.NewTable(title, ui.Left("NAME"), ui.Left("ACTION"), ui.Left("MATCH"))
+		// '#' is the rule's position (what 'add --before/--first' and the
+		// 'remove' messages count), so a skipped line still takes a number.
+		t := ui.NewTable(title, ui.Right("#"), ui.Left("NAME"), ui.Left("ACTION"), ui.Left("MATCH"))
 		catchall := false
-		for _, r := range rules {
+		for i, r := range rules {
 			name, action, match := policy.Field(r, 1), policy.Field(r, 2), ruleMatch(r)
 			if name == "" {
 				continue
@@ -444,7 +406,7 @@ func (inv *invocation) groupCommands(args []string) error {
 				catchall = true
 				shown = name + " (catchall)"
 			}
-			t.Add(shown, ui.Styled(color, action), match)
+			t.Add(strconv.Itoa(i+1), shown, ui.Styled(color, action), match)
 		}
 		inv.write(t.String())
 		inv.echo("")
@@ -472,23 +434,7 @@ func (inv *invocation) groupCommands(args []string) error {
 	case "add":
 		return inv.groupCommandsAdd(group, rest)
 	case "remove":
-		name := arg(rest, 0)
-		if name == "" {
-			return inv.usageErr("Usage: tacctl group commands remove <group> <name>")
-		}
-		if name == policy.Catchall {
-			return inv.usageErr("Cannot remove the '*' catchall. Use 'tacctl group commands default' to change its action,",
-				"or 'tacctl group commands clear "+group+"' to revert this group to shipped defaults.")
-		}
-		if !greps(policy.Lines(c, group), name) {
-			a.Out.WarnE("No rule named '" + name + "' in group '" + group + "'.")
-			return nil
-		}
-		if err := inv.applyWith(func() error { return policy.RemoveRule(a.Conf(), group, name) }); err != nil {
-			return err
-		}
-		a.Out.InfoE("Removed rule '" + name + "' from group '" + group + "'.")
-		inv.echo("")
+		return inv.groupCommandsRemove(group, rest)
 	case "clear":
 		if len(policy.Lines(c, group)) == 0 {
 			a.Out.Info("Group '" + group + "' has no command rules; nothing to clear.")
@@ -521,11 +467,78 @@ func ruleMatch(line string) string {
 	return f[2]
 }
 
+// groupCommandsRemove is 'group commands remove <group> <name>': --match
+// (repeatable, the rule's list as stored) and --action narrow the rules of
+// that name to one; several are refused unless --all.
+func (inv *invocation) groupCommandsRemove(group string, args []string) error {
+	a := inv.app
+	name := arg(args, 0)
+	if name == "" {
+		return inv.usageErr("Usage: tacctl group commands remove <group> <name> [--match <regex>]... [--action permit|deny] [--all]")
+	}
+	if name == policy.Catchall {
+		return inv.usageErr("Cannot remove the '*' catchall. Use 'tacctl group commands default' to change its action,",
+			"or 'tacctl group commands clear "+group+"' to revert this group to shipped defaults.")
+	}
+	var matches []string
+	action, all := "", false
+	rest := args[1:]
+	for len(rest) > 0 {
+		switch rest[0] {
+		case "--match":
+			if len(rest) < 2 {
+				return inv.usageErr("--match needs a regex.")
+			}
+			matches = append(matches, rest[1])
+			rest = rest[2:]
+		case "--action":
+			action = arg(rest, 1)
+			if action != "permit" && action != "deny" {
+				return inv.usageErr("--action must be 'permit' or 'deny'.")
+			}
+			rest = rest[2:]
+		case "--all":
+			all = true
+			rest = rest[1:]
+		default:
+			return inv.usageErr("Unknown flag: '" + rest[0] + "'")
+		}
+	}
+	c := a.Conf()
+	if len(policy.RulesWhere(c, group, name, nil, "")) == 0 {
+		a.Out.WarnE("No rule named '" + name + "' in group '" + group + "'.")
+		return nil
+	}
+	switch n := len(policy.RulesWhere(c, group, name, matches, action)); {
+	case n == 0:
+		a.Out.WarnE("No rule named '" + name + "' in group '" + group + "' has that --match/--action.")
+		return nil
+	case n > 1 && !all:
+		a.Out.ErrorE((&policy.AmbiguousError{Group: group, Name: name, Count: n}).Error())
+		return exit(1)
+	}
+	var gone []policy.Numbered
+	if err := inv.applyWith(func() error {
+		var err error
+		gone, err = policy.RemoveRuleWhere(a.Conf(), group, name, matches, action, all)
+		return err
+	}); err != nil {
+		return err
+	}
+	for _, r := range gone {
+		// Info, not InfoE: a match such as a\x2cb is printed as given.
+		a.Out.Info("Removed rule #" + strconv.Itoa(r.Pos) + " '" + name + "' (" + policy.Field(r.Line, 2) +
+			", match=[" + ruleMatch(r.Line) + "]) from group '" + group + "'.")
+	}
+	inv.echo("")
+	return nil
+}
+
 func (inv *invocation) groupCommandsAdd(group string, args []string) error {
 	a := inv.app
 	name := arg(args, 0)
 	if name == "" {
-		return inv.usageErr("Usage: tacctl group commands add <group> <name> [--match <regex>]... [--action permit|deny]")
+		return inv.usageErr("Usage: tacctl group commands add <group> <name> [--match <regex>]... [--action permit|deny] [--before <name>|--first]")
 	}
 	if err := names.ValidateCommandName(name); err != nil {
 		return inv.validated(err)
@@ -534,6 +547,7 @@ func (inv *invocation) groupCommandsAdd(group string, args []string) error {
 		return inv.usageErr("Use 'tacctl group commands default " + group + " permit|deny' to change the catchall.")
 	}
 	action, matches := "permit", ""
+	var where policy.Where
 	rest := args[1:]
 	for len(rest) > 0 {
 		switch rest[0] {
@@ -572,9 +586,24 @@ func (inv *invocation) groupCommandsAdd(group string, args []string) error {
 				return inv.usageErr("--action must be 'permit' or 'deny'.")
 			}
 			rest = rest[2:]
+		case "--before":
+			where.Before = arg(rest, 1)
+			if where.Before == "" {
+				return inv.usageErr("--before needs the name of a rule.")
+			}
+			rest = rest[2:]
+		case "--first":
+			where.First = true
+			rest = rest[1:]
 		default:
 			return inv.usageErr("Unknown flag: '" + rest[0] + "'")
 		}
+	}
+	if where.First && where.Before != "" {
+		return inv.usageErr("--before and --first cannot be used together.")
+	}
+	if where.Before != "" && where.Before != policy.Catchall && len(policy.RulesWhere(a.Conf(), group, where.Before, nil, "")) == 0 {
+		return inv.usageErr((&policy.NoRuleError{Group: group, Name: where.Before}).Error())
 	}
 	// The same name with the same matches is a no-op; the same name with
 	// other matches is another rule.
@@ -589,7 +618,7 @@ func (inv *invocation) groupCommandsAdd(group string, args []string) error {
 		if err := inv.groupSeedSiblings(group); err != nil {
 			return err
 		}
-		return policy.InsertRule(a.Conf(), group, name, action, matches)
+		return policy.InsertRuleAt(a.Conf(), group, name, action, matches, where)
 	}); err != nil {
 		return err
 	}

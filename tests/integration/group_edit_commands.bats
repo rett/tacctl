@@ -15,6 +15,13 @@ setup() {
     load_fixture tacquito.minimal.yaml
 }
 
+# list_rules <group>: 'group commands list' as run sets it, without the
+# colours, so the table's columns can be matched.
+list_rules() {
+    run "$TACCTL_BIN_SCRIPT" group commands list "$1"
+    output=$(sed 's/\x1b\[[0-9;]*m//g' <<< "$output")
+}
+
 # =============================================================================
 #  group edit
 # =============================================================================
@@ -208,15 +215,114 @@ setup() {
 }
 
 @test "group commands remove: drops a named rule" {
-    "$TACCTL_BIN_SCRIPT" group commands add operator show --match 'run.*' --action permit
-    run "$TACCTL_BIN_SCRIPT" group commands remove operator show
+    run "$TACCTL_BIN_SCRIPT" group commands remove operator ping
     assert_success
-    assert_output --partial "Removed rule"
+    assert_output --partial "Removed rule #2 'ping' (permit, match=[]) from group 'operator'."
 
     run "$TACCTL_BIN_SCRIPT" group commands list operator
-    # 'show' shouldn't appear as a rule name anymore, but 'permit' still will
-    # (the catchall). Check that the regex is gone.
+    refute_output --partial 'ping'
+}
+
+@test "group commands remove: refuses several rules of a name without a selector" {
+    "$TACCTL_BIN_SCRIPT" group commands add operator show --match 'run.*' --action permit
+    before=$("$TACCTL_BIN_SCRIPT" group commands list operator)
+    run "$TACCTL_BIN_SCRIPT" group commands remove operator show
+    assert_failure
+    assert_output --partial "Group 'operator' has 2 rules named 'show'; select one with --match/--action (see 'tacctl group commands list operator'), or pass --all."
+    [[ "$("$TACCTL_BIN_SCRIPT" group commands list operator)" == "$before" ]]
+}
+
+@test "group commands remove: --match and --action pick one rule of several" {
+    "$TACCTL_BIN_SCRIPT" group commands add operator show --match '^crypto( .*)?' --action deny --before show
+    "$TACCTL_BIN_SCRIPT" group commands add operator show --match 'run.*' --match 'start.*' --action permit
+    # The match list is compared whole and in order: no rule has this one.
+    run "$TACCTL_BIN_SCRIPT" group commands remove operator show --match 'start.*' --match 'run.*'
+    assert_success
+    assert_output --partial "No rule named 'show' in group 'operator' has that --match/--action."
+
+    run "$TACCTL_BIN_SCRIPT" group commands remove operator show --match 'run.*' --match 'start.*'
+    assert_success
+    assert_output --partial "Removed rule #6 'show' (permit, match=[run.*,start.*]) from group 'operator'."
+    run "$TACCTL_BIN_SCRIPT" group commands remove operator show --action deny
+    assert_success
+    assert_output --partial "Removed rule #1 'show' (deny, match=[^crypto( .*)?]) from group 'operator'."
+
+    list_rules operator
+    refute_output --partial 'crypto'
     refute_output --partial 'run.*'
+    assert_output --regexp '1 +show +permit'
+}
+
+@test "group commands remove: --all drops every rule of the name (and only those)" {
+    "$TACCTL_BIN_SCRIPT" group commands add operator show --match 'run.*' --action permit
+    run "$TACCTL_BIN_SCRIPT" group commands remove operator show --all
+    assert_success
+    assert_output --partial "Removed rule #1 'show' (permit, match=[]) from group 'operator'."
+    assert_output --partial "Removed rule #5 'show' (permit, match=[run.*]) from group 'operator'."
+
+    list_rules operator
+    refute_output --regexp ' show '
+    assert_output --regexp '1 +ping +permit'
+    assert_output --regexp '4 +\* \(catchall\) +deny'
+}
+
+@test "group commands remove: rejects an unknown flag and a bad --action" {
+    run "$TACCTL_BIN_SCRIPT" group commands remove operator show --bogus
+    assert_failure
+    assert_output --partial "Unknown flag: '--bogus'"
+    run "$TACCTL_BIN_SCRIPT" group commands remove operator show --action maybe
+    assert_failure
+    assert_output --partial "--action must be 'permit' or 'deny'."
+}
+
+@test "group commands list: the # column numbers the rules in order" {
+    list_rules operator
+    assert_success
+    assert_output --regexp '# +NAME +ACTION +MATCH'
+    assert_output --regexp '1 +show +permit'
+    assert_output --regexp '4 +terminal +permit'
+    assert_output --regexp '5 +\* \(catchall\) +deny'
+}
+
+@test "group commands add: --before puts the rule before the first rule of that name" {
+    run "$TACCTL_BIN_SCRIPT" group commands add operator show --match '^crypto( .*)?' --action deny --before show
+    assert_success
+    list_rules operator
+    assert_output --regexp '1 +show +deny +\^crypto\( \.\*\)\?'
+    assert_output --regexp '2 +show +permit'
+    assert_output --regexp '6 +\* \(catchall\) +deny'
+
+    # '--before *' is the default place, before the catchall.
+    run "$TACCTL_BIN_SCRIPT" group commands add operator reload --action deny --before '*'
+    assert_success
+    list_rules operator
+    assert_output --regexp '6 +reload +deny'
+    assert_output --regexp '7 +\* \(catchall\) +deny'
+
+    # The rendered tacquito.yaml keeps the order: the deny is operator's
+    # first rule.
+    run awk '/^  name: operator$/ { g = 1 } g && /^  commands:/ { getline a; getline b; print a; print b; exit }' "$TACCTL_CONFIG"
+    assert_line --index 0 '    - name: "show"'
+    assert_line --index 1 --partial 'crypto'
+}
+
+@test "group commands add: --first puts the rule at position 1" {
+    run "$TACCTL_BIN_SCRIPT" group commands add operator configure --action deny --first
+    assert_success
+    list_rules operator
+    assert_output --regexp '1 +configure +deny'
+    assert_output --regexp '2 +show +permit'
+}
+
+@test "group commands add: --before a missing rule, or with --first, changes nothing" {
+    before=$("$TACCTL_BIN_SCRIPT" group commands list operator)
+    run "$TACCTL_BIN_SCRIPT" group commands add operator configure --before missing
+    assert_failure
+    assert_output --partial "No rule named 'missing' in group 'operator'."
+    run "$TACCTL_BIN_SCRIPT" group commands add operator configure --before show --first
+    assert_failure
+    assert_output --partial "--before and --first cannot be used together."
+    [[ "$("$TACCTL_BIN_SCRIPT" group commands list operator)" == "$before" ]]
 }
 
 @test "group commands remove: refuses to drop the catchall" {

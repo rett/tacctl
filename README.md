@@ -317,7 +317,12 @@ tacctl group commands add operator show --action permit
 tacctl group commands add operator ping --action permit
 tacctl group commands add operator clear --match 'counters.*' --action permit
 ```
-A rule's `name` is compared literally to the TACACS+ `cmd=` word. `--match` regexes are tested by tacquito against the command's **arguments only** — the space-joined `cmd-arg` values after the word, so `show running-config` is tested as `running-config`, never as the full line. A regex that repeats the command word (`^show .*$`) can never match and is rejected by `tacctl group commands add`, and so is a regex with a comma (the stored rule line separates matches with commas; write `\x2c`); omit `--match` to cover any arguments. (tacctl ≤ 0.1.10 shipped defaults with that dead shape, which denied every `show` to operator/readonly users; `tacctl upgrade` heals any override still carrying it.)
+A rule's `name` is compared literally to the TACACS+ `cmd=` word. `--match` regexes are tested by tacquito against the command's **arguments only** — the space-joined `cmd-arg` values after the word, so `show running-config` is tested as `running-config`, never as the full line. A regex that repeats the command word (`^show .*$`) can never match and is rejected by `tacctl group commands add`, and so is a regex with a comma (the stored rule line separates matches with commas; write `\x2c`); omit `--match` to cover any arguments. Each regex is anchored at both ends and tested against the arguments joined by spaces, without `<cr>`: `--match '^crypto'` matches `show crypto` only; write `--match '^crypto( .*)?'` to cover `show crypto pki certificates` too. (tacctl ≤ 0.1.10 shipped defaults with that dead shape, which denied every `show` to operator/readonly users; `tacctl upgrade` heals any override still carrying it.)
+Rules are tried in order, the order `tacctl group commands list <group>` numbers in its `#` column: a rule without `--match` decides, and one whose regexes all miss falls through to the next, so a deny with `--match` placed before a permit of the same name works. `add` puts a rule before the catchall, or before the first rule of another name with `--before <name>`, or first with `--first`:
+```
+tacctl group commands add operator show --match '^crypto( .*)?' --action deny --before show
+```
+`tacctl group commands remove <group> <name>` refuses when several rules share the name; pick one with `--match` (the rule's regexes, all of them, in order) and `--action`, or pass `--all` to drop them all.
 The trailing `*` catchall encodes the default action. Once any group has rules, `tacctl config cisco` emits `aaa authorization commands 1/7/15 default group TACACS-GROUP local` so IOS asks tacquito per command. Juniper enforcement is local via class `allow-commands`/`deny-commands` regex — `tacctl config juniper` emits the equivalent `set system login class …` lines, but you must push them to each device.
 
 When you add the first rule to a group, tacctl auto-seeds a `* permit` catchall onto sibling groups at the same Cisco priv-lvl so their users aren't accidentally locked out.
@@ -740,7 +745,9 @@ group commands list <group>                               Show per-command rules
 group commands default <group> <permit|deny>              Set default action (catchall)
 group commands add <group> <name> [--match <regex>]...    Add a command rule
                                   [--action permit|deny]
-group commands remove <group> <name>                      Drop a rule
+                                  [--before <name>|--first]
+group commands remove <group> <name> [--all]              Drop a rule (--match/--action pick one of several)
+                                  [--match <regex>]... [--action permit|deny]
 group commands clear <group>                              Wipe rules for a group
 group commands seed [<group>] [--force]                   Populate built-ins with sensible defaults
 group privilege list <group>                              Show Cisco priv-exec mappings

@@ -37,6 +37,23 @@ current behaviour; this file is where history lives.
    `client-remove.sh` now finds tacctl's accounts by their primary group as
    well when it reports those left without a way to log in.
 
+4. **`group commands remove` no longer drops several rules of a name at
+   once, and `group commands add` can place a rule.** When more rules than
+   one share the name, `remove` refuses (`[ERROR] Group 'operator' has 2
+   rules named 'show'; select one with --match/--action (see 'tacctl group
+   commands list operator'), or pass --all.`, exit 1) unless `--match` (the
+   rule's regexes, all of them, in order) and `--action` narrow them to one;
+   `--all` removes them all, as `remove` did before. A removal names the
+   rule it took: `Removed rule #3 'show' (deny, match=[^crypto( .*)?]) from
+   group 'operator'.` The name is now compared literally, so `remove
+   operator 'sh.w'` warns that there is no such rule. `add --before <name>`
+   puts the rule before the first rule of that name (`No rule named 'x' in
+   group 'operator'.`, exit 1, when there is none) and `add --first` puts it
+   first; without them it goes before the catchall as before. `group
+   commands list` gains a `#` column with each rule's position, and the
+   `group commands` usage says how tacquito tests a `--match` (anchored at
+   both ends, against the arguments joined by spaces).
+
 ## 0.2.1 (2026-10-07)
 
 ### What changed

@@ -107,6 +107,9 @@ func TestCompleteScenarios(t *testing.T) {
 		{[]string{"user", "move", "alice", ""}, []string{"ops", "admins"}},
 		{[]string{"group", "commands", "default", "ops", ""}, []string{"permit", "deny"}},
 		{[]string{"group", "commands", "add", "ops", "x", "--action", ""}, []string{"permit", "deny"}},
+		{[]string{"group", "commands", "add", "ops", "x", ""}, []string{"--match", "--action", "--before", "--first"}},
+		{[]string{"group", "commands", "remove", "ops", "x", ""}, []string{"--match", "--action", "--all"}},
+		{[]string{"group", "commands", "remove", "ops", "x", "--action", ""}, []string{"permit", "deny"}},
 		{[]string{"config", "linux", ""}, []string{"build", "builds", "remove-script", "script", "uid", "uid-range"}},
 		{[]string{"config", "linux", "script", ""}, []string{"--scope", "--server", "--method", "--output", "-o"}},
 		{[]string{"config", "linux", "script", "--method", ""}, []string{"tacplus", "radius"}},
@@ -142,6 +145,11 @@ func TestCompleteDescribesFlags(t *testing.T) {
 			"-c\t<line>: Run one line and exit",
 		},
 		"backend enable ": {"tacacs", "radius"},
+		"group commands remove operator show -": {
+			"--match\t<regex>: (add, remove) A regex the command's arguments must match (repeatable; remove: the rule's, in order)",
+			"--action\tpermit|deny: (add, remove) What the rule does (add: default permit)",
+			"--all\t(remove) Drop every rule named <name>",
+		},
 	}
 	for line, want := range cases {
 		words := strings.Split(line, " ")

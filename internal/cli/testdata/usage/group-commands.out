@@ -6,9 +6,14 @@ Usage:
   tacctl group commands default <group> <permit|deny>             Set default action (catchall)
   tacctl group commands add <group> <name> [--match <regex>]...   Add a rule
                                             [--action permit|deny]
-      --match <regex>                                             (add) A regex the command's arguments must match (repeatable)
-      --action permit|deny                                        (add) What the rule does (default permit)
-  tacctl group commands remove <group> <name>                     Drop a rule
+                                            [--before <name>|--first]
+      --match <regex>                                             (add, remove) A regex the command's arguments must match (repeatable; remove: the rule's, in order)
+      --action permit|deny                                        (add, remove) What the rule does (add: default permit)
+      --before <name>                                             (add) Put the rule before the first rule named <name> (default: before the catchall)
+      --first                                                     (add) Put the rule first
+  tacctl group commands remove <group> <name> [--all]             Drop a rule
+                                            [--match <regex>]... [--action permit|deny]
+      --all                                                       (remove) Drop every rule named <name>
   tacctl group commands clear <group>                             Drop overrides — revert to shipped defaults (confirms)
   tacctl group commands seed [<group>] [--force]                  Re-apply legacy seed set (recovery tool)
       --force                                                     (seed) Overwrite a group that already has rules
@@ -18,6 +23,18 @@ regexes are tested against the command's ARGUMENTS only (the
 cmd-arg values after the word: 'running-config' for 'show
 running-config'), never the full line -- so '^show .*$' can
 never match and is rejected. Omit --match to cover any args.
+A --match is anchored at both ends and tested against the
+arguments joined by spaces, without <cr>: '^crypto' matches
+'show crypto' only; write '^crypto( .*)?' to cover 'show
+crypto pki certificates' too.
+
+Rules are tried in order ('#' in 'list'): a rule without
+--match decides, one whose regexes all miss falls through.
+'add' puts a rule before the catchall, before the first rule
+of the --before name, or first (--first). 'remove' refuses
+when several rules share the name: pick one with --match
+(all of the rule's regexes, in order) and --action, or pass
+--all.
 
 Rules live under commands.<group> in /etc/tacctl/tacctl.yaml;
 tacquito.yaml's per-group commands: block is a regenerated

@@ -12,7 +12,9 @@
 package policy
 
 import (
+	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/rett/tacctl/internal/conf"
@@ -174,6 +176,115 @@ func InsertRule(c *conf.Config, group, name, action, matches string) error {
 // rest, catch-all included, written back).
 func RemoveRule(c *conf.Config, group, name string) error {
 	return Write(c, group, withoutName(Lines(c, group), name))
+}
+
+// Where is where InsertRuleAt puts a rule: at position 1 (First), before
+// the first rule named Before, or (neither, or Before the catch-all)
+// before the catch-all, as InsertRule does.
+type Where struct {
+	First  bool
+	Before string
+}
+
+// NoRuleError is InsertRuleAt's answer to a Before that names no rule of
+// the group.
+type NoRuleError struct{ Group, Name string }
+
+func (e *NoRuleError) Error() string {
+	return "No rule named '" + e.Name + "' in group '" + e.Group + "'."
+}
+
+// InsertRuleAt is InsertRule with a position (where): the rule goes there,
+// and the catch-all stays last (with the group's default action). Nothing
+// is written when where.Before names no rule.
+func InsertRuleAt(c *conf.Config, group, name, action, matches string, where Where) error {
+	catchall := Catchall + "|" + DefaultAction(c, group) + "|"
+	lines := nonBlank(withoutName(Lines(c, group), Catchall))
+	at := len(lines)
+	switch {
+	case where.First:
+		at = 0
+	case where.Before != "" && where.Before != Catchall:
+		at = -1
+		for i, l := range lines {
+			if Field(l, 1) == where.Before {
+				at = i
+				break
+			}
+		}
+		if at < 0 {
+			return &NoRuleError{Group: group, Name: where.Before}
+		}
+	}
+	out := append(append(append([]string{}, lines[:at]...), name+"|"+action+"|"+matches), lines[at:]...)
+	return Write(c, group, append(out, catchall))
+}
+
+// Numbered is a rule line with its 1-based position in the group (as
+// 'group commands list' numbers it).
+type Numbered struct {
+	Pos  int
+	Line string
+}
+
+// RulesWhere is the selector of RemoveRuleWhere: the rules named name
+// whose match list equals matches (nil for any), in its stored order, and
+// whose action is action ("" for any).
+func RulesWhere(c *conf.Config, group, name string, matches []string, action string) []Numbered {
+	var out []Numbered
+	for i, l := range Lines(c, group) {
+		if Field(l, 1) == name &&
+			(matches == nil || ruleMatches(l) == strings.Join(matches, ",")) &&
+			(action == "" || Field(l, 2) == action) {
+			out = append(out, Numbered{Pos: i + 1, Line: l})
+		}
+	}
+	return out
+}
+
+// AmbiguousError is RemoveRuleWhere's refusal of a selector that leaves
+// several rules without all.
+type AmbiguousError struct {
+	Group, Name string
+	Count       int
+}
+
+func (e *AmbiguousError) Error() string {
+	return "Group '" + e.Group + "' has " + strconv.Itoa(e.Count) + " rules named '" + e.Name +
+		"'; select one with --match/--action (see 'tacctl group commands list " + e.Group + "'), or pass --all."
+}
+
+// RemoveRuleWhere drops the rules RulesWhere selects and returns them (with
+// their positions before the removal). One is removed; several are an
+// AmbiguousError unless all, which removes them all (what RemoveRule does
+// with no selector). None removes nothing; nothing is written then or on
+// an error.
+func RemoveRuleWhere(c *conf.Config, group, name string, matches []string, action string, all bool) ([]Numbered, error) {
+	gone := RulesWhere(c, group, name, matches, action)
+	if len(gone) == 0 {
+		return nil, nil
+	}
+	if len(gone) > 1 && !all {
+		return nil, &AmbiguousError{Group: group, Name: name, Count: len(gone)}
+	}
+	lines := Lines(c, group)
+	keep := make([]string, 0, len(lines))
+	for i, l := range lines {
+		if !slices.ContainsFunc(gone, func(n Numbered) bool { return n.Pos == i+1 }) {
+			keep = append(keep, l)
+		}
+	}
+	return gone, Write(c, group, keep)
+}
+
+// ruleMatches is the match field of a rule line: everything after the
+// second '|'.
+func ruleMatches(line string) string {
+	f := strings.SplitN(line, "|", 3)
+	if len(f) < 3 {
+		return ""
+	}
+	return f[2]
 }
 
 // GroupLevels is what SeedSiblings reads of the groups: the

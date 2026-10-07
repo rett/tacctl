@@ -4,6 +4,8 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -323,6 +325,63 @@ func TestGroupFamily(t *testing.T) {
 	sb.expect(0, "Group 'helpdesk' removed.", "")
 	sb.run("y\n", []string{"group", "remove", "operator"})
 	sb.expect(1, "", "Cannot remove built-in group 'operator'.")
+}
+
+// 'group commands add --before/--first' place a rule, 'list' numbers the
+// rules, and 'remove' takes one of several rules of a name only with a
+// selector (or all of them with --all).
+func TestGroupCommandsPositionAndSelector(t *testing.T) {
+	sb := newSandbox(t, true)
+	names := func() []string {
+		out := plain(sb.run("", []string{"group", "commands", "list", "operator"}))
+		var got []string
+		for _, l := range strings.Split(out, "\n") {
+			if f := strings.Fields(l); len(f) >= 3 && f[0] != "#" {
+				if _, err := strconv.Atoi(f[0]); err == nil {
+					got = append(got, f[0]+":"+f[1]+":"+f[2])
+				}
+			}
+		}
+		return got
+	}
+	if got := names(); !reflect.DeepEqual(got, []string{"1:show:permit", "2:ping:permit", "3:traceroute:permit", "4:terminal:permit", "5:*:(catchall)"}) {
+		t.Errorf("shipped: %q", got)
+	}
+	sb.run("", []string{"group", "commands", "add", "operator", "show", "--match", "^crypto( .*)?", "--action", "deny", "--before", "show"})
+	sb.expect(0, "Added rule 'show' (action=deny, match=[^crypto( .*)?])", "")
+	sb.run("", []string{"group", "commands", "add", "operator", "configure", "--action", "deny", "--first"})
+	sb.expect(0, "Added rule 'configure'", "")
+	sb.run("", []string{"group", "commands", "add", "operator", "reload", "--action", "deny", "--before", "*"})
+	sb.expect(0, "Added rule 'reload'", "")
+	want := []string{"1:configure:deny", "2:show:deny", "3:show:permit", "4:ping:permit", "5:traceroute:permit", "6:terminal:permit", "7:reload:deny", "8:*:(catchall)"}
+	if got := names(); !reflect.DeepEqual(got, want) {
+		t.Errorf("after the adds: %q", got)
+	}
+	sb.run("", []string{"group", "commands", "add", "operator", "x", "--before", "missing"})
+	sb.expect(1, "", "[ERROR] No rule named 'missing' in group 'operator'.")
+	sb.run("", []string{"group", "commands", "add", "operator", "x", "--before", "show", "--first"})
+	sb.expect(1, "", "--before and --first cannot be used together.")
+
+	sb.run("", []string{"group", "commands", "remove", "operator", "show"})
+	sb.expect(1, "", "[ERROR] Group 'operator' has 2 rules named 'show'; select one with --match/--action (see 'tacctl group commands list operator'), or pass --all.")
+	sb.run("", []string{"group", "commands", "remove", "operator", "show", "--match", "^nope"})
+	sb.expect(0, "", "")
+	if got := names(); !reflect.DeepEqual(got, want) {
+		t.Errorf("after the refusals: %q", got)
+	}
+	sb.run("", []string{"group", "commands", "remove", "operator", "show", "--match", "^crypto( .*)?"})
+	sb.expect(0, "Removed rule #2 'show' (deny, match=[^crypto( .*)?]) from group 'operator'.", "")
+	sb.run("", []string{"group", "commands", "add", "operator", "show", "--match", "a", "--action", "deny"})
+	sb.run("", []string{"group", "commands", "remove", "operator", "show", "--action", "permit"})
+	sb.expect(0, "Removed rule #2 'show' (permit, match=[]) from group 'operator'.", "")
+	sb.run("", []string{"group", "commands", "add", "operator", "show", "--match", "b", "--action", "deny"})
+	sb.run("", []string{"group", "commands", "remove", "operator", "show", "--all"})
+	sb.expect(0, "Removed rule #6 'show' (deny, match=[a]) from group 'operator'.\n[INFO] Removed rule #7 'show' (deny, match=[b])", "")
+	if got := names(); !reflect.DeepEqual(got, []string{"1:configure:deny", "2:ping:permit", "3:traceroute:permit", "4:terminal:permit", "5:reload:deny", "6:*:(catchall)"}) {
+		t.Errorf("after the removals: %q", got)
+	}
+	sb.run("", []string{"group", "commands", "remove", "operator", "ping", "--bogus"})
+	sb.expect(1, "", "Unknown flag: '--bogus'")
 }
 
 // Every verb has a Spec (its arguments for completion), and every kind a

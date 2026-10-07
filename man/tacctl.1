@@ -364,7 +364,10 @@ removes either setting, so the priv-lvl decides again (below 7 readonly,
 Remove a custom group. Built-in groups are protected.
 .TP
 .B "group commands list " \fIgroup\fR
-Show the per-command authorization rules for a group, including the
+Show the per-command authorization rules for a group, in the order
+tacquito tries them (the
+.B #
+column), including the
 default action (the action of the trailing
 .RB ` * `
 catchall rule).
@@ -377,8 +380,14 @@ rule that tacquito's
 .B CommandBasedAuthorizer
 matches as a wildcard.
 .TP
-.B "group commands add " \fIgroup\fR " " \fIname\fR " [ --match \fIregex\fR ]... [ --action permit | deny ]"
-Append a rule. Default action is
+.B "group commands add " \fIgroup\fR " " \fIname\fR " [ --match \fIregex\fR ]... [ --action permit | deny ] [ --before \fIname\fR | --first ]"
+Add a rule before the
+.RB ` * `
+catchall, or with
+.B --before
+before the first rule of that name, or with
+.B --first
+at position 1. Default action is
 .BR permit .
 The
 .I name
@@ -390,8 +399,17 @@ adds a regex that tacquito tests against the command's
 .I arguments
 only: the space-joined
 .B cmd-arg
-values after the command word (auto-anchored with
-.RB ` ^…$ `).
+values after the command word, without
+.B <cr>
+(auto-anchored with
+.RB ` ^…$ `,
+so
+.B ^crypto
+matches
+.B show crypto
+only; write
+.B "^crypto( .*)?"
+to cover the arguments after it too).
 For
 .B show running-config
 the string tested is
@@ -410,8 +428,15 @@ matches and the
 catchall is not
 .BR permit .
 .TP
-.B "group commands remove " \fIgroup\fR " " \fIname\fR
-Drop a rule by name. The
+.B "group commands remove " \fIgroup\fR " " \fIname\fR " [ --match \fIregex\fR ]... [ --action permit | deny ] [ --all ]"
+Drop a rule by name. When several rules share the name it refuses
+unless
+.B --match
+(the rule's regexes, all of them, in order) and
+.B --action
+narrow them to one, or
+.B --all
+drops them all. The
 .RB ` * `
 catchall is protected; change it via
 .B group commands default
