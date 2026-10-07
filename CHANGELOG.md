@@ -12,6 +12,18 @@ current behaviour; this file is where history lives.
    longer writes its HSTS cache (`/root/.wget-hsts`) on the server; found
    by the 0.2.1 release check (`tests/containers/fresh/run.sh --release`).
 
+4. **An account whose primary group is `tac-users` is no longer listed in
+   it a second time.** 0.2.0 put every account tacctl manages in
+   `tac-users` as a supplementary group, and 0.2.1 made `tac-users` the
+   primary group but kept the old entry, so `getent group tac-users` still
+   listed them. A sync now takes each managed account whose primary group
+   is `tac-users` out of the group's member list (`gpasswd -d`) and says so
+   once per account; it no longer adds `tac-users` as a supplementary group
+   either, except to an account whose primary group could not be changed
+   yet. Other accounts in the group are left to the existing cleanup.
+   `client-remove.sh` now finds tacctl's accounts by their primary group as
+   well when it reports those left without a way to log in.
+
 ## 0.2.1 (2026-10-07)
 
 ### What changed

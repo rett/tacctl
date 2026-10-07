@@ -116,8 +116,12 @@ for mod in tacctl_pam tacctl_pam_radius; do
 done
 
 # Report accounts that now have no way to log in. Nothing is changed.
+# tacctl's accounts have tac-users as primary group (an earlier release also
+# listed them in it as members).
 orphans=""
-for member in $(getent group "$G_USERS" 2>/dev/null | cut -d: -f4 | tr ',' ' '); do
+users_gid=$(getent group "$G_USERS" 2>/dev/null | cut -d: -f3 || true)
+for member in $({ getent group "$G_USERS" 2>/dev/null | cut -d: -f4 | tr ',' '\n'
+    if [[ -n "$users_gid" ]]; then getent passwd | awk -F: -v g="$users_gid" '$4 == g { print $1 }'; fi; } | sort -u); do
     if usable_password "$member"; then continue; fi
     home=$(getent passwd "$member" | cut -d: -f6)
     if [[ -s "$home/.ssh/authorized_keys" ]]; then continue; fi
