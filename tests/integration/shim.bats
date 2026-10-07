@@ -98,7 +98,7 @@ go_tarball() {
 [[ "'"$sum"'" != offline ]] || exit 4
 case "$*" in
   *.sha256*) [[ "'"$sum"'" == none ]] && exit 8; echo "'"$sum"'" ;;
-  *) cp "'"${BATS_TEST_TMPDIR}/go.tgz"'" "$3" ;;
+  *) cp "'"${BATS_TEST_TMPDIR}/go.tgz"'" "${@: -2:1}" ;;
 esac'
 }
 
@@ -160,8 +160,8 @@ refute_called() {
     assert_output --partial "Go tarball checksum verified."
     assert_output --partial "Go 1.26.2 installed."
     assert_line "NEW user list"
-    stub_called '^wget -q -O .*/go1\.26\.2\.linux-amd64\.tar\.gz https://dl\.google\.com/go/go1\.26\.2\.linux-amd64\.tar\.gz$'
-    stub_called '^wget -qO- https://dl\.google\.com/go/go1\.26\.2\.linux-amd64\.tar\.gz\.sha256$'
+    stub_called '^wget -q --no-hsts -O .*/go1\.26\.2\.linux-amd64\.tar\.gz https://dl\.google\.com/go/go1\.26\.2\.linux-amd64\.tar\.gz$'
+    stub_called '^wget -q --no-hsts -O- https://dl\.google\.com/go/go1\.26\.2\.linux-amd64\.tar\.gz\.sha256$'
     [[ -x "${GOROOT_DIR}/bin/go" ]]
     # The download went to a private directory that is gone.
     [[ -z "$(ls -A "$TMPDIR")" ]]
@@ -239,7 +239,7 @@ refused_unverified() {
         stub_cmd wget '
 case "$*" in
   *.sha256*) cat "'"${BATS_TEST_TMPDIR}/sha-answer"'" ;;
-  *) cp "'"${BATS_TEST_TMPDIR}/go.tgz"'" "$3" ;;
+  *) cp "'"${BATS_TEST_TMPDIR}/go.tgz"'" "${@: -2:1}" ;;
 esac'
         run --separate-stderr "${T}/bin/tacctl.sh" status
         refused_unverified
@@ -255,7 +255,7 @@ esac'
     stub_cmd wget '
 case "$*" in
   *.sha256*) cat "'"${BATS_TEST_TMPDIR}/sha-answer"'" ;;
-  *) cp "'"${BATS_TEST_TMPDIR}/go.tgz"'" "$3" ;;
+  *) cp "'"${BATS_TEST_TMPDIR}/go.tgz"'" "${@: -2:1}" ;;
 esac'
     run_shim status
     assert_success
@@ -458,7 +458,7 @@ not_used() {
     cmp "$B" "$DIST"
     [[ "$(stat -c %a "$B")" == 755 && ! -e "${B}.new" ]]
     for f in SHA256SUMS SHA256SUMS.sig "tacctl-${REL_TAG}-linux-amd64"; do
-        stub_called "^wget -q --timeout=30 --tries=2 -O .*/${f} ${TACCTL_RELEASE_BASE_URL}/${REL_TAG}/${f}\$"
+        stub_called "^wget -q --no-hsts --timeout=30 --tries=2 -O .*/${f} ${TACCTL_RELEASE_BASE_URL}/${REL_TAG}/${f}\$"
     done
     refute_called '^go build'
     [[ -z "$(ls -A "$TMPDIR")" ]]
@@ -567,7 +567,7 @@ not_used() {
     assert_success
     assert_output --partial "Go 1.26.2 installed."
     assert_output --partial "Installing the ${REL_TAG} release binary (linux/arm64, verified)"
-    stub_called '^wget -q -O .*/go1\.26\.2\.linux-arm64\.tar\.gz https://dl\.google\.com/go/go1\.26\.2\.linux-arm64\.tar\.gz$'
+    stub_called '^wget -q --no-hsts -O .*/go1\.26\.2\.linux-arm64\.tar\.gz https://dl\.google\.com/go/go1\.26\.2\.linux-arm64\.tar\.gz$'
     stub_called "/${REL_TAG}/tacctl-${REL_TAG}-linux-arm64\$"
     refute_called 'amd64'
     cmp "$B" "$DIST"

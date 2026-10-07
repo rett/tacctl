@@ -173,13 +173,13 @@ shim_install_go() {
     tarball="go${GO_VERSION}.linux-${arch}.tar.gz"
     SHIM_TMP=$(mktemp -d)
     shim_info "Installing Go ${GO_VERSION}..."
-    if ! wget -q -O "${SHIM_TMP}/${tarball}" "${SHIM_GO_DL}/${tarball}"; then
+    if ! wget -q --no-hsts -O "${SHIM_TMP}/${tarball}" "${SHIM_GO_DL}/${tarball}"; then
         shim_error "Could not download ${SHIM_GO_DL}/${tarball}."
         return 1
     fi
     # Go is installed only verified: no checksum (or anything but one) is a
     # refusal, as is a mismatch; the Go in place stays as it is.
-    want=$(wget -qO- "${SHIM_GO_DL}/${tarball}.sha256" 2> /dev/null || true)
+    want=$(wget -q --no-hsts -O- "${SHIM_GO_DL}/${tarball}.sha256" 2> /dev/null || true)
     want="${want#"${want%%[![:space:]]*}"}"
     want="${want%"${want##*[![:space:]]}"}"
     if [[ ! "$want" =~ ^[0-9a-f]{64}$ ]]; then
@@ -279,7 +279,7 @@ shim_commit_of() {
 shim_download() {
     local f
     for f in SHA256SUMS SHA256SUMS.sig "$3"; do
-        if ! wget -q --timeout=30 --tries=2 -O "${1}/${f}" "${SHIM_RELEASE_URL}/${2}/${f}" 2> /dev/null; then
+        if ! wget -q --no-hsts --timeout=30 --tries=2 -O "${1}/${f}" "${SHIM_RELEASE_URL}/${2}/${f}" 2> /dev/null; then
             echo "$f"
             return 1
         fi

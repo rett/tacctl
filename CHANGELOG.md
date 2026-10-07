@@ -3,6 +3,15 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.2 (unreleased)
+
+### What changed
+
+1. **A release install leaves nothing in root's home.** The bootstrap shim
+   downloads Go and the release binaries with `wget --no-hsts`, so wget no
+   longer writes its HSTS cache (`/root/.wget-hsts`) on the server; found
+   by the 0.2.1 release check (`tests/containers/fresh/run.sh --release`).
+
 ## 0.2.1 (2026-10-07)
 
 ### What changed
