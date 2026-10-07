@@ -122,6 +122,7 @@ Deferred:
 ## 3f. SNMPv3 and configuration deployment (filed 2026-10-07, not started)
 
 - **SNMP:** 0.2.2 reads a device's `sysName` at `device add` (WP9.17), with v2c and v3 both implemented. The user tests and first runs it with v2c and plans to move to v3. When that happens: v3 credentials per scope or per device (one set for every device is the 0.2.2 model), and the production run sheet's `config snmp v3-user` step.
+- **SNMP client list (user, 2026-10-07):** tacctl should keep the collection of client CIDRs allowed to query SNMP on the devices (the tacctl server itself for the `sysName` hint, plus the monitoring systems), the way `config mgmt-acl` keeps the management ACL: a global list with per-scope overrides, emitted by the walkthroughs (Cisco `snmp-server community … <acl>` / SNMPv3 group ACL, Junos `snmp client-list` or the community's `clients`, the WTI's SNMP access list). `config snmp test` and `device add` should say when the server is not in the list.
 - **Configuration deployment:** the user may want tacctl to help orchestrate pushing device configuration (today `config cisco|juniper|wti` only print walkthroughs to paste). SNMPv3 would matter more then. Nothing is designed; the open questions are the transport (NETCONF for Junos, SSH/RESTCONF for IOS-XE, the WTI's CLI), credentials, dry-run/diff and rollback, and the tier that may push.
 
 ## 4. Linux hosts: considered, not pursued
