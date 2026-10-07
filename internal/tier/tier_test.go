@@ -62,7 +62,7 @@ func TestPermitsMatchesBash(t *testing.T) {
 // testdata/sudoers.tiers is emit_tier_sudoers of the 0.1.16 tag plus
 // 0.2.1's lines for 'help', '-h' and '--help', the ssh and device rows, and
 // the env_keep line for SSH_AUTH_SOCK (no SETENV tag: it would let a caller
-// set SUDO_USER).
+// set SUDO_USER), and 0.2.2's 'group show'.
 func TestSudoersMatchesBash(t *testing.T) {
 	want, err := os.ReadFile("testdata/sudoers.tiers")
 	if err != nil {

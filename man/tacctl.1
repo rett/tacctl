@@ -314,20 +314,51 @@ in that intent is "temporarily revoke scope access" rather than
 .B group list
 List all groups with Cisco privilege level, Juniper class, and user count.
 .TP
-.BI "group add " "name priv-lvl juniper-class"
+.BI "group show " name
+Every setting of the group and where it comes from (set on the group, or
+the default of its priv-lvl): Cisco priv-lvl, Juniper class, tacctl tier,
+WTI level, command rules, Junos rules and the number of users.
+.TP
+.B "group add " \fIname priv-lvl juniper-class\fR " [ --tier \fItier\fR ] [ --wti-level \fIlevel\fR ]"
 Add a custom group.
 .I priv-lvl
 is an integer 0\(en15;
 .I juniper-class
 matches the Junos login class name.
+.B --tier
+and
+.B --wti-level
+set those two settings at creation (see
+.BR "group edit" ).
 .TP
-.B "group edit " \fIname\fR " { priv-lvl \fIN\fR | juniper-class \fICLASS\fR }"
-Change a group's Cisco privilege level or Juniper class. The built-in
-groups
+.B "group edit " \fIname\fR " { priv-lvl \fIN\fR | juniper-class \fICLASS\fR | wti-level \fIlevel\fR | tier \fItier\fR }"
+Change one setting of a group. Every group, built-in or custom, is edited
+the same way; the built-in groups
 .RB ( readonly ,
 .BR operator ,
 .BR superuser )
 can be edited but not removed.
+.B wti-level
+is
+.BR viewonly ,
+.BR user ,
+.B superuser
+or
+.BR administrator ,
+the access level a WTI unit with Service Name
+.B wti
+gives the group's users;
+.B tier
+is
+.BR readonly ,
+.BR operator ,
+.B engineer
+or
+.BR superuser ,
+the group's tacctl tier on the server and on Linux hosts.
+.B auto
+removes either setting, so the priv-lvl decides again (below 7 readonly,
+7\(en14 operator, 15 superuser).
 .TP
 .BI "group remove " name
 Remove a custom group. Built-in groups are protected.
@@ -496,6 +527,32 @@ for logins over RADIUS
 and
 .B "backend enable"
 name the groups concerned).
+.TP
+.B "group junos " \fIgroup\fR " list"
+Both Junos deny sets of the group, with their sizes.
+.TP
+.B "group junos " \fIgroup\fR " { deny-commands | deny-configuration } { list | add | remove | clear } [ '\fIregex\fR' ]"
+Show, add to, remove from or drop one set. Each pattern is a POSIX
+extended regular expression Junos tests against the whole command line
+.RB ( deny-commands )
+or the configuration path
+.RB ( deny-configuration ).
+The set is sent at login as one value, the patterns joined with
+.BR | ,
+over TACACS+ (junos-exec) and RADIUS (Juniper VSAs); it may not exceed
+241 bytes (deny-commands) or 236 (deny-configuration), the TACACS+
+argument limit, and a pattern that would make it longer is refused.
+.B deny-commands
+does not cover
+.BR "show configuration" \fIpath\fR:
+put paths in
+.BR deny-configuration ,
+which also hides them from reading. Sets live under
+.BI junos. group
+in tacctl.yaml.
+.TP
+.B "group junos " \fIgroup\fR " clear"
+Drop both sets (confirms).
 .SS Server configuration \fB(tacctl config)\fR
 .TP
 .B config show

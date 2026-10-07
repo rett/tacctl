@@ -8,11 +8,13 @@ package cli
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/names"
 	"github.com/rett/tacctl/internal/policy"
 	"github.com/rett/tacctl/internal/shellquote"
@@ -24,10 +26,14 @@ import (
 // verbs of 'commands' and 'privilege' are under "commands <verb>" and
 // "privilege <verb>".
 var groupSpecs = map[string]Spec{
-	"list":   {},
-	"add":    {MinArgs: 3, MaxArgs: 3, Args: []string{"", "", ""}},
+	"list": {},
+	"add": {MinArgs: 3, MaxArgs: 3, Args: []string{"", "", ""}, Flags: []Flag{
+		{Names: []string{"--tier"}, Value: true, Kind: "readonly|operator|engineer|superuser"},
+		{Names: []string{"--wti-level"}, Value: true, Kind: "viewonly|user|superuser|administrator"}}},
 	"remove": {MinArgs: 1, MaxArgs: 1, Args: []string{KindGroups}},
-	"edit":   {MinArgs: 3, MaxArgs: 3, Args: []string{KindGroups, "priv-lvl|juniper-class", ""}},
+	"edit":   {MinArgs: 3, MaxArgs: 3, Args: []string{KindGroups, "priv-lvl|juniper-class|wti-level|tier", ""}},
+	"show":   {MinArgs: 1, MaxArgs: 1, Args: []string{KindGroups}},
+	"junos":  {MinArgs: 2, MaxArgs: 4, Args: []string{KindGroups, "list|clear|deny-commands|deny-configuration", "list|add|remove|clear", ""}},
 
 	"commands list":    {MinArgs: 1, MaxArgs: 1, Args: []string{KindGroups}},
 	"commands default": {MinArgs: 2, MaxArgs: 2, Args: []string{KindGroups, "permit|deny"}},
@@ -72,9 +78,11 @@ func groupCmd(inv *invocation) *cobra.Command {
 	priv.RunE = n(inv.groupPrivilege)
 	c := verb("group <subcommand>", "Group management (list, add, edit, remove)",
 		withRun(verb("list", "List all groups"), n(inv.groupList)),
-		withRun(verb("add <name> <priv-lvl> <juniper-class>", "Add a new group"), n(inv.groupAdd)),
+		withRun(verb("show <name>", "Every setting of a group and where it comes from"), n(inv.groupShow)),
+		withRun(verb("add <name> <priv-lvl> <juniper-class> [--tier <tier>] [--wti-level <level>]", "Add a new group"), n(inv.groupAdd)),
 		withRun(verb("remove <name>", "Remove a custom group"), n(inv.groupRemove)),
-		withRun(verb("edit <name> {priv-lvl <0-15>|juniper-class <class>}", "Change a group's priv-lvl or juniper-class"), n(inv.groupEdit)),
+		withRun(verb("edit <name> {priv-lvl <0-15>|juniper-class <class>|wti-level <level>|tier <tier>}", "Change one setting of a group"), n(inv.groupEdit)),
+		withRun(verb("junos <group> {list|clear|deny-commands|deny-configuration} ...", "Per-group Junos deny rules"), n(inv.groupJunos)),
 		cmds, priv,
 	)
 	// No sub-command, help or an unknown word: the usage, exit 1.
@@ -133,9 +141,17 @@ func (inv *invocation) groupList([]string) error {
 
 func (inv *invocation) groupAdd(args []string) error {
 	a := inv.app
+	spec := groupSpecs["add"]
+	spec.MinArgs = 0
+	p, err := Parse(spec, args)
+	if err != nil {
+		return inv.usageErr(err.Error(), "Usage: tacctl group add <name> <cisco-priv-lvl> <juniper-class> [--tier <tier>] [--wti-level <level>]")
+	}
+	args = p.Args
+	tierV, wtiV := p.Value("--tier"), p.Value("--wti-level")
 	group, privlvl, class := arg(args, 0), arg(args, 1), arg(args, 2)
 	if group == "" || privlvl == "" || class == "" {
-		a.Out.Error("Usage: tacctl group add <name> <cisco-priv-lvl> <juniper-class>")
+		a.Out.Error("Usage: tacctl group add <name> <cisco-priv-lvl> <juniper-class> [--tier <tier>] [--wti-level <level>]")
 		inv.stderrLine("  Example: tacctl group add helpdesk 5 HELPDESK-CLASS")
 		return exit(1)
 	}
@@ -156,12 +172,37 @@ func (inv *invocation) groupAdd(args []string) error {
 	if err := names.ValidateClassName(class); err != nil {
 		return inv.validated(err)
 	}
-	if err := inv.applyStore(func(s *store.Store) error {
-		return s.GroupSet(group, "priv_lvl="+privlvl, "juniper_class="+class)
-	}); err != nil {
+	if p.Has("--tier") && !slices.Contains(conf.Tiers, tierV) {
+		return inv.usageErr("Unknown tier '" + tierV + "'. Use: " + strings.Join(conf.Tiers, ", "))
+	}
+	if p.Has("--wti-level") && !slices.Contains(conf.WTILevels, wtiV) {
+		return inv.usageErr("Unknown WTI level '" + wtiV + "'. Use: " + strings.Join(conf.WTILevels, ", "))
+	}
+	add := func(s *store.Store) error { return s.GroupSet(group, "priv_lvl="+privlvl, "juniper_class="+class) }
+	if tierV == "" && wtiV == "" {
+		err = inv.applyStore(add)
+	} else {
+		// One apply, so the backends render the group with its settings once.
+		err = inv.applyWith(func() error {
+			if err := inv.mutate(add); err != nil {
+				return err
+			}
+			if err := policy.WriteGroupTier(a.Conf(), group, tierV); err != nil {
+				return err
+			}
+			return policy.WriteWTILevel(a.Conf(), group, wtiV)
+		})
+	}
+	if err != nil {
 		return err
 	}
 	a.Out.Info("Group '" + group + "' added (Cisco priv-lvl " + privlvl + ", Juniper " + class + ").")
+	if tierV != "" {
+		a.Out.Info("tacctl tier: " + tierV + ".")
+	}
+	if wtiV != "" {
+		a.Out.Info("WTI level: " + wtiV + " (units must send Service Name 'wti').")
+	}
 	a.Out.Warn("On Juniper devices, create the template user: set system login user " + class + " class <junos-class>")
 	inv.echo("")
 	return nil
@@ -195,7 +236,19 @@ func (inv *invocation) groupRemove(args []string) error {
 		a.Out.Info("Cancelled.")
 		return nil
 	}
-	if err := inv.applyStore(func(s *store.Store) error { return s.GroupDel(group) }); err != nil {
+	del := func(s *store.Store) error { return s.GroupDel(group) }
+	if !groupHasSettings(a.Conf(), group) {
+		err = inv.applyStore(del)
+	} else {
+		// Its device settings in tacctl.yaml go with it (0.2.2).
+		err = inv.applyWith(func() error {
+			if err := inv.mutate(del); err != nil {
+				return err
+			}
+			return policy.ForgetGroup(a.Conf(), group)
+		})
+	}
+	if err != nil {
 		return err
 	}
 	a.Out.Info("Group '" + group + "' removed.")
@@ -207,9 +260,11 @@ func (inv *invocation) groupEdit(args []string) error {
 	a := inv.app
 	group, field, value := arg(args, 0), arg(args, 1), arg(args, 2)
 	if group == "" || field == "" || value == "" {
-		a.Out.Error("Usage: tacctl group edit <name> <priv-lvl|juniper-class> <value>")
+		a.Out.Error("Usage: tacctl group edit <name> <priv-lvl|juniper-class|wti-level|tier> <value>")
 		inv.stderrLine("  Example: tacctl group edit operator priv-lvl 10")
 		inv.stderrLine("  Example: tacctl group edit operator juniper-class NEW-CLASS")
+		inv.stderrLine("  Example: tacctl group edit engineer wti-level superuser")
+		inv.stderrLine("  Example: tacctl group edit engineer tier engineer")
 		return exit(1)
 	}
 	if err := inv.requireStore(); err != nil {
@@ -238,8 +293,21 @@ func (inv *invocation) groupEdit(args []string) error {
 		}
 		a.Out.Info("Group '" + group + "' Juniper class changed to " + value + ".")
 		a.Out.Warn("On Juniper devices: set system login user " + value + " class <junos-class>")
+	case "wti-level", "tier":
+		m, err := inv.model()
+		if err != nil {
+			return err
+		}
+		if field == "tier" {
+			err = inv.groupEditTier(m.Group(group), value)
+		} else {
+			err = inv.groupEditWTILevel(m.Group(group), value)
+		}
+		if err != nil {
+			return err
+		}
 	default:
-		return inv.usageErr("Unknown field '" + field + "'. Use: priv-lvl or juniper-class")
+		return inv.usageErr("Unknown field '" + field + "'. Use: priv-lvl, juniper-class, wti-level or tier")
 	}
 	inv.echo("")
 	return nil

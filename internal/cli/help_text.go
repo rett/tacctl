@@ -98,18 +98,29 @@ Usage: tacctl group <subcommand> [arguments]
 
 Subcommands:
   list                                                List all groups
+  show <name>                                         Every setting and where it comes from
   add <name> <priv-lvl> <juniper-class>               Add a new group
+      --tier <tier>                                   (add) Its tacctl tier instead of the priv-lvl's
+      --wti-level <level>                             (add) Its WTI level instead of the priv-lvl's
   edit <name> priv-lvl <0-15>                         Change Cisco privilege level
   edit <name> juniper-class <CLASS>                   Change Juniper class name
+  edit <name> wti-level auto|<level>                  WTI access level (viewonly, user, superuser, administrator)
+  edit <name> tier auto|<tier>                        tacctl tier (readonly, operator, engineer, superuser)
   remove <name>                                       Remove a custom group
   commands list|default|add|remove|clear|seed <group> ...  Per-group authorized commands
   privilege list|add|remove|clear|seed <group> ...         Per-group Cisco priv-exec mappings
+  junos <group> list|clear|deny-commands|deny-configuration ...  Per-group Junos deny rules
+
+'auto' (the default) takes the WTI level and the tier from the priv-lvl:
+below 7 readonly, 7-14 operator, 15 superuser.
 
 Examples:
   tacctl group list
   tacctl group add helpdesk 5 HELPDESK-CLASS
   tacctl group edit operator priv-lvl 10
   tacctl group edit operator juniper-class NEW-CLASS
+  tacctl group edit engineer tier engineer
+  tacctl group show engineer
   tacctl group remove helpdesk
   tacctl group commands default operator deny
   tacctl group commands add operator show --action permit
@@ -170,6 +181,32 @@ Drives 'privilege exec level <lvl> <cmd>' lines emitted by
 'tacctl config cisco'. Pure device-side; tacquito does not read
 these. When no explicit mappings exist for a group, a conservative
 default set is used (only commands moved DOWN from priv 15).
+
+`,
+	// 0.2.2 (docs/plans/0.2.2-plan.md §5.1)
+	"group-junos": `
+<b>tacctl group junos</b> — per-group Junos rules the server sends at login
+
+Usage:
+  tacctl group junos <group> list                                    Show both sets and their sizes
+  tacctl group junos <group> deny-commands list                      Show the set
+  tacctl group junos <group> deny-commands add '<regex>'             Add a pattern
+  tacctl group junos <group> deny-commands remove '<regex>'          Remove a pattern (exact text)
+  tacctl group junos <group> deny-commands clear                     Drop the set (confirms)
+  tacctl group junos <group> deny-configuration list|add|remove|clear
+  tacctl group junos <group> clear                                   Drop both sets (confirms)
+
+Each pattern is a POSIX extended regular expression Junos tests against
+the whole command line (deny-commands) or the configuration path
+(deny-configuration). The set is sent as one value, the patterns joined
+with '|'; a set may not exceed 241 bytes (deny-commands) or 236
+(deny-configuration), the TACACS+ argument limit. deny-commands does not
+cover 'show configuration <path>': put paths in deny-configuration, which
+also hides them from reading. The class on the device keeps only its
+permission bits ('tacctl config juniper').
+
+Sets live under junos.<group> in {{overrides}}; tacquito.yaml's
+junos-exec service and the RADIUS policy are regenerated from them.
 
 `,
 	// lib/scopes.sh cmd_scope_usage
