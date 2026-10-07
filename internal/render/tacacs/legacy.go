@@ -15,5 +15,5 @@ func DefaultLoader(path string) (*LegacyResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &LegacyResult{Model: model.FromStore(s), Errors: rep.Errors, Dropped: rep.Dropped}, nil
+	return &LegacyResult{Model: model.FromStore(s), Errors: rep.Errors, Dropped: rep.Dropped, Extras: rep.Extras}, nil
 }

@@ -32,6 +32,58 @@ type LegacyReport struct {
 	Errors []string
 	// Notes are things the operator should know that lose nothing.
 	Notes []string
+	// Extras are the per-group device settings found in the file, which
+	// live in tacctl.yaml, not in the store (0.2.2): kept only so the
+	// render's read-back can check them. Keyed by group name.
+	Extras map[string]*GroupExtras
+}
+
+// GroupExtras is what a group's services carried beyond the store: the
+// Junos set_values by argument name (deny-commands, ...; the first
+// value) and the priv-lvl of a 'wti' service (nil when it has none).
+type GroupExtras struct {
+	Junos map[string]string
+	WTI   any
+}
+
+// junosExtraValues are the junos-exec set_values kept in Extras.
+var junosExtraValues = []string{"deny-commands", "deny-configuration", "allow-commands", "allow-configuration"}
+
+func (r *LegacyReport) extras(group string) *GroupExtras {
+	if r.Extras == nil {
+		r.Extras = map[string]*GroupExtras{}
+	}
+	if r.Extras[group] == nil {
+		r.Extras[group] = &GroupExtras{Junos: map[string]string{}}
+	}
+	return r.Extras[group]
+}
+
+// firstValue is the first value of a set_values entry (nil for none).
+func firstValue(sv *yamlpy.Map) any {
+	values := orEmpty(get(sv, "values"))
+	vals, ok := values.([]any)
+	if values != nil && !ok {
+		vals = []any{values}
+	}
+	if len(vals) == 0 {
+		return nil
+	}
+	return vals[0]
+}
+
+// legacyWTI is a group's 'wti' service: its priv-lvl into Extras, and a
+// note (the level is wti_level.<group> in tacctl.yaml).
+func legacyWTI(name string, svc *yamlpy.Map, rep *LegacyReport) {
+	rep.note("group '%s': service 'wti': the WTI level lives in tacctl.yaml (wti_level.%s); not stored", name, name)
+	setValues, _ := orEmpty(get(svc, "set_values")).([]any)
+	for _, x := range setValues {
+		if sv, ok := mapOf(x); ok && pyStrip(pyStr(get(sv, "name"))) == "priv-lvl" {
+			rep.extras(name).WTI = firstValue(sv)
+			return
+		}
+	}
+	rep.extras(name)
 }
 
 func (r *LegacyReport) drop(format string, a ...any) {
@@ -261,6 +313,9 @@ func legacyGroup(g *yamlpy.Map, rep *LegacyReport, refs map[*yamlpy.Map]bool) *y
 			want, have = "priv-lvl", priv
 		case "junos-exec":
 			want, have = "local-user-name", cls
+		case "wti":
+			legacyWTI(name, svc, rep)
+			continue
 		default:
 			rep.drop("%s: service '%s' (only shell and junos-exec are stored)", label, sname)
 			continue
@@ -296,6 +351,14 @@ func legacyGroup(g *yamlpy.Map, rep *LegacyReport, refs map[*yamlpy.Map]bool) *y
 			vname := ""
 			if v, ok := sv.Get("name"); ok {
 				vname = pyStrip(pyStr(v))
+			}
+			if sname == "junos-exec" && inList(junosExtraValues, vname) {
+				rep.note("%s: set_value '%s' lives in tacctl.yaml (junos.%s.%s); not stored",
+					slabel, vname, name, strings.ReplaceAll(vname, "-", "_"))
+				if v := firstValue(sv); v != nil {
+					rep.extras(name).Junos[vname] = pyStr(v)
+				}
+				continue
 			}
 			if vname != want {
 				rep.drop("%s: extra set_value '%s'", slabel, vname)
