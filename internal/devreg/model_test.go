@@ -6,16 +6,27 @@ import (
 )
 
 func TestValidateName(t *testing.T) {
-	good := []string{"core-sw1", "a", "Core.SW_1", "9lives", strings.Repeat("a", 63)}
+	label := strings.Repeat("a", 63)
+	// 4 labels of 63 and the dots: 255; three and a 61: 253.
+	longest := label + "." + label + "." + label + "." + strings.Repeat("b", 61)
+	good := []string{"core-sw1", "a", "Core.SW_1", "9lives", label, "sw1.site-a.example", "a.b", longest}
 	for _, n := range good {
 		if err := ValidateName(n); err != nil {
 			t.Errorf("ValidateName(%q) = %v", n, err)
 		}
 	}
-	bad := []string{"", "-lead", ".lead", "_x", "has space", "semi;colon", "slash/x", "é", strings.Repeat("a", 64), "a\nb"}
+	bad := []string{"", "-lead", ".lead", "_x", "has space", "semi;colon", "slash/x", "é", strings.Repeat("a", 64), "a\nb",
+		"sw1..site-a.example", "sw1.site-a.example.", "sw1." + strings.Repeat("x", 64) + ".example", longest + "b",
+		strings.Repeat("a.", 126) + "ab"}
 	for _, n := range bad {
-		if err := ValidateName(n); err == nil {
+		err := ValidateName(n)
+		if err == nil {
 			t.Errorf("ValidateName(%q) accepted", n)
+			continue
+		}
+		want := "Invalid device name '" + n + "'. Use letters, digits, '.', '_' or '-', starting with a letter or digit; at most 253 characters, each dotted part at most 63."
+		if err.Error() != want {
+			t.Errorf("ValidateName(%q) = %q, want %q", n, err, want)
 		}
 	}
 	for _, n := range []string{"local", "all", "scope", "SSH", "Device", "shell"} {

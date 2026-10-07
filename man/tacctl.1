@@ -2363,11 +2363,17 @@ and for an enrolled host
 its address changed between two enrolments or syncs),
 the seen cache raises
 .B ambiguous-nas-id
-(one NAS-Identifier sent from several addresses),
+(one NAS-Identifier sent from several addresses; a fully qualified host name
+on each device tells them apart),
 .B generic-nas-id
 (a device identifying itself by a generic name),
 .B name-mismatch
-(a NAS-Identifier other than the registry name; informational),
+(a NAS-Identifier other than the registry name or the hostname, either in full
+or by its first label, as
+.B sw1
+for
+.BR sw1.site-a.example ;
+informational),
 .B duplicate-address
 (two entries at one address, or an address identifying as another entry),
 .B identity-changed
@@ -2475,7 +2481,15 @@ lists them too, marked). It warns when the
 vendor tag and the registered vendor disagree.
 .TP
 .BI "device add " "name address " "[ \-\-vendor cisco|juniper|wti|other ] [ \-\-hostname " dns " ] [ \-\-port " n " ] [ \-\-description " text " ] [ \-\-legacy\-ssh ] [ \-\-host\-key SHA256:" fingerprint " | \-\-no\-host\-key ] [ \-\-allow\-generic ]"
-Register a device. The vendor defaults to
+Register a device. A name is letters, digits,
+.RB ` . ` ,
+.RB ` _ `
+and
+.RB ` - ` ,
+starting with a letter or digit, at most 253 characters, each dotted part at
+most 63: a fully qualified host name such as
+.B sw1.site-a.example
+is a name. The vendor defaults to
 .B other
 (and only drives the ssh profile; it does not tag the address in the scope).
 The address is stored canonically (IPv6 in compressed lower-case form) and may

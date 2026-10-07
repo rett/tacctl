@@ -114,6 +114,29 @@ devices:
     [[ ! -e "$DEVICES" ]]
 }
 
+@test "device add: a fully qualified name up to 253 characters, each dotted part at most 63" {
+    local label long bad
+    label=$(printf 'a%.0s' {1..63})
+    # Three parts of 63, one of 61 and the dots: 253 characters.
+    long="${label}.${label}.${label}.$(printf 'b%.0s' {1..61})"
+    run "$TACCTL_BIN_SCRIPT" device add sw1.site-a.example 192.0.2.10 --vendor juniper --no-host-key
+    assert_success
+    run "$TACCTL_BIN_SCRIPT" device add "$long" 192.0.2.11 --no-host-key
+    assert_success
+    run "$TACCTL_BIN_SCRIPT" device show SW1.Site-A.example
+    assert_success
+    assert_output --partial "sw1.site-a.example"
+    for bad in "${long}b" "sw1..site-a.example" "sw1.site-a.example." "sw1.${label}b.example"; do
+        run "$TACCTL_BIN_SCRIPT" device add "$bad" 192.0.2.12 --no-host-key
+        assert_failure 1
+        assert_output --partial "Invalid device name '${bad}'. Use letters, digits, '.', '_' or '-', starting with a letter or digit; at most 253 characters, each dotted part at most 63."
+    done
+    run "$TACCTL_BIN_SCRIPT" device rename sw1.site-a.example sw1.site-b.example
+    assert_success
+    run "$TACCTL_BIN_SCRIPT" device show sw1.site-b.example
+    assert_success
+}
+
 @test "device add: a generic name is refused with the remedy; --allow-generic registers it with a notice" {
     run "$TACCTL_BIN_SCRIPT" device add switch 10.99.0.1 --vendor juniper
     assert_failure 1

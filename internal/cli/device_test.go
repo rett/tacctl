@@ -169,6 +169,10 @@ func TestDeviceAddRefusals(t *testing.T) {
 		{[]string{"add", "scope", "10.99.0.2"}, "tacctl word"},
 		{[]string{"add", "-bad", "10.99.0.2"}, "Unknown option"},
 		{[]string{"add", "bad name", "10.99.0.2"}, "Invalid device name"},
+		{[]string{"add", "sw1..site-a.example", "10.99.0.2"}, "Invalid device name 'sw1..site-a.example'. Use letters, digits, '.', '_' or '-', " +
+			"starting with a letter or digit; at most 253 characters, each dotted part at most 63."},
+		{[]string{"add", "sw1." + strings.Repeat("x", 64) + ".example", "10.99.0.2"}, "each dotted part at most 63"},
+		{[]string{"add", strings.Repeat("a.", 127), "10.99.0.2"}, "at most 253 characters"},
 		{[]string{"add", "x1", "10.99.0.0/24"}, "Invalid address"},
 		{[]string{"add", "x1", "host.example"}, "Invalid address"},
 		{[]string{"add", "x1", "10.99.0.2", "--vendor", "linux"}, "enrolled hosts"},
@@ -299,6 +303,14 @@ func TestDeviceRename(t *testing.T) {
 	sb.dev("", "rename", "dc1-core1", "switch", "--allow-generic")
 	if sb.code != 0 {
 		t.Errorf("--allow-generic: %q", sb.stderr())
+	}
+	// A fully qualified name, longer than 63 characters, is a name.
+	long := "core-sw1." + strings.Repeat("d", 63) + ".site-a.example"
+	if out := sb.dev("", "rename", "switch", long); sb.code != 0 || !strings.Contains(out, "renamed to '"+long+"'") {
+		t.Errorf("fully qualified rename: %d %q %q", sb.code, out, sb.stderr())
+	}
+	if out := sb.dev("", "show", strings.ToUpper(long)); sb.code != 0 || !strings.Contains(out, long) {
+		t.Errorf("show %s: %d %q", long, sb.code, sb.stderr())
 	}
 }
 

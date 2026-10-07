@@ -79,6 +79,8 @@ func TestFieldsRoundTrip(t *testing.T) {
 			HostKeys: []string{"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA=="}, Ack: []string{"generic-name"}},
 		{Name: "yes", Address: "192.0.2.1", Vendor: "wti"},
 		{Name: "123", Address: "192.0.2.2", Vendor: "other"},
+		{Name: "sw1.site-a.example", Address: "192.0.2.3", Vendor: "juniper"},
+		{Name: strings.Repeat("a", 63) + "." + strings.Repeat("b", 63) + ".site-a.example", Address: "192.0.2.4", Vendor: "cisco"},
 	}
 	text, err := f.Text()
 	if err != nil {
@@ -117,6 +119,10 @@ func TestLoadRefusals(t *testing.T) {
 		"bad host key":        "version: 1\ndevices:\n  a1: {address: 10.0.0.1, host_keys: ['x y z']}\n",
 		"login key":           "version: 1\ndevices:\n  a1: {address: 10.0.0.1, login: admin}\n",
 		"devices not a map":   "version: 1\ndevices: [a]\n",
+		"empty dotted part":   "version: 1\ndevices:\n  sw1..site-a.example: {address: 10.0.0.1}\n",
+		"dotted part over 63": "version: 1\ndevices:\n  sw1." + strings.Repeat("x", 64) + ".example: {address: 10.0.0.1}\n",
+		// Host names keep 63 characters (they are scope names too).
+		"host name over 63": "version: 1\nhosts:\n  " + strings.Repeat("h", 64) + ": {address: 192.0.2.1}\n",
 	}
 	for name, text := range cases {
 		p := filepath.Join(t.TempDir(), "devices.yaml")

@@ -72,21 +72,20 @@ func whenText(t time.Time) string {
 }
 
 // nameMatches reports whether a NAS-Identifier is e's own name: its
-// registry name, its hostname, or the hostname's first label, compared
-// without regard to case.
+// registry name or its first label, its hostname or the hostname's first
+// label, compared without regard to case; or a fully qualified
+// NAS-Identifier whose first label is the registry name.
 func nameMatches(e Entry, nas string) bool {
-	if strings.EqualFold(nas, e.Name) {
+	if strings.EqualFold(nas, e.Name) || strings.EqualFold(nas, firstLabel(e.Name)) {
 		return true
 	}
 	if e.Hostname != "" {
 		h := strings.TrimSuffix(e.Hostname, ".")
-		first, _, _ := strings.Cut(h, ".")
-		if strings.EqualFold(nas, h) || strings.EqualFold(nas, first) {
+		if strings.EqualFold(nas, h) || strings.EqualFold(nas, firstLabel(h)) {
 			return true
 		}
 	}
-	first, _, _ := strings.Cut(nas, ".")
-	return strings.EqualFold(first, e.Name)
+	return strings.EqualFold(firstLabel(nas), e.Name)
 }
 
 // scanNotices are the notices the seen cache raises for e.
@@ -154,7 +153,7 @@ func (r *Resolver) scanNotices(e Entry) []Notice {
 	}
 	if addrs := x.byNAS[strings.ToLower(nas)]; len(addrs) > 1 {
 		add(NoticeAmbiguousNASID, "NAS-Identifier '"+nas+"' is sent from "+strconv.Itoa(len(addrs))+" addresses ("+
-			strings.Join(addrs, ", ")+"); give each device a name of its own: "+hints+ackTail(e, NoticeAmbiguousNASID))
+			strings.Join(addrs, ", ")+"); give each device a name of its own (a fully qualified host name tells them apart: "+hints+")"+ackTail(e, NoticeAmbiguousNASID))
 	}
 	return out
 }

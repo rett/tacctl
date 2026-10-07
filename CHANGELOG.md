@@ -12,7 +12,20 @@ current behaviour; this file is where history lives.
    longer writes its HSTS cache (`/root/.wget-hsts`) on the server; found
    by the 0.2.1 release check (`tests/containers/fresh/run.sh --release`).
 
-4. **An account whose primary group is `tac-users` is no longer listed in
+2. **A device name may be a fully qualified host name of up to 253
+   characters.** `tacctl device add sw1.site-a.example <address>` was
+   already accepted; the limit was 63 characters for the whole name, and is
+   now 253, each dotted part 1 to 63 characters (no empty part, no trailing
+   dot): `Invalid device name '<name>'. Use letters, digits, '.', '_' or '-',
+   starting with a letter or digit; at most 253 characters, each dotted part
+   at most 63.` The `name-mismatch` notice no longer fires when a device
+   registered as `sw1.site-a.example` sends `sw1` as its NAS-Identifier (the
+   registry name's first label). The `ambiguous-nas-id` notice's remedy says
+   that a fully qualified host name tells the devices apart. Enrolled host
+   names are unchanged, because a host's name also names its scope
+   (`linux-<name>`).
+
+3. **An account whose primary group is `tac-users` is no longer listed in
    it a second time.** 0.2.0 put every account tacctl manages in
    `tac-users` as a supplementary group, and 0.2.1 made `tac-users` the
    primary group but kept the old entry, so `getent group tac-users` still

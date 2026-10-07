@@ -203,7 +203,9 @@ refused too). 'check' and 'list --probe' connect to each ssh port (3 s): this
 server often has no path to management ports, so a timeout may be a false
 alarm. Scans, discover and check are for the operator tier and up.
 
-A device is found by name or by its registered address. Enrolled Linux hosts
+A device is found by name or by its registered address. A name is letters,
+digits, '.', '_' and '-', at most 253 characters, each dotted part at most 63:
+a fully qualified host name (sw1.site-a.example) is one. Enrolled Linux hosts
 ('tacctl host') are listed and found too, read-only. The registry is
 /etc/tacctl/devices.yaml; scope and vendor tag are looked up, never stored.
 

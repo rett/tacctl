@@ -92,7 +92,42 @@ func TestScanNoticeTable(t *testing.T) {
 			},
 			check: "sw1", want: []string{NoticeIdentityChanged, NoticeNameMismatch + "+", NoticeAmbiguousNASID},
 			text: []string{"192.0.2.1 now identifies as 'edge-9' (was 'sw1', changed 2026-10-01 12:05) — replaced or reset?",
-				"NAS-Identifier 'edge-9' is sent from 2 addresses (192.0.2.1, 198.51.100.4)"}},
+				"NAS-Identifier 'edge-9' is sent from 2 addresses (192.0.2.1, 198.51.100.4); give each device a name of its own " +
+					"(a fully qualified host name tells them apart: Cisco IOS/IOS-XE: 'hostname <name>'",
+				"format %h'), or acknowledge it: 'tacctl device notice sw1 ack ambiguous-nas-id'"}},
+		{name: "a fully qualified registry name matches the short NAS-Identifier",
+			dev: []*Device{{Name: "sw1.site-a.example", Address: "192.0.2.1", Vendor: "cisco", HostKeys: []string{ed.String()}}},
+			seen: func(s *Seen) {
+				s.Apply("radius", []backend.Sighting{sight(0, "192.0.2.1", backend.SightAccept, "a", "SW1")})
+			},
+			check: "sw1.site-a.example", want: nil},
+		{name: "a fully qualified registry name matches itself",
+			dev: []*Device{{Name: "sw1.site-a.example", Address: "192.0.2.1", Vendor: "cisco", HostKeys: []string{ed.String()}}},
+			seen: func(s *Seen) {
+				s.Apply("radius", []backend.Sighting{sight(0, "192.0.2.1", backend.SightAccept, "a", "sw1.SITE-A.example")})
+			},
+			check: "sw1.site-a.example", want: nil},
+		{name: "a fully qualified registry name: another domain is a mismatch",
+			dev: []*Device{{Name: "sw1.site-a.example", Address: "192.0.2.1", Vendor: "juniper", HostKeys: []string{ed.String()}}},
+			seen: func(s *Seen) {
+				s.Apply("radius", []backend.Sighting{sight(0, "192.0.2.1", backend.SightAccept, "a", "sw1.site-b.example")})
+			},
+			check: "sw1.site-a.example", want: []string{NoticeNameMismatch},
+			text: []string{"identifies itself as 'sw1.site-b.example', not 'sw1.site-a.example' (informational)"}},
+		{name: "two units sending one short name: the remedy names a fully qualified name",
+			dev: []*Device{
+				{Name: "sw1.site-a.example", Address: "192.0.2.1", Vendor: "juniper", HostKeys: []string{ed.String()}},
+				{Name: "sw1.site-b.example", Address: "192.0.2.2", Vendor: "juniper", HostKeys: []string{ed.String()}},
+			},
+			seen: func(s *Seen) {
+				s.Apply("radius", []backend.Sighting{
+					sight(0, "192.0.2.1", backend.SightAccept, "a", "sw1"),
+					sight(1, "192.0.2.2", backend.SightAccept, "a", "sw1"),
+				})
+			},
+			check: "sw1.site-b.example", want: []string{NoticeAmbiguousNASID},
+			text: []string{"NAS-Identifier 'sw1' is sent from 2 addresses (192.0.2.1, 192.0.2.2); give each device a name of its own " +
+				"(a fully qualified host name tells them apart: Junos: 'set system host-name <name>'), or acknowledge it"}},
 		{name: "duplicate-address: an address identifying as another entry",
 			dev: []*Device{
 				{Name: "sw1", Address: "192.0.2.1", Vendor: "cisco", HostKeys: []string{ed.String()}},
