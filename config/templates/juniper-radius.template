@@ -4,7 +4,7 @@ ${TEMPLATE_USERS}
 # Step 2: Configure RADIUS
 ${RADIUS_CONFIG}
 
-# Step 3: (optional) Per-class command rules
+# Step 3: Per-class rules sent by the server at login (read-only summary)
 ${CLASS_COMMAND_RULES}
 
 # Step 4: (optional) Management ACL

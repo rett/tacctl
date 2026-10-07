@@ -27,10 +27,12 @@ const (
 	TypeBackendList    = "backend_list"
 	TypeCiscoCmdList   = "cisco_cmd_list"
 	TypeCommandRules   = "command_rules"
+	// TypeJunosRegexList is junos.<group>.<attr> (junos.go).
+	TypeJunosRegexList = "junos_regex_list"
 )
 
 // listTypes take list input (conf_set_list / a JSON list).
-var listTypes = []string{TypeCIDRList, TypeCiscoCmdList, TypeCommandRules, TypeBackendList}
+var listTypes = []string{TypeCIDRList, TypeCiscoCmdList, TypeCommandRules, TypeBackendList, TypeJunosRegexList}
 
 // Rule is one schema entry.
 type Rule struct {
@@ -93,6 +95,13 @@ func NewSchema(backends []string) *Schema {
 				Default: 20, HasDefault: true},
 			"backends.tacacs.metrics_address": {Type: TypeHostPort,
 				Default: "127.0.0.1:8080", HasDefault: true},
+			// The SNMP name hint of 'device add' (0.2.2; the credentials are in
+			// StateDir/snmp.yaml, never here). No version: no lookup.
+			"snmp.version": {Type: TypeEnum, Values: []string{"v2c", "v3"}},
+			"snmp.port":    {Type: TypeInt, Min: intp(1), Max: intp(65535), Default: 161, HasDefault: true},
+			"snmp.timeout": {Type: TypeInt, Min: intp(1), Max: intp(10), Default: 2, HasDefault: true},
+			"snmp.v3.auth": {Type: TypeEnum, Values: []string{"sha", "sha256"}},
+			"snmp.v3.priv": {Type: TypeEnum, Values: []string{"aes128"}},
 		},
 		wildcards: []wildcard{
 			{"privileges.", Rule{Type: TypeCiscoCmdList}},
@@ -110,6 +119,11 @@ func NewSchema(backends []string) *Schema {
 			{"scope_mgmt_acl.permits.", Rule{Type: TypeCIDRList, Default: []any{}, HasDefault: true}},
 			// listeners.<backend>.<name>: its default is per name.
 			{"listeners.", Rule{Type: TypeListener, Depth: 2}},
+			// The per-group device settings of 0.2.2 (junos.go); no default:
+			// absent is "not set" (the priv-lvl band decides).
+			{"junos.", Rule{Type: TypeJunosRegexList, Depth: 2}},
+			{"wti_level.", Rule{Type: TypeEnum, Values: WTILevels}},
+			{"tier.", Rule{Type: TypeEnum, Values: Tiers}},
 		},
 	}
 }
@@ -297,6 +311,12 @@ func (s *Schema) Validate(path string, value any, isList bool) string {
 			if !isStr {
 				return fmt.Sprintf("element %d: must be a string", i)
 			}
+			// 0.2.2: an entry may start with a mode (exec:, exec all:,
+			// configure:, configure all:); the command after it is checked.
+			// Any other ':' is an invalid character, as before.
+			if _, cmd, ok := names.SplitPrivEntry(str); ok {
+				str = cmd
+			}
 			if !pyMatch(reCmd, str) {
 				return fmt.Sprintf("element %d: %s has invalid characters (letters/digits/spaces/_/- only)", i, py.ReprString(str))
 			}
@@ -307,6 +327,8 @@ func (s *Schema) Validate(path string, value any, isList bool) string {
 		return ""
 	case TypeCommandRules:
 		return validateCommandRules(value)
+	case TypeJunosRegexList:
+		return junosListProblem(path, value)
 	}
 	return fmt.Sprintf("unknown schema type %s", py.ReprString(t))
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/rett/tacctl/internal/execx/fake"
 	"github.com/rett/tacctl/internal/hash"
 	"github.com/rett/tacctl/internal/paths"
+	"github.com/rett/tacctl/internal/snmp"
 )
 
 // The native families end to end, in-process: a sandbox state tree holding
@@ -30,6 +31,10 @@ type sandbox struct {
 	runner   *fake.Runner
 	out, err bytes.Buffer
 	code     int
+	// snmp, when set, is the App's sysName lookup (device_snmp_test.go);
+	// tty, when set, is stdin in place of the string run is given.
+	snmp snmp.Getter
+	tty  *os.File
 }
 
 func newSandbox(t *testing.T, withStore bool) *sandbox {
@@ -80,8 +85,13 @@ func (sb *sandbox) run(stdin string, args []string, extraEnv ...string) string {
 	sb.runner.On([]string{"logger"}, execx.Result{})
 	sb.runner.On([]string{"id"}, execx.Result{Stdout: []byte("users\n")})
 	fakePasswd(sb.runner)
+	stdio := app.Stdio{Stdin: strings.NewReader(stdin), Stdout: &sb.out, Stderr: &sb.err}
+	if sb.tty != nil {
+		stdio.Stdin = sb.tty
+	}
 	a := app.New(args, paths.NewEnv(append(append([]string(nil), sb.env...), extraEnv...)), "/opt/x/dist/tacctl", 1000,
-		app.Stdio{Stdin: strings.NewReader(stdin), Stdout: &sb.out, Stderr: &sb.err}, sb.runner)
+		stdio, sb.runner)
+	a.SNMP = sb.snmp
 	// tacctl's fixed host locations (the installed command, /root, ...)
 	// stay in the sandbox too.
 	a.Paths = a.Paths.Reroot(sb.dir)

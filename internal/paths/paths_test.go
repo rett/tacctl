@@ -270,6 +270,8 @@ func TestDeviceAndConsolePaths(t *testing.T) {
 		p.ConsoleFile: "/etc/tacctl/console.yaml", p.SSHDDropIn: "/etc/ssh/sshd_config.d/tacctl-console.conf",
 		p.ShellsFile: "/etc/shells", p.ConsoleCommand: "/usr/local/bin/tacctl-console",
 		p.VarLib: "/var/lib/tacctl", p.SeenCache: "/var/lib/tacctl/devices-seen.json",
+		p.HostRecords: "/etc/tacctl/hosts",
+		p.SNMPFile:    "/etc/tacctl/snmp.yaml",
 	}
 	for got, w := range want {
 		if got != w {
@@ -282,7 +284,7 @@ func TestDeviceAndConsolePaths(t *testing.T) {
 	}
 	for got, w := range map[string]string{
 		p.DevicesFile: "/s/devices.yaml", p.KnownHosts: "/v/ssh/known_hosts", p.ConsoleFile: "/s/console.yaml",
-		p.VarLib: "/v", p.SeenCache: "/v/devices-seen.json",
+		p.HostRecords: "/s/hosts", p.VarLib: "/v", p.SeenCache: "/v/devices-seen.json", p.SNMPFile: "/s/snmp.yaml",
 	} {
 		if got != w {
 			t.Errorf("overridden %q, want %q", got, w)

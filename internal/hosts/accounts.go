@@ -16,6 +16,7 @@ import (
 	"errors"
 	"io"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -230,12 +231,57 @@ func ParseAccountSummary(line string) (AccountSummary, bool) {
 	return s, true
 }
 
+// AccountChanges are the accounts a run of the client script reported
+// creating, changing (renumbered, primary group, home mode, login shell,
+// re-activated, expired) and deleting, each name once, in the order
+// reported; what 'host show' prints of the last sync.
+type AccountChanges struct {
+	Created, Updated, Removed []string
+}
+
+var (
+	reAccountCreated = regexp.MustCompile(`^\[INFO\] Created account '([^']+)'`)
+	reAccountDeleted = regexp.MustCompile(`^\[INFO\] Deleted account '([^']+)'`)
+	reAccountUpdated = regexp.MustCompile(`^\[INFO\] (?:Re-activated account '([^']+)'|'([^']+)' has no \S+ login here now|'([^']+)': (?:renumbered|primary group is now|home .* is now|login shell is now|no longer listed in))`)
+)
+
+// take adds what one line of the script's output says changed.
+func (c *AccountChanges) take(line string) {
+	add := func(list *[]string, name string) {
+		for _, n := range *list {
+			if n == name {
+				return
+			}
+		}
+		*list = append(*list, name)
+	}
+	// An account created or deleted is not also counted as changed (a new
+	// account's home is made private before it is reported created).
+	drop := func(name string) { c.Updated = slices.DeleteFunc(c.Updated, func(n string) bool { return n == name }) }
+	if m := reAccountCreated.FindStringSubmatch(line); m != nil {
+		add(&c.Created, m[1])
+		drop(m[1])
+	} else if m := reAccountDeleted.FindStringSubmatch(line); m != nil {
+		add(&c.Removed, m[1])
+		drop(m[1])
+	} else if m := reAccountUpdated.FindStringSubmatch(line); m != nil {
+		name := m[1] + m[2] + m[3]
+		for _, n := range append(append([]string(nil), c.Created...), c.Removed...) {
+			if n == name {
+				return
+			}
+		}
+		add(&c.Updated, name)
+	}
+}
+
 // summaryWriter passes everything to w unchanged and as it comes, and
-// keeps the last summary line seen.
+// keeps the last summary line seen and the accounts changed.
 type summaryWriter struct {
-	w    io.Writer
-	line []byte
-	sum  *AccountSummary
+	w       io.Writer
+	line    []byte
+	sum     *AccountSummary
+	changes AccountChanges
 }
 
 func (s *summaryWriter) Write(p []byte) (int, error) {
@@ -250,6 +296,7 @@ func (s *summaryWriter) Write(p []byte) (int, error) {
 		if sum, ok := ParseAccountSummary(string(s.line)); ok {
 			s.sum = &sum
 		}
+		s.changes.take(strings.TrimSuffix(string(s.line), "\r"))
 		s.line = s.line[:0]
 	}
 	return n, err

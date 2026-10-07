@@ -40,7 +40,7 @@ func hostDefaults(p paths.Paths, root string) []string {
 		"Etc": p.Etc, "StateDir": p.StateDir, "Log": p.Log, "Bin": p.Bin, "Config": p.Config,
 		"BackupDir": p.BackupDir, "Overrides": p.Overrides, "StoreFile": p.StoreFile, "Rendered": p.Rendered,
 		"LinuxUIDs": p.LinuxUIDs, "LinuxHosts": p.LinuxHosts, "Templates": p.Templates,
-		"DevicesFile": p.DevicesFile, "KnownHosts": p.KnownHosts, "ConsoleFile": p.ConsoleFile,
+		"DevicesFile": p.DevicesFile, "KnownHosts": p.KnownHosts, "ConsoleFile": p.ConsoleFile, "HostRecords": p.HostRecords, "SNMPFile": p.SNMPFile,
 		"SSHDDropIn": p.SSHDDropIn, "ShellsFile": p.ShellsFile, "VarLib": p.VarLib, "SeenCache": p.SeenCache,
 		"SudoersFile": p.SudoersFile, "TierSudoersFile": p.TierSudoersFile,
 		"OverrideDir": p.OverrideDir, "TacacsUnitDir": p.TacacsUnitDir, "SystemdDir": p.SystemdDir,

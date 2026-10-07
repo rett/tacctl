@@ -101,6 +101,7 @@ var Rules = []Rule{
 	{Tier: Readonly, Cmd: "user", Sub: "list", Sudoers: []string{"user list"}},
 	{Tier: Readonly, Cmd: "user", Sub: "show", Sudoers: []string{"user show *"}},
 	{Tier: Readonly, Cmd: "group", Sub: "list", Sudoers: []string{"group list"}},
+	{Tier: Readonly, Cmd: "group", Sub: "show", Sudoers: []string{"group show *"}},
 	{Tier: Readonly, Cmd: "scope", Sub: "list", Sudoers: []string{"scope list"}, Wrap: true},
 	{Tier: Readonly, Cmd: "backend", Sub: "list", Sudoers: []string{"backend list"}},
 	{Tier: Readonly, Cmd: "backend", Sub: "status", Sudoers: []string{"backend status", "backend status *"}, Wrap: true},

@@ -208,7 +208,7 @@ func (f *File) validate() error {
 	}
 	hostNames := map[string]bool{}
 	for _, h := range f.Hosts {
-		if !reName.MatchString(h.Name) || hostNames[strings.ToLower(h.Name)] {
+		if !reHostEntry.MatchString(h.Name) || hostNames[strings.ToLower(h.Name)] {
 			return fail("hosts: invalid or repeated host name '" + h.Name + "'.")
 		}
 		hostNames[strings.ToLower(h.Name)] = true

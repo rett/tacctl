@@ -2,7 +2,7 @@
 # Remove with: tacctl config sudoers tiers remove
 Cmnd_Alias TACCTL_RO = /usr/local/bin/tacctl "", /usr/local/bin/tacctl passwd, /usr/local/bin/tacctl status, /usr/local/bin/tacctl version, \
     /usr/local/bin/tacctl help, /usr/local/bin/tacctl -h, /usr/local/bin/tacctl --help, \
-    /usr/local/bin/tacctl user list, /usr/local/bin/tacctl user show *, /usr/local/bin/tacctl group list, /usr/local/bin/tacctl scope list, \
+    /usr/local/bin/tacctl user list, /usr/local/bin/tacctl user show *, /usr/local/bin/tacctl group list, /usr/local/bin/tacctl group show *, /usr/local/bin/tacctl scope list, \
     /usr/local/bin/tacctl backend list, /usr/local/bin/tacctl backend status, /usr/local/bin/tacctl backend status *, \
     /usr/local/bin/tacctl ssh *, /usr/local/bin/tacctl device list, /usr/local/bin/tacctl device list *, /usr/local/bin/tacctl device show *, /usr/local/bin/tacctl device notices, /usr/local/bin/tacctl device notices *, /usr/local/bin/tacctl device ssh *, /usr/local/bin/tacctl device ssh-config, \
     /usr/local/bin/tacctl _completion-names *, /usr/local/bin/tacctl _console-policy

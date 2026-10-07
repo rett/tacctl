@@ -84,6 +84,90 @@ _normalize() {
     golden_diff "$out" "juniper-lab.conf"
 }
 
+# --- config cisco: per-level authorization and accounting (0.2.2) -------------
+
+@test "config cisco: authorization and accounting for every level in use, config-commands, console commented" {
+    "$TACCTL_BIN_SCRIPT" group add netops 12 OP-CLASS > /dev/null
+    "$TACCTL_BIN_SCRIPT" group commands default netops permit > /dev/null
+    run "$TACCTL_BIN_SCRIPT" config cisco --scope lab
+    assert_success
+    local l
+    for l in 1 7 12 15; do
+        assert_line "aaa authorization commands $l default group TACACS-GROUP local"
+        assert_line "aaa accounting commands $l default start-stop group TACACS-GROUP"
+    done
+    assert_line "aaa authorization config-commands"
+    assert_line "! aaa authorization console   ! uncomment to have the console line ask the server too"
+    # Ascending order.
+    [[ "$output" == *"commands 7 default group TACACS-GROUP local"*"commands 12 default group TACACS-GROUP local"*"commands 15 default"* ]]
+}
+
+@test "config cisco: a level whose group has no command rules gets a commented line naming the group and the fix" {
+    "$TACCTL_BIN_SCRIPT" group add helpdesk 5 OP-CLASS > /dev/null
+    run "$TACCTL_BIN_SCRIPT" config cisco --scope lab
+    assert_success
+    assert_line "! aaa authorization commands 5 default group TACACS-GROUP local   ! NOT emitted: group 'helpdesk' has no command rules and would be denied every command; run 'tacctl group commands default helpdesk permit'"
+    refute_line "aaa authorization commands 5 default group TACACS-GROUP local"
+    # Accounting does not depend on rules.
+    assert_line "aaa accounting commands 5 default start-stop group TACACS-GROUP"
+    assert_line "aaa authorization commands 7 default group TACACS-GROUP local"
+    "$TACCTL_BIN_SCRIPT" group commands default helpdesk permit > /dev/null
+    run "$TACCTL_BIN_SCRIPT" config cisco --scope lab
+    assert_line "aaa authorization commands 5 default group TACACS-GROUP local"
+    refute_output --partial "NOT emitted"
+}
+
+@test "config cisco: two groups without rules at one level are both named" {
+    "$TACCTL_BIN_SCRIPT" group add helpdesk 5 OP-CLASS > /dev/null
+    "$TACCTL_BIN_SCRIPT" group add noc 5 OP-CLASS > /dev/null
+    run "$TACCTL_BIN_SCRIPT" config cisco --scope lab
+    assert_success
+    assert_output --partial "! NOT emitted: groups 'helpdesk', 'noc' have no command rules and would be denied every command; run 'tacctl group commands default <group> permit' for each"
+}
+
+@test "config cisco --legacy: accounting per level in use too" {
+    "$TACCTL_BIN_SCRIPT" group add helpdesk 5 OP-CLASS > /dev/null
+    run "$TACCTL_BIN_SCRIPT" config cisco --legacy --scope lab
+    assert_success
+    assert_line "aaa accounting commands 5 default start-stop group TACACS-GROUP"
+    assert_line "aaa authorization config-commands"
+}
+
+@test "config cisco: privilege modes render as privilege <mode> [all] level <N>" {
+    "$TACCTL_BIN_SCRIPT" group privilege add operator 'configure: router bgp','exec all: show ip','configure all: interface' > /dev/null
+    run "$TACCTL_BIN_SCRIPT" config cisco --scope lab
+    assert_success
+    assert_line "privilege configure level 7 router bgp"
+    assert_line "privilege exec all level 7 show ip"
+    assert_line "privilege configure all level 7 interface"
+    assert_line "privilege exec level 7 show running-config"
+}
+
+# --- config juniper: the server's rules per class (0.2.2) -------------------
+
+@test "config juniper: Step 3 lists what the server sends per class, with sizes, and no class rules to paste" {
+    printf 'junos:\n  operator:\n    deny_commands: ["^(request|start)( .*)?$", "^file"]\n    deny_configuration: ["^system login"]\n' >> "${TACCTL_STATE_DIR}/tacctl.yaml"
+    run "$TACCTL_BIN_SCRIPT" config juniper --scope lab
+    assert_success
+    assert_output --partial "# Step 3: Per-class rules sent by the server at login (read-only summary)"
+    assert_output --partial "#   deny-commands       33/241 bytes: (^(request|start)( .*)?$)|(^file)"
+    assert_output --partial "#   deny-configuration  15/236 bytes: (^system login)"
+    assert_output --partial "#   none: tacctl group junos readonly deny-commands add '<regex>'"
+    refute_output --regexp "(^|"$'\n'")set system login class [A-Z-]+ (allow|deny)-commands"
+    assert_output --partial "operator: OP-CLASS (local: clear/network/reset/trace/view + view-configuration), junos: deny-commands 33/241, deny-configuration 15/236"
+    assert_output --partial "show cli authorization    (after a TACACS+ login: lists the server's deny values)"
+}
+
+@test "config juniper: a group using ENG-CLASS gets the engineer class and template user" {
+    "$TACCTL_BIN_SCRIPT" group add engineer 15 ENG-CLASS > /dev/null
+    run "$TACCTL_BIN_SCRIPT" config juniper --scope lab
+    assert_success
+    assert_line "set system login class ENG-CLASS permissions [ view view-configuration network clear trace reset configure rollback interface interface-control routing routing-control firewall firewall-control system system-control snmp ]"
+    assert_line "set system login user ENG-CLASS class ENG-CLASS"
+    assert_line "  show configuration system login user ENG-CLASS"
+    assert_output --partial "engineer: ENG-CLASS (local: operator bits + configure/rollback and interface, routing, firewall, system, snmp)"
+}
+
 @test "config cisco: errors on unknown scope" {
     run "$TACCTL_BIN_SCRIPT" config cisco --scope nosuchscope
     assert_failure
@@ -98,8 +182,9 @@ _normalize() {
 
 # --- config wti -------------------------------------------------------------
 # WTI console servers are driven by numbered serial menus, so the render is a
-# walkthrough (not a pasteable config). The unit reads priv-lvl from the same
-# `shell` service Cisco uses; the goldens pin the menu values + band mapping.
+# walkthrough (not a pasteable config). The unit asks for the factory
+# `wti` service: a group's wti-level answers it, else its priv-lvl band
+# through patch 0001. The goldens pin the menu values + band mapping.
 
 @test "config wti: renders deterministic walkthrough from fixture + lab scope" {
     local out="$BATS_TEST_TMPDIR/wti.conf"
@@ -108,13 +193,16 @@ _normalize() {
     golden_diff "$out" "wti-lab.conf"
 }
 
-@test "config wti: fills in server IP, secret, port 49, service name shell" {
+@test "config wti: fills in server IP, secret, port 49, service name wti" {
     run "$TACCTL_BIN_SCRIPT" config wti --scope lab
     assert_success
     assert_output --partial "Primary Host/Address       : 10.0.0.42"
     assert_output --partial "Secret Word                : lab-secret-0123456789abcdef"
     assert_output --partial "Authentication Port        : 49"
-    assert_output --partial "Service Name               : shell"
+    assert_output --partial "Service Name               : wti       (factory default; per-group levels need it, see notes)"
+    refute_output --partial "Service Name               : shell"
+    # A unit left on 'shell' by an earlier walkthrough ignores the per-group levels.
+    assert_output --partial "A unit set to Service Name 'shell' by the walkthrough of tacctl 0.2.1 or"
     assert_output --partial "Account Management Module  : Enabled"
     assert_output --partial "Session Management Module  : Enabled"
 }
@@ -129,7 +217,7 @@ _normalize() {
     assert_output --partial "12. Debug: On"
     assert_output --partial "back to Off"
     assert_output --partial "tacctl config loglevel debug"
-    assert_output --partial "client args [service=shell"
+    assert_output --partial "client args [service=wti"
     assert_output --partial "args [priv-lvl=N]"
     assert_output --partial "bad secret detected"
     assert_output --partial "tacctl config loglevel info"
@@ -178,6 +266,24 @@ _normalize() {
     assert_success
     assert_output --partial "wtisuper: priv-lvl 12 → SuperUser"
     refute_output --partial "No group lands in the SuperUser band"
+}
+
+@test "config wti: a group's wti-level overrides its band in the mapping and in Port access" {
+    printf 'wti_level:\n  operator: superuser\n  superuser: user\n' >> "${TACCTL_STATE_DIR}/tacctl.yaml"
+    run "$TACCTL_BIN_SCRIPT" config wti --scope lab
+    assert_success
+    assert_output --partial "operator: priv-lvl 7 → SuperUser (wti-level override; auto: User)"
+    assert_output --partial "superuser: priv-lvl 15 → User (wti-level override; auto: Administrator)"
+    assert_output --partial "readonly: priv-lvl 1 → ViewOnly"
+    refute_output --partial "No group lands in the SuperUser band"
+    assert_output --partial "    superuser: User"
+    refute_output --partial "    operator: User"
+}
+
+@test "config wti: the SuperUser hint points at wti-level" {
+    run "$TACCTL_BIN_SCRIPT" config wti --scope lab
+    assert_success
+    assert_output --partial "e.g. 'tacctl group edit <group> wti-level superuser'."
 }
 
 @test "config wti: Port access names the User and ViewOnly groups, which need ports turned On" {

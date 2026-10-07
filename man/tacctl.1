@@ -1,6 +1,6 @@
 .\" Manual page for tacctl, the management CLI for TACACS+ (tacquito) and RADIUS (FreeRADIUS).
 .\" Render locally with: groff -man -Tascii man/tacctl.1 | less
-.TH TACCTL 1 "2026-10-07" "tacctl 0.2.1" "tacctl Manual"
+.TH TACCTL 1 "2026-10-07" "tacctl 0.2.2" "tacctl Manual"
 .SH NAME
 tacctl \- manage users, groups and scopes for TACACS+ (tacquito) and RADIUS (FreeRADIUS)
 .SH SYNOPSIS
@@ -314,26 +314,51 @@ in that intent is "temporarily revoke scope access" rather than
 .B group list
 List all groups with Cisco privilege level, Juniper class, and user count.
 .TP
-.BI "group add " "name priv-lvl juniper-class"
+.BI "group show " name
+Every setting of the group and where it comes from (set on the group, or
+the default of its priv-lvl): Cisco priv-lvl, Juniper class, tacctl tier,
+WTI level, command rules, Junos rules and the number of users.
+.TP
+.B "group add " \fIname priv-lvl juniper-class\fR " [ --wti-level \fIlevel\fR ]"
 Add a custom group.
 .I priv-lvl
 is an integer 0\(en15;
 .I juniper-class
 matches the Junos login class name.
+.B --wti-level
+sets the WTI level at creation (see
+.BR "group edit" ).
 .TP
-.B "group edit " \fIname\fR " { priv-lvl \fIN\fR | juniper-class \fICLASS\fR }"
-Change a group's Cisco privilege level or Juniper class. The built-in
-groups
+.B "group edit " \fIname\fR " { priv-lvl \fIN\fR | juniper-class \fICLASS\fR | wti-level \fIlevel\fR }"
+Change one setting of a group. Every group, built-in or custom, is edited
+the same way; the built-in groups
 .RB ( readonly ,
 .BR operator ,
 .BR superuser )
 can be edited but not removed.
+.B wti-level
+is
+.BR viewonly ,
+.BR user ,
+.B superuser
+or
+.BR administrator ,
+the access level a WTI unit with Service Name
+.B wti
+gives the group's users, and
+.B auto
+removes it, so the priv-lvl decides again. The group's tacctl tier on the
+server and on Linux hosts comes from its priv-lvl (below 7 readonly,
+7\(en14 operator, 15 superuser).
 .TP
 .BI "group remove " name
 Remove a custom group. Built-in groups are protected.
 .TP
 .B "group commands list " \fIgroup\fR
-Show the per-command authorization rules for a group, including the
+Show the per-command authorization rules for a group, in the order
+tacquito tries them (the
+.B #
+column), including the
 default action (the action of the trailing
 .RB ` * `
 catchall rule).
@@ -346,8 +371,14 @@ rule that tacquito's
 .B CommandBasedAuthorizer
 matches as a wildcard.
 .TP
-.B "group commands add " \fIgroup\fR " " \fIname\fR " [ --match \fIregex\fR ]... [ --action permit | deny ]"
-Append a rule. Default action is
+.B "group commands add " \fIgroup\fR " " \fIname\fR " [ --match \fIregex\fR ]... [ --action permit | deny ] [ --before \fIname\fR | --first ]"
+Add a rule before the
+.RB ` * `
+catchall, or with
+.B --before
+before the first rule of that name, or with
+.B --first
+at position 1. Default action is
 .BR permit .
 The
 .I name
@@ -359,8 +390,17 @@ adds a regex that tacquito tests against the command's
 .I arguments
 only: the space-joined
 .B cmd-arg
-values after the command word (auto-anchored with
-.RB ` ^…$ `).
+values after the command word, without
+.B <cr>
+(auto-anchored with
+.RB ` ^…$ `,
+so
+.B ^crypto
+matches
+.B show crypto
+only; write
+.B "^crypto( .*)?"
+to cover the arguments after it too).
 For
 .B show running-config
 the string tested is
@@ -379,8 +419,15 @@ matches and the
 catchall is not
 .BR permit .
 .TP
-.B "group commands remove " \fIgroup\fR " " \fIname\fR
-Drop a rule by name. The
+.B "group commands remove " \fIgroup\fR " " \fIname\fR " [ --match \fIregex\fR ]... [ --action permit | deny ] [ --all ]"
+Drop a rule by name. When several rules share the name it refuses
+unless
+.B --match
+(the rule's regexes, all of them, in order) and
+.B --action
+narrow them to one, or
+.B --all
+drops them all. The
 .RB ` * `
 catchall is protected; change it via
 .B group commands default
@@ -433,7 +480,8 @@ catchall.
 .BI "group privilege list " group
 Show the Cisco
 .B "privilege exec level"
-mappings for a group. Reports whether the source is an explicit
+mappings for a group, each with its mode (exec, exec all, configure,
+configure all) in a column. Reports whether the source is an explicit
 override (in
 .I /etc/tacctl/tacctl.yaml
 under
@@ -444,7 +492,23 @@ or the built-in default set (move-DOWN commands only).
 Move one or more Cisco commands to the group's priv-lvl. Quote
 multi-word commands (e.g.
 .RB ' "show running-config" ' );
-separate multiple commands with commas. On first
+separate multiple commands with commas. An entry may start with a mode:
+.B exec:
+(the default when there is none),
+.BR "exec all:" ,
+.B configure:
+or
+.BR "configure all:" ,
+e.g.
+.RB ' "configure: router bgp" ',' "exec all: show ip" ';
+.B config cisco
+renders it as
+.BR "privilege " \fImode\fR " [all] level " \fIN\fR " " \fIcmd\fR .
+An entry is stored in its mode's form, so
+.B "exec: show ip"
+and
+.B "show ip"
+are the same mapping. On first
 .B add
 the group's defaults are inherited; subsequent adds extend that set.
 Every command is validated before anything is written — a bad command
@@ -479,16 +543,19 @@ ships a priv-15 read/diagnostic family moved DOWN to priv-7
 .B superuser
 none (priv-15 is the ceiling).
 .PP
-Cisco devices enforce these rules LIVE over TACACS+ — once any group has rules,
+Cisco devices enforce these rules LIVE over TACACS+. Once any group has rules,
 .B tacctl config cisco
 emits
-.B aaa authorization commands 1/7/15 default group TACACS-GROUP local
-and IOS asks tacquito for every command. Juniper enforces locally via
-class
-.B allow-commands
-/
-.B deny-commands
-regex; a per-device config push is required after every change. RADIUS
+.B aaa authorization commands \fIlevel\fB default group TACACS-GROUP local
+for every privilege level a group uses, and
+.BR "aaa authorization config-commands" ,
+and IOS asks tacquito for every command. A level where some group has no
+rules gets the line commented out, naming the group and the fix
+.RB ( "group commands default \fIgroup\fB permit" ),
+since the server would deny that group every command. Junos devices do
+not use these rules: the server sends them each group's own deny sets
+.RB ( "group junos" ).
+RADIUS
 has no per-command authorization: the server does not enforce these rules
 for logins over RADIUS
 .RB ( status ,
@@ -496,6 +563,59 @@ for logins over RADIUS
 and
 .B "backend enable"
 name the groups concerned).
+.TP
+.B "group junos " \fIgroup\fR " list"
+Both Junos deny sets of the group, with their sizes.
+.TP
+.B "group junos " \fIgroup\fR " { deny-commands | deny-configuration } { list | add | remove | clear } [ '\fIregex\fR' ]"
+Show, add to, remove from or drop one set. Each pattern is a POSIX
+extended regular expression Junos tests against the whole command line
+.RB ( deny-commands )
+or the configuration path
+.RB ( deny-configuration ).
+The set is sent at login as one value, the patterns joined with
+.BR | ,
+over TACACS+ (junos-exec) and RADIUS (Juniper VSAs); it may not exceed
+241 bytes (deny-commands) or 236 (deny-configuration), the TACACS+
+argument limit, and a pattern that would make it longer is refused.
+.B deny-commands
+does not cover
+.BR "show configuration" \fIpath\fR:
+put paths in
+.BR deny-configuration ,
+which also hides them from reading. Sets live under
+.BI junos. group
+in tacctl.yaml.
+.TP
+.B "group junos " \fIgroup\fR " clear"
+Drop both sets (confirms).
+.TP
+.B "group preset roles [ --dry-run ] [ --force ] [ --mgmt-filter \fIname\fR ]"
+Starting values for four roles: viewer (the built-in
+.BR readonly ),
+.BR operator ,
+.B engineer
+(created at priv-lvl 15 with class ENG-CLASS when absent; tier
+.BR engineer )
+and
+.BR superuser :
+their WTI levels, the Junos deny sets of the first three and engineer's
+Cisco command rules (everything but the device's trust boundary and
+lifecycle). It lists every setting as set, unchanged, or kept (a
+different value is there; pass
+.B --force
+to replace it), then asks before writing.
+.B --dry-run
+writes nothing;
+.B --mgmt-filter
+adds the Junos firewall filter guarding the management interface to
+engineer's deny-configuration. Users are not moved
+.RB ( "user move" ).
+Every value can be changed afterwards with
+.BR "group edit" ,
+.B "group junos"
+and
+.BR "group commands" .
 .SS Server configuration \fB(tacctl config)\fR
 .TP
 .B config show
@@ -693,6 +813,71 @@ clears the override and falls back to the unit default.
 .B "host list"
 Show enrolled Linux hosts with their SSH target, scope, server address,
 method and user count.
+.TP
+.B "host show " name " [ \-\-all ] [ \-\-json ] [ \-\-check ]"
+One enrolled host in full, in sections:
+.B Connection
+(target, port, identity file, marked
+.B (missing)
+when it is gone, server address and method;
+.B "this server"
+for a host enrolled with
+.BR \-\-local ),
+.B Scope
+(the registered scope, the scope and prefix that answer the host's address
+today, the warning
+.B "host list"
+gives when they differ, with its
+.BI "host move " name
+fix, and a staging /32 still pending for it),
+.B Address
+(the recorded address, the previous one and when it changed),
+.B "Host keys"
+(the pinned keys' SHA256 fingerprints and the command that shows them on the
+host),
+.B Sightings
+(last and first seen, by which user over which backend, the NAS-Identifier),
+.B Notices
+(the open ones with their remedies and a count of the acknowledged ones;
+.B \-\-all
+lists those too, marked),
+.B Accounts
+(the tacctl users the next sync makes there: name, tier, UID and groups;
+disabled users counted, not listed),
+.B "Last sync"
+(when, by whom, the result or the reason it failed, the client script
+protocol, and the accounts it created, updated and removed) and
+.B "Host facts"
+(the OS from /etc/os-release, sshd's version, the PAM module with its version,
+and useradd's UID range from /etc/login.defs, as that sync read them over its
+session). The last two come from
+.IR /etc/tacctl/hosts/ name .json ,
+written by every
+.B "host enroll"
+and
+.B "host sync"
+(a failed sync too) and removed by
+.BR "host unenroll" ;
+a host not synced since 0.2.2 shows
+.BR "not recorded (before 0.2.2)" .
+They are only shown, never used to decide anything.
+.B \-\-json
+prints every field.
+.B \-\-check
+also logs in read-only, as
+.B "host target"
+tests a login (sudo with a password needs a terminal, else it fails with the
+message
+.B "host sync"
+gives), and compares the host with what tacctl would make it: tacctl's groups
+and their GIDs, each account's UID, primary group and home mode, the PAM files
+tacctl writes (present, and the text the client script recorded writing),
+the client script protocol it last ran, and the host's ssh keys against the
+pins. Nothing is changed. Each difference is one line with the command that
+fixes it (usually
+.BI "host sync " name ),
+and the exit status is 1 when there is one. Same tier as
+.BR "host list" .
 .TP
 .B "host enroll " "{ [" user "@]" host " | \-\-local } [ \-\-method tacplus|radius ] [ \-\-scope " name " ] [ \-\-server " address " ] [ \-\-name " name " ] [ \-\-port " n " ] [ \-\-identity " file " ] [ \-\-build\-on\-host ] [ \-\-allow\-uid\-mismatch ] [ \-\-remove\-home ]"
 Copy the
@@ -961,7 +1146,7 @@ A host with no pinned host key gets the keys it offers pinned, as at
 enrollment. A pin is never changed by a sync: a key that differs from the
 pinned one is reported, with the pinned and offered fingerprints, and new key
 types are reported; both are fixed with
-.BI "device hostkey " name " accept" R.
+.BI "device hostkey " name " accept" \fR.
 .TP
 .B "host target " name " [ " "\fR[\fPuser@\fR]\fPhost" " ] [ \-\-port " n " ] [ \-\-identity " file " | \-\-no\-identity ]"
 With only a name, show how tacctl reaches the enrolled host: its ssh target,
@@ -1128,6 +1313,77 @@ secret, the module, the SELinux module and the sudoers drop-in, and reports
 accounts left with no way to log in. Local accounts, home directories, the
 tac-* groups and installed packages are left in place.
 .TP
+.B "config snmp show"
+The SNMP access
+.B "device add"
+and
+.B "device check"
+read a device's
+.B sysName.0
+with: the version, port, timeout and v3 protocols, and whether the community
+and the v3 user and passphrases are set (never what they are). The settings are
+.B snmp.version
+.RB ( v2c " or " v3 ;
+unset: no lookup),
+.B snmp.port
+(default 161),
+.B snmp.timeout
+(seconds, 1 to 10, default 2; one retry),
+.B snmp.v3.auth
+.RB ( sha ,
+the default, or
+.BR sha256 )
+and
+.B snmp.v3.priv
+.RB ( aes128 )
+in
+.IR tacctl.yaml ;
+the credentials are in
+.IR /etc/tacctl/snmp.yaml .
+v3 is authPriv only (HMAC-SHA-96 or HMAC-SHA-256-192, AES-128-CFB), with
+engine discovery. Administrators only: the credentials reach every device.
+.B "tacctl config snmp"
+with no subcommand prints the usage.
+.TP
+.B "config snmp community " "[ \-\-stdin ]"
+Ask for the v2c community twice, without echo (or read one line from stdin
+with
+.BR \-\-stdin ),
+store it, and set
+.B snmp.version
+to
+.BR v2c .
+.TP
+.BI "config snmp v3\-user " user " [ \-\-auth sha|sha256 ] [ \-\-priv aes128 ] [ \-\-stdin ]"
+Store the v3 user with its authentication and privacy passphrases (each asked
+twice without echo, or one line each from stdin with
+.BR \-\-stdin ;
+at least 8 characters), and set
+.B snmp.version
+to
+.B v3
+and the protocols given.
+.TP
+.BI "config snmp port " "[ n ]"
+Show or set the agents' UDP port.
+.TP
+.BI "config snmp timeout " "[ seconds ]"
+Show or set the wait for an answer, 1 to 10 seconds (one retry after it).
+.TP
+.B "config snmp clear"
+Remove the credentials and unset
+.BR snmp.version :
+no lookups.
+.TP
+.BI "config snmp test " address|device
+Read the sysName of one address (or registered device) and print it, or the
+reason there is none: no answer (on v2c a wrong community, and on v3 a wrong
+privacy passphrase, look the same: the agent drops the request), or the v3
+report the agent sent
+.RB ( unknownUserName ,
+.BR wrongDigest ,
+\&...). Exit status 1 without a name.
+.TP
 .B "config sudoers " "{ show | install | remove } " [ group ]
 Manage the optional
 .I /etc/sudoers.d/tacctl
@@ -1289,7 +1545,17 @@ Print a ready-to-paste Cisco IOS/IOS-XE configuration with the
 server IP, shared secret, current group-to-privilege mappings, and
 the VTY-ACL built from
 .B config mgmt-acl
-pre-filled. Without
+pre-filled. Over TACACS+ it has one
+.B aaa accounting commands
+line per privilege level a group uses and, once any group has command
+rules, the per-level
+.B aaa authorization commands
+lines (see
+.BR "group commands" ),
+.B aaa authorization config-commands
+and a commented
+.B aaa authorization console
+line to uncomment for authorization on the console line. Without
 .BR --scope ,
 emits the default scope's secret (header names the scope and lists
 sibling scopes as a hint). With
@@ -1319,7 +1585,18 @@ Print a ready-to-paste Juniper Junos configuration with template
 users, TACACS+ server setup, verification commands, and a commented
 lo0 firewall-filter example built from
 .B config mgmt-acl
-pre-filled. Scope handling matches
+pre-filled. The classes carry permission bits only (a class named
+.B ENG-CLASS
+gets the engineer bits). Step 3 is a read-only summary of what the
+server sends per class at login: the group's
+.B deny-commands
+and
+.B deny-configuration
+values (from
+.BR "group junos" )
+with their sizes, or none; nothing in it is pasted. The
+.B "group commands"
+rules are not translated into class rules. Scope handling matches
 .BR "config cisco" .
 .B "--protocol radius"
 renders the RADIUS configuration (see
@@ -1339,17 +1616,28 @@ Default User Access
 with Access Level ViewOnly (required: with it Off the unit's OpenSSH
 treats TACACS-only users as invalid and sends a junk password),
 Account/Session Management Modules, Service Name
-.BR shell ),
+.BR wti ,
+the factory default, which per-group WTI levels need),
 an IP Tables check (the unit must accept ESTABLISHED,RELATED traffic or
 tacquito's replies are dropped),
 followed by the group-to-access-level mapping, a troubleshooting step
 that turns on the unit's TACACS Debug echo, and the matching tacquito
 log lines to look for. WTI reads the standard
 .B priv-lvl
-attribute from the same
+attribute from the answer to its
+.B wti
+service: a group with a WTI level of its own
+.RB ( "group edit \fIgroup\fB wti-level" )
+gets that level, any other group its priv-lvl band (0\-4 ViewOnly, 5\-9
+User, 10\-14 SuperUser, 15 Administrator) through the
+default-service-permit patch
+.RI ( patches/0001 ).
+A unit set to Service Name
 .B shell
-service Cisco uses (0\-4 ViewOnly, 5\-9 User, 10\-14 SuperUser, 15
-Administrator), so no extra service block is needed. The unit's
+by an earlier walkthrough ignores the WTI levels set on groups until it
+is set back to
+.BR wti .
+The unit's
 accounting (Session Management Module) needs tacquito built with the
 .I patches/0002
 overlay, which sends an empty server_msg on accounting success; the
@@ -2306,11 +2594,17 @@ and for an enrolled host
 its address changed between two enrolments or syncs),
 the seen cache raises
 .B ambiguous-nas-id
-(one NAS-Identifier sent from several addresses),
+(one NAS-Identifier sent from several addresses; a fully qualified host name
+on each device tells them apart),
 .B generic-nas-id
 (a device identifying itself by a generic name),
 .B name-mismatch
-(a NAS-Identifier other than the registry name; informational),
+(a NAS-Identifier other than the registry name or the hostname, either in full
+or by its first label, as
+.B sw1
+for
+.BR sw1.site-a.example ;
+informational),
 .B duplicate-address
 (two entries at one address, or an address identifying as another entry),
 .B identity-changed
@@ -2417,8 +2711,16 @@ device sends, and the open notices with a count of the acknowledged ones
 lists them too, marked). It warns when the
 vendor tag and the registered vendor disagree.
 .TP
-.BI "device add " "name address " "[ \-\-vendor cisco|juniper|wti|other ] [ \-\-hostname " dns " ] [ \-\-port " n " ] [ \-\-description " text " ] [ \-\-legacy\-ssh ] [ \-\-host\-key SHA256:" fingerprint " | \-\-no\-host\-key ] [ \-\-allow\-generic ]"
-Register a device. The vendor defaults to
+.BI "device add " "[ name ] address " "[ \-\-vendor cisco|juniper|wti|other ] [ \-\-hostname " dns " ] [ \-\-port " n " ] [ \-\-description " text " ] [ \-\-legacy\-ssh ] [ \-\-host\-key SHA256:" fingerprint " | \-\-no\-host\-key ] [ \-\-no\-lookup ] [ \-\-allow\-generic ]"
+Register a device. A name is letters, digits,
+.RB ` . ` ,
+.RB ` _ `
+and
+.RB ` - ` ,
+starting with a letter or digit, at most 253 characters, each dotted part at
+most 63: a fully qualified host name such as
+.B sw1.site-a.example
+is a name. The vendor defaults to
 .B other
 (and only drives the ssh profile; it does not tag the address in the scope).
 The address is stored canonically (IPv6 in compressed lower-case form) and may
@@ -2449,6 +2751,33 @@ notice. A device that does not answer the scan, or offers no key matching
 .BR \-\-host\-key ,
 is refused and nothing is written. The output says which scope, if any, answers
 the address.
+.IP
+Next to the scan,
+.B add
+reads the device's own name, its SNMP
+.B sysName.0
+(see
+.BR "config snmp" ),
+and prints it
+.RI ( "The device calls itself '" sysname "' (SNMP sysName)." ).
+When it is neither the name given, the
+.BR \-\-hostname ,
+nor the first label of either (compared without regard to case), a warning
+names the fixes; the add goes ahead. A device that does not answer within the
+timeout (one retry), an empty sysName, or no SNMP set up is one info line
+.RI ( "No SNMP answer from " address "; no name hint." );
+when a scan recorded a NAS-Identifier for the address, that is shown instead,
+labelled as such. Nothing of it is stored.
+.B \-\-no\-lookup
+skips it. With no
+.IR name ,
+the sysName, lowercased, is offered as the name and taken only after a
+.B y
+at a terminal; without a terminal, without an answer, or when the sysName is
+not a valid device name or is a generic one (a WTI unit's Site ID
+.BR WTI ),
+the add is refused with the usage line. The offered name goes through every
+other check of the add.
 .TP
 .BI "device remove " "name[,name...] | \-\-all " [ \-y ]
 Remove devices from the registry, after confirmation (\c
@@ -2662,13 +2991,25 @@ non-generic one, else
 .B \-\-all
 includes the addresses that were only ever refused.
 .TP
-.BI "device check " name | \-\-all
+.BI "device check " name " | \-\-all [ \-\-json ]"
 A checklist per entry: the scope that answers the address, the vendor tag, the
 last sighting (from the seen cache), whether its ssh port accepts a TCP
 connection (3 seconds; a timeout may be a false alarm, as for
 .BR "list \-\-probe" ),
 the host keys it offers now against the pinned ones (kept for the notices;
-nothing is pinned), and its notices.
+nothing is pinned), for a registered device its SNMP name (the sysName and
+.B match
+or
+.BR differs ,
+.B no answer
+or why there is none; see
+.BR "config snmp" ),
+and its notices.
+.B \-\-json
+prints the rows for scripts, the sysName as
+.B sysname
+(null when none was read) with
+.BR sysname_match .
 .SS SSH to a device \fB(tacctl ssh)\fR
 .TP
 .BI "ssh " name|address " [ \-p " port " ] [ \-X | \-Y ] [ \-g ] [ { \-L | \-R | \-D } " spec " ]... [ \-\- " "ssh args" " ]"
@@ -3681,6 +4022,15 @@ Mode 0600, root only; absent means no devices. Edit it with
 which locks it, validates the result and replaces it atomically. Snapshots
 include it. The pinned keys of enrolled hosts are kept under
 .BR hosts: .
+.TP
+.I /etc/tacctl/snmp.yaml
+The SNMP community, or the v3 user and its passphrases, that
+.B "device add"
+and
+.B "device check"
+read a device's sysName with. Mode 0600, root only, written atomically by
+.BR "tacctl config snmp" ;
+never printed. Absent means none.
 .TP
 .I /etc/tacctl/console.yaml
 The login console's switches per tier, per-user overrides and settings

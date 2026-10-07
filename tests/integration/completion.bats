@@ -319,13 +319,17 @@ esac'
     assert_output ""
 }
 
-@test "completion: host sync and unenroll offer the enrolled host names" {
+@test "completion: host sync, unenroll and show offer the enrolled host names" {
     complete_words tacctl host sync ""
     assert_output "$(printf 'web1\ndb1\n--all\n--allow-uid-mismatch\n--remove-home')"
     complete_words tacctl host sync w
     assert_output "web1"
     complete_words tacctl host unenroll ""
     assert_output "$(printf 'web1\ndb1')"
+    complete_words tacctl host show ""
+    assert_output "$(printf 'web1\ndb1')"
+    complete_words tacctl host show web1 ""
+    assert_output "$(printf -- '--all\n--json\n--check')"
 }
 
 @test "completion: __complete host sync offers the names the bridge gives" {

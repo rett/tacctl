@@ -1,0 +1,14 @@
+# Per-group device settings of 0.2.2 (docs/plans/0.2.2-plan.md §4.1): the
+# approved Junos sets of D19 for operator and engineer, a WTI level for
+# engineer; readonly and superuser keep the priv-lvl bands and send no set.
+junos:
+  operator:
+    deny_commands:
+      - '^(file (delete|rename|copy|archive)|request|start|load|op|test|configure|edit|clear (system|security|network-access)|monitor traffic .*write-file|show (system (login|rollback)|configuration .*(root-auth|login|tacplus|radius).*))( .*)?$'
+  engineer:
+    deny_commands:
+      - '^(request (system (reboot|halt|power-off|zeroize|software|snapshot|storage|scripts)|chassis routing-engine|vmhost|security)|start|load|op|file (copy|delete|rename|archive|show)|clear system login|restart (chassis|management).*)( .*)?$'
+    deny_configuration:
+      - '^(groups [^ ]+ )?(system (login|root-auth|authentication|tacplus|radius|accounting|services|scripts|archival|master|ports)|snmp|event-options|security (ike|ipsec|ssh|cert|pki)|interfaces (fxp0|em0|me0|vme))'
+wti_level:
+  engineer: superuser

@@ -19,3 +19,4 @@ store	0	store
 log	1	log
 backup	1	backup
 hash	0	hash
+group-junos	0	group junos help

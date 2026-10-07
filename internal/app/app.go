@@ -8,6 +8,7 @@ import (
 
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/paths"
+	"github.com/rett/tacctl/internal/snmp"
 	"github.com/rett/tacctl/internal/ui"
 )
 
@@ -38,6 +39,9 @@ type App struct {
 	// be read (a malformed knob variable), which a native command reports.
 	Knobs    Knobs
 	KnobsErr error
+	// SNMP, when set, reads sysName in place of the snmp.* settings and
+	// StateDir/snmp.yaml (the CLI's tests put a stub here).
+	SNMP snmp.Getter
 
 	svc services
 }

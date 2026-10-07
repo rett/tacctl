@@ -174,6 +174,7 @@ Every change goes one way: check that no generated file was edited by hand → s
 | `/etc/tacctl/backups/` | Snapshots (`<timestamp>/`), `legacy/` (old-style backups, pre-store config, displaced files), `password-dates/` (read by the importer) |
 | `/etc/tacctl/templates/` | Device config templates: a copy of each shipped one, which you may customize (a file here overrides the built-in one); `.shipped.sha256` is the manifest of what tacctl wrote there, `<name>.template.new` is a new release's version beside a template you customized (see [Custom Templates](#custom-templates)) |
 | `/etc/tacctl/devices.yaml` | The device registry (`tacctl device`): names, addresses and settings of the network devices; 0600 root, absent means none. Snapshots include it |
+| `/etc/tacctl/snmp.yaml` | The SNMP community, or the v3 user and passphrases, that `device add` and `device check` read a device's sysName with (`tacctl config snmp`); 0600 root, never printed, absent means none |
 | `/etc/tacctl/console.yaml` | The login console's settings (`tacctl console`): per-tier switches, per-user overrides, idle timeout, system shell; 0600 root, absent means the defaults (the console on for every tier). Snapshots include it |
 | `/etc/tacctl/linux-hosts`, `/etc/tacctl/linux-uids` | Enrolled Linux hosts; the UID each user gets on every host |
 | `/var/lib/tacctl/` | tacctl's variable data; 0711 (every user may pass through, only root may list it) |
@@ -295,12 +296,15 @@ Cisco IOS gates command **availability** by privilege level (`privilege exec lev
 tacctl group privilege seed                  # built-in defaults (only verified move-DOWNs)
 tacctl group privilege list operator         # show current mappings + source (explicit / default)
 tacctl group privilege add operator 'show ip route'
+tacctl group privilege add operator 'configure: router bgp','exec all: show ip'
 tacctl group privilege remove operator 'show running-config'
 ```
+An entry may start with a mode: `exec:` (the default when there is none), `exec all:`, `configure:` or `configure all:`. `config cisco` renders it as `privilege <mode> [all] level <N> <command>` (`privilege configure level 7 router bgp`), and `group privilege list` shows the mode in its own column. An entry is stored as typed in its mode's form (`exec: show ip` and `show ip` are the same mapping).
+
 Defaults move only verified priv-15 commands DOWN to lower groups (e.g. `show running-config` → priv 7 for `operator`); they never move commands UP from a lower default level (which would silently restrict them from `readonly` users). Mappings live under `privileges.<group>` in `/etc/tacctl/tacctl.yaml` and survive `tacctl upgrade`. They are emitted by `config cisco` for both protocols.
 
 ### Per-command authorization
-Restrict which commands a group can run, enforced live by Cisco IOS via TACACS+ and mirrored into Junos class `allow-commands`/`deny-commands` by `tacctl config juniper`. **RADIUS has no per-command authorization**: over RADIUS a group's users are limited only by the privilege level, login class or access level the Access-Accept carries (`tacctl status`, `config render` and `backend enable` name the groups whose rules RADIUS does not enforce; the Junos class rules are local to the device and stay in force). Tacctl ships sensible defaults — no seed step needed for fresh installs:
+Restrict which commands a group can run on Cisco devices, enforced live by Cisco IOS via TACACS+. Junos devices do not use these rules: the server sends them each group's own `deny-commands` and `deny-configuration` sets at login (`tacctl group junos`; see [Juniper Junos](#juniper-junos)). **RADIUS has no per-command authorization on Cisco**: over RADIUS a group's users are limited only by the privilege level, login class or access level the Access-Accept carries (`tacctl status`, `config render` and `backend enable` name the groups whose rules RADIUS does not enforce). Tacctl ships sensible defaults — no seed step needed for fresh installs:
 
 - `superuser`: unrestricted `*` catch-all (permit).
 - `operator`: permits `show`, `ping`, `traceroute`, `terminal`; default **deny** catch-all.
@@ -317,8 +321,13 @@ tacctl group commands add operator show --action permit
 tacctl group commands add operator ping --action permit
 tacctl group commands add operator clear --match 'counters.*' --action permit
 ```
-A rule's `name` is compared literally to the TACACS+ `cmd=` word. `--match` regexes are tested by tacquito against the command's **arguments only** — the space-joined `cmd-arg` values after the word, so `show running-config` is tested as `running-config`, never as the full line. A regex that repeats the command word (`^show .*$`) can never match and is rejected by `tacctl group commands add`, and so is a regex with a comma (the stored rule line separates matches with commas; write `\x2c`); omit `--match` to cover any arguments. (tacctl ≤ 0.1.10 shipped defaults with that dead shape, which denied every `show` to operator/readonly users; `tacctl upgrade` heals any override still carrying it.)
-The trailing `*` catchall encodes the default action. Once any group has rules, `tacctl config cisco` emits `aaa authorization commands 1/7/15 default group TACACS-GROUP local` so IOS asks tacquito per command. Juniper enforcement is local via class `allow-commands`/`deny-commands` regex — `tacctl config juniper` emits the equivalent `set system login class …` lines, but you must push them to each device.
+A rule's `name` is compared literally to the TACACS+ `cmd=` word. `--match` regexes are tested by tacquito against the command's **arguments only** — the space-joined `cmd-arg` values after the word, so `show running-config` is tested as `running-config`, never as the full line. A regex that repeats the command word (`^show .*$`) can never match and is rejected by `tacctl group commands add`, and so is a regex with a comma (the stored rule line separates matches with commas; write `\x2c`); omit `--match` to cover any arguments. Each regex is anchored at both ends and tested against the arguments joined by spaces, without `<cr>`: `--match '^crypto'` matches `show crypto` only; write `--match '^crypto( .*)?'` to cover `show crypto pki certificates` too. (tacctl ≤ 0.1.10 shipped defaults with that dead shape, which denied every `show` to operator/readonly users; `tacctl upgrade` heals any override still carrying it.)
+Rules are tried in order, the order `tacctl group commands list <group>` numbers in its `#` column: a rule without `--match` decides, and one whose regexes all miss falls through to the next, so a deny with `--match` placed before a permit of the same name works. `add` puts a rule before the catchall, or before the first rule of another name with `--before <name>`, or first with `--first`:
+```
+tacctl group commands add operator show --match '^crypto( .*)?' --action deny --before show
+```
+`tacctl group commands remove <group> <name>` refuses when several rules share the name; pick one with `--match` (the rule's regexes, all of them, in order) and `--action`, or pass `--all` to drop them all.
+The trailing `*` catchall encodes the default action. Once any group has rules, `tacctl config cisco` emits `aaa authorization commands <level> default group TACACS-GROUP local` for every privilege level a group uses, and `aaa authorization config-commands`, so IOS asks tacquito per command, configuration commands included. A level where some group has no rules gets the line commented out instead, naming the group and the fix (`tacctl group commands default <group> permit`): emitted, it would have the server deny that group every command.
 
 When you add the first rule to a group, tacctl auto-seeds a `* permit` catchall onto sibling groups at the same Cisco priv-lvl so their users aren't accidentally locked out.
 
@@ -406,6 +415,8 @@ tacctl host enroll --local                    # this machine
 tacctl user scope jsmith add <scope>          # give a user a login on hosts of that scope...
 tacctl host sync web1                         # ...and push the account (or: tacctl host sync --all)
 tacctl host list                              # with each host's METHOD
+tacctl host show web1                         # web1 in full: scope, keys, sightings, accounts, last sync, OS facts
+tacctl host show web1 --check                 # ...and compare the host itself with what tacctl would make it
 tacctl host target web1                       # how web1 is reached (target, port, identity, addresses)
 tacctl host target web1 root@web1-mgmt.example.net --port 2222   # change it, tested first
 tacctl host unenroll web1                     # remove the login method; accounts and home directories stay
@@ -418,6 +429,12 @@ The scope of a host is, in order: `--scope`; the scope the host is registered in
 **When the scope no longer answers the host.** A prefix change, a new address or an enroll into the wrong scope can leave a host registered in one scope while another answers its address: the server then checks its logins against that scope's users and secret, and refuses them. tacctl never moves a host on its own (a move changes its secret and deletes the accounts of the users it loses); it says so, with the fix, on every `host sync` of the host, below `host list`, and in `config validate` (from the address recorded at the last enroll or sync): `dev: registered in scope 'linux-dev', but 192.0.2.22 is answered by scope 'lab' (prefix 192.0.2.0/24): its logins are checked against that scope's users and secret, so they are refused. To move it: tacctl host move dev`. Moving prefixes between scopes is one change: `tacctl scope prefixes site-a move 198.51.100.0/24 lab` takes them out of one scope and into the other and names the enrolled hosts that then belong to the other scope. A scope enrolled hosts use cannot be removed until they are moved.
 
 **One machine, one registration.** Enroll refuses a new name for a machine already enrolled under another one (the same address on the same ssh port, or one of this server's own addresses when it is enrolled with `--local`): `'h192-0-2-22' is the enrolled host 'dev' (enrolled as rett@dev.example.net): both reach 192.0.2.22.` Re-enroll it under its registered name (`--name dev`) or change how it is reached (`tacctl host target dev <[user@]host>`).
+
+**One host in full.** `tacctl host show <name>` prints, in sections: Connection (target, port, identity, server, method), Scope (the registered one, the scope and prefix that answer the host's address today, the drift warning of `host list` with its `host move` fix, a pending staging /32), Address (recorded, previous and when it changed), Host keys (the pinned fingerprints and the command that shows them on the host), Sightings, Notices (`--all`: the acknowledged ones too), Accounts (the tacctl users the next sync makes there, with tier, UID and groups; disabled users counted), Last sync (when, by whom, the result or why it failed, the client script protocol, the accounts created, updated and removed) and Host facts (OS, sshd version, the PAM module and its version, `useradd`'s UID range from `login.defs`, as that run read them). The last two are kept in `/etc/tacctl/hosts/<name>.json`, written by each `host enroll` and `host sync` (a failed sync too) and removed by `host unenroll`; they are only shown, never used to decide anything, and a host not synced since 0.2.2 shows `not recorded (before 0.2.2)`. `--json` prints every field. `--check` logs in read-only (as `host sync` does: your ssh, sudo with a terminal for its password) and compares the host with what tacctl would make it: tacctl's groups and their GIDs, each account's UID, primary group and home mode, the PAM files tacctl writes (present, and the text the client script recorded writing), the client script protocol and the host's ssh keys against the pins; each difference is one line with the command that fixes it, and the exit status is 1 when there is one:
+```
+  - group tac-superuser has GID 1002, not 80002. Fix: tacctl host sync web1
+  - /etc/pam.d/tacctl-auth is not the text tacctl wrote there. Fix: tacctl host enroll admin@web1.example.net --name web1
+```
 
 **Provisioning off-site.** A host or network device set up on a bench, at an address its scope does not cover, before it is shipped to the scope's network: give the scope it will be installed in and `--staging` (`tacctl host enroll admin@bench-host --scope lab --staging`; `tacctl config cisco|juniper|wti --scope lab --staging <bench-ip> [--name <device>]`). The bench address joins the scope as a `/32`, so the scope's own secret and users answer the device on the bench and nothing changes on it when it comes online in the scope's prefixes. tacctl records it (`tacctl scope staging` lists each, with where its host or device is seen now) and removes the `/32` once the host (its next enroll or sync) or the registered device (`tacctl device address <name> <ip>`, `device add`) is seen at another address the scope covers: `Staging address 203.0.113.9/32 removed from scope 'lab': sw1 is now seen at 192.168.5.9 (prefix 192.168.0.0/16).` A device staged without a name, and not registered at its bench address, is removed by hand: `tacctl scope staging remove <address>`. **Moving a host:** `tacctl host move <host> [<scope>]` (without a scope: the one that answers its address; `--all`: every host another scope answers), which is an enroll of the registered host naming the new scope; before anything changes it says `Moving dev from scope 'linux-dev' to scope 'lab': it gets that scope's secret and users.` and names the users whose accounts the move deletes, then asks on a terminal (`[y/N]`); without a terminal it stops unless given `--yes`. Removed users' homes follow the usual rules (asked, `--remove-home`, or kept). **Switching:** re-enrolling a registered host with the other `--method` removes the first method's module, secret file and SELinux module and installs the other; re-enrolling without `--method` keeps the host's method.
 
@@ -609,12 +626,13 @@ The device registry (`/etc/tacctl/devices.yaml`) gives the network devices that 
 
 ```
 tacctl device add core-sw1 10.99.0.1 --vendor cisco --legacy-ssh   # register; pins the ssh host keys and prints their fingerprints
-tacctl device check core-sw1        # scope, vendor tag, last seen, reachable, host key against the pin
+tacctl device check core-sw1        # scope, vendor tag, last seen, reachable, host key against the pin, SNMP name
 tacctl ssh core-sw1                 # a session, as you
 tacctl ssh core-sw1 -- show version # one remote command
 ```
 
 1. **Register.** A device whose address a scope's prefixes cover is `configured` in that scope (`tacctl device list`); one that no scope covers registers as `unconfigured`, and no one may connect to it. `--legacy-ssh` is for old IOS that offers only SHA-1 key exchange and `ssh-rsa`; `--vendor wti` selects the password-only method order. `device add` pins the host keys the device offers: **compare the printed fingerprints with the device's console** (Cisco `show ip ssh`, Junos `file show /etc/ssh/ssh_host_ed25519_key.pub` from the CLI, or `ssh-keygen -lf` on the same file from `start shell`, Linux `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`). Names that are factory defaults (`switch`, `router`) are refused; name the device on the device too. Devices that already authenticate but are not registered are listed by `tacctl device discover`, each with a ready `device add` line. See [Host keys of devices and hosts (pinning)](#host-keys-of-devices-and-hosts-pinning).
+   **The device's own name.** With SNMP set up (`tacctl config snmp`), `device add` also reads the device's `sysName.0` and says what the device calls itself; a name that is not the one given (or its `--hostname`, or the first label of either) is a warning with the fixes, and the add goes ahead. `tacctl device add <address>` with no name offers the sysName, lowercased, at a terminal. See [The SNMP name hint](#the-snmp-name-hint).
 2. **Who may connect.** An active tacctl user (in the store, not disabled) whose scopes include the device's scope, at every tier, superusers included. A local account that is not a tacctl user, a disabled user and a device in no configured scope are refused, and each refusal is logged to syslog (`ssh DENY`). A read-only or operator user (a member of `tac-users` with the [tiers file](#tiered-access-for-tacctl-users-opt-in) installed) may run `tacctl ssh` and sees only the devices of its own scopes.
 3. **How it logs in.** ssh runs as you, never as root, and logs in with your own username and your tacctl password (which the device checks against this server): no agent, no key, no other login. Run it from your own account; as root it refuses. It needs a terminal.
 4. **Plain `ssh`.** `tacctl device ssh-config > ~/.ssh/tacctl.conf` and `Include ~/.ssh/tacctl.conf` at the top of `~/.ssh/config` give a plain `ssh core-sw1` (and `scp`) the same options and the same pin. The fragment has one `Host` block per device you may see and no `User` line, so ssh logs in with your local username: a tacctl user whose local account has another name adds `User <tacctl name>` to its own `~/.ssh/config`. Re-run it after the registry changes.
@@ -740,11 +758,14 @@ group commands list <group>                               Show per-command rules
 group commands default <group> <permit|deny>              Set default action (catchall)
 group commands add <group> <name> [--match <regex>]...    Add a command rule
                                   [--action permit|deny]
-group commands remove <group> <name>                      Drop a rule
+                                  [--before <name>|--first]
+group commands remove <group> <name> [--all]              Drop a rule (--match/--action pick one of several)
+                                  [--match <regex>]... [--action permit|deny]
 group commands clear <group>                              Wipe rules for a group
 group commands seed [<group>] [--force]                   Populate built-ins with sensible defaults
-group privilege list <group>                              Show Cisco priv-exec mappings
-group privilege add <group> '<cmd>'[,'<cmd>'...]          Move one or more commands to the group's priv-lvl
+group privilege list <group>                              Show Cisco privilege mappings and their modes
+group privilege add <group> '<cmd>'[,'<cmd>'...]          Move one or more commands to the group's priv-lvl ('<mode>: <cmd>'
+                                                          for exec all, configure or configure all; exec without one)
 group privilege remove <group> '<cmd>'[,'<cmd>'...]       Remove one or more mappings
 group privilege clear <group>                             Wipe explicit mappings (revert to defaults)
 group privilege seed [<group>] [--force]                  Populate built-ins with safe priv-exec defaults
@@ -790,6 +811,13 @@ config linux remove-script [--output <file>]  Write the removal script (no secre
 config linux uid [<user> [<uid>]]           Show or change the UID a user gets on every host
 config linux uid-range [<min>-<max>]        Show or change the UID range of all hosts (default 80000-89999)
 config linux builds [list|clear]            Show or drop the pam_tacplus modules 'host enroll' built in containers
+config snmp show                            The SNMP settings of the name hint, and whether the credentials are set (never what they are)
+config snmp community [--stdin]             Set the v2c community (asked twice, not echoed; --stdin: one line); the version becomes v2c
+config snmp v3-user <user> [--auth sha|sha256] [--priv aes128] [--stdin]
+                                            Set the v3 user and its authentication and privacy passphrases (authPriv); the version becomes v3
+config snmp port [<n>] | timeout [<seconds>]  Show or set the agents' UDP port (default 161) and the wait for an answer (1-10, default 2; one retry)
+config snmp clear                           Remove the credentials and unset the version: no lookups
+config snmp test <address|device>           Read one device's sysName, or say why there is none (timeout, unknownUserName, wrongDigest, ...)
 config sudoers [show|install|remove] [grp]  Manage NOPASSWD sudoers drop-in for tacctl
 config sudoers tiers [show|install|remove]  Manage per-tier (RO/OP/SU) sudoers rules for tacctl users with local accounts
 config password-age [days]                  Show or set password age warning threshold (default 90)
@@ -861,7 +889,7 @@ commands:                    # per-group command-authz rules. Rendered for both 
     - { name: "*",        action: deny }
 ```
 
-Keys without a shipped default, written by their commands: `backends.enabled` (`backend enable|disable`), `backends.tacacs.level` / `backends.tacacs.metrics_address` (`config loglevel|metrics`), `listeners.<backend>.<name>` (`config listen`), and per scope `aaa.order`, `exec_timeout`, `tacacs_group`, `radius_group`, `scope_auth_method`, `scope_mgmt_acl.*`.
+Keys without a shipped default, written by their commands: `backends.enabled` (`backend enable|disable`), `backends.tacacs.level` / `backends.tacacs.metrics_address` (`config loglevel|metrics`), `listeners.<backend>.<name>` (`config listen`), `snmp.version` (`v2c`|`v3`; unset: no SNMP lookup), `snmp.port` (161), `snmp.timeout` (1..10 s, 2), `snmp.v3.auth` (`sha`|`sha256`) and `snmp.v3.priv` (`aes128`) (`config snmp`; the credentials are never in `tacctl.yaml`), and per scope `aaa.order`, `exec_timeout`, `tacacs_group`, `radius_group`, `scope_auth_method`, `scope_mgmt_acl.*`.
 
 Merge semantics:
 - Maps deep-merge (overriding `password.max_age_days` keeps the default `password.min_length`).
@@ -911,6 +939,7 @@ scope mgmt-acl <name> cisco-name|juniper-name [label]    Per-scope mgmt-acl / fi
 
 ```
 host list                                   Show enrolled Linux hosts (target, scope, server, METHOD, users)
+host show <name> [--all] [--json] [--check] One enrolled host in full: connection, scope (and the one answering its address), address history, pinned keys, sightings, notices, the accounts the next sync makes, the last enroll or sync and the host's facts; --check compares the host with what tacctl would make it (exit 1 on a difference)
 host enroll <[user@]host>|--local [opts]    Install TACACS+ or RADIUS login on a host over SSH and register it
       --method tacplus|radius               pam_tacplus (TACACS+) or pam_radius_auth (RADIUS); re-enroll with the other to switch
       --scope <name>                        The host's scope (default: its registered one, else the scope covering its address)
@@ -935,11 +964,12 @@ The device registry gives names to the network devices that authenticate here. I
 ```
 device list [--stale] [--unconfigured] [--scan] [--probe] [--json]   Registered devices, then enrolled hosts: scope, STATE (configured: a scope's prefixes cover the address; unconfigured; stale), last seen / by / via from the seen cache, open notices; --scan scans first, --probe adds REACH (TCP connect to the ssh port, 3 s)
 device show <name|address> [--all] [--json]       One entry in full (scope and routing prefix, shadowed scopes, vendor tag, pinned keys, sightings and NAS-Identifier, the open notices and how many are acknowledged; --all lists the acknowledged ones too, marked)
-device add <name> <address>                       Register a device (writes: administrators only)
+device add [<name>] <address>                     Register a device (writes: administrators only); no name: the SNMP sysName is offered at a terminal
       --vendor cisco|juniper|wti|other            Default other; drives the ssh profile, never tags the address in the scope
       --hostname <dns>, --port <n>, --description <text>, --legacy-ssh
       --host-key SHA256:<fp>                      Register only if the device offers a key with this fingerprint; pin that key alone
       --no-host-key                               Register without scanning: unpinned, with a hostkey-unpinned notice
+      --no-lookup                                 Do not read the device's own name by SNMP (sysName)
       --allow-generic                             Register a generic name (switch, router, cisco, ubuntu, ...) anyway
 device remove <name>[,<name>...] | --all [-y]     Remove from the registry (confirms; hosts, scopes and vendor tags are not touched)
 device rename <old> <new> [--allow-generic]
@@ -957,16 +987,31 @@ device ssh <name|address> [-p <port>] [-X|-Y] [-g] [-L|-R|-D <spec>]... [-- <ssh
 device ssh-config                                 Print an ssh_config Include for your devices (Host blocks with the vendor options and the pin)
 device scan [--full] [--since <dur>] [--backend <id>]   Read the backends' logs into the seen cache from where the last scan stopped; re-scan pinned host keys (never re-pins); print each log's window and the notices
 device discover [--all] [--backend <id>]          Scan, then list the addresses that authenticated unregistered, each with a ready 'tacctl device add' line; --all adds those only refused
-device check <name>|--all                         Checklist: scope, vendor tag, last seen, reachable (TCP connect, 3 s), host key against the pin, notices
+device check <name>|--all [--json]               Checklist: scope, vendor tag, last seen, reachable (TCP connect, 3 s), host key against the pin, SNMP name (sysName, match or differs), notices; --json: the rows, with sysname
 ```
 
-A device is found by name (any case) or by its registered address; an unregistered address is not found, even when a scope covers it. An address is registered once. Enrolled Linux hosts share the namespace and appear in `list` and `show` as `linux` entries, read-only. `list`, `show`, `notices`, `ssh-config` and `tacctl ssh` are open to the read-only and operator tiers, limited to the entries of their own scopes (`tacctl ssh` is limited so for every tier); `export` is operator-level, filtered the same way.
+A device is found by name (any case) or by its registered address; an unregistered address is not found, even when a scope covers it. An address is registered once. A device name is letters, digits, `.`, `_` and `-`, starting with a letter or digit, at most 253 characters with each dotted part at most 63, so a fully qualified host name (`sw1.site-a.example`) is one. An enrolled host's name has no dot and at most 26 characters, because it also names the host's scope (`linux-<name>`); its fully qualified name is its hostname. Enrolled Linux hosts share the namespace and appear in `list` and `show` as `linux` entries, read-only. `list`, `show`, `notices`, `ssh-config` and `tacctl ssh` are open to the read-only and operator tiers, limited to the entries of their own scopes (`tacctl ssh` is limited so for every tier); `export` is operator-level, filtered the same way.
 
 A name that is a factory or image default is refused with the command that names the device on the device itself (`hostname`, `set system host-name`, ...); a host enrolled under such a name before the registry existed is not refused and carries a `generic-name` notice. `host enroll --name` follows the same rules. Add your own patterns with `generic_names:` (regular expressions, whole-name, case-insensitive) in `devices.yaml`.
 
 **Seen data.** `device scan` reads what the daemons logged about each device into `/var/lib/tacctl/devices-seen.json` (0600, a cache: never snapshotted, `--full` rebuilds it): the tacquito journal (`journalctl -u tacquito … -o json`, resuming at its cursor; the `accepting user [u] from [address]` / `failed to validate the user [u] from [address]` lines, `bad secret detected for ip [address:port]`, `remote [address:port] has no secret providers` (no scope covers the address), and at log level 30 `prefix secret provider matches remote [address]`) and FreeRADIUS's `tacctl-auth.log` with its rotations (`client=`, `nas=`, `user=`, resuming by inode and offset). The first scan reads the last `stale-days` days; `--full` everything the logs hold, `--since 7d` that stretch. Per address it keeps the first and last sighting, the count, the last user, outcome and backend and the NAS-Identifier; records unseen for twice `stale-days` are dropped. `list` and `show` read the cache only (`seen data as of <time>`); LAST SEEN is `rejected <time> (bad secret)` when the last exchange was refused. `check` and `list --probe` connect to the ssh port: the server often has no route to management ports, so a timeout may be a false alarm. `scan`, `discover` and `check` are operator-level.
 
-**Notices** are computed when shown (only acknowledgements are stored) and appear in `scan`/`discover` output, a `Device notices` section of `tacctl status` (count and the first five), `device list` (NOTICES), `device notices`, and `device show` (which counts the acknowledged ones; `--all` on either lists them, marked). Besides `generic-name`, `hostkey-unpinned` and, for an enrolled host whose address changed between two enrolments or syncs, `address-changed` (the only notice an enrolled host acknowledges), a scan raises `ambiguous-nas-id` (one NAS-Identifier from several addresses), `generic-nas-id`, `name-mismatch` (informational), `duplicate-address` (two entries at one address, or an address identifying as another entry), `identity-changed` (an address's NAS-Identifier changed: replaced or reset?), and from the host-key re-scan `hostkey-changed` (cannot be acknowledged; only `device hostkey <name> accept|set` clears it), `hostkey-added` and `hostkey-unreachable`. Each line ends with the command that fixes or acknowledges it.
+#### The SNMP name hint
+
+`device add <name> <address>` reads the device's own name, `sysName.0`, next to the host-key scan and compares it with the name given:
+
+```
+$ tacctl device add core-sw1 192.0.2.10 --vendor juniper
+[INFO] Device 'core-sw1' registered: 192.0.2.10, juniper.
+  The device calls itself 'sw1.site-a.example' (SNMP sysName).
+  ! That is not the name given or its --hostname: add --hostname sw1.site-a.example, or register it as sw1.site-a.example.
+```
+
+A match (the name, the `--hostname`, or the first label of either, in any case) prints the first line only; a mismatch is a warning, never a refusal. A device that does not answer within the timeout (`snmp.timeout`, 2 s by default, one retry), an empty sysName, or no SNMP set up is one info line (`No SNMP answer from 192.0.2.10; no name hint.`), and the add goes ahead; when a scan recorded a NAS-Identifier for the address, that is shown instead, labelled `(NAS-Identifier seen by a scan)`. `--no-lookup` skips it. `device add <address>` with no name offers the sysName, lowercased, and takes it only after a `y` at a terminal; without a terminal, without an answer, or when the sysName is no valid device name or a generic one (a WTI unit's Site ID `WTI`), it is refused with the usage line. `device check` shows the sysName in a `SNMP name` row (`match` or `differs`), and `--json` as `sysname`. Nothing of it is stored.
+
+SNMP is v2c (a community) or v3 at authPriv (HMAC-SHA-96 or HMAC-SHA-256-192, AES-128), read by tacctl itself (no net-snmp): `tacctl config snmp community` or `tacctl config snmp v3-user <user> [--auth sha256]` asks for the secrets twice without echo (`--stdin` reads them, one per line), stores them in `/etc/tacctl/snmp.yaml` (0600, never printed) and sets `snmp.version`; `config snmp test <address>` tries one device (`no answer` is also what a wrong community, or a wrong v3 privacy passphrase, looks like; v3 names `unknownUserName` and `wrongDigest`). `config snmp` is for administrators only: the credentials reach every device.
+
+**Notices** are computed when shown (only acknowledgements are stored) and appear in `scan`/`discover` output, a `Device notices` section of `tacctl status` (count and the first five), `device list` (NOTICES), `device notices`, and `device show` (which counts the acknowledged ones; `--all` on either lists them, marked). Besides `generic-name`, `hostkey-unpinned` and, for an enrolled host whose address changed between two enrolments or syncs, `address-changed` (the only notice an enrolled host acknowledges), a scan raises `ambiguous-nas-id` (one NAS-Identifier from several addresses; a fully qualified host name on each device tells them apart), `generic-nas-id`, `name-mismatch` (a NAS-Identifier other than the registry name or the hostname, in full or by its first label, as `sw1` for `sw1.site-a.example`; informational), `duplicate-address` (two entries at one address, or an address identifying as another entry), `identity-changed` (an address's NAS-Identifier changed: replaced or reset?), and from the host-key re-scan `hostkey-changed` (cannot be acknowledged; only `device hostkey <name> accept|set` clears it), `hostkey-added` and `hostkey-unreachable`. Each line ends with the command that fixes or acknowledges it.
 
 **Host keys.** `device add` reads the keys the device offers (`ssh-keyscan -T 5 -p <port> -t ed25519,ecdsa,rsa <address>`, as root; `legacy-ssh` devices are asked for `ssh-rsa` by name too), pins them in `devices.yaml` and prints each `SHA256:` fingerprint with the command that shows it on the device console (Cisco `show ip ssh`, Junos `file show /etc/ssh/ssh_host_ed25519_key.pub` from the CLI, or `ssh-keygen -lf` on the same file from `start shell`, Linux `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`); compare them before connecting (`tacctl device hostkey <name> show` prints each pinned key as an `ssh-ed25519 AAAA…` line as well, so a `file show` output can be compared by eye). A device that does not answer is refused unless `--no-host-key` is given. `host enroll` and `host sync` pin an enrolled host's keys the first time from two independent reads: the host's own public key files (`cat /etc/ssh/ssh_host_*_key.pub`, read-only, over the enrolment's ssh connection, which your own ssh checked against your known_hosts) and an `ssh-keyscan` of the target. Only keys both reads hold are pinned; a key type they disagree on refuses the pin (both sets are shown and `host hostkey-mismatch` is logged), a type only one of them has is reported and not pinned, and key files that cannot be read pin nothing. The enrolment or sync succeeds either way. A sync of a pinned host compares the session's keys with the pin, reports a difference and keeps the pin. The same connection gives the host's address: enroll and sync record the address the connection reached (the host's side of `SSH_CONNECTION`; `--local` records 127.0.0.1) in `devices.yaml`'s `hosts:` section, and warn when it differs from what the target's name resolves to. `device add` and `device address` refuse that address, `device show <address>` finds the host, sightings from it are the host's, and `device discover` does not list it; a sync that finds another address records it and raises `address-changed`. Only `device hostkey <name> accept|set` changes a pin. Every registry write regenerates `/var/lib/tacctl/ssh/known_hosts` (0644), one `<name> <type> <key>` line per pinned key, for `ssh -o UserKnownHostsFile=/var/lib/tacctl/ssh/known_hosts -o GlobalKnownHostsFile=none -o HostKeyAlias=<name> -o StrictHostKeyChecking=yes`.
 
@@ -1107,9 +1152,10 @@ privilege level command mappings. All groups and their privilege levels are incl
 dynamically.
 
 **Key points:**
-- `local` fallback ensures access if TACACS+ is unreachable
-- Custom privilege levels (2-14) require `privilege exec level` command mappings
-- Use `config cisco` to regenerate after adding groups
+- `local` fallback ensures access if TACACS+ is unreachable. A group at priv-lvl 15 is kept apart from the superusers only by the server's rules, so with the server unreachable the fallback lets it run everything
+- Per-command authorization and command accounting: `aaa accounting commands <level>` for every privilege level a group uses, always; once any group has command rules also `aaa authorization commands <level>` per level (commented out, with the group named, for a level where a group has no rules), `aaa authorization config-commands`, and `aaa authorization console` commented out (uncomment it to have commands typed on the console line authorized by the server too)
+- Custom privilege levels (2-14) require `privilege exec level` command mappings (or another mode: see [Cisco priv-exec mappings](#cisco-priv-exec-mappings))
+- Use `config cisco` to regenerate after adding groups, and re-paste the AAA block after a group's level changes
 - By default the output uses the modern IOS 15.0+ `tacacs server <name>` block. For older devices
   (e.g. IOS 12.4), add `--legacy` to emit the global `tacacs-server host` / `aaa group server ... / server <ip>`
   syntax instead. Only the server-definition block changes; the AAA, privilege, and line config are identical.
@@ -1122,6 +1168,9 @@ verification commands. All groups and their Juniper classes are included dynamic
 **Key points:**
 - Template users MUST exist before TACACS+ logins will work
 - If a login fails silently after successful TACACS+ auth, the template user is missing
+- The classes carry permission bits only. A group whose class is `ENG-CLASS` gets the engineer bits (`view view-configuration network clear trace reset configure rollback interface interface-control routing routing-control firewall firewall-control system system-control snmp`) and its template user
+- Step 3 lists, per class, what the server sends at login: the group's `deny-commands` and `deny-configuration` values with their sizes against the 241 and 236 byte limits, or `none`. Nothing in it is pasted; the sets are changed on the tacctl server with `tacctl group junos` and apply at the next login. `show cli authorization` after a login shows the values the device received
+- The `tacctl group commands` rules are Cisco's and are no longer translated into class `allow-commands`/`deny-commands`; Step 3 lists the `delete system login class <class> allow-commands` lines that remove what an earlier walkthrough put there
 - Use `config juniper` to regenerate after adding groups
 
 ### RADIUS device configs (`--protocol radius`)
@@ -1129,7 +1178,7 @@ verification commands. All groups and their Juniper classes are included dynamic
 `tacctl config cisco|juniper|wti --protocol radius` renders the configuration for logging in to a device against this server's RADIUS backend (`tacctl backend enable radius`). The server address, the authentication and accounting ports (the `auth` and `acct` RADIUS listeners; `tacctl config listen --backend radius show`) and the scope's shared secret are filled in; the management ACL, exec timeout, `aaa-order` (the server first, or local first) and the local fallback behave as in the TACACS+ output.
 
 - **Cisco** gets a `radius server RADIUS` block, `aaa group server radius <radius-group>` (see `scope radius-group`), `aaa authentication login`, `aaa authorization exec` (the privilege level comes from `Cisco-AVPair = "shell:priv-lvl=N"`, which the scope must send: see [What an Access-Accept carries](#what-an-access-accept-carries)) and `aaa accounting exec`, plus the same `privilege exec level` mappings. `--legacy` (IOS 12.x) is TACACS+ only.
-- **Juniper** gets `system radius-server` (explicit ports), `authentication-order radius` (or `[ password radius ]`), `system accounting destination radius`, the template users the server maps logins to with `Juniper-Local-User-Name`, and the same per-class `allow-commands`/`deny-commands` rules, which stay in force because the class is local to the device.
+- **Juniper** gets `system radius-server` (explicit ports), `authentication-order radius` (or `[ password radius ]`), `system accounting destination radius`, the template users the server maps logins to with `Juniper-Local-User-Name`, and the same Step 3: with the class the server sends the group's `Juniper-Deny-Commands` and `Juniper-Deny-Configuration` where it has a set, which Junos enforces as it does over TACACS+.
 - **What the Access-Accept carries for the device, and what is lost compared with TACACS+** is printed under every RADIUS config: `Service-Type` and the vendor's attribute (and whether the scope enables it or only tagged addresses get it); no per-command authorization (the only authorization is the privilege level, login class or access level in the Access-Accept; `tacctl group commands` rules are not enforced by the server), no command accounting (exec/login events only), PAP only, and UDP instead of TCP/49.
 - **Refused, with an error and no output:** the RADIUS backend not enabled; a scope whose `scope protocols` filter leaves out `radius` (the daemon would ignore its devices); a scope that sends the vendor's attribute to none of its devices (neither enabled with `scope vendor-attrs` nor any address tagged with it; the error prints the command that enables it); and a scope secret holding a character an IOS or Junos CLI reads as syntax (whitespace, quotes, a backtick, a non-ASCII character, or any of `? ! # $ \ ; { } [ ] | & < > , * ( )`). Letters, digits and `. _ + / = : @ % ^ ~ -` paste as they are, and `scope secret generate` (base64) makes such a secret. The scope secret is shared with TACACS+, so changing it means changing it on every device of the scope. A secret longer than 63 characters renders with a warning (some RADIUS clients take no more).
 - **A listener bound to one IPv4 address** is used as the server address; IPv6 listeners and a loopback bind are warned about.
@@ -1142,30 +1191,33 @@ Nothing here was tested against Cisco, Juniper or WTI hardware: the device synta
 WTI units are configured through numbered text menus on the serial SetUp port, so
 `tacctl config wti` prints a walkthrough instead of a pasteable config: `/N` → the
 **TACACS** entry (item 28 on recent firmware) → one value per menu item, then `[Esc]`
-until "Saving Configuration". No WTI-specific service is added to `tacquito.yaml` — the
-unit requests exec authorization and reads the standard `priv-lvl` attribute from the same
-`shell` service Cisco uses. WTI maps priv-lvl bands to its four access levels:
+until "Saving Configuration". The unit asks for the `wti` service (its factory Service
+Name) and reads the standard `priv-lvl` attribute from the answer. A group with a WTI level
+of its own (`tacctl group edit <group> wti-level ...`) is answered from its `wti` service in
+`tacquito.yaml`; any other group gets the `priv-lvl` of its `shell` service, through the
+default-service-permit patch (`patches/0001`). WTI maps priv-lvl bands to its four access levels:
 
 | priv-lvl | WTI access level | Shipped group |
 |----------|------------------|---------------|
 | 0-4 | ViewOnly (only the ports/services granted under Default TACACS User Access; factory: none) | `readonly` (1) |
 | 5-9 | User (only the ports/services granted under Default TACACS User Access; factory: none) | `operator` (7) |
-| 10-14 | SuperUser (all ports/plugs; no configuration menus) | *(add a group at 10-14)* |
+| 10-14 | SuperUser (all ports/plugs; no configuration menus) | *(set a group's `wti-level superuser`)* |
 | 15 | Administrator | `superuser` (15) |
 
 **Key points:**
 - WTI authenticates with **PAP**; tacquito's bcrypt authenticator handles PAP, nothing to change server-side
 - **Account Management Module = Enabled** is the authorization request that carries `priv-lvl`; **Session Management Module = Enabled** is accounting (the unit's client uses PAM terminology). Accounting needs tacquito built with `patches/0002` (empty `server_msg` on accounting success): given upstream's `success, logging started` message, the unit drops the SSH session right after login. `tacctl install` / `tacctl upgrade` apply the patch overlay
-- **Service Name** is set to `shell` so the unit's request matches tacquito's configured service directly. The factory default `wti` also works, but only through the default-service-permit patch in `patches/` (an unmatched service is answered with the group's `shell` priv-lvl)
+- **Service Name** stays at the factory `wti`, which per-group WTI levels need. A unit set to `shell` by the walkthrough of tacctl 0.2.1 or earlier still logs every group in at its priv-lvl band, but it ignores the WTI levels set on groups until its Service Name is set back to `wti`
+- The summary shows each group's level: its priv-lvl band, or the level set on it (`engineer: priv-lvl 15 → SuperUser (wti-level override; auto: Administrator)`)
 - **Fallback Local** follows the scope's `aaa-order`: `tacacs-first` → `On (Transport Failure)`, `local-first` → `On (All Failures)`. Keep a local Administrator account on the unit as break-glass
 - **Default User Access must be `On`** (Access Level `ViewOnly` as the least-privilege floor; the returned `priv-lvl` still sets the effective level). SSH logins go through the unit's OpenSSH, which has to resolve the account locally: with it `Off`, a TACACS-only user is invalid to sshd, which forwards a junk password (`\b\n\r\177INCORRECT…`), so tacquito logs `failed to validate the user` on every attempt no matter what was typed
 - If the unit's **IP Tables** (`/N`) end in `DROP`, they must accept `-i lo` and `-m conntrack --ctstate ESTABLISHED,RELATED` before the final DROP. Otherwise the unit's TACACS+ SYN leaves but tacquito's SYN-ACK is dropped: every login waits out the Fallback Timer, and tacquito logs nothing (only SYNs in tcpdump, half-open sockets in `ss`). The unit's Ping Test passes regardless — it is ICMP only
 - Test the first login with `ssh -o PreferredAuthentications=password <user>@<wti>` (`tacctl ssh <name>` uses the password method for every `wti` device). If a plain `ssh` is closed without a password prompt while the password method works, the unit's Invalid Access Lockout is armed from earlier failures — `/UL` clears it
 - Port and service access for User/ViewOnly-level logins is defined only under Default TACACS User Access → Port Access / Service Access (factory: Administrator and SuperUser get all ports, User and ViewOnly get none), so an operator (User) sees no ports until they are turned On there; on a power unit Plug Access and Plug Group Access work the same way. The lists are per unit and shared by every such login. Step 3 of `tacctl config wti` sets them, and its "Port access" section names the groups they apply to. A same-named local account on the unit overrides the server-assigned level, so keep the two directories disjoint
 - The output warns when the scope secret contains whitespace/punctuation or exceeds 32 characters, or when a scope member's username exceeds WTI's 32-character limit — regenerate a hex-only key with `tacctl scope secret <name> set $(openssl rand -hex 16)`
-- Verify with `tacctl config loglevel debug` + `tacctl log tail`: `accepting user [x] using a bcrypt password` (PAP), then `client args [service=shell ...]`, then `authorized user [x] ... [priv-lvl=N]`; accounting (start at login, stop after `/X`) lands in `tacctl log accounting`. On the unit, TACACS Parameters → `12. Debug: On` echoes every exchange on the serial session — turn it back `Off` when done
+- Verify with `tacctl config loglevel debug` + `tacctl log tail`: `accepting user [x] using a bcrypt password` (PAP), then `client args [service=wti ...]`, then `authorized user [x] ... [priv-lvl=N]`; accounting (start at login, stop after `/X`) lands in `tacctl log accounting`. On the unit, TACACS Parameters → `12. Debug: On` echoes every exchange on the serial session — turn it back `Off` when done
 
-**Over RADIUS** (`tacctl config wti --protocol radius`, or a scope that resolves to RADIUS) — **not verified on a unit.** The walkthrough follows WTI's documents for the RADIUS Parameters menu (`/N`, item 29 in the user guide; numbers vary by firmware): Enable, Primary Host and Secret Word, Fallback Timer and Retries (factory defaults), Fallback Local from the scope's `aaa-order` as above, the Authentication and Accounting Ports of this server's RADIUS listeners, Default RADIUS User Access `On` at `ViewOnly`, Debug. The server returns the access level in `WTI-Super` (vendor 24496, attribute 41), from the group's priv-lvl in the bands of the table above; the scope must send it (`tacctl scope vendor-attrs <scope> enable wti`, or tag the unit with `tacctl scope devices <scope> set <ip> wti`), or the walkthrough is refused. What carries over from the TACACS+ walkthrough: the unit's IP Tables must let the server's UDP replies in (ESTABLISHED,RELATED), keep a local Administrator, the lockout and `/UL`. Port and plug access is not sent (no `WTI-Port-Access`). WTI's user guide and knowledge base disagree on the level a login gets without `WTI-Super` (User or View), so the walkthrough sets it explicitly. `tacctl log tail --backend radius` shows each attempt, with `nas=` — what the unit sends as its NAS-Identifier.
+**Over RADIUS** (`tacctl config wti --protocol radius`, or a scope that resolves to RADIUS) — **not verified on a unit.** The walkthrough follows WTI's documents for the RADIUS Parameters menu (`/N`, item 29 in the user guide; numbers vary by firmware): Enable, Primary Host and Secret Word, Fallback Timer and Retries (factory defaults), Fallback Local from the scope's `aaa-order` as above, the Authentication and Accounting Ports of this server's RADIUS listeners, Default RADIUS User Access `On` at `ViewOnly`, Debug. The server returns the access level in `WTI-Super` (vendor 24496, attribute 41), from the group's WTI level, or its priv-lvl in the bands of the table above; the scope must send it (`tacctl scope vendor-attrs <scope> enable wti`, or tag the unit with `tacctl scope devices <scope> set <ip> wti`), or the walkthrough is refused. What carries over from the TACACS+ walkthrough: the unit's IP Tables must let the server's UDP replies in (ESTABLISHED,RELATED), keep a local Administrator, the lockout and `/UL`. Port and plug access is not sent (no `WTI-Port-Access`). WTI's user guide and knowledge base disagree on the level a login gets without `WTI-Super` (User or View), so the walkthrough sets it explicitly. `tacctl log tail --backend radius` shows each attempt, with `nas=` — what the unit sends as its NAS-Identifier.
 
 ### Custom Templates
 
@@ -1192,13 +1244,16 @@ The generated Cisco, Juniper, and WTI output is rendered from template files usi
 | `${AUTHN_METHODS}`, `${AUTHZ_EXEC_METHODS}`, `${EXEC_TIMEOUT}`, `${VTY_ACL_BLOCK}`, `${VTY_ACCESS_CLASS}` | Cisco | Method lists (from `aaa-order`), idle timeout and the management-ACL blocks |
 | `${RADIUS_CONFIG}` | Juniper RADIUS | Pre-rendered RADIUS server, authentication-order and accounting commands |
 | `${PRIVILEGE_COMMANDS}` | Cisco | Pre-rendered privilege level command mappings |
+| `${AUTHZ_COMMANDS_BLOCK}` | Cisco TACACS+ | Per-level `aaa authorization commands` lines, `config-commands` and the commented `console` line |
+| `${ACCT_COMMANDS_BLOCK}` | Cisco TACACS+ | One `aaa accounting commands <level>` line per privilege level in use (a template copied before 0.2.2 has the 1/7/15 lines written out) |
+| `${CLASS_COMMAND_RULES}` | Juniper | Step 3: what the server sends per class (comments only) |
 | `${TEMPLATE_USERS}` | Juniper | Pre-rendered `set system login user` lines |
 | `${TACPLUS_CONFIG}` | Juniper | Pre-rendered TACACS+ server setup commands |
 | `${VERIFY_COMMANDS}` | Juniper | Pre-rendered `show configuration` commands |
 | `${GROUP_SUMMARY}` | All | Human-readable group mapping table |
 | `${SCOPE}` | WTI | Name of the scope being rendered |
 | `${FALLBACK_LOCAL}` | WTI | `On (Transport Failure)` or `On (All Failures)`, from the scope's `aaa-order` |
-| `${SERVICE_NAME}` | WTI | Authorization service name the unit should send (`shell`) |
+| `${SERVICE_NAME}` | WTI | Authorization service name the unit should send (`wti`) |
 
 **To customize:** edit the copy in the override location (install puts one there; if it is missing, copy the default first):
 ```bash
@@ -1282,7 +1337,7 @@ After an upgrade: `tacctl status`, `tacctl config validate` (store, rendered con
 - Logged in at the wrong level, or without one: the scope does not send that vendor's attribute (`tacctl scope vendor-attrs <scope>`, `tacctl scope devices <scope>`)
 
 **WTI login refused, or lands at the wrong access level**
-- `tacctl config loglevel debug`, retry, then `tacctl log tail 50`: the `client args [...]` line shows the service name the unit sent. If it is not `shell`, set TACACS Parameters → Service Name to `shell` (or confirm the default-service-permit patch is applied: `tacctl status`)
+- `tacctl config loglevel debug`, retry, then `tacctl log tail 50`: the `client args [...]` line shows the service name the unit sent. If it is not `wti`, set TACACS Parameters → Service Name back to `wti` (with `shell` the WTI levels set on groups are ignored); a group without one is answered through the default-service-permit patch (`tacctl status` shows whether it is applied)
 - No authorization request at all → Account Management Module is Disabled on the unit
 - `failed to validate the user [x] using a bcrypt password` on every attempt although `tacctl user verify` accepts the password → Default User Access is `Off` on the unit (its sshd sends a junk password for users it cannot resolve); set it `On` / Access Level `ViewOnly`
 - Nothing in the tacquito log while the unit waits the Fallback Timer, SYNs visible in tcpdump → the unit's IP Tables drop tacquito's replies; add the `ESTABLISHED,RELATED` accept rule before the final DROP

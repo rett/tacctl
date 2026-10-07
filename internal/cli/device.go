@@ -47,7 +47,7 @@ var deviceSpecs = map[string]Spec{
 	"list": {MaxArgs: 0, Flags: []Flag{{Names: []string{"--stale"}}, {Names: []string{"--unconfigured"}},
 		{Names: []string{"--scan"}}, {Names: []string{"--probe"}}, flagJSON}},
 	"show": {MinArgs: 1, MaxArgs: 1, Args: []string{KindDevices}, Flags: []Flag{flagJSON, flagAllNotices}},
-	"add": {MinArgs: 2, MaxArgs: 2, Args: []string{"", ""}, Flags: []Flag{
+	"add": {MinArgs: 1, MaxArgs: 2, Args: []string{"", ""}, Flags: []Flag{
 		{Names: []string{"--vendor"}, Value: true, Kind: KindVendors},
 		{Names: []string{"--hostname"}, Value: true},
 		{Names: []string{"--port"}, Value: true},
@@ -55,6 +55,7 @@ var deviceSpecs = map[string]Spec{
 		{Names: []string{"--legacy-ssh"}},
 		{Names: []string{"--host-key"}, Value: true},
 		{Names: []string{"--no-host-key"}},
+		{Names: []string{"--no-lookup"}},
 		flagAllowGeneric}},
 	"remove":      {MaxArgs: -1, Args: []string{KindDevices + KindList}, Flags: []Flag{{Names: []string{"--all"}, Alone: true}, flagYes}},
 	"rename":      {MinArgs: 2, MaxArgs: 2, Args: []string{KindDevices, ""}, Flags: []Flag{flagAllowGeneric}},
@@ -77,14 +78,14 @@ var deviceSpecs = map[string]Spec{
 	"scan": {MaxArgs: 0, Flags: []Flag{{Names: []string{"--full"}}, {Names: []string{"--since"}, Value: true},
 		{Names: []string{"--backend"}, Value: true, Kind: KindBackends}}},
 	"discover": {MaxArgs: 0, Flags: []Flag{{Names: []string{"--all"}}, {Names: []string{"--backend"}, Value: true, Kind: KindBackends}}},
-	"check":    {MaxArgs: 1, Args: []string{KindDevices}, Flags: []Flag{{Names: []string{"--all"}, Alone: true}}},
+	"check":    {MaxArgs: 1, Args: []string{KindDevices}, Flags: []Flag{{Names: []string{"--all"}, Alone: true}, flagJSON}},
 }
 
 // deviceVerbs are the verbs ({Use, Short}), in usage order.
 var deviceVerbs = [][2]string{
 	{"list [--stale] [--unconfigured] [--scan] [--probe] [--json]", "Registered devices and enrolled hosts: scope, state, last seen, notices"},
 	{"show <name|address> [--all] [--json]", "One device or host in full (--all: the acknowledged notices too)"},
-	{"add <name> <address> [options]", "Register a device"},
+	{"add [<name>] <address> [options]", "Register a device (no name: offer the one it gives itself by SNMP)"},
 	{"remove <name>[,<name>...] | --all [-y]", "Remove devices from the registry (confirms)"},
 	{"rename <old> <new> [--allow-generic]", "Rename a device"},
 	{"address <name> [<address>]", "Show or set the address"},
@@ -103,7 +104,7 @@ var deviceVerbs = [][2]string{
 	{"ssh-config", "Print an ssh_config Include for your devices (Host blocks, pinned keys)"},
 	{"scan [--full] [--since <dur>] [--backend <id>]", "Read the logs for the devices seen; re-scan pinned host keys"},
 	{"discover [--all] [--backend <id>]", "Scan, then list the addresses that authenticated unregistered"},
-	{"check <name>|--all", "Checklist: scope, tag, seen, reachable, host key"},
+	{"check <name>|--all [--json]", "Checklist: scope, tag, seen, reachable, host key, SNMP name"},
 }
 
 // deviceOptions are the option lines under a verb's row in the usage, one
@@ -114,7 +115,7 @@ var deviceOptions = map[string][][2]string{
 		{"--unconfigured", "Only the devices no scope's prefixes cover"},
 		{"--scan", "Scan the logs first (as 'device scan')"},
 		{"--probe", "Add REACH: a TCP connect to each ssh port (3 s)"},
-		{"--json", "(list, show, export) Print JSON"},
+		{"--json", "(list, show, export, check) Print JSON"},
 	},
 	"add": {
 		{"--vendor cisco|juniper|wti|other", "The vendor (default other)"},
@@ -124,6 +125,7 @@ var deviceOptions = map[string][][2]string{
 		{"--legacy-ssh", "Old IOS: SHA-1 key exchange and ssh-rsa"},
 		{"--host-key SHA256:<fp>", "Register only if the device offers this key; pin it alone"},
 		{"--no-host-key", "Register without a pinned key (a hostkey-unpinned notice)"},
+		{"--no-lookup", "Do not read the device's own name by SNMP (sysName)"},
 		{"--allow-generic", "(add, rename, import) Allow a generic name such as 'switch'"},
 	},
 	"remove": {
@@ -192,6 +194,14 @@ refused unless --no-host-key is given. Only 'hostkey <name> accept' (re-scan,
 confirm, pin) or 'hostkey <name> set SHA256:<fp>' changes a pin; 'tacctl ssh'
 refuses a device whose key no longer matches.
 
+Name hint: 'add' also reads the device's own name (SNMP sysName.0) and
+compares it with the name given or its --hostname; a different one is a
+warning, and the add goes ahead. A device that does not answer is added as
+before; the NAS-Identifier a scan recorded for the address is shown instead
+when there is one. 'add <address>' with no name offers the sysName,
+lowercased, at a terminal ('y' to take it). --no-lookup skips the hint.
+SNMP is set up with 'tacctl config snmp'; 'check' shows the sysName too.
+
 Seen data: 'scan' reads each enabled backend's log (the tacquito journal,
 FreeRADIUS's tacctl-auth.log) from where the last scan stopped into
 /var/lib/tacctl/devices-seen.json, and re-scans the pinned host keys (a scan
@@ -203,7 +213,9 @@ refused too). 'check' and 'list --probe' connect to each ssh port (3 s): this
 server often has no path to management ports, so a timeout may be a false
 alarm. Scans, discover and check are for the operator tier and up.
 
-A device is found by name or by its registered address. Enrolled Linux hosts
+A device is found by name or by its registered address. A name is letters,
+digits, '.', '_' and '-', at most 253 characters, each dotted part at most 63:
+a fully qualified host name (sw1.site-a.example) is one. Enrolled Linux hosts
 ('tacctl host') are listed and found too, read-only. The registry is
 /etc/tacctl/devices.yaml; scope and vendor tag are looked up, never stored.
 
@@ -415,13 +427,21 @@ func deviceJSONOf(inv *invocation, res *devreg.Resolver, e devreg.Entry) deviceJ
 	for _, n := range res.NoticesFor(e) {
 		j.Notices = append(j.Notices, deviceNoticeJSON{Kind: n.Kind, Text: n.Text, Acked: n.Acked})
 	}
-	if x, ok := res.Seen.Of(e.Address); ok && e.Address != "" {
-		_, _, _, stale := deviceSeenCols(inv, res, e)
-		const layout = "2006-01-02T15:04:05Z07:00"
-		j.Seen = &deviceSeenJSON{First: x.First.Format(layout), Last: x.Last.Format(layout), Count: x.Count,
-			LastUser: x.LastUser, LastOutcome: x.LastOutcome, Via: x.Via, NASID: x.LastNASID, Stale: stale}
-	}
+	j.Seen = deviceSeenJSONOf(inv, res, e)
 	return j
+}
+
+// deviceSeenJSONOf is what the seen cache knows of e's address (nil when
+// nothing).
+func deviceSeenJSONOf(inv *invocation, res *devreg.Resolver, e devreg.Entry) *deviceSeenJSON {
+	x, ok := res.Seen.Of(e.Address)
+	if !ok || e.Address == "" {
+		return nil
+	}
+	_, _, _, stale := deviceSeenCols(inv, res, e)
+	const layout = "2006-01-02T15:04:05Z07:00"
+	return &deviceSeenJSON{First: x.First.Format(layout), Last: x.Last.Format(layout), Count: x.Count,
+		LastUser: x.LastUser, LastOutcome: x.LastOutcome, Via: x.Via, NASID: x.LastNASID, Stale: stale}
 }
 
 func (inv *invocation) printJSON(v any) error {
@@ -672,6 +692,18 @@ func (inv *invocation) deviceAdd(args []string) error {
 	if err != nil {
 		return err
 	}
+	// The device's own name, read next to the host-key scan; with no name
+	// given it is read first, and offered.
+	hint := make(chan nameHint, 1)
+	if len(p.Args) == 1 {
+		name, h, err := inv.deviceAddOffered(p, "Usage: tacctl device add [<name>] <address> [options]")
+		if err != nil || name == "" {
+			return err
+		}
+		p.Args = []string{name, p.Args[0]}
+		args = append([]string{name}, args...)
+		hint <- h
+	}
 	d := devreg.Device{Name: p.Args[0], Vendor: devreg.VendorOther, LegacySSH: p.Has("--legacy-ssh")}
 	checks := []error{devreg.ValidateName(d.Name)}
 	if d.Address, err = devreg.NormalizeAddress(p.Args[1]); err != nil {
@@ -718,6 +750,10 @@ func (inv *invocation) deviceAdd(args []string) error {
 	if err := check(res); err != nil {
 		return err
 	}
+	lookup := !p.Has("--no-lookup")
+	if lookup && len(hint) == 0 {
+		go func() { hint <- inv.lookupNameHint(d.Address) }()
+	}
 	retry := retyped("tacctl device add", args, "--host-key", "--no-host-key")
 	pin, offered, err := inv.deviceAddKeys(d, p, retry)
 	if err != nil {
@@ -737,6 +773,9 @@ func (inv *invocation) deviceAdd(args []string) error {
 	}
 	a := inv.app
 	a.Out.Info("Device '" + d.Name + "' registered: " + d.Address + ", " + d.Vendor + ".")
+	if lookup {
+		inv.printNameHint(d, <-hint)
+	}
 	inv.deviceAddReport(d, p, pin, offered)
 	e, _ := after.Lookup(d.Name, devreg.ScopeFilter{})
 	if e.Configured {

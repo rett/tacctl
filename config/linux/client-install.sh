@@ -140,6 +140,8 @@ fi
 mkdir -p "$STATE_DIR/backup"
 chmod 700 "$STATE_DIR"
 touch "$STATE_DIR/created" "$STATE_DIR/expired"
+# The protocol of the last run here, for 'tacctl host show --check'.
+echo "$TAC_PROTOCOL" > "$STATE_DIR/protocol"
 
 # --- Which accounts are tacctl's -------------------------------------------------
 # tacctl gives its accounts UIDs from the
@@ -907,6 +909,22 @@ shared_primary() {
     private_home "$name"
 }
 
+# single_listing <name>: an account whose primary group is tac-users is
+# not listed in it as a supplementary group as well (0.2.0 added every
+# account there; 0.2.1 made it the primary group and kept that entry).
+single_listing() {
+    local name="$1" line
+    line=$(getent group "$G_USERS" || true)
+    [[ -n "$line" ]] || return 0
+    [[ "$(getent passwd "$name" | cut -d: -f4)" == "$(cut -d: -f3 <<< "$line")" ]] || return 0
+    cut -d: -f4 <<< "$line" | tr ',' '\n' | grep -qxF "$name" || return 0
+    if gpasswd -d "$name" "$G_USERS" >/dev/null; then
+        info "'${name}': no longer listed in ${G_USERS} as a supplementary group (it is the primary group)."
+    else
+        warn "'${name}': still listed in ${G_USERS} as a supplementary group (gpasswd -d failed); tried again at the next sync."
+    fi
+}
+
 # fix_gid <group>: the group exists with its fixed GID. A GID held by
 # another group here is left to it: the group then gets or keeps another
 # number, reported. When tac-users moves, the files of the managed homes
@@ -994,8 +1012,9 @@ drop_group() {
 }
 
 # fix_groups: tacctl's groups as this host has them, every managed account
-# with tac-users as primary group. Its own groups go first, so that their
-# GIDs (the numbers of the range) are free for tacctl's.
+# with tac-users as primary group (and not listed in it a second time). Its
+# own groups go first, so that their GIDs (the numbers of the range) are
+# free for tacctl's.
 fix_groups() {
     local g name want
     # tac-users first, for the accounts below; its fixed GID may still be
@@ -1007,6 +1026,7 @@ fix_groups() {
     fi
     while IFS= read -r name; do
         shared_primary "$name"
+        single_listing "$name"
     done < <(managed_accounts)
     park_groups
     for g in $(host_groups); do
@@ -1135,9 +1155,13 @@ sync_accounts() {
                 gpasswd -d "$name" "$g" >/dev/null
             fi
         done
-        want="${G_USERS} ${want}"
+        # tac-users as a supplementary group only while it is not the
+        # primary one yet (usermod -g failed above; tried again next sync).
+        if [[ "$(getent passwd "$name" | cut -d: -f4)" != "$(getent group "$G_USERS" | cut -d: -f3)" ]]; then
+            want="${G_USERS} ${want}"
+        fi
         want="${want% }"
-        usermod -aG "${want// /,}" "$name"
+        if [[ -n "$want" ]]; then usermod -aG "${want// /,}" "$name"; fi
         managed+="${name} "
         if grep -qxF "$name" "$STATE_DIR/expired"; then
             usermod -e '' "$name"
@@ -1396,6 +1420,8 @@ for svc in sshd sudo; do
     grep -qE '^(@include|account[[:space:]]+include[[:space:]]+)[[:space:]]*tacctl-account$' "$PAM_DIR/$svc" \
         || die "Failed to edit $PAM_DIR/$svc."
 done
+# What was written, for 'tacctl host show --check' to compare with.
+(cd "$PAM_DIR" && sha256sum tacctl-auth tacctl-account tacctl-session) > "$STATE_DIR/pam.sha256"
 
 # --- SELinux -------------------------------------------------------------------
 # Failure is reported, not fatal: logins then behave as if the server were

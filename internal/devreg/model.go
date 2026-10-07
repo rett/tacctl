@@ -60,8 +60,9 @@ func (d Device) SSHPort() int {
 }
 
 var (
-	reName     = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$`)
-	reHostname = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*\.?$`)
+	reName      = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,252}$`)
+	reHostEntry = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$`) // an enrolled host's: 63 at most
+	reHostname  = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*\.?$`)
 )
 
 // ReservedNames are words a device may not be called: the tacctl commands
@@ -76,14 +77,33 @@ func fail(lines ...string) error { return &names.Error{Msgs: lines} }
 
 // ValidateName checks the shape of a device name and that it is no
 // reserved word. Uniqueness is the registry's business (File, Resolver).
+// A fully qualified name is a name: at most 253 characters, each dotted
+// part 1-63.
 func ValidateName(name string) error {
-	if !reName.MatchString(name) {
-		return fail("Invalid device name '" + name + "'. Use letters, digits, '.', '_' or '-', starting with a letter or digit, at most 63 characters.")
+	if !reName.MatchString(name) || !labelsOK(name) {
+		return fail("Invalid device name '" + name + "'. Use letters, digits, '.', '_' or '-', starting with a letter or digit; at most 253 characters, each dotted part at most 63.")
 	}
 	if slices.Contains(ReservedNames, strings.ToLower(name)) {
 		return fail("'" + name + "' is a tacctl word and cannot name a device.")
 	}
 	return nil
+}
+
+// labelsOK reports whether every dotted part of name has 1 to 63
+// characters (no '..', no trailing dot).
+func labelsOK(name string) bool {
+	for l := range strings.SplitSeq(name, ".") {
+		if l == "" || len(l) > 63 {
+			return false
+		}
+	}
+	return true
+}
+
+// firstLabel is a name up to its first dot (the whole name without one).
+func firstLabel(name string) string {
+	first, _, _ := strings.Cut(name, ".")
+	return first
 }
 
 // NormalizeAddress is the canonical text of an IPv4 or IPv6 address (no

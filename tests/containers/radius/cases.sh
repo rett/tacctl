@@ -108,7 +108,7 @@ is "vc enables cisco; 127.0.0.18 tagged cisco: Cisco only"        "Accept ${ADM}
 is "vj enables juniper; untagged 127.0.0.20: Juniper only"        "Accept ${ADM}; ${J_RW}" "$(rq 127.0.0.1 vj alice 'Correct-Horse-1' 127.0.0.20)"
 is "vj enables juniper; 127.0.0.21 tagged wti: WTI, no Juniper"   "Accept ${ADM}; ${W3}"   "$(rq 127.0.0.1 vj alice 'Correct-Horse-1' 127.0.0.21)"
 is "vw enables wti; untagged 127.0.0.24: WTI only"                "Accept ${ADM}; ${W3}"   "$(rq 127.0.0.1 vw alice 'Correct-Horse-1' 127.0.0.24)"
-is "vw enables wti; 007 (priv 10): SuperUser"                     "Accept Service-Type = NAS-Prompt-User; WTI-Super = SuperUser" "$(rq 127.0.0.1 vw 007 'Bond-James-Bond-7' 127.0.0.24)"
+is "vw enables wti; 007 (priv 10, wti_level user): User, not the band's SuperUser" "Accept Service-Type = NAS-Prompt-User; WTI-Super = User" "$(rq 127.0.0.1 vw 007 'Bond-James-Bond-7' 127.0.0.24)"
 is "vw enables wti; 127.0.0.25 tagged cisco: Cisco, no WTI"       "Accept ${ADM}; ${C15}"  "$(rq 127.0.0.1 vw alice 'Correct-Horse-1' 127.0.0.25)"
 is "vall enables all three; untagged 127.0.0.28: all three"       "Accept ${ADM}; ${C15}; ${J_RW}; ${W3}" "$(rq 127.0.0.1 vall alice 'Correct-Horse-1' 127.0.0.28)"
 is "vall enables all three; dave (readonly): priv 1, RO-CLASS, ViewOnly (WTI-Super 0)" \
@@ -119,6 +119,13 @@ is "vall, wrong password: a reject carries no vendor attribute"   "Reject "     
 is "vall, tagged wti, wrong password: no attribute"               "Reject "                "$(rq 127.0.0.1 vall alice 'wrong-password' 127.0.0.29)"
 is "vc, a user not in the scope (bob): no attribute"              "Reject "                "$(rq 127.0.0.1 vc bob "$BOB_PW" 127.0.0.16)"
 t "a tagged address with another scope's secret: no answer"      '^None$'                 "$(rq 127.0.0.1 lab alice 'Correct-Horse-1' 127.0.0.17)"
+
+# --- Junos deny sets (tacctl.yaml junos.netops, make-store.py): VSAs 3 and 5,
+# only where the login class is sent
+J_NET='Juniper-Local-User-Name = "NETOPS_class-1"; Juniper-Deny-Commands = "(^request system)|(^start shell)"; Juniper-Deny-Configuration = "(^system login)"'
+is "lab, 127.0.0.11 tagged juniper; 007 (netops): class and both deny sets" "Accept Service-Type = NAS-Prompt-User; ${J_NET}" "$(rq 127.0.0.1 lab 007 'Bond-James-Bond-7' 127.0.0.11)"
+is "lab, 127.0.0.10 tagged cisco; 007: no Juniper attribute"   'Accept Service-Type = NAS-Prompt-User; Cisco-AVPair = "shell:priv-lvl=10"' "$(rq 127.0.0.1 lab 007 'Bond-James-Bond-7' 127.0.0.10)"
+is "lab, 127.0.0.11 tagged juniper; 007, wrong password: no attribute" "Reject "        "$(rq 127.0.0.1 lab 007 'wrong-password' 127.0.0.11)"
 
 if ss -uln | grep -qE '\[::1?\]:1812'; then
     is "IPv6 client ::1 (scope v6, allowed by an IPv6 filter), alice" "Accept ${ADM}" "$(rq '[::1]' v6 alice 'Correct-Horse-1')"

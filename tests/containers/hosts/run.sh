@@ -435,6 +435,17 @@ c rm -f /var/tmp/dave-stray
 tacctl host sync c1 > "${WORK}/sync.out"; rc=$?
 check "a second sync renumbers nothing" bash -c "[[ $rc == 0 ]] && ! grep -qi 'renumbered' '${WORK}/sync.out' && grep -q 'c1: synced (4 users; 1 refused: carl)' '${WORK}/sync.out'"
 
+section "tac-users: erin as 0.2.0 left her (listed in it as a supplementary group as well)"
+# 0.2.0 put every account in tac-users as a supplementary group; 0.2.1 made
+# it the primary group and kept that entry. The sync takes the entry out.
+c gpasswd -a erin tac-users > /dev/null
+check "erin starts listed in tac-users" c bash -c "getent group tac-users | cut -d: -f4 | tr ',' '\\n' | grep -qx erin"
+tacctl host sync c1 > "${WORK}/sync.out"; rc=$?
+check "the sync takes erin out of tac-users' member list and says so" bash -c "[[ $rc == 0 ]] && grep -q \"'erin': no longer listed in tac-users as a supplementary group (it is the primary group).\" '${WORK}/sync.out'"
+check "tac-users lists no members; tac-users is still every account's primary group" c bash -c "[[ -z \$(getent group tac-users | cut -d: -f4) ]] && for u in alice dave erin; do [[ \$(id -gn \$u) == tac-users ]] || exit 1; done"
+tacctl host sync c1 > "${WORK}/sync.out"; rc=$?
+check "a second sync has nothing to change" bash -c "[[ $rc == 0 ]] && ! grep -q 'supplementary' '${WORK}/sync.out'"
+
 section "cases (${FIRST})"
 where_secret "$FIRST"
 full_cases "$FIRST"
@@ -497,7 +508,7 @@ expect "alice can no longer log in" 'rc=255' "$(login alice "$A_PW" true)"
 expect "carl's local account still works" '^carl$' "$(login carl "$CL_PW" 'id -un')"
 expect "ladm logs in and can sudo" '^0$' "$(login ladm "$L_PW" "printf '%s\n' '$L_PW' | sudo -S -k -p '' id -u")"
 check "the registry is empty" bash -c "[[ -z \"\$(podman exec '$S' cat /etc/tacctl/linux-hosts)\" ]]"
-note "left on the host by design: accounts and groups ($(c bash -c 'getent group tac-users | cut -d: -f4')), /var/lib/tacctl-client ($(c ls /var/lib/tacctl-client | paste -sd' ')), packages ($(pkg_versions))"
+note "left on the host by design: accounts and groups ($(c bash -c 'g=$(getent group tac-users | cut -d: -f3); getent passwd | awk -F: -v g="$g" '"'"'$4 == g { print $1 }'"'"' | paste -sd,')), /var/lib/tacctl-client ($(c ls /var/lib/tacctl-client | paste -sd' ')), packages ($(pkg_versions))"
 
 echo
 echo "${CLIENT} ${CYCLE} (server ${SERVER}): ${pass} passed, ${fail} failed"

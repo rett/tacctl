@@ -1,6 +1,7 @@
 package policy
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -96,6 +97,102 @@ func TestInsertUpdateRemove(t *testing.T) {
 	// Back to the shipped rules: the override is gone, and so is the file.
 	if got := file(t, path); got != "" {
 		t.Errorf("override left:\n%s", got)
+	}
+}
+
+func TestInsertRuleAt(t *testing.T) {
+	shipped := []string{"show|permit|", "ping|permit|", "traceroute|permit|", "terminal|permit|"}
+	for _, tc := range []struct {
+		name  string
+		where Where
+		want  []string
+	}{
+		{"default", Where{}, append(append([]string{}, shipped...), "x|deny|a", "*|deny|")},
+		{"before catch-all", Where{Before: Catchall}, append(append([]string{}, shipped...), "x|deny|a", "*|deny|")},
+		{"first", Where{First: true}, append(append([]string{"x|deny|a"}, shipped...), "*|deny|")},
+		{"before ping", Where{Before: "ping"}, []string{"show|permit|", "x|deny|a", "ping|permit|", "traceroute|permit|", "terminal|permit|", "*|deny|"}},
+	} {
+		c, _ := newConf(t, "")
+		if err := InsertRuleAt(c, "operator", "x", "deny", "a", tc.where); err != nil {
+			t.Fatal(err)
+		}
+		if got := Lines(c, "operator"); !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("%s: %q", tc.name, got)
+		}
+	}
+	// Before the first of several rules of the name; a group without a
+	// catch-all gains the deny one, as InsertRule does.
+	c, path := newConf(t, "commands:\n  helpdesk:\n  - {name: show, match: [a]}\n  - {name: show, match: [b]}\n")
+	if err := InsertRuleAt(c, "helpdesk", "show", "deny", "c", Where{Before: "show"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := Lines(c, "helpdesk"); !reflect.DeepEqual(got, []string{"show|deny|c", "show|permit|a", "show|permit|b", "*|deny|"}) {
+		t.Errorf("helpdesk: %q", got)
+	}
+	before := file(t, path)
+	err := InsertRuleAt(c, "helpdesk", "x", "permit", "", Where{Before: "missing"})
+	var nr *NoRuleError
+	if !errors.As(err, &nr) || err.Error() != "No rule named 'missing' in group 'helpdesk'." {
+		t.Errorf("missing: %v", err)
+	}
+	if file(t, path) != before {
+		t.Error("a refused insert wrote")
+	}
+}
+
+func TestRemoveRuleWhere(t *testing.T) {
+	const yaml = "commands:\n  operator:\n" +
+		"  - {name: show, action: deny, match: ['^crypto( .*)?']}\n" +
+		"  - {name: show, action: permit, match: [a, b]}\n" +
+		"  - {name: show, action: permit}\n" +
+		"  - {name: ping, action: permit}\n" +
+		"  - {name: '*', action: deny}\n"
+	for _, tc := range []struct {
+		name    string
+		matches []string
+		action  string
+		all     bool
+		gone    []Numbered
+		ambig   int
+	}{
+		{name: "ambiguous", ambig: 3},
+		{name: "ambiguous by action", action: "permit", ambig: 2},
+		{name: "by match", matches: []string{"^crypto( .*)?"}, gone: []Numbered{{1, "show|deny|^crypto( .*)?"}}},
+		{name: "by match list", matches: []string{"a", "b"}, gone: []Numbered{{2, "show|permit|a,b"}}},
+		{name: "match order counts", matches: []string{"b", "a"}},
+		{name: "by action", action: "deny", gone: []Numbered{{1, "show|deny|^crypto( .*)?"}}},
+		{name: "all", all: true, gone: []Numbered{{1, "show|deny|^crypto( .*)?"}, {2, "show|permit|a,b"}, {3, "show|permit|"}}},
+		{name: "all of a selection", action: "permit", all: true, gone: []Numbered{{2, "show|permit|a,b"}, {3, "show|permit|"}}},
+		{name: "none", action: "deny", matches: []string{"a", "b"}},
+	} {
+		c, path := newConf(t, yaml)
+		before := file(t, path)
+		gone, err := RemoveRuleWhere(c, "operator", "show", tc.matches, tc.action, tc.all)
+		var amb *AmbiguousError
+		switch {
+		case tc.ambig > 0:
+			if !errors.As(err, &amb) || amb.Count != tc.ambig {
+				t.Errorf("%s: %v", tc.name, err)
+			}
+		case err != nil:
+			t.Errorf("%s: %v", tc.name, err)
+		case !reflect.DeepEqual(gone, tc.gone):
+			t.Errorf("%s: removed %v, want %v", tc.name, gone, tc.gone)
+		}
+		if len(tc.gone) == 0 {
+			if file(t, path) != before {
+				t.Errorf("%s: wrote with nothing removed", tc.name)
+			}
+			continue
+		}
+		left := Lines(c, "operator")
+		if len(left) != 5-len(tc.gone) || left[len(left)-1] != "*|deny|" {
+			t.Errorf("%s: left %q", tc.name, left)
+		}
+	}
+	err := (&AmbiguousError{Group: "operator", Name: "show", Count: 2}).Error()
+	if err != "Group 'operator' has 2 rules named 'show'; select one with --match/--action (see 'tacctl group commands list operator'), or pass --all." {
+		t.Errorf("message: %s", err)
 	}
 }
 

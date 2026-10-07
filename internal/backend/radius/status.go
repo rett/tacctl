@@ -146,6 +146,8 @@ func (m *Module) statusConfig(w io.Writer) {
 		switch n.Kind {
 		case "commands":
 			echo(w, "  "+ui.Yellow+"Command rules:"+ui.NC+"        not enforced over RADIUS (commands.<group> of: "+n.Detail+")")
+		case "junos":
+			echo(w, "  "+ui.Bold+"Junos deny sets:"+ui.NC+"      sent with the login class (junos.<group> of: "+n.Detail+")")
 		case "secret":
 			echo(w, "  "+ui.Yellow+"Secrets:"+ui.NC+"              beyond what every RADIUS client takes ("+strconv.Itoa(m.SecretConstraints().MaxLen)+" characters, no space, ASCII): "+n.Detail)
 		case "filters":

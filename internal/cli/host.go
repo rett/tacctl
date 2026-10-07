@@ -39,6 +39,8 @@ var (
 // names complete from the registry (KindHosts).
 var hostSpecs = map[string]Spec{
 	"list": {},
+	"show": {MinArgs: 1, MaxArgs: 1, Args: []string{KindHosts}, Flags: []Flag{
+		{Names: []string{"--all"}}, flagJSON, {Names: []string{"--check"}}}},
 	"enroll": {MaxArgs: 1, Args: []string{""}, Flags: []Flag{
 		{Names: []string{"--local"}},
 		{Names: []string{"--scope"}, Value: true, Kind: KindScopes},
@@ -65,6 +67,7 @@ var hostSpecs = map[string]Spec{
 // hostVerbs are the verbs ({Use, Short}), in usage order.
 var hostVerbs = [][2]string{
 	{"list", "Show enrolled hosts"},
+	{"show <name> [--all] [--json] [--check]", "One enrolled host in full; --check compares it with what tacctl would make it"},
 	{"enroll <[user@]host> | --local [options]", "Install TACACS+ or RADIUS login on a host over SSH and register it"},
 	{"sync <name> | --all [options]", "Push account adds, deletions and tier changes"},
 	{"move <name> [<scope>] | --all [options]", "Move an enrolled host to another scope (default: the scope answering its address)"},
@@ -101,6 +104,8 @@ func (inv *invocation) host(args []string) error {
 	switch sub := arg(args, 0); sub {
 	case "list":
 		return inv.hostList()
+	case "show":
+		return inv.hostShow(rest)
 	case "enroll":
 		return inv.hostEnroll(rest)
 	case "move":
@@ -585,6 +590,7 @@ func (inv *invocation) hostEnroll(args []string) error {
 	}
 	if code != 0 {
 		if prevMethod != "" {
+			inv.recordRun(name, "enroll", "the client script failed on the host (exit status "+strconv.Itoa(code)+")", he)
 			a.Out.ErrorE("Enrollment of " + name + " failed; its registration (method " + prevMethod + ") was left as it was.")
 			if narrowScope {
 				a.Out.WarnE("Scope '" + scope + "' is still open to " + strings.Join(scopeProtocols, ", ") + "; see 'tacctl scope protocols " + scope + "'.")
@@ -616,6 +622,7 @@ func (inv *invocation) hostEnroll(args []string) error {
 	}
 	he.PinKeys(inv.ctx, hosts.Entry{Name: name, Target: target, Port: port})
 	inv.hostFacts(he, name, target, hostIP)
+	inv.recordRun(name, "enroll", "", he)
 	if consoleCheck {
 		inv.consoleAfterLocal()
 	}
@@ -988,13 +995,22 @@ func (inv *invocation) confirmScopeMove(name, from, to string, yes bool) error {
 // it no longer covers 127.0.0.1 (a prefix removed, another scope shadowing
 // it), the accounts are synced but nobody can log in.
 func (inv *invocation) localScopeWarning(e hosts.Entry) {
+	if msg := inv.localScopeDrift(e); msg != "" {
+		inv.app.Out.WarnE(msg)
+	}
+}
+
+// localScopeDrift is the warning about this server's own registration e
+// when its scope does not answer 127.0.0.1 ("" when it does).
+func (inv *invocation) localScopeDrift(e hosts.Entry) string {
 	m, err := inv.model()
 	if err != nil {
-		return
+		return ""
 	}
 	if info, found := m.LookupAddr("127.0.0.1"); !found || info.Scope != e.Scope {
-		inv.app.Out.WarnE(e.Name + ": scope '" + e.Scope + "' does not cover 127.0.0.1, where this server's own logins come from, so they are refused. Add it: tacctl scope prefixes " + e.Scope + " add 127.0.0.1/32")
+		return e.Name + ": scope '" + e.Scope + "' does not cover 127.0.0.1, where this server's own logins come from, so they are refused. Add it: tacctl scope prefixes " + e.Scope + " add 127.0.0.1/32"
 	}
+	return ""
 }
 
 // isRegularFile is '[[ -f <path> ]]'.
@@ -1066,6 +1082,7 @@ func (inv *invocation) hostSync(args []string) error {
 		}
 		if !exists {
 			a.Out.ErrorE(name + ": scope '" + e.Scope + "' no longer exists; skipped.")
+			inv.recordRun(name, "sync", "its scope '"+e.Scope+"' no longer exists", nil)
 			failed = true
 			continue
 		}
@@ -1110,47 +1127,66 @@ func (inv *invocation) provisioningLogin(target string) (login string, explicit,
 }
 
 // syncOne pushes an accounts-only script to one host and runs it; ok is
-// false when the script could not be written or failed there.
+// false when the script could not be written or failed there. The run is
+// recorded for 'host show', failed or not.
 func (inv *invocation) syncOne(he *hosts.Env, e hosts.Entry, method string, scriptArgs []string, removeHome bool) (bool, error) {
+	ok, reason, ran, err := inv.syncRun(he, e, method, scriptArgs, removeHome)
+	switch {
+	case errors.Is(err, ui.ErrInterrupted):
+		reason = "interrupted"
+	case err != nil:
+		reason = strings.Join(msgs(err), " ")
+	}
+	var run *hosts.Env
+	if ran {
+		run = he
+	}
+	inv.recordRun(e.Name, "sync", reason, run)
+	return ok, err
+}
+
+// syncRun is syncOne's run: reason says why it failed, ran whether the
+// client script ran on the host.
+func (inv *invocation) syncRun(he *hosts.Env, e hosts.Entry, method string, scriptArgs []string, removeHome bool) (ok bool, reason string, ran bool, err error) {
 	// A host that cannot hold the range gets no account changes.
 	if err := he.CheckIDMap(inv.ctx, e.Name, e.Target, e.Port, e.Identity); errors.Is(err, hosts.ErrFailed) {
-		return false, nil
+		return false, "the host cannot hold the UID range " + he.UIDRange().String(), false, nil
 	} else if err != nil {
-		return false, err
+		return false, "", false, err
 	}
 	script, err := hosts.TempFile()
 	if err != nil {
-		return false, err
+		return false, "", false, err
 	}
 	defer func() { _ = os.Remove(script) }()
 	req, err := inv.scriptRequest(e.Scope, e.Server, method, script)
 	if err != nil {
-		return false, err
+		return false, "", false, err
 	}
 	req.Temp, req.AccountsOnly = true, true
 	if err := inv.homesToDelete(he, &req, e.Name, e.Target, e.Port, e.Identity, removeHome); err != nil {
-		return false, err
+		return false, "", false, err
 	}
 	consoleCheck := false
 	if e.Target == hosts.Local {
 		inv.localScopeWarning(e)
 		if consoleCheck, err = inv.consoleForLocal(&req); err != nil {
-			return false, err
+			return false, "", false, err
 		}
 	}
 	res, err := he.WriteScript(req)
 	if errors.Is(err, hosts.ErrFailed) {
-		return false, nil
+		return false, "the client script could not be written", false, nil
 	}
 	if err != nil {
-		return false, err
+		return false, "", false, err
 	}
 	code, err := he.RunScript(inv.ctx, e.Target, e.Port, e.Identity, script, scriptArgs)
 	if err != nil {
-		return false, err
+		return false, "", true, err
 	}
 	if code != 0 {
-		return false, nil
+		return false, "the client script failed on the host (exit status " + strconv.Itoa(code) + ")", true, nil
 	}
 	counts := hosts.UsersText(hosts.CountLines(res.Users))
 	if he.Summary != nil {
@@ -1175,7 +1211,7 @@ func (inv *invocation) syncOne(he *hosts.Env, e hosts.Entry, method string, scri
 	if consoleCheck {
 		inv.consoleAfterLocal()
 	}
-	return true, nil
+	return true, "", true, nil
 }
 
 // homesToDelete fills in which removed users' home directories the script
@@ -1256,6 +1292,9 @@ func (inv *invocation) hostUnenroll(args []string) error {
 		return err
 	}
 	inv.forgetHostKeys(name)
+	if err := inv.hostRecords().Forget(name); err != nil {
+		a.Out.WarnE(name + ": its record (" + inv.app.Paths.HostRecords + "/" + name + ".json) could not be removed: " + strings.Join(msgs(err), " "))
+	}
 	if e.Target == hosts.Local {
 		// The remove script gave tacctl's accounts /bin/bash back; the
 		// console's pieces go now (refused, and said, while an account

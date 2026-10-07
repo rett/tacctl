@@ -187,6 +187,28 @@ two_scans() {
     refute_output --partial "name-mismatch"
 }
 
+@test "device scan: a fully qualified registry name matches the unit's short name; two units sending one name are told apart" {
+    "$TACCTL_BIN_SCRIPT" device add sw1.site-a.example 203.0.113.41 --vendor juniper > /dev/null
+    "$TACCTL_BIN_SCRIPT" device add sw1.site-b.example 203.0.113.42 --vendor juniper > /dev/null
+    "$TACCTL_BIN_SCRIPT" device add sw2.site-a.example 203.0.113.43 --vendor juniper > /dev/null
+    {
+        echo "2026-10-04 09:00:00 Access-Accept scope=dmz device=generic client=203.0.113.41 nas=sw1 user=jdoe"
+        echo "2026-10-04 09:01:00 Access-Accept scope=dmz device=generic client=203.0.113.42 nas=sw1 user=jdoe"
+        echo "2026-10-04 09:02:00 Access-Accept scope=dmz device=generic client=203.0.113.43 nas=SW2 user=jdoe"
+    } > "$AUTHLOG"
+    run at 2026-10-04T12:00:00Z device scan --backend radius
+    assert_success
+    run at 2026-10-04T12:00:00Z device notices
+    plain
+    # 'sw1' and 'SW2' are the first labels of the registry names: no
+    # name-mismatch; 'sw1' from two addresses is ambiguous, and the remedy
+    # names a fully qualified host name.
+    refute_output --partial "name-mismatch"
+    assert_output --partial "sw1.site-a.example  ambiguous-nas-id: NAS-Identifier 'sw1' is sent from 2 addresses (203.0.113.41, 203.0.113.42); give each device a name of its own (a fully qualified host name tells them apart: Junos: 'set system host-name <name>'), or acknowledge it: 'tacctl device notice sw1.site-a.example ack ambiguous-nas-id'"
+    assert_output --partial "sw1.site-b.example  ambiguous-nas-id:"
+    refute_output --partial "sw2.site-a.example"
+}
+
 @test "device discover --all includes addresses only ever refused, IPv6 included" {
     register
     two_scans

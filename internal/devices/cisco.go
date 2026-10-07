@@ -1,9 +1,13 @@
 package devices
 
 import (
+	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/rett/tacctl/internal/cidr"
+	"github.com/rett/tacctl/internal/conf"
+	"github.com/rett/tacctl/internal/names"
 	"github.com/rett/tacctl/internal/policy"
 	"github.com/rett/tacctl/internal/ui"
 )
@@ -12,7 +16,8 @@ import (
 // whitelists); anything else in a template is left as written.
 var (
 	ciscoTacacsVars = []string{"SERVER_IP", "SECRET", "PRIVILEGE_COMMANDS", "GROUP_SUMMARY", "VTY_ACL_BLOCK",
-		"VTY_ACCESS_CLASS", "AUTHZ_COMMANDS_BLOCK", "AUTHN_METHODS", "AUTHZ_EXEC_METHODS", "EXEC_TIMEOUT", "TACACS_GROUP"}
+		"VTY_ACCESS_CLASS", "AUTHZ_COMMANDS_BLOCK", "ACCT_COMMANDS_BLOCK", "AUTHN_METHODS", "AUTHZ_EXEC_METHODS",
+		"EXEC_TIMEOUT", "TACACS_GROUP"}
 	ciscoRadiusVars = []string{"SERVER_IP", "SECRET", "AUTH_PORT", "ACCT_PORT", "RADIUS_GROUP", "PRIVILEGE_COMMANDS",
 		"GROUP_SUMMARY", "VTY_ACL_BLOCK", "VTY_ACCESS_CLASS", "AUTHN_METHODS", "AUTHZ_EXEC_METHODS", "EXEC_TIMEOUT"}
 )
@@ -35,9 +40,10 @@ func CiscoVars(req Request, d Data) map[string]string {
 	c, scope := d.Conf, req.Scope
 	groups := privGroups(d.Model)
 
-	// The privilege-exec block: per group at priv-lvl 2-14, its mappings
+	// The privilege block: per group at priv-lvl 2-14, its mappings
 	// ('tacctl group privilege') or the shipped default, each (level,
-	// command) once across groups.
+	// mode, command) once across groups. An entry may name its mode
+	// (exec, exec all, configure, configure all); none is exec.
 	var privilege strings.Builder
 	seen := map[string]bool{}
 	for _, g := range groups {
@@ -53,16 +59,17 @@ func CiscoVars(req Request, d Data) map[string]string {
 		}
 		block := "! --- " + g.name + " — Privilege Level " + g.priv + " Commands ---\n"
 		emitted := false
-		for _, cmd := range cmds {
-			if cmd == "" {
+		for _, entry := range cmds {
+			if entry == "" {
 				continue
 			}
-			pair := g.priv + "|" + cmd
+			mode, cmd, _ := names.SplitPrivEntry(entry)
+			pair := g.priv + "|" + mode + "|" + cmd
 			if seen[pair] {
 				continue
 			}
 			seen[pair] = true
-			block += "privilege exec level " + g.priv + " " + cmd + "\n"
+			block += "privilege " + mode + " level " + g.priv + " " + cmd + "\n"
 			emitted = true
 		}
 		if emitted {
@@ -90,12 +97,16 @@ func CiscoVars(req Request, d Data) map[string]string {
 		authzCmd = "local group " + aaaGroup
 	}
 
+	levels := ciscoLevels(groups)
 	authzCommands := "! Per-command authorization not enabled.\n! To restrict commands per group, use 'tacctl group commands'."
 	if anyGroupHasCommands(c) {
-		authzCommands = "! Per-command authorization (managed by 'tacctl group commands').\n" +
-			"aaa authorization commands 1 default " + authzCmd + "\n" +
-			"aaa authorization commands 7 default " + authzCmd + "\n" +
-			"aaa authorization commands 15 default " + authzCmd
+		authzCommands = ciscoAuthzBlock(c, groups, levels, authzCmd)
+	}
+	// Command accounting: one line per level in use, whether or not any
+	// group has rules.
+	acct := make([]string, 0, len(levels))
+	for _, l := range levels {
+		acct = append(acct, "aaa accounting commands "+strconv.Itoa(l)+" default start-stop group "+tacacsGroup)
 	}
 
 	// The VTY ACL from the management ACL; IPv6 entries are skipped (they
@@ -137,6 +148,7 @@ func CiscoVars(req Request, d Data) map[string]string {
 		"VTY_ACL_BLOCK":        aclBlock,
 		"VTY_ACCESS_CLASS":     accessClass,
 		"AUTHZ_COMMANDS_BLOCK": authzCommands,
+		"ACCT_COMMANDS_BLOCK":  strings.Join(acct, "\n"),
 		"AUTHN_METHODS":        authn,
 		"AUTHZ_EXEC_METHODS":   authzExec,
 		"EXEC_TIMEOUT":         execTimeout(c, scope),
@@ -151,6 +163,54 @@ func CiscoVars(req Request, d Data) map[string]string {
 		}
 	}
 	return vars
+}
+
+// ciscoLevels are the privilege levels in use: the distinct priv-lvls of
+// the groups, ascending.
+func ciscoLevels(groups []group) []int {
+	var out []int
+	for _, g := range groups {
+		if n, err := strconv.Atoi(strings.TrimSpace(g.priv)); err == nil && !slices.Contains(out, n) {
+			out = append(out, n)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+// ciscoAuthzBlock is the per-command authorization block (D5, D16): one
+// 'aaa authorization commands <L>' per level in use, except a level where
+// a group has no command rules (the server would deny that group every
+// command), which gets a commented line naming the group(s) and the fix;
+// then 'aaa authorization config-commands' and the commented console line.
+func ciscoAuthzBlock(c *conf.Config, groups []group, levels []int, methods string) string {
+	var b strings.Builder
+	b.WriteString("! Per-command authorization (managed by 'tacctl group commands'): one line per\n" +
+		"! privilege level in use; the server decides each command, including configuration\n" +
+		"! commands, which IOS sends as ordinary commands.\n")
+	for _, l := range levels {
+		lvl := strconv.Itoa(l)
+		var bare []string
+		for _, g := range groups {
+			if strings.TrimSpace(g.priv) == lvl && len(policy.Lines(c, g.name)) == 0 {
+				bare = append(bare, g.name)
+			}
+		}
+		line := "aaa authorization commands " + lvl + " default " + methods
+		switch len(bare) {
+		case 0:
+			b.WriteString(line + "\n")
+		case 1:
+			b.WriteString("! " + line + "   ! NOT emitted: group '" + bare[0] + "' has no command rules and would be denied every command;" +
+				" run 'tacctl group commands default " + bare[0] + " permit'\n")
+		default:
+			b.WriteString("! " + line + "   ! NOT emitted: groups '" + strings.Join(bare, "', '") + "' have no command rules and would be denied every command;" +
+				" run 'tacctl group commands default <group> permit' for each\n")
+		}
+	}
+	b.WriteString("aaa authorization config-commands\n")
+	b.WriteString("! aaa authorization console   ! uncomment to have the console line ask the server too")
+	return b.String()
 }
 
 // scopeSecret is "$(model_scope <scope> secret)".
@@ -218,6 +278,12 @@ func renderCisco(o *out, req Request, d Data) error {
 	}
 	o.echo("  - Manage 'privilege exec level' mappings with 'tacctl group privilege add ...'")
 	o.echo("    (defaults move only the verified priv-15 commands DOWN; nothing is moved UP)")
+	if anyGroupHasCommands(d.Conf) {
+		o.echo("  - A group at priv-lvl 15 is kept apart from the superusers only by the server's")
+		o.echo("    rules: with the server unreachable, the 'local' fallback lets it run everything")
+		o.echo("  - Commands typed on the console line are not sent to the server for authorization")
+		o.echo("    unless 'aaa authorization console' is uncommented")
+	}
 	o.echo("  - Using template: " + t.Origin())
 	o.echo("")
 	return nil
