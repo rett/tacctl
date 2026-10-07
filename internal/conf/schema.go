@@ -27,10 +27,12 @@ const (
 	TypeBackendList    = "backend_list"
 	TypeCiscoCmdList   = "cisco_cmd_list"
 	TypeCommandRules   = "command_rules"
+	// TypeJunosRegexList is junos.<group>.<attr> (junos.go).
+	TypeJunosRegexList = "junos_regex_list"
 )
 
 // listTypes take list input (conf_set_list / a JSON list).
-var listTypes = []string{TypeCIDRList, TypeCiscoCmdList, TypeCommandRules, TypeBackendList}
+var listTypes = []string{TypeCIDRList, TypeCiscoCmdList, TypeCommandRules, TypeBackendList, TypeJunosRegexList}
 
 // Rule is one schema entry.
 type Rule struct {
@@ -110,6 +112,11 @@ func NewSchema(backends []string) *Schema {
 			{"scope_mgmt_acl.permits.", Rule{Type: TypeCIDRList, Default: []any{}, HasDefault: true}},
 			// listeners.<backend>.<name>: its default is per name.
 			{"listeners.", Rule{Type: TypeListener, Depth: 2}},
+			// The per-group device settings of 0.2.2 (junos.go); no default:
+			// absent is "not set" (the priv-lvl band decides).
+			{"junos.", Rule{Type: TypeJunosRegexList, Depth: 2}},
+			{"wti_level.", Rule{Type: TypeEnum, Values: WTILevels}},
+			{"tier.", Rule{Type: TypeEnum, Values: Tiers}},
 		},
 	}
 }
@@ -307,6 +314,8 @@ func (s *Schema) Validate(path string, value any, isList bool) string {
 		return ""
 	case TypeCommandRules:
 		return validateCommandRules(value)
+	case TypeJunosRegexList:
+		return junosListProblem(path, value)
 	}
 	return fmt.Sprintf("unknown schema type %s", py.ReprString(t))
 }

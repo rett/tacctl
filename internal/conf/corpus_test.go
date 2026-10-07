@@ -393,6 +393,9 @@ func TestGolden(t *testing.T) {
 		}
 	}
 	for _, prefix := range s.Wildcards() {
+		if prefix == "junos." || prefix == "wti_level." || prefix == "tier." {
+			continue // 0.2.2's per-group device settings: not in 0.1.16's golden
+		}
 		v, ok := walk(m, strings.TrimSuffix(prefix, "."), false)
 		if sub, isMap := v.(*yamlpy.Map); !ok || !isMap || sub.Len() == 0 {
 			t.Errorf("golden lacks a %s<name> key", prefix)
