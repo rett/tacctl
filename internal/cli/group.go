@@ -33,7 +33,9 @@ var groupSpecs = map[string]Spec{
 	"remove": {MinArgs: 1, MaxArgs: 1, Args: []string{KindGroups}},
 	"edit":   {MinArgs: 3, MaxArgs: 3, Args: []string{KindGroups, "priv-lvl|juniper-class|wti-level|tier", ""}},
 	"show":   {MinArgs: 1, MaxArgs: 1, Args: []string{KindGroups}},
-	"junos":  {MinArgs: 2, MaxArgs: 4, Args: []string{KindGroups, "list|clear|deny-commands|deny-configuration", "list|add|remove|clear", ""}},
+	"preset roles": {Flags: []Flag{
+		{Names: []string{"--dry-run"}}, {Names: []string{"--force"}}, {Names: []string{"--mgmt-filter"}, Value: true}}},
+	"junos": {MinArgs: 2, MaxArgs: 4, Args: []string{KindGroups, "list|clear|deny-commands|deny-configuration", "list|add|remove|clear", ""}},
 
 	"commands list":    {MinArgs: 1, MaxArgs: 1, Args: []string{KindGroups}},
 	"commands default": {MinArgs: 2, MaxArgs: 2, Args: []string{KindGroups, "permit|deny"}},
@@ -76,6 +78,10 @@ func groupCmd(inv *invocation) *cobra.Command {
 		withRun(verb("seed [<group>] [--force]", "Populate built-ins with safe defaults"), sub(inv.groupPrivilege, "seed")),
 	)
 	priv.RunE = n(inv.groupPrivilege)
+	preset := verb("preset roles [--dry-run] [--force] [--mgmt-filter <name>]", "Starting values for the roles",
+		withRun(verb("roles [--dry-run] [--force] [--mgmt-filter <name>]", "Starting values for viewer, operator, engineer and superuser"), sub(inv.groupPreset, "roles")),
+	)
+	preset.RunE = n(inv.groupPreset)
 	c := verb("group <subcommand>", "Group management (list, add, edit, remove)",
 		withRun(verb("list", "List all groups"), n(inv.groupList)),
 		withRun(verb("show <name>", "Every setting of a group and where it comes from"), n(inv.groupShow)),
@@ -83,7 +89,7 @@ func groupCmd(inv *invocation) *cobra.Command {
 		withRun(verb("remove <name>", "Remove a custom group"), n(inv.groupRemove)),
 		withRun(verb("edit <name> {priv-lvl <0-15>|juniper-class <class>|wti-level <level>|tier <tier>}", "Change one setting of a group"), n(inv.groupEdit)),
 		withRun(verb("junos <group> {list|clear|deny-commands|deny-configuration} ...", "Per-group Junos deny rules"), n(inv.groupJunos)),
-		cmds, priv,
+		cmds, priv, preset,
 	)
 	// No sub-command, help or an unknown word: the usage, exit 1.
 	c.RunE = n(func([]string) error {

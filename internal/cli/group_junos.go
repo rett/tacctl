@@ -246,7 +246,12 @@ func (inv *invocation) groupShow(args []string) error {
 	c := inv.app.Conf()
 	title := "Group '" + group + "'"
 	row := func(label, value string) { inv.echo(fmt.Sprintf("  %-18s %s", label+":", value)) }
-	hint := func(value, cmd string) string { return fmt.Sprintf("%-32s %s", value, cmd) }
+	hint := func(value, cmd string) string {
+		if len(value) > 32 {
+			return value + "\n" + strings.Repeat(" ", 21) + cmd
+		}
+		return fmt.Sprintf("%-32s %s", value, cmd)
+	}
 	inv.echo("")
 	inv.echoE(ui.Bold + title + ui.NC)
 	inv.echo(ui.Rule(title))

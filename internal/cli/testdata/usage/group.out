@@ -17,6 +17,10 @@ Subcommands:
   commands list|default|add|remove|clear|seed <group> ...  Per-group authorized commands
   privilege list|add|remove|clear|seed <group> ...         Per-group Cisco priv-exec mappings
   junos <group> list|clear|deny-commands|deny-configuration ...  Per-group Junos deny rules
+  preset roles                                        Starting values for viewer, operator, engineer, superuser (confirms)
+      --dry-run                                       (preset) Show what would change; write nothing
+      --force                                         (preset) Replace values that differ from the preset's
+      --mgmt-filter <name>                            (preset) Deny engineers that Junos firewall filter too
 
 'auto' (the default) takes the WTI level and the tier from the priv-lvl:
 below 7 readonly, 7-14 operator, 15 superuser.
@@ -28,6 +32,7 @@ Examples:
   tacctl group edit operator juniper-class NEW-CLASS
   tacctl group edit engineer tier engineer
   tacctl group show engineer
+  tacctl group preset roles --dry-run
   tacctl group remove helpdesk
   tacctl group commands default operator deny
   tacctl group commands add operator show --action permit

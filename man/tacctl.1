@@ -553,6 +553,33 @@ in tacctl.yaml.
 .TP
 .B "group junos " \fIgroup\fR " clear"
 Drop both sets (confirms).
+.TP
+.B "group preset roles [ --dry-run ] [ --force ] [ --mgmt-filter \fIname\fR ]"
+Starting values for four roles: viewer (the built-in
+.BR readonly ),
+.BR operator ,
+.B engineer
+(created at priv-lvl 15 with class ENG-CLASS when absent; tier
+.BR engineer )
+and
+.BR superuser :
+their WTI levels, the Junos deny sets of the first three and engineer's
+Cisco command rules (everything but the device's trust boundary and
+lifecycle). It lists every setting as set, unchanged, or kept (a
+different value is there; pass
+.B --force
+to replace it), then asks before writing.
+.B --dry-run
+writes nothing;
+.B --mgmt-filter
+adds the Junos firewall filter guarding the management interface to
+engineer's deny-configuration. Users are not moved
+.RB ( "user move" ).
+Every value can be changed afterwards with
+.BR "group edit" ,
+.B "group junos"
+and
+.BR "group commands" .
 .SS Server configuration \fB(tacctl config)\fR
 .TP
 .B config show
