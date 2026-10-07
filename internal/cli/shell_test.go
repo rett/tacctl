@@ -460,7 +460,7 @@ func TestShellExplain(t *testing.T) {
 			"\n  -p <port>  ", "Connect to <port>",
 			"Next: <Enter> to run\n",
 		}},
-		{[]string{"device", "add", "x"}, []string{"Usage:\n  add <name> <address> [options]", "  --vendor cisco|juniper|wti|other", "  --port <n>                        Its ssh port (default 22)\n", "  --host-key SHA256:<fp>            Register only if the device offers this key; pin it alone\n", "Next: <address>\n"}},
+		{[]string{"device", "add", "x"}, []string{"Usage:\n  add [<name>] <address> [options]", "  --vendor cisco|juniper|wti|other", "  --port <n>                        Its ssh port (default 22)\n", "  --host-key SHA256:<fp>            Register only if the device offers this key; pin it alone\n", "Next: <address>, or <Enter> to run\n"}},
 		{[]string{"device", "address", "x"}, []string{"Next: [<address>], or <Enter> to run\n"}},
 		{[]string{"version"}, []string{"Usage:\n  version [--long]\n", "Next: <Enter> to run\n"}},
 	}

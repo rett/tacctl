@@ -400,9 +400,9 @@ func (inv *invocation) deviceCheck(args []string) error {
 	}
 	switch {
 	case p.Has("--all") && len(p.Args) > 0:
-		return inv.usageErr("--all takes no name.", "Usage: tacctl device check <name>|--all")
+		return inv.usageErr("--all takes no name.", "Usage: tacctl device check <name>|--all [--json]")
 	case !p.Has("--all") && len(p.Args) == 0:
-		return inv.usageErr("Usage: tacctl device check <name>|--all")
+		return inv.usageErr("Usage: tacctl device check <name>|--all [--json]")
 	}
 	_, res, err := inv.deviceLoad()
 	if err != nil {
@@ -431,15 +431,22 @@ func (inv *invocation) deviceCheck(args []string) error {
 			probeOf = append(probeOf, i)
 		}
 	}
+	// The sysNames too, alongside.
 	reach := make([]string, len(entries))
-	done := make(chan struct{})
+	var sys []checkSysName
+	done := make(chan struct{}, 2)
 	go func() {
 		for j, r := range devreg.Probe(inv.ctx, probes) {
 			reach[probeOf[j]] = r
 		}
-		close(done)
+		done <- struct{}{}
+	}()
+	go func() {
+		sys = inv.checkSysNames(entries)
+		done <- struct{}{}
 	}()
 	keys := devreg.RescanKeys(inv.ctx, inv.app.Runner, targets)
+	<-done
 	<-done
 	path := inv.app.Paths.SeenCache
 	unlock, err := devreg.LockSeen(path)
@@ -463,12 +470,69 @@ func (inv *invocation) deviceCheck(args []string) error {
 	for _, k := range keys {
 		byName[strings.ToLower(k.Target.Name)] = k
 	}
+	js := []deviceCheckJSON{}
 	for i, e := range entries {
 		k, scanned := byName[strings.ToLower(e.Name)]
-		inv.printCheck(res, e, reach[i], k, scanned)
+		rows := inv.checkRows(res, e, reach[i], k, scanned, sys[i])
+		if p.Has("--json") {
+			js = append(js, checkJSONOf(res, e, reach[i], rows, sys[i]))
+			continue
+		}
+		inv.printCheck(e, rows)
+	}
+	if p.Has("--json") {
+		return inv.printJSON(js)
 	}
 	inv.echo("")
 	return nil
+}
+
+// deviceCheckJSON is one entry of 'device check --json': the rows as the
+// checklist prints them, and the sysName on its own.
+type deviceCheckJSON struct {
+	Name      string             `json:"name"`
+	Source    string             `json:"source"`
+	Address   string             `json:"address"`
+	Vendor    string             `json:"vendor"`
+	Scope     string             `json:"scope"`
+	Seen      string             `json:"seen"`
+	Reachable string             `json:"reachable"`
+	HostKey   string             `json:"host_key"`
+	Notices   []deviceNoticeJSON `json:"notices"`
+	// SysName is the SNMP sysName (null: none read), SysNameMatch whether
+	// it is the device's own name, SysNameError why there is none.
+	SysName      *string `json:"sysname"`
+	SysNameMatch *bool   `json:"sysname_match"`
+	SysNameError string  `json:"sysname_error,omitempty"`
+}
+
+func checkJSONOf(res *devreg.Resolver, e devreg.Entry, reach string, rows []checkRow, sys checkSysName) deviceCheckJSON {
+	j := deviceCheckJSON{Name: e.Name, Source: string(e.Source), Address: e.Address, Vendor: e.Vendor, Scope: e.Scope,
+		Reachable: dash(reach), Notices: []deviceNoticeJSON{}}
+	for _, r := range rows {
+		switch r.label {
+		case "Seen":
+			j.Seen = r.value
+		case "Host key":
+			j.HostKey = r.value
+		}
+	}
+	for _, n := range devreg.Open(res.NoticesFor(e)) {
+		j.Notices = append(j.Notices, deviceNoticeJSON{Kind: n.Kind, Text: n.Text})
+	}
+	switch {
+	case sys.err == nil && sys.name != "":
+		name, match := sys.name, devreg.NameMatches(e, sys.name)
+		j.SysName, j.SysNameMatch = &name, &match
+	case sys.problem != "":
+		j.SysNameError = sys.problem
+	case sys.err != nil:
+		j.SysNameError = "no answer"
+		if why := snmpReason(sys.err); why != "" {
+			j.SysNameError += " (" + why + ")"
+		}
+	}
+	return j
 }
 
 // checkHost is what a probe of e connects to: its hostname, else its
@@ -487,13 +551,24 @@ func checkHost(e devreg.Entry) string {
 	return e.Address
 }
 
+// checkRow is one line of the checklist.
+type checkRow struct{ label, value string }
+
 // printCheck is the checklist of one entry.
-func (inv *invocation) printCheck(res *devreg.Resolver, e devreg.Entry, reach string, k devreg.KeyResult, scanned bool) {
+func (inv *invocation) printCheck(e devreg.Entry, rows []checkRow) {
 	head := "Check " + e.Name + " (" + dashAddrText(e.Address) + ", " + e.Vendor + ")"
 	inv.echo("")
 	inv.echoE(ui.Bold + head + ui.NC)
 	inv.echo(ui.Rule(head))
-	row := func(k, v string) { inv.write(fmt.Sprintf("  %-12s %s\n", k+":", v)) }
+	for _, r := range rows {
+		inv.write(fmt.Sprintf("  %-12s %s\n", r.label+":", r.value))
+	}
+}
+
+// checkRows are the checklist rows of one entry.
+func (inv *invocation) checkRows(res *devreg.Resolver, e devreg.Entry, reach string, k devreg.KeyResult, scanned bool, sys checkSysName) []checkRow {
+	var rows []checkRow
+	row := func(k, v string) { rows = append(rows, checkRow{k, v}) }
 	switch {
 	case e.Source == devreg.SourceHost && e.Configured:
 		row("Scope", e.Scope)
@@ -550,6 +625,9 @@ func (inv *invocation) printCheck(res *devreg.Resolver, e devreg.Entry, reach st
 			row("Host key", "matches the pinned keys")
 		}
 	}
+	if v := sys.row(e); v != "" {
+		row("SNMP name", v)
+	}
 	ns := devreg.Open(res.NoticesFor(e))
 	if len(ns) == 0 {
 		row("Notices", "none")
@@ -561,6 +639,7 @@ func (inv *invocation) printCheck(res *devreg.Resolver, e devreg.Entry, reach st
 		}
 		row(label, n.Kind+": "+n.Text)
 	}
+	return rows
 }
 
 func dashAddrText(a string) string {

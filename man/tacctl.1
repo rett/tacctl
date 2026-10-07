@@ -1322,6 +1322,77 @@ secret, the module, the SELinux module and the sudoers drop-in, and reports
 accounts left with no way to log in. Local accounts, home directories, the
 tac-* groups and installed packages are left in place.
 .TP
+.B "config snmp show"
+The SNMP access
+.B "device add"
+and
+.B "device check"
+read a device's
+.B sysName.0
+with: the version, port, timeout and v3 protocols, and whether the community
+and the v3 user and passphrases are set (never what they are). The settings are
+.B snmp.version
+.RB ( v2c " or " v3 ;
+unset: no lookup),
+.B snmp.port
+(default 161),
+.B snmp.timeout
+(seconds, 1 to 10, default 2; one retry),
+.B snmp.v3.auth
+.RB ( sha ,
+the default, or
+.BR sha256 )
+and
+.B snmp.v3.priv
+.RB ( aes128 )
+in
+.IR tacctl.yaml ;
+the credentials are in
+.IR /etc/tacctl/snmp.yaml .
+v3 is authPriv only (HMAC-SHA-96 or HMAC-SHA-256-192, AES-128-CFB), with
+engine discovery. Administrators only: the credentials reach every device.
+.B "tacctl config snmp"
+with no subcommand prints the usage.
+.TP
+.B "config snmp community " "[ \-\-stdin ]"
+Ask for the v2c community twice, without echo (or read one line from stdin
+with
+.BR \-\-stdin ),
+store it, and set
+.B snmp.version
+to
+.BR v2c .
+.TP
+.BI "config snmp v3\-user " user " [ \-\-auth sha|sha256 ] [ \-\-priv aes128 ] [ \-\-stdin ]"
+Store the v3 user with its authentication and privacy passphrases (each asked
+twice without echo, or one line each from stdin with
+.BR \-\-stdin ;
+at least 8 characters), and set
+.B snmp.version
+to
+.B v3
+and the protocols given.
+.TP
+.BI "config snmp port " "[ n ]"
+Show or set the agents' UDP port.
+.TP
+.BI "config snmp timeout " "[ seconds ]"
+Show or set the wait for an answer, 1 to 10 seconds (one retry after it).
+.TP
+.B "config snmp clear"
+Remove the credentials and unset
+.BR snmp.version :
+no lookups.
+.TP
+.BI "config snmp test " address|device
+Read the sysName of one address (or registered device) and print it, or the
+reason there is none: no answer (on v2c a wrong community, and on v3 a wrong
+privacy passphrase, look the same: the agent drops the request), or the v3
+report the agent sent
+.RB ( unknownUserName ,
+.BR wrongDigest ,
+\&...). Exit status 1 without a name.
+.TP
 .B "config sudoers " "{ show | install | remove } " [ group ]
 Manage the optional
 .I /etc/sudoers.d/tacctl
@@ -2649,7 +2720,7 @@ device sends, and the open notices with a count of the acknowledged ones
 lists them too, marked). It warns when the
 vendor tag and the registered vendor disagree.
 .TP
-.BI "device add " "name address " "[ \-\-vendor cisco|juniper|wti|other ] [ \-\-hostname " dns " ] [ \-\-port " n " ] [ \-\-description " text " ] [ \-\-legacy\-ssh ] [ \-\-host\-key SHA256:" fingerprint " | \-\-no\-host\-key ] [ \-\-allow\-generic ]"
+.BI "device add " "[ name ] address " "[ \-\-vendor cisco|juniper|wti|other ] [ \-\-hostname " dns " ] [ \-\-port " n " ] [ \-\-description " text " ] [ \-\-legacy\-ssh ] [ \-\-host\-key SHA256:" fingerprint " | \-\-no\-host\-key ] [ \-\-no\-lookup ] [ \-\-allow\-generic ]"
 Register a device. A name is letters, digits,
 .RB ` . ` ,
 .RB ` _ `
@@ -2689,6 +2760,33 @@ notice. A device that does not answer the scan, or offers no key matching
 .BR \-\-host\-key ,
 is refused and nothing is written. The output says which scope, if any, answers
 the address.
+.IP
+Next to the scan,
+.B add
+reads the device's own name, its SNMP
+.B sysName.0
+(see
+.BR "config snmp" ),
+and prints it
+.RI ( "The device calls itself '" sysname "' (SNMP sysName)." ).
+When it is neither the name given, the
+.BR \-\-hostname ,
+nor the first label of either (compared without regard to case), a warning
+names the fixes; the add goes ahead. A device that does not answer within the
+timeout (one retry), an empty sysName, or no SNMP set up is one info line
+.RI ( "No SNMP answer from " address "; no name hint." );
+when a scan recorded a NAS-Identifier for the address, that is shown instead,
+labelled as such. Nothing of it is stored.
+.B \-\-no\-lookup
+skips it. With no
+.IR name ,
+the sysName, lowercased, is offered as the name and taken only after a
+.B y
+at a terminal; without a terminal, without an answer, or when the sysName is
+not a valid device name or is a generic one (a WTI unit's Site ID
+.BR WTI ),
+the add is refused with the usage line. The offered name goes through every
+other check of the add.
 .TP
 .BI "device remove " "name[,name...] | \-\-all " [ \-y ]
 Remove devices from the registry, after confirmation (\c
@@ -2902,13 +3000,25 @@ non-generic one, else
 .B \-\-all
 includes the addresses that were only ever refused.
 .TP
-.BI "device check " name | \-\-all
+.BI "device check " name " | \-\-all [ \-\-json ]"
 A checklist per entry: the scope that answers the address, the vendor tag, the
 last sighting (from the seen cache), whether its ssh port accepts a TCP
 connection (3 seconds; a timeout may be a false alarm, as for
 .BR "list \-\-probe" ),
 the host keys it offers now against the pinned ones (kept for the notices;
-nothing is pinned), and its notices.
+nothing is pinned), for a registered device its SNMP name (the sysName and
+.B match
+or
+.BR differs ,
+.B no answer
+or why there is none; see
+.BR "config snmp" ),
+and its notices.
+.B \-\-json
+prints the rows for scripts, the sysName as
+.B sysname
+(null when none was read) with
+.BR sysname_match .
 .SS SSH to a device \fB(tacctl ssh)\fR
 .TP
 .BI "ssh " name|address " [ \-p " port " ] [ \-X | \-Y ] [ \-g ] [ { \-L | \-R | \-D } " spec " ]... [ \-\- " "ssh args" " ]"
@@ -3921,6 +4031,15 @@ Mode 0600, root only; absent means no devices. Edit it with
 which locks it, validates the result and replaces it atomically. Snapshots
 include it. The pinned keys of enrolled hosts are kept under
 .BR hosts: .
+.TP
+.I /etc/tacctl/snmp.yaml
+The SNMP community, or the v3 user and its passphrases, that
+.B "device add"
+and
+.B "device check"
+read a device's sysName with. Mode 0600, root only, written atomically by
+.BR "tacctl config snmp" ;
+never printed. Absent means none.
 .TP
 .I /etc/tacctl/console.yaml
 The login console's switches per tier, per-user overrides and settings

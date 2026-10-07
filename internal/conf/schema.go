@@ -95,6 +95,13 @@ func NewSchema(backends []string) *Schema {
 				Default: 20, HasDefault: true},
 			"backends.tacacs.metrics_address": {Type: TypeHostPort,
 				Default: "127.0.0.1:8080", HasDefault: true},
+			// The SNMP name hint of 'device add' (0.2.2; the credentials are in
+			// StateDir/snmp.yaml, never here). No version: no lookup.
+			"snmp.version": {Type: TypeEnum, Values: []string{"v2c", "v3"}},
+			"snmp.port":    {Type: TypeInt, Min: intp(1), Max: intp(65535), Default: 161, HasDefault: true},
+			"snmp.timeout": {Type: TypeInt, Min: intp(1), Max: intp(10), Default: 2, HasDefault: true},
+			"snmp.v3.auth": {Type: TypeEnum, Values: []string{"sha", "sha256"}},
+			"snmp.v3.priv": {Type: TypeEnum, Values: []string{"aes128"}},
 		},
 		wildcards: []wildcard{
 			{"privileges.", Rule{Type: TypeCiscoCmdList}},

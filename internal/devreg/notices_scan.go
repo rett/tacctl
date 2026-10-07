@@ -88,6 +88,10 @@ func nameMatches(e Entry, nas string) bool {
 	return strings.EqualFold(firstLabel(nas), e.Name)
 }
 
+// NameMatches is nameMatches for the CLI: whether a name the device gives
+// for itself (its SNMP sysName, its NAS-Identifier) is e's own name.
+func NameMatches(e Entry, name string) bool { return nameMatches(e, name) }
+
 // scanNotices are the notices the seen cache raises for e.
 func (r *Resolver) scanNotices(e Entry) []Notice {
 	var out []Notice

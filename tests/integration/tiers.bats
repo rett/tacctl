@@ -99,6 +99,19 @@ print("" if v is None else v)' "${TACCTL_STATE_DIR}/store.yaml" "$1" "$2"
     assert_failure
 }
 
+@test "tier: config snmp (the SNMP credentials) is the superuser's alone" {
+    local who
+    for who in ro op; do
+        as_user "$who" yes -- config snmp show
+        assert_failure
+        assert_output --partial "not permitted for the"
+    done
+    as_user su yes -- config snmp show
+    assert_success
+    run "$TACCTL_BIN_SCRIPT" config sudoers tiers show
+    refute_output --partial "snmp"
+}
+
 @test "tier: superuser has full access" {
     as_user su yes -- user add newbie readonly --hash "$HASH" --scopes lab
     assert_success

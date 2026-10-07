@@ -129,6 +129,8 @@ func init() {
 			s, ok = configSpecs[path[1]]
 		case path[1] == "linux":
 			s, ok = configLinuxSpecs[path[2]]
+		case path[1] == "snmp":
+			s, ok = configSNMPSpecs[path[2]]
 		case path[1] == "allow" || path[1] == "deny" || path[1] == "mgmt-acl":
 			s, ok = configPolicySpecs[path[2]]
 		}

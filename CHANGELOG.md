@@ -128,6 +128,29 @@ current behaviour; this file is where history lives.
    the PAM files it writes (`/var/lib/tacctl-client/protocol` and
    `pam.sha256`; the removal script deletes them). Same tier as `host list`.
 
+8. **`tacctl device add` says what the device calls itself.** With SNMP set
+   up, it reads the device's `sysName.0` next to the host-key scan and prints
+   `The device calls itself '<sysName>' (SNMP sysName).`; when that is not the
+   name given, its `--hostname`, or the first label of either, a warning
+   names the fixes (`add --hostname <sysName>, or register it as <name>`) and
+   the add goes ahead. A device that does not answer within the timeout (2 s
+   by default, one retry), an empty sysName, or no SNMP set up is one info
+   line (`No SNMP answer from <address>; no name hint.`), and a NAS-Identifier
+   a scan recorded for the address is shown in its place, labelled as such;
+   `--no-lookup` skips it. `tacctl device add <address>` with no name offers
+   the sysName, lowercased, and takes it after a `y` at a terminal; without a
+   terminal or an answer, or for a generic sysName such as a WTI unit's `WTI`,
+   it is refused with the usage line. `device check` gains an `SNMP name` row
+   (`match` or `differs`) and a `--json` option with a `sysname` field.
+   SNMP is v2c or v3 at authPriv (SHA or SHA-256, AES-128), spoken by tacctl
+   itself: `tacctl config snmp community|v3-user <user>` asks for the secrets
+   without echo (or reads them with `--stdin`) and keeps them in
+   `/etc/tacctl/snmp.yaml` (0600, never printed); `config snmp show`, `port`,
+   `timeout`, `clear` and `test <address>` complete it, with `snmp.version`,
+   `snmp.port`, `snmp.timeout`, `snmp.v3.auth` and `snmp.v3.priv` in
+   `tacctl.yaml`. `config snmp` is for administrators only. Nothing of the
+   hint is stored.
+
 ## 0.2.1 (2026-10-07)
 
 ### What changed

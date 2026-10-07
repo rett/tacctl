@@ -174,6 +174,7 @@ Every change goes one way: check that no generated file was edited by hand → s
 | `/etc/tacctl/backups/` | Snapshots (`<timestamp>/`), `legacy/` (old-style backups, pre-store config, displaced files), `password-dates/` (read by the importer) |
 | `/etc/tacctl/templates/` | Device config templates: a copy of each shipped one, which you may customize (a file here overrides the built-in one); `.shipped.sha256` is the manifest of what tacctl wrote there, `<name>.template.new` is a new release's version beside a template you customized (see [Custom Templates](#custom-templates)) |
 | `/etc/tacctl/devices.yaml` | The device registry (`tacctl device`): names, addresses and settings of the network devices; 0600 root, absent means none. Snapshots include it |
+| `/etc/tacctl/snmp.yaml` | The SNMP community, or the v3 user and passphrases, that `device add` and `device check` read a device's sysName with (`tacctl config snmp`); 0600 root, never printed, absent means none |
 | `/etc/tacctl/console.yaml` | The login console's settings (`tacctl console`): per-tier switches, per-user overrides, idle timeout, system shell; 0600 root, absent means the defaults (the console on for every tier). Snapshots include it |
 | `/etc/tacctl/linux-hosts`, `/etc/tacctl/linux-uids` | Enrolled Linux hosts; the UID each user gets on every host |
 | `/var/lib/tacctl/` | tacctl's variable data; 0711 (every user may pass through, only root may list it) |
@@ -625,12 +626,13 @@ The device registry (`/etc/tacctl/devices.yaml`) gives the network devices that 
 
 ```
 tacctl device add core-sw1 10.99.0.1 --vendor cisco --legacy-ssh   # register; pins the ssh host keys and prints their fingerprints
-tacctl device check core-sw1        # scope, vendor tag, last seen, reachable, host key against the pin
+tacctl device check core-sw1        # scope, vendor tag, last seen, reachable, host key against the pin, SNMP name
 tacctl ssh core-sw1                 # a session, as you
 tacctl ssh core-sw1 -- show version # one remote command
 ```
 
 1. **Register.** A device whose address a scope's prefixes cover is `configured` in that scope (`tacctl device list`); one that no scope covers registers as `unconfigured`, and no one may connect to it. `--legacy-ssh` is for old IOS that offers only SHA-1 key exchange and `ssh-rsa`; `--vendor wti` selects the password-only method order. `device add` pins the host keys the device offers: **compare the printed fingerprints with the device's console** (Cisco `show ip ssh`, Junos `file show /etc/ssh/ssh_host_ed25519_key.pub` from the CLI, or `ssh-keygen -lf` on the same file from `start shell`, Linux `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`). Names that are factory defaults (`switch`, `router`) are refused; name the device on the device too. Devices that already authenticate but are not registered are listed by `tacctl device discover`, each with a ready `device add` line. See [Host keys of devices and hosts (pinning)](#host-keys-of-devices-and-hosts-pinning).
+   **The device's own name.** With SNMP set up (`tacctl config snmp`), `device add` also reads the device's `sysName.0` and says what the device calls itself; a name that is not the one given (or its `--hostname`, or the first label of either) is a warning with the fixes, and the add goes ahead. `tacctl device add <address>` with no name offers the sysName, lowercased, at a terminal. See [The SNMP name hint](#the-snmp-name-hint).
 2. **Who may connect.** An active tacctl user (in the store, not disabled) whose scopes include the device's scope, at every tier, superusers included. A local account that is not a tacctl user, a disabled user and a device in no configured scope are refused, and each refusal is logged to syslog (`ssh DENY`). A read-only or operator user (a member of `tac-users` with the [tiers file](#tiered-access-for-tacctl-users-opt-in) installed) may run `tacctl ssh` and sees only the devices of its own scopes.
 3. **How it logs in.** ssh runs as you, never as root, and logs in with your own username and your tacctl password (which the device checks against this server): no agent, no key, no other login. Run it from your own account; as root it refuses. It needs a terminal.
 4. **Plain `ssh`.** `tacctl device ssh-config > ~/.ssh/tacctl.conf` and `Include ~/.ssh/tacctl.conf` at the top of `~/.ssh/config` give a plain `ssh core-sw1` (and `scp`) the same options and the same pin. The fragment has one `Host` block per device you may see and no `User` line, so ssh logs in with your local username: a tacctl user whose local account has another name adds `User <tacctl name>` to its own `~/.ssh/config`. Re-run it after the registry changes.
@@ -809,6 +811,13 @@ config linux remove-script [--output <file>]  Write the removal script (no secre
 config linux uid [<user> [<uid>]]           Show or change the UID a user gets on every host
 config linux uid-range [<min>-<max>]        Show or change the UID range of all hosts (default 80000-89999)
 config linux builds [list|clear]            Show or drop the pam_tacplus modules 'host enroll' built in containers
+config snmp show                            The SNMP settings of the name hint, and whether the credentials are set (never what they are)
+config snmp community [--stdin]             Set the v2c community (asked twice, not echoed; --stdin: one line); the version becomes v2c
+config snmp v3-user <user> [--auth sha|sha256] [--priv aes128] [--stdin]
+                                            Set the v3 user and its authentication and privacy passphrases (authPriv); the version becomes v3
+config snmp port [<n>] | timeout [<seconds>]  Show or set the agents' UDP port (default 161) and the wait for an answer (1-10, default 2; one retry)
+config snmp clear                           Remove the credentials and unset the version: no lookups
+config snmp test <address|device>           Read one device's sysName, or say why there is none (timeout, unknownUserName, wrongDigest, ...)
 config sudoers [show|install|remove] [grp]  Manage NOPASSWD sudoers drop-in for tacctl
 config sudoers tiers [show|install|remove]  Manage per-tier (RO/OP/SU) sudoers rules for tacctl users with local accounts
 config password-age [days]                  Show or set password age warning threshold (default 90)
@@ -880,7 +889,7 @@ commands:                    # per-group command-authz rules. Rendered for both 
     - { name: "*",        action: deny }
 ```
 
-Keys without a shipped default, written by their commands: `backends.enabled` (`backend enable|disable`), `backends.tacacs.level` / `backends.tacacs.metrics_address` (`config loglevel|metrics`), `listeners.<backend>.<name>` (`config listen`), and per scope `aaa.order`, `exec_timeout`, `tacacs_group`, `radius_group`, `scope_auth_method`, `scope_mgmt_acl.*`.
+Keys without a shipped default, written by their commands: `backends.enabled` (`backend enable|disable`), `backends.tacacs.level` / `backends.tacacs.metrics_address` (`config loglevel|metrics`), `listeners.<backend>.<name>` (`config listen`), `snmp.version` (`v2c`|`v3`; unset: no SNMP lookup), `snmp.port` (161), `snmp.timeout` (1..10 s, 2), `snmp.v3.auth` (`sha`|`sha256`) and `snmp.v3.priv` (`aes128`) (`config snmp`; the credentials are never in `tacctl.yaml`), and per scope `aaa.order`, `exec_timeout`, `tacacs_group`, `radius_group`, `scope_auth_method`, `scope_mgmt_acl.*`.
 
 Merge semantics:
 - Maps deep-merge (overriding `password.max_age_days` keeps the default `password.min_length`).
@@ -955,11 +964,12 @@ The device registry gives names to the network devices that authenticate here. I
 ```
 device list [--stale] [--unconfigured] [--scan] [--probe] [--json]   Registered devices, then enrolled hosts: scope, STATE (configured: a scope's prefixes cover the address; unconfigured; stale), last seen / by / via from the seen cache, open notices; --scan scans first, --probe adds REACH (TCP connect to the ssh port, 3 s)
 device show <name|address> [--all] [--json]       One entry in full (scope and routing prefix, shadowed scopes, vendor tag, pinned keys, sightings and NAS-Identifier, the open notices and how many are acknowledged; --all lists the acknowledged ones too, marked)
-device add <name> <address>                       Register a device (writes: administrators only)
+device add [<name>] <address>                     Register a device (writes: administrators only); no name: the SNMP sysName is offered at a terminal
       --vendor cisco|juniper|wti|other            Default other; drives the ssh profile, never tags the address in the scope
       --hostname <dns>, --port <n>, --description <text>, --legacy-ssh
       --host-key SHA256:<fp>                      Register only if the device offers a key with this fingerprint; pin that key alone
       --no-host-key                               Register without scanning: unpinned, with a hostkey-unpinned notice
+      --no-lookup                                 Do not read the device's own name by SNMP (sysName)
       --allow-generic                             Register a generic name (switch, router, cisco, ubuntu, ...) anyway
 device remove <name>[,<name>...] | --all [-y]     Remove from the registry (confirms; hosts, scopes and vendor tags are not touched)
 device rename <old> <new> [--allow-generic]
@@ -977,7 +987,7 @@ device ssh <name|address> [-p <port>] [-X|-Y] [-g] [-L|-R|-D <spec>]... [-- <ssh
 device ssh-config                                 Print an ssh_config Include for your devices (Host blocks with the vendor options and the pin)
 device scan [--full] [--since <dur>] [--backend <id>]   Read the backends' logs into the seen cache from where the last scan stopped; re-scan pinned host keys (never re-pins); print each log's window and the notices
 device discover [--all] [--backend <id>]          Scan, then list the addresses that authenticated unregistered, each with a ready 'tacctl device add' line; --all adds those only refused
-device check <name>|--all                         Checklist: scope, vendor tag, last seen, reachable (TCP connect, 3 s), host key against the pin, notices
+device check <name>|--all [--json]               Checklist: scope, vendor tag, last seen, reachable (TCP connect, 3 s), host key against the pin, SNMP name (sysName, match or differs), notices; --json: the rows, with sysname
 ```
 
 A device is found by name (any case) or by its registered address; an unregistered address is not found, even when a scope covers it. An address is registered once. A device name is letters, digits, `.`, `_` and `-`, starting with a letter or digit, at most 253 characters with each dotted part at most 63, so a fully qualified host name (`sw1.site-a.example`) is one. An enrolled host's name has no dot and at most 26 characters, because it also names the host's scope (`linux-<name>`); its fully qualified name is its hostname. Enrolled Linux hosts share the namespace and appear in `list` and `show` as `linux` entries, read-only. `list`, `show`, `notices`, `ssh-config` and `tacctl ssh` are open to the read-only and operator tiers, limited to the entries of their own scopes (`tacctl ssh` is limited so for every tier); `export` is operator-level, filtered the same way.
@@ -985,6 +995,21 @@ A device is found by name (any case) or by its registered address; an unregister
 A name that is a factory or image default is refused with the command that names the device on the device itself (`hostname`, `set system host-name`, ...); a host enrolled under such a name before the registry existed is not refused and carries a `generic-name` notice. `host enroll --name` follows the same rules. Add your own patterns with `generic_names:` (regular expressions, whole-name, case-insensitive) in `devices.yaml`.
 
 **Seen data.** `device scan` reads what the daemons logged about each device into `/var/lib/tacctl/devices-seen.json` (0600, a cache: never snapshotted, `--full` rebuilds it): the tacquito journal (`journalctl -u tacquito … -o json`, resuming at its cursor; the `accepting user [u] from [address]` / `failed to validate the user [u] from [address]` lines, `bad secret detected for ip [address:port]`, `remote [address:port] has no secret providers` (no scope covers the address), and at log level 30 `prefix secret provider matches remote [address]`) and FreeRADIUS's `tacctl-auth.log` with its rotations (`client=`, `nas=`, `user=`, resuming by inode and offset). The first scan reads the last `stale-days` days; `--full` everything the logs hold, `--since 7d` that stretch. Per address it keeps the first and last sighting, the count, the last user, outcome and backend and the NAS-Identifier; records unseen for twice `stale-days` are dropped. `list` and `show` read the cache only (`seen data as of <time>`); LAST SEEN is `rejected <time> (bad secret)` when the last exchange was refused. `check` and `list --probe` connect to the ssh port: the server often has no route to management ports, so a timeout may be a false alarm. `scan`, `discover` and `check` are operator-level.
+
+#### The SNMP name hint
+
+`device add <name> <address>` reads the device's own name, `sysName.0`, next to the host-key scan and compares it with the name given:
+
+```
+$ tacctl device add core-sw1 192.0.2.10 --vendor juniper
+[INFO] Device 'core-sw1' registered: 192.0.2.10, juniper.
+  The device calls itself 'sw1.site-a.example' (SNMP sysName).
+  ! That is not the name given or its --hostname: add --hostname sw1.site-a.example, or register it as sw1.site-a.example.
+```
+
+A match (the name, the `--hostname`, or the first label of either, in any case) prints the first line only; a mismatch is a warning, never a refusal. A device that does not answer within the timeout (`snmp.timeout`, 2 s by default, one retry), an empty sysName, or no SNMP set up is one info line (`No SNMP answer from 192.0.2.10; no name hint.`), and the add goes ahead; when a scan recorded a NAS-Identifier for the address, that is shown instead, labelled `(NAS-Identifier seen by a scan)`. `--no-lookup` skips it. `device add <address>` with no name offers the sysName, lowercased, and takes it only after a `y` at a terminal; without a terminal, without an answer, or when the sysName is no valid device name or a generic one (a WTI unit's Site ID `WTI`), it is refused with the usage line. `device check` shows the sysName in a `SNMP name` row (`match` or `differs`), and `--json` as `sysname`. Nothing of it is stored.
+
+SNMP is v2c (a community) or v3 at authPriv (HMAC-SHA-96 or HMAC-SHA-256-192, AES-128), read by tacctl itself (no net-snmp): `tacctl config snmp community` or `tacctl config snmp v3-user <user> [--auth sha256]` asks for the secrets twice without echo (`--stdin` reads them, one per line), stores them in `/etc/tacctl/snmp.yaml` (0600, never printed) and sets `snmp.version`; `config snmp test <address>` tries one device (`no answer` is also what a wrong community, or a wrong v3 privacy passphrase, looks like; v3 names `unknownUserName` and `wrongDigest`). `config snmp` is for administrators only: the credentials reach every device.
 
 **Notices** are computed when shown (only acknowledgements are stored) and appear in `scan`/`discover` output, a `Device notices` section of `tacctl status` (count and the first five), `device list` (NOTICES), `device notices`, and `device show` (which counts the acknowledged ones; `--all` on either lists them, marked). Besides `generic-name`, `hostkey-unpinned` and, for an enrolled host whose address changed between two enrolments or syncs, `address-changed` (the only notice an enrolled host acknowledges), a scan raises `ambiguous-nas-id` (one NAS-Identifier from several addresses; a fully qualified host name on each device tells them apart), `generic-nas-id`, `name-mismatch` (a NAS-Identifier other than the registry name or the hostname, in full or by its first label, as `sw1` for `sw1.site-a.example`; informational), `duplicate-address` (two entries at one address, or an address identifying as another entry), `identity-changed` (an address's NAS-Identifier changed: replaced or reset?), and from the host-key re-scan `hostkey-changed` (cannot be acknowledged; only `device hostkey <name> accept|set` clears it), `hostkey-added` and `hostkey-unreachable`. Each line ends with the command that fixes or acknowledges it.
 
