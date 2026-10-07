@@ -124,6 +124,7 @@ func init() {
 		var s Spec
 		var ok bool
 		switch {
+		case len(path) < 2:
 		case len(path) == 2:
 			s, ok = configSpecs[path[1]]
 		case path[1] == "linux":
@@ -155,8 +156,9 @@ func attachCompletion(inv *invocation, root *cobra.Command) {
 	walk = func(c *cobra.Command, path []string) {
 		if len(c.Commands()) == 0 {
 			if spec, ok := specFor(path); ok {
-				c.ValidArgsFunction = func(_ *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
-					return inv.completeSpec(spec, args, toComplete)
+				c.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
+					comps, dir := inv.completeSpec(spec, args, toComplete)
+					return inv.describeFlags(cmd, path, spec, comps), dir
 				}
 			}
 			return
@@ -168,6 +170,28 @@ func attachCompletion(inv *invocation, root *cobra.Command) {
 	for _, sub := range root.Commands() {
 		walk(sub, []string{sub.Name()})
 	}
+}
+
+// describeFlags gives each flag among comps the description the shell's
+// '?' shows for it, after the value it takes ('--idle' → '<min>: End the
+// session after ...'): bash, zsh and fish list it beside the flag when
+// there is more than one candidate. The other words are left as they are.
+func (inv *invocation) describeFlags(cmd *cobra.Command, path []string, spec Spec, comps []cobra.Completion) []cobra.Completion {
+	helps := inv.flagHelps(cmd, path, spec, comps)
+	out := make([]cobra.Completion, 0, len(comps))
+	for _, c := range comps {
+		h, ok := helps[c]
+		if !ok || h[1] == "" || strings.Contains(c, "\t") {
+			out = append(out, c)
+			continue
+		}
+		desc := h[1]
+		if h[0] != "" {
+			desc = h[0] + ": " + desc
+		}
+		out = append(out, cobra.CompletionWithDesc(c, desc))
+	}
+	return out
 }
 
 // completeSpec answers cobra's __complete for a leaf: args are the words
@@ -239,7 +263,7 @@ func (inv *invocation) completeSpec(spec Spec, args []string, toComplete string)
 	if !alone {
 		out, dir = inv.completeKind(kind, toComplete, values)
 	}
-	if strings.HasPrefix(toComplete, "-") || (kind != KindFile && pos >= spec.MinArgs) {
+	if strings.HasPrefix(toComplete, "-") || (!inv.shellMode && kind != KindFile && pos >= spec.MinArgs) {
 		for i := range spec.Flags {
 			f := &spec.Flags[i]
 			if seen[f.Names[0]] || (f.Only != "" && !slices.Contains(words, f.Only)) {
@@ -277,6 +301,7 @@ func (inv *invocation) completeKind(kind, toComplete string, values map[string]s
 		cur := strings.TrimPrefix(toComplete, prefix)
 		var out []cobra.Completion
 		for _, w := range inv.kindWords(base, values) {
+			w, _, _ = strings.Cut(w, "\t")
 			if strings.HasPrefix(w, cur) && !slices.Contains(have, w) {
 				out = append(out, prefix+w)
 			}
@@ -298,7 +323,18 @@ func (inv *invocation) kindWords(kind string, values map[string]string) []string
 	if strings.Contains(kind, "|") {
 		return strings.Split(kind, "|")
 	}
+	if _, ok := completionDescKinds[kind]; ok && inv.shellMode {
+		return inv.liveLines(inv.ctx, kind, "--desc")
+	}
 	switch kind {
+	case KindLine:
+		var out []string
+		for _, r := range topRows() {
+			if r.Name != "shell" && !slices.ContainsFunc(out, func(w string) bool { return strings.HasPrefix(w, r.Name+"\t") }) {
+				out = append(out, r.Name+"\t"+r.Desc)
+			}
+		}
+		return out
 	case KindUsers, KindGroups, KindScopes, KindHosts, KindDevices, KindBackups, KindBackends, KindEnabledBackends:
 		return inv.liveNames(inv.ctx, kind)
 	case KindListeners:
@@ -309,6 +345,54 @@ func (inv *invocation) kindWords(kind string, values map[string]string) []string
 	}
 	// A single fixed word ('1|2' lists have the bar; one word has none).
 	return []string{kind}
+}
+
+// liveLines is liveNames with one entry per line ('name<TAB>description').
+func (inv *invocation) liveLines(ctx context.Context, kind string, extra ...string) []string {
+	if inv.app == nil || inv.app.Runner == nil {
+		return nil
+	}
+	res, err := inv.app.Runner.Run(ctx, execx.Cmd{
+		Name: "sudo", Args: append([]string{"-n", "tacctl", "_completion-names", kind}, extra...)})
+	if err != nil || res.Code != 0 {
+		return nil
+	}
+	var lines []string
+	for _, l := range strings.Split(string(res.Stdout), "\n") {
+		if l != "" {
+			lines = append(lines, l)
+		}
+	}
+	return alignDescs(lines)
+}
+
+// alignDescs pads the words of the descriptions of 'name<TAB>a b c' lines
+// to columns (the last word stays as it is).
+func alignDescs(lines []string) []string {
+	var width []int
+	for _, l := range lines {
+		_, d, _ := strings.Cut(l, "\t")
+		for i, w := range strings.Fields(d) {
+			if i == len(width) {
+				width = append(width, 0)
+			}
+			width[i] = max(width[i], len(w))
+		}
+	}
+	out := make([]string, len(lines))
+	for i, l := range lines {
+		name, d, ok := strings.Cut(l, "\t")
+		if !ok {
+			out[i] = l
+			continue
+		}
+		ws := strings.Fields(d)
+		for j := 0; j < len(ws)-1; j++ {
+			ws[j] += strings.Repeat(" ", width[j]-len(ws[j]))
+		}
+		out[i] = name + "\t" + strings.Join(ws, " ")
+	}
+	return out
 }
 
 // liveNames asks 'sudo -n tacctl _completion-names <kind> [arg]' for the

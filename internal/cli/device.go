@@ -23,6 +23,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/rett/tacctl/internal/devreg"
+	"github.com/rett/tacctl/internal/shellquote"
 	"github.com/rett/tacctl/internal/ui"
 )
 
@@ -36,6 +37,7 @@ var (
 	flagYes          = Flag{Names: []string{"-y", "--yes"}}
 	flagJSON         = Flag{Names: []string{"--json"}}
 	flagAllowGeneric = Flag{Names: []string{"--allow-generic"}}
+	flagAllNotices   = Flag{Names: []string{"--all"}}
 	noticeWords      = strings.Join(devreg.AckableKinds, "|")
 )
 
@@ -44,7 +46,7 @@ var (
 var deviceSpecs = map[string]Spec{
 	"list": {MaxArgs: 0, Flags: []Flag{{Names: []string{"--stale"}}, {Names: []string{"--unconfigured"}},
 		{Names: []string{"--scan"}}, {Names: []string{"--probe"}}, flagJSON}},
-	"show": {MinArgs: 1, MaxArgs: 1, Args: []string{KindDevices}, Flags: []Flag{flagJSON}},
+	"show": {MinArgs: 1, MaxArgs: 1, Args: []string{KindDevices}, Flags: []Flag{flagJSON, flagAllNotices}},
 	"add": {MinArgs: 2, MaxArgs: 2, Args: []string{"", ""}, Flags: []Flag{
 		{Names: []string{"--vendor"}, Value: true, Kind: KindVendors},
 		{Names: []string{"--hostname"}, Value: true},
@@ -64,7 +66,7 @@ var deviceSpecs = map[string]Spec{
 	"legacy-ssh":  {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, "enable|disable"}},
 	"stale-days":  {MaxArgs: 1, Args: []string{""}},
 	"notice":      {MinArgs: 3, MaxArgs: 3, Args: []string{KindDevices, "ack|unack", noticeWords}},
-	"notices":     {MaxArgs: 1, Args: []string{KindDevices}},
+	"notices":     {MaxArgs: 1, Args: []string{KindDevices}, Flags: []Flag{flagAllNotices}},
 	"import": {MinArgs: 1, MaxArgs: 1, Args: []string{KindFile}, Flags: []Flag{
 		{Names: []string{"--check"}}, {Names: []string{"--replace"}}, flagAllowGeneric, flagYes}},
 	"export":  {MaxArgs: 0, Flags: []Flag{{Names: []string{"--csv"}}, flagJSON}},
@@ -81,7 +83,7 @@ var deviceSpecs = map[string]Spec{
 // deviceVerbs are the verbs ({Use, Short}), in usage order.
 var deviceVerbs = [][2]string{
 	{"list [--stale] [--unconfigured] [--scan] [--probe] [--json]", "Registered devices and enrolled hosts: scope, state, last seen, notices"},
-	{"show <name|address> [--json]", "One device or host in full"},
+	{"show <name|address> [--all] [--json]", "One device or host in full (--all: the acknowledged notices too)"},
 	{"add <name> <address> [options]", "Register a device"},
 	{"remove <name>[,<name>...] | --all [-y]", "Remove devices from the registry (confirms)"},
 	{"rename <old> <new> [--allow-generic]", "Rename a device"},
@@ -93,15 +95,64 @@ var deviceVerbs = [][2]string{
 	{"legacy-ssh <name> [enable|disable]", "Opt in to legacy IOS ssh algorithms"},
 	{"stale-days [<n>]", "Show or set the days after which a device counts as stale"},
 	{"notice <name> ack|unack <kind>", "Acknowledge or reopen a notice"},
-	{"notices [<name>]", "The open notices, with what to do about each"},
+	{"notices [<name>] [--all]", "The open notices, with what to do about each (--all: the acknowledged ones too)"},
 	{"import [--check] [--replace] [--allow-generic] [-y] <file|->", "Import devices from CSV or the registry's YAML"},
 	{"export [--csv|--json]", "Print the registry (YAML by default)"},
 	{"hostkey <name> [show|accept [-y]|set SHA256:<fp>]", "Show the pinned ssh host keys, or re-pin them after a verified change"},
-	{"ssh <name|address> [-p <port>] [-- <ssh args>]", "Alias of 'tacctl ssh': a session to the device, as you"},
+	{"ssh <name|address> [-p <port>] [-X|-Y] [-g] [-L|-R|-D <spec>]... [-- <ssh args>]", "Alias of 'tacctl ssh': a session to the device, as you"},
 	{"ssh-config", "Print an ssh_config Include for your devices (Host blocks, pinned keys)"},
 	{"scan [--full] [--since <dur>] [--backend <id>]", "Read the logs for the devices seen; re-scan pinned host keys"},
 	{"discover [--all] [--backend <id>]", "Scan, then list the addresses that authenticated unregistered"},
 	{"check <name>|--all", "Checklist: scope, tag, seen, reachable, host key"},
+}
+
+// deviceOptions are the option lines under a verb's row in the usage, one
+// per flag ({flag, description}), so the shell's '?' describes each.
+var deviceOptions = map[string][][2]string{
+	"list": {
+		{"--stale", "Only the devices not seen for stale-days"},
+		{"--unconfigured", "Only the devices no scope's prefixes cover"},
+		{"--scan", "Scan the logs first (as 'device scan')"},
+		{"--probe", "Add REACH: a TCP connect to each ssh port (3 s)"},
+		{"--json", "(list, show, export) Print JSON"},
+	},
+	"add": {
+		{"--vendor cisco|juniper|wti|other", "The vendor (default other)"},
+		{"--hostname <dns>", "Its DNS name"},
+		{"--port <n>", "Its ssh port (default 22)"},
+		{"--description <text>", "A description"},
+		{"--legacy-ssh", "Old IOS: SHA-1 key exchange and ssh-rsa"},
+		{"--host-key SHA256:<fp>", "Register only if the device offers this key; pin it alone"},
+		{"--no-host-key", "Register without a pinned key (a hostkey-unpinned notice)"},
+		{"--allow-generic", "(add, rename, import) Allow a generic name such as 'switch'"},
+	},
+	"remove": {
+		{"--all", "(remove, check) Every device; (show, notices) the acknowledged notices too"},
+		{"-y, --yes", "(remove, import, hostkey) Answer yes to the confirmation"},
+	},
+	"import": {
+		{"--check", "Write nothing; say what the import would do"},
+		{"--replace", "Replace the registry instead of merging into it"},
+	},
+	"export": {
+		{"--csv", "Print CSV instead of YAML"},
+	},
+	"ssh": {
+		{"-p <port>", "Connect to this port instead of the registered one"},
+		{"-X, -Y", "Forward X11 (untrusted, trusted) to this server's display"},
+		{"-L <spec>", "Forward a local port, as ssh -L (repeatable)"},
+		{"-R <spec>", "Forward a remote port, as ssh -R (repeatable)"},
+		{"-D <spec>", "Open a SOCKS proxy, as ssh -D (repeatable)"},
+		{"-g", "Let -L and -D ports listen on every address, as ssh -g"},
+	},
+	"scan": {
+		{"--full", "Re-read everything the logs still hold"},
+		{"--since <dur>", "Read this stretch of the logs (7d, 12h, 2w)"},
+		{"--backend <id>", "(scan, discover) Only that backend's log"},
+	},
+	"discover": {
+		{"--all", "Also list the addresses that were only refused"},
+	},
 }
 
 func deviceCmd(inv *invocation) *cobra.Command {
@@ -124,15 +175,14 @@ func deviceRegUsage() string {
 		use, short := v[0], v[1]
 		if len(use) > 56 {
 			b.WriteString("  " + use + "\n  " + strings.Repeat(" ", 56) + "  " + short + "\n")
-			continue
+		} else {
+			fmt.Fprintf(&b, "  %-56s  %s\n", use, short)
 		}
-		fmt.Fprintf(&b, "  %-56s  %s\n", use, short)
+		for _, o := range deviceOptions[strings.Fields(use)[0]] {
+			fmt.Fprintf(&b, "      %-52s  %s\n", o[0], o[1])
+		}
 	}
 	b.WriteString(`
-add options: --vendor cisco|juniper|wti|other (default other), --hostname <dns>,
---port <n>, --description <text>, --legacy-ssh, --allow-generic
-(register a generic name such as 'switch' anyway).
-
 Host keys: 'add' reads the device's ssh host keys (ssh-keyscan of the address
 and port) and pins them; compare the fingerprints it prints with the device
 console. --host-key SHA256:<fp> registers only when the device offers a key
@@ -271,6 +321,11 @@ func (inv *invocation) deviceWrite(fn func(*devreg.File, *devreg.Resolver) error
 		r.Hosts = res.Hosts
 		return fn(live, r)
 	})
+	if err == nil {
+		// A device registered at, or moved to, its scope's prefixes ends
+		// its staging address.
+		inv.stagingSweep()
+	}
 	return after, err
 }
 
@@ -424,20 +479,20 @@ func (inv *invocation) deviceList(args []string) error {
 	}
 	head := fmt.Sprintf("Registered devices (%d) and enrolled hosts (%d)", nd, nh)
 	inv.echo("")
-	inv.echoE(ui.Bold + head + ui.NC)
-	inv.echo(strings.Repeat("-", len(head)))
 	if len(shown) == 0 {
+		inv.echoE(ui.Bold + head + ui.NC)
+		inv.echo(ui.Rule(head))
 		inv.echo("  None. Register one with: tacctl device add <name> <address>")
 		inv.echo("")
 		return nil
 	}
-	cols := []string{"NAME", "ADDRESS", "VENDOR", "SCOPE", "STATE", "LAST SEEN", "BY", "VIA", "NOTICES"}
+	cols := []ui.Col{ui.Left("NAME"), ui.Left("ADDRESS"), ui.Left("VENDOR"), ui.Left("SCOPE"), ui.Left("STATE"), ui.Left("LAST SEEN"), ui.Left("BY"), ui.Left("VIA"), ui.Left("NOTICES")}
 	var reach []string
 	if p.Has("--probe") {
-		cols = slices.Insert(cols, 8, "REACH")
+		cols = slices.Insert(cols, 8, ui.Left("REACH"))
 		reach = inv.probeEntries(shown)
 	}
-	rows := [][]string{}
+	tb := ui.NewTable(head, cols...)
 	open := 0
 	for i, e := range shown {
 		last, by, via, stale := deviceSeenCols(inv, res, e)
@@ -447,35 +502,13 @@ func (inv *invocation) deviceList(args []string) error {
 		}
 		ns := res.NoticesFor(e)
 		open += len(devreg.Open(ns))
-		row := []string{e.Name, dash(e.Address), e.Vendor, dash(e.Scope), state, last, by, via, dash(kinds(ns))}
+		row := []any{e.Name, dash(e.Address), e.Vendor, dash(e.Scope), state, last, by, via, dash(kinds(ns))}
 		if reach != nil {
-			row = slices.Insert(row, 8, reach[i])
+			row = slices.Insert(row, 8, any(reach[i]))
 		}
-		rows = append(rows, row)
+		tb.Add(row...)
 	}
-	w := make([]int, len(cols))
-	for i, c := range cols {
-		w[i] = len(c)
-		for _, r := range rows {
-			w[i] = max(w[i], len(r[i]))
-		}
-	}
-	line := func(r []string, pre, post string) {
-		var b strings.Builder
-		b.WriteString("  " + pre)
-		for i, c := range r {
-			if i == len(r)-1 {
-				b.WriteString(c)
-			} else {
-				fmt.Fprintf(&b, "%-*s  ", w[i], c)
-			}
-		}
-		inv.write(b.String() + post + "\n")
-	}
-	line(cols, ui.Bold, ui.NC)
-	for _, r := range rows {
-		line(r, "", "")
-	}
+	inv.write(tb.String())
 	inv.echo("")
 	inv.echo("  " + deviceSeenFooter(res))
 	if reach != nil {
@@ -510,8 +543,13 @@ func (inv *invocation) deviceShow(args []string) error {
 	}
 	inv.echo("")
 	inv.echoE(ui.Bold + kind + " " + e.Name + ui.NC)
-	inv.echo(strings.Repeat("-", len(kind)+1+len(e.Name)))
-	row := func(k, v string) { inv.write(fmt.Sprintf("  %-13s %s\n", k+":", v)) }
+	inv.echo(ui.Rule(kind + " " + e.Name))
+	row := func(k, v string) {
+		if k != "" {
+			k += ":"
+		}
+		inv.write(fmt.Sprintf("  %-13s %s\n", k, v))
+	}
 	row("Name", e.Name)
 	row("Address", dash(e.Address))
 	row("Hostname", dash(e.Hostname))
@@ -573,7 +611,18 @@ func (inv *invocation) deviceShow(args []string) error {
 		}
 	}
 	ns := res.NoticesFor(e)
-	if len(ns) == 0 {
+	acked := len(ns) - len(devreg.Open(ns))
+	if !p.Has("--all") {
+		ns = devreg.Open(ns)
+	}
+	hidden := ""
+	if acked > 0 && !p.Has("--all") {
+		hidden = howMany(acked, "acknowledged notice") + " not shown: tacctl device show " + e.Name + " --all"
+	}
+	if len(ns) == 0 && hidden != "" {
+		row("Notices", "none open; "+hidden)
+		hidden = ""
+	} else if len(ns) == 0 {
 		row("Notices", "none")
 	}
 	for i, n := range ns {
@@ -587,8 +636,31 @@ func (inv *invocation) deviceShow(args []string) error {
 		}
 		row(k, n.Kind+mark+": "+n.Text)
 	}
+	if hidden != "" {
+		row("", hidden)
+	}
 	inv.echo("")
 	return nil
+}
+
+// retyped is the command line prefix args, as the user typed it (each
+// word quoted for the shell where it needs it), without the value flag
+// drop and with the switch add once at the end: the command a refusal
+// suggests keeps every other flag.
+func retyped(prefix string, args []string, drop, add string) string {
+	words := []string{prefix}
+	for i := 0; i < len(args); i++ {
+		w := args[i]
+		switch {
+		case w == drop:
+			i++
+			continue
+		case strings.HasPrefix(w, drop+"="), w == add:
+			continue
+		}
+		words = append(words, shellquote.Q(w))
+	}
+	return strings.Join(append(words, add), " ")
 }
 
 func sortedVendors() []string { return []string{"cisco", "juniper", "wti"} }
@@ -631,7 +703,7 @@ func (inv *invocation) deviceAdd(args []string) error {
 	if fp := p.Value("--host-key"); p.Has("--host-key") && !devreg.ValidFingerprint(fp) {
 		return inv.usageErr("Invalid --host-key '" + fp + "': expected SHA256:<fingerprint> as ssh prints it.")
 	}
-	keep := "tacctl device add " + d.Name + " " + d.Address + " --allow-generic"
+	keep := retyped("tacctl device add", args, "--host-key", "--allow-generic")
 	check := func(r *devreg.Resolver) error {
 		if err := r.CheckName(d.Name, d.Vendor, p.Has("--allow-generic"), keep); err != nil {
 			return err
@@ -646,10 +718,7 @@ func (inv *invocation) deviceAdd(args []string) error {
 	if err := check(res); err != nil {
 		return err
 	}
-	retry := "tacctl device add " + d.Name + " " + d.Address
-	if p.Has("--allow-generic") {
-		retry += " --allow-generic"
-	}
+	retry := retyped("tacctl device add", args, "--host-key", "--no-host-key")
 	pin, offered, err := inv.deviceAddKeys(d, p, retry)
 	if err != nil {
 		return err
@@ -975,11 +1044,7 @@ func (inv *invocation) deviceNotice(args []string) error {
 	if err != nil {
 		return err
 	}
-	d, err := inv.deviceEditable(res, f, p.Args[0])
-	if err != nil {
-		return err
-	}
-	name, action, kind := d.Name, p.Args[1], p.Args[2]
+	action, kind := p.Args[1], p.Args[2]
 	if action != "ack" && action != "unack" {
 		return inv.usageErr("Usage: tacctl device notice <name> ack|unack <kind>")
 	}
@@ -989,6 +1054,14 @@ func (inv *invocation) deviceNotice(args []string) error {
 	if !slices.Contains(devreg.AckableKinds, kind) {
 		return inv.usageErr("Unknown notice kind '"+kind+"'.", "Kinds: "+strings.Join(devreg.AckableKinds, ", ")+".")
 	}
+	if e, ok := res.Lookup(p.Args[0], inv.deviceFilter()); ok && e.Source == devreg.SourceHost {
+		return inv.hostNotice(e, action, kind)
+	}
+	d, err := inv.deviceEditable(res, f, p.Args[0])
+	if err != nil {
+		return err
+	}
+	name := d.Name
 	had := slices.Contains(d.Ack, kind)
 	if (action == "ack") == had {
 		inv.app.Out.Info("Notice '" + kind + "' of '" + name + "' is " + map[bool]string{true: "already", false: "not"}[had] + " acknowledged.")
@@ -1000,6 +1073,41 @@ func (inv *invocation) deviceNotice(args []string) error {
 			live.Ack = append(live.Ack, kind)
 		} else {
 			live.Ack = slices.DeleteFunc(live.Ack, func(k string) bool { return k == kind })
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	inv.app.Out.Info("Notice '" + kind + "' of '" + name + "' " + map[string]string{"ack": "acknowledged", "unack": "reopened"}[action] + ".")
+	return nil
+}
+
+// hostNotice acknowledges or reopens a notice of the enrolled host e: only
+// the kinds an enrolled host may acknowledge (its other notices are
+// cleared on the host).
+func (inv *invocation) hostNotice(e devreg.Entry, action, kind string) error {
+	if !slices.Contains(devreg.HostAckableKinds, kind) {
+		return inv.usageErr("'"+e.Name+"' is an enrolled host; its '"+kind+"' notice is cleared on the host, not acknowledged.",
+			"An enrolled host can acknowledge: "+strings.Join(devreg.HostAckableKinds, ", ")+".")
+	}
+	name := e.Name
+	had := slices.Contains(e.Ack, kind)
+	if (action == "ack") == had {
+		inv.app.Out.Info("Notice '" + kind + "' of '" + name + "' is " + map[bool]string{true: "already", false: "not"}[had] + " acknowledged.")
+		return nil
+	}
+	if action == "ack" && kind == devreg.NoticeAddressChanged && e.PrevAddress == "" {
+		return inv.usageErr("'" + name + "' has no " + kind + " notice.")
+	}
+	if _, err := inv.deviceWrite(func(f *devreg.File, _ *devreg.Resolver) error {
+		h := f.Host(name)
+		if h == nil {
+			return inv.usageErr("'" + name + "' has no " + kind + " notice.")
+		}
+		if action == "ack" {
+			h.Ack = append(h.Ack, kind)
+		} else {
+			h.Ack = slices.DeleteFunc(h.Ack, func(k string) bool { return k == kind })
 		}
 		return nil
 	}); err != nil {
@@ -1029,12 +1137,22 @@ func (inv *invocation) deviceNotices(args []string) error {
 	n := 0
 	inv.echo("")
 	for _, e := range entries {
-		for _, no := range devreg.Open(res.NoticesFor(e)) {
-			inv.echo("  " + e.Name + "  " + no.Kind + ": " + no.Text)
+		ns := res.NoticesFor(e)
+		if !p.Has("--all") {
+			ns = devreg.Open(ns)
+		}
+		for _, no := range ns {
+			mark := ""
+			if no.Acked {
+				mark = " (acknowledged)"
+			}
+			inv.echo("  " + e.Name + "  " + no.Kind + mark + ": " + no.Text)
 			n++
 		}
 	}
-	if n == 0 {
+	if n == 0 && p.Has("--all") {
+		inv.echo("  No notices.")
+	} else if n == 0 {
 		inv.echo("  No open notices.")
 	}
 	inv.echo("")

@@ -42,7 +42,8 @@ var scopeSpecs = map[string]Spec{
 	"rename":       {MinArgs: 2, MaxArgs: 2, Args: []string{KindScopes, ""}},
 	"default":      {MaxArgs: 1, Args: []string{KindScopes}},
 	"lookup":       {MinArgs: 1, MaxArgs: 1, Args: []string{""}},
-	"prefixes":     {MinArgs: 1, MaxArgs: 3, Args: []string{KindScopes, "list|add|remove", ""}, Flags: []Flag{{Names: []string{"--all"}, Only: "remove", Alone: true}, {Names: []string{"--force"}, Only: "remove"}}},
+	"prefixes":     {MinArgs: 1, MaxArgs: 4, Args: []string{KindScopes, "list|add|remove|move", "", KindScopes}, Flags: []Flag{{Names: []string{"--all"}, Only: "remove", Alone: true}, {Names: []string{"--force"}, Only: "remove"}}},
+	"staging":      {MaxArgs: 2, Args: []string{"list|remove", ""}},
 	"secret":       {MinArgs: 1, MaxArgs: 3, Args: []string{KindScopes, "show|set|generate", ""}},
 	"protocols":    {MinArgs: 1, MaxArgs: 3, Args: []string{KindScopes, "list|set|clear", "tacacs|radius" + KindList}},
 	"vendor-attrs": {MinArgs: 1, MaxArgs: 3, Args: []string{KindScopes, "show|enable|disable", "cisco|juniper|wti" + KindList}},
@@ -69,7 +70,8 @@ func scopeCmd(inv *invocation) *cobra.Command {
 		withRun(verb("rename <old> <new>", "Rename (updates user references)"), n(inv.scopeRename)),
 		withRun(verb("default [<name>]", "Show or set the default scope"), n(inv.scopeDefault)),
 		withRun(verb("lookup <ip|cidr>", "Show which scope owns an address"), n(inv.scopeLookup)),
-		withRun(verb("prefixes <scope> {list|add|remove} [<cidr>[,<cidr>...]] | remove --all [--force]", "Manage a scope's CIDR list"), n(inv.scopePrefixes)),
+		withRun(verb("prefixes <scope> {list|add|remove} [<cidr>[,<cidr>...]] | remove --all [--force] | move <cidrs> <scope>", "Manage a scope's CIDR list"), n(inv.scopePrefixes)),
+		withRun(verb("staging [list | remove <address>]", "Bench addresses of devices provisioned off-site for a scope"), n(inv.scopeStaging)),
 		withRun(verb("secret <scope> {show|set <value>|generate}", "Manage a scope's shared secret"), n(inv.scopeSecret)),
 		withRun(verb("protocols <scope> [list|set <protocol>[,<protocol>...]|clear]",
 			"Limit a scope to some protocols (tacacs, radius); default: all"), n(inv.scopeProtocols)),
@@ -477,9 +479,9 @@ func (inv *invocation) scopeUsage() error {
 
 func (inv *invocation) scopeListView([]string) error {
 	b, nc, cy := ui.Bold, ui.NC, ui.Cyan
+	title := "Scopes"
+	hint := cy + "(each scope's prefixes are listed under its name; 'tacctl scope routing' shows the order addresses are matched in)" + nc
 	inv.echo("")
-	inv.echoE(b + "Scopes" + nc + " " + cy + "(one block per scope; see 'tacctl scope routing' for first-match prefix order)" + nc)
-	inv.echo("--------------------------------------------------------------")
 	def, err := inv.defaultScope()
 	if err != nil {
 		return err
@@ -490,6 +492,8 @@ func (inv *invocation) scopeListView([]string) error {
 	}
 	rows := m.ScopeRows(def)
 	if len(rows) == 0 {
+		inv.echoE(b + title + nc + " " + hint)
+		inv.echo(ui.Rule(title + " " + hint))
 		inv.echo("  (no scopes configured)")
 		inv.echo("")
 		return nil
@@ -507,14 +511,12 @@ func (inv *invocation) scopeListView([]string) error {
 			withVendor = true
 		}
 	}
+	cols := []ui.Col{ui.Left("NAME"), ui.Left("PREFIXES"), ui.Right("USERS"), ui.Left("DEFAULT")}
 	if withVendor {
-		inv.write("  " + b + ui.Pad("NAME", 18) + " " + ui.Pad("PREFIXES", 20) + " " + ui.PadLeft("USERS", 5) + "  " +
-			ui.Pad("DEFAULT", 7) + "  " + "VENDOR ATTRIBUTES (RADIUS)" + nc + "\n")
-		inv.echo("  ------------------------------------------------------------------------------------")
-	} else {
-		inv.write("  " + b + ui.Pad("NAME", 18) + " " + ui.Pad("PREFIXES", 20) + " " + ui.PadLeft("USERS", 5) + "  " + "DEFAULT" + nc + "\n")
-		inv.echo("  --------------------------------------------------------------")
+		cols = append(cols, ui.Left("VENDOR ATTRIBUTES (RADIUS)"))
 	}
+	t := ui.NewTable(title, cols...)
+	t.Hint = hint
 	for _, r := range rows {
 		f := split(r)
 		name, c, users, isDefault, vendor := f[0], f[1], f[2], f[3], f[4]
@@ -522,32 +524,32 @@ func (inv *invocation) scopeListView([]string) error {
 			if c == "" {
 				continue
 			}
-			inv.write("  " + ui.Pad("", 18) + " " + ui.Pad(c, 20) + "\n")
+			t.Add("", c)
 			continue
 		}
 		if withVendor {
 			if vendor == "" {
 				vendor = "not sent"
 			}
-			inv.write("  " + b + ui.Pad(name, 18) + nc + " " + ui.Pad(c, 20) + " " + ui.PadLeft(users, 5) + "  " +
-				ui.Pad(isDefault, 7) + "  " + vendor + "\n")
+			t.Add(ui.Styled(ui.Bold, name), c, users, isDefault, vendor)
 		} else {
-			dfl := ""
+			dfl := ui.Cell{}
 			if isDefault == "yes" {
-				dfl = cy + "yes" + nc
+				dfl = ui.Styled(cy, "yes")
 			}
-			inv.write("  " + b + ui.Pad(name, 18) + nc + " " + ui.Pad(c, 20) + " " + ui.PadLeft(users, 5) + "  " + dfl + "\n")
+			t.Add(ui.Styled(ui.Bold, name), c, users, dfl)
 		}
 	}
+	inv.write(t.String())
 	inv.echo("")
 	return nil
 }
 
 func (inv *invocation) scopeRouting([]string) error {
 	b, nc, cy := ui.Bold, ui.NC, ui.Cyan
+	title := "Scope routing"
+	hint := cy + "(first-match order — narrower prefixes win)" + nc
 	inv.echo("")
-	inv.echoE(b + "Scope routing" + nc + " " + cy + "(first-match order — narrower prefixes win)" + nc)
-	inv.echo("--------------------------------------------------------------")
 	def, err := inv.defaultScope()
 	if err != nil {
 		return err
@@ -558,13 +560,14 @@ func (inv *invocation) scopeRouting([]string) error {
 	}
 	rows := m.ScopeRouting(def)
 	if len(rows) == 0 {
+		inv.echoE(b + title + nc + " " + hint)
+		inv.echo(ui.Rule(title + " " + hint))
 		inv.echo("  (no scopes configured)")
 		inv.echo("")
 		return nil
 	}
-	inv.write("  " + b + ui.PadLeft("#", 3) + "  " + ui.Pad("NAME", 18) + " " + ui.Pad("PREFIX", 20) + " " +
-		ui.PadLeft("USERS", 5) + "  " + "DEFAULT" + nc + "\n")
-	inv.echo("  --------------------------------------------------------------")
+	t := ui.NewTable(title, ui.Right("#"), ui.Left("NAME"), ui.Left("PREFIX"), ui.Right("USERS"), ui.Left("DEFAULT"))
+	t.Hint = hint
 	i := 0
 	for _, r := range rows {
 		f := strings.SplitN(r, "|", 4)
@@ -575,13 +578,13 @@ func (inv *invocation) scopeRouting([]string) error {
 			continue
 		}
 		i++
-		dfl := ""
+		dfl := ui.Cell{}
 		if f[3] == "yes" {
-			dfl = cy + "yes" + nc
+			dfl = ui.Styled(cy, "yes")
 		}
-		inv.write("  " + ui.PadLeft(fmt.Sprint(i), 3) + "  " + b + ui.Pad(f[0], 18) + nc + " " + ui.Pad(f[1], 20) + " " +
-			ui.PadLeft(f[2], 5) + "  " + dfl + "\n")
+		t.Add(fmt.Sprint(i), ui.Styled(ui.Bold, f[0]), f[1], f[2], dfl)
 	}
+	inv.write(t.String())
 	inv.echo("")
 	return nil
 }
@@ -944,6 +947,9 @@ func (inv *invocation) scopeRemove(args []string) error {
 	if !m.Exists("scopes", name) {
 		return inv.usageErr("Scope '" + name + "' does not exist.")
 	}
+	if err := inv.scopeHostsRefusal(name, "Cannot remove '"+name+"'"); err != nil {
+		return err
+	}
 	members := m.Members(name)
 	if len(members) > 0 && !force {
 		return inv.scopeMembersRefusal(name, members, []string{
@@ -1014,11 +1020,20 @@ func (inv *invocation) scopeRename(args []string) error {
 	}); err != nil {
 		return err
 	}
+	// Enrolled hosts and staging addresses name the scope too: they follow
+	// it (the hosts keep its secret, which the rename does not change).
+	hostsMoved, err := inv.scopeRenameHosts(old, newName)
+	if err != nil {
+		return err
+	}
 	m, err = inv.model()
 	if err != nil {
 		return err
 	}
 	a.Out.Info(fmt.Sprintf("Scope renamed: %s -> %s (%d user(s) updated).", old, newName, len(m.Members(newName))))
+	if hostsMoved > 0 {
+		a.Out.Info(fmt.Sprintf("Enrolled hosts registered in '%s' now name '%s': %d.", old, newName, hostsMoved))
+	}
 	inv.echo("")
 	return nil
 }
@@ -1086,6 +1101,7 @@ func (inv *invocation) scopePrefixes(args []string) error {
 	scope, sub, argv := arg(args, 0), arg(args, 1), arg(args, 2)
 	if scope == "" {
 		return inv.usageErr("Usage: tacctl scope prefixes <scope> {list|add|remove} [<cidrs>]",
+			"       tacctl scope prefixes <scope> move <cidrs> <other-scope>",
 			"       tacctl scope prefixes <scope> remove --all [--force]")
 	}
 	// A membership list: emptying it is 'remove --all'; the old 'clear'
@@ -1115,7 +1131,7 @@ func (inv *invocation) scopePrefixes(args []string) error {
 			return inv.usageErr("Usage: tacctl scope prefixes " + scope + " remove --all --force   ('--force' is only valid with --all)")
 		}
 	}
-	if sub == "add" || sub == "remove" {
+	if sub == "add" || sub == "remove" || sub == "move" {
 		if err := inv.requireStore(); err != nil {
 			return err
 		}
@@ -1136,7 +1152,7 @@ func (inv *invocation) scopePrefixes(args []string) error {
 	case "list":
 		inv.echo("")
 		inv.echoE(ui.Bold + "Prefixes for scope '" + scope + "'" + ui.NC)
-		inv.echo("--------------------------------------------")
+		inv.echo(ui.Rule("Prefixes for scope '" + scope + "'"))
 		if len(current) == 0 {
 			inv.echo("  (empty — no clients can match this scope)")
 		} else {
@@ -1149,6 +1165,8 @@ func (inv *invocation) scopePrefixes(args []string) error {
 		inv.echo("")
 		return nil
 	case "add", "remove":
+	case "move":
+		return inv.scopePrefixesMove(m, scope, argv, arg(args, 3))
 	default:
 		return inv.usageErr("Unknown subcommand: '"+sub+"'", "Run 'tacctl scope prefixes "+scope+"' for usage.")
 	}
@@ -1241,6 +1259,127 @@ func (inv *invocation) scopePrefixes(args []string) error {
 	return nil
 }
 
+// scopePrefixesMove is 'scope prefixes <from> move <cidrs> <to>': the
+// prefixes leave one scope and join another in one change, so the
+// addresses they hold are never answered by neither. The enrolled hosts
+// whose addresses another scope then answers are named, with the move
+// that follows them; none is moved here.
+func (inv *invocation) scopePrefixesMove(m *model.Model, from, list, to string) error {
+	a := inv.app
+	if list == "" || to == "" {
+		return inv.usageErr("Usage: tacctl scope prefixes " + from + " move <cidr>[,<cidr>...] <other-scope>")
+	}
+	if !m.Exists("scopes", to) {
+		return inv.usageErr("Scope '" + to + "' does not exist.")
+	}
+	if to == from {
+		return inv.usageErr("The prefixes are already in scope '" + from + "'.")
+	}
+	requested, err := inv.parseCIDRList(list)
+	if err != nil {
+		return err
+	}
+	if len(requested) == 0 {
+		return inv.usageErr("No valid CIDRs provided.")
+	}
+	src, dst := m.ScopePrefixes(from), m.ScopePrefixes(to)
+	var missing []string
+	for _, c := range requested {
+		if !contains(src, c) {
+			missing = append(missing, c)
+		}
+	}
+	if len(missing) > 0 {
+		return inv.usageErr("Not prefixes of scope '" + from + "': " + strings.Join(missing, " ") + ". Nothing was changed.")
+	}
+	for _, c := range requested {
+		src = without(src, c)
+		if !contains(dst, c) {
+			dst = append(dst, c)
+		}
+	}
+	if joinNonEmpty(src, "") == "" {
+		return inv.usageErr("Cannot move every prefix of scope '"+from+"': a scope needs at least one. Nothing was changed.",
+			"Add another prefix to it first, or move its users and hosts and remove it: tacctl scope remove "+from)
+	}
+	srcCSV, dstCSV := joinNonEmpty(src, ","), joinNonEmpty(dst, ",")
+	if problems, ok := m.DeviceProblems(from, srcCSV, "", ""); !ok {
+		a.Out.ErrorE("Cannot move the prefix(es) out of scope '" + from + "': a tagged address would be left outside the scope's prefixes:")
+		inv.scopeDeviceProblems(problems)
+		return inv.usageErr("Nothing was changed. Unset the tag first.")
+	}
+	if problems, ok := m.DeviceProblems(to, dstCSV, "", ""); !ok {
+		a.Out.ErrorE("Cannot move the prefix(es) into scope '" + to + "': it would take over an address another scope has tagged with a vendor:")
+		inv.scopeDeviceProblems(problems)
+		return inv.usageErr("Nothing was changed. Unset the tag first.")
+	}
+	if err := inv.applyStore(func(s *store.Store) error {
+		if err := s.ScopeSet(from, "prefixes="+srcCSV); err != nil {
+			return err
+		}
+		return s.ScopeSet(to, "prefixes="+dstCSV)
+	}); err != nil {
+		return err
+	}
+	a.Out.Info(fmt.Sprintf("Moved %d prefix(es) from scope '%s' to '%s': %s", len(requested), from, to, strings.Join(requested, " ")))
+	inv.hostDriftReport()
+	inv.echo("")
+	return nil
+}
+
+// scopeRenameHosts names the new scope in every registry line and staging
+// entry that named the old one; the number of hosts changed.
+func (inv *invocation) scopeRenameHosts(old, newName string) (int, error) {
+	reg, err := inv.registry()
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, e := range reg.Entries() {
+		if e.Scope != old {
+			continue
+		}
+		e.Scope = newName
+		if err := reg.Replace(e); err != nil {
+			return n, err
+		}
+		n++
+	}
+	entries := inv.stagingLoad()
+	changed := false
+	for i := range entries {
+		if entries[i].Scope == old {
+			entries[i].Scope, changed = newName, true
+		}
+	}
+	if changed {
+		if err := inv.stagingSave(entries); err != nil {
+			return n, err
+		}
+	}
+	return n, nil
+}
+
+// scopeHostsRefusal refuses to remove a scope enrolled hosts use: they
+// hold its secret, so their logins would fail. Moving them is the way.
+func (inv *invocation) scopeHostsRefusal(scope, what string) error {
+	reg, err := inv.registry()
+	if err != nil {
+		return err
+	}
+	var used []string
+	for _, e := range reg.Entries() {
+		if e.Scope == scope {
+			used = append(used, e.Name)
+		}
+	}
+	if len(used) == 0 {
+		return nil
+	}
+	return inv.usageErr(what+": enrolled hosts use it: "+strings.Join(used, ", ")+". Nothing was changed.",
+		"Move each one to another scope first: tacctl host move <host> [<scope>]   (or: tacctl host unenroll <host>)")
+}
+
 // without is list minus every entry equal to s ('grep -vxF').
 func without(list []string, s string) []string {
 	var out []string
@@ -1263,6 +1402,9 @@ func (inv *invocation) scopePrefixesRemoveAll(scope string, current []string, fo
 	}
 	m, err := inv.model()
 	if err != nil {
+		return err
+	}
+	if err := inv.scopeHostsRefusal(scope, "Cannot remove every prefix of '"+scope+"' (that removes the scope)"); err != nil {
 		return err
 	}
 	members := m.Members(scope)
@@ -1325,7 +1467,7 @@ func (inv *invocation) scopeSecret(args []string) error {
 	case "show":
 		inv.echo("")
 		inv.echoE(b + "Scope '" + scope + "' — shared secret" + nc)
-		inv.echo("--------------------------------------------")
+		inv.echo(ui.Rule("Scope '" + scope + "' — shared secret"))
 		switch {
 		case cur == "":
 			inv.echoE("  " + ui.Red + "(unset)" + nc)
@@ -1645,17 +1787,21 @@ func (inv *invocation) scopeDevices(args []string) error {
 			attrs = "not sent"
 		}
 		inv.echo("")
-		inv.echoE(ui.Bold + "Tagged addresses of scope '" + scope + "'" + ui.NC + " (RADIUS)")
-		inv.echo("--------------------------------------------")
+		title := "Tagged addresses of scope '" + scope + "'"
 		if len(current) == 0 {
+			inv.echoE(ui.Bold + title + ui.NC + " (RADIUS)")
+			inv.echo(ui.Rule(title + " (RADIUS)"))
 			inv.echo("  (none)")
 		} else {
+			t := ui.NewTable(title, ui.Left("ADDRESS"), ui.Left("VENDOR"))
+			t.Hint = "(RADIUS)"
 			for _, d := range current {
 				dc, dv, _ := strings.Cut(d, "|")
 				if dc != "" {
-					inv.write("  " + ui.Pad(dc, 24) + " " + dv + "\n")
+					t.Add(dc, dv)
 				}
 			}
+			inv.write(t.String())
 		}
 		inv.echo("")
 		inv.echo("  A tagged address gets its own vendor's attribute and no other vendor's.")
@@ -1773,7 +1919,8 @@ func (inv *invocation) scopeKnob(k scopeKnob, args []string) error {
 	}
 	if value == "" {
 		inv.echo("")
-		inv.echo("  Scope '" + scope + "' " + k.shown(current))
+		inv.echo("  Scope '" + scope + "'")
+		inv.echo("  " + k.shown(current))
 		inv.echo("  Source: " + source)
 		inv.echo("")
 		for _, l := range k.help {
@@ -1988,7 +2135,7 @@ func (inv *invocation) scopeMgmtACL(args []string) error {
 		scopeEntries, globalEntries := c.GetList(path), c.GetList("mgmt_acl.permits")
 		inv.echo("")
 		inv.echoE(ui.Bold + "Management ACL for scope '" + scope + "'" + ui.NC)
-		inv.echo("--------------------------------------------")
+		inv.echo(ui.Rule("Management ACL for scope '" + scope + "'"))
 		switch {
 		case captured(scopeEntries) != "":
 			inv.echo("  Source: per-scope override (scope_mgmt_acl.permits." + scope + ")")

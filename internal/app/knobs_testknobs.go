@@ -49,5 +49,15 @@ func loadKnobs(env paths.Env) (Knobs, error) {
 		}
 		k.root = v
 	}
+	if v := env.Get(EnvTestProc); v != "" {
+		if !filepath.IsAbs(v) {
+			return Knobs{}, fmt.Errorf("%s=%q: not an absolute path", EnvTestProc, v)
+		}
+		k.proc = v
+	}
 	return k, nil
 }
+
+// ConsoleTestEnv reports whether env sets TACCTL_TEST_CONSOLE_ENV=1: the
+// console then keeps TACCTL_* and PATH (console.Scrub's keepTest).
+func ConsoleTestEnv(env paths.Env) bool { return env.Get(EnvTestConsoleEnv) == "1" }

@@ -137,6 +137,8 @@ on_tty() {
     SUDO_USER=alice on_tty ssh lab-rtr2
     assert_success
     called "logger -t tacctl -p auth.info ssh user=alice device=lab-rtr2 addr=192.0.2.7"
+    run stub_called "^logger -t tacctl -p auth\.info ssh end user=alice device=lab-rtr2 status=0 duration=[0-9]+$"
+    assert_success
     SSH_EXIT=3 SUDO_USER=alice on_tty ssh lab-rtr2
     assert_failure 3
     SSH_EXIT=130 SUDO_USER=alice on_tty ssh oob-con1
@@ -210,7 +212,7 @@ on_tty() {
     called "sudo -u carol -H ssh ${CT} ${PIN_RTR} -l carol 192.0.2.7"
     run "$TACCTL_BIN_SCRIPT" ssh
     assert_success
-    assert_output --partial "Usage: tacctl ssh <name|address> [-p <port>] [-- <ssh args>]"
+    assert_output --partial "Usage: tacctl ssh <name|address> [-p <port>] [-X|-Y] [-g] [-L|-R|-D <spec>]... [-- <ssh args>]"
 }
 
 @test "ssh: exit 255 on a pinned device whose key changed names both fingerprints and the fix" {
@@ -292,4 +294,31 @@ Host web1"
     run "$TACCTL_BIN_SCRIPT" __complete device ssh ""
     assert_success
     assert_line "web1"
+}
+
+@test "ssh: from a console session, no config file, forwarding, agent or escape, the target after --, unpinned refused" {
+    TACCTL_CONSOLE=0123456789ab SUDO_USER=alice on_tty ssh lab-rtr2 -- show version
+    assert_success
+    called "ssh -F /dev/null -o PermitLocalCommand=no -o ControlMaster=no -o ClearAllForwardings=yes -o ForwardAgent=no -o EscapeChar=none ${CT} ${PIN_RTR} -l alice -- 192.0.2.7 show version"
+    called "logger -t tacctl -p auth.info ssh user=alice device=lab-rtr2 addr=192.0.2.7 console=0123456789ab"
+    run stub_called "^logger -t tacctl -p auth\.info ssh end user=alice device=lab-rtr2 status=0 duration=[0-9]+ console=0123456789ab$"
+    assert_success
+    # console ssh-escape enable keeps the escape character.
+    "$TACCTL_BIN_SCRIPT" console ssh-escape enable > /dev/null
+    : > "$CALLS_LOG"
+    TACCTL_CONSOLE=0123456789ab SUDO_USER=alice on_tty ssh lab-rtr2
+    assert_success
+    called "ssh -F /dev/null -o PermitLocalCommand=no -o ControlMaster=no -o ClearAllForwardings=yes -o ForwardAgent=no ${CT} ${PIN_RTR} -l alice -- 192.0.2.7"
+    # An unpinned device is refused, with the fix; nothing runs.
+    : > "$CALLS_LOG"
+    TACCTL_CONSOLE=0123456789ab SUDO_USER=alice on_tty ssh oob-con1
+    assert_failure 1
+    assert_output --partial "'oob-con1' has no pinned host key, so the console does not connect to it; an administrator pins it: tacctl device hostkey oob-con1 accept"
+    run stub_called "^ssh "
+    assert_failure
+    called "logger -t tacctl -p auth.warning ssh DENY user=alice device=oob-con1 scope=prod reason=unpinned console=0123456789ab"
+    # ssh options after -- are refused in the console.
+    TACCTL_CONSOLE=0123456789ab SUDO_USER=alice on_tty ssh lab-rtr2 -- -o ProxyCommand=sh
+    assert_failure 1
+    assert_output --partial "ssh's own options are not available"
 }

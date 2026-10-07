@@ -35,6 +35,11 @@ type Entry struct {
 	Shadowed           []string
 	// Configured: a scope answers the address (a host: its scope exists).
 	Configured bool
+	// PrevAddress and AddressChanged: a host's address before the last
+	// change 'host sync' recorded, and when ('' when none).
+	PrevAddress, AddressChanged string
+	// Method is a host's login method (tacplus or radius; '' for a device).
+	Method string
 }
 
 // State is 'configured' or 'unconfigured'.
@@ -100,11 +105,15 @@ func (r *Resolver) derive(e *Entry) {
 // hostEntry is an enrolled host as a vendor=linux entry: hostname, port
 // and identity from 'target|port|identity' (the target's user is the
 // provisioning account, never a login for 'tacctl ssh'); the address is the
-// scope's single /32 or /128 when it has one.
+// one 'host enroll'/'host sync' recorded, else (a host not synced since
+// addresses were recorded) the scope's single /32 or /128 when it has one.
 func (r *Resolver) hostEntry(h hosts.Entry) Entry {
-	e := Entry{Source: SourceHost, Target: h.Target, Identity: h.Identity}
+	e := Entry{Source: SourceHost, Target: h.Target, Identity: h.Identity, Method: h.EffectiveMethod()}
 	e.Name, e.Vendor, e.Scope = h.Name, VendorLinux, h.Scope
-	e.HostKeys = r.File.HostKeysOf(h.Name)
+	if rec := r.File.Host(h.Name); rec != nil {
+		e.HostKeys, e.Ack = slices.Clone(rec.Keys), slices.Clone(rec.Ack)
+		e.Address, e.PrevAddress, e.AddressChanged = rec.Address, rec.PrevAddress, rec.Changed
+	}
 	host := h.Target
 	if _, after, ok := strings.Cut(h.Target, "@"); ok {
 		host = after
@@ -113,7 +122,7 @@ func (r *Resolver) hostEntry(h hosts.Entry) Entry {
 	if n, err := strconv.Atoi(h.Port); err == nil && n != DefaultPort {
 		e.Port = n
 	}
-	if r.Model != nil {
+	if r.Model != nil && e.Address == "" {
 		if ps := r.Model.ScopePrefixes(h.Scope); len(ps) == 1 {
 			if a, ok := strings.CutSuffix(ps[0], "/32"); ok {
 				e.Address = a

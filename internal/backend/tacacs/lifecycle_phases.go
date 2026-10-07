@@ -191,10 +191,11 @@ func (b *Backend) upgradeFinish(ctx context.Context) error {
 		storeFlip = l.flip
 	}
 	flip := storeFlip(ctx)
-	l.report.Head, l.report.Notes = "", nil
+	l.report.Head, l.report.Notes, l.report.UpToDate = "", nil, ""
 
 	newBinary := l.skipBuild == "false"
-	if newBinary || l.unitsState == unitsChanged || flip == lifecycle.Flipped || l.configChanged {
+	restart := newBinary || l.unitsState == unitsChanged || flip == lifecycle.Flipped || l.configChanged
+	if restart {
 		out.Info("Restarting tacquito service...")
 		b.run(ctx, "restart", rtacacs.UnitName)
 		b.sleep(ctx, startWait)
@@ -222,6 +223,9 @@ func (b *Backend) upgradeFinish(ctx context.Context) error {
 		l.report.Head = "Upgrade Complete: rebuilt at " + l.currentCommit + " (patch overlay refreshed)"
 	default:
 		l.report.Head = "Scripts Updated (source unchanged at " + l.currentCommit + ")"
+		if !restart && l.report.FilesUpdated == 0 {
+			l.report.UpToDate = "Already Up to Date (source unchanged at " + l.currentCommit + ")"
+		}
 	}
 	if l.unitsState == unitsChanged {
 		l.report.Notes = append(l.report.Notes,

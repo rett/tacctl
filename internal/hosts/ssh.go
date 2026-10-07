@@ -35,6 +35,8 @@ type SSH struct {
 	Batch bool
 	// Port and Identity, when set, are -p and -i.
 	Port, Identity string
+	// Env is more KEY=value for ssh run as AsUser (DISPLAY for -X).
+	Env []string
 }
 
 // Cmd is the ssh command with args after the options.
@@ -55,6 +57,7 @@ func (s SSH) Cmd(args ...string) execx.Cmd {
 		if s.AuthSock != "" {
 			c.UserEnv = []string{"SSH_AUTH_SOCK=" + s.AuthSock}
 		}
+		c.UserEnv = append(c.UserEnv, s.Env...)
 	}
 	return c
 }
@@ -126,6 +129,7 @@ func (e *Env) RunScript(ctx context.Context, target, port, identity, script stri
 	sw := &summaryWriter{w: e.Out.Stdout}
 	out := ui.Output{Stdout: sw, Stderr: e.Out.Stderr}
 	defer func() { e.Summary = sw.sum }()
+	e.Facts = nil
 	if target == Local {
 		code, intr, err := Attached(ctx, e.Runner, execx.Cmd{Name: "bash", Args: append([]string{script}, args...)}, e.Stdin, out)
 		if intr {
@@ -133,6 +137,10 @@ func (e *Env) RunScript(ctx context.Context, target, port, identity, script stri
 		}
 		if err != nil {
 			return code, err
+		}
+		if e.ReadKeys && code == 0 {
+			f := LocalFacts(e.Paths.LoginDefs)
+			e.Facts = &f
 		}
 		return code, nil
 	}
@@ -159,17 +167,22 @@ func (e *Env) RunScript(ctx context.Context, target, port, identity, script stri
 		return 1, nil
 	}
 	tty := e.stdinTTY()
-	flag := "-T"
+	runArgs := []string{"-T"}
 	if tty {
-		flag = "-t"
+		// With a terminal, ssh's mux client says 'Shared connection to <host>
+		// closed.' when the run ends (an INFO-level message); LogLevel=ERROR
+		// keeps errors and drops it. The copy above opened the connection,
+		// so its messages (a new known_hosts entry) were shown there.
+		runArgs = []string{"-o", "LogLevel=ERROR", "-t"}
 	}
-	code, intr, startErr := Attached(ctx, e.Runner, s.Cmd(flag, target, RemoteCommand(remote, args, tty)), e.Stdin, out)
+	code, intr, startErr := Attached(ctx, e.Runner, s.Cmd(append(runArgs, target, RemoteCommand(remote, args, tty))...), e.Stdin, out)
 	if startErr != nil && code == 0 {
 		code = 1
 	}
 	// The host's own public keys, read over this connection for PinKeys.
 	if e.ReadKeys && code == 0 && !intr {
 		e.readKeys(ctx, s, target)
+		e.readFacts(ctx, s, target)
 	}
 	closer := s.Cmd("-O", "exit", target)
 	closer.Stdout, closer.Stderr = io.Discard, io.Discard

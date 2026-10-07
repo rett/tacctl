@@ -6,6 +6,10 @@ Usage:
   tacctl scope prefixes lab add    <cidr>[,<cidr>...]    Add one or more
   tacctl scope prefixes lab remove <cidr>[,<cidr>...]    Remove one or more
   tacctl scope prefixes lab remove --all [--force]       Remove all, which removes the scope (confirms; --force also strips it from users)
+  tacctl scope prefixes lab move <cidr>[,<cidr>...] <scope>
+                                                            Move them to another scope in one change; names the hosts that then belong elsewhere
+      --all                                                 (remove) Every prefix
+      --force                                               (remove --all) Also take the scope out of the users that have it
 
 Current entries: 1
 

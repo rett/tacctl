@@ -413,7 +413,13 @@ func TestDeviceNotices(t *testing.T) {
 	if out = sb.dev("", "list"); !strings.Contains(out, "hostkey-unpinned") || strings.Contains(out, "generic-name") {
 		t.Errorf("list:\n%s", out)
 	}
-	if out = sb.dev("", "show", "router"); !strings.Contains(out, "generic-name (acknowledged):") {
+	if out = sb.dev("", "notices", "router", "--all"); !strings.Contains(out, "generic-name (acknowledged):") {
+		t.Errorf("notices --all:\n%s", out)
+	}
+	if out = sb.dev("", "show", "router"); strings.Contains(out, "generic-name") || !strings.Contains(out, "1 acknowledged notice not shown") {
+		t.Errorf("show:\n%s", out)
+	}
+	if out = sb.dev("", "show", "router", "--all"); !strings.Contains(out, "generic-name (acknowledged):") {
 		t.Errorf("show:\n%s", out)
 	}
 	sb.dev("", "notice", "router", "unack", "generic-name")
@@ -579,6 +585,36 @@ func TestDeviceTierFilteringAndGate(t *testing.T) {
 	}
 	if names = sb.run("", []string{"_completion-names", "devices"}); names != "db1\ndmz-fw\nlab-sw\nprod-sw\nstray\nweb1\n" {
 		t.Errorf("unrestricted completion names = %q", names)
+	}
+	// The shell's descriptions ('--desc': name, TAB, vendor address scope)
+	// name the same devices and show nothing of the others.
+	descs := plain(sb.cfgRun("", []string{"_completion-names", "devices", "--desc"}, func(r *fake.Runner) {
+		r.On([]string{"id", "-nG", "--", "carol"}, execx.Result{Stdout: []byte("carol tac-users tac-readonly\n")})
+	}, "SUDO_USER=carol"))
+	var got []string
+	for _, l := range strings.Split(strings.TrimSuffix(descs, "\n"), "\n") {
+		n, d, _ := strings.Cut(l, "\t")
+		got = append(got, n)
+		if n == "lab-sw" && !strings.HasPrefix(d, "cisco 192.168.1.1 ") {
+			t.Errorf("lab-sw description %q", d)
+		}
+		if n == "web1" && !strings.HasPrefix(d, "linux 192.0.2.10 lab") {
+			t.Errorf("web1 description %q", d)
+		}
+	}
+	if strings.Join(got, " ") != "dmz-fw lab-sw web1" {
+		t.Errorf("carol's described names = %q", got)
+	}
+	for _, hidden := range []string{"prod-sw", "10.99.0.1", "db1", "192.0.2.11", "stray", "100.64.0.1"} {
+		if strings.Contains(descs, hidden) {
+			t.Errorf("carol's descriptions show %s:\n%s", hidden, descs)
+		}
+	}
+	if all := sb.run("", []string{"_completion-names", "devices", "--desc"}); !strings.Contains(all, "prod-sw\tcisco 10.99.0.1 ") || !strings.Contains(all, "db1\tlinux 192.0.2.11 prod") {
+		t.Errorf("unrestricted descriptions = %q", all)
+	}
+	if plainNames := sb.run("", []string{"_completion-names", "users", "--desc"}); strings.Contains(plainNames, "\t") {
+		t.Errorf("a kind without descriptions printed a tab: %q", plainNames)
 	}
 }
 

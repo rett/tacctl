@@ -17,7 +17,6 @@ import (
 	"io"
 	"os"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -28,27 +27,6 @@ import (
 	"github.com/rett/tacctl/internal/tier"
 	"github.com/rett/tacctl/internal/ui"
 )
-
-// UIDBase..UIDMax is the range tacctl assigns UIDs (and the matching
-// primary GIDs) from: it never gives out a number outside it, and the
-// client script never touches an account whose UID is outside it.
-const (
-	UIDBase = 20000
-	UIDMax  = 29999
-)
-
-// UIDRange is the range in words ("20000-29999").
-var UIDRange = strconv.Itoa(UIDBase) + "-" + strconv.Itoa(UIDMax)
-
-// UIDInRange reports whether uid is a decimal number from UIDBase to UIDMax
-// written without leading zeros.
-func UIDInRange(uid string) bool {
-	if uid == "" || uid[0] == '0' || strings.Trim(uid, "0123456789") != "" || len(uid) > 9 {
-		return false
-	}
-	n, _ := strconv.Atoi(uid)
-	return n >= UIDBase && n <= UIDMax
-}
 
 // The pinned pam_tacplus (LINUX_* and PAM_TACPLUS_* of lib/linux_hosts.sh).
 const (
@@ -97,6 +75,12 @@ type Paths struct {
 	UIDs   string // LINUX_UID_FILE
 	Hosts  string // LINUX_HOSTS_FILE
 	VarLib string // paths.VarLib: made 0711 first when Dir is under it (mkDir)
+	// LoginDefs is this server's login.defs, read for a host enrolled with
+	// --local (paths.LoginDefs).
+	LoginDefs string
+	// ProcSelf stands for /proc/self, whose uid_map and gid_map are read
+	// for a host enrolled with --local ("" is /proc/self).
+	ProcSelf string
 }
 
 // Tarball is PAM_TACPLUS_TARBALL.
@@ -120,6 +104,9 @@ type Env struct {
 	AuthSock string
 	// Now is the clock (the knob clock in tests).
 	Now func() time.Time
+	// Range is the server's UID range (tacctl.yaml linux.uid_min and
+	// linux.uid_max); the zero Range is DefaultRange.
+	Range Range
 	// TTY reports whether a terminal can be opened (': > /dev/tty');
 	// StdinTTY whether stdin is one ('[[ -t 0 ]]'); Machine is 'uname -m'.
 	// Nil means the real checks.
@@ -129,10 +116,15 @@ type Env struct {
 	// PinHostKeys pins an enrolled host's ssh keys (pin.go); nil pins
 	// nothing.
 	PinHostKeys KeyPinner
-	// ReadKeys makes RunScript read the host's public keys over its
-	// connection after a successful run (ReadKeysCommand), for PinKeys:
-	// 'host enroll' and 'host sync' set it.
+	// ReadKeys makes RunScript read the host's public keys and its facts
+	// over its connection after a successful run (ReadKeysCommand,
+	// FactsCommand), for PinKeys and Facts: 'host enroll' and 'host sync'
+	// set it.
 	ReadKeys bool
+
+	// Facts are what the last RunScript with ReadKeys read of the host
+	// (nil when nothing was read).
+	Facts *Facts
 
 	// Summary is the account summary the last RunScript's script printed
 	// (nil when it printed none).
@@ -145,6 +137,20 @@ type Env struct {
 // ErrFailed is a failure whose messages have been printed: the bash
 // function's 'return 1'.
 var ErrFailed = errors.New("hosts: failed (reported)")
+
+// rng is the UID range: Range, DefaultRange when it is not set.
+func (e *Env) rng() Range {
+	if e.Range.IsZero() {
+		return DefaultRange
+	}
+	return e.Range
+}
+
+// UIDRange is the UID range (Range, DefaultRange when it is not set).
+func (e *Env) UIDRange() Range { return e.rng() }
+
+// UIDs is the UID file numbered for the range.
+func (e *Env) UIDs() UIDs { return UIDs{Path: e.Paths.UIDs, Range: e.rng()} }
 
 func (e *Env) now() time.Time {
 	if e.Now != nil {
@@ -229,8 +235,10 @@ func UserCount(rows []string) int {
 	return n
 }
 
-// ScopeUsers is linux_scope_users: "name:tier:uid" lines for the rows of
-// the linux-users view that can be Linux accounts, a UID of UIDBase..UIDMax
+// ScopeUsers is linux_scope_users: "name:tier:uid" lines (with shell set,
+// "name:tier:uid:<shell(name, tier)>": the tacctl server's own accounts)
+// for the rows of
+// the linux-users view that can be Linux accounts, a UID of the range
 // assigned to each on first use, joined by newlines ('$(...)': no trailing
 // one). Names useradd would reject are skipped with a warning on stderr.
 // Users whose group has no priv-lvl, and users whose UID file entry is
@@ -238,8 +246,9 @@ func UserCount(rows []string) int {
 // too and returned in keep: they are still users of the scope, so a host
 // expires their accounts rather than deleting them. No UID left in the
 // range is printed and ErrFailed.
-func (e *Env) ScopeUsers(rows []string) (users string, keep []string, err error) {
-	uids := UIDs{Path: e.Paths.UIDs}
+func (e *Env) ScopeUsers(rows []string, shell func(name, tier string) string) (users string, keep []string, err error) {
+	uids := e.UIDs()
+	rng := uids.rng()
 	var out []string
 	for _, r := range rows {
 		name, privlvl := splitRow(r)
@@ -258,19 +267,23 @@ func (e *Env) ScopeUsers(rows []string) (users string, keep []string, err error)
 		}
 		uid, err := uids.For(name)
 		if errors.Is(err, ErrUIDRangeFull) {
-			e.Out.ErrorE("No UID left for '" + name + "': every number of " + UIDRange + " has been given out (UIDs are never reused).")
+			e.Out.ErrorE("No UID left for '" + name + "': every number of " + rng.String() + " has been given out (UIDs are never reused).")
 			e.Out.ErrorE("Give it a free number of the range by hand: tacctl config linux uid " + name + " <uid>")
 			return "", nil, ErrFailed
 		}
 		if err != nil {
 			return "", nil, err
 		}
-		if !UIDInRange(uid) {
-			e.stderrOut().WarnE("Skipping '" + name + "': its UID " + uid + " is outside " + UIDRange + ", so no host gets an account for it. Assign one in the range: tacctl config linux uid " + name + " <uid>")
+		if !rng.Contains(uid) {
+			e.stderrOut().WarnE("Skipping '" + name + "': its UID " + uid + " is outside " + rng.String() + ", so no host gets an account for it. Assign one in the range: tacctl config linux uid " + name + " <uid>")
 			keep = append(keep, name)
 			continue
 		}
-		out = append(out, name+":"+t+":"+uid)
+		line := name + ":" + t + ":" + uid
+		if shell != nil {
+			line += ":" + shell(name, t)
+		}
+		out = append(out, line)
 	}
 	return strings.Join(out, "\n"), keep, nil
 }

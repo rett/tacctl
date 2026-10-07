@@ -149,11 +149,32 @@ func TestScanNoticeTable(t *testing.T) {
 			},
 			check: "sw1", want: nil},
 		{name: "an enrolled host: no acknowledgement offered",
-			hosts: "web9|root@203.0.113.5||host9|192.0.2.1|\n",
+			hosts: "web9|root@203.0.113.5||host9|192.0.2.1||radius\n",
 			seen: func(s *Seen) {
 				s.Apply("radius", []backend.Sighting{sight(0, "203.0.113.5", backend.SightAccept, "a", "ubuntu")})
 			},
 			check: "web9", want: []string{NoticeGenericNASID}},
+		{name: "a TACACS+ host: a NAS-Identifier from an earlier RADIUS enrolment raises nothing",
+			hosts: "web9|root@203.0.113.5||host9|192.0.2.1|\n",
+			seen: func(s *Seen) {
+				s.Apply("radius", []backend.Sighting{sight(0, "203.0.113.5", backend.SightAccept, "a", "sshd")})
+				s.Apply("radius", []backend.Sighting{sight(60, "203.0.113.5", backend.SightAccept, "a", "sudo")})
+			},
+			check: "web9", want: nil},
+		{name: "a RADIUS host sending its PAM service's name: one notice, enrol again",
+			hosts: "web9|root@203.0.113.5||host9|192.0.2.1||radius\n",
+			seen: func(s *Seen) {
+				s.Apply("radius", []backend.Sighting{sight(0, "203.0.113.5", backend.SightAccept, "a", "sshd")})
+				s.Apply("radius", []backend.Sighting{sight(60, "203.0.113.5", backend.SightAccept, "a", "sudo")})
+			},
+			check: "web9", want: []string{NoticeNameMismatch},
+			text: []string{"identifies itself as 'sudo', the PAM service that asked, not the host", "tacctl host enroll root@203.0.113.5"}},
+		{name: "a RADIUS host sending its fully qualified name matches its short registry name",
+			hosts: "web9|root@203.0.113.5||host9|192.0.2.1||radius\n",
+			seen: func(s *Seen) {
+				s.Apply("radius", []backend.Sighting{sight(0, "203.0.113.5", backend.SightAccept, "a", "web9.example.net")})
+			},
+			check: "web9", want: nil},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			f := Empty()

@@ -79,6 +79,7 @@ func newRoot(inv *invocation) *cobra.Command {
 	})
 	root.RunE, help.RunE = topUsage, topUsage
 	attachCompletion(inv, root)
+	applyTopShorts(root)
 	configure(root)
 	configure(help)
 	return root

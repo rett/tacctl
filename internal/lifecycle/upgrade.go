@@ -177,6 +177,12 @@ func Upgrade(ctx context.Context, h *Host, args []string) error {
 	}
 	updated += n
 	updated += h.updateTierSudoers(ctx)
+	n, err = h.updateConsoleLink()
+	if err != nil {
+		return err
+	}
+	updated += n
+	updated += h.updateConsoleDropIn(ctx)
 	// Unconditional re-gzip (cheap) also heals a host where it is missing.
 	if err := h.installManPage(ctx, filepath.Join(active, "man", "tacctl.1")); err != nil {
 		return err
@@ -200,16 +206,21 @@ func Upgrade(ctx context.Context, h *Host, args []string) error {
 	if err := h.upgrade(ctx, ids, backend.PhaseFinish, ""); err != nil {
 		return err
 	}
-	head := ""
+	head, upToDate := "", ""
 	var notes []string
 	for _, id := range ids {
 		if s, ok := h.summarizer(id); ok {
 			sum := s.UpgradeSummary()
 			if sum.Head != "" {
-				head = sum.Head
+				head, upToDate = sum.Head, sum.UpToDate
 			}
 			notes = append(notes, sum.Notes...)
 		}
+	}
+	// No file updated and no backend with anything to say: the headline
+	// says the installation was already current.
+	if updated == 0 && upToDate != "" && len(notes) == 0 {
+		head = upToDate
 	}
 	if note := customisedNote(ts.Customised); note != "" {
 		notes = append(notes, note)

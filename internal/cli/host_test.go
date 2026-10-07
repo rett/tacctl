@@ -27,6 +27,9 @@ type hostSandbox struct {
 	*sandbox
 	pushed   string
 	runFails bool
+	// reroot moves tacctl's fixed host locations (the console's symlink
+	// among them) into the sandbox.
+	reroot bool
 }
 
 func newHostSandbox(t *testing.T) *hostSandbox {
@@ -81,11 +84,24 @@ func (hs *hostSandbox) run(r *fake.Runner, args ...string) string {
 	hs.sandbox.runner = r
 	a := app.New(args, paths.NewEnv(hs.env), "/opt/x/dist/tacctl", 1000,
 		app.Stdio{Stdin: strings.NewReader(""), Stdout: &hs.out, Stderr: &hs.err}, r)
+	if hs.reroot {
+		a.Paths = a.Paths.Reroot(hs.dir)
+	}
 	hs.code = exitCode(Run(context.Background(), a, BuildInfo{Version: "0.2.0-test"}), a.Out)
 	if n := len(r.Execs()); n != 0 {
 		hs.t.Errorf("%q: exec'd", args)
 	}
 	return hs.out.String()
+}
+
+// loopback gives scope lab the address this server's own logins come from,
+// so 'host enroll --local --scope lab' is accepted.
+func (hs *hostSandbox) loopback() {
+	hs.t.Helper()
+	hs.run(nil, "scope", "prefixes", "lab", "add", "127.0.0.1/32")
+	if hs.code != 0 {
+		hs.t.Fatalf("scope prefixes lab add: %d %s", hs.code, hs.err.String())
+	}
 }
 
 func (hs *hostSandbox) registry() string {
@@ -123,7 +139,7 @@ func TestHostEnrollSyncUnenroll(t *testing.T) {
 		t.Errorf("registry %q", got)
 	}
 	for _, w := range []string{"TAC_METHOD=tacplus\n", "TAC_SERVER=192.0.2.1\n", "TAC_SECRET=lab-secret-0123456789abcdef\n",
-		"TAC_USERS=$'alice:superuser:20000\\nbob:operator:20001\\ncarol:readonly:20002'\nTAC_INACTIVE=''\nTAC_REMOVE_HOMES=\\*\nTAC_PROTOCOL=2\n",
+		"TAC_USERS=$'alice:superuser:80000\\nbob:operator:80001\\ncarol:readonly:80002'\nTAC_INACTIVE=''\nTAC_REMOVE_HOMES=\\*\nTAC_UID_FIRST=80000\nTAC_UID_LAST=89999\nTAC_UID_PREVIOUS=''\nTAC_PROTOCOL=5\n",
 		"# tacctl Linux client installer for scope 'lab'. Generated "} {
 		if !strings.Contains(hs.pushed, w) {
 			t.Errorf("pushed script lacks %q", w)
@@ -145,7 +161,7 @@ func TestHostEnrollSyncUnenroll(t *testing.T) {
 	}
 
 	out := hs.run(nil, "host", "list")
-	if !strings.Contains(plain(out), "web1                 admin@web1.example.net       lab                  192.0.2.1        tacplus  3") {
+	if !strings.Contains(plain(out), "  web1  admin@web1.example.net  lab    192.0.2.1  tacplus  3\n") {
 		t.Errorf("list %q", plain(out))
 	}
 	// A disabled user is inactive (expired on the host, never deleted).
@@ -157,7 +173,7 @@ func TestHostEnrollSyncUnenroll(t *testing.T) {
 	if !strings.HasSuffix(hs.pushed, "exit 0\n") {
 		t.Error("sync pushed the tarball")
 	}
-	if !strings.Contains(hs.pushed, "TAC_USERS=$'alice:superuser:20000\\nbob:operator:20001'\nTAC_INACTIVE=carol\nTAC_REMOVE_HOMES=''\nTAC_PROTOCOL=2\n") {
+	if !strings.Contains(hs.pushed, "TAC_USERS=$'alice:superuser:80000\\nbob:operator:80001'\nTAC_INACTIVE=carol\nTAC_REMOVE_HOMES=''\nTAC_UID_FIRST=80000\nTAC_UID_LAST=89999\nTAC_UID_PREVIOUS=''\nTAC_PROTOCOL=5\n") {
 		t.Errorf("sync header:\n%s", strings.SplitN(hs.pushed, "# --- tacctl", 2)[0])
 	}
 	if r.CalledRegexp(`getent passwd`) {
@@ -190,25 +206,56 @@ func TestHostEnrollSyncUnenroll(t *testing.T) {
 	}
 }
 
-func TestHostEnrollCreatesScopeQuietly(t *testing.T) {
+// Without --scope: a registered host keeps its scope; any other goes into
+// the scope that answers its address; one no scope covers is refused, and
+// no scope is ever created.
+func TestHostEnrollScopeChoice(t *testing.T) {
 	hs := newHostSandbox(t)
-	out := hs.run(nil, "host", "enroll", "web1", "--build-on-host")
-	hs.expect(0, "Creating scope 'linux-web1' for 192.0.2.50/32...", "")
-	if strings.Contains(out, "Generated secret") || strings.Contains(out, "added.") {
-		t.Errorf("scope add was not silenced: %q", out)
+	hs.run(nil, "host", "enroll", "admin@web1.example.net", "--build-on-host")
+	hs.expect(1, "", "No scope covers 192.0.2.50 (web1.example.net), so the server would refuse every login of 'web1'. Nothing was changed.")
+	for _, want := range []string{"tacctl scope prefixes <scope> add 192.0.2.50/32",
+		"tacctl scope add linux-web1 --prefixes 192.0.2.50/32 --secret generate",
+		"tacctl host enroll admin@web1.example.net [--scope <scope>]"} {
+		if !strings.Contains(hs.err.String(), want) {
+			t.Errorf("no %q in %q", want, hs.err.String())
+		}
 	}
-	if !strings.Contains(hs.store(), "linux-web1:\n    prefixes: [192.0.2.50/32]") || !strings.Contains(hs.store(), "protocols: [tacacs]") {
-		t.Errorf("store:\n%s", hs.store())
+	if hs.registry() != "" || hs.pushed != "" || strings.Contains(hs.store(), "linux-web1") {
+		t.Error("the refused enrolment changed something")
 	}
-	if !strings.Contains(out, "No users are in scope 'linux-web1' yet.") {
-		t.Errorf("no-users hint: %q", out)
+
+	// A scope answers the address: enrolled there, and said so.
+	hs.run(nil, "scope", "prefixes", "lab", "add", "192.0.2.0/24")
+	hs.run(nil, "host", "enroll", "admin@web1.example.net", "--build-on-host")
+	hs.expect(0, "192.0.2.50 (web1.example.net) is answered by scope 'lab' (prefix 192.0.2.0/24); enrolling web1 there (another one: --scope <name>).", "")
+	if !strings.HasPrefix(hs.registry(), "web1|admin@web1.example.net||lab|") {
+		t.Errorf("registry %q", hs.registry())
 	}
-	// The registered server address is kept on a re-enroll.
-	if err := os.WriteFile(filepath.Join(hs.dir, "state", "linux-hosts"), []byte("web1|web1||linux-web1|198.51.100.7|\n"), 0o600); err != nil {
+
+	// Registered: a re-enroll keeps its scope and server address, even when
+	// a more specific prefix of another scope now answers the address.
+	if err := os.WriteFile(filepath.Join(hs.dir, "state", "linux-hosts"), []byte("web1|web1||lab|198.51.100.7|\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	hs.run(nil, "scope", "add", "linux-web1", "--prefixes", "192.0.2.50/32", "--secret", "generate")
 	hs.run(nil, "host", "enroll", "web1", "--build-on-host")
-	hs.expect(0, "Using existing scope 'linux-web1'.", "")
+	hs.expect(0, "web1 is registered in scope 'lab' and stays in it (another one: --scope <name>).", "")
+	if !strings.Contains(hs.out.String(), "Scope 'lab' does not cover 192.0.2.50") {
+		t.Errorf("no warning: %q", hs.out.String())
+	}
+	if hs.registry() != "web1|web1||lab|198.51.100.7|\n" {
+		t.Errorf("registry %q", hs.registry())
+	}
+	// Named: another scope. The move deletes the accounts of lab's users,
+	// so without a terminal it wants --yes; nothing changes before.
+	hs.pushed = ""
+	hs.run(nil, "host", "enroll", "web1", "--scope", "linux-web1", "--build-on-host")
+	hs.expect(1, "Moving web1 from scope 'lab' to scope 'linux-web1': it gets that scope's secret and users.", "Moving web1 to scope 'linux-web1' deletes accounts; nothing was changed. Confirm with --yes.")
+	if !strings.Contains(hs.out.String(), "their accounts on web1 are deleted: alice, bob") || hs.pushed != "" {
+		t.Errorf("move: %q pushed %d", hs.out.String(), len(hs.pushed))
+	}
+	hs.run(nil, "host", "enroll", "web1", "--scope", "linux-web1", "--yes", "--build-on-host")
+	hs.expect(0, "Host 'web1' enrolled", "")
 	if hs.registry() != "web1|web1||linux-web1|198.51.100.7|\n" {
 		t.Errorf("registry %q", hs.registry())
 	}
@@ -397,60 +444,60 @@ func TestConfigLinuxScriptAndUID(t *testing.T) {
 	hs.expect(1, "", "Usage: tacctl config linux remove-script [--output <file>]")
 
 	hs.run(nil, "config", "linux", "uid")
-	hs.expect(0, "alice                    20000", "")
+	hs.expect(0, "  alice     80000\n", "")
 	hs.run(nil, "config", "linux", "uid", "bob")
-	hs.expect(0, "20001\n", "")
+	hs.expect(0, "80001\n", "")
 	hs.run(nil, "config", "linux", "uid", "dave")
 	hs.expect(1, "", "No UID assigned to 'dave' yet.")
 	hs.run(nil, "config", "linux", "uid", "bad name")
 	hs.expect(1, "", "Username must contain only letters")
-	hs.run(nil, "config", "linux", "uid", "dave", "30000")
+	hs.run(nil, "config", "linux", "uid", "dave", "90000")
 	hs.expect(1, "", "User 'dave' does not exist.")
-	// Only the range: 20000-29999.
-	for _, bad := range []string{"500", "1001", "19999", "30000", "65534", "020000", "x20000"} {
+	// Only the range: 80000-89999 (the legacy range is not it).
+	for _, bad := range []string{"500", "1001", "20000", "29999", "79999", "90000", "65534", "080000", "x80000"} {
 		hs.run(nil, "config", "linux", "uid", "bob", bad)
-		hs.expect(1, "", "UID must be a number from 20000 to 29999: tacctl gives out UIDs (and the matching GIDs) in that range only.")
+		hs.expect(1, "", "UID must be a number from 80000 to 89999: tacctl gives out UIDs in that range only.")
 	}
-	hs.run(nil, "config", "linux", "uid", "bob", "20000")
-	hs.expect(1, "", "UID 20000 is already assigned to 'alice'.")
-	hs.run(nil, "config", "linux", "uid", "bob", "29999")
-	hs.expect(0, "usermod -u 29999 bob && groupmod -g 29999 bob", "")
+	hs.run(nil, "config", "linux", "uid", "bob", "80000")
+	hs.expect(1, "", "UID 80000 is already assigned to 'alice'.")
+	hs.run(nil, "config", "linux", "uid", "bob", "89999")
+	hs.expect(0, "usermod -u 89999 bob", "")
 	// A legacy entry outside the range (before 0.2.1) is listed as unused
 	// on hosts, and its user is left out of the script (expired there, not
 	// deleted).
 	uids := filepath.Join(hs.dir, "state", "linux-uids")
 	data, _ := os.ReadFile(uids)
-	if err := os.WriteFile(uids, []byte(strings.Replace(string(data), "carol:20002", "carol:1500", 1)), 0o600); err != nil {
+	if err := os.WriteFile(uids, []byte(strings.Replace(string(data), "carol:80002", "carol:1500", 1)), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	hs.run(nil, "config", "linux", "uid")
-	hs.expect(0, "  carol                    1500   outside 20000-29999: not used on hosts\n", "")
+	hs.expect(0, "  carol     1500   outside 80000-89999: not used on hosts\n", "")
 	hs.run(nil, "config", "linux", "script", "--scope", "lab", "--server", "192.0.2.10", "-o", out)
-	hs.expect(0, "", "Skipping 'carol': its UID 1500 is outside 20000-29999, so no host gets an account for it. Assign one in the range: tacctl config linux uid carol <uid>")
+	hs.expect(0, "", "Skipping 'carol': its UID 1500 is outside 80000-89999, so no host gets an account for it. Assign one in the range: tacctl config linux uid carol <uid>")
 	script, _ := os.ReadFile(out)
-	if !strings.Contains(string(script), "TAC_USERS=$'alice:superuser:20000\\nbob:operator:29999'\nTAC_INACTIVE=carol\n") {
+	if !strings.Contains(string(script), "TAC_USERS=$'alice:superuser:80000\\nbob:operator:89999'\nTAC_INACTIVE=carol\n") {
 		t.Errorf("script header:\n%s", strings.SplitN(string(script), "# --- tacctl", 2)[0])
 	}
 }
 
-// The range runs out at 29999: the next user is refused with the way out,
+// The range runs out at 89999: the next user is refused with the way out,
 // and nothing is written.
 func TestConfigLinuxScriptUIDRangeFull(t *testing.T) {
 	hs := newHostSandbox(t)
 	uids := filepath.Join(hs.dir, "state", "linux-uids")
-	if err := os.WriteFile(uids, []byte("alice:29999\n"), 0o600); err != nil {
+	if err := os.WriteFile(uids, []byte("alice:89999\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	out := filepath.Join(hs.dir, "x.sh")
 	hs.run(nil, "config", "linux", "script", "--scope", "lab", "--server", "192.0.2.10", "-o", out)
-	hs.expect(1, "", "[ERROR] No UID left for 'bob': every number of 20000-29999 has been given out (UIDs are never reused).")
+	hs.expect(1, "", "[ERROR] No UID left for 'bob': every number of 80000-89999 has been given out (UIDs are never reused).")
 	if !strings.Contains(hs.err.String(), "Give it a free number of the range by hand: tacctl config linux uid bob <uid>") {
 		t.Errorf("stderr %q", hs.err.String())
 	}
 	if _, err := os.Stat(out); !os.IsNotExist(err) {
 		t.Error("a script was written")
 	}
-	if data, _ := os.ReadFile(uids); string(data) != "alice:29999\n" {
+	if data, _ := os.ReadFile(uids); string(data) != "# range 80000-89999\nalice:89999\n" {
 		t.Errorf("uid file %q", data)
 	}
 }
@@ -520,7 +567,7 @@ func TestConfigLinuxBuildBuildsAndOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := hs.run(nil, "config", "linux", "builds")
-	if !strings.Contains(out, "  debian:bookworm              x86_64   built 2026-10-03T12:00:00Z\n      base image sha256:feedface\n") {
+	if !strings.Contains(out, "  debian:bookworm  x86_64  2026-10-03T12:00:00Z  sha256:feedface\n") {
 		t.Errorf("builds %q", out)
 	}
 
@@ -570,4 +617,47 @@ func TestHostSyncReportsTheHostsSummary(t *testing.T) {
 	summary = ""
 	hs.run(r(), "host", "enroll", "web1", "--scope", "lab", "--build-on-host")
 	hs.expect(0, "Host 'web1' enrolled.\n", "")
+}
+
+// The scope must answer the host's requests: for this server (127.0.0.1)
+// another scope or none is refused before anything changes; for another
+// host (its resolved address) it is a warning.
+func TestHostEnrollScopeMustCoverTheHost(t *testing.T) {
+	hs := newHostSandbox(t)
+	before := hs.registry()
+	hs.run(nil, "host", "enroll", "--local", "--name", "authsrv", "--scope", "lab", "--build-on-host")
+	hs.expect(1, "", "Scope 'lab' does not cover 127.0.0.1, the address this server's own logins reach TACACS+ and RADIUS from (no scope covers it), so every login of 'authsrv' would be refused.")
+	for _, want := range []string{"tacctl scope prefixes lab add 127.0.0.1/32", "Nothing was changed."} {
+		if !strings.Contains(hs.err.String(), want) {
+			t.Errorf("no %q in %q", want, hs.err.String())
+		}
+	}
+	if hs.registry() != before || hs.sandbox.runner.Called("bash") {
+		t.Error("the refused enrolment changed something")
+	}
+	// Without --scope and no scope covering 127.0.0.1: refused too.
+	hs.run(nil, "host", "enroll", "--local", "--name", "authsrv", "--build-on-host")
+	hs.expect(1, "", "No scope covers 127.0.0.1 (where this server's own logins come from), so the server would refuse every login of 'authsrv'.")
+	if !strings.Contains(hs.err.String(), "tacctl host enroll --local [--scope <scope>]") {
+		t.Errorf("hint: %q", hs.err.String())
+	}
+	// Its own scope for 127.0.0.1/32: found without --scope.
+	hs.run(nil, "scope", "add", "linux-authsrv", "--prefixes", "127.0.0.1/32", "--secret", "generate")
+	hs.run(nil, "host", "enroll", "--local", "--name", "authsrv", "--build-on-host")
+	hs.expect(0, "Host 'authsrv' enrolled", "")
+
+	// Another host whose address lab does not hold: enrolled, with a warning.
+	hs.run(nil, "host", "enroll", "admin@web1.example.net", "--scope", "lab", "--build-on-host")
+	hs.expect(0, "Scope 'lab' does not cover 192.0.2.50, the address 'web1' resolves to (no scope covers it). If its requests come from that address, its logins are refused.", "")
+	if !strings.Contains(hs.out.String(), "Host 'web1' enrolled") {
+		t.Errorf("not enrolled: %q", hs.out.String())
+	}
+	// A sync of this server whose scope no longer covers 127.0.0.1 warns.
+	hs.run(nil, "host", "enroll", "--local", "--name", "authsrv", "--build-on-host")
+	hs.run(nil, "scope", "prefixes", "linux-authsrv", "add", "10.99.0.0/16")
+	hs.run(nil, "scope", "prefixes", "linux-authsrv", "remove", "127.0.0.1/32")
+	hs.run(nil, "host", "sync", "authsrv")
+	if !strings.Contains(hs.out.String()+hs.err.String(), "authsrv: scope 'linux-authsrv' does not cover 127.0.0.1") {
+		t.Errorf("sync: %q %q", hs.out.String(), hs.err.String())
+	}
 }

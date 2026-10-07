@@ -98,6 +98,8 @@ func ptyHelper(args []string) {
 	fs := flag.NewFlagSet(helperArg, flag.ContinueOnError)
 	idle := fs.Duration("idle", 0, "")
 	hist := fs.String("hist", "", "")
+	listMax := fs.Int("listmax", 0, "")
+	sysShell := fs.String("syssh", "", "")
 	if err := fs.Parse(args); err != nil {
 		return
 	}
@@ -110,6 +112,7 @@ func ptyHelper(args []string) {
 		Idle:     *idle,
 		History:  NewHistory(*hist, os.Stderr),
 		Complete: testCompleter,
+		ListMax:  *listMax,
 		Exec: func(ctx context.Context, words []string, stdin io.Reader) int {
 			code, _, err := execx.Attached(ctx, execx.Real{}, execx.Cmd{Name: words[0], Args: words[1:]}, stdin, os.Stdout, os.Stderr)
 			if err != nil && code == 0 {
@@ -118,8 +121,22 @@ func ptyHelper(args []string) {
 			return code
 		},
 	})
+	if *sysShell != "" {
+		// The console's system-shell: the program -syssh names, with the
+		// terminal (as the console runs the user's shell).
+		sh.o.SystemShell = func(ctx context.Context, interactive bool) int {
+			if !interactive {
+				return 126
+			}
+			code, _, _ := execx.Attached(ctx, execx.Real{}, execx.Cmd{Name: *sysShell, Args: []string{"--norc", "--noprofile", "-i"}},
+				os.Stdin, os.Stdout, os.Stderr)
+			fmt.Printf("SYSTEM-SHELL %d\n", code)
+			return code
+		}
+	}
 	status := sh.Interactive(ctx, os.Stdin)
-	fmt.Printf("STATUS %d\n", status)
+	reason, lines := sh.End()
+	fmt.Printf("STATUS %d REASON %s LINES %d\n", status, reason, lines)
 }
 
 type ptySession struct {
@@ -185,7 +202,14 @@ func (p *ptySession) output(line string) {
 // exits waits for the shell to end with status.
 func (p *ptySession) exits(status int) {
 	p.t.Helper()
-	p.expect(`STATUS ` + strconv.Itoa(status) + `\r\n`)
+	p.endsWith(status, `\w+`)
+}
+
+// endsWith waits for the shell to end with status and the reason (a
+// regular expression) that Shell.End reports.
+func (p *ptySession) endsWith(status int, reason string) {
+	p.t.Helper()
+	p.expect(`STATUS ` + strconv.Itoa(status) + ` REASON ` + reason + ` LINES \d+\r\n`)
 	if _, err := p.Wait(5 * time.Second); err != nil {
 		p.t.Fatal(err)
 	}
@@ -221,7 +245,7 @@ func TestPtyCompletion(t *testing.T) {
 		t.Fatalf("the first Tab listed: %q", out)
 	}
 	p.send("\t")
-	p.expect(`list  List all users\r\n  show  Show a user\r\n`)
+	p.expect(`\r\nlist  show\r\n`)
 	p.expect(`tacctl> user `)
 	p.send("sh\t")
 	p.expect(`show `)
@@ -229,6 +253,74 @@ func TestPtyCompletion(t *testing.T) {
 	p.expect(`user show bob \r\n`)
 	p.expect(`\[exit 127\]`) // no program 'user' here: the line ran as completed
 	p.line("quit")
+	p.exits(0)
+}
+
+// '?' lists the choices with their descriptions at once and inserts
+// nothing; inside quotes and after a backslash it is a character.
+func TestPtyQuestionMark(t *testing.T) {
+	p := startShell(t)
+	p.send("user ?")
+	p.expect(`tacctl> user \r\nPossible completions:\r\n  list  List all users\r\n  show  Show a user\r\n`)
+	p.expect(`tacctl> user `)
+	p.send("\x15") // Ctrl-U
+	p.send("echo \"^show ?\" '?' a\\?\r")
+	p.output(`^show ? ? a?`)
+	p.expect(`tacctl> `)
+	p.line("exit")
+	p.exits(0)
+	b, err := os.ReadFile(p.hist)
+	if err != nil || string(b) != "echo \"^show ?\" '?' a\\?\nexit\n" {
+		t.Errorf("history %q, %v", b, err)
+	}
+}
+
+// A '?' list taller than the terminal (24 rows) pages: a screenful, the
+// more prompt; Space the next screenful, Enter one row, q stops; the
+// prompt and the line come back. -listmax -1: no question first.
+func TestPtyPager(t *testing.T) {
+	p := startShell(t, "-listmax", "-1")
+	p.send("many ?")
+	p.expect(`Possible completions:\r\n  n01  device\r\n(?s:.*)  n22  device\r\n` + regexp.QuoteMeta(morePrompt))
+	if out := p.Settle(200 * time.Millisecond); strings.Contains(out, "n23") {
+		t.Fatalf("more than a screenful: %q", out)
+	}
+	p.send(" ")
+	p.expect(`\r\x1b\[K  n23  device\r\n(?s:.*)  n45  device\r\ntacctl> many `)
+	p.send("?")
+	p.expect(regexp.QuoteMeta(morePrompt))
+	p.send("\r")
+	p.expect(`\r\x1b\[K  n23  device\r\n` + regexp.QuoteMeta(morePrompt))
+	p.send("q")
+	p.expect(`\r\x1b\[Ktacctl> many `)
+	if out := p.Settle(200 * time.Millisecond); strings.Contains(out, "n24") {
+		t.Fatalf("listed after q: %q", out)
+	}
+	p.send("n01\r")
+	p.expect(`\[exit 127\]`)
+	p.line("exit")
+	p.exits(0)
+	b, _ := os.ReadFile(p.hist)
+	if string(b) != "many n01\nexit\n" {
+		t.Errorf("history %q", b)
+	}
+}
+
+// Above ListMax (40 by default) Tab asks first; below it, no question.
+func TestPtyLongListAsks(t *testing.T) {
+	p := startShell(t)
+	p.send("many \t")
+	p.expect(`many n`)
+	p.send("\t")
+	p.expect(regexp.QuoteMeta("Show all 45 devices? [y/N] "))
+	p.send("x")
+	p.expect(regexp.QuoteMeta("\r\ntype more letters to narrow it (e.g. n0…<Tab>)\r\ntacctl> many n"))
+	p.send("\x15user \t\t")
+	p.expect(`\r\nlist  show\r\n`)
+	if strings.Contains(p.Output(), "Show all 2") {
+		t.Error("a short list asked")
+	}
+	p.send("\x15exit\r")
 	p.exits(0)
 }
 
@@ -452,6 +544,103 @@ func TestPtyResize(t *testing.T) {
 	}
 	p.line("echo wide")
 	p.output("wide")
+	p.line("exit")
+	p.exits(0)
+}
+
+// A terminal that reports no size (0x0, as expect(1) leaves its pty) keeps
+// the editor's default width: the prompt and the line are not wrapped
+// after every character.
+func TestPtyZeroSize(t *testing.T) {
+	p := startShell(t)
+	if err := p.Resize(0, 0); err != nil {
+		t.Fatal(err)
+	}
+	p.Settle(200 * time.Millisecond)
+	p.line("echo zero")
+	p.output("zero")
+	p.expect(`tacctl> `)
+	p.send("echo abc")
+	p.expect(`echo abc`)
+	p.send("\r")
+	p.output("abc")
+	p.line("exit")
+	p.exits(0)
+}
+
+// The session's end says why: exit, Ctrl-D, the idle time, SIGHUP.
+func TestPtyEndReasons(t *testing.T) {
+	p := startShell(t)
+	p.line("true")
+	p.expect(`tacctl> `)
+	p.line("exit")
+	p.expect(`STATUS 0 REASON exit LINES 2\r\n`)
+
+	p = startShell(t)
+	p.send("\x04")
+	p.endsWith(0, "eof")
+
+	p = startShell(t, "-idle", "300ms")
+	p.endsWith(0, "idle")
+
+	p = startShell(t)
+	if err := syscall.Kill(p.Pid(), syscall.SIGHUP); err != nil {
+		t.Fatal(err)
+	}
+	p.endsWith(128+int(syscall.SIGHUP), "hangup")
+}
+
+// system-shell runs the console's system shell on the terminal; the shell
+// gets the terminal back even when the system shell was killed without
+// handing it back (an interactive bash takes it for job control).
+func TestPtySystemShell(t *testing.T) {
+	bash, err := execx.Real{}.LookPath("bash")
+	if err != nil {
+		t.Fatalf("bash is required for this test: %v", err)
+	}
+	p := startShell(t, "-syssh", bash)
+	p.line("system-shell now")
+	p.expect(`system-shell takes no arguments`)
+	p.expect(`tacctl> `)
+	p.line("system-shell")
+	p.Settle(300 * time.Millisecond)
+	p.line("echo inside-$((6*7))")
+	p.expect(`inside-42\r\n`)
+	p.line("exit 5")
+	p.expect(`SYSTEM-SHELL 5\r\n`)
+	p.expect(`\[exit 5\]`)
+	p.expect(`tacctl> `)
+	// Killed: bash cannot give the terminal back; the shell takes it.
+	p.line("system-shell")
+	p.Settle(300 * time.Millisecond)
+	p.line("kill -9 $$")
+	p.expect(`SYSTEM-SHELL 137\r\n`)
+	p.expect(`tacctl> `)
+	p.line("echo back")
+	p.output("back")
+	p.expect(`tacctl> `)
+	p.line("exit")
+	p.endsWith(0, "exit")
+	b, _ := os.ReadFile(p.hist)
+	if !strings.Contains(string(b), "system-shell\n") {
+		t.Errorf("history %q", b)
+	}
+}
+
+// Tab offers system-shell only in a shell that has it.
+func TestPtySystemShellCompletes(t *testing.T) {
+	p := startShell(t, "-syssh", "/bin/true")
+	p.send("syst\t")
+	p.expect(`system-shell `)
+	p.send("\x15")
+	p.line("exit")
+	p.exits(0)
+	p = startShell(t)
+	p.send("syst\t\t")
+	if out := p.Settle(300 * time.Millisecond); strings.Contains(out, "system-shell") {
+		t.Errorf("system-shell offered without it: %q", out)
+	}
+	p.send("\x15")
 	p.line("exit")
 	p.exits(0)
 }

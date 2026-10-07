@@ -10,17 +10,28 @@ package cli
 // (no agent, no key, no other login), returning ssh's exit status. The
 // shell and the console run the same line ('sudo -n tacctl ssh <name>'), so
 // there is one path to audit. 'device ssh' is the same command.
+//
+// From a console session (TACCTL_CONSOLE set: the console puts it on every
+// line) ssh reads no configuration file and can open nothing but the
+// session: '-F /dev/null', no local command, no control master, no
+// forwardings, no agent, no escape character unless console.yaml's
+// ssh_escape, the target after '--' (so no word after it is an option), and
+// an entry with no pinned host key is refused.
 
 import (
 	"errors"
 	"io"
+	"net"
 	"os"
+	"regexp"
 	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
+	"github.com/rett/tacctl/internal/console"
 	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/hosts"
 	"github.com/rett/tacctl/internal/ui"
@@ -35,10 +46,18 @@ func init() {
 // handed to ssh as it is).
 var sshSpec = Spec{MaxArgs: 1, Args: []string{KindDevices}, Flags: []Flag{
 	{Names: []string{"-p"}, Value: true},
+	{Names: []string{"-X"}}, {Names: []string{"-Y"}}, {Names: []string{"-g"}},
+	{Names: []string{"-L"}, Value: true, Repeat: true},
+	{Names: []string{"-R"}, Value: true, Repeat: true},
+	{Names: []string{"-D"}, Value: true, Repeat: true},
 }}
 
+// reForwardSpec is the shape of an -L, -R or -D argument: addresses, ports,
+// host names and socket paths, nothing ssh would read as an option.
+var reForwardSpec = regexp.MustCompile(`^[A-Za-z0-9.:/\[\]_*-]+$`)
+
 const (
-	sshUse   = "ssh <name|address> [-p <port>] [-- <ssh args>]"
+	sshUse   = "ssh <name|address> [-p <port>] [-X|-Y] [-g] [-L|-R|-D <spec>]... [-- <ssh args>]"
 	sshShort = "Session to a registered device or enrolled host, as you (never root)"
 )
 
@@ -61,16 +80,27 @@ held to them: a key that changed is refused, with the fingerprints to compare
 and the command that re-pins it.
 
   -p <port>        Connect to <port> (default: the device's port, else 22)
+  -X, -Y           Forward X11 (untrusted, trusted) to this server's display
+  -L <spec>        Forward a local port, as ssh -L (repeatable)
+  -R <spec>        Forward a remote port, as ssh -R (repeatable)
+  -D <spec>        Open a SOCKS proxy, as ssh -D (repeatable)
+  -g               Let -L and -D ports listen on every address, as ssh -g
   -- <ssh args>    Pass the rest to ssh for this session (a remote command)
 
 Only active tacctl users reach a device, and only one in a scope of their own,
 whatever their tier; a device no scope covers is reached by no one. Every
-session is logged to syslog (auth.info).
+session is logged to syslog (auth.info). In the login console, forwarding
+(-X, -Y, -L, -R, -D) is for the tiers of 'tacctl console forwarding tiers'
+(default: superuser); -X uses the display of an 'ssh -X' login to this server.
+There, -L and -D ports listen on loopback only, unless 'tacctl console
+forwarding gateway-ports' is enabled (then -g and a bind address such as
+0.0.0.0:8443:localhost:443 open them to the network).
 
 Examples:
   tacctl ssh core-sw1
   tacctl ssh 10.99.0.1 -p 2222
   tacctl ssh core-sw1 -- show version
+  tacctl ssh core-sw1 -L 8443:localhost:443
 
 `
 }
@@ -129,7 +159,14 @@ func (inv *invocation) ssh(args []string) error {
 	if !sshTerminal(a.Stdin) {
 		return inv.usageErr("a terminal is required: tacctl ssh opens an interactive session")
 	}
-	plan, err := inv.sshResolve(p, caller, extra)
+	if inv.sshConsole() && len(extra) > 0 && strings.HasPrefix(extra[0], "-") {
+		return inv.usageErr("In the tacctl console the words after -- are the remote command; ssh's own options are not available.")
+	}
+	fwd, kinds, err := inv.sshForwarding(p, caller)
+	if err != nil {
+		return err
+	}
+	plan, err := inv.sshResolve(p, caller, extra, fwd)
 	if err != nil {
 		return err
 	}
@@ -138,13 +175,20 @@ func (inv *invocation) ssh(args []string) error {
 	if addr == "" {
 		addr = plan.target
 	}
-	a.Logger(inv.ctx, "auth.info", "ssh user="+caller+" device="+e.Name+" addr="+addr)
+	forward := ""
+	if len(kinds) > 0 {
+		forward = " forward=" + strings.Join(kinds, ",")
+	}
+	a.Logger(inv.ctx, "auth.info", "ssh user="+caller+" device="+e.Name+" addr="+addr+forward+inv.sshConsoleField())
+	start := a.Knobs.Now()
 	code, _, startErr := hosts.Attached(inv.ctx, a.Runner, plan.cmd.Cmd(plan.args...), a.Stdin, a.Out)
+	if startErr != nil && code == 0 {
+		code = 127
+	}
+	a.Logger(inv.ctx, "auth.info", "ssh end user="+caller+" device="+e.Name+" status="+strconv.Itoa(code)+
+		" duration="+console.Seconds(a.Knobs.Now().Sub(start))+inv.sshConsoleField())
 	if startErr != nil {
 		a.Out.Error("ssh could not be run (" + startErr.Error() + "); it comes with the openssh-client package.")
-		if code == 0 {
-			code = 127
-		}
 		return exit(code)
 	}
 	if code == 255 && devreg.Pinned(e) {
@@ -161,7 +205,7 @@ func (inv *invocation) ssh(args []string) error {
 // the profile, the pinning options of a pinned entry (whose known_hosts is
 // brought up to date first), then -p, '-l <caller>', the target and the
 // extra arguments (after the target: ssh takes them as the remote command).
-func (inv *invocation) sshResolve(p Parsed, caller string, extra []string) (sshPlan, error) {
+func (inv *invocation) sshResolve(p Parsed, caller string, extra, fwd []string) (sshPlan, error) {
 	a := inv.app
 	key := p.Args[0]
 	_, res, err := inv.deviceLoad()
@@ -183,6 +227,11 @@ func (inv *invocation) sshResolve(p Parsed, caller string, extra []string) (sshP
 	if !ok {
 		return sshPlan{}, inv.usageErr("'" + e.Name + "' is this server (enrolled with --local); there is no ssh session to open.")
 	}
+	inConsole := inv.sshConsole()
+	if inConsole && !devreg.Pinned(e) {
+		a.Logger(inv.ctx, "auth.warning", "ssh DENY user="+caller+" device="+e.Name+" scope="+dash(e.Scope)+" reason=unpinned"+inv.sshConsoleField())
+		return sshPlan{}, inv.usageErr("'" + e.Name + "' has no pinned host key, so the console does not connect to it; an administrator pins it: tacctl device hostkey " + e.Name + " accept")
+	}
 	plan := sshPlan{entry: e, target: target, port: e.SSHPort()}
 	port := ""
 	if e.Port != 0 {
@@ -201,13 +250,173 @@ func (inv *invocation) sshResolve(p Parsed, caller string, extra []string) (sshP
 	}
 	// No agent socket and no identity (an enrolled host's is the
 	// provisioning account's): the session is the caller's, by password.
-	plan.cmd = hosts.SSH{
-		AsUser:  caller,
-		Options: devreg.OptionArgs(devreg.SSHOptions(e, a.Paths.KnownHosts)),
-		Port:    port,
+	opts := devreg.OptionArgs(devreg.SSHOptions(e, a.Paths.KnownHosts))
+	plan.args = append(append(plan.args, fwd...), "-l", caller)
+	if inConsole {
+		opts = append(sshConsoleOptions(inv.sshEscape(), len(fwd) > 0), opts...)
+		plan.args = append(plan.args, "--")
 	}
-	plan.args = append(append(plan.args, "-l", caller, target), extra...)
+	plan.cmd = hosts.SSH{AsUser: caller, Options: opts, Port: port}
+	if slices.Contains(fwd, "-X") || slices.Contains(fwd, "-Y") {
+		plan.cmd.Env = []string{"DISPLAY=" + a.Env.Get("DISPLAY")}
+	}
+	plan.args = append(append(plan.args, target), extra...)
 	return plan, nil
+}
+
+// sshConsoleOptions are the options a console session's ssh starts with:
+// no configuration file (no ~/.ssh/config, no /etc/ssh/ssh_config: no
+// ProxyCommand, LocalCommand, Match exec or Include), no local command, no
+// control master, no forwardings unless forwarding (the session's own
+// -X/-Y/-L/-R/-D, which ClearAllForwardings would clear too; with -F
+// /dev/null there are no others), no agent, and no escape character unless
+// escape (console.yaml's ssh_escape: '~.' for a hung session, at the cost
+// of '~C').
+func sshConsoleOptions(escape, forwarding bool) []string {
+	o := []string{"-F", "/dev/null", "-o", "PermitLocalCommand=no", "-o", "ControlMaster=no"}
+	if !forwarding {
+		o = append(o, "-o", "ClearAllForwardings=yes")
+	}
+	o = append(o, "-o", "ForwardAgent=no")
+	if !escape {
+		o = append(o, "-o", "EscapeChar=none")
+	}
+	return o
+}
+
+// sshForwarding is the session's forwarding options as ssh takes them (-X,
+// -Y, then each -L, -R and -D with its argument) and their kinds for the
+// log (x11, local, remote, dynamic). Every argument must look like a
+// forwarding spec. In a console session they are for the tiers of console
+// forwarding tiers only; a refusal is logged ('ssh DENY ... reason=forward').
+// There, -g and an -L or -D that listens on another address than loopback
+// need console forwarding gateway-ports too ('reason=gateway'): ssh binds
+// an explicit bind address (0.0.0.0, *, or an empty one) on this server
+// even without -g. -X/-Y need an X11 display (an 'ssh -X' login to this
+// server).
+func (inv *invocation) sshForwarding(p Parsed, caller string) (args, kinds []string, err error) {
+	for _, f := range []string{"-X", "-Y"} {
+		if p.Has(f) {
+			args = append(args, f)
+			if !slices.Contains(kinds, "x11") {
+				kinds = append(kinds, "x11")
+			}
+		}
+	}
+	for _, f := range []struct{ flag, kind string }{{"-L", "local"}, {"-R", "remote"}, {"-D", "dynamic"}} {
+		for _, v := range p.Values(f.flag) {
+			if !reForwardSpec.MatchString(v) || strings.HasPrefix(v, "-") {
+				return nil, nil, inv.usageErr("'" + v + "' is not a forwarding spec for " + f.flag + " (as ssh takes it, e.g. 8443:localhost:443).")
+			}
+			args = append(args, f.flag, v)
+			if !slices.Contains(kinds, f.kind) {
+				kinds = append(kinds, f.kind)
+			}
+		}
+	}
+	if p.Has("-g") {
+		if len(p.Values("-L")) == 0 && len(p.Values("-D")) == 0 {
+			return nil, nil, inv.usageErr("-g only matters with -L or -D.")
+		}
+		args = append([]string{"-g"}, args...)
+	}
+	if len(args) == 0 {
+		return nil, nil, nil
+	}
+	if slices.Contains(kinds, "x11") && !console.ValidDisplay(inv.app.Env.Get("DISPLAY")) {
+		return nil, nil, inv.usageErr("-X needs an X11 display, and this session has none: log in to this server with 'ssh -X' (or -Y) first.")
+	}
+	if inv.sshConsole() {
+		pol, perr := inv.consolePolicy()
+		t := inv.tierGate().Caller(inv.ctx)
+		if perr != nil || !pol.Forwarding(t) {
+			inv.app.Logger(inv.ctx, "auth.warning", "ssh DENY user="+caller+" reason=forward tier="+string(t)+inv.sshConsoleField())
+			return nil, nil, inv.usageErr("Forwarding (-X, -Y, -L, -R, -D) is not available to the " + string(t) + " tier in the console; an administrator allows it with: tacctl console forwarding tiers <tiers>")
+		}
+		if !pol.GatewayPorts() {
+			var open []string
+			if p.Has("-g") {
+				open = append(open, "-g")
+			}
+			for _, f := range []string{"-L", "-D"} {
+				for _, v := range p.Values(f) {
+					if b, ok := forwardBind(f, v); ok && !loopbackBind(b) {
+						open = append(open, f+" "+v)
+					}
+				}
+			}
+			if len(open) > 0 {
+				inv.app.Logger(inv.ctx, "auth.warning", "ssh DENY user="+caller+" reason=gateway tier="+string(t)+inv.sshConsoleField())
+				return nil, nil, inv.usageErr("In the console, forwarded ports listen on loopback only ("+strings.Join(open, ", ")+" would listen on other addresses of this server).",
+					"An administrator allows it with: tacctl console forwarding gateway-ports enable")
+			}
+		}
+	}
+	return args, kinds, nil
+}
+
+// forwardBind is the bind address of an -L or -D spec as ssh reads it
+// ([bind:]port:host:hostport, [bind:]port:/socket, /socket:..., or
+// [bind:]port for -D), with ok false when it names none (ssh then listens
+// on loopback) or listens on a local socket. A bracketed IPv6 address is
+// one field.
+func forwardBind(flag, spec string) (bind string, ok bool) {
+	if strings.HasPrefix(spec, "/") {
+		return "", false
+	}
+	var fields []string
+	cur, depth := "", 0
+	for _, r := range spec {
+		switch {
+		case r == '[':
+			depth++
+		case r == ']':
+			depth--
+		case r == ':' && depth == 0:
+			fields = append(fields, cur)
+			cur = ""
+			continue
+		}
+		cur += string(r)
+	}
+	fields = append(fields, cur)
+	n := len(fields)
+	switch {
+	case flag == "-D" && n == 2:
+	case flag == "-L" && n == 4:
+	case flag == "-L" && n == 3 && strings.HasPrefix(fields[2], "/"):
+	default:
+		return "", false
+	}
+	return strings.Trim(fields[0], "[]"), true
+}
+
+// loopbackBind reports whether ssh binds bind on loopback only.
+func loopbackBind(bind string) bool {
+	if bind == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(bind)
+	return ip != nil && ip.IsLoopback()
+}
+
+// sshConsole reports whether this 'tacctl ssh' comes from a console
+// session (TACCTL_CONSOLE set, whatever its value).
+func (inv *invocation) sshConsole() bool { return inv.app.Env.Get(console.EnvMarker) != "" }
+
+// sshConsoleField is ' console=<session>' for the log lines of a console
+// session's ssh, else "".
+func (inv *invocation) sshConsoleField() string {
+	if !inv.sshConsole() {
+		return ""
+	}
+	return " console=" + console.MarkerValue(inv.app.Env.Get(console.EnvMarker))
+}
+
+// sshEscape is console.yaml's ssh_escape (false when it cannot be read).
+func (inv *invocation) sshEscape() bool {
+	f, err := console.Load(inv.app.Paths.ConsoleFile)
+	return err == nil && f.SSHEscape
 }
 
 // sshAdmit is who may open a session: an active tacctl user (in the store,
@@ -218,7 +427,7 @@ func (inv *invocation) sshResolve(p Parsed, caller string, extra []string) (sshP
 func (inv *invocation) sshAdmit(caller string, e devreg.Entry) error {
 	a := inv.app
 	deny := func(reason, msg string) error {
-		a.Logger(inv.ctx, "auth.warning", "ssh DENY user="+caller+" device="+e.Name+" scope="+dash(e.Scope)+" reason="+reason)
+		a.Logger(inv.ctx, "auth.warning", "ssh DENY user="+caller+" device="+e.Name+" scope="+dash(e.Scope)+" reason="+reason+inv.sshConsoleField())
 		return inv.usageErr(msg)
 	}
 	m, err := inv.model()

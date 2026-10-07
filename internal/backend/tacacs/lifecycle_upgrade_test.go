@@ -106,7 +106,8 @@ func TestUpgradeNothingNewSaysSo(t *testing.T) {
 	}
 	mustNotContain(t, u.out(), "Restarting")
 	r := u.b.UpgradeReport()
-	if r.Head != "Scripts Updated (source unchanged at 1111111)" || r.FilesUpdated != 0 || len(r.Notes) != 0 {
+	if r.Head != "Scripts Updated (source unchanged at 1111111)" || r.FilesUpdated != 0 || len(r.Notes) != 0 ||
+		r.UpToDate != "Already Up to Date (source unchanged at 1111111)" {
 		t.Fatal(r)
 	}
 	mustContain(t, u.out(), "Tacquito source already up to date (1111111); patches applied.")

@@ -18,6 +18,7 @@ package devreg
 //	ambiguous-nas-id     one NAS-Identifier is sent from several addresses
 
 import (
+	"github.com/rett/tacctl/internal/hosts"
 	"slices"
 	"strconv"
 	"strings"
@@ -114,6 +115,22 @@ func (r *Resolver) scanNotices(e Entry) []Notice {
 		return out
 	}
 	nas := s.LastNASID
+	if e.Source == SourceHost {
+		// A host enrolled with pam_tacplus sends no NAS-Identifier: one in
+		// the record is from an earlier RADIUS enrolment, and says nothing
+		// about the host now.
+		if e.Method != hosts.Radius {
+			return out
+		}
+		// pam_radius_auth without client_id= sends the PAM service's name;
+		// it changes with every service that asks (sshd, then sudo). The
+		// client script sends the host's name since 0.2.1.
+		if pamServices[strings.ToLower(nas)] {
+			add(NoticeNameMismatch, e.Address+" identifies itself as '"+nas+"', the PAM service that asked, not the host (a client "+
+				"script older than 0.2.1); enrol it again so it sends its name: 'tacctl host enroll "+e.Target+"'"+ackTail(e, NoticeNameMismatch))
+			return out
+		}
+	}
 	hints := strings.Join(RenameHints(e.Vendor), "; ")
 	if s.PrevNASID != "" && !strings.EqualFold(s.PrevNASID, nas) {
 		add(NoticeIdentityChanged, e.Address+" now identifies as '"+nas+"' (was '"+s.PrevNASID+"', changed "+whenText(s.NASChanged)+
@@ -140,6 +157,14 @@ func (r *Resolver) scanNotices(e Entry) []Notice {
 			strings.Join(addrs, ", ")+"); give each device a name of its own: "+hints+ackTail(e, NoticeAmbiguousNASID))
 	}
 	return out
+}
+
+// pamServices are the PAM services the client script hooks (and a few
+// more a host may route through it): the NAS-Identifier pam_radius_auth
+// sends when it is not given client_id=.
+var pamServices = map[string]bool{
+	"sshd": true, "sudo": true, "sudo-i": true, "login": true, "sddm": true, "gdm-password": true,
+	"su": true, "su-l": true, "passwd": true, "cron": true, "systemd-user": true, "other": true,
 }
 
 func dashAddr(a string) string {

@@ -113,6 +113,8 @@ var Rules = []Rule{
 	{Tier: Readonly, Cmd: "device", Sub: "ssh", Sudoers: []string{"device ssh *"}},
 	{Tier: Readonly, Cmd: "device", Sub: "ssh-config", Sudoers: []string{"device ssh-config"}, Wrap: true},
 	{Tier: Readonly, Cmd: "_completion-names", AnySub: true, Sudoers: []string{"_completion-names *"}},
+	// The login console asks for its settings once per session (console.go).
+	{Tier: Readonly, Cmd: "_console-policy", AnySub: true, Sudoers: []string{"_console-policy"}},
 	{Tier: Readonly, Cmd: "--version", AnySub: true},
 	{Tier: Readonly, Cmd: "-v", AnySub: true},
 	{Tier: Readonly, Cmd: "hash", AnySub: true},
@@ -126,7 +128,9 @@ var Rules = []Rule{
 	{Tier: Operator, Cmd: "device", Sub: "check", Sudoers: []string{"device check *"}},
 	{Tier: Operator, Cmd: "device", Sub: "scan", Sudoers: []string{"device scan", "device scan *"}},
 	{Tier: Operator, Cmd: "device", Sub: "discover", Sudoers: []string{"device discover", "device discover *"}},
-	{Tier: Operator, Cmd: "device", Sub: "export", Sudoers: []string{"device export", "device export *"}},
+	{Tier: Operator, Cmd: "device", Sub: "export", Sudoers: []string{"device export", "device export *"}, Wrap: true},
+	{Tier: Operator, Cmd: "console", Sub: "show", Sudoers: []string{"console show"}},
+	{Tier: Operator, Cmd: "console", Sub: "check", Sudoers: []string{"console check"}},
 }
 
 // Permits is tier_permits: whether tier may run 'tacctl cmd sub'.
@@ -161,8 +165,13 @@ const Binary = "/usr/local/bin/tacctl"
 // variable through (from the caller's environment, or as
 // 'SSH_AUTH_SOCK=...' on the sudo command line) and nothing else; the rules
 // carry no SETENV tag, which would let a caller set any variable, SUDO_USER
-// among them, and so pose as someone else to the tier gate.
-const EnvKeep = "Defaults!" + Binary + " env_keep += \"SSH_AUTH_SOCK\"\n"
+// among them, and so pose as someone else to the tier gate. The second
+// name is the login console's marker (TACCTL_CONSOLE=<session>, a command-
+// line assignment on each of its lines); it is only ever read by tacctl, to
+// tighten what it does, never to widen it. The third is the X11 display
+// sshd's forwarding sets ('tacctl ssh -X' hands it to the ssh it runs as
+// the caller; tacctl checks its shape first).
+const EnvKeep = "Defaults!" + Binary + " env_keep += \"SSH_AUTH_SOCK TACCTL_CONSOLE DISPLAY\"\n"
 
 // Sudoers is emit_tier_sudoers: the per-tier drop-in, byte for byte.
 func Sudoers() string {

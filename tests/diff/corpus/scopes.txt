@@ -3,9 +3,13 @@
 # Run: tests/diff/run.sh scopes
 @fixture tacquito.minimal.yaml
 
+@known 0.2.1 item 56: the usage has one line per option
 scope
+@known 0.2.1 item 56: the usage has one line per option
 scope bogus
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope list
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope routing
 scope show
 scope show nosuch
@@ -22,8 +26,10 @@ scope add prod --prefixes
 scope add prod --prefixes 10.0.0.0/8
 scope add prod --prefixes 10.0.0.0/8 --secret short
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope list ;; scope routing
 scope add prod --prefixes 10.0.0.0/8 --secret generate ;; scope show prod
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef --default ;; scope default ;; scope list
 scope add '1bad' --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef
 scope add prod --prefixes 10.0.0.0/33 --secret prod-secret-1234567890abcdef
@@ -44,24 +50,32 @@ scope remove lab <<< y
 scope remove lab <<< n
 scope remove lab
 scope remove lab --force <<< y
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope remove prod <<< y ;; scope list
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope remove prod <<< n ;; scope list
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; user add alice superuser --hash {HASH} --scopes prod ;; scope remove prod <<< y
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; user add alice superuser --hash {HASH} --scopes prod ;; scope remove prod --force <<< y ;; user show alice
 scope rename
 scope rename lab
 scope rename nosuch other
 scope rename lab 'bad name'
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope rename prod production ;; scope list
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope rename prod lab
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; user add alice superuser --hash {HASH} --scopes prod ;; scope rename prod production ;; user show alice
 scope default
 scope default nosuch
 scope default lab
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope default prod ;; scope default ;; scope list
 
 # prefixes
+@known 0.2.1 item 66: the scope prefixes usage names move <cidrs> <scope>
 scope prefixes
+@known 0.2.1 item 56: the usage has one line per option
 scope prefixes lab
 scope prefixes nosuch list
 scope prefixes lab list
@@ -69,6 +83,7 @@ scope prefixes lab bogus
 scope prefixes lab add
 scope prefixes lab add notacidr
 scope prefixes lab add 10.1.0.0/16 ;; scope prefixes lab list
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope prefixes lab add 10.1.0.0/16,10.2.0.0/16 ;; scope prefixes lab list ;; scope routing
 scope prefixes lab add 10.1.0.0/16 ;; scope prefixes lab add 10.1.0.0/16
 scope prefixes lab remove
@@ -124,25 +139,34 @@ scope devices lab set 10.0.0.5 cisco ;; scope devices lab unset 10.0.0.5 ;; scop
 # aaa-order, exec-timeout, tacacs-group, radius-group, auth-method
 scope aaa-order
 scope aaa-order nosuch
+@known 0.2.1 item 58: the scope on a line of its own
 scope aaa-order lab
+@known 0.2.1 item 58: the scope on a line of its own
 scope aaa-order lab local-first ;; scope aaa-order lab
 scope aaa-order lab sideways
 scope exec-timeout
 scope exec-timeout nosuch
+@known 0.2.1 item 58: the scope on a line of its own
 scope exec-timeout lab
+@known 0.2.1 item 58: the scope on a line of its own
 scope exec-timeout lab 15 ;; scope exec-timeout lab
+@known 0.2.1 item 58: the scope on a line of its own
 scope exec-timeout lab 0 ;; scope exec-timeout lab
 scope exec-timeout lab 90
 scope exec-timeout lab forever
 scope tacacs-group
 scope tacacs-group nosuch
+@known 0.2.1 item 58: the scope on a line of its own
 scope tacacs-group lab
+@known 0.2.1 item 58: the scope on a line of its own
 scope tacacs-group lab TACACS_PROD ;; scope tacacs-group lab
 scope tacacs-group lab 9-digit-start
 scope tacacs-group lab 'has spaces'
 scope radius-group
 scope radius-group nosuch
+@known 0.2.1 item 58: the scope on a line of its own
 scope radius-group lab
+@known 0.2.1 item 58: the scope on a line of its own
 scope radius-group lab RADIUS_PROD ;; scope radius-group lab
 scope radius-group lab 9-digit-start
 scope radius-group lab 'has spaces'
@@ -175,9 +199,13 @@ scope mgmt-acl nosuch cisco-name
 scope mgmt-acl lab ios-name
 
 # WP2.4b: more of the usage, flag and value handling
+@known 0.2.1 item 56: the usage has one line per option
 scope -h
+@known 0.2.1 item 56: the usage has one line per option
 scope --help
+@known 0.2.1 item 56: the usage has one line per option
 scope help
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope list extra
 scope show lab extra
 scope add prod --prefixes 10.0.0.0/8 --secret
@@ -194,9 +222,11 @@ scope add prod --prefixes 10.0.0.0/8 --secret 'äöüäöüäöüäöüäöüß'
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef --protocols 'tacacs, radius' ;; scope protocols prod
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef --protocols , ;; scope protocols prod
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef --vendor-attrs ,
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef --vendor-attrs wti,cisco,wti ;; scope list ;; scope show prod
 scope add prod --prefixes 10.0.0.0/8 --secret generate --protocols radius ;; scope show prod ;; scope auth-method prod
 scope add prod --prefixes 10.0.0.0/8 --default --secret prod-secret-1234567890abcdef ;; scope remove prod <<< y
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope add prod --prefixes 192.168.5.0/24 --secret prod-secret-1234567890abcdef ;; scope routing ;; scope lookup 192.168.5.5 ;; scope lookup 192.168.6.6
 scope lookup 2001:db8::1
 scope lookup 192.168.1.1 extra
@@ -206,20 +236,26 @@ scope lookup 300.1.1.1
 scope remove lab foo --force <<< y
 scope remove lab --bogus <<< y
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope remove prod --force <<< n
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope remove prod <<< yes ;; scope list
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope remove prod <<< Y
 
 # per-scope tacctl.yaml keys follow rename and remove (SCOPE_CONF_KEYS)
 scope aaa-order lab local-first ;; scope exec-timeout lab 15 ;; scope mgmt-acl lab add 10.9.0.0/16 ;; scope rename lab lab2 ;; scope show lab2 ;; scope mgmt-acl lab2 list ;; scope default
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope tacacs-group prod TG ;; scope radius-group prod RG ;; scope auth-method prod radius ;; scope mgmt-acl prod cisco-name P-VTY ;; scope mgmt-acl prod juniper-name P-MGMT ;; scope rename prod production ;; scope show production
+@known 0.2.1 item 58: the scope on a line of its own
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope aaa-order prod local-first ;; scope remove prod <<< y ;; scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope aaa-order prod
+@known 0.2.1 item 58: the scope on a line of its own
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope exec-timeout prod 5 ;; scope prefixes prod remove --all <<< y ;; scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope exec-timeout prod
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope rename lab LAB2 ;; scope list
 scope rename lab ''
 scope rename lab 9lab
 
 # prefixes: --all / --force handling, the last prefix, tagged addresses
+@known 0.2.1 item 56: the usage has one line per option
 scope prefixes lab -h
+@known 0.2.1 item 56: the usage has one line per option
 scope prefixes lab help extra
 scope prefixes lab remove --all --all
 scope prefixes lab remove --force
@@ -234,6 +270,7 @@ scope prefixes lab add ' 10.1.0.0/16 , 10.1.0.9/16 '
 scope prefixes lab add "10.1.0.0/16,'x"
 scope prefixes lab remove 10.1.0.0/16,192.168.0.0/16
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; user add alice superuser --hash {HASH} --scopes prod ;; scope prefixes prod remove --all <<< y
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; user add alice superuser --hash {HASH} --scopes prod ;; scope prefixes prod remove --all --force <<< y ;; user show alice ;; scope list
 scope devices lab set 192.168.7.7 cisco ;; scope add prod --prefixes 192.168.7.0/24 --secret prod-secret-1234567890abcdef
 scope devices lab set 192.168.7.7 cisco ;; scope add prod --prefixes 192.168.8.0/24 --secret prod-secret-1234567890abcdef ;; scope prefixes prod add 192.168.7.0/24
@@ -262,7 +299,9 @@ scope protocols lab set tacacs ;; scope auth-method lab radius
 scope protocols lab set radius ;; scope vendor-attrs lab enable cisco
 scope vendor-attrs lab disable cisco
 scope vendor-attrs lab enable cisco ;; scope vendor-attrs lab enable cisco
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope vendor-attrs lab enable cisco,juniper,wti ;; scope vendor-attrs lab disable juniper,cisco ;; scope list
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope vendor-attrs lab enable cisco ;; scope devices lab set 192.168.7.7 cisco ;; scope vendor-attrs lab disable cisco ;; scope vendor-attrs lab ;; scope list
 scope vendor-attrs lab show
 scope vendor-attrs lab enable 'cisco juniper'
@@ -271,15 +310,21 @@ scope devices lab unset 192.168.7.7 cisco
 scope devices lab set 192.168.7.7
 scope devices lab set 8.8.8.8 cisco
 scope devices lab set 192.168.7.7 cisco ;; scope devices lab set 192.168.7.7 cisco
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope devices lab set 192.168.7.7 cisco ;; scope devices lab set 192.168.7.7/32 juniper ;; scope devices lab ;; scope show lab
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope devices lab set 192.168.7.0/24 wti ;; scope devices lab set 192.168.7.7 cisco ;; scope devices lab ;; scope lookup 192.168.7.7
 scope devices lab bogus
 
 # aaa-order, exec-timeout, groups, auth-method: back to the default, edges
+@known 0.2.1 item 58: the scope on a line of its own
 scope aaa-order lab tacacs-first ;; scope aaa-order lab
+@known 0.2.1 item 58: the scope on a line of its own
 scope aaa-order lab local-first ;; scope aaa-order lab tacacs-first ;; scope aaa-order lab
 scope exec-timeout lab -1
+@known 0.2.1 item 58: the scope on a line of its own
 scope exec-timeout lab 60 ;; scope exec-timeout lab
+@known 0.2.1 item 58: the scope on a line of its own
 scope tacacs-group lab TACACS-GROUP ;; scope tacacs-group lab
 scope auth-method lab tacplus ;; scope auth-method lab
 scope auth-method lab default
@@ -302,6 +347,7 @@ scope mgmt-acl lab bogus extra
 scope show ''
 scope add ''
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef --protocols tacacs,ldap
+@known 0.2.1 item 66: the scope prefixes usage names move <cidrs> <scope>
 scope prefixes '' list
 scope secret lab set ''
 scope protocols lab set ''
@@ -311,6 +357,7 @@ scope exec-timeout lab 1.5
 
 # no store: legacy read-only mode answers the reads, refuses the writes
 @fixture legacy.fresh-install.yaml
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope list
 scope show lab
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef

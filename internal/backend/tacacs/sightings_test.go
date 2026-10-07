@@ -27,8 +27,11 @@ func TestParseSightingLine(t *testing.T) {
 		{"ERROR: x bcrypt.go:152: failed to validate the user [bob] from [198.51.100.7] using a bcrypt password", true, "198.51.100.7", "bob", backend.SightReject},
 		{"ERROR: x server.go:159: closing connection, unable to read, bad secret detected for ip [203.0.113.20:51234]", true, "203.0.113.20", "", backend.SightBadSecret},
 		{"ERROR: x server.go:159: closing connection, unable to read, bad secret detected for ip [[2001:db8::9]:51234]", true, "2001:db8::9", "", backend.SightBadSecret},
-		{"ERROR: x server.go:159: closing connection, unable to read, no matching prefix secret provider found", true, "", "", backend.SightNoScope},
-		{"ERROR: x server.go:159: closing connection for ip [192.0.2.66:4000], no matching prefix secret provider found", true, "192.0.2.66", "", backend.SightNoScope},
+		{"ERROR: x server.go:129: ignoring request: remote [192.0.2.66:4000] has no secret providers", true, "192.0.2.66", "", backend.SightNoScope},
+		{"ERROR: x server.go:129: ignoring request: remote [[2001:db8::9]:4000] has no secret providers", true, "2001:db8::9", "", backend.SightNoScope},
+		// The loader logs this for every provider that does not match, also
+		// when a later one does: not a sighting.
+		{"DEBUG: x loader.go:216: remote [192.0.2.66:4000], no matching prefix secret provider found", false, "", "", ""},
 		{"DEBUG: x provider.go:105: prefix secret provider matches remote [203.0.113.1] against prefix [203.0.113.0/24]", true, "203.0.113.1", "", backend.SightSeen},
 		// The unpatched line names no device.
 		{pre + "accepting user [alice] using a bcrypt password", false, "", "", ""},
@@ -69,10 +72,27 @@ func TestParseJournal(t *testing.T) {
 	}
 	want := []string{
 		"accept 203.0.113.1 alice", "bad-secret 203.0.113.20 ", "accept 203.0.113.77 carol", "bad-secret 192.0.2.66 ",
-		"reject 2001:db8::5 mallory", "no-scope  ", "accept 192.0.2.9 z",
+		"reject 2001:db8::5 mallory", "no-scope 192.0.2.66 ", "accept 192.0.2.9 z",
 	}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Errorf("sightings\n%q\nwant\n%q", got, want)
+	}
+}
+
+// The journal is parsed as journalctl writes it: records split across
+// writes at any byte give what one read of the whole output gives.
+func TestJournalParserStreams(t *testing.T) {
+	data := fixture(t, "tacquito.journal-2.json")
+	wantSS, wantCursor, wantFirst, wantLast, wantN := ParseJournal(data)
+	for _, size := range []int{1, 7, 64, len(data)} {
+		var p journalParser
+		for i := 0; i < len(data); i += size {
+			_, _ = p.Write(data[i:min(i+size, len(data))])
+		}
+		p.flush()
+		if len(p.ss) != len(wantSS) || p.cursor != wantCursor || !p.first.Equal(wantFirst) || !p.last.Equal(wantLast) || p.n != wantN {
+			t.Errorf("chunks of %d: %d sightings, cursor %q, n %d; want %d, %q, %d", size, len(p.ss), p.cursor, p.n, len(wantSS), wantCursor, wantN)
+		}
 	}
 }
 
@@ -87,7 +107,7 @@ func TestSightingsJournalArgsAndResume(t *testing.T) {
 	if !strings.HasPrefix(window, "journal ") || !strings.HasSuffix(window, "(1 entry)") {
 		t.Errorf("window %q", window)
 	}
-	if !e.called(`^journalctl -u tacquito -o json --no-pager --since 2026-09-04 12:00:00$`) {
+	if !e.called(`^journalctl -u tacquito -o json --output-fields=MESSAGE --no-pager --since 2026-09-04 12:00:00$`) {
 		t.Errorf("argv %q", e.run.Argvs())
 	}
 
@@ -98,7 +118,7 @@ func TestSightingsJournalArgsAndResume(t *testing.T) {
 	if err != nil || len(ss) != 0 || next != "s=f00d;i=101" || window != "journal: no new entries" {
 		t.Fatalf("%v %q %q %v", ss, next, window, err)
 	}
-	if !e.called(`^journalctl -u tacquito -o json --no-pager --after-cursor s=f00d;i=101$`) {
+	if !e.called(`^journalctl -u tacquito -o json --output-fields=MESSAGE --no-pager --after-cursor s=f00d;i=101$`) {
 		t.Errorf("argv %q", e.run.Argvs())
 	}
 
@@ -119,7 +139,7 @@ func TestSightingsJournalArgsAndResume(t *testing.T) {
 	if _, _, _, err := e.b.Sightings(t.Context(), time.Time{}, ""); err != nil {
 		t.Fatal(err)
 	}
-	if !e.called(`^journalctl -u tacquito -o json --no-pager$`) {
+	if !e.called(`^journalctl -u tacquito -o json --output-fields=MESSAGE --no-pager$`) {
 		t.Errorf("argv %q", e.run.Argvs())
 	}
 }

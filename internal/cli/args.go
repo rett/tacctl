@@ -50,6 +50,9 @@ const (
 	KindFile = "file"
 	// KindList marks a comma list: "<kind>,list" completes after each comma.
 	KindList = ",list"
+	// KindLine is a tacctl command line ('shell -c'): completion offers the
+	// commands, for its first word.
+	KindLine = "line"
 )
 
 // After is the kind of a positional that completion offers only when the

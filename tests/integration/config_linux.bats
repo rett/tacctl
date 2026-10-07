@@ -81,20 +81,45 @@ _client_env() {
         echo "$1:x:$gid:" >> "$FAKE_DB/group"'
     # The account database is kept up to date: useradd adds the account
     # (and its home), userdel and groupdel take them out again.
-    stub_cmd useradd 'uid=""; gid=""; gecos=""
+    stub_cmd useradd 'uid=""; gid=""; gecos=""; sh=/bin/bash
         while [[ $# -gt 1 ]]; do case "$1" in
             -u) uid="$2"; shift 2 ;;
             -g) gid=$(getent group "$2" | cut -d: -f3); shift 2 ;;
             -c) gecos="$2"; shift 2 ;;
-            -s) shift 2 ;;
+            -s) sh="$2"; shift 2 ;;
             *) shift ;;
         esac; done
-        echo "$1:x:${uid:-1500}:${gid:-1500}:${gecos}:${TACCTL_CLIENT_HOME_ROOT}/$1:/bin/bash" >> "$FAKE_DB/passwd"
+        echo "$1:x:${uid:-1500}:${gid:-1500}:${gecos}:${TACCTL_CLIENT_HOME_ROOT}/$1:${sh}" >> "$FAKE_DB/passwd"
         mkdir -p "${TACCTL_CLIENT_HOME_ROOT}/$1"'
     stub_cmd userdel '[[ -z "${USERDEL_FAILS:-}" ]] || exit 8
         sed -i "/^$1:/d" "$FAKE_DB/passwd" "$FAKE_DB/shadow"'
     stub_cmd groupdel 'sed -i "/^$1:/d" "$FAKE_DB/group"'
-    stub_cmd usermod
+    # usermod -u/-g and groupmod -g renumber in the database (groupmod moves
+    # the primary GID of the group's users too, as shadow-utils does), and
+    # usermod -s changes the shell; the rest of usermod is recorded only.
+    stub_cmd usermod 'u=""; g=""; sh=""
+        while [[ $# -gt 1 ]]; do case "$1" in
+            -u) u="$2"; shift 2 ;;
+            -g) g=$(getent group "$2" | cut -d: -f3); shift 2 ;;
+            -s) sh="$2"; shift 2 ;;
+            -c|-e|-aG|-G) shift 2 ;;
+            *) shift ;;
+        esac; done
+        if [[ -n "$sh" ]]; then
+            awk -F: -v OFS=: -v n="$1" -v v="$sh" "\$1 == n { \$7 = v } 1" "$FAKE_DB/passwd" > "$FAKE_DB/p.new" && mv "$FAKE_DB/p.new" "$FAKE_DB/passwd"
+        fi
+        if [[ -n "$u" ]]; then
+            awk -F: -v OFS=: -v n="$1" -v v="$u" "\$1 == n { \$3 = v } 1" "$FAKE_DB/passwd" > "$FAKE_DB/p.new" && mv "$FAKE_DB/p.new" "$FAKE_DB/passwd"
+        fi
+        if [[ -n "$g" ]]; then
+            awk -F: -v OFS=: -v n="$1" -v v="$g" "\$1 == n { \$4 = v } 1" "$FAKE_DB/passwd" > "$FAKE_DB/p.new" && mv "$FAKE_DB/p.new" "$FAKE_DB/passwd"
+        fi'
+    stub_cmd groupmod '[[ "$1" == "-g" ]] || exit 0
+        old=$(getent group "$3" | cut -d: -f3)
+        awk -F: -v OFS=: -v n="$3" -v v="$2" "\$1 == n { \$3 = v } 1" "$FAKE_DB/group" > "$FAKE_DB/g.new" && mv "$FAKE_DB/g.new" "$FAKE_DB/group"
+        awk -F: -v OFS=: -v o="$old" -v v="$2" "\$4 == o { \$4 = v } 1" "$FAKE_DB/passwd" > "$FAKE_DB/p.new" && mv "$FAKE_DB/p.new" "$FAKE_DB/passwd"'
+    # Nobody is logged in unless a test says so.
+    stub_cmd pgrep 'exit 1'
     stub_cmd gpasswd
     stub_cmd id 'echo "users ${FAKE_ID_GROUPS:-}"'
     stub_cmd apt-get
@@ -102,6 +127,8 @@ _client_env() {
     stub_cmd sshd 'printf "usepam yes\npasswordauthentication yes\n"'
     stub_cmd install 'cp "${@: -2:1}" "${@: -1}"'
     stub_cmd ldconfig
+    # A kept home is made root's: recorded, not run (the tests are not root).
+    stub_cmd chown
 }
 
 # --- generation ---------------------------------------------------------------
@@ -123,8 +150,8 @@ _client_env() {
     assert_output --partial "TAC_SERVER=192.0.2.10"
     assert_output --partial "TAC_PORT=49"
     assert_output --partial "TAC_SECRET=0123456789abcdef0123456789abcdef"
-    assert_output --partial "alice:superuser:20000"
-    assert_output --partial "bob:readonly:20001"
+    assert_output --partial "alice:superuser:80000"
+    assert_output --partial "bob:readonly:80001"
 }
 
 @test "config linux script: the port is the default listener's, from the listener model" {
@@ -151,8 +178,8 @@ _client_env() {
     "$TACCTL_BIN_SCRIPT" user add carol operator --hash "$HASH" --scopes lab > /dev/null
     _gen > /dev/null
     run sed '/^__TARBALL__$/,$d' "$OUT"
-    assert_output --partial "bob:readonly:20001"
-    assert_output --partial "carol:operator:20002"
+    assert_output --partial "bob:readonly:80001"
+    assert_output --partial "carol:operator:80002"
     refute_output --partial "alice"
 }
 
@@ -169,12 +196,12 @@ _client_env() {
     "$TACCTL_BIN_SCRIPT" user disable bob > /dev/null
     _gen > /dev/null
     run sed '/^__TARBALL__$/,$d' "$OUT"
-    assert_output --partial "alice:superuser:20000"
+    assert_output --partial "alice:superuser:80000"
     refute_output --partial "bob:"
     "$TACCTL_BIN_SCRIPT" user enable bob > /dev/null
     _gen > /dev/null
     run sed '/^__TARBALL__$/,$d' "$OUT"
-    assert_output --partial "bob:readonly:20001"
+    assert_output --partial "bob:readonly:80001"
 }
 
 @test "config linux script: refuses a placeholder or unsafe secret" {
@@ -228,17 +255,25 @@ _client_env() {
 
 # --- client scripts -----------------------------------------------------------
 
-@test "client install: creates new accounts with their UIDs and tier groups" {
+@test "client install: creates new accounts with their UIDs, tac-users as primary group, private homes" {
     _gen > /dev/null
     _client_env
     run bash "$OUT" --accounts-only
     assert_success
-    stub_called "groupadd -g 20000 alice"
-    stub_called "useradd -m -u 20000 -g alice -s /bin/bash .* alice"
-    stub_called "groupadd -g 20001 bob"
-    stub_called "useradd -m -u 20001 -g bob -s /bin/bash .* bob"
+    # tacctl's groups of a host other than the server, at their fixed GIDs.
+    stub_called "groupadd -g 80000 tac-users"
+    stub_called "groupadd -g 80002 tac-superuser"
+    run grep -cE "^groupadd .*(tac-readonly|tac-operator|tac-console|alice|bob)" "$CALLS_LOG"
+    assert_output "0"
+    stub_called "useradd -m -u 80000 -g tac-users -s /bin/bash .* alice"
+    stub_called "useradd -m -u 80001 -g tac-users -s /bin/bash .* bob"
     stub_called "usermod -aG tac-users,tac-superuser alice"
-    stub_called "usermod -aG tac-users,tac-readonly bob"
+    stub_called "usermod -aG tac-users bob"
+    run grep -E "^(alice|bob):" "$FAKE_DB/passwd"
+    assert_line --partial "alice:x:80000:80000:"
+    assert_line --partial "bob:x:80001:80000:"
+    [[ "$(stat -c %a "$TACCTL_CLIENT_HOME_ROOT/alice")" == "700" ]]
+    [[ "$(stat -c %a "$TACCTL_CLIENT_HOME_ROOT/bob")" == "700" ]]
     run cat "$TACCTL_CLIENT_STATE/created"
     assert_output "alice
 bob"
@@ -246,13 +281,109 @@ bob"
     [[ ! -f "$TACCTL_CLIENT_PAM_DIR/tacctl-auth" ]]
 }
 
+@test "client install: the tacctl server's own script keeps every tier group, at fixed GIDs" {
+    _gen > /dev/null
+    _client_env
+    _local_header
+    run bash "$OUT" --accounts-only
+    assert_success
+    stub_called "groupadd -g 80000 tac-users"
+    stub_called "groupadd -g 80001 tac-console"
+    stub_called "groupadd -g 80002 tac-superuser"
+    stub_called "groupadd -g 80003 tac-operator"
+    stub_called "groupadd -g 80004 tac-readonly"
+    stub_called "usermod -aG tac-users,tac-superuser alice"
+    stub_called "usermod -aG tac-users,tac-readonly bob"
+}
+
+@test "client install: an earlier release's groups move to the fixed GIDs; own groups go; unused tier groups go" {
+    _gen > /dev/null
+    _client_env
+    mkdir -p "$TACCTL_CLIENT_STATE" "$TACCTL_CLIENT_HOME_ROOT/alice" "$TACCTL_CLIENT_HOME_ROOT/bob"
+    chmod 755 "$TACCTL_CLIENT_HOME_ROOT/alice" "$TACCTL_CLIENT_HOME_ROOT/bob"
+    printf '%s\n' alice bob > "$TACCTL_CLIENT_STATE/created"
+    printf '%s\n' "alice:x:80000:80000:alice (TACACS+):${TACCTL_CLIENT_HOME_ROOT}/alice:/bin/bash" \
+        "bob:x:80001:80001:bob (TACACS+):${TACCTL_CLIENT_HOME_ROOT}/bob:/bin/bash" >> "$FAKE_DB/passwd"
+    printf '%s\n' "alice:x:80000:" "bob:x:80001:" "tac-users:x:1001:alice,bob" "tac-readonly:x:1002:bob" \
+        "tac-operator:x:1003:" "tac-superuser:x:1004:alice" "tac-console:x:20002:alice,admin" >> "$FAKE_DB/group"
+    run bash "$OUT" --accounts-only
+    assert_success
+    stub_called "usermod -g tac-users alice"
+    stub_called "groupdel alice"
+    stub_called "groupdel bob"
+    assert_output --partial "[INFO] 'alice': primary group is now tac-users (was GID 80000)."
+    stub_called "groupmod -g 80000 tac-users"
+    stub_called "groupmod -g 80002 tac-superuser"
+    assert_output --partial "[INFO] Group 'tac-users' is now GID 80000 (was 1001)."
+    # Only tacctl's accounts in them: removed. admin keeps tac-console.
+    stub_called "groupdel tac-readonly"
+    stub_called "groupdel tac-operator"
+    assert_output --partial "[INFO] Group 'tac-console' is not used by tacctl on this host, but is kept: admin."
+    run grep -E "^(alice|bob|tac-[a-z]+):" "$FAKE_DB/group"
+    assert_output $'tac-users:x:80000:alice,bob\ntac-superuser:x:80002:alice\ntac-console:x:20002:alice,admin'
+    run grep -E "^(alice|bob):" "$FAKE_DB/passwd"
+    assert_line --partial "alice:x:80000:80000:"
+    assert_line --partial "bob:x:80001:80000:"
+    [[ "$(stat -c %a "$TACCTL_CLIENT_HOME_ROOT/alice")" == "700" ]]
+    # Once: a second run changes no group.
+    : > "$CALLS_LOG"
+    run bash "$OUT" --accounts-only
+    assert_success
+    run grep -cE "^(groupadd|groupmod|groupdel|usermod -g)" "$CALLS_LOG"
+    assert_output "0"
+}
+
+@test "client install: an own group at tac-users' fixed GID (an earlier build) gives way to it" {
+    _gen > /dev/null
+    _client_env
+    mkdir -p "$TACCTL_CLIENT_STATE" "$TACCTL_CLIENT_HOME_ROOT/alice"
+    echo alice > "$TACCTL_CLIENT_STATE/created"
+    echo "alice:x:80000:80000:alice (TACACS+):${TACCTL_CLIENT_HOME_ROOT}/alice:/bin/bash" >> "$FAKE_DB/passwd"
+    echo "alice:x:80000:" >> "$FAKE_DB/group"
+    run bash "$OUT" --accounts-only
+    assert_success
+    refute_output --partial "[WARN]"
+    stub_called "groupdel alice"
+    stub_called "groupmod -g 80000 tac-users"
+    run grep -E "^(alice|tac-users):" "$FAKE_DB/group"
+    assert_output "tac-users:x:80000:"
+    run grep "^alice:" "$FAKE_DB/passwd"
+    assert_output --partial "alice:x:80000:80000:"
+}
+
+@test "client install: tacctl's groups numbered in an earlier build's order swap to their fixed GIDs" {
+    _gen > /dev/null
+    _client_env
+    _local_header
+    printf '%s\n' "tac-users:x:80000:" "tac-readonly:x:80001:" "tac-operator:x:80002:" \
+        "tac-superuser:x:80003:" "tac-console:x:80004:" >> "$FAKE_DB/group"
+    run bash "$OUT" --accounts-only
+    assert_success
+    refute_output --partial "[WARN] Group"
+    # The GID each had, not the spare one it waited on.
+    assert_output --partial "[INFO] Group 'tac-superuser' is now GID 80002 (was 80003)."
+    assert_output --partial "[INFO] Group 'tac-console' is now GID 80001 (was 80004)."
+    run grep -E "^tac-" "$FAKE_DB/group"
+    assert_output $'tac-users:x:80000:\ntac-readonly:x:80004:\ntac-operator:x:80003:\ntac-superuser:x:80002:\ntac-console:x:80001:'
+}
+
+@test "client install: a fixed GID held by another group is left to it, and said" {
+    _gen > /dev/null
+    _client_env
+    echo 'staff9:x:80002:' >> "$FAKE_DB/group"
+    run bash "$OUT" --accounts-only
+    assert_success
+    assert_output --partial "[WARN] Group 'tac-superuser' was created with GID 900, not 80002: GID 80002 belongs to group 'staff9' here."
+    stub_called "groupadd -g 80000 tac-users"
+}
+
 @test "client install: stops before changing anything when the assigned UID is taken" {
     _gen > /dev/null
     _client_env
-    echo 'squatter:x:20000:20000::/home/squatter:/bin/bash' >> "$FAKE_DB/passwd"
+    echo 'squatter:x:80000:80000::/home/squatter:/bin/bash' >> "$FAKE_DB/passwd"
     run bash "$OUT" --accounts-only
     assert_failure
-    assert_output --partial "alice: UID 20000 already belongs to user 'squatter'"
+    assert_output --partial "alice: UID 80000 already belongs to user 'squatter'"
     assert_output --partial "Nothing was changed"
     assert_output --partial "tacctl config linux uid <user> <new-uid>"
     assert_output --partial "--allow-uid-mismatch"
@@ -260,30 +391,29 @@ bob"
     assert_output "0"
 }
 
-@test "client install: stops when the assigned GID or the user's group name is taken" {
+@test "client install: a group named like the user, or a GID equal to its UID, does not stand in the way" {
     _gen > /dev/null
     _client_env
-    echo 'staff2:x:20000:' >> "$FAKE_DB/group"
+    printf '%s\n' 'staff2:x:80001:' 'alice:x:1500:' >> "$FAKE_DB/group"
     run bash "$OUT" --accounts-only
-    assert_failure
-    assert_output --partial "alice: GID 20000 already belongs to group 'staff2'"
-    printf '%s\n' 'sudo:x:27:admin' 'alice:x:1500:' > "$FAKE_DB/group"
-    run bash "$OUT" --accounts-only
-    assert_failure
-    assert_output --partial "a group named 'alice' exists with GID 1500, not 20000"
+    assert_success
+    stub_called "useradd -m -u 80000 -g tac-users -s /bin/bash .* alice"
+    stub_called "useradd -m -u 80001 -g tac-users -s /bin/bash .* bob"
+    run grep -cE "^group(add|mod|del) .*(alice|staff2)" "$CALLS_LOG"
+    assert_output "0"
 }
 
 @test "client install: --allow-uid-mismatch takes a free number of the range, from the top" {
     _gen > /dev/null
     _client_env
-    echo 'squatter:x:20000:20000::/home/squatter:/bin/bash' >> "$FAKE_DB/passwd"
-    echo 'other:x:29999:' >> "$FAKE_DB/group"
+    echo 'squatter:x:80000:80000::/home/squatter:/bin/bash' >> "$FAKE_DB/passwd"
+    echo 'other:x:89999:' >> "$FAKE_DB/group"
     run bash "$OUT" --accounts-only --allow-uid-mismatch
     assert_success
-    assert_output --partial "conflicts accepted (--allow-uid-mismatch); these users get a free number of 20000-29999 on this host"
-    assert_output --partial "Created account 'alice' (superuser) with UID 29998 (tacctl assigned 20000; --allow-uid-mismatch)."
-    stub_called "groupadd -g 29998 alice"
-    stub_called "useradd -m -u 29998 -g alice -s /bin/bash .* alice"
+    assert_output --partial "conflicts accepted (--allow-uid-mismatch); these users get a free number of 80000-89999 on this host"
+    # A GID of the range (the group 'other') does not matter: UIDs only.
+    assert_output --partial "Created account 'alice' (superuser) with UID 89999 (tacctl assigned 80000; --allow-uid-mismatch)."
+    stub_called "useradd -m -u 89999 -g tac-users -s /bin/bash .* alice"
     run grep -c "useradd -m -s" "$CALLS_LOG"
     assert_output "0"
 }
@@ -293,67 +423,68 @@ bob"
     _client_env
     mkdir -p "$TACCTL_CLIENT_STATE"
     echo bob > "$TACCTL_CLIENT_STATE/created"
-    echo 'bob:x:20500:20500:bob (TACACS+):/home/bob:/bin/bash' >> "$FAKE_DB/passwd"
+    echo 'bob:x:80500:80500:bob (TACACS+):/home/bob:/bin/bash' >> "$FAKE_DB/passwd"
     run bash "$OUT" --accounts-only
     assert_success
-    assert_output --partial "bob: UID 20500 on this host, 20001 assigned by tacctl"
-    assert_output --partial "usermod -u <uid> <user> && groupmod -g <uid> <user>"
+    assert_output --partial "bob: UID 80500 on this host, 80001 assigned by tacctl"
+    assert_output --partial "usermod -u <uid> <user>"
+    refute_output --partial "groupmod"
     assert_output --partial "tacctl config linux uid <user> <uid-on-this-host>"
-    stub_called "usermod -aG tac-users,tac-readonly bob"
+    stub_called "usermod -aG tac-users bob"
 }
 
-@test "config linux uid: lists, shows and reassigns within 20000-29999; refuses duplicates and other values" {
+@test "config linux uid: lists, shows and reassigns within 80000-89999; refuses duplicates and other values" {
     _gen > /dev/null
     run "$TACCTL_BIN_SCRIPT" config linux uid
     assert_success
-    assert_line --regexp "alice +20000"
+    assert_line --regexp "alice +80000"
     run "$TACCTL_BIN_SCRIPT" config linux uid bob
-    assert_output "20001"
-    for bad in 1001 19999 30000 65534 020000; do
+    assert_output "80001"
+    for bad in 1001 20000 29999 79999 90000 65534 080000; do
         run "$TACCTL_BIN_SCRIPT" config linux uid bob "$bad"
         assert_failure
-        assert_output --partial "UID must be a number from 20000 to 29999: tacctl gives out UIDs (and the matching GIDs) in that range only."
+        assert_output --partial "UID must be a number from 80000 to 89999: tacctl gives out UIDs in that range only."
     done
-    run "$TACCTL_BIN_SCRIPT" config linux uid bob 25000
+    run "$TACCTL_BIN_SCRIPT" config linux uid bob 85000
     assert_success
-    assert_output --partial "usermod -u 25000 bob && groupmod -g 25000 bob"
+    assert_output --partial "usermod -u 85000 bob"
     _gen > /dev/null
     run sed '/^__TARBALL__$/,$d' "$OUT"
-    assert_output --partial "bob:readonly:25000"
-    run "$TACCTL_BIN_SCRIPT" config linux uid bob 20000
+    assert_output --partial "bob:readonly:85000"
+    run "$TACCTL_BIN_SCRIPT" config linux uid bob 80000
     assert_failure
     assert_output --partial "already assigned to 'alice'"
-    run "$TACCTL_BIN_SCRIPT" config linux uid ghost 21000
+    run "$TACCTL_BIN_SCRIPT" config linux uid ghost 81000
     assert_failure
     # A new user is numbered after the highest assignment, never into a gap.
     "$TACCTL_BIN_SCRIPT" user add carol operator --hash "$HASH" --scopes lab > /dev/null
     _gen > /dev/null
     run "$TACCTL_BIN_SCRIPT" config linux uid carol
-    assert_output "25001"
+    assert_output "85001"
 }
 
 @test "config linux uid: an entry outside the range (from an earlier release) is reported and never sent to a host" {
-    printf '%s\n' 'alice:20000' 'bob:1001' > "${TACCTL_STATE_DIR}/linux-uids"
+    printf '%s\n' 'alice:80000' 'bob:1001' > "${TACCTL_STATE_DIR}/linux-uids"
     run "$TACCTL_BIN_SCRIPT" config linux uid
     assert_success
-    assert_line --regexp "^  bob +1001   outside 20000-29999: not used on hosts$"
+    assert_line --regexp "^  bob +1001   outside 80000-89999: not used on hosts$"
     run _gen
     assert_success
-    assert_output --partial "Skipping 'bob': its UID 1001 is outside 20000-29999, so no host gets an account for it."
+    assert_output --partial "Skipping 'bob': its UID 1001 is outside 80000-89999, so no host gets an account for it."
     run sed '/^__TARBALL__$/,$d' "$OUT"
-    assert_line "TAC_USERS=alice:superuser:20000"
+    assert_line "TAC_USERS=alice:superuser:80000"
     assert_line "TAC_INACTIVE=bob"
 }
 
-@test "config linux script: no UID is given out past 29999" {
-    echo 'alice:29999' > "${TACCTL_STATE_DIR}/linux-uids"
+@test "config linux script: no UID is given out past 89999" {
+    echo 'alice:89999' > "${TACCTL_STATE_DIR}/linux-uids"
     run _gen
     assert_failure 1
-    assert_output --partial "No UID left for 'bob': every number of 20000-29999 has been given out (UIDs are never reused)."
+    assert_output --partial "No UID left for 'bob': every number of 80000-89999 has been given out (UIDs are never reused)."
     assert_output --partial "Give it a free number of the range by hand: tacctl config linux uid bob <uid>"
     [[ ! -e "$OUT" ]]
     run cat "${TACCTL_STATE_DIR}/linux-uids"
-    assert_output "alice:29999"
+    assert_output $'# range 80000-89999\nalice:89999'
 }
 
 @test "config linux uid: a listing or a lookup does not create or rewrite the UID file" {
@@ -378,7 +509,7 @@ bob"
     run "$TACCTL_BIN_SCRIPT" config linux uid
     assert_success
     run "$TACCTL_BIN_SCRIPT" config linux uid bob
-    assert_output "20001"
+    assert_output "80001"
     [ "$(stat -c '%Y %s' "$f"):$(cat "$f")" = "$before" ]
 }
 
@@ -391,7 +522,7 @@ bob"
     assert_success
     assert_output --partial "[WARN] 'bob': this host has a local account of that name that tacctl did not create, so 'bob' gets no TACACS+ account here. The local account is left as it is."
     assert_output --partial "[INFO] Accounts: 1 managed by tacctl here; refused: bob."
-    stub_called "useradd -m -u 20000 -g alice .* alice"
+    stub_called "useradd -m -u 80000 -g tac-users .* alice"
     run grep -cE "^(useradd|groupadd|usermod|gpasswd|userdel|groupdel) .*bob" "$CALLS_LOG"
     assert_output "0"
     run cat "$TACCTL_CLIENT_STATE/created"
@@ -422,10 +553,10 @@ bob"
 @test "client install: a header of another protocol stops the run before anything changes" {
     _gen > /dev/null
     _client_env
-    sed -i 's/^TAC_PROTOCOL=2$/TAC_PROTOCOL=1/' "$OUT"
+    sed -i 's/^TAC_PROTOCOL=5$/TAC_PROTOCOL=2/' "$OUT"
     run bash "$OUT" --accounts-only
     assert_failure
-    assert_output --partial "This script's header speaks protocol 1 and its body protocol 2"
+    assert_output --partial "This script's header speaks protocol 2 and its body protocol 5"
     sed -i '/^TAC_PROTOCOL=/d' "$OUT"
     run bash "$OUT" --accounts-only
     assert_failure
@@ -465,10 +596,10 @@ bob"
     _client_env
     run bash "$OUT" --accounts-only
     assert_success
-    stub_called "useradd -m -u 20000 -g alice -s /bin/bash -c alice .TACACS.. alice"
+    stub_called "useradd -m -u 80000 -g tac-users -s /bin/bash -K UID_MIN=80000 -K UID_MAX=89999 -c alice .TACACS.. alice"
 
     # An account created by an earlier version carries the generic name.
-    sed -i 's/^alice:x:20000:20000:alice (TACACS+):/alice:x:20000:20000:TACACS+ user (tacctl):/' "$FAKE_DB/passwd"
+    sed -i 's/^alice:x:80000:80000:alice (TACACS+):/alice:x:80000:80000:TACACS+ user (tacctl):/' "$FAKE_DB/passwd"
     run bash "$OUT" --accounts-only
     assert_success
     stub_called "usermod -c alice .TACACS.. alice"
@@ -490,20 +621,24 @@ bob"
     mkdir -p "$TACCTL_CLIENT_STATE" "$TACCTL_CLIENT_HOME_ROOT/olduser"
     echo "olduser" > "$TACCTL_CLIENT_STATE/created"
     echo "olduser" > "$TACCTL_CLIENT_STATE/expired"
-    echo "olduser:x:20005:20005:olduser (TACACS+):${TACCTL_CLIENT_HOME_ROOT}/olduser:/bin/bash" >> "$FAKE_DB/passwd"
-    printf '%s\n' "tac-users:x:900:olduser,localguy" "olduser:x:20005:" >> "$FAKE_DB/group"
+    echo "olduser:x:80005:80005:olduser (TACACS+):${TACCTL_CLIENT_HOME_ROOT}/olduser:/bin/bash" >> "$FAKE_DB/passwd"
+    printf '%s\n' "tac-users:x:900:olduser,localguy" "olduser:x:80005:" >> "$FAKE_DB/group"
     echo 'localguy:x:1600:1600::/home/localguy:/bin/bash' >> "$FAKE_DB/passwd"
     run bash "$OUT" --accounts-only
     assert_success
     stub_called "gpasswd -d olduser tac-users"
     stub_called "userdel olduser"
     stub_called "groupdel olduser"
-    assert_output --partial "[INFO] Deleted account 'olduser': no longer a TACACS+ user here (its UID 20005 stays reserved on the tacctl server, never reused)."
-    assert_output --partial "[INFO] home kept: ${TACCTL_CLIENT_HOME_ROOT}/olduser"
+    assert_output --partial "[INFO] Deleted account 'olduser': no longer a TACACS+ user here (its UID 80005 stays reserved on the tacctl server, never reused)."
+    # The kept home moves out of reach of a later account with the same UID.
+    assert_output --regexp "\[INFO\] home kept: ${TACCTL_CLIENT_HOME_ROOT}/\.tacctl-removed/olduser-[0-9]{8}-[0-9]{6}"$'\n'
+    moved=("$TACCTL_CLIENT_HOME_ROOT"/.tacctl-removed/olduser-*)
+    [[ ${#moved[@]} == 1 && -d "${moved[0]}" && ! -e "$TACCTL_CLIENT_HOME_ROOT/olduser" ]]
+    stub_called "chown root:root ${TACCTL_CLIENT_HOME_ROOT}/.tacctl-removed"
+    stub_called "chown -hR root:root -- ${moved[0]}"
     # A local account in tac-users that tacctl did not create: out of
     # tacctl's groups, nothing else.
     assert_output --partial "[INFO] 'localguy': removed from tacctl's groups (tac-users); it is a plain local account again."
-    [[ -d "$TACCTL_CLIENT_HOME_ROOT/olduser" ]]
     run grep -c olduser "$TACCTL_CLIENT_STATE/created" "$TACCTL_CLIENT_STATE/expired"
     assert_output "${TACCTL_CLIENT_STATE}/created:0
 ${TACCTL_CLIENT_STATE}/expired:0"
@@ -513,6 +648,9 @@ ${TACCTL_CLIENT_STATE}/expired:0"
     stub_called "gpasswd -d localguy tac-users"
     run grep -cE "^(usermod|userdel) .*localguy" "$CALLS_LOG"
     assert_output "0"
+    run stat -c %a "$TACCTL_CLIENT_HOME_ROOT/.tacctl-removed" "${moved[0]}"
+    assert_output "700
+700"
 }
 
 @test "client install: removed users' homes go only when named (TAC_REMOVE_HOMES) or with --remove-home" {
@@ -524,8 +662,8 @@ ${TACCTL_CLIENT_STATE}/expired:0"
         mkdir -p "$TACCTL_CLIENT_HOME_ROOT/$u/.ssh"
         echo key > "$TACCTL_CLIENT_HOME_ROOT/$u/.ssh/authorized_keys"
     done
-    echo "old1:x:20005:20005:old1 (TACACS+):${TACCTL_CLIENT_HOME_ROOT}/old1:/bin/bash" >> "$FAKE_DB/passwd"
-    echo "old2:x:20006:20006:old2 (TACACS+):${TACCTL_CLIENT_HOME_ROOT}/old2:/bin/bash" >> "$FAKE_DB/passwd"
+    echo "old1:x:80005:80005:old1 (TACACS+):${TACCTL_CLIENT_HOME_ROOT}/old1:/bin/bash" >> "$FAKE_DB/passwd"
+    echo "old2:x:80006:80006:old2 (TACACS+):${TACCTL_CLIENT_HOME_ROOT}/old2:/bin/bash" >> "$FAKE_DB/passwd"
     # A link inside a home is removed, never followed.
     mkdir -p "$BATS_TEST_TMPDIR/precious"
     ln -s "$BATS_TEST_TMPDIR/precious" "$TACCTL_CLIENT_HOME_ROOT/old1/link"
@@ -533,13 +671,15 @@ ${TACCTL_CLIENT_STATE}/expired:0"
     run bash "$OUT" --accounts-only
     assert_success
     assert_output --partial "[INFO] Deleted home ${TACCTL_CLIENT_HOME_ROOT}/old1."
-    assert_output --partial "[INFO] home kept: ${TACCTL_CLIENT_HOME_ROOT}/old2"
-    [[ ! -e "$TACCTL_CLIENT_HOME_ROOT/old1" && -d "$TACCTL_CLIENT_HOME_ROOT/old2" && -d "$BATS_TEST_TMPDIR/precious" ]]
+    assert_output --partial "[INFO] home kept: ${TACCTL_CLIENT_HOME_ROOT}/.tacctl-removed/old2-"
+    moved=("$TACCTL_CLIENT_HOME_ROOT"/.tacctl-removed/old2-*)
+    [[ ! -e "$TACCTL_CLIENT_HOME_ROOT/old1" && ! -e "$TACCTL_CLIENT_HOME_ROOT/old2" && -d "$BATS_TEST_TMPDIR/precious" ]]
+    [[ -f "${moved[0]}/.ssh/authorized_keys" ]]
 
     # --remove-home (TAC_REMOVE_HOMES='*' from 'host sync --remove-home'): every one.
     echo old3 >> "$TACCTL_CLIENT_STATE/created"
     mkdir -p "$TACCTL_CLIENT_HOME_ROOT/old3"
-    echo "old3:x:20007:20007:old3 (TACACS+):${TACCTL_CLIENT_HOME_ROOT}/old3:/bin/bash" >> "$FAKE_DB/passwd"
+    echo "old3:x:80007:80007:old3 (TACACS+):${TACCTL_CLIENT_HOME_ROOT}/old3:/bin/bash" >> "$FAKE_DB/passwd"
     sed -i "s/^TAC_REMOVE_HOMES=.*/TAC_REMOVE_HOMES=''/" "$OUT"
     run bash "$OUT" --accounts-only --remove-home
     assert_success
@@ -554,26 +694,46 @@ ${TACCTL_CLIENT_STATE}/expired:0"
         "$TACCTL_CLIENT_HOME_ROOT/team" "$TACCTL_CLIENT_HOME_ROOT/h4"
     ln -s "$BATS_TEST_TMPDIR/real" "$TACCTL_CLIENT_HOME_ROOT/h2"
     printf '%s\n' h1 h2 h3 h4 > "$TACCTL_CLIENT_STATE/created"
-    printf '%s\n' "h1:x:20011:20011:h1 (TACACS+):${BATS_TEST_TMPDIR}/elsewhere/h1:/bin/bash" \
-        "h2:x:20012:20012:h2 (TACACS+):${TACCTL_CLIENT_HOME_ROOT}/h2:/bin/bash" \
-        "h3:x:20013:20013:h3 (TACACS+):${TACCTL_CLIENT_HOME_ROOT}/team:/bin/bash" \
+    printf '%s\n' "h1:x:80011:80011:h1 (TACACS+):${BATS_TEST_TMPDIR}/elsewhere/h1:/bin/bash" \
+        "h2:x:80012:80012:h2 (TACACS+):${TACCTL_CLIENT_HOME_ROOT}/h2:/bin/bash" \
+        "h3:x:80013:80013:h3 (TACACS+):${TACCTL_CLIENT_HOME_ROOT}/team:/bin/bash" \
         "mate:x:1700:1700::${TACCTL_CLIENT_HOME_ROOT}/team:/bin/bash" >> "$FAKE_DB/passwd"
     run bash "$OUT" --accounts-only --remove-home
     assert_success
-    assert_output --partial "[WARN] home kept: ${BATS_TEST_TMPDIR}/elsewhere/h1 (not a directory directly under ${TACCTL_CLIENT_HOME_ROOT})"
-    assert_output --partial "[WARN] home kept: ${TACCTL_CLIENT_HOME_ROOT}/h2 (it is a symbolic link)"
-    assert_output --partial "[WARN] home kept: ${TACCTL_CLIENT_HOME_ROOT}/team (also the home of 'mate')"
+    assert_output --partial "[WARN] home kept in place: ${BATS_TEST_TMPDIR}/elsewhere/h1 (not a directory directly under ${TACCTL_CLIENT_HOME_ROOT})"
+    assert_output --partial "[WARN] home kept in place: ${TACCTL_CLIENT_HOME_ROOT}/h2 (it is a symbolic link)"
+    assert_output --partial "[WARN] home kept in place: ${TACCTL_CLIENT_HOME_ROOT}/team (also the home of 'mate')"
     [[ -d "$BATS_TEST_TMPDIR/elsewhere/h1" && -L "$TACCTL_CLIENT_HOME_ROOT/h2" && -d "$BATS_TEST_TMPDIR/real" && -d "$TACCTL_CLIENT_HOME_ROOT/team" ]]
     # Owned by another UID than the account's.
-    echo "h4:x:20014:20014:h4 (TACACS+):${TACCTL_CLIENT_HOME_ROOT}/h4:/bin/bash" >> "$FAKE_DB/passwd"
+    echo "h4:x:80014:80014:h4 (TACACS+):${TACCTL_CLIENT_HOME_ROOT}/h4:/bin/bash" >> "$FAKE_DB/passwd"
     echo h4 >> "$TACCTL_CLIENT_STATE/created"
     TACCTL_CLIENT_HOME_OWNER=4242 run bash "$OUT" --accounts-only --remove-home
     assert_success
-    assert_output --partial "home kept: ${TACCTL_CLIENT_HOME_ROOT}/h4 (owned by UID $(stat -c %u "$TACCTL_CLIENT_HOME_ROOT/h4"), not 20014)"
+    assert_output --partial "home kept in place: ${TACCTL_CLIENT_HOME_ROOT}/h4 (owned by UID $(stat -c %u "$TACCTL_CLIENT_HOME_ROOT/h4"), not 80014)"
     [[ -d "$TACCTL_CLIENT_HOME_ROOT/h4" ]]
 }
 
-@test "client install: an account outside 20000-29999 is never touched, even when listed as created" {
+@test "client install: a kept home is not moved through a removed-homes directory that is a link" {
+    _gen > /dev/null
+    _client_env
+    mkdir -p "$TACCTL_CLIENT_STATE" "$TACCTL_CLIENT_HOME_ROOT/k1" "$TACCTL_CLIENT_HOME_ROOT/k2" "$BATS_TEST_TMPDIR/elsewhere"
+    printf '%s\n' k1 k2 > "$TACCTL_CLIENT_STATE/created"
+    printf '%s\n' "k1:x:80021:80021:k1 (TACACS+):${TACCTL_CLIENT_HOME_ROOT}/k1:/bin/bash" \
+        "k2:x:80022:80022:k2 (TACACS+):${TACCTL_CLIENT_HOME_ROOT}/k2:/bin/bash" >> "$FAKE_DB/passwd"
+    # .tacctl-removed is a link to somewhere else: nothing is moved through it.
+    ln -s "$BATS_TEST_TMPDIR/elsewhere" "$TACCTL_CLIENT_HOME_ROOT/.tacctl-removed"
+    run bash "$OUT" --accounts-only
+    assert_success
+    assert_output --partial "[WARN] home kept in place: ${TACCTL_CLIENT_HOME_ROOT}/k1 (${TACCTL_CLIENT_HOME_ROOT}/.tacctl-removed is not a real directory)"
+    assert_output --partial "[WARN] home kept in place: ${TACCTL_CLIENT_HOME_ROOT}/k2 (${TACCTL_CLIENT_HOME_ROOT}/.tacctl-removed is not a real directory)"
+    [[ -d "$TACCTL_CLIENT_HOME_ROOT/k1" && -d "$TACCTL_CLIENT_HOME_ROOT/k2" ]]
+    run ls -A "$BATS_TEST_TMPDIR/elsewhere"
+    assert_output ""
+    run grep -c "^chown -hR" "$CALLS_LOG"
+    assert_output "0"
+}
+
+@test "client install: an account outside 80000-89999 is never touched, even when listed as created" {
     _gen > /dev/null
     _client_env
     mkdir -p "$TACCTL_CLIENT_STATE" "$TACCTL_CLIENT_HOME_ROOT/legacy"
@@ -583,14 +743,360 @@ ${TACCTL_CLIENT_STATE}/expired:0"
     echo "tac-users:x:900:legacy,bob" >> "$FAKE_DB/group"
     run bash "$OUT" --accounts-only --remove-home
     assert_success
-    assert_output --partial "[WARN] 'legacy' has UID 1500, outside 20000-29999: tacctl changes nothing on it but its membership in tacctl's groups, although it created it."
-    assert_output --partial "[WARN] 'bob': its account has UID 1001, outside 20000-29999; tacctl changes nothing on it but its membership in tacctl's groups."
+    assert_output --partial "[WARN] 'legacy' has UID 1500, outside 80000-89999: tacctl changes nothing on it but its membership in tacctl's groups, although it created it."
+    assert_output --partial "[WARN] 'bob': its account has UID 1001, outside 80000-89999; tacctl changes nothing on it but its membership in tacctl's groups."
     assert_output --partial "[INFO] 'legacy': removed from tacctl's groups (tac-users); it is a plain local account again."
     assert_output --partial "[INFO] 'bob': removed from tacctl's groups (tac-users); it is a plain local account again."
     assert_output --partial "[INFO] Accounts: 1 managed by tacctl here; refused: bob."
     run grep -cE "^(usermod|userdel|groupdel|useradd) .*(legacy|bob)" "$CALLS_LOG"
     assert_output "0"
     [[ -d "$TACCTL_CLIENT_HOME_ROOT/legacy" ]]
+}
+
+# --- renumbering from the legacy range (20000-29999) ---------------------------
+
+# A server map and a host as an earlier release left them: alice (listed)
+# and gone (removed from the scope) were created by tacctl at legacy UIDs;
+# pat is a local account in the legacy range that tacctl did not create.
+_legacy_host() {
+    printf '%s\n' 'alice:20000' 'bob:20001' 'gone:20002' > "${TACCTL_STATE_DIR}/linux-uids"
+    _gen > /dev/null
+    _client_env
+    mkdir -p "$TACCTL_CLIENT_STATE" "$TACCTL_CLIENT_HOME_ROOT/alice" "$TACCTL_CLIENT_HOME_ROOT/gone" "$TACCTL_CLIENT_HOME_ROOT/pat"
+    echo note > "$TACCTL_CLIENT_HOME_ROOT/alice/note"
+    printf '%s\n' alice gone > "$TACCTL_CLIENT_STATE/created"
+    printf '%s\n' "alice:x:20000:20000:alice (TACACS+):${TACCTL_CLIENT_HOME_ROOT}/alice:/bin/bash" \
+        "gone:x:20002:20002:gone (TACACS+):${TACCTL_CLIENT_HOME_ROOT}/gone:/bin/bash" \
+        "pat:x:20005:20005:Pat:${TACCTL_CLIENT_HOME_ROOT}/pat:/bin/bash" >> "$FAKE_DB/passwd"
+    printf '%s\n' "alice:x:20000:" "gone:x:20002:" "pat:x:20005:" "tac-users:x:900:alice,gone" >> "$FAKE_DB/group"
+}
+
+@test "client install: accounts it created at legacy UIDs are renumbered once (UID, home; own group gone); others untouched" {
+    _legacy_host
+    # The server's map was renumbered by the script's generation, logged,
+    # the old one kept.
+    run cat "${TACCTL_STATE_DIR}/linux-uids"
+    assert_output $'# range 80000-89999\n# previous 20000-29999\nalice:80000\nbob:80001\ngone:80002'
+    run cat "${TACCTL_STATE_DIR}"/linux-uids.pre-renumber-*
+    assert_output $'alice:20000\nbob:20001\ngone:20002'
+    stub_called "logger -t tacctl -p auth.info uid-map renumbered 3 entries from=20000-29999 to=80000-89999 backup=${TACCTL_STATE_DIR}/linux-uids.pre-renumber-"
+    run sed '/^__TARBALL__$/,$d' "$OUT"
+    assert_line "TAC_USERS=\$'alice:superuser:80000\\nbob:readonly:80001'"
+    run bash "$OUT" --accounts-only
+    assert_success
+    assert_output --partial "[INFO] 'alice': renumbered 20000 -> 80000 (home re-owned)"
+    assert_output --partial "[INFO] 'gone': renumbered 20002 -> 80002 (home re-owned)"
+    # alice is managed again at once; gone, renumbered first, is deleted
+    # under its new number; bob is created.
+    assert_output --partial "Deleted account 'gone': no longer a TACACS+ user here (its UID 80002 stays reserved"
+    assert_output --partial "[INFO] Accounts: 2 managed by tacctl here; 2 renumbered."
+    stub_called "usermod -aG tac-users,tac-superuser alice"
+    stub_called "useradd -m -u 80001 -g tac-users"
+    stub_called "pgrep -u 20000"
+    stub_called "usermod -u 80000 alice"
+    stub_called "usermod -g tac-users alice"
+    stub_called "groupdel alice"
+    run grep -cE "^(alice|gone):" "$FAKE_DB/group"
+    assert_output "0"
+    run grep "^alice:" "$FAKE_DB/passwd"
+    assert_output "alice:x:80000:80000:alice (TACACS+):${TACCTL_CLIENT_HOME_ROOT}/alice:/bin/bash"
+    # pat (legacy range, not tacctl's) is left exactly as it is.
+    run grep -cE "^(usermod|groupmod|userdel|groupdel|gpasswd|pgrep) .*(pat|20005)" "$CALLS_LOG"
+    assert_output "0"
+    run grep -c "^pat:x:20005:20005:Pat:" "$FAKE_DB/passwd"
+    assert_output "1"
+    # Once: a second run renumbers nothing.
+    : > "$CALLS_LOG"
+    run bash "$OUT" --accounts-only
+    assert_success
+    refute_output --partial "renumbered"
+    assert_output --partial "[INFO] Accounts: 2 managed by tacctl here."
+    run grep -cE "^(usermod -u|groupmod)" "$CALLS_LOG"
+    assert_output "0"
+}
+
+@test "client install: a legacy account whose new UID is taken here is left as it is and refused" {
+    _legacy_host
+    echo "squat:x:80000:80000::/srv/squat:/bin/bash" >> "$FAKE_DB/passwd"
+    run bash "$OUT" --accounts-only
+    assert_success
+    assert_output --partial "[WARN] 'alice': not renumbered from 20000 to 80000: UID 80000 belongs to 'squat' here. The account is left as it is until 80000 is free here."
+    assert_output --partial "[INFO] Accounts: 1 managed by tacctl here; 1 renumbered; refused: alice."
+    run grep -cE "^(usermod|groupmod|gpasswd) .*alice" "$CALLS_LOG"
+    assert_output "0"
+    run grep -c "^alice:x:20000:20000:" "$FAKE_DB/passwd"
+    assert_output "1"
+
+    # A group with GID 80000 is no obstacle to the UID: tac-users then
+    # keeps its number, and that is said.
+    sed -i '/^squat:/d' "$FAKE_DB/passwd"
+    sed -i 's/^tac-users:x:80000:/tac-users:x:900:/' "$FAKE_DB/group"
+    echo "staff9:x:80000:" >> "$FAKE_DB/group"
+    : > "$CALLS_LOG"
+    run bash "$OUT" --accounts-only
+    assert_success
+    assert_output --partial "[INFO] 'alice': renumbered 20000 -> 80000 (home re-owned)"
+    assert_output --partial "[WARN] Group 'tac-users' keeps GID 900, not 80000: GID 80000 belongs to group 'staff9' here."
+}
+
+@test "client install: a legacy account whose user is logged in is left as it is until the next sync" {
+    _legacy_host
+    stub_cmd pgrep '[[ "$*" == "-u 20000" ]]'
+    run bash "$OUT" --accounts-only
+    assert_success
+    assert_output --partial "[WARN] 'alice': not renumbered from 20000 to 80000: processes run as UID 20000 (still logged in?). The account is left as it is until the next sync."
+    assert_output --partial "[INFO] Accounts: 1 managed by tacctl here; 1 renumbered; refused: alice."
+    # Untouched, its groups too.
+    run grep -cE "^(usermod|groupmod|gpasswd) .*alice" "$CALLS_LOG"
+    assert_output "0"
+    refute_output --partial "'alice': removed from tacctl's groups"
+    # Logged out: the next sync renumbers it.
+    stub_cmd pgrep 'exit 1'
+    run bash "$OUT" --accounts-only
+    assert_success
+    assert_output --partial "[INFO] 'alice': renumbered 20000 -> 80000 (home re-owned)"
+    assert_output --partial "[INFO] Accounts: 2 managed by tacctl here; 1 renumbered."
+}
+
+@test "client install: usermod that fails before or after changing the UID is reported as such" {
+    _legacy_host
+    # Fails outright: nothing changed, the account is left as it is.
+    stub_cmd usermod '[[ "$1" == "-u" ]] && exit 12; exit 0'
+    run bash "$OUT" --accounts-only
+    assert_success
+    assert_output --partial "[WARN] 'alice': not renumbered from 20000 to 80000: usermod failed. The account is left as it is until the next sync."
+    assert_output --partial "refused: alice."
+    # Changes the UID, then cannot re-own the home: renumbered, and said so.
+    stub_cmd usermod '[[ "$1" == "-u" ]] || exit 0
+        awk -F: -v OFS=: -v n="$3" -v v="$2" "\$1 == n { \$3 = v } 1" "$FAKE_DB/passwd" > "$FAKE_DB/p.new" && mv "$FAKE_DB/p.new" "$FAKE_DB/passwd"
+        exit 12'
+    run bash "$OUT" --accounts-only
+    assert_success
+    assert_output --partial "[WARN] 'alice': its UID is now 80000, but usermod could not re-own all of ${TACCTL_CLIENT_HOME_ROOT}/alice; finish it by hand: chown -hR --from=20000 80000 ${TACCTL_CLIENT_HOME_ROOT}/alice"
+    assert_output --partial "[INFO] 'alice': renumbered 20000 -> 80000 (home not fully re-owned)"
+}
+
+@test "client install: files outside the home that keep the old number are listed (at most 20), never changed" {
+    _legacy_host
+    stub_cmd find 'if [[ " $* " == *" -print "* ]]; then for i in $(seq 1 25); do echo "/var/tmp/stray$i"; done; fi'
+    run bash "$OUT" --accounts-only
+    assert_success
+    assert_output --partial "[WARN] 'alice': these files still carry its old number 20000 and were left as they are (chown -h 80000:tac-users <file> gives them back):"
+    assert_line "    /var/tmp/stray20"
+    refute_line "    /var/tmp/stray21"
+    assert_output --partial "    ... more; find them with: find / -xdev \\( -uid 20000 -o -gid 20000 \\)"
+    stub_called "find ${TACCTL_CLIENT_HOME_ROOT} -xdev \\( -uid 20000 -o -gid 20000 \\) -print"
+    run grep -cE "^(chown|chgrp) .*stray" "$CALLS_LOG"
+    assert_output "0"
+}
+
+# --- the tacctl server's own accounts: the login shell field --------------------
+
+# _console_header: the script's TAC_USERS with a shell per user, as 'host
+# enroll --local' writes it (config linux script writes three fields).
+_console_header() {
+    sed -i "s|^TAC_USERS=.*|TAC_USERS=\$'alice:superuser:80000:$1\\\\nbob:readonly:80001:$2'|" "$OUT"
+    _local_header
+}
+# The tacctl server's own script (host enroll --local): TAC_LOCAL=1.
+_local_header() {
+    grep -q '^TAC_LOCAL=1$' "$OUT" || sed -i 's/^TAC_PROTOCOL=/TAC_LOCAL=1\nTAC_PROTOCOL=/' "$OUT"
+}
+CONSOLE=/usr/local/bin/tacctl-console
+
+@test "client install: the shell field makes console accounts, tac-console follows it, the summary counts them" {
+    _gen > /dev/null
+    _client_env
+    _console_header "$CONSOLE" /bin/bash
+    run bash "$OUT" --accounts-only
+    assert_success
+    stub_called "groupadd -g 80001 tac-console"
+    stub_called "useradd -m -u 80000 -g tac-users -s ${CONSOLE} -K UID_MIN=80000 -K UID_MAX=89999 -c alice \\(TACACS\\+\\) alice"
+    stub_called "useradd -m -u 80001 -g tac-users -s /bin/bash -K UID_MIN=80000 -K UID_MAX=89999 -c bob \\(TACACS\\+\\) bob"
+    stub_called "usermod -aG tac-users,tac-superuser,tac-console alice"
+    stub_called "usermod -aG tac-users,tac-readonly bob"
+    assert_output --partial "[INFO] Accounts: 2 managed by tacctl here; console: 1."
+    # Switched: alice back to bash (out of tac-console), bob to the console.
+    _console_header /bin/bash "$CONSOLE"
+    : > "$CALLS_LOG"
+    FAKE_ID_GROUPS="tac-users tac-superuser tac-console" run bash "$OUT" --accounts-only
+    assert_success
+    assert_output --partial "[INFO] 'alice': login shell is now /bin/bash."
+    assert_output --partial "[INFO] 'bob': login shell is now the tacctl console."
+    stub_called "usermod -s /bin/bash alice"
+    stub_called "usermod -s ${CONSOLE} bob"
+    stub_called "gpasswd -d alice tac-console"
+    stub_called "usermod -aG tac-users,tac-readonly,tac-console bob"
+    run grep -E "^(alice|bob):" "$FAKE_DB/passwd"
+    assert_line --partial "alice:x:80000:80000:alice (TACACS+):${TACCTL_CLIENT_HOME_ROOT}/alice:/bin/bash"
+    assert_line --partial "bob:x:80001:80000:bob (TACACS+):${TACCTL_CLIENT_HOME_ROOT}/bob:${CONSOLE}"
+    # Unchanged shells: nothing to do.
+    : > "$CALLS_LOG"
+    run bash "$OUT" --accounts-only
+    assert_success
+    refute_output --partial "login shell is now"
+    if stub_called "^usermod -s "; then stub_calls; return 1; fi
+}
+
+@test "client install: three fields (every other host) leave the shell alone" {
+    _gen > /dev/null
+    _client_env
+    bash "$OUT" --accounts-only > /dev/null
+    awk -F: -v OFS=: -v c="$CONSOLE" '$1 == "alice" { $7 = c } 1' "$FAKE_DB/passwd" > "$FAKE_DB/p.new" && mv "$FAKE_DB/p.new" "$FAKE_DB/passwd"
+    : > "$CALLS_LOG"
+    run bash "$OUT" --accounts-only
+    assert_success
+    if stub_called "^usermod -s "; then stub_calls; return 1; fi
+    refute_output --partial "console:"
+}
+
+@test "client remove: tacctl's accounts with the console get /bin/bash back; others are named and left" {
+    _gen > /dev/null
+    _client_env
+    _console_header "$CONSOLE" /bin/bash
+    bash "$OUT" --accounts-only > /dev/null
+    echo "ext:x:1200:1200::/home/ext:${CONSOLE}" >> "$FAKE_DB/passwd"
+    "$TACCTL_BIN_SCRIPT" config linux remove-script --output "$BATS_TEST_TMPDIR/remove.sh" > /dev/null
+    : > "$CALLS_LOG"
+    run bash "$BATS_TEST_TMPDIR/remove.sh"
+    assert_success
+    assert_output --partial "[INFO] 'alice': login shell is /bin/bash again (it was the tacctl console)."
+    assert_output --partial "[WARN] 'ext' has the tacctl console (${CONSOLE}) as its login shell, but tacctl did not create it; left as it is."
+    stub_called "usermod -s /bin/bash alice"
+    if stub_called "^usermod .* (bob|ext)$"; then stub_calls; return 1; fi
+}
+
+# --- another UID range (tacctl.yaml linux.uid_min, linux.uid_max) --------------
+
+@test "config linux uid-range: shows the range, refuses one that cannot be used, nothing changed" {
+    _gen > /dev/null
+    local before
+    before=$(cat "${TACCTL_STATE_DIR}/linux-uids")
+    run "$TACCTL_BIN_SCRIPT" config linux uid-range
+    assert_success
+    assert_line "  Linux UID range: 80000-89999 (default; one range for all hosts)"
+    assert_line "  ${TACCTL_STATE_DIR}/linux-uids is numbered for 80000-89999"
+    run "$TACCTL_BIN_SCRIPT" config linux uid-range 500-5000
+    assert_failure 1
+    assert_output --partial "Cannot use UID range 500-5000: it starts below 1000 (system accounts)."
+    run "$TACCTL_BIN_SCRIPT" config linux uid-range 61000-62999
+    assert_failure 1
+    assert_output --partial "it overlaps 61184-65519, which systemd reserves."
+    run "$TACCTL_BIN_SCRIPT" config linux uid-range 100000
+    assert_failure 1
+    assert_output --partial "Usage: tacctl config linux uid-range <min>-<max>"
+    [[ "$(cat "${TACCTL_STATE_DIR}/linux-uids")" == "$before" ]]
+    run "$TACCTL_BIN_SCRIPT" config get linux.uid_min
+    assert_output "80000"
+    # A range in useradd's is allowed, with a warning.
+    run "$TACCTL_BIN_SCRIPT" config linux uid-range 40000-49999
+    assert_success
+    assert_output --partial "UID range 40000-49999 overlaps 1000-60000, where local useradd gives out UIDs by default"
+    # A range set by hand in tacctl.yaml that cannot be used stops the
+    # commands that give out numbers.
+    sed -i "s/^\\( *uid_max:\\).*/\\1 40500/" "${TACCTL_STATE_DIR}/tacctl.yaml"
+    run _gen
+    assert_failure 1
+    assert_output --partial "The Linux UID range in tacctl.yaml (40000-40500) cannot be used: it holds 501 numbers"
+    assert_output --partial "Set one that can: tacctl config linux uid-range <min>-<max>"
+}
+
+@test "config linux uid-range: the map moves by offset, scripts carry the range and the earlier ones" {
+    _gen > /dev/null
+    run "$TACCTL_BIN_SCRIPT" config linux uid-range 100000-109999
+    assert_success
+    assert_output --partial "Renumbered 2 entries of ${TACCTL_STATE_DIR}/linux-uids from 80000-89999 to 100000-109999"
+    assert_output --partial "Linux UID range set to 100000-109999 (was 80000-89999)."
+    stub_called "logger -t tacctl -p auth.info uid-range set from=80000-89999 to=100000-109999"
+    run cat "${TACCTL_STATE_DIR}/linux-uids"
+    assert_output $'# range 100000-109999\n# previous 80000-89999\nalice:100000\nbob:100001'
+    _gen > /dev/null
+    run sed '/^__TARBALL__$/,$d' "$OUT"
+    assert_line "TAC_USERS=\$'alice:superuser:100000\\nbob:readonly:100001'"
+    assert_line "TAC_UID_FIRST=100000"
+    assert_line "TAC_UID_LAST=109999"
+    assert_line "TAC_UID_PREVIOUS=80000-89999"
+    run "$TACCTL_BIN_SCRIPT" config linux uid bob 85000
+    assert_failure
+    assert_output --partial "UID must be a number from 100000 to 109999"
+    # Back into a range the map was numbered for: refused.
+    run "$TACCTL_BIN_SCRIPT" config linux uid-range 85000-95000
+    assert_failure 1
+    assert_output --partial "it overlaps 80000-89999, a range the file was numbered for (hosts may still have accounts there). Nothing was changed."
+    run "$TACCTL_BIN_SCRIPT" config get linux.uid_min
+    assert_output "100000"
+}
+
+@test "client install: a header without a valid UID range stops the run before anything changes" {
+    _gen > /dev/null
+    _client_env
+    cp "$OUT" "$BATS_TEST_TMPDIR/good.sh"
+    sed -i '/^TAC_UID_FIRST=/d' "$OUT"
+    run bash "$OUT" --accounts-only
+    assert_failure
+    assert_output --partial "The header has no valid UID range (TAC_UID_FIRST, TAC_UID_LAST). Nothing was changed."
+    sed 's/^TAC_UID_LAST=.*/TAC_UID_LAST=70000/; s/^TAC_UID_FIRST=.*/TAC_UID_FIRST=080000/' "$BATS_TEST_TMPDIR/good.sh" > "$OUT"
+    run bash "$OUT" --accounts-only
+    assert_failure
+    assert_output --partial "The header has no valid UID range"
+    run grep -cE "^(useradd|groupadd|usermod)" "$CALLS_LOG"
+    assert_output "0"
+    [[ ! -e "$TACCTL_CLIENT_STATE/created" ]]
+}
+
+@test "client install: after a range change, accounts it created in any earlier range move by offset, once" {
+    _legacy_host
+    "$TACCTL_BIN_SCRIPT" config linux uid-range 100000-109999 > /dev/null
+    _gen > /dev/null
+    run sed '/^__TARBALL__$/,$d' "$OUT"
+    assert_line "TAC_UID_PREVIOUS=20000-29999\\ 80000-89999"
+    # The host still has alice and gone at legacy UIDs: the offsets add up.
+    run bash "$OUT" --accounts-only
+    assert_success
+    assert_output --partial "[INFO] 'alice': renumbered 20000 -> 100000 (home re-owned)"
+    assert_output --partial "[INFO] 'gone': renumbered 20002 -> 100002 (home re-owned)"
+    assert_output --partial "[INFO] Accounts: 2 managed by tacctl here; 2 renumbered."
+    stub_called "useradd -m -u 100001 -g tac-users"
+    run grep "^alice:" "$FAKE_DB/passwd"
+    assert_output "alice:x:100000:100000:alice (TACACS+):${TACCTL_CLIENT_HOME_ROOT}/alice:/bin/bash"
+    # pat (not tacctl's) is left as it is.
+    run grep -c "^pat:x:20005:20005:Pat:" "$FAKE_DB/passwd"
+    assert_output "1"
+
+    # Again: 100000-109999 -> 120000-129999.
+    "$TACCTL_BIN_SCRIPT" config linux uid-range 120000-129999 > /dev/null
+    _gen > /dev/null
+    : > "$CALLS_LOG"
+    run bash "$OUT" --accounts-only
+    assert_success
+    assert_output --partial "[INFO] 'alice': renumbered 100000 -> 120000 (home re-owned)"
+    assert_output --partial "[INFO] 'bob': renumbered 100001 -> 120001 (home re-owned)"
+    stub_called "usermod -u 120000 alice"
+    # tacctl's groups follow the range's start.
+    stub_called "groupmod -g 120000 tac-users"
+    # Once.
+    : > "$CALLS_LOG"
+    run bash "$OUT" --accounts-only
+    assert_success
+    refute_output --partial "renumbered"
+    run grep -cE "^(usermod -u|groupmod)" "$CALLS_LOG"
+    assert_output "0"
+}
+
+@test "client install: an account whose new number would fall outside the range is left as it is and refused" {
+    _gen > /dev/null
+    _client_env
+    bash "$OUT" --accounts-only > /dev/null
+    # A header whose earlier range is larger than its current one (written
+    # by hand: the server refuses such a range).
+    sed -i 's/^TAC_UID_FIRST=.*/TAC_UID_FIRST=100000/; s/^TAC_UID_LAST=.*/TAC_UID_LAST=100001/; s/^TAC_UID_PREVIOUS=.*/TAC_UID_PREVIOUS=79999-89999/' "$OUT"
+    sed -i "s/^TAC_USERS=.*/TAC_USERS=alice:superuser:100000/" "$OUT"
+    : > "$CALLS_LOG"
+    run bash "$OUT" --accounts-only
+    assert_success
+    assert_output --partial "[WARN] 'bob': not renumbered from 80001: 100002 would be outside 100000-100001. The account is left as it is."
+    run grep -cE "^usermod -u .* bob" "$CALLS_LOG"
+    assert_output "0"
 }
 
 @test "client install: a disabled user's account is expired, not deleted; re-enabling restores it" {
@@ -620,7 +1126,7 @@ ${TACCTL_CLIENT_STATE}/expired:0"
     assert_success
     assert_output --partial "Re-activated account 'bob'."
     stub_called "usermod -e  bob"
-    stub_called "usermod -aG tac-users,tac-readonly bob"
+    stub_called "usermod -aG tac-users bob"
 }
 
 @test "client install: a removed user still logged in (userdel fails) is expired and deleted at the next sync" {
@@ -628,8 +1134,8 @@ ${TACCTL_CLIENT_STATE}/expired:0"
     _client_env
     mkdir -p "$TACCTL_CLIENT_STATE"
     echo old1 > "$TACCTL_CLIENT_STATE/created"
-    echo "old1:x:20005:20005:old1 (TACACS+):${TACCTL_CLIENT_HOME_ROOT}/old1:/bin/bash" >> "$FAKE_DB/passwd"
-    echo "old1:x:20005:" >> "$FAKE_DB/group"
+    echo "old1:x:80005:80005:old1 (TACACS+):${TACCTL_CLIENT_HOME_ROOT}/old1:/bin/bash" >> "$FAKE_DB/passwd"
+    echo "old1:x:80005:" >> "$FAKE_DB/group"
     USERDEL_FAILS=1 run bash "$OUT" --accounts-only
     assert_success
     assert_output --partial "[WARN] Could not delete 'old1' (userdel failed; still logged in?): account expired, deleted at the next sync."
@@ -647,9 +1153,9 @@ ${TACCTL_CLIENT_STATE}/expired:0"
     _client_env
     mkdir -p "$TACCTL_CLIENT_STATE"
     printf '%s\n' g1 g2 > "$TACCTL_CLIENT_STATE/created"
-    printf '%s\n' "g1:x:20005:20005:g1 (TACACS+):${TACCTL_CLIENT_HOME_ROOT}/g1:/bin/bash" \
-        "g2:x:20006:20006:g2 (TACACS+):${TACCTL_CLIENT_HOME_ROOT}/g2:/bin/bash" >> "$FAKE_DB/passwd"
-    printf '%s\n' "g1:x:20005:admin" "g2:x:21111:" >> "$FAKE_DB/group"
+    printf '%s\n' "g1:x:80005:80005:g1 (TACACS+):${TACCTL_CLIENT_HOME_ROOT}/g1:/bin/bash" \
+        "g2:x:80006:80006:g2 (TACACS+):${TACCTL_CLIENT_HOME_ROOT}/g2:/bin/bash" >> "$FAKE_DB/passwd"
+    printf '%s\n' "g1:x:80005:admin" "g2:x:81111:" >> "$FAKE_DB/group"
     run bash "$OUT" --accounts-only
     assert_success
     stub_called "userdel g1"
@@ -996,7 +1502,7 @@ _rhel_env() {
 @test "client remove: reports accounts left without a way to log in" {
     _client_env
     echo "tac-users:x:900:ghost" >> "$FAKE_DB/group"
-    echo 'ghost:x:20009:20009::/nonexistent:/bin/bash' >> "$FAKE_DB/passwd"
+    echo 'ghost:x:80009:80009::/nonexistent:/bin/bash' >> "$FAKE_DB/passwd"
     echo 'ghost:!:1::::::' >> "$FAKE_DB/shadow"
     "$TACCTL_BIN_SCRIPT" config linux remove-script --output "$BATS_TEST_TMPDIR/remove.sh" > /dev/null
     run bash "$BATS_TEST_TMPDIR/remove.sh"
@@ -1056,6 +1562,8 @@ RCONF_LINE="192.0.2.10:1812 0123456789abcdef0123456789abcdef 3"
 @test "client install (radius): package, root-only server file, PAM lines; remove restores everything" {
     _gen_radius > /dev/null
     _client_env
+    # The NAS-Identifier is the host's name (client_id=), not the PAM service's.
+    stub_cmd hostname 'echo web1.example.net'
     run bash "$OUT"
     assert_success
     assert_output --partial "Installing the RADIUS PAM module: libpam-radius-auth"
@@ -1081,7 +1589,7 @@ RCONF_LINE="192.0.2.10:1812 0123456789abcdef0123456789abcdef 3"
     # The same control line as pam_tacplus has; the local stack behind it.
     run cat "$TACCTL_CLIENT_PAM_DIR/tacctl-auth"
     assert_line --index 1 "auth    [success=ok default=1]                               pam_succeed_if.so quiet user ingroup tac-users"
-    assert_line --index 2 "auth    [success=done authinfo_unavail=ignore default=die]   pam_radius_auth.so conf=${TACCTL_CLIENT_RADIUS_CONF} retry=1"
+    assert_line --index 2 "auth    [success=done authinfo_unavail=ignore default=die]   pam_radius_auth.so conf=${TACCTL_CLIENT_RADIUS_CONF} retry=1 client_id=web1.example.net"
     assert_line --index 3 "@include common-auth"
     # No account step: only the distribution's.
     run grep -v '^#' "$TACCTL_CLIENT_PAM_DIR/tacctl-account"
@@ -1089,7 +1597,7 @@ RCONF_LINE="192.0.2.10:1812 0123456789abcdef0123456789abcdef 3"
     # Accounting at session start and end, for tac-users only.
     run grep -v '^#' "$TACCTL_CLIENT_PAM_DIR/tacctl-session"
     assert_line --index 0 "session [success=ok default=1]                               pam_succeed_if.so quiet user ingroup tac-users"
-    assert_line --index 1 "session optional                                             pam_radius_auth.so conf=${TACCTL_CLIENT_RADIUS_CONF}"
+    assert_line --index 1 "session optional                                             pam_radius_auth.so conf=${TACCTL_CLIENT_RADIUS_CONF} client_id=web1.example.net"
     [[ "${#lines[@]}" == "2" ]]
 
     # The service files are edited exactly as for tacplus.
@@ -1101,7 +1609,7 @@ RCONF_LINE="192.0.2.10:1812 0123456789abcdef0123456789abcdef 3"
     run cat "$TACCTL_CLIENT_SUDOERS"
     assert_line "%tac-superuser ALL=(ALL:ALL) ALL"
     assert_output --partial "RADIUS superusers"
-    stub_called "useradd -m -u 20000 -g alice -s /bin/bash -c alice .RADIUS. alice"
+    stub_called "useradd -m -u 80000 -g tac-users -s /bin/bash -K UID_MIN=80000 -K UID_MAX=89999 -c alice .RADIUS. alice"
 
     # A second run finds the module and installs nothing.
     : > "$CALLS_LOG"
@@ -1175,9 +1683,20 @@ RCONF_LINE="192.0.2.10:1812 0123456789abcdef0123456789abcdef 3"
     run bash "$OUT"
     assert_success
     run cat "$TACCTL_CLIENT_PAM_DIR/tacctl-auth"
-    assert_line --regexp "pam_radius_auth.so conf=[^ ]+ retry=1 require_message_authenticator$"
+    assert_line --regexp "pam_radius_auth.so conf=[^ ]+ retry=1 require_message_authenticator( client_id=[^ ]+)?$"
     run grep -v '^#' "$TACCTL_CLIENT_RADIUS_CONF"
     assert_output "[2001:db8::10]:1812 0123456789abcdef0123456789abcdef 3"
+}
+
+@test "client install (radius): a hostname that is not one PAM argument sends no client_id" {
+    _gen_radius > /dev/null
+    _client_env
+    stub_cmd hostname 'echo "bad name"'
+    run bash "$OUT"
+    assert_success
+    run cat "$TACCTL_CLIENT_PAM_DIR/tacctl-auth"
+    assert_line --regexp "pam_radius_auth.so conf=[^ ]+ retry=1$"
+    refute_output --partial "client_id"
 }
 
 @test "client install (radius): a failure after PAM edits begin rolls them back and removes the server file" {
@@ -1333,7 +1852,7 @@ _epel_stubs() {
     run cat "$TACCTL_CLIENT_STATE/method"
     assert_output "tacplus"
     # alice exists from here on, as an account this script created.
-    grep -qx "alice:x:20000:20000:alice (TACACS+):.*" "$FAKE_DB/passwd"
+    grep -qx "alice:x:80000:80000:alice (TACACS+):.*" "$FAKE_DB/passwd"
 
     # tacplus -> radius
     run bash "$BATS_TEST_TMPDIR/radius.sh"
@@ -1353,7 +1872,7 @@ _epel_stubs() {
     run grep -c "tacctl-" "$TACCTL_CLIENT_PAM_DIR/sshd"
     assert_output "3"
     stub_called "usermod -c alice .RADIUS. alice"
-    sed -i 's/^alice:.*/alice:x:20000:20000:alice (RADIUS):\/home\/alice:\/bin\/bash/' "$FAKE_DB/passwd"
+    sed -i 's/^alice:.*/alice:x:80000:80000:alice (RADIUS):\/home\/alice:\/bin\/bash/' "$FAKE_DB/passwd"
 
     # radius -> tacplus
     run bash "$BATS_TEST_TMPDIR/tacplus.sh"

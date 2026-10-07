@@ -9,8 +9,9 @@
 // completion, history), batch (stdin is not a terminal: one command per
 // line, no prompt, stop at the first non-zero status) and a single
 // command (-c). The loop has no job control, spawns no editor or pager,
-// bounds every line (LineMax) and can end itself after an idle time, so
-// the login console of 0.2.2 reuses it as it is.
+// bounds every line (LineMax) and can end itself after an idle time; the
+// login console (tacctl-console) runs it with one more word of its own,
+// system-shell (Options.SystemShell).
 package shell
 
 import (
@@ -49,19 +50,52 @@ type Options struct {
 	// History records the lines of an interactive session and of -c (nil:
 	// none; a History without a file is kept in memory only).
 	History *History
-	// Complete answers Tab.
+	// Complete answers Tab and '?'.
 	Complete Completer
+	// Explain answers '?' where Complete offers no word.
+	Explain Explainer
+	// ListMax is the longest list Tab or '?' shows without asking 'Show
+	// all <n> <kind>?' first: 0 is DefaultListMax, a negative number never
+	// asks.
+	ListMax int
 	// Help is the text of 'help <words>'; false when there is none.
 	Help func(words []string) (string, bool)
 	// Exec runs a tacctl command with the terminal's stdout and stderr and
 	// the given stdin, and returns its exit status.
 	Exec func(ctx context.Context, words []string, stdin io.Reader) int
+	// SystemShell, when set, is the word system-shell (the console's): it
+	// is listed and completed with the shell's own words and runs this
+	// with whether the session is interactive; it returns the status. Nil:
+	// system-shell is no word of the shell's (a tacctl command, unknown).
+	SystemShell func(ctx context.Context, interactive bool) int
 }
+
+// Why a session ended (Shell.End).
+const (
+	EndExit    = "exit"    // exit or quit
+	EndEOF     = "eof"     // Ctrl-D, or the end of a batch
+	EndIdle    = "idle"    // the idle timeout
+	EndHangup  = "hangup"  // SIGHUP
+	EndSignal  = "signal"  // SIGTERM, or a signal during a batch
+	EndCommand = "command" // the one line of -c
+	EndFailed  = "failed"  // a batch stopped at a line that failed
+	EndError   = "error"   // the terminal failed
+)
 
 // Shell runs lines.
 type Shell struct {
 	o Options
+
+	// interactive: Interactive is running (the terminal is tty).
+	interactive bool
+	tty         *os.File
+	lines       int
+	reason      string
 }
+
+// End is why the last session ended (EndExit ...) and how many lines it
+// ran (the lines with a word, the shell's own words included).
+func (s *Shell) End() (reason string, lines int) { return s.reason, s.lines }
 
 // New is a shell with o.
 func New(o Options) *Shell {
@@ -90,6 +124,18 @@ func (s *Shell) run(ctx context.Context, line string, stdin io.Reader) (status i
 	}
 	if len(words) == 0 {
 		return 0, false
+	}
+	s.lines++
+	if words[0] == SystemShellWord && s.o.SystemShell != nil {
+		if len(words) > 1 {
+			s.errorf("%s takes no arguments", SystemShellWord)
+			return 2, false
+		}
+		status := s.o.SystemShell(ctx, s.interactive)
+		if s.interactive && s.tty != nil {
+			reclaimTerminal(int(s.tty.Fd()))
+		}
+		return status, false
 	}
 	switch words[0] {
 	case "exit", "quit":
@@ -131,6 +177,7 @@ func (s *Shell) Command(ctx context.Context, line string, stdin io.Reader) int {
 		s.o.History.Add(line)
 	}
 	status, _ := s.run(ctx, line, stdin)
+	s.reason = EndCommand
 	return status
 }
 
@@ -141,11 +188,20 @@ func (s *Shell) Command(ctx context.Context, line string, stdin io.Reader) int {
 func (s *Shell) Batch(ctx context.Context, r io.Reader) int {
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 0, 4096), LineMax+2)
+	s.reason = EndEOF
 	for sc.Scan() {
 		line := strings.TrimSuffix(sc.Text(), "\r")
 		status, quit := s.run(ctx, line, nil)
 		if ctx.Err() != nil && status == 0 {
 			status = 130
+		}
+		switch {
+		case ctx.Err() != nil:
+			s.reason = EndSignal
+		case status != 0:
+			s.reason = EndFailed
+		case quit:
+			s.reason = EndExit
 		}
 		if status != 0 || quit || ctx.Err() != nil {
 			return status
@@ -153,6 +209,7 @@ func (s *Shell) Batch(ctx context.Context, r io.Reader) int {
 	}
 	if errors.Is(sc.Err(), bufio.ErrTooLong) {
 		s.errorf("line too long (more than %d bytes)", LineMax)
+		s.reason = EndFailed
 		return 2
 	}
 	return 0
@@ -170,6 +227,8 @@ func (s *Shell) Batch(ctx context.Context, r io.Reader) int {
 func (s *Shell) Interactive(ctx context.Context, tty *os.File) int {
 	ctx = context.WithoutCancel(ctx)
 	fd := int(tty.Fd())
+	s.interactive, s.tty, s.reason = true, tty, EndError
+	defer func() { s.interactive, s.tty = false, nil }()
 
 	signal.Ignore(syscall.SIGTSTP, syscall.SIGQUIT)
 	defer signal.Reset(syscall.SIGTSTP, syscall.SIGQUIT)
@@ -187,8 +246,13 @@ func (s *Shell) Interactive(ctx context.Context, tty *os.File) int {
 	if hist == nil {
 		hist = NewHistory("", nil)
 	}
-	ed := &editor{prompt: s.o.Prompt, hist: hist, complete: s.o.Complete}
+	ed := &editor{prompt: s.o.Prompt, hist: hist, complete: s.o.Complete, explain: s.o.Explain, listMax: s.o.ListMax,
+		systemShell: s.o.SystemShell != nil}
+	if ed.listMax == 0 {
+		ed.listMax = DefaultListMax
+	}
 	in := &input{fd: fd, out: s.o.Out.Stdout, idle: s.o.Idle, wake: p[0], ed: ed}
+	ed.out, ed.readKey = in, in.key
 	t := term.NewTerminal(in, s.o.Prompt)
 	ed.t = t
 	t.AutoCompleteCallback = ed.key
@@ -202,9 +266,7 @@ func (s *Shell) Interactive(ctx context.Context, tty *os.File) int {
 		for sig := range sigs {
 			switch sig {
 			case syscall.SIGWINCH:
-				if w, h, err := term.GetSize(fd); err == nil {
-					_ = t.SetSize(w, h)
-				}
+				setSize(t, ed, fd)
 			case syscall.SIGTERM, syscall.SIGHUP:
 				stop.CompareAndSwap(0, int32(sig.(syscall.Signal)))
 				_, _ = unix.Write(p[1], []byte{1})
@@ -217,18 +279,24 @@ func (s *Shell) Interactive(ctx context.Context, tty *os.File) int {
 		<-done
 	}()
 
+	stopped := func() int {
+		sig := stop.Load()
+		s.reason = EndSignal
+		if sig == int32(syscall.SIGHUP) {
+			s.reason = EndHangup
+		}
+		return 128 + int(sig)
+	}
 	for {
-		if sig := stop.Load(); sig != 0 {
-			return 128 + int(sig)
+		if stop.Load() != 0 {
+			return stopped()
 		}
 		old, err := term.MakeRaw(fd)
 		if err != nil {
 			s.errorf("cannot set up the terminal: %v", err)
 			return 1
 		}
-		if w, h, err := term.GetSize(fd); err == nil {
-			_ = t.SetSize(w, h)
-		}
+		setSize(t, ed, fd)
 		ed.interrupted = false
 		t.SetBracketedPasteMode(true)
 		line, err := t.ReadLine()
@@ -240,12 +308,14 @@ func (s *Shell) Interactive(ctx context.Context, tty *os.File) int {
 		switch {
 		case errors.Is(err, errIdle):
 			_, _ = fmt.Fprintf(s.o.Out.Stdout, "\nidle timeout after %s\n", idleText(s.o.Idle))
+			s.reason = EndIdle
 			return 0
 		case errors.Is(err, errStop):
 			_, _ = io.WriteString(s.o.Out.Stdout, "\n")
-			return 128 + int(stop.Load())
+			return stopped()
 		case errors.Is(err, io.EOF):
 			_, _ = io.WriteString(s.o.Out.Stdout, "\n")
+			s.reason = EndEOF
 			return 0
 		case err != nil && !errors.Is(err, term.ErrPasteIndicator):
 			s.errorf("%v", err)
@@ -253,6 +323,7 @@ func (s *Shell) Interactive(ctx context.Context, tty *os.File) int {
 		}
 		status, quit := s.run(ctx, line, tty)
 		if quit {
+			s.reason = EndExit
 			return 0
 		}
 		if status != 0 {
@@ -267,4 +338,33 @@ func idleText(d time.Duration) string {
 		return fmt.Sprintf("%d min", int(d/time.Minute))
 	}
 	return d.String()
+}
+
+// setSize gives the line editor the terminal's size. A terminal that
+// reports no size (0x0: a pty nobody sized, as expect(1) and some serial
+// consoles leave it) keeps the editor's 80x24: a width of 0 would wrap the
+// line after every character.
+func setSize(t *term.Terminal, ed *editor, fd int) {
+	if w, h, err := term.GetSize(fd); err == nil && w > 0 && h > 0 {
+		_ = t.SetSize(w, h)
+		ed.width.Store(int32(min(w, 1<<15)))
+		ed.height.Store(int32(min(h, 1<<15)))
+	}
+}
+
+// reclaimTerminal makes the shell's process group the terminal's
+// foreground group again: a program that took the terminal for job
+// control (an interactive bash, the system shell) and did not give it back
+// when it ended (it was killed) would leave the shell in the background,
+// stopped by SIGTTOU at its next terminal change. SIGTTOU is ignored while
+// the shell takes the terminal back (a background group may then).
+func reclaimTerminal(fd int) {
+	pgrp := unix.Getpgrp()
+	fg, err := unix.IoctlGetInt(fd, unix.TIOCGPGRP)
+	if err != nil || fg == pgrp {
+		return
+	}
+	signal.Ignore(syscall.SIGTTOU)
+	_ = unix.IoctlSetPointerInt(fd, unix.TIOCSPGRP, pgrp)
+	signal.Reset(syscall.SIGTTOU)
 }

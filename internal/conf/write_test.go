@@ -20,7 +20,7 @@ import (
 // the top-level keys and their order.
 func TestDefaultsTextKeys(t *testing.T) {
 	keys := Defaults().Keys()
-	if strings.Join(keys, " ") != "password secret bcrypt scope host mgmt_acl privileges commands" {
+	if strings.Join(keys, " ") != "password secret bcrypt scope host linux mgmt_acl privileges commands" {
 		t.Fatalf("keys %v", keys)
 	}
 }
@@ -263,7 +263,7 @@ func TestMergedViewAccessors(t *testing.T) {
 	if _, ok := c.Value("nope"); ok {
 		t.Fatal("nope")
 	}
-	if c.Overrides().Len() != 1 || c.Merged().Len() != 8 {
+	if c.Overrides().Len() != 1 || c.Merged().Len() != 9 {
 		t.Fatalf("overrides %d merged %d", c.Overrides().Len(), c.Merged().Len())
 	}
 	if _, printed := c.Get("mgmt_acl", "x"); printed {

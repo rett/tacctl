@@ -327,6 +327,13 @@ type Backend interface {
 	DeviceVars(ctx context.Context, vendor, scope string) (map[string]string, error)
 }
 
+// Follower is a backend whose logs 'tacctl log tail -f' can follow: the
+// commands (argv) that print each new entry as it arrives and run until
+// they are stopped. A backend without it is not followed.
+type Follower interface {
+	FollowArgv() [][]string
+}
+
 // Error is a failure of the backend machinery, or a module's, whose
 // messages have already been written. Code is the exit status 0.1.16
 // returns for it.

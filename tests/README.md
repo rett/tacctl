@@ -100,6 +100,9 @@ argv, so nothing leaves the machine and no secret may appear in one.
 | `integration/completion_shells.bats` | `tacctl completion zsh\|fish` in a real zsh (`compinit`, `compadd` captured) and a real fish: the scripts parse and answer with the words `tacctl __complete` gives |
 | `integration/tiers.bats` | extended with the `ssh` and `device` rows per tier, the `env_keep` line (no other environment is let through) and the refusal of a `SUDO_USER` that is not the account of `SUDO_UID` |
 | `integration/shim.bats` | extended with the release-binary tests (below) |
+| `integration/console_cli.bats` | `tacctl console`: `console.yaml` (0600, snapshots, `backup diff`/`restore`), the tier switches, user overrides and settings, `console show` with a stubbed `sshd -T` (the red warning when sshd does not force the console, still forwards or allows key logins), `console install\|remove\|check` |
+| `integration/console.bats` | the login console run as `tacctl-console` (a symlink to `dist/tacctl`): `-c` and its guard, sshd's `ForceCommand` form with `SSH_ORIGINAL_COMMAND`, batches, the per-line `sudo [-n] TACCTL_CONSOLE=<session>` argv, the session log lines, `system-shell`'s refusals. The terminal side is `internal/cli/console_pty_test.go` |
+| `integration/config_linux.bats` | extended with the server's own accounts: the fourth `TAC_USERS` field (`useradd -s`, `usermod -s`, `tac-console` following the shell, the summary's `console:` count) and the remove script giving `/bin/bash` back |
 
 **Terminal tests.** `internal/testpty` runs a program on a pseudo-terminal
 (no cgo, no new module: `golang.org/x/sys/unix`): the program gets a new
@@ -125,6 +128,14 @@ building with the one-line reason, that a branch never downloads, and that arm64
 release download URL) is read by the shim only, for these tests;
 `make release-verify` and `bin/tacctl.sh --verify-release` check real assets
 (`ALLOWED_SIGNERS=<file>` for a trial key, see `docs/releasing.md`).
+
+**`TACCTL_SSHD_DROPIN`** (sshd's drop-in for the console,
+`/etc/ssh/sshd_config.d/tacctl-console.conf`; the `Include` check reads
+`sshd_config` beside its directory) and **`TACCTL_SHELLS_FILE`**
+(`/etc/shells`) are pointed into the test's tmpdir by `tmpenv.bash`, the Go
+sandboxes and the lifecycle tests alike; `sshd` and `systemctl` are always
+stubs. The console's own path (`/usr/local/bin/tacctl-console`) moves only
+with `TACCTL_TEST_ROOT`.
 
 **`TACCTL_VAR_LIB`** is the root of tacctl's variable data (`/var/lib/tacctl`:
 `ssh/known_hosts`, `devices-seen.json`, `linux/`); `tmpenv.bash` points it
@@ -421,7 +432,7 @@ Clients: `ubuntu-noble`, `debian-trixie`, `debian-bookworm`,
 
 | Cycle | Does |
 |---|---|
-| `radius`, `tacplus` | snapshot of the host; `host enroll --method <m>` (per-host scope); users added to the scope and pushed with `host sync` (one of them named like a pre-existing local account, which tacctl must leave alone and name in the summary as refused: `synced (4 users; 1 refused: carl)`; an account an earlier release adopted is taken out of tacctl's groups and nothing else on it changes; every account tacctl created has a UID in 20000-29999); a disabled user expired and restored; removed users deleted (`userdel`, their group too, their UID still reserved on the server), the home kept without a terminal and deleted with `--remove-home`; where the secret is; SSH login right and wrong, `sudo` and `sudo -i` for the superuser, none for the readonly user; a user removed from the scope on the server and not yet synced, then deleted by the sync; the local administrator; the server unreachable (packets dropped at the server with nft) with timings; a wrong shared secret on the host; console login, the stand-in for GDM and a PAM client that is not root; re-enroll; the server's logs; `host unenroll`; the snapshot again, byte for byte |
+| `radius`, `tacplus` | (the client container maps IDs 0-55533, 65534-65535 and 80000-89999, since rootless podman's 65536 subordinate IDs cannot cover both with the default map) snapshot of the host; `host enroll --method <m>` (per-host scope); users added to the scope and pushed with `host sync` (one of them named like a pre-existing local account, which tacctl must leave alone and name in the summary as refused: `synced (4 users; 1 refused: carl)`; an account an earlier release adopted is taken out of tacctl's groups and nothing else on it changes; every account tacctl created has a UID in 80000-89999); an account left at a UID of 20000-29999 as an earlier release made it (state `created`, map entry at the legacy number) renumbered by the next sync on both sides (map rewritten and its old copy kept, UID, group and primary GID, home re-owned, a stray file outside the home reported and left, `synced (4 users; 1 renumbered; 1 refused: carl)`, nothing on a second sync); a disabled user expired and restored; removed users deleted (`userdel`, their group too, their UID still reserved on the server), the home kept without a terminal (moved to `/home/.tacctl-removed/<user>-<time>`, root's, 0700, a link in it not followed, unreadable to a local account later given the same UID) and deleted with `--remove-home`; the `/etc/login.defs` warning at enroll with `UID_MAX 85000` and none with the distribution's own (a real `useradd` then stays below 80000); the address enroll recorded, refused to `device add`; where the secret is; SSH login right and wrong, `sudo` and `sudo -i` for the superuser, none for the readonly user; a user removed from the scope on the server and not yet synced, then deleted by the sync; the local administrator; the server unreachable (packets dropped at the server with nft) with timings; a wrong shared secret on the host; console login, the stand-in for GDM and a PAM client that is not root; re-enroll; the server's logs; `host unenroll`; the snapshot again, byte for byte |
 | `switch` | all of `tacplus`, then `host enroll --method radius` on the enrolled host (nothing of pam_tacplus left, logins answered by FreeRADIUS), then back (nothing of pam_radius_auth's configuration left), then unenroll and the snapshot |
 | `probe` | no enroll: installs the package and prints what `pam_radius_auth` returns for accept, reject, a wrong secret, a silent server with `retry=0..2`, a missing server file, account, session and password change, and the accounting records the server got |
 
@@ -532,6 +543,8 @@ not a knob: it stays an ordinary environment check.
 | `TACCTL_TEST_RANDOM=<hex>` | `Knobs.Rand()` yields those bytes, repeated as often as needed, each call starting at the first byte |
 | `TACCTL_FAULT=<point>[,<point>...]` | `Knobs.Fault(point)` returns an error for each named point |
 | `TACCTL_TEST_ROOT=<dir>` | tacctl's fixed host locations, which no `TACCTL_*` variable moves (the deploy clone `/opt/tacctl`, `/usr/local/bin/tacctl`, `/usr/local/go`, the bash completion, the man page, `/root`), move under `<dir>` (`paths.Paths.Reroot`), so a test can run `install`, `upgrade` and `uninstall` |
+| `TACCTL_TEST_CONSOLE_ENV=1` | the console (`tacctl-console`) keeps `TACCTL_*` and `PATH` from its environment, so the sandbox's paths and stubs reach it |
+| `TACCTL_TEST_PROC=<dir>` | stands for `/proc/self` where `host enroll --local` reads this machine's user namespace maps (`uid_map`, `gid_map`) |
 
 A malformed value is an error naming the variable; an empty one is the same as
 unset. The bootstrap shim honours `TACCTL_TEST_ROOT` for the installed command

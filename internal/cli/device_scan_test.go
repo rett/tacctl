@@ -57,7 +57,7 @@ func scanSandbox(t *testing.T) (*sandbox, func(*fake.Runner), devreg.HostKey) {
 		journalRec("s=2", now.Add(-time.Hour), "ERROR: x server.go:159: closing connection, unable to read, bad secret detected for ip [203.0.113.20:51234]") +
 		journalRec("s=3", now.Add(-50*time.Minute), "INFO: x bcrypt.go:143: accepting user [carol] from [203.0.113.77] using a bcrypt password") +
 		journalRec("s=4", now.Add(-40*time.Minute), "ERROR: x server.go:159: closing connection, unable to read, bad secret detected for ip [192.0.2.66:4000]") +
-		journalRec("s=5", now.Add(-30*time.Minute), "ERROR: x server.go:159: closing connection, unable to read, no matching prefix secret provider found")
+		journalRec("s=5", now.Add(-30*time.Minute), "ERROR: x server.go:129: ignoring request: remote [192.0.2.66:4000] has no secret providers")
 	sb.write("radius-log/tacctl-auth.log",
 		authLine(now.Add(-10*24*time.Hour), "Access-Accept", "203.0.113.9", "oob-con-01", "asmith")+
 			authLine(now.Add(-3*time.Hour), "Access-Accept", "203.0.113.50", "edge-sw5", "carol"), 0o640)
@@ -83,7 +83,7 @@ func TestDeviceScanDiscoverListAndStatus(t *testing.T) {
 		t.Fatalf("scan: %d %q %q", sb.code, out, sb.stderr())
 	}
 	for _, re := range []string{
-		`(?m)^  tacacs  journal \S+ \S+ to \S+ \S+ \(5 entries\): 5 sightings of 4 addresses \(1 without an address\)$`,
+		`(?m)^  tacacs  journal \S+ \S+ to \S+ \S+ \(5 entries\): 5 sightings of 4 addresses$`,
 		`(?m)^  radius  tacctl-auth\.log \S+ \S+ to \S+ \S+ \(2 entries\): 2 sightings of 2 addresses$`,
 		`(?m)^  Host keys: 4 entries re-scanned: 4 unchanged$`,
 		`(?m)^  Seen: 6 addresses, 3 registered, 3 not \(tacctl device discover\)$`,
@@ -94,7 +94,7 @@ func TestDeviceScanDiscoverListAndStatus(t *testing.T) {
 			t.Errorf("scan output lacks %s:\n%s", re, out)
 		}
 	}
-	if !sb.runner.Called("journalctl", "-u", "tacquito", "-o", "json", "--no-pager") {
+	if !sb.runner.Called("journalctl", "-u", "tacquito", "-o", "json", "--output-fields=MESSAGE", "--no-pager") {
 		t.Errorf("journalctl argv %q", sb.runner.Argvs())
 	}
 	if sb.devices() != before {
@@ -106,7 +106,7 @@ func TestDeviceScanDiscoverListAndStatus(t *testing.T) {
 
 	// The next scan resumes after the cursor.
 	sb.devScan("", script, "scan")
-	if !sb.runner.Called("journalctl", "-u", "tacquito", "-o", "json", "--no-pager", "--after-cursor", "s=5") {
+	if !sb.runner.Called("journalctl", "-u", "tacquito", "-o", "json", "--output-fields=MESSAGE", "--no-pager", "--after-cursor", "s=5") {
 		t.Errorf("resume argv %q", sb.runner.Argvs())
 	}
 
@@ -141,7 +141,10 @@ func TestDeviceScanDiscoverListAndStatus(t *testing.T) {
 	if out = sb.dev("", "list"); strings.Contains(out, "name-mismatch") {
 		t.Errorf("acked notice listed:\n%s", out)
 	}
-	if out = sb.dev("", "show", "oob-con1"); !strings.Contains(out, "name-mismatch (acknowledged): 203.0.113.9 identifies") {
+	if out = sb.dev("", "show", "oob-con1"); !strings.Contains(out, "none open; 1 acknowledged notice not shown: tacctl device show oob-con1 --all") {
+		t.Errorf("show:\n%s", out)
+	}
+	if out = sb.dev("", "show", "oob-con1", "--all"); !strings.Contains(out, "name-mismatch (acknowledged): 203.0.113.9 identifies") {
 		t.Errorf("show:\n%s", out)
 	}
 	out = plain(sb.run("", []string{"status"}))

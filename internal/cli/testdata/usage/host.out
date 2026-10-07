@@ -5,22 +5,32 @@ Usage: tacctl host <subcommand> [arguments]
 
   list                                 Show enrolled hosts
   enroll <[user@]host> [options]       Install TACACS+ or RADIUS login on a host over SSH and register it
-  enroll --local [options]             Same, for this machine
+  enroll --local [options]             Same, for this machine (its tacctl users get the login console)
       --method tacplus|radius          pam_tacplus against the TACACS+ backend, or the host's pam_radius_auth
                                        package against the RADIUS backend (default: the host's current
                                        method, else the scope's auth-method, else its only protocol,
                                        else 'host default-method').
                                        Re-enroll with the other to switch
-      --scope <name>                   Use an existing scope (default: create linux-<name> for the host's /32)
+      --scope <name>                   The host's scope (default: its registered one, else the scope covering its address)
       --server <address>               Address the host should use for this server (default: detected)
       --name <name>                    Registry name (default: short hostname)
       --port <n>, --identity <file>    SSH port and key
       --build-on-host                  (tacplus) Compile pam_tacplus on the host instead of in a container here
+      --yes                            (enroll and move) Move a registered host to another scope even when that deletes accounts
+      --staging                        (enroll, with --scope) Provisioned off-site: the host's bench address joins the scope as a
+                                       /32 (its secret and users) until the host is seen in place (tacctl scope staging)
   sync <name> | --all                  Push account adds, deletions and tier changes
-      --allow-uid-mismatch             (enroll and sync) accept a UID/GID conflict on the host instead of stopping
+      --all                            Every enrolled host
+      --allow-uid-mismatch             (enroll and sync) accept a UID conflict on the host instead of stopping
       --remove-home                    (enroll and sync) delete removed users' home directories without asking
                                        (on a terminal each one is asked; without one they are kept)
+  move <name> [<scope>] | --all        Move an enrolled host to another scope (default: the one answering its address);
+                                       --all: every host another scope answers. Asks before deleting accounts
+  target <name> [<[user@]host>]        Show, or change and test, how tacctl reaches an enrolled host over ssh
+      --port <n>, --identity <file>    SSH port and key; tested first, and the host's ssh keys must match the pin
+      --no-identity                    No key file (ssh's default keys and the agent)
   unenroll <name> [--force]            Remove the login method from the host (accounts and homes are kept)
+      --force                          Forget the host even when the removal there failed
   default-method [tacplus|radius]      Show or set the method for hosts enrolled without --method
                                        (a scope's own choice comes first: tacctl scope auth-method)
 

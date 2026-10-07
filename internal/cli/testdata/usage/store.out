@@ -3,11 +3,12 @@
 
   show [--json]                          Print the model (YAML by default).
                                          Includes shared secrets and password hashes.
+      --json                             Print JSON instead
   import [--check|--force] [--replace] [<file>]
                                          Import a legacy tacquito.yaml (default: the live one).
-      --check     write nothing; report what an import would do
-      --force     drop content the store cannot represent (each item is listed)
-      --replace   overwrite an existing store
+      --check                            write nothing; report what an import would do
+      --force                            drop content the store cannot represent (each item is listed)
+      --replace                          overwrite an existing store
   rollback                               Undo the import: restore the pre-store tacquito.yaml, remove
                                          the store, restart (back to legacy read-only mode).
 

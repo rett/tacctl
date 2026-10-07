@@ -18,6 +18,7 @@ Subcommands:
   move <user> <group>                         Move user to a different group
   verify <username>                           Verify password and show user details
   scope <user> list|add|remove|replace        Manage which scopes the user can auth from
+  scope <user> remove --all                   Remove every scope from the user
 
 Examples:
   tacctl user list

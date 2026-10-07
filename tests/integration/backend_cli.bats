@@ -81,8 +81,8 @@ run_plain() {
     run_plain backend list
     assert_success
     assert_line --regexp '^  ID +PROTOCOL +IMPLEMENTATION +INSTALLED +ENABLED +SERVICE'
-    assert_line --regexp '^  tacacs +tacacs +tacquito +yes +yes +active +$'
-    assert_line --regexp '^  radius +radius +freeradius +no +no +- +$'
+    assert_line --regexp '^  tacacs +tacacs +tacquito +yes +yes +active$'
+    assert_line --regexp '^  radius +radius +freeradius +no +no +-$'
 }
 
 # bats test_tags=cutover:wp2-4d
@@ -169,6 +169,26 @@ run_plain() {
     assert_success
     refute_output --partial "== Backend:"
     ! stub_called '^journalctl -u tacquito --no-pager -n 20'
+}
+
+@test "cli: log tail -f prints the tails, then follows every backend, each line behind its id" {
+    enable_by_hand "tacacs, radius"
+    stub_cmd journalctl 'if [[ " $* " == *" -f "* ]]; then echo "srv1 tacquito[1]: new entry"; fi'
+    stub_cmd tail 'printf "%s\n" "auth: Access-Accept user=alice"'
+    run_plain log tail -f 5
+    assert_success
+    assert_line "== Backend: tacacs (tacacs, tacquito) =="
+    assert_line "Following new entries (Ctrl-C to stop)..."
+    assert_line "[tacacs] srv1 tacquito[1]: new entry"
+    assert_line "[radius] auth: Access-Accept user=alice"
+    stub_called '^journalctl -u tacquito --no-pager -n 5$'
+    stub_called '^journalctl -u tacquito --no-pager -f -n 0$'
+    stub_called '^tail -F -q -n 0 .*tacctl-auth.log '
+    refute_output --partial "invalid number of lines"
+    # One backend: no prefix.
+    run_plain log tail --follow --backend tacacs
+    assert_success
+    assert_line "srv1 tacquito[1]: new entry"
 }
 
 # bats test_tags=cutover:wp2-4d

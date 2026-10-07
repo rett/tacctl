@@ -10,11 +10,13 @@ package cli
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/rett/tacctl/internal/backend"
 	"github.com/rett/tacctl/internal/devices"
+	"github.com/rett/tacctl/internal/devreg"
 )
 
 // deviceVendors are the device verbs of 'config', with their Short.
@@ -32,6 +34,8 @@ func deviceSpec(vendor string) Spec {
 	flags := []Flag{
 		{Names: []string{"--scope"}, Value: true, Kind: KindScopes},
 		{Names: []string{"--protocol"}, Value: true, Kind: "tacacs|radius"},
+		{Names: []string{"--staging"}, Value: true},
+		{Names: []string{"--name"}, Value: true},
 	}
 	if vendor == "cisco" {
 		flags = append(flags, Flag{Names: []string{"--legacy"}})
@@ -56,7 +60,7 @@ func deviceUsage(vendor string) string {
 		legacy = " [--legacy]"
 	}
 	return "Usage: tacctl config " + vendor + " [--scope <name>]" + legacy +
-		" [--protocol tacacs|radius]   (without --protocol: the scope's auth-method, else its only protocol, else tacacs)"
+		" [--protocol tacacs|radius] [--staging <bench-ip> [--name <device>]]   (without --protocol: the scope's auth-method, else its only protocol, else tacacs)"
 }
 
 // configDevice is cmd_config_cisco, cmd_config_juniper and cmd_config_wti
@@ -64,12 +68,22 @@ func deviceUsage(vendor string) string {
 func (inv *invocation) configDevice(vendor string, args []string) error {
 	a := inv.app
 	usage := deviceUsage(vendor)
-	var scope, protocol string
+	var scope, protocol, stagingIP, stagingName string
 	legacy := false
 	for i := 0; i < len(args); {
 		switch w := args[i]; {
 		case w == "--scope":
 			if scope = arg(args, i+1); scope == "" {
+				return inv.usageErr(usage)
+			}
+			i += 2
+		case w == "--staging":
+			if stagingIP = arg(args, i+1); stagingIP == "" {
+				return inv.usageErr(usage)
+			}
+			i += 2
+		case w == "--name":
+			if stagingName = arg(args, i+1); stagingName == "" {
 				return inv.usageErr(usage)
 			}
 			i += 2
@@ -90,6 +104,22 @@ func (inv *invocation) configDevice(vendor string, args []string) error {
 	}
 	if protocol == devices.RADIUS && legacy {
 		return inv.usageErr("--legacy (IOS 12.x syntax) applies to TACACS+ only; the RADIUS configuration uses the structured 'radius server' block (IOS 15.2 / IOS-XE and later).")
+	}
+	if stagingName != "" && stagingIP == "" {
+		return inv.usageErr("--name goes with --staging: tacctl config " + vendor + " --scope <scope> --staging <bench-ip> --name <device>")
+	}
+	if stagingIP != "" {
+		if scope == "" {
+			return inv.usageErr("--staging provisions a device off-site for the scope it will be installed in; name it: --scope <scope>")
+		}
+		norm, err := devreg.NormalizeAddress(stagingIP)
+		if err != nil || strings.Contains(norm, ":") || strings.Contains(stagingIP, "/") {
+			return inv.usageErr("--staging takes the device's bench IPv4 address (a single address, no prefix length): '" + stagingIP + "'")
+		}
+		stagingIP = norm
+		if err := inv.requireStore(); err != nil {
+			return err
+		}
 	}
 	if scope == "" {
 		def, err := inv.defaultScope()
@@ -115,6 +145,23 @@ func (inv *invocation) configDevice(vendor string, args []string) error {
 		}
 		return inv.usageErr(first,
 			"For the legacy TACACS+ configuration add --protocol tacacs: tacctl config cisco --scope "+scope+" --legacy --protocol tacacs")
+	}
+	if stagingIP != "" {
+		// The device registered at the bench address, when no --name is
+		// given, is the one whose move ends the staging.
+		if stagingName == "" {
+			if f, err := devreg.Load(a.Paths.DevicesFile); err == nil {
+				if d := f.FindAddress(stagingIP); d != nil {
+					stagingName = d.Name
+				}
+			}
+		}
+		// Everything the staging change prints (its own lines, the
+		// snapshot's and the backends' render) goes to stderr: stdout is
+		// the configuration.
+		if err := inv.stdoutToStderr(func() error { return inv.stagingAdd(scope, stagingIP, "device", stagingName) }); err != nil {
+			return err
+		}
 	}
 	m, err := inv.model()
 	if err != nil {

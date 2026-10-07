@@ -16,6 +16,12 @@ import (
 
 const rule = "--------------------------------------------"
 
+// FollowArgv is backend.Follower: the journal of every listener's unit,
+// new entries only.
+func (b *Backend) FollowArgv() [][]string {
+	return [][]string{append(append([]string{"journalctl"}, b.journalUnits()...), "--no-pager", "-f", "-n", "0")}
+}
+
 // Log is backend_tacacs_log: 'tacctl log tail [n]', 'search <term>',
 // 'failures' and 'clear [-y|--yes|--force]' over the journal of every
 // listener's unit (just 'tacquito' with only the default listener), written
@@ -151,10 +157,12 @@ func (b *Backend) Accounting(_ context.Context, sub string, args []string, w io.
 	writeString(w, "\n")
 	echoLine(w, ui.Bold+"Recent Accounting Entries"+ui.NC)
 	writeString(w, rule+"\n")
-	if acct := b.env.Paths.AcctLog; isRegular(acct) {
-		b.tail(w, acct, count)
-	} else {
+	if acct := b.env.Paths.AcctLog; !isRegular(acct) {
 		writeString(w, "  No accounting log found at "+acct+"\n")
+	} else if isEmptyFile(acct) {
+		writeString(w, "  No entries yet in "+acct+"\n")
+	} else {
+		b.tail(w, acct, count)
 	}
 	// The other listeners' logs, each under its name.
 	for _, log := range b.acctLogs(false) {
@@ -163,10 +171,20 @@ func (b *Backend) Accounting(_ context.Context, sub string, args []string, w io.
 		}
 		writeString(w, "\n")
 		echoLine(w, ui.Bold+log+ui.NC)
+		if isEmptyFile(log) {
+			writeString(w, "  No entries yet.\n")
+			continue
+		}
 		b.tail(w, log, count)
 	}
 	writeString(w, "\n")
 	return nil
+}
+
+// isEmptyFile is a file with nothing in it.
+func isEmptyFile(path string) bool {
+	st, err := os.Stat(path)
+	return err == nil && st.Size() == 0
 }
 
 // tail is 'tail -n <count> <file>': the last count lines ('+K': from line

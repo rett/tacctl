@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/rett/tacctl/internal/execx"
+	"github.com/spf13/cobra"
 )
 
 // completeWords runs 'tacctl __completeNoDesc <words>' with the bridge answering
@@ -67,12 +68,12 @@ func TestCompleteScenarios(t *testing.T) {
 		{[]string{"config", "listen", "--backend", "radius", "--listener", ""}, []string{"auth", "acct"}},
 		{[]string{"config", "listen", "--listener", ""}, []string{"default"}},
 		{[]string{"config", "listen", "--backend", "radius", ""}, []string{"show", "reset", "tcp", "tcp6", "udp", "udp6", "--listener"}},
-		{[]string{"config", "cisco", ""}, []string{"--scope", "--protocol", "--legacy"}},
-		{[]string{"config", "juniper", ""}, []string{"--scope", "--protocol"}},
+		{[]string{"config", "cisco", ""}, []string{"--scope", "--protocol", "--staging", "--name", "--legacy"}},
+		{[]string{"config", "juniper", ""}, []string{"--scope", "--protocol", "--staging", "--name"}},
 		{[]string{"config", "cisco", "--protocol", ""}, []string{"tacacs", "radius"}},
 		{[]string{"config", "juniper", "--scope", "lab", "--protocol", ""}, []string{"tacacs", "radius"}},
-		{[]string{"config", "juniper", "--scope", "lab", ""}, []string{"--protocol"}},
-		{[]string{"config", "cisco", "--protocol", "radius", "--scope", "lab", ""}, []string{"--legacy"}},
+		{[]string{"config", "juniper", "--scope", "lab", ""}, []string{"--protocol", "--staging", "--name"}},
+		{[]string{"config", "cisco", "--protocol", "radius", "--scope", "lab", ""}, []string{"--staging", "--name", "--legacy"}},
 		{[]string{"config", "wti", "--scope", ""}, []string{"lab", "prod"}},
 		{[]string{"scope", "radius"}, []string{"radius-group"}},
 		{[]string{"scope", "auth"}, []string{"auth-method"}},
@@ -86,13 +87,13 @@ func TestCompleteScenarios(t *testing.T) {
 		{[]string{"scope", "add", "edge", ""}, []string{"--prefixes", "--secret", "--protocols", "--vendor-attrs", "--default"}},
 		{[]string{"scope", "add", "edge", "--prefixes", "10.0.0.0/8", "--vendor-attrs", "cisco,"}, []string{"cisco,juniper", "cisco,wti"}},
 		{[]string{"scope", "add", "edge", "--prefixes", "10.0.0.0/8", "--vendor-attrs", "cisco", ""}, []string{"--secret", "--protocols", "--default"}},
-		{[]string{"log", "tail", "--"}, []string{"--backend"}},
+		{[]string{"log", "tail", "--"}, []string{"--backend", "--follow"}},
 		{[]string{"log", "tail", "--backend", ""}, []string{"tacacs", "radius"}},
 		{[]string{"log", "clear", ""}, []string{"--backend", "--force", "-y", "--yes"}},
 		{[]string{"log", "clear", "--backend", "tacacs", ""}, []string{"--force", "-y", "--yes"}},
 		{[]string{"scope", "protocols", "lab", ""}, []string{"list", "set", "clear"}},
 		{[]string{"scope", "protocols", "lab", "set", ""}, []string{"tacacs", "radius"}},
-		{[]string{"scope", "prefixes", "lab", ""}, []string{"list", "add", "remove"}},
+		{[]string{"scope", "prefixes", "lab", ""}, []string{"list", "add", "remove", "move"}},
 		{[]string{"scope", "prefixes", "lab", "remove", ""}, []string{"--all", "--force"}},
 		{[]string{"scope", "prefixes", "lab", "remove", "--all", ""}, []string{"--force"}},
 		{[]string{"user", "scope", "alice", ""}, []string{"list", "add", "remove", "replace"}},
@@ -106,7 +107,7 @@ func TestCompleteScenarios(t *testing.T) {
 		{[]string{"user", "move", "alice", ""}, []string{"ops", "admins"}},
 		{[]string{"group", "commands", "default", "ops", ""}, []string{"permit", "deny"}},
 		{[]string{"group", "commands", "add", "ops", "x", "--action", ""}, []string{"permit", "deny"}},
-		{[]string{"config", "linux", ""}, []string{"build", "builds", "remove-script", "script", "uid"}},
+		{[]string{"config", "linux", ""}, []string{"build", "builds", "remove-script", "script", "uid", "uid-range"}},
 		{[]string{"config", "linux", "script", ""}, []string{"--scope", "--server", "--method", "--output", "-o"}},
 		{[]string{"config", "linux", "script", "--method", ""}, []string{"tacplus", "radius"}},
 		{[]string{"config", "linux", "builds", ""}, []string{"list", "clear"}},
@@ -120,11 +121,61 @@ func TestCompleteScenarios(t *testing.T) {
 		{[]string{"upgrade", ""}, []string{"--branch"}},
 		{[]string{"uninstall", ""}, []string{"-y", "--yes"}},
 		{[]string{"version", ""}, []string{"--long"}},
+		{[]string{"shell", "-c", "sta"}, []string{"status"}},
+		{[]string{"shell", "-c", "status", ""}, []string{"--no-history", "--idle"}},
 	}
 	for _, c := range cases {
 		got, _ := completeWords(t, liveNames, c.words...)
 		if !reflect.DeepEqual(got, c.want) && (len(got) != 0 || len(c.want) != 0) {
 			t.Errorf("%q: offered %q, want %q", c.words, got, c.want)
+		}
+	}
+}
+
+// With descriptions (what bash, zsh and fish ask for), each flag carries
+// the '?' text of the shell, after the value it takes; other words none.
+func TestCompleteDescribesFlags(t *testing.T) {
+	cases := map[string][]string{
+		"shell -": {
+			"--no-history\tKeep no history file for this session",
+			"--idle\t<min>: End the session after this many idle minutes at the prompt",
+			"-c\t<line>: Run one line and exit",
+		},
+		"backend enable ": {"tacacs", "radius"},
+	}
+	for line, want := range cases {
+		words := strings.Split(line, " ")
+		h := newHarness(t, append([]string{"__complete"}, words...))
+		h.runner.OnFunc([]string{"sudo"}, func(c execx.Cmd) (execx.Result, error) {
+			return execx.Result{Stdout: []byte(liveNames[strings.Join(c.Args[3:], " ")])}, nil
+		})
+		if err := h.run(); err != nil {
+			t.Fatal(err)
+		}
+		got := strings.Split(strings.TrimSuffix(h.out.String(), "\n"), "\n")
+		got = slices.DeleteFunc(got[:len(got)-1], func(s string) bool { return strings.HasPrefix(s, "Completion ended") })
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("%q: %q, want %q", line, got, want)
+		}
+	}
+	// Every flag of every verb is described.
+	inv, root, _ := shellTestInv(t)
+	var all [][]string
+	commandPaths(root, nil, &all)
+	for _, p := range all {
+		c, _ := resolve(root, p)
+		spec, ok := specFor(p)
+		if len(c.Commands()) > 0 || !ok {
+			continue
+		}
+		var flags []cobra.Completion
+		for _, f := range spec.Flags {
+			flags = append(flags, f.Names...)
+		}
+		for _, d := range inv.describeFlags(c, p, spec, flags) {
+			if !strings.Contains(d, "\t") {
+				t.Errorf("tacctl %s %s: no description", strings.Join(p, " "), d)
+			}
 		}
 	}
 }

@@ -83,14 +83,28 @@ var reHomeDir = regexp.MustCompile(`^/home/[^/]+$`)
 
 // Removed are the accounts of a host that the script will delete, as far
 // as tacctl can tell from here: a name tacctl gave a UID (uids), a UID of
-// the range on the host, a full name the script writes, and a user that is
-// not current (current: the scope's users, active or not). Only those
-// whose home is a directory directly under /home are returned: any other
-// home is kept by the script whatever the answer.
+// the range on the host (or of a range the UID file was numbered for
+// before: the script renumbers such an account before it deletes it), a
+// full name the script writes, and a user that is not current (current: the
+// scope's users, active or not). Only those whose home is a directory
+// directly under /home are returned: any other home is kept by the script
+// whatever the answer.
 func Removed(accts []Account, uids UIDs, current map[string]bool) ([]Account, error) {
+	_, prev, err := uids.Recorded()
+	if err != nil {
+		return nil, err
+	}
+	ours := func(uid string) bool {
+		for _, r := range append([]Range{uids.rng()}, prev...) {
+			if r.Contains(uid) {
+				return true
+			}
+		}
+		return false
+	}
 	var out []Account
 	for _, a := range accts {
-		if current[a.Name] || !UIDInRange(a.UID) || !tacctlGECOS(a.Name, a.GECOS) || !reHomeDir.MatchString(a.Home) {
+		if current[a.Name] || !ours(a.UID) || !tacctlGECOS(a.Name, a.GECOS) || !reHomeDir.MatchString(a.Home) {
 			continue
 		}
 		uid, err := uids.Lookup(a.Name)
@@ -133,7 +147,7 @@ func (e *Env) HomesToDelete(ctx context.Context, name, target, port, identity st
 		e.Out.WarnE(name + ": could not list the host's accounts; the home directories of removed users are kept.")
 		return nil, nil
 	}
-	removed, err := Removed(accts, UIDs{Path: e.Paths.UIDs}, current)
+	removed, err := Removed(accts, e.UIDs(), current)
 	if err != nil || len(removed) == 0 {
 		return nil, err
 	}
@@ -152,26 +166,46 @@ func (e *Env) HomesToDelete(ctx context.Context, name, target, port, identity st
 }
 
 // AccountSummary is what the client script reports at the end of its
-// account sync ("[INFO] Accounts: <n> managed by tacctl here[; refused:
-// <names>]."): the users of the list that have an account tacctl manages
-// on the host, and the ones it refused there (a local account of that name
-// tacctl did not create, a UID outside the range, no free number).
+// account sync ("[INFO] Accounts: <n> managed by tacctl here[; <k>
+// renumbered][; refused: <names>]."): the users of the list that have an
+// account tacctl manages on the host, how many of the accounts it created
+// were renumbered from the legacy range by this run, and the users it
+// refused there (a local account of that name tacctl did not create, a UID
+// outside the range, no free number, an account it could not renumber).
 type AccountSummary struct {
-	Managed int
+	Managed    int
+	Renumbered int
+	// Console is how many of them have the login console as their shell
+	// (the tacctl server's own accounts only).
+	Console int
 	Refused []string
 }
 
-// Counts is the summary in words: "<n> users", plus "; <k> refused:
-// <names>" when the host refused some.
+// Counts is the summary in words: "<n> users", plus "; <k> renumbered",
+// "; <k> with the console" and "; <k> refused: <names>" when there are any.
 func (s AccountSummary) Counts() string {
-	out := strconv.Itoa(s.Managed) + " users"
+	out := UsersText(s.Managed)
+	if s.Renumbered > 0 {
+		out += "; " + strconv.Itoa(s.Renumbered) + " renumbered"
+	}
+	if s.Console > 0 {
+		out += "; " + strconv.Itoa(s.Console) + " with the console"
+	}
 	if len(s.Refused) > 0 {
 		out += "; " + strconv.Itoa(len(s.Refused)) + " refused: " + strings.Join(s.Refused, ", ")
 	}
 	return out
 }
 
-var reAccountSummary = regexp.MustCompile(`^\[INFO\] Accounts: ([0-9]+) managed by tacctl here(?:; refused: (.*))?\.\r?$`)
+// UsersText is n users ('1 user', '2 users').
+func UsersText(n int) string {
+	if n == 1 {
+		return "1 user"
+	}
+	return strconv.Itoa(n) + " users"
+}
+
+var reAccountSummary = regexp.MustCompile(`^\[INFO\] Accounts: ([0-9]+) managed by tacctl here(?:; ([0-9]+) renumbered)?(?:; console: ([0-9]+))?(?:; refused: (.*))?\.\r?$`)
 
 // ParseAccountSummary reads the summary line; ok is false for any other.
 func ParseAccountSummary(line string) (AccountSummary, bool) {
@@ -185,7 +219,13 @@ func ParseAccountSummary(line string) (AccountSummary, bool) {
 	}
 	s := AccountSummary{Managed: n}
 	if m[2] != "" {
-		s.Refused = strings.Split(m[2], ", ")
+		s.Renumbered, _ = strconv.Atoi(m[2])
+	}
+	if m[3] != "" {
+		s.Console, _ = strconv.Atoi(m[3])
+	}
+	if m[4] != "" {
+		s.Refused = strings.Split(m[4], ", ")
 	}
 	return s, true
 }

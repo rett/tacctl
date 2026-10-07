@@ -11,6 +11,10 @@ type UpgradeSummary struct {
 	Notes []string
 	// FilesUpdated is what its 'files' phase counted as replaced.
 	FilesUpdated int
+	// UpToDate is the headline to show instead of Head when the whole
+	// upgrade updated no file ("" when the backend itself changed
+	// something: a binary, a unit, its config).
+	UpToDate string
 }
 
 // Summarizer is a backend that leaves something for the closing summaries

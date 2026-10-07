@@ -18,6 +18,10 @@ scope:
 host:
   default_method: tacplus # how `tacctl host enroll` sets up a new Linux host: tacplus | radius
 
+linux:
+  uid_min: 80000          # the UIDs (and GIDs) Linux host accounts get, one range for all hosts;
+  uid_max: 89999          # change with `tacctl config linux uid-range <min>-<max>`
+
 mgmt_acl:
   names:
     cisco: VTY-ACL        # ACL name emitted by `tacctl config cisco`

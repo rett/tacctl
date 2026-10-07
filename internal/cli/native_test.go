@@ -61,6 +61,9 @@ func newSandbox(t *testing.T, withStore bool) *sandbox {
 		"TACCTL_SYSTEMD_DIR=" + filepath.Join(w, "systemd"),
 		"TACCTL_OVERRIDE_DIR=" + filepath.Join(w, "systemd", "tacquito.service.d"),
 		"TACCTL_SETTLE_SECONDS=0",
+		"TACCTL_LOGIN_DEFS=" + filepath.Join(w, "login.defs"),
+		"TACCTL_SSHD_DROPIN=" + filepath.Join(w, "sshd_config.d", "tacctl-console.conf"),
+		"TACCTL_SHELLS_FILE=" + filepath.Join(w, "shells"),
 		"TMPDIR=" + filepath.Join(w, "tmp"),
 	}
 	return sb
@@ -111,11 +114,35 @@ func (sb *sandbox) expect(code int, outHas, errHas string) {
 
 const testHash = "24326224313024616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161"
 
+// The UID column is read from the server's map, "-" for a user without
+// one, and a listing never assigns one.
+func TestUserListUIDColumn(t *testing.T) {
+	sb := newSandbox(t, true)
+	sb.write("state/linux-uids", "alice:80001\ncarol:80003\n", 0o600)
+	out := plain(sb.run("", []string{"user", "list"}))
+	for _, want := range []string{"  USERNAME  UID    GROUP", "\n  alice     80001  superuser", "\n  bob       -      operator", "\n  carol     80003  readonly"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("user list lacks %q:\n%s", want, out)
+		}
+	}
+	for _, l := range strings.Split(out, "\n") {
+		if strings.HasSuffix(l, " ") {
+			t.Errorf("trailing space: %q", l)
+		}
+	}
+	if got := plain(sb.run("", []string{"user", "show", "alice"})); !strings.Contains(got, "UID:") || !strings.Contains(got, "80001") {
+		t.Errorf("user show: %s", got)
+	}
+	if b, _ := os.ReadFile(sb.path("state/linux-uids")); string(b) != "alice:80001\ncarol:80003\n" {
+		t.Errorf("a read changed the map: %q", b)
+	}
+}
+
 func TestUserListShowAndUsage(t *testing.T) {
 	sb := newSandbox(t, true)
 	out := sb.run("", []string{"user", "list"})
 	sb.expect(0, "USERNAME", "")
-	for _, want := range []string{"\n  alice                superuser       \x1b[0;32mactive    \x1b[0m unknown      prod,lab", "carol"} {
+	for _, want := range []string{"\n  alice     -    superuser  \x1b[0;32mactive\x1b[0m  unknown     prod,lab\n", "carol"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("user list lacks %q:\n%s", want, out)
 		}

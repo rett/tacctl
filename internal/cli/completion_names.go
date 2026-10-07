@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/hosts"
 	"github.com/rett/tacctl/internal/model"
 	"github.com/rett/tacctl/internal/tier"
@@ -39,6 +40,89 @@ var completionArgKinds = map[string]func(inv *invocation, args []string) []strin
 	// name 'ssh' and 'device' accept; both filtered to the caller's scopes.
 	KindHosts:   (*invocation).hostNames,
 	KindDevices: (*invocation).deviceNames,
+}
+
+// completionDescKinds answer '_completion-names <kind> --desc' (the shell's
+// Tab listing): one 'name<TAB>description' line per name, the same names,
+// in the same order, behind the same scope filter, as without --desc. A
+// kind that is not here answers --desc with its plain names.
+var completionDescKinds = map[string]func(inv *invocation) []string{
+	KindHosts:   (*invocation).hostDescs,
+	KindDevices: (*invocation).deviceDescs,
+}
+
+// descLine is 'name<TAB>description' with the words of the description
+// that are not empty.
+func descLine(name string, words ...string) string {
+	var d []string
+	for _, w := range words {
+		if w != "" {
+			d = append(d, w)
+		}
+	}
+	if len(d) == 0 {
+		return name
+	}
+	return name + "\t" + strings.Join(d, " ")
+}
+
+// hostOf is the host of a [user@]host target.
+func hostOf(target string) string {
+	_, after, ok := strings.Cut(target, "@")
+	if ok {
+		return after
+	}
+	return target
+}
+
+// hostDescs are the enrolled hosts as 'name<TAB>linux <host> <scope>'.
+func (inv *invocation) hostDescs() []string {
+	reg, err := hosts.LoadRegistry(inv.app.Paths.LinuxHosts)
+	if err != nil {
+		return nil
+	}
+	f := inv.callerScopes()
+	var out []string
+	for _, e := range reg.Entries() {
+		if f.allows(e.Scope) {
+			out = append(out, descLine(e.Name, "linux", hostOf(e.Target), e.Scope))
+		}
+	}
+	return out
+}
+
+// deviceDescs are the names of the 'devices' kind, each with '<vendor>
+// <address> <scope>' (an enrolled host: 'linux <host> <scope>'); only
+// entries the caller's scopes allow are named, as for the names. When the
+// registry cannot be joined with the store the names come without a
+// description.
+func (inv *invocation) deviceDescs() []string {
+	names := inv.deviceNames(nil)
+	_, res, err := inv.deviceLoad()
+	if err != nil {
+		return names
+	}
+	f := inv.callerScopes()
+	by := map[string]string{}
+	for _, e := range res.Visible(devreg.ScopeFilter{Restricted: f.restricted, Scopes: f.scopes}) {
+		where := e.Address
+		if where == "" {
+			where = hostOf(e.Target)
+		}
+		if where == "" {
+			where = e.Hostname
+		}
+		by[e.Name] = descLine(e.Name, e.Vendor, where, e.Scope)
+	}
+	out := make([]string, 0, len(names))
+	for _, n := range names {
+		if l, ok := by[n]; ok {
+			out = append(out, l)
+		} else {
+			out = append(out, n)
+		}
+	}
+	return out
 }
 
 // scopeFilter is what a caller may see of the registries: everything for
@@ -125,6 +209,15 @@ func completionNamesCmd(inv *invocation) *cobra.Command {
 	c.RunE = func(cmd *cobra.Command, args []string) error {
 		kind := arg(args, 0)
 		return inv.native(withPreflight, func(args []string) error {
+			if n := len(args); n == 2 && args[1] == "--desc" {
+				if descs, ok := completionDescKinds[kind]; ok {
+					if l := descs(inv); len(l) > 0 {
+						inv.write(strings.Join(l, "\n") + "\n")
+					}
+					return nil
+				}
+				args = args[:1]
+			}
 			if names, ok := completionArgKinds[kind]; ok {
 				if l := names(inv, args[1:]); len(l) > 0 {
 					inv.write(strings.Join(l, "\n") + "\n")

@@ -134,26 +134,26 @@ complete_words() {
 
 @test "completion: config cisco and juniper take --protocol, and its value is tacacs or radius" {
     complete_words tacctl config cisco ""
-    assert_output "$(printf -- '--scope\n--protocol\n--legacy')"
+    assert_output "$(printf -- '--scope\n--protocol\n--staging\n--name\n--legacy')"
     complete_words tacctl config juniper ""
-    assert_output "$(printf -- '--scope\n--protocol')"
+    assert_output "$(printf -- '--scope\n--protocol\n--staging\n--name')"
     complete_words tacctl config cisco --protocol ""
     assert_output "$(printf 'tacacs\nradius')"
     complete_words tacctl config juniper --scope lab --protocol ""
     assert_output "$(printf 'tacacs\nradius')"
     complete_words tacctl config juniper --scope lab ""
-    assert_output "--protocol"
+    assert_output "$(printf -- '--protocol\n--staging\n--name')"
     complete_words tacctl config cisco --protocol radius ""
-    assert_output "$(printf -- '--scope\n--legacy')"
+    assert_output "$(printf -- '--scope\n--staging\n--name\n--legacy')"
     complete_words tacctl config cisco --protocol radius --scope lab ""
-    assert_output "--legacy"
+    assert_output "$(printf -- '--staging\n--name\n--legacy')"
     # WTI takes --protocol like the others.
     complete_words tacctl config wti ""
-    assert_output "$(printf -- '--scope\n--protocol')"
+    assert_output "$(printf -- '--scope\n--protocol\n--staging\n--name')"
     complete_words tacctl config wti --protocol ""
     assert_output "$(printf 'tacacs\nradius')"
     complete_words tacctl config wti --scope lab ""
-    assert_output "--protocol"
+    assert_output "$(printf -- '--protocol\n--staging\n--name')"
 }
 
 @test "completion: scope offers radius-group beside tacacs-group" {
@@ -207,7 +207,7 @@ complete_words() {
 
 @test "completion: log subcommands take --backend, and its value is a backend id" {
     complete_words tacctl log tail --
-    assert_output "--backend"
+    assert_output "$(printf -- '--backend\n--follow')"
     complete_words tacctl log tail --backend ""
     assert_output "$(printf 'tacacs\nradius')"
     complete_words tacctl log clear ""
@@ -226,7 +226,7 @@ complete_words() {
 
 @test "completion: scope prefixes offers list, add and remove, then --all, then --force only after remove" {
     complete_words tacctl scope prefixes lab ""
-    assert_output "$(printf 'list\nadd\nremove')"
+    assert_output "$(printf 'list\nadd\nremove\nmove')"
     complete_words tacctl scope prefixes lab remove ""
     assert_output "$(printf -- '--all\n--force')"
     complete_words tacctl scope prefixes lab remove --all ""
@@ -254,7 +254,7 @@ complete_words() {
 
 @test "completion: config linux script flags and methods, builds, backup restore --legacy" {
     complete_words tacctl config linux ""
-    assert_output "$(printf 'build\nbuilds\nremove-script\nscript\nuid')"
+    assert_output "$(printf 'build\nbuilds\nremove-script\nscript\nuid\nuid-range')"
     complete_words tacctl config linux script ""
     assert_output "$(printf -- '--scope\n--server\n--method\n--output\n-o')"
     complete_words tacctl config linux script --method ""
@@ -353,4 +353,26 @@ esac'
     run "$TACCTL_BIN_SCRIPT" _completion-names hosts
     assert_success
     assert_output ""
+}
+
+@test "completion: Tab Tab lists each flag with its description, and shell -c offers the commands" {
+    # COMP_TYPE 63 is bash's listing of the candidates (the second Tab).
+    run bash -c '
+        source /usr/share/bash-completion/bash_completion
+        source <(tacctl completion bash)
+        compopt() { :; }
+        COMP_WORDS=(tacctl shell -); COMP_CWORD=2
+        COMP_LINE="tacctl shell -"; COMP_POINT=${#COMP_LINE}; COMP_TYPE=63; COLUMNS=200
+        __start_tacctl
+        printf "%s\n" "${COMPREPLY[@]}"
+    '
+    assert_success
+    assert_line --regexp '^--no-history +\(Keep no history file for this session\)$'
+    assert_line --regexp '^--idle +\(<min>: End the session after this many idle minutes at the prompt\)$'
+    assert_line --regexp '^-c +\(<line>: Run one line and exit\)$'
+    complete_words tacctl shell -c sta
+    assert_output "status"
+    complete_words tacctl shell -c ""
+    assert_line "user"
+    refute_line "shell"
 }
