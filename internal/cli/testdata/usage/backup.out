@@ -7,4 +7,5 @@ Subcommands:
   list                           Show snapshots, then old-style backups
   diff [timestamp]               Diff store.yaml and tacctl.yaml against a snapshot (default: most recent)
   restore <timestamp> [--legacy] Restore a snapshot (with confirmation); --legacy for an old-style backup
+      --legacy                   The timestamp names an old-style backup (backups/legacy)
 

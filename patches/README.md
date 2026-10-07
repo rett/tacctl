@@ -69,3 +69,69 @@ The patch only removes the message; the reply status is still
 `AcctReplyStatusSuccess`, and error replies (`accounting failure`,
 `unexpected accounting flag`, ...) keep their messages. Clients that ignore the
 message (Cisco, Juniper, ...) see no difference.
+
+### `0003-authen-log-conn-remote-addr.patch`
+Names the device on the bcrypt authenticator's log lines
+(`cmds/server/config/authenticators/bcrypt/bcrypt.go`): `accepting user [u]
+using a bcrypt password` becomes `accepting user [u] from [addr] using a bcrypt
+password`, and `failed to validate the user [u] using a bcrypt password`
+becomes `failed to validate the user [u] from [addr] using a bcrypt password`.
+
+`addr` is the address of the TACACS+ client (the network device) as the server
+saw the connection: the value tacquito's server stores in the request context
+under `tq.ContextConnRemoteAddr` for every packet of a connection. It reads
+`unknown` when the context carries none. Nothing else in the behavior changes.
+
+Why: the accounting log's `RemAddr` is the user's address, not the device's,
+and the journal names the device only at debug level or on errors. With the
+address on the authentication lines, `tacctl log search` shows which device a
+login came from, and `tacctl device scan` reads these lines to learn which
+devices use the server.
+
+### `0004-authen-fail-no-server-msg.patch`
+Drops the server message from the bcrypt authenticator's failure replies
+(`cmds/server/config/authenticators/bcrypt/bcrypt.go`): a wrong password, an
+undecodable stored hash or a failed keychain lookup still answers `FAIL`, but
+without the text `login failure`. Nothing else in the behavior changes.
+
+Why: pam_tacplus hands a reply's server message to sshd as a PAM message. With
+password authentication (`KbdInteractiveAuthentication no`, the default on
+Ubuntu and Debian) sshd cannot show a PAM message during the login, so it keeps
+every one and prints them all after the next successful login: two wrong
+passwords, then the right one, greet the user with `login failure` twice. The
+message carries nothing that `Permission denied` has not already said, and
+network devices print their own failure text without it.
+
+### `0005-acct-unknown-user-sink.patch`
+Records accounting for users a scope does not know instead of refusing it
+(`cmds/server/handlers/acct.go`).
+
+tacquito looks up the user of every accounting request among the users of
+the device's scope and answers an unknown one with an error (`failed to
+lookup user [x] for accounting login`; upstream marks the spot `TODO
+implement a fallback for cases where a username may not be present`).
+Devices send accounting for every login and commit, local accounts and
+daemons included: Junos discards each refused record and logs
+`AUDITD_TACPLUS_START_NO_RESPONSE: Discarded Accounting-Request message; no
+positive response from TACACS+ servers`, so a local `admin` login or a
+commit by it is lost from the audit trail.
+
+The patch records such a request through the scope's accounter: `root` (the
+accounting-only user tacctl keeps for Junos daemons) when the scope has it,
+else the first of the scope's users by name. tacctl gives every user the
+same file accounter, so the record lands in the accounting log with the
+user the device sent, and the device gets a success reply. Only accounting
+changes: an unknown user still fails authentication and authorization, and
+a scope with no users at all still refuses the record.
+
+Records of `root` with no terminal (port `non-tty`, which Junos sends for
+them, `unknown`, or empty) are answered with success and not recorded, with
+a debug line. Junos opens
+short `root` CLI and junoscript sessions with no terminal for its own
+process and health checks (`show system processes extensive`, several a
+minute), and every login and logout of them is an accounting record. A
+`root` login on the console or over ssh has a port (Junos: a tty name, or
+`0` over ssh) and is recorded, its commands included.
+The device still logs `AUDITD_TACPLUS_MSG_SENT` for each one it sends:
+that line is the device's, and only its syslog configuration can drop it.
+

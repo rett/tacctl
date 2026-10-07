@@ -95,13 +95,26 @@ var Rules = []Rule{
 	{Tier: Readonly, Cmd: "passwd", AnySub: true, Sudoers: []string{"passwd"}},
 	{Tier: Readonly, Cmd: "status", AnySub: true, Sudoers: []string{"status"}},
 	{Tier: Readonly, Cmd: "version", AnySub: true, Sudoers: []string{"version"}, Wrap: true},
+	{Tier: Readonly, Cmd: "help", Sudoers: []string{"help"}},
+	{Tier: Readonly, Cmd: "-h", Sudoers: []string{"-h"}},
+	{Tier: Readonly, Cmd: "--help", Sudoers: []string{"--help"}, Wrap: true},
 	{Tier: Readonly, Cmd: "user", Sub: "list", Sudoers: []string{"user list"}},
 	{Tier: Readonly, Cmd: "user", Sub: "show", Sudoers: []string{"user show *"}},
 	{Tier: Readonly, Cmd: "group", Sub: "list", Sudoers: []string{"group list"}},
 	{Tier: Readonly, Cmd: "scope", Sub: "list", Sudoers: []string{"scope list"}, Wrap: true},
 	{Tier: Readonly, Cmd: "backend", Sub: "list", Sudoers: []string{"backend list"}},
 	{Tier: Readonly, Cmd: "backend", Sub: "status", Sudoers: []string{"backend status", "backend status *"}, Wrap: true},
+	// 'ssh <name>' and the device registry's reads (0.2.1): the root side
+	// filters them to the caller's own scopes (docs/plans/operator-console.md 8).
+	{Tier: Readonly, Cmd: "ssh", AnySub: true, Sudoers: []string{"ssh *"}},
+	{Tier: Readonly, Cmd: "device", Sub: "list", Sudoers: []string{"device list", "device list *"}},
+	{Tier: Readonly, Cmd: "device", Sub: "show", Sudoers: []string{"device show *"}},
+	{Tier: Readonly, Cmd: "device", Sub: "notices", Sudoers: []string{"device notices", "device notices *"}},
+	{Tier: Readonly, Cmd: "device", Sub: "ssh", Sudoers: []string{"device ssh *"}},
+	{Tier: Readonly, Cmd: "device", Sub: "ssh-config", Sudoers: []string{"device ssh-config"}, Wrap: true},
 	{Tier: Readonly, Cmd: "_completion-names", AnySub: true, Sudoers: []string{"_completion-names *"}},
+	// The login console asks for its settings once per session (console.go).
+	{Tier: Readonly, Cmd: "_console-policy", AnySub: true, Sudoers: []string{"_console-policy"}},
 	{Tier: Readonly, Cmd: "--version", AnySub: true},
 	{Tier: Readonly, Cmd: "-v", AnySub: true},
 	{Tier: Readonly, Cmd: "hash", AnySub: true},
@@ -111,13 +124,19 @@ var Rules = []Rule{
 	{Tier: Operator, Cmd: "log", Sub: "failures", Sudoers: []string{"log failures"}},
 	{Tier: Operator, Cmd: "log", Sub: "accounting", Sudoers: []string{"log accounting", "log accounting *"}, Wrap: true},
 	{Tier: Operator, Cmd: "config", Sub: "validate", Sudoers: []string{"config validate"}},
-	{Tier: Operator, Cmd: "backup", Sub: "list", Sudoers: []string{"backup list"}},
+	{Tier: Operator, Cmd: "backup", Sub: "list", Sudoers: []string{"backup list"}, Wrap: true},
+	{Tier: Operator, Cmd: "device", Sub: "check", Sudoers: []string{"device check *"}},
+	{Tier: Operator, Cmd: "device", Sub: "scan", Sudoers: []string{"device scan", "device scan *"}},
+	{Tier: Operator, Cmd: "device", Sub: "discover", Sudoers: []string{"device discover", "device discover *"}},
+	{Tier: Operator, Cmd: "device", Sub: "export", Sudoers: []string{"device export", "device export *"}, Wrap: true},
+	{Tier: Operator, Cmd: "console", Sub: "show", Sudoers: []string{"console show"}},
+	{Tier: Operator, Cmd: "console", Sub: "check", Sudoers: []string{"console check"}},
 }
 
 // Permits is tier_permits: whether tier may run 'tacctl cmd sub'.
 // Unrestricted and superuser may run anything, none nothing; readonly the
-// Readonly rows, operator both kinds. ('help' is in no row: a tier user
-// running 'tacctl help' is denied before the usage, as in 0.1.16.)
+// Readonly rows, operator both kinds. 'help', '-h' and '--help' with
+// nothing after them are Readonly rows: the usage is no secret.
 func Permits(t Tier, cmd, sub string) bool {
 	switch t {
 	case Unrestricted, Superuser:
@@ -139,6 +158,20 @@ func Permits(t Tier, cmd, sub string) bool {
 
 // Binary is the command path the drop-in names (the installed tacctl).
 const Binary = "/usr/local/bin/tacctl"
+
+// EnvKeep is the sudoers line both drop-ins carry: 'tacctl host' runs ssh
+// as the invoking user to enrol and sync hosts and needs their agent
+// socket, which sudo's env_reset would drop. env_keep lets that one
+// variable through (from the caller's environment, or as
+// 'SSH_AUTH_SOCK=...' on the sudo command line) and nothing else; the rules
+// carry no SETENV tag, which would let a caller set any variable, SUDO_USER
+// among them, and so pose as someone else to the tier gate. The second
+// name is the login console's marker (TACCTL_CONSOLE=<session>, a command-
+// line assignment on each of its lines); it is only ever read by tacctl, to
+// tighten what it does, never to widen it. The third is the X11 display
+// sshd's forwarding sets ('tacctl ssh -X' hands it to the ssh it runs as
+// the caller; tacctl checks its shape first).
+const EnvKeep = "Defaults!" + Binary + " env_keep += \"SSH_AUTH_SOCK TACCTL_CONSOLE DISPLAY\"\n"
 
 // Sudoers is emit_tier_sudoers: the per-tier drop-in, byte for byte.
 func Sudoers() string {
@@ -179,6 +212,7 @@ func Sudoers() string {
 		}
 	}
 	b.WriteString("\n")
+	b.WriteString(EnvKeep)
 	b.WriteString("%" + SuperuserGroup + " ALL=(ALL:ALL) ALL\n")
 	b.WriteString("%" + SuperuserGroup + " ALL=(root) NOPASSWD: TACCTL_RO, TACCTL_OP\n")
 	b.WriteString("%" + OperatorGroup + " ALL=(root) NOPASSWD: TACCTL_RO, TACCTL_OP\n")
@@ -192,6 +226,9 @@ type Gate struct {
 	Out    ui.Output
 	// SudoUser is SUDO_USER: the person behind sudo ("" or "root": none).
 	SudoUser string
+	// SudoUID is SUDO_UID: when set, SudoUser must name its account
+	// (VerifyCaller), or the caller is denied everything.
+	SudoUID string
 	// PrivLvl is model_user_privlvl: the priv-lvl of the user's group, ""
 	// when the user is unknown or disabled or the model cannot be read. It
 	// is asked only for a managed caller.
@@ -201,8 +238,51 @@ type Gate struct {
 // ErrDenied is Enforce's refusal; its message has been written (exit 1).
 var ErrDenied = errors.New("tier: command denied")
 
-// Caller is caller_tier.
+// ErrCallerMismatch is VerifyCaller's refusal: SUDO_USER does not name the
+// account of SUDO_UID.
+var ErrCallerMismatch = errors.New("SUDO_USER does not name the account of SUDO_UID")
+
+// VerifyCaller checks that user (SUDO_USER) is the account of uid
+// (SUDO_UID). sudo sets both from the invoking user; the sudoers rules
+// tacctl writes let no caller set either, but a rule elsewhere with SETENV
+// (or one that matches ALL) would let a caller name somebody else in
+// SUDO_USER, and tacctl acts on SUDO_USER: the tier gate, the user 'tacctl
+// ssh' and 'host' run ssh as. Forging the pair takes both variables, so the
+// passwd entry of SUDO_UID ('getent passwd <uid>', NSS included) must name
+// SUDO_USER. No uid (tacctl run as root outside sudo) is not checked; a uid
+// that is not a number, or whose account cannot be looked up, is refused.
+func VerifyCaller(ctx context.Context, r execx.Runner, user, uid string) error {
+	if uid == "" {
+		return nil
+	}
+	if !reDigits.MatchString(uid) {
+		return ErrCallerMismatch
+	}
+	res, err := r.Run(ctx, execx.Cmd{Name: "getent", Args: []string{"passwd", uid}})
+	if err != nil || res.Code != 0 {
+		return ErrCallerMismatch
+	}
+	line, _, _ := strings.Cut(string(res.Stdout), "\n")
+	f := strings.Split(line, ":")
+	if len(f) < 3 || f[2] != uid || f[0] != user {
+		return ErrCallerMismatch
+	}
+	return nil
+}
+
+// Caller is caller_tier. A SUDO_USER that VerifyCaller refuses is None.
 func (g Gate) Caller(ctx context.Context) Tier {
+	if g.verify(ctx) != nil {
+		return None
+	}
+	return g.caller(ctx)
+}
+
+func (g Gate) verify(ctx context.Context) error {
+	return VerifyCaller(ctx, g.Runner, g.SudoUser, g.SudoUID)
+}
+
+func (g Gate) caller(ctx context.Context) Tier {
 	caller := g.SudoUser
 	if caller == "" || caller == "root" {
 		return Unrestricted
@@ -232,14 +312,24 @@ func (g Gate) Caller(ctx context.Context) Tier {
 // Enforce is enforce_tier <cmd> <sub>: nil when the caller's tier permits
 // the command; otherwise the denial is logged ('logger -t tacctl -p
 // auth.warning'), printed, and ErrDenied returned.
+//
+// A SUDO_USER that VerifyCaller refuses is denied every command, logged
+// with the uid ('tier DENY user=<SUDO_USER> uid=<SUDO_UID>
+// reason=sudo-user-mismatch').
 func (g Gate) Enforce(ctx context.Context, cmd, sub string) error {
-	t := g.Caller(ctx)
-	if Permits(t, cmd, sub) {
-		return nil
-	}
 	user := g.SudoUser
 	if user == "" {
 		user = "root"
+	}
+	if g.verify(ctx) != nil {
+		_, _ = g.Runner.Run(ctx, execx.Cmd{Name: "logger", Args: []string{"-t", "tacctl", "-p", "auth.warning",
+			"tier DENY user=" + user + " uid=" + g.SudoUID + " reason=sudo-user-mismatch cmd=" + cmd + " " + sub}})
+		g.Out.ErrorE("SUDO_USER '" + g.SudoUser + "' is not the account of SUDO_UID " + g.SudoUID + ", so tacctl access is denied.")
+		return ErrDenied
+	}
+	t := g.caller(ctx)
+	if Permits(t, cmd, sub) {
+		return nil
 	}
 	_, _ = g.Runner.Run(ctx, execx.Cmd{Name: "logger", Args: []string{"-t", "tacctl", "-p", "auth.warning",
 		"tier DENY user=" + user + " tier=" + string(t) + " cmd=" + cmd + " " + sub}})

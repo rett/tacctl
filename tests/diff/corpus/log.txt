@@ -10,11 +10,17 @@
 @fixture tacquito.minimal.yaml
 
 # log: usage and argument errors
+@known 0.2.1 item 56: the usage has one line per option
 log
+@known 0.2.1 item 56: the usage has one line per option
 log bogus
+@known 0.2.1 item 56: the usage has one line per option
 log help
+@known 0.2.1 item 56: the usage has one line per option
 log -h
+@known 0.2.1 item 56: the usage has one line per option
 log --backend tacacs tail
+@known 0.2.1 item 56: the usage has one line per option
 log --backend=radius tail
 log search
 log search --backend radius
@@ -59,10 +65,15 @@ config metrics disable ;; status
 @fixture tacquito.minimal.yaml
 
 # backend list and status
+@known 0.2.1 item 56: the usage has one line per option
 backend
+@known 0.2.1 item 56: the usage has one line per option
 backend bogus
+@known 0.2.1 item 56: the usage has one line per option
 backend help
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 backend list
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 backend list extra
 backend status
 backend status tacacs
@@ -82,8 +93,10 @@ backend status --backend tacacs
 backend status -y
 backend status tacacss
 backend status TACACS
+@known 0.2.1 item 56: the usage has one line per option
 backend Status
 log tail --backend TACACS
+@known 0.2.1 item 56: the usage has one line per option
 log Tail
 log failures --backend ldap
 log search --backend=nope term
@@ -93,6 +106,7 @@ log clear -y --backend
 # legacy read-only mode: no store yet
 @fixture legacy.fresh-install.yaml
 config metrics disable ;; status
+@known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 backend list
 log accounting
 

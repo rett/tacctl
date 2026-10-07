@@ -35,6 +35,8 @@ type SSH struct {
 	Batch bool
 	// Port and Identity, when set, are -p and -i.
 	Port, Identity string
+	// Env is more KEY=value for ssh run as AsUser (DISPLAY for -X).
+	Env []string
 }
 
 // Cmd is the ssh command with args after the options.
@@ -55,6 +57,7 @@ func (s SSH) Cmd(args ...string) execx.Cmd {
 		if s.AuthSock != "" {
 			c.UserEnv = []string{"SSH_AUTH_SOCK=" + s.AuthSock}
 		}
+		c.UserEnv = append(c.UserEnv, s.Env...)
 	}
 	return c
 }
@@ -67,27 +70,16 @@ func (e *Env) ssh(port, identity string) SSH {
 	}
 }
 
-// Attached runs c with the terminal: stdin, stdout and stderr are tacctl's
-// own, so a program that owns the terminal (ssh -t, a remote sudo prompt)
-// works as it would from the shell. While it runs, a signal that cancels
-// ctx (Ctrl-C reaches the whole foreground process group) is left to the
-// child: it is not killed for it, and its exit status is returned as it
-// ended, as bash's wait does (a remote 'trap ... exit 130' comes back as
-// 130). interrupted reports whether ctx was cancelled meanwhile, so the
-// caller can stop afterwards. err is for a program that could not start.
+// Attached runs c with the terminal (execx.Attached, shared with 'tacctl
+// shell'): a remote 'trap ... exit 130' comes back as 130, and interrupted
+// reports whether ctx was cancelled meanwhile.
 func Attached(ctx context.Context, r execx.Runner, c execx.Cmd, stdin io.Reader, out ui.Output) (code int, interrupted bool, err error) {
-	c.Stdin, c.Stdout, c.Stderr = stdin, out.Stdout, out.Stderr
-	p, err := r.Start(context.WithoutCancel(ctx), c)
-	if err != nil {
-		return 127, ctx.Err() != nil, err
-	}
-	res, err := p.Wait()
-	return res.Code, ctx.Err() != nil, err
+	return execx.Attached(ctx, r, c, stdin, out.Stdout, out.Stderr)
 }
 
 // remoteWord quotes a script argument for the remote shell: as it is when
 // it holds only characters no shell treats specially, else in single
-// quotes. The arguments tacctl passes (--accounts-only, --adopt <names>,
+// quotes. The arguments tacctl passes (--accounts-only, --allow-uid-mismatch,
 // ...) are validated to the first kind, so the command reads as 0.1.16's.
 func remoteWord(w string) string {
 	if w != "" && strings.Trim(w, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_./,:=+@%-") == "" {
@@ -131,16 +123,28 @@ var reRemoteCopy = regexp.MustCompile(`^/tmp/tacctl\.[A-Za-z0-9]+$`)
 // script's exit status (a failed copy is 1, its error printed). A signal
 // during the run ends the command: ui.ErrInterrupted.
 func (e *Env) RunScript(ctx context.Context, target, port, identity, script string, args []string) (int, error) {
+	// The script's output goes through as it comes; its account summary is
+	// kept for the caller.
+	e.Summary = nil
+	sw := &summaryWriter{w: e.Out.Stdout}
+	out := ui.Output{Stdout: sw, Stderr: e.Out.Stderr}
+	defer func() { e.Summary = sw.sum }()
+	e.Facts = nil
 	if target == Local {
-		code, intr, err := Attached(ctx, e.Runner, execx.Cmd{Name: "bash", Args: append([]string{script}, args...)}, e.Stdin, e.Out)
+		code, intr, err := Attached(ctx, e.Runner, execx.Cmd{Name: "bash", Args: append([]string{script}, args...)}, e.Stdin, out)
 		if intr {
 			return code, ui.ErrInterrupted
 		}
 		if err != nil {
 			return code, err
 		}
+		if e.ReadKeys && code == 0 {
+			f := LocalFacts(e.Paths.LoginDefs)
+			e.Facts = &f
+		}
 		return code, nil
 	}
+	e.sessionKeys, e.sessionErr = nil, nil
 	s := e.ssh(port, identity)
 	f, err := os.Open(script)
 	if err != nil {
@@ -163,13 +167,22 @@ func (e *Env) RunScript(ctx context.Context, target, port, identity, script stri
 		return 1, nil
 	}
 	tty := e.stdinTTY()
-	flag := "-T"
+	runArgs := []string{"-T"}
 	if tty {
-		flag = "-t"
+		// With a terminal, ssh's mux client says 'Shared connection to <host>
+		// closed.' when the run ends (an INFO-level message); LogLevel=ERROR
+		// keeps errors and drops it. The copy above opened the connection,
+		// so its messages (a new known_hosts entry) were shown there.
+		runArgs = []string{"-o", "LogLevel=ERROR", "-t"}
 	}
-	code, intr, startErr := Attached(ctx, e.Runner, s.Cmd(flag, target, RemoteCommand(remote, args, tty)), e.Stdin, e.Out)
+	code, intr, startErr := Attached(ctx, e.Runner, s.Cmd(append(runArgs, target, RemoteCommand(remote, args, tty))...), e.Stdin, out)
 	if startErr != nil && code == 0 {
 		code = 1
+	}
+	// The host's own public keys, read over this connection for PinKeys.
+	if e.ReadKeys && code == 0 && !intr {
+		e.readKeys(ctx, s, target)
+		e.readFacts(ctx, s, target)
 	}
 	closer := s.Cmd("-O", "exit", target)
 	closer.Stdout, closer.Stderr = io.Discard, io.Discard

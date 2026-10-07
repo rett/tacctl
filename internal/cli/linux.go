@@ -12,7 +12,6 @@ import (
 	"errors"
 	"io"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -22,6 +21,7 @@ import (
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/hosts"
 	"github.com/rett/tacctl/internal/names"
+	"github.com/rett/tacctl/internal/tier"
 	"github.com/rett/tacctl/internal/ui"
 )
 
@@ -31,7 +31,7 @@ func init() {
 
 // configLinuxFamilySpec is the spec of 'config linux' as config.go's
 // registerConfigVerb takes it.
-var configLinuxFamilySpec = Spec{MaxArgs: -1, Args: []string{"build|script|remove-script|uid|builds", ""}}
+var configLinuxFamilySpec = Spec{MaxArgs: -1, Args: []string{"build|script|remove-script|uid|uid-range|builds", ""}}
 
 // methodWords are the methods as a completion word list.
 const methodWords = "tacplus|radius"
@@ -46,6 +46,7 @@ var configLinuxSpecs = map[string]Spec{
 		{Names: []string{"--output", "-o"}, Value: true, Kind: KindFile}}},
 	"remove-script": {Flags: []Flag{{Names: []string{"--output", "-o"}, Value: true, Kind: KindFile}}},
 	"uid":           {MaxArgs: 2, Args: []string{KindUsers, ""}},
+	"uid-range":     {MaxArgs: 1},
 	"builds":        {MaxArgs: 1, Args: []string{"list|clear"}},
 }
 
@@ -55,7 +56,8 @@ var configLinuxVerbs = [][2]string{
 	{"script [--scope <name>] [--server <address>] [--method tacplus|radius] [--output <file>]",
 		"Write the install script for hosts in a scope (contains the secret)"},
 	{"remove-script [--output <file>]", "Write the removal script (no secrets; accounts are left in place)"},
-	{"uid [<username> [<uid>]]", "Show or change the UID/GID a user gets on every host"},
+	{"uid [<username> [<uid>]]", "Show or change the UID a user gets on every host"},
+	{"uid-range [<min>-<max>]", "Show or change the UID range of all hosts (default 80000-89999)"},
 	{"builds [list|clear]", "Show or drop the modules 'host enroll' built in containers"},
 }
 
@@ -93,6 +95,8 @@ func (inv *invocation) configLinux(args []string) error {
 		return inv.configLinuxRemoveScript(rest)
 	case "uid":
 		return inv.configLinuxUID(rest)
+	case "uid-range":
+		return inv.configLinuxUIDRange(rest)
 	case "builds":
 		return inv.configLinuxBuilds(rest)
 	case "":
@@ -107,22 +111,206 @@ func (inv *invocation) configLinux(args []string) error {
 
 // hostsEnv is the hosts.Env of this invocation. ssh and podman run as the
 // user who invoked sudo (SUDO_USER, when tacctl runs as root for someone
-// other than root), with their agent socket.
+// other than root), with their agent socket. The tier gate before every
+// command has refused a SUDO_USER that is not SUDO_UID's account.
 func (inv *invocation) hostsEnv() *hosts.Env {
 	a := inv.app
+	rng, _ := inv.configuredUIDRange()
 	asUser := ""
 	if u := a.Env.Get("SUDO_USER"); a.EUID == 0 && u != "" && u != "root" {
 		asUser = u
 	}
 	return &hosts.Env{
-		Paths:    hosts.Paths{Dir: a.Paths.LinuxDir, UIDs: a.Paths.LinuxUIDs, Hosts: a.Paths.LinuxHosts},
+		Paths:    hosts.Paths{Dir: a.Paths.LinuxDir, VarLib: a.Paths.VarLib, UIDs: a.Paths.LinuxUIDs, Hosts: a.Paths.LinuxHosts, LoginDefs: a.Paths.LoginDefs, ProcSelf: a.Knobs.ProcSelf()},
+		Range:    rng,
 		Runner:   a.Runner,
 		Out:      a.Out,
 		Stdin:    a.Stdin,
 		AsUser:   asUser,
 		AuthSock: a.Env.Get("SSH_AUTH_SOCK"),
 		Now:      a.Knobs.Now,
+		// host enroll and host sync pin the host's ssh keys in the registry.
+		PinHostKeys: inv.pinHostKeys,
 	}
+}
+
+// configuredUIDRange is the UID range of tacctl.yaml (linux.uid_min,
+// linux.uid_max; hosts.DefaultRange's numbers when unset) and why it cannot
+// be used ("" when it can).
+func (inv *invocation) configuredUIDRange() (hosts.Range, string) {
+	lo := inv.confGet("linux.uid_min", strconv.Itoa(hosts.DefaultRange.Min))
+	hi := inv.confGet("linux.uid_max", strconv.Itoa(hosts.DefaultRange.Max))
+	r, ok := hosts.ParseRange(lo + "-" + hi)
+	if !ok {
+		return hosts.DefaultRange, "linux.uid_min and linux.uid_max must be whole numbers (they are '" + lo + "' and '" + hi + "')"
+	}
+	return r, hosts.RangeProblem(r)
+}
+
+// uidRange is configuredUIDRange for a command that uses it: a range that
+// cannot be used stops the command (exit 1).
+func (inv *invocation) uidRange() (hosts.Range, error) {
+	r, problem := inv.configuredUIDRange()
+	if problem != "" {
+		inv.app.Out.ErrorE("The Linux UID range in tacctl.yaml (" + r.String() + ") cannot be used: " + problem + ".")
+		inv.app.Out.ErrorE("Set one that can: tacctl config linux uid-range <min>-<max>")
+		return r, exit(1)
+	}
+	return r, nil
+}
+
+// renumberUIDs numbers the UID file for the configured range
+// (hosts.UIDs.RenumberTo), run by every command that reads or writes the
+// file: 'config linux uid', 'config linux script', 'host enroll' and
+// 'host sync'. A script must never carry a number of another range (its
+// body renumbers the host's accounts to the server's numbers, which
+// therefore must be renumbered first), and a listing must show the numbers
+// hosts get; so it happens at the first of them, not at one chosen verb:
+// after an upgrade from a release that gave out UIDs from 20000 up, and
+// after the range is changed by hand in tacctl.yaml ('config linux
+// uid-range' renumbers at once). Once the file is numbered for the range
+// it changes nothing. With entries moved, the old file is kept next to it
+// (<file>.pre-renumber-<UTC time>) and the change is logged ('uid-map
+// renumbered <n> entries'). A renumbering that cannot be done (a number
+// that is another name's, a range too small, one that overlaps a range the
+// file was numbered for) changes nothing: printed as errors and exit 1
+// when refuse is set, as warnings (and the command goes on) when not, so
+// 'config linux uid' can still give a name another number.
+func (inv *invocation) renumberUIDs(refuse bool) error {
+	a := inv.app
+	r, err := inv.uidRange()
+	if err != nil {
+		return err
+	}
+	uids := hosts.UIDs{Path: a.Paths.LinuxUIDs, Range: r}
+	backup := uids.Path + ".pre-renumber-" + a.Knobs.Now().UTC().Format("20060102-150405")
+	res, err := uids.RenumberTo(backup, false)
+	if msgs := inv.renumberProblem(uids.Path, res.From, r, err); msgs != nil {
+		say := a.Out.WarnE
+		if refuse {
+			say = a.Out.ErrorE
+		}
+		for _, m := range msgs {
+			say(m)
+		}
+		if refuse {
+			return exit(1)
+		}
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if res.N > 0 {
+		inv.renumbered(uids.Path, res, r, backup)
+	}
+	return nil
+}
+
+// renumbered says and logs that n entries moved.
+func (inv *invocation) renumbered(path string, res hosts.Renumbering, to hosts.Range, backup string) {
+	entries := strconv.Itoa(res.N) + " entries"
+	if res.N == 1 {
+		entries = "1 entry"
+	}
+	inv.app.Out.InfoE("Renumbered " + entries + " of " + path + " from " + res.From.String() + " to " + to.String() + " (the same offset; the old file is kept as " + backup + "). Hosts renumber the accounts tacctl created at their next enroll or sync.")
+	inv.app.Logger(inv.ctx, "auth.info", "uid-map renumbered "+strconv.Itoa(res.N)+" entries from="+res.From.String()+" to="+to.String()+" backup="+backup)
+}
+
+// renumberProblem is what to print for a renumbering hosts.UIDs.RenumberTo
+// refused (nil for any other error).
+func (inv *invocation) renumberProblem(path string, from, to hosts.Range, err error) []string {
+	head := "Cannot renumber " + path + " from " + from.String() + " to " + to.String() + ": "
+	var c *hosts.UIDCollision
+	var small *hosts.RangeTooSmall
+	var over *hosts.RangeOverlap
+	switch {
+	case errors.As(err, &c):
+		return []string{head + "'" + c.Name + "' (" + c.Old + ") would become " + c.New + ", which is already assigned to '" + c.Holder + "'. Nothing was changed.",
+			"Give '" + c.Holder + "' another number first: tacctl config linux uid " + c.Holder + " <uid>"}
+	case errors.As(err, &small):
+		return []string{head + "'" + small.Name + "' (" + small.UID + ") would become " + strconv.Itoa(small.New) + ", past its end. Nothing was changed.",
+			"Choose a range that holds every number given out: tacctl config linux uid-range <min>-<max>"}
+	case errors.As(err, &over):
+		return []string{head + "it overlaps " + over.With.String() + ", a range the file was numbered for (hosts may still have accounts there). Nothing was changed.",
+			"Choose a range clear of it, or one that starts at " + strconv.Itoa(from.Min) + ": tacctl config linux uid-range <min>-<max>"}
+	}
+	return nil
+}
+
+// configLinuxUIDRange is 'config linux uid-range [<min>-<max>]': show the
+// range, or change it. A change is checked first (hosts.RangeProblem, and
+// whether the UID file can be renumbered for it), then written to
+// tacctl.yaml, then the file is renumbered; nothing changes when a check
+// fails. Hosts renumber their accounts at their next enroll or sync.
+func (inv *invocation) configLinuxUIDRange(args []string) error {
+	a := inv.app
+	cur, problem := inv.configuredUIDRange()
+	uids := hosts.UIDs{Path: a.Paths.LinuxUIDs, Range: cur}
+	v := arg(args, 0)
+	if v == "" {
+		src := "default"
+		if a.Conf().HasOverride("linux.uid_min") || a.Conf().HasOverride("linux.uid_max") {
+			src = "tacctl.yaml"
+		}
+		inv.echo("")
+		inv.echo("  Linux UID range: " + cur.String() + " (" + src + "; one range for all hosts)")
+		if problem != "" {
+			inv.echo("  Cannot be used: " + problem + ".")
+		}
+		if rec, prev, err := uids.Recorded(); err == nil && !rec.IsZero() {
+			line := "  " + uids.Path + " is numbered for " + rec.String()
+			if len(prev) > 0 {
+				words := make([]string, len(prev))
+				for i, p := range prev {
+					words[i] = p.String()
+				}
+				line += " (before: " + strings.Join(words, ", ") + ")"
+			}
+			inv.echo(line)
+		}
+		inv.echo("")
+		inv.echo("  Usage: tacctl config linux uid-range <min>-<max>")
+		inv.echo("")
+		return nil
+	}
+	r, ok := hosts.ParseRange(v)
+	if !ok || len(args) > 1 {
+		return inv.usageErr("Usage: tacctl config linux uid-range <min>-<max>   (for example 80000-89999)")
+	}
+	if p := hosts.RangeProblem(r); p != "" {
+		return inv.usageErr("Cannot use UID range " + r.String() + ": " + p + ".")
+	}
+	if w := hosts.RangeWarning(r); w != "" {
+		a.Out.WarnE(w)
+	}
+	uids.Range = r
+	backup := uids.Path + ".pre-renumber-" + a.Knobs.Now().UTC().Format("20060102-150405")
+	res, err := uids.RenumberTo(backup, true)
+	if msgs := inv.renumberProblem(uids.Path, res.From, r, err); msgs != nil {
+		for _, m := range msgs {
+			a.Out.ErrorE(m)
+		}
+		return exit(1)
+	}
+	if err != nil {
+		return err
+	}
+	if err := a.Conf().Set("linux.uid_min", strconv.Itoa(r.Min)); err != nil {
+		return err
+	}
+	if err := a.Conf().Set("linux.uid_max", strconv.Itoa(r.Max)); err != nil {
+		return err
+	}
+	if res, err = uids.RenumberTo(backup, false); err != nil {
+		return err
+	}
+	if res.N > 0 {
+		inv.renumbered(uids.Path, res, r, backup)
+	}
+	a.Out.InfoE("Linux UID range set to " + r.String() + " (was " + cur.String() + "). Hosts renumber the accounts tacctl created at their next enroll or sync.")
+	a.Logger(inv.ctx, "auth.info", "uid-range set from="+cur.String()+" to="+r.String())
+	return nil
 }
 
 // hostsDone maps a hosts error: ErrFailed (printed) is exit 1.
@@ -131,6 +319,19 @@ func (inv *invocation) hostsDone(err error) error {
 		return exit(1)
 	}
 	return err
+}
+
+// verifySudoUser refuses a SUDO_USER that is not the account of SUDO_UID
+// (tier.VerifyCaller), for the commands that run programs as SUDO_USER
+// ('host', 'tacctl ssh'). The tier gate has refused one already; this is
+// the same check where the name is acted on.
+func (inv *invocation) verifySudoUser(what string) error {
+	a := inv.app
+	u, uid := a.Env.Get("SUDO_USER"), a.Env.Get("SUDO_UID")
+	if tier.VerifyCaller(inv.ctx, a.Runner, u, uid) != nil {
+		return inv.usageErr("SUDO_USER '" + u + "' is not the account of SUDO_UID " + uid + "; " + what + " will not run ssh as it")
+	}
+	return nil
 }
 
 // sudoUser is ${SUDO_USER:-root}, for the audit lines.
@@ -228,6 +429,7 @@ func (inv *invocation) scriptRequest(scope, server, method, output string) (host
 		req.Secret = m.Scope(scope).Secret
 	}
 	req.Rows = m.LinuxUsers(scope)
+	req.Inactive = m.LinuxInactive(scope)
 	id := backend.TACACS
 	if method == hosts.Radius {
 		id = "radius"
@@ -346,13 +548,8 @@ func (inv *invocation) configLinuxScript(args []string) error {
 	}
 	if server == "" {
 		res, err := a.Runner.Run(inv.ctx, execx.Cmd{Name: "ip", Args: []string{"-4", "route", "get", "1.0.0.0"}, Stderr: io.Discard})
-		if code := res.Code; code != 0 || err != nil {
-			// 'server=$(ip ... | awk ...)' under pipefail and errexit: a
-			// failing ip ends the command with its status, silently.
-			if code == 0 {
-				code = 1
-			}
-			return exit(code)
+		if res.Code != 0 || err != nil {
+			return inv.usageErr("Could not determine this server's address (ip route failed); pass --server <address>")
 		}
 		server = strings.TrimRight(strings.Join(srcAddresses(string(res.Stdout)), "\n"), "\n")
 		if server == "" {
@@ -365,6 +562,9 @@ func (inv *invocation) configLinuxScript(args []string) error {
 	}
 	req, err := inv.scriptRequest(scope, server, method, output)
 	if err != nil {
+		return err
+	}
+	if err := inv.renumberUIDs(true); err != nil {
 		return err
 	}
 	res, err := inv.hostsEnv().WriteScript(req)
@@ -440,47 +640,40 @@ func (inv *invocation) configLinuxRemoveScript(args []string) error {
 
 // --- uid -----------------------------------------------------------------------
 
-var reUID = regexp.MustCompile(`^[0-9]{4,9}$`)
-
-// uidRefused is '(( uid < 1000 || uid == 65534 ))' for a uid of 4-9 digits:
-// bash reads a leading 0 as octal, and a number that is not valid octal
-// makes the arithmetic fail, which reads as false (0.1.16 also printed
-// bash's own complaint about it, which is not reproduced).
-func uidRefused(uid string) bool {
-	base := 10
-	if len(uid) > 1 && uid[0] == '0' {
-		base = 8
-	}
-	n, err := strconv.ParseInt(uid, base, 64)
-	if err != nil {
-		return false
-	}
-	return n < 1000 || n == 65534
-}
-
 // configLinuxUID is cmd_config_linux_uid: list, show or change the number
-// a user gets as UID and primary GID on every host. Changing it does not
-// renumber accounts that already exist on enrolled hosts; the next sync
-// reports them.
+// a user gets as UID and primary GID on every host, one of the configured
+// range. Only a change (and the renumbering for a new range, renumberUIDs)
+// writes the UID file; a listing or a lookup leaves it as it is (absent
+// stays absent). Changing it
+// does not renumber accounts that already exist on enrolled hosts; the next
+// sync reports them.
 func (inv *invocation) configLinuxUID(args []string) error {
 	a := inv.app
 	username, uid := arg(args, 0), arg(args, 1)
-	uids := hosts.UIDs{Path: a.Paths.LinuxUIDs}
-	if err := uids.Touch(); err != nil {
-		inv.stderrLine("touch: cannot touch '" + uids.Path + "': " + errnoText(err))
-		return exit(1)
+	if err := inv.renumberUIDs(false); err != nil {
+		return err
 	}
+	rng, _ := inv.configuredUIDRange()
+	uids := hosts.UIDs{Path: a.Paths.LinuxUIDs, Range: rng}
 	if username == "" {
 		inv.echo("")
-		inv.echoE(ui.Bold + "Assigned Linux UIDs" + ui.NC + " (same number is the primary GID)")
-		inv.echo("--------------------------------------------")
-		if st, err := os.Stat(uids.Path); err == nil && st.Size() > 0 {
-			listing, err := uids.Listing()
-			if err != nil {
-				return err
+		const title, hint = "Assigned Linux UIDs", "(same number is the primary GID)"
+		listing, err := uids.Listing()
+		if err != nil {
+			return err
+		}
+		if strings.TrimSpace(listing) != "" {
+			t := ui.NewTable(title, ui.Left("USERNAME"), ui.Left("UID"), ui.Left("NOTE"))
+			t.Hint = hint
+			for _, l := range strings.Split(strings.TrimSpace(listing), "\n") {
+				if f := strings.Fields(l); len(f) >= 2 {
+					t.Add(f[0], f[1], strings.Join(f[2:], " "))
+				}
 			}
-			inv.write(listing)
+			inv.write(t.String())
 		} else {
+			inv.echoE(ui.Bold + title + ui.NC + " " + hint)
+			inv.echo(ui.Rule(title + " " + hint))
 			inv.echo("  None yet. A UID is assigned the first time a user is sent to a host.")
 		}
 		inv.echo("")
@@ -509,8 +702,8 @@ func (inv *invocation) configLinuxUID(args []string) error {
 	if !m.Exists("users", username) {
 		return inv.usageErr("User '" + username + "' does not exist.")
 	}
-	if !reUID.MatchString(uid) || uidRefused(uid) {
-		return inv.usageErr("UID must be a number from 1000 up (not 65534).")
+	if !rng.Contains(uid) {
+		return inv.usageErr("UID must be a number from " + strconv.Itoa(rng.Min) + " to " + strconv.Itoa(rng.Max) + ": tacctl gives out UIDs in that range only.")
 	}
 	holder, err := uids.Holder(uid)
 	if err != nil {
@@ -519,13 +712,17 @@ func (inv *invocation) configLinuxUID(args []string) error {
 	if holder != "" && holder != username {
 		return inv.usageErr("UID " + uid + " is already assigned to '" + holder + "'.")
 	}
+	if err := uids.Touch(); err != nil {
+		inv.stderrLine("touch: cannot touch '" + uids.Path + "': " + errnoText(err))
+		return exit(1)
+	}
 	if err := uids.Assign(username, uid); err != nil {
 		return err
 	}
-	a.Out.InfoE("'" + username + "' is now assigned UID/GID " + uid + ".")
+	a.Out.InfoE("'" + username + "' is now assigned UID " + uid + ".")
 	a.Out.Warn("Hosts that already have the account keep its old number until it is renumbered there:")
-	inv.echo("    usermod -u " + uid + " " + username + " && groupmod -g " + uid + " " + username)
-	inv.echo("    find / -xdev \\( -uid <old> -o -gid <old> \\) -exec chown -h " + username + ":" + username + " {} +")
+	inv.echo("    usermod -u " + uid + " " + username)
+	inv.echo("    find / -xdev -uid <old> -exec chown -h " + username + " {} +")
 	inv.echo("  'tacctl host sync' lists the hosts where the number still differs.")
 	return nil
 }
@@ -556,14 +753,19 @@ func (inv *invocation) configLinuxBuilds(args []string) error {
 	switch sub {
 	case "list":
 		inv.echo("")
-		inv.echoE(ui.Bold + "Prebuilt pam_tacplus modules" + ui.NC + " (" + he.Paths.Builds() + ")")
-		inv.echo("--------------------------------------------")
 		builds := he.Builds()
-		for _, b := range builds {
-			inv.write("  " + padTo(b.Image, 28) + " " + padTo(b.Arch, 8) + " built " + b.Built + "\n      base image " + b.Digest + "\n")
-		}
 		if len(builds) == 0 {
+			title := "Prebuilt pam_tacplus modules (" + he.Paths.Builds() + ")"
+			inv.echoE(ui.Bold + "Prebuilt pam_tacplus modules" + ui.NC + " (" + he.Paths.Builds() + ")")
+			inv.echo(ui.Rule(title))
 			inv.echo("  None yet. 'tacctl host enroll' builds one the first time it meets an OS release.")
+		} else {
+			t := ui.NewTable("Prebuilt pam_tacplus modules", ui.Left("IMAGE"), ui.Left("ARCH"), ui.Left("BUILT"), ui.Left("BASE IMAGE"))
+			t.Hint = "(" + he.Paths.Builds() + ")"
+			for _, b := range builds {
+				t.Add(b.Image, b.Arch, b.Built, b.Digest)
+			}
+			inv.write(t.String())
 		}
 		inv.echo("")
 		return nil
@@ -583,16 +785,4 @@ func padTo(s string, n int) string {
 		return s + strings.Repeat(" ", n-l)
 	}
 	return s
-}
-
-// discardStdout runs fn with everything it writes to stdout dropped ('>
-// /dev/null'): the command's own lines, the pre-change snapshot's and the
-// backend modules' (a render and restart inside a store change).
-func (inv *invocation) discardStdout(fn func() error) error {
-	a := inv.app
-	env, snaps := a.BackendEnv(), a.Snapshots()
-	saved, savedEnv, savedSnaps := a.Out, env.Out, snaps.Out
-	a.Out.Stdout, env.Out.Stdout, snaps.Out.Stdout = io.Discard, io.Discard, io.Discard
-	defer func() { a.Out, env.Out, snaps.Out = saved, savedEnv, savedSnaps }()
-	return fn()
 }

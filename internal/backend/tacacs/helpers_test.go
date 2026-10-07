@@ -71,6 +71,7 @@ func newTenv(t *testing.T, extraEnv ...string) *tenv {
 		"TACCTL_SUDOERS_FILE=" + filepath.Join(w, "sudoers"),
 		"TACCTL_TIER_SUDOERS_FILE=" + filepath.Join(w, "sudoers-tiers"),
 		"TACCTL_LINUX_DIR=" + filepath.Join(w, "linux"),
+		"TACCTL_VAR_LIB=" + filepath.Join(w, "var-lib"),
 		"TACCTL_RADIUS_DIR=" + filepath.Join(w, "raddb"),
 		"TACCTL_RADIUS_LOG=" + filepath.Join(w, "radius-log"),
 		"TACCTL_RADIUS_DICT=" + filepath.Join(w, "radius-dict"),

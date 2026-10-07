@@ -5,6 +5,8 @@ Usage: tacctl <command> [arguments]
 
 Commands:
   install [--branch <name>] [-y|--yes]  Install tacctl and the TACACS+ backend (tacquito) from scratch
+      --branch <name>                   The tacctl repo branch to install or upgrade from (default: the current one)
+      -y, --yes                         Answer yes to the confirmations
   upgrade [--branch <name>]             Pull latest source, rebuild, update scripts and every enabled backend
   uninstall [-y|--yes]                  Remove tacctl, its backends' services and all associated files
   status                                Show service health, stats, and recent errors (per backend)
@@ -13,13 +15,23 @@ Commands:
   group <subcommand>                    Group management (list, add, edit, remove)
   scope <subcommand>                    Scope management (named CIDR + shared-secret bundles)
   host <subcommand>                     Linux hosts: enroll, sync, unenroll TACACS+ or RADIUS login over SSH
+  device <subcommand>                   Device registry: list, add, scan, discover, check, host keys (ssh-config)
+  ssh <name|address> [-p <port>]        Open an ssh session to a registered device or enrolled host, as you
+      -p <port>                         Connect to this port instead of the registered one
+  shell [--idle <min>] [-c <line>]      An interactive tacctl prompt with history and completion
+      --idle <min>                      End the session after this many idle minutes at the prompt
+      -c <line>                         Run one line and exit
+      --no-history                      Keep no history file for this session
+  console <subcommand>                  Login console: tiers, per-user overrides, settings (show, tiers, user, ...)
   backend <subcommand>                  Auth backends: list, status, enable <id>, disable <id>
   store <subcommand>                    The canonical store: show, import, rollback
   config <subcommand>                   Configuration (show, render, cisco, juniper, wti, validate, ...)
   log <subcommand>                      Log viewer (tail, search, failures, accounting; --backend <id>)
   backup <subcommand>                   Backup management (list, diff, restore)
   hash <subcommand>                     Bcrypt helper (generate, commands — runs as invoking user, no sudo)
+  completion bash|zsh|fish              Print the shell completion script
   version [--long]                      Print tacctl version (--long: commit, build date, Go version)
+      --long                            Also the commit, build date, Go version and whether test knobs are on
 
 Run any command without arguments for detailed help, e.g.:
   tacctl user

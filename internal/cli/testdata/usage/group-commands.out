@@ -6,9 +6,12 @@ Usage:
   tacctl group commands default <group> <permit|deny>             Set default action (catchall)
   tacctl group commands add <group> <name> [--match <regex>]...   Add a rule
                                             [--action permit|deny]
+      --match <regex>                                             (add) A regex the command's arguments must match (repeatable)
+      --action permit|deny                                        (add) What the rule does (default permit)
   tacctl group commands remove <group> <name>                     Drop a rule
   tacctl group commands clear <group>                             Drop overrides — revert to shipped defaults (confirms)
   tacctl group commands seed [<group>] [--force]                  Re-apply legacy seed set (recovery tool)
+      --force                                                     (seed) Overwrite a group that already has rules
 
 <name> is compared literally to the TACACS+ cmd= word. --match
 regexes are tested against the command's ARGUMENTS only (the

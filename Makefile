@@ -1,5 +1,5 @@
 .PHONY: test test-go test-bats test-integration test-e2e test-diff test-pyyaml build \
-	coverage lint lint-sh lint-go lint-private hooks clean bootstrap
+	coverage lint lint-sh lint-go lint-private hooks clean bootstrap release-assets release-verify
 
 BATS := tests/bats/bats-core/bin/bats
 BATS_FLAGS ?= --print-output-on-failure
@@ -79,6 +79,36 @@ test-diff: build
 build:
 	bin/tacctl.sh --build dist/tacctl --tags testknobs
 
+# --- release assets (docs/releasing.md) ---------------------------------------
+# release-assets: the release binaries of the tag HEAD is at, built with the
+# deploy recipe for each architecture (test knobs off), and their SHA256SUMS,
+# in dist/release/. A tree with local changes or not at a release tag is
+# refused; RELEASE_TAG=<name> builds trial assets from any tree.
+# release-verify: the user's check before uploading: SHA256SUMS.sig verifies
+# with ALLOWED_SIGNERS, every file matches SHA256SUMS, the binary for this
+# machine was built from HEAD.
+RELEASE_DIR := dist/release
+RELEASE_ARCHES := amd64 arm64
+ALLOWED_SIGNERS ?= release/allowed_signers
+
+release-assets:
+	@tag="$(RELEASE_TAG)"; \
+	if [ -z "$$tag" ]; then \
+		tag=$$(git describe --tags --exact-match --match '[0-9]*' HEAD 2> /dev/null) \
+			|| { echo "make: HEAD is not at a release tag (RELEASE_TAG=<name> builds trial assets)"; exit 1; }; \
+		[ -z "$$(git status --porcelain)" ] \
+			|| { echo "make: the tree has local changes; release assets are built from a clean checkout of the tag"; exit 1; }; \
+	fi; \
+	rm -rf $(RELEASE_DIR) && mkdir -p $(RELEASE_DIR) || exit 1; \
+	for arch in $(RELEASE_ARCHES); do \
+		echo "bin/tacctl.sh --build $(RELEASE_DIR)/tacctl-$$tag-linux-$$arch --goarch $$arch"; \
+		bin/tacctl.sh --build $(RELEASE_DIR)/tacctl-$$tag-linux-$$arch --goarch $$arch || exit 1; \
+	done; \
+	cd $(RELEASE_DIR) && sha256sum tacctl-$$tag-linux-* > SHA256SUMS && echo "$(RELEASE_DIR)/SHA256SUMS:" && cat SHA256SUMS
+
+release-verify:
+	bin/tacctl.sh --verify-release $(RELEASE_DIR) $(ALLOWED_SIGNERS)
+
 # Statement coverage of the Go tests (with the test knobs, which the bats
 # suite's binary has too): coverage/go.out, a per-function summary and
 # coverage/index.html.
@@ -103,7 +133,7 @@ hooks:
 
 lint-sh:
 	$(SHELLCHECK) bin/tacctl.sh config/linux/*.sh
-	$(SHELLCHECK) tests/helpers/*.bash tests/tools/*.sh tests/tools/pre-push tests/diff/*.sh
+	$(SHELLCHECK) tests/helpers/*.bash tests/tools/*.sh tests/tools/pre-push tests/diff/*.sh tests/diff/stubs/*/*
 	$(SHELLCHECK) tests/containers/crossover/*.sh tests/containers/fresh/*.sh
 
 lint-go:

@@ -58,7 +58,8 @@ type SeedResult struct {
 // failure stops the install). Then:
 //
 //   - a store that exists is kept as it is ('upgrade config' phase of
-//     every enabled backend, which re-renders: SeedStore);
+//     every enabled backend, which re-renders: SeedStore; a phase that
+//     fails is warned about and the install goes on);
 //   - a legacy tacquito.yaml is kept and goes through what an upgrade does
 //     to it: ConfigSyncExisting, then UpgradeStoreFlip (SeedFlipped, or
 //     SeedLegacy when the gate stopped);
@@ -95,11 +96,13 @@ func InstallSeed(ctx context.Context, env *Env) (SeedResult, error) {
 			out.ErrorE(err.Error())
 			return SeedResult{}, ui.ErrReported
 		}
-		// backends_run: each phase reports its own problems; none stops
-		// the install.
+		// Each phase reports its own problems; a failure is named once
+		// more with the way to finish the job, and stops nothing.
 		for _, id := range ids {
 			if b, err := env.Set.Get(id); err == nil {
-				_ = b.Upgrade(ctx, backend.PhaseConfig, "")
+				if err := b.Upgrade(ctx, backend.PhaseConfig, ""); err != nil {
+					out.Warn(id + ": configuration step failed (see above); run 'tacctl upgrade' after the install")
+				}
 			}
 		}
 		return SeedResult{Mode: SeedStore}, nil

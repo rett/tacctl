@@ -29,6 +29,7 @@ import (
 
 	"github.com/rett/tacctl/internal/backend"
 	"github.com/rett/tacctl/internal/conf"
+	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/lifecycle"
 	"github.com/rett/tacctl/internal/model"
@@ -173,32 +174,34 @@ func (inv *invocation) storeMode() bool { return model.Mode(inv.app.Paths.StoreF
 
 // --- list -----------------------------------------------------------------------
 
-var backupTable = ui.NewTable(ui.L(36), ui.L(10), ui.L(8))
-
 // backupList is _backup_list: the snapshots, then the old-style backups,
 // with their sizes (du -sh).
 func (inv *invocation) backupList([]string) error {
 	ids, entries := inv.snapshotIDs(), inv.legacyBackups()
 	inv.echo("")
-	inv.echoE(ui.Bold + "Config Backups" + ui.NC)
-	inv.echo("--------------------------------------------")
-	if !inv.storeMode() {
-		inv.echo("  No store yet: 'backup diff' and 'backup restore' work on old-style backups only.")
+	noStore := func() {
+		if !inv.storeMode() {
+			inv.echo("  No store yet: 'backup diff' and 'backup restore' work on old-style backups only.")
+		}
 	}
 	if len(ids)+len(entries) == 0 {
+		inv.echoE(ui.Bold + "Config Backups" + ui.NC)
+		inv.echo(ui.Rule("Config Backups"))
+		noStore()
 		inv.echo("  No backups found.")
 		inv.echo("")
 		return nil
 	}
-	inv.write(backupTable.Header("TIMESTAMP", "KIND", "SIZE"))
-	inv.echo("  ------------------------------------------------------")
+	t := ui.NewTable("Config Backups", ui.Left("TIMESTAMP"), ui.Left("KIND"), ui.Left("SIZE"))
 	for _, id := range ids {
-		inv.write(backupTable.Row(id, "snapshot", duSH(filepath.Join(inv.app.Paths.BackupDir, id))))
+		t.Add(id, "snapshot", duSH(filepath.Join(inv.app.Paths.BackupDir, id)))
 	}
 	for _, e := range entries {
-		inv.write(backupTable.Row(e.id, "old-style", duSH(e.path)))
+		t.Add(e.id, "old-style", duSH(e.path))
 	}
+	inv.write(t.String())
 	inv.echo("")
+	noStore()
 	inv.echo("  Old-style entries restore with 'tacctl backup restore <timestamp> --legacy'.")
 	inv.echo("")
 	return nil
@@ -291,9 +294,17 @@ func (inv *invocation) diffSnapshot(id string) {
 	dir := filepath.Join(p.BackupDir, id)
 	inv.echo("")
 	inv.echoE(ui.Bold + "Diff: current store and tacctl.yaml vs snapshot " + id + ui.NC)
-	inv.echo("--------------------------------------------")
+	inv.echo(ui.Rule("Diff: current store and tacctl.yaml vs snapshot " + id))
 	inv.diffFile("store.yaml", filepath.Join(dir, "store.yaml"), p.StoreFile, id)
 	inv.diffFile("tacctl.yaml", filepath.Join(dir, "tacctl.yaml"), p.Overrides, id)
+	// The device registry joins the diff only where there is one to compare.
+	if snap := filepath.Join(dir, "devices.yaml"); cfgIsFile(snap) || cfgIsFile(p.DevicesFile) {
+		inv.diffFile("devices.yaml", snap, p.DevicesFile, id)
+	}
+	// The same for the login console's settings.
+	if snap := filepath.Join(dir, "console.yaml"); cfgIsFile(snap) || cfgIsFile(p.ConsoleFile) {
+		inv.diffFile("console.yaml", snap, p.ConsoleFile, id)
+	}
 }
 
 // diffLegacy is _backup_diff_legacy: the live tacquito.yaml against
@@ -301,7 +312,7 @@ func (inv *invocation) diffSnapshot(id string) {
 func (inv *invocation) diffLegacy(id, file string) {
 	inv.echo("")
 	inv.echoE(ui.Bold + "Diff: current config vs backup " + id + ui.NC)
-	inv.echo("--------------------------------------------")
+	inv.echo(ui.Rule("Diff: current config vs backup " + id))
 	inv.diffU("backup/"+id, "current", file, inv.app.Paths.Config)
 }
 
@@ -477,6 +488,27 @@ func (inv *invocation) restoreSnapshot(id string) error {
 		names := set.AllArtifactNames()
 		return inv.usageErr("Snapshot " + id + " was not restored: " + names + " could not be rendered from it. Store, tacctl.yaml and " + names + " are as they were.")
 	}
+	// The device registry comes back with the snapshot that holds one, after
+	// the render that can still be rolled back; a snapshot without it (a
+	// 0.2.0 one) leaves the live registry alone.
+	if snapDev := filepath.Join(dir, "devices.yaml"); cfgIsFile(snapDev) {
+		if err := backupPut(snapDev, a.Paths.DevicesFile, 0o600); err != nil {
+			inv.stderrLine(err.Error())
+			return err
+		}
+		// The generated known_hosts follows the restored pins.
+		if err := devreg.SyncKnownHosts(a.Paths.DevicesFile, a.Paths.KnownHosts); err != nil {
+			a.Out.WarnE("known_hosts was not regenerated: " + strings.Join(msgs(err), " "))
+		}
+	}
+	// So do the console's settings: a snapshot without console.yaml leaves
+	// the live file alone.
+	if snapCon := filepath.Join(dir, "console.yaml"); cfgIsFile(snapCon) {
+		if err := backupPut(snapCon, a.Paths.ConsoleFile, 0o600); err != nil {
+			inv.stderrLine(err.Error())
+			return err
+		}
+	}
 	inv.reconcileBackends(before)
 	if err := set.RestartAll(inv.ctx); err != nil {
 		return err
@@ -502,9 +534,7 @@ func (inv *invocation) installSnapshot(dir string) error {
 			return err
 		}
 		rtacacs.ChownTacquito(p.Overrides)
-		return nil
-	}
-	if err := os.Remove(p.Overrides); err != nil && !errors.Is(err, fs.ErrNotExist) {
+	} else if err := os.Remove(p.Overrides); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
 	return nil

@@ -615,6 +615,19 @@ func (m *Model) LinuxUsers(scope string) []string {
 	return out
 }
 
+// LinuxInactive are the members of a scope that LinuxUsers leaves out (the
+// accounting sink, disabled users), by name: still users of the scope, so a
+// host expires their accounts instead of deleting them.
+func (m *Model) LinuxInactive(scope string) []string {
+	var out []string
+	for _, n := range m.Members(scope) {
+		if u := m.users[n]; u.AccountingSink || u.IsDisabled() {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
 // Status is the 'status' view: key=value lines for 'tacctl status'
 // (counts, prefix facts, placeholder/weak/empty scopes, orphaned scope
 // references, password dates). minSecret is the weak-secret threshold.

@@ -39,10 +39,20 @@ const (
 	KindUsers  = "users"
 	KindGroups = "groups"
 	KindScopes = "scopes"
+	// KindHosts are the enrolled hosts' names (the host registry);
+	// KindDevices are every name 'ssh' and 'device' accept: the hosts' and
+	// the device registry's (registerDeviceNames).
+	KindHosts   = "hosts"
+	KindDevices = "devices"
+	// KindVendors is the fixed list of device vendors.
+	KindVendors = "cisco|juniper|wti|other"
 	// KindFile is a file or directory name: the shell completes paths.
 	KindFile = "file"
 	// KindList marks a comma list: "<kind>,list" completes after each comma.
 	KindList = ",list"
+	// KindLine is a tacctl command line ('shell -c'): completion offers the
+	// commands, for its first word.
+	KindLine = "line"
 )
 
 // After is the kind of a positional that completion offers only when the

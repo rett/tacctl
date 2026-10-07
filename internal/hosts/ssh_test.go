@@ -33,8 +33,8 @@ func TestSSHCmd(t *testing.T) {
 
 func TestRemoteCommand(t *testing.T) {
 	r := "/tmp/tacctl.AbCd1234"
-	got := RemoteCommand(r, []string{"--accounts-only", "--adopt", "alice,bob"}, false)
-	want := `trap 'rm -f /tmp/tacctl.AbCd1234' EXIT; trap 'exit 130' HUP INT TERM; if [ "$(id -u)" = 0 ]; then bash /tmp/tacctl.AbCd1234 --accounts-only --adopt alice,bob; else if sudo -n true 2>/dev/null; then sudo -n bash /tmp/tacctl.AbCd1234 --accounts-only --adopt alice,bob; else echo '[ERROR] sudo on this host needs a password and there is no terminal to ask on. Run tacctl host from a terminal, allow passwordless sudo for this login, or log in as root.' >&2; false; fi; fi`
+	got := RemoteCommand(r, []string{"--accounts-only", "--allow-uid-mismatch", "--remove-home"}, false)
+	want := `trap 'rm -f /tmp/tacctl.AbCd1234' EXIT; trap 'exit 130' HUP INT TERM; if [ "$(id -u)" = 0 ]; then bash /tmp/tacctl.AbCd1234 --accounts-only --allow-uid-mismatch --remove-home; else if sudo -n true 2>/dev/null; then sudo -n bash /tmp/tacctl.AbCd1234 --accounts-only --allow-uid-mismatch --remove-home; else echo '[ERROR] sudo on this host needs a password and there is no terminal to ask on. Run tacctl host from a terminal, allow passwordless sudo for this login, or log in as root.' >&2; false; fi; fi`
 	if got != want {
 		t.Errorf("no tty\n got %s\nwant %s", got, want)
 	}
@@ -96,13 +96,18 @@ func TestRunScriptThreeCalls(t *testing.T) {
 		t.Errorf("stderr %q", errb.String())
 	}
 
-	// A terminal: -t, the sudo prompt that names the host, no BatchMode.
+	if strings.Contains(argvs[1], "LogLevel") {
+		t.Errorf("LogLevel without a terminal: %s", argvs[1])
+	}
+
+	// A terminal: -t (with LogLevel=ERROR: no 'Shared connection to web1
+	// closed.'), the sudo prompt that names the host, no BatchMode.
 	e.TTY, e.StdinTTY = func() bool { return true }, func() bool { return true }
 	f.Reset()
 	if code, _ := e.RunScript(context.Background(), "web1", "", "", scriptFile(t), nil); code != 0 {
 		t.Errorf("tty code %d", code)
 	}
-	if a := f.Argvs()[1]; !strings.Contains(a, " -t web1 ") || !strings.Contains(a, "sudo -p '[sudo] password for %u on %H: '") || strings.Contains(a, "BatchMode") {
+	if a := f.Argvs()[1]; !strings.Contains(a, " -o LogLevel=ERROR -t web1 ") || !strings.Contains(a, "sudo -p '[sudo] password for %u on %H: '") || strings.Contains(a, "BatchMode") {
 		t.Errorf("tty run %s", a)
 	}
 }

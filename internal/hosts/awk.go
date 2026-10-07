@@ -60,26 +60,3 @@ func awkRecords(text string) []string {
 	}
 	return strings.Split(strings.TrimSuffix(text, "\n"), "\n")
 }
-
-// awkPrefixNumber is awk's numeric value of a string that does not look
-// like a number: its longest leading number (strtod), else 0.
-func awkPrefixNumber(s string) float64 {
-	t := strings.TrimLeft(s, " \t\n")
-	best := 0.0
-	for i := len(t); i > 0; i-- {
-		if f, err := strconv.ParseFloat(t[:i], 64); err == nil && !strings.ContainsAny(t[:i], "xXnNiI_") {
-			best = f
-			break
-		}
-	}
-	return best
-}
-
-// awkString is a number as awk prints it: an integral value as an integer,
-// anything else with %.6g.
-func awkString(f float64) string {
-	if f == float64(int64(f)) {
-		return strconv.FormatInt(int64(f), 10)
-	}
-	return strconv.FormatFloat(f, 'g', 6, 64)
-}

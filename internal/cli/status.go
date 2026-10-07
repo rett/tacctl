@@ -278,6 +278,8 @@ func (inv *invocation) status([]string) error {
 	if warnings == 0 {
 		inv.echoE("    " + G + "No passwords older than " + strconv.Itoa(t.PasswordMaxAgeDays) + " days" + NC)
 	}
+	// The device registry's open notices (device_scan.go).
+	inv.statusDeviceNotices()
 	inv.echo("")
 	return nil
 }

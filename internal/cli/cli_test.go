@@ -79,7 +79,7 @@ func TestEveryCommandHasAHandler(t *testing.T) {
 func TestTopLevelUsage(t *testing.T) {
 	want := Usage("top", UsageVars{"version": "0.2.0-test"})
 	for _, args := range [][]string{
-		{}, {""}, {"help"}, {"-h"}, {"--help"}, {"bogus"}, {"shell"}, {"-x", "user", "list"},
+		{}, {""}, {"help"}, {"-h"}, {"--help"}, {"bogus"}, {"-x", "user", "list"},
 		{"--x=1", "user", "list"}, {"--", "version"}, {"Version"}, {"help", "version"}, {"User", "list"}, {"Hash"},
 	} {
 		h := newHarness(t, args)

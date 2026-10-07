@@ -163,7 +163,22 @@ setup() {
     [[ -f "$TACCTL_SUDOERS_FILE" ]]
     run cat "$TACCTL_SUDOERS_FILE"
     assert_output --partial "%wheel ALL=(ALL) NOPASSWD: /usr/local/bin/tacctl"
+    assert_output --partial 'Defaults!/usr/local/bin/tacctl env_keep += "SSH_AUTH_SOCK TACCTL_CONSOLE DISPLAY"'
+    refute_output --partial "SETENV"
     assert_output --partial "Managed by tacctl"
+}
+
+@test "config sudoers install: the drop-in passes a real visudo (env_keep, no SETENV)" {
+    local visudo_bin
+    visudo_bin=$(PATH="$PATH:/usr/sbin:/sbin" command -v visudo) || skip "visudo not installed"
+    mkdir -p "$(dirname "$TACCTL_SUDOERS_FILE")"
+    stub_cmd visudo
+    stub_cmd install 'cp "${@: -2:1}" "${@: -1}"'
+
+    run bash -c 'echo y | "'"$TACCTL_BIN_SCRIPT"'" config sudoers install wheel'
+    assert_success
+    run "$visudo_bin" -cf "$TACCTL_SUDOERS_FILE"
+    assert_success
 }
 
 @test "config sudoers install: strips leading '%' from group name" {

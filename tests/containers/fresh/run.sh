@@ -4,7 +4,7 @@
 # with systemd and nothing a server would not have before tacctl (no Go, no
 # Python), nothing on this machine touched outside podman and a temp dir.
 #
-#   tests/containers/fresh/run.sh [--rev <commit> | --worktree] [--rollback] [--keep]
+#   tests/containers/fresh/run.sh [--rev <commit> | --worktree | --release <tag>] [--rollback] [--keep]
 #
 # The container installs with the README one-liner, but its git fetches
 # https://github.com/rett/tacctl.git from a bare clone of this repository
@@ -16,6 +16,16 @@
 # 'config cisco --scope lab'; 'uninstall -y'; and what is left on the
 # container's filesystem that was not there before the install and is not
 # there either in a second container that only installed the same packages.
+#
+# --release <tag> installs a published release (docs/releasing.md): the bare
+# clone's master is the tag's commit and the tag is pushed into it too, so
+# the clone is at the tag and the shim downloads the release assets from
+# GitHub (the real ones: it can only run after the release is published, and
+# the tag must be in this repository). openssh-client (ssh-keygen) is
+# installed in the container first; the check is that the install says
+# 'Installing the <tag> release binary (linux/amd64, verified)' and builds
+# no tacctl. Without it a server with no ssh-keygen builds from source, which
+# the default run covers.
 #
 # --rollback adds, before the uninstall, the way back to the last bash
 # release and forward again: 'upgrade --branch <bash release tag>' (the
@@ -29,14 +39,15 @@
 # shellcheck disable=SC2016  # the single-quoted scripts run inside the container
 set -uo pipefail
 export LC_ALL=C  # one collation for sort and comm, here and in the containers
-REV="HEAD"; KEEP=""; ROLLBACK=""
+REV="HEAD"; KEEP=""; ROLLBACK=""; RELEASE=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --rev) REV="${2:?--rev needs a commit}"; shift 2 ;;
         --worktree) REV="worktree"; shift ;;
+        --release) RELEASE="${2:?--release needs a tag}"; REV="$RELEASE"; shift 2 ;;
         --rollback) ROLLBACK="yes"; shift ;;
         --keep) KEEP="yes"; shift ;;
-        *) echo "usage: run.sh [--rev <commit> | --worktree] [--rollback] [--keep]" >&2; exit 2 ;;
+        *) echo "usage: run.sh [--rev <commit> | --worktree | --release <tag>] [--rollback] [--keep]" >&2; exit 2 ;;
     esac
 done
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -78,6 +89,10 @@ fi
 git clone -q --bare "$REPO" "${WORK}/tacctl.git" || exit 1
 # A push carries the commit even when no ref of this repository names it.
 git -C "$REPO" push -q --force --no-verify "${WORK}/tacctl.git" "${COMMIT}:refs/heads/master" || exit 1
+if [[ -n "$RELEASE" ]]; then
+    git -C "$REPO" rev-parse -q --verify "refs/tags/${RELEASE}" > /dev/null || { echo "no tag ${RELEASE} in ${REPO}" >&2; exit 2; }
+    git -C "$REPO" push -q --force --no-verify "${WORK}/tacctl.git" "refs/tags/${RELEASE}:refs/tags/${RELEASE}" || exit 1
+fi
 git -C "${WORK}/tacctl.git" symbolic-ref HEAD refs/heads/master
 echo "installing $(git -C "$REPO" describe --tags --always "$COMMIT") (${COMMIT})"
 
@@ -100,6 +115,10 @@ sleep 5
 podman exec "$C" git config --global url./srv/tacctl.git.insteadOf https://github.com/rett/tacctl.git
 BASH_RELEASE=$(sed -n 's/^TACCTL_BASH_RELEASE="\(.*\)"$/\1/p' "${REPO}/bin/tacctl.sh")
 
+if [[ -n "$RELEASE" ]]; then
+    podman exec "$C" bash -c 'export DEBIAN_FRONTEND=noninteractive; apt-get update -qq && apt-get install -y -qq --no-install-recommends openssh-client > /dev/null' || exit 1
+fi
+
 section "before the install"
 q 'for p in go python3 tacctl; do printf "%s: %s\n" "$p" "$(command -v "$p" || echo absent)"; done; ls -d /usr/local/go 2>&1'
 if q 'command -v go || command -v python3 || test -e /usr/local/go' > /dev/null; then
@@ -116,11 +135,17 @@ snap() { # snap <name>
 snap before
 
 # --- install: the README one-liner ----------------------------------------------
-if timed "install (README one-liner, answering y)" \
-    "echo y | sudo bash -c 'git clone https://github.com/rett/tacctl.git /opt/tacctl && /opt/tacctl/bin/tacctl.sh install'"; then
-    ok "install"
-else
-    bad "install"
+out=$(timed "install (README one-liner, answering y)" \
+    "echo y | sudo bash -c 'git clone https://github.com/rett/tacctl.git /opt/tacctl && /opt/tacctl/bin/tacctl.sh install'"); rc=$?
+echo "$out"
+if [[ $rc == 0 ]]; then ok "install"; else bad "install"; fi
+if [[ -n "$RELEASE" ]]; then
+    if grep -q "Installing the ${RELEASE} release binary (linux/amd64, verified)" <<< "$out" \
+        && ! grep -q 'Building /usr/local/bin/tacctl' <<< "$out"; then
+        ok "the ${RELEASE} release binary was downloaded, verified and installed (nothing built)"
+    else
+        bad "the ${RELEASE} release binary was downloaded, verified and installed: $(grep -E 'Release binary|Building /usr' <<< "$out" | head -2)"
+    fi
 fi
 out=$(q '/usr/local/go/bin/go version')
 if [[ "$out" == "go version go1."* ]]; then ok "the shim installed Go: ${out}"; else bad "the shim installed Go (got: ${out})"; fi

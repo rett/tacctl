@@ -8,7 +8,7 @@ shim (`bin/tacctl.sh`). Its tests come in layers:
 | Go unit tests | `go test -race ./...` with the fake runner, temp dirs and the test knobs | every package on its own: the PyYAML-compatible reader and writer, the store, the model, the renderers, the backend contract (with a stand-in backend), the lifecycle phases, the CLI's argument handling, exit codes and usage blocks | `internal/*/..._test.go` |
 | Goldens | Go tests and bats `golden_diff` over `tests/fixtures/golden/*`, `tests/fixtures/store.*.yaml`, `tests/fixtures/model/*.json` | rendered artifacts byte for byte | both layers |
 | Black-box bats | bats-core against `dist/tacctl` | the command line: output, exit codes, prompts, files and modes, the system commands run (PATH stubs) | `tests/integration`, `tests/e2e` |
-| Differential | `tests/diff/run.sh` | the binary against the last bash release (the `0.1.18` tag) on the same inputs, success and error paths | on demand |
+| Differential | `tests/diff/run.sh` | the binary against a release tag (default the last bash release, `0.1.18`; `--against 0.2.0` for the last Go release) on the same inputs, success and error paths | on demand |
 | Containers | rootless podman | real FreeRADIUS, real PAM logins on enrolled hosts, the cross-over from the bash release, a fresh install on a server without Go | on demand, never by `make test` |
 
 ## Running
@@ -22,7 +22,7 @@ make test-integration
 make test-e2e
 make build           # dist/tacctl: bin/tacctl.sh --build with the test knobs compiled in
 make coverage        # go test -coverprofile; coverage/go.out, coverage/index.html and the total
-make lint            # shellcheck (bin/tacctl.sh, config/linux, tests/helpers, tests/tools, tests/diff,
+make lint            # shellcheck (bin/tacctl.sh, config/linux, tests/helpers, tests/tools, tests/diff and its stubs,
                      #   tests/containers/{crossover,fresh}), gofmt, go vet, golangci-lint (pinned; prints how
                      #   to install it when missing), and tests/tools/no-private.sh
 make test-pyyaml     # the yamlpy and conf PyYAML corpora regenerated with PyYAML and compared
@@ -42,9 +42,13 @@ tests/bats/bats-core/bin/bats --filter 'user add' tests/integration/user_crud.ba
 go test -run TestStoreApply ./internal/backend
 ```
 
-Test-time tools: bash, GNU coreutils, `parallel` (optional), and `python3`
-for a few bats assertions that read JSON and for the generators below. The
-binary itself runs no python3.
+Test-time tools: bash, GNU coreutils, `parallel` (optional), `zsh` and `fish`
+(`tests/integration/completion_shells.bats` runs the generated completion
+scripts in the real shells and fails, naming `apt install zsh fish`, when one
+is missing), `ssh-keygen` (the release-binary tests sign with a key made at
+test time), `script` (util-linux: it gives `tacctl ssh` the terminal it
+requires), and `python3` for a few bats assertions that read JSON and for the
+generators below. The binary itself runs no python3.
 
 ## Layout
 
@@ -69,10 +73,74 @@ tests/
 ├── containers/hosts/    # 'host enroll|sync|unenroll' for real, server and client containers
 ├── containers/crossover/ # the upgrade from the bash release to the Go binary, and back
 └── containers/fresh/    # a fresh install with the README one-liner on a server without Go
+internal/testpty/        # a pseudo-terminal harness for Go tests (below)
 ```
 
 Go tests live beside their packages; their own inputs are in each package's
 `testdata/`.
+
+No private key is kept in the repository, not even a test one: the release
+binary tests of `tests/integration/shim.bats` generate an ed25519 key pair
+and its `allowed_signers` line in `setup_file`, under the file's tmpdir, and
+sign their release assets with it at test time.
+
+## The 0.2.1 test files
+
+The device registry, `tacctl ssh`, the shell and the completion scripts have
+their own bats files beside the older ones; each stubs every program it would
+reach (`ssh`, `ssh-keyscan`, `sudo`, `journalctl`, `logger`) and records the
+argv, so nothing leaves the machine and no secret may appear in one.
+
+| File | What it covers |
+|---|---|
+| `integration/device_cli.bats` | `tacctl device`: the registry file (`devices.yaml`, 0600, snapshot on every write, `backup restore` and `backup diff` including it), add/remove/rename and the field setters, CSV/YAML import and export, generic and duplicate names, the namespace shared with enrolled hosts, host-key pinning (`add`, `--host-key`, `--no-host-key`, `hostkey show\|accept\|set`) and the generated `known_hosts` |
+| `integration/device_scan.bats` | `device scan`, `discover`, `check`, `list --scan\|--probe`: `journalctl` answers with the made-up records of `tests/fixtures/sightings/`, the RADIUS auth log is a fixture file, `ssh-keyscan` answers with keys generated for the tests; the seen cache (`$TACCTL_VAR_LIB/devices-seen.json`), resumption after the cursor, the scan-time notices and the `Device notices` section of `status`; the clock is `TACCTL_TEST_NOW`, the zone UTC |
+| `integration/ssh_cli.bats` | `tacctl ssh` and `device ssh-config`: a `sudo` stub records the drop to the invoking user and an `ssh` stub records its argv (the options of each vendor profile, the pin, the login, no agent and no identity), who is admitted and the logged refusals, `-l` refused, the key-mismatch text, the Include fragment; `script` provides the terminal |
+| `integration/shell.bats` | `tacctl shell -c` and batch input through a `sudo` stub, exit statuses, the history file and its redaction. The interactive mode is the Go pty tests'. |
+| `integration/completion_shells.bats` | `tacctl completion zsh\|fish` in a real zsh (`compinit`, `compadd` captured) and a real fish: the scripts parse and answer with the words `tacctl __complete` gives |
+| `integration/tiers.bats` | extended with the `ssh` and `device` rows per tier, the `env_keep` line (no other environment is let through) and the refusal of a `SUDO_USER` that is not the account of `SUDO_UID` |
+| `integration/shim.bats` | extended with the release-binary tests (below) |
+| `integration/console_cli.bats` | `tacctl console`: `console.yaml` (0600, snapshots, `backup diff`/`restore`), the tier switches, user overrides and settings, `console show` with a stubbed `sshd -T` (the red warning when sshd does not force the console, still forwards or allows key logins), `console install\|remove\|check` |
+| `integration/console.bats` | the login console run as `tacctl-console` (a symlink to `dist/tacctl`): `-c` and its guard, sshd's `ForceCommand` form with `SSH_ORIGINAL_COMMAND`, batches, the per-line `sudo [-n] TACCTL_CONSOLE=<session>` argv, the session log lines, `system-shell`'s refusals. The terminal side is `internal/cli/console_pty_test.go` |
+| `integration/config_linux.bats` | extended with the server's own accounts: the fourth `TAC_USERS` field (`useradd -s`, `usermod -s`, `tac-console` following the shell, the summary's `console:` count) and the remove script giving `/bin/bash` back |
+
+**Terminal tests.** `internal/testpty` runs a program on a pseudo-terminal
+(no cgo, no new module: `golang.org/x/sys/unix`): the program gets a new
+session with the pty as its controlling terminal, so Ctrl-C, Ctrl-Z and
+Ctrl-\ typed on the master reach its foreground process group as on an ssh
+login. Every session has a hard deadline (10 s in `internal/shell`'s tests),
+after which the whole process group is killed and every later `Expect` fails,
+so a test never hangs. `internal/shell/pty_test.go` starts the test binary
+again in a helper mode and drives the real shell with it: the prompt, Tab
+completion, history search, the paste rule, Ctrl-C at the prompt and during a
+running command (the child reports its own state), Ctrl-Z ignored.
+
+**Release-asset tests** (`integration/shim.bats`): `setup_file` makes an
+ed25519 key and its `allowed_signers` line (no key is kept in the repository);
+the tests build a release directory (`SHA256SUMS` signed with
+`ssh-keygen -Y sign`, a stand-in binary built from the tree's commit), put a
+`wget` stub in front that serves `TACCTL_RELEASE_BASE_URL` as a directory, and
+run the shim in a tree checked out at a tag. They prove the download is used
+only at an exact tag, that a bad signature, a checksum mismatch, a binary of
+another commit, a missing key or a missing `ssh-keygen` falls back to
+building with the one-line reason, that a branch never downloads, and that arm64 hosts get the arm64 Go tarball and release asset.
+`TACCTL_RELEASE_BASE_URL` (the base of the release URLs, default the GitHub
+release download URL) is read by the shim only, for these tests;
+`make release-verify` and `bin/tacctl.sh --verify-release` check real assets
+(`ALLOWED_SIGNERS=<file>` for a trial key, see `docs/releasing.md`).
+
+**`TACCTL_SSHD_DROPIN`** (sshd's drop-in for the console,
+`/etc/ssh/sshd_config.d/tacctl-console.conf`; the `Include` check reads
+`sshd_config` beside its directory) and **`TACCTL_SHELLS_FILE`**
+(`/etc/shells`) are pointed into the test's tmpdir by `tmpenv.bash`, the Go
+sandboxes and the lifecycle tests alike; `sshd` and `systemctl` are always
+stubs. The console's own path (`/usr/local/bin/tacctl-console`) moves only
+with `TACCTL_TEST_ROOT`.
+
+**`TACCTL_VAR_LIB`** is the root of tacctl's variable data (`/var/lib/tacctl`:
+`ssh/known_hosts`, `devices-seen.json`, `linux/`); `tmpenv.bash` points it
+into the test's tmpdir and `internal/cli/sandbox_paths_test.go` guards that no
+lifecycle test touches the host's.
 
 ## The bats harness
 
@@ -224,7 +292,7 @@ Notes:
   `$TACCTL_CONFIG` text for what tacquito is *given* (anchor names, the
   `scopes:`/`groups:` of a user entry, the disabled marker, `secrets[]` order).
   Note the renderer quotes a hash whose hex is all digits.
-- Every mutating command snapshots first: `$TACCTL_STATE_DIR/backups/<ts>/{store.yaml,tacctl.yaml,manifest}`.
+- Every mutating command snapshots first: `$TACCTL_STATE_DIR/backups/<ts>/{store.yaml,tacctl.yaml,devices.yaml,manifest}` (`tacctl.yaml` and `devices.yaml` only when they exist).
   `tests/integration/backup.bats` has helpers for listing snapshots and comparing
   the live state before and after.
 - For legacy read-only mode (no store), use `place_fixture`. Every mutating
@@ -364,7 +432,7 @@ Clients: `ubuntu-noble`, `debian-trixie`, `debian-bookworm`,
 
 | Cycle | Does |
 |---|---|
-| `radius`, `tacplus` | snapshot of the host; `host enroll --method <m>` (per-host scope); users added to the scope and pushed with `host sync` (one of them a pre-existing account that needs `--adopt`); where the secret is; SSH login right and wrong, `sudo` and `sudo -i` for the superuser, none for the readonly user; a user removed from the scope on the server and not yet synced; the local administrator; the server unreachable (packets dropped at the server with nft) with timings; a wrong shared secret on the host; console login, the stand-in for GDM and a PAM client that is not root; re-enroll; the server's logs; `host unenroll`; the snapshot again, byte for byte |
+| `radius`, `tacplus` | (the client container maps IDs 0-55533, 65534-65535 and 80000-89999, since rootless podman's 65536 subordinate IDs cannot cover both with the default map) snapshot of the host; `host enroll --method <m>` (per-host scope); users added to the scope and pushed with `host sync` (one of them named like a pre-existing local account, which tacctl must leave alone and name in the summary as refused: `synced (4 users; 1 refused: carl)`; an account an earlier release adopted is taken out of tacctl's groups and nothing else on it changes; every account tacctl created has a UID in 80000-89999); an account left at a UID of 20000-29999 as an earlier release made it (state `created`, map entry at the legacy number) renumbered by the next sync on both sides (map rewritten and its old copy kept, UID, group and primary GID, home re-owned, a stray file outside the home reported and left, `synced (4 users; 1 renumbered; 1 refused: carl)`, nothing on a second sync); a disabled user expired and restored; removed users deleted (`userdel`, their group too, their UID still reserved on the server), the home kept without a terminal (moved to `/home/.tacctl-removed/<user>-<time>`, root's, 0700, a link in it not followed, unreadable to a local account later given the same UID) and deleted with `--remove-home`; the `/etc/login.defs` warning at enroll with `UID_MAX 85000` and none with the distribution's own (a real `useradd` then stays below 80000); the address enroll recorded, refused to `device add`; where the secret is; SSH login right and wrong, `sudo` and `sudo -i` for the superuser, none for the readonly user; a user removed from the scope on the server and not yet synced, then deleted by the sync; the local administrator; the server unreachable (packets dropped at the server with nft) with timings; a wrong shared secret on the host; console login, the stand-in for GDM and a PAM client that is not root; re-enroll; the server's logs; `host unenroll`; the snapshot again, byte for byte |
 | `switch` | all of `tacplus`, then `host enroll --method radius` on the enrolled host (nothing of pam_tacplus left, logins answered by FreeRADIUS), then back (nothing of pam_radius_auth's configuration left), then unenroll and the snapshot |
 | `probe` | no enroll: installs the package and prints what `pam_radius_auth` returns for accept, reject, a wrong secret, a silent server with `retry=0..2`, a missing server file, account, session and password change, and the accounting records the server got |
 
@@ -375,7 +443,7 @@ Each run prints `PASS`/`FAIL`/`NOTE` lines and exits non-zero on a `FAIL`;
 |---|---|
 | `run.sh` | builds the two images if needed (`localhost/tacctl-host-check:{server,client}-<distro>`, kept; the server image gets tacctl built from this checkout by its bootstrap, and the pinned pam_tacplus source through `tacctl config linux build`), starts the containers, runs the cycle |
 | `matrix.sh` | the runs recorded in `docs/radius-notes.md`, one after another, a log per run |
-| `server-setup.sh` | in the server: a store with three users (real bcrypt hashes), tacquito under its unit through the backend's own install phases (`tacctl _phase tacacs install account|start`), `backend enable radius` |
+| `server-setup.sh` | in the server: a store with five users (real bcrypt hashes), tacquito under its unit through the backend's own install phases (`tacctl _phase tacacs install account|start`), `backend enable radius` |
 | `client-prep.sh` | at client image build: sshd, sudo, a local administrator `ladm`, a pre-existing account `carl`, a stand-in `gdm-password` service file, and what a rootless container needs (below). No PAM module, no EPEL: enrollment brings those |
 | `sshtry.sh` | one SSH password login to the container's own sshd (via `SSH_ASKPASS`; `sshpass` is not in every base repository) |
 | `pamprobe.py` | a PAM client: runs the phases of a service for a user and prints each return code and how long it took |
@@ -415,6 +483,7 @@ shim.
 tests/containers/fresh/run.sh                # HEAD; --rev <commit> for another one
 tests/containers/fresh/run.sh --worktree     # the tracked files as they are, uncommitted changes included
 tests/containers/fresh/run.sh --rollback     # also back to the bash release and forward again
+tests/containers/fresh/run.sh --release <tag>  # a published release: the shim must install its verified binary
 ```
 
 An ubuntu:noble container with systemd, `git`, `wget`, `sudo` and
@@ -432,8 +501,11 @@ only installed the same packages. `--rollback` adds `upgrade --branch
 python3-bcrypt first), `upgrade` on the tag, `upgrade --branch
 master` and a second `upgrade` that must build nothing. Needs network access
 (Ubuntu mirrors, `dl.google.com`, GitHub for tacquito, the Go module proxy);
-prints `PASS`/`FAIL` lines and exits non-zero on a `FAIL`. The image
-`localhost/tacctl-fresh:noble` is kept; `--keep` leaves the container
+prints `PASS`/`FAIL` lines and exits non-zero on a `FAIL`. With `--release
+<tag>` the clone is at that tag and the shim downloads the real assets from
+GitHub, so it runs only after the release is published; it checks `Installing
+the <tag> release binary (linux/amd64, verified)` and that nothing was built.
+The image `localhost/tacctl-fresh:noble` is kept; `--keep` leaves the container
 `tacctl-fresh`.
 
 ## Install, upgrade, uninstall
@@ -471,6 +543,8 @@ not a knob: it stays an ordinary environment check.
 | `TACCTL_TEST_RANDOM=<hex>` | `Knobs.Rand()` yields those bytes, repeated as often as needed, each call starting at the first byte |
 | `TACCTL_FAULT=<point>[,<point>...]` | `Knobs.Fault(point)` returns an error for each named point |
 | `TACCTL_TEST_ROOT=<dir>` | tacctl's fixed host locations, which no `TACCTL_*` variable moves (the deploy clone `/opt/tacctl`, `/usr/local/bin/tacctl`, `/usr/local/go`, the bash completion, the man page, `/root`), move under `<dir>` (`paths.Paths.Reroot`), so a test can run `install`, `upgrade` and `uninstall` |
+| `TACCTL_TEST_CONSOLE_ENV=1` | the console (`tacctl-console`) keeps `TACCTL_*` and `PATH` from its environment, so the sandbox's paths and stubs reach it |
+| `TACCTL_TEST_PROC=<dir>` | stands for `/proc/self` where `host enroll --local` reads this machine's user namespace maps (`uid_map`, `gid_map`) |
 
 A malformed value is an error naming the variable; an empty one is the same as
 unset. The bootstrap shim honours `TACCTL_TEST_ROOT` for the installed command
@@ -520,7 +594,9 @@ tests/diff/run.sh --self-test                # the runner against itself and aga
 
 - **A is always a tag** (`--against`, default `0.1.18`, the last bash
   release): a shared clone of this repository checked out at the tag into a
-  temp dir, run from there; nothing of the working tree is used for A. B is
+  temp dir, run from there; nothing of the working tree is used for A. A tag
+  of the Go era (`0.2.0` on) runs as its own binary, built from that checkout
+  with the test knobs (as `make build` builds `dist/tacctl`). B is
   `go` (`dist/tacctl`, started with `TACCTL_TREE` pointing at this tree, as
   the bats harness does), `bash`, or any executable.
 - **Corpora** are `tests/diff/corpus/<name>.txt`: `users`, `scopes`, `groups`,
@@ -550,11 +626,14 @@ tests/diff/run.sh --self-test                # the runner against itself and aga
   generated password, secret or hash is the same on both sides; the Go code must
   draw its salts and secrets from `app.Knobs.Rand()` for that to hold. What is still
   normalised: ANSI colours (`--colour` keeps them), timestamps (`<TS>`, `<ISO>`), the
-  version, the sandbox and tree paths, and generated bcrypt hashes (not the ones
-  the command line itself carries).
+  version (and the commit and build date `version --long` prints), the sandbox and tree paths, the shipped template a device config's
+  `Using template:` note names (`<SHIPPED>/<name>.template`, whether the side
+  prints its path in the checkout or `built-in <name>.template`), and generated
+  bcrypt hashes (not the ones the command line itself carries).
 - Exit status: 0 no unexplained difference, 1 a difference, 2 a usage or setup
-  error. A line marked `@known` (an intended change listed in
-  `docs/plans/go-rewrite.md` 3.9) is reported as `known`, not a failure; the
+  error. A line marked `@known` (an intended change: an item of
+  `docs/plans/go-rewrite.md` 3.9, or a numbered item of the CHANGELOG's 0.2.1
+  list) is reported as `known`, not a failure; the
   runner says so when the marked line no longer differs.
 
 ## Characterisation tests: `tests/integration/characterisation.bats`
@@ -571,7 +650,7 @@ without a value exits 1 without a word.
 ## Isolation guarantees
 
 - Every bats test runs with `$TACCTL_ETC`, `$TACCTL_STATE_DIR`, `$TACCTL_LOG`,
-  `$TACCTL_BIN` and the RADIUS paths pointing at `$BATS_TEST_TMPDIR`. No test
+  `$TACCTL_BIN`, `$TACCTL_VAR_LIB` and the RADIUS paths pointing at `$BATS_TEST_TMPDIR`. No test
   touches `/etc/tacctl`, `/etc/tacquito`, `/var/log/tacquito` or a FreeRADIUS
   directory on the host. A test that reaches `TACQUITO_SRC`, the Linux host
   data, the logrotate directory or the fixed host locations sets those to its

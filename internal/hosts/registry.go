@@ -192,6 +192,29 @@ func (r *Registry) Forget(name string) error {
 	return r.Load()
 }
 
+// Replace writes e over the line of e.Name where it is (other lines of
+// that name are dropped), the file mode 0600; a name with no line is
+// appended.
+func (r *Registry) Replace(e Entry) error {
+	if _, ok := r.Find(e.Name); !ok {
+		return r.Remember(e)
+	}
+	var b strings.Builder
+	done := false
+	for _, l := range awkRecords(r.text) {
+		if !awkEqual(awkField(awkFields(l, "|"), 1), e.Name) {
+			b.WriteString(l + "\n")
+		} else if !done {
+			b.WriteString(e.format() + "\n")
+			done = true
+		}
+	}
+	if err := replaceFile(r.Path, []byte(b.String()), 0o600); err != nil {
+		return err
+	}
+	return r.Load()
+}
+
 // Remember is host_remember: e's old lines forgotten, its line appended,
 // the file mode 0600.
 func (r *Registry) Remember(e Entry) error {

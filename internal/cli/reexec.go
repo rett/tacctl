@@ -16,6 +16,9 @@ var noSudo = map[string]bool{
 	"completion":       true,
 	"__complete":       true,
 	"__completeNoDesc": true,
+	// The interactive shell (0.2.1) runs as the user and re-enters tacctl
+	// under sudo for each line it executes.
+	"shell": true,
 }
 
 // needsSudo is bin/tacctl.sh's re-exec condition: not root, not
@@ -32,9 +35,16 @@ func needsSudo(a *app.App) bool {
 }
 
 // keepEnv are the first words whose re-exec carries variables of the
-// invoker across sudo's env_reset, as command-line assignments: 'host' runs
-// ssh as the invoking user and needs the agent socket (bin/tacctl.sh). A
-// later word that needs the same (a shell mode, 'ssh <name>') is one entry.
+// invoker across sudo's env_reset, as command-line assignments: 'host'
+// runs ssh as the invoking user to enrol and sync hosts with their agent
+// (bin/tacctl.sh). 'tacctl ssh' does not: its sessions log in by password,
+// never with the agent. sudo accepts 'SSH_AUTH_SOCK=...' without a SETENV
+// tag because both tacctl drop-ins keep it ('Defaults!<tacctl> env_keep +=
+// "SSH_AUTH_SOCK"', tier.EnvKeep); a rule that matches ALL (a superuser's
+// own sudoers line, with or without the drop-ins) allows it anyway. The
+// assignment, rather than env_keep alone, is what carries the socket for
+// the latter, where tacctl's Defaults line may not be installed. A later
+// word that needs the same is one entry; it must be in tier.EnvKeep too.
 var keepEnv = map[string][]string{
 	"host": {"SSH_AUTH_SOCK"},
 }

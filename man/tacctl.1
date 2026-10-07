@@ -1,6 +1,6 @@
 .\" Manual page for tacctl, the management CLI for TACACS+ (tacquito) and RADIUS (FreeRADIUS).
 .\" Render locally with: groff -man -Tascii man/tacctl.1 | less
-.TH TACCTL 1 "2026-10-04" "tacctl 0.2.0" "tacctl Manual"
+.TH TACCTL 1 "2026-10-07" "tacctl 0.2.1" "tacctl Manual"
 .SH NAME
 tacctl \- manage users, groups and scopes for TACACS+ (tacquito) and RADIUS (FreeRADIUS)
 .SH SYNOPSIS
@@ -38,9 +38,10 @@ re-executes itself under
 .BR sudo (8)
 automatically when invoked by a non-root user.
 .BR "tacctl hash" ,
-.B tacctl version
-and
+.BR "tacctl version" ,
 .B tacctl completion
+and
+.B tacctl shell
 are deliberate exceptions: they run as the invoking user.
 .SH COMMANDS
 .SS System lifecycle
@@ -49,10 +50,11 @@ are deliberate exceptions: they run as the invoking user.
 Install tacctl and the TACACS+ backend. Builds the tacquito binary with the
 Go toolchain (installed by
 .I /opt/tacctl/bin/tacctl.sh
-when it is missing), builds the
+when it is missing), installs the
 .I /usr/local/bin/tacctl
-binary from the clone in
-.IR /opt/tacctl ,
+binary (the verified release binary when the clone in
+.I /opt/tacctl
+is at a release tag, otherwise built from the clone),
 installs the shell completion and this manual, creates the
 .B tacquito
 service user and the state directory
@@ -101,7 +103,17 @@ disabled for the lifetime of the install. It exists because Junos
 internal daemons (mgd, jsd, op-script probes) run non-tty CLI commands
 as root and generate accounting packets; without a
 .B root
-entry tacquito logs an error for every packet.
+entry tacquito logs an error for every packet. Records of
+.B root
+with no terminal (port
+.BR non\-tty ,
+which Junos sends for them,
+.B unknown
+or empty) are answered with success and not recorded: those are the
+device's own sessions, several a minute on Junos. A
+.B root
+login on the console or over ssh has a port and is recorded, its commands
+included.
 .B "tacctl user passwd root"
 is rejected — root is a Junos built-in intended for local/console use
 only and must never authenticate via TACACS+.
@@ -115,7 +127,8 @@ changed, pull the tacctl repository in
 (after switching to
 .BI --branch " name"
 when given) and, when the installed binary was not built from the commit
-now checked out, build it again from the clone and re-execute it once, install
+now checked out, replace it (the verified release binary at a release tag,
+otherwise built from the clone) and re-execute it once, install
 packages the new release needs, bring every enabled
 backend's configuration in line with the release (a re-render from the
 store; RADIUS restarts when its files or unit drop-in changed), refresh
@@ -176,8 +189,8 @@ adds the commit, the build date, the Go version and whether the test knobs
 are compiled in
 .RB ( "test knobs: off" ).
 .TP
-.B completion bash
-Print the bash completion script on stdout. The script asks
+.B completion bash|zsh|fish
+Print the completion script of that shell on stdout. The script asks
 .B "tacctl __complete"
 for the words, so completion always matches the installed binary. Live names
 (users, groups, scopes, backends, listeners, backups) come from
@@ -185,15 +198,24 @@ for the words, so completion always matches the installed binary. Live names
 which needs root or the NOPASSWD rule of
 .BR "config sudoers install" ;
 without it only fixed words are completed. Install and upgrade write the
-script to
-.IR /etc/bash_completion.d/tacctl .
+bash script to
+.IR /etc/bash_completion.d/tacctl ;
+the zsh and fish scripts are only printed: redirect them to
+.I ~/.zfunc/_tacctl
+(with that directory on
+.B fpath
+before
+.BR compinit )
+or to
+.IR ~/.config/fish/completions/tacctl.fish .
 .SS User management \fB(tacctl user)\fR
 .TP
 .B user list
-List all users with name, group, status, and password age.
+List all users with name, Linux UID (\- when none is assigned), group, status,
+password change date and scopes.
 .TP
 .BI "user show " name
-Show detailed user info: group, status, password change date and age,
+Show detailed user info: group, Linux UID, status, password change date and age,
 last login (the most recent of every enabled backend: the TACACS+
 accounting log, the RADIUS auth log), Cisco privilege level, Juniper
 class, and a hash fingerprint. Read-only -- does not prompt for the
@@ -261,7 +283,10 @@ Rename a user.
 Move a user to a different group without changing the password.
 .TP
 .BI "user verify " name
-Show user details and verify the password interactively.
+Show user details and verify the password interactively. A stored hash
+with a bcrypt cost above 16 (tacctl writes 10\-14) is refused before the
+password is asked, since checking it would take hours; tacquito still
+authenticates it.
 .TP
 .B "user scope " \fIname\fR " " [ "list " | " add " \fIs\fR[,s...] | " remove " \fIs\fR[,s...] | " replace " \fIs\fR[,s...] | " remove \-\-all" ]
 Manage which scopes
@@ -342,7 +367,10 @@ the string tested is
 .BR running-config ,
 never the full line, so a regex that repeats the command word
 .RB ( "^show .*$" )
-can never match and is rejected. Omit
+can never match and is rejected. A regex may not contain a comma (the
+rule's stored line form separates matches with commas); write
+.B \ex2c
+for one. Omit
 .B --match
 to cover any arguments.
 The first matching rule wins; tacquito returns FAIL if no rule
@@ -666,7 +694,7 @@ clears the override and falls back to the unit default.
 Show enrolled Linux hosts with their SSH target, scope, server address,
 method and user count.
 .TP
-.B "host enroll " "{ [" user "@]" host " | \-\-local } [ \-\-method tacplus|radius ] [ \-\-scope " name " ] [ \-\-server " address " ] [ \-\-name " name " ] [ \-\-port " n " ] [ \-\-identity " file " ] [ \-\-build\-on\-host ] [ \-\-allow\-uid\-mismatch ] [ \-\-adopt " names " ]"
+.B "host enroll " "{ [" user "@]" host " | \-\-local } [ \-\-method tacplus|radius ] [ \-\-scope " name " ] [ \-\-server " address " ] [ \-\-name " name " ] [ \-\-port " n " ] [ \-\-identity " file " ] [ \-\-build\-on\-host ] [ \-\-allow\-uid\-mismatch ] [ \-\-remove\-home ]"
 Copy the
 .B "config linux"
 install script to a host over SSH, run it there as root, and register the
@@ -695,19 +723,79 @@ protocol. Re-enrolling a registered host with the other method switches it:
 the first method's module, secret file and SELinux module are removed
 (packages stay). Without
 .B \-\-scope
-a scope named
-.BI linux\- name
-is created for the host's own address (/32) with a generated secret and
-.B protocols
-set to the method's protocol, so a
-secret read off one host is useless from another. The server address
+a registered host keeps the scope it is registered in, and any other host
+goes into the scope that answers its address (said, with the prefix); a
+host whose address no scope covers is refused before anything changes,
+with the commands that add the address to a scope or give the host a scope
+of its own
+.RB ( "scope add linux\-" "name " "\-\-prefixes " addr "/32 \-\-secret generate" ,
+so a secret read off one host is useless from another). Naming another
+scope for a registered host moves it: enroll first names the users whose
+accounts the move deletes and asks on a terminal; without one it stops
+unless given
+.BR \-\-yes .
+tacctl never moves a host itself:
+.BR "host sync" ,
+.B "host list"
+and
+.B "config validate"
+warn, with the enroll that moves it, when another scope answers the
+address recorded for a host. The scope must be the
+one that answers the host's requests (the first prefix that holds the
+address they come from): for
+.B \-\-local
+that address is 127.0.0.1, and a scope that does not cover it is refused
+before anything changes; for another host, a scope that does not cover the
+address its name resolves to is a warning (NAT may change it).
+.B "host sync"
+of this machine warns when its scope no longer covers 127.0.0.1.
+The server address
 defaults to the source address of the route to the host.
 .B \-\-local
 enrolls this machine without SSH. ssh runs as the user who invoked
 .BR sudo (8),
-using their keys; the remote login must be root or able to sudo. The
+using their keys; the remote login must be root or able to sudo. That login
+(the provisioning account:
+.I user
+of the target, else the invoking user's name) must be a local account on the
+host that does not authenticate through tacctl, so enrolment and sync keep
+working when this server cannot be reached;
+.B "host enroll"
+refuses a user of tacctl, and
+.B "host sync"
+warns about an existing enrolment that uses one.
+.B "tacctl ssh"
+never uses it. The
 remote copy of the script is deleted after the run. Nothing is registered
-if the remote run fails.
+if the remote run fails. Accounts are created, expired and deleted as by
+.B "host sync"
+(including the question about removed users' homes, and
+.BR \-\-remove\-home ).
+.IP
+After a successful run the host's public key files are read over the same
+ssh connection
+.RB ( "cat /etc/ssh/ssh_host_*_key.pub" ,
+read-only; the connection is the administrator's own ssh, checked against
+their known_hosts), and the target is scanned
+.RB ( ssh\-keyscan
+of the host and port, as root). Only the keys both reads hold are pinned in
+the device registry for
+.BR "tacctl ssh" ;
+the output lists their
+.B SHA256:
+fingerprints. A key type the two reads give different keys for pins nothing:
+both sets are printed and
+.B "host hostkey\-mismatch"
+is logged to syslog (auth.warning). A type only one read has is reported and
+not pinned. Key files that cannot be read, or a host that does not answer the
+scan, pin nothing, with a warning and the
+.B "device hostkey"
+command; the enrolment succeeds either way.
+.B "host sync"
+of a pinned host compares the key files with the pin and reports a
+difference; it never re-pins. A host enrolled with
+.B \-\-local
+is not pinned.
 .IP
 For
 .BR tacplus ,
@@ -733,10 +821,11 @@ enforcing mode is not verified.
 .IP
 A reject from the server is final. When the server does not answer (or the
 host's shared secret is wrong), login falls through to the local password,
-which only adopted accounts have; local administrators outside
+which tacctl's accounts do not have; local administrators and every other
+local account outside
 .B tac\-users
-never reach the server. With the server silent a user without a local
-password is refused after about 5\(en6 s (tacplus) or 8\(en9 s (radius).
+never reach the server. With the server silent a user of tacctl is refused
+after about 5\(en6 s (tacplus) or 8\(en9 s (radius).
 pam_radius_auth 2.0.x on Ubuntu 24.04 and Debian 12 neither sends nor checks
 Message-Authenticator (BlastRADIUS, CVE-2024-3596); elsewhere tacctl adds
 .BR require_message_authenticator .
@@ -745,27 +834,160 @@ Session accounting over RADIUS is sent only when the RADIUS
 listener is on the authentication port plus one, and never from Ubuntu
 24.04 (malformed records).
 .TP
-.B "host sync " "{ " name " | \-\-all } [ \-\-allow\-uid\-mismatch ] [ \-\-adopt " names " ]"
+.B "host move " "{ " name " [ " scope " ] | \-\-all } [ \-\-yes ] [ \-\-remove\-home ] [ \-\-allow\-uid\-mismatch ]"
+Move an enrolled host to another scope: an enroll with its registered
+target, port, identity, server and method, into
+.I scope
+or, without one, the scope that answers its address. Like an enroll naming
+the scope, it names the users whose accounts the move deletes and asks
+first (without a terminal it stops unless given
+.BR \-\-yes ).
+.B \-\-all
+moves every host another scope answers.
+.TP
+.B "host sync " "{ " name " | \-\-all } [ \-\-allow\-uid\-mismatch ] [ \-\-remove\-home ]"
 Push the scope's current user list to the host: new users get accounts,
-tier changes move group membership, and users no longer in the scope lose
-the tac-* groups (accounts tacctl created are expired, which also blocks
-SSH-key logins). Run after
-.BR "user add" ", " "user remove" ", " "user move" " or " "user scope"
+tier changes move group membership, disabled users' accounts are expired
+(files kept; enabling the user restores the account), and the accounts of
+users no longer in the scope (or no longer tacctl users) are deleted with
+.BR userdel (8),
+with an own group an earlier release made when it is empty. Their UIDs stay
+reserved on the server. Run after
+.BR "user add" ", " "user remove" ", " "user move" ", " "user disable" " or " "user scope"
 changes.
 .IP
-If the host already has a local account under a TACACS+ user's name that
-tacctl did not create, enroll and sync stop before changing anything
-unless the name is given with
-.BI \-\-adopt " name" [, name ...].
-An adopted account keeps its UID, local password, files and groups. A
-warning is printed if it belongs to a privileged local group, and again
-when the user is later removed or disabled: adopted accounts are not
-locked or expired, so the account stays usable locally until blocked by
-hand.
+tacctl's groups have fixed GIDs, the first numbers of the range:
+.B tac\-users
+(+0, every host: every managed account's primary group and the PAM gate),
+.B tac\-console
+(+1, the tacctl server only: sshd's console drop-in),
+.B tac\-superuser
+(+2, every host: sudo),
+.B tac\-operator
+(+3) and
+.B tac\-readonly
+(+4) (the tacctl server only: its tiers sudoers). Accounts have no group
+of their own and get a 0700 home. A sync moves what an earlier release made:
+primary groups to
+.BR tac\-users ;
+own groups removed when empty; groups moved to their fixed GIDs
+.RB ( "groupmod \-g" );
+on a host other than the server, the tier and console groups removed when
+only tacctl's accounts are in them. A fixed GID another group holds is left
+to it, with a warning.
+.IP
+tacctl manages an account only when it created it on that host and its UID
+there is in the server's range (80000\(en89999 by default; see
+.BR "config linux uid\-range" ). Any other account is never created, expired,
+deleted or otherwise changed, with one exception: it is taken out of
+tacctl's own groups
+.RB ( tac\-users ", " tac\-readonly ", " tac\-operator ", " tac\-superuser ", " tac\-console )
+and nothing else on it changes, so it is a plain local account. A local
+account named like a user of tacctl that tacctl did not create is otherwise
+left as it is, and that user gets no account on that host (a warning says
+so); the rest of the sync goes on. The summary counts the accounts tacctl
+manages on the host and names the refused users, as in
+.RB \(lq "c1: synced (4 users; 1 refused: carl)." \(rq.
+.IP
+An account tacctl created with a UID of a range the server used before
+(20000\(en29999, where releases up to 0.2.0 gave them out, or the range before a
+.BR "config linux uid\-range" )
+is renumbered first, to the same offset in the current range: its UID
+.RB ( "usermod \-u" ,
+which re-owns the home directory tree)
+.RI "(\(lq'" user "': renumbered " old " \-> " new " (home re\-owned)\(rq;"
+the summary counts them, as in
+.RB \(lq "c1: synced (3 users; 1 renumbered)." \(rq).
+Files under
+.IR /home ", " /tmp ", " /var/tmp ", " /var/spool/cron " and " /var/mail
+that still carry the old number are listed (at most 20), never changed. An
+account whose user is logged in, or whose new UID is taken on the
+host, is left as it is and named as refused until a later sync.
+.IP
+A removed user's home directory is deleted only when asked for. From a
+terminal, enroll and sync read the host's
+.B "getent passwd"
+over the same ssh connection (read-only, before anything runs there) and ask
+.RI "\(lqDelete /home/" user " of removed user '" user "'? [y/N]\(rq"
+for each removed user;
+.B \-\-remove\-home
+deletes them all without asking; with no terminal and no flag every home is
+kept. A kept home is moved to
+.IR /home/.tacctl\-removed/ user \- YYYYmmdd \- HHMMSS
+(the directory is root's, mode 0700; the moved tree is made root:root with
+.BR "chown \-hR" ,
+never following a link), so a local account that later gets the same UID
+does not inherit it; the host prints
+.RI "\(lqhome kept: /home/.tacctl\-removed/" user \- time \(rq.
+A home that is not a directory directly under
+.IR /home ,
+is a symbolic link, is not owned by the account, is also another
+account's home or is on another file system is neither deleted nor moved
+.RI "(\(lqhome kept in place: " home " (" reason ")\(rq)."
+.IP
+Enroll and sync also read the host's
+.I /etc/login.defs
+(read-only) and warn when its
+.BR UID_MIN \(en UID_MAX
+range overlaps the server's range, where local
+.BR useradd (8)
+could give out a UID tacctl has assigned (the default
+.B "UID_MAX 60000"
+does not overlap 80000\(en89999); keep it clear of the range there. tacctl
+never edits the file. Before anything runs there, enroll and sync read the
+host's
+.I /proc/self/uid_map
+and
+.IR gid_map ,
+and refuse a host whose user namespace cannot hold the range
+.RI "(\(lq'" host "' cannot hold UIDs " min \- max ": its user namespace maps only " ranges " (an unprivileged container). \&...\(rq)."
+.IP
+Enroll and sync record the address the ssh connection reached (the host's
+side of
+.BR SSH_CONNECTION ;
+.B \-\-local
+records 127.0.0.1) as the host's address in the device registry:
+.B "device add"
+refuses it, sightings from it are the host's, and
+.B "device discover"
+does not list it. A sync that finds another address records it, logs
+.BR "host address\-changed" ,
+and raises the
+.B address\-changed
+notice
+.RB ( "device notice " \fIname\fP " ack address\-changed" ).
+.IP
+A host with no pinned host key gets the keys it offers pinned, as at
+enrollment. A pin is never changed by a sync: a key that differs from the
+pinned one is reported, with the pinned and offered fingerprints, and new key
+types are reported; both are fixed with
+.BI "device hostkey " name " accept" R.
+.TP
+.B "host target " name " [ " "\fR[\fPuser@\fR]\fPhost" " ] [ \-\-port " n " ] [ \-\-identity " file " | \-\-no\-identity ]"
+With only a name, show how tacctl reaches the enrolled host: its ssh target,
+port, identity file, the server address the host uses, the address recorded
+for it, its scope and method. With a new target, port or identity
+(administrators only; not for a host enrolled with
+.BR \-\-local ),
+test the change first: log in as
+.B "host enroll"
+and
+.B "host sync"
+do (the invoking user's ssh, agent, port and key), check that the login is
+root or may use sudo (sudo that asks for a password is refused without a
+terminal), read the host's ssh keys over that session and compare them with
+the pinned ones (another key refuses the change, with both fingerprint sets:
+the host must be the same machine), and record the address reached. A
+provisioning login that is a user of tacctl is refused, as at enrollment. Only
+then is the registry line rewritten (scope, server and method kept), after a
+snapshot, and logged
+.RB ( "host target name= target= port= by=" ).
+No script runs on the host.
 .TP
 .B "host unenroll " name " [ \-\-force ]"
-Run the removal script on the host and drop it from the registry. Local
-accounts and home directories are left in place. If the removal fails the
+Run the removal script on the host and drop it from the registry, with its
+pinned host keys. Local accounts and home directories are left in place:
+the removal script changes no account. If the removal fails the
 host stays registered unless
 .B \-\-force
 is given.
@@ -813,8 +1035,11 @@ PAM services (where present) at the server for members of
 .B tac-users
 only, and grants
 .B tac-superuser
-full sudo. Accounts that already exist are adopted with their local
-password left intact. Other local accounts are not affected. It refuses
+full sudo. Accounts of removed users that it created are deleted (homes
+only with
+.BR \-\-remove\-home );
+a local account named like a user that it did not create is left alone and
+that user gets no account. Other local accounts are not affected. It refuses
 to run when no local administrator with a usable password exists outside
 the TACACS+ user list, and puts the PAM files back if any step fails.
 Re-run it with
@@ -822,20 +1047,72 @@ Re-run it with
 to sync users after changes on the server.
 .TP
 .B "config linux uid " "[ " username " [ " uid " ] ]"
-List the UID assigned to each user, print one user's UID, or change it.
-Each user has one number, used as both UID and primary GID on every
-enrolled host; it is assigned the first time the user is sent to a host
-and kept in
-.IR /etc/tacctl/linux\-uids .
+List the UID assigned to each user, print one user's UID, or change it
+(only a change writes the file).
+Each user has one number, its UID on every enrolled host (its primary
+group is
+.BR tac\-users ); it is assigned the first time the user is sent to a host,
+from the server's range only (see
+.BR "config linux uid-range" ;
+after the highest one given, never reused, not even after the user is
+removed), and kept in
+.IR /etc/tacctl/linux\-uids ,
+whose first line records the range it is numbered for.
+A value outside that range is refused; an entry outside it from an earlier
+release is listed as not used on hosts, and its user gets no account until
+given a number in the range. When the range is used up, the script refuses
+the next user.
 The install and sync scripts stop before changing anything if that number
-is already used on a host by another user or group, and print the ways to
+is already used on a host by another account, and print the ways to
 resolve it: renumber the conflicting account on the host, assign the
-user a different number with this command, or accept a different
-number on that host with
+user a different number with this command, or accept another free number
+of the range on that host with
 .BR \-\-allow\-uid\-mismatch .
-Changing a UID does not renumber accounts that already exist on hosts.
-Accounts that existed before enrollment are adopted with their own UID,
-and a difference from the assigned one is reported on every sync.
+Changing a UID does not renumber accounts that already exist on hosts; a
+difference from the assigned one is reported on every sync.
+.TP
+.B "config linux uid\-range " "[ " min \- max " ]"
+Show or change the range Linux host accounts get their UIDs from (its
+first five numbers are also the GIDs of tacctl's groups): one range for all hosts, kept in
+.I tacctl.yaml
+as
+.B linux.uid_min
+and
+.BR linux.uid_max ,
+80000\(en89999 by default. The default lies above the distributions'
+.BR useradd (8)
+range (UID_MAX 60000) and systemd's reserved UIDs, inside the range systemd
+leaves unused (65536\(en524287), and below the usual
+.I /etc/subuid
+start (100000). A range is refused when it holds fewer than 1000 numbers,
+starts below 1000, ends above 4294967293, or overlaps what systemd reserves
+(60001\(en60513, 61184\(en65519, 65534\(en65535, 524288 and up); one that
+overlaps useradd's default 1000\(en60000 is accepted with a warning (every
+host's
+.I /etc/login.defs
+must then keep clear of it).
+A change renumbers
+.I linux\-uids
+at once by offset (the first number of the old range becomes the first of
+the new one; the old file is kept as
+.IR linux\-uids.pre\-renumber\- time ),
+and every host renumbers the accounts tacctl created there at its next
+enroll or sync. It is refused, changing nothing, when an entry would land
+past the new range's end, when a number would be another name's, or when
+the new range overlaps one the file was numbered for before (unless it
+starts at the same number: a range grown or shrunk at its end moves
+nothing). A file numbered by a release that gave out UIDs from 20000 up
+(no record, entries in 20000\(en29999) is renumbered the same way by the
+first
+.BR "config linux uid" ", " "config linux script" ", " "host enroll" " or " "host sync" .
+A host that is an unprivileged container whose user namespace does not map
+the whole range (rootless podman or LXC usually map 0\(en65535) is refused
+by
+.B "host enroll"
+and
+.BR "host sync" ;
+give it an ID map that covers the range, run it privileged, or choose a
+range every host can hold.
 .TP
 .B "config linux builds " "[ list | clear ]"
 List or delete the pam_tacplus modules that
@@ -869,13 +1146,18 @@ which grants tacctl by tier to tacctl users that have local accounts.
 Members of
 .B tac-readonly
 may run
-.BR passwd ", " status ", " version ", " "user list" ", " "user show" ", "
-.BR "group list" ", " "scope list" ", " "backend list" " and " "backend status" .
+.BR passwd ", " status ", " version ", " help " (also " \-h ", " \-\-help "), " "user list" ", " "user show" ", "
+.BR "group list" ", " "scope list" ", " "backend list" ", " "backend status" ", "
+.BR "device list" ", " "device show" ", " "device notices" ", " "device ssh\-config" ", "
+.BR "ssh " \fIname\fR " and " "device ssh " \fIname\fR
+(the devices of their own scopes only), and the console's own
+.BR _console\-policy .
 Members of
 .B tac-operator
 may additionally run
 .BR "log tail" ", " "log search" ", " "log failures" ", " "log accounting" ", "
-.BR "config validate" " and " "backup list" .
+.BR "config validate" ", " "backup list" ", " "device check" ", " "device scan" ", "
+.BR "device discover" ", " "device export" " and " "console show" .
 Members of
 .B tac-superuser
 get full
@@ -888,6 +1170,22 @@ in the store
 outside the local group
 .B tac-users
 are not tier-restricted.
+.B "tacctl upgrade"
+rewrites an installed
+.I /etc/sudoers.d/tacctl\-tiers
+that differs from the release's rules (after
+.B visudo \-cf
+accepts them), so a release's new verbs reach the tiers; it never creates the
+file. Both sudoers files carry
+.B Defaults!/usr/local/bin/tacctl env_keep += "SSH_AUTH_SOCK TACCTL_CONSOLE DISPLAY"
+(the agent socket for
+.BR "tacctl host" ,
+the login console's session marker, and the X11 display
+.B "tacctl ssh \-X"
+hands on) and nothing else of the caller's environment; tacctl also refuses a
+.B SUDO_USER
+that is not the account of
+.BR SUDO_UID .
 .TP
 .BI "config password-age " [ days ]
 Show or set the password age warning threshold. Default 90 days.
@@ -1207,10 +1505,14 @@ and
 .I tacctl\-radius.log
 in the package's log directory.
 .TP
-.BI "log tail " [ n ]
+.BI "log tail " "[ \-f | \-\-follow ] [ " n " ]"
 Show the last
 .I n
 entries (default 20): the tacquito journal; the RADIUS auth log and daemon log.
+With
+.BR \-f ,
+then print new entries of every backend as they arrive (each line behind
+its backend's id when more than one is enabled) until Ctrl-C.
 .TP
 .BI "log search " term
 Search logs for a username or keyword (TACACS+: over the last 7 days).
@@ -1305,6 +1607,152 @@ and hex-encoded forms;
 /
 .B "user passwd --hash"
 accept either and normalize to hex on write.
+.SS Interactive shell \fB(tacctl shell)\fR
+.TP
+.BI "shell " "[ \-\-no\-history ] [ \-\-idle " min " ] [ \-c " line " ]"
+A prompt,
+.BR "tacctl> " ,
+where each line is a tacctl command without the
+.B tacctl
+in front:
+.BR "user list" ,
+.BR "scope show lab" .
+The shell runs as the invoking user and holds no privilege: each line runs as
+.B sudo
+.RB [ \-n ]
+.I tacctl words
+with the terminal attached, so sudo's policy, its log line and tacctl's tier
+gate apply to every line exactly as from a login shell, and prompts, password
+input and Ctrl-C work as they do there.
+.B \-n
+is used for members of
+.B tac-users
+in the readonly or operator tier, or in no tier group (they have no local
+password and their rules are NOPASSWD); a line that sudo refuses them and
+that their tier's sudoers rules do not cover is reported as not permitted for
+the tier. A member of
+.B tac-superuser
+runs plain
+.BR sudo ,
+which asks for the network password on the terminal when a line needs it
+(once; sudo's cache then applies), so superusers' write verbs work from the
+shell.
+.B hash
+and
+.B completion
+lines run without sudo.
+For
+.B host
+lines the agent socket
+.RB ( SSH_AUTH_SOCK )
+is passed as it is when tacctl re-executes itself under sudo.
+Messages and exit statuses are those of the command; after a command that
+ends with a non-zero status the shell prints
+.BR "[exit " \fIN\fB ] .
+.IP
+A line is split into words at blanks (space, tab); single quotes, double
+quotes and backslash quote as in
+.BR sh (1),
+and nothing else is special: there are no variables, globbing, pipes,
+redirections, command separators, command substitution or history expansion
+(\c
+.BR ; ,
+.BR | ,
+.BR $( ,
+backticks,
+.BR > ,
+.B !
+are ordinary characters of a word). A line is at most 4096 bytes.
+The shell's own words are
+.B help
+(the top-level usage),
+.BI "help " command
+(the usage of that command's family),
+.B history
+(the lines entered, as stored),
+.B exit
+and
+.BR quit .
+.IP
+Editing keys: Left/Right, Home/End (Ctrl-A, Ctrl-E), Esc-b and Esc-f (or
+Alt-Left, Alt-Right) by word, Backspace, Delete, Ctrl-K, Ctrl-U, Ctrl-W,
+Ctrl-T, Ctrl-L; Up/Down (Ctrl-P, Ctrl-N) step through the history and
+Ctrl-R searches it backwards as you type (Ctrl-R again: further back; Enter
+runs the match; Ctrl-G gives the line back). Tab completes commands,
+sub-commands, flags and names (users, groups, scopes, hosts, devices, ...,
+asked of
+.B sudo \-n tacctl _completion-names
+and kept for 5 seconds); a second Tab lists the matching words alone, in
+columns that fit the terminal. ? inserts nothing and shows help for the
+cursor's position: where words can come, \(lqPossible completions:\(rq with
+each one's argument column and description (a device or host with its
+vendor, address and scope); after a command that takes arguments, its usage
+lines, its options and what comes next (\(lqNext: <username> <group>\(rq,
+\(lqNext: <Enter> to run\(rq). Inside quotes, or after a backslash, ? is
+typed as a character. A list of more than 40 entries asks first
+(\(lqShow all 45 devices? [y/N]\(rq): y shows it, any other key (or
+Ctrl-C) prints how to narrow it and gives the line back. Help from ? taller
+than the terminal is shown a screenful at a time (\(lq\-\- more (Space:
+page, Enter: line, q: quit) \-\-\(rq; q or Ctrl-C stops). A paste is inserted as one line (its newlines become
+blanks, at most 4096 bytes) and runs only on Enter. Ctrl-C at the prompt discards the
+line; Ctrl-C while a command runs ends the command, and the shell carries on.
+Ctrl-Z and Ctrl-\e do nothing: there is no job control, and the commands
+inherit that. Ctrl-D on an empty line, like
+.BR exit ,
+leaves the shell.
+.IP
+The history is kept in
+.I ~/.local/state/tacctl/history
+(mode 0600, the newest 1000 lines).
+A line is stored redacted: everything after
+.BR \-\-secret ,
+.B \-\-hash
+or
+.BR \-\-password ,
+after
+.B set
+in a
+.B secret ... set
+line, after
+.B import
+when a value follows it, and after the word of a
+.B passwd
+line is replaced by
+.BR \[u2026](redacted) ;
+.B "scope secret lab set x"
+is stored as
+.BR "scope secret lab set \[u2026](redacted)" .
+A recalled line that carries the mark is refused; type the value again.
+Lines ended with Ctrl-C are not stored.
+.B \-\-no\-history
+keeps the history of the session in memory only.
+.IP
+.BI "\-\-idle " min
+ends the shell after
+.I min
+minutes at the prompt without input (0, the default: never; at most 1440);
+the time a command runs does not count.
+.IP
+.BI "\-c " line
+runs one line and exits with its status; the line is stored in the history.
+With standard input not a terminal (\c
+.BR "tacctl shell < file" ),
+the shell runs the lines of the input in order, with no prompt and no
+history, and stops at the first line that ends with a non-zero status,
+exiting with that status. The commands of such a batch get no standard input
+(it is the script), so a command that asks a question cannot be answered
+from it: use its
+.B \-y
+flag where it has one.
+Over ssh, ask for a terminal to get the interactive shell:
+.BR "ssh \-t " "host tacctl shell" ;
+without
+.B \-t
+ssh allocates none, and the shell reads commands from standard input and
+says so on standard error.
+Bare
+.B tacctl
+on a terminal still prints the usage and exits 1.
 .SH SCOPE MANAGEMENT
 A
 .I scope
@@ -1473,7 +1921,37 @@ is given, which strips the scope from those users.
 .B \-\-all
 takes no CIDRs, and
 .B \-\-force
-is only valid with it.
+is only valid with it. A scope enrolled Linux hosts use is not removed
+(move them first:
+.BR "host move" ).
+.TP
+.B "scope prefixes " \fIscope\fR " move " \fIcidr\fR[,cidr...] " " \fIother\fR
+Move the CIDRs from
+.I scope
+to
+.I other
+in one change, so no address they hold is left unanswered. The same checks
+as remove and add apply. Enrolled hosts whose addresses another scope then
+answers are named, with the
+.B "host move"
+that follows them; none is moved.
+.SS Staging addresses \fB(tacctl scope staging)\fR
+.TP
+.BI "scope staging " "[ list | remove " address " ]"
+A host or network device provisioned off-site for a scope, at a bench
+address the scope does not cover
+.RB ( "host enroll ... \-\-scope " "scope " "\-\-staging" ,
+.BR "config cisco" | juniper | wti " \-\-scope " "scope " "\-\-staging " "ip " [ "\-\-name " device ]),
+has that address added to the scope as a /32: the scope's own secret and
+users answer it there, so nothing changes on the device when it is
+installed in the scope's prefixes. The /32 is removed once the host (its
+enroll or sync) or the registered device
+.RB ( "device set" )
+is seen at another address the scope covers.
+.B list
+(the default) shows them with where each is seen now;
+.B remove
+takes one out by hand.
 .SS Per-scope secret \fB(tacctl scope secret)\fR
 .TP
 .BI "scope secret " "scope " "show"
@@ -1735,6 +2213,928 @@ The change takes effect for the next
 .B "config juniper"
 render of the named scope — existing device configs are unchanged
 until the new method-list stanzas are pushed.
+.SH DEVICE REGISTRY
+The
+.I device registry
+gives names to the network devices that authenticate against this server, so
+that they can be listed, looked up and acknowledged by name. It is kept in
+.I /etc/tacctl/devices.yaml
+(mode 0600, root only) and never touches
+.IR store.yaml :
+a device's scope and vendor tag are looked up from the store each time they are
+shown, not stored, and registering a device renders nothing and restarts
+nothing. Every write takes a snapshot first (see
+.BR "backup list" ).
+.PP
+A device is found by name or by its registered address; names are compared
+without regard to case. Enrolled Linux hosts
+.RB ( "tacctl host" )
+share the namespace: they are listed and shown as
+.B linux
+devices, read-only, and a device cannot take a host's name (nor
+.B "host enroll \-\-name"
+a device's). An address is registered at most once. An address that is not
+registered is not found, even when a scope covers it.
+.PP
+A name that is a factory or image default (\c
+.BR switch ,
+.BR router ,
+.BR cisco ,
+.BR ubuntu ,
+.B ip\-10\-0\-0\-1
+and the like; matched without regard to case) is refused with the command that
+gives the device a name of its own, unless
+.B \-\-allow\-generic
+is given; the device then carries a
+.B generic-name
+notice. A host enrolled under such a name before the registry existed is not
+refused, and carries the notice. The built-in list can be extended with
+.B generic_names:
+(regular expressions matched against the whole name) in
+.IR devices.yaml .
+.PP
+Host keys are pinned when a device is registered: tacctl reads the keys the
+device offers with
+.BR ssh\-keyscan (1)
+(as root, outbound, without logging in), keeps them in
+.IR devices.yaml ,
+and prints their
+.B SHA256:
+fingerprints to be compared with the device console. Enrolled hosts are pinned
+by
+.B "host enroll"
+and
+.BR "host sync" .
+Every registry write regenerates
+.IR /var/lib/tacctl/ssh/known_hosts ,
+which lists exactly the pinned keys under each device's name, for
+.BI "ssh \-o UserKnownHostsFile=/var/lib/tacctl/ssh/known_hosts \-o GlobalKnownHostsFile=none \-o HostKeyAlias=" name " \-o StrictHostKeyChecking=yes" .
+A pin changes only through
+.BR "device hostkey accept" " or " "device hostkey set" ,
+never by itself.
+.PP
+What the daemons saw of each device is kept in the
+.I seen cache
+.RI ( /var/lib/tacctl/devices\-seen.json ),
+which
+.B "device scan"
+fills from the logs: the tacquito journal (the
+.BI "accepting user [" user "] from [" address "]"
+and
+.B "failed to validate the user"
+lines, the
+.B "bad secret detected for ip"
+and
+.BI "remote [" address "] has no secret providers"
+errors, and at log level 30 the
+.B "prefix secret provider matches remote"
+lines) and FreeRADIUS's
+.I tacctl\-auth.log
+with its rotations. For each address it keeps the first and last sighting,
+the count, the last user, outcome and backend, and the last NAS-Identifier.
+.B list
+and
+.B show
+read the cache only, and say how old it is.
+.PP
+Notices are computed each time they are shown; only acknowledgements are
+stored. Besides the registry's own
+.RB ( generic-name ,
+.BR hostkey-unpinned ,
+and for an enrolled host
+.BR address\-changed :
+its address changed between two enrolments or syncs),
+the seen cache raises
+.B ambiguous-nas-id
+(one NAS-Identifier sent from several addresses),
+.B generic-nas-id
+(a device identifying itself by a generic name),
+.B name-mismatch
+(a NAS-Identifier other than the registry name; informational),
+.B duplicate-address
+(two entries at one address, or an address identifying as another entry),
+.B identity-changed
+(the NAS-Identifier an address sends changed: a replaced or reset unit), and
+the host-key re-scan of
+.B "device scan"
+and
+.B "device check"
+raises
+.B hostkey-changed
+(no pinned key offered, or another key of a pinned type; it cannot be
+acknowledged, only
+.B "device hostkey accept"
+or
+.B set
+clears it),
+.B hostkey-added
+(a new key type, the pins unchanged) and
+.B hostkey-unreachable
+(no key could be read; with the last good scan). A scan never changes a pin.
+Notices appear in the scan output,
+.BR "tacctl status" ,
+.BR "device list" ,
+.B "device notices"
+and
+.B "device show"
+(which counts the acknowledged ones;
+.B \-\-all
+on either lists them, marked).
+.PP
+Reading verbs
+.RB ( list ,
+.BR show ,
+.BR notices ,
+.BR ssh\-config )
+and
+.B "tacctl ssh"
+are open to the read-only and operator tiers, which see only the devices and
+hosts whose scope is one of their own; an entry no scope covers is seen by
+administrators only.
+.BR export ,
+.BR scan ,
+.BR discover ,
+.B check
+and
+.B "list \-\-scan" | "\-\-probe"
+are operator-level (the scan output's notices are filtered the same way;
+.B discover
+lists every address). Everything else needs an administrator.
+.SS Device registry \fB(tacctl device)\fR
+.TP
+.B device
+With no subcommand (or with
+.BR help ),
+prints a usage summary and exits 0.
+.TP
+.BI "device list " "[ \-\-stale ] [ \-\-unconfigured ] [ \-\-scan ] [ \-\-probe ] [ \-\-json ]"
+One row per registered device, then per enrolled host: name, address, vendor,
+scope, state, last seen, by, via, and the open notices. The state is
+.B configured
+when a scope's prefixes cover the address (a host: when its scope exists) and
+.B unconfigured
+otherwise.
+.B \-\-unconfigured
+lists only those;
+.B \-\-stale
+lists the devices whose last sighting is older than
+.BR stale\-days ,
+which are also marked
+.BR stale .
+The last seen column is the time of the last sighting,
+.BI "rejected " time
+when the last exchange was a refusal (with
+.B "(bad secret)"
+or
+.B "(no scope)"
+when the device's packets could not be read or no scope covers it), and
+.B never
+for an address no scan has seen; with no seen data at all the columns print
+.BR \- .
+The footer says when the seen data was read.
+.B \-\-scan
+runs
+.B "device scan"
+first.
+.B \-\-probe
+adds a
+.B REACH
+column: a TCP connect to each entry's ssh port, 3 seconds, all at once
+.RB ( open ,
+.BR closed ,
+.BR timeout ,
+.BR unreachable ).
+This server often has no route to the devices' management ports, so a timeout
+may be a false alarm.
+.TP
+.BI "device show " "name|address " [ \-\-all ] " " [ \-\-json ]
+One device or host in full: address, hostname, vendor, port, legacy ssh,
+description, the scope that answers the address and the prefix that routes it
+(and the scopes it shadows), the vendor tag that covers it, the pinned host keys,
+the last and first sighting with the sighting count and the NAS-Identifier the
+device sends, and the open notices with a count of the acknowledged ones
+.RB ( \-\-all
+lists them too, marked). It warns when the
+vendor tag and the registered vendor disagree.
+.TP
+.BI "device add " "name address " "[ \-\-vendor cisco|juniper|wti|other ] [ \-\-hostname " dns " ] [ \-\-port " n " ] [ \-\-description " text " ] [ \-\-legacy\-ssh ] [ \-\-host\-key SHA256:" fingerprint " | \-\-no\-host\-key ] [ \-\-allow\-generic ]"
+Register a device. The vendor defaults to
+.B other
+(and only drives the ssh profile; it does not tag the address in the scope).
+The address is stored canonically (IPv6 in compressed lower-case form) and may
+carry no prefix length. A name or address that is taken, a reserved word (a
+tacctl command, \c
+.BR local ,
+.BR all ),
+and a generic name are refused. The host keys the device offers at its address
+and ssh port are read with
+.B "ssh\-keyscan \-T 5 \-p"
+.I port
+.B "\-t ed25519,ecdsa,rsa"
+(with
+.BR \-\-legacy\-ssh ,
+the
+.B ssh\-rsa
+type is asked for by name too) and pinned, and their
+.B SHA256:
+fingerprints are printed with the command that shows them on the device's
+console; compare them before the first connection. With
+.BI "\-\-host\-key SHA256:" fingerprint
+the device is registered only when it offers a key with that fingerprint, and
+only that key is pinned (the other keys it offers are listed, unpinned). With
+.B \-\-no\-host\-key
+nothing is scanned: the device is registered unpinned and carries a
+.B hostkey-unpinned
+notice. A device that does not answer the scan, or offers no key matching
+.BR \-\-host\-key ,
+is refused and nothing is written. The output says which scope, if any, answers
+the address.
+.TP
+.BI "device remove " "name[,name...] | \-\-all " [ \-y ]
+Remove devices from the registry, after confirmation (\c
+.B \-y
+skips it; a closed stdin cancels). Enrolled hosts, scopes and vendor tags are
+not touched.
+.TP
+.BI "device rename " "old new " [ \-\-allow\-generic ]
+Rename a device; acknowledgements stay with it.
+.TP
+.BI "device address " "name " [ address ]
+Show or set the address: the AAA identity of the device, stored canonically. It
+cannot be cleared and may not be one another device holds. Pinned host keys belong
+to the old address and are dropped.
+.TP
+.BI "device hostname " "name " [ dns | clear ]
+Show, set or clear the DNS name (display, and the ssh target when set).
+.TP
+.BI "device vendor " "name " [ cisco | juniper | wti | other ]
+Show or set the vendor;
+.B clear
+sets
+.BR other .
+.TP
+.BI "device port " "name " [ n | clear ]
+Show, set or clear the ssh port (clear is 22).
+.TP
+.BI "device description " "name " [ text | clear ]
+Show, set or clear the description (up to 120 characters).
+With no value these verbs print the current one (\c
+.B \-
+when unset).
+.TP
+.BI "device legacy\-ssh " "name " "[ enable | disable ]"
+Show or set the opt-in for the legacy key-exchange and host-key algorithms
+older IOS releases need (off by default).
+.TP
+.BI "device stale\-days " [ n ]
+Show or set the number of days (1 to 3650, default 30) after which a device
+without a sighting counts as stale.
+.TP
+.BI "device notice " "name " "{ ack | unack } " kind
+Acknowledge an accepted notice, or reopen it. Acknowledgements are kept per
+device and per kind in
+.IR devices.yaml ;
+acknowledged notices leave
+.B list
+and
+.B notices
+and stay in
+.B show
+marked as acknowledged. The kinds are
+.BR generic-name ,
+.BR hostkey-unpinned ,
+.BR hostkey-added ,
+.BR hostkey-unreachable ,
+.BR ambiguous-nas-id ,
+.BR generic-nas-id ,
+.BR name-mismatch ,
+.BR duplicate-address ,
+.B identity-changed
+and
+.BR address\-changed ;
+.B hostkey-changed
+cannot be acknowledged, and an enrolled host acknowledges only
+.BR address\-changed .
+.TP
+.BI "device notices " "" [ name ] " " [ \-\-all ]
+The open notices (all devices, or one), each with the command that fixes or
+acknowledges it;
+.B \-\-all
+lists the acknowledged ones too, marked. The notices the registry raises are
+.BR generic-name ,
+for a device or host whose name is a generic one, with the per-vendor command
+that sets a name on the device and the
+.B device rename
+that follows, and
+.BR hostkey-unpinned ,
+for a device with no pinned host key, with the console command that shows its
+fingerprint and the
+.B device hostkey accept
+that pins it.
+.TP
+.BI "device import " "[ \-\-check ] [ \-\-replace ] [ \-\-allow\-generic ] [ \-y ] " "file|\-"
+Import devices from CSV
+.RB ( name,address[,vendor[,port[,description]]] ;
+blank lines, lines starting with
+.BR # ,
+and a header row starting
+.B name,address
+are skipped) or from the registry's own YAML, from a file or from stdin
+.RB ( \- ).
+Devices of the file are added, or update the registered device of the same name
+(a CSV row leaves the hostname and the legacy-ssh setting alone; a changed address
+drops the pinned host keys); the rest stay. With
+.B \-\-replace
+the registry becomes exactly the file, after confirmation (\c
+.B \-y
+skips it). Every problem is reported with its line, and nothing is written when
+there is one.
+.B \-\-check
+validates and reports what would change without writing or taking a snapshot.
+.TP
+.BI "device export " "[ \-\-csv | \-\-json ]"
+Print the registry: as YAML (the
+.I devices.yaml
+format, the default), as CSV in the import's columns with a header row, or as a
+JSON array. A reduced-scope caller gets only the devices of its own scopes.
+.TP
+.BI "device hostkey " name " [ show | accept [ \-y ] | set SHA256:" fingerprint " ]"
+The pinned ssh host keys of a device or an enrolled host, and the only way to
+change them. With no action (or
+.BR show )
+prints each pinned key's fingerprint and its public-key line (\fBssh\-ed25519 AAAA\|...\fR, as a
+.B file show
+of the device's key file prints it) and the console command that shows them on
+the device.
+.B accept
+reads the keys the device offers now, prints them beside the pinned ones, and
+pins them all after confirmation (\c
+.B \-y
+skips it; a closed stdin cancels): run it only after comparing them with the
+device console.
+.BI "set SHA256:" fingerprint
+reads the keys and pins only the one with that fingerprint, refusing when the
+device offers none. A device that does not answer is refused and the pin stays.
+Administrators only; each change is logged to syslog.
+.TP
+.BI "device ssh " name|address " [ \-p " port " ] [ \-\- " "ssh args" " ]"
+The same as
+.BR "tacctl ssh" ,
+below.
+.TP
+.B device ssh\-config
+Print an
+.BR ssh_config (5)
+fragment with one
+.B Host
+block per device and enrolled host the caller may see:
+.BR HostName ,
+the port when set,
+.B "PubkeyAuthentication no"
+and
+.B "PreferredAuthentications keyboard\-interactive,password"
+(WTI:
+.BR password ),
+the legacy algorithms of a
+.B legacy\-ssh
+device, and for a pinned entry
+.BI "UserKnownHostsFile /var/lib/tacctl/ssh/known_hosts" ,
+.BR "GlobalKnownHostsFile none" ,
+.BR "StrictHostKeyChecking yes" ,
+.BI "HostKeyAlias " name
+and
+.BR "UpdateHostKeys no" .
+An unpinned entry gets a comment instead, and checks against the user's own
+known_hosts. The install hint goes to stderr: save the output with
+.B "tacctl device ssh\-config > ~/.ssh/tacctl.conf"
+and put
+.B "Include ~/.ssh/tacctl.conf"
+at the top of
+.I ~/.ssh/config
+(an
+.B Include
+after a
+.B Host
+block belongs to that block). There is no
+.B User
+line: ssh logs in with your local username, which for a user of tacctl is the
+tacctl name. Then a plain
+.BI "ssh " name
+reaches the device the way
+.B "tacctl ssh"
+does. tacctl only prints it; nothing is written into a home directory. Re-run it
+after registry changes.
+.TP
+.BI "device scan " "[ \-\-full ] [ \-\-since " duration " ] [ \-\-backend " id " ]"
+Read each enabled backend's log (or only
+.IR id 's)
+into the seen cache, from where the previous scan stopped (a journal cursor;
+the auth log's inode and offset, following a rotation); the first scan reads
+the last
+.B stale\-days
+days.
+.B \-\-full
+re-reads everything the logs still hold (journald's retention, twelve weeks
+of rotated RADIUS logs), and
+.B \-\-since
+the given stretch
+.RB ( 7d ,
+.BR 12h ,
+.BR 30m ,
+.BR 2w ),
+each replacing what the cache held of that backend. Then the host keys of
+every entry with a pinned key are read again with
+.B ssh\-keyscan
+and compared with the pins (nothing is pinned). The report prints, per backend,
+the stretch of log read and what it found, the host-key results, how many seen
+addresses are registered, and the open notices. Records not seen for twice
+.B stale\-days
+are dropped. A cache that cannot be read is rebuilt.
+.TP
+.BI "device discover " "[ \-\-all ] [ \-\-backend " id " ]"
+Scan, then list the addresses that authenticated but are not registered, with
+the scope and vendor tag that answer them, first and last sighting, count,
+last user, outcome, backend and NAS-Identifier, and a ready
+.BI "tacctl device add " "name address"
+line for each (the NAS-Identifier as the name when it is a valid, free,
+non-generic one, else
+.BR <name> ).
+.B \-\-all
+includes the addresses that were only ever refused.
+.TP
+.BI "device check " name | \-\-all
+A checklist per entry: the scope that answers the address, the vendor tag, the
+last sighting (from the seen cache), whether its ssh port accepts a TCP
+connection (3 seconds; a timeout may be a false alarm, as for
+.BR "list \-\-probe" ),
+the host keys it offers now against the pinned ones (kept for the notices;
+nothing is pinned), and its notices.
+.SS SSH to a device \fB(tacctl ssh)\fR
+.TP
+.BI "ssh " name|address " [ \-p " port " ] [ \-X | \-Y ] [ \-g ] [ { \-L | \-R | \-D } " spec " ]... [ \-\- " "ssh args" " ]"
+Open an ssh session to a registered device or an enrolled host, named by its
+name or its registered address. tacctl resolves the name as root (the registry
+is root's) and admits only an active tacctl user (in the store, not disabled,
+with a password) whose scopes include the entry's, at every tier, superusers
+included; an entry in no configured scope is refused to everyone, and a local
+account that is not a user of tacctl is refused
+.RI ( "'user' is not a tacctl user" ;
+.IR "'user' has no access to scope 'scope' (device name)" ).
+Each refusal is logged to syslog
+.RB ( "ssh DENY user=" "\fIuser\fR " device= "\fIname\fR " scope= "\fIscope\fR " reason= "\fIreason\fR" ,
+auth.warning). An admitted session is logged as
+.BI "ssh user=" user " device=" name " addr=" address
+(auth.info) and, when ssh ends, as
+.BI "ssh end user=" user " device=" name " status=" n " duration=" seconds\fR;
+.BR ssh (1)
+runs as the invoking user
+.RB ( "sudo \-u " "\fIuser\fR " \-H ),
+with the terminal, returning its exit status. The login is always the invoking
+user's own name
+and the session authenticates by password only: no agent, no key, no other
+login; an enrolled host's enrolment account and identity are never used. It
+never runs ssh as root: run by root itself (no
+.BR SUDO_USER ,
+or
+.BR SUDO_USER=root )
+it refuses with
+.IR "tacctl ssh runs ssh as the user who invoked it; run it from your own account, not as root" .
+It needs a terminal on stdin
+.RI ( "a terminal is required" ).
+An address that is not registered is refused with the
+.B "device add"
+command to register it.
+.IP
+ssh connects to the device's hostname, else its address (an enrolled host: its
+target's host), with its port unless
+.B \-p
+is given, and always
+.B "\-o ConnectTimeout=10 \-o PubkeyAuthentication=no \-o PreferredAuthentications=keyboard\-interactive,password"
+.RB ( wti :
+.BR "PreferredAuthentications=password" ,
+which the units need). A device with
+.B legacy\-ssh
+gets
+\fB\-o KexAlgorithms=\:+diffie\-hellman\-group14\-sha1,\:diffie\-hellman\-group1\-sha1
+\-o HostKeyAlgorithms=\:+ssh\-rsa \-o PubkeyAcceptedAlgorithms=\:+ssh\-rsa\fR
+(old IOS; OpenSSH 8.5 or later). A device with pinned host keys adds
+\fB\-o UserKnownHostsFile=\:/var/lib/tacctl/\:ssh/known_hosts
+\-o GlobalKnownHostsFile=none \-o StrictHostKeyChecking=yes
+\-o HostKeyAlias=\fR\fIname\fR\fB \-o UpdateHostKeys=no\fR,
+so ssh accepts the pinned key and nothing else. An unpinned device is checked
+against the user's own known_hosts, after its
+.B hostkey\-unpinned
+notice is printed (unless acknowledged). Arguments after
+.B \-\-
+follow the target, so ssh takes them as the remote command; they cannot
+replace an option.
+.IP
+.BR \-X " and " \-Y
+forward X11 (untrusted, trusted) to this server's display
+.RB ( DISPLAY ,
+which sudo keeps for tacctl; without one the command says to log in with
+.BR "ssh \-X" );
+.BR \-L ,
+.B \-R
+and
+.B \-D
+(each repeatable) are ssh's local, remote and dynamic port forwardings, with a
+.I spec
+of addresses, ports, host names or socket paths only. The session's log line
+then carries
+.BR forward= \fIkinds\fR
+.RB ( x11 ", " local ", " remote ", " dynamic ).
+In the login console they are for the tiers of
+.B "console forwarding tiers"
+only (default
+.BR superuser );
+any other tier is refused
+.RI ( "Forwarding (\-X, \-Y, \-L, \-R, \-D) is not available to the tier tier in the console" ;
+logged as
+.BR "ssh DENY ... reason=forward" ).
+There,
+.B \-L
+and
+.B \-D
+listen on loopback only:
+.B \-g
+and a bind address other than loopback
+.RB ( 0.0.0.0:8443:localhost:443 ", " *:1080 ,
+or an empty one) are refused
+.RB ( "ssh DENY ... reason=gateway" )
+unless
+.B "console forwarding gateway\-ports"
+is enabled.
+.B \-g
+lets
+.B \-L
+and
+.B \-D
+ports listen on every address, as ssh's
+.BR \-g .
+.IP
+From a session of the login console (the console marks each line with
+.BR TACCTL_CONSOLE= \fIsession\fR),
+ssh reads no configuration file and opens nothing but the session: it starts
+with
+.B "\-F /dev/null \-o PermitLocalCommand=no \-o ControlMaster=no \-o ClearAllForwardings=yes \-o ForwardAgent=no"
+.RB ( ClearAllForwardings
+left out when the session forwards) and
+.B "\-o EscapeChar=none"
+(unless
+.BR "console ssh\-escape enable" ),
+the target follows
+.B \-\-
+so no word after it is an option, and words after the name's
+.B \-\-
+that start with
+.B \-
+are refused. An entry with no pinned host key is refused
+.RI ( "'name' has no pinned host key, so the console does not connect to it; an administrator pins it: tacctl device hostkey name accept" ;
+logged with
+.BR reason=unpinned ).
+Its log lines end with
+.BI console= session\fR.
+.IP
+When ssh ends with status 255 on a pinned device, tacctl reads the device's
+keys again; if the pinned key is not among them it prints the pinned and the
+offered fingerprints, the console command that shows the key on the device,
+and
+.BI "tacctl device hostkey " name " accept"
+or
+.BI "set SHA256:" fingerprint
+to re-pin after verifying. The read-only tier may run it (the tiers sudoers
+rules grant
+.B "tacctl ssh *"
+and
+.BR "tacctl device ssh *" ).
+.SS Login console \fB(tacctl console)\fR
+The login console
+.RB ( tacctl\-console )
+is the login shell of tacctl users on the tacctl server: tacctl commands and
+ssh to registered devices, nothing else. It is on for every tier by default
+(the defaults apply while
+.I /etc/tacctl/console.yaml
+is absent); local accounts that are not tacctl users are never touched. These
+commands change
+.I console.yaml
+only, after a snapshot (mode 0600; backup diff and restore include it), and
+never an account or sshd: the accounts' login shells and sshd's drop-in follow
+it when the provisioning of this server applies it
+.RB ( "host sync" " of the host enrolled with " \-\-local ).
+Every change to the tier switches, a user override, agent forwarding or the
+forwarding tiers prints
+.BI "Apply to the accounts: tacctl host sync " name\fR.
+The idle timeout, the ssh escape and the system shell are read by each console
+session when it starts.
+.TP
+.B console
+With no subcommand (or with
+.BR help ),
+prints a usage summary and exits 0.
+.TP
+.B console show
+The tiers' switches, the settings, and for each user of the scope of the host
+enrolled with
+.B \-\-local
+the tier, the effective shell
+.RB ( console
+or
+.BR bash )
+and why
+.RI ( "user override" ", " "tier readonly" ", " "tier readonly disabled" ).
+Then the state of the server's pieces: the
+.I /usr/local/bin/tacctl\-console
+symlink, the
+.I /etc/shells
+line, sshd's drop-in, and what
+.B "sshd \-T \-C user="\fIuser\fR
+reports for a console user
+.RB ( allowtcpforwarding ,
+.BR allowagentforwarding ,
+.BR forcecommand ,
+.BR pubkeyauthentication ).
+A red warning says so when the drop-in is missing, sshd does not force the
+console, still allows forwarding, or allows key logins, because a console
+user could then forward ports past the device registry, run programs or sftp,
+or log in without TACACS+. A server not enrolled with
+.B \-\-local
+says so and lists no users. Operator tier and up.
+.TP
+.BI "console tiers " "[ " tier " " "{ enable | disable }" " ]"
+Show the switches, or one, or set the console for a tier
+.RB ( readonly ,
+.BR operator ,
+.BR superuser ).
+.TP
+.BI "console user " "name " "[ { enable | disable | clear } ]"
+Show or set one user's override, which wins over the tier's switch;
+.B clear
+returns the user to the tier rule. The user must exist in the store to be
+given an override.
+.TP
+.BI "console idle\-timeout " "[ " min " ]"
+Minutes idle at the prompt before the session ends, 0 to 1440 (0: never;
+default 30).
+.TP
+.BI "console agent\-forwarding " "[ { enable | disable } ]"
+Opt in to ssh agent forwarding for console users (default disabled).
+.TP
+.BI "console forwarding tiers " "[ " csv "|none ]"
+The tiers whose console logins may forward X11 and TCP ports (default
+.BR superuser ):
+sshd's drop-in gives the members of
+.B tac\-console
+and of the tier's group
+.RB ( tac\-superuser ", " tac\-operator ", " tac\-readonly )
+.B "X11Forwarding yes"
+and
+.B "AllowTcpForwarding yes"
+in a block of their own before the console's
+.RB ( "ssh \-X" ,
+.BR \-L ,
+.BR \-R ,
+.B \-D
+and
+.B \-J
+through this server), and the console's
+.B ssh
+to a device accepts
+.BR \-X ,
+.BR \-Y ,
+.BR \-L ,
+.B \-R
+and
+.BR \-D .
+Agent, stream-local and tunnel forwarding stay as for every console user.
+.TP
+.BI "console forwarding gateway\-ports " "[ { enable | disable } ]"
+Opt in to forwarded ports that listen on other addresses than loopback, for
+the tiers of
+.B "console forwarding tiers"
+(default disabled). Enabled, their blocks in sshd's drop-in set
+.BR "GatewayPorts clientspecified" :
+an
+.B "ssh \-R"
+to this server listens on the address the client names
+.RB ( "\-R 0.0.0.0:8080:host:80"
+on every address; none named: loopback), and the console's
+.B ssh
+takes
+.B \-g
+and a bind address on
+.B \-L
+and
+.BR \-D .
+Anyone who reaches this server can then connect to those ports. Every other
+console login keeps
+.BR "GatewayPorts no" ,
+and
+.B "console check"
+warns when sshd applies anything else to it.
+.TP
+.BI "console ssh\-escape " "[ { enable | disable } ]"
+Opt in to ssh's escape character (\fB~.\fR, \fB~C\fR) in the console's ssh
+sessions (default disabled).
+.TP
+.BI "console system\-shell tiers " "[ " csv "|none ]"
+The tiers that may start their system shell from the console (default
+.BR superuser ).
+.TP
+.BI "console system\-shell path " "[ " path " ]"
+The system shell, default
+.IR /bin/bash .
+It must be an absolute path to an executable file listed in
+.IR /etc/shells .
+.TP
+.B console install
+Puts the server's pieces in place, as
+.B host sync
+of the host enrolled with
+.B \-\-local
+does: the line
+.I /usr/local/bin/tacctl\-console
+in
+.IR /etc/shells ,
+and sshd's drop-in
+.I /etc/ssh/sshd_config.d/tacctl\-console.conf
+for the members of
+.BR tac\-console :
+.B "ForceCommand /usr/local/bin/tacctl\-console"
+(every login, remote command and subsystem, sftp included, reaches the
+console, which reads the client's command from
+.BR SSH_ORIGINAL_COMMAND ),
+.B "DisableForwarding yes"
+(left out, with
+.BR "AllowAgentForwarding yes" ,
+when
+.B console agent\-forwarding
+is enabled; for the tiers of
+.B "console forwarding tiers"
+a block before it sets
+.BR "DisableForwarding no" ,
+.B "AllowTcpForwarding yes"
+and
+.BR "X11Forwarding yes" ),
+.BR "AllowTcpForwarding no" ,
+.BR "AllowStreamLocalForwarding no" ,
+.BR "X11Forwarding no" ,
+.BR "PermitTunnel no" ,
+.BR "PermitTTY yes" ,
+.B "PubkeyAuthentication no"
+(a key login would bypass TACACS+),
+.B ClientAliveInterval 300
+and
+.BR "ClientAliveCountMax 2" .
+Each change of the drop-in is checked with
+.BR "sshd \-t" ;
+when sshd refuses it the previous file comes back and the command exits 1,
+otherwise sshd is reloaded
+.RB ( "systemctl reload ssh.service" ,
+or
+.BR sshd.service ).
+Each piece is reported
+.BR Installed: ,
+.B Updated:
+or
+.BR Unchanged: ,
+then the check below runs. Refused when
+.I /usr/local/bin/tacctl\-console
+is missing
+.RB ( "tacctl upgrade" " makes it)."
+.TP
+.B console remove
+Takes the drop-in (checked with
+.BR "sshd \-t" ,
+sshd reloaded) and the
+.I /etc/shells
+line away. Refused, nothing changed, while an account still has the console
+as its login shell; they are named, with the way to give them
+.I /bin/bash
+back.
+.TP
+.B console check
+Whether sshd applies the console's settings: the drop-in present and this
+release's, the
+.B Include
+of
+.I sshd_config.d/*.conf
+in
+.IR /etc/ssh/sshd_config ,
+and
+.B "sshd \-T"
+for the first account whose shell is the console. Exit 1, with the red
+warning, when anything is off. Operator tier and up.
+.PP
+Only the operator tier and up may run
+.B "console show"
+and
+.BR "console check" ;
+everything else needs an administrator.
+.PP
+The console asks tacctl for its settings with the hidden
+.BR _console\-policy ,
+which the tiers sudoers rules grant to every tier.
+.SS Console sessions \fB(tacctl\-console)\fR
+.I /usr/local/bin/tacctl\-console
+is a symbolic link to the tacctl binary; started under that name (as a login
+shell,
+.BR \-tacctl\-console )
+tacctl is the console: the interactive shell
+.RB ( "tacctl shell" )
+with the prompt
+.IB host "> "
+(the server's short host name) and the banner
+.IR "tacctl\~console on host \(em type 'help'. Devices: device list. This session is logged." ,
+whose lines run as
+.PP
+.RS
+.B sudo
+.RB [ \-n ]
+.BI TACCTL_CONSOLE= session
+.B /usr/local/bin/tacctl
+.I words
+.RE
+.PP
+with the rule of
+.B tacctl shell
+for
+.BR \-n .
+It starts nothing else. The login environment is discarded except
+.BR TERM ,
+.BR LANG ,
+.BR LC_* ,
+.BR HOME ,
+.BR USER ,
+.BR LOGNAME ,
+.BR SSH_CONNECTION ,
+.B SSH_CLIENT
+and
+.BR SSH_TTY ;
+.B PATH
+is
+.I /usr/local/bin:/usr/bin:/bin
+and
+.B SHELL
+the console. At the start it asks the root side for its settings
+.RB ( "sudo \-n tacctl _console\-policy" );
+without an answer the defaults apply (30 minutes idle, no system shell). The
+session ends after the idle timeout at the prompt
+.RB ( "console idle\-timeout" ;
+not while a line runs).
+.PP
+.BI "\-c " line
+(the remote command sshd passes:
+.BR "ssh " "\fIserver\fR " "'user list'" )
+runs one tacctl line, with the connection as its standard input. A string
+that is not one line beginning with a tacctl command or
+.B help
+\(em
+.BR scp ,
+.BR sftp ,
+.BR rsync ,
+any program, the shell's own words, an empty string \(em is refused with
+.I "the tacctl\~console does not run programs; file transfer is not available"
+and exit status 126, and nothing runs. Any other argument is refused the same
+way
+.RI ( "the tacctl\~console takes no options" ).
+With standard input not a terminal and no
+.BR \-c ,
+the lines of the input run as a batch, as in
+.BR "tacctl shell" .
+.PP
+.B system\-shell
+(the console's own word; interactive sessions only) starts the user's system
+shell
+.RB ( "console system\-shell path" ,
+default
+.IR /bin/bash )
+as the user, without arguments, with the console's environment and
+.BR SHELL= \fIpath\fR;
+the console's idle timer does not run meanwhile, and sshd's drop-in still
+governs the connection. It is open to the tiers
+.B "console system\-shell tiers"
+names (default: superusers only); otherwise it is refused with
+.IR "system-shell is not available for the tier tier on this console. An administrator enables it with: tacctl console system-shell tiers ..."
+(status 1). In a batch or through
+.B \-c
+it is refused with status 126.
+.PP
+Syslog (tag
+.BR tacctl\-console ):
+.BI "console start session=" id " user=" user " from=" address " tty=" tty " mode=" interactive|command|batch\fR,
+.BI "console end session=" id " user=" user " reason=" exit|eof|idle|hangup|signal|command|failed " lines=" n " status=" n\fR,
+.BI "console DENY session=" id " user=" user " reason=command first=" word
+(auth.warning),
+.BI "console system\-shell start" \fR,
+.B end
+.RB ( status= ", " duration= )
+and
+.BR DENY .
+Each line is also in sudo's log, and
+.B tacctl ssh
+logs
+.BI console= id\fR.
 .SH RADIUS DEVICE CONFIGURATIONS
 .BR "config cisco" ,
 .B "config juniper"
@@ -2024,8 +3424,7 @@ Long-form flags
 .IR --name ,
 .IR --port ,
 .IR --identity ,
-.IR --output ,
-.IR --adopt )
+.IR --output )
 take a single argument;
 .IR --default ,
 .IR --force ,
@@ -2036,7 +3435,8 @@ take a single argument;
 .IR --local ,
 .IR --all ,
 .IR --build-on-host ,
-.I --allow-uid-mismatch
+.IR --allow-uid-mismatch ,
+.I --remove-home
 and
 .I -y
 take none. Required positional arguments come before flags.
@@ -2222,9 +3622,7 @@ it passes is the store written, the old file kept as
 rendered and tacquito restarted.
 .PP
 When the gate stops (unrepresentable content, a render that is not
-equivalent, the binary or
-.B timeout
-missing) the upgrade still completes, leaves
+equivalent, the tacquito binary missing) the upgrade still completes, leaves
 .I tacquito.yaml
 and the daemon as they were, and tacctl is in legacy read-only mode. It never
 forces either through. Fix what
@@ -2269,6 +3667,86 @@ view with
 .BR "tacctl config dump" ;
 re-check the file with
 .BR "tacctl config validate" .
+.TP
+.I /etc/tacctl/devices.yaml
+The device registry (see
+.BR "DEVICE REGISTRY" ):
+registered device names with address, vendor, port, hostname,
+description, legacy-ssh, pinned host keys and acknowledged notices, and the
+registry's settings
+.RB ( stale_days ,
+.BR generic_names ).
+Mode 0600, root only; absent means no devices. Edit it with
+.BR "tacctl device" ,
+which locks it, validates the result and replaces it atomically. Snapshots
+include it. The pinned keys of enrolled hosts are kept under
+.BR hosts: .
+.TP
+.I /etc/tacctl/console.yaml
+The login console's switches per tier, per-user overrides and settings
+.RB ( idle_timeout ,
+.BR agent_forwarding ,
+.BR ssh_escape ,
+.BR system_shell ,
+.BR system_shell_tiers ,
+.BR forwarding_tiers ,
+.BR list_max ,
+the number of completions the shell lists without asking).
+Mode 0600, root only; absent means the defaults (the console on for every
+tier). Edit it with
+.BR "tacctl console" ,
+which locks it, validates the result and replaces it atomically. Snapshots
+include it.
+.TP
+.I /usr/local/bin/tacctl\-console
+The login console: a symbolic link to
+.IR /usr/local/bin/tacctl ,
+made by
+.B install
+and refreshed by
+.BR upgrade .
+.TP
+.I /etc/ssh/sshd_config.d/tacctl\-console.conf
+sshd's drop-in for the members of
+.B tac\-console
+(the accounts whose shell is the console): the console forced, every
+forwarding closed, key logins off. Written by
+.B host sync
+of the host enrolled with
+.B \-\-local
+and
+.BR "console install" ,
+checked with
+.BR "sshd \-t" ,
+refreshed by
+.BR upgrade ,
+removed by
+.BR "console remove" ,
+.B host unenroll
+of that host and
+.BR uninstall .
+Do not edit.
+.TP
+.I /etc/shells
+Gets the line
+.I /usr/local/bin/tacctl\-console
+with the drop-in, and loses it with it.
+.TP
+.I /var/lib/tacctl/ssh/known_hosts
+Generated from
+.I devices.yaml
+on every registry write (and after
+.BR "backup restore" ):
+one
+.I "name type key"
+line per pinned host key, for ssh's
+.B HostKeyAlias
+lookup. Mode 0644, root-owned, in a directory 0755 under
+.I /var/lib/tacctl
+(0711: users pass through it, only root lists it), so every user's ssh can
+read it;
+.I /etc/tacctl
+is root's alone. Do not edit it.
 .TP
 .I /etc/tacctl/rendered.json
 The checksum of every file tacctl rendered, from which
@@ -2321,10 +3799,18 @@ the git history of
 .TP
 .IR /etc/tacctl/linux\-hosts ", " /etc/tacctl/linux\-uids
 The registry of enrolled Linux hosts (with each host's method) and the
-UID/GID each user gets on every host.
+UID each user gets on every host.
 .TP
 .I /var/lib/tacctl/linux/
 The pam_tacplus source tarball and the modules built in containers.
+.TP
+.I /var/lib/tacctl/devices\-seen.json
+The seen cache of
+.BR "device scan" :
+what the logs showed of each address, where each backend's next scan starts,
+and the last host-key re-scan of each entry. Mode 0600, root only; derived
+from the logs, not snapshotted, rebuilt by
+.BR "device scan \-\-full" .
 .TP
 .IR /etc/sudoers.d/tacctl ", " /etc/sudoers.d/tacctl\-tiers
 Optional sudoers rules. Installed only via
@@ -2356,6 +3842,11 @@ The bash completion script, generated by
 .TP
 .I /usr/share/man/man1/tacctl.1.gz
 This manual.
+.TP
+.I ~/.local/state/tacctl/history
+The
+.B tacctl shell
+history of the invoking user: mode 0600, the newest 1000 lines, redacted.
 .SS TACACS+ (tacquito)
 .TP
 .I /etc/tacquito/tacquito.yaml

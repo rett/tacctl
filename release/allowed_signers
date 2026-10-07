@@ -1,0 +1,5 @@
+# The public half of tacctl's release key (docs/releasing.md): the bootstrap
+# shim installs a release binary only when SHA256SUMS.sig verifies with a key
+# listed here. One line per key:
+#   tacctl-release namespaces="tacctl-release" ssh-ed25519 AAAA...
+tacctl-release namespaces="tacctl-release" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINt8AVl1gHGmaE+8OzheNcv2tebTTZtCpOloLf8Y36V7

@@ -86,7 +86,7 @@ func UpgradeStoreFlip(ctx context.Context, env *Env) FlipResult {
 	}
 	bin := filepath.Join(p.Bin, "tacquito")
 	if unix.Access(bin, unix.X_OK) != nil {
-		return flipStopped(env, "the daemon load-smoke cannot run ("+bin+" or 'timeout' is missing), "+
+		return flipStopped(env, "the daemon load-smoke cannot run ("+bin+" is missing), "+
 			"so the rendered config cannot be proven to load")
 	}
 

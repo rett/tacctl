@@ -17,6 +17,8 @@ const (
 	// Command is the installed tacctl command: the binary from 0.2.0 on,
 	// a symlink to the bash entrypoint before.
 	Command = "/usr/local/bin/tacctl"
+	// ConsoleCommand is the login console: a symlink to Command.
+	ConsoleCommand = "/usr/local/bin/tacctl-console"
 	// Completion is the installed bash completion.
 	Completion = "/etc/bash_completion.d/tacctl"
 	// ManPage is the installed man page.
@@ -50,6 +52,17 @@ type Paths struct {
 	LinuxHosts string // LINUX_HOSTS_FILE: the enrolled-host registry
 	Templates  string // TEMPLATE_DIR_LOCAL: operator template overrides
 
+	// The device registry and the console (0.2.1, 0.2.2); every one is under
+	// StateDir (/etc/tacctl, 0700) except the seen cache and the generated
+	// known_hosts, which are under VarLib: users' own ssh reads known_hosts.
+	DevicesFile string // StateDir/devices.yaml: the device registry
+	KnownHosts  string // VarLib/ssh/known_hosts: the generated host-key file (dir 0755, file 0644)
+	ConsoleFile string // StateDir/console.yaml: the login console's settings
+	SSHDDropIn  string // TACCTL_SSHD_DROPIN: sshd's drop-in for the console group
+	ShellsFile  string // TACCTL_SHELLS_FILE: /etc/shells
+	VarLib      string // TACCTL_VAR_LIB: tacctl's variable data (/var/lib/tacctl, 0711)
+	SeenCache   string // VarLib/devices-seen.json: what the logs showed of each device
+
 	SudoersFile     string // TACCTL_SUDOERS_FILE (SUDOERS_FILE)
 	TierSudoersFile string // TACCTL_TIER_SUDOERS_FILE (TIER_SUDOERS_FILE)
 
@@ -61,6 +74,7 @@ type Paths struct {
 
 	TacquitoSrc string // TACQUITO_SRC: the tacquito source checkout
 	LinuxDir    string // TACCTL_LINUX_DIR (LINUX_DIR)
+	LoginDefs   string // TACCTL_LOGIN_DEFS: this server's login.defs, read (never written) for 'host enroll --local'
 
 	// Tree is the source/deploy tree this binary treats as its checkout
 	// (bash: PROJECT_DIR, the parent of the script's own directory).
@@ -71,12 +85,13 @@ type Paths struct {
 	// tacctl's own fixed host locations, which 0.1.16 hard-codes (no
 	// variable overrides them; Reroot moves them for tests).
 	//
-	Deploy     string // DEPLOY_DIR, the clone install and upgrade manage (/opt/tacctl)
-	Command    string // the installed command (/usr/local/bin/tacctl)
-	GoBin      string // GO_BIN (/usr/local/go/bin/go)
-	Completion string // /etc/bash_completion.d/tacctl
-	ManPage    string // /usr/share/man/man1/tacctl.1.gz
-	ArchiveDir string // where uninstall archives what it keeps (/root)
+	Deploy         string // DEPLOY_DIR, the clone install and upgrade manage (/opt/tacctl)
+	Command        string // the installed command (/usr/local/bin/tacctl)
+	ConsoleCommand string // the login console, a symlink to Command (/usr/local/bin/tacctl-console)
+	GoBin          string // GO_BIN (/usr/local/go/bin/go)
+	Completion     string // /etc/bash_completion.d/tacctl
+	ManPage        string // /usr/share/man/man1/tacctl.1.gz
+	ArchiveDir     string // where uninstall archives what it keeps (/root)
 
 	// RADIUS overrides as given; the family decides the defaults (Radius).
 	RadiusFamily string // TACCTL_RADIUS_FAMILY
@@ -110,6 +125,13 @@ func Resolve(env Env, exe string, exists func(string) bool) Paths {
 	p.LinuxUIDs = p.StateDir + "/linux-uids"
 	p.LinuxHosts = p.StateDir + "/linux-hosts"
 	p.Templates = p.StateDir + "/templates"
+	p.DevicesFile = p.StateDir + "/devices.yaml"
+	p.ConsoleFile = p.StateDir + "/console.yaml"
+	p.SSHDDropIn = env.Or("TACCTL_SSHD_DROPIN", "/etc/ssh/sshd_config.d/tacctl-console.conf")
+	p.ShellsFile = env.Or("TACCTL_SHELLS_FILE", "/etc/shells")
+	p.VarLib = env.Or("TACCTL_VAR_LIB", "/var/lib/tacctl")
+	p.SeenCache = p.VarLib + "/devices-seen.json"
+	p.KnownHosts = p.VarLib + "/ssh/known_hosts"
 
 	p.SudoersFile = env.Or("TACCTL_SUDOERS_FILE", "/etc/sudoers.d/tacctl")
 	p.TierSudoersFile = env.Or("TACCTL_TIER_SUDOERS_FILE", "/etc/sudoers.d/tacctl-tiers")
@@ -122,11 +144,13 @@ func Resolve(env Env, exe string, exists func(string) bool) Paths {
 
 	p.TacquitoSrc = env.Or("TACQUITO_SRC", "/opt/tacquito-src")
 	p.LinuxDir = env.Or("TACCTL_LINUX_DIR", "/var/lib/tacctl/linux")
+	p.LoginDefs = env.Or("TACCTL_LOGIN_DEFS", "/etc/login.defs")
 
 	p.Tree = Tree(env, exe, exists)
 	p.PatchDir = env.Or("TACCTL_PATCH_DIR", p.Tree+"/patches")
 
 	p.Deploy, p.Command, p.GoBin, p.Completion, p.ManPage, p.ArchiveDir = DeployDir, Command, GoBin, Completion, ManPage, ArchiveDir
+	p.ConsoleCommand = ConsoleCommand
 
 	p.RadiusFamily = env.Get("TACCTL_RADIUS_FAMILY")
 	p.radiusDir = env.Get("TACCTL_RADIUS_DIR")
@@ -157,8 +181,8 @@ func Tree(env Env, exe string, exists func(string) bool) string {
 	return DeployDir
 }
 
-// Reroot moves tacctl's fixed host locations (Deploy, Command, GoBin,
-// Completion, ManPage, ArchiveDir) under root,
+// Reroot moves tacctl's fixed host locations (Deploy, Command, ConsoleCommand,
+// GoBin, Completion, ManPage, ArchiveDir) under root,
 // keeping their paths below it: /usr/local/bin/tacctl becomes
 // <root>/usr/local/bin/tacctl. It is for tests (the -tags testknobs knob
 // TACCTL_TEST_ROOT, and Go tests), so that install, upgrade and uninstall
@@ -169,7 +193,7 @@ func (p Paths) Reroot(root string) Paths {
 	}
 	under := func(path string) string { return filepath.Join(root, path) }
 	p.Deploy, p.Command, p.GoBin, p.Completion = under(p.Deploy), under(p.Command), under(p.GoBin), under(p.Completion)
-	p.ManPage, p.ArchiveDir = under(p.ManPage), under(p.ArchiveDir)
+	p.ManPage, p.ArchiveDir, p.ConsoleCommand = under(p.ManPage), under(p.ArchiveDir), under(p.ConsoleCommand)
 	return p
 }
 
@@ -243,4 +267,25 @@ func (p Paths) Radius(family string) RadiusPaths {
 func statExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+// VarLibMode is VarLib's mode: every user may pass through it (their ssh
+// reads VarLib/ssh/known_hosts) but only root may list it.
+const VarLibMode os.FileMode = 0o711
+
+// MkVarLib creates dir (VarLib) with VarLibMode, or brings the mode of an
+// existing directory to it: wherever tacctl creates or writes under
+// /var/lib/tacctl.
+func MkVarLib(dir string) error {
+	if err := os.MkdirAll(dir, VarLibMode); err != nil {
+		return err
+	}
+	st, err := os.Stat(dir)
+	if err != nil {
+		return err
+	}
+	if st.Mode().Perm() != VarLibMode {
+		return os.Chmod(dir, VarLibMode)
+	}
+	return nil
 }

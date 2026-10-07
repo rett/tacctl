@@ -71,6 +71,7 @@ func TestResolveDefaults(t *testing.T) {
 		"SettleSeconds":   "0.5",
 		"TacquitoSrc":     "/opt/tacquito-src",
 		"LinuxDir":        "/var/lib/tacctl/linux",
+		"LoginDefs":       "/etc/login.defs",
 		"Tree":            "/opt/tacctl",
 		"PatchDir":        "/opt/tacctl/patches",
 	}
@@ -85,7 +86,7 @@ func TestResolveOverrides(t *testing.T) {
 		"TACCTL_ETC=/t/etc", "TACCTL_STATE_DIR=/t/state", "TACCTL_LOG=/t/log", "TACCTL_BIN=/t/bin",
 		"TACCTL_SUDOERS_FILE=/t/sudoers", "TACCTL_TIER_SUDOERS_FILE=/t/tiers",
 		"TACCTL_OVERRIDE_DIR=/t/dropin", "TACCTL_LOGROTATE_DIR=/t/lr", "TACCTL_SETTLE_SECONDS=0",
-		"TACQUITO_SRC=/t/src", "TACCTL_LINUX_DIR=/t/linux", "TACCTL_TREE=/t/tree",
+		"TACQUITO_SRC=/t/src", "TACCTL_LINUX_DIR=/t/linux", "TACCTL_TREE=/t/tree", "TACCTL_LOGIN_DEFS=/t/login.defs",
 		"TACCTL_PATCH_DIR=/t/patches", "TACCTL_SKIP_SUDO=1",
 	})
 	p := Resolve(env, "", none)
@@ -106,6 +107,7 @@ func TestResolveOverrides(t *testing.T) {
 		"SettleSeconds":   "0",
 		"TacquitoSrc":     "/t/src",
 		"LinuxDir":        "/t/linux",
+		"LoginDefs":       "/t/login.defs",
 		"Tree":            "/t/tree",
 		"PatchDir":        "/t/patches",
 	})
@@ -228,11 +230,11 @@ func checkFields(t *testing.T, v any, want map[string]string) {
 func TestHostLocationsAndReroot(t *testing.T) {
 	p := Resolve(NewEnv(nil), "", func(string) bool { return false })
 	want := map[string]string{
-		"Deploy": "/opt/tacctl", "Command": "/usr/local/bin/tacctl", "GoBin": "/usr/local/go/bin/go",
+		"Deploy": "/opt/tacctl", "Command": "/usr/local/bin/tacctl", "ConsoleCommand": "/usr/local/bin/tacctl-console", "GoBin": "/usr/local/go/bin/go",
 		"Completion": "/etc/bash_completion.d/tacctl", "ManPage": "/usr/share/man/man1/tacctl.1.gz", "ArchiveDir": "/root",
 	}
 	got := func(p Paths) map[string]string {
-		return map[string]string{"Deploy": p.Deploy, "Command": p.Command, "GoBin": p.GoBin,
+		return map[string]string{"Deploy": p.Deploy, "Command": p.Command, "ConsoleCommand": p.ConsoleCommand, "GoBin": p.GoBin,
 			"Completion": p.Completion, "ManPage": p.ManPage, "ArchiveDir": p.ArchiveDir}
 	}
 	for k, v := range got(p) {
@@ -256,5 +258,34 @@ func TestHostLocationsAndReroot(t *testing.T) {
 	// (bash's DEPLOY_DIR is not read from the environment).
 	if q := Resolve(NewEnv([]string{"TACCTL_TREE=/scratch/clone"}), "", nil); q.Deploy != "/opt/tacctl" {
 		t.Errorf("Deploy with TACCTL_TREE: %q", q.Deploy)
+	}
+}
+
+// The device registry's and the console's paths (0.2.1): under StateDir
+// except the seen cache, which follows TACCTL_VAR_LIB.
+func TestDeviceAndConsolePaths(t *testing.T) {
+	p := Resolve(NewEnv(nil), "", func(string) bool { return false })
+	want := map[string]string{
+		p.DevicesFile: "/etc/tacctl/devices.yaml", p.KnownHosts: "/var/lib/tacctl/ssh/known_hosts",
+		p.ConsoleFile: "/etc/tacctl/console.yaml", p.SSHDDropIn: "/etc/ssh/sshd_config.d/tacctl-console.conf",
+		p.ShellsFile: "/etc/shells", p.ConsoleCommand: "/usr/local/bin/tacctl-console",
+		p.VarLib: "/var/lib/tacctl", p.SeenCache: "/var/lib/tacctl/devices-seen.json",
+	}
+	for got, w := range want {
+		if got != w {
+			t.Errorf("default %q, want %q", got, w)
+		}
+	}
+	p = Resolve(NewEnv([]string{"TACCTL_STATE_DIR=/s", "TACCTL_VAR_LIB=/v", "TACCTL_SSHD_DROPIN=/d/c.conf", "TACCTL_SHELLS_FILE=/d/shells"}), "", func(string) bool { return false })
+	if p.SSHDDropIn != "/d/c.conf" || p.ShellsFile != "/d/shells" {
+		t.Errorf("overridden %q %q", p.SSHDDropIn, p.ShellsFile)
+	}
+	for got, w := range map[string]string{
+		p.DevicesFile: "/s/devices.yaml", p.KnownHosts: "/v/ssh/known_hosts", p.ConsoleFile: "/s/console.yaml",
+		p.VarLib: "/v", p.SeenCache: "/v/devices-seen.json",
+	} {
+		if got != w {
+			t.Errorf("overridden %q, want %q", got, w)
+		}
 	}
 }

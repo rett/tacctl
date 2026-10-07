@@ -72,15 +72,23 @@ install
 install <<< n
 install <<< no
 install --branch develop <<< n
+@known 0.2.1 item 3: an unknown argument is refused with the usage, exit 1
 install --branch develop extra <<< n
+@known 0.2.1 item 3: an unknown argument is refused with the usage, exit 1
 install bogus <<< n
 
 # --- uninstall: up to the confirmation -------------------------------------------
+@known 0.2.1 item 25: the uninstall plan names the generated known_hosts
 uninstall
+@known 0.2.1 item 25: the uninstall plan names the generated known_hosts
 uninstall <<< n
+@known 0.2.1 item 25: the uninstall plan names the generated known_hosts
 uninstall <<< N
+@known 0.2.1 item 3: an unknown argument is refused with the usage, exit 1
 uninstall bogus <<< n
 @fixture tacquito.multiscope.yaml
+@known 0.2.1 item 25: the uninstall plan names the generated known_hosts
 uninstall <<< n
 @fixture none
+@known 0.2.1 item 25: the uninstall plan names the generated known_hosts
 uninstall <<< n

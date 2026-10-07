@@ -137,6 +137,29 @@ func Verify(password, hexHash string) Result {
 	return InvalidHash
 }
 
+// MaxVerifyCost is the highest bcrypt cost 'user verify' checks a password
+// against. Each step doubles the work: at 16 a check takes seconds, at 31
+// days. tacctl writes 10 to 14 (bcrypt.cost); a higher cost comes only from
+// a hand-edited or imported hash.
+const MaxVerifyCost = 16
+
+// VerifyCostError is the refusal of a stored hash whose cost is above
+// MaxVerifyCost: nil for any other hash, including one Verify would call
+// INVALID_HASH (Verify reports that itself, quickly).
+func VerifyCostError(hexHash string) error {
+	h, err := hex.DecodeString(hexHash)
+	if err != nil {
+		return nil
+	}
+	if _, ok := parseSalt(h); !ok {
+		return nil
+	}
+	if cost := int(h[4]-'0')*10 + int(h[5]-'0'); cost > MaxVerifyCost {
+		return fmt.Errorf("bcrypt cost %d exceeds the verify limit (%d); tacquito still authenticates it", cost, MaxVerifyCost)
+	}
+	return nil
+}
+
 const (
 	rawHashLen = 60 // '$2b$12$' + 22 salt + 31 hash characters
 	saltChars  = 22

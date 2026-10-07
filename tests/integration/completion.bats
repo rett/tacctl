@@ -29,6 +29,8 @@ setup() {
   *"_completion-names scopes")           printf "%s\n" lab prod ;;
   *"_completion-names users")            printf "%s\n" alice bob ;;
   *"_completion-names groups")           printf "%s\n" ops admins ;;
+  *"_completion-names hosts")            printf "%s\n" web1 db1 ;;
+  *"_completion-names devices")          printf "%s\n" db1 sw1 web1 ;;
 esac'
 }
 
@@ -55,11 +57,20 @@ complete_words() {
     refute_output --partial "/etc/tacquito"
     run "$TACCTL_BIN_SCRIPT" completion
     assert_failure
-    assert_output --partial "Usage: tacctl completion bash"
-    for shell in zsh fish powershell; do
-        run "$TACCTL_BIN_SCRIPT" completion "$shell"
-        assert_failure
-    done
+    assert_output --partial "Usage: tacctl completion bash|zsh|fish"
+    run "$TACCTL_BIN_SCRIPT" completion zsh
+    assert_success
+    assert_line "#compdef tacctl"
+    assert_output --partial "__complete"
+    refute_output --partial "/etc/tacquito"
+    run "$TACCTL_BIN_SCRIPT" completion fish
+    assert_success
+    assert_line --partial "fish completion for tacctl"
+    assert_output --partial "__complete"
+    refute_output --partial "/etc/tacquito"
+    run "$TACCTL_BIN_SCRIPT" completion powershell
+    assert_failure
+    assert_output --partial "Usage: tacctl completion bash|zsh|fish"
 }
 
 @test "completion: the top level offers backend and store, and not the hidden words" {
@@ -123,26 +134,26 @@ complete_words() {
 
 @test "completion: config cisco and juniper take --protocol, and its value is tacacs or radius" {
     complete_words tacctl config cisco ""
-    assert_output "$(printf -- '--scope\n--protocol\n--legacy')"
+    assert_output "$(printf -- '--scope\n--protocol\n--staging\n--name\n--legacy')"
     complete_words tacctl config juniper ""
-    assert_output "$(printf -- '--scope\n--protocol')"
+    assert_output "$(printf -- '--scope\n--protocol\n--staging\n--name')"
     complete_words tacctl config cisco --protocol ""
     assert_output "$(printf 'tacacs\nradius')"
     complete_words tacctl config juniper --scope lab --protocol ""
     assert_output "$(printf 'tacacs\nradius')"
     complete_words tacctl config juniper --scope lab ""
-    assert_output "--protocol"
+    assert_output "$(printf -- '--protocol\n--staging\n--name')"
     complete_words tacctl config cisco --protocol radius ""
-    assert_output "$(printf -- '--scope\n--legacy')"
+    assert_output "$(printf -- '--scope\n--staging\n--name\n--legacy')"
     complete_words tacctl config cisco --protocol radius --scope lab ""
-    assert_output "--legacy"
+    assert_output "$(printf -- '--staging\n--name\n--legacy')"
     # WTI takes --protocol like the others.
     complete_words tacctl config wti ""
-    assert_output "$(printf -- '--scope\n--protocol')"
+    assert_output "$(printf -- '--scope\n--protocol\n--staging\n--name')"
     complete_words tacctl config wti --protocol ""
     assert_output "$(printf 'tacacs\nradius')"
     complete_words tacctl config wti --scope lab ""
-    assert_output "--protocol"
+    assert_output "$(printf -- '--protocol\n--staging\n--name')"
 }
 
 @test "completion: scope offers radius-group beside tacacs-group" {
@@ -196,7 +207,7 @@ complete_words() {
 
 @test "completion: log subcommands take --backend, and its value is a backend id" {
     complete_words tacctl log tail --
-    assert_output "--backend"
+    assert_output "$(printf -- '--backend\n--follow')"
     complete_words tacctl log tail --backend ""
     assert_output "$(printf 'tacacs\nradius')"
     complete_words tacctl log clear ""
@@ -215,7 +226,7 @@ complete_words() {
 
 @test "completion: scope prefixes offers list, add and remove, then --all, then --force only after remove" {
     complete_words tacctl scope prefixes lab ""
-    assert_output "$(printf 'list\nadd\nremove')"
+    assert_output "$(printf 'list\nadd\nremove\nmove')"
     complete_words tacctl scope prefixes lab remove ""
     assert_output "$(printf -- '--all\n--force')"
     complete_words tacctl scope prefixes lab remove --all ""
@@ -243,7 +254,7 @@ complete_words() {
 
 @test "completion: config linux script flags and methods, builds, backup restore --legacy" {
     complete_words tacctl config linux ""
-    assert_output "$(printf 'build\nbuilds\nremove-script\nscript\nuid')"
+    assert_output "$(printf 'build\nbuilds\nremove-script\nscript\nuid\nuid-range')"
     complete_words tacctl config linux script ""
     assert_output "$(printf -- '--scope\n--server\n--method\n--output\n-o')"
     complete_words tacctl config linux script --method ""
@@ -306,4 +317,62 @@ esac'
     run "$TACCTL_BIN_SCRIPT" _completion-names listeners nope
     assert_success
     assert_output ""
+}
+
+@test "completion: host sync and unenroll offer the enrolled host names" {
+    complete_words tacctl host sync ""
+    assert_output "$(printf 'web1\ndb1\n--all\n--allow-uid-mismatch\n--remove-home')"
+    complete_words tacctl host sync w
+    assert_output "web1"
+    complete_words tacctl host unenroll ""
+    assert_output "$(printf 'web1\ndb1')"
+}
+
+@test "completion: __complete host sync offers the names the bridge gives" {
+    run "$TACCTL_BIN_SCRIPT" __complete host sync ""
+    assert_success
+    assert_line "web1"
+    assert_line "db1"
+    run "$TACCTL_BIN_SCRIPT" __complete host unenroll d
+    assert_success
+    assert_line "db1"
+    refute_line "web1"
+}
+
+@test "_completion-names hosts and devices: the registry's names, one per line" {
+    load_fixture tacquito.minimal.yaml
+    printf 'web1|root@192.0.2.10||lab|192.0.2.1|\ndb1|root@192.0.2.11||lab|192.0.2.1|\n' \
+        > "${TACCTL_STATE_DIR}/linux-hosts"
+    run "$TACCTL_BIN_SCRIPT" _completion-names hosts
+    assert_success
+    assert_output "$(printf 'web1\ndb1')"
+    run "$TACCTL_BIN_SCRIPT" _completion-names devices
+    assert_success
+    assert_output "$(printf 'db1\nweb1')"
+    rm "${TACCTL_STATE_DIR}/linux-hosts"
+    run "$TACCTL_BIN_SCRIPT" _completion-names hosts
+    assert_success
+    assert_output ""
+}
+
+@test "completion: Tab Tab lists each flag with its description, and shell -c offers the commands" {
+    # COMP_TYPE 63 is bash's listing of the candidates (the second Tab).
+    run bash -c '
+        source /usr/share/bash-completion/bash_completion
+        source <(tacctl completion bash)
+        compopt() { :; }
+        COMP_WORDS=(tacctl shell -); COMP_CWORD=2
+        COMP_LINE="tacctl shell -"; COMP_POINT=${#COMP_LINE}; COMP_TYPE=63; COLUMNS=200
+        __start_tacctl
+        printf "%s\n" "${COMPREPLY[@]}"
+    '
+    assert_success
+    assert_line --regexp '^--no-history +\(Keep no history file for this session\)$'
+    assert_line --regexp '^--idle +\(<min>: End the session after this many idle minutes at the prompt\)$'
+    assert_line --regexp '^-c +\(<line>: Run one line and exit\)$'
+    complete_words tacctl shell -c sta
+    assert_output "status"
+    complete_words tacctl shell -c ""
+    assert_line "user"
+    refute_line "shell"
 }

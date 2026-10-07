@@ -23,12 +23,15 @@ import (
 // completion, the man page, the state directory (the backups archived
 // first under /root when asked), each backend's data (logs archived when
 // asked), the deploy clone and its safe.directory entry, each backend's
-// account; and the summary. Every other argument is ignored, as 0.1.16
-// ignores all of them.
+// account; and the summary. Any other argument is refused before anything
+// is done.
 //
 // Go, tacquito's source and the Go build cache stay.
 func Uninstall(ctx context.Context, h *Host, args []string) error {
-	yes := slices.Contains(args, "-y") || slices.Contains(args, "--yes")
+	yes := false
+	if err := parseLifecycleArgs(h, args, nil, &yes, uninstallUsage); err != nil {
+		return err
+	}
 	out, p := h.Out, h.Paths
 	// Every backend that is enabled or still installed is removed.
 	ids := h.Set.Present()
@@ -44,7 +47,7 @@ func Uninstall(ctx context.Context, h *Host, args []string) error {
 	h.echo("  - Management CLI (tacctl), its state directory (" + p.StateDir + ": store, tacctl.yaml, backups)")
 	h.echo("  - Sudoers rules (" + p.SudoersFile + ", " + p.TierSudoersFile + ")")
 	h.echo("  - Bash completion (" + p.Completion + ") and man page")
-	h.echo("  - Linux host build data (" + p.LinuxDir + ")")
+	h.echo("  - Linux host build data (" + p.LinuxDir + ") and the generated known_hosts (" + p.KnownHosts + ")")
 	h.echo("  - Management repo (" + p.Deploy + ")")
 	h.echo("  - TACACS+ (tacquito): service and units, binary, password hash generator (tacquito-hashgen),")
 	h.echo("    configuration directory (/etc/tacquito), log directory (/var/log/tacquito), logrotate config,")
@@ -87,8 +90,11 @@ func Uninstall(ctx context.Context, h *Host, args []string) error {
 	}
 	h.echo("")
 
+	// No account may keep the console as its shell once it is gone.
+	h.removeConsole(ctx)
+
 	out.Info("Removing binaries and symlinks...")
-	if err := h.rmF(p.Command); err != nil {
+	if err := h.rmF(p.Command, p.ConsoleCommand); err != nil {
 		return err
 	}
 	if err := h.phase(ids, func(b backend.Backend) error { return b.Uninstall(ctx, backend.PhaseProgram, false) }); err != nil {
@@ -189,7 +195,8 @@ func Uninstall(ctx context.Context, h *Host, args []string) error {
 // through a tacctl about to be gone. Both sudoers drop-ins go (the tier
 // rules allow commands of the removed binary to the tier groups, and must
 // not outlive it), and so does the Linux host data (pam_tacplus source and
-// prebuilt modules), with its parent directory when that leaves it empty.
+// prebuilt modules) and the generated known_hosts (with its directory),
+// with their parent directory when that leaves it empty.
 func (h *Host) removeAccess() error {
 	p := h.Paths
 	if err := h.rmF(p.SudoersFile, p.TierSudoersFile); err != nil {
@@ -198,7 +205,12 @@ func (h *Host) removeAccess() error {
 	if err := h.rmRF(p.LinuxDir); err != nil {
 		return err
 	}
-	_ = os.Remove(filepath.Dir(p.LinuxDir)) // rmdir: only when empty
+	if err := h.rmRF(filepath.Dir(p.KnownHosts)); err != nil {
+		return err
+	}
+	// rmdir: only when empty.
+	_ = os.Remove(p.VarLib)
+	_ = os.Remove(filepath.Dir(p.LinuxDir))
 	return nil
 }
 

@@ -495,3 +495,67 @@ func TestNewTakesThePathsAndVersion(t *testing.T) {
 }
 
 func twoDigits(i int) string { return fmt.Sprintf("%02d", i) }
+
+func TestSnapshotHoldsDevicesYAMLWhenItExists(t *testing.T) {
+	e := newEnv(t)
+	// Absent: nothing to do, no file in the snapshot.
+	first := e.take()
+	if _, err := os.Lstat(filepath.Join(e.backups(), first, "devices.yaml")); err == nil {
+		t.Fatal("devices.yaml in a snapshot taken without one")
+	}
+	e.write("devices.yaml", "version: 1\ndevices: {}\n")
+	second := e.take()
+	if second == "" {
+		t.Fatal("a new devices.yaml did not make a snapshot")
+	}
+	snap := filepath.Join(e.backups(), second, "devices.yaml")
+	if m := mode(t, snap); m != 0o600 {
+		t.Fatalf("devices.yaml mode %v", m)
+	}
+	if got, _ := os.ReadFile(snap); string(got) != "version: 1\ndevices: {}\n" {
+		t.Fatalf("devices.yaml %q", got)
+	}
+	// Equal to the newest: nothing new; changed or removed: a new one.
+	if id := e.take(); id != "" {
+		t.Fatalf("took %q", id)
+	}
+	e.appendTo("devices.yaml", "# note\n")
+	if id := e.take(); id == "" {
+		t.Fatal("a changed devices.yaml made no snapshot")
+	}
+	_ = os.Remove(filepath.Join(e.state, "devices.yaml"))
+	if id := e.take(); id == "" {
+		t.Fatal("a removed devices.yaml made no snapshot")
+	}
+}
+
+func TestSnapshotHoldsConsoleYAMLWhenItExists(t *testing.T) {
+	e := newEnv(t)
+	first := e.take()
+	if _, err := os.Lstat(filepath.Join(e.backups(), first, "console.yaml")); err == nil {
+		t.Fatal("console.yaml in a snapshot taken without one")
+	}
+	e.write("console.yaml", "version: 1\n")
+	second := e.take()
+	if second == "" {
+		t.Fatal("a new console.yaml did not make a snapshot")
+	}
+	snap := filepath.Join(e.backups(), second, "console.yaml")
+	if m := mode(t, snap); m != 0o600 {
+		t.Fatalf("console.yaml mode %v", m)
+	}
+	if got, _ := os.ReadFile(snap); string(got) != "version: 1\n" {
+		t.Fatalf("console.yaml %q", got)
+	}
+	if id := e.take(); id != "" {
+		t.Fatalf("took %q", id)
+	}
+	e.appendTo("console.yaml", "# note\n")
+	if id := e.take(); id == "" {
+		t.Fatal("a changed console.yaml made no snapshot")
+	}
+	_ = os.Remove(filepath.Join(e.state, "console.yaml"))
+	if id := e.take(); id == "" {
+		t.Fatal("a removed console.yaml made no snapshot")
+	}
+}

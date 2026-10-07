@@ -1,6 +1,6 @@
 package cli
 
-// Shell completion. 'tacctl completion bash' prints cobra's
+// Shell completion. 'tacctl completion bash|zsh|fish' prints cobra's
 // generated script; the script asks the binary itself ('tacctl __complete
 // <words>', cobra's protocol) what can come next. The binary answers from
 // the command tree (sub-commands) and from the verbs' Specs (flags and
@@ -37,11 +37,11 @@ var topSpecs = map[string]Spec{
 }
 
 // completionShells are the shells 'tacctl completion' writes a script for.
-var completionShells = []string{"bash"}
+var completionShells = []string{"bash", "zsh", "fish"}
 
 // completionUsage is what 'tacctl completion' prints for a missing or an
 // unknown shell.
-const completionUsage = "Usage: tacctl completion bash"
+const completionUsage = "Usage: tacctl completion bash|zsh|fish"
 
 // completionCmd is 'tacctl completion <shell>': the generated script on
 // stdout. It runs as the invoking user (reexec.go), reads no state and has
@@ -63,7 +63,12 @@ func completionCmd(inv *invocation) *cobra.Command {
 // GenCompletion writes the completion script of shell to w.
 func GenCompletion(w io.Writer, shell string) error {
 	root := newRoot(&invocation{})
-	_ = shell // only bash is supported (the command refuses the rest)
+	switch shell {
+	case "zsh":
+		return root.GenZshCompletion(w)
+	case "fish":
+		return root.GenFishCompletion(w, true)
+	}
 	return root.GenBashCompletionV2(w, true)
 }
 
@@ -77,44 +82,70 @@ func BashCompletion() ([]byte, error) {
 	return b.Bytes(), nil
 }
 
+// specLookups are the argument specs of the families, by first word: the
+// function gets the whole path (the words after 'tacctl', the family's own
+// first) and answers the Spec of that leaf. A family file registers its own
+// in init(): registerSpecs for the usual 'family <verb>' table, registerSpecFunc
+// for any other shape. The words that are leaves of their own are topSpecs.
+var specLookups = map[string]func(path []string) (Spec, bool){}
+
+// registerSpecFunc registers the lookup of the family word.
+func registerSpecFunc(word string, f func(path []string) (Spec, bool)) {
+	if _, dup := specLookups[word]; dup {
+		panic("cli: specs of '" + word + "' registered twice")
+	}
+	specLookups[word] = f
+}
+
+// registerSpecs registers the specs of 'word <verb>', keyed by the verb.
+func registerSpecs(word string, specs map[string]Spec) {
+	registerSpecFunc(word, func(path []string) (Spec, bool) {
+		if len(path) < 2 {
+			return Spec{}, false
+		}
+		s, ok := specs[path[1]]
+		return s, ok
+	})
+}
+
+func init() {
+	registerSpecs("user", userSpecs)
+	registerSpecs("scope", scopeSpecs)
+	registerSpecs("host", hostSpecs)
+	registerSpecs("backend", backendSpecs)
+	registerSpecs("store", storeSpecs)
+	registerSpecs("log", logSpecs)
+	registerSpecs("backup", backupSpecs)
+	registerSpecFunc("group", func(path []string) (Spec, bool) {
+		s, ok := groupSpecs[strings.Join(path[1:], " ")]
+		return s, ok
+	})
+	registerSpecFunc("config", func(path []string) (Spec, bool) {
+		var s Spec
+		var ok bool
+		switch {
+		case len(path) < 2:
+		case len(path) == 2:
+			s, ok = configSpecs[path[1]]
+		case path[1] == "linux":
+			s, ok = configLinuxSpecs[path[2]]
+		case path[1] == "allow" || path[1] == "deny" || path[1] == "mgmt-acl":
+			s, ok = configPolicySpecs[path[2]]
+		}
+		return s, ok
+	})
+}
+
 // specFor is the Spec of the command at path (the words after 'tacctl').
 func specFor(path []string) (Spec, bool) {
-	var s Spec
-	var ok bool
-	switch {
-	case len(path) == 1:
-		s, ok = topSpecs[path[0]]
-	case len(path) >= 2:
-		verbs := path[1]
-		switch path[0] {
-		case "user":
-			s, ok = userSpecs[verbs]
-		case "scope":
-			s, ok = scopeSpecs[verbs]
-		case "host":
-			s, ok = hostSpecs[verbs]
-		case "backend":
-			s, ok = backendSpecs[verbs]
-		case "store":
-			s, ok = storeSpecs[verbs]
-		case "log":
-			s, ok = logSpecs[verbs]
-		case "backup":
-			s, ok = backupSpecs[verbs]
-		case "group":
-			s, ok = groupSpecs[strings.Join(path[1:], " ")]
-		case "config":
-			switch {
-			case len(path) == 2:
-				s, ok = configSpecs[verbs]
-			case verbs == "linux":
-				s, ok = configLinuxSpecs[path[2]]
-			case verbs == "allow" || verbs == "deny" || verbs == "mgmt-acl":
-				s, ok = configPolicySpecs[path[2]]
-			}
-		}
+	if f, ok := specLookups[path[0]]; ok {
+		return f(path)
 	}
-	return s, ok
+	if len(path) == 1 {
+		s, ok := topSpecs[path[0]]
+		return s, ok
+	}
+	return Spec{}, false
 }
 
 // attachCompletion gives every leaf command that has a Spec its
@@ -125,8 +156,9 @@ func attachCompletion(inv *invocation, root *cobra.Command) {
 	walk = func(c *cobra.Command, path []string) {
 		if len(c.Commands()) == 0 {
 			if spec, ok := specFor(path); ok {
-				c.ValidArgsFunction = func(_ *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
-					return inv.completeSpec(spec, args, toComplete)
+				c.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
+					comps, dir := inv.completeSpec(spec, args, toComplete)
+					return inv.describeFlags(cmd, path, spec, comps), dir
 				}
 			}
 			return
@@ -138,6 +170,28 @@ func attachCompletion(inv *invocation, root *cobra.Command) {
 	for _, sub := range root.Commands() {
 		walk(sub, []string{sub.Name()})
 	}
+}
+
+// describeFlags gives each flag among comps the description the shell's
+// '?' shows for it, after the value it takes ('--idle' → '<min>: End the
+// session after ...'): bash, zsh and fish list it beside the flag when
+// there is more than one candidate. The other words are left as they are.
+func (inv *invocation) describeFlags(cmd *cobra.Command, path []string, spec Spec, comps []cobra.Completion) []cobra.Completion {
+	helps := inv.flagHelps(cmd, path, spec, comps)
+	out := make([]cobra.Completion, 0, len(comps))
+	for _, c := range comps {
+		h, ok := helps[c]
+		if !ok || h[1] == "" || strings.Contains(c, "\t") {
+			out = append(out, c)
+			continue
+		}
+		desc := h[1]
+		if h[0] != "" {
+			desc = h[0] + ": " + desc
+		}
+		out = append(out, cobra.CompletionWithDesc(c, desc))
+	}
+	return out
 }
 
 // completeSpec answers cobra's __complete for a leaf: args are the words
@@ -209,7 +263,7 @@ func (inv *invocation) completeSpec(spec Spec, args []string, toComplete string)
 	if !alone {
 		out, dir = inv.completeKind(kind, toComplete, values)
 	}
-	if strings.HasPrefix(toComplete, "-") || (kind != KindFile && pos >= spec.MinArgs) {
+	if strings.HasPrefix(toComplete, "-") || (!inv.shellMode && kind != KindFile && pos >= spec.MinArgs) {
 		for i := range spec.Flags {
 			f := &spec.Flags[i]
 			if seen[f.Names[0]] || (f.Only != "" && !slices.Contains(words, f.Only)) {
@@ -247,6 +301,7 @@ func (inv *invocation) completeKind(kind, toComplete string, values map[string]s
 		cur := strings.TrimPrefix(toComplete, prefix)
 		var out []cobra.Completion
 		for _, w := range inv.kindWords(base, values) {
+			w, _, _ = strings.Cut(w, "\t")
 			if strings.HasPrefix(w, cur) && !slices.Contains(have, w) {
 				out = append(out, prefix+w)
 			}
@@ -268,8 +323,19 @@ func (inv *invocation) kindWords(kind string, values map[string]string) []string
 	if strings.Contains(kind, "|") {
 		return strings.Split(kind, "|")
 	}
+	if _, ok := completionDescKinds[kind]; ok && inv.shellMode {
+		return inv.liveLines(inv.ctx, kind, "--desc")
+	}
 	switch kind {
-	case KindUsers, KindGroups, KindScopes, KindBackups, KindBackends, KindEnabledBackends:
+	case KindLine:
+		var out []string
+		for _, r := range topRows() {
+			if r.Name != "shell" && !slices.ContainsFunc(out, func(w string) bool { return strings.HasPrefix(w, r.Name+"\t") }) {
+				out = append(out, r.Name+"\t"+r.Desc)
+			}
+		}
+		return out
+	case KindUsers, KindGroups, KindScopes, KindHosts, KindDevices, KindBackups, KindBackends, KindEnabledBackends:
 		return inv.liveNames(inv.ctx, kind)
 	case KindListeners:
 		if b := values["--backend"]; b != "" {
@@ -279,6 +345,54 @@ func (inv *invocation) kindWords(kind string, values map[string]string) []string
 	}
 	// A single fixed word ('1|2' lists have the bar; one word has none).
 	return []string{kind}
+}
+
+// liveLines is liveNames with one entry per line ('name<TAB>description').
+func (inv *invocation) liveLines(ctx context.Context, kind string, extra ...string) []string {
+	if inv.app == nil || inv.app.Runner == nil {
+		return nil
+	}
+	res, err := inv.app.Runner.Run(ctx, execx.Cmd{
+		Name: "sudo", Args: append([]string{"-n", "tacctl", "_completion-names", kind}, extra...)})
+	if err != nil || res.Code != 0 {
+		return nil
+	}
+	var lines []string
+	for _, l := range strings.Split(string(res.Stdout), "\n") {
+		if l != "" {
+			lines = append(lines, l)
+		}
+	}
+	return alignDescs(lines)
+}
+
+// alignDescs pads the words of the descriptions of 'name<TAB>a b c' lines
+// to columns (the last word stays as it is).
+func alignDescs(lines []string) []string {
+	var width []int
+	for _, l := range lines {
+		_, d, _ := strings.Cut(l, "\t")
+		for i, w := range strings.Fields(d) {
+			if i == len(width) {
+				width = append(width, 0)
+			}
+			width[i] = max(width[i], len(w))
+		}
+	}
+	out := make([]string, len(lines))
+	for i, l := range lines {
+		name, d, ok := strings.Cut(l, "\t")
+		if !ok {
+			out[i] = l
+			continue
+		}
+		ws := strings.Fields(d)
+		for j := 0; j < len(ws)-1; j++ {
+			ws[j] += strings.Repeat(" ", width[j]-len(ws[j]))
+		}
+		out[i] = name + "\t" + strings.Join(ws, " ")
+	}
+	return out
 }
 
 // liveNames asks 'sudo -n tacctl _completion-names <kind> [arg]' for the

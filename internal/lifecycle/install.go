@@ -33,9 +33,8 @@ var installPrereqs = []string{"git", "wget"}
 // units, logrotate and README.md) come from paths.Tree, the checkout this
 // binary belongs to, as 0.1.16 takes them from its own PROJECT_DIR.
 func Install(ctx context.Context, h *Host, args []string) error {
-	yes := false
-	branch, err := parseBranch(args, &yes)
-	if err != nil {
+	yes, branch := false, ""
+	if err := parseLifecycleArgs(h, args, &branch, &yes, installUsage); err != nil {
 		return err
 	}
 	out, p := h.Out, h.Paths
@@ -86,6 +85,7 @@ func Install(ctx context.Context, h *Host, args []string) error {
 	if err := StateMigrate(StateOptionsFrom(p, out, h.Now, h.IsRoot)); err != nil {
 		return backend.ErrFailed
 	}
+	repairVarLib(out, p.VarLib)
 	h.Conf.Reload()
 	// The device config templates (a customised one already there is
 	// kept).
@@ -144,7 +144,8 @@ func Install(ctx context.Context, h *Host, args []string) error {
 // installDeploy is the "Clone management repo" step: the deploy clone
 // pulled (on --branch's branch when it names one) or cloned, readable by
 // everyone and safe for git as any user, its entrypoint executable; then
-// the installed command made the clone's binary.
+// the installed command made the clone's binary. A clone of a bash-era
+// release is refused before anything is built.
 func (h *Host) installDeploy(ctx context.Context, branch string) error {
 	out, p := h.Out, h.Paths
 	deploy := p.Deploy
@@ -177,29 +178,43 @@ func (h *Host) installDeploy(ctx context.Context, branch string) error {
 	if err := h.chmod(filepath.Join(deploy, "bin", "tacctl.sh"), 0o755); err != nil {
 		return err
 	}
+	// A release of the bash era has no Go sources to build; its own
+	// installer installs it (an install, unlike an upgrade, has nothing
+	// to hand over).
+	if !exists(filepath.Join(deploy, "go.mod")) && exists(filepath.Join(deploy, "lib", "core.sh")) {
+		what := "The tree in " + deploy
+		if branch != "" {
+			what = "'" + branch + "'"
+		}
+		out.Error(what + " is a release of the bash era; install it with its own installer: sudo " +
+			filepath.Join(deploy, "bin", "tacctl.sh") + " install")
+		return backend.ErrFailed
+	}
 	return h.installCommand(ctx)
 }
 
 // installCommand makes the installed command the binary of the deploy
 // clone's HEAD: when it is not a binary yet (missing, or 0.1.16's symlink)
-// or this binary was not built from that commit, it is built from the
-// clone (Build). Run from the bootstrap shim, which built it from the
-// clone a moment ago, it is already. 0.1.16 symlinked its entrypoint
-// instead.
+// or this binary was not built from that commit, the clone's shim installs
+// it (Build: the verified release binary, or one built from the clone).
+// Run from the bootstrap shim, which did that a moment ago, it is already. 0.1.16 symlinked its entrypoint
+// instead. The login console's symlink (paths.ConsoleCommand) is made
+// either way.
 func (h *Host) installCommand(ctx context.Context) error {
 	p := h.Paths
 	head, _ := h.gitOut(ctx, p.Deploy, "rev-parse", "HEAD")
 	if st, err := os.Lstat(p.Command); err == nil && st.Mode().IsRegular() && head != "" && head == h.Commit {
-		return nil
+		_, err := h.ensureConsoleLink()
+		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(p.Command), 0o755); err != nil {
 		return h.failed("mkdir: cannot create directory '" + filepath.Dir(p.Command) + "': " + errno(err))
 	}
-	h.Out.Info("Building " + p.Command + " from " + p.Deploy + "...")
 	if err := h.Build(ctx, p.Deploy, p.Command); err != nil {
 		return h.buildFailed(err, "")
 	}
-	return nil
+	_, err := h.ensureConsoleLink()
+	return err
 }
 
 // installSummary is the closing summary of install.

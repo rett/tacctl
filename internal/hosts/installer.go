@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,27 +22,62 @@ import (
 // (linux_write_install_script): a header of shell assignments, then
 // config/linux/client-install.sh verbatim, then the pam_tacplus source
 // tarball after __TARBALL__ and the prebuilt module after __PREBUILT__,
-// both base64 (the script reads them back through $0). The bytes are
-// 0.1.16's for the same inputs (installer_test.go holds them against a
-// header written by 0.1.16).
+// both base64 (the script reads them back through $0). Up to TAC_USERS the
+// bytes are 0.1.16's for the same inputs (installer_test.go holds them
+// against a header written by 0.1.16); the lines after it are the account
+// lifecycle of 0.2.1 (ScriptProtocol).
 type Script struct {
-	Scope     string
-	Method    string // tacplus or radius
-	Server    string
-	Port      string
-	AcctPort  string // radius only
-	Secret    string
-	Users     string // "name:tier:uid" lines, joined by newlines
-	Generated time.Time
+	Scope    string
+	Method   string // tacplus or radius
+	Server   string
+	Port     string
+	AcctPort string // radius only
+	Secret   string
+	Users    string // "name:tier:uid" lines, joined by newlines
+	// Range is the server's UID range (TAC_UID_FIRST, TAC_UID_LAST; the
+	// zero Range is DefaultRange), Previous the ranges the UID file was
+	// numbered for before (TAC_UID_PREVIOUS): the host renumbers the
+	// accounts tacctl created there into Range.
+	Range    Range
+	Previous []Range
+	// Inactive are users of the scope that get no login now (disabled, the
+	// accounting sink, a group without priv-lvl, a UID outside the range),
+	// joined by newlines: a host expires their accounts, never deletes them.
+	Inactive string
+	// RemoveHomes names the removed users whose home directory the host
+	// deletes with the account, space-separated; "*" is every one of them
+	// (--remove-home). Any other removed user's home is kept.
+	RemoveHomes string
+	Generated   time.Time
 	// Tarball is the pam_tacplus source tarball to embed, "" for none (an
 	// accounts-only or radius script).
 	Tarball string
 	// Prebuilt is a directory of the build cache whose module.tar.gz is
 	// embedded as well ("" for none; only with Tarball).
 	Prebuilt string
+	// Local is the tacctl server's own script (TAC_LOCAL=1): it keeps all
+	// of tacctl's groups (the tiers sudoers, sshd's console drop-in);
+	// every other host has tac-users and tac-superuser only.
+	Local bool
 	// Body is client-install.sh; nil means the embedded copy.
 	Body []byte
 }
+
+// ScriptProtocol is the contract between the header and client-install.sh
+// (TAC_PROTOCOL): 2 was the 0.2.1 account lifecycle (TAC_INACTIVE,
+// TAC_REMOVE_HOMES, removed users deleted, UIDs of one range only); 3 adds
+// the range to the header (TAC_UID_FIRST, TAC_UID_LAST) with the ranges the
+// server numbered for before (TAC_UID_PREVIOUS), whose accounts the host
+// renumbers; 4 adds a fourth TAC_USERS field, the login shell, for the
+// tacctl server's own accounts (the login console, ScriptRequest's
+// ConsoleShell), and the tac-console group; 5 gives tacctl's groups fixed
+// GIDs (the first numbers of the range), makes tac-users every managed
+// account's primary group (no group per user) and adds TAC_LOCAL, the
+// tacctl server's own script (all groups; elsewhere tac-users and
+// tac-superuser only). The body refuses a header of another protocol, and a body of
+// an earlier release has no TAC_PROTOCOL check but never sees this header
+// (both are written into one file by one tacctl).
+const ScriptProtocol = "5"
 
 // fileSHA256 is "sha256sum <f> | awk '{print $1}'": "" when the file
 // cannot be read.
@@ -97,6 +133,23 @@ func (s Script) Header() string {
 		}
 	}
 	q("TAC_USERS", s.Users)
+	q("TAC_INACTIVE", s.Inactive)
+	q("TAC_REMOVE_HOMES", s.RemoveHomes)
+	r := s.Range
+	if r.IsZero() {
+		r = DefaultRange
+	}
+	q("TAC_UID_FIRST", strconv.Itoa(r.Min))
+	q("TAC_UID_LAST", strconv.Itoa(r.Max))
+	prev := make([]string, len(s.Previous))
+	for i, p := range s.Previous {
+		prev[i] = p.String()
+	}
+	q("TAC_UID_PREVIOUS", strings.Join(prev, " "))
+	if s.Local {
+		q("TAC_LOCAL", "1")
+	}
+	q("TAC_PROTOCOL", ScriptProtocol)
 	return b.String()
 }
 
@@ -151,6 +204,18 @@ type ScriptRequest struct {
 	Listeners []backend.Listener
 	// Rows is the scope's linux-users view ('name|priv_lvl').
 	Rows []string
+	// Inactive are the scope's members that get no login now (disabled,
+	// the accounting sink): their accounts are expired, not deleted.
+	Inactive []string
+	// RemoveHomes are the removed users whose home directories go with
+	// their accounts; RemoveAllHomes is --remove-home (every one).
+	RemoveHomes    []string
+	RemoveAllHomes bool
+	// ConsoleShell, for the tacctl server's own accounts only ('host
+	// enroll --local' and its sync), is each user's login shell (the
+	// console or /bin/bash): TAC_USERS lines get it as a fourth field. Nil
+	// for every other host and for 'config linux script': three fields.
+	ConsoleShell func(name, tier string) string
 }
 
 // ScriptResult is what the script was written with (LINUX_SCRIPT_USERS,
@@ -215,13 +280,23 @@ func (e *Env) WriteScript(req ScriptRequest) (ScriptResult, error) {
 	}
 	port := afterLastColon(listen)
 
-	users, err := e.ScopeUsers(req.Rows)
+	users, keep, err := e.ScopeUsers(req.Rows, req.ConsoleShell)
 	if err != nil {
 		return ScriptResult{}, err
 	}
+	_, previous, err := e.UIDs().Recorded()
+	if err != nil {
+		return ScriptResult{}, err
+	}
+	homes := strings.Join(req.RemoveHomes, " ")
+	if req.RemoveAllHomes {
+		homes = "*"
+	}
 	s := Script{
 		Scope: req.Scope, Method: method, Server: req.Server, Port: port, AcctPort: acctPort,
-		Secret: req.Secret, Users: users, Generated: e.now(),
+		Secret: req.Secret, Users: users, Generated: e.now(), Range: e.rng(), Previous: previous,
+		Inactive: strings.Join(linuxNames(append(append([]string(nil), req.Inactive...), keep...)), "\n"), RemoveHomes: homes,
+		Local: req.ConsoleShell != nil,
 	}
 	if embed {
 		s.Tarball = tarball
@@ -232,14 +307,29 @@ func (e *Env) WriteScript(req ScriptRequest) (ScriptResult, error) {
 	if req.Temp {
 		return res, replaceFile(req.Output, data, 0o600)
 	}
-	if _, err := installAs(tempName(os.TempDir()), data, req.Output, 0o600); err != nil {
+	if target, err := installAs(tempName(os.TempDir()), data, req.Output, 0o600); err != nil {
 		var ie *InstallError
 		if !errors.As(err, &ie) {
 			return res, err
 		}
-		_, _ = io.WriteString(e.Out.Stderr, ie.Msg+"\n")
+		e.Out.Error("Cannot write " + target + ": " + strerror(ie.Err))
+		return res, ErrFailed
 	}
 	return res, nil
+}
+
+// linuxNames are the names of names that can be Linux accounts, in order,
+// each once.
+func linuxNames(names []string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, n := range names {
+		if LinuxName(n) && !seen[n] {
+			seen[n] = true
+			out = append(out, n)
+		}
+	}
+	return out
 }
 
 // afterLastColon is ${addr##*:}.

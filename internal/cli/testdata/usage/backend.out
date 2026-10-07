@@ -9,6 +9,7 @@ Subcommands:
   enable <id> [-y]        Install the backend if needed, enable it, render its config, start it
   disable <id> [-y]       Stop and disable it, take it out of backends.enabled (confirms);
                           its package and rendered files stay
+      -y, --yes           Answer yes to the confirmation
 
 Backends: tacacs radius
 

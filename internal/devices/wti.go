@@ -110,6 +110,33 @@ func superUserBand(d Data) bool {
 	return false
 }
 
+// portAccess prints which groups the unit's Default User Access port
+// lists apply to: the groups that land at User or ViewOnly, which reach
+// only the ports (and plugs) turned on there. menu is the Step 3 item.
+func portAccess(o *out, d Data, menu string) {
+	o.heading(ui.Yellow, "Port access ("+menu+" → Port Access, Step 3):")
+	var limited []string
+	for _, g := range privGroups(d.Model) {
+		if _, level := wtiLevel(g.priv); level == "User" || level == "ViewOnly" {
+			limited = append(limited, "    "+g.name+": "+level)
+		}
+	}
+	if len(limited) == 0 {
+		o.echo("  No group lands at User or ViewOnly, so the Port Access list is not used.")
+		o.echo("  Administrator and SuperUser logins reach every port and plug.")
+		o.echo("")
+		return
+	}
+	o.echo("  These groups reach only the ports turned On there (factory: none), and on a")
+	o.echo("  power unit only the plugs and plug groups turned On under Plug Access and")
+	o.echo("  Plug Group Access. One list per unit, shared by every such login:")
+	for _, l := range limited {
+		o.echo(l)
+	}
+	o.echo("  Administrator and SuperUser logins reach every port and plug.")
+	o.echo("")
+}
+
 // renderWTI is cmd_config_wti over TACACS+.
 func renderWTI(o *out, req Request, d Data) error {
 	t, err := ResolveTemplate(d.TemplateDir, WTITemplate(TACACS))
@@ -158,6 +185,7 @@ func renderWTI(o *out, req Request, d Data) error {
 		o.echo("  priv-lvl 10-14, e.g. 'tacctl group add wtisuper 12 OP-CLASS'.")
 	}
 	o.echo("")
+	portAccess(o, d, "8. Default User Access")
 	if secretWarnings.Len() > 0 || userWarnings != "" {
 		o.heading(ui.Yellow, "Warnings:")
 		// echo -en: the scope name is the only value in it.
@@ -190,12 +218,10 @@ func renderWTI(o *out, req Request, d Data) error {
 		"    0002 (patches/): upstream answers accounting with a non-empty server_msg,",
 		"    and the unit drops the SSH session right after login when it gets one.",
 		"    'tacctl upgrade' applies the patch overlay and rebuilds",
-		"  - Port and service access for User/ViewOnly-level logins (priv-lvl 0-9) is",
-		"    defined only under 8. Default TACACS User Access → Configure Port Access /",
-		"    Service Access (factory: Administrator+SuperUser all ports, User+ViewOnly",
-		"    none). If such a login lands at the right level but reaches no ports,",
-		"    grant them there. A same-named LOCAL account on the unit overrides the",
-		"    server-assigned level — keep the two directories disjoint",
+		"  - A User- or ViewOnly-level login that lands at the right level but sees no",
+		"    ports has none turned On under 8. Default User Access → Port Access (see",
+		"    \"Port access\" above). A same-named LOCAL account on the unit overrides",
+		"    the server-assigned level — keep the two directories disjoint",
 		"  - Fallback Local '" + vars["FALLBACK_LOCAL"] + "' mirrors this scope's aaa-order;",
 		"    keep a local Administrator account on the unit as break-glass. It acts",
 		"    only after the TACACS+ transport fails (Fallback Timer expiry), not on an",
@@ -277,13 +303,14 @@ func renderWTIRadius(o *out, req Request, d Data) error {
 		o.echo("  priv-lvl 10-14, e.g. 'tacctl group add wtisuper 12 OP-CLASS'.")
 	}
 	o.echo("")
+	portAccess(o, d, "Default RADIUS User Access")
 	o.summaryAccept("wti", scope, r)
 	o.echo("")
 	o.heading(ui.Yellow, "What RADIUS does not give you here:")
 	for _, l := range []string{
 		"  - Only the access level. The server sends no WTI-Port-Access, WTI-Plug-Access or",
 		"    WTI-Group-Access: which ports and plugs a login reaches is the unit's own setting",
-		"    for that level (Default RADIUS User Access → Port/Plug Access, Service Access)",
+		"    (\"Port access\" above)",
 		"  - No per-command authorization: the access level is all the unit is told",
 		"  - Accounting is not verified: whether the unit sends any, and what (Session Module",
 		"    Type), is not documented",

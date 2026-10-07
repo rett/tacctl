@@ -22,6 +22,16 @@ import (
 // are switched off as well (configure), for the completion path and for
 // whoever calls Execute later.
 
+// families are the command families added after the ones newRoot lists: a
+// family file appends its constructor in init() (registerFamily) and needs
+// no edit of root.go. A family's arguments for completion are registered the
+// same way (registerSpecs, completion.go); its names for completion with
+// registerDeviceNames or a new kind in completion_names.go.
+var families []func(*invocation) *cobra.Command
+
+// registerFamily adds a command family to the tree.
+func registerFamily(f func(*invocation) *cobra.Command) { families = append(families, f) }
+
 // verb declares a command named name with sub-commands.
 func verb(name, short string, subs ...*cobra.Command) *cobra.Command {
 	c := &cobra.Command{Use: name, Short: short}
@@ -49,6 +59,9 @@ func newRoot(inv *invocation) *cobra.Command {
 		// One lifecycle phase of one backend, for drivers and tests (phase.go).
 		phaseCmd(inv),
 	)
+	for _, f := range families {
+		root.AddCommand(f(inv))
+	}
 	// 'help' is not a command of tacctl ('tacctl help' prints the usage and
 	// exits 1, as any unknown word does); this hidden stand-in only keeps
 	// cobra from adding its own help command when Execute runs.
@@ -66,6 +79,7 @@ func newRoot(inv *invocation) *cobra.Command {
 	})
 	root.RunE, help.RunE = topUsage, topUsage
 	attachCompletion(inv, root)
+	applyTopShorts(root)
 	configure(root)
 	configure(help)
 	return root

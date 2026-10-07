@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/rett/tacctl/internal/hash"
+	"github.com/rett/tacctl/internal/hosts"
 	"github.com/rett/tacctl/internal/names"
 	"github.com/rett/tacctl/internal/shellquote"
 	"github.com/rett/tacctl/internal/store"
@@ -241,18 +242,22 @@ func (inv *invocation) scopeList(csv string) ([]string, error) {
 
 // --- list -------------------------------------------------------------------
 
-var userTable = ui.NewTable(ui.L(20), ui.L(15), ui.L(10), ui.L(12), ui.L(30))
+// userUID is the user's Linux UID from the server's map, "-" when it has
+// none (or the map cannot be read). A read never assigns one.
+func (inv *invocation) userUID(name string) string {
+	uid, err := (hosts.UIDs{Path: inv.app.Paths.LinuxUIDs}).Lookup(name)
+	if err != nil || uid == "" {
+		return "-"
+	}
+	return uid
+}
 
 func (inv *invocation) userList([]string) error {
-	inv.echo("")
-	inv.echoE(ui.Bold + "Users" + ui.NC)
-	inv.echo("--------------------------------------------")
-	inv.write(userTable.Header("USERNAME", "GROUP", "STATUS", "PW CHANGED", "SCOPES"))
-	inv.echo("  -----------------------------------------------------------------------------------------------")
 	m, err := inv.model()
 	if err != nil {
 		return err
 	}
+	t := ui.NewTable("Users", ui.Left("USERNAME"), ui.Left("UID"), ui.Left("GROUP"), ui.Left("STATUS"), ui.Left("PW CHANGED"), ui.Left("SCOPES"))
 	for _, row := range m.UserRows() {
 		f := strings.SplitN(row, "|", 5)
 		for len(f) < 5 {
@@ -274,8 +279,10 @@ func (inv *invocation) userList([]string) error {
 				display = f[4]
 			}
 		}
-		inv.write(userTable.Row(f[0], f[1], ui.Styled(color, f[2]), f[3], display))
+		t.Add(f[0], inv.userUID(f[0]), f[1], ui.Styled(color, f[2]), f[3], display)
 	}
+	inv.echo("")
+	inv.write(t.String())
 	inv.echo("")
 	return nil
 }
@@ -309,6 +316,7 @@ func (inv *invocation) userShow(args []string) error {
 	inv.echo("")
 	inv.echoE("  " + b + "User:" + nc + "             " + username)
 	inv.echoE("  " + b + "Group:" + nc + "            " + u.group)
+	inv.echoE("  " + b + "UID:" + nc + "              " + inv.userUID(username))
 	if u.status == "disabled" {
 		inv.echoE("  " + b + "Status:" + nc + "           " + ui.Red + "disabled" + nc)
 	} else {
@@ -661,6 +669,10 @@ func (inv *invocation) userVerify(args []string) error {
 
 	m, _ := inv.model()
 	stored := m.User(username).Hash
+	if err := hash.VerifyCostError(stored); err != nil {
+		a.Out.Error(err.Error())
+		return exit(1)
+	}
 	pw, err := a.Prompter().Password("  Enter password to verify: ")
 	if err != nil {
 		return err
@@ -822,7 +834,7 @@ func (inv *invocation) userScope(args []string) error {
 	case sub == "" || sub == "list" || sub == "-h" || sub == "--help" || sub == "help":
 		inv.echo("")
 		inv.echoE(ui.Bold + "Scopes for user '" + username + "'" + ui.NC)
-		inv.echo("--------------------------------------------")
+		inv.echo(ui.Rule("Scopes for user '" + username + "'"))
 		if len(u.scopes) == 0 {
 			inv.echoE("  " + ui.Red + "(none — user cannot authenticate on any device)" + ui.NC)
 		} else {

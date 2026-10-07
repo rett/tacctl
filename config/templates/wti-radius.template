@@ -22,7 +22,11 @@ Step 3: Set each item (type the number the menu shows next to the label,
           Accounting Port               : ${ACCT_PORT}
           OneTime Auth                  : Off
           Default RADIUS User Access    : Enable On, Access Level ViewOnly,
-                                          Service Access Telnet/SSH On   (see notes)
+                                          Service Access Telnet/SSH On   (see notes),
+                                          Port Access: the serial ports User- and
+                                          ViewOnly-level logins may reach (factory: none;
+                                          see "Port access" below); on a power unit also
+                                          Plug Access and Plug Group Access
           Debug                         : Off (turn On only while troubleshooting)
         Leave Session Module Type as it is: WTI does not document what it
         sends, and nothing on the server depends on it.

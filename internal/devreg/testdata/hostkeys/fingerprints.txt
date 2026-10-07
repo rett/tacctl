@@ -1,0 +1,5 @@
+ed25519.pub 256 SHA256:HSzpLmgLEZdz8s7nf5sAJWaZB73N68fjvTpg8ApFrlQ test (ED25519)
+ecdsa.pub 256 SHA256:VabYT2UoEomNPzIe4Rvt1N8EOfXVP4lZA0cvXBEAdBU test (ECDSA)
+ecdsa384.pub 384 SHA256:i7cOMaNA2Vcvn+idx+1Oz5o4zVt3myuFkppH6Rh4vQY test (ECDSA)
+ecdsa521.pub 521 SHA256:8MRcvyVVGW/u3m36ooc71kIbORzOsQs/zkKtM8pOMXs test (ECDSA)
+rsa.pub 3072 SHA256:G/PYZ0t32xeLxxguBKHGakG84EqZ5E+d6ddD1bf+38Y test (RSA)

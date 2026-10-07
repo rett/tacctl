@@ -9,6 +9,11 @@ tacctl_mocks_init() {
     : > "${CALLS_LOG}"
     # Prepend stub dir so test stubs shadow real binaries.
     export PATH="${STUB_BIN}:${PATH}"
+    # tacctl reads host keys with ssh-keyscan (device add, host enroll and
+    # sync): no test may reach a real host, so by default nothing answers.
+    # A test that wants keys stubs it with stub_cmd, which also logs calls.
+    printf '#!/usr/bin/env bash\nexit 0\n' > "${STUB_BIN}/ssh-keyscan"
+    chmod +x "${STUB_BIN}/ssh-keyscan"
 }
 
 # stub_cmd <name> <body>

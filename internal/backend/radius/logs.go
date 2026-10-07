@@ -60,6 +60,12 @@ func arg(args []string, i int, def string) string {
 	return def
 }
 
+// FollowArgv is backend.Follower: the auth log and the daemon log, new
+// lines only, across rotation.
+func (m *Module) FollowArgv() [][]string {
+	return [][]string{{"tail", "-F", "-q", "-n", "0", m.L.AuthLog, m.L.DaemonLog}}
+}
+
 // logTail is the 'tail' of backend_radius_log.
 func (m *Module) logTail(w io.Writer, count string) error {
 	echo(w, "")

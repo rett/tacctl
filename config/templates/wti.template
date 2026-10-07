@@ -16,7 +16,11 @@ Step 3: Set each item (type the item number, [Enter], then the value)
          6. Fallback Local             : ${FALLBACK_LOCAL}
          7. Authentication Port        : 49
          8. Default User Access        : Enable On, Access Level ViewOnly,
-                                         Service Access Telnet/SSH On   (REQUIRED; see notes)
+                                         Service Access Telnet/SSH On   (REQUIRED; see notes),
+                                         Port Access: the serial ports User- and
+                                         ViewOnly-level logins may reach (factory: none;
+                                         see "Port access" below); on a power unit also
+                                         Plug Access and Plug Group Access
          9. Account Management Module  : Enabled   (TACACS+ authorization -- carries priv-lvl back; REQUIRED)
         10. Session Management Module  : Enabled   (TACACS+ accounting -- needs tacctl's tacquito patch 0002)
         11. Service Name               : ${SERVICE_NAME}     (factory default is "wti"; see notes below)
