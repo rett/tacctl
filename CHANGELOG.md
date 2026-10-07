@@ -94,6 +94,7 @@ current behaviour; this file is where history lives.
      points at `tacctl group edit <group> wti-level superuser`.
    - The `group commands` usage says that Junos devices do not use these
      rules.
+
 6. **`tacctl group privilege` entries may name a mode.** An entry may start
    with `exec:` (the default when there is none), `exec all:`, `configure:`
    or `configure all:` (`tacctl group privilege add operator 'configure:
@@ -105,6 +106,27 @@ current behaviour; this file is where history lives.
    entry with a mode as invalid in `config validate` and prints it after
    `privilege exec level <N>` as it is, so remove such entries before
    rolling back.
+
+7. **`tacctl host show <name> [--all] [--json] [--check]` shows one
+   enrolled host in full.** Its connection, its scope and the scope that
+   answers its address today (with the drift warning of `host list` and a
+   pending staging /32), its address history, pinned keys, sightings,
+   notices, the accounts the next sync makes there, and two new records:
+   the last enroll or sync (when, by whom, the result or why it failed, the
+   client script protocol, the accounts created, updated and removed) and
+   the host's facts read over that run's session (OS, sshd version, PAM
+   module and version, `useradd`'s UID range). They are kept in
+   `/etc/tacctl/hosts/<name>.json`, written by every `host enroll` and
+   `host sync` (a failed sync too) and removed by `host unenroll`, and are
+   only ever shown; a host not synced since this release shows `not
+   recorded (before 0.2.2)`. `--check` logs in read-only and compares the
+   host with what tacctl would make it (groups and GIDs, each account's
+   UID, primary group and home mode, the PAM files, the client script
+   protocol, the host keys against the pins), one line per difference with
+   the command that fixes it, exit 1 when there is one. For it the client
+   script now records on the host the protocol it ran and the checksums of
+   the PAM files it writes (`/var/lib/tacctl-client/protocol` and
+   `pam.sha256`; the removal script deletes them). Same tier as `host list`.
 
 ## 0.2.1 (2026-10-07)
 

@@ -823,6 +823,71 @@ clears the override and falls back to the unit default.
 Show enrolled Linux hosts with their SSH target, scope, server address,
 method and user count.
 .TP
+.B "host show " name " [ \-\-all ] [ \-\-json ] [ \-\-check ]"
+One enrolled host in full, in sections:
+.B Connection
+(target, port, identity file, marked
+.B (missing)
+when it is gone, server address and method;
+.B "this server"
+for a host enrolled with
+.BR \-\-local ),
+.B Scope
+(the registered scope, the scope and prefix that answer the host's address
+today, the warning
+.B "host list"
+gives when they differ, with its
+.BI "host move " name
+fix, and a staging /32 still pending for it),
+.B Address
+(the recorded address, the previous one and when it changed),
+.B "Host keys"
+(the pinned keys' SHA256 fingerprints and the command that shows them on the
+host),
+.B Sightings
+(last and first seen, by which user over which backend, the NAS-Identifier),
+.B Notices
+(the open ones with their remedies and a count of the acknowledged ones;
+.B \-\-all
+lists those too, marked),
+.B Accounts
+(the tacctl users the next sync makes there: name, tier, UID and groups;
+disabled users counted, not listed),
+.B "Last sync"
+(when, by whom, the result or the reason it failed, the client script
+protocol, and the accounts it created, updated and removed) and
+.B "Host facts"
+(the OS from /etc/os-release, sshd's version, the PAM module with its version,
+and useradd's UID range from /etc/login.defs, as that sync read them over its
+session). The last two come from
+.IR /etc/tacctl/hosts/ name .json ,
+written by every
+.B "host enroll"
+and
+.B "host sync"
+(a failed sync too) and removed by
+.BR "host unenroll" ;
+a host not synced since 0.2.2 shows
+.BR "not recorded (before 0.2.2)" .
+They are only shown, never used to decide anything.
+.B \-\-json
+prints every field.
+.B \-\-check
+also logs in read-only, as
+.B "host target"
+tests a login (sudo with a password needs a terminal, else it fails with the
+message
+.B "host sync"
+gives), and compares the host with what tacctl would make it: tacctl's groups
+and their GIDs, each account's UID, primary group and home mode, the PAM files
+tacctl writes (present, and the text the client script recorded writing),
+the client script protocol it last ran, and the host's ssh keys against the
+pins. Nothing is changed. Each difference is one line with the command that
+fixes it (usually
+.BI "host sync " name ),
+and the exit status is 1 when there is one. Same tier as
+.BR "host list" .
+.TP
 .B "host enroll " "{ [" user "@]" host " | \-\-local } [ \-\-method tacplus|radius ] [ \-\-scope " name " ] [ \-\-server " address " ] [ \-\-name " name " ] [ \-\-port " n " ] [ \-\-identity " file " ] [ \-\-build\-on\-host ] [ \-\-allow\-uid\-mismatch ] [ \-\-remove\-home ]"
 Copy the
 .B "config linux"

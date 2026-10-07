@@ -129,6 +129,9 @@ type Env struct {
 	// Summary is the account summary the last RunScript's script printed
 	// (nil when it printed none).
 	Summary *AccountSummary
+	// Changes are the accounts the last RunScript's script reported
+	// creating, changing and deleting (nil before a run).
+	Changes *AccountChanges
 
 	sessionKeys []byte
 	sessionErr  error

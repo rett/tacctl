@@ -550,6 +550,9 @@ on_tty() {
     SUDO_USER=op run "$TACCTL_BIN_SCRIPT" host list
     assert_failure
     assert_output --partial "not permitted"
+    SUDO_USER=op run "$TACCTL_BIN_SCRIPT" host show web1
+    assert_failure
+    assert_output --partial "not permitted"
 }
 
 # --- prebuilt module (container build on the server) --------------------------
@@ -735,7 +738,7 @@ _protocols() { "$TACCTL_BIN_SCRIPT" scope protocols "$1" | sed -n "s/.*Scope '$1
     refute_output --partial "TARBALL_SHA256="
     run bash -n "$PUSHED"
     assert_success
-    run grep -cE "^podman|os-release" "$CALLS_LOG"
+    run grep -cE "^podman|TACCTL_ARCH" "$CALLS_LOG"
     assert_output "0"
 }
 
@@ -1113,4 +1116,74 @@ _container_ssh() {
     assert_output --partial "Nothing was changed."
     [[ -z "$(_hosts)" ]]
     if stub_called '^bash '; then stub_calls; return 1; fi
+}
+
+# --- host show -------------------------------------------------------------------
+
+@test "host show: one enrolled host in full, with the record of its last enroll or sync" {
+    "$TACCTL_BIN_SCRIPT" scope prefixes lab add 192.0.2.0/24 > /dev/null
+    "$TACCTL_BIN_SCRIPT" host enroll admin@web1.example.net --scope lab > /dev/null
+    [[ "$(stat -c %a "${TACCTL_STATE_DIR}/hosts/web1.json")" == 600 ]]
+    run "$TACCTL_BIN_SCRIPT" host show web1
+    assert_success
+    assert_line "Connection"
+    assert_line "  Target:       admin@web1.example.net"
+    assert_line "  Answering:    lab (prefix 192.0.2.0/24) for 192.0.2.50"
+    assert_line "  Pinned:       none (the next 'tacctl host sync web1' pins them)"
+    assert_line "  alice  superuser  UID 80000  tac-users, tac-superuser"
+    assert_line --regexp "^  When:         [0-9-]+ [0-9:]+ by root \(host enroll\)$"
+    assert_line "  Result:       ok"
+    assert_line "Host facts"
+    refute_output --partial "Check"
+    # A failed sync is recorded too.
+    SSH_RUN_FAILS=1 run "$TACCTL_BIN_SCRIPT" host sync web1
+    assert_failure
+    run "$TACCTL_BIN_SCRIPT" host show web1
+    assert_line "  Result:       failed: the client script failed on the host (exit status 1)"
+    run "$TACCTL_BIN_SCRIPT" host show web1 --json
+    assert_success
+    run jq -r '.last_sync.command, .last_sync.ok, .scope.answering, .accounts.users[0].groups[1], (.check == null)' <<< "$output"
+    assert_output "$(printf 'sync\nfalse\nlab\ntac-superuser\ntrue')"
+    run "$TACCTL_BIN_SCRIPT" host show ghost
+    assert_failure 1
+    assert_output --partial "No enrolled host named 'ghost'"
+    "$TACCTL_BIN_SCRIPT" host unenroll web1 > /dev/null
+    [[ ! -e "${TACCTL_STATE_DIR}/hosts/web1.json" ]]
+}
+
+@test "host show: a host enrolled before the record shows it as not recorded" {
+    echo "web1|admin@web1.example.net||lab|192.0.2.1|" > "${TACCTL_STATE_DIR}/linux-hosts"
+    run "$TACCTL_BIN_SCRIPT" host show web1
+    assert_success
+    assert_line "  Recorded:     not recorded (before 0.2.2)"
+}
+
+@test "host show --check: read-only, one line per difference with its fix, exit 1" {
+    "$TACCTL_BIN_SCRIPT" host enroll admin@web1.example.net --scope lab > /dev/null
+    : > "$CALLS_LOG"
+    stub_cmd ssh 'case "$*" in
+        *tacctl-check*) printf "tacctl-check %s\n" "group tac-users 80000" "group tac-superuser 1002" \
+            "account alice 80000 80000 700 /home/alice" "pam tacctl-auth a" "pam tacctl-account b" "pam tacctl-session c" \
+            "pam-written tacctl-auth a" "pam-written tacctl-account b" "pam-written tacctl-session c" "protocol 5" ;;
+        *) true ;;
+    esac'
+    run "$TACCTL_BIN_SCRIPT" host show web1 --check
+    assert_failure 1
+    assert_line "Check (read on the host now)"
+    assert_line "  - group tac-superuser has GID 1002, not 80002. Fix: tacctl host sync web1"
+    assert_line "  - the host's ssh keys (/etc/ssh/ssh_host_*_key.pub) could not be read. Fix: check them on the host: Linux: 'ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub' (and the ecdsa and rsa .pub files beside it)"
+    assert_line "  2 differences."
+    refute_output --partial "tacctl-check"
+    # Nothing is copied to the host: the check is one command line.
+    if stub_called 'mktemp'; then stub_calls; return 1; fi
+    # The run fails (sudo needs a password, no terminal): nothing compared.
+    stub_cmd ssh 'case "$*" in
+        *tacctl-check*) echo "[ERROR] sudo on this host needs a password and there is no terminal to ask on." >&2; false ;;
+        *) true ;;
+    esac'
+    run "$TACCTL_BIN_SCRIPT" host show web1 --check
+    assert_failure 1
+    assert_output --partial "sudo on this host needs a password"
+    assert_output --partial "Could not check web1: the read-only run as root on admin@web1.example.net failed (see above); nothing was compared."
+    refute_line "Connection"
 }

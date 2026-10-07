@@ -122,6 +122,7 @@ func TestCompleteScenarios(t *testing.T) {
 		{[]string{"config", "restore", "20260101-000000", ""}, []string{"--legacy"}},
 		{[]string{"host", "default-method", ""}, []string{"tacplus", "radius"}},
 		{[]string{"host", "enroll", "--method", ""}, []string{"tacplus", "radius"}},
+		{[]string{"host", "show", "web1", ""}, []string{"--all", "--json", "--check"}},
 		{[]string{"install", ""}, []string{"--branch", "-y", "--yes"}},
 		{[]string{"upgrade", ""}, []string{"--branch"}},
 		{[]string{"uninstall", ""}, []string{"-y", "--yes"}},

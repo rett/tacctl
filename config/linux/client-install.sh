@@ -140,6 +140,8 @@ fi
 mkdir -p "$STATE_DIR/backup"
 chmod 700 "$STATE_DIR"
 touch "$STATE_DIR/created" "$STATE_DIR/expired"
+# The protocol of the last run here, for 'tacctl host show --check'.
+echo "$TAC_PROTOCOL" > "$STATE_DIR/protocol"
 
 # --- Which accounts are tacctl's -------------------------------------------------
 # tacctl gives its accounts UIDs from the
@@ -1418,6 +1420,8 @@ for svc in sshd sudo; do
     grep -qE '^(@include|account[[:space:]]+include[[:space:]]+)[[:space:]]*tacctl-account$' "$PAM_DIR/$svc" \
         || die "Failed to edit $PAM_DIR/$svc."
 done
+# What was written, for 'tacctl host show --check' to compare with.
+(cd "$PAM_DIR" && sha256sum tacctl-auth tacctl-account tacctl-session) > "$STATE_DIR/pam.sha256"
 
 # --- SELinux -------------------------------------------------------------------
 # Failure is reported, not fatal: logins then behave as if the server were

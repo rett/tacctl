@@ -417,13 +417,21 @@ func deviceJSONOf(inv *invocation, res *devreg.Resolver, e devreg.Entry) deviceJ
 	for _, n := range res.NoticesFor(e) {
 		j.Notices = append(j.Notices, deviceNoticeJSON{Kind: n.Kind, Text: n.Text, Acked: n.Acked})
 	}
-	if x, ok := res.Seen.Of(e.Address); ok && e.Address != "" {
-		_, _, _, stale := deviceSeenCols(inv, res, e)
-		const layout = "2006-01-02T15:04:05Z07:00"
-		j.Seen = &deviceSeenJSON{First: x.First.Format(layout), Last: x.Last.Format(layout), Count: x.Count,
-			LastUser: x.LastUser, LastOutcome: x.LastOutcome, Via: x.Via, NASID: x.LastNASID, Stale: stale}
-	}
+	j.Seen = deviceSeenJSONOf(inv, res, e)
 	return j
+}
+
+// deviceSeenJSONOf is what the seen cache knows of e's address (nil when
+// nothing).
+func deviceSeenJSONOf(inv *invocation, res *devreg.Resolver, e devreg.Entry) *deviceSeenJSON {
+	x, ok := res.Seen.Of(e.Address)
+	if !ok || e.Address == "" {
+		return nil
+	}
+	_, _, _, stale := deviceSeenCols(inv, res, e)
+	const layout = "2006-01-02T15:04:05Z07:00"
+	return &deviceSeenJSON{First: x.First.Format(layout), Last: x.Last.Format(layout), Count: x.Count,
+		LastUser: x.LastUser, LastOutcome: x.LastOutcome, Via: x.Via, NASID: x.LastNASID, Stale: stale}
 }
 
 func (inv *invocation) printJSON(v any) error {

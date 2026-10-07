@@ -282,6 +282,10 @@ _client_env() {
 bob"
     [[ ! -e "$TACCTL_CLIENT_STATE/adopted" ]]
     [[ ! -f "$TACCTL_CLIENT_PAM_DIR/tacctl-auth" ]]
+    # The protocol it ran, for 'host show --check'; no PAM file was written.
+    run cat "$TACCTL_CLIENT_STATE/protocol"
+    assert_output "$(sed -n 's/^TAC_PROTOCOL=//p' "$OUT")"
+    [[ ! -e "$TACCTL_CLIENT_STATE/pam.sha256" ]]
 }
 
 @test "client install: the tacctl server's own script keeps every tier group, at fixed GIDs" {
@@ -1247,6 +1251,11 @@ CONSOLE=/usr/local/bin/tacctl-console
     assert_line "@include common-auth"
     run cat "$TACCTL_CLIENT_SUDOERS"
     assert_output --partial "%tac-superuser ALL=(ALL:ALL) ALL"
+    # What it wrote is recorded, for 'host show --check'.
+    run bash -c 'cd "$TACCTL_CLIENT_PAM_DIR" && sha256sum -c "$TACCTL_CLIENT_STATE/pam.sha256"'
+    assert_success
+    assert_line "tacctl-auth: OK"
+    assert_line "tacctl-session: OK"
 
     # Re-running must not stack a second session include.
     run bash "$OUT"
@@ -1264,6 +1273,7 @@ CONSOLE=/usr/local/bin/tacctl-console
     cmp "$TACCTL_CLIENT_PAM_DIR/sddm" "$BATS_TEST_TMPDIR/sddm.orig"
     [[ ! -f "$TACCTL_CLIENT_PAM_DIR/tacctl-auth" ]]
     [[ ! -f "$TACCTL_CLIENT_SUDOERS" ]]
+    [[ ! -e "$TACCTL_CLIENT_STATE/pam.sha256" && ! -e "$TACCTL_CLIENT_STATE/protocol" ]]
     run grep -cE "userdel|groupdel" "$CALLS_LOG"
     assert_output "0"
 }

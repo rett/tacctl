@@ -106,7 +106,7 @@ if [[ -f "$STATE_DIR/files" ]]; then
     ldconfig
     rm -f "$STATE_DIR/files"
 fi
-rm -f "$STATE_DIR/installed" "$STATE_DIR/module" "$STATE_DIR/method"
+rm -f "$STATE_DIR/installed" "$STATE_DIR/module" "$STATE_DIR/method" "$STATE_DIR/protocol" "$STATE_DIR/pam.sha256"
 
 for mod in tacctl_pam tacctl_pam_radius; do
     if [[ -f "$STATE_DIR/${mod}.cil" ]]; then

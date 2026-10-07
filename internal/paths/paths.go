@@ -58,6 +58,7 @@ type Paths struct {
 	DevicesFile string // StateDir/devices.yaml: the device registry
 	KnownHosts  string // VarLib/ssh/known_hosts: the generated host-key file (dir 0755, file 0644)
 	ConsoleFile string // StateDir/console.yaml: the login console's settings
+	HostRecords string // StateDir/hosts: what the last enroll or sync saw of each host (hosts.Records)
 	SSHDDropIn  string // TACCTL_SSHD_DROPIN: sshd's drop-in for the console group
 	ShellsFile  string // TACCTL_SHELLS_FILE: /etc/shells
 	VarLib      string // TACCTL_VAR_LIB: tacctl's variable data (/var/lib/tacctl, 0711)
@@ -127,6 +128,7 @@ func Resolve(env Env, exe string, exists func(string) bool) Paths {
 	p.Templates = p.StateDir + "/templates"
 	p.DevicesFile = p.StateDir + "/devices.yaml"
 	p.ConsoleFile = p.StateDir + "/console.yaml"
+	p.HostRecords = p.StateDir + "/hosts"
 	p.SSHDDropIn = env.Or("TACCTL_SSHD_DROPIN", "/etc/ssh/sshd_config.d/tacctl-console.conf")
 	p.ShellsFile = env.Or("TACCTL_SHELLS_FILE", "/etc/shells")
 	p.VarLib = env.Or("TACCTL_VAR_LIB", "/var/lib/tacctl")
