@@ -69,7 +69,8 @@ podman run -d --name "$NAME" -v "${HERE}:/check:ro" -v "${WORK}/data:/data:ro" "
 MYIP=$(podman exec "$NAME" hostname -I | cut -d' ' -f1)
 sed "s#10.0.2.0/24#${MYIP%.*}.0/24#" "${WORK}/data/store.yaml" > "${STATE}/store.yaml"
 "${REPO}/bin/tacctl.sh" --build "${WORK}/tacctl" > /dev/null
-printf 'backends:\n  enabled: [radius]\nlisteners:\n  radius:\n    auth6: {network: udp6, address: "[::]:1812"}\n' > "${STATE}/tacctl.yaml"
+{ printf 'backends:\n  enabled: [radius]\nlisteners:\n  radius:\n    auth6: {network: udp6, address: "[::]:1812"}\n'
+  cat "${WORK}/data/tacctl.yaml"; } > "${STATE}/tacctl.yaml"
 (
     export TACCTL_STATE_DIR="$STATE" TACCTL_ETC="${WORK}/etc" TACCTL_LOG="${WORK}/log" TACCTL_SKIP_SUDO=1
     export TACCTL_RADIUS_FAMILY=rhel

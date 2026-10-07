@@ -1,6 +1,7 @@
 package radius_test
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -477,12 +478,14 @@ func TestVendorPolicy(t *testing.T) {
 		`&Cisco-AVPair := "shell:priv-lvl=%{control:Tacctl-Priv-Lvl}"`,
 		`&Juniper-Local-User-Name := &control:Tacctl-Juniper-Class`,
 		`&WTI-Super := &control:Tacctl-WTI-Super`,
+		`&Juniper-Deny-Commands := &control:Tacctl-Juniper-Deny-Commands`,
+		`&Juniper-Deny-Configuration := &control:Tacctl-Juniper-Deny-Configuration`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("post-auth lacks %s", want)
 		}
 	}
-	// The three are inside the branch a filtered packet does not take,
+	// The five are inside the branch a filtered packet does not take,
 	// before the auth log.
 	n, in := 0, false
 	for _, l := range lines(body) {
@@ -496,8 +499,8 @@ func TestVendorPolicy(t *testing.T) {
 			break
 		}
 	}
-	if n != 3 {
-		t.Errorf("%d update reply before tacctl_auth, want 3", n)
+	if n != 5 {
+		t.Errorf("%d update reply before tacctl_auth, want 5", n)
 	}
 	// Nothing tacctl-internal is ever put into the reply: no line of an
 	// "update reply { ... }" block sets a Tacctl-* attribute.
@@ -514,7 +517,7 @@ func TestVendorPolicy(t *testing.T) {
 	}
 	// A reject strips every vendor attribute.
 	reject := strings.Join(between(out.Conf, regexp.MustCompile(`Post-Auth-Type REJECT \{`), regexp.MustCompile(`^\t\t\}`)), "\n")
-	for _, a := range []string{"Service-Type", "Cisco-AVPair", "Juniper-Local-User-Name", "WTI-Super"} {
+	for _, a := range []string{"Service-Type", "Cisco-AVPair", "Juniper-Local-User-Name", "Juniper-Deny-Commands", "Juniper-Deny-Configuration", "WTI-Super"} {
 		if !strings.Contains(reject, "&"+a+" !* ANY") {
 			t.Errorf("a reject does not strip %s", a)
 		}
@@ -557,7 +560,8 @@ func TestDictionary(t *testing.T) {
 			internal = append(internal, f[1]+" "+f[2]+" "+f[3])
 		}
 	}
-	if !reflect.DeepEqual(internal, []string{"Tacctl-Priv-Lvl 3990 integer", "Tacctl-Juniper-Class 3991 string", "Tacctl-WTI-Super 3992 integer"}) {
+	if !reflect.DeepEqual(internal, []string{"Tacctl-Priv-Lvl 3990 integer", "Tacctl-Juniper-Class 3991 string", "Tacctl-WTI-Super 3992 integer",
+		"Tacctl-Juniper-Deny-Commands 3993 string", "Tacctl-Juniper-Deny-Configuration 3994 string"}) {
 		t.Errorf("internal attributes %v", internal)
 	}
 	if !strings.Contains(out.Dictionary, "https://ftp.wti.com/InfoCenter/rsa/dictionary/dictionary.wti") {
@@ -613,18 +617,38 @@ func TestConfStructure(t *testing.T) {
 
 func TestCommandRulesAreNotRendered(t *testing.T) {
 	out := render(t, radiusModel(t), "debian")
-	if regexp.MustCompile(`(?i)allow-commands|deny-commands|traceroute`).MatchString(out.Conf + out.Users) {
+	// (Juniper-Deny-Commands, the VSA of the Junos deny sets, is not one.)
+	if regexp.MustCompile(`(?i)(^|[^-])(allow|deny)-commands|traceroute`).MatchString(out.Conf + out.Users) {
 		t.Error("command rules are rendered")
 	}
 }
 
-// goldenCase is a store, a family and the golden files it renders to.
+// checkGolden compares what a store renders to for a family (with no
+// tacctl.yaml overrides) with its golden files.
 func checkGolden(t *testing.T, m *model.Model, family, confGolden, usersGolden, dictGolden string) {
 	t.Helper()
-	out := render(t, m, family)
+	compareGolden(t, render(t, m, family), confGolden, usersGolden, dictGolden)
+}
+
+var updateGolden = flag.Bool("update", false, "rewrite the golden files")
+
+// compareGolden compares a render with its golden files; with -update
+// ('go test ./internal/render/radius -run Golden -update') it rewrites
+// them instead. An empty golden name is not compared.
+func compareGolden(t *testing.T, out *radius.Output, confGolden, usersGolden, dictGolden string) {
+	t.Helper()
 	for _, c := range []struct{ name, got, golden string }{
 		{"conf", out.Conf, confGolden}, {"users", out.Users, usersGolden}, {"dictionary", out.Dictionary, dictGolden},
 	} {
+		if c.golden == "" {
+			continue
+		}
+		if *updateGolden {
+			if err := os.WriteFile(c.golden, []byte(c.got), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			continue
+		}
 		if want := read(t, c.golden); c.got != want {
 			t.Errorf("%s differs from %s:\n%s", c.name, c.golden, firstDiff(c.got, want))
 		}
@@ -675,7 +699,8 @@ func TestGoldenRHEL(t *testing.T) {
 
 // The store of tests/containers/radius (vendor attributes and tagged
 // addresses on 127.0.0.0/8, an IPv6 prefix, a user named 007): the goldens
-// were rendered from the snapshot by the 0.1.16 bash renderer.
+// were rendered from the snapshot by the 0.1.16 bash renderer, the conf and
+// dictionary changed by 0.2.2's Junos deny sets (D15).
 func TestGoldenContainerStore(t *testing.T) {
 	m := loadModel(t, "testdata/container.store.yaml")
 	checkGolden(t, m, "debian", "testdata/container.debian.conf", "testdata/container.debian.users", "testdata/container.dictionary")
