@@ -199,20 +199,15 @@ func (inv *invocation) groupEditWTILevel(g *model.Group, value string) error {
 
 // groupEditTier is 'group edit <g> tier <tier>|auto' (D18).
 func (inv *invocation) groupEditTier(g *model.Group, value string) error {
-	a := inv.app
-	if value != "auto" && !slices.Contains(conf.Tiers, value) {
-		return inv.usageErr("Unknown tier '" + value + "'. Use: auto, " + strings.Join(conf.Tiers, ", "))
-	}
-	if err := inv.applyWith(func() error { return policy.WriteGroupTier(a.Conf(), g.Name, value) }); err != nil {
-		return err
-	}
-	if value == "auto" {
-		a.Out.Info(fmt.Sprintf("Group '%s' tacctl tier is automatic again (priv-lvl %d → %s).", g.Name, privOf(g), bandTier(g)))
-	} else {
-		a.Out.Info("Group '" + g.Name + "' tacctl tier set to " + value + ".")
-	}
-	a.Out.Info("Linux hosts take the change at their next sync: tacctl host sync --all")
-	return nil
+	_ = value
+	return inv.usageErr(tierLater(g))
+}
+
+// tierLater is the refusal of a per-group tier: it arrives with the
+// engineer tier (0.2.3); until then the priv-lvl band decides.
+func tierLater(g *model.Group) string {
+	return fmt.Sprintf("A tier per group arrives with the engineer tier in 0.2.3; until then the priv-lvl decides "+
+		"(below 7 readonly, 7-14 operator, 15 superuser): group '%s' is %s.", g.Name, bandTier(g))
 }
 
 // privOf is the group's priv-lvl (0 for a hand-edited store without one).
@@ -257,11 +252,7 @@ func (inv *invocation) groupShow(args []string) error {
 	inv.echo(ui.Rule(title))
 	row("Cisco priv-lvl", strconv.Itoa(privOf(g)))
 	row("Juniper class", g.JuniperClass)
-	if t := policy.GroupTier(c, group); t != "" {
-		row("tacctl tier", t+" (set; auto would be "+bandTier(g)+")")
-	} else {
-		row("tacctl tier", bandTier(g)+" (auto, from priv-lvl)")
-	}
+	row("tacctl tier", bandTier(g)+" (from priv-lvl)")
 	level, over := policy.WTILevel(c, group, privOf(g))
 	if over {
 		row("WTI level", wtiLabel(level)+" (set; auto would be "+wtiLabel(policy.WTILevelOf(privOf(g)))+")")

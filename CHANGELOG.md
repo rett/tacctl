@@ -151,6 +151,35 @@ current behaviour; this file is where history lives.
    `tacctl.yaml`. `config snmp` is for administrators only. Nothing of the
    hint is stored.
 
+9. **Each group carries its own device settings, sent by the server at
+   login.** `tacctl group junos <group> deny-commands|deny-configuration
+   list|add|remove|clear` keeps a group's Junos deny patterns; the server
+   sends them, joined into one value, with the group's login class over
+   TACACS+ (`junos-exec`) and RADIUS (`Juniper-Deny-Commands`,
+   `Juniper-Deny-Configuration`, only where `Juniper-Local-User-Name` is
+   sent). A set may not exceed 241 bytes (deny-commands) or 236
+   (deny-configuration), the TACACS+ argument limit: `add` refuses a
+   pattern that would make it longer, and the render refuses a hand-edited
+   one. `tacctl group edit <group> wti-level viewonly|user|superuser|
+   administrator|auto` gives a group its own WTI access level instead of
+   its priv-lvl band, sent as a `wti` service over TACACS+ (WTI units need
+   their factory Service Name `wti`) and as `WTI-Super` over RADIUS.
+   `group add` takes `--wti-level`; `group show <group>` prints every
+   setting of a group and where it comes from, and is open to the
+   read-only tier; `group remove` drops the group's settings. `tacctl
+   group preset roles [--dry-run] [--force] [--mgmt-filter <name>]` writes
+   starting values for viewer (`readonly`), operator, engineer (created at
+   priv-lvl 15 with class `ENG-CLASS` when absent) and superuser: their WTI
+   levels, the Junos deny sets of the first three and engineer's Cisco
+   command rules; a value already there and different is kept unless
+   `--force`, and no user is moved. The settings live in `tacctl.yaml`
+   (`junos.<group>`, `wti_level.<group>`). A model without them renders
+   `tacquito.yaml` as 0.2.1 did; the RADIUS configuration gains the
+   post-auth and reject lines for the new attributes on every install.
+   Until the engineer tier (0.2.3), a group's tacctl tier still comes from
+   its priv-lvl, so an engineer group at 15 is a superuser on the tacctl
+   server: keep engineers out of the server's own scope.
+
 ## 0.2.1 (2026-10-07)
 
 ### What changed

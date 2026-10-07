@@ -319,19 +319,17 @@ Every setting of the group and where it comes from (set on the group, or
 the default of its priv-lvl): Cisco priv-lvl, Juniper class, tacctl tier,
 WTI level, command rules, Junos rules and the number of users.
 .TP
-.B "group add " \fIname priv-lvl juniper-class\fR " [ --tier \fItier\fR ] [ --wti-level \fIlevel\fR ]"
+.B "group add " \fIname priv-lvl juniper-class\fR " [ --wti-level \fIlevel\fR ]"
 Add a custom group.
 .I priv-lvl
 is an integer 0\(en15;
 .I juniper-class
 matches the Junos login class name.
-.B --tier
-and
 .B --wti-level
-set those two settings at creation (see
+sets the WTI level at creation (see
 .BR "group edit" ).
 .TP
-.B "group edit " \fIname\fR " { priv-lvl \fIN\fR | juniper-class \fICLASS\fR | wti-level \fIlevel\fR | tier \fItier\fR }"
+.B "group edit " \fIname\fR " { priv-lvl \fIN\fR | juniper-class \fICLASS\fR | wti-level \fIlevel\fR }"
 Change one setting of a group. Every group, built-in or custom, is edited
 the same way; the built-in groups
 .RB ( readonly ,
@@ -347,17 +345,10 @@ or
 .BR administrator ,
 the access level a WTI unit with Service Name
 .B wti
-gives the group's users;
-.B tier
-is
-.BR readonly ,
-.BR operator ,
-.B engineer
-or
-.BR superuser ,
-the group's tacctl tier on the server and on Linux hosts.
+gives the group's users, and
 .B auto
-removes either setting, so the priv-lvl decides again (below 7 readonly,
+removes it, so the priv-lvl decides again. The group's tacctl tier on the
+server and on Linux hosts comes from its priv-lvl (below 7 readonly,
 7\(en14 operator, 15 superuser).
 .TP
 .BI "group remove " name

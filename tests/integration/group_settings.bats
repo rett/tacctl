@@ -92,31 +92,31 @@ setup() {
     assert_output "0"
 }
 
-@test "group edit wti-level / tier: unknown values are refused" {
+@test "group edit wti-level: an unknown level is refused; a tier per group waits for 0.2.3" {
     run "$TACCTL_BIN_SCRIPT" group edit operator wti-level root
     assert_failure
     assert_output --partial "Unknown WTI level 'root'"
-    run "$TACCTL_BIN_SCRIPT" group edit operator tier root
+    run "$TACCTL_BIN_SCRIPT" group edit operator tier engineer
     assert_failure
-    assert_output --partial "Unknown tier 'root'"
+    assert_output --partial "A tier per group arrives with the engineer tier in 0.2.3"
+    assert_output --partial "group 'operator' is operator."
 }
 
-@test "group add --tier --wti-level, show, then remove forgets the settings" {
-    run "$TACCTL_BIN_SCRIPT" group add engineer 15 ENG-CLASS --tier engineer --wti-level superuser
+@test "group add --wti-level, show, then remove forgets the settings" {
+    run "$TACCTL_BIN_SCRIPT" group add engineer 15 ENG-CLASS --wti-level superuser
     assert_success
-    assert_output --partial "tacctl tier: engineer."
     "$TACCTL_BIN_SCRIPT" group junos engineer deny-configuration add '^snmp'
 
     run "$TACCTL_BIN_SCRIPT" group show engineer
     assert_success
     assert_output --partial "Cisco priv-lvl:    15"
     assert_output --partial "Juniper class:     ENG-CLASS"
-    assert_output --partial "tacctl tier:       engineer (set; auto would be superuser)"
+    assert_output --partial "tacctl tier:       superuser (from priv-lvl)"
     assert_output --partial "WTI level:         SuperUser (set; auto would be Administrator)"
     assert_output --partial "deny-configuration 7/236 bytes"
 
     run "$TACCTL_BIN_SCRIPT" group show operator
-    assert_output --partial "tacctl tier:       operator (auto, from priv-lvl)"
+    assert_output --partial "tacctl tier:       operator (from priv-lvl)"
     assert_output --partial "WTI level:         User (auto, from priv-lvl)"
 
     run bash -c "echo y | '$TACCTL_BIN_SCRIPT' group remove engineer"
