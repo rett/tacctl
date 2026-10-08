@@ -254,7 +254,8 @@ on_tty() {
     assert_line "TAC_UID_FIRST=80000"
     assert_line "TAC_UID_LAST=89999"
     assert_line "TAC_UID_PREVIOUS=''"
-    assert_line "TAC_PROTOCOL=5"
+    assert_line "TAC_ENGINEER_SUDO=ALL"
+    assert_line "TAC_PROTOCOL=6"
     # The ID maps, then the accounts, were read over the shared connection,
     # read-only, before the copy.
     stub_called "^ssh -o ConnectTimeout=10 -o ControlMaster=auto -o ControlPath=~/.ssh/tacctl-%C -o ControlPersist=60 -T web1 getent passwd$"

@@ -72,6 +72,8 @@ system-shell
 system-shell mode
 system-shell tiers operator,operator
 system-shell tiers root
+system-shell tiers engineer
+system-shell tiers superuser,engineer
 system-shell path bash
 system-shell path /no/such/shell
 system-shell path /bin/ls
@@ -79,6 +81,7 @@ forwarding
 forwarding mode
 forwarding tiers root
 forwarding tiers superuser,superuser
+forwarding tiers engineer
 forwarding gateway-ports on
 forwarding gateway-ports enable extra
 show extra
@@ -93,6 +96,7 @@ LIST
     plain
     assert_output --partial "  readonly: enable"
     assert_output --partial "  operator: enable"
+    assert_output --partial "  engineer: enable"
     assert_output --partial "  superuser: enable"
     assert_output --partial "system-shell tiers: superuser"
     assert_output --partial "forwarding tiers: superuser (X11 and TCP ports)"
@@ -147,7 +151,7 @@ LIST
     [[ "$(stat -c %a "$CONSOLE")" == 600 ]]
     run cat "$CONSOLE"
     assert_output --partial "version: 1"
-    assert_output --partial "tiers: {readonly: disable, operator: enable, superuser: enable}"
+    assert_output --partial "tiers: {readonly: disable, operator: enable, engineer: enable, superuser: enable}"
     assert_output --partial "users: {bob: disable}"
     assert_output --partial "  idle_timeout: 15"
     assert_output --partial "  system_shell_tiers: [superuser]"
@@ -360,6 +364,31 @@ LIST
     "$TACCTL_BIN_SCRIPT" console forwarding tiers readonly
     SUDO_USER=carol run "$TACCTL_BIN_SCRIPT" _console-policy
     assert_output "shell=system idle=5 system_shell=yes system_shell_path=/bin/bash ssh_escape=yes agent=no forward=yes tier=readonly list_max=40"
+}
+
+@test "console: the engineer tier has a switch, but never the system shell or forwarding (D18, D24)" {
+    run "$TACCTL_BIN_SCRIPT" console system-shell tiers superuser,engineer
+    assert_failure 1
+    assert_output --partial "The engineer tier cannot be given the system shell on this server: a shell here would reach the server's secrets. Nothing was changed."
+    run "$TACCTL_BIN_SCRIPT" console forwarding tiers engineer
+    assert_failure 1
+    assert_output --partial "The engineer tier cannot be given forwarding on this server: engineers reach devices with the console's ssh. Nothing was changed."
+    [[ ! -e "$CONSOLE" ]]
+    run "$TACCTL_BIN_SCRIPT" console tiers engineer disable
+    assert_success
+    run "$TACCTL_BIN_SCRIPT" console tiers engineer
+    assert_output "disable"
+    # bob's group is given the engineer tier: his console settings follow.
+    printf 'tier:\n  operator: engineer\n' > "${TACCTL_STATE_DIR}/tacctl.yaml"
+    "$TACCTL_BIN_SCRIPT" console system-shell tiers operator,superuser
+    stub_cmd id 'echo "$3 tac-users"'
+    SUDO_USER=bob run "$TACCTL_BIN_SCRIPT" _console-policy
+    assert_output "shell=system idle=30 system_shell=no system_shell_path=/bin/bash ssh_escape=no agent=no forward=no tier=engineer list_max=40"
+    SUDO_USER=bob run "$TACCTL_BIN_SCRIPT" console show
+    assert_success
+    SUDO_USER=bob run "$TACCTL_BIN_SCRIPT" console system-shell tiers
+    assert_failure 1
+    assert_output --partial "is not permitted for the engineer tier"
 }
 
 @test "console verbs are gated by tier: show for operators, the rest for superusers" {

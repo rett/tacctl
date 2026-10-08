@@ -162,6 +162,7 @@ func configCmd(inv *invocation) *cobra.Command {
 			verb("remove-script", "Write the removal script"),
 			verb("uid", "Show or change the UID a user gets on every host"),
 			verb("uid-range", "Show or change the UID range of all hosts (default 80000-89999)"),
+			verb("engineer-sudo", "Show or limit what engineers may run through sudo on enrolled hosts"),
 			verb("builds", "Show or drop the modules 'host enroll' built in containers"),
 		),
 		withRun(verb("branch [name]", "Show or change the tacctl repo branch"), n(inv.configBranch)),

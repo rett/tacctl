@@ -303,7 +303,7 @@ func TestConfigSudoers(t *testing.T) {
 		t.Errorf("tiers show:\n%q\nwant\n%q", out, want)
 	}
 	sb.cfgRun("", []string{"config", "sudoers", "tiers", "install"}, install, env...)
-	sb.expect(0, "Tiers apply to members of tac-readonly, tac-operator and tac-superuser.", "")
+	sb.expect(0, "Tiers apply to members of tac-readonly, tac-operator, tac-engineer and tac-superuser.", "")
 	if data, _ := os.ReadFile(tiers); string(data) != tier.Sudoers() {
 		t.Errorf("tiers file: %q", data)
 	}

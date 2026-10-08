@@ -406,6 +406,9 @@ func (inv *invocation) hostEnroll(args []string) error {
 		scope = info.Scope
 		a.Out.InfoE(hostScopeOrigin(name, target, hostPart, hostIP) + " is answered by scope '" + scope + "' (prefix " + info.Prefix + "); enrolling " + name + " there (another one: --scope <name>).")
 	}
+	if err := inv.hostEnrollAllowed(reg, name, scope, isLocal); err != nil {
+		return err
+	}
 
 	// The method: the one asked for; else the one a registered host has (so
 	// re-enrolling never switches a host by accident); else what the host's
@@ -866,10 +869,11 @@ func (inv *invocation) hostMove(args []string) error {
 	if err != nil {
 		return err
 	}
+	f := inv.callerScopes()
 	if all {
 		failed, moved := 0, 0
 		for _, e := range reg.Entries() {
-			if inv.hostScopeDrift(e, inv.hostAddress(e)) == "" {
+			if !f.allows(e.Scope) || inv.hostScopeDrift(e, inv.hostAddress(e)) == "" {
 				continue
 			}
 			if err := inv.hostMoveOne(reg, e, "", pass); err != nil {
@@ -892,10 +896,29 @@ func (inv *invocation) hostMove(args []string) error {
 		return nil
 	}
 	e, ok := reg.Find(name)
-	if !ok {
+	if !ok || !f.allows(e.Scope) {
 		return inv.usageErr("No enrolled host named '" + name + "'. See 'tacctl host list'.")
 	}
 	return inv.hostMoveOne(reg, e, scope, pass)
+}
+
+// hostEnrollAllowed is nil when the caller may enroll the host name in
+// scope: always, but for an engineer (a caller the scope filter
+// restricts, D18), who enrolls and moves hosts of their own scopes only,
+// into their own scopes, and never this server itself (--local: its
+// accounts and PAM are the administrators'; its sync is open to them).
+func (inv *invocation) hostEnrollAllowed(reg *hosts.Registry, name, scope string, local bool) error {
+	f := inv.callerScopes()
+	if !f.restricted {
+		return nil
+	}
+	if local {
+		return inv.usageErr("Enrolling this server (--local) is not the engineer tier's; its sync is: tacctl host sync <name of this server>")
+	}
+	if e, ok := reg.Find(name); ok && e.Scope != "" && !f.allows(e.Scope) {
+		return inv.usageErr("'" + name + "' is enrolled in scope '" + e.Scope + "', which is not one of yours. Nothing was changed.")
+	}
+	return inv.ownScope(f, scope)
 }
 
 // isExit is an error that only carries an exit status (its message, if
@@ -1052,16 +1075,22 @@ func (inv *invocation) hostSync(args []string) error {
 		return err
 	}
 	var names []string
+	f := inv.callerScopes()
 	if which == "--all" {
 		if reg.Exists() {
-			names = reg.Names()
+			// An engineer syncs the hosts of their own scopes.
+			for _, n := range reg.Names() {
+				if e, _ := reg.Find(n); f.allows(e.Scope) {
+					names = append(names, n)
+				}
+			}
 		}
 		if len(names) == 0 {
 			a.Out.Info("No hosts enrolled.")
 			return nil
 		}
 	} else {
-		if e, ok := reg.Find(which); !ok || e.Line == "" {
+		if e, ok := reg.Find(which); !ok || e.Line == "" || !f.allows(e.Scope) {
 			return inv.usageErr("No enrolled host named '" + which + "'. See 'tacctl host list'.")
 		}
 		names = []string{which}

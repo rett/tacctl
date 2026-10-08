@@ -112,7 +112,7 @@ func TestCompleteScenarios(t *testing.T) {
 		{[]string{"group", "commands", "remove", "ops", "x", "--action", ""}, []string{"permit", "deny"}},
 		{[]string{"group", "privilege", "add", "ops", ""}, []string{"exec:", "exec all:", "configure:", "configure all:"}},
 		{[]string{"group", "privilege", "add", "ops", "conf"}, []string{"configure:", "configure all:"}},
-		{[]string{"config", "linux", ""}, []string{"build", "builds", "remove-script", "script", "uid", "uid-range"}},
+		{[]string{"config", "linux", ""}, []string{"build", "builds", "engineer-sudo", "remove-script", "script", "uid", "uid-range"}},
 		{[]string{"config", "linux", "script", ""}, []string{"--scope", "--server", "--method", "--output", "-o"}},
 		{[]string{"config", "linux", "script", "--method", ""}, []string{"tacplus", "radius"}},
 		{[]string{"config", "linux", "builds", ""}, []string{"list", "clear"}},

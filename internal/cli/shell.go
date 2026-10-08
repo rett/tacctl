@@ -216,12 +216,15 @@ func (inv *invocation) callerGroups() []string {
 }
 
 // sudoTier is the tier whose sudoers rules a managed caller's groups give
-// them: the operator or readonly aliases (tier.Sudoers), superuser for
-// tac-superuser (every command, with a password), none otherwise.
+// them: the engineer, operator or readonly aliases (tier.Sudoers),
+// superuser for tac-superuser (every command, with a password), none
+// otherwise.
 func sudoTier(groups []string) tier.Tier {
 	switch {
 	case slices.Contains(groups, tier.SuperuserGroup):
 		return tier.Superuser
+	case slices.Contains(groups, tier.EngineerGroup):
+		return tier.Engineer
 	case slices.Contains(groups, tier.OperatorGroup):
 		return tier.Operator
 	case slices.Contains(groups, tier.ReadonlyGroup):
@@ -238,7 +241,7 @@ func sudoGrants(t tier.Tier, words []string) bool {
 		sub = words[1]
 	}
 	for _, r := range tier.Rules {
-		if len(r.Sudoers) == 0 || (r.Tier == tier.Operator && t != tier.Operator) {
+		if len(r.Sudoers) == 0 || !tier.Covers(t, r) {
 			continue
 		}
 		if r.Cmd == cmd && (r.AnySub || r.Sub == sub) {
@@ -250,7 +253,7 @@ func sudoGrants(t tier.Tier, words []string) bool {
 
 // shellNoPrompt reports whether a caller's lines run 'sudo -n': a member
 // of tac-users (no local password) whose tier rules are NOPASSWD rows
-// (readonly, operator, or no tier group). A tac-superuser member's lines
+// (readonly, operator, engineer, or no tier group). A tac-superuser member's lines
 // run plain sudo, which asks for their network password on the terminal
 // (sudo's cache then applies): their write verbs are under '(ALL:ALL) ALL'
 // with a password, and -n would refuse every one. Anyone else (a local
@@ -289,7 +292,7 @@ func (inv *invocation) shellExec(exe string, managed bool, t tier.Tier, extraEnv
 		// A line the tier's sudoers rules do not cover is refused by sudo,
 		// and the shell says why; sudo's own 'a password is required' line
 		// is held back then (and put back if the denial is not printed).
-		mayDeny := managed && (t == tier.Readonly || t == tier.Operator) && !sudoGrants(t, words) && !noSudo[words[0]]
+		mayDeny := managed && (t == tier.Readonly || t == tier.Operator || t == tier.Engineer) && !sudoGrants(t, words) && !noSudo[words[0]]
 		stderr := a.Out.Stderr
 		var filter *sudoLineFilter
 		if mayDeny {

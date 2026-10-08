@@ -485,11 +485,12 @@ Each of tacctl's groups has a fixed GID, the same on every host: the first numbe
 | `tac-superuser` | 80002 | every host | `%tac-superuser` sudo (and the tiers sudoers on the server) |
 | `tac-operator` | 80003 | the tacctl server | its tiers sudoers |
 | `tac-readonly` | 80004 | the tacctl server | its tiers sudoers |
+| `tac-engineer` | 80005 | every host | `%tac-engineer` sudo on hosts other than the tacctl server (`config linux engineer-sudo`); on the server, its tiers sudoers only |
 
 Accounts have no group of their own; with a shared primary group, each home is made 0700 when the account is created or moved. The first enroll or sync with this release moves what an earlier one made, once: each managed account's primary group becomes `tac-users` (`usermod -g` re-groups the files in its home) and its own group is removed when it has no members; each group moves to its fixed GID (`groupmod -g`; files in the managed homes that carried `tac-users`' old number follow it); on a host other than the tacctl server, `tac-readonly`, `tac-operator` and `tac-console` are removed when only tacctl's accounts are in them (otherwise kept, and said). A fixed GID that another group already holds on the host is left to it: tacctl's group keeps or gets another number, with a warning (`Group 'tac-users' keeps GID 1001, not 80000: GID 80000 belongs to group '<other>' here.`).
 
 #### Account lifecycle on a host
-tacctl manages an account on a host only when it created it (the host's `/var/lib/tacctl-client/created`) **and** its UID there is in the server's range. Every other account, whatever its name, is never created, expired, deleted or otherwise changed, with one exception: it is taken out of tacctl's own groups (`tac-users`, `tac-readonly`, `tac-operator`, `tac-superuser`, `tac-console`), so it is a plain local account that is never sent to the server; nothing else on it changes (UID, home, password, shell, expiry, full name). The host reports each one: `'<user>': removed from tacctl's groups (tac-users, tac-<tier>); it is a plain local account again.`
+tacctl manages an account on a host only when it created it (the host's `/var/lib/tacctl-client/created`) **and** its UID there is in the server's range. Every other account, whatever its name, is never created, expired, deleted or otherwise changed, with one exception: it is taken out of tacctl's own groups (`tac-users`, `tac-readonly`, `tac-operator`, `tac-engineer`, `tac-superuser`, `tac-console`), so it is a plain local account that is never sent to the server; nothing else on it changes (UID, home, password, shell, expiry, full name). The host reports each one: `'<user>': removed from tacctl's groups (tac-users, tac-<tier>); it is a plain local account again.`
 
 - **New user in the scope:** the install or sync creates the account.
 - **Local account with the same name:** if the host already has an account named like a tacctl user that tacctl did not create, that user gets no account on that host, with a warning; the local account stays exactly as it is (an emergency login that does not depend on this server), and the rest of the install or sync goes on. A matching name does not prove it is the same person: rename the tacctl user, keep it off that host, or remove or rename the local account. The sync summary names such users: `web1: synced (4 users; 1 refused: carl).`
@@ -804,12 +805,13 @@ config loglevel [debug|info|error]          Show or change the TACACS+ log level
 config listen [--backend <id>] [--listener <name>] [show|tcp|tcp6|udp|udp6|reset] [addr]
                                             Show, change, or reset a listen address (default: the TACACS+ listener 'default'; see "Listeners")
 config metrics <show|enable|disable|address <host:port>|reset>   Prometheus exporter control (TACACS+). Default: loopback-only 127.0.0.1:8080. `disable` sinks to 127.0.0.1:0 (unreachable ephemeral port) since tacquito's own disable flag would crash the server.
-config linux build|script|remove-script|uid|uid-range|builds   Login for Linux hosts (see "Host Commands")
+config linux build|script|remove-script|uid|uid-range|engineer-sudo|builds   Login for Linux hosts (see "Host Commands")
 config linux script [--scope <name>] [--server <address>] [--method tacplus|radius] [--output <file>]
                                             Write the install script for hosts in a scope (contains the secret)
 config linux remove-script [--output <file>]  Write the removal script (no secrets; removes either method)
 config linux uid [<user> [<uid>]]           Show or change the UID a user gets on every host
 config linux uid-range [<min>-<max>]        Show or change the UID range of all hosts (default 80000-89999)
+config linux engineer-sudo [all|<cmd>[,<cmd>...]]  Show or limit what engineers may run through sudo on enrolled hosts (default all)
 config linux builds [list|clear]            Show or drop the pam_tacplus modules 'host enroll' built in containers
 config snmp show                            The SNMP settings of the name hint, and whether the credentials are set (never what they are)
 config snmp community [--stdin]             Set the v2c community (asked twice, not echoed; --stdin: one line); the version becomes v2c

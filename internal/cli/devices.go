@@ -134,6 +134,11 @@ func (inv *invocation) configDevice(vendor string, args []string) error {
 	} else if err := inv.scopeRequire(scope); err != nil {
 		return err
 	}
+	// The configuration carries the scope's secret: an engineer gets their
+	// own scopes' only (D18).
+	if err := inv.ownScope(inv.callerScopes(), scope); err != nil {
+		return err
+	}
 	// No --protocol: the scope's auth-method, else its only protocol, else
 	// TACACS+.
 	choice, choiceSource := inv.scopeProtocolChoice(scope)

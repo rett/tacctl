@@ -14,6 +14,26 @@ import (
 	"github.com/rett/tacctl/internal/ui"
 )
 
+// The tier set on a group wins over its priv-lvl band; a user with no
+// usable priv-lvl is none whatever the group says; an unknown setting is
+// ignored.
+func TestForGroup(t *testing.T) {
+	for _, c := range []struct {
+		set, lvl string
+		want     Tier
+	}{
+		{"", "15", Superuser}, {"", "7", Operator}, {"", "1", Readonly}, {"", "", None},
+		{"engineer", "15", Engineer}, {"engineer", "1", Engineer}, {"readonly", "15", Readonly},
+		{"superuser", "7", Superuser}, {"operator", "15", Operator},
+		{"engineer", "", None}, {"engineer", "x", None},
+		{"bogus", "15", Superuser}, {"none", "7", Operator}, {"unrestricted", "7", Operator},
+	} {
+		if got := ForGroup(c.set, c.lvl); got != c.want {
+			t.Errorf("ForGroup(%q, %q) = %s, want %s", c.set, c.lvl, got, c.want)
+		}
+	}
+}
+
 func TestForPrivLvl(t *testing.T) {
 	for in, want := range map[string]Tier{
 		"15": Superuser, "16": Superuser, "99999999999999999999": Superuser, "7": Operator, "14": Operator,
@@ -26,22 +46,25 @@ func TestForPrivLvl(t *testing.T) {
 }
 
 // testdata/permits.psv is tier_permits of the 0.1.16 tag for every tier
-// and a list of command lines ('cmd|sub|readonly|operator|superuser|
-// unrestricted|none'), written by sourcing bin/tacctl.sh, with 0.2.1's
-// change: 'help', '-h' and '--help' alone are open to the lower tiers.
-// The last rows (ssh, device) are the 0.2.1 table of docs/plans/operator-console.md 8.
+// and a list of command lines ('cmd|sub|readonly|operator|engineer|
+// superuser|unrestricted|none'), written by sourcing bin/tacctl.sh, with
+// 0.2.1's change: 'help', '-h' and '--help' alone are open to the lower
+// tiers. The ssh and device rows are the 0.2.1 table of
+// docs/plans/operator-console.md 8; the engineer column (0.2.2, D18) is
+// the operator's plus the device registry, 'scope devices', 'config
+// cisco|juniper|wti' and 'host enroll|sync|move|target'.
 func TestPermitsMatchesBash(t *testing.T) {
 	f, err := os.Open("testdata/permits.psv")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = f.Close() }()
-	tiers := []Tier{Readonly, Operator, Superuser, Unrestricted, None}
+	tiers := []Tier{Readonly, Operator, Engineer, Superuser, Unrestricted, None}
 	n := 0
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
 		p := strings.Split(sc.Text(), "|")
-		if len(p) != 7 {
+		if len(p) != 8 {
 			t.Fatalf("bad line %q", sc.Text())
 		}
 		for i, tr := range tiers {
@@ -62,7 +85,8 @@ func TestPermitsMatchesBash(t *testing.T) {
 // testdata/sudoers.tiers is emit_tier_sudoers of the 0.1.16 tag plus
 // 0.2.1's lines for 'help', '-h' and '--help', the ssh and device rows, and
 // the env_keep line for SSH_AUTH_SOCK (no SETENV tag: it would let a caller
-// set SUDO_USER), and 0.2.2's 'group show'.
+// set SUDO_USER), 0.2.2's 'group show', and 0.2.3's engineer alias and
+// tac-engineer line (no '(ALL:ALL) ALL' for it).
 func TestSudoersMatchesBash(t *testing.T) {
 	want, err := os.ReadFile("testdata/sudoers.tiers")
 	if err != nil {
@@ -100,7 +124,7 @@ func aliasItems(t *testing.T, text, name string) []string {
 // refuses.
 func TestGateAndSudoersAgree(t *testing.T) {
 	text := Sudoers()
-	ro, op := aliasItems(t, text, "TACCTL_RO"), aliasItems(t, text, "TACCTL_OP")
+	ro, op, en := aliasItems(t, text, "TACCTL_RO"), aliasItems(t, text, "TACCTL_OP"), aliasItems(t, text, "TACCTL_EN")
 	in := func(items []string, cmd, sub string) bool {
 		re := regexp.MustCompile("^" + regexp.QuoteMeta(cmd+" "+sub) + `( \*)?$`)
 		for _, it := range items {
@@ -113,15 +137,26 @@ func TestGateAndSudoersAgree(t *testing.T) {
 	verbs := `user list|user show|user add|user remove|user passwd|group list|group add|scope list|scope show|
 scope secret|scope protocols|backend list|backend status|backend enable|backend disable|store show|store import|
 store rollback|config validate|config show|config render|config dump|config cisco|config sudoers|log tail|
-log search|log failures|log accounting|log clear|backup list|backup diff|backup restore|host list|host enroll`
+log search|log failures|log accounting|log clear|backup list|backup diff|backup restore|host list|host enroll|
+host sync|host move|host target|host unenroll|device add|device remove|device rename|device address|device hostkey|
+device import|device notice|device stale-days|scope devices|scope staging|config juniper|config wti|config linux|
+group edit|user move`
 	for _, v := range strings.Split(strings.ReplaceAll(verbs, "\n", ""), "|") {
 		cmd, sub, _ := strings.Cut(v, " ")
-		inRO, inOP := in(ro, cmd, sub), in(op, cmd, sub)
+		inRO, inOP, inEN := in(ro, cmd, sub), in(op, cmd, sub), in(en, cmd, sub)
 		if Permits(Readonly, cmd, sub) != inRO {
 			t.Errorf("readonly %s: gate %v, sudoers %v", v, Permits(Readonly, cmd, sub), inRO)
 		}
 		if Permits(Operator, cmd, sub) != (inRO || inOP) {
 			t.Errorf("operator %s: gate %v, sudoers %v/%v", v, Permits(Operator, cmd, sub), inRO, inOP)
+		}
+		if Permits(Engineer, cmd, sub) != (inRO || inOP || inEN) {
+			t.Errorf("engineer %s: gate %v, sudoers %v/%v/%v", v, Permits(Engineer, cmd, sub), inRO, inOP, inEN)
+		}
+	}
+	for _, it := range append(append([]string(nil), en...), ro...) {
+		if w := strings.Fields(strings.TrimSuffix(it, " *")); len(w) >= 2 && !Permits(Engineer, w[0], w[1]) {
+			t.Errorf("engineer sudoers-only: %s", it)
 		}
 	}
 	for _, it := range append(append([]string(nil), ro...), op...) {
@@ -137,8 +172,15 @@ log search|log failures|log accounting|log clear|backup list|backup diff|backup 
 		}
 	}
 	// store show never reaches a lower tier, in the gate or in sudoers.
-	if strings.Contains(text, "store") || Permits(Readonly, "store", "show") || Permits(Operator, "store", "show") {
+	if strings.Contains(text, "store") || Permits(Readonly, "store", "show") || Permits(Operator, "store", "show") ||
+		Permits(Engineer, "store", "show") {
 		t.Error("store show reaches a lower tier")
+	}
+	// An engineer's verbs are not the operator's.
+	for _, v := range [][2]string{{"device", "add"}, {"config", "cisco"}, {"host", "enroll"}, {"scope", "devices"}} {
+		if Permits(Operator, v[0], v[1]) || !Permits(Engineer, v[0], v[1]) {
+			t.Errorf("%s %s: operator %v, engineer %v", v[0], v[1], Permits(Operator, v[0], v[1]), Permits(Engineer, v[0], v[1]))
+		}
 	}
 }
 
@@ -148,7 +190,7 @@ type gateRun struct {
 	gate     Gate
 }
 
-func newGate(sudoUser, groups string, privlvl map[string]string) *gateRun {
+func newGate(sudoUser, groups string, privlvl map[string]string, set ...map[string]string) *gateRun {
 	g := &gateRun{run: &fake.Runner{}}
 	if groups == "fail" {
 		g.run.Fail([]string{"id"}, 1, "id: no such user\n")
@@ -158,6 +200,9 @@ func newGate(sudoUser, groups string, privlvl map[string]string) *gateRun {
 	g.run.On([]string{"logger"}, execx.Result{})
 	g.gate = Gate{Runner: g.run, Out: ui.Output{Stdout: &g.out, Stderr: &g.err}, SudoUser: sudoUser,
 		PrivLvl: func(u string) string { return privlvl[u] }}
+	if len(set) > 0 {
+		g.gate.GroupTier = func(u string) string { return set[0][u] }
+	}
 	return g
 }
 
@@ -186,6 +231,27 @@ func TestCaller(t *testing.T) {
 		if n := g.run.Count("id", "-nG", "--", c.user); n != c.ids {
 			t.Errorf("%q: %d id calls", c.user, n)
 		}
+	}
+}
+
+// A tier set on the user's group decides before the priv-lvl band; a user
+// without a priv-lvl stays none.
+func TestCallerGroupTier(t *testing.T) {
+	lv := map[string]string{"bob": "15", "dave": "7", "alice": "15"}
+	set := map[string]string{"bob": "engineer", "dave": "engineer", "ghost": "engineer"}
+	for user, want := range map[string]Tier{"bob": Engineer, "dave": Engineer, "alice": Superuser, "ghost": None} {
+		g := newGate(user, "tac-users", lv, set)
+		if got := g.gate.Caller(context.Background()); got != want {
+			t.Errorf("%s: %s, want %s", user, got, want)
+		}
+	}
+	g := newGate("bob", "tac-users", lv, set)
+	if err := g.gate.Enforce(context.Background(), "config", "cisco"); err != nil {
+		t.Errorf("engineer config cisco: %v %q", err, g.err.String())
+	}
+	if err := g.gate.Enforce(context.Background(), "scope", "secret"); err != ErrDenied ||
+		!strings.Contains(g.err.String(), "'tacctl scope secret' is not permitted for the engineer tier.") {
+		t.Errorf("engineer scope secret: %v %q", err, g.err.String())
 	}
 }
 
@@ -240,6 +306,12 @@ func TestEnforce(t *testing.T) {
 
 func TestSudoersNoSetenv(t *testing.T) {
 	text := Sudoers()
+	// Engineers never get more than tacctl through sudo on the server.
+	for _, l := range strings.Split(text, "\n") {
+		if strings.HasPrefix(l, "%"+EngineerGroup+" ") && l != "%tac-engineer ALL=(root) NOPASSWD: TACCTL_RO, TACCTL_OP, TACCTL_EN" {
+			t.Errorf("engineer line %q", l)
+		}
+	}
 	if strings.Contains(text, "SETENV") || !strings.Contains(text, "\n"+EnvKeep) {
 		t.Errorf("SETENV or no env_keep line:\n%s", text)
 	}
@@ -338,6 +410,12 @@ func TestConsoleRows(t *testing.T) {
 		{Operator, "console", "system-shell", false},
 		{Operator, "console", "", false},
 		{Readonly, "console", "check", false},
+		{Engineer, "console", "show", true},
+		{Engineer, "console", "check", true},
+		{Engineer, "console", "tiers", false},
+		{Engineer, "console", "system-shell", false},
+		{Engineer, "console", "forwarding", false},
+		{Engineer, "_console-policy", "", true},
 		{Superuser, "console", "tiers", true},
 		{Unrestricted, "console", "tiers", true},
 	} {

@@ -43,7 +43,7 @@ type Decision struct {
 // gets no console: it has no account the console provisions.
 func (p *Policy) Decide(user string, t tier.Tier) Decision {
 	switch t {
-	case tier.Readonly, tier.Operator, tier.Superuser:
+	case tier.Readonly, tier.Operator, tier.Engineer, tier.Superuser:
 	default:
 		return Decision{false, "no tier"}
 	}
@@ -66,12 +66,13 @@ func (p *Policy) Shell(user string, t tier.Tier) string {
 }
 
 // SystemShell reports whether the console's system-shell word is open to
-// tier t. A caller with no tier restriction is open to it; none is not.
+// tier t. A caller with no tier restriction is open to it; none and the
+// Closed tiers are not, whatever the file says.
 func (p *Policy) SystemShell(t tier.Tier) bool {
-	switch t {
-	case tier.Unrestricted:
+	switch {
+	case t == tier.Unrestricted:
 		return true
-	case tier.None:
+	case t == tier.None, slices.Contains(Closed, t):
 		return false
 	}
 	for _, s := range p.File.SystemShellTiers {
@@ -84,12 +85,12 @@ func (p *Policy) SystemShell(t tier.Tier) bool {
 
 // Forwarding reports whether tier t's console logins may forward X11 and
 // TCP ports (settings.forwarding_tiers). A caller with no tier restriction
-// may; none may not.
+// may; none and the Closed tiers may not.
 func (p *Policy) Forwarding(t tier.Tier) bool {
-	switch t {
-	case tier.Unrestricted:
+	switch {
+	case t == tier.Unrestricted:
 		return true
-	case tier.None:
+	case t == tier.None, slices.Contains(Closed, t):
 		return false
 	}
 	return slices.Contains(p.File.ForwardingTiers, t)

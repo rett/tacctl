@@ -84,7 +84,7 @@ func TestConsoleShowDefaults(t *testing.T) {
 	sb := consoleSandbox(t)
 	out := sb.con("show")
 	for _, want := range []string{
-		"Login console", "  readonly: enable\n  operator: enable\n  superuser: enable\n",
+		"Login console", "  readonly: enable\n  operator: enable\n  engineer: enable\n  superuser: enable\n",
 		"  idle-timeout: 30 min\n", "  agent-forwarding: disabled\n", "  ssh-escape: disabled\n",
 		"  system-shell tiers: superuser\n", "  system-shell path: /bin/bash\n", "  list-max: 40",
 		"Users of authsrv (scope lab)\n",
@@ -176,7 +176,7 @@ func TestConsoleWritesTiersAndUsers(t *testing.T) {
 		t.Errorf("user: %d %q", sb.code, out)
 	}
 	sb.con("user", "carol", "disable")
-	if got := strings.TrimSpace(sb.con("tiers")); got != "readonly: disable\noperator: enable\nsuperuser: enable" {
+	if got := strings.TrimSpace(sb.con("tiers")); got != "readonly: disable\noperator: enable\nengineer: enable\nsuperuser: enable" {
 		t.Errorf("tiers: %q", got)
 	}
 	if got := strings.TrimSpace(sb.con("user", "bob")); got != "enable" {
@@ -207,7 +207,7 @@ func TestConsoleWritesTiersAndUsers(t *testing.T) {
 	want := `# tacctl login console: which tacctl users get the console as their login shell on this server.
 # Edit with 'tacctl console ...'; 'tacctl host sync <this server>' applies the shells.
 version: 1
-tiers: {readonly: disable, operator: enable, superuser: enable}
+tiers: {readonly: disable, operator: enable, engineer: enable, superuser: enable}
 users: {bob: enable}
 settings:
   idle_timeout: 30

@@ -60,7 +60,8 @@ func (inv *invocation) hostTarget(args []string) error {
 		return err
 	}
 	e, ok := reg.Find(name)
-	if !ok || e.Line == "" {
+	// An engineer sees and changes the hosts of their own scopes only.
+	if !ok || e.Line == "" || !inv.callerScopes().allows(e.Scope) {
 		return inv.usageErr("No enrolled host named '" + name + "'. See 'tacctl host list'.")
 	}
 	if !setTarget && !setPort && !setIdentity && !noIdentity {

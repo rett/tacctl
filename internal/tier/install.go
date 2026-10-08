@@ -34,6 +34,26 @@ func (e *TempError) Unwrap() error { return e.Err }
 // rejected body is ErrVisudo and dst is left as it was; the temporary
 // file never stays behind.
 func InstallSudoers(ctx context.Context, r execx.Runner, stdout, stderr io.Writer, body, dst string) error {
+	return checked(ctx, r, stderr, body, func(tmp string) error {
+		res, _ := r.Run(ctx, execx.Cmd{Name: "install", Args: []string{"-m", "0440", "-o", "root", "-g", "root", tmp, dst},
+			Stdout: stdout, Stderr: stderr})
+		if res.Code != 0 {
+			return &InstallError{Code: res.Code}
+		}
+		return nil
+	})
+}
+
+// CheckSudoers is InstallSudoers' check alone: body is written to a
+// temporary file and 'visudo -cf' checks it (its complaints go to
+// stderr); nothing is installed. A rejected body is ErrVisudo.
+func CheckSudoers(ctx context.Context, r execx.Runner, stderr io.Writer, body string) error {
+	return checked(ctx, r, stderr, body, func(string) error { return nil })
+}
+
+// checked writes body to a temporary file, has 'visudo -cf' check it, and
+// runs then with the file's path; the file never stays behind.
+func checked(ctx context.Context, r execx.Runner, stderr io.Writer, body string, then func(tmp string) error) error {
 	f, err := os.CreateTemp("", "tmp.")
 	if err != nil {
 		return &TempError{Err: err}
@@ -51,10 +71,5 @@ func InstallSudoers(ctx context.Context, r execx.Runner, stdout, stderr io.Write
 	if res.Code != 0 {
 		return ErrVisudo
 	}
-	res, _ = r.Run(ctx, execx.Cmd{Name: "install", Args: []string{"-m", "0440", "-o", "root", "-g", "root", tmp, dst},
-		Stdout: stdout, Stderr: stderr})
-	if res.Code != 0 {
-		return &InstallError{Code: res.Code}
-	}
-	return nil
+	return then(tmp)
 }

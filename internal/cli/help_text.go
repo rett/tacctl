@@ -425,6 +425,7 @@ Usage: tacctl config linux <subcommand>
   remove-script [--output <file>]         Write the removal script (no secrets; accounts are left in place)
   uid [<username> [<uid>]]                Show or change the UID a user gets on every host
   uid-range [<min>-<max>]                 Show or change the UID range of all hosts (default 80000-89999)
+  engineer-sudo [all|<cmd>[,<cmd>...]]    Show or limit what engineers may run through sudo on enrolled hosts (default all)
   builds [list|clear]                     Show or drop the modules 'host enroll' built in containers
 
 Scripts written here give every account /bin/bash. The login console of this

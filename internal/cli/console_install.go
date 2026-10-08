@@ -11,6 +11,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/rett/tacctl/internal/console"
@@ -274,7 +275,97 @@ func (inv *invocation) consoleCheck(args []string) error {
 	if err != nil {
 		return err
 	}
-	return inv.consoleCheckReport(pol)
+	err = inv.consoleCheckReport(pol)
+	if eng := inv.engineerSudoReport(); err == nil {
+		err = eng
+	}
+	return err
+}
+
+// engineerSudoReport is the check of 'console check' that no member of
+// tac-engineer can run anything but tacctl through sudo on this server
+// (D18: engineers never get root here; the client script writes no
+// tac-engineer line on the tacctl server, and the tiers sudoers give them
+// tacctl's verbs only). sudo itself is asked ('sudo -n -l -U <member>', as
+// root), so a rule anywhere in sudoers counts. Problems are the red
+// warning and exit 1.
+func (inv *invocation) engineerSudoReport() error {
+	r := inv.app.Runner
+	inv.echo("Engineer sudo check:")
+	res, err := r.Run(inv.ctx, execx.Cmd{Name: "getent", Args: []string{"group", tier.EngineerGroup}})
+	var members []string
+	if err == nil && res.Code == 0 {
+		if f := strings.Split(strings.TrimSpace(string(res.Stdout)), ":"); len(f) >= 4 {
+			for _, m := range strings.Split(f[3], ",") {
+				if m != "" {
+					members = append(members, m)
+				}
+			}
+		}
+	}
+	if len(members) == 0 {
+		inv.echo("  " + tier.EngineerGroup + ": no member here")
+		return nil
+	}
+	var problems []string
+	for _, m := range members {
+		res, err := r.Run(inv.ctx, execx.Cmd{Name: "sudo", Args: []string{"-n", "-l", "-U", m}})
+		out := string(res.Stdout)
+		switch other, ok := sudoBeyondTacctl(out); {
+		case err != nil || !ok:
+			inv.echo("  sudo for " + m + ": could not be checked")
+			problems = append(problems, "sudo could not be asked what "+m+" may run")
+		case len(other) > 0:
+			inv.echo("  sudo for " + m + ": " + strings.Join(other, ", "))
+			problems = append(problems, m+" ("+tier.EngineerGroup+") can run "+strings.Join(other, ", ")+" through sudo")
+		default:
+			inv.echo("  sudo for " + m + ": tacctl only")
+		}
+	}
+	if len(problems) == 0 {
+		inv.app.Out.InfoE("No member of " + tier.EngineerGroup + " can run anything but tacctl through sudo here.")
+		return nil
+	}
+	inv.echoE(ui.Red + "WARNING: an engineer can run more than tacctl as root on this server: " + strings.Join(problems, "; ") + "." + ui.NC)
+	inv.echoE(ui.Red + "Remove the sudoers rule that grants it (sudo -l -U <user> lists the rules), or move the user out of the engineer tier." + ui.NC)
+	return exit(1)
+}
+
+// reSudoTags are the tags before a command list in 'sudo -l' output
+// (NOPASSWD:, SETENV:, ...).
+var reSudoTags = regexp.MustCompile(`^(?:[A-Z_]+:\s*)+`)
+
+// sudoBeyondTacctl reads 'sudo -l -U <user>' output: the commands it lists
+// that are not tacctl (tier.Binary, with any arguments), and whether the
+// output said what the user may run at all ("is not allowed to run sudo":
+// nothing; "may run the following commands": the list).
+func sudoBeyondTacctl(out string) (other []string, ok bool) {
+	if strings.Contains(out, "is not allowed to run sudo") {
+		return nil, true
+	}
+	_, list, found := strings.Cut(out, "may run the following commands")
+	if !found {
+		return nil, false
+	}
+	_, list, _ = strings.Cut(list, "\n")
+	for _, l := range strings.Split(list, "\n") {
+		l = strings.TrimSpace(l)
+		if strings.HasPrefix(l, "(") {
+			if i := strings.IndexByte(l, ')'); i >= 0 {
+				l = strings.TrimSpace(l[i+1:])
+			}
+		}
+		for _, c := range strings.Split(l, ",") {
+			c = strings.TrimSpace(reSudoTags.ReplaceAllString(strings.TrimSpace(c), ""))
+			if c == "" {
+				continue
+			}
+			if w := strings.Fields(c); w[0] != tier.Binary {
+				other = append(other, c)
+			}
+		}
+	}
+	return other, true
 }
 
 // consoleCheckReport prints the check for the first account that has the
@@ -323,7 +414,7 @@ func (inv *invocation) consoleForLocal(req *hosts.ScriptRequest) (bool, error) {
 	anyConsole := false
 	for _, r := range req.Rows {
 		name, lvl, _ := strings.Cut(r, "|")
-		if pol.Decide(name, tier.ForPrivLvl(lvl)).Console {
+		if pol.Decide(name, inv.userTier(name, lvl)).Console {
 			anyConsole = true
 		}
 	}

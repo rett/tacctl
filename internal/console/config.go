@@ -46,8 +46,17 @@ const (
 	DefaultSystemShell = "/bin/bash"
 )
 
-// Tiers are the tiers that have a console switch, lowest first.
-var Tiers = []tier.Tier{tier.Readonly, tier.Operator, tier.Superuser}
+// Tiers are the tiers that have a console switch, lowest first. A file
+// written before the engineer tier (0.2.2) has no switch for it: it is on,
+// as for every tier by default.
+var Tiers = []tier.Tier{tier.Readonly, tier.Operator, tier.Engineer, tier.Superuser}
+
+// Closed are the tiers neither system-shell nor forwarding is ever opened
+// to (D18, D24): an engineer has the devices' and hosts' secrets of their
+// own scopes through tacctl, and a shell or a forwarded port on this
+// server would be a way to the rest; engineers reach devices with the
+// console's ssh.
+var Closed = []tier.Tier{tier.Engineer}
 
 // On and Off are the words of a switch in the file and on the command line.
 const (
@@ -86,7 +95,7 @@ type File struct {
 // Defaults is the file that is not there.
 func Defaults() *File {
 	return &File{
-		TierOn:           map[tier.Tier]bool{tier.Readonly: true, tier.Operator: true, tier.Superuser: true},
+		TierOn:           map[tier.Tier]bool{tier.Readonly: true, tier.Operator: true, tier.Engineer: true, tier.Superuser: true},
 		Users:            map[string]bool{},
 		Idle:             DefaultIdle,
 		SystemShell:      DefaultSystemShell,
@@ -124,7 +133,8 @@ func (f *File) UserNames() []string {
 
 func fail(lines ...string) error { return &names.Error{Msgs: lines} }
 
-// ParseTier is the tier a word names (readonly, operator, superuser).
+// ParseTier is the tier a word names (readonly, operator, engineer,
+// superuser).
 func ParseTier(s string) (tier.Tier, bool) {
 	for _, t := range Tiers {
 		if string(t) == s {
@@ -134,9 +144,10 @@ func ParseTier(s string) (tier.Tier, bool) {
 	return "", false
 }
 
-// ParseTiers is a comma-separated list of tiers, each once; "none" and ""
-// are the empty list.
-func ParseTiers(csv string) ([]tier.Tier, error) {
+// ParseTiers is a comma-separated list of tiers, each once, for
+// system-shell or forwarding ('what'); "none" and "" are the empty list.
+// A tier of Closed is refused.
+func ParseTiers(csv, what string) ([]tier.Tier, error) {
 	if csv == "none" || csv == "" {
 		return nil, nil
 	}
@@ -146,12 +157,24 @@ func ParseTiers(csv string) ([]tier.Tier, error) {
 		if !ok {
 			return nil, fail("Unknown tier '" + w + "': expected readonly, operator or superuser.")
 		}
+		if slices.Contains(Closed, t) {
+			return nil, fail(ClosedText(t, what))
+		}
 		if slices.Contains(out, t) {
 			return nil, fail("Tier '" + w + "' is listed twice.")
 		}
 		out = append(out, t)
 	}
 	return out, nil
+}
+
+// ClosedText is the refusal of a Closed tier for system-shell or
+// forwarding.
+func ClosedText(t tier.Tier, what string) string {
+	if what == "forwarding" {
+		return "The " + string(t) + " tier cannot be given forwarding on this server: engineers reach devices with the console's ssh. Nothing was changed."
+	}
+	return "The " + string(t) + " tier cannot be given the system shell on this server: a shell here would reach the server's secrets. Nothing was changed."
 }
 
 // ValidShellPath checks the shape of a system shell: an absolute, clean
@@ -178,7 +201,7 @@ func (f *File) validate() error {
 	for key, l := range map[string][]tier.Tier{"system_shell_tiers": f.SystemShellTiers, "forwarding_tiers": f.ForwardingTiers} {
 		seen := map[tier.Tier]bool{}
 		for _, t := range l {
-			if _, ok := ParseTier(string(t)); !ok || seen[t] {
+			if _, ok := ParseTier(string(t)); !ok || seen[t] || slices.Contains(Closed, t) {
 				return fail("settings." + key + ": invalid or repeated tier '" + string(t) + "'.")
 			}
 			seen[t] = true
@@ -270,7 +293,7 @@ func parse(data []byte) (*File, error) {
 				t, known := ParseTier(name)
 				on, valid := onOff(tv)
 				if !known || !valid {
-					return nil, fail("tiers: unknown tier or value for '" + name + "' (readonly, operator, superuser; enable or disable).")
+					return nil, fail("tiers: unknown tier or value for '" + name + "' (readonly, operator, engineer, superuser; enable or disable).")
 				}
 				f.TierOn[t] = on
 			}

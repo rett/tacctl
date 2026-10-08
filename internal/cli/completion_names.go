@@ -127,7 +127,8 @@ func (inv *invocation) deviceDescs() []string {
 
 // scopeFilter is what a caller may see of the registries: everything for
 // an administrator (superuser, unrestricted), the user's own scopes for
-// the lower tiers (docs/plans/operator-console.md 8).
+// the lower tiers (docs/plans/operator-console.md 8). It is also what an
+// engineer may change: the devices and hosts of their own scopes (D18).
 type scopeFilter struct {
 	restricted bool
 	scopes     []string
@@ -138,11 +139,26 @@ func (f scopeFilter) allows(scope string) bool {
 	return !f.restricted || slices.Contains(f.scopes, scope)
 }
 
+// ownScope is nil when the caller may change what scope holds (its devices,
+// tags, staging addresses and hosts): always, but for a caller f restricts
+// (an engineer: the tier gate keeps the lower tiers from every change),
+// whose own scopes it must be one of (D18). The refusal is printed, exit 1.
+func (inv *invocation) ownScope(f scopeFilter, scope string) error {
+	if f.allows(scope) {
+		return nil
+	}
+	yours := "none"
+	if len(f.scopes) > 0 {
+		yours = strings.Join(f.scopes, ", ")
+	}
+	return inv.usageErr("Scope '" + scope + "' is not one of yours: the engineer tier changes the devices and hosts of its own scopes only (yours: " + yours + "). Nothing was changed.")
+}
+
 // callerScopes is the filter of the caller (SUDO_USER); a lower-tier caller
 // whose model cannot be read sees nothing.
 func (inv *invocation) callerScopes() scopeFilter {
 	switch inv.tierGate().Caller(inv.ctx) {
-	case tier.Readonly, tier.Operator:
+	case tier.Readonly, tier.Operator, tier.Engineer:
 	default:
 		return scopeFilter{}
 	}

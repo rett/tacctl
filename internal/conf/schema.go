@@ -29,10 +29,12 @@ const (
 	TypeCommandRules   = "command_rules"
 	// TypeJunosRegexList is junos.<group>.<attr> (junos.go).
 	TypeJunosRegexList = "junos_regex_list"
+	// TypeSudoCommandList is linux.engineer_sudo: absolute command paths.
+	TypeSudoCommandList = "sudo_command_list"
 )
 
 // listTypes take list input (conf_set_list / a JSON list).
-var listTypes = []string{TypeCIDRList, TypeCiscoCmdList, TypeCommandRules, TypeBackendList, TypeJunosRegexList}
+var listTypes = []string{TypeCIDRList, TypeCiscoCmdList, TypeCommandRules, TypeBackendList, TypeJunosRegexList, TypeSudoCommandList}
 
 // Rule is one schema entry.
 type Rule struct {
@@ -87,6 +89,10 @@ func NewSchema(backends []string) *Schema {
 			"mgmt_acl.names.cisco":   {Type: TypeACLName},
 			"mgmt_acl.names.juniper": {Type: TypeACLName},
 			"mgmt_acl.permits":       {Type: TypeCIDRList},
+			// What tac-engineer may run through sudo on enrolled hosts other
+			// than the tacctl server ('tacctl config linux engineer-sudo');
+			// unset is every command.
+			"linux.engineer_sudo": {Type: TypeSudoCommandList},
 			// Backends that serve the model, in render and restart order.
 			"backends.enabled": {Type: TypeBackendList, Values: slices.Clone(backends),
 				Default: []any{"tacacs"}, HasDefault: true},
@@ -329,8 +335,48 @@ func (s *Schema) Validate(path string, value any, isList bool) string {
 		return validateCommandRules(value)
 	case TypeJunosRegexList:
 		return junosListProblem(path, value)
+	case TypeSudoCommandList:
+		items, isList := py.List(value)
+		if !isList || len(items) == 0 {
+			return "must be a non-empty list of absolute command paths"
+		}
+		for i, item := range items {
+			str, isStr := item.(string)
+			if !isStr {
+				return fmt.Sprintf("element %d: must be a string", i)
+			}
+			if p := SudoCommandProblem(str); p != "" {
+				return fmt.Sprintf("element %d: %s %s", i, py.ReprString(str), p)
+			}
+			for _, prev := range items[:i] {
+				if py.Equal(prev, item) {
+					return fmt.Sprintf("element %d: %s is listed twice", i, py.ReprString(str))
+				}
+			}
+		}
+		return ""
 	}
 	return fmt.Sprintf("unknown schema type %s", py.ReprString(t))
+}
+
+// reSudoCommand is a command a sudoers line may name for linux.engineer_sudo:
+// an absolute path of letters, digits and . _ + - /, without arguments (no
+// space, comma, colon, backslash, wildcard or anything else sudoers reads
+// as syntax).
+var reSudoCommand = regexp.MustCompile(`^/[A-Za-z0-9._+/-]+$`)
+
+// SudoCommandProblem is "" when cmd can be one command of
+// linux.engineer_sudo, else why not (after the quoted command).
+func SudoCommandProblem(cmd string) string {
+	switch {
+	case !reSudoCommand.MatchString(cmd):
+		return "is not an absolute command path (letters, digits and . _ + - / only, no arguments)"
+	case len(cmd) > 255:
+		return "is longer than 255 characters"
+	case strings.Contains("/"+cmd+"/", "/../") || strings.Contains("/"+cmd+"/", "/./") || strings.Contains(cmd, "//") || strings.HasSuffix(cmd, "/"):
+		return "is not a clean path"
+	}
+	return ""
 }
 
 // validateCommandRules is the command_rules branch of validate.

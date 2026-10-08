@@ -12,12 +12,14 @@ import (
 	"errors"
 	"io"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/rett/tacctl/internal/backend"
+	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/hosts"
 	"github.com/rett/tacctl/internal/names"
@@ -31,7 +33,7 @@ func init() {
 
 // configLinuxFamilySpec is the spec of 'config linux' as config.go's
 // registerConfigVerb takes it.
-var configLinuxFamilySpec = Spec{MaxArgs: -1, Args: []string{"build|script|remove-script|uid|uid-range|builds", ""}}
+var configLinuxFamilySpec = Spec{MaxArgs: -1, Args: []string{"build|script|remove-script|uid|uid-range|engineer-sudo|builds", ""}}
 
 // methodWords are the methods as a completion word list.
 const methodWords = "tacplus|radius"
@@ -47,6 +49,7 @@ var configLinuxSpecs = map[string]Spec{
 	"remove-script": {Flags: []Flag{{Names: []string{"--output", "-o"}, Value: true, Kind: KindFile}}},
 	"uid":           {MaxArgs: 2, Args: []string{KindUsers, ""}},
 	"uid-range":     {MaxArgs: 1},
+	"engineer-sudo": {MaxArgs: 1},
 	"builds":        {MaxArgs: 1, Args: []string{"list|clear"}},
 }
 
@@ -58,6 +61,7 @@ var configLinuxVerbs = [][2]string{
 	{"remove-script [--output <file>]", "Write the removal script (no secrets; accounts are left in place)"},
 	{"uid [<username> [<uid>]]", "Show or change the UID a user gets on every host"},
 	{"uid-range [<min>-<max>]", "Show or change the UID range of all hosts (default 80000-89999)"},
+	{"engineer-sudo [all|<cmd>[,<cmd>...]]", "Show or limit what engineers may run through sudo on enrolled hosts (default all)"},
 	{"builds [list|clear]", "Show or drop the modules 'host enroll' built in containers"},
 }
 
@@ -97,6 +101,8 @@ func (inv *invocation) configLinux(args []string) error {
 		return inv.configLinuxUID(rest)
 	case "uid-range":
 		return inv.configLinuxUIDRange(rest)
+	case "engineer-sudo":
+		return inv.configLinuxEngineerSudo(rest)
 	case "builds":
 		return inv.configLinuxBuilds(rest)
 	case "":
@@ -313,6 +319,75 @@ func (inv *invocation) configLinuxUIDRange(args []string) error {
 	return nil
 }
 
+// engineerSudoKey is the tacctl.yaml key of 'config linux engineer-sudo':
+// the commands, unset for all of them.
+const engineerSudoKey = "linux.engineer_sudo"
+
+// configLinuxEngineerSudo is 'config linux engineer-sudo [all|<cmd>[,<cmd>
+// ...]]': show or set what the members of tac-engineer may run through
+// sudo on the enrolled hosts other than this server (D18): every command
+// (the default, as tac-superuser; their own password) or the commands
+// named, absolute paths without arguments. The line is checked with
+// 'visudo -cf' before tacctl.yaml is written; each host gets it at its
+// next sync (TAC_ENGINEER_SUDO). This server never writes it: engineers
+// run tacctl's own verbs here and nothing else.
+func (inv *invocation) configLinuxEngineerSudo(args []string) error {
+	a := inv.app
+	usage := "Usage: tacctl config linux engineer-sudo all|<command>[,<command>...]   (absolute paths, such as /usr/bin/systemctl)"
+	cur := a.Conf().GetList(engineerSudoKey)
+	if len(args) == 0 {
+		inv.echo("")
+		if len(cur) == 0 {
+			inv.echo("  Engineers' sudo on enrolled hosts: every command (" + hosts.EngineerSudoLine(nil) + ", their own password)")
+		} else {
+			inv.echo("  Engineers' sudo on enrolled hosts: " + strings.Join(cur, ", ") + " (their own password)")
+		}
+		inv.echo("  On this server engineers run tacctl's own verbs through sudo, nothing else.")
+		inv.echo("")
+		inv.echo("  " + usage)
+		inv.echo("")
+		return nil
+	}
+	if len(args) > 1 || args[0] == "" {
+		return inv.usageErr(usage)
+	}
+	var cmds []string
+	if args[0] != "all" {
+		for _, c := range strings.Split(args[0], ",") {
+			if p := conf.SudoCommandProblem(c); p != "" {
+				return inv.usageErr("'"+c+"' "+p+".", usage)
+			}
+			if !slices.Contains(cmds, c) {
+				cmds = append(cmds, c)
+			}
+		}
+	}
+	line := hosts.EngineerSudoLine(cmds)
+	err := tier.CheckSudoers(inv.ctx, a.Runner, a.Out.Stderr, line+"\n")
+	var te *tier.TempError
+	switch {
+	case errors.Is(err, tier.ErrVisudo):
+		return inv.usageErr("visudo rejected the line '" + line + "'. Nothing was changed.")
+	case errors.As(err, &te):
+		return inv.usageErr("Cannot check the line with visudo: " + te.Err.Error() + ". Nothing was changed.")
+	case err != nil:
+		return err
+	}
+	what := "every command"
+	if len(cmds) == 0 {
+		err = a.Conf().Unset(engineerSudoKey)
+	} else {
+		what = strings.Join(cmds, ", ")
+		err = a.Conf().SetList(engineerSudoKey, cmds)
+	}
+	if err != nil {
+		return err
+	}
+	a.Out.InfoE("Engineers may run " + what + " through sudo on enrolled hosts (" + line + "). Each host gets it at its next sync: tacctl host sync --all")
+	a.Logger(inv.ctx, "auth.info", "linux engineer-sudo set to="+strings.Join(cmds, ",")+" by="+inv.sudoUser())
+	return nil
+}
+
 // hostsDone maps a hosts error: ErrFailed (printed) is exit 1.
 func (inv *invocation) hostsDone(err error) error {
 	if errors.Is(err, hosts.ErrFailed) {
@@ -430,6 +505,8 @@ func (inv *invocation) scriptRequest(scope, server, method, output string) (host
 	}
 	req.Rows = m.LinuxUsers(scope)
 	req.Inactive = m.LinuxInactive(scope)
+	req.GroupTier = inv.userGroupTier
+	req.EngineerSudo = strings.Join(inv.app.Conf().GetList(engineerSudoKey), ",")
 	id := backend.TACACS
 	if method == hosts.Radius {
 		id = "radius"

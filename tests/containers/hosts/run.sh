@@ -402,7 +402,22 @@ c useradd -m localx > /dev/null 2>&1
 check "local useradd with the default login.defs gives a UID below 80000" bash -c "id=\$(podman exec '$C' id -u localx) && (( id < 80000 ))"
 c userdel -r localx > /dev/null 2>&1
 check "every account tacctl created has a UID in 80000-89999" bash -c "for u in alice bob dave erin; do id=\$(podman exec '$C' id -u \$u) && (( id >= 80000 && id <= 89999 )) || exit 1; done"
-check "tacctl's groups here are tac-users 80000 and tac-superuser 80002 only; accounts have tac-users as primary group and a 0700 home" c bash -c "[[ \$(getent group | grep '^tac-' | cut -d: -f1,3 | sort | paste -sd' ') == 'tac-superuser:80002 tac-users:80000' ]] && for u in alice dave erin; do [[ \$(id -gn \$u) == tac-users && \$(stat -c %a /home/\$u) == 700 ]] || exit 1; done"
+check "tacctl's groups here are tac-users 80000, tac-superuser 80002 and tac-engineer 80005 only; accounts have tac-users as primary group and a 0700 home" c bash -c "[[ \$(getent group | grep '^tac-' | cut -d: -f1,3 | sort | paste -sd' ') == 'tac-engineer:80005 tac-superuser:80002 tac-users:80000' ]] && for u in alice dave erin; do [[ \$(id -gn \$u) == tac-users && \$(stat -c %a /home/\$u) == 700 ]] || exit 1; done"
+
+section "the engineer tier: bob's group given the tier engineer (D18), then back"
+# tier.<group> in tacctl.yaml is what 'tacctl group edit <g> tier' (WP9.4)
+# writes; the file is edited here so the case does not depend on it.
+s bash -c "printf 'tier:\n  operator: engineer\n' >> /etc/tacctl/tacctl.yaml"
+tacctl host sync c1 > "${WORK}/sync.out"; rc=$?
+check "the sync puts bob (engineer) in tac-engineer, not tac-superuser" c bash -c "[[ $rc == 0 ]] && id -nG bob | grep -qw tac-engineer && ! id -nG bob | grep -qw tac-superuser"
+check "the host's sudoers drop-in has the tac-engineer line (default: every command)" c grep -qx '%tac-engineer ALL=(ALL:ALL) ALL' /etc/sudoers.d/tacctl-host
+tacctl config linux engineer-sudo /usr/bin/systemctl,/usr/bin/journalctl > /dev/null
+tacctl host sync c1 > "${WORK}/sync.out"
+check "engineer-sudo reaches the host at its next sync, through visudo" bash -c "grep -q 'Sudoers drop-in /etc/sudoers.d/tacctl-host updated (engineers: /usr/bin/systemctl, /usr/bin/journalctl)' '${WORK}/sync.out' && podman exec '$C' grep -qx '%tac-engineer ALL=(ALL:ALL) /usr/bin/systemctl, /usr/bin/journalctl' /etc/sudoers.d/tacctl-host"
+tacctl config linux engineer-sudo all > /dev/null
+s sed -i '/^tier:$/,/^  operator: engineer$/d' /etc/tacctl/tacctl.yaml
+tacctl host sync c1 > "${WORK}/sync.out"
+check "back to operator: bob leaves tac-engineer; the drop-in is every command again" c bash -c "! id -nG bob | grep -qw tac-engineer && grep -qx '%tac-engineer ALL=(ALL:ALL) ALL' /etc/sudoers.d/tacctl-host"
 LABEL="TACACS+"; [[ "$FIRST" == "radius" ]] && LABEL="RADIUS"
 check "alice's account: UID 80000, locked password, named 'alice (${LABEL})'" c bash -c "[[ \$(id -u alice) == 80000 && \$(getent passwd alice | cut -d: -f5) == 'alice (${LABEL})' ]] && getent shadow alice | cut -d: -f2 | grep -q '^!'"
 

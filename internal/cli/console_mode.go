@@ -207,6 +207,13 @@ func (cs *consoleSession) systemShell(ctx context.Context, interactive bool) int
 		cs.log("auth.warning", cs.sess.DenyLine(console.SystemShellWord))
 		return console.RefusedStatus
 	}
+	if !cs.pol.SystemShell && cs.tier == tier.Engineer {
+		// No setting opens it to engineers (D18): a shell on this server
+		// would reach its secrets.
+		a.Out.Error(console.SystemShellWord + " is never available to the engineer tier on this server.")
+		cs.log("auth.warning", cs.sess.SystemShellDenyLine(string(cs.tier)))
+		return 1
+	}
 	if !cs.pol.SystemShell {
 		a.Out.Error(console.SystemShellWord + " is not available for the " + string(cs.tier) + " tier on this console. " +
 			"An administrator enables it with: tacctl console system-shell tiers " + consoleTiersWith(cs.tier))

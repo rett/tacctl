@@ -57,8 +57,14 @@ type Script struct {
 	Prebuilt string
 	// Local is the tacctl server's own script (TAC_LOCAL=1): it keeps all
 	// of tacctl's groups (the tiers sudoers, sshd's console drop-in);
-	// every other host has tac-users and tac-superuser only.
+	// every other host has tac-users, tac-superuser and tac-engineer only.
 	Local bool
+	// EngineerSudo is what tac-engineer may run through sudo on a host
+	// other than the tacctl server (TAC_ENGINEER_SUDO): "ALL", or absolute
+	// command paths joined by commas ('config linux engineer-sudo'; ""
+	// is "ALL"). The tacctl server's own script carries it too, and its
+	// body leaves the line out there.
+	EngineerSudo string
 	// Body is client-install.sh; nil means the embedded copy.
 	Body []byte
 }
@@ -74,10 +80,29 @@ type Script struct {
 // GIDs (the first numbers of the range), makes tac-users every managed
 // account's primary group (no group per user) and adds TAC_LOCAL, the
 // tacctl server's own script (all groups; elsewhere tac-users and
-// tac-superuser only). The body refuses a header of another protocol, and a body of
-// an earlier release has no TAC_PROTOCOL check but never sees this header
-// (both are written into one file by one tacctl).
-const ScriptProtocol = "5"
+// tac-superuser only); 6 adds the engineer tier (tac-engineer, fixed GID
+// first+5, on every host; a host's engineers move from tac-superuser to
+// it) and TAC_ENGINEER_SUDO, its line in the host's sudoers drop-in
+// (written on hosts other than the tacctl server only, and at a sync as
+// well as at an install). The body refuses a header of another protocol,
+// and a body of an earlier release has no TAC_PROTOCOL check but never
+// sees this header (both are written into one file by one tacctl).
+const ScriptProtocol = "6"
+
+// EngineerSudoAll is TAC_ENGINEER_SUDO for every command.
+const EngineerSudoAll = "ALL"
+
+// EngineerSudoLine is the line the client script writes for tac-engineer
+// in a host's sudoers drop-in: every command with cmds empty, else those
+// commands (as client-install.sh's engineer_sudo_line builds it from
+// TAC_ENGINEER_SUDO).
+func EngineerSudoLine(cmds []string) string {
+	what := EngineerSudoAll
+	if len(cmds) > 0 {
+		what = strings.Join(cmds, ", ")
+	}
+	return "%tac-engineer ALL=(ALL:ALL) " + what
+}
 
 // fileSHA256 is "sha256sum <f> | awk '{print $1}'": "" when the file
 // cannot be read.
@@ -149,6 +174,11 @@ func (s Script) Header() string {
 	if s.Local {
 		q("TAC_LOCAL", "1")
 	}
+	sudo := s.EngineerSudo
+	if sudo == "" {
+		sudo = EngineerSudoAll
+	}
+	q("TAC_ENGINEER_SUDO", sudo)
 	q("TAC_PROTOCOL", ScriptProtocol)
 	return b.String()
 }
@@ -216,6 +246,12 @@ type ScriptRequest struct {
 	// console or /bin/bash): TAC_USERS lines get it as a fourth field. Nil
 	// for every other host and for 'config linux script': three fields.
 	ConsoleShell func(name, tier string) string
+	// GroupTier is the tier set on each user's group (policy.GroupTier;
+	// "" when none, or nil): it decides a user's tier before the priv-lvl
+	// band (ScopeUsers).
+	GroupTier func(name string) string
+	// EngineerSudo is the header's TAC_ENGINEER_SUDO (Script.EngineerSudo).
+	EngineerSudo string
 }
 
 // ScriptResult is what the script was written with (LINUX_SCRIPT_USERS,
@@ -280,7 +316,7 @@ func (e *Env) WriteScript(req ScriptRequest) (ScriptResult, error) {
 	}
 	port := afterLastColon(listen)
 
-	users, keep, err := e.ScopeUsers(req.Rows, req.ConsoleShell)
+	users, keep, err := e.ScopeUsers(req.Rows, req.ConsoleShell, req.GroupTier)
 	if err != nil {
 		return ScriptResult{}, err
 	}
@@ -296,7 +332,7 @@ func (e *Env) WriteScript(req ScriptRequest) (ScriptResult, error) {
 		Scope: req.Scope, Method: method, Server: req.Server, Port: port, AcctPort: acctPort,
 		Secret: req.Secret, Users: users, Generated: e.now(), Range: e.rng(), Previous: previous,
 		Inactive: strings.Join(linuxNames(append(append([]string(nil), req.Inactive...), keep...)), "\n"), RemoveHomes: homes,
-		Local: req.ConsoleShell != nil,
+		Local: req.ConsoleShell != nil, EngineerSudo: req.EngineerSudo,
 	}
 	if embed {
 		s.Tarball = tarball

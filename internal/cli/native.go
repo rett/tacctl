@@ -27,6 +27,7 @@ import (
 
 	"github.com/rett/tacctl/internal/backend"
 	"github.com/rett/tacctl/internal/model"
+	"github.com/rett/tacctl/internal/policy"
 	"github.com/rett/tacctl/internal/store"
 	"github.com/rett/tacctl/internal/tier"
 	"github.com/rett/tacctl/internal/ui"
@@ -103,7 +104,29 @@ func (inv *invocation) tierGate() tier.Gate {
 			}
 			return m.UserPrivLvl(user)
 		},
+		GroupTier: inv.userGroupTier,
 	}
+}
+
+// userGroupTier is the tier set on the user's group in tacctl.yaml
+// (policy.GroupTier), "" when none is set or the user is unknown.
+func (inv *invocation) userGroupTier(user string) string {
+	m, err := inv.model()
+	if err != nil {
+		return ""
+	}
+	u := m.User(user)
+	if u == nil {
+		return ""
+	}
+	return policy.GroupTier(inv.app.Conf(), u.Group)
+}
+
+// userTier is the tier of a user of the model whose group has priv-lvl
+// privlvl: the tier set on the group, else the priv-lvl band
+// (tier.ForGroup).
+func (inv *invocation) userTier(user, privlvl string) tier.Tier {
+	return tier.ForGroup(inv.userGroupTier(user), privlvl)
 }
 
 // model is the model as this invocation first read it (model_load's

@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -313,25 +314,38 @@ func (inv *invocation) deviceLoad() (*devreg.File, *devreg.Resolver, error) {
 // deviceWrite changes the registry: fn runs first on a copy, so every
 // refusal comes before the snapshot; then, under the lock and after a
 // snapshot of the current state, on the file itself. The resolver it
-// returns is the state after the change.
+// returns is the state after the change. A caller the scope filter
+// restricts (an engineer) may change only what is in their own scopes
+// (deviceChangeScopes), checked on the copy and again on the file.
 func (inv *invocation) deviceWrite(fn func(*devreg.File, *devreg.Resolver) error) (*devreg.Resolver, error) {
 	f, res, err := inv.deviceLoad()
 	if err != nil {
 		return nil, err
 	}
+	scopes := inv.callerScopes()
+	resolver := func(f *devreg.File) *devreg.Resolver {
+		r := devreg.NewResolver(f, nil, res.Model)
+		r.Hosts = res.Hosts
+		return r
+	}
 	trial := f.Clone()
-	after := devreg.NewResolver(trial, nil, res.Model)
-	after.Hosts = res.Hosts
+	after := resolver(trial)
 	if err := fn(trial, after); err != nil {
+		return nil, err
+	}
+	if err := inv.deviceChangeScopes(scopes, resolver(f), after); err != nil {
 		return nil, err
 	}
 	if _, err := trial.Text(); err != nil {
 		return nil, err
 	}
 	_, err = devreg.Mutate(inv.app.Paths.DevicesFile, inv.app.Paths.KnownHosts, inv.snapshotFirst, func(live *devreg.File) error {
-		r := devreg.NewResolver(live, nil, res.Model)
-		r.Hosts = res.Hosts
-		return fn(live, r)
+		before := resolver(live.Clone())
+		r := resolver(live)
+		if err := fn(live, r); err != nil {
+			return err
+		}
+		return inv.deviceChangeScopes(scopes, before, r)
 	})
 	if err == nil {
 		// A device registered at, or moved to, its scope's prefixes ends
@@ -339,6 +353,64 @@ func (inv *invocation) deviceWrite(fn func(*devreg.File, *devreg.Resolver) error
 		inv.stagingSweep()
 	}
 	return after, err
+}
+
+// deviceChangeScopes is nil when a caller f restricts (an engineer) may
+// make the change from before to after: every device or host record it
+// adds, alters or removes is in one of their own scopes, where it was and
+// where it is now (a device's scope is the one that answers its address,
+// so a device moved to another scope's address is refused too), and the
+// registry's own settings stay as they are. An unrestricted caller may
+// make any change. The refusal is printed, exit 1.
+func (inv *invocation) deviceChangeScopes(f scopeFilter, before, after *devreg.Resolver) error {
+	if !f.restricted {
+		return nil
+	}
+	bf, af := before.File, after.File
+	if bf.StaleDays != af.StaleDays || !slices.Equal(bf.GenericNames, af.GenericNames) {
+		return inv.usageErr("The registry's settings are not the engineer tier's to change. Nothing was changed.")
+	}
+	in := func(r *devreg.Resolver, name string) error {
+		e, _ := r.Lookup(name, devreg.ScopeFilter{})
+		if e.Scope == "" {
+			return inv.usageErr("'" + name + "' is at an address no scope answers: the engineer tier registers devices at the addresses of its own scopes only. Nothing was changed.")
+		}
+		return inv.ownScope(f, e.Scope)
+	}
+	changed := func(name string, was, is any, wasThere, isThere bool) error {
+		if wasThere && isThere && reflect.DeepEqual(was, is) {
+			return nil
+		}
+		if wasThere {
+			if err := in(before, name); err != nil {
+				return err
+			}
+		}
+		if isThere {
+			return in(after, name)
+		}
+		return nil
+	}
+	seen := map[string]bool{}
+	for _, d := range append(slices.Clone(bf.Devices), af.Devices...) {
+		if key := strings.ToLower(d.Name); !seen[key] {
+			seen[key] = true
+			was, is := bf.Find(d.Name), af.Find(d.Name)
+			if err := changed(d.Name, was, is, was != nil, is != nil); err != nil {
+				return err
+			}
+		}
+	}
+	for _, h := range append(slices.Clone(bf.Hosts), af.Hosts...) {
+		if key := "host " + h.Name; !seen[key] {
+			seen[key] = true
+			was, is := bf.Host(h.Name), af.Host(h.Name)
+			if err := changed(h.Name, was, is, was != nil, is != nil); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // deviceFind finds the device a verb names (by name or address; hosts
@@ -352,13 +424,18 @@ func (inv *invocation) deviceFind(res *devreg.Resolver, key string) (devreg.Entr
 }
 
 // deviceEditable is the registry device a write names: an enrolled host
-// is refused, with where to change it.
+// is refused, with where to change it. A device the caller may not see
+// (another scope's, for an engineer) is not found.
 func (inv *invocation) deviceEditable(res *devreg.Resolver, f *devreg.File, key string) (*devreg.Device, error) {
-	if d := f.Find(key); d != nil {
-		return d, nil
+	d := f.Find(key)
+	if d == nil {
+		d = f.FindAddress(key)
 	}
-	if d := f.FindAddress(key); d != nil {
-		return d, nil
+	if d != nil {
+		if _, ok := res.Lookup(d.Name, inv.deviceFilter()); ok {
+			return d, nil
+		}
+		return nil, inv.usageErr("Device '" + key + "' not found. List them with: tacctl device list")
 	}
 	if e, ok := res.NameTaken(key); ok && e.Source == devreg.SourceHost {
 		return nil, inv.usageErr("'" + e.Name + "' is an enrolled host; 'tacctl host' manages it.")
@@ -806,8 +883,11 @@ func (inv *invocation) deviceRemove(args []string) error {
 	case p.Has("--all") && len(p.Args) > 0:
 		return inv.usageErr("--all takes no names.", "Usage: tacctl device remove <name>[,<name>...] | --all [-y]")
 	case p.Has("--all"):
-		for _, d := range f.Devices {
-			targets = append(targets, d.Name)
+		// The caller's devices: every one, or an engineer's own scopes'.
+		for _, e := range res.Visible(inv.deviceFilter()) {
+			if e.Source == devreg.SourceDevice {
+				targets = append(targets, e.Name)
+			}
 		}
 		if len(targets) == 0 {
 			inv.app.Out.Info("The registry is empty.")

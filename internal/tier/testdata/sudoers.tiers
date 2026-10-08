@@ -11,9 +11,16 @@ Cmnd_Alias TACCTL_OP = /usr/local/bin/tacctl log tail, /usr/local/bin/tacctl log
     /usr/local/bin/tacctl config validate, /usr/local/bin/tacctl backup list, \
     /usr/local/bin/tacctl device check *, /usr/local/bin/tacctl device scan, /usr/local/bin/tacctl device scan *, /usr/local/bin/tacctl device discover, /usr/local/bin/tacctl device discover *, /usr/local/bin/tacctl device export, /usr/local/bin/tacctl device export *, \
     /usr/local/bin/tacctl console show, /usr/local/bin/tacctl console check
+Cmnd_Alias TACCTL_EN = /usr/local/bin/tacctl device add *, /usr/local/bin/tacctl device remove *, /usr/local/bin/tacctl device rename *, \
+    /usr/local/bin/tacctl device address *, /usr/local/bin/tacctl device hostname *, /usr/local/bin/tacctl device vendor *, /usr/local/bin/tacctl device port *, \
+    /usr/local/bin/tacctl device description *, /usr/local/bin/tacctl device legacy-ssh *, /usr/local/bin/tacctl device hostkey *, /usr/local/bin/tacctl device import *, \
+    /usr/local/bin/tacctl scope devices *, \
+    /usr/local/bin/tacctl config cisco, /usr/local/bin/tacctl config cisco *, /usr/local/bin/tacctl config juniper, /usr/local/bin/tacctl config juniper *, /usr/local/bin/tacctl config wti, /usr/local/bin/tacctl config wti *, \
+    /usr/local/bin/tacctl host enroll *, /usr/local/bin/tacctl host sync *, /usr/local/bin/tacctl host move *, /usr/local/bin/tacctl host target *
 
 Defaults!/usr/local/bin/tacctl env_keep += "SSH_AUTH_SOCK TACCTL_CONSOLE DISPLAY"
 %tac-superuser ALL=(ALL:ALL) ALL
-%tac-superuser ALL=(root) NOPASSWD: TACCTL_RO, TACCTL_OP
+%tac-superuser ALL=(root) NOPASSWD: TACCTL_RO, TACCTL_OP, TACCTL_EN
+%tac-engineer ALL=(root) NOPASSWD: TACCTL_RO, TACCTL_OP, TACCTL_EN
 %tac-operator ALL=(root) NOPASSWD: TACCTL_RO, TACCTL_OP
 %tac-readonly ALL=(root) NOPASSWD: TACCTL_RO

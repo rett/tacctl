@@ -220,6 +220,10 @@ func LinuxName(name string) bool { return name != "root" && reLinuxName.MatchStr
 // TierOf is tier_for_privlvl.
 func TierOf(privlvl string) string { return string(tier.ForPrivLvl(privlvl)) }
 
+// tierOf is the tier of a user whose group has the tier setting set (""
+// when none) and the priv-lvl privlvl (tier.ForGroup).
+func tierOf(setting, privlvl string) string { return string(tier.ForGroup(setting, privlvl)) }
+
 // splitRow is "IFS='|' read -r username privlvl" of a linux-users row.
 func splitRow(row string) (name, privlvl string) {
 	name, privlvl, _ = strings.Cut(row, "|")
@@ -249,7 +253,11 @@ func UserCount(rows []string) int {
 // too and returned in keep: they are still users of the scope, so a host
 // expires their accounts rather than deleting them. No UID left in the
 // range is printed and ErrFailed.
-func (e *Env) ScopeUsers(rows []string, shell func(name, tier string) string) (users string, keep []string, err error) {
+//
+// groupTier is the tier set on each user's group ("" when none, or nil:
+// none for anyone): it decides the tier before the priv-lvl band, so an
+// engineer is sent as such (0.2.2, D18).
+func (e *Env) ScopeUsers(rows []string, shell func(name, tier string) string, groupTier func(name string) string) (users string, keep []string, err error) {
 	uids := e.UIDs()
 	rng := uids.rng()
 	var out []string
@@ -262,7 +270,11 @@ func (e *Env) ScopeUsers(rows []string, shell func(name, tier string) string) (u
 			e.stderrOut().WarnE("Skipping '" + name + "': not a valid Linux account name (lowercase letters, digits, _ and - only).")
 			continue
 		}
-		t := TierOf(privlvl)
+		set := ""
+		if groupTier != nil {
+			set = groupTier(name)
+		}
+		t := tierOf(set, privlvl)
 		if t == string(tier.None) {
 			e.stderrOut().WarnE("Skipping '" + name + "': its group has no priv-lvl.")
 			keep = append(keep, name)

@@ -1778,6 +1778,10 @@ func (inv *invocation) scopeDevices(args []string) error {
 	if !m.Exists("scopes", scope) {
 		return inv.usageErr("Scope '" + scope + "' does not exist.")
 	}
+	// An engineer tags the addresses of their own scopes only (D18).
+	if err := inv.ownScope(inv.callerScopes(), scope); err != nil {
+		return err
+	}
 	current := m.ScopeDevices(scope)
 
 	switch sub {

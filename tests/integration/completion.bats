@@ -254,7 +254,7 @@ complete_words() {
 
 @test "completion: config linux script flags and methods, builds, backup restore --legacy" {
     complete_words tacctl config linux ""
-    assert_output "$(printf 'build\nbuilds\nremove-script\nscript\nuid\nuid-range')"
+    assert_output "$(printf 'build\nbuilds\nengineer-sudo\nremove-script\nscript\nuid\nuid-range')"
     complete_words tacctl config linux script ""
     assert_output "$(printf -- '--scope\n--server\n--method\n--output\n-o')"
     complete_words tacctl config linux script --method ""

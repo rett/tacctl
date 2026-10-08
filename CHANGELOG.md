@@ -3,6 +3,47 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.3 (unreleased)
+
+### What changed
+
+1. **A fourth tacctl tier, `engineer`, between operator and superuser.** A
+   group's tier is the one set on it in `tacctl.yaml` (`tier.<group>`), else
+   its priv-lvl band as before (below 7 readonly, 7-14 operator, 15
+   superuser), so a group at priv-lvl 15 on the devices can be engineers in
+   tacctl. An engineer may do what an operator may, and for the devices and
+   hosts of their own scopes also: `device add`, `remove`, `rename`,
+   `address`, `hostname`, `vendor`, `port`, `description`, `legacy-ssh`,
+   `hostkey` and `import`, `scope devices`, `config cisco|juniper|wti`
+   (with `--staging`, never at an address another scope answers), and `host
+   enroll|sync|move|target` (not `host enroll --local`). Another scope's
+   device or host is not found; a change that would touch one, or a device
+   at an address no scope of theirs answers, is refused (`Scope '<name>' is
+   not one of yours`, exit 1), and `device remove --all` removes their own
+   devices only. Users, groups, scopes, secrets, backends, backups and
+   upgrades stay the superuser's. The tiers sudoers drop-in gains the
+   engineer rows (`TACCTL_EN`) and `%tac-engineer ALL=(root) NOPASSWD:
+   TACCTL_RO, TACCTL_OP, TACCTL_EN` (superusers get `TACCTL_EN` without a
+   password too); engineers never get more than tacctl through sudo on the
+   tacctl server. `console tiers` has an `engineer` switch (on by default,
+   also in a `console.yaml` written before), `console show` lists the tier,
+   and `console system-shell tiers` and `console forwarding tiers` refuse
+   `engineer`. `console check` asks sudo (`sudo -l -U`) what each member of
+   `tac-engineer` may run and warns in red, exit 1, when it is anything but
+   tacctl. On Linux hosts engineers are in a new group `tac-engineer` (GID
+   80005, the range's first number + 5, on every host) instead of
+   `tac-superuser`; a host's first sync after the upgrade moves them
+   (`'<user>': moved from tac-superuser to tac-engineer`). On a host other
+   than the tacctl server, its sudoers drop-in gives `tac-engineer` every
+   command with their own password (`%tac-engineer ALL=(ALL:ALL) ALL`), or
+   the commands `tacctl config linux engineer-sudo
+   all|<command>[,<command>...]` names (absolute paths, checked with
+   `visudo`, kept as `linux.engineer_sudo`); a sync now rewrites an
+   installed drop-in when it differs, so the setting reaches each host at
+   its next sync. The client script speaks protocol 6 (`TAC_ENGINEER_SUDO`
+   in its header); a script of protocol 5 and this body refuse each other
+   before changing anything.
+
 ## 0.2.2 (2026-10-07)
 
 ### What changed

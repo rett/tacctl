@@ -260,11 +260,58 @@ print("" if v is None else v)' "${TACCTL_STATE_DIR}/store.yaml" "$1" "$2"
 
 @test "config sudoers tiers: lower tiers get no secret-bearing or mutating command" {
     run "$TACCTL_BIN_SCRIPT" config sudoers tiers show
-    refute_output --partial "config cisco"
     refute_output --partial "scope show"
+    refute_output --partial "scope secret"
     refute_output --partial "backup diff"
     refute_output --partial "user passwd"
     refute_output --partial "log clear"
+    refute_output --partial "group edit"
+    # The device configurations (the scope's secret) are the engineer
+    # alias's only.
+    local text ro_op en
+    text=$(sed -n 's/^    //p' <<<"$output" | sed -e ':a' -e '/\\$/N; s/\\\n//; ta')
+    ro_op=$(grep -E '^Cmnd_Alias TACCTL_(RO|OP)' <<<"$text")
+    en=$(grep '^Cmnd_Alias TACCTL_EN' <<<"$text")
+    if grep -q "config cisco" <<<"$ro_op"; then echo "config cisco below the engineer tier"; return 1; fi
+    for r in 'tacctl config cisco \*' 'tacctl config juniper,' 'tacctl config wti \*' 'tacctl device add \*' 'tacctl device import \*' \
+        'tacctl device hostkey \*' 'tacctl scope devices \*' 'tacctl host enroll \*' 'tacctl host sync \*' 'tacctl host move \*' 'tacctl host target \*'; do
+        grep -q -- "$r" <<<"$en" || { echo "engineer lacks $r"; return 1; }
+    done
+    for r in 'host unenroll' 'scope prefixes' 'scope staging' 'device stale-days' 'config linux' 'user ' 'backend enable'; do
+        if grep -q -- "$r" <<<"$en"; then echo "engineer alias has $r"; return 1; fi
+    done
+}
+
+@test "config sudoers tiers: tac-engineer gets tacctl's verbs only, no (ALL:ALL) ALL" {
+    run "$TACCTL_BIN_SCRIPT" config sudoers tiers show
+    assert_success
+    assert_output --partial "    %tac-engineer ALL=(root) NOPASSWD: TACCTL_RO, TACCTL_OP, TACCTL_EN"
+    run grep -c "tac-engineer" <<<"$output"
+    assert_output "1"
+}
+
+@test "tier: a group's tier setting decides before its priv-lvl band (engineer at priv-lvl 15)" {
+    "$TACCTL_BIN_SCRIPT" user add en superuser --hash "$HASH" --scopes lab > /dev/null
+    as_user en yes -- scope secret lab show
+    assert_success
+    printf 'tier:\n  superuser: engineer\n' > "${TACCTL_STATE_DIR}/tacctl.yaml"
+    as_user en yes -- scope secret lab show
+    assert_failure
+    assert_output --partial "'tacctl scope secret' is not permitted for the engineer tier."
+    as_user en yes -- user add mallory superuser
+    assert_failure
+    assert_output --partial "not permitted for the engineer tier"
+    as_user en yes -- backup list
+    refute_output --partial "not permitted"
+    as_user en yes -- device add lab-sw 192.168.1.1 --no-host-key
+    assert_success
+    as_user en yes -- device add prod-sw 10.99.0.1 --no-host-key
+    assert_failure
+    assert_output --partial "is at an address no scope answers: the engineer tier registers devices at the addresses of its own scopes only"
+    # The operator tier keeps its rows only.
+    as_user op yes -- device add lab-sw2 192.168.1.2 --no-host-key
+    assert_failure
+    assert_output --partial "not permitted for the operator tier"
 }
 
 @test "config sudoers tiers install/remove: writes and deletes the drop-in" {

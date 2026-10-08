@@ -74,7 +74,7 @@ func ParseRemote(out string) (r Remote, ok bool) {
 			}
 		case "tier":
 			switch t := tier.Tier(v); t {
-			case tier.Unrestricted, tier.Superuser, tier.Operator, tier.Readonly, tier.None:
+			case tier.Unrestricted, tier.Superuser, tier.Engineer, tier.Operator, tier.Readonly, tier.None:
 				r.Tier, ok = t, true
 			}
 		case "list_max":

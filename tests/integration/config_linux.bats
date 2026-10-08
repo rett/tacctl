@@ -263,6 +263,7 @@ _client_env() {
     # tacctl's groups of a host other than the server, at their fixed GIDs.
     stub_called "groupadd -g 80000 tac-users"
     stub_called "groupadd -g 80002 tac-superuser"
+    stub_called "groupadd -g 80005 tac-engineer"
     run grep -cE "^groupadd .*(tac-readonly|tac-operator|tac-console|alice|bob)" "$CALLS_LOG"
     assert_output "0"
     stub_called "useradd -m -u 80000 -g tac-users -s /bin/bash .* alice"
@@ -299,6 +300,7 @@ bob"
     stub_called "groupadd -g 80002 tac-superuser"
     stub_called "groupadd -g 80003 tac-operator"
     stub_called "groupadd -g 80004 tac-readonly"
+    stub_called "groupadd -g 80005 tac-engineer"
     stub_called "usermod -aG tac-superuser alice"
     stub_called "usermod -aG tac-readonly bob"
 }
@@ -327,7 +329,7 @@ bob"
     stub_called "groupdel tac-operator"
     assert_output --partial "[INFO] Group 'tac-console' is not used by tacctl on this host, but is kept: admin."
     run grep -E "^(alice|bob|tac-[a-z]+):" "$FAKE_DB/group"
-    assert_output $'tac-users:x:80000:alice,bob\ntac-superuser:x:80002:alice\ntac-console:x:20002:alice,admin'
+    assert_output $'tac-users:x:80000:alice,bob\ntac-superuser:x:80002:alice\ntac-console:x:20002:alice,admin\ntac-engineer:x:80005:'
     run grep -E "^(alice|bob):" "$FAKE_DB/passwd"
     assert_line --partial "alice:x:80000:80000:"
     assert_line --partial "bob:x:80001:80000:"
@@ -370,7 +372,7 @@ bob"
     run grep -cE "^(gpasswd|usermod -aG .*tac-users)" "$CALLS_LOG"
     assert_output "0"
     run grep -E "^tac-" "$FAKE_DB/group"
-    assert_output $'tac-users:x:80000:\ntac-superuser:x:80002:alice'
+    assert_output $'tac-users:x:80000:\ntac-superuser:x:80002:alice\ntac-engineer:x:80005:'
 }
 
 @test "client install: an own group at tac-users' fixed GID (an earlier build) gives way to it" {
@@ -404,7 +406,132 @@ bob"
     assert_output --partial "[INFO] Group 'tac-superuser' is now GID 80002 (was 80003)."
     assert_output --partial "[INFO] Group 'tac-console' is now GID 80001 (was 80004)."
     run grep -E "^tac-" "$FAKE_DB/group"
-    assert_output $'tac-users:x:80000:\ntac-readonly:x:80004:\ntac-operator:x:80003:\ntac-superuser:x:80002:\ntac-console:x:80001:'
+    assert_output $'tac-users:x:80000:\ntac-readonly:x:80004:\ntac-operator:x:80003:\ntac-superuser:x:80002:\ntac-console:x:80001:\ntac-engineer:x:80005:'
+}
+
+# An engineer: dave, of a group given the engineer tier (priv-lvl 15 on the
+# devices, as the production server's engineers are).
+_engineer() {
+    "$TACCTL_BIN_SCRIPT" group add engineer 15 ENG-CLASS > /dev/null
+    "$TACCTL_BIN_SCRIPT" user add dave engineer --hash "$HASH" --scopes lab > /dev/null
+    printf 'tier:\n  engineer: engineer\n' > "${TACCTL_STATE_DIR}/tacctl.yaml"
+}
+
+@test "client install: an engineer is in tac-engineer (GID 80005), not tac-superuser, on every host" {
+    _engineer
+    _gen > /dev/null
+    run grep '^TAC_USERS=' "$OUT"
+    assert_output "TAC_USERS=\$'alice:superuser:80000\\nbob:readonly:80001\\ndave:engineer:80002'"
+    _client_env
+    run bash "$OUT" --accounts-only
+    assert_success
+    stub_called "groupadd -g 80005 tac-engineer"
+    stub_called "usermod -aG tac-engineer dave"
+    stub_called "usermod -aG tac-superuser alice"
+    run grep -cE "^usermod -aG .*tac-superuser.* dave|^usermod -aG .*tac-engineer.* (alice|bob)" "$CALLS_LOG"
+    assert_output "0"
+    refute_output --partial "moved from tac-superuser"
+}
+
+@test "client install: at the first 0.2.2 sync an engineer moves from tac-superuser to tac-engineer" {
+    _engineer
+    _gen > /dev/null
+    _client_env
+    run bash "$OUT" --accounts-only
+    assert_success
+    # As 0.2.1 left the host: the engineers were superusers.
+    : > "$CALLS_LOG"
+    FAKE_ID_GROUPS="tac-users tac-superuser" run bash "$OUT" --accounts-only
+    assert_success
+    assert_output --partial "[INFO] 'dave': moved from tac-superuser to tac-engineer (the engineer tier)."
+    refute_output --partial "'alice': moved"
+    stub_called "gpasswd -d dave tac-superuser"
+    stub_called "usermod -aG tac-engineer dave"
+    run grep -c "^gpasswd -d alice tac-superuser" "$CALLS_LOG"
+    assert_output "0"
+}
+
+@test "client install: tac-engineer's sudoers line on a host, none on the tacctl server" {
+    _engineer
+    _gen > /dev/null
+    _client_env
+    run bash "$OUT"
+    assert_success
+    run cat "$TACCTL_CLIENT_SUDOERS"
+    assert_line "%tac-superuser ALL=(ALL:ALL) ALL"
+    assert_line "%tac-engineer ALL=(ALL:ALL) ALL"
+
+    # The tacctl server's own script: no tac-engineer line (engineers run
+    # tacctl's verbs there, nothing else).
+    _local_header
+    run bash "$OUT"
+    assert_success
+    run cat "$TACCTL_CLIENT_SUDOERS"
+    assert_line "%tac-superuser ALL=(ALL:ALL) ALL"
+    refute_output --partial "tac-engineer"
+}
+
+@test "config linux engineer-sudo: a command list, checked with visudo, reaches a host at its next sync" {
+    _engineer
+    stub_cmd visudo
+    run "$TACCTL_BIN_SCRIPT" config linux engineer-sudo
+    assert_success
+    assert_output --partial "Engineers' sudo on enrolled hosts: every command (%tac-engineer ALL=(ALL:ALL) ALL, their own password)"
+    run "$TACCTL_BIN_SCRIPT" config linux engineer-sudo systemctl
+    assert_failure 1
+    assert_output --partial "'systemctl' is not an absolute command path"
+    run "$TACCTL_BIN_SCRIPT" config linux engineer-sudo "/usr/bin/systemctl restart"
+    assert_failure 1
+    ! stub_called "^visudo"
+    _gen > /dev/null
+    _client_env
+    run bash "$OUT"
+    assert_success
+    run cat "$TACCTL_CLIENT_SUDOERS"
+    assert_line "%tac-engineer ALL=(ALL:ALL) ALL"
+
+    run "$TACCTL_BIN_SCRIPT" config linux engineer-sudo /usr/bin/systemctl,/usr/bin/journalctl
+    assert_success
+    assert_output --partial "Each host gets it at its next sync"
+    stub_called "^visudo -cf "
+    _gen > /dev/null
+    run grep -m1 '^TAC_ENGINEER_SUDO=' "$OUT"
+    assert_output 'TAC_ENGINEER_SUDO=/usr/bin/systemctl\,/usr/bin/journalctl'
+    run bash "$OUT" --accounts-only
+    assert_success
+    assert_output --partial "[INFO] Sudoers drop-in ${TACCTL_CLIENT_SUDOERS} updated (engineers: /usr/bin/systemctl, /usr/bin/journalctl)."
+    run cat "$TACCTL_CLIENT_SUDOERS"
+    assert_line "%tac-engineer ALL=(ALL:ALL) /usr/bin/systemctl, /usr/bin/journalctl"
+    assert_line "%tac-superuser ALL=(ALL:ALL) ALL"
+    # Once: the next sync leaves it.
+    run bash "$OUT" --accounts-only
+    assert_success
+    refute_output --partial "Sudoers drop-in"
+
+    # A sync never creates the drop-in on a host without one, and a line
+    # visudo refuses leaves the old one.
+    rm -f "$TACCTL_CLIENT_SUDOERS"
+    run bash "$OUT" --accounts-only
+    assert_success
+    [[ ! -e "$TACCTL_CLIENT_SUDOERS" ]]
+    printf 'old\n' > "$TACCTL_CLIENT_SUDOERS"
+    stub_cmd visudo 'exit 1'
+    run bash "$OUT" --accounts-only
+    assert_success
+    assert_output --partial "visudo rejected the new sudoers drop-in; ${TACCTL_CLIENT_SUDOERS} was left as it was."
+    run cat "$TACCTL_CLIENT_SUDOERS"
+    assert_output "old"
+}
+
+@test "client install: a TAC_ENGINEER_SUDO that is not ALL or absolute paths stops the run before anything changes" {
+    _gen > /dev/null
+    _client_env
+    sed -i '0,/^TAC_ENGINEER_SUDO=/s|^TAC_ENGINEER_SUDO=.*|TAC_ENGINEER_SUDO="ALL, !/bin/sh"|' "$OUT"
+    run bash "$OUT" --accounts-only
+    assert_failure
+    assert_output --partial "The header's TAC_ENGINEER_SUDO is neither ALL nor absolute command paths. Nothing was changed."
+    run grep -cE "^(useradd|groupadd|usermod)" "$CALLS_LOG"
+    assert_output "0"
 }
 
 @test "client install: a fixed GID held by another group is left to it, and said" {
@@ -595,10 +722,10 @@ bob"
 @test "client install: a header of another protocol stops the run before anything changes" {
     _gen > /dev/null
     _client_env
-    sed -i 's/^TAC_PROTOCOL=5$/TAC_PROTOCOL=2/' "$OUT"
+    sed -i 's/^TAC_PROTOCOL=6$/TAC_PROTOCOL=5/' "$OUT"
     run bash "$OUT" --accounts-only
     assert_failure
-    assert_output --partial "This script's header speaks protocol 2 and its body protocol 5"
+    assert_output --partial "This script's header speaks protocol 5 and its body protocol 6"
     sed -i '/^TAC_PROTOCOL=/d' "$OUT"
     run bash "$OUT" --accounts-only
     assert_failure

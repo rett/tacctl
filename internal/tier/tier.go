@@ -7,8 +7,8 @@
 // Only callers in the local group tac-users are tier-managed (the accounts
 // tacctl provisions for its users); everyone else who reaches tacctl (root,
 // a local admin with sudo) is unrestricted. A managed caller's tier comes
-// from the model (the user's group's priv-lvl), never from local group
-// membership.
+// from the model and tacctl.yaml (the tier set on the user's group, else
+// its priv-lvl), never from local group membership.
 //
 // The gate and the sudoers rules are one table (Rules): Permits reads it,
 // Sudoers prints it, so the two cannot disagree. A new read-only verb is
@@ -31,6 +31,7 @@ const (
 	UsersGroup     = "tac-users"
 	ReadonlyGroup  = "tac-readonly"
 	OperatorGroup  = "tac-operator"
+	EngineerGroup  = "tac-engineer"
 	SuperuserGroup = "tac-superuser"
 )
 
@@ -42,10 +43,44 @@ type Tier string
 const (
 	Unrestricted Tier = "unrestricted"
 	Superuser    Tier = "superuser"
+	Engineer     Tier = "engineer"
 	Operator     Tier = "operator"
 	Readonly     Tier = "readonly"
 	None         Tier = "none"
 )
+
+// Managed are the tiers of tacctl users, lowest first: the tiers a group
+// may be given (conf.Tiers) and the order of the tier table's rows.
+var Managed = []Tier{Readonly, Operator, Engineer, Superuser}
+
+// rank is a managed tier's place in Managed (-1: not one).
+func rank(t Tier) int {
+	for i, m := range Managed {
+		if m == t {
+			return i
+		}
+	}
+	return -1
+}
+
+// ForGroup is the tier of a user whose group has the tier setting set
+// (policy.GroupTier: "" when none is set) and the priv-lvl privlvl: the
+// setting, when it names a managed tier, else the priv-lvl band
+// (ForPrivLvl). A user with no usable priv-lvl (unknown, disabled, a group
+// without one) is none whatever the setting says. The setting is what
+// makes an engineer: the bands give readonly, operator or superuser only,
+// so a group at priv-lvl 15 on the devices can be engineers in tacctl
+// (docs/plans/0.2.2-plan.md D18).
+func ForGroup(setting, privlvl string) Tier {
+	t := ForPrivLvl(privlvl)
+	if t == None {
+		return None
+	}
+	if s := Tier(setting); rank(s) >= 0 {
+		return s
+	}
+	return t
+}
 
 // ForPrivLvl is tier_for_privlvl: 15 and up superuser, 7 and up operator,
 // any other number readonly; anything that is not a number is none.
@@ -71,7 +106,7 @@ var (
 // Rule is one row of the tier table: what a lower tier may run.
 type Rule struct {
 	// Tier is the lowest tier the row is for: Readonly rows are open to
-	// operators too.
+	// operators and engineers too, Operator rows to engineers.
 	Tier Tier
 	// Cmd and Sub are the first two words of the command line; AnySub
 	// opens every Sub (Sub is then empty).
@@ -89,7 +124,13 @@ type Rule struct {
 // that prints a shared secret or a password hash (config
 // cisco|juniper|wti, scope secret, backup diff, config dump, store show) is
 // superuser-only, as is scope show (it gives the secret's length) and
-// everything that changes anything. The order is the drop-in's.
+// everything that changes anything, but for the Engineer rows (0.2.2,
+// D18): the device registry, the vendor tags and device configurations of
+// a scope (whose secret they print) and its Linux hosts. The gate lets an
+// engineer run those verbs; the verbs themselves keep the engineer to the
+// devices and hosts of their own scopes (callerScopes). Users, groups,
+// scopes, secrets, backends, backups and upgrades stay the superuser's. The
+// order is the drop-in's.
 var Rules = []Rule{
 	{Tier: Readonly, Cmd: "", AnySub: true, Sudoers: []string{`""`}},
 	{Tier: Readonly, Cmd: "passwd", AnySub: true, Sudoers: []string{"passwd"}},
@@ -132,22 +173,43 @@ var Rules = []Rule{
 	{Tier: Operator, Cmd: "device", Sub: "export", Sudoers: []string{"device export", "device export *"}, Wrap: true},
 	{Tier: Operator, Cmd: "console", Sub: "show", Sudoers: []string{"console show"}},
 	{Tier: Operator, Cmd: "console", Sub: "check", Sudoers: []string{"console check"}},
+
+	{Tier: Engineer, Cmd: "device", Sub: "add", Sudoers: []string{"device add *"}},
+	{Tier: Engineer, Cmd: "device", Sub: "remove", Sudoers: []string{"device remove *"}},
+	{Tier: Engineer, Cmd: "device", Sub: "rename", Sudoers: []string{"device rename *"}, Wrap: true},
+	{Tier: Engineer, Cmd: "device", Sub: "address", Sudoers: []string{"device address *"}},
+	{Tier: Engineer, Cmd: "device", Sub: "hostname", Sudoers: []string{"device hostname *"}},
+	{Tier: Engineer, Cmd: "device", Sub: "vendor", Sudoers: []string{"device vendor *"}},
+	{Tier: Engineer, Cmd: "device", Sub: "port", Sudoers: []string{"device port *"}, Wrap: true},
+	{Tier: Engineer, Cmd: "device", Sub: "description", Sudoers: []string{"device description *"}},
+	{Tier: Engineer, Cmd: "device", Sub: "legacy-ssh", Sudoers: []string{"device legacy-ssh *"}},
+	{Tier: Engineer, Cmd: "device", Sub: "hostkey", Sudoers: []string{"device hostkey *"}},
+	{Tier: Engineer, Cmd: "device", Sub: "import", Sudoers: []string{"device import *"}, Wrap: true},
+	{Tier: Engineer, Cmd: "scope", Sub: "devices", Sudoers: []string{"scope devices *"}, Wrap: true},
+	{Tier: Engineer, Cmd: "config", Sub: "cisco", Sudoers: []string{"config cisco", "config cisco *"}},
+	{Tier: Engineer, Cmd: "config", Sub: "juniper", Sudoers: []string{"config juniper", "config juniper *"}},
+	{Tier: Engineer, Cmd: "config", Sub: "wti", Sudoers: []string{"config wti", "config wti *"}, Wrap: true},
+	{Tier: Engineer, Cmd: "host", Sub: "enroll", Sudoers: []string{"host enroll *"}},
+	{Tier: Engineer, Cmd: "host", Sub: "sync", Sudoers: []string{"host sync *"}},
+	{Tier: Engineer, Cmd: "host", Sub: "move", Sudoers: []string{"host move *"}},
+	{Tier: Engineer, Cmd: "host", Sub: "target", Sudoers: []string{"host target *"}},
 }
 
 // Permits is tier_permits: whether tier may run 'tacctl cmd sub'.
 // Unrestricted and superuser may run anything, none nothing; readonly the
-// Readonly rows, operator both kinds. 'help', '-h' and '--help' with
-// nothing after them are Readonly rows: the usage is no secret.
+// Readonly rows, operator the Readonly and Operator rows, engineer all
+// three kinds. 'help', '-h' and '--help' with nothing after them are
+// Readonly rows: the usage is no secret.
 func Permits(t Tier, cmd, sub string) bool {
 	switch t {
 	case Unrestricted, Superuser:
 		return true
-	case Readonly, Operator:
+	case Readonly, Operator, Engineer:
 	default:
 		return false
 	}
 	for _, r := range Rules {
-		if r.Tier == Operator && t != Operator {
+		if !Covers(t, r) {
 			continue
 		}
 		if r.Cmd == cmd && (r.AnySub || r.Sub == sub) {
@@ -155,6 +217,12 @@ func Permits(t Tier, cmd, sub string) bool {
 		}
 	}
 	return false
+}
+
+// Covers reports whether row r is open to tier t (a lower tier's rows are
+// open to the tiers above it).
+func Covers(t Tier, r Rule) bool {
+	return rank(t) >= rank(r.Tier) && rank(r.Tier) >= 0
 }
 
 // Binary is the command path the drop-in names (the installed tacctl).
@@ -182,7 +250,7 @@ func Sudoers() string {
 	for _, a := range []struct {
 		name string
 		tier Tier
-	}{{"TACCTL_RO", Readonly}, {"TACCTL_OP", Operator}} {
+	}{{"TACCTL_RO", Readonly}, {"TACCTL_OP", Operator}, {"TACCTL_EN", Engineer}} {
 		var lines [][]string
 		var cur []string
 		for _, r := range Rules {
@@ -215,7 +283,11 @@ func Sudoers() string {
 	b.WriteString("\n")
 	b.WriteString(EnvKeep)
 	b.WriteString("%" + SuperuserGroup + " ALL=(ALL:ALL) ALL\n")
-	b.WriteString("%" + SuperuserGroup + " ALL=(root) NOPASSWD: TACCTL_RO, TACCTL_OP\n")
+	b.WriteString("%" + SuperuserGroup + " ALL=(root) NOPASSWD: TACCTL_RO, TACCTL_OP, TACCTL_EN\n")
+	// Engineers get tacctl's own verbs and nothing else on this server: no
+	// '(ALL:ALL) ALL' line, here or in the host drop-in the client script
+	// writes (it leaves tac-engineer out on the tacctl server, TAC_LOCAL=1).
+	b.WriteString("%" + EngineerGroup + " ALL=(root) NOPASSWD: TACCTL_RO, TACCTL_OP, TACCTL_EN\n")
 	b.WriteString("%" + OperatorGroup + " ALL=(root) NOPASSWD: TACCTL_RO, TACCTL_OP\n")
 	b.WriteString("%" + ReadonlyGroup + " ALL=(root) NOPASSWD: TACCTL_RO\n")
 	return b.String()
@@ -234,6 +306,10 @@ type Gate struct {
 	// when the user is unknown or disabled or the model cannot be read. It
 	// is asked only for a managed caller.
 	PrivLvl func(user string) string
+	// GroupTier is the tier set on the user's group (policy.GroupTier; ""
+	// when none is set, or nil: the priv-lvl band decides). It is asked
+	// only for a managed caller with a priv-lvl.
+	GroupTier func(user string) string
 }
 
 // ErrDenied is Enforce's refusal; its message has been written (exit 1).
@@ -307,7 +383,11 @@ func (g Gate) caller(ctx context.Context) Tier {
 	if g.PrivLvl != nil {
 		lvl = g.PrivLvl(caller)
 	}
-	return ForPrivLvl(lvl)
+	set := ""
+	if g.GroupTier != nil && ForPrivLvl(lvl) != None {
+		set = g.GroupTier(caller)
+	}
+	return ForGroup(set, lvl)
 }
 
 // Enforce is enforce_tier <cmd> <sub>: nil when the caller's tier permits

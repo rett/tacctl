@@ -36,6 +36,8 @@ func TierGroup(t tier.Tier) string {
 		return tier.ReadonlyGroup
 	case tier.Operator:
 		return tier.OperatorGroup
+	case tier.Engineer:
+		return tier.EngineerGroup
 	case tier.Superuser:
 		return tier.SuperuserGroup
 	}

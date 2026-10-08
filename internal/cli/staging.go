@@ -84,6 +84,17 @@ func (inv *invocation) stagingAdd(scope, addr, kind, name string) error {
 		a.Out.InfoE("--staging: scope '" + scope + "' already answers " + addr + " (prefix " + info.Prefix + "); no staging address is needed.")
 		return nil
 	}
+	// An engineer stages in their own scopes only, and never an address
+	// another scope answers: the /32 would take it, and its devices'
+	// logins, from that scope (D18).
+	if f := inv.callerScopes(); f.restricted {
+		if err := inv.ownScope(f, scope); err != nil {
+			return err
+		}
+		if info, found := m.LookupAddr(addr); found && !f.allows(info.Scope) {
+			return inv.usageErr("--staging: " + addr + " is answered by scope '" + info.Scope + "', which is not one of yours; staging it would take it from that scope. Nothing was changed.")
+		}
+	}
 	cidr := addr + "/32"
 	collisions, err := inv.scopePrefixCollisions([]string{cidr}, scope)
 	if err != nil {

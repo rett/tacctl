@@ -67,7 +67,7 @@ func TestMutateRoundTripAndMode(t *testing.T) {
 		t.Errorf("mode: %v %v", st, err)
 	}
 	want := Header + `version: 1
-tiers: {readonly: disable, operator: enable, superuser: enable}
+tiers: {readonly: disable, operator: enable, engineer: enable, superuser: enable}
 users: {asmith: disable, jdoe: enable}
 settings:
   idle_timeout: 0
@@ -173,11 +173,56 @@ func TestParseTiers(t *testing.T) {
 		{"admin", nil, true},
 		{"none,operator", nil, true},
 		{"Operator", nil, true},
+		{"engineer", nil, true},
+		{"superuser,engineer", nil, true},
 	} {
-		got, err := ParseTiers(c.in)
+		got, err := ParseTiers(c.in, "system-shell")
 		if (err != nil) != c.bad || !reflect.DeepEqual(got, c.want) {
 			t.Errorf("%q: %v %v", c.in, got, err)
 		}
+	}
+	for what, want := range map[string]string{
+		"system-shell": "The engineer tier cannot be given the system shell on this server: a shell here would reach the server's secrets. Nothing was changed.",
+		"forwarding":   "The engineer tier cannot be given forwarding on this server: engineers reach devices with the console's ssh. Nothing was changed.",
+	} {
+		if _, err := ParseTiers("operator,engineer", what); err == nil || err.Error() != want {
+			t.Errorf("%s: %v", what, err)
+		}
+	}
+}
+
+// The engineer tier has a console switch (on by default, and in a file
+// written before it existed), but never the system shell or forwarding,
+// whatever a hand-edited file says.
+func TestEngineerTier(t *testing.T) {
+	dir := t.TempDir()
+	f, err := Load(write(t, dir, "old.yaml", "version: 1\ntiers: {readonly: enable, operator: disable, superuser: enable}\n", 0o600))
+	if err != nil || !f.TierOn[tier.Engineer] || f.TierOn[tier.Operator] {
+		t.Fatalf("old file: %+v %v", f, err)
+	}
+	if text, err := f.Text(); err != nil || !strings.Contains(string(text), "engineer: enable") {
+		t.Errorf("text: %s %v", text, err)
+	}
+	for _, body := range []string{
+		"version: 1\nsettings: {system_shell_tiers: [superuser, engineer]}\n",
+		"version: 1\nsettings: {forwarding_tiers: [engineer]}\n",
+	} {
+		if _, err := Load(write(t, dir, "bad.yaml", body, 0o600)); err == nil || !strings.Contains(err.Error(), "invalid or repeated tier 'engineer'") {
+			t.Errorf("%q: %v", body, err)
+		}
+	}
+	f = Defaults()
+	f.SystemShellTiers = append(f.SystemShellTiers, tier.Engineer)
+	f.ForwardingTiers = append(f.ForwardingTiers, tier.Engineer)
+	p := &Policy{File: f, Command: "/usr/local/bin/tacctl-console"}
+	if p.SystemShell(tier.Engineer) || p.Forwarding(tier.Engineer) || !p.SystemShell(tier.Superuser) {
+		t.Error("engineer gets the system shell or forwarding")
+	}
+	if d := p.Decide("bob", tier.Engineer); !d.Console || d.Why != "tier engineer" {
+		t.Errorf("decide: %+v", d)
+	}
+	if TierGroup(tier.Engineer) != "tac-engineer" {
+		t.Errorf("group %q", TierGroup(tier.Engineer))
 	}
 }
 

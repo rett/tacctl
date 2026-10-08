@@ -28,7 +28,7 @@ func init() {
 
 var consoleSpecs = map[string]Spec{
 	"show":             {MaxArgs: 0},
-	"tiers":            {MaxArgs: 2, Args: []string{"readonly|operator|superuser", "enable|disable"}},
+	"tiers":            {MaxArgs: 2, Args: []string{"readonly|operator|engineer|superuser", "enable|disable"}},
 	"user":             {MinArgs: 1, MaxArgs: 2, Args: []string{KindUsers, "enable|disable|clear"}},
 	"idle-timeout":     {MaxArgs: 1, Args: []string{""}},
 	"agent-forwarding": {MaxArgs: 1, Args: []string{"enable|disable"}},
@@ -43,14 +43,14 @@ var consoleSpecs = map[string]Spec{
 // consoleVerbs are the verbs ({Use, Short}), in usage order.
 var consoleVerbs = [][2]string{
 	{"show", "Tiers, per-user overrides, the effective shell per user, settings and the server's pieces"},
-	{"tiers [<tier> enable|disable]", "Show or switch the console for a tier (readonly, operator, superuser)"},
+	{"tiers [<tier> enable|disable]", "Show or switch the console for a tier (readonly, operator, engineer, superuser)"},
 	{"user <name> [enable|disable|clear]", "Show or set one user's override of the tier switch"},
 	{"idle-timeout [<min>]", "Show or set the minutes idle at the prompt before the session ends (0-1440, 0: never)"},
 	{"agent-forwarding [enable|disable]", "Opt in to ssh agent forwarding for console users"},
 	{"ssh-escape [enable|disable]", "Opt in to ssh's escape character (~. and ~C) inside the console's ssh"},
-	{"forwarding tiers [<csv>|none]", "Show or set the tiers that may forward X11 and TCP ports (sshd, and the console's ssh -X/-L/-R/-D; default superuser)"},
+	{"forwarding tiers [<csv>|none]", "Show or set the tiers that may forward X11 and TCP ports (sshd, and the console's ssh -X/-L/-R/-D; default superuser; never engineer)"},
 	{"forwarding gateway-ports [enable|disable]", "Opt in to forwarded ports on other addresses than loopback for those tiers (sshd's GatewayPorts for ssh -R, and the console's ssh -g and -L/-D bind addresses)"},
-	{"system-shell tiers [<csv>|none]", "Show or set the tiers that may start their system shell from the console"},
+	{"system-shell tiers [<csv>|none]", "Show or set the tiers that may start their system shell from the console (never engineer)"},
 	{"system-shell path [<path>]", "Show or set the system shell (default /bin/bash; must be listed in /etc/shells)"},
 	{"install", "Put the /etc/shells line and sshd's drop-in for console users in place (host sync of this server does too)"},
 	{"remove", "Take them away again (refused while an account has the console as its shell)"},
@@ -98,7 +98,8 @@ turns key logins off.
 
 'system-shell' starts the user's system shell from the console, as themselves,
 logged. Superusers only by default; 'system-shell tiers' opens or closes it
-per tier.
+per tier. Neither it nor forwarding is ever open to the engineer tier: a shell
+or a forwarded port on this server would reach its secrets.
 
 Examples:
   tacctl console show
@@ -236,7 +237,7 @@ func (inv *invocation) consoleTiers(args []string) error {
 	}
 	t, ok := console.ParseTier(p.Args[0])
 	if !ok {
-		return inv.usageErr("Unknown tier '"+p.Args[0]+"': expected readonly, operator or superuser.", "Usage: tacctl console "+consoleUse("tiers"))
+		return inv.usageErr("Unknown tier '"+p.Args[0]+"': expected readonly, operator, engineer or superuser.", "Usage: tacctl console "+consoleUse("tiers"))
 	}
 	if len(p.Args) == 1 {
 		inv.echo(onOff(pol.File.TierOn[t]))
@@ -406,7 +407,7 @@ func (inv *invocation) consoleSystemShell(args []string) error {
 			inv.echo(tierCSV(pol.File.SystemShellTiers))
 			return nil
 		}
-		l, err := console.ParseTiers(p.Args[1])
+		l, err := console.ParseTiers(p.Args[1], "system-shell")
 		if err != nil {
 			return err
 		}
@@ -474,7 +475,7 @@ func (inv *invocation) consoleForwarding(args []string) error {
 		inv.echo(tierCSV(pol.File.ForwardingTiers))
 		return nil
 	}
-	l, err := console.ParseTiers(p.Args[1])
+	l, err := console.ParseTiers(p.Args[1], "forwarding")
 	if err != nil {
 		return err
 	}

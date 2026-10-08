@@ -1299,6 +1299,23 @@ and
 give it an ID map that covers the range, run it privileged, or choose a
 range every host can hold.
 .TP
+.B "config linux engineer\-sudo " "[ all | " command [ , command ...] " ]"
+Show or set what the members of
+.B tac\-engineer
+(the engineer tier) may run through sudo on enrolled hosts other than the
+tacctl server, with their own password: every command
+.RB ( all ,
+the default, as
+.BR tac\-superuser )
+or the commands named, absolute paths without arguments. The line is
+checked with
+.B "visudo \-cf"
+before it is kept in
+.I tacctl.yaml
+.RB ( linux.engineer_sudo );
+each host gets it at its next sync. The tacctl server itself never gives
+engineers more than tacctl's own verbs.
+.TP
 .B "config linux builds " "[ list | clear ]"
 List or delete the pam_tacplus modules that
 .B "host enroll"

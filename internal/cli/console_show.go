@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/rett/tacctl/internal/console"
-	"github.com/rett/tacctl/internal/tier"
 	"github.com/rett/tacctl/internal/ui"
 )
 
@@ -79,7 +78,7 @@ func (inv *invocation) consoleUsersTable(pol *console.Policy) (users []string, l
 	rows := m.LinuxUsers(e.Scope)
 	for _, r := range rows {
 		name, lvl, _ := strings.Cut(r, "|")
-		tr := tier.ForPrivLvl(lvl)
+		tr := inv.userTier(name, lvl)
 		d := pol.Decide(name, tr)
 		seen[name] = true
 		shell := "bash"
