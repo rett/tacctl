@@ -28,9 +28,10 @@ import (
 var groupSpecs = map[string]Spec{
 	"list": {},
 	"add": {MinArgs: 3, MaxArgs: 3, Args: []string{"", "", ""}, Flags: []Flag{
+		{Names: []string{"--tier"}, Value: true, Kind: "readonly|operator|engineer|superuser"},
 		{Names: []string{"--wti-level"}, Value: true, Kind: "viewonly|user|superuser|administrator"}}},
 	"remove": {MinArgs: 1, MaxArgs: 1, Args: []string{KindGroups}},
-	"edit":   {MinArgs: 3, MaxArgs: 3, Args: []string{KindGroups, "priv-lvl|juniper-class|wti-level", ""}},
+	"edit":   {MinArgs: 3, MaxArgs: 3, Args: []string{KindGroups, "priv-lvl|juniper-class|wti-level|tier", ""}},
 	"show":   {MinArgs: 1, MaxArgs: 1, Args: []string{KindGroups}},
 	"preset roles": {Flags: []Flag{
 		{Names: []string{"--dry-run"}}, {Names: []string{"--force"}}, {Names: []string{"--mgmt-filter"}, Value: true}}},
@@ -91,9 +92,9 @@ func groupCmd(inv *invocation) *cobra.Command {
 	c := verb("group <subcommand>", "Group management (list, add, edit, remove)",
 		withRun(verb("list", "List all groups"), n(inv.groupList)),
 		withRun(verb("show <name>", "Every setting of a group and where it comes from"), n(inv.groupShow)),
-		withRun(verb("add <name> <priv-lvl> <juniper-class> [--wti-level <level>]", "Add a new group"), n(inv.groupAdd)),
+		withRun(verb("add <name> <priv-lvl> <juniper-class> [--tier <tier>] [--wti-level <level>]", "Add a new group"), n(inv.groupAdd)),
 		withRun(verb("remove <name>", "Remove a custom group"), n(inv.groupRemove)),
-		withRun(verb("edit <name> {priv-lvl <0-15>|juniper-class <class>|wti-level <level>}", "Change one setting of a group"), n(inv.groupEdit)),
+		withRun(verb("edit <name> {priv-lvl <0-15>|juniper-class <class>|wti-level <level>|tier <tier>}", "Change one setting of a group"), n(inv.groupEdit)),
 		withRun(verb("junos <group> {list|clear|deny-commands|deny-configuration} ...", "Per-group Junos deny rules"), n(inv.groupJunos)),
 		cmds, priv, preset,
 	)
@@ -157,13 +158,13 @@ func (inv *invocation) groupAdd(args []string) error {
 	spec.MinArgs = 0
 	p, err := Parse(spec, args)
 	if err != nil {
-		return inv.usageErr(err.Error(), "Usage: tacctl group add <name> <cisco-priv-lvl> <juniper-class> [--wti-level <level>]")
+		return inv.usageErr(err.Error(), "Usage: tacctl group add <name> <cisco-priv-lvl> <juniper-class> [--tier <tier>] [--wti-level <level>]")
 	}
 	args = p.Args
-	wtiV := p.Value("--wti-level")
+	tierV, wtiV := p.Value("--tier"), p.Value("--wti-level")
 	group, privlvl, class := arg(args, 0), arg(args, 1), arg(args, 2)
 	if group == "" || privlvl == "" || class == "" {
-		a.Out.Error("Usage: tacctl group add <name> <cisco-priv-lvl> <juniper-class> [--wti-level <level>]")
+		a.Out.Error("Usage: tacctl group add <name> <cisco-priv-lvl> <juniper-class> [--tier <tier>] [--wti-level <level>]")
 		inv.stderrLine("  Example: tacctl group add helpdesk 5 HELPDESK-CLASS")
 		return exit(1)
 	}
@@ -184,16 +185,22 @@ func (inv *invocation) groupAdd(args []string) error {
 	if err := names.ValidateClassName(class); err != nil {
 		return inv.validated(err)
 	}
+	if p.Has("--tier") && !slices.Contains(conf.Tiers, tierV) {
+		return inv.usageErr("Unknown tier '" + tierV + "'. Use: " + strings.Join(conf.Tiers, ", "))
+	}
 	if p.Has("--wti-level") && !slices.Contains(conf.WTILevels, wtiV) {
 		return inv.usageErr("Unknown WTI level '" + wtiV + "'. Use: " + strings.Join(conf.WTILevels, ", "))
 	}
 	add := func(s *store.Store) error { return s.GroupSet(group, "priv_lvl="+privlvl, "juniper_class="+class) }
-	if wtiV == "" {
+	if tierV == "" && wtiV == "" {
 		err = inv.applyStore(add)
 	} else {
 		// One apply, so the backends render the group with its settings once.
 		err = inv.applyWith(func() error {
 			if err := inv.mutate(add); err != nil {
+				return err
+			}
+			if err := policy.WriteGroupTier(a.Conf(), group, tierV); err != nil {
 				return err
 			}
 			return policy.WriteWTILevel(a.Conf(), group, wtiV)
@@ -203,6 +210,9 @@ func (inv *invocation) groupAdd(args []string) error {
 		return err
 	}
 	a.Out.Info("Group '" + group + "' added (Cisco priv-lvl " + privlvl + ", Juniper " + class + ").")
+	if tierV != "" {
+		a.Out.Info("tacctl tier: " + tierV + ".")
+	}
 	if wtiV != "" {
 		a.Out.Info("WTI level: " + wtiV + " (units must send Service Name 'wti').")
 	}
@@ -263,10 +273,11 @@ func (inv *invocation) groupEdit(args []string) error {
 	a := inv.app
 	group, field, value := arg(args, 0), arg(args, 1), arg(args, 2)
 	if group == "" || field == "" || value == "" {
-		a.Out.Error("Usage: tacctl group edit <name> <priv-lvl|juniper-class|wti-level> <value>")
+		a.Out.Error("Usage: tacctl group edit <name> <priv-lvl|juniper-class|wti-level|tier> <value>")
 		inv.stderrLine("  Example: tacctl group edit operator priv-lvl 10")
 		inv.stderrLine("  Example: tacctl group edit operator juniper-class NEW-CLASS")
 		inv.stderrLine("  Example: tacctl group edit engineer wti-level superuser")
+		inv.stderrLine("  Example: tacctl group edit engineer tier engineer")
 		return exit(1)
 	}
 	if err := inv.requireStore(); err != nil {
@@ -309,7 +320,7 @@ func (inv *invocation) groupEdit(args []string) error {
 			return err
 		}
 	default:
-		return inv.usageErr("Unknown field '" + field + "'. Use: priv-lvl, juniper-class or wti-level")
+		return inv.usageErr("Unknown field '" + field + "'. Use: priv-lvl, juniper-class, wti-level or tier")
 	}
 	inv.echo("")
 	return nil

@@ -91,7 +91,7 @@ func RolePreset(mgmtFilter string) []Role {
 		{Group: "operator", PrivLvl: 7, WTI: "user", Junos: map[string][]string{
 			conf.JunosDenyCommands: {`^(file (delete|rename|copy|archive)|request|start|load|op|test|configure|edit|clear (system|security|network-access)|monitor traffic .*write-file|show (system (login|rollback)|configuration .*(root-auth|login|tacplus|radius).*))( .*)?$`},
 		}},
-		{Group: "engineer", PrivLvl: 15, Class: EngineerClass, WTI: "superuser", Junos: map[string][]string{
+		{Group: "engineer", PrivLvl: 15, Class: EngineerClass, WTI: "superuser", Tier: "engineer", Junos: map[string][]string{
 			conf.JunosDenyCommands:      {`^(request (system (reboot|halt|power-off|zeroize|software|snapshot|storage|scripts)|chassis routing-engine|vmhost|security)|start|load|op|file (copy|delete|rename|archive|show)|clear system login|restart (chassis|management).*)( .*)?$`},
 			conf.JunosDenyConfiguration: {engineerDenyConfiguration(mgmtFilter)},
 		}, Commands: engineerCommands},

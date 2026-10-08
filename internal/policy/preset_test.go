@@ -59,7 +59,7 @@ func TestRolePresetFitsAndValidates(t *testing.T) {
 		t.Errorf("a 16-byte filter does not fit: %d", len(v)+2)
 	}
 	eng := RolePreset("")[2]
-	if eng.Group != "engineer" || eng.Tier != "" || eng.Class != EngineerClass || eng.Commands[len(eng.Commands)-1] != Catchall+"|permit|" {
+	if eng.Group != "engineer" || eng.Tier != "engineer" || eng.Class != EngineerClass || eng.Commands[len(eng.Commands)-1] != Catchall+"|permit|" {
 		t.Fatalf("engineer %+v", eng)
 	}
 }

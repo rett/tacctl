@@ -100,10 +100,12 @@ Subcommands:
   list                                                List all groups
   show <name>                                         Every setting and where it comes from
   add <name> <priv-lvl> <juniper-class>               Add a new group
+      --tier <tier>                                   (add) Its tacctl tier instead of the priv-lvl's
       --wti-level <level>                             (add) Its WTI level instead of the priv-lvl's
   edit <name> priv-lvl <0-15>                         Change Cisco privilege level
   edit <name> juniper-class <CLASS>                   Change Juniper class name
   edit <name> wti-level auto|<level>                  WTI access level (viewonly, user, superuser, administrator)
+  edit <name> tier auto|<tier>                        tacctl tier (readonly, operator, engineer, superuser)
   remove <name>                                       Remove a custom group
   commands list|default|add|remove|clear|seed <group> ...  Per-group authorized commands
   privilege list|add|remove|clear|seed <group> ...         Per-group Cisco priv-exec mappings
@@ -113,15 +115,15 @@ Subcommands:
       --force                                         (preset) Replace values that differ from the preset's
       --mgmt-filter <name>                            (preset) Deny engineers that Junos firewall filter too
 
-'auto' (the default) takes the WTI level from the priv-lvl. The tacctl
-tier comes from the priv-lvl: below 7 readonly, 7-14 operator, 15 superuser.
+'auto' (the default) takes the WTI level and the tier from the priv-lvl:
+below 7 readonly, 7-14 operator, 15 superuser.
 
 Examples:
   tacctl group list
   tacctl group add helpdesk 5 HELPDESK-CLASS
   tacctl group edit operator priv-lvl 10
   tacctl group edit operator juniper-class NEW-CLASS
-  tacctl group edit engineer wti-level superuser
+  tacctl group edit engineer tier engineer
   tacctl group show engineer
   tacctl group preset roles --dry-run
   tacctl group remove helpdesk

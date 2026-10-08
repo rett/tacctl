@@ -224,8 +224,6 @@ func (inv *invocation) presetHints(m *model.Model) {
 	if n := len(m.GroupUsers("engineer")); n > 0 {
 		inv.echo(fmt.Sprintf("  (group 'engineer' has %d user(s) already)", n))
 	}
-	inv.echo("  On this server, group 'engineer' (priv-lvl 15) is the superuser tier until")
-	inv.echo("  0.2.3 brings the engineer tier: keep engineers out of this server's own scope.")
 	inv.echo("  The device side of the roles:")
 	inv.echo("    tacctl config juniper    the classes and template users (" + policy.EngineerClass + " for engineer)")
 	inv.echo("    tacctl config cisco      the AAA lines that ask the server per command")

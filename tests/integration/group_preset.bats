@@ -22,9 +22,10 @@ setup() {
     assert_output --partial "readonly (viewer)"
     assert_output --partial "Junos deny-commands (219/241 bytes)"
     assert_output --partial "create (priv-lvl 15, class ENG-CLASS)"
+    assert_output --partial "tacctl tier engineer"
     assert_output --partial "Junos deny-configuration (208/236 bytes)"
     assert_output --partial "leaves out the management filter"
-    assert_output --partial "Dry run: 10 setting(s) would change; nothing was written."
+    assert_output --partial "Dry run: 11 setting(s) would change; nothing was written."
     run cmp "$TACCTL_CONFIG" "$BATS_TEST_TMPDIR/before"
     assert_success
     run "$TACCTL_BIN_SCRIPT" group show engineer
@@ -35,9 +36,8 @@ setup() {
     run bash -c "echo y | '$TACCTL_BIN_SCRIPT' group preset roles --mgmt-filter MGMT-FILTER"
     assert_success
     assert_output --partial "Junos deny-configuration (231/236 bytes)"
-    assert_output --partial "Role preset applied: 10 setting(s) changed."
+    assert_output --partial "Role preset applied: 11 setting(s) changed."
     assert_output --partial "tacctl user move <user> engineer"
-    assert_output --partial "keep engineers out of this server's own scope"
 
     run grep -A3 '^wti_exec_engineer:' "$TACCTL_CONFIG"
     assert_output --partial 'name: wti'
