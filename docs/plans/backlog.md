@@ -2,6 +2,20 @@
 
 **Decision (user, 2026-10-03):** 0.2.0 is the Go rewrite with functional equivalence to 0.1.16 and nothing else. Everything below waits until 0.2.0 is released. Each item records where its design lives and why it was deferred. Nothing here may be started on `feature/go-rewrite`.
 
+## 0. Roadmap after 0.2.2 (user, 2026-10-08): 0.2.x, one release per major phase
+
+Planned 2026-10-08, not started. Each release follows the git-flow procedure in `0.2.2-plan.md`.
+
+| Release | Contents |
+|---|---|
+| **0.2.3** | The engineer tier (WP9.14, from `wip/engineer-tier`) and what waits on it (`group edit <g> tier`, the preset's tier step, `group junos list` for the read-only tier); the Cisco and WTI lab acceptance carried from 0.2.2. **Junos-style spaces at the console/shell prompt:** a repeated space is refused silently (outside quotes; collapsed when pasted); a space completes a fixed word (commands, subcommands, fixed choices, flag names) when the match is unique, never in free-text positions or while pasting; `console space-completion on|off`. **Provisioning-account rotation for Linux hosts:** create the new account over the current session, prove it with a fresh login that reaches root, switch the target, optionally remove the old account last (`host provisioner <name> rotate <user> [--key|--password] [--remove-old]`, a sketch). |
+| **0.2.4** | **Device configuration, read-only.** First a lab spike that decides the design (Junos `commit confirmed` over NETCONF or CLI on SSH; the Cisco IOS-XE `configure terminal revert timer` / `configure confirm` behaviour and its units; whether the WTI SSH menus can be scripted, and the fleet's WTI firmware for its RESTful API; scrapligo against a thin driver on `golang.org/x/crypto/ssh`). Then: `device config pull|diff` of the tacctl-managed sections (AAA, TACACS+/RADIUS servers and secrets, privilege levels and classes, management ACL, SNMP clients), rendered per device; per-device records (last applied fingerprint, when, by whom, result) and `device list --stale`; parallel sessions with `device.config.max_concurrency` (default 8, at most 64) and per-device timeouts; the user's password asked once per run and held only for that run. SSH only. |
+| **0.2.5** | **Device configuration, apply and rollback**, Junos then Cisco: diff review or `--force` (which skips the review, never the access check), `--dry-run`, a canary device first, `--max-failures`; Junos `commit confirmed` and Cisco's revert timer, confirmed only after a fresh login as the user over TACACS+ succeeds, so a lost device rolls itself back; `device config rollback`; `device config apply --stale`. Superusers first, engineers for their own scopes. |
+| **0.2.6** | **WTI** configuration (TACACS+/RADIUS, users) over SSH if the spike shows the menus can be scripted reliably; otherwise HTTPS restricted to the tacctl server (management ACL or VLAN, HTTPS only, a valid certificate), never switched on and off per change. |
+| **0.2.7** | **Provisioning/break-glass account rotation on devices** (new local user, proven by a fresh login, target switched, old one optionally removed last; new passwords generated and shown once unless decided otherwise); optionally the **session-wide password cache** for `tacctl ssh` (in-memory askpass agent, per tier, idle and maximum lifetimes; off by default). |
+
+Open decisions: the password cache's purpose (interactive only, recommended), tiers and lifetimes, and whether policy allows it; on an ambiguous space, list candidates or stay silent, and whether `space-completion` is per user; the WTI firmware in the fleet; NETCONF on Junos; `archive` on Cisco; who may apply and whether a canary is mandatory; where new local device passwords live (shown once, recommended). The SNMP items of §3f fit 0.2.4 (per-scope client lists, per-device overrides).
+
 ## 1. Operator console (0.2.1, 0.2.2)
 
 The design and every decision are in `docs/plans/operator-console.md`.
