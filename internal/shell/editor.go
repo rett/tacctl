@@ -18,12 +18,16 @@ import (
 // argument column: 'version [--long]'); empty for the word. Unlisted keeps
 // a word out of the lists when another candidate shows the same row ('quit'
 // under 'exit | quit'); unlisted words are listed only when no other
-// candidate is. Lists are alphabetical.
+// candidate is. Fixed marks a word of the command language (a command, a
+// sub-command, a fixed choice, a flag name) as against a live name (a user,
+// a host, a file): only fixed words complete on a typed space. Lists are
+// alphabetical.
 type Candidate struct {
 	Word, Desc string
 	Label      string
 	NoSpace    bool
 	Unlisted   bool
+	Fixed      bool
 	// Kind is what the word is, plural ('devices', 'commands'), for the
 	// question before a long list; empty: 'choices'.
 	Kind string
@@ -80,7 +84,7 @@ func builtinCandidates(rows []Row) []Candidate {
 	var out []Candidate
 	for _, r := range rows {
 		for _, w := range r.Words {
-			c := Candidate{Word: w, Desc: r.Desc, Unlisted: true}
+			c := Candidate{Word: w, Desc: r.Desc, Unlisted: true, Fixed: true}
 			if r.Left != w {
 				c.Label = r.Left
 			}
@@ -98,7 +102,10 @@ type editor struct {
 	prompt   string
 	hist     *History
 	complete Completer
-	explain  Explainer
+	// completeFixed answers a typed blank: like complete, but it never
+	// looks up live names (nil: complete).
+	completeFixed Completer
+	explain       Explainer
 	// systemShell: the shell has the system-shell word (Rows).
 	systemShell bool
 	// width and height are the terminal's size (setSize; 0: unknown).
@@ -110,6 +117,8 @@ type editor struct {
 	readKey func() (byte, error)
 	// listMax is the longest list shown without asking (ListMax).
 	listMax int
+	// spaces: a typed blank is handled as on Junos (Options.SpaceCompletion).
+	spaces bool
 
 	// lastTab: the previous key was a Tab that completed nothing more (a
 	// second Tab lists). input clears it on any other key.
@@ -148,6 +157,8 @@ func (e *editor) key(line string, pos int, key rune) (string, int, bool) {
 		return e.tab(line, pos)
 	case key == '?':
 		return e.question(line, pos)
+	case key == ' ' && e.spaces:
+		return e.space(line, pos)
 	}
 	return "", 0, false
 }
@@ -330,18 +341,82 @@ func (e *editor) tab(line string, pos int) (string, int, bool) {
 	return line, pos, true
 }
 
+// space is a typed blank, as on Junos: never two in a row, and at the end
+// of a fixed word it completes the word. Rules, in order: inside quotes or
+// after a backslash it is a character; at the start of the line, right
+// after a blank or right before one it is refused (nothing changes); in
+// the middle of a word it is inserted as typed (completing there would
+// split the word); at a word's end the fixed candidates of the partial
+// decide: an exact match (or none) inserts it, one completes the word and
+// adds the blank, several are listed once. The list never asks 'Show all'
+// and never pages (both would read the next typed-ahead key); a list over
+// listMax prints nothing. Live names (users, hosts, files) are not
+// candidates here (completeFixed does not look them up), so a name in a
+// free position gets its blank.
+func (e *editor) space(line string, pos int) (string, int, bool) {
+	_, st := scan(line[:pos])
+	if st.quote != 0 || st.escape {
+		return "", 0, false
+	}
+	if pos == 0 || isBlank(line[pos-1]) || (pos < len(line) && isBlank(line[pos])) {
+		return line, pos, true
+	}
+	if pos < len(line) {
+		return "", 0, false
+	}
+	words, partial, start, _ := word(line, pos)
+	// A word that is only dashes is no start of a flag: '-' is the
+	// standard-input argument ('device import -') and '--' ends the options
+	// ('log search -- x'). The blank is typed as it is; completing would list
+	// the flags, or turn '--' into '--backend'.
+	if partial != "" && strings.Trim(partial, "-") == "" {
+		return "", 0, false
+	}
+	var cands []Candidate
+	for _, c := range e.candidatesFrom(orElse(e.completeFixed, e.complete), words, partial) {
+		if c.Fixed && !c.NoSpace {
+			cands = append(cands, c)
+		}
+	}
+	e.lastTab = false
+	switch {
+	case len(cands) == 0 || slices.ContainsFunc(cands, func(c Candidate) bool { return c.Word == partial }):
+		return "", 0, false
+	case len(cands) == 1:
+		ins := Quote(cands[0].Word) + " "
+		return line[:start] + ins, start + len(ins), true
+	}
+	if n := len(listed(cands)); e.listMax < 0 || n <= e.listMax {
+		e.show(line, "Possible completions:\n"+listing(cands))
+	}
+	return line, pos, true
+}
+
+// orElse is a, or b when a is nil.
+func orElse(a, b Completer) Completer {
+	if a != nil {
+		return a
+	}
+	return b
+}
+
 // candidates are the completions of partial after words, sorted, once each.
 func (e *editor) candidates(words []string, partial string) []Candidate {
+	return e.candidatesFrom(e.complete, words, partial)
+}
+
+// candidatesFrom is candidates, asking complete.
+func (e *editor) candidatesFrom(complete Completer, words []string, partial string) []Candidate {
 	var all []Candidate
 	switch {
 	case len(words) == 0:
 		all = append(all, builtinCandidates(Rows(e.systemShell))...)
-		if e.complete != nil {
-			all = append(all, e.complete(nil, partial)...)
+		if complete != nil {
+			all = append(all, complete(nil, partial)...)
 		}
 	case words[0] == "help":
-		if e.complete != nil {
-			for _, c := range e.complete(words[1:], partial) {
+		if complete != nil {
+			for _, c := range complete(words[1:], partial) {
 				if !strings.HasPrefix(c.Word, "-") {
 					all = append(all, c)
 				}
@@ -349,8 +424,8 @@ func (e *editor) candidates(words []string, partial string) []Candidate {
 		}
 	case words[0] == "history" || words[0] == "exit" || words[0] == "quit" || (e.systemShell && words[0] == SystemShellWord):
 	default:
-		if e.complete != nil {
-			all = e.complete(words, partial)
+		if complete != nil {
+			all = complete(words, partial)
 		}
 	}
 	var out []Candidate

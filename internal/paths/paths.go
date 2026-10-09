@@ -60,10 +60,25 @@ type Paths struct {
 	ConsoleFile string // StateDir/console.yaml: the login console's settings
 	HostRecords string // StateDir/hosts: what the last enroll or sync saw of each host (hosts.Records)
 	SNMPFile    string // StateDir/snmp.yaml: the SNMP community and v3 passphrases (0600)
+	SNMPDir     string // StateDir/snmp: one <scope>.yaml of SNMP credentials per scope (0600, the directory 0700)
 	SSHDDropIn  string // TACCTL_SSHD_DROPIN: sshd's drop-in for the console group
-	ShellsFile  string // TACCTL_SHELLS_FILE: /etc/shells
-	VarLib      string // TACCTL_VAR_LIB: tacctl's variable data (/var/lib/tacctl, 0711)
-	SeenCache   string // VarLib/devices-seen.json: what the logs showed of each device
+	// SSHDEngineerDropIn is sshd's drop-in for the engineer tier
+	// (TACCTL_SSHD_ENGINEER_DROPIN; next to SSHDDropIn): its own file, so the
+	// lockdown does not depend on the console being installed. Its name
+	// sorts before the console's: sshd reads the drop-ins in name order and
+	// the first value of a keyword wins across Match blocks, so the
+	// engineer lockdown has to come first to beat the console's forwarding
+	// tiers (const SSHDEngineerDropInName).
+	SSHDEngineerDropIn string
+	// SSHDEngineerDropInOld is where the engineer drop-in lived before it was
+	// named to sort first (tacctl-engineer.conf): provisioning, upgrade,
+	// console remove and uninstall take it away.
+	SSHDEngineerDropInOld string
+	SSHDir                string // TACCTL_SSH_DIR: /etc/ssh, where this machine's ssh_host_*_key.pub are
+	ShellsFile            string // TACCTL_SHELLS_FILE: /etc/shells
+	VarLib                string // TACCTL_VAR_LIB: tacctl's variable data (/var/lib/tacctl, 0711)
+	SeenCache             string // VarLib/devices-seen.json: what the logs showed of each device
+	TierPinMarker         string // VarLib/tier-pinned: the upgrade recorded the tier of every group at priv-lvl 15, once (outside tacctl.yaml, which is what gets lost)
 
 	SudoersFile     string // TACCTL_SUDOERS_FILE (SUDOERS_FILE)
 	TierSudoersFile string // TACCTL_TIER_SUDOERS_FILE (TIER_SUDOERS_FILE)
@@ -131,10 +146,15 @@ func Resolve(env Env, exe string, exists func(string) bool) Paths {
 	p.ConsoleFile = p.StateDir + "/console.yaml"
 	p.HostRecords = p.StateDir + "/hosts"
 	p.SNMPFile = p.StateDir + "/snmp.yaml"
+	p.SNMPDir = p.StateDir + "/snmp"
 	p.SSHDDropIn = env.Or("TACCTL_SSHD_DROPIN", "/etc/ssh/sshd_config.d/tacctl-console.conf")
+	p.SSHDEngineerDropIn = env.Or("TACCTL_SSHD_ENGINEER_DROPIN", filepath.Join(filepath.Dir(p.SSHDDropIn), SSHDEngineerDropInName))
+	p.SSHDEngineerDropInOld = filepath.Join(filepath.Dir(p.SSHDDropIn), "tacctl-engineer.conf")
+	p.SSHDir = env.Or("TACCTL_SSH_DIR", "/etc/ssh")
 	p.ShellsFile = env.Or("TACCTL_SHELLS_FILE", "/etc/shells")
 	p.VarLib = env.Or("TACCTL_VAR_LIB", "/var/lib/tacctl")
 	p.SeenCache = p.VarLib + "/devices-seen.json"
+	p.TierPinMarker = p.VarLib + "/tier-pinned"
 	p.KnownHosts = p.VarLib + "/ssh/known_hosts"
 
 	p.SudoersFile = env.Or("TACCTL_SUDOERS_FILE", "/etc/sudoers.d/tacctl")
@@ -227,6 +247,10 @@ type RadiusPaths struct {
 
 // RadiusName is the name the daemon runs under ('-n'; RADIUS_NAME).
 const RadiusName = "tacctl-radius"
+
+// SSHDEngineerDropInName is the file name of the engineer tier's sshd drop-in;
+// the leading 00- puts it before tacctl-console.conf in sshd's read order.
+const SSHDEngineerDropInName = "00-tacctl-engineer.conf"
 
 // Radius returns the RADIUS layout for family ("rhel"; anything else is the
 // Debian layout, as in bash), with the TACCTL_RADIUS_* overrides applied.

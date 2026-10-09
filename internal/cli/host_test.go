@@ -30,6 +30,10 @@ type hostSandbox struct {
 	// reroot moves tacctl's fixed host locations (the console's symlink
 	// among them) into the sandbox.
 	reroot bool
+	// stdin is what the command reads (a confirmation).
+	stdin string
+	// tty, when set, says whether the host commands have a terminal.
+	tty func() bool
 }
 
 func newHostSandbox(t *testing.T) *hostSandbox {
@@ -83,10 +87,11 @@ func (hs *hostSandbox) run(r *fake.Runner, args ...string) string {
 	hs.err.Reset()
 	hs.sandbox.runner = r
 	a := app.New(args, paths.NewEnv(hs.env), "/opt/x/dist/tacctl", 1000,
-		app.Stdio{Stdin: strings.NewReader(""), Stdout: &hs.out, Stderr: &hs.err}, r)
+		app.Stdio{Stdin: strings.NewReader(hs.stdin), Stdout: &hs.out, Stderr: &hs.err}, r)
 	if hs.reroot {
 		a.Paths = a.Paths.Reroot(hs.dir)
 	}
+	a.HostsTTY = hs.tty
 	hs.code = exitCode(Run(context.Background(), a, BuildInfo{Version: "0.2.0-test"}), a.Out)
 	if n := len(r.Execs()); n != 0 {
 		hs.t.Errorf("%q: exec'd", args)
@@ -139,7 +144,7 @@ func TestHostEnrollSyncUnenroll(t *testing.T) {
 		t.Errorf("registry %q", got)
 	}
 	for _, w := range []string{"TAC_METHOD=tacplus\n", "TAC_SERVER=192.0.2.1\n", "TAC_SECRET=lab-secret-0123456789abcdef\n",
-		"TAC_USERS=$'alice:superuser:80000\\nbob:operator:80001\\ncarol:readonly:80002'\nTAC_INACTIVE=''\nTAC_REMOVE_HOMES=\\*\nTAC_UID_FIRST=80000\nTAC_UID_LAST=89999\nTAC_UID_PREVIOUS=''\nTAC_PROTOCOL=5\n",
+		"TAC_USERS=$'alice:superuser:80000\\nbob:operator:80001\\ncarol:readonly:80002'\nTAC_INACTIVE=''\nTAC_REMOVE_HOMES=\\*\nTAC_UID_FIRST=80000\nTAC_UID_LAST=89999\nTAC_UID_PREVIOUS=''\nTAC_ENGINEER_SUDO=ALL\nTAC_PROTOCOL=6\n",
 		"# tacctl Linux client installer for scope 'lab'. Generated "} {
 		if !strings.Contains(hs.pushed, w) {
 			t.Errorf("pushed script lacks %q", w)
@@ -173,7 +178,7 @@ func TestHostEnrollSyncUnenroll(t *testing.T) {
 	if !strings.HasSuffix(hs.pushed, "exit 0\n") {
 		t.Error("sync pushed the tarball")
 	}
-	if !strings.Contains(hs.pushed, "TAC_USERS=$'alice:superuser:80000\\nbob:operator:80001'\nTAC_INACTIVE=carol\nTAC_REMOVE_HOMES=''\nTAC_UID_FIRST=80000\nTAC_UID_LAST=89999\nTAC_UID_PREVIOUS=''\nTAC_PROTOCOL=5\n") {
+	if !strings.Contains(hs.pushed, "TAC_USERS=$'alice:superuser:80000\\nbob:operator:80001'\nTAC_INACTIVE=carol\nTAC_REMOVE_HOMES=''\nTAC_UID_FIRST=80000\nTAC_UID_LAST=89999\nTAC_UID_PREVIOUS=''\nTAC_ENGINEER_SUDO=ALL\nTAC_PROTOCOL=6\n") {
 		t.Errorf("sync header:\n%s", strings.SplitN(hs.pushed, "# --- tacctl", 2)[0])
 	}
 	if r.CalledRegexp(`getent passwd`) {

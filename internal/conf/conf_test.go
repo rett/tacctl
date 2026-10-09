@@ -176,8 +176,9 @@ func TestConfSetListAndGetListRoundTrip(t *testing.T) {
 // list; privileges.operator is one in the shipped defaults.
 func TestConfSetListListsReplaceWholesaleOnOverride(t *testing.T) {
 	c := tempConf(t)
-	assertLines(t, c.GetList("privileges.operator"), "show running-config", "show startup-config",
-		"show tech-support", "show archive", "show access-list", "show ip route")
+	assertLines(t, c.GetList("privileges.operator"), "exec all: ping", "exec all: traceroute",
+		"exec all: monitor capture", "clear counters", "clear line", "clear ip arp", "clear arp-cache",
+		"clear mac address-table dynamic", "undebug all")
 	must(t, c.SetList("privileges.operator", ListItems("show version\n")))
 	assertLines(t, c.GetList("privileges.operator"), "show version")
 }

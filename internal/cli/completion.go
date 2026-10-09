@@ -33,6 +33,7 @@ var topSpecs = map[string]Spec{
 	"install":   {Flags: []Flag{{Names: []string{"--branch"}, Value: true}, {Names: []string{"-y", "--yes"}}}},
 	"upgrade":   {Flags: []Flag{{Names: []string{"--branch"}, Value: true}}},
 	"uninstall": {Flags: []Flag{{Names: []string{"-y", "--yes"}}}},
+	"rollback":  rollbackSpec,
 	"version":   {Flags: []Flag{{Names: []string{"--long"}}}},
 }
 
@@ -260,6 +261,9 @@ func (inv *invocation) completeSpec(spec Spec, args []string, toComplete string)
 			kind = k
 		}
 	}
+	if kind == KindBreakGlass && len(words) > 0 {
+		values["@scope"] = words[0]
+	}
 	var out []cobra.Completion
 	dir := cobra.ShellCompDirectiveNoFileComp
 	if !alone {
@@ -339,6 +343,8 @@ func (inv *invocation) kindWords(kind string, values map[string]string) []string
 		return out
 	case KindUsers, KindGroups, KindScopes, KindHosts, KindDevices, KindBackups, KindBackends, KindEnabledBackends:
 		return inv.liveNames(inv.ctx, kind)
+	case KindBreakGlass:
+		return inv.liveNames(inv.ctx, kind, values["@scope"])
 	case KindListeners:
 		if b := values["--backend"]; b != "" {
 			return inv.liveNames(inv.ctx, kind, b)

@@ -9,8 +9,9 @@
 # The container installs with the README one-liner, but its git fetches
 # https://github.com/rett/tacctl.git from a bare clone of this repository
 # made in the temp dir, whose master is <commit> (default HEAD), or, with
-# --worktree, this checkout's tracked files as they are (a 'git stash
-# create' commit; no ref of this repository changes). Then: the shim installs Go (downloaded from dl.google.com and
+# --worktree, this checkout as it is (HEAD plus every change and every new
+# file that is not ignored, committed from a scratch index; no ref and no
+# index of this repository changes). Then: the shim installs Go (downloaded from dl.google.com and
 # checked against its published SHA-256) and builds /usr/local/bin/tacctl;
 # 'version --long'; 'user passwd engineer' answered through a pty;
 # 'config cisco --scope lab'; 'uninstall -y'; and what is left on the
@@ -81,8 +82,16 @@ timed() {
 
 # --- the commit, as the master of a scratch bare clone -------------------------
 if [[ "$REV" == "worktree" ]]; then
-    COMMIT=$(git -C "$REPO" stash create "fresh-install check: the working tree")
-    [[ -n "$COMMIT" ]] || COMMIT=$(git -C "$REPO" rev-parse HEAD)
+    # A commit of HEAD plus the working tree, untracked files (not ignored
+    # ones) included, from a scratch index: neither the index nor a ref of
+    # this repository changes. ('git stash create' leaves out untracked
+    # files, which a tree with new files would then lack in the container.)
+    export GIT_INDEX_FILE="${WORK}/worktree.index"
+    git -C "$REPO" read-tree HEAD && git -C "$REPO" add -A \
+        && TREE=$(git -C "$REPO" write-tree) \
+        && COMMIT=$(GIT_AUTHOR_NAME=check GIT_AUTHOR_EMAIL=check@example.invalid GIT_COMMITTER_NAME=check GIT_COMMITTER_EMAIL=check@example.invalid \
+            git -C "$REPO" commit-tree "$TREE" -p HEAD -m "fresh-install check: the working tree") || exit 1
+    unset GIT_INDEX_FILE
 else
     COMMIT=$(git -C "$REPO" rev-parse --verify "${REV}^{commit}") || exit 2
 fi

@@ -468,7 +468,7 @@ All live steps snapshot first (`sudo tar czf /root/tacctl-pre-go-<ts>.tgz /etc/t
 8b. `go mod verify` and `go vet ./...` clean on the RC; `vendor/modules.txt` consistent (`go mod vendor` produces no diff); the dependency list in the README's "Project Structure" matches `go.mod`.
 9. Docs: README, `man/tacctl.1`, `tests/README.md`, CHANGELOG/release notes updated; `man -l man/tacctl.1` renders; the man-coverage test (every cobra command appears in the man page) passes.
 10. `tacctl version` on the RC prints the tag after the user tags it; `tacctl version --long` shows `go1.26.2`.
-11. The user's own read-only check on production (`tacctl version`, `tacctl status`, `tacctl config validate`) happens **after** `master` is updated and only when the user chooses to upgrade production; this plan schedules nothing there.
+11. A read-only check of an installed host (`tacctl version`, `tacctl status`, `tacctl config validate`) happens **after** `master` is updated and only when the user chooses; this plan schedules nothing there.
 12. GitHub description/topics updated (§7.4) — can be done at release time by the user.
 
 ---
@@ -719,7 +719,7 @@ Branching (Decision 12; the branch part is **decided**): the git-flow feature br
 
 **WP5.2 — the test client: enrol cycles** — §6.4 "WP5.2 on the test client". Executor: Opus. Deps: WP5.1. Live.
 
-**WP5.3 — Release preparation** — run the §6.6 checklist, assemble the release notes from `CHANGELOG.md`, list the exact commands for the user: `git flow release start 0.2.0` (or the user's equivalent), tag, merge, `gh repo edit …` (§7.4), `gh release create 0.2.0 --notes-file …` (optional), and the production read-only check the user may do afterwards. No package performs the release. Executor: Sonnet. Deps: WP5.2.
+**WP5.3 — Release preparation** — run the §6.6 checklist, assemble the release notes from `CHANGELOG.md`, list the exact commands for the user: `git flow release start 0.2.0` (or the user's equivalent), tag, merge, `gh repo edit …` (§7.4), `gh release create 0.2.0 --notes-file …` (optional), and a read-only check of an installed host the user may do afterwards. No package performs the release. Executor: Sonnet. Deps: WP5.2.
 
 ---
 

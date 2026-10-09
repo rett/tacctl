@@ -98,12 +98,12 @@ exec_engineer: &exec_engineer
       values: [15]
 
 # Juniper junos-exec - engineer
-# "ENG-CLASS" must match a local template user on Juniper devices
+# "EN-CLASS" must match a local template user on Juniper devices
 junos_exec_engineer: &junos_exec_engineer
   name: junos-exec
   set_values:
     - name: local-user-name
-      values: ["ENG-CLASS"]
+      values: ["EN-CLASS"]
     - name: deny-commands
       values: ["(^(request (system (reboot|halt|power-off|zeroize|software|snapshot|storage|scripts)|chassis routing-engine|vmhost|security)|start|load|op|file (copy|delete|rename|archive|show)|clear system login|restart (chassis|management).*)( .*)?$)"]
     - name: deny-configuration
@@ -125,10 +125,22 @@ readonly: &readonly
     - *junos_exec_readonly
   commands:
     - name: "show"
+      match: ["^(?:^(running-config view full)( .*)?$)$"]
+      action: *action_deny
+    - name: "show"
+      action: *action_permit
+    - name: "dir"
       action: *action_permit
     - name: "ping"
       action: *action_permit
     - name: "traceroute"
+      action: *action_permit
+    - name: "terminal"
+      match: ["^(?:^(length|width)( .*)?$)$"]
+      action: *action_permit
+    - name: "exit"
+      action: *action_permit
+    - name: "logout"
       action: *action_permit
     - name: "*"
       action: *action_deny
@@ -141,12 +153,33 @@ operator: &operator
     - *junos_exec_operator
   commands:
     - name: "show"
+      match: ["^(?:^(running-config view full)( .*)?$)$"]
+      action: *action_deny
+    - name: "show"
+      action: *action_permit
+    - name: "dir"
       action: *action_permit
     - name: "ping"
       action: *action_permit
     - name: "traceroute"
       action: *action_permit
     - name: "terminal"
+      action: *action_permit
+    - name: "ssh"
+      action: *action_permit
+    - name: "telnet"
+      action: *action_permit
+    - name: "monitor"
+      match: ["^(?:^(capture)( .*)?$)$"]
+      action: *action_permit
+    - name: "clear"
+      match: ["^(?:^(counters|line|(ip )?arp \\S+|arp-cache \\S+|mac address-table dynamic \\S+)( .*)?$)$"]
+      action: *action_permit
+    - name: "undebug"
+      action: *action_permit
+    - name: "exit"
+      action: *action_permit
+    - name: "logout"
       action: *action_permit
     - name: "*"
       action: *action_deny

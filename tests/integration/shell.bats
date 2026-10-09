@@ -118,6 +118,92 @@ sudo_lines() { grep '^sudo ' "$CALLS_LOG" || true; }
     assert_output --partial "no help for 'nosuchcommand'"
 }
 
+# policy_stub <tier-field>: the root side's answer to _console-policy.
+policy_stub() {
+    stub_cmd sudo "while [[ \"\${1:-}\" == -n || \"\${1:-}\" == *=* ]]; do shift; done
+case \" \$* \" in *' _console-policy '*) echo 'shell=system idle=30 tier=$1 list_max=40'; exit 0 ;; esac
+exec \"\$@\""
+}
+
+@test "shell: help lists the commands the caller's tier can run, and 'help <command>' keeps the whole usage with the tier of each verb" {
+    stub_cmd id 'echo tester tac-users tac-readonly'
+    policy_stub readonly
+    run "$TACCTL_BIN_SCRIPT" shell -c "help"
+    assert_success
+    assert_output --partial "Shown: the commands the readonly tier can run"
+    assert_output --partial "  user <subcommand>"
+    assert_output --partial "  backend <subcommand>"
+    refute_output --partial "  install "
+    refute_output --partial "  store <subcommand>"
+    refute_output --partial "  config <subcommand>"
+    # The tier asked of the root side, once, as the console does.
+    run sudo_lines
+    assert_output --regexp '^sudo -n /[^ ]*/dist/tacctl _console-policy$'
+    run "$TACCTL_BIN_SCRIPT" shell -c "help group"
+    assert_success
+    assert_output --partial "tacctl group add helpdesk 5 HELPDESK-CLASS"
+    assert_output --partial "Tiers (the lowest tier that may run each group verb):"
+    assert_output --partial "  readonly   list, show"
+    assert_output --partial "  superuser  add, commands, edit, junos, preset, privilege, remove, reset"
+    # An operator also sees what the operator rows open.
+    policy_stub operator
+    run "$TACCTL_BIN_SCRIPT" shell -c "help"
+    assert_output --partial "  config <subcommand>"
+    assert_output --partial "  log <subcommand>"
+    refute_output --partial "  host <subcommand>"
+    refute_output --partial "  store <subcommand>"
+}
+
+@test "shell: a superuser, and a caller outside tac-users, get the whole help; an unreadable tier gets the read-only list" {
+    stub_cmd id 'echo tester tac-users tac-superuser'
+    policy_stub superuser
+    run "$TACCTL_BIN_SCRIPT" shell -c "help"
+    assert_success
+    assert_output --partial "  install "
+    assert_output --partial "  store <subcommand>"
+    refute_output --partial "Shown:"
+    # Not a tac-users member: nothing is asked, nothing is hidden.
+    stub_cmd id 'echo tester adm'
+    : > "$CALLS_LOG"
+    run "$TACCTL_BIN_SCRIPT" shell -c "help"
+    assert_output --partial "  install "
+    run sudo_lines
+    assert_output ""
+    # The root side's answer cannot be read: read-only verbs only.
+    stub_cmd id 'echo tester tac-users'
+    stub_cmd sudo 'echo "sudo: a password is required" >&2; exit 1'
+    run "$TACCTL_BIN_SCRIPT" shell -c "help"
+    assert_success
+    assert_output --partial "Shown: the commands the readonly tier can run"
+    refute_output --partial "  install "
+}
+
+@test "shell: a caller the root side answers has no tier (a disabled account) is listed no command; an answer without a tier is read-only" {
+    stub_cmd id 'echo tester tac-users'
+    policy_stub none
+    run "$TACCTL_BIN_SCRIPT" shell -c "help"
+    assert_success
+    assert_output --partial "Shown: no command; this account has no tier"
+    refute_output --partial "  user <subcommand>"
+    refute_output --partial "  status "
+    assert_output --partial "Shell:"
+    # No tier field in the answer: not 'none', the read-only list.
+    stub_cmd sudo "while [[ \"\${1:-}\" == -n || \"\${1:-}\" == *=* ]]; do shift; done
+case \" \$* \" in *' _console-policy '*) echo 'shell=system idle=30 list_max=40'; exit 0 ;; esac
+exec \"\$@\""
+    run "$TACCTL_BIN_SCRIPT" shell -c "help"
+    assert_output --partial "Shown: the commands the readonly tier can run"
+    assert_output --partial "  user <subcommand>"
+}
+
+@test "shell: help scope names the scope staging note for an engineer" {
+    stub_cmd id 'echo tester tac-users tac-engineer'
+    policy_stub engineer
+    run "$TACCTL_BIN_SCRIPT" shell -c "help scope"
+    assert_success
+    assert_output --partial "scope staging: an engineer may run list for a scope of their own; the other verbs need the superuser tier."
+}
+
 @test "shell -c: the history is written redacted, 0600; --no-history writes none" {
     run "$TACCTL_BIN_SCRIPT" shell -c "scope secret lab set x"
     assert_file_exists "$HISTFILE_PATH"
@@ -136,10 +222,32 @@ sudo_lines() { grep '^sudo ' "$CALLS_LOG" || true; }
     refute_output --partial "redacted"
 }
 
+@test "shell --space-completion on|off: -c and batch are the same either way; another value is a usage error" {
+    local v
+    for v in on off; do
+        : > "$CALLS_LOG"
+        run "$TACCTL_BIN_SCRIPT" shell --space-completion "$v" -c "user  list"
+        assert_success
+        run sudo_lines
+        assert_output --regexp '^sudo /[^ ]*/dist/tacctl user list$'
+        : > "$CALLS_LOG"
+        run bash -c 'printf "user  list\n  group list\n" | "$TACCTL_BIN_SCRIPT" shell --space-completion "$1"' _ "$v"
+        assert_success
+        run sudo_lines
+        [ "${#lines[@]}" -eq 2 ]
+    done
+    run "$TACCTL_BIN_SCRIPT" shell --space-completion maybe
+    assert_failure 1
+    assert_output --partial "--space-completion takes on or off"
+    run "$TACCTL_BIN_SCRIPT" shell --space-completion
+    assert_failure 1
+    assert_output --partial "--space-completion requires a value"
+}
+
 @test "shell: usage errors" {
     run "$TACCTL_BIN_SCRIPT" shell --idle soon
     assert_failure 1
-    assert_output --partial "Usage: tacctl shell [--no-history] [--idle <min>] [-c <line>]"
+    assert_output --partial "Usage: tacctl shell [--no-history] [--idle <min>] [--space-completion on|off] [-c <line>]"
     run "$TACCTL_BIN_SCRIPT" shell extra
     assert_failure 1
     assert_output --partial "Unknown argument: 'extra'"

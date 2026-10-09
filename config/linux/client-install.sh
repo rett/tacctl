@@ -6,8 +6,11 @@
 # login now: disabled, the accounting sink), TAC_REMOVE_HOMES (the removed
 # users whose home directories go too, or "*" for all), TAC_UID_FIRST and
 # TAC_UID_LAST (the server's UID range), TAC_UID_PREVIOUS (ranges it used
-# before, "<min>-<max> ..."), and TAC_PROTOCOL (the contract between header
-# and body, 4). TAC_METHOD picks the PAM
+# before, "<min>-<max> ..."), TAC_LOCAL (1 in the tacctl server's own
+# script), TAC_ENGINEER_SUDO (what tac-engineer may run through sudo here:
+# ALL, or absolute command paths separated by commas), TAC_REVOKE_ENGINEER (1
+# only in the script of 'tacctl rollback --hosts': engineers get no sudo here;
+# absent otherwise) and TAC_PROTOCOL (the contract between header and body, 6). TAC_METHOD picks the PAM
 # module the host authenticates through; accounts, tiers, sudo and the
 # fallback to local passwords are the same for both:
 #
@@ -34,6 +37,9 @@
 STATE_DIR="${TACCTL_CLIENT_STATE:-/var/lib/tacctl-client}"
 PAM_DIR="${TACCTL_CLIENT_PAM_DIR:-/etc/pam.d}"
 SUDOERS_HOST_FILE="${TACCTL_CLIENT_SUDOERS:-/etc/sudoers.d/tacctl-host}"
+# What marks a machine as a tacctl server: the installed command or the
+# tiers sudoers drop-in (see host_sudoers).
+SERVER_MARKERS="${TACCTL_CLIENT_SERVER_MARKERS:-/usr/local/bin/tacctl /etc/sudoers.d/tacctl-tiers}"
 XDG_DIR="${TACCTL_CLIENT_XDG:-/etc/xdg}"
 # sudo-i is the service 'sudo -i' uses; where it exists it has its own copy
 # of the includes (Debian) or simply includes sudo (RHEL family). sddm and
@@ -60,8 +66,8 @@ done
 
 # The header and this body are one contract. A header of another protocol
 # was not written together with this body: stop before anything changes.
-if [[ "${TAC_PROTOCOL:-1}" != "5" ]]; then
-    die "This script's header speaks protocol ${TAC_PROTOCOL:-1} and its body protocol 5: they were not written by
+if [[ "${TAC_PROTOCOL:-1}" != "6" ]]; then
+    die "This script's header speaks protocol ${TAC_PROTOCOL:-1} and its body protocol 6: they were not written by
         the same tacctl. Nothing was changed. Write a new script with 'tacctl config linux script', or use
         'tacctl host enroll|sync'."
 fi
@@ -71,6 +77,43 @@ uid_number() { [[ "$1" =~ ^[1-9][0-9]{0,9}$ ]]; }
 if ! { uid_number "${TAC_UID_FIRST:-}" && uid_number "${TAC_UID_LAST:-}" && (( TAC_UID_FIRST < TAC_UID_LAST )); }; then
     die "The header has no valid UID range (TAC_UID_FIRST, TAC_UID_LAST). Nothing was changed."
 fi
+# What tac-engineer may run through sudo on this host: ALL, or absolute
+# command paths without arguments ('tacctl config linux engineer-sudo').
+TAC_ENGINEER_SUDO="${TAC_ENGINEER_SUDO:-ALL}"
+if [[ "$TAC_ENGINEER_SUDO" != "ALL" && ! "$TAC_ENGINEER_SUDO" =~ ^/[A-Za-z0-9._+/-]+(,/[A-Za-z0-9._+/-]+)*$ ]]; then
+    die "The header's TAC_ENGINEER_SUDO is neither ALL nor absolute command paths. Nothing was changed."
+fi
+# Each command is a clean path, as 'tacctl config linux engineer-sudo'
+# insists (no "..", ".", "//" or trailing "/", at most 255 characters).
+if [[ "$TAC_ENGINEER_SUDO" != "ALL" ]]; then
+    IFS=, read -ra engineer_cmds <<< "$TAC_ENGINEER_SUDO"
+    for engineer_cmd in "${engineer_cmds[@]}"; do
+        if (( ${#engineer_cmd} > 255 )) || [[ "/${engineer_cmd}/" == *"/../"* || "/${engineer_cmd}/" == *"/./"* \
+            || "$engineer_cmd" == *//* || "$engineer_cmd" == */ ]]; then
+            die "The header's TAC_ENGINEER_SUDO names '${engineer_cmd}', which is not a clean command path. Nothing was changed."
+        fi
+    done
+fi
+
+# 'tacctl rollback <version> --hosts' sends TAC_REVOKE_ENGINEER=1: the engineer
+# tier does not exist in the release it prepares for, whose sync would make an
+# engineer a superuser here. The script then writes no %tac-engineer line in
+# the sudoers drop-in and takes the accounts of the engineer tier out of
+# tac-superuser and tac-engineer, so they have no sudo on this host. Every other
+# account, the groups themselves and everything else stay as they are. The
+# tacctl server's own script (TAC_LOCAL=1) ignores it: engineers there have
+# tacctl's own sudo rows only, which the older release replaces.
+REVOKE_ENGINEER=0
+case "${TAC_REVOKE_ENGINEER:-0}" in
+    0) ;;
+    1)
+        if [[ "${TAC_LOCAL:-0}" == "1" ]]; then
+            warn "TAC_REVOKE_ENGINEER is for hosts other than the tacctl server; ignored here."
+        else
+            REVOKE_ENGINEER=1
+        fi ;;
+    *) die "The header's TAC_REVOKE_ENGINEER is neither 0 nor 1. Nothing was changed." ;;
+esac
 
 # TACCTL_CLIENT_TEST=1 is for the bats suite only: it skips the root check
 # and fakes the module build so the account and PAM logic can run unprivileged
@@ -835,21 +878,25 @@ renumber_previous() {
 # --- tacctl's groups -----------------------------------------------------------
 # Each has a fixed GID, the same on every host: the first numbers of the
 # server's range (tac-users first, tac-console +1, tac-superuser +2,
-# tac-operator +3, tac-readonly +4). Every host has tac-users (the primary
-# group of every account tacctl manages, and the PAM gate) and
-# tac-superuser (sudo); the tacctl server itself (TAC_LOCAL=1) also has the
-# other two tiers' groups (its tiers sudoers) and tac-console (sshd's
-# drop-in). Elsewhere those three are removed, once only tacctl's accounts
-# are in them. An account tacctl does not manage here (not created by it,
-# or with a UID outside the range) is taken out of these and nothing else
-# is changed on it: the one change tacctl makes to such an account.
+# tac-operator +3, tac-readonly +4, tac-engineer +5). Every host has
+# tac-users (the primary group of every account tacctl manages, and the PAM
+# gate), tac-superuser and tac-engineer (sudo); the tacctl server itself
+# (TAC_LOCAL=1) also has the other two tiers' groups (its tiers sudoers) and
+# tac-console (sshd's drop-in). Elsewhere those three are removed, once only
+# tacctl's accounts are in them. An account tacctl does not manage here (not
+# created by it, or with a UID outside the range) is taken out of these and
+# nothing else is changed on it: the one change tacctl makes to such an
+# account.
 TAC_LOCAL="${TAC_LOCAL:-0}"
-TAC_GROUPS="${G_USERS} tac-readonly tac-operator tac-superuser tac-console"
+TAC_GROUPS="${G_USERS} tac-readonly tac-operator tac-engineer tac-superuser tac-console"
+# The groups of the tiers, and how many fixed GIDs tacctl's groups take.
+TIER_GROUPS="tac-readonly tac-operator tac-engineer tac-superuser"
+GROUP_GIDS=6
 
 # group_gid <group>: the fixed GID of one of tacctl's groups.
 group_gid() {
     local i=0 g
-    for g in "$G_USERS" tac-console tac-superuser tac-operator tac-readonly; do
+    for g in "$G_USERS" tac-console tac-superuser tac-operator tac-readonly tac-engineer; do
         if [[ "$g" == "$1" ]]; then echo $((TAC_UID_FIRST + i)); return 0; fi
         i=$((i + 1))
     done
@@ -858,7 +905,7 @@ group_gid() {
 
 # host_groups: the groups this host has.
 host_groups() {
-    if [[ "$TAC_LOCAL" == "1" ]]; then echo "$TAC_GROUPS"; else echo "${G_USERS} tac-superuser"; fi
+    if [[ "$TAC_LOCAL" == "1" ]]; then echo "$TAC_GROUPS"; else echo "${G_USERS} tac-superuser tac-engineer"; fi
 }
 
 # managed_accounts: the accounts tacctl created here that it manages now
@@ -974,8 +1021,8 @@ park_groups() {
         cur=$(getent group "$g" | cut -d: -f3 || true)
         want=$(group_gid "$g")
         [[ -n "$cur" && "$cur" != "$want" ]] || continue
-        (( cur >= TAC_UID_FIRST && cur < TAC_UID_FIRST + 5 )) || continue
-        for ((spare = TAC_UID_LAST; spare > TAC_UID_FIRST + 4; spare--)); do
+        (( cur >= TAC_UID_FIRST && cur < TAC_UID_FIRST + GROUP_GIDS )) || continue
+        for ((spare = TAC_UID_LAST; spare >= TAC_UID_FIRST + GROUP_GIDS; spare--)); do
             getent group "$spare" >/dev/null || break
         done
         groupmod -g "$spare" "$g" || continue
@@ -1059,7 +1106,7 @@ set_shell() {
 }
 
 sync_accounts() {
-    local g name tier uid shell id listed=" " inactive=" " managed=" " refused="" member legacy groups console=0 want
+    local g name tier uid shell id listed=" " inactive=" " managed=" " refused="" member legacy groups console=0 want revoked
 
     # Earlier releases took pre-existing accounts over ('adopted'). They are
     # not tacctl's: reported once and no longer tracked; the group cleanup
@@ -1138,23 +1185,41 @@ sync_accounts() {
         esac
         set_shell "$name" "$shell"
         # The tier's group: every tier on the tacctl server (its tiers
-        # sudoers), elsewhere tac-superuser only (the host's sudo).
-        # tac-console (sshd's drop-in for console users) follows the shell.
+        # sudoers), elsewhere tac-superuser and tac-engineer only (the
+        # host's sudo). tac-console (sshd's drop-in for console users)
+        # follows the shell.
         want=""
         if [[ "$TAC_LOCAL" == "1" ]]; then
-            want="tac-${tier}"
+            if [[ " ${TIER_GROUPS} " == *" tac-${tier} "* ]]; then want="tac-${tier}"; fi
             if is_console "$shell"; then
-                want+=" tac-console"
+                want+="${want:+ }tac-console"
                 console=$((console + 1))
             fi
-        elif [[ "$tier" == "superuser" ]]; then
-            want="tac-superuser"
+        elif [[ "$tier" == "superuser" || ( "$tier" == "engineer" && "$REVOKE_ENGINEER" != "1" ) ]]; then
+            want="tac-${tier}"
         fi
-        for g in tac-readonly tac-operator tac-superuser tac-console; do
-            if [[ " ${want} " != *" $g "* && " $(id -nG "$name") " == *" $g "* ]]; then
+        groups=" $(id -nG "$name") "
+        for g in $TIER_GROUPS tac-console; do
+            if [[ " ${want} " != *" $g "* && "$groups" == *" $g "* ]]; then
                 gpasswd -d "$name" "$g" >/dev/null
             fi
         done
+        # A rollback (TAC_REVOKE_ENGINEER=1) leaves an engineer in neither
+        # sudo group; the loop above took them out.
+        if [[ "$tier" == "engineer" && "$REVOKE_ENGINEER" == "1" ]]; then
+            revoked=""
+            for g in tac-superuser tac-engineer; do
+                if [[ "$groups" == *" $g "* ]]; then revoked+="${revoked:+, }${g}"; fi
+            done
+            if [[ -n "$revoked" ]]; then
+                info "'${name}': engineer sudo revoked (removed from ${revoked})."
+            fi
+        fi
+        # 0.2.2: an engineer was in tac-superuser until the engineer tier
+        # came; the first sync after it moves them.
+        if [[ "$tier" == "engineer" && "$REVOKE_ENGINEER" != "1" && "$groups" == *" tac-superuser "* && "$groups" != *" tac-engineer "* ]]; then
+            info "'${name}': moved from tac-superuser to tac-engineer (the engineer tier)."
+        fi
         # tac-users as a supplementary group only while it is not the
         # primary one yet (usermod -g failed above; tried again next sync).
         if [[ "$(getent passwd "$name" | cut -d: -f4)" != "$(getent group "$G_USERS" | cut -d: -f3)" ]]; then
@@ -1224,8 +1289,70 @@ sync_accounts() {
     info "${summary}."
 }
 
+# --- sudo for superusers and engineers -----------------------------------------
+# The host's drop-in: tac-superuser gets full sudo, tac-engineer what
+# 'tacctl config linux engineer-sudo' says (TAC_ENGINEER_SUDO; by default
+# the same), both with their own password. On the tacctl server itself
+# (TAC_LOCAL=1) there is no tac-engineer line: engineers run tacctl's own
+# verbs there and nothing else (its tiers sudoers). An install always
+# writes the drop-in; a sync (--accounts-only) rewrites it when it is there
+# and differs, so a change of engineer-sudo reaches the host at its next
+# sync, and a visudo refusal then leaves the old one, with a warning.
+#
+# A machine that runs tacctl but was not enrolled as the server (a header
+# without TAC_LOCAL) gets no engineer line either: it is the tacctl server,
+# whatever it is registered as, and engineers must not get a shell on it.
+is_tacctl_server() {
+    local m
+    for m in $SERVER_MARKERS; do
+        if [[ -e "$m" ]]; then return 0; fi
+    done
+    return 1
+}
+
+host_sudoers() {
+    local mode="$1" tmp engineer_line=1
+    if [[ "$TAC_LOCAL" != "1" ]] && is_tacctl_server; then
+        engineer_line=0
+        warn "This machine runs tacctl but was not enrolled as the tacctl server, so tac-engineer gets no sudo line here; enroll it as the server: tacctl host enroll --local"
+    fi
+    tmp=$(mktemp)
+    {
+        echo "# Managed by tacctl. ${PROTO} superusers get full sudo (password required)."
+        echo "%tac-superuser ALL=(ALL:ALL) ALL"
+        if [[ "$TAC_LOCAL" != "1" && "$engineer_line" == "1" && "$REVOKE_ENGINEER" != "1" ]]; then
+            echo "# ${PROTO} engineers get what 'tacctl config linux engineer-sudo' says (password required)."
+            echo "%tac-engineer ALL=(ALL:ALL) ${TAC_ENGINEER_SUDO//,/, }"
+        fi
+    } > "$tmp"
+    if [[ "$mode" == "sync" && "$(cat "$tmp")" == "$(cat "$SUDOERS_HOST_FILE")" ]]; then
+        rm -f "$tmp"
+        return 0
+    fi
+    if ! visudo -cf "$tmp" >/dev/null; then
+        rm -f "$tmp"
+        if [[ "$mode" == "sync" ]]; then
+            warn "visudo rejected the new sudoers drop-in; ${SUDOERS_HOST_FILE} was left as it was."
+            return 0
+        fi
+        die "visudo rejected the sudoers drop-in."
+    fi
+    install -m 0440 -o root -g root "$tmp" "$SUDOERS_HOST_FILE"
+    rm -f "$tmp"
+    if [[ "$mode" == "sync" ]]; then
+        if [[ "$REVOKE_ENGINEER" == "1" ]]; then
+            info "Sudoers drop-in ${SUDOERS_HOST_FILE} updated (engineers: no sudo)."
+        elif [[ "$TAC_LOCAL" == "1" || "$engineer_line" == "0" ]]; then
+            info "Sudoers drop-in ${SUDOERS_HOST_FILE} updated."
+        else
+            info "Sudoers drop-in ${SUDOERS_HOST_FILE} updated (engineers: ${TAC_ENGINEER_SUDO//,/, })."
+        fi
+    fi
+}
+
 sync_accounts
 if [[ "$ACCOUNTS_ONLY" == "1" ]]; then
+    if [[ -f "$SUDOERS_HOST_FILE" ]]; then host_sudoers sync; fi
     info "Accounts synced for scope '${TAC_SCOPE}'."
     exit 0
 fi
@@ -1479,15 +1606,8 @@ if command -v selinuxenabled >/dev/null && selinuxenabled 2>/dev/null; then
     "selinux_${TAC_METHOD}"
 fi
 
-# --- sudo for superusers -------------------------------------------------------
-sudoers_tmp=$(mktemp)
-cat > "$sudoers_tmp" <<EOF
-# Managed by tacctl. ${PROTO} superusers get full sudo (password required).
-%tac-superuser ALL=(ALL:ALL) ALL
-EOF
-visudo -cf "$sudoers_tmp" >/dev/null || die "visudo rejected the sudoers drop-in."
-install -m 0440 -o root -g root "$sudoers_tmp" "$SUDOERS_HOST_FILE"
-rm -f "$sudoers_tmp"
+# --- sudo for superusers and engineers (host_sudoers above) --------------------
+host_sudoers install
 
 pam_committed=1
 

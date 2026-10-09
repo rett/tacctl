@@ -364,7 +364,8 @@ func templatesSync(o *ohost) (lifecycle.TemplateSync, int) {
 //	cp "$D/state/templates/.shipped.sha256" tests/fixtures/golden/templates.manifest
 //
 // with the hashes of the templates changed since then put in by hand (0.2.1
-// item 59: wti.template and wti-radius.template; 'sha256sum' of each). The
+// item 59: wti.template and wti-radius.template; 0.2.3 item 77: all seven,
+// for the break-glass step; 'sha256sum' of each). The
 // format is still 0.1.16's. A second sync writes nothing.
 func TestTemplatesSyncFreshAndManifestGolden(t *testing.T) {
 	o := newOhost(t)
@@ -558,6 +559,11 @@ func TestInstallFresh(t *testing.T) {
 	if readFile(t, o.p.Command) != "new binary\n" {
 		t.Error("the installed command is not the built binary")
 	}
+	// A fresh install has nothing for the one-time tier migration of an
+	// upgrade: the marker is there from the start.
+	if _, err := os.Stat(o.p.TierPinMarker); err != nil {
+		t.Errorf("no tier migration marker: %v", err)
+	}
 	// No python anywhere.
 	for _, c := range o.run.Argvs() {
 		if strings.Contains(c, "python") {
@@ -587,6 +593,11 @@ func TestInstallOverExistingCloneAndStore(t *testing.T) {
 	}
 	if readFile(t, o.p.Command) != "the shim built this\n" || strings.Contains(o.text(), "Shared Secret:") {
 		t.Errorf("rebuilt, or a secret shown:\n%s", o.text())
+	}
+	// An existing store may hold groups from 0.2.2: the first upgrade
+	// migrates them, so the install leaves no marker.
+	if _, err := os.Stat(o.p.TierPinMarker); err == nil {
+		t.Error("an install over a store left the tier migration marker")
 	}
 }
 
@@ -919,6 +930,7 @@ func TestUninstallYes(t *testing.T) {
 	o.installed()
 	o.rad.SetInstalled(true)
 	o.write(o.p.KnownHosts, "# generated\n")
+	o.write(o.p.TierPinMarker, "migrated\n")
 	if code := uninstall(o, "-y"); code != 0 {
 		t.Fatalf("exit %d\n%s\n%s", code, o.stdout, o.stderr)
 	}
@@ -937,7 +949,7 @@ func TestUninstallYes(t *testing.T) {
 		"[INFO] Removing management repo...", "PHASE tacacs uninstall account", "  Uninstall Complete",
 		"  Not removed:\n    - Go installation (/usr/local/go)\n    - tacquito source (/opt/tacquito-src)\n    - Go build cache (/root/.cache/go-build)\n")
 	for _, f := range []string{o.p.Command, o.p.Completion, o.p.ManPage, o.p.SudoersFile, o.p.TierSudoersFile, o.p.LinuxDir,
-		filepath.Dir(o.p.LinuxDir), o.p.StateDir, o.p.Deploy, o.p.KnownHosts, o.p.VarLib} {
+		filepath.Dir(o.p.LinuxDir), o.p.StateDir, o.p.Deploy, o.p.KnownHosts, o.p.TierPinMarker, o.p.VarLib} {
 		if _, err := os.Lstat(f); err == nil {
 			t.Errorf("%s left", f)
 		}
@@ -1133,9 +1145,14 @@ func TestUpgradeRefreshesConsoleDropIn(t *testing.T) {
 		!o.run.Called("sshd", "-t") || !o.run.Called("systemctl", "reload", "ssh.service") {
 		t.Errorf("not refreshed:\n%s\n%q", o.text(), o.run.Argvs())
 	}
+	// The engineer tier's lockdown used to be a block of that drop-in: an
+	// install that has one gets the drop-in of its own.
+	if readFile(t, o.p.SSHDEngineerDropIn) != console.EngineerDropIn(false) || !strings.Contains(o.text(), "[INFO]   Updated: sshd drop-in for the engineer tier") {
+		t.Errorf("no engineer drop-in:\n%s", o.text())
+	}
 	o.stdout.Reset()
 	upgrade(o)
-	if !strings.Contains(o.text(), "[INFO]   Unchanged: sshd drop-in") {
+	if !strings.Contains(o.text(), "[INFO]   Unchanged: sshd drop-in\n") || !strings.Contains(o.text(), "[INFO]   Unchanged: sshd drop-in for the engineer tier") {
 		t.Errorf("second run:\n%s", o.text())
 	}
 	old := "Match Group tac-console\n"
@@ -1158,6 +1175,7 @@ func TestUninstallRestoresConsoleShells(t *testing.T) {
 	o := newOhost(t)
 	o.installed()
 	o.write(o.p.SSHDDropIn, console.DropIn(o.p.ConsoleCommand, false, false, []tier.Tier{tier.Superuser}))
+	o.write(o.p.SSHDEngineerDropIn, console.EngineerDropIn(false))
 	o.write(o.p.ShellsFile, "/bin/sh\n/bin/bash\n"+o.p.ConsoleCommand+"\n")
 	if err := os.Symlink(o.p.Command, o.p.ConsoleCommand); err != nil {
 		t.Fatal(err)
@@ -1177,7 +1195,7 @@ func TestUninstallRestoresConsoleShells(t *testing.T) {
 	inOrder(t, o.text(), "[INFO] Login shell /bin/bash restored for: alice", "Could not give these accounts /bin/bash back",
 		"carol", "[INFO] Removed sshd drop-in "+o.p.SSHDDropIn, "[INFO] Removed "+o.p.ConsoleCommand+" from "+o.p.ShellsFile,
 		"[INFO] Removing binaries and symlinks...")
-	for _, f := range []string{o.p.SSHDDropIn, o.p.ConsoleCommand} {
+	for _, f := range []string{o.p.SSHDDropIn, o.p.SSHDEngineerDropIn, o.p.ConsoleCommand} {
 		if _, err := os.Lstat(f); err == nil {
 			t.Errorf("%s left", f)
 		}

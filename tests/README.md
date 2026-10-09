@@ -24,7 +24,9 @@ make build           # dist/tacctl: bin/tacctl.sh --build with the test knobs co
 make coverage        # go test -coverprofile; coverage/go.out, coverage/index.html and the total
 make lint            # shellcheck (bin/tacctl.sh, config/linux, tests/helpers, tests/tools, tests/diff and its stubs,
                      #   tests/containers/{crossover,fresh}), gofmt, go vet, golangci-lint (pinned; prints how
-                     #   to install it when missing), and tests/tools/no-private.sh
+                     #   to install it when missing), the manual page (make lint-man: the Man tests of
+                     #   internal/cli and groff -k -ww), and tests/tools/no-private.sh
+make man             # rewrite the generated blocks of man/tacctl.1 from the code (below)
 make test-pyyaml     # the yamlpy and conf PyYAML corpora regenerated with PyYAML and compared
 make test-diff CORPUS=users   # the differential runner on one corpus
 ```
@@ -68,7 +70,7 @@ tests/
 ├── integration/         # the command line against real files in the test's tmpdir
 ├── e2e/                 # whole command flows with stubbed system commands
 ├── diff/                # the differential runner, its corpora, stubs and state roots
-├── tools/               # no-private.sh (lint), pyyaml-corpus.py, usage-goldens.sh, pre-push
+├── tools/               # no-private.sh (lint), pyyaml-corpus.py, usage-goldens.sh, permcheck.py and permcheck-baseline.txt (the lab permission check, below), pre-push
 ├── containers/radius/   # real FreeRADIUS in podman
 ├── containers/hosts/    # 'host enroll|sync|unenroll' for real, server and client containers
 ├── containers/crossover/ # the upgrade from the bash release to the Go binary, and back
@@ -94,11 +96,20 @@ argv, so nothing leaves the machine and no secret may appear in one.
 | File | What it covers |
 |---|---|
 | `integration/device_cli.bats` | `tacctl device`: the registry file (`devices.yaml`, 0600, snapshot on every write, `backup restore` and `backup diff` including it), add/remove/rename and the field setters, CSV/YAML import and export, generic and duplicate names, the namespace shared with enrolled hosts, host-key pinning (`add`, `--host-key`, `--no-host-key`, `hostkey show\|accept\|set`) and the generated `known_hosts` |
+| `integration/config_snmp.bats` | `config snmp` (the default) and `scope snmp` (a scope's settings, its credentials file `snmp/<scope>.yaml` 0600 in a 0700 directory, the default beneath it and the label of each value, the allowed clients in order, the contact, `clear`, a rename and a removal, the lookup with the credentials of the device's scope) against the stub agent `tacctl _snmp-agent`; a `tacctl.yaml` and a `devices.yaml` without the new keys stay byte-identical |
+| `integration/device_snmp.bats` | the SNMP name hint of `device add` and the `SNMP name` row of `device check` (and `--json`) against the stub agent `tacctl _snmp-agent` on 127.0.0.1 |
+| `integration/config_templates.bats` | extended with the SNMP and NETCONF steps of the walkthroughs (not configured, v2c, the client order, the unfilled line, `--name`, `--server`, `--source`, the Cisco superuser-only NETCONF step) and the goldens `golden/snmp/cli-<vendor>-lab.conf`; the WTI IP Tables step (D42): the caution kept as the introduction, the scope's list, the global fallback, a scope with no list (the commented DROP), an IPv6 permit skipped, `--source` in the rules, and the golden `golden/iptables/cli-wti-lab.conf` (`config_radius.bats` has the RADIUS one, `golden/iptables/cli-wti-radius-lab.conf`) |
 | `integration/device_scan.bats` | `device scan`, `discover`, `check`, `list --scan\|--probe`: `journalctl` answers with the made-up records of `tests/fixtures/sightings/`, the RADIUS auth log is a fixture file, `ssh-keyscan` answers with keys generated for the tests; the seen cache (`$TACCTL_VAR_LIB/devices-seen.json`), resumption after the cursor, the scan-time notices and the `Device notices` section of `status`; the clock is `TACCTL_TEST_NOW`, the zone UTC |
 | `integration/ssh_cli.bats` | `tacctl ssh` and `device ssh-config`: a `sudo` stub records the drop to the invoking user and an `ssh` stub records its argv (the options of each vendor profile, the pin, the login, no agent and no identity), who is admitted and the logged refusals, `-l` refused, the key-mismatch text, the Include fragment; `script` provides the terminal |
-| `integration/shell.bats` | `tacctl shell -c` and batch input through a `sudo` stub, exit statuses, the history file and its redaction. The interactive mode is the Go pty tests'. |
+| `integration/shell.bats` | `tacctl shell -c` and batch input through a `sudo` stub, exit statuses, the history file and its redaction, the lists a tier is shown (a disabled account is listed no command; an answer without a tier is the read-only list). The interactive mode is the Go pty tests'; the background lookup of the tier (a slow or failing root side never holds the editor up, a retry after 30 s) is `internal/cli/shell_view_fixes_test.go`. |
 | `integration/completion_shells.bats` | `tacctl completion zsh\|fish` in a real zsh (`compinit`, `compadd` captured) and a real fish: the scripts parse and answer with the words `tacctl __complete` gives |
-| `integration/tiers.bats` | extended with the `ssh` and `device` rows per tier, the `env_keep` line (no other environment is let through) and the refusal of a `SUDO_USER` that is not the account of `SUDO_UID` |
+| `integration/tiers.bats` | extended with `host provisioner` refused to the engineer, operator and read-only tiers (as are the rest of the host deployment verbs to an engineer), and with the `ssh` and `device` rows per tier, the `env_keep` line (no other environment is let through) and the refusal of a `SUDO_USER` that is not the account of `SUDO_UID`; also the groups that lost their tier setting: a custom or built-in group (`operator`) at priv-lvl 15 with no setting holds its members at the operator tier, and a sync gives them the operator tier and prints the repair instead of refusing |
+| `integration/host_provisioner.bats` | `tacctl host provisioner <name> rotate`: an `ssh` stub keeps each script copied to the host (numbered, in order), answers the proof with the id and the host keys it is told to (`PROOF_UID`, `PROOF_KEYS`, `PROOF_FAILS`) and fails a create or remove run on request (`FAIL_CREATE`, `FAIL_REMOVE`); keys are real ones made by `ssh-keygen` in the test directory. The order of the steps (create over the login in use, proof in a new connection with its options, registry, audit line, then the removal over the new account), a failed proof that removes the account and leaves the registry, one that never deletes an adopted account (only the line it added), a second run while the host's lock is held, the proof's ssh with the pinned-keys known_hosts options, a failed creation or removal, the refusals, `--dry-run`, and with `script` as the terminal that a typed `--password` reaches no call, script, state file or log |
+| `integration/scope_breakglass.bats` | `tacctl scope breakglass` (D55): add/list/remove and the default role, `tacctl.yaml` holding names and roles only (written only when set, byte-identical after the last removal), the refused names (shape, reserved, the Junos `remote`, a tacctl user of the scope, a template-user or class name, a name differing only in case), the user verbs refusing a break-glass name (`user add`, `user scope add\|replace`, `user rename`), per-scope isolation, rename and remove, the `scope show` line, the one-line `config validate` warning, and the placeholder (`secret 9 <TYPE9-HASH>`, never `algorithm-type scrypt secret`) and `Unfilled` line in `config cisco\|juniper\|wti` |
+| `integration/group_reset.bats` | `tacctl group reset` (D51): the diff of each built-in (default and `--preset`) and of `engineer`, `already canonical` without a prompt, `--dry-run` writing nothing (the store and `tacctl.yaml` byte-identical), the refusals (a custom group, no terminal without `--yes`), `--only`, `--yes`, the prompt answered `y` and `n` with `script` as the terminal, the audit line (`logger` stub), the sibling catchall of the lockout guard, and that a lower tier, the engineer included, is refused by the gate; the Go tests (`internal/cli/group_reset_test.go`, `internal/policy/canonical_test.go`) hold the golden diffs in `internal/cli/testdata/reset/` (`go test ./internal/cli -run TestGroupResetGoldenDiffs -update-reset` rewrites them) |
+| `integration/group_privilege_reset.bats` | `tacctl group privilege reset <group> [--dry-run] [--yes]` (WP10.5h): `already canonical` without a prompt, `--dry-run` writing nothing (the store and `tacctl.yaml` byte-identical, no audit line), the diff with the `no privilege exec level N ...` lines for the entries removed, the refusal without a terminal and without `--yes`, `--yes` with the audit line and a second run changing nothing, the prompt answered `y` and `n` with `script` as the terminal, the empty list an old `clear` stored shown as a change to the shipped default, a custom group's override removed (nothing stored empty), the same diff and result as `group reset --only privileges`, and the removed `clear` answering as an unknown subcommand; the Go tests (`internal/cli/group_section_reset_test.go`) hold the golden diffs in `internal/cli/testdata/reset/` (`privilege_*.golden`) |
+| `integration/group_commands_reset.bats` | `tacctl group commands reset <group> [--dry-run] [--yes]` (WP10.5h): the same cases for the command rules (the diff of rules and the default action, a custom group's override removed with the warning for a group left without rules, the sibling catchall of the lockout guard as in `group reset`, the same diff and result as `group reset --only commands`, the removed `clear`); the Go tests hold `commands_*.golden` and that no tier below the superuser, the engineer included, may run either reset |
+| `integration/rollback.bats` | `tacctl rollback <version> [--apply] [--yes] [--hosts]` (D50): a 0.2.3 state is built with the verbs that write the formats a 0.2.2 binary does not read (an engineer group at priv-lvl 15, per-scope SNMP settings and credentials, a break-glass user, a device location, space completion off, an engineer sudo list); the refusal of `0.2.1`, `0.2.0`, `0.2.3` and unknown words; the dry run lists every step and warning and leaves every state file byte for byte (and takes no snapshot); `--apply` refuses without `--yes` while a warning applies and needs none without one; the snapshot (taken first, holding the 0.2.3 form), the three converted files, `store.yaml` byte-identical, `snmp/<scope>.yaml` left, `console show`, `device list` and `config validate` still working, and a second `--apply` changing nothing; the gate (engineer, operator and readonly refused, a superuser allowed); `--hosts` with the `ssh` stub of `host.bats` (`TAC_REVOKE_ENGINEER=1` in the pushed header, an ordinary sync without it, a failing host named, exit 1) |
 | `integration/shim.bats` | extended with the release-binary tests (below) |
 | `integration/console_cli.bats` | `tacctl console`: `console.yaml` (0600, snapshots, `backup diff`/`restore`), the tier switches, user overrides and settings, `console show` with a stubbed `sshd -T` (the red warning when sshd does not force the console, still forwards or allows key logins), `console install\|remove\|check` |
 | `integration/console.bats` | the login console run as `tacctl-console` (a symlink to `dist/tacctl`): `-c` and its guard, sshd's `ForceCommand` form with `SSH_ORIGINAL_COMMAND`, batches, the per-line `sudo [-n] TACCTL_CONSOLE=<session>` argv, the session log lines, `system-shell`'s refusals. The terminal side is `internal/cli/console_pty_test.go` |
@@ -131,16 +142,43 @@ release download URL) is read by the shim only, for these tests;
 
 **`TACCTL_SSHD_DROPIN`** (sshd's drop-in for the console,
 `/etc/ssh/sshd_config.d/tacctl-console.conf`; the `Include` check reads
-`sshd_config` beside its directory) and **`TACCTL_SHELLS_FILE`**
-(`/etc/shells`) are pointed into the test's tmpdir by `tmpenv.bash`, the Go
+`sshd_config` beside its directory; the engineer tier's drop-in,
+`00-tacctl-engineer.conf`, is written beside it; the earlier `tacctl-engineer.conf` is
+removed), **`TACCTL_SSH_DIR`**
+(`/etc/ssh`, where this machine's `ssh_host_*_key.pub` are read) and
+**`TACCTL_SHELLS_FILE`** (`/etc/shells`) are pointed into the test's tmpdir by `tmpenv.bash`, the Go
 sandboxes and the lifecycle tests alike; `sshd` and `systemctl` are always
 stubs. The console's own path (`/usr/local/bin/tacctl-console`) moves only
 with `TACCTL_TEST_ROOT`.
 
 **`TACCTL_VAR_LIB`** is the root of tacctl's variable data (`/var/lib/tacctl`:
-`ssh/known_hosts`, `devices-seen.json`, `linux/`); `tmpenv.bash` points it
+`ssh/known_hosts`, `devices-seen.json`, `tier-pinned`, `linux/`); `tmpenv.bash` points it
 into the test's tmpdir and `internal/cli/sandbox_paths_test.go` guards that no
 lifecycle test touches the host's.
+
+### Rollback against the real 0.2.2
+
+`internal/cli/rollback_test.go` `TestRollbackRealOldBinary` builds the 0.2.2 release from an archive of its tag (`go build -tags testknobs`, the vendored modules; about 15 seconds) into a temp directory and runs its `config validate`, `console show`, `device list`, `config render` and `host list` against the same sandbox state before and after `tacctl rollback 0.2.2 --apply --yes`: before, each refuses the 0.2.3 form with the message that motivated the step; after, each accepts it (its `config validate` still reports the rendered config, which 0.2.3 wrote, as out of date until its own `config render`). It is skipped, with the reason, when `git`, `tar`, `go` or the tag is missing, or the build fails; `-short` skips it, and `-args -old-bin=<binary built that way>` skips the build. The sandbox variables are the same as the bats suite's (`tests/helpers/tmpenv.bash`); 0.2.2 reads them like this release. `internal/conf/rollback_test.go` also reads the schema of the tag and holds `Known022` to it, and fails when `schema.go` gains a key family that is in neither table.
+
+## The 0.2.3 Go test files
+
+Beside the bats files above, the packages added these (every one sandboxes the
+paths it touches; `go test ./internal/...` runs them all):
+
+| File | What it covers |
+|---|---|
+| `internal/cli/engineer_nosync_test.go`, `engineer_global_test.go` | The condition on the engineer tier (D48, D58): `syncInputs` reads everything a `host sync` of each registered host is built from (the script it would send, the console policy of this server's own entry, the host registry, the pins and recorded addresses, the `linux.*`, `host.*` and `tier.*` settings, the scope and prefix that answer each address) and `TestEngineerRowsWriteNoGlobalSetting` runs every command line an Engineer row opens, with a sandboxed model, and fails with the line and the field when `tacctl.yaml`, `console.yaml`, the SNMP files or any sync input differs afterwards; `TestSyncInputsSeeEveryInput` proves the reader sees a change to each input (the mutation proofs) |
+| `internal/cli/engineer_fixes_test.go`, `engineer_h_test.go`, `engineer_i_test.go` | The reviews of the engineer tier: an unreadable `tacctl.yaml` or an invalid `tier.<group>` never leaves the band, a capped engineer keeps the console's lockdown, every verb that lowers a tier syncs this server, a group at priv-lvl 15 records its tier and an ambiguous one holds only its members at the operator tier, the engineer sshd drop-in with and without the console, `console check`'s stale-membership and local-administrator cases, `--staging --name` failing closed |
+| `internal/tier/ambiguous_test.go`, `internal/policy/tiergroups*_test.go`, `internal/lifecycle/tiers_test.go` | The gate's treatment of ambiguous groups; which groups at priv-lvl 15 need a recorded tier (only the built-in `superuser` is exempt) and the pin writing only those; the upgrade's one-shot pin and its marker (never again, none after a failure or through an unreadable `tacctl.yaml`) |
+| `internal/cli/shell_view_test.go`, `shell_view_fixes_test.go` | D56: for every tier, every verb of the completion tree is listed exactly when the gate would run it, the `?` and `help` notes, the background lookup of the tier (3 s, retry after 30 s) |
+| `internal/cli/host_provisioner_test.go`, `host_provisioner_safety_test.go`, `internal/hosts/rotate*_test.go`, `revoke_test.go` | `host provisioner rotate` through the scripted runner: the order of the steps, the create and remove scripts as text, the adoption and refusal rules, the lock, the proof's ssh options; and the client script's `TAC_REVOKE_ENGINEER` option |
+| `internal/cli/scope_snmp_test.go`, `scope_breakglass*_test.go`, `internal/conf/snmp_test.go`, `breakglass_test.go`, `internal/cidr/snmp_test.go`, `internal/snmpcred/scope_test.go`, `internal/policy/snmp_test.go`, `internal/devreg/location_test.go` | The per-scope SNMP settings and credentials, the client list rules, the break-glass record and its refusals, the device location |
+| `internal/devices/snmp_test.go`, `breakglass_test.go`, `iptables_test.go` | The SNMP step, the break-glass step and the WTI IP Tables list of the three walkthroughs, whole, per vendor and case (goldens in `tests/fixtures/golden/` and `golden/snmp/`) |
+| `internal/policy/baseline_test.go`, `canonical_test.go`, `tacquito_test.go` | The baseline command rules and privileges of the four roles decided by `tacquito_test.go`'s emulator of tacquito's authorizer (the regex wrapped, a missed match falling through, `*` deciding at once), the nesting of the roles, the regex lint and the Junos set sizes; the canonical state `group reset` compares against |
+| `internal/cli/group_reset_test.go`, `group_section_reset_test.go` | `group reset`, `group privilege reset` and `group commands reset`: the golden diffs in `internal/cli/testdata/reset/`, the refusals, the writes, the audit lines |
+| `internal/cli/rollback_test.go`, `internal/conf/rollback_test.go`, `internal/console/rollback_test.go`, `internal/devreg/rollback_test.go`, `internal/lifecycle/rollback_test.go` | `tacctl rollback`: each file's conversion, the round trip through a 0.2.2-style parser, the warnings, and the real 0.2.2 binary (below) |
+| `internal/cli/man_gate_test.go`, `man_gen_test.go` | The man page gate and its generated blocks (the notes on the manual page gate above; `make lint-man`, `make man`) |
+| `internal/console/dropin_order_test.go`, `internal/lifecycle/engineer_dropin_test.go`, `preset_notice_test.go` | The engineer sshd drop-in sorts before the console's (with `sshd -T` where sshd is installed), its rename at upgrade, and the upgrade notice for 0.2.2's engineer preset |
 
 ## The bats harness
 
@@ -215,8 +253,28 @@ setup() {
   the script and `tacctl __complete <words>` answers it. `completion.bats`
   runs the generated bash script with the real bash-completion library and a
   `sudo` stub for the bridge; the Go tests (`internal/cli/completion_test.go`)
-  check the words per verb, and `internal/cli/man_test.go` checks that
-  `man/tacctl.1` names every command of the tree and none that is not in it.
+  check the words per verb.
+- The manual page is gated (`make lint-man`, part of `make lint`; no terminal
+  needed, a few hundred milliseconds): `internal/cli/man_test.go` checks that
+  `man/tacctl.1` names every command of the tree and none that is not in it;
+  `man_gate_test.go` that it has every flag of every command in the command's
+  entry, every path of `internal/paths` under FILES, every environment
+  variable the code reads under ENVIRONMENT (the test-sandbox variables are
+  listed, with the reason, in `manEnvExempt`), every exit status the tests pin
+  under EXIT STATUS, and every row of `tier.Rules` under TIERS in its tier;
+  `man_gen_test.go` that the blocks generated from the code are current: the
+  TIERS table, the `tacctl.yaml` and `console.yaml` key lists (type, default,
+  the verb that sets it) and, in each command's entry, a `Requires:` tier line
+  and its flags as the usage describes them. A generated block sits between
+  `.\" BEGIN GENERATED: <name>` and `.\" END GENERATED: <name>`; a stale page
+  fails with the names of the blocks, and `make man` (`go test ./internal/cli
+  -run TestManGeneratedBlocksAreCurrent -update-man`) rewrites them and adds a
+  command's block at the end of its first entry. A new key needs an entry in
+  `manKeyDocs` (or `manConsoleDocs`) saying what it is for and which verb sets
+  it, then `make man`; a new variable, exit status or path is documented by
+  hand in the part of the page the failure names; the prose around the blocks
+  is hand-written. Then the page must print
+  nothing under `groff -k -ww -man -Tutf8` (`apt install groff`).
 
 ## Goldens
 
@@ -228,6 +286,16 @@ intended change and review the diff:
 UPDATE_GOLDEN=1 make test-integration
 git diff tests/fixtures/golden/
 ```
+
+`internal/devices` checks the same eight goldens with the Go renderer and the
+SNMP and NETCONF steps in `golden/snmp/`: `block-<vendor>-<case>.txt` (the
+step of each vendor for no SNMP, v2c, v3, SHA-256, no ranges, ranges of /32,
+/24, /8 and /12, unset contact and location, a missing community, an unknown
+server address, a quoting case), `full-<variant>-*.conf` (whole walkthroughs
+of the seven templates, an engineer's, with and without a management filter),
+`addr-*.conf` (`--server` and `--source`) and `cli-<vendor>-lab.conf` (through
+the command line). Regenerate them with `go test ./internal/devices -update`
+and review the diff.
 
 The other goldens come from the last bash release, never from the Go code
 they check. Their generators need git (the release tag), bash and PyYAML,
@@ -241,6 +309,35 @@ and write nothing outside a temp directory:
 | `internal/cidr/testdata/*` | `python3 internal/cidr/testdata/gen.py` |
 | `internal/yamlpy/testdata/*`, `internal/conf/testdata/pyyaml/*` | `tests/tools/pyyaml-corpus.py` (`make test-pyyaml` checks them) |
 | `internal/cli/testdata/usage/*` (every usage block) | `tests/tools/usage-goldens.sh` |
+
+`internal/render/tacacs`'s replay of the 0.1.16 corpus (`corpus.jsonl`)
+renders the match regexes as stored and pins the 0.1.16 shipped rules of
+`operator` and `readonly`: since 0.2.3 tacctl wraps every stored regex as
+`^(?:...)$` and ships other rules, and the three rendered goldens
+(`tacquito.{minimal,multiscope,devauth}.rendered.yaml`) carry both. They are
+rewritten from the current renderer (render each store with the default
+`tacctl.yaml` and review the diff), not from the bash tag.
+
+### Lab permission check
+
+`tests/tools/permcheck.py` asks a TACACS+ server what it decides, without a
+device: one RFC 8907 authorization request per line of a file of
+`user|cmd|args|expected` lines (`permit` or `deny`), the way IOS asks per
+command. `tests/tools/permcheck-baseline.txt` is the sample corpus of
+`internal/policy/baseline_test.go` as the role preset decides it. Create
+throwaway accounts in the groups `readonly`, `operator`, `engineer` and
+`superuser` on a lab server (never a production one), apply the preset
+(`tacctl group preset roles`), make the machine running the script a client
+of a lab secret, and run
+
+```sh
+python3 tests/tools/permcheck.py --host <lab server> --secret <lab secret> tests/tools/permcheck-baseline.txt
+```
+
+It prints the lines that differ and exits 1 when any does. It proves what the
+daemon does with the rendered regexes (anchoring, fall-through, the catch-all)
+that the Go tests only emulate. It sends no password, starts no server and
+needs no more than python3; `python3 -m py_compile` is its lint.
 
 The store fixtures (`tests/fixtures/store.*.yaml`) and model JSON
 (`tests/fixtures/model/*.json`) are PyYAML and Python output of the bash
@@ -425,6 +522,7 @@ tests/containers/hosts/run.sh rocky-9 switch
 tests/containers/hosts/run.sh almalinux-9 radius --server almalinux-9
 tests/containers/hosts/run.sh debian-trixie probe    # what pam_radius_auth returns
 tests/containers/hosts/matrix.sh [<log dir>]         # everything docs/radius-notes.md records
+tests/containers/run-all.sh                           # the whole container matrix, with a table (below)
 ```
 
 Clients: `ubuntu-noble`, `debian-trixie`, `debian-bookworm`,
@@ -432,8 +530,11 @@ Clients: `ubuntu-noble`, `debian-trixie`, `debian-bookworm`,
 
 | Cycle | Does |
 |---|---|
-| `radius`, `tacplus` | (the client container maps IDs 0-55533, 65534-65535 and 80000-89999, since rootless podman's 65536 subordinate IDs cannot cover both with the default map) snapshot of the host; `host enroll --method <m>` (per-host scope); users added to the scope and pushed with `host sync` (one of them named like a pre-existing local account, which tacctl must leave alone and name in the summary as refused: `synced (4 users; 1 refused: carl)`; an account an earlier release adopted is taken out of tacctl's groups and nothing else on it changes; every account tacctl created has a UID in 80000-89999); an account left at a UID of 20000-29999 as an earlier release made it (state `created`, map entry at the legacy number) renumbered by the next sync on both sides (map rewritten and its old copy kept, UID, group and primary GID, home re-owned, a stray file outside the home reported and left, `synced (4 users; 1 renumbered; 1 refused: carl)`, nothing on a second sync); a disabled user expired and restored; removed users deleted (`userdel`, their group too, their UID still reserved on the server), the home kept without a terminal (moved to `/home/.tacctl-removed/<user>-<time>`, root's, 0700, a link in it not followed, unreadable to a local account later given the same UID) and deleted with `--remove-home`; the `/etc/login.defs` warning at enroll with `UID_MAX 85000` and none with the distribution's own (a real `useradd` then stays below 80000); the address enroll recorded, refused to `device add`; where the secret is; SSH login right and wrong, `sudo` and `sudo -i` for the superuser, none for the readonly user; a user removed from the scope on the server and not yet synced, then deleted by the sync; the local administrator; the server unreachable (packets dropped at the server with nft) with timings; a wrong shared secret on the host; console login, the stand-in for GDM and a PAM client that is not root; re-enroll; the server's logs; `host unenroll`; the snapshot again, byte for byte |
+| `radius`, `tacplus` | (the client container maps IDs 0-49999, 65534-65541 and 80000-89999, since rootless podman's 65536 subordinate IDs cannot cover both with the default map) snapshot of the host; `host enroll --method <m>` (per-host scope); users added to the scope and pushed with `host sync` (one of them named like a pre-existing local account, which tacctl must leave alone and name in the summary as refused: `synced (4 users; 1 refused: carl)`; an account an earlier release adopted is taken out of tacctl's groups and nothing else on it changes; every account tacctl created has a UID in 80000-89999); an account left at a UID of 20000-29999 as an earlier release made it (state `created`, map entry at the legacy number) renumbered by the next sync on both sides (map rewritten and its old copy kept, UID, group and primary GID, home re-owned, a stray file outside the home reported and left, `synced (4 users; 1 renumbered; 1 refused: carl)`, nothing on a second sync); a disabled user expired and restored; removed users deleted (`userdel`, their group too, their UID still reserved on the server), the home kept without a terminal (moved to `/home/.tacctl-removed/<user>-<time>`, root's, 0700, a link in it not followed, unreadable to a local account later given the same UID) and deleted with `--remove-home`; the `/etc/login.defs` warning at enroll with `UID_MAX 85000` and none with the distribution's own (a real `useradd` then stays below 80000); the address enroll recorded, refused to `device add`; where the secret is; SSH login right and wrong, `sudo` and `sudo -i` for the superuser, none for the readonly user; the engineer tier (a group given `tier engineer`, `tier.<group>` in `tacctl.yaml`): the operator may not `sudo`, as an engineer he is in `tac-engineer` and not `tac-superuser`, the drop-in has the `%tac-engineer` line, `sudo` gives root, `config linux engineer-sudo /usr/bin/systemctl,...` reaches the host through `visudo` and lets him run `systemctl` and not `id`, and back; a user removed from the scope on the server and not yet synced, then deleted by the sync; the local administrator; the server unreachable (packets dropped at the server with nft) with timings; a wrong shared secret on the host; console login, the stand-in for GDM and a PAM client that is not root; re-enroll; the server's logs; `host unenroll`; the snapshot again, byte for byte |
 | `switch` | all of `tacplus`, then `host enroll --method radius` on the enrolled host (nothing of pam_tacplus left, logins answered by FreeRADIUS), then back (nothing of pam_radius_auth's configuration left), then unenroll and the snapshot |
+| `rotate` | on a client enrolled with `tacplus`: `host provisioner <name> rotate deploy2 --key <file>` (a key made by `ssh-keygen` in the server container) creates the account below the UID range with its sudoers line and `authorized_keys` (modes 0700/0600, `restorecon` where SELinux is on, `ls -Z` checked on the AlmaLinux and Rocky clients), proves it in a new connection and switches the registry; `host sync` then runs through the new account; the old account is removed with `--remove-old` over the new one (its home moved to `/home/.tacctl-removed`, root's); root's record of the account (`/var/lib/tacctl-provisioner`, 0700, 0600) and a GID below the range are checked; a rerun with an account that root's record names adopts it, and a rotation to a name that is another account, or that only carries the marker comment, is refused; a sshd that refuses the new account's key makes the proof fail and removes the account (and its record) again |
+| `rollback` | on a client enrolled with `tacplus`: an engineer (a group at priv-lvl 15 with `--tier engineer`), a superuser, an operator and a readonly user are synced (the engineer is in `tac-engineer`, `%tac-engineer` is in `/etc/sudoers.d/tacctl-host`, both superuser and engineer can `sudo`); `tacctl rollback 0.2.2 --hosts` (dry run) changes nothing on the server or the client; `--apply --hosts` without `--yes` is refused; `--apply --yes --hosts` syncs the client with `TAC_REVOKE_ENGINEER=1`: the `%tac-engineer` line is gone from the drop-in (`visudo -c` is happy, the rest of the file as it was), the engineer is in neither `tac-engineer` nor `tac-superuser`, still logs in and has no `sudo`, and every other account's passwd and shadow lines, groups and home are as before; a second apply has nothing to convert; the 0.2.2 release binary, built here from its tag, then syncs the host (protocol 5) and puts the engineer in `tac-superuser` again, the consequence the dry run warns about; unenroll and the snapshot |
+| `server` | no client enrolled: the role preset, four lab users (`gotestviewer`, `gotestoperator`, `gotestengineer`, `gotestsuper`) and `tests/tools/permcheck.py` with `permcheck-baseline.txt` asked of the real tacquito in the server container (`show version`, `show running-config` and `no aaa new-model` per role among them); then `host enroll --local` of the server container itself (its user namespace cannot hold 80000-89999, so with `config linux uid-range 50000-59999`): `tac-engineer` is the first GID + 5, the engineer is in it, no `%tac-engineer ALL` line on the server (`TAC_LOCAL`), `00-tacctl-engineer.conf` sorts before the console's drop-in and `sshd -T -C user=...` shows an engineer who is also in `tac-superuser` and `tac-console` with nothing forwarded while a superuser with the console may forward, `tacctl console check` passes on the clean server and finds the stale memberships of the two hand-made accounts |
 | `probe` | no enroll: installs the package and prints what `pam_radius_auth` returns for accept, reject, a wrong secret, a silent server with `retry=0..2`, a missing server file, account, session and password change, and the accounting records the server got |
 
 Each run prints `PASS`/`FAIL`/`NOTE` lines and exits non-zero on a `FAIL`;
@@ -481,7 +582,7 @@ shim.
 
 ```sh
 tests/containers/fresh/run.sh                # HEAD; --rev <commit> for another one
-tests/containers/fresh/run.sh --worktree     # the tracked files as they are, uncommitted changes included
+tests/containers/fresh/run.sh --worktree     # this checkout as it is: uncommitted changes and new files included
 tests/containers/fresh/run.sh --rollback     # also back to the bash release and forward again
 tests/containers/fresh/run.sh --release <tag>  # a published release: the shim must install its verified binary
 ```
@@ -489,8 +590,7 @@ tests/containers/fresh/run.sh --release <tag>  # a published release: the shim m
 An ubuntu:noble container with systemd, `git`, `wget`, `sudo` and
 `iproute2`, no Go and no Python, installs with the README one-liner; its git
 fetches the GitHub URL from a bare clone of this repository whose `master`
-is the commit under test (with `--worktree`, a `git stash create` commit of
-the tracked files; no ref of the repository changes). It checks that the bootstrap
+is the commit under test (with `--worktree`, a commit of HEAD plus every change and new file, made from a scratch index; no ref and no index of the repository changes). It checks that the bootstrap
 installs Go (verified download) and builds `/usr/local/bin/tacctl`, `version
 --long`, `user passwd engineer` answered through a pty, `config cisco --scope
 lab`, `status`, `config validate`, and that `uninstall -y` leaves only Go,
@@ -507,6 +607,66 @@ GitHub, so it runs only after the release is published; it checks `Installing
 the <tag> release binary (linux/amd64, verified)` and that nothing was built.
 The image `localhost/tacctl-fresh:noble` is kept; `--keep` leaves the container
 `tacctl-fresh`.
+
+`tests/containers/fresh/upgrade.sh [--from <tag>]` is the way from the release before: the same image, a
+0.2.2 server (the README one-liner on the tag's commit, built from source),
+state made with its own tacctl (a scope, the role preset, users of the four tiers, two devices),
+`tacctl upgrade` to the working tree (the binary is built from it, tacquito stays active,
+`status`, `config validate`, the user and device lists as before, a second upgrade builds nothing), then
+`tacctl rollback 0.2.2` (a dry run that leaves the store byte for byte, then `--apply --yes`) and the
+0.2.2 binary, built in the container from the tag's commit, reading the converted state (`config validate`,
+`user list`, `device list`, `config render`). It needs the same network access as the fresh install.
+
+## The whole container matrix
+
+```sh
+tests/containers/run-all.sh                    # everything, in order, then a table
+tests/containers/run-all.sh --list             # the cases, their commands and images
+tests/containers/run-all.sh --only hosts-rollback,fresh --logs /tmp/logs
+tests/containers/run-all.sh --skip hosts-radius-fr30 --keep
+```
+
+One driver for the whole of this section: a preflight of the machine (not root, `podman info` works and is
+rootless, `/usr/local/bin/tacquito`, Go, `python3` with `bcrypt`, `ssh-keygen` and `git` are there, at least `--min-free-gb`
+(default 6) free where podman keeps its images, and no container named like the scripts' (`thc-*`,
+`tacctl-fresh*`, `tacctl-radius-check-*`: another run would be killed by these scripts)), the list of images
+that are present or will be built, then the cases one after another (`--jobs 1` is the only value: they
+share container names and the network `tacctl-host-check`). Each case's output is `<log dir>/<case>.log`
+(default `${TMPDIR:-/tmp}/tacctl-containers.<time>/`), the table is `summary.txt` there too:
+
+```
+CASE               RESULT            PASS   FAIL  TRIES      TIME  LOG
+hosts-tacplus      PASS                88      0      1    17m32s  /tmp/tacctl-containers.../hosts-tacplus.log
+...
+```
+
+`PASS`/`FAIL` count the script's own lines; a case passes when its exit status is 0 and it printed no `FAIL`
+line. `TRIES 2` means the first attempt ended without a `FAIL` line (an image build, a mirror or a pull that
+failed, a crash: an infrastructure problem) and the case was run once more; the first log is
+`<case>.attempt1.log`. A case with a `FAIL` line is a result and is never run again by the driver. A case
+that runs longer than `--timeout` (default 3000 s) fails. The first lines of each failure are echoed under its case;
+the rest is in the log. The exit status is 0 only when every case that ran passed. Without `--keep` the
+containers of each case are removed after it; with it the last case's stay for a look.
+
+The cases and about how long they take with the images built (an idle eight-core machine; every cold image build
+adds the package mirrors' time, and a loaded machine doubles all of it):
+
+| Case | Script | About |
+|---|---|---|
+| `hosts-tacplus`, `hosts-switch` | `hosts/run.sh ubuntu-noble tacplus` and `... switch` | 10 min, 15 min |
+| `hosts-radius-alma` | `hosts/run.sh almalinux-9 radius` | 10 min |
+| `hosts-radius-fr30` | `hosts/run.sh almalinux-9 radius --server almalinux-9` (FreeRADIUS 3.0.27) | 10 min |
+| `hosts-rotate`, `hosts-rotate-alma` | `hosts/run.sh ubuntu-noble rotate` and `... almalinux-9 rotate` | 5 min each |
+| `hosts-rollback` | `hosts/run.sh ubuntu-noble rollback` | 8 min |
+| `hosts-server` | `hosts/run.sh ubuntu-noble server` | 6 min |
+| `radius` | `radius/run.sh ubuntu-noble` | 6 min |
+| `fresh` | `fresh/run.sh --worktree` | 8 min |
+| `upgrade` | `fresh/upgrade.sh` | 8 min |
+
+`--only` and `--skip` take case names (or a prefix: `hosts-rotate` is both rotate cases). The AlmaLinux server image
+runs the `radius` and `probe` cycles only (no tacquito there), so the `rotate` case on AlmaLinux is a
+client of the Ubuntu server. The `probe` cycles and the other clients of `hosts/matrix.sh` are not in the driver;
+`hosts/matrix.sh` runs them.
 
 ## Install, upgrade, uninstall
 

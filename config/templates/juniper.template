@@ -10,5 +10,14 @@ ${CLASS_COMMAND_RULES}
 # Step 4: (optional) Management ACL
 ${MGMT_ACL_BLOCK}
 
-# Step 5: Commit
+# Step 5: SNMP (read-only, so tacctl can read the device's name and nothing else answers)
+${SNMP_BLOCK}
+
+# Step 6: (optional) NETCONF
+${NETCONF_BLOCK}
+
+# Step 7: Break-glass local users (optional, per scope)
+${BREAKGLASS_BLOCK}
+
+# Step 8: Commit
 commit

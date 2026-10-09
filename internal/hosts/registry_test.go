@@ -422,14 +422,14 @@ func TestAwkHelpers(t *testing.T) {
 
 func TestScopeUsersAndCounts(t *testing.T) {
 	e, _, errb := testEnv(t)
-	got, keep, err := e.ScopeUsers(nil, nil)
+	got, keep, err := e.ScopeUsers(nil, nil, nil)
 	if err != nil || got != "" || keep != nil {
 		t.Fatalf("empty %q %v", got, err)
 	}
 	if _, err := os.Stat(e.Paths.UIDs); !os.IsNotExist(err) {
 		t.Error("no users, but the UID file was made")
 	}
-	got, keep, _ = e.ScopeUsers([]string{"op|7", "x|0", "root|15", "Bad|1", "np|"}, nil)
+	got, keep, _ = e.ScopeUsers([]string{"op|7", "x|0", "root|15", "Bad|1", "np|"}, nil, nil)
 	if got != "op:operator:80000\nx:readonly:80001" || strings.Join(keep, ",") != "np" {
 		t.Errorf("users %q keep %q", got, keep)
 	}

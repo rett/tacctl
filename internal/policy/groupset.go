@@ -14,6 +14,8 @@ import (
 
 	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/render/radius"
+	"github.com/rett/tacctl/internal/tier"
+	"github.com/rett/tacctl/internal/yamlpy"
 )
 
 func junosPath(group, attr string) string { return "junos." + group + "." + attr }
@@ -98,10 +100,50 @@ func WTILevelOf(privlvl int) string {
 // --- tacctl tier -------------------------------------------------------------
 
 // GroupTier is the tier set on the group (readonly, operator, engineer or
-// superuser), or "" when none is set and its priv-lvl band decides.
+// superuser), or "" when none is set and its priv-lvl band decides. A
+// setting that is there but cannot be one (tier.<group> a mapping, a list,
+// null, empty or a number, or a tier that is not a mapping at all) is
+// tier.InvalidSetting, which tier.ForGroup makes readonly: a hand-edit
+// must never leave a group at priv-lvl 15 a superuser.
 func GroupTier(c *conf.Config, group string) string {
-	v, _ := c.Get(tierPath(group), "")
-	return v
+	top, ok := c.Value("tier")
+	if !ok {
+		return ""
+	}
+	m, isMap := top.(*yamlpy.Map)
+	if !isMap {
+		return tier.InvalidSetting
+	}
+	v, ok := m.Get(group)
+	if !ok {
+		return ""
+	}
+	if s, isStr := v.(string); isStr && s != "" {
+		return s
+	}
+	return tier.InvalidSetting
+}
+
+// TierProblem is why the tier settings of tacctl.yaml cannot be trusted
+// ("" when they can): a tier that is not a mapping, or a tier.<group> that
+// is not a non-empty string. The validated writers never produce either;
+// they are hand-edits, and while one stands accounts and tiers are not
+// synced and no managed caller is trusted above the operator tier.
+func TierProblem(c *conf.Config) string {
+	top, ok := c.Value("tier")
+	if !ok {
+		return ""
+	}
+	m, isMap := top.(*yamlpy.Map)
+	if !isMap {
+		return "'tier' must be a mapping of group names to tiers"
+	}
+	for _, g := range m.Keys() {
+		if GroupTier(c, g) == tier.InvalidSetting {
+			return "'tier." + g + "' must be one of " + strings.Join(conf.Tiers, ", ")
+		}
+	}
+	return ""
 }
 
 // WriteGroupTier sets the group's tier; "" (or "auto") removes it.
@@ -112,8 +154,48 @@ func WriteGroupTier(c *conf.Config, group, tier string) error {
 	return c.Set(tierPath(group), tier)
 }
 
+// StaleGroup is a group named in tacctl.yaml's tier, wti_level or junos
+// settings that the store does not have: the leftover of a group removed
+// from the store by something other than 'group remove' (a store import, a
+// restore, a hand edit). Kinds are the settings found, in the order tier,
+// wti-level, junos.
+type StaleGroup struct {
+	Group string
+	Kinds []string
+}
+
+// StaleGroups lists the groups of tacctl.yaml's tier, wti_level and junos
+// settings for which exists is false, sorted. A group added later under the
+// same name would take such a setting over (a tier above its priv-lvl band
+// among them), which 'group add' prevents by clearing them; the report is
+// for the ones already there.
+func StaleGroups(c *conf.Config, exists func(group string) bool) []StaleGroup {
+	kinds := map[string][]string{}
+	for _, s := range []struct{ key, kind string }{{"tier", "tier"}, {"wti_level", "wti-level"}, {"junos", "junos"}} {
+		top, ok := c.Value(s.key)
+		if !ok {
+			continue
+		}
+		m, isMap := top.(*yamlpy.Map)
+		if !isMap {
+			continue
+		}
+		for _, g := range m.Keys() {
+			if !exists(g) {
+				kinds[g] = append(kinds[g], s.kind)
+			}
+		}
+	}
+	out := make([]StaleGroup, 0, len(kinds))
+	for g, k := range kinds {
+		out = append(out, StaleGroup{Group: g, Kinds: k})
+	}
+	slices.SortFunc(out, func(a, b StaleGroup) int { return strings.Compare(a.Group, b.Group) })
+	return out
+}
+
 // ForgetGroup removes every per-group device setting of group (group
-// remove); RenameGroup moves them to the new name (group rename).
+// remove).
 func ForgetGroup(c *conf.Config, group string) error {
 	for _, p := range []string{"junos." + group, wtiPath(group), tierPath(group)} {
 		if err := c.Unset(p); err != nil {
@@ -121,26 +203,4 @@ func ForgetGroup(c *conf.Config, group string) error {
 		}
 	}
 	return nil
-}
-
-// RenameGroup moves the per-group device settings from old to new.
-func RenameGroup(c *conf.Config, old, new string) error {
-	for _, attr := range conf.JunosAttrs {
-		if items := JunosSet(c, old, attr); len(items) > 0 {
-			if err := WriteJunosSet(c, new, attr, items); err != nil {
-				return err
-			}
-		}
-	}
-	if v, ok := c.Get(wtiPath(old), ""); ok && v != "" {
-		if err := WriteWTILevel(c, new, v); err != nil {
-			return err
-		}
-	}
-	if t := GroupTier(c, old); t != "" {
-		if err := WriteGroupTier(c, new, t); err != nil {
-			return err
-		}
-	}
-	return ForgetGroup(c, old)
 }

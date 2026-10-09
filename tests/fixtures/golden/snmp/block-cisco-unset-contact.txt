@@ -1,0 +1,17 @@
+! --- SNMP (read-only; managed by tacctl) ---
+! Credentials: this scope's own (tacctl scope snmp lab show --reveal).
+! Allowed clients: the tacctl server first, the scope's ranges, then everything else (0.0.0.0/0) refused.
+! If TACCTL-SNMP already exists on the device, its old lines stay: 'no ip access-list standard TACCTL-SNMP' first.
+ip access-list standard TACCTL-SNMP
+  permit host 10.0.0.42
+  permit 198.51.100.0 0.0.0.255
+  remark everything else (0.0.0.0/0) is refused
+  deny   any
+!
+snmp-server community lab-ro-community RO TACCTL-SNMP
+!
+snmp-server location Rack 4, DC1
+! snmp-server contact <contact>   ! NOT SET: tacctl scope snmp lab contact '<text>'
+! Check from the tacctl server: tacctl scope snmp lab test <device-address>   (expects sysName 'core-sw1')
+
+Unfilled SNMP values: contact (tacctl scope snmp lab contact '<text>')

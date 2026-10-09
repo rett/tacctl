@@ -100,6 +100,7 @@ func ptyHelper(args []string) {
 	hist := fs.String("hist", "", "")
 	listMax := fs.Int("listmax", 0, "")
 	sysShell := fs.String("syssh", "", "")
+	spaces := fs.Bool("spaces", false, "")
 	if err := fs.Parse(args); err != nil {
 		return
 	}
@@ -108,11 +109,12 @@ func ptyHelper(args []string) {
 	defer stop()
 	out := ui.Output{Stdout: os.Stdout, Stderr: os.Stderr}
 	sh := New(Options{
-		Out:      out,
-		Idle:     *idle,
-		History:  NewHistory(*hist, os.Stderr),
-		Complete: testCompleter,
-		ListMax:  *listMax,
+		Out:             out,
+		Idle:            *idle,
+		History:         NewHistory(*hist, os.Stderr),
+		Complete:        testCompleter,
+		ListMax:         *listMax,
+		SpaceCompletion: *spaces,
 		Exec: func(ctx context.Context, words []string, stdin io.Reader) int {
 			code, _, err := execx.Attached(ctx, execx.Real{}, execx.Cmd{Name: words[0], Args: words[1:]}, stdin, os.Stdout, os.Stderr)
 			if err != nil && code == 0 {
@@ -254,6 +256,104 @@ func TestPtyCompletion(t *testing.T) {
 	p.expect(`\[exit 127\]`) // no program 'user' here: the line ran as completed
 	p.line("quit")
 	p.exits(0)
+}
+
+// With space completion on, a typed space completes a fixed word, is
+// refused where it would be a second one, and lists the choices of an
+// ambiguous word; a paste is unchanged.
+func TestPtySpaceCompletion(t *testing.T) {
+	p := startShell(t, "-spaces")
+	p.send("de ")
+	p.expect(`device `)
+	p.send("  ") // a second blank is refused
+	p.send("x\r")
+	p.expect(`\[exit 127\]`) // 'device x': no such program
+	p.expect(`tacctl> `)
+	p.send("s ")
+	p.expect(`tacctl> s\r\nPossible completions:\r\n  scope  Scope management\r\n  store  The canonical store\r\n`)
+	p.expect(`tacctl> s`)
+	if out := p.Settle(200 * time.Millisecond); strings.Contains(out, "Show all") {
+		t.Errorf("asked: %q", out)
+	}
+	p.send("\x15echo a   b\r") // no fixed word: the first blank is typed, the others refused
+	p.output("a b")
+	p.expect(`tacctl> `)
+	p.send("\x1b[200~echo c   d\n  e\x1b[201~\r")
+	p.output("c d e")
+	p.expect(`tacctl> `)
+	p.send("\x1b[200~echo 'f   g'\x1b[201~\r")
+	p.output("f   g")
+	p.expect(`tacctl> `)
+	p.line("exit")
+	p.exits(0)
+	b, err := os.ReadFile(p.hist)
+	if err != nil || !strings.HasPrefix(string(b), "device x\n") || !strings.Contains(string(b), "echo a b\n") || !strings.Contains(string(b), "echo c   d   e\n") ||
+		!strings.Contains(string(b), "echo 'f   g'\n") {
+		t.Errorf("history %q, %v", b, err)
+	}
+}
+
+// With the setting off the same keys type blanks.
+func TestPtySpaceCompletionOff(t *testing.T) {
+	p := startShell(t)
+	p.send("de  x\r")
+	p.expect(`\[exit 127\]`)
+	p.expect(`tacctl> `)
+	p.send("\x1b[200~echo c   d\x1b[201~\r")
+	p.output("c d")
+	p.expect(`tacctl> `)
+	p.line("exit")
+	p.exits(0)
+	b, _ := os.ReadFile(p.hist)
+	if string(b) != "de  x\necho c   d\nexit\n" {
+		t.Errorf("history %q", b)
+	}
+}
+
+// A Ctrl-C inside a paste whose end arrives in a later write is dropped:
+// the lines pasted after it do not run, with the setting on or off.
+func TestPtyCtrlCInASplitPaste(t *testing.T) {
+	for _, args := range [][]string{{"-spaces"}, nil} {
+		p := startShell(t, args...)
+		p.send("\x1b[200~echo a\x03b")
+		p.Settle(20 * time.Millisecond)
+		p.send("\rrm x\r")
+		p.Settle(20 * time.Millisecond)
+		p.send("\x1b[201~")
+		if out := p.Settle(300 * time.Millisecond); strings.Contains(out, "[exit") || strings.Contains(out, "^C") {
+			t.Fatalf("%q: the paste ran or interrupted: %q", args, out)
+		}
+		p.send("\r")
+		p.output("ab rm x")
+		p.expect(`tacctl> `)
+		p.line("exit")
+		p.exits(0)
+	}
+}
+
+// A pager (or the long-list question) never eats the end mark of a pasted
+// line: with '?' and a paste in one write the question is declined, the
+// paste reaches the line, and nothing runs.
+func TestPtyPasteAfterQuestion(t *testing.T) {
+	for _, args := range [][]string{{"-spaces", "-listmax", "10"}, {"-listmax", "10"}} {
+		p := startShell(t, args...)
+		p.send("many ?\x1b[200~" + strings.Repeat("b", 300) + "\x1b[201~")
+		p.expect(regexp.QuoteMeta("Show all 45 devices? [y/N] "))
+		p.Settle(200 * time.Millisecond)
+		p.send("q")
+		p.send("\x15echo pwned\x03")
+		p.expect(`\^C`)
+		p.expect(`tacctl> `)
+		if out := p.Settle(300 * time.Millisecond); strings.Contains(out, "[exit") || strings.Contains(out, "\r\npwned") {
+			t.Fatalf("%q: the line ran: %q", args, out)
+		}
+		p.line("exit")
+		p.exits(0)
+		b, _ := os.ReadFile(p.hist)
+		if string(b) != "exit\n" {
+			t.Errorf("%q: history %q", args, b)
+		}
+	}
 }
 
 // '?' lists the choices with their descriptions at once and inserts

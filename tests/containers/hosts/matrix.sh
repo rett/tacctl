@@ -39,4 +39,11 @@ done
 for client in ubuntu-noble debian-bookworm rocky-8 rocky-9 almalinux-10; do
     run "$client" switch
 done
+# Rotating the provisioning account: create, prove, sync through it, remove the old one.
+for client in ubuntu-noble almalinux-9; do
+    run "$client" rotate
+done
+# The engineer tier: 'rollback 0.2.2 --hosts' on a client, and the server's own checks.
+run ubuntu-noble rollback
+run ubuntu-noble server
 exit "$failed"

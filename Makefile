@@ -1,5 +1,5 @@
 .PHONY: test test-go test-bats test-integration test-e2e test-diff test-pyyaml build \
-	coverage lint lint-sh lint-go lint-private hooks clean bootstrap release-assets release-verify
+	coverage lint lint-sh lint-go lint-man lint-private man hooks clean bootstrap release-assets release-verify
 
 BATS := tests/bats/bats-core/bin/bats
 BATS_FLAGS ?= --print-output-on-failure
@@ -56,7 +56,10 @@ test-integration: build
 test-e2e: build
 	$(call bats_run,tests/e2e)
 
-# Go unit tests (-race needs cgo).
+# Go unit tests (-race needs cgo). Two tests read the 0.2.2 tag (the rollback
+# of internal/cli builds it; internal/conf compares its schema): where the tag
+# is not in the clone they skip and say so, so CI must fetch the tags
+# (git fetch --tags, or a checkout with fetch-depth 0), or they never run.
 test-go:
 	CGO_ENABLED=1 $(GO) test -race ./...
 	CGO_ENABLED=1 $(GO) test -race -tags testknobs ./...
@@ -120,9 +123,28 @@ coverage:
 	@echo "Report: coverage/index.html"
 
 # Static analysis: the shell that remains (the bootstrap shim, the Linux
-# client scripts, the test helpers and tools), then all Go, then no private
-# names (the repo is public; see tests/tools/no-private.sh).
-lint: lint-sh lint-go lint-private
+# client scripts, the test helpers and tools), then all Go, then the manual
+# page (complete and current against the code, and clean under groff), then
+# no private names (the repo is public; see tests/tools/no-private.sh).
+lint: lint-sh lint-go lint-man lint-private
+
+# man/tacctl.1 against the code (docs/plans/0.2.3-plan.md D57): the Man tests
+# of internal/cli (every command, flag, configuration key, path, environment
+# variable, exit status and tier row is in the page; the generated blocks are
+# current), then the page under groff with all warnings on, which must print
+# nothing. No terminal is needed. A stale page: run 'make man'.
+lint-man:
+	LANG=C.UTF-8 $(GO) test -count=1 ./internal/cli -run Man
+	@command -v groff > /dev/null 2>&1 || { echo "make: groff not found (apt install groff); it checks man/tacctl.1"; exit 1; }
+	@out=$$(groff -k -ww -man -Tutf8 man/tacctl.1 2>&1 > /dev/null); if [ -n "$$out" ]; then \
+		echo "groff -k -ww -man man/tacctl.1:"; echo "$$out"; exit 1; fi
+
+# Rewrite the generated blocks of man/tacctl.1 (the TIERS table, the
+# configuration keys, each command's tier line and flag list) from the code;
+# a command's block is added at the end of its first entry when it has none.
+# The prose around the blocks is hand-written. Commit the page.
+man:
+	LANG=C.UTF-8 $(GO) test -count=1 ./internal/cli -run TestManGeneratedBlocksAreCurrent -update-man
 
 lint-private:
 	tests/tools/no-private.sh
@@ -134,9 +156,10 @@ hooks:
 lint-sh:
 	$(SHELLCHECK) bin/tacctl.sh config/linux/*.sh
 	$(SHELLCHECK) tests/helpers/*.bash tests/tools/*.sh tests/tools/pre-push tests/diff/*.sh tests/diff/stubs/*/*
-	$(SHELLCHECK) tests/containers/crossover/*.sh tests/containers/fresh/*.sh
+	$(SHELLCHECK) tests/containers/*.sh tests/containers/*/*.sh
 
 lint-go:
+	@git rev-parse -q --verify '0.2.2^{commit}' > /dev/null 2>&1 || echo "make: note: the 0.2.2 tag is not in this clone, so two Go tests skip (the rollback build, the 0.2.2 schema). CI must fetch the tags: git fetch --tags"
 	@out=$$($(GOFMT) -l cmd internal); if [ -n "$$out" ]; then echo "gofmt -l: not formatted:"; echo "$$out"; exit 1; fi
 	$(GO) vet ./...
 	$(GO) vet -tags testknobs ./...

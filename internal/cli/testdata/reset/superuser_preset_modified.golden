@@ -1,0 +1,17 @@
+
+Reset of group 'superuser' to the role preset's values
+------------------------------------------------------
+  settings
+    Juniper class:   SU2-CLASS -> RW-CLASS
+    tacctl tier:     engineer (set) -> superuser (auto, from priv-lvl)
+    WTI level:       User (set) -> Administrator (set)
+    warning: the Junos template user of the class changes; re-paste tacctl config juniper Step 1
+  commands
+    - reload       deny
+  privileges
+    - show version
+  junos
+    deny-commands: 6/241 bytes -> none
+      - ^foo  (4 bytes)
+
+[INFO] Dry run: nothing was written.

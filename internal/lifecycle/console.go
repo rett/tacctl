@@ -84,11 +84,13 @@ func (h *Host) removeConsole(ctx context.Context) {
 		out.Warn("Could not give these accounts " + console.SystemLoginShell + " back (usermod -s failed); their shell " +
 			p.ConsoleCommand + " is removed now, so they cannot log in until it is changed: " + strings.Join(failed, ", "))
 	}
-	d := console.DropInFile{Runner: h.Runner, Path: p.SSHDDropIn}
-	if ch, err := d.Remove(ctx); err != nil {
-		out.Warn("sshd drop-in " + p.SSHDDropIn + ": " + strings.Join(lines(err), " "))
-	} else if ch == console.Removed {
-		out.Info("Removed sshd drop-in " + p.SSHDDropIn)
+	for _, path := range []string{p.SSHDDropIn, p.SSHDEngineerDropIn, p.SSHDEngineerDropInOld} {
+		d := console.DropInFile{Runner: h.Runner, Path: path}
+		if ch, err := d.Remove(ctx); err != nil {
+			out.Warn("sshd drop-in " + path + ": " + strings.Join(lines(err), " "))
+		} else if ch == console.Removed {
+			out.Info("Removed sshd drop-in " + path)
+		}
 	}
 	if ch, err := console.RemoveShells(p.ShellsFile, p.ConsoleCommand); err != nil {
 		out.Warn(strings.Join(lines(err), " "))
@@ -113,29 +115,61 @@ func lines(err error) []string {
 // reloaded: "Updated: sshd drop-in", else "Unchanged:". It is never
 // created here ('host sync' of this server or 'console install' does).
 func (h *Host) updateConsoleDropIn(ctx context.Context) int {
-	p, out := h.Paths, h.Out
-	if _, err := os.Stat(p.SSHDDropIn); err != nil {
+	p := h.Paths
+	_, errC := os.Stat(p.SSHDDropIn)
+	_, errE := os.Stat(p.SSHDEngineerDropIn)
+	_, errO := os.Stat(p.SSHDEngineerDropInOld)
+	if errC != nil && errE != nil && errO != nil {
 		return 0
 	}
 	f, err := console.Load(p.ConsoleFile)
 	if err != nil {
-		out.Warn("  Not updated: sshd drop-in (" + strings.Join(lines(err), " ") + ")")
+		h.Out.Warn("  Not updated: sshd drop-in (" + strings.Join(lines(err), " ") + ")")
 		return 0
 	}
-	d := console.DropInFile{Runner: h.Runner, Path: p.SSHDDropIn}
-	ch, err := d.Install(ctx, console.DropIn(p.ConsoleCommand, f.AgentForwarding, f.GatewayPorts, f.ForwardingTiers))
+	n := 0
+	if errC == nil {
+		n += h.updateDropIn(ctx, "sshd drop-in", p.SSHDDropIn, console.DropIn(p.ConsoleCommand, f.AgentForwarding, f.GatewayPorts, f.ForwardingTiers))
+	}
+	// The engineer tier's lockdown lived in the console's drop-in before it
+	// had a file of its own: an install that has one gets the other. The
+	// file also was named tacctl-engineer.conf, which sshd reads after the
+	// console's, where a forwarding tier of the console beat it (S1): the
+	// renamed file is written first, then the old one goes.
+	n += h.updateDropIn(ctx, "sshd drop-in for the engineer tier", p.SSHDEngineerDropIn, console.EngineerDropIn(f.AgentForwarding))
+	if errO == nil {
+		if _, err := os.Stat(p.SSHDEngineerDropIn); err != nil {
+			h.Out.Warn("  Not renamed: " + p.SSHDEngineerDropInOld + " stays until " + p.SSHDEngineerDropIn + " is written")
+			return n
+		}
+		d := console.DropInFile{Runner: h.Runner, Path: p.SSHDEngineerDropInOld}
+		if ch, err := d.Remove(ctx); err != nil && ch == console.Unchanged {
+			h.Out.Warn("  Not removed: sshd drop-in " + p.SSHDEngineerDropInOld + " (" + strings.Join(lines(err), " ") + ")")
+		} else {
+			h.Out.Info("  Removed: sshd drop-in " + p.SSHDEngineerDropInOld + " (renamed to " + filepath.Base(p.SSHDEngineerDropIn) + ")")
+			n++
+		}
+	}
+	return n
+}
+
+// updateDropIn makes the drop-in at path hold text (see updateConsoleDropIn).
+func (h *Host) updateDropIn(ctx context.Context, what, path, text string) int {
+	out := h.Out
+	d := console.DropInFile{Runner: h.Runner, Path: path}
+	ch, err := d.Install(ctx, text)
 	switch {
 	case err != nil && ch == console.Unchanged:
-		out.Warn("  Not updated: sshd drop-in (" + strings.Join(lines(err), " ") + "; " + p.SSHDDropIn + " is unchanged)")
+		out.Warn("  Not updated: " + what + " (" + strings.Join(lines(err), " ") + "; " + path + " is unchanged)")
 		return 0
 	case err != nil:
-		out.Warn("  Updated: sshd drop-in, but " + strings.Join(lines(err), " "))
+		out.Warn("  Updated: " + what + ", but " + strings.Join(lines(err), " "))
 		return 1
 	case ch == console.Unchanged:
-		out.Info("  Unchanged: sshd drop-in")
+		out.Info("  Unchanged: " + what)
 		return 0
 	}
-	out.Info("  Updated: sshd drop-in")
+	out.Info("  Updated: " + what)
 	return 1
 }
 

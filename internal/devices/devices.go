@@ -18,6 +18,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/rett/tacctl/internal/cidr"
 	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/model"
 	"github.com/rett/tacctl/internal/ui"
@@ -106,6 +107,92 @@ type Data struct {
 	ACL MgmtACL
 	// Radius is Prepare's result; required when Protocol is radius.
 	Radius *Radius
+
+	// SNMP is the scope's SNMP settings with the device's values, as the CLI
+	// resolved them (D41, D46); Scope and Server are filled in here. The
+	// zero value is "SNMP is not configured".
+	SNMP SNMPInput
+	// Restricted is an engineer's walkthrough: the Cisco NETCONF step is a
+	// superuser's (D53).
+	Restricted bool
+	// AuthServer is --server (D43): the address the devices are told to
+	// authenticate against, replacing ServerIP (and a bound RADIUS
+	// listener's address) in the lines that say where the server is;
+	// AuthName is the host name it was resolved from, if it was given as
+	// one. SourceIP is --source: the address tacctl itself reaches the
+	// devices from, which the SNMP client list (and the ssh permits) use
+	// instead of ServerIP. Neither is stored.
+	AuthServer, AuthName, SourceIP string
+}
+
+// source is the address tacctl reaches devices from: --source, else the
+// detected one.
+func (d Data) source() string {
+	if d.SourceIP != "" {
+		return d.SourceIP
+	}
+	return d.ServerIP
+}
+
+// mgmtPermits are the permits of the Cisco VTY access list and the Junos
+// management filter: the management ACL's IPv4 entries (the lists skip the
+// rest), headed by the server's /32 (the address tacctl itself reaches the
+// device from: --source, else the detected one), so that the access class
+// or the filter cannot cut off tacctl's own ssh. An entry equal to that /32
+// is not repeated. Nothing when the ACL has no IPv4 entry: no block is
+// rendered then, and the server's address alone would be one that locks
+// everybody else out.
+func (d Data) mgmtPermits() []string {
+	var rest []string
+	for _, e := range d.ACL.CIDRs {
+		if e != "" && cidr.CiscoWildcard(e) != "" {
+			rest = append(rest, e)
+		}
+	}
+	if len(rest) == 0 {
+		return nil
+	}
+	srv := cidr.Host32(d.source())
+	if srv == "" {
+		return rest
+	}
+	out := []string{srv}
+	for _, e := range rest {
+		if n, err := cidr.Parse(e); err == nil && n.String() == srv {
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
+// authIP is the address a device is told to authenticate against:
+// --server, else the address a RADIUS listener is bound to (bound), else
+// the detected one.
+func (d Data) authIP(bound string) string {
+	switch {
+	case d.AuthServer != "":
+		return d.AuthServer
+	case bound != "":
+		return bound
+	}
+	return d.ServerIP
+}
+
+// boundAddr is the address of the RADIUS listener a RADIUS config names.
+func (d Data) boundAddr(protocol string) string {
+	if protocol == RADIUS && d.Radius != nil {
+		return d.Radius.ServerAddr
+	}
+	return ""
+}
+
+// snmpInput is the SNMP step's input for scope.
+func (d Data) snmpInput(scope string) SNMPInput {
+	in := d.SNMP
+	in.Scope = scope
+	in.Server = d.source()
+	return in
 }
 
 // Render writes the device config of req to w.
@@ -257,6 +344,43 @@ func (o *out) header(title, scope, note, other, instruction string) {
 	o.heading(ui.Yellow, instruction)
 	o.echo("--------------------------------------------")
 	o.echo("")
+}
+
+// addressRoles says which server address plays which role when --server or
+// --source makes them differ (D43): nothing otherwise.
+func (o *out) addressRoles(d Data, protocol string) {
+	if d.AuthServer == "" && d.SourceIP == "" {
+		return
+	}
+	auth, src := d.authIP(d.boundAddr(protocol)), d.source()
+	if auth == src {
+		return
+	}
+	how := "detected"
+	if d.SourceIP != "" {
+		how = "--source"
+	}
+	told := "detected"
+	if d.AuthServer != "" {
+		told = "--server"
+		if d.AuthName != "" {
+			told += ": resolved from " + d.AuthName
+		}
+	}
+	o.heading(ui.Yellow, "Two server addresses:")
+	o.echo("  - The device is told to authenticate against " + auth + " (" + told + ")")
+	o.echo("  - tacctl reaches the device from " + src + " (" + how + "): the SNMP client list and the")
+	o.echo("    permits for ssh and SNMP (the first entry of the Cisco access list and of the Junos")
+	o.echo("    filter, a line of the WTI list) name it, and so do the 'tacctl' checks below")
+	o.echo("")
+}
+
+// unfilled ends a walkthrough with the SNMP values it could not fill.
+func (o *out) unfilled(u []Unfilled) {
+	if line := UnfilledLine(u); line != "" {
+		o.heading(ui.Yellow, line)
+		o.echo("")
+	}
 }
 
 // rule is the line between the config and the summary.

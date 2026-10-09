@@ -1,0 +1,12 @@
+# Read-only; managed by tacctl.
+# Credentials: this scope's own (tacctl scope snmp lab show --reveal).
+# Allowed clients: the tacctl server first, the scope's ranges, then everything else (0.0.0.0/0) refused.
+# Scope 'lab' has no client ranges: only the tacctl server may query (tacctl scope snmp lab clients add <cidr>).
+set snmp client-list TACCTL-SNMP 10.0.0.42/32
+set snmp client-list TACCTL-SNMP 0.0.0.0/0 restrict
+set snmp community lab-ro-community authorization read-only
+set snmp community lab-ro-community client-list-name TACCTL-SNMP
+set snmp location "Rack 4, DC1"
+set snmp contact "NOC <noc@example.net>"
+set snmp description "Core switch"
+# Check from the tacctl server: tacctl scope snmp lab test <device-address>   (expects sysName 'core-sw1')

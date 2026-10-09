@@ -5,13 +5,20 @@ Usage:
   tacctl group privilege list <group>                              Show mappings (explicit or default)
   tacctl group privilege add <group>    '<cmd>'[,'<cmd>'...]       Move one or more commands to the priv-lvl
   tacctl group privilege remove <group> '<cmd>'[,'<cmd>'...]       Remove mapping(s)
-  tacctl group privilege clear <group>                             Wipe explicit mappings (revert to defaults)
+  tacctl group privilege reset <group> [--dry-run] [--yes]         Reset the mappings to the shipped default (diff, confirms; superuser only)
+      --dry-run                                                    (reset) Show the difference; write nothing
+      --yes                                                        (reset) Do not ask
   tacctl group privilege seed [<group>] [--force]                  Populate built-ins with safe defaults
       --force                                                      (seed) Overwrite a group that already has mappings
 
 Each '<cmd>' may start with a mode: 'exec:' (the default when
 there is none), 'exec all:', 'configure:' or 'configure all:',
 e.g. 'configure: router bgp','exec all: show ip'.
+
+'reset' puts the group's mappings back to the shipped default, which
+the plain 'group reset' takes too; it has no --preset (the preset's
+values come with 'group reset <group> --preset'). A group with no
+shipped list has none afterwards.
 
 Drives the 'privilege <mode> [all] level <lvl> <cmd>' lines emitted
 by 'tacctl config cisco'. Pure device-side; tacquito does not read

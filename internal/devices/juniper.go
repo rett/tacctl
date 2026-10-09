@@ -15,9 +15,9 @@ import (
 // envsubst whitelists).
 var (
 	juniperTacacsVars = []string{"SERVER_IP", "SECRET", "TEMPLATE_USERS", "TACPLUS_CONFIG", "MGMT_ACL_BLOCK",
-		"CLASS_COMMAND_RULES", "VERIFY_COMMANDS", "GROUP_SUMMARY"}
+		"CLASS_COMMAND_RULES", "VERIFY_COMMANDS", "GROUP_SUMMARY", "SNMP_BLOCK", "NETCONF_BLOCK"}
 	juniperRadiusVars = []string{"SERVER_IP", "SECRET", "TEMPLATE_USERS", "RADIUS_CONFIG", "MGMT_ACL_BLOCK",
-		"CLASS_COMMAND_RULES", "VERIFY_COMMANDS", "GROUP_SUMMARY"}
+		"CLASS_COMMAND_RULES", "VERIFY_COMMANDS", "GROUP_SUMMARY", "SNMP_BLOCK", "NETCONF_BLOCK"}
 )
 
 // JuniperTemplate is the template a Juniper config renders.
@@ -42,7 +42,7 @@ type juniperGroup struct{ name, class, junos string }
 // its template user's permissions.
 const EngineerClass = policy.EngineerClass
 
-// engineerBits are ENG-CLASS's permission bits (D20).
+// engineerBits are EN-CLASS's permission bits (D20).
 var engineerBits = []string{"view", "view-configuration", "network", "clear", "trace", "reset", "configure", "rollback",
 	"interface", "interface-control", "routing", "routing-control", "firewall", "firewall-control",
 	"system", "system-control", "snmp"}
@@ -50,7 +50,7 @@ var engineerBits = []string{"view", "view-configuration", "network", "clear", "t
 // juniperGroups is the awk over model_group_info: the groups with a
 // Juniper class, the login class 'super-user' for a name with super or
 // admin in it, 'read-only' for one with read, else 'operator'; a group
-// whose class is ENG-CLASS gets the engineer bits whatever its name.
+// whose class is EN-CLASS gets the engineer bits whatever its name.
 func juniperGroups(d Data) []juniperGroup {
 	var out []juniperGroup
 	for _, g := range groupInfo(d.Model) {
@@ -129,12 +129,10 @@ func juniperAuthnOrder(d Data, scope, method string) string {
 func JuniperVars(req Request, d Data) map[string]string {
 	c, scope := d.Conf, req.Scope
 	groups := juniperGroups(d)
-	serverIP, secret := d.ServerIP, scopeSecret(d, scope)
+	serverIP, secret := d.authIP(""), scopeSecret(d, scope)
 	if r := d.Radius; req.Protocol == RADIUS && r != nil {
 		secret = r.Secret
-		if r.ServerAddr != "" {
-			serverIP = r.ServerAddr
-		}
+		serverIP = d.authIP(r.ServerAddr)
 	}
 
 	// Each template user is bound to a LOCAL class of its own name (Junos
@@ -144,10 +142,11 @@ func JuniperVars(req Request, d Data) map[string]string {
 		j := g.class
 		switch g.junos {
 		case "read-only":
-			users.WriteString("set system login class " + j + " permissions view\n")
-			users.WriteString("set system login class " + j + " permissions view-configuration\n")
+			for _, p := range []string{"network", "view", "view-configuration"} {
+				users.WriteString("set system login class " + j + " permissions " + p + "\n")
+			}
 		case "operator":
-			for _, p := range []string{"clear", "network", "reset", "trace", "view", "view-configuration"} {
+			for _, p := range []string{"clear", "network", "trace", "view", "view-configuration"} {
 				users.WriteString("set system login class " + j + " permissions " + p + "\n")
 			}
 		case "engineer":
@@ -206,17 +205,37 @@ func JuniperVars(req Request, d Data) map[string]string {
 	// in a comment (a misapplied lo0 filter can cut the routing protocols
 	// off the RE). IPv6 entries are skipped (family inet only).
 	acl := d.ACL.Name
+	snmpIn := d.snmpInput(scope)
 	var terms strings.Builder
-	for _, e := range d.ACL.CIDRs {
-		if e == "" || strings.Contains(e, ":") {
-			continue
-		}
+	for _, e := range d.mgmtPermits() {
 		terms.WriteString("set firewall family inet filter " + acl + " term permit-mgmt from source-address " + e + "\n")
 	}
 	mgmt := "# mgmt-acl empty — configure with 'tacctl config mgmt-acl add <cidr>' on the tacctl server\n" +
 		"# to emit a source-restricted lo0 firewall filter here."
 	if terms.Len() > 0 {
 		f := "set firewall family inet filter " + acl + " term "
+		// udp port 161 from the SNMP clients of Step 5 only, ahead of the
+		// default-accept: the client list of Step 5 binds to communities,
+		// so under SNMPv3 this term is the source restriction. Only udp
+		// 161 is matched; routing protocols and everything else fall
+		// through to default-accept.
+		snmpTerms, snmpNote := "", ""
+		if clients := snmpIn.clientList(); snmpIn.Version != "" && len(clients) > 0 {
+			var sb strings.Builder
+			for _, e := range clients {
+				sb.WriteString(f + "permit-snmp from source-address " + e + "\n")
+			}
+			sb.WriteString(f + "permit-snmp from protocol udp\n" +
+				f + "permit-snmp from destination-port snmp\n" +
+				f + "permit-snmp then accept\n" +
+				f + "deny-snmp from protocol udp\n" +
+				f + "deny-snmp from destination-port snmp\n" +
+				f + "deny-snmp then { log; discard; }\n")
+			snmpTerms = sb.String()
+			snmpNote = "# udp port 161 (SNMP, Step 5) is accepted from the SNMP clients only; this is the source restriction\n" +
+				"# under SNMPv3, which the client list of Step 5 does not give.\n"
+			snmpIn.MgmtFilter = true
+		}
 		mgmt = "# Restrict SSH / NETCONF to the configured mgmt subnets.\n" +
 			"# These 'set firewall' lines define the filter in the candidate config.\n" +
 			"# Activate it by uncommenting the 'set interfaces lo0 …' line below\n" +
@@ -229,7 +248,11 @@ func JuniperVars(req Request, d Data) map[string]string {
 			f + "deny-mgmt from protocol tcp\n" +
 			f + "deny-mgmt from destination-port [ ssh 830 ]\n" +
 			f + "deny-mgmt then { log; discard; }\n" +
+			snmpTerms +
 			f + "default-accept then accept\n" +
+			"#\n" +
+			"# tcp port 830 (NETCONF over ssh, Step 6) is permitted by the same terms as ssh.\n" +
+			snmpNote +
 			"#\n" +
 			"# Apply (review first):\n" +
 			"# set interfaces lo0 unit 0 family inet filter input " + acl
@@ -239,6 +262,9 @@ func JuniperVars(req Request, d Data) map[string]string {
 	if req.Protocol == RADIUS {
 		verify = "  show configuration system radius-server\n  show configuration system authentication-order\n" +
 			"  show configuration system accounting"
+	}
+	if snmpIn.Version != "" {
+		verify += "\n  show configuration snmp"
 	}
 	for _, g := range groups {
 		verify += "\n  show configuration system login user " + g.class
@@ -254,11 +280,11 @@ func JuniperVars(req Request, d Data) map[string]string {
 		desc := g.junos
 		switch g.junos {
 		case "read-only":
-			desc = "local: view + view-configuration"
+			desc = "local: network/view + view-configuration"
 		case "operator":
-			desc = "local: clear/network/reset/trace/view + view-configuration"
+			desc = "local: clear/network/trace/view + view-configuration"
 		case "engineer":
-			desc = "local: operator bits + configure/rollback and interface, routing, firewall, system, snmp"
+			desc = "local: operator bits + reset, configure/rollback and interface, routing, firewall, system, snmp"
 		case "super-user":
 			desc = "local: all"
 		}
@@ -289,6 +315,8 @@ func JuniperVars(req Request, d Data) map[string]string {
 		"CLASS_COMMAND_RULES": classRules,
 		"VERIFY_COMMANDS":     verify,
 		"GROUP_SUMMARY":       summary.String(),
+		"SNMP_BLOCK":          JuniperSNMP(snmpIn).Text,
+		"NETCONF_BLOCK":       JuniperNetconf(NetconfInput{Restricted: d.Restricted, MgmtFilter: terms.Len() > 0}),
 		// Not a template variable: the authentication-order the notes name.
 		"authn_order": order,
 	}
@@ -305,8 +333,13 @@ func renderJuniper(o *out, req Request, d Data) error {
 	if req.Protocol == RADIUS {
 		allowed = juniperRadiusVars
 	}
+	bg := BreakGlassFor(req, d)
+	vars[breakGlassVar] = juniperBreakGlass(bg)
+	allowed = withBreakGlassVar(allowed)
+	snmp := JuniperSNMP(d.snmpInput(req.Scope))
 	o.header("Juniper Junos Configuration", req.Scope, protocolNote(req.Protocol, req.Source),
 		otherScopes(d.Model, req.Scope), "Copy and paste into the device (configure mode):")
+	o.addressRoles(d, req.Protocol)
 	o.write(Expand(t.Text, allowed, vars))
 	o.rule()
 	o.heading(ui.Yellow, "Group → Juniper Class Mapping:")
@@ -335,6 +368,8 @@ func renderJuniper(o *out, req Request, d Data) error {
 		o.echoE(ui.Bold + "Verify after commit:" + ui.NC)
 		o.echo(vars["VERIFY_COMMANDS"])
 		o.echo("")
+		o.unfilledBreakGlass(bg)
+		o.unfilled(t.snmpGaps(snmp))
 		return nil
 	}
 	o.heading(ui.Yellow, "Notes:")
@@ -356,5 +391,7 @@ func renderJuniper(o *out, req Request, d Data) error {
 	o.echoE(ui.Bold + "Verify after commit:" + ui.NC)
 	o.echo(vars["VERIFY_COMMANDS"])
 	o.echo("")
+	o.unfilledBreakGlass(bg)
+	o.unfilled(t.snmpGaps(snmp))
 	return nil
 }

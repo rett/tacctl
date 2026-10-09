@@ -22,6 +22,9 @@ import (
 // SysNameOID is sysName.0 (RFC 3418): the device's own name for itself.
 const SysNameOID = "1.3.6.1.2.1.1.5.0"
 
+// SysLocationOID is sysLocation.0 (RFC 3418): where the device says it is.
+const SysLocationOID = "1.3.6.1.2.1.1.6.0"
+
 // The versions tacctl.yaml's snmp.version takes.
 const (
 	V2c = "v2c"
@@ -39,10 +42,11 @@ const (
 	MaxTimeout     = 10
 )
 
-// Getter reads a device's sysName.0. Config is the real one; the CLI's
-// tests put a stub in its place (app.App's SNMP).
+// Getter reads a device's sysName.0 and sysLocation.0. Config is the real
+// one; the CLI's tests put a stub in its place (app.App's SNMP).
 type Getter interface {
 	SysName(ctx context.Context, address string) (string, error)
+	SysLocation(ctx context.Context, address string) (string, error)
 }
 
 // Config is how to ask: the version and its credentials, the port and the
@@ -129,6 +133,19 @@ func (c Config) SysName(ctx context.Context, address string) (string, error) {
 	}
 	if v.tag != tagOctetString {
 		return "", fmt.Errorf("sysName.0 is not text (tag 0x%02x)", v.tag)
+	}
+	return string(v.val), nil
+}
+
+// SysLocation reads sysLocation.0 from address: the text of its OCTET
+// STRING (empty when the device has none set).
+func (c Config) SysLocation(ctx context.Context, address string) (string, error) {
+	v, err := c.Get(ctx, address, SysLocationOID)
+	if err != nil {
+		return "", err
+	}
+	if v.tag != tagOctetString {
+		return "", fmt.Errorf("sysLocation.0 is not text (tag 0x%02x)", v.tag)
 	}
 	return string(v.val), nil
 }

@@ -29,20 +29,35 @@ mgmt_acl:
   permits: []             # CIDRs for Cisco VTY-ACL + Juniper lo0 filter
 
 privileges:
-  # Per-group Cisco priv-exec lists. Shipped defaults move only
-  # verified priv-15 commands DOWN to lower-privilege groups; they
-  # never move commands UP from a lower default level (which would
-  # silently restrict readonly users). Override any list in tacctl.yaml.
-  operator:
-    # Shipped priv-15 read/diagnostic commands lowered to priv-7 so
-    # commands.operator's `show` permit is actually reachable for
-    # common read paths. No write/configure/debug included.
+  # Per-group Cisco priv-exec lists. Shipped defaults move only verified
+  # priv-15 commands DOWN to the group's level; nothing is moved UP from a
+  # lower default level (which would silently restrict readonly users:
+  # 'show ip route' and 'show access-list' are level 1 already). IOS levels
+  # are cumulative, so operator (7) inherits readonly's line. Every entry
+  # must be permitted by commands.<group> as well, so that the `local`
+  # authorization fallback on a device gives a user no more than the
+  # server does. Override any list in tacctl.yaml.
+  readonly:
+    # The NCM / monitoring account reads the configuration the level
+    # allows (filtered; `show running-config view full` is not lowered).
     - show running-config
-    - show startup-config
-    - show tech-support
-    - show archive
-    - show access-list
-    - show ip route
+  operator:
+    - "exec all: ping"
+    - "exec all: traceroute"
+    - "exec all: monitor capture"
+    # The three 'clear' entries below (ip arp, arp-cache, mac address-table
+    # dynamic) are the one exception to "no more than the server": IOS lowers
+    # a verb with any arguments, the server permits only the single-entry
+    # form ('clear ip arp <address>'), so with the `local` fallback and the
+    # server unreachable the operator can clear a whole table. Kept on
+    # purpose (the tables refill themselves); the test that checks the rule
+    # lists these three by name (TestPrivilegesArePermitted).
+    - clear counters
+    - clear line
+    - clear ip arp
+    - clear arp-cache
+    - clear mac address-table dynamic
+    - undebug all
 
 commands:
   # Per-group per-command authorization rules. tacctl.yaml is the ONE
@@ -58,28 +73,52 @@ commands:
   # `show running-config` the string tested is `running-config`, not
   # the full line. A regex that repeats the command word (`^show .*$`)
   # can therefore never match and silently denies every invocation.
+  # Every regex is tested as ^(?:regex)$ (tacctl wraps it when it renders
+  # the file), so it must cover the whole arguments string: a prefix form
+  # is written ^(alternatives)( .*)?$ . A rule whose match does not match
+  # is skipped and the next rule is tried, in order.
   # Omit `match` to permit/deny the command with any arguments.
   # A trailing name: "*" entry is the catch-all; its action is the
   # group's default action.
   #
   # Ordered superuser → operator → readonly to match how a reader scans
-  # privilege from most-to-least permissive.
+  # privilege from most-to-least permissive. Every command readonly may
+  # run, operator may run (the roles nest).
   superuser:
     # Priv 15 + RW-CLASS — unrestricted by policy.
     - { name: "*", action: permit }
   operator:
-    # Read-only + diagnostics; everything else (configure, write,
-    # debug, reload, etc.) hits the deny catch-all.
+    # Read-only + troubleshooting; everything else (configure, write,
+    # debug, reload, etc.) hits the deny catch-all. These rules only
+    # permit, but for `show running-config view full` (unfiltered, shows
+    # every key), which is denied here first; the deny pairs of the role
+    # preset (`tacctl group preset roles`) stand in front of all of them.
+    - { name: show,       action: deny,   match: ['^(running-config view full)( .*)?$'] }
     - { name: show,       action: permit }
+    - { name: dir,        action: permit }
     - { name: ping,       action: permit }
     - { name: traceroute, action: permit }
     - { name: terminal,   action: permit }
+    - { name: ssh,        action: permit }
+    - { name: telnet,     action: permit }
+    - { name: monitor,    action: permit, match: ['^(capture)( .*)?$'] }
+    - { name: clear,      action: permit, match: ['^(counters|line|(ip )?arp \S+|arp-cache \S+|mac address-table dynamic \S+)( .*)?$'] }
+    - { name: undebug,    action: permit }
+    - { name: exit,       action: permit }
+    - { name: logout,     action: permit }
     - { name: "*",        action: deny }
   readonly:
-    # Defense in depth on top of priv-1 / RO-CLASS. Permits are the
-    # read / diagnostic subset of operator's; `terminal` is omitted
-    # (terminal monitor can leak debug output across sessions).
+    # Defense in depth on top of priv-1 / RO-CLASS: a monitoring system
+    # (SolarWinds NCM, Oxidized, RANCID) reads and compares configurations.
+    # Nothing here allows a change, a hop (ssh/telnet), debug, capture or
+    # clear; `terminal` is limited to length and width (terminal monitor
+    # can leak debug output across sessions).
+    - { name: show,       action: deny,   match: ['^(running-config view full)( .*)?$'] }
     - { name: show,       action: permit }
+    - { name: dir,        action: permit }
     - { name: ping,       action: permit }
     - { name: traceroute, action: permit }
+    - { name: terminal,   action: permit, match: ['^(length|width)( .*)?$'] }
+    - { name: exit,       action: permit }
+    - { name: logout,     action: permit }
     - { name: "*",        action: deny }

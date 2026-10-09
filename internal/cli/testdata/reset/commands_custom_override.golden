@@ -1,0 +1,10 @@
+
+Reset of the command rules of group 'helpdesk' to the shipped default
+---------------------------------------------------------------------
+  commands
+    - show         permit
+    - *            deny
+    default action: deny -> permit
+    warning: group 'helpdesk' has no command rules at priv-lvl 5, so tacctl config cisco leaves 'aaa authorization commands 5' commented out; run: tacctl group commands default helpdesk permit
+
+[INFO] Dry run: nothing was written.

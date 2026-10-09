@@ -121,6 +121,15 @@ type Env struct {
 	// FactsCommand), for PinKeys and Facts: 'host enroll' and 'host sync'
 	// set it.
 	ReadKeys bool
+	// KeepOpen leaves the shared ssh connection of RunScript open after the
+	// run (the caller closes it with CloseSession), so a rotation's later
+	// steps use the login it began with instead of asking again.
+	KeepOpen bool
+	// HangUp gives RunScript a terminal on the host even when tacctl has
+	// none (ssh -tt), so that a lost connection hangs the script up and its
+	// traps run; without one the script keeps running unseen. Set by
+	// RunRotateScript.
+	HangUp bool
 
 	// Facts are what the last RunScript with ReadKeys read of the host
 	// (nil when nothing was read).
@@ -217,8 +226,9 @@ var reLinuxName = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
 // 32) and is not root.
 func LinuxName(name string) bool { return name != "root" && reLinuxName.MatchString(name) }
 
-// TierOf is tier_for_privlvl.
-func TierOf(privlvl string) string { return string(tier.ForPrivLvl(privlvl)) }
+// tierOf is the tier of a user whose group has the tier setting set (""
+// when none) and the priv-lvl privlvl (tier.ForGroup).
+func tierOf(setting, privlvl string) string { return string(tier.ForGroup(setting, privlvl)) }
 
 // splitRow is "IFS='|' read -r username privlvl" of a linux-users row.
 func splitRow(row string) (name, privlvl string) {
@@ -249,7 +259,11 @@ func UserCount(rows []string) int {
 // too and returned in keep: they are still users of the scope, so a host
 // expires their accounts rather than deleting them. No UID left in the
 // range is printed and ErrFailed.
-func (e *Env) ScopeUsers(rows []string, shell func(name, tier string) string) (users string, keep []string, err error) {
+//
+// groupTier is the tier set on each user's group ("" when none, or nil:
+// none for anyone): it decides the tier before the priv-lvl band, so an
+// engineer is sent as such (0.2.2, D18).
+func (e *Env) ScopeUsers(rows []string, shell func(name, tier string) string, groupTier func(name string) string) (users string, keep []string, err error) {
 	uids := e.UIDs()
 	rng := uids.rng()
 	var out []string
@@ -262,7 +276,11 @@ func (e *Env) ScopeUsers(rows []string, shell func(name, tier string) string) (u
 			e.stderrOut().WarnE("Skipping '" + name + "': not a valid Linux account name (lowercase letters, digits, _ and - only).")
 			continue
 		}
-		t := TierOf(privlvl)
+		set := ""
+		if groupTier != nil {
+			set = groupTier(name)
+		}
+		t := tierOf(set, privlvl)
 		if t == string(tier.None) {
 			e.stderrOut().WarnE("Skipping '" + name + "': its group has no priv-lvl.")
 			keep = append(keep, name)

@@ -1,6 +1,6 @@
 package snmp
 
-// Agent is a minimal SNMP agent that answers sysName.0, for the tests and
+// Agent is a minimal SNMP agent that answers sysName.0 and sysLocation.0, for the tests and
 // for the bats suite's stub (the '_snmp-agent' command of a -tags
 // testknobs build): v2c with one community (any other is dropped without
 // an answer, as real agents do), and v3 with one authPriv user, with the
@@ -17,8 +17,10 @@ import (
 
 // Agent answers on one UDP socket.
 type Agent struct {
-	SysName   string
-	Community string
+	SysName string
+	// SysLocation answers sysLocation.0 (empty: an empty string).
+	SysLocation string
+	Community   string
 	// The v3 user (empty: v3 requests get unknownUserName reports).
 	User, AuthPass, PrivPass, Auth string
 	EngineID                       []byte
@@ -89,8 +91,11 @@ func (a *Agent) response(req pdu) pdu {
 	out := pdu{tag: tagGetResponse, requestID: req.requestID}
 	for _, vb := range req.varbinds {
 		v := tlv{tag: tagNoSuchObject}
-		if vb.oid == SysNameOID {
+		switch vb.oid {
+		case SysNameOID:
 			v = tlv{tag: tagOctetString, val: []byte(a.SysName)}
+		case SysLocationOID:
+			v = tlv{tag: tagOctetString, val: []byte(a.SysLocation)}
 		}
 		out.varbinds = append(out.varbinds, varbind{oid: vb.oid, value: v})
 	}

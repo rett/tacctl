@@ -1,0 +1,12 @@
+
+Reset of the privileges of group 'operator' to the shipped default
+------------------------------------------------------------------
+  privileges
+    - show version
+    - configure: router bgp
+    + clear counters
+    warning: devices keep the old 'privilege exec level 7 ...' lines until you re-paste tacctl config cisco and remove them (no privilege exec level 7 ...):
+      no privilege exec level 7 show version
+      no privilege configure level 7 router bgp
+
+[INFO] Dry run: nothing was written.

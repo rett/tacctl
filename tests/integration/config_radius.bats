@@ -195,7 +195,8 @@ radius_listeners() {
     assert_output --partial "ip access-list standard VTY-ACL"
     assert_output --partial "permit 10.0.0.0 0.255.255.255"
     assert_output --partial "  access-class VTY-ACL in"
-    assert_output --partial "privilege exec level 7 show running-config"
+    assert_output --partial "privilege exec all level 7 ping"
+    assert_output --partial "privilege exec level 1 show running-config"
 }
 
 @test "config cisco --protocol radius --legacy: refused, legacy syntax is TACACS+ only" {
@@ -496,6 +497,23 @@ radius_listeners() {
     golden_diff "$out" "wti-radius-lab.conf"
 }
 
+@test "config wti --protocol radius: the IP Tables list of the scope's permits follows the Step 5 caution, the DROP is Step 11 (golden)" {
+    radius_on
+    "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab add 192.0.2.0/24 > /dev/null
+    local out="$BATS_TEST_TMPDIR/wti-radius-iptables.conf"
+    "$TACCTL_BIN_SCRIPT" config wti --scope lab --protocol radius | _normalize > "$out"
+    golden_diff "$out" "iptables/cli-wti-radius-lab.conf"
+    run "$TACCTL_BIN_SCRIPT" config wti --scope lab --protocol radius
+    assert_success
+    output=$(sed 's/\x1b\[[0-9;]*m//g' <<< "$output")
+    assert_output --partial "        log shows it answered.
+
+        Generated for scope 'lab'. Not verified on a unit."
+    assert_output --partial "-p tcp -s 192.0.2.0/24 --dport 22 -j ACCEPT"
+    assert_output --partial "Step 11: The final DROP of the IP Tables list"
+    [[ "$(grep -c '^ *[0-9]*\. iptables -A INPUT -j DROP$' <<< "$output")" == 1 ]]
+}
+
 @test "config wti --protocol radius: says up front it is not verified on a unit, and where WTI's documents disagree" {
     radius_on
     run "$TACCTL_BIN_SCRIPT" config wti --scope lab --protocol radius
@@ -561,7 +579,7 @@ radius_listeners() {
     run "$TACCTL_BIN_SCRIPT" config juniper --scope lab --protocol radius
     assert_success
     assert_output --partial "#   deny-commands       25/241 bytes: (^(request|start)( .*)?$)"
-    assert_output --partial "operator: OP-CLASS (local: clear/network/reset/trace/view + view-configuration), junos: deny-commands 25/241"
+    assert_output --partial "operator: OP-CLASS (local: clear/network/trace/view + view-configuration), junos: deny-commands 25/241"
 }
 
 @test "config wti: without --protocol a scope that resolves to RADIUS gets the RADIUS walkthrough, like cisco and juniper" {

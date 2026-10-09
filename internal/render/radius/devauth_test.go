@@ -67,7 +67,7 @@ func TestDevauthControlList(t *testing.T) {
 		{"bob", `, Tacctl-Priv-Lvl := 7, Tacctl-Juniper-Class := "OP-CLASS", Tacctl-WTI-Super := 1, ` +
 			`Tacctl-Juniper-Deny-Commands := ` + value("junos.operator.deny_commands")},
 		// Both sets; WTI SuperUser below the Administrator band of 15.
-		{"dave", `, Tacctl-Priv-Lvl := 15, Tacctl-Juniper-Class := "ENG-CLASS", Tacctl-WTI-Super := 2, ` +
+		{"dave", `, Tacctl-Priv-Lvl := 15, Tacctl-Juniper-Class := "EN-CLASS", Tacctl-WTI-Super := 2, ` +
 			`Tacctl-Juniper-Deny-Commands := ` + value("junos.engineer.deny_commands") + `, ` +
 			`Tacctl-Juniper-Deny-Configuration := ` + value("junos.engineer.deny_configuration")},
 		// Neither: exactly what 0.2.1 rendered.

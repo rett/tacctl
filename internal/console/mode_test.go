@@ -161,7 +161,7 @@ func TestSessionIDAndLogValues(t *testing.T) {
 func TestParseRemote(t *testing.T) {
 	r, ok := ParseRemote("shell=console idle=5 system_shell=yes system_shell_path=/bin/zsh ssh_escape=yes agent=no tier=superuser list_max=12\n")
 	want := Remote{Idle: 5 * time.Minute, SystemShell: true, SystemShellPath: "/bin/zsh", SSHEscape: true,
-		Tier: tier.Superuser, ListMax: 12, Known: true}
+		Tier: tier.Superuser, ListMax: 12, SpaceCompletion: true, Known: true, TierRead: true}
 	if !ok || r != want {
 		t.Fatalf("ParseRemote = %+v, %t; want %+v", r, ok, want)
 	}
@@ -172,12 +172,60 @@ func TestParseRemote(t *testing.T) {
 	if !ok || r != d {
 		t.Errorf("malformed keys: %+v, want %+v", r, d)
 	}
+	// The space completion: on without the field (an older server), as the
+	// field says otherwise; a malformed value keeps the default.
+	for out, want := range map[string]bool{"idle=5": true, "space_completion=yes": true, "space_completion=no": false, "space_completion=off": true} {
+		if r, _ := ParseRemote(out); r.SpaceCompletion != want {
+			t.Errorf("ParseRemote(%q).SpaceCompletion = %t", out, r.SpaceCompletion)
+		}
+	}
+	// The tier the shell lists for (D56): the gate's, else the tier field,
+	// and none (read-only verbs only) when the answer was not read.
+	for _, c := range []struct {
+		out  string
+		gate tier.Tier
+		view tier.Tier
+	}{
+		{"tier=engineer gate=operator", tier.Operator, tier.Operator},
+		{"tier=engineer", "", tier.Engineer},
+		{"tier=operator gate=wizard", "", tier.Operator},
+		{"gate=readonly", tier.Readonly, tier.Readonly},
+		{"tier=unrestricted", "", tier.Unrestricted},
+	} {
+		r, ok := ParseRemote(c.out)
+		if !ok || r.Gate != c.gate || r.View() != c.view {
+			t.Errorf("ParseRemote(%q): gate %q view %q, want %q %q", c.out, r.Gate, r.View(), c.gate, c.view)
+		}
+	}
+	if v := DefaultRemote().View(); v != tier.None {
+		t.Errorf("the defaults' view = %q, want none", v)
+	}
+	// 'tier=none' is an answer (a disabled account); an answer without a
+	// tier, or none at all, is not.
+	for _, c := range []struct {
+		out  string
+		view tier.Tier
+		read bool
+	}{
+		{"shell=system tier=none", tier.None, true},
+		{"gate=none tier=operator", tier.None, true},
+		{"tier=readonly", tier.Readonly, true},
+		{"shell=console idle=30", tier.None, false},
+		{"tier=wizard idle=30", tier.None, false},
+		{"garbage", tier.None, false},
+		{"", tier.None, false},
+	} {
+		r, _ := ParseRemote(c.out)
+		if v, read := r.ViewRead(); v != c.view || read != c.read {
+			t.Errorf("ParseRemote(%q).ViewRead() = %q, %t; want %q, %t", c.out, v, read, c.view, c.read)
+		}
+	}
 	for _, out := range []string{"", "garbage", "sudo: a password is required"} {
 		if r, ok := ParseRemote(out); ok || r != DefaultRemote() {
 			t.Errorf("ParseRemote(%q) = %+v, %t", out, r, ok)
 		}
 	}
-	if d := DefaultRemote(); d.Idle != 30*time.Minute || d.SystemShell || d.SSHEscape || d.ListMax != DefaultListMax {
+	if d := DefaultRemote(); d.Idle != 30*time.Minute || d.SystemShell || d.SSHEscape || d.ListMax != DefaultListMax || !d.SpaceCompletion {
 		t.Errorf("defaults %+v", d)
 	}
 }

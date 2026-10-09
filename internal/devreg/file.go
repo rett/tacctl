@@ -395,13 +395,13 @@ func parseDevice(name string, v any) (*Device, error) {
 	bad := func(key string) error { return fail("device '" + name + "': invalid '" + key + "'.") }
 	for k, val := range m.All() {
 		switch k {
-		case "address", "vendor", "hostname", "description":
+		case "address", "vendor", "hostname", "description", "location":
 			s, ok := val.(string)
 			if !ok {
 				return nil, bad(k)
 			}
 			*map[string]*string{"address": &d.Address, "vendor": &d.Vendor, "hostname": &d.Hostname,
-				"description": &d.Description}[k] = s
+				"description": &d.Description, "location": &d.Location}[k] = s
 		case "port":
 			n, ok := val.(int)
 			if !ok {
@@ -450,6 +450,9 @@ func (f *File) doc() *yamlpy.Map {
 		}
 		if d.Description != "" {
 			m.Set("description", d.Description)
+		}
+		if d.Location != "" {
+			m.Set("location", d.Location)
 		}
 		if len(d.HostKeys) > 0 {
 			m.Set("host_keys", slices.Clone(d.HostKeys))

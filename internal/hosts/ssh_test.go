@@ -16,7 +16,7 @@ import (
 
 func TestSSHCmd(t *testing.T) {
 	s := SSH{Options: DefaultSSHOptions}
-	want := "ssh -o ConnectTimeout=10 -o ControlMaster=auto -o ControlPath=~/.ssh/tacctl-%C -o ControlPersist=60 web1 true"
+	want := "ssh -o ConnectTimeout=10 -o ControlMaster=auto -o ControlPath=~/.ssh/tacctl-%C -o ControlPersist=60 -o ForwardAgent=no -o ClearAllForwardings=yes web1 true"
 	if got := strings.Join(s.Cmd("web1", "true").Argv(), " "); got != want {
 		t.Errorf("plain\n got %s\nwant %s", got, want)
 	}
@@ -82,7 +82,7 @@ func TestRunScriptThreeCalls(t *testing.T) {
 	if len(argvs) != 3 {
 		t.Fatalf("calls %q", argvs)
 	}
-	opts := "ssh -o ConnectTimeout=10 -o ControlMaster=auto -o ControlPath=~/.ssh/tacctl-%C -o ControlPersist=60 -o BatchMode=yes -p 2222 "
+	opts := "ssh -o ConnectTimeout=10 -o ControlMaster=auto -o ControlPath=~/.ssh/tacctl-%C -o ControlPersist=60 -o ForwardAgent=no -o ClearAllForwardings=yes -o BatchMode=yes -p 2222 "
 	if argvs[0] != opts+"admin@web1 "+copyCommand {
 		t.Errorf("copy %s", argvs[0])
 	}

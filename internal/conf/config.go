@@ -3,6 +3,7 @@ package conf
 import (
 	"io"
 	"math/big"
+	"os"
 	"os/user"
 	"regexp"
 	"strconv"
@@ -33,6 +34,7 @@ type Config struct {
 
 	overrides *yamlpy.Map
 	problem   string
+	missing   bool
 	merged    *yamlpy.Map
 	warned    bool
 }
@@ -49,6 +51,8 @@ func Load(path string, backends []string) *Config {
 // Reload reads the file again (the cache invalidation of lib/conf.sh).
 func (c *Config) Reload() {
 	c.overrides, c.problem = ReadOverrides(c.Path)
+	_, err := os.Stat(c.Path)
+	c.missing = c.Path != "" && err != nil
 	c.merged = merge(Defaults(), c.overrides)
 }
 
@@ -90,6 +94,11 @@ func merge(a, b *yamlpy.Map) *yamlpy.Map {
 // Problem is why the overrides file could not be used ("" when it could).
 func (c *Config) Problem() string { return c.problem }
 
+// Missing is whether there is no overrides file (tacctl removes it when
+// the last override goes, so it is also the state of an install that never
+// set one).
+func (c *Config) Missing() bool { return c.missing }
+
 // Overrides is the operator's mapping as read (empty when there is no
 // file or it cannot be used). Callers must not modify it.
 func (c *Config) Overrides() *yamlpy.Map { return c.overrides }
@@ -104,7 +113,7 @@ func (c *Config) Warning() string {
 		return ""
 	}
 	return "tacctl.yaml: could not parse " + c.Path + ": " + c.problem +
-		"; using the defaults (fix or remove the file; 'tacctl config validate' checks it)."
+		"; using the defaults (fix the file; 'tacctl config validate' checks it)."
 }
 
 // WarnOnce writes the warning to w (stderr) as lib/conf.sh does, once per

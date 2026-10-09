@@ -29,6 +29,10 @@ const shellPtyFakeNames = "fake-names"
 // shellPtyManyNames makes the fake registry hold 45 devices (core01..core45).
 const shellPtyManyNames = "many-names"
 
+// shellPtyViewPrefix, with a tier after it, makes the helper a tac-users
+// member of that tier (readonly, operator, engineer, superuser).
+const shellPtyViewPrefix = "view-"
+
 const shellPtyHelperRun = "-test.run=^TestShellPtyHelper$"
 
 // TestShellPtyHelper is 'tacctl shell' for the terminal tests: they start
@@ -40,6 +44,24 @@ func TestShellPtyHelper(t *testing.T) {
 	exe, _ := os.Executable()
 	env := paths.NewEnv([]string{"TACCTL_SKIP_SUDO=1", "PATH=/usr/bin:/bin", "HOME=" + t.TempDir()})
 	var runner execx.Runner = execx.Real{}
+	viewTier := ""
+	for _, a := range os.Args {
+		if v, ok := strings.CutPrefix(a, shellPtyViewPrefix); ok {
+			viewTier = v
+		}
+	}
+	if viewTier != "" {
+		// A tac-users member of that tier: 'id -nG' says so and the root
+		// side's _console-policy answers it; every other program exits 0
+		// with no output.
+		f := &fake.Runner{}
+		f.On([]string{"id", "-nG"}, execx.Result{Stdout: []byte("carol tac-users tac-" + viewTier + "\n")})
+		f.Func(func(c execx.Cmd) bool { return c.Name == "sudo" && slices.Contains(c.Args, "_console-policy") },
+			func(execx.Cmd) (execx.Result, error) {
+				return execx.Result{Stdout: []byte("shell=system idle=30 tier=" + viewTier + " list_max=40\n")}, nil
+			})
+		runner = f
+	}
 	if slices.Contains(os.Args, shellPtyFakeNames) {
 		// The names of the registry as 'sudo -n tacctl _completion-names'
 		// answers them; every other program exits 0 with no output.
@@ -335,5 +357,66 @@ func TestPtyShellLongListAsks(t *testing.T) {
 	}
 	if err := s.Expect(regexp.QuoteMeta("Possible completions:\r\n  core01  cisco 10.0.0.1  prod\r\ntacctl> ssh core01"), 5*time.Second); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// Tab, '?' and a typed space offer only what the caller's tier can run
+// (D56); a verb typed by hand is not completed, and a superuser sees all.
+func TestPtyShellHidesWhatTheTierCannotRun(t *testing.T) {
+	s := startCLIShell(t, 140, shellPtyViewPrefix+"readonly")
+	if err := s.Send("?"); err != nil {
+		t.Fatal(err)
+	}
+	out := s.Settle(500 * time.Millisecond)
+	for _, w := range []string{"\r\n  user ", "\r\n  backend ", "\r\n  device ", "\r\n  version "} {
+		if !strings.Contains(out, w) {
+			t.Errorf("'?' lacks %q:\n%q", w, out)
+		}
+	}
+	for _, w := range []string{"\r\n  store ", "\r\n  install ", "\r\n  upgrade ", "\r\n  config ", "\r\n  host ", "\r\n  log "} {
+		if strings.Contains(out, w) {
+			t.Errorf("'?' lists %q for a readonly caller:\n%q", w, out)
+		}
+	}
+	// A typed space completes a verb the tier can run ...
+	if err := s.Send("\x15gr "); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Expect(`group `, 5*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	// ... and never one it cannot: the space is inserted as typed.
+	if err := s.Send("\x15sto "); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.Settle(300 * time.Millisecond); strings.Contains(got, "store") {
+		t.Errorf("a space completed a hidden verb: %q", got)
+	}
+	if err := s.Send("\x15group ju "); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.Settle(300 * time.Millisecond); strings.Contains(got, "junos") {
+		t.Errorf("a space completed group junos for a readonly caller: %q", got)
+	}
+	// A double Tab lists the verbs of a family the tier can run.
+	if err := s.Send("\x15user \t\t"); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.Settle(500 * time.Millisecond); !strings.Contains(got, "list") || strings.Contains(got, "add") || strings.Contains(got, "remove") {
+		t.Errorf("user <Tab><Tab> for a readonly caller: %q", got)
+	}
+
+	s = startCLIShell(t, 140, shellPtyViewPrefix+"superuser")
+	if err := s.Send("group ju "); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Expect(`group junos `, 5*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Send("\x15?"); err != nil {
+		t.Fatal(err)
+	}
+	if out := s.Settle(500 * time.Millisecond); !strings.Contains(out, "\r\n  store ") || !strings.Contains(out, "\r\n  install ") {
+		t.Errorf("'?' for a superuser:\n%q", out)
 	}
 }

@@ -29,12 +29,13 @@ plain() {
     mapfile -t lines <<< "$output"
 }
 
-# snmp_agent <sysname>: the stub agent on 127.0.0.1 answering v2c with the
-# community 'c0mm' for a minute, and tacctl set up to ask it (timeout 1 s).
+# snmp_agent <sysname> [<syslocation>]: the stub agent on 127.0.0.1 answering
+# v2c with the community 'c0mm' for a minute, and tacctl set up to ask it
+# (timeout 1 s).
 snmp_agent() {
     local pf="${BATS_TEST_TMPDIR}/snmp-agent.port"
     rm -f "$pf"
-    "$TACCTL_BIN_SCRIPT" _snmp-agent --port-file "$pf" --seconds 60 --sysname "$1" --community c0mm > /dev/null 2>&1 3>&- &
+    "$TACCTL_BIN_SCRIPT" _snmp-agent --port-file "$pf" --seconds 60 --sysname "$1" --syslocation "${2:-}" --community c0mm > /dev/null 2>&1 3>&- &
     SNMP_PID=$!
     local _
     for _ in $(seq 50); do
@@ -154,4 +155,93 @@ EOF
     run "$TACCTL_BIN_SCRIPT" device check core-sw1
     plain
     assert_line "  SNMP name:   sw1.site-a.example  (differs)"
+}
+
+@test "device add: the location the device reports is stored, and said so" {
+    snmp_agent sw1.site-a.example "Site A, rack 4"
+    run "$TACCTL_BIN_SCRIPT" device add sw1 127.0.0.1 --no-host-key
+    assert_success
+    plain
+    assert_line "  Location: Site A, rack 4 (read from the device)"
+    run "$TACCTL_BIN_SCRIPT" device location sw1
+    assert_output "Site A, rack 4"
+    # --snmp-location wins, and --no-lookup reads nothing.
+    "$TACCTL_BIN_SCRIPT" device remove sw1 -y > /dev/null
+    run "$TACCTL_BIN_SCRIPT" device add sw1 127.0.0.1 --no-host-key --snmp-location "Mine"
+    assert_success
+    refute_output --partial "read from the device"
+    run "$TACCTL_BIN_SCRIPT" device location sw1
+    assert_output "Mine"
+}
+
+@test "device add: a device that reports no location gets one hint line without a terminal" {
+    snmp_agent sw1.site-a.example
+    run "$TACCTL_BIN_SCRIPT" device add sw1 127.0.0.1 --no-host-key < /dev/null
+    assert_success
+    plain
+    assert_line "  Location not set: tacctl device location sw1 '<text>'"
+    run "$TACCTL_BIN_SCRIPT" device location sw1
+    [[ "$output" == "-" ]]
+}
+
+@test "device add: no SNMP, no location line" {
+    run "$TACCTL_BIN_SCRIPT" device add sw1 192.0.2.10 --no-host-key
+    assert_success
+    refute_output --partial "Location"
+}
+
+@test "device check: the Location row and syslocation in --json; nothing is written" {
+    snmp_agent sw1.site-a.example "Site A"
+    "$TACCTL_BIN_SCRIPT" device add sw1 127.0.0.1 --no-host-key --port 1 --no-lookup > /dev/null
+    run "$TACCTL_BIN_SCRIPT" device check sw1
+    assert_success
+    plain
+    assert_line "  Location:    Site A  (device only: tacctl device location sw1 --from-device)"
+    "$TACCTL_BIN_SCRIPT" device location sw1 "Site A" > /dev/null
+    run "$TACCTL_BIN_SCRIPT" device check sw1
+    plain
+    assert_line "  Location:    Site A  (match)"
+    run "$TACCTL_BIN_SCRIPT" device check sw1 --json
+    assert_success
+    run python3 -c 'import json,sys; d=json.load(sys.stdin)[0]; print(d["syslocation"], d["syslocation_match"])' <<< "$output"
+    assert_output "Site A True"
+    "$TACCTL_BIN_SCRIPT" device location sw1 "Elsewhere" > /dev/null
+    run "$TACCTL_BIN_SCRIPT" device check sw1
+    plain
+    assert_line "  Location:    differs: device 'Site A', registry 'Elsewhere'"
+    run "$TACCTL_BIN_SCRIPT" device location sw1
+    assert_output "Elsewhere"
+}
+
+@test "device location --from-device: stores the device's reading; a different one needs -y without a terminal" {
+    snmp_agent sw1.site-a.example "Site A"
+    "$TACCTL_BIN_SCRIPT" device add sw1 127.0.0.1 --no-host-key --no-lookup > /dev/null
+    run "$TACCTL_BIN_SCRIPT" device location sw1 --from-device
+    assert_success
+    plain
+    assert_output --partial "[INFO] Device 'sw1' location set to Site A (read from the device)."
+    run "$TACCTL_BIN_SCRIPT" device location sw1 --from-device
+    assert_success
+    assert_output --partial "location is already 'Site A'; nothing to change."
+    "$TACCTL_BIN_SCRIPT" device location sw1 "Old place" > /dev/null
+    run "$TACCTL_BIN_SCRIPT" device location sw1 --from-device < /dev/null
+    assert_failure 1
+    plain
+    assert_line "  Registry: Old place"
+    assert_line "  Device:   Site A"
+    assert_output --partial "Give -y to replace it with the device's."
+    run "$TACCTL_BIN_SCRIPT" device location sw1 --from-device -y
+    assert_success
+    run "$TACCTL_BIN_SCRIPT" device location sw1
+    assert_output "Site A"
+}
+
+@test "device location --from-device: an empty answer is refused with the reason" {
+    snmp_agent sw1.site-a.example
+    "$TACCTL_BIN_SCRIPT" device add sw1 127.0.0.1 --no-host-key --no-lookup > /dev/null
+    run "$TACCTL_BIN_SCRIPT" device location sw1 --from-device
+    assert_failure 1
+    plain
+    assert_output --partial "reports no location (its sysLocation is empty). Nothing was changed."
+    assert_output --partial "Set one with: tacctl device location sw1 '<text>'"
 }

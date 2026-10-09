@@ -16,7 +16,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/rett/tacctl/internal/devreg"
+	"github.com/rett/tacctl/internal/names"
 	"github.com/rett/tacctl/internal/snmp"
 	"github.com/rett/tacctl/internal/snmpcred"
 	"github.com/rett/tacctl/internal/ui"
@@ -32,7 +32,7 @@ var configSNMPFamilySpec = Spec{MaxArgs: -1, Args: []string{"show|community|v3-u
 
 // configSNMPSpecs are the arguments of each verb.
 var configSNMPSpecs = map[string]Spec{
-	"show":      {MaxArgs: 0},
+	"show":      {MaxArgs: 0, Flags: []Flag{{Names: []string{"--reveal"}}}},
 	"community": {MaxArgs: 0, Flags: []Flag{{Names: []string{"--stdin"}}}},
 	"v3-user": {MinArgs: 1, MaxArgs: 1, Args: []string{""}, Flags: []Flag{
 		{Names: []string{"--auth"}, Value: true, Kind: strings.Join(snmp.AuthProtocols, "|")},
@@ -46,7 +46,7 @@ var configSNMPSpecs = map[string]Spec{
 
 // configSNMPVerbs are the verbs ({Use, Short}), in usage order.
 var configSNMPVerbs = [][2]string{
-	{"show", "The SNMP settings, and whether the credentials are set (never what they are)"},
+	{"show [--reveal]", "The SNMP settings, and whether the credentials are set; --reveal prints them (administrators)"},
 	{"community [--stdin]", "Set the v2c community (asked twice, not echoed); the version becomes v2c"},
 	{"v3-user <user> [--auth sha|sha256] [--priv aes128] [--stdin]",
 		"Set the v3 user and its passphrases (authPriv); the version becomes v3"},
@@ -58,6 +58,9 @@ var configSNMPVerbs = [][2]string{
 
 // configSNMPOptions are the option lines under a verb's row.
 var configSNMPOptions = map[string][][2]string{
+	"show": {
+		{"--reveal", "Print the community or the v3 passphrases"},
+	},
 	"v3-user": {
 		{"--auth sha|sha256", "HMAC-SHA-96 or HMAC-SHA-256-192 (default sha)"},
 		{"--priv aes128", "AES-128 (the only one)"},
@@ -95,10 +98,16 @@ func configSNMPUsage() string {
 	b.WriteString(`
 'tacctl device add' reads the device's sysName.0 with these settings and
 compares it with the name given (a hint only: the add never waits on it
-beyond the timeout, and never fails for it); 'device check' shows it.
+beyond the timeout, and never fails for it), and stores the sysLocation.0 it
+reports as the device's location; 'device check' shows both.
 v2c sends the community; v3 is authPriv only (SHA or SHA-256, AES-128).
 The settings are in tacctl.yaml (snmp.*), the community and the v3 user
-and passphrases in /etc/tacctl/snmp.yaml (0600), which tacctl never prints.
+and passphrases in /etc/tacctl/snmp.yaml (0600), which tacctl prints only for
+'show --reveal'.
+
+These are the default for every scope. A scope sets its own with 'tacctl scope
+snmp <scope> ...' (version, community, v3-user, clients, contact, port,
+timeout); what it does not set comes from here.
 
 Examples:
   tacctl config snmp community
@@ -172,8 +181,17 @@ func setOrNot(b bool) string {
 	return "not set"
 }
 
-func (inv *invocation) snmpShow([]string) error {
+func (inv *invocation) snmpShow(args []string) error {
 	a := inv.app
+	reveal := inv.snmpParse("show", args).Has("--reveal")
+	// The default reaches every device: a restricted caller never reveals it.
+	// The gate does not open 'config snmp' to a restricted caller at all (its
+	// tier rows are the superuser's), so this refusal is the same rule where
+	// the gate does not run, not a reachable one: a restricted caller's
+	// reads of SNMP are 'scope snmp' of its own scopes.
+	if reveal && inv.callerScopes().restricted {
+		return inv.usageErr("The default SNMP credentials are the superuser's to read. Nothing was printed.")
+	}
 	c, err := inv.snmpCreds()
 	if err != nil {
 		return err
@@ -200,18 +218,38 @@ func (inv *invocation) snmpShow([]string) error {
 	}
 	inv.echo("  port:       " + src("snmp.port", strconv.Itoa(snmp.DefaultPort)))
 	inv.echo("  timeout:    " + src("snmp.timeout", strconv.Itoa(snmp.DefaultTimeout)) + " s, one retry")
-	inv.echo("  community:  " + setOrNot(c.Community != ""))
+	inv.echo("  community:  " + secretOrSet(reveal, c.Community))
 	// The v3 lines only when v3 is chosen or set up: v2c is the usual way.
 	if version == snmp.V3 || c.User != "" || c.AuthPass != "" || c.PrivPass != "" {
-		inv.echo("  v3 user:    " + setOrNot(c.User != "") + "; passphrases: " + setOrNot(c.AuthPass != "" && c.PrivPass != ""))
+		if reveal {
+			inv.echo("  v3 user:    " + dash(c.User) + "; auth passphrase: " + dash(c.AuthPass) + "; priv passphrase: " + dash(c.PrivPass))
+		} else {
+			inv.echo("  v3 user:    " + setOrNot(c.User != "") + "; passphrases: " + setOrNot(c.AuthPass != "" && c.PrivPass != ""))
+		}
 		inv.echo("  v3 auth:    " + src("snmp.v3.auth", snmp.AuthSHA) + "; priv: " + src("snmp.v3.priv", snmp.PrivAES128))
 	}
 	if _, problem := inv.snmpConfig(); problem != "" && version != "" {
 		inv.echo("  Not usable: " + problem + ".")
 	}
-	inv.echo("  Credentials: " + a.Paths.SNMPFile + " (0600; never printed)")
+	if reveal {
+		inv.echo("  Credentials: " + a.Paths.SNMPFile + " (0600)")
+	} else {
+		inv.echo("  Credentials: " + a.Paths.SNMPFile + " (0600; 'show --reveal' prints them)")
+	}
 	inv.echo("")
 	return nil
+}
+
+// secretOrSet is a credential as 'show' prints it: the value when revealed,
+// else only whether it is set.
+func secretOrSet(reveal bool, v string) string {
+	switch {
+	case v == "":
+		return "not set"
+	case reveal:
+		return v
+	}
+	return "set"
 }
 
 // readSecret is one secret: from stdin (--stdin, one line), else typed
@@ -252,13 +290,19 @@ func upperFirst(s string) string {
 	return strings.ToUpper(s[:1]) + s[1:]
 }
 
-// secretProblem is why s cannot be a secret (” when it can).
-func secretProblem(s, what string, min int) string {
+// secretProblem is why s cannot be a secret (” when it can): too short or
+// too long, or something a device CLI would misread (a blank, '?', '"', a
+// control character: names.SNMPTokenProblem). The value ends up in a line
+// the operator pastes into a device.
+func secretProblem(s, what string, min, max int) string {
 	if len(s) < min {
 		return upperFirst(what) + " too short: at least " + strconv.Itoa(min) + " characters."
 	}
 	if strings.ContainsAny(s, "\n\r\x00") {
 		return upperFirst(what) + " cannot hold a line break or a NUL."
+	}
+	if p := names.SNMPTokenProblem(s, max); p != "" {
+		return upperFirst(what) + " " + p + "."
 	}
 	return ""
 }
@@ -269,7 +313,7 @@ func (inv *invocation) snmpCommunity(args []string) error {
 	if err != nil {
 		return err
 	}
-	if msg := secretProblem(s, "the community", 1); msg != "" {
+	if msg := secretProblem(s, "the community", 1, names.SNMPCommunityMax); msg != "" {
 		return inv.usageErr(msg)
 	}
 	c, err := inv.snmpCreds()
@@ -294,8 +338,8 @@ var reSNMPUser = regexp.MustCompile(`^[!-~]{1,32}$`)
 func (inv *invocation) snmpV3User(args []string) error {
 	p := inv.snmpParse("v3-user", args)
 	user := p.Args[0]
-	if !reSNMPUser.MatchString(user) {
-		return inv.usageErr("Invalid SNMPv3 user '" + user + "': 1-32 printable characters, no blanks.")
+	if !reSNMPUser.MatchString(user) || names.SNMPTokenProblem(user, names.SNMPUserMax) != "" {
+		return inv.usageErr("Invalid SNMPv3 user '" + user + "': 1-32 printable characters, no blanks, no '?' or '\"'.")
 	}
 	auth, priv := p.Value("--auth"), p.Value("--priv")
 	if p.Has("--auth") && auth != snmp.AuthSHA && auth != snmp.AuthSHA256 {
@@ -309,14 +353,14 @@ func (inv *invocation) snmpV3User(args []string) error {
 	if err != nil {
 		return err
 	}
-	if msg := secretProblem(ap, "the authentication passphrase", 8); msg != "" {
+	if msg := secretProblem(ap, "the authentication passphrase", 8, names.SNMPPassphraseMax); msg != "" {
 		return inv.usageErr(msg)
 	}
 	pp, err := inv.readSecret(stdin, "privacy passphrase")
 	if err != nil {
 		return err
 	}
-	if msg := secretProblem(pp, "the privacy passphrase", 8); msg != "" {
+	if msg := secretProblem(pp, "the privacy passphrase", 8, names.SNMPPassphraseMax); msg != "" {
 		return inv.usageErr(msg)
 	}
 	c, err := inv.snmpCreds()
@@ -388,44 +432,5 @@ func (inv *invocation) snmpClear([]string) error {
 
 func (inv *invocation) snmpTest(args []string) error {
 	p := inv.snmpParse("test", args)
-	key := p.Args[0]
-	addr, aerr := devreg.NormalizeAddress(key)
-	if aerr != nil {
-		// A registered device's name.
-		_, res, err := inv.deviceLoad()
-		if err != nil {
-			return err
-		}
-		e, ok := res.Lookup(key, devreg.ScopeFilter{})
-		if !ok || e.Address == "" {
-			return inv.usageErr("'"+key+"' is neither an address nor a registered device.", "Usage: tacctl config snmp test <address|device>")
-		}
-		addr = e.Address
-	}
-	g, problem := inv.snmpGetter()
-	if g == nil {
-		return inv.usageErr("Cannot test: " + problem + ".")
-	}
-	name, err := g.SysName(inv.ctx, addr)
-	var te *snmp.TimeoutError
-	var re *snmp.ReportError
-	switch {
-	case errors.As(err, &te):
-		alike := "a wrong community"
-		if inv.confGet("snmp.version", "") == snmp.V3 {
-			alike = "a wrong privacy passphrase"
-		}
-		return inv.usageErr("No answer from " + addr + ": " + te.Error() + ". No agent there, a filter on the way, or " +
-			alike + " (an agent drops such a request without a word).")
-	case errors.As(err, &re):
-		return inv.usageErr(addr + " refused the request: " + re.Error() + ".")
-	case err != nil:
-		return inv.usageErr("No sysName from " + addr + ": " + err.Error() + ".")
-	}
-	if strings.TrimSpace(name) == "" {
-		inv.app.Out.Info(addr + " answered with an empty sysName.")
-		return nil
-	}
-	inv.app.Out.Info(addr + " calls itself '" + name + "' (SNMP sysName).")
-	return nil
+	return inv.snmpTestWith("", p.Args[0], "tacctl config snmp test <address|device>")
 }

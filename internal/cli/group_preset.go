@@ -12,7 +12,6 @@ import (
 
 	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/model"
-	"github.com/rett/tacctl/internal/names"
 	"github.com/rett/tacctl/internal/policy"
 	"github.com/rett/tacctl/internal/store"
 	"github.com/rett/tacctl/internal/ui"
@@ -44,7 +43,7 @@ func presetState(have, want string, force bool) string {
 
 func (inv *invocation) groupPreset(args []string) error {
 	a := inv.app
-	const usage = "Usage: tacctl group preset roles [--dry-run] [--force] [--mgmt-filter <name>]"
+	const usage = "Usage: tacctl group preset roles [--dry-run] [--force]"
 	if arg(args, 0) != "roles" {
 		return inv.usageErr(usage)
 	}
@@ -52,12 +51,7 @@ func (inv *invocation) groupPreset(args []string) error {
 	if err != nil {
 		return inv.usageErr(err.Error(), usage)
 	}
-	force, dry, filter := p.Has("--force"), p.Has("--dry-run"), p.Value("--mgmt-filter")
-	if p.Has("--mgmt-filter") {
-		if err := names.ValidateClassName(filter); err != nil {
-			return inv.usageErr("Invalid --mgmt-filter '" + filter + "': use the name of the Junos firewall filter on the management interface.")
-		}
-	}
+	force, dry := p.Has("--force"), p.Has("--dry-run")
 	if !dry {
 		if err := inv.requireStore(); err != nil {
 			return err
@@ -68,7 +62,7 @@ func (inv *invocation) groupPreset(args []string) error {
 		return err
 	}
 	c := a.Conf()
-	roles := policy.RolePreset(filter)
+	roles := policy.RolePreset()
 	for _, r := range roles {
 		for attr, items := range r.Junos {
 			if prob := policy.JunosProblem(r.Group, attr, items); prob != nil {
@@ -102,11 +96,6 @@ func (inv *invocation) groupPreset(args []string) error {
 			}
 		}
 	}
-	if filter == "" {
-		inv.echo("")
-		inv.echo("  engineer's deny-configuration leaves out the management filter: pass")
-		inv.echo("  --mgmt-filter <name> to deny engineers 'firewall ... <name>' as well.")
-	}
 	inv.echo("")
 	if changes == 0 {
 		if kept > 0 {
@@ -125,6 +114,7 @@ func (inv *invocation) groupPreset(args []string) error {
 		a.Out.Info("Aborted.")
 		return nil
 	}
+	watch := inv.watchServerTiers()
 	if err := inv.applyWith(func() error {
 		for _, r := range roles {
 			for _, s := range steps[r.Group] {
@@ -148,6 +138,9 @@ func (inv *invocation) groupPreset(args []string) error {
 		return err
 	}
 	a.Out.Info(fmt.Sprintf("Role preset applied: %d setting(s) changed.", changes))
+	if err := watch.lowered("users of the role groups", "Members of the role groups keep their old groups"); err != nil {
+		return err
+	}
 	m, err = inv.model()
 	if err != nil {
 		return err
@@ -188,22 +181,32 @@ func (inv *invocation) presetSteps(m *model.Model, c *conf.Config, r policy.Role
 		if !ok {
 			continue
 		}
+		have := strings.Join(policy.JunosSet(c, group, attr), "\n")
+		if len(items) == 0 && have == "" {
+			continue // the preset leaves this set empty and it is
+		}
 		what := fmt.Sprintf("Junos %s (%d/%d bytes)", conf.JunosArg(attr), len(conf.JunosValue(items)), conf.JunosLimit(attr))
 		out = append(out, presetStep{what: what,
-			state: presetState(strings.Join(policy.JunosSet(c, group, attr), "\n"), strings.Join(items, "\n"), force),
+			state: presetState(have, strings.Join(items, "\n"), force),
 			apply: func(c *conf.Config) error { return policy.WriteJunosSet(c, group, attr, items) }})
 	}
 	if r.Commands != nil {
 		lines := r.Commands
 		state := "unchanged"
 		if !policy.SameLines(policy.Lines(c, group), lines) {
-			state = presetState(strings.Join(policy.Lines(c, group), "\n"), "-", force)
+			// Rules the group has only from the shipped defaults are not
+			// its own: the preset writes its list over them.
+			have := strings.Join(policy.Lines(c, group), "\n")
+			if !policy.HasOverride(c, group) {
+				have = ""
+			}
+			state = presetState(have, "-", force)
 		}
 		levels := m.GroupInfo()
 		if g == nil {
 			levels = append(levels, group+"|"+strconv.Itoa(r.PrivLvl)+"|"+r.Class)
 		}
-		out = append(out, presetStep{what: fmt.Sprintf("Cisco command rules (%d, default permit)", len(lines)), state: state,
+		out = append(out, presetStep{what: fmt.Sprintf("Cisco command rules (%d, default %s)", len(lines), policy.Field(lines[len(lines)-1], 2)), state: state,
 			apply: func(c *conf.Config) error {
 				// The other groups at its priv-lvl keep working once
 				// devices ask per command (as 'group commands' does).
@@ -224,8 +227,10 @@ func (inv *invocation) presetHints(m *model.Model) {
 	if n := len(m.GroupUsers("engineer")); n > 0 {
 		inv.echo(fmt.Sprintf("  (group 'engineer' has %d user(s) already)", n))
 	}
-	inv.echo("  On this server, group 'engineer' (priv-lvl 15) is the superuser tier until")
-	inv.echo("  0.2.3 brings the engineer tier: keep engineers out of this server's own scope.")
+	inv.echo("  Engineers are not restricted in configuration mode: on Cisco they may change AAA, the")
+	inv.echo("  servers and keys, lines and the management ACL (the rules deny the lifecycle and shell")
+	inv.echo("  commands only), on Junos their class decides. A site that wants a boundary adds rules:")
+	inv.echo("    tacctl group commands add engineer <command> --action deny --match '^(...)( .*)?$'")
 	inv.echo("  The device side of the roles:")
 	inv.echo("    tacctl config juniper    the classes and template users (" + policy.EngineerClass + " for engineer)")
 	inv.echo("    tacctl config cisco      the AAA lines that ask the server per command")

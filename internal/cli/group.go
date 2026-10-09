@@ -9,17 +9,21 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/rett/tacctl/internal/conf"
+	"github.com/rett/tacctl/internal/model"
 	"github.com/rett/tacctl/internal/names"
 	"github.com/rett/tacctl/internal/policy"
 	"github.com/rett/tacctl/internal/shellquote"
 	"github.com/rett/tacctl/internal/store"
+	"github.com/rett/tacctl/internal/tier"
 	"github.com/rett/tacctl/internal/ui"
+	"github.com/rett/tacctl/internal/yamlpy"
 )
 
 // groupSpecs are the arguments of each verb, for completion (args.go); the
@@ -28,12 +32,16 @@ import (
 var groupSpecs = map[string]Spec{
 	"list": {},
 	"add": {MinArgs: 3, MaxArgs: 3, Args: []string{"", "", ""}, Flags: []Flag{
+		{Names: []string{"--tier"}, Value: true, Kind: "readonly|operator|engineer|superuser"},
 		{Names: []string{"--wti-level"}, Value: true, Kind: "viewonly|user|superuser|administrator"}}},
 	"remove": {MinArgs: 1, MaxArgs: 1, Args: []string{KindGroups}},
-	"edit":   {MinArgs: 3, MaxArgs: 3, Args: []string{KindGroups, "priv-lvl|juniper-class|wti-level", ""}},
+	"edit":   {MinArgs: 3, MaxArgs: 3, Args: []string{KindGroups, "priv-lvl|juniper-class|wti-level|tier", ""}},
 	"show":   {MinArgs: 1, MaxArgs: 1, Args: []string{KindGroups}},
 	"preset roles": {Flags: []Flag{
-		{Names: []string{"--dry-run"}}, {Names: []string{"--force"}}, {Names: []string{"--mgmt-filter"}, Value: true}}},
+		{Names: []string{"--dry-run"}}, {Names: []string{"--force"}}}},
+	"reset": {MinArgs: 1, MaxArgs: 1, Args: []string{KindGroups}, Flags: []Flag{
+		{Names: []string{"--preset"}}, {Names: []string{"--only"}, Value: true, Kind: "settings|commands|privileges|junos" + KindList},
+		{Names: []string{"--dry-run"}}, {Names: []string{"--yes"}}}},
 	"junos": {MinArgs: 2, MaxArgs: 4, Args: []string{KindGroups, "list|clear|deny-commands|deny-configuration", "list|add|remove|clear", ""}},
 
 	"commands list":    {MinArgs: 1, MaxArgs: 1, Args: []string{KindGroups}},
@@ -44,13 +52,13 @@ var groupSpecs = map[string]Spec{
 	"commands remove": {MinArgs: 2, MaxArgs: 2, Args: []string{KindGroups, ""}, Flags: []Flag{
 		{Names: []string{"--match"}, Value: true, Repeat: true}, {Names: []string{"--action"}, Value: true, Kind: "permit|deny"},
 		{Names: []string{"--all"}}}},
-	"commands clear": {MinArgs: 1, MaxArgs: 1, Args: []string{KindGroups}},
+	"commands reset": {MinArgs: 1, MaxArgs: 1, Args: []string{KindGroups}, Flags: []Flag{{Names: []string{"--dry-run"}}, {Names: []string{"--yes"}}}},
 	"commands seed":  {MaxArgs: 1, Args: []string{"readonly|operator|superuser"}, Flags: []Flag{{Names: []string{"--force"}}}},
 
 	"privilege list":   {MinArgs: 1, MaxArgs: 1, Args: []string{KindGroups}},
 	"privilege add":    {MinArgs: 2, MaxArgs: 2, Args: []string{KindGroups, privModeWords}},
 	"privilege remove": {MinArgs: 2, MaxArgs: 2, Args: []string{KindGroups, ""}},
-	"privilege clear":  {MinArgs: 1, MaxArgs: 1, Args: []string{KindGroups}},
+	"privilege reset":  {MinArgs: 1, MaxArgs: 1, Args: []string{KindGroups}, Flags: []Flag{{Names: []string{"--dry-run"}}, {Names: []string{"--yes"}}}},
 	"privilege seed":   {MaxArgs: 1, Args: []string{"readonly|operator|superuser"}, Flags: []Flag{{Names: []string{"--force"}}}},
 }
 
@@ -67,34 +75,35 @@ func groupCmd(inv *invocation) *cobra.Command {
 	sub := func(family func([]string) error, word string) func(*cobra.Command, []string) error {
 		return n(func(args []string) error { return family(append([]string{word}, args...)) })
 	}
-	cmds := verb("commands {list|default|add|remove|clear|seed} <group> ...", "Per-group authorized commands",
+	cmds := verb("commands {list|default|add|remove|reset|seed} <group> ...", "Per-group authorized commands",
 		withRun(verb("list <group>", "Show rules + default action"), sub(inv.groupCommands, "list")),
 		withRun(verb("default <group> <permit|deny>", "Set default action (catchall)"), sub(inv.groupCommands, "default")),
 		withRun(verb("add <group> <name> [--match <regex>]... [--action permit|deny]", "Add a rule"), sub(inv.groupCommands, "add")),
 		withRun(verb("remove <group> <name>", "Drop a rule"), sub(inv.groupCommands, "remove")),
-		withRun(verb("clear <group>", "Drop overrides — revert to shipped defaults (confirms)"), sub(inv.groupCommands, "clear")),
+		withRun(verb("reset <group> [--dry-run] [--yes]", "Revert the rules to the shipped defaults (diff, confirms)"), sub(inv.groupCommands, "reset")),
 		withRun(verb("seed [<group>] [--force]", "Re-apply legacy seed set (recovery tool)"), sub(inv.groupCommands, "seed")),
 	)
 	cmds.RunE = n(inv.groupCommands)
-	priv := verb("privilege {list|add|remove|clear|seed} <group> ...", "Per-group Cisco priv-exec mappings",
+	priv := verb("privilege {list|add|remove|reset|seed} <group> ...", "Per-group Cisco priv-exec mappings",
 		withRun(verb("list <group>", "Show mappings (explicit or default)"), sub(inv.groupPrivilege, "list")),
 		withRun(verb("add <group> '<cmd>'[,'<cmd>'...]", "Move one or more commands to the priv-lvl"), sub(inv.groupPrivilege, "add")),
 		withRun(verb("remove <group> '<cmd>'[,'<cmd>'...]", "Remove mapping(s)"), sub(inv.groupPrivilege, "remove")),
-		withRun(verb("clear <group>", "Wipe explicit mappings (revert to defaults)"), sub(inv.groupPrivilege, "clear")),
+		withRun(verb("reset <group> [--dry-run] [--yes]", "Revert the mappings to the shipped default (diff, confirms)"), sub(inv.groupPrivilege, "reset")),
 		withRun(verb("seed [<group>] [--force]", "Populate built-ins with safe defaults"), sub(inv.groupPrivilege, "seed")),
 	)
 	priv.RunE = n(inv.groupPrivilege)
-	preset := verb("preset roles [--dry-run] [--force] [--mgmt-filter <name>]", "Starting values for the roles",
-		withRun(verb("roles [--dry-run] [--force] [--mgmt-filter <name>]", "Starting values for viewer, operator, engineer and superuser"), sub(inv.groupPreset, "roles")),
+	preset := verb("preset roles [--dry-run] [--force]", "Starting values for the roles",
+		withRun(verb("roles [--dry-run] [--force]", "Starting values for viewer, operator, engineer and superuser"), sub(inv.groupPreset, "roles")),
 	)
 	preset.RunE = n(inv.groupPreset)
 	c := verb("group <subcommand>", "Group management (list, add, edit, remove)",
 		withRun(verb("list", "List all groups"), n(inv.groupList)),
-		withRun(verb("show <name>", "Every setting of a group and where it comes from"), n(inv.groupShow)),
-		withRun(verb("add <name> <priv-lvl> <juniper-class> [--wti-level <level>]", "Add a new group"), n(inv.groupAdd)),
+		withRun(verb("show <name>", "Every setting of a group and where it comes from, Junos patterns too"), n(inv.groupShow)),
+		withRun(verb("add <name> <priv-lvl> <juniper-class> [--tier <tier>] [--wti-level <level>]", "Add a new group"), n(inv.groupAdd)),
 		withRun(verb("remove <name>", "Remove a custom group"), n(inv.groupRemove)),
-		withRun(verb("edit <name> {priv-lvl <0-15>|juniper-class <class>|wti-level <level>}", "Change one setting of a group"), n(inv.groupEdit)),
+		withRun(verb("edit <name> {priv-lvl <0-15>|juniper-class <class>|wti-level <level>|tier <tier>}", "Change one setting of a group"), n(inv.groupEdit)),
 		withRun(verb("junos <group> {list|clear|deny-commands|deny-configuration} ...", "Per-group Junos deny rules"), n(inv.groupJunos)),
+		withRun(verb("reset <name> [--preset] [--only <sections>] [--dry-run] [--yes]", "Revert a group to its canonical defaults, with a diff and a confirmation"), n(inv.groupReset)),
 		cmds, priv, preset,
 	)
 	// No sub-command, help or an unknown word: the usage, exit 1.
@@ -157,13 +166,13 @@ func (inv *invocation) groupAdd(args []string) error {
 	spec.MinArgs = 0
 	p, err := Parse(spec, args)
 	if err != nil {
-		return inv.usageErr(err.Error(), "Usage: tacctl group add <name> <cisco-priv-lvl> <juniper-class> [--wti-level <level>]")
+		return inv.usageErr(err.Error(), "Usage: tacctl group add <name> <cisco-priv-lvl> <juniper-class> [--tier <tier>] [--wti-level <level>]")
 	}
 	args = p.Args
-	wtiV := p.Value("--wti-level")
+	tierV, wtiV := p.Value("--tier"), p.Value("--wti-level")
 	group, privlvl, class := arg(args, 0), arg(args, 1), arg(args, 2)
 	if group == "" || privlvl == "" || class == "" {
-		a.Out.Error("Usage: tacctl group add <name> <cisco-priv-lvl> <juniper-class> [--wti-level <level>]")
+		a.Out.Error("Usage: tacctl group add <name> <cisco-priv-lvl> <juniper-class> [--tier <tier>] [--wti-level <level>]")
 		inv.stderrLine("  Example: tacctl group add helpdesk 5 HELPDESK-CLASS")
 		return exit(1)
 	}
@@ -184,16 +193,42 @@ func (inv *invocation) groupAdd(args []string) error {
 	if err := names.ValidateClassName(class); err != nil {
 		return inv.validated(err)
 	}
+	if p.Has("--tier") && !slices.Contains(conf.Tiers, tierV) {
+		return inv.usageErr("Unknown tier '" + tierV + "'. Use: " + strings.Join(conf.Tiers, ", "))
+	}
 	if p.Has("--wti-level") && !slices.Contains(conf.WTILevels, wtiV) {
 		return inv.usageErr("Unknown WTI level '" + wtiV + "'. Use: " + strings.Join(conf.WTILevels, ", "))
 	}
 	add := func(s *store.Store) error { return s.GroupSet(group, "priv_lvl="+privlvl, "juniper_class="+class) }
-	if wtiV == "" {
+	// A group in the superuser band always has an explicit tier (the band
+	// alone cannot tell a superuser group from an engineer group whose
+	// setting was lost): without --tier it is written as superuser, what
+	// the band gives.
+	recorded := false
+	if lvl, _ := strconv.Atoi(privlvl); tierV == "" && policy.NeedsTier(group, &lvl) {
+		tierV, recorded = "superuser", true
+	}
+	// tacctl.yaml may still hold the tier, WTI level and Junos rules of an
+	// earlier group of this name (a store import or a restore dropped the
+	// group, not its settings): a new group starts with none of them, or it
+	// would take over what the old one was given (a tier above its band).
+	// Only the flags of this command set them; commands and privileges
+	// overrides are not group-keyed identity and stay.
+	leftover := staleKinds(a.Conf(), group)
+	if tierV == "" && wtiV == "" && len(leftover) == 0 {
 		err = inv.applyStore(add)
 	} else {
 		// One apply, so the backends render the group with its settings once.
 		err = inv.applyWith(func() error {
 			if err := inv.mutate(add); err != nil {
+				return err
+			}
+			if len(leftover) > 0 {
+				if err := policy.ForgetGroup(a.Conf(), group); err != nil {
+					return err
+				}
+			}
+			if err := policy.WriteGroupTier(a.Conf(), group, tierV); err != nil {
 				return err
 			}
 			return policy.WriteWTILevel(a.Conf(), group, wtiV)
@@ -202,13 +237,86 @@ func (inv *invocation) groupAdd(args []string) error {
 	if err != nil {
 		return err
 	}
+	if len(leftover) > 0 {
+		a.Out.Warn("tacctl.yaml still held " + strings.Join(leftover, ", ") + " settings of an earlier group '" + group +
+			"'; they were cleared, so the new group starts from its priv-lvl band" + clearedFlags(tierV, wtiV) + ".")
+	}
 	a.Out.Info("Group '" + group + "' added (Cisco priv-lvl " + privlvl + ", Juniper " + class + ").")
+	if recorded {
+		a.Out.Info("tacctl tier: superuser (recorded, as every group at priv-lvl 15 has one; change it with: tacctl group edit " + group + " tier <tier>).")
+	} else if tierV != "" {
+		a.Out.Info("tacctl tier: " + tierV + ".")
+	}
 	if wtiV != "" {
 		a.Out.Info("WTI level: " + wtiV + " (units must send Service Name 'wti').")
 	}
 	a.Out.Warn("On Juniper devices, create the template user: set system login user " + class + " class <junos-class>")
 	inv.echo("")
 	return nil
+}
+
+// clearedFlags is the sentence tail naming what the flags of 'group add' set
+// again after the leftover settings went.
+func clearedFlags(tierV, wtiV string) string {
+	var set []string
+	if tierV != "" {
+		set = append(set, "--tier")
+	}
+	if wtiV != "" {
+		set = append(set, "--wti-level")
+	}
+	if len(set) == 0 {
+		return ""
+	}
+	return " (and what " + strings.Join(set, " and ") + " gives it)"
+}
+
+// staleKinds are the identity settings (tier, wti-level, junos) tacctl.yaml
+// holds for group.
+func staleKinds(c *conf.Config, group string) []string {
+	var out []string
+	if policy.GroupTier(c, group) != "" {
+		out = append(out, "tier")
+	}
+	if _, over := policy.WTILevel(c, group, 0); over {
+		out = append(out, "wti-level")
+	}
+	for _, attr := range conf.JunosAttrs {
+		if len(policy.JunosSet(c, group, attr)) > 0 {
+			out = append(out, "junos")
+			break
+		}
+	}
+	return out
+}
+
+// staleGroupLines are the warnings for the tier, WTI-level and Junos
+// settings of tacctl.yaml that name a group the store does not have: one
+// line per group. A group that arrives under such a name (a store import, a
+// restore) takes the setting over; 'group add' clears it.
+func (inv *invocation) staleGroupLines(m *model.Model) []string {
+	var out []string
+	for _, s := range policy.StaleGroups(inv.app.Conf(), func(g string) bool { return m.Exists("groups", g) }) {
+		out = append(out, "tacctl.yaml has "+strings.Join(s.Kinds, ", ")+" settings for group '"+s.Group+
+			"', which does not exist: a group that arrives under that name (a store import, a restore) would take them over. "+
+			"Remove them from tacctl.yaml ('tacctl group add' clears them for a group it creates).")
+	}
+	return out
+}
+
+// warnStaleGroupSettings prints staleGroupLines for the store as it is now,
+// after a step that replaced the store and kept tacctl.yaml.
+func (inv *invocation) warnStaleGroupSettings() {
+	if model.Mode(inv.app.Paths.StoreFile) != "store" {
+		return
+	}
+	m, err := inv.app.LoadModel()
+	if err != nil {
+		return
+	}
+	for _, l := range inv.staleGroupLines(m) {
+		inv.app.Out.Warn(l)
+	}
 }
 
 func (inv *invocation) groupRemove(args []string) error {
@@ -240,6 +348,7 @@ func (inv *invocation) groupRemove(args []string) error {
 		return nil
 	}
 	del := func(s *store.Store) error { return s.GroupDel(group) }
+	watch := inv.watchServerTiers()
 	if !groupHasSettings(a.Conf(), group) {
 		err = inv.applyStore(del)
 	} else {
@@ -256,17 +365,20 @@ func (inv *invocation) groupRemove(args []string) error {
 	}
 	a.Out.Info("Group '" + group + "' removed.")
 	inv.echo("")
-	return nil
+	// Only a group without members can be removed, so no tier falls; the
+	// watch is the same as every other verb that writes tiers has.
+	return watch.lowered("'"+group+"'", "Members of '"+group+"' keep their old groups")
 }
 
 func (inv *invocation) groupEdit(args []string) error {
 	a := inv.app
 	group, field, value := arg(args, 0), arg(args, 1), arg(args, 2)
 	if group == "" || field == "" || value == "" {
-		a.Out.Error("Usage: tacctl group edit <name> <priv-lvl|juniper-class|wti-level> <value>")
+		a.Out.Error("Usage: tacctl group edit <name> <priv-lvl|juniper-class|wti-level|tier> <value>")
 		inv.stderrLine("  Example: tacctl group edit operator priv-lvl 10")
 		inv.stderrLine("  Example: tacctl group edit operator juniper-class NEW-CLASS")
 		inv.stderrLine("  Example: tacctl group edit engineer wti-level superuser")
+		inv.stderrLine("  Example: tacctl group edit engineer tier engineer")
 		return exit(1)
 	}
 	if err := inv.requireStore(); err != nil {
@@ -282,10 +394,49 @@ func (inv *invocation) groupEdit(args []string) error {
 		if !privLvlOK(value) {
 			return inv.usageErr("Cisco privilege level must be 0-15.")
 		}
-		if err := inv.applyStore(func(s *store.Store) error { return s.GroupSet(group, "priv_lvl="+value) }); err != nil {
+		watch := inv.watchServerTiers()
+		set := func(s *store.Store) error { return s.GroupSet(group, "priv_lvl="+value) }
+		// The tier setting follows the band across 15 (a group at priv-lvl
+		// 15 always has one): raised into the band, a group with none gets
+		// superuser (its band); lowered out of it, a superuser setting that
+		// only recorded the band goes, so the lower band decides again.
+		m, err := inv.model()
+		if err != nil {
+			return err
+		}
+		lvl, _ := strconv.Atoi(value)
+		var tierNote string
+		var tierWrite func() error
+		switch cur := policy.GroupTier(a.Conf(), group); {
+		case cur == "" && policy.NeedsTier(group, &lvl):
+			tierNote = "tacctl tier: superuser (recorded, as every group at priv-lvl 15 has one; change it with: tacctl group edit " + group + " tier <tier>)."
+			tierWrite = func() error { return policy.WriteGroupTier(a.Conf(), group, "superuser") }
+		case cur == "superuser" && lvl < policy.SuperuserBand && group != "superuser" && privOf(m.Group(group)) >= policy.SuperuserBand:
+			tierNote = "tacctl tier: automatic again (the superuser setting recorded the priv-lvl band; priv-lvl " + value + " → " + string(tier.ForPrivLvl(value)) + ")."
+			tierWrite = func() error { return policy.WriteGroupTier(a.Conf(), group, "auto") }
+		}
+		if tierWrite == nil {
+			err = inv.applyStore(set)
+		} else {
+			err = inv.applyWith(func() error {
+				if err := inv.mutate(set); err != nil {
+					return err
+				}
+				return tierWrite()
+			})
+		}
+		if err != nil {
 			return err
 		}
 		a.Out.Info("Group '" + group + "' Cisco priv-lvl changed to " + value + ".")
+		if tierNote != "" {
+			a.Out.Info(tierNote)
+		}
+		// The band is the tier of a group with none set: a lower priv-lvl
+		// can lower it (and its members' groups on this server).
+		if err := watch.lowered("'"+group+"'", "Members of '"+group+"' keep their old groups"); err != nil {
+			return err
+		}
 	case "juniper-class":
 		if err := names.ValidateClassName(value); err != nil {
 			return inv.validated(err)
@@ -309,7 +460,7 @@ func (inv *invocation) groupEdit(args []string) error {
 			return err
 		}
 	default:
-		return inv.usageErr("Unknown field '" + field + "'. Use: priv-lvl, juniper-class or wti-level")
+		return inv.usageErr("Unknown field '" + field + "'. Use: priv-lvl, juniper-class, wti-level or tier")
 	}
 	inv.echo("")
 	return nil
@@ -343,7 +494,9 @@ func (inv *invocation) groupCommands(args []string) error {
 		return nil
 	case "seed":
 		return inv.groupCommandsSeed(args[1:])
-	case "list", "default", "add", "remove", "clear":
+	case "reset":
+		return inv.groupSectionReset(sectionCommands, args[1:])
+	case "list", "default", "add", "remove":
 	default:
 		a.Out.ErrorE("Unknown subcommand: '" + sub + "'")
 		inv.write(groupCommandsUsage(a.Paths.Overrides))
@@ -428,26 +581,28 @@ func (inv *invocation) groupCommands(args []string) error {
 		return inv.groupCommandsAdd(group, rest)
 	case "remove":
 		return inv.groupCommandsRemove(group, rest)
-	case "clear":
-		if len(policy.Lines(c, group)) == 0 {
-			a.Out.Info("Group '" + group + "' has no command rules; nothing to clear.")
-			return nil
-		}
-		if !a.Prompter().ConfirmPrefix("  Clear all command rules for group '" + group + "'? [y/N]: ") {
-			a.Out.Info("Aborted.")
-			return nil
-		}
-		if err := inv.applyWith(func() error { return policy.Write(a.Conf(), group, nil) }); err != nil {
-			return err
-		}
-		a.Out.Info("Cleared command rules for group '" + group + "' (reverted to shipped defaults).")
-		a.Out.Warn("For a custom group, this leaves the group with no rules — if other groups")
-		a.Out.Warn("at the same Cisco priv-lvl still have rules, Cisco will deny ALL commands to")
-		a.Out.Warn("'" + group + "' users at that level until you re-add a catchall")
-		a.Out.Warn("('tacctl group commands default " + group + " permit') or clear the siblings too.")
-		inv.echo("")
 	}
 	return nil
+}
+
+// commandRuleWarnings is policy.LintRules over every group that has
+// commands in the merged tacctl.yaml, one line per finding.
+func (inv *invocation) commandRuleWarnings() []string {
+	c := inv.app.Conf()
+	v, _ := c.Merged().Get("commands")
+	groups, ok := v.(*yamlpy.Map)
+	if !ok {
+		return nil
+	}
+	keys := groups.Keys()
+	sort.Strings(keys)
+	var out []string
+	for _, g := range keys {
+		for _, f := range policy.LintRules(policy.Lines(c, g)) {
+			out = append(out, "group '"+g+"' rule #"+strconv.Itoa(f.Pos)+" '"+policy.Field(f.Line, 1)+"': "+f.Msg)
+		}
+	}
+	return out
 }
 
 // ruleMatch is the third field of 'IFS="|" read -r name action match': the
@@ -471,7 +626,7 @@ func (inv *invocation) groupCommandsRemove(group string, args []string) error {
 	}
 	if name == policy.Catchall {
 		return inv.usageErr("Cannot remove the '*' catchall. Use 'tacctl group commands default' to change its action,",
-			"or 'tacctl group commands clear "+group+"' to revert this group to shipped defaults.")
+			"or 'tacctl group commands reset "+group+"' to revert this group to shipped defaults.")
 	}
 	var matches []string
 	action, all := "", false
@@ -546,6 +701,10 @@ func (inv *invocation) groupCommandsAdd(group string, args []string) error {
 		switch rest[0] {
 		case "--match":
 			rx := arg(rest, 1)
+			if rx == "" {
+				return inv.usageErr("--match needs a regex; an empty one is skipped by tacquito, so it matches nothing.",
+					"Omit --match to cover any arguments.")
+			}
 			if err := names.ValidateRegex(rx); err != nil {
 				return inv.validated(err)
 			}
@@ -616,6 +775,14 @@ func (inv *invocation) groupCommandsAdd(group string, args []string) error {
 		return err
 	}
 	a.Out.InfoE("Added rule '" + name + "' (action=" + action + ", match=[" + matches + "]) to group '" + group + "'.")
+	// The mistakes tacquito does not report: a prefix form that matches the
+	// exact arguments only, a rule an earlier one makes unreachable.
+	line := name + "|" + action + "|" + matches
+	for _, f := range policy.LintRules(policy.Lines(a.Conf(), group)) {
+		if f.Line == line {
+			a.Out.Warn("Rule #" + strconv.Itoa(f.Pos) + " '" + name + "': " + f.Msg + ".")
+		}
+	}
 	inv.echo("")
 	return nil
 }
@@ -767,7 +934,9 @@ func (inv *invocation) groupPrivilege(args []string) error {
 		return nil
 	case "seed":
 		return inv.groupPrivilegeSeed(args[1:])
-	case "list", "add", "remove", "clear":
+	case "reset":
+		return inv.groupSectionReset(sectionPrivileges, args[1:])
+	case "list", "add", "remove":
 	default:
 		a.Out.ErrorE("Unknown subcommand: '" + sub + "'")
 		inv.write(groupPrivilegeUsage())
@@ -866,20 +1035,6 @@ func (inv *invocation) groupPrivilege(args []string) error {
 				a.Out.Info("(Not mapped, skipped: " + strings.Join(skipped, ", ") + ")")
 			}
 		}
-		inv.echo("")
-	case "clear":
-		if captured(policy.Privileges(c, group)) == "" {
-			a.Out.Info("Group '" + group + "' has no explicit priv mappings; nothing to clear.")
-			return nil
-		}
-		if !a.Prompter().ConfirmPrefix("  Clear all priv-exec mappings for group '" + group + "'? [y/N]: ") {
-			a.Out.Info("Aborted.")
-			return nil
-		}
-		if err := policy.WritePrivileges(c, group, nil); err != nil {
-			return err
-		}
-		a.Out.Info("Cleared explicit priv-exec mappings for group '" + group + "' (defaults will be used).")
 		inv.echo("")
 	}
 	return nil

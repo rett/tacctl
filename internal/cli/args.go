@@ -44,6 +44,9 @@ const (
 	// the device registry's (registerDeviceNames).
 	KindHosts   = "hosts"
 	KindDevices = "devices"
+	// KindBreakGlass are the break-glass users recorded for the scope typed
+	// before (the first positional of 'scope breakglass').
+	KindBreakGlass = "breakglass-users"
 	// KindVendors is the fixed list of device vendors.
 	KindVendors = "cisco|juniper|wti|other"
 	// KindFile is a file or directory name: the shell completes paths.

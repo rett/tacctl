@@ -154,6 +154,9 @@ func Upgrade(ctx context.Context, h *Host, args []string) error {
 		}
 	}
 
+	// A group at priv-lvl 15 gets the explicit tier 0.2.2 gave it by its band.
+	h.pinGroupTiers()
+
 	// Bring the existing config in line with this release (legacy
 	// migrations of tacquito.yaml, or a re-render; RADIUS: re-render,
 	// drop-in, restart): after the pull and its re-exec, so it runs once
@@ -237,6 +240,8 @@ func Upgrade(ctx context.Context, h *Host, args []string) error {
 	}
 	h.echo(rule)
 	h.echo("")
+	h.presetNotice()
+	h.rootMembersNotice(ctx)
 	return nil
 }
 

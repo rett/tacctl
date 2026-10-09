@@ -290,9 +290,8 @@ var (
 	reGroupBlock = regexp.MustCompile(`(?m)^(` + pyW + `+): &(` + pyW + `+)\n(?:[ \t].*\n)+`)
 	reCommands   = regexp.MustCompile(`(?m)^  commands:\n((?:    -.*\n(?:      .*\n)*)+)`)
 	reRule       = regexp.MustCompile(`    - name:` + pyS + `*(?P<name>"[^"]*"|` + pyNS + `+)` + pyS + `*\n` +
-		`(?:      match:` + pyS + `*\[(?P<match>[^\]]*)\]` + pyS + `*\n)?` +
+		`(?:      match:` + pyS + `*\[(?P<match>.*)\]` + pyS + `*\n)?` +
 		`      action:` + pyS + `*\*action_(?P<action>permit|deny)` + pyS + `*\n`)
-	reQuoted = regexp.MustCompile(`"([^"]+)"`)
 
 	// conf_migrate_exec_service_name.
 	reExecCount   = regexp.MustCompile(`(?m)^exec_` + pyW + `+: &exec_` + pyW + `+\n  name: exec$`)
@@ -394,12 +393,21 @@ func migrateCommandRules(env *Env, cont bool) error {
 			continue
 		}
 		var rules []any
+		unreadable := ""
 		for _, rm := range reRule.FindAllStringSubmatch(cm[1], -1) {
 			name := strings.Trim(py.Strip(rm[1]), `"`)
 			var matches []any
 			if ms := py.Strip(rm[2]); ms != "" {
-				for _, q := range reQuoted.FindAllStringSubmatch(ms, -1) {
-					m := strings.Trim(py.Strip(q[1]), `"`)
+				// The flow list is read by the YAML loader: a regex written
+				// with an escaped quote, a \uNNNN escape or a ']' in it is
+				// what the renderer wrote, not what a scrape of quotes sees.
+				list, ok := parseMatchList(ms)
+				if !ok {
+					unreadable = name
+					break
+				}
+				for _, q := range list {
+					m := rtacacs.UnwrapMatch(q)
 					if names.CommandMatchIsDead(name, m) {
 						continue
 					}
@@ -414,10 +422,21 @@ func migrateCommandRules(env *Env, cont bool) error {
 			}
 			rules = append(rules, r)
 		}
+		if unreadable != "" {
+			// A rule with no match permits (or denies) every argument: a
+			// group whose list cannot be read is not migrated at all.
+			env.Out.Warn("The match list of rule '" + unreadable + "' of group '" + group + "' in " + p.Config + " could not be read; its command rules were not migrated.")
+			continue
+		}
 		if len(rules) == 0 {
 			continue
 		}
 		if have, _ := mapGet(cur, group); have != nil && py.Equal(have, rules) {
+			continue
+		}
+		// What an earlier tacctl shipped is not an override (0.2.3 changed
+		// the shipped rules of operator and readonly).
+		if policy.IsPreviousDefault(group, rules) {
 			continue
 		}
 		todo = append(todo, change{group, rules})
@@ -566,6 +585,30 @@ func RegenerateCommands(ctx context.Context, env *Env, group string) error {
 	return nil
 }
 
+// parseMatchList is the text between the brackets of a rendered 'match: [...]'
+// flow list as its strings, read by the YAML loader (the double-quoted
+// scalars rtacacs.YQ writes, escapes and all). false when it is not a list
+// of strings.
+func parseMatchList(inner string) ([]string, bool) {
+	v, err := yamlpy.Decode([]byte("[" + inner + "]"))
+	if err != nil {
+		return nil, false
+	}
+	list, ok := py.List(v)
+	if !ok {
+		return nil, false
+	}
+	out := make([]string, 0, len(list))
+	for _, e := range list {
+		str, ok := e.(string)
+		if !ok {
+			return nil, false
+		}
+		out = append(out, str)
+	}
+	return out, true
+}
+
 // renderBlock is render_block: a tacquito-shaped '  commands:' block for
 // a rule list ("" for none).
 func renderBlock(rules []any) string {
@@ -590,7 +633,7 @@ func renderBlock(rules []any) string {
 		if len(match) > 0 {
 			q := make([]string, len(match))
 			for i, m := range match {
-				q[i] = `"` + py.Str(m) + `"`
+				q[i] = rtacacs.YQ(rtacacs.WrapMatch(py.Str(m)))
 			}
 			b.WriteString("      match: [" + strings.Join(q, ", ") + "]\n")
 		}

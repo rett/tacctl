@@ -162,7 +162,7 @@ func TestConfigLinuxUIDRange(t *testing.T) {
 	hs.run(nil, "config", "linux", "script", "--scope", "lab", "--server", "192.0.2.10", "-o", out)
 	script, _ := os.ReadFile(out)
 	if !strings.Contains(string(script), "TAC_USERS=$'alice:superuser:100000\\nbob:operator:100001\\ncarol:readonly:100002'\n") ||
-		!strings.Contains(string(script), "TAC_UID_FIRST=100000\nTAC_UID_LAST=109999\nTAC_UID_PREVIOUS=80000-89999\nTAC_PROTOCOL=5\n") {
+		!strings.Contains(string(script), "TAC_UID_FIRST=100000\nTAC_UID_LAST=109999\nTAC_UID_PREVIOUS=80000-89999\nTAC_ENGINEER_SUDO=ALL\nTAC_PROTOCOL=6\n") {
 		t.Errorf("script header:\n%s", strings.SplitN(string(script), "# --- tacctl", 2)[0])
 	}
 	hs.run(nil, "config", "linux", "uid", "bob", "85000")

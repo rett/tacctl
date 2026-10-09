@@ -3,6 +3,1582 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.3 (unreleased)
+
+### What changed
+
+1. **A fourth tacctl tier, `engineer`, between operator and superuser.** A
+   group's tier is the one set on it in `tacctl.yaml` (`tier.<group>`), else
+   its priv-lvl band as before (below 7 readonly, 7-14 operator, 15
+   superuser), so a group at priv-lvl 15 on the devices can be engineers in
+   tacctl. An engineer may do what an operator may, and for the
+   devices of their own scopes also: `device add`, `remove`, `rename`,
+   `address`, `hostname`, `vendor`, `port`, `description`, `legacy-ssh`,
+   `hostkey` and `import`, `scope devices`, `config cisco|juniper|wti`
+   (with `--staging`, never at an address another scope answers). Another
+   scope's device is not found; a change that would touch one, or a device
+   at an address no scope of theirs answers, is refused (`Scope '<name>' is
+   not one of yours`, exit 1), and `device remove --all` removes their own
+   devices only. Beyond those an engineer reads the secret of a scope of
+   their own (`scope secret <scope> show`; `scope show <scope>` shows the
+   scope and the secret's length only) and
+   lists and shows the hosts and the staging addresses of their scopes
+   (`host list`, `host show`, `scope staging list`; item 20) and the SNMP
+   settings of those scopes (item 21); the rules that keep the tier away
+   from root and from the global settings are items 3 to 19. Linux
+   host deployment (`host enroll`, `sync`, `move`, `target`, `provisioner`,
+   `unenroll`, `default-method`) is the superuser's (item 26). Users,
+   groups, scopes and the change of any secret, backends, backups,
+   upgrades and every global setting (the default host method, the
+   console's settings, `tacctl.yaml` in general) stay the superuser's.
+   The tiers sudoers drop-in gains the
+   engineer rows (`TACCTL_EN`) and `%tac-engineer ALL=(root) NOPASSWD:
+   TACCTL_RO, TACCTL_OP, TACCTL_EN` (superusers get `TACCTL_EN` without a
+   password too); engineers never get more than tacctl through sudo on the
+   tacctl server. `console tiers` and `console show` list the `engineer`
+   tier (always on, item 5), and `console system-shell tiers` and `console
+   forwarding tiers` refuse `engineer`. `console check` asks sudo (`sudo -l -U`) what each member of
+   `tac-engineer` may run and warns in red, exit 1, when it is anything but
+   tacctl. On Linux hosts engineers are in a new group `tac-engineer` (GID
+   80005, the range's first number + 5, on every host) instead of
+   `tac-superuser`; a host's first sync after the group's tier is set to
+   `engineer` moves them (`'<user>': moved from tac-superuser to tac-engineer`). On a host other
+   than the tacctl server, its sudoers drop-in gives `tac-engineer` every
+   command with their own password (`%tac-engineer ALL=(ALL:ALL) ALL`), or
+   the commands `tacctl config linux engineer-sudo
+   all|<command>[,<command>...]` names (absolute paths, checked with
+   `visudo`, kept as `linux.engineer_sudo`); a sync now rewrites an
+   installed drop-in when it differs, so the setting reaches each host at
+   its next sync. The client script speaks protocol 6 (`TAC_ENGINEER_SUDO`
+   in its header); a script of protocol 5 and this body refuse each other
+   before changing anything.
+
+2. **`group show` prints the Junos patterns to every tier.** Under its
+   `Junos rules` row it lists the `deny-commands` and `deny-configuration`
+   patterns themselves, one per line, beside the byte counts it printed
+   before, so the read-only tier can see them. `group junos` stays the
+   superuser's, and the `tacctl group junos <group> list` hint is printed
+   only to a tier that may run it.
+
+3. **A `tacctl.yaml` that cannot be read no longer makes an engineer a
+   superuser.** The tier of a group comes from `tier.<group>` in
+   `tacctl.yaml`; when the file could not be read the setting was lost and a
+   group at priv-lvl 15 was a superuser, who could then sync this server
+   and join `tac-superuser`. Now, while the file cannot be read, no tacctl
+   user is trusted above the operator tier (a priv-lvl 15 user becomes an
+   operator for the time; `config validate` and `console check` stay open
+   to diagnose it), and the denial says why: `'tacctl host sync' is not
+   permitted: /etc/tacctl/tacctl.yaml cannot be read (<problem>), so no
+   tacctl user is trusted above the operator tier until it is fixed
+   (tacctl config validate).` (logged `reason=conf-problem`; root and
+   callers outside `tac-users` are not affected). `host enroll` and `host
+   sync` refuse for everyone, and `group edit <group> tier` when the file
+   cannot be read (it could not write it), with
+   `/etc/tacctl/tacctl.yaml cannot be read (<problem>); accounts and tiers
+   are not synced until it is fixed.` The same holds, with the same
+   messages, when the file reads but a tier setting is not a tier: a
+   `tier.<group>` that is a mapping, a list, null, empty or a number, or a
+   `tier` that is not a mapping at all (`'tier.<group>' must be one of
+   readonly, operator, engineer, superuser`). Such a group counts as
+   readonly, never as its priv-lvl band (a name that is a string but not a
+   tier, such as `Engineer`, also counts as readonly). A missing or empty
+   file, or one that lost its `tier` section, is not a problem of the file
+   but of the groups it should describe: item 7. For a file that reads
+   but holds a setting that is not a tier, `group edit <group> tier <tier>`
+   run by root writes the setting that repairs it (a managed superuser is
+   held at the operator tier meanwhile, so it is root's verb then), and
+   `group show` says when a group's setting is not a tier (`invalid setting
+   '<x>'; treated as readonly`). The warning that
+   tells root the file could not be parsed no longer suggests removing it
+   (`fix the file; 'tacctl config validate' checks it`).
+
+4. **An engineer keeps the console's lockdown even when `tacctl.yaml` cannot be
+   read.** The console asks the server for its policy with the hidden
+   `_console-policy`. With the file unreadable (item 3) the gate's cap makes
+   an engineer an operator, and `console system-shell tiers operator` or
+   `console forwarding tiers operator` would then have given that engineer a
+   system shell (a bash on the server) and forwarding. The policy line now
+   treats a caller as the engineer tier whenever its tier without the cap is
+   engineer or the account is in `tac-engineer`: `tier=engineer
+   system_shell=no forward=no`, and the console login, whatever the settings
+   and the cap. The gate itself still permits what the capped tier permits.
+
+5. **An engineer has the console or no login on the tacctl server.** The
+   engineer tier's console switch is always on: `console tiers engineer
+   disable` and `console user <engineer> disable` are refused (`The
+   engineer tier has the console or no login on this server; it cannot be
+   disabled. To keep a user off this server, remove its scope from the
+   user.`), a stored `disable` for the tier or for a user is ignored and
+   `console tiers` and `console show` say so, and an engineer whose
+   console cannot be provisioned (the `tacctl-console` link is missing)
+   gets `/usr/sbin/nologin`, with a warning, instead of `/bin/bash`. An
+   account whose tier is none gets `/usr/sbin/nologin` too, no longer a
+   real shell. sshd gets a drop-in of its own for the engineers,
+   `/etc/ssh/sshd_config.d/00-tacctl-engineer.conf`, with a `Match Group
+   tac-engineer` block that closes forwarding and tunnels for engineers
+   whatever shell they have (agent forwarding follows `console
+   agent-forwarding`). The name sorts before `tacctl-console.conf`: sshd
+   reads the drop-ins in name order and takes the first value of a keyword
+   across all `Match` blocks, so an engineer who is also in a group that
+   `console forwarding tiers` lets forward (a stale `tac-superuser`) keeps
+   forwarding closed (item 6). It is written at every `host sync` and `host
+   enroll --local` of this server and by `console install`, with or
+   without the console installed (so `ssh -N -D` fails for an engineer
+   even when the `tacctl-console` link is missing), refreshed or created by
+   `tacctl upgrade` for an install that has the console's drop-in, left in
+   place by `console remove` and removed by `tacctl uninstall`; the
+   console's own drop-in `tacctl-console.conf` no longer holds an engineer
+   block, so there is one source. `console check` checks the file on its
+   own (`sshd drop-in <path>: missing | present, differs from this release's
+   | present, current`, red and exit 1 unless current). The file has no
+   `ForceCommand`: the console's drop-in sets one for the members of
+   `tac-console`, which engineers with the console are, and an engineer
+   without it has `/usr/sbin/nologin`; authentication is left alone. `console
+   check` also checks the engineers: each member of `tac-engineer` has the
+   console or a nologin shell (red, exit 1, otherwise), and sshd closes
+   forwarding for the first of them.
+
+6. **The engineer's sshd drop-in sorts before the console's.** The file was
+   `tacctl-engineer.conf`, which sshd reads after `tacctl-console.conf`; the
+   first value of a keyword wins across `Match` blocks, so with `console
+   forwarding tiers superuser` an engineer who was also in `tac-console`
+   and, through a failed `gpasswd -d` or an NSS group, still in
+   `tac-superuser`, got `DisableForwarding no` and `AllowTcpForwarding yes`
+   from the console's tier block. It is `00-tacctl-engineer.conf` now.
+   `console install`, `host sync` of the server and `console remove` write
+   the new file and then remove the old one; `tacctl upgrade` renames an
+   installed one (`Removed: sshd drop-in <old> (renamed to ...)`, checked
+   with `sshd -t`); `uninstall` removes both; `console check` flags the old
+   file and a name that sorts after the console's. A test builds both
+   drop-ins and checks the order, and runs `sshd -T` on them where sshd is
+   installed.
+
+7. **A custom group at priv-lvl 15 always has an explicit tier, and one
+   that lost it holds back only its own members.** The band cannot say
+   whether a group at priv-lvl 15 other than the built-in `superuser` is a
+   superuser group or an engineer group whose `tier.<group>` was lost (an emptied or
+   restored `tacctl.yaml`; item 3 had made a missing file cap every managed
+   caller, which locked a superuser out of `group edit <g> tier` and every
+   other verb until root acted, and missed an empty file or one without a
+   `tier` section). Now: `group add <name> 15 <class>` without `--tier`
+   writes `tier.<name>: superuser` (and says so), `group edit <name>
+   priv-lvl <n>` does the same when it raises a group into the band, removes
+   a `superuser` setting that only recorded the band when it lowers the
+   group out of it (an `engineer` setting stays), and `group edit <name>
+   tier auto` at priv-lvl 15 records `superuser`; the first `tacctl
+   upgrade` to 0.2.3 writes `tier.<group>: superuser` for every such group
+   that has no setting, which is what 0.2.2 treated them as, one line each
+   (`Group '<g>' (priv-lvl 15): tier recorded as superuser in <file> (what
+   0.2.2 treated it as; change it with: tacctl group edit <g> tier
+   <tier>)`), after a snapshot, and then never again (item 13); `store
+   import` (and a `backup restore --legacy`) do the same for the groups the
+   import brought, not for the ones the store already had. A group at
+   priv-lvl 15 that has no setting anyway is ambiguous: its members are held
+   at the operator tier (`'tacctl <cmd> <sub>' is not permitted: your group
+   '<g>' is at priv-lvl 15 or more and has no tier setting in <file> (it was
+   lost) ...`, logged `reason=group-ambiguous`), a `host enroll` or `host
+   sync` gives them the operator tier on the hosts and prints one red line
+   per such group naming `tacctl group edit <g> tier <tier>` (item 9), and
+   `group show` says `NOT SET`. The members of the built-in `superuser`
+   group and everyone else are not affected, so a managed superuser who is
+   not a member repairs it. The special case of a missing file is gone.
+
+8. **A built-in `readonly` or `operator` group at priv-lvl 15 is ambiguous
+   too.** Item 7 exempted every built-in group from the rule that a group
+   at priv-lvl 15 has an explicit tier, so `group edit operator tier
+   engineer` and `group edit operator priv-lvl 15` followed by a lost
+   `tacctl.yaml` made the members of `operator` superusers again. Only the
+   built-in `superuser` group is exempt now: `group edit operator priv-lvl
+   15` records `tier.operator: superuser` when the group has no setting and
+   lowering it takes that record away again, a lost setting holds the
+   members at the operator tier (item 9), and the upgrade records
+   `readonly` or `operator` at 15 as `superuser`, what 0.2.2 treated them as.
+
+9. **A sync is not refused because a group lost its tier.** While a group at
+   priv-lvl 15 had no setting every `host sync` and `host enroll` was
+   refused, including the sync that `user remove`, `user move` and `group
+   edit ... priv-lvl` run to take rights away, so a removed user kept
+   `tac-superuser`. They run now: the members of an ambiguous group get the
+   operator tier on the hosts (the cap the gate applies to the same users;
+   no `tac-superuser`, no `tac-engineer`), and one red line per group says
+   `Group '<g>' (priv-lvl 15) has no tier setting in <file>, so its members
+   are synced as operators (no tac-superuser, no tac-engineer) until:
+   tacctl group edit <g> tier <tier>`. A `tacctl.yaml` that cannot be read
+   still stops them (item 3). `host show` and `console show` list such a
+   member as an operator.
+
+10. **A legacy install has no ambiguous groups.** An install without a store
+    keeps no tier settings, so none can have been lost, and `group edit ...
+    tier` needs a store: its groups at priv-lvl 15 are superusers as in 0.2.2
+    (the gate no longer holds their members at the operator tier) until
+    `tacctl store import`.
+
+11. **Lowering a group's priv-lvl below 15 removes its `superuser` setting.**
+    The setting written for a group at 15 (item 7) is the same word as one
+    chosen with `--tier superuser`, and lowering the group out of the band
+    removes either, so the lower band decides again (`engineer`, `operator`
+    and `readonly` settings stay). The usage of `group edit` and the README
+    say so; set the tier again after lowering when a superuser group below 15
+    is wanted.
+
+12. **`group show` words a tier that is not one.** A `tier.<group>` that is a
+    string but not a tier (`Engineer`, say) was shown as `Engineer (set;
+    auto would be ...)` although the group counts as readonly. It is
+    `readonly (invalid setting 'Engineer'; treated as readonly; fix: tacctl
+    group edit <g> tier <tier>)`.
+
+13. **The tier migration of the upgrade runs once.** `tacctl upgrade` used to
+    write `tier.<group>: superuser` for every group at priv-lvl 15 without a
+    setting on every run, so an `engineer` group whose setting was lost
+    later (an old `tacctl.yaml` copied back, a hand edit) became a superuser
+    group at the next routine upgrade. The migration now runs at the first
+    upgrade only and leaves the marker `/var/lib/tacctl/tier-pinned` (outside
+    `tacctl.yaml`, which is what gets lost); a fresh install writes it at
+    once, and `tacctl uninstall` removes it. When `tacctl.yaml` cannot be
+    read or written, or the snapshot fails, nothing is written and no marker
+    is left, so the next upgrade tries again. `store import` and `backup
+    restore --legacy` pin only the groups that were not in the store before
+    the import.
+
+14. **Lowering a tier syncs this server's accounts at once.** `group edit
+    <group> tier <tier>|auto`, `group edit <group> priv-lvl <n>`, `user move
+    <user> <group>`, `user rename <old> <new>` (the old account goes), `user
+    disable`, `user remove`, `user scope <user>
+    remove|replace|remove --all` (a user who is no longer in the server's
+    scope is none), `group remove` and `group preset roles --force` take the
+    tier of every user with an account on the tacctl server (the users of
+    the scope it is enrolled in; every user when it is not enrolled) before
+    they write and after, and when any is lower (for example superuser to
+    engineer) run the
+    sync of the enrolled server (`tacctl host sync <server>`, local) and say
+    so, so the user does not keep the old tier's groups, `tac-superuser`
+    among them, until somebody syncs. When the sync fails, or no server is
+    enrolled, a red line says `Members of '<group>' keep their old groups on
+    this server until: tacctl host sync <server>` (`'<user>' keeps the groups
+    of the old tier ...` for `user move`; exit 1 for a failed sync). A raise,
+    or a change that leaves every tier, syncs nothing. `store import`,
+    `store rollback` and `backup restore` replace the state wholesale and
+    cannot say whose tier fell: when the server is enrolled they print the
+    red line `Users whose tier is lower now keep their old groups on this
+    server until: tacctl host sync <server>`, and a model that cannot be read
+    before or after a change prints its red line too. `console check` reports
+    every member of `tac-superuser` that is a tacctl account and not a
+    superuser-tier tacctl user (`<user> is an engineer but is still in
+    tac-superuser here (stale membership ...)`, `<user> is operator, not a
+    superuser, but ...`, or `<user> is no tacctl user (removed?) but ...` for
+    an account whose UID is in tacctl's range; root is not named); an account
+    outside that range, a local administrator added by hand, is only
+    mentioned (item 15).
+
+15. **`console check` does not flag a local administrator.** A member of
+    `tac-superuser` that is not a tacctl account (its UID is outside
+    `linux.uid_min`..`linux.uid_max`, for example an administrator added by
+    hand) made the check exit 1 for good. It is listed now as `<user>: in
+    tac-superuser, not a tacctl account (a local administrator?); tacctl host
+    sync <server> takes it out of tacctl's groups` and the check stays green;
+    a tacctl user who is not a superuser, and an account in the range whose
+    user was removed, are still red.
+
+16. **`console check` asks sudo in the C locale.** The `sudo -l -U` that
+    checks what the engineers may run is run with `LC_ALL=C`, `LANGUAGE=C`
+    and `COLUMNS=4096`, and a rule sudo wrapped onto continuation lines is
+    read as one rule, so a translated or wrapped answer can no longer hide
+    a command.
+
+17. **An engineer imports devices from standard input only.** `device
+    import` by an engineer must be `tacctl device import - [--check|
+    --replace] < file`; a file name (or a flag before `-`) is refused (`The
+    engineer tier imports from standard input only: tacctl device import -
+    [--check|--replace] < file`), and the tiers sudoers rows for it are
+    `device import -` and `device import - *`, so sudo refuses a file name
+    before tacctl runs; until now `device import /some/file` read any file
+    as root for an engineer.
+
+18. **`config cisco|juniper|wti --staging --name <device>` refuses a device
+    of another scope.** An engineer naming a registered device of a scope
+    that is not theirs is told `Device '<name>' not found.` and nothing
+    is staged; a device registry that cannot be read refuses the command
+    instead of skipping the check.
+
+19. **A host is not a device to an engineer, and nothing an engineer runs
+    can make a host sync necessary.** The device verbs that write the
+    registry (`rename`, `remove`, `address`, `hostname`, `vendor`, `port`,
+    `description`, `location`, `legacy-ssh`, `import`) and `device hostkey`
+    (which pins a host's ssh keys) answer `Device '<name>' not found.` for
+    an enrolled host, one of their own scope's included; `config
+    cisco|juniper|wti --staging <address>` refuses an address an enrolled
+    host holds (`--staging: <address> is not available for staging.`) and
+    `--name` of a host; `scope devices <scope> set|unset` refuses an address
+    or range that contains an enrolled host's address (`<range> is not
+    available for tagging.`); and the sweep that ends a staging address
+    after a device moved leaves the staging address of a host alone for an
+    engineer. A test now runs every command line an Engineer row opens and
+    compares, before and after, everything a sync is built from (the script
+    it would send for each registered host: users, tiers, UIDs, shells, the
+    console policy of this server's own entry, `TAC_ENGINEER_SUDO`, the
+    server address, the scope's secret and method; the host registry, the
+    host pins and recorded addresses of `devices.yaml`, the `linux.*`,
+    `host.*` and `tier.*` settings, and the scope and prefix that answer
+    each host's address); any difference fails with the command line and the
+    field.
+
+20. **Engineers read the secrets of their own scopes and see their hosts.**
+    An engineer may run `scope secret <scope> show` (the read of the value,
+    logged) and `scope show <scope>` (the scope and the secret's length only,
+    no read of the value and nothing logged) for the scopes they are a member
+    of (another scope is `Scope '<name>' does not exist.`); `scope secret <scope> set`, `generate` and
+    the usage are refused (`The engineer tier reads a scope's secret:
+    tacctl scope secret <scope> show. Changing it is the superuser's.
+    Nothing was changed.`). Every read of a secret by an engineer, the
+    walkthroughs `config cisco|juniper|wti` included, is logged `secret-read
+    kind=scope name=<scope> by=<user>` (auth.info, never the value). The
+    engineer also gets `host list` and `host show` (their scopes' hosts
+    only; `host show --check` logs in to the host over ssh and is refused:
+    `'host show --check' logs in to the host over ssh, which is the
+    superuser's`) and `scope staging list` (their scopes' addresses;
+    `remove` stays the superuser's and a restricted list does not sweep).
+    The tiers sudoers drop-in has the matching rows (`host list`, `host
+    show *`, `scope staging`, `scope staging list`, `scope secret *`, `scope
+    show *`). Nothing an engineer can run
+    changes a global setting: `tacctl.yaml`, `console.yaml` and the SNMP
+    files stay as they are (a test walks the whole tier table).
+
+21. **Engineers read the SNMP settings of the scopes of their own.**
+    `scope snmp <scope> show [--reveal]` (with the plain reads of version,
+    port, timeout, contact and `clients list`) is open to the engineer tier
+    for the scopes they are a member of, and says whether each value is the
+    scope's or the default's; another scope is `Scope '<name>' does not
+    exist.`. Every setter, `clear` and `test` is refused (`The engineer tier
+    reads a scope's SNMP settings ... Changing them is the superuser's.
+    Nothing was changed.`), and so is `config snmp show --reveal`: the
+    default is the superuser's. A `--reveal` by an engineer, and a
+    walkthrough that prints the credentials, is logged `secret-read
+    kind=snmp name=<scope> by=<user>` (auth.info, never the value). The tiers
+    sudoers drop-in gains the rows `scope snmp *` and `device location *`.
+
+22. **`host show` and `host show --check` know the engineer tier.** `host
+    show` lists an engineer's account in `tac-users` and `tac-engineer` on a
+    host (a superuser's in `tac-users` and `tac-superuser`), and takes the
+    tier from the group's `tier` setting as the sync does, not from the
+    priv-lvl band alone. `--check` expects `tac-engineer` on every host (GID
+    the range's first number + 5; `group tac-engineer is missing` until a
+    sync makes it), reads who is in `tac-superuser` and `tac-engineer`, and
+    reports an engineer still in `tac-superuser` (`<user> is an engineer but
+    is still in tac-superuser`, fixed by `tacctl host sync <name>`). A host
+    that ran client script protocol 5 is still reported by the existing
+    difference.
+
+23. **`config linux engineer-sudo` warns about commands that give root a
+    shell, and the client script checks each command.** A shell, an
+    interpreter, an editor, `su`, `sudo`, `find`, `env` and the like is
+    accepted with `<command> gives root a shell; engineers on those hosts
+    are then superusers in all but name.` The client script refuses a
+    `TAC_ENGINEER_SUDO` command that `engineer-sudo` would refuse (`..`,
+    `.`, `//` or a trailing `/`, more than 255 characters) with `is not a
+    clean command path`, before anything changes.
+
+24. **A machine that runs tacctl gets no engineer sudo line, and this
+    server is enrolled with `--local` only.** The script a host runs is now
+    told whether it is the server (`TAC_LOCAL`) by the registry entry, not
+    by the accounts' shells, and its sudoers step writes no `%tac-engineer`
+    line, with a warning, on a machine that has `/usr/local/bin/tacctl` or
+    the tiers drop-in but was not enrolled as the server. The address
+    `0.0.0.0` (and `0`, which resolves to it) counts as this machine, and
+    `host enroll` of an address of this machine without `--local` is
+    refused, for everyone, with `'<target>' is this server; enroll it with
+    --local`, so no entry that is not the server's own reaches the script
+    without `TAC_LOCAL`.
+
+25. **`tacctl host` no longer forwards your ssh agent or any port to a
+    host.** Every ssh of `host enroll`, `sync`, `move`, `target`, `show
+    --check` and `unenroll` carries `-o ForwardAgent=no -o
+    ClearAllForwardings=yes`, which beat the ssh config of the person who
+    runs it.
+
+26. **Linux host deployment is the superuser's; engineers read hosts.** `host
+    enroll`, `host sync`, `host move`, `host target`, `host provisioner`,
+    `host unenroll` and `host default-method` have no engineer row (and no
+    row in the tiers sudoers drop-in): an engineer is refused at the gate
+    (`'tacctl host sync' is not permitted for the engineer tier.`), in the
+    shell and the console too, and nothing is written. An engineer keeps
+    `host list` and `host show`, which show the hosts of their own scopes
+    only (another scope's host is `No enrolled host named '<name>'`).
+    Engineers still get their accounts and their sudo on the hosts of their
+    scopes through a superuser's sync (`tac-engineer`, `linux.engineer_sudo`,
+    client script protocol 6 and `TAC_REVOKE_ENGINEER` are as before).
+    Every ssh of
+    `tacctl host` still carries `-o ForwardAgent=no -o
+    ClearAllForwardings=yes`.
+
+27. **`host show <name> --check` is the superuser's.** It opens an ssh
+    session as the invoking user, so an engineer, who may read `host show`,
+    is refused with `'host show --check' logs in to the host over ssh, which
+    is the superuser's; 'tacctl host show <name>' shows what tacctl
+    recorded of it.` before anything runs. The family's help lists the
+    note under `host`.
+
+28. **`tacctl host provisioner <name> rotate <user> (--key <file>|--password)
+    [--remove-old [--remove-home]] [--dry-run] [--yes]` switches the account
+    tacctl logs in to a host with, without ever locking tacctl out.** In this
+    order: the arguments are checked locally and nothing has changed (the
+    host is enrolled and not this server's own `--local` entry; the new
+    account is not `root`, the login in use or a tacctl user; exactly one of
+    `--key` and `--password`, the latter on a terminal; `--remove-old` only
+    for a registry target of the form `user@host`, because without a user
+    the "old account" would be your own username); the new account is
+    created over the login in use by a small script of its own, never the
+    client script; a fresh ssh login in a NEW connection (no shared
+    connection, the new account's credentials only) must run `sudo id -u`
+    and get `0`, with ssh trusting the host's pinned keys and no others
+    (item 35; the probe's `sudo-password` answer, which a login that
+    cannot sudo gives too, is not enough);
+    only then does the registry change, as `host target` does it (after a
+    snapshot; scope, server and method kept; `Target` becomes
+    `<user>@<host>`; the identity is the key file, or cleared for
+    `--password`); the old login is recorded in the host's record. With
+    `--remove-old` the old account is removed last, over the new one
+    (item 30). A new `host provisioner` line in the usage, the completion,
+    the README and the manual page.
+
+29. **The new account, and where its secrets are.** It is created below
+    tacctl's UID range from the start (`useradd -K UID_MAX=<first of the
+    range - 1>`, out of the ranges the server used before and out of
+    20000-29999; a system-range number when none is free), with `useradd -m
+    -U -s /bin/bash -c 'tacctl provisioning account'`; that comment is not
+    the one `host sync` gives and manages, and is for display only: a
+    re-run adopts an account only when root's record says tacctl made it
+    (item 31), any other existing account of that name is refused, and so
+    is an adopted one whose UID is inside tacctl's range. Its sudoers line is
+    in its own file, `/etc/sudoers.d/tacctl-provisioner` (one line per
+    provisioning account, checked with `visudo -cf`; never `tacctl-host`,
+    which each sync rewrites). With `--key` the account has a locked
+    password, `NOPASSWD: ALL` and only the public key in
+    `~/.ssh/authorized_keys` (modes 0700 and 0600, `restorecon` where
+    SELinux is on); a missing key file is made by `ssh-keygen -t ed25519`
+    (it asks for the passphrase, empty is your choice) and its path becomes
+    the registry identity, as `host target --identity` does; every access to
+    the key file (existence, owner and mode, the public key, the
+    fingerprint) runs as the invoking user, never as root. With `--password`
+    the account has `ALL` with a password that you type into the host's own
+    `passwd` over the ssh terminal; it never passes through tacctl, an
+    argument, the environment, a file, a log or the audit line (the proof
+    types it into ssh and sudo on your terminal the same way). A host whose
+    sshd has `PasswordAuthentication no` always fails a `--password` proof;
+    `--dry-run` says so.
+
+30. **Failures, `--remove-old`, `--dry-run` and the audit line.** If creating
+    the account fails the script takes back its own steps: the account it
+    made, the sudoers line it wrote (item 36 states what can remain). If
+    the proof fails, what the run did is taken back over the login in use
+    (an account this run created is removed with its sudoers line, an
+    adopted one is never deleted, item 33), the registry is left alone and
+    `auth.warning host provisioner rotate name= old= new= auth= step=prove
+    by=` is logged; if that removal fails too the output names what is
+    left. A run interrupted before the
+    registry changed is repeated with the same command, which adopts the
+    account; one interrupted after it is finished by the same command with
+    `--remove-old`, which reads the old login from the host's record.
+    `--remove-old` runs last, as the new account: `pkill -u <old>`,
+    `userdel`, the old account's line in the provisioner sudoers file, taken
+    out first (other sudoers files that name it, and the groups it was in,
+    are reported and left), and its home moved to `/home/.tacctl-removed/<name>-<time>`, root
+    owned and 0700, or deleted with `--remove-home` (a terminal is asked when
+    neither is given), by the rules of `host sync` for removed users. It is
+    refused when the old and new accounts are the same, the old one is
+    `root` or a tacctl user, an account with a number in tacctl's UID range,
+    or when the registry does not point at the new account yet. `--dry-run`
+    prints the plan (the `useradd` line, the sudoers line, the key's
+    fingerprint, the registry line before and after) and runs only a test
+    login to the current target, a look at whether the account exists there
+    and the host's `sshd -T` value of `passwordauthentication`; it changes
+    nothing. Every completed rotation logs `host provisioner rotate name=
+    old= new= auth=key|password by=` and every removal of the old account
+    `host provisioner remove-old name= old= new= by=`, never a secret.
+
+31. **Adoption trusts root's record, not the account's comment.** A re-run of
+    `host provisioner ... rotate` adopts an existing account only when it is
+    in `/etc/passwd` itself (not an sssd or LDAP account) and a record the
+    create script wrote under `/var/lib/tacctl-provisioner/<account>`
+    (a directory of root's alone, 0700, file 0600; the account name, its UID,
+    whether `~/.ssh` was made by the script) agrees with it, written at once
+    after `useradd`. The comment field (`tacctl provisioning account`) is the
+    account's own to change where `CHFN_RESTRICT` lets it, and a directory
+    supplies it, so it decides nothing and is kept for display. Any other
+    account of that name is refused with nothing changed.
+
+32. **The sudoers line is written last, and the key is written by the
+    account.** The create script sets the key (or runs `passwd`) first and
+    gives the account its `NOPASSWD: ALL` or `ALL` line only after every other
+    step has succeeded; a failure after the line takes that line out again
+    (an adopted account that had another line gets it back), an account the
+    run created is removed with it. `authorized_keys` is written as the
+    account (`runuser`, else `sudo -u`) with `umask 077` instead of by root in
+    a directory the account owns, so a link planted in `~/.ssh` cannot make
+    root write elsewhere, and `~/.ssh` is refused when it is a link, belongs to
+    somebody else or is writable by its group or others. An adopted account
+    is adopted only when its `~/.ssh` was made by the script, and that
+    directory is emptied first (`rc`, `authorized_keys2` and anything else a
+    former user of the account left); the rest of its home (dotfiles, cron,
+    user units) is not scanned, so an account that has been in use is better
+    removed and made again.
+
+33. **A failed proof never deletes an account it did not create.** The
+    create script says on a status line whether it created or adopted the
+    account, and whether it added, changed or left its sudoers line. After a
+    failed proof the command removes (with the home) only an account the run
+    created; for an adopted account it takes out only the line this run
+    added, leaves the account, and says what is left; when the script said
+    nothing, nothing is deleted and the output names what may be there.
+    Two operators rotating to the same name no longer leave the registry
+    pointing at a deleted account.
+
+34. **One rotation of a host at a time.** The command holds an exclusive lock
+    for the host (`/etc/tacctl/locks/host-provisioner-<name>.lock`) from its
+    first check to its last step, and a second run fails at once with
+    `Another rotation of '<name>' is running` and changes nothing (`--dry-run`
+    changes nothing and takes no lock). The host's record is changed under a
+    lock too, and the registry entry is read again just before it is
+    rewritten: a `host move` that ran during the proof is kept, a change of
+    how the host is reached (`host target`) stops the rotation. On the host,
+    both scripts change the shared sudoers file under `flock` on
+    `/etc/sudoers.d/.tacctl-provisioner.lock` (a lock directory where `flock`
+    is missing), so two scripts at once lose no line.
+
+35. **The proof's ssh trusts the pinned keys, not whoever answers.** The keys
+    the new login prints were never proof of the host: a machine that answers
+    can print the pinned ones. The proof now runs ssh with a temporary
+    known_hosts made from the host's pinned keys and `UserKnownHostsFile=<it>`,
+    `GlobalKnownHostsFile=/dev/null`, `StrictHostKeyChecking=yes`,
+    `HostKeyAlias=<name>` and `UpdateHostKeys=no`, so ssh itself refuses
+    another machine; the keys the login reads are still compared with the
+    pins (the comparison `host target` uses, which also logs `auth.warning
+    host provisioner hostkey-mismatch name=`). A host with no pinned keys has
+    nothing to trust: `--password` is refused (the password would be typed to
+    an unauthenticated peer) and `--key` goes on only after the keys the host
+    answered with are listed and confirmed (`--yes` confirms); ssh then goes
+    by your own known_hosts. The proof's options are a stricter set than a
+    later login's (`IdentitiesOnly`, `PreferredAuthentications=publickey`, no
+    GSSAPI or host-based logins), so a proof that holds is not undone by what
+    `host sync` adds. The temporary known_hosts is readable by the user whose
+    ssh runs the proof whatever umask tacctl runs with (it was closed to that
+    user under a restrictive umask, and the proof then failed with "No ED25519
+    host key is known").
+
+36. **Creating the account takes back what it did.** A `useradd` that fails
+    after it made part of the account no longer leaves it: what it made is
+    removed. The scripts run on a terminal on the host even when tacctl has
+    none (`ssh -tt`), so an interrupted or dropped connection hangs the script
+    up and its rollback runs; they also end on a closed pipe. What can still
+    remain: a host that loses power or whose shell is killed outright during
+    the run, a removal that itself fails (the output names it), and an
+    adopted account's emptied `~/.ssh`, which is not brought back.
+
+37. **Removal details.** The remove script takes the account's sudoers line
+    out first, before ending processes and `userdel` (a `userdel` that fails
+    leaves the account expired and without sudo); its group is removed only
+    when it is the account's own (its number is the account's UID or primary
+    group, as `host sync` checks), and the account's record goes with it. The
+    account's group is created below tacctl's range too (`-K GID_MAX`), and
+    a group number inside the range is refused like an account number.
+
+38. **`--dry-run` reads root's record.** It reports whether the host's record
+    names the existing account and agrees with its UID ("the rotation adopts
+    it and empties its `~/.ssh`"), or that nothing shows tacctl made it and the
+    rotation would refuse it.
+
+39. **A space at the prompt of the shell and the console works as on a
+    Junos device.** This changes how typing behaves for existing console
+    users at the upgrade; `tacctl console space-completion off` brings the
+    old typing back for everyone: it turns off the refusal of repeated
+    blanks and the completion. A
+    space is refused (nothing is inserted) where it would be a second one: at the start of
+    the line, right after a space and right before one. At the end of a word
+    that is a command, a sub-command, a fixed choice (such as
+    `enable|disable`) or a flag name, a space completes the word when
+    exactly one such word starts with what is typed and adds the blank (`de`
+    and a space give `device `).
+    When several do, they are listed once, as `?` lists them but without the
+    question for a long list and without paging, and nothing is inserted;
+    more candidates than `list_max` print nothing. A word that is complete
+    already (`user` while `user-x` exists), a name of the store (a user, a
+    group, a scope, a host, a device, a backup, a file), free text, a typo,
+    a space inside a word and a space inside quotes or after a backslash get
+    the space as typed. Tab, `?` and the Ctrl-R search keep their meaning,
+    and `-c` and batch input are not affected. Pastes are unchanged from
+    0.2.2, with the setting on or off, with one addition: a paste that
+    reaches the editor while the long-list question (`Show all <n> ...?`)
+    or the pager is waiting for a key ends it (it counts as `q`) and is then
+    read as a paste.
+
+40. **`tacctl console space-completion [on|off]` and `tacctl shell
+    --space-completion on|off`.** The console setting is server-wide and on
+    by default; without an argument the verb prints the current value, and
+    `console show` has a `space-completion` row. It is stored in
+    `console.yaml` as `settings.space_completion`, and only while it is off;
+    a `console.yaml` without the key reads as on. Each console
+    session reads it when it starts, from a new `space_completion=yes|no`
+    field on the `_console-policy` line (an older tacctl ignores a field it
+    does not know). Plain `tacctl shell` takes `--space-completion on|off`,
+    default on. A `console.yaml` written by 0.2.3 is not read by a 0.2.2
+    binary even when the setting was never turned off, because the engineer
+    tier's switch is written with it too: `tacctl rollback 0.2.2 --apply`
+    (item 84) removes both keys before the older release is installed.
+
+41. **The shell and the console list only what the caller's tier can run.**
+    In `tacctl shell` and the login console, Tab, `?`, a typed space and the
+    top-level `help` no longer name the commands and sub-commands that the
+    caller's tier would be refused: a readonly user does not see `store`,
+    `install` or `user add`, an operator does not see `host`, an engineer does
+    not see `group junos`, and a superuser and a caller outside `tac-users`
+    see everything as before. The lists are read from the same table as the
+    sudoers drop-in (`tier.Rules`), so they cannot differ from what the gate
+    allows, and a test walks every verb of the completion tree for every tier.
+    This is display only: the gate and sudo are still the check, and a
+    command typed by hand is refused as before. The usage stays complete:
+    `help <command>` describes every verb and now ends with the tier each
+    needs, with a note for the verbs whose sub-verbs the code splits (`scope
+    secret`, `scope staging`, `scope snmp`, `host show`, `device import`), and
+    `?` after a verb the tier cannot run shows its usage with `Needs the
+    <tier> tier.`, after a family it cannot run at all (`store ?` for a
+    readonly user) `Needs the <tier> tier. help <family> describes it.` The
+    top-level `help` ends its command list with `Shown: the commands the
+    <tier> tier can run` and leaves out the examples it would not let you run.
+    A caller whose tier cannot be learned (the root side does not answer, or
+    has not yet) sees the read-only commands only, never more; a caller the
+    root side answered has no tier (item 45) sees none. The rows that are
+    listed keep their full description, which can name a verb of the family
+    that is not listed (`user <subcommand>` ends with its list of verbs).
+    `tacctl` with no arguments, `tacctl <command>`, the man page and the
+    README are not filtered.
+
+42. **`tacctl shell` learns the caller's tier from the root side, and
+    `_console-policy` can name the gate's tier.** A `tac-users` member's
+    shell asks `sudo -n tacctl _console-policy` (as the console does) when it
+    starts, in the background (item 43); a caller outside `tac-users` is not
+    asked and sees everything. The answer already
+    carried `tier=`, the console's own view of the caller (an engineer stays
+    an engineer there, item 4). When the tier the gate enforces differs, as
+    for an engineer that an unreadable `tacctl.yaml` caps to operator, the
+    line also carries `gate=<tier>`, and the lists follow it, so they show
+    what the gate will run. An older tacctl ignores the field, and a shell
+    that finds none uses `tier=`.
+
+43. **`tacctl shell` never waits for the root side to learn the tier.** The
+    question to `sudo -n tacctl _console-policy` ran on the editor's own
+    thread, with no limit, the first time Tab, `?` or a typed space needed
+    the tier; if sudo's PAM step waited out a server timeout, typing stalled
+    (Ctrl-C does not reach a raw terminal), and one failure was kept for the
+    session. The interactive shell now asks when it starts, in the
+    background, giving up after 3 seconds. Until the answer is in, or when
+    there was none, the lists show the read-only commands. After a failure
+    the next Tab, `?` or space asks again once 30 seconds have passed. A
+    shell without a terminal (`-c`, a script) asks on first use and waits for
+    the answer, for at most 3 seconds.
+
+44. **`?` after a command the tier cannot run says what it needs.** `store ?`
+    for a readonly user, `config ?` for a readonly one and `host ?` for an
+    operator printed `No valid completions`; they now print `Needs the
+    <tier> tier. help <family> describes it.` The note for `scope staging`
+    joins those of `scope secret` and `scope snmp` in `help scope` (those of
+    `host show` and `device import` are in `help host` and `help device`): an engineer's `scope staging` runs `list` only, but the
+    sudoers rows grant only that, and the shell used to offer `remove`
+    without a word. A test compares the notes with the sudoers rows
+    narrower than `<verb> *`, so a new split verb fails until it has its
+    note. `?` after `scope staging` no longer prints `Next: [list`.
+
+45. **A disabled tacctl user's shell lists no command.** When the root side
+    answers that the caller has no tier (`tier=none`: the account is
+    disabled), the shell used to list the read-only commands, `passwd` and
+    `user list` among them, though the gate refuses them. It now lists none
+    and its top-level `help` says that the account has no tier; `help`,
+    `exit` and `quit` remain. An answer that cannot be read, or has no tier
+    field, still lists the read-only commands.
+
+46. **The plain shell's tier lookup is logged as `shell policy`.** It was
+    logged as `console policy ... session=` like a console login; a lookup
+    without the console's `TACCTL_CONSOLE` marker is now `auth.info shell
+    policy user=<user> tier=<tier>`.
+
+47. **`help scope` for an engineer notes `scope snmp`.** The verbs of a
+    family that the gate cannot tell apart carry a note in the shell's and the
+    console's help of the family; `scope snmp` had
+    none, so an engineer saw it listed without being told that only the reads
+    of a scope of their own are theirs: `scope snmp: an engineer may read the
+    settings of a scope of their own (show [--reveal], version, port, timeout,
+    contact, clients list); every setter, clear and test needs the superuser
+    tier.` The manual's TIERS section prints the same note, from the same
+    place.
+
+48. **Every command-rule regex is rendered whole, `^(?:regex)$`; a rule with a
+    bare alternation now matches what it says.** tacquito adds `^` and `$`
+    only where they are missing, so a stored `crypto|trace` was tested as
+    `^crypto|trace$`: a prefix match on the first branch and a suffix match
+    on the last (`show ip trace` and `show foo trace` matched, `show crypto
+    pki` did not). tacctl now wraps each stored regex when it writes
+    `tacquito.yaml`, so the regex has to match the whole arguments string and
+    its alternation stays together. A rule with a top-level `|` and no
+    anchors, or one that ended in a prefix form tacquito closed with `$`,
+    matches differently after the upgrade: what it was meant to match now
+    matches, and what only the old reading matched no longer does. Review
+    `tacctl group commands list <group>` for such rules; `tacctl upgrade`
+    re-renders and restarts tacquito. A rule without a `match`, the shipped
+    rules before this release and any regex with one pair of anchors and no
+    top-level `|` mean what they meant. The read-back and the legacy importer
+    undo the wrapper, so a rendered file imports back to the same rules.
+
+49. **`group commands add` and `config validate` check the rules they write
+    and hold.** `--match` is now also refused when it is empty (tacquito
+    skips an empty regex, so the rule would match nothing); an invalid regex
+    (Go's RE2, as tacquito), a comma and a regex that begins with the
+    command word (it can never match: the arguments are tested without it)
+    were refused already. After the rule is added, a warning follows for a prefix form without
+    `( .*)?` and without a closing `$` (`^crypto` matches the exact argument
+    `crypto` only: write `^crypto( .*)?$`), and for a rule that can never be
+    reached because an earlier rule of the same name has no `--match`, or the
+    `*` catchall comes first. `config validate` prints the same findings for
+    the stored rules as `Command rules:` warnings; they do not make the
+    validation fail.
+
+50. **The baseline command rules and privileges of the four roles.** Shipped,
+    for every install and every group without an override of its own, and
+    permit-only (nothing that denies what a role could do before): `readonly`
+    is the account for monitoring and backup systems (SolarWinds NCM) and
+    keeps `show`, `ping`, `traceroute`, and gains `dir`, `terminal length|width`
+    (so a screen-scraper's `terminal length 0` is no longer denied), `exit`
+    and `logout`; `operator` gains `dir`, `ssh`, `telnet`, `undebug`, `exit`,
+    `logout`, `monitor capture`, and the `clear` forms `counters`, `line`,
+    `ip arp <address>`, `arp-cache <name>` and `mac address-table dynamic
+    <argument>` (single entries; never the whole table, `clear ip route`, a
+    hard `clear ip bgp`, `debug`, `copy`, `test`). Roles nest: what readonly
+    may run, operator may run. Privileges (`privilege exec ...` on the
+    device): `readonly` lowers `show running-config` to level 1, so a
+    monitoring account backs up the configuration its level may see (IOS
+    filters it to what level 1 could enter; `show running-config view full`
+    is unfiltered, shows every key and is not lowered, and `show startup-config`
+    is not lowered pending a lab check); `operator`'s list is now `exec all:
+    ping`, `exec all: traceroute`, `exec all: monitor capture`, `clear
+    counters`, `clear line`, `clear ip arp`, `clear arp-cache`, `clear mac
+    address-table dynamic` and `undebug all` (IOS levels are cumulative, so
+    operator inherits readonly's line). The old list (`show running-config`,
+    `show startup-config`, `show tech-support`, `show archive`, `show
+    access-list`, `show ip route`) gave an operator little or nothing useful
+    (a level-7 `show running-config` is almost empty) and `show access-list`
+    and `show ip route` are level 1 already; the new list moves nothing up.
+    **On the devices:** the rules reach the server at the upgrade's re-render,
+    but the new `privilege` lines reach a device only when you paste the
+    output of `tacctl config cisco` again, and the old lines stay until you
+    remove them: for each of `show running-config`, `show startup-config`,
+    `show tech-support`, `show archive`, `show access-list` and `show ip route`
+    that a device carries at level 7, enter `no privilege exec level 7 <command>`
+    (`show running-config` needs none: the new `privilege exec level 1 show
+    running-config` replaces its mapping). Until the re-paste an operator cannot yet `clear
+    counters` or `clear line` (the device's level gate), and a readonly user
+    reads the unfiltered level-1 output only. A SolarWinds backup of a Cisco
+    device is therefore a **filtered** configuration; before pointing NCM at
+    a fleet check what it stores. Pre-existing overrides are untouched.
+
+51. **The role preset's Cisco content, rewritten.** `tacctl group preset roles`
+    now also writes, for the viewer (`readonly`) and the operator, a `show`
+    deny in front of their shipped rules for the secret-bearing, unfiltered
+    sub-trees (viewer: `running-config view full`, `tech-support`,
+    `startup-config`, `derived-config`, `key chain`, `snmp community|user`,
+    `crypto`, `archive log`; operator: the same without `tech-support` and
+    with `crypto isakmp key|key`); every other `show` falls through to the
+    shipped permit. The engineer's Cisco rules are 34 rules, written whole
+    (item 48), and **Cisco configuration mode is not restricted for
+    engineers**: an engineer can change AAA, the TACACS+ and RADIUS servers
+    and keys, lines, privilege levels, SNMP, logging and the management ACL,
+    so a mistake can lock a device out (tacctl's own push, 0.2.5, protects
+    itself with its revert timer; a site that wants a boundary adds rules with
+    `tacctl group commands add`). What stays denied is exec-level only and
+    hides nothing: `reload`, `delete`/`erase`/`format`/`fsck`/`rename`/`mkdir`/
+    `rmdir`, `request`/`install`/`software`/`upgrade`/`issu`, `write erase`,
+    `archive` other than `archive config`, `copy` into running-config or
+    flash (saving to startup-config, flash or a URL and exporting a file are
+    permitted), `configure network|memory` and `configure replace <url>`,
+    `tclsh`/`guestshell`/`app-hosting`/`iox`/`scripting`, `hw-module`,
+    `redundancy`, `switch`, `test aaa`, `debug all|aaa|tacacs|radius`, `clear
+    aaa|logging|archive`, and the matching `do` forms. The preset no longer
+    takes the management ACL's name into account.
+
+52. **The role preset's Junos deny sets, and no `deny-configuration`.**
+    `deny-commands` per role: viewer (112 of 241 bytes) denies `ssh`,
+    `telnet`, `file`, `request`, `restart`, `start`, `load`, `op`, `test`,
+    `monitor`, `configure`, `edit`, `clear` and `show system rollback`;
+    operator (226) denies `file`, `request`, `restart`, `start`, `load`, `op`,
+    `test`, `configure`, `edit`, the hard protocol clears (`clear bgp|ospf|
+    ospf3|isis|ldp|rsvp|mpls|pim|igmp|msdp|bfd|vrrp|lacp|dhcp`), `clear
+    system|security|network-access|log`, `monitor traffic ... write-file` and
+    `show system rollback`; engineer (219) denies `request system|chassis
+    routing-engine|vmhost|security`, `start`, `op`, `file copy|delete|
+    delete-directory|rename|archive|show|change-owner|change-permission`,
+    `clear system login|log` and `restart chassis|management`. `load` is not
+    denied for the engineer: Junos tests a pattern against a command's
+    keywords with each argument replaced by a placeholder, so no pattern can
+    allow `load set terminal` (pasting set-lists) and refuse `load set
+    <file>`; an engineer has no shell and cannot `file copy`, so the files a
+    load reads are the ones the box holds. The dead `show configuration .*(...)`
+    clauses of 0.2.2 are gone (the lab showed they never matched). **No role
+    has a `deny-configuration`**: the viewer and the operator read the whole
+    configuration with secrets redacted (`SECRET-DATA`; their classes have no
+    `secret` bit), the engineer must not hide what they can see, and the
+    engineer's set, which 0.2.2 wrote and which contained `snmp`, is no longer
+    part of the preset (engineers may configure SNMP). With the canonical
+    settings **a Junos engineer's `EN-CLASS` bits are the only limit on
+    configuration**: an engineer can edit `system login`, `tacplus-server` and
+    the management filter, where on Cisco the rules (item 51) are the only
+    limit; that asymmetry is accepted. A site that wants a Junos boundary sets
+    `group junos engineer deny-configuration` itself (README, Default
+    Groups). `group preset roles` clears an engineer `deny-configuration` left
+    by 0.2.2 only with `--force` (otherwise it reports it as kept), and its
+    `--mgmt-filter` option is gone, since there is no `deny-configuration`
+    left to put the filter in. The deny sets are sent by the server and take
+    effect at the next login; the classes' permission bits are the ceiling
+    on the device (item 107).
+
+53. **Lab check of per-command authorization: `tests/tools/permcheck.py`.** A
+    small RFC 8907 client that asks a lab TACACS+ server for the decision on
+    every `user|cmd|args|expected` line of a file and reports the differences
+    (no server is started by the repository; it takes a host, port and secret
+    and fake secrets only in its examples). `tests/tools/permcheck-baseline.txt`
+    holds the baseline's sample corpus as the preset decides it. See
+    `tests/README.md`.
+
+54. **The engineer role preset of 0.2.2 did not hold, and `tacctl upgrade`
+    says so.** Of the Cisco denies that `tacctl group preset roles` wrote on
+    0.2.2, most did not work: the regexes were prefix forms (`^config-key`,
+    `^(http|ssh|...)`, `trustBoundary`, the `do` list), and tacquito matches
+    the whole arguments string, so only the exact one-word argument was
+    denied. `no aaa new-model`, `no tacacs server X`, `no username x`,
+    `no line vty 0 4`, `enable secret ...`, `ip ssh ...`, `ip http server`,
+    `key config-key ...`, `test aaa ...`, `clear aaa ...`, `do copy tftp:
+    running-config` and `do reload in 5` were permitted, and the `copy`
+    permit let `copy running-config bootflash:packages.conf` through while it
+    denied `copy running-config tftp://...`. The test of that preset passed
+    because it did not anchor the regexes the way tacquito does; the tests
+    now decide with an emulator of tacquito's authorizer. The
+    preset's values are overrides, which an upgrade never touches, so an
+    install that ran it keeps them: `tacctl upgrade` compares
+    `commands.engineer` and the two Junos sets of `engineer` with the text of
+    0.2.2's preset and, when they are identical, ends with a red notice that
+    names `tacctl group reset engineer` (look first with `--dry-run`; item 55).
+    Nothing in the shipped defaults was affected.
+
+55. **The upgrade notice names the new verb.** An install that still carries
+    0.2.2's engineer role preset is told to run `tacctl group reset engineer
+    --dry-run` and then `tacctl group reset engineer`, in place of `group
+    preset roles --force`, which also rewrote every other role.
+
+56. **`tacctl group reset <group> [--preset] [--only settings,commands,privileges,junos]
+    [--dry-run] [--yes]` puts a group back to its canonical state.** It shows
+    the difference first and asks `Apply these changes to group '<group>'?
+    [y/N]` (`--yes` answers for you; without a terminal and without `--yes`
+    it changes nothing and exits 1; `--dry-run` prints the difference and
+    stops; a group that already is canonical says so and exits 0 without
+    asking). Superuser only: the gate, the tiers sudoers and the shell's and
+    the console's lists give a lower tier, the engineer included, no `group
+    reset` (an engineer changes no global setting). `--only` limits the reset
+    to the sections named; it never changes the group's name, users or
+    built-in flag. Where `group commands reset <group>` drops only the
+    command overrides, this reverts everything a group carries in one
+    reviewed step.
+
+57. **What canonical means.** For `readonly`, `operator` and `superuser`: what
+    a fresh install gives them, read from the same sources the install uses
+    (the shipped command rules and Cisco privileges, priv-lvl 1, 7 and 15,
+    Junos class `RO-CLASS`, `OP-CLASS` and `RW-CLASS`), with no setting of
+    their own for the tier, the WTI level or the Junos sets. With `--preset`:
+    the role preset's values (items 51, 52), so a built-in group can be set
+    back to its role. For `engineer`, which is not built-in until 0.3.0: the
+    preset's engineer (priv-lvl 15, `EN-CLASS`, tier `engineer`, WTI
+    `superuser`, its Junos `deny-commands`, no `deny-configuration`, its Cisco
+    rules), written through the same setters as `group preset roles`, so
+    `group reset engineer` equals `group preset roles --force` for that one
+    group (and creates the group when it is absent). Any other group is
+    refused: `Group 'x' is not a built-in or role group, so it has no
+    canonical defaults; group commands reset x drops its command overrides.`
+
+58. **The difference.** Four sections, each `unchanged` or the lines that
+    change: `settings` (priv-lvl, Junos class, tier and WTI level as
+    `current -> canonical`, the tier and level saying whether the current
+    value is set or automatic), `commands` (rules removed `-`, added `+`,
+    moved `~`, and the default action), `privileges` (lines `-` and `+`) and
+    `junos` (each deny set with its size in bytes, its patterns `-` and
+    `+`). It is computed before anything is written. A priv-lvl change warns
+    `Cisco logins and the per-level authorization lines change; re-paste
+    tacctl config cisco`, a class change `re-paste tacctl config juniper Step
+    1`, and a tier that falls names the users whose tier falls. When the
+    group ends with command rules, the groups at its priv-lvl that have none
+    get a `*` permit rule first, as `group commands add` does (the lockout
+    guard of `aaa authorization commands <level>`), and the diff says which.
+
+59. **Writes, the audit line and the server's accounts.** The reset takes the
+    usual pre-change snapshot, writes in one apply, renders and restarts the
+    backends once, and logs `group reset name=<group> sections=<changed
+    sections> by=<user>`. Every group at priv-lvl 15 other than `superuser`
+    keeps an explicit tier setting (a reset to the preset's `engineer` writes
+    `tier.engineer: engineer`). A reset that lowers a tier syncs this
+    server's accounts at once, or says `Members of '<group>' keep their old
+    groups on this server until: tacctl host sync <server>`, as `group edit
+    tier` does (item 14).
+
+60. **Removed: `tacctl group privilege clear <group>` and `tacctl group
+    commands clear <group>`.** Both answer like any unknown subcommand
+    (`Unknown subcommand: 'clear'` and the usage, exit 1) and are gone from
+    the usage, the completion, the README and the manual page; item 61
+    replaces them. `group privilege clear` wrote an empty list
+    (`privileges.<group>: []`), which hid the shipped default instead of
+    removing the override, so a built-in group that was cleared lost its
+    shipped mappings (`readonly`'s `show running-config`, `operator`'s
+    `ping` and `clear` entries) without saying so; `group commands clear`
+    dropped the rules after a bare confirmation, with no look at what would
+    change. A `privileges.<group>: []` that a `clear` left in
+    `tacctl.yaml` is not touched by the upgrade; `group privilege reset
+    <group>` shows it as a change to the shipped default and removes it.
+
+61. **New: `tacctl group privilege reset <group> [--dry-run] [--yes]` and
+    `tacctl group commands reset <group> [--dry-run] [--yes]`.** Each puts
+    one group's Cisco priv-exec mappings (`privileges.<group>`) or command
+    rules (`commands.<group>`) back to the shipped default, with the
+    difference and the confirmation of `group reset`, and gives the same
+    difference and result as `tacctl group reset <group> --only privileges`
+    or `--only commands` for a built-in group. The shipped default is
+    `defaults.yaml`'s list for `readonly`, `operator` and `superuser`; any
+    other group, a custom group or `engineer`, has none shipped, so the reset
+    removes its override (a true removal: the group has none afterwards, and
+    an empty list is never stored). Neither takes `--preset`: the role
+    preset's values come with `group reset <group> --preset`. The difference
+    lists the entries or rules removed (`-`), added (`+`) and moved (`~`), and
+    for the rules the default action; `already canonical` exits 0 without
+    asking. It then asks `Apply these changes to the privileges of group
+    '<group>'? [y/N]` (`... to the command rules of group ...`); `--yes`
+    answers for you, without a terminal and without `--yes` it changes
+    nothing and exits 1, `--dry-run` stops after the difference. A snapshot is
+    taken first, the backends render and restart once, and the audit line is
+    `group privilege reset name=<group> by=<user>` (`group commands reset
+    ...`). `group privilege reset` warns that devices keep the `privilege
+    exec level N ...` lines they were pasted with, and lists the exact `no
+    privilege <mode> level N <command>` lines for the entries it removes, to
+    paste before re-pasting `tacctl config cisco`. `group commands reset`
+    keeps the lockout guard of `group reset`: a group at the same priv-lvl
+    without rules gets a `*` permit rule first, and a group left without any
+    rules is warned about (`tacctl config cisco` leaves its `aaa
+    authorization commands` line commented out). Both are superuser only, the
+    engineer included, like the other `group privilege` and `group commands`
+    verbs. `group privilege list|add|remove|seed` and `group commands
+    list|default|add|remove|seed` are unchanged.
+
+62. **New: `tacctl scope snmp <scope> show [--reveal] | version | community
+    | v3-user | clients | contact | port | timeout | clear | test`.** SNMP
+    is now a setting of the scope; `tacctl config snmp` keeps meaning the
+    default beneath it. A value comes from the scope, else the default
+    (`snmp.*` and `snmp.yaml`), else the built-in, and `show` labels each
+    one `(scope)`, `(default)` or `(built-in)`; the v3 user and its two
+    passphrases are taken together from one level. The scope's non-secret
+    settings are `snmp_scope.<scope>.{version,port,timeout,v3.auth,v3.priv,
+    contact,clients}` in `tacctl.yaml`, written only when set; its community
+    or v3 passphrases are the file `/etc/tacctl/snmp/<scope>.yaml` (0600 in
+    a 0700 directory, the format of `snmp.yaml`, which is unchanged: a
+    `snmp.yaml` of 0.2.2 loads as it did, and 0.2.2 ignores the new
+    directory). `community` and `v3-user` ask twice without echo (`--stdin`
+    reads them) and make the scope's version v2c or v3. A scope's rename
+    moves its settings and file; its removal (also `scope prefixes remove
+    --all`) deletes them. The sysName lookup of `device add` and `device
+    check` now uses the credentials of the device's scope, the one that
+    answers its address (a device in no scope uses the default);
+    `scope snmp <scope> test <address|device>` tries the scope's,
+    `config snmp test` the default's. A message that says SNMP is not
+    configured names `tacctl config snmp` for a scope that has set nothing
+    of its own and `tacctl scope snmp <scope>` for one that has begun. A
+    credentials file that cannot be read leaves the SNMP step out of a
+    walkthrough with a warning and fails the lookup with its reason.
+
+63. **The allowed SNMP clients and the contact of a scope:
+    `scope snmp <scope> clients list|add|remove <cidr>[,<cidr>...]` and
+    `contact [<text>|--clear]`.** The ranges are IPv4 networks in canonical
+    form, kept in the order given (the order of the access list), at most
+    32, none twice, and never `0.0.0.0/0` (`would allow every address:
+    0.0.0.0/0 is the restrict tacctl always renders last, and is never
+    stored`); IPv6 is refused. An overlap of two ranges is a note, not an
+    error (`10.0.0.0/8 already contains 10.1.0.0/16 (both stay)`). A scope
+    with no ranges allows the tacctl server only, and the walkthrough says
+    so. The contact is up to 120 characters, with no control character and
+    no `?` (a device CLI reads a pasted `?` as a request for help).
+    `tacctl.yaml` is held to the same rules: `config validate` reports a
+    hand-edited list or contact that breaks them.
+
+64. **`config snmp show --reveal` prints the default's credentials.** Plain
+    `show` still says only whether they are set.
+
+65. **New: `tacctl device location <name> [<text>|clear]` and `device add
+    --snmp-location <text>`.** A device may have a location, the SNMP
+    location its walkthrough renders (120 characters, no control character,
+    no `?`). `devices.yaml` gets a `location:` line only for a device that
+    has one, so a registry without any is the bytes it was; `device show`
+    prints it and `device export --json` carries it (the CSV columns do not).
+    A CSV import keeps the location of a device it updates. An empty text
+    clears it. An engineer may set it for the devices of their own scopes.
+
+66. **`config cisco`, `config juniper` and `config wti` end with an SNMP
+    step.** Every walkthrough (the TACACS+ and RADIUS forms, and Cisco's
+    legacy IOS 12.x form) gains a `${SNMP_BLOCK}` step that lets the device
+    answer the tacctl server's reads and nobody else's. The allowed clients
+    are, in this order, the tacctl server's own address as a /32 (always;
+    the address its route to the devices uses, or `--source`, item 68),
+    the scope's ranges in the order given (item 63), then `0.0.0.0/0`
+    refused, which is always rendered and never stored. Cisco gets the
+    standard access list `TACCTL-SNMP` (a /32 as `permit host`, wildcard
+    masks for the rest, ending in `deny any`) bound to `snmp-server
+    community <community> RO TACCTL-SNMP`, or for v3 a view, the group
+    `TACCTL-GROUP` (`v3 priv read ... access TACCTL-SNMP`) and `snmp-server
+    user ... v3 auth sha|sha256 ... priv aes 128 ...`, with `snmp-server
+    location` and `contact`. Junos gets `set snmp client-list TACCTL-SNMP`
+    with the ranges and `0.0.0.0/0 restrict`, the community `authorization
+    read-only` with `client-list-name`, or the v3 `usm local-engine` user
+    with its `vacm` group and view, and `set snmp location|contact|
+    description`. WTI gets the unit's SNMP menu in the walkthrough's style
+    (version, community or v3 user, location, contact) as Step 6, with the
+    client restriction written as the list of clients for the unit's IP
+    Tables (Step 5 is the unit's firewall check). The
+    values are the scope's effective ones (item 62), the credentials are
+    printed for superusers and for engineers of the scope (item 21), and a
+    line says whether they are the scope's own or inherited from the
+    default. A value that is not set (the scope's contact, a device's
+    location) is a commented placeholder, never text a paste would apply,
+    and the output ends with `Unfilled SNMP values: contact (tacctl scope
+    snmp <scope> contact '<text>'), location (tacctl device location <name>
+    '<text>')`; with no SNMP version in the scope or the default the step is
+    a comment saying SNMP is not configured in tacctl, and nothing is
+    listed. The step is built by one function per vendor over one input
+    value (version, credentials, clients, contact, location, sysName,
+    description) that reads no terminal, file or clock, so the text can be
+    rendered per device later and reused by a push. **The Cisco and Junos
+    lines are live, not comments:** pasted on a device that already has SNMP
+    they bind an existing community to a list that allows only the server and
+    the scope's ranges and overwrite the location and contact, so pollers and
+    NCM using that community lose access; add them first with `tacctl scope
+    snmp <scope> clients add <cidr>`, or leave the step out. **Not verified
+    on a device:** the SNMP syntax of the three vendors, the SHA-256 keywords on
+    Cisco and Junos, that a Junos client list does not restrict a v3 user
+    (the output says so), and the WTI menu names and client restriction
+    (the unit may have an SNMP access menu of its own). An operator's copy
+    of a template without `${SNMP_BLOCK}` renders as before, without the
+    step and without the `Unfilled` line. The shipped templates, their
+    golden files and `.shipped.sha256` change.
+
+67. **The WTI walkthrough has one more step.** The SNMP step is Step 6, so
+    Save is Step 7, the test from a second session Step 8 and the debug
+    step Step 9, in the TACACS+ and RADIUS forms; the notes and the verify
+    lines name the new numbers. A template of your own keeps its numbers.
+
+68. **`config cisco|juniper|wti` take `--name`, `--server`, `--source` and
+    `--snmp-location`.** `--server <address|name>` is the address the
+    devices are told to authenticate against (the TACACS+ or RADIUS server
+    lines, the ping step), for devices that reach this server through a
+    translating firewall; a host name must resolve to an IPv4 address, and
+    it replaces the address a RADIUS listener is bound to too.
+    `--source <address>` is the address tacctl itself reaches the devices
+    from: the first SNMP client, and the address the ssh permit of the Cisco
+    VTY-ACL and of the Junos management filter and the server's /32 of the
+    WTI IP Tables list allow in addition to the scope's ranges, so a paste
+    from behind the firewall does not lock tacctl out. When they differ
+    the output says which address plays which role (`Two server addresses:`).
+    Neither is stored, and both combine with `--staging`. `--name <device>`
+    now also names a registered device without `--staging` (it was refused
+    with `--name goes with --staging`): its location, description and sysName
+    fill the SNMP step, and a device of another scope is refused;
+    `--snmp-location <text>` gives the location for one paste. The usage
+    line names the new flags.
+
+69. **A commented NETCONF step in the Junos and Cisco walkthroughs.**
+    Junos: `set system services netconf ssh` with the optional
+    `connection-limit` and `rate-limit`, the check `ssh -p 830 -s
+    <user>@<device> netconf` (expect a `<hello>`) and `show system
+    connections | match "\.830 "`; the management filter, whenever it is
+    rendered, says that it permits tcp port 830 next to ssh (it did), and
+    without a filter the step says to permit it when one is added. Cisco: a
+    commented `netconf-yang` with its prerequisite (exec authorization),
+    for superusers; an engineer's walkthrough says to ask a superuser (the
+    engineer's command rules no longer deny `netconf-yang`, but this step
+    stays a superuser's); the legacy IOS 12.x walkthrough says there is no
+    NETCONF. The WTI notes say the unit has none. Nothing is enabled by
+    tacctl. **Not verified on a device.**
+
+70. **`config wti` renders the unit's IP Tables list for the scope.** Step 5
+    (both protocols) keeps its caution about loopback and replies and now
+    follows it with the whole list, numbered in the unit's order, from data
+    tacctl already holds: the scope's management permit list (`scope
+    mgmt-acl`, else the global `config mgmt-acl`, the list the Cisco
+    VTY-ACL and the Junos filter read), the tacctl server's address (the
+    route to the devices, or `--source`; never `--server`) and the scope's
+    SNMP clients. The rules: `-i lo`; `-m conntrack --ctstate
+    ESTABLISHED,RELATED` (older builds: `-m state --state
+    ESTABLISHED,RELATED`; it covers the replies of the unit's own TACACS+,
+    RADIUS, DNS and NTP queries); `-p tcp -s <cidr> --dport 22` and `--dport
+    443` for the server's /32 and each permitted range; `-p udp -s <cidr>
+    --dport 161` for the SNMP clients (the server first, then the scope's
+    ranges in order). Telnet and http are not rendered; the notes say how to
+    add them. IPv4 only: an IPv6 or malformed entry is skipped with a note.
+    Nothing new is stored and there is no new verb, so rolling back to
+    0.2.2 has nothing to clear.
+
+71. **The final DROP is a separate last step, never applied by the
+    walkthrough.** `iptables -A INPUT -j DROP` is not in the Step 5 list;
+    Step 11 gives it as the next numbered line, says plainly that the
+    walkthrough does not apply it, and tells you to keep the serial session
+    open, to paste it yourself as the last line and to test a login from a
+    permitted address before saving. A scope with no management permit list
+    (none of its own, none global, or only IPv6 entries) gets the loopback,
+    established and server rules and a commented DROP with the reason: the
+    DROP would lock out every administrator but tacctl. An unknown server
+    address also leaves it commented, and the output ends with `Unfilled
+    SNMP values: tacctl server address (pass --source <address>)`.
+
+72. **The WTI walkthroughs end with two more steps.** Break-glass local
+    accounts, which shared Step 9 with the debug step, are Step 10, and the
+    final DROP is Step 11; Step 1 says to keep the serial session open until
+    Step 11 is done when the DROP is added. The templates gain the
+    variables `IPTABLES_BLOCK` and `IPTABLES_DROP_BLOCK`; a template of your
+    own keeps its numbers and lacks the list until you add them.
+
+73. **The WTI SNMP step points at the IP Tables list.** Its client
+    restriction (the server, the scope's ranges, everything else refused) is
+    now the udp port 161 lines of Step 5, unless the unit has an SNMP access
+    menu of its own, where the same clients go; the text no longer says the
+    restriction depends on a list not yet written.
+
+74. **The mgmt-acl usage and the README name WTI.** `config mgmt-acl` and
+    `scope mgmt-acl` describe the permits as those of the Cisco VTY-ACL, the
+    Junos lo0 filter and the WTI IP Tables; the README's "Management ACL"
+    section and the manual page describe the list, the guards and the final
+    DROP.
+
+75. **Not lab-verified.** The list is built from WTI's documents and the
+    user's description of the unit. How the real unit takes the lines (the
+    menu under `/N`, whether a changed list applies on entry or on save,
+    whether `-m conntrack` or the older `-m state` is accepted, and that the
+    TACACS+ login and the `sysName` read still work with the DROP in place)
+    is for the user to confirm on the lab unit; the output says "Not
+    verified on a unit".
+
+76. **`tacctl scope breakglass <scope> list | add <name> [--role
+    admin|operator|readonly] | remove <name>` records a scope's break-glass
+    local users.** These are the accounts a scope's devices keep for the day
+    the server cannot be reached; until now the walkthroughs only advised
+    keeping one. Only the name and the role are recorded (`admin` by
+    default), in `tacctl.yaml` as `breakglass_scope.<scope>.users`, a list
+    of `name:role`, written only when set, moved by `scope rename` and
+    removed with the scope. **tacctl never stores a password or a hash for
+    them.** A name must be a device-safe user name (a letter, then up to 31
+    letters, digits, `_` and `-`), is refused when it is a tacctl user of the
+    scope (the device's local account would shadow the server's), when it is
+    `root`, `tacquito` or the Junos account `remote` (item 80), or when it
+    collides with a template-user or class
+    name of the Juniper walkthrough (`RW-CLASS`, `OP-CLASS`, `RO-CLASS`, any
+    other group's class, `super-user`, `operator`, `read-only`,
+    `unauthorized`), and a scope records at most 16. Each change is logged
+    (`auth.info scope breakglass add|remove`). It is superuser-only, as the
+    other settings of a scope are: an engineer's `scope breakglass` is
+    refused, while the walkthroughs of their own scopes show the accounts
+    (item 77). The tier table has no row for it and `permits.psv` pins that.
+
+77. **`config cisco|juniper|wti` render the scope's break-glass accounts,
+    with a placeholder where the credential goes.** A new last step of every
+    template (`${BREAKGLASS_BLOCK}`: the end of the Cisco configs, Step 7 of
+    the Juniper ones, with Commit as Step 8, and Step 10 of
+    the WTI walkthroughs, for TACACS+ and RADIUS) holds one line per account. Cisco: `username <name> privilege <15|7|1>
+    secret 9 <TYPE9-HASH>` (the type 9 hash itself, as `show
+    running-config` prints it; `--legacy`, IOS 12.x, has no type 9 and gets
+    `secret 5 <HASH>`; item 79), next to the `aaa authentication login`
+    line that follows the scope's `aaa-order`. Junos: `set system
+    login user <name> class <class> authentication encrypted-password
+    '<HASH>'`, the class being the local class of the built-in `superuser`,
+    `operator` or `readonly` group for the roles `admin`, `operator` and
+    `readonly`, never a template user. WTI: a local account of the matching
+    access level (`admin` is Administrator, or the level the group's
+    `wti-level` sets; item 82) in a menu step. The lines are
+    commented out, so a paste cannot create an account with the placeholder
+    as its password, and the output ends with an `Unfilled break-glass
+    credentials` line naming every recorded account (tacctl cannot see
+    whether you put in a credential, so the line stays while the account is
+    recorded). A scope without break-glass users gets the existing advice and
+    a notice with the command that records one. An operator's own copy of a
+    template does not get the step (`tacctl upgrade` leaves the new template
+    beside it as `<name>.template.new`); the `Unfilled` line is printed
+    anyway. Creating, rotating and removing the account on the device stays
+    with the operator.
+
+78. **`config validate` warns about a scope with no break-glass user, and
+    `scope show` says so.** `config validate` prints one `Break-glass:`
+    warning naming the scopes with none (a lockout risk when the server is
+    unreachable; the exit status is unchanged) and one for each recorded name that is also a
+    tacctl user of the scope, and reports a `breakglass_scope.*` key that was
+    hand edited into a shape the setter refuses. `scope show` has a
+    `Break-glass:` line with the accounts and roles, or `none`.
+
+79. **The Cisco break-glass line carries the hash, in the form IOS takes.**
+    The line had the hash after `algorithm-type scrypt secret`, but that
+    keyword takes a plaintext password and hashes it: a pasted `$9$...` hash
+    would have become the password, literally. It is now `username <name> privilege <N> secret 9
+    <TYPE9-HASH>` (`secret 5 <HASH>` with `--legacy`), and the comment above
+    it says the hash is meant, not the password. Output of the walkthroughs,
+    the README and the man page change with it.
+
+80. **Break-glass names: `remote` is reserved and case does not count.**
+    `remote` is the Junos template account every remote user without a
+    local-user-name is mapped to; a local `remote` of the `admin` role would
+    have put them all in the superuser class, so `scope breakglass add`
+    refuses it (as `root`). Duplicate, member and reserved-name checks, and
+    `remove <name>`, compare without regard to case, as the template names
+    always did; `config validate` reports two entries that differ only in
+    case.
+
+81. **`user add`, `user scope add|replace` and `user rename` refuse a name
+    that is a break-glass account.** The check ran only from the break-glass
+    side. A tacctl user named like a break-glass account of a scope they are
+    in (or would be in) gets the local account's class on Junos, and on
+    Cisco with `aaa-order local-first`. The verbs now refuse it, naming
+    `tacctl scope breakglass <scope> remove <name>` as the way out.
+
+82. **The WTI break-glass level follows the group's `wti-level`.** The
+    account line used the group's priv-lvl band and ignored a `wti-level`
+    set on the group, so it could disagree with the mapping table of the same
+    walkthrough. The placeholder in the WTI step is `<PASSWORD>` (it is
+    typed on the unit, not a hash). The comments above the Cisco and Junos
+    accounts now say what the scope's `aaa-order` does: the local accounts
+    are tried first with `local-first`, otherwise only when no server
+    answers.
+
+83. **Smaller changes in `scope breakglass`.** `scope breakglass <scope>
+    remove <name>` completes the recorded names. `config validate` prints
+    one warning line naming the scopes without a break-glass user instead of
+    one per scope. `add` no longer says the account is unfilled "until you
+    put in your own", which tacctl cannot tell.
+
+84. **New: `tacctl rollback <version> [--apply] [--yes] [--hosts]` prepares
+    the state for the release before this one.** Run on 0.2.3, before the
+    older release is installed (item 88 described the manual steps; this
+    does them). It is a dry run unless `--apply` is given: the dry run lists
+    every step and every warning and changes nothing (not a byte, not a
+    snapshot). The one target is `0.2.2`; `0.2.1` and older are refused
+    with the reason (0.2.2's own changes, the per-group `junos`, `wti_level`
+    and `tier` settings, the SNMP name hint and the host facts, are not
+    covered: restore a snapshot with `tacctl backup restore`), and so is
+    `0.2.3`, a newer release or any other word. Superuser only: the tier
+    table has no row for it (`permits.psv` pins that), so an engineer, an
+    operator and a readonly user are refused by the gate. The command ends
+    with the exact next step, `tacctl upgrade --branch 0.2.2` (which
+    switches the clone to the tag, builds it and re-executes it), and the
+    fallback that needs no tool: `tacctl backup restore <id>` of the entry
+    you noted in `tacctl backup list` before the upgrade to 0.2.3 (snapshots
+    are taken before every change; the upgrade adds one only when it records
+    a tier). A new
+    `rollback` entry in the usage, the completion (`--apply`, `--yes`,
+    `--hosts`, and `0.2.2`), the README (Rolling back, under Upgrading) and
+    the manual page.
+
+85. **What `rollback --apply` converts, in this order, after a snapshot.**
+    `tacctl.yaml`: removes `linux.engineer_sudo`, `snmp_scope.*` and
+    `breakglass_scope.*`, the key families 0.2.3 added, and any other key a
+    0.2.2 binary does not know (0.2.2's `config validate` reports them and
+    its `backup restore` refuses a snapshot that has one; every
+    `tier.<group>` setting stays, 0.2.2 has the key and the value
+    `engineer`). The families are one table, `conf.Known022` and
+    `conf.Added023`, and a test fails when `schema.go` gains a key family
+    that is in neither (and, where the 0.2.2 tag is in the repository, when
+    `Known022` is not that tag's schema). `console.yaml`: removes
+    `tiers.engineer` and `settings.space_completion`, which 0.2.2's parser
+    rejects, and writes the file the way 0.2.2 reads it; every other setting
+    stays. `devices.yaml`: removes the `location` of every device (0.2.2's
+    parser answers `unknown key 'location'` and the registry cannot be
+    read). Each file is written once, atomically; a file this release
+    cannot read stops the rollback before anything is changed. It moves the
+    `snmp/` directory (the scopes' credential files, which 0.2.2 never looks
+    at; the snapshot holds them too) aside, and removes the marker
+    `/var/lib/tacctl/tier-pinned`, so that a later upgrade to 0.2.3 records
+    the tiers again. It leaves, and lists, the host records (the
+    `provisioner` entry is ignored by 0.2.2's JSON
+    decoder) and the engineer sshd drop-in `00-tacctl-engineer.conf` (a
+    `Match Group tac-engineer` block that only closes forwarding; 0.2.2
+    neither knows nor removes it, and removing it means an sshd reload in
+    the middle of a rollback).
+    `store.yaml` is not touched (0.2.3 did not change its format; a test
+    compares the bytes). It then re-renders the enabled backends through
+    `config render`: nothing it removed reaches `tacquito.yaml`, so this is a
+    check, and the file stays as 0.2.3 renders it (the shipped command rules
+    of item 50, every regex wrapped as `^(?:regex)$`), which tacquito reads;
+    0.2.2's `config validate` says `Rendered config ... is out of date`
+    until the upgrade (or its `config render`) renders 0.2.2's form. A
+    second `--apply` changes nothing and takes no snapshot.
+
+86. **Warnings that need a human, and `--yes`.** The dry run lists them and
+    `--apply` refuses, changing nothing, while one applies and `--yes` is
+    missing. *Engineers become superusers under 0.2.2*: 0.2.2 takes a user's
+    tier from the priv-lvl of the group alone, so a group at priv-lvl 15
+    (an engineer group, or one given a lower tier, or one whose setting was
+    lost) makes its users superusers; the users are named, for this server
+    (the scope of its `--local` entry: superusers of tacctl there, and
+    members of `tac-superuser`) and for each other host (they join
+    `tac-superuser` at the next 0.2.2 sync, `--hosts` or not). *Groups
+    change tier*: every group whose `tier.<group>` differs from its priv-lvl
+    band, with its tier now and under 0.2.2. *Settings 0.2.2 cannot use are
+    dropped*: the engineer sudo list, the per-scope SNMP settings (the
+    credential files are moved aside, mode 0600, and named; the snapshot
+    holds them), the
+    break-glass users (no longer rendered; they exist only in the snapshot),
+    the device locations. An install without a store has no snapshot to
+    take, which is a warning too. A note (no `--yes`) lists the command
+    rules with a top-level `|` in a regex, which match differently again
+    when 0.2.2 renders them unwrapped (item 48). A model that cannot be
+    read is a warning of its own.
+
+87. **`rollback --hosts` takes the engineers' sudo off the enrolled Linux
+    hosts: the client script's `TAC_REVOKE_ENGINEER=1`.** 0.2.2's sync never
+    removes the `%tac-engineer` line from a host's sudoers drop-in, nor
+    the engineers from `tac-engineer`, and gives an engineer at priv-lvl 15
+    `tac-superuser`. After the files are converted, `--hosts` syncs every
+    enrolled host but this server's own entry (listed as not synced) through
+    `host sync` (the scope rules, the prompt for removed users' homes, the
+    host's record) with a new header field, `TAC_REVOKE_ENGINEER=1`, added
+    only for this run (the protocol stays 6; an ordinary sync has no such
+    line). The script then writes no `%tac-engineer` line in the sudoers
+    drop-in and takes the accounts of the engineer tier out of
+    `tac-superuser` and `tac-engineer` (`'<user>': engineer sudo revoked
+    (removed from tac-engineer).`), so the engineers have no sudo on the
+    host until the next 0.2.2 sync, which puts an engineer at priv-lvl 15 in
+    `tac-superuser` again (item 86): take engineer groups out of those scopes
+    or lower their priv-lvl first. Every other account, and the groups
+    themselves, are left alone.
+    The tacctl server's own script ignores the field (engineers there have
+    tacctl's sudo rows only, which the older release replaces). A host that
+    fails is named, the others are still synced and the exit status is 1;
+    run the same command again once the cause is fixed.
+
+88. **Rolling back to 0.2.2 by hand.** `tacctl rollback 0.2.2 --apply`
+    (item 84) does what follows. A `tacctl.yaml` that carries `snmp_scope.*`
+    is reported as `unknown config key` by 0.2.2 and makes its `backup
+    restore` refuse a snapshot, and a `devices.yaml` with `location:` is
+    refused by its parser (`unknown key 'location'`). Without the tool,
+    clear them before going back: `tacctl scope snmp <scope> clear` for every scope (it
+    removes the settings, the ranges, the contact and the credentials
+    file), and `tacctl device location <name> clear` for every device that
+    has one (`tacctl device export` shows them); `tacctl scope breakglass
+    <scope> remove <name>` for every recorded break-glass name; `tacctl
+    config linux engineer-sudo all`, which unsets `linux.engineer_sudo`; and
+    remove `tiers.engineer` and `settings.space_completion` from
+    `console.yaml` by hand (`console tiers engineer disable` is refused: the
+    engineer tier is always on). The directory
+    `/etc/tacctl/snmp/` is ignored by 0.2.2 and may stay.
+
+89. **The manual page is checked against the code.** `man/tacctl.1` is still
+    written by hand and still shows everything, whatever the caller's tier,
+    but `make lint` now runs the Man tests of `internal/cli` and `groff -k -ww`
+    on it (`make lint-man`), so no change passes with a stale page. The tests
+    fail naming the missing item and the part of the page to edit: every
+    command of the tree has an entry and none that is gone is named (also the
+    removed `group privilege clear` and `group commands clear`); every flag of
+    every command, in every spelling, is in its command's entry; every key of
+    `tacctl.yaml` and `console.yaml` is under CONFIGURATION KEYS with its type
+    and default; every path of `internal/paths` is under FILES (or in a short
+    list of directories whose files are listed, each with the reason); every
+    environment variable the code reads is under ENVIRONMENT (the variables
+    that move paths or set the clock for the test suite are listed with the
+    reason in `manEnvExempt`); every exit status the tests pin is under EXIT
+    STATUS; every row of the tier table is under TIERS in the tier it is open
+    to. Whatever can be derived from the code is generated, so it cannot
+    drift: `make man` rewrites the blocks between `.\" BEGIN GENERATED:
+    <name>` and `.\" END GENERATED: <name>` (the TIERS table, the two key
+    lists, and for each command its tier line and flag list, with the flags
+    described as the usage describes them), and a test compares them byte for
+    byte. The prose around them stays hand-written. See `tests/README.md`.
+
+90. **Four new sections of the manual page, and a tier line in every entry.**
+    TIERS says who is held to a tier and how it is decided, and lists, from
+    the same table the gate and the sudoers drop-in use, the verbs each tier is
+    the lowest for, with the notes for the verbs the code splits further
+    (`scope staging`, `scope secret`, `scope snmp`, `host show`, `device
+    import -`). CONFIGURATION KEYS lists every key of `tacctl.yaml` (the
+    families `privileges.<group>`, `snmp_scope.<scope>.*`,
+    `breakglass_scope.<scope>.users`, `tier.<group>` and the rest included)
+    and every setting of `console.yaml`, each with its type, default, what it
+    is for and the verb that sets it. EXIT STATUS documents 0, 1, 2, 3, 126,
+    127 and 130. ENVIRONMENT documents the variables tacctl reads
+    (`SUDO_USER`, `SUDO_UID`, `SUDO_GID`, `HOME`, `USER`, `LOGNAME`,
+    `SSH_CLIENT`, `SSH_TTY`, `SSH_CONNECTION`, `SSH_AUTH_SOCK`, `DISPLAY`,
+    `TACCTL_CONSOLE`, `TACQUITO_SRC`). Every command's entry ends with a
+    `Requires: <tier>` line and, when the command has flags, an `Options:`
+    list of them.
+
+91. **Gaps the new tests found, filled.** Flags that no entry named:
+    `backend enable|disable --yes`, `config juniper|wti --staging`,
+    `config linux script|remove-script -o`, `device hostkey|import|remove
+    --yes`, `device ssh -X -Y -g -L -R -D`, `host enroll --staging`,
+    `log tail|search|failures|accounting|clear --backend` and `log clear
+    --yes`. Paths FILES did not list: `/etc/tacctl/hosts/` (the per-host
+    records), `/usr/local/go/`, `/etc/login.defs`, `/etc/ssh/ssh_host_*_key.pub`,
+    the archives `uninstall` leaves in `/root/` and the FreeRADIUS package's
+    daemon, module directory, system dictionary and pid file.
+92. **The completion helper no longer names what a verb of the caller's tier
+    would not list.** `_completion-names breakglass-users <scope>` answered any
+    tier with the break-glass account names of any scope; it now answers
+    nothing to a caller below the superuser (the verb it completes, `scope
+    breakglass`, is the superuser's). `_completion-names backups` answers
+    nothing to the readonly tier, whose verbs do not list backups (`backup
+    list` is an operator row). The other kinds (users, groups, scopes,
+    backends, listeners, hosts, devices) are what `user list`, `group list`,
+    `scope list`, `backend list|status`, `ssh` and `device list` already show
+    that tier.
+93. **A setting left behind by a group is not taken over by a new group of the
+    same name.** `tier.<group>`, `wti_level.<group>` and `junos.<group>` stay
+    in `tacctl.yaml` when a store import, a restore or a hand edit drops the
+    group, and `group add` used to let a leftover `tier: superuser` raise a
+    new group at priv-lvl 5 above its band. `group add` now clears those three
+    settings of the name (it says which) unless `--tier` or `--wti-level` sets
+    them again; `commands` and `privileges` overrides are not touched.
+    `config validate` warns, never errors, of a tier, WTI level or Junos
+    setting for a group that does not exist, and so do `store import` and
+    `backup restore --legacy`, which replace the store and keep `tacctl.yaml`.
+94. **The upgrade says when accounts on the tacctl server still hold root.**
+    On an install where 0.2.2's `group preset roles` wrote `tier.engineer:
+    engineer`, the group is engineer-tier from the upgrade while its accounts
+    on this server stay in `tac-superuser` until a sync. When this server is
+    enrolled, the last lines of `tacctl upgrade` now name the members of
+    `tac-superuser` that are tacctl users below the superuser tier, in red,
+    with `tacctl host sync <server>`. The upgrade does not run the sync itself
+    (it prompts and rewrites accounts), as `console check` does not.
+95. **`rollback --apply` removes the tier-pin marker and moves the SNMP
+    credentials aside.** The marker `/var/lib/tacctl/tier-pinned` left in
+    place made the upgrade to 0.2.3 that follows 0.2.2 skip the pin, so a
+    group at priv-lvl 15 made or raised under 0.2.2 stayed at the operator
+    tier; it is removed (the dry run lists it: "remove the tier-pin marker so
+    the next upgrade pins again"). `snmp/` is moved to
+    `snmp.rolled-back-<timestamp>/` beside it (mode 0600 kept), not left live
+    for a new scope of the same name to pick up. The rollback's next steps no
+    longer say the upgrade took a snapshot: they say to note the newest entry
+    of `tacctl backup list` before upgrading.
+96. **Snapshots hold the SNMP credentials.** `snmp.yaml` and the per-scope
+    files of `snmp/` (0600, the directory 0700) are part of a snapshot, and
+    `backup restore` brings them back (a snapshot with a credentials
+    directory makes the live one match it; one without leaves the live files
+    alone). A scope removed with its credentials can be recovered.
+97. **`scope add` and `scope rename` do not take over a credentials file.** A
+    new scope, or a scope renamed to the name, whose SNMP credentials file
+    already exists (kept by a rollback, restored by hand) is refused with the
+    file's path; `snmpcred.RenameScope` no longer overwrites it.
+98. **The Junos walkthroughs number break-glass before the commit.** Step 7 is
+    the break-glass users and Step 8 the commit, in both Junos templates (it
+    was Step 7 Commit, then a second Step 6 after the `commit`); the step no
+    longer says "commit again". The WTI break-glass step (Step 10) ends with
+    "Save as in Step 7."
+99. **SNMP credentials are checked against device syntax.** A community, v3
+     user or passphrase with a blank, `?`, `"` or a control or non-ASCII
+     character, or longer than 32 (community, user) or 64 (passphrase)
+     characters, is refused when it is set. A value already stored that a CLI
+     would misread is rendered as a commented NOT SET line with the command
+     that sets it again. `device description` and `--description` refuse `?`
+     the way the location does (a description is pasted into `set snmp
+     description`); one stored with a `?` is rendered commented.
+100. **The Junos management filter restricts udp port 161.** When a
+     management ACL is rendered and SNMP is configured, the filter gets a
+     `permit-snmp` term (the server's /32, then the scope's SNMP client
+     ranges) and a `deny-snmp` term, for udp port 161 only, ahead of the
+     `default-accept`. The Step 5 text promised a source restriction under
+     SNMPv3 that the client list does not give; the filter is it, once applied
+     to lo0, and the text says so (and says v3 is unrestricted when no filter
+     is rendered).
+101. **The server's own address is the first permit of the Cisco access list
+     and of the Junos filter.** `--source` (else the detected address) heads
+     the VTY ACL and the management filter as a /32 whenever the block is
+     rendered, once, so `access-class` cannot cut off tacctl's own ssh; the
+     note under "Two server addresses" is now true for the three vendors.
+102. **`show running-config view full` is denied by the shipped readonly and
+     operator rules.** A `show` deny with `^(running-config view full)( .*)?$`
+     stands in front of the `show` permit (it was only the role preset's).
+     The three operator `clear` privilege lines (`ip arp`, `arp-cache`, `mac
+     address-table dynamic`) are documented as the one exception to "the
+     `local` fallback gives no more than the server": the device lowers the
+     verb with any arguments, the server permits the single-entry forms only;
+     a test names the three. The engineer preset's note says what tacquito
+     cannot do: tell exec from configuration mode, so `archive`, `switch`,
+     `redundancy`, `hw-module`, `iox`, `app-hosting`, `scripting`, `software`
+     and a bare `configure` are refused there too.
+103. **A typed space after `-` or `--` is a space.** At the shell's prompt `device
+     import -` followed by a space listed the flags, and `log search --` became
+     `log search --backend`; a word of dashes only now keeps the blank as
+     typed. The setting's usage says space completion assumes bracketed paste.
+104. **The legacy importer reads back what 0.2.3 writes.** A command rule with
+     an escaped quote, a `\uNNNN` escape or a `]` in its regex was scraped by
+     pattern and came back wrong or not at all; the `match:` list is read by
+     the YAML loader. `^(?:...)$` is taken off a regex only where what remains
+     has its parentheses paired and compiles, so a pre-0.2.3 `^(?:a)|(?:b)$` is
+     left alone instead of becoming `a)|(?:b`.
+105. **The console policy line logs only a session id.** `session=` in the log
+     line of `_console-policy` was the caller-controlled `TACCTL_CONSOLE`
+     (passed through `env_keep`); anything that is not a session id is logged
+     as `-`.
+106. **The rotation scripts do not read a test switch from the environment.**
+     The scripts the provisioner runs as root took `TACCTL_ROTATE_TEST=1` from
+     the environment of the ssh session, which moved the sudoers and passwd
+     paths and skipped the root check. The script now sets `ROTATE_TEST=0` on a
+     line of its own; the test suite rewrites that line in its copy.
+
+107. **The role preset's engineer class is `EN-CLASS`.** `tacctl group preset
+     roles` creates `engineer` with the Junos class `EN-CLASS`, `tacctl config
+     juniper` writes its template user and the engineer permission bits for
+     any group that uses it, and `group reset engineer` restores it. The other
+     classes are unchanged (`RO-CLASS`, `OP-CLASS`, `RW-CLASS`). A group
+     created earlier keeps the class it holds; set it with `tacctl group edit
+     <group> juniper-class EN-CLASS` after the devices have the template user.
+     The permission bits of the classes are final: the
+     viewer's `RO-CLASS` gains `network` (ping and traceroute; `ssh` and
+     `telnet` stay denied by its server-sent set) and `OP-CLASS` loses `reset`
+     (the operator's set already denied `restart` and `request`). Paste Step 1
+     of `tacctl config juniper` again to bring a device up to date. What an
+     engineer or operator may do beyond the bits is decided by the server-sent
+     deny sets, which need no change on the devices.
+
+108. **`tacctl device show` always names the location, and the walkthroughs do
+     not list it as unfilled.** The Location row is `-` when none is set. The
+     location belongs to one device, so a walkthrough no longer ends with an
+     `Unfilled SNMP values: location (...)` line for it; the commented
+     placeholder in the SNMP step still names `tacctl device location <name>
+     '<text>'`. The contact, the credentials and the server address are listed
+     as before.
+
+109. **`tacctl device config show <name>` prints a registered device's
+     walkthrough.** It prints the device's data (name, address, hostname,
+     vendor, the scope that covers it and the prefix, description, location),
+     then the walkthrough `tacctl config <vendor> --scope <its scope> --name
+     <name>` prints, from the same code, with the device's location,
+     description and name in the SNMP step. `--protocol tacacs|radius`,
+     `--legacy` (Cisco only), `--server` and `--source` are those of `config
+     <vendor>`. Only a cisco, juniper or wti device has one: a vendor `other`
+     is refused with `tacctl device vendor <name> cisco|juniper|wti`, an
+     enrolled Linux host with `tacctl host show <name>`, and a device no
+     scope's prefixes cover with `tacctl scope prefixes <scope> add <cidr>`; a
+     refusal prints no data block. `tacctl device config` alone prints the
+     usage. The row is the engineer's, like `config cisco|juniper|wti`: an
+     engineer gets the devices of their own scopes (another scope's device is
+     "not found"), an operator is refused, and completion offers the device
+     names after `device config show`.
+110. **The device's own location is read by SNMP.** `tacctl device add` reads
+     the device's `sysLocation.0` next to its `sysName.0` (same credentials,
+     timeout and retry) unless `--snmp-location` or `--no-lookup` is given,
+     and stores a non-empty answer as the device's location: `Location: <text>
+     (read from the device)`. A value the registry does not accept is shown and
+     not stored. A device that reports none gets the line `Location not set:
+     tacctl device location <name> '<text>'`; at a terminal the add offers to
+     enter one instead (blank skips). The add never fails because of it, and a
+     device that does not answer says nothing more than the name hint did.
+     `tacctl device check` gains a `Location` row (match, differs with both
+     values, registry only, device only, or why there is no reading) and
+     `syslocation`, `syslocation_match` and `syslocation_error` in `--json`; it
+     writes nothing and stays the operator's. `tacctl device location <name>
+     --from-device [-y]` reads it now and stores it: an empty answer is
+     refused with the reason, and a different registered location is shown
+     beside the device's and replaced after a `y` at a terminal, or with `-y`
+     (without either it is refused).
+
 ## 0.2.2 (2026-10-07)
 
 ### What changed

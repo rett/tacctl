@@ -9,6 +9,7 @@ package cli
 // the cache only; 'scan' is explicit. A scan never writes devices.yaml.
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -504,6 +505,12 @@ type deviceCheckJSON struct {
 	SysName      *string `json:"sysname"`
 	SysNameMatch *bool   `json:"sysname_match"`
 	SysNameError string  `json:"sysname_error,omitempty"`
+	// SysLocation is the SNMP sysLocation (null: none read), SysLocationMatch
+	// whether it is the registry's location (null: the registry has none),
+	// SysLocationError why there is none.
+	SysLocation      *string `json:"syslocation"`
+	SysLocationMatch *bool   `json:"syslocation_match"`
+	SysLocationError string  `json:"syslocation_error,omitempty"`
 }
 
 func checkJSONOf(res *devreg.Resolver, e devreg.Entry, reach string, rows []checkRow, sys checkSysName) deviceCheckJSON {
@@ -530,6 +537,26 @@ func checkJSONOf(res *devreg.Resolver, e devreg.Entry, reach string, rows []chec
 		j.SysNameError = "no answer"
 		if why := snmpReason(sys.err); why != "" {
 			j.SysNameError += " (" + why + ")"
+		}
+	}
+	if e.Source == devreg.SourceDevice {
+		switch {
+		case sys.problem != "":
+			j.SysLocationError = sys.problem
+		case errors.Is(sys.locErr, errEmptySysLocation):
+			j.SysLocationError = "empty"
+		case sys.locErr != nil:
+			j.SysLocationError = "no answer"
+			if why := snmpReason(sys.locErr); why != "" {
+				j.SysLocationError += " (" + why + ")"
+			}
+		default:
+			loc := sys.loc
+			j.SysLocation = &loc
+			if reg := strings.TrimSpace(e.Location); reg != "" {
+				match := strings.EqualFold(reg, loc)
+				j.SysLocationMatch = &match
+			}
 		}
 	}
 	return j
@@ -627,6 +654,9 @@ func (inv *invocation) checkRows(res *devreg.Resolver, e devreg.Entry, reach str
 	}
 	if v := sys.row(e); v != "" {
 		row("SNMP name", v)
+	}
+	if v := sys.locationRow(e); v != "" {
+		row("Location", v)
 	}
 	ns := devreg.Open(res.NoticesFor(e))
 	if len(ns) == 0 {

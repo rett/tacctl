@@ -36,6 +36,8 @@ func TierGroup(t tier.Tier) string {
 		return tier.ReadonlyGroup
 	case tier.Operator:
 		return tier.OperatorGroup
+	case tier.Engineer:
+		return tier.EngineerGroup
 	case tier.Superuser:
 		return tier.SuperuserGroup
 	}
@@ -95,6 +97,45 @@ func DropIn(command string, agent, gateway bool, forward []tier.Tier) string {
 	b.WriteString("    PubkeyAuthentication no\n")
 	b.WriteString("    ClientAliveInterval 300\n")
 	b.WriteString("    ClientAliveCountMax 2\n")
+	return b.String()
+}
+
+// EngineerDropIn is the text of sshd's drop-in for the engineer tier, a file
+// of its own (paths.SSHDEngineerDropIn) that every sync of this server
+// writes whatever the state of the console. The engineer tier has the
+// console or no login (D18), so whatever else its accounts get (a shell
+// after a hand edit, a console that is not there), a login of theirs
+// forwards nothing and runs no tunnel. Agent forwarding follows the console
+// setting (agent), which the engineer's own 'tacctl ssh' to a device or host
+// needs (the login has the console and no shell; the sessions it opens run
+// as the engineer with the engineer's agent).
+//
+// The file's name (paths.SSHDEngineerDropInName, 00-tacctl-engineer.conf)
+// sorts before the console's: sshd reads the drop-ins in name order and the
+// first value of a keyword wins across Match blocks, so these values beat
+// the console's forwarding-tier blocks for an account that is in both
+// tac-engineer and a forwarded tier's group (a stale tac-superuser, an NSS
+// group). That order is the point of the name; TestDropInsSortEngineerFirst
+// holds it. There is no ForceCommand here: the console's drop-in sets one for
+// the members of tac-console (engineers among them, when they have the
+// console), and an engineer without the console has /usr/sbin/nologin, which
+// runs nothing for a remote command, scp or the sftp subsystem.
+// Authentication is left alone.
+func EngineerDropIn(agent bool) string {
+	var b strings.Builder
+	b.WriteString("# Managed by tacctl (host sync of this server, console install, upgrade); do not edit.\n")
+	b.WriteString("# The engineer tier has the console or no login on this server: nothing is forwarded for it,\n")
+	b.WriteString("# and no tunnel is opened, whether or not the console is installed.\n")
+	b.WriteString("Match Group " + tier.EngineerGroup + "\n")
+	if !agent {
+		b.WriteString("    DisableForwarding yes\n")
+	}
+	b.WriteString("    AllowTcpForwarding no\n")
+	b.WriteString("    AllowStreamLocalForwarding no\n")
+	b.WriteString("    X11Forwarding no\n")
+	b.WriteString("    AllowAgentForwarding " + map[bool]string{true: "yes", false: "no"}[agent] + "\n")
+	b.WriteString("    PermitTunnel no\n")
+	b.WriteString("    GatewayPorts no\n")
 	return b.String()
 }
 

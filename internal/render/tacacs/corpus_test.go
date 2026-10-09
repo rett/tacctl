@@ -2,6 +2,8 @@ package tacacs
 
 import (
 	"bufio"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -10,6 +12,7 @@ import (
 
 	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/rendered"
+	"github.com/rett/tacctl/internal/yamlpy"
 )
 
 // corpusCase is one line of testdata/corpus.jsonl (testdata/gen.py has
@@ -84,10 +87,57 @@ func testRenderer(t *testing.T, w, logDir string) *Renderer {
 	}
 }
 
+// legacyRules are the shipped command rules of operator and readonly as
+// 0.1.16 had them: the corpus was written by that release, and the
+// shipped rules have changed since (0.2.3, docs/plans/0.2.3-baseline-design.md).
+// The replay pins them, and renders the match regexes as stored (noWrap),
+// so that everything else stays proven byte for byte; the wrapped output
+// and the new defaults have their own goldens.
+var legacyRules = map[string][]string{
+	"operator": {"show", "ping", "traceroute", "terminal", "*|deny"},
+	"readonly": {"show", "ping", "traceroute", "*|deny"},
+}
+
+// pinLegacyDefaults gives c the 0.1.16 rules of operator and readonly
+// wherever the case's tacctl.yaml does not set its own.
+func pinLegacyDefaults(c *conf.Config) {
+	view := c.Merged()
+	cur, _ := view.Get("commands")
+	cm, _ := cur.(*yamlpy.Map)
+	cmds := yamlpy.NewMap()
+	if cm != nil {
+		for k, v := range cm.All() {
+			cmds.Set(k, v)
+		}
+	}
+	for group, names := range legacyRules {
+		if c.HasOverride("commands." + group) {
+			continue
+		}
+		var rules []any
+		for _, n := range names {
+			name, action, _ := strings.Cut(n, "|")
+			if action == "" {
+				action = "permit"
+			}
+			rules = append(rules, yamlpy.NewMap("name", name, "action", action))
+		}
+		cmds.Set(group, rules)
+	}
+	view.Set("commands", cmds)
+}
+
+// sum256 is the hex SHA-256 of s, the checksum rendered.json records.
+func sum256(s string) string {
+	h := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(h[:])
+}
+
 // Every case of the corpus renders, stages its drop-ins and judges the
 // live files exactly as 0.1.16 did: the same tacquito.yaml, the same
 // drop-ins and index, the same word, the same refusal.
 func TestCorpusMatchesBash(t *testing.T) {
+	defer func() { noWrap = false }()
 	cases := loadCorpus(t)
 	var dropin string
 	for _, c := range cases {
@@ -96,6 +146,7 @@ func TestCorpusMatchesBash(t *testing.T) {
 		}
 	}
 	golden := string(readFile(t, filepath.Join(goldenDir, "tacquito.multiscope.rendered.yaml")))
+	legacyGolden := string(readFile(t, filepath.Join("testdata", "tacquito.multiscope.0.1.16.yaml")))
 	if len(cases) < 100 || dropin == "" {
 		t.Fatalf("corpus too small (%d cases) or without the multiscope drop-in", len(cases))
 	}
@@ -111,11 +162,30 @@ func TestCorpusMatchesBash(t *testing.T) {
 			if c.Tacctl != nil {
 				writeFile(t, filepath.Join(w, "state", "tacctl.yaml"), *c.Tacctl)
 			}
+			// A case whose expected file is the current golden renders with
+			// the current rules; every other is 0.1.16's own output, and its
+			// live '@CONFIG@' is 0.1.16's golden (testdata/).
+			legacy := c.Config == nil || !strings.HasPrefix(*c.Config, "@golden:")
+			config := golden
+			if legacy {
+				config = legacyGolden
+			}
 			for rel, text := range c.Files {
-				text = strings.NewReplacer("@W@", w, "@CONFIG@", golden, "@DROPIN@", dropin).Replace(text)
+				text = strings.NewReplacer("@W@", w, "@CONFIG@", config, "@DROPIN@", dropin).Replace(text)
+				if !legacy {
+					// The recorded checksums are those of 0.1.16's golden;
+					// the current golden has its own.
+					for _, suffix := range []string{"", "# hand edit\n"} {
+						text = strings.ReplaceAll(text, sum256(legacyGolden+suffix), sum256(golden+suffix))
+					}
+				}
 				writeFile(t, filepath.Join(w, rel), text)
 			}
 			r := testRenderer(t, w, c.Log)
+			noWrap = legacy
+			if legacy {
+				pinLegacyDefaults(r.Conf)
+			}
 			out, units := filepath.Join(w, "out", "tacquito.yaml"), filepath.Join(w, "out", "units")
 			status, err := r.RenderLive(out, units)
 			leftovers, _ := filepath.Glob(filepath.Join(w, "out", ".tacquito.*"))

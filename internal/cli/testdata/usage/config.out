@@ -29,7 +29,7 @@ Subcommands:
   secret-min-length [16-128]           Show or set minimum shared-secret length (default 16)
   allow list|add|remove|clear          Manage connection allow list (IP ACL; add/remove accept comma-lists)
   deny list|add|remove|clear           Manage connection deny list (IP ACL; add/remove accept comma-lists)
-  mgmt-acl list|add|remove|clear       Manage Cisco VTY-ACL + Juniper lo0-filter permits
+  mgmt-acl list|add|remove|clear       Manage Cisco VTY-ACL + Juniper lo0-filter + WTI IP Tables permits
   mgmt-acl cisco-name [name]           Show or set the emitted Cisco ACL name (default VTY-ACL)
   mgmt-acl juniper-name [name]         Show or set the emitted Juniper filter name (default MGMT-ACL)
   cisco   [--scope <name>] [--legacy] [--protocol tacacs|radius]  Show working Cisco device configuration for a scope (--legacy = IOS 12.x syntax; --protocol radius = RADIUS backend, default tacacs)
@@ -40,7 +40,13 @@ Subcommands:
       --legacy                         (cisco) IOS 12.x syntax
       --staging <bench-ip>             (cisco, juniper, wti, with --scope) Provisioned off-site: the bench address joins the scope as a
                                        /32 (its secret and users) until the device is seen in place (tacctl scope staging)
-      --name <device>                  (with --staging) The registered device whose move ends the staging (default: the one at the bench address)
+      --name <device>                  (cisco, juniper, wti) A registered device of the scope: its location, description and sysName fill the SNMP step;
+                                       with --staging it is also the device whose move ends the staging (default: the one at the bench address)
+      --server <address|name>          (cisco, juniper, wti) The address the devices are told to authenticate against, for devices behind a
+                                       translating firewall (a name must resolve to an IPv4 address); not stored
+      --source <address>               (cisco, juniper, wti) The address tacctl itself reaches the devices from: the first SNMP client (default: the
+                                       address of the route to the Internet); not stored
+      --snmp-location <text>           (cisco, juniper, wti) The SNMP location for this paste; not stored (a device's own: tacctl device location)
   linux   build|script|remove-script|uid|builds  TACACS+ or RADIUS login for Linux hosts (install/removal scripts)
   snmp    show|community|v3-user|port|timeout|clear|test  SNMP for the name hint of 'device add' (sysName)
   branch [name]                        Show or change the tacctl repo branch

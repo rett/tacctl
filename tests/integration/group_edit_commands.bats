@@ -150,17 +150,22 @@ list_rules() {
     refute_output --partial '^show .*$'
 }
 
-@test "group commands: shipped defaults render into tacquito.yaml without match regexes" {
+@test "group commands: shipped defaults render into tacquito.yaml, show name-only and every match whole" {
     # Any mutation regenerates the tacquito.yaml commands: blocks from the
-    # merged tacctl view. The built-in permits must be name-only rules so
+    # merged tacctl view. `show` must be a name-only rule so
     # `show running-config` (tested by tacquito as 'running-config') is
-    # authorized rather than falling through to the deny catch-all.
+    # authorized rather than falling through to the deny catch-all; the two
+    # rules with a match carry it as ^(?:...)$, so tacquito adds no anchors.
+    # The shipped deny of `show running-config view full` stands before it.
     "$TACCTL_BIN_SCRIPT" group commands default operator deny > /dev/null
     run awk '/^operator: &operator/,/^  accounter:/' "$TACCTL_CONFIG"
-    assert_output --partial 'name: "show"'
+    assert_output --partial $'name: "show"\n      action: *action_permit'
     assert_output --partial 'name: "*"'
-    refute_output --partial 'match:'
-    refute_output --partial '^show'
+    assert_output --partial 'match: ["^(?:^(capture)( .*)?$)$"]'
+    assert_output --partial 'match: ["^(?:^(running-config view full)( .*)?$)$"]'
+    refute_output --partial '"^show'
+    run grep -c 'match: \["' <(awk '/^operator: &operator/,/^  accounter:/' "$TACCTL_CONFIG")
+    assert_output "3"
 }
 
 @test "group commands add: refuses a comma in --match (the rule line form would split it); \\x2c works" {
@@ -178,6 +183,37 @@ list_rules() {
     assert_success
     run "$TACCTL_BIN_SCRIPT" group commands list operator
     assert_output --partial 'a\x2cb'
+}
+
+@test "group commands add: refuses an empty or invalid --match; warns about a prefix form and an unreachable rule" {
+    local before
+    before=$("$TACCTL_BIN_SCRIPT" group commands list operator)
+    run "$TACCTL_BIN_SCRIPT" group commands add operator show --match '' --action deny
+    assert_failure
+    assert_output --partial "--match needs a regex; an empty one is skipped by tacquito"
+    run "$TACCTL_BIN_SCRIPT" group commands add operator show --match '^(a' --action deny
+    assert_failure
+    assert_output --partial "Invalid regex: '^(a'"
+    [[ "$("$TACCTL_BIN_SCRIPT" group commands list operator)" == "$before" ]]
+
+    # A prefix form without '( .*)?$' matches the exact arguments only.
+    run "$TACCTL_BIN_SCRIPT" group commands add operator clear --match '^ip route' --action deny --first
+    assert_success
+    assert_output --partial "matches only the exact arguments 'ip route'"
+    assert_output --partial "write '^ip route( .*)?\$'"
+    run "$TACCTL_BIN_SCRIPT" group commands add operator clear --match '^ip route( .*)?$' --action deny --first
+    assert_success
+    refute_output --partial "matches only"
+
+    # The shipped 'show' permit (rule #4 after the two 'clear' rules and the
+    # view full deny) has no
+    # match, so a later 'show' rule is dead.
+    run "$TACCTL_BIN_SCRIPT" group commands add operator show --match '^crypto( .*)?$' --action deny
+    assert_success
+    assert_output --partial "never reached: rule #4 'show' has no match and decides every 'show' command first"
+    run "$TACCTL_BIN_SCRIPT" config validate
+    assert_output --partial "Command rules:"
+    assert_output --partial "never reached"
 }
 
 @test "group commands add: rejects '*' (must use default)" {
@@ -217,7 +253,7 @@ list_rules() {
 @test "group commands remove: drops a named rule" {
     run "$TACCTL_BIN_SCRIPT" group commands remove operator ping
     assert_success
-    assert_output --partial "Removed rule #2 'ping' (permit, match=[]) from group 'operator'."
+    assert_output --partial "Removed rule #4 'ping' (permit, match=[]) from group 'operator'."
 
     run "$TACCTL_BIN_SCRIPT" group commands list operator
     refute_output --partial 'ping'
@@ -228,7 +264,7 @@ list_rules() {
     before=$("$TACCTL_BIN_SCRIPT" group commands list operator)
     run "$TACCTL_BIN_SCRIPT" group commands remove operator show
     assert_failure
-    assert_output --partial "Group 'operator' has 2 rules named 'show'; select one with --match/--action (see 'tacctl group commands list operator'), or pass --all."
+    assert_output --partial "Group 'operator' has 3 rules named 'show'; select one with --match/--action (see 'tacctl group commands list operator'), or pass --all."
     [[ "$("$TACCTL_BIN_SCRIPT" group commands list operator)" == "$before" ]]
 }
 
@@ -242,28 +278,30 @@ list_rules() {
 
     run "$TACCTL_BIN_SCRIPT" group commands remove operator show --match 'run.*' --match 'start.*'
     assert_success
-    assert_output --partial "Removed rule #6 'show' (permit, match=[run.*,start.*]) from group 'operator'."
-    run "$TACCTL_BIN_SCRIPT" group commands remove operator show --action deny
+    assert_output --partial "Removed rule #15 'show' (permit, match=[run.*,start.*]) from group 'operator'."
+    run "$TACCTL_BIN_SCRIPT" group commands remove operator show --action deny --match '^crypto( .*)?'
     assert_success
     assert_output --partial "Removed rule #1 'show' (deny, match=[^crypto( .*)?]) from group 'operator'."
 
     list_rules operator
     refute_output --partial 'crypto'
     refute_output --partial 'run.*'
-    assert_output --regexp '1 +show +permit'
+    assert_output --regexp '1 +show +deny +\^\(running-config view full\)'
+    assert_output --regexp '2 +show +permit'
 }
 
 @test "group commands remove: --all drops every rule of the name (and only those)" {
     "$TACCTL_BIN_SCRIPT" group commands add operator show --match 'run.*' --action permit
     run "$TACCTL_BIN_SCRIPT" group commands remove operator show --all
     assert_success
-    assert_output --partial "Removed rule #1 'show' (permit, match=[]) from group 'operator'."
-    assert_output --partial "Removed rule #5 'show' (permit, match=[run.*]) from group 'operator'."
+    assert_output --partial "Removed rule #1 'show' (deny, match=[^(running-config view full)( .*)?$]) from group 'operator'."
+    assert_output --partial "Removed rule #2 'show' (permit, match=[]) from group 'operator'."
+    assert_output --partial "Removed rule #14 'show' (permit, match=[run.*]) from group 'operator'."
 
     list_rules operator
     refute_output --regexp ' show '
-    assert_output --regexp '1 +ping +permit'
-    assert_output --regexp '4 +\* \(catchall\) +deny'
+    assert_output --regexp '1 +dir +permit'
+    assert_output --regexp '12 +\* \(catchall\) +deny'
 }
 
 @test "group commands remove: rejects an unknown flag and a bad --action" {
@@ -279,9 +317,10 @@ list_rules() {
     list_rules operator
     assert_success
     assert_output --regexp '# +NAME +ACTION +MATCH'
-    assert_output --regexp '1 +show +permit'
-    assert_output --regexp '4 +terminal +permit'
-    assert_output --regexp '5 +\* \(catchall\) +deny'
+    assert_output --regexp '1 +show +deny +\^\(running-config view full\)'
+    assert_output --regexp '2 +show +permit'
+    assert_output --regexp '6 +terminal +permit'
+    assert_output --regexp '14 +\* \(catchall\) +deny'
 }
 
 @test "group commands add: --before puts the rule before the first rule of that name" {
@@ -289,15 +328,15 @@ list_rules() {
     assert_success
     list_rules operator
     assert_output --regexp '1 +show +deny +\^crypto\( \.\*\)\?'
-    assert_output --regexp '2 +show +permit'
-    assert_output --regexp '6 +\* \(catchall\) +deny'
+    assert_output --regexp '3 +show +permit'
+    assert_output --regexp '15 +\* \(catchall\) +deny'
 
     # '--before *' is the default place, before the catchall.
     run "$TACCTL_BIN_SCRIPT" group commands add operator reload --action deny --before '*'
     assert_success
     list_rules operator
-    assert_output --regexp '6 +reload +deny'
-    assert_output --regexp '7 +\* \(catchall\) +deny'
+    assert_output --regexp '15 +reload +deny'
+    assert_output --regexp '16 +\* \(catchall\) +deny'
 
     # The rendered tacquito.yaml keeps the order: the deny is operator's
     # first rule.
@@ -311,7 +350,7 @@ list_rules() {
     assert_success
     list_rules operator
     assert_output --regexp '1 +configure +deny'
-    assert_output --regexp '2 +show +permit'
+    assert_output --regexp '3 +show +permit'
 }
 
 @test "group commands add: --before a missing rule, or with --first, changes nothing" {
@@ -335,31 +374,6 @@ list_rules() {
     run "$TACCTL_BIN_SCRIPT" group commands remove operator missing
     assert_success
     assert_output --partial "No rule named"
-}
-
-@test "group commands clear: reverts overridden group back to shipped defaults" {
-    # Set a non-default override, then clear, then re-inspect — the merged
-    # view should show the shipped default rules again (not the override).
-    "$TACCTL_BIN_SCRIPT" group commands default operator permit > /dev/null
-    run "$TACCTL_BIN_SCRIPT" group commands list operator
-    assert_output --partial "permit"
-    # Now clear the override.
-    run bash -c 'echo y | "'"$TACCTL_BIN_SCRIPT"'" group commands clear operator'
-    assert_success
-    assert_output --partial "Cleared command rules"
-
-    # Back to shipped defaults: catch-all is deny, show rule present.
-    run "$TACCTL_BIN_SCRIPT" group commands list operator
-    assert_output --partial "deny"
-    assert_output --partial "show"
-}
-
-@test "group commands clear: no-op on a group without rules" {
-    # Custom group never had rules → clear reports nothing to do.
-    "$TACCTL_BIN_SCRIPT" group add netops 10 NET-CLASS
-    run "$TACCTL_BIN_SCRIPT" group commands clear netops
-    assert_success
-    assert_output --partial "nothing to clear"
 }
 
 @test "group commands: errors on unknown group" {

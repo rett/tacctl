@@ -189,13 +189,16 @@ func TestCheckScriptRuns(t *testing.T) {
 
 // ParseCheck: an account line with a home holding spaces, a missing one.
 func TestParseCheck(t *testing.T) {
-	st := ParseCheck([]string{"account alice 80000 80000 700 /home/a b", "account bob", "group tac-users 80000", "pam tacctl-session -", "protocol "})
+	st := ParseCheck([]string{"account alice 80000 80000 700 /home/a b", "account bob", "group tac-users 80000", "members tac-superuser alice,bob", "members tac-engineer ", "pam tacctl-session -", "protocol "})
 	if st.Accounts["alice"] != (AccountState{Exists: true, UID: "80000", GID: "80000", HomeMode: "700", Home: "/home/a b"}) ||
 		st.Accounts["bob"].Exists || st.Groups["tac-users"] != "80000" || st.PAM["tacctl-session"] != "" || st.Protocol != "" {
 		t.Errorf("%+v", st)
 	}
-	if GroupGID("tac-superuser", DefaultRange) != 80002 || GroupGID("wheel", DefaultRange) != 0 ||
-		!reflect.DeepEqual(HostGroups(false), []string{"tac-users", "tac-superuser"}) || len(HostGroups(true)) != len(TacGroups) {
+	if !reflect.DeepEqual(st.Members, map[string][]string{"tac-superuser": {"alice", "bob"}, "tac-engineer": {}}) {
+		t.Errorf("members %+v", st.Members)
+	}
+	if GroupGID("tac-superuser", DefaultRange) != 80002 || GroupGID("tac-engineer", DefaultRange) != 80005 || GroupGID("wheel", DefaultRange) != 0 ||
+		!reflect.DeepEqual(HostGroups(false), []string{"tac-users", "tac-superuser", "tac-engineer"}) || len(HostGroups(true)) != 6 || len(HostGroups(true)) != len(TacGroups) {
 		t.Error("groups")
 	}
 }

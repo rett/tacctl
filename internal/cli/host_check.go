@@ -3,7 +3,7 @@ package cli
 // 'host show <name> --check': log in to the host read-only, as 'host
 // target' tests a login (the invoking user's ssh; sudo, with a terminal
 // for its password), and compare it with what tacctl would make it: the
-// tac groups and their GIDs, each account's UID, primary group and home
+// tac groups and their GIDs, who is in the sudo groups, each account's UID, primary group and home
 // mode, the PAM files tacctl writes, the client script protocol and the
 // host's ssh keys against the pins. Nothing changes there or here. Each
 // difference is one line with the command that fixes it.
@@ -13,6 +13,7 @@ import (
 
 	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/hosts"
+	"github.com/rett/tacctl/internal/tier"
 	"github.com/rett/tacctl/internal/ui"
 )
 
@@ -97,6 +98,17 @@ func (inv *invocation) hostCheck(e hosts.Entry, v *hostShowJSON, toStderr bool) 
 		}
 		if mode, err := strconv.ParseUint(acct.HomeMode, 8, 32); err == nil && mode&0o077 != 0 {
 			diff(u.Name+"'s home "+acct.Home+" is 0"+acct.HomeMode+", open to others (tacctl makes it private: 0700)", sync)
+		}
+	}
+	// An engineer still in tac-superuser (full sudo) from before the engineer
+	// tier: the next sync moves them to tac-engineer.
+	super := map[string]bool{}
+	for _, m := range st.Members["tac-superuser"] {
+		super[m] = true
+	}
+	for _, u := range v.Accounts.Users {
+		if u.Tier == string(tier.Engineer) && super[u.Name] {
+			diff(u.Name+" is an engineer but is still in tac-superuser (full sudo; the engineer tier gets tac-engineer)", sync)
 		}
 	}
 	// The PAM files tacctl writes, as it wrote them.
