@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/rett/tacctl/internal/shell"
+	"github.com/rett/tacctl/internal/tier"
 )
 
 // usageRow is one row of a usage block: the left column (the command with
@@ -117,6 +118,13 @@ func (inv *invocation) familyRows(family string) []usageRow {
 // block of 'tacctl' with the words that name the program left out, and the
 // Shell section after it (with system-shell in the console).
 func shellTop(version string, console bool) string {
+	return shellTopFor(version, console, nil, "")
+}
+
+// shellTopFor is shellTop for a caller whose tier is eff: only the commands
+// (and the hint and example lines) that tier can run are listed (D56), with
+// a sentence saying so. A nil root lists everything.
+func shellTopFor(version string, console bool, root *cobra.Command, eff tier.Tier) string {
 	text := Usage("top", UsageVars{"version": version})
 	text = strings.Replace(text, "Usage: tacctl <command> [arguments]", "Usage: <command> [arguments]", 1)
 	text = strings.Replace(text, "Run any command without arguments for detailed help, e.g.:\n  tacctl user\n  tacctl config\n  tacctl backend",
@@ -124,6 +132,10 @@ func shellTop(version string, console bool) string {
 	head, examples, ok := strings.Cut(text, "\nExamples:\n")
 	if ok {
 		text = head + "\nExamples:\n" + strings.ReplaceAll("\n"+examples, "\n  tacctl ", "\n  ")[1:]
+	}
+	if root != nil {
+		text = filterTop(root, eff, text)
+		text = strings.Replace(text, "\nType help <command> for detailed help", "\n"+viewNote(eff)+"\nType help <command> for detailed help", 1)
 	}
 	return text + shellSection(console)
 }

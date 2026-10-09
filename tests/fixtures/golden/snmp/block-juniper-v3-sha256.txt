@@ -1,0 +1,19 @@
+# Read-only; managed by tacctl.
+# Credentials: this scope's own (tacctl scope snmp lab show --reveal).
+# Allowed clients: the tacctl server first, the scope's ranges, then everything else (0.0.0.0/0) refused.
+set snmp client-list TACCTL-SNMP 10.0.0.42/32
+set snmp client-list TACCTL-SNMP 198.51.100.0/24
+set snmp client-list TACCTL-SNMP 0.0.0.0/0 restrict
+# SHA-256 for SNMPv3 users needs a release that has it; the keyword is not verified on a device.
+set snmp v3 usm local-engine user tacctl-ro authentication-sha256 authentication-password "auth-pass-0123"
+set snmp v3 usm local-engine user tacctl-ro privacy-aes128 privacy-password "priv-pass-4567"
+set snmp v3 vacm security-to-group security-model usm security-name tacctl-ro group TACCTL-GROUP
+set snmp v3 vacm access group TACCTL-GROUP default-context-prefix security-model usm security-level privacy read-view TACCTL-VIEW
+set snmp view TACCTL-VIEW oid .1 include
+# The client list binds to communities only: it does not restrict a v3 user (not verified on a device).
+# No management filter with a udp port 161 term is rendered (Step 4): without one on lo0 a v3 user is
+# not restricted to the clients above.
+set snmp location "Rack 4, DC1"
+set snmp contact "NOC <noc@example.net>"
+set snmp description "Core switch"
+# Check from the tacctl server: tacctl scope snmp lab test <device-address>   (expects sysName 'core-sw1')

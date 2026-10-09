@@ -5,7 +5,8 @@ package hosts
 // user's ssh; sudo, with a terminal for its password), so the command line
 // can compare it with what tacctl would make it. Nothing is copied to the
 // host: the check is one command line (CheckScript) run through 'bash -c'.
-// It reads the tac groups and their GIDs, the accounts named, the PAM files
+// It reads the tac groups and their GIDs, who is in the two sudo groups
+// (tac-superuser and tac-engineer), the accounts named, the PAM files
 // tacctl writes (with the checksums the client script recorded when it
 // wrote them), the client script protocol it recorded, and the host's
 // public keys.
@@ -22,15 +23,19 @@ import (
 // TacGroups are tacctl's groups on a host in the order of their fixed GIDs
 // (the client script's group_gid): the first number of the UID range, the
 // next, and so on.
-var TacGroups = []string{"tac-users", "tac-console", "tac-superuser", "tac-operator", "tac-readonly"}
+var TacGroups = []string{"tac-users", "tac-console", "tac-superuser", "tac-operator", "tac-readonly", "tac-engineer"}
+
+// SudoGroups are the groups whose members the check reads: the ones that
+// give sudo on a host.
+var SudoGroups = []string{"tac-superuser", "tac-engineer"}
 
 // HostGroups are the groups a host has: every one on the tacctl server
-// itself (local), tac-users and tac-superuser elsewhere.
+// itself (local), tac-users, tac-superuser and tac-engineer elsewhere.
 func HostGroups(local bool) []string {
 	if local {
 		return append([]string(nil), TacGroups...)
 	}
-	return []string{"tac-users", "tac-superuser"}
+	return []string{"tac-users", "tac-superuser", "tac-engineer"}
 }
 
 // GroupGID is the fixed GID of one of tacctl's groups in r (0 for another
@@ -68,6 +73,9 @@ say() { printf '` + checkPrefix + `%s\n' "$*"; }
 for g in ` + strings.Join(TacGroups, " ") + `; do
     line=$(getent group "$g") && say "group $g $(echo "$line" | cut -d: -f3)"
 done
+for g in ` + strings.Join(SudoGroups, " ") + `; do
+    line=$(getent group "$g") && say "members $g $(echo "$line" | cut -d: -f4)"
+done
 for n in ` + strings.Join(q, " ") + `; do
     line=$(getent passwd "$n") || { say "account $n"; continue; }
     home=$(echo "$line" | cut -d: -f6)
@@ -102,6 +110,10 @@ type AccountState struct {
 type HostState struct {
 	// Groups are the GIDs of tacctl's groups that exist, by name.
 	Groups map[string]string
+	// Members are the members listed for tac-superuser and tac-engineer
+	// (a group with none has an empty list; a group the host lacks no
+	// entry). An account whose primary group it is is not listed.
+	Members map[string][]string
 	// Accounts are the accounts asked about, by name.
 	Accounts map[string]AccountState
 	// PAM are the checksums (sha256) of the PAM files, by file ("" when
@@ -117,7 +129,7 @@ type HostState struct {
 
 // ParseCheck reads the lines CheckScript printed (without checkPrefix).
 func ParseCheck(lines []string) HostState {
-	s := HostState{Groups: map[string]string{}, Accounts: map[string]AccountState{}, PAM: map[string]string{}, PAMWritten: map[string]string{}}
+	s := HostState{Groups: map[string]string{}, Members: map[string][]string{}, Accounts: map[string]AccountState{}, PAM: map[string]string{}, PAMWritten: map[string]string{}}
 	var keys strings.Builder
 	for _, l := range lines {
 		kind, rest, _ := strings.Cut(l, " ")
@@ -126,6 +138,13 @@ func ParseCheck(lines []string) HostState {
 		case "group":
 			if len(f) == 2 {
 				s.Groups[f[0]] = f[1]
+			}
+		case "members":
+			if len(f) >= 1 {
+				s.Members[f[0]] = []string{}
+				if len(f) == 2 {
+					s.Members[f[0]] = strings.Split(f[1], ",")
+				}
 			}
 		case "account":
 			switch {

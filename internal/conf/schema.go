@@ -31,10 +31,16 @@ const (
 	TypeJunosRegexList = "junos_regex_list"
 	// TypeSudoCommandList is linux.engineer_sudo: absolute command paths.
 	TypeSudoCommandList = "sudo_command_list"
+	// TypeBreakGlassList is breakglass_scope.<scope>.users (breakglass.go).
+	TypeBreakGlassList = "breakglass_list"
+	// TypeSNMPClients and TypeSNMPText are snmp_scope.<scope>.clients and
+	// .contact (snmp.go).
+	TypeSNMPClients = "snmp_clients"
+	TypeSNMPText    = "snmp_text"
 )
 
 // listTypes take list input (conf_set_list / a JSON list).
-var listTypes = []string{TypeCIDRList, TypeCiscoCmdList, TypeCommandRules, TypeBackendList, TypeJunosRegexList, TypeSudoCommandList}
+var listTypes = []string{TypeCIDRList, TypeCiscoCmdList, TypeCommandRules, TypeBackendList, TypeJunosRegexList, TypeSudoCommandList, TypeBreakGlassList, TypeSNMPClients}
 
 // Rule is one schema entry.
 type Rule struct {
@@ -52,6 +58,10 @@ type Rule struct {
 	HasDefault bool
 	// Depth is how many trailing segments a wildcard takes (1 unless set).
 	Depth int
+	// Tail, when set, makes a wildcard match <prefix><name>.<tail> only
+	// (a name without dots): the key families whose instance name is not
+	// last, snmp_scope.<scope>.<setting>.
+	Tail string
 }
 
 func intp(v int) *int { return &v }
@@ -109,7 +119,7 @@ func NewSchema(backends []string) *Schema {
 			"snmp.v3.auth": {Type: TypeEnum, Values: []string{"sha", "sha256"}},
 			"snmp.v3.priv": {Type: TypeEnum, Values: []string{"aes128"}},
 		},
-		wildcards: []wildcard{
+		wildcards: append([]wildcard{
 			{"privileges.", Rule{Type: TypeCiscoCmdList}},
 			{"commands.", Rule{Type: TypeCommandRules}},
 			{"aaa.order.", Rule{Type: TypeEnum, Values: []string{"tacacs-first", "local-first"},
@@ -130,7 +140,10 @@ func NewSchema(backends []string) *Schema {
 			{"junos.", Rule{Type: TypeJunosRegexList, Depth: 2}},
 			{"wti_level.", Rule{Type: TypeEnum, Values: WTILevels}},
 			{"tier.", Rule{Type: TypeEnum, Values: Tiers}},
-		},
+			// The per-scope break-glass local users of 0.2.3 (breakglass.go);
+			// no default: absent is "none recorded".
+			{"breakglass_scope.", Rule{Type: TypeBreakGlassList, Depth: 2}},
+		}, snmpScopeWildcards()...),
 	}
 }
 
@@ -153,6 +166,23 @@ func (s *Schema) Wildcards() []string {
 	return out
 }
 
+// KeyFamily is one wildcard entry of the schema: the prefix of the keys it
+// covers and the rule they follow (the manual page's key list is generated
+// from these).
+type KeyFamily struct {
+	Prefix string
+	Rule   Rule
+}
+
+// Families returns the wildcard entries in order, with their rules.
+func (s *Schema) Families() []KeyFamily {
+	out := make([]KeyFamily, len(s.wildcards))
+	for i, w := range s.wildcards {
+		out[i] = KeyFamily{Prefix: w.prefix, Rule: w.rule}
+	}
+	return out
+}
+
 // RuleFor is schema_for: the rule of a dotted path, or false.
 func (s *Schema) RuleFor(path string) (Rule, bool) {
 	if r, ok := s.exact[path]; ok {
@@ -160,6 +190,13 @@ func (s *Schema) RuleFor(path string) (Rule, bool) {
 	}
 	for _, w := range s.wildcards {
 		if !strings.HasPrefix(path, w.prefix) {
+			continue
+		}
+		if tail := w.rule.Tail; tail != "" {
+			name, ok := strings.CutSuffix(path[len(w.prefix):], "."+tail)
+			if ok && name != "" && !strings.Contains(name, ".") {
+				return w.rule, true
+			}
 			continue
 		}
 		parts := strings.Split(path[len(w.prefix):], ".")
@@ -335,6 +372,12 @@ func (s *Schema) Validate(path string, value any, isList bool) string {
 		return validateCommandRules(value)
 	case TypeJunosRegexList:
 		return junosListProblem(path, value)
+	case TypeBreakGlassList:
+		return breakGlassListProblem(path, value)
+	case TypeSNMPClients:
+		return snmpClientsProblem(value)
+	case TypeSNMPText:
+		return snmpTextProblem(value)
 	case TypeSudoCommandList:
 		items, isList := py.List(value)
 		if !isList || len(items) == 0 {

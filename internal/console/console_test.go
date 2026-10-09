@@ -2,16 +2,20 @@ package console
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/execx/fake"
 	"github.com/rett/tacctl/internal/paths"
+	"github.com/rett/tacctl/internal/pyyaml"
 	"github.com/rett/tacctl/internal/tier"
+	"github.com/rett/tacctl/internal/yamlpy"
 )
 
 func write(t *testing.T, dir, name, text string, mode os.FileMode) string {
@@ -38,7 +42,7 @@ func TestAbsentFileIsTheDefaults(t *testing.T) {
 	}
 	if len(f.Users) != 0 || f.Idle != 30 || f.AgentForwarding || f.SSHEscape || f.SystemShell != "/bin/bash" ||
 		!reflect.DeepEqual(f.SystemShellTiers, []tier.Tier{tier.Superuser}) ||
-		!reflect.DeepEqual(f.ForwardingTiers, []tier.Tier{tier.Superuser}) || f.ListMax != 40 {
+		!reflect.DeepEqual(f.ForwardingTiers, []tier.Tier{tier.Superuser}) || f.ListMax != 40 || !f.SpaceCompletion {
 		t.Errorf("defaults: %+v", f)
 	}
 }
@@ -113,6 +117,58 @@ settings:
 	// A snapshot that fails stops the write.
 	if _, err := Mutate(p, func() error { return os.ErrPermission }, func(*File) error { t.Error("fn ran"); return nil }); err == nil {
 		t.Error("before's error ignored")
+	}
+}
+
+// settings.space_completion is written only when it is off; a file without
+// the key reads as on (see TestRollbackToTheOldParser for 0.2.2).
+func TestSpaceCompletionSetting(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "console.yaml")
+	if _, err := Mutate(p, nil, func(f *File) error { f.Idle = 5; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	on, _ := os.ReadFile(p)
+	if strings.Contains(string(on), "space_completion") {
+		t.Errorf("the key is written while on:\n%s", on)
+	}
+	if f, err := Load(p); err != nil || !f.SpaceCompletion {
+		t.Errorf("a file without the key: %+v %v", f, err)
+	}
+
+	changed, err := Mutate(p, nil, func(f *File) error { f.SpaceCompletion = false; return nil })
+	if err != nil || !changed {
+		t.Fatalf("off: %v %v", changed, err)
+	}
+	off, _ := os.ReadFile(p)
+	if want := string(on) + "  space_completion: false\n"; string(off) != want {
+		t.Errorf("file off:\n%s\nwant:\n%s", off, want)
+	}
+	f, err := Load(p)
+	if err != nil || f.SpaceCompletion || f.Idle != 5 {
+		t.Errorf("round trip off: %+v %v", f, err)
+	}
+	if pol := NewPolicy(f, paths.Paths{}); pol.SpaceCompletion() {
+		t.Error("the policy says on")
+	}
+
+	// Back on: the key disappears and the bytes are those of the file that
+	// never had it.
+	if _, err := Mutate(p, nil, func(f *File) error { f.SpaceCompletion = true; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if again, _ := os.ReadFile(p); string(again) != string(on) {
+		t.Errorf("file on again:\n%s\nwant:\n%s", again, on)
+	}
+
+	// The values: a boolean, true or false.
+	q := write(t, dir, "explicit.yaml", "version: 1\nsettings: {space_completion: true}\n", 0o600)
+	if f, err := Load(q); err != nil || !f.SpaceCompletion {
+		t.Errorf("explicit true: %+v %v", f, err)
+	}
+	q = write(t, dir, "bad.yaml", "version: 1\nsettings: {space_completion: maybe}\n", 0o600)
+	if _, err := Load(q); err == nil || !strings.Contains(err.Error(), "invalid value for 'space_completion'") {
+		t.Errorf("a non-boolean: %v", err)
 	}
 }
 
@@ -218,7 +274,7 @@ func TestEngineerTier(t *testing.T) {
 	if p.SystemShell(tier.Engineer) || p.Forwarding(tier.Engineer) || !p.SystemShell(tier.Superuser) {
 		t.Error("engineer gets the system shell or forwarding")
 	}
-	if d := p.Decide("bob", tier.Engineer); !d.Console || d.Why != "tier engineer" {
+	if d := p.Decide("bob", tier.Engineer); !d.Console || d.Why != "tier engineer (always)" {
 		t.Errorf("decide: %+v", d)
 	}
 	if TierGroup(tier.Engineer) != "tac-engineer" {
@@ -245,8 +301,14 @@ func TestPolicyDecisions(t *testing.T) {
 		{"override on beats tier off", func(f *File) { f.TierOn[tier.Readonly] = false; f.Users["u"] = true }, "u", tier.Readonly, "user override", cmd},
 		{"override off beats tier on", func(f *File) { f.Users["u"] = false }, "u", tier.Superuser, "user override", "/bin/bash"},
 		{"override of another user", func(f *File) { f.Users["v"] = false }, "u", tier.Superuser, "tier superuser", cmd},
-		{"none", func(*File) {}, "u", tier.None, "no tier", "/bin/bash"},
-		{"none with override", func(f *File) { f.Users["u"] = true }, "u", tier.None, "no tier", "/bin/bash"},
+		{"none", func(*File) {}, "u", tier.None, "no tier", "/usr/sbin/nologin"},
+		{"none with override", func(f *File) { f.Users["u"] = true }, "u", tier.None, "no tier", "/usr/sbin/nologin"},
+		{"unknown tier", func(*File) {}, "u", tier.Tier("bogus"), "no tier", "/usr/sbin/nologin"},
+		// The engineer tier has the console or no login: neither the tier's
+		// switch nor a user override turns it off.
+		{"engineer", func(*File) {}, "u", tier.Engineer, "tier engineer (always)", cmd},
+		{"engineer tier off", func(f *File) { f.TierOn[tier.Engineer] = false }, "u", tier.Engineer, "tier engineer (always)", cmd},
+		{"engineer override off", func(f *File) { f.Users["u"] = false }, "u", tier.Engineer, "tier engineer (always)", cmd},
 		{"unrestricted", func(*File) {}, "u", tier.Unrestricted, "no tier", "/bin/bash"},
 	} {
 		f := Defaults()
@@ -430,5 +492,97 @@ func TestSSHDCheck(t *testing.T) {
 	m.Missing("sshd")
 	if _, err := SSHDCheck(ctx, m, "jdoe"); err == nil || !strings.Contains(err.Error(), "sshd could not be run") {
 		t.Errorf("missing sshd: %v", err)
+	}
+}
+
+// accepts022 is the part of 0.2.2's console.yaml parser that matters for a
+// rollback, as a fixture (parse and parseSettings of internal/console/config.go
+// at the 0.2.2 tag): under 'tiers' only readonly, operator and superuser are
+// known, and under 'settings' only the keys listed here; any other makes it
+// fail, and the console falls back to the defaults.
+func accepts022(text []byte) error {
+	v, err := pyyaml.LoadBytes(text)
+	if err != nil {
+		return err
+	}
+	root := v.(*yamlpy.Map)
+	// In this order, so the error a file gets is always the same.
+	known := []struct {
+		section string
+		keys    []string
+	}{
+		{"tiers", []string{"readonly", "operator", "superuser"}},
+		{"settings", []string{"idle_timeout", "list_max", "agent_forwarding", "ssh_escape", "gateway_ports",
+			"system_shell", "system_shell_tiers", "forwarding_tiers"}},
+	}
+	for _, kn := range known {
+		section, keys := kn.section, kn.keys
+		sub, ok := root.Get(section)
+		if !ok {
+			continue
+		}
+		for k := range sub.(*yamlpy.Map).All() {
+			if !slices.Contains(keys, k) {
+				return errors.New(section + ": unknown key '" + k + "'")
+			}
+		}
+	}
+	return nil
+}
+
+// A console.yaml that 0.2.3 writes is not one 0.2.2 reads, whether or not
+// space completion was ever turned off: the engineer tier's switch
+// (tiers.engineer) is written on every write, and 0.2.2 rejects it. So
+// going back to 0.2.2 needs the rollback step (tacctl rollback 0.2.2),
+// which takes tiers.engineer and settings.space_completion out of the file.
+// This test pins the two keys that step has to remove (doc writes them) and
+// that the file without them is one the 0.2.2 fixture accepts.
+func TestRollbackToTheOldParser(t *testing.T) {
+	for _, off := range []bool{false, true} {
+		f := Defaults()
+		f.SpaceCompletion = !off
+		text, err := f.Text()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := accepts022(text); err == nil || !strings.Contains(err.Error(), "engineer") {
+			t.Errorf("space completion off %v: want a rejection naming engineer, got %v\n%s", off, err, text)
+		}
+		v, err := pyyaml.LoadBytes(text)
+		if err != nil {
+			t.Fatal(err)
+		}
+		root := v.(*yamlpy.Map)
+		tiers, _ := root.Get("tiers")
+		settings, _ := root.Get("settings")
+		if !tiers.(*yamlpy.Map).Has("engineer") {
+			t.Errorf("no tiers.engineer is written:\n%s", text)
+		}
+		if settings.(*yamlpy.Map).Has("space_completion") != off {
+			t.Errorf("space_completion written: %v, off: %v:\n%s", !off, off, text)
+		}
+		// tiers.engineer alone out: still rejected when space_completion is
+		// written (off), accepted when it is not (on).
+		tiers.(*yamlpy.Map).Delete("engineer")
+		half, err := yamlpy.EmitChecked(root, yamlpy.StoreOptions, Header, pyyaml.LoadBytes)
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = accepts022(half)
+		if off && (err == nil || !strings.Contains(err.Error(), "space_completion")) {
+			t.Errorf("space completion off: without tiers.engineer: %v\n%s", err, half)
+		}
+		if !off && err != nil {
+			t.Errorf("space completion on: without tiers.engineer still rejected: %v\n%s", err, half)
+		}
+		// The rollback step: both keys out.
+		settings.(*yamlpy.Map).Delete("space_completion")
+		stripped, err := yamlpy.EmitChecked(root, yamlpy.StoreOptions, Header, pyyaml.LoadBytes)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := accepts022(stripped); err != nil {
+			t.Errorf("space completion off %v: still rejected after the step: %v\n%s", off, err, stripped)
+		}
 	}
 }

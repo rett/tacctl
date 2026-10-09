@@ -13,6 +13,22 @@
 #              tacplus  the same with --method tacplus
 #              switch   enroll tacplus, switch to radius, switch back, unenroll
 #              probe    no enroll: what pam_radius_auth returns per case
+#              rotate   enroll with --method radius, then 'host provisioner
+#                       rotate' (--key): create, prove, host sync through the
+#                       new account, --remove-old, adoption, a failed proof;
+#                       then unenroll
+#              rollback enroll with --method tacplus, an engineer-tier user
+#                       and a superuser, sync; 'tacctl rollback 0.2.2 --hosts'
+#                       as a dry run (nothing changes), then --apply --yes:
+#                       the engineer loses the %tac-engineer sudoers line and
+#                       the group memberships, nobody else changes; then 0.2.2's
+#                       own sync (the tag's binary, built here) and unenroll
+#              server   no enroll of the client: the baseline command rules of
+#                       the four roles asked of the real tacquito
+#                       (tests/tools/permcheck.py), then this server enrolled
+#                       as a host itself ('host enroll --local'): the engineer
+#                       tier's group, no %tac-engineer sudoers line here, and
+#                       sshd's drop-ins under 'sshd -T'
 #   --server   ubuntu-noble (default; FreeRADIUS 3.2.x and tacquito) or
 #              almalinux-9 (FreeRADIUS 3.0.27; radius and probe only)
 #   --keep     leave both containers (thc-server, thc-client-<client>)
@@ -26,8 +42,8 @@
 # (bin/tacctl.sh installs Go, verified, and builds /usr/local/bin/tacctl).
 # shellcheck disable=SC2016  # the single-quoted scripts run inside the containers
 set -uo pipefail
-CLIENT="${1:?usage: run.sh <client> <radius|tacplus|switch|probe> [--server <distro>] [--keep]}"
-CYCLE="${2:?usage: run.sh <client> <radius|tacplus|switch|probe> [--server <distro>] [--keep]}"
+CLIENT="${1:?usage: run.sh <client> <radius|tacplus|switch|probe|rotate|rollback|server> [--server <distro>] [--keep]}"
+CYCLE="${2:?usage: run.sh <client> <radius|tacplus|switch|probe|rotate|rollback|server> [--server <distro>] [--keep]}"
 shift 2
 SERVER="ubuntu-noble"; KEEP=""
 while [[ $# -gt 0 ]]; do
@@ -53,17 +69,17 @@ case "$CLIENT" in
     *) echo "unknown client: ${CLIENT}" >&2; exit 2 ;;
 esac
 case "$CYCLE" in
-    radius|probe) WANT=radius ;;
-    tacplus) WANT=tacplus ;;
+    radius|probe|rotate) WANT=radius ;;
+    tacplus|rollback|server) WANT=tacplus ;;
     switch) WANT=both ;;
     *) echo "unknown cycle: ${CYCLE}" >&2; exit 2 ;;
 esac
 case "$SERVER" in
     ubuntu-noble) SBASE=docker.io/library/ubuntu:noble
-        SSETUP='export DEBIAN_FRONTEND=noninteractive; apt-get update -qq && apt-get install -y -qq systemd systemd-sysv dbus python3 python3-yaml python3-bcrypt iproute2 procps logrotate git diffutils openssh-client nftables autoconf automake libtool gnulib libpam0g-dev build-essential wget ca-certificates > /dev/null' ;;
+        SSETUP='export DEBIAN_FRONTEND=noninteractive; apt-get update -qq && apt-get install -y -qq systemd systemd-sysv dbus sudo python3 python3-yaml python3-bcrypt iproute2 procps logrotate git diffutils openssh-client nftables autoconf automake libtool gnulib libpam0g-dev build-essential wget ca-certificates > /dev/null' ;;
     almalinux-9) SBASE=docker.io/library/almalinux:9
         [[ "$WANT" == "radius" ]] || { echo "--server almalinux-9 runs the radius and probe cycles only" >&2; exit 2; }
-        SSETUP='dnf install -y -q systemd python3 python3-pyyaml python3-pip iproute procps-ng logrotate git findutils diffutils openssh-clients nftables wget > /dev/null && pip3 install -q bcrypt' ;;
+        SSETUP='dnf install -y -q systemd sudo python3 python3-pyyaml python3-pip iproute procps-ng logrotate git findutils diffutils openssh-clients nftables wget > /dev/null && pip3 install -q bcrypt' ;;
     *) echo "unknown server: ${SERVER}" >&2; exit 2 ;;
 esac
 SIMAGE="localhost/tacctl-host-check:server-${SERVER}"
@@ -138,14 +154,20 @@ podman run -d --name "$S" --network "$NET" --systemd=always --cap-add SYS_ADMIN 
     -v "${REPO}:/opt/tacctl:ro" "$SIMAGE" /sbin/init > /dev/null || exit 1
 # The client's IDs: rootless podman has 65536 subordinate IDs to give, and
 # the default map (0-65535) leaves out tacctl's 80000-89999. This one keeps
-# 0-55533 (the system's accounts, useradd's range and tacctl's earlier
-# 20000-29999), nobody/nogroup (65534, sshd's privilege separation) and
-# 65535, and maps 80000-89999 too.
+# 0-49999 (the system's accounts, useradd's range and tacctl's earlier
+# 20000-29999), 65534-65541 (nobody/nogroup, sshd's privilege separation, and
+# the numbers shadow-utils' useradd picks above them when asked for an account
+# below 80000: AlmaLinux gave the provisioning account 65536, which a map that
+# stops at 65535 cannot own) and maps 80000-89999 too.
 CLIENT_IDMAP=()
-for m in 0:1:55534 65534:55535:2 80000:55537:10000; do CLIENT_IDMAP+=(--uidmap "$m" --gidmap "$m"); done
+for m in 0:1:50000 65534:50001:8 80000:50009:10000; do CLIENT_IDMAP+=(--uidmap "$m" --gidmap "$m"); done
 podman run -d --name "$C" --network "$NET" --cap-add AUDIT_WRITE "${CLIENT_IDMAP[@]}" -v "${HERE}:/check:ro" \
     "$CIMAGE" /usr/sbin/sshd -D -e > /dev/null || exit 1
 sleep 4
+# visudo: tacctl checks every sudoers line it writes with it ('config linux
+# engineer-sudo'), as on any server that has sudo. Server images built before
+# it was in the package list get it now.
+s bash -c 'command -v visudo > /dev/null || { if command -v apt-get > /dev/null; then apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq sudo; else dnf install -y -q sudo; fi; } > /dev/null 2>&1'
 PY=$(c bash -c 'command -v python3 || echo /usr/libexec/platform-python')
 SIP=$(s hostname -I | cut -d' ' -f1)
 CIP=$(c hostname -I | cut -d' ' -f1)
@@ -218,6 +240,82 @@ if [[ "$CYCLE" == "probe" ]]; then
     echo "-- accounting records the server wrote for the session above"
     radius_acct | grep -E 'Acct-Status-Type|NAS-IP-Address' | sort | uniq -c
     exit 0
+fi
+
+# --- server: what only the server container can show ------------------------------
+# No enrollment of the client: the real tacquito answers authorization
+# requests for the baseline command rules of the four roles
+# (tests/tools/permcheck.py and permcheck-baseline.txt), and this server is
+# enrolled as a host itself ('host enroll --local'): the engineer tier's
+# group number, its sudoers line (none here), and sshd's drop-ins.
+if [[ "$CYCLE" == "server" ]]; then
+    section "server: the role preset, four lab users and the baseline rules asked of the real tacquito"
+    printf 'y\n' | podman exec -i "$S" tacctl group preset roles 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -E 'applied|Nothing|ERROR' | head -3
+    PC_SECRET='permcheck-secret-0123456789'
+    tacctl scope add permlab --prefixes "${SIP}/32,127.0.0.1/32" --secret "$PC_SECRET" --protocols tacacs > /dev/null
+    pchash=$(s python3 -c 'import bcrypt; print(bcrypt.hashpw(b"Gotest-Net-Pw-1", bcrypt.gensalt(rounds=10)).decode())')
+    for pair in gotestviewer:readonly gotestoperator:operator gotestengineer:engineer gotestsuper:superuser; do
+        tacctl user add "${pair%%:*}" "${pair##*:}" --hash "$pchash" --scopes permlab > /dev/null
+    done
+    tacctl config render > /dev/null 2>&1
+    check "tacquito is active after the changes" s systemctl is-active --quiet tacquito
+    for pair in gotestviewer:readonly gotestoperator:operator gotestengineer:engineer gotestsuper:superuser; do
+        expect "${pair%%:*} is in group ${pair##*:}" "${pair%%:*} +[^ ]+ +${pair##*:} " "$(tacctl user list)"
+    done
+    s python3 /opt/tacctl/tests/tools/permcheck.py --host "$SIP" --port 49 --secret "$PC_SECRET" /opt/tacctl/tests/tools/permcheck-baseline.txt > "${WORK}/permcheck.out" 2>&1; rc=$?
+    tail -5 "${WORK}/permcheck.out"
+    grep -vE '^(ok|PASS)' "${WORK}/permcheck.out" | head -30
+    check "permcheck: every baseline pair got the expected answer from the real tacquito ($(grep -cE '^[a-z]' "${REPO}/tests/tools/permcheck-baseline.txt") pairs)" test $rc -eq 0
+    # The three commands by name, for each role, with the answer printed.
+    printf '%s\n' 'gotestviewer|show|version|permit' 'gotestoperator|show|version|permit' 'gotestengineer|show|version|permit' 'gotestsuper|show|version|permit' \
+        'gotestviewer|show|running-config|permit' 'gotestoperator|show|running-config|permit' 'gotestengineer|show|running-config|permit' \
+        'gotestviewer|no|aaa new-model|deny' 'gotestoperator|no|aaa new-model|deny' 'gotestengineer|no|aaa new-model|permit' > "${WORK}/three.txt"
+    podman cp "${WORK}/three.txt" "${S}:/root/three.txt"
+    s python3 /opt/tacctl/tests/tools/permcheck.py --host "$SIP" --port 49 --secret "$PC_SECRET" /root/three.txt > "${WORK}/three.out" 2>&1; rc=$?
+    tail -12 "${WORK}/three.out"
+    check "show version, show running-config and no aaa new-model per role are answered as the baseline says" test $rc -eq 0
+    log=$(s journalctl -u tacquito --no-pager -n 40 2> /dev/null | grep -ciE 'regexp|regex|panic|invalid' || true)
+    note "tacquito's journal lines about regex/panic/invalid: ${log}"
+
+    section "server: this server enrolled as a host ('host enroll --local'): engineer group number, sudoers, sshd drop-ins"
+    c_ssh=$(s bash -c 'DEBIAN_FRONTEND=noninteractive apt-get install -y -qq openssh-server > /dev/null 2>&1; mkdir -p /run/sshd; command -v sshd')
+    note "sshd on the server container: ${c_ssh:-absent}"
+    # sshd must be running for tacctl to reload it (the container's ssh.socket starts it on demand only).
+    s bash -c 'ln -sf /usr/local/bin/tacctl /usr/local/bin/tacctl-console 2> /dev/null; systemctl start ssh.service' > /dev/null 2>&1
+    # The server container's user namespace holds UIDs up to 65536, not tacctl's 80000-89999: its own range.
+    tacctl config linux uid-range 50000-59999 > /dev/null
+    # enroll wants a local administrator with a password (the lockout check).
+    s bash -c 'useradd -m -s /bin/bash -G sudo ladm && echo ladm:Local-Admin-Pw-1 | chpasswd'
+    tacctl host enroll --local --name srv --method tacplus --scope permlab > "${WORK}/local.out" 2>&1; rc=$?
+    sed 's/\x1b\[[0-9;]*m//g' "${WORK}/local.out" | grep -E 'INFO|WARN|ERROR|Installed|Updated' | head -20 | sed 's/^/    | /'
+    check "host enroll --local exits 0" test $rc -eq 0
+    check "tac-engineer is GID 50005 here too (first + 5), tac-users 50000, tac-superuser 50002" s bash -c "[[ \$(getent group tac-engineer | cut -d: -f3) == 50005 && \$(getent group tac-users | cut -d: -f3) == 50000 && \$(getent group tac-superuser | cut -d: -f3) == 50002 ]]"
+    check "the engineer account is in tac-engineer and not in tac-superuser; the superuser the other way" s bash -c 'id -nG gotestengineer | grep -qw tac-engineer && ! id -nG gotestengineer | grep -qw tac-superuser && id -nG gotestsuper | grep -qw tac-superuser'
+    note "this server's sudoers drop-in: $(s bash -c 'grep -hv "^#" /etc/sudoers.d/tacctl-host 2> /dev/null | grep -v "^$" | paste -sd"|"')"
+    check "TAC_LOCAL: no %tac-engineer ALL line on the server itself (engineers have tacctl's own sudo rows only)" s bash -c '! grep -qs "^%tac-engineer ALL=(ALL:ALL) ALL" /etc/sudoers.d/tacctl-host'
+    ls_out=$(s ls /etc/ssh/sshd_config.d); note "sshd_config.d: $(tr '\n' ' ' <<< "$ls_out")"
+    check "the engineers' sshd drop-in exists and sorts before the console's" s bash -c 'cd /etc/ssh/sshd_config.d && [[ -f 00-tacctl-engineer.conf && $(ls | sort | head -1) == 00-tacctl-engineer.conf ]] && [[ 00-tacctl-engineer.conf < tacctl-console.conf ]]'
+    tacctl console check > "${WORK}/ccheck.out" 2>&1; rc=$?
+    sed 's/\x1b\[[0-9;]*m//g' "${WORK}/ccheck.out" | tail -12 | sed 's/^/    | /'
+    check "tacctl console check on the enrolled server: sshd applies the console's and the engineers' settings (exit 0)" test $rc -eq 0
+    # An engineer who is also, through a stale membership, in tac-superuser and
+    # tac-console: the first value of each keyword wins across the files, in name order.
+    s bash -c 'useradd -M -s /bin/bash -G tac-engineer,tac-superuser,tac-console both1 && useradd -M -s /bin/bash -G tac-superuser,tac-console sup1' || bad "could not make the two accounts with the tacctl groups"
+    s tacctl console forwarding tiers superuser > /dev/null 2>&1
+    tacctl console install > "${WORK}/cinst.out" 2>&1; sed 's/\x1b\[[0-9;]*m//g' "${WORK}/cinst.out" | tail -4 | sed 's/^/    | /'
+    for k in allowtcpforwarding x11forwarding allowstreamlocalforwarding permittunnel gatewayports; do
+        expect "sshd -T: an engineer who is also in tac-superuser and tac-console: ${k} no" "^${k} no\$" "$(s sshd -T -C user=both1,host=localhost,addr=127.0.0.1 2>&1 | grep -i "^${k} ")"
+    done
+    expect "sshd -T: that account runs the console (ForceCommand)" '^forcecommand /usr/local/bin/tacctl-console' "$(s sshd -T -C user=both1,host=localhost,addr=127.0.0.1 2>&1 | grep -i '^forcecommand')"
+    expect "sshd -T: a superuser with the console (forwarding tier) may forward TCP" '^allowtcpforwarding yes' "$(s sshd -T -C user=sup1,host=localhost,addr=127.0.0.1 2>&1 | grep -i '^allowtcpforwarding')"
+    tacctl console check > "${WORK}/ccheck2.out" 2>&1; rc=$?
+    expect "tacctl console check finds the two hand-made accounts: stale tac-superuser membership, an engineer with a shell (exit non-zero)" 'both1: still in tac-superuser.*(stale membership|login shell)|stale membership' "$(sed 's/\x1b\[[0-9;]*m//g' "${WORK}/ccheck2.out" | tr '\n' ' ')"
+    check "and its exit status is 1" test $rc -eq 1
+
+    echo
+    echo "${CLIENT} ${CYCLE} (server ${SERVER}): ${pass} passed, ${fail} failed"
+    [[ $fail -eq 0 ]]
+    exit $?
 fi
 
 # --- the login cases, for the method the host has now -------------------------
@@ -363,7 +461,8 @@ enroll() { # <method> [extra args]
     return $rc
 }
 
-FIRST="$CYCLE"; [[ "$CYCLE" == "switch" ]] && FIRST="tacplus"
+FIRST="$CYCLE"; [[ "$CYCLE" == "switch" ]] && FIRST="tacplus"; [[ "$CYCLE" == "rotate" ]] && FIRST="radius"
+[[ "$CYCLE" == "rollback" ]] && FIRST="tacplus"
 
 section "before: snapshot, then enroll with --method ${FIRST}"
 snapshot > "${WORK}/before"
@@ -386,6 +485,206 @@ expect "device add refuses that address" "${CIP} belongs to the enrolled host 'c
 # sync, and local useradd stays below the range.
 c cp /root/login.defs.orig /etc/login.defs
 
+# --- rotate: the provisioning account ('host provisioner rotate') ---------------
+# tacctl logs in to the client as root here, so the first rotation leaves root
+# (not removed: --remove-old refuses root); the second one removes the account
+# the first made, over the new one. The key is made by ssh-keygen in the server
+# container, where tacctl runs as root: every access to it is root's own.
+if [[ "$CYCLE" == "rotate" ]]; then
+    section "rotate: dry run, then root -> deploy2 with a key"
+    s ssh-keygen -q -t ed25519 -N '' -f /root/rot-key
+    reg() { s cat /etc/tacctl/linux-hosts; }
+    reg_before=$(reg)
+    out=$(tacctl host provisioner c1 rotate deploy2 --key /root/rot-key --dry-run)
+    expect "dry run: the plan names the useradd line" "useradd -m -U -s /bin/bash -c 'tacctl provisioning account' -K UID_MAX=79999 -K GID_MAX=79999 deploy2" "$out"
+    expect "dry run: reads the host's sshd setting" 'sshd on c1: passwordauthentication' "$out"
+    expect "dry run: changes nothing" 'Dry run: nothing was changed.' "$out"
+    check "dry run: no account on the host, the registry unchanged" bash -c "! podman exec '$C' id deploy2 && [[ \"\$(podman exec '$S' cat /etc/tacctl/linux-hosts)\" == '${reg_before}' ]]"
+
+    tacctl host provisioner c1 rotate deploy2 --key /root/rot-key --yes > "${WORK}/rot1.out"; rc=$?
+    sed 's/^/    | /' "${WORK}/rot1.out" | grep -E 'INFO|WARN|ERROR'
+    check "rotate root -> deploy2 exits 0" test $rc -eq 0
+    check "the registry reaches the client as deploy2 with the key" bash -c "[[ \"\$(podman exec '$S' cat /etc/tacctl/linux-hosts)\" == *'|deploy2@${CIP}||linux-c1|'*'|/root/rot-key|radius' ]]"
+    check "the account carries the marker comment and a UID and GID below tacctl's range" c bash -c "[[ \$(getent passwd deploy2 | cut -d: -f5) == 'tacctl provisioning account' ]] && (( \$(id -u deploy2) < 80000 && \$(id -g deploy2) < 80000 ))"
+    check "root's record of the account is in a root-only directory (0700, 0600) with its name and UID" c bash -c "[[ \$(stat -c '%a %U' /var/lib/tacctl-provisioner) == '700 root' && \$(stat -c '%a %U' /var/lib/tacctl-provisioner/deploy2) == '600 root' ]] && grep -qx 'account=deploy2' /var/lib/tacctl-provisioner/deploy2 && grep -qx \"uid=\$(id -u deploy2)\" /var/lib/tacctl-provisioner/deploy2 && grep -qx 'ssh_dir=1' /var/lib/tacctl-provisioner/deploy2"
+    check "its password is locked and its sudoers line is NOPASSWD: ALL, in its own file (visudo -c is happy)" c bash -c "getent shadow deploy2 | cut -d: -f2 | grep -q '^!' && grep -qx 'deploy2 ALL=(ALL:ALL) NOPASSWD: ALL' /etc/sudoers.d/tacctl-provisioner && [[ \$(stat -c %a /etc/sudoers.d/tacctl-provisioner) == 440 ]] && visudo -c > /dev/null"
+    check "deploy2/.ssh is 0700 and authorized_keys 0600, both deploy2's, one line" c bash -c 'h=$(getent passwd deploy2 | cut -d: -f6); [[ $(stat -c "%a %U" "$h/.ssh") == "700 deploy2" && $(stat -c "%a %U" "$h/.ssh/authorized_keys") == "600 deploy2" && $(wc -l < "$h/.ssh/authorized_keys") == 1 ]]'
+    if [[ "$(c bash -c 'cut -d" " -f2 "$(getent passwd deploy2 | cut -d: -f6)/.ssh/authorized_keys"')" == "$(s cut -d' ' -f2 /root/rot-key.pub)" ]]; then ok "authorized_keys holds the key tacctl was given"; else bad "authorized_keys holds another key than tacctl was given"; fi
+    if c bash -c 'command -v selinuxenabled > /dev/null && selinuxenabled'; then
+        expect "SELinux is on: the .ssh directory and authorized_keys have the ssh_home_t type" 'ssh_home_t' "$(c bash -c 'h=$(getent passwd deploy2 | cut -d: -f6); ls -dZ "$h/.ssh" "$h/.ssh/authorized_keys"')"
+    else
+        note "SELinux is not enabled in this client container: restorecon's effect is not checked here"
+    fi
+    check "the old login (root) still works" s ssh -o BatchMode=yes "root@${CIP}" true
+    # host sync now goes through deploy2.
+    tacctl user scope alice add linux-c1 > /dev/null
+    tacctl host sync c1 > "${WORK}/sync.out"; rc=$?
+    check "host sync through the new account exits 0 and creates alice" bash -c "[[ $rc == 0 ]] && grep -q 'c1: synced' '${WORK}/sync.out' && podman exec '$C' id alice"
+    check "sync left the provisioning account alone (not in tacctl's groups, still below the range)" c bash -c "! id -nG deploy2 | grep -q 'tac-' && (( \$(id -u deploy2) < 80000 ))"
+
+    section "rotate: adoption, a foreign account, a marker without a record, deploy2 -> deploy3 --remove-old"
+    # deploy3 is left as an interrupted run would leave it: root's record names it.
+    c useradd -m -c 'tacctl provisioning account' deploy3
+    c bash -c 'mkdir -p -m 0700 /var/lib/tacctl-provisioner && printf "account=deploy3\nuid=%s\nssh_dir=0\n" "$(id -u deploy3)" > /var/lib/tacctl-provisioner/deploy3 && chmod 0600 /var/lib/tacctl-provisioner/deploy3'
+    c useradd -m other1
+    # deploy5 only carries the comment: the account can write that itself.
+    c useradd -m -c 'tacctl provisioning account' deploy5
+    reg_now=$(reg)
+    tacctl host provisioner c1 rotate other1 --key /root/rot-key --yes > "${WORK}/rot2.out"; rc=$?
+    check "an existing account that is not ours is refused and nothing changes" bash -c "[[ $rc != 0 ]] && grep -q 'is not a tacctl provisioning account' '${WORK}/rot2.out' && [[ \"\$(podman exec '$S' cat /etc/tacctl/linux-hosts)\" == '${reg_now}' ]]"
+    tacctl host provisioner c1 rotate deploy5 --key /root/rot-key --yes > "${WORK}/rot2b.out"; rc=$?
+    check "an account with only the marker comment is refused: no record of tacctl creating it; no sudoers line, no key" bash -c "[[ $rc != 0 ]] && grep -q 'tacctl has no root-owned record of creating it' '${WORK}/rot2b.out' && ! podman exec '$C' grep -q '^deploy5 ' /etc/sudoers.d/tacctl-provisioner && [[ -z \"\$(podman exec '$C' find /home -maxdepth 2 -name .ssh -path '*deploy5*')\" ]] && [[ \"\$(podman exec '$S' cat /etc/tacctl/linux-hosts)\" == '${reg_now}' ]]"
+    tacctl host provisioner c1 rotate deploy3 --key /root/rot-key --remove-old --yes > "${WORK}/rot3.out"; rc=$?
+    sed 's/^/    | /' "${WORK}/rot3.out" | grep -E 'INFO|WARN|ERROR'
+    check "rotate deploy2 -> deploy3 --remove-old exits 0 and adopts the account that was there" bash -c "[[ $rc == 0 ]] && grep -q \"Adopting the existing provisioning account 'deploy3'\" '${WORK}/rot3.out' && grep -q \"The old account 'deploy2' is removed from c1.\" '${WORK}/rot3.out'"
+    check "deploy2 is gone with its group, its record, its home moved out of reach (root's, 0700), its sudoers line removed" c bash -c "! getent passwd deploy2 && ! getent group deploy2 && [[ ! -e /var/lib/tacctl-provisioner/deploy2 ]] && [[ ! -e /home/deploy2 ]] && [[ \$(stat -c %U:%G /home/.tacctl-removed/deploy2-*) == root:root ]] && ! grep -q '^deploy2 ' /etc/sudoers.d/tacctl-provisioner && grep -qx 'deploy3 ALL=(ALL:ALL) NOPASSWD: ALL' /etc/sudoers.d/tacctl-provisioner"
+    check "the registry reaches the client as deploy3; alice's account is still there" bash -c "[[ \"\$(podman exec '$S' cat /etc/tacctl/linux-hosts)\" == *'|deploy3@${CIP}||'* ]] && podman exec '$C' id alice"
+    tacctl host sync c1 > "${WORK}/sync.out"; rc=$?
+    check "host sync through deploy3 exits 0" test $rc -eq 0
+
+    section "rotate: a proof that fails takes the new account away again"
+    # sshd refuses public keys for deploy4, so the fresh login fails.
+    c bash -c 'printf "%s\n" "Match User deploy4" "    PubkeyAuthentication no" >> /etc/ssh/sshd_config; kill -HUP 1; sleep 1'
+    reg_now=$(reg)
+    tacctl host provisioner c1 rotate deploy4 --key /root/rot-key --yes > "${WORK}/rot4.out"; rc=$?
+    sed 's/^/    | /' "${WORK}/rot4.out" | grep -E 'INFO|WARN|ERROR'
+    check "the rotation fails at the proof and says the account was removed" bash -c "[[ $rc != 0 ]] && grep -q 'The proof failed' '${WORK}/rot4.out' && grep -q \"The new account 'deploy4' and its sudoers line were removed from c1\" '${WORK}/rot4.out'"
+    check "no deploy4 account, home, record or sudoers line; the registry is unchanged" bash -c "! podman exec '$C' getent passwd deploy4 && ! podman exec '$C' test -e /home/deploy4 && ! podman exec '$C' test -e /var/lib/tacctl-provisioner/deploy4 && ! podman exec '$C' grep -q '^deploy4 ' /etc/sudoers.d/tacctl-provisioner && [[ \"\$(podman exec '$S' cat /etc/tacctl/linux-hosts)\" == '${reg_now}' ]]"
+    check "the audit line of the failed step is in the server's log" bash -c "podman exec '$S' journalctl -t tacctl --no-pager | grep -q 'host provisioner rotate name=c1 old=deploy3 new=deploy4 auth=key step=prove'"
+    c bash -c 'sed -i "/^Match User deploy4$/,\$d" /etc/ssh/sshd_config; kill -HUP 1; sleep 1'
+
+    section "unenroll through deploy3"
+    tacctl host unenroll c1 > "${WORK}/unenroll.out"; rc=$?
+    check "host unenroll through the provisioning account exits 0" test $rc -eq 0
+    c bash -c 'userdel -r deploy3 2> /dev/null; userdel -r other1 2> /dev/null; userdel -r deploy5 2> /dev/null; rm -f /etc/sudoers.d/tacctl-provisioner /etc/sudoers.d/.tacctl-provisioner.lock; rm -rf /home/.tacctl-removed /var/lib/tacctl-provisioner'
+    snapshot > "${WORK}/after"
+    if diff "${WORK}/before" "${WORK}/after" > "${WORK}/diff"; then
+        ok "PAM files, sudoers and module directory are as before the enroll"
+    else
+        bad "the host differs from before the enroll:"; cat "${WORK}/diff"
+    fi
+    echo
+    echo "${CLIENT} ${CYCLE} (server ${SERVER}): ${pass} passed, ${fail} failed"
+    [[ $fail -eq 0 ]]
+    exit $?
+fi
+
+# --- rollback: 'tacctl rollback 0.2.2 --apply --yes --hosts' (D50) ---------------
+# The engineer tier does not exist in 0.2.2, whose sync would make an engineer
+# a superuser: the rollback syncs the hosts with TAC_REVOKE_ENGINEER=1 in the
+# client script's header, which takes the engineers out of tac-engineer and
+# tac-superuser and writes no %tac-engineer sudoers line. Here on a real
+# client: the dry run changes nothing, the apply takes away the engineer's
+# sudo and nobody else's anything.
+if [[ "$CYCLE" == "rollback" ]]; then
+    F_PW='Frank-Net-Pw-1'
+    DROPIN=/etc/sudoers.d/tacctl-host
+    # same <description> <got> <wanted>: PASS when they are equal.
+    same() { if [[ "$2" == "$3" ]]; then ok "$1"; else bad "$1   (got: $(tr '\n' ' ' <<< "$2"); wanted: $(tr '\n' ' ' <<< "$3"))"; fi; }
+    section "rollback: frank (a group at priv-lvl 15 with tier engineer), alice (superuser), bob, dave: synced"
+    fhash=$(s python3 -c 'import bcrypt; print(bcrypt.hashpw(b"Frank-Net-Pw-1", bcrypt.gensalt(rounds=10)).decode())')
+    tacctl group add engineers 15 ENG-CLASS --tier engineer > /dev/null
+    tacctl user add frank engineers --hash "$fhash" --scopes linux-c1 > /dev/null
+    for u in alice bob dave; do tacctl user scope "$u" add linux-c1 > /dev/null; done
+    tacctl host sync c1 > "${WORK}/sync.out"; rc=$?
+    check "host sync exits 0 and creates the four accounts" bash -c "[[ $rc == 0 ]] && grep -q 'c1: synced (4 users' '${WORK}/sync.out' && for u in alice bob dave frank; do podman exec '$C' id \$u > /dev/null || exit 1; done"
+    check "frank (tier engineer) is in tac-engineer and not in tac-superuser" c bash -c 'id -nG frank | grep -qw tac-engineer && ! id -nG frank | grep -qw tac-superuser'
+    check "alice (superuser) is in tac-superuser and not in tac-engineer" c bash -c 'id -nG alice | grep -qw tac-superuser && ! id -nG alice | grep -qw tac-engineer'
+    check "the drop-in has the %tac-engineer line (every command) and the %tac-superuser line, and visudo -c is happy" c bash -c "grep -qx '%tac-engineer ALL=(ALL:ALL) ALL' ${DROPIN} && grep -q '^%tac-superuser ' ${DROPIN} && visudo -cf ${DROPIN}"
+    expect "frank: sudo with the network password gives root" '^0$' "$(login frank "$F_PW" "printf '%s\n' '$F_PW' | sudo -S -k -p '' id -u")"
+    expect "alice: sudo with the network password gives root" '^0$' "$(login alice "$A_PW" "printf '%s\n' '$A_PW' | sudo -S -k -p '' id -u")"
+    note "the drop-in before the rollback: $(c grep -v '^#' "$DROPIN" | grep -v '^$' | paste -sd'|')"
+
+    # Everything the rollback must leave alone: each account, tacctl's groups
+    # and PAM files on the client, and (to see a dry run change nothing) the
+    # files of the server.
+    ustate() { c bash -c 'u=$1; getent passwd "$u"; getent shadow "$u" | cut -d: -f1,2,4-9; id -nG "$u" | tr " " "\n" | sort | paste -sd,; stat -c "%U:%G %a" "$(getent passwd "$u" | cut -d: -f6)"' _ "$1"; }
+    gstate() { c bash -c 'getent group | grep "^tac-" | cut -d: -f1,3 | sort; sha256sum /etc/pam.d/tacctl-* 2> /dev/null; ls -l /var/lib/tacctl-client | tail -n +2 | awk "{print \$1, \$3, \$4, \$9}"'; }
+    srvstate() { s bash -c 'cd / && find etc/tacctl var/lib/tacctl -type f -exec sha256sum {} + 2> /dev/null | sort'; }
+    # A 0.2.3-only setting in console.yaml: 0.2.2's parser rejects it, so the
+    # rollback has a file to convert.
+    tacctl console space-completion off > /dev/null
+    check "console.yaml has settings.space_completion (0.2.3 only) before the rollback" s grep -q space_completion /etc/tacctl/console.yaml
+    declare -A U0
+    for u in alice bob dave frank ladm carl; do U0[$u]=$(ustate "$u"); done
+    G0=$(gstate); D0=$(c cat "$DROPIN"); S0=$(srvstate)
+
+    section "rollback: the dry run (--hosts) changes nothing"
+    tacctl rollback 0.2.2 --hosts > "${WORK}/rb-dry.out"; rc=$?
+    sed 's/^/    | /' "${WORK}/rb-dry.out" | grep -E 'Warnings|^ *[0-9]+\. |dry run|--yes|--hosts' | head -20
+    check "the dry run exits 0, says it was a dry run and names the command to apply" bash -c "[[ $rc == 0 ]] && grep -q 'This was a dry run: nothing was changed.' '${WORK}/rb-dry.out' && grep -q 'tacctl rollback 0.2.2 --apply --yes --hosts' '${WORK}/rb-dry.out'"
+    check "the dry run names the engineers' sudo on the hosts" grep -qi 'engineer' "${WORK}/rb-dry.out"
+    same "nothing on the server changed (every file of /etc/tacctl and /var/lib/tacctl as before)" "$(srvstate)" "$S0"
+    same "the client's drop-in is as before" "$(c cat "$DROPIN")" "$D0"
+    same "tacctl's groups and PAM files on the client are as before" "$(gstate)" "$G0"
+    expect "frank still has his sudo after the dry run" '^0$' "$(login frank "$F_PW" "printf '%s\n' '$F_PW' | sudo -S -k -p '' id -u")"
+
+    section "rollback: --apply without --yes is refused while there are warnings"
+    tacctl rollback 0.2.2 --apply --hosts > "${WORK}/rb-noyes.out"; rc=$?
+    check "refused (exit non-zero), with the reason" bash -c "[[ $rc != 0 ]] && grep -q 'need your decision' '${WORK}/rb-noyes.out'"
+    same "nothing on the server changed" "$(srvstate)" "$S0"
+    same "the client's drop-in is as before, frank is in tac-engineer" "$(c cat "$DROPIN"; c id -nG frank | grep -ow tac-engineer)" "$(printf '%s\n%s' "$D0" tac-engineer)"
+
+    section "rollback: --apply --yes --hosts"
+    tacctl rollback 0.2.2 --apply --yes --hosts > "${WORK}/rb.out"; rc=$?
+    sed 's/^/    | /' "${WORK}/rb.out" | grep -E 'INFO|WARN|ERROR|Taking|synced|revoked|did not finish|Next|0\.2\.2' | head -30
+    check "rollback --apply --yes --hosts exits 0" test $rc -eq 0
+    check "it took the engineers' sudo off the host and said so for frank" bash -c "grep -q \"Taking the engineers' sudo off 1 host\" '${WORK}/rb.out' && grep -q \"'frank': engineer sudo revoked (removed from tac-engineer)\" '${WORK}/rb.out' && grep -q 'c1: synced' '${WORK}/rb.out'"
+    check "console.yaml was converted: no space_completion left, the file still there" s bash -c '[[ -f /etc/tacctl/console.yaml ]] && ! grep -q space_completion /etc/tacctl/console.yaml'
+    if [[ "$(srvstate)" != "$S0" ]]; then ok "the server's files differ from before the apply (the conversion and the snapshot)"; else bad "the server's files differ from before the apply"; fi
+    check "the drop-in has no %tac-engineer line any more, is 0440 root:root and visudo -c is happy" c bash -c "! grep -q '^%tac-engineer' ${DROPIN} && visudo -c > /dev/null && [[ \$(stat -c '%a %U:%G' ${DROPIN}) == '440 root:root' ]]"
+    same "the rest of the drop-in is as it was (only the engineer line and its comment are gone)" "$(c cat "$DROPIN")" "$(grep -vE "^%tac-engineer |^# TACACS\+ engineers get" <<< "$D0")"
+    check "frank is in neither tac-engineer nor tac-superuser" c bash -c '! id -nG frank | grep -qwE "tac-engineer|tac-superuser"'
+    expect "frank's account is still there: he logs in with the network password" '^frank$' "$(login frank "$F_PW" 'id -un')"
+    expect "frank has no sudo any more" 'not (allowed|in the sudoers)|rc=1' "$(login frank "$F_PW" "printf '%s\n' '$F_PW' | sudo -S -k -p '' id -u")"
+    expect "sudo -l -U frank says he may run nothing" 'not allowed to run sudo|may not run sudo' "$(c sudo -l -U frank 2>&1)"
+    expect "alice (superuser) still has sudo" '^0$' "$(login alice "$A_PW" "printf '%s\n' '$A_PW' | sudo -S -k -p '' id -u")"
+    check "alice is still in tac-superuser" c bash -c 'id -nG alice | grep -qw tac-superuser'
+    for u in alice bob dave ladm carl; do
+        same "$u: passwd and shadow lines, groups and home are as before" "$(ustate "$u")" "${U0[$u]}"
+    done
+    mapfile -t UF < <(ustate frank); mapfile -t UF0 <<< "${U0[frank]}"
+    same "frank: passwd and shadow lines and home are as before" "${UF[0]}|${UF[1]}|${UF[3]}" "${UF0[0]}|${UF0[1]}|${UF0[3]}"
+    same "frank: his groups lost tac-engineer and nothing else" "${UF[2]}" "$(sed -E 's/(^|,)tac-engineer//; s/^,//' <<< "${UF0[2]}")"
+    same "tacctl's groups (tac-engineer too) and PAM files on the client are as before" "$(gstate)" "$G0"
+    check "tacctl status on the server still works" tacctl status
+    expect "the registry still lists c1" "c1 +root@${CIP} " "$(tacctl host list)"
+    # A second run converts nothing more and syncs the host again, harmlessly.
+    tacctl rollback 0.2.2 --apply --yes --hosts > "${WORK}/rb2.out"; rc=$?
+    check "a second --apply --yes --hosts exits 0 and has nothing left to convert" bash -c "[[ $rc == 0 ]] && grep -q 'Nothing to convert' '${WORK}/rb2.out'"
+    check "and frank is still without sudo, alice with it" c bash -c '! id -nG frank | grep -qwE "tac-engineer|tac-superuser" && id -nG alice | grep -qw tac-superuser'
+
+    section "rollback: what 0.2.2's own sync does afterwards (the warning of the dry run)"
+    # The release binary of the tag, built here from an archive of it.
+    mkdir -p "${WORK}/old-src"
+    if git -C "$REPO" archive 0.2.2 2> /dev/null | tar -x -C "${WORK}/old-src" 2> /dev/null \
+        && (cd "${WORK}/old-src" && GOCACHE="${WORK}/gocache" "$(command -v go || echo /usr/local/go/bin/go)" build -trimpath -buildvcs=false -o "${WORK}/tacctl-0.2.2" ./cmd/tacctl) > "${WORK}/old-build.log" 2>&1; then
+        podman cp "${WORK}/tacctl-0.2.2" "${S}:/usr/local/bin/tacctl-0.2.2" && s chmod 755 /usr/local/bin/tacctl-0.2.2
+        note "the 0.2.2 binary, built from its tag: $(s tacctl-0.2.2 version 2>&1 | head -1)"
+        s tacctl-0.2.2 host sync c1 > "${WORK}/sync022.out" 2>&1; rc=$?
+        sed 's/\x1b\[[0-9;]*m//g' "${WORK}/sync022.out" | sed 's/^/    | /' | tail -5
+        check "0.2.2's host sync (protocol 5) exits 0" test $rc -eq 0
+        check "and puts frank into tac-superuser again: the engineer tier does not exist for it" c bash -c 'id -nG frank | grep -qw tac-superuser'
+        s rm -f /usr/local/bin/tacctl-0.2.2
+    else
+        note "the 0.2.2 tag could not be built here ($(tail -1 "${WORK}/old-build.log" 2> /dev/null)): 0.2.2's own sync is not checked"
+    fi
+
+    section "unenroll"
+    tacctl host unenroll c1 > "${WORK}/unenroll.out"; rc=$?
+    check "host unenroll exits 0" test $rc -eq 0
+    snapshot > "${WORK}/after"
+    if diff "${WORK}/before" "${WORK}/after" > "${WORK}/diff"; then
+        ok "PAM files, sudoers and module directory are as before the enroll"
+    else
+        bad "the host differs from before the enroll:"; cat "${WORK}/diff"
+    fi
+    echo
+    echo "${CLIENT} ${CYCLE} (server ${SERVER}): ${pass} passed, ${fail} failed"
+    [[ $fail -eq 0 ]]
+    exit $?
+fi
+
 section "users: alice (superuser), bob (operator), dave and erin (readonly), carl (readonly; the host has a local carl)"
 # carl as an earlier release left an adopted account: in tacctl's groups
 # (those a host other than the server has: tac-users, tac-superuser) and
@@ -407,13 +706,17 @@ check "tacctl's groups here are tac-users 80000, tac-superuser 80002 and tac-eng
 section "the engineer tier: bob's group given the tier engineer (D18), then back"
 # tier.<group> in tacctl.yaml is what 'tacctl group edit <g> tier' (WP9.4)
 # writes; the file is edited here so the case does not depend on it.
+expect "bob (operator) may not sudo" 'not (allowed|in the sudoers)|rc=1' "$(login bob "$B_PW" "printf '%s\n' '$B_PW' | sudo -S -k -p '' id -u")"
 s bash -c "printf 'tier:\n  operator: engineer\n' >> /etc/tacctl/tacctl.yaml"
 tacctl host sync c1 > "${WORK}/sync.out"; rc=$?
 check "the sync puts bob (engineer) in tac-engineer, not tac-superuser" c bash -c "[[ $rc == 0 ]] && id -nG bob | grep -qw tac-engineer && ! id -nG bob | grep -qw tac-superuser"
 check "the host's sudoers drop-in has the tac-engineer line (default: every command)" c grep -qx '%tac-engineer ALL=(ALL:ALL) ALL' /etc/sudoers.d/tacctl-host
+expect "bob (engineer) logs in with the network password and sudo gives root (every command)" '^0$' "$(login bob "$B_PW" "printf '%s\n' '$B_PW' | sudo -S -k -p '' id -u")"
 tacctl config linux engineer-sudo /usr/bin/systemctl,/usr/bin/journalctl > /dev/null
 tacctl host sync c1 > "${WORK}/sync.out"
 check "engineer-sudo reaches the host at its next sync, through visudo" bash -c "grep -q 'Sudoers drop-in /etc/sudoers.d/tacctl-host updated (engineers: /usr/bin/systemctl, /usr/bin/journalctl)' '${WORK}/sync.out' && podman exec '$C' grep -qx '%tac-engineer ALL=(ALL:ALL) /usr/bin/systemctl, /usr/bin/journalctl' /etc/sudoers.d/tacctl-host"
+expect "bob (engineer, limited): sudo systemctl is allowed" '^systemd [0-9]+' "$(login bob "$B_PW" "printf '%s\n' '$B_PW' | sudo -S -k -p '' /usr/bin/systemctl --version")"
+expect "bob (engineer, limited): sudo id is refused" 'not (allowed|in the sudoers)|rc=1|may not run' "$(login bob "$B_PW" "printf '%s\n' '$B_PW' | sudo -S -k -p '' id -u")"
 tacctl config linux engineer-sudo all > /dev/null
 s sed -i '/^tier:$/,/^  operator: engineer$/d' /etc/tacctl/tacctl.yaml
 tacctl host sync c1 > "${WORK}/sync.out"

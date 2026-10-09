@@ -1,0 +1,13 @@
+# Read-only; managed by tacctl.
+# Credentials: inherited from the default (tacctl config snmp), not set for scope 'lab'.
+# Allowed clients: the tacctl server first, the scope's ranges, then everything else (0.0.0.0/0) refused.
+set snmp client-list TACCTL-SNMP 10.0.0.42/32
+set snmp client-list TACCTL-SNMP 198.51.100.0/24
+set snmp client-list TACCTL-SNMP 0.0.0.0/0 restrict
+# set snmp v3 usm local-engine user <user> ...   (NOT SET: tacctl scope snmp lab v3-user <user>)
+set snmp location "Rack 4, DC1"
+set snmp contact "NOC <noc@example.net>"
+set snmp description "Core switch"
+# Check from the tacctl server: tacctl scope snmp lab test <device-address>   (expects sysName 'core-sw1')
+
+Unfilled SNMP values: v3 user (tacctl scope snmp lab v3-user <user>)

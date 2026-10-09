@@ -187,7 +187,11 @@ func placeholders(row usageRow, skip int) []string {
 	}
 	var out []string
 	for _, w := range f[skip:] {
-		if strings.HasPrefix(w, "-") || strings.HasPrefix(w, "[-") || w == "|" || w == "[options]" {
+		// An option group or alternative ('[list | remove <address>]')
+		// opens with a word that has no closing bracket: '[<name>]' is an
+		// optional positional and stays.
+		if strings.HasPrefix(w, "-") || strings.HasPrefix(w, "[-") || w == "|" || w == "[options]" ||
+			(strings.HasPrefix(w, "[") && !strings.Contains(w, "]")) {
 			break
 		}
 		out = append(out, w)
@@ -243,7 +247,15 @@ func alignRows(rows [][2]string) string {
 func (inv *invocation) shellExplain(root *cobra.Command) func([]string) (string, bool) {
 	return func(words []string) (string, bool) {
 		cmd, path, rest := shellCommand(root, words)
-		if cmd == root || cmd.Hidden || (len(rest) == 0 && slices.ContainsFunc(cmd.Commands(), func(c *cobra.Command) bool { return !c.Hidden })) {
+		if cmd == root || cmd.Hidden {
+			return "", false
+		}
+		if len(rest) == 0 && slices.ContainsFunc(cmd.Commands(), func(c *cobra.Command) bool { return !c.Hidden }) {
+			// A family the view hides lists nothing to complete: say why,
+			// and where its verbs are described (D56).
+			if eff, all, active := inv.currentView(); active && !viewShows(root, eff, all, path) {
+				return "Needs the " + string(familyTier(root, path)) + " tier. help " + strings.Join(path, " ") + " describes it.\n", true
+			}
 			return "", false
 		}
 		rows, block := inv.shellUsage(cmd, path)
@@ -288,6 +300,11 @@ func (inv *invocation) shellExplain(root *cobra.Command) func([]string) (string,
 		default:
 			next = strings.Join(remaining, " ") + ", or " + next
 		}
+		// A verb the caller's tier cannot run is not listed (D56); typed by
+		// hand its usage is still shown, with the tier it needs.
+		if eff, all, active := inv.currentView(); active && !viewShows(root, eff, all, path) {
+			b.WriteString("Needs the " + string(pathTier(path)) + " tier.\n")
+		}
 		b.WriteString("Next: " + next + "\n")
 		return b.String(), true
 	}
@@ -331,13 +348,42 @@ func (inv *invocation) flagHelps(cmd *cobra.Command, path []string, spec Spec, c
 // of the next positional (as completeSpec finds them); "choices" for a
 // fixed word list or free text.
 func listKindName(spec Spec, rest []string) string {
+	kind := strings.TrimSuffix(specKind(spec, rest), KindList)
+	switch kind {
+	case KindUsers, KindGroups, KindScopes, KindHosts, KindDevices, KindBackups, KindBackends, KindListeners:
+		return kind
+	case KindEnabledBackends:
+		return KindBackends
+	case KindFile:
+		return "files"
+	}
+	return "choices"
+}
+
+// hintKinds are word lists that only hint at what is typed (a prefix of a
+// longer word, or a start the operator goes on from): not fixed.
+var hintKinds = map[string]bool{configPaths: true, privModeWords: true}
+
+// fixedKind reports whether the words of a kind are fixed ones: a list
+// 'a|b|c', as against free text, a single word that is only the usual
+// value of a free-text position ('clear'), a hint list (hintKinds), a comma
+// list, a file and the live names of a store (users, hosts ...). Only
+// fixed words complete on a typed space.
+func fixedKind(kind string) bool {
+	return strings.Contains(kind, "|") && !hintKinds[kind] && !strings.HasSuffix(kind, KindList)
+}
+
+// specKind is the kind of the word completed after rest: of the value a
+// flag waits for, else of the next positional (as completeSpec finds
+// them); "" for free text, and after '--'.
+func specKind(spec Spec, rest []string) string {
 	kind, pos := "", 0
 	var words []string
 	pending := false
 	for i := 0; i < len(rest); i++ {
 		a := rest[i]
 		if a == "--" {
-			return "choices"
+			return ""
 		}
 		name, _, hasVal := strings.Cut(a, "=")
 		var flag *Flag
@@ -367,14 +413,5 @@ func listKindName(spec Spec, rest []string) string {
 			}
 		}
 	}
-	kind = strings.TrimSuffix(kind, KindList)
-	switch kind {
-	case KindUsers, KindGroups, KindScopes, KindHosts, KindDevices, KindBackups, KindBackends, KindListeners:
-		return kind
-	case KindEnabledBackends:
-		return KindBackends
-	case KindFile:
-		return "files"
-	}
-	return "choices"
+	return kind
 }

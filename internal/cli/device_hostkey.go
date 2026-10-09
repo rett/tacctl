@@ -144,6 +144,11 @@ func (inv *invocation) deviceHostkey(args []string) error {
 	if err != nil {
 		return err
 	}
+	// A host's pins are the superuser's: 'host sync' pins and checks them,
+	// so an engineer, who deploys no host, is told it is not found.
+	if e.Source == devreg.SourceHost && inv.callerScopes().restricted {
+		return inv.usageErr("Device '" + p.Args[0] + "' not found. List them with: tacctl device list")
+	}
 	pinned := devreg.ParseHostKeys(e.HostKeys)
 	if action == "show" {
 		inv.echo("")

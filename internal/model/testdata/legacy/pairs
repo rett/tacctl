@@ -1,3 +1,4 @@
+# golden/ holds the goldens of 0.1.16 (tests/fixtures/golden has since changed).
 # <name> <live> <rendered>: equiv_check(live, rendered) pinned in
 # expected/equiv.<name>.out (gen.sh). FIXTURES/ is tests/fixtures/.
 self FIXTURES/tacquito.multiscope.yaml FIXTURES/tacquito.multiscope.yaml
@@ -31,8 +32,8 @@ dead-matches.migrated migrated/dead-matches.yaml renders/dead-matches.migrated.y
 multiscope.migrated migrated/multiscope.yaml renders/multiscope.migrated.yaml
 golden-minimal FIXTURES/golden/tacquito.minimal.rendered.yaml FIXTURES/golden/tacquito.minimal.rendered.yaml
 golden-multiscope FIXTURES/golden/tacquito.multiscope.rendered.yaml FIXTURES/golden/tacquito.multiscope.rendered.yaml
-fixture-golden-minimal FIXTURES/tacquito.minimal.yaml FIXTURES/golden/tacquito.minimal.rendered.yaml
-fixture-golden-multiscope FIXTURES/tacquito.multiscope.yaml FIXTURES/golden/tacquito.multiscope.rendered.yaml
+fixture-golden-minimal FIXTURES/tacquito.minimal.yaml golden/minimal.yaml
+fixture-golden-multiscope FIXTURES/tacquito.multiscope.yaml golden/multiscope.yaml
 dead-matches-edge FIXTURES/tacquito.dead-matches.yaml FIXTURES/legacy.import-edge.yaml
 unrepresentable-edge FIXTURES/legacy.unrepresentable.yaml FIXTURES/legacy.import-edge.yaml
 fresh-install-edge FIXTURES/legacy.fresh-install.yaml variants/edge-marker.yaml

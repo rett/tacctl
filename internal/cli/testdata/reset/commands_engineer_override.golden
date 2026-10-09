@@ -1,0 +1,42 @@
+
+Reset of the command rules of group 'engineer' to the shipped default
+---------------------------------------------------------------------
+  commands
+    - reload       deny
+    - copy         permit ^((running-config|startup-config|system:running-config|nvram:startup-config) (startup-config|nvram:startup-config|(flash|bootflash|harddisk|disk\d|usbflash\d*):\S*|(tftp|ftp|scp|sftp|http|https):\S*))( .*)?$
+    - copy         permit ^((flash|bootflash|harddisk|disk\d|usbflash\d*):\S* (tftp|ftp|scp|sftp|http|https):\S*)( .*)?$
+    - copy         deny
+    - write        deny   ^(erase)( .*)?$
+    - delete       deny
+    - erase        deny
+    - format       deny
+    - fsck         deny
+    - rename       deny
+    - mkdir        deny
+    - rmdir        deny
+    - request      deny
+    - install      deny
+    - software     deny
+    - upgrade      deny
+    - issu         deny
+    - archive      permit ^(config)( .*)?$
+    - archive      deny
+    - configure    permit ^(terminal|confirm|revert|replace (nvram|archive|flash|bootflash|harddisk|disk\d|usbflash\d*):\S*)( .*)?$
+    - configure    deny
+    - tclsh        deny
+    - scripting    deny
+    - guestshell   deny
+    - app-hosting  deny
+    - iox          deny
+    - hw-module    deny
+    - redundancy   deny
+    - switch       deny
+    - test         deny   ^(aaa)( .*)?$
+    - debug        deny   ^(all|aaa|tacacs|radius)( .*)?$
+    - clear        deny   ^(aaa|logging|archive)( .*)?$
+    - do           deny   ^(reload|copy|delete|erase|format|fsck|rename|mkdir|rmdir|write erase|request|install|software|upgrade|issu|archive|configure|clear (aaa|logging|archive)|debug (all|aaa|tacacs|radius)|test aaa|tclsh|guestshell|app-hosting|iox|scripting|hw-module|redundancy|switch)( .*)?$
+    - extra        deny   ^(x)$
+    - *            permit
+    warning: group 'engineer' has no command rules at priv-lvl 15, so tacctl config cisco leaves 'aaa authorization commands 15' commented out; run: tacctl group commands default engineer permit
+
+[INFO] Dry run: nothing was written.

@@ -140,7 +140,8 @@ _normalize() {
     assert_line "privilege configure level 7 router bgp"
     assert_line "privilege exec all level 7 show ip"
     assert_line "privilege configure all level 7 interface"
-    assert_line "privilege exec level 7 show running-config"
+    assert_line "privilege exec level 7 clear counters"
+    assert_line "privilege exec level 1 show running-config"
 }
 
 # --- config juniper: the server's rules per class (0.2.2) -------------------
@@ -213,7 +214,7 @@ _normalize() {
     # Debug stays Off in the base procedure and is only flipped in the
     # troubleshooting step, which must tell the operator to flip it back.
     assert_output --partial "12. Debug                      : Off"
-    assert_output --partial "Step 8: Only if Step 7 fails"
+    assert_output --partial "Step 9: Only if Step 8 fails"
     assert_output --partial "12. Debug: On"
     assert_output --partial "back to Off"
     assert_output --partial "tacctl config loglevel debug"
@@ -469,4 +470,252 @@ _normalize() {
     assert_success
     assert_output --partial "filter LAB-MGMT-FILTER"
     refute_output --partial "GLOBAL-MGMT"
+}
+
+# --- SNMP and NETCONF in the walkthroughs (0.2.3: D41, D43, D53) ----------------------------
+
+# snmp_setup: scope lab with a community, two ranges and a contact.
+snmp_setup() {
+    printf 'lab-ro-community\n' | "$TACCTL_BIN_SCRIPT" scope snmp lab community --stdin > /dev/null
+    "$TACCTL_BIN_SCRIPT" scope snmp lab clients add 198.51.100.0/24,10.0.0.0/8 > /dev/null
+    "$TACCTL_BIN_SCRIPT" scope snmp lab contact 'NOC <noc@example.net>' > /dev/null
+}
+
+@test "config cisco|juniper|wti: SNMP not configured is a comment saying so, and NETCONF is commented" {
+    run "$TACCTL_BIN_SCRIPT" config cisco --scope lab
+    assert_success
+    assert_line "! SNMP is not configured in tacctl for scope 'lab': nothing is rendered here."
+    refute_output --partial "snmp-server community"
+    assert_line "! netconf-yang"
+    refute_line "netconf-yang"
+    run "$TACCTL_BIN_SCRIPT" config juniper --scope lab
+    assert_line "# SNMP is not configured in tacctl for scope 'lab': nothing is rendered here."
+    assert_line "#   set system services netconf ssh"
+    refute_line "set system services netconf ssh"
+    run "$TACCTL_BIN_SCRIPT" config wti --scope lab
+    assert_output --partial "SNMP is not configured in tacctl for scope 'lab': nothing is listed here."
+    assert_output --partial "NETCONF does not exist on the unit"
+    refute_output --partial "Unfilled SNMP values"
+}
+
+@test "config cisco: v2c with the server, the ranges in order and the final refusal; unset values are commented and listed last" {
+    snmp_setup
+    run "$TACCTL_BIN_SCRIPT" config cisco --scope lab
+    assert_success
+    assert_line "ip access-list standard TACCTL-SNMP"
+    assert_line "  permit host 10.0.0.42"
+    assert_line "  permit 198.51.100.0 0.0.0.255"
+    assert_line "  permit 10.0.0.0 0.255.255.255"
+    assert_line "  deny   any"
+    assert_line "snmp-server community lab-ro-community RO TACCTL-SNMP"
+    assert_line "snmp-server contact NOC <noc@example.net>"
+    assert_line "! snmp-server location <location>   ! NOT SET: tacctl device location <name> '<text>'"
+    [[ "$output" == *"permit host 10.0.0.42"*"permit 198.51.100.0"*"permit 10.0.0.0 0.255"*"deny   any"* ]]
+    # The last non-empty line.
+    [[ "$(grep -v '^$' <<<"$output" | tail -1 | sed 's/\x1b\[[0-9;]*m//g')" == "Unfilled SNMP values: location (tacctl device location <name> '<text>')" ]]
+}
+
+@test "config juniper: the client list, the community bound to it and the final restrict" {
+    snmp_setup
+    run "$TACCTL_BIN_SCRIPT" config juniper --scope lab
+    assert_success
+    assert_line "set snmp client-list TACCTL-SNMP 10.0.0.42/32"
+    assert_line "set snmp client-list TACCTL-SNMP 198.51.100.0/24"
+    assert_line "set snmp client-list TACCTL-SNMP 0.0.0.0/0 restrict"
+    assert_line "set snmp community lab-ro-community authorization read-only"
+    assert_line "set snmp community lab-ro-community client-list-name TACCTL-SNMP"
+    assert_line 'set snmp contact "NOC <noc@example.net>"'
+    assert_line '# set snmp location "<location>"   (NOT SET: tacctl device location <name> '"'"'<text>'"'"')'
+    assert_line "  show configuration snmp"
+}
+
+@test "config wti: the SNMP step is Step 6, the IP Tables list Step 5 and the final DROP Step 11; the restriction is the udp 161 lines" {
+    snmp_setup
+    run "$TACCTL_BIN_SCRIPT" config wti --scope lab
+    assert_success
+    assert_output --partial "Step 6: SNMP"
+    assert_output --partial "Read-only Community       : lab-ro-community"
+    assert_output --partial "Client restriction (not verified on a unit): the udp port 161 lines of the IP Tables list (Step 5) are"
+    refute_output --partial "depends on the IP Tables"
+    assert_output --partial "allow  198.51.100.0/24"
+    assert_output --partial "Step 7: Save"
+    assert_output --partial "Step 8: Test from a SECOND session"
+    assert_output --partial "Step 9: Only if Step 8 fails"
+    assert_output --partial "Step 10: Break-glass local accounts"
+    assert_output --partial "Step 11: The final DROP of the IP Tables list"
+}
+
+# iptables_setup: scope lab with two management ranges and the SNMP setup.
+iptables_setup() {
+    snmp_setup
+    "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab add 192.0.2.0/24,198.51.100.0/25 > /dev/null
+}
+
+@test "config wti: Step 5 keeps its caution as the introduction and renders the scope's IP Tables list, the DROP last (golden)" {
+    iptables_setup
+    local out="$BATS_TEST_TMPDIR/wti-iptables.conf"
+    "$TACCTL_BIN_SCRIPT" config wti --scope lab | _normalize > "$out"
+    golden_diff "$out" "iptables/cli-wti-lab.conf"
+    run "$TACCTL_BIN_SCRIPT" config wti --scope lab
+    assert_success
+    output=$(sed 's/\x1b\[[0-9;]*m//g' <<< "$output")
+    # The caution is the introduction; the generated list follows it.
+    assert_output --partial "        login waits out the Fallback Timer and tacquito logs nothing.
+
+        Generated for scope 'lab'. Not verified on a unit."
+    assert_output --partial "  1. iptables -A INPUT -i lo -j ACCEPT"
+    assert_output --partial "  2. iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT"
+    assert_output --partial "-s 10.0.0.42/32 --dport 22 -j ACCEPT"
+    assert_output --partial "-s 192.0.2.0/24 --dport 443 -j ACCEPT"
+    assert_output --partial "-s 198.51.100.0/25 --dport 22 -j ACCEPT"
+    assert_output --partial "-p udp -s 10.0.0.42/32 --dport 161 -j ACCEPT"
+    assert_output --partial "-p udp -s 198.51.100.0/24 --dport 161 -j ACCEPT"
+    assert_output --partial "-p udp -s 10.0.0.0/8 --dport 161 -j ACCEPT"
+    assert_output --partial "'-m state --state ESTABLISHED,RELATED' in place of"
+    assert_output --partial "does not apply it"
+    # The only DROP to paste is in Step 11, after every other rule.
+    [[ "$(grep -c '^ *[0-9]*\. iptables -A INPUT -j DROP$' <<< "$output")" == 1 ]]
+    [[ "$(grep -n '^ *[0-9]*\. iptables -A INPUT -j DROP$' <<< "$output" | cut -d: -f1)" -gt "$(grep -n '^Step 11:' <<< "$output" | cut -d: -f1)" ]]
+    [[ "$(grep -n -- '-j ACCEPT$' <<< "$output" | tail -1 | cut -d: -f1)" -lt "$(grep -n '^Step 6:' <<< "$output" | cut -d: -f1)" ]]
+}
+
+@test "config wti: a scope with no management permit list gets the guard, a commented DROP" {
+    run "$TACCTL_BIN_SCRIPT" config wti --scope lab
+    assert_success
+    output=$(sed 's/\x1b\[[0-9;]*m//g' <<< "$output")
+    assert_output --partial "  1. iptables -A INPUT -i lo -j ACCEPT"
+    assert_output --partial "-p tcp -s 10.0.0.42/32 --dport 22 -j ACCEPT"
+    assert_output --partial "# no management permit list for scope 'lab': only the tacctl server is permitted for ssh and https"
+    assert_line "        # iptables -A INPUT -j DROP"
+    assert_output --partial "NOT rendered as a paste: scope 'lab' has no management permit list"
+    assert_output --partial "lock out every"
+    [[ "$(grep -c '^ *[0-9]*\. iptables -A INPUT -j DROP$' <<< "$output")" == 0 ]]
+}
+
+@test "config wti: the list comes from the scope's permits, else the global ones" {
+    "$TACCTL_BIN_SCRIPT" config mgmt-acl add 203.0.113.0/24 > /dev/null
+    run "$TACCTL_BIN_SCRIPT" config wti --scope lab
+    assert_success
+    assert_output --partial "-p tcp -s 203.0.113.0/24 --dport 22 -j ACCEPT"
+    refute_output --partial "NOT rendered as a paste"
+    "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab add 192.0.2.0/24 > /dev/null
+    run "$TACCTL_BIN_SCRIPT" config wti --scope lab
+    assert_output --partial "-p tcp -s 192.0.2.0/24 --dport 22 -j ACCEPT"
+    refute_output --partial "203.0.113.0/24"
+    echo y | "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab clear > /dev/null
+    run "$TACCTL_BIN_SCRIPT" config wti --scope lab
+    assert_output --partial "-p tcp -s 203.0.113.0/24 --dport 22 -j ACCEPT"
+    # Cisco reads the same list; nothing was stored for WTI.
+    run "$TACCTL_BIN_SCRIPT" config cisco --scope lab
+    assert_line "  permit 203.0.113.0 0.0.0.255"
+    run grep -ci 'iptables\|wti' "${TACCTL_STATE_DIR}/tacctl.yaml"
+    assert_output "0"
+}
+
+@test "config wti: an IPv6 permit is skipped with a note, and --source names the server in the rules" {
+    "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab add 192.0.2.0/24,fd00::/64 > /dev/null
+    run "$TACCTL_BIN_SCRIPT" config wti --scope lab --server 203.0.113.9 --source 198.51.100.77
+    assert_success
+    assert_output --partial "# skipped, not rendered: fd00::/64 (IPv6; the list is IPv4 only)"
+    refute_output --partial "-s fd00"
+    assert_output --partial "-p tcp -s 198.51.100.77/32 --dport 443 -j ACCEPT"
+    assert_output --partial "-p udp -s 198.51.100.77/32 --dport 161 -j ACCEPT"
+    refute_output --partial "-s 203.0.113.9"
+    assert_output --partial "Primary Host/Address       : 203.0.113.9"
+}
+
+@test "config cisco|juniper|wti: SNMP goldens (v2c, ranges, contact; location unset)" {
+    snmp_setup
+    local v out
+    for v in cisco juniper wti; do
+        out="$BATS_TEST_TMPDIR/snmp-$v.conf"
+        "$TACCTL_BIN_SCRIPT" config "$v" --scope lab | _normalize > "$out"
+        golden_diff "$out" "snmp/cli-$v-lab.conf"
+    done
+}
+
+@test "config cisco|juniper|wti: --name takes the device's location, description and sysName; --snmp-location overrides for one paste" {
+    snmp_setup
+    "$TACCTL_BIN_SCRIPT" device add lab-sw1 192.168.1.1 --vendor cisco --no-host-key --snmp-location "Rack 4" --description "Lab switch" > /dev/null
+    run "$TACCTL_BIN_SCRIPT" config juniper --scope lab --name lab-sw1
+    assert_success
+    assert_line 'set snmp location "Rack 4"'
+    assert_line 'set snmp description "Lab switch"'
+    refute_output --partial "Unfilled SNMP values"
+    run "$TACCTL_BIN_SCRIPT" config juniper --scope lab --name lab-sw1 --snmp-location "Rack 9"
+    assert_line 'set snmp location "Rack 9"'
+    run grep -c 'Rack 9' "${TACCTL_STATE_DIR}/devices.yaml"
+    assert_output "0"
+    run "$TACCTL_BIN_SCRIPT" config cisco --scope lab --name nosuch
+    assert_failure 1
+    assert_output --partial "Device 'nosuch' not found."
+}
+
+@test "config cisco|juniper|wti --server and --source: the AAA lines carry --server, the SNMP clients --source, a note says which is which" {
+    snmp_setup
+    run "$TACCTL_BIN_SCRIPT" config cisco --scope lab --server 203.0.113.9 --source 198.51.100.77
+    assert_success
+    assert_line "  address ipv4 203.0.113.9"
+    assert_line "  permit host 198.51.100.77"
+    refute_line "  permit host 203.0.113.9"
+    assert_output --partial "Two server addresses:"
+    assert_output --partial "The device is told to authenticate against 203.0.113.9 (--server)"
+    assert_output --partial "tacctl reaches the device from 198.51.100.77 (--source)"
+    run "$TACCTL_BIN_SCRIPT" config juniper --scope lab --server 203.0.113.9
+    assert_line "set system tacplus-server 203.0.113.9 secret lab-secret-0123456789abcdef"
+    assert_line "set snmp client-list TACCTL-SNMP 10.0.0.42/32"
+    run "$TACCTL_BIN_SCRIPT" config wti --scope lab --server 203.0.113.9
+    assert_output --partial "Primary Host/Address       : 203.0.113.9"
+    assert_output --partial "allow  10.0.0.42/32"
+    # Equal addresses: no note. Not stored.
+    run "$TACCTL_BIN_SCRIPT" config cisco --scope lab --server 10.0.0.42 --source 10.0.0.42
+    refute_output --partial "Two server addresses"
+    run grep -c '203.0.113.9' "${TACCTL_STATE_DIR}/tacctl.yaml"
+    assert_output "0"
+    # --staging combined: the staged /32 is the device's bench address.
+    run "$TACCTL_BIN_SCRIPT" config cisco --scope lab --staging 192.0.2.77 --server 203.0.113.9
+    assert_success
+    assert_line "  address ipv4 203.0.113.9"
+    run "$TACCTL_BIN_SCRIPT" scope staging list
+    assert_output --partial "192.0.2.77"
+}
+
+@test "config cisco|juniper|wti: --server and --source are checked" {
+    local bad
+    for bad in "--server 2001:db8::1" "--server 10.0.0.0/8" "--server bad_name" "--source 10.0.0.0/8" "--source ::1" "--source host.example"; do
+        run "$TACCTL_BIN_SCRIPT" config cisco --scope lab $bad
+        assert_failure 1
+        refute_output --partial "ip access-list"
+    done
+    run "$TACCTL_BIN_SCRIPT" config cisco --scope lab --server
+    assert_failure 1
+    assert_output --partial "[--server <address|name>] [--source <address>] [--snmp-location <text>]"
+}
+
+@test "config cisco: the NETCONF step is a superuser's; an engineer is told to ask one" {
+    run "$TACCTL_BIN_SCRIPT" config cisco --scope lab
+    assert_line "! netconf-yang"
+    assert_output --partial "! Prerequisite: exec authorization above"
+    run "$TACCTL_BIN_SCRIPT" config cisco --scope lab --legacy
+    assert_output --partial "! NETCONF (netconf-yang) does not exist on IOS 12.x."
+    "$TACCTL_BIN_SCRIPT" user add en superuser --hash "$(printf 'x' | python3 -c 'import bcrypt,binascii,sys; print(binascii.hexlify(bcrypt.hashpw(sys.stdin.buffer.read(), bcrypt.gensalt(rounds=4))).decode())')" --scopes lab > /dev/null
+    printf 'tier:\n  superuser: engineer\n' > "${TACCTL_STATE_DIR}/tacctl.yaml"
+    stub_cmd id 'echo "users tac-users"'
+    SUDO_USER=en run "$TACCTL_BIN_SCRIPT" config cisco --scope lab
+    assert_success
+    assert_output --partial "NETCONF (netconf-yang) is enabled by a superuser: ask one to run 'tacctl config cisco' for this scope."
+    refute_line "! netconf-yang"
+}
+
+@test "config juniper: the NETCONF step is commented; the management filter permits tcp 830 and says so" {
+    run "$TACCTL_BIN_SCRIPT" config juniper --scope lab
+    assert_output --partial "No management filter is rendered (Step 4)"
+    "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab add 10.0.0.0/8 > /dev/null
+    run "$TACCTL_BIN_SCRIPT" config juniper --scope lab
+    assert_output --partial "permits tcp port 830 next to ssh from the same"
+    assert_output --partial "# tcp port 830 (NETCONF over ssh, Step 6) is permitted by the same terms as ssh."
+    assert_line "set firewall family inet filter MGMT-ACL term permit-mgmt from destination-port [ ssh 830 ]"
+    assert_line "#   ssh -p 830 -s <user>@<device> netconf     (expect a <hello> from the device)"
+    run grep -E '^set system services netconf' <<<"$output"
+    assert_failure
 }

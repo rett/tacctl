@@ -259,6 +259,209 @@ func TestShellCompletion(t *testing.T) {
 	}
 }
 
+// The completer marks the words of the command language Fixed (commands,
+// sub-commands, fixed choices, flag names) and never the live names, the
+// comma lists or the files: only Fixed words complete on a typed space.
+func TestShellCompleterFixedWords(t *testing.T) {
+	inv, root, _ := shellTestInv(t)
+	complete := inv.shellCompleter(root)
+	for _, c := range []struct {
+		words   []string
+		partial string
+		fixed   bool
+		some    string // a word that must be among the candidates
+	}{
+		{nil, "us", true, "user"},
+		{[]string{"user"}, "li", true, "list"},
+		{[]string{"user", "show"}, "al", false, "alice"},
+		{[]string{"user", "add", "x", "ops"}, "--h", true, "--hash"},
+		{[]string{"user", "add", "x", "ops"}, "--scopes", true, "--scopes"},
+		{[]string{"console", "tiers"}, "r", true, "readonly"},
+		{[]string{"console", "tiers", "readonly"}, "", true, "enable"},
+		{[]string{"console", "space-completion"}, "", true, "on"},
+		{[]string{"shell"}, "--sp", true, "--space-completion"},
+		{[]string{"shell", "--space-completion"}, "", true, "off"},
+		// Single words that only hint at free text, and hint lists, are
+		// not fixed: a typed space is a space there.
+		{[]string{"device", "description", "r1"}, "c", false, "clear"},
+		{[]string{"device", "hostname", "r1"}, "cl", false, "clear"},
+		{[]string{"device", "port", "r1"}, "c", false, "clear"},
+		{[]string{"config", "get"}, "privileges", false, "privileges.operator"},
+		{[]string{"config", "get-list"}, "commands", false, "commands.superuser"},
+		{[]string{"group", "privilege", "add", "ops"}, "exec", false, "exec:"},
+		{[]string{"group", "privilege", "add", "ops"}, "configure", false, "configure all:"},
+		// A real fixed choice stays fixed.
+		{[]string{"device", "vendor", "r1"}, "ci", true, "cisco"},
+		{[]string{"config", "loglevel"}, "de", true, "debug"},
+		{[]string{"group", "commands", "default", "ops"}, "pe", true, "permit"},
+	} {
+		var got []shell.Candidate
+		for _, cand := range complete(c.words, c.partial) {
+			if strings.HasPrefix(cand.Word, c.partial) {
+				got = append(got, cand)
+			}
+		}
+		if !slices.Contains(words(got), c.some) {
+			t.Errorf("%q %q: %q lacks %q", c.words, c.partial, words(got), c.some)
+		}
+		for _, cand := range got {
+			if cand.Fixed != c.fixed {
+				t.Errorf("%q %q: %q has Fixed = %v, want %v", c.words, c.partial, cand.Word, cand.Fixed, c.fixed)
+			}
+		}
+	}
+	// The value of a comma list is neither fixed nor followed by a blank.
+	for _, cand := range complete([]string{"user", "add", "x", "ops", "--scopes"}, "la") {
+		if cand.Fixed || !cand.NoSpace {
+			t.Errorf("--scopes %q: Fixed %v NoSpace %v", cand.Word, cand.Fixed, cand.NoSpace)
+		}
+	}
+	// A file is not asked of the completer.
+	if got := complete([]string{"console", "system-shell", "path"}, "/"); len(got) != 0 {
+		t.Errorf("a file position offered %q", words(got))
+	}
+}
+
+// The completer a typed space asks never runs the lookup of live names:
+// where the word is not a fixed one it offers nothing at once (and the
+// space is inserted); fixed words and flags are answered as by the full
+// completer, which does look names up for Tab and '?'.
+func TestShellFixedCompleterSkipsLookups(t *testing.T) {
+	inv, root, runner := shellTestInv(t)
+	fixed := inv.shellCompleterFixed(root)
+	lookups := func() int { return runner.Count("sudo", "-n", "tacctl", "_completion-names") }
+	for _, c := range []struct {
+		words   []string
+		partial string
+	}{
+		{[]string{"user", "show"}, "alice"},
+		{[]string{"user", "show"}, "al"},
+		{[]string{"ssh"}, "r1"},
+		{[]string{"user", "add", "x", "ops", "--scopes"}, "la"},
+		{[]string{"user", "add"}, "x"},
+		{[]string{"device", "description", "r1"}, "c"},
+		{[]string{"config", "get"}, "privileges"},
+	} {
+		if got := fixed(c.words, c.partial); len(got) != 0 {
+			t.Errorf("%q %q: offered %q", c.words, c.partial, words(got))
+		}
+	}
+	if n := lookups(); n != 0 {
+		t.Errorf("a typed space ran %d lookups", n)
+	}
+	// What is fixed is answered, still without a lookup.
+	for _, c := range []struct {
+		words   []string
+		partial string
+		some    string
+	}{
+		{nil, "us", "user"},
+		{[]string{"user"}, "sh", "show"},
+		{[]string{"user", "add", "x", "ops"}, "--h", "--hash"},
+		{[]string{"user", "add", "x", "ops"}, "--s", "--scopes"},
+		{[]string{"console", "tiers", "readonly"}, "en", "enable"},
+	} {
+		if got := words(fixed(c.words, c.partial)); !slices.Contains(got, c.some) {
+			t.Errorf("%q %q: %q lacks %q", c.words, c.partial, got, c.some)
+		}
+	}
+	if n := lookups(); n != 0 {
+		t.Errorf("fixed words ran %d lookups", n)
+	}
+	// A '-' word (a flag being typed, or one the verb does not know) names
+	// flags only: no lookup of the names the positional or the flag's value
+	// would take (a flag that waits for its value offers no flag names, as on Tab).
+	dashes := []struct {
+		words   []string
+		partial string
+		flag    string
+	}{
+		{[]string{"ssh"}, "-l", ""},
+		{[]string{"ssh"}, "-", "-p"},
+		{[]string{"ssh", "-p"}, "-", ""},
+		{[]string{"user", "show"}, "-", ""},
+		{[]string{"user", "add", "x", "ops", "--scopes"}, "-", ""},
+		{[]string{"user", "add", "x", "ops", "--scopes"}, "--h", ""},
+		{[]string{"user", "add", "x", "ops"}, "-", "--hash"},
+	}
+	for _, c := range dashes {
+		got := words(fixed(c.words, c.partial))
+		if c.flag != "" && !slices.Contains(got, c.flag) {
+			t.Errorf("%q %q: %q lacks %q", c.words, c.partial, got, c.flag)
+		}
+		for _, w := range got {
+			if !strings.HasPrefix(w, "-") {
+				t.Errorf("%q %q: offered %q", c.words, c.partial, w)
+			}
+		}
+	}
+	if n := lookups(); n != 0 {
+		t.Errorf("a '-' word ran %d lookups", n)
+	}
+	// The full completer (Tab, '?') does look names up, and still
+	// completes the flags' names.
+	if got := words(inv.shellCompleter(root)([]string{"user", "show"}, "al")); !slices.Contains(got, "alice") || lookups() != 1 {
+		t.Errorf("Tab: %q after %d lookups", got, lookups())
+	}
+	for _, c := range dashes {
+		if c.flag != "" && !slices.Contains(words(inv.shellCompleter(root)(c.words, c.partial)), c.flag) {
+			t.Errorf("Tab %q %q lacks %q", c.words, c.partial, c.flag)
+		}
+	}
+}
+
+func TestFixedKind(t *testing.T) {
+	for kind, want := range map[string]bool{
+		"": false, KindFile: false, KindLine: false, KindUsers: false, KindGroups: false, KindScopes: false,
+		KindHosts: false, KindDevices: false, KindBackups: false, KindBackends: false, KindEnabledBackends: false,
+		KindListeners: false, KindScopes + KindList: false, KindUsers + KindList: false,
+		"on|off": true, "enable|disable": true, KindVendors: true, "tiers|path": true, "list|add": true,
+		"tiers": false, "list": false, "clear": false, configPaths: false, privModeWords: false,
+		"tacacs|radius" + KindList: false,
+	} {
+		if got := fixedKind(kind); got != want {
+			t.Errorf("fixedKind(%q) = %v, want %v", kind, got, want)
+		}
+	}
+	spec := Spec{Args: []string{"a|b", KindUsers, ""}, Flags: []Flag{{Names: []string{"--mode"}, Value: true, Kind: "x|y"}}}
+	for _, c := range []struct {
+		rest []string
+		want string
+	}{
+		{nil, "a|b"}, {[]string{"a"}, KindUsers}, {[]string{"a", "bob"}, ""}, {[]string{"--mode"}, "x|y"},
+		{[]string{"--mode", "x"}, "a|b"}, {[]string{"--"}, ""},
+	} {
+		if got := specKind(spec, c.rest); got != c.want {
+			t.Errorf("specKind(%q) = %q, want %q", c.rest, got, c.want)
+		}
+	}
+}
+
+// -c and batch input build no editor, so the setting changes nothing there,
+// and a bad value is a usage error.
+func TestShellSpaceCompletionFlag(t *testing.T) {
+	for _, flag := range [][]string{nil, {"--space-completion", "on"}, {"--space-completion", "off"}, {"--space-completion=off"}} {
+		h := shellHarness(t, "", append(flag, "-c", "user  list   x"))
+		if code := exitCode(h.run(), h.app.Out); code != 0 {
+			t.Errorf("%q: -c status %d: %s", flag, code, h.err.String())
+		}
+		if got, want := lines(h.runner), []string{"sudo " + testExe + " user list x"}; !slices.Equal(got, want) {
+			t.Errorf("%q: -c ran %q, want %q", flag, got, want)
+		}
+		h = shellHarness(t, "de list\n  user   list\n", flag)
+		exitCode(h.run(), h.app.Out)
+		if got, want := lines(h.runner), []string{"sudo " + testExe + " de list", "sudo " + testExe + " user list"}; !slices.Equal(got, want) {
+			t.Errorf("%q: batch ran %q, want %q", flag, got, want)
+		}
+	}
+	for _, args := range [][]string{{"--space-completion"}, {"--space-completion", "maybe"}, {"--space-completion=yes"}} {
+		h := shellHarness(t, "", args)
+		if code := exitCode(h.run(), h.app.Out); code != 1 || !strings.Contains(h.err.String(), shellUsage) {
+			t.Errorf("%q: status %d, stderr %q", args, code, h.err.String())
+		}
+	}
+}
+
 func TestNamesCacheExpires(t *testing.T) {
 	r := &fake.Runner{}
 	r.On([]string{"sudo"}, execx.Result{Stdout: []byte("a\n")})
@@ -308,7 +511,7 @@ func TestShellHelp(t *testing.T) {
 		{[]string{"scope", "secret", "lab"}, []string{"tacctl scope secret <scope> set <value>"}},
 		{[]string{"backend"}, []string{"Backends: tacacs"}},
 		{[]string{"config", "deny"}, []string{"tacctl config deny list"}},
-		{[]string{"shell"}, []string{"Usage: tacctl shell [--no-history] [--idle <min>] [-c <line>]"}},
+		{[]string{"shell"}, []string{"Usage: tacctl shell [--no-history] [--idle <min>] [--space-completion on|off] [-c <line>]"}},
 	} {
 		got, ok := help(c.words)
 		for _, w := range c.has {

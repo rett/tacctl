@@ -1,12 +1,25 @@
 package policy
 
-// The role preset (docs/plans/0.2.2-plan.md D11, D19-D21, D27): starting
-// values for four roles, viewer (the built-in readonly), operator,
-// engineer and superuser. It is only a table; 'group preset roles' writes
-// it through the same setters as 'group edit', 'group junos' and 'group
-// commands', and never overwrites a value without --force. Nothing here
-// names a site: the management filter of engineer's deny-configuration
-// comes from --mgmt-filter.
+// The role preset (docs/plans/0.2.2-plan.md D11, D19-D21, D27; the content
+// is docs/plans/0.2.3-baseline-design.md, D52): starting values for four
+// roles, viewer (the built-in readonly), operator, engineer and superuser.
+// It is only a table; 'group preset roles' writes it through the same
+// setters as 'group edit', 'group junos' and 'group commands', and never
+// overwrites a value without --force. Nothing here names a site.
+//
+// What the roles are: viewer is a monitoring and backup account (it reads
+// the configuration and changes nothing), operator troubleshoots without
+// changing anything, engineer provisions and configures (on Cisco limited
+// by the few command rules below, which tacquito cannot tell apart in
+// configuration mode, and on Junos only by its class),
+// superuser can do everything. The roles nest: what a role may do, the one
+// above it may do too (TestRolesNest).
+//
+// Every Cisco match is written ^(...)$ in full: tacquito appends a '$' to
+// a regex that does not end in one, so a prefix form has to say
+// '( .*)?$' itself (pfx), and tacctl wraps every stored regex as
+// ^(?:...)$ when it renders, so a top-level alternation cannot be
+// mis-anchored. Junos values are POSIX ERE: no \S, \d, \b or '(?'.
 
 import (
 	"strings"
@@ -22,7 +35,8 @@ type Role struct {
 	Class   string // ... and this Juniper class
 	WTI     string // WTI level
 	Tier    string // tacctl tier ("" leaves the priv-lvl band)
-	// Junos are the deny sets by tacctl.yaml attribute (deny_commands, ...).
+	// Junos are the deny sets by tacctl.yaml attribute (deny_commands, ...);
+	// an attribute with no items clears the set.
 	Junos map[string][]string
 	// Commands are Cisco command rules ('name|action|match' lines, the
 	// catch-all last); nil leaves the group's rules alone.
@@ -30,71 +44,126 @@ type Role struct {
 }
 
 // EngineerClass is the Junos class of the preset's engineer group (D20):
-// its template user is created by 'tacctl config juniper'.
+// its template user is created by 'tacctl config juniper'. Together with
+// store.BuiltinGroups' classes it is the one place a class name lives
+// (D54: the rename waits for 0.2.5).
 const EngineerClass = "ENG-CLASS"
 
-// engineerDenyConfiguration is engineer's deny-configuration, with the
-// management filter's clause when one is given (D21).
-func engineerDenyConfiguration(mgmtFilter string) string {
+// pfx is a prefix match written in full: the alternatives, optionally
+// followed by more arguments.
+func pfx(alts string) string { return "^(" + alts + ")( .*)?$" }
+
+// --- Junos (POSIX ERE; sizes with the '( )' wrapper, limits 241 / 236) ---
+
+const (
+	// viewerDenyCommands: 112 of 241 bytes.
+	viewerDenyCommands = `^(ssh|telnet|file|request|restart|start|load|op|test|monitor|configure|edit|clear|show system rollback)( .*)?$`
+	// operatorDenyCommands: 226 of 241 bytes. The hard protocol clears are
+	// denied; 'clear interfaces statistics', 'clear arp', 'clear
+	// ethernet-switching table' and 'clear firewall' stay.
+	operatorDenyCommands = `^(file|request|restart|start|load|op|test|configure|edit|clear (bgp|ospf|ospf3|isis|ldp|rsvp|mpls|pim|igmp|msdp|bfd|vrrp|lacp|system|security|network-access|log|dhcp)|monitor traffic .*write-file|show system rollback)( .*)?$`
+	// engineerDenyCommands: 192 of 241 bytes. 'request system ...' is
+	// denied as a whole ('request support information' stays allowed);
+	// 'load' only with a third word that does not begin with 't', so
+	// 'load set terminal' passes and 'load set /var/tmp/x.set' does not.
+	engineerDenyCommands = `^(request (system|chassis routing-engine|vmhost|security)|start|load [^ ]+ [^t][^ ]*|op|file (copy|delete|rename|archive|show)|clear (system login|log)|restart (chassis|management).*)( .*)?$`
+)
+
+// EngineerHardeningDenyConfiguration is an OPT-IN example, not canonical
+// and never applied by the preset or by 'group reset': the paths an
+// engineer's deny-configuration could hide, for a site that wants a trust
+// boundary on Junos (it is also what stops the engineer from reading those
+// paths, which the viewer and operator can read; see README, Default
+// Groups). The management filter's clause is left out when mgmtFilter is
+// "". 206 of 236 bytes without a filter.
+func EngineerHardeningDenyConfiguration(mgmtFilter string) string {
 	filter := ""
 	if mgmtFilter != "" {
 		filter = "firewall .*" + mgmtFilter + "|"
 	}
-	return `^(groups [^ ]+ )?(system (login|root-auth|authentication|tacplus|radius|accounting|services|scripts|archival|master|ports)|snmp|event-options|security (ike|ipsec|ssh|cert|pki)|` +
-		filter + `interfaces (fxp0|em0|me0|vme))`
+	return `^(groups [^ ]+ )?(system (login|root-auth|auth|tacplus|radius|accounting|services|scripts|archival|master|ports)|snmp|event-options|security (ike|ipsec|ssh|pki)|` +
+		filter + `interfaces (lo0 .*filter|fxp0|em0|me0|vme))`
 }
 
-// engineerCommands are engineer's Cisco rules: everything permitted but
-// the device's trust boundary and lifecycle (AAA, users, lines, keys,
-// SNMP, boot, software, reload, file deletion, scripting engines); 'no',
-// 'default' and 'do' repeat the denies. Regexes match the arguments only.
-var engineerCommands = []string{
-	"reload|deny|",
-	`copy|permit|^(running-config|startup-config|system:running-config) (startup-config|nvram:startup-config|(tftp|ftp|scp|sftp|http|https):|(flash|bootflash|usbflash\d*|harddisk):\S*\.(cfg|txt|conf))`,
-	`copy|permit|^(flash|bootflash|crashinfo|core|harddisk|usbflash\d*|system):\S* (tftp|ftp|scp|sftp|http|https):`,
-	"copy|deny|",
-	"write|deny|^erase",
-	"delete|deny|", "erase|deny|", "format|deny|", "fsck|deny|", "rename|deny|",
-	"request|deny|", "install|deny|", "software|deny|", "upgrade|deny|", "archive|deny|",
-	`configure|permit|^terminal\b`,
-	"configure|deny|",
-	"boot|deny|", "license|deny|", "crypto|deny|", "aaa|deny|", "username|deny|",
-	`enable|deny|^(secret|password|algorithm-type|view)\b`,
-	"tacacs|deny|", "tacacs-server|deny|", "radius|deny|", "radius-server|deny|", "snmp-server|deny|",
-	"line|deny|", "login|deny|", "password|deny|", "privilege|deny|", "transport|deny|", "access-class|deny|",
-	"authentication|deny|", "authorization|deny|", "accounting|deny|",
-	`service|deny|^(password-encryption|password-recovery)\b`,
-	"key|deny|^config-key",
-	`ip|deny|^(http|ssh|scp|ftp|tftp|tacacs|radius|access-list( \S+)? VTY-ACL\b)`,
-	"event|deny|", "kron|deny|", "tclsh|deny|", "scripting|deny|", "guestshell|deny|", "app-hosting|deny|", "iox|deny|",
-	"hw-module|deny|", "redundancy|deny|", "switch|deny|", "issu|deny|",
-	"test|deny|^aaa",
-	`debug|deny|^all\b`,
-	"clear|deny|^(crypto|aaa|configuration)",
-	"no|deny|" + trustBoundary,
-	"default|deny|" + trustBoundary,
-	`do|deny|^(reload|copy|delete|erase|format|write erase|request|install|archive|crypto|tclsh|license|configure|hw-module|redundancy|switch)\b`,
-	Catchall + "|permit|",
+// --- Cisco -----------------------------------------------------------------
+
+// Secret-bearing sub-trees of 'show' that the preset keeps from viewer and
+// operator (the level-filtered running-config stays readable).
+const (
+	viewerShowDeny   = `running-config view full|tech-support|startup-config|derived-config|key chain|snmp (community|user)|crypto|archive log`
+	operatorShowDeny = `running-config view full|startup-config|derived-config|key chain|snmp (community|user)|crypto (isakmp key|key)|archive log`
+)
+
+// viewerCommands are the preset's rules of the viewer (readonly): the
+// secret-bearing 'show' sub-trees denied (a deny that misses falls through
+// to the shipped permits), then what the group ships with.
+func viewerCommands() []string {
+	return append([]string{"show|deny|" + pfx(viewerShowDeny)}, DefaultLines("readonly")...)
 }
 
-// trustBoundary is what 'no' and 'default' may not undo.
-const trustBoundary = `^(aaa|username|enable (secret|password)|tacacs|tacacs-server|radius|radius-server|snmp-server|crypto|line|login|privilege|archive|boot|license|service (password-encryption|password-recovery)|key config-key|password|event|kron|ip (http|ssh|scp|ftp|tftp|tacacs|radius|access-list( \S+)? VTY-ACL\b))`
+// operatorCommands are the preset's rules of the operator.
+func operatorCommands() []string {
+	return append([]string{"show|deny|" + pfx(operatorShowDeny)}, DefaultLines("operator")...)
+}
 
-// RolePreset is the preset, in the order it is shown. mgmtFilter is the
-// Junos firewall filter that guards the management interface ("" leaves
-// its clause out).
-func RolePreset(mgmtFilter string) []Role {
+// engineerCommands are engineer's Cisco rules: everything is permitted
+// except the exec-level lifecycle (reload, software, file deletion), the
+// shell escapes (tclsh, guestshell, app-hosting, iox, scripting), the
+// copies that would load a configuration or write flash, the AAA debug
+// and test commands, and the 'do' forms of those. Configuration mode is
+// NOT restricted as a mode: an engineer may change AAA, TACACS+/RADIUS
+// servers and keys, lines, privileges and the management ACL (so that
+// tacctl's push can run with the engineer's own login, 0.2.5), and so can
+// lock a device out. But tacquito sees a command as its first word and its
+// arguments and cannot tell exec from configuration mode, so a deny stops
+// the same word typed in configuration mode too: 'archive' (other than
+// 'archive config'), 'switch', 'redundancy', 'hw-module', 'iox',
+// 'app-hosting', 'scripting', 'software' and a bare 'configure' (inside
+// configuration mode an engineer cannot run them, nor 'do' forms of the
+// exec ones). A site that wants a trust boundary adds rules with 'group
+// commands add'. Regexes match the arguments only.
+func engineerCommands() []string {
+	local := `(flash|bootflash|harddisk|disk\d|usbflash\d*):\S*`
+	remote := `(tftp|ftp|scp|sftp|http|https):\S*`
+	return []string{
+		"reload|deny|",
+		"copy|permit|" + pfx(`(running-config|startup-config|system:running-config|nvram:startup-config) (startup-config|nvram:startup-config|`+local+`|`+remote+`)`),
+		"copy|permit|" + pfx(local+` `+remote),
+		"copy|deny|",
+		"write|deny|" + pfx("erase"),
+		"delete|deny|", "erase|deny|", "format|deny|", "fsck|deny|", "rename|deny|", "mkdir|deny|", "rmdir|deny|",
+		"request|deny|", "install|deny|", "software|deny|", "upgrade|deny|", "issu|deny|",
+		"archive|permit|" + pfx("config"),
+		"archive|deny|",
+		"configure|permit|" + pfx(`terminal|confirm|revert|replace (nvram|archive|flash|bootflash|harddisk|disk\d|usbflash\d*):\S*`),
+		"configure|deny|",
+		"tclsh|deny|", "scripting|deny|", "guestshell|deny|", "app-hosting|deny|", "iox|deny|",
+		"hw-module|deny|", "redundancy|deny|", "switch|deny|",
+		"test|deny|" + pfx("aaa"),
+		"debug|deny|" + pfx("all|aaa|tacacs|radius"),
+		"clear|deny|" + pfx("aaa|logging|archive"),
+		"do|deny|" + pfx(`reload|copy|delete|erase|format|fsck|rename|mkdir|rmdir|write erase|request|install|software|upgrade|issu|archive|configure|clear (aaa|logging|archive)|debug (all|aaa|tacacs|radius)|test aaa|tclsh|guestshell|app-hosting|iox|scripting|hw-module|redundancy|switch`),
+		Catchall + "|permit|",
+	}
+}
+
+// RolePreset is the preset, in the order it is shown.
+func RolePreset() []Role {
 	return []Role{
 		{Group: "readonly", Label: "viewer", PrivLvl: 1, WTI: "viewonly", Junos: map[string][]string{
-			conf.JunosDenyCommands: {`^((ssh|telnet|file|request|restart|start|load|op|test|monitor|configure|edit)( .*)?|show (system (login|rollback|commit)|security (ike|ipsec).*|configuration .*(root-auth|login|tacplus|radius|secret|key|password).*))$`},
-		}},
+			conf.JunosDenyCommands: {viewerDenyCommands},
+		}, Commands: viewerCommands()},
 		{Group: "operator", PrivLvl: 7, WTI: "user", Junos: map[string][]string{
-			conf.JunosDenyCommands: {`^(file (delete|rename|copy|archive)|request|start|load|op|test|configure|edit|clear (system|security|network-access)|monitor traffic .*write-file|show (system (login|rollback)|configuration .*(root-auth|login|tacplus|radius).*))( .*)?$`},
-		}},
+			conf.JunosDenyCommands: {operatorDenyCommands},
+		}, Commands: operatorCommands()},
 		{Group: "engineer", PrivLvl: 15, Class: EngineerClass, WTI: "superuser", Tier: "engineer", Junos: map[string][]string{
-			conf.JunosDenyCommands:      {`^(request (system (reboot|halt|power-off|zeroize|software|snapshot|storage|scripts)|chassis routing-engine|vmhost|security)|start|load|op|file (copy|delete|rename|archive|show)|clear system login|restart (chassis|management).*)( .*)?$`},
-			conf.JunosDenyConfiguration: {engineerDenyConfiguration(mgmtFilter)},
-		}, Commands: engineerCommands},
+			conf.JunosDenyCommands: {engineerDenyCommands},
+			// Nothing is hidden from reading (a viewer and an operator see
+			// the whole configuration, secrets redacted by the class), so
+			// the engineer's deny-configuration is empty; the preset sets
+			// it empty (--force clears the 0.2.2 set).
+			conf.JunosDenyConfiguration: nil,
+		}, Commands: engineerCommands()},
 		{Group: "superuser", PrivLvl: 15, WTI: "administrator"},
 	}
 }

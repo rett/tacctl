@@ -28,11 +28,27 @@ type invocation struct {
 	// shellMode: completion is for the tacctl shell's lists (live names
 	// with descriptions; flags only after a '-').
 	shellMode bool
+	// view is the tier whose verbs the shell lists (shell_view.go); nil:
+	// everything, outside the shell.
+	view viewFn
 
 	// The model as first read (native.go: model).
 	loaded bool
 	m      *model.Model
 	mErr   error
+
+	// ambiguousNoted: the red lines for groups without a tier setting were
+	// printed (linux.go: warnAmbiguousGroups).
+	ambiguousNoted bool
+
+	// revokeEngineer: the client scripts this invocation writes carry
+	// TAC_REVOKE_ENGINEER=1 (rollback.go: 'rollback --hosts' syncs the hosts
+	// with it).
+	revokeEngineer bool
+
+	// resolved: what each host name resolved to in this invocation
+	// (host_facts.go: resolveV4).
+	resolved map[string]string
 }
 
 // Main runs tacctl with argv (os.Args: argv[0] is the program) and environ

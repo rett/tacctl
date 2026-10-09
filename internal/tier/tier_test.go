@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -15,8 +16,8 @@ import (
 )
 
 // The tier set on a group wins over its priv-lvl band; a user with no
-// usable priv-lvl is none whatever the group says; an unknown setting is
-// ignored.
+// usable priv-lvl is none whatever the group says; a setting that is not a
+// managed tier is readonly, never the band.
 func TestForGroup(t *testing.T) {
 	for _, c := range []struct {
 		set, lvl string
@@ -26,7 +27,8 @@ func TestForGroup(t *testing.T) {
 		{"engineer", "15", Engineer}, {"engineer", "1", Engineer}, {"readonly", "15", Readonly},
 		{"superuser", "7", Superuser}, {"operator", "15", Operator},
 		{"engineer", "", None}, {"engineer", "x", None},
-		{"bogus", "15", Superuser}, {"none", "7", Operator}, {"unrestricted", "7", Operator},
+		{"bogus", "15", Readonly}, {"none", "7", Readonly}, {"unrestricted", "7", Readonly},
+		{"Engineer", "15", Readonly}, {" engineer", "15", Readonly}, {"bogus", "", None},
 	} {
 		if got := ForGroup(c.set, c.lvl); got != c.want {
 			t.Errorf("ForGroup(%q, %q) = %s, want %s", c.set, c.lvl, got, c.want)
@@ -52,7 +54,12 @@ func TestForPrivLvl(t *testing.T) {
 // tiers. The ssh and device rows are the 0.2.1 table of
 // docs/plans/operator-console.md 8; the engineer column (0.2.2, D18) is
 // the operator's plus the device registry, 'scope devices', 'config
-// cisco|juniper|wti' and 'host enroll|sync|move|target'.
+// cisco|juniper|wti' ('host enroll|sync|move|target' were engineer rows in
+// 0.2.2; Linux host deployment is the superuser's again in 0.2.3, so the
+// engineer column has them closed, with 'host provisioner|unenroll|
+// default-method'); 0.2.3 adds (D45, D47) 'host list|show', 'scope
+// staging', and the reads of a scope's secret, 'scope secret' and 'scope
+// show', and (WP10.5b) 'scope snmp' and 'device location'.
 func TestPermitsMatchesBash(t *testing.T) {
 	f, err := os.Open("testdata/permits.psv")
 	if err != nil {
@@ -126,7 +133,7 @@ func TestGateAndSudoersAgree(t *testing.T) {
 	text := Sudoers()
 	ro, op, en := aliasItems(t, text, "TACCTL_RO"), aliasItems(t, text, "TACCTL_OP"), aliasItems(t, text, "TACCTL_EN")
 	in := func(items []string, cmd, sub string) bool {
-		re := regexp.MustCompile("^" + regexp.QuoteMeta(cmd+" "+sub) + `( \*)?$`)
+		re := regexp.MustCompile("^" + regexp.QuoteMeta(cmd+" "+sub) + `( .*)?$`)
 		for _, it := range items {
 			if re.MatchString(it) {
 				return true
@@ -138,9 +145,9 @@ func TestGateAndSudoersAgree(t *testing.T) {
 scope secret|scope protocols|backend list|backend status|backend enable|backend disable|store show|store import|
 store rollback|config validate|config show|config render|config dump|config cisco|config sudoers|log tail|
 log search|log failures|log accounting|log clear|backup list|backup diff|backup restore|host list|host enroll|
-host sync|host move|host target|host unenroll|device add|device remove|device rename|device address|device hostkey|
+host sync|host move|host target|host provisioner|host unenroll|device add|device remove|device rename|device address|device hostkey|
 device import|device notice|device stale-days|scope devices|scope staging|config juniper|config wti|config linux|
-group edit|user move`
+group edit|user move|scope snmp|device location|host show|rollback|group reset`
 	for _, v := range strings.Split(strings.ReplaceAll(verbs, "\n", ""), "|") {
 		cmd, sub, _ := strings.Cut(v, " ")
 		inRO, inOP, inEN := in(ro, cmd, sub), in(op, cmd, sub), in(en, cmd, sub)
@@ -177,9 +184,40 @@ group edit|user move`
 		t.Error("store show reaches a lower tier")
 	}
 	// An engineer's verbs are not the operator's.
-	for _, v := range [][2]string{{"device", "add"}, {"config", "cisco"}, {"host", "enroll"}, {"scope", "devices"}} {
+	for _, v := range [][2]string{{"device", "add"}, {"config", "cisco"}, {"scope", "devices"},
+		{"scope", "secret"}, {"scope", "snmp"}, {"device", "location"}, {"scope", "show"}, {"scope", "staging"}, {"host", "list"}, {"host", "show"}} {
 		if Permits(Operator, v[0], v[1]) || !Permits(Engineer, v[0], v[1]) {
 			t.Errorf("%s %s: operator %v, engineer %v", v[0], v[1], Permits(Operator, v[0], v[1]), Permits(Engineer, v[0], v[1]))
+		}
+	}
+	// Linux host deployment is the superuser's: an engineer reads hosts
+	// ('host list', 'host show') and runs none of the rest.
+	for _, sub := range []string{"enroll", "sync", "move", "target", "provisioner", "unenroll", "default-method"} {
+		if Permits(Operator, "host", sub) || Permits(Engineer, "host", sub) || !Permits(Superuser, "host", sub) {
+			t.Errorf("host %s: operator %v, engineer %v, superuser %v", sub, Permits(Operator, "host", sub),
+				Permits(Engineer, "host", sub), Permits(Superuser, "host", sub))
+		}
+	}
+}
+
+// Where sudoers can see the difference it carries it (D44, D47): an
+// engineer imports from standard input only and lists the staging
+// addresses but removes none; the sub-verbs sudoers cannot see ('scope
+// secret <scope> set') are the code's.
+func TestEngineerSudoersRowsAreExact(t *testing.T) {
+	en := aliasItems(t, Sudoers(), "TACCTL_EN")
+	has := func(item string) bool { return slices.Contains(en, item) }
+	for _, item := range []string{"device import -", "device import - *", "scope staging", "scope staging list",
+		"host list", "host show *", "scope secret *", "scope show *", "scope snmp *", "device location *"} {
+		if !has(item) {
+			t.Errorf("engineer alias lacks %q", item)
+		}
+	}
+	for _, item := range []string{"device import *", "scope staging *", "host list *", "scope secret", "scope snmp",
+		"config snmp *", "host enroll *", "host sync *", "host move *", "host target *", "host provisioner *",
+		"host unenroll *", "host default-method", "host default-method *"} {
+		if has(item) {
+			t.Errorf("engineer alias has %q", item)
 		}
 	}
 }
@@ -249,9 +287,101 @@ func TestCallerGroupTier(t *testing.T) {
 	if err := g.gate.Enforce(context.Background(), "config", "cisco"); err != nil {
 		t.Errorf("engineer config cisco: %v %q", err, g.err.String())
 	}
-	if err := g.gate.Enforce(context.Background(), "scope", "secret"); err != ErrDenied ||
-		!strings.Contains(g.err.String(), "'tacctl scope secret' is not permitted for the engineer tier.") {
+	if err := g.gate.Enforce(context.Background(), "scope", "secret"); err != nil {
 		t.Errorf("engineer scope secret: %v %q", err, g.err.String())
+	}
+	if err := g.gate.Enforce(context.Background(), "scope", "prefixes"); err != ErrDenied ||
+		!strings.Contains(g.err.String(), "'tacctl scope prefixes' is not permitted for the engineer tier.") {
+		t.Errorf("engineer scope prefixes: %v %q", err, g.err.String())
+	}
+}
+
+// While tacctl.yaml cannot be read no managed caller is above the operator
+// tier (their tier settings are unknown); root, the unrestricted caller and
+// the lower tiers are unchanged, and the denial says why.
+func TestGateConfProblem(t *testing.T) {
+	ctx := context.Background()
+	lv := map[string]string{"ro": "1", "op": "7", "su": "15", "bob": "15", "ghost": ""}
+	set := map[string]string{"bob": "engineer"}
+	for _, c := range []struct {
+		user, groups string
+		want         Tier
+	}{
+		{"su", "tac-users", Operator}, {"bob", "tac-users", Operator},
+		{"op", "tac-users", Operator}, {"ro", "tac-users", Readonly},
+		{"ghost", "tac-users", None}, {"su", "sudo", Unrestricted}, {"root", "", Unrestricted},
+	} {
+		g := newGate(c.user, c.groups, lv, set)
+		g.gate.ConfProblem = func() string { return "line 4, column 1: oops" }
+		if got := g.gate.Caller(ctx); got != c.want {
+			t.Errorf("%s with a broken yaml: %s, want %s", c.user, got, c.want)
+		}
+		g = newGate(c.user, c.groups, lv, set)
+		g.gate.ConfProblem = func() string { return "" }
+		if c.user == "su" && c.groups == "tac-users" && g.gate.Caller(ctx) != Superuser {
+			t.Errorf("%s with a readable yaml is not a superuser", c.user)
+		}
+	}
+	g := newGate("bob", "tac-users", lv, set)
+	g.gate.ConfProblem = func() string { return "line 4, column 1: oops" }
+	g.gate.ConfPath = "/etc/tacctl/tacctl.yaml"
+	if err := g.gate.Enforce(ctx, "config", "validate"); err != nil {
+		t.Errorf("config validate: %v %q", err, g.err.String())
+	}
+	if err := g.gate.Enforce(ctx, "device", "add"); err != ErrDenied {
+		t.Fatalf("device add: %v", err)
+	}
+	want := "\033[0;31m[ERROR]\033[0m 'tacctl device add' is not permitted: /etc/tacctl/tacctl.yaml cannot be read (line 4, column 1: oops), " +
+		"so no tacctl user is trusted above the operator tier until it is fixed (tacctl config validate).\n"
+	if g.err.String() != want {
+		t.Errorf("denial %q", g.err.String())
+	}
+	if !g.run.Called("logger", "-t", "tacctl", "-p", "auth.warning", "tier DENY user=bob tier=operator reason=conf-problem cmd=device add") {
+		t.Errorf("not logged %q", g.run.Argvs())
+	}
+	// A command the operator tier never had is the ordinary denial.
+	r := newGate("ro", "tac-users", lv)
+	r.gate.ConfProblem = func() string { return "oops" }
+	if err := r.gate.Enforce(ctx, "user", "remove"); err != ErrDenied ||
+		!strings.Contains(r.err.String(), "is not permitted for the readonly tier.") {
+		t.Errorf("readonly: %v %q", err, r.err.String())
+	}
+}
+
+// B2: an engineer stays one for the console whatever the cap makes of its
+// tier: the tier without the cap is engineer, or the account is in
+// tac-engineer (the band-15 engineer of a file the cap cannot read).
+func TestEngineerBound(t *testing.T) {
+	ctx := context.Background()
+	lv := map[string]string{"bob": "15", "su": "15", "op": "7"}
+	set := map[string]string{"bob": "engineer"}
+	for _, c := range []struct {
+		user, groups string
+		problem      bool
+		want         bool
+	}{
+		{"bob", "tac-users tac-engineer", false, true},
+		{"bob", "tac-users", false, true},            // the tier setting says engineer
+		{"bob", "tac-users", true, true},             // capped to operator, still the engineer
+		{"su", "tac-users tac-engineer", true, true}, // the setting is unreadable: the group says so
+		{"su", "tac-users tac-superuser", true, false},
+		{"op", "tac-users tac-operator", true, false},
+		{"root", "", true, false},
+		{"", "", false, false},
+	} {
+		g := newGate(c.user, c.groups, lv, set)
+		if c.problem {
+			g.gate.ConfProblem = func() string { return "oops" }
+		}
+		if got := g.gate.EngineerBound(ctx); got != c.want {
+			t.Errorf("%s in %q (problem %v): %v, want %v", c.user, c.groups, c.problem, got, c.want)
+		}
+	}
+	g := newGate("bob", "tac-users tac-engineer", lv, set)
+	g.gate.SudoUID = "1000"
+	g.run.On([]string{"getent", "passwd", "1000"}, execx.Result{Stdout: []byte("mallory:x:1000:1000::/home/mallory:/bin/sh\n")})
+	if g.gate.EngineerBound(ctx) {
+		t.Error("a SUDO_USER that is not the account of SUDO_UID is nobody's engineer")
 	}
 }
 

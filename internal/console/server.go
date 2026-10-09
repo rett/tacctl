@@ -119,6 +119,20 @@ func (s SSHD) Problems(agentAllowed, tcpAllowed, gatewayAllowed bool, command st
 		}
 		out = append(out, "forcecommand is '"+v+"'")
 	}
+	out = append(out, s.ForwardingProblems(agentAllowed, tcpAllowed, gatewayAllowed)...)
+	if s.PubkeyAuth != "" && s.PubkeyAuth != "no" {
+		out = append(out, "pubkeyauthentication is '"+s.PubkeyAuth+"'")
+	}
+	return out
+}
+
+// ForwardingProblems is the forwarding part of Problems: TCP and X11
+// forwarding while tcpAllowed is not set, remote forwards on other
+// addresses than loopback, agent forwarding while agentAllowed is not set.
+// An engineer's login is checked with this alone: it has no ForceCommand
+// when its shell is nologin.
+func (s SSHD) ForwardingProblems(agentAllowed, tcpAllowed, gatewayAllowed bool) []string {
+	var out []string
 	// DisableForwarding yes closes every forwarding, whatever the others say.
 	if !tcpAllowed && s.DisableForwarding != "yes" {
 		if s.TCPForwarding != "no" {
@@ -133,9 +147,6 @@ func (s SSHD) Problems(agentAllowed, tcpAllowed, gatewayAllowed bool, command st
 	}
 	if s.AgentForwarding != "no" && !agentAllowed {
 		out = append(out, "allowagentforwarding is '"+s.AgentForwarding+"'")
-	}
-	if s.PubkeyAuth != "" && s.PubkeyAuth != "no" {
-		out = append(out, "pubkeyauthentication is '"+s.PubkeyAuth+"'")
 	}
 	return out
 }

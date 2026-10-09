@@ -87,8 +87,14 @@ func (in *input) Read(p []byte) (int, error) {
 // key reads one key for the editor's own questions (the long-list
 // question and the pager), unrewritten: what the editor has not read yet
 // first, else the first byte the terminal sends next (the rest of that
-// read is dropped). It fails as a read does (idle, stop, end of input).
+// read is dropped). When what the editor has not read yet holds a paste
+// start or end mark, key answers 'q' (declines the question, ends the
+// pager) and consumes nothing, so a pager never eats the end mark of a
+// pasted line. It fails as a read does (idle, stop, end of input).
 func (in *input) key() (byte, error) {
+	if bytes.Contains(in.pending, seqPasteStart) || bytes.Contains(in.pending, seqPasteEnd) {
+		return 'q', nil
+	}
 	if len(in.pending) > 0 {
 		k := in.pending[0]
 		in.pending = in.pending[1:]

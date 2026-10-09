@@ -3,6 +3,7 @@ package shell
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"slices"
 	"strings"
 	"testing"
@@ -20,11 +21,12 @@ func testCompleter(words []string, partial string) []Candidate {
 	switch strings.Join(words, " ") {
 	case "":
 		return []Candidate{
-			{Word: "user", Desc: "User management"}, {Word: "group", Desc: "Group management"},
-			{Word: "scope", Desc: "Scope management"}, {Word: "store", Desc: "The canonical store"},
+			{Word: "user", Desc: "User management", Fixed: true}, {Word: "group", Desc: "Group management", Fixed: true},
+			{Word: "scope", Desc: "Scope management", Fixed: true}, {Word: "store", Desc: "The canonical store", Fixed: true},
+			{Word: "device", Desc: "Device management", Fixed: true},
 		}
 	case "user":
-		return []Candidate{{Word: "list", Desc: "List all users"}, {Word: "show", Desc: "Show a user"}}
+		return []Candidate{{Word: "list", Desc: "List all users", Fixed: true}, {Word: "show", Desc: "Show a user", Fixed: true}}
 	case "user show":
 		return []Candidate{{Word: "alice"}, {Word: "albert"}, {Word: "bob"}, {Word: "o'neil"}}
 	case "user add bob":
@@ -37,6 +39,55 @@ func testCompleter(words []string, partial string) []Candidate {
 		return out
 	}
 	return nil
+}
+
+// spaceCompleter is what the space tests complete from: fixed words
+// (commands, a choice, a flag), a word that is the start of another, live
+// names, a comma list, and a list longer than ListMax.
+func spaceCompleter(words []string, partial string) []Candidate {
+	fixed := func(ws ...string) []Candidate {
+		var out []Candidate
+		for _, w := range ws {
+			out = append(out, Candidate{Word: w, Desc: "the " + w, Fixed: true})
+		}
+		return out
+	}
+	switch strings.Join(words, " ") {
+	case "":
+		return fixed("user", "user-x", "group", "scope", "store", "fx")
+	case "user":
+		return fixed("list", "show", "mode", "add")
+	case "user mode":
+		return fixed("on", "off")
+	case "é":
+		return fixed("list", "show")
+	case "user add":
+		return append(fixed("--force"), Candidate{Word: "alice"}, Candidate{Word: "albert"})
+	case "user show":
+		return []Candidate{{Word: "alice"}, {Word: "albert"}, {Word: "o'neil"}}
+	case "user add bob":
+		return []Candidate{{Word: "lab,", NoSpace: true}}
+	case "fx":
+		var out []Candidate
+		for i := 1; i <= 45; i++ {
+			out = append(out, Candidate{Word: fmt.Sprintf("f%02d", i), Fixed: true})
+		}
+		return out
+	}
+	return nil
+}
+
+// newSpaceEditor is an editor with space completion on, spaceCompleter and
+// a key reader that fails the test: a space never asks or pages.
+func newSpaceEditor(t *testing.T) (*editor, *screen) {
+	e, sc := newTestEditor()
+	e.spaces, e.listMax, e.complete = true, DefaultListMax, spaceCompleter
+	e.out = sc
+	e.readKey = func() (byte, error) {
+		t.Error("a typed space read a key")
+		return 0, io.EOF
+	}
+	return e, sc
 }
 
 func newTestEditor() (*editor, *screen) {
@@ -265,6 +316,41 @@ func TestInputRewrite(t *testing.T) {
 	}
 }
 
+// A paste is as it was before space completion: newlines and tabs become
+// spaces, other control characters are dropped, runs of blanks stay, and
+// nothing is held back, with the setting on or off.
+func TestPasteIsUnchanged(t *testing.T) {
+	const start, end = "\x1b[200~", "\x1b[201~"
+	cases := []struct {
+		name string
+		in   []string
+		want string
+	}{
+		{"repeated blanks", []string{start + "a  b\n\n\tc" + end + "\r"}, start + "a  b   c" + end + "\r"},
+		{"quote and backslash", []string{start + `echo 'a  b'  c\  d` + end}, start + `echo 'a  b'  c\  d` + end},
+		{"control characters", []string{start + "a\x07b\x01c\x1ad" + end}, start + "abcd" + end},
+		{"split paste", []string{start + "a  ", " b", end + "z"}, start + "a   b" + end + "z"},
+		{"typed blanks", []string{"a  b" + start + "c" + end + "  d"}, "a  b" + start + "c" + end + "  d"},
+	}
+	for _, spaces := range []bool{true, false} {
+		for _, c := range cases {
+			in := &input{fd: -1, ed: &editor{spaces: spaces}, wake: -1}
+			var got []byte
+			for _, chunk := range c.in {
+				got = append(got, in.rewrite([]byte(chunk))...)
+			}
+			if string(got) != c.want || len(in.carry) != 0 {
+				t.Errorf("%s (spaces %v): %q, carry %q, want %q", c.name, spaces, got, in.carry, c.want)
+			}
+		}
+		// The start of a paste is passed on at once, not held.
+		in := &input{fd: -1, ed: &editor{spaces: spaces}, wake: -1}
+		if got := in.rewrite([]byte(start + "a  b")); string(got) != start+"a  b" || len(in.carry) != 0 {
+			t.Errorf("spaces %v: the start of a paste: got %q, carry %q", spaces, got, in.carry)
+		}
+	}
+}
+
 func TestPasteIsCapped(t *testing.T) {
 	in := &input{fd: -1, ed: &editor{}, wake: -1}
 	got := in.rewrite([]byte("\x1b[200~" + strings.Repeat("a\n", PasteMax) + "\x1b[201~z"))
@@ -368,5 +454,245 @@ func TestLongListHelpers(t *testing.T) {
 	}
 	if got := listKind([]Candidate{{Word: "x"}}); got != "choices" {
 		t.Errorf("no kind = %q", got)
+	}
+}
+
+// A typed space, rule by rule (D32). taken is whether the editor took the
+// key (false: the Terminal inserts the blank as typed).
+func TestSpaceRules(t *testing.T) {
+	cases := []struct {
+		name    string
+		line    string
+		pos     int // -1: the end
+		want    string
+		wantPos int // -1: the end of want
+		taken   bool
+	}{
+		{"unique command completes", "gr", -1, "group ", -1, true},
+		{"unique sub-command", "user l", -1, "user list ", -1, true},
+		{"unique fixed choice", "user mode of", -1, "user mode off ", -1, true},
+		{"unique flag", "user add --f", -1, "user add --force ", -1, true},
+		{"closed quotes in the word", "gr'o'", -1, "group ", -1, true},
+		{"the shell's own words", "he", -1, "help ", -1, true},
+		{"quit", "q", -1, "quit ", -1, true},
+		{"help completes the command", "help gr", -1, "help group ", -1, true},
+		{"exact match with a longer one", "user", -1, "", 0, false},
+		{"exact and unique", "user list", -1, "", 0, false},
+		{"none: free text", "zzz", -1, "", 0, false},
+		{"live names are not completed", "user show al", -1, "", 0, false},
+		{"live name, exact", "user show alice", -1, "", 0, false},
+		{"a comma list is not completed", "user add bob l", -1, "", 0, false},
+		{"flag name, live names after it", "user add al", -1, "", 0, false},
+		{"a lone dash is the blank as typed (standard input)", "user add -", -1, "", 0, false},
+		{"two dashes end the options: the blank as typed", "user add --", -1, "", 0, false},
+		{"three dashes too", "user add ---", -1, "", 0, false},
+		{"a flag's start still completes", "user add --f", -1, "user add --force ", -1, true},
+		{"inside double quotes", `echo "gr`, -1, "", 0, false},
+		{"inside single quotes", "echo 'gr", -1, "", 0, false},
+		{"after a backslash", `gr\`, -1, "", 0, false},
+		{"at the start of the line", "group", 0, "group", 0, true},
+		{"after a blank", "user ", -1, "user ", -1, true},
+		{"after a tab", "user\t", -1, "user\t", -1, true},
+		{"before a blank", "user list", 4, "user list", 4, true},
+		{"at a word's end before a blank", "gr list", 2, "gr list", 2, true},
+		{"in the middle of a word", "group", 2, "", 0, false},
+		{"in the middle, past a blank", "user group", 7, "", 0, false},
+		{"at the start of a word", "user group", 5, "user group", 5, true},
+		{"an empty line", "", 0, "", 0, true},
+		{"multibyte word, free text", "é", -1, "", 0, false},
+		{"a fixed word completes after a multibyte word", "é li", -1, "é list ", -1, true},
+		{"a multibyte character before a blank", "é gr", 2, "é gr", 2, true},
+		{"after a multibyte word and a blank", "é ", -1, "é ", -1, true},
+		{"in the middle of a word with a multibyte character", "grü", 2, "", 0, false},
+		{"a live name position, multibyte partial", "user show é", -1, "", 0, false},
+	}
+	for _, c := range cases {
+		e, sc := newSpaceEditor(t)
+		pos := c.pos
+		if pos < 0 {
+			pos = len(c.line)
+		}
+		got, gotPos, ok := e.key(c.line, pos, ' ')
+		if ok != c.taken {
+			t.Errorf("%s: %q at %d: taken = %v", c.name, c.line, pos, ok)
+			continue
+		}
+		if ok {
+			want := c.wantPos
+			if want < 0 {
+				want = len(c.want)
+			}
+			if got != c.want || gotPos != want {
+				t.Errorf("%s: %q at %d = %q,%d; want %q,%d", c.name, c.line, pos, got, gotPos, c.want, want)
+			}
+		}
+		if sc.Len() != 0 {
+			t.Errorf("%s: printed %q", c.name, sc.String())
+		}
+	}
+}
+
+// Several fixed words are listed once, without a question and without
+// changing the line; a list over ListMax prints nothing; the rest of the
+// line, the live names and a mixed list are left out of it.
+func TestSpaceListsAmbiguousWords(t *testing.T) {
+	e, sc := newSpaceEditor(t)
+	got, pos, ok := e.key("s", 1, ' ')
+	if !ok || got != "s" || pos != 1 {
+		t.Errorf("got %q,%d,%v", got, pos, ok)
+	}
+	want := "tacctl> s\r\nPossible completions:\r\n  scope  the scope\r\n  store  the store\r\n"
+	if !strings.Contains(sc.String(), want) {
+		t.Errorf("listing %q; want it to hold %q", sc.String(), want)
+	}
+	if strings.Contains(sc.String(), "Show all") {
+		t.Errorf("asked: %q", sc.String())
+	}
+
+	// Fixed words and live names after a flag-less position: only the
+	// fixed ones.
+	e, sc = newSpaceEditor(t)
+	e.key("user add -", 10, ' ')
+	if strings.Contains(sc.String(), "alice") {
+		t.Errorf("a live name was listed: %q", sc.String())
+	}
+
+	// Over ListMax: nothing printed, nothing inserted, nothing asked.
+	e, sc = newSpaceEditor(t)
+	got, pos, ok = e.key("fx f", 4, ' ')
+	if !ok || got != "fx f" || pos != 4 || sc.Len() != 0 {
+		t.Errorf("over ListMax: %q,%d,%v printed %q", got, pos, ok, sc.String())
+	}
+	// At ListMax it is listed; a negative ListMax has no limit.
+	e, sc = newSpaceEditor(t)
+	e.listMax = 45
+	e.key("fx f", 4, ' ')
+	if !strings.Contains(sc.String(), "  f45\r\n") || len(strings.Split(sc.String(), "\n")) < 45 {
+		t.Errorf("a list of ListMax words was not shown: %q", sc.String())
+	}
+	e, sc = newSpaceEditor(t)
+	e.listMax = -1
+	e.key("fx f", 4, ' ')
+	if !strings.Contains(sc.String(), "  f45\r\n") {
+		t.Errorf("an unlimited list was not shown")
+	}
+}
+
+// With the setting off a blank is a blank.
+func TestSpaceOff(t *testing.T) {
+	for _, line := range []string{"gr", "s", "", "user "} {
+		e, sc := newSpaceEditor(t)
+		e.spaces = false
+		if _, _, ok := e.key(line, len(line), ' '); ok || sc.Len() != 0 {
+			t.Errorf("%q: taken=%v, printed %q", line, ok, sc.String())
+		}
+	}
+}
+
+// During a Ctrl-R search a space is part of the query, wherever the line
+// stands.
+func TestSpaceInSearch(t *testing.T) {
+	e, _ := newSpaceEditor(t)
+	e.hist.Add("user show bob")
+	line, pos := "gr", 2
+	for _, k := range []rune{0x12, 's', 'h', 'o', 'w', ' '} {
+		var ok bool
+		line, pos, ok = e.key(line, pos, k)
+		if !ok {
+			t.Fatalf("key %q not taken", k)
+		}
+	}
+	if string(e.search.query) != "show " || line != "user show bob" || pos != 5 {
+		t.Errorf("query %q, line %q,%d", string(e.search.query), line, pos)
+	}
+	// Once the search is over the next space completes again.
+	e.key(line, pos, markAccept)
+	if e.search.on {
+		t.Fatal("the search is still on")
+	}
+	if _, _, ok := e.key("gr", 2, ' '); !ok {
+		t.Error("the space after the search was not handled")
+	}
+}
+
+// Tab, '?' and the other keys keep their meaning with the setting on.
+func TestSpaceKeepsOtherKeys(t *testing.T) {
+	e, _ := newSpaceEditor(t)
+	if got, _, ok := e.key("gr", 2, '\t'); !ok || got != "group " {
+		t.Errorf("Tab: %q,%v", got, ok)
+	}
+	if _, _, ok := e.key("x", 1, 'a'); ok {
+		t.Error("a letter was taken")
+	}
+	if _, _, ok := e.key("x", 1, '?'); !ok {
+		t.Error("? was not taken")
+	}
+}
+
+// A Ctrl-C inside a paste is part of the paste and dropped: it never
+// interrupts, so what comes after it in the paste is never run as typed
+// keys, with the setting on or off and wherever the reads end.
+func TestCtrlCInAPasteIsContent(t *testing.T) {
+	const start, end = "\x1b[200~", "\x1b[201~"
+	feed := func(spaces bool, reads ...string) string {
+		in := &input{fd: -1, ed: &editor{spaces: spaces}, wake: -1}
+		var got []byte
+		for _, r := range reads {
+			got = append(got, in.rewrite([]byte(r))...)
+		}
+		return string(got)
+	}
+	for _, spaces := range []bool{true, false} {
+		got := feed(spaces, start+"echo a\x03b", "\rrm x\r"+end)
+		if want := start + "echo ab rm x " + end; got != want {
+			t.Errorf("spaces %v: %q, want %q", spaces, got, want)
+		}
+		whole := start + "echo a\x03b\rrm x\r" + end
+		for k := 1; k < len(whole); k++ {
+			got := feed(spaces, whole[:k], whole[k:])
+			if strings.ContainsAny(got, "\r\n") || strings.ContainsRune(got, markInterrupt) {
+				t.Errorf("spaces %v split at %d: %q", spaces, k, got)
+			}
+		}
+	}
+}
+
+// When the editor asks a question or pages, key answers 'q' and consumes
+// nothing if what the editor has not read holds a paste start or end mark,
+// so a pager never eats the end mark of a pasted line; else it takes the
+// next byte.
+func TestKeyLeavesPasteMarks(t *testing.T) {
+	const start, end = "\x1b[200~", "\x1b[201~"
+	for _, pending := range []string{start + "bbb" + end, "bbb" + end, "x" + start + "bbb", end} {
+		in := &input{fd: -1, ed: &editor{}, wake: -1, pending: []byte(pending)}
+		for range 3 {
+			if k, err := in.key(); err != nil || k != 'q' || string(in.pending) != pending {
+				t.Fatalf("%q: key %q, %v, pending %q", pending, k, err, in.pending)
+			}
+		}
+	}
+	in := &input{fd: -1, ed: &editor{}, wake: -1, pending: []byte("ny")}
+	if k, err := in.key(); err != nil || k != 'n' || string(in.pending) != "y" {
+		t.Errorf("plain pending: key %q, %v, pending %q", k, err, in.pending)
+	}
+}
+
+// A typed blank asks completeFixed (which does not look up live names),
+// Tab and '?' ask complete.
+func TestSpaceAsksTheFixedCompleter(t *testing.T) {
+	e, _ := newSpaceEditor(t)
+	var full, fixed int
+	e.complete = func(words []string, partial string) []Candidate { full++; return spaceCompleter(words, partial) }
+	e.completeFixed = func(words []string, partial string) []Candidate { fixed++; return spaceCompleter(words, partial) }
+	if got, _, ok := e.key("gr", 2, ' '); !ok || got != "group " {
+		t.Errorf("space: %q, %v", got, ok)
+	}
+	if full != 0 || fixed != 1 {
+		t.Errorf("space asked complete %d, completeFixed %d times", full, fixed)
+	}
+	e.key("gr", 2, '\t')
+	e.key("user ", 5, '?')
+	if full != 2 || fixed != 1 {
+		t.Errorf("Tab and ? asked complete %d, completeFixed %d times", full, fixed)
 	}
 }

@@ -21,6 +21,10 @@ Commands:
       -y, --yes                         Answer yes to the confirmations
   upgrade [--branch <name>]             Pull latest source, rebuild, update scripts and every enabled backend
   uninstall [-y|--yes]                  Remove tacctl, its backends' services and all associated files
+  rollback <version> [options]          Prepare the state for the release before this one (0.2.2): a dry run unless --apply
+      --apply                           Take a snapshot, then convert the files 0.2.2 cannot read and re-render
+      --yes                             Acknowledge the warnings that --apply refuses to go on without
+      --hosts                           Also take the engineers' sudo off the enrolled Linux hosts
   status                                Show service health, stats, and recent errors (per backend)
   passwd                                Change your own password (asks for the current one)
   user <subcommand>                     User management (list, add, remove, passwd, scope, ...)
@@ -34,6 +38,7 @@ Commands:
       --idle <min>                      End the session after this many idle minutes at the prompt
       -c <line>                         Run one line and exit
       --no-history                      Keep no history file for this session
+      --space-completion on|off         A typed space completes a fixed word and never doubles (default on)
   console <subcommand>                  Login console: tiers, per-user overrides, settings (show, tiers, user, ...)
   backend <subcommand>                  Auth backends: list, status, enable <id>, disable <id>
   store <subcommand>                    The canonical store: show, import, rollback
@@ -98,25 +103,33 @@ Usage: tacctl group <subcommand> [arguments]
 
 Subcommands:
   list                                                List all groups
-  show <name>                                         Every setting and where it comes from
+  show <name>                                         Every setting and where it comes from, Junos patterns too
   add <name> <priv-lvl> <juniper-class>               Add a new group
-      --tier <tier>                                   (add) Its tacctl tier instead of the priv-lvl's
+      --tier <tier>                                   (add) Its tacctl tier instead of the priv-lvl's (at 15: superuser if omitted)
       --wti-level <level>                             (add) Its WTI level instead of the priv-lvl's
   edit <name> priv-lvl <0-15>                         Change Cisco privilege level
   edit <name> juniper-class <CLASS>                   Change Juniper class name
   edit <name> wti-level auto|<level>                  WTI access level (viewonly, user, superuser, administrator)
   edit <name> tier auto|<tier>                        tacctl tier (readonly, operator, engineer, superuser)
   remove <name>                                       Remove a custom group
-  commands list|default|add|remove|clear|seed <group> ...  Per-group authorized commands
-  privilege list|add|remove|clear|seed <group> ...         Per-group Cisco priv-exec mappings
+  commands list|default|add|remove|reset|seed <group> ...  Per-group authorized commands
+  privilege list|add|remove|reset|seed <group> ...         Per-group Cisco priv-exec mappings
   junos <group> list|clear|deny-commands|deny-configuration ...  Per-group Junos deny rules
   preset roles                                        Starting values for viewer, operator, engineer, superuser (confirms)
-      --dry-run                                       (preset) Show what would change; write nothing
+      --dry-run                                       (preset, reset) Show what would change; write nothing
       --force                                         (preset) Replace values that differ from the preset's
-      --mgmt-filter <name>                            (preset) Deny engineers that Junos firewall filter too
+  reset <name>                                        Put readonly, operator, superuser or engineer back to its canonical state (diff, confirms; superuser only)
+      --preset                                        (reset) The role preset's values instead of the shipped ones
+      --only <sections>                               (reset) Only settings, commands, privileges or junos (comma list)
+      --yes                                           (reset) Do not ask
 
 'auto' (the default) takes the WTI level and the tier from the priv-lvl:
-below 7 readonly, 7-14 operator, 15 superuser.
+below 7 readonly, 7-14 operator, 15 superuser. A group at priv-lvl 15 other
+than the built-in superuser always carries its tier: 'add' and 'edit priv-lvl'
+record superuser when none is set, and so does 'edit tier auto' there. Lowering
+a group below 15 takes a superuser setting away again (the recorded one and one
+chosen with --tier superuser look alike): set the tier again when a superuser
+group below 15 is wanted.
 
 Examples:
   tacctl group list
@@ -126,6 +139,7 @@ Examples:
   tacctl group edit engineer tier engineer
   tacctl group show engineer
   tacctl group preset roles --dry-run
+  tacctl group reset operator --dry-run
   tacctl group remove helpdesk
   tacctl group commands default operator deny
   tacctl group commands add operator show --action permit
@@ -150,7 +164,9 @@ Usage:
   tacctl group commands remove <group> <name> [--all]             Drop a rule
                                             [--match <regex>]... [--action permit|deny]
       --all                                                       (remove) Drop every rule named <name>
-  tacctl group commands clear <group>                             Drop overrides — revert to shipped defaults (confirms)
+  tacctl group commands reset <group> [--dry-run] [--yes]         Revert the rules to the shipped defaults (diff, confirms; superuser only)
+      --dry-run                                                   (reset) Show the difference; write nothing
+      --yes                                                       (reset) Do not ask
   tacctl group commands seed [<group>] [--force]                  Re-apply legacy seed set (recovery tool)
       --force                                                     (seed) Overwrite a group that already has rules
 
@@ -159,10 +175,17 @@ regexes are tested against the command's ARGUMENTS only (the
 cmd-arg values after the word: 'running-config' for 'show
 running-config'), never the full line -- so '^show .*$' can
 never match and is rejected. Omit --match to cover any args.
-A --match is anchored at both ends and tested against the
-arguments joined by spaces, without <cr>: '^crypto' matches
-'show crypto' only; write '^crypto( .*)?' to cover 'show
-crypto pki certificates' too.
+A --match must match the whole arguments string, joined by
+spaces, without <cr> (it is rendered as ^(?:regex)$):
+'^crypto' matches 'show crypto' only; write '^crypto( .*)?$'
+to cover 'show crypto pki certificates' too. An empty or
+invalid regex is refused; 'add' warns about a prefix form
+without '( .*)?' and about a rule no command can reach.
+
+'reset' puts the group's rules back to the shipped defaults, as
+'group reset <group> --only commands' does; it has no --preset (the
+preset's rules come with 'group reset <group> --preset'). A group
+with no shipped rules has none afterwards.
 
 Rules are tried in order ('#' in 'list'): a rule without
 --match decides, one whose regexes all miss falls through.
@@ -195,13 +218,20 @@ Usage:
   tacctl group privilege list <group>                              Show mappings (explicit or default)
   tacctl group privilege add <group>    '<cmd>'[,'<cmd>'...]       Move one or more commands to the priv-lvl
   tacctl group privilege remove <group> '<cmd>'[,'<cmd>'...]       Remove mapping(s)
-  tacctl group privilege clear <group>                             Wipe explicit mappings (revert to defaults)
+  tacctl group privilege reset <group> [--dry-run] [--yes]         Reset the mappings to the shipped default (diff, confirms; superuser only)
+      --dry-run                                                    (reset) Show the difference; write nothing
+      --yes                                                        (reset) Do not ask
   tacctl group privilege seed [<group>] [--force]                  Populate built-ins with safe defaults
       --force                                                      (seed) Overwrite a group that already has mappings
 
 Each '<cmd>' may start with a mode: 'exec:' (the default when
 there is none), 'exec all:', 'configure:' or 'configure all:',
 e.g. 'configure: router bgp','exec all: show ip'.
+
+'reset' puts the group's mappings back to the shipped default, which
+the plain 'group reset' takes too; it has no --preset (the preset's
+values come with 'group reset <group> --preset'). A group with no
+shipped list has none afterwards.
 
 Drives the 'privilege <mode> [all] level <lvl> <cmd>' lines emitted
 by 'tacctl config cisco'. Pure device-side; tacquito does not read
@@ -272,6 +302,10 @@ Usage:
   tacctl scope auth-method <scope> [tacacs|radius|clear]   Protocol this scope's device configs and host enrollments use when the command names none
   tacctl scope mgmt-acl <scope> list|add|remove|clear      Per-scope permit list (fallback: global mgmt_acl.permits)
   tacctl scope mgmt-acl <scope> cisco-name|juniper-name [name]  Per-scope ACL / filter name (defaults VTY-ACL / MGMT-ACL)
+  tacctl scope breakglass <scope> list|add <name>|remove <name>  Per-scope break-glass local users in the device walkthroughs (names and roles only; no credential is stored)
+      --role <role>                                        (add) admin (default), operator or readonly
+  tacctl scope snmp <scope> show|version|community|v3-user|clients|contact|port|timeout|clear|test
+                                                           SNMP of a scope: credentials, allowed clients, contact (default beneath: tacctl config snmp)
 
 {{current}}
 
@@ -307,7 +341,7 @@ Usage:
 `,
 	// lib/scopes.sh cmd_scope_mgmt_acl
 	"scope-mgmt-acl": `
-<b>tacctl scope mgmt-acl {{scope}}</b> — per-scope Cisco VTY-ACL + Juniper lo0-filter
+<b>tacctl scope mgmt-acl {{scope}}</b> — per-scope Cisco VTY-ACL + Juniper lo0-filter + WTI IP Tables
 
 Usage:
   tacctl scope mgmt-acl {{scope}} list                          Show effective permits for this scope
@@ -352,7 +386,7 @@ Subcommands:
   secret-min-length [16-128]           Show or set minimum shared-secret length (default 16)
   allow list|add|remove|clear          Manage connection allow list (IP ACL; add/remove accept comma-lists)
   deny list|add|remove|clear           Manage connection deny list (IP ACL; add/remove accept comma-lists)
-  mgmt-acl list|add|remove|clear       Manage Cisco VTY-ACL + Juniper lo0-filter permits
+  mgmt-acl list|add|remove|clear       Manage Cisco VTY-ACL + Juniper lo0-filter + WTI IP Tables permits
   mgmt-acl cisco-name [name]           Show or set the emitted Cisco ACL name (default VTY-ACL)
   mgmt-acl juniper-name [name]         Show or set the emitted Juniper filter name (default MGMT-ACL)
   cisco   [--scope <name>] [--legacy] [--protocol tacacs|radius]  Show working Cisco device configuration for a scope (--legacy = IOS 12.x syntax; --protocol radius = RADIUS backend, default tacacs)
@@ -363,7 +397,13 @@ Subcommands:
       --legacy                         (cisco) IOS 12.x syntax
       --staging <bench-ip>             (cisco, juniper, wti, with --scope) Provisioned off-site: the bench address joins the scope as a
                                        /32 (its secret and users) until the device is seen in place (tacctl scope staging)
-      --name <device>                  (with --staging) The registered device whose move ends the staging (default: the one at the bench address)
+      --name <device>                  (cisco, juniper, wti) A registered device of the scope: its location, description and sysName fill the SNMP step;
+                                       with --staging it is also the device whose move ends the staging (default: the one at the bench address)
+      --server <address|name>          (cisco, juniper, wti) The address the devices are told to authenticate against, for devices behind a
+                                       translating firewall (a name must resolve to an IPv4 address); not stored
+      --source <address>               (cisco, juniper, wti) The address tacctl itself reaches the devices from: the first SNMP client (default: the
+                                       address of the route to the Internet); not stored
+      --snmp-location <text>           (cisco, juniper, wti) The SNMP location for this paste; not stored (a device's own: tacctl device location)
   linux   build|script|remove-script|uid|builds  TACACS+ or RADIUS login for Linux hosts (install/removal scripts)
   snmp    show|community|v3-user|port|timeout|clear|test  SNMP for the name hint of 'device add' (sysName)
   branch [name]                        Show or change the tacctl repo branch
@@ -397,7 +437,7 @@ Note: 'deny' takes precedence over 'allow'. Both empty = all connections accepte
 `,
 	// lib/render_devices.sh cmd_config_mgmt_acl
 	"config-mgmt-acl": `
-<b>tacctl config mgmt-acl</b> — shared Cisco VTY-ACL + Juniper lo0-filter permits
+<b>tacctl config mgmt-acl</b> — shared Cisco VTY-ACL + Juniper lo0-filter + WTI IP Tables permits
 
 Usage:
   tacctl config mgmt-acl list                          Show current permits
@@ -446,7 +486,7 @@ Usage: tacctl host <subcommand> [arguments]
       --all                            (show) The acknowledged notices too
       --json                           (show) Print JSON: every field, and --check's findings under 'check'
       --check                          (show) Log in read-only and compare the host with what tacctl would make it:
-                                       one line per difference with the command that fixes it; exit 1 when there is one
+                                       one line per difference with the command that fixes it; exit 1 when there is one (superuser only)
   enroll <[user@]host> [options]       Install TACACS+ or RADIUS login on a host over SSH and register it
   enroll --local [options]             Same, for this machine (its tacctl users get the login console)
       --method tacplus|radius          pam_tacplus against the TACACS+ backend, or the host's pam_radius_auth
@@ -472,6 +512,16 @@ Usage: tacctl host <subcommand> [arguments]
   target <name> [<[user@]host>]        Show, or change and test, how tacctl reaches an enrolled host over ssh
       --port <n>, --identity <file>    SSH port and key; tested first, and the host's ssh keys must match the pin
       --no-identity                    No key file (ssh's default keys and the agent)
+  provisioner <name> rotate <user>     Switch the account tacctl logs in to the host with: create the new one, prove
+                                       it in a new connection (ssh trusts the host's pinned keys only), then change the
+                                       registry. One rotation of a host at a time
+      --key <file>                     (provisioner) Key login: NOPASSWD sudo and the public key only (sudoers line
+                                       written last); a missing file is made by ssh-keygen, as you
+      --password                       (provisioner) Password login: typed into the host's own passwd on this terminal;
+                                       tacctl never sees it; refused for a host with no pinned ssh keys
+      --remove-old                     (provisioner) Last, over the new account, remove the old one; its home is moved
+                                       out of reach unless --remove-home. Needs a registry target with an explicit user@
+      --dry-run                        (provisioner) Print the plan and test the current login; change nothing
   unenroll <name> [--force]            Remove the login method from the host (accounts and homes are kept)
       --force                          Forget the host even when the removal there failed
   default-method [tacplus|radius]      Show or set the method for hosts enrolled without --method

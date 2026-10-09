@@ -1,0 +1,14 @@
+
+Reset of group 'readonly' to the role preset's values
+-----------------------------------------------------
+  settings
+    WTI level:       ViewOnly (auto, from priv-lvl) -> ViewOnly (set)
+  commands
+    + show         deny   ^(running-config view full|tech-support|startup-config|derived-config|key chain|snmp (community|user)|crypto|archive log)( .*)?$
+  privileges
+    unchanged
+  junos
+    deny-commands: none -> 112/241 bytes
+      + ^(ssh|telnet|file|request|restart|start|load|op|test|monitor|configure|edit|clear|show system rollback)( .*)?$  (110 bytes)
+
+[INFO] Dry run: nothing was written.

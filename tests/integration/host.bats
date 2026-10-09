@@ -112,7 +112,7 @@ _own_scope() {
 @test "host enroll: every step shares one ssh connection, closed at the end" {
     run "$TACCTL_BIN_SCRIPT" host enroll admin@web1.example.net --scope lab
     assert_success
-    run grep -c "^ssh .*-o ControlMaster=auto -o ControlPath=~/.ssh/tacctl-%C -o ControlPersist=60 " "$CALLS_LOG"
+    run grep -c "^ssh .*-o ControlMaster=auto -o ControlPath=~/.ssh/tacctl-%C -o ControlPersist=60 -o ForwardAgent=no -o ClearAllForwardings=yes " "$CALLS_LOG"
     total="$output"
     run grep -c "^ssh" "$CALLS_LOG"
     assert_output "$total"
@@ -258,7 +258,7 @@ on_tty() {
     assert_line "TAC_PROTOCOL=6"
     # The ID maps, then the accounts, were read over the shared connection,
     # read-only, before the copy.
-    stub_called "^ssh -o ConnectTimeout=10 -o ControlMaster=auto -o ControlPath=~/.ssh/tacctl-%C -o ControlPersist=60 -T web1 getent passwd$"
+    stub_called "^ssh -o ConnectTimeout=10 -o ControlMaster=auto -o ControlPath=~/.ssh/tacctl-%C -o ControlPersist=60 -o ForwardAgent=no -o ClearAllForwardings=yes -T web1 getent passwd$"
     run bash -c "grep -n '^ssh' '$CALLS_LOG' | head -3"
     assert_line --index 0 --partial "cat /proc/self/uid_map"
     assert_line --index 1 --partial "getent passwd"
@@ -1163,9 +1163,9 @@ _container_ssh() {
     "$TACCTL_BIN_SCRIPT" host enroll admin@web1.example.net --scope lab > /dev/null
     : > "$CALLS_LOG"
     stub_cmd ssh 'case "$*" in
-        *tacctl-check*) printf "tacctl-check %s\n" "group tac-users 80000" "group tac-superuser 1002" \
+        *tacctl-check*) printf "tacctl-check %s\n" "group tac-users 80000" "group tac-superuser 1002" "group tac-engineer 80005" \
             "account alice 80000 80000 700 /home/alice" "pam tacctl-auth a" "pam tacctl-account b" "pam tacctl-session c" \
-            "pam-written tacctl-auth a" "pam-written tacctl-account b" "pam-written tacctl-session c" "protocol 5" ;;
+            "pam-written tacctl-auth a" "pam-written tacctl-account b" "pam-written tacctl-session c" "protocol 6" ;;
         *) true ;;
     esac'
     run "$TACCTL_BIN_SCRIPT" host show web1 --check
@@ -1187,4 +1187,27 @@ _container_ssh() {
     assert_output --partial "sudo on this host needs a password"
     assert_output --partial "Could not check web1: the read-only run as root on admin@web1.example.net failed (see above); nothing was compared."
     refute_line "Connection"
+}
+
+@test "host show --check: an engineer left in tac-superuser, the tac-engineer group, protocol 5" {
+    "$TACCTL_BIN_SCRIPT" user add bob operator --hash "$HASH" --scopes lab > /dev/null
+    "$TACCTL_BIN_SCRIPT" group edit operator tier engineer > /dev/null
+    "$TACCTL_BIN_SCRIPT" host enroll admin@web1.example.net --scope lab > /dev/null
+    run "$TACCTL_BIN_SCRIPT" host show web1
+    assert_line "  bob    engineer   UID 80001  tac-users, tac-engineer"
+    stub_cmd ssh 'case "$*" in
+        *tacctl-check*) printf "tacctl-check %s\n" "group tac-users 80000" "group tac-superuser 80002" "group tac-engineer 80005" \
+            "members tac-superuser alice,bob" "members tac-engineer " \
+            "account alice 80000 80000 700 /home/alice" "account bob 80001 80000 700 /home/bob" \
+            "pam tacctl-auth a" "pam tacctl-account b" "pam tacctl-session c" \
+            "pam-written tacctl-auth a" "pam-written tacctl-account b" "pam-written tacctl-session c" "protocol 5" ;;
+        *) true ;;
+    esac'
+    run "$TACCTL_BIN_SCRIPT" host show web1 --check
+    assert_failure 1
+    assert_line "  - bob is an engineer but is still in tac-superuser (full sudo; the engineer tier gets tac-engineer). Fix: tacctl host sync web1"
+    assert_line "  - the host ran client script protocol 5; this tacctl writes 6. Fix: tacctl host sync web1"
+    refute_output --partial "alice is an engineer"
+    refute_output --partial "tac-engineer is missing"
+    assert_line "  3 differences."
 }

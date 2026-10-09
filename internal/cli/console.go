@@ -33,6 +33,7 @@ var consoleSpecs = map[string]Spec{
 	"idle-timeout":     {MaxArgs: 1, Args: []string{""}},
 	"agent-forwarding": {MaxArgs: 1, Args: []string{"enable|disable"}},
 	"ssh-escape":       {MaxArgs: 1, Args: []string{"enable|disable"}},
+	"space-completion": {MaxArgs: 1, Args: []string{"on|off"}},
 	"system-shell":     {MinArgs: 1, MaxArgs: 2, Args: []string{"tiers|path", After("path", KindFile)}},
 	"forwarding":       {MinArgs: 1, MaxArgs: 2, Args: []string{"tiers|gateway-ports", After("gateway-ports", "enable|disable")}},
 	"install":          {MaxArgs: 0},
@@ -43,18 +44,19 @@ var consoleSpecs = map[string]Spec{
 // consoleVerbs are the verbs ({Use, Short}), in usage order.
 var consoleVerbs = [][2]string{
 	{"show", "Tiers, per-user overrides, the effective shell per user, settings and the server's pieces"},
-	{"tiers [<tier> enable|disable]", "Show or switch the console for a tier (readonly, operator, engineer, superuser)"},
-	{"user <name> [enable|disable|clear]", "Show or set one user's override of the tier switch"},
+	{"tiers [<tier> enable|disable]", "Show or switch the console for a tier (readonly, operator, engineer, superuser; the engineer tier is always on)"},
+	{"user <name> [enable|disable|clear]", "Show or set one user's override of the tier switch (never disabled for an engineer)"},
 	{"idle-timeout [<min>]", "Show or set the minutes idle at the prompt before the session ends (0-1440, 0: never)"},
 	{"agent-forwarding [enable|disable]", "Opt in to ssh agent forwarding for console users"},
 	{"ssh-escape [enable|disable]", "Opt in to ssh's escape character (~. and ~C) inside the console's ssh"},
+	{"space-completion [on|off]", "Show or set Junos-style spaces at the console's prompt: a typed space completes a fixed word and is never doubled; off turns off the refusal of repeated spaces and the completion (default on); pastes are unchanged, which assumes the terminal sends them bracketed (one that does not sends its spaces as typed ones: turn this off there); a word of dashes only (- or --) keeps its space"},
 	{"forwarding tiers [<csv>|none]", "Show or set the tiers that may forward X11 and TCP ports (sshd, and the console's ssh -X/-L/-R/-D; default superuser; never engineer)"},
 	{"forwarding gateway-ports [enable|disable]", "Opt in to forwarded ports on other addresses than loopback for those tiers (sshd's GatewayPorts for ssh -R, and the console's ssh -g and -L/-D bind addresses)"},
 	{"system-shell tiers [<csv>|none]", "Show or set the tiers that may start their system shell from the console (never engineer)"},
 	{"system-shell path [<path>]", "Show or set the system shell (default /bin/bash; must be listed in /etc/shells)"},
-	{"install", "Put the /etc/shells line and sshd's drop-in for console users in place (host sync of this server does too)"},
-	{"remove", "Take them away again (refused while an account has the console as its shell)"},
-	{"check", "Check that sshd applies the console's settings to its users (exit 1 when not)"},
+	{"install", "Put the /etc/shells line and sshd's drop-ins (console users, engineers) in place (host sync of this server does too)"},
+	{"remove", "Take the console's pieces away again (refused while an account has the console as its shell; the engineers' drop-in stays)"},
+	{"check", "Check that sshd applies the console's and the engineers' settings to their users (exit 1 when not)"},
 }
 
 func consoleCmd(inv *invocation) *cobra.Command {
@@ -83,18 +85,19 @@ func consoleUsage() string {
 	b.WriteString(`
 The console is the login shell of tacctl users on this server (tacctl-console):
 tacctl commands and ssh to registered devices, nothing else. It is on for every
-tier by default; 'tiers' switches a tier, 'user' overrides one user. Local
-accounts that are not tacctl users are never touched.
+tier by default; 'tiers' switches a tier, 'user' overrides one user. The
+engineer tier has the console or no login on this server, so neither can
+switch it off. Local accounts that are not tacctl users are never touched.
 
 The settings commands change /etc/tacctl/console.yaml only. The accounts' login
 shells and sshd's drop-in follow it when this server's accounts are synced
-('tacctl host sync <name of this server>'); idle-timeout, ssh-escape and
-system-shell are read by each console session when it starts. sshd's drop-in
-makes the console the only program a console user's login runs (no scp, sftp
-or remote programs), closes every forwarding but X11 and TCP ports for the
-tiers of 'forwarding tiers' (superusers by default: 'ssh -X', -L, -R, -D and
--J through this server, and 'ssh -X|-L|-R|-D <device>' in the console), and
-turns key logins off.
+('tacctl host sync <name of this server>'); idle-timeout, ssh-escape,
+space-completion and system-shell are read by each console session when it
+starts. sshd's drop-in makes the console the only program a console user's login
+runs (no scp, sftp or remote programs), closes every forwarding but X11 and TCP
+ports for the tiers of 'forwarding tiers' (superusers by default: 'ssh -X', -L,
+-R, -D and -J through this server, and 'ssh -X|-L|-R|-D <device>' in the
+console), and turns key logins off.
 
 'system-shell' starts the user's system shell from the console, as themselves,
 logged. Superusers only by default; 'system-shell tiers' opens or closes it
@@ -123,7 +126,8 @@ func (inv *invocation) console(args []string) error {
 		"show": inv.consoleShow, "tiers": inv.consoleTiers, "user": inv.consoleUser,
 		"idle-timeout": inv.consoleIdle, "system-shell": inv.consoleSystemShell, "forwarding": inv.consoleForwarding,
 		"agent-forwarding": inv.consoleSwitch("agent-forwarding"), "ssh-escape": inv.consoleSwitch("ssh-escape"),
-		"install": inv.consoleInstall, "remove": inv.consoleRemove, "check": inv.consoleCheck,
+		"space-completion": inv.consoleSpace,
+		"install":          inv.consoleInstall, "remove": inv.consoleRemove, "check": inv.consoleCheck,
 	}
 	switch sub := arg(args, 0); sub {
 	case "", "-h", "--help", "help":
@@ -231,7 +235,7 @@ func (inv *invocation) consoleTiers(args []string) error {
 	}
 	if len(p.Args) == 0 {
 		for _, t := range console.Tiers {
-			inv.echo(string(t) + ": " + onOff(pol.File.TierOn[t]))
+			inv.echo(string(t) + ": " + consoleTierState(pol.File, t))
 		}
 		return nil
 	}
@@ -240,18 +244,40 @@ func (inv *invocation) consoleTiers(args []string) error {
 		return inv.usageErr("Unknown tier '"+p.Args[0]+"': expected readonly, operator, engineer or superuser.", "Usage: tacctl console "+consoleUse("tiers"))
 	}
 	if len(p.Args) == 1 {
-		inv.echo(onOff(pol.File.TierOn[t]))
+		inv.echo(onOff(pol.File.TierOn[t] || t == tier.Engineer))
 		return nil
 	}
 	on, err := inv.enableWord(p.Args[1], "tiers")
 	if err != nil {
 		return err
 	}
+	if t == tier.Engineer && !on {
+		return inv.usageErr(engineerConsoleText)
+	}
 	if err := inv.consoleWrite(func(f *console.File) error { f.TierOn[t] = on; return nil }); err != nil {
 		return err
 	}
 	inv.app.Out.Info("The console is " + p.Args[1] + "d for the " + string(t) + " tier.")
 	return inv.consoleApply()
+}
+
+// engineerConsoleText is the refusal to switch the console off for the
+// engineer tier or for one of its users: an engineer has the console or no
+// login on this server.
+const engineerConsoleText = "The engineer tier has the console or no login on this server; it cannot be disabled. " +
+	"To keep a user off this server, remove its scope from the user."
+
+// consoleTierState is a tier's switch as the listings word it: the engineer
+// tier is always on, and a stored 'disable' (console.yaml edited by hand, or
+// from before) is said to be ignored.
+func consoleTierState(f *console.File, t tier.Tier) string {
+	if t != tier.Engineer {
+		return onOff(f.TierOn[t])
+	}
+	if !f.TierOn[t] {
+		return console.On + " (always; the stored " + console.Off + " is ignored)"
+	}
+	return console.On + " (always)"
 }
 
 func onOff(b bool) string {
@@ -312,6 +338,9 @@ func (inv *invocation) consoleUser(args []string) error {
 	}
 	if !m.Exists("users", name) {
 		return inv.usageErr("User '" + name + "' does not exist.")
+	}
+	if !on && inv.userTier(name, m.UserPrivLvl(name)) == tier.Engineer {
+		return inv.usageErr(engineerConsoleText)
 	}
 	if err := inv.consoleWrite(func(f *console.File) error { f.Users[name] = on; return nil }); err != nil {
 		return err
@@ -390,6 +419,49 @@ func (inv *invocation) consoleSwitch(verbName string) func([]string) error {
 		inv.app.Out.Info("The console's ssh escape character is " + p.Args[0] + "d. It applies from the next console login.")
 		return nil
 	}
+}
+
+// consoleSpace is 'console space-completion [on|off]': whether a typed
+// space at the console's prompt completes a fixed word (internal/shell). It
+// is read by each console session when it starts.
+func (inv *invocation) consoleSpace(args []string) error {
+	p, err := inv.consoleParse("space-completion", args)
+	if err != nil {
+		return err
+	}
+	pol, err := inv.consolePolicy()
+	if err != nil {
+		return err
+	}
+	if len(p.Args) == 0 {
+		inv.echo(spaceWord(pol.File.SpaceCompletion))
+		return nil
+	}
+	var on bool
+	switch p.Args[0] {
+	case "on":
+		on = true
+	case "off":
+	default:
+		return inv.usageErr("Usage: tacctl console " + consoleUse("space-completion"))
+	}
+	if err := inv.consoleWrite(func(f *console.File) error { f.SpaceCompletion = on; return nil }); err != nil {
+		return err
+	}
+	if on {
+		inv.app.Out.Info("A typed space at the console's prompt completes a fixed word. It applies from the next console login.")
+	} else {
+		inv.app.Out.Info("A typed space at the console's prompt is an ordinary space. It applies from the next console login.")
+	}
+	return nil
+}
+
+// spaceWord is the on|off word of the space-completion setting.
+func spaceWord(on bool) string {
+	if on {
+		return "on"
+	}
+	return "off"
 }
 
 func (inv *invocation) consoleSystemShell(args []string) error {
@@ -522,7 +594,16 @@ func (inv *invocation) consolePolicyLine([]string) error {
 		return err
 	}
 	user := a.Env.Get("SUDO_USER")
-	t := inv.tierGate().Caller(inv.ctx)
+	gate := inv.tierGate()
+	t := gate.Caller(inv.ctx)
+	enforced := t
+	// An engineer stays an engineer here whatever the cap of an unreadable
+	// tacctl.yaml makes of its tier (Operator): the console is its only
+	// login, with no system shell and no forwarding (D18), even when
+	// 'console system-shell tiers' and 'forwarding tiers' name operator.
+	if gate.EngineerBound(inv.ctx) {
+		t = tier.Engineer
+	}
 	shell := "system"
 	if pol.Decide(user, t).Console {
 		shell = "console"
@@ -539,9 +620,31 @@ func (inv *invocation) consolePolicyLine([]string) error {
 	if who == "" {
 		who = "root"
 	}
-	a.Logger(inv.ctx, "auth.info", "console policy user="+who+" tier="+string(t)+" system_shell="+yesNo(sys)+" session="+a.Env.Get("TACCTL_CONSOLE"))
+	// The login console marks its question with TACCTL_CONSOLE; the plain
+	// shell asks the same way for the tier its lists show, and is logged
+	// as what it is.
+	if session := a.Env.Get("TACCTL_CONSOLE"); session != "" {
+		// The variable comes through sudo's env_keep from the caller, who
+		// can set it to anything (a line break among it): only a session id
+		// as the console makes them is logged.
+		if !console.ValidSessionID(session) {
+			session = "-"
+		}
+		a.Logger(inv.ctx, "auth.info", "console policy user="+who+" tier="+string(t)+" system_shell="+yesNo(sys)+" session="+session)
+	} else {
+		a.Logger(inv.ctx, "auth.info", "shell policy user="+who+" tier="+string(t))
+	}
+	// tier= is the console's own view of the caller; the shell lists only
+	// the verbs the gate lets the caller run (D56), so when the gate's tier
+	// differs (an engineer capped by an unreadable tacctl.yaml) it is sent
+	// as gate=. ParseRemote falls back to tier= when gate= is absent.
+	gateField := ""
+	if enforced != t {
+		gateField = " gate=" + string(enforced)
+	}
 	inv.echo("shell=" + shell + " idle=" + strconv.Itoa(pol.File.Idle) + " system_shell=" + yesNo(sys) +
 		" system_shell_path=" + path + " ssh_escape=" + yesNo(pol.SSHEscape()) + " agent=" + yesNo(pol.AgentForwarding()) +
-		" forward=" + yesNo(pol.Forwarding(t)) + " tier=" + string(t) + " list_max=" + strconv.Itoa(pol.ListMax()))
+		" forward=" + yesNo(pol.Forwarding(t)) + " tier=" + string(t) + gateField + " list_max=" + strconv.Itoa(pol.ListMax()) +
+		" space_completion=" + yesNo(pol.SpaceCompletion()))
 	return nil
 }

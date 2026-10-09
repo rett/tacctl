@@ -21,9 +21,19 @@ type Remote struct {
 	// ports (console forwarding tiers): the console then hands DISPLAY on.
 	Forward bool
 	Tier    tier.Tier
+	// Gate is the tier the root side's gate enforces for the caller (the
+	// conf-problem cap applied, which Tier, the console's own view of an
+	// engineer, ignores); "" when the answer has no gate field.
+	Gate    tier.Tier
 	ListMax int
+	// SpaceCompletion: a typed space completes a fixed word (default on).
+	SpaceCompletion bool
 	// Known reports whether the answer was read (false: the defaults).
 	Known bool
+	// TierRead reports whether the answer named the caller's tier (a
+	// 'tier=' or 'gate=' field): a tier of None is then the real answer,
+	// not the default of an answer without one.
+	TierRead bool
 }
 
 // DefaultRemote is the policy without an answer: idle 30 minutes, no
@@ -34,6 +44,7 @@ func DefaultRemote() Remote {
 		SystemShellPath: DefaultSystemShell,
 		Tier:            tier.None,
 		ListMax:         DefaultListMax,
+		SpaceCompletion: true,
 	}
 }
 
@@ -73,13 +84,20 @@ func ParseRemote(out string) (r Remote, ok bool) {
 				r.Forward, ok = b, true
 			}
 		case "tier":
-			switch t := tier.Tier(v); t {
-			case tier.Unrestricted, tier.Superuser, tier.Engineer, tier.Operator, tier.Readonly, tier.None:
-				r.Tier, ok = t, true
+			if t, good := tierValue(v); good {
+				r.Tier, ok, r.TierRead = t, true, true
+			}
+		case "gate":
+			if t, good := tierValue(v); good {
+				r.Gate, ok, r.TierRead = t, true, true
 			}
 		case "list_max":
 			if n, err := strconv.Atoi(v); err == nil && n >= 1 && n <= MaxListMax {
 				r.ListMax, ok = n, true
+			}
+		case "space_completion":
+			if b, good := yesNoValue(v); good {
+				r.SpaceCompletion, ok = b, true
 			}
 		case "shell":
 			ok = ok || v == "console" || v == "system"
@@ -87,6 +105,37 @@ func ParseRemote(out string) (r Remote, ok bool) {
 	}
 	r.Known = ok
 	return r, ok
+}
+
+// View is the tier whose verbs the shell lists for the caller (docs/plans/
+// 0.2.3-plan.md D56): the gate's tier when the answer has one, else Tier.
+// An answer that was not read gives None, which lists the read-only verbs
+// only, never more.
+func (r Remote) View() tier.Tier {
+	t, _ := r.ViewRead()
+	return t
+}
+
+// ViewRead is View and whether the tier was read from the answer: false for
+// no answer, or an answer without a tier field (the tier is then None only
+// by default, and the caller must not take it for the answer 'tier=none',
+// a disabled account).
+func (r Remote) ViewRead() (tier.Tier, bool) {
+	switch {
+	case !r.Known || !r.TierRead:
+		return tier.None, false
+	case r.Gate != "":
+		return r.Gate, true
+	}
+	return r.Tier, true
+}
+
+func tierValue(v string) (tier.Tier, bool) {
+	switch t := tier.Tier(v); t {
+	case tier.Unrestricted, tier.Superuser, tier.Engineer, tier.Operator, tier.Readonly, tier.None:
+		return t, true
+	}
+	return "", false
 }
 
 // ValidDisplay reports whether v looks like an X11 display name (such as

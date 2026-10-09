@@ -110,6 +110,25 @@ complete_words() {
     assert_output "$(printf -- '--check\n--force\n--replace')"
 }
 
+@test "completion: group commands and privilege offer reset (with --dry-run and --yes) and no clear" {
+    complete_words tacctl group commands re
+    assert_output "$(printf 'remove\nreset')"
+    complete_words tacctl group commands cl
+    assert_output ""
+    complete_words tacctl group commands reset ""
+    assert_output "$(printf 'ops\nadmins')"
+    complete_words tacctl group commands reset ops ""
+    assert_output "$(printf -- '--dry-run\n--yes')"
+    complete_words tacctl group privilege re
+    assert_output "$(printf 'remove\nreset')"
+    complete_words tacctl group privilege cl
+    assert_output ""
+    complete_words tacctl group privilege reset ops ""
+    assert_output "$(printf -- '--dry-run\n--yes')"
+    complete_words tacctl group privilege reset ops --dry-run ""
+    assert_output "--yes"
+}
+
 @test "completion: config offers render with --dry-run and --out, and listen takes --backend and --listener" {
     complete_words tacctl config ren
     assert_output "render"
@@ -134,26 +153,26 @@ complete_words() {
 
 @test "completion: config cisco and juniper take --protocol, and its value is tacacs or radius" {
     complete_words tacctl config cisco ""
-    assert_output "$(printf -- '--scope\n--protocol\n--staging\n--name\n--legacy')"
+    assert_output "$(printf -- '--scope\n--protocol\n--staging\n--name\n--server\n--source\n--snmp-location\n--legacy')"
     complete_words tacctl config juniper ""
-    assert_output "$(printf -- '--scope\n--protocol\n--staging\n--name')"
+    assert_output "$(printf -- '--scope\n--protocol\n--staging\n--name\n--server\n--source\n--snmp-location')"
     complete_words tacctl config cisco --protocol ""
     assert_output "$(printf 'tacacs\nradius')"
     complete_words tacctl config juniper --scope lab --protocol ""
     assert_output "$(printf 'tacacs\nradius')"
     complete_words tacctl config juniper --scope lab ""
-    assert_output "$(printf -- '--protocol\n--staging\n--name')"
+    assert_output "$(printf -- '--protocol\n--staging\n--name\n--server\n--source\n--snmp-location')"
     complete_words tacctl config cisco --protocol radius ""
-    assert_output "$(printf -- '--scope\n--staging\n--name\n--legacy')"
+    assert_output "$(printf -- '--scope\n--staging\n--name\n--server\n--source\n--snmp-location\n--legacy')"
     complete_words tacctl config cisco --protocol radius --scope lab ""
-    assert_output "$(printf -- '--staging\n--name\n--legacy')"
+    assert_output "$(printf -- '--staging\n--name\n--server\n--source\n--snmp-location\n--legacy')"
     # WTI takes --protocol like the others.
     complete_words tacctl config wti ""
-    assert_output "$(printf -- '--scope\n--protocol\n--staging\n--name')"
+    assert_output "$(printf -- '--scope\n--protocol\n--staging\n--name\n--server\n--source\n--snmp-location')"
     complete_words tacctl config wti --protocol ""
     assert_output "$(printf 'tacacs\nradius')"
     complete_words tacctl config wti --scope lab ""
-    assert_output "$(printf -- '--protocol\n--staging\n--name')"
+    assert_output "$(printf -- '--protocol\n--staging\n--name\n--server\n--source\n--snmp-location')"
 }
 
 @test "completion: scope offers radius-group beside tacacs-group" {

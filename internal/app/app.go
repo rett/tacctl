@@ -4,6 +4,7 @@
 package app
 
 import (
+	"context"
 	"io"
 
 	"github.com/rett/tacctl/internal/execx"
@@ -42,6 +43,14 @@ type App struct {
 	// SNMP, when set, reads sysName in place of the snmp.* settings and
 	// StateDir/snmp.yaml (the CLI's tests put a stub here).
 	SNMP snmp.Getter
+	// Resolve looks a host name up (--server of 'config cisco|juniper|wti');
+	// nil is the system resolver. The CLI's tests put a stub here.
+	Resolve func(ctx context.Context, name string) ([]string, error)
+
+	// HostsTTY, when set, says whether a terminal can answer prompts of
+	// the host commands (ssh, sudo, passwd); nil asks the real terminal.
+	// The CLI's tests set it, as they have none.
+	HostsTTY func() bool
 
 	svc services
 }

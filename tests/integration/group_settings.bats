@@ -114,6 +114,9 @@ setup() {
     assert_output --partial "tacctl tier:       engineer (set; auto would be superuser)"
     assert_output --partial "WTI level:         SuperUser (set; auto would be Administrator)"
     assert_output --partial "deny-configuration 7/236 bytes"
+    assert_line --regexp '^ +deny-configuration$'
+    assert_line --regexp '^ +\^snmp$'
+    assert_output --partial "tacctl group junos engineer list"
 
     run "$TACCTL_BIN_SCRIPT" group show operator
     assert_output --partial "tacctl tier:       operator (auto, from priv-lvl)"

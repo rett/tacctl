@@ -195,7 +195,7 @@ func Uninstall(ctx context.Context, h *Host, args []string) error {
 // through a tacctl about to be gone. Both sudoers drop-ins go (the tier
 // rules allow commands of the removed binary to the tier groups, and must
 // not outlive it), and so does the Linux host data (pam_tacplus source and
-// prebuilt modules) and the generated known_hosts (with its directory),
+// prebuilt modules) the generated known_hosts (with its directory) and the tier-migration marker,
 // with their parent directory when that leaves it empty.
 func (h *Host) removeAccess() error {
 	p := h.Paths
@@ -203,6 +203,10 @@ func (h *Host) removeAccess() error {
 		return err
 	}
 	if err := h.rmRF(p.LinuxDir); err != nil {
+		return err
+	}
+	// The marker of the one-time tier migration (a reinstall starts again).
+	if err := h.rmF(p.TierPinMarker); err != nil {
 		return err
 	}
 	if err := h.rmRF(filepath.Dir(p.KnownHosts)); err != nil {

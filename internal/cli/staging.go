@@ -11,12 +11,14 @@ package cli
 // ('scope staging remove').
 
 import (
+	"net"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/rett/tacctl/internal/devreg"
+	"github.com/rett/tacctl/internal/hosts"
 	"github.com/rett/tacctl/internal/store"
 	"github.com/rett/tacctl/internal/ui"
 )
@@ -94,6 +96,12 @@ func (inv *invocation) stagingAdd(scope, addr, kind, name string) error {
 		if info, found := m.LookupAddr(addr); found && !f.allows(info.Scope) {
 			return inv.usageErr("--staging: " + addr + " is answered by scope '" + info.Scope + "', which is not one of yours; staging it would take it from that scope. Nothing was changed.")
 		}
+		// A host is not a device: the scope that answers a host's address
+		// is the superuser's to change, since the host's next sync is
+		// checked against it.
+		if inv.hostWithin(addr) {
+			return inv.usageErr("--staging: " + addr + " is not available for staging. Nothing was changed.")
+		}
 	}
 	cidr := addr + "/32"
 	collisions, err := inv.scopePrefixCollisions([]string{cidr}, scope)
@@ -138,6 +146,38 @@ func (inv *invocation) stagingAdd(scope, addr, kind, name string) error {
 	}
 	a.Out.InfoE("Staging address " + cidr + " added to scope '" + scope + "' (its secret and users) for " + who + "; " + how + ".")
 	return nil
+}
+
+// hostWithin reports whether an enrolled host is at an address of cidr: the
+// address recorded at its last enroll or sync, or an address literal as its
+// target (nothing is resolved). A registry or a devices file that cannot be
+// read counts as yes (fail closed).
+func (inv *invocation) hostWithin(cidr string) bool {
+	if !strings.Contains(cidr, "/") {
+		cidr += "/32"
+	}
+	_, n, err := net.ParseCIDR(cidr)
+	if err != nil {
+		return true
+	}
+	reg, err := inv.registry()
+	if err != nil {
+		return true
+	}
+	f, err := devreg.Load(inv.app.Paths.DevicesFile)
+	if err != nil {
+		return true
+	}
+	in := func(addr string) bool { ip := net.ParseIP(addr); return ip != nil && n.Contains(ip) }
+	for _, e := range reg.Entries() {
+		if in(f.HostAddressOf(e.Name)) {
+			return true
+		}
+		if host, _, ok := hosts.ScanTarget(e.Target, e.Port); ok && in(host) {
+			return true
+		}
+	}
+	return false
 }
 
 // stagingSeen is where the entry's host or device is now ("" unknown).
@@ -185,7 +225,14 @@ func (inv *invocation) stagingSweep() {
 	}
 	var kept []stagingEntry
 	changed := false
+	// A host's staging address ends with a host's sync, which is the
+	// superuser's: a restricted caller's device change leaves it as it is.
+	restricted := inv.callerScopes().restricted
 	for _, e := range entries {
+		if restricted && e.Kind == "host" {
+			kept = append(kept, e)
+			continue
+		}
 		if !m.Exists("scopes", e.Scope) || !contains(m.ScopePrefixes(e.Scope), e.CIDR) {
 			changed = true
 			continue
@@ -232,10 +279,23 @@ func (inv *invocation) stdoutToStderr(fn func() error) error {
 // scopeStaging is 'scope staging [list | remove <cidr>]'.
 func (inv *invocation) scopeStaging(args []string) error {
 	a := inv.app
+	// An engineer lists the staging addresses of their own scopes (D47) and
+	// changes nothing: the sweep, which edits scopes, is the administrators'.
+	f := inv.callerScopes()
+	if sub := arg(args, 0); f.restricted && sub != "" && sub != "list" {
+		return inv.usageErr("The engineer tier lists the staging addresses of its scopes: tacctl scope staging list. Removing one is the superuser's. Nothing was changed.")
+	}
 	switch sub := arg(args, 0); sub {
 	case "", "list":
-		inv.stagingSweep()
-		entries := inv.stagingLoad()
+		if !f.restricted {
+			inv.stagingSweep()
+		}
+		var entries []stagingEntry
+		for _, e := range inv.stagingLoad() {
+			if f.allows(e.Scope) {
+				entries = append(entries, e)
+			}
+		}
 		inv.echo("")
 		if len(entries) == 0 {
 			inv.echoE(ui.Bold + "Staging addresses" + ui.NC)

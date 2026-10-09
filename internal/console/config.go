@@ -90,6 +90,12 @@ type File struct {
 	GatewayPorts bool
 	// ListMax is the number of completions the shell lists without asking.
 	ListMax int
+	// SpaceCompletion is whether a typed space at the console's prompt is
+	// Junos-style (completes a fixed word, never doubles). Written to the
+	// file only when off (doc); a file without the key reads as on. A 0.2.2
+	// reader rejects the key, and the engineer tier's key too: going back
+	// to 0.2.2 needs the rollback step (TestRollbackToTheOldParser).
+	SpaceCompletion bool
 }
 
 // Defaults is the file that is not there.
@@ -102,6 +108,7 @@ func Defaults() *File {
 		SystemShellTiers: []tier.Tier{tier.Superuser},
 		ForwardingTiers:  []tier.Tier{tier.Superuser},
 		ListMax:          DefaultListMax,
+		SpaceCompletion:  true,
 	}
 }
 
@@ -344,7 +351,7 @@ func parseSettings(f *File, m *yamlpy.Map) error {
 			} else {
 				f.ListMax = n
 			}
-		case "agent_forwarding", "ssh_escape", "gateway_ports":
+		case "agent_forwarding", "ssh_escape", "gateway_ports", "space_completion":
 			b, ok := v.(bool)
 			if !ok {
 				return bad
@@ -354,6 +361,8 @@ func parseSettings(f *File, m *yamlpy.Map) error {
 				f.AgentForwarding = b
 			case "ssh_escape":
 				f.SSHEscape = b
+			case "space_completion":
+				f.SpaceCompletion = b
 			default:
 				f.GatewayPorts = b
 			}
@@ -413,20 +422,26 @@ func (f *File) doc() *yamlpy.Map {
 		}
 		return out
 	}
+	settings := yamlpy.NewMap(
+		"idle_timeout", f.Idle,
+		"agent_forwarding", f.AgentForwarding,
+		"ssh_escape", f.SSHEscape,
+		"system_shell", f.SystemShell,
+		"system_shell_tiers", words(f.SystemShellTiers),
+		"forwarding_tiers", words(f.ForwardingTiers),
+		"gateway_ports", f.GatewayPorts,
+		"list_max", f.ListMax,
+	)
+	if !f.SpaceCompletion {
+		// Only when off, so the file of a console that never turned it off
+		// has no key of 0.2.3 beyond the engineer tier's.
+		settings.Set("space_completion", false)
+	}
 	return yamlpy.NewMap(
 		"version", Version,
 		"tiers", tiers,
 		"users", users,
-		"settings", yamlpy.NewMap(
-			"idle_timeout", f.Idle,
-			"agent_forwarding", f.AgentForwarding,
-			"ssh_escape", f.SSHEscape,
-			"system_shell", f.SystemShell,
-			"system_shell_tiers", words(f.SystemShellTiers),
-			"forwarding_tiers", words(f.ForwardingTiers),
-			"gateway_ports", f.GatewayPorts,
-			"list_max", f.ListMax,
-		),
+		"settings", settings,
 	)
 }
 

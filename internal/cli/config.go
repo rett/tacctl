@@ -145,7 +145,7 @@ func configCmd(inv *invocation) *cobra.Command {
 			n(inv.configSecretMinLength)),
 		filter("allow", "Manage connection allow list"),
 		filter("deny", "Manage connection deny list"),
-		verb("mgmt-acl", "Manage Cisco VTY-ACL + Juniper lo0-filter permits",
+		verb("mgmt-acl", "Manage Cisco VTY-ACL + Juniper lo0-filter + WTI IP Tables permits",
 			verb("list", "Show current permits"),
 			verb("add", "Add one or more CIDRs"),
 			verb("remove", "Remove one or more CIDRs"),

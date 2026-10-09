@@ -269,9 +269,11 @@ func TestDeviceAndConsolePaths(t *testing.T) {
 		p.DevicesFile: "/etc/tacctl/devices.yaml", p.KnownHosts: "/var/lib/tacctl/ssh/known_hosts",
 		p.ConsoleFile: "/etc/tacctl/console.yaml", p.SSHDDropIn: "/etc/ssh/sshd_config.d/tacctl-console.conf",
 		p.ShellsFile: "/etc/shells", p.ConsoleCommand: "/usr/local/bin/tacctl-console",
-		p.VarLib: "/var/lib/tacctl", p.SeenCache: "/var/lib/tacctl/devices-seen.json",
+		p.VarLib: "/var/lib/tacctl", p.SeenCache: "/var/lib/tacctl/devices-seen.json", p.TierPinMarker: "/var/lib/tacctl/tier-pinned",
 		p.HostRecords: "/etc/tacctl/hosts",
-		p.SNMPFile:    "/etc/tacctl/snmp.yaml",
+		p.SNMPFile:    "/etc/tacctl/snmp.yaml", p.SNMPDir: "/etc/tacctl/snmp",
+		p.SSHDir: "/etc/ssh", p.SSHDEngineerDropIn: "/etc/ssh/sshd_config.d/00-tacctl-engineer.conf",
+		p.SSHDEngineerDropInOld: "/etc/ssh/sshd_config.d/tacctl-engineer.conf",
 	}
 	for got, w := range want {
 		if got != w {
@@ -282,9 +284,14 @@ func TestDeviceAndConsolePaths(t *testing.T) {
 	if p.SSHDDropIn != "/d/c.conf" || p.ShellsFile != "/d/shells" {
 		t.Errorf("overridden %q %q", p.SSHDDropIn, p.ShellsFile)
 	}
+	// The engineer drop-in follows the console's directory, so a sandbox that
+	// moves one moves both.
+	if p.SSHDEngineerDropIn != "/d/00-tacctl-engineer.conf" {
+		t.Errorf("engineer drop-in %q", p.SSHDEngineerDropIn)
+	}
 	for got, w := range map[string]string{
 		p.DevicesFile: "/s/devices.yaml", p.KnownHosts: "/v/ssh/known_hosts", p.ConsoleFile: "/s/console.yaml",
-		p.HostRecords: "/s/hosts", p.VarLib: "/v", p.SeenCache: "/v/devices-seen.json", p.SNMPFile: "/s/snmp.yaml",
+		p.HostRecords: "/s/hosts", p.VarLib: "/v", p.SeenCache: "/v/devices-seen.json", p.TierPinMarker: "/v/tier-pinned", p.SNMPFile: "/s/snmp.yaml", p.SNMPDir: "/s/snmp",
 	} {
 		if got != w {
 			t.Errorf("overridden %q, want %q", got, w)

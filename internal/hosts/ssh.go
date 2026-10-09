@@ -16,10 +16,14 @@ import (
 // the whole command (the probe, the copy and the run), so a login that
 // needs a password or a key passphrase asks once. The socket sits in the
 // ssh user's own ~/.ssh (ssh expands the path itself); RunScript closes it,
-// and it goes away by itself a minute after the last use.
+// and it goes away by itself a minute after the last use. No agent and no
+// port is forwarded to a host, whatever the user's ssh config says (a
+// command-line -o beats it): the host is root-run and not trusted with the
+// caller's agent.
 var DefaultSSHOptions = []string{
 	"-o", "ConnectTimeout=10",
 	"-o", "ControlMaster=auto", "-o", "ControlPath=~/.ssh/tacctl-%C", "-o", "ControlPersist=60",
+	"-o", "ForwardAgent=no", "-o", "ClearAllForwardings=yes",
 }
 
 // SSH builds ssh commands the way _host_ssh does: run as AsUser through
@@ -183,6 +187,10 @@ func (e *Env) RunScript(ctx context.Context, target, port, identity, script stri
 		// keeps errors and drops it. The copy above opened the connection,
 		// so its messages (a new known_hosts entry) were shown there.
 		runArgs = []string{"-o", "LogLevel=ERROR", "-t"}
+	} else if e.HangUp {
+		// No terminal here, but the script wants to be hung up when the
+		// connection is lost: a remote terminal delivers the hang-up.
+		runArgs = []string{"-o", "LogLevel=ERROR", "-tt"}
 	}
 	code, intr, startErr := Attached(ctx, e.Runner, s.Cmd(append(runArgs, target, RemoteCommand(remote, args, tty))...), e.Stdin, out)
 	if startErr != nil && code == 0 {
@@ -193,11 +201,19 @@ func (e *Env) RunScript(ctx context.Context, target, port, identity, script stri
 		e.readKeys(ctx, s, target)
 		e.readFacts(ctx, s, target)
 	}
-	closer := s.Cmd("-O", "exit", target)
-	closer.Stdout, closer.Stderr = io.Discard, io.Discard
-	_, _ = e.Runner.Run(context.WithoutCancel(ctx), closer)
+	if !e.KeepOpen {
+		e.CloseSession(ctx, target, port, identity)
+	}
 	if intr {
 		return code, ui.ErrInterrupted
 	}
 	return code, nil
+}
+
+// CloseSession closes the shared ssh connection to target (ssh -O exit).
+func (e *Env) CloseSession(ctx context.Context, target, port, identity string) {
+	s := e.ssh(port, identity)
+	closer := s.Cmd("-O", "exit", target)
+	closer.Stdout, closer.Stderr = io.Discard, io.Discard
+	_, _ = e.Runner.Run(context.WithoutCancel(ctx), closer)
 }

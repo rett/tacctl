@@ -111,6 +111,7 @@ func (inv *invocation) storeRollback(args []string) error {
 	out.InfoE("Rolled back: " + p.Config + " is the pre-store file again and the store is gone (legacy read-only mode).")
 	out.InfoE("To move to the store again: 'tacctl store import --check', then 'tacctl upgrade' (or 'tacctl store import' and 'tacctl config render --force').")
 	inv.echo("")
+	inv.warnServerSync("Users whose tier is lower now keep their old groups")
 	return nil
 }
 

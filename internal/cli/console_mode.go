@@ -149,8 +149,8 @@ func (inv *invocation) runConsoleSession(args []string) error {
 		extra = append(extra, "DISPLAY="+d)
 	}
 	r := shellRun{
-		exe: exe, mode: shellBatch, listMax: cs.pol.ListMax,
-		extraEnv: extra, console: true, systemShell: cs.systemShell, groups: groups,
+		exe: exe, mode: shellBatch, listMax: cs.pol.ListMax, spaceCompletion: cs.pol.SpaceCompletion,
+		extraEnv: extra, console: true, systemShell: cs.systemShell, groups: groups, view: consoleView(cs.pol),
 	}
 	if groups == nil {
 		r.groups = []string{}
@@ -175,6 +175,15 @@ func (inv *invocation) runConsoleSession(args []string) error {
 		return exit(status)
 	}
 	return nil
+}
+
+// consoleView is the view of the console's lists: the tier the policy answer
+// named, or viewUnread when it did not (no answer, or one without a tier).
+func consoleView(pol console.Remote) tier.Tier {
+	if t, ok := pol.ViewRead(); ok {
+		return t
+	}
+	return viewUnread
 }
 
 // consoleRemotePolicy asks the root side for the caller's console policy

@@ -61,6 +61,13 @@ var hostSpecs = map[string]Spec{
 		{Names: []string{"--port"}, Value: true},
 		{Names: []string{"--identity"}, Value: true, Kind: KindFile},
 		{Names: []string{"--no-identity"}}}},
+	"provisioner": {MinArgs: 3, MaxArgs: 3, Args: []string{KindHosts, "", ""}, Flags: []Flag{
+		{Names: []string{"--key"}, Value: true, Kind: KindFile},
+		{Names: []string{"--password"}},
+		{Names: []string{"--remove-old"}},
+		{Names: []string{"--remove-home"}},
+		{Names: []string{"--dry-run"}},
+		{Names: []string{"--yes"}}}},
 	"default-method": {MaxArgs: 1, Args: []string{methodWords}},
 }
 
@@ -72,6 +79,7 @@ var hostVerbs = [][2]string{
 	{"sync <name> | --all [options]", "Push account adds, deletions and tier changes"},
 	{"move <name> [<scope>] | --all [options]", "Move an enrolled host to another scope (default: the scope answering its address)"},
 	{"target <name> [<[user@]host>] [options]", "Show or change how tacctl reaches an enrolled host over ssh"},
+	{"provisioner <name> rotate <user> [options]", "Switch the account tacctl logs in to the host with, proving the new one before the registry changes"},
 	{"unenroll <name> [--force]", "Remove the login method from the host (accounts and homes are kept)"},
 	{"default-method [tacplus|radius]", "Show or set the method for hosts enrolled without --method"},
 }
@@ -114,6 +122,8 @@ func (inv *invocation) host(args []string) error {
 		return inv.hostSync(rest)
 	case "target":
 		return inv.hostTarget(rest)
+	case "provisioner":
+		return inv.hostProvisioner(rest)
 	case "unenroll":
 		return inv.hostUnenroll(rest)
 	case "default-method":
@@ -149,8 +159,13 @@ func (inv *invocation) hostList() error {
 		inv.echo("")
 		return nil
 	}
+	// An engineer lists the hosts of their own scopes (D47).
+	f := inv.callerScopes()
 	t := ui.NewTable("Enrolled Linux hosts", ui.Left("NAME"), ui.Left("TARGET"), ui.Left("SCOPE"), ui.Left("SERVER"), ui.Left("METHOD"), ui.Left("USERS"))
 	for _, e := range reg.Entries() {
+		if !f.allows(e.Scope) {
+			continue
+		}
 		target := e.Target
 		if e.Port != "" {
 			target += ":" + e.Port
@@ -161,9 +176,19 @@ func (inv *invocation) hostList() error {
 		}
 		t.Add(e.Name, target, e.Scope, e.Server, reg.Method(e.Name), strconv.Itoa(users))
 	}
+	if t.Len() == 0 {
+		inv.echoE(ui.Bold + "Enrolled Linux hosts" + ui.NC)
+		inv.echo(ui.Rule("Enrolled Linux hosts"))
+		inv.echo("  None in your scopes.")
+		inv.echo("")
+		return nil
+	}
 	inv.write(t.String())
 	inv.echo("")
 	for _, e := range reg.Entries() {
+		if !f.allows(e.Scope) {
+			continue
+		}
 		if msg := inv.hostScopeDrift(e, inv.hostAddress(e)); msg != "" {
 			inv.app.Out.WarnE(msg)
 		}
@@ -259,6 +284,9 @@ func (inv *invocation) hostEnroll(args []string) error {
 		}
 	}
 
+	if err := inv.confReadable(); err != nil {
+		return err
+	}
 	reg, err := inv.registry()
 	if err != nil {
 		return err
@@ -306,6 +334,14 @@ func (inv *invocation) hostEnroll(args []string) error {
 		if hostIP == "" {
 			return inv.usageErr("Could not resolve '" + hostPart + "' to an IPv4 address.")
 		}
+		// This server enrolls as --local: the script of an entry that is
+		// not registered as the server would write the engineers' sudo
+		// line on it.
+		if isLocalAddress(hostIP) {
+			return inv.usageErr("'" + target + "' is this server; enroll it with --local")
+		}
+		// The address the checks below use is the one ssh is pinned to.
+		inv.noteResolved(hostPart, hostIP)
 		if name == "" {
 			// A bare IP has no hostname to borrow: 10.1.2.3 -> h10-1-2-3.
 			if reBareIPv4.MatchString(hostPart) {
@@ -405,9 +441,6 @@ func (inv *invocation) hostEnroll(args []string) error {
 		}
 		scope = info.Scope
 		a.Out.InfoE(hostScopeOrigin(name, target, hostPart, hostIP) + " is answered by scope '" + scope + "' (prefix " + info.Prefix + "); enrolling " + name + " there (another one: --scope <name>).")
-	}
-	if err := inv.hostEnrollAllowed(reg, name, scope, isLocal); err != nil {
-		return err
 	}
 
 	// The method: the one asked for; else the one a registered host has (so
@@ -566,6 +599,7 @@ func (inv *invocation) hostEnroll(args []string) error {
 		return err
 	}
 	req.Temp, req.Prebuilt = true, prebuilt
+	req.Local = target == hosts.Local
 	if err := inv.homesToDelete(he, &req, name, target, port, identity, removeHome); err != nil {
 		return err
 	}
@@ -683,13 +717,16 @@ func (inv *invocation) hostDuplicate(reg *hosts.Registry, name, target, addr, po
 	return nil
 }
 
-// isLocalAddress is an address of this machine (loopback included).
+// isLocalAddress is an address of this machine: loopback, one of its
+// interfaces' addresses, or the unspecified address (0.0.0.0, which
+// 'getent ahostsv4 0.0.0.0' answers for the names "0" and "0.0.0.0" and
+// which connects to this machine).
 func isLocalAddress(addr string) bool {
 	ip := net.ParseIP(addr)
 	if ip == nil {
 		return false
 	}
-	if ip.IsLoopback() {
+	if ip.IsLoopback() || ip.IsUnspecified() {
 		return true
 	}
 	addrs, err := net.InterfaceAddrs()
@@ -869,11 +906,10 @@ func (inv *invocation) hostMove(args []string) error {
 	if err != nil {
 		return err
 	}
-	f := inv.callerScopes()
 	if all {
 		failed, moved := 0, 0
 		for _, e := range reg.Entries() {
-			if !f.allows(e.Scope) || inv.hostScopeDrift(e, inv.hostAddress(e)) == "" {
+			if inv.hostScopeDrift(e, inv.hostAddress(e)) == "" {
 				continue
 			}
 			if err := inv.hostMoveOne(reg, e, "", pass); err != nil {
@@ -896,29 +932,10 @@ func (inv *invocation) hostMove(args []string) error {
 		return nil
 	}
 	e, ok := reg.Find(name)
-	if !ok || !f.allows(e.Scope) {
+	if !ok {
 		return inv.usageErr("No enrolled host named '" + name + "'. See 'tacctl host list'.")
 	}
 	return inv.hostMoveOne(reg, e, scope, pass)
-}
-
-// hostEnrollAllowed is nil when the caller may enroll the host name in
-// scope: always, but for an engineer (a caller the scope filter
-// restricts, D18), who enrolls and moves hosts of their own scopes only,
-// into their own scopes, and never this server itself (--local: its
-// accounts and PAM are the administrators'; its sync is open to them).
-func (inv *invocation) hostEnrollAllowed(reg *hosts.Registry, name, scope string, local bool) error {
-	f := inv.callerScopes()
-	if !f.restricted {
-		return nil
-	}
-	if local {
-		return inv.usageErr("Enrolling this server (--local) is not the engineer tier's; its sync is: tacctl host sync <name of this server>")
-	}
-	if e, ok := reg.Find(name); ok && e.Scope != "" && !f.allows(e.Scope) {
-		return inv.usageErr("'" + name + "' is enrolled in scope '" + e.Scope + "', which is not one of yours. Nothing was changed.")
-	}
-	return inv.ownScope(f, scope)
 }
 
 // isExit is an error that only carries an exit status (its message, if
@@ -1070,27 +1087,24 @@ func (inv *invocation) hostSync(args []string) error {
 	if which == "" {
 		return inv.usageErr("Usage: tacctl host sync <name> | --all  [--allow-uid-mismatch] [--remove-home]")
 	}
+	if err := inv.confReadable(); err != nil {
+		return err
+	}
 	reg, err := inv.registry()
 	if err != nil {
 		return err
 	}
 	var names []string
-	f := inv.callerScopes()
 	if which == "--all" {
 		if reg.Exists() {
-			// An engineer syncs the hosts of their own scopes.
-			for _, n := range reg.Names() {
-				if e, _ := reg.Find(n); f.allows(e.Scope) {
-					names = append(names, n)
-				}
-			}
+			names = reg.Names()
 		}
 		if len(names) == 0 {
 			a.Out.Info("No hosts enrolled.")
 			return nil
 		}
 	} else {
-		if e, ok := reg.Find(which); !ok || e.Line == "" || !f.allows(e.Scope) {
+		if e, ok := reg.Find(which); !ok || e.Line == "" {
 			return inv.usageErr("No enrolled host named '" + which + "'. See 'tacctl host list'.")
 		}
 		names = []string{which}
@@ -1193,6 +1207,7 @@ func (inv *invocation) syncRun(he *hosts.Env, e hosts.Entry, method string, scri
 		return false, "", false, err
 	}
 	req.Temp, req.AccountsOnly = true, true
+	req.Local = e.Target == hosts.Local
 	if err := inv.homesToDelete(he, &req, e.Name, e.Target, e.Port, e.Identity, removeHome); err != nil {
 		return false, "", false, err
 	}

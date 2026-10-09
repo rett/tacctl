@@ -13,6 +13,9 @@ import (
 // The man page is hand-written (man/tacctl.1). These tests keep it honest
 // against the command tree: every command of the tree has an entry, and no
 // entry names a command the tree lacks, so a removed verb cannot linger.
+// man_gate_test.go and man_gen_test.go gate the rest (flags, keys, paths,
+// environment, exit statuses, tiers; the generated blocks): 'make lint' runs
+// them all, 'go test ./internal/cli -run Man'.
 
 var (
 	manFontEsc = regexp.MustCompile(`\\f[BIRP1-4]|\\\(..|\\[&|^]`)
@@ -56,6 +59,34 @@ func manArgs(s string) []string {
 	return out
 }
 
+// manClean is a source line's text as a reader sees it: font macros and
+// escapes removed, white space squeezed.
+func manClean(s string) string {
+	s = strings.ReplaceAll(s, `\-`, "-")
+	s = strings.ReplaceAll(s, `\e`, `\`)
+	return strings.TrimSpace(manSpaces.ReplaceAllString(manFontEsc.ReplaceAllString(s, ""), " "))
+}
+
+// manLineText is the text a source line prints, cleaned; ok is false for a
+// comment and for a macro that prints nothing of its own (.TP, .PP, .RS ...).
+func manLineText(l string) (text string, ok bool) {
+	switch {
+	case strings.HasPrefix(l, `.\"`), l == ".TP":
+		return "", false
+	case strings.HasPrefix(l, "."):
+		name, rest, _ := strings.Cut(l[1:], " ")
+		args := manArgs(rest)
+		switch name {
+		case "B", "I", "SM", "SS", "SH":
+			return manClean(strings.Join(args, " ")), true
+		case "BI", "BR", "IR", "IB", "RB", "RI":
+			return manClean(strings.Join(args, "")), true
+		}
+		return "", false
+	}
+	return manClean(l), true
+}
+
 // manText is the page as a reader sees it, one string per output line of
 // source: font macros and escapes removed. tags are the lines that head a
 // .TP entry.
@@ -65,36 +96,19 @@ func manText(t *testing.T) (lines, tags []string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	clean := func(s string) string {
-		s = strings.ReplaceAll(s, `\-`, "-")
-		s = strings.ReplaceAll(s, `\e`, `\`)
-		return strings.TrimSpace(manSpaces.ReplaceAllString(manFontEsc.ReplaceAllString(s, ""), " "))
-	}
 	afterTP := false
 	for _, l := range strings.Split(string(src), "\n") {
-		var text string
-		switch {
-		case strings.HasPrefix(l, `.\"`):
-			continue
-		case l == ".TP":
+		if l == ".TP" {
 			afterTP = true
 			continue
-		case strings.HasPrefix(l, "."):
-			name, rest, _ := strings.Cut(l[1:], " ")
-			args := manArgs(rest)
-			switch name {
-			case "B", "I", "SM", "SS", "SH":
-				text = strings.Join(args, " ")
-			case "BI", "BR", "IR", "IB", "RB", "RI":
-				text = strings.Join(args, "")
-			default:
-				afterTP = false
-				continue
-			}
-		default:
-			text = l
 		}
-		text = clean(text)
+		text, ok := manLineText(l)
+		if !ok {
+			if !strings.HasPrefix(l, `.\"`) {
+				afterTP = false
+			}
+			continue
+		}
 		lines = append(lines, text)
 		if afterTP {
 			tags = append(tags, expandAlternatives(text)...)
@@ -161,6 +175,7 @@ func TestManPageNamesEveryCommand(t *testing.T) {
 var removedPhrases = []*regexp.Regexp{
 	regexp.MustCompile(`user scope \S+ (set|clear)\b`),
 	regexp.MustCompile(`scope prefixes \S+ clear\b`),
+	regexp.MustCompile(`group (privilege|commands) clear\b`),
 }
 
 // The man page names no command the tree lacks: a '.TP' tag or a 'tacctl
@@ -169,7 +184,7 @@ var removedPhrases = []*regexp.Regexp{
 func TestManPageNamesNoMissingCommand(t *testing.T) {
 	lines, tags := manText(t)
 	root := newRoot(&invocation{app: newHarness(t, nil).app})
-	word := regexp.MustCompile(`^[a-z][a-z-]*$`)
+	word := regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 	check := func(where string, words []string) {
 		c := root
 		for _, w := range words {
@@ -187,7 +202,7 @@ func TestManPageNamesNoMissingCommand(t *testing.T) {
 			c = next
 		}
 	}
-	mention := regexp.MustCompile(`\btacctl ((?:[a-z][a-z-]* ?){2,4})`)
+	mention := regexp.MustCompile(`\btacctl ((?:[a-z][a-z0-9-]* ?){2,4})`)
 	for _, l := range lines {
 		for _, m := range mention.FindAllStringSubmatch(l, -1) {
 			words := strings.Fields(m[1])

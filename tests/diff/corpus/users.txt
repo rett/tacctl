@@ -26,6 +26,7 @@ user add alice superuser --hash
 user add alice superuser --scopes
 user add alice superuser --scopes nosuchscope --hash {HASH}
 user add alice superuser --bogus
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 user add alice superuser --hash {HASH} --scopes lab ;; user show alice
@@ -35,14 +36,19 @@ user add alice superuser --hash {HASH} --scopes lab ;; user list
 user add alice superuser --hash {HASH} ;; user show alice
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 user add alice superuser --hash '$2b$12$abcdefghijklmnopqrstuvABCDEFGHIJKLMNOPQRSTUVWXYZ01234' ;; user show alice
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; user add alice operator --hash {HASH} --scopes lab
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; user add Alice operator --hash {HASH} --scopes lab
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 user add alice superuser --hash {HASH} --scopes lab ;; user add bob operator --hash {HASH} --scopes lab ;; user list
 
 # add: the password prompt (typed, generated, closed stdin, rejected)
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add bob operator --scopes lab <<<
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add bob operator --scopes lab
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add bob operator --scopes lab <<< CorrectHorse99\nCorrectHorse99
 user add bob operator --scopes lab <<< short
 user add bob operator --scopes lab <<< qwerty123456
@@ -56,13 +62,19 @@ user passwd ghost
 user passwd 'bad name'
 user passwd root
 user passwd alice --hash {HASH}
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; user passwd alice --hash
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; user passwd alice --hash notahash
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 user add alice superuser --hash {HASH} --scopes lab ;; user passwd alice --hash {HASH} ;; user show alice
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; user passwd alice <<< CorrectHorse99\nCorrectHorse99
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; user passwd alice <<<
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; user passwd alice
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; user passwd alice <<< short
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 user add alice superuser --hash {HASH} --scopes lab ;; user disable alice <<< y ;; user passwd alice --hash {HASH} ;; user show alice
@@ -72,6 +84,7 @@ user disable
 user disable ghost
 user enable
 user enable ghost
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; user enable alice
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 user add alice superuser --hash {HASH} --scopes lab ;; user disable alice <<< y ;; user list
@@ -79,6 +92,7 @@ user add alice superuser --hash {HASH} --scopes lab ;; user disable alice <<< y 
 user add alice superuser --hash {HASH} --scopes lab ;; user disable alice <<< n ;; user list
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 user add alice superuser --hash {HASH} --scopes lab ;; user disable alice ;; user list
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; user disable alice <<< y ;; user disable alice <<< y
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 user add alice superuser --hash {HASH} --scopes lab ;; user disable alice <<< y ;; user enable alice ;; user show alice
@@ -101,16 +115,20 @@ user rename ghost newname
 user rename alice 'bad name'
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 user add alice superuser --hash {HASH} --scopes lab ;; user rename alice alicia ;; user list
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; user add bob operator --hash {HASH} --scopes lab ;; user rename alice bob
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; user rename alice root
 @known 3.9 item 5: the usage line names 'tacctl user move' (0.1.16: 'tacctl move')
 user move
 @known 3.9 item 5: the usage line names 'tacctl user move' (0.1.16: 'tacctl move')
 user move alice
 user move ghost operator
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; user move alice nosuchgroup
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 user add alice superuser --hash {HASH} --scopes lab ;; user move alice operator ;; user show alice
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; user move alice superuser
 
 # show
@@ -122,10 +140,15 @@ user show 'bad name'
 user verify
 user verify ghost
 user verify 'bad name'
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; user verify alice <<< wrong
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; user verify alice
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; user disable alice <<< y ;; user verify alice <<< wrong
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; user passwd alice <<< CorrectHorse99\nCorrectHorse99 ;; user verify alice <<< CorrectHorse99
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; user passwd alice <<< CorrectHorse99\nCorrectHorse99 ;; user verify alice <<< CorrectHorse98
 
 # scope membership: add / remove / replace / remove --all, and the removed set / clear
@@ -133,27 +156,41 @@ user scope
 user scope alice
 user scope ghost list
 user scope alice list
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; user scope alice list
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; user scope alice add
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; user scope alice add nosuchscope
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; user scope alice add lab
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 user add alice superuser --hash {HASH} --scopes lab ;; scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; user scope alice add prod ;; user scope alice list ;; user show alice
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; user scope alice replace prod ;; user scope alice list
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; user scope alice replace
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; user scope alice replace nosuchscope
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 user add alice superuser --hash {HASH} --scopes lab ;; user scope alice remove lab ;; user show alice
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; user scope alice remove nosuchscope
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; user scope alice remove
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 user add alice superuser --hash {HASH} --scopes lab ;; user scope alice remove --all <<< y ;; user show alice
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 user add alice superuser --hash {HASH} --scopes lab ;; user scope alice remove --all <<< n ;; user show alice
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; user scope alice remove --all
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; user scope alice remove --all extra
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; user scope alice set lab
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; user scope alice clear
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; user scope alice bogus
 
 # hash generate
@@ -187,6 +224,7 @@ hash generate extra <<< CorrectHorse99\nCorrectHorse99
 # add: flags and scope lists
 user add alice superuser --hash {HASH} --hash
 user add alice superuser --hash {HASH} --scopes lab extra
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes ' lab , lab '
 user add alice superuser --hash {HASH} --scopes ,
 user add alice superuser --hash {HASH} --scopes "it's"
@@ -199,31 +237,48 @@ user add 'a\tb' superuser --hash {HASH}
 user add alice superuser --hash '$2b$10$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' --scopes lab ;; user show alice
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 user add alice superuser --hash 2432622431302461616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161 --scopes lab ;; user list
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; user add alice superuser --hash {HASH}
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; user add alice superuser --hash {HASH} --scopes prod,lab,prod ;; user show alice
 @known 3.9 item 10: a password over 72 bytes is refused (0.1.16 hashed its first 72 bytes)
 user add bob operator --scopes lab <<< AbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbc\nAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbc
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add bob operator --scopes lab <<< AbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAb\nAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAb ;; user verify bob <<< AbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAbcdefghijAb
 
 # remove / passwd odd arguments
 user remove alice extra
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; user remove alice extra <<< Y
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; user remove alice <<< yes
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; user passwd alice extra --hash {HASH} <<<
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; user passwd alice --hash {HASH} extra
 
 # scope: help words, odd lists
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; user scope alice help
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; user scope alice -h
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; user scope alice --help
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; user scope alice add lab,lab
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; user scope alice add ' , '
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; user scope alice remove lab,nosuch
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; user scope alice add prod,lab ;; user scope alice remove nosuch
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; user scope alice remove lab,prod
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; user scope alice remove --all yes
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; user scope alice remove --all <<< yes
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; user scope alice add --all
 user scope 'bad name' list
 user scope ghost bogus
@@ -235,17 +290,24 @@ user scope alice set
 @known 0.2.1 item 14: SUDO_UID 1234 is no account named ops, so tacctl refuses SUDO_USER=ops
 user add alice superuser --hash {HASH} --scopes lab ;; user verify alice <<< wrong
 @unenv SUDO_UID
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; user verify alice <<< wrong
 @unenv SUDO_USER
 
 # passwd (self-service): SUDO_USER names the tacctl user ('id' answers that
 # it is no tac-users member, so the tier gate lets it through)
 @env SUDO_USER=alice
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --scopes lab <<< CorrectHorse99\nCorrectHorse99 ;; passwd <<< CorrectHorse99\nNewHorse123456\nNewHorse123456 ;; user verify alice <<< NewHorse123456
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --scopes lab <<< CorrectHorse99\nCorrectHorse99 ;; passwd <<< wrong
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --scopes lab <<< CorrectHorse99\nCorrectHorse99 ;; passwd <<< CorrectHorse99\nCorrectHorse99\nCorrectHorse99
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --scopes lab <<< CorrectHorse99\nCorrectHorse99 ;; passwd <<< CorrectHorse99\nshort
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --scopes lab <<< CorrectHorse99\nCorrectHorse99 ;; passwd <<< CorrectHorse99\n
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --scopes lab <<< CorrectHorse99\nCorrectHorse99 ;; user disable alice ;; passwd <<< CorrectHorse99
 passwd <<< CorrectHorse99
 @unenv SUDO_USER
@@ -262,6 +324,7 @@ _completion-names groups
 _completion-names scopes
 _completion-names bogus
 _completion-names
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; _completion-names users
 version
 --version
@@ -271,6 +334,7 @@ version --long
 
 # the tunables come from tacctl.yaml
 config bcrypt-cost 11 ;; hash generate <<< CorrectHorse99\nCorrectHorse99
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 config password-min-length 8 ;; user add bob operator --scopes lab <<< Horse123\nHorse123
 @fixture tacquito.multiscope.yaml
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID

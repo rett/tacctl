@@ -40,6 +40,8 @@ _client_env() {
     export TACCTL_CLIENT_STATE="${BATS_TEST_TMPDIR}/state"
     export TACCTL_CLIENT_PAM_DIR="${BATS_TEST_TMPDIR}/pam.d"
     export TACCTL_CLIENT_SUDOERS="${BATS_TEST_TMPDIR}/sudoers-host"
+    # Not the real /usr/local/bin/tacctl of the machine the suite runs on.
+    export TACCTL_CLIENT_SERVER_MARKERS="${BATS_TEST_TMPDIR}/no-tacctl-here ${BATS_TEST_TMPDIR}/no-tiers-here"
     export TACCTL_CLIENT_XDG="${BATS_TEST_TMPDIR}/xdg"
     export TACCTL_CLIENT_RADIUS_CONF="${BATS_TEST_TMPDIR}/etc-tacctl-pam_radius.conf"
     export FAKE_DB="${BATS_TEST_TMPDIR}/db"
@@ -471,6 +473,37 @@ _engineer() {
     refute_output --partial "tac-engineer"
 }
 
+@test "client install: a machine that runs tacctl gets no tac-engineer line although it was not enrolled as the server" {
+    _engineer
+    _gen > /dev/null
+    _client_env
+    # The installed command, or the tiers drop-in, marks the tacctl server.
+    for marker in tacctl tacctl-tiers; do
+        export TACCTL_CLIENT_SERVER_MARKERS="${BATS_TEST_TMPDIR}/no-tacctl-here ${BATS_TEST_TMPDIR}/${marker}"
+        : > "${BATS_TEST_TMPDIR}/${marker}"
+        rm -f "$TACCTL_CLIENT_SUDOERS"
+        run bash "$OUT"
+        assert_success
+        assert_output --partial "[WARN] This machine runs tacctl but was not enrolled as the tacctl server, so tac-engineer gets no sudo line here"
+        run cat "$TACCTL_CLIENT_SUDOERS"
+        assert_line "%tac-superuser ALL=(ALL:ALL) ALL"
+        refute_output --partial "tac-engineer"
+        rm -f "${BATS_TEST_TMPDIR}/${marker}"
+    done
+    # A sync rewrites a line an earlier script wrote.
+    export TACCTL_CLIENT_SERVER_MARKERS="${BATS_TEST_TMPDIR}/no-tacctl-here ${BATS_TEST_TMPDIR}/no-tiers-here"
+    rm -f "$TACCTL_CLIENT_SUDOERS"
+    run bash "$OUT"
+    run cat "$TACCTL_CLIENT_SUDOERS"
+    assert_line "%tac-engineer ALL=(ALL:ALL) ALL"
+    export TACCTL_CLIENT_SERVER_MARKERS="${BATS_TEST_TMPDIR}/no-tacctl-here ${BATS_TEST_TMPDIR}/tacctl-tiers"
+    : > "${BATS_TEST_TMPDIR}/tacctl-tiers"
+    run bash "$OUT" --accounts-only
+    assert_success
+    run cat "$TACCTL_CLIENT_SUDOERS"
+    refute_output --partial "tac-engineer"
+}
+
 @test "config linux engineer-sudo: a command list, checked with visudo, reaches a host at its next sync" {
     _engineer
     stub_cmd visudo
@@ -530,6 +563,114 @@ _engineer() {
     run bash "$OUT" --accounts-only
     assert_failure
     assert_output --partial "The header's TAC_ENGINEER_SUDO is neither ALL nor absolute command paths. Nothing was changed."
+    run grep -cE "^(useradd|groupadd|usermod)" "$CALLS_LOG"
+    assert_output "0"
+}
+
+@test "client install: a TAC_ENGINEER_SUDO command that is not a clean path stops the run, as engineer-sudo refuses it" {
+    _gen > /dev/null
+    _client_env
+    for bad in "/usr/bin/../bin/sh" "/usr/bin/" "/usr//bin/sh" "/usr/bin/./sh" "/usr/bin/ok,/usr/bin/../x"; do
+        sed -i "0,/^TAC_ENGINEER_SUDO=/s|^TAC_ENGINEER_SUDO=.*|TAC_ENGINEER_SUDO=${bad}|" "$OUT"
+        run bash "$OUT" --accounts-only
+        assert_failure
+        assert_output --partial "is not a clean command path. Nothing was changed."
+        run grep -cE "^(useradd|groupadd|usermod)" "$CALLS_LOG"
+        assert_output "0"
+    done
+    sed -i "0,/^TAC_ENGINEER_SUDO=/s|^TAC_ENGINEER_SUDO=.*|TAC_ENGINEER_SUDO=/usr/bin/systemctl\\\\,/usr/bin/journalctl|" "$OUT"
+    run bash "$OUT" --accounts-only
+    assert_success
+}
+
+# 'tacctl rollback --hosts' (D50) sends TAC_REVOKE_ENGINEER=1 in the header
+# (protocol 6 still): the engineers lose their sudo on the host, nobody else
+# is touched.
+_revoke_header() {
+    grep -q '^TAC_REVOKE_ENGINEER=1$' "$OUT" || sed -i 's/^TAC_PROTOCOL=/TAC_REVOKE_ENGINEER=1\nTAC_PROTOCOL=/' "$OUT"
+}
+
+@test "client install: TAC_REVOKE_ENGINEER=1 leaves an engineer in neither sudo group and writes no tac-engineer line" {
+    _engineer
+    _gen > /dev/null
+    _client_env
+    # A host as 0.2.3 left it: the engineer is in tac-engineer, the drop-in has its line.
+    run bash "$OUT"
+    assert_success
+    run cat "$TACCTL_CLIENT_SUDOERS"
+    assert_line "%tac-engineer ALL=(ALL:ALL) ALL"
+    : > "$CALLS_LOG"
+    _revoke_header
+    FAKE_ID_GROUPS="tac-users tac-engineer" run bash "$OUT" --accounts-only
+    assert_success
+    assert_output --partial "[INFO] 'dave': engineer sudo revoked (removed from tac-engineer)."
+    assert_output --partial "[INFO] Sudoers drop-in ${TACCTL_CLIENT_SUDOERS} updated (engineers: no sudo)."
+    stub_called "gpasswd -d dave tac-engineer"
+    run grep -cE "^usermod -aG .*tac-(engineer|superuser).* dave" "$CALLS_LOG"
+    assert_output "0"
+    # Every other account is as it was: alice keeps tac-superuser, nobody else
+    # is added to a sudo group (the id stub answers the same for everyone, so
+    # the removals of alice and bob from tac-engineer are the stub's).
+    stub_called "usermod -aG tac-superuser alice"
+    run grep -cE "^usermod -aG .*tac-(engineer|superuser).* bob|^gpasswd -d (alice|bob) tac-superuser" "$CALLS_LOG"
+    assert_output "0"
+    run cat "$TACCTL_CLIENT_SUDOERS"
+    assert_line "%tac-superuser ALL=(ALL:ALL) ALL"
+    refute_output --partial "tac-engineer"
+    # The next run leaves the drop-in alone (nothing differs).
+    FAKE_ID_GROUPS="tac-users" run bash "$OUT" --accounts-only
+    assert_success
+    refute_output --partial "Sudoers drop-in"
+    refute_output --partial "revoked"
+}
+
+@test "client install: TAC_REVOKE_ENGINEER=1 takes an engineer out of tac-superuser too, without the move message" {
+    _engineer
+    _gen > /dev/null
+    _client_env
+    run bash "$OUT" --accounts-only
+    assert_success
+    : > "$CALLS_LOG"
+    # As 0.2.2 would have left it: the engineer in tac-superuser.
+    _revoke_header
+    FAKE_ID_GROUPS="tac-users tac-superuser" run bash "$OUT" --accounts-only
+    assert_success
+    assert_output --partial "[INFO] 'dave': engineer sudo revoked (removed from tac-superuser)."
+    refute_output --partial "'dave': moved from tac-superuser"
+    stub_called "gpasswd -d dave tac-superuser"
+    run grep -cE "^usermod -aG .*tac-(engineer|superuser).* dave" "$CALLS_LOG"
+    assert_output "0"
+}
+
+@test "client install: without TAC_REVOKE_ENGINEER the engineer keeps tac-engineer and its sudoers line" {
+    _engineer
+    _gen > /dev/null
+    run grep -c '^TAC_REVOKE_ENGINEER' "$OUT"
+    assert_output "0"
+    _client_env
+    run bash "$OUT"
+    assert_success
+    stub_called "usermod -aG tac-engineer dave"
+    run cat "$TACCTL_CLIENT_SUDOERS"
+    assert_line "%tac-engineer ALL=(ALL:ALL) ALL"
+}
+
+@test "client install: the tacctl server's own script ignores TAC_REVOKE_ENGINEER, and a bad value stops the run" {
+    _engineer
+    _gen > /dev/null
+    _client_env
+    _local_header
+    _revoke_header
+    run bash "$OUT" --accounts-only
+    assert_success
+    assert_output --partial "[WARN] TAC_REVOKE_ENGINEER is for hosts other than the tacctl server; ignored here."
+    stub_called "usermod -aG tac-engineer dave"
+    refute_output --partial "revoked"
+    sed -i 's/^TAC_REVOKE_ENGINEER=1$/TAC_REVOKE_ENGINEER=2/' "$OUT"
+    : > "$CALLS_LOG"
+    run bash "$OUT" --accounts-only
+    assert_failure
+    assert_output --partial "The header's TAC_REVOKE_ENGINEER is neither 0 nor 1. Nothing was changed."
     run grep -cE "^(useradd|groupadd|usermod)" "$CALLS_LOG"
     assert_output "0"
 }

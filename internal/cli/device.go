@@ -53,6 +53,7 @@ var deviceSpecs = map[string]Spec{
 		{Names: []string{"--hostname"}, Value: true},
 		{Names: []string{"--port"}, Value: true},
 		{Names: []string{"--description"}, Value: true},
+		{Names: []string{"--snmp-location"}, Value: true},
 		{Names: []string{"--legacy-ssh"}},
 		{Names: []string{"--host-key"}, Value: true},
 		{Names: []string{"--no-host-key"}},
@@ -65,6 +66,7 @@ var deviceSpecs = map[string]Spec{
 	"vendor":      {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, KindVendors + "|clear"}},
 	"port":        {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, "clear"}},
 	"description": {MinArgs: 1, MaxArgs: -1, Args: []string{KindDevices, "clear"}},
+	"location":    {MinArgs: 1, MaxArgs: -1, Args: []string{KindDevices, "clear"}},
 	"legacy-ssh":  {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, "enable|disable"}},
 	"stale-days":  {MaxArgs: 1, Args: []string{""}},
 	"notice":      {MinArgs: 3, MaxArgs: 3, Args: []string{KindDevices, "ack|unack", noticeWords}},
@@ -94,11 +96,12 @@ var deviceVerbs = [][2]string{
 	{"vendor <name> [cisco|juniper|wti|other]", "Show or set the vendor"},
 	{"port <name> [<n>|clear]", "Show, set or clear the ssh port"},
 	{"description <name> [<text>|clear]", "Show, set or clear the description"},
+	{"location <name> [<text>|clear]", "Show, set or clear the place, for the SNMP location in the walkthroughs"},
 	{"legacy-ssh <name> [enable|disable]", "Opt in to legacy IOS ssh algorithms"},
 	{"stale-days [<n>]", "Show or set the days after which a device counts as stale"},
 	{"notice <name> ack|unack <kind>", "Acknowledge or reopen a notice"},
 	{"notices [<name>] [--all]", "The open notices, with what to do about each (--all: the acknowledged ones too)"},
-	{"import [--check] [--replace] [--allow-generic] [-y] <file|->", "Import devices from CSV or the registry's YAML"},
+	{"import [--check] [--replace] [--allow-generic] [-y] <file|->", "Import devices from CSV or the registry's YAML (an engineer: from standard input only, `-` first)"},
 	{"export [--csv|--json]", "Print the registry (YAML by default)"},
 	{"hostkey <name> [show|accept [-y]|set SHA256:<fp>]", "Show the pinned ssh host keys, or re-pin them after a verified change"},
 	{"ssh <name|address> [-p <port>] [-X|-Y] [-g] [-L|-R|-D <spec>]... [-- <ssh args>]", "Alias of 'tacctl ssh': a session to the device, as you"},
@@ -123,6 +126,7 @@ var deviceOptions = map[string][][2]string{
 		{"--hostname <dns>", "Its DNS name"},
 		{"--port <n>", "Its ssh port (default 22)"},
 		{"--description <text>", "A description"},
+		{"--snmp-location <text>", "Its place (the SNMP location the walkthroughs render)"},
 		{"--legacy-ssh", "Old IOS: SHA-1 key exchange and ssh-rsa"},
 		{"--host-key SHA256:<fp>", "Register only if the device offers this key; pin it alone"},
 		{"--no-host-key", "Register without a pinned key (a hostkey-unpinned notice)"},
@@ -247,7 +251,7 @@ func (inv *invocation) device(args []string) error {
 		"hostkey": inv.deviceHostkey, "ssh": inv.ssh, "ssh-config": inv.deviceSSHConfig,
 		"scan": inv.deviceScan, "discover": inv.deviceDiscover, "check": inv.deviceCheck,
 		"address": inv.deviceSetter("address"), "hostname": inv.deviceSetter("hostname"), "vendor": inv.deviceSetter("vendor"),
-		"port": inv.deviceSetter("port"), "description": inv.deviceSetter("description"),
+		"port": inv.deviceSetter("port"), "description": inv.deviceSetter("description"), "location": inv.deviceSetter("location"),
 	}
 	switch sub := arg(args, 0); sub {
 	case "", "-h", "--help", "help":
@@ -437,7 +441,9 @@ func (inv *invocation) deviceEditable(res *devreg.Resolver, f *devreg.File, key 
 		}
 		return nil, inv.usageErr("Device '" + key + "' not found. List them with: tacctl device list")
 	}
-	if e, ok := res.NameTaken(key); ok && e.Source == devreg.SourceHost {
+	// A host is not a device: an engineer, who reads hosts and deploys none
+	// (host deployment is the superuser's), is told it is not found.
+	if e, ok := res.NameTaken(key); ok && e.Source == devreg.SourceHost && !inv.callerScopes().restricted {
 		return nil, inv.usageErr("'" + e.Name + "' is an enrolled host; 'tacctl host' manages it.")
 	}
 	return nil, inv.usageErr("Device '" + key + "' not found. List them with: tacctl device list")
@@ -475,6 +481,7 @@ type deviceJSON struct {
 	Port        int                `json:"port"`
 	LegacySSH   bool               `json:"legacy_ssh"`
 	Description string             `json:"description,omitempty"`
+	Location    string             `json:"location,omitempty"`
 	Scope       string             `json:"scope"`
 	Tag         string             `json:"tag"`
 	Shadowed    []string           `json:"shadowed_by"`
@@ -498,7 +505,7 @@ type deviceSeenJSON struct {
 
 func deviceJSONOf(inv *invocation, res *devreg.Resolver, e devreg.Entry) deviceJSON {
 	j := deviceJSON{Name: e.Name, Source: string(e.Source), Address: e.Address, Hostname: e.Hostname, Vendor: e.Vendor,
-		Port: e.SSHPort(), LegacySSH: e.LegacySSH, Description: e.Description, Scope: e.Scope, Tag: e.Tag,
+		Port: e.SSHPort(), LegacySSH: e.LegacySSH, Description: e.Description, Location: e.Location, Scope: e.Scope, Tag: e.Tag,
 		Shadowed: append([]string{}, e.Shadowed...), State: e.State(), HostKeys: append([]string{}, e.HostKeys...),
 		Notices: []deviceNoticeJSON{}}
 	for _, n := range res.NoticesFor(e) {
@@ -658,6 +665,9 @@ func (inv *invocation) deviceShow(args []string) error {
 	} else {
 		row("Legacy ssh", map[bool]string{true: "enabled", false: "disabled"}[e.LegacySSH])
 		row("Description", dash(e.Description))
+		if e.Location != "" {
+			row("Location", e.Location)
+		}
 	}
 	switch {
 	case e.Source == devreg.SourceHost && e.Configured:
@@ -800,7 +810,11 @@ func (inv *invocation) deviceAdd(args []string) error {
 		checks = append(checks, devreg.ValidateHostname(d.Hostname))
 	}
 	d.Description = p.Value("--description")
-	checks = append(checks, devreg.ValidateDescription(d.Description))
+	checks = append(checks, devreg.ValidateNewDescription(d.Description))
+	if p.Has("--snmp-location") {
+		d.Location = p.Value("--snmp-location")
+		checks = append(checks, devreg.ValidateLocation(d.Location))
+	}
 	for _, e := range checks {
 		if e != nil {
 			return e
@@ -993,7 +1007,7 @@ func (inv *invocation) deviceSetter(field string) func([]string) error {
 			}
 			inv.echo(map[string]string{
 				"address": dash(e.Address), "hostname": dash(e.Hostname), "vendor": e.Vendor,
-				"port": strconv.Itoa(e.SSHPort()), "description": dash(e.Description),
+				"port": strconv.Itoa(e.SSHPort()), "description": dash(e.Description), "location": dash(e.Location),
 			}[field])
 			return nil
 		}
@@ -1003,10 +1017,10 @@ func (inv *invocation) deviceSetter(field string) func([]string) error {
 		}
 		name := d.Name
 		value := strings.Join(p.Args[1:], " ")
-		if field != "description" && len(p.Args) > 2 {
+		if field != "description" && field != "location" && len(p.Args) > 2 {
 			return inv.usageErr("Usage: tacctl device " + field + " <name> [<value>|clear]")
 		}
-		clearing := value == "clear"
+		clearing := value == "clear" || (field == "location" && value == "")
 		set := func(d *devreg.Device) error { return setField(d, field, value, clearing) }
 		// Validate before the snapshot, on a copy.
 		probe := d.Clone()
@@ -1084,7 +1098,13 @@ func setField(d *devreg.Device, field, value string, clearing bool) error {
 		d.Description = ""
 		if !clearing {
 			d.Description = value
-			return devreg.ValidateDescription(value)
+			return devreg.ValidateNewDescription(value)
+		}
+	case "location":
+		d.Location = ""
+		if !clearing {
+			d.Location = value
+			return devreg.ValidateLocation(value)
 		}
 	}
 	return nil
@@ -1284,6 +1304,12 @@ func (inv *invocation) deviceImport(args []string) error {
 	p, err := inv.deviceParse("import", args)
 	if err != nil {
 		return err
+	}
+	// sudoers lets an engineer's tacctl start with 'device import -' only;
+	// this is the same rule where sudoers does not run (root's tacctl, the
+	// tests).
+	if inv.callerScopes().restricted && arg(args, 0) != "-" {
+		return inv.usageErr("The engineer tier imports from standard input only: tacctl device import - [--check|--replace] < file")
 	}
 	var data []byte
 	if p.Args[0] == "-" {

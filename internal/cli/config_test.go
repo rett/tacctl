@@ -38,12 +38,18 @@ func (sb *sandbox) cfgRun(stdin string, args []string, script func(*fake.Runner)
 	a := app.New(args, paths.NewEnv(append(append([]string(nil), sb.env...), extraEnv...)), "/opt/x/dist/tacctl", 1000,
 		app.Stdio{Stdin: strings.NewReader(stdin), Stdout: &sb.out, Stderr: &sb.err}, sb.runner)
 	a.SNMP = sb.snmp
+	a.Resolve = sb.resolve
+	a.Paths.ConsoleCommand = sb.consoleCommand()
 	sb.code = exitCode(Run(context.Background(), a, BuildInfo{Version: "0.2.0-test", Commit: "c", Date: "d"}), a.Out)
 	if n := len(sb.runner.Execs()); n != 0 {
 		sb.t.Errorf("%q: exec'd (%d execs)", args, n)
 	}
 	return sb.out.String()
 }
+
+// consoleCommand is the login console's symlink in the sandbox, where
+// Paths.Reroot puts it: a test never looks at the installed one.
+func (sb *sandbox) consoleCommand() string { return sb.path("usr", "local", "bin", "tacctl-console") }
 
 func (sb *sandbox) path(p ...string) string { return filepath.Join(append([]string{sb.dir}, p...)...) }
 

@@ -45,14 +45,15 @@ func init() {
 	})
 }
 
-// shellSpec is 'tacctl shell [--no-history] [--idle <min>] [-c <line>]'.
+// shellSpec is 'tacctl shell [--no-history] [--idle <min>] [--space-completion on|off] [-c <line>]'.
 var shellSpec = Spec{MaxArgs: 0, Flags: []Flag{
 	{Names: []string{"--no-history"}},
 	{Names: []string{"--idle"}, Value: true},
+	{Names: []string{"--space-completion"}, Value: true, Kind: "on|off"},
 	{Names: []string{"-c"}, Value: true, Alone: true, Kind: KindLine},
 }}
 
-const shellUsage = "Usage: tacctl shell [--no-history] [--idle <min>] [-c <line>]"
+const shellUsage = "Usage: tacctl shell [--no-history] [--idle <min>] [--space-completion on|off] [-c <line>]"
 
 // shellNamesTTL is how long the shell keeps the live names of a kind.
 const shellNamesTTL = 5 * time.Second
@@ -63,7 +64,7 @@ const shellIdleMax = 1440
 var reMinutes = regexp.MustCompile(`^[0-9]{1,4}$`)
 
 func shellCmd(inv *invocation) *cobra.Command {
-	c := verb("shell [--no-history] [--idle <min>] [-c <line>]",
+	c := verb("shell [--no-history] [--idle <min>] [--space-completion on|off] [-c <line>]",
 		"Interactive shell: one tacctl command per line, with completion and history")
 	c.RunE = inv.native(noPreflight, inv.shell)
 	return c
@@ -90,6 +91,16 @@ func (inv *invocation) shell(args []string) error {
 		}
 		idle = n
 	}
+	spaces := true
+	if p.Has("--space-completion") {
+		switch p.Value("--space-completion") {
+		case "on":
+		case "off":
+			spaces = false
+		default:
+			return inv.usageErr("--space-completion takes on or off", shellUsage)
+		}
+	}
 	exe := a.Exe
 	if exe == "" || !strings.HasPrefix(exe, "/") {
 		return &ExitError{Code: 1, Err: errors.New("cannot locate the tacctl executable to run commands with")}
@@ -97,7 +108,7 @@ func (inv *invocation) shell(args []string) error {
 
 	f, isFile := a.Stdin.(*os.File)
 	interactive := !p.Has("-c") && isFile && term.IsTerminal(int(f.Fd()))
-	r := shellRun{exe: exe, mode: shellBatch, idle: time.Duration(idle) * time.Minute}
+	r := shellRun{exe: exe, mode: shellBatch, idle: time.Duration(idle) * time.Minute, spaceCompletion: spaces}
 	switch {
 	case p.Has("-c"):
 		r.mode, r.line = shellCommandMode, p.Value("-c")
@@ -141,6 +152,9 @@ type shellRun struct {
 	idle    time.Duration
 	prompt  string
 	listMax int
+	// spaceCompletion: a typed space at the prompt is Junos-style
+	// (shell.Options.SpaceCompletion).
+	spaceCompletion bool
 	// extraEnv are assignments every sudo line carries (the console's
 	// TACCTL_CONSOLE=<session>).
 	extraEnv []string
@@ -150,6 +164,10 @@ type shellRun struct {
 	systemShell func(ctx context.Context, interactive bool) int
 	// groups are the caller's groups (nil: asked of 'id -nG').
 	groups []string
+	// view is the tier whose verbs the lists show (D56; the console has
+	// its policy answer already). "": a tac-users member's tier is asked
+	// of the root side on first use, anyone else sees everything.
+	view tier.Tier
 }
 
 // shellHistoryPath is the history file under home.
@@ -175,16 +193,19 @@ func (inv *invocation) runShell(r shellRun) (int, *shell.Shell) {
 		groups = inv.callerGroups()
 	}
 	managed := slices.Contains(groups, tier.UsersGroup)
+	inv.setView(r, managed)
 	root := newRoot(inv)
 	o := shell.Options{
-		Prompt:   r.prompt,
-		Out:      a.Out,
-		Idle:     r.idle,
-		ListMax:  r.listMax,
-		Complete: inv.shellCompleter(root),
-		Explain:  inv.shellExplain(root),
-		Help:     inv.shellHelp(root, r.console),
-		Exec:     inv.shellExec(r.exe, managed, sudoTier(groups), r.extraEnv),
+		Prompt:          r.prompt,
+		Out:             a.Out,
+		Idle:            r.idle,
+		ListMax:         r.listMax,
+		SpaceCompletion: r.spaceCompletion,
+		Complete:        inv.shellCompleter(root),
+		CompleteFixed:   inv.shellCompleterFixed(root),
+		Explain:         inv.shellExplain(root),
+		Help:            inv.shellHelp(root, r.console),
+		Exec:            inv.shellExec(r.exe, managed, sudoTier(groups), r.extraEnv),
 	}
 	if r.systemShell != nil {
 		o.SystemShell = r.systemShell
@@ -330,16 +351,33 @@ func (inv *invocation) shellExec(exe string, managed bool, t tier.Tier, extraEnv
 // Specs (inv.completeSpec: flags, fixed words and live names; a flag with
 // its description from the verb's usage block).
 func (inv *invocation) shellCompleter(root *cobra.Command) shell.Completer {
+	return inv.completer(root, false)
+}
+
+// shellCompleterFixed is shellCompleter for a typed blank: where the word
+// at the cursor is not a fixed one (a name, free text, a file, a comma
+// list) and does not start with '-', it offers nothing and does not run
+// the lookup of the live names (a blank there is inserted anyway).
+func (inv *invocation) shellCompleterFixed(root *cobra.Command) shell.Completer {
+	return inv.completer(root, true)
+}
+
+// completer is the one completer behind both (see shellCompleterFixed for
+// fixedOnly).
+func (inv *invocation) completer(root *cobra.Command, fixedOnly bool) shell.Completer {
 	inv.shellMode = true
 	return func(words []string, partial string) []shell.Candidate {
 		cmd, path, rest := shellCommand(root, words)
+		// Only the verbs the caller's tier can run are offered (D56).
+		eff, all, active := inv.currentView()
+		shown := func(p []string) bool { return !active || viewShows(root, eff, all, p) }
 		var out []shell.Candidate
 		if len(rest) == 0 && cmd == root {
 			// The rows of the usage (argument column and description).
 			// 'shell' is not offered in the shell.
 			for _, r := range topRows() {
-				if r.Name != "shell" && child(root, r.Name) != nil {
-					out = append(out, shell.Candidate{Word: r.Name, Label: r.Left, Desc: r.Desc, Kind: "commands"})
+				if r.Name != "shell" && child(root, r.Name) != nil && shown([]string{r.Name}) {
+					out = append(out, shell.Candidate{Word: r.Name, Label: r.Left, Desc: r.Desc, Kind: "commands", Fixed: true})
 				}
 			}
 			return out
@@ -350,10 +388,10 @@ func (inv *invocation) shellCompleter(root *cobra.Command) shell.Completer {
 				rows = inv.familyRows(path[0])
 			}
 			for _, sub := range cmd.Commands() {
-				if sub.Hidden {
+				if sub.Hidden || !shown(append(slices.Clone(path), sub.Name())) {
 					continue
 				}
-				c := shell.Candidate{Word: sub.Name(), Desc: sub.Short, Kind: "commands"}
+				c := shell.Candidate{Word: sub.Name(), Desc: sub.Short, Kind: "commands", Fixed: true}
 				for _, r := range rows {
 					if r.Name == sub.Name() {
 						c.Desc, c.Label = r.Desc, reProg.ReplaceAllString(r.Left, "")
@@ -364,30 +402,54 @@ func (inv *invocation) shellCompleter(root *cobra.Command) shell.Completer {
 			}
 			return out
 		}
-		if len(path) == 0 {
+		if len(path) == 0 || !shown(path) {
 			return nil
 		}
 		spec, ok := specFor(path)
 		if !ok {
 			return nil
 		}
-		comps, dir := inv.completeSpec(spec, rest, partial)
+		if fixedOnly && !strings.HasPrefix(partial, "-") && !fixedKind(specKind(spec, rest)) {
+			return nil
+		}
+		// A '-' word where the kind is not a fixed one: the flags' names
+		// only, no lookup (the kinds of the copy are blank).
+		cspec := spec
+		if fixedOnly && !fixedKind(specKind(spec, rest)) {
+			cspec = flagsOnly(spec)
+		}
+		comps, dir := inv.completeSpec(cspec, rest, partial)
 		noSpace := dir&cobra.ShellCompDirectiveNoSpace != 0
 		descs := inv.flagDescs(cmd, path, spec, comps)
 		kind := listKindName(spec, rest)
+		// Fixed words complete on a typed space: the flags' names and the
+		// words of a fixed kind, never live names, files or comma lists.
+		fixed := !noSpace && fixedKind(specKind(spec, rest))
 		for _, c := range comps {
 			w, d, _ := strings.Cut(c, "\t")
 			k := kind
+			isFlag := false
 			if fd, ok := descs[w]; ok && strings.HasPrefix(w, "-") {
-				k = "options"
+				k, isFlag = "options", true
 				if d == "" {
 					d = fd
 				}
 			}
-			out = append(out, shell.Candidate{Word: w, Desc: d, NoSpace: noSpace, Kind: k})
+			out = append(out, shell.Candidate{Word: w, Desc: d, NoSpace: noSpace, Kind: k, Fixed: isFlag || fixed})
 		}
 		return out
 	}
+}
+
+// flagsOnly is a copy of spec with no kind for any positional or flag
+// value, so that completing from it names flags and looks nothing up.
+func flagsOnly(spec Spec) Spec {
+	spec.Args = nil
+	spec.Flags = slices.Clone(spec.Flags)
+	for i := range spec.Flags {
+		spec.Flags[i].Kind = ""
+	}
+	return spec
 }
 
 // shellHelpBlocks are the usage blocks 'help <command>' prints, by command
@@ -402,6 +464,7 @@ var shellHelpBlocks = map[string]func(inv *invocation) string{
 	"scope prefixes":  func(*invocation) string { return usageNoCurrent("scope-prefixes", UsageVars{"scope": "<scope>"}) },
 	"scope secret":    func(*invocation) string { return usageNoCurrent("scope-secret", UsageVars{"scope": "<scope>"}) },
 	"scope mgmt-acl":  func(*invocation) string { return usageNoCurrent("scope-mgmt-acl", UsageVars{"scope": "<scope>"}) },
+	"scope snmp":      func(*invocation) string { return scopeSNMPUsage("<scope>") },
 	"config":          func(*invocation) string { return configUsage() },
 	"config linux":    func(*invocation) string { return configLinuxUsage() },
 	"config snmp":     func(*invocation) string { return configSNMPUsage() },
@@ -436,8 +499,12 @@ func usageNoCurrent(id string, vars UsageVars) string {
 // a block gets its sub-commands or its usage line from the tree.
 func (inv *invocation) shellHelp(root *cobra.Command, console bool) func([]string) (string, bool) {
 	return func(words []string) (string, bool) {
+		eff, all, active := inv.currentView()
 		if len(words) == 0 {
-			return shellTop(inv.build.Version, console), true
+			if !active || all {
+				return shellTop(inv.build.Version, console), true
+			}
+			return shellTopFor(inv.build.Version, console, root, eff), true
 		}
 		cmd, _ := resolve(root, words)
 		if cmd == root || cmd.Hidden {
@@ -447,12 +514,18 @@ func (inv *invocation) shellHelp(root *cobra.Command, console bool) func([]strin
 		for c := cmd; c != root; c = c.Parent() {
 			path = append([]string{c.Name()}, path...)
 		}
+		// The usage stays complete; in the shell it ends with the tier
+		// each verb needs.
+		section := ""
+		if active {
+			section = tierSection(root, path[0])
+		}
 		for n := len(path); n > 0; n-- {
 			if f, ok := shellHelpBlocks[strings.Join(path[:n], " ")]; ok {
-				return f(inv), true
+				return withSection(f(inv), section), true
 			}
 		}
-		return treeUsage(cmd), true
+		return withSection(treeUsage(cmd), section), true
 	}
 }
 

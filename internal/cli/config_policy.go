@@ -55,7 +55,7 @@ func configDenyCmd(inv *invocation) *cobra.Command {
 }
 
 func configMgmtACLCmd(inv *invocation) *cobra.Command {
-	return configPolicyFamily(inv, "mgmt-acl", "Manage Cisco VTY-ACL + Juniper lo0-filter permits", inv.configMgmtACL, [][2]string{
+	return configPolicyFamily(inv, "mgmt-acl", "Manage Cisco VTY-ACL + Juniper lo0-filter + WTI IP Tables permits", inv.configMgmtACL, [][2]string{
 		{"list", "Show current permits"},
 		{"add <cidr>[,<cidr>...]", "Add one or more CIDRs"},
 		{"remove <cidr>[,<cidr>...]", "Remove one or more CIDRs"},

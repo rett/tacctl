@@ -29,7 +29,10 @@ type Device struct {
 	// Port is the ssh port; 0 is the default (22).
 	Port        int
 	Description string
-	LegacySSH   bool
+	// Location is the optional place the device is (SNMP location in the
+	// walkthroughs, 'tacctl device location'); empty is not set.
+	Location  string
+	LegacySSH bool
 	// Ack are the acknowledged notice kinds.
 	Ack []string
 	// HostKeys are the pinned host keys ('<type> <base64>', hostkey.go),
@@ -43,6 +46,7 @@ const (
 	DefaultStaleDays = 30
 	MaxStaleDays     = 3650
 	MaxDescription   = 120
+	MaxLocation      = 120
 	// VendorLinux is the vendor of enrolled hosts; the registry refuses it.
 	VendorLinux = "linux"
 	VendorOther = "other"
@@ -170,6 +174,39 @@ func ValidateDescription(s string) error {
 	return nil
 }
 
+// ValidateNewDescription is ValidateDescription for a description being set
+// (device add, description, import): also no '?', which the description
+// shares with the location because the Junos walkthrough pastes it into
+// 'set snmp description' (a CLI treats a pasted '?' as a request for help).
+// A description already stored with one (it was valid before 0.2.3) is still
+// read; the walkthrough renders it as a commented line.
+func ValidateNewDescription(s string) error {
+	if err := ValidateDescription(s); err != nil {
+		return err
+	}
+	if strings.Contains(s, "?") {
+		return fail("The description may not contain '?' (a device CLI treats it as a request for help).")
+	}
+	return nil
+}
+
+// ValidateLocation checks a device location: 1 to 120 characters, no control
+// characters, no '?' (a device CLI treats a pasted '?' as a request for
+// help).
+func ValidateLocation(s string) error {
+	switch {
+	case strings.TrimSpace(s) == "":
+		return fail("The location may not be empty; to remove it: tacctl device location <name> clear")
+	case utf8.RuneCountInString(s) > MaxLocation || !utf8.ValidString(s):
+		return fail("The location is limited to 120 characters.")
+	case strings.ContainsFunc(s, func(r rune) bool { return r < 0x20 || r == 0x7f }):
+		return fail("The location may not contain control characters.")
+	case strings.Contains(s, "?"):
+		return fail("The location may not contain '?' (a device CLI treats it as a request for help).")
+	}
+	return nil
+}
+
 // validate is every field rule, for a device read from a file or an import.
 func (d Device) validate() error {
 	if err := ValidateName(d.Name); err != nil {
@@ -191,6 +228,11 @@ func (d Device) validate() error {
 	}
 	if err := ValidateDescription(d.Description); err != nil {
 		return err
+	}
+	if d.Location != "" {
+		if err := ValidateLocation(d.Location); err != nil {
+			return err
+		}
 	}
 	for _, k := range d.HostKeys {
 		if _, err := ParseHostKey(k); err != nil {

@@ -83,7 +83,7 @@ func TestHomesToDelete(t *testing.T) {
 	if strings.Join(asked, "|") != "Delete /home/dave of removed user 'dave'? [y/N] |Delete /home/erin of removed user 'erin'? [y/N] |Delete /home/ivy of removed user 'ivy'? [y/N] " {
 		t.Errorf("asked %q", asked)
 	}
-	want := "ssh -o ConnectTimeout=10 -o ControlMaster=auto -o ControlPath=~/.ssh/tacctl-%C -o ControlPersist=60 -o BatchMode=yes -p 2222 -T admin@web1 getent passwd"
+	want := "ssh -o ConnectTimeout=10 -o ControlMaster=auto -o ControlPath=~/.ssh/tacctl-%C -o ControlPersist=60 -o ForwardAgent=no -o ClearAllForwardings=yes -o BatchMode=yes -p 2222 -T admin@web1 getent passwd"
 	if a := f.Argvs(); len(a) != 1 || a[0] != want {
 		t.Errorf("calls %q", a)
 	}
@@ -133,7 +133,11 @@ func TestWriteScriptLifecycleHeader(t *testing.T) {
 	if !strings.HasSuffix(head, "TAC_USERS=alice:superuser:80000\nTAC_INACTIVE=$'bob\\nnopriv'\nTAC_REMOVE_HOMES=dave\\ erin\nTAC_UID_FIRST=80000\nTAC_UID_LAST=89999\nTAC_UID_PREVIOUS=''\nTAC_ENGINEER_SUDO=ALL\nTAC_PROTOCOL=6\n") {
 		t.Errorf("header\n%s", head)
 	}
-	// The tacctl server's own accounts: the shell as a fourth field.
+	// The tacctl server's own accounts: the shell as a fourth field. The
+	// header says TAC_LOCAL=1 only when the request says it is the server.
+	if strings.Contains(readFile(t, out), "\nTAC_LOCAL=1\n") {
+		t.Error("TAC_LOCAL=1 for a remote host")
+	}
 	req.ConsoleShell = func(name, tier string) string {
 		if name == "alice" && tier == "superuser" {
 			return "/usr/local/bin/tacctl-console"
@@ -147,7 +151,17 @@ func TestWriteScriptLifecycleHeader(t *testing.T) {
 	if !strings.Contains(readFile(t, out), "\nTAC_USERS=$'alice:superuser:80000:/usr/local/bin/tacctl-console\\ncarl:readonly:80001:/bin/bash'\n") {
 		t.Errorf("console header\n%s", strings.SplitN(readFile(t, out), "# --- tacctl", 2)[0])
 	}
-	req.ConsoleShell, req.Rows = nil, []string{"alice|15", "nopriv|"}
+	if strings.Contains(readFile(t, out), "\nTAC_LOCAL=1\n") {
+		t.Error("shells alone made the script the server's")
+	}
+	req.Local = true
+	if _, err := e.WriteScript(req); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(readFile(t, out), "\nTAC_LOCAL=1\n") {
+		t.Error("Local did not make the script the server's")
+	}
+	req.Local, req.ConsoleShell, req.Rows = false, nil, []string{"alice|15", "nopriv|"}
 	req.RemoveAllHomes = true
 	if _, err := e.WriteScript(req); err != nil {
 		t.Fatal(err)

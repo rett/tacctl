@@ -9,6 +9,10 @@ Commands:
       -y, --yes                         Answer yes to the confirmations
   upgrade [--branch <name>]             Pull latest source, rebuild, update scripts and every enabled backend
   uninstall [-y|--yes]                  Remove tacctl, its backends' services and all associated files
+  rollback <version> [options]          Prepare the state for the release before this one (0.2.2): a dry run unless --apply
+      --apply                           Take a snapshot, then convert the files 0.2.2 cannot read and re-render
+      --yes                             Acknowledge the warnings that --apply refuses to go on without
+      --hosts                           Also take the engineers' sudo off the enrolled Linux hosts
   status                                Show service health, stats, and recent errors (per backend)
   passwd                                Change your own password (asks for the current one)
   user <subcommand>                     User management (list, add, remove, passwd, scope, ...)
@@ -22,6 +26,7 @@ Commands:
       --idle <min>                      End the session after this many idle minutes at the prompt
       -c <line>                         Run one line and exit
       --no-history                      Keep no history file for this session
+      --space-completion on|off         A typed space completes a fixed word and never doubles (default on)
   console <subcommand>                  Login console: tiers, per-user overrides, settings (show, tiers, user, ...)
   backend <subcommand>                  Auth backends: list, status, enable <id>, disable <id>
   store <subcommand>                    The canonical store: show, import, rollback

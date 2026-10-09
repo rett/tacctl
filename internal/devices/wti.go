@@ -13,8 +13,8 @@ import (
 // The variables each WTI template may use (cmd_config_wti's and
 // config_wti_radius's envsubst whitelists).
 var (
-	wtiTacacsVars = []string{"SERVER_IP", "SECRET", "SCOPE", "FALLBACK_LOCAL", "SERVICE_NAME", "GROUP_SUMMARY"}
-	wtiRadiusVars = []string{"SERVER_IP", "SECRET", "SCOPE", "FALLBACK_LOCAL", "AUTH_PORT", "ACCT_PORT"}
+	wtiTacacsVars = []string{"SERVER_IP", "SECRET", "SCOPE", "FALLBACK_LOCAL", "SERVICE_NAME", "GROUP_SUMMARY", "SNMP_BLOCK", "IPTABLES_BLOCK", "IPTABLES_DROP_BLOCK"}
+	wtiRadiusVars = []string{"SERVER_IP", "SECRET", "SCOPE", "FALLBACK_LOCAL", "AUTH_PORT", "ACCT_PORT", "SNMP_BLOCK", "IPTABLES_BLOCK", "IPTABLES_DROP_BLOCK"}
 )
 
 // WTITemplate is the template a WTI walkthrough renders.
@@ -104,12 +104,16 @@ func wtiUserWarnings(d Data, scope string) string {
 // WTIVars are the template variables of a WTI walkthrough (the values
 // cmd_config_wti or config_wti_radius exports to envsubst).
 func WTIVars(req Request, d Data) map[string]string {
+	ipt := WTIIPTables(d.iptablesInput(req.Scope))
 	vars := map[string]string{
-		"SERVER_IP":      d.ServerIP,
-		"SECRET":         scopeSecret(d, req.Scope),
-		"SCOPE":          req.Scope,
-		"FALLBACK_LOCAL": fallbackLocal(d.Conf, req.Scope),
-		"SERVICE_NAME":   wtiServiceName,
+		"SERVER_IP":           d.authIP(""),
+		"SECRET":              scopeSecret(d, req.Scope),
+		"SCOPE":               req.Scope,
+		"FALLBACK_LOCAL":      fallbackLocal(d.Conf, req.Scope),
+		"SERVICE_NAME":        wtiServiceName,
+		"SNMP_BLOCK":          WTISNMP(d.snmpInput(req.Scope)).Text,
+		"IPTABLES_BLOCK":      ipt.Rules,
+		"IPTABLES_DROP_BLOCK": ipt.Drop,
 	}
 	var summary strings.Builder
 	for _, g := range wtiGroups(d) {
@@ -128,9 +132,7 @@ func WTIVars(req Request, d Data) map[string]string {
 	if r := d.Radius; req.Protocol == RADIUS && r != nil {
 		vars["SECRET"] = r.Secret
 		vars["AUTH_PORT"], vars["ACCT_PORT"] = r.AuthPort, r.AcctPort
-		if r.ServerAddr != "" {
-			vars["SERVER_IP"] = r.ServerAddr
-		}
+		vars["SERVER_IP"] = d.authIP(r.ServerAddr)
 	}
 	return vars
 }
@@ -181,6 +183,8 @@ func renderWTI(o *out, req Request, d Data) error {
 	scope := req.Scope
 	vars := WTIVars(req, d)
 	secret := vars["SECRET"]
+	bg := BreakGlassFor(req, d)
+	vars[breakGlassVar] = wtiBreakGlass(bg)
 
 	// The unit takes the secret at a menu prompt and documents limits for
 	// its other credential fields: flag what is likely to be mangled.
@@ -210,7 +214,8 @@ func renderWTI(o *out, req Request, d Data) error {
 	o.heading(ui.Yellow, "Follow these steps on the WTI serial (SetUp) console:")
 	o.echo("--------------------------------------------")
 	o.echo("")
-	o.write(Expand(t.Text, wtiTacacsVars, vars))
+	o.addressRoles(d, TACACS)
+	o.write(Expand(t.Text, withBreakGlassVar(wtiTacacsVars), vars))
 	o.rule()
 	o.heading(ui.Yellow, "Group → WTI Access Level Mapping (from priv-lvl, or the group's wti-level):")
 	o.write(vars["GROUP_SUMMARY"])
@@ -270,6 +275,7 @@ func renderWTI(o *out, req Request, d Data) error {
 		"    SYNs in tcpdump and half-open (SYN-RECV) sockets; tacquito logs nothing",
 		"  - The unit's source IP must fall inside a prefix of scope '" + scope + "'",
 		"    ('tacctl scope lookup <wti-ip>' to check)",
+		"  - " + netconfDoesNotExistWTI,
 		"  - Using template: " + t.Origin(),
 	} {
 		o.echo(l)
@@ -277,7 +283,7 @@ func renderWTI(o *out, req Request, d Data) error {
 	o.echo("")
 	o.echoE(ui.Bold + "Verify on the tacquito side:" + ui.NC)
 	for _, l := range []string{
-		"  tacctl config loglevel debug          # then log in on the WTI (Step 7) and watch:",
+		"  tacctl config loglevel debug          # then log in on the WTI (Step 8) and watch:",
 		"  tacctl log tail 50                    # 1. 'accepting user [x] using a bcrypt password'  (PAP authen)",
 		"                                        # 2. 'session authz user [x]: client args [service=" + wtiServiceName + " ...]'",
 		"                                        # 3. 'authorized user [x] as session based; args [priv-lvl=N]'",
@@ -288,12 +294,14 @@ func renderWTI(o *out, req Request, d Data) error {
 		"                                        # 'unknown authenticate start packet type' = unit did not",
 		"                                        # send PAP with TACACS+ minor version 1 (open an issue)",
 		"  tacctl config loglevel info           # restore when done",
-		"  On the WTI (Step 8): with 12. Debug: On the unit echoes each TACACS+ exchange on",
+		"  On the WTI (Step 9): with 12. Debug: On the unit echoes each TACACS+ exchange on",
 		"  the serial session; line up the authen/author/acct replies with the entries above",
 	} {
 		o.echo(l)
 	}
 	o.echo("")
+	o.unfilledBreakGlass(bg)
+	o.unfilled(mergeUnfilled(t.snmpGaps(WTISNMP(d.snmpInput(scope))), t.iptablesGaps(WTIIPTables(d.iptablesInput(scope)))))
 	return nil
 }
 
@@ -306,6 +314,8 @@ func renderWTIRadius(o *out, req Request, d Data) error {
 	scope := req.Scope
 	vars := WTIVars(req, d)
 	secret := vars["SECRET"]
+	bg := BreakGlassFor(req, d)
+	vars[breakGlassVar] = wtiBreakGlass(bg)
 	r := d.Radius
 
 	// Prepare has refused what a device CLI reads as syntax already.
@@ -332,7 +342,8 @@ func renderWTIRadius(o *out, req Request, d Data) error {
 	o.heading(ui.Yellow, "Follow these steps on the WTI serial (SetUp) console:")
 	o.echo("--------------------------------------------")
 	o.echo("")
-	o.write(Expand(t.Text, wtiRadiusVars, vars))
+	o.addressRoles(d, RADIUS)
+	o.write(Expand(t.Text, withBreakGlassVar(wtiRadiusVars), vars))
 	o.rule()
 	o.heading(ui.Yellow, "Group → WTI-Super (sent by the server over RADIUS, from priv-lvl or the group's wti-level):")
 	o.write(vars["GROUP_SUMMARY"])
@@ -393,6 +404,7 @@ func renderWTIRadius(o *out, req Request, d Data) error {
 		"    a login that still fails on the unit after the Fallback Timer",
 		"  - Repeated failures arm the unit's Invalid Access Lockout: a plain 'ssh' is then closed",
 		"    without a password prompt; /UL on the serial session clears it",
+		"  - " + netconfDoesNotExistWTI,
 		"  - Using template: " + t.Origin(),
 	} {
 		o.echo(l)
@@ -406,11 +418,13 @@ func renderWTIRadius(o *out, req Request, d Data) error {
 		"                                        # identifier only as starting with the product family",
 		"  tacctl log failures --backend radius  # reason= says why a login was refused",
 		"  tacctl scope lookup <wti-ip>          # the unit's address must answer scope '" + scope + "'",
-		"  On the WTI (Step 8): with Debug On the unit logs its RADIUS exchanges; line them up with",
+		"  On the WTI (Step 9): with Debug On the unit logs its RADIUS exchanges; line them up with",
 		"  the server's auth log above",
 	} {
 		o.echo(l)
 	}
 	o.echo("")
+	o.unfilledBreakGlass(bg)
+	o.unfilled(mergeUnfilled(t.snmpGaps(WTISNMP(d.snmpInput(scope))), t.iptablesGaps(WTIIPTables(d.iptablesInput(scope)))))
 	return nil
 }

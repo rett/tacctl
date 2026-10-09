@@ -157,7 +157,19 @@ func (inv *invocation) storeImport(args []string) error {
 	if err != nil {
 		return err
 	}
-	return store.Import(inv.app.Out, inv.importOptions(p))
+	before := inv.storeGroups()
+	if err := store.Import(inv.app.Out, inv.importOptions(p)); err != nil {
+		return err
+	}
+	if !p.check {
+		// The groups that came from elsewhere (not in the store before):
+		// each one at priv-lvl 15 gets the tier setting 0.2.2 gave it by its
+		// band. A group the store had keeps what tacctl.yaml says of it.
+		inv.pinGroupTiers(before)
+		inv.warnStaleGroupSettings()
+		inv.warnServerSync("Users whose tier is lower now keep their old groups")
+	}
+	return nil
 }
 
 // importOptions are store.Import's inputs for this invocation.

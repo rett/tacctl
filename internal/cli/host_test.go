@@ -30,6 +30,10 @@ type hostSandbox struct {
 	// reroot moves tacctl's fixed host locations (the console's symlink
 	// among them) into the sandbox.
 	reroot bool
+	// stdin is what the command reads (a confirmation).
+	stdin string
+	// tty, when set, says whether the host commands have a terminal.
+	tty func() bool
 }
 
 func newHostSandbox(t *testing.T) *hostSandbox {
@@ -83,10 +87,11 @@ func (hs *hostSandbox) run(r *fake.Runner, args ...string) string {
 	hs.err.Reset()
 	hs.sandbox.runner = r
 	a := app.New(args, paths.NewEnv(hs.env), "/opt/x/dist/tacctl", 1000,
-		app.Stdio{Stdin: strings.NewReader(""), Stdout: &hs.out, Stderr: &hs.err}, r)
+		app.Stdio{Stdin: strings.NewReader(hs.stdin), Stdout: &hs.out, Stderr: &hs.err}, r)
 	if hs.reroot {
 		a.Paths = a.Paths.Reroot(hs.dir)
 	}
+	a.HostsTTY = hs.tty
 	hs.code = exitCode(Run(context.Background(), a, BuildInfo{Version: "0.2.0-test"}), a.Out)
 	if n := len(r.Execs()); n != 0 {
 		hs.t.Errorf("%q: exec'd", args)

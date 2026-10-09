@@ -1,5 +1,5 @@
 
-[1mtacctl scope mgmt-acl lab[0m — per-scope Cisco VTY-ACL + Juniper lo0-filter
+[1mtacctl scope mgmt-acl lab[0m — per-scope Cisco VTY-ACL + Juniper lo0-filter + WTI IP Tables
 
 Usage:
   tacctl scope mgmt-acl lab list                          Show effective permits for this scope

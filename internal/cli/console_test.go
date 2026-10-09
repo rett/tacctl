@@ -8,7 +8,6 @@ import (
 
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/execx/fake"
-	"github.com/rett/tacctl/internal/paths"
 )
 
 // 'tacctl console' end to end, in-process, on the sandbox of native_test.go
@@ -84,15 +83,15 @@ func TestConsoleShowDefaults(t *testing.T) {
 	sb := consoleSandbox(t)
 	out := sb.con("show")
 	for _, want := range []string{
-		"Login console", "  readonly: enable\n  operator: enable\n  engineer: enable\n  superuser: enable\n",
+		"Login console", "  readonly: enable\n  operator: enable\n  engineer: enable (always)\n  superuser: enable\n",
 		"  idle-timeout: 30 min\n", "  agent-forwarding: disabled\n", "  ssh-escape: disabled\n",
-		"  system-shell tiers: superuser\n", "  system-shell path: /bin/bash\n", "  list-max: 40",
+		"  system-shell tiers: superuser\n", "  system-shell path: /bin/bash\n", "  space-completion: on (", "  list-max: 40",
 		"Users of authsrv (scope lab)\n",
 		"  USERNAME  TIER       SHELL    WHY\n",
 		"  alice     superuser  console  tier superuser\n",
 		"  bob       operator   console  tier operator\n",
 		"  carol     readonly   console  tier readonly\n",
-		"/usr/local/bin/tacctl-console: missing", "does not list the console", "sshd drop-in " + sb.path("sshd_config.d", "tacctl-console.conf") + ": missing",
+		sb.consoleCommand() + ": missing", "does not list the console", "sshd drop-in " + sb.path("sshd_config.d", "tacctl-console.conf") + ": missing",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("show lacks %q:\n%s", want, out)
@@ -122,7 +121,7 @@ func TestConsoleShowSSHDWarning(t *testing.T) {
 	sshd := func(tcp string) func(*fake.Runner) {
 		return func(r *fake.Runner) {
 			r.On([]string{"sshd", "-T"}, execx.Result{Stdout: []byte("port 22\nallowtcpforwarding " + tcp + "\nallowagentforwarding no\n" +
-				"forcecommand " + paths.ConsoleCommand + "\npubkeyauthentication no\n")})
+				"forcecommand " + sb.consoleCommand() + "\npubkeyauthentication no\n")})
 		}
 	}
 	raw := sb.cfgRun("", []string{"console", "show"}, sshd("yes"))
@@ -176,7 +175,7 @@ func TestConsoleWritesTiersAndUsers(t *testing.T) {
 		t.Errorf("user: %d %q", sb.code, out)
 	}
 	sb.con("user", "carol", "disable")
-	if got := strings.TrimSpace(sb.con("tiers")); got != "readonly: disable\noperator: enable\nengineer: enable\nsuperuser: enable" {
+	if got := strings.TrimSpace(sb.con("tiers")); got != "readonly: disable\noperator: enable\nengineer: enable (always)\nsuperuser: enable" {
 		t.Errorf("tiers: %q", got)
 	}
 	if got := strings.TrimSpace(sb.con("user", "bob")); got != "enable" {
@@ -259,6 +258,7 @@ func TestConsoleSettings(t *testing.T) {
 		{[]string{"idle-timeout"}, "30"},
 		{[]string{"agent-forwarding"}, "disabled"},
 		{[]string{"ssh-escape"}, "disabled"},
+		{[]string{"space-completion"}, "on"},
 		{[]string{"system-shell", "tiers"}, "superuser"},
 		{[]string{"system-shell", "path"}, "/bin/bash"},
 	} {
@@ -287,6 +287,28 @@ func TestConsoleSettings(t *testing.T) {
 	sb.con("ssh-escape", "enable")
 	if got := strings.TrimSpace(sb.con("ssh-escape")); got != "enabled" {
 		t.Errorf("ssh-escape now %q", got)
+	}
+	// space-completion: on by default and then not in the file; off is
+	// written and shown; on again removes the key.
+	if y := sb.consoleYAML(); strings.Contains(y, "space_completion") {
+		t.Errorf("console.yaml has the key while on:\n%s", y)
+	}
+	out = sb.con("space-completion", "off")
+	if sb.code != 0 || !strings.Contains(out, "ordinary space") || !strings.Contains(out, "next console login") || strings.Contains(out, "host sync") {
+		t.Errorf("space-completion off: %d %q", sb.code, out)
+	}
+	if got := strings.TrimSpace(sb.con("space-completion")); got != "off" || !strings.Contains(sb.con("show"), "  space-completion: off (") {
+		t.Errorf("space-completion now %q", got)
+	}
+	if y := sb.consoleYAML(); !strings.Contains(y, "\n  space_completion: false\n") {
+		t.Errorf("console.yaml lacks the key while off:\n%s", y)
+	}
+	out = sb.con("space-completion", "on")
+	if !strings.Contains(out, "completes a fixed word") {
+		t.Errorf("space-completion on: %q", out)
+	}
+	if y := sb.consoleYAML(); strings.Contains(y, "space_completion") || strings.TrimSpace(sb.con("space-completion")) != "on" {
+		t.Errorf("space-completion on again:\n%s", y)
 	}
 	sb.con("system-shell", "tiers", "operator,superuser")
 	if got := strings.TrimSpace(sb.con("system-shell", "tiers")); got != "operator,superuser" {
@@ -322,6 +344,8 @@ func TestConsoleRefusals(t *testing.T) {
 		{[]string{"idle-timeout", "1", "2"}, "Unknown argument: '2'"},
 		{[]string{"agent-forwarding", "yes"}, "Usage: tacctl console agent-forwarding"},
 		{[]string{"ssh-escape", "on"}, "Usage: tacctl console ssh-escape"},
+		{[]string{"space-completion", "enable"}, "Usage: tacctl console space-completion"},
+		{[]string{"space-completion", "on", "off"}, "Unknown argument: 'off'"},
 		{[]string{"system-shell"}, "expected at least 1 argument(s), got 0"},
 		{[]string{"system-shell", "mode"}, "Usage: tacctl console system-shell"},
 		{[]string{"system-shell", "tiers", "superuser,superuser"}, "Tier 'superuser' is listed twice."},
@@ -400,9 +424,9 @@ func TestConsolePolicyLinePerTier(t *testing.T) {
 	}
 	const tail = " ssh_escape=no agent=no"
 	for _, c := range []struct{ user, group, want string }{
-		{"alice", "superuser", "shell=console idle=30 system_shell=yes system_shell_path=/bin/bash" + tail + " forward=yes tier=superuser list_max=40"},
-		{"bob", "operator", "shell=console idle=30 system_shell=no system_shell_path=/bin/bash" + tail + " forward=no tier=operator list_max=40"},
-		{"carol", "readonly", "shell=console idle=30 system_shell=no system_shell_path=/bin/bash" + tail + " forward=no tier=readonly list_max=40"},
+		{"alice", "superuser", "shell=console idle=30 system_shell=yes system_shell_path=/bin/bash" + tail + " forward=yes tier=superuser list_max=40 space_completion=yes"},
+		{"bob", "operator", "shell=console idle=30 system_shell=no system_shell_path=/bin/bash" + tail + " forward=no tier=operator list_max=40 space_completion=yes"},
+		{"carol", "readonly", "shell=console idle=30 system_shell=no system_shell_path=/bin/bash" + tail + " forward=no tier=readonly list_max=40 space_completion=yes"},
 	} {
 		if got := policy(c.user, c.group); got != c.want {
 			t.Errorf("%s:\n got %q\nwant %q", c.user, got, c.want)
@@ -414,7 +438,7 @@ func TestConsolePolicyLinePerTier(t *testing.T) {
 		t.Errorf("none: %d %q %q", sb.code, got, sb.stderr())
 	}
 	// Not in tac-users: unrestricted, system shell yes.
-	if got := policy("tester", ""); got != "shell=system idle=30 system_shell=yes system_shell_path=/bin/bash"+tail+" forward=yes tier=unrestricted list_max=40" {
+	if got := policy("tester", ""); got != "shell=system idle=30 system_shell=yes system_shell_path=/bin/bash"+tail+" forward=yes tier=unrestricted list_max=40 space_completion=yes" {
 		t.Errorf("unrestricted: %q", got)
 	}
 	// The logged line (auth.info) carries the session marker.
@@ -422,18 +446,36 @@ func TestConsolePolicyLinePerTier(t *testing.T) {
 	if !sb.runner.Called("logger", "-t", "tacctl", "-p", "auth.info", "console policy user=alice tier=superuser system_shell=yes session=0123456789ab") {
 		t.Errorf("calls: %q", sb.runner.Argvs())
 	}
+	// A marker that is no session id (the caller sets the variable through
+	// sudo's env_keep) is logged as '-', never as it is.
+	for _, bad := range []string{"x\ninjected line", "../etc", "0123456789AB", "0123456789abc", "evil user=root"} {
+		policy("alice", "superuser", "TACCTL_CONSOLE="+bad)
+		if !sb.runner.Called("logger", "-t", "tacctl", "-p", "auth.info", "console policy user=alice tier=superuser system_shell=yes session=-") {
+			t.Errorf("marker %q: calls %q", bad, sb.runner.Argvs())
+		}
+		for _, a := range sb.runner.Argvs() {
+			if strings.Contains(a, "injected") || strings.Contains(a, "evil") {
+				t.Errorf("marker %q reached the log: %q", bad, a)
+			}
+		}
+	}
 	// Settings and overrides change the line.
 	sb.con("system-shell", "tiers", "readonly")
 	sb.con("user", "carol", "disable")
 	sb.con("idle-timeout", "5")
 	sb.con("ssh-escape", "enable")
 	sb.con("agent-forwarding", "enable")
-	if got := policy("carol", "readonly"); got != "shell=system idle=5 system_shell=yes system_shell_path=/bin/bash ssh_escape=yes agent=yes forward=no tier=readonly list_max=40" {
+	if got := policy("carol", "readonly"); got != "shell=system idle=5 system_shell=yes system_shell_path=/bin/bash ssh_escape=yes agent=yes forward=no tier=readonly list_max=40 space_completion=yes" {
 		t.Errorf("carol after changes: %q", got)
 	}
 	if got := policy("alice", "superuser"); !strings.Contains(got, "system_shell=no") {
 		t.Errorf("alice after tiers=readonly: %q", got)
 	}
+	sb.con("space-completion", "off")
+	if got := policy("alice", "superuser"); !strings.HasSuffix(got, " list_max=40 space_completion=no") {
+		t.Errorf("after space-completion off: %q", got)
+	}
+	sb.con("space-completion", "on")
 	// A system shell that cannot run is no system shell.
 	sb.write("shells", "/bin/sh\n", 0o644)
 	if got := policy("carol", "readonly"); !strings.Contains(got, "system_shell=no") {
@@ -452,7 +494,7 @@ func TestConsolePolicyRoot(t *testing.T) {
 	if got := strings.TrimSpace(plain(sb.out.String())); !strings.Contains(got, "tier=unrestricted") || !strings.Contains(got, "system_shell=yes") {
 		t.Errorf("root: %q", got)
 	}
-	if !sb.runner.CalledRegexp(`^logger -t tacctl -p auth.info console policy user=root tier=unrestricted `) {
+	if !sb.runner.CalledRegexp(`^logger -t tacctl -p auth.info shell policy user=root tier=unrestricted`) {
 		t.Errorf("calls: %q", sb.runner.Argvs())
 	}
 }
@@ -480,5 +522,46 @@ func TestConsoleYAMLRestore(t *testing.T) {
 	}
 	if st, err := os.Stat(sb.path("state/console.yaml")); err != nil || st.Mode().Perm() != 0o600 {
 		t.Errorf("mode: %v %v", st, err)
+	}
+}
+
+// The engineer tier has the console or no login on this server (B2): the
+// tier's switch and a user's override cannot turn it off, a stored 'disable'
+// (from before, or edited by hand) is listed as ignored, and the shell an
+// engineer gets without the console is nologin.
+func TestConsoleEngineerAlways(t *testing.T) {
+	sb := consoleSandbox(t)
+	sb.write("state/tacctl.yaml", "tier:\n  operator: engineer\n", 0o600)
+	want := "The engineer tier has the console or no login on this server; it cannot be disabled. To keep a user off this server, remove its scope from the user."
+	sb.con("tiers", "engineer", "disable")
+	sb.expect(1, "", want)
+	sb.con("user", "bob", "disable")
+	sb.expect(1, "", want)
+	if sb.consoleYAML() != "" {
+		t.Errorf("console.yaml written by a refusal:\n%s", sb.consoleYAML())
+	}
+	// Others are as before: an override off for a superuser, the tier off
+	// for readonly; enabling an engineer is harmless.
+	sb.con("user", "alice", "disable")
+	sb.expect(0, "", "")
+	sb.con("tiers", "engineer", "enable")
+	sb.expect(0, "", "")
+	// A file that holds the old switch: ignored, and the listings say so.
+	sb.write("state/console.yaml", "version: 1\ntiers: {readonly: enable, operator: enable, engineer: disable, superuser: enable}\nusers: {bob: disable}\n", 0o600)
+	out := sb.con("show")
+	for _, w := range []string{"  engineer: enable (always; the stored disable is ignored)\n",
+		"  bob       engineer   console  tier engineer (always); the stored override is ignored\n"} {
+		if !strings.Contains(out, w) {
+			t.Errorf("show lacks %q:\n%s", w, out)
+		}
+	}
+	if got := strings.TrimSpace(sb.con("tiers", "engineer")); got != "enable" {
+		t.Errorf("tiers engineer: %q", got)
+	}
+	out = plain(sb.cfgRun("", []string{"_console-policy"}, func(r *fake.Runner) {
+		r.On([]string{"id", "-nG", "--", "bob"}, execx.Result{Stdout: []byte("bob tac-users\n")})
+	}, "SUDO_USER=bob"))
+	if !strings.HasPrefix(out, "shell=console ") || !strings.Contains(out, " tier=engineer ") {
+		t.Errorf("policy line %q", out)
 	}
 }

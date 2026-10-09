@@ -1,0 +1,161 @@
+=== cisco / none
+! No break-glass local user is recorded for scope 'lab': with the server
+! unreachable and no local account on the device, nobody can log in. Record one with
+!   tacctl scope breakglass lab add <name> [--role admin|operator|readonly]
+=== cisco legacy / none
+! No break-glass local user is recorded for scope 'lab': with the server
+! unreachable and no local account on the device, nobody can log in. Record one with
+!   tacctl scope breakglass lab add <name> [--role admin|operator|readonly]
+=== juniper / none
+# No break-glass local user is recorded for scope 'lab': with the server
+# unreachable and no local account on the device, nobody can log in. Record one with
+#   tacctl scope breakglass lab add <name> [--role admin|operator|readonly]
+=== wti / none
+        No break-glass local user is recorded for scope 'lab': with the server
+        unreachable and no local account on the device, nobody can log in. Record one with
+          tacctl scope breakglass lab add <name> [--role admin|operator|readonly]
+=== unfilled / none
+
+=== cisco / one admin
+! --- Break-glass local users (scope: lab) ---
+! The 'local' method of 'aaa authentication login' above admits these only when no
+! server answers.
+! tacctl stores no credential: replace <TYPE9-HASH> with the type 9 hash ($9$...) of a password
+! you keep (the hash, not the password: 'secret 9' takes a hash as it appears in 'show running-config'),
+! then remove the '! '.
+! username lab-admin privilege 15 secret 9 <TYPE9-HASH>
+=== cisco legacy / one admin
+! --- Break-glass local users (scope: lab) ---
+! The 'local' method of 'aaa authentication login' above admits these only when no
+! server answers.
+! tacctl stores no credential: replace <HASH> with the type 5 hash ($1$...) of a password you keep,
+! then remove the '! '. (IOS 12.x has no type 9.)
+! username lab-admin privilege 15 secret 5 <HASH>
+=== juniper / one admin
+# Break-glass local users (scope: lab):
+# the authentication-order above names the server only, so Junos falls back to these local
+# accounts only when no server answers.
+# tacctl stores no credential: replace <HASH> with your own crypt hash ($6$...),
+# remove the '# ' before the commit of Step 8.
+# set system login user lab-admin class RW-CLASS authentication encrypted-password '<HASH>'
+=== wti / one admin
+        Local accounts let someone in when the server is unreachable (Fallback Local, Step 3).
+        tacctl stores no password: on the serial session of Step 1 add each account to the unit's
+        user directory (/H lists its command) with the access level shown, and set a password you keep:
+          lab-admin  Access Level: Administrator  Password: <PASSWORD>
+        Save as in Step 7.
+=== unfilled / one admin
+Unfilled break-glass credentials (tacctl stores none; put in your own): lab-admin (admin)
+=== cisco / operator only
+! --- Break-glass local users (scope: lab) ---
+! The 'local' method of 'aaa authentication login' above admits these only when no
+! server answers.
+! tacctl stores no credential: replace <TYPE9-HASH> with the type 9 hash ($9$...) of a password
+! you keep (the hash, not the password: 'secret 9' takes a hash as it appears in 'show running-config'),
+! then remove the '! '.
+! username lab-ops privilege 7 secret 9 <TYPE9-HASH>
+=== cisco legacy / operator only
+! --- Break-glass local users (scope: lab) ---
+! The 'local' method of 'aaa authentication login' above admits these only when no
+! server answers.
+! tacctl stores no credential: replace <HASH> with the type 5 hash ($1$...) of a password you keep,
+! then remove the '! '. (IOS 12.x has no type 9.)
+! username lab-ops privilege 7 secret 5 <HASH>
+=== juniper / operator only
+# Break-glass local users (scope: lab):
+# the authentication-order above names the server only, so Junos falls back to these local
+# accounts only when no server answers.
+# tacctl stores no credential: replace <HASH> with your own crypt hash ($6$...),
+# remove the '# ' before the commit of Step 8.
+# set system login user lab-ops class OP-CLASS authentication encrypted-password '<HASH>'
+=== wti / operator only
+        Local accounts let someone in when the server is unreachable (Fallback Local, Step 3).
+        tacctl stores no password: on the serial session of Step 1 add each account to the unit's
+        user directory (/H lists its command) with the access level shown, and set a password you keep:
+          lab-ops  Access Level: User  Password: <PASSWORD>
+        Save as in Step 7.
+=== unfilled / operator only
+Unfilled break-glass credentials (tacctl stores none; put in your own): lab-ops (operator)
+=== cisco / readonly only
+! --- Break-glass local users (scope: lab) ---
+! The 'local' method of 'aaa authentication login' above admits these only when no
+! server answers.
+! tacctl stores no credential: replace <TYPE9-HASH> with the type 9 hash ($9$...) of a password
+! you keep (the hash, not the password: 'secret 9' takes a hash as it appears in 'show running-config'),
+! then remove the '! '.
+! username lab-ro privilege 1 secret 9 <TYPE9-HASH>
+=== cisco legacy / readonly only
+! --- Break-glass local users (scope: lab) ---
+! The 'local' method of 'aaa authentication login' above admits these only when no
+! server answers.
+! tacctl stores no credential: replace <HASH> with the type 5 hash ($1$...) of a password you keep,
+! then remove the '! '. (IOS 12.x has no type 9.)
+! username lab-ro privilege 1 secret 5 <HASH>
+=== juniper / readonly only
+# Break-glass local users (scope: lab):
+# the authentication-order above names the server only, so Junos falls back to these local
+# accounts only when no server answers.
+# tacctl stores no credential: replace <HASH> with your own crypt hash ($6$...),
+# remove the '# ' before the commit of Step 8.
+# set system login user lab-ro class RO-CLASS authentication encrypted-password '<HASH>'
+=== wti / readonly only
+        Local accounts let someone in when the server is unreachable (Fallback Local, Step 3).
+        tacctl stores no password: on the serial session of Step 1 add each account to the unit's
+        user directory (/H lists its command) with the access level shown, and set a password you keep:
+          lab-ro  Access Level: ViewOnly  Password: <PASSWORD>
+        Save as in Step 7.
+=== unfilled / readonly only
+Unfilled break-glass credentials (tacctl stores none; put in your own): lab-ro (readonly)
+=== cisco / several
+! --- Break-glass local users (scope: lab) ---
+! The 'local' method of 'aaa authentication login' above admits these only when no
+! server answers.
+! tacctl stores no credential: replace <TYPE9-HASH> with the type 9 hash ($9$...) of a password
+! you keep (the hash, not the password: 'secret 9' takes a hash as it appears in 'show running-config'),
+! then remove the '! '.
+! username lab-admin privilege 15 secret 9 <TYPE9-HASH>
+! username lab-ops privilege 7 secret 9 <TYPE9-HASH>
+! username lab-ro privilege 1 secret 9 <TYPE9-HASH>
+=== cisco legacy / several
+! --- Break-glass local users (scope: lab) ---
+! The 'local' method of 'aaa authentication login' above admits these only when no
+! server answers.
+! tacctl stores no credential: replace <HASH> with the type 5 hash ($1$...) of a password you keep,
+! then remove the '! '. (IOS 12.x has no type 9.)
+! username lab-admin privilege 15 secret 5 <HASH>
+! username lab-ops privilege 7 secret 5 <HASH>
+! username lab-ro privilege 1 secret 5 <HASH>
+=== juniper / several
+# Break-glass local users (scope: lab):
+# the authentication-order above names the server only, so Junos falls back to these local
+# accounts only when no server answers.
+# tacctl stores no credential: replace <HASH> with your own crypt hash ($6$...),
+# remove the '# ' before the commit of Step 8.
+# set system login user lab-admin class RW-CLASS authentication encrypted-password '<HASH>'
+# set system login user lab-ops class OP-CLASS authentication encrypted-password '<HASH>'
+# set system login user lab-ro class RO-CLASS authentication encrypted-password '<HASH>'
+=== wti / several
+        Local accounts let someone in when the server is unreachable (Fallback Local, Step 3).
+        tacctl stores no password: on the serial session of Step 1 add each account to the unit's
+        user directory (/H lists its command) with the access level shown, and set a password you keep:
+          lab-admin  Access Level: Administrator  Password: <PASSWORD>
+          lab-ops  Access Level: User  Password: <PASSWORD>
+          lab-ro  Access Level: ViewOnly  Password: <PASSWORD>
+        Save as in Step 7.
+=== unfilled / several
+Unfilled break-glass credentials (tacctl stores none; put in your own): lab-admin (admin), lab-ops (operator), lab-ro (readonly)
+=== cisco / local-first
+! --- Break-glass local users (scope: lab) ---
+! The scope's aaa-order is local-first: the 'local' method of 'aaa authentication login'
+! above tries these accounts before the server.
+! tacctl stores no credential: replace <TYPE9-HASH> with the type 9 hash ($9$...) of a password
+! you keep (the hash, not the password: 'secret 9' takes a hash as it appears in 'show running-config'),
+! then remove the '! '.
+! username lab-admin privilege 15 secret 9 <TYPE9-HASH>
+=== juniper / local-first
+# Break-glass local users (scope: lab):
+# the scope's aaa-order is local-first, so the authentication-order above tries these accounts
+# before the server.
+# tacctl stores no credential: replace <HASH> with your own crypt hash ($6$...),
+# remove the '# ' before the commit of Step 8.
+# set system login user lab-admin class RW-CLASS authentication encrypted-password '<HASH>'

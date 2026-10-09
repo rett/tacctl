@@ -1,0 +1,21 @@
+        Not verified on a unit: the menu item names below are from WTI's documents.
+        Credentials: this scope's own (tacctl scope snmp lab show --reveal).
+        /N [Enter]              Network Parameters
+        <n> [Enter]             SNMP Parameters -- the item number varies by model/firmware;
+                                pick the entry labelled "SNMP"
+        Set each item (type the item number, [Enter], then the value):
+          Version                   : v2c
+          Read-only Community       : lab-ro-community
+          Location                  : Rack 4, DC1
+          Contact                   : NOC <noc@example.net>
+
+        Client restriction (not verified on a unit): the udp port 161 lines of the IP Tables list (Step 5) are
+          the restriction: they accept SNMP only from the clients below and the final DROP (last step) refuses
+          the rest. If the unit has an SNMP access menu of its own, enter the same clients there instead.
+          allow  10.0.0.42/32
+          allow  192.0.2.7/32
+          allow  198.51.100.0/24
+          allow  10.0.0.0/8
+          allow  172.16.0.0/12
+          refuse 0.0.0.0/0 (everything else)
+          Check from the tacctl server: tacctl scope snmp lab test <device-address>   (expects sysName 'core-sw1')

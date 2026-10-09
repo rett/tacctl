@@ -19,6 +19,7 @@ import (
 	"context"
 	"errors"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -53,6 +54,9 @@ const (
 // may be given (conf.Tiers) and the order of the tier table's rows.
 var Managed = []Tier{Readonly, Operator, Engineer, Superuser}
 
+// Rank is a managed tier's place in Managed, lowest first (-1: not one).
+func Rank(t Tier) int { return rank(t) }
+
 // rank is a managed tier's place in Managed (-1: not one).
 func rank(t Tier) int {
 	for i, m := range Managed {
@@ -63,23 +67,30 @@ func rank(t Tier) int {
 	return -1
 }
 
+// InvalidSetting is what policy.GroupTier answers for a tier setting that is
+// there but cannot be one (not a non-empty string, or a tier that is not a
+// mapping). It is not a managed tier, so ForGroup makes it readonly.
+const InvalidSetting = "invalid"
+
 // ForGroup is the tier of a user whose group has the tier setting set
 // (policy.GroupTier: "" when none is set) and the priv-lvl privlvl: the
 // setting, when it names a managed tier, else the priv-lvl band
-// (ForPrivLvl). A user with no usable priv-lvl (unknown, disabled, a group
-// without one) is none whatever the setting says. The setting is what
-// makes an engineer: the bands give readonly, operator or superuser only,
-// so a group at priv-lvl 15 on the devices can be engineers in tacctl
-// (docs/plans/0.2.2-plan.md D18).
+// (ForPrivLvl). A setting that is not a managed tier (a hand-edited file;
+// the validated writers refuse it) is readonly, never the band: it must not
+// leave a group at priv-lvl 15 a superuser. A user with no usable priv-lvl
+// (unknown, disabled, a group without one) is none whatever the setting
+// says. The setting is what makes an engineer: the bands give readonly,
+// operator or superuser only, so a group at priv-lvl 15 on the devices can
+// be engineers in tacctl (docs/plans/0.2.2-plan.md D18).
 func ForGroup(setting, privlvl string) Tier {
 	t := ForPrivLvl(privlvl)
-	if t == None {
-		return None
+	if t == None || setting == "" {
+		return t
 	}
 	if s := Tier(setting); rank(s) >= 0 {
 		return s
 	}
-	return t
+	return Readonly
 }
 
 // ForPrivLvl is tier_for_privlvl: 15 and up superuser, 7 and up operator,
@@ -121,16 +132,25 @@ type Rule struct {
 }
 
 // Rules is the tier table (tier_permits and emit_tier_sudoers). Anything
-// that prints a shared secret or a password hash (config
-// cisco|juniper|wti, scope secret, backup diff, config dump, store show) is
-// superuser-only, as is scope show (it gives the secret's length) and
-// everything that changes anything, but for the Engineer rows (0.2.2,
-// D18): the device registry, the vendor tags and device configurations of
-// a scope (whose secret they print) and its Linux hosts. The gate lets an
-// engineer run those verbs; the verbs themselves keep the engineer to the
-// devices and hosts of their own scopes (callerScopes). Users, groups,
-// scopes, secrets, backends, backups and upgrades stay the superuser's. The
-// order is the drop-in's.
+// that prints a shared secret or a password hash (scope secret, backup diff,
+// config dump, store show) is superuser-only, and so is everything that
+// changes anything, but for the Engineer rows (0.2.2, D18; 0.2.3, D45, D47
+// and D53): the device registry (add, remove, rename, address, hostname,
+// vendor, port, description, location, legacy-ssh, hostkey, and import from
+// standard input only), the scope's devices, vendor tags and staging
+// addresses ('scope devices', 'scope staging' to list), the device
+// configurations 'config cisco|juniper|wti' of their own scopes (which print
+// the scope's secret), the Linux hosts of their scopes to read ('host list',
+// 'host show'), and the secret, settings and SNMP settings of a scope of
+// their own to read ('scope secret', 'scope show', 'scope snmp'). The gate
+// lets an engineer run those verbs; the verbs themselves keep the engineer
+// to the devices, hosts and secrets of their own scopes (callerScopes) and
+// refuse what would change anything global: 'scope secret' other than
+// 'show', 'scope staging' other than 'list', every setter, clear and test of
+// 'scope snmp', and 'device import' of a file. Users, groups, scopes, the
+// secrets' changes, backends, backups, upgrades, rollbacks and the
+// deployment on Linux hosts (enroll, sync, move, target, provisioner,
+// unenroll, default-method) stay the superuser's. The order is the drop-in's.
 var Rules = []Rule{
 	{Tier: Readonly, Cmd: "", AnySub: true, Sudoers: []string{`""`}},
 	{Tier: Readonly, Cmd: "passwd", AnySub: true, Sudoers: []string{"passwd"}},
@@ -182,17 +202,27 @@ var Rules = []Rule{
 	{Tier: Engineer, Cmd: "device", Sub: "vendor", Sudoers: []string{"device vendor *"}},
 	{Tier: Engineer, Cmd: "device", Sub: "port", Sudoers: []string{"device port *"}, Wrap: true},
 	{Tier: Engineer, Cmd: "device", Sub: "description", Sudoers: []string{"device description *"}},
+	{Tier: Engineer, Cmd: "device", Sub: "location", Sudoers: []string{"device location *"}},
 	{Tier: Engineer, Cmd: "device", Sub: "legacy-ssh", Sudoers: []string{"device legacy-ssh *"}},
 	{Tier: Engineer, Cmd: "device", Sub: "hostkey", Sudoers: []string{"device hostkey *"}},
-	{Tier: Engineer, Cmd: "device", Sub: "import", Sudoers: []string{"device import *"}, Wrap: true},
+	// An engineer imports from standard input only: sudoers matches the
+	// first argument, so 'device import /etc/shadow' never reaches tacctl.
+	{Tier: Engineer, Cmd: "device", Sub: "import", Sudoers: []string{"device import -", "device import - *"}, Wrap: true},
 	{Tier: Engineer, Cmd: "scope", Sub: "devices", Sudoers: []string{"scope devices *"}, Wrap: true},
 	{Tier: Engineer, Cmd: "config", Sub: "cisco", Sudoers: []string{"config cisco", "config cisco *"}},
 	{Tier: Engineer, Cmd: "config", Sub: "juniper", Sudoers: []string{"config juniper", "config juniper *"}},
 	{Tier: Engineer, Cmd: "config", Sub: "wti", Sudoers: []string{"config wti", "config wti *"}, Wrap: true},
-	{Tier: Engineer, Cmd: "host", Sub: "enroll", Sudoers: []string{"host enroll *"}},
-	{Tier: Engineer, Cmd: "host", Sub: "sync", Sudoers: []string{"host sync *"}},
-	{Tier: Engineer, Cmd: "host", Sub: "move", Sudoers: []string{"host move *"}},
-	{Tier: Engineer, Cmd: "host", Sub: "target", Sudoers: []string{"host target *"}},
+	// Engineers read the Linux hosts of their scopes and change nothing on
+	// them: enrolling, syncing and the rest of host deployment are the
+	// superuser's.
+	{Tier: Engineer, Cmd: "host", Sub: "list", Sudoers: []string{"host list"}},
+	{Tier: Engineer, Cmd: "host", Sub: "show", Sudoers: []string{"host show *"}, Wrap: true},
+	{Tier: Engineer, Cmd: "scope", Sub: "staging", Sudoers: []string{"scope staging", "scope staging list"}},
+	{Tier: Engineer, Cmd: "scope", Sub: "secret", Sudoers: []string{"scope secret *"}},
+	// The scope's SNMP settings: an engineer reads their own scopes' ('show
+	// [--reveal]', D45); the verb refuses every setter, clear and test.
+	{Tier: Engineer, Cmd: "scope", Sub: "snmp", Sudoers: []string{"scope snmp *"}},
+	{Tier: Engineer, Cmd: "scope", Sub: "show", Sudoers: []string{"scope show *"}},
 }
 
 // Permits is tier_permits: whether tier may run 'tacctl cmd sub'.
@@ -229,8 +259,9 @@ func Covers(t Tier, r Rule) bool {
 const Binary = "/usr/local/bin/tacctl"
 
 // EnvKeep is the sudoers line both drop-ins carry: 'tacctl host' runs ssh
-// as the invoking user to enrol and sync hosts and needs their agent
-// socket, which sudo's env_reset would drop. env_keep lets that one
+// as the invoking user (a superuser enrols and syncs hosts; 'tacctl ssh' of
+// every tier opens a session with the caller's own keys) and needs their
+// agent socket, which sudo's env_reset would drop. env_keep lets that one
 // variable through (from the caller's environment, or as
 // 'SSH_AUTH_SOCK=...' on the sudo command line) and nothing else; the rules
 // carry no SETENV tag, which would let a caller set any variable, SUDO_USER
@@ -310,6 +341,23 @@ type Gate struct {
 	// when none is set, or nil: the priv-lvl band decides). It is asked
 	// only for a managed caller with a priv-lvl.
 	GroupTier func(user string) string
+	// ConfProblem is why tacctl.yaml cannot be read ("" when it can; nil:
+	// never). The tier settings in it are then unknown, so no managed
+	// caller is trusted above the operator tier, which still allows 'config
+	// validate' and 'console check' to diagnose it. Root and the
+	// unrestricted caller are not affected.
+	ConfProblem func() string
+	// AmbiguousGroup is the name of the user's group when that group is a
+	// group other than the built-in superuser at priv-lvl 15 or more with no
+	// tier setting in
+	// tacctl.yaml ("" otherwise, or nil: never): its tier cannot be told
+	// from a superuser group that lost its setting, so its members are held
+	// at the operator tier (asked only for a managed caller above it).
+	// Members of the built-in superuser group, and everyone else, are not
+	// affected: a superuser keeps the tier verbs that repair the setting.
+	AmbiguousGroup func(user string) string
+	// ConfPath is the path of tacctl.yaml, for the denial.
+	ConfPath string
 }
 
 // ErrDenied is Enforce's refusal; its message has been written (exit 1).
@@ -352,11 +400,60 @@ func (g Gate) Caller(ctx context.Context) Tier {
 	if g.verify(ctx) != nil {
 		return None
 	}
-	return g.caller(ctx)
+	t, _, _ := g.capped(ctx)
+	return t
+}
+
+// EngineerBound reports whether the caller is an engineer whatever the cap
+// of an unreadable tacctl.yaml makes of its tier: the tier without the cap
+// is engineer, or the account is a member of tac-engineer (a sync put it
+// there). The console keeps its system shell and forwarding closed to such
+// a caller (D18); the cap lowers what the gate permits, never what an
+// engineer's login can do.
+func (g Gate) EngineerBound(ctx context.Context) bool {
+	if g.verify(ctx) != nil {
+		return false
+	}
+	if _, uncapped, _ := g.capped(ctx); uncapped == Engineer {
+		return true
+	}
+	caller := g.SudoUser
+	if caller == "" || caller == "root" {
+		return false
+	}
+	res, err := g.Runner.Run(ctx, execx.Cmd{Name: "id", Args: []string{"-nG", "--", caller}})
+	if err != nil || res.Code != 0 {
+		return false
+	}
+	return slices.Contains(strings.Fields(string(res.Stdout)), EngineerGroup)
 }
 
 func (g Gate) verify(ctx context.Context) error {
 	return VerifyCaller(ctx, g.Runner, g.SudoUser, g.SudoUID)
+}
+
+// Why a caller is capped at the operator tier (capped's third result).
+const (
+	capNone      = ""
+	capConf      = "conf-problem"
+	capAmbiguous = "group-ambiguous"
+)
+
+// capped is the caller's tier with the cap applied (an unreadable
+// tacctl.yaml caps every managed caller; a group whose tier setting is
+// lost caps its members), the tier it would have without the cap, and why
+// it was capped.
+func (g Gate) capped(ctx context.Context) (t, uncapped Tier, why string) {
+	t = g.caller(ctx)
+	if rank(t) > rank(Operator) {
+		if g.ConfProblem != nil && g.ConfProblem() != "" {
+			return Operator, t, capConf
+		}
+		if g.AmbiguousGroup != nil && g.AmbiguousGroup(g.SudoUser) != "" {
+			return Operator, t, capAmbiguous
+		}
+	}
+	return t, t, capNone
 }
 
 func (g Gate) caller(ctx context.Context) Tier {
@@ -408,13 +505,28 @@ func (g Gate) Enforce(ctx context.Context, cmd, sub string) error {
 		g.Out.ErrorE("SUDO_USER '" + g.SudoUser + "' is not the account of SUDO_UID " + g.SudoUID + ", so tacctl access is denied.")
 		return ErrDenied
 	}
-	t := g.caller(ctx)
+	t, uncapped, why := g.capped(ctx)
 	if Permits(t, cmd, sub) {
 		return nil
 	}
+	// The cap is the reason only when the tier without it would have run
+	// the command.
+	byCap := t != uncapped && Permits(uncapped, cmd, sub)
+	reason := ""
+	if byCap {
+		reason = " reason=" + why
+	}
 	_, _ = g.Runner.Run(ctx, execx.Cmd{Name: "logger", Args: []string{"-t", "tacctl", "-p", "auth.warning",
-		"tier DENY user=" + user + " tier=" + string(t) + " cmd=" + cmd + " " + sub}})
-	if t == None {
+		"tier DENY user=" + user + " tier=" + string(t) + reason + " cmd=" + cmd + " " + sub}})
+	if byCap && why == capAmbiguous {
+		grp := g.AmbiguousGroup(g.SudoUser)
+		g.Out.ErrorE("'tacctl " + cmd + " " + sub + "' is not permitted: your group '" + grp + "' is at priv-lvl 15 or more and has no tier setting in " +
+			g.ConfPath + " (it was lost), so its members are held at the operator tier. A superuser who is not a member sets it: tacctl group edit " +
+			grp + " tier <tier>.")
+	} else if byCap {
+		g.Out.ErrorE("'tacctl " + cmd + " " + sub + "' is not permitted: " + g.ConfPath + " cannot be read (" + g.ConfProblem() +
+			"), so no tacctl user is trusted above the operator tier until it is fixed (tacctl config validate).")
+	} else if t == None {
 		g.Out.ErrorE("'" + g.SudoUser + "' has no active tacctl user, so tacctl access is denied.")
 	} else {
 		g.Out.ErrorE("'tacctl " + cmd + " " + sub + "' is not permitted for the " + string(t) + " tier.")

@@ -60,8 +60,7 @@ func (inv *invocation) hostTarget(args []string) error {
 		return err
 	}
 	e, ok := reg.Find(name)
-	// An engineer sees and changes the hosts of their own scopes only.
-	if !ok || e.Line == "" || !inv.callerScopes().allows(e.Scope) {
+	if !ok || e.Line == "" {
 		return inv.usageErr("No enrolled host named '" + name + "'. See 'tacctl host list'.")
 	}
 	if !setTarget && !setPort && !setIdentity && !noIdentity {
@@ -169,34 +168,66 @@ func (inv *invocation) hostTarget(args []string) error {
 	return nil
 }
 
+// keyVerdict is what comparePinnedKeys found.
+type keyVerdict int
+
+const (
+	// keysMatch: no pinned key type has another key on the host.
+	keysMatch keyVerdict = iota
+	// keysUnpinned: nothing is pinned for the host, so nothing to compare.
+	keysUnpinned
+	// keysUnread: the login read no keys, so the host cannot be told apart.
+	keysUnread
+	// keysDiffer: a pinned key type has another key on the host.
+	keysDiffer
+)
+
+// comparePinnedKeys compares the keys a login read from a host (keys, or
+// keysErr when it could not) with the ones pinned for it: the host is the
+// same machine, so a pinned key type with another key, or keys that cannot
+// be read, mean it is not. It is the one comparison of the test connection of 'host target'
+// connection and of the rotation's proof (cmd names the command in the audit
+// line). A difference is logged ('auth.warning <cmd> hostkey-mismatch') and
+// comes with the lines that show pinned and offered keys and the way
+// forward.
+func (inv *invocation) comparePinnedKeys(cmd, name string, pinned []string, keys []byte, keysErr error) (keyVerdict, []string) {
+	var own []devreg.HostKey
+	if keysErr == nil {
+		own = devreg.ParsePubKeys(keys)
+	}
+	switch {
+	case len(pinned) == 0:
+		return keysUnpinned, nil
+	case len(own) == 0:
+		return keysUnread, nil
+	case devreg.Compare(pinned, own).Changed:
+		inv.app.Logger(inv.ctx, "auth.warning", cmd+" hostkey-mismatch name="+name)
+		return keysDiffer, []string{
+			"  Pinned:      " + devreg.Displays(devreg.ParseHostKeys(pinned)),
+			"  On the host: " + devreg.Displays(own),
+			"If the host was reinstalled, check its keys there (" + devreg.VerifyHint(devreg.VendorLinux) + "), then: tacctl device hostkey " + name + " accept",
+		}
+	}
+	return keysMatch, nil
+}
+
 // hostTargetKeys compares the keys a test connection read with the ones
-// pinned for name: the host is the same machine, so a pinned key type with
-// another key, or keys that cannot be read, refuse the change. With
-// nothing pinned the next 'host sync' pins them.
+// pinned for name (comparePinnedKeys): a pinned key type with another key,
+// or keys that cannot be read, refuse the change. With nothing pinned the
+// next 'host sync' pins them.
 func (inv *invocation) hostTargetKeys(name string, p hosts.Probe) error {
 	a := inv.app
 	f, err := devreg.Load(a.Paths.DevicesFile)
 	if err != nil {
 		return err
 	}
-	pinned := f.HostKeysOf(name)
-	var own []devreg.HostKey
-	if p.KeysErr == nil {
-		own = devreg.ParsePubKeys(p.Keys)
-	}
-	if len(pinned) == 0 {
+	switch v, detail := inv.comparePinnedKeys("host target", name, f.HostKeysOf(name), p.Keys, p.KeysErr); v {
+	case keysUnpinned:
 		a.Out.WarnE(name + ": no host key is pinned to compare with; the next 'tacctl host sync " + name + "' pins them.")
-		return nil
-	}
-	if len(own) == 0 {
+	case keysUnread:
 		return inv.usageErr("The host's ssh keys could not be read over the test connection, so it cannot be told to be '" + name + "'; nothing was changed.")
-	}
-	if devreg.Compare(pinned, own).Changed {
-		a.Logger(inv.ctx, "auth.warning", "host target hostkey-mismatch name="+name)
-		return inv.usageErr("The host reached is not '"+name+"' as pinned: its ssh keys differ; nothing was changed.",
-			"  Pinned:      "+devreg.Displays(devreg.ParseHostKeys(pinned)),
-			"  On the host: "+devreg.Displays(own),
-			"If the host was reinstalled, check its keys there ("+devreg.VerifyHint(devreg.VendorLinux)+"), then: tacctl device hostkey "+name+" accept")
+	case keysDiffer:
+		return inv.usageErr(append([]string{"The host reached is not '" + name + "' as pinned: its ssh keys differ; nothing was changed."}, detail...)...)
 	}
 	return nil
 }

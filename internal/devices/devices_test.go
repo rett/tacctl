@@ -352,14 +352,15 @@ func TestRenderGoldens(t *testing.T) {
 		if err := Render(&buf, Request{Vendor: g.vendor, Scope: g.scope, Legacy: g.legacy, Protocol: g.protocol, Source: source}, d); err != nil {
 			t.Fatal(err)
 		}
-		want, err := os.ReadFile("../../tests/fixtures/golden/" + g.golden)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if got := reANSI.ReplaceAllString(buf.String(), ""); got != string(want) {
-			t.Errorf("%s differs:\n%s", g.golden, firstDiff(got, string(want)))
-		}
+		golden(t, g.golden, reANSI.ReplaceAllString(buf.String(), ""))
 	}
+}
+
+// golden is checkGolden (snmp_test.go; -update rewrites the goldens, the bats
+// files use UPDATE_GOLDEN=1).
+func golden(t *testing.T, name, got string) {
+	t.Helper()
+	checkGolden(t, name, got)
 }
 
 func firstDiff(got, want string) string {
@@ -404,7 +405,7 @@ func TestRenderOverride(t *testing.T) {
 	}
 	// The ACL block: IPv4 only, as wildcards.
 	vars := CiscoVars(Request{Vendor: "cisco", Scope: "lab", Protocol: TACACS}, d)
-	if vars["VTY_ACL_BLOCK"] != "ip access-list standard VTY-ACL\n  remark Managed by tacctl — edit with 'tacctl config mgmt-acl'\n  permit 10.0.0.0 0.255.255.255\n  deny   any log" ||
+	if vars["VTY_ACL_BLOCK"] != "ip access-list standard VTY-ACL\n  remark Managed by tacctl — edit with 'tacctl config mgmt-acl'\n  permit 192.0.2.1 0.0.0.0\n  permit 10.0.0.0 0.255.255.255\n  deny   any log" ||
 		vars["VTY_ACCESS_CLASS"] != "  access-class VTY-ACL in" {
 		t.Errorf("%q %q", vars["VTY_ACL_BLOCK"], vars["VTY_ACCESS_CLASS"])
 	}

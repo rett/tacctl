@@ -266,4 +266,47 @@ func TestHostLocalConsole(t *testing.T) {
 	}
 }
 
+// B2: an engineer has the console or no login on the server. With the
+// console's symlink missing the engineer's shell is nologin (the others keep
+// bash) and the command says so; with it, the console, whatever the tier
+// switch or a stored override says.
+func TestHostLocalConsoleEngineerShell(t *testing.T) {
+	hs := newHostSandbox(t)
+	hs.reroot = true
+	hs.loopback()
+	hs.write("state/tacctl.yaml", "tier:\n  operator: engineer\n", 0o600)
+	hs.write("state/console.yaml", "version: 1\ntiers: {readonly: enable, operator: enable, engineer: disable, superuser: enable}\nusers: {bob: disable}\n", 0o600)
+	hs.write("shells", "/bin/sh\n/bin/bash\n", 0o644)
+	link := hs.path("usr", "local", "bin", "tacctl-console")
+	script := ""
+	runner := func() *fake.Runner {
+		r := hs.runner()
+		sshdOK(link)(r)
+		r.OnFunc([]string{"bash"}, func(c execx.Cmd) (execx.Result, error) {
+			b, _ := os.ReadFile(c.Args[0])
+			script = string(b)
+			return execx.Result{Stdout: []byte("[INFO] Accounts: 3 managed by tacctl here; console: 2.\n")}, nil
+		})
+		r.On([]string{"getent", "passwd"}, execx.Result{Stdout: []byte("root:x:0:0::/root:/bin/bash\n")})
+		return r
+	}
+	hs.run(runner(), "host", "enroll", "--local", "--name", "authsrv", "--scope", "lab", "--build-on-host")
+	all := plain(hs.out.String() + hs.err.String())
+	if hs.code != 0 || !strings.Contains(all, "except engineers, who have the console or no login and get /usr/sbin/nologin") ||
+		!strings.Contains(script, "TAC_USERS=$'alice:superuser:80000:/bin/bash\\nbob:engineer:80001:/usr/sbin/nologin\\ncarol:readonly:80002:/bin/bash'") {
+		t.Fatalf("no symlink: %d\n%s\n%s", hs.code, all, head(script))
+	}
+	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(hs.path("usr", "local", "bin", "tacctl"), link); err != nil {
+		t.Fatal(err)
+	}
+	hs.run(runner(), "host", "sync", "authsrv")
+	all = plain(hs.out.String() + hs.err.String())
+	if hs.code != 0 || !strings.Contains(script, "TAC_USERS=$'alice:superuser:80000:"+link+"\\nbob:engineer:80001:"+link+"\\ncarol:readonly:80002:"+link+"'") {
+		t.Fatalf("with the symlink: %d\n%s\n%s", hs.code, all, head(script))
+	}
+}
+
 func head(script string) string { return strings.SplitN(script, "# --- tacctl", 2)[0] }

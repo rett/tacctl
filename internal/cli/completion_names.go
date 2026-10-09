@@ -31,6 +31,8 @@ var completionKinds = map[string]func(m *model.Model) []string{
 var completionArgKinds = map[string]func(inv *invocation, args []string) []string{
 	// _completion_listeners: listener names, every backend's or one's.
 	KindListeners: (*invocation).listenerNames,
+	// The break-glass users recorded for a scope ('scope breakglass <scope> remove').
+	KindBreakGlass: (*invocation).breakGlassNames,
 	// backup_names | head -50: snapshots newest first, then old-style ids.
 	KindBackups: (*invocation).backupNames,
 	// BACKEND_IDS, and backends_enabled 2>/dev/null || true.
@@ -128,7 +130,7 @@ func (inv *invocation) deviceDescs() []string {
 // scopeFilter is what a caller may see of the registries: everything for
 // an administrator (superuser, unrestricted), the user's own scopes for
 // the lower tiers (docs/plans/operator-console.md 8). It is also what an
-// engineer may change: the devices and hosts of their own scopes (D18).
+// engineer may change: the devices of their own scopes (D18).
 type scopeFilter struct {
 	restricted bool
 	scopes     []string
@@ -151,7 +153,27 @@ func (inv *invocation) ownScope(f scopeFilter, scope string) error {
 	if len(f.scopes) > 0 {
 		yours = strings.Join(f.scopes, ", ")
 	}
-	return inv.usageErr("Scope '" + scope + "' is not one of yours: the engineer tier changes the devices and hosts of its own scopes only (yours: " + yours + "). Nothing was changed.")
+	return inv.usageErr("Scope '" + scope + "' is not one of yours: the engineer tier changes the devices of its own scopes only (yours: " + yours + "). Nothing was changed.")
+}
+
+// scopeNotFound is nil when the caller may read scope (an administrator any
+// scope, an engineer one of their own). Another scope is answered as one
+// that does not exist, as another scope's device is "not found". That does
+// not hide the name ('scope list' names every scope to every tier); it
+// keeps what an engineer may read of a scope (its secret and settings)
+// from a scope that is not theirs, and a refusal that told the two cases
+// apart would only say what 'scope list' already says.
+func (inv *invocation) scopeNotFound(f scopeFilter, scope string) error {
+	if f.allows(scope) {
+		return nil
+	}
+	return inv.usageErr("Scope '" + scope + "' does not exist.")
+}
+
+// secretRead logs a restricted caller's reveal of a secret (kind scope):
+// who read which scope's, never the value (docs/plans/0.2.3-plan.md D45).
+func (inv *invocation) secretRead(kind, name string) {
+	inv.app.Logger(inv.ctx, "auth.info", "secret-read kind="+kind+" name="+name+" by="+inv.sudoUser())
 }
 
 // callerScopes is the filter of the caller (SUDO_USER); a lower-tier caller

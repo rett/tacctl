@@ -669,3 +669,53 @@ targetssh() {
     assert_failure 1
     assert_output --partial "'authsrv' is this server (enrolled with --local)"
 }
+
+# --- device location (0.2.3: D41) ---------------------------------------------------------
+
+@test "device location: shown, set, validated and cleared; written to devices.yaml only when set" {
+    run "$TACCTL_BIN_SCRIPT" device add core-sw1 10.99.0.1 --vendor cisco --no-host-key
+    assert_success
+    cp "$DEVICES" "$BATS_TEST_TMPDIR/devices.before"
+    run grep -c location "$DEVICES"
+    assert_output "0"
+    run "$TACCTL_BIN_SCRIPT" device location core-sw1
+    assert_success
+    [[ "$output" == "-" ]]
+    run "$TACCTL_BIN_SCRIPT" device location core-sw1 Rack 4, DC1
+    assert_success
+    plain
+    assert_output --partial "Device 'core-sw1' location set to Rack 4, DC1."
+    run grep 'location' "$DEVICES"
+    assert_output --partial "Rack 4, DC1"
+    run "$TACCTL_BIN_SCRIPT" device location core-sw1
+    assert_output "Rack 4, DC1"
+    run "$TACCTL_BIN_SCRIPT" device show core-sw1
+    plain
+    assert_output --partial "Location:"
+    run "$TACCTL_BIN_SCRIPT" device export --json
+    assert_output --partial '"location": "Rack 4, DC1"'
+    run "$TACCTL_BIN_SCRIPT" device location core-sw1 'where?'
+    assert_failure 1
+    plain
+    assert_output --partial "The location may not contain '?'"
+    run "$TACCTL_BIN_SCRIPT" device location core-sw1 ''
+    assert_success
+    plain
+    assert_output --partial "location cleared."
+    cmp "$BATS_TEST_TMPDIR/devices.before" "$DEVICES"
+    run "$TACCTL_BIN_SCRIPT" device location nosuch x
+    assert_failure 1
+    plain
+    assert_output --partial "Device 'nosuch' not found."
+}
+
+@test "device add --snmp-location stores the location; a bad one registers nothing" {
+    run "$TACCTL_BIN_SCRIPT" device add core-sw1 10.99.0.1 --no-host-key --snmp-location "Rack 5"
+    assert_success
+    run grep location "$DEVICES"
+    assert_output --partial "Rack 5"
+    run "$TACCTL_BIN_SCRIPT" device add core-sw2 10.99.0.2 --no-host-key --snmp-location 'why?'
+    assert_failure 1
+    run grep -c core-sw2 "$DEVICES"
+    assert_output "0"
+}

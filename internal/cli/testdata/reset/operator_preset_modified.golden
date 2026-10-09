@@ -1,0 +1,26 @@
+
+Reset of group 'operator' to the role preset's values
+-----------------------------------------------------
+  settings
+    Cisco priv-lvl:  10 -> 7
+    Juniper class:   NEW-CLASS -> OP-CLASS
+    tacctl tier:     engineer (set) -> operator (auto, from priv-lvl)
+    WTI level:       Administrator (set) -> User (set)
+    warning: Cisco logins and the per-level authorization lines change; re-paste tacctl config cisco
+    warning: the Junos template user of the class changes; re-paste tacctl config juniper Step 1
+    warning: the tier of its 1 user(s) falls from engineer to operator; this server's accounts are synced after the reset
+  commands
+    - configure    permit
+    - *            permit
+    + show         deny   ^(running-config view full|startup-config|derived-config|key chain|snmp (community|user)|crypto (isakmp key|key)|archive log)( .*)?$
+    + *            deny
+    ~ dir          permit  (moved)
+    default action: permit -> deny
+  privileges
+    - show version
+  junos
+    deny-commands: 6/241 bytes -> 226/241 bytes
+      - ^foo  (4 bytes)
+      + ^(file|request|restart|start|load|op|test|configure|edit|clear (bgp|ospf|ospf3|isis|ldp|rsvp|mpls|pim|igmp|msdp|bfd|vrrp|lacp|system|security|network-access|log|dhcp)|monitor traffic .*write-file|show system rollback)( .*)?$  (224 bytes)
+
+[INFO] Dry run: nothing was written.

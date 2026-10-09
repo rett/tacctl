@@ -41,6 +41,27 @@ func privilegesPath(group string) string { return "privileges." + group }
 // action reads as permit.
 func Lines(c *conf.Config, group string) []string {
 	v, _ := c.Value(commandsPath(group))
+	return linesOf(v)
+}
+
+// DefaultLines is the shipped rule lines of a group (defaults.yaml); nil
+// for a group without shipped rules.
+func DefaultLines(group string) []string {
+	cmds, _ := conf.Defaults().Get("commands")
+	m, ok := cmds.(*yamlpy.Map)
+	if !ok {
+		return nil
+	}
+	v, _ := m.Get(group)
+	return linesOf(v)
+}
+
+// HasOverride reports whether tacctl.yaml carries its own commands.<group>
+// (rather than the shipped rules applying).
+func HasOverride(c *conf.Config, group string) bool { return c.HasOverride(commandsPath(group)) }
+
+// linesOf is Lines of a rule list value.
+func linesOf(v any) []string {
 	rules, ok := py.List(v)
 	if !ok {
 		return nil
@@ -85,7 +106,11 @@ func Field(line string, n int) string {
 // catch-all; permit for a group without rules, deny when the last rule is
 // not a catch-all (tacquito fails a command no rule matches).
 func DefaultAction(c *conf.Config, group string) string {
-	lines := Lines(c, group)
+	return DefaultActionOf(Lines(c, group))
+}
+
+// DefaultActionOf is DefaultAction of a list of rule lines.
+func DefaultActionOf(lines []string) string {
 	if len(lines) == 0 {
 		return "permit"
 	}
@@ -297,28 +322,37 @@ type GroupLevels []string
 // on a device does not deny its users everything. It returns the level
 // and the groups it seeded (none when group has no level).
 func SeedSiblings(c *conf.Config, groups GroupLevels, group string) (privlvl string, seeded []string, err error) {
-	for _, l := range groups {
-		if Field(l, 1) == group {
-			privlvl = Field(l, 2)
-		}
-	}
-	if privlvl == "" {
-		return "", nil, nil
-	}
-	for _, l := range groups {
-		other := Field(l, 1)
-		if other == "" || other == group || Field(l, 2) != privlvl {
-			continue
-		}
-		if len(Lines(c, other)) > 0 {
-			continue
-		}
+	privlvl, bare := BareSiblings(c, groups, group)
+	for _, other := range bare {
 		if err := Write(c, other, []string{Catchall + "|permit|"}); err != nil {
 			return privlvl, seeded, err
 		}
 		seeded = append(seeded, other)
 	}
 	return privlvl, seeded, nil
+}
+
+// BareSiblings is what SeedSiblings would seed, written nothing: the level
+// of group and the other groups at it that have no command rules.
+func BareSiblings(c *conf.Config, groups GroupLevels, group string) (privlvl string, bare []string) {
+	for _, l := range groups {
+		if Field(l, 1) == group {
+			privlvl = Field(l, 2)
+		}
+	}
+	if privlvl == "" {
+		return "", nil
+	}
+	for _, l := range groups {
+		other := Field(l, 1)
+		if other == "" || other == group || Field(l, 2) != privlvl {
+			continue
+		}
+		if len(Lines(c, other)) == 0 {
+			bare = append(bare, other)
+		}
+	}
+	return privlvl, bare
 }
 
 // DefaultRules is default_rules_for_group: the legacy seed set of a
@@ -376,9 +410,17 @@ func DefaultPrivileges(group string) []string {
 }
 
 // WritePrivileges is write_group_privileges: the commands (blank ones
-// dropped) become privileges.<group>; none at all is the default again.
+// dropped) become privileges.<group>. None at all stores an empty list,
+// which keeps a shipped list from applying (as 0.1.16 did); ClearPrivileges
+// is the default again.
 func WritePrivileges(c *conf.Config, group string, cmds []string) error {
 	return c.SetList(privilegesPath(group), conf.ListItems(strings.Join(cmds, "\n")+"\n"))
+}
+
+// ClearPrivileges removes the group's own privileges.<group>, so the
+// shipped list (if the group has one) applies again.
+func ClearPrivileges(c *conf.Config, group string) error {
+	return c.Unset(privilegesPath(group))
 }
 
 // --- healing ----------------------------------------------------------------
@@ -474,7 +516,7 @@ func HealDeadMatches(c *conf.Config) ([]Healed, error) {
 		if !changed {
 			continue
 		}
-		if def, ok := defaults[group]; ok && py.Equal(listOf(healed), def) {
+		if def, ok := defaults[group]; (ok && py.Equal(listOf(healed), def)) || IsPreviousDefault(group, listOf(healed)) {
 			if err := c.Unset(commandsPath(group)); err != nil {
 				return out, err
 			}

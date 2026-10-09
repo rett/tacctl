@@ -434,6 +434,9 @@ func (inv *invocation) userAdd(args []string) error {
 		scopes = []string{def}
 	}
 	display := strings.Join(scopes, ",")
+	if why := breakGlassClash(a.Conf(), username, scopes); why != "" {
+		return inv.usageErr(why)
+	}
 
 	inv.echo("")
 	inv.echoE("  Adding user: " + ui.Bold + username + ui.NC + " (" + group + ")")
@@ -497,12 +500,13 @@ func (inv *invocation) userRemove(args []string) error {
 		inv.app.Out.Info("Cancelled.")
 		return nil
 	}
+	watch := inv.watchServerTiers()
 	if err := inv.storeApply(func(s *store.Store) error { return s.UserDel(username) }); err != nil {
 		return err
 	}
 	inv.app.Out.Info("User '" + username + "' removed.")
 	inv.echo("")
-	return nil
+	return watch.lowered("'"+username+"'", "'"+username+"' keeps the groups of the old tier")
 }
 
 // --- passwd -----------------------------------------------------------------
@@ -600,12 +604,13 @@ func (inv *invocation) userDisable(args []string) error {
 		inv.app.Out.Warn("User '" + username + "' is already disabled.")
 		return nil
 	}
+	watch := inv.watchServerTiers()
 	if err := inv.storeApply(func(s *store.Store) error { return s.UserSet(username, "disabled=true") }); err != nil {
 		return err
 	}
 	inv.app.Out.Info("User '" + username + "' disabled. Use 'enable' to restore access.")
 	inv.echo("")
-	return nil
+	return watch.lowered("'"+username+"'", "'"+username+"' keeps the groups of the old tier")
 }
 
 func (inv *invocation) userEnable(args []string) error {
@@ -729,12 +734,23 @@ func (inv *invocation) userRename(args []string) error {
 	} else if exists {
 		return inv.usageErr("User '" + newname + "' already exists.")
 	}
+	if u, ok, err := inv.userInfo(oldname); err != nil {
+		return err
+	} else if ok {
+		if why := breakGlassClash(inv.app.Conf(), newname, u.scopes); why != "" {
+			return inv.usageErr(why)
+		}
+	}
+	// The old name is gone from the model afterwards, so its account on this
+	// server (and its tac-superuser) goes at the sync that follows; the new
+	// name gets its account there.
+	watch := inv.watchServerTiers()
 	if err := inv.storeApply(func(s *store.Store) error { return s.UserRename(oldname, newname) }); err != nil {
 		return err
 	}
 	inv.app.Out.Info("User renamed: " + oldname + " -> " + newname)
 	inv.echo("")
-	return nil
+	return watch.lowered("'"+oldname+"'", "'"+oldname+"' keeps the groups of the old tier")
 }
 
 func (inv *invocation) userMove(args []string) error {
@@ -769,12 +785,13 @@ func (inv *invocation) userMove(args []string) error {
 		inv.app.Out.Info("User '" + username + "' is already in group '" + newgroup + "'.")
 		return nil
 	}
+	watch := inv.watchServerTiers()
 	if err := inv.storeApply(func(s *store.Store) error { return s.UserSet(username, "group="+newgroup) }); err != nil {
 		return err
 	}
 	inv.app.Out.Info("User '" + username + "' moved: " + oldgroup + " -> " + newgroup)
 	inv.echo("")
-	return nil
+	return watch.lowered("'"+username+"'", "'"+username+"' keeps the groups of the old tier")
 }
 
 // --- scope ------------------------------------------------------------------
@@ -915,6 +932,11 @@ func (inv *invocation) userScope(args []string) error {
 			}
 		}
 	}
+	if sub == "add" || sub == "replace" {
+		if why := breakGlassClash(a.Conf(), username, changed); why != "" {
+			return inv.usageErr(why)
+		}
+	}
 	var kept []string
 	for _, s := range newList {
 		if strings.TrimSpace(s) != "" {
@@ -922,6 +944,9 @@ func (inv *invocation) userScope(args []string) error {
 		}
 	}
 	list := strings.Join(kept, ",")
+	// Taking this server's scope away (remove, replace) drops the account's
+	// groups at the next sync like a lower tier does.
+	watch := inv.watchServerTiers()
 	if err := inv.storeApply(func(s *store.Store) error { return s.UserSet(username, "scopes="+list) }); err != nil {
 		return err
 	}
@@ -943,7 +968,7 @@ func (inv *invocation) userScope(args []string) error {
 		a.Out.Warn("until you run: tacctl user scope " + username + " add <scope>")
 	}
 	inv.echo("")
-	return nil
+	return watch.lowered("'"+username+"'", "'"+username+"' keeps the groups of the old tier")
 }
 
 // userScopeRemoveAll is _user_scope_remove_all: empty the user's scope
@@ -961,10 +986,11 @@ func (inv *invocation) userScopeRemoveAll(username string, current []string) err
 		a.Out.Info("Aborted.")
 		return nil
 	}
+	watch := inv.watchServerTiers()
 	if err := inv.storeApply(func(s *store.Store) error { return s.UserSet(username, "scopes=") }); err != nil {
 		return err
 	}
 	a.Out.Info("Removed all scopes from user '" + username + "'.")
 	inv.echo("")
-	return nil
+	return watch.lowered("'"+username+"'", "'"+username+"' keeps the groups of the old tier")
 }

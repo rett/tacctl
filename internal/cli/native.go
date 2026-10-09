@@ -104,7 +104,10 @@ func (inv *invocation) tierGate() tier.Gate {
 			}
 			return m.UserPrivLvl(user)
 		},
-		GroupTier: inv.userGroupTier,
+		GroupTier:      inv.userGroupTier,
+		ConfProblem:    inv.confProblem,
+		AmbiguousGroup: inv.userAmbiguousGroup,
+		ConfPath:       a.Paths.Overrides,
 	}
 }
 
@@ -125,8 +128,15 @@ func (inv *invocation) userGroupTier(user string) string {
 // userTier is the tier of a user of the model whose group has priv-lvl
 // privlvl: the tier set on the group, else the priv-lvl band
 // (tier.ForGroup).
+//
+// A member of an ambiguous group (priv-lvl 15 or more, no setting) is held
+// at the operator tier, as the gate and the syncs hold them.
 func (inv *invocation) userTier(user, privlvl string) tier.Tier {
-	return tier.ForGroup(inv.userGroupTier(user), privlvl)
+	t := tier.ForGroup(inv.userGroupTier(user), privlvl)
+	if tier.Rank(t) > tier.Rank(tier.Operator) && inv.userAmbiguousGroup(user) != "" {
+		return tier.Operator
+	}
+	return t
 }
 
 // model is the model as this invocation first read it (model_load's

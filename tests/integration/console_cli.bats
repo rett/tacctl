@@ -68,6 +68,8 @@ idle-timeout abc
 idle-timeout -1
 agent-forwarding yes
 ssh-escape on
+space-completion enable
+space-completion on off
 system-shell
 system-shell mode
 system-shell tiers operator,operator
@@ -105,6 +107,7 @@ LIST
     assert_output --partial "idle-timeout: 30 min"
     assert_output --partial "agent-forwarding: disabled"
     assert_output --partial "ssh-escape: disabled"
+    assert_output --partial "space-completion: on"
     assert_output --partial "this server is not enrolled (tacctl host enroll --local): no tacctl user has an account here"
     # Reading writes nothing.
     [[ ! -e "$CONSOLE" ]]
@@ -163,6 +166,44 @@ LIST
     assert_success
     assert_output --partial "console.yaml"
     assert_output --partial "idle_timeout"
+}
+
+@test "console space-completion: on by default, written to console.yaml only while off, shown by console show" {
+    run "$TACCTL_BIN_SCRIPT" console space-completion
+    assert_success
+    assert_output "on"
+    # Switching it on while it is on writes nothing.
+    run "$TACCTL_BIN_SCRIPT" console space-completion on
+    assert_success
+    [[ ! -e "$CONSOLE" ]] || ! grep -q space_completion "$CONSOLE"
+    run "$TACCTL_BIN_SCRIPT" console space-completion off
+    assert_success
+    assert_output --partial "A typed space at the console's prompt is an ordinary space."
+    refute_output --partial "host sync"
+    run "$TACCTL_BIN_SCRIPT" console space-completion
+    assert_output "off"
+    run grep -c '^  space_completion: false$' "$CONSOLE"
+    assert_output "1"
+    run "$TACCTL_BIN_SCRIPT" console show
+    plain
+    assert_output --partial "space-completion: off"
+    # On again: the key is gone, so a 0.2.2 reader accepts the file.
+    run "$TACCTL_BIN_SCRIPT" console space-completion on
+    assert_success
+    assert_output --partial "completes a fixed word"
+    run grep -c space_completion "$CONSOLE"
+    assert_output "0"
+    run "$TACCTL_BIN_SCRIPT" console space-completion
+    assert_output "on"
+    # A console.yaml written before 0.2.3 (no key) reads as on.
+    printf 'version: 1\ntiers: {readonly: enable, operator: enable, superuser: enable}\nusers: {}\nsettings: {idle_timeout: 30}\n' > "$CONSOLE"
+    run "$TACCTL_BIN_SCRIPT" console space-completion
+    assert_output "on"
+    # A value that is not a boolean is refused when the file is read.
+    printf 'version: 1\nsettings: {space_completion: maybe}\n' > "$CONSOLE"
+    run "$TACCTL_BIN_SCRIPT" console space-completion
+    assert_failure
+    assert_output --partial "invalid value for 'space_completion'"
 }
 
 @test "console settings: getters, setters and the system shell" {
@@ -290,10 +331,12 @@ LIST
     assert_output --partial "WARNING"
     assert_output --partial "allowtcpforwarding is 'yes'; x11forwarding is 'yes'"
     assert_output --partial "sshd keeps the first value it reads"
-    # console check prints the drop-in and sshd_config lines once.
+    # console check prints the console's drop-in and sshd_config lines once
+    # (and the engineer tier's drop-in once, on its own).
     run "$TACCTL_BIN_SCRIPT" console check
     plain
-    [[ $(grep -c 'sshd drop-in' <<< "$output") == 1 ]]
+    [[ $(grep -c 'sshd drop-in .*tacctl-console.conf' <<< "$output") == 1 ]]
+    [[ $(grep -c 'sshd drop-in .*00-tacctl-engineer.conf' <<< "$output") == 1 ]]
 }
 
 @test "console show: the server's pieces as they are" {
@@ -339,18 +382,18 @@ LIST
     # Root (no SUDO_USER): unrestricted, system shell yes.
     run "$TACCTL_BIN_SCRIPT" _console-policy
     assert_success
-    assert_output "shell=system idle=30 system_shell=yes system_shell_path=/bin/bash ssh_escape=no agent=no forward=yes tier=unrestricted list_max=40"
-    stub_called '^logger -t tacctl -p auth.info console policy user=root tier=unrestricted system_shell=yes session=$'
+    assert_output "shell=system idle=30 system_shell=yes system_shell_path=/bin/bash ssh_escape=no agent=no forward=yes tier=unrestricted list_max=40 space_completion=yes"
+    stub_called '^logger -t tacctl -p auth.info shell policy user=root tier=unrestricted$'
 
     # A tier user: the id stub puts the caller in tac-users and its tier group.
     stub_cmd id 'echo "$3 tac-users"'
     SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" _console-policy
-    assert_output "shell=console idle=30 system_shell=yes system_shell_path=/bin/bash ssh_escape=no agent=no forward=yes tier=superuser list_max=40"
+    assert_output "shell=console idle=30 system_shell=yes system_shell_path=/bin/bash ssh_escape=no agent=no forward=yes tier=superuser list_max=40 space_completion=yes"
     SUDO_USER=bob TACCTL_CONSOLE=0123456789ab run "$TACCTL_BIN_SCRIPT" _console-policy
-    assert_output "shell=console idle=30 system_shell=no system_shell_path=/bin/bash ssh_escape=no agent=no forward=no tier=operator list_max=40"
+    assert_output "shell=console idle=30 system_shell=no system_shell_path=/bin/bash ssh_escape=no agent=no forward=no tier=operator list_max=40 space_completion=yes"
     stub_called '^logger -t tacctl -p auth.info console policy user=bob tier=operator system_shell=no session=0123456789ab$'
     SUDO_USER=carol run "$TACCTL_BIN_SCRIPT" _console-policy
-    assert_output "shell=console idle=30 system_shell=no system_shell_path=/bin/bash ssh_escape=no agent=no forward=no tier=readonly list_max=40"
+    assert_output "shell=console idle=30 system_shell=no system_shell_path=/bin/bash ssh_escape=no agent=no forward=no tier=readonly list_max=40 space_completion=yes"
 
     # A tier user with no tacctl user is denied by the gate.
     SUDO_USER=mallory run "$TACCTL_BIN_SCRIPT" _console-policy
@@ -363,10 +406,13 @@ LIST
     "$TACCTL_BIN_SCRIPT" console ssh-escape enable
     "$TACCTL_BIN_SCRIPT" console forwarding tiers readonly
     SUDO_USER=carol run "$TACCTL_BIN_SCRIPT" _console-policy
-    assert_output "shell=system idle=5 system_shell=yes system_shell_path=/bin/bash ssh_escape=yes agent=no forward=yes tier=readonly list_max=40"
+    assert_output "shell=system idle=5 system_shell=yes system_shell_path=/bin/bash ssh_escape=yes agent=no forward=yes tier=readonly list_max=40 space_completion=yes"
+    "$TACCTL_BIN_SCRIPT" console space-completion off
+    SUDO_USER=carol run "$TACCTL_BIN_SCRIPT" _console-policy
+    assert_output "shell=system idle=5 system_shell=yes system_shell_path=/bin/bash ssh_escape=yes agent=no forward=yes tier=readonly list_max=40 space_completion=no"
 }
 
-@test "console: the engineer tier has a switch, but never the system shell or forwarding (D18, D24)" {
+@test "console: the engineer tier is always on, and never gets the system shell or forwarding (D18, D24)" {
     run "$TACCTL_BIN_SCRIPT" console system-shell tiers superuser,engineer
     assert_failure 1
     assert_output --partial "The engineer tier cannot be given the system shell on this server: a shell here would reach the server's secrets. Nothing was changed."
@@ -374,16 +420,45 @@ LIST
     assert_failure 1
     assert_output --partial "The engineer tier cannot be given forwarding on this server: engineers reach devices with the console's ssh. Nothing was changed."
     [[ ! -e "$CONSOLE" ]]
+    # The engineer has the console or no login: nothing switches it off.
     run "$TACCTL_BIN_SCRIPT" console tiers engineer disable
-    assert_success
+    assert_failure 1
+    assert_output --partial "The engineer tier has the console or no login on this server; it cannot be disabled. To keep a user off this server, remove its scope from the user."
+    [[ ! -e "$CONSOLE" ]]
     run "$TACCTL_BIN_SCRIPT" console tiers engineer
-    assert_output "disable"
+    assert_output "enable"
     # bob's group is given the engineer tier: his console settings follow.
     printf 'tier:\n  operator: engineer\n' > "${TACCTL_STATE_DIR}/tacctl.yaml"
     "$TACCTL_BIN_SCRIPT" console system-shell tiers operator,superuser
+    run "$TACCTL_BIN_SCRIPT" console user bob disable
+    assert_failure 1
+    assert_output --partial "it cannot be disabled"
+    [[ ! -e "$CONSOLE" ]] || ! grep -q "bob" "$CONSOLE"
     stub_cmd id 'echo "$3 tac-users"'
     SUDO_USER=bob run "$TACCTL_BIN_SCRIPT" _console-policy
-    assert_output "shell=system idle=30 system_shell=no system_shell_path=/bin/bash ssh_escape=no agent=no forward=no tier=engineer list_max=40"
+    assert_output "shell=console idle=30 system_shell=no system_shell_path=/bin/bash ssh_escape=no agent=no forward=no tier=engineer list_max=40 space_completion=yes"
+    # A tacctl.yaml that cannot be read caps the gate's tier at operator, but
+    # an engineer keeps the lockdown: no system shell, no forwarding, even
+    # though the operator tier is given both. Someone who is not an engineer
+    # gets what the operator tier gets.
+    "$TACCTL_BIN_SCRIPT" console forwarding tiers operator,superuser
+    printf 'tier:\n  operator: engineer\n  - [broken\n' > "${TACCTL_STATE_DIR}/tacctl.yaml"
+    stub_cmd id 'echo "$3 tac-users tac-engineer"'
+    SUDO_USER=bob run "$TACCTL_BIN_SCRIPT" _console-policy
+    assert_output --partial "could not parse ${TACCTL_STATE_DIR}/tacctl.yaml"
+    assert_output --partial "shell=console idle=30 system_shell=no system_shell_path=/bin/bash ssh_escape=no agent=no forward=no tier=engineer gate=operator list_max=40 space_completion=yes"
+    stub_cmd id 'echo "$3 tac-users tac-superuser"'
+    SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" _console-policy
+    assert_output --partial " forward=yes tier=operator "
+    printf 'tier:\n  operator: engineer\n' > "${TACCTL_STATE_DIR}/tacctl.yaml"
+    stub_cmd id 'echo "$3 tac-users"'
+    # A stored 'disable' (an older file, or edited by hand) is ignored and said so.
+    printf 'version: 1\ntiers: {readonly: enable, operator: enable, engineer: disable, superuser: enable}\nusers: {bob: disable}\n' > "$CONSOLE"
+    chmod 600 "$CONSOLE"
+    SUDO_USER=bob run "$TACCTL_BIN_SCRIPT" _console-policy
+    assert_output --partial "shell=console "
+    run "$TACCTL_BIN_SCRIPT" console tiers
+    assert_output --partial "engineer: enable (always; the stored disable is ignored)"
     SUDO_USER=bob run "$TACCTL_BIN_SCRIPT" console show
     assert_success
     SUDO_USER=bob run "$TACCTL_BIN_SCRIPT" console system-shell tiers
@@ -403,4 +478,37 @@ LIST
     SUDO_USER=bob run "$TACCTL_BIN_SCRIPT" console idle-timeout 5
     assert_failure 1
     [[ ! -e "$CONSOLE" ]]
+}
+
+@test "console check: the engineer tier's sshd drop-in is checked on its own, and written without the console" {
+    enrol_local
+    mkdir -p "$(dirname "$TACCTL_SSHD_DROPIN")"
+    printf 'Match Group tac-console\n    AllowTcpForwarding no\n' > "$TACCTL_SSHD_DROPIN"
+    local engineer
+    engineer="$(dirname "$TACCTL_SSHD_DROPIN")/00-tacctl-engineer.conf"
+    stub_cmd sshd 'printf "allowtcpforwarding no\nallowagentforwarding no\nforcecommand ${TACCTL_TEST_ROOT:-}/usr/local/bin/tacctl-console\npubkeyauthentication no\n"'
+    run "$TACCTL_BIN_SCRIPT" console check
+    plain
+    assert_output --partial "sshd drop-in ${engineer}: missing"
+    assert_output --partial "sshd's drop-in for the engineer tier ${engineer} is missing"
+    printf 'Match Group tac-engineer\n    AllowTcpForwarding yes\n' > "$engineer"
+    run "$TACCTL_BIN_SCRIPT" console check
+    plain
+    assert_output --partial "sshd drop-in ${engineer}: present, differs from this release's"
+}
+
+@test "console check: an engineer drop-in under its old name is flagged (the new one sorts before the console's)" {
+    enrol_local
+    mkdir -p "$(dirname "$TACCTL_SSHD_DROPIN")"
+    printf 'Match Group tac-console\n    AllowTcpForwarding no\n' > "$TACCTL_SSHD_DROPIN"
+    local old
+    old="$(dirname "$TACCTL_SSHD_DROPIN")/tacctl-engineer.conf"
+    printf 'Match Group tac-engineer\n    AllowTcpForwarding no\n' > "$old"
+    stub_cmd sshd 'printf "allowtcpforwarding no\nallowagentforwarding no\nforcecommand ${TACCTL_TEST_ROOT:-}/usr/local/bin/tacctl-console\npubkeyauthentication no\n"'
+    run "$TACCTL_BIN_SCRIPT" console check
+    plain
+    assert_output --partial "sshd drop-in ${old}: present (the old name)"
+    assert_output --partial "the engineer tier's old sshd drop-in ${old} is still there"
+    # The name the engineer drop-in is written under sorts before the console's.
+    [[ "00-tacctl-engineer.conf" < "$(basename "$TACCTL_SSHD_DROPIN")" ]]
 }

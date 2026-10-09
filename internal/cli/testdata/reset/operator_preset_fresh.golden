@@ -1,0 +1,14 @@
+
+Reset of group 'operator' to the role preset's values
+-----------------------------------------------------
+  settings
+    WTI level:       User (auto, from priv-lvl) -> User (set)
+  commands
+    + show         deny   ^(running-config view full|startup-config|derived-config|key chain|snmp (community|user)|crypto (isakmp key|key)|archive log)( .*)?$
+  privileges
+    unchanged
+  junos
+    deny-commands: none -> 226/241 bytes
+      + ^(file|request|restart|start|load|op|test|configure|edit|clear (bgp|ospf|ospf3|isis|ldp|rsvp|mpls|pim|igmp|msdp|bfd|vrrp|lacp|system|security|network-access|log|dhcp)|monitor traffic .*write-file|show system rollback)( .*)?$  (224 bytes)
+
+[INFO] Dry run: nothing was written.

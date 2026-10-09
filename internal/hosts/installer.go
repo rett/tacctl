@@ -65,6 +65,11 @@ type Script struct {
 	// is "ALL"). The tacctl server's own script carries it too, and its
 	// body leaves the line out there.
 	EngineerSudo string
+	// RevokeEngineer is TAC_REVOKE_ENGINEER=1, the script of 'tacctl rollback
+	// --hosts' (D50): the body writes no %tac-engineer line and takes the
+	// engineer-tier accounts out of tac-superuser and tac-engineer, so the
+	// engineers have no sudo on the host. The protocol stays 6.
+	RevokeEngineer bool
 	// Body is client-install.sh; nil means the embedded copy.
 	Body []byte
 }
@@ -179,6 +184,9 @@ func (s Script) Header() string {
 		sudo = EngineerSudoAll
 	}
 	q("TAC_ENGINEER_SUDO", sudo)
+	if s.RevokeEngineer {
+		q("TAC_REVOKE_ENGINEER", "1")
+	}
 	q("TAC_PROTOCOL", ScriptProtocol)
 	return b.String()
 }
@@ -241,6 +249,11 @@ type ScriptRequest struct {
 	// their accounts; RemoveAllHomes is --remove-home (every one).
 	RemoveHomes    []string
 	RemoveAllHomes bool
+	// Local is the tacctl server's own script (TAC_LOCAL=1, from the
+	// registry entry's target): it is stated, not derived from ConsoleShell,
+	// so the script knows whether it runs on the server whatever the
+	// accounts' shells are.
+	Local bool
 	// ConsoleShell, for the tacctl server's own accounts only ('host
 	// enroll --local' and its sync), is each user's login shell (the
 	// console or /bin/bash): TAC_USERS lines get it as a fourth field. Nil
@@ -252,6 +265,8 @@ type ScriptRequest struct {
 	GroupTier func(name string) string
 	// EngineerSudo is the header's TAC_ENGINEER_SUDO (Script.EngineerSudo).
 	EngineerSudo string
+	// RevokeEngineer is the header's TAC_REVOKE_ENGINEER=1 (Script.RevokeEngineer).
+	RevokeEngineer bool
 }
 
 // ScriptResult is what the script was written with (LINUX_SCRIPT_USERS,
@@ -332,7 +347,7 @@ func (e *Env) WriteScript(req ScriptRequest) (ScriptResult, error) {
 		Scope: req.Scope, Method: method, Server: req.Server, Port: port, AcctPort: acctPort,
 		Secret: req.Secret, Users: users, Generated: e.now(), Range: e.rng(), Previous: previous,
 		Inactive: strings.Join(linuxNames(append(append([]string(nil), req.Inactive...), keep...)), "\n"), RemoveHomes: homes,
-		Local: req.ConsoleShell != nil, EngineerSudo: req.EngineerSudo,
+		Local: req.Local, EngineerSudo: req.EngineerSudo, RevokeEngineer: req.RevokeEngineer,
 	}
 	if embed {
 		s.Tarball = tarball

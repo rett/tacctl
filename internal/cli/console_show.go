@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/rett/tacctl/internal/console"
+	"github.com/rett/tacctl/internal/tier"
 	"github.com/rett/tacctl/internal/ui"
 )
 
@@ -24,7 +25,7 @@ func (inv *invocation) consoleShow(args []string) error {
 	inv.echo("--------------------------------------------")
 	inv.echo("Tiers (the console is the login shell of their users on this server):")
 	for _, t := range console.Tiers {
-		inv.echo("  " + string(t) + ": " + onOff(f.TierOn[t]))
+		inv.echo("  " + string(t) + ": " + consoleTierState(f, t))
 	}
 	inv.echo("")
 	inv.echo("Settings:")
@@ -35,6 +36,7 @@ func (inv *invocation) consoleShow(args []string) error {
 	inv.echo("  forwarding gateway-ports: " + map[bool]string{true: "enabled", false: "disabled"}[f.GatewayPorts] + " (forwarded ports on other addresses than loopback)")
 	inv.echo("  system-shell tiers: " + tierCSV(f.SystemShellTiers))
 	inv.echo("  system-shell path: " + f.SystemShell)
+	inv.echo("  space-completion: " + spaceWord(f.SpaceCompletion) + " (a typed space completes a fixed word at the console's prompt)")
 	inv.echo("  list-max: " + strconv.Itoa(f.ListMax) + " (completions listed without asking; set in " + inv.app.Paths.ConsoleFile + ")")
 	inv.echo("")
 
@@ -86,7 +88,11 @@ func (inv *invocation) consoleUsersTable(pol *console.Policy) (users []string, l
 			shell = "console"
 			users = append(users, name)
 		}
-		tb.Add(name, string(tr), shell, d.Why)
+		why := d.Why
+		if _, over := pol.File.Users[name]; over && tr == tier.Engineer {
+			why += "; the stored override is ignored"
+		}
+		tb.Add(name, string(tr), shell, why)
 	}
 	if tb.Len() == 0 {
 		inv.echoE(ui.Bold + title + ui.NC)

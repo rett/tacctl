@@ -12,6 +12,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -22,7 +23,9 @@ import (
 	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/hosts"
+	"github.com/rett/tacctl/internal/model"
 	"github.com/rett/tacctl/internal/names"
+	"github.com/rett/tacctl/internal/policy"
 	"github.com/rett/tacctl/internal/tier"
 	"github.com/rett/tacctl/internal/ui"
 )
@@ -126,7 +129,7 @@ func (inv *invocation) hostsEnv() *hosts.Env {
 	if u := a.Env.Get("SUDO_USER"); a.EUID == 0 && u != "" && u != "root" {
 		asUser = u
 	}
-	return &hosts.Env{
+	env := &hosts.Env{
 		Paths:    hosts.Paths{Dir: a.Paths.LinuxDir, VarLib: a.Paths.VarLib, UIDs: a.Paths.LinuxUIDs, Hosts: a.Paths.LinuxHosts, LoginDefs: a.Paths.LoginDefs, ProcSelf: a.Knobs.ProcSelf()},
 		Range:    rng,
 		Runner:   a.Runner,
@@ -138,6 +141,10 @@ func (inv *invocation) hostsEnv() *hosts.Env {
 		// host enroll and host sync pin the host's ssh keys in the registry.
 		PinHostKeys: inv.pinHostKeys,
 	}
+	if a.HostsTTY != nil {
+		env.TTY, env.StdinTTY = a.HostsTTY, a.HostsTTY
+	}
+	return env
 }
 
 // configuredUIDRange is the UID range of tacctl.yaml (linux.uid_min,
@@ -383,9 +390,35 @@ func (inv *invocation) configLinuxEngineerSudo(args []string) error {
 	if err != nil {
 		return err
 	}
+	for _, c := range cmds {
+		if rootShellCommand(c) {
+			a.Out.WarnE(c + " gives root a shell; engineers on those hosts are then superusers in all but name.")
+		}
+	}
 	a.Out.InfoE("Engineers may run " + what + " through sudo on enrolled hosts (" + line + "). Each host gets it at its next sync: tacctl host sync --all")
 	a.Logger(inv.ctx, "auth.info", "linux engineer-sudo set to="+strings.Join(cmds, ",")+" by="+inv.sudoUser())
 	return nil
+}
+
+// rootShellCommands are the commands (by name) that hand whoever may run
+// them through sudo a root shell, or run any other command as root: shells,
+// interpreters, editors, su, sudo, find and the commands that run another
+// ('tacctl config linux engineer-sudo' warns for them, it does not refuse:
+// a site may mean it).
+var rootShellCommands = []string{
+	"sh", "bash", "dash", "zsh", "ksh", "csh", "tcsh", "fish", "ash", "busybox",
+	"perl", "ruby", "php", "node", "nodejs", "lua", "awk", "gawk", "mawk", "expect", "tclsh", "irb",
+	"vi", "vim", "view", "rvim", "nano", "ed", "ex", "emacs", "pico", "less", "more", "man",
+	"su", "sudo", "find", "env", "xargs", "nice", "nohup", "timeout", "setsid", "stdbuf", "chroot", "strace", "gdb", "script",
+}
+
+var reInterpreter = regexp.MustCompile(`^(python|pypy)[0-9.]*$`)
+
+// rootShellCommand reports whether the command path names one of
+// rootShellCommands (or a python).
+func rootShellCommand(path string) bool {
+	name := baseName(path)
+	return slices.Contains(rootShellCommands, name) || reInterpreter.MatchString(name)
 }
 
 // hostsDone maps a hosts error: ErrFailed (printed) is exit 1.
@@ -496,6 +529,9 @@ func (inv *invocation) linuxScopeServes(scope, method string) (bool, error) {
 // rows, the method's backend's listeners.
 func (inv *invocation) scriptRequest(scope, server, method, output string) (hosts.ScriptRequest, error) {
 	req := hosts.ScriptRequest{Scope: scope, Server: server, Method: method, Output: output}
+	if err := inv.confReadable(); err != nil {
+		return req, err
+	}
 	m, err := inv.model()
 	if err != nil {
 		return req, err
@@ -505,8 +541,9 @@ func (inv *invocation) scriptRequest(scope, server, method, output string) (host
 	}
 	req.Rows = m.LinuxUsers(scope)
 	req.Inactive = m.LinuxInactive(scope)
-	req.GroupTier = inv.userGroupTier
+	req.GroupTier = inv.syncGroupTier
 	req.EngineerSudo = strings.Join(inv.app.Conf().GetList(engineerSudoKey), ",")
+	req.RevokeEngineer = inv.revokeEngineer
 	id := backend.TACACS
 	if method == hosts.Radius {
 		id = "radius"
@@ -515,6 +552,120 @@ func (inv *invocation) scriptRequest(scope, server, method, output string) (host
 		req.Listeners, _ = b.Listeners().List()
 	}
 	return req, nil
+}
+
+// confProblem is why the tiers of tacctl.yaml cannot be trusted ("" when
+// they can), the one answer the tier gate and every sync use:
+//   - the file cannot be read (it does not parse, is unreadable or is not a
+//     mapping): Config.Problem;
+//   - a tier setting is not a tier (policy.TierProblem);
+//
+// While there is a problem every priv-lvl 15 group would be a superuser
+// group, and an engineer would join tac-superuser on the hosts. A group
+// whose setting is missing is a narrower problem (ambiguousGroups): it
+// holds back its own members (the gate, and the tier a sync gives them),
+// not every caller and not the syncs.
+func (inv *invocation) confProblem() string {
+	c := inv.app.Conf()
+	if p := c.Problem(); p != "" {
+		return p
+	}
+	return policy.TierProblem(c)
+}
+
+// ambiguousGroups are the groups at priv-lvl 15 or more, other than the
+// built-in superuser, with no tier setting (policy.UnsetTierGroups): a group
+// an engineer group may have been before its setting was lost (an empty or
+// restored tacctl.yaml, a hand-edit). Every writer keeps the setting
+// (group add, group edit priv-lvl, tacctl upgrade once, store import), so
+// none exist unless it was lost. A model that cannot be read has none.
+//
+// A legacy install (no store yet) has none: it keeps no tier settings, so
+// none can have been lost, and 0.2.2's rule (priv-lvl 15 is a superuser)
+// stays in force until 'tacctl store import'.
+func (inv *invocation) ambiguousGroups() []string {
+	if !inv.hasTierSettings() {
+		return nil
+	}
+	m, err := inv.model()
+	if err != nil {
+		return nil
+	}
+	return policy.UnsetTierGroups(inv.app.Conf(), m)
+}
+
+// userAmbiguousGroup is the name of the user's group when it is ambiguous
+// ("" otherwise): the gate holds the user at the operator tier, and a sync
+// gives the user the operator tier on the hosts (syncGroupTier).
+func (inv *invocation) userAmbiguousGroup(user string) string {
+	if !inv.hasTierSettings() {
+		return ""
+	}
+	m, err := inv.model()
+	if err != nil {
+		return ""
+	}
+	u := m.User(user)
+	if u == nil {
+		return ""
+	}
+	if g := m.Group(u.Group); g != nil && policy.NeedsTier(u.Group, g.PrivLvl) && policy.GroupTier(inv.app.Conf(), u.Group) == "" {
+		return u.Group
+	}
+	return ""
+}
+
+// hasTierSettings is false for a legacy install, which has no store and so
+// no tier settings to have lost (policy.NeedsTier does not apply to it).
+func (inv *invocation) hasTierSettings() bool {
+	return model.Mode(inv.app.Paths.StoreFile) == "store"
+}
+
+// syncGroupTier is the tier setting a sync uses for the user's group
+// (hosts.ScriptRequest.GroupTier): the setting in tacctl.yaml, and for the
+// member of an ambiguous group the operator tier, the cap the gate applies
+// to the same user. A sync is thereby never refused for the ambiguity, so
+// the syncs that take rights away (user remove, user move, group edit
+// priv-lvl) still run; the members of the group just do not get
+// tac-superuser or tac-engineer until the setting is back.
+func (inv *invocation) syncGroupTier(user string) string {
+	if inv.userAmbiguousGroup(user) != "" {
+		return string(tier.Operator)
+	}
+	return inv.userGroupTier(user)
+}
+
+// confReadable is nil when the tiers of tacctl.yaml can be trusted
+// (confProblem). Otherwise what syncs accounts refuses: the problem is
+// printed, exit 1. Groups that lost their tier setting do not stop a sync
+// (it would also stop the ones that take rights away): one red line each
+// names the repair, once per invocation, and their members are synced as
+// operators (syncGroupTier).
+func (inv *invocation) confReadable() error {
+	if p := inv.confProblem(); p != "" {
+		inv.app.Out.ErrorE(inv.app.Conf().Path + " cannot be read (" + p + "); accounts and tiers are not synced until it is fixed.")
+		return exit(1)
+	}
+	inv.warnAmbiguousGroups()
+	return nil
+}
+
+// warnAmbiguousGroups prints, once per invocation, one red line for each
+// ambiguous group.
+func (inv *invocation) warnAmbiguousGroups() {
+	if inv.ambiguousNoted {
+		return
+	}
+	inv.ambiguousNoted = true
+	groups := inv.ambiguousGroups()
+	if len(groups) == 0 {
+		return
+	}
+	m, _ := inv.model()
+	for _, g := range groups {
+		inv.app.Out.ErrorE("Group '" + g + "' (priv-lvl " + strconv.Itoa(privOf(m.Group(g))) + ") has no tier setting in " + inv.app.Conf().Path +
+			", so its members are synced as operators (no tac-superuser, no tac-engineer) until: tacctl group edit " + g + " tier <tier>")
+	}
 }
 
 // srcAddresses is "awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}'"

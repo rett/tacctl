@@ -110,7 +110,11 @@ func TestCiscoLevelsGuardAndAccounting(t *testing.T) {
 func TestCiscoPrivilegeModes(t *testing.T) {
 	m, c := fixtureGroups(t, nil, "privileges:\n  operator:\n  - 'configure: router bgp'\n  - 'exec all: show ip'\n  - show version\n  - 'exec: show version'\n  - 'configure all: interface'\n")
 	vars := CiscoVars(Request{Vendor: "cisco", Scope: "lab", Protocol: TACACS}, Data{Model: m, Conf: c})
-	want := "! --- operator — Privilege Level 7 Commands ---\n" +
+	// readonly (priv-lvl 1) lowers show running-config to level 1; the
+	// block of a group at level 1 is emitted too.
+	want := "! --- readonly — Privilege Level 1 Commands ---\n" +
+		"privilege exec level 1 show running-config\n!\n" +
+		"! --- operator — Privilege Level 7 Commands ---\n" +
 		"privilege configure level 7 router bgp\n" +
 		"privilege exec all level 7 show ip\n" +
 		"privilege exec level 7 show version\n" +

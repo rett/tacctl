@@ -7,7 +7,8 @@ package cli
 // the accounts the next sync makes there, and the record of its last
 // enroll or sync and the facts that run read (hosts.Records, written here
 // by recordRun). --check logs in read-only and compares the host with what
-// tacctl would make it (hosts.Env.Check). Same tier as 'host list'.
+// tacctl would make it (hosts.Env.Check). Same tier as 'host list', except
+// --check, which is the superuser's (it opens ssh as the invoker).
 
 import (
 	"os"
@@ -172,6 +173,11 @@ func (inv *invocation) hostShow(args []string) error {
 	if !ok || e.Line == "" || !inv.callerScopes().allows(e.Scope) {
 		return inv.usageErr("No enrolled host named '" + name + "'. See 'tacctl host list'.")
 	}
+	// --check opens an ssh session as the invoker; an engineer reads what
+	// tacctl recorded of the host and does not log in to it.
+	if p.Has("--check") && inv.callerScopes().restricted {
+		return inv.usageErr("'host show --check' logs in to the host over ssh, which is the superuser's; 'tacctl host show " + name + "' shows what tacctl recorded of it.")
+	}
 	v, err := inv.hostView(e)
 	if err != nil {
 		return err
@@ -307,7 +313,7 @@ func (inv *invocation) hostAccounts(e hosts.Entry, rng hosts.Range) (hostAccount
 			out.Skipped = append(out.Skipped, hostSkippedJSON{name, "not a valid Linux account name"})
 			continue
 		}
-		t := hosts.TierOf(lvl)
+		t := string(inv.userTier(name, lvl))
 		if t == string(tier.None) {
 			out.Skipped = append(out.Skipped, hostSkippedJSON{name, "its group has no priv-lvl"})
 			continue
@@ -327,8 +333,9 @@ func (inv *invocation) hostAccounts(e hosts.Entry, rng hosts.Range) (hostAccount
 			if pol.Decide(name, tier.Tier(t)).Console {
 				groups = append(groups, console.Group)
 			}
-		case t == string(tier.Superuser):
-			groups = append(groups, "tac-superuser")
+		case t == string(tier.Superuser), t == string(tier.Engineer):
+			// A host has the two sudo groups only: superusers and engineers.
+			groups = append(groups, "tac-"+t)
 		}
 		out.Users = append(out.Users, hostAccountJSON{Name: name, Tier: t, UID: uid, Groups: groups})
 	}

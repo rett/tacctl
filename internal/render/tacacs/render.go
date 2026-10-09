@@ -140,6 +140,84 @@ type Rule struct {
 	Match  []string
 }
 
+// WrapMatch is what a stored match regex is rendered as: ^(?:regex)$.
+// tacquito appends '$' and prepends '^' only when they are missing, so a
+// bare top-level alternation ('a|b') would be tested as '^a|b$' (a prefix
+// match on one branch, a suffix match on the other). Wrapped, the regex
+// must match the whole arguments string and its alternation stays inside.
+// An empty regex stays empty (tacquito skips it).
+func WrapMatch(rx string) string {
+	if rx == "" {
+		return rx
+	}
+	return "^(?:" + rx + ")$"
+}
+
+// noWrap switches WrapMatch off for the one test that replays 0.1.16's
+// own output byte for byte (corpus_test.go); nothing else sets it.
+var noWrap bool
+
+// renderMatch is a stored regex as the file carries it.
+func renderMatch(rx string) string {
+	if noWrap {
+		return rx
+	}
+	return WrapMatch(rx)
+}
+
+// UnwrapMatch is WrapMatch undone, for reading a rendered file back (the
+// legacy importer); a regex that is not wrapped is returned as it is. The
+// '^(?:' and ')$' of a rendered file are the wrapper only when what stands
+// between them is a regex of its own: its parentheses pair up and it
+// compiles. A file written before 0.2.3 had tacquito's own anchoring and
+// '^(?:a)|(?:b)$' was a regex of the operator's (the alternation 'a|b' in
+// two groups); taking its ends for a wrapper would give 'a)|(?:b'.
+func UnwrapMatch(rx string) string {
+	if strings.HasPrefix(rx, "^(?:") && strings.HasSuffix(rx, ")$") && len(rx) >= len("^(?:)$") {
+		inner := rx[len("^(?:") : len(rx)-len(")$")]
+		if parensPair(inner) {
+			if _, err := regexp.Compile(inner); err == nil {
+				return inner
+			}
+		}
+	}
+	return rx
+}
+
+// parensPair reports whether the groups of a regex open and close in order:
+// no ')' without its '(' and none left open, a backslash taking the next
+// byte and a character class counting as one.
+func parensPair(rx string) bool {
+	depth, class := 0, false
+	for i := 0; i < len(rx); i++ {
+		switch c := rx[i]; {
+		case c == '\\':
+			i++
+		case class:
+			if c == ']' {
+				class = false
+			}
+		case c == '[':
+			class = true
+			// A ']' right after '[' or '[^' is a member of the class.
+			if i+1 < len(rx) && rx[i+1] == '^' {
+				i++
+			}
+			if i+1 < len(rx) && rx[i+1] == ']' {
+				i++
+			}
+		case c == '(':
+			depth++
+		case c == ')':
+			depth--
+			if depth < 0 {
+				return false
+			}
+		}
+	}
+	return depth == 0 && !class
+}
+
 // truthy is Python's bool() of a tacctl.yaml value.
 func truthy(v any) bool {
 	switch x := v.(type) {
@@ -385,7 +463,7 @@ func Render(st *store.Store, view *yamlpy.Map) ([]byte, error) {
 				if len(r.Match) > 0 {
 					q := make([]string, len(r.Match))
 					for i, s := range r.Match {
-						q[i] = YQ(s)
+						q[i] = YQ(renderMatch(s))
 					}
 					w.WriteString("      match: [" + strings.Join(q, ", ") + "]\n")
 				}

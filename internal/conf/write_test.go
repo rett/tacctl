@@ -245,7 +245,7 @@ func TestWarningAndProblem(t *testing.T) {
 	// echo -e turns the '\t' of the problem into a tab, as warn() does.
 	want := "\033[1;33m[WARN]\033[0m tacctl.yaml: could not parse " + c.Path +
 		": line 2, column 1: found character '\t' that cannot start any token; using the defaults " +
-		"(fix or remove the file; 'tacctl config validate' checks it).\n"
+		"(fix the file; 'tacctl config validate' checks it).\n"
 	if b.String() != want {
 		t.Fatalf("got %q\nwant %q", b.String(), want)
 	}

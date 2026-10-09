@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"unicode/utf8"
@@ -24,6 +25,7 @@ import (
 	"github.com/rett/tacctl/internal/model"
 	"github.com/rett/tacctl/internal/names"
 	"github.com/rett/tacctl/internal/shellquote"
+	"github.com/rett/tacctl/internal/snmpcred"
 	"github.com/rett/tacctl/internal/store"
 	"github.com/rett/tacctl/internal/ui"
 )
@@ -54,6 +56,13 @@ var scopeSpecs = map[string]Spec{
 	"radius-group": {MinArgs: 1, MaxArgs: 2, Args: []string{KindScopes, ""}},
 	"auth-method":  {MinArgs: 1, MaxArgs: 2, Args: []string{KindScopes, "tacacs|radius|clear"}},
 	"mgmt-acl":     {MinArgs: 1, MaxArgs: 3, Args: []string{KindScopes, "list|add|remove|clear|cisco-name|juniper-name", ""}},
+	"breakglass": {MinArgs: 1, MaxArgs: 3, Args: []string{KindScopes, "list|add|remove", After("remove", KindBreakGlass)}, Flags: []Flag{
+		{Names: []string{"--role"}, Value: true, Only: "add", Kind: "admin|operator|readonly"}}},
+	"snmp": {MinArgs: 1, MaxArgs: -1, Args: []string{KindScopes, "show|version|community|v3-user|clients|contact|port|timeout|clear|test",
+		After("clients", "list|add|remove"), ""}, Flags: []Flag{
+		{Names: []string{"--reveal"}, Only: "show"}, {Names: []string{"--clear"}, Only: "contact"},
+		{Names: []string{"--stdin"}}, {Names: []string{"--auth"}, Value: true, Only: "v3-user", Kind: "sha|sha256"},
+		{Names: []string{"--priv"}, Value: true, Only: "v3-user"}}},
 }
 
 func scopeCmd(inv *invocation) *cobra.Command {
@@ -89,6 +98,9 @@ func scopeCmd(inv *invocation) *cobra.Command {
 			"Protocol this scope's device configs and host enrollments use"), n(inv.scopeAuthMethodCmd)),
 		withRun(verb("mgmt-acl <scope> {list|add|remove|clear|cisco-name|juniper-name} [args]",
 			"Per-scope permit list and ACL / filter names"), n(inv.scopeMgmtACL)),
+		withRun(verb("breakglass <scope> {list|add <name> [--role admin|operator|readonly]|remove <name>}",
+			"Per-scope break-glass local users (names and roles; no credential is stored)"), n(inv.scopeBreakGlass)),
+		withRun(verb(scopeSNMPUse, scopeSNMPShort), n(inv.scopeSNMP)),
 	)
 	// No sub-command, help, -h, --help: the usage, exit 0; anything else:
 	// an error, the usage, exit 1.
@@ -414,6 +426,10 @@ func (inv *invocation) writeMgmtACLCIDRs(list []string, scope string) error {
 // key of tacctl.yaml stored under old goes to new; without new it is
 // dropped. tacctl.yaml is left alone when it does not mention old at all.
 func (inv *invocation) scopeConfKeysMove(old, newName string) error {
+	// The scope's SNMP settings and credentials file (D46) follow it too.
+	if err := inv.scopeSNMPMove(old, newName); err != nil {
+		return err
+	}
 	data, err := os.ReadFile(inv.app.Paths.Overrides)
 	if err != nil || !bytes.Contains(data, []byte(old)) {
 		return nil
@@ -434,7 +450,7 @@ func (inv *invocation) scopeConfKeysMove(old, newName string) error {
 			}
 		}
 	}
-	return nil
+	return inv.scopeBreakGlassMove(old, newName)
 }
 
 // --- usage, list, routing ---------------------------------------------------
@@ -596,6 +612,9 @@ func (inv *invocation) scopeShow(args []string) error {
 	if name == "" {
 		return inv.usageErr("Usage: tacctl scope show <name>")
 	}
+	if err := inv.scopeNotFound(inv.callerScopes(), name); err != nil {
+		return err
+	}
 	s, err := inv.scopeOf(name)
 	if err != nil {
 		return err
@@ -666,6 +685,7 @@ func (inv *invocation) scopeShow(args []string) error {
 	inv.echoE("  " + b + "RADIUS group:" + nc + "  " + radiusGroup)
 	inv.echoE("  " + b + "Cisco ACL:" + nc + "     " + ciscoACL)
 	inv.echoE("  " + b + "Juniper ACL:" + nc + "   " + juniperACL)
+	inv.echoE("  " + b + "Break-glass:" + nc + "    " + inv.scopeBreakGlassSummary(name))
 	inv.echoE("  " + b + "Prefixes:" + nc)
 	m, _ := inv.model()
 	if pfx := m.ScopePrefixes(name); len(pfx) == 0 {
@@ -770,6 +790,12 @@ func (inv *invocation) scopeAdd(args []string) error {
 		return err
 	} else if exists {
 		return inv.usageErr("Scope '" + name + "' already exists.")
+	}
+
+	// A credentials file left by an earlier scope of this name would be the
+	// new scope's own.
+	if err := snmpcred.CheckNoScopeFile(a.Paths.SNMPDir, name); err != nil {
+		return inv.validated(err)
 	}
 
 	var prefixes, secretArg, protocolsArg, vendorArg string
@@ -1002,6 +1028,13 @@ func (inv *invocation) scopeRename(args []string) error {
 	}
 	if !names.MatchScope(newName) {
 		return inv.usageErr("Invalid new name '" + newName + "'.")
+	}
+	// The rename moves the scope's SNMP credentials file: one already named
+	// like the new scope is not overwritten, nor taken over.
+	if _, err := os.Lstat(filepath.Join(a.Paths.SNMPDir, old+".yaml")); err == nil {
+		if err := snmpcred.CheckNoScopeFile(a.Paths.SNMPDir, newName); err != nil {
+			return inv.validated(err)
+		}
 	}
 	if err := inv.applyWith(func() error {
 		if err := inv.mutate(func(s *store.Store) error { return s.ScopeRename(old, newName) }); err != nil {
@@ -1445,6 +1478,17 @@ func (inv *invocation) scopeSecret(args []string) error {
 	if scope == "" {
 		return inv.usageErr("Usage: tacctl scope secret <scope> {show|set <value>|generate}")
 	}
+	// An engineer reads the secret of a scope of their own and changes
+	// nothing (D45): the gate sees 'scope secret' only.
+	f := inv.callerScopes()
+	if f.restricted {
+		if err := inv.scopeNotFound(f, scope); err != nil {
+			return err
+		}
+		if sub != "show" {
+			return inv.usageErr("The engineer tier reads a scope's secret: tacctl scope secret " + scope + " show. Changing it is the superuser's. Nothing was changed.")
+		}
+	}
 	if sub == "set" || sub == "generate" {
 		if err := inv.requireStore(); err != nil {
 			return err
@@ -1465,6 +1509,9 @@ func (inv *invocation) scopeSecret(args []string) error {
 	case "", "-h", "--help", "help":
 		inv.write(scopeSecretUsage(scope, n, minLen))
 	case "show":
+		if f.restricted {
+			inv.secretRead("scope", scope)
+		}
 		inv.echo("")
 		inv.echoE(b + "Scope '" + scope + "' — shared secret" + nc)
 		inv.echo(ui.Rule("Scope '" + scope + "' — shared secret"))
@@ -1829,6 +1876,12 @@ func (inv *invocation) scopeDevices(args []string) error {
 	c := cidr.Canonical(addr)
 	if c == "" {
 		return inv.usageErr("Invalid address or CIDR: '" + addr + "'")
+	}
+	// A tag changes what the RADIUS server answers an address with: a range
+	// that holds an enrolled host's address is the superuser's to tag, as
+	// the host is theirs to deploy.
+	if inv.callerScopes().restricted && inv.hostWithin(c) {
+		return inv.usageErr(c + " is not available for tagging. Nothing was changed.")
 	}
 	had := ""
 	var newMap []string

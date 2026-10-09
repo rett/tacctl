@@ -1,5 +1,5 @@
 
-[1mtacctl config mgmt-acl[0m — shared Cisco VTY-ACL + Juniper lo0-filter permits
+[1mtacctl config mgmt-acl[0m — shared Cisco VTY-ACL + Juniper lo0-filter + WTI IP Tables permits
 
 Usage:
   tacctl config mgmt-acl list                          Show current permits

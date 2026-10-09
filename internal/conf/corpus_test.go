@@ -315,8 +315,11 @@ func replay(t *testing.T, name string, before *string, ops [][]json.RawMessage, 
 	c.WarnOnce(&warn)
 	c.WarnOnce(&warn)
 	if sourceErr != nil {
-		if got := strings.ReplaceAll(warn.String(), path, "@FILE@"); got != *sourceErr {
-			t.Errorf("%s: start-up stderr:\n got: %q\nwant: %q", name, got, *sourceErr)
+		// 0.2.3 no longer tells root to remove the file (without it every
+		// engineer group is a superuser group): the one changed phrase.
+		want := strings.ReplaceAll(*sourceErr, "(fix or remove the file;", "(fix the file;")
+		if got := strings.ReplaceAll(warn.String(), path, "@FILE@"); got != want {
+			t.Errorf("%s: start-up stderr:\n got: %q\nwant: %q", name, got, want)
 		}
 	}
 	tun := c.Tunables()
@@ -336,9 +339,29 @@ func replay(t *testing.T, name string, before *string, ops [][]json.RawMessage, 
 	return &s
 }
 
+// useDefaultsOf022 swaps the shipped defaults for those of 0.2.2 (the
+// text before 0.2.3 changed the command rules and privileges of readonly
+// and operator, testdata/defaults.0.2.2.yaml) for the test: the bash corpus
+// is 0.1.16's own output, which has the old rules. The tests do not run in
+// parallel.
+func useDefaultsOf022(t *testing.T) {
+	t.Helper()
+	Defaults() // parse the real ones first, so the once is spent
+	text := readFile(t, "testdata/defaults.0.2.2.yaml")
+	v, err := pyyaml.Load([]byte(text), "<defaults 0.2.2>")
+	m, ok := v.(*yamlpy.Map)
+	if err != nil || !ok {
+		t.Fatal(err)
+	}
+	oldText, oldMap := DefaultsText, defaultsMap
+	DefaultsText, defaultsMap = text, m
+	t.Cleanup(func() { DefaultsText, defaultsMap = oldText, oldMap })
+}
+
 // TestBashCorpus: the 0.1.16 functions run end to end on a file: output,
 // exit status, the start-up warning, the tunables and the file left.
 func TestBashCorpus(t *testing.T) {
+	useDefaultsOf022(t)
 	forEachRecord(t, "bash.jsonl", func(line int, r bashRecord) {
 		name := fmt.Sprintf("bash.jsonl:%d", line)
 		after := replay(t, name, r.Before, r.Ops, &r.SourceErr, r.Results)
@@ -396,8 +419,11 @@ func TestGolden(t *testing.T) {
 		}
 	}
 	for _, prefix := range s.Wildcards() {
-		if prefix == "junos." || prefix == "wti_level." || prefix == "tier." {
+		if prefix == "junos." || prefix == "wti_level." || prefix == "tier." || prefix == "snmp_scope." {
 			continue // 0.2.2's per-group device settings: not in 0.1.16's golden
+		}
+		if prefix == "breakglass_scope." {
+			continue // 0.2.3's per-scope break-glass users: not in 0.1.16's golden
 		}
 		v, ok := walk(m, strings.TrimSuffix(prefix, "."), false)
 		if sub, isMap := v.(*yamlpy.Map); !ok || !isMap || sub.Len() == 0 {
