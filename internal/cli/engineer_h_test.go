@@ -73,7 +73,7 @@ func ambiguousSandbox(t *testing.T, yaml *string) *sandbox {
 	t.Helper()
 	sb := newSandbox(t, true)
 	sb.write("state/linux-hosts", "authsrv|local||lab|127.0.0.1|\n", 0o600)
-	for _, a := range [][]string{{"group", "add", "neteng", "15", "ENG-CLASS"}, {"user", "move", "bob", "neteng"}} {
+	for _, a := range [][]string{{"group", "add", "neteng", "15", "EN-CLASS"}, {"user", "move", "bob", "neteng"}} {
 		if sb.cfgRun("", a, nil); sb.code != 0 {
 			t.Fatalf("%v: %d %q", a, sb.code, sb.stderr())
 		}

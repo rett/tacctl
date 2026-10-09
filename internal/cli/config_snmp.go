@@ -98,7 +98,8 @@ func configSNMPUsage() string {
 	b.WriteString(`
 'tacctl device add' reads the device's sysName.0 with these settings and
 compares it with the name given (a hint only: the add never waits on it
-beyond the timeout, and never fails for it); 'device check' shows it.
+beyond the timeout, and never fails for it), and stores the sysLocation.0 it
+reports as the device's location; 'device check' shows both.
 v2c sends the community; v3 is authPriv only (SHA or SHA-256, AES-128).
 The settings are in tacctl.yaml (snmp.*), the community and the v3 user
 and passphrases in /etc/tacctl/snmp.yaml (0600), which tacctl prints only for

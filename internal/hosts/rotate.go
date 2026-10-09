@@ -109,7 +109,13 @@ func TempKnownHosts(alias string, keys []string) (path string, cleanup func(), e
 		b.WriteString(alias + " " + k + "\n")
 	}
 	path = dir + "/known_hosts"
+	// The umask of the process (tacctl runs as root under sudo) must not
+	// close the file to the invoking user's ssh, which reads it.
 	if err := os.WriteFile(path, []byte(b.String()), 0o644); err != nil {
+		cleanup()
+		return "", nil, err
+	}
+	if err := os.Chmod(path, 0o644); err != nil {
 		cleanup()
 		return "", nil, err
 	}

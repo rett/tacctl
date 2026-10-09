@@ -46,8 +46,8 @@ type Role struct {
 // EngineerClass is the Junos class of the preset's engineer group (D20):
 // its template user is created by 'tacctl config juniper'. Together with
 // store.BuiltinGroups' classes it is the one place a class name lives
-// (D54: the rename waits for 0.2.5).
-const EngineerClass = "ENG-CLASS"
+// (D54).
+const EngineerClass = "EN-CLASS"
 
 // pfx is a prefix match written in full: the alternatives, optionally
 // followed by more arguments.

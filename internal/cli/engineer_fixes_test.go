@@ -154,7 +154,7 @@ func TestEveryLoweringVerbSyncsTheServer(t *testing.T) {
 			// superuser group by its band; the preset makes it the engineer
 			// tier, and bob in it a lowered user.
 			setup: func(hs *hostSandbox) {
-				for _, a := range [][]string{{"group", "add", "engineer", "15", "ENG-CLASS"}, {"user", "move", "bob", "engineer"}} {
+				for _, a := range [][]string{{"group", "add", "engineer", "15", "EN-CLASS"}, {"user", "move", "bob", "engineer"}} {
 					if hs.run(nil, a...); hs.code != 0 {
 						hs.t.Fatalf("%v: %d %q", a, hs.code, hs.err.String())
 					}

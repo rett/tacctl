@@ -139,8 +139,8 @@ type Rule struct {
 // vendor, port, description, location, legacy-ssh, hostkey, and import from
 // standard input only), the scope's devices, vendor tags and staging
 // addresses ('scope devices', 'scope staging' to list), the device
-// configurations 'config cisco|juniper|wti' of their own scopes (which print
-// the scope's secret), the Linux hosts of their scopes to read ('host list',
+// configurations 'config cisco|juniper|wti' and 'device config show' of their
+// own scopes (which print the scope's secret), the Linux hosts of their scopes to read ('host list',
 // 'host show'), and the secret, settings and SNMP settings of a scope of
 // their own to read ('scope secret', 'scope show', 'scope snmp'). The gate
 // lets an engineer run those verbs; the verbs themselves keep the engineer
@@ -209,6 +209,9 @@ var Rules = []Rule{
 	// first argument, so 'device import /etc/shadow' never reaches tacctl.
 	{Tier: Engineer, Cmd: "device", Sub: "import", Sudoers: []string{"device import -", "device import - *"}, Wrap: true},
 	{Tier: Engineer, Cmd: "scope", Sub: "devices", Sudoers: []string{"scope devices *"}, Wrap: true},
+	// 'device config show <name>' prints a device's walkthrough, secret and
+	// all: the engineer's own scopes' devices (the verb sees to that).
+	{Tier: Engineer, Cmd: "device", Sub: "config", Sudoers: []string{"device config", "device config show *"}},
 	{Tier: Engineer, Cmd: "config", Sub: "cisco", Sudoers: []string{"config cisco", "config cisco *"}},
 	{Tier: Engineer, Cmd: "config", Sub: "juniper", Sudoers: []string{"config juniper", "config juniper *"}},
 	{Tier: Engineer, Cmd: "config", Sub: "wti", Sudoers: []string{"config wti", "config wti *"}, Wrap: true},

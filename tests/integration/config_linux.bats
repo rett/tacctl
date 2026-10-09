@@ -412,9 +412,9 @@ bob"
 }
 
 # An engineer: dave, of a group given the engineer tier (priv-lvl 15 on the
-# devices, as the production server's engineers are).
+# devices, as the engineers of many installs are).
 _engineer() {
-    "$TACCTL_BIN_SCRIPT" group add engineer 15 ENG-CLASS > /dev/null
+    "$TACCTL_BIN_SCRIPT" group add engineer 15 EN-CLASS > /dev/null
     "$TACCTL_BIN_SCRIPT" user add dave engineer --hash "$HASH" --scopes lab > /dev/null
     printf 'tier:\n  engineer: engineer\n' > "${TACCTL_STATE_DIR}/tacctl.yaml"
 }

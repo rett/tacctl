@@ -183,14 +183,14 @@ modify_operator() {
 @test "group reset engineer is the preset's engineer: it creates the group, and equals preset --force" {
     prun "$TACCTL_BIN_SCRIPT" group reset engineer --dry-run
     assert_success
-    assert_output --partial "group:           does not exist: it is created with Cisco priv-lvl 15 and Juniper class ENG-CLASS"
+    assert_output --partial "group:           does not exist: it is created with Cisco priv-lvl 15 and Juniper class EN-CLASS"
     assert_output --partial "tacctl tier:     none -> engineer (set)"
     assert_output --partial "deny-commands: none -> 192/241 bytes"
     prun "$TACCTL_BIN_SCRIPT" group reset engineer --yes
     assert_success
     prun "$TACCTL_BIN_SCRIPT" group show engineer
     assert_output --partial "Cisco priv-lvl:    15"
-    assert_output --partial "Juniper class:     ENG-CLASS"
+    assert_output --partial "Juniper class:     EN-CLASS"
     assert_output --partial "tacctl tier:       engineer (set"
     local shown
     shown=$output

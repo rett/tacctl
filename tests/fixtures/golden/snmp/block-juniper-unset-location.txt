@@ -10,5 +10,3 @@ set snmp community lab-ro-community client-list-name TACCTL-SNMP
 set snmp contact "NOC <noc@example.net>"
 set snmp description "Core switch"
 # Check from the tacctl server: tacctl scope snmp lab test <device-address>   (expects sysName 'core-sw1')
-
-Unfilled SNMP values: location (tacctl device location core-sw1 '<text>')

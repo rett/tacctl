@@ -20,7 +20,7 @@ groups:
   operator: {priv_lvl: 7, juniper_class: OP-CLASS, builtin: true}
   readonly: {priv_lvl: 1, juniper_class: RO-CLASS, builtin: true}
   superuser: {priv_lvl: 15, juniper_class: RW-CLASS, builtin: true}
-  neteng: {priv_lvl: 15, juniper_class: ENG-CLASS}
+  neteng: {priv_lvl: 15, juniper_class: EN-CLASS}
   ops: {priv_lvl: 15, juniper_class: OPS-CLASS}
   helpdesk: {priv_lvl: 14, juniper_class: HD-CLASS}
 users: {}

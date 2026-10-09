@@ -102,7 +102,7 @@ setup() {
 }
 
 @test "group add --tier --wti-level, show, then remove forgets the settings" {
-    run "$TACCTL_BIN_SCRIPT" group add engineer 15 ENG-CLASS --tier engineer --wti-level superuser
+    run "$TACCTL_BIN_SCRIPT" group add engineer 15 EN-CLASS --tier engineer --wti-level superuser
     assert_success
     assert_output --partial "tacctl tier: engineer."
     "$TACCTL_BIN_SCRIPT" group junos engineer deny-configuration add '^snmp'
@@ -110,7 +110,7 @@ setup() {
     run "$TACCTL_BIN_SCRIPT" group show engineer
     assert_success
     assert_output --partial "Cisco priv-lvl:    15"
-    assert_output --partial "Juniper class:     ENG-CLASS"
+    assert_output --partial "Juniper class:     EN-CLASS"
     assert_output --partial "tacctl tier:       engineer (set; auto would be superuser)"
     assert_output --partial "WTI level:         SuperUser (set; auto would be Administrator)"
     assert_output --partial "deny-configuration 7/236 bytes"

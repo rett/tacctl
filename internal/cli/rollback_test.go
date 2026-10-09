@@ -48,7 +48,7 @@ func (hs *hostSandbox) step(stdin string, args ...string) {
 func rollbackState(t *testing.T) *hostSandbox {
 	t.Helper()
 	hs := newHostSandbox(t)
-	hs.step("", "group", "add", "engineer", "15", "ENG-CLASS")
+	hs.step("", "group", "add", "engineer", "15", "EN-CLASS")
 	hs.step("", "group", "edit", "engineer", "tier", "engineer")
 	hs.step("", "user", "add", "erin", "engineer", "--hash", testHash, "--scopes", "lab")
 	hs.step("", "scope", "snmp", "lab", "version", "v2c")

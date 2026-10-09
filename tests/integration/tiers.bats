@@ -293,7 +293,7 @@ print("" if v is None else v)' "${TACCTL_STATE_DIR}/store.yaml" "$1" "$2"
         if grep -q "$r" <<<"$ro_op"; then echo "$r below the engineer tier"; return 1; fi
     done
     for r in 'tacctl config cisco \*' 'tacctl config juniper,' 'tacctl config wti \*' 'tacctl device add \*' 'tacctl device import - \*' \
-        'tacctl device hostkey \*' 'tacctl scope devices \*' \
+        'tacctl device hostkey \*' 'tacctl device config show \*' 'tacctl scope devices \*' \
         'tacctl host list,' 'tacctl host show \*' 'tacctl scope staging list' \
         'tacctl scope secret \*' 'tacctl scope show \*' 'tacctl scope snmp \*' 'tacctl device location \*'; do
         grep -q -- "$r" <<<"$en" || { echo "engineer lacks $r"; return 1; }
@@ -597,6 +597,23 @@ _upgrade() {
     assert_output --partial "Check passed"
 }
 
+@test "tier: an engineer prints the walkthrough of a device of their own scope; an operator may not" {
+    "$TACCTL_BIN_SCRIPT" user add en superuser --hash "$HASH" --scopes lab > /dev/null
+    printf 'tier:\n  superuser: engineer\n' > "${TACCTL_STATE_DIR}/tacctl.yaml"
+    "$TACCTL_BIN_SCRIPT" device add lab-sw 192.168.1.1 --vendor cisco --no-host-key > /dev/null
+    "$TACCTL_BIN_SCRIPT" device add prod-sw 10.99.0.1 --vendor cisco --no-host-key > /dev/null
+    as_user en yes -- device config show lab-sw
+    assert_success
+    assert_output --partial "Device lab-sw"
+    assert_output --partial "(scope: lab)"
+    as_user en yes -- device config show prod-sw
+    assert_failure
+    assert_output --partial "Device 'prod-sw' not found."
+    as_user op yes -- device config show lab-sw
+    assert_failure
+    assert_output --partial "'tacctl device config' is not permitted for the operator tier."
+}
+
 @test "tier: group reset is the superuser's alone: no lower tier, the engineer included, and no sudoers rule" {
     # op is an engineer through its group's tier setting; ro stays readonly.
     printf 'tier:\n  operator: engineer\n' > "${TACCTL_STATE_DIR}/tacctl.yaml"
@@ -716,7 +733,7 @@ _upgrade() {
     assert_success
     # A managed superuser adds the group with no tacctl.yaml: the tier is
     # recorded, and nobody is locked out.
-    as_user su yes -- group add neteng 15 ENG-CLASS
+    as_user su yes -- group add neteng 15 EN-CLASS
     assert_success
     assert_output --partial "tacctl tier: superuser (recorded, as every group at priv-lvl 15 has one; change it with: tacctl group edit neteng tier <tier>)."
     grep -q 'neteng: superuser' "${TACCTL_STATE_DIR}/tacctl.yaml"

@@ -144,7 +144,7 @@ func TestSNMPUnfilled(t *testing.T) {
 	in.Contact, in.Location, in.DeviceName = "", "", ""
 	for vendor, build := range snmpBuilders() {
 		b := build(in)
-		if got := UnfilledLine(b.Unfilled); got != "Unfilled SNMP values: contact (tacctl scope snmp lab contact '<text>'), location (tacctl device location <name> '<text>')" {
+		if got := UnfilledLine(b.Unfilled); got != "Unfilled SNMP values: contact (tacctl scope snmp lab contact '<text>')" {
 			t.Errorf("%s: %q", vendor, got)
 		}
 		for _, l := range strings.Split(b.Text, "\n") {
@@ -156,8 +156,12 @@ func TestSNMPUnfilled(t *testing.T) {
 		}
 	}
 	in.DeviceName = "core-sw1"
-	if got := UnfilledLine(CiscoSNMP(in).Unfilled); !strings.Contains(got, "location (tacctl device location core-sw1 '<text>')") {
+	// The location is a setting of one device, not a gap of the walkthrough.
+	if got := UnfilledLine(CiscoSNMP(in).Unfilled); strings.Contains(got, "location") {
 		t.Errorf("named device: %q", got)
+	}
+	if !strings.Contains(CiscoSNMP(in).Text, "NOT SET: tacctl device location core-sw1 '<text>'") {
+		t.Error("the placeholder line does not name the command that sets the location")
 	}
 	in.Contact, in.Location = "x", "y"
 	if len(CiscoSNMP(in).Unfilled) != 0 || UnfilledLine(nil) != "" {

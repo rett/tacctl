@@ -155,18 +155,18 @@ _normalize() {
     assert_output --partial "#   deny-configuration  15/236 bytes: (^system login)"
     assert_output --partial "#   none: tacctl group junos readonly deny-commands add '<regex>'"
     refute_output --regexp "(^|"$'\n'")set system login class [A-Z-]+ (allow|deny)-commands"
-    assert_output --partial "operator: OP-CLASS (local: clear/network/reset/trace/view + view-configuration), junos: deny-commands 33/241, deny-configuration 15/236"
+    assert_output --partial "operator: OP-CLASS (local: clear/network/trace/view + view-configuration), junos: deny-commands 33/241, deny-configuration 15/236"
     assert_output --partial "show cli authorization    (after a TACACS+ login: lists the server's deny values)"
 }
 
-@test "config juniper: a group using ENG-CLASS gets the engineer class and template user" {
-    "$TACCTL_BIN_SCRIPT" group add engineer 15 ENG-CLASS > /dev/null
+@test "config juniper: a group using EN-CLASS gets the engineer class and template user" {
+    "$TACCTL_BIN_SCRIPT" group add engineer 15 EN-CLASS > /dev/null
     run "$TACCTL_BIN_SCRIPT" config juniper --scope lab
     assert_success
-    assert_line "set system login class ENG-CLASS permissions [ view view-configuration network clear trace reset configure rollback interface interface-control routing routing-control firewall firewall-control system system-control snmp ]"
-    assert_line "set system login user ENG-CLASS class ENG-CLASS"
-    assert_line "  show configuration system login user ENG-CLASS"
-    assert_output --partial "engineer: ENG-CLASS (local: operator bits + configure/rollback and interface, routing, firewall, system, snmp)"
+    assert_line "set system login class EN-CLASS permissions [ view view-configuration network clear trace reset configure rollback interface interface-control routing routing-control firewall firewall-control system system-control snmp ]"
+    assert_line "set system login user EN-CLASS class EN-CLASS"
+    assert_line "  show configuration system login user EN-CLASS"
+    assert_output --partial "engineer: EN-CLASS (local: operator bits + reset, configure/rollback and interface, routing, firewall, system, snmp)"
 }
 
 @test "config cisco: errors on unknown scope" {
@@ -511,8 +511,9 @@ snmp_setup() {
     assert_line "snmp-server contact NOC <noc@example.net>"
     assert_line "! snmp-server location <location>   ! NOT SET: tacctl device location <name> '<text>'"
     [[ "$output" == *"permit host 10.0.0.42"*"permit 198.51.100.0"*"permit 10.0.0.0 0.255"*"deny   any"* ]]
-    # The last non-empty line.
-    [[ "$(grep -v '^$' <<<"$output" | tail -1 | sed 's/\x1b\[[0-9;]*m//g')" == "Unfilled SNMP values: location (tacctl device location <name> '<text>')" ]]
+    # The location is one device's, not a gap of the walkthrough: with the
+    # contact, the credentials and the server address set, nothing is listed.
+    refute_output --partial "Unfilled SNMP values"
 }
 
 @test "config juniper: the client list, the community bound to it and the final restrict" {

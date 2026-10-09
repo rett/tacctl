@@ -123,11 +123,11 @@ func (sb *sandbox) modify(group string) {
 }
 
 // engineer022 gives the sandbox an engineer group as 0.2.2's preset left it:
-// ENG-CLASS, tier engineer, WTI superuser, the fail-open Cisco rules and the
+// EN-CLASS, tier engineer, WTI superuser, the fail-open Cisco rules and the
 // two Junos sets of that release.
 func (sb *sandbox) engineer022() {
 	sb.t.Helper()
-	sb.must("group", "add", "engineer", "15", "ENG-CLASS", "--tier", "engineer", "--wti-level", "superuser")
+	sb.must("group", "add", "engineer", "15", "EN-CLASS", "--tier", "engineer", "--wti-level", "superuser")
 	c := conf.Load(sb.path("state", "tacctl.yaml"), conf.DefaultBackends)
 	dc, dcfg := policy.Engineer022Junos("")
 	for _, err := range []error{
@@ -466,7 +466,7 @@ func TestGroupResetLoweredTierSyncsTheServer(t *testing.T) {
 		hs := hostLowerSandbox(t)
 		// A group called engineer at priv-lvl 15 with the superuser tier
 		// recorded; bob in it is a superuser until the reset.
-		for _, a := range [][]string{{"group", "add", "engineer", "15", "ENG-CLASS"}, {"user", "move", "bob", "engineer"}} {
+		for _, a := range [][]string{{"group", "add", "engineer", "15", "EN-CLASS"}, {"user", "move", "bob", "engineer"}} {
 			if hs.run(nil, a...); hs.code != 0 {
 				t.Fatalf("%v: %d %q", a, hs.code, hs.err.String())
 			}
@@ -544,7 +544,7 @@ func TestGroupResetLockoutGuard(t *testing.T) {
 	// Only settings are reset and the group has no rules of its own: the
 	// level's authorization line would be left out.
 	sb = newSandbox(t, true)
-	sb.must("group", "add", "engineer", "10", "ENG-CLASS")
+	sb.must("group", "add", "engineer", "10", "EN-CLASS")
 	out = sb.plainRun("", "group", "reset", "engineer", "--only", "settings", "--dry-run")
 	if !strings.Contains(out, "warning: group 'engineer' has no command rules at priv-lvl 15, so tacctl config cisco leaves 'aaa authorization commands 15' commented out; run: tacctl group commands default engineer permit") {
 		t.Errorf("no warning:\n%s", out)

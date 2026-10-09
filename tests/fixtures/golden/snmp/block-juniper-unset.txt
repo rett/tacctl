@@ -10,4 +10,4 @@ set snmp community lab-ro-community client-list-name TACCTL-SNMP
 # set snmp contact "<contact>"   (NOT SET: tacctl scope snmp lab contact '<text>')
 # Check from the tacctl server: tacctl scope snmp lab test <device-address>
 
-Unfilled SNMP values: contact (tacctl scope snmp lab contact '<text>'), location (tacctl device location <name> '<text>')
+Unfilled SNMP values: contact (tacctl scope snmp lab contact '<text>')

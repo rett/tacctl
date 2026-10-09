@@ -41,7 +41,7 @@ setup() {
 # user in lab, per-scope SNMP settings, a break-glass user, a device with a
 # location, space completion off, an engineer-sudo list.
 _state_023() {
-    "$TACCTL_BIN_SCRIPT" group add engineer 15 ENG-CLASS > /dev/null
+    "$TACCTL_BIN_SCRIPT" group add engineer 15 EN-CLASS > /dev/null
     "$TACCTL_BIN_SCRIPT" group edit engineer tier engineer > /dev/null
     "$TACCTL_BIN_SCRIPT" user add erin engineer --hash "$HASH" --scopes lab > /dev/null
     "$TACCTL_BIN_SCRIPT" scope snmp lab version v2c > /dev/null

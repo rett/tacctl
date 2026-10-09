@@ -160,6 +160,7 @@ var tierNotes = map[string]string{
 	"scope snmp":    "scope snmp: an engineer may read the settings of a scope of their own (show [--reveal], version, port, timeout, contact, clients list); every setter, clear and test needs the superuser tier.",
 	"host show":     "host show: an engineer reads what tacctl recorded of a host; --check logs in to it and needs the superuser tier.",
 	"device import": "device import: an engineer imports from standard input only (device import -).",
+	"device config": "device config: a device's walkthrough carries its scope's secret, so an engineer gets the devices of their own scopes only.",
 }
 
 // tierSection is the part of a family's help that names the tier each of

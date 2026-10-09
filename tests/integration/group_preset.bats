@@ -23,7 +23,7 @@ setup() {
     assert_output --partial "Junos deny-commands (112/241 bytes)"
     assert_output --partial "Junos deny-commands (226/241 bytes)"
     assert_output --partial "Junos deny-commands (192/241 bytes)"
-    assert_output --partial "create (priv-lvl 15, class ENG-CLASS)"
+    assert_output --partial "create (priv-lvl 15, class EN-CLASS)"
     assert_output --partial "tacctl tier engineer"
     assert_output --partial "Cisco command rules (34, default permit)"
     refute_output --partial "deny-configuration"
@@ -66,7 +66,7 @@ setup() {
     "$TACCTL_BIN_SCRIPT" group edit operator wti-level superuser
     run bash -c "echo y | '$TACCTL_BIN_SCRIPT' group preset roles"
     assert_success
-    assert_output --regexp "Juniper class ENG-CLASS +kept \(pass --force\)"
+    assert_output --regexp "Juniper class EN-CLASS +kept \(pass --force\)"
     assert_output --regexp "WTI level user +kept \(pass --force\)"
     run "$TACCTL_BIN_SCRIPT" group show operator
     assert_output --partial "WTI level:         SuperUser (set"
@@ -76,11 +76,11 @@ setup() {
     assert_output --regexp "WTI level user +replaced"
     run "$TACCTL_BIN_SCRIPT" group show engineer
     assert_output --partial "Cisco priv-lvl:    14"
-    assert_output --partial "Juniper class:     ENG-CLASS"
+    assert_output --partial "Juniper class:     EN-CLASS"
 }
 
 @test "group preset roles: the 0.2.2 engineer deny-configuration is kept unless --force clears it" {
-    "$TACCTL_BIN_SCRIPT" group add engineer 15 ENG-CLASS
+    "$TACCTL_BIN_SCRIPT" group add engineer 15 EN-CLASS
     "$TACCTL_BIN_SCRIPT" group junos engineer deny-configuration add '^(snmp|system login)'
     run bash -c "echo y | '$TACCTL_BIN_SCRIPT' group preset roles"
     assert_success

@@ -14,4 +14,4 @@ snmp-server community lab-ro-community RO TACCTL-SNMP
 ! snmp-server contact <contact>   ! NOT SET: tacctl scope snmp lab contact '<text>'
 ! Check from the tacctl server: tacctl scope snmp lab test <device-address>
 
-Unfilled SNMP values: contact (tacctl scope snmp lab contact '<text>'), location (tacctl device location <name> '<text>')
+Unfilled SNMP values: contact (tacctl scope snmp lab contact '<text>')

@@ -2,7 +2,7 @@
 Reset of group 'engineer' to the role preset's engineer
 -------------------------------------------------------
   settings
-    group:           does not exist: it is created with Cisco priv-lvl 15 and Juniper class ENG-CLASS
+    group:           does not exist: it is created with Cisco priv-lvl 15 and Juniper class EN-CLASS
     tacctl tier:     none -> engineer (set)
     WTI level:       none -> SuperUser (set)
   commands

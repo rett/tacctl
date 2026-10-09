@@ -130,7 +130,7 @@ func TestLoweringSyncRunsWhileAGroupIsAmbiguous(t *testing.T) {
 // before the import and lost its setting, so it is still ambiguous after.
 func TestStoreImportDoesNotRepinAGroupTheStoreHad(t *testing.T) {
 	hs := hostLowerSandbox(t)
-	if hs.run(nil, "group", "add", "neteng", "15", "ENG-CLASS"); hs.code != 0 {
+	if hs.run(nil, "group", "add", "neteng", "15", "EN-CLASS"); hs.code != 0 {
 		t.Fatalf("group add: %d %q", hs.code, hs.err.String())
 	}
 	hs.write("state/tacctl.yaml", "backends:\n  enabled: [tacacs]\n", 0o600)
@@ -193,7 +193,7 @@ func TestLoweredWithNoTiersFromBeforeSaysWhatRemains(t *testing.T) {
 // until 'tacctl store import'), while the same groups in a store are.
 func TestLegacyInstallHasNoAmbiguousGroups(t *testing.T) {
 	hs := hostLowerSandbox(t)
-	if hs.run(nil, "group", "add", "neteng", "15", "ENG-CLASS"); hs.code != 0 {
+	if hs.run(nil, "group", "add", "neteng", "15", "EN-CLASS"); hs.code != 0 {
 		t.Fatalf("group add: %d %q", hs.code, hs.err.String())
 	}
 	hs.run(nil, "user", "move", "bob", "neteng")

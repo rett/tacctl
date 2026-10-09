@@ -19,7 +19,7 @@ func (o *ohost) store15() {
 	if err != nil {
 		o.t.Fatal(err)
 	}
-	extra := "groups:\n  neteng: {priv_lvl: 15, juniper_class: ENG-CLASS}\n  helpdesk: {priv_lvl: 14, juniper_class: HD-CLASS}\n  ops: {priv_lvl: 15, juniper_class: OPS-CLASS}\n"
+	extra := "groups:\n  neteng: {priv_lvl: 15, juniper_class: EN-CLASS}\n  helpdesk: {priv_lvl: 14, juniper_class: HD-CLASS}\n  ops: {priv_lvl: 15, juniper_class: OPS-CLASS}\n"
 	o.write(o.p.StoreFile, strings.Replace(string(fixture), "groups:\n", extra, 1))
 	if err := os.Chmod(o.p.StoreFile, 0o600); err != nil {
 		o.t.Fatal(err)

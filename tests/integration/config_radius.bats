@@ -579,7 +579,7 @@ radius_listeners() {
     run "$TACCTL_BIN_SCRIPT" config juniper --scope lab --protocol radius
     assert_success
     assert_output --partial "#   deny-commands       25/241 bytes: (^(request|start)( .*)?$)"
-    assert_output --partial "operator: OP-CLASS (local: clear/network/reset/trace/view + view-configuration), junos: deny-commands 25/241"
+    assert_output --partial "operator: OP-CLASS (local: clear/network/trace/view + view-configuration), junos: deny-commands 25/241"
 }
 
 @test "config wti: without --protocol a scope that resolves to RADIUS gets the RADIUS walkthrough, like cisco and juniper" {

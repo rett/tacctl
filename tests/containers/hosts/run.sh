@@ -583,7 +583,7 @@ if [[ "$CYCLE" == "rollback" ]]; then
     same() { if [[ "$2" == "$3" ]]; then ok "$1"; else bad "$1   (got: $(tr '\n' ' ' <<< "$2"); wanted: $(tr '\n' ' ' <<< "$3"))"; fi; }
     section "rollback: frank (a group at priv-lvl 15 with tier engineer), alice (superuser), bob, dave: synced"
     fhash=$(s python3 -c 'import bcrypt; print(bcrypt.hashpw(b"Frank-Net-Pw-1", bcrypt.gensalt(rounds=10)).decode())')
-    tacctl group add engineers 15 ENG-CLASS --tier engineer > /dev/null
+    tacctl group add engineers 15 EN-CLASS --tier engineer > /dev/null
     tacctl user add frank engineers --hash "$fhash" --scopes linux-c1 > /dev/null
     for u in alice bob dave; do tacctl user scope "$u" add linux-c1 > /dev/null; done
     tacctl host sync c1 > "${WORK}/sync.out"; rc=$?

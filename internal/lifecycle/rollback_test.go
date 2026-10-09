@@ -74,7 +74,7 @@ func TestTopLevelAlternation(t *testing.T) {
 
 const rbStore = `version: 1
 groups:
-  engineer: {priv_lvl: 15, juniper_class: ENG-CLASS}
+  engineer: {priv_lvl: 15, juniper_class: EN-CLASS}
   ops: {priv_lvl: 15, juniper_class: RW-CLASS}
   lead: {priv_lvl: 10, juniper_class: OP-CLASS}
   operator: {priv_lvl: 7, juniper_class: OP-CLASS, builtin: true}
@@ -467,7 +467,7 @@ func TestPlanRollbackOfACleanState(t *testing.T) {
 	if err := os.MkdirAll(pt.StateDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	store := strings.Replace(rbStore, "  engineer: {priv_lvl: 15, juniper_class: ENG-CLASS}\n  ops: {priv_lvl: 15, juniper_class: RW-CLASS}\n  lead: {priv_lvl: 10, juniper_class: OP-CLASS}\n", "", 1)
+	store := strings.Replace(rbStore, "  engineer: {priv_lvl: 15, juniper_class: EN-CLASS}\n  ops: {priv_lvl: 15, juniper_class: RW-CLASS}\n  lead: {priv_lvl: 10, juniper_class: OP-CLASS}\n", "", 1)
 	for _, u := range []string{"erin", "evan", "olga", "lena", "gone"} {
 		i := strings.Index(store, "  "+u+":")
 		j := strings.Index(store[i:], "\n")

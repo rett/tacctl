@@ -211,6 +211,21 @@ complete_words() {
     assert_output ""
 }
 
+@test "completion: device config offers show, then the device names, then the walkthrough's options" {
+    complete_words tacctl device config ""
+    assert_output "show"
+    complete_words tacctl device config show ""
+    assert_line "db1"
+    assert_line "sw1"
+    assert_line "web1"
+    complete_words tacctl device config show sw1 --pro
+    assert_output "--protocol"
+    complete_words tacctl device config show sw1 --protocol ""
+    assert_output "$(printf 'tacacs\nradius')"
+    complete_words tacctl device config show sw1 --leg
+    assert_output "--legacy"
+}
+
 @test "completion: scope add offers --protocols and --vendor-attrs, with their values" {
     complete_words tacctl scope add edge ""
     assert_output "$(printf -- '--prefixes\n--secret\n--protocols\n--vendor-attrs\n--default')"

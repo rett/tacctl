@@ -17,4 +17,4 @@
           refuse 0.0.0.0/0 (everything else)
           Check from the tacctl server: tacctl scope snmp lab test <device-address>
 
-Unfilled SNMP values: contact (tacctl scope snmp lab contact '<text>'), location (tacctl device location <name> '<text>')
+Unfilled SNMP values: contact (tacctl scope snmp lab contact '<text>')

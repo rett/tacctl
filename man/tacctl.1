@@ -1164,7 +1164,7 @@ Starting values for four roles: viewer (the built-in
 .BR readonly ),
 .BR operator ,
 .B engineer
-(created at priv-lvl 15 with class ENG-CLASS when absent; tier
+(created at priv-lvl 15 with class EN-CLASS when absent; tier
 .BR engineer )
 and
 .BR superuser :
@@ -1235,7 +1235,7 @@ takes the role preset's values instead
 For
 .BR engineer ,
 which is not a built-in group, it is the preset's engineer (priv-lvl 15,
-class ENG-CLASS, tier
+class EN-CLASS, tier
 .BR engineer ,
 WTI level
 .BR superuser ,
@@ -3209,7 +3209,7 @@ users, TACACS+ server setup, verification commands, and a commented
 lo0 firewall-filter example built from
 .B config mgmt-acl
 pre-filled. The classes carry permission bits only (a class named
-.B ENG-CLASS
+.B EN-CLASS
 gets the engineer bits). Step 3 is a read-only summary of what the
 server sends per class at login: the group's
 .B deny-commands
@@ -5136,9 +5136,9 @@ names the fixes; the add goes ahead. A device that does not answer within the
 timeout (one retry), an empty sysName, or no SNMP set up is one info line
 .RI ( "No SNMP answer from " address "; no name hint." );
 when a scan recorded a NAS-Identifier for the address, that is shown instead,
-labelled as such. Nothing of it is stored.
+labelled as such. Nothing of the name is stored.
 .B \-\-no\-lookup
-skips it. With no
+skips the lookup. With no
 .IR name ,
 the sysName, lowercased, is offered as the name and taken only after a
 .B y
@@ -5147,6 +5147,24 @@ not a valid device name or is a generic one (a WTI unit's Site ID
 .BR WTI ),
 the add is refused with the usage line. The offered name goes through every
 other check of the add.
+.IP
+Unless
+.B \-\-snmp\-location
+or
+.B \-\-no\-lookup
+is given,
+.B add
+also reads the device's SNMP
+.B sysLocation.0
+(the same credentials, timeout and retry) and stores a non-empty answer as the
+device's location
+.RI ( "Location: " text " (read from the device)" ).
+A value the registry does not accept is shown with the reason and not stored. A
+device that reports none gets one line
+.RI ( "Location not set: tacctl device location " name " '<text>'" ),
+and at a terminal the add offers to enter one instead (blank skips). A device
+that does not answer is not mentioned again; the add never fails because of the
+location.
 .\" BEGIN GENERATED: command device add
 .RS
 .PP
@@ -5179,7 +5197,7 @@ Register only if the device offers this key; pin it alone.
 Register without a pinned key (a hostkey\-unpinned notice).
 .TP
 \fB\-\-no\-lookup\fR
-Do not read the device's own name by SNMP (sysName).
+Do not read the device's own name and location by SNMP.
 .TP
 \fB\-\-allow\-generic\fR
 (add, rename, import) Allow a generic name such as 'switch'.
@@ -5202,7 +5220,7 @@ Options:
 Remove every device (an engineer: those of their own scopes).
 .TP
 \fB\-y\fR, \fB\-\-yes\fR
-(remove, import, hostkey) Answer yes to the confirmation.
+(remove, import, hostkey, location) Answer yes to the confirmation.
 .RE
 .\" END GENERATED: command device remove
 .TP
@@ -5273,7 +5291,7 @@ Requires: \fBengineer\fR.
 .RE
 .\" END GENERATED: command device description
 .TP
-.BI "device location " "name " [ text | clear ]
+.BI "device location " "name " [ text | clear | "\-\-from\-device " [ \-y ] ]
 Show, set or clear the place of the device (up to 120 characters, no control
 characters, no
 .BR ? ),
@@ -5288,10 +5306,29 @@ only when set;
 of
 .B add
 sets it at registration, and an empty text clears it.
+.B \-\-from\-device
+reads the device's own location (SNMP
+.BR sysLocation.0 ,
+with the credentials of its scope) now and stores it. An empty answer, no
+answer, and a value the registry does not accept are refused with the reason
+and change nothing. When the registry holds a different location, both are
+shown and the device's replaces it after a
+.B y
+at a terminal, or with
+.BR \-y ", " \-\-yes ;
+without either it is refused. The name is the only argument.
 .\" BEGIN GENERATED: command device location
 .RS
 .PP
 Requires: \fBengineer\fR.
+.PP
+Options:
+.TP
+\fB\-\-from\-device\fR
+Read the location from the device (SNMP sysLocation) and store it.
+.TP
+\fB\-y\fR, \fB\-\-yes\fR
+(remove, import, hostkey, location) Answer yes to the confirmation.
 .RE
 .\" END GENERATED: command device location
 .TP
@@ -5412,7 +5449,7 @@ Replace the registry instead of merging into it.
 (add, rename, import) Allow a generic name such as 'switch'.
 .TP
 \fB\-y\fR, \fB\-\-yes\fR
-(remove, import, hostkey) Answer yes to the confirmation.
+(remove, import, hostkey, location) Answer yes to the confirmation.
 .RE
 .\" END GENERATED: command device import
 .TP
@@ -5462,7 +5499,7 @@ Requires: \fBengineer\fR.
 Options:
 .TP
 \fB\-y\fR, \fB\-\-yes\fR
-(remove, import, hostkey) Answer yes to the confirmation.
+(remove, import, hostkey, location) Answer yes to the confirmation.
 .RE
 .\" END GENERATED: command device hostkey
 .TP
@@ -5630,12 +5667,25 @@ or
 .B no answer
 or why there is none; see
 .BR "config snmp" ),
-and its notices.
+its Location (the device's sysLocation against the registry's:
+.BR match ,
+.B differs
+with both values,
+.B registry only
+or
+.BR "device only" ;
+nothing is written), and its notices.
 .B \-\-json
 prints the rows for scripts, the sysName as
 .B sysname
 (null when none was read) with
-.BR sysname_match .
+.BR sysname_match ,
+and the location as
+.B syslocation
+with
+.B syslocation_match
+(null when the registry has none) and
+.BR syslocation_error .
 .\" BEGIN GENERATED: command device check
 .RS
 .PP
@@ -5650,6 +5700,52 @@ Check every device.
 (list, show, export, check) Print JSON.
 .RE
 .\" END GENERATED: command device check
+.TP
+.BI "device config show " name " [ \-\-protocol tacacs|radius ] [ \-\-legacy ] [ \-\-server " "address|name" " ] [ \-\-source " address " ]"
+Print what is registered for the device (name, address, hostname, vendor, the
+scope that covers its address and the prefix, description, location), then the
+walkthrough of its vendor for that scope, exactly as
+.B config cisco|juniper|wti
+prints it with
+.B \-\-scope
+set to the device's scope and
+.B \-\-name
+to its name, built by the same code, with the device's location, description
+and name in the SNMP step. The options are those of
+.BR "config cisco|juniper|wti" ;
+.B \-\-legacy
+is for a Cisco device. Only a cisco, juniper or wti device has a walkthrough: a
+vendor
+.B other
+is refused with
+.BI "tacctl device vendor " "name cisco|juniper|wti" ,
+an enrolled Linux host with
+.BI "tacctl host show " name ,
+and a device no scope's prefixes cover with
+.BI "tacctl scope prefixes " scope " add " cidr .
+A refusal prints no data block. The walkthrough carries the scope's secret: an
+engineer gets the devices of their own scopes, and another scope's device is
+not found. With no subcommand the usage is printed.
+.\" BEGIN GENERATED: command device config
+.RS
+.PP
+Requires: \fBengineer\fR. A device's walkthrough carries its scope's secret, so an engineer gets the devices of their own scopes only.
+.PP
+Options:
+.TP
+\fB\-\-protocol\fR \fItacacs|radius\fR
+The protocol (default: the scope's auth\-method, else its only protocol, else tacacs).
+.TP
+\fB\-\-legacy\fR
+(Cisco) IOS 12.x syntax; TACACS+ only.
+.TP
+\fB\-\-server\fR \fI<address|name>\fR
+The address the device is told to authenticate against.
+.TP
+\fB\-\-source\fR \fI<address>\fR
+The address this server reaches the device from.
+.RE
+.\" END GENERATED: command device config
 .SS SSH to a device \fB(tacctl ssh)\fR
 .TP
 .BI "ssh " name|address " [ \-p " port " ] [ \-X | \-Y ] [ \-g ] [ { \-L | \-R | \-D } " spec " ]... [ \-\- " "ssh args" " ]"
@@ -6419,14 +6515,18 @@ device export, console show, console check
 device add, device remove, device rename, device address,
 device hostname, device vendor, device port, device description,
 device location, device legacy\-ssh, device hostkey, device import,
-scope devices, config cisco, config juniper, config wti, host list,
-host show, scope staging, scope secret, scope snmp, scope show
+scope devices, device config, config cisco, config juniper,
+config wti, host list, host show, scope staging, scope secret,
+scope snmp, scope show
 .TP
 .B superuser
 Every verb not listed above, and every verb of the tiers below.
 .PP
 The gate sees two words, so a verb that the code splits further is listed at its
 two\-word level and then limited by the code:
+.TP
+.B device config
+A device's walkthrough carries its scope's secret, so an engineer gets the devices of their own scopes only.
 .TP
 .B device import
 An engineer imports from standard input only (device import \-).

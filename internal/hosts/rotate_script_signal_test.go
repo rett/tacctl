@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/rett/tacctl/internal/execx"
@@ -30,13 +32,19 @@ echo "script-exit=$?"
 // through the trap: the account it made, root's record of it and the sudoers
 // line it was writing are gone.
 func TestRotateCreateHangUpRemovesWhatItMade(t *testing.T) {
+	// A test run under nohup starts with SIGHUP ignored, and a disposition
+	// of "ignored" survives exec: the script could not trap the hang-up.
+	// Handling the signal here gives the child the default one.
+	hup := make(chan os.Signal, 1)
+	signal.Notify(hup, syscall.SIGHUP)
+	defer signal.Stop(hup)
 	h := newStubHost(t)
 	path := filepath.Join(h.dir, "hup.sh")
 	if err := os.WriteFile(path, testScript(t, h.createKey("deploy2", testRange, testAvoid...)), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	res, err := execx.Real{}.Run(context.Background(), execx.Cmd{Name: "bash", Args: []string{"-c", hupWrapper},
-		Stdin: strings.NewReader(""), Env: h.env("STUB_VISUDO_SLEEP=5", "HUP_SCRIPT="+path)})
+		Stdin: strings.NewReader(""), Env: h.env("STUB_VISUDO_SLEEP=2", "HUP_SCRIPT="+path)})
 	if err != nil {
 		t.Fatal(err)
 	}

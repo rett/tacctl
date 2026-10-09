@@ -450,8 +450,11 @@ func TestEngineerWalkthroughShowsSNMP(t *testing.T) {
 			!strings.Contains(out, "inherited from the default") {
 			t.Errorf("%s: %d\n%s", vendor, sb.code, out)
 		}
-		if !strings.Contains(out, "Unfilled SNMP values: location (tacctl device location <name> '<text>')") {
-			t.Errorf("%s: no Unfilled line:\n%s", vendor, out)
+		// The location is one device's: it is no gap of the walkthrough (the
+		// scope's contact, credentials and server address are all set), and
+		// the placeholder names the command.
+		if strings.Contains(out, "Unfilled SNMP values") || !strings.Contains(out, "tacctl device location <name> '<text>'") {
+			t.Errorf("%s: the location is listed as unfilled, or its placeholder is missing:\n%s", vendor, out)
 		}
 	}
 	if n := sb.runner.Count("logger", "-t", "tacctl", "-p", "auth.info", "secret-read kind=snmp name=lab by=bob"); n != 1 {

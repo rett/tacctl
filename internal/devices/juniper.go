@@ -42,7 +42,7 @@ type juniperGroup struct{ name, class, junos string }
 // its template user's permissions.
 const EngineerClass = policy.EngineerClass
 
-// engineerBits are ENG-CLASS's permission bits (D20).
+// engineerBits are EN-CLASS's permission bits (D20).
 var engineerBits = []string{"view", "view-configuration", "network", "clear", "trace", "reset", "configure", "rollback",
 	"interface", "interface-control", "routing", "routing-control", "firewall", "firewall-control",
 	"system", "system-control", "snmp"}
@@ -50,7 +50,7 @@ var engineerBits = []string{"view", "view-configuration", "network", "clear", "t
 // juniperGroups is the awk over model_group_info: the groups with a
 // Juniper class, the login class 'super-user' for a name with super or
 // admin in it, 'read-only' for one with read, else 'operator'; a group
-// whose class is ENG-CLASS gets the engineer bits whatever its name.
+// whose class is EN-CLASS gets the engineer bits whatever its name.
 func juniperGroups(d Data) []juniperGroup {
 	var out []juniperGroup
 	for _, g := range groupInfo(d.Model) {
@@ -142,10 +142,11 @@ func JuniperVars(req Request, d Data) map[string]string {
 		j := g.class
 		switch g.junos {
 		case "read-only":
-			users.WriteString("set system login class " + j + " permissions view\n")
-			users.WriteString("set system login class " + j + " permissions view-configuration\n")
+			for _, p := range []string{"network", "view", "view-configuration"} {
+				users.WriteString("set system login class " + j + " permissions " + p + "\n")
+			}
 		case "operator":
-			for _, p := range []string{"clear", "network", "reset", "trace", "view", "view-configuration"} {
+			for _, p := range []string{"clear", "network", "trace", "view", "view-configuration"} {
 				users.WriteString("set system login class " + j + " permissions " + p + "\n")
 			}
 		case "engineer":
@@ -279,11 +280,11 @@ func JuniperVars(req Request, d Data) map[string]string {
 		desc := g.junos
 		switch g.junos {
 		case "read-only":
-			desc = "local: view + view-configuration"
+			desc = "local: network/view + view-configuration"
 		case "operator":
-			desc = "local: clear/network/reset/trace/view + view-configuration"
+			desc = "local: clear/network/trace/view + view-configuration"
 		case "engineer":
-			desc = "local: operator bits + configure/rollback and interface, routing, firewall, system, snmp"
+			desc = "local: operator bits + reset, configure/rollback and interface, routing, firewall, system, snmp"
 		case "super-user":
 			desc = "local: all"
 		}

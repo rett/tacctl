@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/rett/tacctl/internal/execx"
@@ -252,6 +253,24 @@ func TestTempKnownHosts(t *testing.T) {
 	}
 	if _, _, err := TempKnownHosts("web1", []string{"ssh-ed25519 AAAA\nweb1 ssh-rsa BBBB"}); err == nil {
 		t.Error("a key with a newline was accepted")
+	}
+}
+
+// The invoking user's ssh reads the file whatever umask tacctl runs with
+// (as root under sudo it can be 077).
+func TestTempKnownHostsIgnoresUmask(t *testing.T) {
+	old := syscall.Umask(0o077)
+	defer syscall.Umask(old)
+	path, cleanup, err := TempKnownHosts("web1", []string{"ssh-ed25519 AAAA1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	if fi, err := os.Stat(path); err != nil || fi.Mode().Perm() != 0o644 {
+		t.Errorf("file %v %v", fi, err)
+	}
+	if fi, err := os.Stat(filepath.Dir(path)); err != nil || fi.Mode().Perm() != 0o755 {
+		t.Errorf("dir %v %v", fi, err)
 	}
 }
 

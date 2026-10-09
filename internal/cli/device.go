@@ -66,7 +66,7 @@ var deviceSpecs = map[string]Spec{
 	"vendor":      {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, KindVendors + "|clear"}},
 	"port":        {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, "clear"}},
 	"description": {MinArgs: 1, MaxArgs: -1, Args: []string{KindDevices, "clear"}},
-	"location":    {MinArgs: 1, MaxArgs: -1, Args: []string{KindDevices, "clear"}},
+	"location":    {MinArgs: 1, MaxArgs: -1, Args: []string{KindDevices, "clear"}, Flags: []Flag{{Names: []string{"--from-device"}}, flagYes}},
 	"legacy-ssh":  {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, "enable|disable"}},
 	"stale-days":  {MaxArgs: 1, Args: []string{""}},
 	"notice":      {MinArgs: 3, MaxArgs: 3, Args: []string{KindDevices, "ack|unack", noticeWords}},
@@ -82,6 +82,12 @@ var deviceSpecs = map[string]Spec{
 		{Names: []string{"--backend"}, Value: true, Kind: KindBackends}}},
 	"discover": {MaxArgs: 0, Flags: []Flag{{Names: []string{"--all"}}, {Names: []string{"--backend"}, Value: true, Kind: KindBackends}}},
 	"check":    {MaxArgs: 1, Args: []string{KindDevices}, Flags: []Flag{{Names: []string{"--all"}, Alone: true}, flagJSON}},
+	// 'device config show <name>' is device_config.go.
+	"config": {MinArgs: 1, MaxArgs: 2, Args: []string{"show", KindDevices}, Flags: []Flag{
+		{Names: []string{"--protocol"}, Value: true, Kind: "tacacs|radius"},
+		{Names: []string{"--legacy"}},
+		{Names: []string{"--server"}, Value: true},
+		{Names: []string{"--source"}, Value: true}}},
 }
 
 // deviceVerbs are the verbs ({Use, Short}), in usage order.
@@ -96,7 +102,7 @@ var deviceVerbs = [][2]string{
 	{"vendor <name> [cisco|juniper|wti|other]", "Show or set the vendor"},
 	{"port <name> [<n>|clear]", "Show, set or clear the ssh port"},
 	{"description <name> [<text>|clear]", "Show, set or clear the description"},
-	{"location <name> [<text>|clear]", "Show, set or clear the place, for the SNMP location in the walkthroughs"},
+	{"location <name> [<text>|clear|--from-device [-y]]", "Show, set or clear the place, for the SNMP location in the walkthroughs (--from-device: read it from the device)"},
 	{"legacy-ssh <name> [enable|disable]", "Opt in to legacy IOS ssh algorithms"},
 	{"stale-days [<n>]", "Show or set the days after which a device counts as stale"},
 	{"notice <name> ack|unack <kind>", "Acknowledge or reopen a notice"},
@@ -108,7 +114,8 @@ var deviceVerbs = [][2]string{
 	{"ssh-config", "Print an ssh_config Include for your devices (Host blocks, pinned keys)"},
 	{"scan [--full] [--since <dur>] [--backend <id>]", "Read the logs for the devices seen; re-scan pinned host keys"},
 	{"discover [--all] [--backend <id>]", "Scan, then list the addresses that authenticated unregistered"},
-	{"check <name>|--all [--json]", "Checklist: scope, tag, seen, reachable, host key, SNMP name"},
+	{"check <name>|--all [--json]", "Checklist: scope, tag, seen, reachable, host key, SNMP name and location"},
+	{"config show <name> [--protocol tacacs|radius] [--legacy] [--server <address|name>] [--source <address>]", "The device's data, then its vendor walkthrough for its scope"},
 }
 
 // deviceOptions are the option lines under a verb's row in the usage, one
@@ -130,12 +137,15 @@ var deviceOptions = map[string][][2]string{
 		{"--legacy-ssh", "Old IOS: SHA-1 key exchange and ssh-rsa"},
 		{"--host-key SHA256:<fp>", "Register only if the device offers this key; pin it alone"},
 		{"--no-host-key", "Register without a pinned key (a hostkey-unpinned notice)"},
-		{"--no-lookup", "Do not read the device's own name by SNMP (sysName)"},
+		{"--no-lookup", "Do not read the device's own name and location by SNMP"},
 		{"--allow-generic", "(add, rename, import) Allow a generic name such as 'switch'"},
 	},
 	"remove": {
 		{"--all", "(remove, check) Every device; (show, notices) the acknowledged notices too"},
-		{"-y, --yes", "(remove, import, hostkey) Answer yes to the confirmation"},
+		{"-y, --yes", "(remove, import, hostkey, location) Answer yes to the confirmation"},
+	},
+	"location": {
+		{"--from-device", "Read the location from the device (SNMP sysLocation) and store it"},
 	},
 	"import": {
 		{"--check", "Write nothing; say what the import would do"},
@@ -159,6 +169,12 @@ var deviceOptions = map[string][][2]string{
 	},
 	"discover": {
 		{"--all", "Also list the addresses that were only refused"},
+	},
+	"config": {
+		{"--protocol tacacs|radius", "The protocol (default: the scope's auth-method, else its only protocol, else tacacs)"},
+		{"--legacy", "(Cisco) IOS 12.x syntax; TACACS+ only"},
+		{"--server <address|name>", "The address the device is told to authenticate against"},
+		{"--source <address>", "The address this server reaches the device from"},
 	},
 }
 
@@ -207,6 +223,21 @@ when there is one. 'add <address>' with no name offers the sysName,
 lowercased, at a terminal ('y' to take it). --no-lookup skips the hint.
 SNMP is set up with 'tacctl config snmp'; 'check' shows the sysName too.
 
+Location: when no --snmp-location is given, 'add' also reads the device's own
+location (SNMP sysLocation.0) and stores it, saying so. A device that reports
+none gets one line with the command that sets it; at a terminal 'add' offers
+to enter one (blank skips). A location the registry does not accept is shown
+and not stored. 'check' compares the device's location with the registry's in
+a Location row and writes nothing. 'location <name> --from-device' reads it
+now and stores it: an empty answer is refused, and a different registered
+location is shown beside the new one and asked about (-y answers yes).
+
+Configuration: 'config show <name>' prints the device's data (name, address,
+hostname, vendor, the scope that covers it, description, location), then the
+walkthrough 'tacctl config <vendor> --scope <its scope> --name <name>' prints,
+with the device's own values in the SNMP step. Only cisco, juniper and wti
+devices have one.
+
 Seen data: 'scan' reads each enabled backend's log (the tacquito journal,
 FreeRADIUS's tacctl-auth.log) from where the last scan stopped into
 /var/lib/tacctl/devices-seen.json, and re-scans the pinned host keys (a scan
@@ -248,7 +279,7 @@ func (inv *invocation) device(args []string) error {
 		"list": inv.deviceList, "show": inv.deviceShow, "add": inv.deviceAdd, "remove": inv.deviceRemove,
 		"rename": inv.deviceRename, "legacy-ssh": inv.deviceLegacySSH, "stale-days": inv.deviceStaleDays,
 		"notice": inv.deviceNotice, "notices": inv.deviceNotices, "import": inv.deviceImport, "export": inv.deviceExport,
-		"hostkey": inv.deviceHostkey, "ssh": inv.ssh, "ssh-config": inv.deviceSSHConfig,
+		"hostkey": inv.deviceHostkey, "ssh": inv.ssh, "ssh-config": inv.deviceSSHConfig, "config": inv.deviceConfig,
 		"scan": inv.deviceScan, "discover": inv.deviceDiscover, "check": inv.deviceCheck,
 		"address": inv.deviceSetter("address"), "hostname": inv.deviceSetter("hostname"), "vendor": inv.deviceSetter("vendor"),
 		"port": inv.deviceSetter("port"), "description": inv.deviceSetter("description"), "location": inv.deviceSetter("location"),
@@ -665,9 +696,7 @@ func (inv *invocation) deviceShow(args []string) error {
 	} else {
 		row("Legacy ssh", map[bool]string{true: "enabled", false: "disabled"}[e.LegacySSH])
 		row("Description", dash(e.Description))
-		if e.Location != "" {
-			row("Location", e.Location)
-		}
+		row("Location", dash(e.Location))
 	}
 	switch {
 	case e.Source == devreg.SourceHost && e.Configured:
@@ -845,12 +874,26 @@ func (inv *invocation) deviceAdd(args []string) error {
 	if lookup && len(hint) == 0 {
 		go func() { hint <- inv.lookupNameHint(d.Address) }()
 	}
+	// The device's own location, read alongside, unless one was given.
+	var locCh chan locRead
+	if lookup && !p.Has("--snmp-location") {
+		locCh = make(chan locRead, 1)
+		go func() { locCh <- inv.readLocation(d.Address) }()
+	}
 	retry := retyped("tacctl device add", args, "--host-key", "--no-host-key")
 	pin, offered, err := inv.deviceAddKeys(d, p, retry)
 	if err != nil {
 		return err
 	}
 	d.HostKeys = devreg.KeyStrings(pin)
+	var loc locRead
+	stored := false
+	if locCh != nil {
+		loc = <-locCh
+		if ok, _ := loc.storable(); ok {
+			d.Location, stored = loc.text, true
+		}
+	}
 	after, err := inv.deviceWrite(func(f *devreg.File, r *devreg.Resolver) error {
 		if err := check(r); err != nil {
 			return err
@@ -873,6 +916,9 @@ func (inv *invocation) deviceAdd(args []string) error {
 		inv.echo("  Scope: " + e.Scope + " (via prefix " + e.Prefix + ")")
 	} else {
 		inv.echo("  Scope: none yet; no scope's prefixes cover " + d.Address + " ('tacctl scope prefixes <scope> add <cidr>').")
+	}
+	if locCh != nil {
+		inv.printLocation(d, loc, stored)
 	}
 	for _, n := range devreg.Open(after.NoticesFor(e)) {
 		a.Out.Warn(n.Kind + ": " + n.Text)
@@ -999,6 +1045,9 @@ func (inv *invocation) deviceSetter(field string) func([]string) error {
 		f, res, err := inv.deviceLoad()
 		if err != nil {
 			return err
+		}
+		if field == "location" && (p.Has("--from-device") || p.Has("-y")) {
+			return inv.deviceLocationFromDevice(p, f, res)
 		}
 		if len(p.Args) == 1 {
 			e, err := inv.deviceFind(res, p.Args[0])

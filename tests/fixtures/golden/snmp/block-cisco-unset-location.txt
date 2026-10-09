@@ -13,5 +13,3 @@ snmp-server community lab-ro-community RO TACCTL-SNMP
 ! snmp-server location <location>   ! NOT SET: tacctl device location core-sw1 '<text>'
 snmp-server contact NOC <noc@example.net>
 ! Check from the tacctl server: tacctl scope snmp lab test <device-address>   (expects sysName 'core-sw1')
-
-Unfilled SNMP values: location (tacctl device location core-sw1 '<text>')

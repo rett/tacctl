@@ -16,5 +16,3 @@
           allow  198.51.100.0/24
           refuse 0.0.0.0/0 (everything else)
           Check from the tacctl server: tacctl scope snmp lab test <device-address>   (expects sysName 'core-sw1')
-
-Unfilled SNMP values: location (tacctl device location core-sw1 '<text>')

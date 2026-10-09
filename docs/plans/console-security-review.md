@@ -5,7 +5,7 @@ The "Automated" column is filled in from the test suite; the "Live (WP7.4)"
 column from the run on the dev server (2026-10-05; OpenSSH 9.6p1 on Ubuntu
 24.04, a `feature/0.2.1` build, the acceptance script kept outside the repo,
 steps in brackets as in `operator-console-wp-console.md` §5.5). Nothing here
-was done against the production host.
+was done outside the dev server and the test client.
 
 Status: **automated tests done; live acceptance done (51 checks passed); the
 interactive checks done by hand on 2026-10-06 (below). The forwarding tiers

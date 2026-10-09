@@ -141,19 +141,13 @@ func (in SNMPInput) missingCreds() string {
 }
 
 // unfilled are the gaps shared by every vendor: what the step needs and has
-// not got, in the order contact, location, then the credentials and the
-// server address.
+// not got, in the order contact, then the credentials and the server
+// address. The location is a setting of one device and is not a gap of the
+// walkthrough: its placeholder line names the command that sets it.
 func (in SNMPInput) unfilled() []Unfilled {
 	var out []Unfilled
 	if in.Contact == "" {
 		out = append(out, Unfilled{"contact", "tacctl scope snmp " + in.Scope + " contact '<text>'"})
-	}
-	if in.Location == "" {
-		name := in.DeviceName
-		if name == "" {
-			name = "<name>"
-		}
-		out = append(out, Unfilled{"location", "tacctl device location " + name + " '<text>'"})
 	}
 	switch in.missingCreds() {
 	case "community":

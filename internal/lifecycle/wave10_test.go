@@ -82,7 +82,7 @@ func TestUpgradeSaysWhenServerAccountsStillHoldRoot(t *testing.T) {
 	o := newOhost(t)
 	o.cloned()
 	fixture := readFile(t, "../../tests/fixtures/store.multiscope.yaml")
-	o.write(o.p.StoreFile, strings.Replace(fixture, "groups:\n", "groups:\n  engineer: {priv_lvl: 15, juniper_class: ENG-CLASS}\n", 1))
+	o.write(o.p.StoreFile, strings.Replace(fixture, "groups:\n", "groups:\n  engineer: {priv_lvl: 15, juniper_class: EN-CLASS}\n", 1))
 	o.write(o.p.StoreFile, strings.Replace(readFile(t, o.p.StoreFile), "  carol:\n    group: readonly", "  carol:\n    group: engineer", 1))
 	o.write(o.p.Overrides, "tier:\n  engineer: engineer\n")
 	o.write(o.p.LinuxHosts, "authsrv|local||lab|127.0.0.1|\n")

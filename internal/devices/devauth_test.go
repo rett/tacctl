@@ -2,7 +2,7 @@ package devices
 
 // 0.2.2 (docs/plans/0.2.2-plan.md §6.4-6.6): per-level Cisco authorization
 // and accounting with the D16 guard, privilege modes, the server's Junos
-// rules per class (D6) and ENG-CLASS (D20), the WTI Service Name and
+// rules per class (D6) and EN-CLASS (D20), the WTI Service Name and
 // per-group levels (D4).
 
 import (
@@ -125,7 +125,7 @@ func TestCiscoPrivilegeModes(t *testing.T) {
 }
 
 func TestJuniperServerRulesAndEngineerClass(t *testing.T) {
-	m, c := fixtureGroups(t, []string{"  engineer: {priv_lvl: 15, juniper_class: ENG-CLASS}"},
+	m, c := fixtureGroups(t, []string{"  engineer: {priv_lvl: 15, juniper_class: EN-CLASS}"},
 		"junos:\n  operator:\n    deny_commands: ['^(request|start)( .*)?$', '^file']\n    deny_configuration: ['^system login']\n")
 	for _, proto := range []string{TACACS, RADIUS} {
 		d := Data{Model: m, Conf: c, ServerIP: "x", ACL: MgmtACL{Name: "MGMT-ACL"}}
@@ -139,10 +139,10 @@ func TestJuniperServerRulesAndEngineerClass(t *testing.T) {
 				"#   deny-commands       33/241 bytes: (^(request|start)( .*)?$)|(^file)\n" +
 				"#   deny-configuration  15/236 bytes: (^system login)\n",
 			"# class 'RO-CLASS' (group 'readonly')\n#   none: tacctl group junos readonly deny-commands add '<regex>'\n",
-			"set system login class ENG-CLASS permissions [ view view-configuration network clear trace reset configure rollback interface interface-control routing routing-control firewall firewall-control system system-control snmp ]\nset system login user ENG-CLASS class ENG-CLASS\n",
-			"  operator: OP-CLASS (local: clear/network/reset/trace/view + view-configuration), junos: deny-commands 33/241, deny-configuration 15/236\n",
-			"  engineer: ENG-CLASS (local: operator bits + configure/rollback and interface, routing, firewall, system, snmp)\n",
-			"  show configuration system login user ENG-CLASS\n",
+			"set system login class EN-CLASS permissions [ view view-configuration network clear trace reset configure rollback interface interface-control routing routing-control firewall firewall-control system system-control snmp ]\nset system login user EN-CLASS class EN-CLASS\n",
+			"  operator: OP-CLASS (local: clear/network/trace/view + view-configuration), junos: deny-commands 33/241, deny-configuration 15/236\n",
+			"  engineer: EN-CLASS (local: operator bits + reset, configure/rollback and interface, routing, firewall, system, snmp)\n",
+			"  show configuration system login user EN-CLASS\n",
 			"#   delete system login class OP-CLASS allow-commands\n",
 		} {
 			if !strings.Contains(out, want) {
@@ -166,7 +166,7 @@ func TestJuniperServerRulesAndEngineerClass(t *testing.T) {
 }
 
 func TestWTILevelOverride(t *testing.T) {
-	m, c := fixtureGroups(t, []string{"  engineer: {priv_lvl: 15, juniper_class: ENG-CLASS}"}, "wti_level:\n  engineer: superuser\n  readonly: user\n")
+	m, c := fixtureGroups(t, []string{"  engineer: {priv_lvl: 15, juniper_class: EN-CLASS}"}, "wti_level:\n  engineer: superuser\n  readonly: user\n")
 	out := renderText(t, Request{Vendor: "wti", Scope: "lab", Protocol: TACACS}, Data{Model: m, Conf: c, ServerIP: "x"})
 	for _, want := range []string{
 		"11. Service Name               : wti       (factory default; per-group levels need it, see notes)\n",

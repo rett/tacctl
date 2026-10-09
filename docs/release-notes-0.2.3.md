@@ -8,12 +8,11 @@ spaces at the shell and console prompt, rotation of the account tacctl logs in
 to a Linux host with, a baseline of command rules and privileges for the four
 roles, `group reset`, SNMP, NETCONF, WTI IP Tables and break-glass users in the
 device walkthroughs, and `tacctl rollback`, which prepares the state for
-0.2.2. The numbered list in `CHANGELOG.md` (0.2.3, items 1 to 106, grouped by
+0.2.2. The numbered list in `CHANGELOG.md` (0.2.3, items 1 to 110, grouped by
 theme) is everything that differs from 0.2.2; the item numbers below point
 into it. Nothing changes on a device until you re-paste a walkthrough, and no
 device configuration is pushed by tacctl: that is 0.2.4 and later.
 
-This is the first release since 0.2.1 that production can reach, so
 "Upgrading" covers 0.2.1 to 0.2.3, 0.2.2's steps included.
 
 ## What is new
@@ -27,7 +26,7 @@ This is the first release since 0.2.1 that production can reach, so
 - **What an engineer may do.** What an operator may, and for the devices of
   their own scopes: `device add|remove|rename|address|hostname|vendor|port|description|location|legacy-ssh|hostkey`,
   `device import -` (standard input only), `scope devices`, and
-  `config cisco|juniper|wti` (also with `--staging`). They read the shared
+  `config cisco|juniper|wti` (also with `--staging`) and `device config show`. They read the shared
   secret and the SNMP credentials of their own scopes (`scope secret <scope>
   show`, `scope snmp <scope> show --reveal`; every read is logged, never the
   value; `scope show` shows the scope and the secret's length only) and the hosts and staging addresses of those scopes
@@ -116,6 +115,14 @@ This is the first release since 0.2.1 that production can reach, so
   cisco|juniper|wti`, for devices behind a translating firewall (item 68);
   `--source` is also permitted for ssh by the Cisco VTY-ACL and the Junos
   management filter, and is the server's /32 of the WTI IP Tables list.
+- **`tacctl device config show <name>`** prints a registered device's data and
+  then the walkthrough for its vendor and scope, with its own location,
+  description and name in the SNMP step; an engineer's for their own scopes
+  (item 109).
+- **The device's own location** is read by SNMP: `device add` stores the
+  `sysLocation` a device reports, `device check` compares it with the
+  registry's, and `device location <name> --from-device` stores it on request
+  (item 110).
 - **A commented NETCONF step** in the Junos and Cisco walkthroughs, so the
   fleet can be prepared before 0.2.4 (item 69).
 - **WTI IP Tables** rendered from the scope's management permit list; the
@@ -135,8 +142,7 @@ This is the first release since 0.2.1 that production can reach, so
 
 ## Upgrading from 0.2.1
 
-Production is on 0.2.1. Upgrade with `sudo tacctl upgrade` as always; a
-second run changes nothing. **Before upgrading, note the newest entry of
+Upgrade with `sudo tacctl upgrade` as always; a second run changes nothing. **Before upgrading, note the newest entry of
 `tacctl backup list`** (snapshots are taken before every change; the upgrade
 adds one only when it records a tier). That entry is your way back (see
 "Rolling back"). Read this section before you run it, and do the device steps
@@ -197,8 +203,8 @@ From 0.2.3:
 - **A red notice** if `commands.engineer` and the two Junos sets of `engineer`
   still hold the text of 0.2.2's role preset: its Cisco denies did not hold.
   Run `tacctl group reset engineer --dry-run`, look, then `tacctl group reset
-  engineer` (items 54, 55). Production did not run the preset on 0.2.1, so you
-  will not see it there.
+  engineer` (items 54, 55). An install that never ran the
+  preset does not see it.
 - **Templates you customized** keep their numbers and their text; the new
   version is written beside them as `<name>.template.new`.
 
@@ -220,16 +226,16 @@ Nothing changes on a device until you paste.
   yet `clear counters` or `clear line`. **Custom Cisco templates** in
   `/etc/tacctl/templates` keep the 1/7/15 accounting lines they have: compare
   with `<name>.template.new` and take what you want.
-- **Junos:** re-paste `tacctl config juniper`. The class names and permission
-  bits are **unchanged** in 0.2.3 (`RO-CLASS`, `OP-CLASS`, `RW-CLASS`, and
-  `ENG-CLASS` for a group that uses it). Step 3 is a read-only summary of what
+- **Junos:** re-paste `tacctl config juniper`. The class names are
+  `RO-CLASS`, `OP-CLASS`, `RW-CLASS` and, for the preset's engineer, `EN-CLASS`;
+  the viewer class gains `network` (ping and traceroute) and the operator class
+  loses `reset`, so a device needs Step 1 pasted again once. Step 3 is a read-only summary of what
   the server sends at login and lists the `delete ... allow-commands` lines
   that remove what an earlier walkthrough wrote on the classes. The
   break-glass step is Step 7 and Commit is Step 8. A group whose
-  class is `ENG-CLASS` needs its template user on the device (Step 1). A
-  rename of the classes (to `EN-CLASS` and `SU-CLASS`) and the changes to the
-  viewer and operator permission bits are held for the release that pushes
-  configuration (0.2.5).
+  class is `EN-CLASS` needs its template user on the device (Step 1). The
+  engineer's bits are fixed: changes to what an engineer may do are made with
+  the server-sent deny sets, which need no device change.
 - **WTI:** a unit whose Service Name was set to `shell` by an earlier
   walkthrough must be set back to its factory `wti` for per-group WTI levels
   to apply. The SNMP step is Step 6 now, so Save, the second-session test and
@@ -341,7 +347,7 @@ tacctl upgrade --branch 0.2.2                 # install 0.2.2: switches the clon
   entry you noted in `tacctl backup list` before the upgrade to 0.2.3; it
   loses what changed since. Command rules with a top-level `|` in a regex
   match differently again under 0.2.2 (it renders them unwrapped).
-- **Back to 0.2.1, which is where production came from.** The tool targets
+- **Back to 0.2.1.** The tool targets
   0.2.2 only, so the way is in four steps:
   1. `tacctl rollback 0.2.2 --apply --yes --hosts`: old releases never remove
      `%tac-engineer` or membership of `tac-engineer`, so the hosts are synced
@@ -359,8 +365,8 @@ tacctl upgrade --branch 0.2.2                 # install 0.2.2: switches the clon
 
 ## What is not lab-tested
 
-Written from the vendors' documents and the tests that run here; the lab
-acceptance is still to do. **Only some of the output says so.** Marked "not
+Written from the vendors' documents and the tests in the repository; none of
+it is confirmed on a device. **Only some of the output says so.** Marked "not
 verified" in the walkthroughs: the WTI SNMP step (the menu names and the client
 restriction), the WTI IP Tables list and when the unit applies a changed list,
 the WTI RADIUS walkthrough, the SHA-256 keyword lines on Cisco and Junos, and
@@ -399,7 +405,7 @@ else below is just as unverified and carries no marker**:
   memory for their session only (never stored), and reads a device's SNMP
   configuration to offer the gaps, with per-device SNMP overrides. **0.2.5**
   applies it with a confirmed commit or revert timer, in batches with a canary,
-  and carries the Junos class rename and the viewer/operator bit changes.
+  and carries the viewer/operator Junos bit changes.
   **0.2.6** WTI configuration, **0.2.7** device account rotation.
 - **`engineer` is an ordinary group** in 0.2.3 (the role preset creates it if
   absent, an existing one is taken as it is). A built-in `engineer` group with a
@@ -408,6 +414,6 @@ else below is just as unverified and carries no marker**:
   roles and renders commented lines; it stores no password or hash, and
   generating, rotating and removing the account on devices is 0.2.7.
 - **Engineers are unrestricted in Cisco configuration mode** under the
-  canonical rules, and on Junos the `ENG-CLASS` bits are the only limit on
+  canonical rules, and on Junos the `EN-CLASS` bits are the only limit on
   configuration. A site that wants a boundary adds rules with `group commands
   add` or sets `group junos <group> deny-configuration`.

@@ -1,6 +1,6 @@
 # tacctl: pluggable auth backends — final plan
 
-Repo `/home/user/tacctl` (branch `develop`, latest tag `0.1.14`, git-flow develop → release/x.y.z → master). Dev host `devserver` tracks develop; the production host tracks master. **All verification in this plan is local bats or the dev hosts `devserver`/`client`; nothing touches production. No work package commits or pushes; the user does that on explicit request.**
+Repo `/home/user/tacctl` (branch `develop`, latest tag `0.1.14`, git-flow develop → release/x.y.z → master). Dev host `devserver` tracks develop. **All verification in this plan is local bats or the dev hosts `devserver`/`client`. No work package commits or pushes; the user does that on explicit request.**
 
 Markers: **[V]** verified by reading code/docs or running a read-only check; **[I]** inferred from code; **[A]** assumption about external software that must be checked against upstream before relying on it (collected in §9).
 
@@ -215,7 +215,7 @@ Representation rules:
 3. `yaml.safe_load` both the live file and the rendered file and **normalize**: users → dict by name with `scopes` sorted, groups inlined (as safe_load already does), authenticator/accounter dicts as-is, group `commands` lists as-is; `secrets` → ordered list of `(name, key, parsed prefixes)` (order matters: first match); `prefix_allow/deny` → sets. Print `EQUIVALENT` or a unified diff of the two normalized JSON dumps;
 4. if `/usr/local/bin/tacquito` exists: `timeout 5 tacquito -config <tmp> -network tcp -address 127.0.0.1:0 -acct-log-path <tmp> -metrics-address 127.0.0.1:0 -level 20`, pass when stderr shows `serve on` before timeout (loader rejects unparseable configs with `error fetching config` [V `main.go:76-96`]).
 
-Procedure on the dev server (the test client only): `tacctl upgrade --branch develop` runs `--check` as a migration gate; only on `EQUIVALENT` + load-smoke pass does it write the store, move state, render, record `rendered.json`, and restart. The pre-flip `tacquito.yaml` is copied to `/etc/tacctl/backups/legacy/tacquito.yaml.pre-store.<ts>`. Then verify live: `tacctl status`, `tacctl config validate`, `tacctl user verify <existing>`, a TACACS+ login from `client` (already enrolled), `tacctl backup diff` shows no semantic change. The same gate runs on production later **only when the user performs the release**; the plan does not schedule that.
+Procedure on the dev server (the test client only): `tacctl upgrade --branch develop` runs `--check` as a migration gate; only on `EQUIVALENT` + load-smoke pass does it write the store, move state, render, record `rendered.json`, and restart. The pre-flip `tacquito.yaml` is copied to `/etc/tacctl/backups/legacy/tacquito.yaml.pre-store.<ts>`. Then verify live: `tacctl status`, `tacctl config validate`, `tacctl user verify <existing>`, a TACACS+ login from `client` (already enrolled), `tacctl backup diff` shows no semantic change. The same gate runs on other installs only when their owner upgrades; the plan does not schedule that.
 
 ### 4.4 Failure and rollback
 
@@ -506,7 +506,7 @@ Common rules for every package (restate in each hand-off): read `/home/user/tacc
 ### WP4.3 — RHEL/SELinux radius path and container matrix
 - **Goal:** EPEL packaging and SELinux handling for the radius method; verify in rootless podman containers (AlmaLinux 8/9/10, Ubuntu noble, Debian bookworm) on the dev server.
 - **Read first:** `client-install.sh` family/SELinux sections (WP4.1 result), project memory test-container notes (`--cap-add AUDIT_WRITE`, `pam_loginuid` commented, `pam_unix account` → `pam_permit`), §9 items 4-5.
-- **Scope:** `pkg_ensure` for `pam_radius` with an EPEL hint when missing; SELinux boolean/CIL per §6.1 (record findings in `docs/radius-notes.md`); run the enroll/login/sudo/unenroll cycle in containers against the dev server FreeRADIUS (throwaway user, removed afterwards); SELinux enforcing cannot be tested in containers — document as unverified like the TACACS+ CIL. Out of scope: production hosts.
+- **Scope:** `pkg_ensure` for `pam_radius` with an EPEL hint when missing; SELinux boolean/CIL per §6.1 (record findings in `docs/radius-notes.md`); run the enroll/login/sudo/unenroll cycle in containers against the dev server FreeRADIUS (throwaway user, removed afterwards); SELinux enforcing cannot be tested in containers — document as unverified like the TACACS+ CIL. Out of scope: hosts other than the dev hosts.
 - **Acceptance:** report per distro; any script fix passes `make test`.
 - **Executor:** Sonnet (procedure is well-defined) — escalate to Opus if PAM behaviour differs from §6.1. **Deps:** WP4.1, WP3.5. **Worktree:** no (live containers).
 

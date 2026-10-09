@@ -3,7 +3,7 @@ Reset of group 'engineer' to the role preset's engineer
 -------------------------------------------------------
   settings
     Cisco priv-lvl:  14 -> 15
-    Juniper class:   OTHER-CLASS -> ENG-CLASS
+    Juniper class:   OTHER-CLASS -> EN-CLASS
     tacctl tier:     operator (set) -> engineer (set)
     WTI level:       Administrator (set) -> SuperUser (set)
     warning: Cisco logins and the per-level authorization lines change; re-paste tacctl config cisco

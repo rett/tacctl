@@ -559,7 +559,10 @@ current behaviour; this file is where history lives.
     by your own known_hosts. The proof's options are a stricter set than a
     later login's (`IdentitiesOnly`, `PreferredAuthentications=publickey`, no
     GSSAPI or host-based logins), so a proof that holds is not undone by what
-    `host sync` adds.
+    `host sync` adds. The temporary known_hosts is readable by the user whose
+    ssh runs the proof whatever umask tacctl runs with (it was closed to that
+    user under a restrictive umask, and the proof then failed with "No ED25519
+    host key is known").
 
 36. **Creating the account takes back what it did.** A `useradd` that fails
     after it made part of the account no longer leaves it: what it made is
@@ -817,7 +820,7 @@ current behaviour; this file is where history lives.
     `secret` bit), the engineer must not hide what they can see, and the
     engineer's set, which 0.2.2 wrote and which contained `snmp`, is no longer
     part of the preset (engineers may configure SNMP). With the canonical
-    settings **a Junos engineer's `ENG-CLASS` bits are the only limit on
+    settings **a Junos engineer's `EN-CLASS` bits are the only limit on
     configuration**: an engineer can edit `system login`, `tacplus-server` and
     the management filter, where on Cisco the rules (item 51) are the only
     limit; that asymmetry is accepted. A site that wants a Junos boundary sets
@@ -825,11 +828,9 @@ current behaviour; this file is where history lives.
     Groups). `group preset roles` clears an engineer `deny-configuration` left
     by 0.2.2 only with `--force` (otherwise it reports it as kept), and its
     `--mgmt-filter` option is gone, since there is no `deny-configuration`
-    left to put the filter in. The Junos class names (`RO-CLASS`, `OP-CLASS`,
-    `RW-CLASS`, `ENG-CLASS`) and the classes' permission bits are unchanged in
-    this release: the deny sets are sent by the server and take effect at the
-    next login. A different set of bits and class names is held for the
-    release that pushes configuration to devices.
+    left to put the filter in. The deny sets are sent by the server and take
+    effect at the next login; the classes' permission bits are the ceiling
+    on the device (item 107).
 
 53. **Lab check of per-command authorization: `tests/tools/permcheck.py`.** A
     small RFC 8907 client that asks a lab TACACS+ server for the decision on
@@ -857,8 +858,7 @@ current behaviour; this file is where history lives.
     `commands.engineer` and the two Junos sets of `engineer` with the text of
     0.2.2's preset and, when they are identical, ends with a red notice that
     names `tacctl group reset engineer` (look first with `--dry-run`; item 55).
-    Production did not run the preset on 0.2.1. Nothing in the shipped
-    defaults was affected.
+    Nothing in the shipped defaults was affected.
 
 55. **The upgrade notice names the new verb.** An install that still carries
     0.2.2's engineer role preset is told to run `tacctl group reset engineer
@@ -886,7 +886,7 @@ current behaviour; this file is where history lives.
     their own for the tier, the WTI level or the Junos sets. With `--preset`:
     the role preset's values (items 51, 52), so a built-in group can be set
     back to its role. For `engineer`, which is not built-in until 0.3.0: the
-    preset's engineer (priv-lvl 15, `ENG-CLASS`, tier `engineer`, WTI
+    preset's engineer (priv-lvl 15, `EN-CLASS`, tier `engineer`, WTI
     `superuser`, its Junos `deny-commands`, no `deny-configuration`, its Cisco
     rules), written through the same setters as `group preset roles`, so
     `group reset engineer` equals `group preset roles --force` for that one
@@ -1517,6 +1517,63 @@ current behaviour; this file is where history lives.
      the environment of the ssh session, which moved the sudoers and passwd
      paths and skipped the root check. The script now sets `ROTATE_TEST=0` on a
      line of its own; the test suite rewrites that line in its copy.
+
+107. **The role preset's engineer class is `EN-CLASS`.** `tacctl group preset
+     roles` creates `engineer` with the Junos class `EN-CLASS`, `tacctl config
+     juniper` writes its template user and the engineer permission bits for
+     any group that uses it, and `group reset engineer` restores it. The other
+     classes are unchanged (`RO-CLASS`, `OP-CLASS`, `RW-CLASS`). A group
+     created earlier keeps the class it holds; set it with `tacctl group edit
+     <group> juniper-class EN-CLASS` after the devices have the template user.
+     The permission bits of the classes are final: the
+     viewer's `RO-CLASS` gains `network` (ping and traceroute; `ssh` and
+     `telnet` stay denied by its server-sent set) and `OP-CLASS` loses `reset`
+     (the operator's set already denied `restart` and `request`). Paste Step 1
+     of `tacctl config juniper` again to bring a device up to date. What an
+     engineer or operator may do beyond the bits is decided by the server-sent
+     deny sets, which need no change on the devices.
+
+108. **`tacctl device show` always names the location, and the walkthroughs do
+     not list it as unfilled.** The Location row is `-` when none is set. The
+     location belongs to one device, so a walkthrough no longer ends with an
+     `Unfilled SNMP values: location (...)` line for it; the commented
+     placeholder in the SNMP step still names `tacctl device location <name>
+     '<text>'`. The contact, the credentials and the server address are listed
+     as before.
+
+109. **`tacctl device config show <name>` prints a registered device's
+     walkthrough.** It prints the device's data (name, address, hostname,
+     vendor, the scope that covers it and the prefix, description, location),
+     then the walkthrough `tacctl config <vendor> --scope <its scope> --name
+     <name>` prints, from the same code, with the device's location,
+     description and name in the SNMP step. `--protocol tacacs|radius`,
+     `--legacy` (Cisco only), `--server` and `--source` are those of `config
+     <vendor>`. Only a cisco, juniper or wti device has one: a vendor `other`
+     is refused with `tacctl device vendor <name> cisco|juniper|wti`, an
+     enrolled Linux host with `tacctl host show <name>`, and a device no
+     scope's prefixes cover with `tacctl scope prefixes <scope> add <cidr>`; a
+     refusal prints no data block. `tacctl device config` alone prints the
+     usage. The row is the engineer's, like `config cisco|juniper|wti`: an
+     engineer gets the devices of their own scopes (another scope's device is
+     "not found"), an operator is refused, and completion offers the device
+     names after `device config show`.
+110. **The device's own location is read by SNMP.** `tacctl device add` reads
+     the device's `sysLocation.0` next to its `sysName.0` (same credentials,
+     timeout and retry) unless `--snmp-location` or `--no-lookup` is given,
+     and stores a non-empty answer as the device's location: `Location: <text>
+     (read from the device)`. A value the registry does not accept is shown and
+     not stored. A device that reports none gets the line `Location not set:
+     tacctl device location <name> '<text>'`; at a terminal the add offers to
+     enter one instead (blank skips). The add never fails because of it, and a
+     device that does not answer says nothing more than the name hint did.
+     `tacctl device check` gains a `Location` row (match, differs with both
+     values, registry only, device only, or why there is no reading) and
+     `syslocation`, `syslocation_match` and `syslocation_error` in `--json`; it
+     writes nothing and stays the operator's. `tacctl device location <name>
+     --from-device [-y]` reads it now and stores it: an empty answer is
+     refused with the reason, and a different registered location is shown
+     beside the device's and replaced after a `y` at a terminal, or with `-y`
+     (without either it is refused).
 
 ## 0.2.2 (2026-10-07)
 

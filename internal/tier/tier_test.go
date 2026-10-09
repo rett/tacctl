@@ -145,7 +145,7 @@ func TestGateAndSudoersAgree(t *testing.T) {
 scope secret|scope protocols|backend list|backend status|backend enable|backend disable|store show|store import|
 store rollback|config validate|config show|config render|config dump|config cisco|config sudoers|log tail|
 log search|log failures|log accounting|log clear|backup list|backup diff|backup restore|host list|host enroll|
-host sync|host move|host target|host provisioner|host unenroll|device add|device remove|device rename|device address|device hostkey|
+host sync|host move|host target|host provisioner|host unenroll|device add|device remove|device rename|device address|device hostkey|device config|device check|device show|
 device import|device notice|device stale-days|scope devices|scope staging|config juniper|config wti|config linux|
 group edit|user move|scope snmp|device location|host show|rollback|group reset`
 	for _, v := range strings.Split(strings.ReplaceAll(verbs, "\n", ""), "|") {
@@ -184,7 +184,7 @@ group edit|user move|scope snmp|device location|host show|rollback|group reset`
 		t.Error("store show reaches a lower tier")
 	}
 	// An engineer's verbs are not the operator's.
-	for _, v := range [][2]string{{"device", "add"}, {"config", "cisco"}, {"scope", "devices"},
+	for _, v := range [][2]string{{"device", "add"}, {"device", "config"}, {"config", "cisco"}, {"scope", "devices"},
 		{"scope", "secret"}, {"scope", "snmp"}, {"device", "location"}, {"scope", "show"}, {"scope", "staging"}, {"host", "list"}, {"host", "show"}} {
 		if Permits(Operator, v[0], v[1]) || !Permits(Engineer, v[0], v[1]) {
 			t.Errorf("%s %s: operator %v, engineer %v", v[0], v[1], Permits(Operator, v[0], v[1]), Permits(Engineer, v[0], v[1]))

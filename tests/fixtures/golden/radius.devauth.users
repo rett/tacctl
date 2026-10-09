@@ -7,14 +7,14 @@
 # The Tacctl-* items go to the control list, never into a packet: the policy makes a vendor's
 # attribute from them for a client whose scope or tag asks for it. The reply is Service-Type.
 
-alice	Tmp-String-0 == "7b74fd83d352f121/lab", Crypt-Password := "$2b$12$dontcare.....................................................", Tacctl-Priv-Lvl := 15, Tacctl-Juniper-Class := "RW-CLASS", Tacctl-WTI-Super := 3
+alice	Tmp-String-0 == "f79162c64a9ec43a/lab", Crypt-Password := "$2b$12$dontcare.....................................................", Tacctl-Priv-Lvl := 15, Tacctl-Juniper-Class := "RW-CLASS", Tacctl-WTI-Super := 3
 	Service-Type = Administrative-User,
 	Fall-Through = No
 
-bob	Tmp-String-0 == "7b74fd83d352f121/lab", Crypt-Password := "$2b$12$dontcare.....................................................", Tacctl-Priv-Lvl := 7, Tacctl-Juniper-Class := "OP-CLASS", Tacctl-WTI-Super := 1, Tacctl-Juniper-Deny-Commands := "(^(file (delete|rename|copy|archive)|request|start|load|op|test|configure|edit|clear (system|security|network-access)|monitor traffic .*write-file|show (system (login|rollback)|configuration .*(root-auth|login|tacplus|radius).*))( .*)?$)"
+bob	Tmp-String-0 == "f79162c64a9ec43a/lab", Crypt-Password := "$2b$12$dontcare.....................................................", Tacctl-Priv-Lvl := 7, Tacctl-Juniper-Class := "OP-CLASS", Tacctl-WTI-Super := 1, Tacctl-Juniper-Deny-Commands := "(^(file (delete|rename|copy|archive)|request|start|load|op|test|configure|edit|clear (system|security|network-access)|monitor traffic .*write-file|show (system (login|rollback)|configuration .*(root-auth|login|tacplus|radius).*))( .*)?$)"
 	Service-Type = NAS-Prompt-User,
 	Fall-Through = No
 
-dave	Tmp-String-0 == "7b74fd83d352f121/lab", Crypt-Password := "$2b$12$dontcare.....................................................", Tacctl-Priv-Lvl := 15, Tacctl-Juniper-Class := "ENG-CLASS", Tacctl-WTI-Super := 2, Tacctl-Juniper-Deny-Commands := "(^(request (system (reboot|halt|power-off|zeroize|software|snapshot|storage|scripts)|chassis routing-engine|vmhost|security)|start|load|op|file (copy|delete|rename|archive|show)|clear system login|restart (chassis|management).*)( .*)?$)", Tacctl-Juniper-Deny-Configuration := "(^(groups [^ ]+ )?(system (login|root-auth|authentication|tacplus|radius|accounting|services|scripts|archival|master|ports)|snmp|event-options|security (ike|ipsec|ssh|cert|pki)|interfaces (fxp0|em0|me0|vme)))"
+dave	Tmp-String-0 == "f79162c64a9ec43a/lab", Crypt-Password := "$2b$12$dontcare.....................................................", Tacctl-Priv-Lvl := 15, Tacctl-Juniper-Class := "EN-CLASS", Tacctl-WTI-Super := 2, Tacctl-Juniper-Deny-Commands := "(^(request (system (reboot|halt|power-off|zeroize|software|snapshot|storage|scripts)|chassis routing-engine|vmhost|security)|start|load|op|file (copy|delete|rename|archive|show)|clear system login|restart (chassis|management).*)( .*)?$)", Tacctl-Juniper-Deny-Configuration := "(^(groups [^ ]+ )?(system (login|root-auth|authentication|tacplus|radius|accounting|services|scripts|archival|master|ports)|snmp|event-options|security (ike|ipsec|ssh|cert|pki)|interfaces (fxp0|em0|me0|vme)))"
 	Service-Type = Administrative-User,
 	Fall-Through = No
