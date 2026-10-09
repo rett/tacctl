@@ -6,8 +6,10 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/rett/tacctl/internal/backend"
+	"github.com/rett/tacctl/internal/model"
 	"github.com/rett/tacctl/internal/paths"
 	"github.com/rett/tacctl/internal/ui"
 )
@@ -87,6 +89,15 @@ func Install(ctx context.Context, h *Host, args []string) error {
 	}
 	repairVarLib(out, p.VarLib)
 	h.Conf.Reload()
+	// A fresh install has nothing for the one-time tier migration of
+	// 'tacctl upgrade' (every group it creates records its tier), so the
+	// marker is there from the start; an install over an existing store
+	// leaves the migration to the first upgrade.
+	if model.Mode(p.StoreFile) != "store" {
+		if err := MarkTierPin(p); err != nil {
+			out.Warn("Could not record the tier migration marker " + p.TierPinMarker + ": " + strings.TrimSpace(err.Error()))
+		}
+	}
 	// The device config templates (a customised one already there is
 	// kept).
 	if _, err := h.TemplatesSync(ctx, tree); err != nil {

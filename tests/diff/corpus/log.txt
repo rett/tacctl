@@ -55,6 +55,7 @@ log clear --backend radius --yes ;; log tail --backend radius
 # status
 config metrics disable ;; status
 config metrics disable ;; status extra words
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 config metrics disable ;; user add alice superuser --hash {HASH} --scopes lab ;; status
 config metrics disable ;; config password-age 1 ;; status
 config metrics disable ;; config password-age 0 ;; status
@@ -84,6 +85,7 @@ backend status radius tacacs
 _completion-names backends
 _completion-names enabled-backends
 _completion-names backups
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; _completion-names backups
 log search "" --backend radius
 log clear --backend

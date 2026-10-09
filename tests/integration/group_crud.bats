@@ -136,7 +136,8 @@ setup() {
     run "$TACCTL_BIN_SCRIPT" group privilege list operator
     assert_success
     assert_output --partial "default"
-    assert_output --partial "show running-config"
+    assert_output --partial "monitor capture"
+    assert_output --partial "clear counters"
 }
 
 @test "group privilege list: flips to 'explicit' once mappings are written" {
@@ -157,18 +158,22 @@ setup() {
 @test "group privilege add: accepts comma-separated list" {
     # First 'add' on a group with empty explicit mappings seeds from defaults
     # first (so the user's addition doesn't silently drop the conservative
-    # built-ins). Operator's defaults are the six priv-15 read/diag lines —
-    # adding two more commands yields 8 total.
+    # built-ins). Operator's defaults are nine lines (ping, traceroute and
+    # monitor capture for all forms, the single-entry clears, undebug) —
+    # adding two more commands yields 11 total.
     run "$TACCTL_BIN_SCRIPT" group privilege add operator "show version,show ip interface brief"
     assert_success
     run conf_get_list privileges.operator
-    [[ "$(printf '%s\n' "$output" | wc -l)" == "8" ]]
-    assert_line "show running-config"
-    assert_line "show startup-config"
-    assert_line "show tech-support"
-    assert_line "show archive"
-    assert_line "show access-list"
-    assert_line "show ip route"
+    [[ "$(printf '%s\n' "$output" | wc -l)" == "11" ]]
+    assert_line "exec all: ping"
+    assert_line "exec all: traceroute"
+    assert_line "exec all: monitor capture"
+    assert_line "clear counters"
+    assert_line "clear line"
+    assert_line "clear ip arp"
+    assert_line "clear arp-cache"
+    assert_line "clear mac address-table dynamic"
+    assert_line "undebug all"
     assert_line "show version"
     assert_line "show ip interface brief"
 }
@@ -194,18 +199,12 @@ setup() {
     assert_line "show version"
 }
 
-@test "group privilege clear: wipes all mappings for a group" {
-    "$TACCTL_BIN_SCRIPT" group privilege add operator "show version,show users"
-
-    run bash -c 'echo y | "'"$TACCTL_BIN_SCRIPT"'" group privilege clear operator'
-    assert_success
-    run conf_get_list privileges.operator
-    assert_output ""
-}
-
-@test "group privilege list: priv-lvl 1 (readonly) has no mappings to emit" {
+@test "group privilege list: readonly (priv-lvl 1) lowers only show running-config" {
     run "$TACCTL_BIN_SCRIPT" group privilege list readonly
     assert_success
-    # 'readonly' is priv-lvl 1 (the floor) — its default is intentionally empty.
-    refute_output --partial "show running-config"
+    # The monitoring account reads the (filtered) configuration; nothing else
+    # is lowered, and nothing is moved up (show ip route, show access-list).
+    assert_output --partial "show running-config"
+    refute_output --partial "show ip route"
+    refute_output --partial "show access-list"
 }

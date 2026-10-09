@@ -149,11 +149,19 @@ func TestSeedTheOldInstallersOutputStillMatchesTheShippedTemplate(t *testing.T) 
 	}
 }
 
+// The old installer's file carries the command rules tacctl shipped then;
+// 0.2.3 changed them, and an upgrade rewrites those blocks from the shipped
+// rules (RegenerateCommands) before the gate looks at the file.
 func TestSeedWhatTheDaemonLoadsIsEquivalentToTheOldTemplatePath(t *testing.T) {
 	e := newSeedEnv(t)
 	e.mustFreshInstall()
+	old := newSeedEnv(t)
+	old.write(old.p.Config, fixture(t, "legacy.fresh-install.yaml"), 0o640)
+	if err := lifecycle.RegenerateCommands(ctx, old.env, ""); err != nil {
+		t.Fatal(err)
+	}
 	var b bytes.Buffer
-	eq, err := model.EquivCheck(filepath.Join(fixDir, "legacy.fresh-install.yaml"), e.p.Config, &b)
+	eq, err := model.EquivCheck(old.p.Config, e.p.Config, &b)
 	if err != nil || !eq || strings.TrimSpace(b.String()) != "EQUIVALENT" {
 		t.Errorf("%v %v %q", eq, err, b.String())
 	}
@@ -166,8 +174,11 @@ func TestSeedTheSeededStoreIsWhatImportingTheOldFileGives(t *testing.T) {
 	_ = os.Remove(e.p.StoreFile)
 	_ = os.Remove(e.p.Rendered)
 	e.write(e.p.Config, fixture(t, "legacy.fresh-install.yaml"), 0o640)
-	// The old file passes the upgrade gate as it stands, imports to the same
-	// store, and renders to the same file.
+	// The old file passes the upgrade gate once the upgrade has rewritten its
+	// command rules, imports to the same store, and renders to the same file.
+	if err := lifecycle.RegenerateCommands(ctx, e.env, ""); err != nil {
+		t.Fatal(err)
+	}
 	e.fakeTacquito("serve")
 	if r := e.flip(); r != lifecycle.Flipped {
 		t.Fatalf("%v\n%s", r, e.output())

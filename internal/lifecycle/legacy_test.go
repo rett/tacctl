@@ -187,7 +187,8 @@ func TestMigrateEndToEndShowIsANameOnlyPermitInTacquitoYAML(t *testing.T) {
 	for _, s := range []string{`name: "show"`, `name: "terminal"`, `name: "*"`} {
 		has(t, b, s)
 	}
-	hasNot(t, b, "match:")
+	// 'show' stays a name-only permit (no match: line under it).
+	has(t, b, "    - name: \"show\"\n      action: *action_permit\n")
 	if mode(t, e.p.Config) != 0o640 {
 		t.Error("mode")
 	}
@@ -216,7 +217,7 @@ func TestMigrateRegenerateOneGroupAndTheBlockShapes(t *testing.T) {
 		t.Fatal(err)
 	}
 	b := e.operatorBlock()
-	has(t, b, "  commands:\n    - name: \"show\"\n      match: [\"running-config.*\", \"version\"]\n      action: *action_permit\n"+
+	has(t, b, "  commands:\n    - name: \"show\"\n      match: [\"^(?:running-config.*)$\", \"^(?:version)$\"]\n      action: *action_permit\n"+
 		"    - name: \"*\"\n      action: *action_deny\n  accounter:")
 	// Only that group: readonly's block is as it was.
 	ro := regexp.MustCompile(`(?ms)^readonly: &readonly\n.*?^  accounter:.*?\n`)
@@ -294,7 +295,7 @@ func TestMigrateWithAStoreHealAndRegenerateReRender(t *testing.T) {
 	}
 	b := e.operatorBlock()
 	has(t, b, `name: "show"`)
-	has(t, b, `"running-config.*"`)
+	has(t, b, `"^(?:running-config.*)$"`)
 	has(t, b, `name: "clear"`)
 	hasNot(t, b, "^show .*$")
 	// Rendered and recorded: nothing left to render.
@@ -574,7 +575,7 @@ func TestConfigSyncInstallPrintsTheFailureAndRunsTheRest(t *testing.T) {
 		t.Errorf("order: %d %d %d %d\n%s", iErr, iScrape, iBackup, iExec, out)
 	}
 	cfg := e.read(e.p.Config)
-	if countLines(cfg, "  name: exec") != 0 || strings.Contains(cfg, `name: "clear"`) || e.backupCount() != 1 {
+	if countLines(cfg, "  name: exec") != 0 || strings.Contains(cfg, "name: \"clear\"\n      action: *action_deny") || e.backupCount() != 1 {
 		t.Error(cfg)
 	}
 }

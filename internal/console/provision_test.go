@@ -68,6 +68,31 @@ func TestDropInText(t *testing.T) {
 	}
 }
 
+// The engineer tier has the console or no login: its drop-in is a file of
+// its own that closes every forwarding and tunnel whatever shell the account
+// has and does not depend on the console's settings but the agent switch,
+// which the engineers' own ssh to the hosts they sync needs. The console's
+// drop-in holds no block of it.
+func TestEngineerDropIn(t *testing.T) {
+	off := EngineerDropIn(false)
+	block := "Match Group tac-engineer\n    DisableForwarding yes\n    AllowTcpForwarding no\n    AllowStreamLocalForwarding no\n" +
+		"    X11Forwarding no\n    AllowAgentForwarding no\n    PermitTunnel no\n    GatewayPorts no\n"
+	if !strings.HasSuffix(off, block) || strings.Contains(off, "ForceCommand\n") {
+		t.Errorf("engineer drop-in:\n%s", off)
+	}
+	on := EngineerDropIn(true)
+	eng := on[strings.Index(on, "Match Group tac-engineer\n"):]
+	if strings.Contains(eng, "DisableForwarding") || !strings.Contains(eng, "    AllowAgentForwarding yes\n") ||
+		!strings.Contains(eng, "    AllowTcpForwarding no\n") || !strings.Contains(eng, "    PermitTunnel no\n") {
+		t.Errorf("engineer drop-in with agent forwarding:\n%s", eng)
+	}
+	for _, d := range []string{DropIn(testConsole, false, false, nil), DropIn(testConsole, true, true, []tier.Tier{tier.Superuser, tier.Operator})} {
+		if strings.Contains(d, "tac-engineer") {
+			t.Errorf("the console's drop-in holds an engineer block:\n%s", d)
+		}
+	}
+}
+
 func TestShellsLine(t *testing.T) {
 	dir := t.TempDir()
 	f := filepath.Join(dir, "shells")

@@ -15,6 +15,11 @@ import (
 // SystemLoginShell is what a user without the console gets as a login shell.
 const SystemLoginShell = "/bin/bash"
 
+// NoLoginShell is the login shell of an account that gets neither the
+// console nor a system shell: an engineer on a server whose console cannot
+// be provisioned, and a user whose tier is none (docs/plans/0.2.3-plan.md B2).
+const NoLoginShell = "/usr/sbin/nologin"
+
 // Policy is console.yaml read as decisions. The console's own process asks
 // it through 'tacctl _console-policy' (it cannot read root's file); the
 // provisioning and 'console show' ask it directly.
@@ -38,14 +43,20 @@ type Decision struct {
 	Why string
 }
 
-// Decide is the console decision for user at tier t: the user's override
-// wins, then the tier's switch. A caller with no tier (none, unrestricted)
-// gets no console: it has no account the console provisions.
+// Decide is the console decision for user at tier t: the engineer tier has
+// the console always (D18: an engineer has the console or no login on this
+// server, so neither a user override nor the tier's switch applies), then
+// the user's override wins, then the tier's switch. A caller with no tier
+// (none, unrestricted) gets no console: it has no account the console
+// provisions.
 func (p *Policy) Decide(user string, t tier.Tier) Decision {
 	switch t {
-	case tier.Readonly, tier.Operator, tier.Superuser:
+	case tier.Readonly, tier.Operator, tier.Engineer, tier.Superuser:
 	default:
 		return Decision{false, "no tier"}
+	}
+	if t == tier.Engineer {
+		return Decision{true, "tier engineer (always)"}
 	}
 	if on, ok := p.File.Users[user]; ok {
 		return Decision{on, "user override"}
@@ -57,21 +68,34 @@ func (p *Policy) Decide(user string, t tier.Tier) Decision {
 }
 
 // Shell is the login shell of user at tier t: the console's command, or
-// /bin/bash.
+// what ShellWithout says.
 func (p *Policy) Shell(user string, t tier.Tier) string {
 	if p.Decide(user, t).Console {
 		return p.Command
 	}
-	return SystemLoginShell
+	return ShellWithout(t)
+}
+
+// ShellWithout is the login shell of an account of tier t that does not get
+// the console: bash, but nologin for an engineer (the console or no login)
+// and for a tier that is none or unknown (no real shell for an account
+// nobody may log in to).
+func ShellWithout(t tier.Tier) string {
+	switch t {
+	case tier.Readonly, tier.Operator, tier.Superuser, tier.Unrestricted:
+		return SystemLoginShell
+	}
+	return NoLoginShell
 }
 
 // SystemShell reports whether the console's system-shell word is open to
-// tier t. A caller with no tier restriction is open to it; none is not.
+// tier t. A caller with no tier restriction is open to it; none and the
+// Closed tiers are not, whatever the file says.
 func (p *Policy) SystemShell(t tier.Tier) bool {
-	switch t {
-	case tier.Unrestricted:
+	switch {
+	case t == tier.Unrestricted:
 		return true
-	case tier.None:
+	case t == tier.None, slices.Contains(Closed, t):
 		return false
 	}
 	for _, s := range p.File.SystemShellTiers {
@@ -84,12 +108,12 @@ func (p *Policy) SystemShell(t tier.Tier) bool {
 
 // Forwarding reports whether tier t's console logins may forward X11 and
 // TCP ports (settings.forwarding_tiers). A caller with no tier restriction
-// may; none may not.
+// may; none and the Closed tiers may not.
 func (p *Policy) Forwarding(t tier.Tier) bool {
-	switch t {
-	case tier.Unrestricted:
+	switch {
+	case t == tier.Unrestricted:
 		return true
-	case tier.None:
+	case t == tier.None, slices.Contains(Closed, t):
 		return false
 	}
 	return slices.Contains(p.File.ForwardingTiers, t)
@@ -103,6 +127,10 @@ func (p *Policy) Idle() time.Duration { return time.Duration(p.File.Idle) * time
 
 // ListMax is the number of completions the shell lists without asking.
 func (p *Policy) ListMax() int { return p.File.ListMax }
+
+// SpaceCompletion reports whether a typed space at the console's prompt
+// completes a fixed word.
+func (p *Policy) SpaceCompletion() bool { return p.File.SpaceCompletion }
 
 // SSHEscape reports whether the console's ssh keeps its escape character.
 func (p *Policy) SSHEscape() bool { return p.File.SSHEscape }

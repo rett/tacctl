@@ -76,6 +76,7 @@ host enroll web1 --scope lab ;; config linux builds ;; host enroll web1 --scope 
 @known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999; 0.2.1 item 62: TAC_PROTOCOL=5
 host enroll web1 --scope lab ;; config linux builds ;; config linux builds clear ;; config linux builds
 @unenv SSH_STUB_OS
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope protocols lab set radius ;; host enroll web1 --scope lab
 scope auth-method lab radius ;; host enroll web1 --scope lab
 @known 0.2.1 items 23, 38-42: the host's ssh keys and facts (address, login.defs) are read after the run, keys pinned and the address recorded; the pushed script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999; 0.2.1 item 62: TAC_PROTOCOL=5
@@ -199,6 +200,7 @@ config linux script extra
 @known 0.2.1 item 9: a failing ip route lookup is an error naming --server, exit 1
 config linux script --scope lab
 @unenv IP_STUB_RC
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope protocols lab set radius ;; config linux script --scope lab --server 192.0.2.10
 scope auth-method lab radius ;; config linux script --scope lab --server 192.0.2.10
 @known 0.2.1 item 55: the removal script gives tacctl's console accounts /bin/bash back

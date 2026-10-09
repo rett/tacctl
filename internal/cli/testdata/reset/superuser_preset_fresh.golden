@@ -1,0 +1,13 @@
+
+Reset of group 'superuser' to the role preset's values
+------------------------------------------------------
+  settings
+    WTI level:       Administrator (auto, from priv-lvl) -> Administrator (set)
+  commands
+    unchanged
+  privileges
+    unchanged
+  junos
+    unchanged
+
+[INFO] Dry run: nothing was written.

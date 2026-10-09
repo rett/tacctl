@@ -17,9 +17,10 @@ import (
 var (
 	ciscoTacacsVars = []string{"SERVER_IP", "SECRET", "PRIVILEGE_COMMANDS", "GROUP_SUMMARY", "VTY_ACL_BLOCK",
 		"VTY_ACCESS_CLASS", "AUTHZ_COMMANDS_BLOCK", "ACCT_COMMANDS_BLOCK", "AUTHN_METHODS", "AUTHZ_EXEC_METHODS",
-		"EXEC_TIMEOUT", "TACACS_GROUP"}
+		"EXEC_TIMEOUT", "TACACS_GROUP", "SNMP_BLOCK", "NETCONF_BLOCK"}
 	ciscoRadiusVars = []string{"SERVER_IP", "SECRET", "AUTH_PORT", "ACCT_PORT", "RADIUS_GROUP", "PRIVILEGE_COMMANDS",
-		"GROUP_SUMMARY", "VTY_ACL_BLOCK", "VTY_ACCESS_CLASS", "AUTHN_METHODS", "AUTHZ_EXEC_METHODS", "EXEC_TIMEOUT"}
+		"GROUP_SUMMARY", "VTY_ACL_BLOCK", "VTY_ACCESS_CLASS", "AUTHN_METHODS", "AUTHZ_EXEC_METHODS", "EXEC_TIMEOUT",
+		"SNMP_BLOCK", "NETCONF_BLOCK"}
 )
 
 // CiscoTemplate is the template a Cisco config renders: cisco,
@@ -40,14 +41,15 @@ func CiscoVars(req Request, d Data) map[string]string {
 	c, scope := d.Conf, req.Scope
 	groups := privGroups(d.Model)
 
-	// The privilege block: per group at priv-lvl 2-14, its mappings
+	// The privilege block: per group below priv-lvl 15 (level 1 too: a
+	// monitoring group lowers show running-config to it), its mappings
 	// ('tacctl group privilege') or the shipped default, each (level,
 	// mode, command) once across groups. An entry may name its mode
 	// (exec, exec all, configure, configure all); none is exec.
 	var privilege strings.Builder
 	seen := map[string]bool{}
 	for _, g := range groups {
-		if g.priv == "1" || g.priv == "15" {
+		if g.priv == "15" {
 			continue
 		}
 		cmds := lines(policy.Privileges(c, g.name))
@@ -114,10 +116,7 @@ func CiscoVars(req Request, d Data) map[string]string {
 	// so the output stays safe to paste.
 	aclName := d.ACL.Name
 	var entries strings.Builder
-	for _, e := range d.ACL.CIDRs {
-		if e == "" {
-			continue
-		}
+	for _, e := range d.mgmtPermits() {
 		if wc := cidr.CiscoWildcard(e); wc != "" {
 			entries.WriteString("  permit " + wc + "\n")
 		}
@@ -141,7 +140,7 @@ func CiscoVars(req Request, d Data) map[string]string {
 	}
 
 	vars := map[string]string{
-		"SERVER_IP":            d.ServerIP,
+		"SERVER_IP":            d.authIP(""),
 		"SECRET":               scopeSecret(d, scope),
 		"PRIVILEGE_COMMANDS":   privilege.String(),
 		"GROUP_SUMMARY":        summary.String(),
@@ -154,13 +153,13 @@ func CiscoVars(req Request, d Data) map[string]string {
 		"EXEC_TIMEOUT":         execTimeout(c, scope),
 		"TACACS_GROUP":         tacacsGroup,
 		"RADIUS_GROUP":         radiusGroup,
+		"SNMP_BLOCK":           CiscoSNMP(d.snmpInput(scope)).Text,
+		"NETCONF_BLOCK":        CiscoNetconf(NetconfInput{Restricted: d.Restricted, Legacy: req.Legacy}),
 	}
 	if r := d.Radius; req.Protocol == RADIUS && r != nil {
 		vars["SECRET"] = r.Secret
 		vars["AUTH_PORT"], vars["ACCT_PORT"] = r.AuthPort, r.AcctPort
-		if r.ServerAddr != "" {
-			vars["SERVER_IP"] = r.ServerAddr
-		}
+		vars["SERVER_IP"] = d.authIP(r.ServerAddr)
 	}
 	return vars
 }
@@ -232,10 +231,15 @@ func renderCisco(o *out, req Request, d Data) error {
 	if req.Protocol == RADIUS {
 		allowed = ciscoRadiusVars
 	}
+	bg := BreakGlassFor(req, d)
+	vars[breakGlassVar] = ciscoBreakGlass(bg)
+	allowed = withBreakGlassVar(allowed)
 	aclName := d.ACL.Name
+	snmp := CiscoSNMP(d.snmpInput(req.Scope))
 
 	o.header("Cisco IOS / IOS-XE Configuration", req.Scope, protocolNote(req.Protocol, req.Source),
 		otherScopes(d.Model, req.Scope), "Copy and paste into the device:")
+	o.addressRoles(d, req.Protocol)
 	// Blank lines left by multi-line values are dropped ('awk NF'); the
 	// '!' separators stay.
 	o.write(DropBlank(Expand(t.Text, allowed, vars)))
@@ -260,6 +264,8 @@ func renderCisco(o *out, req Request, d Data) error {
 		o.echo("    (defaults move only the verified priv-15 commands DOWN; nothing is moved UP)")
 		o.echo("  - Using template: " + t.Origin())
 		o.echo("")
+		o.unfilledBreakGlass(bg)
+		o.unfilled(t.snmpGaps(snmp))
 		return nil
 	}
 	o.heading(ui.Yellow, "Notes:")
@@ -286,5 +292,7 @@ func renderCisco(o *out, req Request, d Data) error {
 	}
 	o.echo("  - Using template: " + t.Origin())
 	o.echo("")
+	o.unfilledBreakGlass(bg)
+	o.unfilled(t.snmpGaps(snmp))
 	return nil
 }

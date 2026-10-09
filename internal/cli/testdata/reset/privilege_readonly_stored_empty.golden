@@ -1,0 +1,7 @@
+
+Reset of the privileges of group 'readonly' to the shipped default
+------------------------------------------------------------------
+  privileges
+    + show running-config
+
+[INFO] Dry run: nothing was written.

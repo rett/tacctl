@@ -133,8 +133,15 @@ type Snapshotter struct {
 	// ConsoleFile is console.yaml, the login console's settings: part of a
 	// snapshot the same way.
 	ConsoleFile string
-	Rendered    string // RENDERED_FILE, copied into the manifest
-	BackupDir   string // BACKUP_DIR
+	// SNMPFile is snmp.yaml (the default SNMP credentials) and SNMPDir the
+	// directory of the per-scope credential files (snmp/<scope>.yaml): both
+	// are part of a snapshot when they exist, in the modes they have
+	// (0600, the directory 0700), so a restore brings the credentials of a
+	// scope back that its removal (or a rollback) deleted.
+	SNMPFile  string
+	SNMPDir   string
+	Rendered  string // RENDERED_FILE, copied into the manifest
+	BackupDir string // BACKUP_DIR
 	// Version is the tacctl version the manifest records ("unknown" when
 	// empty, as get_version prints when it cannot tell).
 	Version string
@@ -164,6 +171,8 @@ func New(p paths.Paths, version string, now func() time.Time, out ui.Output) *Sn
 		Overrides:   p.Overrides,
 		DevicesFile: p.DevicesFile,
 		ConsoleFile: p.ConsoleFile,
+		SNMPFile:    p.SNMPFile,
+		SNMPDir:     p.SNMPDir,
 		Rendered:    p.Rendered,
 		BackupDir:   p.BackupDir,
 		Version:     version,
@@ -317,10 +326,73 @@ func (s *Snapshotter) current(dir string) bool {
 	} else if lexists(filepath.Join(dir, "console.yaml")) {
 		return false
 	}
+	if isRegular(s.SNMPFile) {
+		if !sameBytes(s.SNMPFile, filepath.Join(dir, "snmp.yaml")) {
+			return false
+		}
+	} else if lexists(filepath.Join(dir, "snmp.yaml")) {
+		return false
+	}
+	if !sameSNMPDir(s.SNMPDir, filepath.Join(dir, "snmp")) {
+		return false
+	}
 	if isRegular(s.Overrides) {
 		return sameBytes(s.Overrides, filepath.Join(dir, "tacctl.yaml"))
 	}
 	return !lexists(filepath.Join(dir, "tacctl.yaml"))
+}
+
+// SNMPFiles are the per-scope credential files of dir (the regular
+// <scope>.yaml files; a symbolic link or anything else is not one), sorted
+// by name. A directory that cannot be read has none.
+func SNMPFiles(dir string) []string {
+	if dir == "" {
+		return nil
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, e := range entries {
+		if e.Type().IsRegular() && strings.HasSuffix(e.Name(), ".yaml") {
+			out = append(out, e.Name())
+		}
+	}
+	return out
+}
+
+// sameSNMPDir is whether the live credentials directory and the snapshot's
+// hold the same files with the same bytes (neither having any counts).
+func sameSNMPDir(live, snap string) bool {
+	a, b := SNMPFiles(live), SNMPFiles(snap)
+	if !slices.Equal(a, b) {
+		return false
+	}
+	for _, n := range a {
+		if !sameBytes(filepath.Join(live, n), filepath.Join(snap, n)) {
+			return false
+		}
+	}
+	return true
+}
+
+// copySNMPDir copies the credential files of src into a new directory dst
+// (0700, the files 0600); nothing when src has none.
+func copySNMPDir(src, dst string) error {
+	files := SNMPFiles(src)
+	if len(files) == 0 {
+		return nil
+	}
+	if err := os.Mkdir(dst, 0o700); err != nil {
+		return err
+	}
+	for _, n := range files {
+		if err := copyFile(filepath.Join(src, n), filepath.Join(dst, n)); err != nil {
+			return err
+		}
+	}
+	return os.Chmod(dst, 0o700)
 }
 
 // fill is _backup_snapshot_fill: the files of a snapshot in dir, 0600, the
@@ -349,6 +421,14 @@ func (s *Snapshotter) fill(dir string, now time.Time) error {
 			return err
 		}
 	}
+	if isRegular(s.SNMPFile) {
+		if err := copyFile(s.SNMPFile, filepath.Join(dir, "snmp.yaml")); err != nil {
+			return err
+		}
+	}
+	if err := copySNMPDir(s.SNMPDir, filepath.Join(dir, "snmp")); err != nil {
+		return err
+	}
 	version := s.Version
 	if version == "" {
 		version = "unknown"
@@ -366,7 +446,11 @@ func (s *Snapshotter) fill(dir string, now time.Time) error {
 		return err
 	}
 	for _, e := range entries {
-		if err := os.Chmod(filepath.Join(dir, e.Name()), 0o600); err != nil {
+		mode := os.FileMode(0o600)
+		if e.IsDir() {
+			mode = 0o700
+		}
+		if err := os.Chmod(filepath.Join(dir, e.Name()), mode); err != nil {
 			return err
 		}
 	}

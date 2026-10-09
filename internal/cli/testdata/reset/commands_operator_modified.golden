@@ -1,0 +1,11 @@
+
+Reset of the command rules of group 'operator' to the shipped default
+---------------------------------------------------------------------
+  commands
+    - configure    permit
+    - *            permit
+    + *            deny
+    ~ dir          permit  (moved)
+    default action: permit -> deny
+
+[INFO] Dry run: nothing was written.

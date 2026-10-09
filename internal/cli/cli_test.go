@@ -275,19 +275,25 @@ func TestCompleteReachesValidArgsWithFlagParsingOff(t *testing.T) {
 	}
 }
 
-func TestExitCode(t *testing.T) {
-	var out, errb bytes.Buffer
-	o := app.New(nil, paths.NewEnv(nil), "", 0, app.Stdio{Stdout: &out, Stderr: &errb}, &fake.Runner{}).Out
-	cases := []struct {
-		err  error
-		code int
-		msg  string
-	}{
+// exitCase is one error class exitCode maps: the status and what it prints.
+type exitCase struct {
+	err  error
+	code int
+	msg  string
+}
+
+// exitCodeCases are the exit statuses the CLI pins, one per error class
+// (TestExitCode); the manual page documents every status here
+// (TestManPageDocumentsEveryExitStatus).
+func exitCodeCases() []exitCase {
+	return []exitCase{
 		{nil, 0, ""},
 		{&ExitError{Code: 3}, 3, ""},
 		{&ExitError{Code: 2, Err: errors.New("Unknown backend 'x'")}, 2, "\033[0;31m[ERROR]\033[0m Unknown backend 'x'\n"},
 		{errors.New("boom"), 1, "\033[0;31m[ERROR]\033[0m boom\n"},
-		{errorsJoin(&ExitError{Code: 20}), 20, ""},
+		{errorsJoin(&ExitError{Code: 3}), 3, ""},
+		{&ExitError{Code: 126, Err: errors.New("cannot run sudo")}, 126, "\033[0;31m[ERROR]\033[0m cannot run sudo\n"},
+		{&ExitError{Code: 127, Err: errors.New("sudo not found")}, 127, "\033[0;31m[ERROR]\033[0m sudo not found\n"},
 		{ui.ErrInterrupted, 130, ""},
 		{ui.ErrReported, 1, ""},
 		{tier.ErrDenied, 1, ""},
@@ -305,7 +311,12 @@ func TestExitCode(t *testing.T) {
 		{&conf.ValidationError{Path: "x.y", Msg: "no"}, 1, ""}, // its plain line: set below
 		{&conf.ParseError{Path: "/o", Why: "bad"}, 1, ""},      // its [ERROR] lines: set below
 	}
-	for _, c := range cases {
+}
+
+func TestExitCode(t *testing.T) {
+	var out, errb bytes.Buffer
+	o := app.New(nil, paths.NewEnv(nil), "", 0, app.Stdio{Stdout: &out, Stderr: &errb}, &fake.Runner{}).Out
+	for _, c := range exitCodeCases() {
 		errb.Reset()
 		switch e := c.err.(type) {
 		case *conf.ValidationError:

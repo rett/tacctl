@@ -9,7 +9,7 @@ Usage: tacctl host <subcommand> [arguments]
       --all                            (show) The acknowledged notices too
       --json                           (show) Print JSON: every field, and --check's findings under 'check'
       --check                          (show) Log in read-only and compare the host with what tacctl would make it:
-                                       one line per difference with the command that fixes it; exit 1 when there is one
+                                       one line per difference with the command that fixes it; exit 1 when there is one (superuser only)
   enroll <[user@]host> [options]       Install TACACS+ or RADIUS login on a host over SSH and register it
   enroll --local [options]             Same, for this machine (its tacctl users get the login console)
       --method tacplus|radius          pam_tacplus against the TACACS+ backend, or the host's pam_radius_auth
@@ -35,6 +35,16 @@ Usage: tacctl host <subcommand> [arguments]
   target <name> [<[user@]host>]        Show, or change and test, how tacctl reaches an enrolled host over ssh
       --port <n>, --identity <file>    SSH port and key; tested first, and the host's ssh keys must match the pin
       --no-identity                    No key file (ssh's default keys and the agent)
+  provisioner <name> rotate <user>     Switch the account tacctl logs in to the host with: create the new one, prove
+                                       it in a new connection (ssh trusts the host's pinned keys only), then change the
+                                       registry. One rotation of a host at a time
+      --key <file>                     (provisioner) Key login: NOPASSWD sudo and the public key only (sudoers line
+                                       written last); a missing file is made by ssh-keygen, as you
+      --password                       (provisioner) Password login: typed into the host's own passwd on this terminal;
+                                       tacctl never sees it; refused for a host with no pinned ssh keys
+      --remove-old                     (provisioner) Last, over the new account, remove the old one; its home is moved
+                                       out of reach unless --remove-home. Needs a registry target with an explicit user@
+      --dry-run                        (provisioner) Print the plan and test the current login; change nothing
   unenroll <name> [--force]            Remove the login method from the host (accounts and homes are kept)
       --force                          Forget the host even when the removal there failed
   default-method [tacplus|radius]      Show or set the method for hosts enrolled without --method

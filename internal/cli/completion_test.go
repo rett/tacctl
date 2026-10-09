@@ -41,6 +41,8 @@ var liveNames = map[string]string{
 	"users":            "alice\nbob\n",
 	"groups":           "ops\nadmins\n",
 	"backups":          "20260101-000000\n",
+	// The break-glass users recorded for the scope 'lab'.
+	"breakglass-users lab": "lab-admin\nlab-ops\n",
 }
 
 // The scenarios of the hand-written completion's tests, now answered by the
@@ -68,12 +70,12 @@ func TestCompleteScenarios(t *testing.T) {
 		{[]string{"config", "listen", "--backend", "radius", "--listener", ""}, []string{"auth", "acct"}},
 		{[]string{"config", "listen", "--listener", ""}, []string{"default"}},
 		{[]string{"config", "listen", "--backend", "radius", ""}, []string{"show", "reset", "tcp", "tcp6", "udp", "udp6", "--listener"}},
-		{[]string{"config", "cisco", ""}, []string{"--scope", "--protocol", "--staging", "--name", "--legacy"}},
-		{[]string{"config", "juniper", ""}, []string{"--scope", "--protocol", "--staging", "--name"}},
+		{[]string{"config", "cisco", ""}, []string{"--scope", "--protocol", "--staging", "--name", "--server", "--source", "--snmp-location", "--legacy"}},
+		{[]string{"config", "juniper", ""}, []string{"--scope", "--protocol", "--staging", "--name", "--server", "--source", "--snmp-location"}},
 		{[]string{"config", "cisco", "--protocol", ""}, []string{"tacacs", "radius"}},
 		{[]string{"config", "juniper", "--scope", "lab", "--protocol", ""}, []string{"tacacs", "radius"}},
-		{[]string{"config", "juniper", "--scope", "lab", ""}, []string{"--protocol", "--staging", "--name"}},
-		{[]string{"config", "cisco", "--protocol", "radius", "--scope", "lab", ""}, []string{"--staging", "--name", "--legacy"}},
+		{[]string{"config", "juniper", "--scope", "lab", ""}, []string{"--protocol", "--staging", "--name", "--server", "--source", "--snmp-location"}},
+		{[]string{"config", "cisco", "--protocol", "radius", "--scope", "lab", ""}, []string{"--staging", "--name", "--server", "--source", "--snmp-location", "--legacy"}},
 		{[]string{"config", "wti", "--scope", ""}, []string{"lab", "prod"}},
 		{[]string{"scope", "radius"}, []string{"radius-group"}},
 		{[]string{"scope", "auth"}, []string{"auth-method"}},
@@ -93,6 +95,12 @@ func TestCompleteScenarios(t *testing.T) {
 		{[]string{"log", "clear", "--backend", "tacacs", ""}, []string{"--force", "-y", "--yes"}},
 		{[]string{"scope", "protocols", "lab", ""}, []string{"list", "set", "clear"}},
 		{[]string{"scope", "protocols", "lab", "set", ""}, []string{"tacacs", "radius"}},
+		{[]string{"scope", "breakglass", "lab", ""}, []string{"list", "add", "remove"}},
+		{[]string{"scope", "breakglass", "lab", "add", "lab-admin", ""}, []string{"--role"}},
+		{[]string{"scope", "breakglass", "lab", "add", "lab-admin", "--role", ""}, []string{"admin", "operator", "readonly"}},
+		{[]string{"scope", "breakglass", "lab", "remove", "lab-admin", ""}, nil},
+		{[]string{"scope", "breakglass", "lab", "remove", ""}, []string{"lab-admin", "lab-ops"}},
+		{[]string{"scope", "breakglass", "lab", "remove", "lab-a"}, []string{"lab-admin"}},
 		{[]string{"scope", "prefixes", "lab", ""}, []string{"list", "add", "remove", "move"}},
 		{[]string{"scope", "prefixes", "lab", "remove", ""}, []string{"--all", "--force"}},
 		{[]string{"scope", "prefixes", "lab", "remove", "--all", ""}, []string{"--force"}},
@@ -112,7 +120,7 @@ func TestCompleteScenarios(t *testing.T) {
 		{[]string{"group", "commands", "remove", "ops", "x", "--action", ""}, []string{"permit", "deny"}},
 		{[]string{"group", "privilege", "add", "ops", ""}, []string{"exec:", "exec all:", "configure:", "configure all:"}},
 		{[]string{"group", "privilege", "add", "ops", "conf"}, []string{"configure:", "configure all:"}},
-		{[]string{"config", "linux", ""}, []string{"build", "builds", "remove-script", "script", "uid", "uid-range"}},
+		{[]string{"config", "linux", ""}, []string{"build", "builds", "engineer-sudo", "remove-script", "script", "uid", "uid-range"}},
 		{[]string{"config", "linux", "script", ""}, []string{"--scope", "--server", "--method", "--output", "-o"}},
 		{[]string{"config", "linux", "script", "--method", ""}, []string{"tacplus", "radius"}},
 		{[]string{"config", "linux", "builds", ""}, []string{"list", "clear"}},
@@ -128,7 +136,7 @@ func TestCompleteScenarios(t *testing.T) {
 		{[]string{"uninstall", ""}, []string{"-y", "--yes"}},
 		{[]string{"version", ""}, []string{"--long"}},
 		{[]string{"shell", "-c", "sta"}, []string{"status"}},
-		{[]string{"shell", "-c", "status", ""}, []string{"--no-history", "--idle"}},
+		{[]string{"shell", "-c", "status", ""}, []string{"--no-history", "--idle", "--space-completion"}},
 	}
 	for _, c := range cases {
 		got, _ := completeWords(t, liveNames, c.words...)
@@ -145,6 +153,7 @@ func TestCompleteDescribesFlags(t *testing.T) {
 		"shell -": {
 			"--no-history\tKeep no history file for this session",
 			"--idle\t<min>: End the session after this many idle minutes at the prompt",
+			"--space-completion\ton|off: A typed space completes a fixed word and never doubles (default on)",
 			"-c\t<line>: Run one line and exit",
 		},
 		"backend enable ": {"tacacs", "radius"},

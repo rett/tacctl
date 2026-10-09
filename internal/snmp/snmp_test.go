@@ -183,6 +183,31 @@ func TestV2cAgainstTheAgent(t *testing.T) {
 	}
 }
 
+// sysLocation.0 over v2c and v3, set and empty.
+func TestSysLocationAgainstTheAgent(t *testing.T) {
+	ctx := context.Background()
+	a := &Agent{SysName: "sw1", SysLocation: "Site A, row 3", Community: "c0mmunity"}
+	port := startAgent(t, a)
+	c := fast(Config{Version: V2c, Port: port, Community: "c0mmunity"})
+	if loc, err := c.SysLocation(ctx, "127.0.0.1"); err != nil || loc != "Site A, row 3" {
+		t.Fatalf("v2c SysLocation = %q, %v", loc, err)
+	}
+	if _, err := fast(Config{Version: V2c, Port: port, Community: "wrong"}).SysLocation(ctx, "127.0.0.1"); err == nil {
+		t.Error("wrong community answered")
+	}
+	empty := &Agent{SysName: "sw2", Community: "c0mmunity"}
+	port = startAgent(t, empty)
+	if loc, err := fast(Config{Version: V2c, Port: port, Community: "c0mmunity"}).SysLocation(ctx, "127.0.0.1"); err != nil || loc != "" {
+		t.Errorf("empty SysLocation = %q, %v", loc, err)
+	}
+	v3 := &Agent{SysName: "rtr1", SysLocation: "Site B", User: "alice", AuthPass: "auth-passphrase", PrivPass: "priv-passphrase", Auth: AuthSHA, Boots: 2}
+	port = startAgent(t, v3)
+	c3 := fast(Config{Version: V3, Port: port, User: "alice", AuthPass: "auth-passphrase", PrivPass: "priv-passphrase", Auth: AuthSHA, Priv: PrivAES128})
+	if loc, err := c3.SysLocation(ctx, "127.0.0.1"); err != nil || loc != "Site B" {
+		t.Errorf("v3 SysLocation = %q, %v", loc, err)
+	}
+}
+
 func TestNoAgentIsATimeout(t *testing.T) {
 	// A port nothing listens on: refused reads count as silence.
 	l, err := net.ListenPacket("udp", "127.0.0.1:0")

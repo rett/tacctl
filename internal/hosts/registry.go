@@ -237,3 +237,6 @@ func (r *Registry) Remember(e Entry) error {
 	}
 	return r.Load()
 }
+
+// Formatted is the registry line of e as it would be written now.
+func (e Entry) Formatted() string { return e.format() }

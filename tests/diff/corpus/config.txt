@@ -10,6 +10,7 @@ config
 @known 3.9 item 30: the config usage lists render --dry-run --out; 0.2.1 item 5: the config usage lists mgmt-acl cisco-name|juniper-name
 config bogus
 config show
+@known 0.2.3 item 78: config validate warns about a scope without a break-glass user
 config validate
 @known 3.9 item 28: the comment headers of config defaults and config dump name tacctl, not lib/conf.sh
 config dump
@@ -54,6 +55,7 @@ config secret-min-length 129
 config secret-min-length bad
 @known 3.9 item 28: the comment headers of config defaults and config dump name tacctl, not lib/conf.sh
 config bcrypt-cost 10 ;; config dump
+@known 0.2.3 item 78: config validate warns about a scope without a break-glass user
 config bcrypt-cost 10 ;; config validate
 
 # loglevel, listen, metrics
@@ -89,20 +91,31 @@ config allow list
 config allow bogus
 config allow add
 config allow add notacidr
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 config allow add 10.0.0.0/8,192.168.0.0/16,2001:db8::/32 ;; config allow list
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 config allow add 192.168.0.0/16,10.0.0.0/8 ;; config allow list
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 config allow add 10.0.0.0/8 ;; config allow remove 10.0.0.0/8 ;; config allow list
 config allow remove 10.0.0.0/8
 config allow clear <<< y
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 config allow add 10.0.0.0/8 ;; config allow clear <<< y ;; config allow list
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 config allow add 10.0.0.0/8 ;; config allow clear <<< n ;; config allow list
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 config allow add 10.0.0.0/8 ;; config allow clear
 config deny list
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 config deny add 10.66.0.0/16 ;; config deny list
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 config deny add 10.66.0.9/16 ;; config deny list
+@known 0.2.3 item 78: config validate warns about a scope without a break-glass user
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 config deny add 10.66.0.0/16 ;; config allow add 10.0.0.0/8 ;; config validate
 config deny add notacidr
 config deny remove 10.66.0.0/16
+@known 0.2.3 item 74: the config mgmt-acl usage names the WTI IP Tables
 config mgmt-acl
 config mgmt-acl list
 config mgmt-acl bogus
@@ -136,9 +149,12 @@ config sudoers tiers bogus
 
 # render
 config render
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 config render --force
 config render --now
+@known 0.2.3 item 78: config validate warns about a scope without a break-glass user
 config render ;; config validate
+@known 0.2.3 item 78: config validate warns about a scope without a break-glass user
 config bcrypt-cost 10 ;; config render ;; config validate
 
 # diff / restore aliases of the backup verbs
@@ -269,6 +285,7 @@ config bcrypt-cost ''
 config password-age ''
 @known 3.9 item 28: the comment headers of config defaults and config dump name tacctl, not lib/conf.sh
 config secret-min-length 20 ;; config password-min-length 9 ;; config password-age 30 ;; config dump
+@known 0.2.3 item 78: config validate warns about a scope without a break-glass user
 config loglevel debug ;; config loglevel debug ;; config validate ;; config show
 config metrics disable ;; config metrics enable ;; config metrics address 10.1.0.1:9090 ;; config metrics reset ;; config metrics
 
@@ -283,19 +300,26 @@ config render --force extra
 # show and validate on other states
 @fixture tacquito.multiscope.yaml
 config show
+@known 0.2.3 item 78: config validate warns about a scope without a break-glass user
 config validate
+@known 0.2.3 item 78: config validate warns about a scope without a break-glass user
 config render ;; config validate ;; config show
 config get-list scope_mgmt_acl.permits
 @fixture store.radius.yaml
 config show
+@known 0.2.3 item 78: config validate warns about a scope without a break-glass user
 config validate
+@known 0.2.3 item 78: config validate warns about a scope without a break-glass user
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 config render ;; config validate
 @fixture legacy.fresh-install.yaml
 config show
+@known 0.2.3 item 78: config validate warns about a scope without a break-glass user
 config validate
 config render
 config listen
 @fixture legacy.unrepresentable.yaml
+@known 0.2.3 item 78: config validate warns about a scope without a break-glass user
 config validate
 config show
 @fixture none

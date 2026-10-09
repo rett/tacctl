@@ -1,0 +1,5 @@
+        SNMP is not configured in tacctl for scope 'lab': nothing is listed here.
+        Set it up on the tacctl server, then run this command again:
+          tacctl scope snmp lab community       (v2c)
+          tacctl scope snmp lab v3-user <user>  (v3, authPriv)
+          tacctl config snmp community|v3-user  (the default for every scope that sets none)

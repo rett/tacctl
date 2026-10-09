@@ -28,7 +28,7 @@ changed no Go file.
 | 8b | `go mod verify`, `go vet`, vendor, README modules | **holds** | "all modules verified"; `go vet ./...` and `-tags testknobs` exit 0; `go mod vendor` then `git status vendor go.mod go.sum`: no change; README "Project Structure" names cobra (with pflag, mousetrap), x/crypto, x/sys, x/term, yaml.v3 = `go.mod`'s five direct and two indirect modules |
 | 9 | docs | **holds** | README, `man/tacctl.1`, CHANGELOG updated in WP4.2/4.3 and item 31; `tests/README.md` gains the fresh-install section (WP5.3); `docs/release-notes-0.2.0.md` written. `MANWIDTH=80 man --warnings -l man/tacctl.1 > /dev/null`: no warning, exit 0. `TestManPageNamesEveryCommand` and `TestManPageNamesNoMissingCommand` pass |
 | 10 | `tacctl version` prints the tag; `--long` shows go1.26.2 | **pending the tag** | `--long` shows `go: go1.26.2`, `test knobs: off` on the dev server (c654081) and in the fresh container (66a1882). The first line follows `git describe`: `0.2.0` on `master` once tagged (`0.2.0-1-g…` on `develop` after the back-merge) |
-| 11 | the user's read-only check on production | **pending the user** | commands in "Releasing", step 5 |
+| 11 | the user's read-only check of an install that tracks `master` | **pending the user** | commands in "Releasing", step 5 |
 | 12 | GitHub description and topics | **pending the user** | command in "Releasing", step 6 |
 
 ## Container runs
@@ -187,8 +187,8 @@ pass as before. The plain run is unchanged (19/0; same leftovers).
 ## Releasing (the user)
 
 Every step below is the user's. Paths are the user's own checkout of the
-repository; "the dev server" tracks `develop`, "the production host" tracks
-`master`. The release date is written as `YYYY-MM-DD`; put the real date in.
+repository; "the dev server" tracks `develop`, an install that
+follows releases tracks `master`. The release date is written as `YYYY-MM-DD`; put the real date in.
 
 ### 1. Commit WP5.3 and bring `develop` up to the release candidate
 
@@ -248,7 +248,7 @@ sudo tacctl upgrade             # develop is now "Merge tag '0.2.0' into develop
 tacctl version                  # tacctl 0.2.0-1-g<sha>
 ```
 
-### 5. The production host (when the user chooses)
+### 5. An install that tracks `master` (when the user chooses)
 
 Read-only first:
 
@@ -316,8 +316,8 @@ sudo tacctl upgrade --branch 0.1.18
 A tag works as the target: the Go upgrade fetches tags, checks the tag out
 (`Switched to branch '0.1.18'.`, a detached HEAD), sees a bash release,
 installs `python3`, `python3-yaml` and `python3-bcrypt` if any is missing
-(`Packages the bash release needs: all present.` on the production host,
-which came from 0.1.x), prints `Target branch is a bash release of tacctl;
+(`Packages the bash release needs: all present.` on a host that
+came from 0.1.x), prints `Target branch is a bash release of tacctl;
 handing over.`, turns `/usr/local/bin/tacctl` back into the link to
 `bin/tacctl.sh` and runs 0.1.18's `upgrade`, which finds no upstream on a
 detached HEAD and stays put (`Management scripts already up to date.`).

@@ -1,6 +1,7 @@
 Step 1: Log in on the serial SetUp port as an Administrator-level account
         (factory default: super / super) and reach the Text Interface command
-        prompt. Keep this serial session open until Step 7 succeeds.
+        prompt. Keep this serial session open until Step 8 succeeds
+        (and, if you add the final DROP, until Step 11 is done).
 
 Step 2: Open the TACACS Parameters menu
         /N [Enter]              Network Parameters (eth0/IPv4 [Shared])
@@ -40,11 +41,16 @@ Step 5: Check the unit's firewall (IP Tables under /N)
         unit's TACACS+ SYN leaves but tacquito's SYN-ACK is dropped: every
         login waits out the Fallback Timer and tacquito logs nothing.
 
-Step 6: Save
+${IPTABLES_BLOCK}
+
+Step 6: SNMP (so tacctl can read the unit's name and nothing else answers)
+${SNMP_BLOCK}
+
+Step 7: Save
         Press [Esc] repeatedly until the unit prints "Saving Configuration"
         and returns to the command prompt.
 
-Step 7: Test from a SECOND session -- keep the Step 1 serial session open as a
+Step 8: Test from a SECOND session -- keep the Step 1 serial session open as a
         back door until this works. Log in with a tacquito user that is a member
         of scope '${SCOPE}', forcing the password method first:
           ssh -o PreferredAuthentications=password <user>@<wti-ip>
@@ -55,8 +61,8 @@ Step 7: Test from a SECOND session -- keep the Step 1 serial session open as a
         while the password method works, the unit's Invalid Access Lockout is
         armed from earlier failures: /UL clears it.
 
-Step 8: Only if Step 7 fails -- turn on the unit's TACACS debug
-        /N, 28, then 12. Debug: On, [Esc] to save. Retry the Step 7 login: the
+Step 9: Only if Step 8 fails -- turn on the unit's TACACS debug
+        /N, 28, then 12. Debug: On, [Esc] to save. Retry the Step 8 login: the
         unit now echoes each TACACS+ exchange (PAP authentication, then the
         authorization that returns priv-lvl, then accounting) on THIS serial
         session. Read it next to tacquito's debug log (see "Verify" below),
@@ -64,3 +70,9 @@ Step 8: Only if Step 7 fails -- turn on the unit's TACACS debug
         Session dropped ("Broken pipe") right after login, no accounting STOP:
         the tacquito binary lacks patch 0002 -- run 'tacctl upgrade', or set
         10. Session Management Module: Disabled until it is rebuilt.
+
+Step 10: Break-glass local accounts (optional, per scope)
+${BREAKGLASS_BLOCK}
+
+Step 11: The final DROP of the IP Tables list (optional; the last step, pasted by you)
+${IPTABLES_DROP_BLOCK}

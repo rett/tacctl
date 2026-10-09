@@ -94,7 +94,7 @@ func ParseImport(data []byte) ([]Row, error) {
 			d.Port = n
 		}
 		d.Description = field(4)
-		rowErrs = append(rowErrs, ValidateDescription(d.Description), ValidateName(d.Name))
+		rowErrs = append(rowErrs, ValidateNewDescription(d.Description), ValidateName(d.Name))
 		bad := false
 		for _, e := range rowErrs {
 			if e != nil {
@@ -176,7 +176,7 @@ func (f *File) Import(rows []Row, replace, allowGeneric bool, hostEntries []Entr
 		}
 		merged := d.Clone()
 		if row.CSV {
-			merged.Hostname, merged.LegacySSH = old.Hostname, old.LegacySSH
+			merged.Hostname, merged.LegacySSH, merged.Location = old.Hostname, old.LegacySSH, old.Location
 		}
 		merged.Name = old.Name
 		if len(merged.Ack) == 0 {
@@ -253,6 +253,7 @@ type jsonDevice struct {
 	Port        int      `json:"port"`
 	LegacySSH   bool     `json:"legacy_ssh"`
 	Description string   `json:"description,omitempty"`
+	Location    string   `json:"location,omitempty"`
 	HostKeys    []string `json:"host_keys,omitempty"`
 	Ack         []string `json:"ack,omitempty"`
 }
@@ -260,7 +261,7 @@ type jsonDevice struct {
 // JSONDevice is d as the value 'export --json' and 'list --json' print.
 func JSONDevice(d Device) any {
 	return jsonDevice{Name: d.Name, Address: d.Address, Hostname: d.Hostname, Vendor: d.Vendor, Port: d.SSHPort(),
-		LegacySSH: d.LegacySSH, Description: d.Description, HostKeys: d.HostKeys, Ack: d.Ack}
+		LegacySSH: d.LegacySSH, Description: d.Description, Location: d.Location, HostKeys: d.HostKeys, Ack: d.Ack}
 }
 
 // JSON is the devices as an indented JSON array.

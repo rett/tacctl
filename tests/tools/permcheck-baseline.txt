@@ -1,0 +1,189 @@
+# Baseline command-rule pairs for tests/tools/permcheck.py: the sample
+# corpus of internal/policy/baseline_test.go, as the role PRESET decides it
+# ('tacctl group preset roles' applied). Lab users, one per role, are
+# assumed: create throwaway accounts in the groups readonly, operator,
+# engineer and superuser (never production accounts), then
+#
+#   permcheck.py --host <server> --secret <lab secret> tests/tools/permcheck-baseline.txt
+#
+# user|cmd|args|expected
+
+# readonly
+gotestviewer|terminal|length 0|permit
+gotestviewer|terminal|width 0|permit
+gotestviewer|show|running-config|permit
+gotestviewer|show|version|permit
+gotestviewer|show|inventory|permit
+gotestviewer|show|interfaces|permit
+gotestviewer|show|cdp neighbors detail|permit
+gotestviewer|show|ip route|permit
+gotestviewer|show|logging|permit
+gotestviewer|show|ip bgp summary|permit
+gotestviewer|dir|flash:|permit
+gotestviewer|exit||permit
+gotestviewer|logout||permit
+gotestviewer|ping|192.0.2.1|permit
+gotestviewer|traceroute|192.0.2.1|permit
+gotestviewer|show|running-config view full|deny
+gotestviewer|show|tech-support|deny
+gotestviewer|show|startup-config|deny
+gotestviewer|show|derived-config|deny
+gotestviewer|show|key chain|deny
+gotestviewer|show|snmp community|deny
+gotestviewer|show|crypto session|deny
+gotestviewer|show|archive log config all|deny
+gotestviewer|terminal|monitor|deny
+gotestviewer|terminal||deny
+gotestviewer|enable||deny
+gotestviewer|enable|15|deny
+gotestviewer|copy|running-config tftp://192.0.2.9/x|deny
+gotestviewer|ssh|-l x 192.0.2.1|deny
+gotestviewer|telnet|192.0.2.1|deny
+gotestviewer|clear|counters|deny
+gotestviewer|configure|terminal|deny
+gotestviewer|debug|ip packet|deny
+gotestviewer|undebug|all|deny
+gotestviewer|monitor|capture CAP start|deny
+gotestviewer|write|memory|deny
+gotestviewer|reload||deny
+
+# operator
+gotestoperator|terminal|length 0|permit
+gotestoperator|show|running-config|permit
+gotestoperator|show|version|permit
+gotestoperator|show|ip ospf neighbor|permit
+gotestoperator|show|ip route|permit
+gotestoperator|show|crypto session|permit
+gotestoperator|dir|flash:|permit
+gotestoperator|exit||permit
+gotestoperator|logout||permit
+gotestoperator|terminal|monitor|permit
+gotestoperator|ping|vrf MGMT 192.0.2.1 source Loopback0|permit
+gotestoperator|traceroute|mpls ipv4 10.0.0.1/32|permit
+gotestoperator|monitor|capture CAP interface Gi1 both|permit
+gotestoperator|monitor|capture CAP export tftp://192.0.2.9/c.pcap|permit
+gotestoperator|clear|counters|permit
+gotestoperator|clear|counters GigabitEthernet1|permit
+gotestoperator|clear|line vty 3|permit
+gotestoperator|clear|ip arp 192.0.2.7|permit
+gotestoperator|clear|arp-cache GigabitEthernet1|permit
+gotestoperator|clear|mac address-table dynamic interface Gi1/0/1|permit
+gotestoperator|ssh|-l oper 192.0.2.2|permit
+gotestoperator|telnet|192.0.2.2|permit
+gotestoperator|undebug|all|permit
+gotestoperator|show|running-config view full|deny
+gotestoperator|show|startup-config|deny
+gotestoperator|show|derived-config|deny
+gotestoperator|show|key chain|deny
+gotestoperator|show|snmp user|deny
+gotestoperator|show|crypto isakmp key|deny
+gotestoperator|show|crypto key mypubkey rsa|deny
+gotestoperator|show|archive log config all|deny
+gotestoperator|clear|arp-cache|deny
+gotestoperator|clear|ip arp|deny
+gotestoperator|clear|mac address-table dynamic|deny
+gotestoperator|clear|ip route *|deny
+gotestoperator|clear|ip bgp *|deny
+gotestoperator|clear|ip bgp 192.0.2.1 soft in|deny
+gotestoperator|clear|logging|deny
+gotestoperator|debug|ip ospf adj|deny
+gotestoperator|test|aaa group tacacs+ u p legacy|deny
+gotestoperator|copy|flash:c.pcap tftp://192.0.2.9/c.pcap|deny
+gotestoperator|monitor|session 1 source interface Gi1|deny
+gotestoperator|monitor||deny
+gotestoperator|write|memory|deny
+gotestoperator|reload|in 5|deny
+gotestoperator|configure|terminal|deny
+gotestoperator|enable||deny
+
+# engineer
+gotestengineer|configure|terminal|permit
+gotestengineer|configure|terminal revert timer 5|permit
+gotestengineer|configure|replace flash:backup.cfg list force|permit
+gotestengineer|configure|replace nvram:startup-config|permit
+gotestengineer|configure|confirm|permit
+gotestengineer|copy|running-config startup-config|permit
+gotestengineer|copy|running-config flash:backup.cfg|permit
+gotestengineer|copy|running-config tftp://192.0.2.9/x|permit
+gotestengineer|copy|flash:cap.pcap tftp://192.0.2.9/cap.pcap|permit
+gotestengineer|clear|ip bgp 192.0.2.1 soft in|permit
+gotestengineer|clear|counters|permit
+gotestengineer|no|shutdown|permit
+gotestengineer|interface|GigabitEthernet1|permit
+gotestengineer|ip|route 0.0.0.0 0.0.0.0 192.0.2.1|permit
+gotestengineer|ip|access-list extended EDGE-IN|permit
+gotestengineer|crypto|isakmp policy 10|permit
+gotestengineer|key|chain OSPF-KEYS|permit
+gotestengineer|do|show ip route|permit
+gotestengineer|do|write memory|permit
+gotestengineer|ping|vrf MGMT 192.0.2.1 source Loopback0|permit
+gotestengineer|authentication|port-control auto|permit
+gotestengineer|snmp-server|community c0mm RO TACCTL-SNMP|permit
+gotestengineer|no|snmp-server community old|permit
+gotestengineer|logging|host 192.0.2.50|permit
+gotestengineer|no|logging buffered|permit
+gotestengineer|write|memory|permit
+gotestengineer|debug|ip ospf adj|permit
+gotestengineer|archive|config|permit
+gotestengineer|no|logging host 192.0.2.50|permit
+gotestengineer|no|logging trap|permit
+gotestengineer|netconf-yang||permit
+gotestengineer|restconf||permit
+gotestengineer|config-register|0x2142|permit
+gotestengineer|aaa|new-model|permit
+gotestengineer|no|aaa new-model|permit
+gotestengineer|no|aaa authorization config-commands|permit
+gotestengineer|tacacs|server TACACS|permit
+gotestengineer|no|tacacs server TACACS|permit
+gotestengineer|no|line vty 0 4|permit
+gotestengineer|username|bob privilege 15 secret x|permit
+gotestengineer|no|username admin|permit
+gotestengineer|enable|secret 9 $9$x|permit
+gotestengineer|ip|ssh version 2|permit
+gotestengineer|ip|http server|permit
+gotestengineer|ip|access-list standard VTY-ACL|permit
+gotestengineer|no|ip access-list standard VTY-ACL|permit
+gotestengineer|key|config-key password-encrypt master|permit
+gotestengineer|alias|exec sr show running-config|permit
+gotestengineer|crypto|key generate rsa|permit
+gotestengineer|crypto|pki trustpoint TP|permit
+gotestengineer|boot|system flash:image.bin|permit
+gotestengineer|license|boot level network-advantage|permit
+gotestengineer|event|manager applet X|permit
+gotestengineer|reload||deny
+gotestengineer|reload|in 10|deny
+gotestengineer|do|reload in 5|deny
+gotestengineer|configure|replace tftp://192.0.2.9/x.cfg|deny
+gotestengineer|configure|network tftp://192.0.2.9/x.cfg|deny
+gotestengineer|configure|memory|deny
+gotestengineer|copy|tftp: running-config|deny
+gotestengineer|copy|tftp://192.0.2.9/x flash:y|deny
+gotestengineer|copy|flash:x running-config|deny
+gotestengineer|do|copy tftp: running-config|deny
+gotestengineer|do|configure replace tftp://192.0.2.9/x.cfg|deny
+gotestengineer|test|aaa group tacacs+ u p legacy|deny
+gotestengineer|clear|aaa counters servers all|deny
+gotestengineer|clear|logging|deny
+gotestengineer|do|clear logging|deny
+gotestengineer|switch|1 priority 15|deny
+gotestengineer|debug|all|deny
+gotestengineer|debug|aaa authentication|deny
+gotestengineer|debug|tacacs|deny
+gotestengineer|delete|flash:x|deny
+gotestengineer|erase|startup-config|deny
+gotestengineer|write|erase|deny
+gotestengineer|format|flash:|deny
+gotestengineer|request|platform software x|deny
+gotestengineer|install|add file flash:x.bin|deny
+gotestengineer|archive|download-sw /overwrite tftp://192.0.2.9/x.tar|deny
+gotestengineer|tclsh||deny
+gotestengineer|guestshell|enable|deny
+gotestengineer|app-hosting|install appid x package flash:y|deny
+gotestengineer|hw-module|slot 1 reload|deny
+gotestengineer|redundancy|force-switchover|deny
+
+# superuser
+gotestsuper|reload||permit
+gotestsuper|configure|terminal|permit
+gotestsuper|copy|tftp: running-config|permit
+gotestsuper|show|tech-support|permit

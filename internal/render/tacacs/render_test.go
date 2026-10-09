@@ -187,7 +187,9 @@ func TestRenderCommandRulesReachTheDaemonCharacterForCharacter(t *testing.T) {
 	users := usersOf(decoded(t, readFile(t, out)))
 	op := users["bob"]["groups"].([]any)[0].(map[string]any)["commands"]
 	want := []any{
-		map[string]any{"name": "show", "match": []any{`^running-config\s*$`, `say "hi"`, `back\\slash`}, "action": 2},
+		// Every stored regex is rendered ^(?:regex)$ (WrapMatch), so
+		// tacquito, which only adds the anchors it misses, tests it whole.
+		map[string]any{"name": "show", "match": []any{`^(?:^running-config\s*$)$`, `^(?:say "hi")$`, `^(?:back\\slash)$`}, "action": 2},
 		map[string]any{"name": "*", "action": 1},
 	}
 	if !reflect.DeepEqual(op, want) {
@@ -200,7 +202,7 @@ func TestRenderCommandRulesReachTheDaemonCharacterForCharacter(t *testing.T) {
 	for _, r := range users["carol"]["groups"].([]any)[0].(map[string]any)["commands"].([]any) {
 		names = append(names, r.(map[string]any)["name"].(string))
 	}
-	if strings.Join(names, " ") != "show ping traceroute *" {
+	if strings.Join(names, " ") != "show show dir ping traceroute terminal exit logout *" {
 		t.Fatalf("readonly rules %v", names)
 	}
 }
@@ -552,6 +554,37 @@ func TestGroupCommandsShapes(t *testing.T) {
 		}
 		if got != want {
 			t.Fatalf("%q: got %s, want %s", text, got, want)
+		}
+	}
+}
+
+// A bare top-level alternation is wrapped so that tacquito's own anchoring
+// ('a|b' became '^a|b$') cannot split it, and the wrapper is undone by
+// UnwrapMatch, which the legacy importer uses.
+func TestWrapMatch(t *testing.T) {
+	for _, c := range []struct{ in, want string }{
+		{"a|b", "^(?:a|b)$"},
+		{"^(a|b)( .*)?$", "^(?:^(a|b)( .*)?$)$"},
+		{"running-config", "^(?:running-config)$"},
+		{"", ""},
+	} {
+		got := WrapMatch(c.in)
+		if got != c.want {
+			t.Errorf("WrapMatch(%q) = %q, want %q", c.in, got, c.want)
+		}
+		if UnwrapMatch(got) != c.in {
+			t.Errorf("UnwrapMatch(%q) = %q, want %q", got, UnwrapMatch(got), c.in)
+		}
+	}
+	if UnwrapMatch("^foo$") != "^foo$" || UnwrapMatch("^(?:a)$|b") != "^(?:a)$|b" {
+		t.Error("UnwrapMatch changes a regex that is not wrapped")
+	}
+	// Wrapped, 'crypto|trace' matches the whole arguments or nothing; unwrapped,
+	// tacquito's '^crypto|trace$' would match 'show foo crypto' and 'ip trace'.
+	re := regexp.MustCompile(WrapMatch("crypto|trace"))
+	for in, want := range map[string]bool{"crypto": true, "trace": true, "ip trace": false, "crypto pki": false, "foo crypto": false} {
+		if re.MatchString(in) != want {
+			t.Errorf("%q: %v, want %v", in, !want, want)
 		}
 	}
 }

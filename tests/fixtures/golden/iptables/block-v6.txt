@@ -1,0 +1,43 @@
+        Generated for scope 'lab'. Not verified on a unit. It is the unit's whole IP Tables list, in the
+        unit's order, from the scope's management permit list (tacctl scope mgmt-acl lab list; the global
+        tacctl config mgmt-acl list when the scope has none), the tacctl server's address and the scope's
+        SNMP clients (tacctl scope snmp lab clients list). Add one line per entry under /N, IP Tables,
+        in this order. The number is the line's place in the list, not part of the command; a line that
+        starts with # is a note for you. The final DROP is not in this list: it is the last step, below.
+
+             # the unit's own traffic: loopback, and the replies to its own connections
+          1. iptables -A INPUT -i lo -j ACCEPT
+          2. iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+             # the tacctl server 10.0.0.42/32: ssh and https
+          3. iptables -A INPUT -p tcp -s 10.0.0.42/32 --dport 22 -j ACCEPT
+          4. iptables -A INPUT -p tcp -s 10.0.0.42/32 --dport 443 -j ACCEPT
+             # permitted range 192.0.2.0/24: ssh and https
+          5. iptables -A INPUT -p tcp -s 192.0.2.0/24 --dport 22 -j ACCEPT
+          6. iptables -A INPUT -p tcp -s 192.0.2.0/24 --dport 443 -j ACCEPT
+             # skipped, not rendered: fd00::/64 (IPv6; the list is IPv4 only)
+             # skipped, not rendered: bogus (not a CIDR)
+             # SNMP (udp 161): the tacctl server, then the scope's SNMP clients
+          7. iptables -A INPUT -p udp -s 10.0.0.42/32 --dport 161 -j ACCEPT
+             # skipped, not rendered: SNMP client fd00:1::/48 (IPv6; the list is IPv4 only)
+
+        Notes on the list:
+          - Line 2: older builds take '-m state --state ESTABLISHED,RELATED' in place of
+            '-m conntrack --ctstate ESTABLISHED,RELATED'. It covers the replies of the unit's own TACACS+,
+            RADIUS, DNS and NTP queries.
+          - Only ssh (22) and https (443) are permitted. Telnet and http are not: to allow them, add the same
+            line with '--dport 23' or '--dport 80' for each address above, before the DROP.
+          - The udp 161 lines are the SNMP client restriction of Step 6, unless the unit has an SNMP
+            access menu of its own (then enter the same clients there).
+          - IPv4 only: the unit's 'iptables', not 'ip6tables'. An IPv6 entry of the lists is skipped, with a note.
+
+        This line turns the list into a restriction, and it is the one that can lock you out. The
+        walkthrough does not apply it: you paste it, last, yourself, once the steps above work.
+          a) Keep the serial session of Step 1 open (and a second session ready). It is the way back.
+          b) Add the DROP as the LAST line of the IP Tables list (after line 7):
+               8. iptables -A INPUT -j DROP
+          c) Before saving, test a login from a permitted address (repeat Step 8, and from the tacctl
+             server: tacctl scope snmp lab test <unit-address>). A login from an address
+             outside the list must now be refused.
+          d) Save only when the test works. If it fails, delete line 8 on the serial session first.
+        Not verified on a unit: whether the unit applies a changed list on entry or on save. If on entry,
+        the test above runs with the DROP already in force; the serial session is the way back.

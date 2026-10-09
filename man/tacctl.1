@@ -1,6 +1,6 @@
 .\" Manual page for tacctl, the management CLI for TACACS+ (tacquito) and RADIUS (FreeRADIUS).
 .\" Render locally with: groff -man -Tascii man/tacctl.1 | less
-.TH TACCTL 1 "2026-10-07" "tacctl 0.2.2" "tacctl Manual"
+.TH TACCTL 1 "2026-10-09" "tacctl 0.2.3" "tacctl Manual"
 .SH NAME
 tacctl \- manage users, groups and scopes for TACACS+ (tacquito) and RADIUS (FreeRADIUS)
 .SH SYNOPSIS
@@ -117,6 +117,20 @@ included.
 .B "tacctl user passwd root"
 is rejected — root is a Junos built-in intended for local/console use
 only and must never authenticate via TACACS+.
+.\" BEGIN GENERATED: command install
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-branch\fR \fI<name>\fR
+The tacctl repo branch to install or upgrade from (default: the current one).
+.TP
+\fB\-y\fR, \fB\-\-yes\fR
+Answer yes to the confirmations.
+.RE
+.\" END GENERATED: command install
 .TP
 .BI "upgrade [--branch " name "]"
 Move tacctl state into
@@ -148,8 +162,119 @@ A new README, logrotate file, completion or template restarts
 nothing, and neither does an upgrade with nothing new. Listener, log-level and metrics
 settings live in
 .I tacctl.yaml
-and survive. See
+and survive. When the
+.B engineer
+group still carries the role preset of 0.2.2 (its Cisco rules, whose denies
+did not hold, or its Junos sets), the upgrade ends with a red notice naming
+.BR "group reset engineer" ;
+the upgrade itself never changes an override. See
 .BR UPGRADING .
+.\" BEGIN GENERATED: command upgrade
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-branch\fR \fI<name>\fR
+The tacctl repo branch to install or upgrade from (default: the current one).
+.RE
+.\" END GENERATED: command upgrade
+.TP
+.BI "rollback " version " [\-\-apply] [\-\-yes] [\-\-hosts]"
+Prepare tacctl's state for the release before this one; run on the newer
+release, before the older one is installed. A dry run by default: it lists
+every step and every warning and changes nothing. The only version it takes is
+.BR 0.2.2 ;
+.B 0.2.1
+and older are refused (0.2.2's own changes are not covered; restore a snapshot
+with
+.BR "backup restore" ),
+and so is any other word.
+.B \-\-apply
+takes a snapshot first, then, in this order: removes from
+.I tacctl.yaml
+the key families 0.2.3 added
+.RB ( linux.engineer_sudo ,
+.BR snmp_scope.* ,
+.BR breakglass_scope.* )
+and any other key a 0.2.2 binary does not know (every
+.BI tier. group
+setting stays); removes
+.B tiers.engineer
+and
+.B settings.space_completion
+from
+.I console.yaml
+and writes it the way 0.2.2 reads it; removes the
+.B location
+of every device from
+.IR devices.yaml ;
+re-renders the enabled backends. It moves the per-scope SNMP credentials
+.RI ( snmp/ scope .yaml )
+aside to
+.IR snmp.rolled\-back\-<timestamp>/
+beside them, and removes the marker
+.I /var/lib/tacctl/tier\-pinned
+so that the upgrade that follows records the tier of a group made or raised
+to priv-lvl 15 under 0.2.2. It leaves
+.IR store.yaml ,
+the host records and the engineer sshd drop-in
+.IR 00\-tacctl\-engineer.conf ,
+and lists them. The dry run names what needs a decision, and
+.B \-\-apply
+refuses without
+.B \-\-yes
+while any applies: the users who would become superusers under 0.2.2 (it
+takes the tier from the priv-lvl band of the group, not from
+.BI tier. group ),
+the groups whose tier changes, and the settings that are dropped (per-scope
+SNMP settings, break-glass users, the engineer sudo list, device locations;
+they stay in the snapshot).
+.B \-\-hosts
+also syncs each enrolled Linux host (not this server's own entry) through
+.B "host sync"
+with
+.B TAC_REVOKE_ENGINEER=1
+in the client script's header (the protocol stays 6): the script writes no
+.B %tac\-engineer
+sudoers line and takes the engineer-tier accounts out of
+.B tac\-superuser
+and
+.BR tac\-engineer ,
+so engineers have no sudo there until the next 0.2.2 sync, which puts an
+engineer at priv\-lvl 15 in
+.B tac\-superuser
+again (take engineer groups out of those scopes, or lower their priv\-lvl, first);
+no other account is touched. The command
+ends with the next step,
+.BR "tacctl upgrade \-\-branch 0.2.2" ,
+and the fallback that needs no tool: note the newest entry of
+.B "backup list"
+before upgrading (snapshots are taken before every change; the upgrade adds
+one only when it records a tier), and
+.B "backup restore"
+that entry to come back. A second
+.B \-\-apply
+changes nothing. Superuser only. See
+.BR UPGRADING .
+.\" BEGIN GENERATED: command rollback
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-apply\fR
+Take a snapshot, then convert the files 0.2.2 cannot read and re\-render.
+.TP
+\fB\-\-yes\fR
+Answer yes to the confirmations.
+.TP
+\fB\-\-hosts\fR
+Also take the engineers' sudo off the enrolled Linux hosts.
+.RE
+.\" END GENERATED: command rollback
 .TP
 .BR "uninstall " [ -y | --yes ]
 Remove tacctl and every backend that is enabled or installed: the tacquito
@@ -165,6 +290,17 @@ and each backend's logs by archiving them to
 skips the confirmation and answers
 .B no
 to both offers: nothing is preserved.
+.\" BEGIN GENERATED: command uninstall
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-y\fR, \fB\-\-yes\fR
+Answer yes to the confirmations.
+.RE
+.\" END GENERATED: command uninstall
 .TP
 .B status
 Show service health, authentication statistics, recent errors, and
@@ -177,6 +313,12 @@ backend stay in the general part. With one backend enabled the report is
 laid out as a single report. A listener on an IPv6 network
 .RB ( tcp6 ", " udp6 )
 of any backend triggers the IPv6 ACL parity check.
+.\" BEGIN GENERATED: command status
+.RS
+.PP
+Requires: \fBreadonly\fR.
+.RE
+.\" END GENERATED: command status
 .TP
 .BR "version " [ --long ]
 .TQ
@@ -188,6 +330,17 @@ when the binary was built, so it reflects the exact commit that was built.
 adds the commit, the build date, the Go version and whether the test knobs
 are compiled in
 .RB ( "test knobs: off" ).
+.\" BEGIN GENERATED: command version
+.RS
+.PP
+Requires: \fBreadonly\fR.
+.PP
+Options:
+.TP
+\fB\-\-long\fR
+Also the commit, build date, Go version and whether test knobs are on.
+.RE
+.\" END GENERATED: command version
 .TP
 .B completion bash|zsh|fish
 Print the completion script of that shell on stdout. The script asks
@@ -213,6 +366,12 @@ or to
 .B user list
 List all users with name, Linux UID (\- when none is assigned), group, status,
 password change date and scopes.
+.\" BEGIN GENERATED: command user list
+.RS
+.PP
+Requires: \fBreadonly\fR.
+.RE
+.\" END GENERATED: command user list
 .TP
 .BI "user show " name
 Show detailed user info: group, Linux UID, status, password change date and age,
@@ -221,6 +380,12 @@ accounting log, the RADIUS auth log), Cisco privilege level, Juniper
 class, and a hash fingerprint. Read-only -- does not prompt for the
 password (unlike
 .BR "user verify" ).
+.\" BEGIN GENERATED: command user show
+.RS
+.PP
+Requires: \fBreadonly\fR.
+.RE
+.\" END GENERATED: command user show
 .TP
 .BI "user add " "name group " [ "--hash " hash ] [ "--scopes " name[,name...] ]
 Add a user. Prompts for the password with confirmation. If
@@ -247,9 +412,29 @@ and
 are rejected: both map to local OS accounts that tacquito resolves outside
 the YAML. Create an operator-specific account instead (for example,
 .BR "tacctl user add jsmith superuser" ).
+.\" BEGIN GENERATED: command user add
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-hash\fR \fI<hash>\fR
+Add with pre\-generated bcrypt hash.
+.TP
+\fB\-\-scopes\fR \fI<s>[,s...]\fR
+Grant specific scopes at creation.
+.RE
+.\" END GENERATED: command user add
 .TP
 .BI "user remove " name
 Remove a user after confirmation.
+.\" BEGIN GENERATED: command user remove
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command user remove
 .TP
 .B passwd
 Change your own password. Takes no arguments: the target is the tacctl
@@ -259,6 +444,12 @@ The current password must verify before the new one is accepted, and the
 new one is held to the same strength policy as
 .BR "user passwd" .
 Available to every tier.
+.\" BEGIN GENERATED: command passwd
+.RS
+.PP
+Requires: \fBreadonly\fR.
+.RE
+.\" END GENERATED: command passwd
 .TP
 .BI "user passwd " "name " [ "--hash " hash ]
 Change a user's password. Prompts for the new password with
@@ -269,24 +460,76 @@ is given, the bcrypt hash is used directly and no password is prompted
 .B user add --hash
 for users who self-generate via
 .BR "tacctl hash commands" ).
+.\" BEGIN GENERATED: command user passwd
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-hash\fR \fI<hash>\fR
+Change with pre\-generated bcrypt hash.
+.RE
+.\" END GENERATED: command user passwd
 .TP
 .BI "user disable " name
-Disable a user while preserving the password hash for later re-enable.
+Disable a user while preserving the password hash for later re-enable. On
+the tacctl server the account is synced at once, as for a lowered tier (see
+.BR "group edit" ).
+.\" BEGIN GENERATED: command user disable
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command user disable
 .TP
 .BI "user enable " name
 Re-enable a previously disabled user.
+.\" BEGIN GENERATED: command user enable
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command user enable
 .TP
 .BI "user rename " "old new"
 Rename a user.
+.\" BEGIN GENERATED: command user rename
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command user rename
 .TP
 .BI "user move " "name group"
-Move a user to a different group without changing the password.
+Move a user to a different group without changing the password. A move
+that lowers the user's tier (see
+.BR "group edit" )
+syncs the accounts of this tacctl server at once. So do
+.BR "user disable" ,
+.BR "user remove"
+and a
+.B "user scope"
+change that takes this server's scope away
+.RB ( remove ", " replace ", " "remove \-\-all" ).
+.\" BEGIN GENERATED: command user move
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command user move
 .TP
 .BI "user verify " name
 Show user details and verify the password interactively. A stored hash
 with a bcrypt cost above 16 (tacctl writes 10\-14) is refused before the
 password is asked, since checking it would take hours; tacquito still
 authenticates it.
+.\" BEGIN GENERATED: command user verify
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command user verify
 .TP
 .B "user scope " \fIname\fR " " [ "list " | " add " \fIs\fR[,s...] | " remove " \fIs\fR[,s...] | " replace " \fIs\fR[,s...] | " remove \-\-all" ]
 Manage which scopes
@@ -309,27 +552,79 @@ preserves the bcrypt hash — distinct from
 .B user disable
 in that intent is "temporarily revoke scope access" rather than
 "revoke the password".
+.\" BEGIN GENERATED: command user scope
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-all\fR
+Remove every scope from the user.
+.RE
+.\" END GENERATED: command user scope
 .SS Group management \fB(tacctl group)\fR
 .TP
 .B group list
 List all groups with Cisco privilege level, Juniper class, and user count.
+.\" BEGIN GENERATED: command group list
+.RS
+.PP
+Requires: \fBreadonly\fR.
+.RE
+.\" END GENERATED: command group list
 .TP
 .BI "group show " name
 Every setting of the group and where it comes from (set on the group, or
 the default of its priv-lvl): Cisco priv-lvl, Juniper class, tacctl tier,
-WTI level, command rules, Junos rules and the number of users.
+WTI level, command rules, Junos rules and the number of users. The Junos
+deny-commands and deny-configuration patterns are listed under the Junos
+rules, for every tier; the hint
+.B "group junos " \fIgroup\fR " list"
+is printed only to a tier that may run it (the superuser).
+.\" BEGIN GENERATED: command group show
+.RS
+.PP
+Requires: \fBreadonly\fR.
+.RE
+.\" END GENERATED: command group show
 .TP
-.B "group add " \fIname priv-lvl juniper-class\fR " [ --wti-level \fIlevel\fR ]"
+.B "group add " \fIname priv-lvl juniper-class\fR " [ --tier \fItier\fR ] [ --wti-level \fIlevel\fR ]"
 Add a custom group.
 .I priv-lvl
 is an integer 0\(en15;
 .I juniper-class
 matches the Junos login class name.
+.B --tier
+and
 .B --wti-level
-sets the WTI level at creation (see
+set those two settings at creation (see
 .BR "group edit" ).
+A group at priv-lvl 15 other than the built-in
+.B superuser
+always has an explicit tier setting: without
+.B --tier
+the command records
+.B superuser
+(what the band gives; the output says so), so that a
+.I tacctl.yaml
+that later loses its settings cannot leave the group in doubt.
+.\" BEGIN GENERATED: command group add
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
 .TP
-.B "group edit " \fIname\fR " { priv-lvl \fIN\fR | juniper-class \fICLASS\fR | wti-level \fIlevel\fR }"
+\fB\-\-tier\fR \fI<tier>\fR
+(add) Its tacctl tier instead of the priv\-lvl's (at 15: superuser if omitted).
+.TP
+\fB\-\-wti\-level\fR \fI<level>\fR
+(add) Its WTI level instead of the priv\-lvl's.
+.RE
+.\" END GENERATED: command group add
+.TP
+.B "group edit " \fIname\fR " { priv-lvl \fIN\fR | juniper-class \fICLASS\fR | wti-level \fIlevel\fR | tier \fItier\fR }"
 Change one setting of a group. Every group, built-in or custom, is edited
 the same way; the built-in groups
 .RB ( readonly ,
@@ -345,14 +640,88 @@ or
 .BR administrator ,
 the access level a WTI unit with Service Name
 .B wti
-gives the group's users, and
+gives the group's users;
+.B tier
+is
+.BR readonly ,
+.BR operator ,
+.B engineer
+or
+.BR superuser ,
+the group's tacctl tier on the server and on Linux hosts.
 .B auto
-removes it, so the priv-lvl decides again. The group's tacctl tier on the
-server and on Linux hosts comes from its priv-lvl (below 7 readonly,
-7\(en14 operator, 15 superuser).
+removes either setting, so the priv-lvl decides again (below 7 readonly,
+7\(en14 operator, 15 superuser); for the tier of a custom group at priv-lvl 15
+it records
+.B superuser
+instead. A group other than the built-in
+.B superuser
+always has a tier setting at priv-lvl 15 (the built-in
+.B readonly
+and
+.B operator
+included):
+.B "edit priv-lvl"
+records
+.B superuser
+when it raises a group into the band without one, and removes a
+.B superuser
+setting when it lowers the group out of it, whether the setting only recorded
+the band or was chosen with
+.B --tier superuser
+(set the tier again when a superuser group below 15 is wanted; an
+.BR engineer ,
+.B operator
+or
+.B readonly
+setting stays). A group at priv-lvl 15 with no tier setting
+at all (the settings were lost: an empty or restored
+.IR tacctl.yaml )
+is ambiguous: its members are held at the operator tier, the denial names
+the group,
+.BR "host enroll" " and " "host sync"
+give them the operator tier on the hosts and print one red line per group
+naming the repair (they are not refused: a sync that takes rights away still
+runs), and
+.B "group show"
+says
+.BR "NOT SET" ;
+root, or a superuser who is not a member, sets its tier with
+.BR "group edit" .
+A change of
+.B tier
+or
+.B priv-lvl
+(and
+.BR "user move" ", " "user disable" ", " "user remove" ", a " "user scope"
+change that takes this server's scope away,
+.BR "group preset roles --force" ", and " "group reset" )
+that lowers the tier of a user who has an account on the tacctl server
+syncs those accounts at once, as
+.B "host sync"
+of the host enrolled with
+.B \-\-local
+does, so the user does not keep the old tier's groups
+.RB ( tac\-superuser
+among them); when the sync fails or no server is enrolled, the command says
+which users keep their old groups until
+.BR "host sync" .
+A raise syncs nothing.
+.\" BEGIN GENERATED: command group edit
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command group edit
 .TP
 .BI "group remove " name
 Remove a custom group. Built-in groups are protected.
+.\" BEGIN GENERATED: command group remove
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command group remove
 .TP
 .B "group commands list " \fIgroup\fR
 Show the per-command authorization rules for a group, in the order
@@ -362,6 +731,12 @@ column), including the
 default action (the action of the trailing
 .RB ` * `
 catchall rule).
+.\" BEGIN GENERATED: command group commands list
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command group commands list
 .TP
 .B "group commands default " \fIgroup\fR " { permit | deny }"
 Set the default action for unmatched commands. Stored as the action
@@ -370,6 +745,12 @@ of a trailing
 rule that tacquito's
 .B CommandBasedAuthorizer
 matches as a wildcard.
+.\" BEGIN GENERATED: command group commands default
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command group commands default
 .TP
 .B "group commands add " \fIgroup\fR " " \fIname\fR " [ --match \fIregex\fR ]... [ --action permit | deny ] [ --before \fIname\fR | --first ]"
 Add a rule before the
@@ -392,14 +773,15 @@ only: the space-joined
 .B cmd-arg
 values after the command word, without
 .B <cr>
-(auto-anchored with
-.RB ` ^…$ `,
-so
+(tacctl renders every regex as
+.RB ` ^(?:…)$ `,
+so it must match the whole arguments string and a top-level alternation
+stays together:
 .B ^crypto
 matches
 .B show crypto
 only; write
-.B "^crypto( .*)?"
+.B "^crypto( .*)?$"
 to cover the arguments after it too).
 For
 .B show running-config
@@ -410,14 +792,47 @@ never the full line, so a regex that repeats the command word
 can never match and is rejected. A regex may not contain a comma (the
 rule's stored line form separates matches with commas); write
 .B \ex2c
-for one. Omit
+for one, nor be empty (tacquito skips an empty regex), nor be invalid
+(checked with Go's RE2, as tacquito does). Omit
 .B --match
-to cover any arguments.
-The first matching rule wins; tacquito returns FAIL if no rule
-matches and the
+to cover any arguments. A warning follows the added rule when a
+regex is a prefix form without
+.B "( .*)?"
+(it matches the exact arguments only) or when the rule can never be
+reached because an earlier rule of the same name has no
+.B --match
+or follows the
+.RB ` * `
+catchall;
+.B "config validate"
+warns about the same in the stored rules.
+Rules are tried in order: a rule without
+.B --match
+decides, one whose regexes all miss falls through to the next, and tacquito
+returns FAIL if no rule decides (and the
 .RB ` * `
 catchall is not
-.BR permit .
+.BR permit ).
+.\" BEGIN GENERATED: command group commands add
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-match\fR \fI<regex>\fR
+(add, remove) A regex the command's arguments must match (repeatable; remove: the rule's, in order).
+.TP
+\fB\-\-action\fR \fIpermit|deny\fR
+(add, remove) What the rule does (add: default permit).
+.TP
+\fB\-\-before\fR \fI<name>\fR
+(add) Put the rule before the first rule named <name> (default: before the catchall).
+.TP
+\fB\-\-first\fR
+(add) Put the rule first.
+.RE
+.\" END GENERATED: command group commands add
 .TP
 .B "group commands remove " \fIgroup\fR " " \fIname\fR " [ --match \fIregex\fR ]... [ --action permit | deny ] [ --all ]"
 Drop a rule by name. When several rules share the name it refuses
@@ -431,20 +846,80 @@ drops them all. The
 .RB ` * `
 catchall is protected; change it via
 .B group commands default
-or remove the entire block via
-.B group commands clear .
+or put the group's rules back to the shipped defaults via
+.B group commands reset .
+.\" BEGIN GENERATED: command group commands remove
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
 .TP
-.BI "group commands clear " group
-Remove a group's command-rule override from
-.IR tacctl.yaml .
-The merged view falls back to the shipped defaults for built-in groups
-.RB ( readonly ,
-.BR operator ,
-.BR superuser );
-for custom groups the group ends up with no rules at all.
+\fB\-\-match\fR \fI<regex>\fR
+(add, remove) A regex the command's arguments must match (repeatable; remove: the rule's, in order).
+.TP
+\fB\-\-action\fR \fIpermit|deny\fR
+(add, remove) What the rule does (add: default permit).
+.TP
+\fB\-\-all\fR
+(remove) Drop every rule named <name>.
+.RE
+.\" END GENERATED: command group commands remove
+.TP
+.B "group commands reset " \fIgroup\fR " [ --dry-run ] [ --yes ]"
+Put a group's command rules back to the shipped defaults, as
+.B "group reset"
+.IR group " --only commands"
+does, for any group; superuser only. For
+.BR readonly ,
+.B operator
+and
+.B superuser
+the shipped rules; a group with none shipped (a custom group, or
+.BR engineer )
+has no rules afterwards: its override is removed from
+.IR tacctl.yaml ,
+never stored as an empty list. There is no
+.BR --preset :
+the role preset's rules come with
+.BR "group reset" " " \fIgroup\fR " --preset" .
+The difference is printed first: the rules removed
+.RB ( - ),
+added
+.RB ( + )
+and moved
+.RB ( ~ ),
+and the default action. It asks
+.B "Apply these changes to the command rules of group '<group>'? [y/N]"
+(or takes
+.BR --yes ;
+with no terminal and no
+.B --yes
+it changes nothing and exits 1);
+.B --dry-run
+prints the difference and stops; a group that already is canonical says so,
+exit 0, without asking. The lockout guard is that of
+.BR "group reset" :
+a group at the same priv-lvl without rules gets a permit catchall, and a
+group left without any rules is warned about. The reset takes the pre-change
+snapshot, regenerates
 .I tacquito.yaml
-is regenerated afterwards so device-side enforcement stays in sync.
-Confirmation required.
+and logs
+.BR "group commands reset name=<group> by=<user>" .
+.\" BEGIN GENERATED: command group commands reset
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-dry\-run\fR
+(reset) Show the difference; write nothing.
+.TP
+\fB\-\-yes\fR
+(reset) Do not ask.
+.RE
+.\" END GENERATED: command group commands reset
 .TP
 .B "group commands seed " [ \fIgroup\fR ] " " [ --force ]
 Recovery tool. Writes the legacy broader rule set (with
@@ -454,7 +929,7 @@ Recovery tool. Writes the legacy broader rule set (with
 .BR monitor ,
 etc.) as overrides in
 .IR tacctl.yaml .
-On fresh installs the smaller shipped defaults (viewable via
+On fresh installs the shipped defaults (viewable via
 .BR "tacctl config defaults" )
 are already in effect; you only need
 .B seed
@@ -476,6 +951,17 @@ to the readonly set with default deny;
 gets a
 .RB ` "* permit" `
 catchall.
+.\" BEGIN GENERATED: command group commands seed
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-force\fR
+(seed) Overwrite a group that already has rules.
+.RE
+.\" END GENERATED: command group commands seed
 .TP
 .BI "group privilege list " group
 Show the Cisco
@@ -487,6 +973,12 @@ override (in
 under
 .BR privileges.\fIgroup\fR )
 or the built-in default set (move-DOWN commands only).
+.\" BEGIN GENERATED: command group privilege list
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command group privilege list
 .TP
 .B "group privilege add " \fIgroup\fR " '\fIcmd\fR'[,'\fIcmd\fR'...]"
 Move one or more Cisco commands to the group's priv-lvl. Quote
@@ -513,6 +1005,12 @@ are the same mapping. On first
 the group's defaults are inherited; subsequent adds extend that set.
 Every command is validated before anything is written — a bad command
 aborts the whole op.
+.\" BEGIN GENERATED: command group privilege add
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command group privilege add
 .TP
 .B "group privilege remove " \fIgroup\fR " '\fIcmd\fR'[,'\fIcmd\fR'...]"
 Drop one or more previously-mapped commands. Accepts the same
@@ -520,26 +1018,80 @@ comma-separated list form as
 .BR add .
 If only defaults are in effect, the remove takes effect against the
 default set (suppressing those commands for that group).
+.\" BEGIN GENERATED: command group privilege remove
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command group privilege remove
 .TP
-.BI "group privilege clear " group
-Wipe explicit mappings for a group; the built-in default set takes
-over again.
+.B "group privilege reset " \fIgroup\fR " [ --dry-run ] [ --yes ]"
+Put a group's mappings back to the shipped default, as
+.B "group reset"
+.IR group " --only privileges"
+does, for any group; superuser only. A group with no shipped list (a custom
+group) has none afterwards: its override is removed from
+.IR tacctl.yaml ,
+never stored as an empty list. There is no
+.BR --preset :
+the role preset's values come with
+.BR "group reset" " " \fIgroup\fR " --preset" .
+The difference is printed first, the entries removed
+.RB ( - )
+and added
+.RB ( + ),
+and, for the entries removed, the
+.B "no privilege "
+.IR mode " level " N " " cmd
+lines that take them off the devices, which keep the lines they were pasted
+with until then (paste them, then the output of
+.BR "config cisco" ).
+It asks
+.B "Apply these changes to the privileges of group '<group>'? [y/N]"
+(or takes
+.BR --yes ;
+with no terminal and no
+.B --yes
+it changes nothing and exits 1);
+.B --dry-run
+prints the difference and stops; a group that already is canonical says so,
+exit 0, without asking. The reset takes the pre-change snapshot and logs
+.BR "group privilege reset name=<group> by=<user>" .
+.\" BEGIN GENERATED: command group privilege reset
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-dry\-run\fR
+(reset) Show the difference; write nothing.
+.TP
+\fB\-\-yes\fR
+(reset) Do not ask.
+.RE
+.\" END GENERATED: command group privilege reset
 .TP
 .B "group privilege seed " [ \fIgroup\fR ] " " [ --force ]
 Populate the built-in groups with their default mapping set. Same
 shape as
 .BR "group commands seed" .
-Default sets:
+Default sets (IOS levels are cumulative, so operator inherits readonly's):
 .B readonly
-none (priv-1 is the floor);
+lowers
+.I show running-config
+to priv-1 (the configuration its level may see, filtered by IOS);
 .B operator
-ships a priv-15 read/diagnostic family moved DOWN to priv-7
-.RI ( "show running-config" ,
-.IR "show startup-config" ,
-.IR "show tech-support" ,
-.IR "show archive" ,
-.IR "show access-list" ,
-.IR "show ip route" );
+ships verified commands moved DOWN to priv-7
+.RI ( "exec all: ping" ,
+.IR "exec all: traceroute" ,
+.IR "exec all: monitor capture" ,
+.IR "clear counters" ,
+.IR "clear line" ,
+.IR "clear ip arp" ,
+.IR "clear arp-cache" ,
+.IR "clear mac address-table dynamic" ,
+.IR "undebug all" );
 .B superuser
 none (priv-15 is the ceiling).
 .PP
@@ -563,9 +1115,26 @@ for logins over RADIUS
 and
 .B "backend enable"
 name the groups concerned).
+.\" BEGIN GENERATED: command group privilege seed
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-force\fR
+(seed) Overwrite a group that already has mappings.
+.RE
+.\" END GENERATED: command group privilege seed
 .TP
 .B "group junos " \fIgroup\fR " list"
 Both Junos deny sets of the group, with their sizes.
+.\" BEGIN GENERATED: command group junos
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command group junos
 .TP
 .B "group junos " \fIgroup\fR " { deny-commands | deny-configuration } { list | add | remove | clear } [ '\fIregex\fR' ]"
 Show, add to, remove from or drop one set. Each pattern is a POSIX
@@ -590,32 +1159,152 @@ in tacctl.yaml.
 .B "group junos " \fIgroup\fR " clear"
 Drop both sets (confirms).
 .TP
-.B "group preset roles [ --dry-run ] [ --force ] [ --mgmt-filter \fIname\fR ]"
+.B "group preset roles [ --dry-run ] [ --force ]"
 Starting values for four roles: viewer (the built-in
 .BR readonly ),
 .BR operator ,
 .B engineer
-(created at priv-lvl 15 with class ENG-CLASS when absent; tier
+(created at priv-lvl 15 with class EN-CLASS when absent; tier
 .BR engineer )
 and
 .BR superuser :
-their WTI levels, the Junos deny sets of the first three and engineer's
-Cisco command rules (everything but the device's trust boundary and
-lifecycle). It lists every setting as set, unchanged, or kept (a
+their WTI levels, the Junos
+.B deny-commands
+of the first three (112, 226 and 192 of 241 bytes; no role has a
+.BR deny-configuration :
+nothing is hidden from reading, and a site that wants a Junos boundary sets
+engineer's itself), a
+.B show
+deny in front of the shipped permits of viewer and operator (the
+unfiltered, secret-bearing sub-trees: running-config view full,
+startup-config, derived-config, key chain, snmp community|user, archive log;
+the viewer's also tech-support and crypto), and engineer's Cisco command
+rules (34: everything but the exec-level lifecycle, copies that load a
+configuration or write flash, the shell escapes and the AAA debug and test
+commands; configuration mode is not restricted as a mode, so an engineer can
+change AAA, the servers and keys, lines and the management ACL on Cisco, as
+the class bits are the only limit on Junos; but tacquito cannot tell exec from
+configuration mode, so the denied words, such as archive, switch, redundancy,
+hw-module, iox, app-hosting, scripting, software and a bare configure, are
+refused there too). The roles nest: what a role may run,
+the role above may run. It lists every setting as set, unchanged, or kept (a
 different value is there; pass
 .B --force
 to replace it), then asks before writing.
 .B --dry-run
-writes nothing;
-.B --mgmt-filter
-adds the Junos firewall filter guarding the management interface to
-engineer's deny-configuration. Users are not moved
+writes nothing; an engineer's
+.B deny-configuration
+left by the preset of 0.2.2 is cleared only with
+.BR --force .
+Users are not moved
 .RB ( "user move" ).
 Every value can be changed afterwards with
 .BR "group edit" ,
 .B "group junos"
 and
 .BR "group commands" .
+.\" BEGIN GENERATED: command group preset roles
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-dry\-run\fR
+(preset, reset) Show what would change; write nothing.
+.TP
+\fB\-\-force\fR
+(preset) Replace values that differ from the preset's.
+.RE
+.\" END GENERATED: command group preset roles
+.TP
+.B "group reset " \fIgroup\fR " [ --preset ] [ --only settings,commands,privileges,junos ] [ --dry-run ] [ --yes ]"
+Put a group back to its canonical state, with the difference first and a
+confirmation; superuser only. For
+.BR readonly ,
+.B operator
+and
+.B superuser
+that is what a fresh install gives them: the shipped command rules and
+Cisco privileges, priv-lvl 1, 7 and 15, Junos class RO-CLASS, OP-CLASS and
+RW-CLASS, and no setting of their own for the tier, the WTI level or the Junos
+sets.
+.B --preset
+takes the role preset's values instead
+.RB ( "group preset roles" ).
+For
+.BR engineer ,
+which is not a built-in group, it is the preset's engineer (priv-lvl 15,
+class EN-CLASS, tier
+.BR engineer ,
+WTI level
+.BR superuser ,
+its Junos
+.BR deny-commands ,
+its Cisco rules), so
+.B "group reset engineer"
+is
+.B "group preset roles --force"
+for that one group, and creates the group when it is absent. Any other group
+has no canonical defaults and is refused
+.RB ( "group commands reset"
+drops its command overrides). The difference is printed before anything is
+written, in the sections
+.B settings
+(priv-lvl, Junos class, tier, WTI level, each
+.IR "current -> canonical" ),
+.B commands
+(rules removed, added and moved, and the default action),
+.B privileges
+and
+.B junos
+(each deny set with its size and the patterns removed and added); a section
+without a difference says
+.BR unchanged ,
+and a group that already is canonical says so, exit 0, without asking. A
+priv-lvl change warns that the Cisco logins and the per-level authorization
+lines change
+.RB ( "config cisco" ),
+a class change that the Junos template user changes
+.RB ( "config juniper" ,
+Step 1). When the group ends with command rules, the groups at its priv-lvl
+that have none get a permit catchall, as
+.B "group commands add"
+does. It asks
+.B "Apply these changes to group '<group>'? [y/N]"
+(or takes
+.BR --yes ;
+with no terminal and no
+.B --yes
+it changes nothing and exits 1);
+.B --dry-run
+prints the difference and stops;
+.B --only
+limits the reset to the sections named. The reset takes the pre-change
+snapshot, renders and restarts the backends, logs
+.B "group reset name=<group> sections=<list> by=<user>"
+and, when it lowers a tier, syncs this server's accounts at once. It never
+changes the group's name, users or built-in flag.
+.\" BEGIN GENERATED: command group reset
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-preset\fR
+(reset) The role preset's values instead of the shipped ones.
+.TP
+\fB\-\-only\fR \fI<sections>\fR
+(reset) Only settings, commands, privileges or junos (comma list).
+.TP
+\fB\-\-dry\-run\fR
+(preset, reset) Show what would change; write nothing.
+.TP
+\fB\-\-yes\fR
+(reset) Do not ask.
+.RE
+.\" END GENERATED: command group reset
 .SS Server configuration \fB(tacctl config)\fR
 .TP
 .B config show
@@ -623,6 +1312,12 @@ Show the current configuration summary. Each enabled backend adds its config
 file, service state and the listeners it should have, probed on the port
 (and protocol) of the listener, not on port 49; with more than one backend
 enabled each has a labelled block.
+.\" BEGIN GENERATED: command config show
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config show
 .TP
 .B config dump
 Print the tacctl tunable posture: canonical defaults
@@ -630,6 +1325,12 @@ Print the tacctl tunable posture: canonical defaults
 operator overrides
 .RI ( tacctl.yaml ),
 and the effective merged view.
+.\" BEGIN GENERATED: command config dump
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config dump
 .TP
 .B config defaults
 Print the canonical defaults YAML only (no overrides, no merge).
@@ -638,6 +1339,12 @@ Useful for seeding a new
 or piping into
 .B diff
 against an existing one.
+.\" BEGIN GENERATED: command config defaults
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config defaults
 .TP
 .BI "config get " "path" " [fallback]"
 Read one dotted-path value (e.g.
@@ -648,11 +1355,23 @@ Lists and maps produce no output; use
 or
 .B "config dump"
 instead.
+.\" BEGIN GENERATED: command config get
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config get
 .TP
 .BI "config get-list " "path"
 Read a list value (e.g.
 .BR mgmt_acl.permits )
 from the merged view, one element per stdout line.
+.\" BEGIN GENERATED: command config get-list
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config get-list
 .TP
 .B config validate
 Validate the store
@@ -677,7 +1396,15 @@ reserved usernames
 .BR tacquito )
 present as tacctl-managed users, users missing the
 .B accounter:
-field, and per-scope key divergence.
+field, and per-scope key divergence. Command rules that cannot work as
+written are warnings, not errors (a
+.B Command rules:
+line each): an empty or invalid match, a prefix form without
+.B "( .*)?"
+that matches the exact arguments only, and a rule that is never reached
+because an earlier rule of the same name has no match or follows the
+.RB ` * `
+catchall.
 .IP
 Then, for every enabled backend, whether its rendered config is up to date
 with the store and whether any of its files was edited by hand (drift). With
@@ -686,6 +1413,12 @@ one backend does not hide another's state; files left behind by a disabled
 backend are not checked. With RADIUS enabled it warns about a scope RADIUS
 serves that sends no vendor attribute and is not a Linux-host scope. Exits 1
 when it finds errors.
+.\" BEGIN GENERATED: command config validate
+.RS
+.PP
+Requires: \fBoperator\fR.
+.RE
+.\" END GENERATED: command config validate
 .TP
 .BR "config render " [ \-\-force ]
 .TQ
@@ -714,20 +1447,60 @@ no render record, no service. A hand edit does not stop a dry run.
 .I dir
 must be new or empty and is private to root, since the artifacts hold secrets
 and password hashes.
+.\" BEGIN GENERATED: command config render
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-force\fR
+Overwrite a generated file that was edited by hand.
+.TP
+\fB\-\-dry\-run\fR
+Render into the directory named by \-\-out; nothing live is written.
+.TP
+\fB\-\-out\fR \fI<dir>\fR
+The new, empty directory a \-\-dry\-run render writes to, at the live paths.
+.RE
+.\" END GENERATED: command config render
 .TP
 .BI "config diff " [ timestamp ]
 Alias of
 .BR "backup diff" .
+.\" BEGIN GENERATED: command config diff
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config diff
 .TP
 .BI "config restore " "timestamp " [ \-\-legacy ]
 Alias of
 .BR "backup restore" .
+.\" BEGIN GENERATED: command config restore
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-legacy\fR
+The timestamp names an old\-style backup (backups/legacy).
+.RE
+.\" END GENERATED: command config restore
 .TP
 .BI "config loglevel " [ debug | info | error ]
 Show or change the TACACS+ server's log level. Stored in
 .I tacctl.yaml
 .RB ( backends.tacacs.level ),
 so the change survives upgrades.
+.\" BEGIN GENERATED: command config loglevel
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config loglevel
 .TP
 .B "config listen " "[ \-\-backend \fIid\fR ] [ \-\-listener \fIname\fR ] { show | tcp | tcp6 | udp | udp6 | reset } " [ address ]
 Show, change, or reset a listen address (default: the
@@ -782,6 +1555,20 @@ clients via mapped addresses
 .RB ( ::ffff:x.x.x.x )
 that silently bypass IPv4 prefix ACLs; see
 .B NOTES.
+.\" BEGIN GENERATED: command config listen
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-backend\fR \fI<id>\fR
+Act on another backend (see 'tacctl backend list'); radius: \-\-listener auth|acct <udp|udp6> <addr>.
+.TP
+\fB\-\-listener\fR \fI<name>\fR
+Act on another listener than 'default' (its own tacquito@<name> unit; reset removes it).
+.RE
+.\" END GENERATED: command config listen
 .TP
 .B "config metrics " "{ show | enable | disable | address " \fIhost:port\fR " | reset }"
 Control tacquito's prometheus HTTP exporter's listen address (TACACS+ only;
@@ -809,10 +1596,46 @@ binds explicitly (e.g.
 to expose to external scrapers); non-loopback binds print a warning.
 .B reset
 clears the override and falls back to the unit default.
+.\" BEGIN GENERATED: command config metrics address
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config metrics address
+.\" BEGIN GENERATED: command config metrics disable
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config metrics disable
+.\" BEGIN GENERATED: command config metrics enable
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config metrics enable
+.\" BEGIN GENERATED: command config metrics reset
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config metrics reset
+.\" BEGIN GENERATED: command config metrics show
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config metrics show
 .TP
 .B "host list"
 Show enrolled Linux hosts with their SSH target, scope, server address,
 method and user count.
+.\" BEGIN GENERATED: command host list
+.RS
+.PP
+Requires: \fBengineer\fR.
+.RE
+.\" END GENERATED: command host list
 .TP
 .B "host show " name " [ \-\-all ] [ \-\-json ] [ \-\-check ]"
 One enrolled host in full, in sections:
@@ -877,7 +1700,27 @@ pins. Nothing is changed. Each difference is one line with the command that
 fixes it (usually
 .BI "host sync " name ),
 and the exit status is 1 when there is one. Same tier as
-.BR "host list" .
+.BR "host list" ,
+except
+.BR \-\-check ,
+which logs in and is the superuser's.
+.\" BEGIN GENERATED: command host show
+.RS
+.PP
+Requires: \fBengineer\fR. An engineer reads what tacctl recorded of a host; \-\-check logs in to it and needs the superuser tier.
+.PP
+Options:
+.TP
+\fB\-\-all\fR
+(show) The acknowledged notices too.
+.TP
+\fB\-\-json\fR
+(show) Print JSON: every field, and \-\-check's findings under 'check'.
+.TP
+\fB\-\-check\fR
+(show) Log in read\-only and compare the host with what tacctl would make it: one line per difference with the command that fixes it; exit 1 when there is one (superuser only).
+.RE
+.\" END GENERATED: command host show
 .TP
 .B "host enroll " "{ [" user "@]" host " | \-\-local } [ \-\-method tacplus|radius ] [ \-\-scope " name " ] [ \-\-server " address " ] [ \-\-name " name " ] [ \-\-port " n " ] [ \-\-identity " file " ] [ \-\-build\-on\-host ] [ \-\-allow\-uid\-mismatch ] [ \-\-remove\-home ]"
 Copy the
@@ -939,7 +1782,13 @@ defaults to the source address of the route to the host.
 .B \-\-local
 enrolls this machine without SSH. ssh runs as the user who invoked
 .BR sudo (8),
-using their keys; the remote login must be root or able to sudo. That login
+using their keys, and forwards neither their agent nor any port to the host;
+the remote login must be root or able to sudo. A host whose address is one of this
+machine's own (loopback and
+.B 0.0.0.0
+included) is refused unless it is enrolled with
+.BR \-\-local .
+That login
 (the provisioning account:
 .I user
 of the target, else the invoking user's name) must be a local account on the
@@ -1018,6 +1867,50 @@ Session accounting over RADIUS is sent only when the RADIUS
 .B acct
 listener is on the authentication port plus one, and never from Ubuntu
 24.04 (malformed records).
+.\" BEGIN GENERATED: command host enroll
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-local\fR
+Enroll this machine itself instead of a remote host (its tacctl users get the login console).
+.TP
+\fB\-\-scope\fR \fI<name>\fR
+The host's scope (default: its registered one, else the scope covering its address).
+.TP
+\fB\-\-server\fR \fI<address>\fR
+Address the host should use for this server (default: detected).
+.TP
+\fB\-\-name\fR \fI<name>\fR
+Registry name (default: short hostname).
+.TP
+\fB\-\-port\fR \fI<n>\fR
+The ssh port of the host.
+.TP
+\fB\-\-identity\fR \fI<file>\fR
+The ssh key file to log in with.
+.TP
+\fB\-\-method\fR \fItacplus|radius\fR
+pam_tacplus against the TACACS+ backend, or the host's pam_radius_auth package against the RADIUS backend (default: the host's current method, else the scope's auth\-method, else its only protocol, else 'host default\-method'). Re\-enroll with the other to switch.
+.TP
+\fB\-\-build\-on\-host\fR
+(tacplus) Compile pam_tacplus on the host instead of in a container here.
+.TP
+\fB\-\-yes\fR
+(enroll and move) Move a registered host to another scope even when that deletes accounts.
+.TP
+\fB\-\-staging\fR
+(enroll, with \-\-scope) Provisioned off\-site: the host's bench address joins the scope as a /32 (its secret and users) until the host is seen in place (tacctl scope staging).
+.TP
+\fB\-\-allow\-uid\-mismatch\fR
+(enroll and sync) Accept a UID conflict on the host instead of stopping.
+.TP
+\fB\-\-remove\-home\fR
+(enroll and sync) Delete removed users' home directories without asking (on a terminal each one is asked; without one they are kept).
+.RE
+.\" END GENERATED: command host enroll
 .TP
 .B "host move " "{ " name " [ " scope " ] | \-\-all } [ \-\-yes ] [ \-\-remove\-home ] [ \-\-allow\-uid\-mismatch ]"
 Move an enrolled host to another scope: an enroll with its registered
@@ -1029,6 +1922,26 @@ first (without a terminal it stops unless given
 .BR \-\-yes ).
 .B \-\-all
 moves every host another scope answers.
+.\" BEGIN GENERATED: command host move
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-all\fR
+(move) Every host that another scope answers; asks before deleting accounts.
+.TP
+\fB\-\-yes\fR
+(enroll and move) Move a registered host to another scope even when that deletes accounts.
+.TP
+\fB\-\-allow\-uid\-mismatch\fR
+(enroll and sync) Accept a UID conflict on the host instead of stopping.
+.TP
+\fB\-\-remove\-home\fR
+(enroll and sync) Delete removed users' home directories without asking (on a terminal each one is asked; without one they are kept).
+.RE
+.\" END GENERATED: command host move
 .TP
 .B "host sync " "{ " name " | \-\-all } [ \-\-allow\-uid\-mismatch ] [ \-\-remove\-home ]"
 Push the scope's current user list to the host: new users get accounts,
@@ -1147,6 +2060,23 @@ enrollment. A pin is never changed by a sync: a key that differs from the
 pinned one is reported, with the pinned and offered fingerprints, and new key
 types are reported; both are fixed with
 .BI "device hostkey " name " accept" \fR.
+.\" BEGIN GENERATED: command host sync
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-all\fR
+(sync) Every enrolled host.
+.TP
+\fB\-\-allow\-uid\-mismatch\fR
+(enroll and sync) Accept a UID conflict on the host instead of stopping.
+.TP
+\fB\-\-remove\-home\fR
+(enroll and sync) Delete removed users' home directories without asking (on a terminal each one is asked; without one they are kept).
+.RE
+.\" END GENERATED: command host sync
 .TP
 .B "host target " name " [ " "\fR[\fPuser@\fR]\fPhost" " ] [ \-\-port " n " ] [ \-\-identity " file " | \-\-no\-identity ]"
 With only a name, show how tacctl reaches the enrolled host: its ssh target,
@@ -1168,6 +2098,216 @@ then is the registry line rewritten (scope, server and method kept), after a
 snapshot, and logged
 .RB ( "host target name= target= port= by=" ).
 No script runs on the host.
+.\" BEGIN GENERATED: command host target
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-port\fR \fI<n>\fR
+The ssh port; tested first, and the host's ssh keys must match the pin.
+.TP
+\fB\-\-identity\fR \fI<file>\fR
+The ssh key file; tested first, and the host's ssh keys must match the pin.
+.TP
+\fB\-\-no\-identity\fR
+No key file (ssh's default keys and the agent).
+.RE
+.\" END GENERATED: command host target
+.TP
+.B "host provisioner " name " rotate " user " { \-\-key " file " | \-\-password } [ \-\-remove\-old [ \-\-remove\-home ] ] [ \-\-dry\-run ] [ \-\-yes ]"
+Switch the account tacctl logs in to a host with (the provisioning account)
+without locking tacctl out of it.
+.B rotate
+is the only subcommand. One rotation of a host runs at a time on the tacctl
+server (a lock under
+.IR /etc/tacctl/locks ,
+held for the whole command): a second one fails at once with
+"another rotation of <name> is running" and changes nothing.
+Nothing is changed until everything that can be
+checked here has been: the host is enrolled and not
+the server's own
+.B \-\-local
+entry; the new account is not
+.BR root ,
+the login in use, or a user of tacctl; exactly one of
+.B \-\-key
+and
+.B \-\-password
+is given (the latter needs a terminal, and a host with pinned ssh host keys: with
+none, the password would be typed to a peer nothing has authenticated);
+and
+.B \-\-remove\-old
+has a registry target with an explicit
+.IR user @
+to name the old account. Then, in this order: (1) the new account is created
+over the login in use by a small script of its own (not the
+.B config linux
+script), below the first number of tacctl's UID range and out of the ranges
+the server used before (its group too), with
+.B "useradd \-m \-U \-s /bin/bash \-c 'tacctl provisioning account'"
+(that comment, the account's GECOS field, is for display: the account can
+change it itself, or it comes from a directory service, so nothing is decided
+by it). Root's own proof that
+tacctl made the account is a record the script writes at once under
+.I /var/lib/tacctl\-provisioner
+(a directory of root's alone, 0700; one file per account with its name and UID).
+A re\-run adopts an existing account only when it is in
+.I /etc/passwd
+itself (not one an sssd or LDAP directory supplies) and that record agrees; any
+other account of the name is refused. The sudoers line
+.RI ( /etc/sudoers.d/tacctl\-provisioner ,
+checked with
+.BR visudo (8);
+never
+.IR tacctl\-host ,
+which each sync rewrites) is the sudoers line last: it is written only after the key (or the password) is in
+place, under a lock on the host, so two scripts at once lose no line; a failure
+takes back what the run did, the line included; (2) the new login is proved with a fresh ssh in a
+NEW connection (no shared connection) that runs
+.B "sudo id \-u"
+and must get
+.BR 0 .
+The proof's ssh trusts the host's pinned ssh keys and no others:
+tacctl writes them to a temporary known_hosts file for the run and gives ssh
+.BR "UserKnownHostsFile=<that file>" ", " GlobalKnownHostsFile=/dev/null ", "
+.BR StrictHostKeyChecking=yes " and " HostKeyAlias=<name> ,
+so another machine is refused by ssh itself (and the keys the login reads are
+compared with the pins as well, as
+.B "host target"
+does; a difference is logged
+.RB ( "auth.warning host provisioner hostkey\-mismatch name=" )).
+The proof's ssh options are stricter than a later login's (one key only,
+no GSSAPI or host\-based logins). A host with no pinned keys has nothing to
+trust: the proof then goes by the invoking user's own known_hosts, lists the
+keys the host answered with and asks you to confirm them
+.RB ( \-\-yes
+confirms), and
+.B \-\-password
+is refused; (3) only then the registry line is read again and rewritten as
+.B "host target"
+does (after a snapshot; scope, server and method kept, a
+.B "host move"
+that ran meanwhile kept; a change of how the host is reached stops the
+rotation), the old login is
+recorded in the host's record, and the rotation is logged
+.RB ( "host provisioner rotate name= old= new= auth=key|password by=" );
+(4) with
+.BR \-\-remove\-old ,
+the old account is removed last, over the new one: its sudoers line first,
+then its processes end,
+.BR userdel (8)
+runs, and its home directory is moved out of
+reach and made root\-owned, or deleted with
+.BR \-\-remove\-home .
+A terminal is asked about the home when neither is given. The removal is
+refused when the old and new accounts are the same, the old one is
+.B root
+or a user of tacctl, an account with a number in tacctl's UID range, or the
+registry does not point at the new account yet.
+.IP
+With
+.BI \-\-key " file"
+the account has a locked password,
+.B NOPASSWD: ALL
+and the public key in its
+.I ~/.ssh/authorized_keys
+(modes 0700 and 0600,
+.BR restorecon (8)
+where SELinux is on). The key is written by the account itself
+.RB ( runuser (1)),
+never by root inside a directory the account owns, and
+.I ~/.ssh
+is refused when it is a link, belongs to somebody else or is writable by its
+group or others. An adopted account's
+.I ~/.ssh
+is emptied first (what an earlier user left: rc, authorized_keys2) and is
+adopted only when tacctl made that directory; the rest of the home
+(dotfiles, cron, user units) is not scanned, so an account that has been in
+use is better removed and made again. The proof runs
+.B "sudo \-n id \-u"
+with password and keyboard\-interactive logins off. A missing file is made by
+.B "ssh\-keygen \-t ed25519"
+(which asks for the passphrase; empty is the operator's choice). Every access
+to the key file (existence, owner, the public key, the fingerprint) runs as the
+invoking user, never as root, and its path is recorded as the registry identity
+as
+.B "host target \-\-identity"
+does. With
+.B \-\-password
+the account gets
+.B ALL
+with a password the operator types into the host's own
+.BR passwd (1)
+over the ssh terminal; the proof runs
+.B "sudo id \-u"
+with public key logins off and the operator typing the password. The
+password never passes through tacctl: not its arguments, its environment, a
+file, a log or the audit line. A host whose sshd has
+.B "PasswordAuthentication no"
+always fails a
+.B \-\-password
+proof.
+.IP
+If the create script fails, it takes back its own steps: an account it made is
+removed (a
+.BR useradd (8)
+that fails halfway included), the sudoers line it wrote is taken out again, and
+the output names anything it could not. An interrupted run without a terminal
+is hung up on the host as well (the script runs on a terminal there). What can
+remain: a host that loses power or a shell killed with SIGKILL during the run,
+a removal that itself fails (named), and an adopted account's emptied
+.IR ~/.ssh ,
+which is not brought back. If the proof fails, what the run
+did is taken back over the login in use
+.RB ( "auth.warning host provisioner rotate ... step=prove" ):
+an account this run created is removed with its home and its line; an adopted
+one (an earlier run made it, perhaps another operator's) is never deleted:
+only the sudoers line this run added is taken out, and the output says what
+was left. If a removal fails too, what is left on the host is named. An
+interrupted rotation is repeated by running the same command, which adopts the
+account; one interrupted after the registry changed is finished by running it
+again with the new account as the login and
+.BR \-\-remove\-old .
+.B \-\-dry\-run
+prints the plan (the
+.B useradd
+line, the sudoers line, the key's fingerprint, the registry line before and
+after) and runs only a test login to the current target, a look at whether the
+account exists there and whether root's record names it, and the host's
+.B "sshd \-T"
+value of
+.BR passwordauthentication ;
+nothing is changed. Without a terminal and without
+.B \-\-yes
+nothing runs.
+.\" BEGIN GENERATED: command host provisioner
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-key\fR \fI<file>\fR
+(provisioner) Key login: NOPASSWD sudo and the public key only (sudoers line written last); a missing file is made by ssh\-keygen, as you.
+.TP
+\fB\-\-password\fR
+(provisioner) Password login: typed into the host's own passwd on this terminal; tacctl never sees it; refused for a host with no pinned ssh keys.
+.TP
+\fB\-\-remove\-old\fR
+(provisioner) Last, over the new account, remove the old one; its home is moved out of reach unless \-\-remove\-home. Needs a registry target with an explicit user@.
+.TP
+\fB\-\-remove\-home\fR
+(provisioner) With \-\-remove\-old: also delete the old account's home directory, without asking (otherwise it is moved out of reach, made root's).
+.TP
+\fB\-\-dry\-run\fR
+(provisioner) Print the plan and test the current login; change nothing.
+.TP
+\fB\-\-yes\fR
+(provisioner) Rotate without asking, and continue with the host keys shown when none is pinned.
+.RE
+.\" END GENERATED: command host provisioner
 .TP
 .B "host unenroll " name " [ \-\-force ]"
 Run the removal script on the host and drop it from the registry, with its
@@ -1176,6 +2316,17 @@ the removal script changes no account. If the removal fails the
 host stays registered unless
 .B \-\-force
 is given.
+.\" BEGIN GENERATED: command host unenroll
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-force\fR
+Forget the host even when the removal there failed.
+.RE
+.\" END GENERATED: command host unenroll
 .TP
 .BR "host default-method " [ tacplus | radius ]
 Show or set the method for hosts enrolled without
@@ -1187,6 +2338,12 @@ in
 default
 .BR tacplus ).
 Warns when the method's backend is not enabled.
+.\" BEGIN GENERATED: command host default-method
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command host default-method
 .TP
 .B "config linux build"
 Fetch the pinned
@@ -1200,6 +2357,12 @@ server. Run once before generating
 scripts (the
 .B radius
 method needs nothing built).
+.\" BEGIN GENERATED: command config linux build
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config linux build
 .TP
 .B "config linux script " "[ \-\-scope " name " ] [ \-\-server " address " ] [ \-\-method tacplus|radius ] [ \-\-output " file " ]"
 Write an install script that sets up TACACS+ or RADIUS login on a Debian,
@@ -1230,6 +2393,26 @@ the TACACS+ user list, and puts the PAM files back if any step fails.
 Re-run it with
 .B \-\-accounts\-only
 to sync users after changes on the server.
+.\" BEGIN GENERATED: command config linux script
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-scope\fR \fI<name>\fR
+(script) The scope whose users and secret it carries (default: the default scope).
+.TP
+\fB\-\-server\fR \fI<address>\fR
+(script) The address hosts use for this server (default: detected).
+.TP
+\fB\-\-method\fR \fItacplus|radius\fR
+(script) pam_tacplus, or the host's pam_radius_auth (default: host default\-method).
+.TP
+\fB\-\-output\fR, \fB\-o\fR \fI<file>\fR
+Where the script goes (default: tacctl\-linux\-<scope>.sh, remove\-script: tacctl\-linux\-remove.sh).
+.RE
+.\" END GENERATED: command config linux script
 .TP
 .B "config linux uid " "[ " username " [ " uid " ] ]"
 List the UID assigned to each user, print one user's UID, or change it
@@ -1255,6 +2438,12 @@ of the range on that host with
 .BR \-\-allow\-uid\-mismatch .
 Changing a UID does not renumber accounts that already exist on hosts; a
 difference from the assigned one is reported on every sync.
+.\" BEGIN GENERATED: command config linux uid
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config linux uid
 .TP
 .B "config linux uid\-range " "[ " min \- max " ]"
 Show or change the range Linux host accounts get their UIDs from (its
@@ -1298,6 +2487,42 @@ and
 .BR "host sync" ;
 give it an ID map that covers the range, run it privileged, or choose a
 range every host can hold.
+.\" BEGIN GENERATED: command config linux uid-range
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config linux uid-range
+.TP
+.B "config linux engineer\-sudo " "[ all | " command [ , command ...] " ]"
+Show or set what the members of
+.B tac\-engineer
+(the engineer tier) may run through sudo on enrolled hosts other than the
+tacctl server, with their own password: every command
+.RB ( all ,
+the default, as
+.BR tac\-superuser )
+or the commands named, absolute paths without arguments. The line is
+checked with
+.B "visudo \-cf"
+before it is kept in
+.I tacctl.yaml
+.RB ( linux.engineer_sudo );
+each host gets it at its next sync. A command that gives root a shell (a
+shell, an interpreter, an editor,
+.BR su ", " sudo ", " find ", " env
+and the like) is accepted with a warning: engineers on those hosts are then
+superusers in all but name. The tacctl server itself never gives
+engineers more than tacctl's own verbs, and neither does a machine that runs
+tacctl but was not enrolled as the server (its sync writes no
+.B tac\-engineer
+line).
+.\" BEGIN GENERATED: command config linux engineer-sudo
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config linux engineer-sudo
 .TP
 .B "config linux builds " "[ list | clear ]"
 List or delete the pam_tacplus modules that
@@ -1305,6 +2530,12 @@ List or delete the pam_tacplus modules that
 built in containers, one per OS release and architecture, kept in
 .IR /var/lib/tacctl/linux/builds .
 The listing shows the digest of the base image each was built from.
+.\" BEGIN GENERATED: command config linux builds
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config linux builds
 .TP
 .B "config linux remove-script " "[ \-\-output " file " ]"
 Write a script that removes TACACS+ or RADIUS login from a host (either
@@ -1312,8 +2543,19 @@ method): it undoes the PAM edits, deletes the files holding the shared
 secret, the module, the SELinux module and the sudoers drop-in, and reports
 accounts left with no way to log in. Local accounts, home directories, the
 tac-* groups and installed packages are left in place.
+.\" BEGIN GENERATED: command config linux remove-script
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
 .TP
-.B "config snmp show"
+\fB\-\-output\fR, \fB\-o\fR \fI<file>\fR
+Where the script goes (default: tacctl\-linux\-<scope>.sh, remove\-script: tacctl\-linux\-remove.sh).
+.RE
+.\" END GENERATED: command config linux remove-script
+.TP
+.B "config snmp show " "[ \-\-reveal ]"
 The SNMP access
 .B "device add"
 and
@@ -1341,9 +2583,26 @@ in
 the credentials are in
 .IR /etc/tacctl/snmp.yaml .
 v3 is authPriv only (HMAC-SHA-96 or HMAC-SHA-256-192, AES-128-CFB), with
-engine discovery. Administrators only: the credentials reach every device.
+engine discovery. These are the default for every scope: a scope sets its own
+with
+.B "scope snmp"
+(below) and what it does not set comes from here.
+.B \-\-reveal
+prints the community or the v3 user and passphrases instead of whether they
+are set. Administrators only: the credentials reach every device.
 .B "tacctl config snmp"
 with no subcommand prints the usage.
+.\" BEGIN GENERATED: command config snmp show
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-reveal\fR
+Print the community or the v3 passphrases.
+.RE
+.\" END GENERATED: command config snmp show
 .TP
 .B "config snmp community " "[ \-\-stdin ]"
 Ask for the v2c community twice, without echo (or read one line from stdin
@@ -1353,6 +2612,17 @@ store it, and set
 .B snmp.version
 to
 .BR v2c .
+.\" BEGIN GENERATED: command config snmp community
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-stdin\fR
+(community, v3\-user) Read the secrets from stdin, one per line.
+.RE
+.\" END GENERATED: command config snmp community
 .TP
 .BI "config snmp v3\-user " user " [ \-\-auth sha|sha256 ] [ \-\-priv aes128 ] [ \-\-stdin ]"
 Store the v3 user with its authentication and privacy passphrases (each asked
@@ -1363,17 +2633,52 @@ at least 8 characters), and set
 to
 .B v3
 and the protocols given.
+.\" BEGIN GENERATED: command config snmp v3-user
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-auth\fR \fIsha|sha256\fR
+The authentication protocol: sha (HMAC\-SHA\-96) or sha256 (HMAC\-SHA\-256\-192) (default sha).
+.TP
+\fB\-\-priv\fR \fI<value>\fR
+The privacy protocol: AES\-128 (the only one).
+.TP
+\fB\-\-stdin\fR
+(community, v3\-user) Read the secrets from stdin, one per line.
+.RE
+.\" END GENERATED: command config snmp v3-user
 .TP
 .BI "config snmp port " "[ n ]"
 Show or set the agents' UDP port.
+.\" BEGIN GENERATED: command config snmp port
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config snmp port
 .TP
 .BI "config snmp timeout " "[ seconds ]"
 Show or set the wait for an answer, 1 to 10 seconds (one retry after it).
+.\" BEGIN GENERATED: command config snmp timeout
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config snmp timeout
 .TP
 .B "config snmp clear"
 Remove the credentials and unset
 .BR snmp.version :
 no lookups.
+.\" BEGIN GENERATED: command config snmp clear
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config snmp clear
 .TP
 .BI "config snmp test " address|device
 Read the sysName of one address (or registered device) and print it, or the
@@ -1383,6 +2688,12 @@ report the agent sent
 .RB ( unknownUserName ,
 .BR wrongDigest ,
 \&...). Exit status 1 without a name.
+.\" BEGIN GENERATED: command config snmp test
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config snmp test
 .TP
 .B "config sudoers " "{ show | install | remove } " [ group ]
 Manage the optional
@@ -1394,6 +2705,24 @@ to a group (default:
 Installs are validated with
 .BR visudo (8)
 before taking effect. Not installed by default.
+.\" BEGIN GENERATED: command config sudoers install
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config sudoers install
+.\" BEGIN GENERATED: command config sudoers remove
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config sudoers remove
+.\" BEGIN GENERATED: command config sudoers show
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config sudoers show
 .TP
 .B "config sudoers tiers " "{ show | install | remove }"
 Manage
@@ -1403,7 +2732,7 @@ Members of
 .B tac-readonly
 may run
 .BR passwd ", " status ", " version ", " help " (also " \-h ", " \-\-help "), " "user list" ", " "user show" ", "
-.BR "group list" ", " "scope list" ", " "backend list" ", " "backend status" ", "
+.BR "group list" ", " "group show" ", " "scope list" ", " "backend list" ", " "backend status" ", "
 .BR "device list" ", " "device show" ", " "device notices" ", " "device ssh\-config" ", "
 .BR "ssh " \fIname\fR " and " "device ssh " \fIname\fR
 (the devices of their own scopes only), and the console's own
@@ -1413,16 +2742,81 @@ Members of
 may additionally run
 .BR "log tail" ", " "log search" ", " "log failures" ", " "log accounting" ", "
 .BR "config validate" ", " "backup list" ", " "device check" ", " "device scan" ", "
-.BR "device discover" ", " "device export" " and " "console show" .
+.BR "device discover" ", " "device export" ", " "console show" " and " "console check" .
+Members of
+.B tac-engineer
+may additionally run, for the devices, hosts and scopes of their own scopes only,
+.BR "device add" ", " remove ", " rename ", " address ", " hostname ", " vendor ", "
+.BR port ", " description ", " location ", " legacy\-ssh ", " hostkey " and " "import " "\-"
+(standard input only: sudoers matches the first argument),
+.BR "scope devices" ", " "config cisco" "|" juniper "|" wti ,
+.BR "host list" " and " "host show"
+(read only: another scope's host is not found, and
+.B "host show \-\-check"
+is refused, as it logs in to the host), the staging addresses of their scopes
+.RB ( "scope staging list" ),
+and the reads of a scope of their own:
+.BR "scope secret " \fIscope\fR " show" ,
+.BR "scope show " \fIscope\fR
+and the SNMP settings
+.RB ( "scope snmp " \fIscope\fR " show [ \-\-reveal ]" ,
+with the plain reads of version, port, timeout, contact and
+.BR "clients list" ;
+every setter, clear and test of it stays the superuser's).
+Each read of a secret by an engineer is logged to syslog as
+\fBsecret\-read kind=scope|snmp name=\fR\fIscope\fR\fB by=\fR\fIuser\fR
+(never the value). Engineers change no global setting: users, groups,
+scopes, a secret's change, backends, backups, upgrades, the default host
+method and the console's settings stay the superuser's, and so does the
+deployment of Linux hosts
+.RB ( "host enroll" ", " sync ", " move ", " target ", " provisioner ", " unenroll
+and
+.BR default\-method ):
+an engineer changes no setting that makes a host sync necessary, and a host is
+not found to the device verbs,
+.BR "device hostkey" ,
+and
+.BR \-\-staging .
+Engineers still get their accounts and sudo on the hosts of their scopes
+through a superuser's sync.
 Members of
 .B tac-superuser
 get full
 .BR sudo (8)
 access. Lower-tier rules are NOPASSWD. Commands that print a shared
-secret or a password hash are superuser-only. tacctl re-checks the
+secret or a password hash are superuser-only, but for an engineer's read of
+the secret of a scope of their own. tacctl re-checks the
 caller's tier itself on every run, reading the tier from the user's group
-in the store
-(priv-lvl 15 superuser, 7\-14 operator, below 7 read-only); callers
+in the store (the tier set on the group in
+.IR tacctl.yaml ,
+else its priv-lvl: 15 superuser, 7\-14 operator, below 7 read-only; a setting
+that is not a tier counts as read-only). While
+.I tacctl.yaml
+cannot be read, or holds a tier setting that is not a tier (a mapping, a
+list, null, an empty value or a number under
+.BR tier.\fIgroup\fR ,
+or a
+.B tier
+that is not a mapping), nobody is trusted above the operator tier, and
+.BR "host enroll" " and " "host sync"
+refuse;
+.B "group edit ... tier"
+run by root repairs it. A group at priv-lvl 15 or more with no tier
+setting (see
+.BR "group add" )
+holds back only its own members, at the operator tier, on the hosts and for
+the gate; the members of the built-in
+.B superuser
+group and everyone else are not affected. An install without a store keeps no
+tier settings and has no such group. The first
+.B "tacctl upgrade"
+to 0.2.3 records
+.B superuser
+for each such group once (marker
+.IR /var/lib/tacctl/tier\-pinned ),
+and
+.BR "store import" " and " "backup restore \-\-legacy"
+record it for the groups the import brought. Callers
 outside the local group
 .B tac-users
 are not tier-restricted.
@@ -1442,13 +2836,43 @@ hands on) and nothing else of the caller's environment; tacctl also refuses a
 .B SUDO_USER
 that is not the account of
 .BR SUDO_UID .
+.\" BEGIN GENERATED: command config sudoers tiers install
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config sudoers tiers install
+.\" BEGIN GENERATED: command config sudoers tiers remove
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config sudoers tiers remove
+.\" BEGIN GENERATED: command config sudoers tiers show
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config sudoers tiers show
 .TP
 .BI "config password-age " [ days ]
 Show or set the password age warning threshold. Default 90 days.
+.\" BEGIN GENERATED: command config password-age
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config password-age
 .TP
 .BI "config bcrypt-cost " [ "10-14" ]
 Show or set the bcrypt cost factor used when hashing new or changed
 passwords. Default 12. Existing hashes keep their minted cost.
+.\" BEGIN GENERATED: command config bcrypt-cost
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config bcrypt-cost
 .TP
 .BI "config password-min-length " [ "8-64" ]
 Show or set the minimum length enforced by
@@ -1456,6 +2880,12 @@ Show or set the minimum length enforced by
 on interactively-entered passwords. Default 12 (OWASP 2025). Floor 8
 (NIST 800-63). Auto-generated passwords (operator accepts the blank
 prompt) bypass this check.
+.\" BEGIN GENERATED: command config password-min-length
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config password-min-length
 .TP
 .BI "config secret-min-length " [ "16-128" ]
 Show or set the minimum length enforced when an operator types a
@@ -1463,6 +2893,12 @@ custom shared secret via
 .BR "scope secret " \fIname\fR " set" .
 Default 16 (Cisco TACACS+ best practice). Auto-generated secrets
 bypass this check.
+.\" BEGIN GENERATED: command config secret-min-length
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config secret-min-length
 .TP
 .B "config allow " "{ list | add | remove | clear } " [ cidr[,cidr...] ]
 Manage the connection allow list (IP ACL).
@@ -1474,6 +2910,30 @@ accept a single CIDR or a comma-separated list.
 wipes the entire list (with confirmation) — the result fails open so
 any source IP becomes eligible to connect, subject to the deny list
 and the secret-provider prefixes.
+.\" BEGIN GENERATED: command config allow add
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config allow add
+.\" BEGIN GENERATED: command config allow clear
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config allow clear
+.\" BEGIN GENERATED: command config allow list
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config allow list
+.\" BEGIN GENERATED: command config allow remove
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config allow remove
 .TP
 .B "config deny " "{ list | add | remove | clear } " [ cidr[,cidr...] ]
 Manage the connection deny list. Same comma-list and
@@ -1484,17 +2944,42 @@ semantics as
 takes precedence over
 .BR allow ;
 with both empty, all connections are accepted.
+.\" BEGIN GENERATED: command config deny add
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config deny add
+.\" BEGIN GENERATED: command config deny clear
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config deny clear
+.\" BEGIN GENERATED: command config deny list
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config deny list
+.\" BEGIN GENERATED: command config deny remove
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config deny remove
 .TP
 .B "config mgmt-acl " "{ list | add | remove | clear | cisco-name | juniper-name } " [ arg ]
 Manage a shared CIDR permit list stored under
 .B mgmt_acl.permits
 in
 .I /etc/tacctl/tacctl.yaml
-that drives both the Cisco VTY-ACL and a commented Juniper lo0
-firewall-filter example emitted by
-.B config cisco
+that drives the Cisco VTY-ACL, a commented Juniper lo0
+firewall-filter example and the WTI IP Tables list emitted by
+.BR "config cisco" ,
+.B config juniper
 and
-.BR "config juniper" .
+.BR "config wti" .
 Preserved across
 .BR "tacctl upgrade" .
 .B list
@@ -1514,6 +2999,42 @@ and
 .B juniper-name
 configure the emitted ACL/filter names (see below). With no arguments,
 prints usage, the current entry count, and both ACL names.
+.\" BEGIN GENERATED: command config mgmt-acl add
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config mgmt-acl add
+.\" BEGIN GENERATED: command config mgmt-acl cisco-name
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config mgmt-acl cisco-name
+.\" BEGIN GENERATED: command config mgmt-acl clear
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config mgmt-acl clear
+.\" BEGIN GENERATED: command config mgmt-acl juniper-name
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config mgmt-acl juniper-name
+.\" BEGIN GENERATED: command config mgmt-acl list
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config mgmt-acl list
+.\" BEGIN GENERATED: command config mgmt-acl remove
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config mgmt-acl remove
 .TP
 .BI "config mgmt-acl cisco-name " [ name ]
 Show or set the name of the IOS access-list emitted by
@@ -1540,7 +3061,7 @@ in
 and survive
 .BR "tacctl upgrade" .
 .TP
-.BI "config cisco " [ "--scope " name "] [--legacy] [--protocol " tacacs | radius ]
+.BI "config cisco " [ "--scope " name "] [--legacy] [--protocol " tacacs | radius "] [--name " device "] [--server " address|name "] [--source " address "] [--snmp-location " text ]
 Print a ready-to-paste Cisco IOS/IOS-XE configuration with the
 server IP, shared secret, current group-to-privilege mappings, and
 the VTY-ACL built from
@@ -1579,14 +3100,116 @@ the configuration is for the RADIUS backend instead (see
 below);
 .B --legacy
 is TACACS+ only.
+.IP
+Every walkthrough of
+.BR "config cisco" ", " "config juniper " "and " "config wti"
+has an SNMP step, built from the settings of the scope with the default
+beneath them (see
+.BR "scope snmp" ):
+read-only access for the tacctl server's own address first, the scope's
+allowed client ranges in the order given, and everything else
+.RB ( 0.0.0.0/0 )
+refused last, always. On Cisco that is the standard access list
+.BR TACCTL\-SNMP
+(a /32 as
+.BR "permit host" ,
+the others with wildcard masks, ending in
+.BR "deny any" )
+bound to
+.B "snmp-server community ... RO"
+or to a v3 group and user (authPriv), with
+.B snmp-server location
+and
+.BR contact ;
+on Junos a
+.B client-list
+of the same name with
+.BR "0.0.0.0/0 restrict" ,
+the read-only community bound to it or the v3 usm user with its vacm group and
+view, and
+.B "set snmp location|contact|description"
+(the client list restricts communities only; a v3 user is not restricted by it,
+which is not verified on a device; the management filter of Step 4, when it is
+rendered, has permit-snmp and deny-snmp terms for udp port 161 from the same
+clients, which restrict v3 once the filter is applied to lo0); on WTI the unit's SNMP menu in the
+walkthrough's style, whose menu names and client restriction (the udp port 161
+lines of the unit's IP Tables list, Step 5) are from WTI's documents and not
+verified on a unit. The
+community or the v3 passphrases are printed for superusers and for engineers
+(of their own scopes). A value that is not set (the scope's contact, a
+device's location) is a commented placeholder, never text a paste would
+apply, and the output ends with
+.BI "Unfilled SNMP values: contact (tacctl scope snmp " scope " contact '<text>'), location (tacctl device location " name " '<text>')" .
+An SNMP version unset in the scope and in the default makes the step a comment
+saying SNMP is not configured.
+.B \-\-name
+takes the SNMP location, description and sysName of a registered device of the
+scope
+.RB ( "device location" ,
+.BR "device description" );
+.B "--snmp-location"
+gives the location for this paste only (not stored). The Cisco walkthrough ends
+with a commented
+.B netconf-yang
+step and its prerequisite (exec authorization), for superusers; an engineer's
+says to ask one; IOS 12.x has none. The Junos walkthrough has a commented
+.B "set system services netconf ssh"
+step with the optional connection and rate limits and the check
+.RB ( "ssh -p 830 -s" " user@device " netconf ),
+and its management filter permits tcp port 830 next to ssh; the WTI unit has
+no NETCONF. Nothing is enabled by tacctl itself.
+.B "--server"
+.IR address|name
+is the address the devices are told to authenticate against (TACACS+ or RADIUS
+server lines), for devices that reach this server through a translating
+firewall; a host name must resolve to an IPv4 address.
+.B "--source"
+.I address
+is the address tacctl itself reaches the devices from (the first SNMP client
+and the permit for ssh); the default for both is the address the route to the
+Internet uses. Neither is stored; when they differ the output says which plays
+which role. They combine with
+.BR --staging .
+.\" BEGIN GENERATED: command config cisco
+.RS
+.PP
+Requires: \fBengineer\fR.
+.PP
+Options:
 .TP
-.BI "config juniper " [ "--scope " name "] [--protocol " tacacs | radius ]
+\fB\-\-scope\fR \fI<name>\fR
+(cisco, juniper, wti) The scope whose server address and secret go in (default: the default scope).
+.TP
+\fB\-\-protocol\fR \fItacacs|radius\fR
+(cisco, juniper, wti) The backend the device uses (default: the scope's auth\-method, else its only protocol, else tacacs).
+.TP
+\fB\-\-staging\fR \fI<bench\-ip>\fR
+(cisco, juniper, wti, with \-\-scope) Provisioned off\-site: the bench address joins the scope as a /32 (its secret and users) until the device is seen in place (tacctl scope staging).
+.TP
+\fB\-\-name\fR \fI<device>\fR
+(cisco, juniper, wti) A registered device of the scope: its location, description and sysName fill the SNMP step; with \-\-staging it is also the device whose move ends the staging (default: the one at the bench address).
+.TP
+\fB\-\-server\fR \fI<address|name>\fR
+(cisco, juniper, wti) The address the devices are told to authenticate against, for devices behind a translating firewall (a name must resolve to an IPv4 address); not stored.
+.TP
+\fB\-\-source\fR \fI<address>\fR
+(cisco, juniper, wti) The address tacctl itself reaches the devices from: the first SNMP client (default: the address of the route to the Internet); not stored.
+.TP
+\fB\-\-snmp\-location\fR \fI<text>\fR
+(cisco, juniper, wti) The SNMP location for this paste; not stored (a device's own: tacctl device location).
+.TP
+\fB\-\-legacy\fR
+(cisco) IOS 12.x syntax.
+.RE
+.\" END GENERATED: command config cisco
+.TP
+.BI "config juniper " [ "--scope " name "] [--protocol " tacacs | radius "] [--name " device "] [--server " address|name "] [--source " address "] [--snmp-location " text ]
 Print a ready-to-paste Juniper Junos configuration with template
 users, TACACS+ server setup, verification commands, and a commented
 lo0 firewall-filter example built from
 .B config mgmt-acl
 pre-filled. The classes carry permission bits only (a class named
-.B ENG-CLASS
+.B EN-CLASS
 gets the engineer bits). Step 3 is a read-only summary of what the
 server sends per class at login: the group's
 .B deny-commands
@@ -1602,8 +3225,37 @@ rules are not translated into class rules. Scope handling matches
 renders the RADIUS configuration (see
 .B RADIUS DEVICE CONFIGURATIONS
 below).
+.\" BEGIN GENERATED: command config juniper
+.RS
+.PP
+Requires: \fBengineer\fR.
+.PP
+Options:
 .TP
-.BI "config wti " [ "--scope " name "] [--protocol " tacacs | radius ]
+\fB\-\-scope\fR \fI<name>\fR
+(cisco, juniper, wti) The scope whose server address and secret go in (default: the default scope).
+.TP
+\fB\-\-protocol\fR \fItacacs|radius\fR
+(cisco, juniper, wti) The backend the device uses (default: the scope's auth\-method, else its only protocol, else tacacs).
+.TP
+\fB\-\-staging\fR \fI<bench\-ip>\fR
+(cisco, juniper, wti, with \-\-scope) Provisioned off\-site: the bench address joins the scope as a /32 (its secret and users) until the device is seen in place (tacctl scope staging).
+.TP
+\fB\-\-name\fR \fI<device>\fR
+(cisco, juniper, wti) A registered device of the scope: its location, description and sysName fill the SNMP step; with \-\-staging it is also the device whose move ends the staging (default: the one at the bench address).
+.TP
+\fB\-\-server\fR \fI<address|name>\fR
+(cisco, juniper, wti) The address the devices are told to authenticate against, for devices behind a translating firewall (a name must resolve to an IPv4 address); not stored.
+.TP
+\fB\-\-source\fR \fI<address>\fR
+(cisco, juniper, wti) The address tacctl itself reaches the devices from: the first SNMP client (default: the address of the route to the Internet); not stored.
+.TP
+\fB\-\-snmp\-location\fR \fI<text>\fR
+(cisco, juniper, wti) The SNMP location for this paste; not stored (a device's own: tacctl device location).
+.RE
+.\" END GENERATED: command config juniper
+.TP
+.BI "config wti " [ "--scope " name "] [--protocol " tacacs | radius "] [--name " device "] [--server " address|name "] [--source " address "] [--snmp-location " text ]
 Print a step-by-step procedure for the serial text interface of a WTI
 console server (DSM/CPM/REM/TSM/RSM, firmware v8.x): the
 .B /N
@@ -1618,8 +3270,16 @@ treats TACACS-only users as invalid and sends a junk password),
 Account/Session Management Modules, Service Name
 .BR wti ,
 the factory default, which per-group WTI levels need),
-an IP Tables check (the unit must accept ESTABLISHED,RELATED traffic or
-tacquito's replies are dropped),
+an IP Tables step (the unit must accept loopback and ESTABLISHED,RELATED
+traffic or tacquito's replies are dropped; the walkthrough then renders the
+unit's whole list for the scope: loopback, established, ssh and https for the
+tacctl server and each permitted range of
+.BR "scope mgmt-acl" ,
+and udp port 161 for the SNMP clients, numbered in the unit's order, with a
+note for an IPv6 entry skipped; the final
+.B iptables -A INPUT -j DROP
+is the last step, never applied by the walkthrough, and is only a comment for a
+scope with no management permit list),
 followed by the group-to-access-level mapping, a troubleshooting step
 that turns on the unit's TACACS Debug echo, and the matching tacquito
 log lines to look for. WTI reads the standard
@@ -1663,10 +3323,45 @@ Refused, as for Cisco and Juniper, when the scope sends no
 .B WTI-Super
 (see
 .BR "scope vendor-attrs" ).
+.\" BEGIN GENERATED: command config wti
+.RS
+.PP
+Requires: \fBengineer\fR.
+.PP
+Options:
+.TP
+\fB\-\-scope\fR \fI<name>\fR
+(cisco, juniper, wti) The scope whose server address and secret go in (default: the default scope).
+.TP
+\fB\-\-protocol\fR \fItacacs|radius\fR
+(cisco, juniper, wti) The backend the device uses (default: the scope's auth\-method, else its only protocol, else tacacs).
+.TP
+\fB\-\-staging\fR \fI<bench\-ip>\fR
+(cisco, juniper, wti, with \-\-scope) Provisioned off\-site: the bench address joins the scope as a /32 (its secret and users) until the device is seen in place (tacctl scope staging).
+.TP
+\fB\-\-name\fR \fI<device>\fR
+(cisco, juniper, wti) A registered device of the scope: its location, description and sysName fill the SNMP step; with \-\-staging it is also the device whose move ends the staging (default: the one at the bench address).
+.TP
+\fB\-\-server\fR \fI<address|name>\fR
+(cisco, juniper, wti) The address the devices are told to authenticate against, for devices behind a translating firewall (a name must resolve to an IPv4 address); not stored.
+.TP
+\fB\-\-source\fR \fI<address>\fR
+(cisco, juniper, wti) The address tacctl itself reaches the devices from: the first SNMP client (default: the address of the route to the Internet); not stored.
+.TP
+\fB\-\-snmp\-location\fR \fI<text>\fR
+(cisco, juniper, wti) The SNMP location for this paste; not stored (a device's own: tacctl device location).
+.RE
+.\" END GENERATED: command config wti
 .TP
 .BI "config branch " [ name ]
 Show or change the tacctl repository branch used by
 .B tacctl upgrade.
+.\" BEGIN GENERATED: command config branch
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config branch
 .SS Auth backends \fB(tacctl backend)\fR
 A backend is a daemon that serves the store over one protocol:
 .B tacacs
@@ -1686,11 +3381,23 @@ See
 .B backend list
 Every backend this tacctl has: protocol, implementation, whether it is
 installed, whether it is enabled, and its service state. Read-only.
+.\" BEGIN GENERATED: command backend list
+.RS
+.PP
+Requires: \fBreadonly\fR.
+.RE
+.\" END GENERATED: command backend list
 .TP
 .BI "backend status " [ id ]
 Service and listener state of every backend (or one): state, uptime, PID,
 and for each listener its network and address, the state of its unit and
 whether something is listening there. Read-only.
+.\" BEGIN GENERATED: command backend status
+.RS
+.PP
+Requires: \fBreadonly\fR.
+.RE
+.\" END GENERATED: command backend status
 .TP
 .BI "backend enable " "id " [ \-y ]
 Enable a backend. If it is not installed, confirms (\fB\-y\fR skips) and runs its
@@ -1706,6 +3413,17 @@ If any step fails, the files tacctl owns
 the store, every rendered file) are left or put back exactly as they were, the
 service is stopped and disabled, and the exit status is 1; software that the
 install step put on the machine stays.
+.\" BEGIN GENERATED: command backend enable
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-y\fR, \fB\-\-yes\fR
+Answer yes to the confirmation.
+.RE
+.\" END GENERATED: command backend enable
 .TP
 .BI "backend disable " "id " [ \-y ]
 Take a backend out of
@@ -1749,14 +3467,45 @@ are available to the read-only and operator tiers;
 and
 .B disable
 are superuser only.
+.\" BEGIN GENERATED: command backend disable
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-y\fR, \fB\-\-yes\fR
+Answer yes to the confirmation.
+.RE
+.\" END GENERATED: command backend disable
 .SS Canonical store \fB(tacctl store)\fR
 .TP
 .BR "store show " [ \-\-json ]
 Print the model (users, groups, scopes, filters) as YAML or JSON.
 .B Superuser only:
 the output contains shared secrets and password hashes.
+.\" BEGIN GENERATED: command store show
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-json\fR
+Print JSON instead of YAML.
+.RE
+.\" END GENERATED: command store show
 .TP
 .B "store import " "[ \-\-check | \-\-force ] [ \-\-replace ] [ " file " ]"
+After an import every custom group at priv-lvl 15 without a tier setting gets
+.B superuser
+recorded in
+.I tacctl.yaml
+(a line each; the same step as
+.BR upgrade ),
+and when the tacctl server is enrolled a red line says that users whose tier
+fell keep their old groups until
+.BR "host sync" .
 Import an old-style
 .I tacquito.yaml
 (default: the live one) into the store.
@@ -1771,11 +3520,37 @@ overwrites an existing store. Also the way to keep a hand edit of
 that
 .B config validate
 reports as drift.
+.\" BEGIN GENERATED: command store import
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-check\fR
+Write nothing; report what an import would do.
+.TP
+\fB\-\-force\fR
+Drop content the store cannot represent (each item is listed).
+.TP
+\fB\-\-replace\fR
+Overwrite an existing store.
+.RE
+.\" END GENERATED: command store import
 .TP
 .B store rollback
 Undo the move into the store: restore the pre-store
 .IR tacquito.yaml ,
 remove the store, restart. The install is back in legacy read-only mode.
+When the tacctl server is enrolled a red line says that users whose tier fell
+keep their old groups until
+.BR "host sync" .
+.\" BEGIN GENERATED: command store rollback
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command store rollback
 .SS Log inspection \fB(tacctl log)\fR
 With more than one backend enabled each log subcommand shows every backend's
 log in a section headed by its name; with one, the output is unchanged.
@@ -1801,12 +3576,48 @@ With
 .BR \-f ,
 then print new entries of every backend as they arrive (each line behind
 its backend's id when more than one is enabled) until Ctrl-C.
+.\" BEGIN GENERATED: command log tail
+.RS
+.PP
+Requires: \fBoperator\fR.
+.PP
+Options:
+.TP
+\fB\-\-backend\fR \fI<id>\fR
+Only that backend's log (every subcommand).
+.TP
+\fB\-f\fR, \fB\-\-follow\fR
+(tail) Then print new entries as they arrive, until Ctrl\-C.
+.RE
+.\" END GENERATED: command log tail
 .TP
 .BI "log search " term
 Search logs for a username or keyword (TACACS+: over the last 7 days).
+.\" BEGIN GENERATED: command log search
+.RS
+.PP
+Requires: \fBoperator\fR.
+.PP
+Options:
+.TP
+\fB\-\-backend\fR \fI<id>\fR
+Only that backend's log (every subcommand).
+.RE
+.\" END GENERATED: command log search
 .TP
 .B log failures
 Show authentication failures from the last 24 hours.
+.\" BEGIN GENERATED: command log failures
+.RS
+.PP
+Requires: \fBoperator\fR.
+.PP
+Options:
+.TP
+\fB\-\-backend\fR \fI<id>\fR
+Only that backend's log (every subcommand).
+.RE
+.\" END GENERATED: command log failures
 .TP
 .BI "log accounting " [ n ]
 Show the last
@@ -1814,6 +3625,17 @@ Show the last
 accounting records
 .RI ( /var/log/tacquito/accounting.log ;
 the RADIUS detail file).
+.\" BEGIN GENERATED: command log accounting
+.RS
+.PP
+Requires: \fBoperator\fR.
+.PP
+Options:
+.TP
+\fB\-\-backend\fR \fI<id>\fR
+Only that backend's log (every subcommand).
+.RE
+.\" END GENERATED: command log accounting
 .TP
 .B "log clear " [ --force ]
 Purge tacquito journal entries
@@ -1826,10 +3648,30 @@ Prompts for confirmation;
 .BR -y )
 skips the prompt for scripted use. Destructive — historical auth and
 accounting records are irrecoverable once cleared.
+.\" BEGIN GENERATED: command log clear
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-backend\fR \fI<id>\fR
+Only that backend's log (every subcommand).
+.TP
+\fB\-\-force\fR, \fB\-y\fR, \fB\-\-yes\fR
+(clear) Purge without asking.
+.RE
+.\" END GENERATED: command log clear
 .SS Backup management \fB(tacctl backup)\fR
 .TP
 .B backup list
 List snapshots, newest first, then old-style backups.
+.\" BEGIN GENERATED: command backup list
+.RS
+.PP
+Requires: \fBoperator\fR.
+.RE
+.\" END GENERATED: command backup list
 .TP
 .BI "backup diff " [ timestamp ]
 Diff
@@ -1838,6 +3680,12 @@ and
 .I tacctl.yaml
 against a snapshot (default: most recent). Superuser only: the output
 shows shared secrets and password hashes.
+.\" BEGIN GENERATED: command backup diff
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command backup diff
 .TP
 .BI "backup restore " timestamp " " [ \-\-legacy ]
 Restore both files from a snapshot after confirmation, re-render every
@@ -1856,7 +3704,9 @@ the argument names an old-style
 .I tacquito.yaml.<timestamp>
 file, which goes through
 .B store import \-\-check
-before it is imported.
+before it is imported. When the tacctl server is enrolled a red line says that
+users whose tier fell keep their old groups until
+.BR "host sync" .
 .PP
 A snapshot is the directory
 .I /etc/tacctl/backups/<timestamp>/
@@ -1869,6 +3719,17 @@ of that moment and the tacctl version), root-only. One is taken
 automatically before every change, unless the files already equal the
 newest snapshot. The newest 30 are retained. Without a store, list, diff
 and restore work on old-style backups only.
+.\" BEGIN GENERATED: command backup restore
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-legacy\fR
+The timestamp names an old\-style backup (backups/legacy).
+.RE
+.\" END GENERATED: command backup restore
 .SS Hash generation \fB(tacctl hash)\fR
 .TP
 .B hash
@@ -1883,6 +3744,12 @@ Does not require root.
 .B hash generate
 Interactively prompt for a password on the server and print its bcrypt
 hash. Intended for admins who can shell in to the tacquito host.
+.\" BEGIN GENERATED: command hash generate
+.RS
+.PP
+Requires: \fBreadonly\fR.
+.RE
+.\" END GENERATED: command hash generate
 .TP
 .B hash commands
 Print client-side bcrypt-generation recipes for operators who cannot
@@ -1895,9 +3762,15 @@ and hex-encoded forms;
 /
 .B "user passwd --hash"
 accept either and normalize to hex on write.
+.\" BEGIN GENERATED: command hash commands
+.RS
+.PP
+Requires: \fBreadonly\fR.
+.RE
+.\" END GENERATED: command hash commands
 .SS Interactive shell \fB(tacctl shell)\fR
 .TP
-.BI "shell " "[ \-\-no\-history ] [ \-\-idle " min " ] [ \-c " line " ]"
+.BI "shell " "[ \-\-no\-history ] [ \-\-idle " min " ] [ \-\-space\-completion { on | off } ] [ \-c " line " ]"
 A prompt,
 .BR "tacctl> " ,
 where each line is a tacctl command without the
@@ -1989,6 +3862,54 @@ inherit that. Ctrl-D on an empty line, like
 .BR exit ,
 leaves the shell.
 .IP
+Tab, ?, a typed space and the shell's top-level
+.B help
+list only the commands and sub-commands that the caller's tier can run
+(the rows of the tier table, which the sudoers drop-in is written from, so
+the two cannot differ): a readonly user does not see
+.B store
+or
+.BR install ,
+an operator does not see
+.BR host ,
+and a superuser and a caller outside
+.B tac-users
+see everything. The list ends with \(lqShown: the commands the
+.I tier
+tier can run\(rq.
+The usage stays complete:
+.BI "help " command
+describes every verb of the family and ends with the tier each one needs (with
+a note for the verbs whose sub-verbs the code splits:
+.BR "scope secret" ,
+.BR "scope staging" ,
+.BR "host default\-method" ,
+.BR "device import" ),
+and ? after a verb typed by hand names the tier it needs
+(\(lqNeeds the \fItier\fR tier.\(rq; after a command family the tier cannot run at
+all, \(lqNeeds the \fItier\fR tier. help \fIfamily\fR describes it.\(rq). The
+descriptions of the rows that are listed are the usage's text and can still name
+a verb of the family that is not listed. This is display only:
+the tier gate and sudo remain the check, and a command typed by hand is
+refused as before. The shell learns the tier of a
+.B tac-users
+member from the root side
+.RB ( "sudo \-n tacctl _console-policy" ,
+as the console does) when it starts, in the background and within 3 seconds, so
+typing never waits for it; until the answer is in, or when it cannot be
+learned, only the read-only commands are listed, and the next Tab, ? or space
+asks again once 30 seconds have passed. A disabled tacctl user (the root side
+answers that the account has no tier) is listed no command, as the gate refuses
+them all;
+.BR help ,
+.B exit
+and
+.B quit
+remain.
+This manual and the usage printed by
+.B tacctl
+itself are not filtered: they show everything.
+.IP
 The history is kept in
 .I ~/.local/state/tacctl/history
 (mode 0600, the newest 1000 lines).
@@ -2014,6 +3935,36 @@ A recalled line that carries the mark is refused; type the value again.
 Lines ended with Ctrl-C are not stored.
 .B \-\-no\-history
 keeps the history of the session in memory only.
+.IP
+.BR "\-\-space\-completion on" | off
+(default on) makes a typed space work as on a Junos device. A space is
+refused (nothing is inserted) at the start of the line, right after a space and
+right before one. At the end of a word that is a command, a sub-command, a
+fixed choice or a flag name, it completes the word when exactly one such word
+starts with what is typed and adds the blank
+.RB ( de
+and a space give
+.BR "device " );
+when several do, they are listed once as ? lists them, without the question
+for a long list and without paging, and nothing is inserted (more than
+40 words, or the console's
+.BR list_max ,
+print nothing). A word that is complete already
+.RB ( user
+while
+.B user\-x
+exists), a name (user, group, scope, host, device, file), free text, a typo and
+a space in the middle of a word get the space as typed. Inside quotes, after a
+backslash, in a Ctrl-R search, and with Tab and ?, nothing changes. A paste is
+not affected: it is inserted as it is, with the setting on or off. The login
+console reads the
+setting from
+.BR "console space\-completion" .
+.B \-c
+and batch input are not affected.
+.B off
+turns off the refusal of repeated spaces and the completion: every typed space
+is a space.
 .IP
 .BI "\-\-idle " min
 ends the shell after
@@ -2041,6 +3992,26 @@ says so on standard error.
 Bare
 .B tacctl
 on a terminal still prints the usage and exits 1.
+.\" BEGIN GENERATED: command shell
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-no\-history\fR
+Keep no history file for this session.
+.TP
+\fB\-\-idle\fR \fI<min>\fR
+End the session after this many idle minutes at the prompt.
+.TP
+\fB\-\-space\-completion\fR \fIon|off\fR
+A typed space completes a fixed word and never doubles (default on).
+.TP
+\fB\-c\fR \fI<line>\fR
+Run one line and exit.
+.RE
+.\" END GENERATED: command shell
 .SH SCOPE MANAGEMENT
 A
 .I scope
@@ -2077,6 +4048,12 @@ mirroring how tacquito routes a connecting client) use
 .BR "scope routing" .
 For full per-scope detail (secret posture, per-scope knobs, user list) use
 .BR "scope show " \fIname\fR .
+.\" BEGIN GENERATED: command scope list
+.RS
+.PP
+Requires: \fBreadonly\fR.
+.RE
+.\" END GENERATED: command scope list
 .TP
 .B scope routing
 Print every (scope, prefix) pair in first-match order, as rendered into
@@ -2087,6 +4064,12 @@ numbered by slice position). Multi-prefix scopes repeat their name on
 each prefix row so the display literally mirrors routing priority —
 reading top to bottom shows the order tacquito tries providers for a
 connecting client.
+.\" BEGIN GENERATED: command scope routing
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command scope routing
 .TP
 .BI "scope show " name
 Full detail for one scope: prefixes, users that reference it, the
@@ -2095,6 +4078,12 @@ shared secret's length and posture (never its value:
 prints that), whether the scope is
 the default, its protocols filter and auth-method, its vendor attributes
 and tagged addresses (RADIUS).
+.\" BEGIN GENERATED: command scope show
+.RS
+.PP
+Requires: \fBengineer\fR.
+.RE
+.\" END GENERATED: command scope show
 .TP
 .B "scope add " \fIname\fR " --prefixes " \fIcidr\fR[,cidr...] " [ --secret \fIvalue\fR | --secret generate ] [ --protocols \fIcsv\fR ] [ --vendor-attrs \fIcsv\fR ] [ --default ]
 Create a new scope. Prefixes are required; each must not already
@@ -2113,6 +4102,29 @@ set what
 and
 .B "scope vendor-attrs enable"
 would.
+.\" BEGIN GENERATED: command scope add
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-prefixes\fR \fI<cidrs>\fR
+(add) The scope's CIDRs, comma\-separated.
+.TP
+\fB\-\-secret\fR \fI<value>\fR
+(add) The shared secret, or a generated one.
+.TP
+\fB\-\-protocols\fR \fI<csv>\fR
+(add) Limit it to tacacs, radius (default: all).
+.TP
+\fB\-\-vendor\-attrs\fR \fI<csv>\fR
+(add) RADIUS vendor attributes to send (cisco, juniper, wti).
+.TP
+\fB\-\-default\fR
+(add) Make it the default scope.
+.RE
+.\" END GENERATED: command scope add
 .TP
 .BI "scope remove " "name " [ --force ]
 Remove a scope from the store (and so from every backend's rendered
@@ -2130,8 +4142,22 @@ setting stored under the scope's name
 .BR scope_auth_method ,
 .B scope_mgmt_acl.names.cisco|juniper
 and
-.BR scope_mgmt_acl.permits )
-is removed with it, so a new scope of that name starts from the defaults.
+.BR scope_mgmt_acl.permits ),
+its SNMP settings
+.RB ( snmp_scope.\fIscope\fR.* )
+and its SNMP credentials file are removed with it, so a new scope of that
+name starts from the defaults.
+.\" BEGIN GENERATED: command scope remove
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-force\fR
+(remove) Also take it out of the users that have it.
+.RE
+.\" END GENERATED: command scope remove
 .TP
 .BI "scope rename " "old new"
 Rename a scope. Rewrites the scope in the store (protocols, vendor
@@ -2146,6 +4172,12 @@ in
 and moves every
 .I tacctl.yaml
 setting stored under the old name to the new one.
+.\" BEGIN GENERATED: command scope rename
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command scope rename
 .TP
 .BI "scope default " [ name ]
 Show (no arg) or set (with arg) the default scope. Stored under
@@ -2161,6 +4193,12 @@ is omitted, and by
 when
 .B --scope
 is omitted.
+.\" BEGIN GENERATED: command scope default
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command scope default
 .TP
 .BI "scope lookup " ip\fR|\fIcidr
 Resolve an IPv4 / IPv6 address or CIDR to the scope that owns it,
@@ -2171,10 +4209,30 @@ below the winner for debugging. An address the scope has tagged with a
 vendor
 .RB ( "scope devices" )
 is shown with its tag.
+.\" BEGIN GENERATED: command scope lookup
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command scope lookup
 .SS Per-scope prefixes \fB(tacctl scope prefixes)\fR
 .TP
 .BI "scope prefixes " "scope " "list"
 Show the scope's current prefixes.
+.\" BEGIN GENERATED: command scope prefixes
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-all\fR
+(remove) Remove every prefix of the scope, which removes the scope.
+.TP
+\fB\-\-force\fR
+(remove \-\-all) Also take the scope out of the users that have it.
+.RE
+.\" END GENERATED: command scope prefixes
 .TP
 .B "scope prefixes " \fIscope\fR " add " \fIcidr\fR[,cidr...]
 Add one or more CIDRs. Each CIDR is canonicalized
@@ -2239,7 +4297,14 @@ is seen at another address the scope covers.
 .B list
 (the default) shows them with where each is seen now;
 .B remove
-takes one out by hand.
+takes one out by hand. An engineer lists the addresses of their own scopes
+and removes none.
+.\" BEGIN GENERATED: command scope staging
+.RS
+.PP
+Requires: \fBengineer\fR. An engineer may run list for a scope of their own; the other verbs need the superuser tier.
+.RE
+.\" END GENERATED: command scope staging
 .SS Per-scope secret \fB(tacctl scope secret)\fR
 .TP
 .BI "scope secret " "scope " "show"
@@ -2247,7 +4312,15 @@ Print the scope's raw shared-secret value plus its length and posture.
 The command runs as root, the store is mode 0600, and operators need
 the raw value to paste into device configs — so
 .B show
-prints it rather than hiding it. Superuser only.
+prints it rather than hiding it. Superuser only; an engineer may read the
+secret of a scope of their own (another scope does not exist for them, and
+each read is logged), and may not set or generate one.
+.\" BEGIN GENERATED: command scope secret
+.RS
+.PP
+Requires: \fBengineer\fR. An engineer may run show for a scope of their own; set and generate need the superuser tier.
+.RE
+.\" END GENERATED: command scope secret
 .TP
 .BI "scope secret " "scope " "set " value
 Set the scope's key after validation (≥
@@ -2269,6 +4342,12 @@ and apply it.
 .BI "scope protocols " "scope " "[list]"
 Show which protocols serve the scope. Without a filter, every enabled
 backend serves it.
+.\" BEGIN GENERATED: command scope protocols
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command scope protocols
 .TP
 .BI "scope protocols " "scope " "set " protocol\fR[,protocol...]
 Limit the scope to the named protocols
@@ -2299,6 +4378,12 @@ A vendor's privilege attribute is added only where the operator opted in:
 Show the vendors enabled for the scope, or
 .B "not sent"
 (the state of a new scope).
+.\" BEGIN GENERATED: command scope vendor-attrs
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command scope vendor-attrs
 .TP
 .BI "scope vendor-attrs " scope " enable|disable " vendor\fR[,vendor...]
 Enable or disable a vendor's attribute for every device of the scope that
@@ -2314,6 +4399,12 @@ so the change re-renders the RADIUS backend and restarts it.
 .TP
 .BI "scope devices " scope " [list]"
 List the scope's tagged addresses.
+.\" BEGIN GENERATED: command scope devices
+.RS
+.PP
+Requires: \fBengineer\fR.
+.RE
+.\" END GENERATED: command scope devices
 .TP
 .BI "scope devices " scope " set " "ip\fR|\fIcidr vendor"
 Tag an address (a bare IP is a /32 or /128) or a range of the scope
@@ -2349,13 +4440,22 @@ Junos emits
 Range 0..60 (Junos's max). A value of
 .B 0
 disables idle expiry on both vendors. Default 60.
+.\" BEGIN GENERATED: command scope exec-timeout
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command scope exec-timeout
 .SS Per-scope mgmt-acl \fB(tacctl scope mgmt-acl)\fR
 .TP
 .BI "scope mgmt-acl " scope " " \
 "<list|add|remove|clear|cisco-name|juniper-name>" " [" args "]"
 Per-scope management ACL. Subcommand shape mirrors the global
 .B "tacctl config mgmt-acl"
-so operators who know one form know the other.
+so operators who know one form know the other. The effective permit list of a
+scope drives the Cisco VTY-ACL, the Junos filter and the ssh and https lines of
+the WTI IP Tables list (Step 5 of
+.BR "config wti" ).
 .RS
 .IP \(bu 2
 .BR list ,
@@ -2388,6 +4488,114 @@ Junos puts it in
 .B "set firewall family inet filter <NAME>"
 and the commented lo0 apply. Per-scope permits let one environment
 deviate without changing the house-wide default.
+.\" BEGIN GENERATED: command scope mgmt-acl
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command scope mgmt-acl
+.SS Per-scope SNMP \fB(tacctl scope snmp)\fR
+.PP
+The SNMP settings of the devices of a scope. A setting the scope does not set
+comes from the default
+.RB ( "config snmp" ),
+then the built-in; every
+.B show
+says which one a value is. The non-secret settings are
+.B snmp_scope.\fIscope\fR.{version,port,timeout,v3.auth,v3.priv,contact,clients}
+in
+.IR tacctl.yaml ,
+written only when set; the community and the v3 user with its passphrases are
+the file
+.IR /etc/tacctl/snmp/\fIscope\fR.yaml
+(mode 0600 in a 0700 directory, the format of
+.IR snmp.yaml ),
+never printed but by
+.BR "show \-\-reveal" .
+A scope's rename moves them, its removal deletes them. The SNMP lookup of
+.B "device add"
+and
+.B "device check"
+uses the credentials of the device's scope (the one that answers its address;
+a device in no scope uses the default). The verbs that set or clear anything,
+and
+.BR test ,
+are the superuser's.
+.TP
+.BI "scope snmp " scope " show [ \-\-reveal ]"
+The effective version, port, timeout, protocols, community or v3 user, contact
+and allowed clients of the scope, each with where it comes from
+.RB ( scope ,
+.BR default ,
+.BR built\-in ).
+.B \-\-reveal
+prints the credentials; an engineer may reveal the scopes of their own, and the
+reveal is logged as
+.BR "secret\-read kind=snmp" .
+.\" BEGIN GENERATED: command scope snmp
+.RS
+.PP
+Requires: \fBengineer\fR. An engineer may read the settings of a scope of their own (show [\-\-reveal], version, port, timeout, contact, clients list); every setter, clear and test needs the superuser tier.
+.PP
+Options:
+.TP
+\fB\-\-reveal\fR
+Print the community or the v3 passphrases (an engineer: their own scopes; logged).
+.TP
+\fB\-\-clear\fR
+Remove the contact.
+.TP
+\fB\-\-stdin\fR
+(community, v3\-user) Read the secrets from stdin, one per line.
+.TP
+\fB\-\-auth\fR \fIsha|sha256\fR
+The authentication protocol: sha (HMAC\-SHA\-96) or sha256 (HMAC\-SHA\-256\-192) (default: the default's, else sha).
+.TP
+\fB\-\-priv\fR \fI<value>\fR
+The privacy protocol: AES\-128 (the only one).
+.RE
+.\" END GENERATED: command scope snmp
+.TP
+.BI "scope snmp " scope " version [ v2c | v3 ]"
+Show or set the scope's SNMP version.
+.TP
+.BI "scope snmp " scope " community [ \-\-stdin ]"
+Ask twice, without echo (or read one line from stdin), for the scope's v2c
+community; the scope's version becomes
+.BR v2c .
+.TP
+.BI "scope snmp " scope " v3\-user " user " [ \-\-auth sha|sha256 ] [ \-\-priv aes128 ] [ \-\-stdin ]"
+Set the scope's v3 user and its two passphrases (at least 8 characters); the
+scope's version becomes
+.BR v3 .
+.TP
+.BI "scope snmp " scope " clients { list | add | remove } " [ cidr [ , cidr ...]]
+The ranges allowed to query the scope's devices: IPv4 networks in canonical
+form, kept in the order given, at most 32, never
+.B 0.0.0.0/0
+(the final refusal of everything else is always rendered and never stored)
+and no IPv6. The tacctl server's own address is always the first client and is
+not listed. An overlap of two ranges is a note, not an error. A scope without
+ranges allows the tacctl server only, and the walkthroughs say so.
+.TP
+.BI "scope snmp " scope " contact [ " text " | \-\-clear ]"
+Show, set or remove the scope's SNMP contact (up to 120 characters, no control
+characters, no
+.BR ? ).
+.TP
+.BI "scope snmp " scope " port [ n ]"
+Show or set the agents' UDP port for the scope.
+.TP
+.BI "scope snmp " scope " timeout [ seconds ]"
+Show or set the wait for an answer for the scope, 1 to 10 seconds.
+.TP
+.BI "scope snmp " scope " clear"
+Remove the scope's own settings, credentials, clients and contact: the default
+applies again.
+.TP
+.BI "scope snmp " scope " test " address|device
+Read the sysName of one address (or registered device) with the scope's
+settings.
 .SS Per-scope Cisco aaa-group-server label \fB(tacctl scope tacacs-group)\fR
 .TP
 .BI "scope tacacs-group " scope " [" name ]
@@ -2405,6 +4613,12 @@ and
 .BR TACACS-GROUP .
 Junos has no equivalent — its AAA configuration does not group named
 servers this way.
+.\" BEGIN GENERATED: command scope tacacs-group
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command scope tacacs-group
 .SS Per-scope Cisco RADIUS group label \fB(tacctl scope radius-group)\fR
 .TP
 .BI "scope radius-group " scope " [" name ]
@@ -2422,6 +4636,12 @@ Junos has no equivalent. Stored as
 .B radius_group.<scope>
 in
 .IR tacctl.yaml .
+.\" BEGIN GENERATED: command scope radius-group
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command scope radius-group
 .SS Per-scope default authentication method \fB(tacctl scope auth-method)\fR
 .TP
 .BI "scope auth-method " scope " [" tacacs | radius | clear ]
@@ -2473,6 +4693,12 @@ in
 follows
 .B "scope rename"
 and is removed with the scope.
+.\" BEGIN GENERATED: command scope auth-method
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command scope auth-method
 .SS Per-scope AAA method-list order \fB(tacctl scope aaa-order)\fR
 .TP
 .BI "scope aaa-order " scope " [" tacacs-first | local-first ]
@@ -2501,6 +4727,112 @@ The change takes effect for the next
 .B "config juniper"
 render of the named scope — existing device configs are unchanged
 until the new method-list stanzas are pushed.
+.\" BEGIN GENERATED: command scope aaa-order
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command scope aaa-order
+.SS Per-scope break-glass local users \fB(tacctl scope breakglass)\fR
+.TP
+.BI "scope breakglass " scope " [" list ]
+.TQ
+.BI "scope breakglass " scope " add " name " [" "--role admin" | operator | readonly ]
+.TQ
+.BI "scope breakglass " scope " remove " name
+List, add or remove the local accounts a scope's devices keep for the day the
+server cannot be reached. Only the names and roles are recorded; the role
+defaults to
+.BR admin .
+A name must be a device-safe user name (a letter, then up to 31 letters,
+digits,
+.B _
+and
+.BR - ),
+must not be a user of the scope, and must not collide with a
+template-user or class name of the Juniper walkthrough or be one of the
+reserved names
+.BR root " and " tacquito
+or the Junos account
+.B remote
+(the template account of every remote user without a local-user-name). Names
+compare without regard to case.
+.BR "user add" ,
+.BR "user scope" " (" add " and " replace )
+and
+.B "user rename"
+refuse a user name equal to a break-glass account of a scope the user is in or
+would be in, and name the
+.B remove
+verb as the way out. At most 16 users per scope. Stored as
+.B breakglass_scope.<scope>.users
+(a list of
+.IR name : role )
+in
+.IR tacctl.yaml ,
+written only when set; it follows
+.B "scope rename"
+and is removed with the scope. Superuser only.
+.IP
+.B tacctl never stores a password or hash.
+.B "config cisco" ,
+.B "config juniper"
+and
+.B "config wti"
+render the account lines for the scope with a placeholder where the credential
+goes (commented out, so a paste does not create an account with a placeholder
+for a password) and list each recorded account on an
+.B "Unfilled break-glass credentials"
+line (tacctl cannot see whether a credential was put in, so the line stays for
+as long as the account is recorded). Cisco:
+.B "username <name> privilege <15|7|1> secret 9 <TYPE9-HASH>"
+(the hash itself, as
+.B "show running-config"
+prints it:
+.B "algorithm-type scrypt secret"
+would take a plaintext password and hash it again; IOS 12.x with
+.B --legacy
+uses
+.BR "secret 5" ),
+next to the
+.B "aaa authentication login default"
+line that follows the scope's
+.BR aaa-order .
+Junos:
+.B "set system login user <name> class <class> authentication encrypted-password '<HASH>'"
+with the local class of the built-in
+.BR superuser ,
+.B operator
+or
+.B readonly
+group for
+.BR admin ,
+.B operator
+and
+.BR readonly .
+WTI: a local account of the matching access level (admin is Administrator, or
+the level the group's
+.B wti-level
+sets, as in the mapping table of the same output) in a menu step, with
+.B <PASSWORD>
+where the password goes. A scope without break-glass users gets the existing advice and a
+notice, and
+.B "config validate"
+warns, on one line naming the scopes (it is a warning, not an error), that they are a lockout risk;
+.B "scope show"
+says which scope has none. The credential on the device is never created,
+rotated or removed by tacctl.
+.\" BEGIN GENERATED: command scope breakglass
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-role\fR \fI<role>\fR
+(add) Admin (default), operator or readonly.
+.RE
+.\" END GENERATED: command scope breakglass
 .SH DEVICE REGISTRY
 The
 .I device registry
@@ -2700,6 +5032,29 @@ column: a TCP connect to each entry's ssh port, 3 seconds, all at once
 .BR unreachable ).
 This server often has no route to the devices' management ports, so a timeout
 may be a false alarm.
+.\" BEGIN GENERATED: command device list
+.RS
+.PP
+Requires: \fBreadonly\fR.
+.PP
+Options:
+.TP
+\fB\-\-stale\fR
+Only the devices not seen for stale\-days.
+.TP
+\fB\-\-unconfigured\fR
+Only the devices no scope's prefixes cover.
+.TP
+\fB\-\-scan\fR
+Scan the logs first (as 'device scan').
+.TP
+\fB\-\-probe\fR
+Add REACH: a TCP connect to each ssh port (3 s).
+.TP
+\fB\-\-json\fR
+(list, show, export, check) Print JSON.
+.RE
+.\" END GENERATED: command device list
 .TP
 .BI "device show " "name|address " [ \-\-all ] " " [ \-\-json ]
 One device or host in full: address, hostname, vendor, port, legacy ssh,
@@ -2710,8 +5065,22 @@ device sends, and the open notices with a count of the acknowledged ones
 .RB ( \-\-all
 lists them too, marked). It warns when the
 vendor tag and the registered vendor disagree.
+.\" BEGIN GENERATED: command device show
+.RS
+.PP
+Requires: \fBreadonly\fR.
+.PP
+Options:
 .TP
-.BI "device add " "[ name ] address " "[ \-\-vendor cisco|juniper|wti|other ] [ \-\-hostname " dns " ] [ \-\-port " n " ] [ \-\-description " text " ] [ \-\-legacy\-ssh ] [ \-\-host\-key SHA256:" fingerprint " | \-\-no\-host\-key ] [ \-\-no\-lookup ] [ \-\-allow\-generic ]"
+\fB\-\-json\fR
+(list, show, export, check) Print JSON.
+.TP
+\fB\-\-all\fR
+The acknowledged notices too.
+.RE
+.\" END GENERATED: command device show
+.TP
+.BI "device add " "[ name ] address " "[ \-\-vendor cisco|juniper|wti|other ] [ \-\-hostname " dns " ] [ \-\-port " n " ] [ \-\-description " text " ] [ \-\-snmp\-location " text " ] [ \-\-legacy\-ssh ] [ \-\-host\-key SHA256:" fingerprint " | \-\-no\-host\-key ] [ \-\-no\-lookup ] [ \-\-allow\-generic ]"
 Register a device. A name is letters, digits,
 .RB ` . ` ,
 .RB ` _ `
@@ -2767,9 +5136,9 @@ names the fixes; the add goes ahead. A device that does not answer within the
 timeout (one retry), an empty sysName, or no SNMP set up is one info line
 .RI ( "No SNMP answer from " address "; no name hint." );
 when a scan recorded a NAS-Identifier for the address, that is shown instead,
-labelled as such. Nothing of it is stored.
+labelled as such. Nothing of the name is stored.
 .B \-\-no\-lookup
-skips it. With no
+skips the lookup. With no
 .IR name ,
 the sysName, lowercased, is offered as the name and taken only after a
 .B y
@@ -2778,46 +5147,210 @@ not a valid device name or is a generic one (a WTI unit's Site ID
 .BR WTI ),
 the add is refused with the usage line. The offered name goes through every
 other check of the add.
+.IP
+Unless
+.B \-\-snmp\-location
+or
+.B \-\-no\-lookup
+is given,
+.B add
+also reads the device's SNMP
+.B sysLocation.0
+(the same credentials, timeout and retry) and stores a non-empty answer as the
+device's location
+.RI ( "Location: " text " (read from the device)" ).
+A value the registry does not accept is shown with the reason and not stored. A
+device that reports none gets one line
+.RI ( "Location not set: tacctl device location " name " '<text>'" ),
+and at a terminal the add offers to enter one instead (blank skips). A device
+that does not answer is not mentioned again; the add never fails because of the
+location.
+.\" BEGIN GENERATED: command device add
+.RS
+.PP
+Requires: \fBengineer\fR.
+.PP
+Options:
+.TP
+\fB\-\-vendor\fR \fIcisco|juniper|wti|other\fR
+The vendor (default other).
+.TP
+\fB\-\-hostname\fR \fI<dns>\fR
+The device's DNS name.
+.TP
+\fB\-\-port\fR \fI<n>\fR
+Its ssh port (default 22).
+.TP
+\fB\-\-description\fR \fI<text>\fR
+A description of the device.
+.TP
+\fB\-\-snmp\-location\fR \fI<text>\fR
+Its place (the SNMP location the walkthroughs render).
+.TP
+\fB\-\-legacy\-ssh\fR
+Old IOS: SHA\-1 key exchange and ssh\-rsa.
+.TP
+\fB\-\-host\-key\fR \fISHA256:<fp>\fR
+Register only if the device offers this key; pin it alone.
+.TP
+\fB\-\-no\-host\-key\fR
+Register without a pinned key (a hostkey\-unpinned notice).
+.TP
+\fB\-\-no\-lookup\fR
+Do not read the device's own name and location by SNMP.
+.TP
+\fB\-\-allow\-generic\fR
+(add, rename, import) Allow a generic name such as 'switch'.
+.RE
+.\" END GENERATED: command device add
 .TP
 .BI "device remove " "name[,name...] | \-\-all " [ \-y ]
 Remove devices from the registry, after confirmation (\c
 .B \-y
 skips it; a closed stdin cancels). Enrolled hosts, scopes and vendor tags are
 not touched.
+.\" BEGIN GENERATED: command device remove
+.RS
+.PP
+Requires: \fBengineer\fR.
+.PP
+Options:
+.TP
+\fB\-\-all\fR
+Remove every device (an engineer: those of their own scopes).
+.TP
+\fB\-y\fR, \fB\-\-yes\fR
+(remove, import, hostkey, location) Answer yes to the confirmation.
+.RE
+.\" END GENERATED: command device remove
 .TP
 .BI "device rename " "old new " [ \-\-allow\-generic ]
 Rename a device; acknowledgements stay with it.
+.\" BEGIN GENERATED: command device rename
+.RS
+.PP
+Requires: \fBengineer\fR.
+.PP
+Options:
+.TP
+\fB\-\-allow\-generic\fR
+(add, rename, import) Allow a generic name such as 'switch'.
+.RE
+.\" END GENERATED: command device rename
 .TP
 .BI "device address " "name " [ address ]
 Show or set the address: the AAA identity of the device, stored canonically. It
 cannot be cleared and may not be one another device holds. Pinned host keys belong
 to the old address and are dropped.
+.\" BEGIN GENERATED: command device address
+.RS
+.PP
+Requires: \fBengineer\fR.
+.RE
+.\" END GENERATED: command device address
 .TP
 .BI "device hostname " "name " [ dns | clear ]
 Show, set or clear the DNS name (display, and the ssh target when set).
+.\" BEGIN GENERATED: command device hostname
+.RS
+.PP
+Requires: \fBengineer\fR.
+.RE
+.\" END GENERATED: command device hostname
 .TP
 .BI "device vendor " "name " [ cisco | juniper | wti | other ]
 Show or set the vendor;
 .B clear
 sets
 .BR other .
+.\" BEGIN GENERATED: command device vendor
+.RS
+.PP
+Requires: \fBengineer\fR.
+.RE
+.\" END GENERATED: command device vendor
 .TP
 .BI "device port " "name " [ n | clear ]
 Show, set or clear the ssh port (clear is 22).
+.\" BEGIN GENERATED: command device port
+.RS
+.PP
+Requires: \fBengineer\fR.
+.RE
+.\" END GENERATED: command device port
 .TP
 .BI "device description " "name " [ text | clear ]
 Show, set or clear the description (up to 120 characters).
 With no value these verbs print the current one (\c
 .B \-
 when unset).
+.\" BEGIN GENERATED: command device description
+.RS
+.PP
+Requires: \fBengineer\fR.
+.RE
+.\" END GENERATED: command device description
+.TP
+.BI "device location " "name " [ text | clear | "\-\-from\-device " [ \-y ] ]
+Show, set or clear the place of the device (up to 120 characters, no control
+characters, no
+.BR ? ),
+the SNMP location the walkthroughs render
+.RB ( "config cisco" | juniper | wti
+with
+.BR \-\-name ).
+It is written to
+.I devices.yaml
+only when set;
+.B \-\-snmp\-location
+of
+.B add
+sets it at registration, and an empty text clears it.
+.B \-\-from\-device
+reads the device's own location (SNMP
+.BR sysLocation.0 ,
+with the credentials of its scope) now and stores it. An empty answer, no
+answer, and a value the registry does not accept are refused with the reason
+and change nothing. When the registry holds a different location, both are
+shown and the device's replaces it after a
+.B y
+at a terminal, or with
+.BR \-y ", " \-\-yes ;
+without either it is refused. The name is the only argument.
+.\" BEGIN GENERATED: command device location
+.RS
+.PP
+Requires: \fBengineer\fR.
+.PP
+Options:
+.TP
+\fB\-\-from\-device\fR
+Read the location from the device (SNMP sysLocation) and store it.
+.TP
+\fB\-y\fR, \fB\-\-yes\fR
+(remove, import, hostkey, location) Answer yes to the confirmation.
+.RE
+.\" END GENERATED: command device location
 .TP
 .BI "device legacy\-ssh " "name " "[ enable | disable ]"
 Show or set the opt-in for the legacy key-exchange and host-key algorithms
 older IOS releases need (off by default).
+.\" BEGIN GENERATED: command device legacy-ssh
+.RS
+.PP
+Requires: \fBengineer\fR.
+.RE
+.\" END GENERATED: command device legacy-ssh
 .TP
 .BI "device stale\-days " [ n ]
 Show or set the number of days (1 to 3650, default 30) after which a device
 without a sighting counts as stale.
+.\" BEGIN GENERATED: command device stale-days
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command device stale-days
 .TP
 .BI "device notice " "name " "{ ack | unack } " kind
 Acknowledge an accepted notice, or reopen it. Acknowledgements are kept per
@@ -2844,6 +5377,12 @@ and
 .B hostkey-changed
 cannot be acknowledged, and an enrolled host acknowledges only
 .BR address\-changed .
+.\" BEGIN GENERATED: command device notice
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command device notice
 .TP
 .BI "device notices " "" [ name ] " " [ \-\-all ]
 The open notices (all devices, or one), each with the command that fixes or
@@ -2860,6 +5399,17 @@ for a device with no pinned host key, with the console command that shows its
 fingerprint and the
 .B device hostkey accept
 that pins it.
+.\" BEGIN GENERATED: command device notices
+.RS
+.PP
+Requires: \fBreadonly\fR.
+.PP
+Options:
+.TP
+\fB\-\-all\fR
+The acknowledged notices too.
+.RE
+.\" END GENERATED: command device notices
 .TP
 .BI "device import " "[ \-\-check ] [ \-\-replace ] [ \-\-allow\-generic ] [ \-y ] " "file|\-"
 Import devices from CSV
@@ -2869,7 +5419,9 @@ blank lines, lines starting with
 and a header row starting
 .B name,address
 are skipped) or from the registry's own YAML, from a file or from stdin
-.RB ( \- ).
+.RB ( \- ;
+an engineer's import is from stdin only, with the options after the
+.BR \- ).
 Devices of the file are added, or update the registered device of the same name
 (a CSV row leaves the hostname and the legacy-ssh setting alone; a changed address
 drops the pinned host keys); the rest stay. With
@@ -2880,12 +5432,46 @@ skips it). Every problem is reported with its line, and nothing is written when
 there is one.
 .B \-\-check
 validates and reports what would change without writing or taking a snapshot.
+.\" BEGIN GENERATED: command device import
+.RS
+.PP
+Requires: \fBengineer\fR. An engineer imports from standard input only (device import \-).
+.PP
+Options:
+.TP
+\fB\-\-check\fR
+Write nothing; say what the import would do.
+.TP
+\fB\-\-replace\fR
+Replace the registry instead of merging into it.
+.TP
+\fB\-\-allow\-generic\fR
+(add, rename, import) Allow a generic name such as 'switch'.
+.TP
+\fB\-y\fR, \fB\-\-yes\fR
+(remove, import, hostkey, location) Answer yes to the confirmation.
+.RE
+.\" END GENERATED: command device import
 .TP
 .BI "device export " "[ \-\-csv | \-\-json ]"
 Print the registry: as YAML (the
 .I devices.yaml
 format, the default), as CSV in the import's columns with a header row, or as a
 JSON array. A reduced-scope caller gets only the devices of its own scopes.
+.\" BEGIN GENERATED: command device export
+.RS
+.PP
+Requires: \fBoperator\fR.
+.PP
+Options:
+.TP
+\fB\-\-csv\fR
+Print CSV instead of YAML.
+.TP
+\fB\-\-json\fR
+(list, show, export, check) Print JSON.
+.RE
+.\" END GENERATED: command device export
 .TP
 .BI "device hostkey " name " [ show | accept [ \-y ] | set SHA256:" fingerprint " ]"
 The pinned ssh host keys of a device or an enrolled host, and the only way to
@@ -2905,11 +5491,51 @@ device console.
 reads the keys and pins only the one with that fingerprint, refusing when the
 device offers none. A device that does not answer is refused and the pin stays.
 Administrators only; each change is logged to syslog.
+.\" BEGIN GENERATED: command device hostkey
+.RS
+.PP
+Requires: \fBengineer\fR.
+.PP
+Options:
+.TP
+\fB\-y\fR, \fB\-\-yes\fR
+(remove, import, hostkey, location) Answer yes to the confirmation.
+.RE
+.\" END GENERATED: command device hostkey
 .TP
 .BI "device ssh " name|address " [ \-p " port " ] [ \-\- " "ssh args" " ]"
 The same as
 .BR "tacctl ssh" ,
 below.
+.\" BEGIN GENERATED: command device ssh
+.RS
+.PP
+Requires: \fBreadonly\fR.
+.PP
+Options:
+.TP
+\fB\-p\fR \fI<port>\fR
+Connect to this port instead of the registered one.
+.TP
+\fB\-X\fR
+Forward X11 to this server's display (untrusted, as ssh \-X).
+.TP
+\fB\-Y\fR
+Forward X11 to this server's display (trusted, as ssh \-Y).
+.TP
+\fB\-g\fR
+Let \-L and \-D ports listen on every address, as ssh \-g.
+.TP
+\fB\-L\fR \fI<spec>\fR
+Forward a local port, as ssh \-L (repeatable).
+.TP
+\fB\-R\fR \fI<spec>\fR
+Forward a remote port, as ssh \-R (repeatable).
+.TP
+\fB\-D\fR \fI<spec>\fR
+Open a SOCKS proxy, as ssh \-D (repeatable).
+.RE
+.\" END GENERATED: command device ssh
 .TP
 .B device ssh\-config
 Print an
@@ -2953,6 +5579,12 @@ reaches the device the way
 .B "tacctl ssh"
 does. tacctl only prints it; nothing is written into a home directory. Re-run it
 after registry changes.
+.\" BEGIN GENERATED: command device ssh-config
+.RS
+.PP
+Requires: \fBreadonly\fR.
+.RE
+.\" END GENERATED: command device ssh-config
 .TP
 .BI "device scan " "[ \-\-full ] [ \-\-since " duration " ] [ \-\-backend " id " ]"
 Read each enabled backend's log (or only
@@ -2979,6 +5611,23 @@ the stretch of log read and what it found, the host-key results, how many seen
 addresses are registered, and the open notices. Records not seen for twice
 .B stale\-days
 are dropped. A cache that cannot be read is rebuilt.
+.\" BEGIN GENERATED: command device scan
+.RS
+.PP
+Requires: \fBoperator\fR.
+.PP
+Options:
+.TP
+\fB\-\-full\fR
+Re\-read everything the logs still hold.
+.TP
+\fB\-\-since\fR \fI<dur>\fR
+Read this stretch of the logs (7d, 12h, 2w).
+.TP
+\fB\-\-backend\fR \fI<id>\fR
+(scan, discover) Only that backend's log.
+.RE
+.\" END GENERATED: command device scan
 .TP
 .BI "device discover " "[ \-\-all ] [ \-\-backend " id " ]"
 Scan, then list the addresses that authenticated but are not registered, with
@@ -2990,6 +5639,20 @@ non-generic one, else
 .BR <name> ).
 .B \-\-all
 includes the addresses that were only ever refused.
+.\" BEGIN GENERATED: command device discover
+.RS
+.PP
+Requires: \fBoperator\fR.
+.PP
+Options:
+.TP
+\fB\-\-all\fR
+Also list the addresses that were only refused.
+.TP
+\fB\-\-backend\fR \fI<id>\fR
+(scan, discover) Only that backend's log.
+.RE
+.\" END GENERATED: command device discover
 .TP
 .BI "device check " name " | \-\-all [ \-\-json ]"
 A checklist per entry: the scope that answers the address, the vendor tag, the
@@ -3004,12 +5667,85 @@ or
 .B no answer
 or why there is none; see
 .BR "config snmp" ),
-and its notices.
+its Location (the device's sysLocation against the registry's:
+.BR match ,
+.B differs
+with both values,
+.B registry only
+or
+.BR "device only" ;
+nothing is written), and its notices.
 .B \-\-json
 prints the rows for scripts, the sysName as
 .B sysname
 (null when none was read) with
-.BR sysname_match .
+.BR sysname_match ,
+and the location as
+.B syslocation
+with
+.B syslocation_match
+(null when the registry has none) and
+.BR syslocation_error .
+.\" BEGIN GENERATED: command device check
+.RS
+.PP
+Requires: \fBoperator\fR.
+.PP
+Options:
+.TP
+\fB\-\-all\fR
+Check every device.
+.TP
+\fB\-\-json\fR
+(list, show, export, check) Print JSON.
+.RE
+.\" END GENERATED: command device check
+.TP
+.BI "device config show " name " [ \-\-protocol tacacs|radius ] [ \-\-legacy ] [ \-\-server " "address|name" " ] [ \-\-source " address " ]"
+Print what is registered for the device (name, address, hostname, vendor, the
+scope that covers its address and the prefix, description, location), then the
+walkthrough of its vendor for that scope, exactly as
+.B config cisco|juniper|wti
+prints it with
+.B \-\-scope
+set to the device's scope and
+.B \-\-name
+to its name, built by the same code, with the device's location, description
+and name in the SNMP step. The options are those of
+.BR "config cisco|juniper|wti" ;
+.B \-\-legacy
+is for a Cisco device. Only a cisco, juniper or wti device has a walkthrough: a
+vendor
+.B other
+is refused with
+.BI "tacctl device vendor " "name cisco|juniper|wti" ,
+an enrolled Linux host with
+.BI "tacctl host show " name ,
+and a device no scope's prefixes cover with
+.BI "tacctl scope prefixes " scope " add " cidr .
+A refusal prints no data block. The walkthrough carries the scope's secret: an
+engineer gets the devices of their own scopes, and another scope's device is
+not found. With no subcommand the usage is printed.
+.\" BEGIN GENERATED: command device config
+.RS
+.PP
+Requires: \fBengineer\fR. A device's walkthrough carries its scope's secret, so an engineer gets the devices of their own scopes only.
+.PP
+Options:
+.TP
+\fB\-\-protocol\fR \fItacacs|radius\fR
+The protocol (default: the scope's auth\-method, else its only protocol, else tacacs).
+.TP
+\fB\-\-legacy\fR
+(Cisco) IOS 12.x syntax; TACACS+ only.
+.TP
+\fB\-\-server\fR \fI<address|name>\fR
+The address the device is told to authenticate against.
+.TP
+\fB\-\-source\fR \fI<address>\fR
+The address this server reaches the device from.
+.RE
+.\" END GENERATED: command device config
 .SS SSH to a device \fB(tacctl ssh)\fR
 .TP
 .BI "ssh " name|address " [ \-p " port " ] [ \-X | \-Y ] [ \-g ] [ { \-L | \-R | \-D } " spec " ]... [ \-\- " "ssh args" " ]"
@@ -3149,6 +5885,35 @@ rules grant
 .B "tacctl ssh *"
 and
 .BR "tacctl device ssh *" ).
+.\" BEGIN GENERATED: command ssh
+.RS
+.PP
+Requires: \fBreadonly\fR.
+.PP
+Options:
+.TP
+\fB\-p\fR \fI<port>\fR
+Connect to <port> (default: the device's port, else 22).
+.TP
+\fB\-X\fR
+Forward X11 to this server's display (untrusted, as ssh \-X).
+.TP
+\fB\-Y\fR
+Forward X11 to this server's display (trusted, as ssh \-Y).
+.TP
+\fB\-g\fR
+Let \-L and \-D ports listen on every address, as ssh \-g.
+.TP
+\fB\-L\fR \fI<spec>\fR
+Forward a local port, as ssh \-L (repeatable).
+.TP
+\fB\-R\fR \fI<spec>\fR
+Forward a remote port, as ssh \-R (repeatable).
+.TP
+\fB\-D\fR \fI<spec>\fR
+Open a SOCKS proxy, as ssh \-D (repeatable).
+.RE
+.\" END GENERATED: command ssh
 .SS Login console \fB(tacctl console)\fR
 The login console
 .RB ( tacctl\-console )
@@ -3166,8 +5931,8 @@ it when the provisioning of this server applies it
 Every change to the tier switches, a user override, agent forwarding or the
 forwarding tiers prints
 .BI "Apply to the accounts: tacctl host sync " name\fR.
-The idle timeout, the ssh escape and the system shell are read by each console
-session when it starts.
+The idle timeout, the ssh escape, the space completion and the system shell are
+read by each console session when it starts.
 .TP
 .B console
 With no subcommand (or with
@@ -3188,7 +5953,8 @@ Then the state of the server's pieces: the
 .I /usr/local/bin/tacctl\-console
 symlink, the
 .I /etc/shells
-line, sshd's drop-in, and what
+line, sshd's drop-in, the engineer tier's own drop-in (its absence or a
+difference from this release's is a red warning too), and what
 .B "sshd \-T \-C user="\fIuser\fR
 reports for a console user
 .RB ( allowtcpforwarding ,
@@ -3201,25 +5967,63 @@ user could then forward ports past the device registry, run programs or sftp,
 or log in without TACACS+. A server not enrolled with
 .B \-\-local
 says so and lists no users. Operator tier and up.
+.\" BEGIN GENERATED: command console show
+.RS
+.PP
+Requires: \fBoperator\fR.
+.RE
+.\" END GENERATED: command console show
 .TP
 .BI "console tiers " "[ " tier " " "{ enable | disable }" " ]"
 Show the switches, or one, or set the console for a tier
 .RB ( readonly ,
 .BR operator ,
+.BR engineer ,
 .BR superuser ).
+The engineer tier has the console or no login on the server, so its switch
+is always on: disabling it is refused, and a stored
+.B disable
+is listed as ignored. An engineer whose console cannot be provisioned gets
+.I /usr/sbin/nologin
+as login shell, and so does an account whose tier is none.
+.\" BEGIN GENERATED: command console tiers
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command console tiers
 .TP
 .BI "console user " "name " "[ { enable | disable | clear } ]"
 Show or set one user's override, which wins over the tier's switch;
 .B clear
 returns the user to the tier rule. The user must exist in the store to be
-given an override.
+given an override. An override never applies to an engineer: disabling one is
+refused.
+.\" BEGIN GENERATED: command console user
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command console user
 .TP
 .BI "console idle\-timeout " "[ " min " ]"
 Minutes idle at the prompt before the session ends, 0 to 1440 (0: never;
 default 30).
+.\" BEGIN GENERATED: command console idle-timeout
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command console idle-timeout
 .TP
 .BI "console agent\-forwarding " "[ { enable | disable } ]"
 Opt in to ssh agent forwarding for console users (default disabled).
+.\" BEGIN GENERATED: command console agent-forwarding
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command console agent-forwarding
 .TP
 .BI "console forwarding tiers " "[ " csv "|none ]"
 The tiers whose console logins may forward X11 and TCP ports (default
@@ -3248,6 +6052,12 @@ to a device accepts
 and
 .BR \-D .
 Agent, stream-local and tunnel forwarding stay as for every console user.
+.\" BEGIN GENERATED: command console forwarding
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command console forwarding
 .TP
 .BI "console forwarding gateway\-ports " "[ { enable | disable } ]"
 Opt in to forwarded ports that listen on other addresses than loopback, for
@@ -3277,10 +6087,44 @@ warns when sshd applies anything else to it.
 .BI "console ssh\-escape " "[ { enable | disable } ]"
 Opt in to ssh's escape character (\fB~.\fR, \fB~C\fR) in the console's ssh
 sessions (default disabled).
+.\" BEGIN GENERATED: command console ssh-escape
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command console ssh-escape
+.TP
+.BI "console space\-completion " "[ { on | off } ]"
+Show or set whether a typed space at the console's prompt works as on a Junos
+device (see
+.B "shell \-\-space\-completion"
+for the rules; default
+.BR on ).
+It is server-wide. The key is written to
+.I console.yaml
+only while the setting is off. The setting is read by each console session when
+it starts; sessions already open keep theirs.
+.B off
+turns off the refusal of repeated spaces and the completion: every typed space
+is a plain space. A word of dashes only (\- or \-\-) keeps its space. Pastes
+are not completed, which assumes the terminal sends them bracketed; one that
+does not sends its spaces as typed ones, and the setting should be off there.
+.\" BEGIN GENERATED: command console space-completion
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command console space-completion
 .TP
 .BI "console system\-shell tiers " "[ " csv "|none ]"
 The tiers that may start their system shell from the console (default
 .BR superuser ).
+.\" BEGIN GENERATED: command console system-shell
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command console system-shell
 .TP
 .BI "console system\-shell path " "[ " path " ]"
 The system shell, default
@@ -3339,20 +6183,44 @@ Each piece is reported
 .B Updated:
 or
 .BR Unchanged: ,
-then the check below runs. Refused when
+then the check below runs. The engineer tier's own drop-in
+.I /etc/ssh/sshd_config.d/00\-tacctl\-engineer.conf
+(every forwarding and tunnel closed for the members of
+.BR tac\-engineer )
+is written the same way, and by every
+.B host sync
+of the server even when the console is not installed; an earlier
+.I tacctl\-engineer.conf
+is removed (see
+.BR FILES ).
+Refused when
 .I /usr/local/bin/tacctl\-console
 is missing
 .RB ( "tacctl upgrade" " makes it)."
+.\" BEGIN GENERATED: command console install
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command console install
 .TP
 .B console remove
-Takes the drop-in (checked with
+Takes the console's drop-in (checked with
 .BR "sshd \-t" ,
 sshd reloaded) and the
 .I /etc/shells
-line away. Refused, nothing changed, while an account still has the console
+line away; the engineer tier's drop-in stays (an earlier
+.I tacctl\-engineer.conf
+is renamed). Refused, nothing changed, while an account still has the console
 as its login shell; they are named, with the way to give them
 .I /bin/bash
 back.
+.\" BEGIN GENERATED: command console remove
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command console remove
 .TP
 .B console check
 Whether sshd applies the console's settings: the drop-in present and this
@@ -3364,7 +6232,16 @@ in
 .IR /etc/ssh/sshd_config ,
 and
 .B "sshd \-T"
-for the first account whose shell is the console. Exit 1, with the red
+for the first account whose shell is the console. It also checks the
+engineers (the drop-in of the engineer tier and that its name sorts before
+the console's, a leftover
+.IR tacctl\-engineer.conf ,
+each member's shell) and names every member of
+.B tac\-superuser
+that is a tacctl account and not a superuser-tier tacctl user, a removed
+user's account included (its UID is in tacctl's range; root is not named). A
+member that is no tacctl account (a local administrator added by hand) is only
+listed, and does not make the check fail. Exit 1, with the red
 warning, when anything is off. Operator tier and up.
 .PP
 Only the operator tier and up may run
@@ -3376,6 +6253,12 @@ everything else needs an administrator.
 The console asks tacctl for its settings with the hidden
 .BR _console\-policy ,
 which the tiers sudoers rules grant to every tier.
+.\" BEGIN GENERATED: command console check
+.RS
+.PP
+Requires: \fBoperator\fR.
+.RE
+.\" END GENERATED: command console check
 .SS Console sessions \fB(tacctl\-console)\fR
 .I /usr/local/bin/tacctl\-console
 is a symbolic link to the tacctl binary; started under that name (as a login
@@ -3419,8 +6302,15 @@ and
 .B SHELL
 the console. At the start it asks the root side for its settings
 .RB ( "sudo \-n tacctl _console\-policy" );
-without an answer the defaults apply (30 minutes idle, no system shell). The
-session ends after the idle timeout at the prompt
+without an answer the defaults apply (30 minutes idle, no system shell), and
+only the read-only commands are listed. The answer also carries the caller's
+tier, which Tab,
+.BR ? ,
+a typed space and
+.B help
+use to list only the commands that tier can run (see
+.BR "tacctl shell" ).
+The session ends after the idle timeout at the prompt
 .RB ( "console idle\-timeout" ;
 not while a line runs).
 .PP
@@ -3566,6 +6456,98 @@ and
 .I wti-radius.template
 in the templates directory work as for the TACACS+ templates; see
 .BR FILES .
+.SH TIERS
+A user of tacctl who has a local account on the tacctl server (a member of
+.BR tac\-users )
+reaches tacctl through
+.BR sudo (8)
+and is held to a tier: by tacctl itself, which checks the caller before every
+command, and by the rules of
+.BR "config sudoers tiers" ,
+which are written from the same table. A group's tier is the one set on it
+.RB ( "group edit " \fIgroup\fR " tier " \fItier\fR ,
+kept as
+.BI tier. group
+in
+.IR tacctl.yaml ),
+else the band of its priv-lvl: 15 and up
+.BR superuser ,
+7 to 14
+.BR operator ,
+below 7
+.BR readonly .
+The fourth tier,
+.BR engineer ,
+sits between operator and superuser and is only ever set on a group. A user
+that is unknown or disabled, or whose group has no priv-lvl, has no tier and
+may run nothing. A group at priv-lvl 15 or more that has no tier setting and is
+not the built-in
+.B superuser
+group (the setting was lost) holds its members at the operator tier until a
+superuser who is not a member sets it again; so does a
+.I tacctl.yaml
+that cannot be read, for every managed caller. Root, and a local administrator
+who is no tacctl user, are not held to a tier.
+.PP
+A tier may run what the tiers below it may. Under each tier below are the verbs
+for which it is the lowest; everything not listed (users, groups, scopes and
+the change of any secret, backends, backups and their restore, upgrades and
+every global setting) is the superuser's. The shell and the console list only
+the verbs the caller's tier can run; this manual lists every verb, and each
+entry of COMMANDS names the tier it needs on a
+.B Requires
+line.
+.\" BEGIN GENERATED: tiers
+.TP
+.B readonly
+(no arguments), passwd, status, version, help, \-h, \-\-help,
+user list, user show, group list, group show, scope list,
+backend list, backend status, ssh, device list, device show,
+device notices, device ssh, device ssh\-config, _completion\-names,
+_console\-policy, \-\-version, \-v, hash
+.TP
+.B operator
+log tail, log search, log failures, log accounting, config validate,
+backup list, device check, device scan, device discover,
+device export, console show, console check
+.TP
+.B engineer
+device add, device remove, device rename, device address,
+device hostname, device vendor, device port, device description,
+device location, device legacy\-ssh, device hostkey, device import,
+scope devices, device config, config cisco, config juniper,
+config wti, host list, host show, scope staging, scope secret,
+scope snmp, scope show
+.TP
+.B superuser
+Every verb not listed above, and every verb of the tiers below.
+.PP
+The gate sees two words, so a verb that the code splits further is listed at its
+two\-word level and then limited by the code:
+.TP
+.B device config
+A device's walkthrough carries its scope's secret, so an engineer gets the devices of their own scopes only.
+.TP
+.B device import
+An engineer imports from standard input only (device import \-).
+.TP
+.B host show
+An engineer reads what tacctl recorded of a host; \-\-check logs in to it and needs the superuser tier.
+.TP
+.B scope secret
+An engineer may run show for a scope of their own; set and generate need the superuser tier.
+.TP
+.B scope snmp
+An engineer may read the settings of a scope of their own (show [\-\-reveal], version, port, timeout, contact, clients list); every setter, clear and test needs the superuser tier.
+.TP
+.B scope staging
+An engineer may run list for a scope of their own; the other verbs need the superuser tier.
+.\" END GENERATED: tiers
+.PP
+An engineer's verbs reach only the devices, hosts and secrets of the scopes
+the engineer is a member of; another scope's device is not found, and a change
+that would touch one is refused. Each read of a secret by an engineer is
+logged to syslog (never the value).
 .SH CONVENTIONS
 The following patterns apply uniformly across subcommand families.
 .TP
@@ -3588,6 +6570,7 @@ and every nested dispatcher such as
 .BR "scope vendor-attrs" ,
 .BR "scope devices" ,
 .BR "scope mgmt-acl" ,
+.BR "scope breakglass" ,
 .BR "user scope" ,
 or
 .BR "group privilege" )
@@ -3777,6 +6760,8 @@ take a single argument;
 .IR --all ,
 .IR --build-on-host ,
 .IR --allow-uid-mismatch ,
+.IR --apply ,
+.IR --hosts ,
 .I --remove-home
 and
 .I -y
@@ -3975,6 +6960,426 @@ then
 .BR "config render \-\-force" .
 .B "store rollback"
 undoes the move into the store.
+.PP
+Going back to 0.2.2 is
+.B "tacctl rollback 0.2.2"
+(a dry run), then
+.B "tacctl rollback 0.2.2 \-\-apply \-\-yes \-\-hosts"
+and
+.BR "tacctl upgrade \-\-branch 0.2.2" :
+0.2.3 wrote keys and fields a 0.2.2 binary refuses, and its sync makes an engineer a
+superuser. The README's
+.I Rolling back
+describes each step. Until 0.2.2 is installed, a command that writes the console's
+settings, a scope's SNMP settings, a device location or the engineer sudo list writes
+the 0.2.3 form again; run the rollback again to convert it. Before upgrading, note the newest entry of
+.BR "backup list" :
+snapshots are taken before every change, and the upgrade adds one only when it
+records a tier. To go back to 0.2.1, run the rollback to 0.2.2 with
+.BR "\-\-apply \-\-yes \-\-hosts" ,
+then
+.B "backup restore"
+of that entry, then
+.BR "tacctl upgrade \-\-branch 0.2.1" .
+After the upgrade,
+0.2.2's
+.B "config validate"
+reports the rendered config as out of date until the upgrade (or
+.BR "config render" )
+has rendered 0.2.2's form.
+.SH CONFIGURATION KEYS
+.SS tacctl.yaml
+.I /etc/tacctl/tacctl.yaml
+holds the operator's overrides of tacctl's tunables (see
+.BR FILES ).
+Each key below has a type, a default and the verb that sets it; a key set back
+to its default is removed from the file, and a key that is not in this list, or
+whose value does not fit, is refused with the reason before anything is written.
+Read one with
+.BR "config get" ,
+the merged result with
+.BR "config show"
+or
+.BR "config dump" ,
+and check a hand-edited file with
+.BR "config validate" .
+A name in angle brackets stands for a group, a scope, a backend or a listener;
+the keys of a family exist once for each.
+.\" BEGIN GENERATED: config-keys
+.TP
+.B backends.enabled
+non\-empty list of backends (tacacs, radius). Default: [tacacs].
+The backends that serve the model, in render and restart order. Set with \fBtacctl backend enable\fR or \fBtacctl backend disable\fR.
+.TP
+.B backends.tacacs.level
+integer, 0 to 100. Default: 20.
+Log level of tacquito. Set with \fBtacctl config loglevel\fR.
+.TP
+.B backends.tacacs.metrics_address
+host:port. Default: 127.0.0.1:8080.
+Where tacquito's Prometheus exporter listens. Set with \fBtacctl config metrics address\fR.
+.TP
+.B bcrypt.cost
+integer, 10 to 14. Default: 12.
+Cost of the bcrypt hashes tacctl makes from now on. Set with \fBtacctl config bcrypt\-cost\fR.
+.TP
+.B host.default_method
+one of tacplus, radius. Default: tacplus.
+The method a Linux host is enrolled with when its scope decides none. Set with \fBtacctl host default\-method\fR.
+.TP
+.B linux.engineer_sudo
+non\-empty list of absolute command paths. Default: none (unset).
+The commands tac-engineer may run through sudo on enrolled hosts other than this server; unset: every command. Set with \fBtacctl config linux engineer\-sudo\fR.
+.TP
+.B linux.uid_max
+integer, 1000 to 4294967293. Default: 89999.
+Last UID and GID of that range. Set with \fBtacctl config linux uid\-range\fR.
+.TP
+.B linux.uid_min
+integer, 1000 to 4294967293. Default: 80000.
+First UID and GID of the Linux accounts tacctl makes, one range for every host. Set with \fBtacctl config linux uid\-range\fR.
+.TP
+.B mgmt_acl.names.cisco
+name of 1 to 63 characters (a letter, then letters, digits, _ or \-). Default: VTY\-ACL.
+Name of the ACL config cisco emits. Set with \fBtacctl config mgmt\-acl cisco\-name\fR.
+.TP
+.B mgmt_acl.names.juniper
+name of 1 to 63 characters (a letter, then letters, digits, _ or \-). Default: MGMT\-ACL.
+Name of the filter config juniper emits. Set with \fBtacctl config mgmt\-acl juniper\-name\fR.
+.TP
+.B mgmt_acl.permits
+list of CIDRs. Default: [].
+The CIDRs the management ACL and filter permit. Set with \fBtacctl config mgmt\-acl add\fR or \fBtacctl config mgmt\-acl remove\fR.
+.TP
+.B password.max_age_days
+integer, 1 or more. Default: 90.
+Days after which a password counts as old: tacctl status warns. Set with \fBtacctl config password\-age\fR.
+.TP
+.B password.min_length
+integer, 8 to 64. Default: 12.
+Shortest password typed at a prompt. Set with \fBtacctl config password\-min\-length\fR.
+.TP
+.B scope.default
+scope name (a letter, then up to 31 letters, digits, _ or \-) or null. Default: lab.
+The scope new users and devices land in without a choice; null: none. Set with \fBtacctl scope default\fR.
+.TP
+.B secret.min_length
+integer, 16 to 128. Default: 16.
+Shortest shared secret an operator may type. Set with \fBtacctl config secret\-min\-length\fR.
+.TP
+.B snmp.port
+integer, 1 to 65535. Default: 161.
+UDP port of the agents. Set with \fBtacctl config snmp port\fR.
+.TP
+.B snmp.timeout
+integer, 1 to 10. Default: 2.
+Seconds to wait for an answer (one retry). Set with \fBtacctl config snmp timeout\fR.
+.TP
+.B snmp.v3.auth
+one of sha, sha256. Default: none (unset); sha is used.
+Authentication protocol of the v3 user. Set with \fBtacctl config snmp v3\-user\fR.
+.TP
+.B snmp.v3.priv
+one of aes128. Default: none (unset); aes128 is used.
+Privacy protocol of the v3 user. Set with \fBtacctl config snmp v3\-user\fR.
+.TP
+.B snmp.version
+one of v2c, v3. Default: none (unset).
+SNMP version of the name lookup of device add and device check; unset: no lookup. Set with \fBtacctl config snmp community\fR or \fBtacctl config snmp v3\-user\fR.
+.TP
+.B privileges.<group>
+list of Cisco priv\-exec commands (an entry may start with exec:, exec all:, configure: or configure all:). Default: the shipped value of each built\-in group (tacctl config defaults).
+The Cisco priv-exec commands the group's level may run; unset: the shipped list. Set with \fBtacctl group privilege\fR.
+.TP
+.B commands.<group>
+ordered list of {name, action, match} rules ending in the name: "*" catch\-all. Default: the shipped value of each built\-in group (tacctl config defaults).
+The group's command rules, in order, ending in the catch-all; unset: the shipped rules. Set with \fBtacctl group commands\fR.
+.TP
+.B aaa.order.<scope>
+one of tacacs\-first, local\-first. Default: tacacs\-first.
+Order of the methods in the Cisco aaa lines and the Junos authentication-order the scope's configurations emit. Set with \fBtacctl scope aaa\-order\fR.
+.TP
+.B exec_timeout.<scope>
+integer, 0 to 60. Default: 60.
+Idle-session timeout in minutes the scope's device configurations set; 0: never. Set with \fBtacctl scope exec\-timeout\fR.
+.TP
+.B tacacs_group.<scope>
+name of 1 to 63 characters (a letter, then letters, digits, _ or \-). Default: TACACS\-GROUP.
+The label of the Cisco aaa group server tacacs+ the scope's configuration names. Set with \fBtacctl scope tacacs\-group\fR.
+.TP
+.B radius_group.<scope>
+name of 1 to 63 characters (a letter, then letters, digits, _ or \-). Default: RADIUS\-GROUP.
+The label of the Cisco aaa group server radius the scope's configuration names. Set with \fBtacctl scope radius\-group\fR.
+.TP
+.B scope_auth_method.<scope>
+one of tacacs, radius. Default: none (unset).
+The protocol the scope's device configurations, new hosts and Linux scripts use when a command names none; unset: not decided (the scope's protocols filter, then the global default). Set with \fBtacctl scope auth\-method\fR.
+.TP
+.B scope_mgmt_acl.names.cisco.<scope>
+name of 1 to 63 characters (a letter, then letters, digits, _ or \-). Default: VTY\-ACL.
+The scope's own ACL name, in place of mgmt_acl.names.cisco. Set with \fBtacctl scope mgmt\-acl\fR.
+.TP
+.B scope_mgmt_acl.names.juniper.<scope>
+name of 1 to 63 characters (a letter, then letters, digits, _ or \-). Default: MGMT\-ACL.
+The scope's own filter name, in place of mgmt_acl.names.juniper. Set with \fBtacctl scope mgmt\-acl\fR.
+.TP
+.B scope_mgmt_acl.permits.<scope>
+list of CIDRs. Default: [].
+The scope's own permitted CIDRs, in place of mgmt_acl.permits. Set with \fBtacctl scope mgmt\-acl\fR.
+.TP
+.B listeners.<backend>.<name>
+mapping with network, address, role, metrics_address, tls (tls is reserved). Default: tacacs.default is tcp :49; radius.auth is udp :1812; radius.acct is udp :1813.
+Where a backend's daemon listens; the built-in listeners can be changed and reset, not removed. Set with \fBtacctl config listen\fR.
+.TP
+.B junos.<group>.deny_commands
+list of regular expressions. Default: none (unset).
+POSIX extended regular expressions of the commands the Junos class of the group may not run. Set with \fBtacctl group junos\fR.
+.TP
+.B junos.<group>.deny_configuration
+list of regular expressions. Default: none (unset).
+POSIX extended regular expressions of the configuration statements the Junos class may not touch. Set with \fBtacctl group junos\fR.
+.TP
+.B wti_level.<group>
+one of viewonly, user, superuser, administrator. Default: none (unset).
+The WTI access level of the group, in place of the one its priv-lvl band gives. Set with \fBtacctl group edit\fR or \fBtacctl group add\fR.
+.TP
+.B tier.<group>
+one of readonly, operator, engineer, superuser. Default: none (unset).
+The tacctl tier of the group, in place of the one its priv-lvl band gives. Set with \fBtacctl group edit\fR or \fBtacctl group add\fR.
+.TP
+.B breakglass_scope.<scope>.users
+list of name:role entries, role one of admin, operator, readonly, at most 16. Default: none (unset).
+The break-glass local users the scope's device configurations create. Only the names and roles are kept; no credential is stored. Set with \fBtacctl scope breakglass\fR.
+.TP
+.B snmp_scope.<scope>.version
+one of v2c, v3. Default: none (unset).
+The scope's SNMP version; unset: snmp.version. Set with \fBtacctl scope snmp\fR.
+.TP
+.B snmp_scope.<scope>.port
+integer, 1 to 65535. Default: none (unset).
+The scope's agent port; unset: snmp.port. Set with \fBtacctl scope snmp\fR.
+.TP
+.B snmp_scope.<scope>.timeout
+integer, 1 to 10. Default: none (unset).
+The scope's timeout in seconds; unset: snmp.timeout. Set with \fBtacctl scope snmp\fR.
+.TP
+.B snmp_scope.<scope>.v3.auth
+one of sha, sha256. Default: none (unset).
+The scope's v3 authentication protocol; unset: snmp.v3.auth. Set with \fBtacctl scope snmp\fR.
+.TP
+.B snmp_scope.<scope>.v3.priv
+one of aes128. Default: none (unset).
+The scope's v3 privacy protocol; unset: snmp.v3.priv. Set with \fBtacctl scope snmp\fR.
+.TP
+.B snmp_scope.<scope>.contact
+text of 1 to 120 characters. Default: none (unset).
+The sysContact the scope's walkthroughs set. Set with \fBtacctl scope snmp\fR.
+.TP
+.B snmp_scope.<scope>.clients
+list of IPv4 CIDRs. Default: [].
+The SNMP clients the scope's walkthroughs allow (the server's own address first and a final deny are added when rendered, not stored). Set with \fBtacctl scope snmp\fR.
+.\" END GENERATED: config-keys
+.SS console.yaml
+.I /etc/tacctl/console.yaml
+holds the login console's switches and settings (see
+.BR "tacctl console" ).
+Edit it with
+.BR "tacctl console" ;
+an absent file is the defaults, and a key that is not in this list is refused.
+.\" BEGIN GENERATED: console-keys
+.TP
+.B version
+integer. Default: 1.
+The format of the file; this release reads and writes 1.
+.TP
+.B tiers.<tier>
+enable or disable. Default: enable.
+Whether the tier gets the console as its login shell on this server (readonly, operator, engineer, superuser). Set with \fBtacctl console tiers\fR.
+.TP
+.B users.<name>
+enable or disable. Default: none (no override).
+A user's override of the tier's switch; no entry: the tier decides. Set with \fBtacctl console user\fR.
+.TP
+.B settings.idle_timeout
+integer, 0 to 1440 minutes (0: none). Default: 30.
+Idle time after which a console session ends. Set with \fBtacctl console idle\-timeout\fR.
+.TP
+.B settings.agent_forwarding
+true or false. Default: false.
+Whether the console's ssh and sshd's drop-in forward the ssh agent. Set with \fBtacctl console agent\-forwarding\fR.
+.TP
+.B settings.ssh_escape
+true or false. Default: false.
+Whether the escape character of the console's ssh stays on. Set with \fBtacctl console ssh\-escape\fR.
+.TP
+.B settings.system_shell
+absolute path. Default: /bin/bash.
+The program the console's system-shell word starts. Set with \fBtacctl console system\-shell path\fR.
+.TP
+.B settings.system_shell_tiers
+list of tiers (not engineer). Default: [superuser].
+The tiers that may start the system shell. Set with \fBtacctl console system\-shell tiers\fR.
+.TP
+.B settings.forwarding_tiers
+list of tiers (not engineer). Default: [superuser].
+The tiers whose console logins may forward X11 and TCP ports. Set with \fBtacctl console forwarding tiers\fR.
+.TP
+.B settings.gateway_ports
+true or false. Default: false.
+Whether those tiers may bind forwarded ports to an address other than loopback. Set with \fBtacctl console forwarding gateway\-ports\fR.
+.TP
+.B settings.list_max
+integer, 1 to 1000. Default: 40.
+The number of completions the console's shell lists without asking. Edit the file to change it.
+.TP
+.B settings.space_completion
+true or false. Default: true.
+Whether a typed space at the console's prompt completes a fixed word, as on Junos. Written to the file only when false. Set with \fBtacctl console space\-completion\fR.
+.\" END GENERATED: console-keys
+.SH EXIT STATUS
+.TP
+.B 0
+The command did what it was asked, or showed what there was to show. A
+confirmation answered no cancels the command with nothing changed, and ends
+with 0 for the removals
+.RB ( "user remove" ,
+.BR "group remove" )
+and for
+.BR "store rollback" .
+.TP
+.B 1
+The command refused or failed, and said why on standard error: a value that
+does not fit, a name that does not exist or exists already, a store or
+.I tacctl.yaml
+that cannot be read or written, a caller whose tier does not allow the
+command, a check that found a problem
+.RB ( "config validate" ", " "console check" ", " "device check" ),
+a step of a lifecycle phase that failed. An unknown sub-command prints the
+usage of its family and ends with 1 as well. Nothing was changed unless the
+message says what was.
+.TP
+.B 2
+The arguments were wrong for a verb that checks them itself and says so
+.RB ( "store show" ,
+.BR "store import" ,
+.BR "store rollback" ),
+or a backend id is unknown, or the backend does not provide the action asked
+of it.
+.TP
+.B 3
+A backend command was refused because a file tacctl rendered holds a hand edit
+that the command would discard (see
+.BR "STORE AND GENERATED CONFIGURATION" ),
+or
+.B "store import \-\-check"
+could not prove the import safe. Nothing was written.
+.TP
+.B 126
+sudo could not be run to re-run tacctl as root, or
+.B tacctl\-console
+was given an argument it does not accept.
+.TP
+.B 127
+sudo is not installed, and tacctl was not run as root.
+.TP
+.B 130
+The command was interrupted at a prompt (Ctrl-C at a password prompt, for
+example). Nothing was changed.
+.PP
+.B "tacctl ssh"
+and
+.B "tacctl device ssh"
+end with the status of the ssh they run, and
+.B "tacctl shell \-c"
+with the status of the line it ran.
+.SH ENVIRONMENT
+tacctl reads the variables below. Everything else it needs is a fixed path
+(see
+.BR FILES ).
+.TP
+.B "SUDO_USER, SUDO_UID, SUDO_GID"
+Set by
+.BR sudo (8)
+for the person behind it. tacctl takes the caller's name from
+.BR SUDO_USER :
+the tier gate, the target of
+.BR passwd ,
+the scopes an engineer reaches, the user
+.B ssh
+and
+.B host
+run ssh as. The pair
+.B SUDO_USER
+and
+.B SUDO_UID
+is checked against the passwd database before anything runs, and a
+mismatch denies every command. Files a command writes for the caller
+.RB ( "config linux script \-\-output" ,
+for example) are handed to
+.B SUDO_UID
+and
+.BR SUDO_GID .
+.TP
+.B HOME
+Where the history of
+.B "tacctl shell"
+and of the login console is kept
+.RI ( ~/.local/state/tacctl/history ).
+.TP
+.B "USER, LOGNAME"
+The login name the console records in its session log
+.RB ( USER
+first, then
+.BR LOGNAME ).
+.TP
+.B "SSH_CLIENT, SSH_TTY, SSH_CONNECTION"
+Set by sshd. The console logs the client address and the terminal of a session;
+.B tacctl shell
+reads its lines from the pipe when a command arrives over ssh with
+.B SSH_CONNECTION
+set and no terminal
+.RB ( SSH_TTY
+unset).
+.TP
+.B SSH_AUTH_SOCK
+The agent socket
+.B host
+and
+.B ssh
+hand to the ssh they run as the caller, so an agent's key reaches the host.
+sudo drops it unless the tiers drop-in keeps it
+.RB ( "config sudoers tiers" ).
+.TP
+.B DISPLAY
+The X11 display of sshd's forwarding, handed to
+.B "tacctl ssh \-X"
+and
+.B \-Y
+after its shape is checked, and kept by the tiers drop-in for the console.
+.TP
+.B TACCTL_CONSOLE
+Set by the login console, as
+.BI TACCTL_CONSOLE= session
+on the command line of each sudo it runs, to mark a command as run from a
+console session. The drop-in keeps it, and tacctl only ever reads it to
+tighten what it does (the hardened ssh, the
+.B console=
+field of the log lines), never to widen it.
+.TP
+.B TACQUITO_SRC
+The clone of the tacquito source that
+.B install
+and
+.B upgrade
+build the server from (default
+.IR /opt/tacquito\-src ).
+.PP
+tacctl also reads variables that move its files and set its clock for the test
+suite
+.RB ( TACCTL_ETC ,
+.BR TACCTL_STATE_DIR ,
+\&...). They are not an interface and are described in
+.IR tests/README.md .
 .SH FILES
 .SS tacctl
 .TP
@@ -4003,7 +7408,7 @@ typo'd keys are rejected before anything is written). A file that does
 not parse is never written into: a setter refuses with
 .RI "\(lqtacctl.yaml: could not parse " path ": " reason \(rq
 and exits 1, leaving it as it is, and commands that only read use the
-defaults and warn once on stderr; fix or remove the file. Inspect the merged
+defaults and warn once on stderr; fix the file. Inspect the merged
 view with
 .BR "tacctl config dump" ;
 re-check the file with
@@ -4032,6 +7437,16 @@ read a device's sysName with. Mode 0600, root only, written atomically by
 .BR "tacctl config snmp" ;
 never printed. Absent means none.
 .TP
+.I /etc/tacctl/snmp/\fIscope\fR.yaml
+The SNMP community, or the v3 user and its passphrases, of one scope
+.RB ( "tacctl scope snmp" ):
+the credentials a device of that scope is read with, and printed in its
+walkthroughs, instead of the default's. Mode 0600 in a 0700 directory, root
+only, written atomically; never printed but by
+.BR "scope snmp ... show \-\-reveal" .
+Absent means the scope has none of its own. A scope's rename moves its file and
+its removal deletes it.
+.TP
 .I /etc/tacctl/console.yaml
 The login console's switches per tier, per-user overrides and settings
 .RB ( idle_timeout ,
@@ -4041,7 +7456,9 @@ The login console's switches per tier, per-user overrides and settings
 .BR system_shell_tiers ,
 .BR forwarding_tiers ,
 .BR list_max ,
-the number of completions the shell lists without asking).
+the number of completions the shell lists without asking;
+.BR space_completion ,
+written only when it is false).
 Mode 0600, root only; absent means the defaults (the console on for every
 tier). Edit it with
 .BR "tacctl console" ,
@@ -4077,10 +7494,59 @@ of that host and
 .BR uninstall .
 Do not edit.
 .TP
+.I /etc/ssh/sshd_config.d/00\-tacctl\-engineer.conf
+sshd's drop-in for the members of
+.B tac\-engineer
+(the engineer tier): every forwarding and tunnel closed whatever their shell
+(agent forwarding follows
+.BR "console agent\-forwarding" ).
+sshd reads the files of that directory in name order and takes the first value
+of each keyword across all
+.B Match
+blocks, so the name starts with
+.B 00\-
+to come before
+.IR tacctl\-console.conf :
+an account that is in the engineer group and in a group the console lets
+forward (a stale
+.BR tac\-superuser )
+stays locked down.
+.B upgrade
+and
+.B "console install"
+rename an earlier
+.I tacctl\-engineer.conf
+(removed once the new file is in place). Written at every
+.B host sync
+or
+.B "host enroll \-\-local"
+of the tacctl server and by
+.BR "console install" ,
+whether or not the console is installed; checked with
+.BR "sshd \-t" ,
+refreshed by
+.BR upgrade ,
+left in place by
+.B "console remove"
+and removed by
+.BR uninstall .
+Do not edit.
+.TP
 .I /etc/shells
 Gets the line
 .I /usr/local/bin/tacctl\-console
 with the drop-in, and loses it with it.
+.TP
+.I /var/lib/tacctl/tier\-pinned
+Marker that
+.B "tacctl upgrade"
+recorded the tier of every group at priv-lvl 15, once (a fresh install writes
+it at once). It is outside
+.IR tacctl.yaml ,
+which is what gets lost, so a setting lost later is not recorded again by a
+routine upgrade.
+.B uninstall
+removes it.
 .TP
 .I /var/lib/tacctl/ssh/known_hosts
 Generated from
@@ -4151,6 +7617,23 @@ the git history of
 The registry of enrolled Linux hosts (with each host's method) and the
 UID each user gets on every host.
 .TP
+.I /etc/tacctl/hosts/
+One
+.IR name .json
+per enrolled host: what the last
+.B host enroll
+or
+.B host sync
+did (when, by whom, how it ended, the accounts it changed), the facts it read
+of the host (operating system, sshd, PAM modules, the UID range of
+.IR /etc/login.defs ),
+and the last
+.BR "host provisioner rotate" .
+Printed by
+.BR "host show" .
+Mode 0600 in a 0700 directory, root only; renamed with the host and removed by
+.BR "host unenroll" .
+.TP
 .I /var/lib/tacctl/linux/
 The pam_tacplus source tarball and the modules built in containers.
 .TP
@@ -4189,6 +7672,35 @@ when it is missing or out of date, and runs it.
 .I /etc/bash_completion.d/tacctl
 The bash completion script, generated by
 .BR "tacctl completion bash" .
+.TP
+.I /usr/local/go/
+The Go toolchain
+.B install
+fetches (the version the release pins) to build tacquito;
+.I /usr/local/go/bin/go
+is the compiler tacctl runs.
+.TP
+.I /etc/login.defs
+Read, never written, by
+.B "host enroll \-\-local"
+for the UID range of this server's own accounts.
+.TP
+.I /etc/ssh/ssh_host_*_key.pub
+The public host keys of a host, read over the login in use by
+.BR "host enroll" ,
+.B "host show \-\-check"
+and
+.B "host provisioner rotate"
+to pin them and compare them with the registry.
+.TP
+.I /root/
+Where
+.B uninstall
+leaves what it is asked to keep:
+.IR tacquito\-backups\-<time>.tar.gz ,
+.I tacquito\-logs\-<time>.tar.gz
+(the accounting logs) and, for the RADIUS backend,
+.IR tacctl\-radius\-logs\-<time>.tar.gz .
 .TP
 .I /usr/share/man/man1/tacctl.1.gz
 This manual.
@@ -4268,6 +7780,21 @@ daemon's group.
 .I <raddb>/tacctl\-radius\-dictionary/dictionary
 The dictionary the daemon is started with: the package's, then the WTI
 vendor and tacctl's internal attributes.
+.TP
+.IR /usr/sbin/freeradius ", " /usr/lib/freeradius/ ", " /usr/share/freeradius/dictionary ", " /run/freeradius/freeradius.pid
+What the package provides and the configuration names: the daemon, its module
+directory
+.RI ( libdir ),
+the main dictionary that
+.I <raddb>/tacctl\-radius\-dictionary/dictionary
+includes, and the pid file
+.RI ( pidfile ).
+On the RHEL family they are
+.IR /usr/sbin/radiusd ,
+.IR /usr/lib64/freeradius/ ,
+the same dictionary and
+.IR /run/radiusd/radiusd.pid .
+Read, not edited.
 .TP
 .IR /etc/systemd/system/freeradius.service.d/tacctl.conf " (" radiusd.service.d " on RHEL)"
 Drop-in that starts the distribution's unit as tacctl's instance; present

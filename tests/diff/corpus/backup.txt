@@ -29,6 +29,7 @@ user add alice superuser --hash {HASH} --scopes lab ;; backup list
 user add alice superuser --hash {HASH} --scopes lab ;; backup diff
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 user add alice superuser --hash {HASH} --scopes lab ;; backup diff {TS}
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; backup diff 19990101_000000
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 user add alice superuser --hash {HASH} --scopes lab ;; config bcrypt-cost 10 ;; backup diff
@@ -42,7 +43,9 @@ user add alice superuser --hash {HASH} --scopes lab ;; backup restore {TS} <<< y
 user add alice superuser --hash {HASH} --scopes lab ;; backup restore {TS} <<< n ;; user list
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 user add alice superuser --hash {HASH} --scopes lab ;; backup restore {TS} ;; user list
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; backup restore {TS} --legacy <<< y
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; backup restore 19990101_000000 <<< y
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 user add alice superuser --hash {HASH} --scopes lab ;; config bcrypt-cost 10 ;; backup restore {TS} <<< y ;; config get bcrypt.cost
@@ -70,8 +73,11 @@ config restore 19990101_000000 --legacy
 # the old-style copy the first mutation keeps of the adopted fixture file
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 user add alice superuser --hash {HASH} --scopes lab ;; backup diff drift.{TS}
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; backup restore drift.{TS} <<< y
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; backup restore drift.{TS} --legacy <<< y
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 user add alice superuser --hash {HASH} --scopes lab ;; backup restore --legacy drift.{TS} <<< n
 
 # a file tacctl rendered: imported (the flip keeps it as pre-store), restored with --legacy
@@ -83,11 +89,13 @@ backup restore 19990101_000000 <<< y
 store import ;; user add alice superuser --hash {HASH} --scopes lab ;; backup list ;; backup restore pre-store.{DATE}_120000 --legacy <<< y ;; user list
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 store import ;; user add alice superuser --hash {HASH} --scopes lab ;; backup restore pre-store.{DATE}_120000 --legacy <<< n ;; user list
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 store import ;; user add alice superuser --hash {HASH} --scopes lab ;; backup restore pre-store.{DATE}_120000 <<< y
 
 # back in legacy read-only mode after a rollback: old-style files only
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 store import ;; user add alice superuser --hash {HASH} --scopes lab ;; store rollback <<< y ;; backup list ;; backup diff
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 store import ;; user add alice superuser --hash {HASH} --scopes lab ;; store rollback <<< y ;; backup diff {TS} ;; backup restore {TS} <<< y
 store import ;; store rollback <<< y ;; backup restore pre-store.{DATE}_120000 <<< n
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID

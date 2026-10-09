@@ -23,7 +23,7 @@ setup() {
     # written into the stub: the console's scrub drops the test's variables.
     stub_cmd sudo "while [[ \"\${1:-}\" == -n || \"\${1:-}\" == *=* ]]; do [[ \"\$1\" == *=* ]] && export \"\$1\"; shift; done
 env > '${BATS_TEST_TMPDIR}/sudo.env'
-case \" \$* \" in *' _console-policy '*) echo 'shell=console idle=30 system_shell=no system_shell_path=/bin/bash ssh_escape=no agent=no tier=readonly list_max=40'; exit 0 ;; esac
+case \" \$* \" in *' _console-policy '*) echo 'shell=console idle=30 system_shell=no system_shell_path=/bin/bash ssh_escape=no agent=no tier=readonly list_max=40'\"\$(cat '${BATS_TEST_TMPDIR}/policy.extra' 2>/dev/null)\"; exit 0 ;; esac
 exec \"\$@\""
     stub_cmd id 'echo carol tac-users tac-readonly'
     export HOME="${BATS_TEST_TMPDIR}/home"
@@ -56,6 +56,23 @@ console_log() { grep '^logger -t tacctl-console ' "$CALLS_LOG" | sed 's/^logger 
     run console_log
     assert_line --index 0 "-p auth.info console start session=0123456789ab user=${USER} from=- tty=- mode=command"
     assert_line --index 1 "-p auth.info console end session=0123456789ab user=${USER} reason=command lines=1 status=0"
+}
+
+@test "console -c and batch: the space-completion setting changes nothing (no editor)" {
+    for extra in "" " space_completion=no" " space_completion=yes"; do
+        printf '%s' "$extra" > "${BATS_TEST_TMPDIR}/policy.extra"
+        : > "$CALLS_LOG"
+        run "$CONSOLE_BIN" -c "user  list"
+        assert_success
+        run sudo_lines
+        assert_line --index 1 "sudo -n TACCTL_CONSOLE=0123456789ab ${EXE} user list"
+        : > "$CALLS_LOG"
+        run bash -c 'printf "user  list\n  user list\n" | "$0"' "$CONSOLE_BIN"
+        assert_success
+        run sudo_lines
+        assert_line --index 1 "sudo -n TACCTL_CONSOLE=0123456789ab ${EXE} user list"
+        assert_line --index 2 "sudo -n TACCTL_CONSOLE=0123456789ab ${EXE} user list"
+    done
 }
 
 @test "console: a superuser's lines run plain sudo (the password prompt), others keep -n" {
@@ -156,6 +173,44 @@ exec "$@"'
     run "$TACCTL_BIN_SCRIPT" shell -c "help"
     assert_success
     refute_output --partial "system-shell"
+}
+
+@test "console: help lists the commands the policy's tier can run (the gate's tier wins over the tier field); the usage stays whole" {
+    run "$CONSOLE_BIN" -c "help"
+    assert_success
+    assert_output --partial "Shown: the commands the readonly tier can run"
+    assert_output --partial "  user <subcommand>"
+    refute_output --partial "  install "
+    refute_output --partial "  store <subcommand>"
+    run "$CONSOLE_BIN" -c "help group"
+    assert_success
+    assert_output --partial "tacctl group add helpdesk 5 HELPDESK-CLASS"
+    assert_output --partial "  superuser  add, commands, edit, junos, preset, privilege, remove, reset"
+    # The gate's tier (an engineer capped by an unreadable tacctl.yaml is
+    # an operator there) wins over the tier field.
+    printf ' tier=engineer gate=operator' > "${BATS_TEST_TMPDIR}/policy.extra"
+    run "$CONSOLE_BIN" -c "help"
+    assert_output --partial "Shown: the commands the operator tier can run"
+    assert_output --partial "  config <subcommand>"
+    refute_output --partial "  host <subcommand>"
+    printf ' tier=engineer' > "${BATS_TEST_TMPDIR}/policy.extra"
+    run "$CONSOLE_BIN" -c "help"
+    assert_output --partial "  host <subcommand>"
+    printf ' tier=superuser' > "${BATS_TEST_TMPDIR}/policy.extra"
+    run "$CONSOLE_BIN" -c "help"
+    refute_output --partial "Shown:"
+    assert_output --partial "  install "
+    assert_output --partial "  store <subcommand>"
+}
+
+@test "console: without an answer from _console-policy the help lists the read-only commands only" {
+    stub_cmd sudo 'while [[ "${1:-}" == -n || "${1:-}" == *=* ]]; do shift; done
+case " $* " in *" _console-policy "*) echo "sudo: a password is required" >&2; exit 1 ;; esac
+exec "$@"'
+    run "$CONSOLE_BIN" -c "help"
+    assert_success
+    assert_output --partial "Shown: the commands the readonly tier can run"
+    refute_output --partial "  install "
 }
 
 @test "console: the root side answers _console-policy for the caller" {

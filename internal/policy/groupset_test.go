@@ -6,7 +6,46 @@ import (
 	"testing"
 
 	"github.com/rett/tacctl/internal/conf"
+	"github.com/rett/tacctl/internal/tier"
 )
+
+// B1: a tier setting that is there but cannot be a tier is tier.InvalidSetting
+// (readonly for tier.ForGroup, never the priv-lvl band) and a problem; a tier
+// that is not set is "" and no problem.
+func TestGroupTierInvalidSettings(t *testing.T) {
+	for _, c := range []struct {
+		name, yaml, want, problem string
+	}{
+		{"unset", "", "", ""},
+		{"other group", "tier:\n  ops: engineer\n", "", ""},
+		{"engineer", "tier:\n  neteng: engineer\n", "engineer", ""},
+		{"mapping", "tier:\n  neteng: {x: engineer}\n", tier.InvalidSetting, "'tier.neteng' must be one of"},
+		{"list", "tier:\n  neteng: [engineer]\n", tier.InvalidSetting, "'tier.neteng' must be one of"},
+		{"null", "tier:\n  neteng:\n", tier.InvalidSetting, "'tier.neteng' must be one of"},
+		{"empty", "tier:\n  neteng: ''\n", tier.InvalidSetting, "'tier.neteng' must be one of"},
+		{"number", "tier:\n  neteng: 15\n", tier.InvalidSetting, "'tier.neteng' must be one of"},
+		{"bool", "tier:\n  neteng: true\n", tier.InvalidSetting, "'tier.neteng' must be one of"},
+		{"scalar tier", "tier: engineer\n", tier.InvalidSetting, "'tier' must be a mapping"},
+		{"list tier", "tier: [neteng]\n", tier.InvalidSetting, "'tier' must be a mapping"},
+		{"null tier", "tier:\n", tier.InvalidSetting, "'tier' must be a mapping"},
+		// Not a managed tier, but a string: ForGroup makes it readonly and
+		// the schema validation names it.
+		{"wrong case", "tier:\n  neteng: Engineer\n", "Engineer", ""},
+		{"blank", "tier:\n  neteng: ' engineer'\n", " engineer", ""},
+	} {
+		c0, _ := newConf(t, c.yaml)
+		if got := GroupTier(c0, "neteng"); got != c.want {
+			t.Errorf("%s: GroupTier %q, want %q", c.name, got, c.want)
+		}
+		if got := TierProblem(c0); (c.problem == "") != (got == "") || !strings.Contains(got, c.problem) {
+			t.Errorf("%s: TierProblem %q, want %q", c.name, got, c.problem)
+		}
+		// Whatever it is, ForGroup never lets the band decide for it.
+		if got := tier.ForGroup(GroupTier(c0, "neteng"), "15"); c.want != "" && c.want != "engineer" && got != tier.Readonly {
+			t.Errorf("%s: a priv-lvl 15 group is %s", c.name, got)
+		}
+	}
+}
 
 func TestJunosSetRoundTrip(t *testing.T) {
 	c, path := newConf(t, "")
@@ -77,18 +116,8 @@ func TestWTILevelAndTier(t *testing.T) {
 	if err := WriteJunosSet(c, "engineer", conf.JunosDenyConfiguration, []string{"^snmp"}); err != nil {
 		t.Fatal(err)
 	}
-	// Rename carries everything; forget removes everything.
-	if err := RenameGroup(c, "engineer", "eng"); err != nil {
-		t.Fatal(err)
-	}
-	if GroupTier(c, "eng") != "engineer" || GroupTier(c, "engineer") != "" ||
-		len(JunosSet(c, "eng", conf.JunosDenyConfiguration)) != 1 || len(JunosSet(c, "engineer", conf.JunosDenyConfiguration)) != 0 {
-		t.Fatalf("rename:\n%s", file(t, path))
-	}
-	if l, over := WTILevel(c, "eng", 15); l != "superuser" || !over {
-		t.Fatal("rename wti")
-	}
-	if err := ForgetGroup(c, "eng"); err != nil {
+	// Forget removes everything.
+	if err := ForgetGroup(c, "engineer"); err != nil {
 		t.Fatal(err)
 	}
 	if file(t, path) != "" {

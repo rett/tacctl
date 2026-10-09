@@ -179,7 +179,7 @@ func TestHostShowCheck(t *testing.T) {
 	hs.run(hs.showRunner(ed, showFacts, "", "", 0), "host", "enroll", "admin@web1.example.net", "--scope", "lab", "--build-on-host")
 	hs.expect(0, "Host 'web1' enrolled.", "")
 
-	good := "tacctl-check group tac-users 80000\ntacctl-check group tac-superuser 80002\n" +
+	good := "tacctl-check group tac-users 80000\ntacctl-check group tac-superuser 80002\ntacctl-check group tac-engineer 80005\n" +
 		"tacctl-check account alice 80000 80000 700 /home/alice\ntacctl-check account bob 80001 80000 700 /home/bob\n" +
 		"tacctl-check account carol 80002 80000 700 /home/carol\n" +
 		"tacctl-check pam tacctl-auth aaa\ntacctl-check pam tacctl-account bbb\ntacctl-check pam tacctl-session ccc\n" +
@@ -205,6 +205,7 @@ func TestHostShowCheck(t *testing.T) {
 	for _, w := range []string{
 		"  - group tac-users has GID 1001, not 80000. Fix: tacctl host sync web1\n",
 		"  - group tac-superuser is missing. Fix: tacctl host sync web1\n",
+		"  - group tac-engineer is missing. Fix: tacctl host sync web1\n",
 		"  - alice has UID 80007, not 80000. Fix: tacctl host sync web1\n",
 		"  - alice's home /home/alice is 0755, open to others (tacctl makes it private: 0700). Fix: tacctl host sync web1\n",
 		"  - bob has no account. Fix: tacctl host sync web1\n",
@@ -213,7 +214,7 @@ func TestHostShowCheck(t *testing.T) {
 		"  - /etc/pam.d/tacctl-session is missing. Fix: tacctl host enroll admin@web1.example.net --name web1\n",
 		"  - the host ran client script protocol 4; this tacctl writes " + hosts.ScriptProtocol + ". Fix: tacctl host sync web1\n",
 		"  - the host has keys of types not pinned: RSA " + rsa.Fingerprint() + ". Fix: check on the host",
-		"  10 differences.\n",
+		"  11 differences.\n",
 	} {
 		if !strings.Contains(out, w) {
 			t.Errorf("bad lacks %q:\n%s", w, out)
@@ -247,5 +248,46 @@ func TestHostShowCheck(t *testing.T) {
 	hs.expect(1, "", "Could not check web1: the read-only run as root on admin@web1.example.net failed (see above); nothing was compared.")
 	if strings.Contains(hs.out.String(), "Host web1") {
 		t.Errorf("printed after a failed check:\n%s", hs.out.String())
+	}
+}
+
+// The engineer tier on a host: an engineer's account is in tac-users and
+// tac-engineer there (a superuser's in tac-superuser), every tier's group on
+// this server; --check reads who is in the sudo groups and flags an engineer
+// left in tac-superuser, which only a sync from before the tier leaves.
+func TestHostShowEngineer(t *testing.T) {
+	hs := newHostSandbox(t)
+	hs.write("state/tacctl.yaml", "tier:\n  operator: engineer\n", 0o600)
+	if err := os.WriteFile(filepath.Join(hs.dir, "state", "linux-hosts"),
+		[]byte("web1|admin@web1.example.net||lab|192.0.2.1|\nauthsrv|local||lab|127.0.0.1|\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out := plain(hs.run(nil, "host", "show", "web1"))
+	if hs.code != 0 || !strings.Contains(out, "  alice  superuser  UID -      tac-users, tac-superuser\n  bob    engineer   UID -      tac-users, tac-engineer\n  carol  readonly   UID -      tac-users\n") {
+		t.Errorf("remote: %d\n%s", hs.code, out)
+	}
+	out = plain(hs.run(nil, "host", "show", "authsrv"))
+	if !strings.Contains(out, "  bob    engineer   UID -      tac-users, tac-engineer, tac-console\n") {
+		t.Errorf("local: %d\n%s", hs.code, out)
+	}
+
+	ed := hkKey(t, "ed25519")
+	hs.run(hs.showRunner(ed, "", "", "", 0), "host", "sync", "web1")
+	base := "tacctl-check group tac-users 80000\ntacctl-check group tac-superuser 80002\ntacctl-check group tac-engineer 80005\n" +
+		"tacctl-check account alice 80000 80000 700 /home/alice\ntacctl-check account bob 80001 80000 700 /home/bob\n" +
+		"tacctl-check account carol 80002 80000 700 /home/carol\n" +
+		"tacctl-check pam tacctl-auth aaa\ntacctl-check pam tacctl-account bbb\ntacctl-check pam tacctl-session ccc\n" +
+		"tacctl-check pam-written tacctl-auth aaa\ntacctl-check pam-written tacctl-account bbb\ntacctl-check pam-written tacctl-session ccc\n" +
+		"tacctl-check protocol " + hosts.ScriptProtocol + "\ntacctl-check key " + ed.String() + " root@web1\n"
+	// Engineers in tac-engineer, alice alone in tac-superuser: as it should be.
+	out = plain(hs.run(hs.showRunner(ed, "", "", "tacctl-check members tac-superuser alice\ntacctl-check members tac-engineer bob\n"+base, 0), "host", "show", "web1", "--check"))
+	if hs.code != 0 || !strings.Contains(out, "  web1 is as tacctl would make it.\n") {
+		t.Errorf("good: %d\n%s", hs.code, out)
+	}
+	// An engineer still in tac-superuser (a superuser in tac-engineer is not a finding).
+	out = plain(hs.run(hs.showRunner(ed, "", "", "tacctl-check members tac-superuser alice,bob\ntacctl-check members tac-engineer alice\n"+base, 0), "host", "show", "web1", "--check"))
+	if hs.code != 1 || !strings.Contains(out, "  - bob is an engineer but is still in tac-superuser (full sudo; the engineer tier gets tac-engineer). Fix: tacctl host sync web1\n") ||
+		strings.Contains(out, "alice is") || !strings.Contains(out, "  1 difference.\n") {
+		t.Errorf("engineer in tac-superuser: %d\n%s", hs.code, out)
 	}
 }

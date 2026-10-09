@@ -36,6 +36,7 @@ import (
 	rtacacs "github.com/rett/tacctl/internal/render/tacacs"
 	"github.com/rett/tacctl/internal/snapshot"
 	"github.com/rett/tacctl/internal/store"
+	"github.com/rett/tacctl/internal/tier"
 	"github.com/rett/tacctl/internal/ui"
 )
 
@@ -159,7 +160,11 @@ func (inv *invocation) isSnapshot(id string) bool {
 }
 
 // backupNames is '_completion-names backups' (backup_names | head -50).
+// 'backup list' is an operator row: the readonly tier is told no ids.
 func (inv *invocation) backupNames([]string) []string {
+	if inv.tierGate().Caller(inv.ctx) == tier.Readonly {
+		return nil
+	}
 	names := inv.snapshotIDs()
 	for _, e := range inv.legacyBackups() {
 		names = append(names, e.id)
@@ -509,12 +514,58 @@ func (inv *invocation) restoreSnapshot(id string) error {
 			return err
 		}
 	}
+	// And the SNMP credentials, which the settings in tacctl.yaml name.
+	if err := inv.restoreSNMP(dir); err != nil {
+		inv.stderrLine(err.Error())
+		return err
+	}
 	inv.reconcileBackends(before)
 	if err := set.RestartAll(inv.ctx); err != nil {
 		return err
 	}
 	a.Out.InfoE("Restored snapshot " + id + ".")
 	inv.echo("")
+	inv.warnServerSync("Users whose tier is lower now keep their old groups")
+	return nil
+}
+
+// restoreSNMP puts the SNMP credentials of snapshot directory dir back:
+// snmp.yaml (the default) and the per-scope files of snmp/, in the modes
+// they are kept in (0600, the directory 0700). A snapshot that holds a
+// credentials directory makes the live one match it (a file the snapshot
+// lacks goes: tacctl.yaml, restored with it, names no such scope); one that
+// holds none (taken before there were any, or when there were none) leaves
+// the live files alone.
+func (inv *invocation) restoreSNMP(dir string) error {
+	p := inv.app.Paths
+	if snap := filepath.Join(dir, "snmp.yaml"); cfgIsFile(snap) {
+		if err := backupPut(snap, p.SNMPFile, 0o600); err != nil {
+			return err
+		}
+	}
+	snapDir := filepath.Join(dir, "snmp")
+	files := snapshot.SNMPFiles(snapDir)
+	if len(files) == 0 {
+		return nil
+	}
+	if err := os.MkdirAll(p.SNMPDir, 0o700); err != nil {
+		return err
+	}
+	if err := os.Chmod(p.SNMPDir, 0o700); err != nil {
+		return err
+	}
+	for _, n := range files {
+		if err := backupPut(filepath.Join(snapDir, n), filepath.Join(p.SNMPDir, n), 0o600); err != nil {
+			return err
+		}
+	}
+	for _, n := range snapshot.SNMPFiles(p.SNMPDir) {
+		if !slices.Contains(files, n) {
+			if err := os.Remove(filepath.Join(p.SNMPDir, n)); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 
@@ -630,6 +681,7 @@ func (inv *invocation) restoreLegacy(id string) error {
 		return nil
 	}
 
+	before := inv.storeGroups()
 	if err := inv.snapshotFirst(); err != nil {
 		return err
 	}
@@ -645,6 +697,9 @@ func (inv *invocation) restoreLegacy(id string) error {
 	}
 	a.Out.InfoE("Restored old-style backup " + id + ".")
 	inv.echo("")
+	inv.pinGroupTiers(before)
+	inv.warnStaleGroupSettings()
+	inv.warnServerSync("Users whose tier is lower now keep their old groups")
 	return nil
 }
 

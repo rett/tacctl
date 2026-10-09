@@ -2,6 +2,7 @@ package policy
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -45,8 +46,8 @@ func file(t *testing.T, path string) string {
 
 func TestLinesAndDefaultAction(t *testing.T) {
 	c, _ := newConf(t, "")
-	want := []string{"show|permit|", "ping|permit|", "traceroute|permit|", "terminal|permit|", "*|deny|"}
-	if got := Lines(c, "operator"); !reflect.DeepEqual(got, want) {
+	want := shippedOperator()
+	if got := Lines(c, "operator"); !reflect.DeepEqual(got, want) || want[0] != "show|deny|^(running-config view full)( .*)?$" || want[1] != "show|permit|" || want[len(want)-1] != "*|deny|" {
 		t.Errorf("operator: %q", got)
 	}
 	for group, action := range map[string]string{"operator": "deny", "readonly": "deny", "superuser": "permit", "helpdesk": "permit"} {
@@ -75,7 +76,9 @@ func TestInsertUpdateRemove(t *testing.T) {
 	if err := InsertRule(c, "operator", "configure", "deny", "terminal,x"); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"show|permit|", "ping|permit|", "traceroute|permit|", "terminal|permit|", "configure|deny|terminal,x", "*|deny|"}
+	body := shippedOperator()
+	body = body[:len(body)-1]
+	want := append(append([]string{}, body...), "configure|deny|terminal,x", "*|deny|")
 	if got := Lines(c, "operator"); !reflect.DeepEqual(got, want) {
 		t.Errorf("after insert: %q", got)
 	}
@@ -85,7 +88,7 @@ func TestInsertUpdateRemove(t *testing.T) {
 	if err := UpdateCatchall(c, "operator", "permit"); err != nil {
 		t.Fatal(err)
 	}
-	if got := Lines(c, "operator"); got[len(got)-1] != "*|permit|" || len(got) != 6 {
+	if got := Lines(c, "operator"); got[len(got)-1] != "*|permit|" || len(got) != len(body)+2 {
 		t.Errorf("after update: %q", got)
 	}
 	if err := RemoveRule(c, "operator", "configure"); err != nil {
@@ -101,7 +104,18 @@ func TestInsertUpdateRemove(t *testing.T) {
 }
 
 func TestInsertRuleAt(t *testing.T) {
-	shipped := []string{"show|permit|", "ping|permit|", "traceroute|permit|", "terminal|permit|"}
+	shipped := shippedOperator()
+	shipped = shipped[:len(shipped)-1]
+	beforePing := func() []string {
+		var out []string
+		for _, l := range shipped {
+			if l == "ping|permit|" {
+				out = append(out, "x|deny|a")
+			}
+			out = append(out, l)
+		}
+		return append(out, "*|deny|")
+	}()
 	for _, tc := range []struct {
 		name  string
 		where Where
@@ -110,7 +124,7 @@ func TestInsertRuleAt(t *testing.T) {
 		{"default", Where{}, append(append([]string{}, shipped...), "x|deny|a", "*|deny|")},
 		{"before catch-all", Where{Before: Catchall}, append(append([]string{}, shipped...), "x|deny|a", "*|deny|")},
 		{"first", Where{First: true}, append(append([]string{"x|deny|a"}, shipped...), "*|deny|")},
-		{"before ping", Where{Before: "ping"}, []string{"show|permit|", "x|deny|a", "ping|permit|", "traceroute|permit|", "terminal|permit|", "*|deny|"}},
+		{"before ping", Where{Before: "ping"}, beforePing},
 	} {
 		c, _ := newConf(t, "")
 		if err := InsertRuleAt(c, "operator", "x", "deny", "a", tc.where); err != nil {
@@ -202,11 +216,12 @@ func TestCommaInMatchIsSplitOnWrite(t *testing.T) {
 	if err := InsertRule(c, "operator", "show", "permit", "a{1,3}"); err != nil {
 		t.Fatal(err)
 	}
-	if got := Lines(c, "operator"); got[4] != "show|permit|a{1,3}" {
+	n := len(shippedOperator())
+	if got := Lines(c, "operator"); got[n-1] != "show|permit|a{1,3}" {
 		t.Errorf("lines: %q", got)
 	}
 	v, _ := c.Value("commands.operator")
-	if got := len(v.([]any)); got != 6 {
+	if got := len(v.([]any)); got != n+1 {
 		t.Fatalf("%d rules", got)
 	}
 	m, _ := c.GetJSON("commands.operator")
@@ -281,11 +296,14 @@ func TestDefaultRules(t *testing.T) {
 func TestPrivileges(t *testing.T) {
 	c, path := newConf(t, "")
 	def := DefaultPrivileges("operator")
-	if len(def) != 6 || def[0] != "show running-config" {
+	if len(def) != 9 || def[0] != "exec all: ping" {
 		t.Errorf("defaults: %q", def)
 	}
-	if DefaultPrivileges("readonly") == nil || len(DefaultPrivileges("readonly")) != 0 {
-		t.Error("readonly defaults")
+	if got := DefaultPrivileges("readonly"); len(got) != 1 || got[0] != "show running-config" {
+		t.Errorf("readonly defaults: %q", got)
+	}
+	if got := DefaultPrivileges("superuser"); got == nil || len(got) != 0 {
+		t.Errorf("superuser defaults: %q", got)
 	}
 	if got := Privileges(c, "operator"); !reflect.DeepEqual(got, def) {
 		t.Errorf("merged: %q", got)
@@ -293,7 +311,7 @@ func TestPrivileges(t *testing.T) {
 	if err := WritePrivileges(c, "operator", append(def, "", "show version")); err != nil {
 		t.Fatal(err)
 	}
-	if got := Privileges(c, "operator"); len(got) != 7 || got[6] != "show version" || !c.HasOverride("privileges.operator") {
+	if got := Privileges(c, "operator"); len(got) != len(def)+1 || got[len(def)] != "show version" || !c.HasOverride("privileges.operator") {
 		t.Errorf("after write: %q", got)
 	}
 	if err := WritePrivileges(c, "operator", def); err != nil {
@@ -304,15 +322,33 @@ func TestPrivileges(t *testing.T) {
 	}
 }
 
+// shippedOperator is operator's shipped rule lines (defaults.yaml).
+func shippedOperator() []string { return DefaultLines("operator") }
+
+// flowRules is rule lines as a YAML flow list under a group, the first
+// rule's match replaced by firstMatch.
+func flowRules(lines []string, firstMatch string) string {
+	var b strings.Builder
+	replaced := false
+	for _, l := range lines {
+		f := strings.SplitN(l, "|", 3)
+		fmt.Fprintf(&b, "  - {name: '%s', action: %s", f[0], f[1])
+		switch {
+		// The first rule that permits (the shipped deny of 'show
+		// running-config view full' may stand before it).
+		case !replaced && f[1] == "permit" && firstMatch != "":
+			replaced = true
+			fmt.Fprintf(&b, ", match: ['%s']", firstMatch)
+		case len(f) == 3 && f[2] != "":
+			fmt.Fprintf(&b, ", match: ['%s']", f[2])
+		}
+		b.WriteString("}\n")
+	}
+	return b.String()
+}
+
 func TestHealDeadMatches(t *testing.T) {
-	text := `commands:
-  operator:
-  - {name: show, action: permit, match: ['^show .*$']}
-  - {name: ping, action: permit}
-  - {name: traceroute, action: permit}
-  - {name: terminal, action: permit}
-  - {name: '*', action: deny}
-  helpdesk:
+	text := "commands:\n  operator:\n" + flowRules(shippedOperator(), "^show .*$") + `  helpdesk:
   - {name: show, action: permit, match: ['^show .*$', 'version']}
   - {name: '*', action: deny}
   readonly:

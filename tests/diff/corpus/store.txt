@@ -22,18 +22,27 @@ store show --json extra
 store show "" --json
 store import -
 store import --check -x
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 store import "" --check
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 store import --check --check {FIXTURES}/tacquito.minimal.yaml
 
 # import
 store import
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 store import --check
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 store import --check {FIXTURES}/tacquito.minimal.yaml
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 store import --check {FIXTURES}/tacquito.multiscope.yaml
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 store import --check {FIXTURES}/tacquito.dead-matches.yaml
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 store import --check {FIXTURES}/tacquito.legacy-exec.yaml
 store import --check {FIXTURES}/legacy.unrepresentable.yaml
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 store import --check {FIXTURES}/legacy.import-edge.yaml
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 store import --check {FIXTURES}/legacy.fresh-install.yaml
 store import --check {FIXTURES}/no-such-file.yaml
 store import {FIXTURES}/no-such-file.yaml
@@ -43,10 +52,12 @@ store import --replace {FIXTURES}/tacquito.minimal.yaml
 store import --replace {FIXTURES}/tacquito.multiscope.yaml ;; store show
 store import --replace {FIXTURES}/tacquito.multiscope.yaml ;; store show --json
 store import --replace {FIXTURES}/legacy.unrepresentable.yaml
+@known 0.2.3 item 7: store import records the tier of an imported group at priv-lvl 15 (and takes a snapshot for it)
 store import --replace --force {FIXTURES}/legacy.unrepresentable.yaml ;; store show
 store import --force {FIXTURES}/legacy.unrepresentable.yaml
 store import --replace {FIXTURES}/store.minimal.yaml
 store import --bogus
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 store import --check --force
 store import --check {FIXTURES}/tacquito.minimal.yaml extra
 
@@ -93,9 +104,14 @@ store import ;; store rollback <<< yes
 store import ;; config render --force ;; store rollback <<< y ;; user list ;; backup list
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 store import ;; config render --force ;; user add alice superuser --hash {HASH} --scopes lab ;; store rollback <<< y ;; user list
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 store import ;; config render --force ;; store rollback extra
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 store import ;; config render --force ;; store rollback ""
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 store import ;; config render --force ;; store rollback <<< y ;; store rollback <<< y ;; store import ;; store rollback <<< y
+@known 0.2.3 item 78: config validate warns about a scope without a break-glass user
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 store import ;; config render --force ;; store rollback <<< Y ;; config validate
 # a pre-store copy beside a store that never had a live legacy file
 @fixture store.minimal.yaml

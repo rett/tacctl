@@ -1,0 +1,21 @@
+
+Reset of group 'engineer' to the role preset's engineer
+-------------------------------------------------------
+  settings
+    Cisco priv-lvl:  14 -> 15
+    Juniper class:   OTHER-CLASS -> EN-CLASS
+    tacctl tier:     operator (set) -> engineer (set)
+    WTI level:       Administrator (set) -> SuperUser (set)
+    warning: Cisco logins and the per-level authorization lines change; re-paste tacctl config cisco
+    warning: the Junos template user of the class changes; re-paste tacctl config juniper Step 1
+  commands
+    - extra        deny   ^(x)$
+  privileges
+    unchanged
+  junos
+    deny-commands: 226/241 bytes -> 219/241 bytes
+      - ^foo  (4 bytes)
+    deny-configuration: 7/236 bytes -> none
+      - ^snmp  (5 bytes)
+
+[INFO] Dry run: nothing was written.

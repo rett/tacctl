@@ -170,7 +170,10 @@ func TestConsoleHelpNamesSystemShell(t *testing.T) {
 	if err := run(); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(h.out.String(), "\n  system-shell ") || !strings.Contains(h.out.String(), shellTop("0.2.1-test", true)) {
+	// No policy answer: the tier is unknown, so the help lists the
+	// read-only commands only (D56).
+	want := shellTopFor("0.2.1-test", true, newRoot(&invocation{}), tier.Readonly)
+	if !strings.Contains(h.out.String(), "\n  system-shell ") || !strings.Contains(h.out.String(), want) {
 		t.Errorf("help:\n%s", h.out.String())
 	}
 	if strings.Contains(shellTop("v", false), "system-shell") {

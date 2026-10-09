@@ -52,12 +52,21 @@ type Options struct {
 	History *History
 	// Complete answers Tab and '?'.
 	Complete Completer
+	// CompleteFixed answers a typed blank (SpaceCompletion): like Complete,
+	// but it need not offer, and must not look up, the live names (users,
+	// hosts ...): only fixed words count there. Nil: Complete.
+	CompleteFixed Completer
 	// Explain answers '?' where Complete offers no word.
 	Explain Explainer
 	// ListMax is the longest list Tab or '?' shows without asking 'Show
 	// all <n> <kind>?' first: 0 is DefaultListMax, a negative number never
 	// asks.
 	ListMax int
+	// SpaceCompletion makes a typed blank Junos-style at the prompt (never
+	// two in a row; at the end of a fixed word it completes the word or
+	// lists the choices). A paste is not affected. Off: a blank is a blank.
+	// Interactive only.
+	SpaceCompletion bool
 	// Help is the text of 'help <words>'; false when there is none.
 	Help func(words []string) (string, bool)
 	// Exec runs a tacctl command with the terminal's stdout and stderr and
@@ -246,8 +255,8 @@ func (s *Shell) Interactive(ctx context.Context, tty *os.File) int {
 	if hist == nil {
 		hist = NewHistory("", nil)
 	}
-	ed := &editor{prompt: s.o.Prompt, hist: hist, complete: s.o.Complete, explain: s.o.Explain, listMax: s.o.ListMax,
-		systemShell: s.o.SystemShell != nil}
+	ed := &editor{prompt: s.o.Prompt, hist: hist, complete: s.o.Complete, completeFixed: s.o.CompleteFixed, explain: s.o.Explain, listMax: s.o.ListMax,
+		systemShell: s.o.SystemShell != nil, spaces: s.o.SpaceCompletion}
 	if ed.listMax == 0 {
 		ed.listMax = DefaultListMax
 	}

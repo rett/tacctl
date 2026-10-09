@@ -234,7 +234,7 @@ func wantCommands(rules []Rule) []any {
 		if len(r.Match) > 0 {
 			match := make([]any, len(r.Match))
 			for i, s := range r.Match {
-				match[i] = s
+				match[i] = renderMatch(s)
 			}
 			c.Set("match", match)
 		}

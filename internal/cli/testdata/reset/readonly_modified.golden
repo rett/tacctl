@@ -1,0 +1,20 @@
+
+Reset of group 'readonly' to its canonical defaults
+---------------------------------------------------
+  settings
+    Cisco priv-lvl:  5 -> 1
+    Juniper class:   RO2-CLASS -> RO-CLASS
+    tacctl tier:     operator (set) -> readonly (auto, from priv-lvl)
+    WTI level:       User (set) -> ViewOnly (auto, from priv-lvl)
+    warning: Cisco logins and the per-level authorization lines change; re-paste tacctl config cisco
+    warning: the Junos template user of the class changes; re-paste tacctl config juniper Step 1
+    warning: the tier of its 1 user(s) falls from operator to readonly; this server's accounts are synced after the reset
+  commands
+    - configure    permit
+  privileges
+    - show version
+  junos
+    deny-configuration: 7/236 bytes -> none
+      - ^snmp  (5 bytes)
+
+[INFO] Dry run: nothing was written.

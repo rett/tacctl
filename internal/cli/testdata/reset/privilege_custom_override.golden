@@ -1,0 +1,11 @@
+
+Reset of the privileges of group 'helpdesk' to the shipped default
+------------------------------------------------------------------
+  privileges
+    - show clock
+    - exec all: ping
+    warning: devices keep the old 'privilege exec level 5 ...' lines until you re-paste tacctl config cisco and remove them (no privilege exec level 5 ...):
+      no privilege exec level 5 show clock
+      no privilege exec all level 5 ping
+
+[INFO] Dry run: nothing was written.

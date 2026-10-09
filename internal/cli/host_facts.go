@@ -17,18 +17,33 @@ import (
 )
 
 // resolveV4 is the first IPv4 address 'getent ahostsv4' gives for host
-// ("" when it gives none).
+// ("" when it gives none). The answer is kept for the rest of the
+// invocation: the address a check was made against is the one later steps of
+// the same command use, whatever the name resolves to by then.
 func (inv *invocation) resolveV4(host string) string {
-	res, err := inv.app.Runner.Run(inv.ctx, execx.Cmd{Name: "getent", Args: []string{"ahostsv4", host}, Stderr: io.Discard})
-	if err != nil || res.Code != 0 {
-		return ""
+	if addr, ok := inv.resolved[host]; ok {
+		return addr
 	}
-	if lines := strings.SplitN(string(res.Stdout), "\n", 2); len(lines) > 0 {
-		if f := strings.Fields(lines[0]); len(f) > 0 {
-			return f[0]
+	addr := ""
+	res, err := inv.app.Runner.Run(inv.ctx, execx.Cmd{Name: "getent", Args: []string{"ahostsv4", host}, Stderr: io.Discard})
+	if err == nil && res.Code == 0 {
+		if lines := strings.SplitN(string(res.Stdout), "\n", 2); len(lines) > 0 {
+			if f := strings.Fields(lines[0]); len(f) > 0 {
+				addr = f[0]
+			}
 		}
 	}
-	return ""
+	inv.noteResolved(host, addr)
+	return addr
+}
+
+// noteResolved records what host resolved to (the answer of a check that
+// ran getent itself), for resolveV4 to give again.
+func (inv *invocation) noteResolved(host, addr string) {
+	if inv.resolved == nil {
+		inv.resolved = map[string]string{}
+	}
+	inv.resolved[host] = addr
 }
 
 // hostFacts records the address of the enrolled host name and warns about

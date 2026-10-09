@@ -1,0 +1,17 @@
+! --- SNMP (read-only; managed by tacctl) ---
+! Credentials: inherited from the default (tacctl config snmp), not set for scope 'lab'.
+! Allowed clients: the tacctl server first, the scope's ranges, then everything else (0.0.0.0/0) refused.
+! If TACCTL-SNMP already exists on the device, its old lines stay: 'no ip access-list standard TACCTL-SNMP' first.
+ip access-list standard TACCTL-SNMP
+  permit host 10.0.0.42
+  permit 198.51.100.0 0.0.0.255
+  remark everything else (0.0.0.0/0) is refused
+  deny   any
+!
+! snmp-server user <user> TACCTL-GROUP v3 auth sha <passphrase> priv aes 128 <passphrase>   ! NOT SET: tacctl scope snmp lab v3-user <user>
+!
+snmp-server location Rack 4, DC1
+snmp-server contact NOC <noc@example.net>
+! Check from the tacctl server: tacctl scope snmp lab test <device-address>   (expects sysName 'core-sw1')
+
+Unfilled SNMP values: v3 user (tacctl scope snmp lab v3-user <user>)

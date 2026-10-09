@@ -63,6 +63,25 @@ print("" if v is None else v)' "${TACCTL_STATE_DIR}/store.yaml" "$1" "$2"
     assert_output --partial "ro"
 }
 
+@test "tier: readonly sees a group's Junos patterns through group show, not through group junos" {
+    "$TACCTL_BIN_SCRIPT" group junos operator deny-commands add '^request' > /dev/null
+    "$TACCTL_BIN_SCRIPT" group junos operator deny-configuration add '^snmp' > /dev/null
+    as_user ro yes -- group show operator
+    assert_success
+    assert_output --partial "Junos rules:       deny-commands 10/241 bytes, deny-configuration 7/236 bytes"
+    assert_line --regexp '^ +\^request$'
+    assert_line --regexp '^ +\^snmp$'
+    refute_output --partial "group junos"
+    as_user ro yes -- group junos operator list
+    assert_failure
+    assert_output --partial "not permitted for the readonly tier"
+    # The superuser is pointed to the verb.
+    as_user su yes -- group show operator
+    assert_success
+    assert_line --regexp '^ +\^snmp$'
+    assert_output --partial "tacctl group junos operator list"
+}
+
 @test "tier: readonly may not add users, read logs, or print device config" {
     as_user ro yes -- user add mallory superuser
     assert_failure
@@ -109,7 +128,7 @@ print("" if v is None else v)' "${TACCTL_STATE_DIR}/store.yaml" "$1" "$2"
     as_user su yes -- config snmp show
     assert_success
     run "$TACCTL_BIN_SCRIPT" config sudoers tiers show
-    refute_output --partial "snmp"
+    refute_output --partial "config snmp"
 }
 
 @test "tier: superuser has full access" {
@@ -260,11 +279,65 @@ print("" if v is None else v)' "${TACCTL_STATE_DIR}/store.yaml" "$1" "$2"
 
 @test "config sudoers tiers: lower tiers get no secret-bearing or mutating command" {
     run "$TACCTL_BIN_SCRIPT" config sudoers tiers show
-    refute_output --partial "config cisco"
-    refute_output --partial "scope show"
     refute_output --partial "backup diff"
     refute_output --partial "user passwd"
     refute_output --partial "log clear"
+    refute_output --partial "group edit"
+    # The device configurations and the reads of a scope's secret (the
+    # engineer reads those of its own scopes) are the engineer alias's only.
+    local text ro_op en
+    text=$(sed -n 's/^    //p' <<<"$output" | sed -e ':a' -e '/\\$/N; s/\\\n//; ta')
+    ro_op=$(grep -E '^Cmnd_Alias TACCTL_(RO|OP)' <<<"$text")
+    en=$(grep '^Cmnd_Alias TACCTL_EN' <<<"$text")
+    for r in "config cisco" "scope show" "scope secret" "host unenroll" "scope staging"; do
+        if grep -q "$r" <<<"$ro_op"; then echo "$r below the engineer tier"; return 1; fi
+    done
+    for r in 'tacctl config cisco \*' 'tacctl config juniper,' 'tacctl config wti \*' 'tacctl device add \*' 'tacctl device import - \*' \
+        'tacctl device hostkey \*' 'tacctl device config show \*' 'tacctl scope devices \*' \
+        'tacctl host list,' 'tacctl host show \*' 'tacctl scope staging list' \
+        'tacctl scope secret \*' 'tacctl scope show \*' 'tacctl scope snmp \*' 'tacctl device location \*'; do
+        grep -q -- "$r" <<<"$en" || { echo "engineer lacks $r"; return 1; }
+    done
+    # Sudoers sees these: stdin only for an import, a list but no removal of
+    # staging addresses. Linux host deployment is the superuser's: an engineer
+    # reads hosts (list, show) and nothing else of 'host'.
+    for r in 'device import \*' 'device import /' 'scope staging \*' 'scope staging remove' 'host enroll' 'host sync' 'host move' \
+        'host target' 'host provisioner' 'host unenroll' 'host default-method' \
+        'scope prefixes' 'device stale-days' 'config linux' 'user ' 'backend enable' 'config snmp' 'console '; do
+        if grep -q -- "$r" <<<"$en"; then echo "engineer alias has $r"; return 1; fi
+    done
+}
+
+@test "config sudoers tiers: tac-engineer gets tacctl's verbs only, no (ALL:ALL) ALL" {
+    run "$TACCTL_BIN_SCRIPT" config sudoers tiers show
+    assert_success
+    assert_output --partial "    %tac-engineer ALL=(root) NOPASSWD: TACCTL_RO, TACCTL_OP, TACCTL_EN"
+    run grep -c "tac-engineer" <<<"$output"
+    assert_output "1"
+}
+
+@test "tier: a group's tier setting decides before its priv-lvl band (engineer at priv-lvl 15)" {
+    "$TACCTL_BIN_SCRIPT" user add en superuser --hash "$HASH" --scopes lab > /dev/null
+    as_user en yes -- scope prefixes lab list
+    assert_success
+    printf 'tier:\n  superuser: engineer\n' > "${TACCTL_STATE_DIR}/tacctl.yaml"
+    as_user en yes -- scope prefixes lab list
+    assert_failure
+    assert_output --partial "'tacctl scope prefixes' is not permitted for the engineer tier."
+    as_user en yes -- user add mallory superuser
+    assert_failure
+    assert_output --partial "not permitted for the engineer tier"
+    as_user en yes -- backup list
+    refute_output --partial "not permitted"
+    as_user en yes -- device add lab-sw 192.168.1.1 --no-host-key
+    assert_success
+    as_user en yes -- device add prod-sw 10.99.0.1 --no-host-key
+    assert_failure
+    assert_output --partial "is at an address no scope answers: the engineer tier registers devices at the addresses of its own scopes only"
+    # The operator tier keeps its rows only.
+    as_user op yes -- device add lab-sw2 192.168.1.2 --no-host-key
+    assert_failure
+    assert_output --partial "not permitted for the operator tier"
 }
 
 @test "config sudoers tiers install/remove: writes and deletes the drop-in" {
@@ -396,4 +469,410 @@ _upgrade() {
     assert_output --partial "Managed scripts:"
     [[ "$(cat "$TACCTL_TIER_SUDOERS_FILE")" == "# an older release" ]]
     if stub_called '^install '; then stub_calls; return 1; fi
+}
+
+@test "tier: an engineer reads the secret of a scope of their own, logged, and changes no secret" {
+    "$TACCTL_BIN_SCRIPT" user add en superuser --hash "$HASH" --scopes lab > /dev/null
+    printf 'tier:\n  superuser: engineer\n' > "${TACCTL_STATE_DIR}/tacctl.yaml"
+    local secret
+    secret=$("$TACCTL_BIN_SCRIPT" scope secret lab show | sed 's/\x1b\[[0-9;]*m//g' | sed -n 's/^  Value:  //p')
+    [[ -n "$secret" ]]
+    as_user en yes -- scope secret lab show
+    assert_success
+    assert_output --partial "$secret"
+    stub_called "logger -t tacctl -p auth.info secret-read kind=scope name=lab by=en"
+    run grep -c "secret-read.*${secret}" "$CALLS_LOG"
+    assert_output "0"
+    as_user en yes -- scope show lab
+    assert_success
+    refute_output --partial "$secret"
+    # Another scope is unknown to them; nothing is changed.
+    as_user en yes -- scope secret prod show
+    assert_failure
+    assert_output --partial "Scope 'prod' does not exist."
+    as_user en yes -- scope show prod
+    assert_failure
+    as_user en yes -- scope secret lab generate
+    assert_failure
+    assert_output --partial "The engineer tier reads a scope's secret: tacctl scope secret lab show. Changing it is the superuser's. Nothing was changed."
+    as_user en yes -- scope secret lab set Abcdefgh12345678xyz
+    assert_failure
+    run "$TACCTL_BIN_SCRIPT" scope secret lab show
+    assert_output --partial "$secret"
+    # The operator tier has neither.
+    as_user op yes -- scope secret lab show
+    assert_failure
+    assert_output --partial "'tacctl scope secret' is not permitted for the operator tier."
+}
+
+@test "tier: scope breakglass is the superuser's; an engineer's walkthroughs show the accounts of their scope" {
+    "$TACCTL_BIN_SCRIPT" user add en superuser --hash "$HASH" --scopes lab > /dev/null
+    "$TACCTL_BIN_SCRIPT" scope breakglass lab add lab-admin > /dev/null
+    printf 'tier:\n  superuser: engineer\n' >> "${TACCTL_STATE_DIR}/tacctl.yaml"
+    local before
+    before=$(cat "${TACCTL_STATE_DIR}/tacctl.yaml")
+    local who args
+    for who in ro op en; do
+        for args in "scope breakglass lab" "scope breakglass lab list" "scope breakglass lab add x" "scope breakglass lab remove lab-admin"; do
+            as_user "$who" yes -- $args
+            assert_failure
+            assert_output --partial "'tacctl scope breakglass' is not permitted for the "
+        done
+    done
+    [[ "$(cat "${TACCTL_STATE_DIR}/tacctl.yaml")" == "$before" ]]
+    # The sudoers rules of no lower tier name it.
+    run "$TACCTL_BIN_SCRIPT" config sudoers tiers show
+    refute_output --partial "breakglass"
+    # The walkthroughs of their own scope carry the accounts (the lines are
+    # comments with a placeholder).
+    local v
+    for v in cisco juniper wti; do
+        as_user en yes -- config "$v" --scope lab
+        assert_success
+        assert_output --partial "lab-admin"
+        assert_output --regexp "<(HASH|TYPE9-HASH|PASSWORD)>"
+        assert_output --partial "Unfilled break-glass credentials"
+    done
+}
+
+@test "tier: an engineer lists and shows the hosts of their own scopes and deploys none" {
+    "$TACCTL_BIN_SCRIPT" user add en superuser --hash "$HASH" --scopes lab > /dev/null
+    printf 'tier:\n  superuser: engineer\n' > "${TACCTL_STATE_DIR}/tacctl.yaml"
+    printf 'web1|root@192.0.2.10||lab|192.0.2.1|\ndb1|root@192.0.2.11||prod|192.0.2.1|\nauthsrv|local||lab|127.0.0.1|\n' > "${TACCTL_STATE_DIR}/linux-hosts"
+    local before
+    before=$(cat "${TACCTL_STATE_DIR}/linux-hosts")
+    as_user en yes -- host list
+    assert_success
+    assert_output --partial "web1"
+    refute_output --partial "db1"
+    as_user en yes -- host show web1
+    assert_success
+    as_user en yes -- host show db1
+    assert_failure
+    assert_output --partial "No enrolled host named 'db1'"
+    # --check logs in to the host over ssh as the invoker: the superuser's.
+    as_user en yes -- host show web1 --check
+    assert_failure
+    assert_output --partial "'host show --check' logs in to the host over ssh, which is the superuser's"
+    # Enrolling, syncing and the rest of the deployment are the superuser's.
+    local args
+    for args in "enroll root@192.0.2.50 --name h1 --scope lab --server 192.0.2.1" "enroll --local --scope lab" "sync web1" "sync --all" \
+        "move web1 lab" "target web1 root@192.0.2.20" "provisioner web1 rotate deploy2 --key /tmp/k --yes" "unenroll web1 --force" \
+        "default-method" "default-method radius"; do
+        as_user en yes -- host $args
+        assert_failure
+        assert_output --partial "'tacctl host ${args%% *}' is not permitted for the engineer tier."
+    done
+    [[ "$(cat "${TACCTL_STATE_DIR}/linux-hosts")" == "$before" ]]
+    run "$TACCTL_BIN_SCRIPT" host default-method
+    assert_output --partial "Default method for new hosts: tacplus"
+    as_user op yes -- host list
+    assert_failure
+    assert_output --partial "not permitted for the operator tier"
+}
+
+@test "tier: the operator and read-only tiers do not get host provisioner" {
+    "$TACCTL_BIN_SCRIPT" user add op2 operator --hash "$HASH" --scopes lab > /dev/null
+    printf 'web1|admin@192.0.2.10||lab|192.0.2.1|\n' > "${TACCTL_STATE_DIR}/linux-hosts"
+    as_user op2 yes -- host provisioner web1 rotate deploy2 --password
+    assert_failure
+    assert_output --partial "'tacctl host provisioner' is not permitted for the operator tier."
+    as_user ro yes -- host provisioner web1 rotate deploy2 --password
+    assert_failure
+    assert_output --partial "'tacctl host provisioner' is not permitted for the readonly tier."
+}
+
+@test "tier: an engineer imports devices from standard input only" {
+    "$TACCTL_BIN_SCRIPT" user add en superuser --hash "$HASH" --scopes lab > /dev/null
+    printf 'tier:\n  superuser: engineer\n' > "${TACCTL_STATE_DIR}/tacctl.yaml"
+    printf 'lab-sw,192.168.1.1\n' > "${BATS_TEST_TMPDIR}/devices.csv"
+    as_user en yes -- device import "${BATS_TEST_TMPDIR}/devices.csv"
+    assert_failure
+    assert_output --partial "The engineer tier imports from standard input only: tacctl device import - [--check|--replace] < file"
+    as_user en yes -- device import --check -
+    assert_failure
+    assert_output --partial "imports from standard input only"
+    SUDO_USER=en run "$TACCTL_BIN_SCRIPT" device import - --check < "${BATS_TEST_TMPDIR}/devices.csv"
+    assert_success
+    assert_output --partial "Check passed"
+}
+
+@test "tier: an engineer prints the walkthrough of a device of their own scope; an operator may not" {
+    "$TACCTL_BIN_SCRIPT" user add en superuser --hash "$HASH" --scopes lab > /dev/null
+    printf 'tier:\n  superuser: engineer\n' > "${TACCTL_STATE_DIR}/tacctl.yaml"
+    "$TACCTL_BIN_SCRIPT" device add lab-sw 192.168.1.1 --vendor cisco --no-host-key > /dev/null
+    "$TACCTL_BIN_SCRIPT" device add prod-sw 10.99.0.1 --vendor cisco --no-host-key > /dev/null
+    as_user en yes -- device config show lab-sw
+    assert_success
+    assert_output --partial "Device lab-sw"
+    assert_output --partial "(scope: lab)"
+    as_user en yes -- device config show prod-sw
+    assert_failure
+    assert_output --partial "Device 'prod-sw' not found."
+    as_user op yes -- device config show lab-sw
+    assert_failure
+    assert_output --partial "'tacctl device config' is not permitted for the operator tier."
+}
+
+@test "tier: group reset is the superuser's alone: no lower tier, the engineer included, and no sudoers rule" {
+    # op is an engineer through its group's tier setting; ro stays readonly.
+    printf 'tier:\n  operator: engineer\n' > "${TACCTL_STATE_DIR}/tacctl.yaml"
+    "$TACCTL_BIN_SCRIPT" group edit operator priv-lvl 10 > /dev/null
+    cp "${TACCTL_STATE_DIR}/store.yaml" "${BATS_TEST_TMPDIR}/store.before"
+    cp "${TACCTL_STATE_DIR}/tacctl.yaml" "${BATS_TEST_TMPDIR}/yaml.before"
+    for pair in ro:readonly op:engineer; do
+        as_user "${pair%%:*}" yes -- group reset operator --yes
+        assert_failure
+        assert_output --partial "'tacctl group reset' is not permitted for the ${pair##*:} tier."
+        as_user "${pair%%:*}" yes -- group reset engineer --preset --dry-run
+        assert_failure
+        assert_output --partial "'tacctl group reset' is not permitted for the ${pair##*:} tier."
+    done
+    run cmp "${TACCTL_STATE_DIR}/store.yaml" "${BATS_TEST_TMPDIR}/store.before"
+    assert_success
+    run cmp "${TACCTL_STATE_DIR}/tacctl.yaml" "${BATS_TEST_TMPDIR}/yaml.before"
+    assert_success
+    # A plain operator (no tier setting), --dry-run included.
+    rm -f "${TACCTL_STATE_DIR}/tacctl.yaml"
+    for flag in --yes --dry-run; do
+        as_user op yes -- group reset operator "$flag"
+        assert_failure
+        assert_output --partial "'tacctl group reset' is not permitted for the operator tier."
+    done
+    run cmp "${TACCTL_STATE_DIR}/store.yaml" "${BATS_TEST_TMPDIR}/store.before"
+    assert_success
+    run "$TACCTL_BIN_SCRIPT" config sudoers tiers show
+    refute_output --partial "group reset"
+    refute_output --partial "group preset"
+    # The superuser sees the diff.
+    as_user su yes -- group reset operator --dry-run
+    assert_success
+    assert_output --partial "Cisco priv-lvl:  10 -> 7"
+}
+
+@test "tier: group privilege reset and group commands reset are the superuser's alone: no lower tier, the engineer included, and no sudoers rule" {
+    printf 'tier:\n  operator: engineer\n' > "${TACCTL_STATE_DIR}/tacctl.yaml"
+    "$TACCTL_BIN_SCRIPT" group commands add operator configure --action permit > /dev/null
+    "$TACCTL_BIN_SCRIPT" group privilege add operator 'show version' > /dev/null
+    cp "${TACCTL_STATE_DIR}/store.yaml" "${BATS_TEST_TMPDIR}/store.before"
+    cp "${TACCTL_STATE_DIR}/tacctl.yaml" "${BATS_TEST_TMPDIR}/yaml.before"
+    local fam flag pair
+    for fam in privilege commands; do
+        for pair in ro:readonly op:engineer; do
+            for flag in --yes --dry-run; do
+                as_user "${pair%%:*}" yes -- group "$fam" reset operator "$flag"
+                assert_failure
+                assert_output --partial "'tacctl group $fam' is not permitted for the ${pair##*:} tier."
+            done
+        done
+    done
+    run cmp "${TACCTL_STATE_DIR}/store.yaml" "${BATS_TEST_TMPDIR}/store.before"
+    assert_success
+    run cmp "${TACCTL_STATE_DIR}/tacctl.yaml" "${BATS_TEST_TMPDIR}/yaml.before"
+    assert_success
+    run "$TACCTL_BIN_SCRIPT" config sudoers tiers show
+    refute_output --partial "group privilege"
+    refute_output --partial "group commands"
+    # The superuser sees the diff.
+    as_user su yes -- group privilege reset operator --dry-run
+    assert_success
+    assert_output --partial "    - show version"
+    as_user su yes -- group commands reset operator --dry-run
+    assert_success
+    assert_output --partial "    - configure    permit"
+}
+
+@test "tier: a tacctl.yaml that cannot be read caps every tacctl user at the operator tier" {
+    "$TACCTL_BIN_SCRIPT" user add en superuser --hash "$HASH" --scopes lab > /dev/null
+    printf 'tier:\n  superuser: engineer\n  - [broken\n' > "${TACCTL_STATE_DIR}/tacctl.yaml"
+    as_user su yes -- host sync web1
+    assert_failure
+    assert_output --partial "is not permitted: ${TACCTL_STATE_DIR}/tacctl.yaml cannot be read ("
+    assert_output --partial "so no tacctl user is trusted above the operator tier until it is fixed (tacctl config validate)."
+    stub_called "logger -t tacctl -p auth.warning tier DENY user=su tier=operator reason=conf-problem cmd=host sync"
+    as_user su yes -- config validate
+    refute_output --partial "is not permitted"
+    # A tier setting that is not a tier is read-only, not the band.
+    printf 'tier:\n  superuser: root\n' > "${TACCTL_STATE_DIR}/tacctl.yaml"
+    as_user su yes -- user list
+    assert_success
+    as_user su yes -- log tail
+    assert_failure
+    assert_output --partial "not permitted for the readonly tier"
+}
+
+@test "tier: a tier setting of any other shape is read-only, never the band, and the syncs refuse" {
+    local yaml
+    for yaml in $'tier:\n  superuser: {x: engineer}\n' $'tier:\n  superuser: [engineer]\n' $'tier:\n  superuser:\n' \
+                $'tier:\n  superuser: \'\'\n' $'tier: engineer\n' $'tier: [superuser]\n' $'tier:\n  superuser: Engineer\n'; do
+        printf '%s' "$yaml" > "${TACCTL_STATE_DIR}/tacctl.yaml"
+        as_user su yes -- user list
+        assert_success
+        as_user su yes -- log tail
+        assert_failure
+        assert_output --partial "not permitted for the readonly tier"
+    done
+    printf 'tier:\n  superuser: [engineer]\n' > "${TACCTL_STATE_DIR}/tacctl.yaml"
+    run "$TACCTL_BIN_SCRIPT" host sync web1
+    assert_failure 1
+    assert_output --partial "cannot be read ('tier.superuser' must be one of readonly, operator, engineer, superuser); accounts and tiers are not synced until it is fixed."
+    printf 'tier: engineer\n' > "${TACCTL_STATE_DIR}/tacctl.yaml"
+    run "$TACCTL_BIN_SCRIPT" host sync --all
+    assert_failure 1
+    assert_output --partial "cannot be read ('tier' must be a mapping of group names to tiers); accounts and tiers are not synced until it is fixed."
+    # The verb that writes the setting repairs it.
+    run "$TACCTL_BIN_SCRIPT" group edit superuser tier superuser
+    assert_success
+    as_user su yes -- log tail
+    assert_success
+}
+
+@test "tier: a group at priv-lvl 15 has an explicit tier; one that lost it holds back only its own members" {
+    rm -f "${TACCTL_STATE_DIR}/tacctl.yaml"
+    as_user su yes -- config validate
+    assert_success
+    # A managed superuser adds the group with no tacctl.yaml: the tier is
+    # recorded, and nobody is locked out.
+    as_user su yes -- group add neteng 15 EN-CLASS
+    assert_success
+    assert_output --partial "tacctl tier: superuser (recorded, as every group at priv-lvl 15 has one; change it with: tacctl group edit neteng tier <tier>)."
+    grep -q 'neteng: superuser' "${TACCTL_STATE_DIR}/tacctl.yaml"
+    as_user su yes -- group edit neteng tier engineer
+    assert_success
+    "$TACCTL_BIN_SCRIPT" group edit neteng tier superuser > /dev/null
+    "$TACCTL_BIN_SCRIPT" user add en neteng --hash "$HASH" --scopes lab > /dev/null
+    printf 'web1|root@192.0.2.10||lab|192.0.2.1|\n' > "${TACCTL_STATE_DIR}/linux-hosts"
+    # The setting is lost (a restored older file): its members are held at the
+    # operator tier (the gate names the group and the verb); a sync is not
+    # refused, it gives them the operator tier and prints the repair.
+    printf 'backends:\n  enabled: [tacacs]\n' > "${TACCTL_STATE_DIR}/tacctl.yaml"
+    as_user en yes -- host sync web1
+    assert_failure
+    assert_output --partial "is not permitted: your group 'neteng' is at priv-lvl 15 or more and has no tier setting in ${TACCTL_STATE_DIR}/tacctl.yaml (it was lost)"
+    run "$TACCTL_BIN_SCRIPT" host sync web1
+    assert_output --partial "Group 'neteng' (priv-lvl 15) has no tier setting in ${TACCTL_STATE_DIR}/tacctl.yaml, so its members are synced as operators (no tac-superuser, no tac-engineer) until: tacctl group edit neteng tier <tier>"
+    refute_output --partial "accounts are not synced"
+    # The built-in superuser group is not affected, and repairs it.
+    as_user su yes -- group show neteng
+    assert_success
+    assert_output --partial "NOT SET"
+    as_user su yes -- group edit neteng tier engineer
+    assert_success
+    grep -q 'neteng: engineer' "${TACCTL_STATE_DIR}/tacctl.yaml"
+    as_user su yes -- host sync web1
+    refute_output --partial "is not permitted"
+    refute_output --partial "has no tier setting"
+}
+
+@test "tier: a built-in group raised to priv-lvl 15 with a lost tier setting is ambiguous, not a superuser group" {
+    "$TACCTL_BIN_SCRIPT" group edit operator tier engineer > /dev/null
+    "$TACCTL_BIN_SCRIPT" group edit operator priv-lvl 15 > /dev/null
+    grep -q 'operator: engineer' "${TACCTL_STATE_DIR}/tacctl.yaml"
+    as_user op yes -- _console-policy
+    assert_output --partial " tier=engineer "
+    # The file is restored without its tier section.
+    rm -f "${TACCTL_STATE_DIR}/tacctl.yaml"
+    as_user op yes -- _console-policy
+    assert_output --partial " tier=operator "
+    as_user op yes -- host sync web1
+    assert_failure
+    assert_output --partial "your group 'operator' is at priv-lvl 15 or more and has no tier setting"
+    # The built-in superuser group is never ambiguous.
+    as_user su yes -- _console-policy
+    assert_output --partial " tier=superuser "
+    as_user su yes -- group show operator
+    assert_success
+    assert_output --partial "NOT SET"
+}
+
+@test "tier: group edit priv-lvl keeps the tier setting of a custom group in step with the band" {
+    "$TACCTL_BIN_SCRIPT" group add mid 10 MID-CLASS > /dev/null
+    run "$TACCTL_BIN_SCRIPT" group edit mid priv-lvl 15
+    assert_success
+    assert_output --partial "tacctl tier: superuser (recorded"
+    grep -q 'mid: superuser' "${TACCTL_STATE_DIR}/tacctl.yaml"
+    run "$TACCTL_BIN_SCRIPT" group edit mid priv-lvl 9
+    assert_success
+    assert_output --partial "tacctl tier: automatic again"
+    ! grep -q 'mid:' "${TACCTL_STATE_DIR}/tacctl.yaml"
+}
+
+@test "tier: nobody enrolls this machine under an address of it, and an engineer enrolls nothing" {
+    "$TACCTL_BIN_SCRIPT" user add en superuser --hash "$HASH" --scopes lab > /dev/null
+    printf 'tier:\n  superuser: engineer\n' > "${TACCTL_STATE_DIR}/tacctl.yaml"
+    printf 'web1|root@192.0.2.10||lab|192.0.2.1|\n' > "${TACCTL_STATE_DIR}/linux-hosts"
+    stub_cmd getent 'if [[ "$1 $2" == "ahostsv4 0.0.0.0" || "$1 $2" == "ahostsv4 0" ]]; then echo "0.0.0.0 STREAM $2"; fi'
+    local before
+    before=$(cat "${TACCTL_STATE_DIR}/linux-hosts")
+    as_user en yes -- host enroll root@0.0.0.0 --name sneaky --scope lab --server 192.0.2.1
+    assert_failure
+    assert_output --partial "'tacctl host enroll' is not permitted for the engineer tier."
+    as_user en yes -- host target web1 root@0
+    assert_failure
+    assert_output --partial "'tacctl host target' is not permitted for the engineer tier."
+    [[ "$(cat "${TACCTL_STATE_DIR}/linux-hosts")" == "$before" ]]
+    # The superuser is told to use --local for this machine.
+    run "$TACCTL_BIN_SCRIPT" host enroll root@0.0.0.0 --name sneaky --scope lab --server 192.0.2.1
+    assert_failure
+    assert_output --partial "'root@0.0.0.0' is this server; enroll it with --local"
+    [[ "$(cat "${TACCTL_STATE_DIR}/linux-hosts")" == "$before" ]]
+}
+
+@test "tier: an engineer reads the SNMP settings of a scope of their own (logged on --reveal) and changes none" {
+    "$TACCTL_BIN_SCRIPT" user add en superuser --hash "$HASH" --scopes lab > /dev/null
+    printf 'tier:\n  superuser: engineer\n' > "${TACCTL_STATE_DIR}/tacctl.yaml"
+    printf 'lab-community-bats\n' | "$TACCTL_BIN_SCRIPT" scope snmp lab community --stdin > /dev/null
+    "$TACCTL_BIN_SCRIPT" scope snmp lab clients add 198.51.100.0/24 > /dev/null
+    as_user en yes -- scope snmp lab show
+    assert_success
+    refute_output --partial "lab-community-bats"
+    if stub_called "secret-read kind=snmp"; then echo "plain show was logged"; return 1; fi
+    as_user en yes -- scope snmp lab show --reveal
+    assert_success
+    assert_output --partial "lab-community-bats"
+    stub_called "logger -t tacctl -p auth.info secret-read kind=snmp name=lab by=en"
+    run grep -c "secret-read.*lab-community-bats" "$CALLS_LOG"
+    assert_output "0"
+    as_user en yes -- scope snmp lab clients list
+    assert_success
+    assert_output --partial "198.51.100.0/24"
+    # Another scope is unknown to them.
+    as_user en yes -- scope snmp prod show --reveal
+    assert_failure
+    assert_output --partial "Scope 'prod' does not exist."
+    # No setter, no clear, no test.
+    local args
+    for args in "community --stdin" "version v3" "clients add 192.0.2.0/24" "contact x" "port 162" "clear" "test 127.0.0.1"; do
+        # shellcheck disable=SC2086
+        as_user en yes -- scope snmp lab $args
+        assert_failure
+        assert_output --partial "The engineer tier reads a scope's SNMP settings"
+    done
+    run "$TACCTL_BIN_SCRIPT" scope snmp lab show --reveal
+    assert_output --partial "lab-community-bats"
+    # The default's credentials, and the operator, are shut out.
+    as_user en yes -- config snmp show --reveal
+    assert_failure
+    assert_output --partial "'tacctl config snmp' is not permitted for the engineer tier."
+    as_user op yes -- scope snmp lab show
+    assert_failure
+    assert_output --partial "'tacctl scope snmp' is not permitted for the operator tier."
+    # device location is the engineer's, in their own scopes.
+    "$TACCTL_BIN_SCRIPT" device add lab-sw1 192.168.1.1 --no-host-key > /dev/null
+    as_user en yes -- device location lab-sw1 "Rack 4"
+    assert_success
+    as_user op yes -- device location lab-sw1 "Rack 5"
+    assert_failure
+    assert_output --partial "not permitted for the operator tier."
+}
+
+@test "tier: an engineer's walkthrough shows the SNMP credentials of their own scope, logged" {
+    "$TACCTL_BIN_SCRIPT" user add en superuser --hash "$HASH" --scopes lab > /dev/null
+    printf 'tier:\n  superuser: engineer\n' > "${TACCTL_STATE_DIR}/tacctl.yaml"
+    printf 'lab-community-bats\n' | "$TACCTL_BIN_SCRIPT" scope snmp lab community --stdin > /dev/null
+    as_user en yes -- config cisco --scope lab
+    assert_success
+    assert_output --partial "snmp-server community lab-community-bats RO TACCTL-SNMP"
+    assert_output --partial "NETCONF (netconf-yang) is enabled by a superuser"
+    stub_called "logger -t tacctl -p auth.info secret-read kind=snmp name=lab by=en"
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/rett/tacctl/internal/backend"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/model"
+	"github.com/rett/tacctl/internal/policy"
 	"github.com/rett/tacctl/internal/pyyaml"
 	"github.com/rett/tacctl/internal/store"
 	"github.com/rett/tacctl/internal/ui"
@@ -279,6 +280,13 @@ func (inv *invocation) configValidate([]string) error {
 		errs++
 	}
 
+	// Command rules that cannot work as written (an empty or invalid match,
+	// a prefix form that matches the exact arguments only, a rule an
+	// earlier one makes unreachable): warnings, the file is still valid.
+	for _, l := range inv.commandRuleWarnings() {
+		inv.echo("  " + Y + "Command rules:" + NC + "        " + l)
+	}
+
 	// What the model says: is there anything to serve, are the secrets
 	// real. A store has had its references checked above; a legacy model
 	// gets the full set here.
@@ -329,6 +337,40 @@ func (inv *invocation) configValidate([]string) error {
 		}
 		if drift == 0 {
 			inv.echoE("  " + G + "Linux hosts:" + NC + "          each answered by its scope")
+		}
+	}
+
+	// Break-glass local users (D55): a scope without one is a lockout risk
+	// when the server is unreachable, and a name that is also a tacctl user
+	// of its scope is shadowed on the device. Warnings, never errors.
+	if merr == nil {
+		var bare []string
+		for _, s := range scopeNames {
+			users := policy.BreakGlassUsers(cfg, s)
+			if len(users) == 0 {
+				bare = append(bare, s)
+			}
+			for _, u := range users {
+				if containsFold(m.Members(s), u.Name) {
+					inv.echoE("  " + Y + "Break-glass:" + NC + "          '" + u.Name + "' in scope '" + s + "' is also a tacctl user of the scope; a local account of that name shadows the server's")
+				}
+			}
+		}
+		if len(bare) > 0 {
+			word := "scope"
+			if len(bare) > 1 {
+				word = "scopes"
+			}
+			inv.echoE("  " + Y + "Break-glass:" + NC + "          " + word + " " + quoteJoin(bare) + " without a break-glass local user — a lockout risk with the server unreachable (tacctl scope breakglass <scope> add <name>)")
+		}
+	}
+
+	// Tier, WTI-level and Junos settings of a group the store does not have
+	// (a group removed by an import or a restore): the next group of that
+	// name would take them over. A warning.
+	if merr == nil && storeMode {
+		for _, l := range inv.staleGroupLines(m) {
+			inv.echoE("  " + Y + "Group settings:" + NC + "       " + l)
 		}
 	}
 

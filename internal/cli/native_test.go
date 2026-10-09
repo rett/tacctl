@@ -35,6 +35,8 @@ type sandbox struct {
 	// tty, when set, is stdin in place of the string run is given.
 	snmp snmp.Getter
 	tty  *os.File
+	// resolve, when set, is the App's host-name lookup (--server).
+	resolve func(context.Context, string) ([]string, error)
 }
 
 func newSandbox(t *testing.T, withStore bool) *sandbox {
@@ -69,6 +71,7 @@ func newSandbox(t *testing.T, withStore bool) *sandbox {
 		"TACCTL_LOGIN_DEFS=" + filepath.Join(w, "login.defs"),
 		"TACCTL_SSHD_DROPIN=" + filepath.Join(w, "sshd_config.d", "tacctl-console.conf"),
 		"TACCTL_SHELLS_FILE=" + filepath.Join(w, "shells"),
+		"TACCTL_SSH_DIR=" + filepath.Join(w, "ssh"),
 		"TMPDIR=" + filepath.Join(w, "tmp"),
 	}
 	return sb
@@ -92,6 +95,7 @@ func (sb *sandbox) run(stdin string, args []string, extraEnv ...string) string {
 	a := app.New(args, paths.NewEnv(append(append([]string(nil), sb.env...), extraEnv...)), "/opt/x/dist/tacctl", 1000,
 		stdio, sb.runner)
 	a.SNMP = sb.snmp
+	a.Resolve = sb.resolve
 	// tacctl's fixed host locations (the installed command, /root, ...)
 	// stay in the sandbox too.
 	a.Paths = a.Paths.Reroot(sb.dir)

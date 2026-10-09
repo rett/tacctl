@@ -16,6 +16,9 @@ tacctl_tmpenv_init() {
     # The login console's server pieces: sshd's drop-in and /etc/shells.
     export TACCTL_SSHD_DROPIN="${BATS_TEST_TMPDIR}/sshd_config.d/tacctl-console.conf"
     export TACCTL_SHELLS_FILE="${BATS_TEST_TMPDIR}/shells"
+    # This server's own ssh host keys (ssh_host_*_key.pub), which an engineer's
+    # host enroll|target|sync compares with the keys of the host named.
+    export TACCTL_SSH_DIR="${BATS_TEST_TMPDIR}/ssh"
     # The RADIUS backend's paths: its raddb, log
     # directory, daemon binary and logrotate directory. The systemd directory
     # is TACCTL_SYSTEMD_DIR, shared with the TACACS+ backend.

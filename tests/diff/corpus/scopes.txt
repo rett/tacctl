@@ -13,6 +13,7 @@ scope list
 scope routing
 scope show
 scope show nosuch
+@known 0.2.3 item 78: scope show has a Break-glass line
 scope show lab
 scope lookup
 scope lookup 10.1.2.3
@@ -23,23 +24,32 @@ scope lookup 10.0.0.0/8
 scope add
 scope add prod
 scope add prod --prefixes
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope add prod --prefixes 10.0.0.0/8
 scope add prod --prefixes 10.0.0.0/8 --secret short
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope list ;; scope routing
+@known 0.2.3 item 78: scope show has a Break-glass line
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope add prod --prefixes 10.0.0.0/8 --secret generate ;; scope show prod
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef --default ;; scope default ;; scope list
 scope add '1bad' --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef
 scope add prod --prefixes 10.0.0.0/33 --secret prod-secret-1234567890abcdef
 scope add prod --prefixes notacidr --secret prod-secret-1234567890abcdef
+@known 0.2.3 item 78: scope show has a Break-glass line
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope add prod --prefixes 10.0.0.0/8,172.16.0.0/12 --secret prod-secret-1234567890abcdef ;; scope show prod
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope add prod --prefixes 172.16.0.0/12 --secret another-prod-1234567890abc
 scope add prod --prefixes 192.168.0.0/16 --secret prod-secret-1234567890abcdef ;; scope add dup --prefixes 192.168.0.0/16 --secret dup-secret-1234567890abcdef
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef --bogus
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef --protocols tacacs ;; scope protocols prod list
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef --protocols bogus
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef --protocols radius --vendor-attrs cisco,juniper ;; scope vendor-attrs prod
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef --vendor-attrs bogus
 
@@ -54,6 +64,7 @@ scope remove lab --force <<< y
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope remove prod <<< y ;; scope list
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope remove prod <<< n ;; scope list
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; user add alice superuser --hash {HASH} --scopes prod ;; scope remove prod <<< y
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; user add alice superuser --hash {HASH} --scopes prod ;; scope remove prod --force <<< y ;; user show alice
@@ -63,6 +74,7 @@ scope rename nosuch other
 scope rename lab 'bad name'
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope rename prod production ;; scope list
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope rename prod lab
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; user add alice superuser --hash {HASH} --scopes prod ;; scope rename prod production ;; user show alice
@@ -82,18 +94,24 @@ scope prefixes lab list
 scope prefixes lab bogus
 scope prefixes lab add
 scope prefixes lab add notacidr
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope prefixes lab add 10.1.0.0/16 ;; scope prefixes lab list
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope prefixes lab add 10.1.0.0/16,10.2.0.0/16 ;; scope prefixes lab list ;; scope routing
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope prefixes lab add 10.1.0.0/16 ;; scope prefixes lab add 10.1.0.0/16
 scope prefixes lab remove
 scope prefixes lab remove 10.1.0.0/16
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope prefixes lab add 10.1.0.0/16 ;; scope prefixes lab remove 10.1.0.0/16 ;; scope prefixes lab list
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope prefixes lab remove --all <<< y
 scope prefixes lab remove --all <<< n
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope prefixes lab remove --all --force <<< y
 scope prefixes lab clear
 scope prefixes lab set 10.0.0.0/8
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope prefixes lab add 10.0.0.0/8
 
 # secret
@@ -104,8 +122,13 @@ scope secret lab show
 scope secret lab bogus
 scope secret lab set
 scope secret lab set short
+@known 0.2.3 item 78: scope show has a Break-glass line
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope secret lab set new-secret-1234567890abcdef ;; scope secret lab show ;; scope show lab
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope secret lab generate ;; scope secret lab show
+@known 0.2.3 item 78: scope show has a Break-glass line
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope secret lab generate ;; scope show lab
 
 # protocols, vendor-attrs, devices
@@ -114,16 +137,20 @@ scope protocols lab
 scope protocols nosuch list
 scope protocols lab list
 scope protocols lab set
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope protocols lab set tacacs ;; scope protocols lab list
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope protocols lab set tacacs,radius ;; scope protocols lab list
 scope protocols lab set bogus
 scope protocols lab clear ;; scope protocols lab list
 scope vendor-attrs
 scope vendor-attrs lab
 scope vendor-attrs nosuch
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope vendor-attrs lab enable cisco ;; scope vendor-attrs lab
 scope vendor-attrs lab enable bogus
 scope vendor-attrs lab enable
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope vendor-attrs lab enable cisco,juniper ;; scope vendor-attrs lab disable cisco ;; scope vendor-attrs lab
 scope vendor-attrs lab bogus
 scope devices
@@ -179,6 +206,7 @@ scope auth-method lab bogus
 
 # per-scope management ACL
 scope mgmt-acl
+@known 0.2.3 item 74: the scope mgmt-acl usage names the WTI IP Tables
 scope mgmt-acl lab
 scope mgmt-acl nosuch list
 scope mgmt-acl lab list
@@ -207,6 +235,7 @@ scope --help
 scope help
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope list extra
+@known 0.2.3 item 78: scope show has a Break-glass line
 scope show lab extra
 scope add prod --prefixes 10.0.0.0/8 --secret
 scope add prod --prefixes 10.0.0.0/8 --protocols
@@ -214,17 +243,27 @@ scope add prod --prefixes 10.0.0.0/8 --vendor-attrs
 scope add prod --prefixes 10.0.0.0/8 --vendor-attrs ''
 scope add prod --prefixes '' --secret prod-secret-1234567890abcdef
 scope add prod --prefixes ' , ' --secret prod-secret-1234567890abcdef
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope add prod --prefixes "10.0.0.0/8,'bad" --secret prod-secret-1234567890abcdef
+@known 0.2.3 item 78: scope show has a Break-glass line
 scope add prod --prefixes 10.0.0.9/8,10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope show prod
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef extra
 scope add prod --prefixes 10.0.0.0/8 --secret 'äöüäöüäöüäöüäöü'
+@known 0.2.3 item 78: scope show has a Break-glass line
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope add prod --prefixes 10.0.0.0/8 --secret 'äöüäöüäöüäöüäöüß' ;; scope show prod ;; scope secret prod show
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef --protocols 'tacacs, radius' ;; scope protocols prod
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef --protocols , ;; scope protocols prod
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef --vendor-attrs ,
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef --vendor-attrs wti,cisco,wti ;; scope list ;; scope show prod
+@known 0.2.3 item 78: scope show has a Break-glass line
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope add prod --prefixes 10.0.0.0/8 --secret generate --protocols radius ;; scope show prod ;; scope auth-method prod
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope add prod --prefixes 10.0.0.0/8 --default --secret prod-secret-1234567890abcdef ;; scope remove prod <<< y
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope add prod --prefixes 192.168.5.0/24 --secret prod-secret-1234567890abcdef ;; scope routing ;; scope lookup 192.168.5.5 ;; scope lookup 192.168.6.6
@@ -235,13 +274,19 @@ scope lookup 192.168.0.0/8
 scope lookup 300.1.1.1
 scope remove lab foo --force <<< y
 scope remove lab --bogus <<< y
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope remove prod --force <<< n
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope remove prod <<< yes ;; scope list
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope remove prod <<< Y
 
 # per-scope tacctl.yaml keys follow rename and remove (SCOPE_CONF_KEYS)
+@known 0.2.3 item 78: scope show has a Break-glass line
 scope aaa-order lab local-first ;; scope exec-timeout lab 15 ;; scope mgmt-acl lab add 10.9.0.0/16 ;; scope rename lab lab2 ;; scope show lab2 ;; scope mgmt-acl lab2 list ;; scope default
+@known 0.2.3 item 78: scope show has a Break-glass line
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope tacacs-group prod TG ;; scope radius-group prod RG ;; scope auth-method prod radius ;; scope mgmt-acl prod cisco-name P-VTY ;; scope mgmt-acl prod juniper-name P-MGMT ;; scope rename prod production ;; scope show production
 @known 0.2.1 item 58: the scope on a line of its own
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope aaa-order prod local-first ;; scope remove prod <<< y ;; scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope aaa-order prod
@@ -264,17 +309,27 @@ scope prefixes lab remove --all 10.0.0.0/8
 scope prefixes lab remove --all --force --force
 scope prefixes lab add --all
 scope prefixes lab remove 192.168.0.0/16
+@known 0.2.3 item 78: scope show has a Break-glass line
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope prefixes lab add 10.1.0.0/16 ;; scope prefixes lab remove 192.168.0.0/16 ;; scope prefixes lab list ;; scope show lab
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope prefixes lab add 192.168.0.0/16,10.1.0.0/16
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope prefixes lab add ' 10.1.0.0/16 , 10.1.0.9/16 '
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope prefixes lab add "10.1.0.0/16,'x"
 scope prefixes lab remove 10.1.0.0/16,192.168.0.0/16
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; user add alice superuser --hash {HASH} --scopes prod ;; scope prefixes prod remove --all <<< y
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; user add alice superuser --hash {HASH} --scopes prod ;; scope prefixes prod remove --all --force <<< y ;; user show alice ;; scope list
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope devices lab set 192.168.7.7 cisco ;; scope add prod --prefixes 192.168.7.0/24 --secret prod-secret-1234567890abcdef
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope devices lab set 192.168.7.7 cisco ;; scope add prod --prefixes 192.168.8.0/24 --secret prod-secret-1234567890abcdef ;; scope prefixes prod add 192.168.7.0/24
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope devices lab set 192.168.7.7 cisco ;; scope prefixes lab add 192.168.7.0/24 ;; scope prefixes lab remove 192.168.0.0/16
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope devices lab set 192.168.7.7 cisco ;; scope prefixes lab add 10.0.0.0/8 ;; scope prefixes lab remove 192.168.0.0/16
 
 # secret: the checks on a value, posture lines
@@ -282,33 +337,46 @@ scope secret lab set abcdefghijklmnopqrstuvwxyz
 scope secret lab set ABCDEFGHIJKLMNOPQRSTUVWXYZ
 scope secret lab set 12345678901234567890
 scope secret lab set 'äöüäöüäöüäöüäöü'
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope secret lab set 'with\tescape-1234567890ab' ;; scope secret lab show
+@known 0.2.3 item 78: scope show has a Break-glass line
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope secret lab set REPLACE-ME-1234567890abcdef ;; scope show lab ;; scope secret lab show
 scope secret lab show extra
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope secret lab generate extra
 
 # protocols / vendor-attrs / devices: more paths
 scope protocols lab set "tacacs,'bad"
 scope protocols lab set ,
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope protocols lab set ' tacacs , radius '
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope protocols lab set tacacs ;; scope protocols lab set tacacs
 scope protocols lab clear
+@known 0.2.3 item 78: scope show has a Break-glass line
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope protocols lab set radius ;; scope auth-method lab ;; scope show lab
 scope auth-method lab tacacs ;; scope protocols lab set radius
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope protocols lab set tacacs ;; scope auth-method lab radius
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope protocols lab set radius ;; scope vendor-attrs lab enable cisco
 scope vendor-attrs lab disable cisco
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope vendor-attrs lab enable cisco ;; scope vendor-attrs lab enable cisco
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope vendor-attrs lab enable cisco,juniper,wti ;; scope vendor-attrs lab disable juniper,cisco ;; scope list
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope vendor-attrs lab enable cisco ;; scope devices lab set 192.168.7.7 cisco ;; scope vendor-attrs lab disable cisco ;; scope vendor-attrs lab ;; scope list
 scope vendor-attrs lab show
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope vendor-attrs lab enable 'cisco juniper'
 scope devices lab set notanip bogus
 scope devices lab unset 192.168.7.7 cisco
 scope devices lab set 192.168.7.7
 scope devices lab set 8.8.8.8 cisco
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48)
 scope devices lab set 192.168.7.7 cisco ;; scope devices lab set 192.168.7.7 cisco
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope devices lab set 192.168.7.7 cisco ;; scope devices lab set 192.168.7.7/32 juniper ;; scope devices lab ;; scope show lab
@@ -337,9 +405,12 @@ scope mgmt-acl lab remove 10.1.0.0/16
 scope mgmt-acl lab add 10.1.0.0/16 ;; scope mgmt-acl lab remove 10.2.0.0/16
 scope mgmt-acl lab add 10.1.0.0/16 ;; scope mgmt-acl lab add 10.1.0.9/16,10.3.0.0/16
 scope mgmt-acl lab clear
+@known 0.2.3 item 74: the scope mgmt-acl usage names the WTI IP Tables
 config mgmt-acl add 10.0.0.0/8 ;; scope mgmt-acl lab list ;; scope mgmt-acl lab
+@known 0.2.3 item 78: scope show has a Break-glass line
 config mgmt-acl cisco-name GLOBAL-ACL ;; scope mgmt-acl lab cisco-name ;; scope show lab
 scope mgmt-acl lab cisco-name 'has space'
+@known 0.2.3 item 74: the scope mgmt-acl usage names the WTI IP Tables
 scope mgmt-acl lab add 10.1.0.0/16 ;; scope mgmt-acl lab clear <<< yes ;; scope mgmt-acl lab
 scope mgmt-acl lab bogus extra
 
@@ -359,6 +430,7 @@ scope exec-timeout lab 1.5
 @fixture legacy.fresh-install.yaml
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 scope list
+@known 0.2.3 item 78: scope show has a Break-glass line
 scope show lab
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef
 scope secret lab set new-secret-1234567890abcdef

@@ -11,6 +11,9 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/rett/tacctl/internal/console"
@@ -61,6 +64,51 @@ func (inv *invocation) consoleProvision(pol *console.Policy) error {
 	return nil
 }
 
+// engineerSSHDProvision puts sshd's drop-in for the engineer tier in place
+// (console.EngineerDropIn, its own file): at every sync of this server and
+// by 'console install', whatever the state of the console, because an
+// engineer without the console has /usr/sbin/nologin and still could tunnel
+// through sshd. A change is reported, an unchanged file is not (a sync says
+// enough); an error is printed and returned for the caller to warn about.
+func (inv *invocation) engineerSSHDProvision(pol *console.Policy) error {
+	a := inv.app
+	p := a.Paths
+	d := console.DropInFile{Runner: a.Runner, Path: p.SSHDEngineerDropIn}
+	ch, err := d.Install(inv.ctx, console.EngineerDropIn(pol.AgentForwarding()))
+	if ch != console.Unchanged {
+		a.Out.InfoE("  " + ch.String() + ": sshd drop-in " + p.SSHDEngineerDropIn + " (engineer tier)")
+	}
+	switch {
+	case errors.Is(err, console.ErrSSHD):
+		a.Out.ErrorE("sshd refused the engineer tier's drop-in; " + p.SSHDEngineerDropIn + " was put back as it was:")
+		for _, l := range msgs(err) {
+			a.Out.ErrorE("  " + strings.TrimSpace(l))
+		}
+	case err != nil:
+		inv.consoleErr(err)
+	}
+	if err == nil && ch != console.Unchanged {
+		a.Logger(inv.ctx, "auth.info", "console provision engineer-dropin="+strings.ToLower(ch.String())+" by="+inv.sudoUser())
+	}
+	if err == nil {
+		// The file lived under a name that sorts after the console's (S1):
+		// now that the new one is in place the old one goes, so the
+		// console's forwarding tiers cannot beat it.
+		od := console.DropInFile{Runner: a.Runner, Path: p.SSHDEngineerDropInOld}
+		switch och, oerr := od.Remove(inv.ctx); {
+		case oerr != nil && och == console.Unchanged:
+			inv.consoleErr(oerr)
+			err = oerr
+		case och == console.Removed:
+			a.Out.InfoE("  Removed: sshd drop-in " + p.SSHDEngineerDropInOld + " (replaced by " + p.SSHDEngineerDropIn + ")")
+			if oerr != nil {
+				inv.consoleErr(oerr)
+			}
+		}
+	}
+	return err
+}
+
 // consoleErr prints an error's lines as errors.
 func (inv *invocation) consoleErr(err error) {
 	for _, l := range msgs(err) {
@@ -106,6 +154,15 @@ func (inv *invocation) consoleDeprovision() error {
 		a.Out.ErrorE("Give them " + console.SystemLoginShell + " first: tacctl console tiers <tier> disable (or console user <name> disable), then tacctl host sync " +
 			local + "; or tacctl host unenroll " + local)
 		return exit(1)
+	}
+	// The engineer tier's drop-in stays (an engineer without the console
+	// still must not forward), but under its current name.
+	if _, serr := os.Stat(p.SSHDEngineerDropInOld); serr == nil {
+		if pol, perr := inv.consolePolicy(); perr == nil {
+			if inv.engineerSSHDProvision(pol) != nil {
+				return exit(1)
+			}
+		}
 	}
 	d := console.DropInFile{Runner: a.Runner, Path: p.SSHDDropIn}
 	ch, err := d.Remove(inv.ctx)
@@ -253,6 +310,9 @@ func (inv *invocation) consoleInstall(args []string) error {
 	if err := inv.consoleProvision(pol); err != nil {
 		return err
 	}
+	if err := inv.engineerSSHDProvision(pol); err != nil {
+		return exit(1)
+	}
 	return inv.consoleCheckReport(pol)
 }
 
@@ -274,7 +334,282 @@ func (inv *invocation) consoleCheck(args []string) error {
 	if err != nil {
 		return err
 	}
-	return inv.consoleCheckReport(pol)
+	err = inv.consoleCheckReport(pol)
+	if eng := inv.engineerSudoReport(); err == nil {
+		err = eng
+	}
+	if eng := inv.engineerLoginReport(pol); err == nil {
+		err = eng
+	}
+	return err
+}
+
+// groupMembers are the members of a local group here ('getent group'); nil
+// when the group is missing or empty.
+func (inv *invocation) groupMembers(group string) []string {
+	res, err := inv.app.Runner.Run(inv.ctx, execx.Cmd{Name: "getent", Args: []string{"group", group}})
+	if err != nil || res.Code != 0 {
+		return nil
+	}
+	var members []string
+	if f := strings.Split(strings.TrimSpace(string(res.Stdout)), ":"); len(f) >= 4 {
+		for _, m := range strings.Split(f[3], ",") {
+			if m != "" {
+				members = append(members, m)
+			}
+		}
+	}
+	return members
+}
+
+// loginShell is the login shell of an account here ('getent passwd').
+func (inv *invocation) loginShell(user string) (string, bool) {
+	res, err := inv.app.Runner.Run(inv.ctx, execx.Cmd{Name: "getent", Args: []string{"passwd", user}})
+	if err != nil || res.Code != 0 {
+		return "", false
+	}
+	f := strings.Split(strings.TrimSpace(string(res.Stdout)), ":")
+	if len(f) != 7 {
+		return "", false
+	}
+	return f[6], true
+}
+
+// accountUID is the UID of an account here ('getent passwd'; false when the
+// account is not there).
+func (inv *invocation) accountUID(user string) (int, bool) {
+	res, err := inv.app.Runner.Run(inv.ctx, execx.Cmd{Name: "getent", Args: []string{"passwd", user}})
+	if err != nil || res.Code != 0 {
+		return 0, false
+	}
+	line, _, _ := strings.Cut(strings.TrimSpace(string(res.Stdout)), "\n")
+	f := strings.Split(line, ":")
+	if len(f) < 3 {
+		return 0, false
+	}
+	uid, err := strconv.Atoi(f[2])
+	return uid, err == nil
+}
+
+// engineerLoginReport is the check of 'console check' that an engineer
+// here has the console or no login (D18): every member of tac-engineer has
+// the console or a nologin shell, sshd closes forwarding for the first of
+// them, and no tacctl user keeps tac-superuser once its tier is lower than
+// superuser (S2: a group's tier or priv-lvl lowered, a user moved or
+// disabled, not yet synced). Problems are the red warning and exit 1.
+func (inv *invocation) engineerLoginReport(pol *console.Policy) error {
+	inv.echo("Engineer login check:")
+	members := inv.groupMembers(tier.EngineerGroup)
+	server := "<name of this server>"
+	var problems []string
+	// The engineer tier's own sshd drop-in, whatever the console's state.
+	switch data, err := os.ReadFile(inv.app.Paths.SSHDEngineerDropIn); {
+	case err != nil:
+		inv.echo("  sshd drop-in " + inv.app.Paths.SSHDEngineerDropIn + ": missing")
+		problems = append(problems, "sshd's drop-in for the engineer tier "+inv.app.Paths.SSHDEngineerDropIn+" is missing (tacctl host sync of this server, or tacctl console install, writes it)")
+	case string(data) != console.EngineerDropIn(pol.AgentForwarding()):
+		inv.echo("  sshd drop-in " + inv.app.Paths.SSHDEngineerDropIn + ": present, differs from this release's")
+		problems = append(problems, "sshd's drop-in for the engineer tier "+inv.app.Paths.SSHDEngineerDropIn+" differs from this release's")
+	default:
+		inv.echo("  sshd drop-in " + inv.app.Paths.SSHDEngineerDropIn + ": present, current")
+	}
+	// The engineer's file must be read before the console's (first value
+	// wins), and the file it replaced must be gone.
+	p := inv.app.Paths
+	if filepath.Dir(p.SSHDEngineerDropIn) == filepath.Dir(p.SSHDDropIn) && filepath.Base(p.SSHDEngineerDropIn) >= filepath.Base(p.SSHDDropIn) {
+		inv.echo("  sshd reads " + filepath.Base(p.SSHDDropIn) + " before " + filepath.Base(p.SSHDEngineerDropIn) + ": the console's forwarding tiers win over the engineer lockdown")
+		problems = append(problems, "sshd's drop-in for the engineer tier ("+filepath.Base(p.SSHDEngineerDropIn)+") sorts after the console's ("+filepath.Base(p.SSHDDropIn)+"); sshd takes the first value, so a forwarding tier of the console beats the engineer lockdown")
+	}
+	if _, err := os.Stat(p.SSHDEngineerDropInOld); err == nil {
+		inv.echo("  sshd drop-in " + p.SSHDEngineerDropInOld + ": present (the old name)")
+		problems = append(problems, "the engineer tier's old sshd drop-in "+p.SSHDEngineerDropInOld+" is still there (tacctl console install, or host sync of this server, replaces it with "+p.SSHDEngineerDropIn+")")
+	}
+	engineers := append([]string(nil), members...)
+	if e, ok, _ := inv.localHost(); ok {
+		server = e.Name
+		if m, err := inv.model(); err == nil {
+			for _, r := range m.LinuxUsers(e.Scope) {
+				name, lvl, _ := strings.Cut(r, "|")
+				if inv.userTier(name, lvl) == tier.Engineer && !slices.Contains(engineers, name) {
+					engineers = append(engineers, name)
+				}
+			}
+		}
+	}
+	// Every member of tac-superuser that is a tacctl account whose tier is
+	// not superuser (a group's tier or priv-lvl lowered, a user moved,
+	// disabled or removed since the last sync) still holds root here: a
+	// problem. A member that is no tacctl account (a local administrator
+	// added by hand; its UID is outside tacctl's range) is only mentioned:
+	// it is not tacctl's to flag, though a sync of this server takes it out
+	// of tacctl's groups. root is neither.
+	if m, err := inv.model(); err == nil {
+		rng, _ := inv.configuredUIDRange()
+		for _, u := range inv.groupMembers(tier.SuperuserGroup) {
+			if u == "root" {
+				continue
+			}
+			if m.User(u) == nil {
+				if uid, ok := inv.accountUID(u); !ok || !rng.Has(uid) {
+					inv.echo("  " + u + ": in " + tier.SuperuserGroup + ", not a tacctl account (a local administrator?); tacctl host sync " + server + " takes it out of tacctl's groups")
+					continue
+				}
+				inv.echo("  " + u + ": still in " + tier.SuperuserGroup)
+				problems = append(problems, u+" is no tacctl user (removed?) but is still in "+tier.SuperuserGroup+" here (stale membership; run: tacctl host sync "+server+")")
+				continue
+			}
+			if t := inv.userTier(u, m.UserPrivLvl(u)); t != tier.Superuser {
+				inv.echo("  " + u + ": still in " + tier.SuperuserGroup)
+				who := u + " is an engineer"
+				if t != tier.Engineer {
+					who = u + " is " + string(t) + ", not a superuser,"
+				}
+				problems = append(problems, who+" but is still in "+tier.SuperuserGroup+" here (stale membership; run: tacctl host sync "+server+")")
+			}
+		}
+	}
+	probe := ""
+	for _, m := range members {
+		shell, ok := inv.loginShell(m)
+		switch {
+		case !ok:
+			inv.echo("  login shell of " + m + ": could not be checked")
+			problems = append(problems, "the login shell of "+m+" could not be read")
+		case shell == inv.app.Paths.ConsoleCommand || filepath.Base(shell) == "nologin":
+			inv.echo("  login shell of " + m + ": " + shell)
+			if probe == "" {
+				probe = m
+			}
+		default:
+			inv.echo("  login shell of " + m + ": " + shell)
+			problems = append(problems, m+" ("+tier.EngineerGroup+") has the login shell "+shell+", but an engineer has the console or no login: tacctl host sync "+server)
+		}
+	}
+	if probe != "" {
+		if st, err := console.SSHDCheck(inv.ctx, inv.app.Runner, probe); err != nil {
+			inv.echo("  sshd for " + probe + ": could not be checked: " + strings.Join(msgs(err), " "))
+			problems = append(problems, "sshd could not be asked what it applies to "+probe)
+		} else {
+			inv.echo("  sshd for " + probe + ": allowtcpforwarding " + st.TCPForwarding + ", allowagentforwarding " + st.AgentForwarding + sshdGatewayPorts(st))
+			problems = append(problems, st.ForwardingProblems(pol.AgentForwarding(), false, false)...)
+		}
+	}
+	if len(engineers) == 0 {
+		inv.echo("  " + tier.EngineerGroup + ": no engineer here")
+	}
+	if len(problems) == 0 {
+		inv.app.Out.InfoE("Engineers here have the console or no login, and no one below the superuser tier keeps " + tier.SuperuserGroup + ".")
+		return nil
+	}
+	inv.echoE(ui.Red + "WARNING: an engineer can do more on this server than the console allows: " + strings.Join(problems, "; ") + "." + ui.NC)
+	return exit(1)
+}
+
+// engineerSudoReport is the check of 'console check' that no member of
+// tac-engineer can run anything but tacctl through sudo on this server
+// (D18: engineers never get root here; the client script writes no
+// tac-engineer line on the tacctl server, and the tiers sudoers give them
+// tacctl's verbs only). sudo itself is asked ('sudo -n -l -U <member>', as
+// root), so a rule anywhere in sudoers counts. Problems are the red
+// warning and exit 1.
+func (inv *invocation) engineerSudoReport() error {
+	r := inv.app.Runner
+	inv.echo("Engineer sudo check:")
+	res, err := r.Run(inv.ctx, execx.Cmd{Name: "getent", Args: []string{"group", tier.EngineerGroup}})
+	var members []string
+	if err == nil && res.Code == 0 {
+		if f := strings.Split(strings.TrimSpace(string(res.Stdout)), ":"); len(f) >= 4 {
+			for _, m := range strings.Split(f[3], ",") {
+				if m != "" {
+					members = append(members, m)
+				}
+			}
+		}
+	}
+	if len(members) == 0 {
+		inv.echo("  " + tier.EngineerGroup + ": no member here")
+		return nil
+	}
+	var problems []string
+	for _, m := range members {
+		// sudo words and wraps its answer by locale and terminal width: ask
+		// for the C locale and a line no command list wraps in.
+		res, err := r.Run(inv.ctx, execx.Cmd{Name: "sudo", Args: []string{"-n", "-l", "-U", m},
+			Env: append(inv.app.Env.Environ(), "LC_ALL=C", "LANGUAGE=C", "COLUMNS=4096")})
+		out := string(res.Stdout)
+		switch other, ok := sudoBeyondTacctl(out); {
+		case err != nil || !ok:
+			inv.echo("  sudo for " + m + ": could not be checked")
+			problems = append(problems, "sudo could not be asked what "+m+" may run")
+		case len(other) > 0:
+			inv.echo("  sudo for " + m + ": " + strings.Join(other, ", "))
+			problems = append(problems, m+" ("+tier.EngineerGroup+") can run "+strings.Join(other, ", ")+" through sudo")
+		default:
+			inv.echo("  sudo for " + m + ": tacctl only")
+		}
+	}
+	if len(problems) == 0 {
+		inv.app.Out.InfoE("No member of " + tier.EngineerGroup + " can run anything but tacctl through sudo here.")
+		return nil
+	}
+	inv.echoE(ui.Red + "WARNING: an engineer can run more than tacctl as root on this server: " + strings.Join(problems, "; ") + "." + ui.NC)
+	inv.echoE(ui.Red + "Remove the sudoers rule that grants it (sudo -l -U <user> lists the rules), or move the user out of the engineer tier." + ui.NC)
+	return exit(1)
+}
+
+// reSudoTags are the tags before a command list in 'sudo -l' output
+// (NOPASSWD:, SETENV:, ...).
+var reSudoTags = regexp.MustCompile(`^(?:[A-Z_]+:\s*)+`)
+
+// sudoBeyondTacctl reads 'sudo -l -U <user>' output: the commands it lists
+// that are not tacctl (tier.Binary, with any arguments), and whether the
+// output said what the user may run at all ("is not allowed to run sudo":
+// nothing; "may run the following commands": the list).
+func sudoBeyondTacctl(out string) (other []string, ok bool) {
+	if strings.Contains(out, "is not allowed to run sudo") {
+		return nil, true
+	}
+	_, list, found := strings.Cut(out, "may run the following commands")
+	if !found {
+		return nil, false
+	}
+	_, list, _ = strings.Cut(list, "\n")
+	// sudo wraps a long rule onto lines indented deeper than the rule's
+	// own: they are its continuation.
+	var rules []string
+	base := -1
+	for _, raw := range strings.Split(list, "\n") {
+		l := strings.TrimSpace(raw)
+		if l == "" {
+			continue
+		}
+		indent := len(raw) - len(strings.TrimLeft(raw, " \t"))
+		if base < 0 {
+			base = indent
+		}
+		if indent > base && len(rules) > 0 {
+			rules[len(rules)-1] += " " + l
+			continue
+		}
+		rules = append(rules, l)
+	}
+	for _, l := range rules {
+		if strings.HasPrefix(l, "(") {
+			if i := strings.IndexByte(l, ')'); i >= 0 {
+				l = strings.TrimSpace(l[i+1:])
+			}
+		}
+		for _, c := range strings.Split(l, ",") {
+			c = strings.TrimSpace(reSudoTags.ReplaceAllString(strings.TrimSpace(c), ""))
+			if c == "" {
+				continue
+			}
+			if w := strings.Fields(c); w[0] != tier.Binary {
+				other = append(other, c)
+			}
+		}
+	}
+	return other, true
 }
 
 // consoleCheckReport prints the check for the first account that has the
@@ -320,21 +655,35 @@ func (inv *invocation) consoleForLocal(req *hosts.ScriptRequest) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	anyConsole := false
+	// The engineer tier's sshd lockdown does not wait for the console: it is
+	// written at every sync of this server (a failure is a warning; the
+	// accounts are synced anyway and 'console check' says what sshd allows).
+	if inv.engineerSSHDProvision(pol) != nil {
+		a.Out.WarnE("The accounts are synced anyway; until sshd's drop-in for the engineer tier is in place an engineer can still forward ports. Fix it, then: tacctl console install")
+	}
+	// Without the console an account gets console.ShellWithout: bash, but
+	// nologin for an engineer (the console or no login) and for a tier none.
+	withoutConsole := func(_, t string) string { return console.ShellWithout(tier.Tier(t)) }
+	anyConsole, engineers := false, false
 	for _, r := range req.Rows {
 		name, lvl, _ := strings.Cut(r, "|")
-		if pol.Decide(name, tier.ForPrivLvl(lvl)).Console {
+		t := inv.userTier(name, lvl)
+		engineers = engineers || t == tier.Engineer
+		if pol.Decide(name, t).Console {
 			anyConsole = true
 		}
 	}
 	if !anyConsole {
-		req.ConsoleShell = func(string, string) string { return console.SystemLoginShell }
+		req.ConsoleShell = withoutConsole
 		return false, nil
 	}
 	if target, err := os.Readlink(a.Paths.ConsoleCommand); err != nil || target == "" {
-		a.Out.WarnE(a.Paths.ConsoleCommand + " is missing, so no account gets the login console now (all keep or get " +
-			console.SystemLoginShell + "). Run 'tacctl upgrade', then sync this host again.")
-		req.ConsoleShell = func(string, string) string { return console.SystemLoginShell }
+		msg := a.Paths.ConsoleCommand + " is missing, so no account gets the login console now (all keep or get " + console.SystemLoginShell
+		if engineers {
+			msg += ", except engineers, who have the console or no login and get " + console.NoLoginShell
+		}
+		a.Out.WarnE(msg + "). Run 'tacctl upgrade', then sync this host again.")
+		req.ConsoleShell = withoutConsole
 		return false, nil
 	}
 	req.ConsoleShell = func(name, t string) string { return pol.Shell(name, tier.Tier(t)) }

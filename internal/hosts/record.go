@@ -6,7 +6,8 @@ package hosts
 // protocol it pushed and the accounts the script reported changing; and
 // the host's facts read over that run's session. The record is written
 // whole (a temporary file renamed over it), removed with the host and
-// renamed with it. Nothing reads it to decide anything.
+// renamed with it. Nothing reads it to decide anything, but for the
+// provisioner entry (Record.Provisioner).
 
 import (
 	"encoding/json"
@@ -23,6 +24,25 @@ type Record struct {
 	// Facts are the host's facts as the last successful run read them
 	// (nil before 0.2.2, or when nothing could be read).
 	Facts *FactsRecord `json:"facts,omitempty"`
+	// Provisioner is the last 'host provisioner rotate' (nil when none):
+	// the one record 'rotate --remove-old' reads back, to find the login a
+	// rotation replaced when it was interrupted or run without --remove-old.
+	Provisioner *ProvisionerRecord `json:"provisioner,omitempty"`
+}
+
+// ProvisionerRecord is one 'host provisioner rotate' that switched a
+// host's provisioning account.
+type ProvisionerRecord struct {
+	// At is when the registry switched (RFC 3339), By who ran it.
+	At string `json:"at"`
+	By string `json:"by"`
+	// Old and New are the logins ('' for an old login that was the
+	// invoking user's own name); Auth is 'key' or 'password'.
+	Old  string `json:"old"`
+	New  string `json:"new"`
+	Auth string `json:"auth"`
+	// OldRemoved: the old account was removed afterwards.
+	OldRemoved bool `json:"old_removed"`
 }
 
 // SyncRecord is one run of 'host enroll' or 'host sync' on a host.
@@ -118,8 +138,15 @@ func (rs Records) Save(name string, r Record) error {
 	return os.Rename(tmp.Name(), rs.path(name))
 }
 
-// Update loads the record of name, lets fn change it and saves it.
+// Update loads the record of name, lets fn change it and saves it, under
+// the records' lock, so that two commands changing the same record (a sync
+// and a rotation) do not lose each other's change.
 func (rs Records) Update(name string, fn func(*Record)) error {
+	unlock, err := rs.lockRecords()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	r, err := rs.Load(name)
 	if err != nil {
 		// An unreadable record is replaced: it is only ever shown.

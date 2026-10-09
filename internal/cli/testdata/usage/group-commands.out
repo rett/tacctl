@@ -14,7 +14,9 @@ Usage:
   tacctl group commands remove <group> <name> [--all]             Drop a rule
                                             [--match <regex>]... [--action permit|deny]
       --all                                                       (remove) Drop every rule named <name>
-  tacctl group commands clear <group>                             Drop overrides — revert to shipped defaults (confirms)
+  tacctl group commands reset <group> [--dry-run] [--yes]         Revert the rules to the shipped defaults (diff, confirms; superuser only)
+      --dry-run                                                   (reset) Show the difference; write nothing
+      --yes                                                       (reset) Do not ask
   tacctl group commands seed [<group>] [--force]                  Re-apply legacy seed set (recovery tool)
       --force                                                     (seed) Overwrite a group that already has rules
 
@@ -23,10 +25,17 @@ regexes are tested against the command's ARGUMENTS only (the
 cmd-arg values after the word: 'running-config' for 'show
 running-config'), never the full line -- so '^show .*$' can
 never match and is rejected. Omit --match to cover any args.
-A --match is anchored at both ends and tested against the
-arguments joined by spaces, without <cr>: '^crypto' matches
-'show crypto' only; write '^crypto( .*)?' to cover 'show
-crypto pki certificates' too.
+A --match must match the whole arguments string, joined by
+spaces, without <cr> (it is rendered as ^(?:regex)$):
+'^crypto' matches 'show crypto' only; write '^crypto( .*)?$'
+to cover 'show crypto pki certificates' too. An empty or
+invalid regex is refused; 'add' warns about a prefix form
+without '( .*)?' and about a rule no command can reach.
+
+'reset' puts the group's rules back to the shipped defaults, as
+'group reset <group> --only commands' does; it has no --preset (the
+preset's rules come with 'group reset <group> --preset'). A group
+with no shipped rules has none afterwards.
 
 Rules are tried in order ('#' in 'list'): a rule without
 --match decides, one whose regexes all miss falls through.

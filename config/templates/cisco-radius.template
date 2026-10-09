@@ -29,6 +29,10 @@ aaa accounting exec default start-stop group ${RADIUS_GROUP}
 ${PRIVILEGE_COMMANDS}
 ${VTY_ACL_BLOCK}
 !
+${SNMP_BLOCK}
+!
+${NETCONF_BLOCK}
+!
 line con 0
   login authentication default
   exec-timeout ${EXEC_TIMEOUT} 0
@@ -38,3 +42,5 @@ line vty 0 15
   transport input ssh
 ${VTY_ACCESS_CLASS}
   exec-timeout ${EXEC_TIMEOUT} 0
+!
+${BREAKGLASS_BLOCK}

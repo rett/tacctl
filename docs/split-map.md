@@ -674,7 +674,7 @@ So on the split tree every test passes except the five whose golden files hard-c
 1. **`cmd_upgrade`, `cmd_install`, `cmd_uninstall` and `cmd_config_branch` have no test coverage.** The edits in §7.3 and §7.4 are small and were reasoned through, and the `git diff --quiet` semantics were checked in a scratch repo, but the upgrade path itself was not executed. The first real run will be `tacctl upgrade` on the dev server.
 2. **The transition upgrade (0.1.14 monolith → first split release).** The *old* code performs it: it pulls, sees `bin/tacctl.sh` changed, and execs the new entrypoint, which sources `lib/` from the tree just pulled, as root. By reading this works, and `normalize_deploy_perms` fixes modes later in the same run. Not run. If that upgrade aborts between the pull and the normalize step (a tacquito build or patch failure exits before reaching it), `lib/` is left root-only; root and sudo use keep working, unprivileged `tacctl hash` does not, until an upgrade completes. Today the same abort leaves `bin/tacctl.sh` itself 0700, which is worse, so this is not a regression.
 3. **Switching branches across the split boundary with the old code.** `tacctl config branch <split-branch>` run by a 0.1.14 monolith leaves `lib/` 0700/0600 (the old `cmd_config_branch` only chmods `bin/tacctl.sh`). Same limited effect as risk 2, cleared by `tacctl upgrade`. Switching back from a split branch to a monolith branch removes `lib/` from disk, harmless to the running process.
-4. **Production layout is assumed, not checked.** The lookup needs `/usr/local/bin/tacctl` to be a symlink into a checkout that contains `lib/`. That is what the installer creates and what the dev server has. The production host was not inspected, by instruction.
+4. **The installed layout is assumed, not checked.** The lookup needs `/usr/local/bin/tacctl` to be a symlink into a checkout that contains `lib/`. That is what the installer creates and what the dev server has. No other host was inspected, by instruction.
 5. **Full coverage run not done.** kcov was checked on one test file only. `make coverage` on the split tree is unverified end to end, and takes several times longer than `make test`.
 6. **The prototype's test run happened outside `/home/user/tacctl`.** Five golden tests fail there for a reason unrelated to the split (§8); their output differs from the golden files only in the checkout path, and the unsplit code fails the same five from a scratch path (§10). They have not been seen passing on split code, because that needs the split tree at `/home/user/tacctl`; WP0.2's own `make test` is that run.
 7. **Lint drift with other shellcheck versions.** The counts in §7.2 are for 0.9.0. A different version may report a different baseline and a different set of newly unmasked findings.
@@ -682,6 +682,6 @@ So on the split tree every test passes except the five whose golden files hard-c
 
 ## 12. Assumed rather than verified
 
-- sudo preserves the working directory and passes `$0` through unchanged on production as it does here (default sudoers behaviour).
-- Production's `/usr/local/bin/tacctl` is a symlink (risk 4).
+- sudo preserves the working directory and passes `$0` through unchanged on an installed host as it does here (default sudoers behaviour).
+- An installed host's `/usr/local/bin/tacctl` is a symlink (risk 4).
 - No external tooling outside this repo (cron jobs, monitoring, other repos) reads or copies `bin/tacctl.sh` as a single self-contained file.

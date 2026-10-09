@@ -156,7 +156,7 @@ func (inv *invocation) configSudoersTiers(args []string) error {
 			return err
 		}
 		a.Out.Info("Installed " + file + ".")
-		a.Out.Info("Tiers apply to members of " + tier.ReadonlyGroup + ", " + tier.OperatorGroup + " and " + tier.SuperuserGroup + ".")
+		a.Out.Info("Tiers apply to members of " + tier.ReadonlyGroup + ", " + tier.OperatorGroup + ", " + tier.EngineerGroup + " and " + tier.SuperuserGroup + ".")
 		inv.echo("")
 		return nil
 	case "remove":

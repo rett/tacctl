@@ -50,6 +50,7 @@ func (sb *sandbox) runFamily(stdin string, mk func(*invocation) *cobra.Command, 
 	sb.runner.On([]string{"logger"}, execx.Result{})
 	a := app.New(args, paths.NewEnv(sb.env), "/opt/x/dist/tacctl", 1000,
 		app.Stdio{Stdin: strings.NewReader(stdin), Stdout: &sb.out, Stderr: &sb.err}, sb.runner)
+	a.Paths.ConsoleCommand = sb.consoleCommand()
 	inv := &invocation{ctx: context.Background(), app: a}
 	cmd, rest := resolve(mk(inv), args[2:])
 	sb.code = exitCode(cmd.RunE(cmd, rest), a.Out)
@@ -315,8 +316,8 @@ func TestGroupFamily(t *testing.T) {
 	sb.expect(1, "", "can never match for rule 'show'")
 	sb.run("", []string{"group", "commands", "add", "helpdesk", "show", "--match", "(?=x)"})
 	sb.expect(1, "", "[ERROR] Invalid regex: '(?=x)'")
-	sb.run("y\n", []string{"group", "commands", "clear", "helpdesk"})
-	sb.expect(0, "Cleared command rules for group 'helpdesk'", "")
+	sb.run("", []string{"group", "commands", "reset", "helpdesk", "--yes"})
+	sb.expect(0, "Group 'helpdesk': the override of its command rules is removed", "")
 	sb.run("", []string{"group", "privilege", "add", "operator", "show version"})
 	sb.expect(0, "Added 1 priv-exec mapping(s) for group 'operator' (level 7):\n    - show version\n", "")
 	sb.run("", []string{"group", "privilege", "list", "operator"})
@@ -357,7 +358,18 @@ func TestGroupCommandsPositionAndSelector(t *testing.T) {
 		}
 		return got
 	}
-	if got := names(); !reflect.DeepEqual(got, []string{"1:show:permit", "2:ping:permit", "3:traceroute:permit", "4:terminal:permit", "5:*:(catchall)"}) {
+	// operator's shipped rules (defaults.yaml), numbered as 'list' does.
+	shipped := []string{"show:deny", "show:permit", "dir:permit", "ping:permit", "traceroute:permit", "terminal:permit", "ssh:permit",
+		"telnet:permit", "monitor:permit", "clear:permit", "undebug:permit", "exit:permit", "logout:permit"}
+	numbered := func(rules ...string) []string {
+		out := make([]string, len(rules))
+		for i, r := range rules {
+			out[i] = strconv.Itoa(i+1) + ":" + r
+		}
+		return out
+	}
+	cat := "*:(catchall)"
+	if got := names(); !reflect.DeepEqual(got, numbered(append(append([]string{}, shipped...), cat)...)) {
 		t.Errorf("shipped: %q", got)
 	}
 	sb.run("", []string{"group", "commands", "add", "operator", "show", "--match", "^crypto( .*)?", "--action", "deny", "--before", "show"})
@@ -366,7 +378,7 @@ func TestGroupCommandsPositionAndSelector(t *testing.T) {
 	sb.expect(0, "Added rule 'configure'", "")
 	sb.run("", []string{"group", "commands", "add", "operator", "reload", "--action", "deny", "--before", "*"})
 	sb.expect(0, "Added rule 'reload'", "")
-	want := []string{"1:configure:deny", "2:show:deny", "3:show:permit", "4:ping:permit", "5:traceroute:permit", "6:terminal:permit", "7:reload:deny", "8:*:(catchall)"}
+	want := numbered(append(append([]string{"configure:deny", "show:deny"}, shipped...), "reload:deny", cat)...)
 	if got := names(); !reflect.DeepEqual(got, want) {
 		t.Errorf("after the adds: %q", got)
 	}
@@ -376,7 +388,7 @@ func TestGroupCommandsPositionAndSelector(t *testing.T) {
 	sb.expect(1, "", "--before and --first cannot be used together.")
 
 	sb.run("", []string{"group", "commands", "remove", "operator", "show"})
-	sb.expect(1, "", "[ERROR] Group 'operator' has 2 rules named 'show'; select one with --match/--action (see 'tacctl group commands list operator'), or pass --all.")
+	sb.expect(1, "", "[ERROR] Group 'operator' has 3 rules named 'show'; select one with --match/--action (see 'tacctl group commands list operator'), or pass --all.")
 	sb.run("", []string{"group", "commands", "remove", "operator", "show", "--match", "^nope"})
 	sb.expect(0, "", "")
 	if got := names(); !reflect.DeepEqual(got, want) {
@@ -386,11 +398,12 @@ func TestGroupCommandsPositionAndSelector(t *testing.T) {
 	sb.expect(0, "Removed rule #2 'show' (deny, match=[^crypto( .*)?]) from group 'operator'.", "")
 	sb.run("", []string{"group", "commands", "add", "operator", "show", "--match", "a", "--action", "deny"})
 	sb.run("", []string{"group", "commands", "remove", "operator", "show", "--action", "permit"})
-	sb.expect(0, "Removed rule #2 'show' (permit, match=[]) from group 'operator'.", "")
+	sb.expect(0, "Removed rule #3 'show' (permit, match=[]) from group 'operator'.", "")
 	sb.run("", []string{"group", "commands", "add", "operator", "show", "--match", "b", "--action", "deny"})
 	sb.run("", []string{"group", "commands", "remove", "operator", "show", "--all"})
-	sb.expect(0, "Removed rule #6 'show' (deny, match=[a]) from group 'operator'.\n[INFO] Removed rule #7 'show' (deny, match=[b])", "")
-	if got := names(); !reflect.DeepEqual(got, []string{"1:configure:deny", "2:ping:permit", "3:traceroute:permit", "4:terminal:permit", "5:reload:deny", "6:*:(catchall)"}) {
+	sb.expect(0, "Removed rule #2 'show' (deny, match=[^(running-config view full)( .*)?$]) from group 'operator'.", "")
+	sb.expect(0, "Removed rule #15 'show' (deny, match=[a]) from group 'operator'.\n[INFO] Removed rule #16 'show' (deny, match=[b])", "")
+	if got := names(); !reflect.DeepEqual(got, numbered(append(append([]string{"configure:deny"}, shipped[2:]...), "reload:deny", cat)...)) {
 		t.Errorf("after the removals: %q", got)
 	}
 	sb.run("", []string{"group", "commands", "remove", "operator", "ping", "--bogus"})
@@ -423,7 +436,12 @@ func TestScopeGroupConfigSpecs(t *testing.T) {
 				}
 				for _, k := range kinds {
 					k = strings.TrimSuffix(k, KindList)
-					if _, native := completionKinds[k]; k != "" && !native && !strings.Contains(k, "|") && k != KindFile {
+					if rest, ok := strings.CutPrefix(k, "@"); ok {
+						_, k, _ = strings.Cut(rest, ":") // After(word, kind)
+					}
+					_, native := completionKinds[k]
+					_, argKind := completionArgKinds[k]
+					if k != "" && !native && !argKind && !strings.Contains(k, "|") && k != KindFile {
 						t.Errorf("%s %s: kind %q is no completion kind", family, c.Name(), k)
 					}
 				}

@@ -186,6 +186,25 @@ func TestConsolePtyBannerPromptAndExit(t *testing.T) {
 	}
 }
 
+// A typed space completes a fixed word in the console, and does not when
+// the policy line says space_completion=no.
+func TestConsolePtySpaceCompletion(t *testing.T) {
+	host := regexp.QuoteMeta(shortHostname())
+	p := startConsole(t, ptyPolicyRO, "carol,tac-users,tac-readonly")
+	p.expect(host + `> `)
+	p.send("de x\r")
+	p.expect(`RAN sudo -n TACCTL_CONSOLE=[0-9a-f]{12} ` + regexp.QuoteMeta(testExe) + ` device x\r\n`)
+	p.send("exit\r")
+	p.ends(0)
+
+	p = startConsole(t, ptyPolicyRO+",space_completion=no", "carol,tac-users,tac-readonly")
+	p.expect(host + `> `)
+	p.send("de x\r")
+	p.expect(`RAN sudo -n TACCTL_CONSOLE=[0-9a-f]{12} ` + regexp.QuoteMeta(testExe) + ` de x\r\n`)
+	p.send("exit\r")
+	p.ends(0)
+}
+
 func TestConsolePtyIdle(t *testing.T) {
 	p := startConsole(t, strings.Replace(ptyPolicyRO, "idle=30", "idle=1", 1), "carol,tac-users,tac-readonly", "idle=s")
 	start := time.Now()

@@ -73,7 +73,7 @@ func TestRunScriptReadsKeysOverTheSession(t *testing.T) {
 		t.Fatalf("%d %v", code, err)
 	}
 	argvs := f.Argvs()
-	opts := "ssh -o ConnectTimeout=10 -o ControlMaster=auto -o ControlPath=~/.ssh/tacctl-%C -o ControlPersist=60 -o BatchMode=yes "
+	opts := "ssh -o ConnectTimeout=10 -o ControlMaster=auto -o ControlPath=~/.ssh/tacctl-%C -o ControlPersist=60 -o ForwardAgent=no -o ClearAllForwardings=yes -o BatchMode=yes "
 	if len(argvs) != 5 || argvs[2] != opts+"-T admin@web1 "+ReadKeysCommand || argvs[3] != opts+"-T admin@web1 "+FactsCommand ||
 		argvs[4] != opts+"-O exit admin@web1" {
 		t.Fatalf("calls %q", argvs)
