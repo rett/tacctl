@@ -809,11 +809,15 @@ current behaviour; this file is where history lives.
     `test`, `configure`, `edit`, the hard protocol clears (`clear bgp|ospf|
     ospf3|isis|ldp|rsvp|mpls|pim|igmp|msdp|bfd|vrrp|lacp|dhcp`), `clear
     system|security|network-access|log`, `monitor traffic ... write-file` and
-    `show system rollback`; engineer (192) denies `request system|chassis
-    routing-engine|vmhost|security`, `start`, `load` of anything but
-    `terminal` input (so `load set terminal` works for pasting set-lists),
-    `op`, `file copy|delete|rename|archive|show`, `clear system login|log` and
-    `restart chassis|management`. The dead `show configuration .*(...)`
+    `show system rollback`; engineer (219) denies `request system|chassis
+    routing-engine|vmhost|security`, `start`, `op`, `file copy|delete|
+    delete-directory|rename|archive|show|change-owner|change-permission`,
+    `clear system login|log` and `restart chassis|management`. `load` is not
+    denied for the engineer: Junos tests a pattern against a command's
+    keywords with each argument replaced by a placeholder, so no pattern can
+    allow `load set terminal` (pasting set-lists) and refuse `load set
+    <file>`; an engineer has no shell and cannot `file copy`, so the files a
+    load reads are the ones the box holds. The dead `show configuration .*(...)`
     clauses of 0.2.2 are gone (the lab showed they never matched). **No role
     has a `deny-configuration`**: the viewer and the operator read the whole
     configuration with secrets redacted (`SECRET-DATA`; their classes have no

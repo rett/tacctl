@@ -185,7 +185,7 @@ modify_operator() {
     assert_success
     assert_output --partial "group:           does not exist: it is created with Cisco priv-lvl 15 and Juniper class EN-CLASS"
     assert_output --partial "tacctl tier:     none -> engineer (set)"
-    assert_output --partial "deny-commands: none -> 192/241 bytes"
+    assert_output --partial "deny-commands: none -> 219/241 bytes"
     prun "$TACCTL_BIN_SCRIPT" group reset engineer --yes
     assert_success
     prun "$TACCTL_BIN_SCRIPT" group show engineer

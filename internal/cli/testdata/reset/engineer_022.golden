@@ -54,9 +54,9 @@ Reset of group 'engineer' to the role preset's engineer
   privileges
     unchanged
   junos
-    deny-commands: 236/241 bytes -> 192/241 bytes
+    deny-commands: 236/241 bytes -> 219/241 bytes
       - ^(request (system (reboot|halt|power-off|zeroize|software|snapshot|storage|scripts)|chassis routing-engine|vmhost|security)|start|load|op|file (copy|delete|rename|archive|show)|clear system login|restart (chassis|management).*)( .*)?$  (234 bytes)
-      + ^(request (system|chassis routing-engine|vmhost|security)|start|load [^ ]+ [^t][^ ]*|op|file (copy|delete|rename|archive|show)|clear (system login|log)|restart (chassis|management).*)( .*)?$  (190 bytes)
+      + ^(request (system|chassis routing-engine|vmhost|security)|start|op|file (copy|delete|delete-directory|rename|archive|show|change-owner|change-permission)|clear (system login|log)|restart (chassis|management).*)( .*)?$  (217 bytes)
     deny-configuration: 208/236 bytes -> none
       - ^(groups [^ ]+ )?(system (login|root-auth|authentication|tacplus|radius|accounting|services|scripts|archival|master|ports)|snmp|event-options|security (ike|ipsec|ssh|cert|pki)|interfaces (fxp0|em0|me0|vme))  (206 bytes)
 

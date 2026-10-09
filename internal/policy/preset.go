@@ -62,11 +62,14 @@ const (
 	// denied; 'clear interfaces statistics', 'clear arp', 'clear
 	// ethernet-switching table' and 'clear firewall' stay.
 	operatorDenyCommands = `^(file|request|restart|start|load|op|test|configure|edit|clear (bgp|ospf|ospf3|isis|ldp|rsvp|mpls|pim|igmp|msdp|bfd|vrrp|lacp|system|security|network-access|log|dhcp)|monitor traffic .*write-file|show system rollback)( .*)?$`
-	// engineerDenyCommands: 192 of 241 bytes. 'request system ...' is
-	// denied as a whole ('request support information' stays allowed);
-	// 'load' only with a third word that does not begin with 't', so
-	// 'load set terminal' passes and 'load set /var/tmp/x.set' does not.
-	engineerDenyCommands = `^(request (system|chassis routing-engine|vmhost|security)|start|load [^ ]+ [^t][^ ]*|op|file (copy|delete|rename|archive|show)|clear (system login|log)|restart (chassis|management).*)( .*)?$`
+	// engineerDenyCommands: 219 of 241 bytes. 'request system ...' is
+	// denied as a whole ('request support information' stays allowed).
+	// 'load' is not denied: Junos tests a pattern against the keywords of a
+	// command with each argument replaced by a placeholder, so a pattern
+	// cannot tell 'load set terminal' from 'load set /var/tmp/x.set'; an
+	// engineer has no shell and 'file copy' is denied, so the files a load
+	// can read are the ones the box holds (as with 'rollback').
+	engineerDenyCommands = `^(request (system|chassis routing-engine|vmhost|security)|start|op|file (copy|delete|delete-directory|rename|archive|show|change-owner|change-permission)|clear (system login|log)|restart (chassis|management).*)( .*)?$`
 )
 
 // EngineerHardeningDenyConfiguration is an OPT-IN example, not canonical

@@ -450,8 +450,11 @@ var junosCorpus = []struct {
 	{"show system rollback compare 1 2", map[string]bool{"readonly": true, "operator": true}},
 	{"load set terminal", map[string]bool{"readonly": true, "operator": true}},
 	{"load merge terminal", map[string]bool{"readonly": true, "operator": true}},
-	{"load set /var/tmp/x.set", map[string]bool{"readonly": true, "operator": true, "engineer": true}},
-	{"load override /config/x.conf", map[string]bool{"readonly": true, "operator": true, "engineer": true}},
+	{"load set /var/tmp/x.set", map[string]bool{"readonly": true, "operator": true}},
+	{"load override /config/x.conf", map[string]bool{"readonly": true, "operator": true}},
+	{"file delete-directory /var/tmp/x", map[string]bool{"readonly": true, "operator": true, "engineer": true}},
+	{"file change-owner x /var/tmp/y", map[string]bool{"readonly": true, "operator": true, "engineer": true}},
+	{"file change-permission 600 /var/tmp/y", map[string]bool{"readonly": true, "operator": true, "engineer": true}},
 	{"file show /config/rescue.conf", map[string]bool{"readonly": true, "operator": true, "engineer": true}},
 	{"file list /var/tmp", map[string]bool{"readonly": true, "operator": true}},
 	{"file copy /a /b", map[string]bool{"readonly": true, "operator": true, "engineer": true}},
@@ -505,7 +508,7 @@ func TestJunosDenyNest(t *testing.T) {
 // The sizes of the Junos values with the preset's '( )' wrapper, within
 // TACACS+'s 255-byte argument (limits 241 / 236).
 func TestJunosSizes(t *testing.T) {
-	want := map[string]int{"readonly": 112, "operator": 226, "engineer": 192}
+	want := map[string]int{"readonly": 112, "operator": 226, "engineer": 219}
 	got := map[string]int{}
 	for _, r := range policy.RolePreset() {
 		for attr, items := range r.Junos {

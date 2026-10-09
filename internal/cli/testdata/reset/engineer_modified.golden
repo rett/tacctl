@@ -13,7 +13,7 @@ Reset of group 'engineer' to the role preset's engineer
   privileges
     unchanged
   junos
-    deny-commands: 199/241 bytes -> 192/241 bytes
+    deny-commands: 226/241 bytes -> 219/241 bytes
       - ^foo  (4 bytes)
     deny-configuration: 7/236 bytes -> none
       - ^snmp  (5 bytes)

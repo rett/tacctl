@@ -43,7 +43,7 @@ Reset of group 'engineer' to the role preset's engineer
   privileges
     unchanged
   junos
-    deny-commands: none -> 192/241 bytes
-      + ^(request (system|chassis routing-engine|vmhost|security)|start|load [^ ]+ [^t][^ ]*|op|file (copy|delete|rename|archive|show)|clear (system login|log)|restart (chassis|management).*)( .*)?$  (190 bytes)
+    deny-commands: none -> 219/241 bytes
+      + ^(request (system|chassis routing-engine|vmhost|security)|start|op|file (copy|delete|delete-directory|rename|archive|show|change-owner|change-permission)|clear (system login|log)|restart (chassis|management).*)( .*)?$  (217 bytes)
 
 [INFO] Dry run: nothing was written.
