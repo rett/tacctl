@@ -6059,7 +6059,23 @@ with the sections themselves in
 .IR /var/lib/tacctl/device\-config/<name>.yaml ):
 a secret is compared by presence and its value is kept and printed nowhere. A
 failed pull changes the record's result and leaves the sections of the last
-good one.
+good one. A Cisco device stores some typed lines in another form, which the
+comparison takes as the typed ones: a standard ACL entry
+.B "permit host A"
+or
+.B "permit A 0.0.0.0"
+is stored as
+.BR "permit A" ,
+trailing blanks and the order of the aaa lines do not count, the
+.B "privilege exec level N <words>"
+lines IOS adds for the words that lead to a command are not extra, an image
+that does not know the last words of a privilege command (IOS 12.4 has no
+.BR "monitor capture" )
+stores the ones it knows, which is not extra either (the command itself is
+missing), and
+.BR "snmp\-server queue\-length 100" ,
+which IOS 12.4 prints beside the first community, is not extra when tacctl
+renders a community.
 .PP
 One line per device (rewritten in place on a terminal, appended otherwise):
 .BR ok ,

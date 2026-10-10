@@ -386,6 +386,7 @@ func TestStoredSectionsHoldNoSecretValue(t *testing.T) {
 		"ios/reference-lab/running-config.txt":   {"0822455D0A16", "EXAMPLEEXAMPLE", "example-community", "other-example", "example-trap-community"},
 		"ios-xe/reference-16/running-config.txt": {"0822455D0A16", "EXAMPLEKEY", "EXAMPLEEXAMPLE"},
 		"ios/reference-12x/running-config.txt":   {"0822455D0A16", "EXAMPLEHASH", "example-community"},
+		"ios/real-12.4-7200/running-config.txt":  {"EXAMPLEKEY", "$1$EXAMPLE$HASHHASHHASHHASHHASHH.", "zz-lab-ro-community"},
 	}
 	for rel, values := range secretsOf {
 		vendor := "ios"

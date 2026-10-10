@@ -159,6 +159,7 @@ func TestNormaliseFixtures(t *testing.T) {
 		{"junos", "juniper/synthetic-lab/expected.txt"},
 		{"ios", "ios/reference-lab/expected.txt"},
 		{"ios", "ios/reference-12x/expected.txt"},
+		{"ios", "ios/real-12.4-7200/expected.txt"},
 		{"ios", "ios-xe/reference-16/expected.txt"},
 	} {
 		for _, s := range expectedSections(t, c.rel) {

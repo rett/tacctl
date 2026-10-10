@@ -588,6 +588,83 @@ func isParent(f []string, all [][]string) bool {
 	return false
 }
 
+// iosImplicitQueueLength is the one SNMP line a 12.4 image prints by itself
+// beside the first community ([L] the lab 7200, 2026-10-10).
+const iosImplicitQueueLength = "snmp-server queue-length 100"
+
+// withoutImplicitIOS drops from the device's statements the lines IOS adds
+// to what an operator typed, which the rendering never carries, when the
+// rendering has the statement that causes them. It never makes two
+// statements equal: the line is left out of the extra ones, and the
+// expected statement stays missing if the device lacks it.
+//
+//   - 'privilege exec level N <words>' where the rendering has a longer
+//     'privilege exec [all] level N <words> <more>': an image that does not
+//     know the last words stores the ones it knows (no 'capture' in 12.4:
+//     'privilege exec all level 7 monitor capture' is stored as
+//     'privilege exec level 7 monitor'). The level and the mode are the
+//     same, and the device's line has no 'all' (an 'all' there covers more
+//     than the rendering says, and stays an extra line).
+//   - 'snmp-server queue-length 100' when the rendering has a community:
+//     the image prints it beside the first community.
+func withoutImplicitIOS(exp, dev []stmt) []stmt {
+	onDev := map[string]bool{}
+	for _, x := range dev {
+		onDev[x.stem] = true
+	}
+	var longer [][]string
+	community := false
+	for _, x := range exp {
+		if len(x.path) != 1 {
+			continue
+		}
+		f := strings.Fields(x.path[0])
+		switch {
+		case strings.HasPrefix(x.path[0], "privilege "):
+			if i := slices.Index(f, "all"); i >= 0 && i+1 < len(f) && f[i+1] == "level" {
+				f = slices.Delete(f, i, i+1)
+			}
+			longer = append(longer, f)
+		case len(f) >= 3 && f[0] == "snmp-server" && f[1] == "community":
+			community = true
+		}
+	}
+	expStem := map[string]bool{}
+	for _, x := range exp {
+		expStem[x.stem] = true
+	}
+	var out []stmt
+	for _, x := range dev {
+		if len(x.path) == 1 && !expStem[x.stem] {
+			f := strings.Fields(x.path[0])
+			if x.path[0] == iosImplicitQueueLength && community {
+				continue
+			}
+			if strings.HasPrefix(x.path[0], "privilege ") && slices.Contains(f, "level") &&
+				!slices.Contains(f, "all") && privilegeHasLonger(f, longer) {
+				continue
+			}
+		}
+		out = append(out, x)
+	}
+	return out
+}
+
+// privilegeHasLonger reports whether f, a privilege statement with a mode,
+// a level and at least one word, is a proper word-prefix of one of longer.
+func privilegeHasLonger(f []string, longer [][]string) bool {
+	lvl := slices.Index(f, "level")
+	if lvl < 0 || len(f) <= lvl+2 {
+		return false
+	}
+	for _, g := range longer {
+		if len(g) > len(f) && slices.Equal(g[:len(f)], f) {
+			return true
+		}
+	}
+	return false
+}
+
 // refusedAtStart reports an IOS error line ('% Invalid input ...') among
 // the first lines of the text, before the configuration (or any banner)
 // begins. A '% ' line later is configuration text (a banner's) and fails

@@ -1,0 +1,42 @@
+# secrets visible: true
+[aaa] ok
+= aaa new-model
+= tacacs-server host 192.0.2.10 single-connection timeout 5 key (present, not compared)
+= aaa group server tacacs+ LAB-TACACS > server 192.0.2.10
+= aaa authentication login default local group LAB-TACACS
+= aaa authorization exec default local group LAB-TACACS if-authenticated
+= aaa accounting exec default start-stop group LAB-TACACS
+= aaa accounting commands 1 default start-stop group LAB-TACACS
+= aaa accounting commands 5 default start-stop group LAB-TACACS
+= aaa accounting commands 7 default start-stop group LAB-TACACS
+= aaa accounting commands 15 default start-stop group LAB-TACACS
+= aaa authorization commands 1 default local group LAB-TACACS
+= aaa authorization commands 7 default local group LAB-TACACS
+= aaa authorization commands 15 default local group LAB-TACACS
+= aaa authorization config-commands
+[roles] differs
+= privilege exec level 1 show running-config
+= privilege exec all level 7 ping
+= privilege exec all level 7 traceroute
+- privilege exec all level 7 monitor capture
+= privilege exec level 7 clear counters
+= privilege exec level 7 clear line
+= privilege exec level 7 clear ip arp
+= privilege exec level 7 clear arp-cache
+- privilege exec level 7 clear mac address-table dynamic
+= privilege exec level 7 undebug all
+[mgmt-acl] ok
+= ip access-list standard VTY-ACL > permit 192.0.2.10
+= ip access-list standard VTY-ACL > permit 198.51.100.0 0.0.0.255
+= ip access-list standard VTY-ACL > deny any log
+= line vty 0 15 > access-class VTY-ACL in
+[snmp] ok
+= ip access-list standard TACCTL-SNMP > permit 192.0.2.10
+= ip access-list standard TACCTL-SNMP > permit 198.51.100.0 0.0.0.255
+= ip access-list standard TACCTL-SNMP > deny any
+= snmp-server community <secret> RO TACCTL-SNMP (present, not compared)
+= snmp-server location Rack 4, DC1
+= snmp-server contact NOC <noc@example.net>
+[netconf] n/a
+[breakglass] ok
+= username admin privilege 15 secret (present, not compared)

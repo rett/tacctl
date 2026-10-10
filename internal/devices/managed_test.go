@@ -213,6 +213,33 @@ func TestManagedGoldens(t *testing.T) {
 	}
 }
 
+// The expected.txt of the real legacy IOS capture (tests/fixtures/devconf/
+// ios/real-12.4-7200) is what Managed renders for the legacy Cisco variant
+// of a scope with one management ACL entry and one break-glass account, the
+// lab server address mapped to a documentation address. The comparison
+// tests of internal/devconf read it as the expected side.
+func TestManagedRealDeviceFixture(t *testing.T) {
+	over := strings.Replace(managedOverrides, "users: [lab-admin:admin, lab-ops:operator, lab-ro:readonly]", "users: [admin:admin]", 1)
+	m, c := fixtureGroups(t, managedGroups, over)
+	p := managedProfile{scope: "lab", snmp: v2cAll, cidrs: []string{"198.51.100.0/24"}}
+	req, d := p.input(m, c, variants[1])
+	if !req.Legacy || req.Vendor != "cisco" || req.Protocol != TACACS {
+		t.Fatalf("variant %+v is not the legacy Cisco one", req)
+	}
+	got := strings.ReplaceAll(managedText(mustManaged(t, req, d)), "10.0.0.42", "192.0.2.10")
+	data, err := os.ReadFile("../../tests/fixtures/devconf/ios/real-12.4-7200/expected.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, want, ok := strings.Cut(string(data), "\n# ---\n")
+	if !ok {
+		t.Fatal("expected.txt: no '# ---' line after the header")
+	}
+	if got != want {
+		t.Errorf("real-12.4-7200/expected.txt is not what Managed renders:\n--- got\n%s\n--- want\n%s", got, want)
+	}
+}
+
 // The shape every result has: the sections in order, no section empty,
 // Secret as long as Lines, no comment and no blank among the statements,
 // and no NETCONF (the step is commented out in every walkthrough).

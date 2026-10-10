@@ -370,6 +370,21 @@ current behaviour; this file is where history lives.
     `tacctl ssh`. The refusal still appears when both reads fail, and now says
     so.
 
+23. **A pull of a legacy IOS router compares what IOS stores with what was
+    typed.** Read from a lab router (IOS 12.4(15)SW), `show running-config`
+    prints the typed lines of tacctl's configuration in forms the first
+    comparison listed as differences. The `privilege exec level N <words>` line
+    IOS stores for the words it knows, when it does not know the last ones
+    (`privilege exec all level 7 monitor capture` is stored as `privilege exec
+    level 7 monitor`: the image has no `capture`), is no longer an extra line
+    of `roles`, and `snmp-server queue-length 100`, which the image prints
+    beside the first community, is no longer an extra line of `snmp` when
+    tacctl renders a community. A line of another level or mode, a different
+    queue length and a device-side `all` are still extra, and the command the
+    image did not store (`monitor capture`, and `clear mac address-table
+    dynamic`, which it accepts and does not store) is still missing, so
+    `roles` of such a device stays `differs`.
+
 
 ## 0.2.3 (2026-10-09)
 

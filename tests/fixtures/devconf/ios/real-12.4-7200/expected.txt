@@ -1,0 +1,53 @@
+# vendor: cisco
+# what: the statements devices.Managed renders for the legacy device of a scope with the lab server 192.0.2.10, the management ACL 198.51.100.0/24 and one break-glass account (admin)
+# golden: none: TestManagedRealDeviceFixture (internal/devices) renders it from a synthetic scope; compared with managed.cisco-legacy.lab.txt it has no 192.0.2.0/24 ACL entry and one account
+# source: rendered
+# captured: 2026-10-10
+# ---
+[aaa]
+| aaa new-model
+* tacacs-server host 192.0.2.10 single-connection timeout 5 key lab-secret-0123456789abcdef
+| aaa group server tacacs+ LAB-TACACS
+|   server 192.0.2.10
+| aaa authentication login default local group LAB-TACACS
+| aaa authorization exec default local group LAB-TACACS if-authenticated
+| aaa accounting exec default start-stop group LAB-TACACS
+| aaa accounting commands 1 default start-stop group LAB-TACACS
+| aaa accounting commands 5 default start-stop group LAB-TACACS
+| aaa accounting commands 7 default start-stop group LAB-TACACS
+| aaa accounting commands 15 default start-stop group LAB-TACACS
+| aaa authorization commands 1 default local group LAB-TACACS
+| aaa authorization commands 7 default local group LAB-TACACS
+| aaa authorization commands 15 default local group LAB-TACACS
+| aaa authorization config-commands
+[roles]
+| privilege exec level 1 show running-config
+| privilege exec all level 7 ping
+| privilege exec all level 7 traceroute
+| privilege exec all level 7 monitor capture
+| privilege exec level 7 clear counters
+| privilege exec level 7 clear line
+| privilege exec level 7 clear ip arp
+| privilege exec level 7 clear arp-cache
+| privilege exec level 7 clear mac address-table dynamic
+| privilege exec level 7 undebug all
+[mgmt-acl]
+| ip access-list standard VTY-ACL
+|   remark Managed by tacctl — edit with 'tacctl config mgmt-acl'
+|   permit 192.0.2.10 0.0.0.0
+|   permit 198.51.100.0 0.0.0.255
+|   deny   any log
+| line vty 0 15
+|   access-class VTY-ACL in
+[snmp]
+| ip access-list standard TACCTL-SNMP
+|   permit host 192.0.2.10
+|   permit 198.51.100.0 0.0.0.255
+|   remark everything else (0.0.0.0/0) is refused
+|   deny   any
+* snmp-server community lab-ro-community RO TACCTL-SNMP
+| snmp-server location Rack 4, DC1
+| snmp-server contact NOC <noc@example.net>
+[netconf] not rendered
+[breakglass]
+* username admin privilege 15 secret 5 <HASH>

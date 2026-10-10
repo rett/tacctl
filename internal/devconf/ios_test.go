@@ -107,6 +107,11 @@ func TestCiscoExtractReferenceTexts(t *testing.T) {
 			SectionSNMP: StateDiffers, SectionNetconf: StateNA, SectionBreakGlass: StateDiffers}},
 		{"ios/reference-12x", "ios", map[string]State{SectionAAA: StateOK, SectionRoles: StateOK, SectionMgmtACL: StateOK,
 			SectionSNMP: StateOK, SectionNetconf: StateNA, SectionBreakGlass: StateOK}},
+		// roles: 'monitor capture' and 'clear mac address-table dynamic' are
+		// not stored by this image (a permanent '-'); the lines it stores
+		// instead are not extra, the rest is the stored form of what was typed.
+		{"ios/real-12.4-7200", "ios", map[string]State{SectionAAA: StateOK, SectionRoles: StateDiffers, SectionMgmtACL: StateOK,
+			SectionSNMP: StateOK, SectionNetconf: StateNA, SectionBreakGlass: StateOK}},
 		{"ios-xe/reference-16", "ios", map[string]State{SectionAAA: StateDiffers, SectionRoles: StateOK, SectionMgmtACL: StateOK,
 			SectionSNMP: StateOK, SectionNetconf: StateNA, SectionBreakGlass: StateOK}},
 	}
@@ -146,6 +151,101 @@ func TestCiscoExtractReferenceTexts(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// What IOS prints beside the lines that were typed (the lab 7200, 12.4):
+// the stored form of a privilege command the image does not know to the
+// end, and the queue length beside the first community.
+func TestCiscoImplicitLines(t *testing.T) {
+	roles := func(dev ...string) []string {
+		got := []string{"privilege exec all level 7 monitor capture", "privilege exec level 7 clear counters"}
+		return append(got, dev...)
+	}
+	for _, tc := range []struct {
+		name     string
+		section  string
+		exp, dev []string
+		want     []string // the result's lines, 'op text'
+		state    State
+	}{
+		{"parent kept as stored", SectionRoles, roles(),
+			[]string{"privilege exec level 7 monitor", "privilege exec level 7 clear", "privilege exec level 7 clear counters"},
+			[]string{"- privilege exec all level 7 monitor capture", "= privilege exec level 7 clear counters"}, StateDiffers},
+		{"another level is extra", SectionRoles, roles(),
+			[]string{"privilege exec level 15 monitor", "privilege exec level 7 clear counters"},
+			[]string{"- privilege exec all level 7 monitor capture", "= privilege exec level 7 clear counters", "+ privilege exec level 15 monitor"}, StateDiffers},
+		{"another mode is extra", SectionRoles, roles(),
+			[]string{"privilege configure level 7 monitor", "privilege exec level 7 clear counters"},
+			[]string{"- privilege exec all level 7 monitor capture", "= privilege exec level 7 clear counters", "+ privilege configure level 7 monitor"}, StateDiffers},
+		{"all on the device covers more", SectionRoles, roles(),
+			[]string{"privilege exec all level 7 monitor", "privilege exec level 7 clear counters"},
+			[]string{"- privilege exec all level 7 monitor capture", "= privilege exec level 7 clear counters", "+ privilege exec all level 7 monitor"}, StateDiffers},
+		{"a statement of its own stays", SectionRoles, roles(),
+			[]string{"privilege exec level 7 clear counters", "privilege exec level 7 show", "privilege exec all level 7 monitor capture"},
+			[]string{"= privilege exec all level 7 monitor capture", "= privilege exec level 7 clear counters", "+ privilege exec level 7 show"}, StateDiffers},
+		{"queue length beside the community", SectionSNMP, []string{"snmp-server community c RO ACL"},
+			[]string{"snmp-server community zz RO ACL", "snmp-server queue-length 100"},
+			[]string{"= snmp-server community <secret> RO ACL (present, not compared)"}, StateOK},
+		{"another queue length is extra", SectionSNMP, []string{"snmp-server community c RO ACL"},
+			[]string{"snmp-server community zz RO ACL", "snmp-server queue-length 50"},
+			[]string{"= snmp-server community <secret> RO ACL (present, not compared)", "+ snmp-server queue-length 50"}, StateDiffers},
+		{"queue length without a rendered community", SectionSNMP, []string{"snmp-server location Rack 4"},
+			[]string{"snmp-server location Rack 4", "snmp-server queue-length 100"},
+			[]string{"= snmp-server location Rack 4", "+ snmp-server queue-length 100"}, StateDiffers},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			secret := make([]bool, len(tc.exp))
+			for i, l := range tc.exp {
+				secret[i] = strings.HasPrefix(l, "snmp-server community ")
+			}
+			exp := devices.Section{Name: tc.section, Lines: tc.exp, Secret: secret}
+			raw := "version 12.4\n" + strings.Join(tc.dev, "\n") + "\n"
+			ex, err := Extract("ios", raw, exp)
+			if err != nil {
+				t.Fatal(err)
+			}
+			r, err := Compare("ios", exp, ex.Sections[tc.section], true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got []string
+			for _, l := range r.Lines {
+				got = append(got, string(l.Op)+" "+l.Text)
+			}
+			slices.Sort(got)
+			want := slices.Clone(tc.want)
+			slices.Sort(want)
+			if !slices.Equal(got, want) || r.State != tc.state {
+				t.Errorf("%s\n got  %q\n want %q (%s)", r.State, got, want, tc.state)
+			}
+			// unhinted extraction, then the same comparison
+			ex2, err := Extract("ios", raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			r2, _ := Compare("ios", exp, ex2.Sections[tc.section], true)
+			if r2.State != tc.state {
+				t.Errorf("unhinted: %s, want %s", r2.State, tc.state)
+			}
+		})
+	}
+}
+
+// The stored forms of the lab 7200: a host entry with its mask or without,
+// the keyword, trailing blanks and another order of the aaa lines are the
+// statements that were typed.
+func TestCiscoStoredFormsAreTheTypedOnes(t *testing.T) {
+	typed := []string{"aaa authorization exec default local group G if-authenticated", "aaa accounting exec default start-stop group G",
+		"ip access-list standard A", " permit 192.0.2.10 0.0.0.0", " permit host 192.0.2.11", " deny any log"}
+	stored := []string{"aaa accounting exec default start-stop group G ", "aaa authorization exec default local group G if-authenticated ",
+		"ip access-list standard A", " permit 192.0.2.10", " permit 192.0.2.11", " deny   any log"}
+	if a, b := ciscoStems(typed...), ciscoStems(stored...); !slices.Equal(slices.Sorted(slices.Values(a)), slices.Sorted(slices.Values(b))) {
+		t.Errorf("typed %q\nstored %q", a, b)
+	}
+	// but a mask on a network is a different statement
+	if a, b := ciscoStems(" permit 192.0.2.10 0.0.0.255"), ciscoStems(" permit 192.0.2.10"); slices.Equal(a, b) {
+		t.Errorf("a /24 and a host are one: %q", a)
 	}
 }
 

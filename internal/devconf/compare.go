@@ -350,6 +350,9 @@ func Compare(vendor string, expected, got devices.Section, secretsVisible bool) 
 		}
 		dev = keep
 	}
+	if fam == FamilyIOS {
+		dev = withoutImplicitIOS(exp, dev)
+	}
 	onDev := map[string]int{}
 	for _, x := range dev {
 		onDev[x.stem]++
