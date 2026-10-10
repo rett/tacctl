@@ -9,7 +9,10 @@
 = aaa authentication login default local group LAB-RADIUS
 = aaa authorization exec default local group LAB-RADIUS if-authenticated
 = aaa accounting exec default start-stop group LAB-RADIUS
+= line con 0 > login authentication default
+= line vty 0 15 > login authentication default
 + aaa server radius dynamic-author > client 192.0.2.7 server-key (present, not compared)
+note: no enable secret on the device: with AAA on and the server unreachable, a local user with privilege 15 is the only way to level 15
 [roles] ok
 = privilege exec level 1 show running-config
 = privilege exec all level 7 ping

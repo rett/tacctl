@@ -385,6 +385,36 @@ current behaviour; this file is where history lives.
     dynamic`, which it accepts and does not store) is still missing, so
     `roles` of such a device stays `differs`.
 
+24. **The Cisco comparison reads how the console and VTY lines log in, and
+    whether the device has an `enable` secret.** The `aaa` section of a Cisco
+    device now holds the login method of `line con 0` and of every `line vty`
+    range, which the walkthrough prints as `login authentication default`
+    (the rendered `aaa` of every Cisco variant, IOS-XE, IOS 12.x and RADIUS,
+    ends with those lines). A router whose VTY lines still say `login local`
+    shows `+ line vty 0 4 > login local` and `- line vty 0 15 > login
+    authentication default`. IOS does not print `login authentication
+    default` under a line (the lab router, IOS 12.4(15), has `aaa new-model`
+    on and only the access class under its VTY lines), so with `aaa new-model`
+    on the device a line that has no `login` statement counts as `login
+    authentication default`, as does one that prints it; a rendered `line vty
+    0 15` is satisfied when the device's ranges (`line vty 0 4`, `line vty 5
+    15`) with that method cover it, and the ranges that are in order are not
+    listed. A router without `aaa new-model` has no method on a line with no
+    `login` statement, and one that has nothing of AAA but `login local` on
+    its lines is `missing`, the lines listed all the same. The extraction also
+    records whether the device sets an `enable` secret or password for level
+    15 (by presence, never the value, as one statement of `aaa` in the
+    sections file), and a device with none gets one note under `aaa` when the
+    rendering turns AAA on: with the server unreachable a local user of
+    privilege 15 is then the only way to level 15. A record made by an older
+    tacctl says nothing about the lines or the secret: it is not compared on
+    the lines (a note says so) and gets no note about the secret until the
+    next pull. A rendered `privilege exec [all] level N ...` line that the
+    device stores shortened (`monitor capture` as `monitor`) stays missing,
+    now with a note that names the line the device holds instead; it is not
+    read as equal, since a device on which the line was removed and its
+    parent left looks the same.
+
 
 ## 0.2.3 (2026-10-09)
 

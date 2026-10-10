@@ -350,8 +350,52 @@ func Compare(vendor string, expected, got devices.Section, secretsVisible bool) 
 		}
 		dev = keep
 	}
+	// What the device says about 'enable' is a finding, not a statement the
+	// rendering can have: by presence, a note when none is set and the
+	// rendering turns AAA on (a local user of level 15 is then the only
+	// way up), and a section that holds nothing else is still missing.
+	var enable string
 	if fam == FamilyIOS {
-		dev = withoutImplicitIOS(exp, dev)
+		var notes []string
+		dev, notes = withoutImplicitIOS(exp, dev)
+		res.Notes = append(res.Notes, notes...)
+		var keep []stmt
+		for _, x := range dev {
+			if x.stem == enableHeld || x.stem == enableNone {
+				enable = x.stem
+				continue
+			}
+			keep = append(keep, x)
+		}
+		dev = keep
+		// The login leaves are read from the lines the device printed, by
+		// range: a rendered 'line vty 0 15' is there when the device's
+		// ranges with that leaf cover it. A section with neither a leaf
+		// nor the marker is a record of an older tacctl, which did not read
+		// them: not compared, and said so.
+		known := enable != "" || slices.ContainsFunc(dev, func(x stmt) bool { return isLoginLeaf(x.path) })
+		if known || len(dev) == 0 {
+			dev = alignLogin(exp, dev)
+		} else {
+			var keepExp []stmt
+			skipped := false
+			for _, x := range exp {
+				if isLoginLeaf(x.path) {
+					skipped = true
+					continue
+				}
+				keepExp = append(keepExp, x)
+			}
+			if skipped {
+				exp = keepExp
+				res.Notes = append(res.Notes, "the login method of the console and VTY lines is not in this record "+
+					"(made by an older tacctl): not compared until the next pull")
+			}
+		}
+	}
+	if enable == enableNone && slices.ContainsFunc(exp, func(x stmt) bool { return x.stem == "aaa new-model" }) {
+		res.Notes = append(res.Notes, "no enable secret on the device: with AAA on and the server unreachable, "+
+			"a local user with privilege 15 is the only way to level 15")
 	}
 	onDev := map[string]int{}
 	for _, x := range dev {
@@ -442,10 +486,22 @@ func Compare(vendor string, expected, got devices.Section, secretsVisible bool) 
 		res.Notes = append(res.Notes, unappliedFilters(exp, dev, lo0)...)
 	}
 
+	// present counts the statements that are the section's own: a router
+	// that has only the login method of its lines ('login local') has no
+	// AAA of tacctl's on it, the lines being listed all the same.
+	present := len(dev)
+	if fam == FamilyIOS {
+		for _, x := range dev {
+			if isLoginLeaf(x.path) {
+				present--
+			}
+		}
+	}
+
 	switch {
-	case len(dev) == 0 && allUnseen:
+	case present == 0 && allUnseen:
 		res.State = StateNotVisible
-	case len(dev) == 0:
+	case present == 0:
 		res.State = StateMissing
 	case missing > 0 || extra > 0 || len(order) > 0:
 		res.State = StateDiffers

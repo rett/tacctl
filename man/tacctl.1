@@ -6071,11 +6071,45 @@ trailing blanks and the order of the aaa lines do not count, the
 lines IOS adds for the words that lead to a command are not extra, an image
 that does not know the last words of a privilege command (IOS 12.4 has no
 .BR "monitor capture" )
-stores the ones it knows, which is not extra either (the command itself is
-missing), and
+stores the ones it knows, which is not extra either (the command itself stays
+missing, with a note that names the line the device holds instead: a device on
+which the command was removed and its parent left looks the same), and
 .BR "snmp\-server queue\-length 100" ,
 which IOS 12.4 prints beside the first community, is not extra when tacctl
-renders a community.
+renders a community. On Cisco the
+.B aaa
+section also holds the login method of the console and VTY lines
+.RB ( "line con 0 > login authentication default" ,
+.BR "line vty 0 4 > login local" ).
+They are read by range: with
+.B "aaa new-model"
+on the device a line that has no
+.B login
+statement is on the default method list, which IOS does not print, and counts
+as
+.BR "login authentication default" ;
+the rendered
+.B "line vty 0 15"
+is satisfied when the device's ranges with that method cover it, and a range
+that says
+.BR "login local" ,
+.B login
+or
+.B "no login"
+is a difference. Without
+.B "aaa new-model"
+a line with no
+.B login
+statement has no method. The presence of an
+.B enable
+secret or password is recorded, never its value: a device with none gets a
+note under
+.B aaa
+when the rendering turns AAA on (with the server unreachable, a local user of
+privilege 15 is then the only way to level 15). A record made by an older
+tacctl says nothing about the lines or the secret: it is not compared on the
+lines (a note says so) and gets no note about the secret until the next
+pull.
 .PP
 One line per device (rewritten in place on a terminal, appended otherwise):
 .BR ok ,
@@ -6181,7 +6215,11 @@ community is a difference. Each section is
 .BR ok ,
 .BR differs ,
 .B missing
-(nothing of it on the device),
+(nothing of it on the device; on Cisco a router that has only
+.B "login local"
+on its lines has no
+.B aaa
+of tacctl's, the lines listed all the same),
 .B n/a
 (tacctl renders nothing for it; the device's statements are listed with
 .BR ~ )

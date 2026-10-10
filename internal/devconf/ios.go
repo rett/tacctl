@@ -21,10 +21,19 @@ package devconf
 // behaviours taken from IOS knowledge, not a lab: the parent 'privilege'
 // lines IOS adds, 'aaa session-id common', the 'snmp-server user' lines
 // that 'show running-config' does not print, and the placement of the
-// community in 'snmp-server host'. D62's "'enable' secrets' presence" is
-// dropped: Managed does not render an 'enable' secret, so none is
-// classified, and 'ip tacacs|radius source-interface' (the operator's
-// choice, rendered as a comment) is claimed only when the rendering has it.
+// community in 'snmp-server host'. 'ip tacacs|radius source-interface' (the
+// operator's choice, rendered as a comment) is claimed only when the
+// rendering has it.
+//
+// The 'aaa' section also holds what the device's lines say about logging in
+// (D107): the login leaf of every 'line vty' range and of 'line con 0'
+// ('line vty 0 4 > login local', 'line con 0 > login authentication
+// default'), which the walkthrough renders under the same headers (with
+// 'aaa new-model' on, a line with no login statement is on the default
+// list, which IOS does not print: withImplicitLogin adds it, and
+// alignLogin compares by the lines a range covers), and one marker for the 'enable' secret, by presence only (enableHeld,
+// enableNone): Managed renders no 'enable' secret, so the marker is never
+// expected, and Compare turns it into a note.
 
 import (
 	"fmt"
@@ -371,6 +380,10 @@ func ciscoStem(path, f []string, marked bool) ([]string, bool) {
 		// Already elided: a stem read again.
 		return f, true
 	}
+	if len(path) == 1 && path[0] == enableNone {
+		// The marker of an 'enable' secret the device does not have.
+		return f, false
+	}
 	switch {
 	case f[0] == "snmp-server" && len(f) >= 3 && f[1] == "community":
 		out := slices.Clone(f)
@@ -467,6 +480,203 @@ func ciscoStem(path, f []string, marked bool) ([]string, bool) {
 	return f, false
 }
 
+// isLoginLeaf reports a statement that says how a line's login is done:
+// 'login', 'login local', 'login authentication <list>' or 'no login'
+// under 'line vty <range>' or 'line con 0' (D107). The path is the
+// statement's, header first.
+func isLoginLeaf(path []string) bool {
+	if len(path) != 2 {
+		return false
+	}
+	h := strings.Fields(path[0])
+	if len(h) < 3 || h[0] != "line" || !slices.Contains([]string{"vty", "con", "console"}, h[1]) {
+		return false
+	}
+	f := strings.Fields(path[1])
+	return len(f) >= 1 && (f[0] == "login" || len(f) >= 2 && f[0] == "no" && f[1] == "login")
+}
+
+// loginDefault is the leaf of a line that logs in by the default method
+// list: the walkthrough pastes it, and with 'aaa new-model' on a line that
+// has no login statement is in that state without printing it ([L] the lab
+// 7200: its VTY lines hold only the access class and no 'login' line).
+const loginDefault = "login authentication default"
+
+// lineHeader reads the header of a line a login method belongs to: the
+// kind ('vty', 'con') and the line numbers it covers.
+func lineHeader(h string) (kind string, lines []int, ok bool) {
+	if lo, hi, ok := vtyRange(h); ok {
+		for l := lo; l <= hi; l++ {
+			lines = append(lines, l)
+		}
+		return "vty", lines, true
+	}
+	f := strings.Fields(h)
+	if len(f) == 3 && f[0] == "line" && (f[1] == "con" || f[1] == "console") {
+		if n, err := strconv.Atoi(f[2]); err == nil {
+			return "con", []int{n}, true
+		}
+	}
+	return "", nil, false
+}
+
+// withImplicitLogin adds, for every console and VTY line of a device that
+// has 'aaa new-model' and no login statement of its own, the statement
+// 'line vty 0 15 > login authentication default' (consecutive lines in one,
+// as the VTY ranges of any statement are): the default method list is in
+// force there, IOS omits it from the text, and the compared form says it.
+// The statement goes to the sections file like any other, so a comparison
+// from a stored record reads the line the same way. A device with no
+// 'aaa new-model' gets nothing added: a line without a login statement has
+// no method there, and the marker of the 'enable' secret, which every
+// extraction of this version leaves, tells a record that has no leaf for a
+// line for that reason from one made before the leaves were read.
+func withImplicitLogin(got []stmt) []stmt {
+	newModel := false
+	mentioned := map[string]map[int]bool{"vty": {}, "con": {}}
+	explicit := map[string]map[int]bool{"vty": {}, "con": {}}
+	for _, x := range got {
+		if len(x.path) == 1 && x.path[0] == "aaa new-model" {
+			newModel = true
+		}
+		if len(x.path) == 0 {
+			continue
+		}
+		kind, lines, ok := lineHeader(x.path[0])
+		if !ok {
+			continue
+		}
+		for _, l := range lines {
+			mentioned[kind][l] = true
+			if isLoginLeaf(x.path) {
+				explicit[kind][l] = true
+			}
+		}
+	}
+	if !newModel {
+		return got
+	}
+	add := func(head string) {
+		path := []string{head, loginDefault}
+		s := strings.Join(path, pathSep)
+		got = append(got, stmt{text: s, stem: s, path: path})
+	}
+	var vty []int
+	for l := range mentioned["vty"] {
+		if !explicit["vty"][l] {
+			vty = append(vty, l)
+		}
+	}
+	slices.Sort(vty)
+	for i := 0; i < len(vty); {
+		j := i
+		for j+1 < len(vty) && vty[j+1] == vty[j]+1 {
+			j++
+		}
+		add("line vty " + strconv.Itoa(vty[i]) + " " + strconv.Itoa(vty[j]))
+		i = j + 1
+	}
+	var con []int
+	for l := range mentioned["con"] {
+		if !explicit["con"][l] {
+			con = append(con, l)
+		}
+	}
+	slices.Sort(con)
+	for _, l := range con {
+		add("line con " + strconv.Itoa(l))
+	}
+	return got
+}
+
+// alignLogin makes the device's login statements comparable with the
+// rendered ones by the lines they cover: a rendered 'line vty 0 15 > L' is
+// there when the device's statements with the leaf L cover every line of
+// it ('line vty 0 4' and 'line vty 5 15', the one implicit and the other
+// explicit), whatever ranges the device printed. The device's statements
+// that are such a part of the rendered one are used up: they are not extra,
+// the rendered line is '=' when the lines are covered and '-' while one is
+// not (the other leaves of those lines are extra as they are).
+func alignLogin(exp, dev []stmt) []stmt {
+	used := make([]bool, len(dev))
+	var add []stmt
+	for _, e := range exp {
+		if !isLoginLeaf(e.path) {
+			continue
+		}
+		ek, el, ok := lineHeader(e.path[0])
+		if !ok {
+			continue
+		}
+		want := map[int]bool{}
+		for _, l := range el {
+			want[l] = true
+		}
+		have := map[int]bool{}
+		var part []int
+		for i, d := range dev {
+			if used[i] || !isLoginLeaf(d.path) || d.path[1] != e.path[1] {
+				continue
+			}
+			dk, dl, ok := lineHeader(d.path[0])
+			if !ok || dk != ek || !slices.ContainsFunc(dl, func(l int) bool { return want[l] }) ||
+				slices.ContainsFunc(dl, func(l int) bool { return !want[l] }) {
+				continue
+			}
+			part = append(part, i)
+			for _, l := range dl {
+				have[l] = true
+			}
+		}
+		for _, i := range part {
+			used[i] = true
+		}
+		if len(have) == len(want) && len(part) > 0 {
+			add = append(add, stmt{text: e.stem, stem: e.stem, path: e.path})
+		}
+	}
+	var out []stmt
+	for i, d := range dev {
+		if !used[i] {
+			out = append(out, d)
+		}
+	}
+	return append(out, add...)
+}
+
+// The 'enable' secret is kept by presence in the aaa section of the
+// extraction, as one statement the rendering never has: enableHeld when the
+// device sets a secret or password for level 15, enableNone when it does
+// not. A section read from a pull of tacctl 0.2.4 has neither, so what the
+// device holds is not known from it. Compare takes the statement out of
+// the comparison and turns the second into a note.
+const (
+	enableHeld = "enable secret " + secretMark
+	enableNone = "no enable secret"
+)
+
+// setsEnableSecret reports a top-level statement that sets the secret or
+// password of 'enable' for level 15 ('enable secret 9 <hash>', 'enable
+// password <pw>', 'enable algorithm-type scrypt secret <pw>'); a secret
+// for another level does not reach 15, and 'enable use-tacacs' and the
+// like set none.
+func setsEnableSecret(path []string) bool {
+	if len(path) != 1 {
+		return false
+	}
+	f := strings.Fields(path[0])
+	if len(f) < 2 || f[0] != "enable" || slices.Contains([]string{"use-tacacs", "last-resort", "view"}, f[1]) {
+		return false
+	}
+	for i := 1; i < len(f); i++ {
+		if f[i] != "secret" && f[i] != "password" {
+			continue
+		}
+		return i+2 >= len(f) || f[i+1] != "level" || f[i+2] == "15"
+	}
+	return false
+}
+
 // ciscoACLName is the name of the ACL a statement of 'ip access-list ...'
 // or 'access-list N ...' belongs to.
 func ciscoACLName(p0 string) (string, bool) {
@@ -522,6 +732,10 @@ func (c *ciscoCtx) section(x stmt) string {
 		return SectionSNMP
 	case has("netconf-yang ", "netconf "):
 		return SectionNetconf
+	case isLoginLeaf(p):
+		// The vty and console login method belongs to aaa (D107), the
+		// access-class binding of the same header to mgmt-acl.
+		return SectionAAA
 	case strings.HasPrefix(t, "line vty ") && len(p) >= 2:
 		if strings.HasPrefix(p[len(p)-1], "access-class ") {
 			return SectionMgmtACL
@@ -607,12 +821,20 @@ const iosImplicitQueueLength = "snmp-server queue-length 100"
 //     than the rendering says, and stays an extra line).
 //   - 'snmp-server queue-length 100' when the rendering has a community:
 //     the image prints it beside the first community.
-func withoutImplicitIOS(exp, dev []stmt) []stmt {
+//
+// The rendered line stays '-' even then (plan D106 would read it as
+// equal): the text cannot tell an image that stores the shorter line from a
+// device on which the line was removed and its parent left behind, and
+// 'equal' would hide the second. The notes say which line the device holds
+// instead, for each rendered line it holds only a shorter form of that no
+// other rendered line explains (the parent that 'clear counters' leaves
+// behind is not the stored form of 'clear mac address-table dynamic').
+func withoutImplicitIOS(exp, dev []stmt) (kept []stmt, notes []string) {
 	onDev := map[string]bool{}
 	for _, x := range dev {
 		onDev[x.stem] = true
 	}
-	var longer [][]string
+	var longer []renderedPrivilege
 	community := false
 	for _, x := range exp {
 		if len(x.path) != 1 {
@@ -624,7 +846,7 @@ func withoutImplicitIOS(exp, dev []stmt) []stmt {
 			if i := slices.Index(f, "all"); i >= 0 && i+1 < len(f) && f[i+1] == "level" {
 				f = slices.Delete(f, i, i+1)
 			}
-			longer = append(longer, f)
+			longer = append(longer, renderedPrivilege{f, x.stem})
 		case len(f) >= 3 && f[0] == "snmp-server" && f[1] == "community":
 			community = true
 		}
@@ -633,7 +855,8 @@ func withoutImplicitIOS(exp, dev []stmt) []stmt {
 	for _, x := range exp {
 		expStem[x.stem] = true
 	}
-	var out []stmt
+	// stored are the device's shorter forms, which are left out of kept.
+	var stored []stmt
 	for _, x := range dev {
 		if len(x.path) == 1 && !expStem[x.stem] {
 			f := strings.Fields(x.path[0])
@@ -642,23 +865,68 @@ func withoutImplicitIOS(exp, dev []stmt) []stmt {
 			}
 			if strings.HasPrefix(x.path[0], "privilege ") && slices.Contains(f, "level") &&
 				!slices.Contains(f, "all") && privilegeHasLonger(f, longer) {
+				stored = append(stored, x)
 				continue
 			}
 		}
-		out = append(out, x)
+		kept = append(kept, x)
 	}
-	return out
+	for _, r := range longer {
+		if onDev[r.stem] {
+			continue
+		}
+		// The longest stored form that no other rendered line explains.
+		var best *stmt
+		var bestWords []string
+		for i, x := range stored {
+			f := strings.Fields(x.path[0])
+			if !r.extends(f) || len(f) <= len(bestWords) {
+				continue
+			}
+			explained := false
+			for _, o := range longer {
+				if o.stem != r.stem && o.extends(f) {
+					explained = true
+					break
+				}
+			}
+			if !explained {
+				best, bestWords = &stored[i], f
+			}
+		}
+		if best == nil {
+			continue
+		}
+		note := r.stem + ": not on the device, which holds '" + best.stem + "' instead, as an image that does not know '" +
+			strings.Join(r.words[len(bestWords):], " ") + "' stores it; a device that lost the line looks the same, so it stays missing"
+		if !slices.Contains(notes, note) {
+			notes = append(notes, note)
+		}
+	}
+	return kept, notes
+}
+
+// renderedPrivilege is a rendered 'privilege' statement: its words without
+// the 'all' after the mode, and its compared form.
+type renderedPrivilege struct {
+	words []string
+	stem  string
+}
+
+// extends reports whether r has more words than f and begins with them.
+func (r renderedPrivilege) extends(f []string) bool {
+	return len(r.words) > len(f) && slices.Equal(r.words[:len(f)], f)
 }
 
 // privilegeHasLonger reports whether f, a privilege statement with a mode,
 // a level and at least one word, is a proper word-prefix of one of longer.
-func privilegeHasLonger(f []string, longer [][]string) bool {
+func privilegeHasLonger(f []string, longer []renderedPrivilege) bool {
 	lvl := slices.Index(f, "level")
 	if lvl < 0 || len(f) <= lvl+2 {
 		return false
 	}
 	for _, g := range longer {
-		if len(g) > len(f) && slices.Equal(g[:len(f)], f) {
+		if g.extends(f) {
 			return true
 		}
 	}
@@ -721,7 +989,7 @@ func ciscoExtract(raw string, expected []devices.Section, visible *bool) (Extrac
 			}
 		}
 	}
-	got := privilegeParents(ciscoCanon(lines, nil), c.claim)
+	got := withImplicitLogin(privilegeParents(ciscoCanon(lines, nil), c.claim))
 	for _, x := range got {
 		leaf := strings.Fields(x.path[len(x.path)-1])
 		switch {
@@ -746,11 +1014,22 @@ func ciscoExtract(raw string, expected []devices.Section, visible *bool) (Extrac
 	}
 
 	by := map[string][]stmt{}
+	enable := false
 	for _, x := range got {
+		if setsEnableSecret(x.path) {
+			enable = true
+		}
 		if s := c.section(x); s != "" {
 			by[s] = append(by[s], x)
 		}
 	}
+	// By presence only, whatever the secret is (D107): the statement never
+	// holds a value, and Managed never renders it.
+	marker := stmt{text: enableNone, stem: enableNone, path: []string{enableNone}}
+	if enable {
+		marker = stmt{text: enableHeld, stem: enableHeld, secret: true, path: []string{enableHeld}}
+	}
+	by[SectionAAA] = append(by[SectionAAA], marker)
 	out := make(map[string]devices.Section, len(SectionNames))
 	for _, n := range SectionNames {
 		out[n] = toSection(n, uniq(by[n]))

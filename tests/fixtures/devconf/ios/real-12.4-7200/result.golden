@@ -14,6 +14,9 @@
 = aaa authorization commands 7 default local group LAB-TACACS
 = aaa authorization commands 15 default local group LAB-TACACS
 = aaa authorization config-commands
+= line con 0 > login authentication default
+= line vty 0 15 > login authentication default
+note: no enable secret on the device: with AAA on and the server unreachable, a local user with privilege 15 is the only way to level 15
 [roles] differs
 = privilege exec level 1 show running-config
 = privilege exec all level 7 ping
@@ -25,6 +28,7 @@
 = privilege exec level 7 clear arp-cache
 - privilege exec level 7 clear mac address-table dynamic
 = privilege exec level 7 undebug all
+note: privilege exec all level 7 monitor capture: not on the device, which holds 'privilege exec level 7 monitor' instead, as an image that does not know 'capture' stores it; a device that lost the line looks the same, so it stays missing
 [mgmt-acl] ok
 = ip access-list standard VTY-ACL > permit 192.0.2.10
 = ip access-list standard VTY-ACL > permit 198.51.100.0 0.0.0.255

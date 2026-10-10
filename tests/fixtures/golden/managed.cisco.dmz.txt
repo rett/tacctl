@@ -18,6 +18,10 @@
 | aaa authorization commands 7 default group TACACS-GROUP local
 | aaa authorization commands 15 default group TACACS-GROUP local
 | aaa authorization config-commands
+| line con 0
+|   login authentication default
+| line vty 0 15
+|   login authentication default
 [roles]
 | privilege exec level 1 show running-config
 | privilege exec all level 7 ping

@@ -10,6 +10,10 @@
 | aaa authentication login default group RADIUS-GROUP local
 | aaa authorization exec default group RADIUS-GROUP local if-authenticated
 | aaa accounting exec default start-stop group RADIUS-GROUP
+| line con 0
+|   login authentication default
+| line vty 0 15
+|   login authentication default
 [roles]
 | privilege exec level 1 show running-config
 | privilege exec all level 7 ping

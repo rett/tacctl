@@ -110,6 +110,9 @@ func TestCiscoExtractReferenceTexts(t *testing.T) {
 		// roles: 'monitor capture' and 'clear mac address-table dynamic' are
 		// not stored by this image (a permanent '-'); the lines it stores
 		// instead are not extra, the rest is the stored form of what was typed.
+		// aaa: the capture has no login statement on its console and VTY
+		// lines, IOS being silent about the default method list: they read
+		// as 'login authentication default'.
 		{"ios/real-12.4-7200", "ios", map[string]State{SectionAAA: StateOK, SectionRoles: StateDiffers, SectionMgmtACL: StateOK,
 			SectionSNMP: StateOK, SectionNetconf: StateNA, SectionBreakGlass: StateOK}},
 		{"ios-xe/reference-16", "ios", map[string]State{SectionAAA: StateDiffers, SectionRoles: StateOK, SectionMgmtACL: StateOK,
@@ -254,11 +257,15 @@ func TestCiscoBareDevice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 'enable secret' is not a managed statement (Managed renders none):
-	// nothing of the device is in a section.
+	// Only aaa holds anything of the device: the login method of its VTY
+	// line, and the presence of its 'enable' secret (never the value).
 	for n, sec := range ex.Sections {
-		if len(sec.Lines) != 0 {
-			t.Errorf("[%s] = %q", n, sec.Lines)
+		want := []string(nil)
+		if n == SectionAAA {
+			want = []string{"line vty 0 4 > login local", enableHeld}
+		}
+		if !slices.Equal(sec.Lines, want) {
+			t.Errorf("[%s] = %q, want %q", n, sec.Lines, want)
 		}
 	}
 	expected := expectedSections(t, "ios/reference-lab/expected.txt")
@@ -266,6 +273,8 @@ func TestCiscoBareDevice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A router with nothing but 'login local' on its lines has no AAA of
+	// tacctl's: aaa is missing (not differs), the line still listed.
 	for _, r := range results {
 		want := StateMissing
 		if r.Name == SectionNetconf {
@@ -273,6 +282,15 @@ func TestCiscoBareDevice(t *testing.T) {
 		}
 		if r.State != want {
 			t.Errorf("[%s] %s, want %s", r.Name, r.State, want)
+		}
+		if r.Name == SectionAAA {
+			if !hasLine(r, OpMissing, "line vty 0 15 > login authentication default") ||
+				!hasLine(r, OpExtra, "line vty 0 4 > login local") {
+				t.Errorf("[aaa] %v", r.Lines)
+			}
+			if len(r.Notes) != 0 {
+				t.Errorf("a device with an enable secret has notes: %q", r.Notes)
+			}
 		}
 	}
 }

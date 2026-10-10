@@ -89,6 +89,9 @@ func resultText(ex Extracted, results []SectionResult) string {
 		for _, l := range r.Lines {
 			b.WriteString(string(l.Op) + " " + l.Text + "\n")
 		}
+		for _, n := range r.Notes {
+			b.WriteString("note: " + n + "\n")
+		}
 	}
 	return b.String()
 }

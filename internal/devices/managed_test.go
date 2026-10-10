@@ -356,15 +356,16 @@ func TestManagedStatementsAreInTheWalkthrough(t *testing.T) {
 
 // managedLeftOut are the live statements of a walkthrough that no section
 // of D62 names: the commands that are not configuration ('delete', 'commit'),
-// the Junos idle timeout, and the Cisco lines outside the AAA lists, the
-// access list and the VTY access class.
+// the Junos idle timeout, and the Cisco lines outside the AAA lists and the
+// login method of the console and VTY lines (which are managed, D107), the
+// access list and the VTY access class. The line headers and their login
+// leaf are not left out: they are in aaa, the VTY header in mgmt-acl too.
 var managedLeftOut = regexp.MustCompile(`^(` +
 	`commit` +
 	`|delete .*` +
 	`|set system login idle-timeout \d+` +
 	`|service password-encryption` +
-	`|line (con 0|vty 0 15)` +
-	`|  (login authentication default|transport input ssh|exec-timeout \d+ 0)` +
+	`|  (transport input ssh|exec-timeout \d+ 0)` +
 	`)$`)
 
 // The other direction: a live statement of the walkthrough that Managed
@@ -580,6 +581,55 @@ func TestManagedCisco(t *testing.T) {
 	for _, l := range aaa.Lines {
 		if strings.Contains(l, "commands") || strings.Contains(l, "tacacs") {
 			t.Errorf("radius aaa has %q", l)
+		}
+	}
+}
+
+// The login method of the console and VTY lines is part of aaa in every
+// Cisco variant (D107): the lines the walkthrough prints under the two
+// headers, the VTY header also in mgmt-acl when the access class is
+// rendered, and never an unconfigured scope's.
+func TestManagedCiscoLoginLeaves(t *testing.T) {
+	m, c := managedWorld(t)
+	want := []string{"line con 0", "  login authentication default", "line vty 0 15", "  login authentication default"}
+	for _, v := range managedVariants() {
+		if v.vendor != "cisco" {
+			continue
+		}
+		for _, p := range managedProfiles() {
+			req, d := p.input(m, c, v)
+			secs := mustManaged(t, req, d)
+			aaa, ok := sectionOf(secs, "aaa")
+			if !ok || len(aaa.Lines) < len(want) || !slices.Equal(aaa.Lines[len(aaa.Lines)-len(want):], want) {
+				t.Errorf("%s/%s: aaa does not end with the console and VTY login lines:\n%s", v.name, p.scope, strings.Join(aaa.Lines, "\n"))
+			}
+			for i, l := range aaa.Lines {
+				if strings.Contains(l, "login authentication") && aaa.Secret[i] {
+					t.Errorf("%s/%s: %q is marked secret", v.name, p.scope, l)
+				}
+			}
+			// the same header in mgmt-acl keeps its access class alone
+			if acl, ok := sectionOf(secs, "mgmt-acl"); ok {
+				for _, l := range acl.Lines {
+					if strings.Contains(l, "login") {
+						t.Errorf("%s/%s: mgmt-acl has %q", v.name, p.scope, l)
+					}
+				}
+			}
+		}
+	}
+	// and Junos has none
+	for _, v := range managedVariants() {
+		if v.vendor != "juniper" {
+			continue
+		}
+		req, d := managedProfiles()[0].input(m, c, v)
+		for _, s := range mustManaged(t, req, d) {
+			for _, l := range s.Lines {
+				if strings.HasPrefix(l, "line ") || strings.Contains(l, "login authentication") {
+					t.Errorf("%s: %s has %q", v.name, s.Name, l)
+				}
+			}
 		}
 	}
 }

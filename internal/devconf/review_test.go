@@ -499,7 +499,9 @@ func TestIOSAddedLinesAreNotStrays(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := ex.Sections[SectionAAA].Lines; !slices.Equal(got, []string{"aaa new-model"}) {
+	// 'enable secret' is no stray: it is kept by presence, as one marker
+	// that Compare turns into a note (never the value).
+	if got := ex.Sections[SectionAAA].Lines; !slices.Equal(got, []string{"aaa new-model", enableHeld}) {
 		t.Errorf("aaa = %q", got)
 	}
 	if got := ex.Sections[SectionRoles].Lines; !slices.Equal(got, []string{
@@ -615,7 +617,7 @@ func TestPercentLineInBannerIsNotARefusal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := ex.Sections[SectionAAA].Lines; !slices.Equal(got, []string{"aaa new-model"}) {
+	if got := ex.Sections[SectionAAA].Lines; !slices.Equal(got, []string{"aaa new-model", enableNone}) {
 		t.Errorf("aaa = %q", got)
 	}
 	// without any banner too: a '% ' line after the configuration began

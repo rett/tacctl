@@ -12,7 +12,8 @@ package devices
 //
 // The few statements that only the shipped templates carry, never a
 // builder (Cisco's 'aaa new-model', the server and group blocks, the VTY
-// line header), are written here with the values the builders give them;
+// and console line headers with their 'login authentication default'),
+// are written here with the values the builders give them;
 // the test that every statement is in the walkthrough of the same input
 // keeps them honest.
 
@@ -208,6 +209,15 @@ func managedCisco(req Request, d Data) []Section {
 		aaa = append(aaa, ciscoStatements(v["ACCT_COMMANDS_BLOCK"])...)
 		aaa = append(aaa, ciscoStatements(v["AUTHZ_COMMANDS_BLOCK"])...)
 	}
+	// The lines that use the method list: the walkthrough's console and
+	// VTY lines name the 'default' list (D107). 'no aaa new-model' leaves
+	// a line with no login method, and a line that still says 'login
+	// local' bypasses the list, so the lines are part of what AAA is.
+	aaa = append(aaa,
+		"line con 0",
+		"  login authentication default",
+		"line vty 0 15",
+		"  login authentication default")
 	s.add(sectionAAA, aaa)
 
 	// The privilege lines of the groups below level 15.
