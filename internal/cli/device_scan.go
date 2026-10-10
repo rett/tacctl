@@ -172,7 +172,7 @@ func (inv *invocation) runScan(rq scanRequest) (*scanResult, error) {
 	out.reports = devreg.ScanSources(inv.ctx, seen, srcs, devreg.ScanOptions{
 		Now: now, StaleDays: f.StaleDays, Full: rq.full || out.rebuilt, Since: rq.since})
 	all := res.All()
-	out.keys = devreg.RescanKeys(inv.ctx, inv.app.Runner, keyTargets(all, false))
+	out.keys = devreg.RescanKeys(inv.ctx, inv.app.Runner, keyTargets(all, false), keyFallback(inv))
 	out.keyErr = seen.RecordKeyResults(out.keys, now)
 	var names []string
 	for _, e := range all {
@@ -449,7 +449,7 @@ func (inv *invocation) deviceCheck(args []string) error {
 		sys = inv.checkSysNames(entries)
 		done <- struct{}{}
 	}()
-	keys := devreg.RescanKeys(inv.ctx, inv.app.Runner, targets)
+	keys := devreg.RescanKeys(inv.ctx, inv.app.Runner, targets, keyFallback(inv))
 	<-done
 	<-done
 	path := inv.app.Paths.SeenCache

@@ -108,6 +108,13 @@ func WithAuth(methods ...AuthMethod) Option {
 // WithHostKey sets the host key (WithRandomHostKey for one nobody pinned).
 func WithHostKey(k ssh.Signer) Option { return func(s *Server) { s.hostKey = k } }
 
+// WithExtraHostKeys adds host keys of other types to the server's own (a
+// device that holds an ed25519, an ecdsa and an rsa key); a client is shown
+// the one its negotiated host key algorithm names.
+func WithExtraHostKeys(keys ...ssh.Signer) Option {
+	return func(s *Server) { s.extraKeys = append(s.extraKeys, keys...) }
+}
+
 // WithRandomHostKey gives the server a new ed25519 host key.
 func WithRandomHostKey() Option {
 	return func(s *Server) {
@@ -204,17 +211,18 @@ func WithHang(st Stage) Option { return func(s *Server) { s.hang, s.hangSet = st
 
 // Server is a running fake device.
 type Server struct {
-	t        transcript
-	ln       net.Listener
-	user     string
-	password string
-	credSet  bool
-	methods  []AuthMethod
-	hostKey  ssh.Signer
-	kex      []string
-	ciphers  []string
-	framing  Framing
-	echo     bool
+	t         transcript
+	ln        net.Listener
+	user      string
+	password  string
+	credSet   bool
+	methods   []AuthMethod
+	hostKey   ssh.Signer
+	extraKeys []ssh.Signer
+	kex       []string
+	ciphers   []string
+	framing   Framing
+	echo      bool
 
 	netconfOff bool
 	noStatus   bool
@@ -351,6 +359,9 @@ func (s *Server) accept() {
 func (s *Server) config() *ssh.ServerConfig {
 	cfg := &ssh.ServerConfig{MaxAuthTries: 6}
 	cfg.AddHostKey(s.hostKey)
+	for _, k := range s.extraKeys {
+		cfg.AddHostKey(k)
+	}
 	if s.kex != nil {
 		cfg.KeyExchanges = s.kex
 	}

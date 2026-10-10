@@ -4999,7 +4999,13 @@ refused, and carries the notice. The built-in list can be extended with
 Host keys are pinned when a device is registered: tacctl reads the keys the
 device offers with
 .BR ssh\-keyscan (1)
-(as root, outbound, without logging in), keeps them in
+(as root, outbound, without logging in; for a
+.B legacy\-ssh
+device that
+.B ssh\-keyscan
+reads nothing from, because it cannot do the SHA-1 key exchange and CBC ciphers
+of old IOS, with tacctl's own ssh client, which negotiates them and stops at the
+host key, before authentication), keeps them in
 .IR devices.yaml ,
 and prints their
 .B SHA256:
@@ -5245,7 +5251,10 @@ and ssh port are read with
 .BR \-\-legacy\-ssh ,
 the
 .B ssh\-rsa
-type is asked for by name too) and pinned, and their
+type is asked for by name too, and when
+.B ssh\-keyscan
+reads no key, tacctl's own ssh client reads them: it negotiates the legacy
+algorithms and stops at the host key, so no password is sent) and pinned, and their
 .B SHA256:
 fingerprints are printed with the command that shows them on the device's
 console; compare them before the first connection. With
@@ -5255,7 +5264,7 @@ only that key is pinned (the other keys it offers are listed, unpinned). With
 .B \-\-no\-host\-key
 nothing is scanned: the device is registered unpinned and carries a
 .B hostkey-unpinned
-notice. A device that does not answer the scan, or offers no key matching
+notice. A device that does not answer either read of the scan, or offers no key matching
 .BR \-\-host\-key ,
 is refused and nothing is written. The output says which scope, if any, answers
 the address.

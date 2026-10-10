@@ -355,6 +355,21 @@ current behaviour; this file is where history lives.
     (the CBC ciphers it implements) to its own list. The strong ciphers stay
     first, so a modern device still negotiates them.
 
+22. **`device add` and the host-key re-scans read the key of a `legacy-ssh`
+    device with the built-in client.** OpenSSH 9's `ssh-keyscan` cannot do the
+    `diffie-hellman-group1-sha1` key exchange or the CBC ciphers an old IOS
+    unit offers, so it printed no key and `device add --legacy-ssh` was
+    refused (`No ssh host key could be read`) until `--no-host-key` or `device
+    hostkey <name> set SHA256:<fp>` was used. When `ssh-keyscan` reads no key
+    from a `legacy-ssh` device, tacctl now tries its own ssh client, which
+    negotiates the legacy algorithms and stops at the host key, before
+    authentication: no password is ever sent. It asks for each key type the
+    device offers and pins them like `ssh-keyscan`'s, with the same `SHA256:`
+    fingerprints. It applies to `device add`, `device hostkey <name> accept`,
+    the re-scans of `device scan` and `device check`, and the mismatch report of
+    `tacctl ssh`. The refusal still appears when both reads fail, and now says
+    so.
+
 
 ## 0.2.3 (2026-10-09)
 

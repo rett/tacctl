@@ -143,6 +143,16 @@ var legacyCiphers = []string{
 	ssh.InsecureCipherTripleDESCBC,
 }
 
+// addLegacyAlgorithms appends the legacy key exchanges and ciphers to cfg's
+// lists (the host key algorithms are hostKeyAlgorithms' business). Dial
+// with Target.Legacy and ScanHostKeys both use it, so that a scan negotiates
+// exactly what a login would.
+func addLegacyAlgorithms(cfg *ssh.ClientConfig) {
+	sup := ssh.SupportedAlgorithms()
+	cfg.KeyExchanges = append(sup.KeyExchanges, legacyKex...)
+	cfg.Ciphers = append(sup.Ciphers, legacyCiphers...)
+}
+
 // Client is an authenticated connection to one device. It is safe for
 // concurrent use; the sessions it opens are each for one caller at a time.
 type Client struct {
@@ -192,9 +202,7 @@ func Dial(ctx context.Context, t Target) (*Client, error) {
 		ClientVersion:     "SSH-2.0-tacctl",
 	}
 	if t.Legacy {
-		sup := ssh.SupportedAlgorithms()
-		cfg.KeyExchanges = append(sup.KeyExchanges, legacyKex...)
-		cfg.Ciphers = append(sup.Ciphers, legacyCiphers...)
+		addLegacyAlgorithms(cfg)
 	}
 	// The deadline and the cancellation of the context close the socket,
 	// which fails the handshake wherever it stands.

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -155,6 +156,93 @@ func TestKeyscanCmd(t *testing.T) {
 		if got := strings.Join(KeyscanCmd(c.addr, c.port, c.legacy).Argv(), " "); got != c.want {
 			t.Errorf("%s:%d legacy=%v: %q", c.addr, c.port, c.legacy, got)
 		}
+	}
+}
+
+// For a legacy device that ssh-keyscan reads nothing from (or cannot be
+// run for), the fallback's keys are returned; both failing keeps
+// ssh-keyscan's error; a device without legacy never reaches the fallback.
+func TestScanWithFallback(t *testing.T) {
+	ed, rsa := testKey(t, "ed25519"), testKey(t, "rsa")
+	ctx := context.Background()
+	silent := func() *fake.Runner {
+		r := &fake.Runner{Strict: true}
+		r.On([]string{"ssh-keyscan"}, execx.Result{Stderr: []byte("# 10.99.0.1:22 SSH-2.0-Cisco-1.25\n")})
+		return r
+	}
+	var calls []string
+	answer := func(keys []HostKey, err error) KeyFallback {
+		return func(_ context.Context, address string, port int) ([]HostKey, error) {
+			calls = append(calls, address+" "+strconv.Itoa(port))
+			return keys, err
+		}
+	}
+
+	// ssh-keyscan's banner only: the fallback's keys, in type order, with
+	// the same fingerprints as ssh-keyscan's would carry.
+	keys, err := ScanWith(ctx, silent(), "10.99.0.1", 22, true, answer([]HostKey{rsa, ed}, nil))
+	if err != nil || !reflect.DeepEqual(keys, []HostKey{ed, rsa}) || keys[1].Fingerprint() != rsa.Fingerprint() {
+		t.Errorf("fallback: %v %v", keys, err)
+	}
+	if !reflect.DeepEqual(calls, []string{"10.99.0.1 22"}) {
+		t.Errorf("calls %q", calls)
+	}
+
+	// ssh-keyscan not installed: a legacy device still has its fallback.
+	calls = nil
+	r := &fake.Runner{}
+	r.Missing("ssh-keyscan")
+	if keys, err = ScanWith(ctx, r, "10.99.0.1", 22, true, answer([]HostKey{rsa}, nil)); err != nil || len(keys) != 1 {
+		t.Errorf("missing ssh-keyscan: %v %v", keys, err)
+	}
+
+	// Both fail: ssh-keyscan's ErrNoAnswer, or its error when it could not
+	// run.
+	for name, fb := range map[string]KeyFallback{
+		"error": answer(nil, errors.New("handshake failed")),
+		"empty": answer(nil, nil),
+	} {
+		if _, err := ScanWith(ctx, silent(), "10.99.0.1", 22, true, fb); !errors.Is(err, ErrNoAnswer) {
+			t.Errorf("both fail (%s): %v", name, err)
+		}
+		r := &fake.Runner{}
+		r.Missing("ssh-keyscan")
+		if _, err := ScanWith(ctx, r, "10.99.0.1", 22, true, fb); err == nil || !strings.Contains(err.Error(), "openssh-client") {
+			t.Errorf("both fail, no ssh-keyscan (%s): %v", name, err)
+		}
+	}
+
+	// Not legacy, or ssh-keyscan answered: the fallback is not asked.
+	calls = nil
+	if _, err := ScanWith(ctx, silent(), "10.99.0.1", 22, false, answer([]HostKey{rsa}, nil)); !errors.Is(err, ErrNoAnswer) {
+		t.Errorf("not legacy: %v", err)
+	}
+	r = &fake.Runner{Strict: true}
+	r.On([]string{"ssh-keyscan"}, execx.Result{Stdout: []byte("10.99.0.1 " + ed.String() + "\n")})
+	if keys, err := ScanWith(ctx, r, "10.99.0.1", 22, true, answer([]HostKey{rsa}, nil)); err != nil || !reflect.DeepEqual(keys, []HostKey{ed}) {
+		t.Errorf("keyscan answered: %v %v", keys, err)
+	}
+	if len(calls) != 0 {
+		t.Errorf("fallback called: %q", calls)
+	}
+
+	// A cancelled context is returned as it is, whatever the fallback says.
+	cctx, cancel := context.WithCancel(ctx)
+	cancel()
+	if _, err := ScanWith(cctx, silent(), "10.99.0.1", 22, true, answer([]HostKey{rsa}, nil)); !errors.Is(err, context.Canceled) && !errors.Is(err, ErrNoAnswer) {
+		t.Errorf("cancelled: %v", err)
+	}
+	if len(calls) != 0 {
+		t.Errorf("fallback called after cancel: %q", calls)
+	}
+
+	// RescanKeys hands the fallback to every legacy target.
+	res := RescanKeys(ctx, silent(), []KeyTarget{
+		{Name: "old", Address: "10.99.0.1", Port: 22, Legacy: true},
+		{Name: "new", Address: "10.99.0.2", Port: 22},
+	}, answer([]HostKey{rsa}, nil))
+	if len(res[0].Keys) != 1 || !errors.Is(res[1].Err, ErrNoAnswer) {
+		t.Errorf("rescan: %+v", res)
 	}
 }
 

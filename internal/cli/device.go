@@ -286,7 +286,8 @@ func deviceRegUsage() string {
 	}
 	b.WriteString(`
 Host keys: 'add' reads the device's ssh host keys (ssh-keyscan of the address
-and port) and pins them; compare the fingerprints it prints with the device
+and port; for a legacy-ssh device that ssh-keyscan cannot read, tacctl's own
+ssh client, which stops at the key and sends no password) and pins them; compare the fingerprints it prints with the device
 console. --host-key SHA256:<fp> registers only when the device offers a key
 with that fingerprint, and pins that key alone. --no-host-key registers without
 a pinned key (a hostkey-unpinned notice). A device that does not answer is

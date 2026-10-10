@@ -657,7 +657,7 @@ func (inv *invocation) sshKeyMismatch(plan sshPlan, caller string) {
 	if plan.port != 0 {
 		port = plan.port
 	}
-	offered, err := devreg.Scan(inv.ctx, a.Runner, addr, port, legacy)
+	offered, err := inv.scanDevice(addr, port, legacy)
 	if err != nil {
 		return
 	}
