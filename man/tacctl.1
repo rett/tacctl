@@ -2835,7 +2835,7 @@ Members of
 .B tac-engineer
 may additionally run, for the devices, hosts and scopes of their own scopes only,
 .BR "device add" ", " remove ", " rename ", " address ", " hostname ", " vendor ", "
-.BR port ", " description ", " location ", " legacy\-ssh ", " hostkey " and " "import " "\-"
+.BR port ", " description ", " location ", " legacy\-ssh ", " config\-syntax ", " hostkey " and " "import " "\-"
 (standard input only: sudoers matches the first argument),
 .BR "scope devices" ", " "config cisco" "|" juniper "|" wti ,
 .BR "host list" " and " "host show"
@@ -3183,7 +3183,17 @@ emits legacy IOS 12.x syntax
 .RB ( "tacacs-server host" " and " "aaa group server \&... / server <ip>" )
 for devices predating the structured
 .B "tacacs server"
-block introduced in IOS 15.0.
+block introduced in IOS 15.0, whatever the configuration syntax of the device
+named by
+.B --name
+is. With
+.B --name
+naming a registered Cisco device of the scope the syntax is that device's
+.RB ( "device config\-syntax" ,
+else what its last pull read from its version line, else the modern syntax and
+one line on standard error that says so);
+.B --legacy
+is the explicit override.
 .IP
 With
 .B "--protocol radius"
@@ -5004,8 +5014,8 @@ device offers with
 device that
 .B ssh\-keyscan
 reads nothing from, because it cannot do the SHA-1 key exchange and CBC ciphers
-of old IOS, with tacctl's own ssh client, which negotiates them and stops at the
-host key, before authentication), keeps them in
+such a device offers, with tacctl's own ssh client, which negotiates them and
+stops at the host key, before authentication), keeps them in
 .IR devices.yaml ,
 and prints their
 .B SHA256:
@@ -5200,6 +5210,9 @@ Add REACH: a TCP connect to each ssh port (3 s).
 .TP
 .BI "device show " "name|address " [ \-\-all ] " " [ \-\-json ]
 One device or host in full: address, hostname, vendor, port, legacy ssh,
+for a Cisco device its configuration syntax (the setting and, for
+.BR auto ,
+what the last pull's version line resolved it to, for the operator tier and up),
 description, the scope that answers the address and the prefix that routes it
 (and the scopes it shadows), the vendor tag that covers it, the pinned host keys,
 the last and first sighting with the sighting count and the NAS-Identifier the
@@ -5225,7 +5238,7 @@ The acknowledged notices too.
 .RE
 .\" END GENERATED: command device show
 .TP
-.BI "device add " "[ name ] address " "[ \-\-vendor cisco|juniper|wti|other ] [ \-\-hostname " dns " ] [ \-\-port " n " ] [ \-\-description " text " ] [ \-\-snmp\-location " text " ] [ \-\-legacy\-ssh ] [ \-\-host\-key SHA256:" fingerprint " | \-\-no\-host\-key ] [ \-\-no\-lookup ] [ \-\-allow\-generic ]"
+.BI "device add " "[ name ] address " "[ \-\-vendor cisco|juniper|wti|other ] [ \-\-hostname " dns " ] [ \-\-port " n " ] [ \-\-description " text " ] [ \-\-snmp\-location " text " ] [ \-\-legacy\-ssh ] [ \-\-config\-syntax auto|ios12|modern ] [ \-\-host\-key SHA256:" fingerprint " | \-\-no\-host\-key ] [ \-\-no\-lookup ] [ \-\-allow\-generic ]"
 Register a device. A name is letters, digits,
 .RB ` . ` ,
 .RB ` _ `
@@ -5254,7 +5267,8 @@ the
 type is asked for by name too, and when
 .B ssh\-keyscan
 reads no key, tacctl's own ssh client reads them: it negotiates the legacy
-algorithms and stops at the host key, so no password is sent) and pinned, and their
+algorithms and stops at the host key, so no password is sent; the flag is the
+ssh algorithms and nothing else) and pinned, and their
 .B SHA256:
 fingerprints are printed with the command that shows them on the device's
 console; compare them before the first connection. With
@@ -5336,7 +5350,10 @@ A description of the device.
 Its place (the SNMP location the walkthroughs render).
 .TP
 \fB\-\-legacy\-ssh\fR
-Old IOS: SHA\-1 key exchange, CBC ciphers and ssh\-rsa.
+SHA\-1 key exchange, CBC ciphers and ssh\-rsa; the configuration syntax is \-\-config\-syntax.
+.TP
+\fB\-\-config\-syntax\fR \fI<syntax>\fR
+(cisco) auto, ios12 or modern: the configuration syntax (default auto: the pull's version line says).
 .TP
 \fB\-\-host\-key\fR \fISHA256:<fp>\fR
 Register only if the device offers this key; pin it alone.
@@ -5482,13 +5499,59 @@ Read the location from the device (SNMP sysLocation) and store it.
 .TP
 .BI "device legacy\-ssh " "name " "[ enable | disable ]"
 Show or set the opt-in for the legacy key-exchange, cipher and host-key
-algorithms older IOS releases need (off by default).
+algorithms (SHA-1 key exchange, CBC ciphers, ssh-rsa) that a device offering
+only those needs (off by default). It is the ssh algorithms and nothing else:
+the syntax a Cisco device is rendered and compared in is
+.BR "device config\-syntax" .
 .\" BEGIN GENERATED: command device legacy-ssh
 .RS
 .PP
 Requires: \fBengineer\fR.
 .RE
 .\" END GENERATED: command device legacy-ssh
+.TP
+.BI "device config\-syntax " "name " "[ auto | ios12 | modern ]"
+Show or set the configuration syntax of a Cisco device: the syntax its
+walkthrough
+.RB ( "device config show" ", " "config cisco \-\-name" )
+is printed in and its configuration is compared in
+.RB ( "device config pull" ", " diff " and " list ).
+.B modern
+is the
+.B tacacs server NAME
+syntax of IOS 15.x, 16.x, 17.x and IOS\-XE,
+.B ios12
+the IOS 12.x syntax
+.RB ( "tacacs\-server host" ).
+.B auto
+(the default, and the only value not written to
+.IR devices.yaml )
+takes the syntax from the version line the last
+.B device config pull
+read
+.RB ( "show version | include Version" :
+.B "Version 12."
+is ios12;
+.BR "Version 15." ", " 16. " and " 17.
+and
+.B IOS\-XE
+are modern; any other line is modern, and
+.B device show
+says it was guessed). A device not pulled yet is walked through in the modern
+syntax, with one line that says so, and
+.B device config list
+says
+.B pull
+.RB ( "needs pull (syntax unknown)" )
+for a Cisco device whose record has no version line, until it is pulled once.
+No word prints the setting. The setting is for Cisco devices; an engineer sets it
+for the devices of their own scopes.
+.\" BEGIN GENERATED: command device config-syntax
+.RS
+.PP
+Requires: \fBengineer\fR.
+.RE
+.\" END GENERATED: command device config-syntax
 .TP
 .BI "device snmp " "name " "[ show [ \-\-reveal ] | version v2c|v3 | port " n " | timeout " seconds " | clients { list | add | remove } " "[ cidr [ , cidr ...]] | community [ \-\-stdin ] | v3\-user " "user [ \-\-stdin ] | clear ]"
 The SNMP settings of one registered device, over its scope's and the default's.
@@ -5671,7 +5734,10 @@ are skipped) or from the registry's own YAML, from a file or from stdin
 an engineer's import is from stdin only, with the options after the
 .BR \- ).
 Devices of the file are added, or update the registered device of the same name
-(a CSV row leaves the hostname and the legacy-ssh setting alone; a changed address
+(a CSV row leaves the hostname and the legacy-ssh setting alone, and a file that
+carries no
+.B config_syntax
+leaves the registered configuration syntax alone; a changed address
 drops the pinned host keys); the rest stay. With
 .B \-\-replace
 the registry becomes exactly the file, after confirmation (\c
@@ -5977,7 +6043,12 @@ to its name, built by the same code, with the device's location, description
 and name in the SNMP step. The options are those of
 .BR "config cisco|juniper|wti" ;
 .B \-\-legacy
-is for a Cisco device. Only a cisco, juniper or wti device has a walkthrough: a
+is for a Cisco device and is the IOS 12.x syntax whatever the device's
+.B config\-syntax
+says; without it a Cisco device is walked through in its syntax (the setting,
+else the last pull's, else the modern syntax with one line,
+.BR "# syntax: modern (no pull yet; ...)" ,
+after the data block). Only a cisco, juniper or wti device has a walkthrough: a
 vendor
 .B other
 is refused with
@@ -6000,7 +6071,7 @@ Options:
 The protocol (default: the scope's auth\-method, else its only protocol, else tacacs).
 .TP
 \fB\-\-legacy\fR
-(Cisco) IOS 12.x syntax; TACACS+ only.
+(Cisco) The IOS 12.x syntax, whatever the device's config\-syntax is; TACACS+ only.
 .TP
 \fB\-\-server\fR \fI<address|name>\fR
 The address the device is told to authenticate against.
@@ -6046,7 +6117,12 @@ RPC) where the device answers and over an ssh exec channel otherwise;
 and
 .B ssh
 never fall back (IOS and IOS\-XE are read over the ssh command line, with
-paging off, and never over NETCONF:
+paging off, after
+.BR "show version | include Version" ,
+whose line is kept on the record with the configuration syntax it says (see
+.BR "device config\-syntax" );
+a device that answers no such line and has no setting is refused with the
+command to set one, and is never read over NETCONF:
 .B "\-\-transport netconf"
 refuses a Cisco device before any login, as a failed line that leaves its
 record alone, or as wrong arguments when every selected device is Cisco). The
@@ -6314,7 +6390,12 @@ the state
 .RB ( ok ,
 .BR differs ,
 .BR never ,
-.BR failed ),
+.BR failed ,
+and
+.B pull
+for a Cisco device whose configuration syntax is unknown: its setting is auto
+and its record has no version line, so it is compared neither as IOS 12.x nor as
+the modern syntax until a pull reads it),
 when it was pulled, by whom, over which transport, what the NETCONF probe
 found and, for a device that differs, the sections, or, for one that failed,
 the result.
@@ -6329,9 +6410,10 @@ which reads the record only, still says what the last pull found).
 .B \-\-stale
 is
 .BR \-\-never ,
-.B \-\-failed
-and
+.BR \-\-failed ,
 .B \-\-differs
+and
+.B pull
 together; the state filters add up, and
 .BR \-\-transport ,
 .B \-\-scope
@@ -7246,10 +7328,10 @@ console forget
 .B engineer
 device add, device remove, device rename, device address,
 device hostname, device vendor, device port, device description,
-device location, device legacy\-ssh, device hostkey, device import,
-scope devices, device config, config cisco, config juniper,
-config wti, host list, host show, scope staging, scope secret,
-scope snmp, device snmp, scope show
+device location, device legacy\-ssh, device config\-syntax,
+device hostkey, device import, scope devices, device config,
+config cisco, config juniper, config wti, host list, host show,
+scope staging, scope secret, scope snmp, device snmp, scope show
 .TP
 .B superuser
 Every verb not listed above, and every verb of the tiers below.

@@ -160,7 +160,10 @@ vendor (cisco, juniper or wti) and the scope that covers its address, exactly
 as 'tacctl config <vendor> --scope <scope> --name <name>' prints it, with the
 device's location, description and name filling the SNMP step. A device whose
 vendor is 'other', an enrolled Linux host and a device no scope's prefixes
-cover have none.
+cover have none. A Cisco device is walked through in its configuration syntax:
+the setting of 'tacctl device config-syntax' (ios12 or modern), else the one
+the last pull read from its version line, else the modern syntax with a line
+that says so; --legacy is the IOS 12.x syntax whatever that is.
 
 'pull' logs in to the devices as you (your username and your tacctl password,
 asked for once, never stored or logged), reads each one's configuration over
@@ -173,6 +176,10 @@ must be one of yours. At most device.config.max_concurrency devices are read
 at once (--concurrency lowers it, never raises it). Ctrl-C stops starting new
 devices; a second one cuts the running ones off. Exit status: 0 every device
 read, 1 a device failed (or was refused), 2 wrong arguments, 130 interrupted.
+A Cisco device is read with 'show version | include Version' as well: the
+image's version line is kept on the record with the configuration syntax it
+says (12.x is ios12; 15.x, 16.x, 17.x and IOS-XE are modern), and the device is
+compared in that syntax unless 'device config-syntax' says otherwise.
 
 'diff' compares the last pull with what tacctl renders now, section by
 section: '-' is a statement tacctl renders that the device lacks, '+' one the
@@ -181,10 +188,12 @@ reordering, '?' a secret the login could not see. --pull reads first.
 --exit-code makes a difference exit 2.
 
 'list' shows each device's state: ok (every managed section agrees), differs,
-never (not pulled) or failed (the last pull failed), computed against today's
-rendering, so a change in tacctl makes a device differ without a new pull.
---stale is never, failed and differs together. 'forget' deletes the records
-(they are derived: a pull makes them again).
+never (not pulled), failed (the last pull failed) or pull (a Cisco device whose
+syntax is unknown: its record has no version line and its config-syntax is
+auto: every record made by an earlier tacctl), computed against today's rendering,
+so a change in tacctl makes a device differ without a new pull. --stale is
+never, failed, differs and pull together. 'forget' deletes the records (they
+are derived: a pull makes them again).
 
 Examples:
   tacctl device config show core-sw1
@@ -269,12 +278,17 @@ func (inv *invocation) deviceConfigShow(args []string) error {
 	var walk bytes.Buffer
 	out := inv.app.Out
 	inv.app.Out.Stdout = &walk
-	err = inv.configDevice(e.Vendor, cfg)
+	note, err := inv.configDeviceNote(e.Vendor, cfg, nil)
 	inv.app.Out = out
 	if err != nil {
 		return err
 	}
 	inv.printDeviceData(e)
+	// A device that is neither set nor pulled is walked through in the
+	// modern syntax, and the line says why (D113).
+	if note != "" {
+		inv.echo(note)
+	}
 	_, err = io.Copy(inv.app.Out.Stdout, &walk)
 	return err
 }

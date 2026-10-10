@@ -210,6 +210,112 @@ print(sorted(d), d["lab-a"]["result"])' "${TACCTL_VAR_LIB}/devices-config.json"
     assert_line --regexp '^  lab-j  ok via ssh$'
 }
 
+# The Cisco configuration syntax is a fact of its own (D113): legacy-ssh is the
+# ssh algorithms, the pull reads the image's version line and the device is
+# compared in the syntax that line says.
+cisco_record() {
+    python3 -c '
+import json, sys
+r = json.load(open(sys.argv[1]))["devices"]["lab-c"]
+print(r.get("syntax", "-"), "|", r.get("os", "-"))' "${TACCTL_VAR_LIB}/devices-config.json"
+}
+
+@test "pull: a legacy-ssh Cisco device that runs the modern syntax is ok and records its image" {
+    local cdir
+    cdir=$(fakedev_dir ios)
+    fakedev_start "$cdir"
+    fakedev_register lab-c 192.168.1.30 cisco
+    run "$TACCTL_BIN_SCRIPT" device legacy-ssh lab-c enable
+    assert_success
+    fakedev_serve "$cdir" cisco lab lab-c
+    pull lab-c --diff
+    assert_success
+    assert_line --regexp '^  lab-c  ok via ssh$'
+    refute_output --partial "differs"
+    run cisco_record
+    assert_output "modern | Cisco IOS Software, IOSv Software (VIOS-ADVENTERPRISEK9-M), Version 15.6(2)T, RELEASE SOFTWARE (fc2)"
+    SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device show lab-c
+    plain
+    assert_line --regexp '^  Legacy ssh: +enabled$'
+    assert_line --regexp '^  Config syntax: auto \(modern, from the pull of [0-9-]+\)$'
+    SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device show lab-c --json
+    run python3 -c 'import json,sys; d=json.loads(sys.stdin.read()); print(d["config_syntax"], d["syntax"], d["syntax_source"], d["legacy_ssh"])' <<< "$output"
+    assert_output "auto modern pull True"
+}
+
+@test "pull: a legacy-ssh Cisco device that runs IOS 12.x is ok in the IOS 12.x syntax" {
+    local cdir
+    cdir=$(fakedev_dir ios)
+    fakedev_start "$cdir"
+    fakedev_register lab-c 192.168.1.30 cisco
+    run "$TACCTL_BIN_SCRIPT" device legacy-ssh lab-c enable
+    assert_success
+    FAKEDEV_IOS_SYNTAX=ios12 fakedev_serve "$cdir" cisco lab lab-c
+    grep -q '^tacacs-server host' "${cdir}/show running-config.out"
+    pull lab-c --diff
+    assert_success
+    assert_line --regexp '^  lab-c  ok via ssh$'
+    refute_output --partial "differs"
+    run cisco_record
+    assert_output --regexp '^ios12 \| Cisco IOS Software, 7200 Software .*Version 12\.4\(15\)T14'
+    # The setting overrides what the line says, and the record keeps the line.
+    run "$TACCTL_BIN_SCRIPT" device config-syntax lab-c modern
+    assert_success
+    pull lab-c
+    assert_success
+    assert_output --partial "differs in aaa"
+    run cisco_record
+    assert_output --regexp '^ios12 \|'
+    run "$TACCTL_BIN_SCRIPT" device config-syntax lab-c auto
+    assert_success
+    pull lab-c
+    assert_success
+    assert_line --regexp '^  lab-c  ok via ssh$'
+}
+
+@test "pull: a Cisco device that answers no version line needs its setting, and a record of 0.2.4 needs a pull" {
+    local cdir
+    cdir=$(fakedev_dir ios)
+    fakedev_start "$cdir"
+    fakedev_register lab-c 192.168.1.30 cisco
+    FAKEDEV_IOS_VERSION=none fakedev_serve "$cdir" cisco lab lab-c
+    pull lab-c
+    assert_failure 1
+    assert_output --partial "failed: the device's IOS version was not read"
+    assert_output --partial "tacctl device config-syntax lab-c ios12|modern"
+    # With the setting it is compared, and the record holds no image.
+    run "$TACCTL_BIN_SCRIPT" device config-syntax lab-c modern
+    assert_success
+    pull lab-c
+    assert_success
+    assert_line --regexp '^  lab-c  ok via ssh$'
+    run cisco_record
+    assert_output "- | -"
+    run "$TACCTL_BIN_SCRIPT" device config-syntax lab-c auto
+    assert_success
+    # The record of a pull with no version line is what 0.2.4 wrote: it is
+    # not guessed either way, and --stale selects it for the one pull.
+    SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device config list
+    plain
+    assert_success
+    assert_line --regexp '^ *lab-c .* pull .*needs pull \(syntax unknown\)'
+    SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device list
+    plain
+    assert_line --regexp '^ *lab-c .* pull '
+    SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device config list --stale
+    plain
+    assert_output --partial "lab-c"
+    fakedev_serve "$cdir" cisco lab lab-c
+    printf '%s\n' 'Cisco IOS Software, IOSv Software (VIOS-ADVENTERPRISEK9-M), Version 15.6(2)T, RELEASE SOFTWARE (fc2)' \
+        > "${cdir}/show version | include Version.out"
+    pull --stale
+    assert_success
+    assert_line --regexp '^  lab-c  ok via ssh$'
+    SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device config list --stale
+    plain
+    assert_output --partial "None: every device"
+}
+
 @test "pull: what a device runs beyond tacctl's statements is a difference, and no secret value is printed or kept" {
     fakedev_start "$JDIR"
     fakedev_register lab-j 192.168.1.20 juniper

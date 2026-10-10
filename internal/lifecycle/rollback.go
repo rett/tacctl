@@ -149,7 +149,11 @@ type RollbackPlan struct {
 	keys    []string
 	console console.RollbackPlan
 	snmpDev []devSNMP
-	sudoers []sudoersPlan
+	// syntaxDev are the devices with a configuration syntax setting
+	// (D113, 0.2.5): an older parser refuses the key, so it goes like the
+	// SNMP map does.
+	syntaxDev []devSyntax
+	sudoers   []sudoersPlan
 	// notWritten says, after ApplyRollback, which drop-ins could not be
 	// rewritten and why (the apply goes on: 0.2.3's upgrade rewrites the
 	// tiers one itself).
@@ -159,6 +163,11 @@ type RollbackPlan struct {
 // devSNMP is a device with SNMP settings of its own, described.
 type devSNMP struct {
 	name, what string
+}
+
+// devSyntax is a device with a configuration syntax setting.
+type devSyntax struct {
+	name, syntax string
 }
 
 // sudoersPlan is one drop-in the rollback may rewrite.
@@ -171,13 +180,13 @@ type sudoersPlan struct {
 
 // Pending: there is a file to convert.
 func (p *RollbackPlan) Pending() bool {
-	return len(p.keys) > 0 || p.console.Text != nil || len(p.snmpDev) > 0 || len(p.todoSudoers()) > 0
+	return p.PendingFiles() || len(p.todoSudoers()) > 0
 }
 
 // PendingFiles: there is a file of tacctl's own to convert (the snapshot
 // holds those; the sudoers drop-ins are not in it).
 func (p *RollbackPlan) PendingFiles() bool {
-	return len(p.keys) > 0 || p.console.Text != nil || len(p.snmpDev) > 0
+	return len(p.keys) > 0 || p.console.Text != nil || len(p.snmpDev) > 0 || len(p.syntaxDev) > 0
 }
 
 func (p *RollbackPlan) todoSudoers() []sudoersPlan {
@@ -230,6 +239,9 @@ func PlanRollback(in RollbackInput) (*RollbackPlan, error) {
 	for _, d := range reg.Devices {
 		if !d.SNMP.Empty() {
 			p.snmpDev = append(p.snmpDev, devSNMP{d.Name, describeSNMP(d.SNMP)})
+		}
+		if d.ConfigSyntax != "" {
+			p.syntaxDev = append(p.syntaxDev, devSyntax{d.Name, d.ConfigSyntax})
 		}
 	}
 	p.Steps = append(p.Steps, p.devicesStep())
@@ -309,15 +321,22 @@ func (p *RollbackPlan) consoleStep() RollbackStep {
 }
 
 func (p *RollbackPlan) devicesStep() RollbackStep {
-	s := RollbackStep{Title: p.in.Paths.DevicesFile + ": remove the per-device SNMP settings", Todo: len(p.snmpDev) > 0}
-	if len(p.snmpDev) == 0 {
+	s := RollbackStep{Title: p.in.Paths.DevicesFile + ": remove the per-device SNMP settings",
+		Todo: len(p.snmpDev) > 0 || len(p.syntaxDev) > 0}
+	if len(p.syntaxDev) > 0 {
+		s.Title += " and configuration syntax"
+	}
+	if len(p.snmpDev) == 0 && len(p.syntaxDev) == 0 {
 		s.Lines = []string{"no device has SNMP settings of its own"}
 		return s
 	}
 	for _, d := range p.snmpDev {
 		s.Lines = append(s.Lines, "remove the snmp map of "+d.name+" ("+d.what+")")
 	}
-	s.Lines = append(s.Lines, "(0.2.3's parser refuses a device with a key it does not know: \"unknown key 'snmp'\")")
+	for _, d := range p.syntaxDev {
+		s.Lines = append(s.Lines, "remove the config_syntax key of "+d.name+" ("+d.syntax+")")
+	}
+	s.Lines = append(s.Lines, "(0.2.3's parser refuses a device with a key it does not know: \"unknown key 'snmp'\", \"unknown key 'config_syntax'\")")
 	return s
 }
 
@@ -479,6 +498,12 @@ func (p *RollbackPlan) warnings() []RollbackWarning {
 	if len(dc) > 0 {
 		lines = append(lines, "The settings of 'device config pull' ("+strings.Join(dc, ", ")+") are removed from tacctl.yaml; 0.2.3 has no such verb.")
 	}
+	if len(p.syntaxDev) > 0 {
+		lines = append(lines, "The configuration syntax setting of a Cisco device (device config-syntax) is removed: a release without it compares a legacy-ssh device as IOS 12.x again, and renders its walkthrough in the syntax of --legacy only:")
+		for _, d := range p.syntaxDev {
+			lines = append(lines, "  "+d.name+": "+d.syntax)
+		}
+	}
 	if len(p.console.Remove) > 0 {
 		lines = append(lines, "The password cache's settings of console.yaml are removed ("+strings.TrimPrefix(p.console.Remove[0], "settings.password_cache: ")+"): 0.2.3 has no cache, every login is asked for its password.")
 	}
@@ -538,6 +563,15 @@ func ApplyRollback(p *RollbackPlan) ([]string, error) {
 		}
 		if len(cleared) > 0 {
 			done = append(done, fmt.Sprintf("%s: removed the SNMP settings of %d %s", pt.DevicesFile, len(cleared), plural(len(cleared), "device", "devices")))
+		}
+	}
+	if len(p.syntaxDev) > 0 {
+		cleared, err := devreg.RollbackConfigSyntax(pt.DevicesFile, nil)
+		if err != nil {
+			return done, err
+		}
+		if len(cleared) > 0 {
+			done = append(done, fmt.Sprintf("%s: removed the configuration syntax of %d %s", pt.DevicesFile, len(cleared), plural(len(cleared), "device", "devices")))
 		}
 	}
 	p.notWritten = nil

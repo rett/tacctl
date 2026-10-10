@@ -14,7 +14,7 @@ Cmnd_Alias TACCTL_OP = /usr/local/bin/tacctl log tail, /usr/local/bin/tacctl log
     /usr/local/bin/tacctl console show, /usr/local/bin/tacctl console check, /usr/local/bin/tacctl console forget
 Cmnd_Alias TACCTL_EN = /usr/local/bin/tacctl device add *, /usr/local/bin/tacctl device remove *, /usr/local/bin/tacctl device rename *, \
     /usr/local/bin/tacctl device address *, /usr/local/bin/tacctl device hostname *, /usr/local/bin/tacctl device vendor *, /usr/local/bin/tacctl device port *, \
-    /usr/local/bin/tacctl device description *, /usr/local/bin/tacctl device location *, /usr/local/bin/tacctl device legacy-ssh *, /usr/local/bin/tacctl device hostkey *, /usr/local/bin/tacctl device import -, /usr/local/bin/tacctl device import - *, \
+    /usr/local/bin/tacctl device description *, /usr/local/bin/tacctl device location *, /usr/local/bin/tacctl device legacy-ssh *, /usr/local/bin/tacctl device config-syntax *, /usr/local/bin/tacctl device hostkey *, /usr/local/bin/tacctl device import -, /usr/local/bin/tacctl device import - *, \
     /usr/local/bin/tacctl scope devices *, \
     /usr/local/bin/tacctl device config show *, /usr/local/bin/tacctl device config pull *, /usr/local/bin/tacctl device config diff *, /usr/local/bin/tacctl config cisco, /usr/local/bin/tacctl config cisco *, /usr/local/bin/tacctl config juniper, /usr/local/bin/tacctl config juniper *, /usr/local/bin/tacctl config wti, /usr/local/bin/tacctl config wti *, \
     /usr/local/bin/tacctl host list, /usr/local/bin/tacctl host show *, \

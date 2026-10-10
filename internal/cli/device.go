@@ -72,6 +72,7 @@ var deviceSpecs = map[string]Spec{
 		{Names: []string{"--description"}, Value: true},
 		{Names: []string{"--snmp-location"}, Value: true},
 		{Names: []string{"--legacy-ssh"}},
+		{Names: []string{"--config-syntax"}, Value: true, Kind: "auto|ios12|modern"},
 		{Names: []string{"--host-key"}, Value: true},
 		{Names: []string{"--no-host-key"}},
 		{Names: []string{"--no-lookup"}},
@@ -85,9 +86,11 @@ var deviceSpecs = map[string]Spec{
 	"description": {MinArgs: 1, MaxArgs: -1, Args: []string{KindDevices, "clear"}},
 	"location":    {MinArgs: 1, MaxArgs: -1, Args: []string{KindDevices, "clear"}, Flags: []Flag{{Names: []string{"--from-device"}}, flagYes}},
 	"legacy-ssh":  {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, "enable|disable"}},
-	"stale-days":  {MaxArgs: 1, Args: []string{""}},
-	"notice":      {MinArgs: 3, MaxArgs: 3, Args: []string{KindDevices, "ack|unack", noticeWords}},
-	"notices":     {MaxArgs: 1, Args: []string{KindDevices}, Flags: []Flag{flagAllNotices}},
+	// The Cisco configuration syntax (D113).
+	"config-syntax": {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, "auto|ios12|modern"}},
+	"stale-days":    {MaxArgs: 1, Args: []string{""}},
+	"notice":        {MinArgs: 3, MaxArgs: 3, Args: []string{KindDevices, "ack|unack", noticeWords}},
+	"notices":       {MaxArgs: 1, Args: []string{KindDevices}, Flags: []Flag{flagAllNotices}},
 	"import": {MinArgs: 1, MaxArgs: 1, Args: []string{KindFile}, Flags: []Flag{
 		{Names: []string{"--check"}}, {Names: []string{"--replace"}}, flagAllowGeneric, flagYes}},
 	"export":  {MaxArgs: 0, Flags: []Flag{{Names: []string{"--csv"}}, flagJSON}},
@@ -123,7 +126,8 @@ var deviceVerbs = [][2]string{
 	{"port <name> [<n>|clear]", "Show, set or clear the ssh port"},
 	{"description <name> [<text>|clear]", "Show, set or clear the description"},
 	{"location <name> [<text>|clear|--from-device [-y]]", "Show, set or clear the place, for the SNMP location in the walkthroughs (--from-device: read it from the device)"},
-	{"legacy-ssh <name> [enable|disable]", "Opt in to legacy IOS ssh algorithms"},
+	{"legacy-ssh <name> [enable|disable]", "Opt in to the legacy ssh algorithms (SHA-1 key exchange, CBC ciphers, ssh-rsa)"},
+	{"config-syntax <name> [auto|ios12|modern]", "Show or set the Cisco configuration syntax (IOS 12.x or modern) of the walkthrough and the comparison"},
 	{"stale-days [<n>]", "Show or set the days after which a device counts as stale"},
 	{"notice <name> ack|unack <kind>", "Acknowledge or reopen a notice"},
 	{"notices [<name>] [--all]", "The open notices, with what to do about each (--all: the acknowledged ones too)"},
@@ -159,7 +163,8 @@ var deviceOptions = map[string][][2]string{
 		{"--port <n>", "Its ssh port (default 22)"},
 		{"--description <text>", "A description"},
 		{"--snmp-location <text>", "Its place (the SNMP location the walkthroughs render)"},
-		{"--legacy-ssh", "Old IOS: SHA-1 key exchange, CBC ciphers and ssh-rsa"},
+		{"--legacy-ssh", "SHA-1 key exchange, CBC ciphers and ssh-rsa; the configuration syntax is --config-syntax"},
+		{"--config-syntax <syntax>", "(cisco) auto, ios12 or modern: the configuration syntax (default auto: the pull's version line says)"},
 		{"--host-key SHA256:<fp>", "Register only if the device offers this key; pin it alone"},
 		{"--no-host-key", "Register without a pinned key (a hostkey-unpinned notice)"},
 		{"--no-lookup", "Do not read the device's own name and location by SNMP"},
@@ -198,7 +203,7 @@ var deviceOptions = map[string][][2]string{
 	},
 	"config show": {
 		{"--protocol tacacs|radius", "The protocol (default: the scope's auth-method, else its only protocol, else tacacs)"},
-		{"--legacy", "(Cisco) IOS 12.x syntax; TACACS+ only"},
+		{"--legacy", "(Cisco) The IOS 12.x syntax, whatever the device's config-syntax is; TACACS+ only"},
 		{"--server <address|name>", "The address the device is told to authenticate against"},
 		{"--source <address>", "The address this server reaches the device from"},
 	},
@@ -369,7 +374,7 @@ func (inv *invocation) device(args []string) error {
 	}
 	run := map[string]func([]string) error{
 		"list": inv.deviceList, "show": inv.deviceShow, "add": inv.deviceAdd, "remove": inv.deviceRemove,
-		"rename": inv.deviceRename, "legacy-ssh": inv.deviceLegacySSH, "stale-days": inv.deviceStaleDays,
+		"rename": inv.deviceRename, "legacy-ssh": inv.deviceLegacySSH, "config-syntax": inv.deviceConfigSyntax, "stale-days": inv.deviceStaleDays,
 		"notice": inv.deviceNotice, "notices": inv.deviceNotices, "import": inv.deviceImport, "export": inv.deviceExport,
 		"hostkey": inv.deviceHostkey, "snmp": inv.deviceSNMP, "ssh": inv.ssh, "ssh-config": inv.deviceSSHConfig, "config": inv.deviceConfig,
 		"scan": inv.deviceScan, "discover": inv.deviceDiscover, "check": inv.deviceCheck,
@@ -617,22 +622,31 @@ type deviceNoticeJSON struct {
 }
 
 type deviceJSON struct {
-	Name        string             `json:"name"`
-	Source      string             `json:"source"`
-	Address     string             `json:"address"`
-	Hostname    string             `json:"hostname,omitempty"`
-	Vendor      string             `json:"vendor"`
-	Port        int                `json:"port"`
-	LegacySSH   bool               `json:"legacy_ssh"`
-	Description string             `json:"description,omitempty"`
-	Location    string             `json:"location,omitempty"`
-	Scope       string             `json:"scope"`
-	Tag         string             `json:"tag"`
-	Shadowed    []string           `json:"shadowed_by"`
-	State       string             `json:"state"`
-	HostKeys    []string           `json:"host_keys"`
-	Notices     []deviceNoticeJSON `json:"notices"`
-	Seen        *deviceSeenJSON    `json:"seen,omitempty"`
+	Name      string `json:"name"`
+	Source    string `json:"source"`
+	Address   string `json:"address"`
+	Hostname  string `json:"hostname,omitempty"`
+	Vendor    string `json:"vendor"`
+	Port      int    `json:"port"`
+	LegacySSH bool   `json:"legacy_ssh"`
+	// ConfigSyntax is the Cisco configuration syntax setting (auto, ios12
+	// or modern; Cisco devices and devices that have one set only), Syntax
+	// what it resolves to (ios12 or modern, from the setting or the last
+	// pull; absent while unknown) and SyntaxSource where that comes from
+	// (setting or pull). The resolution is part of the configuration state:
+	// the caller who is not shown that state does not get it.
+	ConfigSyntax string             `json:"config_syntax,omitempty"`
+	Syntax       string             `json:"syntax,omitempty"`
+	SyntaxSource string             `json:"syntax_source,omitempty"`
+	Description  string             `json:"description,omitempty"`
+	Location     string             `json:"location,omitempty"`
+	Scope        string             `json:"scope"`
+	Tag          string             `json:"tag"`
+	Shadowed     []string           `json:"shadowed_by"`
+	State        string             `json:"state"`
+	HostKeys     []string           `json:"host_keys"`
+	Notices      []deviceNoticeJSON `json:"notices"`
+	Seen         *deviceSeenJSON    `json:"seen,omitempty"`
 	// Config is the state of the configuration pull: ok, differs, never or
 	// failed (none for a host and for a vendor that is not read).
 	Config string `json:"config,omitempty"`
@@ -664,9 +678,19 @@ func deviceJSONOf(inv *invocation, res *devreg.Resolver, e devreg.Entry, recs *d
 		j.Notices = append(j.Notices, deviceNoticeJSON{Kind: n.Kind, Text: n.Text, Acked: n.Acked})
 	}
 	j.Seen = deviceSeenJSONOf(inv, res, e)
+	if e.Source == devreg.SourceDevice && (e.Vendor == "cisco" || e.ConfigSyntax != "") {
+		j.ConfigSyntax = devreg.SyntaxAuto
+		if e.ConfigSyntax != "" {
+			j.ConfigSyntax = e.ConfigSyntax
+		}
+	}
 	if recs != nil {
 		rec, _ := recs.Of(e.Name)
-		if st := configState(e, rec); st != "-" {
+		if j.ConfigSyntax != "" {
+			r := syntaxOf(e, rec)
+			j.Syntax, j.SyntaxSource = r.Syntax, r.Source
+		}
+		if st := inv.configStateOf(e, rec); st != "-" {
 			j.Config = st
 		}
 	}
@@ -776,7 +800,7 @@ func (inv *invocation) deviceList(args []string) error {
 		row := []any{e.Name, dash(e.Address), e.Vendor, dash(e.Scope), state, last, by, via, dash(kinds(ns))}
 		if configs != nil {
 			rec, _ := configs.Of(e.Name)
-			row = slices.Insert(row, 8, any(configState(e, rec)))
+			row = slices.Insert(row, 8, any(inv.configStateOf(e, rec)))
 		}
 		if reach != nil {
 			row = slices.Insert(row, len(row)-1, any(reach[i]))
@@ -845,6 +869,9 @@ func (inv *invocation) deviceShow(args []string) error {
 		row("Identity", dash(e.Identity))
 	} else {
 		row("Legacy ssh", map[bool]string{true: "enabled", false: "disabled"}[e.LegacySSH])
+		if e.Vendor == "cisco" || e.ConfigSyntax != "" {
+			row("Config syntax", inv.configSyntaxText(e))
+		}
 		row("Description", dash(e.Description))
 		row("Location", dash(e.Location))
 	}
@@ -979,6 +1006,11 @@ func (inv *invocation) deviceAdd(args []string) error {
 	}
 	d := devreg.Device{Name: p.Args[0], Vendor: devreg.VendorOther, LegacySSH: p.Has("--legacy-ssh")}
 	checks := []error{devreg.ValidateName(d.Name)}
+	if p.Has("--config-syntax") {
+		var serr error
+		d.ConfigSyntax, serr = devreg.ValidateConfigSyntax(p.Value("--config-syntax"))
+		checks = append(checks, serr)
+	}
 	if d.Address, err = devreg.NormalizeAddress(p.Args[1]); err != nil {
 		checks = append(checks, err)
 	}
@@ -1005,6 +1037,9 @@ func (inv *invocation) deviceAdd(args []string) error {
 		if e != nil {
 			return e
 		}
+	}
+	if d.ConfigSyntax != "" && d.Vendor != "cisco" {
+		return inv.usageErr("--config-syntax is the Cisco configuration syntax; give --vendor cisco.")
 	}
 	if p.Has("--host-key") && p.Has("--no-host-key") {
 		return inv.usageErr("Give --host-key or --no-host-key, not both.")

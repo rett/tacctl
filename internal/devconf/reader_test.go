@@ -28,7 +28,7 @@ func TestCommands(t *testing.T) {
 		t.Errorf("junos: %q %q %v", setup, read, err)
 	}
 	setup, read, err = Commands("ios-xe")
-	if err != nil || !slices.Equal(setup, []string{"terminal length 0"}) || read != "show running-config" {
+	if err != nil || !slices.Equal(setup, []string{"terminal length 0", VersionCommand}) || read != "show running-config" {
 		t.Errorf("ios: %q %q %v", setup, read, err)
 	}
 	if _, _, err := Commands("wti"); !errors.Is(err, ErrUnsupportedVendor) {
@@ -56,7 +56,7 @@ func TestReader(t *testing.T) {
 		f := &fakeRunner{out: map[string]string{"show running-config": "version 15.2\n"}}
 		read, _ := Reader("ios")
 		got, err := read(ctx, f)
-		if err != nil || got != "version 15.2" && got != "version 15.2\n" || !slices.Equal(f.ran, []string{"terminal length 0", "show running-config"}) {
+		if err != nil || got != "version 15.2" && got != "version 15.2\n" || !slices.Equal(f.ran, []string{"terminal length 0", VersionCommand, "show running-config"}) {
 			t.Errorf("%q %v %q", got, err, f.ran)
 		}
 	})

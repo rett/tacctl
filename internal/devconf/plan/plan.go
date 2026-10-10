@@ -31,7 +31,9 @@ type Options struct {
 	From string
 	// Scope names the scope in the sensitivity line of the header.
 	Scope string
-	// Legacy is the IOS 12.x rendering (the device's legacy-ssh flag).
+	// Legacy is the IOS 12.x rendering. It is an input only: the caller
+	// maps the device's one resolved configuration syntax (D113: the
+	// setting, else the pull's version line; never the ssh flag) to it.
 	Legacy bool
 	// Login are the vty and console login leaves of the pulled record, for
 	// the IOS back-out (D106 (ii)). When empty they are read from the

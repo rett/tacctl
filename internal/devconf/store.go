@@ -90,9 +90,16 @@ type Record struct {
 	DurationMS int64  `json:"duration_ms,omitempty"`
 	// SecretsVisible is whether the login that pulled could see the
 	// device's secrets (Extracted.SecretsVisible).
-	SecretsVisible bool                     `json:"secrets_visible"`
-	Sections       map[string]SectionRecord `json:"sections,omitempty"`
-	Applied        *Applied                 `json:"applied,omitempty"`
+	SecretsVisible bool `json:"secrets_visible"`
+	// OS is the image's version line of the last pull of a Cisco device
+	// ('show version | include Version', D113) and Syntax the configuration
+	// syntax derived from it (SyntaxIOS12 or SyntaxModern); both are empty
+	// for a Junos device and for a record made before 0.2.5 or by a pull
+	// that read no version line.
+	OS       string                   `json:"os,omitempty"`
+	Syntax   string                   `json:"syntax,omitempty"`
+	Sections map[string]SectionRecord `json:"sections,omitempty"`
+	Applied  *Applied                 `json:"applied,omitempty"`
 }
 
 // Records is devices-config.json.

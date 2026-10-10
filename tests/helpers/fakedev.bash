@@ -73,11 +73,26 @@ fakedev_register() {
 # fakedev_serve <dir> <junos|cisco> <scope> [<name>]
 # Makes the device answer its read command with what tacctl's walkthrough for
 # <scope> carries as statements: the configuration a device that agrees with
-# tacctl runs.
+# tacctl runs. A Cisco device runs the modern syntax and answers 'show version
+# | include Version' with the fixture's IOS 15.6 line; with
+# FAKEDEV_IOS_SYNTAX=ios12 it runs the IOS 12.x syntax and says IOS 12.4, and
+# FAKEDEV_IOS_VERSION is the line it answers instead ('none': nothing).
 fakedev_serve() {
     local dir="$1" vendor="$2" scope="$3"
-    local out
-    out=$("$TACCTL_BIN_SCRIPT" config "$vendor" --scope "$scope" ${4:+--name "$4"}) || return 1
+    local out legacy=()
+    if [[ "$vendor" == "cisco" ]]; then
+        local vf="${dir}/show version | include Version.out"
+        if [[ "${FAKEDEV_IOS_SYNTAX:-}" == "ios12" ]]; then
+            legacy=(--legacy)
+            printf 'Cisco IOS Software, 7200 Software (C7200-ADVENTERPRISEK9-M), Version 12.4(15)T14, RELEASE SOFTWARE (fc2)\n' > "$vf"
+        fi
+        case "${FAKEDEV_IOS_VERSION:-}" in
+            "") ;;
+            none) rm -f "$vf" ;;
+            *) printf '%s\n' "$FAKEDEV_IOS_VERSION" > "$vf" ;;
+        esac
+    fi
+    out=$("$TACCTL_BIN_SCRIPT" config "$vendor" --scope "$scope" "${legacy[@]}" ${4:+--name "$4"}) || return 1
     # The walkthrough's colour is stripped with sed (a pattern, not a plain
     # substitution).
     # shellcheck disable=SC2001
@@ -86,7 +101,7 @@ fakedev_serve() {
     else
         {
             printf 'version 15.2\nhostname %s\n!\n' "${4:-fake}"
-            sed 's/\x1b\[[0-9;]*m//g' <<< "$out" | grep -E '^(aaa |tacacs|radius|privilege|ip access-list|snmp-server|line vty|username |netconf-yang| +[a-z])'
+            sed 's/\x1b\[[0-9;]*m//g' <<< "$out" | grep -E '^(aaa |tacacs|radius|privilege|ip access-list|snmp-server|line (vty|con)|username |netconf-yang| +[a-z])'
             printf 'end\n'
         } > "${dir}/show running-config.out"
     fi

@@ -102,6 +102,7 @@ devices:
     vendor: cisco
     description: DC1 core
     location: Rack 4, DC1
+    config_syntax: modern
     snmp:
       version: v3
       port: 2161
@@ -299,9 +300,11 @@ func TestPlanRollbackFull(t *testing.T) {
 		"remove device.config.max_concurrency", "remove device.config.transport", "remove device.config.timeout",
 		s.p.ConsoleFile + ": write it the way 0.2.3 reads it",
 		"remove settings.password_cache: tiers engineer,superuser, idle 30 min, max 4 h",
-		s.p.DevicesFile + ": remove the per-device SNMP settings",
+		s.p.DevicesFile + ": remove the per-device SNMP settings and configuration syntax",
 		"remove the snmp map of core-sw1 (version v3, port 2161, timeout 4 s, 2 client ranges)",
 		"remove the snmp map of oob-con1 (port 1161)",
+		"remove the config_syntax key of core-sw1 (modern)",
+		"unknown key 'config_syntax'",
 		"put back the sudoers drop-ins 0.2.3 writes",
 		"rewrite " + s.p.TierSudoersFile + " (the per-tier drop-in: 0.2.3's text, after 'visudo -cf'; it loses the TACCTL_ASKPASS alias and env_keep line and the rows of 'device config', 'device snmp' and 'console forget')",
 		"rewrite " + s.p.SudoersFile + " (the drop-in of group ops: 0.2.3's text",
@@ -336,6 +339,8 @@ func TestPlanRollbackFull(t *testing.T) {
 		"Settings 0.2.3 cannot use are dropped",
 		"core-sw1: version v3, port 2161, timeout 4 s, 2 client ranges",
 		"oob-con1: port 1161",
+		"The configuration syntax setting of a Cisco device (device config-syntax) is removed",
+		"  core-sw1: modern",
 		"The devices' own credentials (1 file in " + filepath.Join(s.p.SNMPDir, "devices") + ") stay, unused by 0.2.3.",
 		"device.config.max_concurrency=16, device.config.transport=ssh, device.config.timeout=120",
 		"The password cache's settings of console.yaml are removed (tiers engineer,superuser, idle 30 min, max 4 h)",
@@ -388,6 +393,7 @@ func TestApplyRollbackConvertsAndIsIdempotent(t *testing.T) {
 		s.p.Overrides + ": removed 3 keys",
 		s.p.ConsoleFile + ": removed settings.password_cache",
 		s.p.DevicesFile + ": removed the SNMP settings of 2 devices",
+		s.p.DevicesFile + ": removed the configuration syntax of 1 device",
 		s.p.TierSudoersFile + ": rewritten with the text 0.2.3 writes",
 		s.p.SudoersFile + ": rewritten with the text 0.2.3 writes",
 	}
@@ -436,7 +442,7 @@ func TestApplyRollbackConvertsAndIsIdempotent(t *testing.T) {
 			t.Errorf("devices.yaml lost %q:\n%s", keep, dv)
 		}
 	}
-	if strings.Contains(dv, "snmp") || strings.Contains(dv, "2161") {
+	if strings.Contains(dv, "snmp") || strings.Contains(dv, "2161") || strings.Contains(dv, "config_syntax") {
 		t.Errorf("devices.yaml:\n%s", dv)
 	}
 	if after[s.p.TierSudoersFile] != tier.Sudoers023() || after[s.p.SudoersFile] != tier.GroupSudoers023("ops") {
@@ -528,7 +534,7 @@ func TestRollbackSudoersCases(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(done) != 3 || len(p.NotWritten()) != 2 || !strings.Contains(p.NotWritten()[0], "visudo validation failed") {
+	if len(done) != 4 || len(p.NotWritten()) != 2 || !strings.Contains(p.NotWritten()[0], "visudo validation failed") {
 		t.Errorf("done %q not written %q", done, p.NotWritten())
 	}
 	if len(old023Problems(t, s)) != 0 {
@@ -540,7 +546,7 @@ func TestRollbackSudoersCases(t *testing.T) {
 	s.in.InstallSudoers = nil
 	p, _ = PlanRollback(s.in)
 	done, _ = ApplyRollback(p)
-	if len(done) != 3 || len(p.NotWritten()) != 2 {
+	if len(done) != 4 || len(p.NotWritten()) != 2 {
 		t.Errorf("done %q not written %q", done, p.NotWritten())
 	}
 }

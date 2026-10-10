@@ -93,9 +93,9 @@ Opens an ssh session to a registered device or an enrolled Linux host, named
 by its name or its registered address ('tacctl device list'). ssh runs as you,
 never as root, and logs in as you: your username, your tacctl password (public
 keys and the agent are not used). The device's vendor profile applies
-(legacy-ssh: the old IOS algorithms), and a device with pinned host keys is
-held to them: a key that changed is refused, with the fingerprints to compare
-and the command that re-pins it.
+(legacy-ssh: the SHA-1 key exchange, CBC ciphers and ssh-rsa), and a device
+with pinned host keys is held to them: a key that changed is refused, with the
+fingerprints to compare and the command that re-pins it.
 
   -p <port>        Connect to <port> (default: the device's port, else 22)
   -X, -Y           Forward X11 (untrusted, trusted) to this server's display

@@ -31,6 +31,7 @@ import (
 	"github.com/rett/tacctl/internal/askpass"
 	"github.com/rett/tacctl/internal/devconf"
 	"github.com/rett/tacctl/internal/devconf/batch"
+	"github.com/rett/tacctl/internal/devices"
 	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/devssh"
 	"github.com/rett/tacctl/internal/ui"
@@ -109,6 +110,12 @@ type pullOutcome struct {
 	// Sections are the comparison of a successful pull.
 	Sections       []devconf.SectionResult
 	SecretsVisible bool
+	// OS is the version line a Cisco device answered (D113) and Syntax the
+	// configuration syntax the comparison was made in ("" where the syntax
+	// is of no consequence); SyntaxGuessed is set when the line matched no
+	// row of devconf.SyntaxRows.
+	OS, Syntax    string
+	SyntaxGuessed bool
 	// Reason is the failure in words; Hint what to do about it.
 	Reason, Hint string
 	// Offered is the host key a device presented that is not pinned
@@ -399,6 +406,9 @@ type deviceRead struct {
 	// Fallback is why NETCONF was not used under auto ("" when it was, or
 	// was not tried).
 	Fallback string
+	// Version is the device's version line (devconf.VersionLine; Cisco
+	// only, "" when it answered none).
+	Version string
 }
 
 // errNetconfNotRead is --transport netconf for a vendor that has no NETCONF
@@ -426,7 +436,7 @@ func (r netconfRunner) Run(ctx context.Context, cmd string) (string, error) {
 // the reason; 'netconf' and 'ssh' never do).
 func readDeviceConfig(ctx context.Context, c *devssh.Client, vendor, mode string) (deviceRead, error) {
 	var out deviceRead
-	read, err := devconf.Reader(vendor)
+	read, err := devconf.ReaderWithVersion(vendor)
 	if err != nil {
 		return out, err
 	}
@@ -439,7 +449,7 @@ func readDeviceConfig(ctx context.Context, c *devssh.Client, vendor, mode string
 		ns, nerr := c.NETCONF()
 		if nerr == nil {
 			out.Netconf = netconfHelloOK
-			raw, rerr := func() (string, error) {
+			raw, _, rerr := func() (string, string, error) {
 				defer func() { _ = ns.Close() }()
 				return read(ctx, netconfRunner{ns})
 			}()
@@ -472,11 +482,11 @@ func readDeviceConfig(ctx context.Context, c *devssh.Client, vendor, mode string
 		return out, err
 	}
 	defer func() { _ = s.Close() }()
-	raw, err := read(ctx, s)
+	raw, version, err := read(ctx, s)
 	if err != nil {
 		return out, err
 	}
-	out.Raw, out.Transport = raw, transportSSH
+	out.Raw, out.Version, out.Transport = raw, version, transportSSH
 	return out, nil
 }
 
@@ -510,7 +520,7 @@ func resultOf(ctx context.Context, name string, err error) (result, reason, hint
 	case errors.Is(err, devssh.ErrUnreachable):
 		return devconf.ResultUnreachable, shortReason(err), ""
 	case errors.Is(err, devssh.ErrHandshake):
-		return devconf.ResultUnreachable, shortReason(err), "tacctl device legacy-ssh " + name + " enable (an old IOS needs its legacy algorithms)"
+		return devconf.ResultUnreachable, shortReason(err), "tacctl device legacy-ssh " + name + " enable (a device that offers only the SHA-1 key exchange, CBC ciphers or ssh-rsa needs them)"
 	case errors.Is(err, devssh.ErrNoSubsystem):
 		return devconf.ResultUnreachable, "NETCONF is not enabled on the device", ""
 	case errors.Is(err, errNetconfNotRead):
@@ -569,7 +579,17 @@ func (r *pullRun) pullDevice(ctx context.Context, e devreg.Entry, o *pullOutcome
 	if r.mode == transportNetconf && e.Vendor == "cisco" {
 		return fail(batch.StatusFailed, errNetconfNotRead.Error(), "")
 	}
-	expected, err := r.render.Expected(e)
+	// A device whose syntax is unknown (D113) is rendered after the read, in
+	// the syntax its version line says; the refusals that need no device
+	// (a RADIUS scope that is not enabled) are the same for both syntaxes.
+	_, syntaxKnown := r.render.syntaxFor(e)
+	var expected []devices.Section
+	var err error
+	if syntaxKnown {
+		expected, err = r.render.Expected(e)
+	} else {
+		expected, err = r.render.ExpectedAs(e, false)
+	}
 	if err != nil {
 		return fail(batch.StatusFailed, "cannot build the expected configuration: "+err.Error(), "")
 	}
@@ -589,6 +609,29 @@ func (r *pullRun) pullDevice(ctx context.Context, e devreg.Entry, o *pullOutcome
 		return r.failed(ctx, e, o, err)
 	}
 	o.Transport = rd.Transport
+	// The comparison is made in the syntax the device is in now: the
+	// setting, else what its version line says, else the record's. A device
+	// that says nothing and has no record of it cannot be compared.
+	if r.render.inv.syntaxMatters(e) {
+		o.OS = rd.Version
+		var old *devconf.Record
+		if r.render.recs != nil {
+			old, _ = r.render.recs.Of(e.Name)
+		}
+		syn, guessed := devconf.SyntaxFromRead(e.ConfigSyntax, rd.Version, old)
+		if syn == "" {
+			return fail(batch.StatusFailed, "the device's IOS version was not read ('"+devconf.VersionCommand+
+				"' answered no version line), so its configuration syntax is unknown",
+				"tacctl device config-syntax "+e.Name+" ios12|modern")
+		}
+		o.Syntax, o.SyntaxGuessed = syn, guessed
+		expected, err = r.render.ExpectedAs(e, syn == devconf.SyntaxIOS12)
+		if err != nil {
+			return fail(batch.StatusFailed, "cannot build the expected configuration: "+err.Error(), "")
+		}
+	} else if e.Vendor == "cisco" {
+		o.OS = rd.Version
+	}
 	ext, err := devconf.ExtractWith(e.Vendor, rd.Raw, devconf.Options{Expected: expected})
 	if err != nil {
 		return r.failed(ctx, e, o, err)
@@ -672,6 +715,20 @@ func (r *pullRun) recordSuccess(o *pullOutcome, e devreg.Entry, ext devconf.Extr
 	}
 	rec.Pulled, rec.By, rec.Result = now, r.user, devconf.ResultOK
 	rec.DurationMS = o.Duration.Milliseconds()
+	// The image of a Cisco device (D113): the version line and the syntax
+	// derived from it (not the registry's setting, which overrides it
+	// without changing what the device says). A pull that read no line
+	// keeps the record's under auto, and forgets them under a setting: the
+	// device was compared without them.
+	if e.Vendor == "cisco" {
+		switch {
+		case o.OS != "":
+			rec.OS = o.OS
+			rec.Syntax, _ = devconf.DeriveSyntax(o.OS)
+		case e.ConfigSyntax != "":
+			rec.OS, rec.Syntax = "", ""
+		}
+	}
 	rec.SecretsVisible = ext.SecretsVisible
 	if err := rec.SetSections(ext, results); err != nil {
 		return err

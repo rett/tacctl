@@ -395,13 +395,22 @@ func parseDevice(name string, v any) (*Device, error) {
 	bad := func(key string) error { return fail("device '" + name + "': invalid '" + key + "'.") }
 	for k, val := range m.All() {
 		switch k {
-		case "address", "vendor", "hostname", "description", "location":
+		case "address", "vendor", "hostname", "description", "location", "config_syntax":
 			s, ok := val.(string)
 			if !ok {
 				return nil, bad(k)
 			}
+			if k == "config_syntax" {
+				// auto is the absence of the key; a file that spells it is
+				// read as that, and anything but ios12 and modern is refused.
+				cs, err := ValidateConfigSyntax(s)
+				if err != nil || s == "" {
+					return nil, bad(k)
+				}
+				s = cs
+			}
 			*map[string]*string{"address": &d.Address, "vendor": &d.Vendor, "hostname": &d.Hostname,
-				"description": &d.Description, "location": &d.Location}[k] = s
+				"description": &d.Description, "location": &d.Location, "config_syntax": &d.ConfigSyntax}[k] = s
 		case "port":
 			n, ok := val.(int)
 			if !ok {
@@ -511,6 +520,9 @@ func (f *File) doc() *yamlpy.Map {
 		}
 		if d.LegacySSH {
 			m.Set("legacy_ssh", true)
+		}
+		if d.ConfigSyntax != "" {
+			m.Set("config_syntax", d.ConfigSyntax)
 		}
 		if d.Description != "" {
 			m.Set("description", d.Description)

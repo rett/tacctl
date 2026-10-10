@@ -395,7 +395,7 @@ Subcommands:
   wti     [--scope <name>] [--protocol tacacs|radius]             Show step-by-step WTI console-server (v8.x serial menu) setup for a scope (RADIUS: not verified on a unit)
       --scope <name>                   (cisco, juniper, wti) The scope whose server address and secret go in (default: the default scope)
       --protocol tacacs|radius         (cisco, juniper, wti) The backend the device uses (default: the scope's auth-method, else its only protocol, else tacacs)
-      --legacy                         (cisco) IOS 12.x syntax
+      --legacy                         (cisco) The IOS 12.x syntax, whatever the --name device's config-syntax says
       --staging <bench-ip>             (cisco, juniper, wti, with --scope) Provisioned off-site: the bench address joins the scope as a
                                        /32 (its secret and users) until the device is seen in place (tacctl scope staging)
       --name <device>                  (cisco, juniper, wti) A registered device of the scope: its location, description and sysName fill the SNMP step;

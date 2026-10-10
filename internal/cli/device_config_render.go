@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/rett/tacctl/internal/devconf"
 	"github.com/rett/tacctl/internal/devices"
 	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/snmpcred"
@@ -122,6 +123,10 @@ type managedRender struct {
 	// caller who only lists states logs none.
 	logReads bool
 	base     map[managedKey]*managedBase
+	// recs are the configuration records as prepare read them: the pull's
+	// version line is where a device's syntax comes from (D113), so the
+	// render reads the records once, before any worker starts.
+	recs *devconf.Records
 	// logged are the scopes whose reads were logged.
 	logged map[string]bool
 	// snmp is each prepared device's SNMP input, by lowercased name: the
@@ -142,80 +147,129 @@ func (inv *invocation) newManagedRender(opts managedOptions, logReads bool) *man
 		snmp: map[string]devices.SNMPInput{}, snmpProblem: map[string]string{}}
 }
 
-// keyOf is the sharing key of a registered device.
+// keyOf is the sharing key of a registered device. A device whose syntax is
+// unknown (needs pull) is keyed as the modern syntax: it has no expectation
+// of its own (Expected refuses it), and the pull renders it in the syntax
+// it reads (ExpectedAs).
 func (r *managedRender) keyOf(e devreg.Entry) managedKey {
-	return managedKey{vendor: e.Vendor, scope: e.Scope, legacy: r.legacyOf(e)}
+	legacy, _ := r.syntaxFor(e)
+	return managedKey{vendor: e.Vendor, scope: e.Scope, legacy: legacy}
 }
 
-// legacyOf says whether a Cisco device is compared against the IOS 12.x
-// syntax: the registry's legacy-ssh flag marks the old IOS, whose AAA lines
-// are 'tacacs-server host' (TACACS+ only: a RADIUS scope has one syntax).
-func (r *managedRender) legacyOf(e devreg.Entry) bool {
-	if e.Vendor != "cisco" || !e.LegacySSH || e.Scope == "" {
+// syntaxMatters says whether the configuration syntax is a fact that
+// changes what a device is compared against: a Cisco device of a scope that
+// is served over TACACS+ (a RADIUS scope has the one 'radius server'
+// syntax, as before D113).
+func (inv *invocation) syntaxMatters(e devreg.Entry) bool {
+	if e.Vendor != "cisco" || e.Scope == "" {
 		return false
 	}
-	choice, source := r.inv.scopeProtocolChoice(e.Scope)
+	choice, source := inv.scopeProtocolChoice(e.Scope)
 	protocol, _ := devices.ResolveProtocol("", choice, source)
 	return protocol != devices.RADIUS
+}
+
+// syntaxOf is the one resolution of a Cisco device's configuration
+// syntax (D113 (3)): the explicit setting, else the syntax the last pull
+// derived from the device's version line, else nothing. The comparison, the
+// walkthrough and the planner all take it from here; the ssh flag has no
+// part in it.
+func syntaxOf(e devreg.Entry, rec *devconf.Record) devconf.SyntaxResolution {
+	return devconf.ResolveSyntax(e.ConfigSyntax, rec)
+}
+
+// syntaxFor is the rendering syntax of a registered device: legacy is the
+// IOS 12.x syntax (devices.Request.Legacy), and known is false for a
+// device that needs a pull to say (a Cisco device of a TACACS+ scope whose
+// setting is auto and whose record has no syntax).
+func (r *managedRender) syntaxFor(e devreg.Entry) (legacy, known bool) {
+	if !r.inv.syntaxMatters(e) {
+		return false, true
+	}
+	var rec *devconf.Record
+	if r.recs != nil {
+		rec, _ = r.recs.Of(e.Name)
+	}
+	switch syntaxOf(e, rec).Syntax {
+	case devconf.SyntaxIOS12:
+		return true, true
+	case devconf.SyntaxModern:
+		return false, true
+	}
+	return false, false
 }
 
 // prepare makes the bases of every vendor and scope the entries need. A
 // refusal inside (RADIUS not enabled) is kept as the base's problem, not
 // printed: the batch says it once per device in its own line.
 func (r *managedRender) prepare(entries []devreg.Entry) {
-	inv := r.inv
+	r.recs, _ = r.inv.configStore().Load()
 	for _, e := range entries {
 		if e.Source != devreg.SourceDevice || !e.Configured || (e.Vendor != "cisco" && e.Vendor != "juniper") {
 			continue
 		}
 		k := r.keyOf(e)
-		if _, done := r.base[k]; done {
-			r.prepareOwn(e, k)
-			continue
-		}
-		b := &managedBase{}
-		r.base[k] = b
-		// An engineer's pull reads the scope's secret as the walkthrough
-		// does: logged once per scope, never the value.
-		if r.logReads && !r.logged[k.scope] {
-			r.logged[k.scope] = true
-			inv.secretRead("scope", k.scope)
-		}
-		choice, source := inv.scopeProtocolChoice(k.scope)
-		protocol, psource := devices.ResolveProtocol("", choice, source)
-		var errBuf bytes.Buffer
-		realErr := inv.app.Out.Stderr
-		inv.app.Out.Stderr = &errBuf
-		req, d, err := inv.deviceRenderInput(renderParams{
-			Vendor: k.vendor, Scope: k.scope, Legacy: k.legacy, Protocol: protocol, Source: psource,
-			AuthServer: r.opts.AuthServer, AuthName: r.opts.AuthName, SourceIP: r.opts.SourceIP,
-		})
-		inv.app.Out.Stderr = realErr
-		// What the build said on stderr: its warnings are the operator's to
-		// see, its refusal is the base's problem.
-		for _, l := range strings.Split(strings.TrimRight(errBuf.String(), "\n"), "\n") {
-			if l == "" {
-				continue
-			}
-			if rest, ok := strings.CutPrefix(stripColour(l), "[ERROR] "); ok {
-				if b.problem == "" {
-					b.problem = rest
-				}
-				continue
-			}
-			_, _ = realErr.Write([]byte(l + "\n"))
-		}
-		if err != nil && b.problem == "" {
-			b.problem = strings.Join(msgs(err), " ")
-		}
-		if b.problem == "" {
-			b.req, b.d = req, d
-			if r.logReads && d.SNMP.Version != "" && !r.logged["snmp "+k.scope] {
-				r.logged["snmp "+k.scope] = true
-				inv.secretRead("snmp", k.scope)
-			}
+		r.prepareKey(e, k)
+		// A device whose setting is auto is rendered by a pull in the syntax
+		// it reads then (unknown before the first pull, and an upgraded
+		// device says another one than its record): both bases are made
+		// before the workers start.
+		if r.inv.syntaxMatters(e) && e.ConfigSyntax == "" {
+			k2 := k
+			k2.legacy = !k.legacy
+			r.prepareKey(e, k2)
 		}
 		r.prepareOwn(e, k)
+	}
+}
+
+// prepareKey makes the base of one key, once.
+func (r *managedRender) prepareKey(e devreg.Entry, k managedKey) {
+	inv := r.inv
+	if _, done := r.base[k]; done {
+		return
+	}
+	b := &managedBase{}
+	r.base[k] = b
+	// An engineer's pull reads the scope's secret as the walkthrough
+	// does: logged once per scope, never the value.
+	if r.logReads && !r.logged[k.scope] {
+		r.logged[k.scope] = true
+		inv.secretRead("scope", k.scope)
+	}
+	choice, source := inv.scopeProtocolChoice(k.scope)
+	protocol, psource := devices.ResolveProtocol("", choice, source)
+	var errBuf bytes.Buffer
+	realErr := inv.app.Out.Stderr
+	inv.app.Out.Stderr = &errBuf
+	req, d, err := inv.deviceRenderInput(renderParams{
+		Vendor: k.vendor, Scope: k.scope, Legacy: k.legacy, Protocol: protocol, Source: psource,
+		AuthServer: r.opts.AuthServer, AuthName: r.opts.AuthName, SourceIP: r.opts.SourceIP,
+	})
+	inv.app.Out.Stderr = realErr
+	// What the build said on stderr: its warnings are the operator's to
+	// see, its refusal is the base's problem.
+	for _, l := range strings.Split(strings.TrimRight(errBuf.String(), "\n"), "\n") {
+		if l == "" {
+			continue
+		}
+		if rest, ok := strings.CutPrefix(stripColour(l), "[ERROR] "); ok {
+			if b.problem == "" {
+				b.problem = rest
+			}
+			continue
+		}
+		_, _ = realErr.Write([]byte(l + "\n"))
+	}
+	if err != nil && b.problem == "" {
+		b.problem = strings.Join(msgs(err), " ")
+	}
+	if b.problem == "" {
+		b.req, b.d = req, d
+		if r.logReads && d.SNMP.Version != "" && !r.logged["snmp "+k.scope] {
+			r.logged["snmp "+k.scope] = true
+			inv.secretRead("snmp", k.scope)
+		}
 	}
 }
 
@@ -254,9 +308,29 @@ func (r *managedRender) prepareOwn(e devreg.Entry, k managedKey) {
 // Expected is devices.Managed for a registered device: its own SNMP values
 // laid over the vendor and scope's Data. It reads nothing but the prepared
 // base and the entry, so it is safe to call concurrently. The error is why
-// the device cannot be rendered for.
+// the device cannot be rendered for; a Cisco device whose syntax is unknown
+// is one (errSyntaxUnknown: it needs a pull).
 func (r *managedRender) Expected(e devreg.Entry) ([]devices.Section, error) {
-	b, ok := r.base[r.keyOf(e)]
+	legacy, known := r.syntaxFor(e)
+	if !known {
+		return nil, errSyntaxUnknown
+	}
+	return r.expectedFor(e, managedKey{vendor: e.Vendor, scope: e.Scope, legacy: legacy})
+}
+
+// ExpectedAs is Expected for a syntax the pull has just read from the
+// device (legacy: the IOS 12.x syntax), for a device whose own resolution
+// is unknown or out of date. A device the syntax does not matter for has
+// one expectation, whatever is asked.
+func (r *managedRender) ExpectedAs(e devreg.Entry, legacy bool) ([]devices.Section, error) {
+	if !r.inv.syntaxMatters(e) {
+		return r.Expected(e)
+	}
+	return r.expectedFor(e, managedKey{vendor: e.Vendor, scope: e.Scope, legacy: legacy})
+}
+
+func (r *managedRender) expectedFor(e devreg.Entry, k managedKey) ([]devices.Section, error) {
+	b, ok := r.base[k]
 	switch {
 	case !ok:
 		return nil, errNoRender
@@ -286,6 +360,11 @@ func (e *renderProblem) Error() string { return e.msg }
 // errNoRender is a device whose vendor, scope or kind has no expected
 // configuration.
 var errNoRender = &renderProblem{msg: "nothing is rendered for this device"}
+
+// errSyntaxUnknown is a Cisco device that has no configuration syntax yet
+// (D113): its setting is auto and no pull has read its version line. It is
+// neither compared as IOS 12.x nor as the modern syntax.
+var errSyntaxUnknown = &renderProblem{msg: devconf.NeedsPullText}
 
 // ansiRE matches the colour sequences of ui's tags.
 var ansiRE = regexp.MustCompile("\x1b\\[[0-9;]*m")

@@ -1,6 +1,6 @@
 package devconf
 
-// Staleness (D66): never, failed, differs or ok.
+// Staleness (D66): never, failed, differs or ok, and (D113) pull.
 
 import "github.com/rett/tacctl/internal/devices"
 
@@ -18,7 +18,41 @@ const (
 	StaleDiffers Staleness = "differs"
 	// StaleOK: the last pull was ok and every section agrees (or is n/a).
 	StaleOK Staleness = "ok"
+	// StalePull (D113): a Cisco device whose configuration syntax is
+	// 'auto' and whose record has none (a record of 0.2.4, or a pull that
+	// read no version line) cannot be compared: it is neither guessed
+	// modern nor IOS 12.x, and one pull makes it known. The CONFIG column
+	// says 'pull'; the detail is NeedsPullText.
+	StalePull Staleness = "pull"
 )
+
+// NeedsPullText is the words of the StalePull state.
+const NeedsPullText = "needs pull (syntax unknown)"
+
+// NeedsSyntax reports whether the record is a good pull of a Cisco device
+// that cannot be compared because its syntax is unknown (D113): the
+// registry's setting is auto (or empty) and the record keeps no syntax. A
+// record that is not ok, or has no sections, is never/failed already.
+func NeedsSyntax(rec *Record, setting string) bool {
+	if rec == nil || rec.Result != ResultOK || len(rec.Sections) == 0 {
+		return false
+	}
+	if fam, err := Family(rec.Vendor); err != nil || fam != FamilyIOS {
+		return false
+	}
+	return Syntax(setting, rec) == ""
+}
+
+// WithSyntax is st with D113's state laid over it: a device that is ok or
+// differs but whose syntax is unknown is StalePull. matters is false where
+// the syntax is of no consequence (a Cisco device in a RADIUS scope has the
+// one 'radius server' syntax).
+func WithSyntax(st Staleness, rec *Record, setting string, matters bool) Staleness {
+	if matters && (st == StaleOK || st == StaleDiffers) && NeedsSyntax(rec, setting) {
+		return StalePull
+	}
+	return st
+}
 
 // IsStale reports whether the device wants attention: anything but ok.
 func (s Staleness) IsStale() bool { return s != StaleOK }

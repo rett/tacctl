@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -130,6 +131,11 @@ func (b *pullBox) expected(name string) string {
 	r := inv.newManagedRender(managedOptions{}, false)
 	r.prepare([]devreg.Entry{e})
 	secs, err := r.Expected(e)
+	if errors.Is(err, errSyntaxUnknown) {
+		// A Cisco device the pull has not read yet: the modern syntax is
+		// what the fake device (see serve) says it runs.
+		secs, err = r.ExpectedAs(e, false)
+	}
 	if err != nil {
 		b.t.Fatal(err)
 	}
@@ -144,14 +150,38 @@ func (b *pullBox) expected(name string) string {
 	return text
 }
 
-// serve makes the fake device answer the read command of vendor with text.
+// ciscoVersionModern and ciscoVersion12 are the lines a fake Cisco device
+// answers 'show version | include Version' with (D113).
+const (
+	ciscoVersionModern = "Cisco IOS Software, IOSv Software (VIOS-ADVENTERPRISEK9-M), Version 15.6(2)T, RELEASE SOFTWARE (fc2)"
+	ciscoVersion12     = "Cisco IOS Software, 7200 Software (C7200-ADVENTERPRISEK9-M), Version 12.4(15)T14, RELEASE SOFTWARE (fc2)"
+)
+
+// serve makes the fake device answer the read command of vendor with text;
+// a Cisco device answers the version command with a 15.x line (version
+// changes it).
 func (b *pullBox) serve(vendor, text string) {
 	b.t.Helper()
 	cmd := junosReadCmd
 	if vendor == "cisco" {
 		cmd = "show running-config"
+		b.version(ciscoVersionModern)
 	}
 	if err := os.WriteFile(filepath.Join(b.dir, cmd+".out"), []byte(text), 0o644); err != nil {
+		b.t.Fatal(err)
+	}
+}
+
+// version makes the fake Cisco device answer 'show version | include
+// Version' with line ("" answers what a device that refuses it does).
+func (b *pullBox) version(line string) {
+	b.t.Helper()
+	p := filepath.Join(b.dir, "show version | include Version.out")
+	if line == "" {
+		_ = os.Remove(p)
+		return
+	}
+	if err := os.WriteFile(p, []byte(line+"\n"), 0o644); err != nil {
 		b.t.Fatal(err)
 	}
 }
@@ -1094,6 +1124,8 @@ func TestConfigStatesRendered(t *testing.T) {
 	sb.write("state/devices.yaml", "version: 1\nsettings:\n  stale_days: 30\ndevices:\n"+
 		"  d-ok: {address: 192.168.1.1, vendor: cisco}\n"+
 		"  d-diff: {address: 192.168.1.2, vendor: cisco}\n"+
+		"  d-old: {address: 192.168.1.8, vendor: cisco}\n"+
+		"  d-set: {address: 192.168.1.9, vendor: cisco, config_syntax: ios12}\n"+
 		"  d-never: {address: 192.168.1.3, vendor: juniper}\n"+
 		"  d-failed: {address: 192.168.1.4, vendor: juniper}\n"+
 		"  d-wti: {address: 192.168.1.5, vendor: wti}\n"+
@@ -1102,14 +1134,23 @@ func TestConfigStatesRendered(t *testing.T) {
 		"  d-other: {address: 192.168.1.6, vendor: other}\n", 0o600)
 	sb.write("var-lib/devices-config.json", `{"version":1,"updated":"2026-10-09T12:00:00Z","devices":{
 "d-ok":{"vendor":"cisco","transport":"ssh","pulled":"2026-10-09T12:00:00Z","by":"alice","result":"ok","secrets_visible":true,
+  "os":"Cisco IOS Software, IOSv Software, Version 15.6(2)T","syntax":"modern",
   "sections":{"aaa":{"state":"ok"},"roles":{"state":"ok"},"netconf":{"state":"n/a"}}},
 "d-diff":{"vendor":"cisco","transport":"ssh","pulled":"2026-10-09T12:00:00Z","by":"alice","result":"ok","secrets_visible":true,
+  "os":"Cisco IOS Software, 7200 Software, Version 12.4(15)T14","syntax":"ios12",
   "sections":{"aaa":{"state":"differs"},"snmp":{"state":"missing"}}},
+"d-old":{"vendor":"cisco","transport":"ssh","pulled":"2026-10-09T12:00:00Z","by":"alice","result":"ok","secrets_visible":true,
+  "sections":{"aaa":{"state":"ok"},"roles":{"state":"ok"}}},
+"d-set":{"vendor":"cisco","transport":"ssh","pulled":"2026-10-09T12:00:00Z","by":"alice","result":"ok","secrets_visible":true,
+  "sections":{"aaa":{"state":"ok"},"roles":{"state":"ok"}}},
 "d-failed":{"vendor":"juniper","result":"timeout"},
 "d-unsup":{"vendor":"cisco","result":"unsupported"},
 "d-wti":{"vendor":"wti","result":"unsupported"}}}`, 0o600)
 	out := plain(sb.run("", []string{"device", "list"}))
-	want := map[string]string{"d-ok": "ok", "d-diff": "differs", "d-never": "never", "d-failed": "failed", "d-wti": "-", "d-other": "-", "d-unsup": "failed", "d-nosc": "-"}
+	// d-old is a record of 0.2.4: no version line, so no syntax, and the
+	// setting is auto: neither guessed (D113), one pull makes it known. d-set
+	// has the same record and a setting: compared.
+	want := map[string]string{"d-ok": "ok", "d-old": "pull", "d-set": "ok", "d-diff": "differs", "d-never": "never", "d-failed": "failed", "d-wti": "-", "d-other": "-", "d-unsup": "failed", "d-nosc": "-"}
 	// (d-nosc is in no scope: a pull refuses it, so it is not 'never'.)
 	// The CONFIG column: the word under its heading, whatever the columns
 	// before it hold.
@@ -1153,7 +1194,7 @@ func TestConfigStatesRendered(t *testing.T) {
 	for _, d := range devs {
 		got[d.Name] = d.Config
 	}
-	if got["d-ok"] != "ok" || got["d-diff"] != "differs" || got["d-never"] != "never" || got["d-failed"] != "failed" ||
+	if got["d-ok"] != "ok" || got["d-old"] != "pull" || got["d-diff"] != "differs" || got["d-never"] != "never" || got["d-failed"] != "failed" ||
 		got["d-wti"] != "" || got["d-other"] != "" {
 		t.Errorf("json configs %v", got)
 	}
@@ -1321,5 +1362,20 @@ func TestCorruptSectionsFileIsRecoveredByTheNextPull(t *testing.T) {
 	}
 	if got := b.run("device", "config", "list"); b.sb.code != 0 || strings.Contains(b.sb.stderr(), "cannot be read") {
 		t.Errorf("list after unsafe characters: %d %q\n%s", b.sb.code, b.sb.stderr(), got)
+	}
+}
+
+// putRecord writes one device's configuration record (the others stay).
+func (b *pullBox) putRecord(name string, rec devconf.Record) {
+	b.t.Helper()
+	st := devconf.Store{Records: filepath.Join(b.sb.dir, "var-lib", "devices-config.json"),
+		Dir: filepath.Join(b.sb.dir, "var-lib", "device-config")}
+	recs, err := st.Load()
+	if err != nil {
+		b.t.Fatal(err)
+	}
+	recs.Put(name, rec)
+	if err := st.Save(recs); err != nil {
+		b.t.Fatal(err)
 	}
 }

@@ -32,6 +32,18 @@ func configState(e devreg.Entry, rec *devconf.Record) string {
 	return string(devconf.Recorded(rec))
 }
 
+// configStateOf is configState with D113's state laid over it: a Cisco
+// device of a TACACS+ scope whose syntax is unknown says 'pull'.
+func (inv *invocation) configStateOf(e devreg.Entry, rec *devconf.Record) string {
+	st := configState(e, rec)
+	if st == string(devconf.StaleOK) || st == string(devconf.StaleDiffers) {
+		if inv.syntaxMatters(e) {
+			return string(devconf.WithSyntax(devconf.Staleness(st), rec, e.ConfigSyntax, true))
+		}
+	}
+	return st
+}
+
 // configVisible says whether the caller is shown the configuration state of
 // the devices (the CONFIG column, the Configuration row, the config field of
 // the JSON): the operator tier and up, as 'device config list' is (D69).
@@ -163,7 +175,7 @@ func (inv *invocation) deviceConfigList(args []string) error {
 	var rows []row
 	for _, e := range entries {
 		rec, _ := recs.Of(e.Name)
-		state := configState(e, rec)
+		state := inv.configStateOf(e, rec)
 		var differ []string
 		if e.Vendor != "wti" && e.Configured {
 			if st, err := inv.staleness(store, recs, render, e); err == nil {
@@ -247,6 +259,9 @@ func (inv *invocation) deviceConfigList(args []string) error {
 			case len(r.differ) > 0:
 				detail = strings.Join(r.differ, ",")
 			}
+		}
+		if r.state == string(devconf.StalePull) {
+			detail = devconf.NeedsPullText
 		}
 		switch {
 		case r.e.Vendor == "wti":

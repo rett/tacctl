@@ -192,19 +192,23 @@ func diffLinesJSON(ls []devconf.DiffLine) []diffLineJSON {
 
 // pullJSON is one device of a pull in --json: a line per device.
 type pullJSON struct {
-	Name       string            `json:"name"`
-	Scope      string            `json:"scope"`
-	Vendor     string            `json:"vendor"`
-	Status     string            `json:"status"`
-	Result     string            `json:"result,omitempty"`
-	Reason     string            `json:"reason,omitempty"`
-	Transport  string            `json:"transport,omitempty"`
-	Netconf    string            `json:"netconf,omitempty"`
-	Fallback   string            `json:"fallback,omitempty"`
-	DurationMS int64             `json:"duration_ms"`
-	DiffersIn  []string          `json:"differs_in,omitempty"`
-	Secrets    *bool             `json:"secrets_visible,omitempty"`
-	Sections   []pullSectionJSON `json:"sections,omitempty"`
+	Name      string `json:"name"`
+	Scope     string `json:"scope"`
+	Vendor    string `json:"vendor"`
+	Status    string `json:"status"`
+	Result    string `json:"result,omitempty"`
+	Reason    string `json:"reason,omitempty"`
+	Transport string `json:"transport,omitempty"`
+	Netconf   string `json:"netconf,omitempty"`
+	Fallback  string `json:"fallback,omitempty"`
+	// Syntax is the Cisco configuration syntax the device was compared in
+	// (D113), SyntaxGuessed when its version line matched no known row.
+	Syntax        string            `json:"syntax,omitempty"`
+	SyntaxGuessed bool              `json:"syntax_guessed,omitempty"`
+	DurationMS    int64             `json:"duration_ms"`
+	DiffersIn     []string          `json:"differs_in,omitempty"`
+	Secrets       *bool             `json:"secrets_visible,omitempty"`
+	Sections      []pullSectionJSON `json:"sections,omitempty"`
 }
 
 func (v *pullView) deviceJSON(i int, withLines bool) pullJSON {
@@ -223,6 +227,7 @@ func (v *pullView) deviceJSON(i int, withLines bool) pullJSON {
 	}
 	j.DurationMS = o.Duration.Milliseconds()
 	j.Reason = cleanLine(o.Reason)
+	j.Syntax, j.SyntaxGuessed = o.Syntax, o.SyntaxGuessed
 	if r.Result.Status == batch.StatusOK {
 		j.DiffersIn = r.Result.Differs
 		sv := o.SecretsVisible

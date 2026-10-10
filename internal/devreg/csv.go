@@ -17,8 +17,8 @@ import (
 )
 
 // Row is one device of an import and where it came from. A CSV row says
-// nothing about the hostname or the legacy-ssh flag, so a merge keeps the
-// registered values of those.
+// nothing about the hostname, the legacy-ssh flag or the configuration
+// syntax, so a merge keeps the registered values of those.
 type Row struct {
 	Line   int
 	CSV    bool
@@ -184,6 +184,13 @@ func (f *File) Import(rows []Row, replace, allowGeneric bool, hostEntries []Entr
 		if merged.SNMP.Empty() {
 			merged.SNMP = old.SNMP.Clone()
 		}
+		// Nor does it drop a device's configuration syntax setting (D113): a
+		// file that says nothing of it (a registry exported by an earlier
+		// tacctl) leaves the registered one; 'device config-syntax <name>
+		// auto' clears it.
+		if merged.ConfigSyntax == "" {
+			merged.ConfigSyntax = old.ConfigSyntax
+		}
 		merged.Name = old.Name
 		if len(merged.Ack) == 0 {
 			merged.Ack = slices.Clone(old.Ack)
@@ -252,16 +259,19 @@ func CSV(devs []Device) []byte {
 
 // jsonDevice is the JSON form of a device.
 type jsonDevice struct {
-	Name        string   `json:"name"`
-	Address     string   `json:"address"`
-	Hostname    string   `json:"hostname,omitempty"`
-	Vendor      string   `json:"vendor"`
-	Port        int      `json:"port"`
-	LegacySSH   bool     `json:"legacy_ssh"`
-	Description string   `json:"description,omitempty"`
-	Location    string   `json:"location,omitempty"`
-	HostKeys    []string `json:"host_keys,omitempty"`
-	Ack         []string `json:"ack,omitempty"`
+	Name      string `json:"name"`
+	Address   string `json:"address"`
+	Hostname  string `json:"hostname,omitempty"`
+	Vendor    string `json:"vendor"`
+	Port      int    `json:"port"`
+	LegacySSH bool   `json:"legacy_ssh"`
+	// ConfigSyntax is the Cisco configuration syntax setting (D113), only
+	// when set (ios12 or modern; auto is the absence).
+	ConfigSyntax string   `json:"config_syntax,omitempty"`
+	Description  string   `json:"description,omitempty"`
+	Location     string   `json:"location,omitempty"`
+	HostKeys     []string `json:"host_keys,omitempty"`
+	Ack          []string `json:"ack,omitempty"`
 	// SNMP is the device's own non-secret SNMP settings (D72), only when
 	// set.
 	SNMP *jsonSNMP `json:"snmp,omitempty"`
@@ -278,7 +288,7 @@ type jsonSNMP struct {
 // JSONDevice is d as the value 'export --json' and 'list --json' print.
 func JSONDevice(d Device) any {
 	j := jsonDevice{Name: d.Name, Address: d.Address, Hostname: d.Hostname, Vendor: d.Vendor, Port: d.SSHPort(),
-		LegacySSH: d.LegacySSH, Description: d.Description, Location: d.Location, HostKeys: d.HostKeys, Ack: d.Ack}
+		LegacySSH: d.LegacySSH, ConfigSyntax: d.ConfigSyntax, Description: d.Description, Location: d.Location, HostKeys: d.HostKeys, Ack: d.Ack}
 	if !d.SNMP.Empty() {
 		j.SNMP = &jsonSNMP{Version: d.SNMP.Version, Port: d.SNMP.Port, Timeout: d.SNMP.Timeout, Clients: slices.Clone(d.SNMP.Clients)}
 	}

@@ -291,9 +291,9 @@ device config forget --all
 device config frob
 @known 0.2.4 item 4: device list has a CONFIG column; device show a Configuration row
 device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device list
-@known 0.2.4 item 4: device list has a CONFIG column; device show a Configuration row; 0.2.4 item 14: device show has the SNMP rows
+@known 0.2.4 item 4: device list has a CONFIG column; device show a Configuration row; 0.2.4 item 14: device show has the SNMP rows; 0.2.5 item 25: a Cisco device's show has a Config syntax row
 device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device show core-sw1
-@known 0.2.4 item 4: device list has a CONFIG column; device show a Configuration row
+@known 0.2.4 item 4: device list has a CONFIG column; device show a Configuration row; 0.2.5 item 25: a Cisco device has config_syntax in the JSON
 device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device list --json
 @known 0.2.4 item 6: config devices is new
 config devices
@@ -346,5 +346,15 @@ device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device
 device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device snmp core-sw1 version v3 ;; device snmp core-sw1 clear ;; device export
 @known 0.2.4 item 13: device snmp is new
 device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device snmp core-sw1 community --stdin <<< dev-community-1 ;; device rename core-sw1 dc1-core1 ;; device snmp dc1-core1 show --reveal ;; device remove dc1-core1 -y
-@known 0.2.4 item 13: the registry has the snmp map; 0.2.4 item 14: device show has the SNMP rows and scope snmp show says the order
+@known 0.2.4 item 13: the registry has the snmp map; 0.2.4 item 14: device show has the SNMP rows and scope snmp show says the order; 0.2.5 item 25: a Cisco device's show has a Config syntax row
 device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device snmp core-sw1 version v2c ;; device show core-sw1 ;; scope snmp lab show
+
+# --- the Cisco configuration syntax (0.2.5, D113) --------------------------------
+@known 0.2.5 item 25: device config-syntax is new
+device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device config-syntax core-sw1
+@known 0.2.5 item 25: device config-syntax is new
+device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device config-syntax core-sw1 ios12 ;; device export
+@known 0.2.5 item 25: device config-syntax is new
+device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device config-syntax core-sw1 ios15
+@known 0.2.5 item 25: device add --config-syntax is new
+device add core-sw1 10.99.0.1 --vendor cisco --config-syntax modern --no-host-key --no-lookup ;; device export

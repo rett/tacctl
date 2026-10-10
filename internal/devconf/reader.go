@@ -24,8 +24,10 @@ type Runner interface {
 // then the command whose output is the configuration. Junos: 'show
 // configuration | display inheritance no-comments | display set' (a
 // group-applied statement appears at its normal path; [S] the lab switch).
-// IOS and IOS-XE: 'terminal length 0', then 'show running-config'. The
-// Junos command is also what a NETCONF <command> RPC carries.
+// IOS and IOS-XE: 'terminal length 0', 'show version | include Version'
+// (whose output is the record's OS line, D113: ReadWithVersion keeps it),
+// then 'show running-config'. The Junos command is also what a NETCONF
+// <command> RPC carries.
 func Commands(vendor string) (setup []string, read string, err error) {
 	fam, err := Family(vendor)
 	if err != nil {
@@ -34,36 +36,62 @@ func Commands(vendor string) (setup []string, read string, err error) {
 	if fam == FamilyJunos {
 		return nil, "show configuration | display inheritance no-comments | display set", nil
 	}
-	return []string{"terminal length 0"}, "show running-config", nil
+	return []string{"terminal length 0", VersionCommand}, "show running-config", nil
 }
 
 // ReadFunc reads a device's configuration text through a Runner.
 type ReadFunc func(ctx context.Context, r Runner) (string, error)
+
+// ReadVersionFunc is ReadFunc that also returns the device's version line
+// (VersionLine of the output of VersionCommand; "" for a vendor that has no
+// such setup command and for a device that answered none).
+type ReadVersionFunc func(ctx context.Context, r Runner) (text, version string, err error)
 
 // Reader returns the function that reads a vendor's configuration through a
 // session: the setup commands, then the read command. The text it returns is
 // cleaned of line-end, escape and pager debris and is what Extract takes.
 // An empty reply is an error (ErrParse).
 func Reader(vendor string) (ReadFunc, error) {
-	setup, read, err := Commands(vendor)
+	rv, err := ReaderWithVersion(vendor)
 	if err != nil {
 		return nil, err
 	}
 	return func(ctx context.Context, r Runner) (string, error) {
+		text, _, err := rv(ctx, r)
+		return text, err
+	}, nil
+}
+
+// ReaderWithVersion is Reader that also keeps the version line of a Cisco
+// device (D113). A device that refuses the version command or answers with
+// no line that names a version is not an error: the line is "" and the
+// configuration is read all the same (what that means for the syntax is the
+// caller's: the registry's setting, the record's or 'needs pull').
+func ReaderWithVersion(vendor string) (ReadVersionFunc, error) {
+	setup, read, err := Commands(vendor)
+	if err != nil {
+		return nil, err
+	}
+	return func(ctx context.Context, r Runner) (string, string, error) {
+		version := ""
 		for _, c := range setup {
-			if _, err := r.Run(ctx, c); err != nil {
-				return "", err
+			out, err := r.Run(ctx, c)
+			if err != nil {
+				return "", "", err
+			}
+			if c == VersionCommand {
+				version = VersionLine(cleanText(out))
 			}
 		}
 		out, err := r.Run(ctx, read)
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 		out = cleanText(out)
 		if strings.TrimSpace(out) == "" {
-			return "", fmt.Errorf("%w: the device returned no text", ErrParse)
+			return "", "", fmt.Errorf("%w: the device returned no text", ErrParse)
 		}
-		return out, nil
+		return out, version, nil
 	}, nil
 }
 

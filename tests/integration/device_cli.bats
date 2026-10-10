@@ -208,6 +208,53 @@ devices:
     assert_failure 1
 }
 
+@test "device config-syntax: the Cisco syntax is a setting of its own, and legacy-ssh sets none" {
+    "$TACCTL_BIN_SCRIPT" device add old-ios 10.99.0.1 --vendor cisco --legacy-ssh --no-host-key
+    "$TACCTL_BIN_SCRIPT" device add jun1 10.99.0.2 --vendor juniper --no-host-key
+    run "$TACCTL_BIN_SCRIPT" device config-syntax old-ios
+    assert_success
+    plain
+    assert_output "auto (unknown until the device is pulled: tacctl device config pull old-ios)"
+    run "$TACCTL_BIN_SCRIPT" device config-syntax old-ios ios12
+    assert_success
+    run "$TACCTL_BIN_SCRIPT" device config-syntax old-ios
+    assert_output "ios12"
+    run grep -c 'config_syntax: ios12' "${TACCTL_STATE_DIR}/devices.yaml"
+    assert_output "1"
+    run "$TACCTL_BIN_SCRIPT" device show old-ios
+    assert_success
+    plain
+    assert_line --regexp '^  Legacy ssh: +enabled$'
+    assert_line "  Config syntax: ios12"
+    run "$TACCTL_BIN_SCRIPT" device export
+    assert_success
+    assert_output --partial "config_syntax: ios12"
+    run "$TACCTL_BIN_SCRIPT" device config-syntax old-ios auto
+    assert_success
+    run grep -c config_syntax "${TACCTL_STATE_DIR}/devices.yaml"
+    assert_output "0"
+    run "$TACCTL_BIN_SCRIPT" device config-syntax old-ios ios15
+    assert_failure 1
+    assert_output --partial "Invalid configuration syntax 'ios15'. Use: auto, ios12, modern."
+    run "$TACCTL_BIN_SCRIPT" device config-syntax jun1 modern
+    assert_failure 1
+    assert_output --partial "has vendor 'juniper'; the configuration syntax is a Cisco setting"
+}
+
+@test "device add --config-syntax: stored only when set, and only for a Cisco device" {
+    run "$TACCTL_BIN_SCRIPT" device add lab-c 10.99.0.3 --vendor cisco --config-syntax modern --legacy-ssh --no-host-key
+    assert_success
+    run "$TACCTL_BIN_SCRIPT" device config-syntax lab-c
+    assert_output "modern"
+    run "$TACCTL_BIN_SCRIPT" device add lab-d 10.99.0.4 --vendor cisco --config-syntax auto --no-host-key
+    assert_success
+    run grep -c config_syntax "${TACCTL_STATE_DIR}/devices.yaml"
+    assert_output "1"
+    run "$TACCTL_BIN_SCRIPT" device add lab-e 10.99.0.5 --config-syntax ios12 --no-host-key
+    assert_failure 1
+    assert_output --partial "--config-syntax is the Cisco configuration syntax; give --vendor cisco"
+}
+
 @test "device rename: keeps the entry, refuses a taken or generic name" {
     "$TACCTL_BIN_SCRIPT" device add core-sw1 10.99.0.1 --no-host-key
     "$TACCTL_BIN_SCRIPT" device add edge-fw 10.99.0.2 --no-host-key

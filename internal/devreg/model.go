@@ -31,8 +31,15 @@ type Device struct {
 	Description string
 	// Location is the optional place the device is (SNMP location in the
 	// walkthroughs, 'tacctl device location'); empty is not set.
-	Location  string
+	Location string
+	// LegacySSH opts in to the legacy ssh algorithms (SHA-1 key exchange,
+	// CBC ciphers, ssh-rsa), and nothing else (D113).
 	LegacySSH bool
+	// ConfigSyntax is the Cisco configuration syntax the device is
+	// rendered and compared in (D113, 'tacctl device config-syntax'):
+	// SyntaxIOS12 or SyntaxModern; empty is auto (the last pull's version
+	// line says), and is the only value never written to the file.
+	ConfigSyntax string
 	// Ack are the acknowledged notice kinds.
 	Ack []string
 	// HostKeys are the pinned host keys ('<type> <base64>', hostkey.go),
@@ -119,6 +126,29 @@ const (
 	VendorLinux = "linux"
 	VendorOther = "other"
 )
+
+// The values of a device's configuration syntax setting (D113). SyntaxAuto
+// is the word for no setting: it is never stored.
+const (
+	SyntaxAuto   = "auto"
+	SyntaxIOS12  = "ios12"
+	SyntaxModern = "modern"
+)
+
+// SyntaxWords are the words 'device config-syntax' takes.
+var SyntaxWords = []string{SyntaxAuto, SyntaxIOS12, SyntaxModern}
+
+// ValidateConfigSyntax checks the word of a configuration syntax setting
+// (auto, ios12 or modern) and returns the stored form: "" for auto.
+func ValidateConfigSyntax(s string) (string, error) {
+	switch s {
+	case SyntaxAuto, "":
+		return "", nil
+	case SyntaxIOS12, SyntaxModern:
+		return s, nil
+	}
+	return "", fail("Invalid configuration syntax '" + s + "'. Use: " + strings.Join(SyntaxWords, ", ") + ".")
+}
 
 // Vendors are the vendors a registry entry may have.
 var Vendors = []string{"cisco", "juniper", "wti", VendorOther}
@@ -296,6 +326,11 @@ func (d Device) validate() error {
 	}
 	if err := ValidateDescription(d.Description); err != nil {
 		return err
+	}
+	if d.ConfigSyntax != "" {
+		if s, err := ValidateConfigSyntax(d.ConfigSyntax); err != nil || s == "" {
+			return fail("Invalid configuration syntax '" + d.ConfigSyntax + "'. Use: ios12 or modern.")
+		}
 	}
 	if d.Location != "" {
 		if err := ValidateLocation(d.Location); err != nil {

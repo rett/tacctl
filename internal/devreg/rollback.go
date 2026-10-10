@@ -102,3 +102,56 @@ func RollbackSNMP(path string, before func() error) ([]string, error) {
 	}
 	return cleared, nil
 }
+
+// The per-device configuration syntax of 0.2.5 (D113 of docs/plans/0.2.5-
+// plan.md, 'tacctl device config-syntax'): 0.2.4's parser (and 0.2.3's, and
+// 0.2.2's) refuses a device with a key it does not know (device 'x':
+// unknown key 'config_syntax'), so the key goes before an older release is
+// installed, as the location and the SNMP map do: a rollback plans with
+// ConfigSyntaxSet and applies with RollbackConfigSyntax. An older binary
+// compares a legacy-ssh Cisco device as IOS 12.x again, which is what the
+// rollback's notes say.
+
+// ConfigSyntaxSet are the names of the devices that have a configuration
+// syntax setting, in file order, of the registry at path (none when the file
+// is missing).
+func ConfigSyntaxSet(path string) ([]string, error) {
+	f, err := Load(path)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, d := range f.Devices {
+		if d.ConfigSyntax != "" {
+			out = append(out, d.Name)
+		}
+	}
+	return out, nil
+}
+
+// RollbackConfigSyntax removes the configuration syntax setting of every
+// device, under the registry's lock, in one write; before runs first (a
+// snapshot). It returns the names it cleared, in file order. A registry
+// without any is not written (before does not run), and a missing file is
+// not created.
+func RollbackConfigSyntax(path string, before func() error) ([]string, error) {
+	names, err := ConfigSyntaxSet(path)
+	if err != nil || len(names) == 0 {
+		return nil, err
+	}
+	var cleared []string
+	_, err = Mutate(path, "", before, func(f *File) error {
+		cleared = cleared[:0]
+		for _, d := range f.Devices {
+			if d.ConfigSyntax != "" {
+				cleared = append(cleared, d.Name)
+				d.ConfigSyntax = ""
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return cleared, nil
+}

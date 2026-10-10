@@ -100,6 +100,8 @@ var engineerRowCases = map[string]engineerRow{
 		refusedCase("Device 'web1' not found", "device location web1 Rack4"))},
 	"device legacy-ssh": {cases: append(cases("device legacy-ssh lab-sw enable"),
 		refusedCase("Device 'web1' not found", "device legacy-ssh web1 enable"))},
+	"device config-syntax": {cases: append(cases("device config-syntax lab-sw", "device config-syntax lab-sw auto"),
+		refusedCase("Device 'web1' not found", "device config-syntax web1 modern"))},
 	"device hostkey": {cases: append(cases("device hostkey lab-sw show"),
 		refusedCase("Device 'web1' not found", "device hostkey web1 show"),
 		refusedCase("Device 'web1' not found", "device hostkey web1 accept -y"),
