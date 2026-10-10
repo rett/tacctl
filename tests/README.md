@@ -57,16 +57,18 @@ generators below. The binary itself runs no python3.
 ```
 tests/
 ├── bats/                # vendored bats-core + helpers (git submodules)
-├── helpers/             # setup.bash, tmpenv.bash, mocks.bash, fixtures.bash
+├── helpers/             # setup.bash, tmpenv.bash, mocks.bash, fixtures.bash, fakedev.bash (the fake network device, below)
 ├── fixtures/
 │   ├── tacquito.*.yaml  # tacquito.yaml fixtures (every one must import into the store without --force)
 │   ├── legacy.*.yaml    # tacquito.yaml inputs for the importer and the upgrade gate (edge cases, unrepresentable content, the old installer's output)
 │   ├── store.*.yaml     # store.yaml fixtures; store.X.yaml is exactly what importing tacquito.X.yaml writes
 │   ├── model/           # golden model JSON (what 'store show --json' prints for a fixture)
 │   ├── systemd/         # unit files of earlier releases
+│   ├── devconf/         # device configuration reads: captures and reference texts per vendor, and the fake device's transcripts (below)
 │   └── golden/          # expected rendered output: device configs, tacquito.X.rendered.yaml,
 │                        #   radius.<family>.*, drop-ins, rendered.json, the templates manifest,
-│                        #   the Linux installer headers, tacctl.overrides.yaml
+│                        #   the Linux installer headers, tacctl.overrides.yaml,
+│                        #   managed.<template>.<scope>.txt (what `devices.Managed` renders)
 ├── integration/         # the command line against real files in the test's tmpdir
 ├── e2e/                 # whole command flows with stubbed system commands
 ├── diff/                # the differential runner, its corpora, stubs and state roots
@@ -98,6 +100,7 @@ argv, so nothing leaves the machine and no secret may appear in one.
 | `integration/device_cli.bats` | `tacctl device`: the registry file (`devices.yaml`, 0600, snapshot on every write, `backup restore` and `backup diff` including it), add/remove/rename and the field setters, CSV/YAML import and export, generic and duplicate names, the namespace shared with enrolled hosts, host-key pinning (`add`, `--host-key`, `--no-host-key`, `hostkey show\|accept\|set`) and the generated `known_hosts` |
 | `integration/config_snmp.bats` | `config snmp` (the default) and `scope snmp` (a scope's settings, its credentials file `snmp/<scope>.yaml` 0600 in a 0700 directory, the default beneath it and the label of each value, the allowed clients in order, the contact, `clear`, a rename and a removal, the lookup with the credentials of the device's scope) against the stub agent `tacctl _snmp-agent`; a `tacctl.yaml` and a `devices.yaml` without the new keys stay byte-identical |
 | `integration/device_snmp.bats` | the SNMP name hint of `device add` and the `SNMP name` row of `device check` (and `--json`) against the stub agent `tacctl _snmp-agent` on 127.0.0.1 |
+| `integration/device_snmp_override.bats` | a device's own SNMP settings (D72): `device snmp <name>` (the `snmp:` map of `devices.yaml`, written only when set and byte for byte what it was after `clear`; the credentials file `snmp/devices/<name>.yaml`, 0600 in a 0700 directory, never printed but by `show --reveal`), the order device, scope, default, built-in and its labels in `device show`, `scope snmp show` and `device config show`, rename and remove carrying the file and a leftover refused, the `device check` lookup against the stub agent with the device's own community and port, a snapshot and its restore (also a restore of a snapshot made before the credentials, which leaves no device file), a credentials file that cannot be parsed (`clear` removes it unread, `community` replaces it), the SNMPv3 user's name shown to the engineer tier and above only, and the engineer's reads (logged `secret-read kind=snmp-device`) and refusals |
 | `integration/config_templates.bats` | extended with the SNMP and NETCONF steps of the walkthroughs (not configured, v2c, the client order, the unfilled line, `--name`, `--server`, `--source`, the Cisco superuser-only NETCONF step) and the goldens `golden/snmp/cli-<vendor>-lab.conf`; the WTI IP Tables step (D42): the caution kept as the introduction, the scope's list, the global fallback, a scope with no list (the commented DROP), an IPv6 permit skipped, `--source` in the rules, and the golden `golden/iptables/cli-wti-lab.conf` (`config_radius.bats` has the RADIUS one, `golden/iptables/cli-wti-radius-lab.conf`) |
 | `integration/device_scan.bats` | `device scan`, `discover`, `check`, `list --scan\|--probe`: `journalctl` answers with the made-up records of `tests/fixtures/sightings/`, the RADIUS auth log is a fixture file, `ssh-keyscan` answers with keys generated for the tests; the seen cache (`$TACCTL_VAR_LIB/devices-seen.json`), resumption after the cursor, the scan-time notices and the `Device notices` section of `status`; the clock is `TACCTL_TEST_NOW`, the zone UTC |
 | `integration/ssh_cli.bats` | `tacctl ssh` and `device ssh-config`: a `sudo` stub records the drop to the invoking user and an `ssh` stub records its argv (the options of each vendor profile, the pin, the login, no agent and no identity), who is admitted and the logged refusals, `-l` refused, the key-mismatch text, the Include fragment; `script` provides the terminal |
@@ -109,10 +112,15 @@ argv, so nothing leaves the machine and no secret may appear in one.
 | `integration/group_reset.bats` | `tacctl group reset` (D51): the diff of each built-in (default and `--preset`) and of `engineer`, `already canonical` without a prompt, `--dry-run` writing nothing (the store and `tacctl.yaml` byte-identical), the refusals (a custom group, no terminal without `--yes`), `--only`, `--yes`, the prompt answered `y` and `n` with `script` as the terminal, the audit line (`logger` stub), the sibling catchall of the lockout guard, and that a lower tier, the engineer included, is refused by the gate; the Go tests (`internal/cli/group_reset_test.go`, `internal/policy/canonical_test.go`) hold the golden diffs in `internal/cli/testdata/reset/` (`go test ./internal/cli -run TestGroupResetGoldenDiffs -update-reset` rewrites them) |
 | `integration/group_privilege_reset.bats` | `tacctl group privilege reset <group> [--dry-run] [--yes]` (WP10.5h): `already canonical` without a prompt, `--dry-run` writing nothing (the store and `tacctl.yaml` byte-identical, no audit line), the diff with the `no privilege exec level N ...` lines for the entries removed, the refusal without a terminal and without `--yes`, `--yes` with the audit line and a second run changing nothing, the prompt answered `y` and `n` with `script` as the terminal, the empty list an old `clear` stored shown as a change to the shipped default, a custom group's override removed (nothing stored empty), the same diff and result as `group reset --only privileges`, and the removed `clear` answering as an unknown subcommand; the Go tests (`internal/cli/group_section_reset_test.go`) hold the golden diffs in `internal/cli/testdata/reset/` (`privilege_*.golden`) |
 | `integration/group_commands_reset.bats` | `tacctl group commands reset <group> [--dry-run] [--yes]` (WP10.5h): the same cases for the command rules (the diff of rules and the default action, a custom group's override removed with the warning for a group left without rules, the sibling catchall of the lockout guard as in `group reset`, the same diff and result as `group reset --only commands`, the removed `clear`); the Go tests hold `commands_*.golden` and that no tier below the superuser, the engineer included, may run either reset |
-| `integration/rollback.bats` | `tacctl rollback <version> [--apply] [--yes] [--hosts]` (D50): a 0.2.3 state is built with the verbs that write the formats a 0.2.2 binary does not read (an engineer group at priv-lvl 15, per-scope SNMP settings and credentials, a break-glass user, a device location, space completion off, an engineer sudo list); the refusal of `0.2.1`, `0.2.0`, `0.2.3` and unknown words; the dry run lists every step and warning and leaves every state file byte for byte (and takes no snapshot); `--apply` refuses without `--yes` while a warning applies and needs none without one; the snapshot (taken first, holding the 0.2.3 form), the three converted files, `store.yaml` byte-identical, `snmp/<scope>.yaml` left, `console show`, `device list` and `config validate` still working, and a second `--apply` changing nothing; the gate (engineer, operator and readonly refused, a superuser allowed); `--hosts` with the `ssh` stub of `host.bats` (`TAC_REVOKE_ENGINEER=1` in the pushed header, an ordinary sync without it, a failing host named, exit 1) |
+| `integration/rollback.bats` | `tacctl rollback <version> [--apply] [--yes] [--hosts]` (D73): a 0.2.4 state is built with the verbs that write the formats a 0.2.3 binary does not read (a device's own SNMP settings and credentials, the `device.config` keys, the password cache's tiers, the records of a pull, the tiers sudoers drop-in as 0.2.4 writes it); the refusal of `0.2.2`, `0.2.1`, `0.2.4` and unknown words; the dry run lists every step and warning and leaves every state file byte for byte (and takes no snapshot); `--apply` refuses without `--yes` while a setting is dropped and needs none without one; the snapshot (taken first, holding the 0.2.4 form and the devices' credentials), the three converted files and the rewritten tiers drop-in, `store.yaml` byte-identical, `snmp/devices/` and the records left, `device list` and `config validate` still working, and a second `--apply` changing nothing; the gate (engineer, operator and readonly refused, a superuser allowed); `--hosts` accepted and touching no host |
 | `integration/shim.bats` | extended with the release-binary tests (below) |
 | `integration/console_cli.bats` | `tacctl console`: `console.yaml` (0600, snapshots, `backup diff`/`restore`), the tier switches, user overrides and settings, `console show` with a stubbed `sshd -T` (the red warning when sshd does not force the console, still forwards or allows key logins), `console install\|remove\|check` |
 | `integration/console.bats` | the login console run as `tacctl-console` (a symlink to `dist/tacctl`): `-c` and its guard, sshd's `ForceCommand` form with `SSH_ORIGINAL_COMMAND`, batches, the per-line `sudo [-n] TACCTL_CONSOLE=<session>` argv, the session log lines, `system-shell`'s refusals. The terminal side is `internal/cli/console_pty_test.go` |
+| `integration/console_passcache.bats` | the password cache (D70): `console password-cache tiers\|idle\|max` (written only when set, refusals write nothing, `console show`), `console forget`, the `_console-policy` fields for a tier that has the cache, and the console and `tacctl shell --password-cache` on a pseudo-terminal (`script(1)`) with a `sudo` stub that saves the environment it was given: `TACCTL_ASKPASS` reaches the lines that use the cache (`ssh`, `device config pull`) in that environment and never in sudo's arguments, not the others, and the socket is gone with the session; the `_askpass` helper answers nothing without a cache. The agent, the socket checks and the lifetimes are `internal/askpass`'s Go tests; the root side of a pull and of `tacctl ssh` against a real agent, and the console on a pty with a store from outside, are `internal/cli/password_cache_test.go` and `console_pty_test.go`. |
+| `integration/config_devices.bats` | `tacctl config devices` (D68): the three defaults and where each stands, each setter writing `tacctl.yaml` and passing `config validate`, the refusals (out of range, an unknown word) writing nothing, and the usage |
+| `integration/device_config_pull.bats` | `tacctl device config pull` against the fake device (`tacctl _fake-device` with `TACCTL_TEST_DEVICE_DIAL`): one Junos device over NETCONF recorded, audited and shown by `device list` and `device show`, `--all` with three devices and `--json`, a wrong password stopping the batch, no pinned key, a different key and the invoking user checked first, `--concurrency` never above `device.config.max_concurrency`, a Cisco device over the ssh command line, NETCONF off falling back under `auto` and not under `netconf`, and differences with no secret value printed or kept |
+| `integration/device_config_diff.bats` | `tacctl device config diff`: a device that agrees is ok in every section (exit 0 even with `--exit-code`), `-` and `+` lines with `--exit-code` 2 and no secret value shown, a device never pulled named with the command that reads it, `--pull` with the pull's exit status, the usage and the options that need `--pull` |
+| `integration/device_config_list.bats` | `tacctl device config list` and `forget`, and the CONFIG column of `device list`: `never` for devices not pulled and `-` for a WTI unit or a device in no scope, `ok`, `differs` (after a change of the store, with no new pull) and `failed`, `forget` of one, many and `--all` (superuser only, the sections file goes with the record), `device import --replace` dropping the record, `--json` and the filters validated |
 | `integration/config_linux.bats` | extended with the server's own accounts: the fourth `TAC_USERS` field (`useradd -s`, `usermod -s`, `tac-console` following the shell, the summary's `console:` count) and the remove script giving `/bin/bash` back |
 
 **Terminal tests.** `internal/testpty` runs a program on a pseudo-terminal
@@ -156,9 +164,9 @@ with `TACCTL_TEST_ROOT`.
 into the test's tmpdir and `internal/cli/sandbox_paths_test.go` guards that no
 lifecycle test touches the host's.
 
-### Rollback against the real 0.2.2
+### Rollback against the real 0.2.3
 
-`internal/cli/rollback_test.go` `TestRollbackRealOldBinary` builds the 0.2.2 release from an archive of its tag (`go build -tags testknobs`, the vendored modules; about 15 seconds) into a temp directory and runs its `config validate`, `console show`, `device list`, `config render` and `host list` against the same sandbox state before and after `tacctl rollback 0.2.2 --apply --yes`: before, each refuses the 0.2.3 form with the message that motivated the step; after, each accepts it (its `config validate` still reports the rendered config, which 0.2.3 wrote, as out of date until its own `config render`). It is skipped, with the reason, when `git`, `tar`, `go` or the tag is missing, or the build fails; `-short` skips it, and `-args -old-bin=<binary built that way>` skips the build. The sandbox variables are the same as the bats suite's (`tests/helpers/tmpenv.bash`); 0.2.2 reads them like this release. `internal/conf/rollback_test.go` also reads the schema of the tag and holds `Known022` to it, and fails when `schema.go` gains a key family that is in neither table.
+`internal/cli/rollback_test.go` `TestRollbackRealOldBinary` builds the 0.2.3 release from an archive of its tag (`go build -tags testknobs`, the vendored modules; about 15 seconds) into a temp directory and runs its `config validate`, `console show` and `device list` (and, after, `device show`, `scope snmp show` and a `device location` write) against the same sandbox state before and after `tacctl rollback 0.2.3 --apply --yes`: before, each refuses the 0.2.4 form with the message that motivated the step (`unknown config key`, `unknown key 'password_cache'`, `unknown key 'snmp'`); after, each accepts it and 0.2.3's `config validate` says the configuration is valid. It is skipped, with the reason, when `git`, `tar`, `go` or the tag is missing, or the build fails; `-short` skips it, and `-args -old-bin=<binary built that way>` skips the build. The sandbox variables are the same as the bats suite's (`tests/helpers/tmpenv.bash`); 0.2.3 reads them like this release. `internal/conf/rollback_test.go` also reads the schema of the 0.2.2 and 0.2.3 tags and holds `Known022` (0.2.2) and `Known022` with `Added023` (0.2.3) to them, and fails when `schema.go` gains a key family that is in no table; `internal/tier/rollback_test.go` holds the frozen text of 0.2.3's sudoers drop-in to the golden file of the tag; `internal/console` (`accepts023`) and `internal/lifecycle` carry fixtures of 0.2.3's `console.yaml` and `devices.yaml` parsers.
 
 ## The 0.2.3 Go test files
 
@@ -176,9 +184,41 @@ paths it touches; `go test ./internal/...` runs them all):
 | `internal/devices/snmp_test.go`, `breakglass_test.go`, `iptables_test.go` | The SNMP step, the break-glass step and the WTI IP Tables list of the three walkthroughs, whole, per vendor and case (goldens in `tests/fixtures/golden/` and `golden/snmp/`) |
 | `internal/policy/baseline_test.go`, `canonical_test.go`, `tacquito_test.go` | The baseline command rules and privileges of the four roles decided by `tacquito_test.go`'s emulator of tacquito's authorizer (the regex wrapped, a missed match falling through, `*` deciding at once), the nesting of the roles, the regex lint and the Junos set sizes; the canonical state `group reset` compares against |
 | `internal/cli/group_reset_test.go`, `group_section_reset_test.go` | `group reset`, `group privilege reset` and `group commands reset`: the golden diffs in `internal/cli/testdata/reset/`, the refusals, the writes, the audit lines |
-| `internal/cli/rollback_test.go`, `internal/conf/rollback_test.go`, `internal/console/rollback_test.go`, `internal/devreg/rollback_test.go`, `internal/lifecycle/rollback_test.go` | `tacctl rollback`: each file's conversion, the round trip through a 0.2.2-style parser, the warnings, and the real 0.2.2 binary (below) |
+| `internal/cli/rollback_test.go`, `internal/conf/rollback_test.go`, `internal/console/rollback_test.go`, `internal/devreg/rollback_test.go`, `internal/lifecycle/rollback_test.go`, `internal/tier/rollback_test.go` | `tacctl rollback`: each file's conversion, the round trip through a 0.2.3-style parser, the warnings, the sudoers drop-ins, and the real 0.2.3 binary (below) |
 | `internal/cli/man_gate_test.go`, `man_gen_test.go` | The man page gate and its generated blocks (the notes on the manual page gate above; `make lint-man`, `make man`) |
 | `internal/console/dropin_order_test.go`, `internal/lifecycle/engineer_dropin_test.go`, `preset_notice_test.go` | The engineer sshd drop-in sorts before the console's (with `sshd -T` where sshd is installed), its rename at upgrade, and the upgrade notice for 0.2.2's engineer preset |
+
+## The 0.2.4 Go test files
+
+Device configuration reads, the password cache and per-device SNMP. Each test
+sandboxes the paths it touches (`go test ./internal/...` runs them all; the
+`internal/cli` ones need `setsid` and stdin from `/dev/null`, as above):
+
+| File | What it covers |
+|---|---|
+| `internal/devssh/devssh_test.go`, `hostile_test.go`, `internal_test.go`, `review_test.go` | The SSH client against the fake device in process: password and keyboard-interactive, one attempt per wrong password, host-key pinning, the shell and exec CLI sessions, prompt detection and the paging guard (including hostile prompts and banners), NETCONF hello, framing and RPC, output limits, deadlines and typed errors |
+| `internal/devssh/fakedev/fakedev_test.go` | The fake device's transcript reader (capture headers, command file names) and serve and stop |
+| `internal/devconf/compare_test.go`, `review_test.go` | Comparison states (`ok`, `differs`, `missing`, `n/a`, `not visible`), line texts, normalisation of every fixture, the superuser and engineer captures, ordering (`!`), secrets by presence and never in an output |
+| `internal/devconf/junos_test.go`, `ios_test.go` | Extraction per vendor against the captures, the synthetic Junos cases and the IOS reference texts (also that every reference text is marked as such) |
+| `internal/devconf/reader_test.go`, `store_test.go` | The read commands per vendor and the NETCONF unwrap; the record store (round trip, a corrupt file rebuilt, rename, forget, the lock) and staleness |
+| `internal/devconf/batch/batch_test.go` | The pool: size and bound, results and exit statuses, timeouts, `--max-failures`, stop on the first authentication failure, the two-stage interrupt, the view's lines with a fixed clock |
+| `internal/devices/managed_test.go`, `snmp_device_test.go` | `devices.Managed` per vendor (goldens `tests/fixtures/golden/managed.*`), that every statement is in the walkthrough, secret marks, and the SNMP step naming a device's own settings |
+| `internal/askpass/agent_test.go`, `client_test.go`, `hardening_test.go`, `prompt_test.go` | The password cache: the socket protocol, in-flight gating and the single get, tokens, peer uid, lifetimes against a fixed clock, the helper's prompt filter, the socket directory, the no-echo prompt |
+| `internal/shell/cache_test.go` | The shell's use of the cache: open only for the lines that use it, `console forget`, `passwd` forgetting |
+| `internal/cli/device_config_pull_test.go`, `device_config_render_test.go` | `device config pull|diff|list` in process against the fake device, refusals, the render shared per scope, every diff operator printed |
+| `internal/cli/password_cache_test.go` | The root side of the cache: the variable taken out of the environment, a cached password used, a wrong one forgotten, a typed one stored only after a device accepted it, `tacctl ssh` with a cached password |
+| `internal/cli/device_snmp_override_test.go`, `device_snmp_override_review_test.go`, `internal/snmpcred/device_test.go`, `internal/devreg/snmp_test.go` | `device snmp`: resolution and labels, the `snmp:` map and the credentials file, rename and removal, snapshots and restore, the engineer's reads and the logged reveals, unreadable files |
+| `internal/cli/fakedev_testknobs_test.go`, `fakedev_off_test.go` | The `_fake-device` verb and the dial knob in a test build, and that a build without the tag has neither |
+| `internal/conf/device_config_test.go`, `internal/tier/rollback_test.go` | The `device.config.*` schema keys; the 0.2.3 sudoers texts, held to the tag |
+
+### Device configuration fixtures (`tests/fixtures/devconf/`)
+
+| Directory | What it holds |
+|---|---|
+| `juniper/lab-superuser`, `juniper/lab-engineer` | Sanitised `show configuration \| display set` captures of the same Junos device, as a superuser and as an engineer-class login (secrets masked); `juniper/README.md` says how they were sanitised |
+| `juniper/synthetic-lab`, `juniper/synthetic-inherit` | Hand-made texts for the cases the captures lack (the engineer view, no `lo0` filter, group inheritance) with their expected sections and result goldens |
+| `ios/reference-*`, `ios-xe/reference-16` | IOS and IOS-XE `show running-config` texts written from the vendor references (marked `# source: reference`; not captures), with expected sections and result goldens |
+| `fake/junos`, `fake/ios` | The prompt of a fake device; the bats files add the read command's output (`tests/fixtures/devconf/fake/README.md`) |
 
 ## The bats harness
 
@@ -533,7 +573,6 @@ Clients: `ubuntu-noble`, `debian-trixie`, `debian-bookworm`,
 | `radius`, `tacplus` | (the client container maps IDs 0-49999, 65534-65541 and 80000-89999, since rootless podman's 65536 subordinate IDs cannot cover both with the default map) snapshot of the host; `host enroll --method <m>` (per-host scope); users added to the scope and pushed with `host sync` (one of them named like a pre-existing local account, which tacctl must leave alone and name in the summary as refused: `synced (4 users; 1 refused: carl)`; an account an earlier release adopted is taken out of tacctl's groups and nothing else on it changes; every account tacctl created has a UID in 80000-89999); an account left at a UID of 20000-29999 as an earlier release made it (state `created`, map entry at the legacy number) renumbered by the next sync on both sides (map rewritten and its old copy kept, UID, group and primary GID, home re-owned, a stray file outside the home reported and left, `synced (4 users; 1 renumbered; 1 refused: carl)`, nothing on a second sync); a disabled user expired and restored; removed users deleted (`userdel`, their group too, their UID still reserved on the server), the home kept without a terminal (moved to `/home/.tacctl-removed/<user>-<time>`, root's, 0700, a link in it not followed, unreadable to a local account later given the same UID) and deleted with `--remove-home`; the `/etc/login.defs` warning at enroll with `UID_MAX 85000` and none with the distribution's own (a real `useradd` then stays below 80000); the address enroll recorded, refused to `device add`; where the secret is; SSH login right and wrong, `sudo` and `sudo -i` for the superuser, none for the readonly user; the engineer tier (a group given `tier engineer`, `tier.<group>` in `tacctl.yaml`): the operator may not `sudo`, as an engineer he is in `tac-engineer` and not `tac-superuser`, the drop-in has the `%tac-engineer` line, `sudo` gives root, `config linux engineer-sudo /usr/bin/systemctl,...` reaches the host through `visudo` and lets him run `systemctl` and not `id`, and back; a user removed from the scope on the server and not yet synced, then deleted by the sync; the local administrator; the server unreachable (packets dropped at the server with nft) with timings; a wrong shared secret on the host; console login, the stand-in for GDM and a PAM client that is not root; re-enroll; the server's logs; `host unenroll`; the snapshot again, byte for byte |
 | `switch` | all of `tacplus`, then `host enroll --method radius` on the enrolled host (nothing of pam_tacplus left, logins answered by FreeRADIUS), then back (nothing of pam_radius_auth's configuration left), then unenroll and the snapshot |
 | `rotate` | on a client enrolled with `tacplus`: `host provisioner <name> rotate deploy2 --key <file>` (a key made by `ssh-keygen` in the server container) creates the account below the UID range with its sudoers line and `authorized_keys` (modes 0700/0600, `restorecon` where SELinux is on, `ls -Z` checked on the AlmaLinux and Rocky clients), proves it in a new connection and switches the registry; `host sync` then runs through the new account; the old account is removed with `--remove-old` over the new one (its home moved to `/home/.tacctl-removed`, root's); root's record of the account (`/var/lib/tacctl-provisioner`, 0700, 0600) and a GID below the range are checked; a rerun with an account that root's record names adopts it, and a rotation to a name that is another account, or that only carries the marker comment, is refused; a sshd that refuses the new account's key makes the proof fail and removes the account (and its record) again |
-| `rollback` | on a client enrolled with `tacplus`: an engineer (a group at priv-lvl 15 with `--tier engineer`), a superuser, an operator and a readonly user are synced (the engineer is in `tac-engineer`, `%tac-engineer` is in `/etc/sudoers.d/tacctl-host`, both superuser and engineer can `sudo`); `tacctl rollback 0.2.2 --hosts` (dry run) changes nothing on the server or the client; `--apply --hosts` without `--yes` is refused; `--apply --yes --hosts` syncs the client with `TAC_REVOKE_ENGINEER=1`: the `%tac-engineer` line is gone from the drop-in (`visudo -c` is happy, the rest of the file as it was), the engineer is in neither `tac-engineer` nor `tac-superuser`, still logs in and has no `sudo`, and every other account's passwd and shadow lines, groups and home are as before; a second apply has nothing to convert; the 0.2.2 release binary, built here from its tag, then syncs the host (protocol 5) and puts the engineer in `tac-superuser` again, the consequence the dry run warns about; unenroll and the snapshot |
 | `server` | no client enrolled: the role preset, four lab users (`gotestviewer`, `gotestoperator`, `gotestengineer`, `gotestsuper`) and `tests/tools/permcheck.py` with `permcheck-baseline.txt` asked of the real tacquito in the server container (`show version`, `show running-config` and `no aaa new-model` per role among them); then `host enroll --local` of the server container itself (its user namespace cannot hold 80000-89999, so with `config linux uid-range 50000-59999`): `tac-engineer` is the first GID + 5, the engineer is in it, no `%tac-engineer ALL` line on the server (`TAC_LOCAL`), `00-tacctl-engineer.conf` sorts before the console's drop-in and `sshd -T -C user=...` shows an engineer who is also in `tac-superuser` and `tac-console` with nothing forwarded while a superuser with the console may forward, `tacctl console check` passes on the clean server and finds the stale memberships of the two hand-made accounts |
 | `probe` | no enroll: installs the package and prints what `pam_radius_auth` returns for accept, reject, a wrong secret, a silent server with `retry=0..2`, a missing server file, account, session and password change, and the accounting records the server got |
 
@@ -609,12 +648,12 @@ The image `localhost/tacctl-fresh:noble` is kept; `--keep` leaves the container
 `tacctl-fresh`.
 
 `tests/containers/fresh/upgrade.sh [--from <tag>]` is the way from the release before: the same image, a
-0.2.2 server (the README one-liner on the tag's commit, built from source),
+0.2.3 server (the README one-liner on the tag's commit, built from source),
 state made with its own tacctl (a scope, the role preset, users of the four tiers, two devices),
 `tacctl upgrade` to the working tree (the binary is built from it, tacquito stays active,
 `status`, `config validate`, the user and device lists as before, a second upgrade builds nothing), then
-`tacctl rollback 0.2.2` (a dry run that leaves the store byte for byte, then `--apply --yes`) and the
-0.2.2 binary, built in the container from the tag's commit, reading the converted state (`config validate`,
+`tacctl rollback 0.2.3` (a dry run that leaves the store byte for byte, then `--apply --yes`) and the
+0.2.3 binary, built in the container from the tag's commit, reading the converted state (`config validate`,
 `user list`, `device list`, `config render`). It needs the same network access as the fresh install.
 
 ## The whole container matrix
@@ -622,7 +661,7 @@ state made with its own tacctl (a scope, the role preset, users of the four tier
 ```sh
 tests/containers/run-all.sh                    # everything, in order, then a table
 tests/containers/run-all.sh --list             # the cases, their commands and images
-tests/containers/run-all.sh --only hosts-rollback,fresh --logs /tmp/logs
+tests/containers/run-all.sh --only hosts-server,fresh --logs /tmp/logs
 tests/containers/run-all.sh --skip hosts-radius-fr30 --keep
 ```
 
@@ -657,7 +696,6 @@ adds the package mirrors' time, and a loaded machine doubles all of it):
 | `hosts-radius-alma` | `hosts/run.sh almalinux-9 radius` | 10 min |
 | `hosts-radius-fr30` | `hosts/run.sh almalinux-9 radius --server almalinux-9` (FreeRADIUS 3.0.27) | 10 min |
 | `hosts-rotate`, `hosts-rotate-alma` | `hosts/run.sh ubuntu-noble rotate` and `... almalinux-9 rotate` | 5 min each |
-| `hosts-rollback` | `hosts/run.sh ubuntu-noble rollback` | 8 min |
 | `hosts-server` | `hosts/run.sh ubuntu-noble server` | 6 min |
 | `radius` | `radius/run.sh ubuntu-noble` | 6 min |
 | `fresh` | `fresh/run.sh --worktree` | 8 min |
@@ -690,7 +728,7 @@ under one directory:
 
 ## Test knobs (`internal/app/knobs*.go`)
 
-Four environment variables let a test fix what a command takes from the world.
+Environment variables let a test fix what a command takes from the world.
 They are read **only** by a binary built with `-tags testknobs` (`make build`,
 which the bats harness and the differential runner use); the installed binary
 and the bootstrap shim do not read them at all, whatever the variables hold,
@@ -705,6 +743,20 @@ not a knob: it stays an ordinary environment check.
 | `TACCTL_TEST_ROOT=<dir>` | tacctl's fixed host locations, which no `TACCTL_*` variable moves (the deploy clone `/opt/tacctl`, `/usr/local/bin/tacctl`, `/usr/local/go`, the bash completion, the man page, `/root`), move under `<dir>` (`paths.Paths.Reroot`), so a test can run `install`, `upgrade` and `uninstall` |
 | `TACCTL_TEST_CONSOLE_ENV=1` | the console (`tacctl-console`) keeps `TACCTL_*` and `PATH` from its environment, so the sandbox's paths and stubs reach it |
 | `TACCTL_TEST_PROC=<dir>` | stands for `/proc/self` where `host enroll --local` reads this machine's user namespace maps (`uid_map`, `gid_map`) |
+| `TACCTL_TEST_DEVICE_DIAL=<host:port>` | every device `device config pull` logs in to is dialled at this loopback address instead of its own (the fake device below); a non-loopback value is an error |
+| `TACCTL_TEST_DEVICE_PASSWORD=<text>` | the password a pull logs in with, in place of the terminal prompt (a bats test has no terminal) |
+
+`tacctl _fake-device <dir> [--user <name> --password <text>] [--info-file <file>] [--netconf off] [--seconds <n>]`
+is a hidden verb of test builds only: the fake device of `internal/devssh/fakedev`
+(ssh and NETCONF on 127.0.0.1, one fixed login, a fixed public host key), answering
+CLI commands and NETCONF `<command>` RPCs from the transcript files of `<dir>`
+(`tests/fixtures/devconf/fake/`; the layout is `internal/devssh/fakedev/transcript.go`).
+It prints `<host:port>` and the host key it pins, one per line, and serves until
+`--seconds` (default 120). `tests/helpers/fakedev.bash` starts it, registers devices
+pinned to its key, and makes the device answer with what the walkthrough renders
+(`device_config_pull.bats`, `device_config_diff.bats`, `device_config_list.bats`).
+A production build contains neither the verb, nor the fake device, nor the two
+variables' names.
 
 A malformed value is an error naming the variable; an empty one is the same as
 unset. The bootstrap shim honours `TACCTL_TEST_ROOT` for the installed command

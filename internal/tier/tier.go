@@ -140,14 +140,19 @@ type Rule struct {
 // standard input only), the scope's devices, vendor tags and staging
 // addresses ('scope devices', 'scope staging' to list), the device
 // configurations 'config cisco|juniper|wti' and 'device config show' of their
-// own scopes (which print the scope's secret), the Linux hosts of their scopes to read ('host list',
+// own scopes (which print the scope's secret), 'device config pull' and
+// 'diff' (0.2.4: they log in to the devices of their own scopes as the
+// caller; 'device config list' is the operator's, 'forget' the
+// superuser's), the Linux hosts of their scopes to read ('host list',
 // 'host show'), and the secret, settings and SNMP settings of a scope of
-// their own to read ('scope secret', 'scope show', 'scope snmp'). The gate
+// their own to read ('scope secret', 'scope show', 'scope snmp'), and the
+// SNMP settings of a device of theirs ('device snmp'). The gate
 // lets an engineer run those verbs; the verbs themselves keep the engineer
 // to the devices, hosts and secrets of their own scopes (callerScopes) and
 // refuse what would change anything global: 'scope secret' other than
 // 'show', 'scope staging' other than 'list', every setter, clear and test of
-// 'scope snmp', and 'device import' of a file. Users, groups, scopes, the
+// 'scope snmp' and of 'device snmp' (0.2.4), and 'device import' of a file.
+// Users, groups, scopes, the
 // secrets' changes, backends, backups, upgrades, rollbacks and the
 // deployment on Linux hosts (enroll, sync, move, target, provisioner,
 // unenroll, default-method) stay the superuser's. The order is the drop-in's.
@@ -191,8 +196,18 @@ var Rules = []Rule{
 	{Tier: Operator, Cmd: "device", Sub: "scan", Sudoers: []string{"device scan", "device scan *"}},
 	{Tier: Operator, Cmd: "device", Sub: "discover", Sudoers: []string{"device discover", "device discover *"}},
 	{Tier: Operator, Cmd: "device", Sub: "export", Sudoers: []string{"device export", "device export *"}, Wrap: true},
+	// 'device config list' (0.2.4, D69): states and times, no configuration
+	// text. The gate sees 'device config'; the verb limits an operator to
+	// 'list' (show, pull and diff are the engineer's, forget the
+	// superuser's), and sudoers grants the operator nothing else of it.
+	{Tier: Operator, Cmd: "device", Sub: "config", Sudoers: []string{"device config", "device config list", "device config list *"}, Wrap: true},
 	{Tier: Operator, Cmd: "console", Sub: "show", Sudoers: []string{"console show"}},
 	{Tier: Operator, Cmd: "console", Sub: "check", Sudoers: []string{"console check"}},
+	// 'console forget' (0.2.4, D70) is a word of the shell and the console,
+	// which empty the password cache of their own process; the row lets the
+	// lists show it to the tiers the cache can be opened to, and the verb
+	// run from bash says there is no cache in that process.
+	{Tier: Operator, Cmd: "console", Sub: "forget", Sudoers: []string{"console forget"}},
 
 	{Tier: Engineer, Cmd: "device", Sub: "add", Sudoers: []string{"device add *"}},
 	{Tier: Engineer, Cmd: "device", Sub: "remove", Sudoers: []string{"device remove *"}},
@@ -210,8 +225,10 @@ var Rules = []Rule{
 	{Tier: Engineer, Cmd: "device", Sub: "import", Sudoers: []string{"device import -", "device import - *"}, Wrap: true},
 	{Tier: Engineer, Cmd: "scope", Sub: "devices", Sudoers: []string{"scope devices *"}, Wrap: true},
 	// 'device config show <name>' prints a device's walkthrough, secret and
-	// all: the engineer's own scopes' devices (the verb sees to that).
-	{Tier: Engineer, Cmd: "device", Sub: "config", Sudoers: []string{"device config", "device config show *"}},
+	// all, 'device config pull' and 'diff' log in to the devices as the
+	// caller and print what the device runs: the engineer's own scopes'
+	// devices (the verb sees to that). 'forget' is the superuser's.
+	{Tier: Engineer, Cmd: "device", Sub: "config", Sudoers: []string{"device config show *", "device config pull *", "device config diff *"}},
 	{Tier: Engineer, Cmd: "config", Sub: "cisco", Sudoers: []string{"config cisco", "config cisco *"}},
 	{Tier: Engineer, Cmd: "config", Sub: "juniper", Sudoers: []string{"config juniper", "config juniper *"}},
 	{Tier: Engineer, Cmd: "config", Sub: "wti", Sudoers: []string{"config wti", "config wti *"}, Wrap: true},
@@ -225,6 +242,11 @@ var Rules = []Rule{
 	// The scope's SNMP settings: an engineer reads their own scopes' ('show
 	// [--reveal]', D45); the verb refuses every setter, clear and test.
 	{Tier: Engineer, Cmd: "scope", Sub: "snmp", Sudoers: []string{"scope snmp *"}},
+	// 'device snmp <name> ...' (0.2.4, D72): the engineer reads the SNMP
+	// settings of the devices of their own scopes ('show [--reveal]', the
+	// plain reads, each reveal logged); the verbs that set or clear are the
+	// superuser's (the verb sees to that, as 'scope snmp' does).
+	{Tier: Engineer, Cmd: "device", Sub: "snmp", Sudoers: []string{"device snmp *"}},
 	{Tier: Engineer, Cmd: "scope", Sub: "show", Sudoers: []string{"scope show *"}},
 }
 
@@ -276,6 +298,34 @@ const Binary = "/usr/local/bin/tacctl"
 // the caller; tacctl checks its shape first).
 const EnvKeep = "Defaults!" + Binary + " env_keep += \"SSH_AUTH_SOCK TACCTL_CONSOLE DISPLAY\"\n"
 
+// The password cache's variable (docs/plans/0.2.4-plan.md D70,
+// TACCTL_ASKPASS: '<socket path>:<token>') is kept only for the command
+// lines that use it: 'device config pull', 'device config diff' and 'ssh'
+// ('device ssh'). A 'Defaults!' entry takes no arguments, so the lines are a
+// Cmnd_Alias, which each drop-in names itself (sudoers refuses an alias
+// defined twice, and a host may carry both drop-ins). The shell puts the
+// variable in the environment of the sudo process, never on sudo's command
+// line (argv is world-readable).
+const (
+	// AskpassVar is the password cache's environment variable
+	// (askpass.EnvVar).
+	AskpassVar = "TACCTL_ASKPASS"
+	// AskpassAlias is the alias of the per-tier drop-in and
+	// AskpassGroupAlias that of the group drop-in.
+	AskpassAlias      = "TACCTL_ASKPASS_CMDS"
+	AskpassGroupAlias = "TACCTL_ASKPASS_GROUP_CMDS"
+)
+
+// AskpassKeep is the alias of the command lines that use the password
+// cache, and the 'Defaults!' line that keeps AskpassVar for exactly them:
+// it goes before EnvKeep in a drop-in.
+func AskpassKeep(alias string) string {
+	return "Cmnd_Alias " + alias + " = " +
+		Binary + " device config pull *, " + Binary + " device config diff *, \\\n" +
+		"    " + Binary + " ssh *, " + Binary + " device ssh *\n" +
+		"Defaults!" + alias + " env_keep += \"" + AskpassVar + "\"\n"
+}
+
 // Sudoers is emit_tier_sudoers: the per-tier drop-in, byte for byte.
 func Sudoers() string {
 	var b strings.Builder
@@ -315,6 +365,7 @@ func Sudoers() string {
 		}
 	}
 	b.WriteString("\n")
+	b.WriteString(AskpassKeep(AskpassAlias))
 	b.WriteString(EnvKeep)
 	b.WriteString("%" + SuperuserGroup + " ALL=(ALL:ALL) ALL\n")
 	b.WriteString("%" + SuperuserGroup + " ALL=(root) NOPASSWD: TACCTL_RO, TACCTL_OP, TACCTL_EN\n")

@@ -37,6 +37,14 @@ func TestKnobsIgnoredWithoutTag(t *testing.T) {
 	if k.Fault("render") != nil || len(k.Faults()) != 0 {
 		t.Error("the fault knob took effect")
 	}
+	// The device knobs are not even spelled in this build: the variables the
+	// tagged file names are read by nothing here.
+	for _, kv := range []string{"TACCTL_TEST_DEVICE_DIAL=127.0.0.1:2222", "TACCTL_TEST_DEVICE_PASSWORD=x"} {
+		dk, err := LoadKnobs(paths.NewEnv([]string{kv}))
+		if err != nil || dk.DeviceDial() != "" || dk.DevicePassword() != "" {
+			t.Errorf("%s took effect: %q %q %v", kv, dk.DeviceDial(), dk.DevicePassword(), err)
+		}
+	}
 	if k.Root() != "" || New(nil, env, "", 0, Stdio{}, nil).Paths.Command != paths.Command {
 		t.Error("the root knob took effect")
 	}

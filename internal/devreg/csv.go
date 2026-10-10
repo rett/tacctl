@@ -178,6 +178,12 @@ func (f *File) Import(rows []Row, replace, allowGeneric bool, hostEntries []Entr
 		if row.CSV {
 			merged.Hostname, merged.LegacySSH, merged.Location = old.Hostname, old.LegacySSH, old.Location
 		}
+		// An import never drops a device's own SNMP settings (their
+		// credentials are a file of their own, which a file of devices
+		// cannot carry): the file's map, when it has one, replaces them.
+		if merged.SNMP.Empty() {
+			merged.SNMP = old.SNMP.Clone()
+		}
 		merged.Name = old.Name
 		if len(merged.Ack) == 0 {
 			merged.Ack = slices.Clone(old.Ack)
@@ -256,12 +262,27 @@ type jsonDevice struct {
 	Location    string   `json:"location,omitempty"`
 	HostKeys    []string `json:"host_keys,omitempty"`
 	Ack         []string `json:"ack,omitempty"`
+	// SNMP is the device's own non-secret SNMP settings (D72), only when
+	// set.
+	SNMP *jsonSNMP `json:"snmp,omitempty"`
+}
+
+// jsonSNMP is the JSON form of a device's SNMP settings.
+type jsonSNMP struct {
+	Version string   `json:"version,omitempty"`
+	Port    int      `json:"port,omitempty"`
+	Timeout int      `json:"timeout,omitempty"`
+	Clients []string `json:"clients,omitempty"`
 }
 
 // JSONDevice is d as the value 'export --json' and 'list --json' print.
 func JSONDevice(d Device) any {
-	return jsonDevice{Name: d.Name, Address: d.Address, Hostname: d.Hostname, Vendor: d.Vendor, Port: d.SSHPort(),
+	j := jsonDevice{Name: d.Name, Address: d.Address, Hostname: d.Hostname, Vendor: d.Vendor, Port: d.SSHPort(),
 		LegacySSH: d.LegacySSH, Description: d.Description, Location: d.Location, HostKeys: d.HostKeys, Ack: d.Ack}
+	if !d.SNMP.Empty() {
+		j.SNMP = &jsonSNMP{Version: d.SNMP.Version, Port: d.SNMP.Port, Timeout: d.SNMP.Timeout, Clients: slices.Clone(d.SNMP.Clients)}
+	}
+	return j
 }
 
 // JSON is the devices as an indented JSON array.

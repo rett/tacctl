@@ -92,3 +92,23 @@ uninstall <<< n
 @fixture none
 @known 0.2.1 item 25: the uninstall plan names the generated known_hosts
 uninstall <<< n
+
+# --- rollback: the usage, the refusals and the dry run (never --apply) -------------
+@fixture tacquito.minimal.yaml
+rollback
+rollback --bogus
+rollback 0.2.3 extra
+@known 0.2.4 item 16: the target is 0.2.3; 0.2.2 and older are refused with the way there
+rollback 0.2.2
+@known 0.2.4 item 16: the target is 0.2.3; 0.2.2 and older are refused with the way there
+rollback 0.2.1
+@known 0.2.4 item 16: the target is 0.2.3; 0.2.2 and older are refused with the way there
+rollback 0.2.2 --apply --yes
+@known 0.2.4 item 16: the usage and the refusal name 0.2.3 as the one target
+rollback 0.2.4
+@known 0.2.4 item 16: the usage and the refusal name 0.2.3 as the one target
+rollback main
+@known 0.2.4 item 16: the target is 0.2.3, and its dry run lists the 0.2.4 conversions
+rollback 0.2.3
+@known 0.2.4 item 16: the target is 0.2.3, and its dry run lists the 0.2.4 conversions
+rollback v0.2.3 --hosts

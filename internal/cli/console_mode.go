@@ -152,6 +152,11 @@ func (inv *invocation) runConsoleSession(args []string) error {
 		exe: exe, mode: shellBatch, listMax: cs.pol.ListMax, spaceCompletion: cs.pol.SpaceCompletion,
 		extraEnv: extra, console: true, systemShell: cs.systemShell, groups: groups, view: consoleView(cs.pol),
 	}
+	if cs.pol.PasswordCache {
+		// The policy turned the cache on for this tier (D70): the shell
+		// loop starts the agent, for an interactive session only.
+		r.cacheMode, r.pcIdle, r.pcMax = cacheOn, cs.pol.PCIdle, cs.pol.PCMax
+	}
 	if groups == nil {
 		r.groups = []string{}
 	}

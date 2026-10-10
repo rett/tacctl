@@ -112,10 +112,10 @@ func TestDeviceScanDiscoverListAndStatus(t *testing.T) {
 
 	out = sb.dev("", "list")
 	for _, re := range []string{
-		`(?m)^  core-sw1 +203\.0\.113\.1 +cisco +dmz +configured +\S+ \S+ +alice +tacacs +-$`,
-		`(?m)^  edge-fw +203\.0\.113\.20 +other +dmz +configured +rejected \S+ \S+ \(bad secret\) +- +tacacs +-$`,
-		`(?m)^  oob-con1 +203\.0\.113\.9 +wti +dmz +configured stale +\S+ \S+ +asmith +radius +name-mismatch$`,
-		`(?m)^  lab-rtr2 +198\.51\.100\.7 +juniper +- +unconfigured +never +- +- +-$`,
+		`(?m)^  core-sw1 +203\.0\.113\.1 +cisco +dmz +configured +\S+ \S+ +alice +tacacs +never +-$`,
+		`(?m)^  edge-fw +203\.0\.113\.20 +other +dmz +configured +rejected \S+ \S+ \(bad secret\) +- +tacacs +- +-$`,
+		`(?m)^  oob-con1 +203\.0\.113\.9 +wti +dmz +configured stale +\S+ \S+ +asmith +radius +- +name-mismatch$`,
+		`(?m)^  lab-rtr2 +198\.51\.100\.7 +juniper +- +unconfigured +never +- +- +- +-$`,
 		`(?m)^  seen data as of \S+ \S+ \(tacctl device scan to refresh\); stale after 7 days$`,
 	} {
 		if !regexp.MustCompile(re).MatchString(out) {
@@ -326,7 +326,7 @@ func TestDeviceListProbe(t *testing.T) {
 	}
 	defer func() { devreg.ProbeDial = nil }()
 	out := sb.dev("", "list", "--probe")
-	if !regexp.MustCompile(`(?m)^  loop +127\.0\.0\.1 .* +- +- +- +timeout +-$`).MatchString(out) || !strings.Contains(out, "REACH: a TCP connect") {
+	if !regexp.MustCompile(`(?m)^  loop +127\.0\.0\.1 .* +- +- +- +- +timeout +-$`).MatchString(out) || !strings.Contains(out, "REACH: a TCP connect") {
 		t.Errorf("%s", out)
 	}
 }

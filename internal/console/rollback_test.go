@@ -11,7 +11,8 @@ import (
 	"github.com/rett/tacctl/internal/tier"
 )
 
-// A console.yaml as 0.2.3 writes it with every setting changed.
+// A console.yaml as 0.2.4 writes it with every setting changed, the password
+// cache's included (spaceOff: space completion off, which 0.2.3 writes).
 func rollbackFixture(t *testing.T, spaceOff bool) []byte {
 	t.Helper()
 	f := Defaults()
@@ -23,6 +24,8 @@ func rollbackFixture(t *testing.T, spaceOff bool) []byte {
 	f.SystemShellTiers = []tier.Tier{tier.Operator, tier.Superuser}
 	f.ListMax = 25
 	f.SpaceCompletion = !spaceOff
+	f.PasswordCacheTiers = []tier.Tier{tier.Engineer, tier.Superuser}
+	f.PasswordCacheIdle, f.PasswordCacheMax = 30, 4
 	text, err := f.Text()
 	if err != nil {
 		t.Fatal(err)
@@ -30,46 +33,45 @@ func rollbackFixture(t *testing.T, spaceOff bool) []byte {
 	return text
 }
 
-// The file written for 0.2.2 is accepted by the fixture of 0.2.2's parser
-// (accepts022, console_test.go), keeps every other setting, and 0.2.3 reads
-// it as it read the file it came from but for space completion, which is on
-// again.
-func TestRollbackTextIsReadBy022(t *testing.T) {
+// The file written for 0.2.3 is accepted by the fixture of 0.2.3's parser
+// (accepts023, console_test.go), keeps every other setting (the engineer
+// tier's switch and space completion included, which are 0.2.3's own), and
+// 0.2.4 reads it as it read the file it came from but for the cache, which is
+// off again.
+func TestRollbackTextIsReadBy023(t *testing.T) {
 	for _, off := range []bool{false, true} {
 		dir := t.TempDir()
 		orig := rollbackFixture(t, off)
 		p := write(t, dir, "console.yaml", string(orig), 0o600)
-		if err := accepts022(orig); err == nil {
-			t.Fatalf("off=%v: the fixture of 0.2.3's file is accepted by the 0.2.2 parser", off)
+		if err := accepts023(orig); err == nil {
+			t.Fatalf("off=%v: the fixture of 0.2.4's file is accepted by the 0.2.3 parser", off)
 		}
 		plan, err := PlanRollback(p)
 		if err != nil {
 			t.Fatal(err)
 		}
-		wantRemove := []string{"tiers.engineer: enable"}
-		if off {
-			wantRemove = append(wantRemove, "settings.space_completion: false")
-		}
+		wantRemove := []string{"settings.password_cache: tiers engineer,superuser, idle 30 min, max 4 h"}
 		if !plan.Exists || plan.Text == nil || !reflect.DeepEqual(plan.Remove, wantRemove) {
 			t.Fatalf("off=%v: plan %+v, want remove %q", off, plan, wantRemove)
 		}
-		if err := accepts022(plan.Text); err != nil {
-			t.Errorf("off=%v: 0.2.2 rejects the converted file: %v\n%s", off, err, plan.Text)
+		if err := accepts023(plan.Text); err != nil {
+			t.Errorf("off=%v: 0.2.3 rejects the converted file: %v\n%s", off, err, plan.Text)
 		}
-		// Nothing but the two keys went.
-		if strings.Contains(string(plan.Text), "engineer") || strings.Contains(string(plan.Text), "space_completion") {
-			t.Errorf("off=%v: a key is left:\n%s", off, plan.Text)
+		if strings.Contains(string(plan.Text), "password_cache") {
+			t.Errorf("off=%v: the key is left:\n%s", off, plan.Text)
 		}
 		for _, keep := range []string{"idle_timeout: 12", "agent_forwarding: true", "readonly: disable", "jdoe: enable", "asmith: disable",
-			"system_shell_tiers", "list_max: 25", "version: 1", "superuser: enable", "operator: enable"} {
+			"system_shell_tiers", "list_max: 25", "version: 1", "superuser: enable", "operator: enable", "engineer: enable"} {
 			if !strings.Contains(string(plan.Text), keep) {
 				t.Errorf("off=%v: %q is gone:\n%s", off, keep, plan.Text)
 			}
 		}
+		if got := strings.Contains(string(plan.Text), "space_completion: false"); got != off {
+			t.Errorf("off=%v: space_completion written: %v\n%s", off, got, plan.Text)
+		}
 		if _, err := os.Stat(p + ".tmp"); err == nil {
 			t.Error("a temporary file was left")
 		}
-		// What 0.2.3 itself reads from it.
 		changed, err := Rollback(p, nil)
 		if err != nil || !changed {
 			t.Fatalf("off=%v: Rollback: %v %v", off, changed, err)
@@ -85,9 +87,10 @@ func TestRollbackTextIsReadBy022(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if f.Idle != 12 || !f.AgentForwarding || f.TierOn[tier.Readonly] || !f.TierOn[tier.Engineer] || !f.SpaceCompletion ||
+		if f.Idle != 12 || !f.AgentForwarding || f.TierOn[tier.Readonly] || !f.TierOn[tier.Engineer] || f.SpaceCompletion != !off ||
 			f.Users["jdoe"] != true || f.Users["asmith"] != false || f.ListMax != 25 ||
-			!reflect.DeepEqual(f.SystemShellTiers, []tier.Tier{tier.Operator, tier.Superuser}) {
+			!reflect.DeepEqual(f.SystemShellTiers, []tier.Tier{tier.Operator, tier.Superuser}) ||
+			len(f.PasswordCacheTiers) != 0 || f.PasswordCacheIdle != DefaultPasswordCacheIdle || f.PasswordCacheMax != DefaultPasswordCacheMax {
 			t.Errorf("off=%v: read back: %+v", off, f)
 		}
 		// Idempotent: the converted file needs nothing, and is not rewritten.
@@ -109,31 +112,40 @@ func TestRollbackTextIsReadBy022(t *testing.T) {
 	}
 }
 
-// The defaults file (every tier on, space completion on) loses just tiers.engineer.
-func TestRollbackOfTheDefaultsFile(t *testing.T) {
+// A cache that only moved a lifetime (the tiers are none) is a key 0.2.3
+// rejects as well.
+func TestRollbackOfALifetimeOnly(t *testing.T) {
 	dir := t.TempDir()
-	text, err := Defaults().Text()
+	f := Defaults()
+	f.PasswordCacheMax = 12
+	text, err := f.Text()
 	if err != nil {
 		t.Fatal(err)
 	}
 	p := write(t, dir, "console.yaml", string(text), 0o600)
 	plan, err := PlanRollback(p)
-	if err != nil || !reflect.DeepEqual(plan.Remove, []string{"tiers.engineer: enable"}) {
+	if err != nil || !reflect.DeepEqual(plan.Remove, []string{"settings.password_cache: tiers none, idle 15 min, max 12 h"}) {
 		t.Fatalf("plan %+v %v", plan, err)
 	}
-	if err := accepts022(plan.Text); err != nil {
+	if err := accepts023(plan.Text); err != nil {
 		t.Errorf("rejected: %v\n%s", err, plan.Text)
 	}
 }
 
-// A file 0.2.2 wrote (or a partial one) has nothing to take out and is
-// left alone, byte for byte; so is a missing file.
+// A file 0.2.3 wrote (or a partial one) has nothing to take out and is left
+// alone, byte for byte; so is a missing file. The file the defaults write is
+// one of them: the cache is written only when it is not the default.
 func TestRollbackLeavesWhatIsAlreadyReadable(t *testing.T) {
 	dir := t.TempDir()
+	defaults, err := Defaults().Text()
+	if err != nil {
+		t.Fatal(err)
+	}
 	for name, text := range map[string]string{
-		"partial.yaml": "version: 1\nsettings: {idle_timeout: 5}\n",
-		"old.yaml":     "# written by 0.2.2\nversion: 1\ntiers: {readonly: enable, operator: enable, superuser: disable}\nusers: {}\n",
-		"empty.yaml":   "",
+		"partial.yaml":  "version: 1\nsettings: {idle_timeout: 5}\n",
+		"old.yaml":      "# written by 0.2.3\nversion: 1\ntiers: {readonly: enable, operator: enable, engineer: enable, superuser: disable}\nusers: {}\nsettings: {space_completion: false}\n",
+		"empty.yaml":    "",
+		"defaults.yaml": string(defaults),
 	} {
 		p := write(t, dir, name, text, 0o600)
 		plan, err := PlanRollback(p)
@@ -165,6 +177,7 @@ func TestRollbackRefusesAnUnreadableFile(t *testing.T) {
 		"yaml.yaml":    "a: [\n",
 		"unknown.yaml": "version: 1\nfoo: 1\n",
 		"tier.yaml":    "version: 1\ntiers: {root: enable}\n",
+		"cache.yaml":   "version: 1\nsettings: {password_cache: {tiers: [readonly]}}\n",
 	} {
 		p := write(t, dir, name, text, 0o600)
 		if _, err := PlanRollback(p); err == nil {

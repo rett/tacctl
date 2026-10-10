@@ -39,7 +39,7 @@ snapshot_count() { find "${TACCTL_STATE_DIR}/backups" -mindepth 1 -maxdepth 1 -n
     assert_success
     run "$TACCTL_BIN_SCRIPT" device list
     plain
-    assert_output --regexp "core-sw1 +10\.99\.0\.1 +cisco +lab +configured +- +- +- +hostkey-unpinned"
+    assert_output --regexp "core-sw1 +10\.99\.0\.1 +cisco +lab +configured +- +- +- +never +hostkey-unpinned"
     run "$TACCTL_BIN_SCRIPT" device show 10.99.0.1
     assert_success
     plain

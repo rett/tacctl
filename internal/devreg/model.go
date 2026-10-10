@@ -38,6 +38,74 @@ type Device struct {
 	// HostKeys are the pinned host keys ('<type> <base64>', hostkey.go),
 	// in type order; known_hosts is generated from them.
 	HostKeys []string
+	// SNMP is the device's own SNMP settings (D72 of docs/plans/0.2.4-
+	// plan.md, 'tacctl device snmp'): the device's value wins over its
+	// scope's and the default's. Its credentials are not here (they are
+	// StateDir/snmp/devices/<name>.yaml, internal/snmpcred). The zero value
+	// is "nothing of its own"; the file has the map only when it is set.
+	SNMP SNMP
+}
+
+// SNMP is a device's own SNMP settings: the non-secret ones. Zero is "not
+// set here" for every field.
+type SNMP struct {
+	// Version is v2c or v3.
+	Version string
+	// Port is the agent's UDP port, Timeout the wait for an answer in
+	// seconds.
+	Port, Timeout int
+	// Clients are the allowed client ranges as stored (IPv4 CIDRs in
+	// canonical form, in the order given); the device's list replaces its
+	// scope's.
+	Clients []string
+}
+
+// The bounds of a device's SNMP settings: the scope's (internal/snmp's
+// MinTimeout and MaxTimeout, cidr.MaxSNMPClients; a test holds them equal).
+const (
+	SNMPMinTimeout = 1
+	SNMPMaxTimeout = 10
+	// SNMPVersionV2c and SNMPVersionV3 are the versions a device may set.
+	SNMPVersionV2c = "v2c"
+	SNMPVersionV3  = "v3"
+)
+
+// Empty reports whether nothing is set.
+func (s SNMP) Empty() bool {
+	return s.Version == "" && s.Port == 0 && s.Timeout == 0 && len(s.Clients) == 0
+}
+
+// Clone is a deep copy.
+func (s SNMP) Clone() SNMP {
+	s.Clients = slices.Clone(s.Clients)
+	return s
+}
+
+// validate is every field rule of the settings.
+func (s SNMP) validate() error {
+	if s.Version != "" && s.Version != SNMPVersionV2c && s.Version != SNMPVersionV3 {
+		return fail("Invalid snmp version '" + s.Version + "': v2c or v3.")
+	}
+	if s.Port != 0 && (s.Port < 1 || s.Port > 65535) {
+		return fail("Invalid snmp port " + strconv.Itoa(s.Port) + ": expected 1-65535.")
+	}
+	if s.Timeout != 0 && (s.Timeout < SNMPMinTimeout || s.Timeout > SNMPMaxTimeout) {
+		return fail("Invalid snmp timeout " + strconv.Itoa(s.Timeout) + ": expected " + strconv.Itoa(SNMPMinTimeout) + "-" + strconv.Itoa(SNMPMaxTimeout) + ".")
+	}
+	if len(s.Clients) > cidr.MaxSNMPClients {
+		return fail("At most " + strconv.Itoa(cidr.MaxSNMPClients) + " snmp client ranges.")
+	}
+	seen := map[string]bool{}
+	for _, c := range s.Clients {
+		if why := cidr.ClientProblem(c); why != "" {
+			return fail("Invalid snmp client '" + c + "': it " + why + ".")
+		}
+		if seen[c] {
+			return fail("The snmp client '" + c + "' is listed twice.")
+		}
+		seen[c] = true
+	}
+	return nil
 }
 
 // The defaults and limits of the fields.
@@ -244,7 +312,7 @@ func (d Device) validate() error {
 			return fail("Unknown notice kind '" + k + "'.")
 		}
 	}
-	return nil
+	return d.SNMP.validate()
 }
 
 func mustAddr(s string) string {
@@ -256,6 +324,7 @@ func mustAddr(s string) string {
 func (d Device) Clone() Device {
 	d.Ack = slices.Clone(d.Ack)
 	d.HostKeys = slices.Clone(d.HostKeys)
+	d.SNMP = d.SNMP.Clone()
 	return d
 }
 

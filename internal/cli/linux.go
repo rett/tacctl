@@ -543,7 +543,6 @@ func (inv *invocation) scriptRequest(scope, server, method, output string) (host
 	req.Inactive = m.LinuxInactive(scope)
 	req.GroupTier = inv.syncGroupTier
 	req.EngineerSudo = strings.Join(inv.app.Conf().GetList(engineerSudoKey), ",")
-	req.RevokeEngineer = inv.revokeEngineer
 	id := backend.TACACS
 	if method == hosts.Radius {
 		id = "radius"

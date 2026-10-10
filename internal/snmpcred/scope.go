@@ -118,15 +118,18 @@ func CheckNoScopeFile(dir, scope string) error {
 
 // Where a resolved setting came from.
 const (
+	FromDevice  = "device"
 	FromScope   = "scope"
 	FromDefault = "default"
 	FromBuiltIn = "built-in"
 	NotSet      = "not set"
 )
 
-// Layer is one level's settings: the scope's (snmp_scope.<scope>.* and its
-// file) or the default's (snmp.* and snmp.yaml). The zero value of a field is
-// "not set at this level".
+// Layer is one level's settings: the device's own (the snmp map of
+// devices.yaml and snmp/devices/<name>.yaml, D72 of docs/plans/0.2.4-
+// plan.md), the scope's (snmp_scope.<scope>.* and its file) or the
+// default's (snmp.* and snmp.yaml). The zero value of a field is "not set at
+// this level".
 type Layer struct {
 	Version string
 	Port    int
@@ -156,45 +159,55 @@ type Effective struct {
 
 // Resolve combines the scope's layer with the default's. A device in no
 // scope passes the zero Layer as scope and gets the default.
-func Resolve(scope, def Layer) Effective {
-	var e Effective
-	e.Version, e.VersionFrom = pickStr(scope.Version, def.Version, "")
-	e.Port, e.PortFrom = pickInt(scope.Port, def.Port, snmp.DefaultPort)
-	e.Timeout, e.TimeoutFrom = pickInt(scope.Timeout, def.Timeout, snmp.DefaultTimeout)
-	e.Auth, e.AuthFrom = pickStr(scope.Auth, def.Auth, snmp.AuthSHA)
-	e.Priv, e.PrivFrom = pickStr(scope.Priv, def.Priv, snmp.PrivAES128)
-	e.Community, e.CommunityFrom = pickStr(scope.Creds.Community, def.Creds.Community, "")
-	switch {
-	case scope.Creds.User != "" || scope.Creds.AuthPass != "" || scope.Creds.PrivPass != "":
-		e.User, e.AuthPass, e.PrivPass, e.V3From = scope.Creds.User, scope.Creds.AuthPass, scope.Creds.PrivPass, FromScope
-	case def.Creds.User != "" || def.Creds.AuthPass != "" || def.Creds.PrivPass != "":
-		e.User, e.AuthPass, e.PrivPass, e.V3From = def.Creds.User, def.Creds.AuthPass, def.Creds.PrivPass, FromDefault
-	default:
-		e.V3From = NotSet
-	}
-	return e
-}
+func Resolve(scope, def Layer) Effective { return ResolveDevice(Layer{}, scope, def) }
 
-func pickStr(scope, def, builtIn string) (string, string) {
-	switch {
-	case scope != "":
-		return scope, FromScope
-	case def != "":
-		return def, FromDefault
-	case builtIn != "":
+// ResolveDevice combines a device's own layer (D72 of docs/plans/0.2.4-
+// plan.md: its snmp map in devices.yaml and its file under snmp/devices)
+// with its scope's and the default's: the device's value, then the scope's,
+// then the default's, then the built-in, one setting at a time. The zero
+// Layer as dev is Resolve.
+func ResolveDevice(dev, scope, def Layer) Effective {
+	levels := []struct {
+		l    Layer
+		from string
+	}{{dev, FromDevice}, {scope, FromScope}, {def, FromDefault}}
+	str := func(get func(Layer) string, builtIn string) (string, string) {
+		for _, lv := range levels {
+			if v := get(lv.l); v != "" {
+				return v, lv.from
+			}
+		}
+		if builtIn != "" {
+			return builtIn, FromBuiltIn
+		}
+		return "", NotSet
+	}
+	num := func(get func(Layer) int, builtIn int) (int, string) {
+		for _, lv := range levels {
+			if v := get(lv.l); v != 0 {
+				return v, lv.from
+			}
+		}
 		return builtIn, FromBuiltIn
 	}
-	return "", NotSet
-}
-
-func pickInt(scope, def, builtIn int) (int, string) {
-	switch {
-	case scope != 0:
-		return scope, FromScope
-	case def != 0:
-		return def, FromDefault
+	var e Effective
+	e.Version, e.VersionFrom = str(func(l Layer) string { return l.Version }, "")
+	e.Port, e.PortFrom = num(func(l Layer) int { return l.Port }, snmp.DefaultPort)
+	e.Timeout, e.TimeoutFrom = num(func(l Layer) int { return l.Timeout }, snmp.DefaultTimeout)
+	e.Auth, e.AuthFrom = str(func(l Layer) string { return l.Auth }, snmp.AuthSHA)
+	e.Priv, e.PrivFrom = str(func(l Layer) string { return l.Priv }, snmp.PrivAES128)
+	e.Community, e.CommunityFrom = str(func(l Layer) string { return l.Creds.Community }, "")
+	// The v3 user and both passphrases come together from one level: a user
+	// from the device and passphrases from the scope would be a credential
+	// nobody set.
+	e.V3From = NotSet
+	for _, lv := range levels {
+		if c := lv.l.Creds; c.User != "" || c.AuthPass != "" || c.PrivPass != "" {
+			e.User, e.AuthPass, e.PrivPass, e.V3From = c.User, c.AuthPass, c.PrivPass, lv.from
+			break
+		}
 	}
-	return builtIn, FromBuiltIn
+	return e
 }
 
 // HasV3 reports whether the user and both passphrases are set.

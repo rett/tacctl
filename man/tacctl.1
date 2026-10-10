@@ -158,7 +158,17 @@ only when its content changed (the output says
 .B Updated
 or
 .BR Unchanged ).
-A new README, logrotate file, completion or template restarts
+The sudoers drop-ins an administrator installed are refreshed when they are
+this release's older text: the tiers file
+.RB ( "Updated: tiers sudoers" ),
+and the group file of
+.B "config sudoers install"
+for the group its header names
+.RB ( "Updated: sudoers for group" " \fIname\fR);"
+a group file that was edited is left as it is, with a warning, one that says
+tacctl wrote it but names no group
+.B "config sudoers install"
+accepts is left with a line saying so, and none is ever created. A new README, logrotate file, completion or template restarts
 nothing, and neither does an upgrade with nothing new. Listener, log-level and metrics
 settings live in
 .I tacctl.yaml
@@ -185,76 +195,69 @@ The tacctl repo branch to install or upgrade from (default: the current one).
 Prepare tacctl's state for the release before this one; run on the newer
 release, before the older one is installed. A dry run by default: it lists
 every step and every warning and changes nothing. The only version it takes is
-.BR 0.2.2 ;
-.B 0.2.1
-and older are refused (0.2.2's own changes are not covered; restore a snapshot
-with
-.BR "backup restore" ),
-and so is any other word.
+.BR 0.2.3 ;
+each release's tool converts what that release changed, so
+.B 0.2.2
+and older are refused, with the way there (this rollback,
+.BR "tacctl upgrade \-\-branch 0.2.3" ,
+then the rollback of 0.2.3), and so is any other word.
 .B \-\-apply
 takes a snapshot first, then, in this order: removes from
 .I tacctl.yaml
-the key families 0.2.3 added
-.RB ( linux.engineer_sudo ,
-.BR snmp_scope.* ,
-.BR breakglass_scope.* )
-and any other key a 0.2.2 binary does not know (every
-.BI tier. group
-setting stays); removes
-.B tiers.engineer
-and
-.B settings.space_completion
+the keys 0.2.4 added
+.RB ( device.config.max_concurrency ,
+.BR device.config.transport ,
+.BR device.config.timeout )
+and any other key a 0.2.3 binary does not know; removes
+.B settings.password_cache
 from
 .I console.yaml
-and writes it the way 0.2.2 reads it; removes the
-.B location
-of every device from
-.IR devices.yaml ;
-re-renders the enabled backends. It moves the per-scope SNMP credentials
-.RI ( snmp/ scope .yaml )
-aside to
-.IR snmp.rolled\-back\-<timestamp>/
-beside them, and removes the marker
-.I /var/lib/tacctl/tier\-pinned
-so that the upgrade that follows records the tier of a group made or raised
-to priv-lvl 15 under 0.2.2. It leaves
+and writes it the way 0.2.3 reads it (the cache is off again); removes the
+.B snmp
+map of every device from
+.IR devices.yaml
+(the devices are then read with their scope's or the default's settings);
+and rewrites the sudoers drop-ins that are exactly the text 0.2.4 writes
+.RI ( /etc/sudoers.d/tacctl\-tiers
+and the one
+.B "config sudoers install"
+wrote) with the text 0.2.3 writes, after
+.BR "visudo \-cf" :
+they lose the
+.B TACCTL_ASKPASS
+alias and
+.B env_keep
+line and, in the per-tier file, the rows of
+.BR "device config" ,
+.B "device snmp"
+and
+.BR "console forget" .
+A drop-in that was edited, or that
+.B visudo
+refuses, is left and named. It leaves, and lists,
 .IR store.yaml ,
-the host records and the engineer sshd drop-in
-.IR 00\-tacctl\-engineer.conf ,
-and lists them. The dry run names what needs a decision, and
+the devices' own SNMP credentials
+.RI ( snmp/devices/ name .yaml ,
+mode 0600, which 0.2.3 never opens) and the records of the configuration
+pulls
+.RI ( /var/lib/tacctl/devices\-config.json
+and
+.IR device\-config/ ,
+derived and never in a snapshot). The dry run names what needs a decision,
+and
 .B \-\-apply
 refuses without
 .B \-\-yes
-while any applies: the users who would become superusers under 0.2.2 (it
-takes the tier from the priv-lvl band of the group, not from
-.BI tier. group ),
-the groups whose tier changes, and the settings that are dropped (per-scope
-SNMP settings, break-glass users, the engineer sudo list, device locations;
-they stay in the snapshot).
+while any applies: the settings that are dropped (a device's own SNMP
+settings, the
+.B device.config
+values, the password cache's tiers and lifetimes; they stay in the snapshot,
+which only 0.2.4 restores).
 .B \-\-hosts
-also syncs each enrolled Linux host (not this server's own entry) through
-.B "host sync"
-with
-.B TAC_REVOKE_ENGINEER=1
-in the client script's header (the protocol stays 6): the script writes no
-.B %tac\-engineer
-sudoers line and takes the engineer-tier accounts out of
-.B tac\-superuser
-and
-.BR tac\-engineer ,
-so engineers have no sudo there until the next 0.2.2 sync, which puts an
-engineer at priv\-lvl 15 in
-.B tac\-superuser
-again (take engineer groups out of those scopes, or lower their priv\-lvl, first);
-no other account is touched. The command
-ends with the next step,
-.BR "tacctl upgrade \-\-branch 0.2.2" ,
-and the fallback that needs no tool: note the newest entry of
-.B "backup list"
-before upgrading (snapshots are taken before every change; the upgrade adds
-one only when it records a tier), and
-.B "backup restore"
-that entry to come back. A second
+is accepted and does nothing: 0.2.4 changed nothing on the enrolled Linux
+hosts. The command ends with the next step,
+.BR "tacctl upgrade \-\-branch 0.2.3" .
+A second
 .B \-\-apply
 changes nothing. Superuser only. See
 .BR UPGRADING .
@@ -266,13 +269,13 @@ Requires: \fBsuperuser\fR.
 Options:
 .TP
 \fB\-\-apply\fR
-Take a snapshot, then convert the files 0.2.2 cannot read and re\-render.
+Take a snapshot, then convert the files 0.2.3 cannot read (tacctl.yaml, console.yaml, devices.yaml, sudoers).
 .TP
 \fB\-\-yes\fR
 Answer yes to the confirmations.
 .TP
 \fB\-\-hosts\fR
-Also take the engineers' sudo off the enrolled Linux hosts.
+Accepted; the hosts need nothing for this target (no host is synced).
 .RE
 .\" END GENERATED: command rollback
 .TP
@@ -2695,6 +2698,73 @@ Requires: \fBsuperuser\fR.
 .RE
 .\" END GENERATED: command config snmp test
 .TP
+.B "config devices " "[ show ]"
+How
+.B "device config pull"
+and
+.B "device config diff \-\-pull"
+read the devices: the three settings and whether each is set or the default.
+These are
+.B device.config.max_concurrency
+(the most devices read at once, 1 to 64, default 8),
+.B device.config.transport
+.RB ( auto ,
+the default,
+.B netconf
+or
+.BR ssh )
+and
+.B device.config.timeout
+(seconds one device may take, connect included, 10 to 600, default 90) in
+.IR tacctl.yaml ,
+checked by the schema, so a value out of range never reaches the file.
+.B \-\-concurrency
+of one run can lower the first but never raise it,
+.B \-\-transport
+and
+.B \-\-timeout
+replace the others for that run. The verbs are the superuser's.
+.TP
+.BI "config devices max\-concurrency " "[ n ]"
+Show or set the most devices read at once, 1 to 64 (default 8).
+.\" BEGIN GENERATED: command config devices max-concurrency
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config devices max-concurrency
+.TP
+.BI "config devices transport " "[ auto|netconf|ssh ]"
+Show or set the default transport of a pull: NETCONF where the device answers
+and the vendor reads over it (Junos) with the ssh command line otherwise
+.RB ( auto ),
+NETCONF only, or the ssh command line only.
+.\" BEGIN GENERATED: command config devices transport
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config devices transport
+.TP
+.BI "config devices timeout " "[ seconds ]"
+Show or set the time one device may take, connect included, 10 to 600 (default
+90).
+.\" BEGIN GENERATED: command config devices timeout
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config devices timeout
+.TP
+.B "config devices show"
+Show the three settings.
+.\" BEGIN GENERATED: command config devices show
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config devices show
+.TP
 .B "config sudoers " "{ show | install | remove } " [ group ]
 Manage the optional
 .I /etc/sudoers.d/tacctl
@@ -2704,7 +2774,25 @@ to a group (default:
 .BR adm ).
 Installs are validated with
 .BR visudo (8)
-before taking effect. Not installed by default.
+before taking effect. Not installed by default. The file carries the
+environment the tiers drop-in keeps
+.RB ( SSH_AUTH_SOCK ", " TACCTL_CONSOLE ", " DISPLAY ,
+and
+.B TACCTL_ASKPASS
+for
+.BR "device config pull" ,
+.BR "device config diff" ,
+.B ssh
+and
+.BR "device ssh" ).
+.B "tacctl upgrade"
+rewrites a drop-in this command wrote with an earlier release, for the group
+its header names, when it is exactly the text that release wrote (it prints
+.BR "Updated: sudoers for group" " \fIname\fR);"
+a file that was edited, or is not tacctl's, is left as it is, with a warning
+that names
+.B "config sudoers install"
+for the first case.
 .\" BEGIN GENERATED: command config sudoers install
 .RS
 .PP
@@ -2762,9 +2850,16 @@ and the SNMP settings
 .RB ( "scope snmp " \fIscope\fR " show [ \-\-reveal ]" ,
 with the plain reads of version, port, timeout, contact and
 .BR "clients list" ;
-every setter, clear and test of it stays the superuser's).
+every setter, clear and test of it stays the superuser's), and those of a
+device of theirs
+.RB ( "device snmp " \fIname\fR " [ show [ \-\-reveal ]]" ,
+the same reads; its setters and
+.B clear
+are the superuser's, and an engineer's
+.B "device import"
+neither sets nor drops a device's own settings).
 Each read of a secret by an engineer is logged to syslog as
-\fBsecret\-read kind=scope|snmp name=\fR\fIscope\fR\fB by=\fR\fIuser\fR
+\fBsecret\-read kind=scope|snmp|snmp\-device|snmp\-default name=\fR\fIname\fR\fB by=\fR\fIuser\fR
 (never the value). Engineers change no global setting: users, groups,
 scopes, a secret's change, backends, backups, upgrades, the default host
 method and the console's settings stay the superuser's, and so does the
@@ -2832,7 +2927,10 @@ file. Both sudoers files carry
 .BR "tacctl host" ,
 the login console's session marker, and the X11 display
 .B "tacctl ssh \-X"
-hands on) and nothing else of the caller's environment; tacctl also refuses a
+hands on) and, for the command lines that use the password cache
+.RB ( "device config pull" ", " "device config diff" ", " ssh " and " "device ssh" ),
+.BR TACCTL_ASKPASS ,
+and nothing else of the caller's environment; tacctl also refuses a
 .B SUDO_USER
 that is not the account of
 .BR SUDO_UID .
@@ -3770,7 +3868,7 @@ Requires: \fBreadonly\fR.
 .\" END GENERATED: command hash commands
 .SS Interactive shell \fB(tacctl shell)\fR
 .TP
-.BI "shell " "[ \-\-no\-history ] [ \-\-idle " min " ] [ \-\-space\-completion { on | off } ] [ \-c " line " ]"
+.BI "shell " "[ \-\-no\-history ] [ \-\-idle " min " ] [ \-\-space\-completion { on | off } ] [ \-\-password\-cache ] [ \-c " line " ]"
 A prompt,
 .BR "tacctl> " ,
 where each line is a tacctl command without the
@@ -3831,6 +3929,9 @@ The shell's own words are
 (the usage of that command's family),
 .B history
 (the lines entered, as stored),
+.B console forget
+(empties the password cache, see
+.BR \-\-password\-cache ),
 .B exit
 and
 .BR quit .
@@ -3966,6 +4067,25 @@ and batch input are not affected.
 turns off the refusal of repeated spaces and the completion: every typed space
 is a space.
 .IP
+.B \-\-password\-cache
+keeps your network password in the memory of this shell for the session (see
+.B "console password\-cache"
+for the policy and the lifetimes): the first device pull asks for it once and
+later pulls, diffs and
+.B ssh
+lines use it. It needs an interactive shell, and for a member of
+.B tac-users
+a tier that
+.B "console password\-cache tiers"
+names; a caller outside
+.B tac-users
+asks for it themselves. When the cache cannot start (memory cannot be locked,
+a debugger is attached, no private directory is available for its socket) one
+line says why.
+.B console forget
+empties it. The password is never written to a file, a log, an argument or the
+environment.
+.IP
 .BI "\-\-idle " min
 ends the shell after
 .I min
@@ -4007,6 +4127,9 @@ End the session after this many idle minutes at the prompt.
 .TP
 \fB\-\-space\-completion\fR \fIon|off\fR
 A typed space completes a fixed word and never doubles (default on).
+.TP
+\fB\-\-password\-cache\fR
+Keep your network password in this shell's memory (when your tier's policy allows).
 .TP
 \fB\-c\fR \fI<line>\fR
 Run one line and exit.
@@ -4995,7 +5118,20 @@ prints a usage summary and exits 0.
 .TP
 .BI "device list " "[ \-\-stale ] [ \-\-unconfigured ] [ \-\-scan ] [ \-\-probe ] [ \-\-json ]"
 One row per registered device, then per enrolled host: name, address, vendor,
-scope, state, last seen, by, via, and the open notices. The state is
+scope, state, last seen, by, via, config, and the open notices. The config
+column (the operator tier's: a read-only user's list has none, in the table
+or in the JSON) is the state of the device's last configuration pull
+.RB ( "device config pull" ):
+.BR ok ,
+.BR differs ,
+.B never
+or
+.BR failed ,
+from the pull's record without rendering; it is
+.B \-
+for a host, a vendor
+.BR other ,
+a WTI unit and a device no scope covers. The state is
 .B configured
 when a scope's prefixes cover the address (a host: when its scope exists) and
 .B unconfigured
@@ -5035,7 +5171,7 @@ may be a false alarm.
 .\" BEGIN GENERATED: command device list
 .RS
 .PP
-Requires: \fBreadonly\fR.
+Requires: \fBreadonly\fR. The CONFIG column (and config of \-\-json) is the operator tier's; a read\-only user's list has none.
 .PP
 Options:
 .TP
@@ -5061,14 +5197,17 @@ One device or host in full: address, hostname, vendor, port, legacy ssh,
 description, the scope that answers the address and the prefix that routes it
 (and the scopes it shadows), the vendor tag that covers it, the pinned host keys,
 the last and first sighting with the sighting count and the NAS-Identifier the
-device sends, and the open notices with a count of the acknowledged ones
+device sends, the configuration of the last pull (when, by whom, over which
+transport and what the NETCONF probe found, its result and the state of each
+managed section; the operator tier's, a read-only user is not shown it), and
+the open notices with a count of the acknowledged ones
 .RB ( \-\-all
 lists them too, marked). It warns when the
 vendor tag and the registered vendor disagree.
 .\" BEGIN GENERATED: command device show
 .RS
 .PP
-Requires: \fBreadonly\fR.
+Requires: \fBreadonly\fR. The Configuration row (and config of \-\-json) is the operator tier's; a read\-only user's output has none.
 .PP
 Options:
 .TP
@@ -5342,6 +5481,106 @@ Requires: \fBengineer\fR.
 .RE
 .\" END GENERATED: command device legacy-ssh
 .TP
+.BI "device snmp " "name " "[ show [ \-\-reveal ] | version v2c|v3 | port " n " | timeout " seconds " | clients { list | add | remove } " "[ cidr [ , cidr ...]] | community [ \-\-stdin ] | v3\-user " "user [ \-\-stdin ] | clear ]"
+The SNMP settings of one registered device, over its scope's and the default's.
+The order is the device's value, then its scope's, then the default's, then
+the built\-in, one setting at a time (the v3 user and both passphrases come
+together from one level).
+.B show
+(the default verb) prints the resolved version, port, timeout, protocols,
+community or v3 user (set or not), and allowed clients, each with where it
+comes from
+.RB ( device ,
+.BR "scope " scope ,
+.BR default ,
+.BR built\-in ),
+and
+.B \-\-reveal
+prints the credentials; an engineer may reveal the devices of their own
+scopes, and the reveal is logged, one line for each level a printed secret
+comes from, as
+.BR "secret\-read kind=snmp\-device name=" \fIdevice\fR ,
+.BR "secret\-read kind=snmp name=" \fIscope\fR
+or
+.BR "secret\-read kind=snmp\-default name=default" .
+.BR version ", " port " and " timeout
+show or set the device's own value;
+.B community
+and
+.B v3\-user
+ask twice, without echo (or read lines from stdin), for the credentials and
+make the device's version
+.B v2c
+or
+.BR v3 ;
+the authentication and privacy protocols are the scope's or the default's.
+.B clients
+lists, adds and removes the ranges allowed to query this device: its own list,
+when it has one, replaces its scope's (IPv4, at most 32, never
+.BR 0.0.0.0/0 ;
+the tacctl server's own address is always first).
+.B clear
+removes everything the device sets of its own; it removes the credentials
+file without reading it, so a file that cannot be parsed is cleared too
+(every read that meets such a file names it and says so, and
+.B scope snmp show
+lists the device), and
+.B community
+and
+.B v3\-user
+replace it, saying so. A change of a credential takes the snapshot first, so
+it holds the old one. The SNMPv3 user's name is shown to the engineer tier and
+above; a read\-only or operator user is told only that one is set
+.RB ( "v3 user set" ,
+and
+.B v3_user_set
+in
+.BR \-\-json ).
+The non\-secret settings are the optional
+.B snmp:
+map of the device in
+.I devices.yaml
+(\fBversion\fR, \fBport\fR, \fBtimeout\fR, \fBclients\fR; written only when
+set), the credentials the file
+.IR /etc/tacctl/snmp/devices/\fIname\fR.yaml
+(mode 0600 in a 0700 directory, the format of
+.IR snmp.yaml ).
+A device's rename moves the file, its removal and
+.B "device import \-\-replace"
+delete it, snapshots hold it, and a new device, or a rename onto a name whose
+file is already there, is refused with the file's path.
+.B "device show"
+and
+.B "device check"
+print the resolved settings and where each comes from, the sysName and
+location lookups use them, and so do the SNMP step of
+.B "config cisco|juniper|wti \-\-name"
+and
+.B "device config show"
+and the SNMP and management\-ACL sections of
+.B "device config pull"
+and
+.BR "device config diff" .
+.B "scope snmp test"
+and
+.B "config snmp test"
+try the scope's and the default's settings, not a device's. An engineer's
+import never sets or drops a device's own settings.
+.\" BEGIN GENERATED: command device snmp
+.RS
+.PP
+Requires: \fBengineer\fR. An engineer may read the settings of a device of their own scope (show [\-\-reveal], version, port, timeout, clients list); every setter and clear needs the superuser tier.
+.PP
+Options:
+.TP
+\fB\-\-reveal\fR
+(snmp show) Print the community or the v3 passphrases (an engineer: their own scopes' devices; logged).
+.TP
+\fB\-\-stdin\fR
+(snmp community, v3\-user) Read the secrets from stdin, one per line.
+.RE
+.\" END GENERATED: command device snmp
+.TP
 .BI "device stale\-days " [ n ]
 Show or set the number of days (1 to 3650, default 30) after which a device
 without a sighting counts as stale.
@@ -5428,8 +5667,13 @@ drops the pinned host keys); the rest stay. With
 .B \-\-replace
 the registry becomes exactly the file, after confirmation (\c
 .B \-y
-skips it). Every problem is reported with its line, and nothing is written when
-there is one.
+skips it), and the devices it removes lose their configuration records and SNMP
+credentials, as with
+.BR remove .
+An import never drops a device's own SNMP settings (the
+.B snmp:
+map of a file replaces them, a file without one leaves them). Every problem is
+reported with its line, and nothing is written when there is one.
 .B \-\-check
 validates and reports what would change without writing or taking a snapshot.
 .\" BEGIN GENERATED: command device import
@@ -5686,6 +5930,16 @@ with
 .B syslocation_match
 (null when the registry has none) and
 .BR syslocation_error .
+A juniper device also has a NETCONF row (a cisco device is not read over
+NETCONF): what the probe of its last pull found
+.RB ( "hello ok" ,
+.BR "port closed" ,
+.BR "no hello" ),
+with the time, or
+.B "not probed"
+and the command that probes it; the check itself logs in to nothing. It is
+.B netconf
+in the JSON.
 .\" BEGIN GENERATED: command device check
 .RS
 .PP
@@ -5726,10 +5980,10 @@ and a device no scope's prefixes cover with
 A refusal prints no data block. The walkthrough carries the scope's secret: an
 engineer gets the devices of their own scopes, and another scope's device is
 not found. With no subcommand the usage is printed.
-.\" BEGIN GENERATED: command device config
+.\" BEGIN GENERATED: command device config show
 .RS
 .PP
-Requires: \fBengineer\fR. A device's walkthrough carries its scope's secret, so an engineer gets the devices of their own scopes only.
+Requires: \fBengineer\fR. An engineer gets the devices of their own scopes only.
 .PP
 Options:
 .TP
@@ -5745,7 +5999,330 @@ The address the device is told to authenticate against.
 \fB\-\-source\fR \fI<address>\fR
 The address this server reaches the device from.
 .RE
-.\" END GENERATED: command device config
+.\" END GENERATED: command device config show
+.TP
+.BI "device config pull " "name[,name...] | \-\-all | \-\-scope " scope " | \-\-vendor " vendor " | \-\-stale [ \-\-transport auto|netconf|ssh ] [ \-\-concurrency " n " ] [ \-\-timeout " seconds " ] [ \-\-max\-failures " n " ] [ \-\-diff ] [ \-\-json ] [ \-\-server " "address|name" " ] [ \-\-source " address " ]"
+Log in to the devices as the user who invoked tacctl and read what each runs
+(nothing is written to a device). The login is that user's: with
+.B sudo
+the invoking user, never root (it is refused), with the user's tacctl password,
+asked for once on the terminal without echo and never stored, put in an
+argument or the environment, written to a file or logged. The user must be an
+active user of tacctl whose scopes include the device's. A device needs a pinned host key
+.RB ( "device hostkey" ):
+an unpinned device is refused with that command, a key that is not the pinned
+one is
+.B host\-key\-mismatch
+and raises the hostkey notice; nothing is trusted on first use. The devices are
+named (comma lists too), or selected with
+.B \-\-all
+(every device of yours),
+.B \-\-scope
+and
+.B \-\-vendor
+(together), or
+.B \-\-stale
+(never read, last read in failure, or differing from what tacctl renders now);
+a vendor
+.BR other ,
+a device in no scope and, for a selector, a WTI unit are left out and said so
+(a WTI unit named is recorded
+.BR unsupported ).
+An engineer reads the devices of their own scopes only.
+.PP
+Junos is read over NETCONF (the ssh subsystem, a
+.B <command>
+RPC) where the device answers and over an ssh exec channel otherwise;
+.B \-\-transport netconf
+and
+.B ssh
+never fall back (IOS and IOS\-XE are read over the ssh command line, with
+paging off, and never over NETCONF:
+.B "\-\-transport netconf"
+refuses a Cisco device before any login, as a failed line that leaves its
+record alone, or as wrong arguments when every selected device is Cisco). The
+text is the same either way. From it six sections are
+extracted, as in the table of
+.BR "device config diff" ,
+compared with what tacctl renders for that device and recorded
+.RI ( /var/lib/tacctl/devices\-config.json ,
+with the sections themselves in
+.IR /var/lib/tacctl/device\-config/<name>.yaml ):
+a secret is compared by presence and its value is kept and printed nowhere. A
+failed pull changes the record's result and leaves the sections of the last
+good one.
+.PP
+One line per device (rewritten in place on a terminal, appended otherwise):
+.BR ok ,
+.BR "ok, differs in aaa,snmp" ,
+.B "failed: <reason>"
+(authentication failed, timed out, unreachable, a host key that is not the
+pinned one, output that is not a configuration), then a summary
+.RB ( "12 ok, 2 differ, 1 failed" ).
+At most
+.B device.config.max_concurrency
+devices are read at once (8 by default, at most 64;
+.B \-\-concurrency
+lowers it for a run and is refused above it, naming
+.BR "config devices" ),
+each for at most
+.B \-\-timeout
+seconds (10 to 600, default
+.BR device.config.timeout ,
+connect included). The first rejected password stops the batch (and makes the
+password cache forget it): one wrong password is not tried on every device.
+.B \-\-max\-failures
+stops starting devices after that many failures. The first Ctrl\-C stops
+starting devices and lets the running ones finish (the rest are reported
+.BR "not started" ),
+a second cuts the running ones off; the status is 130 either way.
+.B \-\-diff
+prints the differences after the summary;
+.B \-\-json
+prints one JSON object per device as it ends and a last object
+.BR "{\(dqsummary\(dq: ...}" .
+.BR \-\-server " and " \-\-source
+are those of
+.BR "config cisco|juniper|wti" :
+the addresses the expected configuration is rendered with, for devices behind a
+translating firewall. A Cisco device registered with
+.B legacy\-ssh
+is compared with the IOS 12.x syntax. Each device is logged to syslog
+.RB ( "auth.info device config pull user= device= transport= result= duration=" ),
+and an engineer's pull logs the
+.B secret\-read
+lines the walkthrough logs. Exit status: 0 when every device was read
+(differences are not failures), 1 when one failed or was refused, 2 for wrong
+arguments, 130 when interrupted.
+.\" BEGIN GENERATED: command device config pull
+.RS
+.PP
+Requires: \fBengineer\fR. An engineer gets the devices of their own scopes only.
+.PP
+Options:
+.TP
+\fB\-\-all\fR
+(pull, diff, forget) Every device of yours (not WTI units, or devices in no scope).
+.TP
+\fB\-\-scope\fR \fI<scope>\fR
+(pull, diff, list) Only the devices of that scope.
+.TP
+\fB\-\-vendor\fR \fIcisco|juniper|wti\fR
+(pull, diff, list) Only that vendor's devices.
+.TP
+\fB\-\-stale\fR
+(pull, diff, list) Only the devices never read, last read in failure, or differing.
+.TP
+\fB\-\-transport\fR \fIauto|netconf|ssh\fR
+(pull, diff) NETCONF where the device answers (auto, default), NETCONF only, or the ssh command line only; (list) netconf, ssh or none: only the devices last read over that transport (none: never read).
+.TP
+\fB\-\-concurrency\fR \fI<n>\fR
+Read at most n devices at once (never above device.config.max_concurrency).
+.TP
+\fB\-\-timeout\fR \fI<seconds>\fR
+Per device, connect included (10\-600; default device.config.timeout).
+.TP
+\fB\-\-max\-failures\fR \fI<n>\fR
+Stop starting devices after n failures.
+.TP
+\fB\-\-server\fR \fI<address|name>\fR
+The address the devices are told to authenticate against, for devices behind a translating firewall (not stored).
+.TP
+\fB\-\-source\fR \fI<address>\fR
+The address this server reaches the devices from (not stored).
+.TP
+\fB\-\-diff\fR
+Print the differences after the summary.
+.TP
+\fB\-\-json\fR
+(pull, diff, list) Print JSON (a pull: one line per device, then the summary).
+.RE
+.\" END GENERATED: command device config pull
+.TP
+.BI "device config diff " "name[,name...] | \-\-all | \-\-scope " scope " | \-\-vendor " vendor " | \-\-stale [ \-\-pull ] [ \-\-section " list " ] [ \-\-exit\-code ] [ \-\-json ]"
+Compare the managed sections of the last pull of each device with the
+statements tacctl renders for it now, built from the same code as the
+walkthroughs. The sections are
+.BR aaa ,
+.BR roles ,
+.BR mgmt\-acl ,
+.BR snmp ,
+.B netconf
+(compared only when tacctl renders it) and
+.B breakglass
+(the accounts by name; never a hash). A section is what tacctl renders plus
+whatever the device holds in the same hierarchy, so a stray server or
+community is a difference. Each section is
+.BR ok ,
+.BR differs ,
+.B missing
+(nothing of it on the device),
+.B n/a
+(tacctl renders nothing for it; the device's statements are listed with
+.BR ~ )
+or
+.B "not visible"
+(the login could not see the secrets it consists of). The lines are
+.B \-
+(rendered, absent on the device),
+.B +
+(on the device, not rendered),
+.B !
+(the same statements in another order: a Junos authentication order, the terms
+of a filter, a Cisco ACL),
+.B ?
+(a secret the device omits for that login) and
+.B =
+for a secret that is present
+.RB ( "(present, not compared)" ).
+Statements compare as sets otherwise, secrets by presence, so no value of a
+key, community or hash is ever printed. A Junos class without the secret
+permission sees its secrets masked: a masked statement is present, an omitted
+one is
+.BR ? ,
+never
+.BR \- .
+.B \-\-pull
+reads the devices first (with the options of
+.BR "device config pull" ),
+.B \-\-section
+limits the output to the named sections,
+.B \-\-json
+prints an array with the lines of each section, and
+.B \-\-exit\-code
+makes a difference exit 2 as
+.BR git (1)
+does (a device that could not be compared exits 1). A device never pulled is
+said so, with the command that reads it.
+.\" BEGIN GENERATED: command device config diff
+.RS
+.PP
+Requires: \fBengineer\fR. An engineer gets the devices of their own scopes only.
+.PP
+Options:
+.TP
+\fB\-\-all\fR
+(pull, diff, forget) Every device of yours (not WTI units, or devices in no scope).
+.TP
+\fB\-\-scope\fR \fI<scope>\fR
+(pull, diff, list) Only the devices of that scope.
+.TP
+\fB\-\-vendor\fR \fIcisco|juniper|wti\fR
+(pull, diff, list) Only that vendor's devices.
+.TP
+\fB\-\-stale\fR
+(pull, diff, list) Only the devices never read, last read in failure, or differing.
+.TP
+\fB\-\-transport\fR \fIauto|netconf|ssh\fR
+(pull, diff) NETCONF where the device answers (auto, default), NETCONF only, or the ssh command line only; (list) netconf, ssh or none: only the devices last read over that transport (none: never read).
+.TP
+\fB\-\-concurrency\fR \fI<n>\fR
+Read at most n devices at once (never above device.config.max_concurrency).
+.TP
+\fB\-\-timeout\fR \fI<seconds>\fR
+Per device, connect included (10\-600; default device.config.timeout).
+.TP
+\fB\-\-max\-failures\fR \fI<n>\fR
+Stop starting devices after n failures.
+.TP
+\fB\-\-server\fR \fI<address|name>\fR
+The address the devices are told to authenticate against (with \-\-pull; not stored).
+.TP
+\fB\-\-source\fR \fI<address>\fR
+The address this server reaches the devices from (with \-\-pull; not stored).
+.TP
+\fB\-\-pull\fR
+Read the devices first (takes the pull options).
+.TP
+\fB\-\-section\fR \fI<list>\fR
+Only these sections: aaa, roles, mgmt\-acl, snmp, netconf, breakglass.
+.TP
+\fB\-\-json\fR
+(pull, diff, list) Print JSON (a pull: one line per device, then the summary).
+.TP
+\fB\-\-exit\-code\fR
+Exit 2 when a device differs (and none failed).
+.RE
+.\" END GENERATED: command device config diff
+.TP
+.BI "device config list " "[ \-\-stale ] [ \-\-never ] [ \-\-failed ] [ \-\-differs ] [ \-\-transport netconf|ssh|none ] [ \-\-scope " scope " ] [ \-\-vendor " vendor " ] [ \-\-json ]"
+One row per device (the caller's own scopes below the administrator tier):
+the state
+.RB ( ok ,
+.BR differs ,
+.BR never ,
+.BR failed ),
+when it was pulled, by whom, over which transport, what the NETCONF probe
+found and, for a device that differs, the sections, or, for one that failed,
+the result.
+The state is computed against today's rendering from the stored sections, so a
+change of the store or of
+.I tacctl.yaml
+makes a device
+.B differs
+without a new pull
+.RB ( "device list" ,
+which reads the record only, still says what the last pull found).
+.B \-\-stale
+is
+.BR \-\-never ,
+.B \-\-failed
+and
+.B \-\-differs
+together; the state filters add up, and
+.BR \-\-transport ,
+.B \-\-scope
+and
+.B \-\-vendor
+narrow them. A WTI unit has no configuration to compare and is never stale.
+.\" BEGIN GENERATED: command device config list
+.RS
+.PP
+Requires: \fBoperator\fR.
+.PP
+Options:
+.TP
+\fB\-\-stale\fR
+(pull, diff, list) Only the devices never read, last read in failure, or differing.
+.TP
+\fB\-\-never\fR
+Only the devices not pulled yet.
+.TP
+\fB\-\-failed\fR
+Only the devices whose last pull failed.
+.TP
+\fB\-\-differs\fR
+Only the devices that differ from what tacctl renders now.
+.TP
+\fB\-\-transport\fR \fIauto|netconf|ssh\fR
+(pull, diff) NETCONF where the device answers (auto, default), NETCONF only, or the ssh command line only; (list) netconf, ssh or none: only the devices last read over that transport (none: never read).
+.TP
+\fB\-\-scope\fR \fI<scope>\fR
+(pull, diff, list) Only the devices of that scope.
+.TP
+\fB\-\-vendor\fR \fIcisco|juniper|wti\fR
+(pull, diff, list) Only that vendor's devices.
+.TP
+\fB\-\-json\fR
+(pull, diff, list) Print JSON (a pull: one line per device, then the summary).
+.RE
+.\" END GENERATED: command device config list
+.TP
+.BI "device config forget " "name[,name...] | \-\-all"
+Delete the pull records of the devices and their stored sections. They are
+derived data: a pull makes them again. A name that has none is said so.
+Administrators only.
+.\" BEGIN GENERATED: command device config forget
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-all\fR
+Every record, and the stored sections of every device (one of a device that is no longer registered too).
+.RE
+.\" END GENERATED: command device config forget
 .SS SSH to a device \fB(tacctl ssh)\fR
 .TP
 .BI "ssh " name|address " [ \-p " port " ] [ \-X | \-Y ] [ \-g ] [ { \-L | \-R | \-D } " spec " ]... [ \-\- " "ssh args" " ]"
@@ -5885,6 +6462,25 @@ rules grant
 .B "tacctl ssh *"
 and
 .BR "tacctl device ssh *" ).
+.IP
+When the session's password cache holds the user's password
+.RB ( "console password\-cache" )
+and the device has pinned host keys, ssh is not asked for it on the terminal:
+it is started as the user directly, without
+.BR sudo ,
+with an explicit environment, the helper
+.B SSH_ASKPASS
+(the tacctl binary; it answers a password prompt and nothing else) with
+.BR SSH_ASKPASS_REQUIRE=force ,
+.BR "\-o NumberOfPasswordPrompts=1" ,
+.BR "\-F /dev/null"
+and the pinned host key checked strictly; the log line then ends
+.BR password=cached .
+Words after
+.B \-\-
+that start with a dash, an unpinned device, and an account that is not in the
+local account database keep the prompt. An ssh that ends with status 255
+makes the cache forget the password.
 .\" BEGIN GENERATED: command ssh
 .RS
 .PP
@@ -6115,6 +6711,76 @@ does not sends its spaces as typed ones, and the setting should be off there.
 Requires: \fBsuperuser\fR.
 .RE
 .\" END GENERATED: command console space-completion
+.TP
+.BI "console password\-cache tiers " "[ " csv "|none ]"
+Show or set the tiers whose shell and console sessions may keep the user's
+network password in memory for the session, so that a device pull, a diff and
+the
+.B ssh
+lines after it ask once
+.RB ( operator ,
+.BR engineer ,
+.BR superuser ;
+default
+.BR none :
+off for every tier). The password lives only in the memory of the session's own
+process, in a locked page of a process marked not dumpable, and in no file, log,
+argument or environment; the agent is shut between lines. For each line that
+runs
+.BR "device config pull" ,
+.BR "device config diff \-\-pull" ,
+.B ssh
+or
+.BR "device ssh" ,
+and for no other (a
+.B diff
+without
+.B \-\-pull
+logs in to nothing), the shell makes a token, hands it to that line in the
+environment of its
+.B sudo
+process, and kills it when the line ends: the agent answers, to the user and to
+root with that token, while the line runs and gives the password once; after
+that one get the token is good for
+.B forget
+only. What remains is a process of the same user that reads the line's
+environment and reaches the socket before the one get. A pull that had
+to prompt stores the password after the first device accepted it; a device that
+refuses a cached password makes it forgotten at once. It is forgotten when the
+session ends, after the idle time, after the maximum lifetime, when
+.B passwd
+changes the password, when the clock goes backwards, and with the shell's word
+.BR "console forget" .
+Sessions read the setting when they start. Root can read any process: the cache
+protects the password against other users and against its landing in files and
+logs.
+.\" BEGIN GENERATED: command console password-cache
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command console password-cache
+.TP
+.BI "console password\-cache idle " "[ " min " ]"
+Show or set how long a cached password lives without a use, in minutes (1 to
+120, default 15). Each use restarts it.
+.TP
+.BI "console password\-cache max " "[ " hours " ]"
+Show or set the lifetime of a cached password from the moment it was cached, in
+hours (1 to 24, default 8). Use does not extend it.
+.TP
+.B console forget
+Forgets the cached password of this
+.B "tacctl shell"
+or console session now. It is a word of the shell and the console, handled in
+the session's own process without sudo, and works while the cache is off (it
+says so). Run as a command, outside a session, it only says where the cache is.
+.\" BEGIN GENERATED: command console forget
+.RS
+.PP
+Requires: \fBoperator\fR.
+.RE
+.\" END GENERATED: command console forget
 .TP
 .BI "console system\-shell tiers " "[ " csv "|none ]"
 The tiers that may start their system shell from the console (default
@@ -6509,7 +7175,8 @@ _console\-policy, \-\-version, \-v, hash
 .B operator
 log tail, log search, log failures, log accounting, config validate,
 backup list, device check, device scan, device discover,
-device export, console show, console check
+device export, device config, console show, console check,
+console forget
 .TP
 .B engineer
 device add, device remove, device rename, device address,
@@ -6517,7 +7184,7 @@ device hostname, device vendor, device port, device description,
 device location, device legacy\-ssh, device hostkey, device import,
 scope devices, device config, config cisco, config juniper,
 config wti, host list, host show, scope staging, scope secret,
-scope snmp, scope show
+scope snmp, device snmp, scope show
 .TP
 .B superuser
 Every verb not listed above, and every verb of the tiers below.
@@ -6526,10 +7193,19 @@ The gate sees two words, so a verb that the code splits further is listed at its
 two\-word level and then limited by the code:
 .TP
 .B device config
-A device's walkthrough carries its scope's secret, so an engineer gets the devices of their own scopes only.
+An operator may run list; show, pull and diff need the engineer tier (a device's walkthrough carries its scope's secret, and a pull logs in to the device as you), and an engineer gets the devices of their own scopes only; forget needs the superuser tier.
 .TP
 .B device import
 An engineer imports from standard input only (device import \-).
+.TP
+.B device list
+The CONFIG column (and config of \-\-json) is the operator tier's; a read\-only user's list has none.
+.TP
+.B device show
+The Configuration row (and config of \-\-json) is the operator tier's; a read\-only user's output has none.
+.TP
+.B device snmp
+An engineer may read the settings of a device of their own scope (show [\-\-reveal], version, port, timeout, clients list); every setter and clear needs the superuser tier.
 .TP
 .B host show
 An engineer reads what tacctl recorded of a host; \-\-check logs in to it and needs the superuser tier.
@@ -6961,32 +7637,31 @@ then
 .B "store rollback"
 undoes the move into the store.
 .PP
-Going back to 0.2.2 is
-.B "tacctl rollback 0.2.2"
+Going back to 0.2.3 is
+.B "tacctl rollback 0.2.3"
 (a dry run), then
-.B "tacctl rollback 0.2.2 \-\-apply \-\-yes \-\-hosts"
+.B "tacctl rollback 0.2.3 \-\-apply \-\-yes"
 and
-.BR "tacctl upgrade \-\-branch 0.2.2" :
-0.2.3 wrote keys and fields a 0.2.2 binary refuses, and its sync makes an engineer a
-superuser. The README's
+.BR "tacctl upgrade \-\-branch 0.2.3" :
+0.2.4 wrote keys and fields a 0.2.3 binary refuses (the
+.B device.config
+keys, the password cache's settings, a device's
+.B snmp
+map). The README's
 .I Rolling back
-describes each step. Until 0.2.2 is installed, a command that writes the console's
-settings, a scope's SNMP settings, a device location or the engineer sudo list writes
-the 0.2.3 form again; run the rollback again to convert it. Before upgrading, note the newest entry of
-.BR "backup list" :
-snapshots are taken before every change, and the upgrade adds one only when it
-records a tier. To go back to 0.2.1, run the rollback to 0.2.2 with
-.BR "\-\-apply \-\-yes \-\-hosts" ,
-then
+describes each step. Until 0.2.3 is installed, a command that writes the console's
+settings, a device's SNMP settings or the
+.B device.config
+keys writes the 0.2.4 form again; run the rollback again to convert it. The
+snapshot the rollback takes holds the 0.2.4 form and is restored with 0.2.4
+(0.2.3's
 .B "backup restore"
-of that entry, then
-.BR "tacctl upgrade \-\-branch 0.2.1" .
-After the upgrade,
-0.2.2's
-.B "config validate"
-reports the rendered config as out of date until the upgrade (or
-.BR "config render" )
-has rendered 0.2.2's form.
+refuses a
+.I tacctl.yaml
+with a key it does not know). The tool takes 0.2.3 only: each release's
+rollback prepares the state for the one before it, so going back to 0.2.2 is
+this rollback, the install of 0.2.3 and then 0.2.3's own
+.BR "tacctl rollback 0.2.2" .
 .SH CONFIGURATION KEYS
 .SS tacctl.yaml
 .I /etc/tacctl/tacctl.yaml
@@ -7022,6 +7697,18 @@ Where tacquito's Prometheus exporter listens. Set with \fBtacctl config metrics 
 .B bcrypt.cost
 integer, 10 to 14. Default: 12.
 Cost of the bcrypt hashes tacctl makes from now on. Set with \fBtacctl config bcrypt\-cost\fR.
+.TP
+.B device.config.max_concurrency
+integer, 1 to 64. Default: 8.
+The most devices device config pull reads at once; --concurrency can lower it for a run, never raise it. Set with \fBtacctl config devices max\-concurrency\fR.
+.TP
+.B device.config.timeout
+integer, 10 to 600. Default: 90.
+Seconds one device may take in a pull, connect included. Set with \fBtacctl config devices timeout\fR.
+.TP
+.B device.config.transport
+one of auto, netconf, ssh. Default: auto.
+How device config pull reads a device: NETCONF where it answers and the ssh command line otherwise (auto), NETCONF only, or ssh only. Set with \fBtacctl config devices transport\fR.
 .TP
 .B host.default_method
 one of tacplus, radius. Default: tacplus.
@@ -7236,6 +7923,15 @@ The number of completions the console's shell lists without asking. Edit the fil
 true or false. Default: true.
 Whether a typed space at the console's prompt completes a fixed word, as on Junos. Written to the file only when false. Set with \fBtacctl console space\-completion\fR.
 .\" END GENERATED: console-keys
+.PP
+A mapping
+.B settings.password_cache
+(\fBtiers\fR: a list of operator, engineer, superuser, default none;
+\fBidle\fR: minutes, 1 to 120, default 15; \fBmax\fR: hours, 1 to 24, default
+8) is written only when one of its three values is not the default. Set with
+.BR "tacctl console password\-cache" .
+.B "rollback 0.2.3"
+takes it out of the file.
 .SH EXIT STATUS
 .TP
 .B 0
@@ -7254,6 +7950,8 @@ does not fit, a name that does not exist or exists already, a store or
 that cannot be read or written, a caller whose tier does not allow the
 command, a check that found a problem
 .RB ( "config validate" ", " "console check" ", " "device check" ),
+a device that could not be read or compared
+.RB ( "device config pull" ", " "device config diff" ),
 a step of a lifecycle phase that failed. An unknown sub-command prints the
 usage of its family and ends with 1 as well. Nothing was changed unless the
 message says what was.
@@ -7264,7 +7962,11 @@ The arguments were wrong for a verb that checks them itself and says so
 .BR "store import" ,
 .BR "store rollback" ),
 or a backend id is unknown, or the backend does not provide the action asked
-of it.
+of it, or
+.B "device config diff \-\-exit\-code"
+found a device that differs, or the arguments of
+.BR "device config pull" ", " diff ", " list " or " forget
+were wrong.
 .TP
 .B 3
 A backend command was refused because a file tacctl rendered holds a hand edit
@@ -7284,7 +7986,13 @@ sudo is not installed, and tacctl was not run as root.
 .TP
 .B 130
 The command was interrupted at a prompt (Ctrl-C at a password prompt, for
-example). Nothing was changed.
+example), or a
+.B "device config pull"
+or
+.B "device config diff \-\-pull"
+was stopped by Ctrl-C (the first stops starting devices and lets the running
+ones finish, a second cuts them off). Nothing was changed (a pull writes
+nothing to a device).
 .PP
 .B "tacctl ssh"
 and
@@ -7356,6 +8064,24 @@ The X11 display of sshd's forwarding, handed to
 and
 .B \-Y
 after its shape is checked, and kept by the tiers drop-in for the console.
+.TP
+.B TACCTL_ASKPASS
+.RI "Set by a " "tacctl shell" " or console session whose password cache is on, as " socket : token
+in the environment of the
+.B sudo
+of each line that uses it, with a token made for that line and dead when it
+ends (never on sudo's command line); the tiers drop-ins keep it for those
+lines only. The root side of
+.B "device config pull"
+and
+.B ssh
+reads it once and removes it from its own environment, and the helper ssh runs as
+.B SSH_ASKPASS
+(the tacctl binary, started with
+.B TACCTL_ASKPASS_HELPER=1
+and the prompt as its only argument) answers a password prompt with it and
+nothing else. See
+.BR "console password\-cache" .
 .TP
 .B TACCTL_CONSOLE
 Set by the login console, as
@@ -7446,6 +8172,35 @@ only, written atomically; never printed but by
 .BR "scope snmp ... show \-\-reveal" .
 Absent means the scope has none of its own. A scope's rename moves its file and
 its removal deletes it.
+.TP
+.I /etc/tacctl/snmp/devices/\fIname\fR.yaml
+The SNMP community, or the v3 user and its passphrases, of one registered
+device
+.RB ( "tacctl device snmp" ):
+read in place of its scope's and the default's. The file is named for the
+device in lower case. Mode 0600 in a 0700 directory, root only, written
+atomically; never printed but by
+.BR "device snmp ... show \-\-reveal" .
+Absent means the device has none of its own. The file counts only while the
+device has an
+.B snmp:
+map of its own; one without (such as a rollback to 0.2.3 leaves) is ignored,
+not read, and said once by
+.B "device show"
+and
+.BR "device snmp ... show" .
+A device's rename moves its file,
+its removal and
+.B "device import \-\-replace"
+delete it, snapshots hold it, and
+.B "backup restore"
+makes the directory match the registry it restores. The device's non\-secret SNMP
+settings are the
+.B snmp:
+map of its entry in
+.IR devices.yaml .
+.B "rollback 0.2.3"
+removes that map and leaves the file (0.2.3 never opens the subdirectory).
 .TP
 .I /etc/tacctl/console.yaml
 The login console's switches per tier, per-user overrides and settings
@@ -7643,13 +8398,41 @@ The seen cache of
 what the logs showed of each address, where each backend's next scan starts,
 and the last host-key re-scan of each entry. Mode 0600, root only; derived
 from the logs, not snapshotted, rebuilt by
-.BR "device scan \-\-full" .
+.BR "device scan \-\-full" ;
+.B uninstall
+removes it.
+.TP
+.I /var/lib/tacctl/devices\-config.json
+The record of each device's last configuration pull
+.RB ( "device config pull" ):
+when, by whom, over which transport, what the NETCONF probe found, the result
+and the state of each managed section, keyed by the device's lower\-case name.
+Mode 0600, root only; derived from the devices, not snapshotted, rebuilt by a
+pull. A rename carries a record along, a removal and
+.B "device config forget"
+delete it. 0.2.3 never opens it and
+.B "rollback 0.2.3"
+leaves it (as it leaves
+.IR device\-config/ );
+.B uninstall
+removes it.
+.TP
+.I /var/lib/tacctl/device\-config/
+One file per device,
+.IR <name>.yaml :
+the managed sections of its last successful pull, one literal block per
+section, in the form they are compared in: a secret's value is not in it.
+Mode 0600 in a 0700 directory, root only; derived, not snapshotted;
+.B uninstall
+removes the directory.
 .TP
 .IR /etc/sudoers.d/tacctl ", " /etc/sudoers.d/tacctl\-tiers
 Optional sudoers rules. Installed only via
 .B "tacctl config sudoers install"
 and
-.BR "tacctl config sudoers tiers install" .
+.BR "tacctl config sudoers tiers install" ;
+.B "rollback 0.2.3"
+rewrites a file that is exactly this release's text with 0.2.3's.
 .TP
 .I /usr/local/bin/tacctl
 The tacctl binary, built on the host from the clone in

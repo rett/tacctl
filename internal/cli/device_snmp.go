@@ -10,7 +10,8 @@ package cli
 // registry's in a 'Location' row, and 'device location <name> --from-device'
 // stores it on request. The SNMP settings are
 // tacctl.yaml's snmp.*, the credentials StateDir/snmp.yaml (config_snmp.go),
-// and a scope's own settings and credentials come first (snmp_scope.go, D46);
+// and a scope's own settings and credentials come first (snmp_scope.go, D46),
+// then a registered device's own over both (device_snmp_override.go, D72);
 // app.App's SNMP replaces all of them in the tests.
 
 import (
@@ -49,10 +50,11 @@ func snmpReason(err error) string {
 
 // sysName reads the device's sysName (trimmed) with the credentials of the
 // device's scope, derived from its address (a device in no scope uses the
-// default, D46); a lookup that cannot run is problem, one that ran and got
-// no name is err (an empty answer is one).
+// default, D46), and the settings of its own when the registry has a device
+// at the address that has some (D72); a lookup that cannot run is problem,
+// one that ran and got no name is err (an empty answer is one).
 func (inv *invocation) sysName(addr string) (name, problem string, err error) {
-	g, problem := inv.snmpGetterFor(inv.scopeOfAddress(addr))
+	g, problem := inv.snmpGetterForAddr(addr)
 	if g == nil {
 		return "", problem, nil
 	}
@@ -72,7 +74,7 @@ var errEmptySysLocation = errors.New("an empty sysLocation")
 // that cannot run is problem, one that ran and got no location is err (an
 // empty answer is errEmptySysLocation).
 func (inv *invocation) sysLocation(addr string) (loc, problem string, err error) {
-	g, problem := inv.snmpGetterFor(inv.scopeOfAddress(addr))
+	g, problem := inv.snmpGetterForAddr(addr)
 	if g == nil {
 		return "", problem, nil
 	}
@@ -284,14 +286,24 @@ type checkSysName struct {
 // at once (at most 16 in flight); hosts get none.
 func (inv *invocation) checkSysNames(entries []devreg.Entry) []checkSysName {
 	out := make([]checkSysName, len(entries))
-	// The credentials are the device's scope's (D46): one getter per scope.
+	// The credentials are the device's scope's (D46): one getter per scope,
+	// and one per device that has settings of its own (D72).
 	type lookup struct {
 		g       snmp.Getter
 		problem string
 	}
 	byScope := map[string]lookup{}
-	for _, e := range entries {
+	own := map[int]lookup{}
+	for i, e := range entries {
 		if e.Source != devreg.SourceDevice || e.Address == "" {
+			continue
+		}
+		if o, err := inv.deviceSNMPOwnOf(e.Device); err != nil {
+			own[i] = lookup{nil, strings.Join(msgs(err), " ")}
+			continue
+		} else if o.isSet() {
+			g, problem := inv.snmpGetterOwn(e.Scope, o)
+			own[i] = lookup{g, problem}
 			continue
 		}
 		if _, ok := byScope[e.Scope]; !ok {
@@ -305,9 +317,13 @@ func (inv *invocation) checkSysNames(entries []devreg.Entry) []checkSysName {
 		if e.Source != devreg.SourceDevice || e.Address == "" {
 			continue
 		}
-		g := byScope[e.Scope].g
+		lk, ok := own[i]
+		if !ok {
+			lk = byScope[e.Scope]
+		}
+		g := lk.g
 		if g == nil {
-			out[i].problem = byScope[e.Scope].problem
+			out[i].problem = lk.problem
 			continue
 		}
 		wg.Add(1)

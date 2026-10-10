@@ -93,7 +93,9 @@ func TestPermitsMatchesBash(t *testing.T) {
 // 0.2.1's lines for 'help', '-h' and '--help', the ssh and device rows, and
 // the env_keep line for SSH_AUTH_SOCK (no SETENV tag: it would let a caller
 // set SUDO_USER), 0.2.2's 'group show', and 0.2.3's engineer alias and
-// tac-engineer line (no '(ALL:ALL) ALL' for it).
+// tac-engineer line (no '(ALL:ALL) ALL' for it), 0.2.4's console forget row
+// and the alias that keeps TACCTL_ASKPASS for the lines that use the
+// password cache.
 func TestSudoersMatchesBash(t *testing.T) {
 	want, err := os.ReadFile("testdata/sudoers.tiers")
 	if err != nil {
@@ -184,10 +186,31 @@ group edit|user move|scope snmp|device location|host show|rollback|group reset`
 		t.Error("store show reaches a lower tier")
 	}
 	// An engineer's verbs are not the operator's.
-	for _, v := range [][2]string{{"device", "add"}, {"device", "config"}, {"config", "cisco"}, {"scope", "devices"},
+	for _, v := range [][2]string{{"device", "add"}, {"config", "cisco"}, {"scope", "devices"},
 		{"scope", "secret"}, {"scope", "snmp"}, {"device", "location"}, {"scope", "show"}, {"scope", "staging"}, {"host", "list"}, {"host", "show"}} {
 		if Permits(Operator, v[0], v[1]) || !Permits(Engineer, v[0], v[1]) {
 			t.Errorf("%s %s: operator %v, engineer %v", v[0], v[1], Permits(Operator, v[0], v[1]), Permits(Engineer, v[0], v[1]))
+		}
+	}
+	// 'device config' is open to the operator for 'list' only: sudoers grants
+	// the operator that and the engineer show, pull and diff, and the verb
+	// holds each to its tier (the gate sees two words).
+	if !Permits(Operator, "device", "config") || Permits(Readonly, "device", "config") {
+		t.Errorf("device config: operator %v, readonly %v", Permits(Operator, "device", "config"), Permits(Readonly, "device", "config"))
+	}
+	for _, it := range []string{"device config", "device config list", "device config list *"} {
+		if !slices.Contains(op, it) {
+			t.Errorf("operator alias lacks %q", it)
+		}
+	}
+	for _, it := range []string{"device config show *", "device config pull *", "device config diff *"} {
+		if !slices.Contains(en, it) || slices.Contains(op, it) {
+			t.Errorf("%q: engineer alias %v, operator alias %v", it, slices.Contains(en, it), slices.Contains(op, it))
+		}
+	}
+	for _, it := range []string{"device config forget", "device config forget *"} {
+		if slices.Contains(en, it) || slices.Contains(op, it) {
+			t.Errorf("%q is below the superuser tier", it)
 		}
 	}
 	// Linux host deployment is the superuser's: an engineer reads hosts
@@ -450,6 +473,41 @@ func TestSudoersNoSetenv(t *testing.T) {
 	}
 }
 
+// TACCTL_ASKPASS (D70) is kept for the four command lines that use the
+// password cache and nowhere else: not on the general env_keep line, and
+// the two drop-ins name their aliases differently (sudoers refuses an alias
+// defined twice, and a host may carry both).
+func TestAskpassKeepIsScoped(t *testing.T) {
+	if strings.Contains(EnvKeep, AskpassVar) {
+		t.Errorf("EnvKeep keeps %s for every tacctl line: %q", AskpassVar, EnvKeep)
+	}
+	for _, alias := range []string{AskpassAlias, AskpassGroupAlias} {
+		k := AskpassKeep(alias)
+		items := aliasItems(t, k, alias)
+		want := []string{"device config pull *", "device config diff *", "ssh *", "device ssh *"}
+		if !slices.Equal(items, want) {
+			t.Errorf("%s commands %q, want %q", alias, items, want)
+		}
+		if !strings.Contains(k, "\nDefaults!"+alias+" env_keep += \""+AskpassVar+"\"\n") {
+			t.Errorf("%s: no env_keep line:\n%s", alias, k)
+		}
+		if strings.Contains(k, "SETENV") {
+			t.Errorf("%s: SETENV", alias)
+		}
+	}
+	if AskpassAlias == AskpassGroupAlias {
+		t.Error("the two drop-ins share an alias name")
+	}
+	// The alias is defined before the line that uses it, in the drop-in.
+	text := Sudoers()
+	if !strings.Contains(text, "Cmnd_Alias "+AskpassAlias) || strings.Index(text, "Cmnd_Alias "+AskpassAlias) > strings.Index(text, "Defaults!"+AskpassAlias) {
+		t.Errorf("alias order:\n%s", text)
+	}
+	if strings.Count(text, `"`+AskpassVar+`"`) != 1 {
+		t.Errorf("%s named more than once:\n%s", AskpassVar, text)
+	}
+}
+
 func TestVerifyCaller(t *testing.T) {
 	ctx := context.Background()
 	for _, c := range []struct {
@@ -565,5 +623,63 @@ func TestConsoleRows(t *testing.T) {
 	}
 	if ro, _, _ := strings.Cut(text, "Cmnd_Alias TACCTL_OP"); strings.Contains(ro, "console show") {
 		t.Error("console show is in the read-only alias")
+	}
+}
+
+// The group drop-in has one text for 'config sudoers install' and for the
+// upgrade's refresh, names the group in its header, and is read back by it.
+func TestGroupSudoers(t *testing.T) {
+	text := GroupSudoers("wheel")
+	for _, want := range []string{
+		"# Managed by tacctl. Grants passwordless sudo on /usr/local/bin/tacctl\n",
+		"# to members of group 'wheel'. Remove with: tacctl config sudoers remove\n",
+		"Cmnd_Alias " + AskpassGroupAlias + " = ",
+		"Defaults!" + AskpassGroupAlias + " env_keep += \"TACCTL_ASKPASS\"\n",
+		"\n" + EnvKeep + "%wheel ALL=(ALL) NOPASSWD: /usr/local/bin/tacctl\n",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("GroupSudoers lacks %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "SETENV") || strings.Contains(text, AskpassAlias+" ") {
+		t.Errorf("tiers alias or SETENV in the group drop-in:\n%s", text)
+	}
+	if g, ok := GroupOfSudoers(text); !ok || g != "wheel" {
+		t.Errorf("GroupOfSudoers = %q %v", g, ok)
+	}
+	for _, bad := range []string{"", "# my rules\n%wheel ALL=(ALL) NOPASSWD: ALL\n", "# Managed by tacctl. Grants passwordless sudo on /usr/local/bin/tacctl\n# to members of group 'a b'. Remove with: tacctl config sudoers remove\nx\n"} {
+		if g, ok := GroupOfSudoers(bad); ok {
+			t.Errorf("GroupOfSudoers(%q) = %q", bad, g)
+		}
+	}
+}
+
+// ClassifyGroupSudoers tells the current text, the texts earlier releases
+// wrote, an edited file and a file that is not tacctl's apart.
+func TestClassifyGroupSudoers(t *testing.T) {
+	head := "# Managed by tacctl. Grants passwordless sudo on /usr/local/bin/tacctl\n" +
+		"# to members of group 'adm'. Remove with: tacctl config sudoers remove\n"
+	envKeep := "Defaults!/usr/local/bin/tacctl env_keep += \"SSH_AUTH_SOCK TACCTL_CONSOLE DISPLAY\"\n"
+	rule := "%adm ALL=(ALL) NOPASSWD: /usr/local/bin/tacctl\n"
+	for name, c := range map[string]struct {
+		text  string
+		group string
+		kind  GroupFile
+	}{
+		"current":       {GroupSudoers("adm"), "adm", GroupCurrent},
+		"0.2.3":         {head + envKeep + rule, "adm", GroupOlder},
+		"0.2.0":         {head + rule, "adm", GroupOlder},
+		"edited rule":   {head + envKeep + "%adm ALL=(ALL) PASSWD: /usr/local/bin/tacctl\n", "adm", GroupCustomised},
+		"forged":        {head + "%adm ALL=(ALL) NOPASSWD: ALL\n", "adm", GroupCustomised},
+		"extra":         {head + envKeep + rule + "# note\n", "adm", GroupCustomised},
+		"foreign":       {"# mine\n" + rule, "", GroupForeign},
+		"unknown group": {strings.Replace(head, "group 'adm'", "group 'ops.team'", 1) + rule, "", GroupUnrecognised},
+		"marker only":   {"# Managed by tacctl. something else\n" + rule, "", GroupUnrecognised},
+		"empty":         {"", "", GroupForeign},
+	} {
+		g, k := ClassifyGroupSudoers(c.text)
+		if g != c.group || k != c.kind {
+			t.Errorf("%s: %q %v, want %q %v", name, g, k, c.group, c.kind)
+		}
 	}
 }

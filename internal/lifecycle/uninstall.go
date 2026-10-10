@@ -10,6 +10,8 @@ import (
 	"slices"
 
 	"github.com/rett/tacctl/internal/backend"
+	"github.com/rett/tacctl/internal/devconf"
+	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/ui"
 )
@@ -195,8 +197,9 @@ func Uninstall(ctx context.Context, h *Host, args []string) error {
 // through a tacctl about to be gone. Both sudoers drop-ins go (the tier
 // rules allow commands of the removed binary to the tier groups, and must
 // not outlive it), and so does the Linux host data (pam_tacplus source and
-// prebuilt modules) the generated known_hosts (with its directory) and the tier-migration marker,
-// with their parent directory when that leaves it empty.
+// prebuilt modules) the generated known_hosts (with its directory), the
+// tier-migration marker, the seen cache and the configuration records of
+// the devices, with their parent directory when that leaves it empty.
 func (h *Host) removeAccess() error {
 	p := h.Paths
 	if err := h.rmF(p.SudoersFile, p.TierSudoersFile); err != nil {
@@ -210,6 +213,19 @@ func (h *Host) removeAccess() error {
 		return err
 	}
 	if err := h.rmRF(filepath.Dir(p.KnownHosts)); err != nil {
+		return err
+	}
+	// What tacctl derived of the devices in VarLib: the seen cache (which
+	// addresses authenticated, as whom) and the records of the configuration
+	// pulls, with the lock files beside them (the records hold excerpts of
+	// each device's AAA, ACL, SNMP and break-glass configuration, secret
+	// values elided). A file of someone else's in VarLib stays, and with it
+	// the directory.
+	if err := h.rmF(p.SeenCache, filepath.Join(filepath.Dir(p.SeenCache), devreg.SeenLockName),
+		p.ConfigRecords, filepath.Join(filepath.Dir(p.ConfigRecords), devconf.LockName)); err != nil {
+		return err
+	}
+	if err := h.rmRF(p.ConfigDir); err != nil {
 		return err
 	}
 	// rmdir: only when empty.

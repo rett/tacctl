@@ -95,7 +95,10 @@ plain() {
     plain
     assert_output --partial "Usage: tacctl device config <subcommand> [arguments]"
     assert_output --partial "show <name> [--protocol tacacs|radius] [--legacy] [--server <address|name>] [--source <address>]"
-    refute_output --partial "pull"
+    assert_output --partial "pull <name>[,<name>...] | --all"
+    assert_output --partial "diff <name>[,<name>...] | --all"
+    assert_output --partial "list [--stale] [--never] [--failed] [--differs]"
+    assert_output --partial "forget <name>[,<name>...] | --all"
     refute_output --partial "apply"
     run "$TACCTL_BIN_SCRIPT" device config frob
     assert_failure 1

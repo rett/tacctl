@@ -5,5 +5,5 @@
   "/etc/systemd/system/tacquito.service.d/tacctl.conf": "4dcd27b9f6cc7f5b4d312b85ecea255dacb9190d6502ee11f27c2d38ec9aa7fc",
   "/etc/systemd/system/tacquito@alt6.service.d/tacctl.conf": "dd8c6f2aa932e311922373bde75fa8c459f9fa497686389eeb7a89eab962e18b",
   "/etc/systemd/system/tacquito@mgmt.service.d/tacctl.conf": "477d42318e7cd0be3eea563d655183fd2bddc24e59b3c7674d26c1bb4637504d",
-  "/etc/tacquito/tacquito.yaml": "c2545250082f7b59c5f6acc752d2ae929bff32019550fcad6b0d33a9e2fce197"
+  "/etc/tacquito/tacquito.yaml": "af15a0b7f8568a9abbae3d7865edc0d6b9b6b15187df335bb4d0a50bf3b6fae3"
 }

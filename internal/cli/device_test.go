@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -54,7 +55,22 @@ func TestDeviceUsageAndUnknown(t *testing.T) {
 func TestDeviceSpecsCoverEveryVerb(t *testing.T) {
 	var words []string
 	for _, v := range deviceVerbs {
-		w := strings.Fields(v[0])[0]
+		f := strings.Fields(v[0])
+		w := f[0]
+		if w == "config" {
+			// 'device config <verb>' has specs of its own.
+			s, ok := specFor([]string{"device", "config", f[1]})
+			if !ok || !reflect.DeepEqual(s, deviceConfigSpecs[f[1]]) {
+				t.Errorf("no spec for 'device config %s'", f[1])
+			}
+			if !slices.Contains(words, w) {
+				words = append(words, w)
+			}
+			if _, ok := specFor([]string{"device", "config"}); ok {
+				t.Error("the node 'device config' has a spec of its own")
+			}
+			continue
+		}
 		words = append(words, w)
 		s, ok := specFor([]string{"device", w})
 		if !ok || !reflect.DeepEqual(s, deviceSpecs[w]) {
@@ -64,10 +80,17 @@ func TestDeviceSpecsCoverEveryVerb(t *testing.T) {
 	if len(deviceSpecs) != len(words) {
 		t.Errorf("%d specs for %d verbs", len(deviceSpecs), len(words))
 	}
+	if len(deviceConfigSpecs) != len(deviceConfigWords) {
+		t.Errorf("%d specs for %d device config verbs", len(deviceConfigSpecs), len(deviceConfigWords))
+	}
 	root := newRoot(&invocation{})
 	c := child(root, "device")
-	if c == nil || len(c.Commands()) != len(deviceVerbs) {
+	if c == nil || len(c.Commands()) != len(words) {
 		t.Fatalf("the device family is not in the tree: %v", c)
+	}
+	cfg := child(c, "config")
+	if cfg == nil || len(cfg.Commands()) != len(deviceConfigWords) {
+		t.Fatalf("device config has no sub-commands for %v: %v", deviceConfigWords, cfg)
 	}
 }
 
@@ -95,7 +118,7 @@ func TestDeviceAddListShow(t *testing.T) {
 	for _, line := range strings.Split(out, "\n") {
 		if strings.HasPrefix(strings.TrimSpace(line), "core-sw1") {
 			f := strings.Fields(line)
-			if !reflect.DeepEqual(f[:9], []string{"core-sw1", "10.99.0.1", "cisco", "prod", "configured", "-", "-", "-", "hostkey-unpinned"}) {
+			if !reflect.DeepEqual(f[:10], []string{"core-sw1", "10.99.0.1", "cisco", "prod", "configured", "-", "-", "-", "never", "hostkey-unpinned"}) {
 				t.Errorf("row = %q", f)
 			}
 		}

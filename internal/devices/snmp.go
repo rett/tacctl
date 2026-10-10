@@ -45,14 +45,19 @@ type SNMPInput struct {
 	// V3User and the passphrases are the v3 credentials; V3Auth is sha or
 	// sha256, V3Priv aes128.
 	V3User, V3Auth, V3Priv, V3AuthPass, V3PrivPass string
-	// CredFrom says where the credentials came from, for a comment: scope
-	// or default (snmpcred.FromScope, FromDefault); empty adds no line.
+	// CredFrom says where the credentials came from, for a comment: device,
+	// scope or default (snmpcred.FromDevice, FromScope, FromDefault); empty
+	// adds no line.
 	CredFrom string
 	// Server is the tacctl server's own address, the first client (an IPv4
 	// address; anything else is rendered as a commented placeholder).
 	Server string
-	// Ranges are the scope's allowed clients, as stored, in the order given.
+	// Ranges are the allowed clients, as stored, in the order given: the
+	// scope's, or the device's own (RangesFrom).
 	Ranges []string
+	// RangesFrom is "device" when Ranges are the device's own (D72 of
+	// docs/plans/0.2.4-plan.md); empty is the scope's.
+	RangesFrom string
 	// Contact is the scope's contact; Location, SysName and Description are
 	// the device's. Empty is "not set".
 	Contact, Location, SysName, Description string
@@ -199,12 +204,22 @@ func commented(c string, lines []string) string {
 // credNote says where the credentials came from.
 func (in SNMPInput) credNote() string {
 	switch in.CredFrom {
+	case "device":
+		return "Credentials: this device's own (tacctl device snmp " + devName(in) + " show --reveal)."
 	case "scope":
 		return "Credentials: this scope's own (tacctl scope snmp " + in.Scope + " show --reveal)."
 	case "default":
 		return "Credentials: inherited from the default (tacctl config snmp), not set for scope '" + in.Scope + "'."
 	}
 	return ""
+}
+
+// rangesWord names the ranges after the server's /32 in a comment.
+func (in SNMPInput) rangesWord() string {
+	if in.RangesFrom == "device" {
+		return "this device's own ranges"
+	}
+	return "the scope's ranges"
 }
 
 // clientNotes are the lines under the client list: the notice for a scope
@@ -246,7 +261,7 @@ func CiscoSNMP(in SNMPInput) SNMPBlock {
 	if n := in.credNote(); n != "" {
 		add("! " + n)
 	}
-	add("! Allowed clients: the tacctl server first, the scope's ranges, then everything else (0.0.0.0/0) refused.")
+	add("! Allowed clients: the tacctl server first, " + in.rangesWord() + ", then everything else (0.0.0.0/0) refused.")
 	for _, n := range in.clientNotes() {
 		add("! " + n)
 	}
@@ -327,7 +342,7 @@ func JuniperSNMP(in SNMPInput) SNMPBlock {
 	if n := in.credNote(); n != "" {
 		add("# " + n)
 	}
-	add("# Allowed clients: the tacctl server first, the scope's ranges, then everything else (0.0.0.0/0) refused.")
+	add("# Allowed clients: the tacctl server first, " + in.rangesWord() + ", then everything else (0.0.0.0/0) refused.")
 	for _, n := range in.clientNotes() {
 		add("# " + n)
 	}

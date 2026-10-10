@@ -18,7 +18,6 @@ import (
 	"github.com/rett/tacctl/internal/backend"
 	"github.com/rett/tacctl/internal/devices"
 	"github.com/rett/tacctl/internal/devreg"
-	"github.com/rett/tacctl/internal/ui"
 )
 
 // deviceVendors are the device verbs of 'config', with their Short.
@@ -241,41 +240,15 @@ func (inv *invocation) configDevice(vendor string, args []string) error {
 			return err
 		}
 	}
-	m, err := inv.model()
+	req, d, err := inv.deviceRenderInput(renderParams{
+		Vendor: vendor, Scope: scope, Legacy: legacy, Protocol: protocol, Source: source,
+		Device: dev, AuthServer: authServer, AuthName: authName, SourceIP: sourceFlag,
+		Restricted: ownScopes.restricted,
+	})
 	if err != nil {
 		return err
 	}
-	d := devices.Data{
-		Model:       m,
-		Conf:        a.Conf(),
-		TemplateDir: a.Paths.Templates,
-		ServerIP:    devices.ServerIP(inv.ctx, a.Runner),
-		Restricted:  ownScopes.restricted,
-		AuthServer:  authServer, AuthName: authName, SourceIP: sourceFlag,
-	}
-	if d.SNMP, err = inv.walkthroughSNMP(scope, dev); err != nil {
-		// A credentials file that cannot be read leaves the step out; the
-		// rest of the walkthrough is still good.
-		ui.Output{Stdout: a.Out.Stderr}.Warn("The SNMP step is left out: " + strings.Join(msgs(err), " "))
-		d.SNMP = dev
-		d.SNMP.Scope = scope
-	}
-	if ownScopes.restricted && d.SNMP.Version != "" {
-		inv.secretRead("snmp", scope)
-	}
-	// The permit list is read for every vendor (WTI's IP Tables list, D42,
-	// is built from it too); a WTI unit has no ACL name.
-	d.ACL = devices.MgmtACL{CIDRs: inv.readMgmtACLCIDRs(scope)}
-	if vendor != "wti" {
-		d.ACL.Name = inv.readMgmtACLName(vendor, scope)
-	}
-	if protocol == devices.RADIUS {
-		if d.Radius, err = inv.deviceRadius(vendor, scope); err != nil {
-			return err
-		}
-	}
-	return devices.Render(a.Out.Stdout, devices.Request{Vendor: vendor, Scope: scope, Legacy: legacy,
-		Protocol: protocol, Source: source}, d)
+	return devices.Render(a.Out.Stdout, req, d)
 }
 
 // deviceSNMPValues are the SNMP values a registry device carries: its

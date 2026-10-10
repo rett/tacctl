@@ -17,22 +17,40 @@ package cli
 // forwardings, no agent, no escape character unless console.yaml's
 // ssh_escape, the target after '--' (so no word after it is an option), and
 // an entry with no pinned host key is refused.
+//
+// When the session's password cache holds the caller's password (D70,
+// password_cache.go) and the entry's host key is pinned, ssh gets the cached
+// password from the user's own shell without a prompt: SSH_ASKPASS names this
+// binary (askpass_cmd.go), SSH_ASKPASS_REQUIRE=force, and ssh asks once
+// (NumberOfPasswordPrompts=1), reads no configuration file and checks the
+// pinned host key strictly, so a redirected or substituted hop is never
+// handed the password. In that case ssh is started as the user directly
+// (uid, gid and groups set in the child; no sudo, whose log lines would
+// carry the variable), with TACCTL_ASKPASS, a token made for this line, in
+// its environment and nowhere else. The cache forgets the password when ssh
+// ends with status 255 (a refusal cannot be told from other failures of the
+// connection).
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net"
 	"os"
+	"os/user"
 	"regexp"
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
+	"github.com/rett/tacctl/internal/askpass"
 	"github.com/rett/tacctl/internal/console"
 	"github.com/rett/tacctl/internal/devreg"
+	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/hosts"
 	"github.com/rett/tacctl/internal/ui"
 )
@@ -128,6 +146,9 @@ func (inv *invocation) ssh(args []string) error {
 		inv.write(sshUsage())
 		return nil
 	}
+	// The password cache's variable is read once and taken out of the
+	// environment before anything else runs.
+	cacheClient := inv.takeAskpass()
 	var extra []string
 	if i := slices.Index(args, "--"); i >= 0 {
 		args, extra = args[:i], args[i+1:]
@@ -179,9 +200,37 @@ func (inv *invocation) ssh(args []string) error {
 	if len(kinds) > 0 {
 		forward = " forward=" + strings.Join(kinds, ",")
 	}
-	a.Logger(inv.ctx, "auth.info", "ssh user="+caller+" device="+e.Name+" addr="+addr+forward+inv.sshConsoleField())
+	// A cached password is used only for a pinned entry (the host key is
+	// then checked strictly against the pin) and when ssh's own options
+	// are not user words (an option after the target would be ssh's).
+	cached := false
+	optionAfterTarget := len(extra) > 0 && strings.HasPrefix(extra[0], "-")
+	if cacheClient != nil && devreg.Pinned(e) && !optionAfterTarget {
+		if have, err := cacheClient.Have(inv.ctx); err == nil && have {
+			cached = true
+		}
+	}
+	cmd := plan.cmd.Cmd(plan.args...)
+	cacheNote := ""
+	if cached {
+		// Started as the user directly, not through sudo, so that the
+		// token is never a sudo variable or argument. An account that
+		// cannot be looked up locally (a directory service the static
+		// binary does not read) keeps the old path and the prompt.
+		if c, ok := inv.sshCachedCommand(plan, caller, cacheClient); ok {
+			cmd, cacheNote = c, " password=cached"
+		} else {
+			cached = false
+		}
+	}
+	a.Logger(inv.ctx, "auth.info", "ssh user="+caller+" device="+e.Name+" addr="+addr+forward+cacheNote+inv.sshConsoleField())
 	start := a.Knobs.Now()
-	code, _, startErr := hosts.Attached(inv.ctx, a.Runner, plan.cmd.Cmd(plan.args...), a.Stdin, a.Out)
+	code, _, startErr := hosts.Attached(inv.ctx, a.Runner, cmd, a.Stdin, a.Out)
+	if cached && code == 255 {
+		// ssh gave up: the password may be what the device refused.
+		// (not the invocation's context: a hangup still forgets)
+		_ = cacheClient.Forget(context.WithoutCancel(inv.ctx))
+	}
 	if startErr != nil && code == 0 {
 		code = 127
 	}
@@ -262,6 +311,133 @@ func (inv *invocation) sshResolve(p Parsed, caller string, extra, fwd []string) 
 	}
 	plan.args = append(append(plan.args, target), extra...)
 	return plan, nil
+}
+
+// sshCachedOptions are the options ssh gets besides the plan's when it
+// asks the password cache: one password prompt (a refused password is not
+// offered again), and the same closed set a console session has when the
+// plan does not have it already (no configuration file: no SendEnv,
+// ProxyJump, ProxyCommand or Match exec of the user's, no local command, no
+// control master, no agent). The pinned host key's strict checking is the
+// entry's own (devreg.PinOptions), which the cache is used with only.
+func sshCachedOptions(console bool) []string {
+	o := []string{"-o", "NumberOfPasswordPrompts=1"}
+	if console {
+		return o // sshConsoleOptions has the rest
+	}
+	return append([]string{"-F", "/dev/null", "-o", "PermitLocalCommand=no", "-o", "ControlMaster=no", "-o", "ForwardAgent=no"}, o...)
+}
+
+// sshAccount is what the cached path needs of the caller's account to start
+// ssh as them without sudo.
+type sshAccount struct {
+	UID, GID uint32
+	Groups   []uint32
+	Home     string
+}
+
+// sshAccountOf looks the caller up in the local account database, with the
+// supplementary groups (tests replace it).
+var sshAccountOf = func(name string) (sshAccount, error) {
+	u, err := user.Lookup(name)
+	if err != nil {
+		return sshAccount{}, err
+	}
+	uid, err1 := strconv.ParseUint(u.Uid, 10, 32)
+	gid, err2 := strconv.ParseUint(u.Gid, 10, 32)
+	if err1 != nil || err2 != nil {
+		return sshAccount{}, errors.New("the account's ids are not numbers")
+	}
+	acct := sshAccount{UID: uint32(uid), GID: uint32(gid), Home: u.HomeDir}
+	gids, err := u.GroupIds()
+	if err != nil {
+		return sshAccount{}, err
+	}
+	for _, g := range gids {
+		n, err := strconv.ParseUint(g, 10, 32)
+		if err != nil {
+			return sshAccount{}, errors.New("a group id is not a number")
+		}
+		acct.Groups = append(acct.Groups, uint32(n))
+	}
+	return acct, nil
+}
+
+// sshUserEnvKeep are the variables of the invoking process's environment
+// that ssh run as the user keeps, which is what 'sudo -u <user> -H' kept
+// (its env_keep and env_check defaults that matter to ssh): the terminal
+// and locale, and the X11 display. HOME, USER, LOGNAME and PATH are set from
+// the account, SUDO_* and the rest are not passed.
+var sshUserEnvKeep = []string{"TERM", "COLORTERM", "LANG", "LANGUAGE", "TZ", "DISPLAY", "XAUTHORITY"}
+
+// sshUserEnviron is the explicit environment of the ssh a user's own account
+// runs: the account's HOME, USER, LOGNAME, PATH, the variables of
+// sshUserEnvKeep and LC_* the process has, then extra (later entries win).
+func sshUserEnviron(environ []string, acct sshAccount, name string, extra []string) []string {
+	path := "/usr/local/bin:/usr/bin:/bin"
+	vals := map[string]string{}
+	var order []string
+	set := func(k, v string) {
+		if _, ok := vals[k]; !ok {
+			order = append(order, k)
+		}
+		vals[k] = v
+	}
+	for _, kv := range environ {
+		k, v, ok := strings.Cut(kv, "=")
+		switch {
+		case !ok:
+		case k == "PATH" && v != "":
+			path = v
+		case slices.Contains(sshUserEnvKeep, k), strings.HasPrefix(k, "LC_"):
+			set(k, v)
+		}
+	}
+	set("HOME", acct.Home)
+	set("USER", name)
+	set("LOGNAME", name)
+	set("PATH", path)
+	for _, kv := range extra {
+		if k, v, ok := strings.Cut(kv, "="); ok {
+			set(k, v)
+		}
+	}
+	out := make([]string, 0, len(order))
+	for _, k := range order {
+		out = append(out, k+"="+vals[k])
+	}
+	return out
+}
+
+// sshCachedCommand is the ssh command of a plan whose password comes from
+// the cache: the plan's options with those of sshCachedOptions first (ssh
+// keeps the first value of an option), started as the caller (their uid, gid
+// and supplementary groups, set in the child before exec) with an explicit
+// environment: SSH_ASKPASS naming this binary, the line's TACCTL_ASKPASS,
+// and what sshUserEnviron gives. There is no sudo in this path, so the token
+// is never an argument or a 'sudo' variable and reaches no log; it is in the
+// environment of ssh and of the helper ssh starts, once. ok is false when the
+// caller's account cannot be looked up here.
+func (inv *invocation) sshCachedCommand(plan sshPlan, caller string, c *askpass.Client) (execx.Cmd, bool) {
+	a := inv.app
+	acct, err := sshAccountOf(caller)
+	if err != nil || acct.Home == "" {
+		return execx.Cmd{}, false
+	}
+	// The account looked up here must be the one sudo ran this for: the
+	// socket was checked to be SUDO_UID's, and root is never the user.
+	if acct.UID == 0 || c.ExpectUID <= 0 || acct.UID != uint32(c.ExpectUID) {
+		return execx.Cmd{}, false
+	}
+	s := plan.cmd
+	s.Options = append(sshCachedOptions(inv.sshConsole()), s.Options...)
+	extra := append(slices.Clone(s.Env),
+		"SSH_ASKPASS="+a.Exe, "SSH_ASKPASS_REQUIRE=force", askpass.HelperEnv+"=1", askpass.EnvVar+"="+c.Env())
+	s.AsUser, s.AuthSock, s.Env = "", "", nil
+	cmd := s.Cmd(plan.args...)
+	cmd.Env = sshUserEnviron(a.Env.Environ(), acct, caller, extra)
+	cmd.Credential = &syscall.Credential{Uid: acct.UID, Gid: acct.GID, Groups: acct.Groups}
+	return cmd, true
 }
 
 // sshConsoleOptions are the options a console session's ssh starts with:

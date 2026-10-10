@@ -6,6 +6,7 @@ load ../helpers/setup
 load ../helpers/tmpenv
 load ../helpers/mocks
 load ../helpers/fixtures
+load ../helpers/fakedev
 
 setup() {
     tacctl_tmpenv_init
@@ -289,14 +290,21 @@ print("" if v is None else v)' "${TACCTL_STATE_DIR}/store.yaml" "$1" "$2"
     text=$(sed -n 's/^    //p' <<<"$output" | sed -e ':a' -e '/\\$/N; s/\\\n//; ta')
     ro_op=$(grep -E '^Cmnd_Alias TACCTL_(RO|OP)' <<<"$text")
     en=$(grep '^Cmnd_Alias TACCTL_EN' <<<"$text")
-    for r in "config cisco" "scope show" "scope secret" "host unenroll" "scope staging"; do
+    for r in "config cisco" "scope show" "scope secret" "host unenroll" "scope staging" "device config pull" "device config diff" "device config show" "device config forget"; do
         if grep -q "$r" <<<"$ro_op"; then echo "$r below the engineer tier"; return 1; fi
     done
     for r in 'tacctl config cisco \*' 'tacctl config juniper,' 'tacctl config wti \*' 'tacctl device add \*' 'tacctl device import - \*' \
-        'tacctl device hostkey \*' 'tacctl device config show \*' 'tacctl scope devices \*' \
+        'tacctl device hostkey \*' 'tacctl device config show \*' 'tacctl device config pull \*' 'tacctl device config diff \*' \
+        'tacctl scope devices \*' \
         'tacctl host list,' 'tacctl host show \*' 'tacctl scope staging list' \
         'tacctl scope secret \*' 'tacctl scope show \*' 'tacctl scope snmp \*' 'tacctl device location \*'; do
         grep -q -- "$r" <<<"$en" || { echo "engineer lacks $r"; return 1; }
+    done
+    # The operator's alias holds the list of device configurations and no
+    # other verb of it; forget is nobody's but the superuser's.
+    grep -q 'tacctl device config list \*' <<<"$ro_op" || { echo "operator lacks device config list"; return 1; }
+    for r in 'device config forget'; do
+        if grep -q -- "$r" <<<"$ro_op$en"; then echo "$r below the superuser tier"; return 1; fi
     done
     # Sudoers sees these: stdin only for an import, a list but no removal of
     # staging addresses. Linux host deployment is the superuser's: an engineer
@@ -611,7 +619,74 @@ _upgrade() {
     assert_output --partial "Device 'prod-sw' not found."
     as_user op yes -- device config show lab-sw
     assert_failure
-    assert_output --partial "'tacctl device config' is not permitted for the operator tier."
+    assert_output --partial "'tacctl device config show' is not permitted for the operator tier."
+}
+
+@test "tier: device config list is the operator's; show, pull and diff the engineer's; forget the superuser's" {
+    "$TACCTL_BIN_SCRIPT" user add en superuser --hash "$HASH" --scopes lab > /dev/null
+    printf 'tier:\n  superuser: engineer\n' > "${TACCTL_STATE_DIR}/tacctl.yaml"
+    "$TACCTL_BIN_SCRIPT" device add lab-sw 192.168.1.1 --vendor cisco --no-host-key > /dev/null
+    "$TACCTL_BIN_SCRIPT" device add prod-sw 10.99.0.1 --vendor cisco --no-host-key > /dev/null
+    # The operator lists; the other verbs say the operator tier may not.
+    as_user op yes -- device config list
+    assert_success
+    assert_output --partial "lab-sw"
+    for v in show pull diff forget; do
+        as_user op yes -- device config "$v" lab-sw
+        assert_failure
+        assert_output --partial "'tacctl device config $v' is not permitted for the operator tier."
+    done
+    # The read-only tier does not get the family at all, and none of the
+    # configuration state in the registry's views: no column, no row, no field.
+    as_user ro yes -- device config list
+    assert_failure
+    assert_output --partial "'tacctl device config' is not permitted for the readonly tier."
+    as_user ro yes -- device list
+    assert_success
+    assert_output --partial "lab-sw"
+    refute_output --partial "CONFIG"
+    as_user ro yes -- device show lab-sw
+    assert_success
+    refute_output --partial "Configuration:"
+    as_user ro yes -- device list --json
+    assert_success
+    refute_output --partial '"config"'
+    as_user op yes -- device list
+    assert_success
+    assert_output --partial "CONFIG"
+    as_user op yes -- device show lab-sw
+    assert_output --partial "Configuration: never pulled"
+    # The engineer lists their own scopes' devices, and may not forget.
+    as_user en yes -- device config list
+    assert_success
+    assert_output --partial "lab-sw"
+    refute_output --partial "prod-sw"
+    as_user en yes -- device config forget lab-sw
+    assert_failure
+    assert_output --partial "'tacctl device config forget' is not permitted for the engineer tier."
+    as_user en yes -- device config pull prod-sw
+    assert_failure
+    assert_output --partial "Device 'prod-sw' not found."
+}
+
+@test "tier: an engineer pulls the devices of their own scope as themselves and the pull is audited" {
+    stub_cmd ip 'if [[ "$*" == *"route get 1.0.0.0"* ]]; then echo "1.0.0.0 via 10.0.0.1 dev eth0 src 10.0.0.42 uid 0"; fi'
+    "$TACCTL_BIN_SCRIPT" user add en superuser --hash "$HASH" --scopes lab > /dev/null
+    printf 'tier:\n  superuser: engineer\n' > "${TACCTL_STATE_DIR}/tacctl.yaml"
+    unset FAKEDEV_PID
+    local jdir
+    jdir=$(fakedev_dir junos)
+    FAKEDEV_USER=en fakedev_start "$jdir"
+    fakedev_register lab-j 192.168.1.20 juniper
+    fakedev_serve "$jdir" juniper lab lab-j
+    as_user en yes -- device config pull lab-j
+    fakedev_stop
+    assert_success
+    assert_output --partial "lab-j  ok via netconf"
+    # The login was the engineer's own, and the scope's secret read is logged
+    # as the walkthrough logs it.
+    stub_called 'logger -t tacctl -p auth.info device config pull user=en device=lab-j transport=netconf result=ok'
+    stub_called 'logger -t tacctl -p auth.info secret-read kind=scope name=lab by=en'
 }
 
 @test "tier: group reset is the superuser's alone: no lower tier, the engineer included, and no sudoers rule" {

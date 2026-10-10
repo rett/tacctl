@@ -45,15 +45,16 @@ func init() {
 	})
 }
 
-// shellSpec is 'tacctl shell [--no-history] [--idle <min>] [--space-completion on|off] [-c <line>]'.
+// shellSpec is 'tacctl shell [--no-history] [--idle <min>] [--space-completion on|off] [--password-cache] [-c <line>]'.
 var shellSpec = Spec{MaxArgs: 0, Flags: []Flag{
 	{Names: []string{"--no-history"}},
 	{Names: []string{"--idle"}, Value: true},
 	{Names: []string{"--space-completion"}, Value: true, Kind: "on|off"},
+	{Names: []string{"--password-cache"}},
 	{Names: []string{"-c"}, Value: true, Alone: true, Kind: KindLine},
 }}
 
-const shellUsage = "Usage: tacctl shell [--no-history] [--idle <min>] [--space-completion on|off] [-c <line>]"
+const shellUsage = "Usage: tacctl shell [--no-history] [--idle <min>] [--space-completion on|off] [--password-cache] [-c <line>]"
 
 // shellNamesTTL is how long the shell keeps the live names of a kind.
 const shellNamesTTL = 5 * time.Second
@@ -64,7 +65,7 @@ const shellIdleMax = 1440
 var reMinutes = regexp.MustCompile(`^[0-9]{1,4}$`)
 
 func shellCmd(inv *invocation) *cobra.Command {
-	c := verb("shell [--no-history] [--idle <min>] [--space-completion on|off] [-c <line>]",
+	c := verb("shell [--no-history] [--idle <min>] [--space-completion on|off] [--password-cache] [-c <line>]",
 		"Interactive shell: one tacctl command per line, with completion and history")
 	c.RunE = inv.native(noPreflight, inv.shell)
 	return c
@@ -109,6 +110,9 @@ func (inv *invocation) shell(args []string) error {
 	f, isFile := a.Stdin.(*os.File)
 	interactive := !p.Has("-c") && isFile && term.IsTerminal(int(f.Fd()))
 	r := shellRun{exe: exe, mode: shellBatch, idle: time.Duration(idle) * time.Minute, spaceCompletion: spaces}
+	if p.Has("--password-cache") {
+		r.cacheMode = cacheAsk
+	}
 	switch {
 	case p.Has("-c"):
 		r.mode, r.line = shellCommandMode, p.Value("-c")
@@ -164,6 +168,12 @@ type shellRun struct {
 	systemShell func(ctx context.Context, interactive bool) int
 	// groups are the caller's groups (nil: asked of 'id -nG').
 	groups []string
+	// cacheMode says how the run came by a password cache (cacheOff, cacheAsk
+	// for --password-cache, cacheOn for the console's policy answer) and
+	// pcIdle and pcMax are its lifetimes when the policy named them
+	// (password_cache.go).
+	cacheMode     int
+	pcIdle, pcMax time.Duration
 	// view is the tier whose verbs the lists show (D56; the console has
 	// its policy answer already). "": a tac-users member's tier is asked
 	// of the root side on first use, anyone else sees everything.
@@ -193,6 +203,10 @@ func (inv *invocation) runShell(r shellRun) (int, *shell.Shell) {
 		groups = inv.callerGroups()
 	}
 	managed := slices.Contains(groups, tier.UsersGroup)
+	// The password cache (D70): the agent lives as long as the loop; the
+	// password is forgotten and the socket removed when the loop ends.
+	cache := inv.openPasswordCache(r, managed)
+	defer cache.close()
 	inv.setView(r, managed)
 	root := newRoot(inv)
 	o := shell.Options{
@@ -206,6 +220,9 @@ func (inv *invocation) runShell(r shellRun) (int, *shell.Shell) {
 		Explain:         inv.shellExplain(root),
 		Help:            inv.shellHelp(root, r.console),
 		Exec:            inv.shellExec(r.exe, managed, sudoTier(groups), r.extraEnv),
+	}
+	if cache != nil {
+		o.Cache = cache
 	}
 	if r.systemShell != nil {
 		o.SystemShell = r.systemShell
@@ -301,6 +318,13 @@ func shellArgv(exe string, words []string, noPrompt bool, extraEnv []string, env
 // shellExec runs a line with the terminal attached. A managed caller's
 // line that sudo refused (status 1) and that the tier's sudoers rules do
 // not cover is reported as the tier denial.
+//
+// The lines that use the password cache (askpassWords) get the value of
+// TACCTL_ASKPASS the loop opened the cache for them with (shell.LineEnv: a
+// token made for this line, "" when the shell has no cache) in the
+// environment of the sudo process; any other value of the variable the
+// shell inherited is taken off those lines. It is read from the line's
+// context each time, never kept.
 func (inv *invocation) shellExec(exe string, managed bool, t tier.Tier, extraEnv []string) func(context.Context, []string, io.Reader) int {
 	a := inv.app
 	return func(ctx context.Context, words []string, stdin io.Reader) int {
@@ -310,6 +334,9 @@ func (inv *invocation) shellExec(exe string, managed bool, t tier.Tier, extraEnv
 		}
 		argv := shellArgv(exe, words, shellNoPrompt(managed, t), extraEnv, a.Env.Get)
 		c := execx.Cmd{Name: argv[0], Args: argv[1:]}
+		if !noSudo[words[0]] && askpassWords(words) {
+			c.Env = environWith(a.Env.Environ(), shell.LineEnv(ctx))
+		}
 		// A line the tier's sudoers rules do not cover is refused by sudo,
 		// and the shell says why; sudo's own 'a password is required' line
 		// is held back then (and put back if the denial is not printed).

@@ -211,9 +211,9 @@ complete_words() {
     assert_output ""
 }
 
-@test "completion: device config offers show, then the device names, then the walkthrough's options" {
+@test "completion: device config offers its verbs, then the device names, then the walkthrough's options" {
     complete_words tacctl device config ""
-    assert_output "show"
+    assert_output "$(printf 'diff\nforget\nlist\npull\nshow')"
     complete_words tacctl device config show ""
     assert_line "db1"
     assert_line "sw1"

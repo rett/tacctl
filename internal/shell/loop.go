@@ -11,7 +11,10 @@
 // command (-c). The loop has no job control, spawns no editor or pager,
 // bounds every line (LineMax) and can end itself after an idle time; the
 // login console (tacctl-console) runs it with one more word of its own,
-// system-shell (Options.SystemShell).
+// system-shell (Options.SystemShell). With a password cache
+// (Options.Cache, D70 of docs/plans/0.2.4-plan.md) it has one more word,
+// 'console forget', marks each command line as in flight for the cache, and
+// forgets the cached password when the person changes their own.
 package shell
 
 import (
@@ -30,6 +33,7 @@ import (
 	"golang.org/x/sys/unix"
 	"golang.org/x/term"
 
+	"github.com/rett/tacctl/internal/askpass"
 	"github.com/rett/tacctl/internal/ui"
 )
 
@@ -38,6 +42,43 @@ const LineMax = 4096
 
 // DefaultPrompt is the interactive prompt.
 const DefaultPrompt = "tacctl> "
+
+// PasswordCache is the shell's side of the password cache of the session
+// (internal/askpass: the agent lives in this process). The loop opens it
+// for the command lines that use it, and only those, for the time they run,
+// forgets the password on 'console forget' and when the person changes
+// their password, and prints what it queued (a password stored, a password
+// forgotten and why) between lines.
+type PasswordCache interface {
+	// BeginLine opens the cache for one command line when words run a verb
+	// that uses it, and returns the line's value of TACCTL_ASKPASS (a token
+	// minted for this line); "" when the line does not use the cache, which
+	// is then not opened at all.
+	BeginLine(words []string) string
+	// EndLine closes the cache again: the line's token is dead.
+	EndLine()
+	// Forget empties the cache (why is one of askpass.Why*) and reports
+	// whether a password was held.
+	Forget(why string) bool
+	// Notices returns, and clears, the lines to show the person (events
+	// that happened since the last call).
+	Notices() []string
+}
+
+type lineEnvKey struct{}
+
+// WithLineEnv is ctx carrying the line's value of TACCTL_ASKPASS for Exec.
+func WithLineEnv(ctx context.Context, env string) context.Context {
+	return context.WithValue(ctx, lineEnvKey{}, env)
+}
+
+// LineEnv is the value of TACCTL_ASKPASS the loop opened the cache with for
+// this command line ("" when there is none): Exec puts it in the
+// environment of the process it starts, and nowhere else.
+func LineEnv(ctx context.Context) string {
+	v, _ := ctx.Value(lineEnvKey{}).(string)
+	return v
+}
 
 // Options are what the shell works with.
 type Options struct {
@@ -77,6 +118,9 @@ type Options struct {
 	// with whether the session is interactive; it returns the status. Nil:
 	// system-shell is no word of the shell's (a tacctl command, unknown).
 	SystemShell func(ctx context.Context, interactive bool) int
+	// Cache is the session's password cache; nil: none (the cache is off,
+	// or the mode keeps no process around: -c and batch).
+	Cache PasswordCache
 }
 
 // Why a session ended (Shell.End).
@@ -176,7 +220,68 @@ func (s *Shell) run(ctx context.Context, line string, stdin io.Reader) (status i
 		_, _ = io.WriteString(s.o.Out.Stdout, text)
 		return 0, false
 	}
-	return s.o.Exec(ctx, words, stdin), false
+	if isConsoleForget(words) {
+		return s.consoleForget(words), false
+	}
+	if c := s.o.Cache; c != nil {
+		// The cache is open only for the lines that use it, for as long as
+		// they run, with a token made for the line; any other line, the
+		// shell's own words and the prompt leave it shut.
+		if env := c.BeginLine(words); env != "" {
+			ctx = WithLineEnv(ctx, env)
+			defer c.EndLine()
+		}
+	}
+	status = s.o.Exec(ctx, words, stdin)
+	if s.o.Cache != nil && changesOwnPassword(words) {
+		// The password the cache holds is the old one now (or the person
+		// meant to leave it): either way it goes.
+		s.o.Cache.Forget(askpass.WhyPasswd)
+	}
+	return status, false
+}
+
+// isConsoleForget reports whether words are 'console forget': a word of the
+// shell and the console, never run through sudo.
+func isConsoleForget(words []string) bool {
+	return len(words) >= 2 && words[0] == "console" && words[1] == "forget"
+}
+
+// changesOwnPassword reports whether the line is 'passwd' or 'user passwd'
+// (the latter may be the person's own account).
+func changesOwnPassword(words []string) bool {
+	return words[0] == "passwd" || (len(words) >= 2 && words[0] == "user" && words[1] == "passwd")
+}
+
+// consoleForget is 'console forget': the password cache is emptied now.
+func (s *Shell) consoleForget(words []string) int {
+	if len(words) > 2 {
+		s.errorf("console forget takes no arguments")
+		return 2
+	}
+	c := s.o.Cache
+	if c == nil {
+		_, _ = fmt.Fprintln(s.o.Out.Stdout, "no password is cached: the password cache is not on in this session")
+		return 0
+	}
+	if !c.Forget(askpass.WhyCommand) {
+		_, _ = fmt.Fprintln(s.o.Out.Stdout, "no password is cached")
+		return 0
+	}
+	s.printNotices()
+	return 0
+}
+
+// printNotices writes what the password cache queued, to stderr: after the
+// line that caused it and before the next prompt, never in the middle of
+// the editor.
+func (s *Shell) printNotices() {
+	if s.o.Cache == nil {
+		return
+	}
+	for _, l := range s.o.Cache.Notices() {
+		_, _ = fmt.Fprintln(s.o.Out.Stderr, l)
+	}
 }
 
 // Command runs one line (-c), recorded in the history, with stdin for the
@@ -300,6 +405,7 @@ func (s *Shell) Interactive(ctx context.Context, tty *os.File) int {
 		if stop.Load() != 0 {
 			return stopped()
 		}
+		s.printNotices()
 		old, err := term.MakeRaw(fd)
 		if err != nil {
 			s.errorf("cannot set up the terminal: %v", err)

@@ -180,6 +180,7 @@ func Upgrade(ctx context.Context, h *Host, args []string) error {
 	}
 	updated += n
 	updated += h.updateTierSudoers(ctx)
+	updated += h.updateGroupSudoers(ctx)
 	n, err = h.updateConsoleLink()
 	if err != nil {
 		return err
@@ -509,5 +510,45 @@ func (h *Host) updateTierSudoers(ctx context.Context) int {
 		return 0
 	}
 	h.Out.Info("  Updated: tiers sudoers")
+	return 1
+}
+
+// updateGroupSudoers refreshes the drop-in 'config sudoers install <group>'
+// wrote (the paths' SudoersFile) when it is exactly a text an earlier
+// release wrote for that group, so a host that installed it before the
+// password cache keeps the cache's environment variable through sudo. A
+// file an administrator edited, or whose header only says tacctl wrote it,
+// is left as it is with a warning that names the command to re-run; one
+// that is not tacctl's, an absent one and a current one are left alone and
+// not mentioned. It is never created, and a refused or failed rewrite
+// leaves the old file and warns.
+func (h *Host) updateGroupSudoers(ctx context.Context) int {
+	file := h.Paths.SudoersFile
+	cur, err := os.ReadFile(file)
+	if err != nil {
+		return 0
+	}
+	group, kind := tier.ClassifyGroupSudoers(string(cur))
+	switch kind {
+	case tier.GroupUnrecognised:
+		h.Out.Warn("  " + file + ": not written by tacctl for a group it knows; left alone")
+		return 0
+	case tier.GroupCustomised:
+		h.Out.Warn("  Not updated: sudoers for group " + group + " (customised; " + file + " is unchanged; " +
+			"re-run 'tacctl config sudoers install " + group + "' to take this release's text)")
+		return 0
+	case tier.GroupOlder:
+	default:
+		return 0
+	}
+	if err := tier.InstallSudoers(ctx, h.Runner, h.Out.Stdout, h.Out.Stderr, tier.GroupSudoers(group), file); err != nil {
+		why := "install failed"
+		if errors.Is(err, tier.ErrVisudo) {
+			why = "visudo validation failed"
+		}
+		h.Out.Warn("  Not updated: sudoers for group " + group + " (" + why + "; " + file + " is unchanged)")
+		return 0
+	}
+	h.Out.Info("  Updated: sudoers for group " + group)
 	return 1
 }

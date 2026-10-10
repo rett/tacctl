@@ -28,6 +28,14 @@ import (
 //	TACCTL_TEST_PROC=<dir>       stands for /proc/self where 'host enroll
 //	                             --local' reads this machine's user
 //	                             namespace maps (uid_map, gid_map)
+//	TACCTL_TEST_DEVICE_DIAL=<host:port>
+//	                             every device a configuration pull logs in
+//	                             to is dialled at this loopback address
+//	                             instead of its own (the fake device of
+//	                             'tacctl _fake-device')
+//	TACCTL_TEST_DEVICE_PASSWORD=<text>
+//	                             the password a pull logs in with, in place
+//	                             of the terminal prompt (a test has none)
 //
 // They are read from the environment only by a binary built with
 // -tags testknobs ('make build', which the bats harness and the differential
@@ -58,7 +66,20 @@ type Knobs struct {
 	faults map[string]bool
 	root   string // "": the host's own locations
 	proc   string // "": /proc/self
+	// dial and devPass are the device knobs of the configuration pull
+	// (their variables are named in knobs_testknobs.go only, so a
+	// production binary does not even contain the names).
+	dial    string // "": every device at its own address
+	devPass string // "": the password comes from the terminal or the cache
 }
+
+// DeviceDial is the host:port a test build dials for every device ("" in a
+// production build, and when the knob is unset).
+func (k Knobs) DeviceDial() string { return k.dial }
+
+// DevicePassword is the password a test build logs in to devices with ("":
+// ask).
+func (k Knobs) DevicePassword() string { return k.devPass }
 
 // ProcSelf is the directory TACCTL_TEST_PROC names ("" when unset: the
 // real /proc/self).

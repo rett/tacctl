@@ -5,32 +5,35 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/rett/tacctl/internal/conf"
-	"github.com/rett/tacctl/internal/model"
 	"github.com/rett/tacctl/internal/paths"
+	"github.com/rett/tacctl/internal/pyyaml"
+	"github.com/rett/tacctl/internal/tier"
+	"github.com/rett/tacctl/internal/yamlpy"
 )
 
 func TestCheckRollbackVersion(t *testing.T) {
-	for _, ok := range []string{"0.2.2", "v0.2.2"} {
-		if v, err := CheckRollbackVersion(ok); err != nil || v != "0.2.2" {
+	for _, ok := range []string{"0.2.3", "v0.2.3"} {
+		if v, err := CheckRollbackVersion(ok); err != nil || v != "0.2.3" {
 			t.Errorf("%q: %q %v", ok, v, err)
 		}
 	}
 	for _, c := range []struct{ in, want string }{
-		{"0.2.1", "older than 0.2.2"},
-		{"0.2.0", "older than 0.2.2"},
-		{"0.1.16", "older than 0.2.2"},
-		{"v0.2.1", "older than 0.2.2"},
-		{"0.2.3", "prepares the state for 0.2.2 only"},
-		{"0.3.0", "prepares the state for 0.2.2 only"},
-		{"1.0.0", "prepares the state for 0.2.2 only"},
+		{"0.2.2", "'tacctl rollback' converts what 0.2.4 changed and prepares the state for 0.2.3 only (0.2.2 is older)"},
+		{"v0.2.2", "is older"},
+		{"0.2.1", "is older"},
+		{"0.1.16", "is older"},
+		{"0.2.4", "prepares the state for 0.2.3 only"},
+		{"0.3.0", "prepares the state for 0.2.3 only"},
+		{"1.0.0", "prepares the state for 0.2.3 only"},
 		{"0.2", "is not a release this tacctl knows"},
 		{"main", "is not a release this tacctl knows"},
 		{"", "is not a release this tacctl knows"},
-		{"0.2.2-rc1", "is not a release this tacctl knows"},
+		{"0.2.3-rc1", "is not a release this tacctl knows"},
 	} {
 		_, err := CheckRollbackVersion(c.in)
 		var ref *RollbackRefusal
@@ -38,69 +41,20 @@ func TestCheckRollbackVersion(t *testing.T) {
 			t.Errorf("%q: %v (want %q)", c.in, err, c.want)
 		}
 	}
-	// The reason for 0.2.1 says what is not covered and what to do.
-	_, err := CheckRollbackVersion("0.2.1")
-	for _, want := range []string{"0.2.2 changed the state as well", "tacctl backup restore"} {
+	// The refusal of 0.2.2 names the two steps and the fallback.
+	_, err := CheckRollbackVersion("0.2.2")
+	for _, want := range []string{"one release at a time", "tacctl rollback 0.2.3 --apply", "tacctl upgrade --branch 0.2.3",
+		"0.2.3's prepares the state for 0.2.2", "tacctl backup restore"} {
 		if !strings.Contains(err.Error(), want) {
-			t.Errorf("0.2.1 refusal lacks %q: %v", want, err)
+			t.Errorf("0.2.2 refusal lacks %q: %v", want, err)
 		}
 	}
 }
 
-func TestTopLevelAlternation(t *testing.T) {
-	for rx, want := range map[string]bool{
-		"crypto|trace":        true,
-		"a|b|c":               true,
-		"^(a|b)$":             false,
-		"(a|b)c":              false,
-		"^crypto( .*)?$":      false,
-		"[|]x":                false,
-		"[^|]x":               false,
-		"[]|]x":               false,
-		`a\|b`:                false,
-		`(a\)|b)`:             false,
-		`(?:a|b)|c`:           true,
-		"ip (route|addr)|vrf": true,
-		"":                    false,
-		"plain":               false,
-	} {
-		if got := TopLevelAlternation(rx); got != want {
-			t.Errorf("TopLevelAlternation(%q) = %v, want %v", rx, got, want)
-		}
-	}
-}
+// --- a 0.2.4 state in a sandbox ---------------------------------------------------
 
-// --- a 0.2.3 state in a sandbox ---------------------------------------------------
-
-const rbStore = `version: 1
-groups:
-  engineer: {priv_lvl: 15, juniper_class: EN-CLASS}
-  ops: {priv_lvl: 15, juniper_class: RW-CLASS}
-  lead: {priv_lvl: 10, juniper_class: OP-CLASS}
-  operator: {priv_lvl: 7, juniper_class: OP-CLASS, builtin: true}
-  readonly: {priv_lvl: 1, juniper_class: RO-CLASS, builtin: true}
-  superuser: {priv_lvl: 15, juniper_class: RW-CLASS, builtin: true}
-users:
-  alice: {group: superuser, scopes: [lab, prod], hash: 24326224313224646f6e74636172652e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e}
-  erin: {group: engineer, scopes: [lab], hash: 24326224313224646f6e74636172652e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e}
-  evan: {group: engineer, scopes: [prod], hash: 24326224313224646f6e74636172652e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e}
-  olga: {group: ops, scopes: [lab], hash: 24326224313224646f6e74636172652e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e}
-  lena: {group: lead, scopes: [lab], hash: 24326224313224646f6e74636172652e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e}
-  gone: {group: engineer, scopes: [lab], disabled: true, hash: 24326224313224646f6e74636172652e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e}
-scopes:
-  lab:
-    prefixes: [172.16.0.0/12]
-    secret: lab-secret-0123456789abcdef
-  prod:
-    prefixes: [10.0.0.0/8]
-    secret: prod-secret-0123456789abcdef
-filters:
-  allow: []
-  deny: []
-`
-
-// rbConf is a tacctl.yaml with every family 0.2.3 added, the settings 0.2.2
-// has and a regex with a top-level alternation.
+// rbConf is a tacctl.yaml with the device.config keys of 0.2.4, every family
+// 0.2.3 added (which stay) and the settings both have.
 const rbConf = `bcrypt:
   cost: 11
 commands:
@@ -109,52 +63,64 @@ commands:
     action: permit
     match:
     - crypto|trace
-  - name: '*'
-    action: deny
 linux:
   uid_min: 70000
   uid_max: 79999
   engineer_sudo:
   - /usr/bin/systemctl
-  - /usr/bin/journalctl
 tier:
   engineer: engineer
-  lead: engineer
-  ops: operator
 snmp:
   version: v2c
 snmp_scope:
   lab:
     version: v3
     contact: NOC, building 2
-    clients:
-    - 10.1.0.0/16
-    v3:
-      auth: sha
-  prod:
-    port: 1161
 breakglass_scope:
   lab:
     users:
     - bg-admin:admin
-    - bg-ro:readonly
+device:
+  config:
+    max_concurrency: 16
+    transport: ssh
+    timeout: 120
 `
+
+// rbConsole is a console.yaml as 0.2.4 writes it: the engineer tier's
+// switch and space completion off (0.2.3's own keys) and the password cache.
+const rbConsole = "# tacctl login console\nversion: 1\ntiers:\n  readonly: enable\n  operator: enable\n  engineer: enable\n  superuser: enable\nusers:\n  jdoe: disable\n" +
+	"settings:\n  idle_timeout: 12\n  agent_forwarding: false\n  ssh_escape: false\n  system_shell: /bin/bash\n  system_shell_tiers: [superuser]\n  forwarding_tiers: [superuser]\n" +
+	"  gateway_ports: false\n  list_max: 40\n  space_completion: false\n  password_cache:\n    tiers: [engineer, superuser]\n    idle: 30\n    max: 4\n"
 
 const rbDevices = `# tacctl device registry (header)
 version: 1
 settings: {stale_days: 30}
 devices:
-  core-sw1: {address: 10.99.0.1, vendor: cisco, description: DC1 core, location: 'Rack 4, DC1'}
+  core-sw1:
+    address: 10.99.0.1
+    vendor: cisco
+    description: DC1 core
+    location: Rack 4, DC1
+    snmp:
+      version: v3
+      port: 2161
+      timeout: 4
+      clients: [10.1.0.0/16, 10.2.0.0/16]
   lab-rtr2: {address: 192.0.2.7, vendor: juniper}
-  oob-con1: {address: 10.99.0.9, vendor: wti, location: Room 17}
+  oob-con1:
+    address: 10.99.0.9
+    vendor: wti
+    snmp: {port: 1161}
 `
 
 type rbSandbox struct {
-	t  *testing.T
-	w  string
-	p  paths.Paths
-	c  *conf.Config
-	in RollbackInput
+	t   *testing.T
+	w   string
+	p   paths.Paths
+	c   *conf.Config
+	in  RollbackInput
+	ins []string // the drop-ins InstallSudoers was asked for
 }
 
 func (s *rbSandbox) write(path, text string, mode os.FileMode) {
@@ -167,8 +133,8 @@ func (s *rbSandbox) write(path, text string, mode os.FileMode) {
 	}
 }
 
-// newRBSandbox lays out a 0.2.3 state: every file the rollback converts, and
-// every file it leaves.
+// newRBSandbox lays out a 0.2.4 state: every file the rollback converts,
+// and every file it leaves.
 func newRBSandbox(t *testing.T) *rbSandbox {
 	t.Helper()
 	w := t.TempDir()
@@ -177,33 +143,37 @@ func newRBSandbox(t *testing.T) *rbSandbox {
 		"TACCTL_STATE_DIR=" + filepath.Join(w, "state"),
 		"TACCTL_VAR_LIB=" + filepath.Join(w, "var-lib"),
 		"TACCTL_SSHD_DROPIN=" + filepath.Join(w, "sshd_config.d", "tacctl-console.conf"),
+		"TACCTL_TIER_SUDOERS_FILE=" + filepath.Join(w, "sudoers.d", "tacctl-tiers"),
+		"TACCTL_SUDOERS_FILE=" + filepath.Join(w, "sudoers.d", "tacctl"),
 	}
 	s := &rbSandbox{t: t, w: w}
 	s.p = paths.Resolve(paths.NewEnv(vars), "", func(string) bool { return false })
-	s.write(s.p.StoreFile, rbStore, 0o600)
+	s.write(s.p.StoreFile, "version: 1\n", 0o600)
 	s.write(s.p.Overrides, rbConf, 0o640)
 	s.write(s.p.DevicesFile, rbDevices, 0o600)
-	// console.yaml as 0.2.3 writes it, space completion off.
-	s.write(s.p.ConsoleFile, "# tacctl login console\nversion: 1\ntiers:\n  readonly: enable\n  operator: enable\n  engineer: enable\n  superuser: enable\nusers:\n  jdoe: disable\nsettings:\n  idle_timeout: 12\n  agent_forwarding: false\n  ssh_escape: false\n  system_shell: /bin/bash\n  system_shell_tiers: [superuser]\n  forwarding_tiers: [superuser]\n  gateway_ports: false\n  list_max: 40\n  space_completion: false\n", 0o600)
+	s.write(s.p.ConsoleFile, rbConsole, 0o600)
 	s.write(filepath.Join(s.p.SNMPDir, "lab.yaml"), "community: lab-community-1\n", 0o600)
-	s.write(filepath.Join(s.p.HostRecords, "web1.json"), "{\n  \"provisioner\": {\"at\": \"2026-10-01T00:00:00Z\", \"by\": \"root\", \"old\": \"a\", \"new\": \"b\", \"auth\": \"key\", \"old_removed\": false}\n}\n", 0o600)
-	s.write(filepath.Join(s.p.HostRecords, "web2.json"), "{}\n", 0o600)
-	s.write(s.p.SSHDEngineerDropIn, "# Managed by tacctl\nMatch Group tac-engineer\n  AllowTcpForwarding no\n", 0o644)
+	s.write(filepath.Join(s.p.SNMPDir, "devices", "core-sw1.yaml"), "community: sw1-community\n", 0o600)
+	s.write(s.p.ConfigRecords, "{\"version\": 1, \"devices\": {}}\n", 0o600)
+	s.write(filepath.Join(s.p.ConfigDir, "core-sw1.yaml"), "aaa: []\n", 0o600)
 	s.write(s.p.TierPinMarker, "", 0o644)
+	s.write(s.p.TierSudoersFile, tier.Sudoers(), 0o640)
+	s.write(s.p.SudoersFile, tier.GroupSudoers("ops"), 0o640)
 	s.reload()
+	s.in.InstallSudoers = func(body, dst string) error {
+		s.ins = append(s.ins, dst)
+		return os.WriteFile(dst, []byte(body), 0o640)
+	}
 	return s
 }
 
-// reload reads the model and tacctl.yaml again, as a new run would.
+// reload reads tacctl.yaml again, as a new run would.
 func (s *rbSandbox) reload() {
 	s.t.Helper()
 	s.c = conf.Load(s.p.Overrides, conf.DefaultBackends)
 	s.c.Owner = nil
-	_, m, err := model.LoadStore(s.p.StoreFile)
-	s.in = RollbackInput{Paths: s.p, Conf: s.c, Model: m, ModelErr: err, HasStore: err == nil,
-		Hosts:    []RollbackHost{{Name: "srv", Scope: "lab", Local: true}, {Name: "web1", Scope: "prod"}, {Name: "web2", Scope: "lab"}},
-		AllHosts: []RollbackHost{{Name: "srv", Scope: "lab", Local: true}, {Name: "web1", Scope: "prod"}, {Name: "web2", Scope: "lab"}},
-	}
+	inst := s.in.InstallSudoers
+	s.in = RollbackInput{Paths: s.p, Conf: s.c, HasStore: true, InstallSudoers: inst}
 }
 
 // snapshotOf is every file under the sandbox, by path, with its bytes.
@@ -248,6 +218,59 @@ func warnText(p *RollbackPlan) string {
 	return b.String()
 }
 
+// old023Problems is what a reader of 0.2.3 refuses in the state, as fixtures
+// of its three parsers (the tacctl.yaml schema, console.yaml and devices.yaml
+// at the 0.2.3 tag): "<file>: <key>" for each. The sudoers drop-ins are
+// not read by tacctl.
+func old023Problems(t *testing.T, s *rbSandbox) []string {
+	t.Helper()
+	var out []string
+	c := conf.Load(s.p.Overrides, conf.DefaultBackends)
+	for _, k := range c.RollbackKeys023() {
+		out = append(out, "tacctl.yaml: "+k)
+	}
+	load := func(path string) *yamlpy.Map {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+		v, err := pyyaml.LoadBytes(b)
+		if err != nil {
+			t.Fatal(err)
+		}
+		m, _ := v.(*yamlpy.Map)
+		return m
+	}
+	if root := load(s.p.ConsoleFile); root != nil {
+		for section, known := range map[string][]string{
+			"tiers": {"readonly", "operator", "engineer", "superuser"},
+			"settings": {"idle_timeout", "list_max", "agent_forwarding", "ssh_escape", "gateway_ports", "space_completion",
+				"system_shell", "system_shell_tiers", "forwarding_tiers"},
+		} {
+			if sub, ok := root.Get(section); ok {
+				for k := range sub.(*yamlpy.Map).All() {
+					if !slices.Contains(known, k) {
+						out = append(out, "console.yaml: "+section+"."+k)
+					}
+				}
+			}
+		}
+	}
+	if root := load(s.p.DevicesFile); root != nil {
+		known := []string{"address", "vendor", "hostname", "description", "location", "port", "legacy_ssh", "host_keys", "ack"}
+		if devs, ok := root.Get("devices"); ok && devs != nil {
+			for name, d := range devs.(*yamlpy.Map).All() {
+				for k := range d.(*yamlpy.Map).All() {
+					if !slices.Contains(known, k) {
+						out = append(out, "devices.yaml: device '"+name+"' has "+k)
+					}
+				}
+			}
+		}
+	}
+	return out
+}
+
 // A plan reads and writes nothing, lists every step and every warning.
 func TestPlanRollbackFull(t *testing.T) {
 	s := newRBSandbox(t)
@@ -260,72 +283,70 @@ func TestPlanRollbackFull(t *testing.T) {
 	if !reflect.DeepEqual(before, s.snapshotOf()) {
 		t.Error("PlanRollback wrote something")
 	}
-	if !p.Pending() || !p.NeedsYes() {
-		t.Errorf("pending %v needs-yes %v", p.Pending(), p.NeedsYes())
+	if len(s.ins) != 0 {
+		t.Errorf("the plan installed %q", s.ins)
 	}
-	wantKeys := []string{"linux.engineer_sudo", "snmp_scope.lab.version", "snmp_scope.lab.contact", "snmp_scope.lab.clients",
-		"snmp_scope.lab.v3.auth", "snmp_scope.prod.port", "breakglass_scope.lab.users"}
+	if !p.Pending() || !p.PendingFiles() || !p.NeedsYes() {
+		t.Errorf("pending %v files %v needs-yes %v", p.Pending(), p.PendingFiles(), p.NeedsYes())
+	}
+	wantKeys := []string{"device.config.max_concurrency", "device.config.transport", "device.config.timeout"}
 	if !reflect.DeepEqual(p.Keys(), wantKeys) {
 		t.Errorf("keys %q, want %q", p.Keys(), wantKeys)
 	}
 	steps := stepText(p)
 	for _, want := range []string{
-		s.p.Overrides + ": remove the keys 0.2.2 does not know",
-		"remove linux.engineer_sudo", "remove snmp_scope.lab.contact", "remove breakglass_scope.lab.users",
-		"keep every tier.<group> setting",
-		s.p.ConsoleFile + ": write it the way 0.2.2 reads it",
-		"remove tiers.engineer: enable", "remove settings.space_completion: false",
-		s.p.DevicesFile + ": remove the per-device location",
-		"remove the location of 2 devices: core-sw1, oob-con1",
-		"move aside " + s.p.SNMPDir, "moves " + filepath.Join(s.p.SNMPDir, "lab.yaml"),
-		"1 record has a provisioner entry (the last 'host provisioner rotate'): web1",
-		"leaves " + s.p.SSHDEngineerDropIn, "remove the tier-pin marker so the next upgrade pins again", "removes " + s.p.TierPinMarker,
+		s.p.Overrides + ": remove the keys 0.2.3 does not know",
+		"remove device.config.max_concurrency", "remove device.config.transport", "remove device.config.timeout",
+		s.p.ConsoleFile + ": write it the way 0.2.3 reads it",
+		"remove settings.password_cache: tiers engineer,superuser, idle 30 min, max 4 h",
+		s.p.DevicesFile + ": remove the per-device SNMP settings",
+		"remove the snmp map of core-sw1 (version v3, port 2161, timeout 4 s, 2 client ranges)",
+		"remove the snmp map of oob-con1 (port 1161)",
+		"put back the sudoers drop-ins 0.2.3 writes",
+		"rewrite " + s.p.TierSudoersFile + " (the per-tier drop-in: 0.2.3's text, after 'visudo -cf'; it loses the TACCTL_ASKPASS alias and env_keep line and the rows of 'device config', 'device snmp' and 'console forget')",
+		"rewrite " + s.p.SudoersFile + " (the drop-in of group ops: 0.2.3's text",
+		"leave " + filepath.Join(s.p.SNMPDir, "devices"),
+		"1 file (mode 0600, kept): core-sw1",
+		"leaves " + s.p.ConfigRecords, "leaves " + s.p.ConfigDir + " (1 file)",
 		"leave " + s.p.StoreFile + " untouched",
-		"re-render the enabled backends",
-		"srv (scope 'lab') is this tacctl server: not synced",
-		"sync web1 (scope 'prod') with TAC_REVOKE_ENGINEER=1", "sync web2 (scope 'lab') with TAC_REVOKE_ENGINEER=1",
+		"the enrolled Linux hosts (--hosts)", "no host is synced",
 	} {
 		if !strings.Contains(steps, want) {
 			t.Errorf("steps lack %q:\n%s", want, steps)
 		}
 	}
 	for _, st := range p.Steps {
-		wantTodo := strings.Contains(st.Title, "remove") || strings.Contains(st.Title, "move aside") || strings.Contains(st.Title, "write it") || strings.Contains(st.Title, "re-render") || strings.Contains(st.Title, "engineers' sudo")
+		wantTodo := strings.Contains(st.Title, "remove the") || strings.Contains(st.Title, "write it") || strings.Contains(st.Title, "put back")
 		if st.Todo != wantTodo {
 			t.Errorf("step %q: todo %v", st.Title, st.Todo)
 		}
 	}
+	// What 0.2.3 has is not in the plan: not its keys, not its marker.
+	for _, not := range []string{"linux.engineer_sudo", "snmp_scope", "breakglass", "space_completion", "tiers.engineer", "tier-pinned", "location"} {
+		if strings.Contains(steps, not) {
+			t.Errorf("steps name %q:\n%s", not, steps)
+		}
+	}
+	if strings.Contains(steps, "re-render the enabled backends") {
+		t.Errorf("a re-render is planned:\n%s", steps)
+	}
 
 	warns := warnText(p)
 	for _, want := range []string{
-		"Engineers become superusers under 0.2.2",
-		// erin is an engineer at priv-lvl 15 in lab, the scope of the server; olga (group ops, tier operator) too.
-		"This server (host srv, scope 'lab'): erin (group engineer, engineer now), olga (group ops, operator now) become superusers of tacctl here",
-		// evan is in prod only: the host of that scope.
-		"Host web1 (scope 'prod'): evan (group engineer, engineer now) join tac-superuser (full sudo)",
-		"Host web2 (scope 'lab'): erin (group engineer, engineer now), olga (group ops, operator now) join tac-superuser",
-		"Groups change tier",
-		"group engineer (priv-lvl 15): engineer now, superuser under 0.2.2 (higher)",
-		"group lead (priv-lvl 10): engineer now, operator under 0.2.2 (lower)",
-		"group ops (priv-lvl 15): operator now, superuser under 0.2.2 (higher)",
-		"Settings 0.2.2 cannot use are dropped",
-		"linux.engineer_sudo (/usr/bin/systemctl, /usr/bin/journalctl) is removed",
-		"of lab, prod are removed from tacctl.yaml",
-		"The credentials (lab.yaml, mode 0600) are moved from " + s.p.SNMPDir + "/ to a snmp.rolled-back-<timestamp> directory beside it",
-		"scope 'lab': bg-admin (admin), bg-ro (readonly)",
-		"The location of 2 devices is removed from the device registry (core-sw1, oob-con1)",
+		"Settings 0.2.3 cannot use are dropped",
+		"core-sw1: version v3, port 2161, timeout 4 s, 2 client ranges",
+		"oob-con1: port 1161",
+		"The devices' own credentials (1 file in " + filepath.Join(s.p.SNMPDir, "devices") + ") stay, unused by 0.2.3.",
+		"device.config.max_concurrency=16, device.config.transport=ssh, device.config.timeout=120",
+		"The password cache's settings of console.yaml are removed (tiers engineer,superuser, idle 30 min, max 4 h)",
 		"stays in the snapshot --apply takes first",
 	} {
 		if !strings.Contains(warns, want) {
 			t.Errorf("warnings lack %q:\n%s", want, warns)
 		}
 	}
-	// lena (group lead, lab) is not at priv-lvl 15, so she does not become a superuser; the disabled engineer is not named.
-	if strings.Contains(warns, "lena (") || strings.Contains(warns, "gone (") {
-		t.Errorf("a user who does not become a superuser is named:\n%s", warns)
-	}
-	if len(p.Notes) < 2 || !strings.Contains(strings.Join(p.Notes, "\n"), "group engineer: rule show match crypto|trace") {
-		t.Errorf("notes: %q", p.Notes)
+	if len(p.Notes) != 1 || !strings.Contains(p.Notes[0], "restore it with 0.2.4") {
+		t.Errorf("notes %q", p.Notes)
 	}
 }
 
@@ -336,15 +357,24 @@ func TestPlanRollbackWithoutHosts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(stepText(p), "TAC_REVOKE_ENGINEER") {
+	if strings.Contains(stepText(p), "--hosts") || strings.Contains(stepText(p), "no host is synced") {
 		t.Errorf("a host step without --hosts:\n%s", stepText(p))
 	}
 }
 
 // --apply's conversions: each file is converted, everything else is left
-// byte for byte, and a second run changes nothing.
+// byte for byte, the state is then one a 0.2.3 reader accepts, and a second
+// run changes nothing.
 func TestApplyRollbackConvertsAndIsIdempotent(t *testing.T) {
 	s := newRBSandbox(t)
+	if p := old023Problems(t, s); len(p) < 5 {
+		t.Fatalf("the 0.2.4 state is refused for only %q", p)
+	}
+	for _, want := range []string{"tacctl.yaml: device.config.timeout", "console.yaml: settings.password_cache", "devices.yaml: device 'core-sw1' has snmp", "devices.yaml: device 'oob-con1' has snmp"} {
+		if !slices.Contains(old023Problems(t, s), want) {
+			t.Errorf("the 0.2.4 state is not refused for %q", want)
+		}
+	}
 	before := s.snapshotOf()
 	p, err := PlanRollback(s.in)
 	if err != nil {
@@ -354,199 +384,242 @@ func TestApplyRollbackConvertsAndIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(done) != 5 {
-		t.Errorf("done %q", done)
+	wantDone := []string{
+		s.p.Overrides + ": removed 3 keys",
+		s.p.ConsoleFile + ": removed settings.password_cache",
+		s.p.DevicesFile + ": removed the SNMP settings of 2 devices",
+		s.p.TierSudoersFile + ": rewritten with the text 0.2.3 writes",
+		s.p.SudoersFile + ": rewritten with the text 0.2.3 writes",
+	}
+	if !reflect.DeepEqual(done, wantDone) {
+		t.Errorf("done %q\nwant %q", done, wantDone)
+	}
+	if len(p.NotWritten()) != 0 {
+		t.Errorf("not written: %q", p.NotWritten())
 	}
 	after := s.snapshotOf()
-	changed := map[string]bool{s.p.Overrides: true, s.p.ConsoleFile: true, s.p.DevicesFile: true}
-	// The credentials directory is moved aside whole, the marker removed.
-	moved := filepath.Join(s.p.SNMPDir, "lab.yaml")
-	gone := map[string]bool{moved: true, s.p.TierPinMarker: true}
-	var aside string
-	for path, was := range before {
-		if gone[path] {
-			if _, there := after[path]; there {
-				t.Errorf("%s is still there", path)
-			}
-			continue
-		}
-		if changed[path] {
-			if after[path] == was {
-				t.Errorf("%s was not converted", path)
-			}
-			continue
-		}
-		// Lock files appear beside the converted ones; the rest is as it was.
-		if after[path] != was {
-			t.Errorf("%s changed", path)
+	// The state is one 0.2.3 reads.
+	if probs := old023Problems(t, s); len(probs) != 0 {
+		t.Errorf("a 0.2.3 reader refuses the converted state: %q", probs)
+	}
+	// Only the five files changed.
+	changed := map[string]bool{s.p.Overrides: true, s.p.ConsoleFile: true, s.p.DevicesFile: true, s.p.TierSudoersFile: true, s.p.SudoersFile: true}
+	for path, b := range before {
+		if a, ok := after[path]; !ok || (a != b) != changed[path] {
+			t.Errorf("%s: changed %v, want %v", path, a != b, changed[path])
 		}
 	}
 	for path := range after {
 		if _, ok := before[path]; !ok && !strings.HasSuffix(path, ".lock") {
-			if strings.HasPrefix(path, s.p.SNMPDir+".rolled-back-") && filepath.Base(path) == "lab.yaml" {
-				aside = path
-				if after[path] != before[moved] {
-					t.Errorf("%s: the moved credentials changed", path)
-				}
-				if fi, err := os.Stat(path); err != nil || fi.Mode().Perm() != 0o600 {
-					t.Errorf("%s: mode %v %v", path, fi, err)
-				}
-				continue
-			}
-			t.Errorf("new file %s", path)
+			t.Errorf("a file appeared: %s", path)
 		}
 	}
-	if aside == "" {
-		t.Error("the credentials were not moved aside")
-	}
-	if _, err := os.Stat(s.p.SNMPDir); err == nil {
-		t.Errorf("%s is still live", s.p.SNMPDir)
-	}
-	if TierPinDone(s.p) {
-		t.Error("the tier-pin marker is still there")
-	}
-	// store.yaml is byte-identical (D50).
-	if after[s.p.StoreFile] != rbStore {
-		t.Error("store.yaml changed")
-	}
-	// tacctl.yaml keeps what 0.2.2 knows and nothing else.
-	got := after[s.p.Overrides]
-	for _, gone := range []string{"engineer_sudo", "snmp_scope", "breakglass", "contact", "clients", "bg-admin"} {
-		if strings.Contains(got, gone) {
-			t.Errorf("tacctl.yaml still has %q:\n%s", gone, got)
+	// What 0.2.3 has stays, key by key.
+	ov := after[s.p.Overrides]
+	for _, keep := range []string{"engineer_sudo:", "snmp_scope:", "breakglass_scope:", "tier:\n  engineer: engineer", "bcrypt:"} {
+		if !strings.Contains(ov, keep) {
+			t.Errorf("tacctl.yaml lost %q:\n%s", keep, ov)
 		}
 	}
-	for _, kept := range []string{"cost: 11", "uid_min: 70000", "engineer: engineer", "lead: engineer", "ops: operator", "crypto|trace", "version: v2c"} {
-		if !strings.Contains(got, kept) {
-			t.Errorf("tacctl.yaml lost %q:\n%s", kept, got)
+	if strings.Contains(ov, "device:") || strings.Contains(ov, "max_concurrency") {
+		t.Errorf("tacctl.yaml:\n%s", ov)
+	}
+	cs := after[s.p.ConsoleFile]
+	for _, keep := range []string{"engineer: enable", "space_completion: false", "list_max: 40", "jdoe: disable"} {
+		if !strings.Contains(cs, keep) {
+			t.Errorf("console.yaml lost %q:\n%s", keep, cs)
 		}
 	}
-	if fi, _ := os.Stat(s.p.Overrides); fi.Mode().Perm() != 0o640 {
-		t.Errorf("tacctl.yaml mode %v", fi.Mode().Perm())
+	dv := after[s.p.DevicesFile]
+	for _, keep := range []string{"location: 'Rack 4, DC1'", "address: 10.99.0.1", "description: DC1 core", "lab-rtr2"} {
+		if !strings.Contains(dv, keep) {
+			t.Errorf("devices.yaml lost %q:\n%s", keep, dv)
+		}
 	}
-	if strings.Contains(after[s.p.ConsoleFile], "engineer") || strings.Contains(after[s.p.ConsoleFile], "space_completion") ||
-		!strings.Contains(after[s.p.ConsoleFile], "jdoe: disable") || !strings.Contains(after[s.p.ConsoleFile], "idle_timeout: 12") {
-		t.Errorf("console.yaml:\n%s", after[s.p.ConsoleFile])
+	if strings.Contains(dv, "snmp") || strings.Contains(dv, "2161") {
+		t.Errorf("devices.yaml:\n%s", dv)
 	}
-	if strings.Contains(after[s.p.DevicesFile], "location") || !strings.Contains(after[s.p.DevicesFile], "core-sw1") {
-		t.Errorf("devices.yaml:\n%s", after[s.p.DevicesFile])
+	if after[s.p.TierSudoersFile] != tier.Sudoers023() || after[s.p.SudoersFile] != tier.GroupSudoers023("ops") {
+		t.Error("a sudoers drop-in is not 0.2.3's text")
+	}
+	// The files 0.2.3 ignores, the credentials, the marker: untouched.
+	for _, kept := range []string{filepath.Join(s.p.SNMPDir, "lab.yaml"), filepath.Join(s.p.SNMPDir, "devices", "core-sw1.yaml"),
+		s.p.ConfigRecords, filepath.Join(s.p.ConfigDir, "core-sw1.yaml"), s.p.TierPinMarker, s.p.StoreFile} {
+		if a, ok := after[kept]; !ok || a != before[kept] {
+			t.Errorf("%s was not left alone", kept)
+		}
 	}
 
-	// The second run: nothing pending, no warning about files, nothing written.
+	// Idempotent: the dry run of the converted state has nothing to do and
+	// the apply changes no byte.
 	s.reload()
 	p2, err := PlanRollback(s.in)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p2.Pending() || len(p2.Keys()) != 0 {
-		t.Errorf("pending after the rollback: %v %q", p2.Pending(), p2.Keys())
+	if p2.Pending() || p2.PendingFiles() || p2.NeedsYes() || len(p2.Keys()) != 0 {
+		t.Errorf("a converted state is pending: keys %q warnings %q", p2.Keys(), warnText(p2))
 	}
-	for _, w := range p2.Warnings {
-		if w.Title == "Settings 0.2.2 cannot use are dropped" {
-			t.Errorf("the second plan still drops settings:\n%s", warnText(p2))
+	steps := stepText(p2)
+	for _, want := range []string{"nothing to remove (every key is one 0.2.3 has)", "nothing to remove (settings.password_cache is not written)",
+		"no device has SNMP settings of its own", "is already the text 0.2.3 writes"} {
+		if !strings.Contains(steps, want) {
+			t.Errorf("the second plan lacks %q:\n%s", want, steps)
 		}
 	}
-	done, err = ApplyRollback(p2)
-	if err != nil || len(done) != 0 {
-		t.Errorf("second apply: %q %v", done, err)
+	n := len(s.ins)
+	done2, err := ApplyRollback(p2)
+	if err != nil || len(done2) != 0 || len(s.ins) != n {
+		t.Errorf("second apply: %q %v (installs %d -> %d)", done2, err, n, len(s.ins))
 	}
 	if !reflect.DeepEqual(after, s.snapshotOf()) {
 		t.Error("the second apply changed a file")
 	}
-	// The tier warnings are about the model and stay until the groups change.
-	if !strings.Contains(warnText(p2), "Engineers become superusers under 0.2.2") {
-		t.Errorf("the superuser warning went with the files:\n%s", warnText(p2))
-	}
 }
 
-// A state 0.2.2 can read has nothing to convert and no warning.
-func TestPlanRollbackOfACleanState(t *testing.T) {
-	w := t.TempDir()
-	vars := []string{"TACCTL_ETC=" + w + "/etc", "TACCTL_STATE_DIR=" + w + "/state", "TACCTL_VAR_LIB=" + w + "/var"}
-	pt := paths.Resolve(paths.NewEnv(vars), "", func(string) bool { return false })
-	if err := os.MkdirAll(pt.StateDir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	store := strings.Replace(rbStore, "  engineer: {priv_lvl: 15, juniper_class: EN-CLASS}\n  ops: {priv_lvl: 15, juniper_class: RW-CLASS}\n  lead: {priv_lvl: 10, juniper_class: OP-CLASS}\n", "", 1)
-	for _, u := range []string{"erin", "evan", "olga", "lena", "gone"} {
-		i := strings.Index(store, "  "+u+":")
-		j := strings.Index(store[i:], "\n")
-		store = store[:i] + store[i+j+1:]
-	}
-	if err := os.WriteFile(pt.StoreFile, []byte(store), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	_, m, err := model.LoadStore(pt.StoreFile)
-	if err != nil {
-		t.Fatal(err)
-	}
-	in := RollbackInput{Paths: pt, Conf: conf.Load(pt.Overrides, conf.DefaultBackends), Model: m, HasStore: true,
-		Hosts: []RollbackHost{{Name: "web1", Scope: "prod"}}, AllHosts: []RollbackHost{{Name: "web1", Scope: "prod"}}, WithHosts: true}
-	p, err := PlanRollback(in)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if p.Pending() || p.NeedsYes() || len(p.Notes) != 0 {
-		t.Errorf("pending %v, warnings %s, notes %q", p.Pending(), warnText(p), p.Notes)
-	}
-	// --hosts still has something to do (the sudoers of the hosts).
-	if !strings.Contains(stepText(p), "sync web1 (scope 'prod') with TAC_REVOKE_ENGINEER=1") {
-		t.Errorf("steps:\n%s", stepText(p))
-	}
-}
-
-// A model that cannot be read is a warning of its own, and the other warnings
-// still come.
-func TestPlanRollbackWithoutAModel(t *testing.T) {
+// A file that is not this release's text is left, a drop-in that cannot be
+// installed is reported and does not stop the rest, and without an installer
+// nothing is rewritten.
+func TestRollbackSudoersCases(t *testing.T) {
+	// Edited drop-ins are left; the plan says so.
 	s := newRBSandbox(t)
-	s.in.Model, s.in.ModelErr = nil, errors.New("tacctl store: bad\nline")
+	s.write(s.p.TierSudoersFile, tier.Sudoers()+"# local addition\n", 0o640)
+	s.write(s.p.SudoersFile, tier.GroupSudoers("ops")+"%ops ALL=(ALL) NOPASSWD: /usr/bin/id\n", 0o640)
+	before := s.snapshotOf()
 	p, err := PlanRollback(s.in)
 	if err != nil {
 		t.Fatal(err)
 	}
-	w := warnText(p)
-	if !strings.Contains(w, "Who changes tier cannot be told") || !strings.Contains(w, "tacctl store: bad line") ||
-		!strings.Contains(w, "Settings 0.2.2 cannot use are dropped") || strings.Contains(w, "Groups change tier") {
-		t.Errorf("warnings:\n%s", w)
+	if st := stepText(p); !strings.Contains(st, "leaves "+s.p.TierSudoersFile+": it is not the text this release writes") ||
+		!strings.Contains(st, "0.2.3's upgrade rewrites the per-tier drop-in") || !strings.Contains(st, "leaves "+s.p.SudoersFile) {
+		t.Errorf("steps:\n%s", st)
+	}
+	if _, err := ApplyRollback(p); err != nil {
+		t.Fatal(err)
+	}
+	after := s.snapshotOf()
+	if after[s.p.TierSudoersFile] != before[s.p.TierSudoersFile] || after[s.p.SudoersFile] != before[s.p.SudoersFile] || len(s.ins) != 0 {
+		t.Errorf("an edited drop-in was rewritten: %q", s.ins)
+	}
+
+	// A drop-in of an older release (0.2.3's own text) is left, and said to be done.
+	s = newRBSandbox(t)
+	s.write(s.p.TierSudoersFile, tier.Sudoers023(), 0o640)
+	s.write(s.p.SudoersFile, tier.GroupSudoers023("ops"), 0o640)
+	p, _ = PlanRollback(s.in)
+	if len(p.todoSudoers()) != 0 || strings.Count(stepText(p), "is already the text 0.2.3 writes") != 2 {
+		t.Errorf("0.2.3's own text:\n%s", stepText(p))
+	}
+
+	// No drop-in at all: said, nothing to do.
+	s = newRBSandbox(t)
+	_ = os.Remove(s.p.TierSudoersFile)
+	_ = os.Remove(s.p.SudoersFile)
+	p, _ = PlanRollback(s.in)
+	if !strings.Contains(stepText(p), "no tacctl sudoers drop-in is installed") {
+		t.Errorf("no drop-ins:\n%s", stepText(p))
+	}
+
+	// An installer that fails: reported, the files are still converted.
+	s = newRBSandbox(t)
+	s.in.InstallSudoers = func(body, dst string) error { return errors.New("visudo validation failed") }
+	p, _ = PlanRollback(s.in)
+	done, err := ApplyRollback(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(done) != 3 || len(p.NotWritten()) != 2 || !strings.Contains(p.NotWritten()[0], "visudo validation failed") {
+		t.Errorf("done %q not written %q", done, p.NotWritten())
+	}
+	if len(old023Problems(t, s)) != 0 {
+		t.Errorf("the files were not converted: %q", old023Problems(t, s))
+	}
+
+	// No installer: listed, left.
+	s = newRBSandbox(t)
+	s.in.InstallSudoers = nil
+	p, _ = PlanRollback(s.in)
+	done, _ = ApplyRollback(p)
+	if len(done) != 3 || len(p.NotWritten()) != 2 {
+		t.Errorf("done %q not written %q", done, p.NotWritten())
 	}
 }
 
-// A file that cannot be read stops the plan before anything is converted.
-func TestPlanRollbackRefusesUnreadableFiles(t *testing.T) {
-	for name, mut := range map[string]func(s *rbSandbox){
-		"tacctl.yaml":  func(s *rbSandbox) { s.write(s.p.Overrides, "bcrypt: [\n", 0o640) },
-		"console.yaml": func(s *rbSandbox) { s.write(s.p.ConsoleFile, "version: 1\nfoo: 1\n", 0o600) },
-		"devices.yaml": func(s *rbSandbox) { s.write(s.p.DevicesFile, "devices: [\n", 0o600) },
-	} {
-		s := newRBSandbox(t)
-		mut(s)
-		s.reload()
-		before := s.snapshotOf()
-		if _, err := PlanRollback(s.in); err == nil {
-			t.Errorf("%s: no error", name)
-		}
-		if !reflect.DeepEqual(before, s.snapshotOf()) {
-			t.Errorf("%s: a file changed", name)
-		}
-	}
-}
-
-// Groups with a missing tier setting at priv-lvl 15 are held at operator in
-// 0.2.3 and are superusers in 0.2.2.
-func TestPlanRollbackAmbiguousGroup(t *testing.T) {
+// A state 0.2.3 can read has nothing to convert and no warning.
+func TestPlanRollbackOfACleanState(t *testing.T) {
 	s := newRBSandbox(t)
-	s.write(s.p.Overrides, "tier:\n  lead: engineer\n", 0o640)
+	s.write(s.p.Overrides, "bcrypt:\n  cost: 11\nlinux:\n  engineer_sudo:\n  - /usr/bin/id\n", 0o640)
+	s.write(s.p.ConsoleFile, "# tacctl login console\nversion: 1\ntiers: {readonly: enable, operator: enable, engineer: enable, superuser: enable}\nusers: {}\nsettings: {space_completion: false}\n", 0o600)
+	s.write(s.p.DevicesFile, "version: 1\ndevices:\n  sw1: {address: 192.0.2.7, vendor: cisco, location: Rack 4}\n", 0o600)
+	_ = os.Remove(s.p.TierSudoersFile)
+	_ = os.Remove(s.p.SudoersFile)
+	_ = os.RemoveAll(filepath.Join(s.p.SNMPDir, "devices"))
+	_ = os.Remove(s.p.ConfigRecords)
+	_ = os.RemoveAll(s.p.ConfigDir)
+	s.reload()
+	before := s.snapshotOf()
+	p, err := PlanRollback(s.in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Pending() || p.NeedsYes() || len(p.Warnings) != 0 || len(p.Notes) != 0 {
+		t.Errorf("pending %v warnings %q notes %q", p.Pending(), p.Warnings, p.Notes)
+	}
+	st := stepText(p)
+	for _, want := range []string{"no file there", "no record of a configuration pull", "no device has SNMP settings of its own"} {
+		if !strings.Contains(st, want) {
+			t.Errorf("steps lack %q:\n%s", want, st)
+		}
+	}
+	done, err := ApplyRollback(p)
+	if err != nil || len(done) != 0 || !reflect.DeepEqual(before, s.snapshotOf()) {
+		t.Errorf("apply: %q %v", done, err)
+	}
+}
+
+// A key neither release knows goes too and is named so.
+func TestPlanRollbackNamesUnknownKeys(t *testing.T) {
+	s := newRBSandbox(t)
+	s.write(s.p.Overrides, "bcrypt:\n  cost: 11\nfrobnicate:\n  level: 3\n", 0o640)
 	s.reload()
 	p, err := PlanRollback(s.in)
 	if err != nil {
 		t.Fatal(err)
 	}
-	w := warnText(p)
-	for _, want := range []string{"group engineer (priv-lvl 15): operator now, superuser under 0.2.2 (higher)",
-		"group ops (priv-lvl 15): operator now, superuser under 0.2.2 (higher)",
-		"erin (group engineer, operator now)"} {
-		if !strings.Contains(w, want) {
-			t.Errorf("warnings lack %q:\n%s", want, w)
+	if !reflect.DeepEqual(p.Keys(), []string{"frobnicate.level"}) || !strings.Contains(stepText(p), "remove frobnicate.level  (no release knows this key; 0.2.3 refuses a file that has it)") {
+		t.Errorf("keys %q\n%s", p.Keys(), stepText(p))
+	}
+}
+
+// Without a store there is no snapshot: a warning, as the other tools say.
+func TestPlanRollbackWithoutAStore(t *testing.T) {
+	s := newRBSandbox(t)
+	s.in.HasStore = false
+	p, err := PlanRollback(s.in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(warnText(p), "No snapshot can be taken") {
+		t.Errorf("warnings:\n%s", warnText(p))
+	}
+}
+
+// A file that cannot be read stops the plan before anything is converted.
+func TestPlanRollbackRefusesUnreadableFiles(t *testing.T) {
+	for name, file := range map[string]func(*rbSandbox) string{
+		"console.yaml": func(s *rbSandbox) string { return s.p.ConsoleFile },
+		"devices.yaml": func(s *rbSandbox) string { return s.p.DevicesFile },
+	} {
+		s := newRBSandbox(t)
+		s.write(file(s), "version: 1\nfoo: [\n", 0o600)
+		if _, err := PlanRollback(s.in); err == nil {
+			t.Errorf("%s: no error", name)
 		}
+	}
+	s := newRBSandbox(t)
+	s.write(s.p.Overrides, "bcrypt: [\n", 0o640)
+	s.reload()
+	if _, err := PlanRollback(s.in); err == nil || !strings.Contains(err.Error(), "cannot be read") {
+		t.Errorf("tacctl.yaml: %v", err)
 	}
 }

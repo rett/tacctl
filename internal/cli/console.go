@@ -11,6 +11,7 @@ package cli
 import (
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -36,6 +37,8 @@ var consoleSpecs = map[string]Spec{
 	"space-completion": {MaxArgs: 1, Args: []string{"on|off"}},
 	"system-shell":     {MinArgs: 1, MaxArgs: 2, Args: []string{"tiers|path", After("path", KindFile)}},
 	"forwarding":       {MinArgs: 1, MaxArgs: 2, Args: []string{"tiers|gateway-ports", After("gateway-ports", "enable|disable")}},
+	"password-cache":   {MaxArgs: 2, Args: []string{"tiers|idle|max", ""}},
+	"forget":           {MaxArgs: 0},
 	"install":          {MaxArgs: 0},
 	"remove":           {MaxArgs: 0},
 	"check":            {MaxArgs: 0},
@@ -54,6 +57,10 @@ var consoleVerbs = [][2]string{
 	{"forwarding gateway-ports [enable|disable]", "Opt in to forwarded ports on other addresses than loopback for those tiers (sshd's GatewayPorts for ssh -R, and the console's ssh -g and -L/-D bind addresses)"},
 	{"system-shell tiers [<csv>|none]", "Show or set the tiers that may start their system shell from the console (never engineer)"},
 	{"system-shell path [<path>]", "Show or set the system shell (default /bin/bash; must be listed in /etc/shells)"},
+	{"password-cache tiers [<csv>|none]", "Show or set the tiers whose shell and console sessions may keep your network password in memory for the session (operator, engineer, superuser; default none)"},
+	{"password-cache idle [<min>]", "Show or set the minutes a cached password lives without a use (1-120, default 15)"},
+	{"password-cache max [<hours>]", "Show or set the hours a cached password lives from the moment it was cached (1-24, default 8)"},
+	{"forget", "Forget the cached password of this shell or console session now"},
 	{"install", "Put the /etc/shells line and sshd's drop-ins (console users, engineers) in place (host sync of this server does too)"},
 	{"remove", "Take the console's pieces away again (refused while an account has the console as its shell; the engineers' drop-in stays)"},
 	{"check", "Check that sshd applies the console's and the engineers' settings to their users (exit 1 when not)"},
@@ -104,6 +111,14 @@ logged. Superusers only by default; 'system-shell tiers' opens or closes it
 per tier. Neither it nor forwarding is ever open to the engineer tier: a shell
 or a forwarded port on this server would reach its secrets.
 
+'password-cache' lets a tier's shell and console sessions keep the user's network
+password in memory for the session, so a device pull or an ssh to a device asks
+once (off for every tier by default; plain 'tacctl shell' takes --password-cache).
+The password lives only in the session's own process: it is never written to a
+file, and it is forgotten on exit, after the idle time, after the maximum
+lifetime, when the password is changed, when a device refuses it, and with
+'console forget'. It does not protect against root, who can read any process.
+
 Examples:
   tacctl console show
   tacctl console tiers readonly disable
@@ -127,7 +142,8 @@ func (inv *invocation) console(args []string) error {
 		"idle-timeout": inv.consoleIdle, "system-shell": inv.consoleSystemShell, "forwarding": inv.consoleForwarding,
 		"agent-forwarding": inv.consoleSwitch("agent-forwarding"), "ssh-escape": inv.consoleSwitch("ssh-escape"),
 		"space-completion": inv.consoleSpace,
-		"install":          inv.consoleInstall, "remove": inv.consoleRemove, "check": inv.consoleCheck,
+		"password-cache":   inv.consolePasswordCache, "forget": inv.consoleForget,
+		"install": inv.consoleInstall, "remove": inv.consoleRemove, "check": inv.consoleCheck,
 	}
 	switch sub := arg(args, 0); sub {
 	case "", "-h", "--help", "help":
@@ -569,6 +585,88 @@ func tierCSV(l []tier.Tier) string {
 	return strings.Join(s, ",")
 }
 
+// consolePasswordCache is 'console password-cache [tiers [<csv>|none] | idle
+// [<min>] | max [<hours>]]': the password cache's tiers and lifetimes (D70).
+// A session reads them when it starts.
+func (inv *invocation) consolePasswordCache(args []string) error {
+	p, err := inv.consoleParse("password-cache", args)
+	if err != nil {
+		return err
+	}
+	pol, err := inv.consolePolicy()
+	if err != nil {
+		return err
+	}
+	f := pol.File
+	if len(p.Args) == 0 {
+		inv.echo("tiers: " + tierCSV(f.PasswordCacheTiers))
+		inv.echo("idle: " + strconv.Itoa(f.PasswordCacheIdle) + " min")
+		inv.echo("max: " + strconv.Itoa(f.PasswordCacheMax) + " h")
+		return nil
+	}
+	usage := "Usage: tacctl console " + consoleUse("password-cache")
+	switch p.Args[0] {
+	case "tiers":
+		if len(p.Args) == 1 {
+			inv.echo(tierCSV(f.PasswordCacheTiers))
+			return nil
+		}
+		l, err := console.ParsePasswordCacheTiers(p.Args[1])
+		if err != nil {
+			return err
+		}
+		if err := inv.consoleWrite(func(f *console.File) error { f.PasswordCacheTiers = l; return nil }); err != nil {
+			return err
+		}
+		inv.app.Out.Info("The password cache is open to: " + tierCSV(l) + ". It applies from the next console login or 'tacctl shell --password-cache'.")
+		return nil
+	case "idle", "max":
+		isIdle := p.Args[0] == "idle"
+		lo, hi, unit := 1, console.MaxPasswordCacheMax, "hour(s)"
+		cur := f.PasswordCacheMax
+		if isIdle {
+			hi, unit, cur = console.MaxPasswordCacheIdle, "minute(s)", f.PasswordCacheIdle
+		}
+		if len(p.Args) == 1 {
+			inv.echo(strconv.Itoa(cur))
+			return nil
+		}
+		n, err := strconv.Atoi(p.Args[1])
+		if err != nil || n < lo || n > hi || strconv.Itoa(n) != p.Args[1] {
+			return inv.usageErr("Invalid number of "+unit+" '"+p.Args[1]+"': expected "+strconv.Itoa(lo)+"-"+strconv.Itoa(hi)+".", usage)
+		}
+		if err := inv.consoleWrite(func(f *console.File) error {
+			if isIdle {
+				f.PasswordCacheIdle = n
+			} else {
+				f.PasswordCacheMax = n
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+		what := "A cached password is forgotten after " + p.Args[1] + " " + unit + " without a use"
+		if !isIdle {
+			what = "A cached password is forgotten " + p.Args[1] + " " + unit + " after it was cached"
+		}
+		inv.app.Out.Info(what + ". It applies to sessions that start from now on.")
+		return nil
+	}
+	return inv.usageErr(usage)
+}
+
+// consoleForget is 'console forget' run as a tacctl command (from bash, or
+// by a caller whose line did not reach the shell's own word): the cache
+// lives in the process of the shell or the console, which handles the word
+// itself, so there is nothing for this process to forget.
+func (inv *invocation) consoleForget(args []string) error {
+	if _, err := inv.consoleParse("forget", args); err != nil {
+		return err
+	}
+	inv.app.Out.Info("The password cache belongs to the 'tacctl shell' or console session that holds it: type 'console forget' there. Nothing is cached in this process.")
+	return nil
+}
+
 // --- _console-policy ------------------------------------------------------------
 
 // consolePolicyCmd is the hidden '_console-policy' (the Readonly row of the
@@ -642,9 +740,17 @@ func (inv *invocation) consolePolicyLine([]string) error {
 	if enforced != t {
 		gateField = " gate=" + string(enforced)
 	}
+	// The password cache's fields (D70) only when the caller's tier has
+	// it: a line without them reads as off, and a console of an older
+	// tacctl ignores them.
+	cache := ""
+	if pol.PasswordCache(t) {
+		cache = " password_cache=yes pc_idle=" + strconv.Itoa(int(pol.PasswordCacheIdle()/time.Minute)) +
+			" pc_max=" + strconv.Itoa(int(pol.PasswordCacheMax()/time.Hour))
+	}
 	inv.echo("shell=" + shell + " idle=" + strconv.Itoa(pol.File.Idle) + " system_shell=" + yesNo(sys) +
 		" system_shell_path=" + path + " ssh_escape=" + yesNo(pol.SSHEscape()) + " agent=" + yesNo(pol.AgentForwarding()) +
 		" forward=" + yesNo(pol.Forwarding(t)) + " tier=" + string(t) + gateField + " list_max=" + strconv.Itoa(pol.ListMax()) +
-		" space_completion=" + yesNo(pol.SpaceCompletion()))
+		" space_completion=" + yesNo(pol.SpaceCompletion()) + cache)
 	return nil
 }

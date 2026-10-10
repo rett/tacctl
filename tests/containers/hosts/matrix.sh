@@ -43,7 +43,6 @@ done
 for client in ubuntu-noble almalinux-9; do
     run "$client" rotate
 done
-# The engineer tier: 'rollback 0.2.2 --hosts' on a client, and the server's own checks.
-run ubuntu-noble rollback
+# The engineer tier: the server's own checks.
 run ubuntu-noble server
 exit "$failed"

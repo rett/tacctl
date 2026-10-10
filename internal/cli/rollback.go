@@ -1,23 +1,23 @@
 package cli
 
 // 'tacctl rollback <version> [--apply] [--yes] [--hosts]' (docs/plans/
-// 0.2.3-plan.md D50): prepare tacctl's state for the release before this
-// one. The plan and the conversions of the files are internal/lifecycle's
-// (rollback.go); this is the command around them: the arguments, what is
-// printed, the snapshot, the re-render and the sync of the hosts.
+// 0.2.3-plan.md D50, docs/plans/0.2.4-plan.md D73): prepare tacctl's state
+// for the release before this one (0.2.3). The plan and the conversions of
+// the files are internal/lifecycle's (rollback.go); this is the command
+// around them: the arguments, what is printed, the snapshot and the
+// sudoers installer.
 //
-// It is the superuser's alone (the tier table has no row for it, so the
-// gate refuses every lower tier), and a dry run unless --apply is given.
+// It is the superuser's alone (the tier table has no row for it, so the gate
+// refuses every lower tier), and a dry run unless --apply is given.
 
 import (
 	"errors"
 	"strconv"
-	"strings"
 
 	"github.com/spf13/cobra"
 
-	"github.com/rett/tacctl/internal/hosts"
 	"github.com/rett/tacctl/internal/lifecycle"
+	"github.com/rett/tacctl/internal/tier"
 	"github.com/rett/tacctl/internal/ui"
 )
 
@@ -57,21 +57,21 @@ func (inv *invocation) rollback(args []string) error {
 		return err
 	}
 	// The gate lets only the superuser through; a restricted caller that got
-	// here anyway (a changed table) syncs nothing.
+	// here anyway (a changed table) changes nothing.
 	if f := inv.callerScopes(); f.restricted {
 		return inv.usageErr("'tacctl rollback' is the superuser's. Nothing was changed.")
 	}
 
-	in, err := inv.rollbackInput(withHosts)
-	if err != nil {
-		return err
-	}
+	in := lifecycle.RollbackInput{Paths: a.Paths, Conf: a.Conf(), HasStore: isRegularFile(a.Paths.StoreFile), WithHosts: withHosts,
+		InstallSudoers: func(body, dst string) error {
+			return tier.InstallSudoers(inv.ctx, a.Runner, a.Out.Stdout, a.Out.Stderr, body, dst)
+		}}
 	plan, err := lifecycle.PlanRollback(in)
 	if err != nil {
 		msgs := msgs(err)
 		return inv.usageErr(append(msgs, "Nothing was changed.")...)
 	}
-	inv.printRollbackPlan(version, plan, apply, withHosts)
+	inv.printRollbackPlan(version, plan, apply)
 
 	if !apply {
 		inv.echo("")
@@ -80,15 +80,9 @@ func (inv *invocation) rollback(args []string) error {
 		if plan.NeedsYes() {
 			cmd += " --yes"
 		}
-		if withHosts {
-			cmd += " --hosts"
-		}
 		inv.echo("To convert the state: " + cmd)
 		if plan.NeedsYes() {
 			inv.echo("(--yes says you read the warnings above; --apply refuses without it.)")
-		}
-		if !withHosts {
-			inv.echo("Add --hosts to take the engineers' sudo off the enrolled Linux hosts too.")
 		}
 		return nil
 	}
@@ -99,10 +93,8 @@ func (inv *invocation) rollback(args []string) error {
 
 	inv.echo("")
 	inv.echo(ui.Bold + "Applying." + ui.NC)
-	hostNames := inv.rollbackHostNames(in, withHosts)
-	// The snapshot is of the files the rollback converts; the syncs of the
-	// hosts change none of them.
-	if plan.Pending() {
+	// The snapshot is of the files the rollback converts.
+	if plan.PendingFiles() {
 		if err := inv.snapshotFirst(); err != nil {
 			return err
 		}
@@ -117,67 +109,22 @@ func (inv *invocation) rollback(args []string) error {
 		}
 		return inv.usageErr("The rollback stopped. The files listed above are converted, the others are as they were (the snapshot holds the state before); run the same command again to finish: a file that is converted is not touched again.")
 	}
+	for _, n := range plan.NotWritten() {
+		a.Out.Warn("Not rewritten: " + n + " (the next 'tacctl config sudoers tiers install' or the upgrade to " + version + " writes it)")
+	}
 	if len(done) == 0 {
-		a.Out.InfoE("Nothing to convert: every file is one 0.2.2 can read.")
+		a.Out.InfoE("Nothing to convert: every file is one " + version + " can read.")
 	}
 	inv.loaded = false
 	a.Conf().Reload()
 
-	failed := false
-	if in.HasStore {
-		if err := inv.renderAfterRollback(); err != nil {
-			a.Out.ErrorE("The re-render failed; the files are converted. Run 'tacctl config render --force' and look at 'tacctl config validate'.")
-			failed = true
-		}
-	}
-	if len(hostNames) > 0 {
-		if !inv.syncRevoked(hostNames) {
-			failed = true
-		}
-	}
-	inv.rollbackNextSteps(version, withHosts, failed)
-	a.Logger(inv.ctx, "auth.info", "rollback target="+version+" keys="+strconv.Itoa(len(plan.Keys()))+" hosts="+strconv.Itoa(len(hostNames))+" by="+inv.sudoUser())
-	if failed {
-		return exit(1)
-	}
+	inv.rollbackNextSteps(version)
+	a.Logger(inv.ctx, "auth.info", "rollback target="+version+" keys="+strconv.Itoa(len(plan.Keys()))+" by="+inv.sudoUser())
 	return nil
 }
 
-// rollbackInput is what the plan reads: the settings, the model (or why it
-// cannot be read), the hosts.
-func (inv *invocation) rollbackInput(withHosts bool) (lifecycle.RollbackInput, error) {
-	a := inv.app
-	in := lifecycle.RollbackInput{Paths: a.Paths, Conf: a.Conf(), HasStore: isRegularFile(a.Paths.StoreFile), WithHosts: withHosts, Now: a.Knobs.Now}
-	in.Model, in.ModelErr = inv.model()
-	reg, err := inv.registry()
-	if err != nil {
-		return in, err
-	}
-	for _, e := range reg.Entries() {
-		h := lifecycle.RollbackHost{Name: e.Name, Scope: e.Scope, Local: e.Target == hosts.Local}
-		in.AllHosts = append(in.AllHosts, h)
-		in.Hosts = append(in.Hosts, h)
-	}
-	return in, nil
-}
-
-// rollbackHostNames are the hosts --hosts syncs: every enrolled host but this
-// server's own entry.
-func (inv *invocation) rollbackHostNames(in lifecycle.RollbackInput, withHosts bool) []string {
-	if !withHosts {
-		return nil
-	}
-	var out []string
-	for _, h := range in.Hosts {
-		if !h.Local {
-			out = append(out, h.Name)
-		}
-	}
-	return out
-}
-
 // printRollbackPlan prints the steps, the warnings and the notes.
-func (inv *invocation) printRollbackPlan(version string, plan *lifecycle.RollbackPlan, apply, withHosts bool) {
+func (inv *invocation) printRollbackPlan(version string, plan *lifecycle.RollbackPlan, apply bool) {
 	inv.echo("")
 	title := "Roll back to " + version
 	if !apply {
@@ -217,61 +164,17 @@ func (inv *invocation) printRollbackPlan(version string, plan *lifecycle.Rollbac
 	}
 }
 
-// renderAfterRollback is the re-render of the enabled backends from the
-// store, through the path 'config render' takes (a backend whose files did
-// not change is not restarted).
-func (inv *invocation) renderAfterRollback() error {
-	return inv.app.Backends().ConfigRender(inv.ctx, false)
-}
-
-// syncRevoked syncs the hosts with the script that revokes the engineers'
-// sudo (TAC_REVOKE_ENGINEER=1), host by host through 'host sync', and says
-// which failed. It reports whether every host synced.
-func (inv *invocation) syncRevoked(names []string) bool {
-	a := inv.app
-	inv.revokeEngineer = true
-	defer func() { inv.revokeEngineer = false }()
-	inv.echo("")
-	inv.echo(ui.Bold + "Taking the engineers' sudo off " + strconv.Itoa(len(names)) + " " + map[bool]string{true: "host", false: "hosts"}[len(names) == 1] + "." + ui.NC)
-	var bad []string
-	for _, n := range names {
-		if inv.ctx.Err() != nil {
-			bad = append(bad, n)
-			continue
-		}
-		if err := inv.hostSync([]string{n}); err != nil {
-			if !isExit(err) {
-				inv.reportOnly(err)
-			}
-			bad = append(bad, n)
-		}
-	}
-	if len(bad) > 0 {
-		a.Out.ErrorE("Not synced: " + strings.Join(bad, ", ") + ". Their engineers may still have sudo there. Fix the cause (tacctl host show <name> --check) and run 'tacctl rollback " + lifecycle.RollbackTarget + " --apply --yes --hosts' again (the files are converted once; the hosts are synced again).")
-		return false
-	}
-	return true
-}
-
 // rollbackNextSteps tells the operator what to do next, exactly.
-func (inv *invocation) rollbackNextSteps(version string, withHosts, failed bool) {
+func (inv *invocation) rollbackNextSteps(version string) {
 	inv.echo("")
-	if failed {
-		inv.echo(ui.Red + "The rollback did not finish; fix what is reported above and run the command again before the next steps." + ui.NC)
-		inv.echo("")
-	}
 	inv.echo(ui.Bold + "Next steps" + ui.NC)
 	inv.echo("  1. Install " + version + " with the upgrade (see Upgrading in the README), which switches the clone in " + inv.app.Paths.Deploy + " to the tag, builds it and re-executes it:")
 	inv.echo("       tacctl upgrade --branch " + version)
 	inv.echo("  2. Check it: tacctl status; tacctl config validate")
-	if !withHosts {
-		inv.echo("  3. The enrolled Linux hosts still have the engineers' sudo (the %tac-engineer line, membership of tac-engineer) and " + version + " does not remove it:")
-		inv.echo("     'tacctl rollback " + version + " --apply --hosts' does that, before the upgrade, with this release.")
-	}
 	inv.echo("")
-	inv.echo("Until the upgrade, do not run a command that writes the console's settings, the SNMP settings of a scope, a device location or an engineer sudo list:")
-	inv.echo("it writes the 0.2.3 form again. If one did, run 'tacctl rollback " + version + " --apply' again (it converts what is left).")
+	inv.echo("Until the upgrade, do not run a command that writes the console's settings, a device's SNMP settings or the settings of 'device config pull':")
+	inv.echo("it writes the 0.2.4 form again. If one did, run 'tacctl rollback " + version + " --apply' again (it converts what is left).")
 	inv.echo("")
-	inv.echo("Before upgrading, note the newest entry of 'tacctl backup list' (snapshots are taken before every change; the upgrade adds one only when it records a tier).")
-	inv.echo("That entry is your way back: 'tacctl backup restore <id>' brings back that state and loses what changed since.")
+	inv.echo("The snapshot taken first (the newest entry of 'tacctl backup list') holds the 0.2.4 state. Restore it with 0.2.4 only: 'tacctl backup restore <id>' of this release brings that")
+	inv.echo("state back and loses what changed since; " + version + "'s restore refuses a tacctl.yaml with a key it does not know.")
 }

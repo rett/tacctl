@@ -118,6 +118,12 @@ func NewSchema(backends []string) *Schema {
 			"snmp.timeout": {Type: TypeInt, Min: intp(1), Max: intp(10), Default: 2, HasDefault: true},
 			"snmp.v3.auth": {Type: TypeEnum, Values: []string{"sha", "sha256"}},
 			"snmp.v3.priv": {Type: TypeEnum, Values: []string{"aes128"}},
+			// How 'device config pull|diff' read the devices (0.2.4, D68):
+			// the most devices read at once, the transport and the time one
+			// device may take, connect included.
+			"device.config.max_concurrency": {Type: TypeInt, Min: intp(1), Max: intp(64), Default: 8, HasDefault: true},
+			"device.config.transport":       {Type: TypeEnum, Values: []string{"auto", "netconf", "ssh"}, Default: "auto", HasDefault: true},
+			"device.config.timeout":         {Type: TypeInt, Min: intp(10), Max: intp(600), Default: 90, HasDefault: true},
 		},
 		wildcards: append([]wildcard{
 			{"privileges.", Rule{Type: TypeCiscoCmdList}},

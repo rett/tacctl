@@ -29,6 +29,11 @@ type Cmd struct {
 	// (lib/linux_hosts.sh _host_ssh, _linux_podman).
 	AsUser  string
 	UserEnv []string // KEY=value assignments passed through env(1) with AsUser
+	// Credential, when set, starts the program as that user and groups
+	// (setgroups, setgid and setuid in the child before exec, so no sudo
+	// and nothing of the program's environment or arguments reaches its
+	// log). It takes a process with the right to.
+	Credential *syscall.Credential
 	// Stdout and Stderr, when set, receive the output as it is produced (a
 	// terminal, a live log); Result then holds only what was not streamed.
 	Stdout io.Writer
@@ -112,6 +117,9 @@ func (Real) Start(ctx context.Context, c Cmd) (Process, error) {
 	cmd.Stdin = c.Stdin
 	cmd.Env = c.Env
 	cmd.Dir = c.Dir
+	if c.Credential != nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{Credential: c.Credential}
+	}
 	p := &realProcess{ctx: ctx, cmd: cmd}
 	cmd.Stdout = &p.stdout
 	if c.Stdout != nil {

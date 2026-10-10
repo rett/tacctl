@@ -3,6 +3,339 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.4 (unreleased)
+
+### What changed
+
+1. **`tacctl device config pull` reads what the devices run and compares the
+   sections tacctl manages with what tacctl renders for each device.** Nothing
+   is written to a device. It logs in to each device as the user who invoked
+   tacctl (`SUDO_USER`; root is refused, and so is a caller who is not an active
+   tacctl user with the device's scope, as for `tacctl ssh`) with that user's
+   tacctl password, asked for once on the terminal without echo and never
+   stored, put in an argument or the environment, written to a file or logged
+   (the session's password cache, below, can hold it). The devices are named
+   (`<name>[,<name>...]`) or selected with `--all` (every device of yours) or
+   with `--scope`, `--vendor` and `--stale`, which combine; names and `--all`
+   stand alone. An engineer's selection is their own scopes' devices. A device
+   of vendor `other`, one in no scope and one in a scope you are not in are
+   refused when named and left out, with a note that names them, by a selection;
+   so is a WTI unit, which is not read: named, it is recorded `unsupported` and
+   the run exits 1. A device needs a pinned host key (`device hostkey <name>
+   accept`): an unpinned device is refused with that command, a key that is not
+   the pinned one is `host-key-mismatch` and raises the `hostkey-changed`
+   notice, and nothing is trusted on first use. Junos is read over NETCONF (the
+   ssh subsystem, a `<command>` RPC) where the device answers and over an ssh
+   exec channel otherwise (`--transport auto`, the default; `netconf` and `ssh`
+   never fall back); IOS and IOS-XE are read with `terminal length 0` and `show
+   running-config` over the ssh command line (not lab-tested; a Cisco device is
+   never read over NETCONF, and `--transport netconf` refuses it before any
+   login, leaving its record alone, or as wrong arguments when every selected
+   device is Cisco). From the text six sections are extracted (`aaa`, `roles`,
+   `mgmt-acl`, `snmp`, `netconf`, `breakglass`), compared with what tacctl
+   renders for that device (the same builders as the walkthroughs; a Cisco
+   device with `legacy-ssh` against the IOS 12.x syntax; `--server` and
+   `--source` as for `config <vendor>`) and recorded. A secret (a server key, a
+   community, a hash) is compared by presence only: no output, record or file
+   holds a device's secret value. One line per device (`ok via netconf`, `ok,
+   differs in aaa,snmp via ssh (netconf: port closed)`, `failed: <reason>`),
+   rewritten in place on a terminal and appended otherwise; then `12 ok, 2
+   differ, 1 failed`. `--diff` prints the differences, `--json` one JSON line
+   per device and a summary line, `--timeout <seconds>` bounds one device
+   (10-600, default 90, connect included), `--max-failures <n>` stops starting
+   devices after n failures. At most `device.config.max_concurrency` devices are
+   read at once (default 8; `--concurrency` lowers it, never raises it). The
+   first rejected password stops the batch, so one wrong password is not tried
+   on every device; the first Ctrl-C stops starting devices and lets the running
+   ones finish (the rest are `not started`), a second cuts them off. Exit status
+   0 (differences are not failures), 1 (a device failed or was refused), 2
+   (wrong arguments), 130 (interrupted). Every device is logged (`auth.info
+   device config pull user= device= transport= result= duration=`, never a
+   credential) and an engineer's pull logs the `secret-read` lines the
+   walkthrough logs.
+
+2. **`tacctl device config diff` shows the last pull against what tacctl renders
+   now, per section.** `-` is a rendered statement the device lacks, `+` one it
+   has in a managed hierarchy that tacctl does not render, `!` the same
+   statements in another order (a Junos authentication order or filter terms, a
+   Cisco ACL), `?` a secret the login could not see (a Junos class without the
+   secret permission masks its secrets and omits a server's `secret`: a masked
+   one is present, an omitted one is never `-`), `=` a secret that is present. A
+   section tacctl renders nothing for is `n/a`, with the device's statements
+   listed. `--pull` reads the devices first (with the options of `pull`),
+   `--section <list>` limits the output, `--json` prints an array and
+   `--exit-code` makes a difference exit 2 (a device that could not be compared
+   exits 1). A device never pulled is said so, with the command that reads it.
+   With `--pull` the status follows the pull: a device whose pull failed, or was
+   not started, counts as failed (1) even when the last good pull's diff is
+   printed for it, and an interrupt is 130.
+
+3. **`tacctl device config list` and `forget`, and the records.** A pull keeps,
+   per device, `/var/lib/tacctl/devices-config.json` (when, by whom, over which
+   transport, what the NETCONF probe found, the result, the state of each
+   section; 0600, derived, never snapshotted) and
+   `/var/lib/tacctl/device-config/<name>.yaml` (the managed sections of the last
+   successful pull, secret values elided). `device config list` shows each
+   device's state (`ok`, `differs`, `never`, `failed`) computed against today's
+   rendering, so a change of the store makes a device `differs` without a new
+   pull; `--stale` is `--never`, `--failed` and `--differs` together,
+   `--transport netconf|ssh|none`, `--scope`, `--vendor` and `--json` narrow it.
+   `device config forget <name>[,...]|--all` deletes records (they are derived:
+   a pull makes them again). A failed pull changes the record's result and keeps
+   the sections of the last good one, which `diff` still compares. `device
+   rename` carries a record along; `device remove` and `device import --replace`
+   drop the record and the sections file of the devices they remove.
+
+4. **`device list` has a CONFIG column and `device show` a Configuration row.**
+   The column is the state the last pull recorded (`ok`, `differs`, `never`,
+   `failed`; `-` for a host, a vendor `other`, a WTI unit and a device in no
+   scope) and is `config` in `--json`; the row says when, by whom and over what
+   the device was read, the result and the state of each section (`pulled
+   2026-10-09 14:02 by alice over netconf (hello ok), ok; sections: aaa ok,
+   roles ok, ...`). Both are the operator tier's: a read-only user's `device
+   list` and `device show` (and their JSON) have neither the column nor the row.
+   `device list --stale` keeps its meaning (not seen in the logs for
+   `stale-days`); the configuration's staleness is `device config list --stale`.
+
+5. **`device check` shows a NETCONF row for a Junos device.** What the probe of
+   the device's last pull found (`hello ok`, `port closed`, `no hello`, with the
+   time), or `not probed` and the command that probes it; the check logs in to
+   nothing. It is `netconf` in `--json`. A Cisco device is not read over NETCONF
+   and has no row.
+
+6. **`tacctl config devices` sets how pulls read the devices.**
+   `max-concurrency` (1-64, default 8), `transport` (`auto`, `netconf`, `ssh`)
+   and `timeout` (10-600 seconds, default 90) are the schema's
+   `device.config.max_concurrency`, `.transport` and `.timeout`; with no word it
+   shows them and whether each is set. Superuser only. `--concurrency` above the
+   cap is refused, naming the cap and the verb that raises it.
+
+7. **Tiers: `device config list` and the shell word `console forget` are the
+   operator's, `device config show|pull|diff` and `device snmp` the engineer's,
+   `device config forget` the superuser's.** The gate sees `device config`, so
+   the verb holds each to its tier (`'tacctl device config pull' is not
+   permitted for the operator tier.`, logged as a tier denial; the operator
+   tier's `device config show` refusal now names the verb too). The tiers
+   sudoers drop-in grants the operator `device config list` and `console forget`
+   and the engineer `device config show|pull|diff` and `device snmp *`, and
+   keeps `TACCTL_ASKPASS` for four command lines only: a `Cmnd_Alias` of `device
+   config pull|diff`, `ssh` and `device ssh` (named differently in the group
+   drop-in, since sudoers refuses an alias defined twice) with its own
+   `env_keep` line, so the variable is in the environment of the sudo process
+   and never on sudo's command line (argv is world-readable). The rules are
+   re-rendered by `config sudoers tiers install`, and `upgrade` rewrites an
+   installed drop-in. An engineer's `device config list`, `pull` and `diff`
+   cover the devices of their own scopes; another scope's device is not found.
+
+8. **The shell and the login console can keep your network password in memory
+   for the session, so a pull, a diff and the `ssh` lines after it ask once.**
+   It is off for every tier until `tacctl console password-cache tiers
+   <operator,engineer,superuser|none>` opens it (a read-only user has no pull
+   and is not offered it); the console then has it for those tiers, and a plain
+   `tacctl shell --password-cache` asks the same policy (a caller outside
+   `tac-users` asks for it themselves). `console password-cache idle` is 1-120
+   minutes without a use (default 15; each use restarts it) and `max` 1-24 hours
+   from the moment the password was cached (default 8; use does not extend it);
+   `tiers`, `idle` and `max` are superuser verbs. The settings are
+   `settings.password_cache` in `console.yaml`, written only when one is not the
+   default, and `console show` lists them; the policy line `_console-policy`
+   carries `password_cache=yes pc_idle= pc_max=` for a tier that has the cache
+   (an older console ignores them). The shell says `password cached for this
+   session (console password-cache)` when it keeps a password and `password
+   forgotten (<why>)` when it lets go: after the idle time, the maximum
+   lifetime, `passwd` (or `user passwd`), the shell word `console forget`
+   (operator and up; handled in the session's own process, without sudo), a
+   device's refusal, a clock that went backwards, and the end of the session. It
+   is for the interactive session only: `-c` and batch lines keep no process
+   around and use no cache, and the plain CLI from bash asks per run. When the
+   cache cannot start (memory cannot be locked, a debugger is attached, no
+   private directory is available for its socket, or the policy cannot be read
+   or does not allow the tier) one line says `password cache unavailable:
+   <why>`.
+
+9. **The cache lives in the session's own process and is opened only for the
+   lines that use it, each with a token of its own.** The password is in a
+   locked page of the shell's (or console's) process, which is marked not
+   dumpable before it checks for a tracer, and is zeroed when it is forgotten;
+   no file, log, argument or environment holds it. The process listens on a
+   socket in a private directory (`$XDG_RUNTIME_DIR/tacctl`, else
+   `/run/user/<uid>/tacctl`, else `~/.local/state/tacctl/run`) and is shut
+   between lines. For a line that runs `device config pull`, `device config
+   diff --pull`, `ssh` or `device ssh` (and no other) it makes a token for that line,
+   puts `TACCTL_ASKPASS=<socket>:<token>` in the environment of that line's sudo
+   process and answers the same user or root with that token once, until the
+   line ends, when the token is dead: after the line's one get the token can do
+   nothing but forget, a value read out of an earlier line, or by another
+   process of the user after the line, opens nothing, and a request that was
+   waiting when its line ended is refused. What remains is a process of the same
+   user that reads the line's environment and reaches the socket before that one
+   get. The root side marks its process not dumpable and, as the first thing any
+   verb does, takes `TACCTL_ASKPASS` out of its environment, so no program it
+   starts inherits it.
+
+10. **A pull stores only a password it prompted for, after a device accepted it,
+    and forgets it when one refuses it.** `device config pull` and `diff --pull`
+    ask the session's cache first and prompt on the terminal only when nothing
+    is cached; a password that came from the cache is never stored again, so the
+    maximum lifetime cannot be stretched by use, and a device that refuses a
+    cached password makes it forgotten at once and stops the run. A store never
+    lands after a forget in one run.
+
+11. **`tacctl ssh` uses a cached password for a device with pinned host keys.**
+    ssh is started as the user directly, without sudo, so the token is never a
+    sudo variable or argument and reaches no log, and runs `SSH_ASKPASS` (the
+    tacctl binary; it answers a password prompt and nothing else) with
+    `SSH_ASKPASS_REQUIRE=force`, one password prompt, no configuration file (no
+    `SendEnv`, `ProxyJump` or `Match exec` of the user's) and strict checking of
+    the pinned host key; an option word after `--`, an unpinned device or an
+    account that is not in the local account database keeps the prompt as
+    before. An ssh that ends with status 255 makes the cache forget the
+    password, since a refusal cannot be told from other failures. The audit line
+    says `password=cached` when the cache was used.
+
+12. **`tacctl upgrade` rewrites the drop-in `config sudoers install <group>`
+    wrote with an earlier release.** When the file is exactly the text 0.1.x to
+    0.2.3 wrote for the group its header names, it is replaced by this release's
+    (after `visudo -cf`), so a host that installed it before the password cache
+    keeps `TACCTL_ASKPASS` through sudo: `Updated: sudoers for group <name>`, or
+    a warning and the old file when `visudo` refuses. A file an administrator
+    edited (a rule, a host restriction, extra lines) or that only has a tacctl
+    header is left as it is with `customised`, naming `tacctl config sudoers
+    install <group>`; one that says tacctl wrote it but names no group
+    `config sudoers install` accepts (`[a-zA-Z_][a-zA-Z0-9_-]*`) gets one
+    line, `<file>: not written by tacctl for a group it knows; left alone`; a
+    file that is not tacctl's, a current one and an absent one are left alone
+    and not mentioned.
+
+13. **`tacctl device snmp <name>` gives one device SNMP settings of its own.**
+    `device snmp <name> [show [--reveal] | version v2c|v3 | port <n> | timeout
+    <seconds> | clients list|add|remove <cidr> | community [--stdin] | v3-user
+    <user> [--stdin] | clear]`: a device that its scope's (or the default's)
+    settings do not fit has its own version, agent port, wait, list of allowed
+    clients and credentials. The order is the device's value, then its scope's,
+    then the default's, then the built-in, one setting at a time (the v3 user
+    and both passphrases come from one level, so a user is never joined to
+    passphrases nobody paired with it); a device's list of allowed clients
+    replaces its scope's for that device (the tacctl server's /32 stays first,
+    `0.0.0.0/0` refused last). `community` and `v3-user` make the device's
+    version `v2c` or `v3`, as the scope's verbs do. The non-secret settings are
+    an optional `snmp:` map of the device in `devices.yaml` (`version`, `port`,
+    `timeout`, `clients`), written only when something is set, so a registry
+    that sets none is byte for byte what it was; the credentials are
+    `/etc/tacctl/snmp/devices/<name>.yaml` (the lowercased name, 0600 in a 0700
+    directory, the format of `snmp.yaml`, atomic writes; 0.2.3 never opens the
+    subdirectory). `device remove` and `device import --replace` delete the file
+    and `device rename` moves it; a new device, or a rename onto a name whose
+    file is already there (an earlier device's, kept by a rollback), is refused
+    with the file's path. `device import` and `device export` carry the map: a
+    file without one never drops a device's own, and `device export --json` has
+    it as `snmp`. 0.2.3 refuses a registry that has the map, so a rollback to
+    0.2.3 has to remove it first.
+
+14. **`device show`, `device check`, `scope snmp show`, `device config show` and
+    the walkthrough say which value a device is read with and where it comes
+    from, and every read uses it.** `device show` has an `SNMP` row (`version
+    v2c (scope lab), port 2161 (device), timeout 4 s (scope lab)`, then the
+    credentials as set or not, and the clients), `device check` an `SNMP` and an
+    `SNMP creds` row before the sysName, and both put an `snmp` object (values,
+    `*_from`, never a secret) in `--json`; `device config show` has the same
+    rows in its data block, and the SNMP step of `config <vendor> --name
+    <device>` says `Credentials: this device's own (tacctl device snmp <name>
+    show --reveal).` and `this device's own ranges` when they are. `scope snmp
+    <scope> show` prints the order of resolution and which of the scope's
+    devices have settings of their own (what they set, never a value). The
+    labels are `(device)`, `(scope <scope>)`, `(default)`, `(built-in)` and
+    `(not set)`. `device add`, `device check` and `device location
+    --from-device` read a registered device with its own version, port, timeout
+    and credentials when it has them (`scope snmp <scope> test` and `config snmp
+    test` still try the scope's and the default's), and `device config pull`,
+    `diff` and `list` compare the `snmp` section (and the management filter's
+    SNMP terms) with what tacctl renders for that device with its own values
+    over its scope's; a device whose own credentials file cannot be read fails
+    on its line instead of being compared with its scope's.
+
+15. **Tiers, logging and snapshots for a device's own SNMP settings.** Setting
+    and clearing are the superuser's; an engineer reads `device snmp <name>
+    [show [--reveal]]`, the plain reads of version, port, timeout and `clients
+    list` for the devices of their own scopes, and each `--reveal` (or
+    walkthrough that prints the device's own credentials) is logged as
+    `secret-read kind=snmp-device name=<device> by=<user>`, never the value; an
+    engineer's `--reveal` logs one such line for each level a printed secret
+    comes from (`kind=snmp-device name=<device>`, `kind=snmp name=<scope>`,
+    `kind=snmp-default name=default`). The SNMPv3 user's name is the engineer
+    tier's: `device show` and `device check`, and their `--json`, print `v3 user
+    set` and `v3_user_set` below the engineer tier and the name (`v3_user`) from
+    engineer up. An engineer's `device import` neither sets nor drops a device's
+    own settings (a file that carries a map that differs is refused). Snapshots
+    hold `snmp/devices/` in its modes, and `device snmp <name> community`,
+    `v3-user` and `clear` take the snapshot before the credentials file is
+    written or removed, so it holds the old credential (also for a clear of a
+    file that has no map). `backup restore` makes `snmp/devices/` match the
+    registry it restores, also when the snapshot has no `snmp/` directory
+    (absent means none), so no device file is left that the restored registry
+    has no map for; a snapshot without a registry (0.2.0) leaves them alone. A
+    file that cannot be read can be repaired: `clear` removes the file without
+    parsing it, `community` and `v3-user` replace a file that cannot be parsed
+    and say so, every read that meets one names it and the way out, and `scope
+    snmp <scope> show` lists the device as unreadable instead of skipping it.
+
+16. **`tacctl rollback 0.2.3` prepares the state for 0.2.3, and 0.2.2 is two
+    steps away.** The tool of 0.2.3 (target 0.2.2) is replaced: each release's
+    rollback converts what that release changed, so this one takes `0.2.3` only,
+    as a dry run unless `--apply` (a snapshot first; `--yes` while a setting is
+    dropped). It removes `device.config.max_concurrency`, `.transport` and
+    `.timeout` from `tacctl.yaml` (and any key a 0.2.3 binary does not know),
+    `settings.password_cache` from `console.yaml` (the cache is off again;
+    `tiers.engineer` and `space_completion` are 0.2.3's own and stay) and the
+    `snmp:` map of every device from `devices.yaml` (0.2.3's parser answers
+    `unknown key 'snmp'` and cannot read the registry); it rewrites the tiers
+    sudoers drop-in and the `config sudoers install <group>` drop-in with
+    0.2.3's text, after `visudo -cf`, when the file is exactly this release's
+    text (an edited file, or one `visudo` refuses, is left and named; 0.2.3's
+    upgrade rewrites the tiers file itself). It leaves, and lists,
+    `snmp/devices/` (0.2.3 never opens the subdirectory), the records of the
+    pulls in `/var/lib/tacctl` (`devices-config.json`, `device-config/`:
+    derived, never snapshotted; `device config forget --all` before the rollback
+    deletes them), `store.yaml` and the rendered backend files, and re-renders
+    and restarts nothing. `--hosts` is accepted and says no host needs anything.
+    `rollback 0.2.2` is refused with the way there: this rollback, `tacctl
+    upgrade --branch 0.2.3`, then 0.2.3's own `rollback 0.2.2` (so the 0.2.2
+    conversions, the tier marker, the SNMP credentials directory and the
+    `--hosts` sync of the engineers' sudo are that release's tool). The snapshot
+    holds the 0.2.4 form: restore it with 0.2.4, not with 0.2.3. Rolling back,
+    then: dry run `tacctl rollback 0.2.3`, `tacctl rollback 0.2.3 --apply
+    --yes`, `tacctl upgrade --branch 0.2.3`; until the install, a command that
+    writes the console's settings, a device's SNMP settings or `config devices`
+    writes the 0.2.4 form again, and a second `--apply` converts it. (The real
+    0.2.3 release, built from its tag, is run against the state before and after
+    in the test suite.)
+
+17. **Test builds only: `tacctl _fake-device` and two knobs.** A `-tags
+    testknobs` build (`make build`) has a hidden verb that runs the fake device
+    of `internal/devssh/fakedev` on loopback, and `TACCTL_TEST_DEVICE_DIAL` (a
+    loopback `host:port` every device is dialled at) and
+    `TACCTL_TEST_DEVICE_PASSWORD` (the password a pull logs in with); the bats
+    files of the device configuration verbs run against them. The installed
+    binary has neither the verb, the fake device nor the variables' names.
+
+18. **A device's own SNMP credentials count only while the device has an `snmp:`
+    map.** The map gates the file `snmp/devices/<name>.yaml`: a file with no map
+    beside it (what a rollback to 0.2.3 leaves, or a stray) is ignored by the
+    lookups, the walkthroughs, `device show`, `device check`, the pull's
+    expected configuration and `scope snmp show`, and is not parsed. `device show`
+    and `device snmp <name> show` say once that it is present and ignored, with
+    `clear` as the way out; giving the device settings brings it into force
+    again and the verb says so, and `community` and `v3-user` replace it
+    instead of carrying its other half. A device that has a v3 user in an ignored
+    file under a v2c scope is therefore read with the scope's settings, not with
+    its own credentials under the scope's version.
+
+19. **`tacctl uninstall` removes the device records of `/var/lib/tacctl`.** The
+    seen cache (`devices-seen.json`), the records of the configuration pulls
+    (`devices-config.json`, `device-config/`) and their lock files go with the
+    rest, so the directory itself is removed when nothing of anyone else's is in
+    it; they held excerpts of each device's configuration (secret values elided).
+
 ## 0.2.3 (2026-10-09)
 
 ### What changed

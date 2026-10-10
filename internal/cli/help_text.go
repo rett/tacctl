@@ -21,10 +21,10 @@ Commands:
       -y, --yes                         Answer yes to the confirmations
   upgrade [--branch <name>]             Pull latest source, rebuild, update scripts and every enabled backend
   uninstall [-y|--yes]                  Remove tacctl, its backends' services and all associated files
-  rollback <version> [options]          Prepare the state for the release before this one (0.2.2): a dry run unless --apply
-      --apply                           Take a snapshot, then convert the files 0.2.2 cannot read and re-render
+  rollback <version> [options]          Prepare the state for the release before this one (0.2.3): a dry run unless --apply
+      --apply                           Take a snapshot, then convert the files 0.2.3 cannot read (tacctl.yaml, console.yaml, devices.yaml, sudoers)
       --yes                             Acknowledge the warnings that --apply refuses to go on without
-      --hosts                           Also take the engineers' sudo off the enrolled Linux hosts
+      --hosts                           Accepted; the hosts need nothing for this target (no host is synced)
   status                                Show service health, stats, and recent errors (per backend)
   passwd                                Change your own password (asks for the current one)
   user <subcommand>                     User management (list, add, remove, passwd, scope, ...)
@@ -39,6 +39,7 @@ Commands:
       -c <line>                         Run one line and exit
       --no-history                      Keep no history file for this session
       --space-completion on|off         A typed space completes a fixed word and never doubles (default on)
+      --password-cache                  Keep your network password in this shell's memory (when your tier's policy allows)
   console <subcommand>                  Login console: tiers, per-user overrides, settings (show, tiers, user, ...)
   backend <subcommand>                  Auth backends: list, status, enable <id>, disable <id>
   store <subcommand>                    The canonical store: show, import, rollback
@@ -406,6 +407,7 @@ Subcommands:
       --snmp-location <text>           (cisco, juniper, wti) The SNMP location for this paste; not stored (a device's own: tacctl device location)
   linux   build|script|remove-script|uid|builds  TACACS+ or RADIUS login for Linux hosts (install/removal scripts)
   snmp    show|community|v3-user|port|timeout|clear|test  SNMP for the name hint of 'device add' (sysName)
+  devices [show|max-concurrency|transport|timeout] [value]  How 'device config pull' reads the devices (default 8 at once, auto, 90 s)
   branch [name]                        Show or change the tacctl repo branch
 
 Examples:

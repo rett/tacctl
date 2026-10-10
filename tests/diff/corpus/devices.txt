@@ -244,3 +244,107 @@ config juniper --scope nosuch
 config cisco
 config juniper --scope lab
 config wti --protocol radius
+
+# --- device configuration reads (0.2.4): usage and refusals that need no device -----
+# The runner has no device to log in to and no SUDO_USER: the verbs that log in
+# are refused first with the account rule, the rest by their own arguments.
+@fixture tacquito.multiscope.yaml
+@known 0.2.4 item 1: device config lists pull, diff, list and forget
+device config
+@known 0.2.4 item 1: device config lists pull, diff, list and forget
+device config help
+@known 0.2.4 item 1: device config pull is new
+device config pull
+@known 0.2.4 item 1: device config pull is new
+device config pull --all
+@known 0.2.4 item 1: device config pull is new
+device config pull --all --stale
+@known 0.2.4 item 1: device config pull is new
+device config pull nosuch --bogus
+@known 0.2.4 item 1: device config pull is new
+device config pull --all --concurrency 0
+@known 0.2.4 item 2: device config diff is new
+device config diff
+@known 0.2.4 item 2: device config diff is new
+device config diff nosuch
+@known 0.2.4 item 2: device config diff is new
+device config diff nosuch --transport ssh
+@known 0.2.4 item 2: device config diff is new
+device config diff --all --section bogus
+@known 0.2.4 item 2: device config diff is new
+device config diff --all
+@known 0.2.4 item 3: device config list is new
+device config list
+@known 0.2.4 item 3: device config list is new
+device config list --json
+@known 0.2.4 item 3: device config list is new
+device config list --vendor other
+@known 0.2.4 item 3: device config list is new
+device config list --scope nosuch
+@known 0.2.4 item 3: device config forget is new
+device config forget
+@known 0.2.4 item 3: device config forget is new
+device config forget nosuch
+@known 0.2.4 item 3: device config forget is new
+device config forget --all
+@known 0.2.4 item 3: device config forget is new
+device config frob
+@known 0.2.4 item 4: device list has a CONFIG column; device show a Configuration row
+device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device list
+@known 0.2.4 item 4: device list has a CONFIG column; device show a Configuration row; 0.2.4 item 14: device show has the SNMP rows
+device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device show core-sw1
+@known 0.2.4 item 4: device list has a CONFIG column; device show a Configuration row
+device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device list --json
+@known 0.2.4 item 6: config devices is new
+config devices
+@known 0.2.4 item 6: config devices is new
+config devices show
+@known 0.2.4 item 6: config devices is new
+config devices max-concurrency 16 ;; config devices
+@known 0.2.4 item 6: config devices is new
+config devices max-concurrency 0
+@known 0.2.4 item 6: config devices is new
+config devices max-concurrency 65
+@known 0.2.4 item 6: config devices is new
+config devices transport pigeon
+@known 0.2.4 item 6: config devices is new
+config devices timeout 9
+@known 0.2.4 item 6: config devices is new
+config devices frob
+@known 0.2.4 item 6: the config usage lists devices
+config
+
+# --- a device's own SNMP settings (0.2.4, D72) -----------------------------------------
+# A registry that sets none is what 0.2.3 wrote and prints: the export and the
+# registry file compare in full. 'device snmp' and the SNMP rows are new.
+device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device export
+device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device export --csv
+device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device export --json
+@known 0.2.4 item 13: device snmp is new
+device snmp
+@known 0.2.4 item 13: device snmp is new
+device snmp nosuch
+@known 0.2.4 item 13: device snmp is new
+device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device snmp core-sw1
+@known 0.2.4 item 13: device snmp is new
+device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device snmp core-sw1 show --reveal
+@known 0.2.4 item 13: device snmp is new
+device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device snmp core-sw1 version v1
+@known 0.2.4 item 13: device snmp is new
+device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device snmp core-sw1 port 0
+@known 0.2.4 item 13: device snmp is new
+device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device snmp core-sw1 timeout 11
+@known 0.2.4 item 13: device snmp is new
+device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device snmp core-sw1 clients add 0.0.0.0/0
+@known 0.2.4 item 13: device snmp is new
+device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device snmp core-sw1 bogus
+@known 0.2.4 item 13: device snmp is new
+device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device snmp core-sw1 version v3 ;; device snmp core-sw1 port 2161 ;; device snmp core-sw1 clients add 192.0.2.0/24 ;; device snmp core-sw1 show
+@known 0.2.4 item 13: device snmp is new
+device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device snmp core-sw1 community --stdin <<< dev-community-1 ;; device snmp core-sw1 show --reveal
+@known 0.2.4 item 13: device snmp is new
+device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device snmp core-sw1 version v3 ;; device snmp core-sw1 clear ;; device export
+@known 0.2.4 item 13: device snmp is new
+device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device snmp core-sw1 community --stdin <<< dev-community-1 ;; device rename core-sw1 dc1-core1 ;; device snmp dc1-core1 show --reveal ;; device remove dc1-core1 -y
+@known 0.2.4 item 13: the registry has the snmp map; 0.2.4 item 14: device show has the SNMP rows and scope snmp show says the order
+device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device snmp core-sw1 version v2c ;; device show core-sw1 ;; scope snmp lab show

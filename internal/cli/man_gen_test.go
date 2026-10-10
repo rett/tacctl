@@ -139,6 +139,13 @@ func manCommandBlocks(t *testing.T) []manBlock {
 		if note, ok := tierNotes[p[0]+" "+sub]; ok {
 			req += " " + roff(upperFirst(strings.TrimPrefix(note, p[0]+" "+sub+": ")))
 		}
+		// The gate sees 'device config'; each of its verbs holds its own tier.
+		if need, ok := deviceConfigNeeds[strings.TrimPrefix(words, "device config ")]; ok && len(p) == 3 && p[0] == "device" && p[1] == "config" {
+			req = `Requires: \fB` + string(need) + `\fR.`
+			if need == tier.Engineer {
+				req += " An engineer gets the devices of their own scopes only."
+			}
+		}
 		l = append(l, req)
 		if spec, ok := specFor(p); ok && len(spec.Flags) > 0 {
 			var cands []string
@@ -209,6 +216,11 @@ var manFlagOverrides = map[string]string{
 	"device remove --all":            "Remove every device (an engineer: those of their own scopes).",
 	"device check --all":             "Check every device.",
 	"device discover --all":          "Also list the addresses that were only refused.",
+	"device config forget --all":     "Every record, and the stored sections of every device (one of a device that is no longer registered too).",
+	"device config pull --server":    "The address the devices are told to authenticate against, for devices behind a translating firewall (not stored).",
+	"device config pull --source":    "The address this server reaches the devices from (not stored).",
+	"device config diff --server":    "The address the devices are told to authenticate against (with --pull; not stored).",
+	"device config diff --source":    "The address this server reaches the devices from (with --pull; not stored).",
 	"device add --hostname":          "The device's DNS name.",
 	"device add --description":       "A description of the device.",
 	"device ssh -X":                  "Forward X11 to this server's display (untrusted, as ssh -X).",
@@ -343,6 +355,9 @@ var manKeyDocs = map[string]struct{ verb, desc string }{
 	"snmp.timeout":                         {setWith("config snmp timeout"), "Seconds to wait for an answer (one retry)."},
 	"snmp.v3.auth":                         {setWith("config snmp v3-user"), "Authentication protocol of the v3 user."},
 	"snmp.v3.priv":                         {setWith("config snmp v3-user"), "Privacy protocol of the v3 user."},
+	"device.config.max_concurrency":        {setWith("config devices max-concurrency"), "The most devices device config pull reads at once; --concurrency can lower it for a run, never raise it."},
+	"device.config.transport":              {setWith("config devices transport"), "How device config pull reads a device: NETCONF where it answers and the ssh command line otherwise (auto), NETCONF only, or ssh only."},
+	"device.config.timeout":                {setWith("config devices timeout"), "Seconds one device may take in a pull, connect included."},
 	"privileges.<group>":                   {setWith("group privilege"), "The Cisco priv-exec commands the group's level may run; unset: the shipped list."},
 	"commands.<group>":                     {setWith("group commands"), "The group's command rules, in order, ending in the catch-all; unset: the shipped rules."},
 	"aaa.order.<scope>":                    {setWith("scope aaa-order"), "Order of the methods in the Cisco aaa lines and the Junos authentication-order the scope's configurations emit."},

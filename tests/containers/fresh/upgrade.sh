@@ -1,8 +1,8 @@
 #!/bin/bash
-# The way from the release before this one: a 0.2.2 server (the README
-# one-liner on the 0.2.2 commit), some state made with its own tacctl (users,
+# The way from the release before this one: a 0.2.3 server (the README
+# one-liner on the 0.2.3 commit), some state made with its own tacctl (users,
 # groups, a scope, a device, the role preset), then 'tacctl upgrade' to this
-# working tree, then 'tacctl rollback 0.2.2 --apply --yes' and the 0.2.2
+# working tree, then 'tacctl rollback 0.2.3 --apply --yes' and the 0.2.3
 # binary reading the converted state. Rootless podman, an ubuntu:noble
 # container with systemd (the image of fresh/run.sh), nothing on this machine
 # touched outside podman and a temp dir.
@@ -23,7 +23,7 @@
 # shellcheck disable=SC2016  # the single-quoted scripts run inside the container
 set -uo pipefail
 export LC_ALL=C
-FROM="0.2.2"; KEEP=""
+FROM="0.2.3"; KEEP=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --from) FROM="${2:?--from needs a tag}"; shift 2 ;;
@@ -93,7 +93,7 @@ q "tacctl user add alice superuser --hash '${H}' --scopes lab; tacctl user add e
 q "tacctl device add sw1 192.0.2.10 --vendor cisco --no-host-key; tacctl device add rt1 192.0.2.11 --vendor juniper --no-host-key" | tail -2
 q 'tacctl config validate' | tail -2
 q 'tacctl user list' > "${WORK}/users.before"; cat "${WORK}/users.before"
-q 'tacctl device list' > "${WORK}/devices.before"
+q 'tacctl device export' > "${WORK}/devices.before"
 q 'tacctl group list' > "${WORK}/groups.before"
 q 'tacctl config cisco --scope lab' > "${WORK}/cisco.before"
 q 'sha256sum /etc/tacctl/store.yaml' > "${WORK}/store.before"
@@ -112,8 +112,8 @@ out=$(q 'tacctl config validate'); rc=$?; echo "$out" | tail -4
 if [[ $rc == 0 ]]; then ok "config validate"; else bad "config validate (exit ${rc})"; fi
 q 'tacctl user list' > "${WORK}/users.after"
 if diff "${WORK}/users.before" "${WORK}/users.after" > "${WORK}/users.diff"; then ok "user list is as before the upgrade"; else bad "user list is as before the upgrade"; cat "${WORK}/users.diff"; fi
-q 'tacctl device list' > "${WORK}/devices.after"
-if diff "${WORK}/devices.before" "${WORK}/devices.after" > /dev/null; then ok "device list is as before the upgrade"; else bad "device list is as before the upgrade"; diff "${WORK}/devices.before" "${WORK}/devices.after"; fi
+q 'tacctl device export' > "${WORK}/devices.after"
+if diff "${WORK}/devices.before" "${WORK}/devices.after" > /dev/null; then ok "the registry is as before the upgrade"; else bad "the registry is as before the upgrade"; diff "${WORK}/devices.before" "${WORK}/devices.after"; fi
 check "the store still verifies alice's password hash form (user show alice)" 'tacctl user show alice'
 out=$(q 'tacctl config cisco --scope lab'); rc=$?
 if [[ $rc == 0 ]]; then ok "config cisco --scope lab renders"; else bad "config cisco --scope lab renders (exit ${rc})"; fi
@@ -124,34 +124,37 @@ if [[ $rc == 0 ]] && ! grep -q 'Building' <<< "$out"; then ok "a second upgrade 
 out=$(q 'tacctl console check'); rc=$?; echo "$out" | tail -8
 echo "(console check exit ${rc}; no console is installed by the upgrade alone)"
 
-section "0.2.3-only settings, then ${FROM}'s own binary on the state (it refuses them)"
-q 'tacctl config linux engineer-sudo /usr/bin/systemctl' | tail -1
-q 'tacctl console space-completion off' | tail -1
-check "tacctl.yaml has linux.engineer_sudo and console.yaml settings.space_completion" 'grep -q engineer_sudo /etc/tacctl/tacctl.yaml && grep -q space_completion /etc/tacctl/console.yaml'
+section "0.2.4-only settings, then ${FROM}'s own binary on the state (it refuses them)"
+q 'tacctl config devices max-concurrency 16' | tail -1
+q 'tacctl console password-cache tiers engineer' | tail -1
+q 'tacctl device snmp sw1 port 2161' | tail -1
+check "tacctl.yaml has device.config, console.yaml settings.password_cache and devices.yaml a device's snmp map" 'grep -q max_concurrency /etc/tacctl/tacctl.yaml && grep -q password_cache /etc/tacctl/console.yaml && grep -q "snmp:" /etc/tacctl/devices.yaml'
 # The release binary of the tag, built from the commit in the clone (vendored modules).
 out=$(q "mkdir -p /tmp/old && git -C /opt/tacctl archive ${OLD} | tar -x -C /tmp/old && cd /tmp/old && /usr/local/go/bin/go build -trimpath -buildvcs=false -o /tmp/tacctl-old ./cmd/tacctl && /tmp/tacctl-old version"); rc=$?
 echo "$out" | tail -3
 if [[ $rc == 0 ]]; then ok "${FROM} built from its commit"; else bad "${FROM} built from its commit (exit ${rc})"; fi
 out=$(q '/tmp/tacctl-old config validate'); rc=$?
 echo "$out" | tail -4
-if [[ $rc != 0 ]] || grep -qiE 'engineer_sudo|unknown' <<< "$out"; then ok "${FROM}'s config validate reports the 0.2.3 key before the rollback"; else bad "${FROM}'s config validate reports the 0.2.3 key before the rollback (exit ${rc})"; fi
+if [[ $rc != 0 ]] || grep -qiE 'max_concurrency|unknown' <<< "$out"; then ok "${FROM}'s config validate reports the 0.2.4 key before the rollback"; else bad "${FROM}'s config validate reports the 0.2.4 key before the rollback (exit ${rc})"; fi
 out=$(q '/tmp/tacctl-old console show'); rc=$?
 echo "$out" | tail -3
 if [[ $rc != 0 ]]; then ok "${FROM}'s console show refuses console.yaml before the rollback"; else bad "${FROM}'s console show refuses console.yaml before the rollback"; fi
+out=$(q '/tmp/tacctl-old device list'); rc=$?
+if [[ $rc != 0 ]]; then ok "${FROM}'s device list refuses devices.yaml before the rollback"; else bad "${FROM}'s device list refuses devices.yaml before the rollback"; fi
 
 section "tacctl rollback ${FROM}"
 out=$(q "tacctl rollback ${FROM}"); rc=$?
 echo "$out" | head -40
 if [[ $rc == 0 ]] && grep -q 'This was a dry run: nothing was changed.' <<< "$out"; then ok "rollback ${FROM}: the dry run exits 0 and changes nothing"; else bad "rollback ${FROM}: the dry run (exit ${rc})"; fi
-check "the dry run left tacctl.yaml and console.yaml as they were (both still hold the 0.2.3 settings)" 'grep -q engineer_sudo /etc/tacctl/tacctl.yaml && grep -q space_completion /etc/tacctl/console.yaml'
+check "the dry run left the three files as they were (all still hold the 0.2.4 settings)" 'grep -q max_concurrency /etc/tacctl/tacctl.yaml && grep -q password_cache /etc/tacctl/console.yaml && grep -q "snmp:" /etc/tacctl/devices.yaml'
 out=$(q "tacctl rollback ${FROM} --apply --yes"); rc=$?
 echo "$out" | tail -25
 if [[ $rc == 0 ]]; then ok "rollback ${FROM} --apply --yes exits 0"; else bad "rollback ${FROM} --apply --yes (exit ${rc})"; fi
-check "tacctl.yaml no longer has linux.engineer_sudo, console.yaml no longer has space_completion" '! grep -q engineer_sudo /etc/tacctl/tacctl.yaml && ! grep -q space_completion /etc/tacctl/console.yaml'
+check "the three files no longer have the 0.2.4 settings" '! grep -q max_concurrency /etc/tacctl/tacctl.yaml && ! grep -q password_cache /etc/tacctl/console.yaml && ! grep -q "snmp:" /etc/tacctl/devices.yaml'
 check "a snapshot of the state before was taken (tacctl backup list)" 'tacctl backup list | grep -qi .'
 section "${FROM}'s own binary on the converted state"
 out=$(q '/tmp/tacctl-old config validate'); rc=$?; echo "$out" | tail -6
-if ! grep -qiE 'engineer_sudo|unknown key' <<< "$out"; then ok "${FROM}'s config validate no longer reports a key it does not know (exit ${rc}: the rendered config may be out of date until its own config render)"; else bad "${FROM}'s config validate still reports a key it does not know"; fi
+if ! grep -qiE 'max_concurrency|unknown key' <<< "$out"; then ok "${FROM}'s config validate no longer reports a key it does not know (exit ${rc}: the rendered config may be out of date until its own config render)"; else bad "${FROM}'s config validate still reports a key it does not know"; fi
 out=$(q '/tmp/tacctl-old console show'); rc=$?
 if [[ $rc == 0 ]]; then ok "${FROM}'s console show reads console.yaml"; else bad "${FROM}'s console show reads console.yaml (exit ${rc}): $(tr '\n' ' ' <<< "$out" | cut -c1-200)"; fi
 q '/tmp/tacctl-old user list' > "${WORK}/users.old"

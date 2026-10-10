@@ -1,16 +1,19 @@
 package conf
 
-// What a rollback to 0.2.2 (docs/plans/0.2.3-plan.md D50) takes out of
-// tacctl.yaml: every key family 0.2.3 added, and any other key a 0.2.2
-// binary does not know. 0.2.2's 'backup restore' refuses a snapshot whose
-// tacctl.yaml has a key its schema lacks, and its 'config validate' reports
-// one, so the keys have to go before the old release is installed.
+// What a rollback takes out of tacctl.yaml (docs/plans/0.2.3-plan.md D50 for
+// 0.2.3's tool, docs/plans/0.2.4-plan.md D73 for 0.2.4's): the key families
+// the release being left added, and any other key the older binary does not
+// know. 0.2.2's 'backup restore' refuses a snapshot whose tacctl.yaml has a
+// key its schema lacks, and 0.2.3's 'config validate' reports one, so the
+// keys have to go before the old release is installed.
 //
-// The two tables below are the whole knowledge: Known022 lists every key
-// family the schema of 0.2.2 has, Added023 every family 0.2.3 added. A test
+// The tables below are the whole knowledge: Known022 lists every key
+// family the schema of 0.2.2 has, Added023 every family 0.2.3 added and
+// Added024 every one 0.2.4 added. What 0.2.3 knows is Known022 and Added023
+// together (Unknown023), what 0.2.4 added is Added024. A test
 // (rollback_test.go) holds them to the current schema, so a key family added
 // to schema.go without a decision here fails the build, and, where the 0.2.2
-// tag is in the repository, to the schema of that tag.
+// and 0.2.3 tags are in the repository, to the schemas of those tags.
 
 import (
 	"os"
@@ -78,6 +81,19 @@ var Added023 = []Family{
 	{"breakglass_scope.", true},
 }
 
+// Added024 are the key families 0.2.4 added: 'device config pull|diff' read
+// them (device.config.*). A 0.2.2 binary does not know them either (they
+// are outside Known022, so Unknown022 reports them); 'tacctl rollback 0.2.3'
+// removes exactly these.
+var Added024 = []Family{
+	{"device.config.max_concurrency", false},
+	{"device.config.transport", false},
+	{"device.config.timeout", false},
+}
+
+// Added024Key reports whether path is a key 0.2.4 added.
+func Added024Key(path string) bool { return inFamilies(Added024, path) }
+
 // Matches reports whether the dotted path is in the family: the key itself,
 // or, for a prefix family, the family's own key (the prefix without its
 // dot) or anything under it.
@@ -104,6 +120,45 @@ func Unknown022(path string) bool {
 		return false
 	}
 	return !inFamilies(Known022, path)
+}
+
+// Unknown023 reports whether a tacctl 0.2.3 binary does not know the key at
+// path: a family 0.2.4 added, or a key that is in no table (the current
+// schema does not know it either). The listeners are one section, checked
+// as a whole, and are the same in all three releases.
+func Unknown023(path string) bool {
+	if path == "listeners" || strings.HasPrefix(path, "listeners.") {
+		return false
+	}
+	return !inFamilies(Known022, path) && !inFamilies(Added023, path)
+}
+
+// RollbackKeys023 are the leaf keys of the overrides that a 0.2.3 binary
+// does not know, in file order: the dotted path of each (the device.config
+// keys of 0.2.4, and any key neither release knows). A mapping that holds
+// nothing yields no key.
+func (c *Config) RollbackKeys023() []string {
+	var out []string
+	walkLeaves(c.Overrides(), "", func(p string, _ any) {
+		if c.unknown023(p) {
+			out = append(out, p)
+		}
+	})
+	return out
+}
+
+// unknown023 is Unknown023 with the schema's shape as well, as unknown022
+// is for 0.2.2: a key the current schema does not know (a path too deep or
+// too short for its family, a typo) is not known to 0.2.3 either.
+func (c *Config) unknown023(path string) bool {
+	if Unknown023(path) {
+		return true
+	}
+	if path == "listeners" || strings.HasPrefix(path, "listeners.") {
+		return false
+	}
+	_, ok := c.Schema.RuleFor(path)
+	return !ok
 }
 
 // RollbackKeys022 are the leaf keys of the overrides that a 0.2.2 binary

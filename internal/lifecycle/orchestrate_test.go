@@ -1204,3 +1204,103 @@ func TestUninstallRestoresConsoleShells(t *testing.T) {
 		t.Errorf("shells %q", readFile(t, o.p.ShellsFile))
 	}
 }
+
+// A drop-in 'config sudoers install <group>' wrote before this release is
+// rewritten for the same group (through visudo and install) when it is
+// exactly the text an earlier release wrote, so it keeps the password
+// cache's variable; a file tacctl did not write, a current one and an
+// absent one are left alone, a customised one (a rule an administrator
+// changed, a forged header over another body) is left alone with a warning,
+// and a refusing visudo leaves the old file.
+func TestUpgradeRefreshesTheGroupSudoersItWrote(t *testing.T) {
+	o := newOhost(t)
+	o.cloned()
+	o.run.Func(func(c execx.Cmd) bool { return c.Name == "install" }, func(c execx.Cmd) (execx.Result, error) {
+		data, err := os.ReadFile(c.Args[len(c.Args)-2])
+		if err != nil {
+			return execx.Result{Code: 1}, nil
+		}
+		return execx.Result{}, os.WriteFile(c.Args[len(c.Args)-1], data, 0o440)
+	})
+	file := o.p.SudoersFile
+	head := "# Managed by tacctl. Grants passwordless sudo on /usr/local/bin/tacctl\n" +
+		"# to members of group 'wheel'. Remove with: tacctl config sudoers remove\n"
+	envKeep := "Defaults!/usr/local/bin/tacctl env_keep += \"SSH_AUTH_SOCK TACCTL_CONSOLE DISPLAY\"\n"
+	rule := "%wheel ALL=(ALL) NOPASSWD: /usr/local/bin/tacctl\n"
+	v023 := head + envKeep + rule
+	v020 := head + rule
+	const sayings = "sudoers for group"
+
+	// Absent: never created, not mentioned.
+	if code := upgrade(o); code != 0 {
+		t.Fatalf("exit %d\n%s\n%s", code, o.stdout, o.stderr)
+	}
+	if exists(file) || strings.Contains(o.text(), sayings) {
+		t.Fatalf("absent file touched:\n%s", o.text())
+	}
+
+	left := func(name, text string, warn bool) {
+		t.Helper()
+		o.write(file, text)
+		if code := upgrade(o); code != 0 {
+			t.Fatalf("%s: exit %d\n%s\n%s", name, code, o.stdout, o.stderr)
+		}
+		if readFile(t, file) != text {
+			t.Errorf("%s: the file was rewritten: %q", name, readFile(t, file))
+		}
+		said := strings.Contains(o.text(), "[WARN]   Not updated: sudoers for group wheel (customised; "+file+" is unchanged; re-run 'tacctl config sudoers install wheel'")
+		if said != warn || (!warn && strings.Contains(o.text(), sayings)) {
+			t.Errorf("%s: warning %v, want %v:\n%s", name, said, warn, o.text())
+		}
+	}
+	// Not tacctl's: untouched, silent.
+	left("foreign", "# my own rules\n%wheel ALL=(ALL) NOPASSWD: /usr/local/bin/tacctl\n", false)
+	// Customised: a changed rule, a host restriction, another group in the
+	// rule, extra lines, a forged header over anything.
+	left("password required", head+envKeep+"%wheel ALL=(ALL) PASSWD: /usr/local/bin/tacctl\n", true)
+	left("host restriction", head+envKeep+"%wheel web1=(ALL) NOPASSWD: /usr/local/bin/tacctl\n", true)
+	left("another group", head+envKeep+"%staff ALL=(ALL) NOPASSWD: /usr/local/bin/tacctl\n", true)
+	left("extra line", v023+"%ops ALL=(ALL) NOPASSWD: ALL\n", true)
+	left("forged header", head+"%wheel ALL=(ALL) NOPASSWD: ALL\n", true)
+	// A header that says tacctl wrote it but names no group it knows (the
+	// install accepts [a-zA-Z_][a-zA-Z0-9_-]* only): left alone, said once.
+	for name, g := range map[string]string{"group with a space": "a b", "dotted group": "ops.team"} {
+		text := strings.Replace(head, "group 'wheel'", "group '"+g+"'", 1) + strings.ReplaceAll(rule, "wheel", g)
+		o.write(file, text)
+		if code := upgrade(o); code != 0 {
+			t.Fatalf("%s: exit %d\n%s\n%s", name, code, o.stdout, o.stderr)
+		}
+		if readFile(t, file) != text || strings.Count(o.text(), "[WARN]   "+file+": not written by tacctl for a group it knows; left alone") != 1 {
+			t.Errorf("%s: %q\n%s", name, readFile(t, file), o.text())
+		}
+	}
+
+	// Exactly an earlier release's text: rewritten for the group it names.
+	for name, text := range map[string]string{"0.2.1-0.2.3": v023, "0.2.0": v020} {
+		o.write(file, text)
+		if code := upgrade(o); code != 0 {
+			t.Fatalf("%s: exit %d\n%s\n%s", name, code, o.stdout, o.stderr)
+		}
+		if !strings.Contains(o.text(), "[INFO]   Updated: sudoers for group wheel") || readFile(t, file) != tier.GroupSudoers("wheel") {
+			t.Fatalf("%s: not rewritten: %q\n%s", name, readFile(t, file), o.text())
+		}
+		if !strings.Contains(readFile(t, file), "TACCTL_ASKPASS") {
+			t.Errorf("%s: the rewritten drop-in has no TACCTL_ASKPASS", name)
+		}
+	}
+
+	// Current: left alone, nothing said.
+	if code := upgrade(o); code != 0 || strings.Contains(o.text(), sayings) {
+		t.Fatalf("exit %d, said something:\n%s", code, o.text())
+	}
+
+	// visudo refuses: the old file stays and a warning says so.
+	o.write(file, v023)
+	o.run.Fail([]string{"visudo"}, 1, "")
+	if code := upgrade(o); code != 0 {
+		t.Fatalf("exit %d\n%s\n%s", code, o.stdout, o.stderr)
+	}
+	if !strings.Contains(o.text(), "[WARN]   Not updated: sudoers for group wheel (visudo validation failed; "+file+" is unchanged)") || readFile(t, file) != v023 {
+		t.Errorf("refused rewrite: %q\n%s", readFile(t, file), o.text())
+	}
+}

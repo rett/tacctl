@@ -44,6 +44,13 @@ const (
 	DefaultListMax     = 40
 	MaxListMax         = 1000
 	DefaultSystemShell = "/bin/bash"
+
+	// The password cache's lifetimes (D70): idle minutes without a use,
+	// and hours from the store.
+	DefaultPasswordCacheIdle = 15
+	MaxPasswordCacheIdle     = 120
+	DefaultPasswordCacheMax  = 8
+	MaxPasswordCacheMax      = 24
 )
 
 // Tiers are the tiers that have a console switch, lowest first. A file
@@ -94,8 +101,18 @@ type File struct {
 	// Junos-style (completes a fixed word, never doubles). Written to the
 	// file only when off (doc); a file without the key reads as on. A 0.2.2
 	// reader rejects the key, and the engineer tier's key too: going back
-	// to 0.2.2 needs the rollback step (TestRollbackToTheOldParser).
+	// to 0.2.2 needed the rollback step of 0.2.3's tool (pinned by
+	// TestRollbackToTheOldParser); 0.2.3 reads both.
 	SpaceCompletion bool
+	// PasswordCacheTiers are the tiers whose shell and console sessions
+	// may keep the user's network password in memory for the session
+	// (docs/plans/0.2.4-plan.md D70); none by default. PasswordCacheIdle is
+	// the minutes without a use and PasswordCacheMax the hours from the
+	// store. The settings.password_cache mapping is written only when one
+	// of the three is not its default. A 0.2.3 reader (and a 0.2.2 one)
+	// rejects the key, and 'tacctl rollback 0.2.3' (Text023) removes it.
+	PasswordCacheTiers                  []tier.Tier
+	PasswordCacheIdle, PasswordCacheMax int
 }
 
 // Defaults is the file that is not there.
@@ -109,6 +126,9 @@ func Defaults() *File {
 		ForwardingTiers:  []tier.Tier{tier.Superuser},
 		ListMax:          DefaultListMax,
 		SpaceCompletion:  true,
+
+		PasswordCacheIdle: DefaultPasswordCacheIdle,
+		PasswordCacheMax:  DefaultPasswordCacheMax,
 	}
 }
 
@@ -125,6 +145,7 @@ func (f *File) Clone() *File {
 	}
 	c.SystemShellTiers = slices.Clone(f.SystemShellTiers)
 	c.ForwardingTiers = slices.Clone(f.ForwardingTiers)
+	c.PasswordCacheTiers = slices.Clone(f.PasswordCacheTiers)
 	return &c
 }
 
@@ -175,6 +196,31 @@ func ParseTiers(csv, what string) ([]tier.Tier, error) {
 	return out, nil
 }
 
+// CacheTiers are the tiers the password cache can be opened to: the ones
+// that log in to devices with their own password (D70). A read-only user
+// has no pull, and the cache is not offered to it.
+var CacheTiers = []tier.Tier{tier.Operator, tier.Engineer, tier.Superuser}
+
+// ParsePasswordCacheTiers is a comma-separated list of tiers, each once,
+// for password-cache tiers; "none" and "" are the empty list.
+func ParsePasswordCacheTiers(csv string) ([]tier.Tier, error) {
+	if csv == "none" || csv == "" {
+		return nil, nil
+	}
+	var out []tier.Tier
+	for _, w := range strings.Split(csv, ",") {
+		t := tier.Tier(w)
+		if !slices.Contains(CacheTiers, t) {
+			return nil, fail("Unknown tier '" + w + "': the password cache can be opened to operator, engineer and superuser.")
+		}
+		if slices.Contains(out, t) {
+			return nil, fail("Tier '" + w + "' is listed twice.")
+		}
+		out = append(out, t)
+	}
+	return out, nil
+}
+
 // ClosedText is the refusal of a Closed tier for system-shell or
 // forwarding.
 func ClosedText(t tier.Tier, what string) string {
@@ -213,6 +259,19 @@ func (f *File) validate() error {
 			}
 			seen[t] = true
 		}
+	}
+	seenPC := map[tier.Tier]bool{}
+	for _, t := range f.PasswordCacheTiers {
+		if !slices.Contains(CacheTiers, t) || seenPC[t] {
+			return fail("settings.password_cache.tiers: invalid or repeated tier '" + string(t) + "'.")
+		}
+		seenPC[t] = true
+	}
+	if f.PasswordCacheIdle < 1 || f.PasswordCacheIdle > MaxPasswordCacheIdle {
+		return fail("settings.password_cache.idle must be 1-" + strconv.Itoa(MaxPasswordCacheIdle) + " (minutes).")
+	}
+	if f.PasswordCacheMax < 1 || f.PasswordCacheMax > MaxPasswordCacheMax {
+		return fail("settings.password_cache.max must be 1-" + strconv.Itoa(MaxPasswordCacheMax) + " (hours).")
 	}
 	for _, t := range Tiers {
 		if _, ok := f.TierOn[t]; !ok {
@@ -366,6 +425,14 @@ func parseSettings(f *File, m *yamlpy.Map) error {
 			default:
 				f.GatewayPorts = b
 			}
+		case "password_cache":
+			m, ok := v.(*yamlpy.Map)
+			if !ok {
+				return fail("settings.password_cache must be a mapping (tiers, idle, max).")
+			}
+			if err := parsePasswordCache(f, m); err != nil {
+				return err
+			}
 		case "system_shell":
 			s, ok := v.(string)
 			if !ok {
@@ -394,6 +461,43 @@ func parseSettings(f *File, m *yamlpy.Map) error {
 			}
 		default:
 			return fail("settings: unknown key '" + k + "'.")
+		}
+	}
+	return nil
+}
+
+func parsePasswordCache(f *File, m *yamlpy.Map) error {
+	for k, v := range m.All() {
+		bad := fail("settings.password_cache: invalid value for '" + k + "'.")
+		switch k {
+		case "tiers":
+			var l []tier.Tier
+			switch x := v.(type) {
+			case nil:
+			case []any:
+				for _, e := range x {
+					s, ok := e.(string)
+					if !ok {
+						return bad
+					}
+					l = append(l, tier.Tier(s))
+				}
+			default:
+				return bad
+			}
+			f.PasswordCacheTiers = l
+		case "idle", "max":
+			n, ok := v.(int)
+			if !ok {
+				return bad
+			}
+			if k == "idle" {
+				f.PasswordCacheIdle = n
+			} else {
+				f.PasswordCacheMax = n
+			}
+		default:
+			return fail("settings.password_cache: unknown key '" + k + "'.")
 		}
 	}
 	return nil
@@ -436,6 +540,15 @@ func (f *File) doc() *yamlpy.Map {
 		// Only when off, so the file of a console that never turned it off
 		// has no key of 0.2.3 beyond the engineer tier's.
 		settings.Set("space_completion", false)
+	}
+	if len(f.PasswordCacheTiers) > 0 || f.PasswordCacheIdle != DefaultPasswordCacheIdle || f.PasswordCacheMax != DefaultPasswordCacheMax {
+		// Only when something is set, so a file that never touched the
+		// cache is the file 0.2.3 wrote.
+		settings.Set("password_cache", yamlpy.NewMap(
+			"tiers", words(f.PasswordCacheTiers),
+			"idle", f.PasswordCacheIdle,
+			"max", f.PasswordCacheMax,
+		))
 	}
 	return yamlpy.NewMap(
 		"version", Version,

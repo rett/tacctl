@@ -166,6 +166,23 @@ var engineerRowCases = map[string]engineerRow{
 		refusedCase("does not exist", "scope snmp prod show --reveal"),
 		refusedCase("does not exist", "scope snmp prod community --stdin"),
 		refusedCase("does not exist", "scope snmp prod clear"))},
+	// The same for the devices of their own scopes (D72): they read, and
+	// every setter and clear is the superuser's; another scope's device, and
+	// an enrolled host, are not a device of theirs to read.
+	"device snmp": {cases: append(cases("device snmp lab-sw", "device snmp lab-sw show", "device snmp lab-sw show --reveal",
+		"device snmp lab-sw clients list", "device snmp lab-sw version", "device snmp lab-sw port", "device snmp lab-sw timeout"),
+		refusedCase("The engineer tier reads a device's SNMP settings", "device snmp lab-sw community --stdin"),
+		refusedCase("The engineer tier reads a device's SNMP settings", "device snmp lab-sw v3-user alice --stdin"),
+		refusedCase("The engineer tier reads a device's SNMP settings", "device snmp lab-sw version v3"),
+		refusedCase("The engineer tier reads a device's SNMP settings", "device snmp lab-sw clients add 192.0.2.0/24"),
+		refusedCase("The engineer tier reads a device's SNMP settings", "device snmp lab-sw clients remove 192.0.2.0/24"),
+		refusedCase("The engineer tier reads a device's SNMP settings", "device snmp lab-sw port 162"),
+		refusedCase("The engineer tier reads a device's SNMP settings", "device snmp lab-sw timeout 3"),
+		refusedCase("The engineer tier reads a device's SNMP settings", "device snmp lab-sw clear"),
+		refusedCase("Device 'prod-sw' not found", "device snmp prod-sw show --reveal"),
+		refusedCase("Device 'prod-sw' not found", "device snmp prod-sw community --stdin"),
+		refusedCase("Device 'prod-sw' not found", "device snmp prod-sw clear"),
+		refusedCase("is an enrolled Linux host", "device snmp web1 show"))},
 }
 
 // watchedFiles are the files of the state directory an engineer never

@@ -5,6 +5,7 @@ package app
 import (
 	"encoding/hex"
 	"fmt"
+	"net"
 	"path/filepath"
 	"strings"
 	"time"
@@ -17,6 +18,16 @@ import (
 // (TACCTL_TEST_NOW, TACCTL_TEST_RANDOM, TACCTL_FAULT, TACCTL_TEST_ROOT; docs/plans/go-rewrite.md
 // 3.6, Decision 17). 'tacctl version --long' prints it.
 const TestKnobs = true
+
+// The device knobs of 'tacctl device config pull' (internal/app/knobs.go).
+// The names are here and nowhere else: a build without the tag has neither
+// the variables nor their spelling.
+const (
+	// EnvTestDeviceDial is the loopback host:port every device is dialled at.
+	EnvTestDeviceDial = "TACCTL_TEST_DEVICE_DIAL"
+	// EnvTestDevicePassword is the password a pull logs in with.
+	EnvTestDevicePassword = "TACCTL_TEST_DEVICE_PASSWORD"
+)
 
 // loadKnobs is the only place the knob variables are read.
 func loadKnobs(env paths.Env) (Knobs, error) {
@@ -55,6 +66,15 @@ func loadKnobs(env paths.Env) (Knobs, error) {
 		}
 		k.proc = v
 	}
+	if v := env.Get(EnvTestDeviceDial); v != "" {
+		host, port, err := net.SplitHostPort(v)
+		ip := net.ParseIP(host)
+		if err != nil || port == "" || (host != "localhost" && (ip == nil || !ip.IsLoopback())) {
+			return Knobs{}, fmt.Errorf("%s=%q: not a loopback host:port (127.0.0.1:2222)", EnvTestDeviceDial, v)
+		}
+		k.dial = v
+	}
+	k.devPass = env.Get(EnvTestDevicePassword)
 	return k, nil
 }
 
