@@ -1,0 +1,22 @@
+{
+  "name": "dev-cisco-reference-12x",
+  "address": "192.0.2.21",
+  "scope": "lab",
+  "vendor": "cisco",
+  "based_on": {
+    "pulled": "2026-10-10T14:02:00Z",
+    "by": "alice",
+    "transport": "ssh",
+    "age_s": 1080,
+    "secrets_visible": true
+  },
+  "status": "consistent",
+  "irregularities": [],
+  "region": [],
+  "after": [],
+  "extras": [],
+  "skipped": [],
+  "withheld": [],
+  "warnings": [],
+  "holds_secret": false
+}

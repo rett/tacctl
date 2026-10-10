@@ -1,0 +1,4 @@
+configure private
+show | compare | no-more
+commit check
+commit confirmed 5 comment "tacctl plan dev-juniper-synthetic-lab-engineer 2026-10-10T14:20Z by alice"

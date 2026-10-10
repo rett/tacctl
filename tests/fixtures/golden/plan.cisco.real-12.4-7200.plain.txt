@@ -1,0 +1,4 @@
+configure terminal
+privilege exec all level 7 monitor capture
+privilege exec level 7 clear mac address-table dynamic
+end

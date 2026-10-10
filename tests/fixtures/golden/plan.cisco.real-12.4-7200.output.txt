@@ -1,0 +1,47 @@
+!!!!! dev-cisco-real-12-4-7200  192.0.2.21  scope lab  cisco (IOS 12.x syntax, TACACS+) !!!!!
+! Based on the pull of 2026-10-10 14:02 by alice over ssh (18 minutes ago; the login could see
+! secrets) and the standard of 2026-10-10 14:20 (tacctl 0.2.5). Lab-tested on IOS 12.4(15) (a 7200
+! emulator); other IOS trains and IOS-XE are written from the references.
+!
+! What is irregular on dev-cisco-real-12-4-7200 (1 item; the paste fixes 1, leaves 0):
+!  1. roles    COSMETIC   missing: the commands of privilege level 7: 2 statements (e.g. privilege
+!                         exec all level 7 monitor capture). Fixed by region lines 3-4.
+! Consistent: aaa, snmp, mgmt-acl. Not planned: netconf, breakglass.
+! Secrets: 2 present on the device, not changed (--secrets pushes them).
+! Note: no enable secret on the device: with AAA on and the server unreachable, a local user with
+! privilege 15 is the only way to level 15.
+! Note: privilege exec all level 7 monitor capture: not on the device, which holds 'privilege exec
+! level 7 monitor' instead, as an image that does not know 'capture' stores it; a device that lost the
+! line looks the same, so it stays missing.
+! The change is live when the paste ends. NOTHING rolls it back by itself. Keep a second terminal
+! logged in at privilege 15 until the end.
+! Paste over ssh, not the console; on a console paste at most twenty lines at a time and watch the
+! echo for '% Invalid'. Pasting the region twice is harmless.
+!
+! Type this first, on dev-cisco-real-12-4-7200, and check the name:   show version | include uptime
+!
+!!!!! PASTE FROM HERE: dev-cisco-real-12-4-7200 !!!!!
+configure terminal
+! roles: the privilege lines of the levels tacctl renders
+privilege exec all level 7 monitor capture
+privilege exec level 7 clear mac address-table dynamic
+end
+!!!!! PASTE TO HERE: dev-cisco-real-12-4-7200 !!!!!
+!
+! If any line printed "% Invalid" or "% Error", stop and paste the back-out below.
+!
+! Check now (nothing rolls this back by itself):
+!   From the tacctl server:   tacctl device config pull dev-cisco-real-12-4-7200 --diff     (roles: ok)
+!   In the second terminal:   open a NEW ssh session to dev-cisco-real-12-4-7200 as yourself, then: terminal length 0, show privilege (must say 15)
+! If both are fine, type this in the pasting session:
+write memory
+!
+! To undo (paste in the second terminal, in configuration mode, before 'write memory' or after):
+!   no privilege exec level 7 clear mac address-table dynamic
+!   no privilege exec all level 7 monitor capture
+!   (on IOS 15.x a removed privilege line may stay as 'privilege exec level <default> <cmd>'
+!    (the command's own default level): harmless)
+!   end
+! Do not: 'write memory' before the check; paste outside the banners; paste into another device;
+! paste on a console more than twenty lines at a time; keep this output in a file after the paste
+! when it holds a secret.

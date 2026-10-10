@@ -1,0 +1,147 @@
+!!!!! dev-cisco-reference-bare  192.0.2.21  scope lab  cisco (IOS-XE and IOS 15 syntax, TACACS+) !!!!!
+! Based on the pull of 2026-10-10 14:02 by alice over ssh (18 minutes ago; the login could see
+! secrets) and the standard of 2026-10-10 14:20 (tacctl 0.2.5). Lab-tested on IOS 12.4(15) (a 7200
+! emulator); other IOS trains and IOS-XE are written from the references.
+! THIS OUTPUT HOLDS THE TACACS+ KEY AND THE SNMP COMMUNITY OF SCOPE lab: do not keep it in a file or a
+! scrollback.
+!
+! What is irregular on dev-cisco-reference-bare (17 items; the paste fixes 15, leaves 2):
+!  1. aaa      ACCESS     missing: AAA is not turned on (aaa new-model). Fixed by region line 3.
+!  2. aaa      ACCESS     missing: tacacs server TACACS: 4 statements (e.g. tacacs server TACACS >
+!                         address ipv4 192.0.2.10). Fixed by region lines 5-8.
+!  3. aaa      ACCESS     missing: the server group LAB-TACACS: server name TACACS (aaa group server
+!                         tacacs+ LAB-TACACS > server name TACACS). Fixed by region line 10.
+!  4. aaa      ACCESS     missing: the default login method list (aaa authentication login default
+!                         local group LAB-TACACS). Fixed by region line 11.
+!  5. aaa      ACCESS     missing: the default exec authorization list (without it every new login
+!                         lands at privilege 1) (aaa authorization exec default local group LAB-TACACS
+!                         if-authenticated). Fixed by region line 12.
+!  6. aaa      COSMETIC   missing: accounting: 5 statements (e.g. aaa accounting exec default
+!                         start-stop group LAB-TACACS). Fixed by region lines 13-17.
+!  7. aaa      ACCESS     missing: command authorization: 4 statements (e.g. aaa authorization
+!                         commands 1 default local group LAB-TACACS). Fixed by region lines 46-49.
+!  8. aaa      ACCESS     missing: the login method of line con 0: login authentication default (line
+!                         con 0 > login authentication default). Follows from 'aaa new-model': lines
+!                         with no login method use the default list.
+!  9. aaa      ACCESS     different: the login method of line vty 0 15: login authentication default
+!                         (the device has: the login method of line vty 0 4: login local) (line vty 0
+!                         15 > login authentication default). Fixed by region line 19.
+! 10. roles    COSMETIC   missing: level 1 may run show running-config (privilege exec level 1 show
+!                         running-config). Fixed by region line 21.
+! 11. roles    COSMETIC   missing: the commands of privilege level 7: 9 statements (e.g. privilege
+!                         exec all level 7 ping). Fixed by region lines 22-30.
+! 12. snmp     MONITORING missing: ip access-list standard TACCTL-SNMP: 3 statements (e.g. ip
+!                         access-list standard TACCTL-SNMP > permit 192.0.2.10). Fixed by region lines
+!                         33-35.
+! 13. snmp     MONITORING missing: an SNMP community (snmp-server community <secret> RO TACCTL-SNMP).
+!                         Fixed by region line 36.
+! 14. snmp     COSMETIC   missing: the SNMP location is Rack 4, DC1 (snmp-server location Rack 4,
+!                         DC1). Fixed by region line 37.
+! 15. snmp     COSMETIC   missing: the SNMP contact is NOC <noc@example.net> (snmp-server contact NOC
+!                         <noc@example.net>). Fixed by region line 38.
+! 16. mgmt-acl ACCESS     missing: ip access-list standard VTY-ACL: 4 statements (e.g. ip access-list
+!                         standard VTY-ACL > permit 192.0.2.10). Fixed by region lines 41-44.
+! 17. mgmt-acl ACCESS     missing: the access-class binding of line vty 0 15 (line vty 0 15 >
+!                         access-class VTY-ACL in). Left to you: the walkthrough's access-class line
+!                         is never part of this output.
+! Not planned: netconf, breakglass.
+! WARNING: the block switches command authorization on ('aaa authorization commands',
+! 'config-commands') with its last lines: from then on every command is authorized by the server, so
+! paste it as a user the server knows (or with local first), and keep the second terminal for the
+! back-out.
+! The change is live when the paste ends. NOTHING rolls it back by itself. Keep a second terminal
+! logged in at privilege 15 until the end.
+! Paste over ssh, not the console; on a console paste at most twenty lines at a time and watch the
+! echo for '% Invalid'. Pasting the region twice is harmless.
+!
+! Type this first, on dev-cisco-reference-bare, and check the name:   show version | include uptime
+!
+!!!!! PASTE FROM HERE: dev-cisco-reference-bare !!!!!
+configure terminal
+! aaa: the server, the group and the method lists tacctl renders
+aaa new-model
+tacacs server TACACS
+ address ipv4 192.0.2.10
+ key lab-secret-0123456789abcdef
+ single-connection
+ timeout 5
+aaa group server tacacs+ LAB-TACACS
+ server name TACACS
+aaa authentication login default local group LAB-TACACS
+aaa authorization exec default local group LAB-TACACS if-authenticated
+aaa accounting exec default start-stop group LAB-TACACS
+aaa accounting commands 1 default start-stop group LAB-TACACS
+aaa accounting commands 5 default start-stop group LAB-TACACS
+aaa accounting commands 7 default start-stop group LAB-TACACS
+aaa accounting commands 15 default start-stop group LAB-TACACS
+line vty 0 4
+ login authentication default
+! roles: the privilege lines of the levels tacctl renders
+privilege exec level 1 show running-config
+privilege exec all level 7 ping
+privilege exec all level 7 traceroute
+privilege exec all level 7 monitor capture
+privilege exec level 7 clear counters
+privilege exec level 7 clear line
+privilege exec level 7 clear ip arp
+privilege exec level 7 clear arp-cache
+privilege exec level 7 clear mac address-table dynamic
+privilege exec level 7 undebug all
+! snmp: the community tacctl renders, retyped as rendered
+ip access-list standard TACCTL-SNMP
+ permit host 192.0.2.10
+ permit 198.51.100.0 0.0.0.255
+ deny any
+snmp-server community lab-ro-community RO TACCTL-SNMP
+snmp-server location Rack 4, DC1
+snmp-server contact NOC <noc@example.net>
+! mgmt-acl: the management access list tacctl renders (its entries and their order)
+ip access-list standard VTY-ACL
+ permit 192.0.2.10 0.0.0.0
+ permit 198.51.100.0 0.0.0.255
+ permit 192.0.2.0 0.0.0.255
+ deny any log
+! aaa: command authorization, last on purpose
+aaa authorization commands 1 default local group LAB-TACACS
+aaa authorization commands 7 default local group LAB-TACACS
+aaa authorization commands 15 default local group LAB-TACACS
+aaa authorization config-commands
+end
+!!!!! PASTE TO HERE: dev-cisco-reference-bare !!!!!
+!
+! If any line printed "% Invalid" or "% Error", stop and paste the back-out below.
+!
+! Check now (nothing rolls this back by itself):
+!   From the tacctl server:   tacctl device config pull dev-cisco-reference-bare --diff     (aaa, roles, snmp and mgmt-acl: ok)
+!   In the second terminal:   open a NEW ssh session to dev-cisco-reference-bare as yourself, then: terminal length 0, show privilege (must say 15)
+! If both are fine, type this in the pasting session:
+write memory
+!
+! To undo (paste in the second terminal, in configuration mode, before 'write memory' or after):
+!   no aaa new-model
+!   line vty 0 4
+!    login local
+!   no ip access-list standard VTY-ACL
+!   no snmp-server contact NOC <noc@example.net>
+!   no snmp-server location Rack 4, DC1
+!   no snmp-server community lab-ro-community
+!   no ip access-list standard TACCTL-SNMP
+!   no privilege exec level 7 undebug all
+!   no privilege exec level 7 clear mac address-table dynamic
+!   no privilege exec level 7 clear arp-cache
+!   no privilege exec level 7 clear ip arp
+!   no privilege exec level 7 clear line
+!   no privilege exec level 7 clear counters
+!   no privilege exec all level 7 monitor capture
+!   no privilege exec all level 7 traceroute
+!   no privilege exec all level 7 ping
+!   no privilege exec level 1 show running-config
+!   (on IOS 15.x a removed privilege line may stay as 'privilege exec level <default> <cmd>'
+!    (the command's own default level): harmless)
+!   no tacacs server TACACS
+!   end
+!   ('no aaa new-model' drops every aaa line but does not restore the login method of the lines:
+!    the lines after it do.)
+! Do not: 'write memory' before the check; paste outside the banners; paste into another device;
+! paste on a console more than twenty lines at a time; keep this output in a file after the paste
+! when it holds a secret.

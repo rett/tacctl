@@ -1,0 +1,62 @@
+{
+  "name": "dev-cisco-real-12-4-7200",
+  "address": "192.0.2.21",
+  "scope": "lab",
+  "vendor": "cisco",
+  "based_on": {
+    "pulled": "2026-10-10T14:02:00Z",
+    "by": "alice",
+    "transport": "ssh",
+    "age_s": 1080,
+    "secrets_visible": true
+  },
+  "status": "needs-change",
+  "irregularities": [
+    {
+      "n": 1,
+      "kind": "missing",
+      "severity": "COSMETIC",
+      "section": "roles",
+      "what": "the commands of privilege level 7: 2 statements",
+      "statement": "e.g. privilege exec all level 7 monitor capture",
+      "action": "Fixed by region lines 3-4.",
+      "fixed": true,
+      "region_lines": [
+        3,
+        4
+      ]
+    }
+  ],
+  "region": [
+    "configure terminal",
+    "! roles: the privilege lines of the levels tacctl renders",
+    "privilege exec all level 7 monitor capture",
+    "privilege exec level 7 clear mac address-table dynamic",
+    "end"
+  ],
+  "after": [
+    "!",
+    "! If any line printed \"% Invalid\" or \"% Error\", stop and paste the back-out below.",
+    "!",
+    "! Check now (nothing rolls this back by itself):",
+    "!   From the tacctl server:   tacctl device config pull dev-cisco-real-12-4-7200 --diff     (roles: ok)",
+    "!   In the second terminal:   open a NEW ssh session to dev-cisco-real-12-4-7200 as yourself, then: terminal length 0, show privilege (must say 15)",
+    "! If both are fine, type this in the pasting session:",
+    "write memory",
+    "!",
+    "! To undo (paste in the second terminal, in configuration mode, before 'write memory' or after):",
+    "!   no privilege exec level 7 clear mac address-table dynamic",
+    "!   no privilege exec all level 7 monitor capture",
+    "!   (on IOS 15.x a removed privilege line may stay as 'privilege exec level \u003cdefault\u003e \u003ccmd\u003e'",
+    "!    (the command's own default level): harmless)",
+    "!   end",
+    "! Do not: 'write memory' before the check; paste outside the banners; paste into another device;",
+    "! paste on a console more than twenty lines at a time; keep this output in a file after the paste",
+    "! when it holds a secret."
+  ],
+  "extras": [],
+  "skipped": [],
+  "withheld": [],
+  "warnings": [],
+  "holds_secret": false
+}

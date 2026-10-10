@@ -1,0 +1,39 @@
+{
+  "name": "dev-cisco-xe-reference-16",
+  "address": "192.0.2.21",
+  "scope": "lab",
+  "vendor": "cisco",
+  "based_on": {
+    "pulled": "2026-10-10T14:02:00Z",
+    "by": "alice",
+    "transport": "ssh",
+    "age_s": 1080,
+    "secrets_visible": true
+  },
+  "status": "consistent",
+  "irregularities": [
+    {
+      "n": 1,
+      "kind": "extra",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "aaa server radius dynamic-author client 192.0.2.7 server-key",
+      "statement": "aaa server radius dynamic-author \u003e client 192.0.2.7 server-key \u003csecret\u003e",
+      "action": "Left alone. To remove it later: client 192.0.2.7 server-key",
+      "fixed": false
+    }
+  ],
+  "region": [],
+  "after": [],
+  "extras": [
+    {
+      "section": "aaa",
+      "text": "aaa server radius dynamic-author \u003e client 192.0.2.7 server-key",
+      "remove": "client 192.0.2.7 server-key"
+    }
+  ],
+  "skipped": [],
+  "withheld": [],
+  "warnings": [],
+  "holds_secret": false
+}
