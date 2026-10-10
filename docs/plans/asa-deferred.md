@@ -30,10 +30,10 @@
 3. **The ASA's SNMP hosts:** the ASA polls only from listed `snmp-server host` entries; the walkthrough renders one per /32 of the scope's client list and a note for a prefix (`the ASA needs host entries: add the pollers' addresses as /32 entries, or list them by hand`): **recommended yes** (the alternative, rendering nothing for SNMP on ASA, leaves the unit unmonitored).
 4. **`aaa authorization exec authentication-server auto-enable`** so that level-15 users land in enable at login and the ASA takes the server's `priv-lvl` for everyone: **recommended yes** (without `auto-enable` every superuser types `enable` and the enable password's authentication line must name the server too; the walkthrough carries both lines either way).
 
-## Target observations added later (2026-10-10)
+## Image shapes to anticipate (2026-10-10)
 
-From a `show version | include Version` run on a target unit (pasted by the
-user; host name omitted here):
+The version output of an ASA 9.14 image on a Firepower (FXOS) platform has
+this shape:
 
 ```
 <host>/act/sec# show version | include Version
@@ -46,14 +46,15 @@ Baseboard Management Controller (revision 0x1) Firmware Version: 2.4
 - **Prompt:** `<hostname>/<state>/<priority>#` (`act` active, `stby` standby;
   `pri` or `sec` is the configured failover priority, so an active unit can be
   the secondary). The CLI prompt detector of `internal/devssh` must accept the
-  slashed form and must not assume `host#`. It also means a read or a paste
-  made on a unit shows which unit it was (`/act/` or `/stby/`): a paste on a
-  `/stby/` prompt is refused by the walkthrough's pre-check.
-- **Platform:** `SSP Operating System` and a baseboard management controller
-  line show a Firepower platform running the ASA image on FXOS, not a classic
-  ASA 5500-X (the earlier paste named an ASA5525): the model needs confirming
-  with the user, because FXOS-managed units have chassis-level settings
-  (management access, users) that the ASA CLI does not hold.
+  slashed form and must not assume `host#`. A read or a paste made on a unit
+  shows which unit it was (`/act/` or `/stby/`): the walkthrough's pre-check
+  refuses a paste on a `/stby/` prompt.
+- **Platform family:** `SSP Operating System` and a baseboard management
+  controller line mark a Firepower platform running the ASA image on FXOS, as
+  opposed to a classic ASA 5500-X. FXOS-managed units keep some chassis-level
+  settings (management access, users) outside the ASA CLI; whether that
+  matters for a given unit is decided when the release starts, from a
+  `show version` and `show mode` capture.
 - **Version line:** `Cisco Adaptive Security Appliance Software Version
   9.14(3)15` is the shape the version derivation (D113) would need if the
   `asa` vendor reuses it.
