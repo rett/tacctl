@@ -14,6 +14,12 @@
   "irregularities": [],
   "region": [],
   "after": [],
+  "backout": [],
+  "left": {
+    "access": 0,
+    "monitoring": 0,
+    "cosmetic": 0
+  },
   "extras": [],
   "skipped": [],
   "withheld": [],

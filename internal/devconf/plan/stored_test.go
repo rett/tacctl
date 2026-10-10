@@ -112,7 +112,11 @@ var storedCases = map[string]rowCase{
 		}
 		// the back-out says so once, after the privilege lines
 		d2 := planI(t, fixtureNamed(t, "cisco.reference-bare"), nil, Options{})
-		if b := Block(d2, fixtureNamed(t, "cisco.reference-bare").header(), Wrapper{}); strings.Count(b, "on IOS 15.x a removed privilege line may stay") != 1 {
+		b, err := Backout(d2, fixtureNamed(t, "cisco.reference-bare").header(), Wrapper{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Count(b, "on IOS 15.x a removed privilege line may stay") != 1 {
 			t.Errorf("the back-out does not carry the residue comment once:\n%s", b)
 		}
 	},

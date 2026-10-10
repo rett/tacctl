@@ -10,7 +10,7 @@
     "age_s": 1080,
     "secrets_visible": true
   },
-  "status": "consistent",
+  "status": "left-alone",
   "irregularities": [
     {
       "n": 1,
@@ -19,17 +19,26 @@
       "section": "aaa",
       "what": "aaa server radius dynamic-author client 192.0.2.7 server-key",
       "statement": "aaa server radius dynamic-author \u003e client 192.0.2.7 server-key \u003csecret\u003e",
-      "action": "Left alone. To remove it later: client 192.0.2.7 server-key",
+      "action": "Left alone. To remove it later, type these lines in order: aaa server radius dynamic-author / no client 192.0.2.7",
       "fixed": false
     }
   ],
   "region": [],
   "after": [],
+  "backout": [],
+  "left": {
+    "access": 1,
+    "monitoring": 0,
+    "cosmetic": 0
+  },
   "extras": [
     {
       "section": "aaa",
       "text": "aaa server radius dynamic-author \u003e client 192.0.2.7 server-key",
-      "remove": "client 192.0.2.7 server-key"
+      "remove": [
+        "aaa server radius dynamic-author",
+        "no client 192.0.2.7"
+      ]
     }
   ],
   "skipped": [],

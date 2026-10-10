@@ -252,12 +252,18 @@ type Delta struct {
 	SecretKinds []string
 	// Scope is the scope's name for the sensitivity line, from Options.
 	Scope string
-	// Legacy is Options.Legacy (the IOS 12.x rendering).
-	Legacy bool
+	// Syntax is Options.Syntax (SyntaxIOS12 or SyntaxModern; empty on
+	// Junos).
+	Syntax string
 	// Login are the IOS vty and console login leaves the back-out restores.
 	Login []LoginLeaf
 	// AddsAAA is true when the block turns 'aaa new-model' on.
 	AddsAAA bool
+	// Backout are the Junos lines that put the planned sections back to
+	// what the pull showed (set, delete, insert, and OpComment lines for
+	// what cannot be typed: an original secret). An IOS delta has none: its
+	// back-out is built from the undo lines of Lines.
+	Backout []Line
 	// Class is the caller's class name when it limited the plan.
 	Class string
 	// Items are the irregularities of the comparison, in plain words, in
@@ -282,6 +288,9 @@ const (
 	KindExtra     = "extra"
 	KindSecret    = "secret not visible"
 	KindNotPlan   = "not plannable for this login"
+	// KindNoLocal: the device has no local user at privilege 15 and the
+	// paste puts AAA in front of the local database (M4).
+	KindNoLocal = "no local login"
 )
 
 // Item is one irregularity: one finding of the comparison.

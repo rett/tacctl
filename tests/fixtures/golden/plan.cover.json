@@ -1,0 +1,182 @@
+[
+  {
+    "device": "dev-juniper-synthetic-lab",
+    "scope": "lab",
+    "vendor": "juniper",
+    "address": "192.0.2.21",
+    "state": "needs-change",
+    "fixes": 1,
+    "left": 3,
+    "remaining": {
+      "access": 1,
+      "monitoring": 2,
+      "cosmetic": 0
+    },
+    "extras": 3
+  },
+  {
+    "device": "dev-juniper-synthetic-lab-engineer",
+    "scope": "lab",
+    "vendor": "juniper",
+    "address": "192.0.2.21",
+    "state": "left-alone",
+    "fixes": 0,
+    "left": 5,
+    "remaining": {
+      "access": 2,
+      "monitoring": 2,
+      "cosmetic": 1
+    },
+    "extras": 0
+  },
+  {
+    "device": "dev-juniper-synthetic-lab-nolo0",
+    "scope": "lab",
+    "vendor": "juniper",
+    "address": "192.0.2.21",
+    "state": "needs-change",
+    "fixes": 1,
+    "left": 3,
+    "remaining": {
+      "access": 1,
+      "monitoring": 2,
+      "cosmetic": 0
+    },
+    "extras": 3
+  },
+  {
+    "device": "dev-juniper-synthetic-inherit",
+    "scope": "lab",
+    "vendor": "juniper",
+    "address": "192.0.2.21",
+    "state": "needs-change",
+    "fixes": 14,
+    "left": 0,
+    "remaining": {
+      "access": 0,
+      "monitoring": 0,
+      "cosmetic": 0
+    },
+    "extras": 0
+  },
+  {
+    "device": "dev-juniper-lab-superuser",
+    "scope": "lab",
+    "vendor": "juniper",
+    "address": "192.0.2.21",
+    "state": "needs-change",
+    "fixes": 9,
+    "left": 2,
+    "remaining": {
+      "access": 1,
+      "monitoring": 1,
+      "cosmetic": 0
+    },
+    "extras": 3
+  },
+  {
+    "device": "dev-juniper-lab-engineer",
+    "scope": "lab",
+    "vendor": "juniper",
+    "address": "192.0.2.21",
+    "state": "needs-change",
+    "fixes": 1,
+    "left": 13,
+    "remaining": {
+      "access": 3,
+      "monitoring": 4,
+      "cosmetic": 6
+    },
+    "extras": 0
+  },
+  {
+    "device": "dev-cisco-reference-lab",
+    "scope": "lab",
+    "vendor": "cisco",
+    "address": "192.0.2.21",
+    "state": "needs-change",
+    "fixes": 1,
+    "left": 3,
+    "remaining": {
+      "access": 0,
+      "monitoring": 3,
+      "cosmetic": 0
+    },
+    "extras": 3
+  },
+  {
+    "device": "dev-cisco-reference-12x",
+    "scope": "lab",
+    "vendor": "cisco",
+    "address": "192.0.2.21",
+    "state": "consistent",
+    "fixes": 0,
+    "left": 0,
+    "remaining": {
+      "access": 0,
+      "monitoring": 0,
+      "cosmetic": 0
+    },
+    "extras": 0
+  },
+  {
+    "device": "dev-cisco-real-12-4-7200",
+    "scope": "lab",
+    "vendor": "cisco",
+    "address": "192.0.2.21",
+    "state": "needs-change",
+    "fixes": 1,
+    "left": 0,
+    "remaining": {
+      "access": 0,
+      "monitoring": 0,
+      "cosmetic": 0
+    },
+    "extras": 0
+  },
+  {
+    "device": "dev-cisco-reference-bare",
+    "scope": "lab",
+    "vendor": "cisco",
+    "address": "192.0.2.21",
+    "state": "needs-change",
+    "fixes": 15,
+    "left": 3,
+    "remaining": {
+      "access": 3,
+      "monitoring": 0,
+      "cosmetic": 0
+    },
+    "extras": 0
+  },
+  {
+    "device": "dev-cisco-xe-reference-16",
+    "scope": "lab",
+    "vendor": "cisco",
+    "address": "192.0.2.21",
+    "state": "left-alone",
+    "fixes": 0,
+    "left": 1,
+    "remaining": {
+      "access": 1,
+      "monitoring": 0,
+      "cosmetic": 0
+    },
+    "extras": 1
+  },
+  {
+    "device": "dev-not-pulled",
+    "scope": "lab",
+    "vendor": "juniper",
+    "state": "cannot-plan",
+    "fixes": 0,
+    "left": 0,
+    "remaining": {
+      "access": 0,
+      "monitoring": 0,
+      "cosmetic": 0
+    },
+    "extras": 0,
+    "reason": "not pulled"
+  }
+]

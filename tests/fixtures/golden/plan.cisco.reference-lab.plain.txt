@@ -1,3 +1,1 @@
-configure terminal
 aaa accounting commands 15 default start-stop group LAB-TACACS
-end

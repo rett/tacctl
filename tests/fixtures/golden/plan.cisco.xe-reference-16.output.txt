@@ -6,7 +6,8 @@
 ! What is irregular on dev-cisco-xe-reference-16 (1 item; the paste fixes 0, leaves 1):
 !  1. aaa      ACCESS     extra: aaa server radius dynamic-author client 192.0.2.7 server-key (aaa
 !                         server radius dynamic-author > client 192.0.2.7 server-key <secret>). Left
-!                         alone. To remove it later: client 192.0.2.7 server-key
+!                         alone. To remove it later, type these lines in order: aaa server radius
+!                         dynamic-author / no client 192.0.2.7
 ! Nothing to paste: everything above is left alone or cannot be fixed by this login.
 ! Consistent: roles, snmp, mgmt-acl. Not planned: netconf, breakglass.
 ! Secrets: 2 present on the device, not changed (--secrets pushes them).

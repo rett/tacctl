@@ -36,6 +36,9 @@ func checkConverges(t *testing.T, f fixture, exp []devices.Section, raw string, 
 		}
 		after = c.Text()
 		checkJunosPreserved(t, f, exp, before, c, d, inherited, label)
+		if len(d.Inherited) == 0 {
+			checkJunosBackout(t, f, raw, d, label)
+		}
 	default:
 		before := ParseIOS(raw)
 		c := ParseIOS(raw)

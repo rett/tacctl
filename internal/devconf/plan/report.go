@@ -116,6 +116,12 @@ func (p *planner) buildItems(d *Delta, byName map[string]devconf.SectionResult) 
 		}
 	}
 	d.Items = groupItems(d.Vendor, d.Items)
+	if p.noLocal {
+		d.Items = append(d.Items, Item{Kind: KindNoLocal, Section: "aaa", Severity: SevAccess,
+			Words:     "the device has no local user at privilege 15",
+			Statement: "username <name> privilege 15 secret ...",
+			Action:    "Not fixed by this paste: create the local user by hand before you paste."})
+	}
 	for i := range d.Items {
 		d.Items[i].N = i + 1
 	}
@@ -207,10 +213,6 @@ func groupItems(vendor string, items []Item) []Item {
 	for i := range out {
 		if out[i].n > 1 {
 			out[i].Words = out[i].Words + ": " + plural(out[i].n, "statement", "statements")
-			// the removal lines of a group are in the JSON extras
-			if j := strings.Index(out[i].Action, " To remove it later"); j >= 0 {
-				out[i].Action = out[i].Action[:j]
-			}
 		}
 		slices.Sort(out[i].Lines)
 		out[i].Lines = slices.Compact(out[i].Lines)
@@ -250,7 +252,7 @@ func (p *planner) actionFor(d *Delta, it *Item, extraOf map[string]Extra, stem s
 		return "Not visible to this login; left alone (--secrets pushes the value)."
 	case KindExtra:
 		if e, ok := extraOf[it.Section+"|"+stem]; ok && len(e.Remove) > 0 && e.Guard == "" {
-			return "Left alone. To remove it later: " + e.Remove[0].Shown()
+			return "Left alone. To remove it later" + removeText(e.Remove)
 		} else if ok && e.Guard != "" {
 			return "Left alone (" + e.Guard + ")."
 		}
@@ -445,8 +447,10 @@ func (p *planner) buildExtras(d *Delta) {
 				e.Guard = "the device's own identity: never removed"
 			case len(t) >= 3 && t[0] == "system" && t[1] == "login" && t[2] == "user":
 				e.Guard = "a login: never removed"
+			case len(t) >= 4 && t[0] == "system" && t[1] == "login" && t[2] == "class" && p.classInUse(t[3]):
+				e.Guard = "a login uses this class: not removed"
 			default:
-				e.Remove = []Line{{Op: OpDelete, Section: k.Section, Text: junosDeleteText(t)}}
+				e.Remove = []Line{{Op: OpDelete, Section: k.Section, Text: p.junosRemoval(k.Section, t)}}
 			}
 		default:
 			path := strings.Split(k.Text, pathSep)
@@ -459,11 +463,127 @@ func (p *planner) buildExtras(d *Delta) {
 			case k.Note != "" && (strings.Contains(k.Note, "image") || strings.Contains(k.Note, "default level")):
 				e.Guard = "the image's own line"
 			default:
-				e.Remove = []Line{{Op: OpNo, Section: k.Section, Context: slices.Clone(path[:len(path)-1]), Text: leaf}}
+				e.Remove = p.iosRemoval(k.Section, path)
 			}
 		}
 		d.Extras = append(d.Extras, e)
 	}
+}
+
+// junosObjectDepths are the depths at which a statement's path names an
+// object of its own, shallowest first: a server, a client list, a
+// community, a login class, a filter and a term of one.
+func junosObjectDepths(t []string) []int {
+	switch {
+	case len(t) >= 3 && t[0] == "system" && (t[1] == "tacplus-server" || t[1] == "radius-server"):
+		return []int{3}
+	case len(t) >= 3 && t[0] == "snmp" && (t[1] == "client-list" || t[1] == "community"):
+		return []int{3}
+	case len(t) >= 4 && t[0] == "system" && t[1] == "login" && (t[2] == "class" || t[2] == "user"):
+		return []int{4}
+	case len(t) >= 7 && t[0] == "firewall" && t[1] == "family" && t[3] == "filter" && t[5] == "term":
+		return []int{5, 7}
+	}
+	return nil
+}
+
+// classInUse reports whether a login user of the pulled device is in the
+// class.
+func (p *planner) classInUse(class string) bool {
+	for _, s := range p.cur.Sections["roles"].Lines {
+		t := splitTokens(strings.TrimPrefix(s, "set "))
+		if len(t) >= 6 && t[0] == "system" && t[1] == "login" && t[2] == "user" && t[4] == "class" && t[5] == class {
+			return true
+		}
+	}
+	return false
+}
+
+// junosRemoval is the one delete line that removes an extra statement
+// (D111): the whole object (a server, a client list, a term) when the
+// rendering does not hold the object, the statement's own leaf when it
+// does (the object is tacctl's and stays).
+func (p *planner) junosRemoval(section string, t []string) string {
+	exp := p.expected(section)
+	for _, depth := range junosObjectDepths(t) {
+		if depth < len(t) && !p.renderedPrefix(exp, t[:depth]) {
+			return "delete " + joinTokens(t[:depth])
+		}
+	}
+	return junosDeleteText(t)
+}
+
+// iosRemoval is the lines that remove an extra statement (D111): the 'no'
+// of the whole block or group when tacctl renders none like it, the
+// server's own line for the legacy host forms, and otherwise the leaf as a
+// 'no' line under its submode header.
+func (p *planner) iosRemoval(section string, path []string) []Line {
+	leaf := path[len(path)-1]
+	ctx := slices.Clone(path[:len(path)-1])
+	f := strings.Fields(leaf)
+	no := func(ctx []string, text string) []Line {
+		return []Line{{Op: OpNo, Section: section, Context: ctx, Text: text}}
+	}
+	if len(ctx) == 0 {
+		if len(f) >= 3 && (f[0] == "tacacs-server" || f[0] == "radius-server") && f[1] == "host" {
+			return no(nil, strings.Join(f[:3], " "))
+		}
+		return no(nil, leaf)
+	}
+	header := ctx[0]
+	if len(ctx) == 1 {
+		for _, pfx := range []string{"tacacs server ", "radius server ", "aaa group server "} {
+			if strings.HasPrefix(header, pfx) && !p.ios.renderedHeader(header) {
+				return no(nil, header)
+			}
+		}
+		if header == "aaa server radius dynamic-author" && len(f) >= 2 && f[0] == "client" {
+			return no(ctx, "client "+f[1])
+		}
+	}
+	return no(ctx, leaf)
+}
+
+// renderedHeader reports whether the rendering has a block under the
+// header.
+func (st *iosState) renderedHeader(header string) bool {
+	for _, es := range st.entries {
+		for _, e := range es {
+			if len(e.ctx) > 0 && e.ctx[0] == header {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// removeLines are the lines of a removal as typed, a submode header
+// before the lines under it.
+func removeLines(lines []Line) []string {
+	var out []string
+	var ctx []string
+	for _, l := range lines {
+		if !slices.Equal(ctx, l.Context) {
+			out = append(out, l.Context...)
+			ctx = l.Context
+		}
+		text := l.Shown()
+		if l.Op == OpNo {
+			text = "no " + text
+		}
+		out = append(out, text)
+	}
+	return out
+}
+
+// removeText finishes the sentence 'To remove it later': one line, or the
+// lines in order.
+func removeText(lines []Line) string {
+	ls := removeLines(lines)
+	if len(ls) == 1 {
+		return ": " + ls[0]
+	}
+	return ", type these lines in order: " + strings.Join(ls, " / ")
 }
 
 // --- the report ---------------------------------------------------------------------
@@ -487,9 +607,12 @@ func boxLine(d Delta, h Header) string {
 		proto = "TACACS+"
 	}
 	if d.Vendor == devconf.FamilyIOS {
-		syntax := "IOS-XE and IOS 15 syntax"
-		if h.Legacy || d.Legacy {
+		syntax := "syntax not known"
+		switch d.Syntax {
+		case SyntaxIOS12:
 			syntax = "IOS 12.x syntax"
+		case SyntaxModern:
+			syntax = "IOS-XE and IOS 15 syntax"
 		}
 		proto = syntax + ", " + proto
 	}
@@ -644,6 +767,7 @@ func Report(d Delta, h Header, w Wrapper) string {
 		add("Paste over ssh, not the console; on a console paste at most twenty lines at a time and watch the echo for '" + errorWord(d.Vendor) + "'. Pasting the region twice is harmless.")
 		blank()
 		b.WriteString(c + " Type this first, on " + h.Device + ", and check the name:   " + checkLine(d.Vendor) + "\n")
+		add(promptCheck(d.Vendor))
 		blank()
 	}
 	return b.String()
@@ -658,6 +782,14 @@ func errorWord(vendor string) string {
 	return "error:"
 }
 
+// promptCheck is what the prompt must look like before the paste.
+func promptCheck(vendor string) string {
+	if vendor == devconf.FamilyIOS {
+		return "The prompt must end in # (privileged mode), not in (config)#, before you paste: a prompt ending in > means type enable first, a prompt with (config) in it means a configuration session is open: type end first."
+	}
+	return "The prompt must end in > (operational mode) before you paste: a prompt ending in # means a configuration session is open: stop."
+}
+
 func checkLine(vendor string) string {
 	if vendor == devconf.FamilyIOS {
 		return "show version | include uptime"
@@ -669,16 +801,71 @@ func checkLine(vendor string) string {
 
 // The states of a device on the cover page.
 const (
-	StatusConsistent  = "consistent"
+	// StatusConsistent: the comparison found nothing at all.
+	StatusConsistent = "consistent"
+	// StatusNeedsChange: the paste has something to type.
 	StatusNeedsChange = "needs-change"
-	StatusCannotPlan  = "cannot-plan"
+	// StatusLeftAlone: the device has irregularities and nothing can be
+	// pasted for them (extras, secrets not visible, sections this login
+	// cannot change): it is not consistent, and the paste does not help.
+	StatusLeftAlone = "left-alone"
+	// StatusCannotPlan: no plan could be made.
+	StatusCannotPlan = "cannot-plan"
 )
 
+// statusOf is the device's state. 'consistent' only with no finding of any
+// kind: a device with an unfixed ACCESS problem is never called consistent.
 func statusOf(d Delta) string {
-	if d.Empty() {
-		return StatusConsistent
+	switch {
+	case !d.Empty():
+		return StatusNeedsChange
+	case len(d.Items) > 0:
+		return StatusLeftAlone
 	}
-	return StatusNeedsChange
+	return StatusConsistent
+}
+
+// LeftCounts are the findings the paste leaves, by severity.
+type LeftCounts struct {
+	Access     int `json:"access"`
+	Monitoring int `json:"monitoring"`
+	Cosmetic   int `json:"cosmetic"`
+}
+
+// Total is the number of findings left.
+func (c LeftCounts) Total() int { return c.Access + c.Monitoring + c.Cosmetic }
+
+// leftOf counts the findings no line of the paste fixes.
+func leftOf(d Delta) LeftCounts {
+	var c LeftCounts
+	for _, it := range d.Items {
+		if it.Fixed {
+			continue
+		}
+		switch it.Severity {
+		case SevAccess:
+			c.Access++
+		case SevMonitoring:
+			c.Monitoring++
+		default:
+			c.Cosmetic++
+		}
+	}
+	return c
+}
+
+func (c LeftCounts) String() string {
+	var parts []string
+	if c.Access > 0 {
+		parts = append(parts, fmt.Sprintf("%d ACCESS", c.Access))
+	}
+	if c.Monitoring > 0 {
+		parts = append(parts, fmt.Sprintf("%d MONITORING", c.Monitoring))
+	}
+	if c.Cosmetic > 0 {
+		parts = append(parts, fmt.Sprintf("%d COSMETIC", c.Cosmetic))
+	}
+	return strings.Join(parts, ", ")
 }
 
 // DeviceStatus is one line of the cover page: a stable shape the CLI
@@ -691,10 +878,12 @@ type DeviceStatus struct {
 	// State is one of the Status constants.
 	State string `json:"state"`
 	// Fixes is the number of irregularities the paste fixes, Left the
-	// number it leaves, Extras the statements left alone.
-	Fixes  int `json:"fixes"`
-	Left   int `json:"left"`
-	Extras int `json:"extras"`
+	// number it leaves (Remaining says how many of each severity), Extras
+	// the statements left alone.
+	Fixes     int        `json:"fixes"`
+	Left      int        `json:"left"`
+	Remaining LeftCounts `json:"remaining"`
+	Extras    int        `json:"extras"`
 	// Reason is why a device cannot be planned (not pulled, a stale pull,
 	// refused, a failed read).
 	Reason string `json:"reason,omitempty"`
@@ -710,6 +899,7 @@ func StatusFor(d Delta, h Header) DeviceStatus {
 			s.Left++
 		}
 	}
+	s.Remaining = leftOf(d)
 	return s
 }
 
@@ -722,7 +912,7 @@ func CannotPlan(h Header, reason string) DeviceStatus {
 // totals.
 func Cover(ds []DeviceStatus) string {
 	var b strings.Builder
-	var ok, need, cannot int
+	var ok, need, left, cannot int
 	width := 0
 	for _, s := range ds {
 		width = max(width, len(s.Device))
@@ -734,15 +924,18 @@ func Cover(ds []DeviceStatus) string {
 		case StatusConsistent:
 			ok++
 			what = "consistent"
-			if s.Extras > 0 {
-				what += fmt.Sprintf(" (%s left alone)", plural(s.Extras, "extra", "extras"))
-			}
 		case StatusNeedsChange:
 			need++
 			what = fmt.Sprintf("needs change: %s fixed by the paste", plural(s.Fixes, "irregularity", "irregularities"))
 			if s.Left > 0 {
-				what += fmt.Sprintf(", %d left", s.Left)
+				what += fmt.Sprintf(", %d left (%s)", s.Left, s.Remaining)
 			}
+			if s.Extras > 0 {
+				what += fmt.Sprintf(", %s", plural(s.Extras, "extra", "extras"))
+			}
+		case StatusLeftAlone:
+			left++
+			what = fmt.Sprintf("NOT consistent, nothing to paste: %s left (%s)", plural(s.Left, "irregularity", "irregularities"), s.Remaining)
 			if s.Extras > 0 {
 				what += fmt.Sprintf(", %s", plural(s.Extras, "extra", "extras"))
 			}
@@ -752,6 +945,6 @@ func Cover(ds []DeviceStatus) string {
 		}
 		fmt.Fprintf(&b, "#   %-*s  %s\n", width, s.Device, what)
 	}
-	fmt.Fprintf(&b, "# %d consistent, %d need a change, %d cannot be planned\n", ok, need, cannot)
+	fmt.Fprintf(&b, "# %d consistent, %d need a change, %d not consistent with nothing to paste, %d cannot be planned\n", ok, need, left, cannot)
 	return b.String()
 }

@@ -10,29 +10,27 @@ import (
 // iosPrivilegeResidue follows the privilege 'no' lines of a back-out. [S: lab
 // IOSv 15.6(2)T: 'no privilege exec level 7 <cmd>' leaves an explicit line at
 // the command's default level in the running configuration.]
-const iosPrivilegeResidue = "!   (on IOS 15.x a removed privilege line may stay as 'privilege exec level <default> <cmd>'\n" +
-	"!    (the command's own default level): harmless)\n"
+var iosPrivilegeResidue = []string{
+	"! (on IOS 15.x a removed privilege line may stay as 'privilege exec level <default> <cmd>'",
+	"!  (the command's own default level): harmless)",
+}
 
 // iosCursor remembers the submode the last written line was in, so a
 // header is written once for consecutive lines.
 type iosCursor struct{ ctx []string }
 
-// writeIOSLine writes one line of a Delta (or an undo) as typed: submode
-// headers once, the leaf indented under them, 'no ' in front of a removal.
-// leader is a comment leader for the back-out block ('!   ').
-func writeIOSLine(b *strings.Builder, l Line, leader string, c *iosCursor) {
-	if l.Op == OpComment {
-		// a back-out step that is no line: a note, in parentheses
-		b.WriteString(leader + "(" + l.Text + ")\n")
-		return
-	}
+// emitIOSLine appends one line of a Delta (or an undo) as typed: the
+// submode headers once for consecutive lines, the leaf indented under them,
+// 'no ' in front of a removal. idx is the line's index in Delta.Lines (-1
+// for a back-out line).
+func emitIOSLine(out *[]RegionLine, c *iosCursor, l Line, idx int) {
 	same := len(c.ctx) == len(l.Context)
 	for i := 0; same && i < len(l.Context); i++ {
 		same = c.ctx[i] == l.Context[i]
 	}
 	if !same {
 		for i, h := range l.Context {
-			b.WriteString(leader + strings.Repeat(" ", i) + h + "\n")
+			*out = append(*out, RegionLine{Text: strings.Repeat(" ", i) + h, Line: -1})
 		}
 		c.ctx = append([]string(nil), l.Context...)
 	}
@@ -40,7 +38,12 @@ func writeIOSLine(b *strings.Builder, l Line, leader string, c *iosCursor) {
 	if l.Op == OpNo {
 		text = "no " + text
 	}
-	b.WriteString(leader + strings.Repeat(" ", len(l.Context)) + text + "\n")
+	text = strings.Repeat(" ", len(l.Context)) + text
+	if l.Secret && !l.HasValue && strings.Contains(l.Text, "<SECRET>") {
+		*out = append(*out, RegionLine{Text: "! " + secretLinePrefix + strings.TrimSpace(text), Comment: true, Line: idx})
+		return
+	}
+	*out = append(*out, RegionLine{Text: text, Line: idx})
 }
 
 // DECISION: the back-out is the delta's undo lines in reverse paste order
@@ -135,7 +138,7 @@ func sameLine(a, b Line) bool {
 // the last statements (Opus HIGH 5). Nothing that saves or leaves is in it:
 // the change is live at 'end' and 'write memory' is typed afterwards.
 func iosRegion(d Delta) []RegionLine {
-	out := []RegionLine{{Text: "configure terminal", Line: -1}}
+	out := []RegionLine{{Text: "configure terminal", Wrapper: true, Line: -1}}
 	cur := ""
 	var c iosCursor
 	for i, l := range d.Lines {
@@ -158,52 +161,19 @@ func iosRegion(d Delta) []RegionLine {
 			}
 			out = append(out, RegionLine{Text: label, Comment: true, Line: -1})
 		}
-		// headers once for consecutive lines of one submode
-		same := len(c.ctx) == len(l.Context)
-		for ci := 0; same && ci < len(l.Context); ci++ {
-			same = c.ctx[ci] == l.Context[ci]
-		}
-		if !same {
-			for ci, h := range l.Context {
-				out = append(out, RegionLine{Text: strings.Repeat(" ", ci) + h, Line: -1})
-			}
-			c.ctx = append([]string(nil), l.Context...)
-		}
-		text := l.Text
-		if l.Op == OpNo {
-			text = "no " + text
-		}
-		text = strings.Repeat(" ", len(l.Context)) + text
-		if l.Secret && !l.HasValue && strings.Contains(l.Text, "<SECRET>") {
-			out = append(out, RegionLine{Text: "! " + secretLinePrefix + strings.TrimSpace(text), Comment: true, Line: i})
-			continue
-		}
-		out = append(out, RegionLine{Text: text, Line: i})
+		emitIOSLine(&out, &c, l, i)
 	}
-	out = append(out, RegionLine{Text: "end", Line: -1})
+	out = append(out, RegionLine{Text: "end", Wrapper: true, Line: -1})
 	return out
 }
 
-// iosAfter is what follows the region: how to read the echo, the check, the
-// one line to type, the back-out as comments, what not to do.
-func iosAfter(d Delta, h Header, w Wrapper) string {
-	var b strings.Builder
-	c := func(s string) {
-		for _, l := range wrapText(s, 96) {
-			b.WriteString("! " + l + "\n")
-		}
-	}
-	b.WriteString("!\n")
-	c("If any line printed \"% Invalid\" or \"% Error\", stop and paste the back-out below.")
-	b.WriteString("!\n")
-	c("Check now (nothing rolls this back by itself):")
-	b.WriteString("!   From the tacctl server:   tacctl device config pull " + h.Device + " --diff     (" + joinAnd(d.Planned()) + ": ok)\n")
-	b.WriteString("!   In the second terminal:   open a NEW ssh session to " + h.Device + " as yourself, then: terminal length 0, show privilege (must say 15)\n")
-	c("If both are fine, type this in the pasting session:")
-	b.WriteString("write memory\n")
-	b.WriteString("!\n")
-	c("To undo (paste in the second terminal, in configuration mode, before 'write memory' or after):")
-	cur := &iosCursor{}
+// iosBackoutRegion is the back-out as a region: 'configure terminal', the
+// undo lines (plain, executable: no line of it is a comment but the notes),
+// 'end'.
+func iosBackoutRegion(d Delta) []RegionLine {
+	out := []RegionLine{{Text: "configure terminal", Wrapper: true, Line: -1},
+		{Text: "! back-out: the lines as the pull showed them", Comment: true, Line: -1}}
+	var c iosCursor
 	lines := iosBackout(d)
 	lastPriv := -1
 	for i, l := range lines {
@@ -212,16 +182,73 @@ func iosAfter(d Delta, h Header, w Wrapper) string {
 		}
 	}
 	for i, l := range lines {
-		writeIOSLine(&b, l, "!   ", cur)
+		if l.Op == OpComment {
+			// a step that is no line: a note, in parentheses
+			out = append(out, RegionLine{Text: "! (" + l.Text + ")", Comment: true, Line: -1})
+			continue
+		}
+		emitIOSLine(&out, &c, l, -1)
 		if i == lastPriv {
-			b.WriteString(iosPrivilegeResidue)
+			for _, r := range iosPrivilegeResidue {
+				out = append(out, RegionLine{Text: r, Comment: true, Line: -1})
+			}
 		}
 	}
-	b.WriteString("!   end\n")
 	if d.AddsAAA {
-		b.WriteString("!   ('no aaa new-model' drops every aaa line but does not restore the login method of the lines:\n")
-		b.WriteString("!    the lines after it do.)\n")
+		out = append(out, RegionLine{Text: "! ('no aaa new-model' drops every aaa line but does not restore the login method of the lines: the line vty and line con lines of this back-out do)", Comment: true, Line: -1})
 	}
+	out = append(out, RegionLine{Text: "end", Wrapper: true, Line: -1})
+	return out
+}
+
+// iosAfter is what follows the region: how to read the echo, the check, the
+// one line to type (a comment line: a copy of the whole output must not save
+// before the check, review H1), where the back-out is, what not to do.
+func iosAfter(d Delta, h Header, w Wrapper) string {
+	var b strings.Builder
+	c := func(s string) {
+		for _, l := range wrapText(s, 96) {
+			b.WriteString("! " + l + "\n")
+		}
+	}
+	undo := "tacctl device config plan " + h.Device + " --backout"
+	b.WriteString("!\n")
+	if HasBackout(d) {
+		c("If any line printed \"% Invalid\" or \"% Error\", stop and undo it: " + undo + "     (its own region, to paste in the second terminal).")
+	} else {
+		c("If any line printed \"% Invalid\" or \"% Error\", stop and undo it by hand: tacctl has no lines of its own to undo this plan.")
+	}
+	b.WriteString("!\n")
+	c("Check now (nothing rolls this back by itself):")
+	b.WriteString("!   From the tacctl server:   tacctl device config pull " + h.Device + " --diff     (" + joinAnd(d.Planned()) + ": ok)\n")
+	b.WriteString("!   In the second terminal:   open a NEW ssh session to " + h.Device + " as yourself, then: terminal length 0, show privilege (must say 15)\n")
+	b.WriteString("! When both checks are fine, type this one command yourself:  write memory\n")
+	b.WriteString("!\n")
+	if HasBackout(d) {
+		c("To undo: " + undo)
+	}
+	c("Do not: 'write memory' before the check; paste outside the banners; paste into another device; paste on a console more than twenty lines at a time; keep this output in a file after the paste when it holds a secret.")
+	return b.String()
+}
+
+// iosBackoutAfter is what follows the back-out region: comments only.
+func iosBackoutAfter(d Delta, h Header, w Wrapper) string {
+	var b strings.Builder
+	c := func(s string) {
+		for _, l := range wrapText(s, 96) {
+			b.WriteString("! " + l + "\n")
+		}
+	}
+	b.WriteString("!\n")
+	c("If any line printed \"% Invalid\" or \"% Error\", stop and read the echo line by line.")
+	b.WriteString("!\n")
+	c("Check now (nothing undoes this by itself):")
+	b.WriteString("!   From the tacctl server:   tacctl device config pull " + h.Device + " --diff     (the differences of the plan are back)\n")
+	b.WriteString("!   In the second terminal:   open a NEW ssh session to " + h.Device + " as yourself, then: terminal length 0, show privilege (must say 15)\n")
+	b.WriteString("! When both checks are fine, type this one command yourself:  write memory\n")
+	c("If the plan was saved with write memory, this undo is saved only when you type it again.")
+	b.WriteString("!\n")
+	c("A value that tacctl does not hold (an original secret) is a line marked with ! inside the region: put it back by hand.")
 	c("Do not: 'write memory' before the check; paste outside the banners; paste into another device; paste on a console more than twenty lines at a time; keep this output in a file after the paste when it holds a secret.")
 	return b.String()
 }

@@ -10,7 +10,7 @@
     "age_s": 1080,
     "secrets_visible": false
   },
-  "status": "consistent",
+  "status": "left-alone",
   "irregularities": [
     {
       "n": 1,
@@ -65,6 +65,12 @@
   ],
   "region": [],
   "after": [],
+  "backout": [],
+  "left": {
+    "access": 2,
+    "monitoring": 2,
+    "cosmetic": 1
+  },
   "extras": [],
   "skipped": [
     {

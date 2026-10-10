@@ -56,7 +56,9 @@ func planText(t *testing.T, f fixture, exp []devices.Section, text string, opt O
 	if opt.Class == nil {
 		opt.Class = f.class
 	}
-	opt.Legacy = f.legacy
+	if opt.Syntax == "" {
+		opt.Syntax = f.syntax()
+	}
 	d, err := Plan(f.vendor, exp, cur, cur, opt)
 	if err != nil {
 		t.Fatal(err)

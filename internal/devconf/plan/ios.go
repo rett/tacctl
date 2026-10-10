@@ -640,6 +640,22 @@ func (p *planner) iosSection(name string, r devconf.SectionResult) secOut {
 		if st.enable == "absent" {
 			o.warnings = append(o.warnings, "the device has no enable secret: with the server unreachable, level 15 is reached only through the local user and 'aaa authorization exec'; set an enable secret first if you want a second way")
 		}
+		// M4: with AAA in front of the local database and no local user at
+		// privilege 15, a server that rejects (wrong key, an unfilled
+		// --no-secrets value, a server down) leaves no way in on the
+		// console or the vty.
+		if slices.ContainsFunc(o.lines, func(l Line) bool {
+			return l.Op == OpLine && len(l.Context) == 0 && (l.Text == "aaa new-model" ||
+				strings.HasPrefix(l.Text, "aaa authentication login ") || strings.HasPrefix(l.Text, "aaa authorization exec "))
+		}) {
+			switch has, known := localPriv15(p.cur); {
+			case known && !has:
+				p.noLocal = true
+				o.warnings = append(o.warnings, "the device has no local user at privilege 15 ('username <name> privilege 15 secret ...'): if the server cannot be reached or does not answer (wrong key, a value not filled in, server down) a new session on the console or the vty cannot get in; create the local user first, by hand")
+			case !known:
+				o.warnings = append(o.warnings, "the pull does not show the device's local users, so a local user at privilege 15 could not be checked: make sure one exists before you paste, or a server that does not answer leaves no way in")
+			}
+		}
 	}
 
 	// the access-class check (D106, mgmt-acl)
@@ -1044,6 +1060,29 @@ func isNumberedACL(h string) bool {
 	return err == nil
 }
 
+// localPriv15 reads whether the pulled device has a local user at privilege
+// 15: the breakglass section of the extraction holds the 'username' lines
+// (their secret elided). known is false when the extraction has no such
+// section at all (a record that does not say).
+func localPriv15(ex devconf.Extracted) (has, known bool) {
+	sec, ok := ex.Sections[devconf.SectionBreakGlass]
+	if !ok {
+		return false, false
+	}
+	for _, s := range sec.Lines {
+		f := strings.Fields(s)
+		if len(f) < 2 || f[0] != "username" {
+			continue
+		}
+		for i := 2; i+1 < len(f); i++ {
+			if f[i] == "privilege" && f[i+1] == "15" {
+				return true, true
+			}
+		}
+	}
+	return false, true
+}
+
 // iosFromCheck applies D106's access-class guard: a warning without --from,
 // a refusal when --from is not permitted by the rendered ACL.
 func (p *planner) iosFromCheck() (string, bool) {
@@ -1100,6 +1139,10 @@ func aclEntryMatch(entry string, a netip.Addr) (bool, string) {
 		return false, ""
 	}
 	act := f[0]
+	if f[1] == "host" && len(f) >= 3 {
+		// 'permit host A.B.C.D' is 'permit A.B.C.D' (wildcard 0.0.0.0)
+		f = []string{f[0], f[2]}
+	}
 	if f[1] == "any" {
 		return true, act
 	}

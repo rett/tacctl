@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -29,8 +30,6 @@ type Header struct {
 	Vendor string
 	// Protocol is TACACS+ or RADIUS.
 	Protocol string
-	// Legacy is the IOS 12.x rendering.
-	Legacy bool
 	// Pulled, PulledBy and Transport come from the record of the pull the
 	// plan is based on.
 	Pulled    time.Time
@@ -68,6 +67,11 @@ const secretLinePrefix = "VALUE NEEDED, then remove this mark: "
 type RegionLine struct {
 	Text    string
 	Comment bool
+	// Wrapper marks the lines that are the procedure around the
+	// statements (configure, show | compare, commit check, the confirmed
+	// commit, end); Plain leaves them out. An IOS submode header is none
+	// of these: it belongs to the statements under it.
+	Wrapper bool
 	Line    int
 }
 
@@ -112,15 +116,18 @@ func Region(d Delta, h Header, w Wrapper) string {
 	return b.String()
 }
 
-// Plain is the region with every comment line and both banners stripped
-// (D99): no comment at all. A --no-secrets plan has no plain form.
+// Plain is the statements only (D99, M5): no wrapper line, no comment, no
+// banner. It is the list for 'load set <file>' on Junos, which reports the
+// wrapper lines and every '#' line as errors, and the lines to type inside
+// 'configure terminal' on IOS (an indented submode header stays: it is part
+// of the statements under it). A --no-secrets plan has no plain form.
 func Plain(d Delta, h Header, w Wrapper) (string, error) {
 	if d.Counts.Placeholders > 0 {
 		return "", ErrNoSecretsPlain
 	}
 	var b strings.Builder
 	for _, l := range RegionLines(d, h, w) {
-		if !l.Comment {
+		if !l.Comment && !l.Wrapper {
 			b.WriteString(l.Text + "\n")
 		}
 	}
@@ -152,50 +159,221 @@ func After(d Delta, h Header, w Wrapper) string {
 	return junosAfter(d, h, w)
 }
 
+// ErrNoBackout: the plan has nothing tacctl can type to undo it (no
+// statement, or only values it does not hold).
+var ErrNoBackout = errors.New("plan: there is nothing tacctl can type to undo this plan")
+
+// backoutLines are the lines of the back-out in the order to type them.
+func backoutLines(d Delta) []Line {
+	if d.Empty() {
+		return nil
+	}
+	if d.Vendor == devconf.FamilyIOS {
+		return iosBackout(d)
+	}
+	return d.Backout
+}
+
+// HasBackout reports whether the plan has a back-out region: at least one
+// line tacctl can type (a value it does not hold is a comment, not a line).
+func HasBackout(d Delta) bool {
+	return slices.ContainsFunc(backoutLines(d), func(l Line) bool { return l.Op != OpComment })
+}
+
+// BackoutLines returns the lines between the back-out banners: the
+// wrapper, the statements that put the pulled configuration back (plain
+// executable lines, a value that is not known as a comment), and the end of
+// the wrapper. The whole-paste invariant holds for them as for the
+// region's.
+func BackoutLines(d Delta, h Header, w Wrapper) []RegionLine {
+	if d.Vendor == devconf.FamilyIOS {
+		return iosBackoutRegion(d)
+	}
+	return junosBackoutRegion(d, h, w)
+}
+
+// Backout is the back-out as its own output (D108, review H2): the device
+// box, what it is and the check, ONE delimited region of plain lines
+// ('BACK-OUT FROM HERE' ... 'BACK-OUT TO HERE'), and after it nothing but
+// comment lines. It is never part of Block: a copy of the whole output of a
+// plan must not paste the undo. ErrNoBackout when there is no line to type.
+func Backout(d Delta, h Header, w Wrapper) (string, error) {
+	if d.Empty() || !HasBackout(d) {
+		return "", ErrNoBackout
+	}
+	var b strings.Builder
+	c := commentLeader(d.Vendor)
+	add := func(s string) {
+		for _, l := range wrapText(s, 100) {
+			b.WriteString(c + " " + l + "\n")
+		}
+	}
+	bc := bannerChar(d.Vendor)
+	b.WriteString(boxLine(d, h) + "\n")
+	add("BACK-OUT of the plan for " + h.Device + ": it puts back what the pull of " + fmtTime(h.Pulled) +
+		" showed, for the sections the plan changed. Use it only after the plan was pasted and the check was not fine.")
+	if s := sensitivityLine(d, h); s != "" {
+		add(s)
+	}
+	if d.Vendor == devconf.FamilyIOS {
+		add("The change is live when the paste ends. NOTHING undoes it by itself. Keep a second terminal logged in at privilege 15 until the end.")
+	} else {
+		add("The switch undoes this by itself in " + fmt.Sprint(confirmMinutes(w)) + " minutes unless you type the one word after the check (see below).")
+	}
+	b.WriteString(c + "\n")
+	b.WriteString(c + " Type this first, on " + h.Device + ", and check the name:   " + checkLine(d.Vendor) + "\n")
+	add(promptCheck(d.Vendor))
+	b.WriteString(c + "\n")
+	b.WriteString(bc + " BACK-OUT FROM HERE: " + h.Device + " " + bc + "\n")
+	for _, l := range BackoutLines(d, h, w) {
+		b.WriteString(l.Text + "\n")
+	}
+	b.WriteString(bc + " BACK-OUT TO HERE: " + h.Device + " " + bc + "\n")
+	if d.Vendor == devconf.FamilyIOS {
+		b.WriteString(iosBackoutAfter(d, h, w))
+	} else {
+		b.WriteString(junosBackoutAfter(d, h, w))
+	}
+	return b.String(), nil
+}
+
 // CheckRegion verifies the whole-paste invariant on the lines between the
-// banners (plan D109): the wrapper's first and last line, no line that
-// confirms, saves or leaves, no comment but the labels and the placeholder
-// lines. It returns the first fault.
+// banners (plan D109) as an allowlist: only the wrapper lines of the vendor
+// in their places, statements of the shapes the planner emits, and comment
+// lines. It returns the first fault. Junos: 'configure private', then only
+// 'set <path>', 'delete <path>', 'insert <path> before|after term <term>' and
+// comments, then 'show | compare | no-more', 'commit check' and the one
+// 'commit confirmed N [comment "..."]' as the last line. IOS: 'configure
+// terminal', then only the statements of owned shapes (a submode header and
+// the leaves under it, with or without 'no') and comments, then 'end'.
 func CheckRegion(vendor string, lines []string) error {
 	if len(lines) < 2 {
 		return fmt.Errorf("a region of %d lines", len(lines))
 	}
-	ios := vendor == devconf.FamilyIOS
-	leader := commentLeader(vendor)
-	first, last := lines[0], lines[len(lines)-1]
-	switch {
-	case ios && (first != "configure terminal" || last != "end"):
-		return fmt.Errorf("the region starts %q and ends %q", first, last)
-	case !ios && (first != "configure private" || !strings.HasPrefix(last, "commit confirmed ")):
-		return fmt.Errorf("the region starts %q and ends %q", first, last)
+	if vendor == devconf.FamilyIOS {
+		return checkIOSRegion(lines)
 	}
-	for i, l := range lines {
-		t := strings.TrimSpace(l)
-		if t == "" {
-			return fmt.Errorf("line %d is empty", i+1)
+	return checkJunosRegion(lines)
+}
+
+var reJunosConfirmed = regexp.MustCompile(`^commit confirmed [0-9]{1,3}( comment "[^"]*")?$`)
+
+func checkJunosRegion(lines []string) error {
+	n := len(lines)
+	if n < 4 {
+		return fmt.Errorf("a region of %d lines", n)
+	}
+	if lines[0] != "configure private" {
+		return fmt.Errorf("the region starts %q, not 'configure private'", lines[0])
+	}
+	if lines[n-3] != "show | compare | no-more" || lines[n-2] != "commit check" || !reJunosConfirmed.MatchString(lines[n-1]) {
+		return fmt.Errorf("the region ends %q, %q, %q, not 'show | compare | no-more', 'commit check', 'commit confirmed N'",
+			lines[n-3], lines[n-2], lines[n-1])
+	}
+	for i := 1; i < n-3; i++ {
+		if err := junosStatementOK(lines[i]); err != nil {
+			return fmt.Errorf("line %d, %q: %w", i+1, lines[i], err)
 		}
-		if strings.HasPrefix(t, leader) {
+	}
+	return nil
+}
+
+// junosStatementOK checks one line between the wrapper lines of a Junos
+// region.
+func junosStatementOK(l string) error {
+	if l != strings.TrimSpace(l) || l == "" {
+		return errors.New("empty or indented")
+	}
+	if strings.HasPrefix(l, "#") {
+		return nil
+	}
+	if strings.ContainsAny(l, "\r\n\t") {
+		return errors.New("a control character")
+	}
+	// outside double quotes: no pipe, no semicolon, no brace
+	quoted := false
+	for _, r := range l {
+		switch {
+		case r == '"':
+			quoted = !quoted
+		case !quoted && strings.ContainsRune("|;{}`", r):
+			return fmt.Errorf("%q does not belong in a statement", r)
+		}
+	}
+	t := splitTokens(l)
+	switch t[0] {
+	case "set", "delete":
+		if len(t) < 2 {
+			return fmt.Errorf("a bare %s", t[0])
+		}
+	case "insert":
+		if len(t) < 5 || t[len(t)-3] != "before" && t[len(t)-3] != "after" || t[len(t)-2] != "term" {
+			return errors.New("an insert that is not '<path> before|after term <term>'")
+		}
+	default:
+		return fmt.Errorf("%q is not a set, delete or insert statement", t[0])
+	}
+	return nil
+}
+
+// iosTopStatements are the shapes of an IOS statement at the top level of a
+// region (after an optional 'no'); an entry ending in a space is a prefix.
+var iosTopStatements = []string{
+	"aaa new-model", "aaa authentication login ", "aaa authorization exec ", "aaa authorization commands ",
+	"aaa authorization config-commands", "aaa accounting ", "aaa group server tacacs+ ", "aaa group server radius ",
+	"tacacs server ", "radius server ", "tacacs-server host ", "radius-server host ",
+	"privilege exec ", "snmp-server community ", "snmp-server location ", "snmp-server contact ",
+	"ip access-list standard ", "ip access-list extended ", "ipv6 access-list ", "line vty ", "line con ",
+}
+
+// iosHeaderStatements are the top-level shapes that open a submode.
+var iosHeaderStatements = []string{
+	"aaa group server tacacs+ ", "aaa group server radius ", "tacacs server ", "radius server ",
+	"ip access-list standard ", "ip access-list extended ", "ipv6 access-list ", "line vty ", "line con ",
+}
+
+// iosLeafWords are the first words of a leaf under a submode header.
+var iosLeafWords = []string{"address", "key", "single-connection", "timeout", "retransmit", "port", "server",
+	"permit", "deny", "remark", "login", "send-nat-address"}
+
+func hasAnyPrefix(s string, prefixes []string) bool {
+	for _, p := range prefixes {
+		if s == strings.TrimSuffix(p, " ") || strings.HasSuffix(p, " ") && strings.HasPrefix(s, p) {
+			return true
+		}
+	}
+	return false
+}
+
+func checkIOSRegion(lines []string) error {
+	n := len(lines)
+	if lines[0] != "configure terminal" || lines[n-1] != "end" {
+		return fmt.Errorf("the region starts %q and ends %q", lines[0], lines[n-1])
+	}
+	inBlock := false
+	for i := 1; i < n-1; i++ {
+		l := lines[i]
+		t := strings.TrimSpace(l)
+		switch {
+		case t == "":
+			return fmt.Errorf("line %d is empty", i+1)
+		case strings.HasPrefix(t, "!"):
+			continue
+		case strings.ContainsAny(l, "\r\t"):
+			return fmt.Errorf("line %d, %q, holds a control character", i+1, l)
+		}
+		indent := len(l) - len(strings.TrimLeft(l, " "))
+		no := strings.HasPrefix(t, "no ")
+		body := strings.TrimPrefix(t, "no ")
+		if indent == 0 {
+			if !hasAnyPrefix(body, iosTopStatements) || no && strings.HasPrefix(body, "line ") {
+				return fmt.Errorf("line %d, %q, is not a statement of an owned shape", i+1, t)
+			}
+			inBlock = !no && hasAnyPrefix(body, iosHeaderStatements)
 			continue
 		}
-		f := strings.Fields(t)
-		bad := false
-		switch f[0] {
-		case "commit":
-			check := len(f) >= 2 && f[1] == "check"
-			confirmed := len(f) >= 2 && f[1] == "confirmed" && i == len(lines)-1
-			bad = !check && !confirmed
-		case "exit", "quit", "rollback", "write", "copy", "reload", "load", "request", "file", "configure":
-			bad = i != 0 || t != "configure private" && t != "configure terminal"
-		case "delete":
-			bad = ios // a Junos delete is a statement; an IOS delete is a file command
-		case "end":
-			bad = !ios || i != len(lines)-1
-		}
-		if bad {
-			return fmt.Errorf("line %d, %q, does not belong in a region", i+1, t)
-		}
-		if !ios && strings.HasPrefix(t, "commit confirmed ") && i != len(lines)-1 {
-			return fmt.Errorf("line %d: commit confirmed is not the last line", i+1)
+		if f := strings.Fields(body); !inBlock || len(f) == 0 || !slices.Contains(iosLeafWords, f[0]) {
+			return fmt.Errorf("line %d, %q, is not a leaf of an owned shape", i+1, t)
 		}
 	}
 	return nil
@@ -340,8 +518,10 @@ type jsonItem struct {
 type jsonExtra struct {
 	Section string `json:"section"`
 	Text    string `json:"text"`
-	Remove  string `json:"remove,omitempty"`
-	Guard   string `json:"guard,omitempty"`
+	// Remove are the lines that remove it, in order, a submode header
+	// before the line under it.
+	Remove []string `json:"remove,omitempty"`
+	Guard  string   `json:"guard,omitempty"`
 }
 
 type jsonDelta struct {
@@ -355,6 +535,8 @@ type jsonDelta struct {
 	Irregularities  []jsonItem  `json:"irregularities"`
 	Region          []string    `json:"region"`
 	After           []string    `json:"after"`
+	Backout         []string    `json:"backout"`
+	Left            LeftCounts  `json:"left"`
 	Extras          []jsonExtra `json:"extras"`
 	Skipped         []Skip      `json:"skipped"`
 	Withheld        []string    `json:"withheld"`
@@ -370,7 +552,7 @@ func JSON(d Delta, h Header, w Wrapper) ([]byte, error) {
 	out := jsonDelta{Name: h.Device, Address: h.Address, Scope: h.Scope, Vendor: h.Vendor,
 		BasedOn: jsonBasedOn{Pulled: h.Pulled, By: h.PulledBy, Transport: h.Transport,
 			AgeS: int64(h.Now.Sub(h.Pulled).Seconds()), SecretsVisible: h.SecretsVisible},
-		Status: statusOf(d), Irregularities: []jsonItem{}, Region: []string{}, After: []string{},
+		Status: statusOf(d), Left: leftOf(d), Irregularities: []jsonItem{}, Region: []string{}, After: []string{}, Backout: []string{},
 		Extras: []jsonExtra{}, Skipped: nonNilSkip(d.Skipped), Withheld: nonNil(d.Withheld), Warnings: nonNil(d.Warnings),
 		HoldsSecret: d.HoldsSecret()}
 	lineNo := map[int]int{}
@@ -390,6 +572,11 @@ func JSON(d Delta, h Header, w Wrapper) ([]byte, error) {
 		if d.Vendor == devconf.FamilyJunos {
 			out.ConfirmTimeout = confirmMinutes(w)
 		}
+		if HasBackout(d) {
+			for _, rl := range BackoutLines(d.shown(), h, w) {
+				out.Backout = append(out.Backout, rl.Text)
+			}
+		}
 	}
 	for _, it := range d.Items {
 		ji := jsonItem{N: it.N, Kind: it.Kind, Severity: it.Severity, Section: it.Section, Words: it.Words,
@@ -404,7 +591,7 @@ func JSON(d Delta, h Header, w Wrapper) ([]byte, error) {
 	for _, e := range d.Extras {
 		je := jsonExtra{Section: e.Section, Text: e.Text, Guard: e.Guard}
 		if len(e.Remove) > 0 {
-			je.Remove = e.Remove[0].Shown()
+			je.Remove = removeLines(e.Remove)
 		}
 		out.Extras = append(out.Extras, je)
 	}
@@ -429,6 +616,13 @@ func (d Delta) shown() Delta {
 		}
 		l.Undo = undo
 		c.Lines[i] = l
+	}
+	c.Backout = make([]Line, len(d.Backout))
+	for i, l := range d.Backout {
+		if l.Secret && l.HasValue && l.Elided != "" {
+			l.Text, l.HasValue = l.Elided, false
+		}
+		c.Backout[i] = l
 	}
 	return c
 }

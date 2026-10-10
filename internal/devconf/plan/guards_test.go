@@ -250,7 +250,7 @@ func TestIOSAAAUnitGuards(t *testing.T) {
 	}
 	// one unit: new-model first, exec directly after authentication, the
 	// login method of the lines after the lists
-	d, err := Plan("cisco", exp, cur, cur, Options{Device: "rtr-lab-1"})
+	d, err := Plan("cisco", exp, cur, cur, Options{Device: "rtr-lab-1", Syntax: SyntaxModern})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -316,7 +316,7 @@ func TestIOSAAAUnitGuards(t *testing.T) {
 	if slices.ContainsFunc(d.Warnings, func(w string) bool { return strings.Contains(w, "no enable secret") }) {
 		t.Errorf("an enable secret is on the device: %v", d.Warnings)
 	}
-	d, err = Plan("cisco", exp, cur, cur, Options{EnableSecret: "absent"})
+	d, err = Plan("cisco", exp, cur, cur, Options{EnableSecret: "absent", Syntax: SyntaxModern})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -334,7 +334,7 @@ func TestIOSAAAUnitGuards(t *testing.T) {
 	if _, known := LoginLeaves(old); known {
 		t.Errorf("an older record is not unknown")
 	}
-	d, err = Plan("cisco", exp, old, old, Options{Device: "rtr-lab-1"})
+	d, err = Plan("cisco", exp, old, old, Options{Device: "rtr-lab-1", Syntax: SyntaxModern})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -349,7 +349,7 @@ func TestIOSAAAUnitGuards(t *testing.T) {
 		t.Errorf("the rest of the block must stand")
 	}
 	// the record's leaves given as input override: the unit is planned
-	d, err = Plan("cisco", exp, old, old, Options{Login: []LoginLeaf{{"line vty 0 4", "login local"}}})
+	d, err = Plan("cisco", exp, old, old, Options{Syntax: SyntaxModern, Login: []LoginLeaf{{"line vty 0 4", "login local"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -374,7 +374,7 @@ func TestIOSAAAUnitGuards(t *testing.T) {
 		}
 		cut = append(cut, s)
 	}
-	d, err = Plan("cisco", cut, cur, cur, Options{})
+	d, err = Plan("cisco", cut, cur, cur, Options{Syntax: SyntaxModern})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -439,7 +439,7 @@ func TestIOSLoginLeavesInThePlan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	d, err = Plan("cisco", exp, cur, cur, Options{})
+	d, err = Plan("cisco", exp, cur, cur, Options{Syntax: SyntaxModern})
 	if err != nil {
 		t.Fatal(err)
 	}

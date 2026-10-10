@@ -166,11 +166,23 @@ func (f fixture) header() Header {
 	if proto == "" {
 		proto = "TACACS+"
 	}
-	return Header{Device: "dev-" + strings.ReplaceAll(f.name, ".", "-"), Address: "192.0.2.21", Scope: "lab", Vendor: f.vendor, Protocol: proto, Legacy: f.legacy,
+	return Header{Device: "dev-" + strings.ReplaceAll(f.name, ".", "-"), Address: "192.0.2.21", Scope: "lab", Vendor: f.vendor, Protocol: proto,
 		Pulled: tPull, PulledBy: "alice", Transport: map[string]string{"juniper": "netconf", "cisco": "ssh"}[f.vendor],
 		SecretsVisible: !strings.Contains(f.name, "engineer"), Now: tNow, Version: "0.2.5", User: "alice", StaleDays: 7}
 }
 
+// syntax is the configuration syntax the fixture's device is planned with
+// (empty for Junos).
+func (f fixture) syntax() string {
+	switch {
+	case f.vendor != "cisco":
+		return ""
+	case f.legacy:
+		return SyntaxIOS12
+	}
+	return SyntaxModern
+}
+
 func (f fixture) options() Options {
-	return Options{Scope: "lab", Class: f.class, Legacy: f.legacy}
+	return Options{Scope: "lab", Class: f.class, Syntax: f.syntax()}
 }

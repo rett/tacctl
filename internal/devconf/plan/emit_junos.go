@@ -13,7 +13,13 @@ import (
 // reference's, and the 0.2.4 spike (d) confirmed the CLI's 'commit confirmed
 // N' and its expiry.]
 func junosCommitConfirmed(minutes int, h Header) string {
-	return "commit confirmed " + strconv.Itoa(minutes) + " comment \"tacctl plan " + commentSafe(h.Device) + " " +
+	return junosCommitWord("plan", minutes, h)
+}
+
+// junosCommitWord is the confirmed commit of a region; word names what it
+// commits ('plan', 'backout').
+func junosCommitWord(word string, minutes int, h Header) string {
+	return "commit confirmed " + strconv.Itoa(minutes) + " comment \"tacctl " + word + " " + commentSafe(h.Device) + " " +
 		fmtStamp(h.Now) + " by " + commentSafe(h.User) + "\""
 }
 
@@ -44,7 +50,7 @@ func junosVerifyHierarchy(text string) string {
 // configuration mode; L5: a refused `configure private` leaves every later
 // line an unknown operational command.]
 func junosRegion(d Delta, h Header, w Wrapper) []RegionLine {
-	out := []RegionLine{{Text: "configure private", Line: -1}}
+	out := []RegionLine{{Text: "configure private", Wrapper: true, Line: -1}}
 	cur := ""
 	for i, l := range d.Lines {
 		if l.Section != cur {
@@ -62,10 +68,56 @@ func junosRegion(d Delta, h Header, w Wrapper) []RegionLine {
 		out = append(out, RegionLine{Text: l.Text, Line: i})
 	}
 	out = append(out,
-		RegionLine{Text: "show | compare | no-more", Line: -1},
-		RegionLine{Text: "commit check", Line: -1},
-		RegionLine{Text: junosCommitConfirmed(confirmMinutes(w), h), Line: -1})
+		RegionLine{Text: "show | compare | no-more", Wrapper: true, Line: -1},
+		RegionLine{Text: "commit check", Wrapper: true, Line: -1},
+		RegionLine{Text: junosCommitConfirmed(confirmMinutes(w), h), Wrapper: true, Line: -1})
 	return out
+}
+
+// junosBackoutRegion is the back-out as a region: the same wrapper as the
+// plan's, the lines that put the pulled statements back, the confirmed
+// commit last. A line that holds the placeholder of --no-secrets, or that
+// is a note, is a comment.
+func junosBackoutRegion(d Delta, h Header, w Wrapper) []RegionLine {
+	out := []RegionLine{{Text: "configure private", Wrapper: true, Line: -1},
+		{Text: "# back-out: the statements as the pull showed them", Comment: true, Line: -1}}
+	for _, l := range d.Backout {
+		switch {
+		case l.Op == OpComment:
+			out = append(out, RegionLine{Text: "# " + l.Text, Comment: true, Line: -1})
+		case l.Secret && !l.HasValue && strings.Contains(l.Text, "<SECRET>"):
+			out = append(out, RegionLine{Text: "# " + secretLinePrefix + l.Text, Comment: true, Line: -1})
+		default:
+			out = append(out, RegionLine{Text: l.Text, Line: -1})
+		}
+	}
+	out = append(out,
+		RegionLine{Text: "show | compare | no-more", Wrapper: true, Line: -1},
+		RegionLine{Text: "commit check", Wrapper: true, Line: -1},
+		RegionLine{Text: junosCommitWord("backout", confirmMinutes(w), h), Wrapper: true, Line: -1})
+	return out
+}
+
+// junosBackoutAfter is what follows the back-out region: comments only.
+func junosBackoutAfter(d Delta, h Header, w Wrapper) string {
+	var b strings.Builder
+	n := confirmMinutes(w)
+	c := func(s string) {
+		for _, l := range wrapText(s, 96) {
+			b.WriteString("# " + l + "\n")
+		}
+	}
+	b.WriteString("#\n")
+	c("If the first line printed \"Users currently editing the configuration\" or \"error: shared configuration database modified\": nothing happened; ask that person to commit or roll back, then paste again. If any line printed \"error:\": do not type commit; the switch undoes this by itself in " + strconv.Itoa(n) + " minutes.")
+	b.WriteString("#\n")
+	c("Check now. In " + strconv.Itoa(n) + " minutes the switch undoes this by itself unless you type one word.")
+	b.WriteString("#   From the tacctl server:   tacctl device config pull " + h.Device + " --diff     (the differences of the plan are back)\n")
+	b.WriteString("#   In a second terminal:     ssh " + h.Device + ", then: show cli authorization | no-more\n")
+	b.WriteString("# When both checks are fine, type this one word yourself:  commit     (before the " + strconv.Itoa(n) + " minutes end)\n")
+	b.WriteString("#\n")
+	c("A value that tacctl does not hold (an original secret) is a line marked with # inside the region: put it back by hand.")
+	c("Do not: type commit before the check; paste anything outside the banners; paste this into another device; use configure exclusive; keep this output in a file after the paste when it holds a secret.")
+	return b.String()
 }
 
 // junosAfter is what follows the region: the refused-configure note, the
@@ -80,7 +132,7 @@ func junosAfter(d Delta, h Header, w Wrapper) string {
 		}
 	}
 	b.WriteString("#\n")
-	c("If the first line printed \"Users currently editing the configuration\" or \"error: shared configuration database modified\": nothing happened; ask that person to commit or roll back, then paste again. If any line printed \"error:\", stop and type:  rollback 0")
+	c("If the first line printed \"Users currently editing the configuration\" or \"error: shared configuration database modified\": nothing happened; ask that person to commit or roll back, then paste again. If any line printed \"error:\": do not type commit; the switch undoes this by itself in " + strconv.Itoa(n) + " minutes.")
 	b.WriteString("#\n")
 	c("Check now. In " + strconv.Itoa(n) + " minutes the switch undoes this by itself unless you type one word.")
 	b.WriteString("#   From the tacctl server:   tacctl device config pull " + h.Device + " --diff     (" + joinAnd(d.Planned()) + ": ok)\n")
@@ -94,10 +146,16 @@ func junosAfter(d Delta, h Header, w Wrapper) string {
 	for _, v := range shown {
 		b.WriteString("#                             show configuration " + v + " | no-more\n")
 	}
-	c("If both are fine, type this one word in the pasting session, before the " + strconv.Itoa(n) + " minutes end:")
-	b.WriteString("commit\n")
+	// a comment line, never a plain one: a copy of the whole output must not
+	// confirm the commit before the check (review H1)
+	b.WriteString("# When both checks are fine, type this one word yourself:  commit     (before the " + strconv.Itoa(n) + " minutes end)\n")
 	b.WriteString("#\n")
-	c("If your session drops before that, the switch still rolls back when the time runs out (a dropped CLI session does not roll back at once): log in again and paste again. To undo after the commit: show system commit, then rollback <n> of the entry just before the one commented \"tacctl plan " + commentSafe(h.Device) + "\" (the newest entry is that commit itself), then commit.")
+	c("If your session drops before that, the switch still rolls back when the time runs out (a dropped CLI session does not roll back at once): log in again and paste again.")
+	if HasBackout(d) {
+		c("To undo it after the commit: tacctl device config plan " + h.Device + " --backout     (its own region to paste). Without tacctl: show system commit, then rollback <n> of the entry just before the one commented \"tacctl plan " + commentSafe(h.Device) + "\" (the newest entry is that commit itself), then commit.")
+	} else {
+		c("To undo it after the commit: show system commit, then rollback <n> of the entry just before the one commented \"tacctl plan " + commentSafe(h.Device) + "\" (the newest entry is that commit itself), then commit. tacctl has no lines of its own to undo this plan.")
+	}
 	c("Do not: type commit before the check; paste anything outside the banners; paste this into another device; use configure exclusive; keep this output in a file after the paste when it holds a secret.")
 	return b.String()
 }

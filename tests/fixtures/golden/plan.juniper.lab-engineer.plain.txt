@@ -1,4 +1,3 @@
-configure private
 set firewall family inet filter MGMT-ACL term permit-mgmt from source-address 192.0.2.10/32
 set firewall family inet filter MGMT-ACL term permit-mgmt from source-address 198.51.100.0/24
 set firewall family inet filter MGMT-ACL term permit-mgmt from source-address 192.0.2.0/24
@@ -21,6 +20,3 @@ set firewall family inet filter MGMT-ACL term deny-snmp from destination-port sn
 set firewall family inet filter MGMT-ACL term deny-snmp then log
 set firewall family inet filter MGMT-ACL term deny-snmp then discard
 set firewall family inet filter MGMT-ACL term default-accept then accept
-show | compare | no-more
-commit check
-commit confirmed 5 comment "tacctl plan dev-juniper-lab-engineer 2026-10-10T14:20Z by alice"

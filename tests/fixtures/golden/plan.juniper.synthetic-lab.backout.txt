@@ -1,0 +1,35 @@
+##### dev-juniper-synthetic-lab  192.0.2.21  scope lab  juniper (TACACS+) #####
+# BACK-OUT of the plan for dev-juniper-synthetic-lab: it puts back what the pull of 2026-10-10 14:02
+# showed, for the sections the plan changed. Use it only after the plan was pasted and the check was
+# not fine.
+# The switch undoes this by itself in 5 minutes unless you type the one word after the check (see
+# below).
+#
+# Type this first, on dev-juniper-synthetic-lab, and check the name:   show version | match Hostname
+# The prompt must end in > (operational mode) before you paste: a prompt ending in # means a
+# configuration session is open: stop.
+#
+##### BACK-OUT FROM HERE: dev-juniper-synthetic-lab #####
+configure private
+# back-out: the statements as the pull showed them
+delete snmp description
+show | compare | no-more
+commit check
+commit confirmed 5 comment "tacctl backout dev-juniper-synthetic-lab 2026-10-10T14:20Z by alice"
+##### BACK-OUT TO HERE: dev-juniper-synthetic-lab #####
+#
+# If the first line printed "Users currently editing the configuration" or "error: shared
+# configuration database modified": nothing happened; ask that person to commit or roll back, then
+# paste again. If any line printed "error:": do not type commit; the switch undoes this by itself
+# in 5 minutes.
+#
+# Check now. In 5 minutes the switch undoes this by itself unless you type one word.
+#   From the tacctl server:   tacctl device config pull dev-juniper-synthetic-lab --diff     (the differences of the plan are back)
+#   In a second terminal:     ssh dev-juniper-synthetic-lab, then: show cli authorization | no-more
+# When both checks are fine, type this one word yourself:  commit     (before the 5 minutes end)
+#
+# A value that tacctl does not hold (an original secret) is a line marked with # inside the
+# region: put it back by hand.
+# Do not: type commit before the check; paste anything outside the banners; paste this into
+# another device; use configure exclusive; keep this output in a file after the paste when it
+# holds a secret.

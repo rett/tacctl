@@ -23,6 +23,18 @@ func between(t *testing.T, out, bc, dev string) []string {
 	return strings.Split(strings.TrimSuffix(out[i+len(from):j], "\n"), "\n")
 }
 
+// between2 is between for a named banner pair ('PASTE' or 'BACK-OUT').
+func between2(t *testing.T, out, bc, word, dev string) []string {
+	t.Helper()
+	from := bc + " " + word + " FROM HERE: " + dev + " " + bc + "\n"
+	to := bc + " " + word + " TO HERE: " + dev + " " + bc + "\n"
+	i, j := strings.Index(out, from), strings.Index(out, to)
+	if i < 0 || j < i {
+		t.Fatalf("no %s region in:\n%s", word, out)
+	}
+	return strings.Split(strings.TrimSuffix(out[i+len(from):j], "\n"), "\n")
+}
+
 func nonComments(lines []string, leader string) []string {
 	var out []string
 	for _, l := range lines {
@@ -114,23 +126,37 @@ func TestJunosOutputIsThePlansSample(t *testing.T) {
 	if ev == nil || !ev.Fixed || ev.Severity != SevCosmetic || ev.Action != "Fixed by region line 3." {
 		t.Errorf("the event: %+v", ev)
 	}
-	// what follows: the one word, as the only typed line
+	// what follows: the one word, as a comment (a copy of the whole output
+	// must not confirm the commit before the check)
 	after := out[strings.Index(out, "##### PASTE TO HERE: sw-lab-1 #####"):]
-	if got := nonComments(strings.Split(after, "\n")[1:], "#"); !slices.Equal(got, []string{"commit", ""}) {
+	if got := nonComments(strings.Split(after, "\n")[1:], "#"); !slices.Equal(got, []string{""}) {
 		t.Errorf("after the region: %q", got)
 	}
+	if !strings.Contains(after, "# When both checks are fine, type this one word yourself:  commit") {
+		t.Errorf("the follow-up is not said:\n%s", after)
+	}
 	flat := strings.Join(strings.Fields(strings.ReplaceAll(after, "# ", "")), " ")
-	for _, want := range []string{"rollback 0", "show system commit", "the newest entry is that commit itself", "tacctl device config pull sw-lab-1 --diff", "Do not: "} {
+	for _, want := range []string{"do not type commit; the switch undoes this by itself in 5 minutes",
+		"show system commit", "the newest entry is that commit itself", "tacctl device config pull sw-lab-1 --diff",
+		"tacctl device config plan sw-lab-1 --backout", "Do not: "} {
 		if !strings.Contains(flat, want) {
 			t.Errorf("the after-steps lack %q", want)
 		}
+	}
+	if strings.Contains(after, "rollback 0") {
+		t.Errorf("rollback 0 is meaningless once the confirmed commit ran:\n%s", after)
+	}
+	// the prompt check is above the region
+	if !strings.Contains(out[:strings.Index(out, "##### PASTE FROM HERE")], "prompt must end in >") {
+		t.Errorf("no prompt check before the region")
 	}
 	// the plain form: the region without a comment line
 	plain, err := Plain(d, h, w)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.Split(strings.TrimSuffix(plain, "\n"), "\n"); !slices.Equal(got, wantStmts) {
+	// statements only (D99, M5): `load set` reports the wrapper lines
+	if got := strings.Split(strings.TrimSuffix(plain, "\n"), "\n"); !slices.Equal(got, wantStmts[1:len(wantStmts)-3]) {
 		t.Errorf("plain:\n%s", plain)
 	}
 }
@@ -145,9 +171,9 @@ func TestIOSOutputIsThePlansSample(t *testing.T) {
 				c.blocks[i].lines[0] = "!"
 			}
 		}
-	}, Options{Scope: "lab"})
+	}, Options{Scope: "lab", Syntax: SyntaxIOS12})
 	h := f.header()
-	h.Device, h.Address, h.Legacy = "rtr-lab-1", "192.0.2.31", true
+	h.Device, h.Address = "rtr-lab-1", "192.0.2.31"
 	out := Block(d, h, Wrapper{})
 	if !strings.HasPrefix(out, "!!!!! rtr-lab-1  192.0.2.31  scope lab  cisco (IOS 12.x syntax, TACACS+) !!!!!\n") {
 		t.Errorf("the box:\n%s", out[:140])
@@ -183,16 +209,28 @@ func TestIOSOutputIsThePlansSample(t *testing.T) {
 	if last != "aaa authorization config-commands" {
 		t.Errorf("the last statement is %q", last)
 	}
-	// 'write memory' is the one line typed after the region
+	// 'write memory' is said after the region as a comment, never as a line
 	after := out[strings.Index(out, "!!!!! PASTE TO HERE: rtr-lab-1 !!!!!"):]
-	if got := nonComments(strings.Split(after, "\n")[1:], "!"); !slices.Equal(got, []string{"write memory", ""}) {
+	if got := nonComments(strings.Split(after, "\n")[1:], "!"); !slices.Equal(got, []string{""}) {
 		t.Errorf("after the region: %q", got)
 	}
-	// the back-out: no aaa new-model, the login method restored
-	for _, want := range []string{"!   no aaa new-model", "!   line vty 0 4", "!    login local"} {
-		if !strings.Contains(after, want) {
-			t.Errorf("the back-out lacks %q", want)
+	if !strings.Contains(after, "! When both checks are fine, type this one command yourself:  write memory") {
+		t.Errorf("the follow-up is not said:\n%s", after)
+	}
+	// the back-out is its own region of plain lines (H2): no aaa new-model,
+	// the login method restored
+	bo, err := Backout(d, h, Wrapper{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	back := nonComments(between2(t, bo, "!!!!!", "BACK-OUT", "rtr-lab-1"), "!")
+	for _, want := range []string{"configure terminal", "no aaa new-model", "line vty 0 4", " login local", "end"} {
+		if !slices.Contains(back, want) {
+			t.Errorf("the back-out lacks %q:\n%s", want, bo)
 		}
+	}
+	if strings.Contains(after, "no aaa new-model") {
+		t.Errorf("the main output holds the back-out lines")
 	}
 	// the stray community is reported, left alone
 	var stray bool

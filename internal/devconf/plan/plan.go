@@ -31,10 +31,14 @@ type Options struct {
 	From string
 	// Scope names the scope in the sensitivity line of the header.
 	Scope string
-	// Legacy is the IOS 12.x rendering. It is an input only: the caller
-	// maps the device's one resolved configuration syntax (D113: the
-	// setting, else the pull's version line; never the ssh flag) to it.
-	Legacy bool
+	// Syntax is the Cisco device's configuration syntax, one of SyntaxIOS12
+	// and SyntaxModern: the caller passes the device's one resolved
+	// configuration syntax (D113: the setting, else the pull's version
+	// line; never the ssh flag). It is ignored for Junos. For a Cisco plan
+	// the empty string is refused (every section is skipped with
+	// KindNotPlannable): a caller that forgets it must not get the
+	// lock-out direction silently.
+	Syntax string
 	// Login are the vty and console login leaves of the pulled record, for
 	// the IOS back-out (D106 (ii)). When empty they are read from the
 	// extraction with LoginLeaves; when that does not know either, the aaa
@@ -47,6 +51,24 @@ type Options struct {
 	// Device is the device's name, used in the pull command of the refusal
 	// texts ('tacctl device config pull <name>').
 	Device string
+}
+
+// The configuration syntaxes of a Cisco plan (Options.Syntax).
+const (
+	// SyntaxIOS12 is the IOS 12.x rendering.
+	SyntaxIOS12 = "ios12"
+	// SyntaxModern is the IOS 15 and IOS-XE rendering.
+	SyntaxModern = "modern"
+)
+
+// syntaxUnknownWhy is the reason a Cisco plan with no Options.Syntax gives.
+func syntaxUnknownWhy(device string) string {
+	name := device
+	if name == "" {
+		name = "<name>"
+	}
+	return "the configuration syntax of this device is not known: run `tacctl device config pull " + name +
+		"` or `tacctl device config-syntax " + name + " ios12|modern`"
 }
 
 // PlanOrder is the order the sections go in a block (D95 for Junos, §4b for
@@ -105,6 +127,9 @@ func Plan(vendor string, expected []devices.Section, current, plain devconf.Extr
 	if err != nil {
 		return Delta{}, fmt.Errorf("%w: %q", ErrUnsupported, vendor)
 	}
+	if fam == devconf.FamilyIOS && opt.Syntax != "" && opt.Syntax != SyntaxIOS12 && opt.Syntax != SyntaxModern {
+		return Delta{}, fmt.Errorf("%w: unknown configuration syntax %q (ios12 or modern)", ErrUsage, opt.Syntax)
+	}
 	if opt.Secrets && opt.NoSecrets {
 		return Delta{}, fmt.Errorf("%w: --secrets and --no-secrets exclude each other", ErrUsage)
 	}
@@ -126,8 +151,10 @@ func Plan(vendor string, expected []devices.Section, current, plain devconf.Extr
 		byName[r.Name] = r
 	}
 
-	d := Delta{Vendor: fam, Scope: opt.Scope, Legacy: opt.Legacy,
-		InheritanceChecked: len(plain.Sections) > 0}
+	d := Delta{Vendor: fam, Scope: opt.Scope, InheritanceChecked: len(plain.Sections) > 0}
+	if fam == devconf.FamilyIOS {
+		d.Syntax = opt.Syntax
+	}
 	// Only Junos has groups: an IOS plan has no inheritance to check.
 	d.InheritanceChecked = d.InheritanceChecked && fam == devconf.FamilyJunos
 	p := &planner{fam: fam, opt: opt, cur: current, plain: plain, checked: d.InheritanceChecked}
@@ -147,6 +174,13 @@ func Plan(vendor string, expected []devices.Section, current, plain devconf.Extr
 		switch {
 		case len(opt.Sections) > 0 && !slices.Contains(opt.Sections, name):
 			sp.State = StateNotSelected
+		case fam == devconf.FamilyIOS && opt.Syntax == "":
+			// M9: the dialect is a fact the caller must give; without it
+			// nothing is typed (the modern default would lock out an IOS
+			// 12.x device).
+			sp.State, sp.Why, sp.Kind = StateSkipped, syntaxUnknownWhy(opt.Device), KindNotPlannable
+			d.Skipped = append(d.Skipped, Skip{name, KindNotPlannable, sp.Why})
+			d.Warnings = appendNew(d.Warnings, sp.Why)
 		case opt.Writable != nil && !opt.Writable[name]:
 			sp.State, sp.Why, sp.Kind = StateSkipped, "not writable by the caller", KindNotWritable
 			d.Skipped = append(d.Skipped, Skip{name, KindNotWritable, sp.Why})
@@ -198,6 +232,9 @@ func Plan(vendor string, expected []devices.Section, current, plain devconf.Extr
 	// words with the region lines that fix them (D110, D111).
 	p.buildExtras(&d)
 	p.buildItems(&d, byName)
+	if fam == devconf.FamilyJunos && !d.Empty() {
+		d.Backout = p.junosBackout(d)
+	}
 	if !d.Empty() {
 		lineNo := map[int]int{}
 		for n, rl := range RegionLines(d, Header{}, Wrapper{}) {
@@ -285,6 +322,9 @@ type planner struct {
 	cur     devconf.Extracted
 	plain   devconf.Extracted
 	checked bool
+	// noLocal is set when the IOS guards found no local user at privilege
+	// 15 (the report gets an ACCESS item of its own).
+	noLocal bool
 	// ios holds the IOS-only state.
 	ios *iosState
 }
@@ -336,7 +376,6 @@ func (p *planner) finish(d *Delta) {
 	if p.opt.Class != nil {
 		d.Class = p.opt.Class.Name
 	}
-	d.Legacy = p.opt.Legacy
 	for _, l := range d.Lines {
 		if l.Section == "aaa" && l.Op == OpLine && l.Text == "aaa new-model" && len(l.Context) == 0 {
 			d.AddsAAA = true

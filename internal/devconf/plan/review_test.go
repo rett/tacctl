@@ -281,7 +281,7 @@ func TestSkipKinds(t *testing.T) {
 	expb := expectedSections(t, fb.expected)
 	old := devconf.Extracted{Vendor: "ios", SecretsVisible: true, Sections: map[string]devices.Section{
 		"aaa": {Name: "aaa", Lines: []string{"aaa authentication login default local"}, Secret: []bool{false}}}}
-	d, err = Plan("cisco", expb, old, old, Options{})
+	d, err = Plan("cisco", expb, old, old, Options{Syntax: SyntaxModern})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -304,7 +304,7 @@ func TestFormatsElide(t *testing.T) {
 	d := planJ(t, f, nil, Options{})
 	fi := fixtureNamed(t, "cisco.reference-bare")
 	exp, cur, _ := fi.load(t)
-	di, err := Plan("cisco", exp, cur, cur, Options{})
+	di, err := Plan("cisco", exp, cur, cur, Options{Syntax: SyntaxModern})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -462,7 +462,7 @@ func TestPlanIsDeterministic(t *testing.T) {
 	}
 	first = ""
 	for i := 0; i < 50; i++ {
-		d, err := Plan("cisco", iexp, icur, icur, Options{From: "192.0.2.1"})
+		d, err := Plan("cisco", iexp, icur, icur, Options{From: "192.0.2.1", Syntax: SyntaxModern})
 		if err != nil {
 			t.Fatal(err)
 		}

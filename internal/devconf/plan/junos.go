@@ -714,21 +714,34 @@ func (p *planner) junosTermOrder(exp devices.Section, rows []*jrow, deletes []Li
 				cur = append(cur, t)
 			}
 		}
-		prefix := "firewall family inet filter " + quoteTok(filter) + " term "
-		for i, t := range want {
-			if i < len(cur) && cur[i] == t {
-				continue
-			}
-			j := slices.Index(cur, t)
-			cur = slices.Delete(cur, j, j+1)
-			if i == 0 {
-				out = append(out, Line{Op: OpInsert, Text: "insert " + prefix + quoteTok(t) + " before term " + quoteTok(cur[0])})
-				cur = slices.Insert(cur, 0, t)
-			} else {
-				out = append(out, Line{Op: OpInsert, Text: "insert " + prefix + quoteTok(t) + " after term " + quoteTok(want[i-1])})
-				at := slices.Index(cur, want[i-1])
-				cur = slices.Insert(cur, at+1, t)
-			}
+		out = append(out, termInserts("firewall family inet filter "+quoteTok(filter)+" term ", want, cur)...)
+	}
+	return out
+}
+
+// termInserts returns the insert lines that take the terms from the order
+// cur to the order want (the same terms): a term that is not where it
+// belongs is moved with one insert, the first one 'before term <current
+// first>', every other 'after term <previous wanted>'.
+func termInserts(prefix string, want, cur []string) []Line {
+	var out []Line
+	cur = slices.Clone(cur)
+	for i, t := range want {
+		if i < len(cur) && cur[i] == t {
+			continue
+		}
+		j := slices.Index(cur, t)
+		if j < 0 {
+			continue
+		}
+		cur = slices.Delete(cur, j, j+1)
+		if i == 0 {
+			out = append(out, Line{Op: OpInsert, Text: "insert " + prefix + quoteTok(t) + " before term " + quoteTok(cur[0])})
+			cur = slices.Insert(cur, 0, t)
+		} else {
+			out = append(out, Line{Op: OpInsert, Text: "insert " + prefix + quoteTok(t) + " after term " + quoteTok(want[i-1])})
+			at := slices.Index(cur, want[i-1])
+			cur = slices.Insert(cur, at+1, t)
 		}
 	}
 	return out
