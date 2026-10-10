@@ -1,0 +1,18 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /N > 21 > 2
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+2
+
+TELNET PORT:
+
+Enter Telnet Port Number.
+Enter <ESC> to exit.
+
+
+23
+-----

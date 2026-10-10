@@ -1,0 +1,19 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /N > 13
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+13
+
+SEQUENCE DISCONNECT: [Shared]
+
+1. Three Characters (<CR> before and after)
+2. One Character Only
+3. Off
+
+
+Enter: #<CR> to change,
+       <ESC> to return to previous menu ... 

@@ -1,0 +1,19 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /P > 23
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+23
+
+DTR OUTPUT (when not connected & not in Modem mode):
+
+1. Low
+2. High
+3. Pulse upon disconnect then go High
+
+
+Enter: #<CR> to change,
+       <ESC> to return to previous menu ... 

@@ -1,0 +1,30 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /N > 32
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+32
+
+EMAIL MESSAGING: IPv4
+
+1.  Enable:                      Off
+2.  SMTP Server                  (undefined)
+3.  Port Number:                 25
+4.  Use TLS:                     On (UseTLS)
+5.  Domain:                      (undefined)
+6.  Auth Type:                   None
+7.  Username:                    (undefined)
+8.  Password:                    (undefined)
+9. From Name:                    (undefined)
+10. From Address:                (undefined)
+11. To Address:                  (undefined)
+12. To Address:                  (undefined)
+13. To Address:                  (undefined)
+14. Send Test Email
+
+
+Enter: #<CR> to change,
+       <ESC> to return to previous menu ... 

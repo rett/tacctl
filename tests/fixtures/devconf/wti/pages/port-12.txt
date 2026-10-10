@@ -1,0 +1,22 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /P > 12
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+12
+
+LOGOFF CHARACTER:
+
+Enter a single character,
+Precede with "^" to indicate "CTRL".
+
+Enter: <SPACE><CR> to clear,
+       <text><CR> to change,
+       <ESC> to return to previous menu ...
+
+
+^X
+--

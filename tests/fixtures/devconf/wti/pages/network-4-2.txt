@@ -1,0 +1,25 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /N > 4 > 2
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+2
+
+DHCP SERVER: [eth0] IPv4
+
+1.  Enable:                      Off
+2.  Gateway:                     (undefined)
+3.  Primary DNS:                 (undefined)
+4.  Secondary DNS:               (undefined)
+5.  Domain Name:                 (undefined)
+6.  Default Lease:               600
+7.  Maximum Lease:               7000
+8.  Pool Start:                  1
+9.  Pool End:                    254
+
+
+Enter: #<CR> to change,
+       <ESC> to return to previous menu ... 

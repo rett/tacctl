@@ -1,0 +1,18 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /P > 3
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+3
+
+STOP BITS:
+
+1. 1
+2. 2
+
+
+Enter: #<CR> to change,
+       <ESC> to return to previous menu ... 

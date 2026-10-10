@@ -1,0 +1,35 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# command: /N, then 29
+# level: SuperUser
+# source: captured
+# captured: 2026-10-10
+# sanitised: names, addresses, communities, banner, port names
+# ---
+29
+
+RADIUS: [Shared]
+
+1.  Enable:                     Off
+2.  Primary Host/Address:       (undefined)
+3.  Primary Secret Word:        (undefined)
+4.  Secondary Host/Address:     (undefined)
+5.  Secondary Secret Word:      (undefined)
+6.  Fallback Timer:             3 Sec
+7.  Fallback Local:             Off
+8.  Retries:                    3
+9.  Authentication Port:        1812
+10. Accounting Port:            1813
+11. Default User Access:        On
+12. OneTime Auth:               Off
+13. OneTime Auth Timer:         5
+14. OneTime Auth Type:          DBM
+15. Session Module Type:        Enable
+16. Require Message Authentic:  Off
+17. Debug:                      Off
+18. Ping Test
+
+
+Enter: #<CR> to change,
+       <ESC> to return to previous menu ... 

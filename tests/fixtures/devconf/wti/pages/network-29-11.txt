@@ -1,0 +1,21 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /N > 29 > 11
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+11
+
+
+RADIUS Default User Access: [Shared]:
+
+1.  Default User Access:  On
+2.  Access Level:         User
+3.  Port Access:          (defined)
+4.  Service Access:       Serial Port, Telnet/SSH, Web, RESTful API
+
+
+Enter: #<CR> to change,
+       <ESC> to return to previous menu ... 

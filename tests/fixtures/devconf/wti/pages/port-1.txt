@@ -1,0 +1,26 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /P > 1
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+1
+
+BAUD RATE:
+
+1.  300
+2.  1200
+3.  2400
+4.  4800
+5.  9600
+6.  19.2K
+7.  38.4K
+8.  57.6K
+9.  115.2K
+10. 230.4K
+
+
+Enter: #<CR> to change,
+       <ESC> to return to previous menu ... 

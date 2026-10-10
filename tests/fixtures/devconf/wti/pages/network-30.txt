@@ -1,0 +1,21 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /N > 30
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+30
+
+PING ACCESS: [eth0] IPv4
+
+1.  PING Access:  Limited
+2.  Allowed #1:  198.51.100.0/24
+3.  Allowed #2:  192.168.0.0/16
+4.  Allowed #3:  172.0.0.0/8
+5.  Allowed #4:  10.0.0.0/8
+
+
+Enter: #<CR> to change,
+       <ESC> to return to previous menu ... 

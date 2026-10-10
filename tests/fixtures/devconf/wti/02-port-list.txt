@@ -1,0 +1,33 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# command: <CR> at the banner
+# level: SuperUser
+# source: captured
+# captured: 2026-10-10
+# sanitised: names, addresses, communities, banner, port names
+# ---
+Console Server           Site ID: wti.site.example.net
+
+PORT|           NAME           | STATUS |  MODE  | BUFF CT|
+----+--------------------------+--------+--------+---------
+ 01 | sw1.example.net          |  Free  |  Any   |       0|
+ 02 | rtr1.example.net-re0     |  Free  |  Pass  |       0|
+ 03 | rtr1.example.net-re1     |  Free  |  Pass  |       0|
+ 04 | sw2.example.net          |  Free  |  Pass  |       0|
+ 05 | gw1.example.net          |  Free  |  Pass  |       0|
+ 06 | TEST.FW                  |  Free  |  Pass  |       0|
+ 07 | TEST.SW                  |  Free  |  Pass  |       0|
+ 08 |                          |  Free  |  Pass  |       0|
+    |                          |        |        |        |
+    |                          |        |        |        |
+    |                          |        |        |        |
+    |                          |        |        |        |
+    |                          |        |        |        |
+    |                          |        |        |        |
+    |                          |        |        |        |
+    |                          |        |        |        |
+    |                          |        |        |        |
+
+Enter /H for command menu.                System Temperature: 70F
+DSM>

@@ -1,0 +1,18 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /F > 7
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+7
+CALLBACK SECURITY:
+
+1. Callback Enable:         On - Callback (Without Password Prompt)
+2. Callback Attempts:       3
+3. Callback Delay:          30
+
+
+Enter: #<CR> to select,
+       <ESC> to return to previous menu ... 

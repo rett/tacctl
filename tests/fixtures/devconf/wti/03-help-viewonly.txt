@@ -1,0 +1,43 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# command: /H, then SPACE
+# level: ViewOnly (readonly group, priv-lvl 0)
+# source: captured
+# captured: 2026-10-10
+# sanitised: names, addresses, communities, banner, port names
+# ---
+/H
+
+COMMAND MENU:                           Version 8.10
+                                        10/10/2026 02:10:07 UTC  (GMT+0000)
+DISPLAY COMMANDS
+/S            Plug Status
+/SD           Port Diagnostics
+/SN           Network Status
+/SA           Alias Status
+/AS           Alarm Status
+/W            Who Display
+/H            Command Menu (Help)
+/L            Log
+/J [*]        Site ID
+
+CONTROL COMMANDS
+/X            Exit Command Mode
+/TELNET <ip> [port] [raw] Telnet Out
+
+LEGEND:
++---------------------------------+
+| n   Port #/name                 |
+| Nn  Network port #              |
+| z   n,n-n,... | *               |
+| *   "all"                       |
+Enter: SPACE for page, ENTER for line
+                                                                          | |   "or"                        |
+| <>  Required entry              |
+| []  Optional entry              |
+| ,   Link multiple plug commands |
++---------------------------------+
+
+
+DSM> 

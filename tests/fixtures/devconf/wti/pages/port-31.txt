@@ -1,0 +1,19 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /P > 31
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+31
+
+DIRECT CONNECT:
+
+1. Off
+2. On - No Password
+3. On - Password
+
+
+Enter: #<CR> to change,
+       <ESC> to return to previous menu ... 

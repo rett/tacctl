@@ -1,0 +1,27 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /F
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+/F
+
+SYSTEM PARAMETERS:
+
+1.  User Directory
+2.  Unit Identification:       (defined)
+3.  Real Time Clock:           10/10/2026 03:21:51
+4.  Invalid Access Lockout:    Off
+5.  Temperature Settings:
+6.  Log Configuration
+7.  Callback Security:         On - Callback (Without Password Prompt)
+8.  Front Panel Buttons:       On
+9.  Analog Modem Phone #:      (undefined)
+10. Scripting Options
+11. SSL Providers:             fips base default
+
+
+Enter: #<CR> to change,
+       <ESC> to exit and save configuration ... 

@@ -1,0 +1,21 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# command: /N, 29, 17, then 3 (two-choice pick, out-of-range choice)
+# level: SuperUser
+# source: captured
+# captured: 2026-10-10
+# sanitised: names, addresses, communities, banner, port names
+# ---
+3
+
+ENABLE:
+
+1. Off
+2. On
+
+
+ERROR: Invalid entry.
+
+Enter: #<CR> to change,
+       <ESC> to return to previous menu ... 

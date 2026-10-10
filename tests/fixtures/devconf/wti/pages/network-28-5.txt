@@ -1,0 +1,17 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /N > 28 > 5
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+5
+
+FALLBACK TIMER:
+
+Enter number of seconds (1-600).
+
+
+15
+---

@@ -1,0 +1,21 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /N > 24 > 2
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+2
+
+SYSLOG SERVER: [eth0] IPv4
+
+1.  Enable:                   Off
+2.  Port:                     514
+3.  Transport:                UDP
+4.  Secure Syslog (SSL/TLS):  ---
+5.  Block IPs:                (Undefined)
+
+
+Enter: #<CR> to change,
+       <ESC> to exit and save configuration ... 

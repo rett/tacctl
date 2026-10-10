@@ -1,0 +1,30 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# command: /N, then 28
+# level: SuperUser
+# source: captured
+# captured: 2026-10-10
+# sanitised: names, addresses, communities, banner, port names
+# ---
+28
+
+TACACS: [Shared]
+
+1.  Enable:                     On
+2.  Primary host/address:       192.0.2.42
+3.  Secondary host/address:
+4.  Secret Word:                (defined)
+5.  Fallback Timer:             15 Sec
+6.  Fallback Local:             On (Transport failure)
+7.  Authentication Port:        49
+8.  Default User Access:        On
+9.  Account Management Module:  Enabled
+10  Session Management Module:  Enabled
+11. Service Name:               wti
+12. Debug:                      Off
+13. Ping Test
+
+
+Enter: #<CR> to change,
+       <ESC> to return to previous menu ... 

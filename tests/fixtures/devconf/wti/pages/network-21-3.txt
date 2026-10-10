@@ -1,0 +1,17 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /N > 21 > 3
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+3
+
+MAX PER SOURCE:
+
+Enter 1 - 25 to select the number of "connections allowed per a computer".
+
+
+Enter: #<CR> to select,
+       <ESC> to return to previous menu ... 

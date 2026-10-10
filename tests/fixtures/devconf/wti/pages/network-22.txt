@@ -1,0 +1,23 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /N > 22
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+22
+
+SSH ACCESS: [Shared]
+
+1. Enable:                    On
+2. Port:                      22
+3. Security Level             Normal
+4. SSH View Port Enable:      Off
+5. SSH View Port Bidirection: Off
+6. Allow Pseudo-Terminal:     On
+7. Disable Password Auth:     Off
+
+
+Enter: #<CR> to change,
+       <ESC> to return to previous menu ... 

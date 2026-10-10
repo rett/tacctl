@@ -1,0 +1,25 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /F > 10
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+10
+
+SCRIPTING OPTIONS:
+
+1.  TCP Hold Write Options:     Off     10. Keep Alive:                 7200s
+2.  Reverse DNS:                On      11. Disable Status After Login: Off
+3.  Port 1 Mode Override:       Off     12. NetReach Access:            Off
+4.  USB Client State:           On
+5.  Modem Hunt Telnet:          Off
+6.  Modem Hunt Raw:             Off
+7.  TCP TimeStamps:             On - Using random offsets
+8.  User Defined Prompt:        (undefined)
+9.  Command Prompt:             (u-boot/Default) DSM
+
+
+Enter: #<CR> to change,
+       <ESC> to return to previous menu ... 

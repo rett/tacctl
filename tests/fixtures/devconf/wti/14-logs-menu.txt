@@ -1,0 +1,23 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# command: /L
+# level: SuperUser
+# source: captured
+# captured: 2026-10-10
+# sanitised: names, addresses, communities, banner, port names
+# ---
+/L
+
+DISPLAY LOGS:
+
+1. Log Time Format:          ISO 8601
+2. Audit Log
+3. Alarm Log
+4. Syslog Server Log
+5. Temperature Log
+6. Change Log
+
+
+Enter: #<CR> to change,
+       <ESC> to exit ... 

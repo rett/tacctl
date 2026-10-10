@@ -1,0 +1,35 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# command: /N, then 5
+# level: SuperUser
+# source: captured
+# captured: 2026-10-10
+# sanitised: names, addresses, communities, banner, port names
+# ---
+5
+
+IPTABLES ENTRIES: IPv4
+
+1.
+2.
+3.
+4.
+5.
+6.
+7.
+8.
+9.
+10.
+11.
+12.
+
+
+   Multiple iptables commands can be uploaded here in the format:
+   <iptables>
+   COMMANDS (1 per line, 256 char max per command)
+   </iptables>
+   WARNING: Upload will replace and overwrite all current entries.
+
+Enter #<CR> to change, '<' for previous entries, '>' for next entries,
+       <ESC> to return to previous menu ... 
