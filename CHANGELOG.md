@@ -336,6 +336,15 @@ current behaviour; this file is where history lives.
     rest, so the directory itself is removed when nothing of anyone else's is in
     it; they held excerpts of each device's configuration (secret values elided).
 
+20. **The Junos walkthrough writes the management filter's deny terms as plain
+    `set` statements.** The terms that log and drop (`deny-mgmt`, and
+    `deny-snmp` under SNMPv3) were printed as `then { log; discard; }`, which
+    is the brace form of a hierarchy, not a `set` line a device takes. They are
+    now `set firewall family inet filter <name> term deny-mgmt then log` and
+    `... then discard` (and the same for `deny-snmp`). The pull's expected
+    configuration is built from the same lines.
+
+
 ## 0.2.3 (2026-10-09)
 
 ### What changed

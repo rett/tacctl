@@ -88,7 +88,7 @@ func TestJunosFilterRestrictsUDP161(t *testing.T) {
 			f + "permit-snmp from source-address 192.0.2.1/32\n",
 			f + "permit-snmp from source-address 198.51.100.0/24\n",
 			f + "permit-snmp from protocol udp\n", f + "permit-snmp from destination-port snmp\n", f + "permit-snmp then accept\n",
-			f + "deny-snmp from protocol udp\n", f + "deny-snmp from destination-port snmp\n", f + "deny-snmp then { log; discard; }\n",
+			f + "deny-snmp from protocol udp\n", f + "deny-snmp from destination-port snmp\n", f + "deny-snmp then log\n", f + "deny-snmp then discard\n",
 		} {
 			if !strings.Contains(got, want) {
 				t.Errorf("%s: lacks %q:\n%s", name, want, got)

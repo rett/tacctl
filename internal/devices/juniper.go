@@ -230,7 +230,8 @@ func JuniperVars(req Request, d Data) map[string]string {
 				f + "permit-snmp then accept\n" +
 				f + "deny-snmp from protocol udp\n" +
 				f + "deny-snmp from destination-port snmp\n" +
-				f + "deny-snmp then { log; discard; }\n")
+				f + "deny-snmp then log\n" +
+				f + "deny-snmp then discard\n")
 			snmpTerms = sb.String()
 			snmpNote = "# udp port 161 (SNMP, Step 5) is accepted from the SNMP clients only; this is the source restriction\n" +
 				"# under SNMPv3, which the client list of Step 5 does not give.\n"
@@ -247,7 +248,8 @@ func JuniperVars(req Request, d Data) map[string]string {
 			f + "permit-mgmt then accept\n" +
 			f + "deny-mgmt from protocol tcp\n" +
 			f + "deny-mgmt from destination-port [ ssh 830 ]\n" +
-			f + "deny-mgmt then { log; discard; }\n" +
+			f + "deny-mgmt then log\n" +
+			f + "deny-mgmt then discard\n" +
 			snmpTerms +
 			f + "default-accept then accept\n" +
 			"#\n" +

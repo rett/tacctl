@@ -112,11 +112,11 @@ scope tacacs-group lab TACACS_PROD ;; config cisco --scope lab ;; config cisco -
 scope radius-group lab RADIUS_LAB ;; config cisco --scope lab
 
 # management ACL: global, per scope, IPv6 skipped, names
-@known 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device; 0.2.3 item 78: and the break-glass step or notice
+@known 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device; 0.2.3 item 78: and the break-glass step or notice; 0.2.4 item 20: the Junos management filter's deny terms are plain 'then log' and 'then discard' statements
 config mgmt-acl add 10.0.0.0/8,192.168.1.0/24,fd00::/64 ;; config cisco --scope lab ;; config juniper --scope lab
 @known 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device; 0.2.3 item 78: and the break-glass step or notice
 config mgmt-acl cisco-name GLOBAL-VTY ;; scope mgmt-acl lab cisco-name LAB-VTY-ACL ;; config mgmt-acl add 10.0.0.0/8 ;; config cisco --scope lab ;; config cisco --scope prod
-@known 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device; 0.2.3 item 78: and the break-glass step or notice
+@known 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device; 0.2.3 item 78: and the break-glass step or notice; 0.2.4 item 20: the Junos management filter's deny terms are plain 'then log' and 'then discard' statements
 config mgmt-acl juniper-name GLOBAL-MGMT ;; scope mgmt-acl lab juniper-name LAB-MGMT-FILTER ;; scope mgmt-acl lab add 172.16.5.0/24 ;; config juniper --scope lab ;; config juniper --scope prod
 @known 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device; 0.2.3 item 78: and the break-glass step or notice
 scope mgmt-acl lab add fd00:1::/64 ;; config cisco --scope lab ;; config juniper --scope lab
@@ -185,11 +185,11 @@ scope tacacs-group lab TACACS_PROD ;; config cisco --scope lab ;; config cisco -
 scope radius-group lab RADIUS_LAB ;; config cisco --scope lab
 
 # management ACL: global, per scope, IPv6 skipped, names
-@known 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device; 0.2.3 item 67: every walkthrough gains an SNMP step; 0.2.3 item 68: the WTI steps after the firewall check move down by one; 0.2.3 item 70: the Cisco and Junos walkthroughs gain a commented NETCONF step
+@known 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device; 0.2.3 item 67: every walkthrough gains an SNMP step; 0.2.3 item 68: the WTI steps after the firewall check move down by one; 0.2.3 item 70: the Cisco and Junos walkthroughs gain a commented NETCONF step; 0.2.4 item 20: the Junos management filter's deny terms are plain 'then log' and 'then discard' statements
 config mgmt-acl add 10.0.0.0/8,192.168.1.0/24,fd00::/64 ;; config cisco --scope lab ;; config juniper --scope lab
 @known 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device; 0.2.3 item 67: every walkthrough gains an SNMP step; 0.2.3 item 68: the WTI steps after the firewall check move down by one; 0.2.3 item 70: the Cisco and Junos walkthroughs gain a commented NETCONF step
 config mgmt-acl cisco-name GLOBAL-VTY ;; scope mgmt-acl lab cisco-name LAB-VTY-ACL ;; config mgmt-acl add 10.0.0.0/8 ;; config cisco --scope lab ;; config cisco --scope prod
-@known 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device; 0.2.3 item 67: every walkthrough gains an SNMP step; 0.2.3 item 68: the WTI steps after the firewall check move down by one; 0.2.3 item 70: the Cisco and Junos walkthroughs gain a commented NETCONF step
+@known 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device; 0.2.3 item 67: every walkthrough gains an SNMP step; 0.2.3 item 68: the WTI steps after the firewall check move down by one; 0.2.3 item 70: the Cisco and Junos walkthroughs gain a commented NETCONF step; 0.2.4 item 20: the Junos management filter's deny terms are plain 'then log' and 'then discard' statements
 config mgmt-acl juniper-name GLOBAL-MGMT ;; scope mgmt-acl lab juniper-name LAB-MGMT-FILTER ;; scope mgmt-acl lab add 172.16.5.0/24 ;; config juniper --scope lab ;; config juniper --scope prod
 @known 0.2.2 item 5: config cisco|juniper|wti say what the server sends and what stays on the device; 0.2.3 item 67: every walkthrough gains an SNMP step; 0.2.3 item 68: the WTI steps after the firewall check move down by one; 0.2.3 item 70: the Cisco and Junos walkthroughs gain a commented NETCONF step
 scope mgmt-acl lab add fd00:1::/64 ;; config cisco --scope lab ;; config juniper --scope lab

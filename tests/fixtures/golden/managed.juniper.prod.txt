@@ -27,7 +27,8 @@
 | set firewall family inet filter MGMT-ACL term permit-mgmt then accept
 | set firewall family inet filter MGMT-ACL term deny-mgmt from protocol tcp
 | set firewall family inet filter MGMT-ACL term deny-mgmt from destination-port [ ssh 830 ]
-| set firewall family inet filter MGMT-ACL term deny-mgmt then { log; discard; }
+| set firewall family inet filter MGMT-ACL term deny-mgmt then log
+| set firewall family inet filter MGMT-ACL term deny-mgmt then discard
 | set firewall family inet filter MGMT-ACL term permit-snmp from source-address 10.0.0.42/32
 | set firewall family inet filter MGMT-ACL term permit-snmp from source-address 198.51.100.0/24
 | set firewall family inet filter MGMT-ACL term permit-snmp from protocol udp
@@ -35,7 +36,8 @@
 | set firewall family inet filter MGMT-ACL term permit-snmp then accept
 | set firewall family inet filter MGMT-ACL term deny-snmp from protocol udp
 | set firewall family inet filter MGMT-ACL term deny-snmp from destination-port snmp
-| set firewall family inet filter MGMT-ACL term deny-snmp then { log; discard; }
+| set firewall family inet filter MGMT-ACL term deny-snmp then log
+| set firewall family inet filter MGMT-ACL term deny-snmp then discard
 | set firewall family inet filter MGMT-ACL term default-accept then accept
 [snmp]
 | set snmp client-list TACCTL-SNMP 10.0.0.42/32
