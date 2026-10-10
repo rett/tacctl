@@ -3,7 +3,7 @@
 Go CLI that manages a TACACS+ (tacquito) and FreeRADIUS server, its users,
 groups and scopes, network devices and enrolled Linux hosts.
 
-Start with `docs/plans/0.2.3-handoff.md` (state, scope, working rules), then
+Start with `docs/plans/0.2.4-handoff.md` (state, scope, working rules), then
 `docs/plans/backlog.md` §0 (roadmap) and the current release plan.
 
 ## Commands
