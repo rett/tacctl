@@ -86,6 +86,66 @@ func TestConfigSyntaxRefusals(t *testing.T) {
 	}
 }
 
+// The setting is a Cisco setting everywhere a device is read or written: a
+// registry file, an import and a save refuse a non-Cisco device that has one
+// (only 'device add' and the verb used to), and a merge never carries a
+// registered setting onto a device the file made another vendor.
+func TestConfigSyntaxIsCiscoOnly(t *testing.T) {
+	for _, vendor := range []string{"juniper", "wti", "other"} {
+		text := strings.Replace(sample, "vendor: wti}", "vendor: "+vendor+", config_syntax: ios12}", 1)
+		p := filepath.Join(t.TempDir(), "devices.yaml")
+		if err := os.WriteFile(p, []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		_, err := Load(p)
+		if err == nil || !strings.Contains(strings.Join(msgs(err), " "), "is a Cisco setting") {
+			t.Errorf("load of vendor %s with config_syntax: %v", vendor, err)
+		}
+		// The key before the vendor in the map reads the same.
+		text = strings.Replace(sample, "vendor: wti}", "config_syntax: modern, vendor: "+vendor+"}", 1)
+		if err := os.WriteFile(p, []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Load(p); err == nil || !strings.Contains(strings.Join(msgs(err), " "), "is a Cisco setting") {
+			t.Errorf("load of config_syntax before vendor %s: %v", vendor, err)
+		}
+	}
+	// An import file with the key on a non-Cisco device is refused whole.
+	f, _ := loadText(t, sampleSyntax)
+	rows, err := ParseImport([]byte(Header + "version: 1\ndevices:\n  edge-j1: {address: 192.0.2.40, vendor: juniper, config_syntax: modern}\n"))
+	if err == nil {
+		_, err = f.Import(rows, false, true, nil)
+	}
+	if err == nil || !strings.Contains(strings.Join(msgs(err), " "), "is a Cisco setting") {
+		t.Errorf("import: %v", err)
+	}
+	if f.Find("edge-j1") != nil {
+		t.Error("the refused import added the device")
+	}
+	// A save refuses it too.
+	d := f.Find("core-sw1")
+	d.Vendor = "juniper"
+	if _, err := f.Text(); err == nil {
+		t.Error("a Juniper device with a syntax was written")
+	}
+	d.Vendor = "cisco"
+	// A file that moves a registered Cisco device to another vendor takes
+	// the registered setting away with it.
+	rows, err = ParseImport([]byte(Header + "version: 1\ndevices:\n  core-sw1: {address: 10.99.0.1, vendor: juniper}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.Import(rows, false, true, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.Find("core-sw1"); got.Vendor != "juniper" || got.ConfigSyntax != "" {
+		t.Errorf("the merge kept the syntax of a device that is not Cisco: %+v", got)
+	}
+	if _, err := f.Text(); err != nil {
+		t.Errorf("the merged registry cannot be written: %v", err)
+	}
+}
+
 // An import of the registry's YAML carries the setting; a CSV row says
 // nothing of it, and neither does a YAML file made before the key existed, so
 // a merge keeps the registered one (the verb clears it).

@@ -187,7 +187,7 @@ func TestPullRecordsImageAndSyntaxPerDialect(t *testing.T) {
 			// pull --json says which syntax it compared in.
 			js := b.run("device", "config", "pull", "lab-c", "--json")
 			var line pullJSON
-			if err := json.Unmarshal([]byte(strings.Split(strings.TrimSpace(js), "\n")[0]), &line); err != nil || line.Syntax != tc.wantSyn || line.SyntaxGuessed {
+			if err := json.Unmarshal([]byte(strings.Split(strings.TrimSpace(js), "\n")[0]), &line); err != nil || line.Syntax != tc.wantSyn || line.SyntaxConflict || line.OS != tc.line {
 				t.Errorf("json: %+v %v\n%s", line, err, js)
 			}
 		})
@@ -240,15 +240,35 @@ func TestPullSettingAndMissingVersionLine(t *testing.T) {
 		t.Errorf("list:\n%s", list)
 	}
 
-	// A line no row knows is the modern syntax, and says it was guessed.
-	b.version("Cisco IOS Software, CSR1000V Software, Version 3.16.0S, RELEASE SOFTWARE")
+	// A line no row maps is not guessed modern: the pull is refused with the
+	// hint, nothing is recorded, and the setting makes it comparable.
+	const unmapped = "Cisco IOS Software, CSR1000V Software, Version 3.16.0S, RELEASE SOFTWARE"
 	b.serve("cisco", b.expectedSyntax("lab-c", false))
-	b.version("Cisco IOS Software, CSR1000V Software, Version 3.16.0S, RELEASE SOFTWARE")
+	b.version(unmapped)
 	out = b.run("device", "config", "pull", "lab-c")
-	if b.sb.code != 0 || !strings.Contains(out, "ok via ssh") {
-		t.Fatalf("guessed: %d\n%s", b.sb.code, out)
+	if b.sb.code != 1 || !strings.Contains(out, `the device's version line "`+unmapped+`" is not an image tacctl maps`) ||
+		!strings.Contains(out, "tacctl device config-syntax lab-c ios12|modern") {
+		t.Fatalf("unmapped line, auto: %d\n%s", b.sb.code, out)
 	}
-	if show := b.run("device", "show", "lab-c"); !strings.Contains(show, `Config syntax: auto (modern, guessed from "Cisco IOS Software, CSR1000V Software, Version 3.16.0S, RELEASE SOFTWARE" in the pull of `) {
+	if rec, _ := b.records().Of("lab-c"); rec == nil || rec.OS != "" || rec.Syntax != "" {
+		t.Errorf("a refused pull was recorded: %+v", rec)
+	}
+	b.sb.dev("", "config-syntax", "lab-c", "modern")
+	out = b.run("device", "config", "pull", "lab-c")
+	if b.sb.code != 0 || !strings.Contains(out, "ok via ssh") || strings.Contains(out, "warning") {
+		t.Fatalf("unmapped line, modern: %d\n%s", b.sb.code, out)
+	}
+	if rec, _ := b.records().Of("lab-c"); rec == nil || rec.OS != unmapped || rec.Syntax != "" {
+		t.Errorf("record %+v: the line is kept and no syntax is derived", rec)
+	}
+	// Back at auto, the record's line is one nothing maps: the device needs
+	// the setting, and 'show' says which line it was.
+	b.sb.dev("", "config-syntax", "lab-c", "auto")
+	if list := b.run("device", "config", "list"); !strings.Contains(list, "needs pull (syntax unknown)") {
+		t.Errorf("list:\n%s", list)
+	}
+	if show := b.run("device", "show", "lab-c"); !strings.Contains(show, `Config syntax: auto (unknown: the pull of `) ||
+		!strings.Contains(show, `read "`+unmapped+`", which tacctl does not map to a syntax`) {
 		t.Errorf("show:\n%s", show)
 	}
 }

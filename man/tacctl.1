@@ -3181,9 +3181,9 @@ sibling scopes as a hint). With
 .BR --legacy ,
 emits legacy IOS 12.x syntax
 .RB ( "tacacs-server host" " and " "aaa group server \&... / server <ip>" )
-for devices predating the structured
-.B "tacacs server"
-block introduced in IOS 15.0, whatever the configuration syntax of the device
+for devices that use the older
+.B "tacacs-server host"
+form (IOS 12.x), whatever the configuration syntax of the device
 named by
 .B --name
 is. With
@@ -5519,7 +5519,7 @@ is printed in and its configuration is compared in
 .B modern
 is the
 .B tacacs server NAME
-syntax of IOS 15.x, 16.x, 17.x and IOS\-XE,
+syntax of IOS 15.2 and later, 16.x, 17.x and IOS\-XE,
 .B ios12
 the IOS 12.x syntax
 .RB ( "tacacs\-server host" ).
@@ -5535,17 +5535,59 @@ is ios12;
 .BR "Version 15." ", " 16. " and " 17.
 and
 .B IOS\-XE
-are modern; any other line is modern, and
-.B device show
-says it was guessed). A device not pulled yet is walked through in the modern
-syntax, with one line that says so, and
+are modern, the
+.B tacacs server NAME
+syntax being believed to start at IOS 15.2, not verified; any other line is
+unknown and is never guessed either way: IOS 11.x, IOS 15.0 and 15.1, an ASA
+registered as cisco, IOS XR, and the boot loader's
+.B ROM:
+and
+.B BOOTLDR:
+lines, which name no image). The pull of a device that is
+.B auto
+and whose line is unknown is refused with the command to set
+.B ios12
+or
+.BR modern ,
+and a refused pull is not recorded, so
+.B device config list
+is unchanged and the pull's own output is where the reason is. A device not
+pulled yet is walked through in the modern syntax, with one line that says so
+(for a device that an earlier release pulled, the line says that the last pull
+holds no image line and to run
+.BR "device config pull" ),
+and
 .B device config list
 says
 .B pull
 .RB ( "needs pull (syntax unknown)" )
 for a Cisco device whose record has no version line, until it is pulled once.
-No word prints the setting. The setting is for Cisco devices; an engineer sets it
-for the devices of their own scopes.
+A setting that the image of the last pull contradicts
+.RB ( modern
+on a device that says IOS 12.4, the direction that locks a person out) is not
+refused: the setting wins and the contradiction is shown by
+.BR "device config pull" " (a warning on the device's line; " \-\-json
+carries
+.BR syntax_conflict ,
+.B image_syntax
+and
+.BR os ),
+by
+.BR "device show" ,
+by
+.B device config list
+(its DETAIL column and
+.BR syntax_conflict )
+and by the walkthrough (one
+.B # warning:
+line), and
+.B "device config\-syntax"
+says it when the setting is made.
+No word prints the setting. The setting is for Cisco devices (a registry file
+or an import that gives one to another vendor is refused, and
+.B "device vendor"
+takes it away from a device that stops being Cisco, saying so); an engineer sets
+it for the devices of their own scopes.
 .\" BEGIN GENERATED: command device config-syntax
 .RS
 .PP
@@ -6121,8 +6163,13 @@ paging off, after
 .BR "show version | include Version" ,
 whose line is kept on the record with the configuration syntax it says (see
 .BR "device config\-syntax" );
-a device that answers no such line and has no setting is refused with the
-command to set one, and is never read over NETCONF:
+a device that answers no image line (the boot loader's
+.B ROM:
+and
+.B BOOTLDR:
+lines are none) or one that maps to no syntax, and has no setting, is refused
+with the command to set one and nothing is recorded; a Cisco device is never
+read over NETCONF:
 .B "\-\-transport netconf"
 refuses a Cisco device before any login, as a failed line that leaves its
 record alone, or as wrong arguments when every selected device is Cisco). The
@@ -6394,8 +6441,10 @@ the state
 and
 .B pull
 for a Cisco device whose configuration syntax is unknown: its setting is auto
-and its record has no version line, so it is compared neither as IOS 12.x nor as
-the modern syntax until a pull reads it),
+and its record has no version line (or one that maps to no syntax), so it is
+compared neither as IOS 12.x nor as the modern syntax until a pull reads it;
+a pull of a device whose version line is not read or not mapped is refused and
+not recorded, so this state does not change by it),
 when it was pulled, by whom, over which transport, what the NETCONF probe
 found and, for a device that differs, the sections, or, for one that failed,
 the result.

@@ -112,10 +112,11 @@ type pullOutcome struct {
 	SecretsVisible bool
 	// OS is the version line a Cisco device answered (D113) and Syntax the
 	// configuration syntax the comparison was made in ("" where the syntax
-	// is of no consequence); SyntaxGuessed is set when the line matched no
-	// row of devconf.SyntaxRows.
-	OS, Syntax    string
-	SyntaxGuessed bool
+	// is of no consequence). ImageSyntax is the syntax the line derives to
+	// when it is not the setting's: the pull was compared as set (the
+	// setting wins), and the view says the line contradicts it.
+	OS, Syntax  string
+	ImageSyntax string
 	// Reason is the failure in words; Hint what to do about it.
 	Reason, Hint string
 	// Offered is the host key a device presented that is not pinned
@@ -618,13 +619,24 @@ func (r *pullRun) pullDevice(ctx context.Context, e devreg.Entry, o *pullOutcome
 		if r.render.recs != nil {
 			old, _ = r.render.recs.Of(e.Name)
 		}
-		syn, guessed := devconf.SyntaxFromRead(e.ConfigSyntax, rd.Version, old)
+		syn := devconf.SyntaxFromRead(e.ConfigSyntax, rd.Version, old)
 		if syn == "" {
+			// Nothing is recorded: the pull's own output is the only place
+			// that says why (the list keeps showing 'needs pull').
+			if strings.TrimSpace(rd.Version) != "" {
+				return fail(batch.StatusFailed, "the device's version line \""+cleanLine(rd.Version)+
+					"\" is not an image tacctl maps to a configuration syntax (IOS 12.x, 15.2 and later, 16.x, 17.x, IOS-XE), so its configuration syntax is unknown",
+					"tacctl device config-syntax "+e.Name+" ios12|modern")
+			}
 			return fail(batch.StatusFailed, "the device's IOS version was not read ('"+devconf.VersionCommand+
-				"' answered no version line), so its configuration syntax is unknown",
+				"' answered no image line), so its configuration syntax is unknown",
 				"tacctl device config-syntax "+e.Name+" ios12|modern")
 		}
-		o.Syntax, o.SyntaxGuessed = syn, guessed
+		o.Syntax = syn
+		// An explicit setting that the line contradicts wins; the pull says so.
+		if img, conflict := devconf.ConflictOf(e.ConfigSyntax, rd.Version); conflict {
+			o.ImageSyntax = img
+		}
 		expected, err = r.render.ExpectedAs(e, syn == devconf.SyntaxIOS12)
 		if err != nil {
 			return fail(batch.StatusFailed, "cannot build the expected configuration: "+err.Error(), "")
@@ -724,7 +736,7 @@ func (r *pullRun) recordSuccess(o *pullOutcome, e devreg.Entry, ext devconf.Extr
 		switch {
 		case o.OS != "":
 			rec.OS = o.OS
-			rec.Syntax, _ = devconf.DeriveSyntax(o.OS)
+			rec.Syntax = devconf.DeriveSyntax(o.OS)
 		case e.ConfigSyntax != "":
 			rec.OS, rec.Syntax = "", ""
 		}

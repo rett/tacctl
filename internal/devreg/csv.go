@@ -188,7 +188,9 @@ func (f *File) Import(rows []Row, replace, allowGeneric bool, hostEntries []Entr
 		// file that says nothing of it (a registry exported by an earlier
 		// tacctl) leaves the registered one; 'device config-syntax <name>
 		// auto' clears it.
-		if merged.ConfigSyntax == "" {
+		// A registered setting does not outlive a vendor that is not Cisco
+		// (the file moved the device to another vendor).
+		if merged.ConfigSyntax == "" && merged.Vendor == "cisco" {
 			merged.ConfigSyntax = old.ConfigSyntax
 		}
 		merged.Name = old.Name

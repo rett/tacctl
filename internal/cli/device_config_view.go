@@ -98,6 +98,12 @@ func (v *pullView) rowText(i int) string {
 		case r.Result.Status != batch.StatusOK && o.Fallback != "" && o.Reason == "":
 			text += " (" + o.Fallback + ")"
 		}
+		// A setting the device's own version line contradicts (D113: the
+		// setting wins; modern on a 12.x image is the lock-out direction).
+		if o.ImageSyntax != "" && r.Result.Status == batch.StatusOK {
+			text += "; warning: config-syntax is " + o.Syntax + " but the device says " + imageText(o.OS) +
+				" (" + o.ImageSyntax + " syntax)"
+		}
 	}
 	return cleanLine(text)
 }
@@ -202,13 +208,17 @@ type pullJSON struct {
 	Netconf   string `json:"netconf,omitempty"`
 	Fallback  string `json:"fallback,omitempty"`
 	// Syntax is the Cisco configuration syntax the device was compared in
-	// (D113), SyntaxGuessed when its version line matched no known row.
-	Syntax        string            `json:"syntax,omitempty"`
-	SyntaxGuessed bool              `json:"syntax_guessed,omitempty"`
-	DurationMS    int64             `json:"duration_ms"`
-	DiffersIn     []string          `json:"differs_in,omitempty"`
-	Secrets       *bool             `json:"secrets_visible,omitempty"`
-	Sections      []pullSectionJSON `json:"sections,omitempty"`
+	// (D113) and OS the version line it answered. SyntaxConflict is set when
+	// the explicit setting is not the syntax that line derives to (the
+	// setting wins), ImageSyntax then being what the line says.
+	Syntax         string            `json:"syntax,omitempty"`
+	OS             string            `json:"os,omitempty"`
+	SyntaxConflict bool              `json:"syntax_conflict,omitempty"`
+	ImageSyntax    string            `json:"image_syntax,omitempty"`
+	DurationMS     int64             `json:"duration_ms"`
+	DiffersIn      []string          `json:"differs_in,omitempty"`
+	Secrets        *bool             `json:"secrets_visible,omitempty"`
+	Sections       []pullSectionJSON `json:"sections,omitempty"`
 }
 
 func (v *pullView) deviceJSON(i int, withLines bool) pullJSON {
@@ -227,7 +237,8 @@ func (v *pullView) deviceJSON(i int, withLines bool) pullJSON {
 	}
 	j.DurationMS = o.Duration.Milliseconds()
 	j.Reason = cleanLine(o.Reason)
-	j.Syntax, j.SyntaxGuessed = o.Syntax, o.SyntaxGuessed
+	j.Syntax, j.OS = o.Syntax, cleanLine(o.OS)
+	j.SyntaxConflict, j.ImageSyntax = o.ImageSyntax != "", o.ImageSyntax
 	if r.Result.Status == batch.StatusOK {
 		j.DiffersIn = r.Result.Differs
 		sv := o.SecretsVisible

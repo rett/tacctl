@@ -635,18 +635,24 @@ type deviceJSON struct {
 	// pull; absent while unknown) and SyntaxSource where that comes from
 	// (setting or pull). The resolution is part of the configuration state:
 	// the caller who is not shown that state does not get it.
-	ConfigSyntax string             `json:"config_syntax,omitempty"`
-	Syntax       string             `json:"syntax,omitempty"`
-	SyntaxSource string             `json:"syntax_source,omitempty"`
-	Description  string             `json:"description,omitempty"`
-	Location     string             `json:"location,omitempty"`
-	Scope        string             `json:"scope"`
-	Tag          string             `json:"tag"`
-	Shadowed     []string           `json:"shadowed_by"`
-	State        string             `json:"state"`
-	HostKeys     []string           `json:"host_keys"`
-	Notices      []deviceNoticeJSON `json:"notices"`
-	Seen         *deviceSeenJSON    `json:"seen,omitempty"`
+	// SyntaxConflict is set when the explicit setting is not the syntax the
+	// last pull's version line (OS) derives to: the setting wins, and
+	// ImageSyntax is what the line says.
+	ConfigSyntax   string             `json:"config_syntax,omitempty"`
+	Syntax         string             `json:"syntax,omitempty"`
+	SyntaxSource   string             `json:"syntax_source,omitempty"`
+	SyntaxConflict bool               `json:"syntax_conflict,omitempty"`
+	ImageSyntax    string             `json:"image_syntax,omitempty"`
+	OS             string             `json:"os,omitempty"`
+	Description    string             `json:"description,omitempty"`
+	Location       string             `json:"location,omitempty"`
+	Scope          string             `json:"scope"`
+	Tag            string             `json:"tag"`
+	Shadowed       []string           `json:"shadowed_by"`
+	State          string             `json:"state"`
+	HostKeys       []string           `json:"host_keys"`
+	Notices        []deviceNoticeJSON `json:"notices"`
+	Seen           *deviceSeenJSON    `json:"seen,omitempty"`
 	// Config is the state of the configuration pull: ok, differs, never or
 	// failed (none for a host and for a vendor that is not read).
 	Config string `json:"config,omitempty"`
@@ -689,6 +695,12 @@ func deviceJSONOf(inv *invocation, res *devreg.Resolver, e devreg.Entry, recs *d
 		if j.ConfigSyntax != "" {
 			r := syntaxOf(e, rec)
 			j.Syntax, j.SyntaxSource = r.Syntax, r.Source
+			if rec != nil && e.Vendor == "cisco" {
+				j.OS = cleanLine(rec.OS)
+				if r.Conflict {
+					j.SyntaxConflict, j.ImageSyntax = true, r.ImageSyntax
+				}
+			}
 		}
 		if st := inv.configStateOf(e, rec); st != "-" {
 			j.Config = st
@@ -1274,6 +1286,9 @@ func (inv *invocation) deviceSetter(field string) func([]string) error {
 		if err := set(&probe); err != nil {
 			return err
 		}
+		// A configuration syntax setting is a Cisco setting: it goes with
+		// the vendor, and the message says which one went.
+		droppedSyntax := d.ConfigSyntax != "" && probe.ConfigSyntax == ""
 		warnKeys := false
 		if _, err := inv.deviceWrite(func(f *devreg.File, r *devreg.Resolver) error {
 			live := f.Find(name)
@@ -1307,6 +1322,9 @@ func (inv *invocation) deviceSetter(field string) func([]string) error {
 		if warnKeys {
 			inv.app.Out.Warn("The pinned host keys belonged to the old address and were dropped.")
 		}
+		if droppedSyntax {
+			inv.app.Out.Warn("The configuration syntax setting (" + d.ConfigSyntax + ") was removed: it is a Cisco setting.")
+		}
 		return nil
 	}
 }
@@ -1332,7 +1350,14 @@ func setField(d *devreg.Device, field, value string, clearing bool) error {
 		d.Vendor = devreg.VendorOther
 		if !clearing {
 			d.Vendor = strings.ToLower(value)
-			return devreg.ValidateVendor(d.Vendor)
+			if err := devreg.ValidateVendor(d.Vendor); err != nil {
+				return err
+			}
+		}
+		// The configuration syntax is a Cisco setting: a device that stops
+		// being one does not keep it (the registry refuses the pair).
+		if d.Vendor != "cisco" {
+			d.ConfigSyntax = ""
 		}
 	case "port":
 		d.Port = 0

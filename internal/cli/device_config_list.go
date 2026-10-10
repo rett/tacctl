@@ -116,6 +116,11 @@ type listJSON struct {
 	Netconf   string            `json:"netconf,omitempty"`
 	Sections  map[string]string `json:"sections,omitempty"`
 	DiffersIn []string          `json:"differs_in,omitempty"`
+	// SyntaxConflict is set when the device's explicit config-syntax is not
+	// the syntax its last pull's version line derives to (the setting wins);
+	// ImageSyntax is what the line says.
+	SyntaxConflict bool   `json:"syntax_conflict,omitempty"`
+	ImageSyntax    string `json:"image_syntax,omitempty"`
 }
 
 // deviceConfigList is 'device config list'.
@@ -171,6 +176,9 @@ func (inv *invocation) deviceConfigList(args []string) error {
 		rec    *devconf.Record
 		state  string
 		differ []string
+		// conflict is the syntax the version line derives to when the
+		// explicit setting contradicts it ("" otherwise).
+		conflict string
 	}
 	var rows []row
 	for _, e := range entries {
@@ -203,12 +211,19 @@ func (inv *invocation) deviceConfigList(args []string) error {
 				continue
 			}
 		}
-		rows = append(rows, row{e, rec, state, differ})
+		var conflict string
+		if rec != nil && inv.syntaxMatters(e) {
+			if sr := syntaxOf(e, rec); sr.Conflict {
+				conflict = sr.ImageSyntax
+			}
+		}
+		rows = append(rows, row{e, rec, state, differ, conflict})
 	}
 	if p.Has("--json") {
 		out := []listJSON{}
 		for _, r := range rows {
-			j := listJSON{Name: r.e.Name, Scope: r.e.Scope, Vendor: r.e.Vendor, State: r.state, DiffersIn: r.differ}
+			j := listJSON{Name: r.e.Name, Scope: r.e.Scope, Vendor: r.e.Vendor, State: r.state, DiffersIn: r.differ,
+				SyntaxConflict: r.conflict != "", ImageSyntax: r.conflict}
 			if r.rec != nil {
 				j.Result, j.By, j.Transport = r.rec.Result, r.rec.By, r.rec.Transport
 				if !r.rec.Pulled.IsZero() {
@@ -262,6 +277,15 @@ func (inv *invocation) deviceConfigList(args []string) error {
 		}
 		if r.state == string(devconf.StalePull) {
 			detail = devconf.NeedsPullText
+		}
+		if r.conflict != "" {
+			// The setting wins; the pull's image says another syntax.
+			note := "config-syntax " + r.e.ConfigSyntax + ", the pull read " + r.conflict
+			if detail == "-" {
+				detail = note
+			} else {
+				detail += "; " + note
+			}
 		}
 		switch {
 		case r.e.Vendor == "wti":

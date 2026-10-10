@@ -273,6 +273,71 @@ print(r.get("syntax", "-"), "|", r.get("os", "-"))' "${TACCTL_VAR_LIB}/devices-c
     assert_line --regexp '^  lab-c  ok via ssh$'
 }
 
+@test "pull: a setting that the device's image contradicts wins and is shown by pull, show, list and the walkthrough" {
+    local cdir
+    cdir=$(fakedev_dir ios)
+    fakedev_start "$cdir"
+    fakedev_register lab-c 192.168.1.30 cisco
+    run "$TACCTL_BIN_SCRIPT" device config-syntax lab-c modern
+    assert_success
+    # The device runs the modern text and says IOS 12.4.
+    fakedev_serve "$cdir" cisco lab lab-c
+    printf '%s\n' 'Cisco IOS Software, 7200 Software (C7200-ADVENTERPRISEK9-M), Version 12.4(15)T14, RELEASE SOFTWARE (fc2)' \
+        > "${cdir}/show version | include Version.out"
+    pull lab-c
+    assert_success
+    assert_line --regexp '^  lab-c  ok via ssh; warning: config-syntax is modern but the device says IOS 12\.4\(15\)T14 \(ios12 syntax\)$'
+    pull lab-c --json
+    assert_success
+    run python3 -c 'import json,sys; d=json.loads(sys.stdin.readline()); print(d["syntax"], d["syntax_conflict"], d["image_syntax"])' <<< "$output"
+    assert_output "modern True ios12"
+    SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device show lab-c
+    plain
+    assert_line --regexp '^  Config syntax: modern \(the pull of [0-9-]+ read IOS 12\.4\(15\)T14, which is ios12 syntax, not modern: check the setting\)$'
+    SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device show lab-c --json
+    run python3 -c 'import json,sys; d=json.loads(sys.stdin.read()); print(d["syntax"], d["syntax_conflict"], d["image_syntax"])' <<< "$output"
+    assert_output "modern True ios12"
+    SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device config list
+    plain
+    assert_output --partial "config-syntax modern, the pull read ios12"
+    SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device config show lab-c
+    plain
+    assert_success
+    assert_line --regexp '^# warning: config-syntax of lab-c is modern but the pull of [0-9-]+ read IOS 12\.4\(15\)T14, which is ios12 syntax, not modern; '
+    # What the image says silences it all.
+    run "$TACCTL_BIN_SCRIPT" device config-syntax lab-c ios12
+    assert_success
+    SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device config list
+    plain
+    refute_output --partial "the pull read"
+}
+
+@test "pull: a version line no row maps (an ASA registered as cisco, IOS 15.1) is refused, not guessed modern" {
+    local cdir
+    cdir=$(fakedev_dir ios)
+    fakedev_start "$cdir"
+    fakedev_register lab-c 192.168.1.30 cisco
+    FAKEDEV_IOS_VERSION='Cisco Adaptive Security Appliance Software Version 9.8(4)' fakedev_serve "$cdir" cisco lab lab-c
+    pull lab-c
+    assert_failure 1
+    assert_output --partial "failed: the device's version line \"Cisco Adaptive Security Appliance Software Version 9.8(4)\" is not an image tacctl maps"
+    assert_output --partial "tacctl device config-syntax lab-c ios12|modern"
+    # Nothing is recorded: the list says what it said before.
+    SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device config list
+    plain
+    assert_line --regexp '^ *lab-c .* never '
+    printf '%s\n' 'Cisco IOS Software, 1900 Software (C1900-UNIVERSALK9-M), Version 15.1(4)M, RELEASE SOFTWARE' \
+        > "${cdir}/show version | include Version.out"
+    pull lab-c
+    assert_failure 1
+    assert_output --partial "is not an image tacctl maps"
+    run "$TACCTL_BIN_SCRIPT" device config-syntax lab-c modern
+    assert_success
+    pull lab-c
+    assert_success
+    assert_line --regexp '^  lab-c  ok via ssh$'
+}
+
 @test "pull: a Cisco device that answers no version line needs its setting, and a record of 0.2.4 needs a pull" {
     local cdir
     cdir=$(fakedev_dir ios)

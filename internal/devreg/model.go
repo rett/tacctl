@@ -331,6 +331,12 @@ func (d Device) validate() error {
 		if s, err := ValidateConfigSyntax(d.ConfigSyntax); err != nil || s == "" {
 			return fail("Invalid configuration syntax '" + d.ConfigSyntax + "'. Use: ios12 or modern.")
 		}
+		// A Cisco setting only: a device of another vendor has no syntax
+		// to set (the verb and 'device add' refuse it; a file is checked
+		// here, on load, import and save alike).
+		if d.Vendor != "cisco" {
+			return fail("config_syntax '" + d.ConfigSyntax + "' is a Cisco setting; the vendor is '" + d.Vendor + "'.")
+		}
 	}
 	if d.Location != "" {
 		if err := ValidateLocation(d.Location); err != nil {

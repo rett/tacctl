@@ -178,8 +178,11 @@ devices; a second one cuts the running ones off. Exit status: 0 every device
 read, 1 a device failed (or was refused), 2 wrong arguments, 130 interrupted.
 A Cisco device is read with 'show version | include Version' as well: the
 image's version line is kept on the record with the configuration syntax it
-says (12.x is ios12; 15.x, 16.x, 17.x and IOS-XE are modern), and the device is
-compared in that syntax unless 'device config-syntax' says otherwise.
+says (12.x is ios12; 15.2 to 15.9, 16.x, 17.x and IOS-XE are modern; any other
+image, such as 11.x, 15.0, 15.1, an ASA or IOS XR, is unknown and is not guessed:
+the pull is refused and nothing is recorded), and the device is compared in that
+syntax unless 'device config-syntax' says otherwise; a setting that the image
+contradicts wins and is shown.
 
 'diff' compares the last pull with what tacctl renders now, section by
 section: '-' is a statement tacctl renders that the device lacks, '+' one the

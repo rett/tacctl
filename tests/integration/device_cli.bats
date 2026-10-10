@@ -241,6 +241,22 @@ devices:
     assert_output --partial "has vendor 'juniper'; the configuration syntax is a Cisco setting"
 }
 
+@test "device vendor: a device that stops being Cisco loses its configuration syntax, and a file cannot give one to another vendor" {
+    "$TACCTL_BIN_SCRIPT" device add old-ios 10.99.0.1 --vendor cisco --no-host-key
+    "$TACCTL_BIN_SCRIPT" device config-syntax old-ios ios12
+    run "$TACCTL_BIN_SCRIPT" device vendor old-ios juniper
+    assert_success
+    assert_output --partial "The configuration syntax setting (ios12) was removed: it is a Cisco setting."
+    run grep -c config_syntax "${TACCTL_STATE_DIR}/devices.yaml"
+    assert_output "0"
+    # The registry file is checked on load, whatever the order of its keys.
+    printf '%s\n' '# tacctl device registry' 'version: 1' 'devices:' \
+        '  jun-1: {address: 10.99.0.9, config_syntax: modern, vendor: juniper}' > "${BATS_TEST_TMPDIR}/bad.yaml"
+    run "$TACCTL_BIN_SCRIPT" device import --check "${BATS_TEST_TMPDIR}/bad.yaml"
+    assert_failure
+    assert_output --partial "is a Cisco setting"
+}
+
 @test "device add --config-syntax: stored only when set, and only for a Cisco device" {
     run "$TACCTL_BIN_SCRIPT" device add lab-c 10.99.0.3 --vendor cisco --config-syntax modern --legacy-ssh --no-host-key
     assert_success

@@ -445,7 +445,23 @@ current behaviour; this file is where history lives.
     once)`, after the data block of `device config show` and on standard error
     of `config cisco --name`. `--legacy` of `config cisco` and `device config
     show` stays an explicit IOS 12.x override for that run. A scope served over
-    RADIUS has one syntax, as before.
+    RADIUS has one syntax, as before. The setting is a Cisco setting
+    everywhere: a registry file, an import and a save refuse `config_syntax` on
+    a device of another vendor, and `device vendor <name> <other>` removes the
+    setting and says so. A setting that contradicts the image the last pull
+    read (`modern` on a device whose pull read `Version 12.4`: the lock-out
+    direction) is not refused (the setting wins) and is no longer silent:
+    `device config pull` ends the device's line with `warning: config-syntax is
+    modern but the device says IOS 12.4(15)T14 (ios12 syntax)` and `--json`
+    carries `syntax_conflict`, `image_syntax` and `os`; `device show` and
+    `device config-syntax <name>` say `modern (the pull of 2026-10-10 read IOS
+    12.4(15)T14, which is ios12 syntax, not modern: check the setting)`
+    (`syntax_conflict` and `image_syntax` in `--json`); `device config list`
+    names it in the DETAIL column and `--json`; the walkthrough prints one
+    `# warning:` line; and `device config-syntax <name> <word>` says it when
+    the setting is made. For a device that was pulled by a build that kept no
+    image line, `device config show` says `the last pull holds no image line:
+    run device config pull <name>` instead of `no pull yet`.
 
 26. **`legacy-ssh` is the ssh algorithms and nothing else.** The flag adds the
     SHA-1 key exchange, the CBC ciphers and `ssh-rsa` to the ssh login, the
@@ -460,17 +476,23 @@ current behaviour; this file is where history lives.
     `terminal length 0` and before `show running-config`; the first line that
     names the image (`Cisco IOS Software, ... Version 15.6(2)T`, `Cisco IOS XE
     Software, Version 16.07.01`) is kept on the record as `os`, and the syntax
-    derived from it as `syntax`: `Version 12.` is `ios12`; `Version 15.`,
-    `16.`, `17.` and `IOS-XE` or `IOS XE` are `modern`; any other line is
-    `modern`, and `device show` says it was guessed from that line. The
-    comparison of the pull is made in the syntax the device says now unless
+    derived from it as `syntax`: `Version 12.` is `ios12`; `Version 15.2` to
+    `15.9`, `16.`, `17.` and `IOS-XE` or `IOS XE` are `modern`; **any other
+    line has no syntax and is never guessed modern**: IOS 11.x, IOS 15.0 and
+    15.1 (the `tacacs server NAME` syntax is believed to start at 15.2, which
+    is not verified for those, so they take the setting), an ASA registered as
+    cisco and IOS XR. The loader's `ROM:` and `BOOTLDR:` lines name no image
+    and are ignored, so a device that answers only those has no version line.
+    The comparison of the pull is made in the syntax the device says now unless
     the setting says otherwise (an upgraded device is not compared in the
-    syntax it had), and `pull --json` carries `syntax` (and `syntax_guessed`).
-    A device that answers no version line is not an error of the read; if it
-    has no setting and its record has no syntax either, the pull is refused
-    with `tacctl device config-syntax <name> ios12|modern`, and nothing is
-    recorded. Under a setting the pull is compared as set and the record
-    keeps no image.
+    syntax it had), and `pull --json` carries `syntax` and `os`. A device
+    that answers no image line, or one that maps to no syntax, is not an error
+    of the read; if it has no setting (and, for no line at all, its record has
+    no syntax either), the pull is refused with `tacctl device config-syntax
+    <name> ios12|modern`, and nothing is recorded: the pull's own output is
+    where the reason is, and `device config list` is unchanged. Under a
+    setting the pull is compared as set and a record that read no line keeps
+    no image.
 
 28. **A Cisco device whose syntax is unknown is `pull`, not guessed either
     way.** Nothing in the registry is rewritten by the upgrade, and a record
@@ -482,8 +504,9 @@ current behaviour; this file is where history lives.
     (syntax unknown)`. One `tacctl device config pull --vendor cisco` after the
     upgrade makes every such device known; an operator who knows a device sets
     `ios12` or `modern` and compares it without that pull (the 12.4 router is
-    one `device config-syntax <name> ios12`). A device of a RADIUS scope is
-    never in this state.
+    one `device config-syntax <name> ios12`). A record whose version line maps
+    to no syntax is in the same state. A device of a RADIUS scope is never in
+    this state.
 
 29. **`tacctl rollback` removes the `config_syntax` key.** A release before
     0.2.5 refuses a `devices.yaml` with a device key it does not know
