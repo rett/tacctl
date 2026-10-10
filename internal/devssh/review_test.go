@@ -3,7 +3,9 @@ package devssh_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -332,14 +334,18 @@ func TestLegacyAlgorithmNegotiation(t *testing.T) {
 		{"ssh-rsa host key only", []fakedev.Option{fakedev.WithSHA1RSAHostKey()}, "host key"},
 		{"group1-sha1 key exchange only", []fakedev.Option{fakedev.WithKeyExchanges(ssh.InsecureKeyExchangeDH1SHA1)}, "key exchange"},
 		{"group-exchange-sha1 key exchange only", []fakedev.Option{fakedev.WithKeyExchanges(ssh.InsecureKeyExchangeDHGEXSHA1)}, "key exchange"},
-		{"an old device, both", []fakedev.Option{fakedev.WithLegacy()}, "algorithm"},
+		{"cbc ciphers only", []fakedev.Option{fakedev.WithCiphers(ssh.InsecureCipherAES128CBC, ssh.InsecureCipherTripleDESCBC)}, "cipher"},
+		{"an old device, all three", []fakedev.Option{fakedev.WithLegacy()}, "algorithm"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := serve(t, dir, tc.opts...)
 			tg := target(t, srv, nil)
 			_, err := devssh.Dial(bg(), tg)
-			if !errors.Is(err, devssh.ErrHandshake) || !strings.Contains(err.Error(), "no common algorithm for "+tc.algo) &&
-				tc.algo != "algorithm" {
+			// x/crypto words it 'no common algorithm for <what>' ('client to
+			// server cipher' for a cipher).
+			named := tc.algo == "algorithm" ||
+				regexp.MustCompile(`no common algorithm for [^;]*`+tc.algo).MatchString(fmt.Sprint(err))
+			if !errors.Is(err, devssh.ErrHandshake) || !named {
 				t.Fatalf("without Legacy: err = %v, want a negotiation failure naming %q", err, tc.algo)
 			}
 			if srv.Attempts() != 0 {

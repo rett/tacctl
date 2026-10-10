@@ -18,7 +18,7 @@ func TestSSHOptionsTable(t *testing.T) {
 	ct := []string{"-o", "ConnectTimeout=10", "-o", "PubkeyAuthentication=no", "-o", "PreferredAuthentications=keyboard-interactive,password"}
 	wti := []string{"-o", "ConnectTimeout=10", "-o", "PubkeyAuthentication=no", "-o", "PreferredAuthentications=password"}
 	legacy := []string{"-o", "KexAlgorithms=+diffie-hellman-group14-sha1,diffie-hellman-group1-sha1",
-		"-o", "HostKeyAlgorithms=+ssh-rsa", "-o", "PubkeyAcceptedAlgorithms=+ssh-rsa"}
+		"-o", "Ciphers=+aes128-cbc,aes192-cbc,aes256-cbc,3des-cbc", "-o", "HostKeyAlgorithms=+ssh-rsa", "-o", "PubkeyAcceptedAlgorithms=+ssh-rsa"}
 	pin := func(name string) []string {
 		return []string{"-o", "UserKnownHostsFile=" + testKnownHosts, "-o", "GlobalKnownHostsFile=none", "-o", "StrictHostKeyChecking=yes",
 			"-o", "HostKeyAlias=" + name, "-o", "UpdateHostKeys=no"}

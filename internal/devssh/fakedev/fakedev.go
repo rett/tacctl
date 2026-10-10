@@ -132,13 +132,19 @@ var (
 // SHA-1 ones are what a client needs Target.Legacy for).
 func WithKeyExchanges(kex ...string) Option { return func(s *Server) { s.kex = kex } }
 
+// WithCiphers restricts the ciphers the server accepts (the CBC ones are
+// what a client needs Target.Legacy for).
+func WithCiphers(ciphers ...string) Option { return func(s *Server) { s.ciphers = ciphers } }
+
 // WithLegacy makes the server an old device: an RSA host key signed with
-// SHA-1 ('ssh-rsa') and the group1-sha1 key exchange only, which a client
-// negotiates only with Target.Legacy.
+// SHA-1 ('ssh-rsa'), the group1-sha1 key exchange and the CBC ciphers
+// aes128-cbc and 3des-cbc only, which a client negotiates only with
+// Target.Legacy.
 func WithLegacy() Option {
 	return func(s *Server) {
 		WithSHA1RSAHostKey()(s)
 		s.kex = []string{ssh.InsecureKeyExchangeDH1SHA1}
+		s.ciphers = []string{ssh.InsecureCipherAES128CBC, ssh.InsecureCipherTripleDESCBC}
 	}
 }
 
@@ -206,6 +212,7 @@ type Server struct {
 	methods  []AuthMethod
 	hostKey  ssh.Signer
 	kex      []string
+	ciphers  []string
 	framing  Framing
 	echo     bool
 
@@ -346,6 +353,9 @@ func (s *Server) config() *ssh.ServerConfig {
 	cfg.AddHostKey(s.hostKey)
 	if s.kex != nil {
 		cfg.KeyExchanges = s.kex
+	}
+	if s.ciphers != nil {
+		cfg.Ciphers = s.ciphers
 	}
 	check := func(user, pw string) bool {
 		u, p := s.credentials()

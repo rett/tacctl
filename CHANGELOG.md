@@ -344,6 +344,17 @@ current behaviour; this file is where history lives.
     `... then discard` (and the same for `deny-snmp`). The pull's expected
     configuration is built from the same lines.
 
+21. **A `legacy-ssh` device also gets the CBC ciphers old IOS offers.** Old IOS
+    (12.4) offers only `aes128-cbc`, `aes192-cbc`, `aes256-cbc` and `3des-cbc`,
+    which neither OpenSSH nor the built-in client has by default, so `tacctl
+    ssh` and a pull failed with `no matching cipher found` after the key
+    exchange and the host key had been accepted. `legacy-ssh` now appends
+    `Ciphers=+aes128-cbc,aes192-cbc,aes256-cbc,3des-cbc` to the options of
+    `tacctl ssh` and to the `Host` blocks of `device ssh-config`, and the
+    built-in client of the device reader appends `aes128-cbc` and `3des-cbc`
+    (the CBC ciphers it implements) to its own list. The strong ciphers stay
+    first, so a modern device still negotiates them.
+
 
 ## 0.2.3 (2026-10-09)
 

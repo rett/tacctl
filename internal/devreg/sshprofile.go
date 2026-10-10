@@ -36,12 +36,14 @@ func configWord(v string) string {
 const SSHConnectTimeout = 10
 
 // legacyOptions are the algorithms old IOS still needs (SHA-1 key
-// exchange, ssh-rsa host keys and signatures). '+' appends them to
-// OpenSSH's defaults, so a modern unit still negotiates the strong set; the
+// exchange, CBC ciphers, ssh-rsa host keys and signatures). '+' appends
+// them to OpenSSH's defaults, so the strong ones stay first and a modern
+// unit still negotiates the strong set; the
 // option names are those of current OpenSSH (PubkeyAcceptedAlgorithms
 // since 8.5), which the 0.2.1 lab acceptance verifies on argv only.
 var legacyOptions = []SSHOption{
 	{"KexAlgorithms", "+diffie-hellman-group14-sha1,diffie-hellman-group1-sha1"},
+	{"Ciphers", "+aes128-cbc,aes192-cbc,aes256-cbc,3des-cbc"},
 	{"HostKeyAlgorithms", "+ssh-rsa"},
 	{"PubkeyAcceptedAlgorithms", "+ssh-rsa"},
 }

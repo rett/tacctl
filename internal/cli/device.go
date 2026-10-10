@@ -159,7 +159,7 @@ var deviceOptions = map[string][][2]string{
 		{"--port <n>", "Its ssh port (default 22)"},
 		{"--description <text>", "A description"},
 		{"--snmp-location <text>", "Its place (the SNMP location the walkthroughs render)"},
-		{"--legacy-ssh", "Old IOS: SHA-1 key exchange and ssh-rsa"},
+		{"--legacy-ssh", "Old IOS: SHA-1 key exchange, CBC ciphers and ssh-rsa"},
 		{"--host-key SHA256:<fp>", "Register only if the device offers this key; pin it alone"},
 		{"--no-host-key", "Register without a pinned key (a hostkey-unpinned notice)"},
 		{"--no-lookup", "Do not read the device's own name and location by SNMP"},

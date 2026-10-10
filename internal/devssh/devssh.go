@@ -91,8 +91,9 @@ type Target struct {
 	// none, Dial refuses with ErrHostKey (Unpinned) before connecting.
 	HostKeys []string
 	// Legacy adds the algorithms old IOS needs to the client's lists (the
-	// SHA-1 key exchanges and ssh-rsa host keys), as devreg.Profile does
-	// for the system ssh. The default sets stay first.
+	// SHA-1 key exchanges, the CBC ciphers x/crypto implements and ssh-rsa
+	// host keys), as devreg.Profile does for the system ssh. The default
+	// sets stay first.
 	Legacy   bool
 	Password PasswordSource
 	// ConnectTimeout is DefaultConnectTimeout when zero.
@@ -132,6 +133,14 @@ var legacyKex = []string{
 	ssh.InsecureKeyExchangeDH14SHA1,
 	ssh.InsecureKeyExchangeDHGEXSHA1,
 	ssh.InsecureKeyExchangeDH1SHA1,
+}
+
+// legacyCiphers are the ciphers Legacy appends to the supported ones: the
+// CBC ciphers old IOS offers (aes192-cbc and aes256-cbc, which it offers
+// too, x/crypto does not implement).
+var legacyCiphers = []string{
+	ssh.InsecureCipherAES128CBC,
+	ssh.InsecureCipherTripleDESCBC,
 }
 
 // Client is an authenticated connection to one device. It is safe for
@@ -183,7 +192,9 @@ func Dial(ctx context.Context, t Target) (*Client, error) {
 		ClientVersion:     "SSH-2.0-tacctl",
 	}
 	if t.Legacy {
-		cfg.KeyExchanges = append(ssh.SupportedAlgorithms().KeyExchanges, legacyKex...)
+		sup := ssh.SupportedAlgorithms()
+		cfg.KeyExchanges = append(sup.KeyExchanges, legacyKex...)
+		cfg.Ciphers = append(sup.Ciphers, legacyCiphers...)
 	}
 	// The deadline and the cancellation of the context close the socket,
 	// which fails the handshake wherever it stands.

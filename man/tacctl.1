@@ -5327,7 +5327,7 @@ A description of the device.
 Its place (the SNMP location the walkthroughs render).
 .TP
 \fB\-\-legacy\-ssh\fR
-Old IOS: SHA\-1 key exchange and ssh\-rsa.
+Old IOS: SHA\-1 key exchange, CBC ciphers and ssh\-rsa.
 .TP
 \fB\-\-host\-key\fR \fISHA256:<fp>\fR
 Register only if the device offers this key; pin it alone.
@@ -5472,8 +5472,8 @@ Read the location from the device (SNMP sysLocation) and store it.
 .\" END GENERATED: command device location
 .TP
 .BI "device legacy\-ssh " "name " "[ enable | disable ]"
-Show or set the opt-in for the legacy key-exchange and host-key algorithms
-older IOS releases need (off by default).
+Show or set the opt-in for the legacy key-exchange, cipher and host-key
+algorithms older IOS releases need (off by default).
 .\" BEGIN GENERATED: command device legacy-ssh
 .RS
 .PP
@@ -6370,8 +6370,10 @@ which the units need). A device with
 .B legacy\-ssh
 gets
 \fB\-o KexAlgorithms=\:+diffie\-hellman\-group14\-sha1,\:diffie\-hellman\-group1\-sha1
+\-o Ciphers=\:+aes128\-cbc,\:aes192\-cbc,\:aes256\-cbc,\:3des\-cbc
 \-o HostKeyAlgorithms=\:+ssh\-rsa \-o PubkeyAcceptedAlgorithms=\:+ssh\-rsa\fR
-(old IOS; OpenSSH 8.5 or later). A device with pinned host keys adds
+(old IOS; OpenSSH 8.5 or later; the CBC ciphers are appended, so the strong
+ones stay first). A device with pinned host keys adds
 \fB\-o UserKnownHostsFile=\:/var/lib/tacctl/\:ssh/known_hosts
 \-o GlobalKnownHostsFile=none \-o StrictHostKeyChecking=yes
 \-o HostKeyAlias=\fR\fIname\fR\fB \-o UpdateHostKeys=no\fR,
