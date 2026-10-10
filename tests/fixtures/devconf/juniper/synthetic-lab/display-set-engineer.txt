@@ -1,0 +1,99 @@
+# vendor: juniper
+# os: Junos 25.4 (synthetic), a login without the secret permission
+# transport: ssh
+# command: show configuration | display inheritance no-comments | display set
+# source: reference
+# captured: 2026-10-09
+# ---
+set version 25.4R1-S2.3
+set system host-name example-router
+set system root-authentication encrypted-password /* SECRET-DATA */
+set system login idle-timeout 60
+set system login class OPS-NOC permissions view
+set system login class OPS-NOC permissions network
+set system login class RO-CLASS permissions network
+set system login class RO-CLASS permissions view
+set system login class RO-CLASS permissions view-configuration
+set system login user RO-CLASS uid 2000
+set system login user RO-CLASS class RO-CLASS
+set system login class OP-CLASS permissions clear
+set system login class OP-CLASS permissions network
+set system login class OP-CLASS permissions trace
+set system login class OP-CLASS permissions view
+set system login class OP-CLASS permissions view-configuration
+set system login user OP-CLASS uid 2001
+set system login user OP-CLASS class OP-CLASS
+set system login class RW-CLASS permissions all
+set system login user RW-CLASS uid 2002
+set system login user RW-CLASS class RW-CLASS
+set system login class EN-CLASS permissions view
+set system login class EN-CLASS permissions view-configuration
+set system login class EN-CLASS permissions network
+set system login class EN-CLASS permissions clear
+set system login class EN-CLASS permissions trace
+set system login class EN-CLASS permissions reset
+set system login class EN-CLASS permissions configure
+set system login class EN-CLASS permissions rollback
+set system login class EN-CLASS permissions interface
+set system login class EN-CLASS permissions interface-control
+set system login class EN-CLASS permissions routing
+set system login class EN-CLASS permissions routing-control
+set system login class EN-CLASS permissions firewall
+set system login class EN-CLASS permissions firewall-control
+set system login class EN-CLASS permissions system
+set system login class EN-CLASS permissions system-control
+set system login class EN-CLASS permissions snmp
+set system login user EN-CLASS uid 2003
+set system login user EN-CLASS class EN-CLASS
+set system login user lab-admin uid 2010
+set system login user lab-admin class RW-CLASS
+set system login user lab-admin authentication encrypted-password /* SECRET-DATA */
+set system login user lab-ro uid 2012
+set system login user lab-ro class RO-CLASS
+set system login user lab-ro authentication encrypted-password /* SECRET-DATA */
+set system login user noc-ro uid 2011
+set system login user noc-ro class OPS-NOC
+set system services netconf ssh
+set system services ssh protocol-version v2
+set system authentication-order password
+set system authentication-order tacplus
+set system tacplus-server 192.0.2.10 single-connection
+set system accounting events login
+set system accounting events change-log
+set system accounting destination tacplus
+set system tacplus-server 192.0.2.99 secret /* SECRET-DATA */
+set firewall family inet filter MGMT-ACL term permit-mgmt from source-address 192.0.2.10/32
+set firewall family inet filter MGMT-ACL term permit-mgmt from source-address 198.51.100.0/24
+set firewall family inet filter MGMT-ACL term permit-mgmt from source-address 192.0.2.0/24
+set firewall family inet filter MGMT-ACL term permit-mgmt from protocol tcp
+set firewall family inet filter MGMT-ACL term permit-mgmt from destination-port ssh
+set firewall family inet filter MGMT-ACL term permit-mgmt from destination-port 830
+set firewall family inet filter MGMT-ACL term permit-mgmt then accept
+set firewall family inet filter MGMT-ACL term deny-mgmt from protocol tcp
+set firewall family inet filter MGMT-ACL term deny-mgmt from destination-port ssh
+set firewall family inet filter MGMT-ACL term deny-mgmt from destination-port 830
+set firewall family inet filter MGMT-ACL term deny-mgmt then log
+set firewall family inet filter MGMT-ACL term deny-mgmt then discard
+set firewall family inet filter MGMT-ACL term permit-snmp from source-address 192.0.2.10/32
+set firewall family inet filter MGMT-ACL term permit-snmp from source-address 198.51.100.0/24
+set firewall family inet filter MGMT-ACL term permit-snmp from protocol udp
+set firewall family inet filter MGMT-ACL term permit-snmp from destination-port snmp
+set firewall family inet filter MGMT-ACL term permit-snmp then accept
+set firewall family inet filter MGMT-ACL term deny-snmp from protocol udp
+set firewall family inet filter MGMT-ACL term deny-snmp from destination-port snmp
+set firewall family inet filter MGMT-ACL term deny-snmp then log
+set firewall family inet filter MGMT-ACL term deny-snmp then discard
+set firewall family inet filter MGMT-ACL term default-accept then accept
+set firewall family inet filter PROTECT-RE term allow-ntp from protocol udp
+set firewall family inet filter PROTECT-RE term allow-ntp then accept
+set snmp client-list TACCTL-SNMP 192.0.2.10/32
+set snmp client-list TACCTL-SNMP 198.51.100.0/24
+set snmp client-list TACCTL-SNMP 0.0.0.0/0 restrict
+set snmp community example-community authorization read-only
+set snmp community example-community client-list-name TACCTL-SNMP
+set snmp location "Rack 4, DC1"
+set snmp contact "NOC <noc@example.net>"
+set snmp community other-example authorization read-only
+set snmp trap-group example-traps targets 192.0.2.50
+set interfaces lo0 unit 0 family inet filter input MGMT-ACL
+set interfaces lo0 unit 0 family inet address 192.0.2.250/32

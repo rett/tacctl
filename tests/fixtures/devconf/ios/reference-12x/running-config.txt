@@ -1,0 +1,75 @@
+# vendor: cisco
+# os: IOS 12.4 (reference text)
+# transport: ssh
+# command: show running-config
+# source: reference
+# assumptions: [A] IOS knowledge, not a lab: the parent privilege lines, aaa session-id common, snmp-server user not printed, the community of snmp-server host
+# captured: 2026-10-09
+# ---
+Building configuration...
+
+Current configuration : 2048 bytes
+!
+version 12.4
+service password-encryption
+!
+hostname rtr1.example.net
+!
+aaa new-model
+!
+aaa group server tacacs+ LAB-TACACS
+ server 192.0.2.10
+!
+aaa authentication login default local group LAB-TACACS
+aaa authorization exec default local group LAB-TACACS if-authenticated
+aaa authorization commands 1 default local group LAB-TACACS
+aaa authorization commands 7 default local group LAB-TACACS
+aaa authorization commands 15 default local group LAB-TACACS
+aaa authorization config-commands
+aaa accounting exec default start-stop group LAB-TACACS
+aaa accounting commands 1 default start-stop group LAB-TACACS
+aaa accounting commands 5 default start-stop group LAB-TACACS
+aaa accounting commands 7 default start-stop group LAB-TACACS
+aaa accounting commands 15 default start-stop group LAB-TACACS
+!
+username lab-admin privilege 15 secret 5 $1$exam$EXAMPLEHASHEXAMPLEHASH
+username lab-ops privilege 7 secret 5 $1$exam$EXAMPLEHASHEXAMPLEHASH
+username lab-ro privilege 1 secret 5 $1$exam$EXAMPLEHASHEXAMPLEHASH
+!
+tacacs-server host 192.0.2.10 single-connection timeout 5 key 7 0822455D0A16
+!
+privilege exec level 1 show running-config
+privilege exec level 1 show
+privilege exec all level 7 ping
+privilege exec all level 7 traceroute
+privilege exec all level 7 monitor capture
+privilege exec level 7 clear counters
+privilege exec level 7 clear line
+privilege exec level 7 clear ip arp
+privilege exec level 7 clear arp-cache
+privilege exec level 7 clear mac address-table dynamic
+privilege exec level 7 undebug all
+!
+ip access-list standard VTY-ACL
+ permit 192.0.2.10
+ permit 198.51.100.0 0.0.0.255
+ permit 192.0.2.0 0.0.0.255
+ deny   any log
+ip access-list standard TACCTL-SNMP
+ permit 192.0.2.10
+ permit 198.51.100.0 0.0.0.255
+ deny   any
+!
+snmp-server community example-community RO TACCTL-SNMP
+snmp-server location Rack 4, DC1
+snmp-server contact NOC <noc@example.net>
+!
+line con 0
+line vty 0 4
+ access-class VTY-ACL in
+ transport input ssh
+line vty 5 15
+ access-class VTY-ACL in
+ transport input ssh
+!
+end

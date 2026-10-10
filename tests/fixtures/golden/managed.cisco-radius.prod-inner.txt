@@ -1,0 +1,27 @@
+[aaa]
+| aaa new-model
+| radius server RADIUS
+|   address ipv4 10.0.0.42 auth-port 1812 acct-port 1813
+*   key inner-secret-0123456789abcdef
+|   timeout 5
+|   retransmit 2
+| aaa group server radius RADIUS-GROUP
+|   server name RADIUS
+| aaa authentication login default group RADIUS-GROUP local
+| aaa authorization exec default group RADIUS-GROUP local if-authenticated
+| aaa accounting exec default start-stop group RADIUS-GROUP
+[roles]
+| privilege exec level 1 show running-config
+| privilege exec all level 7 ping
+| privilege exec all level 7 traceroute
+| privilege exec all level 7 monitor capture
+| privilege exec level 7 clear counters
+| privilege exec level 7 clear line
+| privilege exec level 7 clear ip arp
+| privilege exec level 7 clear arp-cache
+| privilege exec level 7 clear mac address-table dynamic
+| privilege exec level 7 undebug all
+[mgmt-acl] not rendered
+[snmp] not rendered
+[netconf] not rendered
+[breakglass] not rendered

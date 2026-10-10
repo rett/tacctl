@@ -1,0 +1,54 @@
+[aaa]
+| set system authentication-order [ password tacplus ]
+* set system tacplus-server 10.0.0.42 secret lab-secret-0123456789abcdef
+| set system tacplus-server 10.0.0.42 single-connection
+| set system accounting events [ login change-log ]
+| set system accounting destination tacplus
+[roles]
+| set system login class RO-CLASS permissions network
+| set system login class RO-CLASS permissions view
+| set system login class RO-CLASS permissions view-configuration
+| set system login user RO-CLASS class RO-CLASS
+| set system login class OP-CLASS permissions clear
+| set system login class OP-CLASS permissions network
+| set system login class OP-CLASS permissions trace
+| set system login class OP-CLASS permissions view
+| set system login class OP-CLASS permissions view-configuration
+| set system login user OP-CLASS class OP-CLASS
+| set system login class RW-CLASS permissions all
+| set system login user RW-CLASS class RW-CLASS
+| set system login class EN-CLASS permissions [ view view-configuration network clear trace reset configure rollback interface interface-control routing routing-control firewall firewall-control system system-control snmp ]
+| set system login user EN-CLASS class EN-CLASS
+[mgmt-acl]
+| set firewall family inet filter MGMT-ACL term permit-mgmt from source-address 10.0.0.42/32
+| set firewall family inet filter MGMT-ACL term permit-mgmt from source-address 198.51.100.0/24
+| set firewall family inet filter MGMT-ACL term permit-mgmt from source-address 192.0.2.0/24
+| set firewall family inet filter MGMT-ACL term permit-mgmt from protocol tcp
+| set firewall family inet filter MGMT-ACL term permit-mgmt from destination-port [ ssh 830 ]
+| set firewall family inet filter MGMT-ACL term permit-mgmt then accept
+| set firewall family inet filter MGMT-ACL term deny-mgmt from protocol tcp
+| set firewall family inet filter MGMT-ACL term deny-mgmt from destination-port [ ssh 830 ]
+| set firewall family inet filter MGMT-ACL term deny-mgmt then { log; discard; }
+| set firewall family inet filter MGMT-ACL term permit-snmp from source-address 10.0.0.42/32
+| set firewall family inet filter MGMT-ACL term permit-snmp from source-address 198.51.100.0/24
+| set firewall family inet filter MGMT-ACL term permit-snmp from protocol udp
+| set firewall family inet filter MGMT-ACL term permit-snmp from destination-port snmp
+| set firewall family inet filter MGMT-ACL term permit-snmp then accept
+| set firewall family inet filter MGMT-ACL term deny-snmp from protocol udp
+| set firewall family inet filter MGMT-ACL term deny-snmp from destination-port snmp
+| set firewall family inet filter MGMT-ACL term deny-snmp then { log; discard; }
+| set firewall family inet filter MGMT-ACL term default-accept then accept
+[snmp]
+| set snmp client-list TACCTL-SNMP 10.0.0.42/32
+| set snmp client-list TACCTL-SNMP 198.51.100.0/24
+| set snmp client-list TACCTL-SNMP 0.0.0.0/0 restrict
+* set snmp community lab-ro-community authorization read-only
+* set snmp community lab-ro-community client-list-name TACCTL-SNMP
+| set snmp location "Rack 4, DC1"
+| set snmp contact "NOC <noc@example.net>"
+| set snmp description "Core switch"
+[netconf] not rendered
+[breakglass]
+* set system login user lab-admin class RW-CLASS authentication encrypted-password '<HASH>'
+* set system login user lab-ops class OP-CLASS authentication encrypted-password '<HASH>'
+* set system login user lab-ro class RO-CLASS authentication encrypted-password '<HASH>'

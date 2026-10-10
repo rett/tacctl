@@ -1,0 +1,44 @@
+[aaa]
+| aaa new-model
+| radius server RADIUS
+|   address ipv4 10.0.0.42 auth-port 1812 acct-port 1813
+*   key prod-secret-0123456789abcdef
+|   timeout 5
+|   retransmit 2
+| aaa group server radius RADIUS-GROUP
+|   server name RADIUS
+| aaa authentication login default group RADIUS-GROUP local
+| aaa authorization exec default group RADIUS-GROUP local if-authenticated
+| aaa accounting exec default start-stop group RADIUS-GROUP
+[roles]
+| privilege exec level 1 show running-config
+| privilege exec all level 7 ping
+| privilege exec all level 7 traceroute
+| privilege exec all level 7 monitor capture
+| privilege exec level 7 clear counters
+| privilege exec level 7 clear line
+| privilege exec level 7 clear ip arp
+| privilege exec level 7 clear arp-cache
+| privilege exec level 7 clear mac address-table dynamic
+| privilege exec level 7 undebug all
+[mgmt-acl]
+| ip access-list standard VTY-ACL
+|   remark Managed by tacctl — edit with 'tacctl config mgmt-acl'
+|   permit 10.0.0.42 0.0.0.0
+|   permit 10.0.0.0 0.255.255.255
+|   deny   any log
+| line vty 0 15
+|   access-class VTY-ACL in
+[snmp]
+| ip access-list standard TACCTL-SNMP
+|   permit host 10.0.0.42
+|   permit 198.51.100.0 0.0.0.255
+|   remark everything else (0.0.0.0/0) is refused
+|   deny   any
+| snmp-server view TACCTL-VIEW iso included
+| snmp-server group TACCTL-GROUP v3 priv read TACCTL-VIEW access TACCTL-SNMP
+* snmp-server user tacctl-ro TACCTL-GROUP v3 auth sha auth-pass-0123 priv aes 128 priv-pass-4567
+| snmp-server location Rack 4, DC1
+| snmp-server contact NOC <noc@example.net>
+[netconf] not rendered
+[breakglass] not rendered

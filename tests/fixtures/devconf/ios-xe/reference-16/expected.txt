@@ -1,0 +1,52 @@
+# vendor: cisco
+# what: the statements devices.Managed renders for the RADIUS device
+# golden: managed.cisco-radius.lab.txt (the lab server address is 192.0.2.10 here)
+# source: reference
+# captured: 2026-10-09
+# ---
+[aaa]
+| aaa new-model
+| radius server RADIUS
+|   address ipv4 192.0.2.10 auth-port 1812 acct-port 1813
+*   key lab-secret-0123456789abcdef
+|   timeout 5
+|   retransmit 2
+| aaa group server radius LAB-RADIUS
+|   server name RADIUS
+| aaa authentication login default local group LAB-RADIUS
+| aaa authorization exec default local group LAB-RADIUS if-authenticated
+| aaa accounting exec default start-stop group LAB-RADIUS
+[roles]
+| privilege exec level 1 show running-config
+| privilege exec all level 7 ping
+| privilege exec all level 7 traceroute
+| privilege exec all level 7 monitor capture
+| privilege exec level 7 clear counters
+| privilege exec level 7 clear line
+| privilege exec level 7 clear ip arp
+| privilege exec level 7 clear arp-cache
+| privilege exec level 7 clear mac address-table dynamic
+| privilege exec level 7 undebug all
+[mgmt-acl]
+| ip access-list standard VTY-ACL
+|   remark Managed by tacctl — edit with 'tacctl config mgmt-acl'
+|   permit 192.0.2.10 0.0.0.0
+|   permit 198.51.100.0 0.0.0.255
+|   permit 192.0.2.0 0.0.0.255
+|   deny   any log
+| line vty 0 15
+|   access-class VTY-ACL in
+[snmp]
+| ip access-list standard TACCTL-SNMP
+|   permit host 192.0.2.10
+|   permit 198.51.100.0 0.0.0.255
+|   remark everything else (0.0.0.0/0) is refused
+|   deny   any
+* snmp-server community lab-ro-community RO TACCTL-SNMP
+| snmp-server location Rack 4, DC1
+| snmp-server contact NOC <noc@example.net>
+[netconf] not rendered
+[breakglass]
+* username lab-admin privilege 15 secret 9 <TYPE9-HASH>
+* username lab-ops privilege 7 secret 9 <TYPE9-HASH>
+* username lab-ro privilege 1 secret 9 <TYPE9-HASH>

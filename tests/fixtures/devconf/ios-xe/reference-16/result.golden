@@ -1,0 +1,43 @@
+# secrets visible: true
+[aaa] differs
+= aaa new-model
+= radius server RADIUS > address ipv4 192.0.2.10 auth-port 1812 acct-port 1813
+= radius server RADIUS > key (present, not compared)
+= radius server RADIUS > timeout 5
+= radius server RADIUS > retransmit 2
+= aaa group server radius LAB-RADIUS > server name RADIUS
+= aaa authentication login default local group LAB-RADIUS
+= aaa authorization exec default local group LAB-RADIUS if-authenticated
+= aaa accounting exec default start-stop group LAB-RADIUS
++ aaa server radius dynamic-author > client 192.0.2.7 server-key (present, not compared)
+[roles] ok
+= privilege exec level 1 show running-config
+= privilege exec all level 7 ping
+= privilege exec all level 7 traceroute
+= privilege exec all level 7 monitor capture
+= privilege exec level 7 clear counters
+= privilege exec level 7 clear line
+= privilege exec level 7 clear ip arp
+= privilege exec level 7 clear arp-cache
+= privilege exec level 7 clear mac address-table dynamic
+= privilege exec level 7 undebug all
+[mgmt-acl] ok
+= ip access-list standard VTY-ACL > permit 192.0.2.10
+= ip access-list standard VTY-ACL > permit 198.51.100.0 0.0.0.255
+= ip access-list standard VTY-ACL > permit 192.0.2.0 0.0.0.255
+= ip access-list standard VTY-ACL > deny any log
+= line vty 0 15 > access-class VTY-ACL in
+[snmp] ok
+= ip access-list standard TACCTL-SNMP > permit 192.0.2.10
+= ip access-list standard TACCTL-SNMP > permit 198.51.100.0 0.0.0.255
+= ip access-list standard TACCTL-SNMP > deny any
+= snmp-server community <secret> RO TACCTL-SNMP (present, not compared)
+= snmp-server location Rack 4, DC1
+= snmp-server contact NOC <noc@example.net>
+[netconf] n/a
+~ netconf-yang
+~ netconf-yang feature candidate-datastore
+[breakglass] ok
+= username lab-admin privilege 15 secret (present, not compared)
+= username lab-ops privilege 7 secret (present, not compared)
+= username lab-ro privilege 1 secret (present, not compared)

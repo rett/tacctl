@@ -1,0 +1,85 @@
+# secrets visible: false
+[aaa] differs
+= set system authentication-order password
+= set system authentication-order tacplus
+? set system tacplus-server 192.0.2.10 secret (not visible to this login)
+= set system tacplus-server 192.0.2.10 single-connection
+= set system accounting events login
+= set system accounting events change-log
+= set system accounting destination tacplus
++ set system tacplus-server 192.0.2.99 secret (present, not compared)
+[roles] ok
+= set system login class RO-CLASS permissions network
+= set system login class RO-CLASS permissions view
+= set system login class RO-CLASS permissions view-configuration
+= set system login user RO-CLASS class RO-CLASS
+= set system login class OP-CLASS permissions clear
+= set system login class OP-CLASS permissions network
+= set system login class OP-CLASS permissions trace
+= set system login class OP-CLASS permissions view
+= set system login class OP-CLASS permissions view-configuration
+= set system login user OP-CLASS class OP-CLASS
+= set system login class RW-CLASS permissions all
+= set system login user RW-CLASS class RW-CLASS
+= set system login class EN-CLASS permissions view
+= set system login class EN-CLASS permissions view-configuration
+= set system login class EN-CLASS permissions network
+= set system login class EN-CLASS permissions clear
+= set system login class EN-CLASS permissions trace
+= set system login class EN-CLASS permissions reset
+= set system login class EN-CLASS permissions configure
+= set system login class EN-CLASS permissions rollback
+= set system login class EN-CLASS permissions interface
+= set system login class EN-CLASS permissions interface-control
+= set system login class EN-CLASS permissions routing
+= set system login class EN-CLASS permissions routing-control
+= set system login class EN-CLASS permissions firewall
+= set system login class EN-CLASS permissions firewall-control
+= set system login class EN-CLASS permissions system
+= set system login class EN-CLASS permissions system-control
+= set system login class EN-CLASS permissions snmp
+= set system login user EN-CLASS class EN-CLASS
+[mgmt-acl] ok
+= set firewall family inet filter MGMT-ACL term permit-mgmt from source-address 192.0.2.10/32
+= set firewall family inet filter MGMT-ACL term permit-mgmt from source-address 198.51.100.0/24
+= set firewall family inet filter MGMT-ACL term permit-mgmt from source-address 192.0.2.0/24
+= set firewall family inet filter MGMT-ACL term permit-mgmt from protocol tcp
+= set firewall family inet filter MGMT-ACL term permit-mgmt from destination-port ssh
+= set firewall family inet filter MGMT-ACL term permit-mgmt from destination-port 830
+= set firewall family inet filter MGMT-ACL term permit-mgmt then accept
+= set firewall family inet filter MGMT-ACL term deny-mgmt from protocol tcp
+= set firewall family inet filter MGMT-ACL term deny-mgmt from destination-port ssh
+= set firewall family inet filter MGMT-ACL term deny-mgmt from destination-port 830
+= set firewall family inet filter MGMT-ACL term deny-mgmt then log
+= set firewall family inet filter MGMT-ACL term deny-mgmt then discard
+= set firewall family inet filter MGMT-ACL term permit-snmp from source-address 192.0.2.10/32
+= set firewall family inet filter MGMT-ACL term permit-snmp from source-address 198.51.100.0/24
+= set firewall family inet filter MGMT-ACL term permit-snmp from protocol udp
+= set firewall family inet filter MGMT-ACL term permit-snmp from destination-port snmp
+= set firewall family inet filter MGMT-ACL term permit-snmp then accept
+= set firewall family inet filter MGMT-ACL term deny-snmp from protocol udp
+= set firewall family inet filter MGMT-ACL term deny-snmp from destination-port snmp
+= set firewall family inet filter MGMT-ACL term deny-snmp then log
+= set firewall family inet filter MGMT-ACL term deny-snmp then discard
+= set firewall family inet filter MGMT-ACL term default-accept then accept
+[snmp] differs
+= set snmp client-list TACCTL-SNMP 192.0.2.10/32
+= set snmp client-list TACCTL-SNMP 198.51.100.0/24
+= set snmp client-list TACCTL-SNMP 0.0.0.0/0 restrict
+= set snmp community <secret> authorization read-only (present, not compared)
+= set snmp community <secret> client-list-name TACCTL-SNMP (present, not compared)
+= set snmp location "Rack 4, DC1"
+= set snmp contact "NOC <noc@example.net>"
+- set snmp description "Core switch"
++ set snmp community <secret> authorization read-only (present, not compared)
++ set snmp trap-group <secret> targets 192.0.2.50 (present, not compared)
+[netconf] n/a
+~ set system services netconf ssh
+[breakglass] differs
+= set system login user lab-admin class RW-CLASS
+= set system login user lab-admin authentication encrypted-password (present, not compared)
+- set system login user lab-ops class OP-CLASS
+- set system login user lab-ops authentication encrypted-password (not present)
+= set system login user lab-ro class RO-CLASS
+= set system login user lab-ro authentication encrypted-password (present, not compared)
++ set system login user noc-ro class OPS-NOC

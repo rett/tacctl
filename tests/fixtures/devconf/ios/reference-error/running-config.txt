@@ -1,0 +1,10 @@
+# vendor: cisco
+# os: IOS 15.2 (reference text)
+# transport: ssh
+# command: show running-config
+# source: reference
+# captured: 2026-10-09
+# ---
+sw3.example.net#show running-config
+                  ^
+% Invalid input detected at '^' marker.

@@ -1,0 +1,26 @@
+[aaa]
+| set system authentication-order radius
+| set system radius-server 10.0.0.42 port 1812
+| set system radius-server 10.0.0.42 accounting-port 1813
+* set system radius-server 10.0.0.42 secret inner-secret-0123456789abcdef
+| set system accounting events [ login change-log ]
+| set system accounting destination radius
+[roles]
+| set system login class RO-CLASS permissions network
+| set system login class RO-CLASS permissions view
+| set system login class RO-CLASS permissions view-configuration
+| set system login user RO-CLASS class RO-CLASS
+| set system login class OP-CLASS permissions clear
+| set system login class OP-CLASS permissions network
+| set system login class OP-CLASS permissions trace
+| set system login class OP-CLASS permissions view
+| set system login class OP-CLASS permissions view-configuration
+| set system login user OP-CLASS class OP-CLASS
+| set system login class RW-CLASS permissions all
+| set system login user RW-CLASS class RW-CLASS
+| set system login class EN-CLASS permissions [ view view-configuration network clear trace reset configure rollback interface interface-control routing routing-control firewall firewall-control system system-control snmp ]
+| set system login user EN-CLASS class EN-CLASS
+[mgmt-acl] not rendered
+[snmp] not rendered
+[netconf] not rendered
+[breakglass] not rendered

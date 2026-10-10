@@ -1,0 +1,27 @@
+# vendor: cisco
+# os: IOS 15.2 (reference text)
+# transport: ssh
+# command: show running-config
+# source: reference
+# assumptions: [A] IOS knowledge, not a lab: the parent privilege lines, aaa session-id common, snmp-server user not printed, the community of snmp-server host
+# captured: 2026-10-09
+# ---
+Building configuration...
+
+Current configuration : 1024 bytes
+!
+version 15.2
+hostname sw2.example.net
+!
+enable secret 9 $9$EXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLE
+!
+interface GigabitEthernet0/1
+ description uplink to example
+ ip address 192.0.2.2 255.255.255.0
+!
+line con 0
+line vty 0 4
+ login local
+ transport input ssh
+!
+end
