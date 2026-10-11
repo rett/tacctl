@@ -143,6 +143,7 @@ var deviceVerbs = [][2]string{
 	{"config show <name> [--protocol tacacs|radius] [--legacy] [--server <address|name>] [--source <address>]", "The device's data, then its vendor walkthrough for its scope"},
 	{"config pull <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale [options]", "Read the devices' configuration as you and compare the managed sections with what tacctl renders"},
 	{"config diff <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale [--pull] [--section <list>] [--exit-code] [--json]", "The last pull against what tacctl renders now, section by section"},
+	{"config plan <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale [--pull] [--section <list>] [--converge] [--secrets|--no-secrets] [--plain|--json|--backout] [--out <file>|--out-dir <dir>] [--force] [--from <address>] [--exit-code]", "What to paste to make each device match what tacctl renders: the report, one region, the check and the back-out"},
 	{"config list [--stale] [--never] [--failed] [--differs] [--transport netconf|ssh|none] [--scope <scope>] [--vendor <vendor>] [--json]", "Each device's configuration state, when it was read, by whom and over what"},
 	{"config forget <name>[,<name>...] | --all", "Delete the pull records (a pull makes them again)"},
 }
@@ -208,23 +209,38 @@ var deviceOptions = map[string][][2]string{
 		{"--source <address>", "The address this server reaches the device from"},
 	},
 	"config pull": {
-		{"--all", "(pull, diff, forget) Every device of yours (not WTI units, or devices in no scope)"},
-		{"--scope <scope>", "(pull, diff, list) Only the devices of that scope"},
-		{"--vendor cisco|juniper|wti", "(pull, diff, list) Only that vendor's devices"},
-		{"--stale", "(pull, diff, list) Only the devices never read, last read in failure, or differing"},
-		{"--transport auto|netconf|ssh", "(pull, diff) NETCONF where the device answers (auto, default), NETCONF only, or the ssh command line only; (list) netconf, ssh or none: only the devices last read over that transport (none: never read)"},
+		{"--all", "(pull, diff, plan, forget) Every device of yours (not WTI units, or devices in no scope)"},
+		{"--scope <scope>", "(pull, diff, plan, list) Only the devices of that scope"},
+		{"--vendor cisco|juniper|wti", "(pull, diff, plan, list) Only that vendor's devices"},
+		{"--stale", "(pull, diff, plan, list) Only the devices never read, last read in failure, or differing"},
+		{"--transport auto|netconf|ssh", "(pull, diff, plan) NETCONF where the device answers (auto, default), NETCONF only, or the ssh command line only; (list) netconf, ssh or none: only the devices last read over that transport (none: never read)"},
 		{"--concurrency <n>", "Read at most n devices at once (never above device.config.max_concurrency)"},
 		{"--timeout <seconds>", "Per device, connect included (10-600; default device.config.timeout)"},
 		{"--max-failures <n>", "Stop starting devices after n failures"},
 		{"--diff", "Print the differences after the summary"},
 		{"--server <address|name>", "The address the devices are told to authenticate against (not stored)"},
 		{"--source <address>", "The address this server reaches the devices from (not stored)"},
-		{"--json", "(pull, diff, list) Print JSON (a pull: one line per device, then the summary)"},
+		{"--json", "(pull, diff, plan, list) Print JSON (a pull: one line per device, then the summary)"},
 	},
 	"config diff": {
 		{"--pull", "Read the devices first (takes the pull options)"},
 		{"--section <list>", "Only these sections: aaa, roles, mgmt-acl, snmp, netconf, breakglass"},
 		{"--exit-code", "Exit 2 when a device differs (and none failed)"},
+	},
+	"config plan": {
+		{"--pull", "Read the devices first (takes the pull options); the plan is made from that pull"},
+		{"--section <list>", "Only these sections: aaa, roles, mgmt-acl, snmp (the report still names the others)"},
+		{"--converge", "Add the cleanup of a device with nothing else to paste: the region that removes the old servers and the like (a device with a first region gets that and a line to plan again after the paste)"},
+		{"--secrets", "Type every secret of the planned sections, also the ones the device has"},
+		{"--no-secrets", "Leave each secret as a marked line to fill in (no plain form)"},
+		{"--plain", "The statements of one device alone, for 'load set' (--converge: two files, with --out or --out-dir)"},
+		{"--json", "One object per device: the findings, the region, the cleanup and the back-out; values elided"},
+		{"--backout", "Only the back-out region (what puts the pulled lines back; the one kept from the plan once a later pull replaced them; not with --pull)"},
+		{"--out <file>", "Write one device's output to a file (0600)"},
+		{"--out-dir <dir>", "One file per device (<name>.txt, .set with --plain, .json with --json; each plan's .backout.txt) and COVER.txt, 0600 in a 0700 directory"},
+		{"--force", "Replace files --out or --out-dir would write"},
+		{"--from <address>", "The address you are logged in from: the cleanup keeps it; the management filter check uses it"},
+		{"--exit-code", "Exit 2 when a device needs a change (and none could not be planned)"},
 	},
 	"config list": {
 		{"--never", "Only the devices not pulled yet"},
@@ -245,7 +261,7 @@ func deviceCmd(inv *invocation) *cobra.Command {
 		word := f[0]
 		if word == "config" && len(f) > 1 {
 			if cfg == nil {
-				cfg = verb("config <subcommand>", "A device's walkthrough, and reading its configuration (pull, diff, list, forget)")
+				cfg = verb("config <subcommand>", "A device's walkthrough, reading its configuration (pull, diff, list, forget) and what to paste (plan)")
 				cfg.RunE = inv.native(withPreflight, func(args []string) error {
 					return inv.device(append([]string{"config"}, args...))
 				})

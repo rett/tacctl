@@ -6,6 +6,11 @@ package devconf
 //	                                  device keyed by its lower-case name
 //	<VarLib>/device-config/<name>.yaml  0600, the extracted sections' text of
 //	                                  the last successful pull
+//	<VarLib>/device-config/<name>.plain    0600, the plain view of that pull
+//	                                  (stamped with its time)
+//	<VarLib>/device-config/<name>.backout  0600, the back-out of the last plan
+//	                                  that had changes (stamped with the
+//	                                  pull it was computed from)
 //
 // The raw configuration is never kept, and neither is a secret's value: the
 // sections file holds the statements in their compared form (Normalise),
@@ -276,6 +281,73 @@ func (s Store) SaveSections(name, vendor string, secs map[string]devices.Section
 	if err != nil {
 		return err
 	}
+	return s.writeSections(p, vendor, secs, "")
+}
+
+// plainSuffix ends the file of a device's plain view (Junos: the
+// configuration without the groups' inheritance applied, D97). The name
+// does not end in '.yaml', so the code that lists the sections files
+// (ForgetAll) does not take it for a device.
+const plainSuffix = ".plain"
+
+// backoutSuffix ends the file of a device's stored back-out: the back-out of
+// the last plan that had changes, as that plan printed it. Like the plain
+// view's it does not end in '.yaml'.
+const backoutSuffix = ".backout"
+
+// stampKey is the key of a stamp in a plain view's file: the Pulled time of
+// the record it belongs to.
+const stampKey = "pulled"
+
+// plainPath is the plain view's file of a device.
+func (s Store) plainPath(name string) (string, error) {
+	p, err := s.sectionsPath(name)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSuffix(p, ".yaml") + plainSuffix, nil
+}
+
+// SavePlain writes a device's plain view (0600, in the sections file's
+// form, a secret's value elided as for any section), stamped with the time of
+// the pull it belongs to (the record's Pulled). A nil map removes the file: a
+// pull that read no plain view must not leave the last one behind.
+func (s Store) SavePlain(name, vendor string, secs map[string]devices.Section, pulled time.Time) error {
+	p, err := s.plainPath(name)
+	if err != nil {
+		return err
+	}
+	if secs == nil {
+		if err := os.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return fail("Cannot remove " + p + ": " + errText(err))
+		}
+		return nil
+	}
+	return s.writeSections(p, vendor, secs, pulled.UTC().Format(time.RFC3339Nano))
+}
+
+// Plain reads a device's plain view of the pull made at pulled (the record's
+// Pulled). An absent file, and one stamped with another pull, is (nil, nil):
+// the record has none that belongs to it and the inheritance check is
+// skipped (and said); a view of another pull would compare two pulls.
+func (s Store) Plain(name, vendor string, pulled time.Time) (map[string]devices.Section, error) {
+	p, err := s.plainPath(name)
+	if err != nil {
+		return nil, err
+	}
+	secs, stamp, err := s.readSections(p, vendor)
+	if err != nil || secs == nil {
+		return nil, err
+	}
+	if t, perr := time.Parse(time.RFC3339Nano, stamp); perr != nil || pulled.IsZero() || !t.Equal(pulled) {
+		return nil, nil
+	}
+	return secs, nil
+}
+
+// writeSections writes a sections file at p, with the stamp of a plain view
+// ("" for none).
+func (s Store) writeSections(p, vendor string, secs map[string]devices.Section, stamp string) error {
 	norm := make(map[string]devices.Section, len(secs))
 	for k, v := range secs {
 		n, err := Normalise(vendor, v)
@@ -299,6 +371,9 @@ func (s Store) SaveSections(name, vendor string, secs map[string]devices.Section
 	var b strings.Builder
 	b.WriteString(SectionsHeader)
 	b.WriteString("version: 1\n")
+	if stamp != "" {
+		b.WriteString(stampKey + ": \"" + stamp + "\"\n")
+	}
 	keys := slices.Clone(SectionNames)
 	for k := range secs {
 		if !slices.Contains(keys, k) {
@@ -332,32 +407,44 @@ func (s Store) Sections(name, vendor string) (map[string]devices.Section, error)
 	if err != nil {
 		return nil, err
 	}
+	secs, _, err := s.readSections(p, vendor)
+	return secs, err
+}
+
+// readSections reads the sections file at p and the stamp it carries ("" when
+// it has none).
+func (s Store) readSections(p, vendor string) (map[string]devices.Section, string, error) {
 	data, err := os.ReadFile(p)
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, nil
+		return nil, "", nil
 	}
 	if err != nil {
-		return nil, fail("Cannot read " + p + ": " + errText(err))
+		return nil, "", fail("Cannot read " + p + ": " + errText(err))
 	}
 	v, err := pyyaml.LoadBytes(data)
 	root, ok := v.(*yamlpy.Map)
 	if err != nil || !ok {
-		return nil, fail(p + " is not a sections file of this tacctl; 'tacctl device config pull' rebuilds it.")
+		return nil, "", fail(p + " is not a sections file of this tacctl; 'tacctl device config pull' rebuilds it.")
 	}
+	stamp := ""
 	fam, famErr := Family(vendor)
 	out := map[string]devices.Section{}
 	haveVersion := false
 	for k, val := range root.All() {
 		if k == "version" {
 			if n, ok := val.(int); !ok || n != RecordsVersion {
-				return nil, fail(p + " is not a sections file of this tacctl; 'tacctl device config pull' rebuilds it.")
+				return nil, "", fail(p + " is not a sections file of this tacctl; 'tacctl device config pull' rebuilds it.")
 			}
 			haveVersion = true
 			continue
 		}
 		text, ok := val.(string)
 		if !ok {
-			return nil, fail(p + " is not a sections file of this tacctl; 'tacctl device config pull' rebuilds it.")
+			return nil, "", fail(p + " is not a sections file of this tacctl; 'tacctl device config pull' rebuilds it.")
+		}
+		if k == stampKey {
+			stamp = text
+			continue
 		}
 		sec := devices.Section{Name: k}
 		for _, l := range strings.Split(text, "\n") {
@@ -371,9 +458,109 @@ func (s Store) Sections(name, vendor string) (map[string]devices.Section, error)
 		out[k] = sec
 	}
 	if !haveVersion {
-		return nil, fail(p + " is not a sections file of this tacctl; 'tacctl device config pull' rebuilds it.")
+		return nil, "", fail(p + " is not a sections file of this tacctl; 'tacctl device config pull' rebuilds it.")
 	}
-	return out, nil
+	return out, stamp, nil
+}
+
+// StoredBackout is the back-out of the last plan that had changes, kept
+// beside the device's record: the text the plan printed (a secret's value
+// elided), the Pulled time of the record it was computed from and the
+// vendor (which comment leader its text uses).
+type StoredBackout struct {
+	Pulled time.Time
+	Vendor string
+	Text   string
+}
+
+// backoutPath is the stored back-out's file of a device.
+func (s Store) backoutPath(name string) (string, error) {
+	p, err := s.sectionsPath(name)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSuffix(p, ".yaml") + backoutSuffix, nil
+}
+
+// BackoutHeader heads every stored back-out.
+const BackoutHeader = "# tacctl: the back-out of the last plan made for this device that had changes, as\n" +
+	"# that plan printed it (a secret's value elided). Derived; 'tacctl device config\n" +
+	"# plan <name> --backout' prints it. Root only.\n"
+
+// backoutRule ends the header of a stored back-out.
+const backoutRule = "---\n"
+
+// SaveBackout writes a device's stored back-out (0600, through a temporary
+// file, under the store's lock so that a forget or a rename is not undone).
+func (s Store) SaveBackout(name string, b StoredBackout) error {
+	p, err := s.backoutPath(name)
+	if err != nil {
+		return err
+	}
+	if b.Pulled.IsZero() {
+		return fail("A back-out is stamped with the pull it was computed from.")
+	}
+	unlock, err := s.Lock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if err := os.MkdirAll(s.Dir, 0o700); err != nil {
+		return fail("Cannot create " + s.Dir + ": " + errText(err))
+	}
+	var w strings.Builder
+	w.WriteString(BackoutHeader)
+	w.WriteString("version: 1\n")
+	w.WriteString("pulled: " + b.Pulled.UTC().Format(time.RFC3339Nano) + "\n")
+	w.WriteString("vendor: " + b.Vendor + "\n")
+	w.WriteString(backoutRule)
+	w.WriteString(b.Text)
+	return atomicWrite(p, []byte(w.String()), 0o600)
+}
+
+// Backout reads a device's stored back-out; nil when it has none or the file
+// is not one of this tacctl (the next plan with changes writes it again).
+func (s Store) Backout(name string) (*StoredBackout, error) {
+	p, err := s.backoutPath(name)
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(p)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fail("Cannot read " + p + ": " + errText(err))
+	}
+	head, text, ok := strings.Cut(string(data), "\n"+backoutRule)
+	if !ok {
+		return nil, nil
+	}
+	b := &StoredBackout{Text: text}
+	version := false
+	for _, l := range strings.Split(head, "\n") {
+		l = strings.TrimSpace(l)
+		k, v, found := strings.Cut(l, ": ")
+		if !found || strings.HasPrefix(l, "#") {
+			continue
+		}
+		switch k {
+		case "version":
+			version = v == "1"
+		case "pulled":
+			t, perr := time.Parse(time.RFC3339Nano, v)
+			if perr != nil {
+				return nil, nil
+			}
+			b.Pulled = t
+		case "vendor":
+			b.Vendor = v
+		}
+	}
+	if !version || b.Pulled.IsZero() {
+		return nil, nil
+	}
+	return b, nil
 }
 
 // Forget removes a device's record and sections file under the lock, and
@@ -406,6 +593,13 @@ func (s Store) Forget(name string) (bool, error) {
 	case !errors.Is(err, fs.ErrNotExist):
 		return had, fail("Cannot remove " + p + ": " + errText(err))
 	}
+	for _, other := range []func(string) (string, error){s.plainPath, s.backoutPath} {
+		if pp, err := other(name); err == nil {
+			if err := os.Remove(pp); err != nil && !errors.Is(err, fs.ErrNotExist) {
+				return had, fail("Cannot remove " + pp + ": " + errText(err))
+			}
+		}
+	}
 	return had, nil
 }
 
@@ -424,8 +618,18 @@ func (s Store) ForgetAll() (int, error) {
 	}
 	if ents, err := os.ReadDir(s.Dir); err == nil {
 		for _, e := range ents {
-			if n, ok := strings.CutSuffix(e.Name(), ".yaml"); ok && !e.IsDir() {
+			if e.IsDir() {
+				continue
+			}
+			if n, ok := strings.CutSuffix(e.Name(), ".yaml"); ok {
 				seen[n] = true
+				if err := os.Remove(filepath.Join(s.Dir, e.Name())); err != nil && !errors.Is(err, fs.ErrNotExist) {
+					return 0, fail("Cannot remove " + filepath.Join(s.Dir, e.Name()) + ": " + errText(err))
+				}
+			}
+			// a plain view and a stored back-out go with their device, and
+			// are no device of their own
+			if strings.HasSuffix(e.Name(), plainSuffix) || strings.HasSuffix(e.Name(), backoutSuffix) {
 				if err := os.Remove(filepath.Join(s.Dir, e.Name())); err != nil && !errors.Is(err, fs.ErrNotExist) {
 					return 0, fail("Cannot remove " + filepath.Join(s.Dir, e.Name()) + ": " + errText(err))
 				}
@@ -478,6 +682,25 @@ func (s Store) Rename(oldName, newName string) error {
 	}
 	if err := os.Rename(from, to); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fail("Cannot move " + from + ": " + errText(err))
+	}
+	// the plain view and the stored back-out go with it (a stale one under the
+	// new name is dropped when the old name has none)
+	for _, path := range []func(string) (string, error){s.plainPath, s.backoutPath} {
+		pf, perr1 := path(oldName)
+		pt, perr2 := path(newName)
+		if perr1 != nil || perr2 != nil {
+			continue
+		}
+		err := os.Rename(pf, pt)
+		switch {
+		case err == nil:
+		case errors.Is(err, fs.ErrNotExist):
+			if rerr := os.Remove(pt); rerr != nil && !errors.Is(rerr, fs.ErrNotExist) {
+				return fail("Cannot remove " + pt + ": " + errText(rerr))
+			}
+		default:
+			return fail("Cannot move " + pf + ": " + errText(err))
+		}
 	}
 	return nil
 }

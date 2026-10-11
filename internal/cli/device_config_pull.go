@@ -410,6 +410,11 @@ type deviceRead struct {
 	// Version is the device's version line (devconf.VersionLine; Cisco
 	// only, "" when it answered none).
 	Version string
+	// Plain is the same configuration without the groups' inheritance applied
+	// (Junos; devconf.ReadPlain), "" when the device has none or did not
+	// answer: the planner then cannot tell a group's statements from the
+	// device's own, and says so.
+	Plain string
 }
 
 // errNetconfNotRead is --transport netconf for a vendor that has no NETCONF
@@ -450,12 +455,16 @@ func readDeviceConfig(ctx context.Context, c *devssh.Client, vendor, mode string
 		ns, nerr := c.NETCONF()
 		if nerr == nil {
 			out.Netconf = netconfHelloOK
-			raw, _, rerr := func() (string, string, error) {
+			raw, plain, rerr := func() (string, string, error) {
 				defer func() { _ = ns.Close() }()
-				return read(ctx, netconfRunner{ns})
+				text, _, err := read(ctx, netconfRunner{ns})
+				if err != nil {
+					return "", "", err
+				}
+				return text, devconf.ReadPlain(ctx, netconfRunner{ns}, vendor), nil
 			}()
 			if rerr == nil {
-				out.Raw, out.Transport = raw, transportNetconf
+				out.Raw, out.Plain, out.Transport = raw, plain, transportNetconf
 				return out, nil
 			}
 			if mode == transportNetconf || ctx.Err() != nil {
@@ -488,6 +497,7 @@ func readDeviceConfig(ctx context.Context, c *devssh.Client, vendor, mode string
 		return out, err
 	}
 	out.Raw, out.Version, out.Transport = raw, version, transportSSH
+	out.Plain = devconf.ReadPlain(ctx, s, vendor)
 	return out, nil
 }
 
@@ -653,7 +663,16 @@ func (r *pullRun) pullDevice(ctx context.Context, e devreg.Entry, o *pullOutcome
 		return r.failed(ctx, e, o, err)
 	}
 	o.Result, o.Sections, o.SecretsVisible = devconf.ResultOK, results, ext.SecretsVisible
-	if err := r.recordSuccess(o, e, ext, results); err != nil {
+	// The plain view, extracted the same way, tells the planner which
+	// statements a group supplies (D97). A view that does not extract is no
+	// view: the pull is not refused for it.
+	var plain map[string]devices.Section
+	if rd.Plain != "" {
+		if pe, perr := devconf.ExtractWith(e.Vendor, rd.Plain, devconf.Options{Expected: expected}); perr == nil {
+			plain = pe.Sections
+		}
+	}
+	if err := r.recordSuccess(o, e, ext, results, plain); err != nil {
 		o.Result = ""
 		return fail(batch.StatusFailed, "cannot record the result: "+strings.Join(msgs(err), " "), "")
 	}
@@ -709,7 +728,7 @@ func (r *pullRun) record(o *pullOutcome, e devreg.Entry) {
 
 // recordSuccess keeps a successful pull: the sections file, then the
 // record, under the store's lock.
-func (r *pullRun) recordSuccess(o *pullOutcome, e devreg.Entry, ext devconf.Extracted, results []devconf.SectionResult) error {
+func (r *pullRun) recordSuccess(o *pullOutcome, e devreg.Entry, ext devconf.Extracted, results []devconf.SectionResult, plain map[string]devices.Section) error {
 	unlock, err := r.store.Lock()
 	if err != nil {
 		return err
@@ -746,6 +765,11 @@ func (r *pullRun) recordSuccess(o *pullOutcome, e devreg.Entry, ext devconf.Extr
 		return err
 	}
 	if err := r.store.SaveSections(e.Name, e.Vendor, ext.Sections); err != nil {
+		return err
+	}
+	// The plain view of this pull, or none: the last pull's must not outlive
+	// it (the planner would compare two different pulls).
+	if err := r.store.SavePlain(e.Name, e.Vendor, plain, now); err != nil {
 		return err
 	}
 	recs.Put(e.Name, rec)

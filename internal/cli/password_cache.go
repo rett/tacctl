@@ -9,7 +9,8 @@ package cli
 // for the caller's tier (the console) or when 'tacctl shell
 // --password-cache' asks for it and the policy allows it. The agent is shut
 // between lines. For each line that uses it ('device config pull', 'device
-// config diff', 'ssh', 'device ssh': askpassWords) and only those, the loop
+// config diff', 'device config plan', 'ssh', 'device ssh': askpassWords) and
+// only those, the loop
 // opens it with a token made for that line and closes it, killing the
 // token, when the line ends; '<socket>:<token>' goes to that line in the
 // environment of the sudo process, never on sudo's command line, and the
@@ -203,9 +204,10 @@ func (inv *invocation) plainShellCachePolicy(r shellRun, managed bool) (allowed 
 
 // askpassWords reports whether a shell line uses the password cache: the
 // lines tier.AskpassKeep keeps TACCTL_ASKPASS for, and for which the root
-// side consumes the line's single get. 'device config diff' logs in to
-// nothing unless it is given --pull (before any '--'), so it is not one
-// of them without it: the cache stays shut for such a line.
+// side consumes the line's single get. 'device config diff' and 'device
+// config plan' log in to nothing unless they are given --pull (before any
+// '--'), so they are not among them without it: the cache stays shut for
+// such a line.
 func askpassWords(words []string) bool {
 	switch {
 	case len(words) == 0:
@@ -216,7 +218,7 @@ func askpassWords(words []string) bool {
 		return true
 	case words[0] == "device" && len(words) > 2 && words[1] == "config" && words[2] == "pull":
 		return true
-	case words[0] == "device" && len(words) > 2 && words[1] == "config" && words[2] == "diff":
+	case words[0] == "device" && len(words) > 2 && words[1] == "config" && (words[2] == "diff" || words[2] == "plan"):
 		for _, w := range words[3:] {
 			switch w {
 			case "--":

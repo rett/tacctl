@@ -585,12 +585,14 @@ func TestEnvironWith(t *testing.T) {
 	}
 }
 
-// askpassWords is exactly the four command lines tier.AskpassKeep keeps the
-// variable for.
+// askpassWords is exactly the command lines tier.AskpassKeep keeps the
+// variable for ('device config plan' only with --pull, as 'diff').
 func TestAskpassWords(t *testing.T) {
 	for words, want := range map[string]bool{
 		"ssh core-sw1": true, "device ssh core-sw1": true, "device config pull --all": true, "device config diff --pull x": true,
 		"device config diff --all --pull": true, "device config diff --section aaa --pull --all": true,
+		"device config plan --pull x": true, "device config plan --all --pull --converge": true,
+		"device config plan x": false, "device config plan --all": false, "device config plan x -- --pull": false,
 		// A diff reads the last pull and logs in to nothing without --pull:
 		// its line never opens the cache. After '--' a word is no option.
 		"device config diff --all": false, "device config diff x": false, "device config diff": false,

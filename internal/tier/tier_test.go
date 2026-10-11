@@ -473,8 +473,10 @@ func TestSudoersNoSetenv(t *testing.T) {
 	}
 }
 
-// TACCTL_ASKPASS (D70) is kept for the four command lines that use the
-// password cache and nowhere else: not on the general env_keep line, and
+// TACCTL_ASKPASS (D70) is kept for the command lines that use the password
+// cache ('device config pull', 'diff' and, from 0.2.5, 'plan', all three
+// when they read the devices, and 'ssh') and nowhere else: not on the
+// general env_keep line, and
 // the two drop-ins name their aliases differently (sudoers refuses an alias
 // defined twice, and a host may carry both).
 func TestAskpassKeepIsScoped(t *testing.T) {
@@ -484,7 +486,7 @@ func TestAskpassKeepIsScoped(t *testing.T) {
 	for _, alias := range []string{AskpassAlias, AskpassGroupAlias} {
 		k := AskpassKeep(alias)
 		items := aliasItems(t, k, alias)
-		want := []string{"device config pull *", "device config diff *", "ssh *", "device ssh *"}
+		want := []string{"device config pull *", "device config diff *", "device config plan *", "ssh *", "device ssh *"}
 		if !slices.Equal(items, want) {
 			t.Errorf("%s commands %q, want %q", alias, items, want)
 		}

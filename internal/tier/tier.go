@@ -231,7 +231,13 @@ var Rules = []Rule{
 	// all, 'device config pull' and 'diff' log in to the devices as the
 	// caller and print what the device runs: the engineer's own scopes'
 	// devices (the verb sees to that). 'forget' is the superuser's.
-	{Tier: Engineer, Cmd: "device", Sub: "config", Sudoers: []string{"device config show *", "device config pull *", "device config diff *"}},
+	//
+	// 'device config plan' (0.2.5, D104) prints what to paste to make a
+	// device match the rendering, from the last pull (with --pull it logs in
+	// to the devices as the caller, as 'pull' does): the engineer's own
+	// scopes' devices, and the output holds the scope's key where the
+	// device lacks it, as 'device config show' does.
+	{Tier: Engineer, Cmd: "device", Sub: "config", Sudoers: []string{"device config show *", "device config pull *", "device config diff *", "device config plan *"}},
 	{Tier: Engineer, Cmd: "config", Sub: "cisco", Sudoers: []string{"config cisco", "config cisco *"}},
 	{Tier: Engineer, Cmd: "config", Sub: "juniper", Sudoers: []string{"config juniper", "config juniper *"}},
 	{Tier: Engineer, Cmd: "config", Sub: "wti", Sudoers: []string{"config wti", "config wti *"}, Wrap: true},
@@ -303,7 +309,8 @@ const EnvKeep = "Defaults!" + Binary + " env_keep += \"SSH_AUTH_SOCK TACCTL_CONS
 
 // The password cache's variable (docs/plans/0.2.4-plan.md D70,
 // TACCTL_ASKPASS: '<socket path>:<token>') is kept only for the command
-// lines that use it: 'device config pull', 'device config diff' and 'ssh'
+// lines that use it: 'device config pull', 'device config diff', 'device
+// config plan' (all three read the devices with --pull) and 'ssh'
 // ('device ssh'). A 'Defaults!' entry takes no arguments, so the lines are a
 // Cmnd_Alias, which each drop-in names itself (sudoers refuses an alias
 // defined twice, and a host may carry both drop-ins). The shell puts the
@@ -324,7 +331,7 @@ const (
 // it goes before EnvKeep in a drop-in.
 func AskpassKeep(alias string) string {
 	return "Cmnd_Alias " + alias + " = " +
-		Binary + " device config pull *, " + Binary + " device config diff *, \\\n" +
+		Binary + " device config pull *, " + Binary + " device config diff *, " + Binary + " device config plan *, \\\n" +
 		"    " + Binary + " ssh *, " + Binary + " device ssh *\n" +
 		"Defaults!" + alias + " env_keep += \"" + AskpassVar + "\"\n"
 }

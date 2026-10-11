@@ -91,8 +91,10 @@ func (s skippedDevices) any() bool {
 	return len(s.noScope)+len(s.other)+len(s.wti)+len(s.notYours) > 0
 }
 
-// lines are the notes about what was left out, with the names.
-func (s skippedDevices) lines() []string {
+// linesFor are the notes about what was left out, with the names, for a
+// verb: 'plan' says WTI units are not planned where the others say they are
+// not read.
+func (s skippedDevices) linesFor(verb string) []string {
 	var out []string
 	add := func(names []string, why string) {
 		if len(names) == 0 {
@@ -107,7 +109,11 @@ func (s skippedDevices) lines() []string {
 	}
 	add(s.noScope, "no scope's prefixes cover the address")
 	add(s.other, "the vendor is 'other'; set it with: tacctl device vendor <name> cisco|juniper|wti")
-	add(s.wti, "WTI units are not read in this release (name one to see it recorded as unsupported)")
+	if verb == "plan" {
+		add(s.wti, "WTI units are not planned in this release (name one to see why)")
+	} else {
+		add(s.wti, "WTI units are not read in this release (name one to see it recorded as unsupported)")
+	}
 	add(s.notYours, "in a scope you are not a member of: the device login is your own account")
 	return out
 }
@@ -121,8 +127,11 @@ type chosenDevices struct {
 }
 
 // printSkipped says what the selection left out.
-func (c *chosenDevices) printSkipped(inv *invocation) {
-	for _, l := range c.skipped.lines() {
+func (c *chosenDevices) printSkipped(inv *invocation) { c.printSkippedFor(inv, "pull") }
+
+// printSkippedFor is printSkipped in the words of a verb.
+func (c *chosenDevices) printSkippedFor(inv *invocation, verb string) {
+	for _, l := range c.skipped.linesFor(verb) {
 		inv.echo("  " + l)
 	}
 }

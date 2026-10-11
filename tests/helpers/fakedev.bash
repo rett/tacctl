@@ -98,6 +98,8 @@ fakedev_serve() {
     # shellcheck disable=SC2001
     if [[ "$vendor" == "juniper" ]]; then
         sed 's/\x1b\[[0-9;]*m//g' <<< "$out" | grep '^set ' > "${dir}/show configuration | display inheritance no-comments | display set.out"
+        # the plain view (no inheritance applied) of a device that has no group
+        cp "${dir}/show configuration | display inheritance no-comments | display set.out" "${dir}/show configuration | display set.out"
     else
         {
             printf 'version 15.2\nhostname %s\n!\n' "${4:-fake}"

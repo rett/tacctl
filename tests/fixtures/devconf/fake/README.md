@@ -9,7 +9,12 @@ taken from `tacctl config <vendor>`, so the pull agrees with it, or edited to
 differ) and, with `TACCTL_TEST_DEVICE_DIAL`, point `device config pull` at it.
 
 - `junos/`: the prompt of a Junos CLI. Its read command is
-  `show configuration | display inheritance no-comments | display set`.
+  `show configuration | display inheritance no-comments | display set`; the
+  plain view that `device config plan` compares it with (the same statements
+  with the groups' inheritance not applied) is `show configuration | display
+  set` (a device with no file for it is pulled all the same, with no plain
+  view; `tests/helpers/fakedev.bash` `fakedev_serve` writes one that equals
+  the inheritance view).
 - `ios/`: the prompt of an IOS CLI. Its read command is `show running-config`
   (`terminal length 0` needs no file); `show version | include Version.out` is
   the image's version line, which a pull keeps on the record and derives the

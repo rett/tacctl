@@ -26,6 +26,8 @@ type goldenCase struct {
 	plain string
 	// plainErr is the error of Plain (ErrNoSecretsPlain for --no-secrets).
 	plainErr error
+	// converge marks the case of --converge (the cleanup region).
+	converge bool
 }
 
 type goldenFile struct{ name, content string }
@@ -50,10 +52,24 @@ func goldenVariants(f fixture) []struct {
 	return vs
 }
 
-// goldenCases plans every fixture in every variant and lists the files
+// goldenCases are the plans of the fixtures without --converge (the
+// --converge ones, of the fixtures that have something to say about a
+// cleanup, are in allGoldenCases, with the plain ones).
+func goldenCases(t *testing.T) []goldenCase {
+	t.Helper()
+	var out []goldenCase
+	for _, gc := range allGoldenCases(t) {
+		if !gc.converge {
+			out = append(out, gc)
+		}
+	}
+	return out
+}
+
+// allGoldenCases plans every fixture in every variant and lists the files
 // each one produces: the whole output, the statements only, the JSON, and
 // the back-out when there is one.
-func goldenCases(t *testing.T) []goldenCase {
+func allGoldenCases(t *testing.T) []goldenCase {
 	t.Helper()
 	var out []goldenCase
 	for _, f := range fixtures(t) {
@@ -81,6 +97,58 @@ func goldenCases(t *testing.T) []goldenCase {
 			}
 			out = append(out, gc)
 		}
+		// --converge (D111, amended): the fixtures that have something to say
+		// about a cleanup once the first region is pasted. As pulled the
+		// output is the first region and the one sentence ('.converge.');
+		// after the pastes and the verifying pull it is the cleanup alone
+		// ('.converge-after.').
+		o := f.options()
+		o.Converge = true
+		sexp, scur, _ := settledFixture(t, f, f.options())
+		sd, err := Plan(f.vendor, sexp, scur, scur, o)
+		if err != nil {
+			t.Fatalf("%s: %v", f.name, err)
+		}
+		if !sd.Cleanup.Empty() || sd.Cleanup.Whole != "" || len(sd.Cleanup.Left) > 0 {
+			d, err := Plan(f.vendor, exp, cur, plain, o)
+			if err != nil {
+				t.Fatalf("%s: %v", f.name, err)
+			}
+			out = append(out, convergeCases(t, f, d, sd)...)
+		}
+	}
+	// the old server forms of an IOS device (no fixture of the corpus has
+	// them): the IOS cleanup region
+	f := fixtureByName(t, "cisco.reference-lab")
+	f.name = "cisco.old-server-forms"
+	first, sd := withIOSExtras(t, fixtureByName(t, "cisco.reference-lab"), iosExtraText+iosDot1xText)
+	out = append(out, convergeCases(t, f, first, sd)...)
+	return out
+}
+
+// convergeCases are the two goldens of a --converge plan: the device as
+// pulled (the first region and the sentence) and after the pastes (the
+// cleanup region alone).
+func convergeCases(t *testing.T, f fixture, asPulled, settled Delta) []goldenCase {
+	t.Helper()
+	h := f.header()
+	w := Wrapper{ConfirmMinutes: 5}
+	var out []goldenCase
+	for _, c := range []struct {
+		name string
+		d    Delta
+	}{{f.name + ".converge.", asPulled}, {f.name + ".converge-after.", settled}} {
+		gc := goldenCase{name: c.name, opt: Options{Converge: true}, d: c.d, h: h, w: w, converge: true}
+		gc.files = append(gc.files, goldenFile{gc.name + "output.txt", Block(c.d, h, w)})
+		js, err := JSON(c.d, h, w)
+		if err != nil {
+			t.Fatal(err)
+		}
+		gc.files = append(gc.files, goldenFile{gc.name + "json", string(js) + "\n"})
+		if !c.d.Cleanup.Empty() {
+			gc.files = append(gc.files, goldenFile{gc.name + "cleanup.plain.txt", CleanupPlain(c.d, h, w)})
+		}
+		out = append(out, gc)
 	}
 	return out
 }
@@ -91,7 +159,7 @@ func coverFiles(t *testing.T) []goldenFile {
 	t.Helper()
 	var sts []DeviceStatus
 	for _, gc := range goldenCases(t) {
-		if gc.opt.Secrets || gc.opt.NoSecrets {
+		if gc.opt.Secrets || gc.opt.NoSecrets || gc.converge {
 			continue
 		}
 		sts = append(sts, StatusFor(gc.d, gc.h))
@@ -105,12 +173,16 @@ func coverFiles(t *testing.T) []goldenFile {
 }
 
 func TestGoldens(t *testing.T) {
-	for _, gc := range goldenCases(t) {
+	for _, gc := range allGoldenCases(t) {
 		for _, f := range gc.files {
 			golden(t, f.name, f.content)
 		}
 		if gc.opt.NoSecrets && !errors.Is(gc.plainErr, ErrNoSecretsPlain) && gc.d.Counts.Placeholders > 0 {
 			t.Errorf("%s: a --no-secrets plain form: %v", gc.name, gc.plainErr)
+		}
+		if gc.converge {
+			checkCleanupWhole(t, gc.name, gc.d, gc.h, gc.w)
+			continue
 		}
 		checkWholePaste(t, gc.name, gc.d, gc.h, gc.w)
 	}
@@ -124,7 +196,7 @@ func TestGoldens(t *testing.T) {
 // the planner no longer makes).
 func TestGoldenFilesAreProduced(t *testing.T) {
 	want := map[string]bool{}
-	for _, gc := range goldenCases(t) {
+	for _, gc := range allGoldenCases(t) {
 		for _, f := range gc.files {
 			want["plan."+f.name] = true
 		}

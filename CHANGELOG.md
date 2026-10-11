@@ -662,6 +662,231 @@ current behaviour; this file is where history lives.
     `cisco.source_interface.<scope>` keys (a 0.2.3 binary refuses a key it does
     not know).
 
+37. **`tacctl device config plan` prints what to paste to make a device match
+    what tacctl renders.** Per device, from the last pull: a box naming the
+    device, the irregularity report in plain words, ONE region between `PASTE
+    FROM HERE` and `PASTE TO HERE`, the check and the one line to type
+    yourself afterwards, and the back-out as comments. Nothing is written to a
+    device, and nothing is read from one unless `--pull` says so (it is the
+    pull of `device config diff --pull`, with the pull's options; its progress
+    goes to standard error). The devices are named (`<name>[,<name>...]`) or
+    selected with `--all`, `--scope`, `--vendor` and `--stale`, as for `pull`
+    and `diff`; `--section aaa,roles,mgmt-acl,snmp` limits the plan (the
+    report still names the others; `netconf` and `breakglass` are never
+    planned and are a wrong argument). The report has one numbered item per
+    finding of the comparison (missing, different, out of order, extra, a
+    secret not visible, not plannable for this login), its section, the
+    statement in words with the line (a secret's value elided), its severity
+    (`ACCESS`, `MONITORING`, `COSMETIC`) and what the paste does about it
+    (`Fixed by region line 3`, `Left alone`, `Not fixable by this login`).
+    The region holds only statements the device takes as they stand, the
+    wrapper lines and one label comment per section; the report, the check,
+    the follow-up and the back-out are comment lines outside it. A device that
+    was never pulled, was pulled more than `stale-days` ago, whose last pull
+    failed, whose Cisco syntax is not known (`needs pull`), a WTI unit, or one
+    whose plan has nothing to paste because a section was refused (a
+    statement a Junos group applies, the lock-out guards of the Cisco `aaa`
+    unit) cannot be planned: exit 1, one line on standard error and, with
+    several devices, the cover page. Exit status 0 (the outputs were made, a
+    consistent device included), 1, 2 (wrong arguments; with `--exit-code` also
+    a device that needs a change and none that could not be planned), 130.
+    Every device is logged (`auth.info device config plan user= device=
+    status= sections= converge= secrets= out=`, never a value).
+
+38. **A plan is safe when pasted whole, and its follow-up is never in it.** On
+    Junos the region is `configure private`, the statements, `show | compare
+    | no-more`, `commit check` and the confirmed commit `commit confirmed N
+    comment "tacctl plan <device> <time> by <user>"`: without the one word
+    `commit`, typed by hand after the check, the switch undoes the paste by
+    itself in N minutes. A `configure private` that another session's
+    uncommitted work refuses leaves every later line an unknown command, and
+    the report says so. On IOS the region is `configure terminal`, the lines
+    and `end`: the change is live at `end` and nothing rolls it back by itself
+    (the report says so twice and asks for a second privilege-15 session until
+    the end); there is no revert timer, because on IOS 15.x it reverts only
+    while the session that armed it stays open, which is not the case that
+    matters, a paste that cuts the technician's own session. `write memory`
+    is typed by hand after the check. The region never holds a plain
+    `commit`, `exit`, `rollback`, `write memory`, `configure confirm`, `copy`,
+    `delete /force` or `reload`, nor `breakglass`, `netconf`, the application
+    of the management filter on `lo0`, the `access-class` binding, `system
+    root-authentication`, `system services ssh`, groups, `username`, `enable
+    secret` or a `line` header; every region is checked to be printable ASCII
+    and of an owned shape before it is printed. **`tacctl config devices
+    confirm-timeout [<minutes>]`** sets N (1-60, default 5; the key
+    `device.config.confirm_timeout` of `tacctl.yaml`, which `rollback`
+    removes).
+
+39. **`--converge` adds a cleanup region for the extras.** A statement in a
+    standard hierarchy that the standard does not have is reported with its
+    severity and the exact line that removes it, and left alone by the plan's
+    region. `--converge` makes the region that removes the old servers and the
+    like, between `CLEANUP FROM HERE` and `CLEANUP TO HERE`, for a device that
+    has nothing else to paste (item 46): on IOS another `tacacs server` block
+    or `tacacs-server host` line of the scope's protocol, an old `aaa group
+    server` (its entries first, the group before the server it names), another
+    `snmp-server community`; on Junos another `system tacplus-server` or
+    `radius-server`, another `snmp community`, the entries of another `snmp
+    client-list`, a login class no user uses. Never a login, a line, the enable
+    secret, a method list, another ACL, the other protocol's servers and
+    groups, a server or group that a statement which stays names (item 47);
+    never a line that holds the address given with `--from` (the address you
+    are logged in from), and without `--from` no client-list entry; the whole
+    cleanup is refused while the standard's server is missing and the plan does
+    not put it there; a section the pull's login could not see completely is
+    not cleaned. The cleanup ends as the plan does (`commit confirmed`, or
+    `end`), has its own follow-up, and each item of the report says which
+    cleanup line removes it.
+
+40. **`--backout` prints the back-out region alone.** From the last pull: the
+    statements that put back what the pull showed, for the sections the plan
+    changed, between `BACK-OUT FROM HERE` and `BACK-OUT TO HERE`, with the
+    same wrapper as the plan's region. On IOS the `no` lines in reverse
+    order, with the console and VTY login leaves typed again and never a `no
+    line`; a secret tacctl does not hold is a comment that says to type it
+    again. A pull made after the paste replaces what the back-out is computed
+    from: the plan keeps its back-out beside the record, and `--backout` prints
+    that one then (item 48); `--out-dir` also writes it beside the plan, at
+    plan time, as `<name>.backout.txt`.
+
+41. **`--plain`, `--json`, `--out`, `--out-dir`, `--force` and the cover
+    page.** `--plain` is the statements of one device, no wrapper line, no
+    comment, no banner (for `load set <file>` on Junos; with `--converge` a
+    device that has a cleanup makes two files, `--out` and
+    `<name>.cleanup.set`); `--plain` of several devices
+    needs `--out-dir`, and `--plain --no-secrets` is refused. `--json` is an
+    array with one object per device (`name`, `address`, `scope`, `vendor`,
+    `based_on`, `status` `consistent`, `needs-change`, `left-alone` or
+    `cannot-plan`, `reason`, `irregularities`, `region`, `after`, `backout`,
+    `extras`, `skipped`, `withheld`, `warnings`, `confirm_timeout`, and with
+    `--converge` `cleanup`, `cleanup_after`, `cleanup_deferred`,
+    `cleanup_refused`, `cleanup_left`); a secret's value is never in it. `--out <file>` writes one
+    device's output; `--out-dir <dir>` one file per device (`<name>.txt`,
+    `.set` with `--plain`, `.json` with `--json`), each plan's
+    `<name>.backout.txt` and, for several devices, `COVER.txt`. The files are
+    0600 in a 0700 directory (an existing directory open to others is
+    refused), written as the user who ran sudo (the verb runs as root, and a
+    path a lower tier names is never written with root's rights), and an
+    existing file is refused, all of them before any is written, unless
+    `--force`. Several devices print the cover page first: one line per
+    device (`consistent`, `needs change: 2 irregularities fixed by the paste,
+    1 left (1 ACCESS), 1 extra`, `NOT consistent, nothing to paste`, `cannot
+    be planned: <why>`) and the totals, then the outputs separated by a rule.
+
+42. **A plan types a secret only where the device lacks it.** A server key or
+    community the device lacks is typed in its line, and the output says so:
+    `THIS OUTPUT HOLDS THE TACACS+ KEY OF SCOPE lab` is the first line of the
+    report and is repeated on standard error, so a redirected output carries
+    it. A secret the device has, or one the pull's login could not see, is
+    neither printed nor changed unless `--secrets`, which types every secret
+    statement of the planned sections again (the way to rotate a key).
+    `--no-secrets` leaves each as a comment line, `# VALUE NEEDED, then remove
+    this mark: ...`, so a paste as it stands cannot set the literal
+    `<SECRET>`. The values are the ones `device config show` prints for the
+    same caller; an engineer's print logs `secret-read`.
+
+43. **A Cisco plan follows the standard block, and holds command
+    authorization back until the server is proven.** The region is the
+    standard's order: `aaa new-model`, the server block or host line, the
+    group, the method lists with `aaa authorization exec` directly after the
+    login list, accounting, `roles`, `snmp`, `mgmt-acl`, then the console and
+    VTY login leaves. The `aaa authorization commands <level>` and
+    `config-commands` lines are in the paste only when the pulled
+    configuration already uses the scope's server (its address in a server
+    block or host line and a login or exec list that names the group);
+    otherwise the report says `command authorization is not in this paste: log
+    in on a new session with your own account and check 'show privilege', then
+    plan again; it is the one group of lines left`, and the first plan puts
+    everything else (once the commands list names the server every further
+    command of the pasting session and of its back-out is asked of it, and
+    the server answers FAIL for a user it does not know and never falls
+    through). A device that has no local user at privilege 15 and no `aaa
+    new-model` is refused for `aaa`. The syntax is the one resolution of
+    `device config-syntax` and the pull's version line (item 25), never the
+    ssh flag. The unset `cisco.source_interface.<scope>` is a warning of the
+    report, never a line. The report says `Lab-tested on IOS 12.4(15) (a 7200
+    emulator); other IOS trains and IOS-XE are written from the references`.
+
+44. **Who may plan, and what a login's class cannot commit.** `device config
+    plan` is an Engineer verb for the devices of the engineer's own scopes (the
+    tier tables, the completion lists and the sudoers rule `device config plan
+    *`; a superuser sees all; an operator is refused). The Junos login class of
+    the caller's group, as the rendering gives it, decides what is planned: a
+    section it cannot commit (for `EN-CLASS`: the server, accounting, `login`,
+    `snmp`) is not in the region and the report says `Not fixable by this
+    login: EN-CLASS cannot change 'system tacplus-server' (ask a superuser)`,
+    in one line. `plan --pull` shares the pull's password handling, so the
+    shell's and the console's password cache serve it too (the
+    `TACCTL_ASKPASS` alias names it).
+
+45. **A Junos pull also reads the plain view.** After the inheritance view,
+    the same session reads `show configuration | display set` (best effort: a
+    device that does not answer it is still pulled) and keeps it, in the form
+    of the sections file, as `/var/lib/tacctl/device-config/<name>.plain`
+    (0600, stamped with the time of the pull it belongs to, so a view of
+    another pull is ignored; `device config forget` and `device rename` carry
+    it). The plan
+    compares the two to tell a statement of the device's own from one a group
+    supplies: a statement that a group applies is never changed, its section is
+    refused. A record without a plain view says so in the report (`pull the
+    device again to read it`).
+
+46. **A device with something to paste gets no cleanup beside it.** A
+    technician who copies a whole output runs every region in it: the old
+    server would go in the paste that adds the new one, and on Junos the second
+    `commit check` would confirm the first region's pending `commit confirmed`
+    unverified. `--converge` therefore makes the cleanup region only for a
+    device whose first region is empty (the plan after the paste and the
+    verifying pull, `tacctl device config pull <name> --diff`); the cleanup is
+    then the whole output, between `CLEANUP FROM HERE` and `CLEANUP TO HERE`
+    (never the first region's `PASTE TO HERE`). A device with a first region
+    gets that region and one line in the report: `cleanup comes after this
+    region is pasted and verified: pull the device, then plan --converge
+    again` (`cleanup_deferred` in `--json`); `--plain --converge` makes the
+    cleanup file only for a device that has one.
+
+47. **The cleanup never removes what a statement that stays names.** An IOS
+    cleanup removes only the scope's own protocol's servers and groups (a
+    TACACS+ scope never touches `radius server`, `radius-server host` or `aaa
+    group server radius`, which may serve 802.1X or another list; a RADIUS
+    scope never touches TACACS+); never a group that an `aaa ... group <name>`
+    line which stays names, nor the servers that group names (the report says
+    which statement names it); no server at all while a staying list uses
+    every server of the protocol (`group tacacs+`, `group radius`); and no
+    named `aaa authorization commands` list, because the pull does not say
+    which line uses a named list: it is left, with its `no` line in the report
+    to type when you know it is not in use. The order is the groups, then the
+    servers, so a group is gone before the server it names, and a RADIUS
+    group's `server name X` names a RADIUS block.
+
+48. **A plan keeps its back-out, and `--backout` prints it after the check
+    pull.** The check the after-steps ask for is `device config pull <name>
+    --diff`, and that pull is the new baseline: a back-out computed from it
+    would be "nothing to back out". Every plan that has changes now saves its
+    back-out beside the device's record (`/var/lib/tacctl/device-config/<name>.backout`,
+    0600, stamped with the pull it was computed from, carried by `device config
+    forget` and `device rename`): the text the plan printed, with a line that
+    holds a secret's value turned into a note to type it with its own value.
+    `plan <name> --backout` computes it from the pull as before while the
+    record's pull is the stamp; after a later pull it prints the kept one, with
+    a first comment line that says which pull it undoes (the latest plan with
+    changes replaces it); with none kept it says `nothing to back out: no plan
+    was made from an earlier pull of <name>` (exit 0). `--backout --pull` is
+    refused (exit 2): a pull replaces the picture a back-out is computed from.
+
+49. **The files of a plan are named and checked more strictly.** The name of a
+    device's cleanup file (`<name>.cleanup.set`) is reserved in a run, so the
+    plain file of a device called `<name>.cleanup` is not the same file and
+    `--force` cannot let one replace the other; `COVER.txt` is reserved only
+    when a cover is written; `--plain --out` of a device that cannot be planned
+    writes no file, as `--out-dir` already did, and says so on standard error;
+    the `out=` of the audit line is quoted when a path holds a space. Writing
+    as the user who ran sudo proves each change of the thread's file-system
+    identity (a refused change is an error, never a write as root), and a
+    directory that only a supplementary group of the user may write is
+    refused. A plan reads the record, its sections and its plain view under
+    the store's lock, so a pull running at the same time cannot mix two pulls.
+
 
 ## 0.2.3 (2026-10-09)
 

@@ -978,7 +978,7 @@ func TestDeviceConfigTiers(t *testing.T) {
 	if out := asOp("device", "config", "list"); b.sb.code != 0 || !strings.Contains(out, "lab-j") {
 		t.Errorf("operator list: %d %q %q", b.sb.code, out, b.sb.stderr())
 	}
-	for _, sub := range []string{"show", "pull", "diff", "forget"} {
+	for _, sub := range []string{"show", "pull", "diff", "plan", "forget"} {
 		asOp("device", "config", sub, "lab-j")
 		if b.sb.code != 1 || !strings.Contains(b.sb.stderr(), "'tacctl device config "+sub+"' is not permitted for the operator tier.") {
 			t.Errorf("operator %s: %d %q", sub, b.sb.code, b.sb.stderr())
@@ -1004,7 +1004,8 @@ func TestDeviceConfigTiers(t *testing.T) {
 func TestConfigDevicesSettings(t *testing.T) {
 	sb := newSandbox(t, true)
 	out := plain(sb.cfgRun("", []string{"config", "devices"}, nil))
-	for _, w := range []string{"max-concurrency: 8   (default;", "transport:       auto   (default;", "timeout:         90 s   (default;"} {
+	for _, w := range []string{"max-concurrency: 8   (default;", "transport:       auto   (default;", "timeout:         90 s   (default;",
+		"confirm-timeout: 5 min   (default;"} {
 		if sb.code != 0 || !strings.Contains(out, w) {
 			t.Errorf("show lacks %q: %d\n%s", w, sb.code, out)
 		}
@@ -1016,6 +1017,7 @@ func TestConfigDevicesSettings(t *testing.T) {
 		{[]string{"max-concurrency", "16"}, "The most devices read at once set to 16."},
 		{[]string{"transport", "ssh"}, "The default transport set to ssh."},
 		{[]string{"timeout", "120"}, "The time one device may take set to 120 s."},
+		{[]string{"confirm-timeout", "10"}, "The confirm timeout of a Junos plan set to 10 minutes."},
 	} {
 		out := plain(sb.cfgRun("", append([]string{"config", "devices"}, c.args...), nil))
 		if sb.code != 0 || !strings.Contains(out, c.want) {
@@ -1023,12 +1025,14 @@ func TestConfigDevicesSettings(t *testing.T) {
 		}
 	}
 	out = plain(sb.cfgRun("", []string{"config", "devices", "show"}, nil))
-	for _, w := range []string{"max-concurrency: 16   (set;", "transport:       ssh   (set;", "timeout:         120 s   (set;"} {
+	for _, w := range []string{"max-concurrency: 16   (set;", "transport:       ssh   (set;", "timeout:         120 s   (set;",
+		"confirm-timeout: 10 min   (set;"} {
 		if !strings.Contains(out, w) {
 			t.Errorf("show lacks %q:\n%s", w, out)
 		}
 	}
-	if y := sb.read("state/tacctl.yaml"); !strings.Contains(y, "max_concurrency: 16") || !strings.Contains(y, "transport: ssh") || !strings.Contains(y, "timeout: 120") {
+	if y := sb.read("state/tacctl.yaml"); !strings.Contains(y, "max_concurrency: 16") || !strings.Contains(y, "transport: ssh") ||
+		!strings.Contains(y, "timeout: 120") || !strings.Contains(y, "confirm_timeout: 10") {
 		t.Errorf("tacctl.yaml:\n%s", y)
 	}
 	for _, c := range []struct {
@@ -1041,6 +1045,9 @@ func TestConfigDevicesSettings(t *testing.T) {
 		{[]string{"transport", "carrier-pigeon"}, "device.config.transport"},
 		{[]string{"timeout", "9"}, "device.config.timeout"},
 		{[]string{"timeout", "601"}, "device.config.timeout"},
+		{[]string{"confirm-timeout", "0"}, "device.config.confirm_timeout"},
+		{[]string{"confirm-timeout", "61"}, "device.config.confirm_timeout"},
+		{[]string{"confirm-timeout", "soon"}, "device.config.confirm_timeout"},
 	} {
 		sb.cfgRun("", append([]string{"config", "devices"}, c.args...), nil)
 		if sb.code != 1 || !strings.Contains(sb.stderr(), c.want) {

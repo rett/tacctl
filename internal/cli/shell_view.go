@@ -164,7 +164,7 @@ var tierNotes = map[string]string{
 	"device show":   "device show: the Configuration row (and config of --json) is the operator tier's; a read-only user's output has none.",
 	"device import": "device import: an engineer imports from standard input only (device import -).",
 	"config cisco":  "config cisco: an engineer may print the walkthrough and read source-interface for a scope of their own; setting or unsetting source-interface needs the superuser tier.",
-	"device config": "device config: an operator may run list; show, pull and diff need the engineer tier (a device's walkthrough carries its scope's secret, and a pull logs in to the device as you), and an engineer gets the devices of their own scopes only; forget needs the superuser tier.",
+	"device config": "device config: an operator may run list; show, pull, diff and plan need the engineer tier (a device's walkthrough carries its scope's secret, a plan can type it, and a pull logs in to the device as you), and an engineer gets the devices of their own scopes only; forget needs the superuser tier.",
 }
 
 // tierSection is the part of a family's help that names the tier each of

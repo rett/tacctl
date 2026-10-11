@@ -286,6 +286,211 @@ func TestStoreForgetRenameAll(t *testing.T) {
 	}
 }
 
+// The plain view (Junos, D97) lives beside the sections file, is 0600, goes
+// with Forget, ForgetAll and Rename, is no device of its own, is removed by a
+// pull that read none, and is read only for the pull it was made with.
+func TestPlainViewFollowsTheDevice(t *testing.T) {
+	s := newStore(t)
+	pulled := time.Date(2026, 10, 10, 14, 2, 0, 123456789, time.UTC)
+	secs := map[string]devices.Section{SectionAAA: {Name: SectionAAA, Lines: []string{"set system tacplus-server 192.0.2.10 single-connection"}}}
+	for _, n := range []string{"a", "b"} {
+		unlock, err := s.Lock()
+		if err != nil {
+			t.Fatal(err)
+		}
+		r, _ := s.Load()
+		r.Put(n, sampleRecord())
+		if err := s.Save(r); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.SaveSections(n, "junos", secs); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.SavePlain(n, "junos", secs, pulled); err != nil {
+			t.Fatal(err)
+		}
+		unlock()
+	}
+	if st, err := os.Stat(filepath.Join(s.Dir, "a.plain")); err != nil || st.Mode().Perm() != 0o600 {
+		t.Fatalf("plain file: %v %v", st, err)
+	}
+	got, err := s.Plain("a", "junos", pulled)
+	if err != nil || !slices.Equal(got[SectionAAA].Lines, secs[SectionAAA].Lines) {
+		t.Fatalf("plain: %+v %v", got, err)
+	}
+	// the sections file does not read the stamp as a section
+	if secs, err := s.Sections("a", "junos"); err != nil || len(secs) != 1 {
+		t.Errorf("sections read the plain stamp: %+v %v", secs, err)
+	}
+	// a view of another pull is no view of this one
+	if got, err := s.Plain("a", "junos", pulled.Add(time.Second)); got != nil || err != nil {
+		t.Errorf("a plain view of another pull was read: %v %v", got, err)
+	}
+	if got, err := s.Plain("a", "junos", time.Time{}); got != nil || err != nil {
+		t.Errorf("a plain view for a record with no pull was read: %v %v", got, err)
+	}
+	if got, err := s.Plain("zzz", "junos", pulled); got != nil || err != nil {
+		t.Errorf("no file: %v %v", got, err)
+	}
+	// a view with no stamp (an earlier build's) is read for no pull
+	if err := os.WriteFile(filepath.Join(s.Dir, "old.plain"), []byte("version: 1\naaa: |\n  set a b\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.Plain("old", "junos", pulled); got != nil || err != nil {
+		t.Errorf("an unstamped plain view was read: %v %v", got, err)
+	}
+	_ = os.Remove(filepath.Join(s.Dir, "old.plain"))
+	// a pull that read none leaves none
+	if err := s.SavePlain("b", "junos", nil, pulled); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(s.Dir, "b.plain")); err == nil {
+		t.Error("the plain view of the last pull is kept")
+	}
+	if err := s.SavePlain("b", "junos", nil, pulled); err != nil {
+		t.Errorf("removing what is not there: %v", err)
+	}
+	// rename and forget carry it
+	if err := s.Rename("a", "c"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(s.Dir, "c.plain")); err != nil {
+		t.Error("the plain view did not move with its device")
+	}
+	if _, err := os.Stat(filepath.Join(s.Dir, "a.plain")); err == nil {
+		t.Error("the old plain view stayed")
+	}
+	if got, err := s.Plain("c", "junos", pulled); err != nil || got == nil {
+		t.Errorf("the moved plain view: %v %v", got, err)
+	}
+	if had, err := s.Forget("c"); err != nil || !had {
+		t.Fatalf("%v %v", had, err)
+	}
+	if _, err := os.Stat(filepath.Join(s.Dir, "c.plain")); err == nil {
+		t.Error("forget left the plain view")
+	}
+	if err := s.SavePlain("b", "junos", secs, pulled); err != nil {
+		t.Fatal(err)
+	}
+	n, err := s.ForgetAll()
+	if err != nil || n != 1 {
+		t.Errorf("ForgetAll counted %d (a plain view is no device): %v", n, err)
+	}
+	if ents, _ := os.ReadDir(s.Dir); len(ents) != 0 {
+		t.Errorf("%d files left", len(ents))
+	}
+}
+
+// A rename of a device with no plain view drops the stale one the new name
+// had (the comment on Rename says it does).
+func TestRenameDropsAStalePlainViewOfTheTarget(t *testing.T) {
+	s := newStore(t)
+	pulled := time.Date(2026, 10, 10, 14, 2, 0, 0, time.UTC)
+	secs := map[string]devices.Section{SectionAAA: {Name: SectionAAA, Lines: []string{"set a b"}}}
+	r, _ := s.Load()
+	r.Put("old", sampleRecord())
+	if err := s.Save(r); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SaveSections("old", "junos", secs); err != nil {
+		t.Fatal(err)
+	}
+	// the target name has a plain view left from a device that was forgotten
+	if err := s.SavePlain("new", "junos", secs, pulled); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SaveBackout("new", StoredBackout{Pulled: pulled, Vendor: "junos", Text: "# x\n"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Rename("old", "new"); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{"new.plain", "new.backout"} {
+		if _, err := os.Stat(filepath.Join(s.Dir, f)); err == nil {
+			t.Errorf("a stale %s stayed under the new name", f)
+		}
+	}
+}
+
+// The stored back-out (D111, amended): beside the record, 0600, stamped with
+// the pull it was computed from, replaced by the next plan, and carried by
+// Rename, Forget and ForgetAll like the plain view.
+func TestStoredBackoutFollowsTheDevice(t *testing.T) {
+	s := newStore(t)
+	pulled := time.Date(2026, 10, 10, 14, 2, 0, 987654321, time.UTC)
+	secs := map[string]devices.Section{SectionAAA: {Name: SectionAAA, Lines: []string{"set a b"}}}
+	r, _ := s.Load()
+	for _, n := range []string{"a", "b"} {
+		r.Put(n, sampleRecord())
+		if err := s.SaveSections(n, "juniper", secs); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.Save(r); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.Backout("a"); got != nil || err != nil {
+		t.Fatalf("a back-out before any plan: %v %v", got, err)
+	}
+	text := "##### box #####\n# BACK-OUT\n##### BACK-OUT FROM HERE: a #####\nconfigure private\nset a b\n"
+	if err := s.SaveBackout("a", StoredBackout{Pulled: pulled, Vendor: "juniper", Text: text}); err != nil {
+		t.Fatal(err)
+	}
+	if st, err := os.Stat(filepath.Join(s.Dir, "a.backout")); err != nil || st.Mode().Perm() != 0o600 {
+		t.Fatalf("back-out file: %v %v", st, err)
+	}
+	got, err := s.Backout("a")
+	if err != nil || got == nil || got.Text != text || !got.Pulled.Equal(pulled) || got.Vendor != "juniper" {
+		t.Fatalf("back-out: %+v %v", got, err)
+	}
+	// a stamp is required
+	if err := s.SaveBackout("a", StoredBackout{Vendor: "juniper", Text: text}); err == nil {
+		t.Error("a back-out with no stamp was stored")
+	}
+	// the next plan replaces it
+	later := pulled.Add(time.Hour)
+	if err := s.SaveBackout("a", StoredBackout{Pulled: later, Vendor: "juniper", Text: "# two\n"}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.Backout("a"); got == nil || got.Text != "# two\n" || !got.Pulled.Equal(later) {
+		t.Errorf("replaced back-out: %+v", got)
+	}
+	// a file that is none of ours is no back-out
+	if err := os.WriteFile(filepath.Join(s.Dir, "junk.backout"), []byte("not a back-out"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.Backout("junk"); got != nil || err != nil {
+		t.Errorf("junk read as a back-out: %v %v", got, err)
+	}
+	_ = os.Remove(filepath.Join(s.Dir, "junk.backout"))
+	// rename carries it, the sections file's listing does not take it for a device
+	if err := s.Rename("a", "c"); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.Backout("c"); got == nil || got.Text != "# two\n" {
+		t.Errorf("the back-out did not move: %+v", got)
+	}
+	if got, _ := s.Backout("a"); got != nil {
+		t.Error("the old back-out stayed")
+	}
+	if err := s.SaveBackout("b", StoredBackout{Pulled: pulled, Vendor: "juniper", Text: "# b\n"}); err != nil {
+		t.Fatal(err)
+	}
+	if had, err := s.Forget("c"); err != nil || !had {
+		t.Fatalf("%v %v", had, err)
+	}
+	if _, err := os.Stat(filepath.Join(s.Dir, "c.backout")); err == nil {
+		t.Error("forget left the back-out")
+	}
+	n, err := s.ForgetAll()
+	if err != nil || n != 1 {
+		t.Errorf("ForgetAll counted %d (a back-out is no device): %v", n, err)
+	}
+	if ents, _ := os.ReadDir(s.Dir); len(ents) != 0 {
+		t.Errorf("%d files left", len(ents))
+	}
+}
+
 // Writers hold the lock across load and save: concurrent updates all land.
 func TestStoreLockSerialises(t *testing.T) {
 	s := newStore(t)

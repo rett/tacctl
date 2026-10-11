@@ -39,6 +39,36 @@ func TestCommands(t *testing.T) {
 	}
 }
 
+// The plain view is read for Junos only, and only a text that holds a 'set'
+// statement is one: an error text is never a configuration with nothing in it.
+func TestReadPlain(t *testing.T) {
+	ctx := context.Background()
+	const cmd = "show configuration | display set"
+	if PlainCommand("juniper") != cmd || PlainCommand("cisco") != "" || PlainCommand("wti") != "" {
+		t.Errorf("commands: %q %q %q", PlainCommand("juniper"), PlainCommand("cisco"), PlainCommand("wti"))
+	}
+	f := &fakeRunner{out: map[string]string{cmd: "set system a b\r\nset snmp c d\r\n"}}
+	if got := ReadPlain(ctx, f, "juniper"); !strings.Contains(got, "set system a b\nset snmp c d") {
+		t.Errorf("plain: %q", got)
+	}
+	f = &fakeRunner{out: map[string]string{cmd: "syntax error, expecting <command>.\n"}}
+	if got := ReadPlain(ctx, f, "juniper"); got != "" {
+		t.Errorf("an error text is a view: %q", got)
+	}
+	f = &fakeRunner{out: map[string]string{}}
+	if got := ReadPlain(ctx, f, "juniper"); got != "" {
+		t.Errorf("no answer is a view: %q", got)
+	}
+	f = &fakeRunner{errs: map[string]error{cmd: errors.New("boom")}}
+	if got := ReadPlain(ctx, f, "juniper"); got != "" {
+		t.Errorf("an error is a view: %q", got)
+	}
+	f = &fakeRunner{out: map[string]string{"show running-config": "set a b\n"}}
+	if got := ReadPlain(ctx, f, "cisco"); got != "" || len(f.ran) != 0 {
+		t.Errorf("IOS has a plain view: %q %v", got, f.ran)
+	}
+}
+
 func TestReader(t *testing.T) {
 	ctx := context.Background()
 	t.Run("junos", func(t *testing.T) {

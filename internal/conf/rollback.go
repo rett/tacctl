@@ -92,10 +92,13 @@ var Added024 = []Family{
 }
 
 // Added025 are the key families 0.2.5 added: the source interface of the
-// Cisco devices of a scope ('tacctl config cisco source-interface'). A 0.2.4
-// or older binary does not know them, so a rollback removes them.
+// Cisco devices of a scope ('tacctl config cisco source-interface') and the
+// minutes of the confirmed commit of 'device config plan'
+// (device.config.confirm_timeout). A 0.2.4 or older binary does not know
+// them, so a rollback removes them.
 var Added025 = []Family{
 	{"cisco.source_interface.", true},
+	{"device.config.confirm_timeout", false},
 }
 
 // Added024Key reports whether path is a key 0.2.4 added.

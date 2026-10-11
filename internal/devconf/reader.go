@@ -95,6 +95,42 @@ func ReaderWithVersion(vendor string) (ReadVersionFunc, error) {
 	}, nil
 }
 
+// PlainCommand is the command that reads a Junos device's configuration
+// without the inheritance of its groups applied (plan D97, L6): the same
+// statements as Commands' read, minus the ones a group supplies. The planner
+// compares the two views to tell a statement of the device's own from one a
+// group owns. It is "" for a vendor that has no groups (IOS).
+func PlainCommand(vendor string) string {
+	if fam, err := Family(vendor); err == nil && fam == FamilyJunos {
+		return "show configuration | display set"
+	}
+	return ""
+}
+
+// ReadPlain reads the plain view through a session. It returns "" when the
+// vendor has none, when the device refuses or does not answer the command,
+// or when the answer holds no 'set' statement at all (an error text must
+// never be taken for a configuration with nothing in it: every statement
+// would then look as if a group supplied it). The read is best effort: the
+// caller's pull does not fail for want of it.
+func ReadPlain(ctx context.Context, r Runner, vendor string) string {
+	cmd := PlainCommand(vendor)
+	if cmd == "" {
+		return ""
+	}
+	out, err := r.Run(ctx, cmd)
+	if err != nil {
+		return ""
+	}
+	out = cleanText(out)
+	for _, l := range strings.Split(out, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(l), "set ") {
+			return out
+		}
+	}
+	return ""
+}
+
 // UnwrapNetconf returns the text carried by a Junos NETCONF reply: the
 // content of <configuration-output> (a <command> reply) or
 // <configuration-set> (a <get-configuration format="set"/> reply), XML

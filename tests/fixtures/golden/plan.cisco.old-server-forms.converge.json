@@ -1,0 +1,357 @@
+{
+  "name": "dev-cisco-old-server-forms",
+  "address": "192.0.2.21",
+  "scope": "lab",
+  "vendor": "cisco",
+  "based_on": {
+    "pulled": "2026-10-10T14:02:00Z",
+    "by": "alice",
+    "transport": "ssh",
+    "age_s": 1080,
+    "secrets_visible": true
+  },
+  "status": "needs-change",
+  "irregularities": [
+    {
+      "n": 1,
+      "kind": "missing",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "the console's own login list CONSOLE (local only, so a local user always gets in there)",
+      "statement": "aaa authentication login CONSOLE local",
+      "action": "Fixed by region line 3.",
+      "fixed": true,
+      "region_lines": [
+        3
+      ]
+    },
+    {
+      "n": 2,
+      "kind": "missing",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "the 'enable' list (it asks the server first, so nobody needs a shared enable password)",
+      "statement": "aaa authentication enable default group LAB-TACACS enable",
+      "action": "Fixed by region line 4.",
+      "fixed": true,
+      "region_lines": [
+        4
+      ]
+    },
+    {
+      "n": 3,
+      "kind": "missing",
+      "severity": "COSMETIC",
+      "section": "aaa",
+      "what": "accounting of commands 15",
+      "statement": "aaa accounting commands 15 default start-stop group LAB-TACACS",
+      "action": "Fixed by region line 5.",
+      "fixed": true,
+      "region_lines": [
+        5
+      ]
+    },
+    {
+      "n": 4,
+      "kind": "different",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "the login method of line con 0: login authentication CONSOLE (the device has: the login method of line con 0: login authentication default)",
+      "statement": "line con 0 \u003e login authentication CONSOLE",
+      "action": "Fixed by region line 8.",
+      "fixed": true,
+      "region_lines": [
+        8
+      ]
+    },
+    {
+      "n": 5,
+      "kind": "extra",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "the TACACS+ server 192.0.2.77",
+      "statement": "tacacs-server host 192.0.2.77 key \u003csecret\u003e",
+      "action": "Left alone. To remove it later: no tacacs-server host 192.0.2.77",
+      "fixed": false
+    },
+    {
+      "n": 6,
+      "kind": "extra",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "the server group OLD-GROUP: server 192.0.2.77",
+      "statement": "aaa group server tacacs+ OLD-GROUP \u003e server 192.0.2.77",
+      "action": "Left alone. To remove it later: no aaa group server tacacs+ OLD-GROUP",
+      "fixed": false
+    },
+    {
+      "n": 7,
+      "kind": "extra",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "tacacs server OLDSRV: 2 statements",
+      "statement": "e.g. tacacs server OLDSRV \u003e address ipv4 192.0.2.78",
+      "action": "Left alone. To remove it later: no tacacs server OLDSRV",
+      "fixed": false
+    },
+    {
+      "n": 8,
+      "kind": "extra",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "the server group SPARE-GROUP: server name SPARESRV",
+      "statement": "aaa group server tacacs+ SPARE-GROUP \u003e server name SPARESRV",
+      "action": "Left alone. To remove it later: no aaa group server tacacs+ SPARE-GROUP",
+      "fixed": false
+    },
+    {
+      "n": 9,
+      "kind": "extra",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "tacacs server SPARESRV: 2 statements",
+      "statement": "e.g. tacacs server SPARESRV \u003e address ipv4 192.0.2.79",
+      "action": "Left alone. To remove it later: no tacacs server SPARESRV",
+      "fixed": false
+    },
+    {
+      "n": 10,
+      "kind": "extra",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "command authorization at level 15",
+      "statement": "aaa authorization commands 15 OTHER group OLD-GROUP local",
+      "action": "Left alone. To remove it later: no aaa authorization commands 15 OTHER group OLD-GROUP local",
+      "fixed": false
+    },
+    {
+      "n": 11,
+      "kind": "extra",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "the VTYLIST login method list",
+      "statement": "aaa authentication login VTYLIST group OLD-GROUP local",
+      "action": "Left alone. To remove it later: no aaa authentication login VTYLIST group OLD-GROUP local",
+      "fixed": false
+    },
+    {
+      "n": 12,
+      "kind": "extra",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "the server group ISE: server name ISE-1",
+      "statement": "aaa group server radius ISE \u003e server name ISE-1",
+      "action": "Left alone. To remove it later: no aaa group server radius ISE",
+      "fixed": false
+    },
+    {
+      "n": 13,
+      "kind": "extra",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "radius server ISE-1: 2 statements",
+      "statement": "e.g. radius server ISE-1 \u003e address ipv4 192.0.2.60 auth-port 1812 acct-port 1813",
+      "action": "Left alone. To remove it later: no radius server ISE-1",
+      "fixed": false
+    },
+    {
+      "n": 14,
+      "kind": "extra",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "the default dot1x method list",
+      "statement": "aaa authentication dot1x default group ISE",
+      "action": "Left alone. To remove it later: no aaa authentication dot1x default group ISE",
+      "fixed": false
+    },
+    {
+      "n": 15,
+      "kind": "extra",
+      "severity": "MONITORING",
+      "section": "snmp",
+      "what": "an SNMP community",
+      "statement": "snmp-server community \u003csecret\u003e RO TACCTL-SNMP",
+      "action": "Left alone (its name is the secret and is not known to tacctl).",
+      "fixed": false
+    },
+    {
+      "n": 16,
+      "kind": "extra",
+      "severity": "MONITORING",
+      "section": "snmp",
+      "what": "snmp-server enable traps config",
+      "statement": "snmp-server enable traps config",
+      "action": "Left alone. To remove it later: no snmp-server enable traps config",
+      "fixed": false
+    },
+    {
+      "n": 17,
+      "kind": "extra",
+      "severity": "MONITORING",
+      "section": "snmp",
+      "what": "snmp-server host 192.0.2.50 version 2c \u003csecret\u003e",
+      "statement": "snmp-server host 192.0.2.50 version 2c \u003csecret\u003e",
+      "action": "Left alone (its name is the secret and is not known to tacctl).",
+      "fixed": false
+    }
+  ],
+  "region": [
+    "configure terminal",
+    "! aaa: the method lists tacctl renders, each replaced by the rendered line",
+    "aaa authentication login CONSOLE local",
+    "aaa authentication enable default group LAB-TACACS enable",
+    "aaa accounting commands 15 default start-stop group LAB-TACACS",
+    "! aaa: the login method of the console and vty lines",
+    "line con 0",
+    " login authentication CONSOLE",
+    "end"
+  ],
+  "after": [
+    "!",
+    "! If any line printed \"% Invalid\" or \"% Error\", stop and undo it: tacctl device config plan",
+    "! dev-cisco-old-server-forms --backout (its own region, to paste in the second terminal).",
+    "!",
+    "! Check now (nothing rolls this back by itself):",
+    "!   From the tacctl server:   tacctl device config pull dev-cisco-old-server-forms --diff     (aaa: ok)",
+    "!   In the second terminal:   open a NEW ssh session to dev-cisco-old-server-forms as yourself, then: terminal length 0, show privilege (must say 15)",
+    "! When both checks are fine, type this one command yourself:  write memory",
+    "!",
+    "! To undo: tacctl device config plan dev-cisco-old-server-forms --backout (tacctl keeps this",
+    "! plan's back-out: after the check pull has replaced the picture, the command still prints this",
+    "! plan's, and says which pull it undoes)",
+    "! Do not: 'write memory' before the check; paste outside the banners; paste into another device;",
+    "! paste on a console more than twenty lines at a time; keep this output in a file after the paste",
+    "! when it holds a secret."
+  ],
+  "backout": [
+    "configure terminal",
+    "! back-out: the lines as the pull showed them",
+    "line con 0",
+    " login authentication default",
+    "no aaa accounting commands 15 default start-stop group LAB-TACACS",
+    "no aaa authentication enable default group LAB-TACACS enable",
+    "no aaa authentication login CONSOLE local",
+    "end"
+  ],
+  "left": {
+    "access": 10,
+    "monitoring": 3,
+    "cosmetic": 0
+  },
+  "extras": [
+    {
+      "section": "aaa",
+      "text": "tacacs-server host 192.0.2.77 key",
+      "remove": [
+        "no tacacs-server host 192.0.2.77"
+      ]
+    },
+    {
+      "section": "aaa",
+      "text": "aaa group server tacacs+ OLD-GROUP \u003e server 192.0.2.77",
+      "remove": [
+        "no aaa group server tacacs+ OLD-GROUP"
+      ]
+    },
+    {
+      "section": "aaa",
+      "text": "tacacs server OLDSRV \u003e address ipv4 192.0.2.78",
+      "remove": [
+        "no tacacs server OLDSRV"
+      ]
+    },
+    {
+      "section": "aaa",
+      "text": "tacacs server OLDSRV \u003e key",
+      "remove": [
+        "no tacacs server OLDSRV"
+      ]
+    },
+    {
+      "section": "aaa",
+      "text": "aaa group server tacacs+ SPARE-GROUP \u003e server name SPARESRV",
+      "remove": [
+        "no aaa group server tacacs+ SPARE-GROUP"
+      ]
+    },
+    {
+      "section": "aaa",
+      "text": "tacacs server SPARESRV \u003e address ipv4 192.0.2.79",
+      "remove": [
+        "no tacacs server SPARESRV"
+      ]
+    },
+    {
+      "section": "aaa",
+      "text": "tacacs server SPARESRV \u003e key",
+      "remove": [
+        "no tacacs server SPARESRV"
+      ]
+    },
+    {
+      "section": "aaa",
+      "text": "aaa authorization commands 15 OTHER group OLD-GROUP local",
+      "remove": [
+        "no aaa authorization commands 15 OTHER group OLD-GROUP local"
+      ]
+    },
+    {
+      "section": "aaa",
+      "text": "aaa authentication login VTYLIST group OLD-GROUP local",
+      "remove": [
+        "no aaa authentication login VTYLIST group OLD-GROUP local"
+      ]
+    },
+    {
+      "section": "aaa",
+      "text": "aaa group server radius ISE \u003e server name ISE-1",
+      "remove": [
+        "no aaa group server radius ISE"
+      ]
+    },
+    {
+      "section": "aaa",
+      "text": "radius server ISE-1 \u003e address ipv4 192.0.2.60 auth-port 1812 acct-port 1813",
+      "remove": [
+        "no radius server ISE-1"
+      ]
+    },
+    {
+      "section": "aaa",
+      "text": "radius server ISE-1 \u003e key",
+      "remove": [
+        "no radius server ISE-1"
+      ]
+    },
+    {
+      "section": "aaa",
+      "text": "aaa authentication dot1x default group ISE",
+      "remove": [
+        "no aaa authentication dot1x default group ISE"
+      ]
+    },
+    {
+      "section": "snmp",
+      "text": "snmp-server community \u003csecret\u003e RO TACCTL-SNMP",
+      "guard": "its name is the secret and is not known to tacctl"
+    },
+    {
+      "section": "snmp",
+      "text": "snmp-server enable traps config",
+      "remove": [
+        "no snmp-server enable traps config"
+      ]
+    },
+    {
+      "section": "snmp",
+      "text": "snmp-server host 192.0.2.50 version 2c \u003csecret\u003e",
+      "guard": "its name is the secret and is not known to tacctl"
+    }
+  ],
+  "skipped": [],
+  "withheld": [],
+  "warnings": [],
+  "holds_secret": false,
+  "converge": true,
+  "cleanup_deferred": "cleanup comes after this region is pasted and verified: pull the device, then plan --converge again"
+}

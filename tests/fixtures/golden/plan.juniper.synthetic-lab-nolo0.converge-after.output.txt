@@ -1,0 +1,47 @@
+##### dev-juniper-synthetic-lab-nolo0  192.0.2.21  scope lab  juniper (TACACS+) #####
+# Based on the pull of 2026-10-10 14:02 by alice over netconf (18 minutes ago; the login could see
+# secrets) and the standard of 2026-10-10 14:20 (tacctl 0.2.5).
+#
+# What is irregular on dev-juniper-synthetic-lab-nolo0 (3 items; the paste fixes 1, leaves 2):
+#  1. aaa      ACCESS     extra: a TACACS+ server 192.0.2.99 (set system tacplus-server 192.0.2.99
+#                         secret <secret>). Removed by the cleanup region, line 3.
+#  2. snmp     MONITORING extra: an SNMP community: authorization read-only (set snmp community
+#                         <secret> authorization read-only). Left alone (its name is the secret and is
+#                         not known to tacctl).
+#  3. snmp     MONITORING extra: SNMP: trap-group <secret> targets 192.0.2.50 (set snmp trap-group
+#                         <secret> targets 192.0.2.50). Left alone (its name is the secret and is not
+#                         known to tacctl).
+# No fix to paste: the cleanup region below is the only paste (what else remains is left alone).
+# Consistent: roles, mgmt-acl. Not planned: netconf, breakglass (walkthrough Steps 6 and 7).
+# Secrets: 3 present on the device, not changed (--secrets pushes them).
+# Cleanup (--converge): the region below is the whole output: it removes 1 line: TACACS+ servers the
+# standard does not have. Paste it only after you have checked that the pull of
+# dev-juniper-synthetic-lab-nolo0 is current (tacctl device config pull
+# dev-juniper-synthetic-lab-nolo0 --diff reads ok for aaa, and a NEW ssh session as yourself works).
+# Note: filter MGMT-ACL is not applied on lo0.
+# The switch undoes this by itself in 5 minutes unless you type the one word after the check (see
+# below).
+# Paste over ssh, not the console; on a console paste at most twenty lines at a time and watch the
+# echo for 'error:'. Pasting the region twice is harmless.
+#
+# Type this first, on dev-juniper-synthetic-lab-nolo0, and check the name:   show version | match Hostname
+# The prompt must end in > (operational mode) before you paste: a prompt ending in # means a
+# configuration session is open: stop.
+#
+##### CLEANUP FROM HERE: dev-juniper-synthetic-lab-nolo0 #####
+configure private
+# aaa: removes the servers the standard does not have
+delete system tacplus-server 192.0.2.99
+show | compare | no-more
+commit check
+commit confirmed 5 comment "tacctl cleanup dev-juniper-synthetic-lab-nolo0 2026-10-10T14:20Z by alice"
+##### CLEANUP TO HERE: dev-juniper-synthetic-lab-nolo0 #####
+#
+# There is no other paste for dev-juniper-synthetic-lab-nolo0: its first region is empty. Check
+# that the pull is current (tacctl device config pull dev-juniper-synthetic-lab-nolo0 --diff reads
+# ok for aaa) and keep a NEW ssh session as yourself open.
+# Same check, same one word, typed yourself:  commit     (before the 5 minutes end)
+# If any line printed "error:", do not type commit: the switch undoes the cleanup by itself in 5
+# minutes. To undo it after the commit: show system commit, then rollback <n> of the entry just
+# before the one commented "tacctl cleanup dev-juniper-synthetic-lab-nolo0", then commit. A
+# removed server's secret is not held by tacctl: type it again.

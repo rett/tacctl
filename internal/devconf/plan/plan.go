@@ -56,6 +56,10 @@ type Options struct {
 	// (devices.PolicyGaps, D119): the statement is left out of the rendering,
 	// and nothing here is an irregularity of the device.
 	PolicyGaps []string
+	// Converge asks for the cleanup region (--converge, D111): the removals
+	// of the extras the plan leaves, in a second region of their own
+	// (Delta.Cleanup). The plan's own region is the same with or without it.
+	Converge bool
 }
 
 // The configuration syntaxes of a Cisco plan (Options.Syntax).
@@ -275,8 +279,13 @@ func Plan(vendor string, expected []devices.Section, current, plain devconf.Extr
 		}
 	}
 
+	// --converge: the cleanup region (D111), from the extras above.
+	if opt.Converge {
+		p.buildCleanup(&d)
+	}
+
 	// Defensive: nothing on the never list may be in the block.
-	for _, l := range d.Lines {
+	for _, l := range slices.Concat(d.Lines, d.Cleanup.Lines) {
 		if id, bad := neverMatch(fam, l); bad {
 			return Delta{}, fmt.Errorf("plan: internal error: %q is on the never-emitted list (%s)", l.Shown(), id)
 		}

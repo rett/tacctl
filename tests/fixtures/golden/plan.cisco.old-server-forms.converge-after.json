@@ -1,0 +1,334 @@
+{
+  "name": "dev-cisco-old-server-forms",
+  "address": "192.0.2.21",
+  "scope": "lab",
+  "vendor": "cisco",
+  "based_on": {
+    "pulled": "2026-10-10T14:02:00Z",
+    "by": "alice",
+    "transport": "ssh",
+    "age_s": 1080,
+    "secrets_visible": true
+  },
+  "status": "needs-change",
+  "irregularities": [
+    {
+      "n": 1,
+      "kind": "extra",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "the TACACS+ server 192.0.2.77",
+      "statement": "tacacs-server host 192.0.2.77 key \u003csecret\u003e",
+      "action": "Left alone. To remove it later: no tacacs-server host 192.0.2.77. Not in the cleanup: a group entry that names it stays.",
+      "fixed": false
+    },
+    {
+      "n": 2,
+      "kind": "extra",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "the server group OLD-GROUP: server 192.0.2.77",
+      "statement": "aaa group server tacacs+ OLD-GROUP \u003e server 192.0.2.77",
+      "action": "Left alone. To remove it later: no aaa group server tacacs+ OLD-GROUP. Not in the cleanup: a statement that stays names this group: aaa authorization commands 15 OTHER group OLD-GROUP local.",
+      "fixed": false
+    },
+    {
+      "n": 3,
+      "kind": "extra",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "tacacs server OLDSRV: 2 statements",
+      "statement": "e.g. tacacs server OLDSRV \u003e address ipv4 192.0.2.78",
+      "action": "Removed by the cleanup region, line 4.",
+      "fixed": false
+    },
+    {
+      "n": 4,
+      "kind": "extra",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "the server group SPARE-GROUP: server name SPARESRV",
+      "statement": "aaa group server tacacs+ SPARE-GROUP \u003e server name SPARESRV",
+      "action": "Removed by the cleanup region, line 3.",
+      "fixed": false
+    },
+    {
+      "n": 5,
+      "kind": "extra",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "tacacs server SPARESRV: 2 statements",
+      "statement": "e.g. tacacs server SPARESRV \u003e address ipv4 192.0.2.79",
+      "action": "Removed by the cleanup region, line 5.",
+      "fixed": false
+    },
+    {
+      "n": 6,
+      "kind": "extra",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "command authorization at level 15",
+      "statement": "aaa authorization commands 15 OTHER group OLD-GROUP local",
+      "action": "Left alone. To remove it later: no aaa authorization commands 15 OTHER group OLD-GROUP local. Not in the cleanup: a named command authorization list may be in use on a line, and the pull does not say which: type the removal yourself when you know it is not.",
+      "fixed": false
+    },
+    {
+      "n": 7,
+      "kind": "extra",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "the VTYLIST login method list",
+      "statement": "aaa authentication login VTYLIST group OLD-GROUP local",
+      "action": "Left alone. To remove it later: no aaa authentication login VTYLIST group OLD-GROUP local",
+      "fixed": false
+    },
+    {
+      "n": 8,
+      "kind": "extra",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "the server group ISE: server name ISE-1",
+      "statement": "aaa group server radius ISE \u003e server name ISE-1",
+      "action": "Left alone. To remove it later: no aaa group server radius ISE. Not in the cleanup: it is a RADIUS entry and the scope's protocol is the other: it may serve 802.1X or another list, and is never removed.",
+      "fixed": false
+    },
+    {
+      "n": 9,
+      "kind": "extra",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "radius server ISE-1: 2 statements",
+      "statement": "e.g. radius server ISE-1 \u003e address ipv4 192.0.2.60 auth-port 1812 acct-port 1813",
+      "action": "Left alone. To remove it later: no radius server ISE-1. Not in the cleanup: it is a RADIUS entry and the scope's protocol is the other: it may serve 802.1X or another list, and is never removed.",
+      "fixed": false
+    },
+    {
+      "n": 10,
+      "kind": "extra",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "the default dot1x method list",
+      "statement": "aaa authentication dot1x default group ISE",
+      "action": "Left alone. To remove it later: no aaa authentication dot1x default group ISE",
+      "fixed": false
+    },
+    {
+      "n": 11,
+      "kind": "extra",
+      "severity": "MONITORING",
+      "section": "snmp",
+      "what": "an SNMP community",
+      "statement": "snmp-server community \u003csecret\u003e RO TACCTL-SNMP",
+      "action": "Left alone (its name is the secret and is not known to tacctl).",
+      "fixed": false
+    },
+    {
+      "n": 12,
+      "kind": "extra",
+      "severity": "MONITORING",
+      "section": "snmp",
+      "what": "snmp-server enable traps config",
+      "statement": "snmp-server enable traps config",
+      "action": "Left alone. To remove it later: no snmp-server enable traps config",
+      "fixed": false
+    },
+    {
+      "n": 13,
+      "kind": "extra",
+      "severity": "MONITORING",
+      "section": "snmp",
+      "what": "snmp-server host 192.0.2.50 version 2c \u003csecret\u003e",
+      "statement": "snmp-server host 192.0.2.50 version 2c \u003csecret\u003e",
+      "action": "Left alone (its name is the secret and is not known to tacctl).",
+      "fixed": false
+    }
+  ],
+  "region": [],
+  "after": [],
+  "backout": [],
+  "left": {
+    "access": 7,
+    "monitoring": 3,
+    "cosmetic": 0
+  },
+  "extras": [
+    {
+      "section": "aaa",
+      "text": "tacacs-server host 192.0.2.77 key",
+      "remove": [
+        "no tacacs-server host 192.0.2.77"
+      ]
+    },
+    {
+      "section": "aaa",
+      "text": "aaa group server tacacs+ OLD-GROUP \u003e server 192.0.2.77",
+      "remove": [
+        "no aaa group server tacacs+ OLD-GROUP"
+      ]
+    },
+    {
+      "section": "aaa",
+      "text": "tacacs server OLDSRV \u003e address ipv4 192.0.2.78",
+      "remove": [
+        "no tacacs server OLDSRV"
+      ]
+    },
+    {
+      "section": "aaa",
+      "text": "tacacs server OLDSRV \u003e key",
+      "remove": [
+        "no tacacs server OLDSRV"
+      ]
+    },
+    {
+      "section": "aaa",
+      "text": "aaa group server tacacs+ SPARE-GROUP \u003e server name SPARESRV",
+      "remove": [
+        "no aaa group server tacacs+ SPARE-GROUP"
+      ]
+    },
+    {
+      "section": "aaa",
+      "text": "tacacs server SPARESRV \u003e address ipv4 192.0.2.79",
+      "remove": [
+        "no tacacs server SPARESRV"
+      ]
+    },
+    {
+      "section": "aaa",
+      "text": "tacacs server SPARESRV \u003e key",
+      "remove": [
+        "no tacacs server SPARESRV"
+      ]
+    },
+    {
+      "section": "aaa",
+      "text": "aaa authorization commands 15 OTHER group OLD-GROUP local",
+      "remove": [
+        "no aaa authorization commands 15 OTHER group OLD-GROUP local"
+      ]
+    },
+    {
+      "section": "aaa",
+      "text": "aaa authentication login VTYLIST group OLD-GROUP local",
+      "remove": [
+        "no aaa authentication login VTYLIST group OLD-GROUP local"
+      ]
+    },
+    {
+      "section": "aaa",
+      "text": "aaa group server radius ISE \u003e server name ISE-1",
+      "remove": [
+        "no aaa group server radius ISE"
+      ]
+    },
+    {
+      "section": "aaa",
+      "text": "radius server ISE-1 \u003e address ipv4 192.0.2.60 auth-port 1812 acct-port 1813",
+      "remove": [
+        "no radius server ISE-1"
+      ]
+    },
+    {
+      "section": "aaa",
+      "text": "radius server ISE-1 \u003e key",
+      "remove": [
+        "no radius server ISE-1"
+      ]
+    },
+    {
+      "section": "aaa",
+      "text": "aaa authentication dot1x default group ISE",
+      "remove": [
+        "no aaa authentication dot1x default group ISE"
+      ]
+    },
+    {
+      "section": "snmp",
+      "text": "snmp-server community \u003csecret\u003e RO TACCTL-SNMP",
+      "guard": "its name is the secret and is not known to tacctl"
+    },
+    {
+      "section": "snmp",
+      "text": "snmp-server enable traps config",
+      "remove": [
+        "no snmp-server enable traps config"
+      ]
+    },
+    {
+      "section": "snmp",
+      "text": "snmp-server host 192.0.2.50 version 2c \u003csecret\u003e",
+      "guard": "its name is the secret and is not known to tacctl"
+    }
+  ],
+  "skipped": [],
+  "withheld": [],
+  "warnings": [],
+  "holds_secret": false,
+  "converge": true,
+  "cleanup": [
+    "configure terminal",
+    "! aaa: removes the servers and groups the standard does not have",
+    "no aaa group server tacacs+ SPARE-GROUP",
+    "no tacacs server OLDSRV",
+    "no tacacs server SPARESRV",
+    "end"
+  ],
+  "cleanup_after": [
+    "!",
+    "! There is no other paste for dev-cisco-old-server-forms: its first region is empty. Check that",
+    "! the pull is current (tacctl device config pull dev-cisco-old-server-forms --diff reads ok for",
+    "! aaa) and keep a NEW ssh session as yourself open.",
+    "! Same check, then type this one command yourself:  write memory",
+    "! Nothing rolls the cleanup back by itself; until write memory is typed a reload brings back the",
+    "! saved configuration. A removed server entry takes its key with it: tacctl holds no key it",
+    "! removes, so to put one back you type it again."
+  ],
+  "cleanup_left": [
+    {
+      "section": "aaa",
+      "text": "tacacs-server host 192.0.2.77 key",
+      "why": "a group entry that names it stays"
+    },
+    {
+      "section": "aaa",
+      "text": "aaa group server tacacs+ OLD-GROUP \u003e server 192.0.2.77",
+      "why": "a statement that stays names this group: aaa authorization commands 15 OTHER group OLD-GROUP local"
+    },
+    {
+      "section": "aaa",
+      "text": "aaa authorization commands 15 OTHER group OLD-GROUP local",
+      "why": "a named command authorization list may be in use on a line, and the pull does not say which: type the removal yourself when you know it is not"
+    },
+    {
+      "section": "aaa",
+      "text": "aaa authentication login VTYLIST group OLD-GROUP local",
+      "why": "the cleanup does not remove this kind of statement"
+    },
+    {
+      "section": "aaa",
+      "text": "aaa group server radius ISE \u003e server name ISE-1",
+      "why": "it is a RADIUS entry and the scope's protocol is the other: it may serve 802.1X or another list, and is never removed"
+    },
+    {
+      "section": "aaa",
+      "text": "radius server ISE-1 \u003e address ipv4 192.0.2.60 auth-port 1812 acct-port 1813",
+      "why": "it is a RADIUS entry and the scope's protocol is the other: it may serve 802.1X or another list, and is never removed"
+    },
+    {
+      "section": "aaa",
+      "text": "radius server ISE-1 \u003e key",
+      "why": "it is a RADIUS entry and the scope's protocol is the other: it may serve 802.1X or another list, and is never removed"
+    },
+    {
+      "section": "aaa",
+      "text": "aaa authentication dot1x default group ISE",
+      "why": "the cleanup does not remove this kind of statement"
+    },
+    {
+      "section": "snmp",
+      "text": "snmp-server enable traps config",
+      "why": "the cleanup does not remove this kind of statement"
+    }
+  ]
+}

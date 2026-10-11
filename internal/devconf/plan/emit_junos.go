@@ -7,17 +7,11 @@ import (
 	"strings"
 )
 
-// junosCommitConfirmed is the last line of the region and the only commit it
-// holds. [A: lab check L3 was not run (a commit needs a separate go-ahead):
-// the 'commit confirmed <minutes> comment "..."' syntax is the Junos
-// reference's, and the 0.2.4 spike (d) confirmed the CLI's 'commit confirmed
-// N' and its expiry.]
-func junosCommitConfirmed(minutes int, h Header) string {
-	return junosCommitWord("plan", minutes, h)
-}
-
-// junosCommitWord is the confirmed commit of a region; word names what it
-// commits ('plan', 'backout').
+// junosCommitWord is the last line of a region and the only commit it holds;
+// word names what it commits ('plan', 'backout', 'cleanup'). [A: lab check
+// L3 was not run (a commit needs a separate go-ahead): the 'commit confirmed
+// <minutes> comment "..."' syntax is the Junos reference's, and the 0.2.4
+// spike (d) confirmed the CLI's 'commit confirmed N' and its expiry.]
 func junosCommitWord(word string, minutes int, h Header) string {
 	return "commit confirmed " + strconv.Itoa(minutes) + " comment \"tacctl " + word + " " + commentSafe(h.Device) + " " +
 		fmtStamp(h.Now) + " by " + commentSafe(h.User) + "\""
@@ -50,6 +44,12 @@ func junosVerifyHierarchy(text string) string {
 // configuration mode; L5: a refused `configure private` leaves every later
 // line an unknown operational command.]
 func junosRegion(d Delta, h Header, w Wrapper) []RegionLine {
+	return junosRegionWord(d, h, w, "plan")
+}
+
+// junosRegionWord is junosRegion for the region word of the commit comment:
+// 'plan' for the plan's region, 'cleanup' for the --converge region.
+func junosRegionWord(d Delta, h Header, w Wrapper, word string) []RegionLine {
 	out := []RegionLine{{Text: "configure private", Wrapper: true, Line: -1}}
 	cur := ""
 	for i, l := range d.Lines {
@@ -70,7 +70,7 @@ func junosRegion(d Delta, h Header, w Wrapper) []RegionLine {
 	out = append(out,
 		RegionLine{Text: "show | compare | no-more", Wrapper: true, Line: -1},
 		RegionLine{Text: "commit check", Wrapper: true, Line: -1},
-		RegionLine{Text: junosCommitConfirmed(confirmMinutes(w), h), Wrapper: true, Line: -1})
+		RegionLine{Text: junosCommitWord(word, confirmMinutes(w), h), Wrapper: true, Line: -1})
 	return out
 }
 
@@ -152,7 +152,7 @@ func junosAfter(d Delta, h Header, w Wrapper) string {
 	b.WriteString("#\n")
 	c("If your session drops before that, the switch still rolls back when the time runs out (a dropped CLI session does not roll back at once): log in again and paste again.")
 	if HasBackout(d) {
-		c("To undo it after the commit: tacctl device config plan " + h.Device + " --backout     (its own region to paste). Without tacctl: show system commit, then rollback <n> of the entry just before the one commented \"tacctl plan " + commentSafe(h.Device) + "\" (the newest entry is that commit itself), then commit.")
+		c("To undo it after the commit: tacctl device config plan " + h.Device + " --backout     (its own region to paste; tacctl keeps this plan's back-out: after the check pull has replaced the picture, the command still prints this plan's, and says which pull it undoes). Without tacctl: show system commit, then rollback <n> of the entry just before the one commented \"tacctl plan " + commentSafe(h.Device) + "\" (the newest entry is that commit itself), then commit.")
 	} else {
 		c("To undo it after the commit: show system commit, then rollback <n> of the entry just before the one commented \"tacctl plan " + commentSafe(h.Device) + "\" (the newest entry is that commit itself), then commit. tacctl has no lines of its own to undo this plan.")
 	}

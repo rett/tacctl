@@ -127,6 +127,10 @@ func NewSchema(backends []string) *Schema {
 			"device.config.max_concurrency": {Type: TypeInt, Min: intp(1), Max: intp(64), Default: 8, HasDefault: true},
 			"device.config.transport":       {Type: TypeEnum, Values: []string{"auto", "netconf", "ssh"}, Default: "auto", HasDefault: true},
 			"device.config.timeout":         {Type: TypeInt, Min: intp(10), Max: intp(600), Default: 90, HasDefault: true},
+			// The minutes of 'commit confirmed' in the Junos regions of
+			// 'device config plan' (0.2.5, D104): the switch undoes the
+			// paste by itself unless the one word is typed in time.
+			"device.config.confirm_timeout": {Type: TypeInt, Min: intp(1), Max: intp(60), Default: 5, HasDefault: true},
 		},
 		wildcards: append([]wildcard{
 			{"privileges.", Rule{Type: TypeCiscoCmdList}},

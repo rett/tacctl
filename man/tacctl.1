@@ -2700,10 +2700,12 @@ Requires: \fBsuperuser\fR.
 .TP
 .B "config devices " "[ show ]"
 How
-.B "device config pull"
-and
+.BR "device config pull" ,
 .B "device config diff \-\-pull"
-read the devices: the three settings and whether each is set or the default.
+and
+.B "device config plan \-\-pull"
+read the devices, and how long a Junos plan lets the switch wait: the four
+settings and whether each is set or the default.
 These are
 .B device.config.max_concurrency
 (the most devices read at once, 1 to 64, default 8),
@@ -2712,10 +2714,15 @@ These are
 the default,
 .B netconf
 or
-.BR ssh )
-and
+.BR ssh ),
 .B device.config.timeout
-(seconds one device may take, connect included, 10 to 600, default 90) in
+(seconds one device may take, connect included, 10 to 600, default 90) and
+.B device.config.confirm_timeout
+(the minutes of the
+.B "commit confirmed"
+that ends the region of
+.BR "device config plan" ,
+1 to 60, default 5) in
 .IR tacctl.yaml ,
 checked by the schema, so a value out of range never reaches the file.
 .B \-\-concurrency
@@ -2756,8 +2763,24 @@ Requires: \fBsuperuser\fR.
 .RE
 .\" END GENERATED: command config devices timeout
 .TP
+.BI "config devices confirm\-timeout " "[ minutes ]"
+Show or set the minutes of the
+.B "commit confirmed N"
+that ends the region of a Junos
+.BR "device config plan" ,
+1 to 60 (default 5): the switch undoes the paste by itself after N minutes
+unless the one word
+.B commit
+is typed after the check.
+.\" BEGIN GENERATED: command config devices confirm-timeout
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config devices confirm-timeout
+.TP
 .B "config devices show"
-Show the three settings.
+Show the four settings.
 .\" BEGIN GENERATED: command config devices show
 .RS
 .PP
@@ -2782,6 +2805,7 @@ and
 for
 .BR "device config pull" ,
 .BR "device config diff" ,
+.BR "device config plan" ,
 .B ssh
 and
 .BR "device ssh" ).
@@ -2928,7 +2952,7 @@ file. Both sudoers files carry
 the login console's session marker, and the X11 display
 .B "tacctl ssh \-X"
 hands on) and, for the command lines that use the password cache
-.RB ( "device config pull" ", " "device config diff" ", " ssh " and " "device ssh" ),
+.RB ( "device config pull" ", " "device config diff" ", " "device config plan" ", " ssh " and " "device ssh" ),
 .BR TACCTL_ASKPASS ,
 and nothing else of the caller's environment; tacctl also refuses a
 .B SUDO_USER
@@ -5659,7 +5683,7 @@ Show or set the configuration syntax of a Cisco device: the syntax its
 walkthrough
 .RB ( "device config show" ", " "config cisco \-\-name" )
 is printed in and its configuration is compared in
-.RB ( "device config pull" ", " diff " and " list ).
+.RB ( "device config pull" ", " diff ", " plan " and " list ).
 .B modern
 is the
 .B tacacs server NAME
@@ -5816,9 +5840,10 @@ location lookups use them, and so do the SNMP step of
 and
 .B "device config show"
 and the SNMP and management\-ACL sections of
-.B "device config pull"
+.BR "device config pull" ,
+.B "device config diff"
 and
-.BR "device config diff" .
+.BR "device config plan" .
 .B "scope snmp test"
 and
 .B "config snmp test"
@@ -6480,19 +6505,19 @@ Requires: \fBengineer\fR. An engineer gets the devices of their own scopes only.
 Options:
 .TP
 \fB\-\-all\fR
-(pull, diff, forget) Every device of yours (not WTI units, or devices in no scope).
+(pull, diff, plan, forget) Every device of yours (not WTI units, or devices in no scope).
 .TP
 \fB\-\-scope\fR \fI<scope>\fR
-(pull, diff, list) Only the devices of that scope.
+(pull, diff, plan, list) Only the devices of that scope.
 .TP
 \fB\-\-vendor\fR \fIcisco|juniper|wti\fR
-(pull, diff, list) Only that vendor's devices.
+(pull, diff, plan, list) Only that vendor's devices.
 .TP
 \fB\-\-stale\fR
-(pull, diff, list) Only the devices never read, last read in failure, or differing.
+(pull, diff, plan, list) Only the devices never read, last read in failure, or differing.
 .TP
 \fB\-\-transport\fR \fIauto|netconf|ssh\fR
-(pull, diff) NETCONF where the device answers (auto, default), NETCONF only, or the ssh command line only; (list) netconf, ssh or none: only the devices last read over that transport (none: never read).
+(pull, diff, plan) NETCONF where the device answers (auto, default), NETCONF only, or the ssh command line only; (list) netconf, ssh or none: only the devices last read over that transport (none: never read).
 .TP
 \fB\-\-concurrency\fR \fI<n>\fR
 Read at most n devices at once (never above device.config.max_concurrency).
@@ -6513,7 +6538,7 @@ The address this server reaches the devices from (not stored).
 Print the differences after the summary.
 .TP
 \fB\-\-json\fR
-(pull, diff, list) Print JSON (a pull: one line per device, then the summary).
+(pull, diff, plan, list) Print JSON (a pull: one line per device, then the summary).
 .RE
 .\" END GENERATED: command device config pull
 .TP
@@ -6584,19 +6609,19 @@ Requires: \fBengineer\fR. An engineer gets the devices of their own scopes only.
 Options:
 .TP
 \fB\-\-all\fR
-(pull, diff, forget) Every device of yours (not WTI units, or devices in no scope).
+(pull, diff, plan, forget) Every device of yours (not WTI units, or devices in no scope).
 .TP
 \fB\-\-scope\fR \fI<scope>\fR
-(pull, diff, list) Only the devices of that scope.
+(pull, diff, plan, list) Only the devices of that scope.
 .TP
 \fB\-\-vendor\fR \fIcisco|juniper|wti\fR
-(pull, diff, list) Only that vendor's devices.
+(pull, diff, plan, list) Only that vendor's devices.
 .TP
 \fB\-\-stale\fR
-(pull, diff, list) Only the devices never read, last read in failure, or differing.
+(pull, diff, plan, list) Only the devices never read, last read in failure, or differing.
 .TP
 \fB\-\-transport\fR \fIauto|netconf|ssh\fR
-(pull, diff) NETCONF where the device answers (auto, default), NETCONF only, or the ssh command line only; (list) netconf, ssh or none: only the devices last read over that transport (none: never read).
+(pull, diff, plan) NETCONF where the device answers (auto, default), NETCONF only, or the ssh command line only; (list) netconf, ssh or none: only the devices last read over that transport (none: never read).
 .TP
 \fB\-\-concurrency\fR \fI<n>\fR
 Read at most n devices at once (never above device.config.max_concurrency).
@@ -6620,12 +6645,354 @@ Read the devices first (takes the pull options).
 Only these sections: aaa, roles, mgmt\-acl, snmp, netconf, breakglass.
 .TP
 \fB\-\-json\fR
-(pull, diff, list) Print JSON (a pull: one line per device, then the summary).
+(pull, diff, plan, list) Print JSON (a pull: one line per device, then the summary).
 .TP
 \fB\-\-exit\-code\fR
 Exit 2 when a device differs (and none failed).
 .RE
 .\" END GENERATED: command device config diff
+.TP
+.BI "device config plan " "name[,name...] | \-\-all | \-\-scope " scope " | \-\-vendor " vendor " | \-\-stale [ \-\-pull ] [ \-\-section " list " ] [ \-\-converge ] [ \-\-secrets | \-\-no\-secrets ] [ \-\-plain | \-\-json | \-\-backout ] [ \-\-out " file " | \-\-out\-dir " dir " ] [ \-\-force ] [ \-\-from " address " ] [ \-\-exit\-code ]"
+Print, for each device, what to paste to make it match what tacctl renders,
+from its last pull. It reads no device unless
+.B \-\-pull
+reads them first (as
+.B "device config diff \-\-pull"
+does) and writes to none, ever: the paste is the technician's. The output of
+one device is, in this order: a box naming the device, its address, scope and
+vendor; the
+.BR report ,
+in plain words, with one numbered item per finding of the comparison
+.RB ( missing ,
+.BR different ,
+.BR "out of order" ,
+.BR extra ,
+.B "secret not visible"
+and
+.BR "not plannable for this login" ),
+its severity
+.RB ( ACCESS :
+anything on the login path, AAA, the authentication order, template users, the
+management filter, a second AAA server;
+.BR MONITORING :
+SNMP communities and clients;
+.BR COSMETIC :
+order, contact, location, accounting events, privilege lines) and what the
+paste does about it
+.RB ( "Fixed by region line 3" ,
+.BR "Left alone" ,
+.BR "Not fixable by this login: EN\-CLASS cannot change 'snmp'" );
+the line to type first, on the device, to check its name; and
+.BR "one region" ,
+between
+.B "PASTE FROM HERE"
+and
+.BR "PASTE TO HERE" ,
+which holds only statements the device takes as they stand, the wrapper lines
+and one label comment per section. The region is safe pasted whole. On Junos
+it is
+.BR "configure private" ,
+the statements,
+.BR "show | compare | no\-more" ,
+.B "commit check"
+and the confirmed commit
+.BR "commit confirmed N" :
+without the one word
+.B commit
+typed by hand after the check the switch undoes the paste by itself in N
+minutes (N is
+.BR "config devices confirm\-timeout" ,
+default 5). On IOS it is
+.BR "configure terminal" ,
+the lines and
+.BR end :
+the change is live at
+.B end
+and nothing rolls it back by itself (there is no revert timer: on IOS 15.x it
+reverts only while the session that armed it stays open, which is not the case
+that matters, a paste that cuts the technician's own session);
+.B "write memory"
+is typed by hand after the check, never in the region. After the region, as
+comments: the check, the one line to type, how to undo, and what not to do
+(type the follow-up before the check, paste outside the banners, paste into
+another device, keep the output in a file when it holds a secret).
+.PP
+A statement in a standard hierarchy that the standard does not have is an
+.BR extra :
+reported with the exact line that removes it, and left alone.
+.B \-\-converge
+makes the region that removes the extras of the kinds the standard names, for
+a device that has nothing else to paste: the plan made after the paste and the
+pull that verified it
+.RB ( "device config pull <name> \-\-diff"
+reads ok for
+.BR aaa ,
+and a new session as yourself works). That region is the whole output of the
+device, between
+.B "CLEANUP FROM HERE"
+and
+.BR "CLEANUP TO HERE" :
+never beside a first region, because whoever copies a whole output runs every
+region in it. A device with a first region gets that region and one line,
+.BR "cleanup comes after this region is pasted and verified: pull the device, then plan \-\-converge again" .
+It removes other servers of the scope's protocol and their groups (IOS: a
+legacy
+.B tacacs\-server host
+line, a
+.B tacacs server
+block, an old
+.BR "aaa group server" ,
+its entries first and the group before the server it names; Junos: another
+server, a login class no user uses, the entries of another client list). It
+never removes a login, a line, the enable secret, a method list (not a named
+.B "aaa authorization commands"
+list either: the pull does not say which line uses it, and the report gives
+the line to type), another ACL, a server or group of the other protocol (RADIUS
+on a TACACS+ scope may serve 802.1X), a server or group that a statement which
+stays names, or any server of the protocol while a staying list uses
+.B "group tacacs+"
+or
+.BR "group radius" ;
+never a line that holds the address of
+.BR \-\-from ,
+and without
+.B \-\-from
+no client\-list entry; it is refused as a whole while the standard's server is
+missing and the paste does not put it there, and a section the pull's login
+could not see completely is not cleaned.
+.B \-\-backout
+prints the back\-out region alone
+.RB ( "BACK\-OUT FROM HERE" ):
+the statements that put back what the pull showed, for the sections the plan
+changed (on IOS the
+.B no
+lines in reverse order with the console and VTY login leaves typed again,
+never a
+.BR "no line" ;
+a secret tacctl does not hold is a comment saying to type it again). The
+check the plan asks for is a pull, which replaces the picture a back\-out is
+computed from, so every plan that has changes keeps its back\-out beside the
+device's record
+.RI ( /var/lib/tacctl/device\-config/ <name> .backout ;
+0600, stamped with the pull it was computed from, a secret's
+value never in it, carried by
+.B "device config forget"
+and
+.BR "device rename" ):
+while the record's pull is the stamp
+.B \-\-backout
+computes it as above, after a later pull it prints the kept one with a first
+comment line that says which pull it undoes (the latest plan with changes
+replaces it), and with none kept it says
+.B "nothing to back out: no plan was made from an earlier pull of <name>"
+(exit 0).
+.B "\-\-backout \-\-pull"
+is refused (exit 2).
+.B \-\-out\-dir
+also writes it beside the plan.
+.PP
+On a Cisco device the region follows the order of the standard block, and
+.BR "command authorization is held back" :
+the
+.B "aaa authorization commands"
+and
+.B config\-commands
+lines are in the paste only when the pulled configuration already uses the
+scope's server (its address in a server block or host line and a login or
+exec list that names the group). Once the commands list names the server every
+further command, the back\-out's included, is asked of it, and it answers FAIL
+for a user it does not know and never falls through; a device whose TACACS+
+path has not been proven could end with no session able to run a command. The
+report then says that command authorization is not in this paste, to check
+.B "show privilege"
+in a new session with your own account and plan again: the first plan puts
+everything else, the second the one group of lines left. A Cisco device that
+has no local user at privilege 15 and no
+.B "aaa new\-model"
+is refused for
+.B aaa
+(add the break\-glass user first). The syntax is the setting of
+.B "device config\-syntax"
+or the pull's version line, never the ssh flag; a device that needs a pull is
+not planned. A Junos statement that a group applies (the inheritance view
+against the plain view the pull also reads) is never changed: its section is
+refused.
+.PP
+A secret the device lacks is typed in its line, and the output then says so
+(first line of the report, and on standard error). One the device has, or the
+pull's login could not see, is neither printed nor changed unless
+.BR \-\-secrets ,
+which types every secret statement of the planned sections again.
+.B \-\-no\-secrets
+leaves each as a comment line
+.RB ( "VALUE NEEDED, then remove this mark" )
+so that a paste cannot set the literal placeholder;
+.B "\-\-plain \-\-no\-secrets"
+is refused.
+.B \-\-json
+never holds a value.
+.B \-\-plain
+is the statements of one device alone, no wrapper line, no comment, no
+banner, for
+.B "load set"
+(with
+.BR \-\-converge ,
+a device that has a cleanup makes two files: the plan's and
+.IR <name>.cleanup.set );
+.B \-\-json
+is an array with one object per device
+.RB ( name ,
+.BR scope ,
+.BR vendor ,
+.BR based_on ,
+.BR status ,
+.BR reason ,
+.BR irregularities ,
+.BR region ,
+.BR after ,
+.BR backout ,
+.BR extras ,
+.BR warnings ,
+and with
+.B \-\-converge
+.BR cleanup ,
+.BR cleanup_after ,
+.BR cleanup_deferred ,
+.BR cleanup_refused ,
+.BR cleanup_left ).
+.B \-\-out
+writes one device's output to a file and
+.B \-\-out\-dir
+one file per device
+.RI ( <name>.txt ,
+.I <name>.set
+with
+.BR \-\-plain ,
+.I <name>.json
+with
+.BR \-\-json ),
+each plan's
+.IR <name>.backout.txt ,
+and for several devices
+.IR COVER.txt .
+The files are 0600, written as the user who ran sudo, in a directory of mode
+0700 (an existing directory open to others is refused, and so is one that
+only a supplementary group of that user may write: the files are written with
+the user's own user and group alone); an existing file is refused, all of them
+before any is written, unless
+.BR \-\-force .
+A device that cannot be planned gets no
+.B \-\-plain
+file (an empty one would read as nothing to load); the name of a device's
+cleanup file, and
+.I COVER.txt
+when a cover is written, count as files of the run.
+Several devices print the cover page first, one line per device
+.RB ( consistent ,
+.BR "needs change" ,
+.BR "NOT consistent, nothing to paste" ,
+.BR "cannot be planned" ),
+then the outputs separated by a rule;
+.B \-\-plain
+of several devices needs
+.BR \-\-out\-dir .
+.PP
+A device cannot be planned, with the reason on standard error and exit 1, when
+it was never pulled, was pulled more than
+.B stale\-days
+ago, whose last pull failed, a Cisco device whose syntax is unknown, a WTI
+unit, or one whose plan has nothing to paste because a section was refused.
+Exit status 0 when the outputs were made, 1 when a device cannot be planned, 2
+for wrong arguments (and, with
+.BR \-\-exit\-code ,
+when a device needs a change and none could not be planned), 130 when
+interrupted. An engineer plans the devices of their own scopes, and a section
+their login's class cannot commit
+.RB ( EN\-CLASS :
+the server, accounting,
+.BR login ,
+.BR snmp )
+is not in the region, with one report line saying so. Every device is logged
+.RB ( "auth.info device config plan user= device= status= sections= converge= secrets= out=" ,
+never a value). The Cisco report says what was lab\-tested: IOS 12.4(15), a
+7200 emulator; other IOS trains and IOS\-XE are written from the references.
+.\" BEGIN GENERATED: command device config plan
+.RS
+.PP
+Requires: \fBengineer\fR. An engineer gets the devices of their own scopes only.
+.PP
+Options:
+.TP
+\fB\-\-all\fR
+(pull, diff, plan, forget) Every device of yours (not WTI units, or devices in no scope).
+.TP
+\fB\-\-scope\fR \fI<scope>\fR
+(pull, diff, plan, list) Only the devices of that scope.
+.TP
+\fB\-\-vendor\fR \fIcisco|juniper|wti\fR
+(pull, diff, plan, list) Only that vendor's devices.
+.TP
+\fB\-\-stale\fR
+(pull, diff, plan, list) Only the devices never read, last read in failure, or differing.
+.TP
+\fB\-\-transport\fR \fIauto|netconf|ssh\fR
+(pull, diff, plan) NETCONF where the device answers (auto, default), NETCONF only, or the ssh command line only; (list) netconf, ssh or none: only the devices last read over that transport (none: never read).
+.TP
+\fB\-\-concurrency\fR \fI<n>\fR
+Read at most n devices at once (never above device.config.max_concurrency).
+.TP
+\fB\-\-timeout\fR \fI<seconds>\fR
+Per device, connect included (10\-600; default device.config.timeout).
+.TP
+\fB\-\-max\-failures\fR \fI<n>\fR
+Stop starting devices after n failures.
+.TP
+\fB\-\-server\fR \fI<address|name>\fR
+The address the devices are told to authenticate against, for devices behind a translating firewall (not stored).
+.TP
+\fB\-\-source\fR \fI<address>\fR
+The address this server reaches the devices from (not stored).
+.TP
+\fB\-\-pull\fR
+Read the devices first (takes the pull options); the plan is made from that pull.
+.TP
+\fB\-\-section\fR \fI<list>\fR
+Only these sections: aaa, roles, mgmt\-acl, snmp (the report still names the others).
+.TP
+\fB\-\-converge\fR
+Add the cleanup of a device with nothing else to paste: the region that removes the old servers and the like (a device with a first region gets that and a line to plan again after the paste).
+.TP
+\fB\-\-secrets\fR
+Type every secret of the planned sections, also the ones the device has.
+.TP
+\fB\-\-no\-secrets\fR
+Leave each secret as a marked line to fill in (no plain form).
+.TP
+\fB\-\-plain\fR
+The statements of one device alone, for 'load set' (\-\-converge: two files, with \-\-out or \-\-out\-dir).
+.TP
+\fB\-\-backout\fR
+Only the back\-out region (what puts the pulled lines back; the one kept from the plan once a later pull replaced them; not with \-\-pull).
+.TP
+\fB\-\-json\fR
+One object per device: the findings, the region, the cleanup and the back\-out; values elided.
+.TP
+\fB\-\-out\fR \fI<file>\fR
+Write one device's output to a file (0600).
+.TP
+\fB\-\-out\-dir\fR \fI<dir>\fR
+One file per device (<name>.txt, .set with \-\-plain, .json with \-\-json; each plan's .backout.txt) and COVER.txt, 0600 in a 0700 directory.
+.TP
+\fB\-\-force\fR
+Replace files \-\-out or \-\-out\-dir would write.
+.TP
+\fB\-\-from\fR \fI<address>\fR
+The address you are logged in from: the cleanup keeps it; the management filter check uses it.
+.TP
+\fB\-\-exit\-code\fR
+Exit 2 when a device needs a change (and none could not be planned).
+.RE
+.\" END GENERATED: command device config plan
 .TP
 .BI "device config list " "[ \-\-stale ] [ \-\-never ] [ \-\-failed ] [ \-\-differs ] [ \-\-transport netconf|ssh|none ] [ \-\-scope " scope " ] [ \-\-vendor " vendor " ] [ \-\-json ]"
 One row per device (the caller's own scopes below the administrator tier):
@@ -6673,7 +7040,7 @@ Requires: \fBoperator\fR.
 Options:
 .TP
 \fB\-\-stale\fR
-(pull, diff, list) Only the devices never read, last read in failure, or differing.
+(pull, diff, plan, list) Only the devices never read, last read in failure, or differing.
 .TP
 \fB\-\-never\fR
 Only the devices not pulled yet.
@@ -6685,16 +7052,16 @@ Only the devices whose last pull failed.
 Only the devices that differ from what tacctl renders now.
 .TP
 \fB\-\-transport\fR \fIauto|netconf|ssh\fR
-(pull, diff) NETCONF where the device answers (auto, default), NETCONF only, or the ssh command line only; (list) netconf, ssh or none: only the devices last read over that transport (none: never read).
+(pull, diff, plan) NETCONF where the device answers (auto, default), NETCONF only, or the ssh command line only; (list) netconf, ssh or none: only the devices last read over that transport (none: never read).
 .TP
 \fB\-\-scope\fR \fI<scope>\fR
-(pull, diff, list) Only the devices of that scope.
+(pull, diff, plan, list) Only the devices of that scope.
 .TP
 \fB\-\-vendor\fR \fIcisco|juniper|wti\fR
-(pull, diff, list) Only that vendor's devices.
+(pull, diff, plan, list) Only that vendor's devices.
 .TP
 \fB\-\-json\fR
-(pull, diff, list) Print JSON (a pull: one line per device, then the summary).
+(pull, diff, plan, list) Print JSON (a pull: one line per device, then the summary).
 .RE
 .\" END GENERATED: command device config list
 .TP
@@ -7121,11 +7488,14 @@ argument or environment; the agent is shut between lines. For each line that
 runs
 .BR "device config pull" ,
 .BR "device config diff \-\-pull" ,
+.BR "device config plan \-\-pull" ,
 .B ssh
 or
 .BR "device ssh" ,
 and for no other (a
 .B diff
+or a
+.B plan
 without
 .B \-\-pull
 logs in to nothing), the shell makes a token, hands it to that line in the
@@ -7588,7 +7958,7 @@ two\-word level and then limited by the code:
 An engineer may print the walkthrough and read source\-interface for a scope of their own; setting or unsetting source\-interface needs the superuser tier.
 .TP
 .B device config
-An operator may run list; show, pull and diff need the engineer tier (a device's walkthrough carries its scope's secret, and a pull logs in to the device as you), and an engineer gets the devices of their own scopes only; forget needs the superuser tier.
+An operator may run list; show, pull, diff and plan need the engineer tier (a device's walkthrough carries its scope's secret, a plan can type it, and a pull logs in to the device as you), and an engineer gets the devices of their own scopes only; forget needs the superuser tier.
 .TP
 .B device import
 An engineer imports from standard input only (device import \-).
@@ -8093,6 +8463,10 @@ Where tacquito's Prometheus exporter listens. Set with \fBtacctl config metrics 
 integer, 10 to 14. Default: 12.
 Cost of the bcrypt hashes tacctl makes from now on. Set with \fBtacctl config bcrypt\-cost\fR.
 .TP
+.B device.config.confirm_timeout
+integer, 1 to 60. Default: 5.
+Minutes of the commit confirmed that ends the region of a Junos device config plan: the switch undoes the paste by itself after that long unless the one word commit is typed. Set with \fBtacctl config devices confirm\-timeout\fR.
+.TP
 .B device.config.max_concurrency
 integer, 1 to 64. Default: 8.
 The most devices device config pull reads at once; --concurrency can lower it for a run, never raise it. Set with \fBtacctl config devices max\-concurrency\fR.
@@ -8349,8 +8723,8 @@ does not fit, a name that does not exist or exists already, a store or
 that cannot be read or written, a caller whose tier does not allow the
 command, a check that found a problem
 .RB ( "config validate" ", " "console check" ", " "device check" ),
-a device that could not be read or compared
-.RB ( "device config pull" ", " "device config diff" ),
+a device that could not be read, compared or planned
+.RB ( "device config pull" ", " "device config diff" ", " "device config plan" ),
 a step of a lifecycle phase that failed. An unknown sub-command prints the
 usage of its family and ends with 1 as well. Nothing was changed unless the
 message says what was.
@@ -8363,8 +8737,10 @@ The arguments were wrong for a verb that checks them itself and says so
 or a backend id is unknown, or the backend does not provide the action asked
 of it, or
 .B "device config diff \-\-exit\-code"
-found a device that differs, or the arguments of
-.BR "device config pull" ", " diff ", " list " or " forget
+found a device that differs, or
+.B "device config plan \-\-exit\-code"
+found a device that needs a change, or the arguments of
+.BR "device config pull" ", " diff ", " plan ", " list " or " forget
 were wrong.
 .TP
 .B 3
@@ -8386,9 +8762,10 @@ sudo is not installed, and tacctl was not run as root.
 .B 130
 The command was interrupted at a prompt (Ctrl-C at a password prompt, for
 example), or a
-.B "device config pull"
-or
+.BR "device config pull" ,
 .B "device config diff \-\-pull"
+or
+.B "device config plan \-\-pull"
 was stopped by Ctrl-C (the first stops starting devices and lets the running
 ones finish, a second cuts them off). Nothing was changed (a pull writes
 nothing to a device).

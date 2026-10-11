@@ -139,15 +139,24 @@ func Plain(d Delta, h Header, w Wrapper) (string, error) {
 func Block(d Delta, h Header, w Wrapper) string {
 	var b strings.Builder
 	b.WriteString(Report(d, h, w))
-	if d.Empty() {
-		b.WriteString(ByHand(d, h))
-		return b.String()
+	if !d.Empty() {
+		b.WriteString(Region(d, h, w))
+		b.WriteString(After(d, h, w))
 	}
-	b.WriteString(Region(d, h, w))
-	b.WriteString(After(d, h, w))
+	// --converge: the cleanup region, only for a device with no first region
+	// (one output, one region: D111, amended)
+	if d.Empty() && !d.Cleanup.Empty() {
+		b.WriteString(CleanupRegion(d, h, w))
+		b.WriteString(CleanupAfter(d, h, w))
+	}
 	b.WriteString(ByHand(d, h))
 	return b.String()
 }
+
+// Sensitivity is the line that says the output holds a secret ("" when it
+// holds none): the first line of the report, and what a caller repeats on
+// its error stream so that a redirected output still shows it (D98).
+func Sensitivity(d Delta, h Header) string { return sensitivityLine(d, h) }
 
 // ByHand is the text for a unit the plan refuses and a person has to do by
 // hand (D117): comment lines, after the region or, when there is none,
@@ -228,6 +237,43 @@ func BackoutLines(d Delta, h Header, w Wrapper) []RegionLine {
 		return iosBackoutRegion(d)
 	}
 	return junosBackoutRegion(d, h, w)
+}
+
+// StoredBackout is the text of the back-out that tacctl keeps beside the
+// device's record (D111, point 3): the back-out as Backout prints it, except
+// that a line which holds a secret's value is a comment that says to type it
+// with its own value ('<secret>' in its place), as the back-out already does
+// for a value tacctl does not hold. Nothing more than the printed back-out
+// is ever stored, and no value: the record store keeps none (M1).
+// ErrNoBackout when there is no line to type.
+func StoredBackout(d Delta, h Header, w Wrapper) (string, error) {
+	return Backout(d.kept(), h, w)
+}
+
+// kept is the delta with every value elided, and every back-out line that
+// held one turned into a note.
+func (d Delta) kept() Delta {
+	c := d.shown()
+	note := func(l Line) Line {
+		text := l.Elided
+		if l.Op == OpNo {
+			text = "no " + text
+		}
+		return Line{Op: OpComment, Section: l.Section, Text: "type yourself, with its own value: " + text}
+	}
+	for i, l := range d.Backout {
+		if l.Secret && l.HasValue && l.Elided != "" {
+			c.Backout[i] = note(l)
+		}
+	}
+	for i, l := range d.Lines {
+		for j, u := range l.Undo {
+			if u.Secret && u.HasValue && u.Elided != "" {
+				c.Lines[i].Undo[j] = note(u)
+			}
+		}
+	}
+	return c
 }
 
 // Backout is the back-out as its own output (D108, review H2): the device
@@ -594,6 +640,30 @@ type jsonDelta struct {
 	ConfirmTimeout  int         `json:"confirm_timeout,omitempty"`
 	HoldsSecret     bool        `json:"holds_secret"`
 	CommandAuthLast bool        `json:"command_authorization_last,omitempty"`
+	// Converge, Cleanup and the two after it are present with --converge
+	// only (D99): the cleanup region's lines, why it is refused as a whole,
+	// and the extras it leaves.
+	Converge       bool     `json:"converge,omitempty"`
+	Cleanup        []string `json:"cleanup,omitempty"`
+	CleanupAfter   []string `json:"cleanup_after,omitempty"`
+	CleanupRefused string   `json:"cleanup_refused,omitempty"`
+	// CleanupDeferred says the cleanup comes after the first region.
+	CleanupDeferred string        `json:"cleanup_deferred,omitempty"`
+	CleanupLeft     []CleanupLeft `json:"cleanup_left,omitempty"`
+}
+
+// CannotPlanJSON is the JSON object of a device that could not be planned
+// (D99: status cannot-plan and the reason, every list empty), in the shape
+// of JSON.
+func CannotPlanJSON(h Header, reason string) ([]byte, error) {
+	out := jsonDelta{Name: h.Device, Address: h.Address, Scope: h.Scope, Vendor: h.Vendor,
+		BasedOn: jsonBasedOn{Pulled: h.Pulled, By: h.PulledBy, Transport: h.Transport, SecretsVisible: h.SecretsVisible},
+		Status:  StatusCannotPlan, Reason: reason, Irregularities: []jsonItem{}, Region: []string{}, After: []string{}, Backout: []string{},
+		Extras: []jsonExtra{}, Skipped: []Skip{}, Withheld: []string{}, Warnings: []string{}}
+	if !h.Pulled.IsZero() && !h.Now.IsZero() {
+		out.BasedOn.AgeS = int64(h.Now.Sub(h.Pulled).Seconds())
+	}
+	return json.MarshalIndent(out, "", "  ")
 }
 
 // JSON is the D99 shape of one device's output: values are always elided (a
@@ -605,6 +675,9 @@ func JSON(d Delta, h Header, w Wrapper) ([]byte, error) {
 		Status: statusOf(d), Left: leftOf(d), Irregularities: []jsonItem{}, Region: []string{}, After: []string{}, Backout: []string{},
 		Extras: []jsonExtra{}, Skipped: nonNilSkip(d.Skipped), Withheld: nonNil(d.Withheld), Warnings: nonNil(d.Warnings), ByHand: d.ByHand,
 		HoldsSecret: d.HoldsSecret()}
+	if out.Status == StatusCannotPlan {
+		out.Reason = d.Refusal()
+	}
 	lineNo := map[int]int{}
 	if !d.Empty() {
 		for n, rl := range RegionLines(d, h, w) {
@@ -644,6 +717,18 @@ func JSON(d Delta, h Header, w Wrapper) ([]byte, error) {
 			je.Remove = removeLines(e.Remove)
 		}
 		out.Extras = append(out.Extras, je)
+	}
+	if d.Converge {
+		out.Converge = true
+		out.CleanupRefused = d.Cleanup.Whole
+		out.CleanupDeferred = d.Cleanup.Deferred
+		out.CleanupLeft = d.Cleanup.Left
+		for _, rl := range CleanupLines(d, h, w) {
+			out.Cleanup = append(out.Cleanup, rl.Text)
+		}
+		if !d.Cleanup.Empty() {
+			out.CleanupAfter = strings.Split(strings.TrimRight(CleanupAfter(d, h, w), "\n"), "\n")
+		}
 	}
 	return json.MarshalIndent(out, "", "  ")
 }

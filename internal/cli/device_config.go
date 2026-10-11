@@ -59,6 +59,13 @@ var deviceConfigSpecs = func() map[string]Spec {
 			Flags: join(selectors, read, []Flag{{Names: []string{"--pull"}},
 				{Names: []string{"--section"}, Value: true, Kind: strings.Join(devconf.SectionNames, "|") + KindList},
 				flagJSON, {Names: []string{"--exit-code"}}})},
+		"plan": {MaxArgs: -1, Args: []string{KindDevices + KindList},
+			Flags: join(selectors, read, []Flag{{Names: []string{"--pull"}},
+				{Names: []string{"--section"}, Value: true, Kind: strings.Join(planSections, "|") + KindList},
+				{Names: []string{"--converge"}}, {Names: []string{"--secrets"}}, {Names: []string{"--no-secrets"}},
+				{Names: []string{"--plain"}}, {Names: []string{"--backout"}}, flagJSON,
+				{Names: []string{"--out"}, Value: true, Kind: KindFile}, {Names: []string{"--out-dir"}, Value: true, Kind: KindFile},
+				{Names: []string{"--force"}}, {Names: []string{"--from"}, Value: true}, {Names: []string{"--exit-code"}}})},
 		"list": {MaxArgs: 0, Flags: []Flag{{Names: []string{"--stale"}}, {Names: []string{"--never"}}, {Names: []string{"--failed"}},
 			{Names: []string{"--differs"}}, {Names: []string{"--transport"}, Value: true, Kind: "netconf|ssh|none"},
 			{Names: []string{"--scope"}, Value: true, Kind: KindScopes}, {Names: []string{"--vendor"}, Value: true, Kind: "cisco|juniper|wti"},
@@ -69,7 +76,7 @@ var deviceConfigSpecs = func() map[string]Spec {
 
 // deviceConfigVerbs are the 'device config' verbs in the order of device.go's
 // rows.
-var deviceConfigWords = []string{"show", "pull", "diff", "list", "forget"}
+var deviceConfigWords = []string{"show", "pull", "diff", "plan", "list", "forget"}
 
 // deviceConfigUse is the usage of a 'device config' verb after
 // 'tacctl device config ' (” for none).
@@ -112,7 +119,8 @@ func (inv *invocation) argErr(msgs ...string) error {
 // engineer for the rest); the verb holds each to its own tier, as 'scope
 // snmp' does.
 var deviceConfigNeeds = map[string]tier.Tier{
-	"list": tier.Operator, "show": tier.Engineer, "pull": tier.Engineer, "diff": tier.Engineer, "forget": tier.Superuser,
+	"list": tier.Operator, "show": tier.Engineer, "pull": tier.Engineer, "diff": tier.Engineer, "plan": tier.Engineer,
+	"forget": tier.Superuser,
 }
 
 // deviceConfigAllowed is nil when the caller's tier may run the verb; the
@@ -190,6 +198,41 @@ device has in a managed hierarchy that tacctl does not render, '!' a
 reordering, '?' a secret the login could not see. --pull reads first.
 --exit-code makes a difference exit 2.
 
+'plan' prints, for each device, what to paste to make it match what tacctl
+renders, from the last pull; it reads no device unless --pull reads them
+first, and writes to none ever. The output is the report in plain words (each
+irregularity, how serious it is, and what the paste does about it), then ONE
+region between 'PASTE FROM HERE' and 'PASTE TO HERE' that is safe to paste
+whole (on Junos it ends at 'commit confirmed', so the paste makes no permanent
+change; on IOS at 'end'), then the check, the one line to type yourself
+afterwards ('commit' or 'write memory'; it is never in the region) and the
+back-out, all comments. A statement that is an extra is reported with the
+line that removes it and left alone; --converge makes the region that removes
+the old servers and the like for a device that has nothing else to paste (the
+plan after the paste and the verifying pull; a device with a first region gets
+that region and one line that says to plan again after it): never beside a
+first region, never a server or group a statement that stays names, never the
+other protocol's, never a named command list. A section
+that cannot be pasted safely (a statement a group owns, a login class that
+cannot commit it, the Cisco lock-out guards) is left out and the report says
+why; on a Cisco device the standard's command authorization is held back until
+the server is proven to the device, and the report says so. A device that was
+never pulled, was pulled more than stale-days ago, whose last pull failed or
+whose Cisco syntax is not known cannot be planned (exit 1). With several
+devices a cover page comes first. --plain is the statements of one device
+alone (for 'load set'; with --out-dir one .set file each); --json is one
+object per device, secret values elided; --backout prints the back-out region
+alone (every plan with changes keeps its back-out beside the record, so after
+the check pull --backout prints that one, and says which pull it undoes;
+--backout with --pull is refused); --out and --out-dir write 0600 files, as
+the user who ran sudo, into a directory that user may write without a
+supplementary group (--out-dir adds COVER.txt and each plan's back-out). A secret the device lacks is typed in its line, and a
+secret it has is neither printed nor changed unless --secrets; --no-secrets
+leaves each as a marked line to fill in. --from <address> is where you are
+logged in from: the cleanup never removes it. Exit status: 0 the outputs were
+made, 1 a device cannot be planned, 2 wrong arguments (or, with --exit-code,
+a device needs a change), 130 interrupted.
+
 'list' shows each device's state: ok (every managed section agrees), differs,
 never (not pulled), failed (the last pull failed) or pull (a Cisco device whose
 syntax is unknown: its record has no version line and its config-syntax is
@@ -204,6 +247,8 @@ Examples:
   tacctl device config pull --all --diff
   tacctl device config pull --scope lab --vendor juniper --concurrency 4
   tacctl device config diff core-sw1 --section aaa,snmp
+  tacctl device config plan core-sw1
+  tacctl device config plan --scope lab --out-dir ~/plans
   tacctl device config list --stale
 
 `)
@@ -227,6 +272,8 @@ func (inv *invocation) deviceConfig(args []string) error {
 		return inv.deviceConfigPull(args[1:])
 	case "diff":
 		return inv.deviceConfigDiff(args[1:])
+	case "plan":
+		return inv.deviceConfigPlan(args[1:])
 	case "list":
 		return inv.deviceConfigList(args[1:])
 	case "forget":

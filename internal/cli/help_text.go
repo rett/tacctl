@@ -408,7 +408,7 @@ Subcommands:
       --snmp-location <text>           (cisco, juniper, wti) The SNMP location for this paste; not stored (a device's own: tacctl device location)
   linux   build|script|remove-script|uid|builds  TACACS+ or RADIUS login for Linux hosts (install/removal scripts)
   snmp    show|community|v3-user|port|timeout|clear|test  SNMP for the name hint of 'device add' (sysName)
-  devices [show|max-concurrency|transport|timeout] [value]  How 'device config pull' reads the devices (default 8 at once, auto, 90 s)
+  devices [show|max-concurrency|transport|timeout|confirm-timeout] [value]  How 'device config pull' reads the devices (default 8 at once, auto, 90 s) and the confirm timeout of 'plan' (5 min)
   branch [name]                        Show or change the tacctl repo branch
 
 Examples:

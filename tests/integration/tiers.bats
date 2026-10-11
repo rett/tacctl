@@ -290,11 +290,11 @@ print("" if v is None else v)' "${TACCTL_STATE_DIR}/store.yaml" "$1" "$2"
     text=$(sed -n 's/^    //p' <<<"$output" | sed -e ':a' -e '/\\$/N; s/\\\n//; ta')
     ro_op=$(grep -E '^Cmnd_Alias TACCTL_(RO|OP)' <<<"$text")
     en=$(grep '^Cmnd_Alias TACCTL_EN' <<<"$text")
-    for r in "config cisco" "scope show" "scope secret" "host unenroll" "scope staging" "device config pull" "device config diff" "device config show" "device config forget"; do
+    for r in "config cisco" "scope show" "scope secret" "host unenroll" "scope staging" "device config pull" "device config diff" "device config plan" "device config show" "device config forget"; do
         if grep -q "$r" <<<"$ro_op"; then echo "$r below the engineer tier"; return 1; fi
     done
     for r in 'tacctl config cisco \*' 'tacctl config juniper,' 'tacctl config wti \*' 'tacctl device add \*' 'tacctl device import - \*' \
-        'tacctl device hostkey \*' 'tacctl device config show \*' 'tacctl device config pull \*' 'tacctl device config diff \*' \
+        'tacctl device hostkey \*' 'tacctl device config show \*' 'tacctl device config pull \*' 'tacctl device config diff \*' 'tacctl device config plan \*' \
         'tacctl scope devices \*' \
         'tacctl host list,' 'tacctl host show \*' 'tacctl scope staging list' \
         'tacctl scope secret \*' 'tacctl scope show \*' 'tacctl scope snmp \*' 'tacctl device location \*'; do
@@ -622,7 +622,7 @@ _upgrade() {
     assert_output --partial "'tacctl device config show' is not permitted for the operator tier."
 }
 
-@test "tier: device config list is the operator's; show, pull and diff the engineer's; forget the superuser's" {
+@test "tier: device config list is the operator's; show, pull, diff and plan the engineer's; forget the superuser's" {
     "$TACCTL_BIN_SCRIPT" user add en superuser --hash "$HASH" --scopes lab > /dev/null
     printf 'tier:\n  superuser: engineer\n' > "${TACCTL_STATE_DIR}/tacctl.yaml"
     "$TACCTL_BIN_SCRIPT" device add lab-sw 192.168.1.1 --vendor cisco --no-host-key > /dev/null
@@ -631,7 +631,7 @@ _upgrade() {
     as_user op yes -- device config list
     assert_success
     assert_output --partial "lab-sw"
-    for v in show pull diff forget; do
+    for v in show pull diff plan forget; do
         as_user op yes -- device config "$v" lab-sw
         assert_failure
         assert_output --partial "'tacctl device config $v' is not permitted for the operator tier."
@@ -667,6 +667,14 @@ _upgrade() {
     as_user en yes -- device config pull prod-sw
     assert_failure
     assert_output --partial "Device 'prod-sw' not found."
+    # A plan is the engineer's for their own scopes; another scope's device
+    # is not found, and a device not pulled cannot be planned.
+    as_user en yes -- device config plan prod-sw
+    assert_failure
+    assert_output --partial "Device 'prod-sw' not found."
+    as_user en yes -- device config plan lab-sw
+    assert_failure 1
+    assert_output --partial "lab-sw cannot be planned: not pulled: tacctl device config pull lab-sw (or --pull)"
 }
 
 @test "tier: an engineer pulls the devices of their own scope as themselves and the pull is audited" {

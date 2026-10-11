@@ -82,7 +82,9 @@
     "!   In the second terminal:   open a NEW ssh session to dev-cisco-xe-reference-16 as yourself, then: terminal length 0, show privilege (must say 15)",
     "! When both checks are fine, type this one command yourself:  write memory",
     "!",
-    "! To undo: tacctl device config plan dev-cisco-xe-reference-16 --backout",
+    "! To undo: tacctl device config plan dev-cisco-xe-reference-16 --backout (tacctl keeps this plan's",
+    "! back-out: after the check pull has replaced the picture, the command still prints this plan's,",
+    "! and says which pull it undoes)",
     "! Do not: 'write memory' before the check; paste outside the banners; paste into another device;",
     "! paste on a console more than twenty lines at a time; keep this output in a file after the paste",
     "! when it holds a secret."

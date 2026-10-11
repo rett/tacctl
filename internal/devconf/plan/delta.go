@@ -281,6 +281,11 @@ type Delta struct {
 	// with the exact removal line (D111), so a cleanup region can be added.
 	Items  []Item
 	Extras []Extra
+	// Converge is set when the plan was asked for the cleanup (--converge),
+	// and Cleanup is that second region (empty when there is nothing to
+	// remove or the cleanup is refused: Cleanup.Whole says why).
+	Converge bool
+	Cleanup  Cleanup
 }
 
 // Severity of an irregularity (D110).
@@ -321,6 +326,11 @@ type Item struct {
 	Fixed bool `json:"fixed"`
 	// n counts the findings folded into the item.
 	n int
+}
+
+// removedByCleanup reports an extra that the cleanup region removes.
+func (it Item) removedByCleanup() bool {
+	return !it.Fixed && strings.HasPrefix(it.Action, "Removed by the cleanup region")
 }
 
 // Extra is a statement of a standard hierarchy that the standard does not

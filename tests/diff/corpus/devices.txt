@@ -249,9 +249,9 @@ config wti --protocol radius
 # The runner has no device to log in to and no SUDO_USER: the verbs that log in
 # are refused first with the account rule, the rest by their own arguments.
 @fixture tacquito.multiscope.yaml
-@known 0.2.4 item 1: device config lists pull, diff, list and forget
+@known 0.2.4 item 1: device config lists pull, diff, list and forget; 0.2.5 item 37: and plan
 device config
-@known 0.2.4 item 1: device config lists pull, diff, list and forget
+@known 0.2.4 item 1: device config lists pull, diff, list and forget; 0.2.5 item 37: and plan
 device config help
 @known 0.2.4 item 1: device config pull is new
 device config pull
@@ -289,6 +289,34 @@ device config forget nosuch
 device config forget --all
 @known 0.2.4 item 3: device config forget is new
 device config frob
+@known 0.2.5 item 37: device config plan is new
+device config plan
+@known 0.2.5 item 37: device config plan is new
+device config plan nosuch
+@known 0.2.5 item 37: device config plan is new
+device config plan --all
+@known 0.2.5 item 37: device config plan is new
+device config plan nosuch --plain --json
+@known 0.2.5 item 37: device config plan is new
+device config plan nosuch --plain --no-secrets
+@known 0.2.5 item 37: device config plan is new
+device config plan nosuch --secrets --no-secrets
+@known 0.2.5 item 37: device config plan is new
+device config plan nosuch --section netconf
+@known 0.2.5 item 37: device config plan is new
+device config plan nosuch --transport ssh
+@known 0.2.5 item 37: device config plan is new; 0.2.5 item 41: --out and --out-dir
+device config plan nosuch --out a --out-dir b
+@known 0.2.5 item 37: device config plan is new; 0.2.5 item 41: --force
+device config plan nosuch --force
+@known 0.2.5 item 37: device config plan is new
+device config plan nosuch --bogus
+@known 0.2.5 item 38: config devices confirm-timeout is new
+config devices confirm-timeout 12 ;; config devices
+@known 0.2.5 item 38: config devices confirm-timeout is new
+config devices confirm-timeout 0
+@known 0.2.5 item 38: config devices confirm-timeout is new
+config devices confirm-timeout 61
 @known 0.2.4 item 4: device list has a CONFIG column; device show a Configuration row
 device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device list
 @known 0.2.4 item 4: device list has a CONFIG column; device show a Configuration row; 0.2.4 item 14: device show has the SNMP rows; 0.2.5 item 25: a Cisco device's show has a Config syntax row

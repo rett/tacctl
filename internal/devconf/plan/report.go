@@ -405,8 +405,10 @@ func plainIOS(stem string) string {
 		w = "the 'enable' list (it asks the server first, so nobody needs a shared enable password)"
 	case len(f) >= 4 && f[0] == "aaa" && f[1] == "authentication" && f[3] == iosConsoleList:
 		w = "the console's own login list " + iosConsoleList + " (local only, so a local user always gets in there)"
-	case len(f) >= 4 && f[0] == "aaa" && f[1] == "authentication":
+	case len(f) >= 4 && f[0] == "aaa" && f[1] == "authentication" && f[2] == "login":
 		w = "the " + f[3] + " login method list"
+	case len(f) >= 4 && f[0] == "aaa" && f[1] == "authentication":
+		w = "the " + f[3] + " " + f[2] + " method list"
 	case len(f) >= 3 && f[0] == "aaa" && f[1] == "session-id":
 		w = "the accounting session id is " + f[2]
 	case len(f) >= 3 && f[0] == "ip" && (f[1] == "tacacs" || f[1] == "radius") && f[2] == "source-interface":
@@ -671,11 +673,13 @@ func Report(d Delta, h Header, w Wrapper) string {
 
 	fixed := 0
 	for _, it := range d.Items {
-		if it.Fixed {
+		if it.Fixed || it.removedByCleanup() {
 			fixed++
 		}
 	}
 	switch {
+	case len(d.Items) == 0 && d.Refusal() != "":
+		add("CANNOT BE PLANNED: " + d.Refusal() + ". Nothing to paste.")
 	case len(d.Items) == 0:
 		add("CONSISTENT: nothing to paste.")
 	default:
@@ -698,7 +702,13 @@ func Report(d Delta, h Header, w Wrapper) string {
 			}
 		}
 		if d.Empty() {
-			add("Nothing to paste: everything above is left alone or cannot be fixed by this login.")
+			if r := d.Refusal(); r != "" {
+				add("CANNOT BE PLANNED: " + r + ". Nothing is pasted for this device.")
+			} else if !d.Cleanup.Empty() {
+				add("No fix to paste: the cleanup region below is the only paste (what else remains is left alone).")
+			} else {
+				add("Nothing to paste: everything above is left alone or cannot be fixed by this login.")
+			}
 		}
 	}
 
@@ -758,7 +768,27 @@ func Report(d Delta, h Header, w Wrapper) string {
 		add("Note: a delete under an SNMP community acts on the community tacctl renders only (the device's community names are not compared); 'statement not found' is then expected for a leaf of another community.")
 	}
 	if !d.InheritanceChecked && d.Vendor == devconf.FamilyJunos {
-		add("The pull has no plain view of the configuration: statements that come from a group could not be told apart and were not checked.")
+		add("The pull has no plain view of the configuration: statements that come from a group could not be told apart and were not checked (pull the device again to read it).")
+	}
+	if d.Converge {
+		c := d.Cleanup
+		switch {
+		case c.Deferred != "":
+			add("Cleanup (--converge): " + c.Deferred + ".")
+		case c.Whole != "":
+			add("Cleanup (--converge) is not offered: " + c.Whole + ".")
+		case !c.Empty():
+			add(fmt.Sprintf("Cleanup (--converge): the region below is the whole output: it removes %s: %s the standard does not have. Paste it only after you have checked that the pull of %s is current (tacctl device config pull %s --diff reads ok for aaa, and a NEW ssh session as yourself works).",
+				plural(len(c.Lines), "line", "lines"), cleanupKinds(c), h.Device, h.Device))
+			if len(c.Left) > 0 {
+				add(extrasStay(len(c.Left)))
+			}
+		default:
+			add("Cleanup (--converge): nothing to remove.")
+			if len(c.Left) > 0 {
+				add(extrasStay(len(c.Left)))
+			}
+		}
 	}
 	for _, n := range d.Notes {
 		add("Note: " + n + ".")
@@ -773,7 +803,9 @@ func Report(d Delta, h Header, w Wrapper) string {
 	if d.Vendor == devconf.FamilyJunos && !h.SecretsVisible {
 		add("WARNING: the pull's login could not see secrets: a secret the device holds could not be compared and is left alone.")
 	}
-	if !d.Empty() {
+	// the cleanup is the whole output of a device with no first region: the
+	// same warnings and the same check line stand in front of it
+	if !d.Empty() || !d.Cleanup.Empty() {
 		if d.Vendor == devconf.FamilyIOS {
 			add("The change is live when the paste ends. NOTHING rolls it back by itself. Keep a second terminal logged in at privilege 15 until the end.")
 		} else {
@@ -830,14 +862,38 @@ const (
 
 // statusOf is the device's state. 'consistent' only with no finding of any
 // kind: a device with an unfixed ACCESS problem is never called consistent.
+// A plan with nothing to paste and a section it refused (a statement a group
+// owns, the lock-out guards of the aaa unit, a record that needs a pull) is
+// one that cannot be planned: the person is told there is nothing to paste
+// because it is refused, not because nothing is wrong.
 func statusOf(d Delta) string {
 	switch {
-	case !d.Empty():
+	case !d.Empty(), !d.Cleanup.Empty():
+		// the cleanup region (--converge) is the paste of a device that has
+		// no other
 		return StatusNeedsChange
+	case d.Refusal() != "":
+		return StatusCannotPlan
 	case len(d.Items) > 0:
 		return StatusLeftAlone
 	}
 	return StatusConsistent
+}
+
+// Refusal is the first refusal of a plan that has nothing to paste ("" when
+// it has lines, or none of its sections was refused): 'refused: <section>:
+// <why>'. A section the login's class cannot commit is no refusal (it is
+// left to a superuser, and the report says so).
+func (d Delta) Refusal() string {
+	if !d.Empty() {
+		return ""
+	}
+	for _, s := range d.Skipped {
+		if s.Kind == KindRefused || s.Kind == KindNotPlannable {
+			return "refused: " + s.Section + ": " + firstSentence(s.Why)
+		}
+	}
+	return ""
 }
 
 // LeftCounts are the findings the paste leaves, by severity.
@@ -854,7 +910,7 @@ func (c LeftCounts) Total() int { return c.Access + c.Monitoring + c.Cosmetic }
 func leftOf(d Delta) LeftCounts {
 	var c LeftCounts
 	for _, it := range d.Items {
-		if it.Fixed {
+		if it.Fixed || it.removedByCleanup() {
 			continue
 		}
 		switch it.Severity {
@@ -908,13 +964,16 @@ type DeviceStatus struct {
 func StatusFor(d Delta, h Header) DeviceStatus {
 	s := DeviceStatus{Device: h.Device, Scope: h.Scope, Vendor: h.Vendor, Address: h.Address, State: statusOf(d), Extras: len(d.Extras)}
 	for _, it := range d.Items {
-		if it.Fixed {
+		if it.Fixed || it.removedByCleanup() {
 			s.Fixes++
 		} else {
 			s.Left++
 		}
 	}
 	s.Remaining = leftOf(d)
+	if s.State == StatusCannotPlan {
+		s.Reason = d.Refusal()
+	}
 	return s
 }
 

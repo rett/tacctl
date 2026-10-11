@@ -1,0 +1,40 @@
+##### lab-j  192.168.1.20  scope lab  juniper (TACACS+) #####
+# Based on the pull of <time> by alice over netconf (less than a minute ago; the login could
+# see secrets) and the standard of <time> (tacctl 0.2.0-test).
+#
+# What is irregular on lab-j (1 item; the paste fixes 1, leaves 0):
+#  1. aaa      ACCESS     extra: a TACACS+ server 192.0.2.99 (set system tacplus-server 192.0.2.99
+#                         secret <secret>). Removed by the cleanup region, line 3.
+# No fix to paste: the cleanup region below is the only paste (what else remains is left alone).
+# Consistent: roles. Not planned: netconf, breakglass (walkthrough Steps 6 and 7).
+# The standard has nothing for: snmp, mgmt-acl.
+# Secrets: 1 present on the device, not changed (--secrets pushes them).
+# Cleanup (--converge): the region below is the whole output: it removes 1 line: TACACS+ servers the
+# standard does not have. Paste it only after you have checked that the pull of lab-j is current
+# (tacctl device config pull lab-j --diff reads ok for aaa, and a NEW ssh session as yourself works).
+# The switch undoes this by itself in 5 minutes unless you type the one word after the check (see
+# below).
+# Paste over ssh, not the console; on a console paste at most twenty lines at a time and watch the
+# echo for 'error:'. Pasting the region twice is harmless.
+#
+# Type this first, on lab-j, and check the name:   show version | match Hostname
+# The prompt must end in > (operational mode) before you paste: a prompt ending in # means a
+# configuration session is open: stop.
+#
+##### CLEANUP FROM HERE: lab-j #####
+configure private
+# aaa: removes the servers the standard does not have
+delete system tacplus-server 192.0.2.99
+show | compare | no-more
+commit check
+commit confirmed 5 comment "tacctl cleanup lab-j <time> by alice"
+##### CLEANUP TO HERE: lab-j #####
+#
+# There is no other paste for lab-j: its first region is empty. Check that the pull is current
+# (tacctl device config pull lab-j --diff reads ok for aaa) and keep a NEW ssh session as yourself
+# open.
+# Same check, same one word, typed yourself:  commit     (before the 5 minutes end)
+# If any line printed "error:", do not type commit: the switch undoes the cleanup by itself in 5
+# minutes. To undo it after the commit: show system commit, then rollback <n> of the entry just
+# before the one commented "tacctl cleanup lab-j", then commit. A removed server's secret is not
+# held by tacctl: type it again.
