@@ -1161,6 +1161,127 @@ current behaviour; this file is where history lives.
     device lacks is still missing, and the back-out's comment about the
     lines is unchanged.
 
+70. **`tacctl breakglass hold <device> --reason "<text>"` makes the server
+    stop answering one device, so its local accounts can be used while the
+    server is up; `release <device>` answers it again.** The standard Cisco
+    block (items 30 and 31) and the Junos `authentication-order` use a
+    device's local accounts only while no server answers it, so the way in
+    for a locked-out technician was a cable or a hand-edited firewall on the
+    server. A hold is the superuser's, for one registered device, for an
+    exceptional case, and is shown until it is released: there is no timer and
+    no automatic release, and no whole-scope form. It asks for the device's
+    name typed back at a terminal (no `--yes`), says in a paragraph that the
+    act is for one device in exceptional circumstances and which local
+    accounts (`scope breakglass <scope> list`) are the only way in, and
+    prints one report: the record, what was rendered (`192.0.2.0/24 of scope
+    'lab' answers as 8 prefixes without 192.0.2.21`), the backends that
+    restarted, the way in for the device's vendor (Cisco: ssh as a local
+    account, the console's local `CONSOLE` login and `enable` with the local
+    secret; Junos: a local `system login user`; WTI: Fallback Local), that its
+    accounting goes to a server that does not answer it, `Held now:` with every
+    hold that stands and `When done: tacctl breakglass release <device>`. It
+    is refused, with nothing changed, for a device that is not registered (an
+    enrolled Linux host is not one), has no address, is held already, is at a
+    loopback address, an address a listener of either backend binds or the
+    recorded address of an enrolled host (the server's own logins come from
+    `127.0.0.1`), or that no scope covers (`already unanswered`). `--reason`
+    is required, 1 to 256 characters. The record is
+    `breakglass_hold.<device>.address|since|by|reason` in `tacctl.yaml` (a
+    device name's dots are written `~` in the key), so every snapshot holds
+    it and `backup diff` shows it; `release` removes it from the record alone,
+    so a device removed from `devices.yaml` by hand is still released.
+
+71. **A hold is carved out at render time; the store is never changed.** Both
+    renderers replace every prefix of every scope, and every tagged address of
+    `scope devices` for RADIUS, by itself minus the held addresses: a `/24`
+    that holds the address becomes the eight prefixes `/25` to `/32` that do
+    not, a prefix equal to the address is gone, an IPv6 `/64` is sixty-four
+    prefixes, several holes in one prefix are taken out in turn, and a prefix
+    that holds none is written as it was. A piece sorts where the prefix it
+    came from did (and, in `clients.conf`, falls on the longest stored
+    prefix's client), so every address that is not held is answered by the scope
+    that answered it before. The read-back of the rendered `tacquito.yaml`
+    compares the file with the same carved model, so it keeps passing while a
+    hold stands. `tacquito.yaml` and `clients.conf` get a comment block that
+    names each held address, its device and the prefixes it was carved from
+    (only where something was carved), never the reason. `hold` then `release`
+    renders the original bytes, byte for byte; each is one restart of each
+    backend whose file changed, and a release that changes nothing (the device
+    was uncovered meanwhile: `breakglass list` says `no scope covers it now`)
+    restarts nothing. `scope rename`, `scope prefixes` and `scope remove` are
+    neither refused nor changed: the record names no scope, the carve-out
+    applies to every scope that covers the address.
+
+72. **A held device is shown as held wherever it is shown.** `breakglass list
+    [--json]` (device, address, scope, since, how long, by whom, why);
+    `status` (`Break-glass:        none held`, or one red line per hold);
+    `device show` (a `Break-glass` row: `HELD since 2026-10-10 14:02 (2 h 14
+    min) by alice: <reason>; the server does not answer 192.0.2.21`) and `device
+    list` (`BREAK-GLASS` in the STATE column and a footer) and `device show
+    --json`, `device list --json` and `device check --json` (a `breakglass`
+    object with `held`, `address`, `since`, `by` and `reason`); `device check`
+    (a note on the Scope row); `device scan` (a refusal of the address reads
+    `(break-glass held)` in place of `(no scope)`); `scope routing` (one line
+    per hold under the stored rows), `scope show` (`Break-glass held:` under
+    the prefixes), `scope list` (`(1 break-glass hold)`) and `scope lookup`
+    (`NOT ANSWERED: break-glass held on <device> since ...`, and a note for a
+    range that holds a held address); `config validate` (a warning per hold,
+    red when the device is not registered). `device list --unconfigured` does
+    not list a held device. An engineer sees the holds of the devices of their
+    own scopes only.
+
+73. **What a hold changes for other verbs.** `device address` and `device
+    remove` (and `device import` that would move or remove it) of a held device
+    are refused (`break-glass is held on <name>: release it first`), because
+    the hold is on the address the server sees; `device rename` moves the
+    record with the device and renders the comment again, restarting nothing.
+    `device config pull`, `diff --pull` and `plan --pull` of a held device are
+    refused up front, and a batch (`--all`, `--scope`, `--vendor`, `--stale`)
+    skips it with that line instead of failing on it, because the device does
+    not authenticate your login; `device config plan` of the last pull works,
+    puts `BREAK-GLASS HELD on this device since ... by ...: the server does not
+    answer it, so the check below ("a NEW ssh session as yourself") cannot pass
+    until it is released` before its items and marks the device on the cover
+    page (`[break-glass held]`; `breakglass_held` in `--json`). `tacctl ssh` of
+    a held device warns and connects. The three after-steps comment lines of a
+    plan (`Locked out ... A superuser runs: tacctl breakglass hold <name>
+    --reason "..."`, the local login, `... tacctl breakglass release <name>`)
+    end every Cisco and Junos region's after-steps, the cleanup's and the
+    back-out's, whether or not the device is held, and Step 0 of the Cisco
+    walkthrough has one commented line after the accounts: `To use these
+    accounts while the server is up: tacctl breakglass hold <device> --reason
+    "..." (a superuser); release when done`. `tacctl backup restore` is a
+    render like any other: a hold comes back with a snapshot of a
+    `tacctl.yaml` that has it and goes with one that lacks it, and the
+    restore says which devices are held now and which will be held after
+    (before the question, and again at the end) whenever that set changes.
+
+74. **Tiers and the log.** `hold` and `release` are the superuser's (the tier
+    table has no row for them, as for every change of what the scopes
+    answer); `list` is an engineer row with its sudoers line (`breakglass
+    list`, read-only, the devices of the engineer's own scopes). Both verbs
+    log `auth.info breakglass hold device=<name> addr=<ip> reason="<text>"
+    by=<user>` and `breakglass release device=<name> addr=<ip> held=<duration>
+    by=<user>` (the reason is logged: it is where the why outlives the
+    release) and take the snapshot every change takes first. `tacctl.yaml`
+    carries no credential and the reason never reaches a backend file.
+
+75. **`tacctl rollback` is refused while a hold stands.** In the dry run and
+    with `--apply` alike: the older release has no such record, so the device
+    would stay unanswered until the older release's first render and then be
+    answered without anyone releasing the hold. The refusal names each held
+    device with its address, who held it and since when, and
+    `tacctl breakglass release <device>`; nothing is changed.
+    `breakglass_hold.*` is in the keys a rollback strips when none stands.
+
+76. **The break-glass texts say how to use the local console while the server
+    is up.** The README and the manual page already said the console's local
+    login and `enable` work only while no server answers; they now add that
+    `tacctl breakglass hold <device>` is how to make that happen on purpose for
+    one device (a "Holding break-glass" subsection with the procedure per
+    vendor, the `enable` design paragraph's last sentence, and the
+    `scope breakglass` verb's description: the accounts a hold makes usable).
+
 
 ## 0.2.3 (2026-10-09)
 

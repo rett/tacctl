@@ -160,7 +160,7 @@ func NewSchema(backends []string) *Schema {
 			// The per-scope break-glass local users of 0.2.3 (breakglass.go);
 			// no default: absent is "none recorded".
 			{"breakglass_scope.", Rule{Type: TypeBreakGlassList, Depth: 2}},
-		}, snmpScopeWildcards()...),
+		}, append(snmpScopeWildcards(), holdWildcards()...)...),
 	}
 }
 
@@ -419,6 +419,8 @@ func (s *Schema) Validate(path string, value any, isList bool) string {
 		return junosListProblem(path, value)
 	case TypeBreakGlassList:
 		return breakGlassListProblem(path, value)
+	case TypeHoldAddress, TypeHoldSince, TypeHoldText:
+		return holdProblem(t, path, value)
 	case TypeSNMPClients:
 		return snmpClientsProblem(value)
 	case TypeSNMPText:

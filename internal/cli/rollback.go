@@ -68,6 +68,12 @@ func (inv *invocation) rollback(args []string) error {
 		}}
 	plan, err := lifecycle.PlanRollback(in)
 	if err != nil {
+		// A break-glass hold stands: the refusal says what to release and
+		// that nothing was changed.
+		var held *lifecycle.RollbackRefusal
+		if errors.As(err, &held) {
+			return inv.usageErr(held.Lines...)
+		}
 		msgs := msgs(err)
 		return inv.usageErr(append(msgs, "Nothing was changed.")...)
 	}

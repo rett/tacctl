@@ -246,6 +246,7 @@ func iosAfter(d Delta, h Header, w Wrapper) string {
 		c("To undo: " + undo + "     (tacctl keeps this plan's back-out: after the check pull has replaced the picture, the command still prints this plan's, and says which pull it undoes, until the next plan with changes)")
 	}
 	c("Do not: 'write memory' before the check; paste outside the banners; paste into another device; paste on a console more than twenty lines at a time; keep this output in a file after the paste when it holds a secret.")
+	b.WriteString(lockoutHelp(d, h))
 	return b.String()
 }
 
@@ -268,6 +269,7 @@ func iosBackoutAfter(d Delta, h Header, w Wrapper) string {
 	b.WriteString("!\n")
 	c("A value that tacctl does not hold (an original secret) is a line marked with ! inside the region: put it back by hand.")
 	c("Do not: 'write memory' before the check; paste outside the banners; paste into another device; paste on a console more than twenty lines at a time; keep this output in a file after the paste when it holds a secret.")
+	b.WriteString(lockoutHelp(d, h))
 	return b.String()
 }
 

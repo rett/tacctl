@@ -257,6 +257,11 @@ var Rules = []Rule{
 	// superuser's (the verb sees to that, as 'scope snmp' does).
 	{Tier: Engineer, Cmd: "device", Sub: "snmp", Sudoers: []string{"device snmp *"}},
 	{Tier: Engineer, Cmd: "scope", Sub: "show", Sudoers: []string{"scope show *"}},
+	// The break-glass holds (0.2.5, D125): an engineer reads the holds on
+	// the devices of their own scopes (the verb sees to that). 'hold' and
+	// 'release' have no row: what the scopes answer is the superuser's to
+	// change, and a hold takes one device out of AAA for everyone.
+	{Tier: Engineer, Cmd: "breakglass", Sub: "list", Sudoers: []string{"breakglass list", "breakglass list *"}},
 }
 
 // Permits is tier_permits: whether tier may run 'tacctl cmd sub'.

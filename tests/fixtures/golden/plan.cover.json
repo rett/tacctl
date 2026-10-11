@@ -15,6 +15,22 @@
     "extras": 3
   },
   {
+    "device": "dev-juniper-synthetic-lab",
+    "scope": "lab",
+    "vendor": "juniper",
+    "address": "192.0.2.21",
+    "state": "needs-change",
+    "fixes": 1,
+    "left": 3,
+    "remaining": {
+      "access": 1,
+      "monitoring": 2,
+      "cosmetic": 0
+    },
+    "extras": 3,
+    "breakglass_held": true
+  },
+  {
     "device": "dev-juniper-synthetic-lab-engineer",
     "scope": "lab",
     "vendor": "juniper",
@@ -103,6 +119,22 @@
       "cosmetic": 0
     },
     "extras": 3
+  },
+  {
+    "device": "dev-cisco-reference-lab",
+    "scope": "lab",
+    "vendor": "cisco",
+    "address": "192.0.2.21",
+    "state": "needs-change",
+    "fixes": 4,
+    "left": 3,
+    "remaining": {
+      "access": 0,
+      "monitoring": 3,
+      "cosmetic": 0
+    },
+    "extras": 3,
+    "breakglass_held": true
   },
   {
     "device": "dev-cisco-reference-12x",

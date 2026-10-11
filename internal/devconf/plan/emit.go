@@ -194,6 +194,21 @@ func ByHand(d Delta, h Header) string {
 	return b.String()
 }
 
+// lockoutHelp is the three comment lines that end every region's
+// after-steps whether or not the device is held (D124): what a person does
+// whose paste cut the session and left no login that works. The device's
+// local account is the way in, and the verbs are the superuser's.
+func lockoutHelp(d Delta, h Header) string {
+	c := commentLeader(d.Vendor)
+	way := "then log in as the device's local account (console: local login, then 'enable' with the local secret),"
+	if d.Vendor != devconf.FamilyIOS {
+		way = "then log in as the device's local user (ssh or console),"
+	}
+	return c + " Locked out (the paste cut your session and no login works)? A superuser runs: tacctl breakglass hold " + h.Device + " --reason \"...\"\n" +
+		c + " " + way + "\n" +
+		c + " fix or back out, and the superuser runs: tacctl breakglass release " + h.Device + "\n"
+}
+
 // After is the text after the region (outside it): what to read, the check
 // and the one line to type, the back-out as comments, what not to do.
 func After(d Delta, h Header, w Wrapper) string {

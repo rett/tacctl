@@ -815,11 +815,13 @@ func CleanupAfter(d Delta, h Header, w Wrapper) string {
 		// not save before the check (as the first region's)
 		b.WriteString("! Same check, then type this one command yourself:  write memory\n")
 		add("Nothing rolls the cleanup back by itself; until write memory is typed a reload brings back the saved configuration. A removed server entry takes its key with it: tacctl holds no key it removes, so to put one back you type it again.")
+		b.WriteString(lockoutHelp(d, h))
 		return b.String()
 	}
 	n := strconv.Itoa(confirmMinutes(w))
 	b.WriteString("# Same check, same one word, typed yourself:  commit     (before the " + n + " minutes end)\n")
 	add("If any line printed \"error:\", do not type commit: the switch undoes the cleanup by itself in " + n + " minutes. To undo it after the commit: show system commit, then rollback <n> of the entry just before the one commented \"tacctl cleanup " + commentSafe(h.Device) + "\", then commit. A removed server's secret is not held by tacctl: type it again.")
+	b.WriteString(lockoutHelp(d, h))
 	return b.String()
 }
 

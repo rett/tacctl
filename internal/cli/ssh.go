@@ -223,6 +223,13 @@ func (inv *invocation) ssh(args []string) error {
 			cached = false
 		}
 	}
+	// A held device takes local accounts only; the session goes on (the
+	// person may be about to type the local name).
+	if e.Source == devreg.SourceDevice {
+		if _, held := inv.holdOf(e.Name); held {
+			a.Out.Warn("break-glass is held on " + e.Name + ": it takes local accounts only")
+		}
+	}
 	a.Logger(inv.ctx, "auth.info", "ssh user="+caller+" device="+e.Name+" addr="+addr+forward+cacheNote+inv.sshConsoleField())
 	start := a.Knobs.Now()
 	code, _, startErr := hosts.Attached(inv.ctx, a.Runner, cmd, a.Stdin, a.Out)

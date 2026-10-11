@@ -53,15 +53,22 @@ log clear --backend radius -y
 log clear --backend radius --yes ;; log tail --backend radius
 
 # status
+@known 0.2.5 item 72: status has a Break-glass line in its Security Posture
 config metrics disable ;; status
+@known 0.2.5 item 72: status has a Break-glass line in its Security Posture
 config metrics disable ;; status extra words
-@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's)
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's); 0.2.5 item 72: status has a Break-glass line in its Security Posture
 config metrics disable ;; user add alice superuser --hash {HASH} --scopes lab ;; status
+@known 0.2.5 item 72: status has a Break-glass line in its Security Posture
 config metrics disable ;; config password-age 1 ;; status
+@known 0.2.5 item 72: status has a Break-glass line in its Security Posture
 config metrics disable ;; config password-age 0 ;; status
+@known 0.2.5 item 72: status has a Break-glass line in its Security Posture
 config metrics disable ;; config mgmt-acl add 10.0.0.0/8 <<< y ;; status
+@known 0.2.5 item 72: status has a Break-glass line in its Security Posture
 config metrics disable ;; config listen tcp6 [::]:49 <<< y ;; status
 @fixture tacquito.multiscope.yaml
+@known 0.2.5 item 72: status has a Break-glass line in its Security Posture
 config metrics disable ;; status
 @fixture tacquito.minimal.yaml
 

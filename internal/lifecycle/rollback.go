@@ -19,6 +19,12 @@ package lifecycle
 //	                       snapshot that has them. They are removed
 //	                       (conf.Added024 and any other key it does not
 //	                       know).
+//	                       A break-glass hold (0.2.5, breakglass_hold.<device>.*)
+//	                       is not removed: the rollback is refused while one
+//	                       stands (HeldRefusal), in the dry run and --apply
+//	                       alike, because the older release would leave the
+//	                       device unanswered until its first render and then
+//	                       answer it without anyone releasing the hold.
 //	console.yaml           0.2.3's parser rejects settings.password_cache;
 //	                       removed (console.Rollback). 'tiers.engineer' and
 //	                       'settings.space_completion' are 0.2.3's own.
@@ -76,6 +82,28 @@ const RollbackTarget = "0.2.3"
 type RollbackRefusal struct{ Lines []string }
 
 func (e *RollbackRefusal) Error() string { return strings.Join(e.Lines, " ") }
+
+// HeldRefusal is the refusal of a rollback while any break-glass hold
+// stands: each hold with its address, who held it and since when, why the
+// older release cannot take it over and what to run first.
+func HeldRefusal(holds []conf.Hold) *RollbackRefusal {
+	var lines, release []string
+	for _, h := range holds {
+		line := "Break-glass is held on " + h.Device + " (" + h.Address
+		if h.By != "" {
+			line += ", by " + h.By
+		}
+		if t := h.SinceTime(); !t.IsZero() {
+			line += " since " + t.Local().Format("2006-01-02 15:04")
+		}
+		lines = append(lines, line+").")
+		release = append(release, "tacctl breakglass release "+h.Device)
+	}
+	lines = append(lines,
+		RollbackTarget+" has no such record: the device would stay unanswered until "+RollbackTarget+"'s first render and then be answered without anyone releasing it.",
+		"Release it first: "+strings.Join(release, "; ")+". Nothing was changed.")
+	return &RollbackRefusal{Lines: lines}
+}
 
 var reVersion = regexp.MustCompile(`^v?([0-9]+)\.([0-9]+)\.([0-9]+)$`)
 
@@ -219,6 +247,15 @@ func PlanRollback(in RollbackInput) (*RollbackPlan, error) {
 	// 1. tacctl.yaml
 	if prob := in.Conf.Problem(); prob != "" {
 		return nil, fmt.Errorf("%s cannot be read (%s); fix it first (tacctl config validate)", pa.Overrides, prob)
+	}
+	// A break-glass hold is refused, in the dry run and --apply alike: the
+	// release being left has the record (docs/plans/0.2.5-plan.md D122), and
+	// the older one does not, so a device held would stay unanswered until
+	// that release's first render and then be answered without anyone
+	// releasing it. The rollback would have to render and restart the
+	// backends to do better, which no rollback step does.
+	if holds := in.Conf.Holds(); len(holds) > 0 {
+		return nil, HeldRefusal(holds)
 	}
 	p.keys = in.Conf.RollbackKeys023()
 	p.Steps = append(p.Steps, p.confStep())

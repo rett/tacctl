@@ -156,6 +156,10 @@ var engineerRowCases = map[string]engineerRow{
 		refusedCase("does not exist", "scope secret prod set abcdefgh12345678ABCDEFGH"),
 		refusedCase("does not exist", "scope secret prod show"))},
 	"scope show": {cases: append(cases("scope show lab"), refusedCase("does not exist", "scope show prod"))},
+	// The break-glass holds (0.2.5, D125): an engineer lists the holds on the
+	// devices of their own scopes and changes nothing; hold and release
+	// have no Engineer row, the gate refuses them (breakglass_test.go).
+	"breakglass list": {cases: cases("breakglass list", "breakglass list --json")},
 	// The engineer reads the SNMP settings of the scopes of their own (the
 	// reveal is logged) and changes nothing: every setter, clear and test
 	// is refused, another scope does not exist.

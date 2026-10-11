@@ -49,6 +49,13 @@ func goldenVariants(f fixture) []struct {
 		s.Secrets = true
 		vs = append(vs, variant{"nosecrets.", o}, variant{"secrets.", s})
 	}
+	// A device held for break-glass (D124): the report names the hold and
+	// the cover page marks it.
+	if f.name == "juniper.synthetic-lab" || f.name == "cisco.reference-lab" {
+		o := f.options()
+		o.BreakglassHeld = &BreakglassHold{Since: "2026-10-10 14:02", By: "alice"}
+		vs = append(vs, variant{"held.", o})
+	}
 	return vs
 }
 

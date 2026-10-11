@@ -258,6 +258,9 @@ type Delta struct {
 	SecretKinds []string
 	// Scope is the scope's name for the sensitivity line, from Options.
 	Scope string
+	// BreakglassHeld is Options.BreakglassHeld: the device is held for
+	// break-glass.
+	BreakglassHeld *BreakglassHold
 	// Syntax is Options.Syntax (SyntaxIOS12 or SyntaxModern; empty on
 	// Junos).
 	Syntax string

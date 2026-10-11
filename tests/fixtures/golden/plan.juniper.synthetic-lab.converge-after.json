@@ -93,6 +93,9 @@
     "# If any line printed \"error:\", do not type commit: the switch undoes the cleanup by itself in 5",
     "# minutes. To undo it after the commit: show system commit, then rollback \u003cn\u003e of the entry just",
     "# before the one commented \"tacctl cleanup dev-juniper-synthetic-lab\", then commit. A removed",
-    "# server's secret is not held by tacctl: type it again."
+    "# server's secret is not held by tacctl: type it again.",
+    "# Locked out (the paste cut your session and no login works)? A superuser runs: tacctl breakglass hold dev-juniper-synthetic-lab --reason \"...\"",
+    "# then log in as the device's local user (ssh or console),",
+    "# fix or back out, and the superuser runs: tacctl breakglass release dev-juniper-synthetic-lab"
   ]
 }

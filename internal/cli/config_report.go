@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/rett/tacctl/internal/backend"
+	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/model"
 	"github.com/rett/tacctl/internal/policy"
@@ -378,6 +379,22 @@ func (inv *invocation) configValidate([]string) error {
 				word = "scopes"
 			}
 			inv.echoE("  " + Y + "Break-glass:" + NC + "          " + word + " " + quoteJoin(bare) + " without a break-glass local user — a lockout risk with the server unreachable (tacctl scope breakglass <scope> add <name>)")
+		}
+	}
+
+	// Break-glass holds: a warning per hold while it stands, red when its
+	// device is not registered any more (the record still silences the
+	// address; 'breakglass release' removes it).
+	if hs := inv.holdSeenBy(); len(hs) > 0 {
+		f, _ := devreg.Load(a.Paths.DevicesFile)
+		now := a.Knobs.Now()
+		for _, h := range hs {
+			if f != nil && f.Find(h.Device) == nil {
+				inv.echoE("  " + R + "Break-glass hold:" + NC + "    " + h.Device + " is not a registered device; the record still silences " + h.Address + " (tacctl breakglass release " + h.Device + ")")
+				continue
+			}
+			inv.echoE("  " + Y + "Break-glass hold:" + NC + "    " + h.Device + " (" + h.Address + ") held since " + holdTime(h) + " by " + h.By +
+				" (" + holdAge(h, now) + "): the server does not answer it (tacctl breakglass release " + h.Device + ")")
 		}
 	}
 

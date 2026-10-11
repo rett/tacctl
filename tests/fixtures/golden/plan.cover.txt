@@ -1,11 +1,13 @@
-# tacctl device config plan: 14 devices
+# tacctl device config plan: 16 devices
 #   dev-juniper-synthetic-lab           needs change: 1 irregularity fixed by the paste, 3 left (1 ACCESS, 2 MONITORING), 3 extras
+#   dev-juniper-synthetic-lab           needs change: 1 irregularity fixed by the paste, 3 left (1 ACCESS, 2 MONITORING), 3 extras [break-glass held]
 #   dev-juniper-synthetic-lab-engineer  NOT consistent, nothing to paste: 5 irregularities left (2 ACCESS, 2 MONITORING, 1 COSMETIC)
 #   dev-juniper-synthetic-lab-nolo0     needs change: 1 irregularity fixed by the paste, 3 left (1 ACCESS, 2 MONITORING), 3 extras
 #   dev-juniper-synthetic-inherit       needs change: 14 irregularities fixed by the paste
 #   dev-juniper-lab-superuser           needs change: 10 irregularities fixed by the paste, 2 left (1 ACCESS, 1 MONITORING), 3 extras
 #   dev-juniper-lab-engineer            needs change: 1 irregularity fixed by the paste, 14 left (4 ACCESS, 4 MONITORING, 6 COSMETIC)
 #   dev-cisco-reference-lab             needs change: 4 irregularities fixed by the paste, 3 left (3 MONITORING), 3 extras
+#   dev-cisco-reference-lab             needs change: 4 irregularities fixed by the paste, 3 left (3 MONITORING), 3 extras [break-glass held]
 #   dev-cisco-reference-12x             consistent
 #   dev-cisco-real-12-4-7200            needs change: 4 irregularities fixed by the paste
 #   dev-cisco-reference-bare            needs change: 18 irregularities fixed by the paste, 2 left (2 ACCESS)
@@ -13,4 +15,4 @@
 #   dev-cisco-same-address-block        needs change: 8 irregularities fixed by the paste, 3 left (3 MONITORING), 3 extras
 #   dev-cisco-same-address-block-nocmd  needs change: 9 irregularities fixed by the paste, 3 left (3 MONITORING), 3 extras
 #   dev-not-pulled                      cannot be planned: not pulled
-# 1 consistent, 11 need a change, 1 not consistent with nothing to paste, 1 cannot be planned
+# 1 consistent, 13 need a change, 1 not consistent with nothing to paste, 1 cannot be planned

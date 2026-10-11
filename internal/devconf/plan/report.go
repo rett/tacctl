@@ -669,6 +669,9 @@ func Report(d Delta, h Header, w Wrapper) string {
 	if s := sensitivityLine(d, h); s != "" {
 		add(s)
 	}
+	if hold := d.BreakglassHeld; hold != nil {
+		add("BREAK-GLASS HELD on this device since " + hold.Since + " by " + hold.By + ": the server does not answer it, so the check below (\"a NEW ssh session as yourself\") cannot pass until it is released: tacctl breakglass release " + h.Device)
+	}
 	blank()
 
 	fixed := 0
@@ -978,11 +981,14 @@ type DeviceStatus struct {
 	// Reason is why a device cannot be planned (not pulled, a stale pull,
 	// refused, a failed read).
 	Reason string `json:"reason,omitempty"`
+	// BreakglassHeld marks a device the server was told not to answer.
+	BreakglassHeld bool `json:"breakglass_held,omitempty"`
 }
 
 // StatusFor is the cover line of a planned device.
 func StatusFor(d Delta, h Header) DeviceStatus {
-	s := DeviceStatus{Device: h.Device, Scope: h.Scope, Vendor: h.Vendor, Address: h.Address, State: statusOf(d), Extras: len(d.Extras)}
+	s := DeviceStatus{Device: h.Device, Scope: h.Scope, Vendor: h.Vendor, Address: h.Address, State: statusOf(d), Extras: len(d.Extras),
+		BreakglassHeld: d.BreakglassHeld != nil}
 	for _, it := range d.Items {
 		if it.Fixed || it.removedByCleanup() {
 			s.Fixes++
@@ -1036,6 +1042,9 @@ func Cover(ds []DeviceStatus) string {
 		default:
 			cannot++
 			what = "cannot be planned: " + s.Reason
+		}
+		if s.BreakglassHeld {
+			what += " [break-glass held]"
 		}
 		fmt.Fprintf(&b, "#   %-*s  %s\n", width, s.Device, what)
 	}

@@ -382,6 +382,10 @@ var manKeyDocs = map[string]struct{ verb, desc string }{
 	"wti_level.<group>":                    {setWith("group edit", "group add"), "The WTI access level of the group, in place of the one its priv-lvl band gives."},
 	"tier.<group>":                         {setWith("group edit", "group add"), "The tacctl tier of the group, in place of the one its priv-lvl band gives."},
 	"breakglass_scope.<scope>.users":       {setWith("scope breakglass"), "The break-glass local users the scope's device configurations create. Only the names and roles are kept; no credential is stored."},
+	"breakglass_hold.<device>.address":     {setWith("breakglass hold"), "The address the server does not answer while the hold stands; a device name's dots are written ~ in the key. The renderers take it out of every prefix and tagged address."},
+	"breakglass_hold.<device>.since":       {setWith("breakglass hold"), "When the hold was made (RFC 3339)."},
+	"breakglass_hold.<device>.by":          {setWith("breakglass hold"), "The user who held it."},
+	"breakglass_hold.<device>.reason":      {setWith("breakglass hold"), "Why, 1 to 256 characters; logged and shown, never rendered into a backend file. Removed with the hold by tacctl breakglass release."},
 	"snmp_scope.<scope>.version":           {setWith("scope snmp"), "The scope's SNMP version; unset: snmp.version."},
 	"snmp_scope.<scope>.port":              {setWith("scope snmp"), "The scope's agent port; unset: snmp.port."},
 	"snmp_scope.<scope>.timeout":           {setWith("scope snmp"), "The scope's timeout in seconds; unset: snmp.timeout."},
@@ -444,6 +448,12 @@ func manTypeText(r conf.Rule) string {
 		return "non-empty list of absolute command paths"
 	case conf.TypeBreakGlassList:
 		return "list of name:role entries, role one of " + strings.Join(conf.BreakGlassRoles, ", ") + ", at most " + strconv.Itoa(conf.MaxBreakGlassUsers)
+	case conf.TypeHoldAddress:
+		return "one IPv4 or IPv6 address, in its canonical form, without a prefix length"
+	case conf.TypeHoldSince:
+		return "RFC 3339 time"
+	case conf.TypeHoldText:
+		return "text of 1 to " + strconv.Itoa(conf.MaxHoldReason) + " characters (a user name for by)"
 	case conf.TypeSNMPClients:
 		return "list of IPv4 CIDRs"
 	case conf.TypeSNMPText:
@@ -527,6 +537,8 @@ func manConfigKeyRows(t *testing.T) []manKeyRow {
 		}
 		ph := manPlaceholders[f.Prefix]
 		switch {
+		case f.Rule.Tail != "" && f.Prefix == "breakglass_hold.":
+			add(f.Prefix+"<device>."+f.Rule.Tail, f.Rule, def)
 		case f.Rule.Tail != "":
 			add(f.Prefix+"<scope>."+f.Rule.Tail, f.Rule, def)
 		case f.Prefix == "junos.":

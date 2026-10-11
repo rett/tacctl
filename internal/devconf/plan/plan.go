@@ -60,6 +60,18 @@ type Options struct {
 	// of the extras the plan leaves, in a second region of their own
 	// (Delta.Cleanup). The plan's own region is the same with or without it.
 	Converge bool
+	// BreakglassHeld, when not nil, says the server has been told not to
+	// answer this device ('tacctl breakglass hold', D124): the report names
+	// it before its items, since the check below cannot pass while it
+	// stands, and the cover page marks the device. A pure input: the planner
+	// never reads the record itself.
+	BreakglassHeld *BreakglassHold
+}
+
+// BreakglassHold is what a plan says of a hold: when it was made, as the
+// caller shows times, and by whom.
+type BreakglassHold struct {
+	Since, By string
 }
 
 // The configuration syntaxes of a Cisco plan (Options.Syntax).
@@ -163,7 +175,7 @@ func Plan(vendor string, expected []devices.Section, current, plain devconf.Extr
 		byName[r.Name] = r
 	}
 
-	d := Delta{Vendor: fam, Scope: opt.Scope, InheritanceChecked: len(plain.Sections) > 0}
+	d := Delta{Vendor: fam, Scope: opt.Scope, InheritanceChecked: len(plain.Sections) > 0, BreakglassHeld: opt.BreakglassHeld}
 	if fam == devconf.FamilyIOS {
 		d.Syntax = opt.Syntax
 	}

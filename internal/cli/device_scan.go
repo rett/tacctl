@@ -46,7 +46,13 @@ func deviceSeenCols(inv *invocation, res *devreg.Resolver, e devreg.Entry) (last
 		case backend.SightBadSecret:
 			last += " (bad secret)"
 		case backend.SightNoScope:
-			last += " (no scope)"
+			// A device the server was told not to answer is refused on
+			// purpose.
+			if _, held := inv.holdAt(e.Address); held {
+				last += " (break-glass held)"
+			} else {
+				last += " (no scope)"
+			}
 		}
 	}
 	days := res.File.StaleDays
@@ -489,6 +495,7 @@ func (inv *invocation) deviceCheck(args []string) error {
 		}
 		if p.Has("--json") {
 			cj := checkJSONOf(res, e, reach[i], rows, sys[i])
+			cj.Breakglass = inv.deviceHoldOf(e)
 			if e.Source == devreg.SourceDevice {
 				if info, err := inv.deviceSNMPInfoOf(e); err == nil {
 					cj.SNMP = info.json()
@@ -536,6 +543,8 @@ type deviceCheckJSON struct {
 	// SNMP is what the name and the location were read with and where each
 	// value comes from (D72); never a secret.
 	SNMP *deviceSNMPJSON `json:"snmp,omitempty"`
+	// Breakglass is the hold on the device while there is one.
+	Breakglass *deviceHoldJSON `json:"breakglass,omitempty"`
 }
 
 func checkJSONOf(res *devreg.Resolver, e devreg.Entry, reach string, rows []checkRow, sys checkSysName) deviceCheckJSON {
@@ -652,6 +661,10 @@ func (inv *invocation) checkRows(res *devreg.Resolver, e devreg.Entry, reach str
 		row("Scope", e.Scope+"  (via prefix "+e.Prefix+")")
 	default:
 		row("Scope", "none: no scope's prefixes cover "+e.Address+" ('tacctl scope prefixes <scope> add <cidr>')")
+	}
+	if h := inv.deviceHoldOf(e); h != nil {
+		hold, _ := inv.holdOf(e.Name)
+		rows[len(rows)-1].value += "; " + ui.Red + "NOT ANSWERED: break-glass " + inv.holdRowText(hold) + ui.NC
 	}
 	if e.Source == devreg.SourceDevice {
 		row("Vendor tag", dash(e.Tag))

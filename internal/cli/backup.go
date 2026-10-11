@@ -478,6 +478,14 @@ func (inv *invocation) restoreSnapshot(id string) error {
 	inv.echo("")
 	inv.echo("  Restoring snapshot: " + id)
 	inv.diffSnapshot(id)
+	// A restore is a render like any other: the break-glass holds come back
+	// with a tacctl.yaml that has them and go with one that lacks them
+	// (D126), so a change of the set is said before the question.
+	holdNote := inv.restoreHoldNote(dir)
+	if holdNote != "" {
+		inv.echo("")
+		inv.echoE(ui.Red + holdNote + ui.NC)
+	}
 	inv.echo("")
 	if !inv.confirmRestore() {
 		return nil
@@ -524,9 +532,38 @@ func (inv *invocation) restoreSnapshot(id string) error {
 		return err
 	}
 	a.Out.InfoE("Restored snapshot " + id + ".")
+	if holdNote != "" {
+		a.Out.WarnE(holdNote)
+	}
 	inv.echo("")
 	inv.warnServerSync("Users whose tier is lower now keep their old groups")
 	return nil
+}
+
+// restoreHoldNote says how the set of break-glass holds changes when the
+// snapshot in dir is restored ("" when it does not): the devices held now
+// and the ones held after.
+func (inv *invocation) restoreHoldNote(dir string) string {
+	now := inv.holds()
+	after := conf.Load(filepath.Join(dir, "tacctl.yaml"), inv.app.Backends().IDs()).Holds()
+	same := len(now) == len(after)
+	for i := 0; same && i < len(now); i++ {
+		same = now[i].Device == after[i].Device && now[i].Address == after[i].Address
+	}
+	if same {
+		return ""
+	}
+	list := func(hs []conf.Hold) string {
+		if len(hs) == 0 {
+			return "none"
+		}
+		parts := make([]string, len(hs))
+		for i, h := range hs {
+			parts[i] = h.Device + " (" + h.Address + ")"
+		}
+		return strings.Join(parts, ", ")
+	}
+	return "Break-glass holds change: held now: " + list(now) + "; held after the restore: " + list(after) + " (tacctl breakglass list)."
 }
 
 // restoreSNMP puts the SNMP credentials of snapshot directory dir back:

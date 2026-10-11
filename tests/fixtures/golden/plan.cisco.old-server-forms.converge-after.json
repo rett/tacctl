@@ -282,7 +282,10 @@
     "! Same check, then type this one command yourself:  write memory",
     "! Nothing rolls the cleanup back by itself; until write memory is typed a reload brings back the",
     "! saved configuration. A removed server entry takes its key with it: tacctl holds no key it",
-    "! removes, so to put one back you type it again."
+    "! removes, so to put one back you type it again.",
+    "! Locked out (the paste cut your session and no login works)? A superuser runs: tacctl breakglass hold dev-cisco-old-server-forms --reason \"...\"",
+    "! then log in as the device's local account (console: local login, then 'enable' with the local secret),",
+    "! fix or back out, and the superuser runs: tacctl breakglass release dev-cisco-old-server-forms"
   ],
   "cleanup_left": [
     {

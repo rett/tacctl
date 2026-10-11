@@ -495,7 +495,14 @@ func (r *Renderer) matchesStore(path string) bool {
 	if err != nil {
 		return false
 	}
-	return MatchesModel(path, model.FromStore(st), r.Load)
+	m := model.FromStore(st)
+	if r.Conf != nil {
+		// A hold carves its address out of the rendering, so a file that
+		// says what the store says with those addresses taken out is the
+		// one tacctl would have written.
+		m = Carved(m, r.Conf.Merged())
+	}
+	return MatchesModel(path, m, r.Load)
 }
 
 // Check is tacacs_render_check (units false) and the units form of

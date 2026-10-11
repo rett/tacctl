@@ -32,6 +32,7 @@ Commands:
   scope <subcommand>                    Scope management (named CIDR + shared-secret bundles)
   host <subcommand>                     Linux hosts: enroll, sync, unenroll TACACS+ or RADIUS login over SSH
   device <subcommand>                   Device registry: list, add, scan, discover, check, host keys (ssh-config)
+  breakglass <subcommand>               Break-glass hold: make the server stop answering one device (hold, release, list)
   ssh <name|address> [-p <port>]        Open an ssh session to a registered device or enrolled host, as you
       -p <port>                         Connect to this port instead of the registered one
   shell [--idle <min>] [-c <line>]      An interactive tacctl prompt with history and completion
@@ -303,7 +304,7 @@ Usage:
   tacctl scope auth-method <scope> [tacacs|radius|clear]   Protocol this scope's device configs and host enrollments use when the command names none
   tacctl scope mgmt-acl <scope> list|add|remove|clear      Per-scope permit list (fallback: global mgmt_acl.permits)
   tacctl scope mgmt-acl <scope> cisco-name|juniper-name [name]  Per-scope ACL / filter name (defaults VTY-ACL / MGMT-ACL)
-  tacctl scope breakglass <scope> list|add <name>|remove <name>  Per-scope break-glass local users in the device walkthroughs (names and roles only; no credential is stored)
+  tacctl scope breakglass <scope> list|add <name>|remove <name>  Per-scope break-glass local users in the device walkthroughs (names and roles only; no credential is stored): the accounts 'tacctl breakglass hold' makes usable
       --role <role>                                        (add) admin (default), operator or readonly
   tacctl scope snmp <scope> show|version|community|v3-user|clients|contact|port|timeout|clear|test
                                                            SNMP of a scope: credentials, allowed clients, contact (default beneath: tacctl config snmp)

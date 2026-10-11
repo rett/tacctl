@@ -23,6 +23,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/devconf"
 	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/shellquote"
@@ -675,6 +676,37 @@ type deviceJSON struct {
 	// SNMP is what the device is read with and where each value comes from
 	// (D72); 'show' only, never a secret.
 	SNMP *deviceSNMPJSON `json:"snmp,omitempty"`
+	// Breakglass is the hold on the device ('tacctl breakglass'): present
+	// while the server is told not to answer its address.
+	Breakglass *deviceHoldJSON `json:"breakglass,omitempty"`
+}
+
+// deviceHoldJSON is the break-glass hold of a device as the displays give it.
+type deviceHoldJSON struct {
+	Held    bool   `json:"held"`
+	Address string `json:"address"`
+	Since   string `json:"since"`
+	By      string `json:"by"`
+	Reason  string `json:"reason"`
+}
+
+// deviceHoldOf is the hold of a registered device as JSON (nil when none).
+func (inv *invocation) deviceHoldOf(e devreg.Entry) *deviceHoldJSON {
+	if e.Source != devreg.SourceDevice {
+		return nil
+	}
+	h, ok := inv.holdOf(e.Name)
+	if !ok {
+		return nil
+	}
+	return &deviceHoldJSON{Held: true, Address: h.Address, Since: h.Since, By: h.By, Reason: h.Reason}
+}
+
+// holdRowText is the Break-glass row of 'device show' and the Scope row's
+// note of 'device check'.
+func (inv *invocation) holdRowText(h conf.Hold) string {
+	return "HELD since " + holdTime(h) + " (" + holdAge(h, inv.app.Knobs.Now()) + ") by " + h.By + ": " + h.Reason +
+		"; the server does not answer " + h.Address
 }
 
 // deviceSeenJSON is what the seen cache knows of an entry's address.
@@ -700,6 +732,7 @@ func deviceJSONOf(inv *invocation, res *devreg.Resolver, e devreg.Entry, recs *d
 		j.Notices = append(j.Notices, deviceNoticeJSON{Kind: n.Kind, Text: n.Text, Acked: n.Acked})
 	}
 	j.Seen = deviceSeenJSONOf(inv, res, e)
+	j.Breakglass = inv.deviceHoldOf(e)
 	if e.Source == devreg.SourceDevice && (e.Vendor == "cisco" || e.ConfigSyntax != "") {
 		j.ConfigSyntax = devreg.SyntaxAuto
 		if e.ConfigSyntax != "" {
@@ -816,12 +849,24 @@ func (inv *invocation) deviceList(args []string) error {
 		reach = inv.probeEntries(shown)
 	}
 	tb := ui.NewTable(head, cols...)
-	open := 0
+	open, held := 0, 0
 	for i, e := range shown {
 		last, by, via, stale := deviceSeenCols(inv, res, e)
-		state := e.State()
+		var state any = e.State()
 		if stale {
-			state += " stale"
+			state = e.State() + " stale"
+		}
+		// A device the server has been told not to answer is marked, in
+		// place of what the scopes would say of it.
+		if e.Source == devreg.SourceDevice {
+			if _, isHeld := inv.holdOf(e.Name); isHeld {
+				held++
+				text := "BREAK-GLASS"
+				if stale {
+					text += " stale"
+				}
+				state = ui.Styled(ui.Red, text)
+			}
 		}
 		ns := res.NoticesFor(e)
 		open += len(devreg.Open(ns))
@@ -843,6 +888,9 @@ func (inv *invocation) deviceList(args []string) error {
 	}
 	if open > 0 {
 		inv.echo(fmt.Sprintf("  %d open notice(s): tacctl device notices", open))
+	}
+	if held > 0 {
+		inv.echoE(fmt.Sprintf("  %s%d device(s) held for break-glass%s: tacctl breakglass list", ui.Red, held, ui.NC))
 	}
 	inv.echo("")
 	return nil
@@ -917,6 +965,10 @@ func (inv *invocation) deviceShow(args []string) error {
 		row("Shadowed", "also covered by "+strings.Join(e.Shadowed, ", ")+" (the more specific prefix wins)")
 	}
 	row("State", e.State())
+	if h := inv.deviceHoldOf(e); h != nil {
+		hold, _ := inv.holdOf(e.Name)
+		row("Break-glass", ui.Red+inv.holdRowText(hold)+ui.NC)
+	}
 	if e.Source == devreg.SourceDevice {
 		switch {
 		case e.Tag != "":
@@ -1191,6 +1243,17 @@ func (inv *invocation) deviceRemove(args []string) error {
 			}
 		}
 	}
+	// A record without its device would silence an address nobody can find.
+	var heldTargets, rel []string
+	for _, n := range targets {
+		if _, held := inv.holdOf(n); held {
+			heldTargets = append(heldTargets, n)
+			rel = append(rel, "tacctl breakglass release "+n)
+		}
+	}
+	if len(heldTargets) > 0 {
+		return inv.usageErr("break-glass is held on " + strings.Join(heldTargets, ", ") + ": release it first (" + strings.Join(rel, "; ") + "). Nothing was changed.")
+	}
 	a := inv.app
 	a.Out.Warn(fmt.Sprintf("About to remove %d device(s) from the registry: %s.", len(targets), strings.Join(targets, ", ")))
 	a.Out.Warn("Enrolled hosts, scopes and vendor tags are not touched.")
@@ -1253,6 +1316,7 @@ func (inv *invocation) deviceRename(args []string) error {
 	}
 	inv.configCarry(oldName, newName)
 	inv.snmpDeviceCarry(oldName, newName)
+	inv.holdCarry(oldName, newName)
 	inv.app.Out.Info("Device '" + oldName + "' renamed to '" + newName + "'.")
 	inv.echo("")
 	return nil
@@ -1291,6 +1355,13 @@ func (inv *invocation) deviceSetter(field string) func([]string) error {
 			return err
 		}
 		name := d.Name
+		// The hold is on the address the server sees: moving the device
+		// would leave the old address silenced and the new one answered.
+		if field == "address" {
+			if _, held := inv.holdOf(name); held {
+				return inv.usageErr("break-glass is held on " + name + ": release it first (tacctl breakglass release " + name + "). Nothing was changed.")
+			}
+		}
 		value := strings.Join(p.Args[1:], " ")
 		if field != "description" && field != "location" && len(p.Args) > 2 {
 			return inv.usageErr("Usage: tacctl device " + field + " <name> [<value>|clear]")
@@ -1622,9 +1693,20 @@ func (inv *invocation) deviceImport(args []string) error {
 			hostEntries = append(hostEntries, e)
 		}
 	}
-	plan, err := f.Clone().Import(rows, p.Has("--replace"), p.Has("--allow-generic"), hostEntries)
+	trial := f.Clone()
+	plan, err := trial.Import(rows, p.Has("--replace"), p.Has("--allow-generic"), hostEntries)
 	if err != nil {
 		return err
+	}
+	// An import that removes a held device or moves it to another address
+	// is refused, as 'remove' and 'address' are.
+	for _, h := range inv.holds() {
+		if f.Find(h.Device) == nil {
+			continue
+		}
+		if d := trial.Find(h.Device); d == nil || d.Address != h.Address {
+			return inv.usageErr("break-glass is held on " + h.Device + ": release it first (tacctl breakglass release " + h.Device + "). Nothing was changed.")
+		}
 	}
 	a := inv.app
 	summary := fmt.Sprintf("%d added, %d updated, %d unchanged, %d removed.", len(plan.Added), len(plan.Updated), len(plan.Unchanged), len(plan.Removed))

@@ -117,6 +117,7 @@ func junosBackoutAfter(d Delta, h Header, w Wrapper) string {
 	b.WriteString("#\n")
 	c("A value that tacctl does not hold (an original secret) is a line marked with # inside the region: put it back by hand.")
 	c("Do not: type commit before the check; paste anything outside the banners; paste this into another device; use configure exclusive; keep this output in a file after the paste when it holds a secret.")
+	b.WriteString(lockoutHelp(d, h))
 	return b.String()
 }
 
@@ -157,6 +158,7 @@ func junosAfter(d Delta, h Header, w Wrapper) string {
 		c("To undo it after the commit: show system commit, then rollback <n> of the entry just before the one commented \"tacctl plan " + commentSafe(h.Device) + "\" (the newest entry is that commit itself), then commit. tacctl has no lines of its own to undo this plan.")
 	}
 	c("Do not: type commit before the check; paste anything outside the banners; paste this into another device; use configure exclusive; keep this output in a file after the paste when it holds a secret.")
+	b.WriteString(lockoutHelp(d, h))
 	return b.String()
 }
 

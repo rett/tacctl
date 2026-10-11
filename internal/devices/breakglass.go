@@ -161,6 +161,8 @@ func ciscoBreakGlass(in BreakGlassInput) string {
 		}
 		b.WriteString("! username " + u.Name + " privilege " + strconv.Itoa(in.Privilege[u.Role]) + " " + secret + hash + "\n")
 	}
+	// The way to use them with the server up (D124): the superuser's hold.
+	b.WriteString("! To use these accounts while the server is up: tacctl breakglass hold <device> --reason \"...\" (a superuser); release when done\n")
 	return strings.TrimSuffix(b.String(), "\n")
 }
 

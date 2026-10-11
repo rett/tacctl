@@ -85,10 +85,13 @@ func (inv *invocation) configLogin(what string) (string, error) {
 // skippedDevices counts what a selection left out, by reason.
 type skippedDevices struct {
 	noScope, other, wti, notYours []string
+	// held are the devices a break-glass hold stands on: the server does
+	// not answer them, so no login of the caller is accepted there (D126).
+	held []string
 }
 
 func (s skippedDevices) any() bool {
-	return len(s.noScope)+len(s.other)+len(s.wti)+len(s.notYours) > 0
+	return len(s.noScope)+len(s.other)+len(s.wti)+len(s.notYours)+len(s.held) > 0
 }
 
 // linesFor are the notes about what was left out, with the names, for a
@@ -115,6 +118,9 @@ func (s skippedDevices) linesFor(verb string) []string {
 		add(s.wti, "WTI units are not read in this release (name one to see it recorded as unsupported)")
 	}
 	add(s.notYours, "in a scope you are not a member of: the device login is your own account")
+	for _, n := range s.held {
+		out = append(out, "skipped "+n+": "+holdRefusal(n))
+	}
 	return out
 }
 
@@ -160,9 +166,15 @@ func (inv *invocation) nothingSelected(c *chosenDevices, asJSON, diff bool) erro
 	return nil
 }
 
+// holdRefusal is why a device on which break-glass is held is not logged in
+// to: the one line of D126.
+func holdRefusal(name string) string {
+	return "break-glass is held on " + name + ": the device does not authenticate your login until it is released (tacctl breakglass release " + name + ")"
+}
+
 func (s skippedDevices) jsonMap() map[string][]string {
 	m := map[string][]string{}
-	for k, v := range map[string][]string{"no_scope": s.noScope, "vendor_other": s.other, "wti": s.wti, "not_your_scope": s.notYours} {
+	for k, v := range map[string][]string{"no_scope": s.noScope, "vendor_other": s.other, "wti": s.wti, "not_your_scope": s.notYours, "break_glass_held": s.held} {
 		if len(v) > 0 {
 			m[k] = v
 		}
@@ -224,6 +236,12 @@ func (inv *invocation) chooseDevices(sel selection, user string, login bool, ver
 				inv.app.Logger(inv.ctx, "auth.warning", "device config "+verb+" DENY user="+user+" device="+e.Name+" scope="+dash(e.Scope)+" reason=scope")
 				return nil, inv.usageErr(msg + " (device " + e.Name + ")")
 			}
+			// A held device does not accept the login; refused before any
+			// device is dialled, as a batch would stop on an authentication
+			// failure.
+			if _, held := inv.holdOf(e.Name); login && held {
+				return nil, inv.usageErr(holdRefusal(e.Name))
+			}
 			out.entries = append(out.entries, e)
 		}
 		out.render.prepare(out.entries)
@@ -257,6 +275,8 @@ func (inv *invocation) chooseDevices(sel selection, user string, login bool, ver
 			out.skipped.wti = append(out.skipped.wti, e.Name)
 		case login && loginProblem(m, user, e.Scope) != "":
 			out.skipped.notYours = append(out.skipped.notYours, e.Name)
+		case login && inv.isHeld(e.Name):
+			out.skipped.held = append(out.skipped.held, e.Name)
 		default:
 			out.entries = append(out.entries, e)
 		}

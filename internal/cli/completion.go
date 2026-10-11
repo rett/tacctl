@@ -343,7 +343,7 @@ func (inv *invocation) kindWords(kind string, values map[string]string) []string
 			}
 		}
 		return out
-	case KindUsers, KindGroups, KindScopes, KindHosts, KindDevices, KindBackups, KindBackends, KindEnabledBackends:
+	case KindUsers, KindGroups, KindScopes, KindHosts, KindDevices, KindBackups, KindBackends, KindEnabledBackends, KindHeld:
 		return inv.liveNames(inv.ctx, kind)
 	case KindBreakGlass:
 		return inv.liveNames(inv.ctx, kind, values["@scope"])

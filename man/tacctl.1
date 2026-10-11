@@ -3340,7 +3340,9 @@ and the local enable secret
 .B "enable secret <PASSWORD>"
 with
 .BR --legacy ),
-then the scope's break-glass accounts; it is site policy, tacctl keeps no value
+then the scope's break-glass accounts and one commented line that names
+.B "tacctl breakglass hold"
+as the way to use them while the server is up; it is site policy, tacctl keeps no value
 for it and compares none of it. Step 1 is the AAA standard in the order that
 keeps the pasting session alive:
 .B "aaa new-model"
@@ -5192,7 +5194,9 @@ notice, and
 warns, on one line naming the scopes (it is a warning, not an error), that they are a lockout risk;
 .B "scope show"
 says which scope has none. The credential on the device is never created,
-rotated or removed by tacctl.
+rotated or removed by tacctl. These are the accounts a
+.B "breakglass hold"
+makes usable while the server is up.
 .\" BEGIN GENERATED: command scope breakglass
 .RS
 .PP
@@ -7453,6 +7457,148 @@ Forward a remote port, as ssh \-R (repeatable).
 Open a SOCKS proxy, as ssh \-D (repeatable).
 .RE
 .\" END GENERATED: command ssh
+.SS Break-glass hold \fB(tacctl breakglass)\fR
+A device's local accounts
+.RB ( "tacctl scope breakglass" )
+are usable only while no server answers it: a server's refusal is final, so on a
+vty a local login is refused while the server is up, and on the console a local
+user lands at privilege 1 and
+.B enable
+asks the server first. A
+.I hold
+makes the server stop answering one registered device on purpose, so that
+its local accounts can be used while the server is up. It is for one device, for
+an exceptional case; it has no timer and no automatic release, and no
+whole\-scope form.
+.PP
+The record is
+.B breakglass_hold.<device>.address|since|by|reason
+in
+.IR tacctl.yaml
+(a device name's dots are written
+.B ~
+in the key), so every snapshot holds it. Both renderers take the held address
+out of every prefix of every scope, and out of every tagged address (RADIUS), when
+they render: a /24 that holds it answers as the eight prefixes /25 to /32 that
+do not, a prefix equal to the address is gone, and every address that is not
+held is answered by the scope that answered it before.
+.I store.yaml
+is never changed.
+.B tacquito.yaml
+and
+.B clients.conf
+carry a comment that names the address, the device and the prefixes it was carved
+from, never the reason. One restart of each backend whose file changed, at
+the hold and at the release; a release that changes nothing restarts nothing.
+While a hold stands,
+.B "device address"
+and
+.B "device remove"
+of the device are refused,
+.B "device rename"
+moves the record,
+.BR "device config pull" ,
+.B "diff \-\-pull"
+and
+.B "plan \-\-pull"
+refuse the device (a batch skips it: it does not authenticate your login),
+.B "device config plan"
+of the last pull names the hold before its items and the cover page marks the
+device,
+.B "tacctl ssh"
+warns and connects, and
+.BR "tacctl rollback"
+is refused (the older release has no such record).
+.B "backup restore"
+is a render like any other: a hold comes back with a snapshot that has it and
+goes with one that lacks it, and the restore names the devices held now and
+after it when that set changes.
+.B status
+(a red line per hold),
+.BR "device show" ,
+.BR "device list" ,
+.BR "device check" ,
+.BR "device scan" ,
+.BR "scope routing" ,
+.BR "scope show" ,
+.BR "scope list" ,
+.B "scope lookup"
+and
+.B "config validate"
+say so for as long as it stands. Both verbs write an
+.B auth.info
+line (the reason is in the hold's:
+.BI "breakglass hold device=" name " addr=" ip " reason=\(dq" text "\(dq by=" user
+and
+.BI "breakglass release device=" name " addr=" ip " held=" duration " by=" user )
+and take the snapshot every change takes.
+.TP
+.BI "breakglass hold " device " \-\-reason " text
+Hold break\-glass on a registered device (not an enrolled host). The reason is
+required, 1 to 256 characters. At a terminal it asks for the device's name typed
+back (there is no
+.BR \-\-yes ;
+without a terminal the verb refuses) and prints one report: the record, what was
+rendered and which backends restarted, the way in for the device's vendor (Cisco:
+ssh as a local account, the local
+.B CONSOLE
+login and
+.B enable
+with the local secret; Junos: a local
+.BR "system login user" ;
+WTI: its Fallback Local), that the device's accounting goes to a server that
+does not answer it,
+.B "Held now:"
+(every hold that stands) and
+.BR "When done:" .
+Refused, with nothing changed, for a device that is not registered or is an
+enrolled host, has no address, is held already, is at a loopback address, an
+address a listener of either backend binds or the recorded address of an enrolled
+host (the server's own logins come from 127.0.0.1), or that no scope covers
+(it is unanswered already). Superuser only.
+.\" BEGIN GENERATED: command breakglass hold
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-reason\fR \fI<value>\fR
+(hold) Why, 1 to 256 characters; kept with the record and in the log.
+.RE
+.\" END GENERATED: command breakglass hold
+.TP
+.BI "breakglass release " device
+Make the server answer the device again. Works from the record alone, so a
+device removed from
+.I devices.yaml
+by hand is still released. The report names how long it was held, by whom and why,
+what was rendered, the check
+.RB ( "tacctl device config pull " device " \-\-diff" ,
+then a new ssh login as yourself) and the holds that remain. Superuser only.
+.\" BEGIN GENERATED: command breakglass release
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command breakglass release
+.TP
+.BR "breakglass list " [ \-\-json ]
+The holds that stand: device, address, scope that answers the address, since,
+how long, by whom and why (a record whose device is not registered, or whose
+address no scope covers, says so). An engineer sees the devices of their own
+scopes only.
+.\" BEGIN GENERATED: command breakglass list
+.RS
+.PP
+Requires: \fBengineer\fR. An engineer lists the holds of the devices of their own scopes only; hold and release need the superuser tier.
+.PP
+Options:
+.TP
+\fB\-\-json\fR
+(list) Print the holds as a JSON array.
+.RE
+.\" END GENERATED: command breakglass list
 .SS Login console \fB(tacctl console)\fR
 The login console
 .RB ( tacctl\-console )
@@ -8130,13 +8276,17 @@ device hostname, device vendor, device port, device description,
 device location, device legacy\-ssh, device config\-syntax,
 device hostkey, device import, scope devices, device config,
 config cisco, config juniper, config wti, host list, host show,
-scope staging, scope secret, scope snmp, device snmp, scope show
+scope staging, scope secret, scope snmp, device snmp, scope show,
+breakglass list
 .TP
 .B superuser
 Every verb not listed above, and every verb of the tiers below.
 .PP
 The gate sees two words, so a verb that the code splits further is listed at its
 two\-word level and then limited by the code:
+.TP
+.B breakglass list
+An engineer lists the holds of the devices of their own scopes only; hold and release need the superuser tier.
 .TP
 .B config cisco
 An engineer may print the walkthrough and read source\-interface for a scope of their own; setting or unsetting source\-interface needs the superuser tier.
@@ -8864,6 +9014,22 @@ The sysContact the scope's walkthroughs set. Set with \fBtacctl scope snmp\fR.
 .B snmp_scope.<scope>.clients
 list of IPv4 CIDRs. Default: [].
 The SNMP clients the scope's walkthroughs allow (the server's own address first and a final deny are added when rendered, not stored). Set with \fBtacctl scope snmp\fR.
+.TP
+.B breakglass_hold.<device>.address
+one IPv4 or IPv6 address, in its canonical form, without a prefix length. Default: none (unset).
+The address the server does not answer while the hold stands; a device name's dots are written ~ in the key. The renderers take it out of every prefix and tagged address. Set with \fBtacctl breakglass hold\fR.
+.TP
+.B breakglass_hold.<device>.since
+RFC 3339 time. Default: none (unset).
+When the hold was made (RFC 3339). Set with \fBtacctl breakglass hold\fR.
+.TP
+.B breakglass_hold.<device>.by
+text of 1 to 256 characters (a user name for by). Default: none (unset).
+The user who held it. Set with \fBtacctl breakglass hold\fR.
+.TP
+.B breakglass_hold.<device>.reason
+text of 1 to 256 characters (a user name for by). Default: none (unset).
+Why, 1 to 256 characters; logged and shown, never rendered into a backend file. Removed with the hold by tacctl breakglass release. Set with \fBtacctl breakglass hold\fR.
 .\" END GENERATED: config-keys
 .SS console.yaml
 .I /etc/tacctl/console.yaml

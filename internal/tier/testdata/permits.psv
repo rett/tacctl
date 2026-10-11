@@ -102,6 +102,10 @@ backup|restore|0|0|0|1|1|0
 ssh||1|1|1|1|1|0
 ssh|core-sw1|1|1|1|1|1|0
 device||0|0|0|1|1|0
+breakglass||0|0|0|1|1|0
+breakglass|list|0|0|1|1|1|0
+breakglass|hold|0|0|0|1|1|0
+breakglass|release|0|0|0|1|1|0
 device|list|1|1|1|1|1|0
 device|show|1|1|1|1|1|0
 device|notices|1|1|1|1|1|0

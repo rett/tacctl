@@ -94,11 +94,18 @@ var Added024 = []Family{
 // Added025 are the key families 0.2.5 added: the source interface of the
 // Cisco devices of a scope ('tacctl config cisco source-interface') and the
 // minutes of the confirmed commit of 'device config plan'
-// (device.config.confirm_timeout). A 0.2.4 or older binary does not know
-// them, so a rollback removes them.
+// (device.config.confirm_timeout), and the record of a break-glass hold
+// ('tacctl breakglass hold': breakglass_hold.<device>.*). A 0.2.4 or older
+// binary does not know them, so a rollback removes them. A hold is the one
+// that is never left to the removal: a device held would stay unanswered
+// until the older release's first render and then be answered without
+// anyone releasing it, so a rollback is refused while one stands
+// (lifecycle.PlanRollback) and the family is removed here only when none
+// does.
 var Added025 = []Family{
 	{"cisco.source_interface.", true},
 	{"device.config.confirm_timeout", false},
+	{"breakglass_hold.", true},
 }
 
 // Added024Key reports whether path is a key 0.2.4 added.

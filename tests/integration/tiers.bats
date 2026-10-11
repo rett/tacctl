@@ -530,7 +530,7 @@ _upgrade() {
     [[ "$(cat "${TACCTL_STATE_DIR}/tacctl.yaml")" == "$before" ]]
     # The sudoers rules of no lower tier name it.
     run "$TACCTL_BIN_SCRIPT" config sudoers tiers show
-    refute_output --partial "breakglass"
+    refute_output --partial "scope breakglass"
     # The walkthroughs of their own scope carry the accounts (the lines are
     # comments with a placeholder).
     local v
@@ -541,6 +541,35 @@ _upgrade() {
         assert_output --regexp "<(HASH|TYPE9-HASH|PASSWORD)>"
         assert_output --partial "Unfilled break-glass credentials"
     done
+}
+
+@test "tier: breakglass hold and release are the superuser's; list is the engineer's, read-only" {
+    "$TACCTL_BIN_SCRIPT" user add en superuser --hash "$HASH" --scopes lab > /dev/null
+    printf 'tier:\n  superuser: engineer\n' >> "${TACCTL_STATE_DIR}/tacctl.yaml"
+    local before
+    before=$(cat "${TACCTL_STATE_DIR}/tacctl.yaml")
+    local who args
+    for who in ro op en; do
+        for args in 'breakglass hold sw --reason x' 'breakglass release sw'; do
+            as_user "$who" yes -- $args
+            assert_failure
+            assert_output --partial "'tacctl ${args%% sw*}' is not permitted for the "
+        done
+    done
+    for who in ro op; do
+        as_user "$who" yes -- breakglass list
+        assert_failure
+        assert_output --partial "'tacctl breakglass list' is not permitted for the "
+    done
+    as_user en yes -- breakglass list
+    assert_success
+    assert_output --partial "None held"
+    [[ "$(cat "${TACCTL_STATE_DIR}/tacctl.yaml")" == "$before" ]]
+    # Only the engineer's alias names it, and no lower tier's names hold or release.
+    run "$TACCTL_BIN_SCRIPT" config sudoers tiers show
+    assert_output --partial "/usr/local/bin/tacctl breakglass list, /usr/local/bin/tacctl breakglass list *"
+    refute_output --partial "breakglass hold"
+    refute_output --partial "breakglass release"
 }
 
 @test "tier: an engineer lists and shows the hosts of their own scopes and deploys none" {

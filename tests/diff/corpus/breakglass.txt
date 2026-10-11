@@ -1,0 +1,43 @@
+# tacctl breakglass ...: new in 0.2.5 (D121-D126). The tag the corpus runs
+# against has no such family and prints the top-level usage for the word. The
+# hold itself asks for the device name at a terminal and the corpus has none,
+# so the verbs are run for their refusals: the usage, the missing reason, the
+# unknown and unregistered device, and the empty list. The bats file
+# breakglass.bats and internal/cli/breakglass_test.go hold the rest.
+# Run: tests/diff/run.sh breakglass
+@fixture tacquito.multiscope.yaml
+
+@known 0.2.5 item 70: breakglass is new
+breakglass
+@known 0.2.5 item 70: breakglass is new
+breakglass help
+@known 0.2.5 item 70: breakglass is new
+breakglass bogus
+@known 0.2.5 item 70: breakglass is new
+breakglass list
+@known 0.2.5 item 70: breakglass is new
+breakglass list --json
+@known 0.2.5 item 70: breakglass is new
+breakglass list --bogus
+@known 0.2.5 item 70: breakglass is new
+breakglass hold
+@known 0.2.5 item 70: breakglass is new
+breakglass hold nosuch
+@known 0.2.5 item 70: breakglass is new
+breakglass hold nosuch --reason console recovery
+@known 0.2.5 item 70: breakglass is new
+breakglass hold nosuch --reason
+@known 0.2.5 item 70: breakglass is new
+breakglass release
+@known 0.2.5 item 70: breakglass is new
+breakglass release nosuch
+
+# a device that is registered and covered: no terminal to confirm on
+@known 0.2.5 item 70: breakglass is new
+device add lab-sw 192.168.1.1 --vendor cisco --no-host-key ;; breakglass hold lab-sw
+@known 0.2.5 item 70: breakglass is new
+device add lab-sw 192.168.1.1 --vendor cisco --no-host-key ;; breakglass hold lab-sw --reason console recovery
+@known 0.2.5 item 70: breakglass is new
+device add core-rtr 100.64.0.9 --vendor cisco --no-host-key ;; breakglass hold core-rtr --reason x
+@known 0.2.5 item 70: breakglass is new
+device add self 127.0.0.1 --no-host-key ;; breakglass hold self --reason x
