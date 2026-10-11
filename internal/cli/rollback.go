@@ -178,9 +178,9 @@ func (inv *invocation) rollbackNextSteps(version string) {
 	inv.echo("       tacctl upgrade --branch " + version)
 	inv.echo("  2. Check it: tacctl status; tacctl config validate")
 	inv.echo("")
-	inv.echo("Until the upgrade, do not run a command that writes the console's settings, a device's SNMP settings or the settings of 'device config pull':")
-	inv.echo("it writes the 0.2.4 form again. If one did, run 'tacctl rollback " + version + " --apply' again (it converts what is left).")
+	inv.echo("Until the upgrade, do not run a command that writes the console's settings, a device's SNMP settings or configuration syntax, a scope's Cisco source interface or the settings of 'device config pull':")
+	inv.echo("it writes the 0.2.5 form again. If one did, run 'tacctl rollback " + version + " --apply' again (it converts what is left).")
 	inv.echo("")
-	inv.echo("The snapshot taken first (the newest entry of 'tacctl backup list') holds the 0.2.4 state. Restore it with 0.2.4 only: 'tacctl backup restore <id>' of this release brings that")
+	inv.echo("The snapshot taken first (the newest entry of 'tacctl backup list') holds the 0.2.5 state. Restore it with 0.2.5 only: 'tacctl backup restore <id>' of this release brings that")
 	inv.echo("state back and loses what changed since; " + version + "'s restore refuses a tacctl.yaml with a key it does not know.")
 }

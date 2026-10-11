@@ -239,7 +239,7 @@ func TestRollbackDryRunWritesNothing(t *testing.T) {
 		"sw1: version v3, port 2161, timeout 4 s, 1 client range", "sw2: version v2c",
 		"device.config.max_concurrency=16, device.config.transport=ssh, device.config.timeout=120",
 		"The password cache's settings of console.yaml are removed",
-		"restore it with 0.2.4",
+		"restore it with 0.2.5",
 		"To convert the state: tacctl rollback 0.2.3 --apply --yes",
 	} {
 		if !strings.Contains(out, want) {
@@ -297,7 +297,7 @@ func TestRollbackRoundTrip(t *testing.T) {
 	for _, want := range []string{"Config snapshot saved to", "state/tacctl.yaml: removed 3 keys", "state/console.yaml: removed settings.password_cache",
 		"state/devices.yaml: removed the SNMP settings of 2 devices",
 		"sudoers.d/tacctl-tiers: rewritten with the text 0.2.3 writes", "sudoers.d/tacctl: rewritten with the text 0.2.3 writes",
-		"Next steps", "tacctl upgrade --branch 0.2.3", "holds the 0.2.4 state. Restore it with 0.2.4 only"} {
+		"Next steps", "tacctl upgrade --branch 0.2.3", "holds the 0.2.5 state. Restore it with 0.2.5 only"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("--apply output lacks %q:\n%s", want, out)
 		}

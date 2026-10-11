@@ -1,7 +1,7 @@
 !!!!! lab-c  192.168.1.30  scope lab  cisco (IOS 12.x syntax, TACACS+) !!!!!
 ! Based on the pull of <time> by alice over ssh (less than a minute ago; the login could see
-! secrets) and the standard of <time> (tacctl 0.2.0-test). Lab-tested on IOS 12.4(15) (a
-! 7200 emulator); other IOS trains and IOS-XE are written from the references.
+! secrets) and the standard of <time> (tacctl 0.2.0-test). Checked on a device: IOS 12.4(15)
+! (a 7200 emulator), IOS 15.6(2)T and IOS-XE 16.7.1; other trains are written from the references.
 ! THIS OUTPUT HOLDS THE TACACS+ KEY OF SCOPE lab: do not keep it in a file or a scrollback.
 !
 ! What is irregular on lab-c (1 item; the paste fixes 1, leaves 0):

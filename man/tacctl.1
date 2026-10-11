@@ -214,20 +214,28 @@ then the rollback of 0.2.3), and so is any other word.
 .B \-\-apply
 takes a snapshot first, then, in this order: removes from
 .I tacctl.yaml
-the keys 0.2.4 added
+the keys 0.2.5 added
 .RB ( device.config.max_concurrency ,
 .BR device.config.transport ,
-.BR device.config.timeout )
+.BR device.config.timeout ,
+.BR device.config.confirm_timeout ,
+.BR cisco.source_interface.<scope> ,
+.BR breakglass_hold.<device> )
 and any other key a 0.2.3 binary does not know; removes
 .B settings.password_cache
 from
 .I console.yaml
 and writes it the way 0.2.3 reads it (the cache is off again); removes the
 .B snmp
-map of every device from
+map and the
+.B config_syntax
+key of every device from
 .IR devices.yaml
-(the devices are then read with their scope's or the default's settings);
-and rewrites the sudoers drop-ins that are exactly the text 0.2.4 writes
+(the devices are then read with their scope's or the default's settings, and
+a
+.B legacy\-ssh
+Cisco device is compared as IOS 12.x again);
+and rewrites the sudoers drop-ins that are exactly the text 0.2.5 writes
 .RI ( /etc/sudoers.d/tacctl\-tiers
 and the one
 .B "config sudoers install"
@@ -239,7 +247,9 @@ alias and
 .B env_keep
 line and, in the per-tier file, the rows of
 .BR "device config" ,
-.B "device snmp"
+.BR "device snmp" ,
+.BR "device config\-syntax" ,
+.B "breakglass list"
 and
 .BR "console forget" .
 A drop-in that was edited, or that
@@ -259,12 +269,17 @@ and
 refuses without
 .B \-\-yes
 while any applies: the settings that are dropped (a device's own SNMP
-settings, the
+settings, a device's configuration syntax, a scope's Cisco source interface,
+the
 .B device.config
 values, the password cache's tiers and lifetimes; they stay in the snapshot,
-which only 0.2.4 restores).
+which only 0.2.5 restores). A break-glass hold that stands stops the
+rollback, the dry run too, and names each held device with the way to release
+it
+.RB ( "breakglass release" ):
+0.2.3 has no such record.
 .B \-\-hosts
-is accepted and does nothing: 0.2.4 changed nothing on the enrolled Linux
+is accepted and does nothing: 0.2.5 changed nothing on the enrolled Linux
 hosts. The command ends with the next step,
 .BR "tacctl upgrade \-\-branch 0.2.3" .
 A second
@@ -8821,17 +8836,22 @@ Going back to 0.2.3 is
 .B "tacctl rollback 0.2.3 \-\-apply \-\-yes"
 and
 .BR "tacctl upgrade \-\-branch 0.2.3" :
-0.2.4 wrote keys and fields a 0.2.3 binary refuses (the
+0.2.5 wrote keys and fields a 0.2.3 binary refuses (the
 .B device.config
 keys, the password cache's settings, a device's
 .B snmp
-map). The README's
+map and
+.B config_syntax
+key, a scope's
+.B cisco.source_interface
+key). The README's
 .I Rolling back
 describes each step. Until 0.2.3 is installed, a command that writes the console's
-settings, a device's SNMP settings or the
+settings, a device's SNMP settings or configuration syntax, a scope's Cisco
+source interface or the
 .B device.config
-keys writes the 0.2.4 form again; run the rollback again to convert it. The
-snapshot the rollback takes holds the 0.2.4 form and is restored with 0.2.4
+keys writes the 0.2.5 form again; run the rollback again to convert it. The
+snapshot the rollback takes holds the 0.2.5 form and is restored with 0.2.5
 (0.2.3's
 .B "backup restore"
 refuses a

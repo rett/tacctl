@@ -3,7 +3,12 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
-## 0.2.4 (unreleased)
+## 0.2.5 (unreleased)
+
+The items below are everything that differs from 0.2.3. Items 1 to 29 were
+drafted under the working name 0.2.4 (the diff corpus and a few comments in the
+code call them `0.2.4 item N`); items 30 and later were drafted as 0.2.5, and
+all of them ship together as this release. The numbers 62 to 69 are not used.
 
 ### What changed
 
@@ -118,8 +123,8 @@ current behaviour; this file is where history lives.
    tier's `device config show` refusal now names the verb too). The tiers
    sudoers drop-in grants the operator `device config list` and `console forget`
    and the engineer `device config show|pull|diff` and `device snmp *`, and
-   keeps `TACCTL_ASKPASS` for four command lines only: a `Cmnd_Alias` of `device
-   config pull|diff`, `ssh` and `device ssh` (named differently in the group
+   keeps `TACCTL_ASKPASS` for five command lines only: a `Cmnd_Alias` of `device
+   config pull|diff|plan`, `ssh` and `device ssh` (named differently in the group
    drop-in, since sudoers refuses an alias defined twice) with its own
    `env_keep` line, so the variable is in the environment of the sudo process
    and never on sudo's command line (argv is world-readable). The rules are
@@ -302,11 +307,11 @@ current behaviour; this file is where history lives.
     upgrade --branch 0.2.3`, then 0.2.3's own `rollback 0.2.2` (so the 0.2.2
     conversions, the tier marker, the SNMP credentials directory and the
     `--hosts` sync of the engineers' sudo are that release's tool). The snapshot
-    holds the 0.2.4 form: restore it with 0.2.4, not with 0.2.3. Rolling back,
+    holds the 0.2.5 form: restore it with 0.2.5, not with 0.2.3. Rolling back,
     then: dry run `tacctl rollback 0.2.3`, `tacctl rollback 0.2.3 --apply
     --yes`, `tacctl upgrade --branch 0.2.3`; until the install, a command that
     writes the console's settings, a device's SNMP settings or `config devices`
-    writes the 0.2.4 form again, and a second `--apply` converts it. (The real
+    writes the 0.2.5 form again, and a second `--apply` converts it. (The real
     0.2.3 release, built from its tag, is run against the state before and after
     in the test suite.)
 
@@ -495,7 +500,8 @@ current behaviour; this file is where history lives.
 
 28. **A Cisco device whose syntax is unknown is `pull`, not guessed either
     way.** Nothing in the registry is rewritten by the upgrade, and a record
-    made by 0.2.4 has no version line: a Cisco device whose setting is `auto`
+    made before item 27 (by a build that did not read the version line) has no
+    version line: a Cisco device whose setting is `auto`
     and whose last good pull recorded no syntax is `needs pull (syntax
     unknown)` in `device config list`, `pull` in its state column and in the
     CONFIG column of `device list`, and `--stale` selects it (so does `device
@@ -651,13 +657,13 @@ current behaviour; this file is where history lives.
     before AAA is turned on. Everything in it is comments: site policy, never
     compared, never part of the managed sections.
 
-36. **Moving from 0.2.4 to 0.2.5.** A Cisco device configured from an earlier
-    walkthrough reads as missing the lines of items 30 and 31 and, for its
-    console, as `login authentication default` where the standard has
-    `CONSOLE`; nothing is rewritten by the upgrade and a pull of the device
-    shows exactly that. A record pulled before the upgrade holds no `aaa
-    session-id common` in its `aaa` section (it was not read then), so it
-    shows as missing until the next pull. The break-glass step of the walkthrough is now Step 0 and says
+36. **A Cisco device configured from an earlier walkthrough.** It reads as
+    missing the lines of items 30 and 31 and, for its console, as `login
+    authentication default` where the standard has `CONSOLE`; nothing is
+    rewritten by the upgrade and a pull of the device shows exactly that. A
+    record pulled before this release holds no `aaa session-id common` in its
+    `aaa` section (it was not read then), so it shows as missing until the
+    next pull. The break-glass step of the walkthrough is now Step 0 and says
     the CONSOLE list takes the same accounts. `rollback 0.2.3` removes the
     `cisco.source_interface.<scope>` keys (a 0.2.3 binary refuses a key it does
     not know).
@@ -805,8 +811,9 @@ current behaviour; this file is where history lives.
     new-model` is refused for `aaa`. The syntax is the one resolution of
     `device config-syntax` and the pull's version line (item 25), never the
     ssh flag. The unset `cisco.source_interface.<scope>` is a warning of the
-    report, never a line. The report says `Lab-tested on IOS 12.4(15) (a 7200
-    emulator); other IOS trains and IOS-XE are written from the references`.
+    report, never a line. The report says `Checked on a device: IOS 12.4(15) (a
+    7200 emulator), IOS 15.6(2)T and IOS-XE 16.7.1; other trains are written
+    from the references`.
 
 44. **Who may plan, and what a login's class cannot commit.** `device config
     plan` is an Engineer verb for the devices of the engineer's own scopes (the

@@ -641,7 +641,7 @@ func boxLine(d Delta, h Header) string {
 }
 
 // iosLabNote is the sentence every Cisco output's report carries (D100).
-const iosLabNote = "Lab-tested on IOS 12.4(15) (a 7200 emulator); other IOS trains and IOS-XE are written from the references."
+const iosLabNote = "Checked on a device: IOS 12.4(15) (a 7200 emulator), IOS 15.6(2)T and IOS-XE 16.7.1; other trains are written from the references."
 
 // Report is the box, the irregularity report and the one check line, all
 // outside the region (D108, D110, D112).

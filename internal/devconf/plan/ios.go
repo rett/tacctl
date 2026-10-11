@@ -756,7 +756,7 @@ func (p *planner) iosSection(name string, r devconf.SectionResult) secOut {
 				if p.opt.Device != "" {
 					cmd += " " + p.opt.Device
 				}
-				o.refused = "the pull has no vty and console login leaves (a pull by 0.2.4) and 'no aaa new-model' does not put 'login local' back: run '" + cmd + "' first"
+				o.refused = "the pull has no vty and console login leaves (a pull made before they were read) and 'no aaa new-model' does not put 'login local' back: run '" + cmd + "' first"
 				o.refusedKind = KindNotPlannable
 				return o
 			}

@@ -23,7 +23,7 @@ func TestCheckRollbackVersion(t *testing.T) {
 		}
 	}
 	for _, c := range []struct{ in, want string }{
-		{"0.2.2", "'tacctl rollback' converts what 0.2.4 changed and prepares the state for 0.2.3 only (0.2.2 is older)"},
+		{"0.2.2", "'tacctl rollback' converts what 0.2.5 changed and prepares the state for 0.2.3 only (0.2.2 is older)"},
 		{"v0.2.2", "is older"},
 		{"0.2.1", "is older"},
 		{"0.1.16", "is older"},
@@ -350,7 +350,7 @@ func TestPlanRollbackFull(t *testing.T) {
 			t.Errorf("warnings lack %q:\n%s", want, warns)
 		}
 	}
-	if len(p.Notes) != 1 || !strings.Contains(p.Notes[0], "restore it with 0.2.4") {
+	if len(p.Notes) != 1 || !strings.Contains(p.Notes[0], "restore it with 0.2.5") {
 		t.Errorf("notes %q", p.Notes)
 	}
 }

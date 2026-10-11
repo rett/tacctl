@@ -128,7 +128,7 @@ func CheckRollbackVersion(arg string) (string, error) {
 	older := n(1) == 0 && (n(2) < 2 || (n(2) == 2 && n(3) < 3))
 	if older {
 		return "", &RollbackRefusal{Lines: []string{
-			"Rolling back to " + v + " is not supported from this release: 'tacctl rollback' converts what 0.2.4 changed and prepares the state for " + RollbackTarget + " only (" + v + " is older).",
+			"Rolling back to " + v + " is not supported from this release: 'tacctl rollback' converts what 0.2.5 changed and prepares the state for " + RollbackTarget + " only (" + v + " is older).",
 			"Go back one release at a time: run 'tacctl rollback " + RollbackTarget + " --apply', install it with 'tacctl upgrade --branch " + RollbackTarget + "', and run the rollback of that release",
 			"(" + RollbackTarget + "'s prepares the state for 0.2.2). The fallback that needs no tool is 'tacctl backup restore' of a snapshot of the time (see 'tacctl backup list')."}}
 	}
@@ -337,7 +337,7 @@ func (p *RollbackPlan) confStep() RollbackStep {
 	for _, k := range other {
 		s.Lines = append(s.Lines, "remove "+k+"  (no release knows this key; 0.2.3 refuses a file that has it)")
 	}
-	s.Lines = append(s.Lines, "(a 'device config pull' of 0.2.4 and the Cisco source interface of 0.2.5 are these; every other key is one 0.2.3 has and stays)")
+	s.Lines = append(s.Lines, "(the settings of 'device config pull' and 'plan', the Cisco source interface and the break-glass records are these; every other key is one 0.2.3 has and stays)")
 	return s
 }
 
@@ -345,7 +345,7 @@ func (p *RollbackPlan) consoleStep() RollbackStep {
 	s := RollbackStep{Title: p.in.Paths.ConsoleFile + ": write it the way 0.2.3 reads it", Todo: p.console.Text != nil}
 	switch {
 	case !p.console.Exists:
-		s.Lines = []string{"no file (0.2.3 reads the defaults, as 0.2.4 does)"}
+		s.Lines = []string{"no file (0.2.3 reads the defaults, as 0.2.5 does)"}
 	case p.console.Text == nil:
 		s.Lines = []string{"nothing to remove (settings.password_cache is not written)"}
 	default:
@@ -456,8 +456,8 @@ func (p *RollbackPlan) credentialsStep() RollbackStep {
 		names = append(names, strings.TrimSuffix(filepath.Base(f), ".yaml"))
 	}
 	s.Lines = []string{fmt.Sprintf("%d %s (mode 0600, kept): %s", len(files), plural(len(files), "file", "files"), strings.Join(names, ", ")),
-		"0.2.3 opens snmp/<scope>.yaml by name and never lists the directory, so it ignores the subdirectory; 0.2.4 finds the files again",
-		"(a credential is not deleted by a rollback; 'tacctl device snmp <name> clear' of 0.2.4 removes one, and the snapshot --apply takes first holds them)"}
+		"0.2.3 opens snmp/<scope>.yaml by name and never lists the directory, so it ignores the subdirectory; 0.2.5 finds the files again",
+		"(a credential is not deleted by a rollback; 'tacctl device snmp <name> clear' of 0.2.5 removes one, and the snapshot --apply takes first holds them)"}
 	return s
 }
 
@@ -486,20 +486,20 @@ func (p *RollbackPlan) recordsStep() RollbackStep {
 	for _, f := range found {
 		s.Lines = append(s.Lines, "leaves "+f)
 	}
-	s.Lines = append(s.Lines, "(derived from the devices and the last pulls, never in a snapshot; 0.2.3 does not open them and 0.2.4 rebuilds them;",
-		" 'tacctl device config forget --all' of 0.2.4, before the rollback, deletes them, or delete the files by hand)")
+	s.Lines = append(s.Lines, "(derived from the devices and the last pulls, never in a snapshot; 0.2.3 does not open them and 0.2.5 rebuilds them;",
+		" 'tacctl device config forget --all' of 0.2.5, before the rollback, deletes them, or delete the files by hand)")
 	return s
 }
 
 func (p *RollbackPlan) storeStep() RollbackStep {
 	return RollbackStep{Title: "leave " + p.in.Paths.StoreFile + " untouched",
-		Lines: []string{"0.2.4 did not change the format of the store; the file is not read for writing and not written",
+		Lines: []string{"0.2.5 did not change the format of the store; the file is not read for writing and not written",
 			"(nor is the rendered tacquito.yaml or the RADIUS files: nothing that is removed reaches them, so nothing is re-rendered or restarted)"}}
 }
 
 func (p *RollbackPlan) hostsStep() RollbackStep {
 	return RollbackStep{Title: "the enrolled Linux hosts (--hosts)",
-		Lines: []string{"nothing to do for " + RollbackTarget + ": 0.2.4 changed nothing on the hosts (the client script and the sudoers drop-ins there are the ones 0.2.3 writes); no host is synced"}}
+		Lines: []string{"nothing to do for " + RollbackTarget + ": 0.2.5 changed nothing on the hosts (the client script and the sudoers drop-ins there are the ones 0.2.3 writes); no host is synced"}}
 }
 
 func plural(n int, one, many string) string {
@@ -555,7 +555,7 @@ func (p *RollbackPlan) warnings() []RollbackWarning {
 		lines = append(lines, "The password cache's settings of console.yaml are removed ("+strings.TrimPrefix(p.console.Remove[0], "settings.password_cache: ")+"): 0.2.3 has no cache, every login is asked for its password.")
 	}
 	if len(lines) > 0 {
-		lines = append(lines, "Everything removed from tacctl.yaml, console.yaml and devices.yaml stays in the snapshot --apply takes first (tacctl backup list); 'tacctl backup restore' of it, with 0.2.4, brings it back.")
+		lines = append(lines, "Everything removed from tacctl.yaml, console.yaml and devices.yaml stays in the snapshot --apply takes first (tacctl backup list); 'tacctl backup restore' of it, with 0.2.5, brings it back.")
 		out = append(out, RollbackWarning{Title: "Settings 0.2.3 cannot use are dropped", Lines: lines})
 	}
 	if !in.HasStore && p.PendingFiles() {
@@ -570,7 +570,7 @@ func (p *RollbackPlan) warnings() []RollbackWarning {
 func (p *RollbackPlan) notes() []string {
 	var out []string
 	if p.PendingFiles() {
-		out = append(out, "The snapshot --apply takes holds the 0.2.4 form of these files: restore it with 0.2.4 ('tacctl backup restore'), not with 0.2.3, whose restore refuses a tacctl.yaml with a key it does not know.")
+		out = append(out, "The snapshot --apply takes holds the 0.2.5 form of these files: restore it with 0.2.5 ('tacctl backup restore'), not with 0.2.3, whose restore refuses a tacctl.yaml with a key it does not know.")
 	}
 	return out
 }

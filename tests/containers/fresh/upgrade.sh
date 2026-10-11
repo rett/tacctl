@@ -124,7 +124,7 @@ if [[ $rc == 0 ]] && ! grep -q 'Building' <<< "$out"; then ok "a second upgrade 
 out=$(q 'tacctl console check'); rc=$?; echo "$out" | tail -8
 echo "(console check exit ${rc}; no console is installed by the upgrade alone)"
 
-section "0.2.4-only settings, then ${FROM}'s own binary on the state (it refuses them)"
+section "0.2.5-only settings, then ${FROM}'s own binary on the state (it refuses them)"
 q 'tacctl config devices max-concurrency 16' | tail -1
 q 'tacctl console password-cache tiers engineer' | tail -1
 q 'tacctl device snmp sw1 port 2161' | tail -1
@@ -135,7 +135,7 @@ echo "$out" | tail -3
 if [[ $rc == 0 ]]; then ok "${FROM} built from its commit"; else bad "${FROM} built from its commit (exit ${rc})"; fi
 out=$(q '/tmp/tacctl-old config validate'); rc=$?
 echo "$out" | tail -4
-if [[ $rc != 0 ]] || grep -qiE 'max_concurrency|unknown' <<< "$out"; then ok "${FROM}'s config validate reports the 0.2.4 key before the rollback"; else bad "${FROM}'s config validate reports the 0.2.4 key before the rollback (exit ${rc})"; fi
+if [[ $rc != 0 ]] || grep -qiE 'max_concurrency|unknown' <<< "$out"; then ok "${FROM}'s config validate reports the 0.2.5 key before the rollback"; else bad "${FROM}'s config validate reports the 0.2.5 key before the rollback (exit ${rc})"; fi
 out=$(q '/tmp/tacctl-old console show'); rc=$?
 echo "$out" | tail -3
 if [[ $rc != 0 ]]; then ok "${FROM}'s console show refuses console.yaml before the rollback"; else bad "${FROM}'s console show refuses console.yaml before the rollback"; fi
@@ -146,11 +146,11 @@ section "tacctl rollback ${FROM}"
 out=$(q "tacctl rollback ${FROM}"); rc=$?
 echo "$out" | head -40
 if [[ $rc == 0 ]] && grep -q 'This was a dry run: nothing was changed.' <<< "$out"; then ok "rollback ${FROM}: the dry run exits 0 and changes nothing"; else bad "rollback ${FROM}: the dry run (exit ${rc})"; fi
-check "the dry run left the three files as they were (all still hold the 0.2.4 settings)" 'grep -q max_concurrency /etc/tacctl/tacctl.yaml && grep -q password_cache /etc/tacctl/console.yaml && grep -q "snmp:" /etc/tacctl/devices.yaml'
+check "the dry run left the three files as they were (all still hold the 0.2.5 settings)" 'grep -q max_concurrency /etc/tacctl/tacctl.yaml && grep -q password_cache /etc/tacctl/console.yaml && grep -q "snmp:" /etc/tacctl/devices.yaml'
 out=$(q "tacctl rollback ${FROM} --apply --yes"); rc=$?
 echo "$out" | tail -25
 if [[ $rc == 0 ]]; then ok "rollback ${FROM} --apply --yes exits 0"; else bad "rollback ${FROM} --apply --yes (exit ${rc})"; fi
-check "the three files no longer have the 0.2.4 settings" '! grep -q max_concurrency /etc/tacctl/tacctl.yaml && ! grep -q password_cache /etc/tacctl/console.yaml && ! grep -q "snmp:" /etc/tacctl/devices.yaml'
+check "the three files no longer have the 0.2.5 settings" '! grep -q max_concurrency /etc/tacctl/tacctl.yaml && ! grep -q password_cache /etc/tacctl/console.yaml && ! grep -q "snmp:" /etc/tacctl/devices.yaml'
 check "a snapshot of the state before was taken (tacctl backup list)" 'tacctl backup list | grep -qi .'
 section "${FROM}'s own binary on the converted state"
 out=$(q '/tmp/tacctl-old config validate'); rc=$?; echo "$out" | tail -6
