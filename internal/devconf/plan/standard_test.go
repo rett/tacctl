@@ -33,12 +33,21 @@ func serverInUse(c *IOSConfig) {
 	c.typeGlobal("aaa authentication login default group tacacs+ local")
 }
 
-// D117: with command authorization on, the old entry cannot be removed first
-// and the named block cannot be added beside it: the unit is refused, with
-// the steps outside any region.
+// legacyUnproven is legacyOnModern on a device that authorizes commands and
+// shows no server in use: no login or exec list names a group, so nothing
+// proves that the pasting session is a TACACS+ user (D117, amended).
+func legacyUnproven(c *IOSConfig) {
+	legacyOnModern(c)
+	c.noGlobal("aaa authentication login default")
+	c.noGlobal("aaa authorization exec default")
+}
+
+// D117 (amended): with command authorization on and no server in use, the
+// old entry cannot be removed first and the named block cannot be added
+// beside it: the unit is refused, with the steps outside any region.
 func TestStandardLegacyHostWithCommandAuthorizationIsRefused(t *testing.T) {
 	f := fixtureNamed(t, "cisco.reference-lab")
-	d := planI(t, f, legacyOnModern, Options{Scope: "lab", Device: "sw-lab-1"})
+	d := planI(t, f, legacyUnproven, Options{Scope: "lab", Device: "sw-lab-1"})
 	st := d.Of("aaa")
 	const why = "this device runs the legacy server form with command authorization: migrate it from the console as a user that reaches privilege 15 there (the steps are below the region)"
 	if st.State != StateSkipped || st.Kind != KindRefused || st.Why != why {
@@ -92,7 +101,7 @@ func TestStandardLegacyHostWithCommandAuthorizationIsRefused(t *testing.T) {
 	// typed: step 0 takes the setting off first, while the TACACS+ user's
 	// commands still pass, and says what to do if the console is refused
 	dc := planI(t, f, func(c *IOSConfig) {
-		legacyOnModern(c)
+		legacyUnproven(c)
 		c.typeGlobal("aaa authorization console")
 	}, Options{Scope: "lab", Device: "sw-lab-1"})
 	if len(dc.ByHand) < 5 || !strings.HasPrefix(dc.ByHand[0], "0. ") {
@@ -140,11 +149,14 @@ func TestStandardLegacyHostWithCommandAuthorizationIsRefused(t *testing.T) {
 func TestStandardByHandKeepsTheDevicesGroup(t *testing.T) {
 	f := fixtureNamed(t, "cisco.reference-lab")
 	d := planI(t, f, func(c *IOSConfig) {
-		legacyOnModern(c)
+		legacyUnproven(c)
 		for i := range c.blocks {
 			if c.blocks[i].lines[0] == "aaa group server tacacs+ LAB-TACACS" {
 				c.blocks[i].lines[0] = "aaa group server tacacs+ OLD-GROUP"
 			}
+		}
+		for _, lvl := range []string{"1", "7", "15"} {
+			c.typeGlobal("aaa authorization commands " + lvl + " default local group OLD-GROUP")
 		}
 	}, Options{Scope: "lab", Device: "sw-lab-1"})
 	steps := strings.Join(d.ByHand, "\n")
@@ -163,14 +175,20 @@ func TestStandardByHandKeepsTheDevicesGroup(t *testing.T) {
 func TestStandardByHandWhenNoGroupHoldsTheAddress(t *testing.T) {
 	f := fixtureNamed(t, "cisco.reference-lab")
 	d := planI(t, f, func(c *IOSConfig) {
-		legacyOnModern(c)
+		legacyUnproven(c)
 		for i := range c.blocks {
 			if strings.HasPrefix(c.blocks[i].lines[0], "aaa group server tacacs+ ") {
 				c.blocks = append(c.blocks[:i], c.blocks[i+1:]...)
 				break
 			}
 		}
-		c.typeGlobal("aaa authentication login default group tacacs+ local")
+		// the command lists use 'group tacacs+' and no login list names a
+		// group: nothing proves the pasting session
+		for _, l := range []string{"aaa authorization commands 1 default", "aaa authorization commands 7 default",
+			"aaa authorization commands 15 default"} {
+			c.noGlobal(l)
+		}
+		c.typeGlobal("aaa authorization commands 15 default group tacacs+ local")
 	}, Options{Scope: "lab", Device: "sw-lab-1"})
 	steps := strings.Join(d.ByHand, "\n")
 	for _, want := range []string{"3. No server group holds the old address, so the standard group is created",
@@ -201,10 +219,12 @@ func TestStandardLegacyHostWithoutCommandAuthorizationIsReplaced(t *testing.T) {
 		t.Fatalf("aaa: %+v", st)
 	}
 	ls := lines(d, "aaa")
+	// (b): the group's entry first, then the old line, then the block
+	ent := slices.Index(ls, "aaa group server tacacs+ LAB-TACACS > no server 192.0.2.10")
 	rm := slices.Index(ls, "no tacacs-server host 192.0.2.10")
 	blk := slices.Index(ls, "tacacs server TACACS > address ipv4 192.0.2.10")
-	if rm != 0 || blk <= rm {
-		t.Errorf("the old entry is not removed first, then the block (%d, %d):\n%s", rm, blk, strings.Join(ls, "\n"))
+	if ent != 0 || rm != 1 || blk <= rm {
+		t.Errorf("the old entry is not removed first, then the block (%d, %d, %d):\n%s", ent, rm, blk, strings.Join(ls, "\n"))
 	}
 	if len(d.ByHand) != 0 {
 		t.Errorf("by-hand steps with nothing refused: %q", d.ByHand)
@@ -221,14 +241,18 @@ func TestStandardLegacyHostWithoutCommandAuthorizationIsReplaced(t *testing.T) {
 	if len(undo) != 1 || !strings.Contains(undo[0], "type again with its original secret: tacacs-server host 192.0.2.10") {
 		t.Errorf("undo: %q", undo)
 	}
-	// another server at another address is nobody's but its owner's
+	// another server at another address is nobody's but its owner's; the
+	// entry at the rendered address is replaced, command authorization on
+	// the device or not (the server is in use here: the pasting session is a
+	// TACACS+ user)
 	d = planI(t, f, func(c *IOSConfig) {
 		legacyOnModern(c)
 		c.typeGlobal("tacacs-server host 192.0.2.77 key 7 0822455D0A16")
 	}, Options{Scope: "lab"})
-	if st := d.Of("aaa"); st.State != StateSkipped {
+	if st := d.Of("aaa"); st.State != StatePlanned || len(d.ByHand) != 0 {
 		t.Errorf("the entry at the rendered address with command authorization: %+v", st)
 	}
+	wantKept(t, d, "aaa", "tacacs-server host 192.0.2.77")
 	dn := planI(t, f, func(c *IOSConfig) {
 		c.typeGlobal("tacacs-server host 192.0.2.77 key 7 0822455D0A16")
 	}, Options{Scope: "lab"})
@@ -328,7 +352,9 @@ func TestStandardRegionTypesNewModelFirst(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "before 'aaa new-model'") {
 		t.Errorf("the simulated device took a group before aaa new-model: %v", err)
 	}
-	if err := c.Apply([]Line{{Op: OpLine, Text: "aaa new-model"}, {Op: OpLine, Context: []string{"aaa group server tacacs+ G"}, Text: "server name TACACS"}}); err != nil {
+	if err := c.Apply([]Line{{Op: OpLine, Text: "aaa new-model"},
+		{Op: OpLine, Context: []string{"tacacs server TACACS"}, Text: "address ipv4 192.0.2.10"},
+		{Op: OpLine, Context: []string{"aaa group server tacacs+ G"}, Text: "server name TACACS"}}); err != nil {
 		t.Errorf("the right order: %v", err)
 	}
 }

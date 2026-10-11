@@ -243,7 +243,7 @@ func iosAfter(d Delta, h Header, w Wrapper) string {
 	b.WriteString("! When both checks are fine, type this one command yourself:  write memory\n")
 	b.WriteString("!\n")
 	if HasBackout(d) {
-		c("To undo: " + undo + "     (tacctl keeps this plan's back-out: after the check pull has replaced the picture, the command still prints this plan's, and says which pull it undoes)")
+		c("To undo: " + undo + "     (tacctl keeps this plan's back-out: after the check pull has replaced the picture, the command still prints this plan's, and says which pull it undoes, until the next plan with changes)")
 	}
 	c("Do not: 'write memory' before the check; paste outside the banners; paste into another device; paste on a console more than twenty lines at a time; keep this output in a file after the paste when it holds a secret.")
 	return b.String()

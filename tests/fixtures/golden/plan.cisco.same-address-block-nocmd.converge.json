@@ -1,0 +1,269 @@
+{
+  "name": "dev-cisco-same-address-block-nocmd",
+  "address": "192.0.2.21",
+  "scope": "lab",
+  "vendor": "cisco",
+  "based_on": {
+    "pulled": "2026-10-10T14:02:00Z",
+    "by": "alice",
+    "transport": "ssh",
+    "age_s": 1080,
+    "secrets_visible": true
+  },
+  "status": "needs-change",
+  "irregularities": [
+    {
+      "n": 1,
+      "kind": "missing",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "tacacs server TACACS: 4 statements",
+      "statement": "e.g. tacacs server TACACS \u003e address ipv4 192.0.2.10",
+      "action": "Fixed by region lines 7-10.",
+      "fixed": true,
+      "region_lines": [
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "n": 2,
+      "kind": "missing",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "the server group TACACS-GROUP: server name TACACS",
+      "statement": "aaa group server tacacs+ TACACS-GROUP \u003e server name TACACS",
+      "action": "Fixed by region line 12.",
+      "fixed": true,
+      "region_lines": [
+        12
+      ]
+    },
+    {
+      "n": 3,
+      "kind": "missing",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "the console's own login list CONSOLE (local only, so a local user always gets in there)",
+      "statement": "aaa authentication login CONSOLE local",
+      "action": "Fixed by region line 13.",
+      "fixed": true,
+      "region_lines": [
+        13
+      ]
+    },
+    {
+      "n": 4,
+      "kind": "missing",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "the 'enable' list (it asks the server first, so nobody needs a shared enable password)",
+      "statement": "aaa authentication enable default group TACACS-GROUP enable",
+      "action": "Fixed by region line 14.",
+      "fixed": true,
+      "region_lines": [
+        14
+      ]
+    },
+    {
+      "n": 5,
+      "kind": "missing",
+      "severity": "COSMETIC",
+      "section": "aaa",
+      "what": "accounting of commands 15",
+      "statement": "aaa accounting commands 15 default start-stop group TACACS-GROUP",
+      "action": "Fixed by region line 15.",
+      "fixed": true,
+      "region_lines": [
+        15
+      ]
+    },
+    {
+      "n": 6,
+      "kind": "different",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "the login method of line con 0: login authentication CONSOLE (the device has: the login method of line con 0: login authentication default)",
+      "statement": "line con 0 \u003e login authentication CONSOLE",
+      "action": "Fixed by region line 18.",
+      "fixed": true,
+      "region_lines": [
+        18
+      ]
+    },
+    {
+      "n": 7,
+      "kind": "missing",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "command authorization: 4 statements",
+      "statement": "e.g. aaa authorization commands 1 default local group TACACS-GROUP",
+      "action": "Fixed by region lines 20-23.",
+      "fixed": true,
+      "region_lines": [
+        20,
+        21,
+        22,
+        23
+      ]
+    },
+    {
+      "n": 8,
+      "kind": "extra",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "the server group TACACS-GROUP: server name OLD-TACACS",
+      "statement": "aaa group server tacacs+ TACACS-GROUP \u003e server name OLD-TACACS",
+      "action": "Fixed by region line 4.",
+      "fixed": true,
+      "region_lines": [
+        4
+      ]
+    },
+    {
+      "n": 9,
+      "kind": "extra",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "tacacs server OLD-TACACS: 4 statements",
+      "statement": "e.g. tacacs server OLD-TACACS \u003e address ipv4 192.0.2.10",
+      "action": "Fixed by region line 5.",
+      "fixed": true,
+      "region_lines": [
+        5
+      ]
+    },
+    {
+      "n": 10,
+      "kind": "extra",
+      "severity": "MONITORING",
+      "section": "snmp",
+      "what": "an SNMP community",
+      "statement": "snmp-server community \u003csecret\u003e RO TACCTL-SNMP",
+      "action": "Left alone (its name is the secret and is not known to tacctl).",
+      "fixed": false
+    },
+    {
+      "n": 11,
+      "kind": "extra",
+      "severity": "MONITORING",
+      "section": "snmp",
+      "what": "snmp-server enable traps config",
+      "statement": "snmp-server enable traps config",
+      "action": "Left alone. To remove it later: no snmp-server enable traps config",
+      "fixed": false
+    },
+    {
+      "n": 12,
+      "kind": "extra",
+      "severity": "MONITORING",
+      "section": "snmp",
+      "what": "snmp-server host 192.0.2.50 version 2c \u003csecret\u003e",
+      "statement": "snmp-server host 192.0.2.50 version 2c \u003csecret\u003e",
+      "action": "Left alone (its name is the secret and is not known to tacctl).",
+      "fixed": false
+    }
+  ],
+  "region": [
+    "configure terminal",
+    "! aaa: the method lists tacctl renders, each replaced by the rendered line",
+    "aaa group server tacacs+ TACACS-GROUP",
+    " no server name OLD-TACACS",
+    "no tacacs server OLD-TACACS",
+    "tacacs server TACACS",
+    " address ipv4 192.0.2.10",
+    " key \u003csecret\u003e",
+    " single-connection",
+    " timeout 5",
+    "aaa group server tacacs+ TACACS-GROUP",
+    " server name TACACS",
+    "aaa authentication login CONSOLE local",
+    "aaa authentication enable default group TACACS-GROUP enable",
+    "aaa accounting commands 15 default start-stop group TACACS-GROUP",
+    "! aaa: the login method of the console and vty lines",
+    "line con 0",
+    " login authentication CONSOLE",
+    "! aaa: command authorization, last on purpose",
+    "aaa authorization commands 1 default local group TACACS-GROUP",
+    "aaa authorization commands 7 default local group TACACS-GROUP",
+    "aaa authorization commands 15 default local group TACACS-GROUP",
+    "aaa authorization config-commands",
+    "end"
+  ],
+  "after": [
+    "!",
+    "! If any line printed \"% Invalid\" or \"% Error\", stop and undo it: tacctl device config plan",
+    "! dev-cisco-same-address-block-nocmd --backout (its own region, to paste in the second terminal).",
+    "!",
+    "! Check now (nothing rolls this back by itself):",
+    "!   From the tacctl server:   tacctl device config pull dev-cisco-same-address-block-nocmd --diff     (aaa: ok)",
+    "!   In the second terminal:   open a NEW ssh session to dev-cisco-same-address-block-nocmd as yourself, then: terminal length 0, show privilege (must say 15)",
+    "! When both checks are fine, type this one command yourself:  write memory",
+    "!",
+    "! To undo: tacctl device config plan dev-cisco-same-address-block-nocmd --backout (tacctl keeps",
+    "! this plan's back-out: after the check pull has replaced the picture, the command still prints",
+    "! this plan's, and says which pull it undoes, until the next plan with changes)",
+    "! Do not: 'write memory' before the check; paste outside the banners; paste into another device;",
+    "! paste on a console more than twenty lines at a time; keep this output in a file after the paste",
+    "! when it holds a secret."
+  ],
+  "backout": [
+    "configure terminal",
+    "! back-out: the lines as the pull showed them",
+    "no aaa authorization config-commands",
+    "no aaa authorization commands 15 default local group TACACS-GROUP",
+    "no aaa authorization commands 7 default local group TACACS-GROUP",
+    "no aaa authorization commands 1 default local group TACACS-GROUP",
+    "line con 0",
+    " login authentication default",
+    "no aaa accounting commands 15 default start-stop group TACACS-GROUP",
+    "no aaa authentication enable default group TACACS-GROUP enable",
+    "no aaa authentication login CONSOLE local",
+    "aaa group server tacacs+ TACACS-GROUP",
+    " no server name TACACS",
+    "no tacacs server TACACS",
+    "tacacs server OLD-TACACS",
+    " address ipv4 192.0.2.10",
+    "! (type again with its original secret: tacacs server OLD-TACACS \u003e key \u003csecret\u003e)",
+    " single-connection",
+    " timeout 5",
+    "aaa group server tacacs+ TACACS-GROUP",
+    " server name OLD-TACACS",
+    "end"
+  ],
+  "left": {
+    "access": 0,
+    "monitoring": 3,
+    "cosmetic": 0
+  },
+  "extras": [
+    {
+      "section": "snmp",
+      "text": "snmp-server community \u003csecret\u003e RO TACCTL-SNMP",
+      "guard": "its name is the secret and is not known to tacctl"
+    },
+    {
+      "section": "snmp",
+      "text": "snmp-server enable traps config",
+      "remove": [
+        "no snmp-server enable traps config"
+      ]
+    },
+    {
+      "section": "snmp",
+      "text": "snmp-server host 192.0.2.50 version 2c \u003csecret\u003e",
+      "guard": "its name is the secret and is not known to tacctl"
+    }
+  ],
+  "skipped": [],
+  "withheld": [],
+  "warnings": [
+    "the server entry tacacs server OLD-TACACS is at the address of the standard server, and IOS refuses a second entry with the same address and key: the region removes it (and the group entries that name it) before it adds the standard block, and the back-out puts it back",
+    "the block switches command authorization on ('aaa authorization commands', 'config-commands') with its last lines: from then on every command is authorized by the server, so paste it as a user the server knows (or with local first), and keep the second terminal for the back-out"
+  ],
+  "holds_secret": true,
+  "converge": true,
+  "cleanup_deferred": "cleanup comes after this region is pasted and verified: pull the device, then plan --converge again"
+}

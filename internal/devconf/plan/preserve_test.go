@@ -139,6 +139,14 @@ func checkIOSPreserved(t *testing.T, f fixture, exp []devices.Section, before, a
 			}
 		}
 	}
+	// the server blocks the plan removes whole, by their header: only a block
+	// of another name at the address the standard types (D117, amended)
+	removedBlock := map[string]bool{}
+	for _, l := range d.Lines {
+		if l.Op == OpNo && len(l.Context) == 0 && (strings.HasPrefix(l.Text, "tacacs server ") || strings.HasPrefix(l.Text, "radius server ")) {
+			removedBlock[norm(l.Text)] = true
+		}
+	}
 	for line := range b {
 		if a[line] {
 			continue
@@ -180,6 +188,9 @@ func checkIOSPreserved(t *testing.T, f fixture, exp []devices.Section, before, a
 		lf := strings.Fields(leaf)
 		switch {
 		case len(path) == 2 && isACLHeader(head) && st.acls[head]:
+		case len(path) == 2 && removedBlock[head]:
+			// D117 (amended): a leaf of an old server block the region removes
+			// whole, at the standard's address
 		case len(path) == 2 && st.kinds[head] != nil && st.kinds[head][lf[0]]:
 		case len(path) == 1 && lf[0] == "privilege" && len(lf) >= 5 && lf[1] == "exec" && st.levels[lf[slices.Index(lf, "level")+1]]:
 		case len(path) == 1 && lf[0] == "aaa":

@@ -152,7 +152,7 @@ func junosAfter(d Delta, h Header, w Wrapper) string {
 	b.WriteString("#\n")
 	c("If your session drops before that, the switch still rolls back when the time runs out (a dropped CLI session does not roll back at once): log in again and paste again.")
 	if HasBackout(d) {
-		c("To undo it after the commit: tacctl device config plan " + h.Device + " --backout     (its own region to paste; tacctl keeps this plan's back-out: after the check pull has replaced the picture, the command still prints this plan's, and says which pull it undoes). Without tacctl: show system commit, then rollback <n> of the entry just before the one commented \"tacctl plan " + commentSafe(h.Device) + "\" (the newest entry is that commit itself), then commit.")
+		c("To undo it after the commit: tacctl device config plan " + h.Device + " --backout     (its own region to paste; tacctl keeps this plan's back-out: after the check pull has replaced the picture, the command still prints this plan's, and says which pull it undoes, until the next plan with changes). Without tacctl: show system commit, then rollback <n> of the entry just before the one commented \"tacctl plan " + commentSafe(h.Device) + "\" (the newest entry is that commit itself), then commit.")
 	} else {
 		c("To undo it after the commit: show system commit, then rollback <n> of the entry just before the one commented \"tacctl plan " + commentSafe(h.Device) + "\" (the newest entry is that commit itself), then commit. tacctl has no lines of its own to undo this plan.")
 	}

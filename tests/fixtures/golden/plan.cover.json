@@ -165,6 +165,36 @@
     "extras": 1
   },
   {
+    "device": "dev-cisco-same-address-block",
+    "scope": "lab",
+    "vendor": "cisco",
+    "address": "192.0.2.21",
+    "state": "needs-change",
+    "fixes": 8,
+    "left": 3,
+    "remaining": {
+      "access": 0,
+      "monitoring": 3,
+      "cosmetic": 0
+    },
+    "extras": 3
+  },
+  {
+    "device": "dev-cisco-same-address-block-nocmd",
+    "scope": "lab",
+    "vendor": "cisco",
+    "address": "192.0.2.21",
+    "state": "needs-change",
+    "fixes": 9,
+    "left": 3,
+    "remaining": {
+      "access": 0,
+      "monitoring": 3,
+      "cosmetic": 0
+    },
+    "extras": 3
+  },
+  {
     "device": "dev-not-pulled",
     "scope": "lab",
     "vendor": "juniper",

@@ -702,10 +702,18 @@ func Report(d Delta, h Header, w Wrapper) string {
 			}
 		}
 		if d.Empty() {
-			if r := d.Refusal(); r != "" {
+			// the cleanup region is the paste of the device (statusOf says
+			// needs-change): a refused section is left as it is, not the reason
+			// there is nothing to paste
+			if !d.Cleanup.Empty() {
+				if sk, ok := d.refusedSection(); ok {
+					add("No fix to paste: the cleanup region below is the only paste. The section " + sk.Section +
+						" is not planned and stays as it is (refused: " + firstSentence(sk.Why) + "); what else remains is left alone.")
+				} else {
+					add("No fix to paste: the cleanup region below is the only paste (what else remains is left alone).")
+				}
+			} else if r := d.Refusal(); r != "" {
 				add("CANNOT BE PLANNED: " + r + ". Nothing is pasted for this device.")
-			} else if !d.Cleanup.Empty() {
-				add("No fix to paste: the cleanup region below is the only paste (what else remains is left alone).")
 			} else {
 				add("Nothing to paste: everything above is left alone or cannot be fixed by this login.")
 			}
@@ -778,8 +786,12 @@ func Report(d Delta, h Header, w Wrapper) string {
 		case c.Whole != "":
 			add("Cleanup (--converge) is not offered: " + c.Whole + ".")
 		case !c.Empty():
-			add(fmt.Sprintf("Cleanup (--converge): the region below is the whole output: it removes %s: %s the standard does not have. Paste it only after you have checked that the pull of %s is current (tacctl device config pull %s --diff reads ok for aaa, and a NEW ssh session as yourself works).",
-				plural(len(c.Lines), "line", "lines"), cleanupKinds(c), h.Device, h.Device))
+			pending := ""
+			if d.Vendor == devconf.FamilyJunos {
+				pending = ", and " + junosPendingCheck
+			}
+			add(fmt.Sprintf("Cleanup (--converge): the region below is the whole output: it removes %s: %s the standard does not have. Paste it only after you have checked that the pull of %s is current (tacctl device config pull %s --diff reads ok for aaa, and a NEW ssh session as yourself works)%s.",
+				plural(len(c.Lines), "line", "lines"), cleanupKinds(c), h.Device, h.Device, pending))
 			if len(c.Left) > 0 {
 				add(extrasStay(len(c.Left)))
 			}
@@ -885,15 +897,23 @@ func statusOf(d Delta) string {
 // <why>'. A section the login's class cannot commit is no refusal (it is
 // left to a superuser, and the report says so).
 func (d Delta) Refusal() string {
+	if sk, ok := d.refusedSection(); ok {
+		return "refused: " + sk.Section + ": " + firstSentence(sk.Why)
+	}
+	return ""
+}
+
+// refusedSection is the first section a plan with nothing to paste refused.
+func (d Delta) refusedSection() (Skip, bool) {
 	if !d.Empty() {
-		return ""
+		return Skip{}, false
 	}
 	for _, s := range d.Skipped {
 		if s.Kind == KindRefused || s.Kind == KindNotPlannable {
-			return "refused: " + s.Section + ": " + firstSentence(s.Why)
+			return s, true
 		}
 	}
-	return ""
+	return Skip{}, false
 }
 
 // LeftCounts are the findings the paste leaves, by severity.

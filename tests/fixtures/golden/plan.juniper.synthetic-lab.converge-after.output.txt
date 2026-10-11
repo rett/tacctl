@@ -17,7 +17,8 @@
 # Cleanup (--converge): the region below is the whole output: it removes 1 line: TACACS+ servers the
 # standard does not have. Paste it only after you have checked that the pull of
 # dev-juniper-synthetic-lab is current (tacctl device config pull dev-juniper-synthetic-lab --diff
-# reads ok for aaa, and a NEW ssh session as yourself works).
+# reads ok for aaa, and a NEW ssh session as yourself works), and that 'show system commit' shows no
+# pending 'commit confirmed' (type the plan's 'commit' first).
 # The switch undoes this by itself in 5 minutes unless you type the one word after the check (see
 # below).
 # Paste over ssh, not the console; on a console paste at most twenty lines at a time and watch the
@@ -37,7 +38,8 @@ commit confirmed 5 comment "tacctl cleanup dev-juniper-synthetic-lab 2026-10-10T
 ##### CLEANUP TO HERE: dev-juniper-synthetic-lab #####
 #
 # There is no other paste for dev-juniper-synthetic-lab: its first region is empty. Check that the
-# pull is current (tacctl device config pull dev-juniper-synthetic-lab --diff reads ok for aaa)
+# pull is current (tacctl device config pull dev-juniper-synthetic-lab --diff reads ok for aaa),
+# that 'show system commit' shows no pending 'commit confirmed' (type the plan's 'commit' first),
 # and keep a NEW ssh session as yourself open.
 # Same check, same one word, typed yourself:  commit     (before the 5 minutes end)
 # If any line printed "error:", do not type commit: the switch undoes the cleanup by itself in 5

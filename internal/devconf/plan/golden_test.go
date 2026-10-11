@@ -396,7 +396,7 @@ func checkBackoutWhole(t *testing.T, name string, d Delta, h Header, w Wrapper, 
 var secretValues = []string{
 	"lab-secret-0123456789abcdef", "lab-ro-community", "auth-pass-0123", "priv-pass-4567",
 	"EXAMPLEEXAMPLE", "example-community", "other-example", "EXAMPLEKEY", "0822455D0A16",
-	"STRAYSTRAY", "notarealsecret", "example-trap-community", "EXAMPLEHASH", "EXAMPLEAUTH1", "EXAMPLEPRIV1", "$9$",
+	"STRAYSTRAY", "notarealsecret", "example-trap-community", "EXAMPLEHASH", "EXAMPLEAUTH1", "EXAMPLEPRIV1", "$9$", "0703204E031A",
 	"AAAAC3NzaC1lZDI1NTE5AAAAIEXAMPLEKEY",
 }
 

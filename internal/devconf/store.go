@@ -465,12 +465,18 @@ func (s Store) readSections(p, vendor string) (map[string]devices.Section, strin
 
 // StoredBackout is the back-out of the last plan that had changes, kept
 // beside the device's record: the text the plan printed (a secret's value
-// elided), the Pulled time of the record it was computed from and the
-// vendor (which comment leader its text uses).
+// elided), the Pulled time of the record it was computed from, the vendor
+// (which comment leader its text uses), the address of the device it was
+// computed for (a name that moved to another address is another device: the
+// back-out is not its own), and the sections it covers.
 type StoredBackout struct {
 	Pulled time.Time
 	Vendor string
-	Text   string
+	// Address is the device's address when the plan was made.
+	Address string
+	// Sections are the planned sections the back-out undoes, in plan order.
+	Sections []string
+	Text     string
 }
 
 // backoutPath is the stored back-out's file of a device.
@@ -497,8 +503,8 @@ func (s Store) SaveBackout(name string, b StoredBackout) error {
 	if err != nil {
 		return err
 	}
-	if b.Pulled.IsZero() {
-		return fail("A back-out is stamped with the pull it was computed from.")
+	if b.Pulled.IsZero() || b.Address == "" {
+		return fail("A back-out is stamped with the pull and the device address it was computed from.")
 	}
 	unlock, err := s.Lock()
 	if err != nil {
@@ -510,9 +516,11 @@ func (s Store) SaveBackout(name string, b StoredBackout) error {
 	}
 	var w strings.Builder
 	w.WriteString(BackoutHeader)
-	w.WriteString("version: 1\n")
+	w.WriteString("version: 2\n")
 	w.WriteString("pulled: " + b.Pulled.UTC().Format(time.RFC3339Nano) + "\n")
 	w.WriteString("vendor: " + b.Vendor + "\n")
+	w.WriteString("address: " + b.Address + "\n")
+	w.WriteString("sections: " + strings.Join(b.Sections, ",") + "\n")
 	w.WriteString(backoutRule)
 	w.WriteString(b.Text)
 	return atomicWrite(p, []byte(w.String()), 0o600)
@@ -546,7 +554,7 @@ func (s Store) Backout(name string) (*StoredBackout, error) {
 		}
 		switch k {
 		case "version":
-			version = v == "1"
+			version = v == "2"
 		case "pulled":
 			t, perr := time.Parse(time.RFC3339Nano, v)
 			if perr != nil {
@@ -555,12 +563,39 @@ func (s Store) Backout(name string) (*StoredBackout, error) {
 			b.Pulled = t
 		case "vendor":
 			b.Vendor = v
+		case "address":
+			b.Address = v
+		case "sections":
+			for _, sec := range strings.Split(v, ",") {
+				if sec = strings.TrimSpace(sec); sec != "" {
+					b.Sections = append(b.Sections, sec)
+				}
+			}
 		}
 	}
-	if !version || b.Pulled.IsZero() {
+	if !version || b.Pulled.IsZero() || b.Address == "" {
 		return nil, nil
 	}
 	return b, nil
+}
+
+// RemoveBackout removes a device's stored back-out (under the lock): a plan
+// that has changes and no line tacctl can type to undo them leaves none of its
+// own, and an earlier plan's would be taken for it.
+func (s Store) RemoveBackout(name string) error {
+	p, err := s.backoutPath(name)
+	if err != nil {
+		return err
+	}
+	unlock, err := s.Lock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if err := os.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fail("Cannot remove " + p + ": " + errText(err))
+	}
+	return nil
 }
 
 // Forget removes a device's record and sections file under the lock, and

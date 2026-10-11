@@ -86,7 +86,8 @@
   "cleanup_after": [
     "#",
     "# There is no other paste for dev-juniper-synthetic-lab: its first region is empty. Check that the",
-    "# pull is current (tacctl device config pull dev-juniper-synthetic-lab --diff reads ok for aaa)",
+    "# pull is current (tacctl device config pull dev-juniper-synthetic-lab --diff reads ok for aaa),",
+    "# that 'show system commit' shows no pending 'commit confirmed' (type the plan's 'commit' first),",
     "# and keep a NEW ssh session as yourself open.",
     "# Same check, same one word, typed yourself:  commit     (before the 5 minutes end)",
     "# If any line printed \"error:\", do not type commit: the switch undoes the cleanup by itself in 5",

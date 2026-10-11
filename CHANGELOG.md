@@ -622,7 +622,8 @@ current behaviour; this file is where history lives.
     `radius-server host` beside a `radius server` block, a server group of
     another name) are listed by `device config pull --diff` and `device
     config diff` as extras (`+` lines), never as satisfied lines, and the
-    standard's lines as missing (`-` lines); nothing removes the old ones.
+    standard's lines as missing (`-` lines); the walkthrough removes none of
+    them (`device config plan` replaces or removes them, items 39 and 50).
     The README gives the steps to replace an old `tacacs-server host` entry
     from the console (the old entry out, the named block in, each group
     that held its address pointed at the named block, then a check): the
@@ -725,8 +726,9 @@ current behaviour; this file is where history lives.
     has nothing else to paste (item 46): on IOS another `tacacs server` block
     or `tacacs-server host` line of the scope's protocol, an old `aaa group
     server` (its entries first, the group before the server it names), another
-    `snmp-server community`; on Junos another `system tacplus-server` or
-    `radius-server`, another `snmp community`, the entries of another `snmp
+    `snmp-server community`; on Junos another `system tacplus-server` (a
+    `system radius-server` on a RADIUS scope: only the scope's own protocol,
+    item 53), another `snmp community`, the entries of another `snmp
     client-list`, a login class no user uses. Never a login, a line, the enable
     secret, a method list, another ACL, the other protocol's servers and
     groups, a server or group that a statement which stays names (item 47);
@@ -855,9 +857,10 @@ current behaviour; this file is where history lives.
     every server of the protocol (`group tacacs+`, `group radius`); and no
     named `aaa authorization commands` list, because the pull does not say
     which line uses a named list: it is left, with its `no` line in the report
-    to type when you know it is not in use. The order is the groups, then the
-    servers, so a group is gone before the server it names, and a RADIUS
-    group's `server name X` names a RADIUS block.
+    to type when you know it is not in use. The order is the group entries,
+    then the groups, then the servers, so an entry is gone before its group
+    and a group before the server it names, and a RADIUS group's `server name
+    X` names a RADIUS block.
 
 48. **A plan keeps its back-out, and `--backout` prints it after the check
     pull.** The check the after-steps ask for is `device config pull <name>
@@ -867,12 +870,12 @@ current behaviour; this file is where history lives.
     0600, stamped with the pull it was computed from, carried by `device config
     forget` and `device rename`): the text the plan printed, with a line that
     holds a secret's value turned into a note to type it with its own value.
-    `plan <name> --backout` computes it from the pull as before while the
-    record's pull is the stamp; after a later pull it prints the kept one, with
-    a first comment line that says which pull it undoes (the latest plan with
-    changes replaces it); with none kept it says `nothing to back out: no plan
-    was made from an earlier pull of <name>` (exit 0). `--backout --pull` is
-    refused (exit 2): a pull replaces the picture a back-out is computed from.
+    `plan <name> --backout` prints the kept one, with a first comment line
+    that says which plan and pull it undoes (the latest plan with changes
+    replaces it, item 51); with none kept it computes it from the pull, and
+    with no plan to undo it says `nothing to back out: no plan was made from an
+    earlier pull of <name>` (exit 0). `--backout --pull` is refused (exit 2): a
+    pull replaces the picture a back-out is computed from.
 
 49. **The files of a plan are named and checked more strictly.** The name of a
     device's cleanup file (`<name>.cleanup.set`) is reserved in a run, so the
@@ -886,6 +889,98 @@ current behaviour; this file is where history lives.
     directory that only a supplementary group of the user may write is
     refused. A plan reads the record, its sections and its plain view under
     the store's lock, so a pull running at the same time cannot mix two pulls.
+
+50. **A server entry of another name at the standard's address is replaced,
+    in an order that keeps the session.** IOS silently refuses a second
+    server entry with the same address and key, so a device that already
+    holds the standard's server under another form (a named `tacacs server
+    <OTHER>` block, the shape every earlier walkthrough produced, or the
+    legacy `tacacs-server host` line on a modern image) could not take
+    `tacacs server TACACS` beside it: the plan as first built typed the
+    standard block (refused), then `server name TACACS` into the group and
+    removed the old entry, and the group named a block that did not exist
+    (TACACS+ dead, local fallback only). Now the region (a) takes the
+    command-authorization lists that name the group off first, typed while
+    the server still answers (`no aaa authorization config-commands`, then
+    each `no aaa authorization commands <level> ...`), (b) removes the
+    group's `server name <OTHER>` or `server <address>` entry and then the
+    old block or `no tacacs-server host`, (c) adds the standard block, the
+    group's `server name TACACS` and the rest in the standard's order, and
+    (d) types the lists again last. A group of another name that held the old
+    entry is pointed at the standard block by its own name, so the method
+    lists that name it keep resolving. The back-out is the inverse (the old
+    block and entry back, the old key a note to type yourself, the lists
+    last) and starts by taking command authorization off. The report says
+    which entry is replaced and why. A `radius server <OTHER>` block at the
+    standard's address and ports is replaced the same way (RADIUS has no
+    command authorization). The refusal with the steps by hand
+    (`this device runs the legacy server form with command authorization`)
+    remains only for a device that authorizes commands and shows no server in
+    use (no login or exec list names a group): nothing then proves that the
+    pasting session is a TACACS+ user. On `ios12` the host line is the
+    standard and nothing of this applies. The old entry is removed by the
+    region only when the plan types the standard block's address or key; a
+    block that has both leaves the old one an extra for `--converge`.
+
+51. **The kept back-out is the device's and says what it covers.** It is
+    stamped with the pull, the device's address and the sections it undoes.
+    A narrower plan from the same pull (`plan <name>` of `aaa` and `snmp`,
+    then `plan <name> --section snmp`) no longer replaces it: the narrower one
+    would be labelled as undoing the plan of that pull. A later plan with
+    changes replaces it and the report says so (`this plan replaces the kept
+    back-out of the plan from the pull of <time> (UTC); print it first with
+    'tacctl device config plan <name> --backout'`); a plan with changes and no
+    line tacctl can type to undo them removes it (an earlier plan's back-out
+    would be printed for it) and says so. `--backout` prints the kept one
+    whenever one exists, whatever pull it was made from (it is what was
+    pasted), with a first comment line that names the sections and the pull;
+    it prints it even when the plan itself cannot be made (a stale record, a
+    rendering that fails), with one line on standard error; and for a name
+    whose address changed since the plan it says `nothing to back out: the
+    kept back-out is for another device address` (exit 0). The after-steps
+    say it is kept `until the next plan with changes`.
+
+52. **A file of an earlier plan is not left beside a new one.** A plain plan
+    after the verifying pull writes `<name>.set` and `<name>.cleanup.set`; when
+    the device changed and `--force` wrote the new `<name>.set`, the old
+    cleanup file stayed and could be loaded beside the new statements. A
+    `--plain` run that writes a device's file now removes that device's cleanup
+    file (`<out>.cleanup.set` for `--out`) when it does not write one itself,
+    and a text `--out-dir` run removes `<name>.backout.txt` when the plan has
+    no back-out to write; each says so on standard error (`Removed <path> (a
+    file of an earlier plan that this plan does not make)`). `--plain --converge`
+    says on standard error why a device has no cleanup file: the cleanup is
+    deferred to after the first region, refused as a whole, or there is
+    nothing to remove.
+
+53. **The Junos cleanup follows the scope's protocol.** On a TACACS+ scope it
+    removed `system radius-server <X>` too, which may serve accounting or
+    another login method; on a RADIUS scope it removed `system tacplus-server`.
+    It now removes only other servers of the scope's own protocol, as the IOS
+    cleanup does, and keeps one that a statement staying on the device names
+    (`system accounting destination <protocol> server <address>`). Items 39
+    and 47 read that way, and the order of an IOS cleanup is the group
+    entries first, then the groups, then the servers. The README and the
+    manual page list `snmp-server community` and `snmp community` among what
+    the cleanup removes.
+
+54. **The report agrees with the region it prints, and the Junos cleanup
+    asks for the pending commit.** A device with an empty first region, a
+    refused section (a management ACL the `--from` address is not permitted
+    by) and a cleanup said `CANNOT BE PLANNED ... Nothing is pasted for this
+    device` and then printed the cleanup region; it now says the cleanup
+    region is the only paste and names the refused section as left alone. The
+    check pull of a Junos plan is taken before its `commit`, so a plan made
+    from it reads as applied while the `commit confirmed` may still be
+    pending: the report of a Junos cleanup and its follow-up now say to check
+    that `show system commit` shows no pending `commit confirmed` (type the
+    plan's `commit` first).
+
+55. **Smaller corrections of the plan.** A kept back-out turns a line that
+    holds a value into a note whether or not its elided form is known. A group
+    entry `server 192.0.2.5` names the `radius-server host 192.0.2.5 auth-port
+    ... acct-port ...` the device stores, so the cleanup that removes the host
+    removes the entry with it and a host a staying entry names stays.
 
 
 ## 0.2.3 (2026-10-09)

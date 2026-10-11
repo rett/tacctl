@@ -376,6 +376,15 @@ func iosPool(exp []devices.Section) []string {
 		"aaa session-id unique",
 		"ip tacacs source-interface Loopback9",
 		"tacacs-server host 192.0.2.10 single-connection timeout 5 key 7 0822455D0A16",
+		// D117 (amended): the standard's server under another form, with the
+		// rendered key (type 7 of lab-secret-0123456789abcdef): a named block
+		// of another name and the group that names it, the legacy line, and a
+		// RADIUS block at the same address and ports
+		"tacacs server OLD-NAMED\n address ipv4 192.0.2.10\n key 7 0703204E031A1C0605171F41547B79777C6663754B5E170102525C5E\n single-connection",
+		"aaa group server tacacs+ OLD-GROUP\n server name OLD-NAMED",
+		"tacacs-server host 192.0.2.10 single-connection timeout 5 key 7 0703204E031A1C0605171F41547B79777C6663754B5E170102525C5E",
+		"radius server OLD-RADIUS\n address ipv4 192.0.2.10 auth-port 1812 acct-port 1813\n key 7 0703204E031A1C0605171F41547B79777C6663754B5E170102525C5E",
+		"aaa group server radius OLD-RGROUP\n server name OLD-RADIUS",
 		"snmp-server chassis-id",
 		"privilege configure level 7 snmp-server",
 		"privilege interface level 7 shutdown",
@@ -481,6 +490,7 @@ func TestPropertyFuzz(t *testing.T) {
 	ops := map[Op]int{}
 	changed := 0
 	inheritedCases := 0
+	oldForms := 0
 	for fi, f := range fixtures(t) {
 		exp, _, _ := f.load(t)
 		raw := capture(t, f.raw)
@@ -543,8 +553,17 @@ func TestPropertyFuzz(t *testing.T) {
 			if len(d.Lines) > 0 {
 				changed++
 			}
+			replaced := false
 			for _, l := range d.Lines {
 				ops[l.Op]++
+				// an old server entry at the standard's address replaced (D117)
+				if l.Op == OpNo && len(l.Context) == 0 && (strings.HasPrefix(l.Text, "tacacs server ") || strings.HasPrefix(l.Text, "radius server ") ||
+					f.syntax() == SyntaxModern && strings.HasPrefix(l.Text, "tacacs-server host ")) {
+					replaced = true
+				}
+			}
+			if replaced {
+				oldForms++
 			}
 			if t.Failed() {
 				return
@@ -555,5 +574,9 @@ func TestPropertyFuzz(t *testing.T) {
 		total, len(fixtures(t)), changed, ops[OpSet], ops[OpDelete], ops[OpInsert], ops[OpLine], ops[OpNo], inheritedCases)
 	if changed < total*2/3 || ops[OpInsert] == 0 || ops[OpNo] == 0 || ops[OpDelete] == 0 {
 		t.Errorf("the fuzz is too tame: %d of %d changed, ops %v", changed, total, ops)
+	}
+	t.Logf("fuzz: %d plans replaced an old server entry at the standard's address", oldForms)
+	if oldForms < 8 {
+		t.Errorf("the fuzz replaced an old server entry in only %d plans", oldForms)
 	}
 }

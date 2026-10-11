@@ -11,7 +11,8 @@
 # Secrets: 1 present on the device, not changed (--secrets pushes them).
 # Cleanup (--converge): the region below is the whole output: it removes 1 line: TACACS+ servers the
 # standard does not have. Paste it only after you have checked that the pull of lab-j is current
-# (tacctl device config pull lab-j --diff reads ok for aaa, and a NEW ssh session as yourself works).
+# (tacctl device config pull lab-j --diff reads ok for aaa, and a NEW ssh session as yourself works),
+# and that 'show system commit' shows no pending 'commit confirmed' (type the plan's 'commit' first).
 # The switch undoes this by itself in 5 minutes unless you type the one word after the check (see
 # below).
 # Paste over ssh, not the console; on a console paste at most twenty lines at a time and watch the
@@ -31,8 +32,9 @@ commit confirmed 5 comment "tacctl cleanup lab-j <time> by alice"
 ##### CLEANUP TO HERE: lab-j #####
 #
 # There is no other paste for lab-j: its first region is empty. Check that the pull is current
-# (tacctl device config pull lab-j --diff reads ok for aaa) and keep a NEW ssh session as yourself
-# open.
+# (tacctl device config pull lab-j --diff reads ok for aaa), that 'show system commit' shows no
+# pending 'commit confirmed' (type the plan's 'commit' first), and keep a NEW ssh session as
+# yourself open.
 # Same check, same one word, typed yourself:  commit     (before the 5 minutes end)
 # If any line printed "error:", do not type commit: the switch undoes the cleanup by itself in 5
 # minutes. To undo it after the commit: show system commit, then rollback <n> of the entry just

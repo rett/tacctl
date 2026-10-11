@@ -1,0 +1,17 @@
+!!!!! dev-cisco-same-address-block  192.0.2.21  scope lab  cisco (IOS-XE and IOS 15 syntax, TACACS+) !!!!!
+! Based on the pull of 2026-10-10 14:02 by alice over ssh (18 minutes ago; the login could see
+! secrets) and the standard of 2026-10-10 14:20 (tacctl 0.2.5). Lab-tested on IOS 12.4(15) (a 7200
+! emulator); other IOS trains and IOS-XE are written from the references.
+!
+! What is irregular on dev-cisco-same-address-block (3 items; the paste fixes 0, leaves 3):
+!  1. snmp     MONITORING extra: an SNMP community (snmp-server community <secret> RO TACCTL-SNMP).
+!                         Left alone (its name is the secret and is not known to tacctl).
+!  2. snmp     MONITORING extra: snmp-server enable traps config. Left alone. To remove it later: no
+!                         snmp-server enable traps config
+!  3. snmp     MONITORING extra: snmp-server host 192.0.2.50 version 2c <secret>. Left alone (its name
+!                         is the secret and is not known to tacctl).
+! Nothing to paste: everything above is left alone or cannot be fixed by this login.
+! Consistent: aaa, roles, mgmt-acl. Not planned: netconf, breakglass.
+! Secrets: 2 present on the device, not changed (--secrets pushes them).
+! Cleanup (--converge): nothing to remove.
+! 1 extra stays: its item above says why.

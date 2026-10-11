@@ -80,6 +80,12 @@ const cleanupKindWhy = "the cleanup does not remove this kind of statement"
 // list in use cannot be told from one that is not.
 const cleanupCmdListWhy = "a named command authorization list may be in use on a line, and the pull does not say which: type the removal yourself when you know it is not"
 
+// junosPendingCheck is the check a Junos cleanup region asks for besides the
+// pull: the check pull of the first region is taken before its 'commit', and
+// a plan made from that pull reads as applied while the 'commit confirmed'
+// may still be pending (it would be rolled back when its time runs out).
+const junosPendingCheck = "that 'show system commit' shows no pending 'commit confirmed' (type the plan's 'commit' first)"
+
 // CleanupDeferred is the one report line of a device that has a first
 // region: the cleanup is a second output, after it.
 const CleanupDeferred = "cleanup comes after this region is pasted and verified: pull the device, then plan --converge again"
@@ -244,13 +250,12 @@ func (p *planner) buildCleanup(d *Delta) {
 			}
 		}
 		if ic != nil {
-			removed := map[string]bool{}
+			var removed, stays []string
 			for i, e := range d.Extras {
 				if vs[i].ok && len(e.Remove) == 1 && len(e.Remove[0].Context) == 0 {
-					removed[e.Remove[0].Text] = true
+					removed = append(removed, e.Remove[0].Text)
 				}
 			}
-			stays := map[string]bool{}
 			for i, e := range d.Extras {
 				if e.Section != "aaa" {
 					continue
@@ -258,21 +263,24 @@ func (p *planner) buildCleanup(d *Delta) {
 				path := strings.Split(e.Text, pathSep)
 				if len(path) == 2 && !vs[i].ok {
 					if k := iosGroupEntryServer(path[0], path[1]); k != "" {
-						stays[k] = true
+						stays = append(stays, k)
 					}
 				}
 				if !vs[i].ok {
 					continue
 				}
 				for _, r := range e.Remove {
-					if len(r.Context) == 1 && strings.HasPrefix(r.Context[0], "aaa group server ") &&
-						!removed[iosGroupEntryServer(r.Context[0], r.Text)] {
-						down(i, "it names a server that stays: the group is left as it is")
+					if len(r.Context) == 1 && strings.HasPrefix(r.Context[0], "aaa group server ") {
+						k := iosGroupEntryServer(r.Context[0], r.Text)
+						if !slices.ContainsFunc(removed, func(s string) bool { return sameServerEntry(s, k) }) {
+							down(i, "it names a server that stays: the group is left as it is")
+						}
 					}
 				}
 			}
 			for i, e := range d.Extras {
-				if vs[i].ok && len(e.Remove) == 1 && len(e.Remove[0].Context) == 0 && stays[e.Remove[0].Text] {
+				if vs[i].ok && len(e.Remove) == 1 && len(e.Remove[0].Context) == 0 &&
+					slices.ContainsFunc(stays, func(s string) bool { return sameServerEntry(s, e.Remove[0].Text) }) {
 					down(i, "a group entry that names it stays")
 				}
 			}
@@ -432,6 +440,22 @@ func iosGroupEntryServer(header, leaf string) string {
 	return ""
 }
 
+// sameServerEntry reports whether two removal lines name one server: the same
+// line, or two host lines of one protocol at one address whose ports do not
+// differ (a group entry 'server 192.0.2.5' names the host the device stores
+// as 'radius-server host 192.0.2.5 auth-port 1812 acct-port 1813').
+func sameServerEntry(a, b string) bool {
+	if a == b {
+		return true
+	}
+	fa, fb := strings.Fields(a), strings.Fields(b)
+	if len(fa) >= 3 && len(fb) >= 3 && fa[0] == fb[0] && fa[1] == "host" && fb[1] == "host" && fa[2] == fb[2] &&
+		(fa[0] == "tacacs-server" || fa[0] == "radius-server") {
+		return samePorts(fa[3:], fb[3:])
+	}
+	return false
+}
+
 // cleanupRank orders the removals of a section: the entries under a header
 // first, then the groups, then the servers (and the rest), so that a group
 // is gone before the server it names and an entry before its group.
@@ -464,7 +488,8 @@ type iosCleanupCtx struct {
 }
 
 // scopeProtocol is the protocol of the scope's rendering: "radius" when its
-// aaa section has a RADIUS server or group, else "tacacs".
+// aaa section has a RADIUS server or group (on Junos: a radius-server or the
+// radius accounting destination), else "tacacs".
 func (p *planner) scopeProtocol() string {
 	for _, s := range p.exp {
 		if s.Name != "aaa" {
@@ -472,7 +497,8 @@ func (p *planner) scopeProtocol() string {
 		}
 		for _, l := range s.Lines {
 			if strings.HasPrefix(l, "radius server ") || strings.HasPrefix(l, "radius-server host ") ||
-				strings.HasPrefix(l, "aaa group server radius ") {
+				strings.HasPrefix(l, "aaa group server radius ") ||
+				strings.HasPrefix(l, "set system radius-server ") || l == "set system accounting destination radius" {
 				return "radius"
 			}
 		}
@@ -581,6 +607,20 @@ func (p *planner) junosCleanupAllowed(r Line, e Extra, from netip.Addr) (bool, s
 	t := splitTokens(strings.TrimPrefix(r.Text, "delete "))
 	switch {
 	case len(t) == 3 && t[0] == "system" && (t[1] == "tacplus-server" || t[1] == "radius-server"):
+		// the scope manages one protocol's servers only: the other's may serve
+		// accounting or another login method, and is never removed; and a
+		// server that a statement staying on the device names is left
+		proto := protoWord(t[1])
+		if proto != p.scopeProtocol() {
+			other := "RADIUS"
+			if proto == "tacacs" {
+				other = "TACACS+"
+			}
+			return false, "it is a " + other + " server and the scope's protocol is the other: it may serve accounting or another login method, and is never removed"
+		}
+		if st := p.junosStayingNames(t[1], t[2]); st != "" {
+			return false, "a statement that stays names it: " + st
+		}
 		return true, ""
 	case len(t) == 3 && t[0] == "snmp" && t[1] == "community":
 		return true, ""
@@ -596,11 +636,26 @@ func (p *planner) junosCleanupAllowed(r Line, e Extra, from netip.Addr) (bool, s
 	return false, cleanupKindWhy
 }
 
+// junosStayingNames finds a statement of the device that stays (the cleanup
+// removes no accounting statement) and names the server: 'system accounting
+// destination <protocol> server <address> ...'. kind is the server's
+// hierarchy ('tacplus-server', 'radius-server'). "" when none does.
+func (p *planner) junosStayingNames(kind, addr string) string {
+	dest := map[string]string{"tacplus-server": "tacplus", "radius-server": "radius"}[kind]
+	for _, s := range p.cur.Sections["aaa"].Lines {
+		t := splitTokens(strings.TrimPrefix(s, "set "))
+		if len(t) >= 6 && t[0] == "system" && t[1] == "accounting" && t[2] == "destination" && t[3] == dest && t[4] == "server" && t[5] == addr {
+			return strings.TrimPrefix(s, "set ")
+		}
+	}
+	return ""
+}
+
 // protoWord names the protocol of a keyword of a server line ('tacacs',
 // 'tacacs+', 'radius'): "tacacs", "radius" or "".
 func protoWord(w string) string {
 	switch w {
-	case "tacacs", "tacacs+", "tacacs-server":
+	case "tacacs", "tacacs+", "tacacs-server", "tacplus-server":
 		return "tacacs"
 	case "radius", "radius-server":
 		return "radius"
@@ -744,8 +799,15 @@ func CleanupAfter(d Delta, h Header, w Wrapper) string {
 		}
 	}
 	// the cleanup is only ever made for a device with no first region
+	// On Junos the check pull the plan asked for is taken before the one word
+	// 'commit': a pull that reads ok does not say the confirmed commit is
+	// done, and a pending one that runs out takes the first region back.
+	pending := " "
+	if d.Vendor == devconf.FamilyJunos {
+		pending = ", " + junosPendingCheck + ", "
+	}
 	why := "There is no other paste for " + h.Device + ": its first region is empty. Check that the pull is current (tacctl device config pull " + h.Device +
-		" --diff reads ok for aaa) and keep a NEW ssh session as yourself open."
+		" --diff reads ok for aaa)" + pending + "and keep a NEW ssh session as yourself open."
 	b.WriteString(c + "\n")
 	add(why)
 	if d.Vendor == devconf.FamilyIOS {

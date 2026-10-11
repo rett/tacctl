@@ -86,7 +86,7 @@ end
 !
 ! To undo: tacctl device config plan dev-cisco-old-server-forms --backout (tacctl keeps this
 ! plan's back-out: after the check pull has replaced the picture, the command still prints this
-! plan's, and says which pull it undoes)
+! plan's, and says which pull it undoes, until the next plan with changes)
 ! Do not: 'write memory' before the check; paste outside the banners; paste into another device;
 ! paste on a console more than twenty lines at a time; keep this output in a file after the paste
 ! when it holds a secret.

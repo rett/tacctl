@@ -378,6 +378,12 @@ func (c *IOSConfig) Apply(lines []Line) error {
 	// spike's "Legacy IOS 12.4"): an 'aaa ...' statement or an 'aaa group
 	// server' block typed before it is rejected, and so is the paste.
 	modelOn := slices.ContainsFunc(c.blocks, func(b iosBlk) bool { return norm(b.lines[0]) == "aaa new-model" })
+	// D117 (amended): IOS silently refuses a second server entry with the
+	// same address and key; the block the paste creates and the device
+	// refuses is gone, and what the paste then types under its header is
+	// typed into nothing. created and dropped are per paste.
+	created, dropped := map[string]bool{}, map[string]bool{}
+	dangling := c.danglingGroupEntries()
 	for _, l := range lines {
 		text := norm(l.Text)
 		if l.Op == OpLine && len(l.Context) == 0 && text == "aaa new-model" {
@@ -398,17 +404,44 @@ func (c *IOSConfig) Apply(lines []Line) error {
 		}
 		switch {
 		case l.Op == OpLine && len(l.Context) == 0:
+			if e, ok := hostLineEntry(text); ok && c.duplicateOf("", e) {
+				continue // refused, silently
+			}
 			c.typeGlobal(text)
 		case l.Op == OpLine:
-			if isLoginLeafPath([]string{l.Context[0], text}) {
-				c.replaceLogin(l.Context[0])
+			hdr := l.Context[0]
+			if dropped[hdr] {
+				continue
 			}
-			blk := c.blockFor(l.Context[0])
+			if isLoginLeafPath([]string{hdr, text}) {
+				c.replaceLogin(hdr)
+			}
+			blk := c.blockFor(hdr)
 			if blk == nil {
-				c.insertBlock(iosBlk{lines: []string{l.Context[0]}})
-				blk = c.blockFor(l.Context[0])
+				c.insertBlock(iosBlk{lines: []string{hdr}})
+				blk = c.blockFor(hdr)
+				created[hdr] = true
+			}
+			if f := strings.Fields(text); serverBlockKind(hdr) != "" && len(f) > 0 && (f[0] == "address" || f[0] == "key") {
+				cp := iosBlk{lines: slices.Clone(blk.lines)}
+				typeChild(&cp, l.Context, text)
+				if e, ok := blockServerEntry(serverBlockKind(hdr), cp.lines[1:]); ok && c.duplicateOf(hdr, e) {
+					if created[hdr] {
+						c.removeBlock(hdr)
+						dropped[hdr] = true
+					}
+					continue
+				}
+				blk.lines = cp.lines
+				continue
 			}
 			typeChild(blk, l.Context, text)
+			// a group's 'server name X' is a block the device has
+			if f := strings.Fields(text); len(f) == 3 && f[0] == "server" && f[1] == "name" {
+				if kind := groupKind(hdr); kind != "" && c.blockFor(kind+" server "+f[2]) == nil {
+					return fmt.Errorf("plan: %q under %q names no %s server block %q: the group would name a block that does not exist", l.Shown(), hdr, kind, f[2])
+				}
+			}
 		case l.Op == OpNo && len(l.Context) == 0:
 			c.noGlobal(text)
 		case l.Op == OpNo:
@@ -419,7 +452,203 @@ func (c *IOSConfig) Apply(lines []Line) error {
 			return fmt.Errorf("plan: cannot apply %q", l.Shown())
 		}
 	}
+	for g := range c.danglingGroupEntries() {
+		if !dangling[g] {
+			return fmt.Errorf("plan: the group entry %q names a server block that does not exist after the paste", g)
+		}
+	}
 	return nil
+}
+
+// --- the server entries the device refuses (D117, amended) -------------------------------
+
+// iosServerEntry is what makes two server entries the same to IOS: the
+// protocol, the address, the ports (RADIUS) and the key.
+type iosServerEntry struct {
+	kind, addr, ports, key string
+}
+
+// serverBlockKind is "tacacs" or "radius" for a 'tacacs server N' or 'radius
+// server N' header, "" for any other.
+func serverBlockKind(header string) string {
+	h := norm(header)
+	switch {
+	case strings.HasPrefix(h, "tacacs server "):
+		return "tacacs"
+	case strings.HasPrefix(h, "radius server "):
+		return "radius"
+	}
+	return ""
+}
+
+// groupKind is "tacacs" or "radius" for an 'aaa group server tacacs+|radius
+// G' header.
+func groupKind(header string) string {
+	h := norm(header)
+	switch {
+	case strings.HasPrefix(h, "aaa group server tacacs+ "):
+		return "tacacs"
+	case strings.HasPrefix(h, "aaa group server radius "):
+		return "radius"
+	}
+	return ""
+}
+
+// type7 is the table of the 'key 7' encoding, which is reversible: two
+// devices hold the same key when their decoded values are the same.
+const type7 = "dsfd;kfoA,.iyewrkldJKDHSUBsgvca69834ncxv9873254kfg87"
+
+// keyValue reads the words after 'key' as the value IOS compares: a plain or
+// 'key 0' value as it is, 'key 7' decoded, any other encryption type as an
+// opaque value of its own type.
+func keyValue(w []string) string {
+	if len(w) == 0 {
+		return ""
+	}
+	if len(w) >= 2 {
+		switch w[0] {
+		case "0":
+			return w[1]
+		case "7":
+			if v, ok := decodeType7(w[1]); ok {
+				return v
+			}
+		case "6", "8", "9":
+			return "type" + w[0] + ":" + w[1]
+		}
+	}
+	return w[0]
+}
+
+func decodeType7(h string) (string, bool) {
+	if len(h) < 4 || len(h)%2 != 0 {
+		return "", false
+	}
+	seed := 0
+	for _, r := range h[:2] {
+		if r < '0' || r > '9' {
+			return "", false
+		}
+		seed = seed*10 + int(r-'0')
+	}
+	var out []byte
+	for i := 2; i+1 < len(h); i += 2 {
+		var b byte
+		for _, r := range h[i : i+2] {
+			switch {
+			case r >= '0' && r <= '9':
+				b = b<<4 | byte(r-'0')
+			case r >= 'A' && r <= 'F':
+				b = b<<4 | byte(r-'A'+10)
+			case r >= 'a' && r <= 'f':
+				b = b<<4 | byte(r-'a'+10)
+			default:
+				return "", false
+			}
+		}
+		out = append(out, b^type7[(seed+len(out))%len(type7)])
+	}
+	return string(out), true
+}
+
+// portsOf reads the ports of a RADIUS entry (the defaults when not given) and
+// the port of a TACACS+ one.
+func portsOf(kind string, w []string) string {
+	val := func(kw, def string) string {
+		if i := slices.Index(w, kw); i >= 0 && i+1 < len(w) {
+			return w[i+1]
+		}
+		return def
+	}
+	if kind == "radius" {
+		return val("auth-port", "1812") + "/" + val("acct-port", "1813")
+	}
+	return val("port", "49")
+}
+
+// blockServerEntry reads the address, ports and key of a block's leaves; ok
+// is false while the block lacks the address or the key.
+func blockServerEntry(kind string, leaves []string) (iosServerEntry, bool) {
+	e := iosServerEntry{kind: kind}
+	for _, l := range leaves {
+		w := strings.Fields(l)
+		switch {
+		case len(w) >= 3 && w[0] == "address" && w[1] == "ipv4":
+			e.addr, e.ports = w[2], portsOf(kind, w[3:])
+		case len(w) >= 2 && w[0] == "key":
+			e.key = keyValue(w[1:])
+		}
+	}
+	if e.ports == "" {
+		e.ports = portsOf(kind, nil)
+	}
+	return e, e.addr != "" && e.key != ""
+}
+
+// hostLineEntry reads a global 'tacacs-server host A ... key K' or
+// 'radius-server host A ... key K' line.
+func hostLineEntry(text string) (iosServerEntry, bool) {
+	w := strings.Fields(text)
+	if len(w) < 3 || w[1] != "host" || (w[0] != "tacacs-server" && w[0] != "radius-server") {
+		return iosServerEntry{}, false
+	}
+	kind := strings.TrimSuffix(w[0], "-server")
+	e := iosServerEntry{kind: kind, addr: w[2], ports: portsOf(kind, w[3:])}
+	if i := slices.Index(w, "key"); i >= 0 {
+		e.key = keyValue(w[i+1:])
+	}
+	return e, e.key != ""
+}
+
+// duplicateOf reports whether another entry of the device (a named block other
+// than self, or a global host line) is the same server as e.
+func (c *IOSConfig) duplicateOf(self string, e iosServerEntry) bool {
+	for _, b := range c.blocks {
+		h := norm(b.lines[0])
+		if self != "" && h == norm(self) {
+			continue
+		}
+		var o iosServerEntry
+		var ok bool
+		if k := serverBlockKind(h); k != "" {
+			o, ok = blockServerEntry(k, b.lines[1:])
+		} else if len(b.lines) == 1 && self != "" {
+			o, ok = hostLineEntry(h)
+		}
+		if ok && o.kind == e.kind && o.addr == e.addr && o.ports == e.ports && o.key == e.key {
+			return true
+		}
+	}
+	return false
+}
+
+// removeBlock drops the block with the header.
+func (c *IOSConfig) removeBlock(header string) {
+	for i := range c.blocks {
+		if norm(c.blocks[i].lines[0]) == norm(header) {
+			c.blocks = slices.Delete(c.blocks, i, i+1)
+			return
+		}
+	}
+}
+
+// danglingGroupEntries are the 'server name X' entries of the groups that
+// name a server block the device does not have, as 'header > entry'.
+func (c *IOSConfig) danglingGroupEntries() map[string]bool {
+	out := map[string]bool{}
+	for _, b := range c.blocks {
+		kind := groupKind(b.lines[0])
+		if kind == "" {
+			continue
+		}
+		for _, l := range b.lines[1:] {
+			w := strings.Fields(l)
+			if len(w) == 3 && w[0] == "server" && w[1] == "name" && c.blockFor(kind+" server "+w[2]) == nil {
+				out[norm(b.lines[0])+" > "+norm(l)] = true
+			}
+		}
+	}
+	return out
 }
 
 // replaceLogin models what typing a login method under 'line vty A B' does:

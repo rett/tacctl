@@ -221,12 +221,18 @@ func TestPlanBackoutSurvivesTheCheckPull(t *testing.T) {
 	kept, _ := os.ReadFile(store)
 	const key = "lab-secret-0123456789abcdef"
 	noSecrets(t, "the kept back-out", string(kept), key, testPassword)
-	// computed from the pull it belongs to: the back-out as it stands
+	// the one kept prints, whatever the record's pull is: it is what was
+	// pasted. Its first comment line says the sections and the pull; while the
+	// record's pull is the stamp nothing says a later pull replaced it.
 	bo := b.run("device", "config", "plan", "lab-c", "--backout")
 	if b.sb.code != 0 || !strings.Contains(bo, "!!!!! BACK-OUT FROM HERE: lab-c !!!!!") || strings.Contains(bo, "PASTE FROM HERE") ||
-		!strings.Contains(bo, "\nno tacacs server TACACS\n") || strings.Contains(unwrapPlan(bo), "undoes the plan made from the pull of") {
+		!strings.Contains(bo, "\nno tacacs server TACACS\n") ||
+		!strings.HasPrefix(bo, "! This back-out undoes the plan of aaa made from the pull of ") ||
+		!strings.Contains(strings.SplitN(bo, "\n", 2)[0], "it is the one tacctl kept from that plan.") ||
+		strings.Contains(bo, "a later pull replaced that picture") {
 		t.Fatalf("backout: %d\n%s", b.sb.code, bo)
 	}
+	_, bo, _ = strings.Cut(bo, "\n")
 	// the paste is made, and the check pull reads the device: the record now
 	// shows the standard, the plan has nothing to paste
 	b.serve("cisco", b.expected("lab-c"))
@@ -237,7 +243,7 @@ func TestPlanBackoutSurvivesTheCheckPull(t *testing.T) {
 	}
 	// ... and the back-out is the one the plan kept, with the pull it undoes
 	got := b.run("device", "config", "plan", "lab-c", "--backout")
-	if b.sb.code != 0 || !strings.HasPrefix(got, "! This back-out undoes the plan made from the pull of ") ||
+	if b.sb.code != 0 || !strings.HasPrefix(got, "! This back-out undoes the plan of aaa made from the pull of ") ||
 		!strings.Contains(got, "a later pull replaced that picture") {
 		t.Fatalf("after the check pull: %d\n%s", b.sb.code, got)
 	}

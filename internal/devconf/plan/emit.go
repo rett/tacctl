@@ -254,21 +254,27 @@ func StoredBackout(d Delta, h Header, w Wrapper) (string, error) {
 // held one turned into a note.
 func (d Delta) kept() Delta {
 	c := d.shown()
+	// A line that holds a value is a note whether or not its elided form is
+	// known: with none the note names the section, and the value (Text) is
+	// never copied.
 	note := func(l Line) Line {
 		text := l.Elided
-		if l.Op == OpNo {
+		switch {
+		case text == "":
+			text = "a statement of " + l.Section + " that holds a secret"
+		case l.Op == OpNo:
 			text = "no " + text
 		}
 		return Line{Op: OpComment, Section: l.Section, Text: "type yourself, with its own value: " + text}
 	}
 	for i, l := range d.Backout {
-		if l.Secret && l.HasValue && l.Elided != "" {
+		if l.Secret && l.HasValue {
 			c.Backout[i] = note(l)
 		}
 	}
 	for i, l := range d.Lines {
 		for j, u := range l.Undo {
-			if u.Secret && u.HasValue && u.Elided != "" {
+			if u.Secret && u.HasValue {
 				c.Lines[i].Undo[j] = note(u)
 			}
 		}

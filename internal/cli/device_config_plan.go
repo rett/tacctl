@@ -50,10 +50,14 @@ type planDevice struct {
 	status plan.DeviceStatus
 	// cannot is why the device could not be planned ("" when it was).
 	cannot string
-	// backout is the back-out kept from an earlier plan, when a pull made
-	// since replaced the picture it was computed from (--backout prints it).
+	// backout is the back-out kept from an earlier plan (--backout prints it,
+	// whatever pull it was computed from: it is what was pasted).
 	backout *devconf.StoredBackout
-	// backoutNote is a warning about the back-out that was not saved.
+	// noBackout is why --backout prints nothing for a kept back-out that is
+	// not this device's.
+	noBackout string
+	// backoutNote is a line about the back-out for standard error: one that
+	// could not be saved, one that was kept, one that a plan replaced.
 	backoutNote string
 }
 
@@ -186,6 +190,12 @@ func (r *planRun) planOne(e devreg.Entry) planDevice {
 	cannot := func(why string) planDevice {
 		out.cannot = why
 		out.status = plan.CannotPlan(out.h, why)
+		// --backout needs none of the plan's prerequisites (a stale record, a
+		// rendering that fails): what was kept is what was pasted
+		if r.opt.backout && snap.backout != nil && e.Vendor != "wti" {
+			r.keptBackout(&out, e, snap.backout)
+			out.backoutNote = "the plan itself cannot be made (" + why + "); the back-out kept from an earlier plan is printed"
+		}
 		return out
 	}
 	switch {
@@ -261,22 +271,73 @@ func (r *planRun) planOne(e devreg.Entry) planDevice {
 	// check pull the after-steps ask for replaces the picture a back-out is
 	// computed from, and this is what --backout prints then. --backout
 	// itself never replaces it.
+	kept := snap.backout
+	sameDevice := kept != nil && kept.Address == e.Address && kept.Vendor == e.Vendor
 	switch {
 	case r.opt.backout:
-		if b := snap.backout; b != nil && !b.Pulled.Equal(rec.Pulled) {
-			out.backout = b
+		// the one kept prints whatever pull it was computed from: it is what
+		// was pasted (a recomputation from the record would be of another
+		// plan's options)
+		if kept != nil {
+			r.keptBackout(&out, e, kept)
 		}
 	case !d.Empty() && plan.HasBackout(d):
-		text, berr := plan.StoredBackout(d, out.h, r.wrap)
-		if berr == nil {
-			berr = r.store.SaveBackout(name, devconf.StoredBackout{Pulled: rec.Pulled, Vendor: e.Vendor, Text: text})
+		sections := d.Planned()
+		switch {
+		case sameDevice && kept.Pulled.Equal(rec.Pulled) && len(kept.Sections) > 0 && subsetOf(sections, kept.Sections):
+			// a narrower plan from the same pull: the back-out kept covers
+			// what was pasted, this plan's sections included
+			out.backoutNote = "the back-out kept from this pull covers " + strings.Join(kept.Sections, ", ") +
+				" and is kept: this plan covers " + strings.Join(sections, ", ") + " only"
+		default:
+			text, berr := plan.StoredBackout(d, out.h, r.wrap)
+			if berr == nil {
+				berr = r.store.SaveBackout(name, devconf.StoredBackout{Pulled: rec.Pulled, Vendor: e.Vendor, Address: e.Address,
+					Sections: sections, Text: text})
+			}
+			if berr != nil {
+				out.backoutNote = "the back-out of this plan could not be kept for later: " + strings.Join(msgs(berr), " ") +
+					" Print it now: tacctl device config plan " + name + " --backout"
+			} else if kept != nil && !kept.Pulled.Equal(rec.Pulled) {
+				// the one kept is of an earlier pull: a plan that was pasted and
+				// not undone loses its back-out here, so the report says so
+				out.d.Warnings = append(slices.Clone(out.d.Warnings), "this plan replaces the kept back-out of the plan from the pull of "+
+					kept.Pulled.UTC().Format("2006-01-02 15:04")+" (UTC); print it first with 'tacctl device config plan "+name+" --backout'")
+			}
 		}
-		if berr != nil {
-			out.backoutNote = "the back-out of this plan could not be kept for later: " + strings.Join(msgs(berr), " ") +
-				" Print it now: tacctl device config plan " + name + " --backout"
+	case !d.Empty() && kept != nil:
+		// changes and no line tacctl can type to undo them: the one kept is of
+		// another plan and would be taken for this one's
+		if berr := r.store.RemoveBackout(name); berr != nil {
+			out.backoutNote = "the back-out kept from an earlier plan could not be removed: " + strings.Join(msgs(berr), " ")
+		} else {
+			out.d.Warnings = append(slices.Clone(out.d.Warnings), "this plan has no lines tacctl can type to undo it and removes the kept back-out of the plan from the pull of "+
+				kept.Pulled.UTC().Format("2006-01-02 15:04")+" (UTC); print it first with 'tacctl device config plan "+name+" --backout'")
 		}
 	}
 	return out
+}
+
+// keptBackout sets the back-out --backout prints from the kept one, or says
+// why it is not this device's: a name that moved to another address (or
+// vendor) is another device.
+func (r *planRun) keptBackout(out *planDevice, e devreg.Entry, b *devconf.StoredBackout) {
+	out.cannot = ""
+	if b.Address != e.Address || b.Vendor != e.Vendor {
+		out.noBackout = "nothing to back out: the kept back-out is for another device address"
+		return
+	}
+	out.backout = b
+}
+
+// subsetOf reports whether every section of a is in b.
+func subsetOf(a, b []string) bool {
+	for _, s := range a {
+		if !slices.Contains(b, s) {
+			return false
+		}
+	}
+	return true
 }
 
 // planSnapshot is what one device's plan reads of the store, in one read.
@@ -288,8 +349,8 @@ type planSnapshot struct {
 	backout     *devconf.StoredBackout
 }
 
-// snapshot reads a device's record, sections, plain view and (for
-// --backout) stored back-out under the store's lock, as one picture.
+// snapshot reads a device's record, sections, plain view and stored back-out
+// under the store's lock, as one picture.
 func (r *planRun) snapshot(e devreg.Entry) planSnapshot {
 	var s planSnapshot
 	if _, err := os.Stat(r.store.Records); err != nil {
@@ -302,6 +363,10 @@ func (r *planRun) snapshot(e devreg.Entry) planSnapshot {
 		return s
 	}
 	defer unlock()
+	// the back-out of an earlier plan is read first: --backout prints it
+	// whatever the rest of the plan finds, and a plan that has changes replaces
+	// or keeps it by what it holds
+	s.backout, _ = r.store.Backout(e.Name)
 	recs, _ := r.store.Load()
 	rec, ok := recs.Of(e.Name)
 	if !ok {
@@ -315,9 +380,6 @@ func (r *planRun) snapshot(e devreg.Entry) planSnapshot {
 	s.sections, s.sectionsErr = r.store.Sections(e.Name, e.Vendor)
 	if pv, err := r.store.Plain(e.Name, e.Vendor, c.Pulled); err == nil {
 		s.plain = pv
-	}
-	if r.opt.backout {
-		s.backout, _ = r.store.Backout(e.Name)
 	}
 	return s
 }
@@ -434,6 +496,12 @@ func (o planOptions) deviceText(r planDevice, w plan.Wrapper) (text, cleanup str
 	// a device with no plan at all (never pulled, stale, a read that failed)
 	noPlan := r.d.Vendor == ""
 	switch {
+	case o.backout && r.backout != nil:
+		// the one kept from the plan that was pasted, whatever pull replaced
+		// the picture it was computed from
+		return storedBackoutText(r), "", nil
+	case o.backout && r.noBackout != "":
+		return cannotNote(r, r.noBackout), "", nil
 	case noPlan && o.asJSON:
 		b, jerr := plan.CannotPlanJSON(r.h, r.cannot)
 		return string(b) + "\n", "", jerr
@@ -446,11 +514,6 @@ func (o planOptions) deviceText(r planDevice, w plan.Wrapper) (text, cleanup str
 		b, jerr := plan.JSON(r.d, r.h, w)
 		return string(b) + "\n", "", jerr
 	case o.backout:
-		if r.backout != nil {
-			// a pull made since replaced the picture: the back-out is the one
-			// kept from the plan, said to be of that pull
-			return storedBackoutText(r), "", nil
-		}
 		if r.d.Empty() {
 			return cannotNote(r, "nothing to back out: no plan was made from an earlier pull of "+r.e.Name), "", nil
 		}
@@ -469,14 +532,24 @@ func (o planOptions) deviceText(r planDevice, w plan.Wrapper) (text, cleanup str
 }
 
 // storedBackoutText is the back-out kept from an earlier plan, with a first
-// comment line that says which pull it undoes.
+// comment line that says which plan it undoes: its sections and the pull it
+// was made from.
 func storedBackoutText(r planDevice) string {
 	c := "#"
 	if r.backout.Vendor == "cisco" || strings.HasPrefix(r.backout.Text, "!") {
 		c = "!"
 	}
-	return c + " This back-out undoes the plan made from the pull of " + r.backout.Pulled.UTC().Format("2006-01-02 15:04") +
-		" (UTC); a later pull replaced that picture, so it is the one tacctl kept from that plan.\n" + r.backout.Text
+	what := "the plan"
+	if len(r.backout.Sections) > 0 {
+		what = "the plan of " + strings.Join(r.backout.Sections, ", ")
+	}
+	line := c + " This back-out undoes " + what + " made from the pull of " + r.backout.Pulled.UTC().Format("2006-01-02 15:04") + " (UTC)"
+	if r.h.Pulled.After(r.backout.Pulled) {
+		line += "; a later pull replaced that picture, so it is the one tacctl kept from that plan"
+	} else {
+		line += "; it is the one tacctl kept from that plan"
+	}
+	return line + ".\n" + r.backout.Text
 }
 
 // planBackout is the back-out region alone.
@@ -696,9 +769,12 @@ type planFile struct {
 
 // writePlanFiles writes the files as the caller: the directory is made 0700
 // (an existing one must not be open to others), a name that exists is
-// refused for all of them before any is written, unless --force.
-func (inv *invocation) writePlanFiles(dir string, files []planFile, force bool) error {
-	return inv.asCaller(func() error {
+// refused for all of them before any is written, unless --force. The stale
+// files (regular files of an earlier plan beside a main file that was
+// written) are removed after the write; the ones that were there are
+// returned.
+func (inv *invocation) writePlanFiles(dir string, files []planFile, stale []string, force bool) (removed []string, err error) {
+	err = inv.asCaller(func() error {
 		if dir != "" {
 			if err := os.MkdirAll(dir, 0o700); err != nil {
 				return fmt.Errorf("cannot create %s: %w", dir, err)
@@ -730,8 +806,19 @@ func (inv *invocation) writePlanFiles(dir string, files []planFile, force bool) 
 				return err
 			}
 		}
+		for _, p := range stale {
+			st, err := os.Lstat(p)
+			if err != nil || !st.Mode().IsRegular() {
+				continue // not there, or not a file of ours: left alone
+			}
+			if err := os.Remove(p); err != nil {
+				return fmt.Errorf("cannot remove %s, a file of an earlier plan: %w", p, err)
+			}
+			removed = append(removed, p)
+		}
 		return nil
 	})
+	return removed, err
 }
 
 // --- the verb ------------------------------------------------------------------------
@@ -860,6 +947,12 @@ func (inv *invocation) deviceConfigPlan(args []string) error {
 
 	written := map[string]string{}
 	var files []planFile
+	// companions are the files of an earlier run that sit beside a device's
+	// main file and that this run may not write: the cleanup file of a plain
+	// plan, the back-out of a text plan. When the main file is written they
+	// are the old plan's, and a technician who loads the pair would run the
+	// old cleanup beside the new statements (B1 through files).
+	var companions []string
 	switch {
 	case opt.out != "":
 		path, aerr := filepath.Abs(opt.out)
@@ -875,6 +968,9 @@ func (inv *invocation) deviceConfigPlan(args []string) error {
 			files = append(files, planFile{path, texts[0].text})
 			if opt.plain && opt.converge && texts[0].cleanup != "" {
 				files = append(files, planFile{cleanupName(path), texts[0].cleanup})
+			}
+			if opt.plain {
+				companions = append(companions, cleanupName(path))
 			}
 			written[strings.ToLower(results[0].e.Name)] = path
 		}
@@ -903,6 +999,13 @@ func (inv *invocation) deviceConfigPlan(args []string) error {
 			seen[name] = true
 			files = append(files, planFile{filepath.Join(dir, name), texts[i].text})
 			written[strings.ToLower(r.e.Name)] = filepath.Join(dir, name)
+			switch {
+			case opt.plain:
+				// the file of this mode's own family that this run may not write
+				companions = append(companions, filepath.Join(dir, cleanupName(name)))
+			case !opt.asJSON && !opt.backout:
+				companions = append(companions, filepath.Join(dir, r.e.Name+".backout.txt"))
+			}
 			if opt.plain && opt.converge && texts[i].cleanup != "" {
 				// the cleanup's own name counts as a file of the run too: the
 				// plain file of a device called x.cleanup is the same file
@@ -939,9 +1042,38 @@ func (inv *invocation) deviceConfigPlan(args []string) error {
 		if opt.outDir != "" {
 			dir, _ = filepath.Abs(opt.outDir)
 		}
-		if err := inv.writePlanFiles(dir, files, opt.force); err != nil {
+		// the companions this run does not write are removed with the main file
+		var stale []string
+		for _, c := range companions {
+			if !slices.ContainsFunc(files, func(f planFile) bool { return f.path == c }) && !slices.Contains(stale, c) {
+				stale = append(stale, c)
+			}
+		}
+		removed, err := inv.writePlanFiles(dir, files, stale, opt.force)
+		if err != nil {
 			inv.app.Out.ErrorE(err.Error())
 			return exit(1)
+		}
+		for _, f := range removed {
+			inv.stderrLine("Removed " + f + " (a file of an earlier plan that this plan does not make).")
+		}
+	}
+	// --plain --converge makes the cleanup file only for a device that has a
+	// cleanup: for the others one line says why there is none
+	if opt.plain && opt.converge {
+		for i, r := range results {
+			if !r.planned() || texts[i].cleanup != "" || r.d.Vendor == "" {
+				continue
+			}
+			c := r.d.Cleanup
+			switch {
+			case c.Deferred != "":
+				inv.stderrLine(r.e.Name + ": no cleanup file: " + c.Deferred)
+			case c.Whole != "":
+				inv.stderrLine(r.e.Name + ": no cleanup file: the cleanup is not offered: " + cleanLine(c.Whole))
+			default:
+				inv.stderrLine(r.e.Name + ": no cleanup file: nothing to remove")
+			}
 		}
 	}
 

@@ -6409,9 +6409,17 @@ scope sets none is not listed. The forms of an earlier walkthrough
 beside a
 .BR "radius server" " block, a server group of another name)"
 are listed as extras
-.RB ( + " lines), never as satisfied lines, and nothing removes them. An old"
+.RB ( + " lines), never as satisfied lines, and the walkthrough removes none of"
+them:
+.B "device config plan"
+replaces an entry at the standard server's address in its region and
+.B \-\-converge
+removes the others, and what neither does stays on the device until you remove
+it there. An old
 .B "tacacs-server host"
-entry at the standard server's address on a modern image is replaced from the
+entry at the standard server's address on a modern image, on a device that
+.B plan
+refuses (command authorization on and no server in use), is replaced from the
 console, as a user that reaches privilege 15 there, in four steps:
 .BR "no tacacs-server host " <address> ;
 the standard's
@@ -6735,15 +6743,34 @@ and
 never beside a first region, because whoever copies a whole output runs every
 region in it. A device with a first region gets that region and one line,
 .BR "cleanup comes after this region is pasted and verified: pull the device, then plan \-\-converge again" .
-It removes other servers of the scope's protocol and their groups (IOS: a
-legacy
+It removes other servers of the scope's own protocol and their groups, and
+other SNMP communities (IOS: a legacy
 .B tacacs\-server host
 line, a
 .B tacacs server
 block, an old
 .BR "aaa group server" ,
-its entries first and the group before the server it names; Junos: another
-server, a login class no user uses, the entries of another client list). It
+its entries first, then the group, then the server it names, another
+.BR "snmp\-server community" ;
+Junos: another
+.B "system tacplus\-server"
+(on a RADIUS scope another
+.BR "system radius\-server" :
+never the other protocol's, which may serve accounting or another login
+method, nor a server that a staying
+.B "system accounting destination <protocol> server <address>"
+names), another
+.BR "snmp community" ,
+a login class no user uses, the entries of another client list). On Junos the
+check pull of the first region is taken before its
+.BR commit ,
+so the report and the follow-up of the cleanup also ask that
+.B "show system commit"
+shows no pending
+.B "commit confirmed"
+(type the plan's
+.B commit
+first). It
 never removes a login, a line, the enable secret, a method list (not a named
 .B "aaa authorization commands"
 list either: the pull does not say which line uses it, and the report gives
@@ -6774,16 +6801,27 @@ check the plan asks for is a pull, which replaces the picture a back\-out is
 computed from, so every plan that has changes keeps its back\-out beside the
 device's record
 .RI ( /var/lib/tacctl/device\-config/ <name> .backout ;
-0600, stamped with the pull it was computed from, a secret's
-value never in it, carried by
+0600, stamped with the pull it was computed from, the device's address and the
+sections it undoes, a secret's value never in it, carried by
 .B "device config forget"
 and
-.BR "device rename" ):
-while the record's pull is the stamp
+.BR "device rename" ).
 .B \-\-backout
-computes it as above, after a later pull it prints the kept one with a first
-comment line that says which pull it undoes (the latest plan with changes
-replaces it), and with none kept it says
+prints the kept one whenever one exists, whatever pull it was made from (it is
+what was pasted), with a first comment line that names the sections and the
+pull, and prints it even when the plan itself cannot be made (a stale record),
+with one line on standard error. A narrower plan from the same pull
+.RB ( "plan <name> \-\-section snmp"
+after
+.BR "plan <name>" )
+does not replace it; a later plan with changes does, and the report then says
+.BR "this plan replaces the kept back\-out of the plan from the pull of <time> (UTC); print it first with 'tacctl device config plan <name> \-\-backout'" ;
+a plan with changes and no line tacctl can type to undo them removes it and
+says so; a plan with nothing to paste leaves it. For a device name whose
+address changed since the plan it says
+.B "nothing to back out: the kept back\-out is for another device address"
+(exit 0); with none kept it is computed from the pull, and with no plan to
+undo it says
 .B "nothing to back out: no plan was made from an earlier pull of <name>"
 (exit 0).
 .B "\-\-backout \-\-pull"
@@ -6811,7 +6849,41 @@ has no local user at privilege 15 and no
 .B "aaa new\-model"
 is refused for
 .B aaa
-(add the break\-glass user first). The syntax is the setting of
+(add the break\-glass user first). IOS silently refuses a second server entry
+with the same address and key, so a device that holds the standard's server as
+a named
+.B "tacacs server <OTHER>"
+block or as the legacy
+.B tacacs\-server host
+line on a modern image cannot take
+.B "tacacs server TACACS"
+beside it. The region replaces it in an order that keeps the pasting session:
+the command\-authorization lists that name the group are taken off first
+.RB ( "no aaa authorization config\-commands" ,
+then each
+.BR "no aaa authorization commands <level> ..." ),
+typed while the server still answers; then the group's
+.B "server name <OTHER>"
+or
+.B "server <address>"
+entry and the old block or
+.BR "no tacacs\-server host" ;
+then the standard block, the group's
+.B "server name TACACS"
+and the rest of the standard's order; and the lists again, last. A group of
+another name that held the old entry is pointed at the standard block by its
+own name. The back\-out is the inverse (the old block and entry back, its key a
+note for you to type, the lists last) and starts by taking command
+authorization off. A
+.B "radius server <OTHER>"
+block at the standard's address and ports is replaced the same way. Only a
+device that authorizes commands and shows no server in use (no login or exec
+list names a group), where nothing proves that the pasting session is a
+TACACS+ user, is refused for
+.B aaa
+with the steps by hand below the region. The old entry is removed by the
+region only when the plan types the standard block's address or key. The
+syntax is the setting of
 .B "device config\-syntax"
 or the pull's version line, never the ssh flag; a device that needs a pull is
 not planned. A Junos statement that a group applies (the inheritance view
@@ -6886,7 +6958,23 @@ A device that cannot be planned gets no
 file (an empty one would read as nothing to load); the name of a device's
 cleanup file, and
 .I COVER.txt
-when a cover is written, count as files of the run.
+when a cover is written, count as files of the run. A
+.B \-\-plain
+run that writes a device's file also removes that device's
+.I <name>.cleanup.set
+(the
+.IR <out>.cleanup.set
+of
+.BR \-\-out )
+of an earlier plan when it does not write one itself, and a text
+.B \-\-out\-dir
+run removes
+.I <name>.backout.txt
+when the plan has no back\-out to write (each says so on standard error), so
+that an old cleanup is never left beside new statements;
+.B "\-\-plain \-\-converge"
+says on standard error why a device has no cleanup file (deferred to after the
+first region, refused, nothing to remove).
 Several devices print the cover page first, one line per device
 .RB ( consistent ,
 .BR "needs change" ,

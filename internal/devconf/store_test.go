@@ -399,7 +399,7 @@ func TestRenameDropsAStalePlainViewOfTheTarget(t *testing.T) {
 	if err := s.SavePlain("new", "junos", secs, pulled); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SaveBackout("new", StoredBackout{Pulled: pulled, Vendor: "junos", Text: "# x\n"}); err != nil {
+	if err := s.SaveBackout("new", StoredBackout{Pulled: pulled, Vendor: "junos", Address: "192.0.2.1", Text: "# x\n"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Rename("old", "new"); err != nil {
@@ -433,26 +433,30 @@ func TestStoredBackoutFollowsTheDevice(t *testing.T) {
 		t.Fatalf("a back-out before any plan: %v %v", got, err)
 	}
 	text := "##### box #####\n# BACK-OUT\n##### BACK-OUT FROM HERE: a #####\nconfigure private\nset a b\n"
-	if err := s.SaveBackout("a", StoredBackout{Pulled: pulled, Vendor: "juniper", Text: text}); err != nil {
+	if err := s.SaveBackout("a", StoredBackout{Pulled: pulled, Vendor: "juniper", Address: "192.0.2.1", Sections: []string{"aaa", "snmp"}, Text: text}); err != nil {
 		t.Fatal(err)
 	}
 	if st, err := os.Stat(filepath.Join(s.Dir, "a.backout")); err != nil || st.Mode().Perm() != 0o600 {
 		t.Fatalf("back-out file: %v %v", st, err)
 	}
 	got, err := s.Backout("a")
-	if err != nil || got == nil || got.Text != text || !got.Pulled.Equal(pulled) || got.Vendor != "juniper" {
+	if err != nil || got == nil || got.Text != text || !got.Pulled.Equal(pulled) || got.Vendor != "juniper" ||
+		got.Address != "192.0.2.1" || strings.Join(got.Sections, ",") != "aaa,snmp" {
 		t.Fatalf("back-out: %+v %v", got, err)
 	}
-	// a stamp is required
-	if err := s.SaveBackout("a", StoredBackout{Vendor: "juniper", Text: text}); err == nil {
+	// a stamp and the address are required
+	if err := s.SaveBackout("a", StoredBackout{Vendor: "juniper", Address: "192.0.2.1", Text: text}); err == nil {
 		t.Error("a back-out with no stamp was stored")
+	}
+	if err := s.SaveBackout("a", StoredBackout{Pulled: pulled, Vendor: "juniper", Text: text}); err == nil {
+		t.Error("a back-out with no address was stored")
 	}
 	// the next plan replaces it
 	later := pulled.Add(time.Hour)
-	if err := s.SaveBackout("a", StoredBackout{Pulled: later, Vendor: "juniper", Text: "# two\n"}); err != nil {
+	if err := s.SaveBackout("a", StoredBackout{Pulled: later, Vendor: "juniper", Address: "192.0.2.1", Text: "# two\n"}); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := s.Backout("a"); got == nil || got.Text != "# two\n" || !got.Pulled.Equal(later) {
+	if got, _ := s.Backout("a"); got == nil || got.Text != "# two\n" || !got.Pulled.Equal(later) || len(got.Sections) != 0 {
 		t.Errorf("replaced back-out: %+v", got)
 	}
 	// a file that is none of ours is no back-out
@@ -473,7 +477,20 @@ func TestStoredBackoutFollowsTheDevice(t *testing.T) {
 	if got, _ := s.Backout("a"); got != nil {
 		t.Error("the old back-out stayed")
 	}
-	if err := s.SaveBackout("b", StoredBackout{Pulled: pulled, Vendor: "juniper", Text: "# b\n"}); err != nil {
+	if err := s.SaveBackout("b", StoredBackout{Pulled: pulled, Vendor: "juniper", Address: "192.0.2.2", Text: "# b\n"}); err != nil {
+		t.Fatal(err)
+	}
+	// a plan with changes and nothing to type removes the kept one
+	if err := s.RemoveBackout("b"); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.Backout("b"); got != nil {
+		t.Errorf("RemoveBackout left it: %+v", got)
+	}
+	if err := s.RemoveBackout("b"); err != nil {
+		t.Errorf("removing a back-out that is not there: %v", err)
+	}
+	if err := s.SaveBackout("b", StoredBackout{Pulled: pulled, Vendor: "juniper", Address: "192.0.2.2", Text: "# b\n"}); err != nil {
 		t.Fatal(err)
 	}
 	if had, err := s.Forget("c"); err != nil || !had {

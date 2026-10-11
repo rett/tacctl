@@ -139,6 +139,12 @@ func fixtures(t testing.TB) []fixture {
 		{name: "cisco.real-12.4-7200", vendor: "cisco", raw: "ios/real-12.4-7200/running-config.txt", expected: "ios/real-12.4-7200/expected.txt", legacy: true},
 		{name: "cisco.reference-bare", vendor: "cisco", raw: "ios/reference-bare/running-config.txt", expected: "ios/reference-lab/expected.txt"},
 		{name: "cisco.xe-reference-16", vendor: "cisco", raw: "ios-xe/reference-16/running-config.txt", expected: "ios-xe/reference-16/expected.txt", protocol: "RADIUS"},
+		// D117 (amended): the shape of a real 15.6 device, a named block of
+		// another name at the standard's address, with the command lists on
+		// the device and without (appended last: the fuzz seeds follow the
+		// order of the fixtures)
+		{name: "cisco.same-address-block", vendor: "cisco", raw: "ios/same-address-block/running-config.txt", expected: "ios/same-address-block/expected.txt"},
+		{name: "cisco.same-address-block-nocmd", vendor: "cisco", raw: "ios/same-address-block-nocmd/running-config.txt", expected: "ios/same-address-block-nocmd/expected.txt"},
 	}
 }
 

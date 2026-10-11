@@ -245,6 +245,19 @@ print("fine")' <<< "$output"
     assert_success
     [[ ! -s "$f" ]]
     [[ "$(cat "${BATS_TEST_TMPDIR}/after.cleanup.set")" == "delete system tacplus-server 192.0.2.99" ]]
+
+    # the device changes again: the new statements are written and the
+    # cleanup file of the earlier plan is taken away, never left beside them
+    head -n -1 "$JCMD" > "${JCMD}.new"
+    mv "${JCMD}.new" "$JCMD"
+    cp "$JCMD" "$JPLAIN"
+    alice device config pull lab-j
+    assert_success
+    alice device config plan lab-j --plain --converge --out "$f" --force
+    assert_success
+    assert_output --partial "Removed ${BATS_TEST_TMPDIR}/after.cleanup.set"
+    [[ "$(cat "$f")" == "set system authentication-order tacplus" ]]
+    [[ ! -e "${BATS_TEST_TMPDIR}/after.cleanup.set" ]]
 }
 
 @test "plan: --backout after the check pull prints the back-out the plan kept; --backout --pull is refused" {
@@ -254,7 +267,10 @@ print("fine")' <<< "$output"
     alice device config plan lab-j --backout
     assert_success
     assert_line "delete system authentication-order"
-    refute_output --partial "undoes the plan made from the pull"
+    # the one kept prints, saying which plan and pull it undoes; the record's
+    # pull is still the stamp, so nothing says a later pull replaced it
+    assert_line --regexp '^# This back-out undoes the plan of aaa made from the pull of [0-9: -]+ \(UTC\); it is the one tacctl kept from that plan\.$'
+    refute_output --partial "a later pull replaced that picture"
     # the paste is made and the check pull replaces the baseline
     printf '%s\n' 'set system authentication-order tacplus' >> "$JCMD"
     cp "$JCMD" "$JPLAIN"
@@ -262,7 +278,7 @@ print("fine")' <<< "$output"
     assert_success
     alice device config plan lab-j --backout
     assert_success
-    assert_line --regexp '^# This back-out undoes the plan made from the pull of [0-9: -]+ \(UTC\); a later pull replaced that picture'
+    assert_line --regexp '^# This back-out undoes the plan of aaa made from the pull of [0-9: -]+ \(UTC\); a later pull replaced that picture'
     assert_line "##### BACK-OUT FROM HERE: lab-j #####"
     assert_line "delete system authentication-order"
     alice device config plan lab-j --backout --pull
