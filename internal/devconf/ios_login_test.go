@@ -499,8 +499,15 @@ func TestCiscoTruncatedPrivilegeNote(t *testing.T) {
 			nil},
 		{"another level",
 			[]string{"privilege exec all level 7 monitor capture"},
+			[]string{"privilege exec level 5 monitor"},
+			[]string{"- privilege exec all level 7 monitor capture", "+ privilege exec level 5 monitor"},
+			nil},
+		// the command's own default level is what a 15.x image keeps of a
+		// removed line (CHANGELOG 61): not an extra, and no note
+		{"the default level is the image's own",
+			[]string{"privilege exec all level 7 monitor capture"},
 			[]string{"privilege exec level 15 monitor"},
-			[]string{"- privilege exec all level 7 monitor capture", "+ privilege exec level 15 monitor"},
+			[]string{"- privilege exec all level 7 monitor capture"},
 			nil},
 		{"the longest stored form is named",
 			[]string{"privilege exec level 7 monitor capture start"},

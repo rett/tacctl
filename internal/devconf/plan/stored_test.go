@@ -107,14 +107,22 @@ var storedCases = map[string]rowCase{
 			"privilege exec level 1 undebug", "privilege exec level 15 clear counters"} {
 			noLine(t, d, "roles", "no "+l)
 		}
-		var notes int
+		// the comparison leaves out the lines of a command the rendering has
+		// no line for (CHANGELOG 61): none is kept with a note, none reported.
+		// The one the rendering does have ('undebug all', rendered at level
+		// 7) is the paste's to replace, and so is a parent-shaped line of its
+		// words at level 1 or 15 (the table says 'undebug' is level 15, so
+		// 'level 1 undebug' is somebody's): the guard keeps both with the
+		// note.
+		var noted []string
 		for _, k := range d.Kept {
 			if strings.HasPrefix(k.Text, "privilege exec level ") && strings.Contains(k.Note, "default level") {
-				notes++
+				noted = append(noted, k.Text)
 			}
 		}
-		if notes == 0 {
-			t.Errorf("the residue lines are not kept with a note: %+v", d.Kept)
+		slices.Sort(noted)
+		if want := []string{"privilege exec level 1 undebug", "privilege exec level 15 undebug all"}; !slices.Equal(noted, want) {
+			t.Errorf("kept with a note: %q, want %q", noted, want)
 		}
 		st := rolesState(t, "cisco.reference-lab")
 		for _, s := range []string{"privilege exec level 1 ping", "privilege exec level 15 clear counters", "privilege exec level 15 clear ip", "privilege exec level 1 show", "privilege exec level 1 undebug"} {

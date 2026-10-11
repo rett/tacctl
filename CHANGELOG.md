@@ -1141,6 +1141,26 @@ current behaviour; this file is where history lives.
     it is extra and the plan removes it with the command (whenever a
     rendering is given, a rendered `privilege` line or none).
 
+61. **The privilege lines IOS 15.x leaves behind are the image's own and are
+    not reported.** On IOS 15.x and IOS-XE, `no privilege exec level N
+    <command>` does not remove the line: the image keeps `privilege exec
+    level <the command's own level> <command>` (`level 15 clear counters`,
+    `level 15 monitor capture`, `level 1 ping`, and the words leading to
+    them: `level 15 clear ip`, `level 15 monitor`, `level 1 clear`, `level 1
+    show`). Nobody can remove such a line, so a device that ever had one
+    removed read `roles differs` forever, `device config pull --diff` showed
+    the lines as `+`, and `device config plan` listed them as irregularities
+    it could not fix. A line `privilege exec level L <words>` is now the
+    image's own, and neither compared nor reported, when `<words>` is one of
+    the commands tacctl lowers or has lowered (`ping`, `traceroute`, `monitor
+    capture`, `clear counters`, `clear line`, `clear ip arp`, `clear
+    arp-cache`, `clear mac address-table dynamic`, `undebug all`, `show
+    running-config`, and the words leading to them), `L` is that command's
+    own level, it has no `all`, and the rendering has no line for that
+    command. A line at any other level is still an extra, a rendered line the
+    device lacks is still missing, and the back-out's comment about the
+    lines is unchanged.
+
 
 ## 0.2.3 (2026-10-09)
 

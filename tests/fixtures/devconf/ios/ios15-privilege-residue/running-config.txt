@@ -1,0 +1,99 @@
+# vendor: cisco
+# os: IOS 15.6(2)T (the privilege lines of a lab router and a lab IOS-XE 16.7 router after the operator-policy privilege lines were removed with 'no privilege exec ...'; the rest is the reference-lab shape)
+# transport: ssh
+# command: show running-config
+# source: synthetic (documentation addresses)
+# assumptions: [S] a 15.x image keeps 'privilege exec level <the command's default level> <command>' for each removed privilege line, with the parents at their own levels; [A] the rest of the text is the reference-lab shape
+# captured: 2026-10-11
+# ---
+Building configuration...
+
+Current configuration : 4821 bytes
+!
+! Last configuration change at 10:11:12 UTC Fri Oct 9 2026 by admin
+!
+version 15.2
+service timestamps debug datetime msec
+service password-encryption
+!
+hostname sw1.example.net
+!
+boot-start-marker
+boot-end-marker
+!
+enable secret 9 $9$EXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLE
+!
+aaa new-model
+!
+aaa group server tacacs+ LAB-TACACS
+ server name TACACS
+!
+aaa authentication login default local group LAB-TACACS
+aaa authorization exec default local group LAB-TACACS if-authenticated
+aaa authorization commands 1 default local group LAB-TACACS
+aaa authorization commands 7 default local group LAB-TACACS
+aaa authorization commands 15 default local group LAB-TACACS
+aaa authorization config-commands
+aaa accounting exec default start-stop group LAB-TACACS
+aaa accounting commands 1 default start-stop group LAB-TACACS
+aaa accounting commands 5 default start-stop group LAB-TACACS
+aaa accounting commands 7 default start-stop group LAB-TACACS
+!
+aaa session-id common
+!
+username lab-admin privilege 15 secret 9 $9$EXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLE
+username lab-ops privilege 7 secret 9 $9$EXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLE
+!
+ip tacacs source-interface Loopback0
+tacacs server TACACS
+ address ipv4 192.0.2.10
+ key 7 0822455D0A16
+ single-connection
+ timeout 5
+!
+privilege exec level 15 monitor capture
+privilege exec level 15 monitor
+privilege exec level 15 clear counters
+privilege exec level 15 clear line
+privilege exec level 15 clear ip arp
+privilege exec level 15 clear ip
+privilege exec level 15 clear arp-cache
+privilege exec level 1 clear
+privilege exec level 1 ping
+privilege exec level 1 traceroute
+privilege exec level 1 show running-config
+privilege exec level 1 show
+privilege exec level 7 undebug all
+!
+ip access-list standard VTY-ACL
+ permit 192.0.2.10
+ permit 198.51.100.0 0.0.0.255
+ permit 192.0.2.0 0.0.0.255
+ deny   any log
+ip access-list standard TACCTL-SNMP
+ permit 192.0.2.10
+ permit 198.51.100.0 0.0.0.255
+ deny   any
+!
+snmp-server community example-community RO TACCTL-SNMP
+snmp-server community other-example RO TACCTL-SNMP
+snmp-server location Rack 4, DC1
+snmp-server contact NOC <noc@example.net>
+snmp-server enable traps config
+snmp-server host 192.0.2.50 version 2c example-trap-community
+!
+banner motd ^C
+% Authorized users only
+username not-a-user privilege 15 secret 0 notarealsecret
+^C
+!
+line con 0
+ exec-timeout 60 0
+line vty 0 4
+ access-class VTY-ACL in
+ transport input ssh
+line vty 5 15
+ access-class VTY-ACL in
+ transport input ssh
+!
+end

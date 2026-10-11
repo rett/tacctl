@@ -877,15 +877,6 @@ func iosRowID(section string, l Line) string {
 	return ""
 }
 
-// iosDefaultLevel is the default privilege level of the commands the lab
-// showed IOS 15.x leaving a line for: the first word after 'level N'. [S: lab
-// IOSv 15.6(2)T] A command not in the table is not taken for a residue.
-var iosDefaultLevel = map[string]string{
-	"clear": "15", "undebug": "15", "debug": "15", "monitor": "15", "configure": "15", "reload": "15",
-	"copy": "15", "write": "15", "erase": "15", "delete": "15",
-	"ping": "1", "traceroute": "1", "show": "1", "telnet": "1", "ssh": "1", "exit": "1", "enable": "1",
-}
-
 // IOSStoredForm is a row of the stored-forms table (D106, the spike's "What
 // show running-config stores"): what the image adds or stores by itself,
 // and what the planner does about it. The extractor tolerates most of them
@@ -908,7 +899,7 @@ var iosStoredForms = []IOSStoredForm{
 	{"ios.stored.chassis-id", "'snmp-server chassis-id' (an empty value) that IOSv 15.6 prints by itself once a community is set and keeps after 'no snmp-server community' [S: lab IOSv 15.6(2)T]",
 		"never a 'no'; kept with a note (devconf's implicit-lines rule covers the queue length only: flagged)"},
 	{"ios.stored.ios15-privilege-default", "'privilege exec level <default> <cmd>' that IOS 15.x keeps in place of a removed 'privilege exec level N <cmd>' (the command's own default level: 'level 15 clear counters', 'level 1 ping', parents 'level 15 clear ip', 'level 1 show') [S: lab IOSv 15.6(2)T]",
-		"never a 'no', kept with a note: it is harmless, and a later comparison shows it as '+'"},
+		"never a 'no': the comparison leaves the line out when the rendering has no line for the command (devconf: IOSDefaultPrivilege), so it is no extra, no report item and no region line; where the rendering has one, the typed line replaces it and the guard keeps it with a note"},
 	{"ios.stored.truncated", "'privilege exec all level N <words>' stored as a prefix of the typed words on an image that lacks the last word",
 		"typed as rendered every time (the extractor reads it as '-' until WP13.1b); the stored prefix is never a 'no'"},
 	{"ios.stored.not-stored", "a rendered line the image accepts and does not store (a command whose last words it does not know: it stores the words it knows)",
@@ -937,8 +928,11 @@ func (st *iosState) isStoredFormOnly(stmt string) string {
 			return "" // an 'all' on the device covers more than the rendering says
 		}
 		// [S: lab IOSv 15.6(2)T] the line IOS 15.x leaves where the command
-		// is at its own default level
-		if def, ok := iosDefaultLevel[f[li+2]]; ok && def == f[li+1] {
+		// is at its own default level (devconf's table, which the comparison
+		// uses to leave such a line out when the rendering has none for the
+		// command; this guard is for the one the rendering does have, which
+		// the paste replaces)
+		if def, ok := devconf.IOSDefaultPrivilege(strings.Join(f[li+2:], " ")); ok && def == f[li+1] {
 			return "the command's own default level, which IOS 15.x keeps after a 'no'"
 		}
 		// [S: lab IOSv 15.6(2)T] a parent-shaped line at level 1 or 15 (the

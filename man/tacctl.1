@@ -6432,7 +6432,31 @@ trailing blanks and the order of the aaa lines do not count, the
 .B "privilege exec level N <words>"
 lines IOS adds for the words that lead to a command the rendering carries are
 not extra (when nothing rendered is beneath one, it is extra, and so is the
-command it was added for), an image
+command it was added for), the
+line an IOS 15.x or IOS-XE image keeps where a privilege line is negated
+.RB ( "no privilege exec level 7 clear counters"
+leaves
+.BR "privilege exec level 15 clear counters" ,
+.B "no privilege exec all level 7 ping"
+leaves
+.BR "privilege exec level 1 ping" ,
+with the words leading to them at their own levels) is the image's own and is
+neither compared nor reported when the command is one tacctl lowers or has
+lowered
+.RB ( ping ,
+.BR traceroute ,
+.BR "monitor capture" ,
+.BR "clear counters" ,
+.BR "clear line" ,
+.BR "clear ip arp" ,
+.BR "clear arp\-cache" ,
+.BR "clear mac address\-table dynamic" ,
+.BR "undebug all" ,
+.BR "show running\-config" ,
+and the words leading to them), the level is that command's own, it has no
+.BR all ,
+and the rendering has no line for the command (a line at another level is
+extra, and a rendered line the device lacks is still missing), an image
 that does not know the last words of a privilege command (IOS 12.4 has no
 .BR "monitor capture" )
 stores the ones it knows, which is not extra either (the command itself stays

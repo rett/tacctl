@@ -47,8 +47,13 @@ func TestCiscoImplicitParentsOfAllChildren(t *testing.T) {
 			[]string{"privilege exec all level 7 ping", "privilege exec level 7 monitor"},
 			[]string{"= privilege exec all level 7 ping", "+ privilege exec level 7 monitor"}, StateDiffers},
 		{"another level", []string{monitorCapture},
+			[]string{monitorCapture, "privilege exec level 5 monitor"},
+			[]string{"= " + monitorCapture, "+ privilege exec level 5 monitor"}, StateDiffers},
+		// the command's own default level is the image's, not an extra
+		// (CHANGELOG 61)
+		{"the command's default level", []string{monitorCapture},
 			[]string{monitorCapture, "privilege exec level 15 monitor"},
-			[]string{"= " + monitorCapture, "+ privilege exec level 15 monitor"}, StateDiffers},
+			[]string{"= " + monitorCapture}, StateOK},
 		{"another mode", []string{monitorCapture},
 			[]string{monitorCapture, "privilege configure level 7 monitor"},
 			[]string{"= " + monitorCapture, "+ privilege configure level 7 monitor"}, StateDiffers},

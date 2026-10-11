@@ -811,6 +811,13 @@ func privilegeParents(in []stmt, claim map[string]string) []stmt {
 		return strings.Fields(x.path[0])
 	}
 	rendered := len(claim) > 0
+	// The commands the rendering lowers, for the residue a 15.x image keeps.
+	cmds := map[string]bool{}
+	for stem := range claim {
+		if strings.HasPrefix(stem, "privilege ") {
+			addRenderedCommand(cmds, stem)
+		}
+	}
 	var all [][]string
 	for _, x := range in {
 		f := isPriv(x)
@@ -824,13 +831,91 @@ func privilegeParents(in []stmt, claim map[string]string) []stmt {
 	var out []stmt
 	for _, x := range in {
 		if f := isPriv(x); f != nil {
-			if _, claimed := claim[x.stem]; !claimed && isParent(f, all) {
+			if _, claimed := claim[x.stem]; !claimed && (isParent(f, all) || isImageResidue(f, cmds)) {
 				continue
 			}
 		}
 		out = append(out, x)
 	}
 	return out
+}
+
+// iosDefaultPrivilege is the level a command has on IOS when no 'privilege'
+// line sets it, for the commands tacctl lowers or has lowered (the shipped
+// operator and readonly privilege lists of this release and of 0.2.3, which
+// internal/policy/previous_defaults.go keeps) and for the words that lead to
+// them (the parents the image adds at the command's level and, after a 'no',
+// leaves behind at their own).
+//
+// An IOS 15.x or IOS-XE image does not remove a privilege line when it is
+// negated: 'no privilege exec level 7 clear counters' leaves 'privilege exec
+// level 15 clear counters', 'no privilege exec all level 7 ping' leaves
+// 'privilege exec level 1 ping', and the parents stay at their own levels
+// ('level 15 clear ip', 'level 15 monitor', 'level 1 clear', 'level 1
+// show'). That line is the image's own and harmless: nobody can remove it,
+// so it is never an irregularity (isImageResidue). The table is deliberately
+// small and explicit: a command that is not in it is nobody's residue, and
+// its line at any level is an extra.
+//
+// [S: lab IOSv 15.6(2)T and CSR1000v 16.7.1] the entries of the first
+// group; [A: IOS knowledge, no capture of the residue] those of the second.
+var iosDefaultPrivilege = map[string]string{
+	"ping": "1", "traceroute": "1", "show": "1", "clear": "1",
+	"clear counters": "15", "clear line": "15", "clear ip": "15", "clear ip arp": "15", "clear arp-cache": "15",
+	"monitor": "15", "monitor capture": "15",
+	// [A]
+	"clear mac address-table dynamic": "15", "undebug": "15", "undebug all": "15", "show running-config": "15",
+}
+
+// IOSDefaultPrivilege is the level IOS gives the command (its words, one
+// space apart) when no 'privilege' line sets it; ok is false for a command
+// outside the table above.
+func IOSDefaultPrivilege(words string) (level string, ok bool) {
+	level, ok = iosDefaultPrivilege[words]
+	return level, ok
+}
+
+// execPrivilegeWords splits the fields of 'privilege exec [all] level N
+// <words>' into the level, the words and whether it has 'all'. ok is false
+// for another mode or a shape without a command.
+func execPrivilegeWords(f []string) (level string, words []string, all, ok bool) {
+	if len(f) < 5 || f[0] != "privilege" || f[1] != "exec" {
+		return "", nil, false, false
+	}
+	i := 2
+	if f[i] == "all" {
+		all = true
+		i++
+	}
+	if f[i] != "level" || i+2 >= len(f) {
+		return "", nil, false, false
+	}
+	return f[i+1], f[i+2:], all, true
+}
+
+// addRenderedCommand adds to cmds the command a rendered 'privilege exec'
+// statement lowers (with or without 'all').
+func addRenderedCommand(cmds map[string]bool, stmt string) {
+	if _, words, _, ok := execPrivilegeWords(strings.Fields(stmt)); ok {
+		cmds[strings.Join(words, " ")] = true
+	}
+}
+
+// isImageResidue reports whether f, the fields of a device's 'privilege'
+// statement, is the line a 15.x image keeps for a command whose privilege
+// line was removed: mode exec, no 'all' (an 'all' covers more than the
+// default does), the command in iosDefaultPrivilege at exactly its default
+// level, and no line of the rendering for that command (cmds, from
+// addRenderedCommand): a rendered line for it is the line that should be
+// there, and the device's other one is replaced by the paste.
+func isImageResidue(f []string, cmds map[string]bool) bool {
+	level, words, all, ok := execPrivilegeWords(f)
+	if !ok || all {
+		return false
+	}
+	w := strings.Join(words, " ")
+	def, known := iosDefaultPrivilege[w]
+	return known && def == level && !cmds[w]
 }
 
 // isParent reports whether f is a proper word-prefix of another statement
@@ -868,6 +953,10 @@ const iosImplicitQueueLength = "snmp-server queue-length 100"
 //     than the rendering says, and stays an extra line).
 //   - 'snmp-server queue-length 100' when the rendering has a community:
 //     the image prints it beside the first community.
+//   - 'privilege exec level L <words>' where <words> is a command of
+//     iosDefaultPrivilege at its default level L and the rendering has no
+//     line for it: what a 15.x image keeps when a privilege line is removed
+//     (isImageResidue). No note: there is nothing to do about it.
 //
 // The rendered line stays '-' even then (plan D106 would read it as
 // equal): the text cannot tell an image that stores the shorter line from a
@@ -883,6 +972,7 @@ func withoutImplicitIOS(exp, dev []stmt) (kept []stmt, notes []string) {
 	}
 	var longer []renderedPrivilege
 	community := false
+	cmds := map[string]bool{}
 	for _, x := range exp {
 		if len(x.path) != 1 {
 			continue
@@ -890,6 +980,7 @@ func withoutImplicitIOS(exp, dev []stmt) (kept []stmt, notes []string) {
 		f := strings.Fields(x.path[0])
 		switch {
 		case strings.HasPrefix(x.path[0], "privilege "):
+			addRenderedCommand(cmds, x.path[0])
 			if i := slices.Index(f, "all"); i >= 0 && i+1 < len(f) && f[i+1] == "level" {
 				f = slices.Delete(f, i, i+1)
 			}
@@ -908,6 +999,11 @@ func withoutImplicitIOS(exp, dev []stmt) (kept []stmt, notes []string) {
 		if len(x.path) == 1 && !expStem[x.stem] {
 			f := strings.Fields(x.path[0])
 			if x.path[0] == iosImplicitQueueLength && community {
+				continue
+			}
+			// what a 15.x image keeps of a privilege line that was removed:
+			// nobody can remove it, so it is never reported
+			if isImageResidue(f, cmds) {
 				continue
 			}
 			if strings.HasPrefix(x.path[0], "privilege ") && slices.Contains(f, "level") &&
