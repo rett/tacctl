@@ -531,9 +531,10 @@ func TestManagedCisco(t *testing.T) {
 	}
 
 	roles, _ := sectionOf(secs, "roles")
-	if !slices.Contains(roles.Lines, "privilege exec level 1 show running-config") ||
-		!slices.Contains(roles.Lines, "privilege exec all level 7 ping") {
-		t.Errorf("roles:\n%s", strings.Join(roles.Lines, "\n"))
+	// The operator is lowered one command, 'undebug all': nothing that can
+	// interrupt service, not 'ping', 'traceroute' or a clear.
+	if got := strings.Join(roles.Lines, "\n"); got != "privilege exec level 1 show running-config\nprivilege exec level 7 undebug all" {
+		t.Errorf("roles:\n%s", got)
 	}
 
 	acl, _ := sectionOf(secs, "mgmt-acl")

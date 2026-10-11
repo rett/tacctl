@@ -102,8 +102,10 @@ readonly: &readonly
     - name: "dir"
       action: *action_permit
     - name: "ping"
+      match: ["^(?:^((vrf \\S+ )?(ip |ipv6 )?\\S+( source \\S+)?( size \\d+)?( df-bit)?|mpls (ipv4|pseudowire) \\S+( \\S+)?)$)$"]
       action: *action_permit
     - name: "traceroute"
+      match: ["^(?:^((vrf \\S+ )?(ip |ipv6 )?\\S+( source \\S+)?( numeric)?|mpls (ipv4|pseudowire) \\S+( \\S+)?)$)$"]
       action: *action_permit
     - name: "terminal"
       match: ["^(?:^(length|width)( .*)?$)$"]
@@ -130,20 +132,16 @@ operator: &operator
     - name: "dir"
       action: *action_permit
     - name: "ping"
+      match: ["^(?:^((vrf \\S+ )?(ip |ipv6 )?\\S+( source \\S+)?( size \\d+)?( df-bit)?|mpls (ipv4|pseudowire) \\S+( \\S+)?)$)$"]
       action: *action_permit
     - name: "traceroute"
+      match: ["^(?:^((vrf \\S+ )?(ip |ipv6 )?\\S+( source \\S+)?( numeric)?|mpls (ipv4|pseudowire) \\S+( \\S+)?)$)$"]
       action: *action_permit
     - name: "terminal"
       action: *action_permit
     - name: "ssh"
       action: *action_permit
     - name: "telnet"
-      action: *action_permit
-    - name: "monitor"
-      match: ["^(?:^(capture)( .*)?$)$"]
-      action: *action_permit
-    - name: "clear"
-      match: ["^(?:^(counters|line|(ip )?arp \\S+|arp-cache \\S+|mac address-table dynamic \\S+)( .*)?$)$"]
       action: *action_permit
     - name: "undebug"
       action: *action_permit

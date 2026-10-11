@@ -56,12 +56,21 @@ func pfx(alts string) string { return "^(" + alts + ")( .*)?$" }
 // --- Junos (POSIX ERE; sizes with the '( )' wrapper, limits 241 / 236) ---
 
 const (
-	// viewerDenyCommands: 112 of 241 bytes.
-	viewerDenyCommands = `^(ssh|telnet|file|request|restart|start|load|op|test|monitor|configure|edit|clear|show system rollback)( .*)?$`
-	// operatorDenyCommands: 226 of 241 bytes. The hard protocol clears are
-	// denied; 'clear interfaces statistics', 'clear arp', 'clear
-	// ethernet-switching table' and 'clear firewall' stay.
-	operatorDenyCommands = `^(file|request|restart|start|load|op|test|configure|edit|clear (bgp|ospf|ospf3|isis|ldp|rsvp|mpls|pim|igmp|msdp|bfd|vrrp|lacp|system|security|network-access|log|dhcp)|monitor traffic .*write-file|show system rollback)( .*)?$`
+	// viewerDenyCommands: 136 of 241 bytes. Everything that is not
+	// reading: 'clear' whole (the device class has no clear bit either),
+	// 'monitor' whole, and the ping keywords that send at the reply rate
+	// ('rapid') or at a chosen rate ('interval'): the operator may not
+	// interrupt service, even briefly, and the roles nest. A pattern that
+	// names a keyword after '.*' rests on the matching the 'monitor
+	// traffic' denies have always assumed (docs/plans/0.2.5-operator-audit.md,
+	// lab item 9.3).
+	viewerDenyCommands = `^(ssh|telnet|file|request|restart|start|load|op|test|monitor|configure|edit|clear|ping .*(rapid|interval)|show system rollback)( .*)?$`
+	// operatorDenyCommands: 133 of 241 bytes. The operator's class has no
+	// 'clear' bit; the whole family is denied as well, so a site that
+	// grants the bit back keeps the rule. 'monitor traffic' (a capture on
+	// the routing engine, unbounded without a count) is denied whole;
+	// 'monitor start|stop|list' and 'monitor interface' stay.
+	operatorDenyCommands = `^(file|request|restart|start|load|op|test|configure|edit|clear|monitor traffic|ping .*(rapid|interval)|show system rollback)( .*)?$`
 	// engineerDenyCommands: 219 of 241 bytes. 'request system ...' is
 	// denied as a whole ('request support information' stays allowed).
 	// 'load' is not denied: Junos tests a pattern against the keywords of a
@@ -94,7 +103,7 @@ func EngineerHardeningDenyConfiguration(mgmtFilter string) string {
 // operator (the level-filtered running-config stays readable).
 const (
 	viewerShowDeny   = `running-config view full|tech-support|startup-config|derived-config|key chain|snmp (community|user)|crypto|archive log`
-	operatorShowDeny = `running-config view full|startup-config|derived-config|key chain|snmp (community|user)|crypto (isakmp key|key)|archive log`
+	operatorShowDeny = `running-config view full|tech-support|startup-config|derived-config|key chain|snmp (community|user)|crypto (isakmp key|key)|archive log`
 )
 
 // viewerCommands are the preset's rules of the viewer (readonly): the

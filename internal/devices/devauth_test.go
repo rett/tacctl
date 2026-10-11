@@ -149,8 +149,8 @@ func TestJuniperServerRulesAndEngineerClass(t *testing.T) {
 				"#   deny-configuration  15/236 bytes: (^system login)\n",
 			"# class 'RO-CLASS' (group 'readonly')\n#   none: tacctl group junos readonly deny-commands add '<regex>'\n",
 			"set system login class EN-CLASS permissions [ view view-configuration network clear trace reset configure rollback interface interface-control routing routing-control firewall firewall-control system system-control snmp ]\nset system login user EN-CLASS class EN-CLASS\n",
-			"  operator: OP-CLASS (local: clear/network/trace/view + view-configuration), junos: deny-commands 33/241, deny-configuration 15/236\n",
-			"  engineer: EN-CLASS (local: operator bits + reset, configure/rollback and interface, routing, firewall, system, snmp)\n",
+			"  operator: OP-CLASS (local: network/trace/view + view-configuration), junos: deny-commands 33/241, deny-configuration 15/236\n",
+			"  engineer: EN-CLASS (local: operator bits + clear, reset, configure/rollback and interface, routing, firewall, system, snmp)\n",
 			"  show configuration system login user EN-CLASS\n",
 			"#   delete system login class OP-CLASS allow-commands\n",
 		} {

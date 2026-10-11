@@ -546,10 +546,10 @@ var iosRowCases = map[string]rowCase{
 		d := planI(t, f, func(c *IOSConfig) {
 			c.typeGlobal("privilege exec level 7 fuzz thing")
 			c.typeGlobal("privilege exec level 9 other thing")
-			c.noGlobal("privilege exec level 7 clear counters")
+			c.noGlobal("privilege exec level 7 undebug all")
 		}, Options{})
 		ls := lines(d, "roles")
-		if len(ls) < 2 || ls[0] != "no privilege exec level 7 fuzz thing" || ls[len(ls)-1] != "privilege exec level 7 clear counters" {
+		if len(ls) < 2 || ls[0] != "no privilege exec level 7 fuzz thing" || ls[len(ls)-1] != "privilege exec level 7 undebug all" {
 			t.Errorf("the no lines do not come first: %q", ls)
 		}
 		noLine(t, d, "roles", "level 9")

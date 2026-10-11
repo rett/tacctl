@@ -2,7 +2,6 @@ set system login class RO-CLASS permissions network
 set system login class RO-CLASS permissions view
 set system login class RO-CLASS permissions view-configuration
 set system login user RO-CLASS class RO-CLASS
-set system login class OP-CLASS permissions clear
 set system login class OP-CLASS permissions network
 set system login class OP-CLASS permissions trace
 set system login class OP-CLASS permissions view

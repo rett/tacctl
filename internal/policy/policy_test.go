@@ -109,7 +109,7 @@ func TestInsertRuleAt(t *testing.T) {
 	beforePing := func() []string {
 		var out []string
 		for _, l := range shipped {
-			if l == "ping|permit|" {
+			if strings.HasPrefix(l, "ping|permit|") {
 				out = append(out, "x|deny|a")
 			}
 			out = append(out, l)
@@ -275,18 +275,30 @@ func TestDefaultRules(t *testing.T) {
 	if got := Lines(c, "superuser"); !reflect.DeepEqual(got, []string{"*|permit|"}) {
 		t.Errorf("superuser: %q", got)
 	}
-	ro := Lines(c, "readonly")
-	if len(ro) != 12 || ro[0] != "show|permit|" || ro[11] != "*|deny|" {
-		t.Errorf("readonly: %q", ro)
+	// The seed set is the shipped rules: nothing an operator may not run,
+	// and no override stored for what equals them.
+	for _, g := range []string{"readonly", "operator"} {
+		if got := Lines(c, g); !reflect.DeepEqual(got, DefaultLines(g)) {
+			t.Errorf("%s: %q, want the shipped rules", g, got)
+		}
+		if HasOverride(c, g) {
+			t.Errorf("%s: an override is stored for the shipped rules:\n%s", g, file(t, path))
+		}
 	}
-	if !strings.Contains(file(t, path), "  operator:\n  - name: show\n") {
-		t.Errorf("file:\n%s", file(t, path))
+	for _, l := range Lines(c, "operator") {
+		if n := strings.SplitN(l, "|", 2)[0]; n == "clear" || n == "monitor" || n == "test" || n == "enable" {
+			t.Errorf("the operator's seed set permits %q", l)
+		}
 	}
 	if ok, _ := ApplyDefaultRules(c, "helpdesk"); ok {
 		t.Error("helpdesk has a seed set")
 	}
-	if a, p, ok := DefaultRules("operator"); a != "deny" || len(p) != 14 || p[13] != "monitor" || !ok {
+	if a, p, ok := DefaultRules("operator"); a != "deny" || !ok ||
+		!reflect.DeepEqual(p, []string{"show", "dir", "ping", "traceroute", "terminal", "ssh", "telnet", "undebug", "exit", "logout"}) {
 		t.Errorf("operator seed: %q %q %v", a, p, ok)
+	}
+	if a, p, ok := DefaultRules("superuser"); a != "permit" || len(p) != 0 || !ok {
+		t.Errorf("superuser seed: %q %q %v", a, p, ok)
 	}
 	if _, _, ok := DefaultRules("helpdesk"); ok {
 		t.Error("DefaultRules(helpdesk)")
@@ -296,7 +308,7 @@ func TestDefaultRules(t *testing.T) {
 func TestPrivileges(t *testing.T) {
 	c, path := newConf(t, "")
 	def := DefaultPrivileges("operator")
-	if len(def) != 9 || def[0] != "exec all: ping" {
+	if len(def) != 1 || def[0] != "undebug all" {
 		t.Errorf("defaults: %q", def)
 	}
 	if got := DefaultPrivileges("readonly"); len(got) != 1 || got[0] != "show running-config" {

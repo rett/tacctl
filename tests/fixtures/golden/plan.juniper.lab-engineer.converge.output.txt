@@ -2,49 +2,52 @@
 # Based on the pull of 2026-10-10 14:02 by alice over netconf (18 minutes ago) and the standard of
 # 2026-10-10 14:20 (tacctl 0.2.5).
 #
-# What is irregular on dev-juniper-lab-engineer (14 items; the paste fixes 1, leaves 13):
-#  1. aaa      ACCESS     secret not visible: a TACACS+ server 192.0.2.10 (set system tacplus-server
+# What is irregular on dev-juniper-lab-engineer (15 items; the paste fixes 1, leaves 14):
+#  1. roles    ACCESS     extra: login class OP-CLASS allows clear (set system login class OP-CLASS
+#                         permissions clear). Not fixable by this login: EN-CLASS cannot change
+#                         'system login' (ask a superuser).
+#  2. aaa      ACCESS     secret not visible: a TACACS+ server 192.0.2.10 (set system tacplus-server
 #                         192.0.2.10 secret <secret>). Not fixable by this login: EN-CLASS cannot
 #                         change 'system tacplus-server' (ask a superuser).
-#  2. aaa      ACCESS     missing: a TACACS+ server 192.0.2.10 (set system tacplus-server 192.0.2.10
+#  3. aaa      ACCESS     missing: a TACACS+ server 192.0.2.10 (set system tacplus-server 192.0.2.10
 #                         single-connection). Not fixable by this login: EN-CLASS cannot change
 #                         'system tacplus-server' (ask a superuser).
-#  3. aaa      ACCESS     extra: a TACACS+ server 198.18.0.24 (set system tacplus-server 198.18.0.24
+#  4. aaa      ACCESS     extra: a TACACS+ server 198.18.0.24 (set system tacplus-server 198.18.0.24
 #                         single-connection). Not fixable by this login: EN-CLASS cannot change
 #                         'system tacplus-server' (ask a superuser).
-#  4. aaa      COSMETIC   extra: accounting sends the event interactive-commands (set system
+#  5. aaa      COSMETIC   extra: accounting sends the event interactive-commands (set system
 #                         accounting events interactive-commands). Not fixable by this login: EN-CLASS
 #                         cannot change 'system accounting' (ask a superuser).
-#  5. snmp     MONITORING missing: SNMP client list TACCTL-SNMP: 3 statements (e.g. set snmp
+#  6. snmp     MONITORING missing: SNMP client list TACCTL-SNMP: 3 statements (e.g. set snmp
 #                         client-list TACCTL-SNMP 192.0.2.10/32). Not fixable by this login: EN-CLASS
 #                         cannot change 'snmp' (ask a superuser).
-#  6. snmp     MONITORING missing: an SNMP community: client-list-name TACCTL-SNMP (set snmp community
+#  7. snmp     MONITORING missing: an SNMP community: client-list-name TACCTL-SNMP (set snmp community
 #                         <secret> client-list-name TACCTL-SNMP). Not fixable by this login: EN-CLASS
 #                         cannot change 'snmp' (ask a superuser).
-#  7. snmp     COSMETIC   missing: the SNMP location is Rack 4, DC1 (set snmp location "Rack 4, DC1").
+#  8. snmp     COSMETIC   missing: the SNMP location is Rack 4, DC1 (set snmp location "Rack 4, DC1").
 #                         Not fixable by this login: EN-CLASS cannot change 'snmp' (ask a superuser).
-#  8. snmp     COSMETIC   missing: the SNMP contact is NOC <noc@example.net> (set snmp contact "NOC
+#  9. snmp     COSMETIC   missing: the SNMP contact is NOC <noc@example.net> (set snmp contact "NOC
 #                         <noc@example.net>"). Not fixable by this login: EN-CLASS cannot change
 #                         'snmp' (ask a superuser).
-#  9. snmp     COSMETIC   missing: the SNMP description is Core switch (set snmp description "Core
+# 10. snmp     COSMETIC   missing: the SNMP description is Core switch (set snmp description "Core
 #                         switch"). Not fixable by this login: EN-CLASS cannot change 'snmp' (ask a
 #                         superuser).
-# 10. snmp     MONITORING extra: SNMP: name example-switch.example.net (set snmp name
+# 11. snmp     MONITORING extra: SNMP: name example-switch.example.net (set snmp name
 #                         example-switch.example.net). Not fixable by this login: EN-CLASS cannot
 #                         change 'snmp' (ask a superuser).
-# 11. snmp     COSMETIC   extra: the SNMP location is example location (set snmp location "example
+# 12. snmp     COSMETIC   extra: the SNMP location is example location (set snmp location "example
 #                         location"). Not fixable by this login: EN-CLASS cannot change 'snmp' (ask a
 #                         superuser).
-# 12. snmp     COSMETIC   extra: the SNMP contact is example contact (set snmp contact "example
+# 13. snmp     COSMETIC   extra: the SNMP contact is example contact (set snmp contact "example
 #                         contact"). Not fixable by this login: EN-CLASS cannot change 'snmp' (ask a
 #                         superuser).
-# 13. snmp     MONITORING extra: an SNMP community: 3 statements (e.g. set snmp community <secret>
+# 14. snmp     MONITORING extra: an SNMP community: 3 statements (e.g. set snmp community <secret>
 #                         clients 198.18.0.0/20). Not fixable by this login: EN-CLASS cannot change
 #                         'snmp' (ask a superuser).
-# 14. mgmt-acl ACCESS     missing: the management filter MGMT-ACL: 22 statements (e.g. set firewall
+# 15. mgmt-acl ACCESS     missing: the management filter MGMT-ACL: 22 statements (e.g. set firewall
 #                         family inet filter MGMT-ACL term permit-mgmt from source-address
 #                         192.0.2.10/32). Fixed by region lines 3-24.
-# Consistent: roles. Not planned: netconf, breakglass (walkthrough Steps 6 and 7).
+# Not planned: netconf, breakglass (walkthrough Steps 6 and 7).
 # Cleanup (--converge): cleanup comes after this region is pasted and verified: pull the device, then
 # plan --converge again.
 # WARNING: the pull's login could not see secrets: a secret the device holds could not be compared and

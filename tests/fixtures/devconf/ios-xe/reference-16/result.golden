@@ -18,14 +18,6 @@
 note: no enable secret on the device: with AAA on and the server unreachable, a local user with privilege 15 is the only way to level 15
 [roles] ok
 = privilege exec level 1 show running-config
-= privilege exec all level 7 ping
-= privilege exec all level 7 traceroute
-= privilege exec all level 7 monitor capture
-= privilege exec level 7 clear counters
-= privilege exec level 7 clear line
-= privilege exec level 7 clear ip arp
-= privilege exec level 7 clear arp-cache
-= privilege exec level 7 clear mac address-table dynamic
 = privilege exec level 7 undebug all
 [mgmt-acl] ok
 = ip access-list standard VTY-ACL > permit 192.0.2.10

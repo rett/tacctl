@@ -161,7 +161,11 @@ list_rules() {
     run awk '/^operator: &operator/,/^  accounter:/' "$TACCTL_CONFIG"
     assert_output --partial $'name: "show"\n      action: *action_permit'
     assert_output --partial 'name: "*"'
-    assert_output --partial 'match: ["^(?:^(capture)( .*)?$)$"]'
+    assert_output --partial 'match: ["^(?:^((vrf \\S+ )?(ip |ipv6 )?\\S+( source \\S+)?( size \\d+)?( df-bit)?|mpls (ipv4|pseudowire) \\S+( \\S+)?)$)$"]'
+    assert_output --partial 'match: ["^(?:^((vrf \\S+ )?(ip |ipv6 )?\\S+( source \\S+)?( numeric)?|mpls (ipv4|pseudowire) \\S+( \\S+)?)$)$"]'
+    # an operator has no rule for clear or monitor: the catch-all denies them
+    refute_output --partial 'name: "clear"'
+    refute_output --partial 'name: "monitor"'
     assert_output --partial 'match: ["^(?:^(running-config view full)( .*)?$)$"]'
     refute_output --partial '"^show'
     run grep -c 'match: \["' <(awk '/^operator: &operator/,/^  accounter:/' "$TACCTL_CONFIG")
@@ -251,12 +255,12 @@ list_rules() {
 }
 
 @test "group commands remove: drops a named rule" {
-    run "$TACCTL_BIN_SCRIPT" group commands remove operator ping
+    run "$TACCTL_BIN_SCRIPT" group commands remove operator telnet
     assert_success
-    assert_output --partial "Removed rule #4 'ping' (permit, match=[]) from group 'operator'."
+    assert_output --partial "Removed rule #8 'telnet' (permit, match=[]) from group 'operator'."
 
     run "$TACCTL_BIN_SCRIPT" group commands list operator
-    refute_output --partial 'ping'
+    refute_output --partial 'telnet'
 }
 
 @test "group commands remove: refuses several rules of a name without a selector" {
@@ -278,7 +282,7 @@ list_rules() {
 
     run "$TACCTL_BIN_SCRIPT" group commands remove operator show --match 'run.*' --match 'start.*'
     assert_success
-    assert_output --partial "Removed rule #15 'show' (permit, match=[run.*,start.*]) from group 'operator'."
+    assert_output --partial "Removed rule #13 'show' (permit, match=[run.*,start.*]) from group 'operator'."
     run "$TACCTL_BIN_SCRIPT" group commands remove operator show --action deny --match '^crypto( .*)?'
     assert_success
     assert_output --partial "Removed rule #1 'show' (deny, match=[^crypto( .*)?]) from group 'operator'."
@@ -296,12 +300,12 @@ list_rules() {
     assert_success
     assert_output --partial "Removed rule #1 'show' (deny, match=[^(running-config view full)( .*)?$]) from group 'operator'."
     assert_output --partial "Removed rule #2 'show' (permit, match=[]) from group 'operator'."
-    assert_output --partial "Removed rule #14 'show' (permit, match=[run.*]) from group 'operator'."
+    assert_output --partial "Removed rule #12 'show' (permit, match=[run.*]) from group 'operator'."
 
     list_rules operator
     refute_output --regexp ' show '
     assert_output --regexp '1 +dir +permit'
-    assert_output --regexp '12 +\* \(catchall\) +deny'
+    assert_output --regexp '10 +\* \(catchall\) +deny'
 }
 
 @test "group commands remove: rejects an unknown flag and a bad --action" {
@@ -320,7 +324,7 @@ list_rules() {
     assert_output --regexp '1 +show +deny +\^\(running-config view full\)'
     assert_output --regexp '2 +show +permit'
     assert_output --regexp '6 +terminal +permit'
-    assert_output --regexp '14 +\* \(catchall\) +deny'
+    assert_output --regexp '12 +\* \(catchall\) +deny'
 }
 
 @test "group commands add: --before puts the rule before the first rule of that name" {
@@ -329,14 +333,14 @@ list_rules() {
     list_rules operator
     assert_output --regexp '1 +show +deny +\^crypto\( \.\*\)\?'
     assert_output --regexp '3 +show +permit'
-    assert_output --regexp '15 +\* \(catchall\) +deny'
+    assert_output --regexp '13 +\* \(catchall\) +deny'
 
     # '--before *' is the default place, before the catchall.
     run "$TACCTL_BIN_SCRIPT" group commands add operator reload --action deny --before '*'
     assert_success
     list_rules operator
-    assert_output --regexp '15 +reload +deny'
-    assert_output --regexp '16 +\* \(catchall\) +deny'
+    assert_output --regexp '13 +reload +deny'
+    assert_output --regexp '14 +\* \(catchall\) +deny'
 
     # The rendered tacquito.yaml keeps the order: the deny is operator's
     # first rule.

@@ -8,31 +8,31 @@
 #                         RO-CLASS permissions network). Fixed by region lines 3-5.
 #  2. roles    ACCESS     missing: template user RO-CLASS is in class RO-CLASS (set system login user
 #                         RO-CLASS class RO-CLASS). Fixed by region line 6.
-#  3. roles    ACCESS     missing: login class OP-CLASS: 5 statements (e.g. set system login class
-#                         OP-CLASS permissions clear). Fixed by region lines 7-11.
+#  3. roles    ACCESS     missing: login class OP-CLASS: 4 statements (e.g. set system login class
+#                         OP-CLASS permissions network). Fixed by region lines 7-10.
 #  4. roles    ACCESS     missing: template user OP-CLASS is in class OP-CLASS (set system login user
-#                         OP-CLASS class OP-CLASS). Fixed by region line 12.
+#                         OP-CLASS class OP-CLASS). Fixed by region line 11.
 #  5. roles    ACCESS     missing: login class RW-CLASS allows all (set system login class RW-CLASS
-#                         permissions all). Fixed by region line 13.
+#                         permissions all). Fixed by region line 12.
 #  6. roles    ACCESS     missing: template user RW-CLASS is in class RW-CLASS (set system login user
-#                         RW-CLASS class RW-CLASS). Fixed by region line 14.
+#                         RW-CLASS class RW-CLASS). Fixed by region line 13.
 #  7. roles    ACCESS     missing: login class EN-CLASS: 17 statements (e.g. set system login class
-#                         EN-CLASS permissions view). Fixed by region lines 15-31.
+#                         EN-CLASS permissions view). Fixed by region lines 14-30.
 #  8. roles    ACCESS     missing: template user EN-CLASS is in class EN-CLASS (set system login user
-#                         EN-CLASS class EN-CLASS). Fixed by region line 32.
+#                         EN-CLASS class EN-CLASS). Fixed by region line 31.
 #  9. snmp     MONITORING missing: SNMP client list TACCTL-SNMP: 3 statements (e.g. set snmp
-#                         client-list TACCTL-SNMP 192.0.2.10/32). Fixed by region lines 34-36.
+#                         client-list TACCTL-SNMP 192.0.2.10/32). Fixed by region lines 33-35.
 # 10. snmp     MONITORING missing: an SNMP community: 2 statements (e.g. set snmp community <secret>
-#                         authorization read-only). Fixed by region lines 37-38.
+#                         authorization read-only). Fixed by region lines 36-37.
 # 11. snmp     COSMETIC   missing: the SNMP location is Rack 4, DC1 (set snmp location "Rack 4, DC1").
-#                         Fixed by region line 39.
+#                         Fixed by region line 38.
 # 12. snmp     COSMETIC   missing: the SNMP contact is NOC <noc@example.net> (set snmp contact "NOC
-#                         <noc@example.net>"). Fixed by region line 40.
+#                         <noc@example.net>"). Fixed by region line 39.
 # 13. snmp     COSMETIC   missing: the SNMP description is Core switch (set snmp description "Core
-#                         switch"). Fixed by region line 41.
+#                         switch"). Fixed by region line 40.
 # 14. mgmt-acl ACCESS     missing: the management filter MGMT-ACL: 22 statements (e.g. set firewall
 #                         family inet filter MGMT-ACL term permit-mgmt from source-address
-#                         192.0.2.10/32). Fixed by region lines 43-64.
+#                         192.0.2.10/32). Fixed by region lines 42-63.
 # Consistent: aaa. Not planned: netconf, breakglass (walkthrough Steps 6 and 7).
 # Secrets: 1 present on the device, not changed (--secrets pushes them).
 # The switch undoes this by itself in 5 minutes unless you type the one word after the check (see
@@ -51,7 +51,6 @@ set system login class RO-CLASS permissions network
 set system login class RO-CLASS permissions view
 set system login class RO-CLASS permissions view-configuration
 set system login user RO-CLASS class RO-CLASS
-set system login class OP-CLASS permissions clear
 set system login class OP-CLASS permissions network
 set system login class OP-CLASS permissions trace
 set system login class OP-CLASS permissions view

@@ -142,7 +142,9 @@ _normalize() {
     assert_line "privilege configure level 7 router bgp"
     assert_line "privilege exec all level 7 show ip"
     assert_line "privilege configure all level 7 interface"
-    assert_line "privilege exec level 7 clear counters"
+    assert_line "privilege exec level 7 undebug all"
+    refute_output --partial "level 7 clear"
+    refute_output --partial "level 7 ping"
     assert_line "privilege exec level 1 show running-config"
 }
 
@@ -157,7 +159,7 @@ _normalize() {
     assert_output --partial "#   deny-configuration  15/236 bytes: (^system login)"
     assert_output --partial "#   none: tacctl group junos readonly deny-commands add '<regex>'"
     refute_output --regexp "(^|"$'\n'")set system login class [A-Z-]+ (allow|deny)-commands"
-    assert_output --partial "operator: OP-CLASS (local: clear/network/trace/view + view-configuration), junos: deny-commands 33/241, deny-configuration 15/236"
+    assert_output --partial "operator: OP-CLASS (local: network/trace/view + view-configuration), junos: deny-commands 33/241, deny-configuration 15/236"
     assert_output --partial "show cli authorization    (after a TACACS+ login: lists the server's deny values)"
 }
 
@@ -168,7 +170,7 @@ _normalize() {
     assert_line "set system login class EN-CLASS permissions [ view view-configuration network clear trace reset configure rollback interface interface-control routing routing-control firewall firewall-control system system-control snmp ]"
     assert_line "set system login user EN-CLASS class EN-CLASS"
     assert_line "  show configuration system login user EN-CLASS"
-    assert_output --partial "engineer: EN-CLASS (local: operator bits + reset, configure/rollback and interface, routing, firewall, system, snmp)"
+    assert_output --partial "engineer: EN-CLASS (local: operator bits + clear, reset, configure/rollback and interface, routing, firewall, system, snmp)"
 }
 
 @test "config cisco: errors on unknown scope" {

@@ -65,7 +65,7 @@
     "vendor": "juniper",
     "address": "192.0.2.21",
     "state": "needs-change",
-    "fixes": 9,
+    "fixes": 10,
     "left": 2,
     "remaining": {
       "access": 1,
@@ -81,9 +81,9 @@
     "address": "192.0.2.21",
     "state": "needs-change",
     "fixes": 1,
-    "left": 13,
+    "left": 14,
     "remaining": {
-      "access": 3,
+      "access": 4,
       "monitoring": 4,
       "cosmetic": 6
     },

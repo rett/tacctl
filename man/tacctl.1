@@ -177,7 +177,15 @@ and survive. When the
 group still carries the role preset of 0.2.2 (its Cisco rules, whose denies
 did not hold, or its Junos sets), the upgrade ends with a red notice naming
 .BR "group reset engineer" ;
-the upgrade itself never changes an override. See
+and when a stored
+.B privileges.operator
+or
+.BR commands.operator / commands.readonly ,
+or the Junos deny sets of the preset of 0.2.3, still give an operator or a
+viewer a command that can interrupt service, a red notice names each setting
+and the command that puts the shipped value back. The upgrade itself never
+changes an override, but for an operator or readonly list that is exactly
+what 0.2.3 shipped, which it drops. See
 .BR UPGRADING .
 .\" BEGIN GENERATED: command upgrade
 .RS
@@ -925,31 +933,29 @@ Options:
 .\" END GENERATED: command group commands reset
 .TP
 .B "group commands seed " [ \fIgroup\fR ] " " [ --force ]
-Recovery tool. Writes the legacy broader rule set (with
-.BR enable ,
-.BR clear ,
-.BR test ,
-.BR monitor ,
-etc.) as overrides in
-.IR tacctl.yaml .
-On fresh installs the shipped defaults (viewable via
-.BR "tacctl config defaults" )
-are already in effect; you only need
+Recovery tool. Writes the shipped rules of the built-in groups
+(viewable via
+.BR "tacctl config defaults" ):
+the same as
+.BR "group commands reset" ,
+for several groups and without a prompt. On fresh installs they are already
+in effect; you only need
 .B seed
-if you've customized and want to start from a known, broader baseline.
-Without an argument, seeds all three built-ins; with a group name, only
-that one (custom groups are not seeded). Refuses to overwrite existing
-rules without
+if you've customized and want to start from them again. Without an argument,
+seeds all three built-ins; with a group name, only that one (custom groups are
+not seeded). Refuses to overwrite existing rules without
 .BR --force .
-Legacy seed defaults:
+The set is the shipped one:
 .B readonly
 permits
-.IR "show ping traceroute terminal exit end quit logout who where enable"
+.IR "show dir ping traceroute terminal(length|width) exit logout"
 with default deny;
 .B operator
 adds
-.IR "clear test monitor"
-to the readonly set with default deny;
+.IR "terminal ssh telnet undebug"
+with default deny (no clear, no capture, no flood form of ping and
+traceroute: an operator may not interrupt service, even intermittently, and
+the engineer is the escalation);
 .B superuser
 gets a
 .RB ` "* permit" `
@@ -1085,18 +1091,33 @@ lowers
 .I show running-config
 to priv-1 (the configuration its level may see, filtered by IOS);
 .B operator
-ships verified commands moved DOWN to priv-7
-.RI ( "exec all: ping" ,
-.IR "exec all: traceroute" ,
-.IR "exec all: monitor capture" ,
-.IR "clear counters" ,
-.IR "clear line" ,
-.IR "clear ip arp" ,
-.IR "clear arp-cache" ,
-.IR "clear mac address-table dynamic" ,
-.IR "undebug all" );
+lowers
+.I undebug all
+to priv-7 and nothing else: an operator may not interrupt service, even
+intermittently, so no command that clears a table, an entry or a line, captures
+traffic or sends traffic at a rate is lowered (they stay at priv-15, the
+engineer's);
 .B superuser
 none (priv-15 is the ceiling).
+.PP
+Every shipped entry is permitted by the group's command rules both bare and
+with any arguments, so the
+.B local
+authorization fallback and a RADIUS device (which carries no command rules)
+give a user exactly what the server does; a verb whose arguments the rules
+restrict
+.RB ( ping ,
+.BR traceroute )
+is never lowered. A stored operator list keeps its entries until
+.BR "group privilege reset operator" ,
+which prints the
+.B "no privilege exec ..."
+lines a device pasted earlier needs, as
+.B "device config plan"
+does for a pulled device. An upgrade drops a list that is exactly the one
+0.2.3 shipped and names a stored one that still lowers a removed entry
+.RB ( "config validate"
+repeats it).
 .PP
 Cisco devices enforce these rules LIVE over TACACS+. Once any group has rules,
 .B tacctl config cisco
@@ -1173,15 +1194,24 @@ and
 .BR superuser :
 their WTI levels, the Junos
 .B deny-commands
-of the first three (112, 226 and 192 of 241 bytes; no role has a
+of the first three (136, 133 and 219 of 241 bytes; no role has a
 .BR deny-configuration :
 nothing is hidden from reading, and a site that wants a Junos boundary sets
-engineer's itself), a
+engineer's itself; the operator's set denies
+.I clear
+whole and
+.IR "monitor traffic" ,
+and the viewer's and the operator's both deny
+.I "ping ... rapid"
+and
+.IR "ping ... interval" ,
+because an operator may not interrupt service, even intermittently), a
 .B show
 deny in front of the shipped permits of viewer and operator (the
-unfiltered, secret-bearing sub-trees: running-config view full,
+unfiltered, secret-bearing sub-trees: running-config view full, tech-support,
 startup-config, derived-config, key chain, snmp community|user, archive log;
-the viewer's also tech-support and crypto), and engineer's Cisco command
+the viewer's also crypto, the operator's crypto isakmp key and crypto key),
+and engineer's Cisco command
 rules (34: everything but the exec-level lifecycle, copies that load a
 configuration or write flash, the shell escapes and the AAA debug and test
 commands; configuration mode is not restricted as a mode, so an engineer can
@@ -6360,7 +6390,9 @@ is stored as
 .BR "permit A" ,
 trailing blanks and the order of the aaa lines do not count, the
 .B "privilege exec level N <words>"
-lines IOS adds for the words that lead to a command are not extra, an image
+lines IOS adds for the words that lead to a command the rendering carries are
+not extra (when nothing rendered is beneath one, it is extra, and so is the
+command it was added for), an image
 that does not know the last words of a privilege command (IOS 12.4 has no
 .BR "monitor capture" )
 stores the ones it knows, which is not extra either (the command itself stays
@@ -8489,6 +8521,44 @@ then
 .BR "config render \-\-force" .
 .B "store rollback"
 undoes the move into the store.
+.PP
+From 0.2.5 an operator cannot interrupt service, even intermittently: the
+shipped operator rules and privileges no longer hold
+.IR "clear ..." ,
+.IR "monitor capture" ,
+the flood forms of
+.B ping
+and
+.BR traceroute ,
+nor does Junos
+.B OP-CLASS
+(no
+.B clear
+bit). A list stored in
+.I tacctl.yaml
+keeps what it holds, but for an operator or readonly list that is exactly what
+0.2.3 shipped, which the upgrade drops; the upgrade and
+.B "config validate"
+name the stored settings that still carry a removed command, with
+.B "group privilege reset operator"
+and
+.B "group commands reset <group>"
+(or
+.BR "group reset <group> --preset" )
+as the way back to the shipped values. A device configured earlier keeps its
+old lines until they are removed:
+.B "group privilege reset operator"
+and
+.B "device config plan"
+print the
+.B "no privilege exec ..."
+lines, and Junos
+.B OP-CLASS
+loses
+.B clear
+when Step 1 of
+.B "config juniper"
+is pasted again.
 .PP
 Going back to 0.2.3 is
 .B "tacctl rollback 0.2.3"

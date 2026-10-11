@@ -15,10 +15,15 @@ configure terminal
 ! back-out: the lines as the pull showed them
 line con 0
  login authentication default
-no privilege exec level 7 clear mac address-table dynamic
-no privilege exec all level 7 monitor capture
-! (on IOS 15.x a removed privilege line may stay as 'privilege exec level <default> <cmd>'
-!  (the command's own default level): harmless)
+privilege exec level 7 clear
+privilege exec level 7 clear counters
+privilege exec level 7 clear line
+privilege exec level 7 clear arp-cache
+privilege exec level 7 clear ip
+privilege exec level 7 clear ip arp
+privilege exec all level 7 ping
+privilege exec all level 7 traceroute
+privilege exec level 7 monitor
 no aaa authentication enable default group LAB-TACACS enable
 no aaa authentication login CONSOLE local
 end

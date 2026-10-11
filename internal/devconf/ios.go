@@ -792,6 +792,14 @@ func (c *ciscoCtx) section(x stmt) string {
 // for the words leading to a command ('privilege exec level 7 clear' for
 // 'privilege exec level 7 clear counters') that the rendering does not
 // carry itself. [A] from IOS knowledge, not a lab.
+//
+// A parent is the image's own line only while a statement the rendering
+// carries is beneath it: when every statement beneath it is an extra (the
+// operator lost the command a device was pasted with, so the plan removes
+// it), the parent is an extra too, and the plan removes it with them; else
+// a device would keep 'privilege exec level 7 clear' and read as different
+// after the paste. With no rendered 'privilege' statement at all (a text
+// extracted without its rendering) every parent is dropped, as before.
 func privilegeParents(in []stmt, claim map[string]string) []stmt {
 	isPriv := func(x stmt) []string {
 		if len(x.path) != 1 || !strings.HasPrefix(x.path[0], "privilege ") {
@@ -799,9 +807,20 @@ func privilegeParents(in []stmt, claim map[string]string) []stmt {
 		}
 		return strings.Fields(x.path[0])
 	}
+	rendered := false
+	for stem := range claim {
+		if strings.HasPrefix(stem, "privilege ") {
+			rendered = true
+			break
+		}
+	}
 	var all [][]string
 	for _, x := range in {
-		if f := isPriv(x); f != nil {
+		f := isPriv(x)
+		if f == nil {
+			continue
+		}
+		if _, claimed := claim[x.stem]; claimed || !rendered {
 			all = append(all, f)
 		}
 	}
@@ -859,7 +878,7 @@ const iosImplicitQueueLength = "snmp-server queue-length 100"
 // 'equal' would hide the second. The notes say which line the device holds
 // instead, for each rendered line it holds only a shorter form of that no
 // other rendered line explains (the parent that 'clear counters' leaves
-// behind is not the stored form of 'clear mac address-table dynamic').
+// behind is not the stored form of an unrelated rendered 'clear' line).
 func withoutImplicitIOS(exp, dev []stmt) (kept []stmt, notes []string) {
 	onDev := map[string]bool{}
 	for _, x := range dev {

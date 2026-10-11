@@ -146,7 +146,7 @@ func JuniperVars(req Request, d Data) map[string]string {
 				users.WriteString("set system login class " + j + " permissions " + p + "\n")
 			}
 		case "operator":
-			for _, p := range []string{"clear", "network", "trace", "view", "view-configuration"} {
+			for _, p := range []string{"network", "trace", "view", "view-configuration"} {
 				users.WriteString("set system login class " + j + " permissions " + p + "\n")
 			}
 		case "engineer":
@@ -284,9 +284,9 @@ func JuniperVars(req Request, d Data) map[string]string {
 		case "read-only":
 			desc = "local: network/view + view-configuration"
 		case "operator":
-			desc = "local: clear/network/trace/view + view-configuration"
+			desc = "local: network/trace/view + view-configuration"
 		case "engineer":
-			desc = "local: operator bits + reset, configure/rollback and interface, routing, firewall, system, snmp"
+			desc = "local: operator bits + clear, reset, configure/rollback and interface, routing, firewall, system, snmp"
 		case "super-user":
 			desc = "local: all"
 		}

@@ -1,6 +1,13 @@
 aaa authentication login CONSOLE local
 aaa authentication enable default group LAB-TACACS enable
-privilege exec all level 7 monitor capture
-privilege exec level 7 clear mac address-table dynamic
+no privilege exec level 7 monitor
+no privilege exec all level 7 traceroute
+no privilege exec all level 7 ping
+no privilege exec level 7 clear ip arp
+no privilege exec level 7 clear ip
+no privilege exec level 7 clear arp-cache
+no privilege exec level 7 clear line
+no privilege exec level 7 clear counters
+no privilege exec level 7 clear
 line con 0
  login authentication CONSOLE

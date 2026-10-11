@@ -8,7 +8,7 @@ Reset of group 'readonly' to the role preset's values
   privileges
     unchanged
   junos
-    deny-commands: none -> 112/241 bytes
-      + ^(ssh|telnet|file|request|restart|start|load|op|test|monitor|configure|edit|clear|show system rollback)( .*)?$  (110 bytes)
+    deny-commands: none -> 136/241 bytes
+      + ^(ssh|telnet|file|request|restart|start|load|op|test|monitor|configure|edit|clear|ping .*(rapid|interval)|show system rollback)( .*)?$  (134 bytes)
 
 [INFO] Dry run: nothing was written.

@@ -131,7 +131,7 @@ func TestCommandAuthorizationIsLast(t *testing.T) {
 			if name == "cisco.reference-lab" {
 				c.noGlobal("aaa authorization commands 15 default local group LAB-TACACS")
 				c.noGlobal("aaa authorization config-commands")
-				c.noGlobal("privilege exec level 7 clear counters")
+				c.noGlobal("privilege exec level 7 undebug all")
 			}
 		}, Options{})
 		var lateStart = -1
@@ -153,7 +153,7 @@ func TestCommandAuthorizationIsLast(t *testing.T) {
 		}
 		// the roles line of the second case comes before it in the block
 		if name == "cisco.reference-lab" {
-			wantLine(t, d, "roles", "privilege exec level 7 clear counters")
+			wantLine(t, d, "roles", "privilege exec level 7 undebug all")
 		}
 		// the block says where it starts
 		var reg []string

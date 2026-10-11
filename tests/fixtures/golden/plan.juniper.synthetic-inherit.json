@@ -45,16 +45,15 @@
       "kind": "missing",
       "severity": "ACCESS",
       "section": "roles",
-      "what": "login class OP-CLASS: 5 statements",
-      "statement": "e.g. set system login class OP-CLASS permissions clear",
-      "action": "Fixed by region lines 7-11.",
+      "what": "login class OP-CLASS: 4 statements",
+      "statement": "e.g. set system login class OP-CLASS permissions network",
+      "action": "Fixed by region lines 7-10.",
       "fixed": true,
       "region_lines": [
         7,
         8,
         9,
-        10,
-        11
+        10
       ]
     },
     {
@@ -64,10 +63,10 @@
       "section": "roles",
       "what": "template user OP-CLASS is in class OP-CLASS",
       "statement": "set system login user OP-CLASS class OP-CLASS",
-      "action": "Fixed by region line 12.",
+      "action": "Fixed by region line 11.",
       "fixed": true,
       "region_lines": [
-        12
+        11
       ]
     },
     {
@@ -77,10 +76,10 @@
       "section": "roles",
       "what": "login class RW-CLASS allows all",
       "statement": "set system login class RW-CLASS permissions all",
-      "action": "Fixed by region line 13.",
+      "action": "Fixed by region line 12.",
       "fixed": true,
       "region_lines": [
-        13
+        12
       ]
     },
     {
@@ -90,10 +89,10 @@
       "section": "roles",
       "what": "template user RW-CLASS is in class RW-CLASS",
       "statement": "set system login user RW-CLASS class RW-CLASS",
-      "action": "Fixed by region line 14.",
+      "action": "Fixed by region line 13.",
       "fixed": true,
       "region_lines": [
-        14
+        13
       ]
     },
     {
@@ -103,9 +102,10 @@
       "section": "roles",
       "what": "login class EN-CLASS: 17 statements",
       "statement": "e.g. set system login class EN-CLASS permissions view",
-      "action": "Fixed by region lines 15-31.",
+      "action": "Fixed by region lines 14-30.",
       "fixed": true,
       "region_lines": [
+        14,
         15,
         16,
         17,
@@ -121,8 +121,7 @@
         27,
         28,
         29,
-        30,
-        31
+        30
       ]
     },
     {
@@ -132,10 +131,10 @@
       "section": "roles",
       "what": "template user EN-CLASS is in class EN-CLASS",
       "statement": "set system login user EN-CLASS class EN-CLASS",
-      "action": "Fixed by region line 32.",
+      "action": "Fixed by region line 31.",
       "fixed": true,
       "region_lines": [
-        32
+        31
       ]
     },
     {
@@ -145,12 +144,12 @@
       "section": "snmp",
       "what": "SNMP client list TACCTL-SNMP: 3 statements",
       "statement": "e.g. set snmp client-list TACCTL-SNMP 192.0.2.10/32",
-      "action": "Fixed by region lines 34-36.",
+      "action": "Fixed by region lines 33-35.",
       "fixed": true,
       "region_lines": [
+        33,
         34,
-        35,
-        36
+        35
       ]
     },
     {
@@ -160,11 +159,11 @@
       "section": "snmp",
       "what": "an SNMP community: 2 statements",
       "statement": "e.g. set snmp community \u003csecret\u003e authorization read-only",
-      "action": "Fixed by region lines 37-38.",
+      "action": "Fixed by region lines 36-37.",
       "fixed": true,
       "region_lines": [
-        37,
-        38
+        36,
+        37
       ]
     },
     {
@@ -174,10 +173,10 @@
       "section": "snmp",
       "what": "the SNMP location is Rack 4, DC1",
       "statement": "set snmp location \"Rack 4, DC1\"",
-      "action": "Fixed by region line 39.",
+      "action": "Fixed by region line 38.",
       "fixed": true,
       "region_lines": [
-        39
+        38
       ]
     },
     {
@@ -187,10 +186,10 @@
       "section": "snmp",
       "what": "the SNMP contact is NOC \u003cnoc@example.net\u003e",
       "statement": "set snmp contact \"NOC \u003cnoc@example.net\u003e\"",
-      "action": "Fixed by region line 40.",
+      "action": "Fixed by region line 39.",
       "fixed": true,
       "region_lines": [
-        40
+        39
       ]
     },
     {
@@ -200,10 +199,10 @@
       "section": "snmp",
       "what": "the SNMP description is Core switch",
       "statement": "set snmp description \"Core switch\"",
-      "action": "Fixed by region line 41.",
+      "action": "Fixed by region line 40.",
       "fixed": true,
       "region_lines": [
-        41
+        40
       ]
     },
     {
@@ -213,9 +212,10 @@
       "section": "mgmt-acl",
       "what": "the management filter MGMT-ACL: 22 statements",
       "statement": "e.g. set firewall family inet filter MGMT-ACL term permit-mgmt from source-address 192.0.2.10/32",
-      "action": "Fixed by region lines 43-64.",
+      "action": "Fixed by region lines 42-63.",
       "fixed": true,
       "region_lines": [
+        42,
         43,
         44,
         45,
@@ -236,8 +236,7 @@
         60,
         61,
         62,
-        63,
-        64
+        63
       ]
     }
   ],
@@ -248,7 +247,6 @@
     "set system login class RO-CLASS permissions view",
     "set system login class RO-CLASS permissions view-configuration",
     "set system login user RO-CLASS class RO-CLASS",
-    "set system login class OP-CLASS permissions clear",
     "set system login class OP-CLASS permissions network",
     "set system login class OP-CLASS permissions trace",
     "set system login class OP-CLASS permissions view",

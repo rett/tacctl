@@ -14,6 +14,16 @@
   "irregularities": [
     {
       "n": 1,
+      "kind": "extra",
+      "severity": "ACCESS",
+      "section": "roles",
+      "what": "login class OP-CLASS allows clear",
+      "statement": "set system login class OP-CLASS permissions clear",
+      "action": "Not fixable by this login: EN-CLASS cannot change 'system login' (ask a superuser).",
+      "fixed": false
+    },
+    {
+      "n": 2,
       "kind": "secret not visible",
       "severity": "ACCESS",
       "section": "aaa",
@@ -23,7 +33,7 @@
       "fixed": false
     },
     {
-      "n": 2,
+      "n": 3,
       "kind": "missing",
       "severity": "ACCESS",
       "section": "aaa",
@@ -33,7 +43,7 @@
       "fixed": false
     },
     {
-      "n": 3,
+      "n": 4,
       "kind": "extra",
       "severity": "ACCESS",
       "section": "aaa",
@@ -43,7 +53,7 @@
       "fixed": false
     },
     {
-      "n": 4,
+      "n": 5,
       "kind": "extra",
       "severity": "COSMETIC",
       "section": "aaa",
@@ -53,7 +63,7 @@
       "fixed": false
     },
     {
-      "n": 5,
+      "n": 6,
       "kind": "missing",
       "severity": "MONITORING",
       "section": "snmp",
@@ -63,7 +73,7 @@
       "fixed": false
     },
     {
-      "n": 6,
+      "n": 7,
       "kind": "missing",
       "severity": "MONITORING",
       "section": "snmp",
@@ -73,7 +83,7 @@
       "fixed": false
     },
     {
-      "n": 7,
+      "n": 8,
       "kind": "missing",
       "severity": "COSMETIC",
       "section": "snmp",
@@ -83,7 +93,7 @@
       "fixed": false
     },
     {
-      "n": 8,
+      "n": 9,
       "kind": "missing",
       "severity": "COSMETIC",
       "section": "snmp",
@@ -93,7 +103,7 @@
       "fixed": false
     },
     {
-      "n": 9,
+      "n": 10,
       "kind": "missing",
       "severity": "COSMETIC",
       "section": "snmp",
@@ -103,7 +113,7 @@
       "fixed": false
     },
     {
-      "n": 10,
+      "n": 11,
       "kind": "extra",
       "severity": "MONITORING",
       "section": "snmp",
@@ -113,7 +123,7 @@
       "fixed": false
     },
     {
-      "n": 11,
+      "n": 12,
       "kind": "extra",
       "severity": "COSMETIC",
       "section": "snmp",
@@ -123,7 +133,7 @@
       "fixed": false
     },
     {
-      "n": 12,
+      "n": 13,
       "kind": "extra",
       "severity": "COSMETIC",
       "section": "snmp",
@@ -133,7 +143,7 @@
       "fixed": false
     },
     {
-      "n": 13,
+      "n": 14,
       "kind": "extra",
       "severity": "MONITORING",
       "section": "snmp",
@@ -147,12 +157,17 @@
   "after": [],
   "backout": [],
   "left": {
-    "access": 3,
+    "access": 4,
     "monitoring": 4,
     "cosmetic": 6
   },
   "extras": [],
   "skipped": [
+    {
+      "section": "roles",
+      "kind": "class",
+      "why": "not visible to class EN-CLASS: 'system login' (admin-control)"
+    },
     {
       "section": "aaa",
       "kind": "class",
@@ -165,6 +180,7 @@
     }
   ],
   "withheld": [
+    "set system login class OP-CLASS permissions clear",
     "set system tacplus-server 192.0.2.10 single-connection",
     "set system tacplus-server 198.18.0.24 single-connection",
     "set system accounting events interactive-commands",

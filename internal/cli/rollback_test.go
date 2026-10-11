@@ -573,7 +573,18 @@ func TestRollbackRealOldBinary(t *testing.T) {
 	hs.run(r, "rollback", "0.2.3", "--apply", "--yes")
 	hs.expect(0, "Applying.", "")
 
-	// After.
+	// After. The rollback leaves the rendered files alone, and the shipped
+	// operator rules of 0.2.3 permit 'clear mac address-table dynamic' again
+	// (CHANGELOG item 37), so its rendering differs from the one this
+	// release wrote: 0.2.3 asks for a new rendering with its own message,
+	// which is then done.
+	if out, code = run("config", "validate"); code != 1 || !strings.Contains(out, "is out of date with the store") ||
+		strings.Contains(out, "unknown config key") {
+		t.Errorf("0.2.3 config validate after, before its render: %d\n%s", code, out)
+	}
+	if out, code = run("config", "render"); code != 0 {
+		t.Errorf("0.2.3 config render: %d\n%s", code, out)
+	}
 	out, code = run("config", "validate")
 	if code != 0 || strings.Contains(out, "unknown config key") || !strings.Contains(out, "Configuration is valid.") {
 		t.Errorf("0.2.3 config validate after: %d\n%s", code, out)

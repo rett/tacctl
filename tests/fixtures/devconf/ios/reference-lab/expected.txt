@@ -33,14 +33,6 @@
 | aaa authorization config-commands
 [roles]
 | privilege exec level 1 show running-config
-| privilege exec all level 7 ping
-| privilege exec all level 7 traceroute
-| privilege exec all level 7 monitor capture
-| privilege exec level 7 clear counters
-| privilege exec level 7 clear line
-| privilege exec level 7 clear ip arp
-| privilege exec level 7 clear arp-cache
-| privilege exec level 7 clear mac address-table dynamic
 | privilege exec level 7 undebug all
 [mgmt-acl]
 | ip access-list standard VTY-ACL

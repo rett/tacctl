@@ -67,6 +67,16 @@ var corpus = []sample{
 	{"readonly", "logout", "PP"},
 	{"readonly", "ping 192.0.2.1", "PP"},
 	{"readonly", "traceroute 192.0.2.1", "PP"},
+	{"readonly", "ping vrf MGMT 192.0.2.1 source Loopback0", "PP"},
+	// ... but no flood form: the keywords that repeat, set a timeout or
+	// sweep, and the interactive form (no arguments, never authorized
+	// at its prompts), are the engineer's
+	{"readonly", "ping", "DD"},
+	{"readonly", "ping 192.0.2.1 repeat 1000", "DD"},
+	{"readonly", "ping 192.0.2.1 timeout 0", "DD"},
+	{"readonly", "ping 192.0.2.1 size 1500 repeat 100", "DD"},
+	{"readonly", "traceroute", "DD"},
+	{"readonly", "traceroute 192.0.2.1 probe 100", "DD"},
 	{"readonly", "show running-config view full", "DD"},
 	{"readonly", "show running-config view full | include key", "DD"},
 	{"readonly", "show running-config view", "PP"},
@@ -104,16 +114,33 @@ var corpus = []sample{
 	{"operator", "exit", "PP"},
 	{"operator", "logout", "PP"},
 	{"operator", "terminal monitor", "PP"},
+	{"operator", "ping 192.0.2.1", "PP"},
+	{"operator", "ping 192.0.2.1 size 1500 df-bit", "PP"},
 	{"operator", "ping vrf MGMT 192.0.2.1 source Loopback0", "PP"},
+	{"operator", "ping ipv6 2001:db8::1", "PP"},
+	{"operator", "ping mpls ipv4 10.0.0.1/32", "PP"},
+	{"operator", "traceroute 192.0.2.1", "PP"},
+	{"operator", "traceroute vrf MGMT 192.0.2.1 numeric", "PP"},
 	{"operator", "traceroute mpls ipv4 10.0.0.1/32", "PP"},
-	{"operator", "monitor capture CAP interface Gi1 both", "PP"},
-	{"operator", "monitor capture CAP export tftp://192.0.2.9/c.pcap", "PP"},
-	{"operator", "clear counters", "PP"},
-	{"operator", "clear counters GigabitEthernet1", "PP"},
-	{"operator", "clear line vty 3", "PP"},
-	{"operator", "clear ip arp 192.0.2.7", "PP"},
-	{"operator", "clear arp-cache GigabitEthernet1", "PP"},
-	{"operator", "clear mac address-table dynamic interface Gi1/0/1", "PP"},
+	// An operator cannot interrupt service, even briefly: no flood form of
+	// ping or traceroute, no capture, no clear (the engineer's).
+	{"operator", "ping", "DD"},
+	{"operator", "ping 192.0.2.1 repeat 1000", "DD"},
+	{"operator", "ping 192.0.2.1 repeat 2147483647 size 18024", "DD"},
+	{"operator", "ping 192.0.2.1 timeout 0", "DD"},
+	{"operator", "ping 192.0.2.1 sweep range 36 18024 1", "DD"},
+	{"operator", "ping vrf MGMT 192.0.2.1 repeat 100", "DD"},
+	{"operator", "traceroute", "DD"},
+	{"operator", "traceroute 192.0.2.1 probe 100", "DD"},
+	{"operator", "traceroute 192.0.2.1 ttl 1 255 timeout 0", "DD"},
+	{"operator", "monitor capture CAP interface Gi1 both", "DD"},
+	{"operator", "monitor capture CAP export tftp://192.0.2.9/c.pcap", "DD"},
+	{"operator", "clear counters", "DD"},
+	{"operator", "clear counters GigabitEthernet1", "DD"},
+	{"operator", "clear line vty 3", "DD"},
+	{"operator", "clear ip arp 192.0.2.7", "DD"},
+	{"operator", "clear ip arp vrf MGMT", "DD"},
+	{"operator", "clear arp-cache GigabitEthernet1", "DD"},
 	{"operator", "ssh -l oper 192.0.2.2", "PP"},
 	{"operator", "telnet 192.0.2.2", "PP"},
 	{"operator", "undebug all", "PP"},
@@ -121,6 +148,7 @@ var corpus = []sample{
 	{"operator", "show running-config view full | include key", "DD"},
 	{"operator", "show running-config view", "PP"},
 	{"operator", "show running-config view-full", "PP"},
+	{"operator", "show tech-support", "PD"},
 	{"operator", "show startup-config", "PD"},
 	{"operator", "show derived-config", "PD"},
 	{"operator", "show key chain", "PD"},
@@ -131,6 +159,8 @@ var corpus = []sample{
 	{"operator", "clear arp-cache", "DD"},
 	{"operator", "clear ip arp", "DD"},
 	{"operator", "clear mac address-table dynamic", "DD"},
+	{"operator", "clear mac address-table dynamic interface Gi1/0/1", "DD"},
+	{"operator", "clear mac address-table", "DD"},
 	{"operator", "clear ip route *", "DD"},
 	{"operator", "clear ip bgp *", "DD"},
 	{"operator", "clear ip bgp 192.0.2.1 soft in", "DD"},
@@ -158,7 +188,18 @@ var corpus = []sample{
 	{"engineer", "copy running-config tftp://192.0.2.9/x", "PP"},
 	{"engineer", "copy flash:cap.pcap tftp://192.0.2.9/cap.pcap", "PP"},
 	{"engineer", "clear ip bgp 192.0.2.1 soft in", "PP"},
+	{"engineer", "clear mac address-table dynamic", "PP"},
+	{"engineer", "clear mac address-table dynamic interface Gi1/0/1", "PP"},
 	{"engineer", "clear counters", "PP"},
+	{"engineer", "clear counters GigabitEthernet1", "PP"},
+	{"engineer", "clear line vty 3", "PP"},
+	{"engineer", "clear ip arp 192.0.2.7", "PP"},
+	{"engineer", "clear arp-cache GigabitEthernet1", "PP"},
+	{"engineer", "monitor capture CAP interface Gi1 both", "PP"},
+	{"engineer", "undebug all", "PP"},
+	{"engineer", "ping", "PP"},
+	{"engineer", "ping 192.0.2.1 repeat 1000 size 1500", "PP"},
+	{"engineer", "traceroute 192.0.2.1 probe 100", "PP"},
 	{"engineer", "no shutdown", "PP"},
 	{"engineer", "interface GigabitEthernet1", "PP"},
 	{"engineer", "ip route 0.0.0.0 0.0.0.0 192.0.2.1", "PP"},
@@ -324,30 +365,18 @@ func TestRolesNest(t *testing.T) {
 	}
 }
 
-// localFallbackExceptions are the shipped privilege entries whose BARE form
-// the server does not permit: IOS lowers the verb with any arguments, the
-// server permits only the single-entry form ('clear ip arp <address>'), so
-// with `aaa authorization ... group X local` and the server unreachable the
-// operator can clear a whole table. Decided and documented (the comment above
-// the privilege lines of internal/conf/defaults.yaml and the README): the
-// tables refill themselves, and the operator needs the single-entry forms.
-// A new entry cannot slip in unnoticed: it is listed here with its reason or
-// the test fails.
-var localFallbackExceptions = map[string]string{
-	"clear ip arp":                    "single-entry form only on the server; the ARP table refills",
-	"clear arp-cache":                 "single-entry form only on the server; the ARP table refills",
-	"clear mac address-table dynamic": "single-entry form only on the server; the MAC table relearns",
-}
-
 // Every shipped privilege entry is something the group's rules permit in
-// its BARE form (what the `local` authorization fallback on a device
-// allows), so the fallback gives a user no more than the server does,
-// except the exceptions listed in localFallbackExceptions, which the server
-// permits with an argument; and none is a command that is level 1 already
-// (lowering it would move it up).
+// its bare form AND with any arguments (what the `local` authorization
+// fallback on a device and a RADIUS device, which has no command rules,
+// allow: IOS lowers a verb with every argument it accepts), so the fallback
+// gives a user exactly what the server does and a verb whose arguments the
+// server restricts is never lowered. There is no exception list: an entry
+// the server permits only with some arguments does not belong in the
+// privileges. None is a command that is level 1 already (lowering it would
+// move it up).
 func TestPrivilegesArePermitted(t *testing.T) {
 	level1 := []string{"show ip route", "show access-list", "show version", "ping", "traceroute"}
-	usedException := map[string]bool{}
+	tails := []string{"", " a b c", " 192.0.2.1", " vrf MGMT 192.0.2.1 repeat 100", " mpls ipv4 10.0.0.1/32"}
 	for _, role := range roleNames {
 		for _, preset := range []bool{false, true} {
 			rules := ruleSet(t, role, preset)
@@ -356,15 +385,10 @@ func TestPrivilegesArePermitted(t *testing.T) {
 				if i := strings.Index(entry, ": "); i >= 0 {
 					cmd = entry[i+2:]
 				}
-				switch _, exempt := localFallbackExceptions[cmd]; {
-				case tqPermits(rules, true, cmd):
-				case exempt:
-					usedException[cmd] = true
-					if !tqPermits(rules, true, cmd+" 192.0.2.1") {
-						t.Errorf("%s (preset=%v): the exception %q is not permitted with an argument either", role, preset, entry)
+				for _, tail := range tails {
+					if !tqPermits(rules, true, cmd+tail) {
+						t.Errorf("%s (preset=%v): privilege %q is lowered with every argument, but the group's rules do not permit %q (the local fallback and a RADIUS device would allow more than the server); do not lower the verb, or permit all of its arguments", role, preset, entry, cmd+tail)
 					}
-				default:
-					t.Errorf("%s (preset=%v): privilege %q is not permitted by the group's rules in its bare form (the local fallback would allow more than the server); fix the rule or list it in localFallbackExceptions with a reason", role, preset, entry)
 				}
 				for _, l1 := range level1 {
 					// 'exec all:' lowers the extended forms (ping vrf ...),
@@ -376,11 +400,6 @@ func TestPrivilegesArePermitted(t *testing.T) {
 			}
 		}
 	}
-	for cmd := range localFallbackExceptions {
-		if !usedException[cmd] {
-			t.Errorf("localFallbackExceptions lists %q, which no shipped privilege entry needs any more or the rules permit bare", cmd)
-		}
-	}
 	// Operator inherits readonly's level-1 line, so readonly's entries must
 	// be permitted to operator as well (IOS levels are cumulative).
 	for _, entry := range policy.DefaultPrivileges("readonly") {
@@ -390,6 +409,38 @@ func TestPrivilegesArePermitted(t *testing.T) {
 	}
 	if got := policy.DefaultPrivileges("superuser"); len(got) != 0 {
 		t.Errorf("superuser: %q", got)
+	}
+}
+
+// Nothing the operator or readonly has lowered, or may run, can interrupt
+// service (CHANGELOG, the operator audit): the commands the audit removed
+// are denied to both for any arguments the rules cannot bound, and
+// permitted to the engineer.
+func TestOperatorCannotInterruptService(t *testing.T) {
+	removed := []string{
+		"clear counters", "clear counters GigabitEthernet1", "clear line vty 3", "clear ip arp 192.0.2.7",
+		"clear arp-cache GigabitEthernet1", "clear mac address-table dynamic", "clear mac address-table dynamic interface Gi1/0/1",
+		"monitor capture CAP start", "monitor capture CAP interface Gi1 both",
+		"ping", "ping 192.0.2.1 repeat 1000", "ping 192.0.2.1 timeout 0", "ping 192.0.2.1 sweep range 36 18024 1",
+		"traceroute", "traceroute 192.0.2.1 probe 65535", "traceroute 192.0.2.1 ttl 1 255", "traceroute 192.0.2.1 timeout 0",
+	}
+	for _, preset := range []bool{false, true} {
+		for _, line := range removed {
+			for _, role := range []string{"operator", "readonly"} {
+				if tqPermits(ruleSet(t, role, preset), true, line) {
+					t.Errorf("%s (preset=%v) is permitted %q", role, preset, line)
+				}
+			}
+		}
+	}
+	for _, line := range removed {
+		if !tqPermits(presetRules(t, "engineer"), true, line) {
+			t.Errorf("the engineer is not permitted %q", line)
+		}
+	}
+	// The one lowered operator command stops a debug: it relieves load.
+	if got := policy.DefaultPrivileges("operator"); len(got) != 1 || got[0] != "undebug all" {
+		t.Errorf("operator privileges %q, want [undebug all]", got)
 	}
 }
 
@@ -422,7 +473,13 @@ var junosCorpus = []struct {
 	{"show version", nil},
 	{"show log messages", nil},
 	{"ping 192.0.2.1", nil},
+	{"ping count 5 192.0.2.1", nil},
+	{"ping size 1472 do-not-fragment 192.0.2.1", nil},
+	{"ping rapid 192.0.2.1", map[string]bool{"readonly": true, "operator": true}},
+	{"ping 192.0.2.1 rapid count 1000", map[string]bool{"readonly": true, "operator": true}},
+	{"ping interval 0.1 192.0.2.1", map[string]bool{"readonly": true, "operator": true}},
 	{"traceroute 192.0.2.1", nil},
+	{"traceroute wait 1 ttl 5 192.0.2.1", nil},
 	{"request support information", map[string]bool{"readonly": true, "operator": true}},
 	{"request system reboot", map[string]bool{"readonly": true, "operator": true, "engineer": true}},
 	{"request system storage cleanup", map[string]bool{"readonly": true, "operator": true, "engineer": true}},
@@ -430,19 +487,25 @@ var junosCorpus = []struct {
 	{"request vmhost reboot", map[string]bool{"readonly": true, "operator": true, "engineer": true}},
 	{"ssh 192.0.2.1", map[string]bool{"readonly": true}},
 	{"telnet 192.0.2.1", map[string]bool{"readonly": true}},
-	{"clear interfaces statistics", map[string]bool{"readonly": true}},
-	{"clear arp", map[string]bool{"readonly": true}},
-	{"clear ethernet-switching table", map[string]bool{"readonly": true}},
-	{"clear firewall all", map[string]bool{"readonly": true}},
+	{"clear interfaces statistics", map[string]bool{"readonly": true, "operator": true}},
+	{"clear arp", map[string]bool{"readonly": true, "operator": true}},
+	{"clear arp hostname 192.0.2.7", map[string]bool{"readonly": true, "operator": true}},
+	{"clear ethernet-switching table", map[string]bool{"readonly": true, "operator": true}},
+	{"clear firewall all", map[string]bool{"readonly": true, "operator": true}},
+	{"clear ipv6 neighbors", map[string]bool{"readonly": true, "operator": true}},
+	{"clear services sessions", map[string]bool{"readonly": true, "operator": true}},
 	{"clear bgp neighbor 192.0.2.1 soft", map[string]bool{"readonly": true, "operator": true}},
 	{"clear ospf neighbor all", map[string]bool{"readonly": true, "operator": true}},
 	{"clear isis adjacency", map[string]bool{"readonly": true, "operator": true}},
 	{"clear system login lockout user x", map[string]bool{"readonly": true, "operator": true, "engineer": true}},
 	{"clear log messages", map[string]bool{"readonly": true, "operator": true, "engineer": true}},
 	{"clear security flow session", map[string]bool{"readonly": true, "operator": true}},
-	{"monitor traffic interface ge-0/0/0", map[string]bool{"readonly": true}},
+	{"monitor traffic interface ge-0/0/0", map[string]bool{"readonly": true, "operator": true}},
+	{"monitor traffic interface ge-0/0/0 count 10", map[string]bool{"readonly": true, "operator": true}},
 	{"monitor traffic interface ge-0/0/0 write-file /var/tmp/x", map[string]bool{"readonly": true, "operator": true}},
 	{"monitor start messages", map[string]bool{"readonly": true}},
+	{"monitor interface ge-0/0/0", map[string]bool{"readonly": true}},
+	{"monitor list", map[string]bool{"readonly": true}},
 	{"restart routing", map[string]bool{"readonly": true, "operator": true}},
 	{"restart management", map[string]bool{"readonly": true, "operator": true, "engineer": true}},
 	{"restart chassis-control", map[string]bool{"readonly": true, "operator": true, "engineer": true}},
@@ -508,7 +571,7 @@ func TestJunosDenyNest(t *testing.T) {
 // The sizes of the Junos values with the preset's '( )' wrapper, within
 // TACACS+'s 255-byte argument (limits 241 / 236).
 func TestJunosSizes(t *testing.T) {
-	want := map[string]int{"readonly": 112, "operator": 226, "engineer": 219}
+	want := map[string]int{"readonly": 136, "operator": 133, "engineer": 219}
 	got := map[string]int{}
 	for _, r := range policy.RolePreset() {
 		for attr, items := range r.Junos {

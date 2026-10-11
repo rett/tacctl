@@ -911,7 +911,7 @@ var iosStoredForms = []IOSStoredForm{
 		"never a 'no', kept with a note: it is harmless, and a later comparison shows it as '+'"},
 	{"ios.stored.truncated", "'privilege exec all level N <words>' stored as a prefix of the typed words on an image that lacks the last word",
 		"typed as rendered every time (the extractor reads it as '-' until WP13.1b); the stored prefix is never a 'no'"},
-	{"ios.stored.not-stored", "a rendered line the image accepts and does not store ('clear mac address-table dynamic')",
+	{"ios.stored.not-stored", "a rendered line the image accepts and does not store (a command whose last words it does not know: it stores the words it knows)",
 		"a permanent '-': typed every time (typing it again is idempotent) and noted once in the section's why-line"},
 }
 

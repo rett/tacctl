@@ -12,14 +12,11 @@
 !                         enable). Fixed by region line 4.
 !  3. aaa      ACCESS     different: the login method of line con 0: login authentication CONSOLE (the
 !                         device has: the login method of line con 0: login authentication default)
-!                         (line con 0 > login authentication CONSOLE). Fixed by region line 10.
-!  4. roles    COSMETIC   missing: the commands of privilege level 7: 2 statements (e.g. privilege
-!                         exec all level 7 monitor capture). Fixed by region lines 6-7.
+!                         (line con 0 > login authentication CONSOLE). Fixed by region line 17.
+!  4. roles    COSMETIC   extra: the commands of privilege level 7: 9 statements (e.g. privilege exec
+!                         level 7 monitor). Fixed by region lines 6-14.
 ! Consistent: snmp, mgmt-acl. Not planned: netconf, breakglass.
 ! Secrets: 2 present on the device, not changed (--secrets pushes them).
-! Note: privilege exec all level 7 monitor capture: not on the device, which holds 'privilege exec
-! level 7 monitor' instead, as an image that does not know 'capture' stores it; a device that lost the
-! line looks the same, so it stays missing.
 ! WARNING: the device has no enable secret: with the server unreachable, level 15 is reached only
 ! through the local user and 'aaa authorization exec'; set an enable secret first if you want a second
 ! way.
@@ -39,8 +36,15 @@ configure terminal
 aaa authentication login CONSOLE local
 aaa authentication enable default group LAB-TACACS enable
 ! roles: the privilege lines of the levels tacctl renders
-privilege exec all level 7 monitor capture
-privilege exec level 7 clear mac address-table dynamic
+no privilege exec level 7 monitor
+no privilege exec all level 7 traceroute
+no privilege exec all level 7 ping
+no privilege exec level 7 clear ip arp
+no privilege exec level 7 clear ip
+no privilege exec level 7 clear arp-cache
+no privilege exec level 7 clear line
+no privilege exec level 7 clear counters
+no privilege exec level 7 clear
 ! aaa: the login method of the console and vty lines
 line con 0
  login authentication CONSOLE

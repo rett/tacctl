@@ -107,9 +107,11 @@ func TestCiscoExtractReferenceTexts(t *testing.T) {
 			SectionSNMP: StateDiffers, SectionNetconf: StateNA, SectionBreakGlass: StateDiffers}},
 		{"ios/reference-12x", "ios", map[string]State{SectionAAA: StateOK, SectionRoles: StateOK, SectionMgmtACL: StateOK,
 			SectionSNMP: StateOK, SectionNetconf: StateNA, SectionBreakGlass: StateOK}},
-		// roles: 'monitor capture' and 'clear mac address-table dynamic' are
-		// not stored by this image (a permanent '-'); the lines it stores
-		// instead are not extra, the rest is the stored form of what was typed.
+		// roles: the device was pasted with the operator lines of 0.2.3
+		// (ping, traceroute, monitor capture and the clears); the rendering
+		// has since lost them, so each is an extra line (with the parents
+		// beneath which nothing rendered is left), and 'monitor' is the
+		// stored form of the removed 'monitor capture'.
 		// aaa: the capture has no login statement on its console and VTY
 		// lines, IOS being silent about the default method list: they read
 		// as 'login authentication default'. It predates the standard block:
@@ -189,6 +191,14 @@ func TestCiscoImplicitLines(t *testing.T) {
 		{"a statement of its own stays", SectionRoles, roles(),
 			[]string{"privilege exec level 7 clear counters", "privilege exec level 7 show", "privilege exec all level 7 monitor capture"},
 			[]string{"= privilege exec all level 7 monitor capture", "= privilege exec level 7 clear counters", "+ privilege exec level 7 show"}, StateDiffers},
+		// a device pasted before the operator lost 'clear mac address-table
+		// dynamic' keeps the line: it is extra until removed, and no rendered
+		// line explains it
+		{"a retired privilege line is extra", SectionRoles, roles(),
+			[]string{"privilege exec all level 7 monitor capture", "privilege exec level 7 clear counters",
+				"privilege exec level 7 clear mac address-table dynamic"},
+			[]string{"= privilege exec all level 7 monitor capture", "= privilege exec level 7 clear counters",
+				"+ privilege exec level 7 clear mac address-table dynamic"}, StateDiffers},
 		{"queue length beside the community", SectionSNMP, []string{"snmp-server community c RO ACL"},
 			[]string{"snmp-server community zz RO ACL", "snmp-server queue-length 100"},
 			[]string{"= snmp-server community <secret> RO ACL (present, not compared)"}, StateOK},

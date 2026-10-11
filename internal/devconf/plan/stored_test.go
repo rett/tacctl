@@ -23,28 +23,43 @@ func rolesState(t *testing.T, name string) *iosState {
 	return st
 }
 
+// planWithRole plans a fixture against its rendering with one roles line
+// more: a site's own 'privileges.operator' entry. No default lowers
+// 'monitor capture' (the operator may not interrupt service, even
+// briefly), but a site may, and the 12.4 image of the real capture stores
+// it as 'privilege exec level 7 monitor'.
+func planWithRole(t *testing.T, f fixture, line string) Delta {
+	t.Helper()
+	exp := expectedSections(t, f.expected)
+	for i := range exp {
+		if exp[i].Name == "roles" {
+			exp[i].Lines = append(exp[i].Lines, line)
+			exp[i].Secret = append(exp[i].Secret, false)
+		}
+	}
+	return planText(t, f, exp, capture(t, f.raw), Options{})
+}
+
 var storedCases = map[string]rowCase{
 	"ios.stored.parent": func(t *testing.T) {
 		f := fixtureNamed(t, "cisco.reference-lab")
 		d := planI(t, f, func(c *IOSConfig) {
-			// only the parent is left of the level 7 clear commands
-			for _, w := range []string{"counters", "line", "ip arp", "arp-cache", "mac address-table dynamic"} {
-				c.noGlobal("privilege exec level 7 clear " + w)
-			}
-			c.typeGlobal("privilege exec level 7 clear")
+			// only the parent is left of the level 7 undebug command
+			c.noGlobal("privilege exec level 7 undebug all")
+			c.typeGlobal("privilege exec level 7 undebug")
 		}, Options{})
-		noLine(t, d, "roles", "no privilege exec level 7 clear")
-		wantLine(t, d, "roles", "privilege exec level 7 clear counters")
+		noLine(t, d, "roles", "no privilege exec level 7 undebug")
+		wantLine(t, d, "roles", "privilege exec level 7 undebug all")
 		// the planner's own guard
 		st := rolesState(t, "cisco.reference-lab")
-		if st.isStoredFormOnly("privilege exec level 7 clear") == "" || st.isStoredFormOnly("privilege exec level 7 clear ip") == "" {
+		if st.isStoredFormOnly("privilege exec level 7 undebug") == "" || st.isStoredFormOnly("privilege exec level 1 show") == "" {
 			t.Errorf("a parent is not recognised")
 		}
-		if st.isStoredFormOnly("privilege exec level 7 clear counters") != "" || st.isStoredFormOnly("privilege exec level 7 fuzz thing") != "" {
+		if st.isStoredFormOnly("privilege exec level 7 undebug all") != "" || st.isStoredFormOnly("privilege exec level 7 fuzz thing") != "" {
 			t.Errorf("a rendered line or an unrelated line is taken for a parent")
 		}
 		// an 'all' on the device covers more than the rendering says
-		if st.isStoredFormOnly("privilege exec all level 7 clear") != "" {
+		if st.isStoredFormOnly("privilege exec all level 7 undebug") != "" {
 			t.Errorf("a device 'all' line is taken for a parent")
 		}
 	},
@@ -81,7 +96,7 @@ var storedCases = map[string]rowCase{
 		d := planI(t, f, func(c *IOSConfig) {
 			for _, l := range []string{"privilege exec level 15 clear counters", "privilege exec level 15 undebug all",
 				"privilege exec level 15 monitor capture", "privilege exec level 1 ping", "privilege exec level 1 traceroute",
-				"privilege exec level 15 clear ip", "privilege exec level 1 show", "privilege exec level 1 clear"} {
+				"privilege exec level 15 clear ip", "privilege exec level 1 show", "privilege exec level 1 undebug"} {
 				c.typeGlobal(l)
 			}
 			// an operator's own line at a rendered level is not a residue
@@ -89,7 +104,7 @@ var storedCases = map[string]rowCase{
 		}, Options{})
 		wantLine(t, d, "roles", "no privilege exec level 7 fuzz thing")
 		for _, l := range []string{"privilege exec level 1 ping", "privilege exec level 1 traceroute", "privilege exec level 1 show",
-			"privilege exec level 1 clear", "privilege exec level 15 clear counters"} {
+			"privilege exec level 1 undebug", "privilege exec level 15 clear counters"} {
 			noLine(t, d, "roles", "no "+l)
 		}
 		var notes int
@@ -102,7 +117,7 @@ var storedCases = map[string]rowCase{
 			t.Errorf("the residue lines are not kept with a note: %+v", d.Kept)
 		}
 		st := rolesState(t, "cisco.reference-lab")
-		for _, s := range []string{"privilege exec level 1 ping", "privilege exec level 15 clear counters", "privilege exec level 15 clear ip", "privilege exec level 1 show"} {
+		for _, s := range []string{"privilege exec level 1 ping", "privilege exec level 15 clear counters", "privilege exec level 15 clear ip", "privilege exec level 1 show", "privilege exec level 1 undebug"} {
 			if st.isStoredFormOnly(s) == "" {
 				t.Errorf("%q is not taken for a residue", s)
 			}
@@ -122,7 +137,7 @@ var storedCases = map[string]rowCase{
 	},
 	"ios.stored.truncated": func(t *testing.T) {
 		f := fixtureNamed(t, "cisco.real-12.4-7200")
-		d := planI(t, f, nil, Options{})
+		d := planWithRole(t, f, "privilege exec all level 7 monitor capture")
 		// the image stored 'privilege exec level 7 monitor': the rendered
 		// 'all ... monitor capture' is typed, the stored prefix is no 'no'
 		wantLine(t, d, "roles", "privilege exec all level 7 monitor capture")
@@ -130,8 +145,10 @@ var storedCases = map[string]rowCase{
 	},
 	"ios.stored.not-stored": func(t *testing.T) {
 		f := fixtureNamed(t, "cisco.real-12.4-7200")
-		d := planI(t, f, nil, Options{})
-		wantLine(t, d, "roles", "privilege exec level 7 clear mac address-table dynamic")
+		d := planWithRole(t, f, "privilege exec all level 7 monitor capture")
+		// the 12.4 image stores no 'capture' (as 'privilege exec level 7
+		// monitor'): the line it accepted and did not store is typed again
+		wantLine(t, d, "roles", "privilege exec all level 7 monitor capture")
 		if !strings.Contains(d.Of("roles").Why, "permanent '-'") {
 			t.Errorf("the why-line does not say a permanent '-' is expected: %q", d.Of("roles").Why)
 		}
