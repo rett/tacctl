@@ -173,6 +173,29 @@ Deferred:
 - **Per-device SNMP overrides (user, 2026-10-07; shipped in 0.2.4 as `tacctl device snmp <name> show|version|port|timeout|clients|community|v3-user|clear`, credentials in `StateDir/snmp/devices/<name>.yaml`, not in `snmp.yaml`):** a device may override the scope's SNMP settings: its client list, its version, port and timeout, and its credentials (a community or v3 user of its own, kept in `snmp.yaml` beside the shared ones, never in `devices.yaml`). Resolution order: the device's own value, then its scope's, then the global default; `device show` and `config snmp show` say where each value comes from. Possible commands: `tacctl device snmp <name> show|clients|version|community|v3-user|clear`.
 - **Configuration deployment:** the user may want tacctl to help orchestrate pushing device configuration (today `config cisco|juniper|wti` only print walkthroughs to paste). SNMPv3 would matter more then. Nothing is designed; the open questions are the transport (NETCONF for Junos, SSH/RESTCONF for IOS-XE, the WTI's CLI), credentials, dry-run/diff and rollback, and the tier that may push.
 
+## 3g. Findings from comparing the standard block with three real Cisco images (filed 2026-10-11, for the WP13.2 review)
+
+Pulling a 12.4 router image, an IOS 15.6 router image and an IOS-XE 16.7 image
+against the standard block (all three on TACACS+) leaves two kinds of
+difference the comparison reports but a paste cannot remove:
+
+- **Role lines that no router image stores.** `privilege exec level 7 clear
+  mac address-table dynamic` is accepted and not stored on all three (only
+  the parent `clear` is), and 12.4 also stores `monitor capture` as
+  `monitor`. The role preset's line is a switch command; on a router the
+  `roles` section reads `differs` for ever and every plan re-types a line
+  that cannot take. Options for the planner: treat an accepted-but-unstored
+  line as `left-alone` once a pull after a paste still lacks it (needs a
+  per-device note in the record); or split the preset by platform from the
+  pull's image line; or drop the line from the router presets. Decide with
+  the first switch image.
+- **A source interface typed inside the group.** `ip tacacs source-interface
+  <ifc>` under `aaa group server tacacs+ <G>` (a per-group form) reads as a
+  device-only line while the scope sets no source interface; the global
+  form is the standard (D119), so the comparison should name the group form
+  as an old form (an extra removed only by the cleanup region) and not as an
+  unexplained addition.
+
 ## 4. Linux hosts: considered, not pursued
 
 - **nss_tacplus** (shared template accounts, no per-user local accounts) — considered 2026-10-04, not pursued; revisit if per-user accounts become a burden. 0.2.1 keeps one local account per user (UIDs 20000-29999, created, expired and deleted by `host enroll|sync`).
