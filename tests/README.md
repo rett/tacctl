@@ -161,7 +161,7 @@ stubs. The console's own path (`/usr/local/bin/tacctl-console`) moves only
 with `TACCTL_TEST_ROOT`.
 
 **`TACCTL_VAR_LIB`** is the root of tacctl's variable data (`/var/lib/tacctl`:
-`ssh/known_hosts`, `devices-seen.json`, `tier-pinned`, `linux/`); `tmpenv.bash` points it
+`ssh/known_hosts`, `devices-seen.json`, `tier-pinned`, `operator-policy-noted`, `linux/`); `tmpenv.bash` points it
 into the test's tmpdir and `internal/cli/sandbox_paths_test.go` guards that no
 lifecycle test touches the host's.
 

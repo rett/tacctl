@@ -564,6 +564,11 @@ func TestInstallFresh(t *testing.T) {
 	if _, err := os.Stat(o.p.TierPinMarker); err != nil {
 		t.Errorf("no tier migration marker: %v", err)
 	}
+	// ... and no device was configured by an earlier release, so the
+	// upgrade's one-time word about their operator lines is marked said.
+	if !lifecycle.OperatorNoticeDone(o.p) {
+		t.Error("no operator notice marker after a fresh install")
+	}
 	// No python anywhere.
 	for _, c := range o.run.Argvs() {
 		if strings.Contains(c, "python") {
@@ -598,6 +603,11 @@ func TestInstallOverExistingCloneAndStore(t *testing.T) {
 	// migrates them, so the install leaves no marker.
 	if _, err := os.Stat(o.p.TierPinMarker); err == nil {
 		t.Error("an install over a store left the tier migration marker")
+	}
+	// Its devices may have been configured by an earlier release: the first
+	// upgrade says what they keep.
+	if lifecycle.OperatorNoticeDone(o.p) {
+		t.Error("an install over a store left the operator notice marker")
 	}
 }
 

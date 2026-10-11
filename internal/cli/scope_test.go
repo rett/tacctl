@@ -359,7 +359,7 @@ func TestGroupCommandsPositionAndSelector(t *testing.T) {
 		return got
 	}
 	// operator's shipped rules (defaults.yaml), numbered as 'list' does.
-	shipped := []string{"show:deny", "show:permit", "dir:permit", "ping:permit", "traceroute:permit", "terminal:permit", "ssh:permit",
+	shipped := []string{"show:deny", "show:permit", "dir:permit", "ping:deny", "ping:permit", "traceroute:deny", "traceroute:permit", "terminal:permit", "ssh:permit",
 		"telnet:permit", "undebug:permit", "exit:permit", "logout:permit"}
 	numbered := func(rules ...string) []string {
 		out := make([]string, len(rules))
@@ -402,7 +402,7 @@ func TestGroupCommandsPositionAndSelector(t *testing.T) {
 	sb.run("", []string{"group", "commands", "add", "operator", "show", "--match", "b", "--action", "deny"})
 	sb.run("", []string{"group", "commands", "remove", "operator", "show", "--all"})
 	sb.expect(0, "Removed rule #2 'show' (deny, match=[^(running-config view full)( .*)?$]) from group 'operator'.", "")
-	sb.expect(0, "Removed rule #13 'show' (deny, match=[a]) from group 'operator'.\n[INFO] Removed rule #14 'show' (deny, match=[b])", "")
+	sb.expect(0, "Removed rule #15 'show' (deny, match=[a]) from group 'operator'.\n[INFO] Removed rule #16 'show' (deny, match=[b])", "")
 	if got := names(); !reflect.DeepEqual(got, numbered(append(append([]string{"configure:deny"}, shipped[2:]...), "reload:deny", cat)...)) {
 		t.Errorf("after the removals: %q", got)
 	}

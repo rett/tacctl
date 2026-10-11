@@ -107,10 +107,13 @@ func TestInsertRuleAt(t *testing.T) {
 	shipped := shippedOperator()
 	shipped = shipped[:len(shipped)-1]
 	beforePing := func() []string {
+		// before the first rule named ping (its deny of the interactive forms)
 		var out []string
+		done := false
 		for _, l := range shipped {
-			if strings.HasPrefix(l, "ping|permit|") {
+			if strings.HasPrefix(l, "ping|") && !done {
 				out = append(out, "x|deny|a")
+				done = true
 			}
 			out = append(out, l)
 		}

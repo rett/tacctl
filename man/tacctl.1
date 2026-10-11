@@ -183,9 +183,11 @@ or
 .BR commands.operator / commands.readonly ,
 or the Junos deny sets of the preset of 0.2.3, still give an operator or a
 viewer a command that can interrupt service, a red notice names each setting
-and the command that puts the shipped value back. The upgrade itself never
-changes an override, but for an operator or readonly list that is exactly
-what 0.2.3 shipped, which it drops. See
+and the command that puts the shipped value (or, for what the role preset of
+0.2.3 stored, the preset's) back; the first upgrade onto 0.2.5 also prints the
+lines a device configured earlier keeps. The upgrade itself never changes an
+override, but for an operator or readonly list that is exactly what 0.2.3
+shipped, which it drops (on a RADIUS-only install too). See
 .BR UPGRADING .
 .\" BEGIN GENERATED: command upgrade
 .RS
@@ -953,9 +955,27 @@ with default deny;
 .B operator
 adds
 .IR "terminal ssh telnet undebug"
-with default deny (no clear, no capture, no flood form of ping and
-traceroute: an operator may not interrupt service, even intermittently, and
-the engineer is the escalation);
+with default deny (no clear, no capture, no unbounded or interactive form of
+ping and traceroute: an operator may not interrupt service, even
+intermittently, and the engineer is the escalation);
+.B ping
+and
+.B traceroute
+take a host and the one-line extended options in any order, each number inside
+a bound the rule checks
+.RB ( ping :
+.IR "[vrf name] [ip|ipv6] host [source addr|if] [size 1-9999] [df-bit] [repeat 1-1000] [timeout 1-10] [data hex] [validate]" ,
+.IR "mpls ipv4|pseudowire target [vc-id]" ;
+.BR traceroute :
+.IR "[vrf name] [ip|ipv6] host [source addr|if] [numeric] [probe 1-10] [ttl 1-255 [1-255]] [timeout 1-10]" ,
+the same mpls forms);
+a value past a bound, sweep, another keyword and the interactive dialog (a bare
+.BR ping ,
+or a protocol keyword with no host such as
+.BR "ping ip" ,
+which makes IOS ask its questions at the device, where the server neither
+authorizes nor accounts the answers) are denied, and the engineer runs every
+form. A broadcast or multicast target is a residual risk no rule can close.
 .B superuser
 gets a
 .RB ` "* permit" `
@@ -1101,21 +1121,31 @@ engineer's);
 none (priv-15 is the ceiling).
 .PP
 Every shipped entry is permitted by the group's command rules both bare and
-with any arguments, so the
+with any arguments its own keywords leave to it (a keyword child with a level
+of its own, such as
+.IR "show running-config view full" ,
+keeps that level), so the
 .B local
 authorization fallback and a RADIUS device (which carries no command rules)
-give a user exactly what the server does; a verb whose arguments the rules
-restrict
+give a user what the server does; a verb whose arguments the rules bound
 .RB ( ping ,
 .BR traceroute )
-is never lowered. A stored operator list keeps its entries until
+is never lowered. With no server answering, and over RADIUS, an operator
+therefore has the basic
+.B ping
+and
+.B traceroute
+of IOS's own level-1 command set and nothing beyond them: the strict side of
+the trade-off, decided. A stored operator list keeps its entries until
 .BR "group privilege reset operator" ,
 which prints the
 .B "no privilege exec ..."
-lines a device pasted earlier needs, as
+lines for the entries a stored list holds that the shipped one does not (an
+install on the shipped list is already canonical and gets none; the upgrade
+prints the lines once, and
 .B "device config plan"
-does for a pulled device. An upgrade drops a list that is exactly the one
-0.2.3 shipped and names a stored one that still lowers a removed entry
+prints them for a pulled device). An upgrade drops a list that is exactly the
+one 0.2.3 shipped and names a stored one that still lowers a removed entry
 .RB ( "config validate"
 repeats it).
 .PP
@@ -1205,7 +1235,17 @@ and the viewer's and the operator's both deny
 .I "ping ... rapid"
 and
 .IR "ping ... interval" ,
-because an operator may not interrupt service, even intermittently), a
+because an operator may not interrupt service, even intermittently; these
+denies, and the one of
+.IR "monitor traffic" ,
+exist only where the sets are sent: without the preset (or sets of your own, or
+the RADIUS
+.BR Juniper-Deny-Commands )
+the removal of the
+.B clear
+bit is the only protection, and which bit
+.I "test interface restart-auto-negotiation"
+needs is an open lab item), a
 .B show
 deny in front of the shipped permits of viewer and operator (the
 unfiltered, secret-bearing sub-trees: running-config view full, tech-support,
@@ -8526,7 +8566,7 @@ From 0.2.5 an operator cannot interrupt service, even intermittently: the
 shipped operator rules and privileges no longer hold
 .IR "clear ..." ,
 .IR "monitor capture" ,
-the flood forms of
+the unbounded and interactive forms of
 .B ping
 and
 .BR traceroute ,
@@ -8544,21 +8584,25 @@ name the stored settings that still carry a removed command, with
 and
 .B "group commands reset <group>"
 (or
-.BR "group reset <group> --preset" )
-as the way back to the shipped values. A device configured earlier keeps its
-old lines until they are removed:
-.B "group privilege reset operator"
+.BR "group reset <group> --preset --only commands,junos" ,
+for the values of a role preset of 0.2.3, which keeps its
+.B show
+denies)
+as the way back. A device configured earlier keeps its old lines until they
+are removed (until then its operators keep the old reach when the server does
+not answer, and always over RADIUS): the first upgrade onto this release prints
+them (on Cisco
+.BR "no privilege exec all level 7 ping" ,
+.BR traceroute ,
+.BR "monitor capture" ,
+and
+.B "no privilege exec level 7 clear"
+.IR "counters, line, ip arp, arp-cache, mac address-table dynamic" ;
+on Junos
+.BR "delete system login class OP-CLASS permissions clear" ),
 and
 .B "device config plan"
-print the
-.B "no privilege exec ..."
-lines, and Junos
-.B OP-CLASS
-loses
-.B clear
-when Step 1 of
-.B "config juniper"
-is pasted again.
+prints the lines a pulled device needs, in the form its image stores them.
 .PP
 Going back to 0.2.3 is
 .B "tacctl rollback 0.2.3"
@@ -9234,6 +9278,15 @@ it at once). It is outside
 .IR tacctl.yaml ,
 which is what gets lost, so a setting lost later is not recorded again by a
 routine upgrade.
+.B uninstall
+removes it.
+.TP
+.I /var/lib/tacctl/operator\-policy\-noted
+Marker that
+.B "tacctl upgrade"
+told once, on the first upgrade onto 0.2.5, which privilege lines a device
+configured earlier keeps (a fresh install writes it at once). Delete it to be
+told again.
 .B uninstall
 removes it.
 .TP

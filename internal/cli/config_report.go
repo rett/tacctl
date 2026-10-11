@@ -385,7 +385,7 @@ func (inv *invocation) configValidate([]string) error {
 	// 0.2.5 removed (a clear, a capture, a flood form of ping): a warning
 	// naming each with the command that takes the shipped value.
 	for _, s := range policy.StaleOperatorPolicy(cfg) {
-		inv.echoE("  " + Y + "Operator policy:" + NC + "      " + s.String() + " still gives the operator or the viewer a command that can interrupt service; '" + s.Fix() + "' takes the shipped value")
+		inv.echoE("  " + Y + "Operator policy:" + NC + "      " + s.String() + " still gives the operator or the viewer a command that can interrupt service; '" + s.Fix() + "' puts back " + s.Restores())
 	}
 
 	// Tier, WTI-level and Junos settings of a group the store does not have

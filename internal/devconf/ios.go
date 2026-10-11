@@ -798,8 +798,11 @@ func (c *ciscoCtx) section(x stmt) string {
 // operator lost the command a device was pasted with, so the plan removes
 // it), the parent is an extra too, and the plan removes it with them; else
 // a device would keep 'privilege exec level 7 clear' and read as different
-// after the paste. With no rendered 'privilege' statement at all (a text
-// extracted without its rendering) every parent is dropped, as before.
+// after the paste. That holds whenever a rendering was given, with or
+// without a rendered 'privilege' line (a site that lowers nothing has none:
+// every privilege line on the device, parents included, is an extra the
+// plan removes). Only a text extracted with no rendering at all has no
+// claim to judge by, and every parent is dropped there, as before.
 func privilegeParents(in []stmt, claim map[string]string) []stmt {
 	isPriv := func(x stmt) []string {
 		if len(x.path) != 1 || !strings.HasPrefix(x.path[0], "privilege ") {
@@ -807,13 +810,7 @@ func privilegeParents(in []stmt, claim map[string]string) []stmt {
 		}
 		return strings.Fields(x.path[0])
 	}
-	rendered := false
-	for stem := range claim {
-		if strings.HasPrefix(stem, "privilege ") {
-			rendered = true
-			break
-		}
-	}
+	rendered := len(claim) > 0
 	var all [][]string
 	for _, x := range in {
 		f := isPriv(x)

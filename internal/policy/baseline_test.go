@@ -68,15 +68,23 @@ var corpus = []sample{
 	{"readonly", "ping 192.0.2.1", "PP"},
 	{"readonly", "traceroute 192.0.2.1", "PP"},
 	{"readonly", "ping vrf MGMT 192.0.2.1 source Loopback0", "PP"},
-	// ... but no flood form: the keywords that repeat, set a timeout or
-	// sweep, and the interactive form (no arguments, never authorized
-	// at its prompts), are the engineer's
+	{"readonly", "ping 192.0.2.1 repeat 1000", "PP"},
+	{"readonly", "ping 192.0.2.1 size 1500 df-bit repeat 100 timeout 2", "PP"},
+	{"readonly", "traceroute 192.0.2.1 probe 3 ttl 30 timeout 2", "PP"},
+	// ... bounded: the one-line extended forms stay inside numbers the server
+	// rule checks; the interactive dialog (no host: its prompts are typed at
+	// the device, never authorized or accounted) and every unbounded value
+	// are the engineer's
 	{"readonly", "ping", "DD"},
-	{"readonly", "ping 192.0.2.1 repeat 1000", "DD"},
+	{"readonly", "ping ip", "DD"},
+	{"readonly", "ping ipv6", "DD"},
+	{"readonly", "ping vrf MGMT ip", "DD"},
+	{"readonly", "ping 192.0.2.1 repeat 1001", "DD"},
 	{"readonly", "ping 192.0.2.1 timeout 0", "DD"},
-	{"readonly", "ping 192.0.2.1 size 1500 repeat 100", "DD"},
+	{"readonly", "ping 192.0.2.1 size 10000", "DD"},
 	{"readonly", "traceroute", "DD"},
-	{"readonly", "traceroute 192.0.2.1 probe 100", "DD"},
+	{"readonly", "traceroute ip", "DD"},
+	{"readonly", "traceroute 192.0.2.1 probe 11", "DD"},
 	{"readonly", "show running-config view full", "DD"},
 	{"readonly", "show running-config view full | include key", "DD"},
 	{"readonly", "show running-config view", "PP"},
@@ -119,20 +127,69 @@ var corpus = []sample{
 	{"operator", "ping vrf MGMT 192.0.2.1 source Loopback0", "PP"},
 	{"operator", "ping ipv6 2001:db8::1", "PP"},
 	{"operator", "ping mpls ipv4 10.0.0.1/32", "PP"},
+	{"operator", "ping mpls pseudowire 192.0.2.5 100", "PP"},
+	// The one-line extended forms, with every number inside its bound and
+	// the options in any order (IOS takes them so).
+	{"operator", "ping 192.0.2.1 repeat 1000", "PP"},
+	{"operator", "ping 192.0.2.1 repeat 100", "PP"},
+	{"operator", "ping 192.0.2.1 size 1500 df-bit repeat 100 timeout 2", "PP"},
+	{"operator", "ping 192.0.2.1 timeout 2 repeat 100 df-bit size 1500", "PP"},
+	{"operator", "ping 192.0.2.1 df-bit timeout 10 repeat 1 size 9999", "PP"},
+	{"operator", "ping 192.0.2.1 size 1500 source Loopback0", "PP"},
+	{"operator", "ping 192.0.2.1 data 0xabcd validate", "PP"},
+	{"operator", "ping vrf MGMT ip 192.0.2.1 repeat 5", "PP"},
+	{"operator", "ping ipv6 2001:db8::1 repeat 10 size 1280", "PP"},
 	{"operator", "traceroute 192.0.2.1", "PP"},
 	{"operator", "traceroute vrf MGMT 192.0.2.1 numeric", "PP"},
 	{"operator", "traceroute mpls ipv4 10.0.0.1/32", "PP"},
-	// An operator cannot interrupt service, even briefly: no flood form of
-	// ping or traceroute, no capture, no clear (the engineer's).
+	{"operator", "traceroute 192.0.2.1 numeric source Loopback0", "PP"},
+	{"operator", "traceroute 192.0.2.1 probe 3 ttl 30 timeout 2", "PP"},
+	{"operator", "traceroute 192.0.2.1 ttl 1 30 probe 10 timeout 10", "PP"},
+	// An operator cannot interrupt service, even briefly: no unbounded value
+	// in ping or traceroute, no interactive form, no capture, no clear (the
+	// engineer's). A protocol keyword with no host starts IOS's interactive
+	// (extended) ping or traceroute, whose prompts no rule ever sees.
 	{"operator", "ping", "DD"},
-	{"operator", "ping 192.0.2.1 repeat 1000", "DD"},
+	{"operator", "ping ip", "DD"},
+	{"operator", "ping ipv6", "DD"},
+	{"operator", "ping vrf MGMT ip", "DD"},
+	{"operator", "ping vrf MGMT ipv6", "DD"},
+	{"operator", "ping mpls", "DD"},
+	{"operator", "ping clns", "DD"},
+	{"operator", "ping tag", "DD"},
+	{"operator", "ping ip source Loopback0", "DD"},
+	{"operator", "ping ip repeat 5", "DD"},
+	{"operator", "ping vrf df-bit", "DD"},
+	{"operator", "ping mpls ipv4", "DD"},
+	{"operator", "ping mpls ipv4 10.0.0.1/32 repeat 100", "DD"},
+	{"operator", "ping 192.0.2.1 repeat 1001", "DD"},
+	{"operator", "ping 192.0.2.1 repeat 100000", "DD"},
+	{"operator", "ping 192.0.2.1 repeat 2147483647", "DD"},
 	{"operator", "ping 192.0.2.1 repeat 2147483647 size 18024", "DD"},
+	{"operator", "ping 192.0.2.1 repeat 0", "DD"},
+	{"operator", "ping 192.0.2.1 repeat", "DD"},
 	{"operator", "ping 192.0.2.1 timeout 0", "DD"},
+	{"operator", "ping 192.0.2.1 timeout 11", "DD"},
+	{"operator", "ping 192.0.2.1 size 10000", "DD"},
+	{"operator", "ping 192.0.2.1 size 18024", "DD"},
+	{"operator", "ping 192.0.2.1 size 0", "DD"},
 	{"operator", "ping 192.0.2.1 sweep range 36 18024 1", "DD"},
-	{"operator", "ping vrf MGMT 192.0.2.1 repeat 100", "DD"},
+	{"operator", "ping 192.0.2.1 repeat 5 ; show run", "DD"},
+	{"operator", "ping vrf MGMT 192.0.2.1 repeat 100000", "DD"},
 	{"operator", "traceroute", "DD"},
-	{"operator", "traceroute 192.0.2.1 probe 100", "DD"},
+	{"operator", "traceroute ip", "DD"},
+	{"operator", "traceroute ipv6", "DD"},
+	{"operator", "traceroute vrf MGMT ip", "DD"},
+	{"operator", "traceroute mpls", "DD"},
+	{"operator", "traceroute 192.0.2.1 probe 11", "DD"},
+	{"operator", "traceroute 192.0.2.1 probe 65535", "DD"},
+	{"operator", "traceroute 192.0.2.1 probe 0", "DD"},
+	{"operator", "traceroute 192.0.2.1 timeout 0", "DD"},
+	{"operator", "traceroute 192.0.2.1 ttl 256", "DD"},
+	{"operator", "traceroute 192.0.2.1 ttl 1 256", "DD"},
+	{"operator", "traceroute 192.0.2.1 ttl 0", "DD"},
 	{"operator", "traceroute 192.0.2.1 ttl 1 255 timeout 0", "DD"},
+	{"operator", "traceroute 192.0.2.1 probe 3 ; show run", "DD"},
 	{"operator", "monitor capture CAP interface Gi1 both", "DD"},
 	{"operator", "monitor capture CAP export tftp://192.0.2.9/c.pcap", "DD"},
 	{"operator", "clear counters", "DD"},
@@ -320,10 +377,22 @@ func TestShippedRulesOnlyPermitAndEndInDeny(t *testing.T) {
 			t.Errorf("%s: shipped rules %+v, want a deny catch-all last", role, rules)
 		}
 		for _, r := range rules[:len(rules)-1] {
-			// The one deny the defaults carry: the unfiltered, key-bearing
-			// running-config, in front of the permits of 'show'. Every
-			// other deny pair belongs to the preset.
-			if isViewFullDeny := r.name == "show" && slices.Equal(r.match, []string{"^(running-config view full)( .*)?$"}); r.action != "permit" && !isViewFullDeny {
+			// 'group commands' lines split a rule's regexes at commas, so a
+			// shipped regex has none (a '{m,n}' repeat is written out).
+			for _, m := range r.match {
+				if strings.Contains(m, ",") {
+					t.Errorf("%s: shipped regex %q has a comma (lines split matches at commas)", role, m)
+				}
+			}
+			// The denies the defaults carry: the unfiltered, key-bearing
+			// running-config, in front of the permits of 'show', and the
+			// interactive forms of ping and traceroute (a protocol keyword
+			// with no host starts the extended dialog, whose prompts are
+			// never authorized), in front of their permits. Every other
+			// deny pair belongs to the preset.
+			isViewFullDeny := r.name == "show" && slices.Equal(r.match, []string{"^(running-config view full)( .*)?$"})
+			isInteractiveDeny := (r.name == "ping" || r.name == "traceroute") && len(r.match) == 1
+			if r.action != "permit" && !isViewFullDeny && !isInteractiveDeny {
 				t.Errorf("%s: shipped rule %q denies; the deny pairs belong to the preset", role, r.name)
 			}
 		}
@@ -366,14 +435,15 @@ func TestRolesNest(t *testing.T) {
 }
 
 // Every shipped privilege entry is something the group's rules permit in
-// its bare form AND with any arguments (what the `local` authorization
-// fallback on a device and a RADIUS device, which has no command rules,
-// allow: IOS lowers a verb with every argument it accepts), so the fallback
-// gives a user exactly what the server does and a verb whose arguments the
-// server restricts is never lowered. There is no exception list: an entry
-// the server permits only with some arguments does not belong in the
-// privileges. None is a command that is level 1 already (lowering it would
-// move it up).
+// its bare form AND with arguments of its own (what the `local`
+// authorization fallback on a device and a RADIUS device, which has no
+// command rules, allow: IOS lowers a verb with every argument it accepts,
+// but for a keyword child that has a level of its own, such as 'show
+// running-config view full'), so the fallback gives a user what the server
+// does and a verb whose arguments the server restricts is never lowered.
+// There is no exception list: an entry the server permits only with some
+// arguments does not belong in the privileges. None is a command that is
+// level 1 already (lowering it would move it up).
 func TestPrivilegesArePermitted(t *testing.T) {
 	level1 := []string{"show ip route", "show access-list", "show version", "ping", "traceroute"}
 	tails := []string{"", " a b c", " 192.0.2.1", " vrf MGMT 192.0.2.1 repeat 100", " mpls ipv4 10.0.0.1/32"}
@@ -421,8 +491,11 @@ func TestOperatorCannotInterruptService(t *testing.T) {
 		"clear counters", "clear counters GigabitEthernet1", "clear line vty 3", "clear ip arp 192.0.2.7",
 		"clear arp-cache GigabitEthernet1", "clear mac address-table dynamic", "clear mac address-table dynamic interface Gi1/0/1",
 		"monitor capture CAP start", "monitor capture CAP interface Gi1 both",
-		"ping", "ping 192.0.2.1 repeat 1000", "ping 192.0.2.1 timeout 0", "ping 192.0.2.1 sweep range 36 18024 1",
-		"traceroute", "traceroute 192.0.2.1 probe 65535", "traceroute 192.0.2.1 ttl 1 255", "traceroute 192.0.2.1 timeout 0",
+		"ping", "ping ip", "ping ipv6", "ping vrf MGMT ip", "ping mpls", "ping 192.0.2.1 repeat 1001",
+		"ping 192.0.2.1 repeat 100000", "ping 192.0.2.1 repeat 2147483647", "ping 192.0.2.1 timeout 0",
+		"ping 192.0.2.1 size 10000", "ping 192.0.2.1 sweep range 36 18024 1",
+		"traceroute", "traceroute ip", "traceroute mpls", "traceroute 192.0.2.1 probe 11", "traceroute 192.0.2.1 probe 65535",
+		"traceroute 192.0.2.1 ttl 256", "traceroute 192.0.2.1 timeout 0",
 	}
 	for _, preset := range []bool{false, true} {
 		for _, line := range removed {

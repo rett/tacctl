@@ -152,6 +152,16 @@ var storedCases = map[string]rowCase{
 		if !strings.Contains(d.Of("roles").Why, "permanent '-'") {
 			t.Errorf("the why-line does not say a permanent '-' is expected: %q", d.Of("roles").Why)
 		}
+		// a line the device holds in no form (a synthetic command; an image
+		// that accepts it and stores nothing looks the same to a reader of
+		// the running configuration): typed, with no 'no' beside it, and the
+		// why-line says a permanent '-' is expected
+		d = planWithRole(t, f, "privilege exec level 7 synthetic probe")
+		wantLine(t, d, "roles", "privilege exec level 7 synthetic probe")
+		noLine(t, d, "roles", "no privilege exec level 7 synthetic")
+		if !strings.Contains(d.Of("roles").Why, "permanent '-'") {
+			t.Errorf("the why-line does not say a permanent '-' is expected: %q", d.Of("roles").Why)
+		}
 	},
 }
 

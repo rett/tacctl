@@ -35,9 +35,11 @@ privileges:
   # 'show ip route' and 'show access-list' are level 1 already). IOS levels
   # are cumulative, so operator (7) inherits readonly's line. Every entry
   # must be permitted by commands.<group> as well, bare AND with any
-  # arguments: IOS lowers a verb with every argument it accepts, so the
-  # `local` authorization fallback on a device and a RADIUS device (which
-  # has no command rules) give a user exactly what the server does, and a
+  # arguments the entry's own keywords do not take away: IOS lowers a verb
+  # with every argument it accepts, and only a keyword child of it that has
+  # a level of its own (`show running-config view full`) keeps that level.
+  # So the `local` authorization fallback on a device and a RADIUS device
+  # (which has no command rules) give a user what the server does, and a
   # verb whose arguments the server restricts ('ping', 'traceroute', the
   # clears) is never lowered (TestPrivilegesArePermitted). Override any
   # list in tacctl.yaml.
@@ -84,19 +86,33 @@ commands:
     # debug, reload, capture, clear, etc.) hits the deny catch-all: an
     # operator cannot interrupt service, even briefly, so a command that
     # can is the engineer's. These rules only permit, but for `show
-    # running-config view full` (unfiltered, shows every key), which is
-    # denied here first; the deny pairs of the role preset (`tacctl group
-    # preset roles`) stand in front of all of them. `ping` and
-    # `traceroute` take a host and only the keywords that cannot flood
-    # (vrf, source, size, df-bit, numeric, mpls); never repeat, timeout,
-    # sweep or the interactive form. A server rule bounds the arguments
+    # running-config view full` (unfiltered, shows every key) and the
+    # interactive forms of ping and traceroute, which are denied first;
+    # the deny pairs of the role preset (`tacctl group preset roles`) stand
+    # in front of all of them. `ping` and `traceroute` take a host and the
+    # one-line extended options in any order, each with its number inside a
+    # bound (ping: source, size 1-9999, df-bit, repeat 1-1000, timeout
+    # 1-10, data, validate; traceroute: source, numeric, probe 1-10, ttl
+    # 1-255 (one or two numbers), timeout 1-10; vrf, ip, ipv6 and mpls
+    # ipv4|pseudowire before the host); never sweep or a value past a
+    # bound. A protocol keyword with no host (`ping ip`, `ping vrf X
+    # ipv6`, `traceroute mpls`) starts IOS's interactive dialog, whose
+    # prompts are typed at the device and are neither authorized nor
+    # accounted; the deny in front of each permit stops it (the permit's
+    # host is any word, a protocol keyword included). No regex bounds a
+    # broadcast or multicast target. A server rule bounds the arguments
     # only while the server answers, which is why neither verb is lowered
-    # on the device (`privileges:`).
+    # on the device (`privileges:`): with no server the device's own
+    # level decides, and an operator gets IOS's basic ping and traceroute.
+    # No regex may hold a comma (`group commands` lines split at commas), so
+    # a '{m,n}' repeat is written out.
     - { name: show,       action: deny,   match: ['^(running-config view full)( .*)?$'] }
     - { name: show,       action: permit }
     - { name: dir,        action: permit }
-    - { name: ping,       action: permit, match: ['^((vrf \S+ )?(ip |ipv6 )?\S+( source \S+)?( size \d+)?( df-bit)?|mpls (ipv4|pseudowire) \S+( \S+)?)$'] }
-    - { name: traceroute, action: permit, match: ['^((vrf \S+ )?(ip |ipv6 )?\S+( source \S+)?( numeric)?|mpls (ipv4|pseudowire) \S+( \S+)?)$'] }
+    - { name: ping,       action: deny,   match: ['^((vrf \S+ )?(ip|ipv6|mpls|clns|tag|appletalk|ipx|srb|decnet|vines|oldvines|xns|apollo)( (source|size|df-bit|repeat|timeout|data|validate)( .*)?)?|vrf \S+)$'] }
+    - { name: ping,       action: permit, match: ['^((vrf \S+ )?(ip |ipv6 )?\S+( (source \S+|size [1-9]\d?\d?\d?|df-bit|repeat ([1-9]\d?\d?|1000)|timeout ([1-9]|10)|data (0x)?[0-9a-fA-F]+|validate))*|mpls (ipv4|pseudowire) \S+( \d+)?)$'] }
+    - { name: traceroute, action: deny,   match: ['^((vrf \S+ )?(ip|ipv6|mpls|clns|tag|appletalk|ipx|srb|decnet|vines|oldvines|xns|apollo)( (source|numeric|probe|ttl|timeout)( .*)?)?|vrf \S+)$'] }
+    - { name: traceroute, action: permit, match: ['^((vrf \S+ )?(ip |ipv6 )?\S+( (source \S+|numeric|probe ([1-9]|10)|timeout ([1-9]|10)|ttl ([1-9]\d?|1\d\d|2[0-4]\d|25[0-5])( ([1-9]\d?|1\d\d|2[0-4]\d|25[0-5]))?))*|mpls (ipv4|pseudowire) \S+( \d+)?)$'] }
     - { name: terminal,   action: permit }
     - { name: ssh,        action: permit }
     - { name: telnet,     action: permit }
@@ -110,13 +126,15 @@ commands:
     # Nothing here allows a change, a hop (ssh/telnet), debug, capture or
     # clear; `terminal` is limited to length and width (terminal monitor
     # can leak debug output across sessions). `ping` and `traceroute` are
-    # the operator's (the roles nest): a host and the keywords that cannot
-    # flood.
+    # the operator's (the roles nest): a host and the bounded one-line
+    # options; never the interactive dialog.
     - { name: show,       action: deny,   match: ['^(running-config view full)( .*)?$'] }
     - { name: show,       action: permit }
     - { name: dir,        action: permit }
-    - { name: ping,       action: permit, match: ['^((vrf \S+ )?(ip |ipv6 )?\S+( source \S+)?( size \d+)?( df-bit)?|mpls (ipv4|pseudowire) \S+( \S+)?)$'] }
-    - { name: traceroute, action: permit, match: ['^((vrf \S+ )?(ip |ipv6 )?\S+( source \S+)?( numeric)?|mpls (ipv4|pseudowire) \S+( \S+)?)$'] }
+    - { name: ping,       action: deny,   match: ['^((vrf \S+ )?(ip|ipv6|mpls|clns|tag|appletalk|ipx|srb|decnet|vines|oldvines|xns|apollo)( (source|size|df-bit|repeat|timeout|data|validate)( .*)?)?|vrf \S+)$'] }
+    - { name: ping,       action: permit, match: ['^((vrf \S+ )?(ip |ipv6 )?\S+( (source \S+|size [1-9]\d?\d?\d?|df-bit|repeat ([1-9]\d?\d?|1000)|timeout ([1-9]|10)|data (0x)?[0-9a-fA-F]+|validate))*|mpls (ipv4|pseudowire) \S+( \d+)?)$'] }
+    - { name: traceroute, action: deny,   match: ['^((vrf \S+ )?(ip|ipv6|mpls|clns|tag|appletalk|ipx|srb|decnet|vines|oldvines|xns|apollo)( (source|numeric|probe|ttl|timeout)( .*)?)?|vrf \S+)$'] }
+    - { name: traceroute, action: permit, match: ['^((vrf \S+ )?(ip |ipv6 )?\S+( (source \S+|numeric|probe ([1-9]|10)|timeout ([1-9]|10)|ttl ([1-9]\d?|1\d\d|2[0-4]\d|25[0-5])( ([1-9]\d?|1\d\d|2[0-4]\d|25[0-5]))?))*|mpls (ipv4|pseudowire) \S+( \d+)?)$'] }
     - { name: terminal,   action: permit, match: ['^(length|width)( .*)?$'] }
     - { name: exit,       action: permit }
     - { name: logout,     action: permit }

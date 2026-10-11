@@ -24,9 +24,27 @@ gotestviewer|exit||permit
 gotestviewer|logout||permit
 gotestviewer|ping|192.0.2.1|permit
 gotestviewer|traceroute|192.0.2.1|permit
+gotestviewer|ping|192.0.2.1 repeat 1000|permit
+gotestviewer|ping|192.0.2.1 size 1500 df-bit repeat 100 timeout 2|permit
+gotestviewer|ping|192.0.2.1 timeout 2 repeat 100 df-bit size 1500|permit
+gotestviewer|ping|192.0.2.1 size 1500 source Loopback0|permit
+gotestviewer|traceroute|192.0.2.1 probe 3 ttl 30 timeout 2|permit
 gotestviewer|ping||deny
-gotestviewer|ping|192.0.2.1 repeat 1000|deny
-gotestviewer|traceroute|192.0.2.1 probe 100|deny
+gotestviewer|ping|ip|deny
+gotestviewer|ping|ipv6|deny
+gotestviewer|ping|vrf MGMT ip|deny
+gotestviewer|ping|mpls|deny
+gotestviewer|ping|192.0.2.1 repeat 1001|deny
+gotestviewer|ping|192.0.2.1 repeat 100000|deny
+gotestviewer|ping|192.0.2.1 repeat 2147483647|deny
+gotestviewer|ping|192.0.2.1 timeout 0|deny
+gotestviewer|ping|192.0.2.1 size 10000|deny
+gotestviewer|ping|192.0.2.1 repeat 5 ; show run|deny
+gotestviewer|traceroute||deny
+gotestviewer|traceroute|ip|deny
+gotestviewer|traceroute|192.0.2.1 probe 11|deny
+gotestviewer|traceroute|192.0.2.1 timeout 0|deny
+gotestviewer|traceroute|192.0.2.1 ttl 256|deny
 gotestviewer|show|running-config view full|deny
 gotestviewer|show|tech-support|deny
 gotestviewer|show|startup-config|deny
@@ -65,6 +83,27 @@ gotestoperator|ping|vrf MGMT 192.0.2.1 source Loopback0|permit
 gotestoperator|traceroute|mpls ipv4 10.0.0.1/32|permit
 gotestoperator|ping|192.0.2.1|permit
 gotestoperator|traceroute|192.0.2.1|permit
+gotestoperator|ping|192.0.2.1 repeat 1000|permit
+gotestoperator|ping|192.0.2.1 size 1500 df-bit repeat 100 timeout 2|permit
+gotestoperator|ping|192.0.2.1 timeout 2 repeat 100 df-bit size 1500|permit
+gotestoperator|ping|192.0.2.1 size 1500 source Loopback0|permit
+gotestoperator|traceroute|192.0.2.1 probe 3 ttl 30 timeout 2|permit
+gotestoperator|ping||deny
+gotestoperator|ping|ip|deny
+gotestoperator|ping|ipv6|deny
+gotestoperator|ping|vrf MGMT ip|deny
+gotestoperator|ping|mpls|deny
+gotestoperator|ping|192.0.2.1 repeat 1001|deny
+gotestoperator|ping|192.0.2.1 repeat 100000|deny
+gotestoperator|ping|192.0.2.1 repeat 2147483647|deny
+gotestoperator|ping|192.0.2.1 timeout 0|deny
+gotestoperator|ping|192.0.2.1 size 10000|deny
+gotestoperator|ping|192.0.2.1 repeat 5 ; show run|deny
+gotestoperator|traceroute||deny
+gotestoperator|traceroute|ip|deny
+gotestoperator|traceroute|192.0.2.1 probe 11|deny
+gotestoperator|traceroute|192.0.2.1 timeout 0|deny
+gotestoperator|traceroute|192.0.2.1 ttl 256|deny
 gotestoperator|monitor|capture CAP interface Gi1 both|deny
 gotestoperator|monitor|capture CAP export tftp://192.0.2.9/c.pcap|deny
 gotestoperator|clear|counters|deny
@@ -72,10 +111,6 @@ gotestoperator|clear|counters GigabitEthernet1|deny
 gotestoperator|clear|line vty 3|deny
 gotestoperator|clear|ip arp 192.0.2.7|deny
 gotestoperator|clear|arp-cache GigabitEthernet1|deny
-gotestoperator|ping||deny
-gotestoperator|ping|192.0.2.1 repeat 1000|deny
-gotestoperator|traceroute||deny
-gotestoperator|traceroute|192.0.2.1 probe 100|deny
 gotestoperator|ssh|-l oper 192.0.2.2|permit
 gotestoperator|telnet|192.0.2.2|permit
 gotestoperator|undebug|all|permit

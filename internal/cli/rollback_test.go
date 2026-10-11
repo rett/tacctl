@@ -575,7 +575,7 @@ func TestRollbackRealOldBinary(t *testing.T) {
 
 	// After. The rollback leaves the rendered files alone, and the shipped
 	// operator rules of 0.2.3 permit 'clear mac address-table dynamic' again
-	// (CHANGELOG item 37), so its rendering differs from the one this
+	// (CHANGELOG item 56), so its rendering differs from the one this
 	// release wrote: 0.2.3 asks for a new rendering with its own message,
 	// which is then done.
 	if out, code = run("config", "validate"); code != 1 || !strings.Contains(out, "is out of date with the store") ||

@@ -157,6 +157,15 @@ func Upgrade(ctx context.Context, h *Host, args []string) error {
 	// A group at priv-lvl 15 gets the explicit tier 0.2.2 gave it by its band.
 	h.pinGroupTiers()
 
+	// The operator and readonly settings that are exactly what 0.2.3
+	// shipped are not a choice: dropped here for every backend (a RADIUS
+	// install has no tacquito migration to do it, and its devices are the
+	// ones the privilege lines decide), so the shipped values apply before
+	// the configuration is brought in line.
+	if err := MigratePreviousOperatorDefaults(h.Env); err != nil {
+		return err
+	}
+
 	// Bring the existing config in line with this release (legacy
 	// migrations of tacquito.yaml, or a re-render; RADIUS: re-render,
 	// drop-in, restart): after the pull and its re-exec, so it runs once

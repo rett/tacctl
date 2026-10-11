@@ -91,7 +91,8 @@ func TestDropPreviousDefaults(t *testing.T) {
 	if got[1].String() != "commands.operator (clear, monitor, ping, traceroute)" {
 		t.Errorf("commands: %q", got[1])
 	}
-	if got[0].Fix() != "tacctl group privilege reset operator" || got[1].Fix() != "tacctl group commands reset operator" {
+	if got[0].Fix() != "tacctl group privilege reset operator" || got[1].Fix() != "tacctl group commands reset operator" ||
+		got[0].Restores() != "the shipped value" || got[1].Restores() != "the shipped value" {
 		t.Errorf("fixes: %q %q", got[0].Fix(), got[1].Fix())
 	}
 }
@@ -107,7 +108,7 @@ func TestStaleOperatorPolicyJunosSets(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := StaleOperatorPolicy(c)
-	if len(got) != 2 || got[0].String() != "junos readonly deny-commands" || got[1].Fix() != "tacctl group reset operator --preset" {
+	if len(got) != 2 || got[0].String() != "junos readonly deny-commands" || got[1].Fix() != "tacctl group reset operator --preset --only junos" || got[1].Restores() != "the role preset's value" {
 		t.Fatalf("0.2.3 sets: %v", got)
 	}
 	for _, r := range RolePreset() {

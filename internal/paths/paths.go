@@ -81,6 +81,7 @@ type Paths struct {
 	ConfigRecords         string // VarLib/devices-config.json: the record of each device's last configuration pull (0.2.4)
 	ConfigDir             string // VarLib/device-config: the managed sections of each device's last successful pull, one file per device
 	TierPinMarker         string // VarLib/tier-pinned: the upgrade recorded the tier of every group at priv-lvl 15, once (outside tacctl.yaml, which is what gets lost)
+	OperatorNoticeMarker  string // VarLib/operator-policy-noted: the upgrade told once about the devices configured before the operator lost the commands that can interrupt service (0.2.5)
 
 	SudoersFile     string // TACCTL_SUDOERS_FILE (SUDOERS_FILE)
 	TierSudoersFile string // TACCTL_TIER_SUDOERS_FILE (TIER_SUDOERS_FILE)
@@ -159,6 +160,7 @@ func Resolve(env Env, exe string, exists func(string) bool) Paths {
 	p.ConfigRecords = p.VarLib + "/devices-config.json"
 	p.ConfigDir = p.VarLib + "/device-config"
 	p.TierPinMarker = p.VarLib + "/tier-pinned"
+	p.OperatorNoticeMarker = p.VarLib + "/operator-policy-noted"
 	p.KnownHosts = p.VarLib + "/ssh/known_hosts"
 
 	p.SudoersFile = env.Or("TACCTL_SUDOERS_FILE", "/etc/sudoers.d/tacctl")

@@ -985,47 +985,65 @@ current behaviour; this file is where history lives.
     nothing an operator (or the `readonly` viewer) may run can drop or reset a
     connection, a session or an adjacency, change forwarding, or load a device
     enough to degrade forwarding or management, with any arguments the server
-    permits and with any the device's own level accepts when the server does
-    not answer (the `local` fallback, and every RADIUS device, which carries
-    no command rules). The engineer is the escalation. Out of the operator's
-    command rules (`commands.operator`) and out of `privileges.operator`:
-    `monitor capture ...` (the control plane takes the matched packets and
-    `export` writes or sends them off the box), and the `clear` forms
-    `counters` (it erases the evidence of an escalation; no service impact,
-    but the operator reads counters, the engineer resets them), `line <n>`
-    (ends another session at once), `ip arp <address>` and `arp-cache <name>`
-    (a re-resolution, a brief interruption for the host, a whole interface or
+    permits. The engineer is the escalation. Out of the operator's command
+    rules (`commands.operator`) and out of `privileges.operator`: `monitor
+    capture ...` (the control plane takes the matched packets and `export`
+    writes or sends them off the box), and the `clear` forms `counters` (it
+    erases the evidence of an escalation; no service impact, but the operator
+    reads counters, the engineer resets them), `line <n>` (ends another
+    session at once), `ip arp <address>` and `arp-cache <name>` (a
+    re-resolution, a brief interruption for the host, a whole interface or
     table with the arguments the device accepts) and `mac address-table
     dynamic ...` (every frame to an unlearned address floods, a port or a
     VLAN with it). The operator has no `clear` or `monitor` rule at all
     afterwards (the catch-all denies them). `ping` and `traceroute` stay, as
-    bounded forms: the shipped rule of both `operator` and `readonly` permits
-    a host and, in this order, `vrf <name>`, `ip` or `ipv6`, `source <if>`,
-    `size <n>`, `df-bit` for `ping`, `numeric` for `traceroute`, and `mpls
-    ipv4|pseudowire <target> [<more>]`; `repeat`, `timeout`, `sweep`, `probe`,
-    `ttl`, the interactive form with no host and everything else are denied.
-    `privileges.operator` is `undebug all` alone: `exec all: ping`, `exec all:
-    traceroute` and `exec all: monitor capture` are gone, so on a device the
-    level-1 `ping` and `traceroute` are what a user below level 15 runs: the
-    `vrf` and `mpls` forms, which `exec all:` lowered, are level 15 again, the
-    engineer's, however the server rule reads; a verb whose arguments the
-    server restricts is never lowered. `undebug all` (it only stops a debug, which relieves load) and
-    `terminal` (a session's own settings) stay. The invariant is stricter and
-    has no exception left: every shipped privilege entry is permitted by the
-    group's rules bare and with any arguments (`TestPrivilegesArePermitted`,
-    whose `localFallbackExceptions` is gone). The role preset's operator and
-    viewer rules follow the shipped ones, and its operator `show` deny gains
-    `tech-support` (the level already stopped it). `config cisco` and `device
-    config show` render `privilege exec level 1 show running-config` and
-    `privilege exec level 7 undebug all` and nothing else; the engineer
-    permits every removed command (rules and level 15), which `tests/tools/
-    permcheck-baseline.txt` proves live. Over RADIUS a user is limited by the
-    level alone; whether an IOS image accepts `repeat` at level 1 is not
-    something tacctl can change, and the README says so. An operator on a
-    WTI unit keeps the `User` level: it can end a console session on a port
-    the Default User Access list grants (`/D`), which is the point of it, and
-    the README says so. `rollback 0.2.3` leaves the rendered files as they
-    are, and the shipped rules of 0.2.3 permit the commands again, so an
+    the one-line extended forms with every number inside a bound the rule
+    checks (one rule per command, in front of it a deny of the interactive
+    forms): `ping [vrf <name>] [ip|ipv6] <host>` and, in any order, `source
+    <addr|if>`, `size 1-9999`, `df-bit`, `repeat 1-1000`, `timeout 1-10`,
+    `data <hex>`, `validate`; `traceroute [vrf <name>] [ip|ipv6] <host>` and,
+    in any order, `source <addr|if>`, `numeric`, `probe 1-10`, `ttl 1-255
+    [1-255]`, `timeout 1-10`; `mpls ipv4|pseudowire <target> [<vc-id>]` for
+    both. A value past a bound (`repeat 1001`, `repeat 2147483647`, `timeout
+    0`, `size 10000`, `probe 11`, `ttl 256`), `sweep` (its one-line syntax is
+    not verified here: a lab item; MTU testing is `size` with `df-bit`),
+    another keyword and anything after the options are denied. The
+    interactive dialog is denied: a bare `ping` or `traceroute`, or a
+    protocol keyword with no host (`ping ip`, `ping ipv6`, `ping vrf MGMT
+    ip`, `ping mpls`, `ping clns`, `traceroute ip`, ...), makes IOS ask its
+    questions (repeat count, timeout, sweep range) at the device, where the
+    server neither authorizes nor accounts what is typed, while the one-line
+    forms carry the same choices as arguments the rule checks and the
+    accounting records. A broadcast or multicast address as the host is a
+    residual risk no regex can close; the engineer runs every form,
+    unbounded. `privileges.operator` is `undebug all` alone: `exec all:
+    ping`, `exec all: traceroute` and `exec all: monitor capture` are gone,
+    so on a device the level-1 `ping` and `traceroute` are what a user below
+    level 15 runs, and with the server unreachable (the `local` fallback) or
+    over RADIUS, which carries no command rules, an operator has IOS's own
+    basic `ping` and `traceroute` and nothing beyond them: lowering them would
+    hand every form to every user whenever the server does not answer, which
+    the user ruled out (the strict side of the trade-off, decided). The `vrf`
+    and `mpls` forms, which `exec all:` lowered, are expected to be level 15
+    again, the engineer's, however the server rule reads (a lab item);
+    whether an image accepts `repeat` or `timeout` at level 1 is not
+    something tacctl can change, and the README says so. `undebug all` (it
+    only stops a debug, which relieves load) and `terminal` (a session's own
+    settings) stay. The invariant is stricter and has no exception left:
+    every shipped privilege entry is permitted by the group's rules bare and
+    with any arguments its own keywords leave to it (a keyword child with a
+    level of its own, `show running-config view full`, keeps it;
+    `TestPrivilegesArePermitted`, whose `localFallbackExceptions` is gone).
+    The role preset's operator and viewer rules follow the shipped ones, and
+    its operator `show` deny gains `tech-support` (the level already stopped
+    it). `config cisco` and `device config show` render `privilege exec
+    level 1 show running-config` and `privilege exec level 7 undebug all` and
+    nothing else; the engineer permits every removed command (rules and level
+    15), which `tests/tools/permcheck-baseline.txt` proves live. An operator
+    on a WTI unit keeps the `User` level: it can end a console session on a
+    port the Default User Access list grants (`/D`), which is the point of
+    it, and the README says so. `rollback 0.2.3` leaves the rendered files as
+    they are, and the shipped rules of 0.2.3 permit the commands again, so an
     installation on the shipped rules is told by `config validate` of 0.2.3
     that its rendered configuration is out of date until `tacctl config
     render` there brings the permits back.
@@ -1055,7 +1073,12 @@ current behaviour; this file is where history lives.
     reset operator --preset` and `tacctl group reset readonly --preset` bring
     the new ones (item 58 names them). A shipped Junos deny set that applies
     to every install, without the preset, is a mechanism of its own and is
-    not part of this change.
+    not part of this change: without the preset (or sets of your own, or
+    the RADIUS `Juniper-Deny-Commands` attribute) nothing denies `ping
+    ... rapid`, `ping ... interval` or an unbounded `monitor traffic`; the
+    bit removal is the protection every install has, and those three are
+    denied only where the deny sets are sent. Which bit `test interface
+    restart-auto-negotiation` needs is an open lab item.
 
 58. **Moving from 0.2.3's operator rules to this release.** A stored value
     is a choice, so `tacctl upgrade` drops only the one that is not: a
@@ -1063,27 +1086,42 @@ current behaviour; this file is where history lives.
     `tacctl.yaml` that is exactly what 0.2.3 shipped (`group privilege add`
     seeds the shipped list into the override first, so an installation that
     ever added an entry holds the nine lines) is removed, with an info line
-    each, and the shipped values of this release apply; the same exact match
-    is dropped when `tacquito.yaml` of an installation without a store is
-    migrated. Any other stored value is kept, and the upgrade ends with a
-    red notice that names each setting with the removed entries (`privileges
-    .operator (exec all: ping, clear line)`, `commands.operator (permits
-    clear, monitor)`, `commands.readonly (permits ping)`, `junos operator
-    deny-commands` for the 0.2.3 preset's value) and the command that puts the
-    shipped value back: `tacctl group privilege reset operator`, `tacctl
-    group commands reset <group>`, `tacctl group reset <group> --preset`
-    (each takes `--dry-run`). `tacctl config validate` prints the same as a
-    warning, `Operator policy:`, which does not fail the validation. Devices
-    pasted earlier keep their `privilege exec level 7 ...` lines (and, on
-    Junos, `clear` in `OP-CLASS`), so until a device is re-pasted its
-    operators keep the old reach when the server does not answer:
-    `tacctl group privilege reset operator` prints the lines it needs
-    (`no privilege exec all level 7 ping`, `no privilege exec all level 7
-    traceroute`, `no privilege exec all level 7 monitor capture`, `no
-    privilege exec level 7 clear counters`, `clear line`, `clear ip arp`,
-    `clear arp-cache`, `clear mac address-table dynamic`), and `tacctl
-    device config plan <device>` prints them, parents included, for a pulled
-    device, in its paste region.
+    each, and the shipped values of this release apply, on every install
+    whichever backend is enabled (a RADIUS-only one included); the same exact
+    match is dropped when `tacquito.yaml` of an installation without a store
+    is migrated. Any other stored value is kept, and the upgrade ends with a
+    red notice that names each setting with the removed entries
+    (`privileges.operator (exec all: ping, clear line)`, `commands.operator
+    (clear, monitor, ping, traceroute)`, `commands.readonly (ping,
+    traceroute)`, `junos operator deny-commands` for the 0.2.3 preset's
+    value) and the command that replaces each: `tacctl group privilege reset
+    operator` and `tacctl group commands reset <group>` for a list somebody
+    stored (the shipped value), and, for what 0.2.3's `group preset roles`
+    stored (its `show` deny and the Junos deny sets, which the shipped
+    rules do not carry), `tacctl group reset <group> --preset --only
+    commands,junos` (`--only junos` for the Junos set alone), which puts the
+    preset's current value back and loses no deny (each takes `--dry-run`).
+    `tacctl config validate` prints the same as a warning, `Operator
+    policy:`, which does not fail the validation. Devices pasted earlier
+    keep their `privilege exec level 7 ...` lines (and, on Junos, `clear`
+    in `OP-CLASS`) whatever `tacctl.yaml` holds, so until a device is
+    re-pasted its operators keep the old reach when the server does not
+    answer, and always over RADIUS. The first upgrade onto this release says
+    so, on every install, with the lines to remove (on Cisco `no privilege
+    exec all level 7 ping`, `no privilege exec all level 7 traceroute`, `no
+    privilege exec all level 7 monitor capture`, `no privilege exec level 7
+    clear counters`, `clear line`, `clear ip arp`, `clear arp-cache`, `clear
+    mac address-table dynamic`; on Junos `delete system login class
+    OP-CLASS permissions clear`) and the way to get exactly the lines a
+    device needs: `tacctl device config pull <device>` and `tacctl device
+    config plan <device>`, which prints them, parents included, in its
+    paste region. It says so once (the marker `operator-policy-noted` in
+    `/var/lib/tacctl`, which a fresh install writes at once and `tacctl
+    uninstall` removes) and again at each upgrade while a stored setting
+    still carries a removed entry. `tacctl group privilege reset operator`
+    prints the removal lines only for entries a stored list holds that the
+    shipped one does not; for an install on the shipped list it says the
+    group is already canonical and prints none.
 
 59. **`group commands seed` writes the shipped rules.** The recovery verb
     wrote a broader legacy set that gave the operator `clear`, `test`,
@@ -1100,7 +1138,8 @@ current behaviour; this file is where history lives.
     beneath them, so a device pasted with a removed command kept the parents
     after the plan's `no` lines and a second plan was needed. A parent is the
     image's own line only while a rendered command is beneath it; otherwise
-    it is extra and the plan removes it with the command.
+    it is extra and the plan removes it with the command (whenever a
+    rendering is given, a rendered `privilege` line or none).
 
 
 ## 0.2.3 (2026-10-09)

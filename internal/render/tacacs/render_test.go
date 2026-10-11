@@ -202,7 +202,7 @@ func TestRenderCommandRulesReachTheDaemonCharacterForCharacter(t *testing.T) {
 	for _, r := range users["carol"]["groups"].([]any)[0].(map[string]any)["commands"].([]any) {
 		names = append(names, r.(map[string]any)["name"].(string))
 	}
-	if strings.Join(names, " ") != "show show dir ping traceroute terminal exit logout *" {
+	if strings.Join(names, " ") != "show show dir ping ping traceroute traceroute terminal exit logout *" {
 		t.Fatalf("readonly rules %v", names)
 	}
 }
