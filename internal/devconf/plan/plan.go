@@ -51,6 +51,11 @@ type Options struct {
 	// Device is the device's name, used in the pull command of the refusal
 	// texts ('tacctl device config pull <name>').
 	Device string
+	// PolicyGaps are the policy values the standard needs and the scope has
+	// not set, each as the sentence the report carries as a warning
+	// (devices.PolicyGaps, D119): the statement is left out of the rendering,
+	// and nothing here is an irregularity of the device.
+	PolicyGaps []string
 }
 
 // The configuration syntaxes of a Cisco plan (Options.Syntax).
@@ -101,6 +106,9 @@ type secOut struct {
 	refusedKind string
 	// partial describes a section planned in part (class limits).
 	partial string
+	// byHand are the steps to type by hand, outside any region, for a unit
+	// that is refused (D117).
+	byHand []string
 }
 
 // DECISION: Plan runs devconf.CompareAll itself from the extraction and the
@@ -207,24 +215,35 @@ func Plan(vendor string, expected []devices.Section, current, plain devconf.Extr
 	for _, n := range never {
 		d.Sections = append(d.Sections, SectionPlan{Name: n, State: StateNever})
 	}
-	// HIGH 5 (IOS): command authorization goes last in the whole block.
-	var early, late []Line
+	// D118: the lines that use the lists (the console's and the vty lines'
+	// login method) come after roles, snmp and mgmt-acl, and (HIGH 5) command
+	// authorization goes last in the whole block.
+	var early, leaves, late []Line
 	for _, l := range d.Lines {
-		if lateAAA(l) {
+		switch {
+		case lateAAA(l):
 			l.Late = true
 			late = append(late, l)
-		} else {
+		case isLoginLeafLine(l):
+			l.Leaf = true
+			leaves = append(leaves, l)
+		default:
 			early = append(early, l)
 		}
 	}
+	// The console first, then the vty ranges by their first line.
+	slices.SortStableFunc(leaves, func(a, b Line) int { return leafOrder(a) - leafOrder(b) })
+	d.Lines = slices.Concat(early, leaves, late)
 	if len(late) > 0 {
-		d.Lines = append(early, late...)
 		d.Warnings = append(d.Warnings, "the block switches command authorization on ('aaa authorization commands', 'config-commands') with its last lines: from then on every command is authorized by the server, so paste it as a user the server knows (or with local first), and keep the second terminal for the back-out")
 	}
 	// The comparison's note about a missing enable secret and the plan's own
 	// warning say the same: the warning (which says what to do) stands.
 	if slices.ContainsFunc(d.Warnings, func(w string) bool { return strings.HasPrefix(w, "the device has no enable secret") }) {
 		d.Notes = slices.DeleteFunc(d.Notes, func(n string) bool { return strings.HasPrefix(n, "no enable secret on the device") })
+	}
+	for _, g := range opt.PolicyGaps {
+		d.Warnings = appendNew(d.Warnings, g)
 	}
 	p.finish(&d)
 
@@ -272,6 +291,8 @@ func (d *Delta) merge(sp *SectionPlan, o secOut) {
 	d.Unattributed = appendNew(d.Unattributed, o.unattributed...)
 	d.Withheld = appendNew(d.Withheld, o.withheld...)
 	d.Inherited = appendNew(d.Inherited, o.inherited...)
+	// the steps repeat lines on purpose ('exit' ends each submode): kept as given
+	d.ByHand = append(d.ByHand, o.byHand...)
 	d.Skipped = append(d.Skipped, o.skipped...)
 	switch {
 	case o.refused != "":

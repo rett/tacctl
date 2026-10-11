@@ -8,10 +8,12 @@
 | aaa group server radius RADIUS-GROUP
 |   server name RADIUS
 | aaa authentication login default group RADIUS-GROUP local
+| aaa authentication login CONSOLE local
 | aaa authorization exec default group RADIUS-GROUP local if-authenticated
 | aaa accounting exec default start-stop group RADIUS-GROUP
+| aaa session-id common
 | line con 0
-|   login authentication default
+|   login authentication CONSOLE
 | line vty 0 15
 |   login authentication default
 [roles]

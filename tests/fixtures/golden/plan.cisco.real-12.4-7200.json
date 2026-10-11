@@ -15,23 +15,68 @@
     {
       "n": 1,
       "kind": "missing",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "the console's own login list CONSOLE (local only, so a local user always gets in there)",
+      "statement": "aaa authentication login CONSOLE local",
+      "action": "Fixed by region line 3.",
+      "fixed": true,
+      "region_lines": [
+        3
+      ]
+    },
+    {
+      "n": 2,
+      "kind": "missing",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "the 'enable' list (it asks the server first, so nobody needs a shared enable password)",
+      "statement": "aaa authentication enable default group LAB-TACACS enable",
+      "action": "Fixed by region line 4.",
+      "fixed": true,
+      "region_lines": [
+        4
+      ]
+    },
+    {
+      "n": 3,
+      "kind": "different",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "the login method of line con 0: login authentication CONSOLE (the device has: the login method of line con 0: login authentication default)",
+      "statement": "line con 0 \u003e login authentication CONSOLE",
+      "action": "Fixed by region line 10.",
+      "fixed": true,
+      "region_lines": [
+        10
+      ]
+    },
+    {
+      "n": 4,
+      "kind": "missing",
       "severity": "COSMETIC",
       "section": "roles",
       "what": "the commands of privilege level 7: 2 statements",
       "statement": "e.g. privilege exec all level 7 monitor capture",
-      "action": "Fixed by region lines 3-4.",
+      "action": "Fixed by region lines 6-7.",
       "fixed": true,
       "region_lines": [
-        3,
-        4
+        6,
+        7
       ]
     }
   ],
   "region": [
     "configure terminal",
+    "! aaa: the method lists tacctl renders, each replaced by the rendered line (the console's own list is local only)",
+    "aaa authentication login CONSOLE local",
+    "aaa authentication enable default group LAB-TACACS enable",
     "! roles: the privilege lines of the levels tacctl renders",
     "privilege exec all level 7 monitor capture",
     "privilege exec level 7 clear mac address-table dynamic",
+    "! aaa: the login method of the console and vty lines",
+    "line con 0",
+    " login authentication CONSOLE",
     "end"
   ],
   "after": [
@@ -40,7 +85,7 @@
     "! dev-cisco-real-12-4-7200 --backout (its own region, to paste in the second terminal).",
     "!",
     "! Check now (nothing rolls this back by itself):",
-    "!   From the tacctl server:   tacctl device config pull dev-cisco-real-12-4-7200 --diff     (roles: ok)",
+    "!   From the tacctl server:   tacctl device config pull dev-cisco-real-12-4-7200 --diff     (aaa and roles: ok)",
     "!   In the second terminal:   open a NEW ssh session to dev-cisco-real-12-4-7200 as yourself, then: terminal length 0, show privilege (must say 15)",
     "! When both checks are fine, type this one command yourself:  write memory",
     "!",
@@ -52,10 +97,14 @@
   "backout": [
     "configure terminal",
     "! back-out: the lines as the pull showed them",
+    "line con 0",
+    " login authentication default",
     "no privilege exec level 7 clear mac address-table dynamic",
     "no privilege exec all level 7 monitor capture",
     "! (on IOS 15.x a removed privilege line may stay as 'privilege exec level \u003cdefault\u003e \u003ccmd\u003e'",
     "!  (the command's own default level): harmless)",
+    "no aaa authentication enable default group LAB-TACACS enable",
+    "no aaa authentication login CONSOLE local",
     "end"
   ],
   "left": {
@@ -66,6 +115,8 @@
   "extras": [],
   "skipped": [],
   "withheld": [],
-  "warnings": [],
+  "warnings": [
+    "the device has no enable secret: with the server unreachable, level 15 is reached only through the local user and 'aaa authorization exec'; set an enable secret first if you want a second way"
+  ],
   "holds_secret": false
 }

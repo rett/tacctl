@@ -123,6 +123,11 @@ func TestCommandAuthorizationIsLast(t *testing.T) {
 	for _, name := range []string{"cisco.reference-bare", "cisco.reference-lab"} {
 		f := fixtureNamed(t, name)
 		d := planI(t, f, func(c *IOSConfig) {
+			if name == "cisco.reference-bare" {
+				// D118 (12): command authorization is in the paste only
+				// when the device already uses the server
+				serverInUse(c)
+			}
 			if name == "cisco.reference-lab" {
 				c.noGlobal("aaa authorization commands 15 default local group LAB-TACACS")
 				c.noGlobal("aaa authorization config-commands")

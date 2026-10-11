@@ -4,18 +4,21 @@
 = tacacs-server host 192.0.2.10 single-connection timeout 5 key (present, not compared)
 = aaa group server tacacs+ LAB-TACACS > server 192.0.2.10
 = aaa authentication login default local group LAB-TACACS
+= aaa authentication login CONSOLE local
 = aaa authorization exec default local group LAB-TACACS if-authenticated
+= aaa authentication enable default group LAB-TACACS enable
 = aaa accounting exec default start-stop group LAB-TACACS
 = aaa accounting commands 1 default start-stop group LAB-TACACS
 = aaa accounting commands 5 default start-stop group LAB-TACACS
 = aaa accounting commands 7 default start-stop group LAB-TACACS
 = aaa accounting commands 15 default start-stop group LAB-TACACS
+= aaa session-id common
+= line con 0 > login authentication CONSOLE
+= line vty 0 15 > login authentication default
 = aaa authorization commands 1 default local group LAB-TACACS
 = aaa authorization commands 7 default local group LAB-TACACS
 = aaa authorization commands 15 default local group LAB-TACACS
 = aaa authorization config-commands
-= line con 0 > login authentication default
-= line vty 0 15 > login authentication default
 note: no enable secret on the device: with AAA on and the server unreachable, a local user with privilege 15 is the only way to level 15
 [roles] ok
 = privilege exec level 1 show running-config

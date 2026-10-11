@@ -3172,9 +3172,9 @@ rules, the per-level
 lines (see
 .BR "group commands" ),
 .B aaa authorization config-commands
-and a commented
-.B aaa authorization console
-line to uncomment for authorization on the console line. Without
+and a comment that says not to set
+.BR "aaa authorization console" .
+Without
 .BR --scope ,
 emits the default scope's secret (header names the scope and lists
 sibling scopes as a hint). With
@@ -3193,7 +3193,21 @@ naming a registered Cisco device of the scope the syntax is that device's
 else what its last pull read from its version line, else the modern syntax and
 one line on standard error that says so);
 .B --legacy
-is the explicit override.
+is the explicit override. It differs from the modern output only in the server
+block (the global
+.B "tacacs-server host ... single-connection timeout 5 key ..."
+line and
+.B "server <ip>"
+under the group, in place of
+.B "tacacs server TACACS"
+and
+.BR "server name TACACS" ),
+the local enable secret line
+.RB ( "enable secret <PASSWORD>"
+in place of
+.BR "enable algorithm-type scrypt secret <PASSWORD>" ),
+the break-glass hashes (type 5, not type 9), the NETCONF step (a comment: IOS
+12.x has none) and the Type 6 note (not available on IOS 12.x).
 .IP
 With
 .B "--protocol radius"
@@ -3208,6 +3222,111 @@ the configuration is for the RADIUS backend instead (see
 below);
 .B --legacy
 is TACACS+ only.
+.IP
+The output is the standard Cisco block, the same lines in one order for every
+Cisco device. Step 0 is a commented hardening checklist
+.RB ( hostname ,
+.BR "ip domain name" ,
+.BR "no ip domain lookup" ,
+.BR "service password-encryption" ,
+.BR "service timestamps" ,
+.BR "no service pad" ,
+.BR "no ip source-route" ,
+.BR "no ip http server" ,
+.BR "no ip http secure-server" ,
+the three
+.B "ip ssh"
+settings,
+.BR "transport input ssh" ,
+.BR exec-timeout ,
+.BR "logging synchronous" )
+and the local enable secret
+.RB ( "no enable password" ,
+.BR "enable algorithm-type scrypt secret <PASSWORD>" ;
+.B "enable secret <PASSWORD>"
+with
+.BR --legacy ),
+then the scope's break-glass accounts; it is site policy, tacctl keeps no value
+for it and compares none of it. Step 1 is the AAA standard in the order that
+keeps the pasting session alive:
+.B "aaa new-model"
+first (nothing under
+.B aaa
+exists on IOS until it is set), the server block
+.RB ( "tacacs server TACACS" )
+and its group
+.RB ( "aaa group server tacacs+ " <G>
+.RB ", " "scope tacacs-group" ),
+.B "ip tacacs source-interface"
+when the scope sets one,
+.B "aaa authentication login default"
+and
+.BR "aaa authentication login CONSOLE local" ,
+.BR "aaa authorization exec default" ,
+.BR "aaa authentication enable default group " <G> " enable" ,
+accounting,
+.BR "aaa session-id common" ,
+the
+.B privilege exec level
+lines, SNMP, the VTY access list, the commented NETCONF step,
+.B "line con 0"
+with
+.B "login authentication CONSOLE"
+and
+.B "line vty 0 15"
+with
+.BR "login authentication default" .
+The command authorization lines
+.RB ( "aaa authorization commands " <level>
+per level in use, then
+.BR "aaa authorization config-commands" )
+are not in that step: they are Step 2, after a check. The session that pastes
+is a local user the server does not know, and a server that answers
+.B fail
+for such a name is final and never falls through to local, so every command of
+that session would be denied. The walkthrough says to open a new session with
+the user's own TACACS+ account, run
+.BR "show privilege" ,
+and only then type Step 2. The names are the plain ones
+(server
+.BR TACACS ,
+group
+.BR TACACS-GROUP ,
+.BR VTY-ACL ,
+.BR TACCTL-SNMP ):
+only the console's list
+.B CONSOLE
+is new, and none is a setting. The console has a list of its own, local only,
+so that a local user can always log in there; the default list asks the server
+first, and a reject does not fall through to local. With the server up a local
+user on the console lands at privilege 1 (the standard does not set
+.BR "aaa authorization console" ,
+and must not: it would put the console under the default lists, server first,
+and defeat
+.BR CONSOLE ).
+.B enable
+asks the server first, so nobody needs it in normal operation (a TACACS+ user
+lands at the level the server's
+.B priv-lvl
+gives, an operator who types it is refused by the server, which does not fall
+through) and the local enable secret answers only when no server does: the
+local console is a way to privilege 15 only while no server answers. The
+secret is never in the login path. With
+.B "--protocol radius"
+the same standard is rendered where RADIUS has it (no command authorization,
+.B "ip radius source-interface"
+from the same setting, the
+.B enable
+list is unverified against a RADIUS server and is left commented in the
+walkthrough, neither rendered nor compared: a reachable server that does not
+answer enable requests positively makes
+.B enable
+fail, and the local enable secret is used only when no server answers). The
+source interface is
+the one policy value the standard needs from the operator
+.RB ( "config cisco source-interface" ):
+unset, the walkthrough prints the line commented with that command and nothing
+is rendered or compared.
 .IP
 Every walkthrough of
 .BR "config cisco" ", " "config juniper " "and " "config wti"
@@ -3281,7 +3400,7 @@ which role. They combine with
 .\" BEGIN GENERATED: command config cisco
 .RS
 .PP
-Requires: \fBengineer\fR.
+Requires: \fBengineer\fR. An engineer may print the walkthrough and read source\-interface for a scope of their own; setting or unsetting source\-interface needs the superuser tier.
 .PP
 Options:
 .TP
@@ -3310,6 +3429,31 @@ Options:
 (cisco) IOS 12.x syntax.
 .RE
 .\" END GENERATED: command config cisco
+.TP
+.BI "config cisco source-interface " [ scope " [" interface | none ]]
+Show or set the interface the Cisco devices of a scope take the source address
+of their TACACS+ and RADIUS requests from
+.RB ( "ip tacacs source-interface" ,
+.BR "ip radius source-interface" ).
+Without arguments it lists every scope's setting (an engineer: the scopes of
+their own); with a scope it shows that scope's; with the full interface name as IOS prints
+it (such as
+.BR Loopback0 " or " GigabitEthernet0/0/1 ,
+not an abbreviation such as lo0 or gi0/1, which IOS stores in the long form)
+it sets it, and
+.B none
+unsets it. Setting it is the superuser's; the engineer tier reads. The address
+of the interface should be inside a prefix of the scope, since the server
+matches a device by its source address. Unset, the standard renders no line,
+the walkthrough prints the statement commented with this command and nothing is
+compared; a source interface a device has is then left alone. In
+.I /etc/tacctl/tacctl.yaml
+as
+.BR cisco.source_interface.<scope> ,
+moved by
+.B "scope rename"
+and removed with the scope; shown by
+.BR "config show" .
 .TP
 .BI "config juniper " [ "--scope " name "] [--protocol " tacacs | radius "] [--name " device "] [--server " address|name "] [--source " address "] [--snmp-location " text ]
 Print a ready-to-paste Juniper Junos configuration with template
@@ -6202,7 +6346,7 @@ which IOS 12.4 prints beside the first community, is not extra when tacctl
 renders a community. On Cisco the
 .B aaa
 section also holds the login method of the console and VTY lines
-.RB ( "line con 0 > login authentication default" ,
+.RB ( "line con 0 > login authentication CONSOLE" ,
 .BR "line vty 0 4 > login local" ).
 They are read by range: with
 .B "aaa new-model"
@@ -6219,7 +6363,59 @@ that says
 .B login
 or
 .B "no login"
-is a difference. Without
+is a difference. The console is the exception: its standard list is
+.BR CONSOLE ,
+the default list is not that, so a console with no explicit
+.B "login authentication CONSOLE"
+shows
+.B "\- line con 0 > login authentication CONSOLE"
+and
+.BR "+ line con 0 > login authentication default" .
+.BR "aaa authentication login CONSOLE local" ,
+.BR "aaa authentication enable default group " <G> " enable"
+(not rendered for a RADIUS device, whose enable list is unverified: a device
+that has it is neither missing nor extra),
+.B "aaa session-id common"
+and, where the scope sets one,
+.B "ip tacacs source-interface"
+are statements like any other; a source interface the device has where the
+scope sets none is not listed. The forms of an earlier walkthrough
+.RB ( "tacacs-server host" " on a modern image, " "radius-server host"
+beside a
+.BR "radius server" " block, a server group of another name)"
+are listed as extras
+.RB ( + " lines), never as satisfied lines, and nothing removes them. An old"
+.B "tacacs-server host"
+entry at the standard server's address on a modern image is replaced from the
+console, as a user that reaches privilege 15 there, in four steps:
+.BR "no tacacs-server host " <address> ;
+the standard's
+.B "tacacs server TACACS"
+block;
+in each
+.BR "aaa group server tacacs+ " <group>
+that held
+.BR "server " <address> ,
+.B "server name TACACS"
+and then
+.BR "no server " <address> ;
+then a new session and one command to check. The groups keep their names and
+the method lists that name them keep resolving; when no group holds the old
+address, because the method lists use
+.BR "group tacacs+" ,
+the standard group is created and pointed at the named block and the lists keep
+using
+.BR "group tacacs+" .
+A device that also has
+.B "aaa authorization console"
+cannot take the four steps as they are: after the old entry goes the group has
+no server, command authorization falls to local, and a TACACS+ user is not in
+the local database. A step 0 comes first, typed while the TACACS+ user's
+commands still pass:
+.BR "configure terminal" ", " "no aaa authorization console" ", " end
+(the standard never sets it and it is not put back); if the console session is
+refused after it, type steps 1 to 4 from a new session as a user that reaches
+privilege 15. Without
 .B "aaa new-model"
 a line with no
 .B login
@@ -7388,6 +7584,9 @@ Every verb not listed above, and every verb of the tiers below.
 The gate sees two words, so a verb that the code splits further is listed at its
 two\-word level and then limited by the code:
 .TP
+.B config cisco
+An engineer may print the walkthrough and read source\-interface for a scope of their own; setting or unsetting source\-interface needs the superuser tier.
+.TP
 .B device config
 An operator may run list; show, pull and diff need the engineer tier (a device's walkthrough carries its scope's secret, and a pull logs in to the device as you), and an engineer gets the devices of their own scopes only; forget needs the superuser tier.
 .TP
@@ -7993,6 +8192,10 @@ The label of the Cisco aaa group server tacacs+ the scope's configuration names.
 .B radius_group.<scope>
 name of 1 to 63 characters (a letter, then letters, digits, _ or \-). Default: RADIUS\-GROUP.
 The label of the Cisco aaa group server radius the scope's configuration names. Set with \fBtacctl scope radius\-group\fR.
+.TP
+.B cisco.source_interface.<scope>
+interface name in the long form IOS prints (Loopback, GigabitEthernet, TenGigabitEthernet, TwentyFiveGigE, FortyGigabitEthernet, HundredGigE, FastEthernet, Ethernet, Serial, Vlan, Port\-channel, Tunnel, BVI, Management, then the number, with / . : separators), such as Loopback0 or GigabitEthernet0/0; not an abbreviation such as lo0. Default: none (unset).
+The interface the scope's Cisco devices source their TACACS+ and RADIUS requests from (ip tacacs source-interface, ip radius source-interface); unset: the standard renders and compares no such line, and the walkthrough prints it commented. Set with \fBtacctl config cisco source\-interface\fR.
 .TP
 .B scope_auth_method.<scope>
 one of tacacs, radius. Default: none (unset).

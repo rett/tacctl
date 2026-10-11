@@ -15,6 +15,8 @@ hostname sw2.example.net
 !
 enable secret 9 $9$EXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLE
 !
+username lab-admin privilege 15 secret 9 $9$EXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLE
+!
 interface GigabitEthernet0/1
  description uplink to example
  ip address 192.0.2.2 255.255.255.0

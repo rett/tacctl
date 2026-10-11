@@ -195,19 +195,37 @@ func TestIOSOutputIsThePlansSample(t *testing.T) {
 	if body[0] != "configure terminal" || body[len(body)-1] != "end" {
 		t.Errorf("the region is %q ... %q", body[0], body[len(body)-1])
 	}
-	// the unit: aaa new-model first, exec authorization directly after the
-	// authentication list, command authorization the last statements
+	// the unit in D118's order: aaa new-model, the server and the group,
+	// the login lists with exec authorization right after them, 'enable',
+	// the session id; the lines' login method after mgmt-acl; command
+	// authorization the last statements
 	idx := func(s string) int { return slices.Index(body, s) }
-	if idx("aaa new-model") != 1 {
-		t.Errorf("aaa new-model is not the first statement")
+	if g, m := idx("aaa group server tacacs+ LAB-TACACS"), idx("aaa new-model"); g < 0 || m != 1 || m > g {
+		t.Errorf("aaa new-model is not the first statement, before the group (group at %d, new-model at %d)", g, m)
 	}
 	a := idx("aaa authentication login default local group LAB-TACACS")
-	if a < 0 || !strings.HasPrefix(body[a+1], "aaa authorization exec default ") {
-		t.Errorf("authorization exec does not follow the authentication list")
+	if a < 0 || body[a+1] != "aaa authentication login CONSOLE local" || !strings.HasPrefix(body[a+2], "aaa authorization exec ") {
+		t.Errorf("the login lists and authorization exec are not in a row")
 	}
-	last := body[len(body)-2]
-	if last != "aaa authorization config-commands" {
+	if e := idx("aaa authentication enable default group LAB-TACACS enable"); e != a+3 {
+		t.Errorf("'enable' is not right after authorization exec (at %d, want %d)", e, a+3)
+	}
+	// D118 (12): the device is bare, so command authorization is not in the
+	// paste (the one group of lines left, said in the report); the lines'
+	// login method are the last statements, the console's first
+	if v, c := idx("ip access-list standard VTY-ACL"), idx("line con 0"); v <= 0 || v >= c {
+		t.Errorf("the console's leaf is not after mgmt-acl (%d %d)", v, c)
+	}
+	for _, s := range body {
+		if strings.HasPrefix(s, "aaa authorization commands ") || s == "aaa authorization config-commands" {
+			t.Errorf("command authorization is in the region of a device whose server is not proven: %q", s)
+		}
+	}
+	if last := body[len(body)-2]; last != " login authentication default" {
 		t.Errorf("the last statement is %q", last)
+	}
+	if !strings.Contains(strings.Join(strings.Fields(strings.ReplaceAll(out, "\n!", " ")), " "), cmdAuthHeldText) {
+		t.Errorf("the report does not say that command authorization is not in this paste:\n%s", out)
 	}
 	// 'write memory' is said after the region as a comment, never as a line
 	after := out[strings.Index(out, "!!!!! PASTE TO HERE: rtr-lab-1 !!!!!"):]
@@ -224,7 +242,7 @@ func TestIOSOutputIsThePlansSample(t *testing.T) {
 		t.Fatal(err)
 	}
 	back := nonComments(between2(t, bo, "!!!!!", "BACK-OUT", "rtr-lab-1"), "!")
-	for _, want := range []string{"configure terminal", "no aaa new-model", "line vty 0 4", " login local", "end"} {
+	for _, want := range []string{"configure terminal", "no aaa new-model", "line vty 0 4", " login local", "line con 0", " no login authentication CONSOLE", "end"} {
 		if !slices.Contains(back, want) {
 			t.Errorf("the back-out lacks %q:\n%s", want, bo)
 		}

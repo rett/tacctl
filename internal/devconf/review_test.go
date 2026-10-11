@@ -500,9 +500,26 @@ func TestIOSAddedLinesAreNotStrays(t *testing.T) {
 		t.Fatal(err)
 	}
 	// 'enable secret' is no stray: it is kept by presence, as one marker
-	// that Compare turns into a note (never the value).
-	if got := ex.Sections[SectionAAA].Lines; !slices.Equal(got, []string{"aaa new-model", enableHeld}) {
+	// that Compare turns into a note (never the value). 'aaa session-id
+	// common' is a statement of the section now that tacctl renders it, and
+	// no extra where the rendering has none.
+	if got := ex.Sections[SectionAAA].Lines; !slices.Equal(got, []string{"aaa new-model", "aaa session-id common", enableHeld}) {
 		t.Errorf("aaa = %q", got)
+	}
+	bare := sec(SectionAAA, "aaa new-model")
+	if r := resultOf(t, "ios", bare, ex.Sections[SectionAAA], true); r.State != StateOK {
+		t.Errorf("an implicit session id is no stray: %s %v", r.State, r.Lines)
+	}
+	// the device's source interface is nobody's business where the scope sets
+	// none (a record may hold it), and a rendering that sets one compares it
+	held := sec(SectionAAA, "aaa new-model", "ip tacacs source-interface Loopback1")
+	if r := resultOf(t, "ios", bare, held, true); r.State != StateOK {
+		t.Errorf("an unrendered source interface is an extra: %s %v", r.State, r.Lines)
+	}
+	set := sec(SectionAAA, "aaa new-model", "ip tacacs source-interface Loopback0")
+	rs := resultOf(t, "ios", set, held, true)
+	if !hasLine(rs, OpMissing, "ip tacacs source-interface Loopback0") || !hasLine(rs, OpExtra, "ip tacacs source-interface Loopback1") {
+		t.Errorf("another interface than the rendered one: %v", rs.Lines)
 	}
 	if got := ex.Sections[SectionRoles].Lines; !slices.Equal(got, []string{
 		"privilege exec level 7 clear counters", "privilege exec level 7 show ip route"}) {

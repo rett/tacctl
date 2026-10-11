@@ -140,10 +140,48 @@ func Block(d Delta, h Header, w Wrapper) string {
 	var b strings.Builder
 	b.WriteString(Report(d, h, w))
 	if d.Empty() {
+		b.WriteString(ByHand(d, h))
 		return b.String()
 	}
 	b.WriteString(Region(d, h, w))
 	b.WriteString(After(d, h, w))
+	b.WriteString(ByHand(d, h))
+	return b.String()
+}
+
+// ByHand is the text for a unit the plan refuses and a person has to do by
+// hand (D117): comment lines, after the region or, when there is none,
+// after the report. Nothing in it is a region.
+func ByHand(d Delta, h Header) string {
+	if len(d.ByHand) == 0 {
+		return ""
+	}
+	c := commentLeader(d.Vendor)
+	var b strings.Builder
+	b.WriteString(c + "\n")
+	text := "By hand (this is no region and tacctl pastes none of it): the old server entry cannot be replaced from a session that a command authorization list governs. "
+	if strings.HasPrefix(d.ByHand[0], "0. ") {
+		// SF2: the console is under command authorization too
+		text += "The console is under command authorization as well ('aaa authorization console'), so the steps cannot be typed as they are: step 0 takes that setting off first. "
+	}
+	for _, l := range wrapText(text+
+		"Do it on the console, as any user that reaches privilege 15 there, one numbered step at a time (the indented lines are typed as they stand); then pull and plan again ("+
+		"tacctl device config pull "+h.Device+", tacctl device config plan "+h.Device+").", 100) {
+		b.WriteString(c + " " + l + "\n")
+	}
+	for _, l := range d.ByHand {
+		if strings.HasPrefix(l, byHandIndent) {
+			b.WriteString(c + "   " + l + "\n")
+			continue
+		}
+		for i, w := range wrapText(l, 92) {
+			pad := ""
+			if i > 0 {
+				pad = "   " // under the text of a numbered step
+			}
+			b.WriteString(c + "   " + pad + w + "\n")
+		}
+	}
 	return b.String()
 }
 
@@ -250,6 +288,16 @@ func CheckRegion(vendor string, lines []string) error {
 	if len(lines) < 2 {
 		return fmt.Errorf("a region of %d lines", len(lines))
 	}
+	// A paste is ASCII, comments included: a byte outside 0x20-0x7e (an
+	// em dash from a device's description, a control character) is a fault
+	// wherever it stands.
+	for i, l := range lines {
+		for j := 0; j < len(l); j++ {
+			if c := l[j]; c < 0x20 || c > 0x7e {
+				return fmt.Errorf("line %d, %q, holds a byte (0x%02x) that is not printable ASCII", i+1, l, c)
+			}
+		}
+	}
 	if vendor == devconf.FamilyIOS {
 		return checkIOSRegion(lines)
 	}
@@ -319,8 +367,9 @@ func junosStatementOK(l string) error {
 // iosTopStatements are the shapes of an IOS statement at the top level of a
 // region (after an optional 'no'); an entry ending in a space is a prefix.
 var iosTopStatements = []string{
-	"aaa new-model", "aaa authentication login ", "aaa authorization exec ", "aaa authorization commands ",
-	"aaa authorization config-commands", "aaa accounting ", "aaa group server tacacs+ ", "aaa group server radius ",
+	"aaa new-model", "aaa authentication login ", "aaa authentication enable ", "aaa authorization exec ",
+	"aaa authorization commands ", "aaa authorization config-commands", "aaa accounting ", "aaa session-id ",
+	"aaa group server tacacs+ ", "aaa group server radius ", "ip tacacs source-interface ", "ip radius source-interface ",
 	"tacacs server ", "radius server ", "tacacs-server host ", "radius-server host ",
 	"privilege exec ", "snmp-server community ", "snmp-server location ", "snmp-server contact ",
 	"ip access-list standard ", "ip access-list extended ", "ipv6 access-list ", "line vty ", "line con ",
@@ -541,6 +590,7 @@ type jsonDelta struct {
 	Skipped         []Skip      `json:"skipped"`
 	Withheld        []string    `json:"withheld"`
 	Warnings        []string    `json:"warnings"`
+	ByHand          []string    `json:"by_hand,omitempty"`
 	ConfirmTimeout  int         `json:"confirm_timeout,omitempty"`
 	HoldsSecret     bool        `json:"holds_secret"`
 	CommandAuthLast bool        `json:"command_authorization_last,omitempty"`
@@ -553,7 +603,7 @@ func JSON(d Delta, h Header, w Wrapper) ([]byte, error) {
 		BasedOn: jsonBasedOn{Pulled: h.Pulled, By: h.PulledBy, Transport: h.Transport,
 			AgeS: int64(h.Now.Sub(h.Pulled).Seconds()), SecretsVisible: h.SecretsVisible},
 		Status: statusOf(d), Left: leftOf(d), Irregularities: []jsonItem{}, Region: []string{}, After: []string{}, Backout: []string{},
-		Extras: []jsonExtra{}, Skipped: nonNilSkip(d.Skipped), Withheld: nonNil(d.Withheld), Warnings: nonNil(d.Warnings),
+		Extras: []jsonExtra{}, Skipped: nonNilSkip(d.Skipped), Withheld: nonNil(d.Withheld), Warnings: nonNil(d.Warnings), ByHand: d.ByHand,
 		HoldsSecret: d.HoldsSecret()}
 	lineNo := map[int]int{}
 	if !d.Empty() {

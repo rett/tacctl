@@ -390,6 +390,7 @@ Subcommands:
   mgmt-acl list|add|remove|clear       Manage Cisco VTY-ACL + Juniper lo0-filter + WTI IP Tables permits
   mgmt-acl cisco-name [name]           Show or set the emitted Cisco ACL name (default VTY-ACL)
   mgmt-acl juniper-name [name]         Show or set the emitted Juniper filter name (default MGMT-ACL)
+  cisco source-interface [<scope> [<interface>|none]]  Show or set the interface a scope's Cisco devices source their server requests from (the full name IOS prints: Loopback0, GigabitEthernet0/0)
   cisco   [--scope <name>] [--legacy] [--protocol tacacs|radius]  Show working Cisco device configuration for a scope (--legacy = IOS 12.x syntax; --protocol radius = RADIUS backend, default tacacs)
   juniper [--scope <name>] [--protocol tacacs|radius]             Show working Juniper device configuration for a scope
   wti     [--scope <name>] [--protocol tacacs|radius]             Show step-by-step WTI console-server (v8.x serial menu) setup for a scope (RADIUS: not verified on a unit)
@@ -419,6 +420,7 @@ Examples:
   tacctl config cisco --scope prod
   tacctl config cisco --scope prod --legacy   # legacy IOS 12.x syntax
   tacctl config cisco --scope prod --protocol radius
+  tacctl config cisco source-interface prod Loopback0
   tacctl config wti --scope prod
   tacctl config wti --scope prod --protocol radius
 

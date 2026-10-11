@@ -130,7 +130,7 @@ var (
 // scope's name (<key>.<scope>). 'scope rename' moves them and 'scope
 // remove' drops them (scopeConfKeysMove).
 var scopeConfKeys = []string{"aaa.order", "exec_timeout", "tacacs_group", "radius_group", "scope_auth_method",
-	"scope_mgmt_acl.names.cisco", "scope_mgmt_acl.names.juniper", "scope_mgmt_acl.permits"}
+	"scope_mgmt_acl.names.cisco", "scope_mgmt_acl.names.juniper", "scope_mgmt_acl.permits", "cisco.source_interface"}
 
 // The ACL / filter names the device configs use when none is set
 // (CISCO_ACL_NAME_DEFAULT, JUNIPER_ACL_NAME_DEFAULT).

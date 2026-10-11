@@ -112,8 +112,10 @@ func TestCiscoExtractReferenceTexts(t *testing.T) {
 		// instead are not extra, the rest is the stored form of what was typed.
 		// aaa: the capture has no login statement on its console and VTY
 		// lines, IOS being silent about the default method list: they read
-		// as 'login authentication default'.
-		{"ios/real-12.4-7200", "ios", map[string]State{SectionAAA: StateOK, SectionRoles: StateDiffers, SectionMgmtACL: StateOK,
+		// as 'login authentication default'. It predates the standard block:
+		// the console is on the default list, not CONSOLE, and the CONSOLE and
+		// enable lists are missing (D107: the console is never implicit).
+		{"ios/real-12.4-7200", "ios", map[string]State{SectionAAA: StateDiffers, SectionRoles: StateDiffers, SectionMgmtACL: StateOK,
 			SectionSNMP: StateOK, SectionNetconf: StateNA, SectionBreakGlass: StateOK}},
 		{"ios-xe/reference-16", "ios", map[string]State{SectionAAA: StateDiffers, SectionRoles: StateOK, SectionMgmtACL: StateOK,
 			SectionSNMP: StateOK, SectionNetconf: StateNA, SectionBreakGlass: StateOK}},
@@ -257,12 +259,16 @@ func TestCiscoBareDevice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Only aaa holds anything of the device: the login method of its VTY
-	// line, and the presence of its 'enable' secret (never the value).
+	// Only aaa and breakglass hold anything of the device: the login method
+	// of its VTY line, the presence of its 'enable' secret (never the value),
+	// and the local user its 'login local' needs.
 	for n, sec := range ex.Sections {
 		want := []string(nil)
-		if n == SectionAAA {
+		switch n {
+		case SectionAAA:
 			want = []string{"line vty 0 4 > login local", enableHeld}
+		case SectionBreakGlass:
+			want = []string{"username lab-admin privilege 15 secret"}
 		}
 		if !slices.Equal(sec.Lines, want) {
 			t.Errorf("[%s] = %q, want %q", n, sec.Lines, want)
@@ -277,8 +283,11 @@ func TestCiscoBareDevice(t *testing.T) {
 	// tacctl's: aaa is missing (not differs), the line still listed.
 	for _, r := range results {
 		want := StateMissing
-		if r.Name == SectionNetconf {
+		switch r.Name {
+		case SectionNetconf:
 			want = StateNA
+		case SectionBreakGlass:
+			want = StateDiffers // the one account it has, the two others missing
 		}
 		if r.State != want {
 			t.Errorf("[%s] %s, want %s", r.Name, r.State, want)

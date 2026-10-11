@@ -228,8 +228,19 @@ func checkIOSBackout(t *testing.T, f fixture, exp []devices.Section, raw string,
 	if err != nil {
 		t.Fatal(err)
 	}
+	// a line the plan removed whose key is the device's own (D117: the old
+	// server entry) is given back by a note, never by a line: the back-out
+	// cannot type a value tacctl does not hold
+	noted := map[string]bool{}
+	for _, l := range d.Lines {
+		for _, u := range l.Undo {
+			if s, ok := strings.CutPrefix(u.Text, "type again with its original secret: "); ok && u.Op == OpComment && l.Op == OpNo {
+				noted[strings.TrimSuffix(s, " "+secretMark)] = true
+			}
+		}
+	}
 	for _, name := range []string{"aaa", "roles", "snmp", "mgmt-acl"} {
-		o := slices.Clone(orig.Sections[name].Lines)
+		o := slices.DeleteFunc(slices.Clone(orig.Sections[name].Lines), func(s string) bool { return noted[s] || noted[strings.TrimSuffix(s, " "+secretMark)] })
 		g := slices.Clone(got.Sections[name].Lines)
 		slices.Sort(o)
 		slices.Sort(g)

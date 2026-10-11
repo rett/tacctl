@@ -236,6 +236,11 @@ func (p *planner) actionFor(d *Delta, it *Item, extraOf map[string]Extra, stem s
 		return "Not fixed: " + firstSentence(sp.Why) + "."
 	}
 	for _, w := range d.Withheld {
+		if w == cmdAuthWithheldPrefix+stem {
+			return cmdAuthHeldText + "."
+		}
+	}
+	for _, w := range d.Withheld {
 		if strings.HasSuffix(w, stem) || strings.HasPrefix(w, stem) {
 			switch {
 			case strings.HasPrefix(w, "the access-class binding"):
@@ -392,10 +397,20 @@ func plainIOS(stem string) string {
 		w = "the server " + strings.Fields(path[0])[2] + ": " + leaf
 	case len(f) >= 3 && f[0] == "tacacs-server" && f[1] == "host":
 		w = "the TACACS+ server " + f[2]
+	case len(f) >= 3 && f[0] == "radius-server" && f[1] == "host":
+		w = "the RADIUS server " + f[2]
 	case len(path) == 2 && strings.HasPrefix(path[0], "aaa group server "):
 		w = "the server group " + strings.Fields(path[0])[len(strings.Fields(path[0]))-1] + ": " + leaf
+	case len(f) >= 4 && f[0] == "aaa" && f[1] == "authentication" && f[2] == "enable":
+		w = "the 'enable' list (it asks the server first, so nobody needs a shared enable password)"
+	case len(f) >= 4 && f[0] == "aaa" && f[1] == "authentication" && f[3] == iosConsoleList:
+		w = "the console's own login list " + iosConsoleList + " (local only, so a local user always gets in there)"
 	case len(f) >= 4 && f[0] == "aaa" && f[1] == "authentication":
 		w = "the " + f[3] + " login method list"
+	case len(f) >= 3 && f[0] == "aaa" && f[1] == "session-id":
+		w = "the accounting session id is " + f[2]
+	case len(f) >= 3 && f[0] == "ip" && (f[1] == "tacacs" || f[1] == "radius") && f[2] == "source-interface":
+		w = "the " + map[string]string{"tacacs": "TACACS+", "radius": "RADIUS"}[f[1]] + " source interface is " + strings.Join(f[3:], " ")
 	case len(f) >= 4 && f[0] == "aaa" && f[1] == "authorization" && f[2] == "exec":
 		w = "the " + f[3] + " exec authorization list (without it every new login lands at privilege 1)"
 	case len(f) >= 5 && f[0] == "aaa" && f[1] == "authorization" && f[2] == "commands":
@@ -526,7 +541,7 @@ func (p *planner) iosRemoval(section string, path []string) []Line {
 	}
 	if len(ctx) == 0 {
 		if len(f) >= 3 && (f[0] == "tacacs-server" || f[0] == "radius-server") && f[1] == "host" {
-			return no(nil, strings.Join(f[:3], " "))
+			return no(nil, hostEntry(f))
 		}
 		return no(nil, leaf)
 	}

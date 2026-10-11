@@ -231,9 +231,16 @@ func TestManagedRealDeviceFixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, want, ok := strings.Cut(string(data), "\n# ---\n")
+	header, want, ok := strings.Cut(string(data), "\n# ---\n")
 	if !ok {
 		t.Fatal("expected.txt: no '# ---' line after the header")
+	}
+	if *updateGolden {
+		// -update rewrites the body and keeps the capture's header.
+		if err := os.WriteFile("../../tests/fixtures/devconf/ios/real-12.4-7200/expected.txt", []byte(header+"\n# ---\n"+got), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return
 	}
 	if got != want {
 		t.Errorf("real-12.4-7200/expected.txt is not what Managed renders:\n--- got\n%s\n--- want\n%s", got, want)
@@ -591,7 +598,7 @@ func TestManagedCisco(t *testing.T) {
 // rendered, and never an unconfigured scope's.
 func TestManagedCiscoLoginLeaves(t *testing.T) {
 	m, c := managedWorld(t)
-	want := []string{"line con 0", "  login authentication default", "line vty 0 15", "  login authentication default"}
+	want := []string{"line con 0", "  login authentication CONSOLE", "line vty 0 15", "  login authentication default"}
 	for _, v := range managedVariants() {
 		if v.vendor != "cisco" {
 			continue
@@ -600,8 +607,16 @@ func TestManagedCiscoLoginLeaves(t *testing.T) {
 			req, d := p.input(m, c, v)
 			secs := mustManaged(t, req, d)
 			aaa, ok := sectionOf(secs, "aaa")
-			if !ok || len(aaa.Lines) < len(want) || !slices.Equal(aaa.Lines[len(aaa.Lines)-len(want):], want) {
-				t.Errorf("%s/%s: aaa does not end with the console and VTY login lines:\n%s", v.name, p.scope, strings.Join(aaa.Lines, "\n"))
+			// the console's leaf names its own list; the lines are followed
+			// only by command authorization (the last of the unit, D118)
+			at := slices.Index(aaa.Lines, want[0])
+			if !ok || at < 0 || at+len(want) > len(aaa.Lines) || !slices.Equal(aaa.Lines[at:at+len(want)], want) {
+				t.Fatalf("%s/%s: aaa has no console and VTY login lines:\n%s", v.name, p.scope, strings.Join(aaa.Lines, "\n"))
+			}
+			for _, l := range aaa.Lines[at+len(want):] {
+				if !strings.HasPrefix(l, "aaa authorization ") || strings.HasPrefix(l, "aaa authorization exec ") {
+					t.Errorf("%s/%s: %q follows the login lines, and only command authorization may", v.name, p.scope, l)
+				}
 			}
 			for i, l := range aaa.Lines {
 				if strings.Contains(l, "login authentication") && aaa.Secret[i] {

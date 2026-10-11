@@ -162,62 +162,86 @@ func juniperSecret(line string) bool { return reJuniperSecret.MatchString(line) 
 
 // --- Cisco --------------------------------------------------------------------
 
-// managedCisco is Managed for an IOS or IOS-XE device.
+// managedCisco is Managed for an IOS or IOS-XE device: the managed part of
+// the standard block (plan §13, D116 (A)), in the order the region types it
+// (D118). The walkthrough's templates carry the same lines in the same
+// order; the test that every statement is in the walkthrough of the same
+// input keeps the two honest.
 func managedCisco(req Request, d Data) []Section {
 	v := CiscoVars(req, d)
 	s := &sections{secret: ciscoSecret}
 	radius := req.Protocol == RADIUS
 
-	// The AAA lines: the server and its group (the shipped templates' own
-	// text, with the builders' values), then the method lines and the
-	// per-level lines the builders give.
-	aaa := []string{"aaa new-model"}
-	switch {
-	case radius:
-		aaa = append(aaa,
-			"radius server RADIUS",
-			"  address ipv4 "+v["SERVER_IP"]+" auth-port "+v["AUTH_PORT"]+" acct-port "+v["ACCT_PORT"],
-			"  key "+v["SECRET"],
-			"  timeout 5",
-			"  retransmit 2",
-			"aaa group server radius "+v["RADIUS_GROUP"],
-			"  server name RADIUS")
-	case req.Legacy:
-		aaa = append(aaa,
-			"tacacs-server host "+v["SERVER_IP"]+" single-connection timeout 5 key "+v["SECRET"],
-			"aaa group server tacacs+ "+v["TACACS_GROUP"],
-			"  server "+v["SERVER_IP"])
-	default:
-		aaa = append(aaa,
-			"tacacs server TACACS",
-			"  address ipv4 "+v["SERVER_IP"],
-			"  key "+v["SECRET"],
-			"  single-connection",
-			"  timeout 5",
-			"aaa group server tacacs+ "+v["TACACS_GROUP"],
-			"  server name TACACS")
-	}
 	group := v["TACACS_GROUP"]
 	if radius {
 		group = v["RADIUS_GROUP"]
 	}
+
+	// (1) 'aaa new-model' first: on IOS nothing under 'aaa' but it exists
+	// until it is set, so a group and its server leaf typed before it are
+	// rejected. (2), (3): the server and its group, then (4) the source
+	// interface when the scope sets one (an unset value renders nothing:
+	// PolicyGaps names it in a plan's report).
+	aaa := []string{"aaa new-model"}
+	switch {
+	case radius:
+		aaa = append(aaa,
+			"radius server "+ciscoRadiusServer,
+			"  address ipv4 "+v["SERVER_IP"]+" auth-port "+v["AUTH_PORT"]+" acct-port "+v["ACCT_PORT"],
+			"  key "+v["SECRET"],
+			"  timeout 5",
+			"  retransmit 2",
+			"aaa group server radius "+group,
+			"  server name "+ciscoRadiusServer)
+	case req.Legacy:
+		aaa = append(aaa,
+			"tacacs-server host "+v["SERVER_IP"]+" single-connection timeout 5 key "+v["SECRET"],
+			"aaa group server tacacs+ "+group,
+			"  server "+v["SERVER_IP"])
+	default:
+		aaa = append(aaa,
+			"tacacs server "+ciscoTacacsServer,
+			"  address ipv4 "+v["SERVER_IP"],
+			"  key "+v["SECRET"],
+			"  single-connection",
+			"  timeout 5",
+			"aaa group server tacacs+ "+group,
+			"  server name "+ciscoTacacsServer)
+	}
+	if ifc := ciscoSourceInterface(d.Conf, req.Scope); ifc != "" {
+		aaa = append(aaa, ciscoSourceCommand(req.Protocol)+" "+ifc)
+	}
+	// (5)-(8): the login lists (the console's own, local only), exec
+	// authorization, 'enable' asking the server first, accounting and the
+	// session id. A RADIUS device's enable list is not rendered (lab item E2:
+	// what a RADIUS server answers to IOS's enable request is open); the
+	// walkthrough carries the line commented.
 	aaa = append(aaa,
 		"aaa authentication login default "+v["AUTHN_METHODS"],
-		"aaa authorization exec default "+v["AUTHZ_EXEC_METHODS"],
-		"aaa accounting exec default start-stop group "+group)
+		"aaa authentication login "+ciscoConsoleList+" local",
+		"aaa authorization exec default "+v["AUTHZ_EXEC_METHODS"])
+	if !radius {
+		aaa = append(aaa, "aaa authentication enable default group "+group+" enable")
+	}
+	aaa = append(aaa, "aaa accounting exec default start-stop group "+group)
 	if !radius {
 		aaa = append(aaa, ciscoStatements(v["ACCT_COMMANDS_BLOCK"])...)
-		aaa = append(aaa, ciscoStatements(v["AUTHZ_COMMANDS_BLOCK"])...)
 	}
-	// The lines that use the method list: the walkthrough's console and
-	// VTY lines name the 'default' list (D107). 'no aaa new-model' leaves
-	// a line with no login method, and a line that still says 'login
-	// local' bypasses the list, so the lines are part of what AAA is.
+	aaa = append(aaa, "aaa session-id common")
+	// (10): the lines that use the lists, the console first, then the vty
+	// ranges. The console names its own list; the VTY lines the default one
+	// (D107). 'no aaa new-model' leaves a line with no login method, and a
+	// line that still says 'login local' bypasses the list, so the leaves are
+	// part of what AAA is.
 	aaa = append(aaa,
 		"line con 0",
-		"  login authentication default",
+		"  login authentication "+ciscoConsoleList,
 		"line vty 0 15",
 		"  login authentication default")
+	// (11): command authorization last. RADIUS has none.
+	if !radius {
+		aaa = append(aaa, ciscoStatements(v["AUTHZ_COMMANDS_BLOCK"])...)
+	}
 	s.add(sectionAAA, aaa)
 
 	// The privilege lines of the groups below level 15.

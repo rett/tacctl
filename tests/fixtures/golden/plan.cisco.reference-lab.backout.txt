@@ -13,7 +13,11 @@
 !!!!! BACK-OUT FROM HERE: dev-cisco-reference-lab !!!!!
 configure terminal
 ! back-out: the lines as the pull showed them
+line con 0
+ login authentication default
 no aaa accounting commands 15 default start-stop group LAB-TACACS
+no aaa authentication enable default group LAB-TACACS enable
+no aaa authentication login CONSOLE local
 end
 !!!!! BACK-OUT TO HERE: dev-cisco-reference-lab !!!!!
 !

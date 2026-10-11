@@ -21,12 +21,15 @@ const (
 	TypeNullableString = "nullable_string"
 	TypeEnum           = "enum"
 	TypeACLName        = "acl_name"
-	TypeCIDRList       = "cidr_list"
-	TypeHostPort       = "host_port"
-	TypeListener       = "listener"
-	TypeBackendList    = "backend_list"
-	TypeCiscoCmdList   = "cisco_cmd_list"
-	TypeCommandRules   = "command_rules"
+	// TypeInterfaceName is cisco.source_interface.<scope>: an IOS interface
+	// name in the long form, such as Loopback0 or GigabitEthernet0/0/1.
+	TypeInterfaceName = "interface_name"
+	TypeCIDRList      = "cidr_list"
+	TypeHostPort      = "host_port"
+	TypeListener      = "listener"
+	TypeBackendList   = "backend_list"
+	TypeCiscoCmdList  = "cisco_cmd_list"
+	TypeCommandRules  = "command_rules"
 	// TypeJunosRegexList is junos.<group>.<attr> (junos.go).
 	TypeJunosRegexList = "junos_regex_list"
 	// TypeSudoCommandList is linux.engineer_sudo: absolute command paths.
@@ -134,6 +137,10 @@ func NewSchema(backends []string) *Schema {
 			{"exec_timeout.", Rule{Type: TypeInt, Min: intp(0), Max: intp(60), Default: 60, HasDefault: true}},
 			{"tacacs_group.", Rule{Type: TypeACLName, Default: "TACACS-GROUP", HasDefault: true}},
 			{"radius_group.", Rule{Type: TypeACLName, Default: "RADIUS-GROUP", HasDefault: true}},
+			// The interface a Cisco device sources its TACACS+ and RADIUS
+			// requests from (0.2.5, D119); no default: unset renders
+			// nothing and the plan reports it.
+			{"cisco.source_interface.", Rule{Type: TypeInterfaceName}},
 			// No default on purpose: unset means "not decided for this scope".
 			{"scope_auth_method.", Rule{Type: TypeEnum, Values: []string{"tacacs", "radius"}}},
 			{"scope_mgmt_acl.names.cisco.", Rule{Type: TypeACLName, Default: "VTY-ACL", HasDefault: true}},
@@ -246,9 +253,24 @@ func pyMatch(re *regexp.Regexp, s string) bool { return re.MatchString(s) }
 var (
 	reScopeDefault = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]{0,31}\n?$`)
 	reACLName      = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]*\n?$`)
-	reCmd          = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9 _-]+\n?$`)
-	reRuleName     = regexp.MustCompile(`^(?:[A-Za-z][A-Za-z0-9_-]{0,31}|\*)\n?$`)
+	// reInterfaceName is a Cisco interface name in the long form IOS prints:
+	// one of InterfaceTypes, case as listed, then the number with its slot,
+	// port, channel and sub-interface separators. An abbreviation (lo0, gi0/1)
+	// is refused: IOS stores the long form, so a device would compare
+	// different for ever.
+	reInterfaceName = regexp.MustCompile(`^(?:` + strings.Join(InterfaceTypes, "|") + `)[0-9]+(?:[/.:][0-9]+)*$`)
+	reCmd           = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9 _-]+\n?$`)
+	reRuleName      = regexp.MustCompile(`^(?:[A-Za-z][A-Za-z0-9_-]{0,31}|\*)\n?$`)
 )
+
+// InterfaceTypes are the IOS and IOS-XE interface type names (the long form
+// 'show running-config' prints) that cisco.source_interface.<scope> accepts,
+// each followed by the number.
+var InterfaceTypes = []string{
+	"Loopback", "GigabitEthernet", "TenGigabitEthernet", "TwentyFiveGigE", "FortyGigabitEthernet",
+	"HundredGigE", "FastEthernet", "Ethernet", "Serial", "Vlan", "Port-channel", "Tunnel", "BVI",
+	"Management",
+}
 
 // pyLen is len(s): characters, not bytes.
 func pyLen(s string) int { return utf8.RuneCountInString(s) }
@@ -311,6 +333,19 @@ func (s *Schema) Validate(path string, value any, isList bool) string {
 		}
 		if !pyMatch(reACLName, str) {
 			return "must start with a letter and contain only [A-Za-z0-9_-]"
+		}
+		return ""
+	case TypeInterfaceName:
+		str, isStr := value.(string)
+		if !isStr {
+			return "must be a string"
+		}
+		if n := pyLen(str); n < 2 || n > 63 {
+			return fmt.Sprintf("must be 2..63 chars; got %d", n)
+		}
+		if !pyMatch(reInterfaceName, str) {
+			return "write the full interface name as IOS prints it, such as Loopback0 or GigabitEthernet0/0 (not lo0 or gi0/1); the types are " +
+				strings.Join(InterfaceTypes, ", ")
 		}
 		return ""
 	case TypeCIDRList:

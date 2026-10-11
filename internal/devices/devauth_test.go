@@ -72,9 +72,18 @@ func TestCiscoLevelsGuardAndAccounting(t *testing.T) {
 		"aaa authorization commands 12 default local group TACACS-GROUP\n" +
 		"aaa authorization commands 15 default local group TACACS-GROUP\n" +
 		"aaa authorization config-commands\n" +
-		"! aaa authorization console   ! uncomment to have the console line ask the server too"
-	if vars["AUTHZ_COMMANDS_BLOCK"] != want {
-		t.Errorf("authz:\n%s\nwant:\n%s", vars["AUTHZ_COMMANDS_BLOCK"], want)
+		"! Do NOT set 'aaa authorization console': the console would be authorized by the default lists,\n" +
+		"! server first, which defeats the CONSOLE list."
+	// D118 (12): the lines are Step 2, after a check from a new session
+	block := vars["AUTHZ_COMMANDS_BLOCK"]
+	head, rest, ok := strings.Cut(block, "! Per-command authorization (managed by")
+	if !ok || !strings.HasPrefix(head, "! --- Check: before Step 2, from a NEW session ---\n") ||
+		!strings.Contains(head, "show privilege") || !strings.Contains(head, "! --- Step 2: command authorization ---\n") ||
+		strings.Index(head, "Check:") > strings.Index(head, "Step 2: command") {
+		t.Errorf("the block has no check and no Step 2 above its lines:\n%s", block)
+	}
+	if got := "! Per-command authorization (managed by" + rest; got != want {
+		t.Errorf("authz:\n%s\nwant:\n%s", got, want)
 	}
 	acct := "aaa accounting commands 1 default start-stop group TACACS-GROUP\n" +
 		"aaa accounting commands 5 default start-stop group TACACS-GROUP\n" +
@@ -98,7 +107,7 @@ func TestCiscoLevelsGuardAndAccounting(t *testing.T) {
 		for _, want := range []string{
 			"aaa accounting exec default start-stop group TACACS-GROUP\naaa accounting commands 1 default start-stop group TACACS-GROUP\naaa accounting commands 5 ",
 			"  - A group at priv-lvl 15 is kept apart from the superusers only by the server's\n",
-			"    unless 'aaa authorization console' is uncommented\n",
+			"    ('aaa authorization console' is not set)\n",
 		} {
 			if !strings.Contains(out, want) {
 				t.Errorf("legacy=%v lacks %q", legacy, want)
@@ -112,9 +121,9 @@ func TestCiscoPrivilegeModes(t *testing.T) {
 	vars := CiscoVars(Request{Vendor: "cisco", Scope: "lab", Protocol: TACACS}, Data{Model: m, Conf: c})
 	// readonly (priv-lvl 1) lowers show running-config to level 1; the
 	// block of a group at level 1 is emitted too.
-	want := "! --- readonly — Privilege Level 1 Commands ---\n" +
+	want := "! --- readonly - Privilege Level 1 Commands ---\n" +
 		"privilege exec level 1 show running-config\n!\n" +
-		"! --- operator — Privilege Level 7 Commands ---\n" +
+		"! --- operator - Privilege Level 7 Commands ---\n" +
 		"privilege configure level 7 router bgp\n" +
 		"privilege exec all level 7 show ip\n" +
 		"privilege exec level 7 show version\n" +

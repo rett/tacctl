@@ -18,16 +18,20 @@
 
 === cisco / one admin
 ! --- Break-glass local users (scope: lab) ---
-! The 'local' method of 'aaa authentication login' above admits these only when no
+! The 'local' method of 'aaa authentication login' in Step 1 admits these only when no
 ! server answers.
+! The console's own list, CONSOLE, is local only: these accounts log in there whatever the server says,
+! at privilege 1 while a server answers (see the Notes under the configuration).
 ! tacctl stores no credential: replace <TYPE9-HASH> with the type 9 hash ($9$...) of a password
 ! you keep (the hash, not the password: 'secret 9' takes a hash as it appears in 'show running-config'),
 ! then remove the '! '.
 ! username lab-admin privilege 15 secret 9 <TYPE9-HASH>
 === cisco legacy / one admin
 ! --- Break-glass local users (scope: lab) ---
-! The 'local' method of 'aaa authentication login' above admits these only when no
+! The 'local' method of 'aaa authentication login' in Step 1 admits these only when no
 ! server answers.
+! The console's own list, CONSOLE, is local only: these accounts log in there whatever the server says,
+! at privilege 1 while a server answers (see the Notes under the configuration).
 ! tacctl stores no credential: replace <HASH> with the type 5 hash ($1$...) of a password you keep,
 ! then remove the '! '. (IOS 12.x has no type 9.)
 ! username lab-admin privilege 15 secret 5 <HASH>
@@ -48,16 +52,20 @@
 Unfilled break-glass credentials (tacctl stores none; put in your own): lab-admin (admin)
 === cisco / operator only
 ! --- Break-glass local users (scope: lab) ---
-! The 'local' method of 'aaa authentication login' above admits these only when no
+! The 'local' method of 'aaa authentication login' in Step 1 admits these only when no
 ! server answers.
+! The console's own list, CONSOLE, is local only: these accounts log in there whatever the server says,
+! at privilege 1 while a server answers (see the Notes under the configuration).
 ! tacctl stores no credential: replace <TYPE9-HASH> with the type 9 hash ($9$...) of a password
 ! you keep (the hash, not the password: 'secret 9' takes a hash as it appears in 'show running-config'),
 ! then remove the '! '.
 ! username lab-ops privilege 7 secret 9 <TYPE9-HASH>
 === cisco legacy / operator only
 ! --- Break-glass local users (scope: lab) ---
-! The 'local' method of 'aaa authentication login' above admits these only when no
+! The 'local' method of 'aaa authentication login' in Step 1 admits these only when no
 ! server answers.
+! The console's own list, CONSOLE, is local only: these accounts log in there whatever the server says,
+! at privilege 1 while a server answers (see the Notes under the configuration).
 ! tacctl stores no credential: replace <HASH> with the type 5 hash ($1$...) of a password you keep,
 ! then remove the '! '. (IOS 12.x has no type 9.)
 ! username lab-ops privilege 7 secret 5 <HASH>
@@ -78,16 +86,20 @@ Unfilled break-glass credentials (tacctl stores none; put in your own): lab-admi
 Unfilled break-glass credentials (tacctl stores none; put in your own): lab-ops (operator)
 === cisco / readonly only
 ! --- Break-glass local users (scope: lab) ---
-! The 'local' method of 'aaa authentication login' above admits these only when no
+! The 'local' method of 'aaa authentication login' in Step 1 admits these only when no
 ! server answers.
+! The console's own list, CONSOLE, is local only: these accounts log in there whatever the server says,
+! at privilege 1 while a server answers (see the Notes under the configuration).
 ! tacctl stores no credential: replace <TYPE9-HASH> with the type 9 hash ($9$...) of a password
 ! you keep (the hash, not the password: 'secret 9' takes a hash as it appears in 'show running-config'),
 ! then remove the '! '.
 ! username lab-ro privilege 1 secret 9 <TYPE9-HASH>
 === cisco legacy / readonly only
 ! --- Break-glass local users (scope: lab) ---
-! The 'local' method of 'aaa authentication login' above admits these only when no
+! The 'local' method of 'aaa authentication login' in Step 1 admits these only when no
 ! server answers.
+! The console's own list, CONSOLE, is local only: these accounts log in there whatever the server says,
+! at privilege 1 while a server answers (see the Notes under the configuration).
 ! tacctl stores no credential: replace <HASH> with the type 5 hash ($1$...) of a password you keep,
 ! then remove the '! '. (IOS 12.x has no type 9.)
 ! username lab-ro privilege 1 secret 5 <HASH>
@@ -108,8 +120,10 @@ Unfilled break-glass credentials (tacctl stores none; put in your own): lab-ops 
 Unfilled break-glass credentials (tacctl stores none; put in your own): lab-ro (readonly)
 === cisco / several
 ! --- Break-glass local users (scope: lab) ---
-! The 'local' method of 'aaa authentication login' above admits these only when no
+! The 'local' method of 'aaa authentication login' in Step 1 admits these only when no
 ! server answers.
+! The console's own list, CONSOLE, is local only: these accounts log in there whatever the server says,
+! at privilege 1 while a server answers (see the Notes under the configuration).
 ! tacctl stores no credential: replace <TYPE9-HASH> with the type 9 hash ($9$...) of a password
 ! you keep (the hash, not the password: 'secret 9' takes a hash as it appears in 'show running-config'),
 ! then remove the '! '.
@@ -118,8 +132,10 @@ Unfilled break-glass credentials (tacctl stores none; put in your own): lab-ro (
 ! username lab-ro privilege 1 secret 9 <TYPE9-HASH>
 === cisco legacy / several
 ! --- Break-glass local users (scope: lab) ---
-! The 'local' method of 'aaa authentication login' above admits these only when no
+! The 'local' method of 'aaa authentication login' in Step 1 admits these only when no
 ! server answers.
+! The console's own list, CONSOLE, is local only: these accounts log in there whatever the server says,
+! at privilege 1 while a server answers (see the Notes under the configuration).
 ! tacctl stores no credential: replace <HASH> with the type 5 hash ($1$...) of a password you keep,
 ! then remove the '! '. (IOS 12.x has no type 9.)
 ! username lab-admin privilege 15 secret 5 <HASH>
@@ -147,7 +163,9 @@ Unfilled break-glass credentials (tacctl stores none; put in your own): lab-admi
 === cisco / local-first
 ! --- Break-glass local users (scope: lab) ---
 ! The scope's aaa-order is local-first: the 'local' method of 'aaa authentication login'
-! above tries these accounts before the server.
+! in Step 1 tries these accounts before the server.
+! The console's own list, CONSOLE, is local only: these accounts log in there whatever the server says,
+! at privilege 1 while a server answers (see the Notes under the configuration).
 ! tacctl stores no credential: replace <TYPE9-HASH> with the type 9 hash ($9$...) of a password
 ! you keep (the hash, not the password: 'secret 9' takes a hash as it appears in 'show running-config'),
 ! then remove the '! '.

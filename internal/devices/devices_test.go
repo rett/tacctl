@@ -405,7 +405,7 @@ func TestRenderOverride(t *testing.T) {
 	}
 	// The ACL block: IPv4 only, as wildcards.
 	vars := CiscoVars(Request{Vendor: "cisco", Scope: "lab", Protocol: TACACS}, d)
-	if vars["VTY_ACL_BLOCK"] != "ip access-list standard VTY-ACL\n  remark Managed by tacctl — edit with 'tacctl config mgmt-acl'\n  permit 192.0.2.1 0.0.0.0\n  permit 10.0.0.0 0.255.255.255\n  deny   any log" ||
+	if vars["VTY_ACL_BLOCK"] != "ip access-list standard VTY-ACL\n  remark Managed by tacctl - edit with 'tacctl config mgmt-acl'\n  permit 192.0.2.1 0.0.0.0\n  permit 10.0.0.0 0.255.255.255\n  deny   any log" ||
 		vars["VTY_ACCESS_CLASS"] != "  access-class VTY-ACL in" {
 		t.Errorf("%q %q", vars["VTY_ACL_BLOCK"], vars["VTY_ACCESS_CLASS"])
 	}

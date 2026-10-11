@@ -290,9 +290,11 @@ func TestJunosBackoutRestoresTermOrder(t *testing.T) {
 func TestStatusIsNeverConsistentWithFindings(t *testing.T) {
 	want := map[string]string{
 		"juniper.synthetic-lab-engineer": StatusLeftAlone,
-		"cisco.xe-reference-16":          StatusLeftAlone,
-		"cisco.reference-12x":            StatusConsistent,
-		"juniper.synthetic-lab":          StatusNeedsChange,
+		// before the standard block the RADIUS device had only extras: the
+		// CONSOLE list, 'enable' and the session id are missing now, and fixed
+		"cisco.xe-reference-16": StatusNeedsChange,
+		"cisco.reference-12x":   StatusConsistent,
+		"juniper.synthetic-lab": StatusNeedsChange,
 	}
 	seen := 0
 	for _, gc := range goldenCases(t) {
@@ -528,8 +530,10 @@ func wantRemoval(t *testing.T, d Delta, what string, lines []string) {
 	t.Errorf("no extra for %q: %+v", what, d.Extras)
 }
 
-// M4: AAA in front of the local database with no local user at privilege 15
-// is a warning and an ACCESS finding.
+// M4, D118 (0): AAA turned on in front of the local database of a device
+// with no local user at privilege 15 is refused for the aaa unit (no region
+// line of it: add the break-glass user first); a device that already runs
+// AAA gets the D106 warning and an ACCESS finding instead.
 func TestNoLocalUserAtPrivilege15IsAFinding(t *testing.T) {
 	has := func(d Delta) (warn, item bool) {
 		for _, w := range d.Warnings {
@@ -544,28 +548,52 @@ func TestNoLocalUserAtPrivilege15IsAFinding(t *testing.T) {
 		}
 		return
 	}
-	// a device with no username at all that gets 'aaa new-model'
+	noUsers := func(c *IOSConfig) {
+		for i := range c.blocks {
+			if strings.HasPrefix(c.blocks[i].lines[0], "username ") {
+				c.blocks[i].lines[0] = "!"
+			}
+		}
+	}
+	refused := func(t *testing.T, d Delta, what string) {
+		t.Helper()
+		st := d.Of("aaa")
+		if st.State != StateSkipped || st.Kind != KindRefused ||
+			!strings.Contains(st.Why, "add the break-glass user first (walkthrough Step 0), then plan again") {
+			t.Errorf("%s: the aaa unit is %+v", what, st)
+		}
+		if n := len(lines(d, "aaa")); n != 0 {
+			t.Errorf("%s: a refused unit has %d lines", what, n)
+		}
+		if d.Of("roles").State != StatePlanned {
+			t.Errorf("%s: the rest of the plan must stand", what)
+		}
+	}
+	// a device with no username at all that would get 'aaa new-model'
 	f := fixtureNamed(t, "cisco.reference-bare")
-	d := planI(t, f, nil, Options{})
-	if w, i := has(d); !w || !i {
-		t.Errorf("no warning (%v) or finding (%v) for a device with no local user:\n%s", w, i, Block(d, f.header(), Wrapper{}))
-	}
+	refused(t, planI(t, f, noUsers, Options{}), "no user")
 	// the same device with a user at privilege 1 only
-	d = planI(t, f, func(c *IOSConfig) {
+	refused(t, planI(t, f, func(c *IOSConfig) {
+		noUsers(c)
 		c.typeGlobal("username helper privilege 1 secret 5 $1$exam$EXAMPLEHASHEXAMPLEHASH")
-	}, Options{})
-	if w, i := has(d); !w || !i {
-		t.Errorf("a privilege 1 user is taken for a way in: %v %v", w, i)
-	}
-	// with a privilege 15 user: nothing
-	d = planI(t, f, func(c *IOSConfig) {
+	}, Options{}), "a privilege 1 user")
+	// with a privilege 15 user: nothing, planned
+	d := planI(t, f, func(c *IOSConfig) {
+		noUsers(c)
 		c.typeGlobal("username helper privilege 15 secret 5 $1$exam$EXAMPLEHASHEXAMPLEHASH")
 	}, Options{})
-	if w, i := has(d); w || i {
-		t.Errorf("a warning (%v) or finding (%v) with a privilege 15 user", w, i)
+	if w, i := has(d); w || i || d.Of("aaa").State != StatePlanned {
+		t.Errorf("a warning (%v) or finding (%v) with a privilege 15 user: %+v", w, i, d.Of("aaa"))
+	}
+	// AAA already on and no local user: the warning of D106, the finding, the
+	// unit planned
+	lab := fixtureNamed(t, "cisco.reference-lab")
+	d = planI(t, lab, noUsers, Options{})
+	if w, i := has(d); !w || !i || d.Of("aaa").State != StatePlanned {
+		t.Errorf("AAA on, no local user: warning %v finding %v unit %+v", w, i, d.Of("aaa"))
 	}
 	// the fixtures that have one
-	for _, name := range []string{"cisco.reference-lab", "cisco.reference-12x", "cisco.real-12.4-7200", "cisco.xe-reference-16"} {
+	for _, name := range []string{"cisco.reference-lab", "cisco.reference-12x", "cisco.real-12.4-7200", "cisco.xe-reference-16", "cisco.reference-bare"} {
 		df := planI(t, fixtureNamed(t, name), nil, Options{})
 		if w, i := has(df); w || i {
 			t.Errorf("%s: a warning (%v) or finding (%v) for a device with a local user", name, w, i)

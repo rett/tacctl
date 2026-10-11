@@ -364,6 +364,7 @@ var manKeyDocs = map[string]struct{ verb, desc string }{
 	"exec_timeout.<scope>":                 {setWith("scope exec-timeout"), "Idle-session timeout in minutes the scope's device configurations set; 0: never."},
 	"tacacs_group.<scope>":                 {setWith("scope tacacs-group"), "The label of the Cisco aaa group server tacacs+ the scope's configuration names."},
 	"radius_group.<scope>":                 {setWith("scope radius-group"), "The label of the Cisco aaa group server radius the scope's configuration names."},
+	"cisco.source_interface.<scope>":       {setWith("config cisco source-interface"), "The interface the scope's Cisco devices source their TACACS+ and RADIUS requests from (ip tacacs source-interface, ip radius source-interface); unset: the standard renders and compares no such line, and the walkthrough prints it commented."},
 	"scope_auth_method.<scope>":            {setWith("scope auth-method"), "The protocol the scope's device configurations, new hosts and Linux scripts use when a command names none; unset: not decided (the scope's protocols filter, then the global default)."},
 	"scope_mgmt_acl.names.cisco.<scope>":   {setWith("scope mgmt-acl"), "The scope's own ACL name, in place of mgmt_acl.names.cisco."},
 	"scope_mgmt_acl.names.juniper.<scope>": {setWith("scope mgmt-acl"), "The scope's own filter name, in place of mgmt_acl.names.juniper."},
@@ -394,7 +395,8 @@ var manKeyDefaults = map[string]string{
 var manPlaceholders = map[string]string{
 	"privileges.": "<group>", "commands.": "<group>", "wti_level.": "<group>", "tier.": "<group>",
 	"aaa.order.": "<scope>", "exec_timeout.": "<scope>", "tacacs_group.": "<scope>", "radius_group.": "<scope>",
-	"scope_auth_method.": "<scope>", "scope_mgmt_acl.names.cisco.": "<scope>",
+	"cisco.source_interface.": "<scope>",
+	"scope_auth_method.":      "<scope>", "scope_mgmt_acl.names.cisco.": "<scope>",
 	"scope_mgmt_acl.names.juniper.": "<scope>", "scope_mgmt_acl.permits.": "<scope>",
 }
 
@@ -415,6 +417,8 @@ func manTypeText(r conf.Rule) string {
 		return "one of " + strings.Join(r.Values, ", ")
 	case conf.TypeACLName:
 		return "name of 1 to 63 characters (a letter, then letters, digits, _ or -)"
+	case conf.TypeInterfaceName:
+		return "interface name in the long form IOS prints (" + strings.Join(conf.InterfaceTypes, ", ") + ", then the number, with / . : separators), such as Loopback0 or GigabitEthernet0/0; not an abbreviation such as lo0"
 	case conf.TypeCIDRList:
 		return "list of CIDRs"
 	case conf.TypeHostPort:

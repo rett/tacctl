@@ -8,10 +8,12 @@
 | aaa group server radius LAB-RADIUS
 |   server name RADIUS
 | aaa authentication login default local group LAB-RADIUS
+| aaa authentication login CONSOLE local
 | aaa authorization exec default local group LAB-RADIUS if-authenticated
 | aaa accounting exec default start-stop group LAB-RADIUS
+| aaa session-id common
 | line con 0
-|   login authentication default
+|   login authentication CONSOLE
 | line vty 0 15
 |   login authentication default
 [roles]
@@ -27,7 +29,7 @@
 | privilege exec level 7 undebug all
 [mgmt-acl]
 | ip access-list standard VTY-ACL
-|   remark Managed by tacctl — edit with 'tacctl config mgmt-acl'
+|   remark Managed by tacctl - edit with 'tacctl config mgmt-acl'
 |   permit 10.0.0.42 0.0.0.0
 |   permit 198.51.100.0 0.0.0.255
 |   permit 192.0.2.0 0.0.0.255

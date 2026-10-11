@@ -8,20 +8,23 @@
 | aaa group server tacacs+ LAB-TACACS
 |   server name TACACS
 | aaa authentication login default local group LAB-TACACS
+| aaa authentication login CONSOLE local
 | aaa authorization exec default local group LAB-TACACS if-authenticated
+| aaa authentication enable default group LAB-TACACS enable
 | aaa accounting exec default start-stop group LAB-TACACS
 | aaa accounting commands 1 default start-stop group LAB-TACACS
 | aaa accounting commands 5 default start-stop group LAB-TACACS
 | aaa accounting commands 7 default start-stop group LAB-TACACS
 | aaa accounting commands 15 default start-stop group LAB-TACACS
+| aaa session-id common
+| line con 0
+|   login authentication CONSOLE
+| line vty 0 15
+|   login authentication default
 | aaa authorization commands 1 default local group LAB-TACACS
 | aaa authorization commands 7 default local group LAB-TACACS
 | aaa authorization commands 15 default local group LAB-TACACS
 | aaa authorization config-commands
-| line con 0
-|   login authentication default
-| line vty 0 15
-|   login authentication default
 [roles]
 | privilege exec level 1 show running-config
 | privilege exec all level 7 ping
@@ -35,7 +38,7 @@
 | privilege exec level 7 undebug all
 [mgmt-acl]
 | ip access-list standard VTY-ACL
-|   remark Managed by tacctl — edit with 'tacctl config mgmt-acl'
+|   remark Managed by tacctl - edit with 'tacctl config mgmt-acl'
 |   permit 10.0.0.42 0.0.0.0
 |   permit 198.51.100.0 0.0.0.255
 |   permit 192.0.2.0 0.0.0.255

@@ -125,7 +125,14 @@ var engineerRowCases = map[string]engineerRow{
 	"device config": {cases: append(cases("device config", "device config show lab-sw"),
 		refusedCase("Device 'prod-sw' not found", "device config show prod-sw"),
 		refusedCase("enrolled Linux host", "device config show web1"))},
-	"config cisco": {cases: append(cases("config cisco --scope lab", "config cisco --scope lab --staging 192.168.1.50"),
+	// The source interface (0.2.5, D119) is a setting of tacctl.yaml: an
+	// engineer reads their own scopes' and changes nothing.
+	"config cisco": {cases: append(cases("config cisco --scope lab", "config cisco --scope lab --staging 192.168.1.50",
+		"config cisco source-interface", "config cisco source-interface lab"),
+		refusedCase("Setting it is the superuser's", "config cisco source-interface lab Loopback0"),
+		refusedCase("Setting it is the superuser's", "config cisco source-interface lab none"),
+		refusedCase("Scope 'prod' does not exist", "config cisco source-interface prod"),
+		refusedCase("Scope 'prod' does not exist", "config cisco source-interface prod Loopback0"),
 		refusedCase("Scope 'prod' is not one of yours", "config cisco --scope prod"),
 		refusedCase("not found", "config cisco --scope lab --staging 192.168.2.50 --name prod-sw"),
 		refusedCase("is not available for staging", "config cisco --scope lab --staging 100.64.0.5"),

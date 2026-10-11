@@ -7,11 +7,14 @@
 = radius server RADIUS > retransmit 2
 = aaa group server radius LAB-RADIUS > server name RADIUS
 = aaa authentication login default local group LAB-RADIUS
+- aaa authentication login CONSOLE local
 = aaa authorization exec default local group LAB-RADIUS if-authenticated
 = aaa accounting exec default start-stop group LAB-RADIUS
-= line con 0 > login authentication default
+- aaa session-id common
+- line con 0 > login authentication CONSOLE
 = line vty 0 15 > login authentication default
 + aaa server radius dynamic-author > client 192.0.2.7 server-key (present, not compared)
++ line con 0 > login authentication default
 note: no enable secret on the device: with AAA on and the server unreachable, a local user with privilege 15 is the only way to level 15
 [roles] ok
 = privilege exec level 1 show running-config

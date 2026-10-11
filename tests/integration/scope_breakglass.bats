@@ -179,8 +179,9 @@ walk() {
     assert_output --partial $'\n! username lab-admin privilege 15 secret 9 <TYPE9-HASH>\n'
     assert_output --partial $'\n! username lab-ops privilege 7 secret 9 <TYPE9-HASH>\n'
     assert_output --partial $'\n! username lab-ro privilege 1 secret 9 <TYPE9-HASH>\n'
-    # 'algorithm-type scrypt secret' takes a plaintext password: never rendered.
-    refute_output --partial "algorithm-type"
+    # 'algorithm-type scrypt secret' takes a plaintext password: never on an
+    # account line (Step 0's local enable secret is the one place it is).
+    refute_output --regexp 'username .*algorithm-type'
     assert_output --partial "Unfilled break-glass credentials (tacctl stores none; put in your own): lab-admin (admin), lab-ops (operator), lab-ro (readonly)"
     refute_output --partial "prod-admin"
     refute_line --regexp '^username '

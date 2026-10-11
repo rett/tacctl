@@ -89,7 +89,14 @@ func checkConverges(t *testing.T, f fixture, exp []devices.Section, raw string, 
 		}
 	}
 	withheld := map[string]bool{}
+	// D118 (12): command authorization the plan holds back until the
+	// server is proven; the second plan of the result emits exactly these
+	held := map[string]bool{}
 	for _, w := range d.Withheld {
+		if r, ok := strings.CutPrefix(w, cmdAuthWithheldPrefix); ok {
+			held[r] = true
+		}
+		w = strings.TrimPrefix(w, cmdAuthWithheldPrefix)
 		w = strings.TrimPrefix(w, "the access-class binding: ")
 		w = strings.TrimPrefix(w, "the login method of lines the record does not show: ")
 		withheld[strings.TrimSuffix(w, " "+secretMark)] = true
@@ -137,12 +144,37 @@ func checkConverges(t *testing.T, f fixture, exp []devices.Section, raw string, 
 		// a section refused for a statement of a group is not converged
 		return len(d.Lines)
 	}
+	var step2 []Line
 	for _, l := range d2.Lines {
 		if d.Vendor == devconf.FamilyJunos && l.Op == OpDelete && l.Secret && unattributed[strings.TrimPrefix(l.Elided, "delete ")] {
 			continue // a leaf of another community (the name is not compared)
 		}
+		if l.Late && held[l.Text] {
+			step2 = append(step2, l) // the held command authorization, now proven
+			continue
+		}
 		t.Errorf("%s %s: the plan of the result is not empty: %s\n%s\n--- first\n%s", f.name, label, l.Shown(), d2.Display(), d.Display())
 		break
+	}
+	if len(step2) > 0 {
+		// the second paste types them and the device is then consistent
+		c2 := ParseIOS(after)
+		if err := c2.Apply(d2.Lines); err != nil {
+			t.Fatalf("%s %s: apply the second plan: %v", f.name, label, err)
+		}
+		ex3, err := devconf.Extract(f.vendor, c2.Text(), exp...)
+		if err != nil {
+			t.Fatalf("%s %s: extract after the second plan: %v", f.name, label, err)
+		}
+		ex3.SecretsVisible = ex.SecretsVisible
+		d3, err := Plan(f.vendor, exp, ex3, ex3, opt2)
+		if err != nil {
+			t.Fatalf("%s %s: third plan: %v", f.name, label, err)
+		}
+		held3 := slices.ContainsFunc(d3.Withheld, func(w string) bool { return strings.HasPrefix(w, cmdAuthWithheldPrefix) })
+		if len(d3.Lines) > 0 || held3 {
+			t.Errorf("%s %s: the plan after the held lines were typed is not empty:\n%s", f.name, label, d3.Display())
+		}
 	}
 	return len(d.Lines)
 }
@@ -334,6 +366,16 @@ func iosPool(exp []devices.Section) []string {
 		"line vty 0 4\n login local",
 		"line vty 5 15\n login authentication OTHER",
 		"line con 0\n login local",
+		// the standard block (D116-D118): another console list, another
+		// enable list, a session id mode, a source interface, the old server
+		// form beside the named block
+		"line con 0\n login authentication default",
+		"aaa authentication login CONSOLE group " + grp + " local",
+		"aaa authentication login OTHER-LIST local",
+		"aaa authentication enable default enable",
+		"aaa session-id unique",
+		"ip tacacs source-interface Loopback9",
+		"tacacs-server host 192.0.2.10 single-connection timeout 5 key 7 0822455D0A16",
 		"snmp-server chassis-id",
 		"privilege configure level 7 snmp-server",
 		"privilege interface level 7 shutdown",
@@ -390,6 +432,12 @@ func mutateIOS(raw string, exp []devices.Section, r *rand.Rand) (string, string)
 		case 2, 3:
 			p := pool[r.Intn(len(pool))]
 			what = append(what, "add "+strings.ReplaceAll(p, "\n", " / "))
+			// a method list and a line's 'login authentication' exist only
+			// on a device that has 'aaa new-model' (the simulator refuses the
+			// rest)
+			if (strings.HasPrefix(p, "aaa ") || strings.Contains(p, "login authentication")) && c.blockFor("aaa new-model") == nil {
+				c.typeGlobal("aaa new-model")
+			}
 			var hdr *iosBlk
 			for _, l := range strings.Split(p, "\n") {
 				if strings.HasPrefix(l, " ") {

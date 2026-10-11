@@ -15,10 +15,10 @@
     {
       "n": 1,
       "kind": "missing",
-      "severity": "COSMETIC",
+      "severity": "ACCESS",
       "section": "aaa",
-      "what": "accounting of commands 15",
-      "statement": "aaa accounting commands 15 default start-stop group LAB-TACACS",
+      "what": "the console's own login list CONSOLE (local only, so a local user always gets in there)",
+      "statement": "aaa authentication login CONSOLE local",
       "action": "Fixed by region line 3.",
       "fixed": true,
       "region_lines": [
@@ -27,6 +27,45 @@
     },
     {
       "n": 2,
+      "kind": "missing",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "the 'enable' list (it asks the server first, so nobody needs a shared enable password)",
+      "statement": "aaa authentication enable default group LAB-TACACS enable",
+      "action": "Fixed by region line 4.",
+      "fixed": true,
+      "region_lines": [
+        4
+      ]
+    },
+    {
+      "n": 3,
+      "kind": "missing",
+      "severity": "COSMETIC",
+      "section": "aaa",
+      "what": "accounting of commands 15",
+      "statement": "aaa accounting commands 15 default start-stop group LAB-TACACS",
+      "action": "Fixed by region line 5.",
+      "fixed": true,
+      "region_lines": [
+        5
+      ]
+    },
+    {
+      "n": 4,
+      "kind": "different",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "the login method of line con 0: login authentication CONSOLE (the device has: the login method of line con 0: login authentication default)",
+      "statement": "line con 0 \u003e login authentication CONSOLE",
+      "action": "Fixed by region line 8.",
+      "fixed": true,
+      "region_lines": [
+        8
+      ]
+    },
+    {
+      "n": 5,
       "kind": "extra",
       "severity": "MONITORING",
       "section": "snmp",
@@ -36,7 +75,7 @@
       "fixed": false
     },
     {
-      "n": 3,
+      "n": 6,
       "kind": "extra",
       "severity": "MONITORING",
       "section": "snmp",
@@ -46,7 +85,7 @@
       "fixed": false
     },
     {
-      "n": 4,
+      "n": 7,
       "kind": "extra",
       "severity": "MONITORING",
       "section": "snmp",
@@ -59,7 +98,12 @@
   "region": [
     "configure terminal",
     "! aaa: the method lists tacctl renders, each replaced by the rendered line",
+    "aaa authentication login CONSOLE local",
+    "aaa authentication enable default group LAB-TACACS enable",
     "aaa accounting commands 15 default start-stop group LAB-TACACS",
+    "! aaa: the login method of the console and vty lines",
+    "line con 0",
+    " login authentication CONSOLE",
     "end"
   ],
   "after": [
@@ -80,7 +124,11 @@
   "backout": [
     "configure terminal",
     "! back-out: the lines as the pull showed them",
+    "line con 0",
+    " login authentication default",
     "no aaa accounting commands 15 default start-stop group LAB-TACACS",
+    "no aaa authentication enable default group LAB-TACACS enable",
+    "no aaa authentication login CONSOLE local",
     "end"
   ],
   "left": {

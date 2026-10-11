@@ -79,11 +79,23 @@ func iosBackout(d Delta) []Line {
 		return strings.HasPrefix(l.Text, "aaa ") && len(l.Context) == 0 || len(l.Context) > 0 && strings.HasPrefix(l.Context[0], "aaa ")
 	}
 	if d.AddsAAA {
-		push(Line{Op: OpNo, Text: "aaa new-model"})
 		var touched []string
+		// A leaf the paste typed on a line that had none (the console's
+		// CONSOLE list) is taken off first, while AAA is still on and the
+		// command is there to type: with AAA off a 'login authentication'
+		// is not a command of the line any more.
 		for i := len(d.Lines) - 1; i >= 0; i-- {
 			for _, u := range d.Lines[i].Undo {
-				if isLine(u) {
+				if isLine(u) && u.Op == OpNo {
+					push(u)
+					touched = append(touched, u.Context[0])
+				}
+			}
+		}
+		push(Line{Op: OpNo, Text: "aaa new-model"})
+		for i := len(d.Lines) - 1; i >= 0; i-- {
+			for _, u := range d.Lines[i].Undo {
+				if isLine(u) && u.Op != OpNo {
 					push(u)
 					touched = append(touched, u.Context[0])
 				}
@@ -143,16 +155,22 @@ func iosRegion(d Delta) []RegionLine {
 	var c iosCursor
 	for i, l := range d.Lines {
 		sec := l.Section
-		if l.Late {
+		switch {
+		case l.Late:
 			sec = "late"
+		case l.Leaf:
+			sec = "leaf"
 		}
 		if sec != cur {
 			cur = sec
 			c = iosCursor{}
 			label := ""
-			if l.Late {
+			switch {
+			case l.Late:
 				label = "! aaa: command authorization, last on purpose"
-			} else {
+			case l.Leaf:
+				label = "! aaa: the login method of the console and vty lines"
+			default:
 				why, _, _ := strings.Cut(d.Of(l.Section).Why, "; ")
 				if why == "" {
 					why = "the lines tacctl renders"

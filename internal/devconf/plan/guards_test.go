@@ -248,8 +248,11 @@ func TestIOSAAAUnitGuards(t *testing.T) {
 	if !known || len(leaves) != 1 || leaves[0] != (LoginLeaf{"line vty 0 4", "login local"}) {
 		t.Errorf("login leaves %v known %v", leaves, known)
 	}
-	// one unit: new-model first, exec directly after authentication, the
-	// login method of the lines after the lists
+	// one unit in D118's order: new-model first (from there the vty lines use
+	// the default list), the server and the group, the login lists, exec
+	// authorization directly after them, 'enable', accounting, the session
+	// id; the login method of the lines after roles, snmp and mgmt-acl (the
+	// console first); command authorization last
 	d, err := Plan("cisco", exp, cur, cur, Options{Device: "rtr-lab-1", Syntax: SyntaxModern})
 	if err != nil {
 		t.Fatal(err)
@@ -258,33 +261,58 @@ func TestIOSAAAUnitGuards(t *testing.T) {
 		t.Fatalf("aaa: %+v", st)
 	}
 	ls := lines(d, "aaa")
-	i := slices.Index(ls, "aaa authentication login default local group LAB-TACACS")
-	if i < 0 || i+1 >= len(ls) || !strings.HasPrefix(ls[i+1], "aaa authorization exec default ") {
-		t.Errorf("authorization exec is not directly after authentication:\n%s", strings.Join(ls, "\n"))
+	i := slices.Index(ls, "aaa authentication login CONSOLE local")
+	if i < 1 || ls[i-1] != "aaa authentication login default local group LAB-TACACS" ||
+		i+1 >= len(ls) || !strings.HasPrefix(ls[i+1], "aaa authorization exec default ") {
+		t.Errorf("authorization exec does not follow the login lists:\n%s", strings.Join(ls, "\n"))
 	}
-	if ls[0] != "aaa new-model" {
-		t.Errorf("the unit does not start with aaa new-model: %q", ls[0])
+	// B1: nothing under 'aaa' exists on IOS until 'aaa new-model' is set, so it
+	// is the first line, then the server block
+	if ls[0] != "aaa new-model" || ls[1] != "tacacs server TACACS > address ipv4 192.0.2.10" {
+		t.Errorf("the unit does not start with aaa new-model and the server block: %q, %q", ls[0], ls[1])
 	}
-	// HIGH 5: command authorization is the last of the whole block, after
-	// the login method of the lines
+	order := []string{"aaa new-model", "tacacs server TACACS > address ipv4 192.0.2.10",
+		"aaa group server tacacs+ LAB-TACACS > server name TACACS",
+		"aaa authentication login default local group LAB-TACACS", "aaa authentication login CONSOLE local",
+		"aaa authorization exec default local group LAB-TACACS if-authenticated",
+		"aaa authentication enable default group LAB-TACACS enable",
+		"aaa accounting exec default start-stop group LAB-TACACS", "aaa session-id common"}
+	last := -1
+	for _, want := range order {
+		at := slices.Index(ls, want)
+		if at <= last {
+			t.Errorf("%q is out of D118's order (at %d, after %d):\n%s", want, at, last, strings.Join(ls, "\n"))
+		}
+		last = at
+	}
+	// D118 (12): the device is bare, so its TACACS+ path is not proven and
+	// command authorization is not in the block at all; the login leaves are
+	// its last lines
 	iv := slices.Index(ls, "line vty 0 4 > login authentication default")
 	if iv < 0 {
 		t.Errorf("the explicit 'login local' on lines 0 to 4 is not replaced:\n%s", strings.Join(ls, "\n"))
 	}
+	for _, l := range d.Lines {
+		if lateAAA(l) || l.Late {
+			t.Errorf("command authorization is in the plan of a device whose server is not proven: %q", l.Text)
+		}
+	}
 	for _, l := range ls[iv+1:] {
-		if !strings.HasPrefix(l, "aaa authorization commands ") && l != "aaa authorization config-commands" {
-			t.Errorf("%q after the login leaf, before command authorization", l)
+		if !strings.HasSuffix(l, "> login authentication CONSOLE") && !strings.HasSuffix(l, "> login authentication default") {
+			t.Errorf("%q after the login leaves", l)
 		}
 	}
-	for _, l := range d.Lines[len(d.Lines)-3:] {
-		if !l.Late {
-			t.Errorf("the last lines of the block are not the late ones: %q", l.Text)
-		}
+	if slices.ContainsFunc(d.Warnings, func(w string) bool { return strings.Contains(w, "command authorization") }) {
+		t.Errorf("a warning about command authorization in a plan that has none: %v", d.Warnings)
 	}
-	if !slices.ContainsFunc(d.Warnings, func(w string) bool { return strings.Contains(w, "command authorization") }) {
-		t.Errorf("no warning about command authorization: %v", d.Warnings)
+	if !slices.ContainsFunc(d.Withheld, func(w string) bool {
+		return w == cmdAuthWithheldPrefix+"aaa authorization config-commands"
+	}) {
+		t.Errorf("the held lines are not named: %v", d.Withheld)
 	}
-	noLine(t, d, "aaa", "line con 0")
+	// the console has no leaf and the default list is not CONSOLE (D107): its
+	// leaf is typed, under the header the device has, with the vty leaf
+	wantLine(t, d, "aaa", "line con 0 > login authentication CONSOLE")
 	if !d.AddsAAA || len(d.Login) != 1 {
 		t.Errorf("AddsAAA %v login %v", d.AddsAAA, d.Login)
 	}
@@ -302,9 +330,11 @@ func TestIOSAAAUnitGuards(t *testing.T) {
 		}
 		got = append(got, s)
 	}
-	want := []string{"no aaa new-model", "line vty 0 4 > login local"}
-	if !slices.Equal(got[:2], want) {
-		t.Errorf("the back-out starts %q, want %q", got[:2], want)
+	// the console's leaf is taken off while AAA is on (with AAA off the
+	// command is not there), then no aaa new-model, then the vty method
+	want := []string{"line con 0 > no login authentication CONSOLE", "no aaa new-model", "line vty 0 4 > login local"}
+	if !slices.Equal(got[:3], want) {
+		t.Errorf("the back-out starts %q, want %q", got[:3], want)
 	}
 	// BLOCKER 2: never 'no line ...'
 	for _, l := range b {
@@ -396,7 +426,11 @@ func TestIOSAAAUnitGuards(t *testing.T) {
 func TestIOSLoginLeavesInThePlan(t *testing.T) {
 	f := fixtureNamed(t, "cisco.reference-lab") // AAA on, the lines have no leaf: implicit default
 	d := planI(t, f, nil, Options{})
-	noLine(t, d, "aaa", "login")
+	// the vty lines on the implicit default list need nothing; the console is
+	// on it too, which is not its CONSOLE list: the list and the leaf are typed
+	wantLine(t, d, "aaa", "aaa authentication login CONSOLE local")
+	wantLine(t, d, "aaa", "line con 0 > login authentication CONSOLE")
+	noLine(t, d, "aaa", "line vty")
 	// an explicit 'login local' on a range is replaced; the back-out types it again
 	d = planI(t, f, func(c *IOSConfig) {
 		blk := c.blockFor("line vty 0 4")
@@ -639,7 +673,7 @@ func TestEditors(t *testing.T) {
 		t.Errorf("insert of an absent term is not an error")
 	}
 
-	i := ParseIOS("hostname r\n!\naaa authentication login default local\nip access-list standard A\n 10 permit host 192.0.2.1\n 20 deny   any\n!\nend\n")
+	i := ParseIOS("hostname r\n!\naaa new-model\naaa authentication login default local\nip access-list standard A\n 10 permit host 192.0.2.1\n 20 deny   any\n!\nend\n")
 	err = i.Apply([]Line{
 		{Op: OpLine, Text: "aaa authentication login default group G local"},
 		{Op: OpLine, Context: []string{"ip access-list standard A"}, Text: "permit 192.0.2.9"},
@@ -649,7 +683,7 @@ func TestEditors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantI := "hostname r\n!\naaa authentication login default group G local\nip access-list standard A\n 20 deny   any\n permit 192.0.2.9\n!\ntacacs server T\n address ipv4 192.0.2.10\nend\n"
+	wantI := "hostname r\n!\naaa new-model\naaa authentication login default group G local\nip access-list standard A\n 20 deny   any\n permit 192.0.2.9\n!\ntacacs server T\n address ipv4 192.0.2.10\nend\n"
 	if got := i.Text(); got != wantI {
 		t.Errorf("ios editor:\n%s\nwant\n%s", got, wantI)
 	}

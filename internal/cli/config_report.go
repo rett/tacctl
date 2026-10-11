@@ -114,6 +114,22 @@ func (inv *invocation) configShow([]string) error {
 	inv.echoE("    Cisco ACL:          " + cisco)
 	inv.echoE("    Juniper filter:     " + juniper)
 
+	// The interface a scope's Cisco devices source their server requests
+	// from (D119): listed when a scope sets one; unset renders nothing.
+	var sources []string
+	for _, s := range m.ScopeNames() {
+		if v, _ := cfg.Get(ciscoSourceInterfaceKey(s), ""); v != "" {
+			sources = append(sources, "    "+s+": "+v)
+		}
+	}
+	if len(sources) > 0 {
+		inv.echo("")
+		inv.echoE("  " + B + "Cisco source interface (per scope):" + NC)
+		for _, l := range sources {
+			inv.echoE(l)
+		}
+	}
+
 	inv.echo("")
 	inv.echoE("  " + B + "Connection Filters:" + NC + " " + C + "(deny takes precedence over allow)" + NC)
 	if cs["deny"] != "" {

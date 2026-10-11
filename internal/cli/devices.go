@@ -44,6 +44,9 @@ func deviceSpec(vendor string) Spec {
 	}
 	if vendor == "cisco" {
 		flags = append(flags, Flag{Names: []string{"--legacy"}})
+		// 'config cisco source-interface [<scope> [<interface>|none]]': the
+		// scope is the second word
+		return Spec{Flags: flags, MaxArgs: 3, Args: []string{"", KindScopes, ""}}
 	}
 	return Spec{Flags: flags}
 }
@@ -88,6 +91,11 @@ func (inv *invocation) configDevice(vendor string, args []string) error {
 // walkthrough is the modern syntax as before.
 func (inv *invocation) configDeviceNote(vendor string, args []string, sink func(string)) (note string, _ error) {
 	a := inv.app
+	// 'config cisco source-interface ...' is the setting of D119, not a
+	// walkthrough.
+	if vendor == "cisco" && arg(args, 0) == "source-interface" {
+		return "", inv.configCiscoSourceInterface(args[1:])
+	}
 	usage := deviceUsage(vendor)
 	var scope, protocol, stagingIP, stagingName, server, sourceFlag, snmpLocation string
 	legacy := false

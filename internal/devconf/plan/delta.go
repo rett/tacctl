@@ -75,6 +75,10 @@ type Line struct {
 	// command authorization of the aaa unit, which must not be on while the
 	// rest is typed).
 	Late bool `json:"-"`
+	// Leaf marks the login method of a console or vty line (IOS), which the
+	// block types after roles, snmp and mgmt-acl and before the command
+	// authorization (D118 (9)).
+	Leaf bool `json:"-"`
 }
 
 // String is the line as Shown: a secret's value never reaches a %v or %s.
@@ -242,7 +246,9 @@ type Delta struct {
 	Unattributed []string
 	// Withheld are statements the plan did not emit because the caller's
 	// class cannot see their hierarchy (see Class), or because they are the
-	// operator's step (the IOS access-class binding), elided.
+	// operator's step (the IOS access-class binding), or because the
+	// device's TACACS+ path is not proven yet (the IOS command-authorization
+	// lines, D118 (12)), elided.
 	Withheld []string
 	// InheritanceChecked is false when no plain view was given: the plan
 	// then could not tell a group's statements from the device's own.
@@ -266,6 +272,10 @@ type Delta struct {
 	Backout []Line
 	// Class is the caller's class name when it limited the plan.
 	Class string
+	// ByHand are the steps a person types by hand, from the console, for a
+	// unit the plan refuses (D117: the legacy server form with command
+	// authorization); they are outside any region.
+	ByHand []string
 	// Items are the irregularities of the comparison, in plain words, in
 	// the order of the report (D110); Extras the statements left alone, each
 	// with the exact removal line (D111), so a cleanup region can be added.

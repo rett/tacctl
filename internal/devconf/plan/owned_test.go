@@ -414,6 +414,19 @@ var iosRowCases = map[string]rowCase{
 		noLine(t, d, "aaa", "no tacacs-server")
 		wantKept(t, d, "aaa", "tacacs-server host 192.0.2.77")
 	},
+	"ios.aaa.legacy-radius-host": func(t *testing.T) {
+		f := fixtureNamed(t, "cisco.xe-reference-16")
+		d := planI(t, f, func(c *IOSConfig) {
+			for i := range c.blocks {
+				if strings.HasPrefix(c.blocks[i].lines[0], "radius server ") {
+					c.blocks[i].lines = []string{"radius-server host 192.0.2.10 auth-port 1812 acct-port 1813 key 7 0822455D0A16"}
+				}
+			}
+			c.typeGlobal("radius-server host 192.0.2.77 key 7 0822455D0A16")
+		}, Options{Scope: "lab"})
+		wantLine(t, d, "aaa", "no radius-server host 192.0.2.10 auth-port 1812 acct-port 1813")
+		wantKept(t, d, "aaa", "radius-server host 192.0.2.77")
+	},
 	"ios.aaa.group": func(t *testing.T) {
 		f := fixtureNamed(t, "cisco.reference-lab")
 		d := planI(t, f, func(c *IOSConfig) {
@@ -427,6 +440,106 @@ var iosRowCases = map[string]rowCase{
 			typeChild(c.blockFor("aaa group server radius LAB-RADIUS"), []string{"aaa group server radius LAB-RADIUS"}, "server name OTHER")
 		}, Options{})
 		wantLine(t, d, "aaa", "aaa group server radius LAB-RADIUS > no server name OTHER")
+	},
+	"ios.aaa.console-list": func(t *testing.T) {
+		f := fixtureNamed(t, "cisco.reference-lab")
+		d := planI(t, f, func(c *IOSConfig) {
+			c.typeGlobal("aaa authentication login CONSOLE group LAB-TACACS local")
+			c.typeGlobal("aaa authentication login OTHER local")
+		}, Options{})
+		wantLine(t, d, "aaa", "aaa authentication login CONSOLE local")
+		noLine(t, d, "aaa", "no aaa authentication")
+		wantKept(t, d, "aaa", "aaa authentication login OTHER local")
+	},
+	"ios.aaa.enable-list": func(t *testing.T) {
+		f := fixtureNamed(t, "cisco.reference-lab")
+		d := planI(t, f, func(c *IOSConfig) {
+			c.typeGlobal("aaa authentication enable default enable")
+			c.typeGlobal("aaa authentication enable OTHER enable")
+		}, Options{})
+		wantLine(t, d, "aaa", "aaa authentication enable default group LAB-TACACS enable")
+		noLine(t, d, "aaa", "no aaa authentication enable")
+		wantKept(t, d, "aaa", "aaa authentication enable OTHER enable")
+	},
+	"ios.aaa.session-id": func(t *testing.T) {
+		f := fixtureNamed(t, "cisco.reference-lab")
+		d := planI(t, f, func(c *IOSConfig) {
+			c.noGlobal("aaa session-id common")
+			c.typeGlobal("aaa session-id unique")
+		}, Options{})
+		wantLine(t, d, "aaa", "aaa session-id common")
+		noLine(t, d, "aaa", "no aaa session-id")
+	},
+	"ios.aaa.source-interface": func(t *testing.T) {
+		f := fixtureNamed(t, "cisco.reference-lab")
+		// the scope sets one: a device's other interface is replaced in place
+		exp := expectedSections(t, f.expected)
+		for i := range exp {
+			if exp[i].Name == "aaa" {
+				exp[i].Lines = append(exp[i].Lines, "ip tacacs source-interface Loopback7")
+				exp[i].Secret = append(exp[i].Secret, false)
+			}
+		}
+		c := ParseIOS(capture(t, f.raw))
+		c.typeGlobal("ip tacacs source-interface Loopback9")
+		d := planText(t, f, exp, c.Text(), Options{})
+		wantLine(t, d, "aaa", "ip tacacs source-interface Loopback7")
+		noLine(t, d, "aaa", "no ip tacacs source-interface")
+		// the scope sets none: the device's own is not compared, not kept, not
+		// removed (the fixture's device has Loopback0)
+		d = planI(t, f, nil, Options{})
+		noLine(t, d, "aaa", "source-interface")
+		for _, k := range d.Kept {
+			if strings.Contains(k.Text, "source-interface") {
+				t.Errorf("the device's source interface is listed: %+v", k)
+			}
+		}
+	},
+	"ios.aaa.console-leaf": func(t *testing.T) {
+		f := fixtureNamed(t, "cisco.reference-lab")
+		// no explicit leaf: typed under the header the device has, taken off
+		// again by the back-out
+		d := planI(t, f, nil, Options{})
+		wantLine(t, d, "aaa", "line con 0 > login authentication CONSOLE")
+		// an explicit method is replaced, and typed again by the back-out
+		d = planI(t, f, func(c *IOSConfig) {
+			blk := c.blockFor("line con 0")
+			blk.lines = append(blk.lines, " login local")
+		}, Options{})
+		wantLine(t, d, "aaa", "line con 0 > login authentication CONSOLE")
+		var undo []string
+		for _, l := range d.Lines {
+			if l.Section == "aaa" && l.Text == "login authentication CONSOLE" {
+				for _, u := range l.Undo {
+					undo = append(undo, strings.Join(u.Context, " > ")+" > "+u.Text)
+				}
+			}
+		}
+		if !slices.Equal(undo, []string{"line con 0 > login local"}) {
+			t.Errorf("undo: %q", undo)
+		}
+		// the console's leaf is typed after roles, snmp and mgmt-acl
+		idx := func(section string) int {
+			return slices.IndexFunc(d.Lines, func(l Line) bool { return l.Section == section })
+		}
+		var at int
+		for i, l := range d.Lines {
+			if l.Leaf && l.Context[0] == "line con 0" {
+				at = i
+			}
+		}
+		if idx("roles") >= 0 && (at <= idx("roles") || at <= idx("snmp") || at <= idx("mgmt-acl")) {
+			t.Errorf("the console's leaf is not after roles, snmp and mgmt-acl:\n%s", d.Display())
+		}
+	},
+	"ios.aaa.vty-leaf": func(t *testing.T) {
+		f := fixtureNamed(t, "cisco.reference-lab")
+		d := planI(t, f, func(c *IOSConfig) {
+			blk := c.blockFor("line vty 0 4")
+			blk.lines = append(blk.lines, " login local")
+		}, Options{})
+		wantLine(t, d, "aaa", "line vty 0 4 > login authentication default")
+		noLine(t, d, "aaa", "line vty 0 15")
 	},
 	"ios.roles.privilege": func(t *testing.T) {
 		f := fixtureNamed(t, "cisco.reference-lab")

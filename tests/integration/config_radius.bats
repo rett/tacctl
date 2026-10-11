@@ -152,8 +152,8 @@ radius_listeners() {
     run "$TACCTL_BIN_SCRIPT" config cisco --scope lab --protocol radius
     assert_success
     local cfg summary
-    cfg="${output%%Group → Privilege Level Mapping*}"
-    summary="${output#*Group → Privilege Level Mapping}"
+    cfg="${output%%Group -> Privilege Level Mapping*}"
+    summary="${output#*Group -> Privilege Level Mapping}"
     [[ "$summary" == *"What RADIUS does not give you (compared with TACACS+)"* ]]
     [[ "$summary" == *"What an Access-Accept carries for this device:"* ]]
     [[ "$summary" == *"Service-Type: Administrative-User at privilege 15, else NAS-Prompt-User (always sent)"* ]]

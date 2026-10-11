@@ -5,9 +5,9 @@
 # Run: tests/diff/run.sh config
 @fixture tacquito.minimal.yaml
 
-@known 3.9 item 30: the config usage lists render --dry-run --out; 0.2.1 item 5: the config usage lists mgmt-acl cisco-name|juniper-name; 0.2.5 item 25: the --legacy option says it overrides the device's config-syntax
+@known 3.9 item 30: the config usage lists render --dry-run --out; 0.2.1 item 5: the config usage lists mgmt-acl cisco-name|juniper-name; 0.2.5 item 25: the --legacy option says it overrides the device's config-syntax; 0.2.5 item 33: the config usage lists cisco source-interface
 config
-@known 3.9 item 30: the config usage lists render --dry-run --out; 0.2.1 item 5: the config usage lists mgmt-acl cisco-name|juniper-name; 0.2.4 item 6: the config usage lists devices; 0.2.5 item 25: the --legacy option says it overrides the device's config-syntax
+@known 3.9 item 30: the config usage lists render --dry-run --out; 0.2.1 item 5: the config usage lists mgmt-acl cisco-name|juniper-name; 0.2.4 item 6: the config usage lists devices; 0.2.5 item 25: the --legacy option says it overrides the device's config-syntax; 0.2.5 item 33: the config usage lists cisco source-interface
 config bogus
 config show
 @known 0.2.3 item 78: config validate warns about a scope without a break-glass user
@@ -201,9 +201,9 @@ config diff ../../etc/passwd
 config restore nosuchid
 config restore ../../etc/passwd
 config restore a b
-@known 3.9 item 30: the config usage lists render --dry-run --out; 0.2.1 item 5: the config usage lists mgmt-acl cisco-name|juniper-name; 0.2.4 item 6: the config usage lists devices; 0.2.5 item 25: the --legacy option says it overrides the device's config-syntax
+@known 3.9 item 30: the config usage lists render --dry-run --out; 0.2.1 item 5: the config usage lists mgmt-acl cisco-name|juniper-name; 0.2.4 item 6: the config usage lists devices; 0.2.5 item 25: the --legacy option says it overrides the device's config-syntax; 0.2.5 item 33: the config usage lists cisco source-interface
 config frobnicate
-@known 3.9 item 30: the config usage lists render --dry-run --out; 0.2.1 item 5: the config usage lists mgmt-acl cisco-name|juniper-name; 0.2.4 item 6: the config usage lists devices; 0.2.5 item 25: the --legacy option says it overrides the device's config-syntax
+@known 3.9 item 30: the config usage lists render --dry-run --out; 0.2.1 item 5: the config usage lists mgmt-acl cisco-name|juniper-name; 0.2.4 item 6: the config usage lists devices; 0.2.5 item 25: the --legacy option says it overrides the device's config-syntax; 0.2.5 item 33: the config usage lists cisco source-interface
 config frobnicate extra
 config loglevel bogus
 config password-age abc

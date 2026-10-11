@@ -153,7 +153,7 @@ func TestScopeBreakGlassInWalkthroughs(t *testing.T) {
 	}{
 		{[]string{"config", "cisco", "--scope", "lab"},
 			[]string{"! username lab-admin privilege 15 secret 9 <TYPE9-HASH>\n", "! username lab-ops privilege 7 secret 9 <TYPE9-HASH>\n"},
-			[]string{"prod-ro", "algorithm-type", "scrypt"}, "lab-admin (admin), lab-ops (operator)"},
+			[]string{"prod-ro", "username lab-admin privilege 15 algorithm-type"}, "lab-admin (admin), lab-ops (operator)"},
 		{[]string{"config", "cisco", "--scope", "lab", "--legacy"},
 			[]string{"! username lab-admin privilege 15 secret 5 <HASH>\n"}, []string{"scrypt"}, "lab-admin (admin)"},
 		{[]string{"config", "juniper", "--scope", "lab"},

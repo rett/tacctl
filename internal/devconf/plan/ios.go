@@ -237,9 +237,15 @@ func iosKey(path []string) (string, bool) {
 				return strings.Join(leaf[:5], " "), true
 			case len(leaf) >= 4 && (leaf[1] == "authentication" || leaf[1] == "authorization" || leaf[1] == "accounting"):
 				return strings.Join(leaf[:4], " "), true
+			case leaf[1] == "session-id":
+				// one session id mode: 'common' replaces 'unique'
+				return "aaa session-id", true
 			}
+		case leaf[0] == "ip" && len(leaf) >= 3 && (leaf[1] == "tacacs" || leaf[1] == "radius") && leaf[2] == "source-interface":
+			// one source interface per protocol: a typed one replaces it
+			return "ip " + leaf[1] + " source-interface", true
 		case (leaf[0] == "tacacs-server" || leaf[0] == "radius-server") && len(leaf) >= 3 && leaf[1] == "host":
-			return strings.Join(leaf[:3], " "), true
+			return hostEntry(leaf), true
 		case leaf[0] == "snmp-server" && len(leaf) >= 2 && (leaf[1] == "location" || leaf[1] == "contact"):
 			return leaf[0] + " " + leaf[1], true
 		}
@@ -388,8 +394,26 @@ func (p *planner) iosSection(name string, r devconf.SectionResult) secOut {
 	var addLines []Line
 	var loginMissing []iosEntry
 	var loginLines []Line
+	// loginUsed marks the rendered leaves a device's explicit leaf replaced.
+	loginUsed := map[int]bool{}
+	// D117: the legacy server entries that sit at the address the named
+	// block takes (modern syntax only), which the region removes first when
+	// no command authorization is on, and which refuse the unit when it is.
+	var legacyAt map[string]bool
+	if name == "aaa" {
+		legacyAt = p.legacyHostsToReplace(missing)
+	}
+	cmdAuth := p.commandAuthActive()
+	// D118 (12): command authorization waits until the server is proven to
+	// this device.
+	holdCmdAuth := name == "aaa" && !p.serverProven()
+	var preNos []Line
 	for _, e := range missing {
 		path := e.path()
+		if holdCmdAuth && isCmdAuthStem(e.stem) {
+			o.withheld = append(o.withheld, cmdAuthWithheldPrefix+e.stem)
+			continue
+		}
 		if isACLHeader(path[0]) && st.acls[path[0]] {
 			continue // planned with its ACL
 		}
@@ -439,6 +463,18 @@ func (p *planner) iosSection(name string, r devconf.SectionResult) secOut {
 	}
 	for _, x := range extras {
 		path := strings.Split(x.stem, pathSep)
+		if legacyAt[x.stem] && (!cmdAuth || isRadiusHost(x.stem)) {
+			// D117: with no command authorization on, the old server entry
+			// goes first and the standard block follows in the same paste (the
+			// held second session is the guard); the back-out types the line
+			// again, its key to be put in by hand.
+			preNos = append(preNos, Line{Op: OpNo, Section: name, Text: hostEntry(strings.Fields(x.stem)), For: []string{x.stem},
+				Undo: []Line{{Op: OpComment, Text: "type again with its original secret: " + shownSecret(x.stem)}}})
+			if !p.inPlain(name, x.stem) {
+				o.inherited = append(o.inherited, x.stem)
+			}
+			continue
+		}
 		if isACLHeader(path[0]) {
 			if handled[path[0]] {
 				continue
@@ -459,6 +495,7 @@ func (p *planner) iosSection(name string, r devconf.SectionResult) secOut {
 				return within(path[0], e.path()[0])
 			})
 			if covered >= 0 {
+				loginUsed[covered] = true
 				if !p.inPlain(name, x.stem) {
 					o.inherited = append(o.inherited, x.stem)
 				}
@@ -525,9 +562,20 @@ func (p *planner) iosSection(name string, r devconf.SectionResult) secOut {
 	// A rendered login leaf that replaced nothing: the lines it names have no
 	// leaf (they are on the default list once 'aaa new-model' is on), or the
 	// device does not have them at all. Only the second is a finding.
-	for _, e := range loginMissing {
-		if !p.linesKnown(e.path()[0]) {
+	//
+	// The console is the exception (D107): it is never implicit. A device
+	// whose console has no explicit leaf uses the default list once 'aaa
+	// new-model' is on, which is not the standard's CONSOLE list, so the
+	// leaf is typed under the console header the device always has.
+	for i, e := range loginMissing {
+		header := e.path()[0]
+		switch kind, _, _, _ := lineRange(header); {
+		case !p.linesKnown(header):
 			o.withheld = append(o.withheld, "the login method of lines the record does not show: "+e.stem)
+		case kind == "con" && !loginUsed[i]:
+			loginLines = append(loginLines, Line{Op: OpLine, Section: name, Context: []string{header}, Text: e.leaf,
+				For:  []string{e.stem},
+				Undo: []Line{{Op: OpNo, Context: []string{header}, Text: e.leaf}}})
 		}
 	}
 
@@ -573,7 +621,7 @@ func (p *planner) iosSection(name string, r devconf.SectionResult) secOut {
 				undo.Elided = "snmp-server community " + secretMark
 			}
 		case len(l.Context) == 0 && strings.HasPrefix(l.Text, "tacacs-server host "):
-			undo.Text = strings.Join(strings.Fields(l.Text)[:3], " ")
+			undo.Text = hostEntry(strings.Fields(l.Text))
 		}
 		// a block the paste created goes with one 'no <header>'; a line
 		// header ('line vty 0 15') is never removed, only the leaf
@@ -590,11 +638,13 @@ func (p *planner) iosSection(name string, r devconf.SectionResult) secOut {
 	// 'no privilege exec level 7 ping' after 'privilege exec all level 7
 	// ping' would take the new assignment with it); aaa and the lists add
 	// first and remove after (new before no, D106). The aaa unit is in the
-	// order of aaaRank: aaa new-model, the server, the group, the
-	// authentication list, 'aaa authorization exec' directly after it, then
-	// commands, config-commands, accounting (the plan's sample).
+	// order of aaaRank (D118): 'aaa new-model', the server, the group, the
+	// source interface, the login lists, exec authorization, 'enable',
+	// accounting, the session id; the line leaves and the command
+	// authorization are moved to the end of the block by Plan.
 	switch name {
 	case "aaa":
+		finalAdds = append(slices.Clone(preNos), finalAdds...)
 		slices.SortStableFunc(finalAdds, func(a, b Line) int { return aaaRank(a) - aaaRank(b) })
 		o.lines = append(finalAdds, nos...)
 	case "roles":
@@ -612,8 +662,26 @@ func (p *planner) iosSection(name string, r devconf.SectionResult) secOut {
 		return o
 	}
 
-	// the aaa unit's guards (D106)
+	// the aaa unit's guards (D106, D117, D118)
 	if name == "aaa" && len(o.lines) > 0 {
+		// RADIUS has no command authorization: an old 'radius-server host' goes
+		// first like any other, and only a TACACS+ entry refuses the unit.
+		tacacsAt := map[string]bool{}
+		for s := range legacyAt {
+			if !isRadiusHost(s) {
+				tacacsAt[s] = true
+			}
+		}
+		if len(tacacsAt) > 0 && cmdAuth {
+			// D117: the old server entry cannot be removed first (the group would
+			// empty and the next line's authorization fall to local, denying a
+			// TACACS+ user its own paste) and the named block cannot be added
+			// beside it: the unit is refused, the by-hand steps are outside it.
+			o.lines = nil
+			o.refused = "this device runs the legacy server form with command authorization: migrate it from the console as a user that reaches privilege 15 there (the steps are below the region)"
+			o.byHand = p.migrationSteps(tacacsAt)
+			return o
+		}
 		addsModel := slices.ContainsFunc(missing, func(e iosEntry) bool { return e.stem == "aaa new-model" })
 		if addsModel {
 			hasExec := slices.ContainsFunc(missing, func(e iosEntry) bool {
@@ -634,6 +702,14 @@ func (p *planner) iosSection(name string, r devconf.SectionResult) secOut {
 				}
 				o.refused = "the pull has no vty and console login leaves (a pull by 0.2.4) and 'no aaa new-model' does not put 'login local' back: run '" + cmd + "' first"
 				o.refusedKind = KindNotPlannable
+				return o
+			}
+			// D118 (0): turning AAA on in front of the local database of a
+			// device that has no local user at privilege 15 leaves nothing to fall
+			// back to when the server does not answer: the unit is refused.
+			if has, known := localPriv15(p.cur); known && !has {
+				o.lines = nil
+				o.refused = "the device has no local user at privilege 15 and this block turns 'aaa new-model' on: add the break-glass user first (walkthrough Step 0), then plan again"
 				return o
 			}
 		}
@@ -713,10 +789,24 @@ func iosRowID(section string, l Line) string {
 		return "ios.aaa.radius-group"
 	case strings.HasPrefix(t, "tacacs-server host "):
 		return "ios.aaa.legacy-host"
+	case strings.HasPrefix(t, "radius-server host "):
+		return "ios.aaa.legacy-radius-host"
+	case strings.HasPrefix(c0, "line con ") && strings.HasPrefix(t, "login authentication "):
+		return "ios.aaa.console-leaf"
+	case strings.HasPrefix(c0, "line vty ") && strings.HasPrefix(t, "login authentication "):
+		return "ios.aaa.vty-leaf"
 	case l.Op == OpNo && strings.HasPrefix(t, "aaa ") && strings.Contains(t, " commands "):
 		return "ios.aaa.commands-level"
 	case strings.HasPrefix(t, "aaa authorization config-commands"):
 		return "ios.aaa.config-commands"
+	case strings.HasPrefix(t, "aaa authentication login "+iosConsoleList+" "):
+		return "ios.aaa.console-list"
+	case strings.HasPrefix(t, "aaa authentication enable "):
+		return "ios.aaa.enable-list"
+	case strings.HasPrefix(t, "aaa session-id "):
+		return "ios.aaa.session-id"
+	case strings.HasPrefix(t, "ip tacacs source-interface "), strings.HasPrefix(t, "ip radius source-interface "):
+		return "ios.aaa.source-interface"
 	case strings.HasPrefix(t, "aaa "):
 		return "ios.aaa.method-list"
 	case strings.HasPrefix(t, "privilege "):
@@ -850,7 +940,7 @@ func undoOfSecret(path []string, l Line) string {
 	t := l.Text
 	switch {
 	case strings.HasPrefix(t, "tacacs-server host ") || strings.HasPrefix(t, "radius-server host "):
-		return strings.Join(strings.Fields(t)[:3], " ")
+		return hostEntry(strings.Fields(t))
 	case strings.HasPrefix(t, "snmp-server community "):
 		f := strings.Fields(t)
 		return strings.Join(f[:3], " ")
@@ -861,31 +951,96 @@ func undoOfSecret(path []string, l Line) string {
 	return t
 }
 
+// hostEntry is the text a 'no' line takes to remove a server entry, as the
+// device stores it: 'tacacs-server host <address>' is keyed by its address;
+// IOS keys a RADIUS host on the address and its ports, so 'radius-server host
+// <address> auth-port N acct-port M' keeps them and drops the rest (timeout,
+// key). f are the entry's words.
+func hostEntry(f []string) string {
+	if len(f) < 3 {
+		return strings.Join(f, " ")
+	}
+	out := slices.Clone(f[:3])
+	if f[0] == "radius-server" {
+		for i := 3; i+1 < len(f); i++ {
+			if f[i] == "auth-port" || f[i] == "acct-port" {
+				out = append(out, f[i], f[i+1])
+				i++
+			}
+		}
+	}
+	return strings.Join(out, " ")
+}
+
+// iosConsoleList is the console's login list (D117): local only.
+const iosConsoleList = "CONSOLE"
+
+// aaaRank orders the lines of the aaa unit as D118 does, with 'aaa
+// new-model' first: nothing under 'aaa' but 'aaa new-model' exists on IOS
+// until it is set (the spike's "Legacy IOS 12.4": 'aaa group server' and its
+// leaves pasted before it are rejected). (0) 'aaa new-model' (from here the
+// vty lines use the default list), (1) the removal of the legacy server
+// entry the block replaces, (2) the server block, (3) the group and its
+// server leaf, (4) the source interface, (5) the login lists, (6) exec
+// authorization, (7) 'enable', (8) accounting, (9) the session id, then what
+// the section has besides. The line leaves are typed after roles, snmp and
+// mgmt-acl (Plan moves them there, the console first) and the
+// command-authorization lines last (lateAAA).
 func aaaRank(l Line) int {
 	t := l.Text
 	switch {
 	case len(l.Context) == 0 && t == "aaa new-model":
 		return 0
+	case l.Op == OpNo && len(l.Context) == 0 && (strings.HasPrefix(t, "tacacs-server host ") || strings.HasPrefix(t, "radius-server host ")):
+		// the old entry goes before the standard one is added: IOS refuses a
+		// second server entry with the same address and key
+		return 1
 	case strings.HasPrefix(t, "tacacs-server host "), strings.HasPrefix(t, "radius-server host "),
 		strings.HasPrefix(firstCtx(l), "tacacs server "), strings.HasPrefix(firstCtx(l), "radius server "):
-		return 1
-	case strings.HasPrefix(t, "aaa group server "), strings.HasPrefix(firstCtx(l), "aaa group server "):
 		return 2
-	case strings.HasPrefix(t, "aaa authentication login "):
+	case strings.HasPrefix(t, "aaa group server "), strings.HasPrefix(firstCtx(l), "aaa group server "):
 		return 3
-	case strings.HasPrefix(t, "aaa authorization exec "):
+	case len(l.Context) == 0 && (strings.HasPrefix(t, "ip tacacs source-interface ") || strings.HasPrefix(t, "ip radius source-interface ")):
 		return 4
-	case strings.HasPrefix(t, "aaa authorization commands "):
+	case strings.HasPrefix(t, "aaa authentication login "):
 		return 5
-	case strings.HasPrefix(t, "aaa authorization config-commands"):
+	case strings.HasPrefix(t, "aaa authorization exec "):
 		return 6
-	case strings.HasPrefix(t, "aaa accounting "):
+	case strings.HasPrefix(t, "aaa authentication enable "):
 		return 7
+	case strings.HasPrefix(t, "aaa accounting "):
+		return 8
+	case strings.HasPrefix(t, "aaa session-id "):
+		return 9
+	case strings.HasPrefix(t, "aaa authorization commands "):
+		return 11
+	case strings.HasPrefix(t, "aaa authorization config-commands"):
+		return 12
 	case strings.HasPrefix(firstCtx(l), "line "):
 		// the lines that use the method lists come after the lists
-		return 9
+		return 13
 	}
-	return 8
+	return 10
+}
+
+// isLoginLeafLine reports a forward line that types the login method of a
+// console or vty line.
+func isLoginLeafLine(l Line) bool {
+	return l.Op == OpLine && len(l.Context) == 1 && isLoginLeafPath([]string{l.Context[0], l.Text})
+}
+
+// leafOrder orders the line leaves of a region: the console first, then the
+// vty ranges by their first line (a stable sort keeps a range's own leaves in
+// the order they were planned).
+func leafOrder(l Line) int {
+	kind, lo, _, ok := lineRange(firstCtx(l))
+	switch {
+	case !ok:
+		return 1 << 20
+	case kind == "con":
+		return lo
+	}
+	return 1000 + lo
 }
 
 func firstCtx(l Line) string {
@@ -1207,4 +1362,268 @@ func lateAAA(l Line) bool {
 		return false
 	}
 	return strings.HasPrefix(l.Text, "aaa authorization commands ") || l.Text == "aaa authorization config-commands"
+}
+
+// --- the legacy server form on a modern image (D117) --------------------------------
+
+// legacyHostsToReplace are the device's 'tacacs-server host' and
+// 'radius-server host' statements (a stem each) at the address of the named
+// server block the plan would add: IOS refuses a second entry with the same
+// address and key, and whether the old line also blocks the named block is
+// open (lab E3), so the standard is never added beside it. Nothing when the
+// plan adds no named block (the ios12 rendering has none for TACACS+).
+func (p *planner) legacyHostsToReplace(missing []iosEntry) map[string]bool {
+	out := map[string]bool{}
+	for _, kind := range []struct{ block, host string }{{"tacacs server ", "tacacs-server"}, {"radius server ", "radius-server"}} {
+		addr := ""
+		var ports []string
+		for _, e := range p.ios.entries["aaa"] {
+			if len(e.ctx) == 1 && strings.HasPrefix(e.ctx[0], kind.block) && strings.HasPrefix(e.leaf, "address ipv4 ") {
+				// a RADIUS block's leaf goes on with the ports
+				if f := strings.Fields(e.leaf); len(f) >= 3 {
+					addr = f[2]
+					ports = f[3:]
+				}
+				break
+			}
+		}
+		if addr == "" || !slices.ContainsFunc(missing, func(e iosEntry) bool {
+			return len(e.ctx) == 1 && strings.HasPrefix(e.ctx[0], kind.block)
+		}) {
+			continue
+		}
+		for _, s := range p.cur.Sections["aaa"].Lines {
+			if f := strings.Fields(s); len(f) >= 3 && f[0] == kind.host && f[1] == "host" && f[2] == addr && samePorts(f[3:], ports) {
+				out[s] = true
+			}
+		}
+	}
+	return out
+}
+
+// samePorts reports whether a legacy RADIUS host entry's words (after the
+// address) do not name a port that differs from the block's: IOS keys a
+// RADIUS host on its address and ports, so an entry on other ports is another
+// server and does not collide with the block.
+func samePorts(entry, block []string) bool {
+	for _, kw := range []string{"auth-port", "acct-port"} {
+		e, b := slices.Index(entry, kw), slices.Index(block, kw)
+		if e >= 0 && e+1 < len(entry) && b >= 0 && b+1 < len(block) && entry[e+1] != block[b+1] {
+			return false
+		}
+	}
+	return true
+}
+
+// isRadiusHost reports the stem of a legacy 'radius-server host' statement.
+func isRadiusHost(stem string) bool { return strings.HasPrefix(stem, "radius-server host ") }
+
+// commandAuthActive reports whether the device authorizes commands: an
+// 'aaa authorization commands <level> default ...' list is on it.
+func (p *planner) commandAuthActive() bool {
+	return slices.ContainsFunc(p.cur.Sections["aaa"].Lines, func(s string) bool {
+		return strings.HasPrefix(s, "aaa authorization commands ") && strings.Contains(s, " default ")
+	})
+}
+
+// cmdAuthHeldText is what the report says about the command-authorization
+// lines a plan holds back (D118 (12)). It is the Action of their items.
+const cmdAuthHeldText = "command authorization is not in this paste: log in on a new session with your own account and check 'show privilege', then plan again; it is the one group of lines left"
+
+// cmdAuthWithheldPrefix marks a Delta.Withheld entry as a held-back
+// command-authorization statement.
+const cmdAuthWithheldPrefix = "command authorization, held back until the server is proven: "
+
+// isCmdAuthStem reports a compared statement that switches command
+// authorization on: 'aaa authorization commands <level> ...' and 'aaa
+// authorization config-commands'.
+func isCmdAuthStem(stem string) bool {
+	return strings.HasPrefix(stem, "aaa authorization commands ") || stem == "aaa authorization config-commands"
+}
+
+// serverProven reports whether the pulled configuration already uses the
+// scope's server, so command authorization may be typed in the same paste
+// (D118 (12)): the server's address is in a 'tacacs server' block or a
+// 'tacacs-server host' entry AND an 'aaa authentication login' or 'aaa
+// authorization exec' method list names a group; or the device already has
+// an 'aaa authorization commands' line (the server is in use by definition).
+//
+// The session that pastes was opened before AAA, as a local user the server
+// does not know: once the commands list names the server every command of
+// that session and of its back-out is asked of the server, which answers
+// FAIL for an unknown name and never falls through. A device whose TACACS+
+// path has not been proven can end with no session able to run a command.
+func (p *planner) serverProven() bool {
+	lines := p.cur.Sections["aaa"].Lines
+	if slices.ContainsFunc(lines, func(s string) bool { return strings.HasPrefix(s, "aaa authorization commands ") }) {
+		return true
+	}
+	addr := ""
+	for _, e := range p.ios.entries["aaa"] {
+		if len(e.ctx) == 1 && strings.HasPrefix(e.ctx[0], "tacacs server ") && strings.HasPrefix(e.leaf, "address ipv4 ") {
+			addr = strings.Fields(e.leaf)[2]
+			break
+		}
+		if f := strings.Fields(e.stem); len(e.ctx) == 0 && len(f) >= 3 && f[0] == "tacacs-server" && f[1] == "host" {
+			addr = f[2]
+			break
+		}
+	}
+	if addr == "" {
+		return false
+	}
+	known, named := false, false
+	for _, s := range lines {
+		path := strings.Split(s, pathSep)
+		f := strings.Fields(path[len(path)-1])
+		switch {
+		case len(path) == 1 && len(f) >= 3 && f[0] == "tacacs-server" && f[1] == "host" && f[2] == addr:
+			known = true
+		case len(path) == 2 && strings.HasPrefix(path[0], "tacacs server ") && len(f) >= 3 && f[0] == "address" && f[2] == addr:
+			known = true
+		case len(path) == 1 && len(f) >= 5 && f[0] == "aaa" &&
+			(f[1] == "authentication" && f[2] == "login" || f[1] == "authorization" && f[2] == "exec"):
+			if i := slices.Index(f[4:], "group"); i >= 0 && i+1 < len(f[4:]) {
+				named = true
+			}
+		}
+	}
+	return known && named
+}
+
+// byHandIndent is what a typed line of the by-hand steps is indented by; a
+// numbered line of the steps starts at the left.
+const byHandIndent = "    "
+
+// migrationSteps are the steps to type by hand, on the console as any user
+// that reaches privilege 15 there, to move a device from the legacy server
+// entry to the named block (D117), as a short numbered list: a numbered line
+// says what the lines under it do, and the lines under it (indented) are
+// typed as they stand, in configuration mode. They are given outside any
+// region.
+//
+// byHandStepZero is step 0 of the by-hand steps of a device that also
+// authorizes the commands typed on the console (SF2): the setting goes first.
+const byHandStepZero = "0. This device authorizes the commands typed on the console ('aaa authorization console'): the four steps cannot be typed with it on " +
+	"(after step 1 the group has no server, command authorization falls to 'local' and a TACACS+ user is not in the local database). " +
+	"Take it off first, while the TACACS+ user's commands still pass; the standard never sets it and it is not put back. " +
+	"If the console session is refused after it, type steps 1 to 4 from a new session as a user that reaches privilege 15:"
+
+// DECISION: the device's own groups are kept and pointed at the named
+// server, not replaced: the method lists name the group (whatever its name),
+// so a group that holds 'server <address>' gets ' server name <block>' and
+// loses the address, and every list keeps resolving. A group of another name
+// than the standard is the standard's business after the pull (it shows as
+// extra, and the standard group and the lists are typed by the plan then).
+// The old entry goes first: IOS refuses a second server entry at the same
+// address and key (lab E3 [A]: whether the old line blocks the named block),
+// and for the few lines between 1 and 3 the group does not resolve, so the
+// command authorization lists fall to their local fallback (the console user
+// is local and at privilege 15).
+func (p *planner) migrationSteps(legacyAt map[string]bool) []string {
+	var hosts []string
+	addrs := map[string]bool{}
+	for s := range legacyAt {
+		f := strings.Fields(s)
+		hosts = append(hosts, "no "+hostEntry(f))
+		addrs[f[2]] = true
+	}
+	slices.Sort(hosts)
+	t := func(s string) string { return byHandIndent + s }
+
+	// the named block, as the rendering has it
+	var blockName string
+	var block []string
+	for _, e := range p.ios.entries["aaa"] {
+		if len(e.ctx) != 1 || !strings.HasPrefix(e.ctx[0], "tacacs server ") {
+			continue
+		}
+		if e.ctx[0] != blockName {
+			blockName = e.ctx[0]
+			block = append(block, t(blockName))
+		}
+		leaf := e.leaf
+		if strings.HasPrefix(leaf, "key ") {
+			scope := p.opt.Scope
+			if scope == "" {
+				scope = "<scope>"
+			}
+			leaf = "key <the scope's key: tacctl scope secret show " + scope + ">"
+		}
+		block = append(block, t(" "+leaf))
+	}
+	serverName := strings.TrimPrefix(blockName, "tacacs server ")
+
+	// the groups that hold a legacy address, in the order the device has them
+	var groups []string
+	holds := map[string][]string{}
+	for _, s := range p.cur.Sections["aaa"].Lines {
+		path := strings.Split(s, pathSep)
+		if len(path) != 2 || !strings.HasPrefix(path[0], "aaa group server tacacs+ ") {
+			continue
+		}
+		if f := strings.Fields(path[1]); len(f) == 2 && f[0] == "server" && addrs[f[1]] {
+			if _, ok := holds[path[0]]; !ok {
+				groups = append(groups, path[0])
+			}
+			holds[path[0]] = append(holds[path[0]], f[1])
+		}
+	}
+	anyHolds := len(groups) > 0
+	if len(groups) == 0 {
+		// no group holds the address: the standard group, as the rendering has it
+		for _, e := range p.ios.entries["aaa"] {
+			if len(e.ctx) == 1 && strings.HasPrefix(e.ctx[0], "aaa group server tacacs+ ") && !slices.Contains(groups, e.ctx[0]) {
+				groups = append(groups, e.ctx[0])
+			}
+		}
+	}
+
+	var steps []string
+	if slices.ContainsFunc(p.cur.Sections["aaa"].Lines, func(s string) bool {
+		return s == "aaa authorization console" || strings.HasPrefix(s, "aaa authorization console ")
+	}) {
+		// SF2: with the console under command authorization the four steps
+		// cannot be typed: after step 1 the group has no server, command
+		// authorization falls to 'local', and a TACACS+ user is not in the
+		// local database; a local user, for its part, cannot get an exec
+		// while the server answers. So the setting goes first, while the
+		// TACACS+ user's commands still pass.
+		steps = append(steps,
+			byHandStepZero,
+			t("configure terminal"),
+			t("no aaa authorization console"),
+			t("end"))
+	}
+	n := 1
+	num := func(s string) { steps = append(steps, strconv.Itoa(n)+". "+s); n++ }
+	num("Enter configuration mode and remove the old server entry (the groups that name its address do not resolve until step 3):")
+	steps = append(steps, t("configure terminal"))
+	for _, h := range hosts {
+		steps = append(steps, t(h))
+	}
+	num("Add the named server block (the key is the scope's, shown by the command in the brackets):")
+	steps = append(steps, block...)
+	steps = append(steps, t("exit"))
+	if anyHolds {
+		num("Point each group that held the old address at the named block, then drop the address (the method lists keep naming the group):")
+	} else {
+		lists := "the method lists keep naming what they name"
+		if slices.ContainsFunc(p.cur.Sections["aaa"].Lines, func(s string) bool {
+			return strings.HasPrefix(s, "aaa ") && strings.Contains(s, " group tacacs+")
+		}) {
+			lists = "the method lists use 'group tacacs+' and keep using it"
+		}
+		num("No server group holds the old address, so the standard group is created and pointed at the named block (" + lists + "):")
+	}
+	for _, g := range groups {
+		steps = append(steps, t(g), t(" server name "+serverName))
+		for _, a := range holds[g] {
+			steps = append(steps, t(" no server "+a))
+		}
+		steps = append(steps, t("exit"))
+	}
+	num("Leave configuration mode, then open a NEW session as yourself and check 'show privilege' and one command before you pull and plan again:")
+	steps = append(steps, t("end"))
+	return steps
 }

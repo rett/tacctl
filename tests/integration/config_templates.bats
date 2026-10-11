@@ -86,7 +86,7 @@ _normalize() {
 
 # --- config cisco: per-level authorization and accounting (0.2.2) -------------
 
-@test "config cisco: authorization and accounting for every level in use, config-commands, console commented" {
+@test "config cisco: authorization and accounting for every level in use, config-commands, console not authorized" {
     "$TACCTL_BIN_SCRIPT" group add netops 12 OP-CLASS > /dev/null
     "$TACCTL_BIN_SCRIPT" group commands default netops permit > /dev/null
     run "$TACCTL_BIN_SCRIPT" config cisco --scope lab
@@ -97,7 +97,9 @@ _normalize() {
         assert_line "aaa accounting commands $l default start-stop group TACACS-GROUP"
     done
     assert_line "aaa authorization config-commands"
-    assert_line "! aaa authorization console   ! uncomment to have the console line ask the server too"
+    assert_line "! Do NOT set 'aaa authorization console': the console would be authorized by the default lists,"
+    refute_line --regexp "^aaa authorization console"
+    refute_output --partial "uncomment to have the console"
     # Ascending order.
     [[ "$output" == *"commands 7 default group TACACS-GROUP local"*"commands 12 default group TACACS-GROUP local"*"commands 15 default"* ]]
 }
@@ -719,4 +721,66 @@ iptables_setup() {
     assert_line "#   ssh -p 830 -s <user>@<device> netconf     (expect a <hello> from the device)"
     run grep -E '^set system services netconf' <<<"$output"
     assert_failure
+}
+
+# The standard Cisco block (0.2.5, D116-D120): the order, the console's list,
+# enable asking the server, the source interface and what an unset one is.
+@test "config cisco: the standard block, in order, with the CONSOLE list and enable asking the server" {
+    run "$TACCTL_BIN_SCRIPT" config cisco --scope lab
+    assert_success
+    local want=(
+        "aaa new-model"
+        "tacacs server TACACS"
+        "aaa group server tacacs+ TACACS-GROUP"
+        "aaa authentication login default group TACACS-GROUP local"
+        "aaa authentication login CONSOLE local"
+        "aaa authorization exec default group TACACS-GROUP local if-authenticated"
+        "aaa authentication enable default group TACACS-GROUP enable"
+        "aaa session-id common"
+        "line con 0"
+        "  login authentication CONSOLE"
+        "line vty 0 15"
+        "  login authentication default"
+        "aaa authorization commands 15 default group TACACS-GROUP local"
+        "aaa authorization config-commands"
+    )
+    local at=0 w n
+    for w in "${want[@]}"; do
+        n=$(grep -n -x -F -- "$w" <<< "$output" | head -1 | cut -d: -f1)
+        [[ -n "$n" && "$n" -gt "$at" ]] || { echo "$w: line '$n' is not after line $at"; return 1; }
+        at=$n
+    done
+    # Step 0 is comments only
+    assert_output --partial "! --- Step 0: hardening checklist and the local enable secret ---"
+    assert_output --partial "!   enable algorithm-type scrypt secret <PASSWORD>"
+    refute_line --regexp '^(hostname|no ip http|ip ssh|no enable|enable )'
+    run "$TACCTL_BIN_SCRIPT" config cisco --scope lab --legacy
+    assert_output --partial "!   enable secret <PASSWORD>"
+    refute_output --partial "scrypt"
+}
+
+@test "config cisco source-interface: unset renders no line and names the command; set renders it once, config show lists it" {
+    run "$TACCTL_BIN_SCRIPT" config cisco --scope lab
+    assert_output --partial "! Source interface not set for scope lab"
+    assert_output --partial "!   tacctl config cisco source-interface lab <interface>"
+    refute_line --regexp '^ip tacacs source-interface'
+    run "$TACCTL_BIN_SCRIPT" config cisco source-interface lab Loopback0
+    assert_success
+    assert_output --partial "Scope 'lab' Cisco source interface set to Loopback0."
+    run "$TACCTL_BIN_SCRIPT" config cisco --scope lab
+    assert_line "ip tacacs source-interface Loopback0"
+    refute_output --partial "Source interface not set"
+    run "$TACCTL_BIN_SCRIPT" config show
+    assert_output --partial "Cisco source interface (per scope):"
+    run "$TACCTL_BIN_SCRIPT" config cisco source-interface lab "not an interface"
+    assert_failure
+    # an abbreviation is refused: IOS stores the long form
+    run "$TACCTL_BIN_SCRIPT" config cisco source-interface lab lo0
+    assert_failure
+    assert_output --partial "write the full interface name"
+    assert_output --partial "Loopback0 or GigabitEthernet0/0"
+    run "$TACCTL_BIN_SCRIPT" config cisco source-interface lab none
+    assert_success
+    run "$TACCTL_BIN_SCRIPT" config cisco --scope lab
+    refute_line --regexp '^ip tacacs source-interface'
 }

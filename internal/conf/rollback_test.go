@@ -32,24 +32,24 @@ func TestRollbackTablesMatchTheSchema(t *testing.T) {
 		}
 	}
 	for _, f := range schema {
-		in022, in023, in024 := slices.Contains(Known022, f), slices.Contains(Added023, f), slices.Contains(Added024, f)
+		in022, in023, in024, in025 := slices.Contains(Known022, f), slices.Contains(Added023, f), slices.Contains(Added024, f), slices.Contains(Added025, f)
 		n := 0
-		for _, in := range []bool{in022, in023, in024} {
+		for _, in := range []bool{in022, in023, in024, in025} {
 			if in {
 				n++
 			}
 		}
 		switch {
 		case n > 1:
-			t.Errorf("%+v is in more than one of Known022, Added023 and Added024", f)
+			t.Errorf("%+v is in more than one of Known022, Added023, Added024 and Added025", f)
 		case n == 0:
-			t.Errorf("schema.go has the key family %+v, which rollback.go lists in none of Known022 (0.2.2 has it), Added023 (0.2.3 added it) and Added024 (0.2.4 added it): decide, so a rollback knows what to remove", f)
+			t.Errorf("schema.go has the key family %+v, which rollback.go lists in none of Known022 (0.2.2 has it), Added023 (0.2.3 added it), Added024 (0.2.4 added it) and Added025 (0.2.5 added it): decide, so a rollback knows what to remove", f)
 		}
 	}
 	for _, tbl := range []struct {
 		name string
 		list []Family
-	}{{"Known022", Known022}, {"Added023", Added023}, {"Added024", Added024}} {
+	}{{"Known022", Known022}, {"Added023", Added023}, {"Added024", Added024}, {"Added025", Added025}} {
 		for _, f := range tbl.list {
 			if !slices.Contains(schema, f) {
 				t.Errorf("%s lists %+v, which schema.go no longer has", tbl.name, f)
@@ -153,6 +153,7 @@ func TestUnknown023(t *testing.T) {
 		"device.config.transport":       true,
 		"device.config.timeout":         true,
 		"device.config.timeout.extra":   true,
+		"cisco.source_interface.lab":    true, // 0.2.5 added it
 		"nonsense.key":                  true,
 		"snmp_scopex":                   true,
 		"":                              true,

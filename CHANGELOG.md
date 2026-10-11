@@ -517,6 +517,151 @@ current behaviour; this file is where history lives.
     after the snapshot. The records' `os` and `syntax` fields stay: the older
     release ignores them.
 
+30. **`config cisco` and `device config show` print the standard Cisco block,
+    and the managed `aaa` section is that block.** One set of lines, in one
+    order, for every Cisco device (the three templates `cisco`,
+    `cisco-legacy` and `cisco-radius`, rewritten, and the managed sections
+    built from the same builders): `aaa new-model` first (nothing under
+    `aaa` exists on IOS until it is set, so a group and its `server` leaf
+    typed before it are rejected); the server block and its group;
+    `ip tacacs source-interface <interface>` when the scope sets one (item
+    33); `aaa authentication login default <methods>` and
+    `aaa authentication login CONSOLE local`; `aaa authorization exec default
+    <methods>`; `aaa authentication enable default group <G> enable`;
+    `aaa accounting exec ...` and `aaa accounting commands <level> ...` per
+    level in use; `aaa session-id common`; the `privilege exec level` lines;
+    SNMP; the VTY access list; the NETCONF step (commented); `line con 0` with
+    `login authentication CONSOLE` and `line vty 0 15` with `login
+    authentication default`. The command authorization (`aaa authorization
+    commands <level> ...` per level in use and `aaa authorization
+    config-commands`) is a Step 2 of its own, after a check: the session
+    that pastes is a local user the server does not know, and a server that
+    answers `fail` for such a name is final and never falls through to
+    `local`, so a device whose TACACS+ path is not proven could end with no
+    session able to run a command. The walkthrough says to open a new
+    session with your own account, run `show privilege`, and only then type
+    Step 2. From `aaa new-model` until the login lists are typed a new
+    TACACS+ login would fail (a local user still gets in): the walkthrough
+    says to paste the block in one go from a session that stays open. RADIUS gets the same where RADIUS has it (no command
+    authorization; `ip radius source-interface`); its `aaa authentication
+    enable default group <G> enable` is not rendered or compared (item 31).
+    `--legacy` (the IOS 12.x syntax) differs from the modern output in the
+    server block (the global `tacacs-server host ... single-connection
+    timeout 5 key ...` line and `server <ip>` under the group), the local
+    enable secret line (`enable secret <PASSWORD>`, not `enable
+    algorithm-type scrypt secret <PASSWORD>`), the hashes of the break-glass
+    accounts (type 5, not type 9), the NETCONF step (a comment: IOS 12.x has
+    none) and the Type 6 note (not available on 12.x); the `aaa` lines, the
+    `privilege exec level` lines, SNMP and the access list are the same.
+    Everything the walkthrough pastes is ASCII (the remark of the access list
+    and the privilege headings had a dash that was not).
+
+31. **The console has a login list of its own, `CONSOLE`, and `enable` asks
+    the server first.** `aaa authentication login CONSOLE local` and
+    `login authentication CONSOLE` under `line con 0`: a local user can
+    always log in on the console, since the `default` list asks the server
+    first and a reject from the server does not fall through to local. With
+    the server up that user lands at privilege 1: the standard does not set
+    `aaa authorization console` and must not (it would put the console under
+    the `default` lists, server first, and defeat `CONSOLE`; the walkthrough
+    says so where it used to suggest uncommenting it), and `enable` asks the
+    server first, which refuses a name it does not know and does not fall
+    through, so the local console is a way to privilege 15 only while no
+    server answers. `aaa authentication enable default group <G> enable`
+    makes `enable` ask the server first: a TACACS+ user lands at the level
+    the server's `priv-lvl` gives, so nobody types `enable` while the server
+    is up (an operator who does is refused by the server, by design: levels
+    come from groups, not from a shared password), and only when no server
+    answers does the keyword fall through to the local enable secret. There
+    is no enable password in the login path. For RADIUS what a server answers
+    to IOS's enable request is not verified: with a reachable server that
+    does not answer enable requests positively `enable` fails, and the local
+    enable secret is used only when no server answers, so the RADIUS
+    walkthrough carries the line commented out with that note and neither
+    renders nor compares it (a device that has it is not told it is extra).
+    The comparison reads the console's leaf as any other: a console that
+    prints no `login authentication` leaf is on the default list, which is
+    not `CONSOLE`, so it shows `- line con 0 > login authentication CONSOLE`
+    and `+ line con 0 > login authentication default` (the vty lines on the
+    default list with no leaf stay what they were).
+
+32. **`aaa session-id common` is rendered and compared.** It was only
+    tolerated (never an extra, never missing); it is now a statement of the
+    `aaa` section like the others, and where a rendering has none (an
+    operator's own template, an old record) a device's line is still no
+    extra.
+
+33. **`tacctl config cisco source-interface <scope> <interface>|none`
+    sets the interface a scope's Cisco devices take their server requests'
+    source address from.** Stored as `cisco.source_interface.<scope>` in
+    `tacctl.yaml` (the full interface name as IOS prints it, with its capitals:
+    `Loopback0`, `GigabitEthernet0/0/1`, `TenGigabitEthernet`,
+    `FortyGigabitEthernet`, `FastEthernet`, `Ethernet`, `Serial`, `Vlan`,
+    `Port-channel`, `Tunnel`, `BVI`, `Management` and the other long type
+    names the verb's help lists; an abbreviation such as `lo0` or `gi0/1` is
+    refused, because IOS stores the long form and the device would compare
+    different for ever; checked by the schema; unset by default; moved by
+    `scope rename`, dropped with the scope, removed by `rollback 0.2.3`),
+    rendered as `ip tacacs source-interface <interface>` (`ip radius
+    source-interface` for RADIUS), compared like any statement, and listed
+    by `config show` when a scope sets one. Without arguments the verb lists
+    every scope's setting, with a scope it shows it; setting or unsetting is
+    the superuser's, an engineer reads their own scopes' (the tier gate sees
+    `config cisco`, which an engineer may run for the walkthrough, so the
+    verb decides). **Unset, nothing is rendered or compared** (never a
+    placeholder in a statement): the walkthrough prints the line commented
+    with the command, and a source interface a device already has is left
+    alone, not an extra.
+
+34. **The names are the ones tacctl has always rendered; nothing is renamed
+    and nothing migrates.** The server block `TACACS`, its group
+    `TACACS-GROUP` (`scope tacacs-group` sets another), `VTY-ACL`,
+    `TACCTL-SNMP`; the one new name is the console's list `CONSOLE`. A device
+    configured by an earlier walkthrough needs no rename. The forms it may
+    still carry (a global `tacacs-server host` on a modern image, a
+    `radius-server host` beside a `radius server` block, a server group of
+    another name) are listed by `device config pull --diff` and `device
+    config diff` as extras (`+` lines), never as satisfied lines, and the
+    standard's lines as missing (`-` lines); nothing removes the old ones.
+    The README gives the steps to replace an old `tacacs-server host` entry
+    from the console (the old entry out, the named block in, each group
+    that held its address pointed at the named block, then a check): the
+    groups keep their names, so the method lists that name them keep
+    resolving (when no group holds the old address, because the lists use
+    `group tacacs+`, the standard group is created and the lists keep using
+    `group tacacs+`), and with command authorization on a TACACS+ session
+    must not be the one that removes the entry. A device that also has
+    `aaa authorization console` cannot take the four steps as they are (the
+    group has no server after the old entry goes, command authorization
+    falls to `local`, and a TACACS+ user is not in the local database): the
+    README and the manual page put a step 0 first, `no aaa authorization
+    console`, typed while the TACACS+ user's commands still pass (the
+    standard never sets it and it is not put back).
+
+35. **The walkthrough starts with Step 0, a commented hardening checklist and
+    the local enable secret.** `hostname`, `ip domain name`, `no ip domain
+    lookup`, `service password-encryption`, `service timestamps debug|log
+    datetime msec localtime`, `no service pad`, `no ip source-route`, `no ip
+    http server`, `no ip http secure-server`, `ip ssh version 2`, `ip ssh
+    time-out 60`, `ip ssh authentication-retries 3`, `transport input ssh`,
+    `exec-timeout` and `logging synchronous` on the lines, then `no enable
+    password` and `enable algorithm-type scrypt secret <PASSWORD>` (`enable
+    secret <PASSWORD>` for IOS 12.x), followed by the scope's break-glass
+    accounts, which moved there from the end so that the local user exists
+    before AAA is turned on. Everything in it is comments: site policy, never
+    compared, never part of the managed sections.
+
+36. **Moving from 0.2.4 to 0.2.5.** A Cisco device configured from an earlier
+    walkthrough reads as missing the lines of items 30 and 31 and, for its
+    console, as `login authentication default` where the standard has
+    `CONSOLE`; nothing is rewritten by the upgrade and a pull of the device
+    shows exactly that. A record pulled before the upgrade holds no `aaa
+    session-id common` in its `aaa` section (it was not read then), so it
+    shows as missing until the next pull. The break-glass step of the walkthrough is now Step 0 and says
+    the CONSOLE list takes the same accounts. `rollback 0.2.3` removes the
+    `cisco.source_interface.<scope>` keys (a 0.2.3 binary refuses a key it does
+    not know).
+
 
 ## 0.2.3 (2026-10-09)
 

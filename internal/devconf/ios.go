@@ -696,6 +696,35 @@ type ciscoCtx struct {
 	acls  map[string]string // ACL name -> section, the rendered ones'
 	// device side: the ACLs the VTY lines and SNMP refer to.
 	vtyRefs, snmpRefs map[string]bool
+	// sourceInterface are the source-interface commands the rendering sets
+	// ('ip tacacs source-interface'): only then is the device's own value of
+	// the same command a statement of the aaa section. The interface is the
+	// operator's choice and the scope may set none (D119): a device's value
+	// is then nobody's business.
+	sourceInterface map[string]bool
+}
+
+// The two source-interface commands (D119).
+const (
+	ciscoSourceInterfaceTacacs = "ip tacacs source-interface"
+	ciscoSourceInterfaceRadius = "ip radius source-interface"
+)
+
+// sessionIDCommon is the statement IOS prints by itself and tacctl renders
+// (D116): a statement of the aaa section, tolerated where the rendering has
+// none (Compare).
+const sessionIDCommon = "aaa session-id common"
+
+// isEnableList reports an 'aaa authentication enable default ...' statement.
+func isEnableList(x stmt) bool {
+	return len(x.path) == 1 && strings.HasPrefix(x.path[0], "aaa authentication enable default ")
+}
+
+// isSourceInterface reports a statement that sets the source interface of the
+// TACACS+ or RADIUS client.
+func isSourceInterface(x stmt) bool {
+	return len(x.path) == 1 && (strings.HasPrefix(x.path[0], ciscoSourceInterfaceTacacs+" ") ||
+		strings.HasPrefix(x.path[0], ciscoSourceInterfaceRadius+" "))
 }
 
 // defaultACLNames are the names tacctl's ACLs have by default.
@@ -719,8 +748,10 @@ func (c *ciscoCtx) section(x stmt) string {
 		return false
 	}
 	switch {
-	case t == "aaa session-id common":
-		// [A] IOS adds it by itself.
+	case strings.HasPrefix(t, ciscoSourceInterfaceTacacs+" "), strings.HasPrefix(t, ciscoSourceInterfaceRadius+" "):
+		if c.sourceInterface[strings.Join(strings.Fields(t)[:3], " ")] {
+			return SectionAAA
+		}
 		return ""
 	case has("aaa ", "tacacs server ", "radius server ", "tacacs-server ", "radius-server "):
 		return SectionAAA
@@ -980,10 +1011,13 @@ func ciscoExtract(raw string, expected []devices.Section, visible *bool) (Extrac
 	}
 
 	c := &ciscoCtx{claim: map[string]string{}, acls: map[string]string{},
-		vtyRefs: map[string]bool{}, snmpRefs: map[string]bool{}}
+		vtyRefs: map[string]bool{}, snmpRefs: map[string]bool{}, sourceInterface: map[string]bool{}}
 	for _, sec := range expected {
 		for _, x := range ciscoCanon(sec.Lines, sec.Secret) {
 			c.claim[x.stem] = sec.Name
+			if isSourceInterface(x) {
+				c.sourceInterface[strings.Join(strings.Fields(x.path[0])[:3], " ")] = true
+			}
 			if name, ok := ciscoACLName(x.path[0]); ok {
 				c.acls[name] = sec.Name
 			}

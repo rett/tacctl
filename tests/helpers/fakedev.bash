@@ -101,7 +101,12 @@ fakedev_serve() {
     else
         {
             printf 'version 15.2\nhostname %s\n!\n' "${4:-fake}"
-            sed 's/\x1b\[[0-9;]*m//g' <<< "$out" | grep -E '^(aaa |tacacs|radius|privilege|ip access-list|snmp-server|line (vty|con)|username |netconf-yang| +[a-z])'
+            # Only the configuration: what is between the first two rules (the
+            # summary and the notes under the second are prose, and the
+            # standard ends its configuration with a command-authorization
+            # line that the prose would otherwise attach itself to).
+            sed 's/\x1b\[[0-9;]*m//g' <<< "$out" | awk '/^--------------------/ {n++; next} n == 1' |
+                grep -E '^(aaa |tacacs|radius|privilege|ip access-list|snmp-server|line (vty|con)|username |netconf-yang| +[a-z])'
             printf 'end\n'
         } > "${dir}/show running-config.out"
     fi

@@ -374,8 +374,28 @@ func (c *IOSConfig) blockFor(header string) *iosBlk {
 // with the same key in place, as IOS does), a 'no' removes the line, or the
 // whole block when it is a block's header.
 func (c *IOSConfig) Apply(lines []Line) error {
+	// Nothing under 'aaa' exists on IOS until 'aaa new-model' is set (the
+	// spike's "Legacy IOS 12.4"): an 'aaa ...' statement or an 'aaa group
+	// server' block typed before it is rejected, and so is the paste.
+	modelOn := slices.ContainsFunc(c.blocks, func(b iosBlk) bool { return norm(b.lines[0]) == "aaa new-model" })
 	for _, l := range lines {
 		text := norm(l.Text)
+		if l.Op == OpLine && len(l.Context) == 0 && text == "aaa new-model" {
+			modelOn = true
+		}
+		if l.Op == OpNo && len(l.Context) == 0 && text == "aaa new-model" {
+			modelOn = false
+		}
+		if l.Op == OpLine && !modelOn && (len(l.Context) == 0 && strings.HasPrefix(text, "aaa ") ||
+			len(l.Context) > 0 && strings.HasPrefix(norm(l.Context[0]), "aaa group server ")) {
+			return fmt.Errorf("plan: %q is typed before 'aaa new-model': IOS has no such command until it is set", l.Shown())
+		}
+		// 'login authentication <list>' is a line command only once 'aaa
+		// new-model' is set: typed before it the line is refused
+		if l.Op == OpLine && !modelOn && len(l.Context) == 1 && isLoginLeafPath([]string{l.Context[0], text}) &&
+			strings.HasPrefix(text, "login authentication ") {
+			return fmt.Errorf("plan: %q under %q is typed before 'aaa new-model': IOS has no such line command until it is set", l.Shown(), l.Context[0])
+		}
 		switch {
 		case l.Op == OpLine && len(l.Context) == 0:
 			c.typeGlobal(text)

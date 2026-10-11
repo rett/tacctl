@@ -3,16 +3,26 @@
 ! secrets) and the standard of 2026-10-10 14:20 (tacctl 0.2.5). Lab-tested on IOS 12.4(15) (a 7200
 ! emulator); other IOS trains and IOS-XE are written from the references.
 !
-! What is irregular on dev-cisco-real-12-4-7200 (1 item; the paste fixes 1, leaves 0):
-!  1. roles    COSMETIC   missing: the commands of privilege level 7: 2 statements (e.g. privilege
-!                         exec all level 7 monitor capture). Fixed by region lines 3-4.
-! Consistent: aaa, snmp, mgmt-acl. Not planned: netconf, breakglass.
+! What is irregular on dev-cisco-real-12-4-7200 (4 items; the paste fixes 4, leaves 0):
+!  1. aaa      ACCESS     missing: the console's own login list CONSOLE (local only, so a local user
+!                         always gets in there) (aaa authentication login CONSOLE local). Fixed by
+!                         region line 3.
+!  2. aaa      ACCESS     missing: the 'enable' list (it asks the server first, so nobody needs a
+!                         shared enable password) (aaa authentication enable default group LAB-TACACS
+!                         enable). Fixed by region line 4.
+!  3. aaa      ACCESS     different: the login method of line con 0: login authentication CONSOLE (the
+!                         device has: the login method of line con 0: login authentication default)
+!                         (line con 0 > login authentication CONSOLE). Fixed by region line 10.
+!  4. roles    COSMETIC   missing: the commands of privilege level 7: 2 statements (e.g. privilege
+!                         exec all level 7 monitor capture). Fixed by region lines 6-7.
+! Consistent: snmp, mgmt-acl. Not planned: netconf, breakglass.
 ! Secrets: 2 present on the device, not changed (--secrets pushes them).
-! Note: no enable secret on the device: with AAA on and the server unreachable, a local user with
-! privilege 15 is the only way to level 15.
 ! Note: privilege exec all level 7 monitor capture: not on the device, which holds 'privilege exec
 ! level 7 monitor' instead, as an image that does not know 'capture' stores it; a device that lost the
 ! line looks the same, so it stays missing.
+! WARNING: the device has no enable secret: with the server unreachable, level 15 is reached only
+! through the local user and 'aaa authorization exec'; set an enable secret first if you want a second
+! way.
 ! The change is live when the paste ends. NOTHING rolls it back by itself. Keep a second terminal
 ! logged in at privilege 15 until the end.
 ! Paste over ssh, not the console; on a console paste at most twenty lines at a time and watch the
@@ -25,9 +35,15 @@
 !
 !!!!! PASTE FROM HERE: dev-cisco-real-12-4-7200 !!!!!
 configure terminal
+! aaa: the method lists tacctl renders, each replaced by the rendered line (the console's own list is local only)
+aaa authentication login CONSOLE local
+aaa authentication enable default group LAB-TACACS enable
 ! roles: the privilege lines of the levels tacctl renders
 privilege exec all level 7 monitor capture
 privilege exec level 7 clear mac address-table dynamic
+! aaa: the login method of the console and vty lines
+line con 0
+ login authentication CONSOLE
 end
 !!!!! PASTE TO HERE: dev-cisco-real-12-4-7200 !!!!!
 !
@@ -35,7 +51,7 @@ end
 ! dev-cisco-real-12-4-7200 --backout (its own region, to paste in the second terminal).
 !
 ! Check now (nothing rolls this back by itself):
-!   From the tacctl server:   tacctl device config pull dev-cisco-real-12-4-7200 --diff     (roles: ok)
+!   From the tacctl server:   tacctl device config pull dev-cisco-real-12-4-7200 --diff     (aaa and roles: ok)
 !   In the second terminal:   open a NEW ssh session to dev-cisco-real-12-4-7200 as yourself, then: terminal length 0, show privilege (must say 15)
 ! When both checks are fine, type this one command yourself:  write memory
 !

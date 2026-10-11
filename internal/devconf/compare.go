@@ -359,6 +359,25 @@ func Compare(vendor string, expected, got devices.Section, secretsVisible bool) 
 		var notes []string
 		dev, notes = withoutImplicitIOS(exp, dev)
 		res.Notes = append(res.Notes, notes...)
+		// The source interface is the operator's where the scope sets none
+		// (D119): a device's value is no extra then, whatever record it comes
+		// from.
+		if !slices.ContainsFunc(exp, isSourceInterface) {
+			dev = slices.DeleteFunc(dev, isSourceInterface)
+		}
+		// IOS prints 'aaa session-id common' by itself; tacctl renders it, and
+		// where a rendering has none (an operator's own expectation) it is
+		// no extra.
+		if !slices.ContainsFunc(exp, func(x stmt) bool { return x.stem == sessionIDCommon }) {
+			dev = slices.DeleteFunc(dev, func(x stmt) bool { return x.stem == sessionIDCommon })
+		}
+		// The enable list of a RADIUS device is not rendered (lab item E2: what
+		// a RADIUS server answers to IOS's enable request is open): where the
+		// rendering has no 'aaa authentication enable' statement at all, a
+		// device's own is nobody's business, neither missing nor extra.
+		if !slices.ContainsFunc(exp, isEnableList) {
+			dev = slices.DeleteFunc(dev, isEnableList)
+		}
 		var keep []stmt
 		for _, x := range dev {
 			if x.stem == enableHeld || x.stem == enableNone {
@@ -492,7 +511,7 @@ func Compare(vendor string, expected, got devices.Section, secretsVisible bool) 
 	present := len(dev)
 	if fam == FamilyIOS {
 		for _, x := range dev {
-			if isLoginLeaf(x.path) {
+			if isLoginLeaf(x.path) || x.stem == sessionIDCommon {
 				present--
 			}
 		}

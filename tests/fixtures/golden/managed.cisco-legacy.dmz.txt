@@ -4,20 +4,23 @@
 | aaa group server tacacs+ TACACS-GROUP
 |   server 203.0.113.9
 | aaa authentication login default group TACACS-GROUP local
+| aaa authentication login CONSOLE local
 | aaa authorization exec default group TACACS-GROUP local if-authenticated
+| aaa authentication enable default group TACACS-GROUP enable
 | aaa accounting exec default start-stop group TACACS-GROUP
 | aaa accounting commands 1 default start-stop group TACACS-GROUP
 | aaa accounting commands 5 default start-stop group TACACS-GROUP
 | aaa accounting commands 7 default start-stop group TACACS-GROUP
 | aaa accounting commands 15 default start-stop group TACACS-GROUP
+| aaa session-id common
+| line con 0
+|   login authentication CONSOLE
+| line vty 0 15
+|   login authentication default
 | aaa authorization commands 1 default group TACACS-GROUP local
 | aaa authorization commands 7 default group TACACS-GROUP local
 | aaa authorization commands 15 default group TACACS-GROUP local
 | aaa authorization config-commands
-| line con 0
-|   login authentication default
-| line vty 0 15
-|   login authentication default
 [roles]
 | privilege exec level 1 show running-config
 | privilege exec all level 7 ping
