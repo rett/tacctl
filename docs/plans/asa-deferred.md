@@ -58,3 +58,42 @@ Baseboard Management Controller (revision 0x1) Firmware Version: 2.4
 - **Version line:** `Cisco Adaptive Security Appliance Software Version
   9.14(3)15` is the shape the version derivation (D113) would need if the
   `asa` vendor reuses it.
+
+## Lab A1 results: ASAv 9.12(4)18, single context (2026-10-11, read-only)
+
+An ASAv with a local account, `aaa authentication ssh console LOCAL` and
+`aaa authorization exec LOCAL auto-enable`, read through the ssh CLI with
+`terminal pager 0`. A2 and A3 are not run (writes, after WP13.2).
+
+- **Login and prompt:** the plain `<host>#` prompt (no `/act/sec` suffix on a
+  single ASAv); the banner is three lines (`User <name> logged in to <host>`,
+  `Logins over the last N days: ...`, `Failed logins since the last login: N.`)
+  and a privilege-15 user lands at `#` through `auto-enable`.
+- **ssh:** the stock client algorithms suffice (`ssh key-exchange group
+  dh-group14-sha256`, an RSA host key, AES CTR and CBC ciphers, `ssh cipher
+  encryption medium`, `ssh cipher integrity high`); no legacy profile is needed.
+- **Version:** `show version | include Version` prints the three-line shape
+  (software, `SSP Operating System`, `Device Manager`); the license state
+  (`ASAv Platform License State: Unlicensed`) does not affect the CLI.
+- **Running config:** starts with `: Saved`, a `: Serial Number:` and a
+  `: Hardware:` line, then `ASA Version <v>`; secrets print masked
+  (`username <u> password ***** pbkdf2 privilege 15`, `enable password *****
+  pbkdf2`), so the comparison is by presence, as on IOS.
+- **AAA shape:** no `aaa new-model`, no `line vty`, no `login authentication`
+  leaves. `show running-config aaa` gives `aaa authentication ssh console LOCAL`
+  (with a trailing blank), `aaa authorization exec LOCAL auto-enable`,
+  `aaa authentication login-history`; `show running-config all aaa` adds
+  `aaa proxy-limit 16`, `no aaa authentication secure-http-client`,
+  `no aaa local authentication attempts max-fail` and
+  `aaa authentication login-history duration 90` (the implicit lines the
+  extractor must tolerate). `show aaa-server` lists the built-in `LOCAL`
+  group with request counters.
+- **Management access:** `ssh <network> <mask> <nameif>` lines (one per
+  permitted network and interface) are the management ACL, with `ssh version 2`,
+  `ssh timeout <minutes>`, `ssh stricthostkeycheck` and the key-exchange line.
+- **Command differences from IOS:** `show curpriv` (not `show privilege`);
+  `show mode` prints `Security context mode: single`; `show context` is invalid
+  in single mode; errors read `ERROR: % Invalid input detected at '^' marker.`,
+  `ERROR: % Unrecognized command`, `ERROR: % Incomplete command`; the `aaa ...`
+  configuration commands are refused at the exec prompt (config mode needed),
+  and `?` is not interactive through a non-tty exec.
