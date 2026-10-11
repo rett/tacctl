@@ -1282,6 +1282,92 @@ current behaviour; this file is where history lives.
     vendor, the `enable` design paragraph's last sentence, and the
     `scope breakglass` verb's description: the accounts a hold makes usable).
 
+77. **The hold report says plainly what is carved, and warns when the server
+    has not seen that address.** A hold takes out the one address the device
+    is registered at (its management address). A device that sends its AAA
+    from another address (a Cisco `ip tacacs source-interface`, which
+    `cisco.source_interface.<scope>` sets, a NAT, an IPv6 address) is still
+    answered, and the report said HELD all the same. It now has a `Carved:`
+    line after `Rendered:` that says so (`only 192.0.2.21, the address
+    registered for sw-lab-1. A device that sends its AAA from another address
+    (a source interface, a NAT) is still answered.`), and, when the seen data
+    (`device scan`) hold no request from the registered address, a
+    `Warning:` line: either that the server has seen the device from no
+    address at all (no request from it, none that identifies as its name), or
+    that another address identifies as the device's name and is most likely
+    where it sends from, and in both that it is still answered, with where to
+    learn the address: `tacctl device config pull <device>` (its source
+    interface) or `show tacacs` and the device's own log. With no seen data
+    nothing is added. The hold itself does not change: it still carves the
+    registered address only.
+
+78. **A hand-written key with a dot in it is released from where it is
+    stored, and `config validate` names every entry that is not a usable
+    hold.** `breakglass_hold: {sw.lab: {address: ...}}` is read, listed and
+    carved (the schema's own check of the leaf path does not accept a name
+    with a dot, which `config validate` already reported), but `release` and
+    the rename carry removed the key tacctl would have written (`sw~lab`), so
+    the report said RELEASED while the record stayed and the device stayed
+    unanswered. A release now removes every entry of the device under the key
+    it is stored under, whichever spelling, and renders again. `config
+    validate` names, in red, `breakglass_hold.<key>` for a key with a dot in
+    it (still carved: `release` removes it), an entry with no address, an
+    address that is not one IPv4 or IPv6 address (a prefix included: it is
+    not carved, so a hand-written `10.0.0.0/8` silences nothing) and an entry
+    that is not a record; the last three carve nothing and are not listed by
+    `breakglass list`, `tacctl breakglass release <name>` removes them (`Break-glass
+    record REMOVED for <name>: the entry ...`, nothing restarts), and an entry
+    with no address makes `config validate` exit 1.
+
+79. **A restart that failed is reported as not restarted, and the hold or
+    release exits 1.** A service restart that failed printed its warning and
+    the report said `tacacs restarted`, so a hold that was not in force looked
+    as if it was. The report now says `tacacs NOT restarted: the running server
+    still answers 192.0.2.21 until it is restarted (run: sudo systemctl restart
+    tacquito)` for a hold, and `still does not answer` for a release, naming
+    the command the warning names, and exits 1 after the whole report with
+    the line `The hold is recorded and the rendered files are kept, but it is
+    not in force until the backend named under Rendered is restarted` (a
+    release: `The record is removed and the rendered files are kept, ...`).
+    Nothing is undone: the record and the files are what the next restart
+    serves, and `release` takes the hold back. The backends' restart now
+    returns that failure to its caller, which `StoreApply` carries in its
+    result; every other caller still goes on as it did, except `backend
+    enable`, which now takes a restart that failed as the backend not having
+    come up (it undoes the change, as for a service that is not active).
+
+80. **Two superusers cannot both hold one device.** The check for a hold that
+    was made while the name was typed ran before `tacctl.yaml` was locked, so
+    two holds could both pass it and the second overwrote the first one's
+    `since`, `by` and `reason`. The check is now made under the file's lock,
+    on the file as it is, in the same step as the write; the second hold is
+    refused as `already held` (`Break-glass is already held on '<device>'
+    (<address>) since ... by ...: another hold was made while the name was
+    typed. Nothing was changed.`) and the first record is as it was.
+
+81. **A hold applies to a device only while the device is registered at the
+    record's address; any other record is an orphan.** Holds were matched to
+    devices by name, so a device removed from `devices.yaml` by hand and
+    another registered under the same name took over the old record: it
+    showed as held, `device address` was refused and the pulls skipped it,
+    while the address that was carved was the old one. A record now holds the
+    device of its name only while that device's registered address is the
+    record's. Any other record (no device of that name is registered, or the
+    one that is stands at another address) is an orphan: `breakglass list`
+    shows `<device> (orphan)` with its address, since, by and reason and says
+    why, `--json` has `orphan: true`, `status` says `ORPHAN record <device>
+    ...`, and `config validate` says `<device> is an orphan record: ...; it
+    still silences <address>` (red, as it was for a device that is not
+    registered). The address stays carved until `tacctl breakglass release
+    <device>` removes it. The device itself is not shown as held, is not
+    refused `device address`, `device remove` or `device import`, is pulled,
+    and `device rename` leaves the record under the old name; `breakglass hold
+    <device>` of such a device is refused (`A break-glass record named
+    '<device>' stands at <address>, not at the address the device is
+    registered at ...`) until the record is released, rather than written
+    over. An engineer sees only the records that hold a device of their own
+    scopes. A rename of a device that is held still carries the record.
+
 
 ## 0.2.3 (2026-10-09)
 

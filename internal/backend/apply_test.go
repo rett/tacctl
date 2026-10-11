@@ -153,6 +153,36 @@ func TestStoreApplyGatesTheGivenBackendsAndDefersARestart(t *testing.T) {
 	}
 }
 
+// A restart that does not succeed is in the result, with the command its
+// warning names; the files stay rendered and the apply is not undone.
+func TestStoreApplyReportsARestartThatFailed(t *testing.T) {
+	e := newTenv(t)
+	e.withStore("fake")
+	res, err := e.apply(func() error { return e.userSet("dave", "group=operator", "hash="+testHash, "scopes=lab")() })
+	if err != nil || len(res.RestartFailed) != 0 || !slices.Equal(res.Changed, []string{"fake"}) {
+		t.Fatalf("%v: changed %v failed %v", err, res.Changed, res.RestartFailed)
+	}
+	e.fake.RestartFails = true
+	res, err = e.apply(func() error { return e.userSet("erin", "group=operator", "hash="+testHash, "scopes=lab")() })
+	if err != nil {
+		t.Fatalf("a failed restart failed the apply: %v", err)
+	}
+	if !slices.Equal(res.Changed, []string{"fake"}) || len(res.RestartFailed) != 1 ||
+		res.RestartFailed[0] != (backend.RestartFailure{ID: "fake", Command: "sudo systemctl restart fake"}) {
+		t.Fatalf("changed %v failed %v", res.Changed, res.RestartFailed)
+	}
+	if !strings.Contains(readFile(t, e.fakeConf), "erin") || !strings.Contains(readFile(t, e.p.StoreFile), "erin") {
+		t.Error("the change was undone")
+	}
+	// A deferred restart is not a failure.
+	e.reset()
+	res, err = e.set.StoreApply(ctx, backend.ApplyOptions{DeferRestart: []string{"fake"}},
+		func() error { return e.userSet("frank", "group=operator", "hash="+testHash, "scopes=lab")() })
+	if err != nil || len(res.RestartFailed) != 0 {
+		t.Fatalf("%v %v", err, res.RestartFailed)
+	}
+}
+
 func TestStoreApplyAGateThatFailsIs1AndAnUnreadableEnabledListToo(t *testing.T) {
 	e := newTenv(t)
 	e.withStore("tacacs, fake")

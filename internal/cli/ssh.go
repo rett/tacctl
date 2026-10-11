@@ -226,7 +226,7 @@ func (inv *invocation) ssh(args []string) error {
 	// A held device takes local accounts only; the session goes on (the
 	// person may be about to type the local name).
 	if e.Source == devreg.SourceDevice {
-		if _, held := inv.holdOf(e.Name); held {
+		if _, held := inv.holdOf(e.Name, e.Address); held {
 			a.Out.Warn("break-glass is held on " + e.Name + ": it takes local accounts only")
 		}
 	}

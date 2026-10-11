@@ -16,6 +16,7 @@ package conf
 
 import (
 	"fmt"
+	"net/netip"
 	"slices"
 	"sort"
 	"strings"
@@ -140,13 +141,57 @@ func holdProblem(typ, path string, value any) string {
 	return ""
 }
 
-// Holds reads the records of the merged view, ordered by device name. A
-// device whose record lacks its address is left out (the schema accepts
-// each leaf alone, so a hand-edited file can hold a partial record; the
-// validator names it, the renderers carve nothing for it).
+// Holds reads the usable records of the merged view, ordered by device
+// name: those with an address that is one IPv4 or IPv6 address. A record
+// that has none (the schema accepts each leaf alone, so a hand-edited file
+// can hold a partial record) or whose address is not one is left out, and
+// so is carved by no renderer; HoldDefects names it for the validator.
 func (c *Config) Holds() []Hold {
 	v, _ := c.Value("breakglass_hold")
 	return holdsOf(v)
+}
+
+// HoldRecord is one entry of breakglass_hold as the file has it.
+type HoldRecord struct {
+	Hold
+	// Key is the mapping key it is stored under: the device's name with its
+	// dots written '~' when tacctl wrote it, and whatever the person wrote
+	// when the file was edited by hand (a name with a dot in it, which no
+	// dotted path can reach).
+	Key string
+	// Usable is whether the renderers carve it and the displays list it: it
+	// has an address that is one IP address.
+	Usable bool
+	// Defect is what is wrong with the entry ("" when nothing): it is not a
+	// record, has no address, an address that is not one, or a key a dotted
+	// path cannot name. A defect may leave the record usable.
+	Defect string
+}
+
+// HoldDefects are the entries of the merged view that have a defect, in
+// device order: what 'config validate' names, so that none stays invisible.
+func (c *Config) HoldDefects() []HoldRecord {
+	v, _ := c.Value("breakglass_hold")
+	var out []HoldRecord
+	for _, r := range holdRecordsOf(v) {
+		if r.Defect != "" {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// HoldRecordsNamed are the entries of the merged view of a device, usable
+// or not, whatever spelling their key has (names compare exactly).
+func (c *Config) HoldRecordsNamed(device string) []HoldRecord {
+	v, _ := c.Value("breakglass_hold")
+	var out []HoldRecord
+	for _, r := range holdRecordsOf(v) {
+		if r.Device == device {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 // HoldsOf reads the records of a merged view.
@@ -159,14 +204,30 @@ func HoldsOf(view *yamlpy.Map) []Hold {
 }
 
 func holdsOf(v any) []Hold {
+	var out []Hold
+	for _, r := range holdRecordsOf(v) {
+		if r.Usable {
+			out = append(out, r.Hold)
+		}
+	}
+	return out
+}
+
+// holdRecordsOf reads every entry of a breakglass_hold mapping, ordered by
+// device name.
+func holdRecordsOf(v any) []HoldRecord {
 	m, ok := v.(*yamlpy.Map)
 	if !ok {
 		return nil
 	}
-	var out []Hold
+	var out []HoldRecord
 	for key, e := range m.All() {
+		r := HoldRecord{Key: key}
+		r.Device = HoldDevice(key)
 		leaves, ok := e.(*yamlpy.Map)
 		if !ok {
+			r.Defect = "is not a record (address, since, by and reason)"
+			out = append(out, r)
 			continue
 		}
 		str := func(k string) string {
@@ -174,14 +235,29 @@ func holdsOf(v any) []Hold {
 			s, _ := x.(string)
 			return s
 		}
-		h := Hold{Device: HoldDevice(key), Address: str(HoldKeyAddress), Since: str(HoldKeySince), By: str(HoldKeyBy), Reason: str(HoldKeyReason)}
-		if h.Address == "" {
-			continue
+		r.Address, r.Since, r.By, r.Reason = str(HoldKeyAddress), str(HoldKeySince), str(HoldKeyBy), str(HoldKeyReason)
+		switch {
+		case r.Address == "":
+			r.Defect = "has no address, so it silences nothing"
+		case !holdAddressUsable(r.Address):
+			r.Defect = "has the address '" + r.Address + "', which is not one IPv4 or IPv6 address, so it silences nothing"
+		default:
+			r.Usable = true
+			if strings.Contains(key, ".") {
+				r.Defect = "is stored under the key '" + key + "', which holds a dot (tacctl writes a device name's dots as '~': " + HoldKey(key) + ")"
+			}
 		}
-		out = append(out, h)
+		out = append(out, r)
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Device < out[j].Device })
 	return out
+}
+
+// holdAddressUsable is whether s is one IP address (no prefix length, no
+// zone): what a renderer may carve out.
+func holdAddressUsable(s string) bool {
+	a, err := netip.ParseAddr(s)
+	return err == nil && a.Zone() == ""
 }
 
 // HeldAddresses are the addresses of the holds of a merged view, in device
@@ -215,14 +291,45 @@ func (c *Config) SetHold(h Hold) error {
 	})
 }
 
-// UnsetHold removes a device's record (the key and the mappings it leaves
-// empty); nothing is written when there is none.
+// SetHoldIf is SetHold for a hold that is written only while check, run
+// under the file's lock on the usable records the file holds at that
+// moment, accepts them: the check and the write cannot be separated by
+// another writer (two superusers holding one device).
+func (c *Config) SetHoldIf(h Hold, check func(existing []Hold) error) error {
+	return c.SetValuesIf([]PathValue{
+		{HoldPath(h.Device, HoldKeyAddress), h.Address},
+		{HoldPath(h.Device, HoldKeySince), h.Since},
+		{HoldPath(h.Device, HoldKeyBy), h.By},
+		{HoldPath(h.Device, HoldKeyReason), h.Reason},
+	}, func(overrides *yamlpy.Map) error {
+		v, _ := overrides.Get("breakglass_hold")
+		return check(holdsOf(v))
+	})
+}
+
+// UnsetHold removes every entry of a device (the mapping it leaves empty
+// goes too), under the key each is stored under: the one tacctl writes
+// (dots as '~') or a hand-written one with the dot in it. Nothing is
+// written when there is none.
 func (c *Config) UnsetHold(device string) error {
-	var paths []string
-	for _, k := range HoldKeys {
-		paths = append(paths, HoldPath(device, k))
-	}
-	return c.UnsetMany(paths)
+	return c.edit(func(overrides *yamlpy.Map) (bool, error) {
+		v, _ := overrides.Get("breakglass_hold")
+		m, ok := v.(*yamlpy.Map)
+		if !ok {
+			return false, nil
+		}
+		changed := false
+		for _, key := range m.Keys() {
+			if HoldDevice(key) == device {
+				m.Delete(key)
+				changed = true
+			}
+		}
+		if changed && m.Len() == 0 {
+			overrides.Delete("breakglass_hold")
+		}
+		return changed, nil
+	})
 }
 
 // HoldKeysOf lists the dotted paths under breakglass_hold in the file's own

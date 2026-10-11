@@ -93,10 +93,12 @@ func breakglassUsage() string {
       --json                            (list) Print the holds as a JSON array
 
 A device that authenticates against this server is answered by a scope whose
-prefixes cover its address. 'hold' takes that one address out of every
-scope's prefixes (the stored scopes do not change), so the server stops
-answering the device and its local accounts, the ones 'tacctl scope
-breakglass <scope> list' records, are usable while the server is up. It
+prefixes cover its address. 'hold' takes that one address, the one the device
+is registered at, out of every scope's prefixes (the stored scopes do not
+change), so the server stops answering the device and its local accounts, the
+ones 'tacctl scope breakglass <scope> list' records, are usable while the
+server is up; a device that sends its AAA from another address (a source
+interface, a NAT) is still answered, and the report says so. It
 asks for the device's name typed back, restarts the backends that serve it
 and shows the way in for the device's vendor. A hold is for one device, for an
 exceptional case, and is shown until 'release' (there is no timer): 'status',
@@ -142,8 +144,21 @@ func (inv *invocation) breakglass(args []string) error {
 // holds are the records of tacctl.yaml, by device name.
 func (inv *invocation) holds() []conf.Hold { return inv.app.Conf().Holds() }
 
-// holdOf is the record of a device (names compare without regard to case).
-func (inv *invocation) holdOf(device string) (conf.Hold, bool) {
+// sameAddress compares two addresses as addresses (not as text); text that
+// is not an address compares as text.
+func sameAddress(a, b string) bool {
+	x, err1 := netip.ParseAddr(a)
+	y, err2 := netip.ParseAddr(b)
+	if err1 != nil || err2 != nil {
+		return a == b
+	}
+	return x == y
+}
+
+// holdNamed is the record under a device's name, whatever address it is at
+// (names compare without regard to case): what 'release' and the refusal
+// of a second hold work from.
+func (inv *invocation) holdNamed(device string) (conf.Hold, bool) {
 	for _, h := range inv.holds() {
 		if strings.EqualFold(h.Device, device) {
 			return h, true
@@ -152,27 +167,74 @@ func (inv *invocation) holdOf(device string) (conf.Hold, bool) {
 	return conf.Hold{}, false
 }
 
-// isHeld reports whether a hold stands on the device.
-func (inv *invocation) isHeld(device string) bool {
-	_, ok := inv.holdOf(device)
+// holdOf is the record that holds a registered device: the one under its
+// name whose address is the address the device is registered at. A record
+// under the name at another address holds nothing of this device (it is an
+// orphan: the address it silences is nobody's registered address).
+func (inv *invocation) holdOf(device, addr string) (conf.Hold, bool) {
+	if h, ok := inv.holdNamed(device); ok && sameAddress(h.Address, addr) {
+		return h, true
+	}
+	return conf.Hold{}, false
+}
+
+// isHeld reports whether a hold stands on the device registered at addr.
+func (inv *invocation) isHeld(device, addr string) bool {
+	_, ok := inv.holdOf(device, addr)
 	return ok
 }
 
 // holdAt is the record of an address.
 func (inv *invocation) holdAt(addr string) (conf.Hold, bool) {
 	for _, h := range inv.holds() {
-		if h.Address == addr {
+		if sameAddress(h.Address, addr) {
 			return h, true
 		}
 	}
 	return conf.Hold{}, false
 }
 
+// holdOrphan says why a record holds no registered device ("" when one
+// does): no device of its name is registered, or the one that is stands at
+// another address than the record's.
+func holdOrphan(h conf.Hold, res *devreg.Resolver) string {
+	if res == nil {
+		return ""
+	}
+	e, ok := res.Lookup(h.Device, devreg.ScopeFilter{})
+	switch {
+	case !ok || e.Source != devreg.SourceDevice || !strings.EqualFold(e.Name, h.Device):
+		return "no device of that name is registered"
+	case !sameAddress(e.Address, h.Address):
+		return e.Name + " is registered at " + dash(e.Address) + ", not at " + h.Address
+	}
+	return ""
+}
+
+// holdOrphans are the records of the caller's view that hold no registered
+// device, by device name, with why (the registry that cannot be read says
+// none).
+func (inv *invocation) holdOrphans(hs []conf.Hold) map[string]string {
+	out := map[string]string{}
+	if len(hs) == 0 {
+		return out
+	}
+	if _, res, err := inv.deviceLoad(); err == nil {
+		for _, h := range hs {
+			if why := holdOrphan(h, res); why != "" {
+				out[h.Device] = why
+			}
+		}
+	}
+	return out
+}
+
 // holdSeenBy are the records the caller is shown: all of them for an
 // administrator, and for the lower tiers the holds of the devices of their
-// own scopes (a record whose device is not registered, or at an address no
-// scope answers, is no scope's). It reads the registry; a registry that
-// cannot be read shows a restricted caller nothing.
+// own scopes (a record whose device is not registered at the record's
+// address, or at an address no scope answers, is no scope's). It reads the
+// registry; a registry that cannot be read shows a restricted caller
+// nothing.
 func (inv *invocation) holdSeenBy() []conf.Hold {
 	all := inv.holds()
 	if len(all) == 0 || !inv.callerScopes().restricted {
@@ -184,7 +246,7 @@ func (inv *invocation) holdSeenBy() []conf.Hold {
 	}
 	var out []conf.Hold
 	for _, h := range all {
-		if e, ok := res.Lookup(h.Device, inv.deviceFilter()); ok && e.Source == devreg.SourceDevice {
+		if e, ok := res.Lookup(h.Device, inv.deviceFilter()); ok && e.Source == devreg.SourceDevice && sameAddress(e.Address, h.Address) {
 			out = append(out, h)
 		}
 	}
@@ -383,7 +445,13 @@ func (inv *invocation) breakglassHold(args []string) error {
 		return inv.usageErr("Device '" + e.Name + "' has no address: the hold is on the address the server sees. Register one: tacctl device address " + e.Name + " <address>")
 	}
 	// 3. Not already held.
-	if cur, held := inv.holdOf(e.Name); held {
+	if cur, held := inv.holdNamed(e.Name); held {
+		if !sameAddress(cur.Address, e.Address) {
+			// A record of that name at another address (the device was
+			// registered again): writing over it would drop its carve-out.
+			inv.app.Out.Error("A break-glass record named '" + cur.Device + "' stands at " + cur.Address + " " + inv.holdSummary(cur) + ", not at the address the device is registered at (" + e.Address + ").")
+			return inv.usageErr("Release it first (tacctl breakglass release " + cur.Device + "), then hold again. Nothing was changed.")
+		}
 		inv.app.Out.Error("Break-glass is already held on '" + cur.Device + "' (" + cur.Address + ") " + inv.holdSummary(cur) + ".")
 		inv.echo("  Reason: " + cur.Reason)
 		return inv.usageErr("Release it first (tacctl breakglass release " + cur.Device + "), then hold again with the new reason. Nothing was changed.")
@@ -436,29 +504,47 @@ func (inv *invocation) breakglassHold(args []string) error {
 
 	now := inv.app.Knobs.Now()
 	h := conf.Hold{Device: e.Name, Address: e.Address, Since: now.Format(time.RFC3339), By: inv.sudoUser(), Reason: reason}
-	var changed []string
+	// Another hold may have been made while the name was typed: the check
+	// and the write are one step under tacctl.yaml's lock (SetHoldIf), so
+	// two superusers cannot both pass it.
+	var raced *conf.Hold
 	res2, err := inv.app.Backends().StoreApply(inv.ctx, backend.ApplyOptions{}, func() error {
-		// Another hold may have been made while the name was typed.
-		c := inv.app.Conf()
-		c.Reload()
-		for _, x := range c.Holds() {
-			if strings.EqualFold(x.Device, h.Device) || x.Address == h.Address {
-				return fmt.Errorf("break-glass is held on %s (%s) now: nothing was changed", x.Device, x.Address)
+		err := inv.app.Conf().SetHoldIf(h, func(existing []conf.Hold) error {
+			for _, x := range existing {
+				if strings.EqualFold(x.Device, h.Device) || sameAddress(x.Address, h.Address) {
+					return &heldNowError{x}
+				}
 			}
+			return nil
+		})
+		var hn *heldNowError
+		if errors.As(err, &hn) {
+			// Nothing was written. Returning it would have StoreApply put
+			// back its copy of tacctl.yaml, taken before the other hold
+			// landed, over the record that did.
+			raced = &hn.hold
+			return nil
 		}
-		return c.SetHold(h)
+		return err
 	})
 	inv.loaded = false
 	if err != nil {
 		return err
 	}
-	changed = res2.Changed
+	if raced != nil {
+		inv.app.Out.Error("Break-glass is already held on '" + raced.Device + "' (" + raced.Address + ") " + inv.holdSummary(*raced) + ": another hold was made while the name was typed.")
+		return inv.usageErr("Nothing was changed.")
+	}
 	inv.app.Logger(inv.ctx, "auth.info", "breakglass hold device="+e.Name+" addr="+e.Address+" reason="+strconv.Quote(reason)+" by="+h.By)
 
 	inv.echo("")
 	inv.echoE(ui.Red + "Break-glass HELD" + ui.NC + " on " + e.Name + " (" + e.Address + ") since " + holdTime(h) + " by " + h.By + ".")
 	inv.echo("  Reason:   " + reason)
-	inv.echo("  Rendered: " + inv.renderedSentence(m, e.Address, changed, true))
+	inv.echo("  Rendered: " + inv.renderedSentence(m, e.Address, res2, true))
+	inv.echo("  Carved:   " + holdCarvedText(e))
+	if w := holdSourceWarning(e, res); w != "" {
+		inv.echo("  " + ui.Yellow + "Warning:" + ui.NC + "  " + w)
+	}
 	inv.echo("")
 	for _, l := range vendorWayIn(e.Vendor) {
 		inv.echo("  " + l)
@@ -469,13 +555,58 @@ func (inv *invocation) breakglassHold(args []string) error {
 	inv.echo("  " + inv.heldNow("Held now: "))
 	inv.echo("  When done: tacctl breakglass release " + e.Name)
 	inv.echo("")
+	if len(res2.RestartFailed) > 0 {
+		// The record and the rendered files stay: they are what the next
+		// restart, or the next boot, serves.
+		inv.app.Out.Error("The hold is recorded and the rendered files are kept, but it is not in force until the backend named under Rendered is restarted; 'tacctl breakglass release " + e.Name + "' removes the record.")
+		return exit(1)
+	}
 	return nil
+}
+
+// heldNowError is a hold that was found under the lock: the device or its
+// address is held by another record.
+type heldNowError struct{ hold conf.Hold }
+
+func (e *heldNowError) Error() string {
+	return "break-glass is already held on " + e.hold.Device + " (" + e.hold.Address + ")"
+}
+
+// holdCarvedText says plainly what a hold carves: the address the device is
+// registered at, and not the address a device may send its AAA from.
+func holdCarvedText(e devreg.Entry) string {
+	return "only " + e.Address + ", the address registered for " + e.Name + ". A device that sends its AAA from another address (a source interface, a NAT) is still answered."
+}
+
+// holdSourceWarning is the warning the hold report adds when the server's
+// own log data show no request from the registered address: the device may
+// send from another one, which the hold does not carve ("" when the
+// address has been seen, and when there is no log data to judge by).
+func holdSourceWarning(e devreg.Entry, res *devreg.Resolver) string {
+	if res == nil || !res.Seen.HasData() {
+		return ""
+	}
+	if _, ok := res.Seen.Of(e.Address); ok {
+		return ""
+	}
+	learn := "learn the address it sends from with 'tacctl device config pull " + e.Name + "' (its source interface) or on the device with 'show tacacs' and its own log."
+	for _, x := range res.Seen.All() {
+		if !sameAddress(x.Address, e.Address) && x.LastNASID != "" && devreg.NameMatches(e, x.LastNASID) {
+			return "the server's logs hold no request from " + e.Address + ", but " + x.Address + " identifies as '" + x.LastNASID +
+				"': that is most likely where " + e.Name + " sends from, and it is still answered; " + learn
+		}
+	}
+	return "the server has seen " + e.Name + " from no address at all (no request from " + e.Address + ", none that identifies as '" + e.Name +
+		"'). If it sends from another address it is still answered; " + learn
 }
 
 // renderedSentence says what a hold or release did to the rendering: the
 // prefixes (and tagged addresses) of the scopes that hold addr, and which
-// backends restarted. held is the state after the change.
-func (inv *invocation) renderedSentence(m *model.Model, addr string, restarted []string, held bool) string {
+// backends restarted (res is what the apply did). A backend whose restart
+// did not succeed is said so, with what the running server answers until it
+// is restarted and the command that does it. held is the state after the
+// change.
+func (inv *invocation) renderedSentence(m *model.Model, addr string, res backend.Result, held bool) string {
 	var parts []string
 	for _, c := range m.CarvedFrom(addr, "", true) {
 		what := c.CIDR + " of scope '" + c.Scope + "'"
@@ -499,12 +630,21 @@ func (inv *invocation) renderedSentence(m *model.Model, addr string, restarted [
 	default:
 		s = strings.Join(parts, "; ")
 	}
-	if len(restarted) == 0 {
+	if len(res.Changed) == 0 {
 		return s + "; no backend file changed, nothing restarted."
 	}
-	rs := make([]string, len(restarted))
-	for i, id := range restarted {
+	still := "still answers " + addr
+	if !held {
+		still = "still does not answer " + addr
+	}
+	rs := make([]string, len(res.Changed))
+	for i, id := range res.Changed {
 		rs[i] = id + " restarted"
+		for _, f := range res.RestartFailed {
+			if f.ID == id {
+				rs[i] = id + " NOT restarted: the running server " + still + " until it is restarted (run: " + f.Command + ")"
+			}
+		}
 	}
 	return s + "; " + strings.Join(rs, ", ") + "."
 }
@@ -520,8 +660,15 @@ func (inv *invocation) breakglassRelease(args []string) error {
 		return inv.usageErr("'tacctl breakglass release' is the superuser's. Nothing was changed.")
 	}
 	name := p.Args[0]
-	h, ok := inv.holdOf(name)
+	h, ok := inv.holdNamed(name)
 	if !ok {
+		// An entry of that name that carved nothing (no address, or one that
+		// is not an address): removed by name, as the validator tells.
+		for _, d := range inv.app.Conf().HoldDefects() {
+			if !d.Usable && strings.EqualFold(d.Device, name) {
+				return inv.releaseUnusable(d)
+			}
+		}
 		held := inv.heldNow("")
 		return inv.usageErr("Break-glass is not held on '"+name+"'. Held now: "+held+" (tacctl breakglass list)", "Nothing was changed.")
 	}
@@ -548,25 +695,47 @@ func (inv *invocation) breakglassRelease(args []string) error {
 	// echo, not echoE: the reason is free text and a backslash in it is a
 	// backslash.
 	inv.echo(ui.Green + "Break-glass RELEASED" + ui.NC + " on " + h.Device + " (" + h.Address + "): held " + age + " by " + h.By + " (" + h.Reason + ").")
-	inv.echo("  Rendered: " + inv.renderedSentence(m, h.Address, res.Changed, false))
-	if e := inv.registeredVendor(h.Device); e == "cisco" || e == "juniper" || e == "wti" {
+	inv.echo("  Rendered: " + inv.renderedSentence(m, h.Address, res, false))
+	if e := inv.registeredVendor(h.Device, h.Address); e == "cisco" || e == "juniper" || e == "wti" {
 		inv.echo("  Check:    tacctl device config pull " + h.Device + " --diff (aaa: ok), then a new ssh login as yourself.")
 	} else {
 		inv.echo("  Check:    a new login as yourself at the device.")
 	}
 	inv.echo("  " + inv.heldNow("Still held: "))
 	inv.echo("")
+	if len(res.RestartFailed) > 0 {
+		inv.app.Out.Error("The record is removed and the rendered files are kept, but the release is not in force until the backend named under Rendered is restarted.")
+		return exit(1)
+	}
+	return nil
+}
+
+// releaseUnusable removes an entry that carved nothing (it has no address,
+// or one that is not an address, or is not a record): the rendering does
+// not change, so nothing restarts, and it is no hold that was released.
+func (inv *invocation) releaseUnusable(d conf.HoldRecord) error {
+	if _, err := inv.app.Backends().StoreApply(inv.ctx, backend.ApplyOptions{}, func() error {
+		return inv.app.Conf().UnsetHold(d.Device)
+	}); err != nil {
+		return err
+	}
+	inv.loaded = false
+	inv.app.Logger(inv.ctx, "auth.info", "breakglass remove-record device="+d.Device+" by="+inv.sudoUser())
+	inv.echo("")
+	inv.echo(ui.Green + "Break-glass record REMOVED" + ui.NC + " for " + d.Device + ": the entry " + d.Defect + "; the rendering did not change.")
+	inv.echo("  " + inv.heldNow("Still held: "))
+	inv.echo("")
 	return nil
 }
 
 // registeredVendor is the vendor of a registered device ("" when it is not
-// registered).
-func (inv *invocation) registeredVendor(device string) string {
+// registered at addr).
+func (inv *invocation) registeredVendor(device, addr string) string {
 	f, err := devreg.Load(inv.app.Paths.DevicesFile)
 	if err != nil {
 		return ""
 	}
-	if d := f.Find(device); d != nil {
+	if d := f.Find(device); d != nil && sameAddress(d.Address, addr) {
 		return d.Vendor
 	}
 	return ""
@@ -585,7 +754,11 @@ type holdJSON struct {
 	Scope      string `json:"scope"`
 	Vendor     string `json:"vendor"`
 	Registered bool   `json:"registered"`
-	Covered    bool   `json:"covered"`
+	// Orphan is a record that holds no registered device: none of its name
+	// is registered, or the one that is stands at another address. The
+	// address it carves is still not answered.
+	Orphan  bool `json:"orphan"`
+	Covered bool `json:"covered"`
 }
 
 func (inv *invocation) holdJSONOf(h conf.Hold, m *model.Model, res *devreg.Resolver) holdJSON {
@@ -597,6 +770,7 @@ func (inv *invocation) holdJSONOf(h conf.Hold, m *model.Model, res *devreg.Resol
 		if e, ok := res.Lookup(h.Device, devreg.ScopeFilter{}); ok && e.Source == devreg.SourceDevice {
 			j.Registered, j.Vendor = true, e.Vendor
 		}
+		j.Orphan = holdOrphan(h, res) != ""
 	}
 	if m != nil {
 		if info, ok := m.LookupAddr(h.Address); ok {
@@ -645,20 +819,22 @@ func (inv *invocation) breakglassList(args []string) error {
 	t := ui.NewTable(fmt.Sprintf("%s (%d)", title, len(rows)), ui.Left("DEVICE"), ui.Left("ADDRESS"), ui.Left("SCOPE"), ui.Left("SINCE"), ui.Left("HELD"), ui.Left("BY"), ui.Left("REASON"))
 	for i, h := range holds {
 		scope := rows[i].Scope
-		switch {
-		case !rows[i].Registered:
-			scope = "not registered"
-		case !rows[i].Covered:
+		if !rows[i].Covered {
 			scope = "no scope covers it now"
 		}
-		t.Add(ui.Styled(ui.Red, h.Device), h.Address, scope, holdTime(h), holdAge(h, now), h.By, h.Reason)
+		name := h.Device
+		if rows[i].Orphan {
+			name += " (orphan)"
+		}
+		t.Add(ui.Styled(ui.Red, name), h.Address, scope, holdTime(h), holdAge(h, now), h.By, h.Reason)
 	}
 	inv.write(t.String())
 	inv.echo("")
 	for i, h := range holds {
 		switch {
-		case !rows[i].Registered:
-			inv.echoE("  " + ui.Red + h.Device + ui.NC + " is not a registered device any more; 'tacctl breakglass release " + h.Device + "' removes the record.")
+		case rows[i].Orphan:
+			inv.echo("  " + ui.Red + h.Device + ui.NC + " is an orphan record: " + holdOrphan(h, res) + ", so it holds no registered device, and it still silences " + h.Address +
+				"; 'tacctl breakglass release " + h.Device + "' removes it.")
 		case !rows[i].Covered:
 			inv.echo("  " + h.Device + ": no scope covers " + h.Address + " now, so it is unanswered whether held or not; 'release' changes nothing in the rendering.")
 		}
@@ -672,7 +848,8 @@ func (inv *invocation) breakglassList(args []string) error {
 }
 
 // statusHolds is the Break-glass line of the Security Posture section of
-// 'status': none held (green), or one red line per hold that stands.
+// 'status': none held (green), or one red line per hold that stands (a
+// record that holds no registered device says so).
 func (inv *invocation) statusHolds() {
 	hs := inv.holdSeenBy()
 	if len(hs) == 0 {
@@ -684,7 +861,13 @@ func (inv *invocation) statusHolds() {
 		return
 	}
 	now := inv.app.Knobs.Now()
+	orphans := inv.holdOrphans(hs)
 	for _, h := range hs {
+		if why, ok := orphans[h.Device]; ok {
+			inv.echoE("    " + ui.Red + "Break-glass:        ORPHAN record " + h.Device + " (" + h.Address + ") since " + holdTime(h) + " by " + h.By +
+				" (" + holdAge(h, now) + "): " + why + "; the server does not answer " + h.Address + " (tacctl breakglass release " + h.Device + ")" + ui.NC)
+			continue
+		}
 		inv.echoE("    " + ui.Red + "Break-glass:        HELD on " + h.Device + " (" + h.Address + ") since " + holdTime(h) + " by " + h.By +
 			" (" + holdAge(h, now) + "): the server does not answer it (tacctl breakglass list)" + ui.NC)
 	}
@@ -694,9 +877,11 @@ func (inv *invocation) statusHolds() {
 // hold stays on the same address, and the rendered files name the device in
 // a comment, so they are rendered again; no backend is restarted (only a
 // comment changed). A failure is a warning: the record keeps its old name
-// ('breakglass release' works from the record alone).
-func (inv *invocation) holdCarry(oldName, newName string) {
-	h, ok := inv.holdOf(oldName)
+// ('breakglass release' works from the record alone). Only a record that
+// holds the device (its address is the one the device is registered at, addr)
+// moves with it; an orphan stays under the name it has.
+func (inv *invocation) holdCarry(oldName, newName, addr string) {
+	h, ok := inv.holdOf(oldName, addr)
 	if !ok {
 		return
 	}

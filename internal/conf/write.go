@@ -114,6 +114,44 @@ type PathValue struct {
 // value that equals the default leaves the file, as for one key). Nothing
 // is written when one is refused.
 func (c *Config) SetValues(pairs []PathValue) error {
+	return c.SetValuesIf(pairs, nil)
+}
+
+// SetValuesIf is SetValues with a precondition: check (when not nil) runs
+// under the file's lock, on the overrides as they are on disk now and before
+// anything is validated or written, so a writer that checks what is there
+// and then sets cannot be overtaken between the two. A non-nil error is
+// returned as it is and nothing is written. check must not modify the
+// mapping.
+func (c *Config) SetValuesIf(pairs []PathValue, check func(overrides *yamlpy.Map) error) error {
+	return c.edit(func(overrides *yamlpy.Map) (bool, error) {
+		if check != nil {
+			if err := check(overrides); err != nil {
+				return false, err
+			}
+		}
+		for _, pv := range pairs {
+			_, isList := py.List(pv.Value)
+			if msg := c.Schema.Validate(pv.Path, pv.Value, isList); msg != "" {
+				return false, &ValidationError{Path: pv.Path, Msg: msg}
+			}
+		}
+		for _, pv := range pairs {
+			if def, _ := c.defaultFor(pv.Path); py.Equal(def, pv.Value) {
+				unsetNested(overrides, pv.Path)
+			} else {
+				setNested(overrides, pv.Path, pv.Value)
+			}
+		}
+		return true, nil
+	})
+}
+
+// edit is the read-modify-write of tacctl.yaml: under the directory lock,
+// fn changes the file's overrides and says whether it did (nothing is
+// written when it did not, or when fn failed). The file is removed when no
+// override is left.
+func (c *Config) edit(fn func(overrides *yamlpy.Map) (bool, error)) error {
 	dir := filepath.Dir(c.Path)
 	if err := os.MkdirAll(dir, 0o777); err != nil {
 		return fmt.Errorf("tacctl.yaml: cannot create %s: %w", dir, err)
@@ -131,18 +169,9 @@ func (c *Config) SetValues(pairs []PathValue) error {
 	}
 	defer c.chown()
 
-	for _, pv := range pairs {
-		_, isList := py.List(pv.Value)
-		if msg := c.Schema.Validate(pv.Path, pv.Value, isList); msg != "" {
-			return &ValidationError{Path: pv.Path, Msg: msg}
-		}
-	}
-	for _, pv := range pairs {
-		if def, _ := c.defaultFor(pv.Path); py.Equal(def, pv.Value) {
-			unsetNested(overrides, pv.Path)
-		} else {
-			setNested(overrides, pv.Path, pv.Value)
-		}
+	changed, err := fn(overrides)
+	if err != nil || !changed {
+		return err
 	}
 	if overrides.Len() == 0 {
 		if err := os.Remove(c.Path); err != nil && !errors.Is(err, fs.ErrNotExist) {

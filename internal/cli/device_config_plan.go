@@ -190,7 +190,7 @@ func (r *planRun) planOne(e devreg.Entry) planDevice {
 	cannot := func(why string) planDevice {
 		out.cannot = why
 		out.status = plan.CannotPlan(out.h, why)
-		out.status.BreakglassHeld = r.inv.isHeld(e.Name)
+		out.status.BreakglassHeld = r.inv.isHeld(e.Name, e.Address)
 		// --backout needs none of the plan's prerequisites (a stale record, a
 		// rendering that fails): what was kept is what was pasted
 		if r.opt.backout && snap.backout != nil && e.Vendor != "wti" {
@@ -251,7 +251,7 @@ func (r *planRun) planOne(e devreg.Entry) planDevice {
 	// A device the server was told not to answer: the report says the check
 	// cannot pass while the hold stands (the planner is given the fact, it
 	// never reads the record).
-	if h, held := r.inv.holdOf(e.Name); held {
+	if h, held := r.inv.holdOf(e.Name, e.Address); held {
 		opt.BreakglassHeld = &plan.BreakglassHold{Since: holdTime(h), By: h.By}
 	}
 	d, err := plan.Plan(e.Vendor, expected, current, plainView, opt)

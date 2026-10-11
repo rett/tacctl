@@ -7490,6 +7490,19 @@ and
 carry a comment that names the address, the device and the prefixes it was carved
 from, never the reason. One restart of each backend whose file changed, at
 the hold and at the release; a release that changes nothing restarts nothing.
+Only the address the device is registered at is carved: a device that sends its
+AAA from another address (a source interface, a NAT) is still answered, which
+the report of the hold says. A record holds a device only while the device is
+registered at the record's address; any other record (the device was removed by
+hand, or another was registered under the name at another address) is an
+orphan, which
+.BR "breakglass list" ,
+.B status
+and
+.B "config validate"
+name, whose address stays carved, and which
+.B "breakglass release"
+removes.
 While a hold stands,
 .B "device address"
 and
@@ -7551,6 +7564,20 @@ does not answer it,
 .B "Held now:"
 (every hold that stands) and
 .BR "When done:" .
+A
+.B "Carved:"
+line says that only the registered address is carved and that a device that
+sends its AAA from another address is still answered, and a
+.B "Warning:"
+line adds, when the seen data hold no request from the registered address, how
+to learn the address the device sends from
+.RB ( "tacctl device config pull" ", " "show tacacs" ,
+the device's log). A backend whose restart failed is reported as
+.BR "NOT restarted" ,
+with the command, and the verb exits 1; the record and the rendered files are
+kept. Two holds of one device at once are refused as already held (the check is
+made under the lock of
+.IR tacctl.yaml ).
 Refused, with nothing changed, for a device that is not registered or is an
 enrolled host, has no address, is held already, is at a loopback address, an
 address a listener of either backend binds or the recorded address of an enrolled
@@ -7572,7 +7599,12 @@ Options:
 Make the server answer the device again. Works from the record alone, so a
 device removed from
 .I devices.yaml
-by hand is still released. The report names how long it was held, by whom and why,
+by hand is still released, and removes the record under the key it is stored
+under, whichever spelling (an entry that carved nothing, with no address or with
+one that is not an address, is removed by name).
+A restart that failed is reported as
+.B "NOT restarted"
+and the verb exits 1. The report names how long it was held, by whom and why,
 what was rendered, the check
 .RB ( "tacctl device config pull " device " \-\-diff" ,
 then a new ssh login as yourself) and the holds that remain. Superuser only.
@@ -7585,8 +7617,13 @@ Requires: \fBsuperuser\fR.
 .TP
 .BR "breakglass list " [ \-\-json ]
 The holds that stand: device, address, scope that answers the address, since,
-how long, by whom and why (a record whose device is not registered, or whose
-address no scope covers, says so). An engineer sees the devices of their own
+how long, by whom and why (a record whose address no scope covers says so; a
+record that holds no registered device is marked
+.BR orphan ,
+and
+.B \-\-json
+has
+.BR orphan:true ). An engineer sees the devices of their own
 scopes only.
 .\" BEGIN GENERATED: command breakglass list
 .RS

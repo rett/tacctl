@@ -663,7 +663,7 @@ func (inv *invocation) checkRows(res *devreg.Resolver, e devreg.Entry, reach str
 		row("Scope", "none: no scope's prefixes cover "+e.Address+" ('tacctl scope prefixes <scope> add <cidr>')")
 	}
 	if h := inv.deviceHoldOf(e); h != nil {
-		hold, _ := inv.holdOf(e.Name)
+		hold, _ := inv.holdOf(e.Name, e.Address)
 		rows[len(rows)-1].value += "; " + ui.Red + "NOT ANSWERED: break-glass " + inv.holdRowText(hold) + ui.NC
 	}
 	if e.Source == devreg.SourceDevice {

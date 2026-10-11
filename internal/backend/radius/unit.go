@@ -168,8 +168,8 @@ func (m *Module) unitFree(ctx context.Context) bool {
 
 // Service is backend_radius_service. One daemon serves every listener, so
 // the listener argument changes nothing. 'reload' restarts: FreeRADIUS reads
-// its clients only at start. A restart reports its own outcome and never
-// fails. stop does nothing without the drop-in: the unit is then not running
+// its clients only at start. A restart reports its own outcome and, when it
+// failed, returns a *backend.RestartError naming the command. stop does nothing without the drop-in: the unit is then not running
 // tacctl's instance, and whatever it does is not tacctl's to stop.
 // is-active returns systemctl's word and an error when it is not "active";
 // since and pid return systemd's values.
@@ -179,10 +179,11 @@ func (m *Module) Service(ctx context.Context, action backend.ServiceAction, _ st
 	case backend.ServiceRestart, backend.ServiceReload:
 		if m.unitRestart(ctx) {
 			out.Info("Service restarted (" + m.unitName() + ").")
-		} else {
-			out.Warn("Service restart failed — run: sudo systemctl restart " + m.unitName())
+			return "", nil
 		}
-		return "", nil
+		cmd := "sudo systemctl restart " + m.unitName()
+		out.Warn("Service restart failed — run: " + cmd)
+		return "", &backend.RestartError{Command: cmd}
 	case backend.ServiceStart:
 		return "", failed(m.systemctl(ctx, false, "start", m.L.Unit))
 	case backend.ServiceStop:

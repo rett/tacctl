@@ -239,7 +239,7 @@ func (inv *invocation) chooseDevices(sel selection, user string, login bool, ver
 			// A held device does not accept the login; refused before any
 			// device is dialled, as a batch would stop on an authentication
 			// failure.
-			if _, held := inv.holdOf(e.Name); login && held {
+			if _, held := inv.holdOf(e.Name, e.Address); login && held {
 				return nil, inv.usageErr(holdRefusal(e.Name))
 			}
 			out.entries = append(out.entries, e)
@@ -275,7 +275,7 @@ func (inv *invocation) chooseDevices(sel selection, user string, login bool, ver
 			out.skipped.wti = append(out.skipped.wti, e.Name)
 		case login && loginProblem(m, user, e.Scope) != "":
 			out.skipped.notYours = append(out.skipped.notYours, e.Name)
-		case login && inv.isHeld(e.Name):
+		case login && inv.isHeld(e.Name, e.Address):
 			out.skipped.held = append(out.skipped.held, e.Name)
 		default:
 			out.entries = append(out.entries, e)

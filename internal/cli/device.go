@@ -695,7 +695,7 @@ func (inv *invocation) deviceHoldOf(e devreg.Entry) *deviceHoldJSON {
 	if e.Source != devreg.SourceDevice {
 		return nil
 	}
-	h, ok := inv.holdOf(e.Name)
+	h, ok := inv.holdOf(e.Name, e.Address)
 	if !ok {
 		return nil
 	}
@@ -859,7 +859,7 @@ func (inv *invocation) deviceList(args []string) error {
 		// A device the server has been told not to answer is marked, in
 		// place of what the scopes would say of it.
 		if e.Source == devreg.SourceDevice {
-			if _, isHeld := inv.holdOf(e.Name); isHeld {
+			if _, isHeld := inv.holdOf(e.Name, e.Address); isHeld {
 				held++
 				text := "BREAK-GLASS"
 				if stale {
@@ -966,7 +966,7 @@ func (inv *invocation) deviceShow(args []string) error {
 	}
 	row("State", e.State())
 	if h := inv.deviceHoldOf(e); h != nil {
-		hold, _ := inv.holdOf(e.Name)
+		hold, _ := inv.holdOf(e.Name, e.Address)
 		row("Break-glass", ui.Red+inv.holdRowText(hold)+ui.NC)
 	}
 	if e.Source == devreg.SourceDevice {
@@ -1246,7 +1246,7 @@ func (inv *invocation) deviceRemove(args []string) error {
 	// A record without its device would silence an address nobody can find.
 	var heldTargets, rel []string
 	for _, n := range targets {
-		if _, held := inv.holdOf(n); held {
+		if d := f.Find(n); d != nil && inv.isHeld(n, d.Address) {
 			heldTargets = append(heldTargets, n)
 			rel = append(rel, "tacctl breakglass release "+n)
 		}
@@ -1316,7 +1316,7 @@ func (inv *invocation) deviceRename(args []string) error {
 	}
 	inv.configCarry(oldName, newName)
 	inv.snmpDeviceCarry(oldName, newName)
-	inv.holdCarry(oldName, newName)
+	inv.holdCarry(oldName, newName, old.Address)
 	inv.app.Out.Info("Device '" + oldName + "' renamed to '" + newName + "'.")
 	inv.echo("")
 	return nil
@@ -1358,7 +1358,7 @@ func (inv *invocation) deviceSetter(field string) func([]string) error {
 		// The hold is on the address the server sees: moving the device
 		// would leave the old address silenced and the new one answered.
 		if field == "address" {
-			if _, held := inv.holdOf(name); held {
+			if inv.isHeld(name, d.Address) {
 				return inv.usageErr("break-glass is held on " + name + ": release it first (tacctl breakglass release " + name + "). Nothing was changed.")
 			}
 		}
@@ -1701,10 +1701,12 @@ func (inv *invocation) deviceImport(args []string) error {
 	// An import that removes a held device or moves it to another address
 	// is refused, as 'remove' and 'address' are.
 	for _, h := range inv.holds() {
-		if f.Find(h.Device) == nil {
+		// A record holds the device only while the device is registered at
+		// the record's address; an orphan is not the import's to refuse.
+		if cur := f.Find(h.Device); cur == nil || !sameAddress(cur.Address, h.Address) {
 			continue
 		}
-		if d := trial.Find(h.Device); d == nil || d.Address != h.Address {
+		if d := trial.Find(h.Device); d == nil || !sameAddress(d.Address, h.Address) {
 			return inv.usageErr("break-glass is held on " + h.Device + ": release it first (tacctl breakglass release " + h.Device + "). Nothing was changed.")
 		}
 	}

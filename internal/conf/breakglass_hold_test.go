@@ -1,11 +1,173 @@
 package conf
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 )
+
+const handHolds = `breakglass_hold:
+  sw.lab:
+    address: 192.0.2.21
+    since: '2026-10-10T14:02:00+00:00'
+    by: alice
+    reason: hand written
+  bare:
+    reason: no address
+  wrong:
+    address: 10.0.0.0/8
+    reason: a prefix is not an address
+  word:
+    address: nope
+  text: x
+`
+
+// An entry the file holds is a usable hold or is named: a hand-written key
+// with a dot is carved and listed (and named), an entry with no address, a
+// prefix, or something that is not an address carves nothing.
+func TestHoldRecordsAndDefects(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "tacctl.yaml")
+	if err := os.WriteFile(p, []byte(handHolds), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c := Load(p, DefaultBackends)
+	hs := c.Holds()
+	if len(hs) != 1 || hs[0].Device != "sw.lab" || hs[0].Address != "192.0.2.21" {
+		t.Fatalf("usable holds %+v", hs)
+	}
+	if a := HeldAddresses(c.Merged()); len(a) != 1 || a[0] != "192.0.2.21" {
+		t.Errorf("a prefix or a word was carved: %v", a)
+	}
+	got := map[string]HoldRecord{}
+	for _, d := range c.HoldDefects() {
+		got[d.Key] = d
+	}
+	if len(got) != 5 {
+		t.Fatalf("defects %+v", got)
+	}
+	for key, want := range map[string]string{
+		"sw.lab": "holds a dot", "bare": "has no address", "wrong": "not one IPv4 or IPv6 address",
+		"word": "not one IPv4 or IPv6 address", "text": "is not a record",
+	} {
+		if d := got[key]; !strings.Contains(d.Defect, want) {
+			t.Errorf("%s: %q, want %q", key, d.Defect, want)
+		}
+	}
+	if !got["sw.lab"].Usable || got["bare"].Usable || got["wrong"].Usable {
+		t.Errorf("usable: %+v", got)
+	}
+	if n := len(c.HoldRecordsNamed("bare")); n != 1 {
+		t.Errorf("named: %d", n)
+	}
+}
+
+// A release removes the entry under the key it is stored under, whichever
+// spelling, and the mapping goes with the last one.
+func TestUnsetHoldRemovesAHandWrittenKey(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "tacctl.yaml")
+	if err := os.WriteFile(p, []byte(handHolds), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c := Load(p, DefaultBackends)
+	// The tacctl spelling of the same device, beside the dotted one.
+	if err := c.SetHold(Hold{Device: "sw.lab", Address: "192.0.2.21", Since: "2026-10-10T14:02:00Z", By: "bob", Reason: "again"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.UnsetHold("sw.lab"); err != nil {
+		t.Fatal(err)
+	}
+	text, _ := os.ReadFile(p)
+	if strings.Contains(string(text), "sw.lab") || strings.Contains(string(text), "sw~lab") || !strings.Contains(string(text), "bare:") {
+		t.Errorf("after the release:\n%s", text)
+	}
+	if len(Load(p, DefaultBackends).Holds()) != 0 {
+		t.Error("a hold is left")
+	}
+	// The unusable ones go by name too, and the last one takes the mapping
+	// and the file.
+	for _, n := range []string{"bare", "wrong", "word", "text"} {
+		if err := c.UnsetHold(n); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := os.Stat(p); err == nil {
+		again, _ := os.ReadFile(p)
+		t.Errorf("the file is left:\n%s", again)
+	}
+	// Nothing to remove writes nothing.
+	if err := c.UnsetHold("nosuch"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The check of a hold runs under the file's lock, on the file as it is: a
+// writer whose own view is stale is still refused, and nothing is written.
+func TestSetHoldIfChecksTheFileUnderTheLock(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "tacctl.yaml")
+	stale := Load(p, DefaultBackends)
+	first := Load(p, DefaultBackends)
+	h := Hold{Device: "sw-1", Address: "192.0.2.21", Since: "2026-10-10T14:02:00Z", By: "alice", Reason: "first"}
+	refuse := func(existing []Hold) error {
+		for _, x := range existing {
+			if x.Device == h.Device {
+				return errors.New("held already")
+			}
+		}
+		return nil
+	}
+	if err := first.SetHoldIf(h, refuse); err != nil {
+		t.Fatal(err)
+	}
+	if len(stale.Holds()) != 0 {
+		t.Fatal("the stale view saw the write")
+	}
+	second := h
+	second.By, second.Reason = "bob", "second"
+	if err := stale.SetHoldIf(second, refuse); err == nil || err.Error() != "held already" {
+		t.Fatalf("the second hold: %v", err)
+	}
+	got := Load(p, DefaultBackends).Holds()
+	if len(got) != 1 || got[0].By != "alice" || got[0].Reason != "first" {
+		t.Errorf("the first hold was overwritten: %+v", got)
+	}
+}
+
+// Several writers at once: exactly one hold of a device is made.
+func TestSetHoldIfOnlyOneWriterWins(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "tacctl.yaml")
+	const n = 8
+	var wg sync.WaitGroup
+	var won atomic.Int32
+	for i := range n {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			c := Load(p, DefaultBackends)
+			h := Hold{Device: "sw-1", Address: "192.0.2.21", Since: "2026-10-10T14:02:00Z", By: "user" + strconv.Itoa(i), Reason: "r"}
+			err := c.SetHoldIf(h, func(existing []Hold) error {
+				if len(existing) > 0 {
+					return errors.New("held already")
+				}
+				return nil
+			})
+			if err == nil {
+				won.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+	if won.Load() != 1 {
+		t.Errorf("%d holds were made", won.Load())
+	}
+	if got := Load(p, DefaultBackends).Holds(); len(got) != 1 {
+		t.Errorf("records %+v", got)
+	}
+}
 
 func TestHoldSchema(t *testing.T) {
 	s := NewSchema(DefaultBackends)
