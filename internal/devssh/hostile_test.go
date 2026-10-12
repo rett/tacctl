@@ -40,11 +40,15 @@ type scripted struct {
 	// freezeAfterBlanks: after this many empty lines the device stops
 	// reading its input for good (0: never).
 	freezeAfterBlanks int
+	// raw: a shell channel handed to the test, byte for byte (a menu
+	// program on a terminal); it takes the place of perCmd.
+	raw func(ch ssh.Channel)
 
 	mu      sync.Mutex
 	answers [][]string // what the client answered, per round
 	pwSeen  []string   // passwords presented by the password method
 	recv    []byte     // everything the shell read
+	ptys    []string   // the pty requests: '<term> <cols>x<rows>'
 	quit    chan struct{}
 }
 
@@ -141,13 +145,49 @@ func (d *scripted) serve(nc net.Conn, cfg *ssh.ServerConfig) {
 		}
 		go func() {
 			for r := range rq {
+				if r.Type == "pty-req" {
+					d.notePty(r.Payload)
+				}
 				_ = r.Reply(true, nil)
-				if r.Type == "shell" && d.perCmd != nil {
-					go d.shell(ch)
+				if r.Type == "shell" {
+					switch {
+					case d.raw != nil:
+						go d.raw(ch)
+					case d.perCmd != nil:
+						go d.shell(ch)
+					}
 				}
 			}
 		}()
 	}
+}
+
+// notePty records a pty request.
+func (d *scripted) notePty(payload []byte) {
+	var req struct {
+		Term          string
+		Cols, Rows    uint32
+		Width, Height uint32
+		Modes         string
+	}
+	if ssh.Unmarshal(payload, &req) != nil {
+		return
+	}
+	d.mu.Lock()
+	d.ptys = append(d.ptys, req.Term+" "+strconv.Itoa(int(req.Cols))+"x"+strconv.Itoa(int(req.Rows)))
+	d.mu.Unlock()
+}
+
+// readByte is one byte of the shell's input, recorded in recv.
+func (d *scripted) readByte(ch ssh.Channel) (byte, bool) {
+	one := make([]byte, 1)
+	if _, err := ch.Read(one); err != nil {
+		return 0, false
+	}
+	d.mu.Lock()
+	d.recv = append(d.recv, one[0])
+	d.mu.Unlock()
+	return one[0], true
 }
 
 func (d *scripted) shell(ch ssh.Channel) {
