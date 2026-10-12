@@ -7,6 +7,7 @@ package plan
 
 import (
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -83,7 +84,7 @@ func (p *planner) buildItems(d *Delta, byName map[string]devconf.SectionResult) 
 			}
 			it.Lines = slices.Clone(answers[name+"|"+stem])
 			it.Fixed = len(it.Lines) > 0
-			it.Words = plainWords(d.Vendor, stem)
+			it.Words = p.words(d.Vendor, stem)
 			if kind == KindMissing {
 				// a line that fixes it by replacing another one: different
 				var device []string
@@ -98,7 +99,7 @@ func (p *planner) buildItems(d *Delta, byName map[string]devconf.SectionResult) 
 					it.Kind = KindDifferent
 					var ws []string
 					for _, s := range device {
-						ws = append(ws, plainWords(d.Vendor, s))
+						ws = append(ws, p.words(d.Vendor, s))
 					}
 					it.Words += " (the device has: " + strings.Join(ws, "; ") + ")"
 				}
@@ -115,7 +116,7 @@ func (p *planner) buildItems(d *Delta, byName map[string]devconf.SectionResult) 
 			d.Items = append(d.Items, it)
 		}
 	}
-	d.Items = groupItems(d.Vendor, d.Items)
+	d.Items = groupItems(d.Vendor, d.Items, p.blk)
 	if p.noLocal {
 		d.Items = append(d.Items, Item{Kind: KindNoLocal, Section: "aaa", Severity: SevAccess,
 			Words:     "the device has no local user at privilege 15",
@@ -130,8 +131,13 @@ func (p *planner) buildItems(d *Delta, byName map[string]devconf.SectionResult) 
 // objectOf names the object a statement is part of, for grouping: a filter,
 // a client list, a server block, an access list, a privilege level. Empty
 // when the statement is its own.
-func objectOf(vendor, stem string) (key, label string) {
+func objectOf(vendor, stem string, blk *blockObjects) (key, label string) {
 	if vendor == devconf.FamilyJunos {
+		if blk != nil {
+			if k, l := blk.object(stem); k != "" {
+				return k, l
+			}
+		}
 		t := splitTokens(strings.TrimPrefix(strings.TrimPrefix(stem, "set "), "deactivate "))
 		switch {
 		case len(t) >= 6 && t[0] == "firewall" && t[3] == "filter":
@@ -144,6 +150,8 @@ func objectOf(vendor, stem string) (key, label string) {
 			return "class " + t[3], "login class " + t[3]
 		case len(t) >= 4 && t[0] == "system" && (t[1] == "tacplus-server" || t[1] == "radius-server"):
 			return t[1] + " " + t[2], "the " + map[string]string{"tacplus-server": "TACACS+", "radius-server": "RADIUS"}[t[1]] + " server " + t[2]
+		case len(t) >= 4 && t[0] == "system" && t[1] == "ntp" && t[2] == "server":
+			return "ntp-server " + t[3], "the NTP server " + t[3]
 		}
 		return "", ""
 	}
@@ -168,7 +176,7 @@ func objectOf(vendor, stem string) (key, label string) {
 // groupItems folds two or more findings of one object, of one kind and
 // one outcome, into one item: a tech reads "the management filter is
 // missing (22 statements)", not twenty-two lines.
-func groupItems(vendor string, items []Item) []Item {
+func groupItems(vendor string, items []Item, blk *blockObjects) []Item {
 	type gkey struct{ section, kind, obj, outcome string }
 	outcome := func(it Item) string {
 		if it.Fixed {
@@ -178,7 +186,7 @@ func groupItems(vendor string, items []Item) []Item {
 	}
 	counts := map[gkey]int{}
 	keyOf := func(it Item) (gkey, string) {
-		obj, label := objectOf(vendor, it.Statement)
+		obj, label := objectOf(vendor, it.Statement, blk)
 		if obj == "" {
 			return gkey{}, ""
 		}
@@ -256,12 +264,18 @@ func (p *planner) actionFor(d *Delta, it *Item, extraOf map[string]Extra, stem s
 	case KindSecret:
 		return "Not visible to this login; left alone (--secrets pushes the value)."
 	case KindExtra:
+		// the system block only adds: what the device holds beside it is its
+		// own, and the report says why it stays
+		left := "Left alone"
+		if it.Section == devconf.SectionSystem {
+			left = "Left alone (the system block only adds, it never removes)"
+		}
 		if e, ok := extraOf[it.Section+"|"+stem]; ok && len(e.Remove) > 0 && e.Guard == "" {
-			return "Left alone. To remove it later" + removeText(e.Remove)
+			return left + ". To remove it later" + removeText(e.Remove)
 		} else if ok && e.Guard != "" {
 			return "Left alone (" + e.Guard + ")."
 		}
-		return "Left alone."
+		return left + "."
 	case KindMissing:
 		if strings.Contains(stem, "login") && strings.HasPrefix(stem, "line ") {
 			return "Follows from 'aaa new-model': lines with no login method use the default list."
@@ -319,6 +333,20 @@ func severityOf(vendor, section, stem, kind string) string {
 	}
 	return SevCosmetic
 }
+
+// words is plainWords with the statements of a scope's configuration block
+// named by their block.
+func (p *planner) words(vendor, stem string) string {
+	if p.blk != nil && vendor == devconf.FamilyJunos {
+		if w := p.blk.words(stem); w != "" {
+			return w
+		}
+	}
+	return plainWords(vendor, stem)
+}
+
+// reMessageSize reads the size out of the mark of a login message.
+var reMessageSize = regexp.MustCompile(`^<message: ([0-9]+) lines, ([0-9]+) characters, id [0-9a-f]{8}>$`)
 
 // plainWords is a statement in the words of a technician.
 func plainWords(vendor, stem string) string {
@@ -379,6 +407,32 @@ func plainJunos(stem string) string {
 		w = "management filter " + t[4] + ", term " + t[6] + ": " + rest(7)
 	case len(t) >= 2 && t[0] == "snmp":
 		w = "SNMP: " + rest(1)
+	case len(t) == 4 && t[0] == "system" && t[1] == "login" && t[2] == "message":
+		// the compared form holds the message's size, never a word of it
+		w = "the login message"
+		if m := reMessageSize.FindStringSubmatch(t[3]); m != nil {
+			w += " of " + m[1] + " lines, " + m[2] + " characters"
+		}
+	case len(t) >= 3 && t[0] == "system" && t[1] == "domain-name":
+		w = "the domain name is " + rest(2)
+	case len(t) >= 3 && t[0] == "system" && t[1] == "domain-search":
+		w = "the search domain " + rest(2)
+	case len(t) >= 3 && t[0] == "system" && t[1] == "time-zone":
+		w = "the time zone is " + rest(2)
+	case len(t) >= 3 && t[0] == "system" && t[1] == "name-server":
+		w = "the name server " + rest(2)
+	case len(t) == 4 && t[0] == "system" && t[1] == "ntp" && t[2] == "server":
+		w = "the NTP server " + t[3]
+	case len(t) >= 5 && t[0] == "system" && t[1] == "ntp" && t[2] == "server":
+		w = "the NTP server " + t[3] + ": " + rest(4)
+	case len(t) >= 4 && t[0] == "system" && t[1] == "ntp" && t[2] == "boot-server":
+		w = "the NTP boot server is " + t[3]
+	case len(t) >= 4 && t[0] == "system" && t[1] == "ntp" && t[2] == "source-address":
+		w = "the NTP source address is " + t[3]
+	case len(t) >= 5 && t[0] == "system" && t[1] == "ntp" && t[2] == "authentication-key" && t[4] == "value":
+		w = "NTP key " + t[3] + " is set"
+	case len(t) >= 4 && t[0] == "system" && t[1] == "ntp" && t[2] == "trusted-key":
+		w = "NTP key " + t[3] + " is trusted"
 	default:
 		w = strings.Join(t, " ")
 	}
@@ -496,17 +550,20 @@ func (p *planner) buildExtras(d *Delta) {
 
 // junosObjectDepths are the depths at which a statement's path names an
 // object of its own, shallowest first: a server, a client list, a
-// community, a login class, a filter and a term of one.
+// community or trap group, a login class, a filter and a term of one.
 func junosObjectDepths(t []string) []int {
 	switch {
 	case len(t) >= 3 && t[0] == "system" && (t[1] == "tacplus-server" || t[1] == "radius-server"):
 		return []int{3}
-	case len(t) >= 3 && t[0] == "snmp" && (t[1] == "client-list" || t[1] == "community"):
+	case len(t) >= 3 && t[0] == "snmp" && (t[1] == "client-list" || t[1] == "community" || t[1] == "trap-group"):
 		return []int{3}
 	case len(t) >= 4 && t[0] == "system" && t[1] == "login" && (t[2] == "class" || t[2] == "user"):
 		return []int{4}
 	case len(t) >= 7 && t[0] == "firewall" && t[1] == "family" && t[3] == "filter" && t[5] == "term":
 		return []int{5, 7}
+	case len(t) >= 5 && t[0] == "system" && t[1] == "ntp" && (t[2] == "server" || t[2] == "authentication-key"):
+		// an NTP server with its options, a key with its type and value
+		return []int{4}
 	}
 	return nil
 }

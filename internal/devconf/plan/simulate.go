@@ -53,11 +53,12 @@ func ParseJunos(text string) *JunosConfig {
 	return c
 }
 
-// expandBrackets resolves '[ a b ]' lists.
+// expandBrackets resolves '[ a b ]' lists, and splits the one-line forms the
+// device prints as one statement per leaf (splitLeaves).
 func expandBrackets(t []string) [][]string {
 	i := slices.Index(t, "[")
 	if i < 0 {
-		return [][]string{t}
+		return splitLeaves(t)
 	}
 	j := slices.Index(t[i:], "]")
 	if j < 0 {
@@ -68,6 +69,46 @@ func expandBrackets(t []string) [][]string {
 	for _, item := range t[i+1 : j] {
 		next := slices.Concat(t[:i:i], []string{item}, t[j+1:])
 		out = append(out, expandBrackets(next)...)
+	}
+	return out
+}
+
+// splitLeaves puts a statement of several leaves as 'display set' prints it:
+// the options of an NTP server and the type and value of an NTP key one
+// statement each (the system block renders them on one line).
+func splitLeaves(t []string) [][]string {
+	if len(t) < 5 || t[0] != "system" || t[1] != "ntp" {
+		return [][]string{t}
+	}
+	var out [][]string
+	switch t[2] {
+	case "server":
+		if len(t) == 4 {
+			return [][]string{t}
+		}
+		base := t[:4:4]
+		for i := 4; i < len(t); {
+			n := 1
+			if t[i] != "prefer" && i+1 < len(t) {
+				n = 2
+			}
+			out = append(out, slices.Concat(base, t[i:i+n]))
+			i += n
+		}
+	case "authentication-key":
+		if len(t) <= 6 {
+			return [][]string{t}
+		}
+		base := t[:4:4]
+		for i := 4; i < len(t); i += 2 {
+			if i+1 >= len(t) {
+				out = append(out, slices.Concat(base, t[i:]))
+				break
+			}
+			out = append(out, slices.Concat(base, t[i:i+2]))
+		}
+	default:
+		return [][]string{t}
 	}
 	return out
 }
@@ -145,8 +186,13 @@ var junosSingleKeys = []string{
 	"system radius-server * secret", "system radius-server * port", "system radius-server * timeout",
 	"system login user * class", "system login user * uid",
 	"system login class * idle-timeout",
-	"snmp community * authorization",
+	"snmp community * authorization", "snmp community * client-list-name",
+	"snmp trap-group * version",
 	"system host-name",
+	"system login message", "system domain-name", "system time-zone",
+	"system ntp boot-server", "system ntp source-address",
+	"system ntp server * version", "system ntp server * key", "system ntp server * routing-instance",
+	"system ntp authentication-key * type", "system ntp authentication-key * value",
 }
 
 func singleKeyLen(path []string) int {
@@ -196,6 +242,24 @@ func (c *JunosConfig) Apply(lines []Line) error {
 }
 
 func (c *JunosConfig) set(path []string) {
+	// A list entry's flag ('restrict', 'except') is a node of its own under
+	// the entry, which 'display set' prints as one statement: setting the
+	// flagged entry puts the flag on the one the device has, and setting an
+	// entry that has its flag already changes nothing.
+	if n := len(path); n > 1 && junosFlags[path[n-1]] {
+		for i, s := range c.stmts {
+			if s.head == "set" && slices.Equal(s.path, path[:n-1]) {
+				c.stmts[i].path = slices.Clone(path)
+				return
+			}
+		}
+	} else {
+		for _, s := range c.stmts {
+			if s.head == "set" && len(s.path) == len(path)+1 && junosFlags[s.path[len(path)]] && slices.Equal(s.path[:len(path)], path) {
+				return
+			}
+		}
+	}
 	if n := singleKeyLen(path); n > 0 {
 		for i, s := range c.stmts {
 			if s.head == "set" && len(s.path) == n+1 && slices.Equal(s.path[:n], path[:n]) {

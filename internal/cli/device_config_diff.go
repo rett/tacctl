@@ -63,7 +63,7 @@ func diffText(r devconf.SectionResult) []string {
 }
 
 // printDeviceDiff prints one device's comparison. only limits it to the
-// named sections (nil: all six).
+// named sections (nil: all of them).
 func (inv *invocation) printDeviceDiff(name, scope, vendor string, rs []devconf.SectionResult, only []string, secretsVisible bool, meta deviceDiffMeta) {
 	head := "Device " + name + " (" + dash(scope) + ", " + vendor + ")"
 	if !meta.Pulled.IsZero() {

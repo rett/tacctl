@@ -39,6 +39,13 @@ type Section struct {
 	// hashed; it is compared by presence only (D64). Secret[i] belongs to
 	// Lines[i].
 	Secret []bool
+	// Block marks, per line, a statement that comes from a configuration
+	// block of the scope (0.2.7) and not from the structured settings: the
+	// planner owns a block's community or trap group as a whole object, the
+	// structured community by the leaves it renders. Nil when no line is a
+	// block's; else Block[i] belongs to Lines[i]. Every line of the system
+	// section is a block's.
+	Block []bool
 }
 
 // The sections, in the order Managed returns them.
@@ -47,16 +54,18 @@ const (
 	sectionRoles      = "roles"
 	sectionMgmtACL    = "mgmt-acl"
 	sectionSNMP       = "snmp"
+	sectionSystem     = "system"
 	sectionNetconf    = "netconf"
 	sectionBreakGlass = "breakglass"
 )
 
 // Managed returns the managed sections expected for one device, built from
 // the same inputs as its walkthrough, in the order aaa, roles, mgmt-acl,
-// snmp, netconf, breakglass. A section tacctl renders no statement for
-// (SNMP not configured, no management ACL, the NETCONF step commented out,
-// no break-glass user) is left out, so a device is never told it lacks
-// what tacctl does not render.
+// snmp, system, netconf, breakglass. A section tacctl renders no statement
+// for (SNMP not configured, no management ACL, the NETCONF step commented
+// out, no break-glass user, and the system section of a scope with no system
+// block) is left out, so a device is never told it lacks what tacctl does not
+// render.
 //
 // Lines are the statements exactly as the walkthrough prints them, a
 // secret's value included (Secret marks them): a caller that shows a
@@ -77,6 +86,9 @@ func Managed(req Request, d Data) ([]Section, error) {
 	if req.Protocol == RADIUS && d.Radius == nil {
 		return nil, errors.New("devices: a RADIUS device needs Data.Radius, as its walkthrough does")
 	}
+	if err := d.blockProblem(req); err != nil {
+		return nil, err
+	}
 	if req.Vendor == "cisco" {
 		return managedCisco(req, d), nil
 	}
@@ -91,13 +103,27 @@ type sections struct {
 }
 
 func (s *sections) add(name string, lines []string) {
+	s.addFrom(name, lines, nil)
+}
+
+// addFrom is add for a section some of whose lines come from a block:
+// block holds those statements.
+func (s *sections) addFrom(name string, lines []string, block map[string]bool) {
 	if len(lines) == 0 {
 		return
 	}
 	sec := Section{Name: name, Lines: lines, Secret: make([]bool, len(lines))}
+	var from []bool
 	for i, l := range lines {
 		sec.Secret[i] = s.secret(l)
+		if block[l] {
+			if from == nil {
+				from = make([]bool, len(lines))
+			}
+			from[i] = true
+		}
 	}
+	sec.Block = from
 	s.out = append(s.out, sec)
 }
 
@@ -122,13 +148,32 @@ func managedJuniper(req Request, d Data) []Section {
 	s.add(sectionRoles, junosStatements(v["TEMPLATE_USERS"]))
 	// Step 4: the lo0 filter (SNMP terms included).
 	s.add(sectionMgmtACL, junosStatements(v["MGMT_ACL_BLOCK"]))
-	// Step 5 and 6.
-	s.add(sectionSNMP, junosStatements(v["SNMP_BLOCK"]))
+	// Step 5 and 6. The scope's snmp block follows the structured settings
+	// in the same step: its statements are the live lines of the same
+	// block, marked as the block's.
+	s.addFrom(sectionSNMP, junosStatements(v["SNMP_STEP"]), d.blockSNMPSet())
+	// The scope's system block follows in the same step: a section of its
+	// own, present only when a block is in force (so the device's own login
+	// message, domain and NTP are no business of a scope without one).
+	sys := junosStatements(v["SYSTEM_BLOCK"])
+	s.addFrom(sectionSystem, sys, setOf(sys))
 	s.add(sectionNetconf, junosStatements(v["NETCONF_BLOCK"]))
 	// Step 7: the account lines are rendered commented, to be completed
 	// with a hash; the statement is the line as it is once pasted.
 	s.add(sectionBreakGlass, uncommented(juniperBreakGlass(BreakGlassFor(req, d)), "# ", "# set system login user "))
 	return s.out
+}
+
+// setOf is the set of the lines.
+func setOf(lines []string) map[string]bool {
+	if len(lines) == 0 {
+		return nil
+	}
+	out := make(map[string]bool, len(lines))
+	for _, l := range lines {
+		out[l] = true
+	}
+	return out
 }
 
 // junosStatements are the 'set' lines of a block: comments, blanks and
@@ -149,13 +194,16 @@ func junosStatements(block string) []string {
 
 // reJuniperSecret is a Junos statement that carries a secret, the device
 // stores it encrypted (the '$9$' form) or hashed, so it is compared by
-// presence: a server's secret, an SNMP community (its name is the secret),
-// an SNMPv3 user's authentication and privacy passwords, a local user's
-// hash.
+// presence: a server's secret, an SNMP community (its name is the secret) and
+// a trap group (its name is the community its traps are sent with, 0.2.7:
+// only a block has one), an SNMPv3 user's authentication and privacy
+// passwords, an NTP authentication key's value (the system block, 0.2.7), a
+// local user's hash.
 var reJuniperSecret = regexp.MustCompile(`^set (` +
 	`system (tacplus|radius)-server \S+ secret ` +
-	`|snmp community ` +
+	`|snmp (community|trap-group) ` +
 	`|snmp v3 usm local-engine user \S+ (authentication-\S+ authentication|privacy-\S+ privacy)-password ` +
+	`|system ntp authentication-key \S+ (type \S+ )?value ` +
 	`|system login user \S+ class \S+ authentication encrypted-password )`)
 
 func juniperSecret(line string) bool { return reJuniperSecret.MatchString(line) }

@@ -31,6 +31,11 @@ const (
 	// in place, the other value is never deleted; with no rendered value the
 	// leaf is kept.
 	ModeSingle Mode = "single"
+	// ModeAdditive: an object of a list the rendering adds to: each rendered
+	// entry is set when the device lacks it, and nothing under the pattern is
+	// ever deleted: the device's other entries are kept and listed (0.2.7, the
+	// system block).
+	ModeAdditive Mode = "additive"
 )
 
 // OwnedRow is one row of an ownership table.
@@ -54,6 +59,13 @@ type OwnedRow struct {
 	// ModeLeaves row owns 'system accounting destination tacplus' (4) and
 	// not 'system accounting destination tacplus server 192.0.2.8 ...'.
 	Depth int
+	// Block marks a row for what a scope's configuration block states
+	// (0.2.7, devices.Section.Block): it owns the objects the rendering took
+	// from a block, whole; a row without it owns what the structured
+	// settings render. The two may share a pattern: the origin of the
+	// object decides which applies. In Why, '<scope>' is the scope whose
+	// block it is. Every row of the system section is a block's.
+	Block bool
 }
 
 // junosOwned is the plan §4 table for Junos.
@@ -87,6 +99,15 @@ var junosOwned = []OwnedRow{
 	{ID: "junos.snmp.community", Section: "snmp", Pattern: "snmp community $", Mode: ModeWhole,
 		Why:  "the community tacctl renders for the scope",
 		Kept: "other communities"},
+	{ID: "junos.snmp.block-community", Section: "snmp", Pattern: "snmp community $", Mode: ModeWhole, Block: true,
+		Why:  "the communities of the SNMP block of scope <scope> (their statements set when missing, a leaf the block does not state removed)",
+		Kept: ""},
+	{ID: "junos.snmp.trap-group", Section: "snmp", Pattern: "snmp trap-group $", Mode: ModeWhole, Block: true,
+		Why:  "the trap groups of the SNMP block of scope <scope> (their statements set when missing, a leaf the block does not state removed)",
+		Kept: "trap groups the SNMP block does not name"},
+	{ID: "junos.snmp.trap-options", Section: "snmp", Pattern: "snmp trap-options $", Mode: ModeSingle, Block: true,
+		Why:  "the trap options of the SNMP block of scope <scope>",
+		Kept: "trap options the SNMP block does not set"},
 	{ID: "junos.snmp.v3-user", Section: "snmp", Pattern: "snmp v3 usm local-engine user $", Mode: ModeWhole,
 		Why:  "the SNMPv3 user tacctl renders",
 		Kept: "other v3 users"},
@@ -105,6 +126,53 @@ var junosOwned = []OwnedRow{
 		Why: "the contact tacctl renders", Kept: "the contact when tacctl renders none"},
 	{ID: "junos.snmp.description", Section: "snmp", Pattern: "snmp description", Mode: ModeSingle,
 		Why: "the description tacctl renders", Kept: "the description when tacctl renders none"},
+
+	// The system block (0.2.7): every statement is an object, set when
+	// missing; a value of a single-valued statement is replaced in place, and
+	// what the device holds beside the block's statements is kept and listed.
+	// The rows of a server's options come first: the first row a statement
+	// matches decides. A key is typed only where the device has none of the
+	// number, and the block's list entries are only ever added. One Why serves
+	// the whole section (the comment above its statements names the block).
+	{ID: "junos.system.login-message", Section: "system", Pattern: "system login message", Mode: ModeSingle, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the login message when the block states none"},
+	{ID: "junos.system.domain-name", Section: "system", Pattern: "system domain-name", Mode: ModeSingle, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the domain name when the block states none"},
+	{ID: "junos.system.time-zone", Section: "system", Pattern: "system time-zone", Mode: ModeSingle, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the time zone when the block states none"},
+	{ID: "junos.system.ntp-boot-server", Section: "system", Pattern: "system ntp boot-server", Mode: ModeSingle, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the NTP boot server when the block states none"},
+	{ID: "junos.system.ntp-source-address", Section: "system", Pattern: "system ntp source-address", Mode: ModeSingle, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the NTP source address when the block states none"},
+	{ID: "junos.system.ntp-server-version", Section: "system", Pattern: "system ntp server $ version", Mode: ModeSingle, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the options of a server the block does not name"},
+	{ID: "junos.system.ntp-server-key", Section: "system", Pattern: "system ntp server $ key", Mode: ModeSingle, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the options of a server the block does not name"},
+	{ID: "junos.system.ntp-server-routing-instance", Section: "system", Pattern: "system ntp server $ routing-instance", Mode: ModeSingle, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the options of a server the block does not name"},
+	{ID: "junos.system.domain-search", Section: "system", Pattern: "system domain-search $", Mode: ModeAdditive, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the device's other search domains"},
+	{ID: "junos.system.name-server", Section: "system", Pattern: "system name-server $", Mode: ModeAdditive, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the device's other name servers"},
+	{ID: "junos.system.ntp-server", Section: "system", Pattern: "system ntp server $", Mode: ModeAdditive, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the device's other NTP servers and the options of a server the block does not state (a preference, say)"},
+	{ID: "junos.system.ntp-key", Section: "system", Pattern: "system ntp authentication-key $", Mode: ModeAdditive, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the device's other NTP keys (and the type of a key the device has)"},
+	{ID: "junos.system.ntp-trusted-key", Section: "system", Pattern: "system ntp trusted-key $", Mode: ModeAdditive, Block: true,
+		Why:  "the statements of the system block of scope <scope>",
+		Kept: "the device's other trusted NTP keys"},
 
 	{ID: "junos.mgmt-acl.filter", Section: "mgmt-acl", Pattern: "firewall family inet filter $", Mode: ModeWhole, Ordered: true,
 		Why:  "the management filter tacctl renders (its terms, their leaves and their order)",

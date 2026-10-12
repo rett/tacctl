@@ -287,6 +287,12 @@ func junosCanon(lines []string, marks []bool, lb *labels) []stmt {
 		if head != "set" && head != "deactivate" {
 			continue
 		}
+		// The login message is read from the device's own text (its escapes
+		// are the body's line breaks) and kept as a mark.
+		if x, ok := messageStmt(head, strings.TrimSpace(rest)); ok {
+			out = append(out, x)
+			continue
+		}
 		ts := tokenize(rest)
 		if len(ts) == 0 {
 			continue
@@ -300,6 +306,18 @@ func junosCanon(lines []string, marks []bool, lb *labels) []stmt {
 		}
 		marked := markAt(marks, n) && len(parts) == 1
 		for _, s := range parts {
+			if sys, ok := systemParts(s); ok {
+				for _, sp := range sys {
+					x := stmt{text: head + " " + renderTokens(sp.ts), secret: sp.secret}
+					x.stem = x.text
+					x.path = make([]string, len(sp.ts))
+					for i, t := range sp.ts {
+						x.path[i] = t.s
+					}
+					out = append(out, x)
+				}
+				continue
+			}
 			for i := range s {
 				switch s[i].s {
 				case "authentication-password":
@@ -344,6 +362,10 @@ type junosCtx struct {
 	users map[string]string
 	// lo0 is set when the rendering applies a filter on lo0.
 	lo0 bool
+	// system is set when the rendering has a system section: only then are
+	// the login message, domain, time zone, name servers and NTP of the
+	// device the section's statements.
+	system bool
 	// device side: a user's class, and the filters applied on lo0.
 	userClass map[string]string
 	lo0Filter map[string]bool
@@ -395,6 +417,10 @@ func (c *junosCtx) section(x stmt) string {
 			if len(p) >= 3 && p[2] == "netconf" {
 				return SectionNetconf
 			}
+		case "domain-name", "domain-search", "time-zone", "name-server", "ntp":
+			if c.system {
+				return SectionSystem
+			}
 		}
 	case p[0] == "snmp":
 		return SectionSNMP
@@ -419,6 +445,10 @@ func (c *junosCtx) login(p []string) string {
 		return ""
 	}
 	switch p[2] {
+	case "message":
+		if c.system {
+			return SectionSystem
+		}
 	case "class":
 		if c.classes == nil || c.classes[p[3]] {
 			return SectionRoles
@@ -481,7 +511,8 @@ func junosExtract(raw string, expected []devices.Section, visible *bool) (Extrac
 	}
 
 	c := &junosCtx{claim: map[string]string{}, users: map[string]string{},
-		userClass: map[string]string{}, lo0Filter: map[string]bool{}}
+		userClass: map[string]string{}, lo0Filter: map[string]bool{},
+		system: renders(expected, SectionSystem)}
 	haveExpected := false
 	for _, sec := range expected {
 		for _, x := range junosCanon(sec.Lines, sec.Secret, lb) {
@@ -547,6 +578,9 @@ func junosExtract(raw string, expected []devices.Section, visible *bool) (Extrac
 	}
 	out := make(map[string]devices.Section, len(SectionNames))
 	for _, n := range SectionNames {
+		if optionalSection(n) && !c.system {
+			continue
+		}
 		out[n] = toSection(n, uniq(by[n]))
 	}
 	vis := !maskedText(lines)

@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"net/netip"
 	"slices"
+	"strconv"
 	"strings"
 
+	"github.com/rett/tacctl/internal/blocks"
 	"github.com/rett/tacctl/internal/devconf"
 	"github.com/rett/tacctl/internal/devices"
 )
@@ -41,13 +43,19 @@ func junosRows(section string, exp devices.Section) []*jrow {
 		rows = append(rows, &jrow{OwnedRow: r, pat: strings.Fields(r.Pattern),
 			names: map[string]bool{}, keys: map[string]bool{}, kinds: map[string]map[string]bool{}})
 	}
-	for _, line := range exp.Lines {
+	for i, line := range exp.Lines {
 		t := splitTokens(strings.TrimSpace(line))
 		if len(t) < 2 || t[0] != "set" {
 			continue
 		}
 		t = t[1:]
+		// A statement of a configuration block is for the rows of blocks, one
+		// of the structured settings for the others.
+		fromBlock := i < len(exp.Block) && exp.Block[i]
 		for _, r := range rows {
+			if r.Block != fromBlock {
+				continue
+			}
 			name, at, ok := matchPrefix(r.pat, t)
 			if !ok {
 				continue
@@ -78,6 +86,53 @@ func rowOf(rows []*jrow, path []string) (*jrow, string) {
 		}
 	}
 	return nil, ""
+}
+
+// The rows of a configuration block (owned.go: Block).
+const (
+	rowCommunity      = "junos.snmp.community"
+	rowBlockCommunity = "junos.snmp.block-community"
+	rowTrapGroup      = "junos.snmp.trap-group"
+)
+
+// rowFor is rowOf with the origin of a community: a statement under a
+// community the rendering took from a block is the block row's, one under
+// the structured settings' community the community row's. byLabel maps a
+// community label to its string (devconf.CommunityLabels).
+func rowFor(rows []*jrow, path []string, byLabel map[string]string) (*jrow, string) {
+	r, name := rowOf(rows, path)
+	if r != nil && r.ID == rowCommunity {
+		if b := findRowByID(rows, rowBlockCommunity); b != nil && b.names[byLabel[name]] {
+			return b, name
+		}
+	}
+	return r, name
+}
+
+// namedBy is the string a community or trap group row's object is known by
+// in the rendering: the label's string when the row has an object of that
+// name, "" for the device's own.
+func namedBy(row *jrow, label string, byLabel map[string]string) string {
+	switch row.ID {
+	case rowCommunity, rowBlockCommunity, rowTrapGroup:
+		if s := byLabel[label]; s != "" && row.names[s] {
+			return s
+		}
+	}
+	return ""
+}
+
+// singleLeaf reports whether the leaf of a community or trap group takes one
+// value (a set replaces the device's value in place), as against a list
+// (clients, categories, targets) whose extra entries are removed one by one.
+func singleLeaf(row *jrow, leaf string) bool {
+	switch row.ID {
+	case rowCommunity, rowBlockCommunity:
+		return leaf == "authorization" || leaf == "client-list-name"
+	case rowTrapGroup:
+		return leaf == "version"
+	}
+	return false
 }
 
 // rawIndex maps a compared stem to the rendered lines that produced it, in
@@ -147,6 +202,11 @@ func (p *planner) junosSection(name string, r devconf.SectionResult) secOut {
 	raws := junosRaw(devconf.FamilyJunos, exp)
 	ls := parseJunosLines(r)
 	cls := p.opt.Class
+	// A community's name is the secret: the comparison shows it as its label,
+	// '<secret:N>' for the rendering's N-th string (communityOf has its
+	// name; a block's follow the structured settings') and '<other:N>' for
+	// one of the device's own.
+	communityOf, _ := devconf.CommunityLabels(devconf.FamilyJunos, exp.Lines)
 
 	// The class: what it cannot see is withheld (plan D97 as the lab check L1
 	// corrected it: those hierarchies are not visible to the class).
@@ -225,6 +285,9 @@ func (p *planner) junosSection(name string, r devconf.SectionResult) secOut {
 	refuseInherited := func(stem string) {
 		inheritedRefs = append(inheritedRefs, stem)
 	}
+	// entryRestrict is, per client entry of a block's community that the plan
+	// sets, whether the set carries the restrict flag.
+	entryRestrict := map[string]bool{}
 	var kept []Kept
 	var deacts []jl
 	keepStem := func(stem, note string) {
@@ -236,11 +299,15 @@ func (p *planner) junosSection(name string, r devconf.SectionResult) secOut {
 		}
 	}
 
+	// foldedBare maps an NTP server's path to the stem of its bare statement,
+	// which the line of one of its options answers
+	foldedBare := map[string]string{}
 	// the set lines (and the by-value re-pushes), in rendered order
 	setKeys := map[string]bool{}
 	rawFor := map[int]string{}
 	for i, x := range ls {
-		if x.secret && (x.op == devconf.OpMissing || x.op == devconf.OpSame || x.op == devconf.OpNotVisible) {
+		if x.secret && (x.op == devconf.OpMissing || x.op == devconf.OpSame || x.op == devconf.OpNotVisible) ||
+			x.op == devconf.OpMissing && isMessagePath(x.path) {
 			rawFor[i] = raws.pop(x.stem)
 		}
 	}
@@ -254,19 +321,33 @@ func (p *planner) junosSection(name string, r devconf.SectionResult) secOut {
 			if inOrder && orderTouched {
 				continue
 			}
-			row, _ := rowOf(rows, x.path)
+			row, _ := rowFor(rows, x.path, communityOf)
 			fire(row)
+			if isBareNTPServer(x.path) && missingOptionOf(live, x.path) {
+				// the server is created by the statement of its option: its
+				// own line is not typed, and the option's line answers it
+				foldedBare[strings.Join(x.path, " ")] = x.stem
+				continue
+			}
 			skey := ""
 			if row != nil && row.Mode == ModeSingle {
 				skey = strings.Join(x.path[:len(row.pat)], " ")
 				setKeys[skey] = true
 			}
-			if row != nil && row.ID == "junos.snmp.community" && len(x.path) > len(row.pat) {
-				// a leaf of the community tacctl renders is single-valued
-				// (authorization, client-list-name): its set replaces the
-				// device's value in place
+			if row != nil && len(x.path) > len(row.pat) && singleLeaf(row, x.path[len(row.pat)]) {
+				// a single-valued leaf of a community or trap group
+				// (authorization, client-list-name, version): its set
+				// replaces the device's value in place
 				skey = strings.Join(x.path[:len(row.pat)+1], " ")
 				setKeys[skey] = true
+			}
+			if row != nil && row.ID == rowBlockCommunity && len(x.path) > 4 && x.path[3] == "clients" {
+				// a client entry of a block's community: the set of an entry
+				// the device has with another flag changes the flag in place,
+				// and the device's entry is not removed beside it
+				skey = strings.Join(x.path[:5], " ")
+				setKeys[skey] = true
+				entryRestrict[skey] = len(x.path) > 5
 			}
 			if row != nil && row.Mode == ModeRenderedLeaves && len(x.path) > len(row.pat) {
 				// a leaf under tacctl's server is single-valued: its set
@@ -276,6 +357,9 @@ func (p *planner) junosSection(name string, r devconf.SectionResult) secOut {
 			}
 			sl := p.junosSetLine(x, rawFor[i])
 			sl.For = []string{x.stem}
+			if isMessagePath(x.path) && len(sl.Text) > blocks.MessageNoteChars {
+				o.warnings = append(o.warnings, p.longMessageWarning(len(sl.Text)))
+			}
 			sets = append(sets, sl)
 			setKeyOf = append(setKeyOf, skey)
 		case devconf.OpSame, devconf.OpNotVisible:
@@ -283,7 +367,7 @@ func (p *planner) junosSection(name string, r devconf.SectionResult) secOut {
 				continue
 			}
 			if p.opt.Secrets && (!inOrder || !orderTouched) {
-				row, _ := rowOf(rows, x.path)
+				row, _ := rowFor(rows, x.path, communityOf)
 				fire(row)
 				sets = append(sets, p.junosSetLine(x, rawFor[i]))
 				setKeyOf = append(setKeyOf, "")
@@ -330,10 +414,7 @@ func (p *planner) junosSection(name string, r devconf.SectionResult) secOut {
 		}
 	}
 
-	// Extras. A community's name is the secret: the comparison shows it as
-	// its label, '<secret:N>' for the rendering's N-th community (communityOf
-	// has its name) and '<other:N>' for one of the device's own.
-	communityOf, _ := devconf.CommunityLabels(devconf.FamilyJunos, exp.Lines)
+	// Extras.
 	for _, x := range live {
 		if x.op != devconf.OpExtra {
 			continue
@@ -349,23 +430,23 @@ func (p *planner) junosSection(name string, r devconf.SectionResult) secOut {
 			keepStem(x.stem, "")
 			continue
 		}
-		row, objName := rowOf(rows, x.path)
+		row, objName := rowFor(rows, x.path, communityOf)
 		if row == nil {
 			keepStem(x.stem, "")
 			continue
 		}
-		community := ""
-		if row.ID == "junos.snmp.community" {
-			community = communityOf[objName]
-		}
+		// the string of a community or trap group the rendering names, ""
+		// for the device's own
+		community := namedBy(row, objName, communityOf)
 		known := row.names[objName] || community != ""
 		switch row.Mode {
 		case ModeWhole:
-			if row.ID == "junos.snmp.community" && objName == secretMark {
+			if objName == secretMark && (row.ID == rowCommunity || row.ID == rowTrapGroup && row.has) {
 				// DECISION: a record of an older tacctl has every community's
 				// name as one mark, so whose community a leaf is cannot be
 				// told: nothing is emitted for it, it is listed as unattributed
-				// and left alone until a pull labels it.
+				// and left alone until a pull labels it. A trap group is the
+				// same once a block names one.
 				o.unattributed = append(o.unattributed, x.stem)
 				keepStem(x.stem, communityNotVisible)
 				continue
@@ -375,10 +456,13 @@ func (p *planner) junosSection(name string, r devconf.SectionResult) secOut {
 				continue
 			}
 			if community != "" {
-				// A leaf of tacctl's own community: one of a kind tacctl
-				// renders is replaced in place by its set, any other (a
-				// stray 'clients' leaf) is deleted under the community's
-				// own name, as the standard asks.
+				// A leaf of an object tacctl renders (its community, or a
+				// community or trap group of a block): one of a kind that takes
+				// one value is replaced in place by its set, any other (a
+				// stray 'clients' leaf) is deleted under the object's own name,
+				// as the standard asks. Of the structured settings' community
+				// only the kinds it renders are owned; a block's object is
+				// owned whole.
 				key := strings.Join(x.path[:min(4, len(x.path))], " ")
 				if setKeys[key] {
 					if !p.inPlain(name, x.stem) {
@@ -387,16 +471,34 @@ func (p *planner) junosSection(name string, r devconf.SectionResult) secOut {
 					supersededBy[key] = append(supersededBy[key], x.stem)
 					continue
 				}
-				if len(x.path) > 3 && row.kinds[community][x.path[3]] {
+				if row.ID == rowCommunity && len(x.path) > 3 && row.kinds[community][x.path[3]] {
 					keepStem(x.stem, "")
 					continue
+				}
+				flagOnly := false
+				if row.ID == rowBlockCommunity && len(x.path) > 4 && x.path[3] == "clients" {
+					k5 := strings.Join(x.path[:5], " ")
+					if setKeys[k5] {
+						// the block has this client entry with another flag
+						if entryRestrict[k5] && len(x.path) == 5 {
+							// the set adds the flag to the device's entry
+							if !p.inPlain(name, x.stem) {
+								refuseInherited(x.stem)
+							}
+							supersededBy[k5] = append(supersededBy[k5], x.stem)
+							continue
+						}
+						// the device's entry has the flag, the block's has
+						// not: only the flag goes, the entry stays as a permit
+						flagOnly = len(x.path) > 5 && !entryRestrict[k5]
+					}
 				}
 				if !p.inPlain(name, x.stem) {
 					refuseInherited(x.stem)
 					continue
 				}
 				fire(row)
-				addDelete(p.communityDelete(community, objName, x.path[3:]), x.stem)
+				addDelete(p.objectDelete(x.path[1], community, objName, x.path[3:], flagOnly), x.stem)
 				continue
 			}
 			if !p.inPlain(name, x.stem) {
@@ -477,7 +579,7 @@ func (p *planner) junosSection(name string, r devconf.SectionResult) secOut {
 				continue // replaced in place by its set
 			}
 			keepStem(x.stem, "")
-		case ModeList:
+		case ModeList, ModeAdditive:
 			keepStem(x.stem, "")
 		}
 	}
@@ -542,6 +644,13 @@ func (p *planner) junosSection(name string, r devconf.SectionResult) secOut {
 		if k := setKeyOf[i]; k != "" {
 			sets[i].For = append(sets[i].For, supersededBy[k]...)
 		}
+		if t := splitTokens(sets[i].Text); len(t) >= 6 && t[1] == "system" && t[2] == "ntp" && t[3] == "server" {
+			k := strings.Join(t[1:5], " ")
+			if stem, ok := foldedBare[k]; ok {
+				sets[i].For = append(sets[i].For, stem)
+				delete(foldedBare, k)
+			}
+		}
 	}
 	for i := range inserts {
 		for _, l := range r.Lines {
@@ -557,10 +666,53 @@ func (p *planner) junosSection(name string, r devconf.SectionResult) secOut {
 	o.kept = kept
 	for _, row := range rows {
 		if row.fired {
-			o.why = append(o.why, row.Why)
+			if w := strings.ReplaceAll(row.Why, "<scope>", p.blockScope()); !slices.Contains(o.why, w) {
+				o.why = append(o.why, w)
+			}
 		}
 	}
 	return o
+}
+
+// blockScope names the scope whose block a row's reason speaks of.
+func (p *planner) blockScope() string {
+	if p.opt.Scope != "" {
+		return "'" + p.opt.Scope + "'"
+	}
+	return "this scope"
+}
+
+// isBareNTPServer reports the path of a bare 'system ntp server <host>'
+// statement.
+func isBareNTPServer(path []string) bool {
+	return len(path) == 4 && path[0] == "system" && path[1] == "ntp" && path[2] == "server"
+}
+
+// missingOptionOf reports whether a statement of the comparison, missing on
+// the device, is an option of the server the path names.
+func missingOptionOf(ls []jl, server []string) bool {
+	return slices.ContainsFunc(ls, func(x jl) bool {
+		return x.op == devconf.OpMissing && len(x.path) > 4 && slices.Equal(x.path[:4], server)
+	})
+}
+
+// isMessagePath reports the path of the login message statement ('system
+// login message <mark>').
+func isMessagePath(path []string) bool {
+	return len(path) == 4 && path[0] == "system" && path[1] == "login" && path[2] == "message"
+}
+
+// longMessageWarning is the warning of a login message statement that a
+// person pasting it as one line into an interactive terminal would have cut
+// (a terminal in canonical mode truncates a line at 1,023 characters). The
+// statement itself is emitted whole; nothing of the message is in the words.
+func (p *planner) longMessageWarning(n int) string {
+	name := p.opt.Device
+	if name == "" {
+		name = "<name>"
+	}
+	return "the login message statement is " + strconv.Itoa(n) + " characters on one line, and a line over 1,023 characters pasted into an interactive terminal is truncated: " +
+		"use `tacctl device config plan " + name + " --plain` (the statements for 'load set', through a file) for it"
 }
 
 // displayStem is a statement as shown (a secret's value is never in it).
@@ -601,14 +753,17 @@ func (p *planner) renderedPrefix(exp devices.Section, path []string) bool {
 // left alone.
 const communityNotVisible = "the community's name is not visible"
 
-// communityDelete is the delete of a leaf under a rendered community: its
-// text holds the community's name, a secret; the line shows its label.
-func (p *planner) communityDelete(community, label string, rest []string) Line {
-	for len(rest) > 1 && junosFlags[rest[len(rest)-1]] {
+// objectDelete is the delete of a leaf under a community or trap group the
+// rendering names (kind is community or trap-group): its text holds the
+// object's name, a secret; the line shows its label. A trailing flag of a
+// client entry ('restrict') goes with the entry, unless flagOnly says the
+// device's entry is to stay and lose the flag.
+func (p *planner) objectDelete(kind, name, label string, rest []string, flagOnly bool) Line {
+	for len(rest) > 1 && junosFlags[rest[len(rest)-1]] && !flagOnly {
 		rest = rest[:len(rest)-1]
 	}
-	shown := "delete " + joinTokens(append([]string{"snmp", "community", label}, rest...))
-	text := "delete " + joinTokens(append([]string{"snmp", "community", community}, rest...))
+	shown := "delete " + joinTokens(append([]string{"snmp", kind, label}, rest...))
+	text := "delete " + joinTokens(append([]string{"snmp", kind, name}, rest...))
 	if p.opt.NoSecrets {
 		return Line{Op: OpDelete, Text: placeholderOf(shown), Secret: true, Elided: shown}
 	}
@@ -652,6 +807,11 @@ func findRowByID(rows []*jrow, id string) *jrow {
 // an ordinary one, the rendered line for a secret (its value), a placeholder
 // under --no-secrets.
 func (p *planner) junosSetLine(x jl, raw string) Line {
+	if !x.secret && isMessagePath(x.path) && raw != "" {
+		// the login message: the stem holds its mark, the line the rendered
+		// statement, which is what the block says
+		return Line{Op: OpSet, Text: raw}
+	}
 	if !x.secret {
 		return Line{Op: OpSet, Text: x.stem}
 	}

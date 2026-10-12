@@ -221,6 +221,11 @@ func JuniperVars(req Request, d Data) map[string]string {
 		// through to default-accept.
 		snmpTerms, snmpNote := "", ""
 		if clients := snmpIn.clientList(); snmpIn.Version != "" && len(clients) > 0 {
+			// the clients of the scope's SNMP block are polling this
+			// device too: their udp 161 must pass the same term, or the
+			// deny-snmp term below would refuse a community the block
+			// grants
+			clients, listNote := d.Blocks.snmpClientPermits(clients)
 			var sb strings.Builder
 			for _, e := range clients {
 				sb.WriteString(f + "permit-snmp from source-address " + e + "\n")
@@ -235,6 +240,10 @@ func JuniperVars(req Request, d Data) map[string]string {
 			snmpTerms = sb.String()
 			snmpNote = "# udp port 161 (SNMP, Step 5) is accepted from the SNMP clients only; this is the source restriction\n" +
 				"# under SNMPv3, which the client list of Step 5 does not give.\n"
+			if listNote {
+				snmpNote += "# A community of the SNMP block uses a client list that the device holds: its addresses are not\n" +
+					"# visible to tacctl, so add them to the permit-snmp term by hand (or it refuses them).\n"
+			}
 			snmpIn.MgmtFilter = true
 		}
 		mgmt = "# Restrict SSH / NETCONF to the configured mgmt subnets.\n" +
@@ -265,8 +274,13 @@ func JuniperVars(req Request, d Data) map[string]string {
 		verify = "  show configuration system radius-server\n  show configuration system authentication-order\n" +
 			"  show configuration system accounting"
 	}
-	if snmpIn.Version != "" {
+	if snmpIn.Version != "" || len(snmpIn.Block) > 0 {
 		verify += "\n  show configuration snmp"
+	}
+	// The system block's hierarchies, each one the block states.
+	system := d.Blocks.systemLines(scope)
+	for _, h := range systemHierarchies(d.Blocks.System) {
+		verify += "\n  show configuration " + h
 	}
 	for _, g := range groups {
 		verify += "\n  show configuration system login user " + g.class
@@ -307,6 +321,17 @@ func JuniperVars(req Request, d Data) map[string]string {
 	// keep their permission bits; nothing here is pasted.
 	classRules := juniperServerRules(c, groups, req.Protocol)
 
+	// The scope's system block follows the SNMP step as the trailing lines of
+	// its block (the template's own steps keep their numbers): the same
+	// statements are the managed system section, so the walkthrough and a
+	// pull's compare cannot drift. SNMP_STEP is the step alone, SYSTEM_BLOCK
+	// the system lines, and neither is a template variable.
+	snmpStep := JuniperSNMP(snmpIn).Text
+	snmpBlock := snmpStep
+	if len(system) > 0 {
+		snmpBlock += "\n" + strings.Join(system, "\n")
+	}
+
 	return map[string]string{
 		"SERVER_IP":           serverIP,
 		"SECRET":              secret,
@@ -317,7 +342,9 @@ func JuniperVars(req Request, d Data) map[string]string {
 		"CLASS_COMMAND_RULES": classRules,
 		"VERIFY_COMMANDS":     verify,
 		"GROUP_SUMMARY":       summary.String(),
-		"SNMP_BLOCK":          JuniperSNMP(snmpIn).Text,
+		"SNMP_BLOCK":          snmpBlock,
+		"SNMP_STEP":           snmpStep,
+		"SYSTEM_BLOCK":        strings.Join(system, "\n"),
 		"NETCONF_BLOCK":       JuniperNetconf(NetconfInput{Restricted: d.Restricted, MgmtFilter: terms.Len() > 0}),
 		// Not a template variable: the authentication-order the notes name.
 		"authn_order": order,
@@ -328,6 +355,9 @@ func JuniperVars(req Request, d Data) map[string]string {
 func renderJuniper(o *out, req Request, d Data) error {
 	t, err := ResolveTemplate(d.TemplateDir, JuniperTemplate(req.Protocol))
 	if err != nil {
+		return err
+	}
+	if err := d.blockProblem(req); err != nil {
 		return err
 	}
 	vars := JuniperVars(req, d)

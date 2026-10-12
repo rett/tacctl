@@ -254,7 +254,7 @@ func TestPlanFormatsAndFiles(t *testing.T) {
 	bad("--force replaces files", "--force")
 	bad("never planned", "--section", "netconf")
 	bad("never planned", "--section", "breakglass")
-	bad("--section takes sections of aaa, roles, mgmt-acl, snmp: 'nope'", "--section", "nope")
+	bad("--section takes sections of aaa, roles, mgmt-acl, snmp, system: 'nope'", "--section", "nope")
 	bad("--transport is for --pull", "--transport", "ssh")
 	bad("--from takes the address you are logged in", "--from", "10.0.0.0/8")
 	bad("--plain --converge makes two files", "--plain", "--converge")

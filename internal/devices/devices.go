@@ -112,6 +112,10 @@ type Data struct {
 	// resolved them (D41, D46); Scope and Server are filled in here. The
 	// zero value is "SNMP is not configured".
 	SNMP SNMPInput
+	// Blocks are the scope's configuration blocks in force, resolved for
+	// the device (0.2.7, blocks.go): rendered into the Junos SNMP step and
+	// the managed snmp section. The zero value is "no block".
+	Blocks Blocks
 	// Restricted is an engineer's walkthrough: the Cisco NETCONF step is a
 	// superuser's (D53).
 	Restricted bool
@@ -192,6 +196,13 @@ func (d Data) snmpInput(scope string) SNMPInput {
 	in := d.SNMP
 	in.Scope = scope
 	in.Server = d.source()
+	in.Block = d.Blocks.snmpStatements()
+	if len(in.Block) > 0 {
+		in.BlockScope = d.Blocks.Scope
+		if in.BlockScope == "" {
+			in.BlockScope = scope
+		}
+	}
 	return in
 }
 

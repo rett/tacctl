@@ -134,7 +134,8 @@ func TestJunosExtractCaptures(t *testing.T) {
 		t.Error("the engineer view is taken as visible")
 	}
 	for _, name := range SectionNames {
-		if _, ok := super.Sections[name]; !ok {
+		// the system section is there where the rendering has one
+		if _, ok := super.Sections[name]; !ok && !optionalSection(name) {
 			t.Errorf("no %s section", name)
 		}
 	}

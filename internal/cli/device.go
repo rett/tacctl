@@ -225,12 +225,12 @@ var deviceOptions = map[string][][2]string{
 	},
 	"config diff": {
 		{"--pull", "Read the devices first (takes the pull options)"},
-		{"--section <list>", "Only these sections: aaa, roles, mgmt-acl, snmp, netconf, breakglass"},
+		{"--section <list>", "Only these sections: aaa, roles, mgmt-acl, snmp, system, netconf, breakglass"},
 		{"--exit-code", "Exit 2 when a device differs (and none failed)"},
 	},
 	"config plan": {
 		{"--pull", "Read the devices first (takes the pull options); the plan is made from that pull"},
-		{"--section <list>", "Only these sections: aaa, roles, mgmt-acl, snmp (the report still names the others)"},
+		{"--section <list>", "Only these sections: aaa, roles, mgmt-acl, snmp, system (the report still names the others)"},
 		{"--converge", "Add the cleanup of a device with nothing else to paste: the region that removes the old servers and the like (a device with a first region gets that and a line to plan again after the paste)"},
 		{"--secrets", "Type every secret of the planned sections, also the ones the device has"},
 		{"--no-secrets", "Leave each secret as a marked line to fill in (no plain form)"},

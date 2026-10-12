@@ -6,7 +6,7 @@
 // are passed in), no global state. It does five things:
 //
 //   - Reader says which commands read a vendor's configuration (D61);
-//   - Extract turns that text into the six managed sections (D62): Junos
+//   - Extract turns that text into the managed sections (D62): Junos
 //     'show configuration | display set' and IOS/IOS-XE 'show
 //     running-config';
 //   - Normalise and Compare put an extracted section and a rendered one
@@ -34,18 +34,32 @@ import (
 	"github.com/rett/tacctl/internal/devices"
 )
 
-// The six managed sections, in the order devices.Managed returns them.
+// The managed sections, in the order devices.Managed returns them. The system
+// section (0.2.7, Junos only) is present only for a scope that has a system
+// block in force: where the rendering has none, the section is not extracted,
+// not compared and not shown, so a device's own login message, domain and NTP
+// are no business of a scope without one.
 const (
 	SectionAAA        = "aaa"
 	SectionRoles      = "roles"
 	SectionMgmtACL    = "mgmt-acl"
 	SectionSNMP       = "snmp"
+	SectionSystem     = "system"
 	SectionNetconf    = "netconf"
 	SectionBreakGlass = "breakglass"
 )
 
 // SectionNames are the managed sections, in order.
-var SectionNames = []string{SectionAAA, SectionRoles, SectionMgmtACL, SectionSNMP, SectionNetconf, SectionBreakGlass}
+var SectionNames = []string{SectionAAA, SectionRoles, SectionMgmtACL, SectionSNMP, SectionSystem, SectionNetconf, SectionBreakGlass}
+
+// optionalSection reports a section that exists only where the rendering
+// has it (the system section).
+func optionalSection(name string) bool { return name == SectionSystem }
+
+// renders reports whether the rendering has the section (some statement).
+func renders(expected []devices.Section, name string) bool {
+	return len(sectionOf(expected, name).Lines) > 0
+}
 
 // The vendor families the package reads. The registry's vendor words
 // (juniper, cisco) and the transport-level names (junos, ios, ios-xe) are

@@ -60,8 +60,12 @@ func checkJunosPreserved(t *testing.T, f fixture, exp []devices.Section, before,
 			case l.Op == OpDelete && len(tk) > 1 && len(s.path) >= len(tk)-1 && slices.Equal(s.path[:len(tk)-1], tk[1:]):
 				named = true
 			case l.Op == OpSet && len(tk) > 2:
-				if n := singleKeyLen(s.path); n > 0 && len(tk)-1 > n && slices.Equal(tk[1:n+1], s.path[:n]) {
-					named = true // replaced in place
+				// a line of several leaves (an NTP key's type and value) is
+				// one statement per leaf on the device
+				for _, lp := range splitLeaves(tk[1:]) {
+					if n := singleKeyLen(s.path); n > 0 && len(lp) > n && slices.Equal(lp[:n], s.path[:n]) {
+						named = true // replaced in place
+					}
 				}
 			}
 		}

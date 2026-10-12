@@ -190,36 +190,54 @@ var keptExamples = map[string]struct {
 	unrender  string
 	dropped   bool
 }{
-	"junos.roles.class":          {stmt: "set system login class OTHER-CLASS permissions view", unmanaged: false},
-	"junos.roles.user-class":     {stmt: "set system login user OTHER-CLASS class OTHER-CLASS", unmanaged: false},
-	"junos.aaa.tacplus":          {stmt: "set system tacplus-server 192.0.2.98 port 4949", unmanaged: false},
-	"junos.aaa.radius":           {stmt: "set system radius-server 192.0.2.98 port 1812", unmanaged: false},
-	"junos.snmp.client-list":     {stmt: "set snmp client-list OTHER-LIST 192.0.2.7/32", unmanaged: true},
-	"junos.snmp.community":       {stmt: "set snmp community <other:2> authorization read-only", unmanaged: true},
-	"junos.snmp.v3-user":         {stmt: "set snmp v3 usm local-engine user other-user authentication-none", unmanaged: true},
-	"junos.snmp.view":            {stmt: "set snmp view OTHER-VIEW oid .1 include", unmanaged: true},
-	"junos.snmp.location":        {stmt: `set snmp location "Rack 5"`, unmanaged: true, unrender: "set snmp location"},
-	"junos.snmp.contact":         {stmt: `set snmp contact "Other NOC"`, unmanaged: true, unrender: "set snmp contact"},
-	"junos.snmp.description":     {stmt: `set snmp description "Other switch"`, unmanaged: true, unrender: "set snmp description"},
-	"junos.mgmt-acl.filter":      {stmt: "set firewall family inet filter OTHER-ACL term t then accept", unmanaged: false},
-	"ios.aaa.method-list":        {stmt: "aaa authentication login OTHER local", unmanaged: false},
-	"ios.aaa.console-list":       {stmt: "aaa authentication login OTHER local", unmanaged: false},
-	"ios.aaa.enable-list":        {stmt: "aaa authentication enable OTHER enable", unmanaged: false},
-	"ios.aaa.source-interface":   {stmt: "ip tacacs source-interface Loopback0", unmanaged: false, dropped: true},
-	"ios.aaa.console-leaf":       {stmt: "line con 0 > exec-timeout 5 0", unmanaged: false},
-	"ios.aaa.vty-leaf":           {stmt: "line vty 0 4 > exec-timeout 5 0", unmanaged: false},
-	"ios.aaa.server-block":       {stmt: "tacacs server OTHER > address ipv4 192.0.2.98", unmanaged: false},
-	"ios.aaa.radius-block":       {stmt: "radius server OTHER > address ipv4 192.0.2.98", unmanaged: false},
-	"ios.aaa.legacy-host":        {stmt: "tacacs-server host 192.0.2.98", unmanaged: false},
-	"ios.aaa.legacy-radius-host": {stmt: "radius-server host 192.0.2.98", unmanaged: false},
-	"ios.aaa.group":              {stmt: "aaa group server tacacs+ OTHER > server name OTHER", unmanaged: false},
-	"ios.aaa.radius-group":       {stmt: "aaa group server radius OTHER > server name OTHER", unmanaged: false},
-	"ios.roles.privilege":        {stmt: "privilege exec level 9 show", unmanaged: false},
-	"ios.snmp.community":         {stmt: "snmp-server community <other:2> RO", unmanaged: true},
-	"ios.snmp.location":          {stmt: "snmp-server location Rack 5", unmanaged: true, unrender: "snmp-server location"},
-	"ios.snmp.contact":           {stmt: "snmp-server contact Other NOC", unmanaged: true, unrender: "snmp-server contact"},
-	"ios.snmp.acl":               {stmt: "ip access-list standard OTHER-SNMP > permit 192.0.2.7", unmanaged: true},
-	"ios.mgmt-acl.acl":           {stmt: "ip access-list standard OTHER-VTY > permit 192.0.2.7", unmanaged: false},
+	"junos.roles.class":       {stmt: "set system login class OTHER-CLASS permissions view", unmanaged: false},
+	"junos.roles.user-class":  {stmt: "set system login user OTHER-CLASS class OTHER-CLASS", unmanaged: false},
+	"junos.aaa.tacplus":       {stmt: "set system tacplus-server 192.0.2.98 port 4949", unmanaged: false},
+	"junos.aaa.radius":        {stmt: "set system radius-server 192.0.2.98 port 1812", unmanaged: false},
+	"junos.snmp.client-list":  {stmt: "set snmp client-list OTHER-LIST 192.0.2.7/32", unmanaged: true},
+	"junos.snmp.community":    {stmt: "set snmp community <other:2> authorization read-only", unmanaged: true},
+	"junos.snmp.trap-group":   {stmt: "set snmp trap-group <other:2> targets 192.0.2.7", unmanaged: true},
+	"junos.snmp.trap-options": {stmt: "set snmp trap-options agent-address outgoing-interface", unmanaged: true},
+	"junos.snmp.v3-user":      {stmt: "set snmp v3 usm local-engine user other-user authentication-none", unmanaged: true},
+	"junos.snmp.view":         {stmt: "set snmp view OTHER-VIEW oid .1 include", unmanaged: true},
+	"junos.snmp.location":     {stmt: `set snmp location "Rack 5"`, unmanaged: true, unrender: "set snmp location"},
+	"junos.snmp.contact":      {stmt: `set snmp contact "Other NOC"`, unmanaged: true, unrender: "set snmp contact"},
+	"junos.snmp.description":  {stmt: `set snmp description "Other switch"`, unmanaged: true, unrender: "set snmp description"},
+	// 0.2.7: the system section is additive, so what the device holds
+	// beside the block's statements is its own (the stems of the compared
+	// form: the message is its mark)
+	"junos.system.login-message":               {stmt: `set system login message "` + devconf.MessageMark("Another banner") + `"`, unmanaged: true, unrender: "set system login message"},
+	"junos.system.domain-name":                 {stmt: "set system domain-name other.example.net", unmanaged: true, unrender: "set system domain-name"},
+	"junos.system.time-zone":                   {stmt: "set system time-zone America/New_York", unmanaged: true, unrender: "set system time-zone"},
+	"junos.system.ntp-boot-server":             {stmt: "set system ntp boot-server 192.0.2.99", unmanaged: true, unrender: "set system ntp boot-server"},
+	"junos.system.ntp-source-address":          {stmt: "set system ntp source-address 192.0.2.99", unmanaged: true, unrender: "set system ntp source-address"},
+	"junos.system.ntp-server-version":          {stmt: "set system ntp server 192.0.2.77 version 3", unmanaged: true},
+	"junos.system.ntp-server-key":              {stmt: "set system ntp server 192.0.2.77 key 3", unmanaged: true},
+	"junos.system.ntp-server-routing-instance": {stmt: "set system ntp server 192.0.2.77 routing-instance mgmt", unmanaged: true},
+	"junos.system.domain-search":               {stmt: "set system domain-search example.net", unmanaged: true},
+	"junos.system.name-server":                 {stmt: "set system name-server 198.51.100.53", unmanaged: true},
+	"junos.system.ntp-server":                  {stmt: "set system ntp server ntp.example.net", unmanaged: true},
+	"junos.system.ntp-key":                     {stmt: "set system ntp authentication-key 9 value", unmanaged: true},
+	"junos.system.ntp-trusted-key":             {stmt: "set system ntp trusted-key 9", unmanaged: true},
+	"junos.mgmt-acl.filter":                    {stmt: "set firewall family inet filter OTHER-ACL term t then accept", unmanaged: false},
+	"ios.aaa.method-list":                      {stmt: "aaa authentication login OTHER local", unmanaged: false},
+	"ios.aaa.console-list":                     {stmt: "aaa authentication login OTHER local", unmanaged: false},
+	"ios.aaa.enable-list":                      {stmt: "aaa authentication enable OTHER enable", unmanaged: false},
+	"ios.aaa.source-interface":                 {stmt: "ip tacacs source-interface Loopback0", unmanaged: false, dropped: true},
+	"ios.aaa.console-leaf":                     {stmt: "line con 0 > exec-timeout 5 0", unmanaged: false},
+	"ios.aaa.vty-leaf":                         {stmt: "line vty 0 4 > exec-timeout 5 0", unmanaged: false},
+	"ios.aaa.server-block":                     {stmt: "tacacs server OTHER > address ipv4 192.0.2.98", unmanaged: false},
+	"ios.aaa.radius-block":                     {stmt: "radius server OTHER > address ipv4 192.0.2.98", unmanaged: false},
+	"ios.aaa.legacy-host":                      {stmt: "tacacs-server host 192.0.2.98", unmanaged: false},
+	"ios.aaa.legacy-radius-host":               {stmt: "radius-server host 192.0.2.98", unmanaged: false},
+	"ios.aaa.group":                            {stmt: "aaa group server tacacs+ OTHER > server name OTHER", unmanaged: false},
+	"ios.aaa.radius-group":                     {stmt: "aaa group server radius OTHER > server name OTHER", unmanaged: false},
+	"ios.roles.privilege":                      {stmt: "privilege exec level 9 show", unmanaged: false},
+	"ios.snmp.community":                       {stmt: "snmp-server community <other:2> RO", unmanaged: true},
+	"ios.snmp.location":                        {stmt: "snmp-server location Rack 5", unmanaged: true, unrender: "snmp-server location"},
+	"ios.snmp.contact":                         {stmt: "snmp-server contact Other NOC", unmanaged: true, unrender: "snmp-server contact"},
+	"ios.snmp.acl":                             {stmt: "ip access-list standard OTHER-SNMP > permit 192.0.2.7", unmanaged: true},
+	"ios.mgmt-acl.acl":                         {stmt: "ip access-list standard OTHER-VTY > permit 192.0.2.7", unmanaged: false},
 }
 
 // The comparison's shapes of the device's own statements are in step with
@@ -233,8 +251,8 @@ func TestKeptShapesFollowTheOwnedRows(t *testing.T) {
 			rows[r.ID] = r
 		}
 		for _, s := range devconf.KeptShapes(fam) {
-			if r, ok := rows[s.Row]; s.Row != "" && (!ok || r.Section != devconf.SectionSNMP) {
-				t.Errorf("%s: shape %q names %q, not an snmp row of the table", fam, s.Pattern, s.Row)
+			if r, ok := rows[s.Row]; s.Row != "" && (!ok || r.Section != devconf.SectionSNMP && r.Section != devconf.SectionSystem) {
+				t.Errorf("%s: shape %q names %q, not an snmp or system row of the table", fam, s.Pattern, s.Row)
 			}
 		}
 		for _, r := range OwnedTable(fam) {
@@ -246,13 +264,17 @@ func TestKeptShapesFollowTheOwnedRows(t *testing.T) {
 				t.Errorf("%s has a Kept column and no example: is what it keeps the device's own?", r.ID)
 				continue
 			}
-			if ex.unmanaged != (r.Section == devconf.SectionSNMP) {
+			if ex.unmanaged != (r.Section == devconf.SectionSNMP || r.Section == devconf.SectionSystem) {
 				t.Errorf("%s: unmanaged %v in section %s", r.ID, ex.unmanaged, r.Section)
 			}
 			var exp []devices.Section
 			var dev devices.Section
 			if fam == devconf.FamilyJunos {
-				f := fixtureNamed(t, "juniper.synthetic-communities")
+				fixture := "juniper.synthetic-communities"
+				if r.Section == devconf.SectionSystem {
+					fixture = "juniper.synthetic-system"
+				}
+				f := fixtureNamed(t, fixture)
 				e, cur, _ := f.load(t)
 				exp, dev = e, cur.Sections[r.Section]
 			} else {

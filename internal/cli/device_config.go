@@ -175,10 +175,12 @@ that says so; --legacy is the IOS 12.x syntax whatever that is.
 
 'pull' logs in to the devices as you (your username and your tacctl password,
 asked for once, never stored or logged), reads each one's configuration over
-NETCONF where it answers (Junos) or the ssh command line, and keeps the six
-managed sections (aaa, roles, mgmt-acl, snmp, netconf, breakglass) with the
-state of their comparison with what tacctl renders for that device. A secret
-is compared by presence only and no secret value is kept or printed. A device
+NETCONF where it answers (Junos) or the ssh command line, and keeps the managed
+sections (aaa, roles, mgmt-acl, snmp, netconf, breakglass, and system for a
+scope that has a system block) with the state of their comparison with what
+tacctl renders for that device. A secret is compared by presence only and no
+secret value is kept or printed (a login message is kept as its size and a
+digest, never as text). A device
 needs a pinned host key ('tacctl device hostkey <name> accept'); its scope
 must be one of yours. At most device.config.max_concurrency devices are read
 at once (--concurrency lowers it, never raises it). Ctrl-C stops starting new

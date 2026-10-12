@@ -229,6 +229,10 @@ func TestPullJunosOverNetconfThenListShowDiff(t *testing.T) {
 		t.Fatalf("record %+v", rec)
 	}
 	for _, n := range devconf.SectionNames {
+		if n == "system" {
+			// only a scope that has a system block has the section
+			continue
+		}
 		if s, ok := rec.Sections[n]; !ok || s.State == "differs" || s.State == "missing" {
 			t.Errorf("section %s: %+v", n, s)
 		}

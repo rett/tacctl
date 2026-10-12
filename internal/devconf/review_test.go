@@ -723,10 +723,10 @@ func TestSecretRecognitionIsNarrow(t *testing.T) {
 	// text that looks like a hash is text; a hash in an unknown statement
 	// is elided and the statement stays
 	for in, want := range map[string]string{
-		`set system login message "$5$ per unit of $9$ stuff"`: `set system login message "$5$ per unit of $9$ stuff"`,
-		`set system foo bar $9$abcdefgh baz`:                   `set system foo bar <secret> baz`,
-		`set system foo "$6$salt$hashhash" baz`:                `set system foo <secret> baz`,
-		`set system foo "a /* SECRET-DATA */ b"`:               `set system foo "a /* SECRET-DATA */ b"`,
+		`set system location building "$5$ per unit of $9$ stuff"`: `set system location building "$5$ per unit of $9$ stuff"`,
+		`set system foo bar $9$abcdefgh baz`:                       `set system foo bar <secret> baz`,
+		`set system foo "$6$salt$hashhash" baz`:                    `set system foo <secret> baz`,
+		`set system foo "a /* SECRET-DATA */ b"`:                   `set system foo "a /* SECRET-DATA */ b"`,
 	} {
 		if got := junosStems(in); len(got) != 1 || got[0] != want {
 			t.Errorf("%q: %q, want %q", in, got, want)

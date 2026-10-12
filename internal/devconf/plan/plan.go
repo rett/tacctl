@@ -93,13 +93,27 @@ func syntaxUnknownWhy(device string) string {
 		"` or `tacctl device config-syntax " + name + " ios12|modern`"
 }
 
+// systemUnreadWhy is the reason a plan with a system block has no system
+// section from a pull that predates the block.
+func systemUnreadWhy(device string) string {
+	name := device
+	if name == "" {
+		name = "<name>"
+	}
+	return "the system block of this scope is newer than the pull of this device, so its system settings were not read: run `tacctl device config pull " +
+		name + "` to plan them"
+}
+
 // PlanOrder is the order the sections go in a block (D95 for Junos, §4b for
 // IOS).
+//
+// The system section (Junos, 0.2.7) follows snmp and comes before mgmt-acl,
+// which stays last; Plan leaves it out of a plan whose rendering has none.
 func PlanOrder(family string) []string {
 	if family == devconf.FamilyIOS {
 		return []string{"aaa", "roles", "snmp", "mgmt-acl"}
 	}
-	return []string{"roles", "aaa", "snmp", "mgmt-acl"}
+	return []string{"roles", "aaa", "snmp", devconf.SectionSystem, "mgmt-acl"}
 }
 
 // never are the two sections that are never planned.
@@ -184,15 +198,24 @@ func Plan(vendor string, expected []devices.Section, current, plain devconf.Extr
 	d.InheritanceChecked = d.InheritanceChecked && fam == devconf.FamilyJunos
 	p := &planner{fam: fam, opt: opt, cur: current, plain: plain, checked: d.InheritanceChecked}
 	p.exp = expected
+	if fam == devconf.FamilyJunos {
+		p.blk = blockObjectsOf(expected, opt.Scope)
+	}
 	if fam == devconf.FamilyIOS {
 		p.prepareIOS(byName)
 	}
 
 	for _, name := range PlanOrder(fam) {
+		// the system section exists only where the rendering has one
+		if name == devconf.SectionSystem && len(p.expected(name).Lines) == 0 {
+			continue
+		}
 		r := byName[name]
 		sp := SectionPlan{Name: name}
+		// a system section the record has not read has its own words, below
+		unread := name == devconf.SectionSystem && r.State == devconf.StateNA
 		for _, n := range r.Notes {
-			if !slices.Contains(d.Notes, n) {
+			if !slices.Contains(d.Notes, n) && !unread {
 				d.Notes = append(d.Notes, n)
 			}
 		}
@@ -209,6 +232,12 @@ func Plan(vendor string, expected []devices.Section, current, plain devconf.Extr
 		case opt.Writable != nil && !opt.Writable[name]:
 			sp.State, sp.Why, sp.Kind = StateSkipped, "not writable by the caller", KindNotWritable
 			d.Skipped = append(d.Skipped, Skip{name, KindNotWritable, sp.Why})
+		case unread:
+			// the block is newer than the pull: nothing of the section was
+			// read, and nothing is guessed
+			sp.State, sp.Why, sp.Kind = StateSkipped, systemUnreadWhy(opt.Device), KindNotPlannable
+			d.Skipped = append(d.Skipped, Skip{name, KindNotPlannable, sp.Why})
+			d.Warnings = appendNew(d.Warnings, sp.Why)
 		case r.State == devconf.StateNA:
 			sp.State = StateNA
 		// DECISION: a section whose every compared statement is a secret the
@@ -370,6 +399,9 @@ type planner struct {
 	noLocal bool
 	// ios holds the IOS-only state.
 	ios *iosState
+	// blk are the objects of the rendering that a configuration block put
+	// there (nil: none), for the report's words.
+	blk *blockObjects
 }
 
 func (p *planner) expected(name string) devices.Section {
@@ -459,6 +491,8 @@ func secretKind(family string, l Line) string {
 		return "SNMP COMMUNITY"
 	case strings.Contains(t, "snmp v3"), strings.Contains(t, "snmp-server user"):
 		return "SNMPv3 USER PASSWORDS"
+	case strings.Contains(t, "ntp authentication-key"):
+		return "NTP KEY"
 	}
 	return "SECRET"
 }
@@ -519,14 +553,24 @@ func placeholderOf(stem string) string {
 }
 
 // splitTokens splits a statement into words; double and single quotes group
-// and are dropped.
+// and are dropped. A word is as the device prints it: inside double quotes a
+// backslash and the character after it stay together (so '\"' does not end
+// the quote and a login message's '\n' stays a '\n'), and quoteTok writes
+// the word back the same way.
 func splitTokens(s string) []string {
 	var out []string
 	var b strings.Builder
 	in := rune(0)
 	has := false
+	esc := false
 	for _, r := range s {
 		switch {
+		case esc:
+			b.WriteRune(r)
+			esc = false
+		case in == '"' && r == '\\':
+			b.WriteRune(r)
+			esc = true
 		case in != 0:
 			if r == in {
 				in = 0
@@ -551,10 +595,30 @@ func splitTokens(s string) []string {
 	return out
 }
 
-// quoteTok writes a path token back the way a Junos statement has it.
+// quoteTok writes a path token back the way a Junos statement has it: bare
+// unless it holds a blank, a quote or a character Junos reads as structure.
+// A token is in the form splitTokens gives (escapes as printed), so an escape
+// in it stays, and a quote that is not escaped is.
 func quoteTok(t string) string {
 	if t == "" || strings.ContainsAny(t, " \t\"'\\;[]{}") {
-		return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(t) + `"`
+		var b strings.Builder
+		b.WriteByte('"')
+		for i := 0; i < len(t); i++ {
+			switch c := t[i]; {
+			case c == '\\' && i+1 < len(t):
+				b.WriteByte(c)
+				i++
+				b.WriteByte(t[i])
+			case c == '\\':
+				b.WriteString(`\\`)
+			case c == '"':
+				b.WriteString(`\"`)
+			default:
+				b.WriteByte(c)
+			}
+		}
+		b.WriteByte('"')
+		return b.String()
 	}
 	return t
 }

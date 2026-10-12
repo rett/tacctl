@@ -17,8 +17,9 @@ import (
 type Extracted struct {
 	// Vendor is the family the text was read as (junos or ios).
 	Vendor string
-	// Sections has all six managed sections by name; one with no statement
-	// on the device has no Lines. Lines are in the compared form (see
+	// Sections has the managed sections by name (the system section only
+	// when the rendering has one, and on Junos); one with no statement on
+	// the device has no Lines. Lines are in the compared form (see
 	// Normalise): a secret's value is not in them, whatever the device
 	// printed (encrypted, hashed or masked), and Secret marks the lines
 	// that carried one.
@@ -42,14 +43,16 @@ type Options struct {
 	SecretsVisible *bool
 }
 
-// Extract returns the six managed sections of a device's configuration
+// Extract returns the managed sections of a device's configuration
 // text: Junos 'show configuration | display inheritance no-comments |
 // display set' or IOS/IOS-XE 'show running-config'. A section is the
 // statements under its hierarchy (plan D62): the system's AAA keys, the
 // login classes and users, the management filter, 'snmp', 'system services
-// netconf' on Junos; 'aaa', the server blocks, 'username', 'privilege', the
-// management ACL and the VTY 'access-class', 'snmp-server' and
-// 'netconf-yang' on IOS.
+// netconf' on Junos, and the login message, domain, time zone, name servers
+// and NTP where the rendering has a system section (a login message is kept
+// as a mark of its size and a digest, never as text); 'aaa', the server
+// blocks, 'username', 'privilege', the management ACL and the VTY
+// 'access-class', 'snmp-server' and 'netconf-yang' on IOS.
 //
 // The optional expected sections (devices.Managed's result for the device)
 // say which named objects are tacctl's, so a login class, a filter or an
@@ -532,6 +535,7 @@ func Compare(vendor string, expected, got devices.Section, secretsVisible bool) 
 		res.Lines = append(res.Lines, l)
 	}
 	extra := 0
+	rs := newRenderedSet(fam, expected, exp, lb)
 	left := map[string]int{}
 	for s, n := range budget {
 		left[s] = n
@@ -541,7 +545,7 @@ func Compare(vendor string, expected, got devices.Section, secretsVisible bool) 
 			left[x.stem]--
 			continue
 		}
-		l := DiffLine{Op: OpExtra, Text: x.stem, Secret: x.secret, Unmanaged: unmanaged(fam, res.Name, x, exp)}
+		l := DiffLine{Op: OpExtra, Text: x.stem, Secret: x.secret, Unmanaged: unmanaged(fam, res.Name, x, rs)}
 		if x.secret {
 			l.Text += notePresent
 		}
@@ -639,6 +643,19 @@ func CompareAll(expected []devices.Section, got Extracted) ([]SectionResult, err
 	out := make([]SectionResult, 0, len(SectionNames))
 	for _, n := range SectionNames {
 		e := sectionOf(expected, n)
+		if optionalSection(n) {
+			if !renders(expected, n) {
+				// the scope has no such block: no section at all
+				continue
+			}
+			if _, ok := got.Sections[n]; !ok {
+				// A record made before the block was set (or by an older
+				// tacctl) did not read the section: nothing is compared
+				// until the next pull.
+				out = append(out, SectionResult{Name: n, State: StateNA, Notes: []string{noteNoSystem}})
+				continue
+			}
+		}
 		g := got.Sections[n]
 		g.Name = n
 		r, err := Compare(got.Vendor, e, g, got.SecretsVisible)
@@ -650,3 +667,8 @@ func CompareAll(expected []devices.Section, got Extracted) ([]SectionResult, err
 	}
 	return out, nil
 }
+
+// noteNoSystem is the note of a record that has no system section although
+// the rendering has one.
+const noteNoSystem = "the system block of this scope is newer than the pull of this record: " +
+	"the system settings are not compared until the next pull"

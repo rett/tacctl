@@ -173,6 +173,10 @@ func checkJunosBackout(t *testing.T, f fixture, raw string, d Delta, label strin
 			if len(s.path) >= 4 && s.path[len(s.path)-2] == "secret" {
 				s.path = s.path[:len(s.path)-1]
 			}
+			if len(s.path) >= 6 && s.path[2] == "authentication-key" && s.path[len(s.path)-2] == "value" {
+				// an NTP key's value, a secret too
+				s.path = s.path[:len(s.path)-1]
+			}
 			out = append(out, s.text())
 		}
 		slices.Sort(out)

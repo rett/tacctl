@@ -13,9 +13,11 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/rett/tacctl/internal/blocks"
 	"github.com/rett/tacctl/internal/devconf"
 	"github.com/rett/tacctl/internal/devices"
 	"github.com/rett/tacctl/internal/devreg"
+	"github.com/rett/tacctl/internal/policy"
 	"github.com/rett/tacctl/internal/snmpcred"
 	"github.com/rett/tacctl/internal/ui"
 )
@@ -82,6 +84,32 @@ func (inv *invocation) deviceRenderInput(p renderParams) (devices.Request, devic
 	if p.Protocol == devices.RADIUS {
 		if d.Radius, err = inv.deviceRadius(p.Vendor, p.Scope); err != nil {
 			return req, d, err
+		}
+	}
+	// The scope's snmp and system blocks (0.2.7; Junos only: IOS blocks are the
+	// release after). One with an error is never rendered in part: the refusal
+	// names the scope and the verb that says what is wrong.
+	if p.Vendor == "juniper" {
+		store, cfg := blocks.NewStore(a.Paths.BlocksDir), a.Conf()
+		snmp, err := policy.ResolveSNMPBlock(store, cfg, p.Scope)
+		if err != nil {
+			return req, d, inv.usageErr(msgs(err)...)
+		}
+		system, err := policy.ResolveSystemBlock(store, cfg, p.Scope)
+		if err != nil {
+			return req, d, inv.usageErr(msgs(err)...)
+		}
+		if snmp != nil || system != nil {
+			d.Blocks = devices.Blocks{Scope: p.Scope, SNMP: snmp, System: system}
+			// An engineer's walkthrough shows the block's community strings
+			// as it shows the scope's, and the system block's NTP key: a read
+			// of its own, logged.
+			if p.Restricted && snmp != nil {
+				inv.secretRead("block", p.Scope+"/juniper/"+blocks.BlockSNMP)
+			}
+			if p.Restricted && system != nil && len(system.NTPKeys) > 0 {
+				inv.secretRead("block", p.Scope+"/juniper/"+blocks.BlockSystem)
+			}
 		}
 	}
 	return req, d, nil

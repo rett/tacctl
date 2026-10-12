@@ -291,6 +291,38 @@ var junosRowCases = map[string]rowCase{
 		// the other communities of the device stay
 		wantKept(t, d, "snmp", "snmp trap-group")
 	},
+	"junos.snmp.block-community": func(t *testing.T) {
+		// a community of the scope's snmp block is owned whole: a stray leaf
+		// goes, under the block community's own name; tacctl's own community
+		// and the device's other one are not touched
+		d := planJ(t, blockFixture(t), addMany("set snmp community nms-ro clients 203.0.113.0/24",
+			"set snmp community other-example clients 203.0.113.9/32"), blockOpt)
+		wantLine(t, d, "snmp", "delete snmp community <secret:2> clients 203.0.113.0/24")
+		noLine(t, d, "snmp", "<secret:1>")
+		noLine(t, d, "snmp", "<other:")
+		wantKept(t, d, "snmp", "snmp community <other:1> clients 203.0.113.9/32")
+	},
+	"junos.snmp.trap-group": func(t *testing.T) {
+		// a trap group the block names is owned whole, another is the
+		// device's own
+		d := planJ(t, blockFixture(t), addMany("set snmp trap-group nms-traps targets 203.0.113.9",
+			"set snmp trap-group other-example targets 203.0.113.9"), blockOpt)
+		wantLine(t, d, "snmp", "delete snmp trap-group <secret:3> targets 203.0.113.9")
+		noLine(t, d, "snmp", "<other:")
+		wantKept(t, d, "snmp", "snmp trap-group <other:1> targets 203.0.113.9")
+	},
+	"junos.snmp.trap-options": func(t *testing.T) {
+		// the leaf the block sets is replaced as rendered, the device's own
+		// other leaf stays
+		f := blockFixture(t)
+		d := planJ(t, f, func(c *JunosConfig) {
+			c.Remove("set snmp trap-options agent-address outgoing-interface")
+		}, blockOpt)
+		wantLine(t, d, "snmp", "set snmp trap-options agent-address outgoing-interface")
+		noLine(t, d, "snmp", "source-address")
+		noLine(t, d, "snmp", "delete")
+		wantKept(t, d, "snmp", "snmp trap-options source-address 192.0.2.250")
+	},
 	"junos.snmp.v3-user": func(t *testing.T) {
 		_, d := v3Device(t, `set snmp v3 usm local-engine user tacctl-ro privacy-aes256 privacy-key "$9$EXTRAEXTRA1"`)
 		wantLine(t, d, "snmp", "delete snmp v3 usm local-engine user tacctl-ro privacy-aes256 privacy-key")
@@ -327,6 +359,136 @@ var junosRowCases = map[string]rowCase{
 		d := planJ(t, f, add(`set snmp description "Old"`), Options{})
 		wantLine(t, d, "snmp", `set snmp description "Core switch"`)
 		noLine(t, d, "snmp", "delete snmp description")
+	},
+	// 0.2.7: the system block. Each single-valued statement is replaced in
+	// place, each list statement adds, and nothing is ever deleted.
+	"junos.system.login-message": func(t *testing.T) {
+		d, _ := planSystem(t, func(c *JunosConfig) {
+			dropPrefix("system login message")(c)
+			c.Add(`set system login message "Another banner"`)
+		}, nil, systemOpt)
+		wantLine(t, d, "system", `set system login message `+fixtureMessage)
+		noLine(t, d, "system", "delete")
+		noLine(t, d, "system", "Another")
+		for _, k := range d.Kept {
+			if k.Section == "system" {
+				t.Errorf("kept: %+v", k)
+			}
+		}
+	},
+	"junos.system.domain-name": func(t *testing.T) {
+		d, _ := planSystem(t, add("set system domain-name other.example.net"), nil, systemOpt)
+		wantLine(t, d, "system", "set system domain-name lab.example.net")
+		noLine(t, d, "system", "delete")
+	},
+	"junos.system.time-zone": func(t *testing.T) {
+		d, _ := planSystem(t, func(c *JunosConfig) {
+			dropPrefix("system time-zone")(c)
+			c.Add("set system time-zone America/New_York")
+		}, nil, systemOpt)
+		wantLine(t, d, "system", "set system time-zone UTC")
+		noLine(t, d, "system", "delete")
+	},
+	"junos.system.ntp-boot-server": func(t *testing.T) {
+		d, _ := planSystem(t, func(c *JunosConfig) {
+			dropPrefix("system ntp boot-server")(c)
+			c.Add("set system ntp boot-server 192.0.2.99")
+		}, nil, systemOpt)
+		wantLine(t, d, "system", "set system ntp boot-server 192.0.2.123")
+		noLine(t, d, "system", "delete")
+	},
+	"junos.system.ntp-source-address": func(t *testing.T) {
+		d, _ := planSystem(t, func(c *JunosConfig) {
+			dropPrefix("system ntp source-address")(c)
+			c.Add("set system ntp source-address 192.0.2.99")
+		}, nil, systemOpt)
+		wantLine(t, d, "system", "set system ntp source-address 192.0.2.250")
+		noLine(t, d, "system", "delete")
+	},
+	"junos.system.ntp-server-version": func(t *testing.T) {
+		d, _ := planSystem(t, func(c *JunosConfig) {
+			dropPrefix("system ntp server 192.0.2.123 version")(c)
+			c.Add("set system ntp server 192.0.2.123 version 3")
+		}, nil, systemOpt)
+		wantLine(t, d, "system", "set system ntp server 192.0.2.123 version 4")
+		noLine(t, d, "system", "delete")
+	},
+	"junos.system.ntp-server-key": func(t *testing.T) {
+		d, _ := planSystem(t, func(c *JunosConfig) {
+			dropPrefix("system ntp server 192.0.2.123 key")(c)
+			c.Add("set system ntp server 192.0.2.123 key 2")
+		}, nil, systemOpt)
+		wantLine(t, d, "system", "set system ntp server 192.0.2.123 key 1")
+		noLine(t, d, "system", "delete")
+	},
+	"junos.system.ntp-server-routing-instance": func(t *testing.T) {
+		f := systemFixture(t)
+		sec := systemSectionOf(t, "set system ntp server 192.0.2.123 routing-instance mgmt\n")
+		d, _ := planSystem(t, add("set system ntp server 192.0.2.123 routing-instance other"),
+			withSystem(expectedSections(t, f.expected), sec), systemOpt)
+		wantLine(t, d, "system", "set system ntp server 192.0.2.123 routing-instance mgmt")
+		noLine(t, d, "system", "delete")
+	},
+	"junos.system.domain-search": func(t *testing.T) {
+		d, _ := planSystem(t, func(c *JunosConfig) {
+			dropPrefix("system domain-search")(c)
+			c.Add("set system domain-search example.net")
+		}, nil, systemOpt)
+		wantLine(t, d, "system", "set system domain-search lab.example.net")
+		noLine(t, d, "system", "delete")
+		wantKept(t, d, "system", "system domain-search example.net")
+	},
+	"junos.system.name-server": func(t *testing.T) {
+		d, _ := planSystem(t, func(c *JunosConfig) {
+			dropPrefix("system name-server")(c)
+			c.Add("set system name-server 198.51.100.53")
+		}, nil, systemOpt)
+		wantLine(t, d, "system", "set system name-server 192.0.2.53")
+		noLine(t, d, "system", "delete")
+		wantKept(t, d, "system", "system name-server 198.51.100.53")
+	},
+	"junos.system.ntp-server": func(t *testing.T) {
+		d, _ := planSystem(t, func(c *JunosConfig) {
+			dropPrefix("system ntp server")(c)
+			c.Add("set system ntp server ntp.example.net")
+		}, nil, systemOpt)
+		wantLine(t, d, "system", "set system ntp server 192.0.2.123 prefer")
+		noLine(t, d, "system", "delete")
+		wantKept(t, d, "system", "system ntp server ntp.example.net")
+	},
+	"junos.system.ntp-key": func(t *testing.T) {
+		// typed (by value) only where the device has no key of the number
+		d, _ := planSystem(t, func(c *JunosConfig) {
+			dropPrefix("system ntp authentication-key")(c)
+			c.Add(`set system ntp authentication-key 9 value "$9$OTHEROTHEROTHER"`)
+		}, nil, systemOpt)
+		var key Line
+		for _, l := range d.Lines {
+			if strings.Contains(l.Text, "ntp authentication-key") {
+				key = l
+			}
+		}
+		if key.Text != "set system ntp authentication-key 1 type md5 value ntp-key-0123456789" || !key.HasValue || key.Shown() != "set system ntp authentication-key 1 value <secret>" {
+			t.Errorf("the key line: %+v", key)
+		}
+		noLine(t, d, "system", "delete")
+		wantKept(t, d, "system", "system ntp authentication-key 9 value")
+		// the device's key of the number, of another type, is left as it is
+		d, _ = planSystem(t, func(c *JunosConfig) {
+			dropPrefix("system ntp authentication-key")(c)
+			c.Add("set system ntp authentication-key 1 type sha1")
+			c.Add(`set system ntp authentication-key 1 value "$9$OTHEROTHEROTHER"`)
+		}, nil, systemOpt)
+		noLine(t, d, "system", "authentication-key")
+	},
+	"junos.system.ntp-trusted-key": func(t *testing.T) {
+		d, _ := planSystem(t, func(c *JunosConfig) {
+			dropPrefix("system ntp trusted-key")(c)
+			c.Add("set system ntp trusted-key 9")
+		}, nil, systemOpt)
+		wantLine(t, d, "system", "set system ntp trusted-key 1")
+		noLine(t, d, "system", "delete")
+		wantKept(t, d, "system", "system ntp trusted-key 9")
 	},
 	"junos.mgmt-acl.filter": func(t *testing.T) {
 		f := fixtureNamed(t, "juniper.synthetic-lab")

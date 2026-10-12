@@ -386,7 +386,7 @@ func cleanupLeftWhy(left []CleanupLeft, e Extra) string {
 // folded.
 func (p *planner) extrasOfItem(d *Delta, it Item) []int {
 	stem := strings.TrimPrefix(it.Statement, "e.g. ")
-	obj, _ := objectOf(d.Vendor, stem)
+	obj, _ := objectOf(d.Vendor, stem, p.blk)
 	var out []int
 	for i, e := range d.Extras {
 		if e.Section != it.Section {
@@ -398,7 +398,7 @@ func (p *planner) extrasOfItem(d *Delta, it Item) []int {
 			continue
 		}
 		if strings.HasPrefix(it.Statement, "e.g. ") && obj != "" {
-			if eo, _ := objectOf(d.Vendor, e.Text); eo == obj {
+			if eo, _ := objectOf(d.Vendor, e.Text, p.blk); eo == obj {
 				out = append(out, i)
 			}
 		}

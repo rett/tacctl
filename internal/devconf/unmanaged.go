@@ -7,14 +7,18 @@ package devconf
 //
 // The shapes mirror the Kept column of the planner's ownership rows
 // (plan/owned.go, named by Row; a test there keeps the two in step) and the
-// statements of no row at all ('snmp name', trap groups, trap options,
-// 'snmp-server host'). Only the 'snmp' section has them: an extra of the
-// other sections (another server, a login class, a filter, a user nobody
-// recorded) is a finding about who can log in, and stays a difference.
+// statements of no row at all ('snmp name', the engine id, 'snmp-server
+// host'). A trap group is the device's own unless a configuration block
+// names it (0.2.7). Only the 'snmp' and 'system' sections have them: an
+// extra of the other sections (another server, a login class, a filter, a
+// user nobody recorded) is a finding about who can log in, and stays a
+// difference.
 
 import (
 	"slices"
 	"strings"
+
+	"github.com/rett/tacctl/internal/devices"
 )
 
 // keptShape is one shape of statement the planner keeps by rule.
@@ -28,18 +32,28 @@ type keptShape struct {
 	// keep reports whether a statement of the pattern is the device's own:
 	// name is the word at '$' and prefix the pattern's words with it filled
 	// in.
-	keep func(name string, prefix []string, exp *renderedWords) bool
+	keep func(name string, prefix []string, exp *renderedSet) bool
 }
 
 // The tests of the shapes.
 var (
 	// another community: its label is '<other:N>' (the bare mark of an
-	// older record cannot be told apart, so it is not)
-	otherCommunity = func(name string, _ []string, _ *renderedWords) bool { return IsOtherLabel(name) }
+	// older record cannot be told apart, so it is not), or the label of a
+	// string the rendering names only as a trap group
+	otherCommunity = func(name string, _ []string, exp *renderedSet) bool {
+		return IsOtherLabel(name) || IsLabel(name) && !exp.community[name]
+	}
+	// a trap group the rendering (a block) does not name: another's label,
+	// or the label of a string the rendering has as a community only. The
+	// bare mark of an older record cannot be told apart, and is left alone
+	// as it always was.
+	otherTrapGroup = func(name string, _ []string, exp *renderedSet) bool {
+		return name == secretMark || !exp.trapGroup[name]
+	}
 	// an object of a name the rendering does not set
-	notRendered = func(_ string, prefix []string, exp *renderedWords) bool { return !exp.has(prefix) }
+	notRendered = func(_ string, prefix []string, exp *renderedSet) bool { return !exp.has(prefix) }
 	// a statement the rendering has nothing of
-	always = func(string, []string, *renderedWords) bool { return true }
+	always = func(string, []string, *renderedSet) bool { return true }
 )
 
 // keptShapes are the shapes per family; the first whose pattern a statement
@@ -47,6 +61,8 @@ var (
 var keptShapes = map[string][]keptShape{
 	FamilyJunos: {
 		{Row: "junos.snmp.community", Pattern: "snmp community $", keep: otherCommunity},
+		{Row: "junos.snmp.trap-group", Pattern: "snmp trap-group $", keep: otherTrapGroup},
+		{Row: "junos.snmp.trap-options", Pattern: "snmp trap-options $", keep: notRendered},
 		{Row: "junos.snmp.client-list", Pattern: "snmp client-list $", keep: notRendered},
 		{Row: "junos.snmp.v3-user", Pattern: "snmp v3 usm local-engine user $", keep: notRendered},
 		{Row: "junos.snmp.v3-group", Pattern: "snmp v3 vacm security-to-group security-model usm security-name $", keep: notRendered},
@@ -55,9 +71,31 @@ var keptShapes = map[string][]keptShape{
 		{Row: "junos.snmp.location", Pattern: "snmp location", keep: notRendered},
 		{Row: "junos.snmp.contact", Pattern: "snmp contact", keep: notRendered},
 		{Row: "junos.snmp.description", Pattern: "snmp description", keep: notRendered},
-		// no row: trap groups, trap options, the name, the engine id, the
-		// rest of v3 and anything else under 'snmp'
+		// no row: the name, the engine id, the rest of v3 and anything else
+		// under 'snmp'
 		{Pattern: "snmp", keep: always},
+		// The system section (0.2.7) is additive: what the device holds
+		// beside the block's statements is its own, and a single value the
+		// block states and the device holds otherwise is a difference (the
+		// plan replaces it in place), so each shape keeps a statement only
+		// where the rendering says nothing of the same object. The options of
+		// an NTP server come before the server itself.
+		{Row: "junos.system.login-message", Pattern: "system login message", keep: notRendered},
+		{Row: "junos.system.domain-name", Pattern: "system domain-name", keep: notRendered},
+		{Row: "junos.system.time-zone", Pattern: "system time-zone", keep: notRendered},
+		{Row: "junos.system.domain-search", Pattern: "system domain-search $", keep: notRendered},
+		{Row: "junos.system.name-server", Pattern: "system name-server $", keep: notRendered},
+		{Row: "junos.system.ntp-boot-server", Pattern: "system ntp boot-server", keep: notRendered},
+		{Row: "junos.system.ntp-source-address", Pattern: "system ntp source-address", keep: notRendered},
+		{Row: "junos.system.ntp-server-version", Pattern: "system ntp server $ version", keep: notRendered},
+		{Row: "junos.system.ntp-server-key", Pattern: "system ntp server $ key", keep: notRendered},
+		{Row: "junos.system.ntp-server-routing-instance", Pattern: "system ntp server $ routing-instance", keep: notRendered},
+		{Row: "junos.system.ntp-server", Pattern: "system ntp server $ prefer", keep: notRendered},
+		{Row: "junos.system.ntp-server", Pattern: "system ntp server $", keep: notRendered},
+		{Row: "junos.system.ntp-key", Pattern: "system ntp authentication-key $", keep: notRendered},
+		{Row: "junos.system.ntp-trusted-key", Pattern: "system ntp trusted-key $", keep: notRendered},
+		// no row: the rest of 'system ntp' (threshold, interval-range, ...)
+		{Pattern: "system ntp", keep: always},
 	},
 	FamilyIOS: {
 		{Row: "ios.snmp.community", Pattern: "snmp-server community $", keep: otherCommunity},
@@ -87,12 +125,59 @@ func KeptShapes(family string) []KeptShape {
 	return out
 }
 
-// renderedWords are the words of the rendered statements.
-type renderedWords [][]string
+// renderedSet is what the rendering says, for the shapes: the words of its
+// statements, and the labels of the names under the objects whose origin
+// matters (a block's trap group is the plan's; so is no community that the
+// rendering does not name as one).
+type renderedSet struct {
+	words [][]string
+	// community are the labels of the names the rendering sets under
+	// 'snmp community' (the structured settings' and a block's), trapGroup
+	// those under 'snmp trap-group' that a configuration block sets (the
+	// structured settings have no trap group).
+	community, trapGroup map[string]bool
+}
 
 // has reports whether a rendered statement starts with the words.
-func (r *renderedWords) has(prefix []string) bool {
-	return slices.ContainsFunc(*r, func(w []string) bool { return len(w) >= len(prefix) && slices.Equal(w[:len(prefix)], prefix) })
+func (r *renderedSet) has(prefix []string) bool {
+	return slices.ContainsFunc(r.words, func(w []string) bool { return len(w) >= len(prefix) && slices.Equal(w[:len(prefix)], prefix) })
+}
+
+// newRenderedSet is the rendering of a section as the shapes read it. lb is
+// the comparison's labels (nil for a record of an older tacctl).
+func newRenderedSet(fam string, section devices.Section, exp []stmt, lb *labels) *renderedSet {
+	rs := &renderedSet{community: map[string]bool{}, trapGroup: map[string]bool{}}
+	for _, e := range exp {
+		rs.words = append(rs.words, stmtWords(fam, e))
+	}
+	if fam != FamilyJunos {
+		for _, line := range section.Lines {
+			if f := strings.Fields(line); len(f) >= 3 && f[0] == "snmp-server" && f[1] == "community" {
+				rs.community[lb.of(f[2])] = true
+			}
+		}
+		return rs
+	}
+	for i, line := range section.Lines {
+		head, rest, _ := strings.Cut(strings.TrimSpace(line), " ")
+		if head != "set" {
+			continue
+		}
+		for _, ts := range expand(tokenize(rest)) {
+			if len(ts) < 3 || ts[0].s != "snmp" {
+				continue
+			}
+			switch ts[1].s {
+			case "community":
+				rs.community[lb.of(ts[2].s)] = true
+			case "trap-group":
+				if i < len(section.Block) && section.Block[i] {
+					rs.trapGroup[lb.of(ts[2].s)] = true
+				}
+			}
+		}
+	}
+	return rs
 }
 
 // stmtWords are a statement's words: the Junos path, or the IOS context and
@@ -106,15 +191,11 @@ func stmtWords(fam string, x stmt) []string {
 
 // unmanaged reports an extra statement of a section that is the device's
 // own by rule. A deactivated statement is a finding of its own.
-func unmanaged(fam, section string, x stmt, exp []stmt) bool {
-	if section != SectionSNMP || strings.HasPrefix(x.stem, "deactivate ") {
+func unmanaged(fam, section string, x stmt, rs *renderedSet) bool {
+	if section != SectionSNMP && section != SectionSystem || strings.HasPrefix(x.stem, "deactivate ") {
 		return false
 	}
 	words := stmtWords(fam, x)
-	var rw renderedWords
-	for _, e := range exp {
-		rw = append(rw, stmtWords(fam, e))
-	}
 	for _, s := range keptShapes[fam] {
 		pat := strings.Fields(s.Pattern)
 		if len(words) < len(pat) {
@@ -130,7 +211,7 @@ func unmanaged(fam, section string, x stmt, exp []stmt) bool {
 			}
 		}
 		if ok {
-			return s.keep(name, words[:len(pat)], &rw)
+			return s.keep(name, words[:len(pat)], rs)
 		}
 	}
 	return false

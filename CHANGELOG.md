@@ -107,6 +107,50 @@ current behaviour; this file is where history lives.
    the path. `rollback 0.2.3` removes the lists and leaves the files. A scope
    called `devices` is an ordinary scope name.
 
+6. **A scope's Junos `snmp` block is rendered, compared and planned.** The
+   block's communities (`authorization`, `clients`, `client-list-name`), trap
+   groups (`version`, `categories`, `targets`) and trap options are appended
+   to the SNMP step of `device config show` and `config juniper`, and to the
+   managed `snmp` section, as live lines under a comment that names the
+   scope's block (never a string); they are rendered even when the scope's own
+   SNMP settings are not configured. Each community and trap group of the
+   block is an object tacctl owns whole: the plan sets what the device lacks
+   and deletes a `clients` entry, a leaf or a trap-group target the block does
+   not state, under the object's real name, and the back-out deletes what the
+   plan created. The device's other communities stay `<other:N>`: kept, listed
+   and counted as unmanaged. The management filter's `permit-snmp` term also
+   permits the block's unrestricted IPv4 clients (a `restrict` entry is no
+   permit; a community that uses a `client-list-name` gets a comment, because
+   the list's addresses are on the device), so the filter's `deny-snmp` term
+   does not refuse a community the block grants. A block with an error is never
+   rendered in part: every Junos device of the scope is refused, with the line
+   numbers and the verb that checks the block, and a block community that is
+   the scope's own community is refused without printing it. A scope with no
+   block renders exactly what it did.
+
+7. **A scope's Junos `system` block is a seventh managed section.** The login
+   message, domain name, domain search list, time zone, name servers and NTP
+   servers (with `prefer`, `version`, `key`, `routing-instance`), boot server,
+   source address, authentication keys and trusted keys that the block states
+   are rendered as the last lines of the SNMP step, compared and planned
+   additively: a statement the device lacks is set, a single value that
+   differs (the login message, domain name, time zone, boot server, source
+   address) is replaced in place, a list entry is added, and nothing the
+   device holds is ever deleted (the extras are listed as unmanaged; `ok (+N
+   unmanaged)` applies). An NTP key is typed only where its number is missing
+   (the device keeps ciphertext, so presence is all that is compared), and a
+   login message is kept in the record, the diff and the report as its size and
+   a digest, never as text; the plan's pasted statement is the whole message,
+   with a warning when the one-line statement is over 1,000 characters (a line
+   over 1,023 pasted into an interactive terminal is truncated: use `device
+   config plan <name> --plain`). The section exists only for a scope that has
+   the block, so no other device gains `~` lines for its own NTP; `--section
+   system` selects it in `device config diff` and `plan`. An older record has
+   no such section and is not compared until the next pull; the plan says to
+   pull again. The back-out types a replaced value back and deletes what the
+   plan added; for a replaced message it names the rollback, because only a
+   digest is kept.
+
 ## 0.2.6 (2026-10-12)
 
 A hotfix for 0.2.5, started from `master`. The items below are everything that

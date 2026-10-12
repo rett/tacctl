@@ -21,9 +21,9 @@ import (
 
 // The names the SNMP step defines on the device.
 const (
-	snmpACLName   = "TACCTL-SNMP"
-	snmpViewName  = "TACCTL-VIEW"
-	snmpGroupName = "TACCTL-GROUP"
+	snmpACLName   = names.SNMPClientList
+	snmpViewName  = names.SNMPView
+	snmpGroupName = names.SNMPGroup
 )
 
 // The SNMP versions (internal/snmp's constants, repeated so this package's
@@ -68,6 +68,14 @@ type SNMPInput struct {
 	// DeviceName is the registry name of the device the values are of (the
 	// hint of the Unfilled line); empty is the placeholder <name>.
 	DeviceName string
+	// Block are the 'set' lines of the scope's snmp configuration block
+	// (0.2.7): rendered after the structured settings as live lines of
+	// their own, whether or not the structured SNMP is configured, and
+	// BlockScope is the scope whose block it is (named in a comment, never a
+	// community string). Data.snmpInput fills them from Data.Blocks; only
+	// the Junos step renders them.
+	Block      []string
+	BlockScope string
 }
 
 // Unfilled is a value the step could not fill, and the command that sets it.
@@ -334,7 +342,12 @@ func junosQuote(s string) string {
 func JuniperSNMP(in SNMPInput) SNMPBlock {
 	const c = "#"
 	if in.Version == "" {
-		return SNMPBlock{Text: in.notConfigured(c)}
+		// The block is independent of the structured settings: it is
+		// rendered all the same.
+		if len(in.Block) == 0 {
+			return SNMPBlock{Text: in.notConfigured(c)}
+		}
+		return SNMPBlock{Text: strings.Join(append([]string{commented(c, in.notConfiguredLines("rendered from the structured settings"))}, in.junosBlockLines()...), "\n")}
 	}
 	var b []string
 	add := func(l ...string) { b = append(b, l...) }
@@ -400,8 +413,24 @@ func JuniperSNMP(in SNMPInput) SNMPBlock {
 	} else if in.Description != "" {
 		add("set snmp description " + junosQuote(in.Description))
 	}
+	add(in.junosBlockLines()...)
 	add("# " + in.verifyHint())
 	return SNMPBlock{Text: strings.Join(b, "\n"), Unfilled: in.unfilled()}
+}
+
+// junosBlockLines are the lines of the scope's snmp block: a comment that
+// names the block (by its scope, never by a string), then its statements as
+// live lines. None when the scope has no block.
+func (in SNMPInput) junosBlockLines() []string {
+	if len(in.Block) == 0 {
+		return nil
+	}
+	scope := in.BlockScope
+	if scope == "" {
+		scope = in.Scope
+	}
+	out := []string{"# The snmp block of scope '" + scope + "' (tacctl scope block " + scope + " juniper show snmp): its communities, trap groups and trap options."}
+	return append(out, in.Block...)
 }
 
 // --- WTI ---------------------------------------------------------------------

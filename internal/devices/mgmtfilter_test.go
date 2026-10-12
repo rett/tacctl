@@ -4,6 +4,7 @@ package devices
 // restricts udp port 161, and a credential a CLI would misread is not pasted.
 
 import (
+	"github.com/rett/tacctl/internal/blocks"
 	"strings"
 	"testing"
 )
@@ -167,5 +168,41 @@ func TestSNMPCredentialsAMisreadingCLIIsNeverPasted(t *testing.T) {
 	in := SNMPInput{Scope: "lab", Version: "v2c", Community: "public-ro", Server: "192.0.2.1", Description: "core? router"}
 	if got := JuniperSNMP(in).Text; strings.Contains(got, "\nset snmp description") || !strings.Contains(got, "# set snmp description \"core? router\"   (NOT SET: the description holds '?'") {
 		t.Errorf("description with '?':\n%s", got)
+	}
+}
+
+// The clients of the scope's SNMP block are polling the device too, so the
+// filter's udp 161 term must accept them (and not the 'restrict' entry), or
+// the deny-snmp term would refuse a community the block grants. A client list
+// of the device is named in a note.
+func TestJunosFilterPermitsBlockClients(t *testing.T) {
+	v2c := SNMPInput{Version: "v2c", Community: "public-ro", Ranges: []string{"198.51.100.0/24"}}
+	d := mgmtData(t, "192.0.2.1", "", []string{"10.0.0.0/8"}, v2c)
+	b, f := blocks.Parse("set snmp community other-poll authorization read-only\n" +
+		"set snmp community other-poll clients 203.0.113.0/24\n" +
+		"set snmp community other-poll clients 198.51.100.0/24\n" +
+		"set snmp community other-poll clients 0.0.0.0/0 restrict\n" +
+		"set snmp community listed-poll client-list-name NMS-LIST\n")
+	if blocks.HasErrors(f) {
+		t.Fatalf("block: %v", f)
+	}
+	d.Blocks = Blocks{Scope: "lab", SNMP: b}
+	got := JuniperVars(Request{Vendor: "juniper", Scope: "lab", Protocol: TACACS}, d)["MGMT_ACL_BLOCK"]
+	pre := "set firewall family inet filter MGMT-ACL term permit-snmp from source-address "
+	for _, want := range []string{pre + "192.0.2.1/32\n", pre + "198.51.100.0/24\n", pre + "203.0.113.0/24\n", "client list that the device holds"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("lacks %q:\n%s", want, got)
+		}
+	}
+	if n := strings.Count(got, pre+"198.51.100.0/24\n"); n != 1 {
+		t.Errorf("198.51.100.0/24 is permitted %d times, want once:\n%s", n, got)
+	}
+	if strings.Contains(got, pre+"0.0.0.0/0") {
+		t.Errorf("a restrict entry became a permit:\n%s", got)
+	}
+	// no block: unchanged
+	d.Blocks = Blocks{}
+	if strings.Contains(JuniperVars(Request{Vendor: "juniper", Scope: "lab", Protocol: TACACS}, d)["MGMT_ACL_BLOCK"], "203.0.113.0/24") {
+		t.Error("a permit without a block")
 	}
 }

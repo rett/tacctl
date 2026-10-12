@@ -1191,6 +1191,9 @@ func ciscoExtract(raw string, expected []devices.Section, visible *bool) (Extrac
 	by[SectionAAA] = append(by[SectionAAA], marker)
 	out := make(map[string]devices.Section, len(SectionNames))
 	for _, n := range SectionNames {
+		if optionalSection(n) {
+			continue
+		}
 		out[n] = toSection(n, uniq(by[n]))
 	}
 	vis := true

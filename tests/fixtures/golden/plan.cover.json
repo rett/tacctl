@@ -242,6 +242,36 @@
     "extras": 12
   },
   {
+    "device": "dev-juniper-synthetic-system",
+    "scope": "lab",
+    "vendor": "juniper",
+    "address": "192.0.2.21",
+    "state": "needs-change",
+    "fixes": 1,
+    "left": 3,
+    "remaining": {
+      "access": 1,
+      "monitoring": 2,
+      "cosmetic": 0
+    },
+    "extras": 3
+  },
+  {
+    "device": "dev-juniper-synthetic-system-new",
+    "scope": "lab",
+    "vendor": "juniper",
+    "address": "192.0.2.21",
+    "state": "needs-change",
+    "fixes": 11,
+    "left": 3,
+    "remaining": {
+      "access": 1,
+      "monitoring": 2,
+      "cosmetic": 0
+    },
+    "extras": 3
+  },
+  {
     "device": "dev-not-pulled",
     "scope": "lab",
     "vendor": "juniper",

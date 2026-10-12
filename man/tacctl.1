@@ -6440,7 +6440,9 @@ read over NETCONF:
 .B "\-\-transport netconf"
 refuses a Cisco device before any login, as a failed line that leaves its
 record alone, or as wrong arguments when every selected device is Cisco). The
-text is the same either way. From it six sections are
+text is the same either way. From it six sections (and a seventh,
+.BR system ,
+for a scope that has a Junos system block) are
 extracted, as in the table of
 .BR "device config diff" ,
 compared with what tacctl renders for that device and recorded
@@ -6886,7 +6888,7 @@ The address this server reaches the devices from (with \-\-pull; not stored).
 Read the devices first (takes the pull options).
 .TP
 \fB\-\-section\fR \fI<list>\fR
-Only these sections: aaa, roles, mgmt\-acl, snmp, netconf, breakglass.
+Only these sections: aaa, roles, mgmt\-acl, snmp, system, netconf, breakglass.
 .TP
 \fB\-\-json\fR
 (pull, diff, plan, list) Print JSON (a pull: one line per device, then the summary).
@@ -7287,7 +7289,7 @@ The address this server reaches the devices from (not stored).
 Read the devices first (takes the pull options); the plan is made from that pull.
 .TP
 \fB\-\-section\fR \fI<list>\fR
-Only these sections: aaa, roles, mgmt\-acl, snmp (the report still names the others).
+Only these sections: aaa, roles, mgmt\-acl, snmp, system (the report still names the others).
 .TP
 \fB\-\-converge\fR
 Add the cleanup of a device with nothing else to paste: the region that removes the old servers and the like (a device with a first region gets that and a line to plan again after the paste).

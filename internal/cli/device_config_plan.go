@@ -30,8 +30,9 @@ import (
 )
 
 // planSections are the sections a plan may name (--section): the other two
-// are never planned (netconf and breakglass are the walkthrough's steps).
-var planSections = []string{"aaa", "roles", "mgmt-acl", "snmp"}
+// are never planned (netconf and breakglass are the walkthrough's steps). The
+// system section exists only for a scope with a system block (0.2.7).
+var planSections = []string{"aaa", "roles", "mgmt-acl", "snmp", "system"}
 
 // planOptions is what the command line asked of a plan.
 type planOptions struct {

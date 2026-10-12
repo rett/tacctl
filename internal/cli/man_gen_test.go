@@ -226,7 +226,7 @@ var manFlagOverrides = map[string]string{
 	"device config plan --source":    "The address this server reaches the devices from (not stored).",
 	"device config plan --exit-code": "Exit 2 when a device needs a change (and none could not be planned).",
 	"device config plan --pull":      "Read the devices first (takes the pull options); the plan is made from that pull.",
-	"device config plan --section":   "Only these sections: aaa, roles, mgmt-acl, snmp (the report still names the others).",
+	"device config plan --section":   "Only these sections: aaa, roles, mgmt-acl, snmp, system (the report still names the others).",
 	"device config plan --json":      "One object per device: the findings, the region, the cleanup and the back-out; values elided.",
 	"device add --hostname":          "The device's DNS name.",
 	"device add --description":       "A description of the device.",
