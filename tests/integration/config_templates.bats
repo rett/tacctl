@@ -567,7 +567,7 @@ iptables_setup() {
     # The caution is the introduction; the generated list follows it.
     assert_output --partial "        login waits out the Fallback Timer and tacquito logs nothing.
 
-        Generated for scope 'lab'. Not verified on a unit."
+        Generated for scope 'lab'. Verified on a lab unit (8.10, 2026-10-12)."
     assert_output --partial "  1. iptables -A INPUT -i lo -j ACCEPT"
     assert_output --partial "  2. iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT"
     assert_output --partial "-s 10.0.0.42/32 --dport 22 -j ACCEPT"

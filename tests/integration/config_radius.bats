@@ -508,7 +508,7 @@ radius_listeners() {
     output=$(sed 's/\x1b\[[0-9;]*m//g' <<< "$output")
     assert_output --partial "        log shows it answered.
 
-        Generated for scope 'lab'. Not verified on a unit."
+        Generated for scope 'lab'. Verified on a lab unit (8.10, 2026-10-12)."
     assert_output --partial "-p tcp -s 192.0.2.0/24 --dport 22 -j ACCEPT"
     assert_output --partial "Step 11: The final DROP of the IP Tables list"
     [[ "$(grep -c '^ *[0-9]*\. iptables -A INPUT -j DROP$' <<< "$output")" == 1 ]]
