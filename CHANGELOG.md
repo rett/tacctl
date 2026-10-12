@@ -342,6 +342,20 @@ current behaviour; this file is where history lives.
     device is read with the default's as before, and `scope snmp <scope> test`
     is still the scope's.
 
+14. **`device list` is sorted by name and can be narrowed.** The rows were in
+    registry order, devices before hosts. They are now sorted by name (case
+    ignored, then address), in the table and in `--json`. `--name <text>` keeps
+    the names that contain the text, `--ip <addr|cidr|text>` the addresses
+    equal to an address, inside a CIDR (`10.20.0.0/16`, `2001:db8::/32`) or
+    containing a text (`10.20.1.`), `--vendor <vendor>` and `--scope <scope>`
+    those exact values; each takes one value or a comma list (any of them
+    matches) and different options must all match. A bare word
+    (`device list sw1`, `device list lab`) keeps the entries whose name or
+    address contains it or whose vendor or scope it is. The heading then reads
+    `Registered devices (N) and enrolled hosts (M), of T`, an empty selection
+    says `None match.`, and `--stale`, `--unconfigured`, `--scan`, `--probe`
+    and `--json` combine with all of it.
+
 ## 0.2.6 (2026-10-12)
 
 A hotfix for 0.2.5, started from `master`. The items below are everything that

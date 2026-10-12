@@ -63,7 +63,9 @@ var (
 // deviceSpecs are the arguments of each verb, for the parser and for
 // completion (args.go).
 var deviceSpecs = map[string]Spec{
-	"list": {MaxArgs: 0, Flags: []Flag{{Names: []string{"--stale"}}, {Names: []string{"--unconfigured"}},
+	"list": {MaxArgs: 1, Args: []string{""}, Flags: []Flag{{Names: []string{"--stale"}}, {Names: []string{"--unconfigured"}},
+		{Names: []string{"--name"}, Value: true}, {Names: []string{"--ip"}, Value: true},
+		{Names: []string{"--vendor"}, Value: true, Kind: KindVendors}, {Names: []string{"--scope"}, Value: true, Kind: KindScopes},
 		{Names: []string{"--scan"}}, {Names: []string{"--probe"}}, flagJSON}},
 	"show": {MinArgs: 1, MaxArgs: 1, Args: []string{KindDevices}, Flags: []Flag{flagJSON, flagAllNotices}},
 	"add": {MinArgs: 1, MaxArgs: 2, Args: []string{"", ""}, Flags: []Flag{
@@ -118,7 +120,7 @@ var deviceSpecs = map[string]Spec{
 
 // deviceVerbs are the verbs ({Use, Short}), in usage order.
 var deviceVerbs = [][2]string{
-	{"list [--stale] [--unconfigured] [--scan] [--probe] [--json]", "Registered devices and enrolled hosts: scope, state, last seen, notices"},
+	{"list [word] [--name <text>] [--ip <addr|cidr|text>] [--vendor <vendor>] [--scope <scope>] [--stale] [--unconfigured] [--scan] [--probe] [--json]", "Registered devices and enrolled hosts, by name: scope, state, last seen, notices; the options narrow the list"},
 	{"show <name|address> [--all] [--json]", "One device or host in full (--all: the acknowledged notices too)"},
 	{"add [<name>] <address> [options]", "Register a device (no name: offer the one it gives itself by SNMP)"},
 	{"remove <name>[,<name>...] | --all [-y]", "Remove devices from the registry (confirms)"},
@@ -158,6 +160,11 @@ var deviceOptions = map[string][][2]string{
 	"list": {
 		{"--stale", "Only the devices not seen for stale-days"},
 		{"--unconfigured", "Only the devices no scope's prefixes cover"},
+		{"--name <text>", "Only names containing the text (a comma list: any of them)"},
+		{"--ip <addr|cidr|text>", "Only an address equal to, inside, or containing it (a comma list)"},
+		// --vendor and --scope are described in the usage row: the shell's
+		// help finds a flag's text by its name across the family, and 'add'
+		// has its own --vendor line.
 		{"--scan", "Scan the logs first (as 'device scan')"},
 		{"--probe", "Add REACH: a TCP connect to each ssh port (3 s)"},
 		{"--json", "(list, show, export, check) Print JSON"},
@@ -815,13 +822,20 @@ func (inv *invocation) deviceList(args []string) error {
 		return err
 	}
 	var shown []devreg.Entry
+	narrow := newDeviceListFilter(p)
+	total := 0
 	for _, e := range res.Visible(inv.deviceFilter()) {
 		_, _, _, stale := deviceSeenCols(inv, res, e)
 		if (p.Has("--unconfigured") && e.Configured) || (p.Has("--stale") && !stale) {
 			continue
 		}
+		total++
+		if !narrow.match(e) {
+			continue
+		}
 		shown = append(shown, e)
 	}
+	sortEntriesByName(shown)
 	// The configuration state is the operator tier's (D69): a read-only user
 	// is not shown it, in the table or in the JSON.
 	var configs *devconf.Records
@@ -844,11 +858,18 @@ func (inv *invocation) deviceList(args []string) error {
 		}
 	}
 	head := fmt.Sprintf("Registered devices (%d) and enrolled hosts (%d)", nd, nh)
+	if !narrow.empty() {
+		head += fmt.Sprintf(", of %d", total)
+	}
 	inv.echo("")
 	if len(shown) == 0 {
 		inv.echoE(ui.Bold + head + ui.NC)
 		inv.echo(ui.Rule(head))
-		inv.echo("  None. Register one with: tacctl device add <name> <address>")
+		if narrow.empty() {
+			inv.echo("  None. Register one with: tacctl device add <name> <address>")
+		} else {
+			inv.echo("  None match.")
+		}
 		inv.echo("")
 		return nil
 	}
