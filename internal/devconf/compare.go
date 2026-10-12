@@ -330,6 +330,11 @@ func Compare(vendor string, expected, got devices.Section, secretsVisible bool) 
 	if res.Name == "" {
 		res.Name = got.Name
 	}
+	if res.Name == SectionBreakGlass {
+		var notes []string
+		dev, notes = foldLoginNames(exp, dev)
+		res.Notes = append(res.Notes, notes...)
+	}
 	expStems := map[string]bool{}
 	for _, x := range exp {
 		expStems[x.stem] = true

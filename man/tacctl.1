@@ -6693,7 +6693,15 @@ walkthroughs. The sections are
 .B netconf
 (compared only when tacctl renders it) and
 .B breakglass
-(the accounts by name; never a hash). A section is what tacctl renders plus
+(the accounts by name; never a hash; an account that differs from the scope's
+only in case, such as
+.B netengineer
+and
+.BR NetEngineer ,
+is the same account and the section reads
+.B ok
+with a note that says so, because the names are case\-sensitive on the device and
+a login by the scope's spelling is refused there). A section is what tacctl renders plus
 whatever the device holds in the same hierarchy, so a stray server or
 community is a difference. Each section is
 .BR ok ,

@@ -3,6 +3,21 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.7 (unreleased)
+
+1. **The break-glass section compares login names without regard to case, and says so.**
+   A scope's break-glass user `NetEngineer` and a device whose account is
+   `netengineer` were reported as one missing and one extra user. They are now
+   one account for the section's state, which reads ok, with a note under the
+   section: `login user 'netengineer' on the device is 'NetEngineer' in the
+   scope: the names differ only in case, and they are case-sensitive on the
+   device, so a login by the scope's spelling is refused there`. Junos and IOS
+   login names are case-sensitive, so the note stays until the record or the
+   device is changed (`tacctl scope breakglass <scope> add <name>`). A device
+   that has the rendered spelling as well keeps the other spelling as an extra,
+   and only the break-glass section is affected (IOS `username` lines and Junos
+   `system login user` statements).
+
 ## 0.2.6 (2026-10-12)
 
 A hotfix for 0.2.5, started from `master`. The items below are everything that
