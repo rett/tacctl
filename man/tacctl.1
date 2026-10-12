@@ -5718,8 +5718,8 @@ or
 from the pull's record without rendering; it is
 .B \-
 for a host, a vendor
-.BR other ,
-a WTI unit and a device no scope covers. The state is
+.B other
+and a device no scope covers. The state is
 .B configured
 when a scope's prefixes cover the address (a host: when its scope exists) and
 .B unconfigured
@@ -5804,8 +5804,9 @@ device sends, the configuration of the last pull (when, by whom, over which
 transport and what the NETCONF probe found, its result and the state of each
 managed section, with
 .B "ok (+N unmanaged)"
-for one that holds only statements of the device's own; the operator tier's, a
-read-only user is not shown it), and
+for one that holds only statements of the device's own; for a WTI unit also its
+command menu's version, its Site ID and how many other sessions it had at that
+pull; the operator tier's, a read-only user is not shown it), and
 the open notices with a count of the acknowledged ones
 .RB ( \-\-all
 lists them too, marked). It warns when the
@@ -6803,10 +6804,51 @@ and
 (never read, last read in failure, or differing from what tacctl renders now);
 a vendor
 .BR other ,
-a device in no scope and, for a selector, a WTI unit are left out and said so
-(a WTI unit named is recorded
-.BR unsupported ).
-An engineer reads the devices of their own scopes only.
+and a device in no scope are left out and said so. A WTI unit is selected like
+any device. An engineer reads the devices of their own scopes only.
+.PP
+A WTI console server has no command that prints its configuration. It is read
+as its menus show it, over ssh as you
+.RB ( "\-\-transport auto" " and " ssh ;
+.B "\-\-transport netconf"
+is refused for a unit as for a Cisco device): the pages the tables of command
+menu version 8.10 name are opened one after the other (the login's help, the
+network status, the Site ID, and under
+.B /N
+the SNMP access and trap pages, the TACACS+ and RADIUS pages and the IP tables
+list), with only the keys a page lists, never a prompt that takes a value and
+never the final ESC, which makes the unit save its configuration. The user
+directory
+.RB ( /F )
+is read in a second connection with the same password, because a top\-level
+menu is left only by a save. Both connections end on a page, which writes
+nothing, and the pages are never kept: only the extraction is, with a community
+the unit prints in clear compared against what tacctl renders and kept as a
+label. The line of a unit that was read says how many other sessions it had
+.RB ( "1 other session on the unit" ;
+a count, no name) and carries a warning when its user directory could not be
+read (the second connection was refused, or the list is longer than a pull
+reads): the pull is
+.B ok
+all the same, and
+.B breakglass
+reads
+.B n/a
+with a note. Three results belong to a unit.
+.B denied
+is a login whose WTI level cannot configure it
+.RB ( "the login's WTI level is User; SuperUser or Administrator is needed" ,
+with
+.B "tacctl group edit <group> wti\-level superuser"
+for the login's group): none of the tables' pages is opened, the pull is a
+failed one (exit 1) and the batch goes on, since the password was accepted.
+.B unsupported
+is a command menu that is not version 8.10
+.RB ( "command menu version 7.4; tables are verified for 8.10" ),
+checked before any page.
+.B parse\-failed
+is a page the tables do not know or that is laid out otherwise: the reason names
+the page's path and its title line, never its text.
 .PP
 Junos is read over NETCONF (the ssh subsystem, a
 .B <command>
@@ -6831,8 +6873,13 @@ refuses a Cisco device before any login, as a failed line that leaves its
 record alone, or as wrong arguments when every selected device is Cisco). The
 text is the same either way. From it six sections (and a seventh,
 .BR system ,
-for a scope that has a Junos system block) are
-extracted, as in the table of
+for a scope that has a Junos system block; the four of a WTI unit, which are
+.BR aaa ,
+.BR mgmt\-acl ,
+.B snmp
+and
+.BR breakglass )
+are extracted, as in the table of
 .BR "device config diff" ,
 compared with what tacctl renders for that device and recorded
 .RI ( /var/lib/tacctl/devices\-config.json ,
@@ -6994,7 +7041,9 @@ One line per device (rewritten in place on a terminal, appended otherwise):
 .BR "ok, differs in aaa,snmp" ,
 .B "failed: <reason>"
 (authentication failed, timed out, unreachable, a host key that is not the
-pinned one, output that is not a configuration), then a summary
+pinned one, output that is not a configuration, for a WTI unit a login level
+that cannot configure it or a command menu version that is not 8.10), then a
+summary
 .RB ( "12 ok, 2 differ, 1 failed" ).
 At most
 .B device.config.max_concurrency
@@ -7045,7 +7094,7 @@ Requires: \fBengineer\fR. An engineer gets the devices of their own scopes only.
 Options:
 .TP
 \fB\-\-all\fR
-(pull, diff, plan, forget) Every device of yours (not WTI units, or devices in no scope).
+(pull, diff, plan, forget) Every device of yours that a scope covers (a plan leaves WTI units out).
 .TP
 \fB\-\-scope\fR \fI<scope>\fR
 (pull, diff, plan, list) Only the devices of that scope.
@@ -7101,7 +7150,23 @@ and
 is the same account and the section reads
 .B ok
 with a note that says so, because the names are case\-sensitive on the device and
-a login by the scope's spelling is refused there). A section is what tacctl renders plus
+a login by the scope's spelling is refused there). A WTI unit has four of them,
+.BR aaa ,
+.BR mgmt\-acl ,
+.B snmp
+and
+.BR breakglass :
+a unit has no login classes, no NETCONF and no system block, so
+.BR roles ,
+.B netconf
+and
+.B system
+are not listed for it, as
+.B n/a
+or otherwise; the other protocol's page of a unit is the unit's own and its
+statements are listed as
+.B +
+and kept. A section is what tacctl renders plus
 whatever the device holds in the same hierarchy, so a stray server is a
 difference. Each section is
 .BR ok ,
@@ -7244,7 +7309,7 @@ Requires: \fBengineer\fR. An engineer gets the devices of their own scopes only.
 Options:
 .TP
 \fB\-\-all\fR
-(pull, diff, plan, forget) Every device of yours (not WTI units, or devices in no scope).
+(pull, diff, plan, forget) Every device of yours that a scope covers (a plan leaves WTI units out).
 .TP
 \fB\-\-scope\fR \fI<scope>\fR
 (pull, diff, plan, list) Only the devices of that scope.
@@ -7277,7 +7342,7 @@ The address this server reaches the devices from (with \-\-pull; not stored).
 Read the devices first (takes the pull options).
 .TP
 \fB\-\-section\fR \fI<list>\fR
-Only these sections: aaa, roles, mgmt\-acl, snmp, system, netconf, breakglass.
+Only these sections: aaa, roles, mgmt\-acl, snmp, system, netconf, breakglass (a WTI unit has aaa, mgmt\-acl, snmp and breakglass).
 .TP
 \fB\-\-json\fR
 (pull, diff, plan, list) Print JSON (a pull: one line per device, then the summary).
@@ -7622,7 +7687,9 @@ A device cannot be planned, with the reason on standard error and exit 1, when
 it was never pulled, was pulled more than
 .B stale\-days
 ago, whose last pull failed, a Cisco device whose syntax is unknown, a WTI
-unit, or one whose plan has nothing to paste because a section was refused.
+unit (which the plan does not cover; its walkthrough is
+.BR "config wti" ),
+or one whose plan has nothing to paste because a section was refused.
 Exit status 0 when the outputs were made, 1 when a device cannot be planned, 2
 for wrong arguments (and, with
 .BR \-\-exit\-code ,
@@ -7645,7 +7712,7 @@ Requires: \fBengineer\fR. An engineer gets the devices of their own scopes only.
 Options:
 .TP
 \fB\-\-all\fR
-(pull, diff, plan, forget) Every device of yours (not WTI units, or devices in no scope).
+(pull, diff, plan, forget) Every device of yours that a scope covers (a plan leaves WTI units out).
 .TP
 \fB\-\-scope\fR \fI<scope>\fR
 (pull, diff, plan, list) Only the devices of that scope.
@@ -7741,7 +7808,19 @@ and
 .B \-\-json
 has the map
 .B unmanaged
-of section to count for the sections that are ok.
+of section to count for the sections that are ok. For a WTI unit the detail
+also says how many other sessions it had at the last good pull
+.RB ( "1 other session on the unit" ),
+and
+.B \-\-json
+has its
+.B unit
+(command menu
+.BR version ,
+.BR site_id ,
+.B other_sessions
+and
+.BR users_read ).
 The state is computed against today's rendering from the stored sections, so a
 change of the store or of
 .I tacctl.yaml
@@ -7762,7 +7841,13 @@ together; the state filters add up, and
 .B \-\-scope
 and
 .B \-\-vendor
-narrow them. A WTI unit has no configuration to compare and is never stale.
+narrow them. A WTI unit is a device like the others: a pull that was
+.B denied
+(its login's WTI level cannot configure it) or
+.B unsupported
+(a command menu that is not version 8.10) is
+.BR failed ,
+with that word as its detail.
 .\" BEGIN GENERATED: command device config list
 .RS
 .PP

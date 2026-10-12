@@ -29,6 +29,7 @@ package devconf
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -52,6 +53,22 @@ const (
 
 // SectionNames are the managed sections, in order.
 var SectionNames = []string{SectionAAA, SectionRoles, SectionMgmtACL, SectionSNMP, SectionSystem, SectionNetconf, SectionBreakGlass}
+
+// unitSections are the sections a WTI unit has: its pages hold the
+// authentication servers, the IP tables list, the SNMP access pages and the
+// local users. A unit has no login classes, no NETCONF and no system block,
+// so a comparison does not list them (as n/a or any other state).
+var unitSections = []string{SectionAAA, SectionMgmtACL, SectionSNMP, SectionBreakGlass}
+
+// SectionsOf are the managed sections a vendor's device can have, in order:
+// every section of SectionNames for Junos and IOS (system only where the
+// rendering has it), the four of a WTI unit for WTI.
+func SectionsOf(vendor string) []string {
+	if fam, err := Family(vendor); err == nil && fam == FamilyWTI {
+		return slices.Clone(unitSections)
+	}
+	return slices.Clone(SectionNames)
+}
 
 // optionalSection reports a section that exists only where the rendering
 // has it (the system section).

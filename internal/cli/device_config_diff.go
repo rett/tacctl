@@ -201,8 +201,6 @@ func (inv *invocation) deviceConfigDiff(args []string) error {
 		var secrets bool
 		why := ""
 		switch {
-		case e.Vendor == "wti":
-			why = wtiUnsupported
 		case pulled[key] != nil:
 			o := pulled[key]
 			results, secrets = o.Sections, o.SecretsVisible

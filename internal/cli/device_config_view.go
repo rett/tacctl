@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
 	"golang.org/x/term"
@@ -98,6 +99,16 @@ func (v *pullView) rowText(i int) string {
 		case r.Result.Status != batch.StatusOK && o.Fallback != "" && o.Reason == "":
 			text += " (" + o.Fallback + ")"
 		}
+		// A WTI unit: who else is logged in (a count; no name is kept) and a
+		// pull that did less than asked.
+		if o.Unit != nil && r.Result.Status == batch.StatusOK {
+			if n := o.Unit.OtherSessions; n > 0 {
+				text += "; " + sessionsText(n)
+			}
+			if o.Warning != "" {
+				text += "; warning: " + o.Warning
+			}
+		}
 		// A setting the device's own version line contradicts (D113: the
 		// setting wins; modern on a 12.x image is the lock-out direction).
 		if o.ImageSyntax != "" && r.Result.Status == batch.StatusOK {
@@ -106,6 +117,14 @@ func (v *pullView) rowText(i int) string {
 		}
 	}
 	return cleanLine(text)
+}
+
+// sessionsText is the count of the other sessions on a WTI unit in words.
+func sessionsText(n int) string {
+	if n == 1 {
+		return "1 other session on the unit"
+	}
+	return strconv.Itoa(n) + " other sessions on the unit"
 }
 
 // cleanLine makes device-controlled text safe for a terminal: control
@@ -214,14 +233,29 @@ type pullJSON struct {
 	// (D113) and OS the version line it answered. SyntaxConflict is set when
 	// the explicit setting is not the syntax that line derives to (the
 	// setting wins), ImageSyntax then being what the line says.
-	Syntax         string            `json:"syntax,omitempty"`
-	OS             string            `json:"os,omitempty"`
-	SyntaxConflict bool              `json:"syntax_conflict,omitempty"`
-	ImageSyntax    string            `json:"image_syntax,omitempty"`
-	DurationMS     int64             `json:"duration_ms"`
-	DiffersIn      []string          `json:"differs_in,omitempty"`
-	Secrets        *bool             `json:"secrets_visible,omitempty"`
-	Sections       []pullSectionJSON `json:"sections,omitempty"`
+	Syntax         string `json:"syntax,omitempty"`
+	OS             string `json:"os,omitempty"`
+	SyntaxConflict bool   `json:"syntax_conflict,omitempty"`
+	ImageSyntax    string `json:"image_syntax,omitempty"`
+	// Unit is what a WTI unit's read saw beside its pages; Warning a pull
+	// that is ok but did less than asked.
+	Unit       *pullUnitJSON     `json:"unit,omitempty"`
+	Warning    string            `json:"warning,omitempty"`
+	DurationMS int64             `json:"duration_ms"`
+	DiffersIn  []string          `json:"differs_in,omitempty"`
+	Secrets    *bool             `json:"secrets_visible,omitempty"`
+	Sections   []pullSectionJSON `json:"sections,omitempty"`
+}
+
+// pullUnitJSON is the facts of a WTI unit's read in --json: the command
+// menu's version and the login's access level, the unit's Site ID, how many
+// other sessions it had (no name), and whether its user directory was read.
+type pullUnitJSON struct {
+	Version       string `json:"version"`
+	Level         string `json:"level,omitempty"`
+	SiteID        string `json:"site_id,omitempty"`
+	OtherSessions int    `json:"other_sessions"`
+	UsersRead     bool   `json:"users_read"`
 }
 
 func (v *pullView) deviceJSON(i int, withLines bool) pullJSON {
@@ -243,6 +277,11 @@ func (v *pullView) deviceJSON(i int, withLines bool) pullJSON {
 	j.Syntax, j.OS = o.Syntax, cleanLine(o.OS)
 	j.SyntaxConflict, j.ImageSyntax = o.ImageSyntax != "", o.ImageSyntax
 	if r.Result.Status == batch.StatusOK {
+		if u := o.Unit; u != nil {
+			j.Unit = &pullUnitJSON{Version: cleanLine(u.Version), Level: u.Level, SiteID: cleanLine(u.SiteID),
+				OtherSessions: u.OtherSessions, UsersRead: u.UsersRead}
+			j.Warning = cleanLine(o.Warning)
+		}
 		j.DiffersIn = r.Result.Differs
 		sv := o.SecretsVisible
 		j.Secrets = &sv

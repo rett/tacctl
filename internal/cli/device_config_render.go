@@ -244,7 +244,7 @@ func (r *managedRender) syntaxFor(e devreg.Entry) (legacy, known bool) {
 func (r *managedRender) prepare(entries []devreg.Entry) {
 	r.recs, _ = r.inv.configStore().Load()
 	for _, e := range entries {
-		if e.Source != devreg.SourceDevice || !e.Configured || (e.Vendor != "cisco" && e.Vendor != "juniper") {
+		if e.Source != devreg.SourceDevice || !e.Configured || (e.Vendor != "cisco" && e.Vendor != "juniper" && e.Vendor != "wti") {
 			continue
 		}
 		k := r.keyOf(e)

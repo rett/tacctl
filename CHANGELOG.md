@@ -365,6 +365,42 @@ current behaviour; this file is where history lives.
     pull compares for a unit (`snmp enable on`, `snmp version v1-v2-only`,
     `snmp read-only yes`, ...) are the ones this step tells it.
 
+16. **`device config pull`, `diff` and `list` read WTI units.** A WTI console
+    server has no command that prints its configuration, so a pull walks the
+    unit's menus over ssh as you (the pages of command menu version 8.10 the
+    tables name: the login's help, the network status, the Site ID, and under
+    `/N` the SNMP, TACACS+, RADIUS and IP tables pages), typing only the keys a
+    page lists and never the final ESC that makes a unit save its
+    configuration. The user directory is read in a second connection with the
+    same password. The pages are never kept: the extraction is, compared with
+    what tacctl renders as for any device, with a community the unit prints in
+    clear kept as a label (`<secret:N>`, `<other:N>`). A unit has four
+    sections, `aaa`, `mgmt-acl`, `snmp` and `breakglass`; `roles`, `netconf`
+    and `system` are not listed for it. Units are selected by `--all`,
+    `--scope`, `--vendor wti` and `--stale` like any device, the record has the
+    command menu version (`os`), the unit's Site ID and the number of other
+    sessions it had, and the line of a pull says `1 other session on the unit`
+    (a count; no name is read into any output).
+    The results are new for a unit: **`denied`** (the login's WTI level cannot
+    configure it: `the login's WTI level is User; SuperUser or Administrator
+    is needed`, with `tacctl group edit <group> wti-level superuser`), a failed
+    pull that exits 1 and does not stop a batch; **`unsupported`** (`command
+    menu version 7.4; tables are verified for 8.10`, before any page); and
+    **`parse-failed`** (a page the tables do not know: its path and title line
+    only). A user directory that cannot be read is a warning on the line, the
+    pull is `ok`, and `breakglass` reads `n/a` with a note. `device config
+    list --failed` includes `denied` and `unsupported`, `device list` shows the
+    state in its CONFIG column instead of `-`, and `device show` replaces `not
+    read (WTI units are not read in this release)` with the last pull.
+    `--transport netconf` is refused for a unit as for a Cisco device.
+    `device config plan` does not cover a unit and says so
+    (`device config plan does not cover WTI units; the walkthrough is: tacctl
+    config wti`); `plan --pull` does not read a unit it will not plan. In
+    `--json`, a pull has `unit` (`version`, `level`, `site_id`,
+    `other_sessions`, `users_read`) and `warning`, `device config list --json`
+    has `unit` for a unit (`version`, `site_id`, `other_sessions`,
+    `users_read`), and a record made before 0.2.7 is unchanged.
+
 ## 0.2.6 (2026-10-12)
 
 A hotfix for 0.2.5, started from `master`. The items below are everything that

@@ -667,10 +667,15 @@ func unappliedFilters(exp, dev, lo0 []stmt) []string {
 
 // CompareAll compares every managed section of a device: expected is
 // devices.Managed's result (a section it leaves out is n/a), got is the
-// extraction. The results are in SectionNames order.
+// extraction. The results are in SectionNames order (a WTI unit's, in
+// SectionsOf order: aaa, mgmt-acl, snmp, breakglass).
 func CompareAll(expected []devices.Section, got Extracted) ([]SectionResult, error) {
 	out := make([]SectionResult, 0, len(SectionNames))
 	for _, n := range SectionNames {
+		if got.Vendor == FamilyWTI && !slices.Contains(unitSections, n) {
+			// a unit has no such section: not listed, not n/a
+			continue
+		}
 		e := sectionOf(expected, n)
 		if optionalSection(n) {
 			if !renders(expected, n) {

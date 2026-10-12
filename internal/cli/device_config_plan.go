@@ -205,7 +205,7 @@ func (r *planRun) planOne(e devreg.Entry) planDevice {
 	}
 	switch {
 	case e.Vendor == "wti":
-		return cannot("WTI units are not planned in this release (their settings are menu items, not lines)")
+		return cannot("device config plan does not cover WTI units; the walkthrough is: tacctl config wti")
 	case r.failed[strings.ToLower(name)] != "":
 		return cannot("the pull failed (" + r.failed[strings.ToLower(name)] + ")")
 	case rec == nil || rec.Pulled.IsZero():
@@ -891,21 +891,28 @@ func (inv *invocation) deviceConfigPlan(args []string) error {
 	// to standard error so that what is redirected is the plan alone.
 	failed := map[string]string{}
 	interrupted := false
-	if opt.pull {
-		if err := inv.refuseNetconfForCisco(chosen.entries, pa.transport); err != nil {
+	// A WTI unit is not planned, so it is not read for one: no login.
+	var toPull []devreg.Entry
+	for _, e := range chosen.entries {
+		if e.Vendor != "wti" {
+			toPull = append(toPull, e)
+		}
+	}
+	if opt.pull && len(toPull) > 0 {
+		if err := inv.refuseNetconfForCisco(toPull, pa.transport); err != nil {
 			return err
 		}
 		saved := inv.app.Out.Stdout
 		inv.app.Out.Stdout = inv.app.Out.Stderr
-		view := inv.newPullView(chosen.entries, false, user, opt.asJSON)
-		sum, outs, rerr := inv.runPull(pullBatch{entries: chosen.entries, render: chosen.render, args: pa, user: user, view: view})
+		view := inv.newPullView(toPull, false, user, opt.asJSON)
+		sum, outs, rerr := inv.runPull(pullBatch{entries: toPull, render: chosen.render, args: pa, user: user, view: view})
 		inv.app.Out.Stdout = saved
 		if rerr != nil {
 			return rerr
 		}
 		interrupted = sum.Interrupted
 		for i, o := range outs {
-			e := chosen.entries[i]
+			e := toPull[i]
 			st := sum.Entries[i].Result
 			switch {
 			case o != nil && st.Status == batch.StatusOK:

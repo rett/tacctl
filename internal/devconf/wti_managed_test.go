@@ -147,7 +147,7 @@ func TestWTIManagedRenderingAgainstItsUnit(t *testing.T) {
 		ex, by := wtiPull(t, doc, exp)
 		for name, want := range map[string]string{
 			SectionAAA: "ok (+13 unmanaged)", SectionMgmtACL: "ok (+5 unmanaged)", SectionSNMP: "ok (+4 unmanaged)",
-			SectionBreakGlass: "ok", SectionRoles: "n/a", SectionNetconf: "n/a",
+			SectionBreakGlass: "ok",
 		} {
 			if got := by[name].StateText(); got != want {
 				t.Errorf("%s: %q, want %q: %q", name, got, want, wtiLines(by[name]))

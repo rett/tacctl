@@ -61,6 +61,10 @@ const (
 	ResultUnsupported     = "unsupported"
 	ResultParseFailed     = "parse-failed"
 	ResultInterrupted     = "interrupted"
+	// ResultDenied (0.2.7): a WTI unit's login level cannot configure the
+	// unit, so its pages are not shown to it; the level is the login's, not
+	// the credentials' (auth-failed).
+	ResultDenied = "denied"
 )
 
 // SectionRecord is what a pull kept of one section: the SHA-256 of the
@@ -103,10 +107,24 @@ type Record struct {
 	// syntax derived from it (SyntaxIOS12 or SyntaxModern); both are empty
 	// for a Junos device and for a record made before 0.2.5 or by a pull
 	// that read no version line.
+	// For a WTI unit OS is the command menu's version ('8.10').
 	OS       string                   `json:"os,omitempty"`
 	Syntax   string                   `json:"syntax,omitempty"`
 	Sections map[string]SectionRecord `json:"sections,omitempty"`
-	Applied  *Applied                 `json:"applied,omitempty"`
+	// Unit is what the last good pull of a WTI unit saw beside its sections;
+	// nil for every other vendor and for a record made before 0.2.7.
+	Unit    *UnitFacts `json:"unit,omitempty"`
+	Applied *Applied   `json:"applied,omitempty"`
+}
+
+// UnitFacts are the facts of a WTI unit's pull that are no section: the
+// unit's own Site ID, the number of other sessions on the unit when it was
+// read (no name is kept) and whether its user directory was read (the
+// breakglass section is n/a when not). None of it is a secret.
+type UnitFacts struct {
+	SiteID        string `json:"site_id,omitempty"`
+	OtherSessions int    `json:"other_sessions"`
+	UsersRead     bool   `json:"users_read"`
 }
 
 // Records is devices-config.json.
@@ -137,6 +155,10 @@ func (r *Records) Put(name string, rec Record) {
 	if rec.Applied != nil {
 		a := *rec.Applied
 		c.Applied = &a
+	}
+	if rec.Unit != nil {
+		u := *rec.Unit
+		c.Unit = &u
 	}
 	if rec.Sections != nil {
 		c.Sections = make(map[string]SectionRecord, len(rec.Sections))

@@ -21,7 +21,7 @@ setup() {
     unset FAKEDEV_USER FAKEDEV_PASSWORD FAKEDEV_PID
     JDIR=$(fakedev_dir junos)
     fakedev_start "$JDIR"
-    fakedev_register lab-j 192.168.1.20 juniper lab-k 192.168.1.21 juniper pdu1 192.168.1.40 wti
+    fakedev_register lab-j 192.168.1.20 juniper lab-k 192.168.1.21 juniper
     fakedev_serve "$JDIR" juniper lab
 }
 
@@ -39,22 +39,70 @@ alice() {
     plain
 }
 
-@test "list: never pulled devices are never; a WTI unit is not listed as stale" {
+@test "list: never pulled devices are never, and --stale lists them" {
     alice device config list
     assert_success
     assert_line --regexp '^ *lab-j .* never '
-    assert_line --regexp '^ *pdu1 .* not read'
     alice device config list --stale
     assert_success
     assert_output --partial "lab-j"
-    refute_output --partial "pdu1"
     alice device config list --never --scope lab --vendor juniper
     assert_success
     assert_output --partial "lab-k"
     alice device list
     assert_success
     assert_line --regexp '^ *lab-j .* never '
-    assert_line --regexp '^ *pdu1 .* -  *-$|^ *pdu1 .* - +-'
+}
+
+@test "list: a WTI unit is read over its menus and listed like any device" {
+    # The fake unit is a menu device: the captured screens of the lab unit,
+    # with the login's level and one other session open.
+    local wdir="${BATS_TEST_TMPDIR}/fakedev-wti"
+    fakedev_stop
+    rm -rf "$wdir"
+    mkdir -p "$wdir"
+    cp -r "${TACCTL_SRC}/tests/fixtures/devconf/wti/fake/lab-superuser/." "$wdir/"
+    sed -i "s#^screens .*#screens ${TACCTL_SRC}/tests/fixtures/devconf/wti#" "$wdir/menu"
+    fakedev_start "$wdir"
+    fakedev_register pdu1 192.168.1.40 wti
+    alice device config list
+    assert_success
+    assert_line --regexp '^ *pdu1 .* never '
+    alice device config pull pdu1
+    assert_success
+    assert_output --regexp 'pdu1 +ok.* via ssh; 1 other session on the unit'
+    alice device config list --json
+    assert_success
+    run python3 -c '
+import json, sys
+d = json.loads(sys.stdin.read())
+assert [x["name"] for x in d] == ["pdu1"], d
+x = d[0]
+assert x["vendor"] == "wti" and x["result"] == "ok" and x["transport"] == "ssh", x
+assert x["state"] in ("ok", "differs"), x
+assert sorted(x["sections"]) == ["aaa", "breakglass", "mgmt-acl", "snmp"], x
+print("fine")' <<< "$output"
+    assert_output "fine"
+    alice device show pdu1
+    assert_success
+    assert_output --partial "command menu 8.10"
+    assert_output --partial "1 other session on the unit"
+    refute_output --partial "not read"
+    alice device config diff pdu1
+    assert_success
+    refute_output --partial "roles"
+    refute_output --partial "netconf"
+    # a login that cannot configure the unit is denied, and says so
+    sed -i 's/^level .*/level user/' "$wdir/menu"
+    fakedev_stop
+    fakedev_start "$wdir"
+    fakedev_register pdu1 192.168.1.40 wti
+    alice device config pull pdu1
+    assert_failure 1
+    assert_output --partial "failed: the login's WTI level is User; SuperUser or Administrator is needed"
+    alice device config list --failed
+    assert_success
+    assert_line --regexp '^ *pdu1 .* failed .*denied'
 }
 
 @test "list: a device in no scope is not read: '-', never stale, and pull skips it" {
@@ -153,8 +201,8 @@ print("fine")' <<< "$output"
     run python3 -c '
 import json, sys
 d = json.loads(sys.stdin.read())
-assert [x["name"] for x in d] == ["lab-j", "lab-k", "pdu1"], d
-assert [x["state"] for x in d] == ["never", "never", "-"], d
+assert [x["name"] for x in d] == ["lab-j", "lab-k"], d
+assert [x["state"] for x in d] == ["never", "never"], d
 print("fine")' <<< "$output"
     assert_output "fine"
     alice device config list --vendor other

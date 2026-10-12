@@ -196,7 +196,7 @@ func TestPlanCannotPlanWhatIsNotCurrent(t *testing.T) {
 		{"new-j", "not pulled: tacctl device config pull new-j (or --pull)"},
 		{"old-j", "stale pull (45 days old, stale-days is 30): tacctl device config pull old-j (or --pull)"},
 		{"bad-j", "the last pull failed (unreachable)"},
-		{"rack-w", "WTI units are not planned in this release"},
+		{"rack-w", "device config plan does not cover WTI units; the walkthrough is: tacctl config wti"},
 	} {
 		out := b.run("device", "config", "plan", c.dev)
 		if b.sb.code != 1 {
@@ -230,7 +230,7 @@ func TestPlanCannotPlanWhatIsNotCurrent(t *testing.T) {
 		!strings.Contains(out, "bad-j  cannot be planned: the last pull failed") {
 		t.Errorf("cover: %d\n%s", b.sb.code, out)
 	}
-	if strings.Contains(out, "rack-w") || !strings.Contains(b.sb.stderr(), "skipped 1 (rack-w): WTI units are not planned in this release") {
+	if strings.Contains(out, "rack-w") || !strings.Contains(b.sb.stderr(), "skipped 1 (rack-w): device config plan does not cover WTI units; the walkthrough is: tacctl config wti") {
 		t.Errorf("a selection took the WTI unit, or did not say it left it out:\n%s\n%s", out, b.sb.stderr())
 	}
 }

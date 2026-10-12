@@ -227,7 +227,7 @@ var deviceOptions = map[string][][2]string{
 		{"--source <address>", "The address this server reaches the device from"},
 	},
 	"config pull": {
-		{"--all", "(pull, diff, plan, forget) Every device of yours (not WTI units, or devices in no scope)"},
+		{"--all", "(pull, diff, plan, forget) Every device of yours that a scope covers (a plan leaves WTI units out)"},
 		{"--scope <scope>", "(pull, diff, plan, list) Only the devices of that scope"},
 		{"--vendor cisco|juniper|wti", "(pull, diff, plan, list) Only that vendor's devices"},
 		{"--stale", "(pull, diff, plan, list) Only the devices never read, last read in failure, or differing"},
@@ -242,7 +242,7 @@ var deviceOptions = map[string][][2]string{
 	},
 	"config diff": {
 		{"--pull", "Read the devices first (takes the pull options)"},
-		{"--section <list>", "Only these sections: aaa, roles, mgmt-acl, snmp, system, netconf, breakglass"},
+		{"--section <list>", "Only these sections: aaa, roles, mgmt-acl, snmp, system, netconf, breakglass (a WTI unit has aaa, mgmt-acl, snmp and breakglass)"},
 		{"--exit-code", "Exit 2 when a device differs (and none failed)"},
 	},
 	"config plan": {

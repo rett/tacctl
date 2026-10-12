@@ -89,11 +89,6 @@ func Recorded(rec *Record) Staleness {
 	switch {
 	case rec == nil || rec.Result == "":
 		return StaleNever
-	case rec.Result == ResultUnsupported && rec.Vendor == "wti":
-		// A vendor that is not read has nothing to be stale: only a WTI
-		// unit's pull is recorded unsupported, and a record of another
-		// vendor with that result is a refusal that did not read it.
-		return StaleOK
 	case rec.Result != ResultOK:
 		return StaleFailed
 	case len(rec.Sections) == 0:
@@ -110,16 +105,13 @@ func Recorded(rec *Record) Staleness {
 // Stale is the staleness of a device against today's rendering: the stored
 // sections of its last successful pull compared with expected
 // (devices.Managed's result now), so a change on the tacctl side makes a
-// device stale without a new pull. A WTI unit's record, result
-// 'unsupported' (a vendor that is not read), is never stale; the same result
-// of another vendor is failed; a record that is ok but has no stored sections
-// is never.
+// device stale without a new pull. A record whose result is not ok is
+// failed (a WTI unit's 'denied' and 'unsupported' included); a record that is
+// ok but has no stored sections is never.
 func Stale(rec *Record, stored map[string]devices.Section, expected []devices.Section) (Staleness, error) {
 	switch {
 	case rec == nil || rec.Result == "":
 		return StaleNever, nil
-	case rec.Result == ResultUnsupported && rec.Vendor == "wti":
-		return StaleOK, nil
 	case rec.Result != ResultOK:
 		return StaleFailed, nil
 	case len(stored) == 0:

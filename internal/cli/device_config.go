@@ -193,6 +193,11 @@ image, such as 11.x, 15.0, 15.1, an ASA or IOS XR, is unknown and is not guessed
 the pull is refused and nothing is recorded), and the device is compared in that
 syntax unless 'device config-syntax' says otherwise; a setting that the image
 contradicts wins and is shown.
+A WTI console server is read as its menus show it, over ssh: its command menu
+must be version 8.10 and its pages (never a prompt, never a save) give aaa,
+mgmt-acl, snmp and breakglass. A login whose WTI level cannot configure the
+unit is 'denied' and a menu of another version 'unsupported'; both are failed
+pulls, and the line of a unit says how many other sessions it has.
 
 'diff' compares the last pull with what tacctl renders now, section by
 section: '-' is a statement tacctl renders that the device lacks, '+' one the

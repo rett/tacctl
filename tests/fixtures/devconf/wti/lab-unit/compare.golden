@@ -27,7 +27,6 @@
 + radius message-authenticator off
 + radius debug off
 note: tacacs default-services: the unit allows more services than the standard asks for (serial, web, restful-api): kept, not compared
-[roles] n/a
 [mgmt-acl] ok (+5 unmanaged)
 = iptables -A INPUT -i lo -j ACCEPT
 = iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
@@ -67,7 +66,6 @@ note: the IP tables list ends with the final DROP and the policies of the walkth
 + snmp trap manager 1 192.0.2.34
 + snmp trap community <secret:1> (present, not compared)
 + snmp trap version v2
-[netconf] n/a
 [breakglass] ok
 = user localadmin level administrator
 = user localadmin password <secret> (present, not compared)

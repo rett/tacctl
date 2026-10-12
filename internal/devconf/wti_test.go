@@ -231,15 +231,18 @@ func TestWTICompareLabUnit(t *testing.T) {
 		SectionMgmtACL:    "ok (+5 unmanaged)",
 		SectionSNMP:       "differs",
 		SectionBreakGlass: "ok",
-		SectionRoles:      "n/a",
-		SectionNetconf:    "n/a",
 	} {
 		if got := by[name].StateText(); got != want {
 			t.Errorf("%s: %q, want %q", name, got, want)
 		}
 	}
-	if _, ok := by[SectionSystem]; ok {
-		t.Errorf("a system section for a unit")
+	for _, n := range []string{SectionSystem, SectionRoles, SectionNetconf} {
+		if _, ok := by[n]; ok {
+			t.Errorf("a %s section for a unit", n)
+		}
+	}
+	if got := SectionsOf("wti"); !slices.Equal(got, []string{SectionAAA, SectionMgmtACL, SectionSNMP, SectionBreakGlass}) {
+		t.Errorf("SectionsOf(wti) = %q", got)
 	}
 	// the one finding of the snmp section: a read/write community
 	snmp := by[SectionSNMP]
