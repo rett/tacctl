@@ -3,7 +3,7 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
-## 0.2.5 (unreleased)
+## 0.2.5 (2026-10-11)
 
 The items below are everything that differs from 0.2.3. Items 1 to 29 were
 drafted under the working name 0.2.4 (the diff corpus and a few comments in the
