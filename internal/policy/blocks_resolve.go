@@ -1,10 +1,11 @@
 package policy
 
-// The snmp and system blocks a scope's devices are rendered with (0.2.7, B3
-// and B7): the file the manifest names, held to the grammar at the scope's
-// layer, resolved (device layer: none yet, B8 adds it; default layer: no file
-// exists). A block with an error is never half rendered: the call fails and
-// names the scope and the verb that says what is wrong.
+// The snmp and system blocks a device is rendered with (0.2.7, B3, B7 and
+// B8): the scope's file and the device's own, each when the manifest names
+// it and its file exists, held to the grammar at its layer, resolved (the
+// default layer has no file). A block with an error is never half rendered:
+// the call fails and names the scope or the device and the verb that says
+// what is wrong.
 
 import (
 	"errors"
@@ -20,49 +21,99 @@ import (
 // 'tacctl scope block <scope> juniper check snmp' shows them all.
 const maxBlockFindings = 5
 
-// ResolveSNMPBlock is the Junos snmp block of a scope as the renderers take
-// it: nil when the scope has none in force (no manifest entry, or an entry
-// with no file, which 'check' reports and which renders nothing), or an
-// error when the block cannot be rendered whole. The error names the scope,
-// holds no community string (the findings of internal/blocks never do) and
-// says to run 'tacctl scope block <scope> juniper check snmp'.
-func ResolveSNMPBlock(store *blocks.Store, c *conf.Config, scope string) (*blocks.SNMPBlock, error) {
-	text, err := scopeBlockText(store, c, scope, blocks.BlockSNMP)
-	if text == nil || err != nil {
-		return nil, err
-	}
-	b, findings := blocks.Lint(string(text), blocks.LayerScope)
-	if err := blockFindingsError(scope, blocks.BlockSNMP, findings); err != nil {
-		return nil, err
-	}
-	r := blocks.Resolve(nil, b, nil)
-	if r.Empty() {
-		return nil, nil
-	}
-	return r, nil
+// BlockLayers says which layers of the resolution hold the block that came
+// out: the scope's file, the device's own, both, or neither (nothing is
+// rendered).
+type BlockLayers struct {
+	Scope, Device bool
 }
 
-// ResolveSystemBlock is the Junos system block of a scope as the renderers
-// take it, with the same rules as ResolveSNMPBlock: nil when none is in
-// force, an error (naming the scope and 'tacctl scope block <scope> juniper
-// check system', holding no part of the login message and no key) when it
-// cannot be rendered whole. The default and device layers hold none yet (B8
-// adds the device's), so the result is the scope's block with the delete
-// lines applied.
-func ResolveSystemBlock(store *blocks.Store, c *conf.Config, scope string) (*blocks.SystemBlock, error) {
-	text, err := scopeBlockText(store, c, scope, blocks.BlockSystem)
-	if text == nil || err != nil {
-		return nil, err
+// ResolveSNMPBlock is the Junos snmp block of a scope, and of one device of
+// it when device is not empty, as the renderers take it: nil when no layer
+// has one in force (no manifest entry, or an entry with no file, which
+// 'check' reports and which renders nothing), or an error when a layer
+// cannot be rendered whole. The error names the scope or the device, holds
+// no community string (the findings of internal/blocks never do) and says
+// which verb to run: 'tacctl scope block <scope> juniper check snmp', or
+// 'tacctl device block <device> check snmp'.
+func ResolveSNMPBlock(store *blocks.Store, c *conf.Config, scope, device string) (*blocks.SNMPBlock, BlockLayers, error) {
+	scopeText, deviceText, err := layerTexts(store, c, scope, device, blocks.BlockSNMP)
+	if err != nil {
+		return nil, BlockLayers{}, err
 	}
-	b, findings := blocks.LintSystem(string(text), blocks.LayerScope)
-	if err := blockFindingsError(scope, blocks.BlockSystem, findings); err != nil {
-		return nil, err
+	return ResolveSNMPTexts(scope, device, scopeText, deviceText)
+}
+
+// ResolveSNMPTexts is ResolveSNMPBlock for texts already in hand: a nil text
+// is a layer that has no block. 'check --against' plans a device with a text
+// that is not yet in force through it.
+func ResolveSNMPTexts(scope, device string, scopeText, deviceText []byte) (*blocks.SNMPBlock, BlockLayers, error) {
+	var sc, dv *blocks.SNMPBlock
+	var layers BlockLayers
+	if scopeText != nil {
+		b, findings := blocks.Lint(string(scopeText), blocks.LayerScope)
+		if err := blockFindingsError(blocks.ScopeLevel(scope), blocks.BlockSNMP, findings); err != nil {
+			return nil, BlockLayers{}, err
+		}
+		sc, layers.Scope = b, true
 	}
-	r := blocks.ResolveSystem(nil, b, nil)
+	if deviceText != nil {
+		b, findings := blocks.Lint(string(deviceText), blocks.LayerDevice)
+		if err := blockFindingsError(blocks.DeviceLevel(device), blocks.BlockSNMP, findings); err != nil {
+			return nil, BlockLayers{}, err
+		}
+		dv, layers.Device = b, true
+	}
+	if sc == nil && dv == nil {
+		return nil, BlockLayers{}, nil
+	}
+	r := blocks.Resolve(nil, sc, dv)
+	if r.Empty() {
+		return nil, BlockLayers{}, nil
+	}
+	return r, layers, nil
+}
+
+// ResolveSystemBlock is the Junos system block of a scope, and of one device
+// of it when device is not empty, as the renderers take it, with the same
+// rules as ResolveSNMPBlock: nil when no layer has one in force, an error
+// (naming the scope or device and the verb that checks it, holding no part
+// of the login message and no key) when a layer cannot be rendered whole.
+// A block of delete lines only renders nothing.
+func ResolveSystemBlock(store *blocks.Store, c *conf.Config, scope, device string) (*blocks.SystemBlock, BlockLayers, error) {
+	scopeText, deviceText, err := layerTexts(store, c, scope, device, blocks.BlockSystem)
+	if err != nil {
+		return nil, BlockLayers{}, err
+	}
+	return ResolveSystemTexts(scope, device, scopeText, deviceText)
+}
+
+// ResolveSystemTexts is ResolveSystemBlock for texts already in hand.
+func ResolveSystemTexts(scope, device string, scopeText, deviceText []byte) (*blocks.SystemBlock, BlockLayers, error) {
+	var sc, dv *blocks.SystemBlock
+	var layers BlockLayers
+	if scopeText != nil {
+		b, findings := blocks.LintSystem(string(scopeText), blocks.LayerScope)
+		if err := blockFindingsError(blocks.ScopeLevel(scope), blocks.BlockSystem, findings); err != nil {
+			return nil, BlockLayers{}, err
+		}
+		sc, layers.Scope = b, true
+	}
+	if deviceText != nil {
+		b, findings := blocks.LintSystem(string(deviceText), blocks.LayerDevice)
+		if err := blockFindingsError(blocks.DeviceLevel(device), blocks.BlockSystem, findings); err != nil {
+			return nil, BlockLayers{}, err
+		}
+		dv, layers.Device = b, true
+	}
+	if sc == nil && dv == nil {
+		return nil, BlockLayers{}, nil
+	}
+	r := blocks.ResolveSystem(nil, sc, dv)
 	if !hasSystemStatement(r) {
-		return nil, nil
+		return nil, BlockLayers{}, nil
 	}
-	return r, nil
+	return r, layers, nil
 }
 
 // hasSystemStatement reports whether the resolved block states anything to
@@ -71,38 +122,83 @@ func hasSystemStatement(b *blocks.SystemBlock) bool {
 	return b != nil && len(blocks.SystemStatements(b)) > 0
 }
 
-// scopeBlockText is the text of the scope's Junos block when it is in force
-// and its file exists: nil, nil when there is none to render, an error when
-// the file cannot be read. The first line of the error says it all: a batch
-// keeps the first line of a refusal as the device's reason.
-func scopeBlockText(store *blocks.Store, c *conf.Config, scope, block string) ([]byte, error) {
-	if store == nil || c == nil || blocks.ValidateScope(scope) != nil ||
-		!BlockInForce(c, scope, blocks.VendorJuniper, block) {
+// layerTexts are the texts of the scope's and the device's file of a block,
+// nil for a layer that has none in force.
+func layerTexts(store *blocks.Store, c *conf.Config, scope, device, block string) (scopeText, deviceText []byte, err error) {
+	if scopeText, err = LayerText(store, c, blocks.ScopeLevel(scope), block); err != nil {
+		return nil, nil, err
+	}
+	if device != "" {
+		if deviceText, err = LayerText(store, c, blocks.DeviceLevel(device), block); err != nil {
+			return nil, nil, err
+		}
+	}
+	return scopeText, deviceText, nil
+}
+
+// LayerText is the text of one level's Junos block when it is in force and
+// its file exists: nil, nil when there is none to render, an error when the
+// file cannot be read. The first line of the error says it all: a batch keeps
+// the first line of a refusal as the device's reason.
+func LayerText(store *blocks.Store, c *conf.Config, l blocks.Level, block string) ([]byte, error) {
+	if store == nil || c == nil || l.Validate() != nil {
 		return nil, nil
 	}
-	check := "tacctl scope block " + scope + " juniper check " + block
-	text, err := store.Read(blocks.ScopeLevel(scope), blocks.VendorJuniper, block)
+	if l.IsDevice() {
+		if !DeviceBlockInForce(c, l.Device, blocks.VendorJuniper, block) {
+			return nil, nil
+		}
+	} else if !BlockInForce(c, l.Scope, blocks.VendorJuniper, block) {
+		return nil, nil
+	}
+	text, err := store.Read(l, blocks.VendorJuniper, block)
 	switch {
 	case errors.Is(err, blocks.ErrNotFound):
 		return nil, nil
 	case err != nil:
 		return nil, &names.Error{Msgs: []string{
-			fmt.Sprintf("The %s block of scope '%s' cannot be read, so nothing is rendered for the scope's Junos devices (%s). Look at it with: %s",
-				block, scope, strings.Join(errLines(err), " "), check),
+			fmt.Sprintf("The %s block of %s cannot be read, so nothing is rendered for %s (%s). Look at it with: %s",
+				block, levelWord(l), renderedFor(l), strings.Join(errLines(err), " "), CheckVerb(l, block)),
 		}}
+	}
+	if text == nil {
+		text = []byte{}
 	}
 	return text, nil
 }
 
+// CheckVerb is the command line that lints a level's block.
+func CheckVerb(l blocks.Level, block string) string {
+	if l.IsDevice() {
+		return "tacctl device block " + l.Device + " check " + block
+	}
+	return "tacctl scope block " + l.Scope + " juniper check " + block
+}
+
+// levelWord is "scope 'lab'" or "device 'sw1'".
+func levelWord(l blocks.Level) string {
+	if l.IsDevice() {
+		return "device '" + l.Device + "'"
+	}
+	return "scope '" + l.Scope + "'"
+}
+
+// renderedFor is who a refusal says gets nothing.
+func renderedFor(l blocks.Level) string {
+	if l.IsDevice() {
+		return "the device's Junos configuration"
+	}
+	return "the scope's Junos devices"
+}
+
 // blockFindingsError is the refusal of a block with an error finding (nil
 // when it has none): a block is never rendered in part.
-func blockFindingsError(scope, block string, findings []blocks.Finding) error {
+func blockFindingsError(l blocks.Level, block string, findings []blocks.Finding) error {
 	if !blocks.HasErrors(findings) {
 		return nil
 	}
-	check := "tacctl scope block " + scope + " juniper check " + block
-	msgs := []string{fmt.Sprintf("The %s block of scope '%s' has errors, so nothing is rendered for the scope's Junos devices (a block is never rendered in part). Fix it, then run: %s",
-		block, scope, check)}
+	msgs := []string{fmt.Sprintf("The %s block of %s has errors, so nothing is rendered for %s (a block is never rendered in part). Fix it, then run: %s",
+		block, levelWord(l), renderedFor(l), CheckVerb(l, block))}
 	shown := 0
 	for _, f := range findings {
 		if f.Severity != blocks.SevError {

@@ -76,6 +76,10 @@ type SNMPInput struct {
 	// the Junos step renders them.
 	Block      []string
 	BlockScope string
+	// BlockHead is what the comment above the block says of it (the layers
+	// it is made of and the verb that shows it); empty is the scope's block
+	// alone, named by BlockScope.
+	BlockHead string
 }
 
 // Unfilled is a value the step could not fill, and the command that sets it.
@@ -425,11 +429,15 @@ func (in SNMPInput) junosBlockLines() []string {
 	if len(in.Block) == 0 {
 		return nil
 	}
-	scope := in.BlockScope
-	if scope == "" {
-		scope = in.Scope
+	head := in.BlockHead
+	if head == "" {
+		scope := in.BlockScope
+		if scope == "" {
+			scope = in.Scope
+		}
+		head = "The snmp block of scope '" + scope + "' (tacctl scope block " + scope + " juniper show snmp)"
 	}
-	out := []string{"# The snmp block of scope '" + scope + "' (tacctl scope block " + scope + " juniper show snmp): its communities, trap groups and trap options."}
+	out := []string{"# " + head + ": its communities, trap groups and trap options."}
 	return append(out, in.Block...)
 }
 

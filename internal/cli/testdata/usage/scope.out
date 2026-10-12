@@ -38,6 +38,8 @@ Usage:
       --role <role>                                        (add) admin (default), operator or readonly
   tacctl scope snmp <scope> show|version|community|v3-user|clients|contact|port|timeout|clear|test
                                                            SNMP of a scope: credentials, allowed clients, contact (default beneath: tacctl config snmp)
+  tacctl scope block <scope> juniper list|show|check|set|remove [<block>]
+                                                           Junos configuration blocks of a scope (snmp, system): community strings and trap groups, login message, domain, time zone, name servers, NTP
 
 Current scopes: 1
 Default scope:  lab

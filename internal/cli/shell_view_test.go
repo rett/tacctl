@@ -338,7 +338,7 @@ func TestViewFamilyHelp(t *testing.T) {
 		t.Errorf("help group junos:\n%s", got)
 	}
 	sc := helpFor(tier.Engineer, "scope")
-	for _, want := range []string{"  engineer   devices, secret, show, snmp, staging\n", "  readonly   list\n",
+	for _, want := range []string{"  engineer   block, devices, secret, show, snmp, staging\n", "  readonly   list\n",
 		"scope secret: an engineer may run show for a scope of their own; set and generate need the superuser tier.",
 		"An engineer's verbs reach only the devices, hosts and secrets of the scopes the engineer is a member of."} {
 		if !strings.Contains(sc, want) {

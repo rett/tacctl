@@ -202,6 +202,7 @@ func (d Data) snmpInput(scope string) SNMPInput {
 		if in.BlockScope == "" {
 			in.BlockScope = scope
 		}
+		in.BlockHead = d.Blocks.snmpHead(scope)
 	}
 	return in
 }

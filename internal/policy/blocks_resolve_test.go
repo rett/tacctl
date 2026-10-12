@@ -21,30 +21,30 @@ func TestResolveSNMPBlock(t *testing.T) {
 	if err := store.Write(lab, blocks.VendorJuniper, blocks.BlockSNMP, []byte(good)); err != nil {
 		t.Fatal(err)
 	}
-	if b, err := ResolveSNMPBlock(store, c, "lab"); b != nil || err != nil {
+	if b, _, err := ResolveSNMPBlock(store, c, "lab", ""); b != nil || err != nil {
 		t.Fatalf("not in force: %v %v", b, err)
 	}
 	if err := SetBlockInForce(c, "lab", blocks.VendorJuniper, blocks.BlockSNMP, true); err != nil {
 		t.Fatal(err)
 	}
-	b, err := ResolveSNMPBlock(store, c, "lab")
+	b, _, err := ResolveSNMPBlock(store, c, "lab", "")
 	if err != nil || b == nil || len(b.Communities) != 1 || len(b.TrapGroups) != 1 {
 		t.Fatalf("in force: %v %v", b, err)
 	}
 	// other scopes and vendors have none; so does a nil store
 	for _, scope := range []string{"dmz", "devices", "no/such"} {
-		if b, err := ResolveSNMPBlock(store, c, scope); b != nil || err != nil {
+		if b, _, err := ResolveSNMPBlock(store, c, scope, ""); b != nil || err != nil {
 			t.Errorf("%s: %v %v", scope, b, err)
 		}
 	}
-	if b, err := ResolveSNMPBlock(nil, c, "lab"); b != nil || err != nil {
+	if b, _, err := ResolveSNMPBlock(nil, c, "lab", ""); b != nil || err != nil {
 		t.Errorf("no store: %v %v", b, err)
 	}
 	// a name in force with no file renders nothing ('check' says so)
 	if err := SetBlockInForce(c, "dmz", blocks.VendorJuniper, blocks.BlockSNMP, true); err != nil {
 		t.Fatal(err)
 	}
-	if b, err := ResolveSNMPBlock(store, c, "dmz"); b != nil || err != nil {
+	if b, _, err := ResolveSNMPBlock(store, c, "dmz", ""); b != nil || err != nil {
 		t.Errorf("no file: %v %v", b, err)
 	}
 	// only a note (a community open to every client): rendered
@@ -52,7 +52,7 @@ func TestResolveSNMPBlock(t *testing.T) {
 	if err := store.Write(lab, blocks.VendorJuniper, blocks.BlockSNMP, []byte(open)); err != nil {
 		t.Fatal(err)
 	}
-	if b, err := ResolveSNMPBlock(store, c, "lab"); b == nil || err != nil {
+	if b, _, err := ResolveSNMPBlock(store, c, "lab", ""); b == nil || err != nil {
 		t.Errorf("a block with notes only: %v %v", b, err)
 	}
 
@@ -61,7 +61,7 @@ func TestResolveSNMPBlock(t *testing.T) {
 	if err := store.Write(lab, blocks.VendorJuniper, blocks.BlockSNMP, []byte(bad)); err != nil {
 		t.Fatal(err)
 	}
-	b, err = ResolveSNMPBlock(store, c, "lab")
+	b, _, err = ResolveSNMPBlock(store, c, "lab", "")
 	if b != nil || err == nil {
 		t.Fatalf("a block with errors: %v %v", b, err)
 	}
@@ -96,44 +96,44 @@ func TestResolveSystemBlock(t *testing.T) {
 	if err := store.Write(lab, blocks.VendorJuniper, blocks.BlockSystem, []byte(good)); err != nil {
 		t.Fatal(err)
 	}
-	if b, err := ResolveSystemBlock(store, c, "lab"); b != nil || err != nil {
+	if b, _, err := ResolveSystemBlock(store, c, "lab", ""); b != nil || err != nil {
 		t.Fatalf("not in force: %v %v", b, err)
 	}
 	// the snmp block's entry is not the system block's
 	if err := SetBlockInForce(c, "lab", blocks.VendorJuniper, blocks.BlockSNMP, true); err != nil {
 		t.Fatal(err)
 	}
-	if b, err := ResolveSystemBlock(store, c, "lab"); b != nil || err != nil {
+	if b, _, err := ResolveSystemBlock(store, c, "lab", ""); b != nil || err != nil {
 		t.Fatalf("the snmp entry: %v %v", b, err)
 	}
 	if err := SetBlockInForce(c, "lab", blocks.VendorJuniper, blocks.BlockSystem, true); err != nil {
 		t.Fatal(err)
 	}
-	b, err := ResolveSystemBlock(store, c, "lab")
+	b, _, err := ResolveSystemBlock(store, c, "lab", "")
 	if err != nil || b == nil || b.Message == nil || b.DomainName == nil || len(b.NameServers) != 1 || len(b.NTPServers) != 1 || len(b.NTPKeys) != 1 {
 		t.Fatalf("in force: %v %v", b, err)
 	}
 	// other scopes have none; so does a nil store
 	for _, scope := range []string{"dmz", "devices", "no/such"} {
-		if b, err := ResolveSystemBlock(store, c, scope); b != nil || err != nil {
+		if b, _, err := ResolveSystemBlock(store, c, scope, ""); b != nil || err != nil {
 			t.Errorf("%s: %v %v", scope, b, err)
 		}
 	}
-	if b, err := ResolveSystemBlock(nil, c, "lab"); b != nil || err != nil {
+	if b, _, err := ResolveSystemBlock(nil, c, "lab", ""); b != nil || err != nil {
 		t.Errorf("no store: %v %v", b, err)
 	}
 	// a name in force with no file renders nothing ('check' says so)
 	if err := SetBlockInForce(c, "dmz", blocks.VendorJuniper, blocks.BlockSystem, true); err != nil {
 		t.Fatal(err)
 	}
-	if b, err := ResolveSystemBlock(store, c, "dmz"); b != nil || err != nil {
+	if b, _, err := ResolveSystemBlock(store, c, "dmz", ""); b != nil || err != nil {
 		t.Errorf("no file: %v %v", b, err)
 	}
 	// a block of delete lines renders nothing
 	if err := store.Write(lab, blocks.VendorJuniper, blocks.BlockSystem, []byte("delete system ntp\n")); err != nil {
 		t.Fatal(err)
 	}
-	if b, err := ResolveSystemBlock(store, c, "lab"); b != nil || err != nil {
+	if b, _, err := ResolveSystemBlock(store, c, "lab", ""); b != nil || err != nil {
 		t.Errorf("delete lines only: %v %v", b, err)
 	}
 
@@ -142,7 +142,7 @@ func TestResolveSystemBlock(t *testing.T) {
 	if err := store.Write(lab, blocks.VendorJuniper, blocks.BlockSystem, []byte(bad)); err != nil {
 		t.Fatal(err)
 	}
-	b, err = ResolveSystemBlock(store, c, "lab")
+	b, _, err = ResolveSystemBlock(store, c, "lab", "")
 	if b != nil || err == nil {
 		t.Fatalf("a block with errors: %v %v", b, err)
 	}
@@ -159,5 +159,137 @@ func TestResolveSystemBlock(t *testing.T) {
 	first, _, _ := strings.Cut(err.Error(), "\n")
 	if !strings.Contains(first, "scope 'lab'") || !strings.Contains(first, "tacctl scope block lab juniper check system") {
 		t.Errorf("the first line: %q", first)
+	}
+}
+
+// The device's own block is laid over the scope's, per object: a community
+// the device states replaces the scope's of the same string whole, the scope's
+// others stay, and the layers say where the result came from.
+func TestResolveWithTheDevicesOwnBlock(t *testing.T) {
+	c, _ := newConf(t, "")
+	store := blocks.NewStore(t.TempDir())
+	scope, dev := blocks.ScopeLevel("lab"), blocks.DeviceLevel("JS1.lab.example.net")
+	scopeText := "set snmp community nms-ro authorization read-only\nset snmp community nms-ro clients 192.0.2.50/32\n" +
+		"set snmp community poller-two authorization read-only\nset snmp community poller-two clients 192.0.2.60/32\n"
+	devText := "set snmp community nms-ro authorization read-write\nset snmp community nms-ro clients 198.51.100.0/24\n" +
+		"set snmp community dev-extra authorization read-only\nset snmp community dev-extra clients 203.0.113.9/32\n"
+	for _, w := range []struct {
+		l    blocks.Level
+		text string
+	}{{scope, scopeText}, {dev, devText}} {
+		if err := store.Write(w.l, blocks.VendorJuniper, blocks.BlockSNMP, []byte(w.text)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// nothing is in force: no layer
+	if b, l, err := ResolveSNMPBlock(store, c, "lab", "js1.lab.example.net"); b != nil || l != (BlockLayers{}) || err != nil {
+		t.Fatalf("nothing in force: %v %v %v", b, l, err)
+	}
+	if err := SetBlockInForce(c, "lab", blocks.VendorJuniper, blocks.BlockSNMP, true); err != nil {
+		t.Fatal(err)
+	}
+	// the scope's alone, for a device with none of its own and for the scope
+	for _, device := range []string{"", "js1.lab.example.net"} {
+		b, l, err := ResolveSNMPBlock(store, c, "lab", device)
+		if err != nil || b == nil || l != (BlockLayers{Scope: true}) || len(b.Communities) != 2 || b.Communities[0].Authorization != "read-only" {
+			t.Fatalf("scope only (%q): %v %v %v", device, b, l, err)
+		}
+	}
+	if err := SetDeviceBlockInForce(c, "JS1.lab.example.net", blocks.VendorJuniper, blocks.BlockSNMP, true); err != nil {
+		t.Fatal(err)
+	}
+	b, l, err := ResolveSNMPBlock(store, c, "lab", "JS1.lab.example.net")
+	if err != nil || b == nil || l != (BlockLayers{Scope: true, Device: true}) {
+		t.Fatalf("both: %v %v %v", b, l, err)
+	}
+	var got []string
+	for _, cm := range b.Communities {
+		got = append(got, cm.String+":"+cm.Authorization)
+	}
+	if want := "nms-ro:read-write poller-two:read-only dev-extra:read-only"; strings.Join(got, " ") != want {
+		t.Errorf("communities %q, want %q", strings.Join(got, " "), want)
+	}
+	if st := blocks.Statements(b); strings.Contains(strings.Join(st, "\n"), "192.0.2.50") {
+		t.Errorf("the scope's client of the replaced community stayed:\n%s", strings.Join(st, "\n"))
+	}
+	// the scope alone is what the scope's own render sees
+	if _, l, _ := ResolveSNMPBlock(store, c, "lab", ""); l != (BlockLayers{Scope: true}) {
+		t.Errorf("scope layers: %v", l)
+	}
+	// the device's alone: the scope has none in force
+	if err := SetBlockInForce(c, "lab", blocks.VendorJuniper, blocks.BlockSNMP, false); err != nil {
+		t.Fatal(err)
+	}
+	b, l, err = ResolveSNMPBlock(store, c, "lab", "js1.lab.example.net")
+	if err != nil || b == nil || l != (BlockLayers{Device: true}) || len(b.Communities) != 2 {
+		t.Errorf("device only: %v %v %v", b, l, err)
+	}
+	// a device's block with an error refuses that device, naming it and its verb
+	if err := store.Write(dev, blocks.VendorJuniper, blocks.BlockSNMP, []byte(devText+"set snmp community short authorization read-only\n")); err != nil {
+		t.Fatal(err)
+	}
+	b, _, err = ResolveSNMPBlock(store, c, "lab", "js1.lab.example.net")
+	if b != nil || err == nil {
+		t.Fatalf("a device block with errors: %v %v", b, err)
+	}
+	first, _, _ := strings.Cut(err.Error(), "\n")
+	for _, want := range []string{"The snmp block of device 'js1.lab.example.net' has errors", "tacctl device block js1.lab.example.net check snmp"} {
+		if !strings.Contains(first, want) {
+			t.Errorf("the first line lacks %q: %q", want, first)
+		}
+	}
+	for _, s := range []string{"nms-ro", "dev-extra", "short"} {
+		if strings.Contains(err.Error(), s) {
+			t.Errorf("the refusal holds %q:\n%s", s, err)
+		}
+	}
+	// the same device without the device argument is untouched by it
+	if _, _, err := ResolveSNMPBlock(store, c, "lab", ""); err != nil {
+		t.Errorf("the scope's render: %v", err)
+	}
+}
+
+func TestResolveSystemBlockWithTheDevicesOwn(t *testing.T) {
+	c, _ := newConf(t, "")
+	store := blocks.NewStore(t.TempDir())
+	scope, dev := blocks.ScopeLevel("lab"), blocks.DeviceLevel("sw1")
+	scopeText := "set system domain-name lab.example.net\nset system time-zone UTC\nset system name-server 192.0.2.53\n"
+	devText := "set system domain-name sw1.lab.example.net\nset system name-server 192.0.2.54\ndelete system time-zone\n"
+	if err := store.Write(scope, blocks.VendorJuniper, blocks.BlockSystem, []byte(scopeText)); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Write(dev, blocks.VendorJuniper, blocks.BlockSystem, []byte(devText)); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetBlockInForce(c, "lab", blocks.VendorJuniper, blocks.BlockSystem, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetDeviceBlockInForce(c, "sw1", blocks.VendorJuniper, blocks.BlockSystem, true); err != nil {
+		t.Fatal(err)
+	}
+	b, l, err := ResolveSystemBlock(store, c, "lab", "sw1")
+	if err != nil || b == nil || l != (BlockLayers{Scope: true, Device: true}) {
+		t.Fatalf("%v %v %v", b, l, err)
+	}
+	want := "set system domain-name sw1.lab.example.net\nset system name-server 192.0.2.53\nset system name-server 192.0.2.54"
+	if got := strings.Join(blocks.SystemStatements(b), "\n"); got != want {
+		t.Errorf("statements:\n%s\nwant\n%s", got, want)
+	}
+	// a device block of delete lines alone renders what the scope has
+	if err := store.Write(dev, blocks.VendorJuniper, blocks.BlockSystem, []byte("delete system domain-name\n")); err != nil {
+		t.Fatal(err)
+	}
+	b, _, err = ResolveSystemBlock(store, c, "lab", "sw1")
+	if err != nil || b == nil || strings.Contains(strings.Join(blocks.SystemStatements(b), "\n"), "domain-name") {
+		t.Errorf("delete: %v %v", b, err)
+	}
+	// errors name the device and the verb, and no word of a message
+	if err := store.Write(dev, blocks.VendorJuniper, blocks.BlockSystem, []byte("set system login message <<'EOF'\nSecret banner text\nEOF\nset system time-zone\n")); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = ResolveSystemBlock(store, c, "lab", "sw1")
+	if err == nil || !strings.Contains(err.Error(), "The system block of device 'sw1' has errors") ||
+		!strings.Contains(err.Error(), "tacctl device block sw1 check system") || strings.Contains(err.Error(), "Secret banner") {
+		t.Errorf("errors: %v", err)
 	}
 }

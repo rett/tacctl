@@ -2966,9 +2966,16 @@ the same reads; its setters and
 .B clear
 are the superuser's, and an engineer's
 .B "device import"
-neither sets nor drops a device's own settings).
+neither sets nor drops a device's own settings), and the configuration blocks
+of a scope of theirs and of the devices there
+.RB ( "scope block " \fIscope\fR " juniper list|show|check" ,
+.BR "device block " \fIname\fR " list|show|check" ;
+.B set
+and
+.B remove
+are the superuser's).
 Each read of a secret by an engineer is logged to syslog as
-\fBsecret\-read kind=scope|snmp|snmp\-device|snmp\-default name=\fR\fIname\fR\fB by=\fR\fIuser\fR
+\fBsecret\-read kind=scope|snmp|snmp\-device|snmp\-default|block name=\fR\fIname\fR\fB by=\fR\fIuser\fR
 (never the value). Engineers change no global setting: users, groups,
 scopes, a secret's change, backends, backups, upgrades, the default host
 method and the console's settings stay the superuser's, and so does the
@@ -4990,6 +4997,151 @@ applies again.
 .BI "scope snmp " scope " test " address|device
 Read the sysName of one address (or registered device) with the scope's
 settings.
+.SS Per-scope configuration blocks \fB(tacctl scope block)\fR
+.PP
+A configuration block is vendor syntax that a scope, or one device, owns beside
+its structured settings, kept as a text file of its own and held to a grammar.
+Junos is the only vendor with blocks in this release; the blocks are
+.B snmp
+(communities, their client lists and trap groups: the SNMP that the scope's
+settings do not hold) and
+.B system
+(the login message, domain name and search list, time zone, name servers and
+NTP). A block is Junos
+.B set
+statements and nothing else, one per line, with
+.B #
+comment lines and blank lines; the login message is the one statement that is
+a heredoc,
+.BR "set system login message <<'EOF'" ,
+its lines, and
+.BR EOF .
+A
+.B delete
+line says that what it names is not managed on this device: it is kept, never
+rendered, and in a device's block takes the scope's object of that name out for
+that device. Junos and IOS are never translated into each other, so a scope
+with both has a file for each, and
+.B cisco
+is refused in this release.
+.PP
+The blocks of a scope are the files under
+.IR /etc/tacctl/blocks/\fIscope\fR/juniper ,
+and a block is in force only while
+.I tacctl.yaml
+names it
+.RB ( blocks.\fIscope\fR.juniper ).
+The communities and trap groups of the
+.B snmp
+block become objects tacctl owns: the plan of
+.B "device config plan"
+sets what a device lacks and deletes a client or target of those objects that
+the block does not state, under the object's real name, and the device's other
+communities are kept and listed as unmanaged. The
+.B system
+block is additive: a statement is set when it is missing, a single value is
+replaced in place, and nothing the device holds is deleted. A block with an
+error is never rendered in part: every Junos device it reaches is refused. A
+block holds community strings, so every output but
+.B "show \-\-reveal"
+shows marks instead:
+.B <secret:N>
+for a community string,
+.B <group:N>
+for a trap group's name,
+.B <secret>
+for an NTP key,
+.B "<message: N lines, M characters>"
+for the login message, and a comment line is never shown.
+.PP
+A device's own block is laid over its scope's per object: a community (by its
+string), a trap group (by its name) or a trap\-options leaf of the device
+replaces the scope's of the same key whole, one it adds is added and the
+scope's others stay; in the system block a single value is the device's and a
+list entry is added or, when it has the same value, replaced. The
+management filter's
+.B permit\-snmp
+term permits the resolved block's unrestricted IPv4 clients.
+.TP
+.BI "scope block " scope " juniper list"
+The blocks of the scope: for each, whether it is in force, has no file, or is a
+file that
+.I tacctl.yaml
+does not name (and is ignored), its size, and what it states (communities and
+trap groups, or statements and the login message's lines, or the number of
+errors), then the findings: a file no list names and a name with no file.
+Nothing is secret. An engineer may list the scopes of their own.
+.\" BEGIN GENERATED: command scope block
+.RS
+.PP
+Requires: \fBengineer\fR. An engineer may read the configuration blocks of a scope of their own (list, show [\-\-reveal], check); set and remove need the superuser tier.
+.PP
+Options:
+.TP
+\fB\-\-reveal\fR
+Print the strings (an engineer: their own scopes; logged).
+.TP
+\fB\-\-file\fR \fI<path>\fR
+(check, set) The text to look at: a regular file of at most 256 KiB, read as you.
+.TP
+\fB\-\-against\fR \fI<device>\fR
+Plan the device of this scope with this text in force and print the statements of its section (from its last pull; nothing is written and no device is reached).
+.TP
+\fB\-y\fR, \fB\-\-yes\fR
+(set, remove) Answer yes to the question (a block read from standard input needs it).
+.RE
+.\" END GENERATED: command scope block
+.TP
+.BI "scope block " scope " juniper show " block " [ \-\-reveal ]"
+The block as it is in force, elided as described above (a comment is never
+shown, and a block with errors is refused: run
+.BR check ).
+.B \-\-reveal
+prints the file as stored; an engineer may reveal the scopes of their own, and
+the reveal is logged as
+.BR "secret\-read kind=block name=" \fIscope\fR/juniper/\fIblock\fR .
+.TP
+.BI "scope block " scope " juniper check " block " [ \-\-file " path " | \- ] [ \-\-against " device " ]"
+Lint the file in force, the file
+.I path
+(a regular file of at most 256 KiB, read as the caller) or standard input
+.RB ( \- ):
+every finding with its line, the objects that become owned, the number of
+statements that carry a secret, the difference from the file in force (elided;
+a changed string shows as the same mark removed and added), and a block
+community that is the scope's own community, which a device cannot hold twice
+and is refused without printing it. Exit status 1 when there is an error.
+.B \-\-against
+plans the named device of the scope (and of vendor Junos) with the text in
+force and prints the statements for the block's section, from the device's last
+pull: nothing is written, no back\-out is kept and no device is reached. A
+device that has not been pulled is told to be pulled first, and a system block
+that was not in force at the last pull is told to be set and pulled.
+.TP
+.BI "scope block " scope " juniper set " block " { \-\-file " path " | \- } [ \-y ]"
+Superuser only. Check the text as
+.B check
+does (an error refuses it and nothing is written), show the owned objects and
+the difference, ask (\fB\-y\fR, \fB\-\-yes\fR, answers yes; a text read from
+standard input needs it unless standard input is a terminal), take the
+configuration snapshot, write the file (0600, atomically) and put the block in
+force in
+.IR tacctl.yaml .
+Nothing is restarted: a block reaches a device through
+.BR "device config plan" .
+A text that states nothing (comments and blank lines) is refused; the same text
+as the file in force is no change. A change that cannot be made because
+.I tacctl.yaml
+cannot be read or written is refused before anything is. Logged as
+.BR "block\-set name=" \fIscope\fR/juniper/\fIblock\fR .
+.TP
+.BI "scope block " scope " juniper remove " block " [ \-y ]"
+Superuser only. Take the block out of force and delete its file (a file no list
+names is removable too), after a question (\fB\-y\fR answers it) and a
+snapshot. Nothing is deleted from a device: what the block set is no longer
+rendered, and the next compare lists those statements as the device's own,
+kept. Logged as
+.BR block\-remove .
 .SS Per-scope Cisco aaa-group-server label \fB(tacctl scope tacacs-group)\fR
 .TP
 .BI "scope tacacs-group " scope " [" name ]
@@ -5961,6 +6113,56 @@ Options:
 (snmp community, v3\-user) Read the secrets from stdin, one per line.
 .RE
 .\" END GENERATED: command device snmp
+.TP
+.BI "device block " "name " "{ list | show " "block " "[ \-\-effective ] [ \-\-reveal ] | check " "block " "[ \-\-file " "path " "| \- ] [ \-\-against ] | set " "block " "{ \-\-file " "path " "| \- } [ \-y ] | remove " "block " "[ \-y ] }"
+One registered Junos device's own configuration blocks, laid over its scope's
+(see
+.BR "Per\-scope configuration blocks" ):
+the files
+.IR /etc/tacctl/blocks/_devices/\fIname\fR/juniper/\fIblock\fR ,
+named in
+.I tacctl.yaml
+by
+.BR blocks_device.\fIname\fR.juniper .
+The verbs are those of
+.BR "scope block" ,
+and
+.B check \-\-against
+plans this device itself. A device in no scope (no scope's prefixes cover its
+address), an enrolled host and a device that is not a Junos device have no
+blocks; a device that has left every scope can still have its blocks
+removed.
+.B "show \-\-effective"
+prints the block as it is rendered for the device, the scope's with the
+device's laid over it, with a comment for each object saying which layer it is
+from (\fB\-\-reveal\fR prints the strings). A rename of the device moves its
+blocks and its removal deletes them. An engineer may list, show and check the
+blocks of the devices of their own scopes (a reveal is logged as
+.BR "secret\-read kind=block name=_devices/" \fIname\fR/juniper/\fIblock\fR );
+set and remove are the superuser's.
+.\" BEGIN GENERATED: command device block
+.RS
+.PP
+Requires: \fBengineer\fR. An engineer may read the configuration blocks of a device of their own scope (list, show [\-\-effective] [\-\-reveal], check); set and remove need the superuser tier.
+.PP
+Options:
+.TP
+\fB\-\-reveal\fR
+Print the strings (an engineer: their own scopes' devices; logged).
+.TP
+\fB\-\-effective\fR
+The block as rendered for the device, with the layer of each object.
+.TP
+\fB\-\-file\fR \fI<path>\fR
+(check, set) The text to look at: a regular file of at most 256 KiB, read as you.
+.TP
+\fB\-\-against\fR
+Plan the device with this text in force and print the statements of its section (from its last pull; nothing is written and no device is reached).
+.TP
+\fB\-y\fR, \fB\-\-yes\fR
+(set, remove) Answer yes to the question (a block read from standard input needs it).
+.RE
+.\" END GENERATED: command device block
 .TP
 .BI "device stale\-days " [ n ]
 Show or set the number of days (1 to 3650, default 30) after which a device
@@ -8471,8 +8673,8 @@ device hostname, device vendor, device port, device description,
 device location, device legacy\-ssh, device config\-syntax,
 device hostkey, device import, scope devices, device config,
 config cisco, config juniper, config wti, host list, host show,
-scope staging, scope secret, scope snmp, device snmp, scope show,
-breakglass list
+scope staging, scope secret, scope snmp, device snmp, scope block,
+device block, scope show, breakglass list
 .TP
 .B superuser
 Every verb not listed above, and every verb of the tiers below.
@@ -8485,6 +8687,9 @@ An engineer lists the holds of the devices of their own scopes only; hold and re
 .TP
 .B config cisco
 An engineer may print the walkthrough and read source\-interface for a scope of their own; setting or unsetting source\-interface needs the superuser tier.
+.TP
+.B device block
+An engineer may read the configuration blocks of a device of their own scope (list, show [\-\-effective] [\-\-reveal], check); set and remove need the superuser tier.
 .TP
 .B device config
 An operator may run list; show, pull, diff and plan need the engineer tier (a device's walkthrough carries its scope's secret, a plan can type it, and a pull logs in to the device as you), and an engineer gets the devices of their own scopes only; forget needs the superuser tier.
@@ -8503,6 +8708,9 @@ An engineer may read the settings of a device of their own scope (show [\-\-reve
 .TP
 .B host show
 An engineer reads what tacctl recorded of a host; \-\-check logs in to it and needs the superuser tier.
+.TP
+.B scope block
+An engineer may read the configuration blocks of a scope of their own (list, show [\-\-reveal], check); set and remove need the superuser tier.
 .TP
 .B scope secret
 An engineer may run show for a scope of their own; set and generate need the superuser tier.
@@ -8541,6 +8749,7 @@ and every nested dispatcher such as
 .BR "scope devices" ,
 .BR "scope mgmt-acl" ,
 .BR "scope breakglass" ,
+.BR "scope block" ,
 .BR "user scope" ,
 or
 .BR "group privilege" )
@@ -9211,11 +9420,11 @@ The break-glass local users the scope's device configurations create. Only the n
 .TP
 .B blocks.<scope>.<vendor>
 non\-empty list of block names (snmp, system). Default: none (unset).
-The configuration blocks in force for the scope and vendor (juniper or cisco), a list of snmp and system; a file under the blocks directory that this list does not name is ignored. Set with a text editor on \fItacctl.yaml\fR.
+The configuration blocks in force for the scope and vendor (juniper or cisco), a list of snmp and system; a file under the blocks directory that this list does not name is ignored. Set with \fBtacctl scope block\fR.
 .TP
 .B blocks_device.<device>.<vendor>
 non\-empty list of block names (snmp, system). Default: none (unset).
-The configuration blocks in force for one device and vendor (juniper or cisco), a list of snmp and system; the device's lower case name is written with every '.' as '~' (js1~lab~example~net), and a file under the blocks directory that this list does not name is ignored. Set with a text editor on \fItacctl.yaml\fR.
+The configuration blocks in force for one device and vendor (juniper or cisco), a list of snmp and system; the device's lower case name is written with every '.' as '~' (js1~lab~example~net), and a file under the blocks directory that this list does not name is ignored. Set with \fBtacctl device block\fR.
 .TP
 .B snmp_scope.<scope>.version
 one of v2c, v3. Default: none (unset).
@@ -9627,7 +9836,7 @@ or
 .BR system .
 Mode 0600 in 0700 directories, root only, written atomically; a block holds
 community strings, so it is never printed but by
-.BR "\-\-reveal" .
+.BR "scope block ... show \-\-reveal" .
 A block is in force only while
 .BR tacctl.yaml
 names it
@@ -9643,7 +9852,9 @@ named in
 by
 .BR blocks_device.\fIdevice\fR.\fIvendor\fR ,
 the device's dots written as
-.BR ~ .
+.BR ~ ,
+and written by
+.BR "device block" .
 A device's rename moves it and its removal deletes it; a new device, or a
 rename onto a name whose blocks are already on disk, is refused.
 .TP

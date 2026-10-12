@@ -441,7 +441,8 @@ func TestScopeGroupConfigSpecs(t *testing.T) {
 					}
 					_, native := completionKinds[k]
 					_, argKind := completionArgKinds[k]
-					if k != "" && !native && !argKind && !strings.Contains(k, "|") && k != KindFile {
+					// a one-word list of fixed words is a list too
+					if k != "" && !native && !argKind && !strings.Contains(k, "|") && k != KindFile && k != "juniper" {
 						t.Errorf("%s %s: kind %q is no completion kind", family, c.Name(), k)
 					}
 				}

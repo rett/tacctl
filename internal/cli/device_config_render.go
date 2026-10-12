@@ -38,6 +38,13 @@ type renderParams struct {
 	// Restricted is an engineer's config: the Cisco NETCONF step is a
 	// superuser's, and the SNMP read is logged.
 	Restricted bool
+	// BlockDevice names the registered device of the scope whose own
+	// configuration blocks are laid over the scope's (empty: the scope's
+	// alone, which is what a batch's shared base is).
+	BlockDevice string
+	// Override is a block text laid in place of the file in force
+	// ('block check --against'); nil for none.
+	Override *blockOverride
 }
 
 // deviceRenderInput builds the Request and the Data of one device config:
@@ -86,30 +93,21 @@ func (inv *invocation) deviceRenderInput(p renderParams) (devices.Request, devic
 			return req, d, err
 		}
 	}
-	// The scope's snmp and system blocks (0.2.7; Junos only: IOS blocks are the
-	// release after). One with an error is never rendered in part: the refusal
-	// names the scope and the verb that says what is wrong.
+	// The snmp and system blocks of the scope, and of the device when it has
+	// some of its own (0.2.7; Junos only: IOS blocks are the release after).
+	// One with an error is never rendered in part: the refusal names the
+	// scope or the device and the verb that says what is wrong.
 	if p.Vendor == "juniper" {
-		store, cfg := blocks.NewStore(a.Paths.BlocksDir), a.Conf()
-		snmp, err := policy.ResolveSNMPBlock(store, cfg, p.Scope)
+		blk, layers, err := inv.resolveBlocks(p.Scope, p.BlockDevice, p.Override)
 		if err != nil {
 			return req, d, inv.usageErr(msgs(err)...)
 		}
-		system, err := policy.ResolveSystemBlock(store, cfg, p.Scope)
-		if err != nil {
-			return req, d, inv.usageErr(msgs(err)...)
-		}
-		if snmp != nil || system != nil {
-			d.Blocks = devices.Blocks{Scope: p.Scope, SNMP: snmp, System: system}
-			// An engineer's walkthrough shows the block's community strings
-			// as it shows the scope's, and the system block's NTP key: a read
-			// of its own, logged.
-			if p.Restricted && snmp != nil {
-				inv.secretRead("block", p.Scope+"/juniper/"+blocks.BlockSNMP)
-			}
-			if p.Restricted && system != nil && len(system.NTPKeys) > 0 {
-				inv.secretRead("block", p.Scope+"/juniper/"+blocks.BlockSystem)
-			}
+		d.Blocks = blk
+		// An engineer's walkthrough shows the block's community strings as it
+		// shows the scope's, and the system block's NTP key: a read of its
+		// own, logged.
+		if p.Restricted {
+			inv.logBlockReads(blk, layers, p.Scope, p.BlockDevice)
 		}
 	}
 	return req, d, nil
@@ -163,6 +161,19 @@ type managedRender struct {
 	// compared against the scope's, which would read as drift).
 	snmp        map[string]devices.SNMPInput
 	snmpProblem map[string]string
+	// devBlocks are the blocks of the devices that have some of their own,
+	// by lowercased name: the scope's with the device's laid over them.
+	devBlocks map[string]*deviceBlocks
+	// override is a block text laid in place of the file in force
+	// ('block check --against'); nil for none.
+	override *blockOverride
+}
+
+// deviceBlocks is the resolution of one device's blocks, or why there is
+// none (a block of the device with an error: the refusal names it).
+type deviceBlocks struct {
+	blocks  devices.Blocks
+	problem string
 }
 
 // newManagedRender is a render for the batch verbs. The expected
@@ -172,7 +183,7 @@ type managedRender struct {
 func (inv *invocation) newManagedRender(opts managedOptions, logReads bool) *managedRender {
 	return &managedRender{inv: inv, opts: opts, logReads: logReads,
 		base: map[managedKey]*managedBase{}, logged: map[string]bool{},
-		snmp: map[string]devices.SNMPInput{}, snmpProblem: map[string]string{}}
+		snmp: map[string]devices.SNMPInput{}, snmpProblem: map[string]string{}, devBlocks: map[string]*deviceBlocks{}}
 }
 
 // keyOf is the sharing key of a registered device. A device whose syntax is
@@ -248,6 +259,7 @@ func (r *managedRender) prepare(entries []devreg.Entry) {
 			r.prepareKey(e, k2)
 		}
 		r.prepareOwn(e, k)
+		r.prepareDeviceBlocks(e, k)
 	}
 }
 
@@ -273,6 +285,7 @@ func (r *managedRender) prepareKey(e devreg.Entry, k managedKey) {
 	req, d, err := inv.deviceRenderInput(renderParams{
 		Vendor: k.vendor, Scope: k.scope, Legacy: k.legacy, Protocol: protocol, Source: psource,
 		AuthServer: r.opts.AuthServer, AuthName: r.opts.AuthName, SourceIP: r.opts.SourceIP,
+		Override: r.override,
 	})
 	inv.app.Out.Stderr = realErr
 	// What the build said on stderr: its warnings are the operator's to
@@ -298,6 +311,45 @@ func (r *managedRender) prepareKey(e devreg.Entry, k managedKey) {
 			r.logged["snmp "+k.scope] = true
 			inv.secretRead("snmp", k.scope)
 		}
+		// the scope's blocks carry community strings and NTP keys: a read of
+		// their own, once per scope
+		if r.logReads && (d.Blocks.SNMP != nil || d.Blocks.System != nil) && !r.logged["blocks "+k.scope] {
+			r.logged["blocks "+k.scope] = true
+			inv.logBlockReads(d.Blocks, [2]policy.BlockLayers{{Scope: d.Blocks.SNMP != nil}, {Scope: d.Blocks.System != nil}}, k.scope, "")
+		}
+	}
+}
+
+// prepareDeviceBlocks resolves the blocks of one device that has some of its
+// own in force (or is the one a check --against plans): the scope's, with the
+// device's laid over them. A device with none renders the base's, which was
+// made once for the scope. Nothing is read by Expected: this runs before any
+// worker starts.
+func (r *managedRender) prepareDeviceBlocks(e devreg.Entry, k managedKey) {
+	inv := r.inv
+	b := r.base[k]
+	if e.Vendor != "juniper" || b == nil || b.problem != "" {
+		return
+	}
+	lc := strings.ToLower(e.Name)
+	cfg := inv.app.Conf()
+	has := len(policy.DeviceBlockNames(cfg, e.Name, blocks.VendorJuniper)) > 0 ||
+		(r.override != nil && r.override.level.IsDevice() && strings.EqualFold(r.override.level.Device, e.Name))
+	if !has {
+		return
+	}
+	blk, layers, err := inv.resolveBlocks(e.Scope, e.Name, r.override)
+	if err != nil {
+		r.devBlocks[lc] = &deviceBlocks{problem: strings.Join(msgs(err), " ")}
+		return
+	}
+	r.devBlocks[lc] = &deviceBlocks{blocks: blk}
+	if r.logReads && !r.logged["blocks-device "+lc] {
+		r.logged["blocks-device "+lc] = true
+		for i := range layers {
+			layers[i].Scope = false // the scope's own were logged with its base
+		}
+		inv.logBlockReads(blk, layers, e.Scope, e.Name)
 	}
 }
 
@@ -370,6 +422,12 @@ func (r *managedRender) expectedFor(e devreg.Entry, k managedKey) ([]devices.Sec
 		return nil, &renderProblem{msg: why}
 	}
 	d := b.d
+	if db, ok := r.devBlocks[lc]; ok {
+		if db.problem != "" {
+			return nil, &renderProblem{msg: db.problem}
+		}
+		d.Blocks = db.blocks
+	}
 	if in, ok := r.snmp[lc]; ok {
 		d.SNMP = in
 	} else {

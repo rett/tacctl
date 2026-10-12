@@ -151,6 +151,83 @@ current behaviour; this file is where history lives.
    plan added; for a replaced message it names the rollback, because only a
    digest is kept.
 
+8. **`tacctl scope block <scope> juniper` and `tacctl device block <name>`
+   keep the configuration blocks: `list`, `show`, `check`, `set`, `remove`.**
+   `list` names each block of the scope (or device) with its state (in force,
+   named in `tacctl.yaml` with no file, or a file `tacctl.yaml` does not name,
+   which is ignored), its size, what it states (communities and trap groups,
+   or statements and the login message's lines, or the number of errors) and
+   the findings of the store against `tacctl.yaml`; for a device it also names
+   the scope's blocks beneath, and the device's orphans (a vendor directory
+   that is not the device's vendor). `show <block>` prints the block elided:
+   `<secret:N>` for a community string, `<group:N>` for a trap group's name,
+   `<secret>` for an NTP key, `<message: N lines, M characters>` for the
+   login message, and never a comment line (a comment may hold anything);
+   `--reveal` prints the file as stored. `device block <name> show <block>
+   --effective` prints the block as it is rendered for the device, the scope's
+   with the device's laid over it, with a comment before each object saying
+   which layer it comes from. `check <block> [--file <path>|-]` lints the file
+   in force, a file (read as the caller, at most 256 KiB) or standard input:
+   every finding with its line, the objects that become owned, the number of
+   statements that carry a secret, the diff against the file in force (elided;
+   a changed string shows as the same mark removed and added), and a block
+   community that is the scope's own community (refused, by its place and
+   without printing it); the exit status is 1 on an error. `check --against
+   <device>` (at the device level `--against`) plans that Junos device with the
+   text in force and prints the statements of the block's section from its last
+   pull, every secret as a mark: nothing is written, no back-out is kept and no
+   device is reached; a device that was not pulled is told to be pulled first.
+   `set <block> (--file <path>|-) [-y]` runs the check (an error refuses it and
+   writes nothing; a text that states nothing is refused, use `remove`),
+   shows the owned objects and the diff, asks, takes the configuration
+   snapshot, writes the file (0600, atomically) and names it in `tacctl.yaml`
+   (blocks.<scope>.juniper or blocks_device.<device>.juniper); a block read
+   from standard input needs `-y` unless standard input is a terminal, and the
+   same text as the file in force is no change. `remove <block> [-y]` takes
+   the entry and the file away after a snapshot (a file no list names is
+   removable too) and says that nothing is deleted from a device: what the
+   block set is no longer rendered, and the next compare lists those
+   statements as the device's own, kept. Nothing is restarted by either.
+   `set` and `remove` are the superuser's and are logged `block-set` and
+   `block-remove` (name `<scope>/juniper/<block>`, or `_devices/<device>/
+   juniper/<block>`, with the size and counts, never a value); an engineer
+   reads (`list`, `show`, `check`) the blocks of their own scopes and of the
+   devices there, another scope or device is not found, and an engineer's
+   `show --reveal` is logged as `secret-read kind=block name=<that name>`. A
+   write is refused, before anything is changed, when `tacctl.yaml` cannot be
+   read or written. `cisco` is refused (`IOS blocks come in the release
+   after`), and so is a device that is not a Junos device, an enrolled host and
+   a device in no scope (its blocks can still be removed). The two verbs are in
+   the engineer's rows of the tier table and the sudoers drop-in
+   (`scope block *`, `device block *`), in the shell's and the console's lists
+   and in tab completion (scope and device names, `juniper`, the block names,
+   `--file` paths).
+
+9. **A device's own blocks are rendered, compared and planned over its scope's,
+   and `config validate` reports the blocks.** The walkthrough of a registered
+   Junos device (`device config show <name>`, `config juniper --name <name>`)
+   and the managed `snmp` and `system` sections of `device config
+   pull|diff|plan` are made from the scope's block with the device's laid over
+   it per object: a community (by its string), a trap group (by its name) or a
+   trap-options leaf the device states replaces the scope's of the same key
+   whole, one it adds is added, and the scope's others stay; in the system
+   block a single value is the device's and a list entry is added, or replaced
+   when it has the same value; the device's `delete` line takes the scope's
+   object out for that device. The management filter's `permit-snmp` term
+   permits the resolved block's clients. The comment above the block's
+   statements says which layers it is made of and the verb that shows it
+   (`tacctl device block <name> show snmp --effective`), and a refusal names
+   the layer: a device block with an error refuses that device alone, with
+   `tacctl device block <name> check <block>`; a block community that is the
+   scope's own community is refused naming the device's block when it holds it.
+   A batch resolves the device level once per device that has blocks of its
+   own, before its workers start; an engineer's pull logs the read of a
+   device's block under its own name. `config validate` gains a `Config
+   blocks:` line when there are blocks: a name in `tacctl.yaml` with no file and
+   a block in force that does not parse are errors (exit 1), a file no list
+   names and a device's orphans (not registered, another vendor) are warnings;
+   an installation with no blocks prints nothing new.
+
 ## 0.2.6 (2026-10-12)
 
 A hotfix for 0.2.5, started from `master`. The items below are everything that

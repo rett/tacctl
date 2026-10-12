@@ -43,6 +43,8 @@ var liveNames = map[string]string{
 	"backups":          "20260101-000000\n",
 	// The break-glass users recorded for the scope 'lab'.
 	"breakglass-users lab": "lab-admin\nlab-ops\n",
+	// the device registry's and the hosts' names (kind devices)
+	"devices": "js1\nsw1\n",
 }
 
 // The scenarios of the hand-written completion's tests, now answered by the
@@ -101,6 +103,18 @@ func TestCompleteScenarios(t *testing.T) {
 		{[]string{"scope", "breakglass", "lab", "remove", "lab-admin", ""}, nil},
 		{[]string{"scope", "breakglass", "lab", "remove", ""}, []string{"lab-admin", "lab-ops"}},
 		{[]string{"scope", "breakglass", "lab", "remove", "lab-a"}, []string{"lab-admin"}},
+		{[]string{"scope", "block", ""}, []string{"lab", "prod"}},
+		{[]string{"scope", "block", "lab", ""}, []string{"juniper"}},
+		{[]string{"scope", "block", "lab", "juniper", ""}, []string{"list", "show", "check", "set", "remove"}},
+		{[]string{"scope", "block", "lab", "juniper", "s"}, []string{"show", "set"}},
+		{[]string{"scope", "block", "lab", "juniper", "show", ""}, []string{"snmp", "system", "--reveal"}},
+		{[]string{"scope", "block", "lab", "juniper", "set", "snmp", ""}, []string{"--file", "-y", "--yes"}},
+		{[]string{"scope", "block", "lab", "juniper", "check", "snmp", "--against", ""}, []string{"js1", "sw1"}},
+		{[]string{"scope", "block", "lab", "juniper", "check", "snmp", ""}, []string{"--file", "--against"}},
+		{[]string{"device", "block", ""}, []string{"js1", "sw1"}},
+		{[]string{"device", "block", "js1", ""}, []string{"list", "show", "check", "set", "remove"}},
+		{[]string{"device", "block", "js1", "show", ""}, []string{"snmp", "system", "--reveal", "--effective"}},
+		{[]string{"device", "block", "js1", "check", "system", ""}, []string{"--file", "--against"}},
 		{[]string{"scope", "prefixes", "lab", ""}, []string{"list", "add", "remove", "move"}},
 		{[]string{"scope", "prefixes", "lab", "remove", ""}, []string{"--all", "--force"}},
 		{[]string{"scope", "prefixes", "lab", "remove", "--all", ""}, []string{"--force"}},

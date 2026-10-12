@@ -61,6 +61,9 @@ var scopeSpecs = map[string]Spec{
 	"mgmt-acl":     {MinArgs: 1, MaxArgs: 3, Args: []string{KindScopes, "list|add|remove|clear|cisco-name|juniper-name", ""}},
 	"breakglass": {MinArgs: 1, MaxArgs: 3, Args: []string{KindScopes, "list|add|remove", After("remove", KindBreakGlass)}, Flags: []Flag{
 		{Names: []string{"--role"}, Value: true, Only: "add", Kind: "admin|operator|readonly"}}},
+	// 'scope block' parses each verb with scopeBlockSpecs; this is the whole of
+	// it for completion.
+	"block": scopeBlockCompletion,
 	"snmp": {MinArgs: 1, MaxArgs: -1, Args: []string{KindScopes, "show|version|community|v3-user|clients|contact|port|timeout|clear|test",
 		After("clients", "list|add|remove"), ""}, Flags: []Flag{
 		{Names: []string{"--reveal"}, Only: "show"}, {Names: []string{"--clear"}, Only: "contact"},
@@ -104,6 +107,7 @@ func scopeCmd(inv *invocation) *cobra.Command {
 		withRun(verb("breakglass <scope> {list|add <name> [--role admin|operator|readonly]|remove <name>}",
 			"Per-scope break-glass local users (names and roles; no credential is stored): the accounts a breakglass hold makes usable"), n(inv.scopeBreakGlass)),
 		withRun(verb(scopeSNMPUse, scopeSNMPShort), n(inv.scopeSNMP)),
+		withRun(verb(scopeBlockUse, scopeBlockShort), n(inv.scopeBlock)),
 	)
 	// No sub-command, help, -h, --help: the usage, exit 0; anything else:
 	// an error, the usage, exit 1.

@@ -155,6 +155,9 @@ type planRun struct {
 	// failed are the devices a --pull could not read, with the reason.
 	failed map[string]string
 	wrap   plan.Wrapper
+	// dry: the plan is made and nothing is kept (no back-out is saved or
+	// removed): 'block check --against' looks at what a text would plan.
+	dry bool
 }
 
 // header is the box and the "based on" facts of a device.
@@ -273,6 +276,9 @@ func (r *planRun) planOne(e devreg.Entry) planDevice {
 	// report and the cover.
 	if out.status.State == plan.StatusCannotPlan {
 		out.cannot = out.status.Reason
+	}
+	if r.dry {
+		return out
 	}
 	// The back-out (D111, point 3). A plan with changes keeps its back-out
 	// beside the record, stamped with the pull it was computed from: the

@@ -230,6 +230,9 @@ func (inv *invocation) configDeviceNote(vendor string, args []string, sink func(
 	// sysName the walkthrough uses (with --staging it also names the device
 	// whose move ends the staging).
 	var dev devices.SNMPInput
+	// blockDevice is the device whose own configuration blocks are laid over
+	// the scope's: a registered Junos device of this scope.
+	blockDevice := ""
 	if stagingName != "" {
 		_, res, err := inv.deviceLoad()
 		if err != nil {
@@ -239,6 +242,9 @@ func (inv *invocation) configDeviceNote(vendor string, args []string, sink func(
 		switch {
 		case ok && e.Source == devreg.SourceDevice && ownScopes.allows(e.Scope) && (e.Scope == "" || e.Scope == scope):
 			dev = deviceSNMPValues(e)
+			if e.Scope == scope && e.Vendor == "juniper" {
+				blockDevice = e.Name
+			}
 			// The device's configuration syntax (D113): the one resolution
 			// the comparison and the planner use. An explicit --legacy
 			// stays what it was, and a RADIUS configuration has one.
@@ -274,7 +280,7 @@ func (inv *invocation) configDeviceNote(vendor string, args []string, sink func(
 	req, d, err := inv.deviceRenderInput(renderParams{
 		Vendor: vendor, Scope: scope, Legacy: legacy, Protocol: protocol, Source: source,
 		Device: dev, AuthServer: authServer, AuthName: authName, SourceIP: sourceFlag,
-		Restricted: ownScopes.restricted,
+		Restricted: ownScopes.restricted, BlockDevice: blockDevice,
 	})
 	if err != nil {
 		return "", err

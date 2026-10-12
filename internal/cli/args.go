@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -23,8 +24,9 @@ type Flag struct {
 	// Repeat: the flag may be given more than once (each value is kept).
 	Repeat bool
 	// Only: completion offers the flag only after this positional word
-	// ('remove --all'). Alone: no positional is offered once the flag is on
-	// the line. Neither changes how the verb parses its arguments.
+	// ('remove --all'), or after one of several joined with '|' ('set|check
+	// --file'). Alone: no positional is offered once the flag is on the
+	// line. Neither changes how the verb parses its arguments.
 	Only  string
 	Alone bool
 	// Kind is what the value is, for completion: a _completion-names kind
@@ -61,6 +63,20 @@ const (
 // After is the kind of a positional that completion offers only when the
 // word is among the positionals typed before it ('set <ip> <vendor>').
 func After(word, kind string) string { return "@" + word + ":" + kind }
+
+// offeredAfter reports whether completion offers the flag, given the
+// positional words typed so far.
+func (f Flag) offeredAfter(words []string) bool {
+	if f.Only == "" {
+		return true
+	}
+	for _, w := range strings.Split(f.Only, "|") {
+		if slices.Contains(words, w) {
+			return true
+		}
+	}
+	return false
+}
 
 // Spec describes a verb's arguments.
 type Spec struct {

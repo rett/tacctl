@@ -274,7 +274,7 @@ func (inv *invocation) completeSpec(spec Spec, args []string, toComplete string)
 	if strings.HasPrefix(toComplete, "-") || (!inv.shellMode && kind != KindFile && pos >= spec.MinArgs) {
 		for i := range spec.Flags {
 			f := &spec.Flags[i]
-			if seen[f.Names[0]] || (f.Only != "" && !slices.Contains(words, f.Only)) {
+			if seen[f.Names[0]] || !f.offeredAfter(words) {
 				continue
 			}
 			for _, n := range f.Names {

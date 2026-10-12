@@ -99,6 +99,8 @@ var deviceSpecs = map[string]Spec{
 	// 'device snmp' (D72) parses each verb with deviceSNMPSpecs; this is
 	// the whole of it for completion.
 	"snmp": deviceSNMPCompletion,
+	// 'device block' parses each verb with deviceBlockSpecs.
+	"block": deviceBlockCompletion,
 	// 'device ssh' is 'tacctl ssh' (ssh.go); ssh-config is device_sshconfig.go.
 	"ssh":        sshSpec,
 	"ssh-config": {MaxArgs: 0},
@@ -136,6 +138,7 @@ var deviceVerbs = [][2]string{
 	{"export [--csv|--json]", "Print the registry (YAML by default)"},
 	{"hostkey <name> [show|accept [-y]|set SHA256:<fp>]", "Show the pinned ssh host keys, or re-pin them after a verified change"},
 	{deviceSNMPUse, "A device's own SNMP settings over its scope's: version, port, timeout, allowed clients and credentials, and where each comes from"},
+	{deviceBlockUse, "A device's own Junos snmp and system configuration blocks over its scope's: list, show, check, set, remove"},
 	{"ssh <name|address> [-p <port>] [-X|-Y] [-g] [-L|-R|-D <spec>]... [-- <ssh args>]", "Alias of 'tacctl ssh': a session to the device, as you"},
 	{"ssh-config", "Print an ssh_config Include for your devices (Host blocks, pinned keys)"},
 	{"scan [--full] [--since <dur>] [--backend <id>]", "Read the logs for the devices seen; re-scan pinned host keys"},
@@ -187,6 +190,12 @@ var deviceOptions = map[string][][2]string{
 		{"--csv", "Print CSV instead of YAML"},
 	},
 	"snmp": deviceSNMPOptions,
+	"block": {
+		{"--effective", "(block show) The block as rendered for the device, with the layer each object is from"},
+		{"--reveal", "(block show) Print the strings (an engineer: their own scopes' devices; logged)"},
+		{"--file <path>", "(block check, set) The text to look at, read as you"},
+		{"--against", "(block check) Plan the device with the text in force and print its section's statements"},
+	},
 	"ssh": {
 		{"-p <port>", "Connect to this port instead of the registered one"},
 		{"-X, -Y", "Forward X11 (untrusted, trusted) to this server's display"},
@@ -393,7 +402,7 @@ func (inv *invocation) device(args []string) error {
 		"list": inv.deviceList, "show": inv.deviceShow, "add": inv.deviceAdd, "remove": inv.deviceRemove,
 		"rename": inv.deviceRename, "legacy-ssh": inv.deviceLegacySSH, "config-syntax": inv.deviceConfigSyntax, "stale-days": inv.deviceStaleDays,
 		"notice": inv.deviceNotice, "notices": inv.deviceNotices, "import": inv.deviceImport, "export": inv.deviceExport,
-		"hostkey": inv.deviceHostkey, "snmp": inv.deviceSNMP, "ssh": inv.ssh, "ssh-config": inv.deviceSSHConfig, "config": inv.deviceConfig,
+		"hostkey": inv.deviceHostkey, "snmp": inv.deviceSNMP, "block": inv.deviceBlock, "ssh": inv.ssh, "ssh-config": inv.deviceSSHConfig, "config": inv.deviceConfig,
 		"scan": inv.deviceScan, "discover": inv.deviceDiscover, "check": inv.deviceCheck,
 		"address": inv.deviceSetter("address"), "hostname": inv.deviceSetter("hostname"), "vendor": inv.deviceSetter("vendor"),
 		"port": inv.deviceSetter("port"), "description": inv.deviceSetter("description"), "location": inv.deviceSetter("location"),

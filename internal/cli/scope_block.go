@@ -1,0 +1,218 @@
+package cli
+
+// 'scope block' (0.2.7, docs/plans/0.2.7-blocks-plan.md B4): a scope's
+// configuration blocks, the vendor syntax it owns beside its structured
+// settings. The engine is blocks_verbs.go; this file is the dispatcher, the
+// argument specs and the usage. The verbs that set or remove are the
+// superuser's, and so is every one that would change what a device is told;
+// an engineer reads the blocks of their own scopes (the tier gate sees
+// 'scope block' only, so the engineer's part is decided here, as 'scope
+// snmp' does), and every reveal is logged.
+
+import (
+	"errors"
+	"fmt"
+	"strings"
+
+	"github.com/rett/tacctl/internal/blocks"
+	"github.com/rett/tacctl/internal/ui"
+)
+
+func init() {
+	shellHelpBlocks["scope block"] = func(*invocation) string { return scopeBlockUsage("<scope>") }
+	shellHelpBlocks["device block"] = func(*invocation) string { return deviceBlockUsage("<name>") }
+}
+
+const scopeBlockUse = "block <scope> juniper {list|show|check|set|remove} [<block>] [options]"
+
+const scopeBlockShort = "A scope's Junos snmp and system configuration blocks: list, show, check, set, remove"
+
+var (
+	flagFile    = Flag{Names: []string{"--file"}, Value: true, Kind: KindFile}
+	blockSubs   = "list|show|check|set|remove"
+	blockSubSet = map[string]bool{"list": true, "show": true, "check": true, "set": true, "remove": true}
+)
+
+// scopeBlockSpecs are the arguments of each verb after the vendor.
+var scopeBlockSpecs = map[string]Spec{
+	"list":   {MaxArgs: 0},
+	"show":   {MinArgs: 1, MaxArgs: 1, Args: []string{blockWords}, Flags: []Flag{{Names: []string{"--reveal"}}}},
+	"check":  {MinArgs: 1, MaxArgs: 2, Args: []string{blockWords, ""}, Flags: []Flag{flagFile, {Names: []string{"--against"}, Value: true, Kind: KindDevices}}},
+	"set":    {MinArgs: 1, MaxArgs: 2, Args: []string{blockWords, ""}, Flags: []Flag{flagFile, flagYes}},
+	"remove": {MinArgs: 1, MaxArgs: 1, Args: []string{blockWords}, Flags: []Flag{flagYes}},
+}
+
+// scopeBlockCompletion is the Spec of the whole verb for completion (the
+// words after 'tacctl scope block').
+var scopeBlockCompletion = Spec{MinArgs: 1, MaxArgs: -1,
+	Args: []string{KindScopes, "juniper", blockSubs, blockWords, ""},
+	Flags: []Flag{{Names: []string{"--reveal"}, Only: "show"}, {Names: []string{"--file"}, Value: true, Only: "check|set", Kind: KindFile},
+		{Names: []string{"--against"}, Value: true, Only: "check", Kind: KindDevices},
+		{Names: []string{"-y", "--yes"}, Only: "set|remove"}}}
+
+// scopeBlockVerbs are the verbs ({Use, Short}), in usage order.
+var scopeBlockVerbs = [][2]string{
+	{"list", "The blocks of the scope: whether each is in force, its size and what it states, and the findings (a file tacctl.yaml does not name, a name with no file)"},
+	{"show <block> [--reveal]", "The block as it is in force, elided (marks for community strings, trap group names, NTP keys and the login message); --reveal prints it as stored"},
+	{"check <block> [--file <path>|-] [--against <device>]", "Lint the file in force, a file or standard input: every finding with its line, the objects that become owned, the statements that carry a secret and the diff against the file in force"},
+	{"set <block> (--file <path>|-) [-y]", "Check a file or standard input, show the diff, ask, take a snapshot and put the block in force"},
+	{"remove <block> [-y]", "Take the block out of force and delete its file (asks)"},
+}
+
+// scopeBlockOptions are the option lines under a verb's row.
+var scopeBlockOptions = map[string][][2]string{
+	"show": {
+		{"--reveal", "Print the strings (an engineer: their own scopes; logged)"},
+	},
+	"check": {
+		{"--file <path>", "(check, set) The text to look at: a regular file of at most 256 KiB, read as you"},
+		{"--against <device>", "Plan the device of this scope with this text in force and print the statements of its section (from its last pull; nothing is written and no device is reached)"},
+	},
+	"set": {
+		{"-y, --yes", "(set, remove) Answer yes to the question (a block read from standard input needs it)"},
+	},
+}
+
+// scopeBlockUsage is the usage of 'scope block'.
+func scopeBlockUsage(scope string) string {
+	var b strings.Builder
+	b.WriteString("\n" + ui.Bold + "tacctl scope block " + scope + " juniper" + ui.NC + " — configuration blocks of scope '" + scope + "'\n\nUsage: tacctl scope block " + scope + " juniper <subcommand>\n\n")
+	for _, v := range scopeBlockVerbs {
+		use, short := v[0], v[1]
+		if len(use) > 40 {
+			b.WriteString("  " + use + "\n  " + strings.Repeat(" ", 40) + "  " + short + "\n")
+		} else {
+			fmt.Fprintf(&b, "  %-40s  %s\n", use, short)
+		}
+		for _, o := range scopeBlockOptions[strings.Fields(use)[0]] {
+			fmt.Fprintf(&b, "      %-36s  %s\n", o[0], o[1])
+		}
+	}
+	b.WriteString(`
+A block is Junos 'set' statements and nothing else (a 'delete' line says "not
+managed on this device"), kept as a text file of its own; <block> is snmp or
+system. The snmp block's communities, client lists and trap groups are objects
+tacctl owns once the block is in force: 'device config plan' sets what a
+device lacks and removes the statements of those objects that the block does
+not state, and the device's other communities are kept. The system block is
+additive: its statements are set when missing and nothing the device holds is
+removed. The login message is a heredoc (set system login message <<'EOF' ...
+EOF). A block holds community strings, so 'show' elides them and only 'show
+--reveal' prints them. A block is in force only while tacctl.yaml names it
+(blocks.<scope>.juniper); the files are /etc/tacctl/blocks/<scope>/juniper/
+(0600) and are in every snapshot. Setting and removing are the superuser's; an
+engineer reads the blocks of their own scopes.
+
+Examples:
+  tacctl scope block ` + scope + ` juniper list
+  tacctl scope block ` + scope + ` juniper check snmp --file snmp.txt --against js1.lab.example.net
+  tacctl scope block ` + scope + ` juniper set snmp --file snmp.txt
+  tacctl scope block ` + scope + ` juniper show system
+
+`)
+	return b.String()
+}
+
+// scopeBlock dispatches 'scope block <scope> juniper <subcommand>'.
+func (inv *invocation) scopeBlock(args []string) error {
+	const usage = "Usage: tacctl scope " + scopeBlockUse
+	scope := arg(args, 0)
+	switch scope {
+	case "":
+		return inv.usageErr(usage)
+	case "-h", "--help", "help":
+		inv.write(scopeBlockUsage("<scope>"))
+		return nil
+	}
+	f := inv.callerScopes()
+	if f.restricted {
+		if err := inv.scopeNotFound(f, scope); err != nil {
+			return err
+		}
+	}
+	if err := inv.scopeRequire(scope); err != nil {
+		return err
+	}
+	vendor, sub := arg(args, 1), arg(args, 2)
+	switch vendor {
+	case "", "-h", "--help", "help":
+		inv.write(scopeBlockUsage(scope))
+		return nil
+	case blocks.VendorJuniper:
+	case blocks.VendorCisco:
+		return inv.usageErr("IOS blocks come in the release after: only Junos ('juniper') blocks exist in this release.")
+	default:
+		if blockSubSet[vendor] {
+			return inv.usageErr("The vendor comes before the verb: tacctl scope block "+scope+" juniper "+vendor+" ...", usage)
+		}
+		return inv.usageErr("Unknown vendor '"+vendor+"' for a block: juniper.", usage)
+	}
+	switch sub {
+	case "":
+		sub = "list"
+	case "-h", "--help", "help":
+		inv.write(scopeBlockUsage(scope))
+		return nil
+	}
+	spec, ok := scopeBlockSpecs[sub]
+	if !ok {
+		inv.app.Out.ErrorE("Unknown subcommand: '" + sub + "'")
+		inv.write(scopeBlockUsage(scope))
+		return exit(1)
+	}
+	var rest []string
+	if len(args) > 3 {
+		rest = args[3:]
+	}
+	p, err := Parse(spec, rest)
+	if err != nil {
+		return inv.scopeBlockUsageErr(scope, sub, err)
+	}
+	c := &blockCtx{inv: inv, level: blocks.ScopeLevel(scope), vendor: blocks.VendorJuniper, scope: scope, restricted: f.restricted}
+	return inv.blockRun(c, sub, p, "tacctl scope block "+scope+" juniper "+sub)
+}
+
+func (inv *invocation) scopeBlockUsageErr(scope, verbName string, err error) error {
+	var use string
+	for _, v := range scopeBlockVerbs {
+		if strings.Fields(v[0])[0] == verbName {
+			use = v[0]
+		}
+	}
+	msg := err.Error()
+	var uf *UnknownFlagError
+	if errors.As(err, &uf) {
+		msg = "Unknown option: '" + uf.Flag + "'"
+	}
+	return inv.usageErr(msg, "Usage: tacctl scope block "+scope+" juniper "+use)
+}
+
+// blockRun runs a verb that is the same at both levels once the level is
+// settled. Where edit and adopt are added, they are one case each.
+func (inv *invocation) blockRun(c *blockCtx, sub string, p Parsed, usage string) error {
+	if sub == "list" {
+		return c.list()
+	}
+	block := p.Args[0]
+	if err := inv.blockName(block); err != nil {
+		return err
+	}
+	switch sub {
+	case "show":
+		return c.show(block, p.Has("--reveal"), p.Has("--effective"))
+	case "check":
+		against := p.Value("--against")
+		if p.Has("--against") && c.isDevice() {
+			against = c.dev.Name
+		}
+		if p.Has("--against") && against == "" {
+			return inv.usageErr("--against takes the name of a device of the scope.", "Usage: "+usage+" "+block)
+		}
+		return c.check(block, p, against, usage+" "+block)
+	case "set":
+		return c.set(block, p, usage+" "+block)
+	case "remove":
+		return c.remove(block, p)
+	}
+	return inv.usageErr("Unknown subcommand: '" + sub + "'")
+}

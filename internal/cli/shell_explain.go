@@ -274,7 +274,7 @@ func (inv *invocation) shellExplain(root *cobra.Command) func([]string) (string,
 				name, _, _ := strings.Cut(w, "=")
 				return slices.Contains(f.Names, name)
 			})
-			if typed || (f.Only != "" && !slices.Contains(rest, f.Only)) {
+			if typed || !f.offeredAfter(rest) {
 				continue
 			}
 			value, desc := flagHelp(block, rows, f)

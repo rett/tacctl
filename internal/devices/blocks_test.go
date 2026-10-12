@@ -232,3 +232,65 @@ func TestCiscoIgnoresBlocks(t *testing.T) {
 		}
 	}
 }
+
+// A device's own block laid over the scope's: the comment above the block's
+// statements names the layers and the verb that shows the result, and the
+// refusal of a community that is the scope's own names the layer that holds
+// it and its place there.
+func TestBlockCommentAndRefusalNameTheDevicesLayer(t *testing.T) {
+	lab := managedProfiles()[0]
+	req, d := juniperInput(t, lab, variants[3], blockText)
+	comment := func(d Data) string {
+		t.Helper()
+		var buf strings.Builder
+		if err := Render(&buf, req, d); err != nil {
+			t.Fatal(err)
+		}
+		for _, l := range strings.Split(buf.String(), "\n") {
+			if strings.HasPrefix(l, "# The snmp block of ") {
+				return l
+			}
+		}
+		t.Fatalf("no comment in:\n%s", buf.String())
+		return ""
+	}
+	tail := ": its communities, trap groups and trap options."
+	if got, want := comment(d), "# The snmp block of scope 'lab' (tacctl scope block lab juniper show snmp)"+tail; got != want {
+		t.Errorf("scope only:\n%s\nwant\n%s", got, want)
+	}
+	d.Blocks.Device, d.Blocks.SNMPLayer = "js1.lab.example.net", LayerScopeDevice
+	if got, want := comment(d), "# The snmp block of scope 'lab' with the block of device 'js1.lab.example.net' over it (tacctl device block js1.lab.example.net show snmp --effective)"+tail; got != want {
+		t.Errorf("both:\n%s\nwant\n%s", got, want)
+	}
+	d.Blocks.SNMPLayer = LayerDevice
+	if got, want := comment(d), "# The snmp block of device 'js1.lab.example.net' (tacctl device block js1.lab.example.net show snmp)"+tail; got != want {
+		t.Errorf("device only:\n%s\nwant\n%s", got, want)
+	}
+
+	// the refusal: the device's layer holds the community, at its own place
+	text := "set snmp community other-example authorization read-only\nset snmp community other-example clients 192.0.2.50/32\n" +
+		"set snmp community " + lab.snmp.Community + " authorization read-only\nset snmp community " + lab.snmp.Community + " clients 192.0.2.60/32\n"
+	dev := parsedBlock(t, "set snmp community "+lab.snmp.Community+" authorization read-only\nset snmp community "+lab.snmp.Community+" clients 192.0.2.60/32\n")
+	scope := parsedBlock(t, blockText)
+	req, d = juniperInput(t, lab, variants[3], text)
+	d.Blocks = Blocks{Scope: lab.scope, Device: "js1.lab.example.net", SNMP: parsedBlock(t, text), ScopeSNMP: scope, DeviceSNMP: dev, SNMPLayer: LayerScopeDevice}
+	_, err := Managed(req, d)
+	if err == nil {
+		t.Fatal("Managed accepted it")
+	}
+	for _, want := range []string{"Community 1 of the SNMP block of device 'js1.lab.example.net'", "tacctl device block js1.lab.example.net edit snmp"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the error lacks %q: %v", want, err)
+		}
+	}
+	// the scope's layer holds it
+	d.Blocks.DeviceSNMP = parsedBlock(t, "set snmp community other-example authorization read-only\nset snmp community other-example clients 192.0.2.50/32\n")
+	d.Blocks.ScopeSNMP = parsedBlock(t, text)
+	_, err = Managed(req, d)
+	if err == nil || !strings.Contains(err.Error(), "Community 2 of the SNMP block of scope 'lab'") || !strings.Contains(err.Error(), "tacctl scope block lab juniper edit snmp") {
+		t.Errorf("scope layer: %v", err)
+	}
+	if err != nil && (strings.Contains(err.Error(), lab.snmp.Community) || strings.Contains(err.Error(), "other-example")) {
+		t.Errorf("the error holds a string: %v", err)
+	}
+}

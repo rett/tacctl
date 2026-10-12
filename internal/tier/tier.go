@@ -146,12 +146,15 @@ type Rule struct {
 // superuser's), the Linux hosts of their scopes to read ('host list',
 // 'host show'), and the secret, settings and SNMP settings of a scope of
 // their own to read ('scope secret', 'scope show', 'scope snmp'), and the
-// SNMP settings of a device of theirs ('device snmp'). The gate
+// SNMP settings of a device of theirs ('device snmp'), and the configuration
+// blocks of their own scopes and of the devices there to read ('scope block',
+// 'device block'). The gate
 // lets an engineer run those verbs; the verbs themselves keep the engineer
 // to the devices, hosts and secrets of their own scopes (callerScopes) and
 // refuse what would change anything global: 'scope secret' other than
 // 'show', 'scope staging' other than 'list', every setter, clear and test of
-// 'scope snmp' and of 'device snmp' (0.2.4), and 'device import' of a file.
+// 'scope snmp' and of 'device snmp' (0.2.4), 'set' and 'remove' of 'scope
+// block' and 'device block' (0.2.7), and 'device import' of a file.
 // Users, groups, scopes, the
 // secrets' changes, backends, backups, upgrades, rollbacks and the
 // deployment on Linux hosts (enroll, sync, move, target, provisioner,
@@ -256,6 +259,13 @@ var Rules = []Rule{
 	// plain reads, each reveal logged); the verbs that set or clear are the
 	// superuser's (the verb sees to that, as 'scope snmp' does).
 	{Tier: Engineer, Cmd: "device", Sub: "snmp", Sudoers: []string{"device snmp *"}},
+	// 'scope block' and 'device block' (0.2.7): the engineer reads the
+	// configuration blocks of their own scopes and of the devices there
+	// ('list', 'show' elided or --reveal, logged, 'check'); 'set' and
+	// 'remove' are the superuser's (the verbs see to that, as 'scope snmp'
+	// does).
+	{Tier: Engineer, Cmd: "scope", Sub: "block", Sudoers: []string{"scope block *"}},
+	{Tier: Engineer, Cmd: "device", Sub: "block", Sudoers: []string{"device block *"}},
 	{Tier: Engineer, Cmd: "scope", Sub: "show", Sudoers: []string{"scope show *"}},
 	// The break-glass holds (0.2.5, D125): an engineer reads the holds on
 	// the devices of their own scopes (the verb sees to that). 'hold' and
