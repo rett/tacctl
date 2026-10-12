@@ -105,7 +105,9 @@ func TestCiscoExtractReferenceTexts(t *testing.T) {
 	}{
 		{"ios/reference-lab", "ios", map[string]State{SectionAAA: StateDiffers, SectionRoles: StateOK, SectionMgmtACL: StateOK,
 			SectionSNMP: StateDiffers, SectionNetconf: StateNA, SectionBreakGlass: StateDiffers}},
-		{"ios/reference-12x", "ios", map[string]State{SectionAAA: StateOK, SectionRoles: StateOK, SectionMgmtACL: StateOK,
+		// aaa: the capture keeps the enable list of 0.2.5 on purpose (the
+		// removal case): the standard has none, so it is an extra
+		{"ios/reference-12x", "ios", map[string]State{SectionAAA: StateDiffers, SectionRoles: StateOK, SectionMgmtACL: StateOK,
 			SectionSNMP: StateOK, SectionNetconf: StateNA, SectionBreakGlass: StateOK}},
 		// roles: the device was pasted with the operator lines of 0.2.3
 		// (ping, traceroute, monitor capture and the clears); the rendering
@@ -115,8 +117,8 @@ func TestCiscoExtractReferenceTexts(t *testing.T) {
 		// aaa: the capture has no login statement on its console and VTY
 		// lines, IOS being silent about the default method list: they read
 		// as 'login authentication default'. It predates the standard block:
-		// the console is on the default list, not CONSOLE, and the CONSOLE and
-		// enable lists are missing (D107: the console is never implicit).
+		// the console is on the default list, not CONSOLE, and the CONSOLE list
+		// is missing (D107: the console is never implicit).
 		{"ios/real-12.4-7200", "ios", map[string]State{SectionAAA: StateDiffers, SectionRoles: StateDiffers, SectionMgmtACL: StateOK,
 			SectionSNMP: StateOK, SectionNetconf: StateNA, SectionBreakGlass: StateOK}},
 		{"ios-xe/reference-16", "ios", map[string]State{SectionAAA: StateDiffers, SectionRoles: StateOK, SectionMgmtACL: StateOK,

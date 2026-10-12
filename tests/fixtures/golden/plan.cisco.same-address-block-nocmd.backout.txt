@@ -21,7 +21,6 @@ no aaa authorization commands 1 default local group TACACS-GROUP
 line con 0
  login authentication default
 no aaa accounting commands 15 default start-stop group TACACS-GROUP
-no aaa authentication enable default group TACACS-GROUP enable
 no aaa authentication login CONSOLE local
 aaa group server tacacs+ TACACS-GROUP
  no server name TACACS

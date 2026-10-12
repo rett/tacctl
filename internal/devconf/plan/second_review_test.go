@@ -291,9 +291,11 @@ func TestStatusIsNeverConsistentWithFindings(t *testing.T) {
 	want := map[string]string{
 		"juniper.synthetic-lab-engineer": StatusLeftAlone,
 		// before the standard block the RADIUS device had only extras: the
-		// CONSOLE list, 'enable' and the session id are missing now, and fixed
+		// CONSOLE list and the session id are missing now, and fixed
 		"cisco.xe-reference-16": StatusNeedsChange,
-		"cisco.reference-12x":   StatusConsistent,
+		// the device carries the 0.2.5 enable list, which the standard has
+		// not: the paste removes it
+		"cisco.reference-12x":   StatusNeedsChange,
 		"juniper.synthetic-lab": StatusNeedsChange,
 	}
 	seen := 0

@@ -715,6 +715,10 @@ const (
 // none (Compare).
 const sessionIDCommon = "aaa session-id common"
 
+// enableLocalOnly is the enable list that only names the local secret, which
+// is what a device with no list does (Compare).
+const enableLocalOnly = "aaa authentication enable default enable"
+
 // isEnableList reports an 'aaa authentication enable default ...' statement.
 func isEnableList(x stmt) bool {
 	return len(x.path) == 1 && strings.HasPrefix(x.path[0], "aaa authentication enable default ")

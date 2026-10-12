@@ -725,9 +725,9 @@ iptables_setup() {
     assert_failure
 }
 
-# The standard Cisco block (0.2.5, D116-D120): the order, the console's list,
-# enable asking the server, the source interface and what an unset one is.
-@test "config cisco: the standard block, in order, with the CONSOLE list and enable asking the server" {
+# The standard Cisco block (0.2.5, D116-D120; 0.2.6 D127): the order, the
+# console's list, no enable list, the source interface and what an unset one is.
+@test "config cisco: the standard block, in order, with the CONSOLE list and no enable list" {
     run "$TACCTL_BIN_SCRIPT" config cisco --scope lab
     assert_success
     local want=(
@@ -737,7 +737,6 @@ iptables_setup() {
         "aaa authentication login default group TACACS-GROUP local"
         "aaa authentication login CONSOLE local"
         "aaa authorization exec default group TACACS-GROUP local if-authenticated"
-        "aaa authentication enable default group TACACS-GROUP enable"
         "aaa session-id common"
         "line con 0"
         "  login authentication CONSOLE"
@@ -756,9 +755,12 @@ iptables_setup() {
     assert_output --partial "! --- Step 0: hardening checklist and the local enable secret ---"
     assert_output --partial "!   enable algorithm-type scrypt secret <PASSWORD>"
     refute_line --regexp '^(hostname|no ip http|ip ssh|no enable|enable )'
+    # no enable list in any form: 'enable' is the local enable secret (D127)
+    refute_line --regexp '^aaa authentication enable'
     run "$TACCTL_BIN_SCRIPT" config cisco --scope lab --legacy
     assert_output --partial "!   enable secret <PASSWORD>"
     refute_output --partial "scrypt"
+    refute_line --regexp '^aaa authentication enable'
 }
 
 @test "config cisco source-interface: unset renders no line and names the command; set renders it once, config show lists it" {

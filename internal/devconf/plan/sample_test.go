@@ -196,9 +196,9 @@ func TestIOSOutputIsThePlansSample(t *testing.T) {
 		t.Errorf("the region is %q ... %q", body[0], body[len(body)-1])
 	}
 	// the unit in D118's order: aaa new-model, the server and the group,
-	// the login lists with exec authorization right after them, 'enable',
-	// the session id; the lines' login method after mgmt-acl; command
-	// authorization the last statements
+	// the login lists with exec authorization right after them, accounting,
+	// the session id (no enable list: the standard has none); the lines'
+	// login method after mgmt-acl; command authorization the last statements
 	idx := func(s string) int { return slices.Index(body, s) }
 	if g, m := idx("aaa group server tacacs+ LAB-TACACS"), idx("aaa new-model"); g < 0 || m != 1 || m > g {
 		t.Errorf("aaa new-model is not the first statement, before the group (group at %d, new-model at %d)", g, m)
@@ -207,8 +207,13 @@ func TestIOSOutputIsThePlansSample(t *testing.T) {
 	if a < 0 || body[a+1] != "aaa authentication login CONSOLE local" || !strings.HasPrefix(body[a+2], "aaa authorization exec ") {
 		t.Errorf("the login lists and authorization exec are not in a row")
 	}
-	if e := idx("aaa authentication enable default group LAB-TACACS enable"); e != a+3 {
-		t.Errorf("'enable' is not right after authorization exec (at %d, want %d)", e, a+3)
+	for _, s := range body {
+		if strings.HasPrefix(s, "aaa authentication enable") {
+			t.Errorf("the standard has no enable list: %q", s)
+		}
+	}
+	if e := idx("aaa accounting exec default start-stop group LAB-TACACS"); e != a+3 {
+		t.Errorf("accounting is not right after authorization exec (at %d, want %d)", e, a+3)
 	}
 	// D118 (12): the device is bare, so command authorization is not in the
 	// paste (the one group of lines left, said in the report); the lines'

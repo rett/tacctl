@@ -4,7 +4,7 @@
 ! 7200 emulator), IOS 15.6(2)T and IOS-XE 16.7.1; other trains are written from the references.
 ! THIS OUTPUT HOLDS THE TACACS+ KEY OF SCOPE lab: do not keep it in a file or a scrollback.
 !
-! What is irregular on dev-cisco-same-address-block (11 items; the paste fixes 8, leaves 3):
+! What is irregular on dev-cisco-same-address-block (10 items; the paste fixes 7, leaves 3):
 !  1. aaa      ACCESS     missing: tacacs server TACACS: 4 statements (e.g. tacacs server TACACS >
 !                         address ipv4 192.0.2.10). Fixed by region lines 11-14.
 !  2. aaa      ACCESS     missing: the server group TACACS-GROUP: server name TACACS (aaa group server
@@ -12,24 +12,21 @@
 !  3. aaa      ACCESS     missing: the console's own login list CONSOLE (local only, so a local user
 !                         always gets in there) (aaa authentication login CONSOLE local). Fixed by
 !                         region line 17.
-!  4. aaa      ACCESS     missing: the 'enable' list (it asks the server first, so nobody needs a
-!                         shared enable password) (aaa authentication enable default group
-!                         TACACS-GROUP enable). Fixed by region line 18.
-!  5. aaa      COSMETIC   missing: accounting of commands 15 (aaa accounting commands 15 default
-!                         start-stop group TACACS-GROUP). Fixed by region line 19.
-!  6. aaa      ACCESS     different: the login method of line con 0: login authentication CONSOLE (the
+!  4. aaa      COSMETIC   missing: accounting of commands 15 (aaa accounting commands 15 default
+!                         start-stop group TACACS-GROUP). Fixed by region line 18.
+!  5. aaa      ACCESS     different: the login method of line con 0: login authentication CONSOLE (the
 !                         device has: the login method of line con 0: login authentication default)
-!                         (line con 0 > login authentication CONSOLE). Fixed by region line 22.
-!  7. aaa      ACCESS     extra: the server group TACACS-GROUP: server name OLD-TACACS (aaa group
+!                         (line con 0 > login authentication CONSOLE). Fixed by region line 21.
+!  6. aaa      ACCESS     extra: the server group TACACS-GROUP: server name OLD-TACACS (aaa group
 !                         server tacacs+ TACACS-GROUP > server name OLD-TACACS). Fixed by region line
 !                         8.
-!  8. aaa      ACCESS     extra: tacacs server OLD-TACACS: 4 statements (e.g. tacacs server OLD-TACACS
+!  7. aaa      ACCESS     extra: tacacs server OLD-TACACS: 4 statements (e.g. tacacs server OLD-TACACS
 !                         > address ipv4 192.0.2.10). Fixed by region line 9.
-!  9. snmp     MONITORING extra: an SNMP community (snmp-server community <secret> RO TACCTL-SNMP).
+!  8. snmp     MONITORING extra: an SNMP community (snmp-server community <secret> RO TACCTL-SNMP).
 !                         Left alone (its name is the secret and is not known to tacctl).
-! 10. snmp     MONITORING extra: snmp-server enable traps config. Left alone. To remove it later: no
+!  9. snmp     MONITORING extra: snmp-server enable traps config. Left alone. To remove it later: no
 !                         snmp-server enable traps config
-! 11. snmp     MONITORING extra: snmp-server host 192.0.2.50 version 2c <secret>. Left alone (its name
+! 10. snmp     MONITORING extra: snmp-server host 192.0.2.50 version 2c <secret>. Left alone (its name
 !                         is the secret and is not known to tacctl).
 ! Consistent: roles, mgmt-acl. Not planned: netconf, breakglass.
 ! Secrets: 1 present on the device, not changed (--secrets pushes them).
@@ -69,7 +66,6 @@ tacacs server TACACS
 aaa group server tacacs+ TACACS-GROUP
  server name TACACS
 aaa authentication login CONSOLE local
-aaa authentication enable default group TACACS-GROUP enable
 aaa accounting commands 15 default start-stop group TACACS-GROUP
 ! aaa: the login method of the console and vty lines
 line con 0

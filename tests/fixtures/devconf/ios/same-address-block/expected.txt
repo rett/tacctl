@@ -16,7 +16,6 @@
 | aaa authentication login default local group TACACS-GROUP
 | aaa authentication login CONSOLE local
 | aaa authorization exec default local group TACACS-GROUP if-authenticated
-| aaa authentication enable default group TACACS-GROUP enable
 | aaa accounting exec default start-stop group TACACS-GROUP
 | aaa accounting commands 1 default start-stop group TACACS-GROUP
 | aaa accounting commands 5 default start-stop group TACACS-GROUP

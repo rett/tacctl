@@ -43,8 +43,8 @@
 ### Non-goals (0.2.5)
 
 - Cisco apply (D77: refused with the reason; the unknowns are listed in §5.3). IOS-XE over NETCONF stays conditional on `netconf-yang` (backlog §0).
-- WTI (0.2.6). Per-device source address (backlog §0b, parked): mentioned only where apply meets a configured one (D79: left alone).
-- Unattended or scheduled apply (0.2.7: a service account). Apply needs a person and their password, as the pull does.
+- WTI (0.2.7). Per-device source address (backlog §0b, parked): mentioned only where apply meets a configured one (D79: left alone).
+- Unattended or scheduled apply (0.2.8: a service account). Apply needs a person and their password, as the pull does.
 - Writing `breakglass`, the lo0 application of the filter, `system root-authentication`, `system services ssh`, `groups` or `apply-groups` (D79, D81): never, whatever flag is given. Of `netconf`, apply writes nothing; the one statement `set system services netconf ssh` is D93's verb and nothing else of the hierarchy (no `connection-limit`, no `rate-limit`, no port) is ever written.
 - Pruning foreign statements in a managed hierarchy (another server, another community, the operator's own classes): D79 keeps them; a `--prune` is a backlog idea, not designed.
 - Apply over the Junos command line (D77): NETCONF only; a Junos device without NETCONF is refused and told to run `device config enable-netconf` (D93).

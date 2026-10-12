@@ -10,11 +10,54 @@
     "age_s": 1080,
     "secrets_visible": true
   },
-  "status": "consistent",
-  "irregularities": [],
-  "region": [],
-  "after": [],
-  "backout": [],
+  "status": "needs-change",
+  "irregularities": [
+    {
+      "n": 1,
+      "kind": "extra",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "an 'enable' list that asks the server (anyone the server knows reaches level 15 with their own password; the standard has none)",
+      "statement": "aaa authentication enable default group LAB-TACACS enable",
+      "action": "Fixed by region line 3.",
+      "fixed": true,
+      "region_lines": [
+        3
+      ]
+    }
+  ],
+  "region": [
+    "configure terminal",
+    "! aaa: the enable list: the standard has none ('enable' is the local enable secret), so a list that asks the server is removed",
+    "no aaa authentication enable default group LAB-TACACS enable",
+    "end"
+  ],
+  "after": [
+    "!",
+    "! If any line printed \"% Invalid\" or \"% Error\", stop and undo it: tacctl device config plan",
+    "! dev-cisco-reference-12x --backout (its own region, to paste in the second terminal).",
+    "!",
+    "! Check now (nothing rolls this back by itself):",
+    "!   From the tacctl server:   tacctl device config pull dev-cisco-reference-12x --diff     (aaa: ok)",
+    "!   In the second terminal:   open a NEW ssh session to dev-cisco-reference-12x as yourself, then: terminal length 0, show privilege (must say 15)",
+    "! When both checks are fine, type this one command yourself:  write memory",
+    "!",
+    "! To undo: tacctl device config plan dev-cisco-reference-12x --backout (tacctl keeps this plan's",
+    "! back-out: after the check pull has replaced the picture, the command still prints this plan's,",
+    "! and says which pull it undoes, until the next plan with changes)",
+    "! Do not: 'write memory' before the check; paste outside the banners; paste into another device;",
+    "! paste on a console more than twenty lines at a time; keep this output in a file after the paste",
+    "! when it holds a secret.",
+    "! Locked out (the paste cut your session and no login works)? A superuser runs: tacctl breakglass hold dev-cisco-reference-12x --reason \"...\"",
+    "! then log in as the device's local account (console: local login, then 'enable' with the local secret),",
+    "! fix or back out, and the superuser runs: tacctl breakglass release dev-cisco-reference-12x"
+  ],
+  "backout": [
+    "configure terminal",
+    "! back-out: the lines as the pull showed them",
+    "aaa authentication enable default group LAB-TACACS enable",
+    "end"
+  ],
   "left": {
     "access": 0,
     "monitoring": 0,
@@ -23,6 +66,8 @@
   "extras": [],
   "skipped": [],
   "withheld": [],
-  "warnings": [],
+  "warnings": [
+    "the device has no enable secret: with the server unreachable, level 15 is reached only through the local user and 'aaa authorization exec'; set an enable secret first if you want a second way"
+  ],
   "holds_secret": false
 }

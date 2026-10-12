@@ -384,8 +384,7 @@ func vendorWayIn(vendor string) []string {
 		return []string{
 			"ssh: log in as a local account; the device waits for the server first (a few seconds), then takes the local",
 			"password, and the account lands at the level of its 'username ... privilege' line.",
-			"Console: log in as the local account (the CONSOLE list is local), then 'enable' with the local enable secret:",
-			"the server is silent, so 'enable' falls through to it.",
+			"Console: log in as the local account (the CONSOLE list is local), then 'enable' with the local enable secret.",
 			"Logins by your TACACS+ name fail on this device until you release it.",
 		}
 	case "juniper":
