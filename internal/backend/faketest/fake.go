@@ -11,6 +11,7 @@
 //	PhaseFail  an install phase that fails (FAKE_PHASE_FAIL)
 //	StartFails a start or restart leaves the service not active (FAKE_START=failed)
 //	StopFails  'service stop' fails (FAKE_STOP_FAIL)
+//	RestartFails 'service restart' fails (the service is left as it was)
 //	Check      what its RenderCheck returns (FAKE_CHECK; default current)
 //	Listen6    its auth listener is udp6 (FAKE_LISTEN6)
 //	Sights     the sightings its log holds (backend.Sighter), in order;
@@ -60,8 +61,11 @@ type Backend struct {
 	PhaseFail  backend.Phase
 	StartFails bool
 	StopFails  bool
-	Check      string
-	Listen6    bool
+	// RestartFails makes a restart fail, as a systemctl that exits non-zero
+	// does: a *backend.RestartError, nothing restarted.
+	RestartFails bool
+	Check        string
+	Listen6      bool
 	// LastLoginAt is what LastLogin returns ("" is "never").
 	LastLoginAt string
 	// Sights are the sightings its log holds, in log order; Sightings
@@ -325,6 +329,9 @@ func (b *Backend) Service(_ context.Context, action backend.ServiceAction, liste
 	}
 	switch action {
 	case backend.ServiceStart, backend.ServiceRestart, backend.ServiceReload:
+		if b.RestartFails && action != backend.ServiceStart {
+			return "", &backend.RestartError{Command: "sudo systemctl restart " + b.ID()}
+		}
 		b.up()
 	case backend.ServiceStop:
 		if b.StopFails {

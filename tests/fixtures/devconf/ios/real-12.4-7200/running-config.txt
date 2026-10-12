@@ -1,0 +1,137 @@
+# vendor: cisco
+# os: IOS 12.4(15)SW (7206VXR emulator, lab)
+# transport: ssh
+# command: show running-config
+# source: captured
+# note: sanitised (key EXAMPLEKEY, hash, documentation addresses); the lines of the managed sections were typed from the legacy template
+# captured: 2026-10-10
+# ---
+Building configuration...
+
+Current configuration : 2668 bytes
+!
+version 12.4
+service timestamps debug datetime msec
+service timestamps log datetime msec
+no service password-encryption
+!
+hostname R1
+!
+boot-start-marker
+boot-end-marker
+!
+!
+aaa new-model
+!
+!
+aaa group server tacacs+ LAB-TACACS
+ server 192.0.2.10
+!
+aaa authentication login default local group LAB-TACACS
+aaa authorization config-commands
+aaa authorization exec default local group LAB-TACACS if-authenticated 
+aaa authorization commands 1 default local group LAB-TACACS 
+aaa authorization commands 7 default local group LAB-TACACS 
+aaa authorization commands 15 default local group LAB-TACACS 
+aaa accounting exec default start-stop group LAB-TACACS
+aaa accounting commands 1 default start-stop group LAB-TACACS
+aaa accounting commands 5 default start-stop group LAB-TACACS
+aaa accounting commands 7 default start-stop group LAB-TACACS
+aaa accounting commands 15 default start-stop group LAB-TACACS
+!
+!
+aaa session-id common
+no ip icmp rate-limit unreachable
+!
+!
+ip cef
+no ip domain lookup
+!
+!
+multilink bundle-name authenticated
+!
+!
+!
+! 
+!
+username admin privilege 15 secret 5 $1$EXAMPLE$HASHHASHHASHHASHHASHH.
+archive
+ log config
+  hidekeys
+!
+!
+ip tcp synwait-time 5
+!
+!
+!
+interface FastEthernet0/0
+ ip address dhcp hostname R1
+ duplex half
+!
+!
+!
+!
+!
+!
+!
+!
+!
+no ip http server
+no ip http secure-server
+!
+!
+!
+ip access-list standard TACCTL-SNMP
+ permit 192.0.2.10
+ permit 198.51.100.0 0.0.0.255
+ remark everything else (0.0.0.0/0) is refused
+ deny   any
+ip access-list standard VTY-ACL
+ remark Managed by tacctl - edit with 'tacctl config mgmt-acl'
+ permit 192.0.2.10
+ permit 198.51.100.0 0.0.0.255
+ deny   any log
+logging history size 500
+logging alarm informational
+snmp-server community zz-lab-ro-community RO TACCTL-SNMP
+snmp-server queue-length 100
+snmp-server location Rack 4, DC1
+snmp-server contact NOC <noc@example.net>
+no cdp log mismatch duplex
+tacacs-server host 192.0.2.10 single-connection timeout 5 key EXAMPLEKEY
+!
+!
+control-plane
+!
+privilege exec level 7 monitor
+privilege exec all level 7 traceroute
+privilege exec all level 7 ping
+privilege exec level 7 undebug all
+privilege exec level 7 undebug
+privilege exec level 1 show running-config
+privilege exec level 1 show
+privilege exec level 7 clear ip arp
+privilege exec level 7 clear ip
+privilege exec level 7 clear arp-cache
+privilege exec level 7 clear line
+privilege exec level 7 clear counters
+privilege exec level 7 clear
+!
+line con 0
+ exec-timeout 0 0
+ privilege level 15
+ logging synchronous
+ stopbits 1
+line aux 0
+ exec-timeout 0 0
+ privilege level 15
+ logging synchronous
+ stopbits 1
+line vty 0 4
+ access-class VTY-ACL in
+line vty 5 15
+ access-class VTY-ACL in
+!
+!
+end
+

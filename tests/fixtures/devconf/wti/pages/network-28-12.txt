@@ -1,0 +1,18 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /N > 28 > 12
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+12
+
+DEBUG:
+
+1. Off
+2. On
+
+
+Enter: #<CR> to change,
+       <ESC> to return to previous menu ... 

@@ -1,0 +1,19 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /N > 29 > 7
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+7
+
+FALLBACK LOCAL:
+
+1. Off
+2. On (All failures)
+3. On (Transport failure)
+
+
+Enter: #<CR> to change,
+       <ESC> to return to previous menu ... 

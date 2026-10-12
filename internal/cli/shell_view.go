@@ -155,12 +155,17 @@ func familyTier(root *cobra.Command, path []string) tier.Tier {
 // tierNotes are the verbs whose sub-verbs the gate cannot tell apart (it
 // sees two words); the family's help says what the code decides.
 var tierNotes = map[string]string{
-	"scope staging": "scope staging: an engineer may run list for a scope of their own; the other verbs need the superuser tier.",
-	"scope secret":  "scope secret: an engineer may run show for a scope of their own; set and generate need the superuser tier.",
-	"scope snmp":    "scope snmp: an engineer may read the settings of a scope of their own (show [--reveal], version, port, timeout, contact, clients list); every setter, clear and test needs the superuser tier.",
-	"host show":     "host show: an engineer reads what tacctl recorded of a host; --check logs in to it and needs the superuser tier.",
-	"device import": "device import: an engineer imports from standard input only (device import -).",
-	"device config": "device config: a device's walkthrough carries its scope's secret, so an engineer gets the devices of their own scopes only.",
+	"scope staging":   "scope staging: an engineer may run list for a scope of their own; the other verbs need the superuser tier.",
+	"scope secret":    "scope secret: an engineer may run show for a scope of their own; set and generate need the superuser tier.",
+	"scope snmp":      "scope snmp: an engineer may read the settings of a scope of their own (show [--reveal], version, port, timeout, contact, clients list); every setter, clear and test needs the superuser tier.",
+	"device snmp":     "device snmp: an engineer may read the settings of a device of their own scope (show [--reveal], version, port, timeout, clients list); every setter and clear needs the superuser tier.",
+	"host show":       "host show: an engineer reads what tacctl recorded of a host; --check logs in to it and needs the superuser tier.",
+	"device list":     "device list: the CONFIG column (and config of --json) is the operator tier's; a read-only user's list has none.",
+	"device show":     "device show: the Configuration row (and config of --json) is the operator tier's; a read-only user's output has none.",
+	"device import":   "device import: an engineer imports from standard input only (device import -).",
+	"config cisco":    "config cisco: an engineer may print the walkthrough and read source-interface for a scope of their own; setting or unsetting source-interface needs the superuser tier.",
+	"breakglass list": "breakglass list: an engineer lists the holds of the devices of their own scopes only; hold and release need the superuser tier.",
+	"device config":   "device config: an operator may run list; show, pull, diff and plan need the engineer tier (a device's walkthrough carries its scope's secret, a plan can type it, and a pull logs in to the device as you), and an engineer gets the devices of their own scopes only; forget needs the superuser tier.",
 }
 
 // tierSection is the part of a family's help that names the tier each of

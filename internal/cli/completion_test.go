@@ -136,7 +136,7 @@ func TestCompleteScenarios(t *testing.T) {
 		{[]string{"uninstall", ""}, []string{"-y", "--yes"}},
 		{[]string{"version", ""}, []string{"--long"}},
 		{[]string{"shell", "-c", "sta"}, []string{"status"}},
-		{[]string{"shell", "-c", "status", ""}, []string{"--no-history", "--idle", "--space-completion"}},
+		{[]string{"shell", "-c", "status", ""}, []string{"--no-history", "--idle", "--space-completion", "--password-cache"}},
 	}
 	for _, c := range cases {
 		got, _ := completeWords(t, liveNames, c.words...)
@@ -154,6 +154,7 @@ func TestCompleteDescribesFlags(t *testing.T) {
 			"--no-history\tKeep no history file for this session",
 			"--idle\t<min>: End the session after this many idle minutes at the prompt",
 			"--space-completion\ton|off: A typed space completes a fixed word and never doubles (default on)",
+			"--password-cache\tKeep your network password in this shell's memory (when your tier's policy allows)",
 			"-c\t<line>: Run one line and exit",
 		},
 		"backend enable ": {"tacacs", "radius"},

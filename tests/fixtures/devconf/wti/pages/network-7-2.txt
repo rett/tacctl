@@ -1,0 +1,21 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /N > 7 > 2
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+2
+
+DDNS SERVICES: [eth0] IPv4
+
+1.  Services                     None
+2.  Host Name                    (undefined)
+3.  Username                     (undefined)
+4.  Password                     (undefined)
+5.  Max update times             Every 1 Hour
+
+
+Enter: #<CR> to change,
+       <ESC> to return to previous menu ... 

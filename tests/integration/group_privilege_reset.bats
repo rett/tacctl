@@ -45,7 +45,7 @@ on_tty() {
 
 @test "group privilege reset --dry-run: prints the diff and the device lines, writes nothing" {
     "$TACCTL_BIN_SCRIPT" group privilege add operator 'show version,configure: router bgp' > /dev/null
-    "$TACCTL_BIN_SCRIPT" group privilege remove operator 'clear counters' > /dev/null
+    "$TACCTL_BIN_SCRIPT" group privilege remove operator 'undebug all' > /dev/null
     cp "$STORE" "$BATS_TEST_TMPDIR/store.before"
     cp "$YAML" "$BATS_TEST_TMPDIR/yaml.before"
     : > "$CALLS_LOG"
@@ -54,7 +54,7 @@ on_tty() {
     assert_output --partial "Reset of the privileges of group 'operator' to the shipped default"
     assert_output --partial "    - show version"
     assert_output --partial "    - configure: router bgp"
-    assert_output --partial "    + clear counters"
+    assert_output --partial "    + undebug all"
     assert_output --partial "warning: devices keep the old 'privilege exec level 7 ...' lines until you re-paste tacctl config cisco and remove them (no privilege exec level 7 ...):"
     assert_output --partial "      no privilege exec level 7 show version"
     assert_output --partial "      no privilege configure level 7 router bgp"

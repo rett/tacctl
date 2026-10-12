@@ -1,0 +1,18 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /N > 33
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+33
+
+OUTBOUND OPTIONS: [Shared]
+
+1. Outbound Access       - Off
+2. Outbound Secure Level - Serial Only
+
+
+Enter: #<CR> to change,
+       <ESC> to return to previous menu ... 

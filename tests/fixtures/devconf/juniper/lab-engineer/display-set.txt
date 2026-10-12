@@ -1,0 +1,563 @@
+set version 25.4R1-S2.3
+set system host-name example-switch
+set system root-authentication encrypted-password /* SECRET-DATA */
+set system login idle-timeout 60
+set system login class EN-CLASS permissions clear
+set system login class EN-CLASS permissions configure
+set system login class EN-CLASS permissions firewall
+set system login class EN-CLASS permissions firewall-control
+set system login class EN-CLASS permissions interface
+set system login class EN-CLASS permissions interface-control
+set system login class EN-CLASS permissions network
+set system login class EN-CLASS permissions reset
+set system login class EN-CLASS permissions rollback
+set system login class EN-CLASS permissions routing
+set system login class EN-CLASS permissions routing-control
+set system login class EN-CLASS permissions snmp
+set system login class EN-CLASS permissions system
+set system login class EN-CLASS permissions system-control
+set system login class EN-CLASS permissions trace
+set system login class EN-CLASS permissions view
+set system login class EN-CLASS permissions view-configuration
+set system login class OP-CLASS permissions clear
+set system login class OP-CLASS permissions network
+set system login class OP-CLASS permissions trace
+set system login class OP-CLASS permissions view
+set system login class OP-CLASS permissions view-configuration
+set system login class RO-CLASS permissions network
+set system login class RO-CLASS permissions view
+set system login class RO-CLASS permissions view-configuration
+set system login class RW-CLASS permissions all
+set system login user EN-CLASS uid 2003
+set system login user EN-CLASS class EN-CLASS
+set system login user OP-CLASS uid 2002
+set system login user OP-CLASS class OP-CLASS
+set system login user RO-CLASS uid 2001
+set system login user RO-CLASS class RO-CLASS
+set system login user RW-CLASS uid 2000
+set system login user RW-CLASS class RW-CLASS
+set system login user exampleadmin uid 1024
+set system login user exampleadmin class RW-CLASS
+set system login user exampleadmin authentication encrypted-password /* SECRET-DATA */
+set system login user exampleadmin authentication ssh-ed25519 /* SECRET-DATA */
+set system services netconf ssh
+set system services ssh root-login allow
+set system services ssh protocol-version v2
+set system services ssh sftp-server
+set system services web-management https pki-local-certificate juniper
+set system auto-snapshot
+set system domain-name example.net
+set system domain-search example.net
+set system time-zone UTC
+set system authentication-order password
+set system authentication-order tacplus
+set system ports console log-out-on-disconnect
+set system ports auxiliary type ansi
+set system name-server 198.18.0.1
+set system tacplus-server 198.18.0.24 single-connection
+set system accounting events login
+set system accounting events change-log
+set system accounting events interactive-commands
+set system accounting destination tacplus
+set system syslog archive size 100k
+set system syslog archive files 3
+set system syslog user * any emergency
+set system syslog file auth.log authorization any
+set system syslog file auth.log archive size 1m
+set system syslog file auth.log archive files 1
+set system syslog file cron.log cron any
+set system syslog file cron.log archive size 1m
+set system syslog file cron.log archive files 1
+set system syslog file daemon.log daemon info
+set system syslog file daemon.log archive size 1m
+set system syslog file daemon.log archive files 1
+set system syslog file firewall.log firewall any
+set system syslog file firewall.log archive size 5m
+set system syslog file firewall.log archive files 3
+set system syslog file interactive-commands interactive-commands error
+set system syslog file interfaces.log any info
+set system syslog file interfaces.log match .*SNMP_TRAP_LINK.*
+set system syslog file interfaces.log archive size 1m
+set system syslog file interfaces.log archive files 3
+set system syslog file messages any critical
+set system syslog file messages authorization info
+set system syslog file messages.log any notice
+set system syslog file messages.log match "!(.*vlan MAC filter:.*)"
+set system syslog file messages.log archive size 5m
+set system syslog file messages.log archive files 3
+set system syslog file misc.log kernel info
+set system syslog file misc.log lpr info
+set system syslog file misc.log news info
+set system syslog file misc.log user info
+set system syslog file misc.log uucp info
+set system syslog file misc.log archive size 1m
+set system syslog file misc.log archive files 1
+set system syslog file security.log authorization info
+set system syslog file security.log interactive-commands info
+set system syslog file security.log match ".*UI_COMMIT.*|.*UI_CMDLINE_READ_LINE.*|.*UI_LOAD_EVENT.*|.*password.*"
+set system syslog file security.log archive size 5m
+set system syslog file security.log archive files 3
+set system syslog file syslog.log syslog info
+set system syslog file syslog.log archive size 1m
+set system syslog file syslog.log archive files 1
+set system ntp server 198.18.0.1 prefer
+set system ntp server 198.18.0.10
+set chassis aggregated-devices ethernet device-count 5
+set chassis alarm management-ethernet link-down ignore
+set interfaces ge-0/0/0 description "example description"
+set interfaces ge-0/0/0 mtu 9216
+set interfaces ge-0/0/0 unit 0 family ethernet-switching interface-mode access
+set interfaces ge-0/0/0 unit 0 family ethernet-switching vlan members default
+set interfaces ge-0/0/1 description "example description"
+set interfaces ge-0/0/1 mtu 9216
+set interfaces ge-0/0/1 unit 0 family ethernet-switching interface-mode access
+set interfaces ge-0/0/1 unit 0 family ethernet-switching vlan members default
+set interfaces ge-0/0/2 description "example description"
+set interfaces ge-0/0/2 mtu 9216
+set interfaces ge-0/0/2 unit 0 family ethernet-switching interface-mode access
+set interfaces ge-0/0/2 unit 0 family ethernet-switching vlan members VLAN10
+set interfaces ge-0/0/3 description "example description"
+set interfaces ge-0/0/3 mtu 9216
+set interfaces ge-0/0/3 unit 0 family ethernet-switching interface-mode access
+set interfaces ge-0/0/3 unit 0 family ethernet-switching vlan members VLAN10
+set interfaces ge-0/0/4 description "example description"
+set interfaces ge-0/0/4 vlan-tagging
+set interfaces ge-0/0/4 native-vlan-id 1
+set interfaces ge-0/0/4 mtu 9216
+set interfaces ge-0/0/4 unit 0 family ethernet-switching interface-mode trunk
+set interfaces ge-0/0/4 unit 0 family ethernet-switching vlan members default
+set interfaces ge-0/0/4 unit 0 family ethernet-switching vlan members VLAN101
+set interfaces ge-0/0/4 unit 0 family ethernet-switching vlan members VLAN102
+set interfaces ge-0/0/4 unit 0 family ethernet-switching vlan members VLAN103
+set interfaces ge-0/0/4 unit 0 family ethernet-switching vlan members VLAN104
+set interfaces ge-0/0/4 unit 0 family ethernet-switching vlan members VLAN105
+set interfaces ge-0/0/5 description "example description"
+set interfaces ge-0/0/5 vlan-tagging
+set interfaces ge-0/0/5 native-vlan-id 1
+set interfaces ge-0/0/5 mtu 9216
+set interfaces ge-0/0/5 unit 0 family ethernet-switching interface-mode trunk
+set interfaces ge-0/0/5 unit 0 family ethernet-switching vlan members default
+set interfaces ge-0/0/5 unit 0 family ethernet-switching vlan members VLAN101
+set interfaces ge-0/0/5 unit 0 family ethernet-switching vlan members VLAN102
+set interfaces ge-0/0/5 unit 0 family ethernet-switching vlan members VLAN103
+set interfaces ge-0/0/5 unit 0 family ethernet-switching vlan members VLAN104
+set interfaces ge-0/0/5 unit 0 family ethernet-switching vlan members VLAN105
+set interfaces ge-0/0/6 description "example description"
+set interfaces ge-0/0/6 vlan-tagging
+set interfaces ge-0/0/6 native-vlan-id 1
+set interfaces ge-0/0/6 mtu 9216
+set interfaces ge-0/0/6 unit 0 family ethernet-switching interface-mode trunk
+set interfaces ge-0/0/6 unit 0 family ethernet-switching vlan members default
+set interfaces ge-0/0/6 unit 0 family ethernet-switching vlan members VLAN101
+set interfaces ge-0/0/6 unit 0 family ethernet-switching vlan members VLAN102
+set interfaces ge-0/0/6 unit 0 family ethernet-switching vlan members VLAN103
+set interfaces ge-0/0/6 unit 0 family ethernet-switching vlan members VLAN104
+set interfaces ge-0/0/6 unit 0 family ethernet-switching vlan members VLAN105
+set interfaces ge-0/0/7 description "example description"
+set interfaces ge-0/0/7 vlan-tagging
+set interfaces ge-0/0/7 native-vlan-id 1
+set interfaces ge-0/0/7 mtu 9216
+set interfaces ge-0/0/7 unit 0 family ethernet-switching interface-mode trunk
+set interfaces ge-0/0/7 unit 0 family ethernet-switching vlan members default
+set interfaces ge-0/0/7 unit 0 family ethernet-switching vlan members VLAN101
+set interfaces ge-0/0/7 unit 0 family ethernet-switching vlan members VLAN102
+set interfaces ge-0/0/7 unit 0 family ethernet-switching vlan members VLAN103
+set interfaces ge-0/0/7 unit 0 family ethernet-switching vlan members VLAN104
+set interfaces ge-0/0/7 unit 0 family ethernet-switching vlan members VLAN105
+set interfaces ge-0/0/8 description "example description"
+set interfaces ge-0/0/8 vlan-tagging
+set interfaces ge-0/0/8 native-vlan-id 1
+set interfaces ge-0/0/8 mtu 9216
+set interfaces ge-0/0/8 unit 0 family ethernet-switching interface-mode trunk
+set interfaces ge-0/0/8 unit 0 family ethernet-switching vlan members default
+set interfaces ge-0/0/8 unit 0 family ethernet-switching vlan members VLAN101
+set interfaces ge-0/0/8 unit 0 family ethernet-switching vlan members VLAN102
+set interfaces ge-0/0/8 unit 0 family ethernet-switching vlan members VLAN103
+set interfaces ge-0/0/8 unit 0 family ethernet-switching vlan members VLAN104
+set interfaces ge-0/0/8 unit 0 family ethernet-switching vlan members VLAN105
+set interfaces ge-0/0/9 description "example description"
+set interfaces ge-0/0/9 vlan-tagging
+set interfaces ge-0/0/9 native-vlan-id 1
+set interfaces ge-0/0/9 mtu 9216
+set interfaces ge-0/0/9 unit 0 family ethernet-switching interface-mode trunk
+set interfaces ge-0/0/9 unit 0 family ethernet-switching vlan members default
+set interfaces ge-0/0/9 unit 0 family ethernet-switching vlan members VLAN101
+set interfaces ge-0/0/9 unit 0 family ethernet-switching vlan members VLAN102
+set interfaces ge-0/0/9 unit 0 family ethernet-switching vlan members VLAN103
+set interfaces ge-0/0/9 unit 0 family ethernet-switching vlan members VLAN104
+set interfaces ge-0/0/9 unit 0 family ethernet-switching vlan members VLAN105
+set interfaces ge-0/0/10 description "example description"
+set interfaces ge-0/0/10 vlan-tagging
+set interfaces ge-0/0/10 native-vlan-id 1
+set interfaces ge-0/0/10 mtu 9216
+set interfaces ge-0/0/10 unit 0 family ethernet-switching interface-mode trunk
+set interfaces ge-0/0/10 unit 0 family ethernet-switching vlan members default
+set interfaces ge-0/0/10 unit 0 family ethernet-switching vlan members VLAN101
+set interfaces ge-0/0/10 unit 0 family ethernet-switching vlan members VLAN102
+set interfaces ge-0/0/10 unit 0 family ethernet-switching vlan members VLAN103
+set interfaces ge-0/0/10 unit 0 family ethernet-switching vlan members VLAN104
+set interfaces ge-0/0/10 unit 0 family ethernet-switching vlan members VLAN105
+set interfaces ge-0/0/11 description "example description"
+set interfaces ge-0/0/11 vlan-tagging
+set interfaces ge-0/0/11 native-vlan-id 1
+set interfaces ge-0/0/11 mtu 9216
+set interfaces ge-0/0/11 unit 0 family ethernet-switching interface-mode trunk
+set interfaces ge-0/0/11 unit 0 family ethernet-switching vlan members default
+set interfaces ge-0/0/11 unit 0 family ethernet-switching vlan members VLAN101
+set interfaces ge-0/0/11 unit 0 family ethernet-switching vlan members VLAN102
+set interfaces ge-0/0/11 unit 0 family ethernet-switching vlan members VLAN103
+set interfaces ge-0/0/11 unit 0 family ethernet-switching vlan members VLAN104
+set interfaces ge-0/0/11 unit 0 family ethernet-switching vlan members VLAN105
+set interfaces ge-0/0/12 gigether-options 802.3ad ae0
+set interfaces ge-0/0/13 gigether-options 802.3ad ae0
+set interfaces ge-0/0/14 gigether-options 802.3ad ae0
+set interfaces ge-0/0/15 gigether-options 802.3ad ae0
+set interfaces ge-0/0/16 gigether-options 802.3ad ae1
+set interfaces ge-0/0/17 gigether-options 802.3ad ae1
+set interfaces ge-0/0/18 gigether-options 802.3ad ae2
+set interfaces ge-0/0/19 gigether-options 802.3ad ae2
+set interfaces ge-0/0/20 gigether-options 802.3ad ae3
+set interfaces ge-0/0/21 gigether-options 802.3ad ae3
+set interfaces ge-0/0/22 gigether-options 802.3ad ae4
+set interfaces ge-0/0/23 gigether-options 802.3ad ae4
+set interfaces mge-0/0/24 description "example description"
+set interfaces mge-0/0/24 disable
+set interfaces mge-0/0/25 description "example description"
+set interfaces mge-0/0/25 disable
+set interfaces mge-0/0/26 description "example description"
+set interfaces mge-0/0/26 vlan-tagging
+set interfaces mge-0/0/26 native-vlan-id 1
+set interfaces mge-0/0/26 mtu 9216
+set interfaces mge-0/0/26 unit 0 family ethernet-switching interface-mode trunk
+set interfaces mge-0/0/26 unit 0 family ethernet-switching vlan members default
+set interfaces mge-0/0/26 unit 0 family ethernet-switching vlan members VLAN10
+set interfaces mge-0/0/26 unit 0 family ethernet-switching vlan members VLAN20
+set interfaces mge-0/0/26 unit 0 family ethernet-switching vlan members VLAN101
+set interfaces mge-0/0/26 unit 0 family ethernet-switching vlan members VLAN102
+set interfaces mge-0/0/26 unit 0 family ethernet-switching vlan members VLAN103
+set interfaces mge-0/0/26 unit 0 family ethernet-switching vlan members VLAN104
+set interfaces mge-0/0/26 unit 0 family ethernet-switching vlan members VLAN105
+set interfaces mge-0/0/27 description "example description"
+set interfaces mge-0/0/27 vlan-tagging
+set interfaces mge-0/0/27 native-vlan-id 1
+set interfaces mge-0/0/27 mtu 9216
+set interfaces mge-0/0/27 unit 0 family ethernet-switching interface-mode trunk
+set interfaces mge-0/0/27 unit 0 family ethernet-switching vlan members default
+set interfaces mge-0/0/27 unit 0 family ethernet-switching vlan members VLAN10
+set interfaces mge-0/0/27 unit 0 family ethernet-switching vlan members VLAN20
+set interfaces mge-0/0/27 unit 0 family ethernet-switching vlan members VLAN101
+set interfaces mge-0/0/27 unit 0 family ethernet-switching vlan members VLAN102
+set interfaces mge-0/0/27 unit 0 family ethernet-switching vlan members VLAN103
+set interfaces mge-0/0/27 unit 0 family ethernet-switching vlan members VLAN104
+set interfaces mge-0/0/27 unit 0 family ethernet-switching vlan members VLAN105
+set interfaces mge-0/0/28 description "example description"
+set interfaces mge-0/0/28 vlan-tagging
+set interfaces mge-0/0/28 native-vlan-id 1
+set interfaces mge-0/0/28 mtu 9216
+set interfaces mge-0/0/28 unit 0 family ethernet-switching interface-mode trunk
+set interfaces mge-0/0/28 unit 0 family ethernet-switching vlan members default
+set interfaces mge-0/0/28 unit 0 family ethernet-switching vlan members VLAN10
+set interfaces mge-0/0/28 unit 0 family ethernet-switching vlan members VLAN20
+set interfaces mge-0/0/28 unit 0 family ethernet-switching vlan members VLAN101
+set interfaces mge-0/0/28 unit 0 family ethernet-switching vlan members VLAN102
+set interfaces mge-0/0/28 unit 0 family ethernet-switching vlan members VLAN103
+set interfaces mge-0/0/28 unit 0 family ethernet-switching vlan members VLAN104
+set interfaces mge-0/0/28 unit 0 family ethernet-switching vlan members VLAN105
+set interfaces mge-0/0/29 description "example description"
+set interfaces mge-0/0/29 vlan-tagging
+set interfaces mge-0/0/29 native-vlan-id 1
+set interfaces mge-0/0/29 mtu 9216
+set interfaces mge-0/0/29 unit 0 family ethernet-switching interface-mode trunk
+set interfaces mge-0/0/29 unit 0 family ethernet-switching vlan members default
+set interfaces mge-0/0/29 unit 0 family ethernet-switching vlan members VLAN10
+set interfaces mge-0/0/29 unit 0 family ethernet-switching vlan members VLAN20
+set interfaces mge-0/0/29 unit 0 family ethernet-switching vlan members VLAN101
+set interfaces mge-0/0/29 unit 0 family ethernet-switching vlan members VLAN102
+set interfaces mge-0/0/29 unit 0 family ethernet-switching vlan members VLAN103
+set interfaces mge-0/0/29 unit 0 family ethernet-switching vlan members VLAN104
+set interfaces mge-0/0/29 unit 0 family ethernet-switching vlan members VLAN105
+set interfaces mge-0/0/30 description "example description"
+set interfaces mge-0/0/30 vlan-tagging
+set interfaces mge-0/0/30 native-vlan-id 1
+set interfaces mge-0/0/30 mtu 9216
+set interfaces mge-0/0/30 unit 0 family ethernet-switching interface-mode trunk
+set interfaces mge-0/0/30 unit 0 family ethernet-switching vlan members default
+set interfaces mge-0/0/30 unit 0 family ethernet-switching vlan members VLAN10
+set interfaces mge-0/0/30 unit 0 family ethernet-switching vlan members VLAN20
+set interfaces mge-0/0/30 unit 0 family ethernet-switching vlan members VLAN101
+set interfaces mge-0/0/30 unit 0 family ethernet-switching vlan members VLAN102
+set interfaces mge-0/0/30 unit 0 family ethernet-switching vlan members VLAN103
+set interfaces mge-0/0/30 unit 0 family ethernet-switching vlan members VLAN104
+set interfaces mge-0/0/30 unit 0 family ethernet-switching vlan members VLAN105
+set interfaces mge-0/0/31 description "example description"
+set interfaces mge-0/0/31 vlan-tagging
+set interfaces mge-0/0/31 native-vlan-id 1
+set interfaces mge-0/0/31 mtu 9216
+set interfaces mge-0/0/31 unit 0 family ethernet-switching interface-mode trunk
+set interfaces mge-0/0/31 unit 0 family ethernet-switching vlan members default
+set interfaces mge-0/0/31 unit 0 family ethernet-switching vlan members VLAN10
+set interfaces mge-0/0/31 unit 0 family ethernet-switching vlan members VLAN20
+set interfaces mge-0/0/31 unit 0 family ethernet-switching vlan members VLAN101
+set interfaces mge-0/0/31 unit 0 family ethernet-switching vlan members VLAN102
+set interfaces mge-0/0/31 unit 0 family ethernet-switching vlan members VLAN103
+set interfaces mge-0/0/31 unit 0 family ethernet-switching vlan members VLAN104
+set interfaces mge-0/0/31 unit 0 family ethernet-switching vlan members VLAN105
+set interfaces mge-0/0/32 description "example description"
+set interfaces mge-0/0/32 vlan-tagging
+set interfaces mge-0/0/32 native-vlan-id 1
+set interfaces mge-0/0/32 mtu 9216
+set interfaces mge-0/0/32 unit 0 family ethernet-switching interface-mode trunk
+set interfaces mge-0/0/32 unit 0 family ethernet-switching vlan members default
+set interfaces mge-0/0/32 unit 0 family ethernet-switching vlan members VLAN10
+set interfaces mge-0/0/32 unit 0 family ethernet-switching vlan members VLAN20
+set interfaces mge-0/0/32 unit 0 family ethernet-switching vlan members VLAN101
+set interfaces mge-0/0/32 unit 0 family ethernet-switching vlan members VLAN102
+set interfaces mge-0/0/32 unit 0 family ethernet-switching vlan members VLAN103
+set interfaces mge-0/0/32 unit 0 family ethernet-switching vlan members VLAN104
+set interfaces mge-0/0/32 unit 0 family ethernet-switching vlan members VLAN105
+set interfaces mge-0/0/33 description "example description"
+set interfaces mge-0/0/33 vlan-tagging
+set interfaces mge-0/0/33 native-vlan-id 1
+set interfaces mge-0/0/33 mtu 9216
+set interfaces mge-0/0/33 unit 0 family ethernet-switching interface-mode trunk
+set interfaces mge-0/0/33 unit 0 family ethernet-switching vlan members default
+set interfaces mge-0/0/33 unit 0 family ethernet-switching vlan members VLAN10
+set interfaces mge-0/0/33 unit 0 family ethernet-switching vlan members VLAN20
+set interfaces mge-0/0/33 unit 0 family ethernet-switching vlan members VLAN101
+set interfaces mge-0/0/33 unit 0 family ethernet-switching vlan members VLAN102
+set interfaces mge-0/0/33 unit 0 family ethernet-switching vlan members VLAN103
+set interfaces mge-0/0/33 unit 0 family ethernet-switching vlan members VLAN104
+set interfaces mge-0/0/33 unit 0 family ethernet-switching vlan members VLAN105
+set interfaces mge-0/0/34 description "example description"
+set interfaces mge-0/0/34 vlan-tagging
+set interfaces mge-0/0/34 native-vlan-id 1
+set interfaces mge-0/0/34 mtu 9216
+set interfaces mge-0/0/34 unit 0 family ethernet-switching interface-mode trunk
+set interfaces mge-0/0/34 unit 0 family ethernet-switching vlan members default
+set interfaces mge-0/0/34 unit 0 family ethernet-switching vlan members VLAN10
+set interfaces mge-0/0/34 unit 0 family ethernet-switching vlan members VLAN20
+set interfaces mge-0/0/34 unit 0 family ethernet-switching vlan members VLAN101
+set interfaces mge-0/0/34 unit 0 family ethernet-switching vlan members VLAN102
+set interfaces mge-0/0/34 unit 0 family ethernet-switching vlan members VLAN103
+set interfaces mge-0/0/34 unit 0 family ethernet-switching vlan members VLAN104
+set interfaces mge-0/0/34 unit 0 family ethernet-switching vlan members VLAN105
+set interfaces mge-0/0/35 description "example description"
+set interfaces mge-0/0/35 vlan-tagging
+set interfaces mge-0/0/35 native-vlan-id 1
+set interfaces mge-0/0/35 mtu 9216
+set interfaces mge-0/0/35 unit 0 family ethernet-switching interface-mode trunk
+set interfaces mge-0/0/35 unit 0 family ethernet-switching vlan members default
+set interfaces mge-0/0/35 unit 0 family ethernet-switching vlan members VLAN10
+set interfaces mge-0/0/35 unit 0 family ethernet-switching vlan members VLAN20
+set interfaces mge-0/0/35 unit 0 family ethernet-switching vlan members VLAN101
+set interfaces mge-0/0/35 unit 0 family ethernet-switching vlan members VLAN102
+set interfaces mge-0/0/35 unit 0 family ethernet-switching vlan members VLAN103
+set interfaces mge-0/0/35 unit 0 family ethernet-switching vlan members VLAN104
+set interfaces mge-0/0/35 unit 0 family ethernet-switching vlan members VLAN105
+set interfaces mge-0/0/36 description "example description"
+set interfaces mge-0/0/36 vlan-tagging
+set interfaces mge-0/0/36 native-vlan-id 1
+set interfaces mge-0/0/36 mtu 9216
+set interfaces mge-0/0/36 unit 0 family ethernet-switching interface-mode trunk
+set interfaces mge-0/0/36 unit 0 family ethernet-switching vlan members default
+set interfaces mge-0/0/36 unit 0 family ethernet-switching vlan members VLAN10
+set interfaces mge-0/0/36 unit 0 family ethernet-switching vlan members VLAN20
+set interfaces mge-0/0/36 unit 0 family ethernet-switching vlan members VLAN101
+set interfaces mge-0/0/36 unit 0 family ethernet-switching vlan members VLAN102
+set interfaces mge-0/0/36 unit 0 family ethernet-switching vlan members VLAN103
+set interfaces mge-0/0/36 unit 0 family ethernet-switching vlan members VLAN104
+set interfaces mge-0/0/36 unit 0 family ethernet-switching vlan members VLAN105
+set interfaces mge-0/0/37 description "example description"
+set interfaces mge-0/0/37 unit 0 family ethernet-switching interface-mode access
+set interfaces mge-0/0/37 unit 0 family ethernet-switching vlan members VLAN50
+set interfaces mge-0/0/38 description "example description"
+set interfaces mge-0/0/38 vlan-tagging
+set interfaces mge-0/0/38 native-vlan-id 1
+set interfaces mge-0/0/38 mtu 9216
+set interfaces mge-0/0/38 unit 0 family ethernet-switching interface-mode trunk
+set interfaces mge-0/0/38 unit 0 family ethernet-switching vlan members default
+set interfaces mge-0/0/38 unit 0 family ethernet-switching vlan members VLAN10
+set interfaces mge-0/0/38 unit 0 family ethernet-switching vlan members VLAN20
+set interfaces mge-0/0/38 unit 0 family ethernet-switching vlan members VLAN101
+set interfaces mge-0/0/38 unit 0 family ethernet-switching vlan members VLAN102
+set interfaces mge-0/0/38 unit 0 family ethernet-switching vlan members VLAN103
+set interfaces mge-0/0/38 unit 0 family ethernet-switching vlan members VLAN104
+set interfaces mge-0/0/38 unit 0 family ethernet-switching vlan members VLAN105
+set interfaces mge-0/0/39 description "example description"
+set interfaces mge-0/0/39 unit 0 family ethernet-switching interface-mode access
+set interfaces mge-0/0/39 unit 0 family ethernet-switching vlan members VLAN50
+set interfaces mge-0/0/40 description "example description"
+set interfaces mge-0/0/40 vlan-tagging
+set interfaces mge-0/0/40 native-vlan-id 1
+set interfaces mge-0/0/40 mtu 9216
+set interfaces mge-0/0/40 unit 0 family ethernet-switching interface-mode trunk
+set interfaces mge-0/0/40 unit 0 family ethernet-switching vlan members default
+set interfaces mge-0/0/40 unit 0 family ethernet-switching vlan members VLAN10
+set interfaces mge-0/0/40 unit 0 family ethernet-switching vlan members VLAN20
+set interfaces mge-0/0/40 unit 0 family ethernet-switching vlan members VLAN101
+set interfaces mge-0/0/40 unit 0 family ethernet-switching vlan members VLAN102
+set interfaces mge-0/0/40 unit 0 family ethernet-switching vlan members VLAN103
+set interfaces mge-0/0/40 unit 0 family ethernet-switching vlan members VLAN104
+set interfaces mge-0/0/40 unit 0 family ethernet-switching vlan members VLAN105
+set interfaces mge-0/0/41 description "example description"
+set interfaces mge-0/0/41 unit 0 family ethernet-switching interface-mode access
+set interfaces mge-0/0/41 unit 0 family ethernet-switching vlan members VLAN50
+set interfaces mge-0/0/42 description "example description"
+set interfaces mge-0/0/42 vlan-tagging
+set interfaces mge-0/0/42 native-vlan-id 1
+set interfaces mge-0/0/42 mtu 9216
+set interfaces mge-0/0/42 unit 0 family ethernet-switching interface-mode trunk
+set interfaces mge-0/0/42 unit 0 family ethernet-switching vlan members default
+set interfaces mge-0/0/42 unit 0 family ethernet-switching vlan members VLAN10
+set interfaces mge-0/0/42 unit 0 family ethernet-switching vlan members VLAN20
+set interfaces mge-0/0/42 unit 0 family ethernet-switching vlan members VLAN101
+set interfaces mge-0/0/42 unit 0 family ethernet-switching vlan members VLAN102
+set interfaces mge-0/0/42 unit 0 family ethernet-switching vlan members VLAN103
+set interfaces mge-0/0/42 unit 0 family ethernet-switching vlan members VLAN104
+set interfaces mge-0/0/42 unit 0 family ethernet-switching vlan members VLAN105
+set interfaces mge-0/0/43 description "example description"
+set interfaces mge-0/0/43 unit 0 family ethernet-switching interface-mode access
+set interfaces mge-0/0/43 unit 0 family ethernet-switching vlan members VLAN50
+set interfaces mge-0/0/44 description "example description"
+set interfaces mge-0/0/44 vlan-tagging
+set interfaces mge-0/0/44 native-vlan-id 1
+set interfaces mge-0/0/44 mtu 9216
+set interfaces mge-0/0/44 unit 0 family ethernet-switching interface-mode trunk
+set interfaces mge-0/0/44 unit 0 family ethernet-switching vlan members default
+set interfaces mge-0/0/44 unit 0 family ethernet-switching vlan members VLAN10
+set interfaces mge-0/0/44 unit 0 family ethernet-switching vlan members VLAN20
+set interfaces mge-0/0/44 unit 0 family ethernet-switching vlan members VLAN101
+set interfaces mge-0/0/44 unit 0 family ethernet-switching vlan members VLAN102
+set interfaces mge-0/0/44 unit 0 family ethernet-switching vlan members VLAN103
+set interfaces mge-0/0/44 unit 0 family ethernet-switching vlan members VLAN104
+set interfaces mge-0/0/44 unit 0 family ethernet-switching vlan members VLAN105
+set interfaces mge-0/0/45 description "example description"
+set interfaces mge-0/0/45 unit 0 family ethernet-switching interface-mode access
+set interfaces mge-0/0/45 unit 0 family ethernet-switching vlan members VLAN50
+set interfaces mge-0/0/46 description "example description"
+set interfaces mge-0/0/46 vlan-tagging
+set interfaces mge-0/0/46 native-vlan-id 1
+set interfaces mge-0/0/46 mtu 9216
+set interfaces mge-0/0/46 unit 0 family ethernet-switching interface-mode trunk
+set interfaces mge-0/0/46 unit 0 family ethernet-switching vlan members default
+set interfaces mge-0/0/46 unit 0 family ethernet-switching vlan members VLAN10
+set interfaces mge-0/0/46 unit 0 family ethernet-switching vlan members VLAN20
+set interfaces mge-0/0/46 unit 0 family ethernet-switching vlan members VLAN101
+set interfaces mge-0/0/46 unit 0 family ethernet-switching vlan members VLAN102
+set interfaces mge-0/0/46 unit 0 family ethernet-switching vlan members VLAN103
+set interfaces mge-0/0/46 unit 0 family ethernet-switching vlan members VLAN104
+set interfaces mge-0/0/46 unit 0 family ethernet-switching vlan members VLAN105
+set interfaces mge-0/0/47 description "example description"
+set interfaces mge-0/0/47 unit 0 family ethernet-switching interface-mode access
+set interfaces mge-0/0/47 unit 0 family ethernet-switching vlan members VLAN50
+set interfaces ae0 vlan-tagging
+set interfaces ae0 native-vlan-id 1
+set interfaces ae0 mtu 9216
+set interfaces ae0 aggregated-ether-options link-speed 1g
+set interfaces ae0 aggregated-ether-options lacp active
+set interfaces ae0 unit 0 family ethernet-switching interface-mode trunk
+set interfaces ae0 unit 0 family ethernet-switching vlan members default
+set interfaces ae0 unit 0 family ethernet-switching vlan members VLAN10
+set interfaces ae0 unit 0 family ethernet-switching vlan members VLAN20
+set interfaces ae0 unit 0 family ethernet-switching vlan members VLAN101
+set interfaces ae0 unit 0 family ethernet-switching vlan members VLAN102
+set interfaces ae0 unit 0 family ethernet-switching vlan members VLAN103
+set interfaces ae0 unit 0 family ethernet-switching vlan members VLAN104
+set interfaces ae0 unit 0 family ethernet-switching vlan members VLAN105
+set interfaces ae1 vlan-tagging
+set interfaces ae1 native-vlan-id 1
+set interfaces ae1 mtu 9216
+set interfaces ae1 aggregated-ether-options link-speed 1g
+set interfaces ae1 aggregated-ether-options lacp active
+set interfaces ae1 unit 0 family ethernet-switching interface-mode trunk
+set interfaces ae1 unit 0 family ethernet-switching vlan members default
+set interfaces ae1 unit 0 family ethernet-switching vlan members VLAN10
+set interfaces ae1 unit 0 family ethernet-switching vlan members VLAN20
+set interfaces ae1 unit 0 family ethernet-switching vlan members VLAN101
+set interfaces ae1 unit 0 family ethernet-switching vlan members VLAN102
+set interfaces ae1 unit 0 family ethernet-switching vlan members VLAN103
+set interfaces ae1 unit 0 family ethernet-switching vlan members VLAN104
+set interfaces ae1 unit 0 family ethernet-switching vlan members VLAN105
+set interfaces ae2 vlan-tagging
+set interfaces ae2 native-vlan-id 1
+set interfaces ae2 mtu 9216
+set interfaces ae2 aggregated-ether-options link-speed 1g
+set interfaces ae2 aggregated-ether-options lacp active
+set interfaces ae2 unit 0 family ethernet-switching interface-mode trunk
+set interfaces ae2 unit 0 family ethernet-switching vlan members default
+set interfaces ae2 unit 0 family ethernet-switching vlan members VLAN10
+set interfaces ae2 unit 0 family ethernet-switching vlan members VLAN20
+set interfaces ae2 unit 0 family ethernet-switching vlan members VLAN101
+set interfaces ae2 unit 0 family ethernet-switching vlan members VLAN102
+set interfaces ae2 unit 0 family ethernet-switching vlan members VLAN103
+set interfaces ae2 unit 0 family ethernet-switching vlan members VLAN104
+set interfaces ae2 unit 0 family ethernet-switching vlan members VLAN105
+set interfaces ae3 vlan-tagging
+set interfaces ae3 native-vlan-id 1
+set interfaces ae3 mtu 9216
+set interfaces ae3 aggregated-ether-options link-speed 1g
+set interfaces ae3 aggregated-ether-options lacp active
+set interfaces ae3 unit 0 family ethernet-switching interface-mode trunk
+set interfaces ae3 unit 0 family ethernet-switching vlan members default
+set interfaces ae3 unit 0 family ethernet-switching vlan members VLAN10
+set interfaces ae3 unit 0 family ethernet-switching vlan members VLAN20
+set interfaces ae3 unit 0 family ethernet-switching vlan members VLAN101
+set interfaces ae3 unit 0 family ethernet-switching vlan members VLAN102
+set interfaces ae3 unit 0 family ethernet-switching vlan members VLAN103
+set interfaces ae3 unit 0 family ethernet-switching vlan members VLAN104
+set interfaces ae3 unit 0 family ethernet-switching vlan members VLAN105
+set interfaces ae4 vlan-tagging
+set interfaces ae4 native-vlan-id 1
+set interfaces ae4 mtu 9216
+set interfaces ae4 aggregated-ether-options link-speed 1g
+set interfaces ae4 aggregated-ether-options lacp active
+set interfaces ae4 unit 0 family ethernet-switching interface-mode trunk
+set interfaces ae4 unit 0 family ethernet-switching vlan members default
+set interfaces ae4 unit 0 family ethernet-switching vlan members VLAN10
+set interfaces ae4 unit 0 family ethernet-switching vlan members VLAN20
+set interfaces ae4 unit 0 family ethernet-switching vlan members VLAN101
+set interfaces ae4 unit 0 family ethernet-switching vlan members VLAN102
+set interfaces ae4 unit 0 family ethernet-switching vlan members VLAN103
+set interfaces ae4 unit 0 family ethernet-switching vlan members VLAN104
+set interfaces ae4 unit 0 family ethernet-switching vlan members VLAN105
+set interfaces irb mtu 9216
+set interfaces irb unit 0 family inet address 198.18.0.5/24
+set interfaces vme unit 0 family inet dhcp vendor-id Juniper-ex4300-48mp-XR0000000000
+set snmp name example-switch.example.net
+set snmp location "example location"
+set snmp contact "example contact"
+set snmp community example-community authorization read-only
+set snmp community example-community clients 198.18.0.0/20
+set snmp community example-community clients 198.19.0.0/16
+set snmp community example-community clients 0.0.0.0/0 restrict
+set forwarding-options storm-control-profiles default all
+set routing-options static route 0.0.0.0/0 next-hop 198.18.0.1
+set protocols lldp management-interface irb.0
+set protocols lldp interface all
+set protocols lldp interface mge-0/0/45 disable
+set protocols lldp interface mge-0/0/47 disable
+set protocols lldp-med interface all
+set protocols lldp-med interface mge-0/0/45 disable
+set protocols lldp-med interface mge-0/0/47 disable
+set protocols igmp-snooping vlan default immediate-leave
+set protocols igmp-snooping vlan VLAN101 immediate-leave
+set protocols igmp-snooping vlan VLAN102 immediate-leave
+set protocols igmp-snooping vlan VLAN103 immediate-leave
+set protocols igmp-snooping vlan VLAN104 immediate-leave
+set protocols igmp-snooping vlan VLAN105 immediate-leave
+set protocols igmp-snooping version 3
+set protocols rstp bridge-priority 16k
+set protocols rstp interface mge-0/0/45 disable
+set protocols rstp interface mge-0/0/47 disable
+set protocols rstp interface all
+set vlans VLAN10 vlan-id 10
+set vlans VLAN20 vlan-id 20
+set vlans VLAN101 vlan-id 101
+set vlans VLAN102 vlan-id 102
+set vlans VLAN103 vlan-id 103
+set vlans VLAN104 vlan-id 104
+set vlans VLAN105 vlan-id 105
+set vlans VLAN50 vlan-id 50
+set vlans default vlan-id 1
+set vlans default l3-interface irb.0
+set poe interface all

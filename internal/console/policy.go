@@ -143,6 +143,27 @@ func (p *Policy) AgentForwarding() bool { return p.File.AgentForwarding }
 // ports to an address other than loopback.
 func (p *Policy) GatewayPorts() bool { return p.File.GatewayPorts }
 
+// PasswordCache reports whether tier t's shell and console sessions keep
+// the user's network password in memory (settings.password_cache.tiers).
+// Off for everyone by default; a caller with no tier restriction, none and
+// the read-only tier are never in the list.
+func (p *Policy) PasswordCache(t tier.Tier) bool {
+	return slices.Contains(p.File.PasswordCacheTiers, t)
+}
+
+// PasswordCacheTiers are the tiers of settings.password_cache.tiers.
+func (p *Policy) PasswordCacheTiers() []tier.Tier { return p.File.PasswordCacheTiers }
+
+// PasswordCacheIdle is how long a cached password lives without a use.
+func (p *Policy) PasswordCacheIdle() time.Duration {
+	return time.Duration(p.File.PasswordCacheIdle) * time.Minute
+}
+
+// PasswordCacheMax is the cached password's lifetime from the store.
+func (p *Policy) PasswordCacheMax() time.Duration {
+	return time.Duration(p.File.PasswordCacheMax) * time.Hour
+}
+
 // SystemShellPath is the system shell, checked: see CheckShell.
 func (p *Policy) SystemShellPath() (string, error) {
 	return p.File.SystemShell, CheckShell(p.File.SystemShell, p.ShellsFile)

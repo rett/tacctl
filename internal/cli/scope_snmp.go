@@ -277,6 +277,12 @@ func (inv *invocation) scopeSNMPShow(scope string, reveal, restricted bool) erro
 	for _, w := range cidr.OverlapWarnings(own.Clients) {
 		inv.echo("  Note:       " + w + " (both stay)")
 	}
+	// A device's own settings come first (D72): which of the scope's
+	// devices have some.
+	inv.echo("  order:      a device's own setting first (tacctl device snmp <name>), then the scope's, then the default's, then the built-in")
+	if devs := inv.scopeDevicesWithSNMP(scope); len(devs) > 0 {
+		inv.echo("  devices with settings of their own: " + strings.Join(devs, ", ") + " (tacctl device snmp <name> show)")
+	}
 	switch {
 	case reveal && restricted:
 		inv.echo("  Reveal logged: the secrets above are the scope's own or the default's, as labelled.")

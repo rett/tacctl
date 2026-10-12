@@ -1,0 +1,48 @@
+# tacctl canonical store: users, groups, scopes, prefix filters.
+# Managed by tacctl -- change it with tacctl commands. Contains shared
+# secrets and password hashes; keep it 0600.
+#
+# Fixture for the break-glass hold (docs/plans/0.2.5-plan.md D123): nested
+# prefixes of two scopes (a /16 and a /24 that both hold one address), a
+# /32 prefix, a TACACS+-only and a RADIUS-only scope, tagged addresses (a
+# /32 and a /28) and an IPv6 /64. Documentation addresses only.
+
+version: 1
+groups:
+  operator: {priv_lvl: 7, juniper_class: OP-CLASS, builtin: true}
+  readonly: {priv_lvl: 1, juniper_class: RO-CLASS, builtin: true}
+  superuser: {priv_lvl: 15, juniper_class: RW-CLASS, builtin: true}
+users:
+  alice:
+    group: superuser
+    scopes: [core, lab, edge, wifi, v6]
+    hash: 24326224313224616c6963652e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e
+    disabled: false
+scopes:
+  core:
+    prefixes: [10.0.0.0/16]
+    secret: core-secret-0123456789abcdef
+  edge:
+    prefixes: [198.51.100.0/24]
+    secret: edge-tacacs-only-0123456789
+    protocols: [tacacs]
+  lab:
+    prefixes: [10.0.1.0/24, 192.0.2.0/24]
+    secret: lab-secret-0123456789abcdef
+    vendor_attrs: [cisco]
+    devices:
+      10.0.1.0/28: cisco
+      10.0.1.5/32: juniper
+  mgmt:
+    prefixes: [192.0.2.21/32]
+    secret: mgmt-secret-0123456789abcdef
+  v6:
+    prefixes: ['2001:db8:0:1::/64']
+    secret: v6-secret-0123456789abcdef
+  wifi:
+    prefixes: [203.0.113.0/24]
+    secret: wifi-radius-only-0123456789
+    protocols: [radius]
+filters:
+  allow: []
+  deny: []

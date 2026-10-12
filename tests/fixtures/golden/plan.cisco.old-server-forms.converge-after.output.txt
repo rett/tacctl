@@ -1,0 +1,85 @@
+!!!!! dev-cisco-old-server-forms  192.0.2.21  scope lab  cisco (IOS-XE and IOS 15 syntax, TACACS+) !!!!!
+! Based on the pull of 2026-10-10 14:02 by alice over ssh (18 minutes ago; the login could see
+! secrets) and the standard of 2026-10-10 14:20 (tacctl 0.2.5). Checked on a device: IOS 12.4(15) (a
+! 7200 emulator), IOS 15.6(2)T and IOS-XE 16.7.1; other trains are written from the references.
+!
+! What is irregular on dev-cisco-old-server-forms (13 items; the paste fixes 3, leaves 10):
+!  1. aaa      ACCESS     extra: the TACACS+ server 192.0.2.77 (tacacs-server host 192.0.2.77 key
+!                         <secret>). Left alone. To remove it later: no tacacs-server host 192.0.2.77.
+!                         Not in the cleanup: a group entry that names it stays.
+!  2. aaa      ACCESS     extra: the server group OLD-GROUP: server 192.0.2.77 (aaa group server
+!                         tacacs+ OLD-GROUP > server 192.0.2.77). Left alone. To remove it later: no
+!                         aaa group server tacacs+ OLD-GROUP. Not in the cleanup: a statement that
+!                         stays names this group: aaa authorization commands 15 OTHER group OLD-GROUP
+!                         local.
+!  3. aaa      ACCESS     extra: tacacs server OLDSRV: 2 statements (e.g. tacacs server OLDSRV >
+!                         address ipv4 192.0.2.78). Removed by the cleanup region, line 4.
+!  4. aaa      ACCESS     extra: the server group SPARE-GROUP: server name SPARESRV (aaa group server
+!                         tacacs+ SPARE-GROUP > server name SPARESRV). Removed by the cleanup region,
+!                         line 3.
+!  5. aaa      ACCESS     extra: tacacs server SPARESRV: 2 statements (e.g. tacacs server SPARESRV >
+!                         address ipv4 192.0.2.79). Removed by the cleanup region, line 5.
+!  6. aaa      ACCESS     extra: command authorization at level 15 (aaa authorization commands 15
+!                         OTHER group OLD-GROUP local). Left alone. To remove it later: no aaa
+!                         authorization commands 15 OTHER group OLD-GROUP local. Not in the cleanup: a
+!                         named command authorization list may be in use on a line, and the pull does
+!                         not say which: type the removal yourself when you know it is not.
+!  7. aaa      ACCESS     extra: the VTYLIST login method list (aaa authentication login VTYLIST group
+!                         OLD-GROUP local). Left alone. To remove it later: no aaa authentication
+!                         login VTYLIST group OLD-GROUP local
+!  8. aaa      ACCESS     extra: the server group ISE: server name ISE-1 (aaa group server radius ISE
+!                         > server name ISE-1). Left alone. To remove it later: no aaa group server
+!                         radius ISE. Not in the cleanup: it is a RADIUS entry and the scope's
+!                         protocol is the other: it may serve 802.1X or another list, and is never
+!                         removed.
+!  9. aaa      ACCESS     extra: radius server ISE-1: 2 statements (e.g. radius server ISE-1 > address
+!                         ipv4 192.0.2.60 auth-port 1812 acct-port 1813). Left alone. To remove it
+!                         later: no radius server ISE-1. Not in the cleanup: it is a RADIUS entry and
+!                         the scope's protocol is the other: it may serve 802.1X or another list, and
+!                         is never removed.
+! 10. aaa      ACCESS     extra: the default dot1x method list (aaa authentication dot1x default group
+!                         ISE). Left alone. To remove it later: no aaa authentication dot1x default
+!                         group ISE
+! 11. snmp     MONITORING extra: an SNMP community (snmp-server community <secret> RO TACCTL-SNMP).
+!                         Left alone (its name is the secret and is not known to tacctl).
+! 12. snmp     MONITORING extra: snmp-server enable traps config. Left alone. To remove it later: no
+!                         snmp-server enable traps config
+! 13. snmp     MONITORING extra: snmp-server host 192.0.2.50 version 2c <secret>. Left alone (its name
+!                         is the secret and is not known to tacctl).
+! No fix to paste: the cleanup region below is the only paste (what else remains is left alone).
+! Consistent: roles, mgmt-acl. Not planned: netconf, breakglass.
+! Secrets: 2 present on the device, not changed (--secrets pushes them).
+! Cleanup (--converge): the region below is the whole output: it removes 3 lines: server groups,
+! TACACS+ servers the standard does not have. Paste it only after you have checked that the pull of
+! dev-cisco-old-server-forms is current (tacctl device config pull dev-cisco-old-server-forms --diff
+! reads ok for aaa, and a NEW ssh session as yourself works).
+! 9 extras stay: each item above says why.
+! The change is live when the paste ends. NOTHING rolls it back by itself. Keep a second terminal
+! logged in at privilege 15 until the end.
+! Paste over ssh, not the console; on a console paste at most twenty lines at a time and watch the
+! echo for '% Invalid'. Pasting the region twice is harmless.
+!
+! Type this first, on dev-cisco-old-server-forms, and check the name:   show version | include uptime
+! The prompt must end in # (privileged mode), not in (config)#, before you paste: a prompt ending in >
+! means type enable first, a prompt with (config) in it means a configuration session is open: type
+! end first.
+!
+!!!!! CLEANUP FROM HERE: dev-cisco-old-server-forms !!!!!
+configure terminal
+! aaa: removes the servers and groups the standard does not have
+no aaa group server tacacs+ SPARE-GROUP
+no tacacs server OLDSRV
+no tacacs server SPARESRV
+end
+!!!!! CLEANUP TO HERE: dev-cisco-old-server-forms !!!!!
+!
+! There is no other paste for dev-cisco-old-server-forms: its first region is empty. Check that
+! the pull is current (tacctl device config pull dev-cisco-old-server-forms --diff reads ok for
+! aaa) and keep a NEW ssh session as yourself open.
+! Same check, then type this one command yourself:  write memory
+! Nothing rolls the cleanup back by itself; until write memory is typed a reload brings back the
+! saved configuration. A removed server entry takes its key with it: tacctl holds no key it
+! removes, so to put one back you type it again.
+! Locked out (the paste cut your session and no login works)? A superuser runs: tacctl breakglass hold dev-cisco-old-server-forms --reason "..."
+! then log in as the device's local account (console: local login, then 'enable' with the local secret),
+! fix or back out, and the superuser runs: tacctl breakglass release dev-cisco-old-server-forms

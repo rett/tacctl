@@ -145,8 +145,9 @@ type KeyResult struct {
 // KeyscanParallel is how many ssh-keyscan run at once.
 const KeyscanParallel = 8
 
-// RescanKeys reads the host keys of every target, a few at a time.
-func RescanKeys(ctx context.Context, r execx.Runner, targets []KeyTarget) []KeyResult {
+// RescanKeys reads the host keys of every target, a few at a time, with
+// ScanWith (fallback may be nil).
+func RescanKeys(ctx context.Context, r execx.Runner, targets []KeyTarget, fallback KeyFallback) []KeyResult {
 	out := make([]KeyResult, len(targets))
 	sem := make(chan struct{}, KeyscanParallel)
 	var wg sync.WaitGroup
@@ -156,7 +157,7 @@ func RescanKeys(ctx context.Context, r execx.Runner, targets []KeyTarget) []KeyR
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			keys, err := Scan(ctx, r, t.Address, t.Port, t.Legacy)
+			keys, err := ScanWith(ctx, r, t.Address, t.Port, t.Legacy, fallback)
 			out[i] = KeyResult{Target: t, Keys: keys, Err: err}
 		}()
 	}

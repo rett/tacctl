@@ -3,6 +3,1379 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.5 (2026-10-11)
+
+The items below are everything that differs from 0.2.3. Items 1 to 29 were
+drafted under the working name 0.2.4 (the diff corpus and a few comments in the
+code call them `0.2.4 item N`); items 30 and later were drafted as 0.2.5, and
+all of them ship together as this release. The numbers 62 to 69 are not used.
+
+### What changed
+
+1. **`tacctl device config pull` reads what the devices run and compares the
+   sections tacctl manages with what tacctl renders for each device.** Nothing
+   is written to a device. It logs in to each device as the user who invoked
+   tacctl (`SUDO_USER`; root is refused, and so is a caller who is not an active
+   tacctl user with the device's scope, as for `tacctl ssh`) with that user's
+   tacctl password, asked for once on the terminal without echo and never
+   stored, put in an argument or the environment, written to a file or logged
+   (the session's password cache, below, can hold it). The devices are named
+   (`<name>[,<name>...]`) or selected with `--all` (every device of yours) or
+   with `--scope`, `--vendor` and `--stale`, which combine; names and `--all`
+   stand alone. An engineer's selection is their own scopes' devices. A device
+   of vendor `other`, one in no scope and one in a scope you are not in are
+   refused when named and left out, with a note that names them, by a selection;
+   so is a WTI unit, which is not read: named, it is recorded `unsupported` and
+   the run exits 1. A device needs a pinned host key (`device hostkey <name>
+   accept`): an unpinned device is refused with that command, a key that is not
+   the pinned one is `host-key-mismatch` and raises the `hostkey-changed`
+   notice, and nothing is trusted on first use. Junos is read over NETCONF (the
+   ssh subsystem, a `<command>` RPC) where the device answers and over an ssh
+   exec channel otherwise (`--transport auto`, the default; `netconf` and `ssh`
+   never fall back); IOS and IOS-XE are read with `terminal length 0` and `show
+   running-config` over the ssh command line (not lab-tested; a Cisco device is
+   never read over NETCONF, and `--transport netconf` refuses it before any
+   login, leaving its record alone, or as wrong arguments when every selected
+   device is Cisco). From the text six sections are extracted (`aaa`, `roles`,
+   `mgmt-acl`, `snmp`, `netconf`, `breakglass`), compared with what tacctl
+   renders for that device (the same builders as the walkthroughs; a Cisco
+   device with `legacy-ssh` against the IOS 12.x syntax; `--server` and
+   `--source` as for `config <vendor>`) and recorded. A secret (a server key, a
+   community, a hash) is compared by presence only: no output, record or file
+   holds a device's secret value. One line per device (`ok via netconf`, `ok,
+   differs in aaa,snmp via ssh (netconf: port closed)`, `failed: <reason>`),
+   rewritten in place on a terminal and appended otherwise; then `12 ok, 2
+   differ, 1 failed`. `--diff` prints the differences, `--json` one JSON line
+   per device and a summary line, `--timeout <seconds>` bounds one device
+   (10-600, default 90, connect included), `--max-failures <n>` stops starting
+   devices after n failures. At most `device.config.max_concurrency` devices are
+   read at once (default 8; `--concurrency` lowers it, never raises it). The
+   first rejected password stops the batch, so one wrong password is not tried
+   on every device; the first Ctrl-C stops starting devices and lets the running
+   ones finish (the rest are `not started`), a second cuts them off. Exit status
+   0 (differences are not failures), 1 (a device failed or was refused), 2
+   (wrong arguments), 130 (interrupted). Every device is logged (`auth.info
+   device config pull user= device= transport= result= duration=`, never a
+   credential) and an engineer's pull logs the `secret-read` lines the
+   walkthrough logs.
+
+2. **`tacctl device config diff` shows the last pull against what tacctl renders
+   now, per section.** `-` is a rendered statement the device lacks, `+` one it
+   has in a managed hierarchy that tacctl does not render, `!` the same
+   statements in another order (a Junos authentication order or filter terms, a
+   Cisco ACL), `?` a secret the login could not see (a Junos class without the
+   secret permission masks its secrets and omits a server's `secret`: a masked
+   one is present, an omitted one is never `-`), `=` a secret that is present. A
+   section tacctl renders nothing for is `n/a`, with the device's statements
+   listed. `--pull` reads the devices first (with the options of `pull`),
+   `--section <list>` limits the output, `--json` prints an array and
+   `--exit-code` makes a difference exit 2 (a device that could not be compared
+   exits 1). A device never pulled is said so, with the command that reads it.
+   With `--pull` the status follows the pull: a device whose pull failed, or was
+   not started, counts as failed (1) even when the last good pull's diff is
+   printed for it, and an interrupt is 130.
+
+3. **`tacctl device config list` and `forget`, and the records.** A pull keeps,
+   per device, `/var/lib/tacctl/devices-config.json` (when, by whom, over which
+   transport, what the NETCONF probe found, the result, the state of each
+   section; 0600, derived, never snapshotted) and
+   `/var/lib/tacctl/device-config/<name>.yaml` (the managed sections of the last
+   successful pull, secret values elided). `device config list` shows each
+   device's state (`ok`, `differs`, `never`, `failed`) computed against today's
+   rendering, so a change of the store makes a device `differs` without a new
+   pull; `--stale` is `--never`, `--failed` and `--differs` together,
+   `--transport netconf|ssh|none`, `--scope`, `--vendor` and `--json` narrow it.
+   `device config forget <name>[,...]|--all` deletes records (they are derived:
+   a pull makes them again). A failed pull changes the record's result and keeps
+   the sections of the last good one, which `diff` still compares. `device
+   rename` carries a record along; `device remove` and `device import --replace`
+   drop the record and the sections file of the devices they remove.
+
+4. **`device list` has a CONFIG column and `device show` a Configuration row.**
+   The column is the state the last pull recorded (`ok`, `differs`, `never`,
+   `failed`; `-` for a host, a vendor `other`, a WTI unit and a device in no
+   scope) and is `config` in `--json`; the row says when, by whom and over what
+   the device was read, the result and the state of each section (`pulled
+   2026-10-09 14:02 by alice over netconf (hello ok), ok; sections: aaa ok,
+   roles ok, ...`). Both are the operator tier's: a read-only user's `device
+   list` and `device show` (and their JSON) have neither the column nor the row.
+   `device list --stale` keeps its meaning (not seen in the logs for
+   `stale-days`); the configuration's staleness is `device config list --stale`.
+
+5. **`device check` shows a NETCONF row for a Junos device.** What the probe of
+   the device's last pull found (`hello ok`, `port closed`, `no hello`, with the
+   time), or `not probed` and the command that probes it; the check logs in to
+   nothing. It is `netconf` in `--json`. A Cisco device is not read over NETCONF
+   and has no row.
+
+6. **`tacctl config devices` sets how pulls read the devices.**
+   `max-concurrency` (1-64, default 8), `transport` (`auto`, `netconf`, `ssh`)
+   and `timeout` (10-600 seconds, default 90) are the schema's
+   `device.config.max_concurrency`, `.transport` and `.timeout`; with no word it
+   shows them and whether each is set. Superuser only. `--concurrency` above the
+   cap is refused, naming the cap and the verb that raises it.
+
+7. **Tiers: `device config list` and the shell word `console forget` are the
+   operator's, `device config show|pull|diff` and `device snmp` the engineer's,
+   `device config forget` the superuser's.** The gate sees `device config`, so
+   the verb holds each to its tier (`'tacctl device config pull' is not
+   permitted for the operator tier.`, logged as a tier denial; the operator
+   tier's `device config show` refusal now names the verb too). The tiers
+   sudoers drop-in grants the operator `device config list` and `console forget`
+   and the engineer `device config show|pull|diff` and `device snmp *`, and
+   keeps `TACCTL_ASKPASS` for five command lines only: a `Cmnd_Alias` of `device
+   config pull|diff|plan`, `ssh` and `device ssh` (named differently in the group
+   drop-in, since sudoers refuses an alias defined twice) with its own
+   `env_keep` line, so the variable is in the environment of the sudo process
+   and never on sudo's command line (argv is world-readable). The rules are
+   re-rendered by `config sudoers tiers install`, and `upgrade` rewrites an
+   installed drop-in. An engineer's `device config list`, `pull` and `diff`
+   cover the devices of their own scopes; another scope's device is not found.
+
+8. **The shell and the login console can keep your network password in memory
+   for the session, so a pull, a diff and the `ssh` lines after it ask once.**
+   It is off for every tier until `tacctl console password-cache tiers
+   <operator,engineer,superuser|none>` opens it (a read-only user has no pull
+   and is not offered it); the console then has it for those tiers, and a plain
+   `tacctl shell --password-cache` asks the same policy (a caller outside
+   `tac-users` asks for it themselves). `console password-cache idle` is 1-120
+   minutes without a use (default 15; each use restarts it) and `max` 1-24 hours
+   from the moment the password was cached (default 8; use does not extend it);
+   `tiers`, `idle` and `max` are superuser verbs. The settings are
+   `settings.password_cache` in `console.yaml`, written only when one is not the
+   default, and `console show` lists them; the policy line `_console-policy`
+   carries `password_cache=yes pc_idle= pc_max=` for a tier that has the cache
+   (an older console ignores them). The shell says `password cached for this
+   session (console password-cache)` when it keeps a password and `password
+   forgotten (<why>)` when it lets go: after the idle time, the maximum
+   lifetime, `passwd` (or `user passwd`), the shell word `console forget`
+   (operator and up; handled in the session's own process, without sudo), a
+   device's refusal, a clock that went backwards, and the end of the session. It
+   is for the interactive session only: `-c` and batch lines keep no process
+   around and use no cache, and the plain CLI from bash asks per run. When the
+   cache cannot start (memory cannot be locked, a debugger is attached, no
+   private directory is available for its socket, or the policy cannot be read
+   or does not allow the tier) one line says `password cache unavailable:
+   <why>`.
+
+9. **The cache lives in the session's own process and is opened only for the
+   lines that use it, each with a token of its own.** The password is in a
+   locked page of the shell's (or console's) process, which is marked not
+   dumpable before it checks for a tracer, and is zeroed when it is forgotten;
+   no file, log, argument or environment holds it. The process listens on a
+   socket in a private directory (`$XDG_RUNTIME_DIR/tacctl`, else
+   `/run/user/<uid>/tacctl`, else `~/.local/state/tacctl/run`) and is shut
+   between lines. For a line that runs `device config pull`, `device config
+   diff --pull`, `ssh` or `device ssh` (and no other) it makes a token for that line,
+   puts `TACCTL_ASKPASS=<socket>:<token>` in the environment of that line's sudo
+   process and answers the same user or root with that token once, until the
+   line ends, when the token is dead: after the line's one get the token can do
+   nothing but forget, a value read out of an earlier line, or by another
+   process of the user after the line, opens nothing, and a request that was
+   waiting when its line ended is refused. What remains is a process of the same
+   user that reads the line's environment and reaches the socket before that one
+   get. The root side marks its process not dumpable and, as the first thing any
+   verb does, takes `TACCTL_ASKPASS` out of its environment, so no program it
+   starts inherits it.
+
+10. **A pull stores only a password it prompted for, after a device accepted it,
+    and forgets it when one refuses it.** `device config pull` and `diff --pull`
+    ask the session's cache first and prompt on the terminal only when nothing
+    is cached; a password that came from the cache is never stored again, so the
+    maximum lifetime cannot be stretched by use, and a device that refuses a
+    cached password makes it forgotten at once and stops the run. A store never
+    lands after a forget in one run.
+
+11. **`tacctl ssh` uses a cached password for a device with pinned host keys.**
+    ssh is started as the user directly, without sudo, so the token is never a
+    sudo variable or argument and reaches no log, and runs `SSH_ASKPASS` (the
+    tacctl binary; it answers a password prompt and nothing else) with
+    `SSH_ASKPASS_REQUIRE=force`, one password prompt, no configuration file (no
+    `SendEnv`, `ProxyJump` or `Match exec` of the user's) and strict checking of
+    the pinned host key; an option word after `--`, an unpinned device or an
+    account that is not in the local account database keeps the prompt as
+    before. An ssh that ends with status 255 makes the cache forget the
+    password, since a refusal cannot be told from other failures. The audit line
+    says `password=cached` when the cache was used.
+
+12. **`tacctl upgrade` rewrites the drop-in `config sudoers install <group>`
+    wrote with an earlier release.** When the file is exactly the text 0.1.x to
+    0.2.3 wrote for the group its header names, it is replaced by this release's
+    (after `visudo -cf`), so a host that installed it before the password cache
+    keeps `TACCTL_ASKPASS` through sudo: `Updated: sudoers for group <name>`, or
+    a warning and the old file when `visudo` refuses. A file an administrator
+    edited (a rule, a host restriction, extra lines) or that only has a tacctl
+    header is left as it is with `customised`, naming `tacctl config sudoers
+    install <group>`; one that says tacctl wrote it but names no group
+    `config sudoers install` accepts (`[a-zA-Z_][a-zA-Z0-9_-]*`) gets one
+    line, `<file>: not written by tacctl for a group it knows; left alone`; a
+    file that is not tacctl's, a current one and an absent one are left alone
+    and not mentioned.
+
+13. **`tacctl device snmp <name>` gives one device SNMP settings of its own.**
+    `device snmp <name> [show [--reveal] | version v2c|v3 | port <n> | timeout
+    <seconds> | clients list|add|remove <cidr> | community [--stdin] | v3-user
+    <user> [--stdin] | clear]`: a device that its scope's (or the default's)
+    settings do not fit has its own version, agent port, wait, list of allowed
+    clients and credentials. The order is the device's value, then its scope's,
+    then the default's, then the built-in, one setting at a time (the v3 user
+    and both passphrases come from one level, so a user is never joined to
+    passphrases nobody paired with it); a device's list of allowed clients
+    replaces its scope's for that device (the tacctl server's /32 stays first,
+    `0.0.0.0/0` refused last). `community` and `v3-user` make the device's
+    version `v2c` or `v3`, as the scope's verbs do. The non-secret settings are
+    an optional `snmp:` map of the device in `devices.yaml` (`version`, `port`,
+    `timeout`, `clients`), written only when something is set, so a registry
+    that sets none is byte for byte what it was; the credentials are
+    `/etc/tacctl/snmp/devices/<name>.yaml` (the lowercased name, 0600 in a 0700
+    directory, the format of `snmp.yaml`, atomic writes; 0.2.3 never opens the
+    subdirectory). `device remove` and `device import --replace` delete the file
+    and `device rename` moves it; a new device, or a rename onto a name whose
+    file is already there (an earlier device's, kept by a rollback), is refused
+    with the file's path. `device import` and `device export` carry the map: a
+    file without one never drops a device's own, and `device export --json` has
+    it as `snmp`. 0.2.3 refuses a registry that has the map, so a rollback to
+    0.2.3 has to remove it first.
+
+14. **`device show`, `device check`, `scope snmp show`, `device config show` and
+    the walkthrough say which value a device is read with and where it comes
+    from, and every read uses it.** `device show` has an `SNMP` row (`version
+    v2c (scope lab), port 2161 (device), timeout 4 s (scope lab)`, then the
+    credentials as set or not, and the clients), `device check` an `SNMP` and an
+    `SNMP creds` row before the sysName, and both put an `snmp` object (values,
+    `*_from`, never a secret) in `--json`; `device config show` has the same
+    rows in its data block, and the SNMP step of `config <vendor> --name
+    <device>` says `Credentials: this device's own (tacctl device snmp <name>
+    show --reveal).` and `this device's own ranges` when they are. `scope snmp
+    <scope> show` prints the order of resolution and which of the scope's
+    devices have settings of their own (what they set, never a value). The
+    labels are `(device)`, `(scope <scope>)`, `(default)`, `(built-in)` and
+    `(not set)`. `device add`, `device check` and `device location
+    --from-device` read a registered device with its own version, port, timeout
+    and credentials when it has them (`scope snmp <scope> test` and `config snmp
+    test` still try the scope's and the default's), and `device config pull`,
+    `diff` and `list` compare the `snmp` section (and the management filter's
+    SNMP terms) with what tacctl renders for that device with its own values
+    over its scope's; a device whose own credentials file cannot be read fails
+    on its line instead of being compared with its scope's.
+
+15. **Tiers, logging and snapshots for a device's own SNMP settings.** Setting
+    and clearing are the superuser's; an engineer reads `device snmp <name>
+    [show [--reveal]]`, the plain reads of version, port, timeout and `clients
+    list` for the devices of their own scopes, and each `--reveal` (or
+    walkthrough that prints the device's own credentials) is logged as
+    `secret-read kind=snmp-device name=<device> by=<user>`, never the value; an
+    engineer's `--reveal` logs one such line for each level a printed secret
+    comes from (`kind=snmp-device name=<device>`, `kind=snmp name=<scope>`,
+    `kind=snmp-default name=default`). The SNMPv3 user's name is the engineer
+    tier's: `device show` and `device check`, and their `--json`, print `v3 user
+    set` and `v3_user_set` below the engineer tier and the name (`v3_user`) from
+    engineer up. An engineer's `device import` neither sets nor drops a device's
+    own settings (a file that carries a map that differs is refused). Snapshots
+    hold `snmp/devices/` in its modes, and `device snmp <name> community`,
+    `v3-user` and `clear` take the snapshot before the credentials file is
+    written or removed, so it holds the old credential (also for a clear of a
+    file that has no map). `backup restore` makes `snmp/devices/` match the
+    registry it restores, also when the snapshot has no `snmp/` directory
+    (absent means none), so no device file is left that the restored registry
+    has no map for; a snapshot without a registry (0.2.0) leaves them alone. A
+    file that cannot be read can be repaired: `clear` removes the file without
+    parsing it, `community` and `v3-user` replace a file that cannot be parsed
+    and say so, every read that meets one names it and the way out, and `scope
+    snmp <scope> show` lists the device as unreadable instead of skipping it.
+
+16. **`tacctl rollback 0.2.3` prepares the state for 0.2.3, and 0.2.2 is two
+    steps away.** The tool of 0.2.3 (target 0.2.2) is replaced: each release's
+    rollback converts what that release changed, so this one takes `0.2.3` only,
+    as a dry run unless `--apply` (a snapshot first; `--yes` while a setting is
+    dropped). It removes `device.config.max_concurrency`, `.transport` and
+    `.timeout` from `tacctl.yaml` (and any key a 0.2.3 binary does not know),
+    `settings.password_cache` from `console.yaml` (the cache is off again;
+    `tiers.engineer` and `space_completion` are 0.2.3's own and stay) and the
+    `snmp:` map of every device from `devices.yaml` (0.2.3's parser answers
+    `unknown key 'snmp'` and cannot read the registry); it rewrites the tiers
+    sudoers drop-in and the `config sudoers install <group>` drop-in with
+    0.2.3's text, after `visudo -cf`, when the file is exactly this release's
+    text (an edited file, or one `visudo` refuses, is left and named; 0.2.3's
+    upgrade rewrites the tiers file itself). It leaves, and lists,
+    `snmp/devices/` (0.2.3 never opens the subdirectory), the records of the
+    pulls in `/var/lib/tacctl` (`devices-config.json`, `device-config/`:
+    derived, never snapshotted; `device config forget --all` before the rollback
+    deletes them), `store.yaml` and the rendered backend files, and re-renders
+    and restarts nothing. `--hosts` is accepted and says no host needs anything.
+    `rollback 0.2.2` is refused with the way there: this rollback, `tacctl
+    upgrade --branch 0.2.3`, then 0.2.3's own `rollback 0.2.2` (so the 0.2.2
+    conversions, the tier marker, the SNMP credentials directory and the
+    `--hosts` sync of the engineers' sudo are that release's tool). The snapshot
+    holds the 0.2.5 form: restore it with 0.2.5, not with 0.2.3. Rolling back,
+    then: dry run `tacctl rollback 0.2.3`, `tacctl rollback 0.2.3 --apply
+    --yes`, `tacctl upgrade --branch 0.2.3`; until the install, a command that
+    writes the console's settings, a device's SNMP settings or `config devices`
+    writes the 0.2.5 form again, and a second `--apply` converts it. (The real
+    0.2.3 release, built from its tag, is run against the state before and after
+    in the test suite.)
+
+17. **Test builds only: `tacctl _fake-device` and two knobs.** A `-tags
+    testknobs` build (`make build`) has a hidden verb that runs the fake device
+    of `internal/devssh/fakedev` on loopback, and `TACCTL_TEST_DEVICE_DIAL` (a
+    loopback `host:port` every device is dialled at) and
+    `TACCTL_TEST_DEVICE_PASSWORD` (the password a pull logs in with); the bats
+    files of the device configuration verbs run against them. The installed
+    binary has neither the verb, the fake device nor the variables' names.
+
+18. **A device's own SNMP credentials count only while the device has an `snmp:`
+    map.** The map gates the file `snmp/devices/<name>.yaml`: a file with no map
+    beside it (what a rollback to 0.2.3 leaves, or a stray) is ignored by the
+    lookups, the walkthroughs, `device show`, `device check`, the pull's
+    expected configuration and `scope snmp show`, and is not parsed. `device show`
+    and `device snmp <name> show` say once that it is present and ignored, with
+    `clear` as the way out; giving the device settings brings it into force
+    again and the verb says so, and `community` and `v3-user` replace it
+    instead of carrying its other half. A device that has a v3 user in an ignored
+    file under a v2c scope is therefore read with the scope's settings, not with
+    its own credentials under the scope's version.
+
+19. **`tacctl uninstall` removes the device records of `/var/lib/tacctl`.** The
+    seen cache (`devices-seen.json`), the records of the configuration pulls
+    (`devices-config.json`, `device-config/`) and their lock files go with the
+    rest, so the directory itself is removed when nothing of anyone else's is in
+    it; they held excerpts of each device's configuration (secret values elided).
+
+20. **The Junos walkthrough writes the management filter's deny terms as plain
+    `set` statements.** The terms that log and drop (`deny-mgmt`, and
+    `deny-snmp` under SNMPv3) were printed as `then { log; discard; }`, which
+    is the brace form of a hierarchy, not a `set` line a device takes. They are
+    now `set firewall family inet filter <name> term deny-mgmt then log` and
+    `... then discard` (and the same for `deny-snmp`). The pull's expected
+    configuration is built from the same lines.
+
+21. **A `legacy-ssh` device also gets the CBC ciphers old IOS offers.** Old IOS
+    (12.4) offers only `aes128-cbc`, `aes192-cbc`, `aes256-cbc` and `3des-cbc`,
+    which neither OpenSSH nor the built-in client has by default, so `tacctl
+    ssh` and a pull failed with `no matching cipher found` after the key
+    exchange and the host key had been accepted. `legacy-ssh` now appends
+    `Ciphers=+aes128-cbc,aes192-cbc,aes256-cbc,3des-cbc` to the options of
+    `tacctl ssh` and to the `Host` blocks of `device ssh-config`, and the
+    built-in client of the device reader appends `aes128-cbc` and `3des-cbc`
+    (the CBC ciphers it implements) to its own list. The strong ciphers stay
+    first, so a modern device still negotiates them.
+
+22. **`device add` and the host-key re-scans read the key of a `legacy-ssh`
+    device with the built-in client.** OpenSSH 9's `ssh-keyscan` cannot do the
+    `diffie-hellman-group1-sha1` key exchange or the CBC ciphers an old IOS
+    unit offers, so it printed no key and `device add --legacy-ssh` was
+    refused (`No ssh host key could be read`) until `--no-host-key` or `device
+    hostkey <name> set SHA256:<fp>` was used. When `ssh-keyscan` reads no key
+    from a `legacy-ssh` device, tacctl now tries its own ssh client, which
+    negotiates the legacy algorithms and stops at the host key, before
+    authentication: no password is ever sent. It asks for each key type the
+    device offers and pins them like `ssh-keyscan`'s, with the same `SHA256:`
+    fingerprints. It applies to `device add`, `device hostkey <name> accept`,
+    the re-scans of `device scan` and `device check`, and the mismatch report of
+    `tacctl ssh`. The refusal still appears when both reads fail, and now says
+    so.
+
+23. **A pull of a legacy IOS router compares what IOS stores with what was
+    typed.** Read from a lab router (IOS 12.4(15)SW), `show running-config`
+    prints the typed lines of tacctl's configuration in forms the first
+    comparison listed as differences. The `privilege exec level N <words>` line
+    IOS stores for the words it knows, when it does not know the last ones
+    (`privilege exec all level 7 monitor capture` is stored as `privilege exec
+    level 7 monitor`: the image has no `capture`), is no longer an extra line
+    of `roles`, and `snmp-server queue-length 100`, which the image prints
+    beside the first community, is no longer an extra line of `snmp` when
+    tacctl renders a community. A line of another level or mode, a different
+    queue length and a device-side `all` are still extra, and the command the
+    image did not store (`monitor capture`) is still missing, so `roles` of
+    such a device stays `differs`.
+
+24. **The Cisco comparison reads how the console and VTY lines log in, and
+    whether the device has an `enable` secret.** The `aaa` section of a Cisco
+    device now holds the login method of `line con 0` and of every `line vty`
+    range, which the walkthrough prints as `login authentication default`
+    (the rendered `aaa` of every Cisco variant, IOS-XE, IOS 12.x and RADIUS,
+    ends with those lines). A router whose VTY lines still say `login local`
+    shows `+ line vty 0 4 > login local` and `- line vty 0 15 > login
+    authentication default`. IOS does not print `login authentication
+    default` under a line (the lab router, IOS 12.4(15), has `aaa new-model`
+    on and only the access class under its VTY lines), so with `aaa new-model`
+    on the device a line that has no `login` statement counts as `login
+    authentication default`, as does one that prints it; a rendered `line vty
+    0 15` is satisfied when the device's ranges (`line vty 0 4`, `line vty 5
+    15`) with that method cover it, and the ranges that are in order are not
+    listed. A router without `aaa new-model` has no method on a line with no
+    `login` statement, and one that has nothing of AAA but `login local` on
+    its lines is `missing`, the lines listed all the same. The extraction also
+    records whether the device sets an `enable` secret or password for level
+    15 (by presence, never the value, as one statement of `aaa` in the
+    sections file), and a device with none gets one note under `aaa` when the
+    rendering turns AAA on: with the server unreachable a local user of
+    privilege 15 is then the only way to level 15. A record made by an older
+    tacctl says nothing about the lines or the secret: it is not compared on
+    the lines (a note says so) and gets no note about the secret until the
+    next pull. A rendered `privilege exec [all] level N ...` line that the
+    device stores shortened (`monitor capture` as `monitor`) stays missing,
+    now with a note that names the line the device holds instead; it is not
+    read as equal, since a device on which the line was removed and its
+    parent left looks the same.
+
+25. **A Cisco device's configuration syntax is a setting of its own:
+    `tacctl device config-syntax <name> [auto|ios12|modern]`.** Two lab
+    devices that need `legacy-ssh` (IOSv 15.6, CSR1000v IOS-XE 16.7) speak the
+    modern `tacacs server NAME` syntax, but the comparison rendered the IOS 12.x
+    syntax for every device with the flag, so `device config pull --diff` read
+    both as `aaa differs`, while `device config show` printed the modern syntax;
+    one flag carried two facts. The syntax is now a per-device fact, written to
+    `devices.yaml` as `config_syntax: ios12|modern` only when set (`auto`, the
+    default, is the absence of the key). The verb prints the setting with no
+    word, and is an Engineer verb for the devices of the engineer's own scopes
+    (sudoers `device config-syntax *`, the tier tables and the completion
+    lists); it refuses a device that is not a Cisco device. `device add
+    --config-syntax auto|ios12|modern` sets it on registering (with `--vendor
+    cisco`). `device show` has a `Config syntax` row for a Cisco device
+    (`auto (modern, from the pull of 2026-10-10)`, `ios12`; the resolution is
+    part of the configuration state the read-only tier is not shown), and
+    `device show --json`, `device list --json` and `device export` carry
+    `config_syntax` (and, for `show` and `list`, `syntax` and `syntax_source`).
+    `device import` of the registry's YAML carries the key; a CSV row, and a
+    YAML file that has none (a registry exported by an earlier tacctl), say
+    nothing of it, so a merge keeps the registered one. One resolution decides
+    the syntax for the comparison (`device config pull`, `diff` and `list`) and
+    for the walkthroughs (`device config show`, and `config cisco --name` of a
+    registered device): the explicit `ios12` or `modern`, else the syntax the
+    last pull derived from the device's version line, else (walkthrough only)
+    the modern syntax with one line, `# syntax: modern (no pull yet; set
+    'tacctl device config-syntax <name> ios12' for IOS 12.x, or pull the device
+    once)`, after the data block of `device config show` and on standard error
+    of `config cisco --name`. `--legacy` of `config cisco` and `device config
+    show` stays an explicit IOS 12.x override for that run. A scope served over
+    RADIUS has one syntax, as before. The setting is a Cisco setting
+    everywhere: a registry file, an import and a save refuse `config_syntax` on
+    a device of another vendor, and `device vendor <name> <other>` removes the
+    setting and says so. A setting that contradicts the image the last pull
+    read (`modern` on a device whose pull read `Version 12.4`: the lock-out
+    direction) is not refused (the setting wins) and is no longer silent:
+    `device config pull` ends the device's line with `warning: config-syntax is
+    modern but the device says IOS 12.4(15)T14 (ios12 syntax)` and `--json`
+    carries `syntax_conflict`, `image_syntax` and `os`; `device show` and
+    `device config-syntax <name>` say `modern (the pull of 2026-10-10 read IOS
+    12.4(15)T14, which is ios12 syntax, not modern: check the setting)`
+    (`syntax_conflict` and `image_syntax` in `--json`); `device config list`
+    names it in the DETAIL column and `--json`; the walkthrough prints one
+    `# warning:` line; and `device config-syntax <name> <word>` says it when
+    the setting is made. For a device that was pulled by a build that kept no
+    image line, `device config show` says `the last pull holds no image line:
+    run device config pull <name>` instead of `no pull yet`.
+
+26. **`legacy-ssh` is the ssh algorithms and nothing else.** The flag adds the
+    SHA-1 key exchange, the CBC ciphers and `ssh-rsa` to the ssh login, the
+    host-key scan and `tacctl ssh`; it no longer decides which syntax a
+    device is rendered or compared in (item 25). The help of `device
+    legacy-ssh` and `device add --legacy-ssh`, the README and the manual page
+    no longer say "old IOS" or "rendering" for it, and the hint a failed
+    handshake prints names the algorithms.
+
+27. **`device config pull` of a Cisco device records the image and the syntax
+    it says.** The Cisco read gains `show version | include Version` after
+    `terminal length 0` and before `show running-config`; the first line that
+    names the image (`Cisco IOS Software, ... Version 15.6(2)T`, `Cisco IOS XE
+    Software, Version 16.07.01`) is kept on the record as `os`, and the syntax
+    derived from it as `syntax`: `Version 12.` is `ios12`; `Version 15.2` to
+    `15.9`, `16.`, `17.` and `IOS-XE` or `IOS XE` are `modern`; **any other
+    line has no syntax and is never guessed modern**: IOS 11.x, IOS 15.0 and
+    15.1 (the `tacacs server NAME` syntax is believed to start at 15.2, which
+    is not verified for those, so they take the setting), an ASA registered as
+    cisco and IOS XR. The loader's `ROM:` and `BOOTLDR:` lines name no image
+    and are ignored, so a device that answers only those has no version line.
+    The comparison of the pull is made in the syntax the device says now unless
+    the setting says otherwise (an upgraded device is not compared in the
+    syntax it had), and `pull --json` carries `syntax` and `os`. A device
+    that answers no image line, or one that maps to no syntax, is not an error
+    of the read; if it has no setting (and, for no line at all, its record has
+    no syntax either), the pull is refused with `tacctl device config-syntax
+    <name> ios12|modern`, and nothing is recorded: the pull's own output is
+    where the reason is, and `device config list` is unchanged. Under a
+    setting the pull is compared as set and a record that read no line keeps
+    no image.
+
+28. **A Cisco device whose syntax is unknown is `pull`, not guessed either
+    way.** Nothing in the registry is rewritten by the upgrade, and a record
+    made before item 27 (by a build that did not read the version line) has no
+    version line: a Cisco device whose setting is `auto`
+    and whose last good pull recorded no syntax is `needs pull (syntax
+    unknown)` in `device config list`, `pull` in its state column and in the
+    CONFIG column of `device list`, and `--stale` selects it (so does `device
+    config pull --stale`). `device config diff` of it says `needs pull
+    (syntax unknown)`. One `tacctl device config pull --vendor cisco` after the
+    upgrade makes every such device known; an operator who knows a device sets
+    `ios12` or `modern` and compares it without that pull (the 12.4 router is
+    one `device config-syntax <name> ios12`). A record whose version line maps
+    to no syntax is in the same state. A device of a RADIUS scope is never in
+    this state.
+
+29. **`tacctl rollback` removes the `config_syntax` key.** A release before
+    0.2.5 refuses a `devices.yaml` with a device key it does not know
+    (`device 'x': unknown key 'config_syntax'`), so the rollback plan lists
+    each device that has one under the devices step, warns that the older
+    release compares a `legacy-ssh` Cisco device as IOS 12.x again, and
+    `--apply` removes the keys in the one write that removes the SNMP maps,
+    after the snapshot. The records' `os` and `syntax` fields stay: the older
+    release ignores them.
+
+30. **`config cisco` and `device config show` print the standard Cisco block,
+    and the managed `aaa` section is that block.** One set of lines, in one
+    order, for every Cisco device (the three templates `cisco`,
+    `cisco-legacy` and `cisco-radius`, rewritten, and the managed sections
+    built from the same builders): `aaa new-model` first (nothing under
+    `aaa` exists on IOS until it is set, so a group and its `server` leaf
+    typed before it are rejected); the server block and its group;
+    `ip tacacs source-interface <interface>` when the scope sets one (item
+    33); `aaa authentication login default <methods>` and
+    `aaa authentication login CONSOLE local`; `aaa authorization exec default
+    <methods>`; `aaa authentication enable default group <G> enable`;
+    `aaa accounting exec ...` and `aaa accounting commands <level> ...` per
+    level in use; `aaa session-id common`; the `privilege exec level` lines;
+    SNMP; the VTY access list; the NETCONF step (commented); `line con 0` with
+    `login authentication CONSOLE` and `line vty 0 15` with `login
+    authentication default`. The command authorization (`aaa authorization
+    commands <level> ...` per level in use and `aaa authorization
+    config-commands`) is a Step 2 of its own, after a check: the session
+    that pastes is a local user the server does not know, and a server that
+    answers `fail` for such a name is final and never falls through to
+    `local`, so a device whose TACACS+ path is not proven could end with no
+    session able to run a command. The walkthrough says to open a new
+    session with your own account, run `show privilege`, and only then type
+    Step 2. From `aaa new-model` until the login lists are typed a new
+    TACACS+ login would fail (a local user still gets in): the walkthrough
+    says to paste the block in one go from a session that stays open. RADIUS gets the same where RADIUS has it (no command
+    authorization; `ip radius source-interface`); its `aaa authentication
+    enable default group <G> enable` is not rendered or compared (item 31).
+    `--legacy` (the IOS 12.x syntax) differs from the modern output in the
+    server block (the global `tacacs-server host ... single-connection
+    timeout 5 key ...` line and `server <ip>` under the group), the local
+    enable secret line (`enable secret <PASSWORD>`, not `enable
+    algorithm-type scrypt secret <PASSWORD>`), the hashes of the break-glass
+    accounts (type 5, not type 9), the NETCONF step (a comment: IOS 12.x has
+    none) and the Type 6 note (not available on 12.x); the `aaa` lines, the
+    `privilege exec level` lines, SNMP and the access list are the same.
+    Everything the walkthrough pastes is ASCII (the remark of the access list
+    and the privilege headings had a dash that was not).
+
+31. **The console has a login list of its own, `CONSOLE`, and `enable` asks
+    the server first.** `aaa authentication login CONSOLE local` and
+    `login authentication CONSOLE` under `line con 0`: a local user can
+    always log in on the console, since the `default` list asks the server
+    first and a reject from the server does not fall through to local. With
+    the server up that user lands at privilege 1: the standard does not set
+    `aaa authorization console` and must not (it would put the console under
+    the `default` lists, server first, and defeat `CONSOLE`; the walkthrough
+    says so where it used to suggest uncommenting it), and `enable` asks the
+    server first, which refuses a name it does not know and does not fall
+    through, so the local console is a way to privilege 15 only while no
+    server answers. `aaa authentication enable default group <G> enable`
+    makes `enable` ask the server first: a TACACS+ user lands at the level
+    the server's `priv-lvl` gives, so nobody types `enable` while the server
+    is up (an operator who does is refused by the server, by design: levels
+    come from groups, not from a shared password), and only when no server
+    answers does the keyword fall through to the local enable secret. There
+    is no enable password in the login path. For RADIUS what a server answers
+    to IOS's enable request is not verified: with a reachable server that
+    does not answer enable requests positively `enable` fails, and the local
+    enable secret is used only when no server answers, so the RADIUS
+    walkthrough carries the line commented out with that note and neither
+    renders nor compares it (a device that has it is not told it is extra).
+    The comparison reads the console's leaf as any other: a console that
+    prints no `login authentication` leaf is on the default list, which is
+    not `CONSOLE`, so it shows `- line con 0 > login authentication CONSOLE`
+    and `+ line con 0 > login authentication default` (the vty lines on the
+    default list with no leaf stay what they were).
+
+32. **`aaa session-id common` is rendered and compared.** It was only
+    tolerated (never an extra, never missing); it is now a statement of the
+    `aaa` section like the others, and where a rendering has none (an
+    operator's own template, an old record) a device's line is still no
+    extra.
+
+33. **`tacctl config cisco source-interface <scope> <interface>|none`
+    sets the interface a scope's Cisco devices take their server requests'
+    source address from.** Stored as `cisco.source_interface.<scope>` in
+    `tacctl.yaml` (the full interface name as IOS prints it, with its capitals:
+    `Loopback0`, `GigabitEthernet0/0/1`, `TenGigabitEthernet`,
+    `FortyGigabitEthernet`, `FastEthernet`, `Ethernet`, `Serial`, `Vlan`,
+    `Port-channel`, `Tunnel`, `BVI`, `Management` and the other long type
+    names the verb's help lists; an abbreviation such as `lo0` or `gi0/1` is
+    refused, because IOS stores the long form and the device would compare
+    different for ever; checked by the schema; unset by default; moved by
+    `scope rename`, dropped with the scope, removed by `rollback 0.2.3`),
+    rendered as `ip tacacs source-interface <interface>` (`ip radius
+    source-interface` for RADIUS), compared like any statement, and listed
+    by `config show` when a scope sets one. Without arguments the verb lists
+    every scope's setting, with a scope it shows it; setting or unsetting is
+    the superuser's, an engineer reads their own scopes' (the tier gate sees
+    `config cisco`, which an engineer may run for the walkthrough, so the
+    verb decides). **Unset, nothing is rendered or compared** (never a
+    placeholder in a statement): the walkthrough prints the line commented
+    with the command, and a source interface a device already has is left
+    alone, not an extra.
+
+34. **The names are the ones tacctl has always rendered; nothing is renamed
+    and nothing migrates.** The server block `TACACS`, its group
+    `TACACS-GROUP` (`scope tacacs-group` sets another), `VTY-ACL`,
+    `TACCTL-SNMP`; the one new name is the console's list `CONSOLE`. A device
+    configured by an earlier walkthrough needs no rename. The forms it may
+    still carry (a global `tacacs-server host` on a modern image, a
+    `radius-server host` beside a `radius server` block, a server group of
+    another name) are listed by `device config pull --diff` and `device
+    config diff` as extras (`+` lines), never as satisfied lines, and the
+    standard's lines as missing (`-` lines); the walkthrough removes none of
+    them (`device config plan` replaces or removes them, items 39 and 50).
+    The README gives the steps to replace an old `tacacs-server host` entry
+    from the console (the old entry out, the named block in, each group
+    that held its address pointed at the named block, then a check): the
+    groups keep their names, so the method lists that name them keep
+    resolving (when no group holds the old address, because the lists use
+    `group tacacs+`, the standard group is created and the lists keep using
+    `group tacacs+`), and with command authorization on a TACACS+ session
+    must not be the one that removes the entry. A device that also has
+    `aaa authorization console` cannot take the four steps as they are (the
+    group has no server after the old entry goes, command authorization
+    falls to `local`, and a TACACS+ user is not in the local database): the
+    README and the manual page put a step 0 first, `no aaa authorization
+    console`, typed while the TACACS+ user's commands still pass (the
+    standard never sets it and it is not put back).
+
+35. **The walkthrough starts with Step 0, a commented hardening checklist and
+    the local enable secret.** `hostname`, `ip domain name`, `no ip domain
+    lookup`, `service password-encryption`, `service timestamps debug|log
+    datetime msec localtime`, `no service pad`, `no ip source-route`, `no ip
+    http server`, `no ip http secure-server`, `ip ssh version 2`, `ip ssh
+    time-out 60`, `ip ssh authentication-retries 3`, `transport input ssh`,
+    `exec-timeout` and `logging synchronous` on the lines, then `no enable
+    password` and `enable algorithm-type scrypt secret <PASSWORD>` (`enable
+    secret <PASSWORD>` for IOS 12.x), followed by the scope's break-glass
+    accounts, which moved there from the end so that the local user exists
+    before AAA is turned on. Everything in it is comments: site policy, never
+    compared, never part of the managed sections.
+
+36. **A Cisco device configured from an earlier walkthrough.** It reads as
+    missing the lines of items 30 and 31 and, for its console, as `login
+    authentication default` where the standard has `CONSOLE`; nothing is
+    rewritten by the upgrade and a pull of the device shows exactly that. A
+    record pulled before this release holds no `aaa session-id common` in its
+    `aaa` section (it was not read then), so it shows as missing until the
+    next pull. The break-glass step of the walkthrough is now Step 0 and says
+    the CONSOLE list takes the same accounts. `rollback 0.2.3` removes the
+    `cisco.source_interface.<scope>` keys (a 0.2.3 binary refuses a key it does
+    not know).
+
+37. **`tacctl device config plan` prints what to paste to make a device match
+    what tacctl renders.** Per device, from the last pull: a box naming the
+    device, the irregularity report in plain words, ONE region between `PASTE
+    FROM HERE` and `PASTE TO HERE`, the check and the one line to type
+    yourself afterwards, and the back-out as comments. Nothing is written to a
+    device, and nothing is read from one unless `--pull` says so (it is the
+    pull of `device config diff --pull`, with the pull's options; its progress
+    goes to standard error). The devices are named (`<name>[,<name>...]`) or
+    selected with `--all`, `--scope`, `--vendor` and `--stale`, as for `pull`
+    and `diff`; `--section aaa,roles,mgmt-acl,snmp` limits the plan (the
+    report still names the others; `netconf` and `breakglass` are never
+    planned and are a wrong argument). The report has one numbered item per
+    finding of the comparison (missing, different, out of order, extra, a
+    secret not visible, not plannable for this login), its section, the
+    statement in words with the line (a secret's value elided), its severity
+    (`ACCESS`, `MONITORING`, `COSMETIC`) and what the paste does about it
+    (`Fixed by region line 3`, `Left alone`, `Not fixable by this login`).
+    The region holds only statements the device takes as they stand, the
+    wrapper lines and one label comment per section; the report, the check,
+    the follow-up and the back-out are comment lines outside it. A device that
+    was never pulled, was pulled more than `stale-days` ago, whose last pull
+    failed, whose Cisco syntax is not known (`needs pull`), a WTI unit, or one
+    whose plan has nothing to paste because a section was refused (a
+    statement a Junos group applies, the lock-out guards of the Cisco `aaa`
+    unit) cannot be planned: exit 1, one line on standard error and, with
+    several devices, the cover page. Exit status 0 (the outputs were made, a
+    consistent device included), 1, 2 (wrong arguments; with `--exit-code` also
+    a device that needs a change and none that could not be planned), 130.
+    Every device is logged (`auth.info device config plan user= device=
+    status= sections= converge= secrets= out=`, never a value).
+
+38. **A plan is safe when pasted whole, and its follow-up is never in it.** On
+    Junos the region is `configure private`, the statements, `show | compare
+    | no-more`, `commit check` and the confirmed commit `commit confirmed N
+    comment "tacctl plan <device> <time> by <user>"`: without the one word
+    `commit`, typed by hand after the check, the switch undoes the paste by
+    itself in N minutes. A `configure private` that another session's
+    uncommitted work refuses leaves every later line an unknown command, and
+    the report says so. On IOS the region is `configure terminal`, the lines
+    and `end`: the change is live at `end` and nothing rolls it back by itself
+    (the report says so twice and asks for a second privilege-15 session until
+    the end); there is no revert timer, because on IOS 15.x it reverts only
+    while the session that armed it stays open, which is not the case that
+    matters, a paste that cuts the technician's own session. `write memory`
+    is typed by hand after the check. The region never holds a plain
+    `commit`, `exit`, `rollback`, `write memory`, `configure confirm`, `copy`,
+    `delete /force` or `reload`, nor `breakglass`, `netconf`, the application
+    of the management filter on `lo0`, the `access-class` binding, `system
+    root-authentication`, `system services ssh`, groups, `username`, `enable
+    secret` or a `line` header; every region is checked to be printable ASCII
+    and of an owned shape before it is printed. **`tacctl config devices
+    confirm-timeout [<minutes>]`** sets N (1-60, default 5; the key
+    `device.config.confirm_timeout` of `tacctl.yaml`, which `rollback`
+    removes).
+
+39. **`--converge` adds a cleanup region for the extras.** A statement in a
+    standard hierarchy that the standard does not have is reported with its
+    severity and the exact line that removes it, and left alone by the plan's
+    region. `--converge` makes the region that removes the old servers and the
+    like, between `CLEANUP FROM HERE` and `CLEANUP TO HERE`, for a device that
+    has nothing else to paste (item 46): on IOS another `tacacs server` block
+    or `tacacs-server host` line of the scope's protocol, an old `aaa group
+    server` (its entries first, the group before the server it names), another
+    `snmp-server community`; on Junos another `system tacplus-server` (a
+    `system radius-server` on a RADIUS scope: only the scope's own protocol,
+    item 53), another `snmp community`, the entries of another `snmp
+    client-list`, a login class no user uses. Never a login, a line, the enable
+    secret, a method list, another ACL, the other protocol's servers and
+    groups, a server or group that a statement which stays names (item 47);
+    never a line that holds the address given with `--from` (the address you
+    are logged in from), and without `--from` no client-list entry; the whole
+    cleanup is refused while the standard's server is missing and the plan does
+    not put it there; a section the pull's login could not see completely is
+    not cleaned. The cleanup ends as the plan does (`commit confirmed`, or
+    `end`), has its own follow-up, and each item of the report says which
+    cleanup line removes it.
+
+40. **`--backout` prints the back-out region alone.** From the last pull: the
+    statements that put back what the pull showed, for the sections the plan
+    changed, between `BACK-OUT FROM HERE` and `BACK-OUT TO HERE`, with the
+    same wrapper as the plan's region. On IOS the `no` lines in reverse
+    order, with the console and VTY login leaves typed again and never a `no
+    line`; a secret tacctl does not hold is a comment that says to type it
+    again. A pull made after the paste replaces what the back-out is computed
+    from: the plan keeps its back-out beside the record, and `--backout` prints
+    that one then (item 48); `--out-dir` also writes it beside the plan, at
+    plan time, as `<name>.backout.txt`.
+
+41. **`--plain`, `--json`, `--out`, `--out-dir`, `--force` and the cover
+    page.** `--plain` is the statements of one device, no wrapper line, no
+    comment, no banner (for `load set <file>` on Junos; with `--converge` a
+    device that has a cleanup makes two files, `--out` and
+    `<name>.cleanup.set`); `--plain` of several devices
+    needs `--out-dir`, and `--plain --no-secrets` is refused. `--json` is an
+    array with one object per device (`name`, `address`, `scope`, `vendor`,
+    `based_on`, `status` `consistent`, `needs-change`, `left-alone` or
+    `cannot-plan`, `reason`, `irregularities`, `region`, `after`, `backout`,
+    `extras`, `skipped`, `withheld`, `warnings`, `confirm_timeout`, and with
+    `--converge` `cleanup`, `cleanup_after`, `cleanup_deferred`,
+    `cleanup_refused`, `cleanup_left`); a secret's value is never in it. `--out <file>` writes one
+    device's output; `--out-dir <dir>` one file per device (`<name>.txt`,
+    `.set` with `--plain`, `.json` with `--json`), each plan's
+    `<name>.backout.txt` and, for several devices, `COVER.txt`. The files are
+    0600 in a 0700 directory (an existing directory open to others is
+    refused), written as the user who ran sudo (the verb runs as root, and a
+    path a lower tier names is never written with root's rights), and an
+    existing file is refused, all of them before any is written, unless
+    `--force`. Several devices print the cover page first: one line per
+    device (`consistent`, `needs change: 2 irregularities fixed by the paste,
+    1 left (1 ACCESS), 1 extra`, `NOT consistent, nothing to paste`, `cannot
+    be planned: <why>`) and the totals, then the outputs separated by a rule.
+
+42. **A plan types a secret only where the device lacks it.** A server key or
+    community the device lacks is typed in its line, and the output says so:
+    `THIS OUTPUT HOLDS THE TACACS+ KEY OF SCOPE lab` is the first line of the
+    report and is repeated on standard error, so a redirected output carries
+    it. A secret the device has, or one the pull's login could not see, is
+    neither printed nor changed unless `--secrets`, which types every secret
+    statement of the planned sections again (the way to rotate a key).
+    `--no-secrets` leaves each as a comment line, `# VALUE NEEDED, then remove
+    this mark: ...`, so a paste as it stands cannot set the literal
+    `<SECRET>`. The values are the ones `device config show` prints for the
+    same caller; an engineer's print logs `secret-read`.
+
+43. **A Cisco plan follows the standard block, and holds command
+    authorization back until the server is proven.** The region is the
+    standard's order: `aaa new-model`, the server block or host line, the
+    group, the method lists with `aaa authorization exec` directly after the
+    login list, accounting, `roles`, `snmp`, `mgmt-acl`, then the console and
+    VTY login leaves. The `aaa authorization commands <level>` and
+    `config-commands` lines are in the paste only when the pulled
+    configuration already uses the scope's server (its address in a server
+    block or host line and a login or exec list that names the group);
+    otherwise the report says `command authorization is not in this paste: log
+    in on a new session with your own account and check 'show privilege', then
+    plan again; it is the one group of lines left`, and the first plan puts
+    everything else (once the commands list names the server every further
+    command of the pasting session and of its back-out is asked of it, and
+    the server answers FAIL for a user it does not know and never falls
+    through). A device that has no local user at privilege 15 and no `aaa
+    new-model` is refused for `aaa`. The syntax is the one resolution of
+    `device config-syntax` and the pull's version line (item 25), never the
+    ssh flag. The unset `cisco.source_interface.<scope>` is a warning of the
+    report, never a line. The report says `Checked on a device: IOS 12.4(15) (a
+    7200 emulator), IOS 15.6(2)T and IOS-XE 16.7.1; other trains are written
+    from the references`.
+
+44. **Who may plan, and what a login's class cannot commit.** `device config
+    plan` is an Engineer verb for the devices of the engineer's own scopes (the
+    tier tables, the completion lists and the sudoers rule `device config plan
+    *`; a superuser sees all; an operator is refused). The Junos login class of
+    the caller's group, as the rendering gives it, decides what is planned: a
+    section it cannot commit (for `EN-CLASS`: the server, accounting, `login`,
+    `snmp`) is not in the region and the report says `Not fixable by this
+    login: EN-CLASS cannot change 'system tacplus-server' (ask a superuser)`,
+    in one line. `plan --pull` shares the pull's password handling, so the
+    shell's and the console's password cache serve it too (the
+    `TACCTL_ASKPASS` alias names it).
+
+45. **A Junos pull also reads the plain view.** After the inheritance view,
+    the same session reads `show configuration | display set` (best effort: a
+    device that does not answer it is still pulled) and keeps it, in the form
+    of the sections file, as `/var/lib/tacctl/device-config/<name>.plain`
+    (0600, stamped with the time of the pull it belongs to, so a view of
+    another pull is ignored; `device config forget` and `device rename` carry
+    it). The plan
+    compares the two to tell a statement of the device's own from one a group
+    supplies: a statement that a group applies is never changed, its section is
+    refused. A record without a plain view says so in the report (`pull the
+    device again to read it`).
+
+46. **A device with something to paste gets no cleanup beside it.** A
+    technician who copies a whole output runs every region in it: the old
+    server would go in the paste that adds the new one, and on Junos the second
+    `commit check` would confirm the first region's pending `commit confirmed`
+    unverified. `--converge` therefore makes the cleanup region only for a
+    device whose first region is empty (the plan after the paste and the
+    verifying pull, `tacctl device config pull <name> --diff`); the cleanup is
+    then the whole output, between `CLEANUP FROM HERE` and `CLEANUP TO HERE`
+    (never the first region's `PASTE TO HERE`). A device with a first region
+    gets that region and one line in the report: `cleanup comes after this
+    region is pasted and verified: pull the device, then plan --converge
+    again` (`cleanup_deferred` in `--json`); `--plain --converge` makes the
+    cleanup file only for a device that has one.
+
+47. **The cleanup never removes what a statement that stays names.** An IOS
+    cleanup removes only the scope's own protocol's servers and groups (a
+    TACACS+ scope never touches `radius server`, `radius-server host` or `aaa
+    group server radius`, which may serve 802.1X or another list; a RADIUS
+    scope never touches TACACS+); never a group that an `aaa ... group <name>`
+    line which stays names, nor the servers that group names (the report says
+    which statement names it); no server at all while a staying list uses
+    every server of the protocol (`group tacacs+`, `group radius`); and no
+    named `aaa authorization commands` list, because the pull does not say
+    which line uses a named list: it is left, with its `no` line in the report
+    to type when you know it is not in use. The order is the group entries,
+    then the groups, then the servers, so an entry is gone before its group
+    and a group before the server it names, and a RADIUS group's `server name
+    X` names a RADIUS block.
+
+48. **A plan keeps its back-out, and `--backout` prints it after the check
+    pull.** The check the after-steps ask for is `device config pull <name>
+    --diff`, and that pull is the new baseline: a back-out computed from it
+    would be "nothing to back out". Every plan that has changes now saves its
+    back-out beside the device's record (`/var/lib/tacctl/device-config/<name>.backout`,
+    0600, stamped with the pull it was computed from, carried by `device config
+    forget` and `device rename`): the text the plan printed, with a line that
+    holds a secret's value turned into a note to type it with its own value.
+    `plan <name> --backout` prints the kept one, with a first comment line
+    that says which plan and pull it undoes (the latest plan with changes
+    replaces it, item 51); with none kept it computes it from the pull, and
+    with no plan to undo it says `nothing to back out: no plan was made from an
+    earlier pull of <name>` (exit 0). `--backout --pull` is refused (exit 2): a
+    pull replaces the picture a back-out is computed from.
+
+49. **The files of a plan are named and checked more strictly.** The name of a
+    device's cleanup file (`<name>.cleanup.set`) is reserved in a run, so the
+    plain file of a device called `<name>.cleanup` is not the same file and
+    `--force` cannot let one replace the other; `COVER.txt` is reserved only
+    when a cover is written; `--plain --out` of a device that cannot be planned
+    writes no file, as `--out-dir` already did, and says so on standard error;
+    the `out=` of the audit line is quoted when a path holds a space. Writing
+    as the user who ran sudo proves each change of the thread's file-system
+    identity (a refused change is an error, never a write as root), and a
+    directory that only a supplementary group of the user may write is
+    refused. A plan reads the record, its sections and its plain view under
+    the store's lock, so a pull running at the same time cannot mix two pulls.
+
+50. **A server entry of another name at the standard's address is replaced,
+    in an order that keeps the session.** IOS silently refuses a second
+    server entry with the same address and key, so a device that already
+    holds the standard's server under another form (a named `tacacs server
+    <OTHER>` block, the shape every earlier walkthrough produced, or the
+    legacy `tacacs-server host` line on a modern image) could not take
+    `tacacs server TACACS` beside it: the plan as first built typed the
+    standard block (refused), then `server name TACACS` into the group and
+    removed the old entry, and the group named a block that did not exist
+    (TACACS+ dead, local fallback only). Now the region (a) takes the
+    command-authorization lists that name the group off first, typed while
+    the server still answers (`no aaa authorization config-commands`, then
+    each `no aaa authorization commands <level> ...`), (b) removes the
+    group's `server name <OTHER>` or `server <address>` entry and then the
+    old block or `no tacacs-server host`, (c) adds the standard block, the
+    group's `server name TACACS` and the rest in the standard's order, and
+    (d) types the lists again last. A group of another name that held the old
+    entry is pointed at the standard block by its own name, so the method
+    lists that name it keep resolving. The back-out is the inverse (the old
+    block and entry back, the old key a note to type yourself, the lists
+    last) and starts by taking command authorization off. The report says
+    which entry is replaced and why. A `radius server <OTHER>` block at the
+    standard's address and ports is replaced the same way (RADIUS has no
+    command authorization). The refusal with the steps by hand
+    (`this device runs the legacy server form with command authorization`)
+    remains only for a device that authorizes commands and shows no server in
+    use (no login or exec list names a group): nothing then proves that the
+    pasting session is a TACACS+ user. On `ios12` the host line is the
+    standard and nothing of this applies. The old entry is removed by the
+    region only when the plan types the standard block's address or key; a
+    block that has both leaves the old one an extra for `--converge`.
+
+51. **The kept back-out is the device's and says what it covers.** It is
+    stamped with the pull, the device's address and the sections it undoes.
+    A narrower plan from the same pull (`plan <name>` of `aaa` and `snmp`,
+    then `plan <name> --section snmp`) no longer replaces it: the narrower one
+    would be labelled as undoing the plan of that pull. A later plan with
+    changes replaces it and the report says so (`this plan replaces the kept
+    back-out of the plan from the pull of <time> (UTC); print it first with
+    'tacctl device config plan <name> --backout'`); a plan with changes and no
+    line tacctl can type to undo them removes it (an earlier plan's back-out
+    would be printed for it) and says so. `--backout` prints the kept one
+    whenever one exists, whatever pull it was made from (it is what was
+    pasted), with a first comment line that names the sections and the pull;
+    it prints it even when the plan itself cannot be made (a stale record, a
+    rendering that fails), with one line on standard error; and for a name
+    whose address changed since the plan it says `nothing to back out: the
+    kept back-out is for another device address` (exit 0). The after-steps
+    say it is kept `until the next plan with changes`.
+
+52. **A file of an earlier plan is not left beside a new one.** A plain plan
+    after the verifying pull writes `<name>.set` and `<name>.cleanup.set`; when
+    the device changed and `--force` wrote the new `<name>.set`, the old
+    cleanup file stayed and could be loaded beside the new statements. A
+    `--plain` run that writes a device's file now removes that device's cleanup
+    file (`<out>.cleanup.set` for `--out`) when it does not write one itself,
+    and a text `--out-dir` run removes `<name>.backout.txt` when the plan has
+    no back-out to write; each says so on standard error (`Removed <path> (a
+    file of an earlier plan that this plan does not make)`). `--plain --converge`
+    says on standard error why a device has no cleanup file: the cleanup is
+    deferred to after the first region, refused as a whole, or there is
+    nothing to remove.
+
+53. **The Junos cleanup follows the scope's protocol.** On a TACACS+ scope it
+    removed `system radius-server <X>` too, which may serve accounting or
+    another login method; on a RADIUS scope it removed `system tacplus-server`.
+    It now removes only other servers of the scope's own protocol, as the IOS
+    cleanup does, and keeps one that a statement staying on the device names
+    (`system accounting destination <protocol> server <address>`). Items 39
+    and 47 read that way, and the order of an IOS cleanup is the group
+    entries first, then the groups, then the servers. The README and the
+    manual page list `snmp-server community` and `snmp community` among what
+    the cleanup removes.
+
+54. **The report agrees with the region it prints, and the Junos cleanup
+    asks for the pending commit.** A device with an empty first region, a
+    refused section (a management ACL the `--from` address is not permitted
+    by) and a cleanup said `CANNOT BE PLANNED ... Nothing is pasted for this
+    device` and then printed the cleanup region; it now says the cleanup
+    region is the only paste and names the refused section as left alone. The
+    check pull of a Junos plan is taken before its `commit`, so a plan made
+    from it reads as applied while the `commit confirmed` may still be
+    pending: the report of a Junos cleanup and its follow-up now say to check
+    that `show system commit` shows no pending `commit confirmed` (type the
+    plan's `commit` first).
+
+55. **Smaller corrections of the plan.** A kept back-out turns a line that
+    holds a value into a note whether or not its elided form is known. A group
+    entry `server 192.0.2.5` names the `radius-server host 192.0.2.5 auth-port
+    ... acct-port ...` the device stores, so the cleanup that removes the host
+    removes the entry with it and a host a staying entry names stays.
+56. **An operator can no longer interrupt service, even intermittently.**
+    The rule the shipped `operator` rules and privileges are now written to:
+    nothing an operator (or the `readonly` viewer) may run can drop or reset a
+    connection, a session or an adjacency, change forwarding, or load a device
+    enough to degrade forwarding or management, with any arguments the server
+    permits. The engineer is the escalation. Out of the operator's command
+    rules (`commands.operator`) and out of `privileges.operator`: `monitor
+    capture ...` (the control plane takes the matched packets and `export`
+    writes or sends them off the box), and the `clear` forms `counters` (it
+    erases the evidence of an escalation; no service impact, but the operator
+    reads counters, the engineer resets them), `line <n>` (ends another
+    session at once), `ip arp <address>` and `arp-cache <name>` (a
+    re-resolution, a brief interruption for the host, a whole interface or
+    table with the arguments the device accepts) and `mac address-table
+    dynamic ...` (every frame to an unlearned address floods, a port or a
+    VLAN with it). The operator has no `clear` or `monitor` rule at all
+    afterwards (the catch-all denies them). `ping` and `traceroute` stay, as
+    the one-line extended forms with every number inside a bound the rule
+    checks (one rule per command, in front of it a deny of the interactive
+    forms): `ping [vrf <name>] [ip|ipv6] <host>` and, in any order, `source
+    <addr|if>`, `size 1-9999`, `df-bit`, `repeat 1-1000`, `timeout 1-10`,
+    `data <hex>`, `validate`; `traceroute [vrf <name>] [ip|ipv6] <host>` and,
+    in any order, `source <addr|if>`, `numeric`, `probe 1-10`, `ttl 1-255
+    [1-255]`, `timeout 1-10`; `mpls ipv4|pseudowire <target> [<vc-id>]` for
+    both. A value past a bound (`repeat 1001`, `repeat 2147483647`, `timeout
+    0`, `size 10000`, `probe 11`, `ttl 256`), `sweep` (its one-line syntax is
+    not verified here: a lab item; MTU testing is `size` with `df-bit`),
+    another keyword and anything after the options are denied. The
+    interactive dialog is denied: a bare `ping` or `traceroute`, or a
+    protocol keyword with no host (`ping ip`, `ping ipv6`, `ping vrf MGMT
+    ip`, `ping mpls`, `ping clns`, `traceroute ip`, ...), makes IOS ask its
+    questions (repeat count, timeout, sweep range) at the device, where the
+    server neither authorizes nor accounts what is typed, while the one-line
+    forms carry the same choices as arguments the rule checks and the
+    accounting records. A broadcast or multicast address as the host is a
+    residual risk no regex can close; the engineer runs every form,
+    unbounded. `privileges.operator` is `undebug all` alone: `exec all:
+    ping`, `exec all: traceroute` and `exec all: monitor capture` are gone,
+    so on a device the level-1 `ping` and `traceroute` are what a user below
+    level 15 runs, and with the server unreachable (the `local` fallback) or
+    over RADIUS, which carries no command rules, an operator has IOS's own
+    basic `ping` and `traceroute` and nothing beyond them: lowering them would
+    hand every form to every user whenever the server does not answer, which
+    the user ruled out (the strict side of the trade-off, decided). The `vrf`
+    and `mpls` forms, which `exec all:` lowered, are expected to be level 15
+    again, the engineer's, however the server rule reads (a lab item);
+    whether an image accepts `repeat` or `timeout` at level 1 is not
+    something tacctl can change, and the README says so. `undebug all` (it
+    only stops a debug, which relieves load) and `terminal` (a session's own
+    settings) stay. The invariant is stricter and has no exception left:
+    every shipped privilege entry is permitted by the group's rules bare and
+    with any arguments its own keywords leave to it (a keyword child with a
+    level of its own, `show running-config view full`, keeps it;
+    `TestPrivilegesArePermitted`, whose `localFallbackExceptions` is gone).
+    The role preset's operator and viewer rules follow the shipped ones, and
+    its operator `show` deny gains `tech-support` (the level already stopped
+    it). `config cisco` and `device config show` render `privilege exec
+    level 1 show running-config` and `privilege exec level 7 undebug all` and
+    nothing else; the engineer permits every removed command (rules and level
+    15), which `tests/tools/permcheck-baseline.txt` proves live. An operator
+    on a WTI unit keeps the `User` level: it can end a console session on a
+    port the Default User Access list grants (`/D`), which is the point of
+    it, and the README says so. `rollback 0.2.3` leaves the rendered files as
+    they are, and the shipped rules of 0.2.3 permit the commands again, so an
+    installation on the shipped rules is told by `config validate` of 0.2.3
+    that its rendered configuration is out of date until `tacctl config
+    render` there brings the permits back.
+
+57. **A Junos operator has no `clear` bit, and the preset's deny sets are
+    narrower for it.** `OP-CLASS` is `network trace view view-configuration`
+    (no `clear`): the bit reached every `clear` family that needs only it
+    (`clear bgp|ospf|isis|... neighbor`, `clear security flow session`,
+    `clear arp`, `clear ethernet-switching table`, the counter resets), which
+    the preset's deny set could not list within 241 bytes, so this holds with
+    no preset, over RADIUS and whatever the server sends. The `config
+    juniper` summary says `local: network/trace/view + view-configuration`
+    for the operator and `operator bits + clear, reset, ...` for the engineer
+    (whose `EN-CLASS` bits are unchanged, `clear` among them; `engineer` may
+    run every removed command). The role preset's `deny-commands` follow: the
+    operator denies `clear` whole in place of the family list and `monitor
+    traffic` whole in place of `monitor traffic ... write-file` (a capture on
+    the routing engine, unbounded without a `count`; `monitor start|stop|list`
+    and `monitor interface` stay), and the viewer's and the operator's both
+    deny `ping ... rapid` and `ping ... interval` (they send at the reply
+    rate or at a chosen one; `count`, `size` and the default pace stay).
+    The sets are 136, 133 and 219 of 241 bytes (viewer, operator, engineer).
+    A device configured from an earlier Step 1 keeps `clear` in `OP-CLASS`
+    until Step 1 is pasted again: `device config plan` for a pulled device
+    prints `delete system login class OP-CLASS permissions clear`. Stored
+    deny sets of the 0.2.3 preset keep working as before until `tacctl group
+    reset operator --preset` and `tacctl group reset readonly --preset` bring
+    the new ones (item 58 names them). A shipped Junos deny set that applies
+    to every install, without the preset, is a mechanism of its own and is
+    not part of this change: without the preset (or sets of your own, or
+    the RADIUS `Juniper-Deny-Commands` attribute) nothing denies `ping
+    ... rapid`, `ping ... interval` or an unbounded `monitor traffic`; the
+    bit removal is the protection every install has, and those three are
+    denied only where the deny sets are sent. Which bit `test interface
+    restart-auto-negotiation` needs is an open lab item.
+
+58. **Moving from 0.2.3's operator rules to this release.** A stored value
+    is a choice, so `tacctl upgrade` drops only the one that is not: a
+    `privileges.operator`, `commands.operator` or `commands.readonly` in
+    `tacctl.yaml` that is exactly what 0.2.3 shipped (`group privilege add`
+    seeds the shipped list into the override first, so an installation that
+    ever added an entry holds the nine lines) is removed, with an info line
+    each, and the shipped values of this release apply, on every install
+    whichever backend is enabled (a RADIUS-only one included); the same exact
+    match is dropped when `tacquito.yaml` of an installation without a store
+    is migrated. Any other stored value is kept, and the upgrade ends with a
+    red notice that names each setting with the removed entries
+    (`privileges.operator (exec all: ping, clear line)`, `commands.operator
+    (clear, monitor, ping, traceroute)`, `commands.readonly (ping,
+    traceroute)`, `junos operator deny-commands` for the 0.2.3 preset's
+    value) and the command that replaces each: `tacctl group privilege reset
+    operator` and `tacctl group commands reset <group>` for a list somebody
+    stored (the shipped value), and, for what 0.2.3's `group preset roles`
+    stored (its `show` deny and the Junos deny sets, which the shipped
+    rules do not carry), `tacctl group reset <group> --preset --only
+    commands,junos` (`--only junos` for the Junos set alone), which puts the
+    preset's current value back and loses no deny (each takes `--dry-run`).
+    `tacctl config validate` prints the same as a warning, `Operator
+    policy:`, which does not fail the validation. Devices pasted earlier
+    keep their `privilege exec level 7 ...` lines (and, on Junos, `clear`
+    in `OP-CLASS`) whatever `tacctl.yaml` holds, so until a device is
+    re-pasted its operators keep the old reach when the server does not
+    answer, and always over RADIUS. The first upgrade onto this release says
+    so, on every install, with the lines to remove (on Cisco `no privilege
+    exec all level 7 ping`, `no privilege exec all level 7 traceroute`, `no
+    privilege exec all level 7 monitor capture`, `no privilege exec level 7
+    clear counters`, `clear line`, `clear ip arp`, `clear arp-cache`, `clear
+    mac address-table dynamic`; on Junos `delete system login class
+    OP-CLASS permissions clear`) and the way to get exactly the lines a
+    device needs: `tacctl device config pull <device>` and `tacctl device
+    config plan <device>`, which prints them, parents included, in its
+    paste region. It says so once (the marker `operator-policy-noted` in
+    `/var/lib/tacctl`, which a fresh install writes at once and `tacctl
+    uninstall` removes) and again at each upgrade while a stored setting
+    still carries a removed entry. `tacctl group privilege reset operator`
+    prints the removal lines only for entries a stored list holds that the
+    shipped one does not; for an install on the shipped list it says the
+    group is already canonical and prints none.
+
+59. **`group commands seed` writes the shipped rules.** The recovery verb
+    wrote a broader legacy set that gave the operator `clear`, `test`,
+    `monitor` and `enable`, and `ping` and `traceroute` with any arguments;
+    it now writes the shipped rules of the built-in groups (what `group
+    commands reset` writes), so it cannot hand an operator what item 56
+    removed. Its verb description says so.
+
+60. **A privilege line IOS added for a command that is gone is extra too.**
+    `device config pull` and `device config plan` took the `privilege exec
+    level N <words>` lines IOS adds for the words leading to a command
+    ('privilege exec level 7 clear' for 'privilege exec level 7 clear
+    counters') as part of that command even when nothing rendered was left
+    beneath them, so a device pasted with a removed command kept the parents
+    after the plan's `no` lines and a second plan was needed. A parent is the
+    image's own line only while a rendered command is beneath it; otherwise
+    it is extra and the plan removes it with the command (whenever a
+    rendering is given, a rendered `privilege` line or none).
+
+61. **The privilege lines IOS 15.x leaves behind are the image's own and are
+    not reported.** On IOS 15.x and IOS-XE, `no privilege exec level N
+    <command>` does not remove the line: the image keeps `privilege exec
+    level <the command's own level> <command>` (`level 15 clear counters`,
+    `level 15 monitor capture`, `level 1 ping`, and the words leading to
+    them: `level 15 clear ip`, `level 15 monitor`, `level 1 clear`, `level 1
+    show`). Nobody can remove such a line, so a device that ever had one
+    removed read `roles differs` forever, `device config pull --diff` showed
+    the lines as `+`, and `device config plan` listed them as irregularities
+    it could not fix. A line `privilege exec level L <words>` is now the
+    image's own, and neither compared nor reported, when `<words>` is one of
+    the commands tacctl lowers or has lowered (`ping`, `traceroute`, `monitor
+    capture`, `clear counters`, `clear line`, `clear ip arp`, `clear
+    arp-cache`, `clear mac address-table dynamic`, `undebug all`, `show
+    running-config`, and the words leading to them), `L` is that command's
+    own level, it has no `all`, and the rendering has no line for that
+    command. A line at any other level is still an extra, a rendered line the
+    device lacks is still missing, and the back-out's comment about the
+    lines is unchanged.
+
+70. **`tacctl breakglass hold <device> --reason "<text>"` makes the server
+    stop answering one device, so its local accounts can be used while the
+    server is up; `release <device>` answers it again.** The standard Cisco
+    block (items 30 and 31) and the Junos `authentication-order` use a
+    device's local accounts only while no server answers it, so the way in
+    for a locked-out technician was a cable or a hand-edited firewall on the
+    server. A hold is the superuser's, for one registered device, for an
+    exceptional case, and is shown until it is released: there is no timer and
+    no automatic release, and no whole-scope form. It asks for the device's
+    name typed back at a terminal (no `--yes`), says in a paragraph that the
+    act is for one device in exceptional circumstances and which local
+    accounts (`scope breakglass <scope> list`) are the only way in, and
+    prints one report: the record, what was rendered (`192.0.2.0/24 of scope
+    'lab' answers as 8 prefixes without 192.0.2.21`), the backends that
+    restarted, the way in for the device's vendor (Cisco: ssh as a local
+    account, the console's local `CONSOLE` login and `enable` with the local
+    secret; Junos: a local `system login user`; WTI: Fallback Local), that its
+    accounting goes to a server that does not answer it, `Held now:` with every
+    hold that stands and `When done: tacctl breakglass release <device>`. It
+    is refused, with nothing changed, for a device that is not registered (an
+    enrolled Linux host is not one), has no address, is held already, is at a
+    loopback address, an address a listener of either backend binds or the
+    recorded address of an enrolled host (the server's own logins come from
+    `127.0.0.1`), or that no scope covers (`already unanswered`). `--reason`
+    is required, 1 to 256 characters. The record is
+    `breakglass_hold.<device>.address|since|by|reason` in `tacctl.yaml` (a
+    device name's dots are written `~` in the key), so every snapshot holds
+    it and `backup diff` shows it; `release` removes it from the record alone,
+    so a device removed from `devices.yaml` by hand is still released.
+
+71. **A hold is carved out at render time; the store is never changed.** Both
+    renderers replace every prefix of every scope, and every tagged address of
+    `scope devices` for RADIUS, by itself minus the held addresses: a `/24`
+    that holds the address becomes the eight prefixes `/25` to `/32` that do
+    not, a prefix equal to the address is gone, an IPv6 `/64` is sixty-four
+    prefixes, several holes in one prefix are taken out in turn, and a prefix
+    that holds none is written as it was. A piece sorts where the prefix it
+    came from did (and, in `clients.conf`, falls on the longest stored
+    prefix's client), so every address that is not held is answered by the scope
+    that answered it before. The read-back of the rendered `tacquito.yaml`
+    compares the file with the same carved model, so it keeps passing while a
+    hold stands. `tacquito.yaml` and `clients.conf` get a comment block that
+    names each held address, its device and the prefixes it was carved from
+    (only where something was carved), never the reason. `hold` then `release`
+    renders the original bytes, byte for byte; each is one restart of each
+    backend whose file changed, and a release that changes nothing (the device
+    was uncovered meanwhile: `breakglass list` says `no scope covers it now`)
+    restarts nothing. `scope rename`, `scope prefixes` and `scope remove` are
+    neither refused nor changed: the record names no scope, the carve-out
+    applies to every scope that covers the address.
+
+72. **A held device is shown as held wherever it is shown.** `breakglass list
+    [--json]` (device, address, scope, since, how long, by whom, why);
+    `status` (`Break-glass:        none held`, or one red line per hold);
+    `device show` (a `Break-glass` row: `HELD since 2026-10-10 14:02 (2 h 14
+    min) by alice: <reason>; the server does not answer 192.0.2.21`) and `device
+    list` (`BREAK-GLASS` in the STATE column and a footer) and `device show
+    --json`, `device list --json` and `device check --json` (a `breakglass`
+    object with `held`, `address`, `since`, `by` and `reason`); `device check`
+    (a note on the Scope row); `device scan` (a refusal of the address reads
+    `(break-glass held)` in place of `(no scope)`); `scope routing` (one line
+    per hold under the stored rows), `scope show` (`Break-glass held:` under
+    the prefixes), `scope list` (`(1 break-glass hold)`) and `scope lookup`
+    (`NOT ANSWERED: break-glass held on <device> since ...`, and a note for a
+    range that holds a held address); `config validate` (a warning per hold,
+    red when the device is not registered). `device list --unconfigured` does
+    not list a held device. An engineer sees the holds of the devices of their
+    own scopes only.
+
+73. **What a hold changes for other verbs.** `device address` and `device
+    remove` (and `device import` that would move or remove it) of a held device
+    are refused (`break-glass is held on <name>: release it first`), because
+    the hold is on the address the server sees; `device rename` moves the
+    record with the device and renders the comment again, restarting nothing.
+    `device config pull`, `diff --pull` and `plan --pull` of a held device are
+    refused up front, and a batch (`--all`, `--scope`, `--vendor`, `--stale`)
+    skips it with that line instead of failing on it, because the device does
+    not authenticate your login; `device config plan` of the last pull works,
+    puts `BREAK-GLASS HELD on this device since ... by ...: the server does not
+    answer it, so the check below ("a NEW ssh session as yourself") cannot pass
+    until it is released` before its items and marks the device on the cover
+    page (`[break-glass held]`; `breakglass_held` in `--json`). `tacctl ssh` of
+    a held device warns and connects. The three after-steps comment lines of a
+    plan (`Locked out ... A superuser runs: tacctl breakglass hold <name>
+    --reason "..."`, the local login, `... tacctl breakglass release <name>`)
+    end every Cisco and Junos region's after-steps, the cleanup's and the
+    back-out's, whether or not the device is held, and Step 0 of the Cisco
+    walkthrough has one commented line after the accounts: `To use these
+    accounts while the server is up: tacctl breakglass hold <device> --reason
+    "..." (a superuser); release when done`. `tacctl backup restore` is a
+    render like any other: a hold comes back with a snapshot of a
+    `tacctl.yaml` that has it and goes with one that lacks it, and the
+    restore says which devices are held now and which will be held after
+    (before the question, and again at the end) whenever that set changes.
+
+74. **Tiers and the log.** `hold` and `release` are the superuser's (the tier
+    table has no row for them, as for every change of what the scopes
+    answer); `list` is an engineer row with its sudoers line (`breakglass
+    list`, read-only, the devices of the engineer's own scopes). Both verbs
+    log `auth.info breakglass hold device=<name> addr=<ip> reason="<text>"
+    by=<user>` and `breakglass release device=<name> addr=<ip> held=<duration>
+    by=<user>` (the reason is logged: it is where the why outlives the
+    release) and take the snapshot every change takes first. `tacctl.yaml`
+    carries no credential and the reason never reaches a backend file.
+
+75. **`tacctl rollback` is refused while a hold stands.** In the dry run and
+    with `--apply` alike: the older release has no such record, so the device
+    would stay unanswered until the older release's first render and then be
+    answered without anyone releasing the hold. The refusal names each held
+    device with its address, who held it and since when, and
+    `tacctl breakglass release <device>`; nothing is changed.
+    `breakglass_hold.*` is in the keys a rollback strips when none stands.
+
+76. **The break-glass texts say how to use the local console while the server
+    is up.** The README and the manual page already said the console's local
+    login and `enable` work only while no server answers; they now add that
+    `tacctl breakglass hold <device>` is how to make that happen on purpose for
+    one device (a "Holding break-glass" subsection with the procedure per
+    vendor, the `enable` design paragraph's last sentence, and the
+    `scope breakglass` verb's description: the accounts a hold makes usable).
+
+77. **The hold report says plainly what is carved, and warns when the server
+    has not seen that address.** A hold takes out the one address the device
+    is registered at (its management address). A device that sends its AAA
+    from another address (a Cisco `ip tacacs source-interface`, which
+    `cisco.source_interface.<scope>` sets, a NAT, an IPv6 address) is still
+    answered, and the report said HELD all the same. It now has a `Carved:`
+    line after `Rendered:` that says so (`only 192.0.2.21, the address
+    registered for sw-lab-1. A device that sends its AAA from another address
+    (a source interface, a NAT) is still answered.`), and, when the seen data
+    (`device scan`) hold no request from the registered address, a
+    `Warning:` line: either that the server has seen the device from no
+    address at all (no request from it, none that identifies as its name), or
+    that another address identifies as the device's name and is most likely
+    where it sends from, and in both that it is still answered, with where to
+    learn the address: `tacctl device config pull <device>` (its source
+    interface) or `show tacacs` and the device's own log. With no seen data
+    nothing is added. The hold itself does not change: it still carves the
+    registered address only.
+
+78. **A hand-written key with a dot in it is released from where it is
+    stored, and `config validate` names every entry that is not a usable
+    hold.** `breakglass_hold: {sw.lab: {address: ...}}` is read, listed and
+    carved (the schema's own check of the leaf path does not accept a name
+    with a dot, which `config validate` already reported), but `release` and
+    the rename carry removed the key tacctl would have written (`sw~lab`), so
+    the report said RELEASED while the record stayed and the device stayed
+    unanswered. A release now removes every entry of the device under the key
+    it is stored under, whichever spelling, and renders again. `config
+    validate` names, in red, `breakglass_hold.<key>` for a key with a dot in
+    it (still carved: `release` removes it), an entry with no address, an
+    address that is not one IPv4 or IPv6 address (a prefix included: it is
+    not carved, so a hand-written `10.0.0.0/8` silences nothing) and an entry
+    that is not a record; the last three carve nothing and are not listed by
+    `breakglass list`, `tacctl breakglass release <name>` removes them (`Break-glass
+    record REMOVED for <name>: the entry ...`, nothing restarts), and an entry
+    with no address makes `config validate` exit 1.
+
+79. **A restart that failed is reported as not restarted, and the hold or
+    release exits 1.** A service restart that failed printed its warning and
+    the report said `tacacs restarted`, so a hold that was not in force looked
+    as if it was. The report now says `tacacs NOT restarted: the running server
+    still answers 192.0.2.21 until it is restarted (run: sudo systemctl restart
+    tacquito)` for a hold, and `still does not answer` for a release, naming
+    the command the warning names, and exits 1 after the whole report with
+    the line `The hold is recorded and the rendered files are kept, but it is
+    not in force until the backend named under Rendered is restarted` (a
+    release: `The record is removed and the rendered files are kept, ...`).
+    Nothing is undone: the record and the files are what the next restart
+    serves, and `release` takes the hold back. The backends' restart now
+    returns that failure to its caller, which `StoreApply` carries in its
+    result; every other caller still goes on as it did, except `backend
+    enable`, which now takes a restart that failed as the backend not having
+    come up (it undoes the change, as for a service that is not active).
+
+80. **Two superusers cannot both hold one device.** The check for a hold that
+    was made while the name was typed ran before `tacctl.yaml` was locked, so
+    two holds could both pass it and the second overwrote the first one's
+    `since`, `by` and `reason`. The check is now made under the file's lock,
+    on the file as it is, in the same step as the write; the second hold is
+    refused as `already held` (`Break-glass is already held on '<device>'
+    (<address>) since ... by ...: another hold was made while the name was
+    typed. Nothing was changed.`) and the first record is as it was.
+
+81. **A hold applies to a device only while the device is registered at the
+    record's address; any other record is an orphan.** Holds were matched to
+    devices by name, so a device removed from `devices.yaml` by hand and
+    another registered under the same name took over the old record: it
+    showed as held, `device address` was refused and the pulls skipped it,
+    while the address that was carved was the old one. A record now holds the
+    device of its name only while that device's registered address is the
+    record's. Any other record (no device of that name is registered, or the
+    one that is stands at another address) is an orphan: `breakglass list`
+    shows `<device> (orphan)` with its address, since, by and reason and says
+    why, `--json` has `orphan: true`, `status` says `ORPHAN record <device>
+    ...`, and `config validate` says `<device> is an orphan record: ...; it
+    still silences <address>` (red, as it was for a device that is not
+    registered). The address stays carved until `tacctl breakglass release
+    <device>` removes it. The device itself is not shown as held, is not
+    refused `device address`, `device remove` or `device import`, is pulled,
+    and `device rename` leaves the record under the old name; `breakglass hold
+    <device>` of such a device is refused (`A break-glass record named
+    '<device>' stands at <address>, not at the address the device is
+    registered at ...`) until the record is released, rather than written
+    over. An engineer sees only the records that hold a device of their own
+    scopes. A rename of a device that is held still carries the record.
+
+
 ## 0.2.3 (2026-10-09)
 
 ### What changed

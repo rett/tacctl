@@ -1,0 +1,17 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /N > 29 > 8
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+8
+
+SERVER RETRY:
+
+Enter 1 - 99 to select the number of "retries".
+
+
+Enter: #<CR> to select,
+       <ESC> to return to previous menu ... 

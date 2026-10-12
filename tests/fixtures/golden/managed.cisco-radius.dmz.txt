@@ -1,0 +1,32 @@
+[aaa]
+| aaa new-model
+| radius server RADIUS
+|   address ipv4 203.0.113.9 auth-port 1812 acct-port 1813
+*   key dmz-secret-0123456789abcdef
+|   timeout 5
+|   retransmit 2
+| aaa group server radius RADIUS-GROUP
+|   server name RADIUS
+| aaa authentication login default group RADIUS-GROUP local
+| aaa authentication login CONSOLE local
+| aaa authorization exec default group RADIUS-GROUP local if-authenticated
+| aaa accounting exec default start-stop group RADIUS-GROUP
+| aaa session-id common
+| line con 0
+|   login authentication CONSOLE
+| line vty 0 15
+|   login authentication default
+[roles]
+| privilege exec level 1 show running-config
+| privilege exec level 7 undebug all
+[mgmt-acl] not rendered
+[snmp]
+| ip access-list standard TACCTL-SNMP
+|   permit host 198.51.100.77
+|   permit 198.51.100.0 0.0.0.255
+|   remark everything else (0.0.0.0/0) is refused
+|   deny   any
+* snmp-server community lab-ro-community RO TACCTL-SNMP
+[netconf] not rendered
+[breakglass]
+* username dmz-ops privilege 7 secret 9 <TYPE9-HASH>

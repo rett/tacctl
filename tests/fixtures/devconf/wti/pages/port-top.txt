@@ -1,0 +1,31 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /P
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+/P
+
+PORT PARAMETERS #01:
+
+COMMUNICATION SETTINGS                PORT MODE PARAMETERS
+1. Baud Rate:            9600         21. Port Name:           sw1.example.net
+2. Bits/Parity:          8-None       22. Port Mode:           Any-to-Any
+3. Stop Bits:            1            23. DTR Output:          Pulse
+4. Handshake:            RTS/CTS      24. Modem Params:        ---
+                                      25. Buffer Params:       ---
+                                      26. Heartbeat:           Off
+
+GENERAL PARAMETERS                    NETWORK SERVICES
+11. Admin Mode:          Permit       31. Direct Connect:      On - Password
+12. Logoff Char:         ^X               Telnet Port:         2101
+13. Sequence Disc:       One Char         SSH Port:            2201
+14. Inact Timeout:       30 Min           Raw Port:            3101
+15. Command Echo:        Off          32. IP Alias:            (undefined)
+16. Accept Break:        On           33. Break on Raw Disc:   Off
+
+
+Enter #<CR> to change, "<" for previous port, ">" for next port,
+      <ESC> to exit and save configuration... 

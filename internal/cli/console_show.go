@@ -37,6 +37,9 @@ func (inv *invocation) consoleShow(args []string) error {
 	inv.echo("  system-shell tiers: " + tierCSV(f.SystemShellTiers))
 	inv.echo("  system-shell path: " + f.SystemShell)
 	inv.echo("  space-completion: " + spaceWord(f.SpaceCompletion) + " (a typed space completes a fixed word at the console's prompt)")
+	inv.echo("  password-cache tiers: " + tierCSV(f.PasswordCacheTiers) + " (shell and console sessions that keep your network password in memory)")
+	inv.echo("  password-cache idle: " + strconv.Itoa(f.PasswordCacheIdle) + " min")
+	inv.echo("  password-cache max: " + strconv.Itoa(f.PasswordCacheMax) + " h")
 	inv.echo("  list-max: " + strconv.Itoa(f.ListMax) + " (completions listed without asking; set in " + inv.app.Paths.ConsoleFile + ")")
 	inv.echo("")
 

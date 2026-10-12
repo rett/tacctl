@@ -232,6 +232,12 @@ func (inv *invocation) status([]string) error {
 		inv.echoE("    " + G + "Management ACL:     configured (" + strconv.Itoa(acl) + " entries)" + NC)
 	}
 
+	// Break-glass holds (D123): every device the server was told not to
+	// answer, for as long as the hold stands.
+	if storeMode {
+		inv.statusHolds()
+	}
+
 	// Scopes. An orphan is a user referencing a scope that does not exist
 	// (possible only in a legacy config; the store refuses one).
 	switch {

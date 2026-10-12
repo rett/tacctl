@@ -354,6 +354,12 @@ func Render(st *store.Store, view *yamlpy.Map) ([]byte, error) {
 		return nil, &rendered.Error{Msg: "cannot render an invalid model:\n  - " + strings.Join(errs, "\n  - ")}
 	}
 	m := model.FromStore(st)
+	// The break-glass holds of tacctl.yaml: their addresses are taken out
+	// of every prefix below, for the comment block and the entries
+	// (docs/plans/0.2.5-plan.md D123); the store is not changed.
+	holds := conf.HoldsOf(view)
+	whole := m
+	m = Carved(m, view)
 	var w strings.Builder
 
 	w.WriteString(Header)
@@ -498,6 +504,7 @@ func Render(st *store.Store, view *yamlpy.Map) ([]byte, error) {
 	w.WriteString("\n# --- Secret Providers (Scopes) ---\n" +
 		"# One entry per (scope, prefix), most specific prefix first: tacquito\n" +
 		"# answers a client with the first entry whose prefix contains it.\n")
+	w.WriteString(holdComment(whole, holds))
 	type entry struct {
 		cidr, scope string
 		key         cidr.Key
@@ -507,8 +514,9 @@ func Render(st *store.Store, view *yamlpy.Map) ([]byte, error) {
 		if !sc.ServedBy(Protocol) {
 			continue
 		}
-		for _, c := range sc.Prefixes {
-			entries = append(entries, entry{c, sc.Name, cidrKey(c)})
+		for i, c := range sc.Prefixes {
+			// A piece carved out of a prefix sorts where that prefix did.
+			entries = append(entries, entry{c, sc.Name, cidrKey(sc.PrefixOrigin(i))})
 		}
 	}
 	sort.SliceStable(entries, func(i, j int) bool {
@@ -518,6 +526,21 @@ func Render(st *store.Store, view *yamlpy.Map) ([]byte, error) {
 		}
 		return a.scope < b.scope
 	})
+	// A piece two prefixes of a scope both produce is one entry, the one
+	// that sorts first (only a carve makes one).
+	if len(holds) > 0 {
+		seen := map[[2]string]bool{}
+		kept := entries[:0]
+		for _, e := range entries {
+			k := [2]string{e.scope, e.cidr}
+			if seen[k] {
+				continue
+			}
+			seen[k] = true
+			kept = append(kept, e)
+		}
+		entries = kept
+	}
 	if len(entries) > 0 {
 		w.WriteString("secrets:\n")
 		for _, e := range entries {
@@ -557,6 +580,40 @@ func Render(st *store.Store, view *yamlpy.Map) ([]byte, error) {
 		w.WriteString("\n# --- Connection filters ---\n" + strings.Join(lines, ""))
 	}
 	return []byte(w.String()), nil
+}
+
+// Carved is the model without the addresses of the holds of the merged
+// view (model.WithoutAddresses): the model the renderer writes and the
+// read-back compares the file with.
+func Carved(m *model.Model, view *yamlpy.Map) *model.Model {
+	return m.WithoutAddresses(conf.HeldAddresses(view))
+}
+
+// holdComment is the comment block of the secret providers naming each
+// held address, its device and the prefixes it was carved out of (the
+// stored ones of the scopes this backend serves), "" when no hold carves
+// anything out of this file. Never the reason: free text does not go into a
+// backend file.
+func holdComment(m *model.Model, holds []conf.Hold) string {
+	var b strings.Builder
+	for _, h := range holds {
+		from := m.CarvedFrom(h.Address, Protocol, false)
+		if len(from) == 0 {
+			continue
+		}
+		parts := make([]string, len(from))
+		for i, c := range from {
+			parts[i] = c.CIDR + " (" + c.Scope + ")"
+		}
+		fmt.Fprintf(&b, "# break-glass held: %s (device %s) is answered by no entry; carved out of %s\n",
+			h.Address, h.Device, strings.Join(parts, ", "))
+	}
+	if b.Len() == 0 {
+		return ""
+	}
+	return "# Break-glass holds ('tacctl breakglass list'): the addresses below are taken out of the\n" +
+		"# prefixes that cover them, so this server does not answer them. A piece carved out of a\n" +
+		"# prefix is listed where that prefix was, so every other address keeps the scope it had.\n" + b.String()
 }
 
 // junosSetValues is the set_values lines the group's Junos deny sets add

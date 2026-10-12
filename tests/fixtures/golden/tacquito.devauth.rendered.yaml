@@ -132,8 +132,16 @@ readonly: &readonly
     - name: "dir"
       action: *action_permit
     - name: "ping"
+      match: ["^(?:^((vrf \\S+ )?(ip|ipv6|mpls|clns|tag|appletalk|ipx|srb|decnet|vines|oldvines|xns|apollo)( (source|size|df-bit|repeat|timeout|data|validate)( .*)?)?|vrf \\S+)$)$"]
+      action: *action_deny
+    - name: "ping"
+      match: ["^(?:^((vrf \\S+ )?(ip |ipv6 )?\\S+( (source \\S+|size [1-9]\\d?\\d?\\d?|df-bit|repeat ([1-9]\\d?\\d?|1000)|timeout ([1-9]|10)|data (0x)?[0-9a-fA-F]+|validate))*|mpls (ipv4|pseudowire) \\S+( \\d+)?)$)$"]
       action: *action_permit
     - name: "traceroute"
+      match: ["^(?:^((vrf \\S+ )?(ip|ipv6|mpls|clns|tag|appletalk|ipx|srb|decnet|vines|oldvines|xns|apollo)( (source|numeric|probe|ttl|timeout)( .*)?)?|vrf \\S+)$)$"]
+      action: *action_deny
+    - name: "traceroute"
+      match: ["^(?:^((vrf \\S+ )?(ip |ipv6 )?\\S+( (source \\S+|numeric|probe ([1-9]|10)|timeout ([1-9]|10)|ttl ([1-9]\\d?|1\\d\\d|2[0-4]\\d|25[0-5])( ([1-9]\\d?|1\\d\\d|2[0-4]\\d|25[0-5]))?))*|mpls (ipv4|pseudowire) \\S+( \\d+)?)$)$"]
       action: *action_permit
     - name: "terminal"
       match: ["^(?:^(length|width)( .*)?$)$"]
@@ -160,20 +168,22 @@ operator: &operator
     - name: "dir"
       action: *action_permit
     - name: "ping"
+      match: ["^(?:^((vrf \\S+ )?(ip|ipv6|mpls|clns|tag|appletalk|ipx|srb|decnet|vines|oldvines|xns|apollo)( (source|size|df-bit|repeat|timeout|data|validate)( .*)?)?|vrf \\S+)$)$"]
+      action: *action_deny
+    - name: "ping"
+      match: ["^(?:^((vrf \\S+ )?(ip |ipv6 )?\\S+( (source \\S+|size [1-9]\\d?\\d?\\d?|df-bit|repeat ([1-9]\\d?\\d?|1000)|timeout ([1-9]|10)|data (0x)?[0-9a-fA-F]+|validate))*|mpls (ipv4|pseudowire) \\S+( \\d+)?)$)$"]
       action: *action_permit
     - name: "traceroute"
+      match: ["^(?:^((vrf \\S+ )?(ip|ipv6|mpls|clns|tag|appletalk|ipx|srb|decnet|vines|oldvines|xns|apollo)( (source|numeric|probe|ttl|timeout)( .*)?)?|vrf \\S+)$)$"]
+      action: *action_deny
+    - name: "traceroute"
+      match: ["^(?:^((vrf \\S+ )?(ip |ipv6 )?\\S+( (source \\S+|numeric|probe ([1-9]|10)|timeout ([1-9]|10)|ttl ([1-9]\\d?|1\\d\\d|2[0-4]\\d|25[0-5])( ([1-9]\\d?|1\\d\\d|2[0-4]\\d|25[0-5]))?))*|mpls (ipv4|pseudowire) \\S+( \\d+)?)$)$"]
       action: *action_permit
     - name: "terminal"
       action: *action_permit
     - name: "ssh"
       action: *action_permit
     - name: "telnet"
-      action: *action_permit
-    - name: "monitor"
-      match: ["^(?:^(capture)( .*)?$)$"]
-      action: *action_permit
-    - name: "clear"
-      match: ["^(?:^(counters|line|(ip )?arp \\S+|arp-cache \\S+|mac address-table dynamic \\S+)( .*)?$)$"]
       action: *action_permit
     - name: "undebug"
       action: *action_permit

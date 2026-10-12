@@ -1,0 +1,27 @@
+##### dev-juniper-synthetic-lab-engineer  192.0.2.21  scope lab  juniper (TACACS+) #####
+# Based on the pull of 2026-10-10 14:02 by alice over netconf (18 minutes ago) and the standard of
+# 2026-10-10 14:20 (tacctl 0.2.5).
+#
+# What is irregular on dev-juniper-synthetic-lab-engineer (5 items; the paste fixes 0, leaves 5):
+#  1. aaa      ACCESS     secret not visible: a TACACS+ server 192.0.2.10 (set system tacplus-server
+#                         192.0.2.10 secret <secret>). Not fixable by this login: EN-CLASS cannot
+#                         change 'system tacplus-server' (ask a superuser).
+#  2. aaa      ACCESS     extra: a TACACS+ server 192.0.2.99 (set system tacplus-server 192.0.2.99
+#                         secret <secret>). Not fixable by this login: EN-CLASS cannot change 'system
+#                         tacplus-server' (ask a superuser).
+#  3. snmp     COSMETIC   missing: the SNMP description is Core switch (set snmp description "Core
+#                         switch"). Not fixable by this login: EN-CLASS cannot change 'snmp' (ask a
+#                         superuser).
+#  4. snmp     MONITORING extra: an SNMP community: authorization read-only (set snmp community
+#                         <secret> authorization read-only). Not fixable by this login: EN-CLASS
+#                         cannot change 'snmp' (ask a superuser).
+#  5. snmp     MONITORING extra: SNMP: trap-group <secret> targets 192.0.2.50 (set snmp trap-group
+#                         <secret> targets 192.0.2.50). Not fixable by this login: EN-CLASS cannot
+#                         change 'snmp' (ask a superuser).
+# Nothing to paste: everything above is left alone or cannot be fixed by this login.
+# Consistent: roles, mgmt-acl. Not planned: netconf, breakglass (walkthrough Steps 6 and 7).
+# Cleanup (--converge) is not offered: the aaa section is not planned (not visible to class EN-CLASS:
+# 'system accounting' (admin-control), 'system tacplus-server' (admin-control, secret-control)), so
+# the standard's server is not in place and this paste does not put it there.
+# WARNING: the pull's login could not see secrets: a secret the device holds could not be compared and
+# is left alone.

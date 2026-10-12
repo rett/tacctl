@@ -1,0 +1,34 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /N
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+/N
+
+NETWORK PARAMETERS: [eth0] IPv4         10/10/2026 03:16:32 UTC  (GMT+0000)
+
+COMMUNICATION SETTINGS                  SERVERS AND CLIENTS
+1.  IP Address:        198.51.100.112   21. Telnet Access:     Off
+2.  Subnet Mask:       255.255.255.0    22. SSH Access:        On
+3.  Gateway Addr:      198.51.100.1 *   23. Web Access:        Off
+4.  DHCP:              Off              24. SYSLOG
+5.  IP Tables:         Off              25. SNMP Access:       On
+6.  Static Route:      Off              26. SNMP Trap:         On
+7.  DNS Services:      (undefined)      27. LDAP:              Off
+8.  Negotiation:       Auto             28. TACACS:            On
+                                        29. RADIUS:            Off
+                                        30. PING Access:       Limited
+GENERAL PARAMETERS                      31. Multiple Logins:   On
+11. Admin Mode:        Permit           32. Email Messaging:   Off
+12. Logoff Char:       ^X               33. Outbound Access:   Off
+13. Sequence Disc:     One Char         34. Raw Socket Access: Off
+14. Inact Timeout:     Off
+15. Command Echo:      On
+16. Accept Break:      On (ASCII 28)
+
+
+Enter: #<CR> to change,
+       <ESC> to exit and save configuration ... 

@@ -1,0 +1,18 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /N > 3
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+3
+
+GATEWAY OPTIONS: [eth0] IPv4
+
+1. Gateway Addr:    198.51.100.1
+2. Default Gateway: On
+
+
+Enter: #<CR> to change,
+       <ESC> to return to previous menu ... 

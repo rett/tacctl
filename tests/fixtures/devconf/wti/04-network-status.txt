@@ -1,0 +1,35 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# command: /SN
+# level: SuperUser
+# source: captured
+# captured: 2026-10-10
+# sanitised: names, addresses, communities, banner, port names
+# ---
+/SN
+
+NETWORK STATUS:                      MAC Address: [eth0] 00-00-5e-00-53-01
+
+PORT|TCP PORT|STATUS| USERNAME       |PORT|TCP PORT|STATUS| USERNAME       |
+----+--------+------+----------------+----+--------+------+----------------+
+N1  |      22|Active|user1           |N17 |        | Free |                |
+N2  |      22|Active|testuser        |N18 |        | Free |                |
+N3  |        | Free |                |N19 |        | Free |                |
+N4  |        | Free |                |N20 |        | Free |                |
+N5  |        | Free |                |N21 |        | Free |                |
+N6  |        | Free |                |N22 |        | Free |                |
+N7  |        | Free |                |N23 |        | Free |                |
+N8  |        | Free |                |N24 |        | Free |                |
+N9  |        | Free |                |N25 |        | Free |                |
+N10 |        | Free |                |N26 |        | Free |                |
+N11 |        | Free |                |N27 |        | Free |                |
+N12 |        | Free |                |N28 |        | Free |                |
+N13 |        | Free |                |N29 |        | Free |                |
+N14 |        | Free |                |N30 |        | Free |                |
+N15 |        | Free |                |N31 |        | Free |                |
+N16 |        | Free |                |N32 |        | Free |                |
+----+--------+------+----------------+----+--------+------+----------------+
+
+
+Enter: <CR> for more ports, <ESC> to quit ... 

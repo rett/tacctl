@@ -48,6 +48,41 @@ plain() {
     [[ ${#shown} -gt ${#output} ]]
 }
 
+@test "device config show: the Cisco syntax is the setting, else the pull's, else modern with one line saying so" {
+    "$TACCTL_BIN_SCRIPT" device add core-sw1 10.99.0.1 --vendor cisco --legacy-ssh --no-host-key > /dev/null
+    # No pull, auto: the modern syntax; legacy-ssh is only the ssh algorithms.
+    run "$TACCTL_BIN_SCRIPT" device config show core-sw1
+    assert_success
+    plain
+    assert_line "# syntax: modern (no pull yet; set 'tacctl device config-syntax core-sw1 ios12' for IOS 12.x, or pull the device once)"
+    assert_output --partial "tacacs server TACACS"
+    refute_output --partial "tacacs-server host"
+    # --legacy is the explicit IOS 12.x override and says nothing.
+    run "$TACCTL_BIN_SCRIPT" device config show core-sw1 --legacy
+    assert_success
+    plain
+    assert_output --partial "tacacs-server host"
+    refute_output --partial "# syntax:"
+    # The setting.
+    "$TACCTL_BIN_SCRIPT" device config-syntax core-sw1 ios12 > /dev/null
+    run "$TACCTL_BIN_SCRIPT" device config show core-sw1
+    assert_success
+    plain
+    assert_output --partial "tacacs-server host"
+    refute_output --partial "# syntax:"
+    "$TACCTL_BIN_SCRIPT" device config-syntax core-sw1 modern > /dev/null
+    run "$TACCTL_BIN_SCRIPT" device config show core-sw1
+    assert_success
+    plain
+    assert_output --partial "tacacs server TACACS"
+    refute_output --partial "# syntax:"
+    # config cisco --name is the same walkthrough (the note is on stderr).
+    "$TACCTL_BIN_SCRIPT" device config-syntax core-sw1 ios12 > /dev/null
+    run --separate-stderr "$TACCTL_BIN_SCRIPT" config cisco --scope prod --name core-sw1
+    assert_success
+    [[ "$output" == *"tacacs-server host"* ]]
+}
+
 @test "device config show: juniper and wti devices, and the options of config <vendor>" {
     "$TACCTL_BIN_SCRIPT" device add jun1 10.99.0.2 --vendor juniper --no-host-key > /dev/null
     "$TACCTL_BIN_SCRIPT" device add pdu1 10.99.0.3 --vendor wti --no-host-key > /dev/null
@@ -95,7 +130,10 @@ plain() {
     plain
     assert_output --partial "Usage: tacctl device config <subcommand> [arguments]"
     assert_output --partial "show <name> [--protocol tacacs|radius] [--legacy] [--server <address|name>] [--source <address>]"
-    refute_output --partial "pull"
+    assert_output --partial "pull <name>[,<name>...] | --all"
+    assert_output --partial "diff <name>[,<name>...] | --all"
+    assert_output --partial "list [--stale] [--never] [--failed] [--differs]"
+    assert_output --partial "forget <name>[,<name>...] | --all"
     refute_output --partial "apply"
     run "$TACCTL_BIN_SCRIPT" device config frob
     assert_failure 1

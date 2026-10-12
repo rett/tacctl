@@ -2,6 +2,7 @@ package tacacs
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -12,8 +13,9 @@ import (
 	"github.com/rett/tacctl/internal/execx"
 )
 
-// "tacacs service: restart reports and never fails; other actions pass
-// systemctl through" (tests/unit/backend.bats).
+// "tacacs service: restart reports; a restart that failed is a
+// *RestartError naming the command; other actions pass systemctl through"
+// (tests/unit/backend.bats).
 func TestServiceRestartReportsAndNeverFails(t *testing.T) {
 	e := newTenv(t)
 	ctx := context.Background()
@@ -27,8 +29,10 @@ func TestServiceRestartReportsAndNeverFails(t *testing.T) {
 	e.reset()
 	e.run.On([]string{"systemctl"}, execx.Result{Code: 1})
 	e.run.On([]string{"systemctl", "is-active"}, execx.Result{Code: 3, Stdout: []byte("inactive\n")})
-	if _, err := e.b.Service(ctx, backend.ServiceReload, ""); err != nil {
-		t.Fatal(err)
+	_, err := e.b.Service(ctx, backend.ServiceReload, "")
+	var re *backend.RestartError
+	if !errors.As(err, &re) || re.Command != "sudo systemctl restart tacquito" {
+		t.Fatalf("a failed restart returned %v", err)
 	}
 	mustContain(t, e.stdout.String(), "Service restart failed — run: sudo systemctl restart tacquito")
 	word, err := e.b.Service(ctx, backend.ServiceIsActive, "")

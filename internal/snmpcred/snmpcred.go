@@ -129,7 +129,10 @@ func parse(data []byte) (Creds, error) {
 
 // Text is the file as it is written, read back with the reader it is read
 // with.
-func (c Creds) Text() ([]byte, error) {
+func (c Creds) Text() ([]byte, error) { return c.textWith(Header) }
+
+// textWith is Text under the given header.
+func (c Creds) textWith(header string) ([]byte, error) {
 	doc := yamlpy.NewMap("version", Version)
 	if c.Community != "" {
 		doc.Set("community", c.Community)
@@ -137,7 +140,7 @@ func (c Creds) Text() ([]byte, error) {
 	if c.User != "" || c.AuthPass != "" || c.PrivPass != "" {
 		doc.Set("v3", yamlpy.NewMap("user", c.User, "auth_passphrase", c.AuthPass, "priv_passphrase", c.PrivPass))
 	}
-	out, err := yamlpy.EmitChecked(doc, yamlpy.StoreOptions, Header, pyyaml.LoadBytes)
+	out, err := yamlpy.EmitChecked(doc, yamlpy.StoreOptions, header, pyyaml.LoadBytes)
 	if err != nil {
 		return nil, fail("cannot write the SNMP credentials (a character YAML cannot hold?); nothing was written")
 	}
@@ -145,14 +148,17 @@ func (c Creds) Text() ([]byte, error) {
 }
 
 // Save writes c to path (0600); no credentials at all removes the file.
-func Save(path string, c Creds) error {
+func Save(path string, c Creds) error { return saveWith(path, c, Header) }
+
+// saveWith is Save under the given header.
+func saveWith(path string, c Creds, header string) error {
 	if c.Empty() {
 		if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return fail("Cannot remove " + path + ": " + errText(err))
 		}
 		return nil
 	}
-	text, err := c.Text()
+	text, err := c.textWith(header)
 	if err != nil {
 		return err
 	}

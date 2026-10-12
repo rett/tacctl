@@ -4,6 +4,7 @@ Host core-sw1
     PubkeyAuthentication no
     PreferredAuthentications keyboard-interactive,password
     KexAlgorithms +diffie-hellman-group14-sha1,diffie-hellman-group1-sha1
+    Ciphers +aes128-cbc,aes192-cbc,aes256-cbc,3des-cbc
     HostKeyAlgorithms +ssh-rsa
     PubkeyAcceptedAlgorithms +ssh-rsa
     UserKnownHostsFile /var/lib/tacctl/ssh/known_hosts

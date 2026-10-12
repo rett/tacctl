@@ -41,14 +41,13 @@ type invocation struct {
 	// printed (linux.go: warnAmbiguousGroups).
 	ambiguousNoted bool
 
-	// revokeEngineer: the client scripts this invocation writes carry
-	// TAC_REVOKE_ENGINEER=1 (rollback.go: 'rollback --hosts' syncs the hosts
-	// with it).
-	revokeEngineer bool
-
 	// resolved: what each host name resolved to in this invocation
 	// (host_facts.go: resolveV4).
 	resolved map[string]string
+
+	// snmpUserSeen: whether the caller may be told an SNMPv3 user's name
+	// (device_snmp_override.go: snmpUserVisible), asked once.
+	snmpUserSeen *bool
 }
 
 // Main runs tacctl with argv (os.Args: argv[0] is the program) and environ
@@ -60,6 +59,10 @@ func Main(argv, environ []string, stdio app.Stdio, build BuildInfo) int {
 	// staging directories as bash's 'trap ... EXIT' does (docs/plans/go-rewrite.md 3.5).
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 	defer stop()
+	// The password cache's variable is taken out of the environment before
+	// anything runs, so no program tacctl starts (id, logger, sudo, ssh ...)
+	// inherits it; the one verb that uses it asks for it (takeAskpass).
+	environ = captureAskpass(environ)
 	exe, err := os.Executable()
 	if err != nil {
 		exe = ""
@@ -71,6 +74,8 @@ func Main(argv, environ []string, stdio app.Stdio, build BuildInfo) int {
 	if len(argv) > 1 {
 		args = argv[1:]
 	}
+	// ssh runs SSH_ASKPASS with the prompt as its only argument (askpass_cmd.go).
+	args = askpassHelperArgs(environ, args)
 	a := app.New(args, paths.NewEnv(environ), exe, os.Geteuid(), stdio, execx.Real{})
 	return exitCode(Run(ctx, a, build.resolved(debug.ReadBuildInfo)), a.Out)
 }

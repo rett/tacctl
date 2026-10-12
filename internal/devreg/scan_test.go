@@ -99,7 +99,7 @@ func TestRescanKeysAndRecord(t *testing.T) {
 		{Name: "a", Address: "192.0.2.1", Port: 22},
 		{Name: "b", Address: "192.0.2.2", Port: 2222, Legacy: true},
 		{Name: "c", Address: "192.0.2.3", Port: 22},
-	})
+	}, nil)
 	if len(res) != 3 || len(res[0].Keys) != 1 || !errors.Is(res[1].Err, ErrNoAnswer) || res[2].Err == nil {
 		t.Fatalf("%+v", res)
 	}

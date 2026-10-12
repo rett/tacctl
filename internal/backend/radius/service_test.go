@@ -2,6 +2,7 @@ package radius_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -228,7 +229,8 @@ func TestServiceStopAndDisableWithoutDropInDoNothing(t *testing.T) {
 }
 
 // restart/reload: the drop-in is brought in line first when the dictionary
-// is there; success and failure are reported and never fail the caller.
+// is there; success and failure are reported, and a failure is returned as
+// a *backend.RestartError (callers that go on regardless ignore it).
 func TestServiceRestartReports(t *testing.T) {
 	r := newEnv(t)
 	r.up()
@@ -245,8 +247,10 @@ func TestServiceRestartReports(t *testing.T) {
 	}
 	r.setFailStart(true)
 	r.reset()
-	if _, err := r.m.Service(ctx, backend.ServiceRestart, ""); err != nil {
-		t.Fatalf("a failing restart failed the caller: %v", err)
+	_, err := r.m.Service(ctx, backend.ServiceRestart, "")
+	var re *backend.RestartError
+	if !errors.As(err, &re) || re.Command != "sudo systemctl restart freeradius" {
+		t.Fatalf("a failing restart returned %v", err)
 	}
 	contains(t, r.out(), "Service restart failed — run: sudo systemctl restart freeradius")
 	contains(t, r.stdout.String(), "[WARN]")

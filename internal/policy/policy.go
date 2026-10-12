@@ -355,33 +355,40 @@ func BareSiblings(c *conf.Config, groups GroupLevels, group string) (privlvl str
 	return privlvl, bare
 }
 
-// DefaultRules is default_rules_for_group: the legacy seed set of a
-// built-in group (its default action and the commands it permits); ok is
-// false for any other group.
+// DefaultRules is the seed set of a built-in group: its default action and
+// the commands it permits, which are the shipped rules (defaults.yaml,
+// 0.2.5; the broader legacy set gave the operator 'clear', 'test' and
+// 'monitor' with any arguments); ok is false for any other group.
 func DefaultRules(group string) (action string, permits []string, ok bool) {
-	switch group {
-	case "readonly":
-		return "deny", strings.Fields("show ping traceroute terminal exit end quit logout who where enable"), true
-	case "operator":
-		return "deny", strings.Fields("show ping traceroute terminal exit end quit logout who where enable clear test monitor"), true
-	case "superuser":
-		return "permit", nil, true
+	lines := DefaultLines(group)
+	if len(lines) == 0 {
+		return "", nil, false
 	}
-	return "", nil, false
+	action = "deny"
+	for _, l := range lines {
+		f := strings.SplitN(l, "|", 3)
+		if len(f) < 2 {
+			continue
+		}
+		switch {
+		case f[0] == Catchall:
+			action = f[1]
+		case f[1] == "permit" && !slices.Contains(permits, f[0]):
+			permits = append(permits, f[0])
+		}
+	}
+	return action, permits, true
 }
 
 // ApplyDefaultRules is apply_default_rules: the group's rules replaced by
-// its seed set. It does nothing and returns false for a group with none.
+// its shipped rules. It does nothing and returns false for a group with
+// none.
 func ApplyDefaultRules(c *conf.Config, group string) (bool, error) {
-	action, permits, ok := DefaultRules(group)
-	if !ok {
+	lines := DefaultLines(group)
+	if len(lines) == 0 {
 		return false, nil
 	}
-	var lines []string
-	for _, p := range permits {
-		lines = append(lines, p+"|permit|")
-	}
-	return true, Write(c, group, append(lines, Catchall+"|"+action+"|"))
+	return true, Write(c, group, lines)
 }
 
 // --- privileges -------------------------------------------------------------

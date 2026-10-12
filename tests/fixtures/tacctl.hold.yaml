@@ -1,0 +1,34 @@
+# Fixture for the break-glass hold (docs/plans/0.2.5-plan.md D122): one hold
+# in a /16 and a /24 and a tagged /32 and /28 at once, one in a /24 beside a
+# /32 prefix, two in one /24, an IPv6 address and a RADIUS-only one.
+breakglass_hold:
+  sw-core-1:
+    address: 10.0.1.5
+    since: '2026-10-10T14:02:00+00:00'
+    by: alice
+    reason: console recovery after a failed paste
+  sw-lab-1:
+    address: 192.0.2.21
+    since: '2026-10-10T15:00:00+00:00'
+    by: alice
+    reason: lab console
+  rtr-edge-1:
+    address: 198.51.100.7
+    since: '2026-10-10T15:10:00+00:00'
+    by: alice
+    reason: one
+  rtr-edge-2:
+    address: 198.51.100.200
+    since: '2026-10-10T15:11:00+00:00'
+    by: alice
+    reason: two
+  rtr-v6:
+    address: 2001:db8:0:1::5
+    since: '2026-10-10T15:12:00+00:00'
+    by: alice
+    reason: v6 console
+  ap-1:
+    address: 203.0.113.9
+    since: '2026-10-10T15:13:00+00:00'
+    by: alice
+    reason: radius only

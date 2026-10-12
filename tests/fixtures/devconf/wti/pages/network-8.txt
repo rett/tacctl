@@ -1,0 +1,23 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /N > 8
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+8
+
+NEGOTIATION: [eth0] IPv4/IPv6
+
+1. Auto
+2. 10/half
+3. 10/full
+4. 100/half
+5. 100/full
+6. 1000/half
+7. 1000/full
+
+
+Enter: #<CR> to change,
+       <ESC> to return to previous menu ... 

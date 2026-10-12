@@ -511,7 +511,7 @@ func TestShellHelp(t *testing.T) {
 		{[]string{"scope", "secret", "lab"}, []string{"tacctl scope secret <scope> set <value>"}},
 		{[]string{"backend"}, []string{"Backends: tacacs"}},
 		{[]string{"config", "deny"}, []string{"tacctl config deny list"}},
-		{[]string{"shell"}, []string{"Usage: tacctl shell [--no-history] [--idle <min>] [--space-completion on|off] [-c <line>]"}},
+		{[]string{"shell"}, []string{"Usage: tacctl shell [--no-history] [--idle <min>] [--space-completion on|off] [--password-cache] [-c <line>]"}},
 	} {
 		got, ok := help(c.words)
 		for _, w := range c.has {

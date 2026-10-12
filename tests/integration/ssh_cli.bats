@@ -50,7 +50,7 @@ setup() {
     PIN_SW="-o UserKnownHostsFile=${KH} -o GlobalKnownHostsFile=none -o StrictHostKeyChecking=yes -o HostKeyAlias=core-sw1 -o UpdateHostKeys=no"
     PIN_RTR="-o UserKnownHostsFile=${KH} -o GlobalKnownHostsFile=none -o StrictHostKeyChecking=yes -o HostKeyAlias=lab-rtr2 -o UpdateHostKeys=no"
     CT="-o ConnectTimeout=10 -o PubkeyAuthentication=no -o PreferredAuthentications=keyboard-interactive,password"
-    LEGACY="-o KexAlgorithms=+diffie-hellman-group14-sha1,diffie-hellman-group1-sha1 -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedAlgorithms=+ssh-rsa"
+    LEGACY="-o KexAlgorithms=+diffie-hellman-group14-sha1,diffie-hellman-group1-sha1 -o Ciphers=+aes128-cbc,aes192-cbc,aes256-cbc,3des-cbc -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedAlgorithms=+ssh-rsa"
 
     # sudo -u <user> -H ssh ...: record, drop the sudo options, run the rest.
     stub_cmd sudo 'while [[ $# -gt 0 && "$1" == -* ]]; do case "$1" in -u) shift 2 ;; *) shift ;; esac; done; exec "$@"'
@@ -244,6 +244,7 @@ on_tty() {
     PubkeyAuthentication no
     PreferredAuthentications keyboard-interactive,password
     KexAlgorithms +diffie-hellman-group14-sha1,diffie-hellman-group1-sha1
+    Ciphers +aes128-cbc,aes192-cbc,aes256-cbc,3des-cbc
     HostKeyAlgorithms +ssh-rsa
     PubkeyAcceptedAlgorithms +ssh-rsa
     UserKnownHostsFile ${KH}

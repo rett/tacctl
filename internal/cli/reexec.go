@@ -19,6 +19,9 @@ var noSudo = map[string]bool{
 	// The interactive shell (0.2.1) runs as the user and re-enters tacctl
 	// under sudo for each line it executes.
 	"shell": true,
+	// ssh runs the helper of the password cache as the user it was run as
+	// (SSH_ASKPASS, askpass_cmd.go): no sudo, no tier gate, no preflight.
+	"_askpass": true,
 }
 
 // needsSudo is bin/tacctl.sh's re-exec condition: not root, not

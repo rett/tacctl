@@ -71,11 +71,10 @@ case_ hosts-radius-alma  "hosts/run.sh almalinux-9 radius"     "$H:server-ubuntu
 case_ hosts-radius-fr30  "hosts/run.sh almalinux-9 radius --server almalinux-9" "$H:server-almalinux-9 $H:client-almalinux-9" "AlmaLinux 9 client, AlmaLinux 9 server (FreeRADIUS 3.0.27)"
 case_ hosts-rotate       "hosts/run.sh ubuntu-noble rotate"    "$H:server-ubuntu-noble $H:client-ubuntu-noble"   "provisioning-account rotation on Ubuntu"
 case_ hosts-rotate-alma  "hosts/run.sh almalinux-9 rotate"     "$H:server-ubuntu-noble $H:client-almalinux-9"    "provisioning-account rotation on AlmaLinux 9 (restorecon)"
-case_ hosts-rollback     "hosts/run.sh ubuntu-noble rollback"  "$H:server-ubuntu-noble $H:client-ubuntu-noble"   "tacctl rollback 0.2.2 --hosts: the engineer loses sudo, nobody else changes"
 case_ hosts-server       "hosts/run.sh ubuntu-noble server"    "$H:server-ubuntu-noble $H:client-ubuntu-noble"   "real tacquito answers the baseline rules of the four roles (permcheck); this server enrolled as a host: engineer group, sudoers, sshd drop-ins"
 case_ radius             "radius/run.sh ubuntu-noble"          "localhost/tacctl-radius-check:ubuntu-noble"      "real FreeRADIUS: enable, cases, mutations, listeners, uninstall"
 case_ fresh              "fresh/run.sh --worktree"             "localhost/tacctl-fresh:noble"                    "fresh install of this working tree on a server without Go"
-case_ upgrade           "fresh/upgrade.sh"                    "localhost/tacctl-fresh:noble"                    "0.2.2 server with state, tacctl upgrade to this tree, rollback 0.2.2, the 0.2.2 binary on the result"
+case_ upgrade           "fresh/upgrade.sh"                    "localhost/tacctl-fresh:noble"                    "0.2.3 server with state, tacctl upgrade to this tree, rollback 0.2.3, the 0.2.3 binary on the result"
 
 selected() { # selected <name>
     local n="$1" p ok=1

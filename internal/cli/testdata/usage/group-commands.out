@@ -17,7 +17,7 @@ Usage:
   tacctl group commands reset <group> [--dry-run] [--yes]         Revert the rules to the shipped defaults (diff, confirms; superuser only)
       --dry-run                                                   (reset) Show the difference; write nothing
       --yes                                                       (reset) Do not ask
-  tacctl group commands seed [<group>] [--force]                  Re-apply legacy seed set (recovery tool)
+  tacctl group commands seed [<group>] [--force]                  Re-apply the shipped rules (recovery tool)
       --force                                                     (seed) Overwrite a group that already has rules
 
 <name> is compared literally to the TACACS+ cmd= word. --match

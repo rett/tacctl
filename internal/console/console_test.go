@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/execx/fake"
@@ -530,6 +531,44 @@ func accepts022(text []byte) error {
 	return nil
 }
 
+// accepts023 is the part of 0.2.3's console.yaml parser that matters for a
+// rollback to it, as a fixture (parse and parseSettings of
+// internal/console/config.go at the 0.2.3 tag): the top-level keys, the four
+// tiers and the nine settings listed here are known; any other makes it
+// fail, and the console falls back to the defaults.
+func accepts023(text []byte) error {
+	v, err := pyyaml.LoadBytes(text)
+	if err != nil {
+		return err
+	}
+	root := v.(*yamlpy.Map)
+	for k := range root.All() {
+		if !slices.Contains([]string{"version", "tiers", "users", "settings"}, k) {
+			return errors.New("unknown key '" + k + "'")
+		}
+	}
+	known := []struct {
+		section string
+		keys    []string
+	}{
+		{"tiers", []string{"readonly", "operator", "engineer", "superuser"}},
+		{"settings", []string{"idle_timeout", "list_max", "agent_forwarding", "ssh_escape", "gateway_ports", "space_completion",
+			"system_shell", "system_shell_tiers", "forwarding_tiers"}},
+	}
+	for _, kn := range known {
+		sub, ok := root.Get(kn.section)
+		if !ok {
+			continue
+		}
+		for k := range sub.(*yamlpy.Map).All() {
+			if !slices.Contains(kn.keys, k) {
+				return errors.New(kn.section + ": unknown key '" + k + "'")
+			}
+		}
+	}
+	return nil
+}
+
 // A console.yaml that 0.2.3 writes is not one 0.2.2 reads, whether or not
 // space completion was ever turned off: the engineer tier's switch
 // (tiers.engineer) is written on every write, and 0.2.2 rejects it. So
@@ -584,5 +623,116 @@ func TestRollbackToTheOldParser(t *testing.T) {
 		if err := accepts022(stripped); err != nil {
 			t.Errorf("space completion off %v: still rejected after the step: %v\n%s", off, err, stripped)
 		}
+	}
+}
+
+// settings.password_cache (D70) is written only when something in it is not
+// the default, reads back, is checked, and is what the policy answers.
+func TestPasswordCacheSetting(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "console.yaml")
+	if _, err := Mutate(p, nil, func(f *File) error { f.Idle = 5; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	plain, _ := os.ReadFile(p)
+	if strings.Contains(string(plain), "password_cache") {
+		t.Errorf("the key is written with its defaults:\n%s", plain)
+	}
+	f, err := Load(p)
+	if err != nil || len(f.PasswordCacheTiers) != 0 || f.PasswordCacheIdle != 15 || f.PasswordCacheMax != 8 {
+		t.Fatalf("defaults: %+v %v", f, err)
+	}
+	pol := NewPolicy(f, paths.Paths{})
+	for _, tr := range []tier.Tier{tier.Readonly, tier.Operator, tier.Engineer, tier.Superuser, tier.Unrestricted, tier.None} {
+		if pol.PasswordCache(tr) {
+			t.Errorf("the cache is on for %s by default", tr)
+		}
+	}
+	if _, err := Mutate(p, nil, func(f *File) error {
+		f.PasswordCacheTiers = []tier.Tier{tier.Engineer, tier.Superuser}
+		f.PasswordCacheIdle, f.PasswordCacheMax = 30, 4
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	text, _ := os.ReadFile(p)
+	if !strings.Contains(string(text), "password_cache:") || !strings.Contains(string(text), "idle: 30") || !strings.Contains(string(text), "max: 4") {
+		t.Errorf("password_cache not written:\n%s", text)
+	}
+	f, err = Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pol = NewPolicy(f, paths.Paths{})
+	if !pol.PasswordCache(tier.Engineer) || !pol.PasswordCache(tier.Superuser) || pol.PasswordCache(tier.Operator) || pol.PasswordCache(tier.Readonly) || pol.PasswordCache(tier.Unrestricted) {
+		t.Errorf("tiers: %+v", f.PasswordCacheTiers)
+	}
+	if pol.PasswordCacheIdle() != 30*time.Minute || pol.PasswordCacheMax() != 4*time.Hour {
+		t.Errorf("lifetimes: %v %v", pol.PasswordCacheIdle(), pol.PasswordCacheMax())
+	}
+	// Back to the defaults: the key disappears.
+	if _, err := Mutate(p, nil, func(f *File) error {
+		f.PasswordCacheTiers, f.PasswordCacheIdle, f.PasswordCacheMax = nil, 15, 8
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if again, _ := os.ReadFile(p); string(again) != string(plain) {
+		t.Errorf("defaults again:\n%s\nwant:\n%s", again, plain)
+	}
+	// What is refused.
+	for _, c := range []struct{ name, text, err string }{
+		{"readonly", "version: 1\nsettings: {password_cache: {tiers: [readonly]}}\n", "invalid or repeated tier"},
+		{"twice", "version: 1\nsettings: {password_cache: {tiers: [operator, operator]}}\n", "invalid or repeated tier"},
+		{"idle 0", "version: 1\nsettings: {password_cache: {idle: 0}}\n", "idle must be 1-120"},
+		{"idle big", "version: 1\nsettings: {password_cache: {idle: 121}}\n", "idle must be 1-120"},
+		{"max 25", "version: 1\nsettings: {password_cache: {max: 25}}\n", "max must be 1-24"},
+		{"unknown", "version: 1\nsettings: {password_cache: {keep: 1}}\n", "unknown key 'keep'"},
+		{"not a map", "version: 1\nsettings: {password_cache: yes}\n", "must be a mapping"},
+	} {
+		q := write(t, dir, "bad-"+strings.ReplaceAll(c.name, " ", "-")+".yaml", c.text, 0o600)
+		if _, err := Load(q); err == nil || !strings.Contains(err.Error(), c.err) {
+			t.Errorf("%s: %v, want %q", c.name, err, c.err)
+		}
+	}
+	if _, err := ParsePasswordCacheTiers("operator,readonly"); err == nil {
+		t.Error("readonly accepted for the cache")
+	}
+	if l, err := ParsePasswordCacheTiers("none"); err != nil || l != nil {
+		t.Errorf("none: %v %v", l, err)
+	}
+	if l, err := ParsePasswordCacheTiers("superuser,engineer"); err != nil || len(l) != 2 {
+		t.Errorf("list: %v %v", l, err)
+	}
+}
+
+// The rollback to 0.2.3 takes settings.password_cache out and nothing else:
+// the file as 0.2.3 reads it (rollback_test.go has the fixture of its parser).
+func TestPasswordCacheRollback023(t *testing.T) {
+	dir := t.TempDir()
+	f := Defaults()
+	f.PasswordCacheTiers = []tier.Tier{tier.Operator}
+	f.SpaceCompletion = false
+	text, err := f.Text()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := accepts023(text); err == nil {
+		t.Fatal("0.2.3's parser accepts a file with password_cache")
+	}
+	p := write(t, dir, "console.yaml", string(text), 0o600)
+	plan, err := PlanRollback(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.ContainsFunc(plan.Remove, func(s string) bool { return strings.HasPrefix(s, "settings.password_cache") }) {
+		t.Errorf("the plan does not name the key: %q", plan.Remove)
+	}
+	if err := accepts023(plan.Text); err != nil {
+		t.Errorf("0.2.3 rejects the converted file: %v\n%s", err, plan.Text)
+	}
+	if strings.Contains(string(plan.Text), "password_cache") || !strings.Contains(string(plan.Text), "space_completion: false") ||
+		!strings.Contains(string(plan.Text), "engineer: enable") {
+		t.Errorf("the converted file:\n%s", plan.Text)
 	}
 }

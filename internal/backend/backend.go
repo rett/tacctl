@@ -156,8 +156,10 @@ func (g GateResult) String() string {
 type ServiceAction string
 
 // The service actions. Restart (and Reload, which restarts) reports its
-// own outcome and never fails the caller; IsActive returns systemctl's word
-// and an error when it is not "active"; Since and PID return a value.
+// own outcome and, when the restart did not succeed, returns a
+// *RestartError (callers that go on regardless ignore it, as they always
+// did); IsActive returns systemctl's word and an error when it is not
+// "active"; Since and PID return a value.
 // Enable and Disable are the boot-time half of Start and Stop.
 const (
 	ServiceStart    ServiceAction = "start"
@@ -374,6 +376,17 @@ func (e *UnknownError) Error() string { return "Unknown backend '" + e.ID + "'."
 // ExitCode is 2.
 func (e *UnknownError) ExitCode() int { return 2 }
 
+// RestartError is a restart that did not succeed. The outcome has been
+// reported where it happened (the warning names the command); Command is
+// that command, for a caller that must say the running daemon still has the
+// configuration it had.
+type RestartError struct{ Command string }
+
+func (e *RestartError) Error() string { return "restart failed — run: " + e.Command }
+
+// ExitCode is 1.
+func (e *RestartError) ExitCode() int { return 1 }
+
 // ExitCode maps an error of this package to its exit status: nil 0, *Error
 // its Code, *UnknownError 2, ErrAdopt 10, anything else 1.
 func ExitCode(err error) int {
@@ -398,5 +411,6 @@ func ExitCode(err error) int {
 // *Error): a caller then exits with ExitCode(err) and prints nothing.
 func Reported(err error) bool {
 	var be *Error
-	return errors.As(err, &be)
+	var re *RestartError
+	return errors.As(err, &be) || errors.As(err, &re)
 }

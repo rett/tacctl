@@ -1,0 +1,24 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /F > 3
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+3
+
+REAL-TIME-CLOCK:
+
+1. Date:                      10/10/2026 (Sat)
+2. Time:                      03:22:16
+3. Time Zone:                 (GMT-0900) US/Alaska
+4. NTP Enable:                On
+5. Primary NTP Address:       198.51.100.66
+6. Secondary NTP Address:     (undefined)
+7. NTP Timeout:               3 Sec
+8. Test NTP Servers:
+
+
+Enter: #<CR> to change,
+       <ESC> to return to previous menu ... 

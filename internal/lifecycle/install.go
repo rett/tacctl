@@ -97,6 +97,11 @@ func Install(ctx context.Context, h *Host, args []string) error {
 		if err := MarkTierPin(p); err != nil {
 			out.Warn("Could not record the tier migration marker " + p.TierPinMarker + ": " + strings.TrimSpace(err.Error()))
 		}
+		// ... and no device was configured by an earlier release, so the
+		// upgrade's one-time word about their operator lines is not needed.
+		if err := MarkOperatorNotice(p); err != nil {
+			out.Warn("Could not record the operator notice marker " + p.OperatorNoticeMarker + ": " + strings.TrimSpace(err.Error()))
+		}
 	}
 	// The device config templates (a customised one already there is
 	// kept).

@@ -1,0 +1,33 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /N > 23
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+23
+
+WEB ACCESS: [eth0] IPv4/IPv6
+
+HTTP:
+1.  Enable: Off
+2.  Port:   80
+
+HTTPS:
+3.  Enable: Off
+4.  Port:   443
+
+5.  SSL Certificates:    (undefined)
+6.  Harden Web Security: Medium
+7.  TLS Mode:            TLSv1.1/TLSv1.2
+8.  HSTS Policy          OFF
+9.  TRACE Method:        ON
+10. OCSP Stapling:       OFF
+11. Web Terminal:        OFF
+12. Inact Timeout:       OFF
+13. oAuth Parameters:    OFF
+14. Listen Addresses:    (undefined)
+
+Enter: #<CR> to change,
+       <ESC> to return to previous menu ... 

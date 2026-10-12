@@ -226,19 +226,35 @@ func (k *Kept) put(kept, dst string) {
 	errOut(k.out).Warn("Could not put " + dst + " back; 'tacctl config render' rewrites it from the store.")
 }
 
+// RestartFailure is a backend whose restart did not succeed: the running
+// daemon still has the configuration it had. Command is the one the warning
+// names, to restart it by hand.
+type RestartFailure struct {
+	ID      string
+	Command string
+}
+
 // RestartChanged is backends_restart_changed: restart the backends of
 // changed (what RenderAll returned), except the ids in except (a caller
 // that starts one itself, 'tacctl backend enable'). A restart reports its
-// own outcome and never fails.
-func (s *Set) RestartChanged(ctx context.Context, changed, except []string) {
+// own outcome and never fails the caller; the ones that did not succeed are
+// returned, for a caller that has to say what the running daemon answers.
+func (s *Set) RestartChanged(ctx context.Context, changed, except []string) []RestartFailure {
+	var failed []RestartFailure
 	for _, id := range changed {
 		if slices.Contains(except, id) {
 			continue
 		}
 		if b, err := s.Get(id); err == nil {
-			_, _ = b.Service(ctx, ServiceRestart, "")
+			if _, err := b.Service(ctx, ServiceRestart, ""); err != nil {
+				var re *RestartError
+				if errors.As(err, &re) {
+					failed = append(failed, RestartFailure{ID: id, Command: re.Command})
+				}
+			}
 		}
 	}
+	return failed
 }
 
 // RestartAll is backends_restart_all: restart every enabled backend (a

@@ -1,0 +1,18 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /N > 24
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+24
+
+SYSLOG:
+
+1. Client
+2. Server
+
+
+Enter: #<CR> to change,
+       <ESC> to return to previous menu ... 

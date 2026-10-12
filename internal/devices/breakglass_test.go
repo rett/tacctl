@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -244,8 +245,19 @@ func TestBreakGlassCiscoLineIsTheHashForm(t *testing.T) {
 			t.Fatal(err)
 		}
 		out := reANSI.ReplaceAllString(buf.String(), "")
-		if strings.Contains(out, "algorithm-type") || strings.Contains(out, "scrypt secret") {
-			t.Errorf("legacy=%v: the plaintext form is rendered:\n%s", legacy, out)
+		// The one 'algorithm-type' of the walkthrough is Step 0's local
+		// enable secret, a plaintext placeholder that IOS hashes itself
+		// (none on IOS 12.x); no account line is in that form.
+		for _, l := range strings.Split(out, "\n") {
+			if strings.Contains(l, "username") && (strings.Contains(l, "algorithm-type") || strings.Contains(l, "scrypt secret")) {
+				t.Errorf("legacy=%v: the plaintext form is rendered: %q", legacy, l)
+			}
+			if legacy && (strings.Contains(l, "algorithm-type") || strings.Contains(l, "scrypt")) {
+				t.Errorf("legacy=%v: IOS 12.x has no scrypt: %q", legacy, l)
+			}
+		}
+		if !legacy && !strings.Contains(out, "!   enable algorithm-type scrypt secret <PASSWORD>\n") {
+			t.Errorf("the enable secret placeholder is not in Step 0:\n%s", out)
 		}
 		want := "! username lab-admin privilege 15 secret 9 <TYPE9-HASH>\n"
 		if legacy {
@@ -296,7 +308,9 @@ func TestBreakGlassDocsNameTheHashForm(t *testing.T) {
 			t.Fatal(err)
 		}
 		text := string(b)
-		if strings.Contains(text, "algorithm-type scrypt secret <") {
+		// the local enable secret of Step 0 takes a plaintext password
+		// (<PASSWORD>) that IOS hashes itself: not an account line
+		if regexp.MustCompile("algorithm-type scrypt secret <(?i:(type9-)?hash)>").MatchString(text) {
 			t.Errorf("%s still shows 'algorithm-type scrypt secret <hash>'", f)
 		}
 		if f != "../../CHANGELOG.md" && !strings.Contains(text, "secret 9 <TYPE9-HASH>") {

@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -99,7 +100,7 @@ func scopeCmd(inv *invocation) *cobra.Command {
 		withRun(verb("mgmt-acl <scope> {list|add|remove|clear|cisco-name|juniper-name} [args]",
 			"Per-scope permit list and ACL / filter names"), n(inv.scopeMgmtACL)),
 		withRun(verb("breakglass <scope> {list|add <name> [--role admin|operator|readonly]|remove <name>}",
-			"Per-scope break-glass local users (names and roles; no credential is stored)"), n(inv.scopeBreakGlass)),
+			"Per-scope break-glass local users (names and roles; no credential is stored): the accounts a breakglass hold makes usable"), n(inv.scopeBreakGlass)),
 		withRun(verb(scopeSNMPUse, scopeSNMPShort), n(inv.scopeSNMP)),
 	)
 	// No sub-command, help, -h, --help: the usage, exit 0; anything else:
@@ -130,7 +131,7 @@ var (
 // scope's name (<key>.<scope>). 'scope rename' moves them and 'scope
 // remove' drops them (scopeConfKeysMove).
 var scopeConfKeys = []string{"aaa.order", "exec_timeout", "tacacs_group", "radius_group", "scope_auth_method",
-	"scope_mgmt_acl.names.cisco", "scope_mgmt_acl.names.juniper", "scope_mgmt_acl.permits"}
+	"scope_mgmt_acl.names.cisco", "scope_mgmt_acl.names.juniper", "scope_mgmt_acl.permits", "cisco.source_interface"}
 
 // The ACL / filter names the device configs use when none is set
 // (CISCO_ACL_NAME_DEFAULT, JUNIPER_ACL_NAME_DEFAULT).
@@ -528,6 +529,9 @@ func (inv *invocation) scopeListView([]string) error {
 		}
 	}
 	cols := []ui.Col{ui.Left("NAME"), ui.Left("PREFIXES"), ui.Right("USERS"), ui.Left("DEFAULT")}
+	// A scope that holds the address of a device held for break-glass says
+	// so beside its name.
+	heldIn := inv.scopeHoldCounts(m)
 	if withVendor {
 		cols = append(cols, ui.Left("VENDOR ATTRIBUTES (RADIUS)"))
 	}
@@ -543,17 +547,21 @@ func (inv *invocation) scopeListView([]string) error {
 			t.Add("", c)
 			continue
 		}
+		label := name
+		if n := heldIn[name]; n > 0 {
+			label += " (" + strconv.Itoa(n) + " break-glass " + plural(n, "hold", "holds") + ")"
+		}
 		if withVendor {
 			if vendor == "" {
 				vendor = "not sent"
 			}
-			t.Add(ui.Styled(ui.Bold, name), c, users, isDefault, vendor)
+			t.Add(ui.Styled(ui.Bold, label), c, users, isDefault, vendor)
 		} else {
 			dfl := ui.Cell{}
 			if isDefault == "yes" {
 				dfl = ui.Styled(cy, "yes")
 			}
-			t.Add(ui.Styled(ui.Bold, name), c, users, dfl)
+			t.Add(ui.Styled(ui.Bold, label), c, users, dfl)
 		}
 	}
 	inv.write(t.String())
@@ -601,8 +609,39 @@ func (inv *invocation) scopeRouting([]string) error {
 		t.Add(fmt.Sprint(i), ui.Styled(ui.Bold, f[0]), f[1], f[2], dfl)
 	}
 	inv.write(t.String())
+	// The rows are what the scopes store; a held address is taken out of
+	// them when they are rendered.
+	for _, h := range inv.holdSeenBy() {
+		from := m.CarvedFrom(h.Address, "", false)
+		parts := make([]string, len(from))
+		for i, c := range from {
+			parts[i] = c.CIDR + " (" + c.Scope + ")"
+		}
+		where := "is carved out of " + strings.Join(parts, ", ") + " and answered by nothing"
+		if len(from) == 0 {
+			where = "is covered by no scope and answered by nothing"
+		}
+		inv.echoE("  " + ui.Red + "break-glass held:" + ui.NC + " " + h.Address + " (" + h.Device + ") " + where + ": tacctl breakglass list")
+	}
 	inv.echo("")
 	return nil
+}
+
+// scopeHoldCounts is how many visible holds stand on an address each
+// scope's prefixes hold.
+func (inv *invocation) scopeHoldCounts(m *model.Model) map[string]int {
+	out := map[string]int{}
+	for _, h := range inv.holdSeenBy() {
+		for _, s := range m.Scopes {
+			for _, p := range s.Prefixes {
+				if cidr.ContainsAddr(p, h.Address) {
+					out[s.Name]++
+					break
+				}
+			}
+		}
+	}
+	return out
 }
 
 // --- show -------------------------------------------------------------------
@@ -694,6 +733,14 @@ func (inv *invocation) scopeShow(args []string) error {
 		for _, c := range pfx {
 			if c != "" {
 				inv.echo("    - " + c)
+			}
+		}
+	}
+	for _, h := range inv.holdSeenBy() {
+		for _, p := range s.Prefixes {
+			if cidr.ContainsAddr(p, h.Address) {
+				inv.echoE("  " + b + "Break-glass held:" + nc + " " + ui.Red + h.Device + " (" + h.Address + ") since " + holdTime(h) + " by " + h.By + ui.NC)
+				break
 			}
 		}
 	}
@@ -1118,6 +1165,9 @@ func (inv *invocation) scopeLookup(args []string) error {
 		return err
 	}
 	lines, code := m.ScopeLookup(query)
+	if code == model.LookupFound {
+		lines = inv.lookupHoldNotes(query, lines)
+	}
 	for _, l := range lines {
 		inv.echo(l)
 	}
@@ -2348,4 +2398,35 @@ func (inv *invocation) listLines(list []string) {
 			inv.echo("  - " + e)
 		}
 	}
+}
+
+// lookupHoldNotes says, for an address a break-glass hold stands on, that
+// the scope it routes to does not answer it, and for a range that holds
+// such addresses, which ones (D123).
+func (inv *invocation) lookupHoldNotes(query string, lines []string) []string {
+	if len(inv.holds()) == 0 || len(lines) == 0 {
+		return lines
+	}
+	q, ok := store.ParseNet(query)
+	if !ok {
+		return lines
+	}
+	if !strings.Contains(query, "/") {
+		if h, held := inv.holdAt(q.String()[:strings.LastIndexByte(q.String(), '/')]); held {
+			lines[0] += ", " + ui.Red + "NOT ANSWERED: break-glass held on " + h.Device + " since " + holdTime(h) + " by " + h.By +
+				" (tacctl breakglass release " + h.Device + ")" + ui.NC
+		}
+		return lines
+	}
+	var notes []string
+	for _, h := range inv.holds() {
+		if cidr.ContainsAddr(query, h.Address) {
+			notes = append(notes, "  Break-glass held inside this range: "+h.Address+" ("+h.Device+") is answered by nothing (tacctl breakglass list)")
+		}
+	}
+	if len(notes) > 0 {
+		lines = append(lines, "")
+		lines = append(lines, notes...)
+	}
+	return lines
 }

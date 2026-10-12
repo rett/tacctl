@@ -100,6 +100,8 @@ var engineerRowCases = map[string]engineerRow{
 		refusedCase("Device 'web1' not found", "device location web1 Rack4"))},
 	"device legacy-ssh": {cases: append(cases("device legacy-ssh lab-sw enable"),
 		refusedCase("Device 'web1' not found", "device legacy-ssh web1 enable"))},
+	"device config-syntax": {cases: append(cases("device config-syntax lab-sw", "device config-syntax lab-sw auto"),
+		refusedCase("Device 'web1' not found", "device config-syntax web1 modern"))},
 	"device hostkey": {cases: append(cases("device hostkey lab-sw show"),
 		refusedCase("Device 'web1' not found", "device hostkey web1 show"),
 		refusedCase("Device 'web1' not found", "device hostkey web1 accept -y"),
@@ -123,7 +125,14 @@ var engineerRowCases = map[string]engineerRow{
 	"device config": {cases: append(cases("device config", "device config show lab-sw"),
 		refusedCase("Device 'prod-sw' not found", "device config show prod-sw"),
 		refusedCase("enrolled Linux host", "device config show web1"))},
-	"config cisco": {cases: append(cases("config cisco --scope lab", "config cisco --scope lab --staging 192.168.1.50"),
+	// The source interface (0.2.5, D119) is a setting of tacctl.yaml: an
+	// engineer reads their own scopes' and changes nothing.
+	"config cisco": {cases: append(cases("config cisco --scope lab", "config cisco --scope lab --staging 192.168.1.50",
+		"config cisco source-interface", "config cisco source-interface lab"),
+		refusedCase("Setting it is the superuser's", "config cisco source-interface lab Loopback0"),
+		refusedCase("Setting it is the superuser's", "config cisco source-interface lab none"),
+		refusedCase("Scope 'prod' does not exist", "config cisco source-interface prod"),
+		refusedCase("Scope 'prod' does not exist", "config cisco source-interface prod Loopback0"),
 		refusedCase("Scope 'prod' is not one of yours", "config cisco --scope prod"),
 		refusedCase("not found", "config cisco --scope lab --staging 192.168.2.50 --name prod-sw"),
 		refusedCase("is not available for staging", "config cisco --scope lab --staging 100.64.0.5"),
@@ -147,6 +156,10 @@ var engineerRowCases = map[string]engineerRow{
 		refusedCase("does not exist", "scope secret prod set abcdefgh12345678ABCDEFGH"),
 		refusedCase("does not exist", "scope secret prod show"))},
 	"scope show": {cases: append(cases("scope show lab"), refusedCase("does not exist", "scope show prod"))},
+	// The break-glass holds (0.2.5, D125): an engineer lists the holds on the
+	// devices of their own scopes and changes nothing; hold and release
+	// have no Engineer row, the gate refuses them (breakglass_test.go).
+	"breakglass list": {cases: cases("breakglass list", "breakglass list --json")},
 	// The engineer reads the SNMP settings of the scopes of their own (the
 	// reveal is logged) and changes nothing: every setter, clear and test
 	// is refused, another scope does not exist.
@@ -166,6 +179,23 @@ var engineerRowCases = map[string]engineerRow{
 		refusedCase("does not exist", "scope snmp prod show --reveal"),
 		refusedCase("does not exist", "scope snmp prod community --stdin"),
 		refusedCase("does not exist", "scope snmp prod clear"))},
+	// The same for the devices of their own scopes (D72): they read, and
+	// every setter and clear is the superuser's; another scope's device, and
+	// an enrolled host, are not a device of theirs to read.
+	"device snmp": {cases: append(cases("device snmp lab-sw", "device snmp lab-sw show", "device snmp lab-sw show --reveal",
+		"device snmp lab-sw clients list", "device snmp lab-sw version", "device snmp lab-sw port", "device snmp lab-sw timeout"),
+		refusedCase("The engineer tier reads a device's SNMP settings", "device snmp lab-sw community --stdin"),
+		refusedCase("The engineer tier reads a device's SNMP settings", "device snmp lab-sw v3-user alice --stdin"),
+		refusedCase("The engineer tier reads a device's SNMP settings", "device snmp lab-sw version v3"),
+		refusedCase("The engineer tier reads a device's SNMP settings", "device snmp lab-sw clients add 192.0.2.0/24"),
+		refusedCase("The engineer tier reads a device's SNMP settings", "device snmp lab-sw clients remove 192.0.2.0/24"),
+		refusedCase("The engineer tier reads a device's SNMP settings", "device snmp lab-sw port 162"),
+		refusedCase("The engineer tier reads a device's SNMP settings", "device snmp lab-sw timeout 3"),
+		refusedCase("The engineer tier reads a device's SNMP settings", "device snmp lab-sw clear"),
+		refusedCase("Device 'prod-sw' not found", "device snmp prod-sw show --reveal"),
+		refusedCase("Device 'prod-sw' not found", "device snmp prod-sw community --stdin"),
+		refusedCase("Device 'prod-sw' not found", "device snmp prod-sw clear"),
+		refusedCase("is an enrolled Linux host", "device snmp web1 show"))},
 }
 
 // watchedFiles are the files of the state directory an engineer never

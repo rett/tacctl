@@ -474,6 +474,28 @@ func MigrateDeadCommandMatches(env *Env) error {
 	return nil
 }
 
+// --- the operator audit of 0.2.5 --------------------------------------------------
+
+// MigratePreviousOperatorDefaults drops the operator and readonly settings
+// of tacctl.yaml that are exactly what 0.2.3 shipped (privileges.operator,
+// commands.operator, commands.readonly): 'group privilege add' seeds the
+// shipped list into the override, so an install that ever added an entry
+// holds it, and it is not a choice. The shipped values of this release then
+// apply (the operator cannot interrupt service, even briefly). A list that
+// differs is left alone; the upgrade's notice names it
+// (policy.StaleOperatorPolicy). A write that fails is printed and returned.
+func MigratePreviousOperatorDefaults(env *Env) error {
+	dropped, err := policy.DropPreviousDefaults(env.Conf)
+	for _, d := range dropped {
+		env.Out.InfoE("Dropped " + d + " override: it is the value an earlier release shipped; the shipped value now applies")
+	}
+	if err != nil {
+		report(env.Out, err)
+		return ui.ErrReported
+	}
+	return nil
+}
+
 // --- conf_migrate_exec_service_name ----------------------------------------------
 
 // MigrateExecServiceName is conf_migrate_exec_service_name: on an install
@@ -717,7 +739,8 @@ type SyncOptions struct {
 //
 // Without a store: the in-place migrations every upgrade has run, ahead of
 // the store gate, which judges the file as they leave it
-// (MigrateCommandRules, MigrateDeadCommandMatches, MigrateExecServiceName,
+// (MigrateCommandRules, MigrateDeadCommandMatches,
+// MigratePreviousOperatorDefaults, MigrateExecServiceName,
 // RegenerateCommands); changed means tacquito.yaml's bytes differ from
 // before the first of them.
 //
@@ -753,6 +776,7 @@ func ConfigSyncExisting(ctx context.Context, env *Env, opts SyncOptions) (bool, 
 	}
 	if !step(migrateCommandRules(env, cont)) ||
 		!step(MigrateDeadCommandMatches(env)) ||
+		!step(MigratePreviousOperatorDefaults(env)) ||
 		!step(migrateExecServiceName(env, cont)) {
 		return false, failed
 	}

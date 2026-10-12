@@ -23,6 +23,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/rett/tacctl/internal/conf"
+	"github.com/rett/tacctl/internal/devconf"
 	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/shellquote"
 	"github.com/rett/tacctl/internal/ui"
@@ -30,8 +32,24 @@ import (
 
 func init() {
 	registerFamily(deviceCmd)
-	registerSpecs("device", deviceSpecs)
+	// 'device <verb>' is deviceSpecs; 'device config <verb>' is
+	// deviceConfigSpecs (device_config.go).
+	registerSpecFunc("device", func(path []string) (Spec, bool) {
+		switch {
+		case len(path) == 3 && path[1] == "config":
+			s, ok := deviceConfigSpecs[path[2]]
+			return s, ok
+		case len(path) == 2 && path[1] == "config":
+			// A node of its own verbs: none of its flags is the node's.
+			return Spec{}, false
+		case len(path) == 2:
+			s, ok := deviceSpecs[path[1]]
+			return s, ok
+		}
+		return Spec{}, false
+	})
 	registerDeviceNames(deviceRegistryNames)
+	shellHelpBlocks["device config"] = func(*invocation) string { return deviceConfigUsage() }
 }
 
 var (
@@ -55,6 +73,7 @@ var deviceSpecs = map[string]Spec{
 		{Names: []string{"--description"}, Value: true},
 		{Names: []string{"--snmp-location"}, Value: true},
 		{Names: []string{"--legacy-ssh"}},
+		{Names: []string{"--config-syntax"}, Value: true, Kind: "auto|ios12|modern"},
 		{Names: []string{"--host-key"}, Value: true},
 		{Names: []string{"--no-host-key"}},
 		{Names: []string{"--no-lookup"}},
@@ -68,13 +87,18 @@ var deviceSpecs = map[string]Spec{
 	"description": {MinArgs: 1, MaxArgs: -1, Args: []string{KindDevices, "clear"}},
 	"location":    {MinArgs: 1, MaxArgs: -1, Args: []string{KindDevices, "clear"}, Flags: []Flag{{Names: []string{"--from-device"}}, flagYes}},
 	"legacy-ssh":  {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, "enable|disable"}},
-	"stale-days":  {MaxArgs: 1, Args: []string{""}},
-	"notice":      {MinArgs: 3, MaxArgs: 3, Args: []string{KindDevices, "ack|unack", noticeWords}},
-	"notices":     {MaxArgs: 1, Args: []string{KindDevices}, Flags: []Flag{flagAllNotices}},
+	// The Cisco configuration syntax (D113).
+	"config-syntax": {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, "auto|ios12|modern"}},
+	"stale-days":    {MaxArgs: 1, Args: []string{""}},
+	"notice":        {MinArgs: 3, MaxArgs: 3, Args: []string{KindDevices, "ack|unack", noticeWords}},
+	"notices":       {MaxArgs: 1, Args: []string{KindDevices}, Flags: []Flag{flagAllNotices}},
 	"import": {MinArgs: 1, MaxArgs: 1, Args: []string{KindFile}, Flags: []Flag{
 		{Names: []string{"--check"}}, {Names: []string{"--replace"}}, flagAllowGeneric, flagYes}},
 	"export":  {MaxArgs: 0, Flags: []Flag{{Names: []string{"--csv"}}, flagJSON}},
 	"hostkey": {MinArgs: 1, MaxArgs: 3, Args: []string{KindDevices, "show|accept|set", ""}, Flags: []Flag{flagYes}},
+	// 'device snmp' (D72) parses each verb with deviceSNMPSpecs; this is
+	// the whole of it for completion.
+	"snmp": deviceSNMPCompletion,
 	// 'device ssh' is 'tacctl ssh' (ssh.go); ssh-config is device_sshconfig.go.
 	"ssh":        sshSpec,
 	"ssh-config": {MaxArgs: 0},
@@ -103,19 +127,26 @@ var deviceVerbs = [][2]string{
 	{"port <name> [<n>|clear]", "Show, set or clear the ssh port"},
 	{"description <name> [<text>|clear]", "Show, set or clear the description"},
 	{"location <name> [<text>|clear|--from-device [-y]]", "Show, set or clear the place, for the SNMP location in the walkthroughs (--from-device: read it from the device)"},
-	{"legacy-ssh <name> [enable|disable]", "Opt in to legacy IOS ssh algorithms"},
+	{"legacy-ssh <name> [enable|disable]", "Opt in to the legacy ssh algorithms (SHA-1 key exchange, CBC ciphers, ssh-rsa)"},
+	{"config-syntax <name> [auto|ios12|modern]", "Show or set the Cisco configuration syntax (IOS 12.x or modern) of the walkthrough and the comparison"},
 	{"stale-days [<n>]", "Show or set the days after which a device counts as stale"},
 	{"notice <name> ack|unack <kind>", "Acknowledge or reopen a notice"},
 	{"notices [<name>] [--all]", "The open notices, with what to do about each (--all: the acknowledged ones too)"},
 	{"import [--check] [--replace] [--allow-generic] [-y] <file|->", "Import devices from CSV or the registry's YAML (an engineer: from standard input only, `-` first)"},
 	{"export [--csv|--json]", "Print the registry (YAML by default)"},
 	{"hostkey <name> [show|accept [-y]|set SHA256:<fp>]", "Show the pinned ssh host keys, or re-pin them after a verified change"},
+	{deviceSNMPUse, "A device's own SNMP settings over its scope's: version, port, timeout, allowed clients and credentials, and where each comes from"},
 	{"ssh <name|address> [-p <port>] [-X|-Y] [-g] [-L|-R|-D <spec>]... [-- <ssh args>]", "Alias of 'tacctl ssh': a session to the device, as you"},
 	{"ssh-config", "Print an ssh_config Include for your devices (Host blocks, pinned keys)"},
 	{"scan [--full] [--since <dur>] [--backend <id>]", "Read the logs for the devices seen; re-scan pinned host keys"},
 	{"discover [--all] [--backend <id>]", "Scan, then list the addresses that authenticated unregistered"},
 	{"check <name>|--all [--json]", "Checklist: scope, tag, seen, reachable, host key, SNMP name and location"},
 	{"config show <name> [--protocol tacacs|radius] [--legacy] [--server <address|name>] [--source <address>]", "The device's data, then its vendor walkthrough for its scope"},
+	{"config pull <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale [options]", "Read the devices' configuration as you and compare the managed sections with what tacctl renders"},
+	{"config diff <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale [--pull] [--section <list>] [--exit-code] [--json]", "The last pull against what tacctl renders now, section by section"},
+	{"config plan <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale [--pull] [--section <list>] [--converge] [--secrets|--no-secrets] [--plain|--json|--backout] [--out <file>|--out-dir <dir>] [--force] [--from <address>] [--exit-code]", "What to paste to make each device match what tacctl renders: the report, one region, the check and the back-out"},
+	{"config list [--stale] [--never] [--failed] [--differs] [--transport netconf|ssh|none] [--scope <scope>] [--vendor <vendor>] [--json]", "Each device's configuration state, when it was read, by whom and over what"},
+	{"config forget <name>[,<name>...] | --all", "Delete the pull records (a pull makes them again)"},
 }
 
 // deviceOptions are the option lines under a verb's row in the usage, one
@@ -134,7 +165,8 @@ var deviceOptions = map[string][][2]string{
 		{"--port <n>", "Its ssh port (default 22)"},
 		{"--description <text>", "A description"},
 		{"--snmp-location <text>", "Its place (the SNMP location the walkthroughs render)"},
-		{"--legacy-ssh", "Old IOS: SHA-1 key exchange and ssh-rsa"},
+		{"--legacy-ssh", "SHA-1 key exchange, CBC ciphers and ssh-rsa; the configuration syntax is --config-syntax"},
+		{"--config-syntax <syntax>", "(cisco) auto, ios12 or modern: the configuration syntax (default auto: the pull's version line says)"},
 		{"--host-key SHA256:<fp>", "Register only if the device offers this key; pin it alone"},
 		{"--no-host-key", "Register without a pinned key (a hostkey-unpinned notice)"},
 		{"--no-lookup", "Do not read the device's own name and location by SNMP"},
@@ -154,6 +186,7 @@ var deviceOptions = map[string][][2]string{
 	"export": {
 		{"--csv", "Print CSV instead of YAML"},
 	},
+	"snmp": deviceSNMPOptions,
 	"ssh": {
 		{"-p <port>", "Connect to this port instead of the registered one"},
 		{"-X, -Y", "Forward X11 (untrusted, trusted) to this server's display"},
@@ -170,24 +203,92 @@ var deviceOptions = map[string][][2]string{
 	"discover": {
 		{"--all", "Also list the addresses that were only refused"},
 	},
-	"config": {
+	"config show": {
 		{"--protocol tacacs|radius", "The protocol (default: the scope's auth-method, else its only protocol, else tacacs)"},
-		{"--legacy", "(Cisco) IOS 12.x syntax; TACACS+ only"},
+		{"--legacy", "(Cisco) The IOS 12.x syntax, whatever the device's config-syntax is; TACACS+ only"},
 		{"--server <address|name>", "The address the device is told to authenticate against"},
 		{"--source <address>", "The address this server reaches the device from"},
+	},
+	"config pull": {
+		{"--all", "(pull, diff, plan, forget) Every device of yours (not WTI units, or devices in no scope)"},
+		{"--scope <scope>", "(pull, diff, plan, list) Only the devices of that scope"},
+		{"--vendor cisco|juniper|wti", "(pull, diff, plan, list) Only that vendor's devices"},
+		{"--stale", "(pull, diff, plan, list) Only the devices never read, last read in failure, or differing"},
+		{"--transport auto|netconf|ssh", "(pull, diff, plan) NETCONF where the device answers (auto, default), NETCONF only, or the ssh command line only; (list) netconf, ssh or none: only the devices last read over that transport (none: never read)"},
+		{"--concurrency <n>", "Read at most n devices at once (never above device.config.max_concurrency)"},
+		{"--timeout <seconds>", "Per device, connect included (10-600; default device.config.timeout)"},
+		{"--max-failures <n>", "Stop starting devices after n failures"},
+		{"--diff", "Print the differences after the summary"},
+		{"--server <address|name>", "The address the devices are told to authenticate against (not stored)"},
+		{"--source <address>", "The address this server reaches the devices from (not stored)"},
+		{"--json", "(pull, diff, plan, list) Print JSON (a pull: one line per device, then the summary)"},
+	},
+	"config diff": {
+		{"--pull", "Read the devices first (takes the pull options)"},
+		{"--section <list>", "Only these sections: aaa, roles, mgmt-acl, snmp, netconf, breakglass"},
+		{"--exit-code", "Exit 2 when a device differs (and none failed)"},
+	},
+	"config plan": {
+		{"--pull", "Read the devices first (takes the pull options); the plan is made from that pull"},
+		{"--section <list>", "Only these sections: aaa, roles, mgmt-acl, snmp (the report still names the others)"},
+		{"--converge", "Add the cleanup of a device with nothing else to paste: the region that removes the old servers and the like (a device with a first region gets that and a line to plan again after the paste)"},
+		{"--secrets", "Type every secret of the planned sections, also the ones the device has"},
+		{"--no-secrets", "Leave each secret as a marked line to fill in (no plain form)"},
+		{"--plain", "The statements of one device alone, for 'load set' (--converge: two files, with --out or --out-dir)"},
+		{"--json", "One object per device: the findings, the region, the cleanup and the back-out; values elided"},
+		{"--backout", "Only the back-out region (what puts the pulled lines back; the one kept from the plan once a later pull replaced them; not with --pull)"},
+		{"--out <file>", "Write one device's output to a file (0600)"},
+		{"--out-dir <dir>", "One file per device (<name>.txt, .set with --plain, .json with --json; each plan's .backout.txt) and COVER.txt, 0600 in a 0700 directory"},
+		{"--force", "Replace files --out or --out-dir would write"},
+		{"--from <address>", "The address you are logged in from: the cleanup keeps it; the management filter check uses it"},
+		{"--exit-code", "Exit 2 when a device needs a change (and none could not be planned)"},
+	},
+	"config list": {
+		{"--never", "Only the devices not pulled yet"},
+		{"--failed", "Only the devices whose last pull failed"},
+		{"--differs", "Only the devices that differ from what tacctl renders now"},
+		{"--transport netconf|ssh|none", "Only the devices last read over that transport (none: never read)"},
 	},
 }
 
 func deviceCmd(inv *invocation) *cobra.Command {
 	c := verb("device <subcommand>", "Device registry: names, addresses and notices for the devices that authenticate here")
 	c.RunE = inv.native(withPreflight, inv.device)
+	// 'device config' has verbs of its own (show, pull, diff, list, forget):
+	// its rows are the sub-commands of one node.
+	var cfg *cobra.Command
 	for _, v := range deviceVerbs {
-		word := strings.Fields(v[0])[0]
+		f := strings.Fields(v[0])
+		word := f[0]
+		if word == "config" && len(f) > 1 {
+			if cfg == nil {
+				cfg = verb("config <subcommand>", "A device's walkthrough, reading its configuration (pull, diff, list, forget) and what to paste (plan)")
+				cfg.RunE = inv.native(withPreflight, func(args []string) error {
+					return inv.device(append([]string{"config"}, args...))
+				})
+				c.AddCommand(cfg)
+			}
+			sub := f[1]
+			cfg.AddCommand(withRun(verb(strings.TrimPrefix(v[0], "config "), v[1]), inv.native(withPreflight, func(args []string) error {
+				return inv.device(append([]string{"config", sub}, args...))
+			})))
+			continue
+		}
 		c.AddCommand(withRun(verb(v[0], v[1]), inv.native(withPreflight, func(args []string) error {
 			return inv.device(append([]string{word}, args...))
 		})))
 	}
 	return c
+}
+
+// deviceOptKey is the key of a verb row's option lines in deviceOptions: its
+// first word, and for a 'config' row the second as well.
+func deviceOptKey(use string) string {
+	f := strings.Fields(use)
+	if f[0] == "config" && len(f) > 1 {
+		return "config " + f[1]
+	}
+	return f[0]
 }
 
 // deviceRegUsage is the usage of the family.
@@ -201,13 +302,14 @@ func deviceRegUsage() string {
 		} else {
 			fmt.Fprintf(&b, "  %-56s  %s\n", use, short)
 		}
-		for _, o := range deviceOptions[strings.Fields(use)[0]] {
+		for _, o := range deviceOptions[deviceOptKey(use)] {
 			fmt.Fprintf(&b, "      %-52s  %s\n", o[0], o[1])
 		}
 	}
 	b.WriteString(`
 Host keys: 'add' reads the device's ssh host keys (ssh-keyscan of the address
-and port) and pins them; compare the fingerprints it prints with the device
+and port; for a legacy-ssh device that ssh-keyscan cannot read, tacctl's own
+ssh client, which stops at the key and sends no password) and pins them; compare the fingerprints it prints with the device
 console. --host-key SHA256:<fp> registers only when the device offers a key
 with that fingerprint, and pins that key alone. --no-host-key registers without
 a pinned key (a hostkey-unpinned notice). A device that does not answer is
@@ -238,6 +340,16 @@ walkthrough 'tacctl config <vendor> --scope <its scope> --name <name>' prints,
 with the device's own values in the SNMP step. Only cisco, juniper and wti
 devices have one.
 
+SNMP of its own: 'snmp <name>' gives one device a version, port, timeout,
+allowed clients and credentials of its own, over its scope's ('tacctl scope
+snmp') and the default's ('tacctl config snmp'): the device's value wins, then
+the scope's, then the default's, then the built-in; 'snmp <name> show', 'show'
+and 'check' say which one each value is, and a secret only as set or not
+('snmp <name> show --reveal' prints it). A device's own list of allowed clients
+replaces its scope's. The credentials are /etc/tacctl/snmp/devices/<name>.yaml
+(0600); 'remove' deletes them and 'rename' moves them. Setting and clearing
+are the superuser's; an engineer reads the devices of their own scopes.
+
 Seen data: 'scan' reads each enabled backend's log (the tacquito journal,
 FreeRADIUS's tacctl-auth.log) from where the last scan stopped into
 /var/lib/tacctl/devices-seen.json, and re-scans the pinned host keys (a scan
@@ -261,6 +373,8 @@ Examples:
   tacctl device scan
   tacctl device discover
   tacctl device rename core-sw1 dc1-core1
+  tacctl device snmp core-sw1 community
+  tacctl device snmp core-sw1 clients add 192.0.2.0/24
   tacctl device export --csv > devices.csv
   tacctl device ssh-config > ~/.ssh/tacctl.conf
 
@@ -277,9 +391,9 @@ func (inv *invocation) device(args []string) error {
 	}
 	run := map[string]func([]string) error{
 		"list": inv.deviceList, "show": inv.deviceShow, "add": inv.deviceAdd, "remove": inv.deviceRemove,
-		"rename": inv.deviceRename, "legacy-ssh": inv.deviceLegacySSH, "stale-days": inv.deviceStaleDays,
+		"rename": inv.deviceRename, "legacy-ssh": inv.deviceLegacySSH, "config-syntax": inv.deviceConfigSyntax, "stale-days": inv.deviceStaleDays,
 		"notice": inv.deviceNotice, "notices": inv.deviceNotices, "import": inv.deviceImport, "export": inv.deviceExport,
-		"hostkey": inv.deviceHostkey, "ssh": inv.ssh, "ssh-config": inv.deviceSSHConfig, "config": inv.deviceConfig,
+		"hostkey": inv.deviceHostkey, "snmp": inv.deviceSNMP, "ssh": inv.ssh, "ssh-config": inv.deviceSSHConfig, "config": inv.deviceConfig,
 		"scan": inv.deviceScan, "discover": inv.deviceDiscover, "check": inv.deviceCheck,
 		"address": inv.deviceSetter("address"), "hostname": inv.deviceSetter("hostname"), "vendor": inv.deviceSetter("vendor"),
 		"port": inv.deviceSetter("port"), "description": inv.deviceSetter("description"), "location": inv.deviceSetter("location"),
@@ -309,7 +423,8 @@ func (inv *invocation) deviceParse(verbName string, args []string) (Parsed, erro
 	}
 	var use string
 	for _, v := range deviceVerbs {
-		if strings.Fields(v[0])[0] == verbName {
+		// 'config' is five rows; this parse is the one of 'config show'.
+		if f := strings.Fields(v[0]); f[0] == verbName && (verbName != "config" || (len(f) > 1 && f[1] == "show")) {
 			use = v[0]
 		}
 	}
@@ -369,6 +484,9 @@ func (inv *invocation) deviceWrite(fn func(*devreg.File, *devreg.Resolver) error
 		return nil, err
 	}
 	if err := inv.deviceChangeScopes(scopes, resolver(f), after); err != nil {
+		return nil, err
+	}
+	if err := inv.snmpNewNamesFree(f, trial); err != nil {
 		return nil, err
 	}
 	if _, err := trial.Text(); err != nil {
@@ -431,6 +549,23 @@ func (inv *invocation) deviceChangeScopes(f scopeFilter, before, after *devreg.R
 		if key := strings.ToLower(d.Name); !seen[key] {
 			seen[key] = true
 			was, is := bf.Find(d.Name), af.Find(d.Name)
+			// A device's SNMP settings are the superuser's to set (D72, D48):
+			// an engineer's import or registration cannot carry them in or
+			// change them. Removing a device, or renaming it (the same
+			// address with the same settings under a new name), is not a
+			// change of them.
+			if is != nil && !is.SNMP.Empty() {
+				switch {
+				case was != nil && reflect.DeepEqual(was.SNMP, is.SNMP):
+				case was == nil && slices.ContainsFunc(bf.Devices, func(o *devreg.Device) bool {
+					return o.Address == is.Address && reflect.DeepEqual(o.SNMP, is.SNMP)
+				}):
+				default:
+					return inv.usageErr("A device's SNMP settings are not the engineer tier's to change (tacctl device snmp is the superuser's); '" + d.Name + "' was not changed. Nothing was changed.")
+				}
+			} else if is != nil && was != nil && !was.SNMP.Empty() {
+				return inv.usageErr("A device's SNMP settings are not the engineer tier's to change (tacctl device snmp is the superuser's); '" + d.Name + "' was not changed. Nothing was changed.")
+			}
 			if err := changed(d.Name, was, is, was != nil, is != nil); err != nil {
 				return err
 			}
@@ -504,22 +639,74 @@ type deviceNoticeJSON struct {
 }
 
 type deviceJSON struct {
-	Name        string             `json:"name"`
-	Source      string             `json:"source"`
-	Address     string             `json:"address"`
-	Hostname    string             `json:"hostname,omitempty"`
-	Vendor      string             `json:"vendor"`
-	Port        int                `json:"port"`
-	LegacySSH   bool               `json:"legacy_ssh"`
-	Description string             `json:"description,omitempty"`
-	Location    string             `json:"location,omitempty"`
-	Scope       string             `json:"scope"`
-	Tag         string             `json:"tag"`
-	Shadowed    []string           `json:"shadowed_by"`
-	State       string             `json:"state"`
-	HostKeys    []string           `json:"host_keys"`
-	Notices     []deviceNoticeJSON `json:"notices"`
-	Seen        *deviceSeenJSON    `json:"seen,omitempty"`
+	Name      string `json:"name"`
+	Source    string `json:"source"`
+	Address   string `json:"address"`
+	Hostname  string `json:"hostname,omitempty"`
+	Vendor    string `json:"vendor"`
+	Port      int    `json:"port"`
+	LegacySSH bool   `json:"legacy_ssh"`
+	// ConfigSyntax is the Cisco configuration syntax setting (auto, ios12
+	// or modern; Cisco devices and devices that have one set only), Syntax
+	// what it resolves to (ios12 or modern, from the setting or the last
+	// pull; absent while unknown) and SyntaxSource where that comes from
+	// (setting or pull). The resolution is part of the configuration state:
+	// the caller who is not shown that state does not get it.
+	// SyntaxConflict is set when the explicit setting is not the syntax the
+	// last pull's version line (OS) derives to: the setting wins, and
+	// ImageSyntax is what the line says.
+	ConfigSyntax   string             `json:"config_syntax,omitempty"`
+	Syntax         string             `json:"syntax,omitempty"`
+	SyntaxSource   string             `json:"syntax_source,omitempty"`
+	SyntaxConflict bool               `json:"syntax_conflict,omitempty"`
+	ImageSyntax    string             `json:"image_syntax,omitempty"`
+	OS             string             `json:"os,omitempty"`
+	Description    string             `json:"description,omitempty"`
+	Location       string             `json:"location,omitempty"`
+	Scope          string             `json:"scope"`
+	Tag            string             `json:"tag"`
+	Shadowed       []string           `json:"shadowed_by"`
+	State          string             `json:"state"`
+	HostKeys       []string           `json:"host_keys"`
+	Notices        []deviceNoticeJSON `json:"notices"`
+	Seen           *deviceSeenJSON    `json:"seen,omitempty"`
+	// Config is the state of the configuration pull: ok, differs, never or
+	// failed (none for a host and for a vendor that is not read).
+	Config string `json:"config,omitempty"`
+	// SNMP is what the device is read with and where each value comes from
+	// (D72); 'show' only, never a secret.
+	SNMP *deviceSNMPJSON `json:"snmp,omitempty"`
+	// Breakglass is the hold on the device ('tacctl breakglass'): present
+	// while the server is told not to answer its address.
+	Breakglass *deviceHoldJSON `json:"breakglass,omitempty"`
+}
+
+// deviceHoldJSON is the break-glass hold of a device as the displays give it.
+type deviceHoldJSON struct {
+	Held    bool   `json:"held"`
+	Address string `json:"address"`
+	Since   string `json:"since"`
+	By      string `json:"by"`
+	Reason  string `json:"reason"`
+}
+
+// deviceHoldOf is the hold of a registered device as JSON (nil when none).
+func (inv *invocation) deviceHoldOf(e devreg.Entry) *deviceHoldJSON {
+	if e.Source != devreg.SourceDevice {
+		return nil
+	}
+	h, ok := inv.holdOf(e.Name, e.Address)
+	if !ok {
+		return nil
+	}
+	return &deviceHoldJSON{Held: true, Address: h.Address, Since: h.Since, By: h.By, Reason: h.Reason}
+}
+
+// holdRowText is the Break-glass row of 'device show' and the Scope row's
+// note of 'device check'.
+func (inv *invocation) holdRowText(h conf.Hold) string {
+	return "HELD since " + holdTime(h) + " (" + holdAge(h, inv.app.Knobs.Now()) + ") by " + h.By + ": " + h.Reason +
+		"; the server does not answer " + h.Address
 }
 
 // deviceSeenJSON is what the seen cache knows of an entry's address.
@@ -534,7 +721,9 @@ type deviceSeenJSON struct {
 	Stale       bool   `json:"stale"`
 }
 
-func deviceJSONOf(inv *invocation, res *devreg.Resolver, e devreg.Entry) deviceJSON {
+// deviceJSONOf is one entry as JSON; recs are the configuration records of
+// the pulls, nil when the caller is not shown them (a read-only user).
+func deviceJSONOf(inv *invocation, res *devreg.Resolver, e devreg.Entry, recs *devconf.Records) deviceJSON {
 	j := deviceJSON{Name: e.Name, Source: string(e.Source), Address: e.Address, Hostname: e.Hostname, Vendor: e.Vendor,
 		Port: e.SSHPort(), LegacySSH: e.LegacySSH, Description: e.Description, Location: e.Location, Scope: e.Scope, Tag: e.Tag,
 		Shadowed: append([]string{}, e.Shadowed...), State: e.State(), HostKeys: append([]string{}, e.HostKeys...),
@@ -543,6 +732,29 @@ func deviceJSONOf(inv *invocation, res *devreg.Resolver, e devreg.Entry) deviceJ
 		j.Notices = append(j.Notices, deviceNoticeJSON{Kind: n.Kind, Text: n.Text, Acked: n.Acked})
 	}
 	j.Seen = deviceSeenJSONOf(inv, res, e)
+	j.Breakglass = inv.deviceHoldOf(e)
+	if e.Source == devreg.SourceDevice && (e.Vendor == "cisco" || e.ConfigSyntax != "") {
+		j.ConfigSyntax = devreg.SyntaxAuto
+		if e.ConfigSyntax != "" {
+			j.ConfigSyntax = e.ConfigSyntax
+		}
+	}
+	if recs != nil {
+		rec, _ := recs.Of(e.Name)
+		if j.ConfigSyntax != "" {
+			r := syntaxOf(e, rec)
+			j.Syntax, j.SyntaxSource = r.Syntax, r.Source
+			if rec != nil && e.Vendor == "cisco" {
+				j.OS = cleanLine(rec.OS)
+				if r.Conflict {
+					j.SyntaxConflict, j.ImageSyntax = true, r.ImageSyntax
+				}
+			}
+		}
+		if st := inv.configStateOf(e, rec); st != "-" {
+			j.Config = st
+		}
+	}
 	return j
 }
 
@@ -597,10 +809,16 @@ func (inv *invocation) deviceList(args []string) error {
 		}
 		shown = append(shown, e)
 	}
+	// The configuration state is the operator tier's (D69): a read-only user
+	// is not shown it, in the table or in the JSON.
+	var configs *devconf.Records
+	if inv.configVisible() {
+		configs = inv.configRecords()
+	}
 	if p.Has("--json") {
 		out := []deviceJSON{}
 		for _, e := range shown {
-			out = append(out, deviceJSONOf(inv, res, e))
+			out = append(out, deviceJSONOf(inv, res, e, configs))
 		}
 		return inv.printJSON(out)
 	}
@@ -622,24 +840,43 @@ func (inv *invocation) deviceList(args []string) error {
 		return nil
 	}
 	cols := []ui.Col{ui.Left("NAME"), ui.Left("ADDRESS"), ui.Left("VENDOR"), ui.Left("SCOPE"), ui.Left("STATE"), ui.Left("LAST SEEN"), ui.Left("BY"), ui.Left("VIA"), ui.Left("NOTICES")}
+	if configs != nil {
+		cols = slices.Insert(cols, 8, ui.Left("CONFIG"))
+	}
 	var reach []string
 	if p.Has("--probe") {
-		cols = slices.Insert(cols, 8, ui.Left("REACH"))
+		cols = slices.Insert(cols, len(cols)-1, ui.Left("REACH"))
 		reach = inv.probeEntries(shown)
 	}
 	tb := ui.NewTable(head, cols...)
-	open := 0
+	open, held := 0, 0
 	for i, e := range shown {
 		last, by, via, stale := deviceSeenCols(inv, res, e)
-		state := e.State()
+		var state any = e.State()
 		if stale {
-			state += " stale"
+			state = e.State() + " stale"
+		}
+		// A device the server has been told not to answer is marked, in
+		// place of what the scopes would say of it.
+		if e.Source == devreg.SourceDevice {
+			if _, isHeld := inv.holdOf(e.Name, e.Address); isHeld {
+				held++
+				text := "BREAK-GLASS"
+				if stale {
+					text += " stale"
+				}
+				state = ui.Styled(ui.Red, text)
+			}
 		}
 		ns := res.NoticesFor(e)
 		open += len(devreg.Open(ns))
 		row := []any{e.Name, dash(e.Address), e.Vendor, dash(e.Scope), state, last, by, via, dash(kinds(ns))}
+		if configs != nil {
+			rec, _ := configs.Of(e.Name)
+			row = slices.Insert(row, 8, any(inv.configStateOf(e, rec)))
+		}
 		if reach != nil {
-			row = slices.Insert(row, 8, any(reach[i]))
+			row = slices.Insert(row, len(row)-1, any(reach[i]))
 		}
 		tb.Add(row...)
 	}
@@ -651,6 +888,9 @@ func (inv *invocation) deviceList(args []string) error {
 	}
 	if open > 0 {
 		inv.echo(fmt.Sprintf("  %d open notice(s): tacctl device notices", open))
+	}
+	if held > 0 {
+		inv.echoE(fmt.Sprintf("  %s%d device(s) held for break-glass%s: tacctl breakglass list", ui.Red, held, ui.NC))
 	}
 	inv.echo("")
 	return nil
@@ -670,7 +910,17 @@ func (inv *invocation) deviceShow(args []string) error {
 		return err
 	}
 	if p.Has("--json") {
-		return inv.printJSON(deviceJSONOf(inv, res, e))
+		var configs *devconf.Records
+		if inv.configVisible() {
+			configs = inv.configRecords()
+		}
+		j := deviceJSONOf(inv, res, e, configs)
+		if e.Source == devreg.SourceDevice {
+			if info, err := inv.deviceSNMPInfoOf(e); err == nil {
+				j.SNMP = info.json()
+			}
+		}
+		return inv.printJSON(j)
 	}
 	kind := "Device"
 	if e.Source == devreg.SourceHost {
@@ -695,6 +945,9 @@ func (inv *invocation) deviceShow(args []string) error {
 		row("Identity", dash(e.Identity))
 	} else {
 		row("Legacy ssh", map[bool]string{true: "enabled", false: "disabled"}[e.LegacySSH])
+		if e.Vendor == "cisco" || e.ConfigSyntax != "" {
+			row("Config syntax", inv.configSyntaxText(e))
+		}
 		row("Description", dash(e.Description))
 		row("Location", dash(e.Location))
 	}
@@ -712,6 +965,10 @@ func (inv *invocation) deviceShow(args []string) error {
 		row("Shadowed", "also covered by "+strings.Join(e.Shadowed, ", ")+" (the more specific prefix wins)")
 	}
 	row("State", e.State())
+	if h := inv.deviceHoldOf(e); h != nil {
+		hold, _ := inv.holdOf(e.Name, e.Address)
+		row("Break-glass", ui.Red+inv.holdRowText(hold)+ui.NC)
+	}
 	if e.Source == devreg.SourceDevice {
 		switch {
 		case e.Tag != "":
@@ -745,6 +1002,13 @@ func (inv *invocation) deviceShow(args []string) error {
 		if x.LastNASID != "" {
 			row("Identifies", "as '"+x.LastNASID+"' (NAS-Identifier)")
 		}
+	}
+	if e.Source == devreg.SourceDevice {
+		inv.deviceSNMPRows(e, row)
+	}
+	if e.Source == devreg.SourceDevice && slices.Contains(sortedVendors(), e.Vendor) && inv.configVisible() {
+		rec, _ := inv.configRecords().Of(e.Name)
+		row("Configuration", configBlock(e, rec))
 	}
 	ns := res.NoticesFor(e)
 	acked := len(ns) - len(devreg.Open(ns))
@@ -822,6 +1086,11 @@ func (inv *invocation) deviceAdd(args []string) error {
 	}
 	d := devreg.Device{Name: p.Args[0], Vendor: devreg.VendorOther, LegacySSH: p.Has("--legacy-ssh")}
 	checks := []error{devreg.ValidateName(d.Name)}
+	if p.Has("--config-syntax") {
+		var serr error
+		d.ConfigSyntax, serr = devreg.ValidateConfigSyntax(p.Value("--config-syntax"))
+		checks = append(checks, serr)
+	}
 	if d.Address, err = devreg.NormalizeAddress(p.Args[1]); err != nil {
 		checks = append(checks, err)
 	}
@@ -848,6 +1117,9 @@ func (inv *invocation) deviceAdd(args []string) error {
 		if e != nil {
 			return e
 		}
+	}
+	if d.ConfigSyntax != "" && d.Vendor != "cisco" {
+		return inv.usageErr("--config-syntax is the Cisco configuration syntax; give --vendor cisco.")
 	}
 	if p.Has("--host-key") && p.Has("--no-host-key") {
 		return inv.usageErr("Give --host-key or --no-host-key, not both.")
@@ -971,6 +1243,17 @@ func (inv *invocation) deviceRemove(args []string) error {
 			}
 		}
 	}
+	// A record without its device would silence an address nobody can find.
+	var heldTargets, rel []string
+	for _, n := range targets {
+		if d := f.Find(n); d != nil && inv.isHeld(n, d.Address) {
+			heldTargets = append(heldTargets, n)
+			rel = append(rel, "tacctl breakglass release "+n)
+		}
+	}
+	if len(heldTargets) > 0 {
+		return inv.usageErr("break-glass is held on " + strings.Join(heldTargets, ", ") + ": release it first (" + strings.Join(rel, "; ") + "). Nothing was changed.")
+	}
 	a := inv.app
 	a.Out.Warn(fmt.Sprintf("About to remove %d device(s) from the registry: %s.", len(targets), strings.Join(targets, ", ")))
 	a.Out.Warn("Enrolled hosts, scopes and vendor tags are not touched.")
@@ -985,6 +1268,10 @@ func (inv *invocation) deviceRemove(args []string) error {
 		return nil
 	}); err != nil {
 		return err
+	}
+	for _, n := range targets {
+		inv.configCarry(n, "")
+		inv.snmpDeviceCarry(n, "")
 	}
 	a.Out.Info(fmt.Sprintf("Removed %d device(s).", len(targets)))
 	inv.echo("")
@@ -1027,6 +1314,9 @@ func (inv *invocation) deviceRename(args []string) error {
 	}); err != nil {
 		return err
 	}
+	inv.configCarry(oldName, newName)
+	inv.snmpDeviceCarry(oldName, newName)
+	inv.holdCarry(oldName, newName, old.Address)
 	inv.app.Out.Info("Device '" + oldName + "' renamed to '" + newName + "'.")
 	inv.echo("")
 	return nil
@@ -1065,6 +1355,13 @@ func (inv *invocation) deviceSetter(field string) func([]string) error {
 			return err
 		}
 		name := d.Name
+		// The hold is on the address the server sees: moving the device
+		// would leave the old address silenced and the new one answered.
+		if field == "address" {
+			if inv.isHeld(name, d.Address) {
+				return inv.usageErr("break-glass is held on " + name + ": release it first (tacctl breakglass release " + name + "). Nothing was changed.")
+			}
+		}
 		value := strings.Join(p.Args[1:], " ")
 		if field != "description" && field != "location" && len(p.Args) > 2 {
 			return inv.usageErr("Usage: tacctl device " + field + " <name> [<value>|clear]")
@@ -1076,6 +1373,9 @@ func (inv *invocation) deviceSetter(field string) func([]string) error {
 		if err := set(&probe); err != nil {
 			return err
 		}
+		// A configuration syntax setting is a Cisco setting: it goes with
+		// the vendor, and the message says which one went.
+		droppedSyntax := d.ConfigSyntax != "" && probe.ConfigSyntax == ""
 		warnKeys := false
 		if _, err := inv.deviceWrite(func(f *devreg.File, r *devreg.Resolver) error {
 			live := f.Find(name)
@@ -1109,6 +1409,9 @@ func (inv *invocation) deviceSetter(field string) func([]string) error {
 		if warnKeys {
 			inv.app.Out.Warn("The pinned host keys belonged to the old address and were dropped.")
 		}
+		if droppedSyntax {
+			inv.app.Out.Warn("The configuration syntax setting (" + d.ConfigSyntax + ") was removed: it is a Cisco setting.")
+		}
 		return nil
 	}
 }
@@ -1134,7 +1437,14 @@ func setField(d *devreg.Device, field, value string, clearing bool) error {
 		d.Vendor = devreg.VendorOther
 		if !clearing {
 			d.Vendor = strings.ToLower(value)
-			return devreg.ValidateVendor(d.Vendor)
+			if err := devreg.ValidateVendor(d.Vendor); err != nil {
+				return err
+			}
+		}
+		// The configuration syntax is a Cisco setting: a device that stops
+		// being one does not keep it (the registry refuses the pair).
+		if d.Vendor != "cisco" {
+			d.ConfigSyntax = ""
 		}
 	case "port":
 		d.Port = 0
@@ -1383,9 +1693,22 @@ func (inv *invocation) deviceImport(args []string) error {
 			hostEntries = append(hostEntries, e)
 		}
 	}
-	plan, err := f.Clone().Import(rows, p.Has("--replace"), p.Has("--allow-generic"), hostEntries)
+	trial := f.Clone()
+	plan, err := trial.Import(rows, p.Has("--replace"), p.Has("--allow-generic"), hostEntries)
 	if err != nil {
 		return err
+	}
+	// An import that removes a held device or moves it to another address
+	// is refused, as 'remove' and 'address' are.
+	for _, h := range inv.holds() {
+		// A record holds the device only while the device is registered at
+		// the record's address; an orphan is not the import's to refuse.
+		if cur := f.Find(h.Device); cur == nil || !sameAddress(cur.Address, h.Address) {
+			continue
+		}
+		if d := trial.Find(h.Device); d == nil || !sameAddress(d.Address, h.Address) {
+			return inv.usageErr("break-glass is held on " + h.Device + ": release it first (tacctl breakglass release " + h.Device + "). Nothing was changed.")
+		}
 	}
 	a := inv.app
 	summary := fmt.Sprintf("%d added, %d updated, %d unchanged, %d removed.", len(plan.Added), len(plan.Updated), len(plan.Unchanged), len(plan.Removed))
@@ -1411,6 +1734,12 @@ func (inv *invocation) deviceImport(args []string) error {
 		return err
 	}); err != nil {
 		return err
+	}
+	// A device the import removed takes its configuration record and its
+	// SNMP credentials with it, as 'device remove' does.
+	for _, n := range plan.Removed {
+		inv.configCarry(n, "")
+		inv.snmpDeviceCarry(n, "")
 	}
 	a.Out.Info("Imported: " + summary)
 	for _, n := range plan.Added {

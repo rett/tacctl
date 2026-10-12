@@ -1,0 +1,205 @@
+{
+  "name": "dev-juniper-lab-engineer",
+  "address": "192.0.2.21",
+  "scope": "lab",
+  "vendor": "juniper",
+  "based_on": {
+    "pulled": "2026-10-10T14:02:00Z",
+    "by": "alice",
+    "transport": "netconf",
+    "age_s": 1080,
+    "secrets_visible": false
+  },
+  "status": "left-alone",
+  "irregularities": [
+    {
+      "n": 1,
+      "kind": "extra",
+      "severity": "ACCESS",
+      "section": "roles",
+      "what": "login class OP-CLASS allows clear",
+      "statement": "set system login class OP-CLASS permissions clear",
+      "action": "Not fixable by this login: EN-CLASS cannot change 'system login' (ask a superuser).",
+      "fixed": false
+    },
+    {
+      "n": 2,
+      "kind": "secret not visible",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "a TACACS+ server 192.0.2.10",
+      "statement": "set system tacplus-server 192.0.2.10 secret \u003csecret\u003e",
+      "action": "Not fixable by this login: EN-CLASS cannot change 'system tacplus-server' (ask a superuser).",
+      "fixed": false
+    },
+    {
+      "n": 3,
+      "kind": "missing",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "a TACACS+ server 192.0.2.10",
+      "statement": "set system tacplus-server 192.0.2.10 single-connection",
+      "action": "Not fixable by this login: EN-CLASS cannot change 'system tacplus-server' (ask a superuser).",
+      "fixed": false
+    },
+    {
+      "n": 4,
+      "kind": "extra",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "a TACACS+ server 198.18.0.24",
+      "statement": "set system tacplus-server 198.18.0.24 single-connection",
+      "action": "Not fixable by this login: EN-CLASS cannot change 'system tacplus-server' (ask a superuser).",
+      "fixed": false
+    },
+    {
+      "n": 5,
+      "kind": "extra",
+      "severity": "COSMETIC",
+      "section": "aaa",
+      "what": "accounting sends the event interactive-commands",
+      "statement": "set system accounting events interactive-commands",
+      "action": "Not fixable by this login: EN-CLASS cannot change 'system accounting' (ask a superuser).",
+      "fixed": false
+    },
+    {
+      "n": 6,
+      "kind": "missing",
+      "severity": "MONITORING",
+      "section": "snmp",
+      "what": "SNMP client list TACCTL-SNMP: 3 statements",
+      "statement": "e.g. set snmp client-list TACCTL-SNMP 192.0.2.10/32",
+      "action": "Not fixable by this login: EN-CLASS cannot change 'snmp' (ask a superuser).",
+      "fixed": false
+    },
+    {
+      "n": 7,
+      "kind": "missing",
+      "severity": "MONITORING",
+      "section": "snmp",
+      "what": "an SNMP community: client-list-name TACCTL-SNMP",
+      "statement": "set snmp community \u003csecret\u003e client-list-name TACCTL-SNMP",
+      "action": "Not fixable by this login: EN-CLASS cannot change 'snmp' (ask a superuser).",
+      "fixed": false
+    },
+    {
+      "n": 8,
+      "kind": "missing",
+      "severity": "COSMETIC",
+      "section": "snmp",
+      "what": "the SNMP location is Rack 4, DC1",
+      "statement": "set snmp location \"Rack 4, DC1\"",
+      "action": "Not fixable by this login: EN-CLASS cannot change 'snmp' (ask a superuser).",
+      "fixed": false
+    },
+    {
+      "n": 9,
+      "kind": "missing",
+      "severity": "COSMETIC",
+      "section": "snmp",
+      "what": "the SNMP contact is NOC \u003cnoc@example.net\u003e",
+      "statement": "set snmp contact \"NOC \u003cnoc@example.net\u003e\"",
+      "action": "Not fixable by this login: EN-CLASS cannot change 'snmp' (ask a superuser).",
+      "fixed": false
+    },
+    {
+      "n": 10,
+      "kind": "missing",
+      "severity": "COSMETIC",
+      "section": "snmp",
+      "what": "the SNMP description is Core switch",
+      "statement": "set snmp description \"Core switch\"",
+      "action": "Not fixable by this login: EN-CLASS cannot change 'snmp' (ask a superuser).",
+      "fixed": false
+    },
+    {
+      "n": 11,
+      "kind": "extra",
+      "severity": "MONITORING",
+      "section": "snmp",
+      "what": "SNMP: name example-switch.example.net",
+      "statement": "set snmp name example-switch.example.net",
+      "action": "Not fixable by this login: EN-CLASS cannot change 'snmp' (ask a superuser).",
+      "fixed": false
+    },
+    {
+      "n": 12,
+      "kind": "extra",
+      "severity": "COSMETIC",
+      "section": "snmp",
+      "what": "the SNMP location is example location",
+      "statement": "set snmp location \"example location\"",
+      "action": "Not fixable by this login: EN-CLASS cannot change 'snmp' (ask a superuser).",
+      "fixed": false
+    },
+    {
+      "n": 13,
+      "kind": "extra",
+      "severity": "COSMETIC",
+      "section": "snmp",
+      "what": "the SNMP contact is example contact",
+      "statement": "set snmp contact \"example contact\"",
+      "action": "Not fixable by this login: EN-CLASS cannot change 'snmp' (ask a superuser).",
+      "fixed": false
+    },
+    {
+      "n": 14,
+      "kind": "extra",
+      "severity": "MONITORING",
+      "section": "snmp",
+      "what": "an SNMP community: 3 statements",
+      "statement": "e.g. set snmp community \u003csecret\u003e clients 198.18.0.0/20",
+      "action": "Not fixable by this login: EN-CLASS cannot change 'snmp' (ask a superuser).",
+      "fixed": false
+    }
+  ],
+  "region": [],
+  "after": [],
+  "backout": [],
+  "left": {
+    "access": 4,
+    "monitoring": 4,
+    "cosmetic": 6
+  },
+  "extras": [],
+  "skipped": [
+    {
+      "section": "roles",
+      "kind": "class",
+      "why": "not visible to class EN-CLASS: 'system login' (admin-control)"
+    },
+    {
+      "section": "aaa",
+      "kind": "class",
+      "why": "not visible to class EN-CLASS: 'system accounting' (admin-control), 'system tacplus-server' (admin-control, secret-control)"
+    },
+    {
+      "section": "snmp",
+      "kind": "class",
+      "why": "not visible to class EN-CLASS: 'snmp' (snmp-control)"
+    }
+  ],
+  "withheld": [
+    "set system login class OP-CLASS permissions clear",
+    "set system tacplus-server 192.0.2.10 single-connection",
+    "set system tacplus-server 198.18.0.24 single-connection",
+    "set system accounting events interactive-commands",
+    "set snmp client-list TACCTL-SNMP 192.0.2.10/32",
+    "set snmp client-list TACCTL-SNMP 198.51.100.0/24",
+    "set snmp client-list TACCTL-SNMP 0.0.0.0/0 restrict",
+    "set snmp community \u003csecret\u003e client-list-name TACCTL-SNMP",
+    "set snmp location \"Rack 4, DC1\"",
+    "set snmp contact \"NOC \u003cnoc@example.net\u003e\"",
+    "set snmp description \"Core switch\"",
+    "set snmp name example-switch.example.net",
+    "set snmp location \"example location\"",
+    "set snmp contact \"example contact\"",
+    "set snmp community \u003csecret\u003e clients 198.18.0.0/20",
+    "set snmp community \u003csecret\u003e clients 198.19.0.0/16",
+    "set snmp community \u003csecret\u003e clients 0.0.0.0/0 restrict"
+  ],
+  "warnings": [],
+  "holds_secret": false,
+  "converge": true,
+  "cleanup_refused": "the aaa section is not planned (not visible to class EN-CLASS: 'system accounting' (admin-control), 'system tacplus-server' (admin-control, secret-control)), so the standard's server is not in place and this paste does not put it there"
+}

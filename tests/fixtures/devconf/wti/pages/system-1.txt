@@ -1,0 +1,20 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# path: /F > 1
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-10
+# ---
+1
+
+USER DIRECTORY:
+
+1. View User Directory
+2. Add User to Directory
+3. Modify User Directory
+4. Delete User from Directory
+
+
+Enter: #<CR> to select,
+       <ESC> to return to previous menu ... 

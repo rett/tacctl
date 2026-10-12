@@ -62,6 +62,10 @@ type Scope struct {
 	Protocols   []string
 	VendorAttrs []string
 	Devices     []Device // stored order
+
+	// prefixFrom and deviceFrom, set by WithoutAddresses only, are the
+	// stored entry each of Prefixes and Devices was carved from.
+	prefixFrom, deviceFrom []string
 }
 
 // ServedBy reports whether protocol may serve the scope ('protocols'

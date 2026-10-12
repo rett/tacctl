@@ -1,0 +1,320 @@
+{
+  "name": "dev-juniper-lab-superuser",
+  "address": "192.0.2.21",
+  "scope": "lab",
+  "vendor": "juniper",
+  "based_on": {
+    "pulled": "2026-10-10T14:02:00Z",
+    "by": "alice",
+    "transport": "netconf",
+    "age_s": 1080,
+    "secrets_visible": true
+  },
+  "status": "needs-change",
+  "irregularities": [
+    {
+      "n": 1,
+      "kind": "extra",
+      "severity": "ACCESS",
+      "section": "roles",
+      "what": "login class OP-CLASS allows clear",
+      "statement": "set system login class OP-CLASS permissions clear",
+      "action": "Fixed by region line 3.",
+      "fixed": true,
+      "region_lines": [
+        3
+      ]
+    },
+    {
+      "n": 2,
+      "kind": "missing",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "the TACACS+ server 192.0.2.10: 2 statements",
+      "statement": "e.g. set system tacplus-server 192.0.2.10 secret \u003csecret\u003e",
+      "action": "Fixed by region lines 5-6.",
+      "fixed": true,
+      "region_lines": [
+        5,
+        6
+      ]
+    },
+    {
+      "n": 3,
+      "kind": "extra",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "the TACACS+ server 198.18.0.24: 2 statements",
+      "statement": "e.g. set system tacplus-server 198.18.0.24 secret \u003csecret\u003e",
+      "action": "Left alone. To remove it later: delete system tacplus-server 198.18.0.24",
+      "fixed": false
+    },
+    {
+      "n": 4,
+      "kind": "extra",
+      "severity": "COSMETIC",
+      "section": "aaa",
+      "what": "accounting sends the event interactive-commands",
+      "statement": "set system accounting events interactive-commands",
+      "action": "Fixed by region line 7.",
+      "fixed": true,
+      "region_lines": [
+        7
+      ]
+    },
+    {
+      "n": 5,
+      "kind": "missing",
+      "severity": "MONITORING",
+      "section": "snmp",
+      "what": "SNMP client list TACCTL-SNMP: 3 statements",
+      "statement": "e.g. set snmp client-list TACCTL-SNMP 192.0.2.10/32",
+      "action": "Fixed by region lines 9-11.",
+      "fixed": true,
+      "region_lines": [
+        9,
+        10,
+        11
+      ]
+    },
+    {
+      "n": 6,
+      "kind": "missing",
+      "severity": "MONITORING",
+      "section": "snmp",
+      "what": "an SNMP community: client-list-name TACCTL-SNMP",
+      "statement": "set snmp community \u003csecret\u003e client-list-name TACCTL-SNMP",
+      "action": "Fixed by region line 12.",
+      "fixed": true,
+      "region_lines": [
+        12
+      ]
+    },
+    {
+      "n": 7,
+      "kind": "different",
+      "severity": "COSMETIC",
+      "section": "snmp",
+      "what": "the SNMP location is Rack 4, DC1 (the device has: the SNMP location is example location)",
+      "statement": "set snmp location \"Rack 4, DC1\"",
+      "action": "Fixed by region line 13.",
+      "fixed": true,
+      "region_lines": [
+        13
+      ]
+    },
+    {
+      "n": 8,
+      "kind": "different",
+      "severity": "COSMETIC",
+      "section": "snmp",
+      "what": "the SNMP contact is NOC \u003cnoc@example.net\u003e (the device has: the SNMP contact is example contact)",
+      "statement": "set snmp contact \"NOC \u003cnoc@example.net\u003e\"",
+      "action": "Fixed by region line 14.",
+      "fixed": true,
+      "region_lines": [
+        14
+      ]
+    },
+    {
+      "n": 9,
+      "kind": "missing",
+      "severity": "COSMETIC",
+      "section": "snmp",
+      "what": "the SNMP description is Core switch",
+      "statement": "set snmp description \"Core switch\"",
+      "action": "Fixed by region line 15.",
+      "fixed": true,
+      "region_lines": [
+        15
+      ]
+    },
+    {
+      "n": 10,
+      "kind": "extra",
+      "severity": "MONITORING",
+      "section": "snmp",
+      "what": "SNMP: name example-switch.example.net",
+      "statement": "set snmp name example-switch.example.net",
+      "action": "Left alone (the device's own identity: never removed).",
+      "fixed": false
+    },
+    {
+      "n": 11,
+      "kind": "extra",
+      "severity": "MONITORING",
+      "section": "snmp",
+      "what": "an SNMP community: 3 statements",
+      "statement": "e.g. set snmp community \u003csecret\u003e clients 198.18.0.0/20",
+      "action": "Fixed by region lines 16-18.",
+      "fixed": true,
+      "region_lines": [
+        16,
+        17,
+        18
+      ]
+    },
+    {
+      "n": 12,
+      "kind": "missing",
+      "severity": "ACCESS",
+      "section": "mgmt-acl",
+      "what": "the management filter MGMT-ACL: 22 statements",
+      "statement": "e.g. set firewall family inet filter MGMT-ACL term permit-mgmt from source-address 192.0.2.10/32",
+      "action": "Fixed by region lines 20-41.",
+      "fixed": true,
+      "region_lines": [
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41
+      ]
+    }
+  ],
+  "region": [
+    "configure private",
+    "# roles: the login classes tacctl renders (every leaf of a rendered class, allow-*/deny-* included)",
+    "delete system login class OP-CLASS permissions clear",
+    "# aaa: the accounting events tacctl renders",
+    "set system tacplus-server 192.0.2.10 secret \u003csecret\u003e",
+    "set system tacplus-server 192.0.2.10 single-connection",
+    "delete system accounting events interactive-commands",
+    "# snmp: the client list tacctl renders",
+    "set snmp client-list TACCTL-SNMP 192.0.2.10/32",
+    "set snmp client-list TACCTL-SNMP 198.51.100.0/24",
+    "set snmp client-list TACCTL-SNMP 0.0.0.0/0 restrict",
+    "set snmp community \u003csecret\u003e client-list-name TACCTL-SNMP",
+    "set snmp location \"Rack 4, DC1\"",
+    "set snmp contact \"NOC \u003cnoc@example.net\u003e\"",
+    "set snmp description \"Core switch\"",
+    "delete snmp community \u003csecret\u003e clients 198.18.0.0/20",
+    "delete snmp community \u003csecret\u003e clients 198.19.0.0/16",
+    "delete snmp community \u003csecret\u003e clients 0.0.0.0/0",
+    "# mgmt-acl: the management filter tacctl renders (its terms, their leaves and their order)",
+    "set firewall family inet filter MGMT-ACL term permit-mgmt from source-address 192.0.2.10/32",
+    "set firewall family inet filter MGMT-ACL term permit-mgmt from source-address 198.51.100.0/24",
+    "set firewall family inet filter MGMT-ACL term permit-mgmt from source-address 192.0.2.0/24",
+    "set firewall family inet filter MGMT-ACL term permit-mgmt from protocol tcp",
+    "set firewall family inet filter MGMT-ACL term permit-mgmt from destination-port ssh",
+    "set firewall family inet filter MGMT-ACL term permit-mgmt from destination-port 830",
+    "set firewall family inet filter MGMT-ACL term permit-mgmt then accept",
+    "set firewall family inet filter MGMT-ACL term deny-mgmt from protocol tcp",
+    "set firewall family inet filter MGMT-ACL term deny-mgmt from destination-port ssh",
+    "set firewall family inet filter MGMT-ACL term deny-mgmt from destination-port 830",
+    "set firewall family inet filter MGMT-ACL term deny-mgmt then log",
+    "set firewall family inet filter MGMT-ACL term deny-mgmt then discard",
+    "set firewall family inet filter MGMT-ACL term permit-snmp from source-address 192.0.2.10/32",
+    "set firewall family inet filter MGMT-ACL term permit-snmp from source-address 198.51.100.0/24",
+    "set firewall family inet filter MGMT-ACL term permit-snmp from protocol udp",
+    "set firewall family inet filter MGMT-ACL term permit-snmp from destination-port snmp",
+    "set firewall family inet filter MGMT-ACL term permit-snmp then accept",
+    "set firewall family inet filter MGMT-ACL term deny-snmp from protocol udp",
+    "set firewall family inet filter MGMT-ACL term deny-snmp from destination-port snmp",
+    "set firewall family inet filter MGMT-ACL term deny-snmp then log",
+    "set firewall family inet filter MGMT-ACL term deny-snmp then discard",
+    "set firewall family inet filter MGMT-ACL term default-accept then accept",
+    "show | compare | no-more",
+    "commit check",
+    "commit confirmed 5 comment \"tacctl plan dev-juniper-lab-superuser 2026-10-10T14:20Z by alice\""
+  ],
+  "after": [
+    "#",
+    "# If the first line printed \"Users currently editing the configuration\" or \"error: shared",
+    "# configuration database modified\": nothing happened; ask that person to commit or roll back, then",
+    "# paste again. If any line printed \"error:\": do not type commit; the switch undoes this by itself",
+    "# in 5 minutes.",
+    "#",
+    "# Check now. In 5 minutes the switch undoes this by itself unless you type one word.",
+    "#   From the tacctl server:   tacctl device config pull dev-juniper-lab-superuser --diff     (roles, aaa, snmp and mgmt-acl: ok)",
+    "#   In a second terminal:     ssh dev-juniper-lab-superuser, then: show cli authorization | no-more",
+    "#                             show configuration system login | no-more",
+    "#                             show configuration system tacplus-server | no-more",
+    "#                             show configuration system accounting | no-more",
+    "#                             show configuration snmp | no-more",
+    "#                             show configuration firewall family inet filter MGMT-ACL | no-more",
+    "# When both checks are fine, type this one word yourself:  commit     (before the 5 minutes end)",
+    "#",
+    "# If your session drops before that, the switch still rolls back when the time runs out (a dropped",
+    "# CLI session does not roll back at once): log in again and paste again.",
+    "# To undo it after the commit: tacctl device config plan dev-juniper-lab-superuser --backout (its",
+    "# own region to paste; tacctl keeps this plan's back-out: after the check pull has replaced the",
+    "# picture, the command still prints this plan's, and says which pull it undoes, until the next",
+    "# plan with changes). Without tacctl: show system commit, then rollback \u003cn\u003e of the entry just",
+    "# before the one commented \"tacctl plan dev-juniper-lab-superuser\" (the newest entry is that",
+    "# commit itself), then commit.",
+    "# Do not: type commit before the check; paste anything outside the banners; paste this into",
+    "# another device; use configure exclusive; keep this output in a file after the paste when it",
+    "# holds a secret.",
+    "# Locked out (the paste cut your session and no login works)? A superuser runs: tacctl breakglass hold dev-juniper-lab-superuser --reason \"...\"",
+    "# then log in as the device's local user (ssh or console),",
+    "# fix or back out, and the superuser runs: tacctl breakglass release dev-juniper-lab-superuser"
+  ],
+  "backout": [
+    "configure private",
+    "# back-out: the statements as the pull showed them",
+    "delete firewall family inet filter MGMT-ACL",
+    "# type again, with the community's own name: set snmp community \u003csecret\u003e clients 0.0.0.0/0 restrict",
+    "# type again, with the community's own name: set snmp community \u003csecret\u003e clients 198.19.0.0/16",
+    "# type again, with the community's own name: set snmp community \u003csecret\u003e clients 198.18.0.0/20",
+    "delete snmp description",
+    "set snmp contact \"example contact\"",
+    "set snmp location \"example location\"",
+    "delete snmp community \u003csecret\u003e client-list-name TACCTL-SNMP",
+    "delete snmp client-list TACCTL-SNMP",
+    "set system accounting events interactive-commands",
+    "delete system tacplus-server 192.0.2.10",
+    "set system login class OP-CLASS permissions clear",
+    "show | compare | no-more",
+    "commit check",
+    "commit confirmed 5 comment \"tacctl backout dev-juniper-lab-superuser 2026-10-10T14:20Z by alice\""
+  ],
+  "left": {
+    "access": 1,
+    "monitoring": 1,
+    "cosmetic": 0
+  },
+  "extras": [
+    {
+      "section": "aaa",
+      "text": "set system tacplus-server 198.18.0.24 secret",
+      "remove": [
+        "delete system tacplus-server 198.18.0.24"
+      ]
+    },
+    {
+      "section": "aaa",
+      "text": "set system tacplus-server 198.18.0.24 single-connection",
+      "remove": [
+        "delete system tacplus-server 198.18.0.24"
+      ]
+    },
+    {
+      "section": "snmp",
+      "text": "set snmp name example-switch.example.net",
+      "guard": "the device's own identity: never removed"
+    }
+  ],
+  "skipped": [],
+  "withheld": [],
+  "warnings": [],
+  "confirm_timeout": 5,
+  "holds_secret": true
+}
