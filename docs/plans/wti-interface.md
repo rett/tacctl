@@ -319,3 +319,28 @@ lock out the management path).
   PUT does, and the certificate procedure the web service needs.
 - Other firmware versions (7.x, earlier 8.x) and the CPM models: the page
   titles and numbering above are 8.10 on an 8-port unit.
+
+What the plan work (`device config plan`, 0.2.7) settles or does not depend
+on:
+
+- The IP tables block is presented and never applied: the list is
+  "forbidden remotely" (section 6), so the plan prints the one
+  `<iptables>` block and the steps to check it, and the person pastes it. A
+  list of more than 48 entries, a command of more than 256 characters or a
+  command that is not `iptables -A` or `-P` is refused rather than tried,
+  because what the page does with them is not known (above).
+- The unit's own tail (the final DROP, the OUTPUT ACCEPT and the three
+  policies) is kept exactly as the pull showed it, as entries of the pasted
+  block; no slot is cleared to change a policy, so the question about a
+  cleared `-P` slot does not arise. A list that held no entry is put back by
+  clearing the slots one by one (`<SPACE><CR>` at each), not by an empty
+  `<iptables></iptables>` block, whose effect is not known either.
+- The pick numbers of the SNMP version (1 V1/V2 Only, 2 V3, 3 All) are the
+  order of the reference, not a captured screen, and the screens of Read Only
+  and of the Default User Access page (switch, Access Level, Service Access)
+  were not captured: the plan names those picks by their text. The numbers it
+  gives for the other picks are those of the captured screens (Off and On,
+  Disabled and Enabled, Fallback Local).
+- The plan types no secret unless `--secrets` is given: the secret word and a
+  community are named by the command that shows them. A community the unit
+  prints in clear is compared with the rendered one and is not kept.

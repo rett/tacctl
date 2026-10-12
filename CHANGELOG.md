@@ -392,14 +392,48 @@ current behaviour; this file is where history lives.
     list --failed` includes `denied` and `unsupported`, `device list` shows the
     state in its CONFIG column instead of `-`, and `device show` replaces `not
     read (WTI units are not read in this release)` with the last pull.
-    `--transport netconf` is refused for a unit as for a Cisco device.
-    `device config plan` does not cover a unit and says so
-    (`device config plan does not cover WTI units; the walkthrough is: tacctl
-    config wti`); `plan --pull` does not read a unit it will not plan. In
+    `--transport netconf` is refused for a unit as for a Cisco device. In
     `--json`, a pull has `unit` (`version`, `level`, `site_id`,
     `other_sessions`, `users_read`) and `warning`, `device config list --json`
     has `unit` for a unit (`version`, `site_id`, `other_sessions`,
     `users_read`), and a record made before 0.2.7 is unchanged.
+
+17. **`device config plan` plans a WTI unit.** A unit has nothing to paste:
+    its settings are the items of numbered menu pages, a value is live as soon
+    as its Enter is accepted, and it has no commit-confirm and no rollback. Its
+    plan is the report, the version check (`/H` must show `Version 8.10`, `/J`
+    the Site ID the pull read), what to have ready (a serial console or a
+    second session that stays open, `/SN` for other administrators, the
+    other sessions the pull saw), **a numbered checklist of menu steps**
+    between `DO THESE STEPS ON: <unit>` and `END OF STEPS` (the keys typed from
+    the prompt, the item as the unit prints it, what to enter, and `was:` the
+    pulled value), the `ESC ESC` that saves and a `CHECK` step, and **one
+    `<iptables>` block** between `IP TABLES (replaces every entry; see the
+    notes)` and `END OF IP TABLES`. The steps are ordered so that none takes
+    away the way in before the one that needs it (the SNMP page, then the
+    protocol's page with its secret word first and its Enable last); a step on
+    the AAA page carries the warning that a wrong secret word, host, port or
+    service name returns every login to the Default User Access level. The
+    block is the whole rendered list followed by the unit's own tail exactly as
+    the pull showed it, is presented and never applied, and its lines are the
+    only lines of the output that are not comments. The IP tables section is
+    refused, the rest still planned and the report saying why, when the list
+    would hold more than 48 entries or an entry the page does not take, does
+    not permit the tacctl server's address to reach the unit's ssh, or does not
+    permit the `--from` address; without `--from`, a list that ends in the
+    final DROP and other sessions on the unit are warnings. A secret step names
+    the command that shows the value (`tacctl scope secret show <scope>`,
+    `tacctl scope snmp <scope> show --reveal`) and a unit's plan types none
+    unless `--secrets` is given. A second host, a read/write community, the
+    other protocol's page switched on and a local account the scope does not
+    record are findings with the step that removes them; `breakglass` is
+    reported and never planned (walkthrough Step 10). `--backout` prints the
+    steps with the pulled values (a secret as "re-enter the one you keep") and
+    the old list as a block, or the slots to clear; `--converge` offers only
+    the read/write community and the other protocol's Enable. `--plain` and
+    `--section roles|system` are refused for a unit (exit 2), `--out-dir`
+    writes `<name>.txt` and `<name>.backout.txt`, never a `.set`, and `plan
+    --pull` and `--all`, `--scope` and `--vendor wti` select units.
 
 ## 0.2.6 (2026-10-12)
 

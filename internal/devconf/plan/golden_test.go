@@ -211,6 +211,9 @@ func TestGoldenFilesAreProduced(t *testing.T) {
 	for _, f := range coverFiles(t) {
 		want["plan."+f.name] = true
 	}
+	for _, f := range wtiGoldenFiles(t) {
+		want["plan."+f.name] = true
+	}
 	ents, err := os.ReadDir(goldenDir)
 	if err != nil {
 		t.Fatal(err)

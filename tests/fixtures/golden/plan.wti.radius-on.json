@@ -1,0 +1,47 @@
+{
+  "name": "lab-unit",
+  "address": "192.0.2.21",
+  "scope": "lab",
+  "vendor": "wti",
+  "based_on": {
+    "pulled": "2026-10-10T14:02:00Z",
+    "by": "alice",
+    "transport": "ssh",
+    "age_s": 1080,
+    "secrets_visible": true
+  },
+  "status": "left-alone",
+  "irregularities": [
+    {
+      "n": 1,
+      "kind": "extra",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "the unit's RADIUS page is in use while the scope uses TACACS+: 14 statements",
+      "statement": "e.g. radius enable on",
+      "action": "Left alone. To remove it later: /N 29 1 (Enable) -\u003e 1 (Off)",
+      "fixed": false
+    }
+  ],
+  "region": [],
+  "after": [],
+  "backout": [],
+  "left": {
+    "access": 1,
+    "monitoring": 0,
+    "cosmetic": 0
+  },
+  "extras": [
+    {
+      "section": "aaa",
+      "text": "radius enable on",
+      "remove": [
+        "/N 29 1 (Enable) -\u003e 1 (Off)"
+      ]
+    }
+  ],
+  "skipped": [],
+  "withheld": [],
+  "warnings": [],
+  "holds_secret": false
+}

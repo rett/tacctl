@@ -176,6 +176,9 @@ func (r *planRun) header(e devreg.Entry, rec *devconf.Record) plan.Header {
 	}
 	if rec != nil {
 		h.Pulled, h.PulledBy, h.Transport, h.SecretsVisible = rec.Pulled, rec.By, rec.Transport, rec.SecretsVisible
+		if e.Vendor == "wti" && rec.Unit != nil {
+			h.Unit = &plan.UnitInfo{Version: rec.OS, SiteID: rec.Unit.SiteID, OtherSessions: rec.Unit.OtherSessions}
+		}
 	}
 	return h
 }
@@ -204,8 +207,6 @@ func (r *planRun) planOne(e devreg.Entry) planDevice {
 		return out
 	}
 	switch {
-	case e.Vendor == "wti":
-		return cannot("device config plan does not cover WTI units; the walkthrough is: tacctl config wti")
 	case r.failed[strings.ToLower(name)] != "":
 		return cannot("the pull failed (" + r.failed[strings.ToLower(name)] + ")")
 	case rec == nil || rec.Pulled.IsZero():
@@ -236,6 +237,15 @@ func (r *planRun) planOne(e devreg.Entry) planDevice {
 
 	opt := plan.Options{Sections: r.opt.sections, Secrets: r.opt.secrets, NoSecrets: r.opt.noSecrets, From: r.opt.from,
 		Scope: e.Scope, Device: name, Converge: r.opt.converge}
+	if e.Vendor == "wti" {
+		// the facts of the IP tables builder and of the pull that the plan's
+		// guards read (the server's address, the other sessions)
+		opt.WTI.Server, opt.WTI.ListWhy = r.render.wtiFacts(e)
+		if rec.Unit != nil {
+			n := rec.Unit.OtherSessions
+			opt.WTI.OtherSessions = &n
+		}
+	}
 	if e.Vendor == "cisco" {
 		// The one resolution of the comparison and the walkthrough (D113);
 		// a scope served over RADIUS has the one syntax. legacy-ssh is the
@@ -388,7 +398,7 @@ func (r *planRun) snapshot(e devreg.Entry) planSnapshot {
 	}
 	c := *rec
 	s.rec = &c
-	if e.Vendor == "wti" || c.Pulled.IsZero() {
+	if c.Pulled.IsZero() {
 		return s
 	}
 	s.sections, s.sectionsErr = r.store.Sections(e.Name, e.Vendor)
@@ -445,6 +455,16 @@ func (r *managedRender) policyGaps(e devreg.Entry) []string {
 		return nil
 	}
 	return devices.PolicyGaps(b.req, b.d)
+}
+
+// wtiFacts are the facts of a unit's IP tables builder for its scope: the
+// address its list must permit and why it could not be built.
+func (r *managedRender) wtiFacts(e devreg.Entry) (server, why string) {
+	b := r.base[managedKey{vendor: e.Vendor, scope: e.Scope}]
+	if b == nil || b.problem != "" {
+		return "", ""
+	}
+	return devices.WTIListFacts(b.req, b.d)
 }
 
 // callerClass is the Junos login class the person who asked pastes under:
@@ -877,6 +897,24 @@ func (inv *invocation) deviceConfigPlan(args []string) error {
 		chosen.printSkippedFor(inv, "plan")
 		return nil
 	}
+	// A WTI unit has no statements and no such sections: refused before
+	// anything is read, naming the units.
+	var units []string
+	for _, e := range chosen.entries {
+		if e.Vendor == "wti" {
+			units = append(units, e.Name)
+		}
+	}
+	if len(units) > 0 {
+		names := strings.Join(units, ", ")
+		switch {
+		case opt.plain:
+			return inv.argErr("--plain is a file of statements to load, and a WTI unit ("+names+") has none: its plan is menu steps to type and one IP tables block to paste. "+
+				"Drop --plain, or name the other devices.", usage)
+		case slices.ContainsFunc(opt.sections, func(s string) bool { return s == "roles" || s == "system" }):
+			return inv.argErr("--section: a WTI unit ("+names+") has no roles or system section; it has aaa, snmp and mgmt-acl. Name the other devices, or leave those sections out.", usage)
+		}
+	}
 	// what depends on how many devices there are
 	switch {
 	case opt.out != "" && len(chosen.entries) != 1:
@@ -891,13 +929,7 @@ func (inv *invocation) deviceConfigPlan(args []string) error {
 	// to standard error so that what is redirected is the plan alone.
 	failed := map[string]string{}
 	interrupted := false
-	// A WTI unit is not planned, so it is not read for one: no login.
-	var toPull []devreg.Entry
-	for _, e := range chosen.entries {
-		if e.Vendor != "wti" {
-			toPull = append(toPull, e)
-		}
-	}
+	toPull := chosen.entries
 	if opt.pull && len(toPull) > 0 {
 		if err := inv.refuseNetconfForCisco(toPull, pa.transport); err != nil {
 			return err

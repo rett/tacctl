@@ -1,0 +1,108 @@
+[
+  {
+    "device": "dev-juniper-synthetic-lab",
+    "scope": "lab",
+    "vendor": "juniper",
+    "address": "192.0.2.21",
+    "state": "needs-change",
+    "fixes": 1,
+    "left": 3,
+    "remaining": {
+      "access": 1,
+      "monitoring": 2,
+      "cosmetic": 0
+    },
+    "extras": 3
+  },
+  {
+    "device": "unit-consistent",
+    "scope": "lab",
+    "vendor": "wti",
+    "address": "192.0.2.21",
+    "state": "consistent",
+    "fixes": 0,
+    "left": 0,
+    "remaining": {
+      "access": 0,
+      "monitoring": 0,
+      "cosmetic": 0
+    },
+    "extras": 0
+  },
+  {
+    "device": "unit-three-irregularities",
+    "scope": "lab",
+    "vendor": "wti",
+    "address": "192.0.2.21",
+    "state": "needs-change",
+    "fixes": 1,
+    "left": 2,
+    "remaining": {
+      "access": 1,
+      "monitoring": 1,
+      "cosmetic": 0
+    },
+    "extras": 2
+  },
+  {
+    "device": "unit-iptables-tail",
+    "scope": "lab",
+    "vendor": "wti",
+    "address": "192.0.2.21",
+    "state": "needs-change",
+    "fixes": 3,
+    "left": 2,
+    "remaining": {
+      "access": 1,
+      "monitoring": 1,
+      "cosmetic": 0
+    },
+    "extras": 2
+  },
+  {
+    "device": "unit-from-refused",
+    "scope": "lab",
+    "vendor": "wti",
+    "address": "192.0.2.21",
+    "state": "needs-change",
+    "fixes": 1,
+    "left": 4,
+    "remaining": {
+      "access": 3,
+      "monitoring": 1,
+      "cosmetic": 0
+    },
+    "extras": 3
+  },
+  {
+    "device": "unit-over-48",
+    "scope": "lab",
+    "vendor": "wti",
+    "address": "192.0.2.21",
+    "state": "cannot-plan",
+    "fixes": 0,
+    "left": 1,
+    "remaining": {
+      "access": 1,
+      "monitoring": 0,
+      "cosmetic": 0
+    },
+    "extras": 0,
+    "reason": "refused: mgmt-acl: the list would hold 55 entries (50 rendered and 5 of the unit's own tail) and the unit holds 48: reduce the scope's management permit list (tacctl scope mgmt-acl lab list) or its SNMP clients (tacctl scope snmp lab clients list), or use wider networks"
+  },
+  {
+    "device": "unit-not-pulled",
+    "scope": "lab",
+    "vendor": "wti",
+    "state": "cannot-plan",
+    "fixes": 0,
+    "left": 0,
+    "remaining": {
+      "access": 0,
+      "monitoring": 0,
+      "cosmetic": 0
+    },
+    "extras": 0,
+    "reason": "not pulled"
+  }
+]

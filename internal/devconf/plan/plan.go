@@ -67,6 +67,9 @@ type Options struct {
 	// stands, and the cover page marks the device. A pure input: the planner
 	// never reads the record itself.
 	BreakglassHeld *BreakglassHold
+	// WTI are the facts of a WTI unit's plan that neither the rendering nor
+	// the comparison say (ignored for any other vendor).
+	WTI WTIFacts
 }
 
 // BreakglassHold is what a plan says of a hold: when it was made, as the
@@ -112,6 +115,11 @@ func systemUnreadWhy(device string) string {
 func PlanOrder(family string) []string {
 	if family == devconf.FamilyIOS {
 		return []string{"aaa", "roles", "snmp", "mgmt-acl"}
+	}
+	if family == devconf.FamilyWTI {
+		// the unit's checklist goes page 25 first (it cannot lock anybody
+		// out), then the AAA pages, and the IP tables paste last
+		return []string{devconf.SectionSNMP, devconf.SectionAAA, devconf.SectionMgmtACL}
 	}
 	return []string{"roles", "aaa", "snmp", devconf.SectionSystem, "mgmt-acl"}
 }
@@ -163,9 +171,7 @@ type secOut struct {
 // ordered statements, for an access list's entry order.
 func Plan(vendor string, expected []devices.Section, current, plain devconf.Extracted, opt Options) (Delta, error) {
 	fam, err := devconf.Family(vendor)
-	if err != nil || fam == devconf.FamilyWTI {
-		// A WTI unit is planned by its own planner (the menu steps), not by
-		// this one.
+	if err != nil {
 		return Delta{}, fmt.Errorf("%w: %q", ErrUnsupported, vendor)
 	}
 	if fam == devconf.FamilyIOS && opt.Syntax != "" && opt.Syntax != SyntaxIOS12 && opt.Syntax != SyntaxModern {
@@ -183,6 +189,11 @@ func Plan(vendor string, expected []devices.Section, current, plain devconf.Extr
 		}
 	}
 	current.Vendor = fam
+	if fam == devconf.FamilyWTI {
+		// A unit has no statements to paste: its plan is a checklist of menu
+		// steps and one IP tables block (wti.go).
+		return planWTI(expected, current, opt)
+	}
 	results, err := devconf.CompareAll(expected, current)
 	if err != nil {
 		return Delta{}, err

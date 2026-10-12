@@ -239,6 +239,19 @@ leaves each as a marked line to fill in. --from <address> is where you are
 logged in from: the cleanup never removes it. Exit status: 0 the outputs were
 made, 1 a device cannot be planned, 2 wrong arguments (or, with --exit-code,
 a device needs a change), 130 interrupted.
+A WTI console server has nothing to paste: its plan is a numbered checklist of
+menu steps for you to type (the keys to the item, its label, what to enter and
+the value the pull showed), in an order that cannot take away the way in before
+the step that needs it, and one <iptables> block for the IP tables list, which
+is the only line of the output that is not a comment, replaces every entry and
+is presented, never applied. The unit has no commit-confirm: the plan names the
+sessions to keep open, the check to make after the save (ESC out of /N) and, in
+--backout, the steps with the old values and the old list. A secret step names
+the command that shows the value (--secrets types it); a list that would not
+fit, that does not permit the tacctl server or that --from is not in is left
+out and the rest is planned. --plain, and --section roles or system, are
+refused for a unit; --converge offers the read/write community and the other
+protocol's switch only.
 
 'list' shows each device's state: ok (every managed section agrees), differs,
 never (not pulled), failed (the last pull failed) or pull (a Cisco device whose

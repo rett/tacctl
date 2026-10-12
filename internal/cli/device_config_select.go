@@ -84,19 +84,18 @@ func (inv *invocation) configLogin(what string) (string, error) {
 
 // skippedDevices counts what a selection left out, by reason.
 type skippedDevices struct {
-	noScope, other, wti, notYours []string
+	noScope, other, notYours []string
 	// held are the devices a break-glass hold stands on: the server does
 	// not answer them, so no login of the caller is accepted there (D126).
 	held []string
 }
 
 func (s skippedDevices) any() bool {
-	return len(s.noScope)+len(s.other)+len(s.wti)+len(s.notYours)+len(s.held) > 0
+	return len(s.noScope)+len(s.other)+len(s.notYours)+len(s.held) > 0
 }
 
-// linesFor are the notes about what was left out, with the names, for a
-// verb: only 'plan' leaves WTI units out (a pull and a diff read them).
-func (s skippedDevices) linesFor(verb string) []string {
+// linesFor are the notes about what was left out, with the names.
+func (s skippedDevices) linesFor(string) []string {
 	var out []string
 	add := func(names []string, why string) {
 		if len(names) == 0 {
@@ -111,9 +110,6 @@ func (s skippedDevices) linesFor(verb string) []string {
 	}
 	add(s.noScope, "no scope's prefixes cover the address")
 	add(s.other, "the vendor is 'other'; set it with: tacctl device vendor <name> cisco|juniper|wti")
-	if verb == "plan" {
-		add(s.wti, "device config plan does not cover WTI units; the walkthrough is: tacctl config wti")
-	}
 	add(s.notYours, "in a scope you are not a member of: the device login is your own account")
 	for _, n := range s.held {
 		out = append(out, "skipped "+n+": "+holdRefusal(n))
@@ -171,7 +167,7 @@ func holdRefusal(name string) string {
 
 func (s skippedDevices) jsonMap() map[string][]string {
 	m := map[string][]string{}
-	for k, v := range map[string][]string{"no_scope": s.noScope, "vendor_other": s.other, "wti": s.wti, "not_your_scope": s.notYours, "break_glass_held": s.held} {
+	for k, v := range map[string][]string{"no_scope": s.noScope, "vendor_other": s.other, "not_your_scope": s.notYours, "break_glass_held": s.held} {
 		if len(v) > 0 {
 			m[k] = v
 		}
@@ -268,8 +264,6 @@ func (inv *invocation) chooseDevices(sel selection, user string, login bool, ver
 			out.skipped.other = append(out.skipped.other, e.Name)
 		case !e.Configured:
 			out.skipped.noScope = append(out.skipped.noScope, e.Name)
-		case e.Vendor == "wti" && verb == "plan" && sel.vendor != "wti":
-			out.skipped.wti = append(out.skipped.wti, e.Name)
 		case login && loginProblem(m, user, e.Scope) != "":
 			out.skipped.notYours = append(out.skipped.notYours, e.Name)
 		case login && inv.isHeld(e.Name, e.Address):

@@ -46,6 +46,9 @@ type Header struct {
 	// StaleDays is the 'stale-days' setting: a pull older than that is a
 	// warning (0: no check).
 	StaleDays int
+	// Unit is what the pull of a WTI unit saw beside its sections (nil: the
+	// record does not say, and for any other vendor).
+	Unit *UnitInfo
 }
 
 // Wrapper is the procedure around the statements.
@@ -98,6 +101,9 @@ func RegionLines(d Delta, h Header, w Wrapper) []RegionLine {
 	if d.Vendor == devconf.FamilyIOS {
 		return iosRegion(d)
 	}
+	if d.Vendor == devconf.FamilyWTI {
+		return wtiRegionLines(d, h)
+	}
 	return junosRegion(d, h, w)
 }
 
@@ -107,6 +113,13 @@ func Region(d Delta, h Header, w Wrapper) string {
 		return ""
 	}
 	var b strings.Builder
+	if d.Vendor == devconf.FamilyWTI {
+		// a unit's banners are its own: the steps and the IP tables block
+		for _, l := range RegionLines(d, h, w) {
+			b.WriteString(l.Text + "\n")
+		}
+		return b.String()
+	}
 	bc := bannerChar(d.Vendor)
 	b.WriteString(bc + " PASTE FROM HERE: " + h.Device + " " + bc + "\n")
 	for _, l := range RegionLines(d, h, w) {
@@ -122,6 +135,9 @@ func Region(d Delta, h Header, w Wrapper) string {
 // 'configure terminal' on IOS (an indented submode header stays: it is part
 // of the statements under it). A --no-secrets plan has no plain form.
 func Plain(d Delta, h Header, w Wrapper) (string, error) {
+	if d.Vendor == devconf.FamilyWTI {
+		return "", ErrWTIPlain
+	}
 	if d.Counts.Placeholders > 0 {
 		return "", ErrNoSecretsPlain
 	}
@@ -201,7 +217,10 @@ func ByHand(d Delta, h Header) string {
 func lockoutHelp(d Delta, h Header) string {
 	c := commentLeader(d.Vendor)
 	way := "then log in as the device's local account (console: local login, then 'enable' with the local secret),"
-	if d.Vendor != devconf.FamilyIOS {
+	switch d.Vendor {
+	case devconf.FamilyWTI:
+		way = "then log in on the unit's serial console as its local Administrator account,"
+	case devconf.FamilyJunos:
 		way = "then log in as the device's local user (ssh or console),"
 	}
 	return c + " Locked out (the paste cut your session and no login works)? A superuser runs: tacctl breakglass hold " + h.Device + " --reason \"...\"\n" +
@@ -215,8 +234,11 @@ func After(d Delta, h Header, w Wrapper) string {
 	if d.Empty() {
 		return ""
 	}
-	if d.Vendor == devconf.FamilyIOS {
+	switch d.Vendor {
+	case devconf.FamilyIOS:
 		return iosAfter(d, h, w)
+	case devconf.FamilyWTI:
+		return wtiAfter(d, h)
 	}
 	return junosAfter(d, h, w)
 }
@@ -239,6 +261,9 @@ func backoutLines(d Delta) []Line {
 // HasBackout reports whether the plan has a back-out region: at least one
 // line tacctl can type (a value it does not hold is a comment, not a line).
 func HasBackout(d Delta) bool {
+	if d.Vendor == devconf.FamilyWTI {
+		return !d.Empty() && wtiHasBackout(d)
+	}
 	return slices.ContainsFunc(backoutLines(d), func(l Line) bool { return l.Op != OpComment })
 }
 
@@ -248,6 +273,9 @@ func HasBackout(d Delta) bool {
 // the wrapper. The whole-paste invariant holds for them as for the
 // region's.
 func BackoutLines(d Delta, h Header, w Wrapper) []RegionLine {
+	if d.Vendor == devconf.FamilyWTI {
+		return wtiBackoutLines(d, h)
+	}
 	if d.Vendor == devconf.FamilyIOS {
 		return iosBackoutRegion(d)
 	}
@@ -305,6 +333,9 @@ func (d Delta) kept() Delta {
 func Backout(d Delta, h Header, w Wrapper) (string, error) {
 	if d.Empty() || !HasBackout(d) {
 		return "", ErrNoBackout
+	}
+	if d.Vendor == devconf.FamilyWTI {
+		return wtiBackout(d, h)
 	}
 	var b strings.Builder
 	c := commentLeader(d.Vendor)
@@ -365,8 +396,11 @@ func CheckRegion(vendor string, lines []string) error {
 			}
 		}
 	}
-	if vendor == devconf.FamilyIOS {
+	switch vendor {
+	case devconf.FamilyIOS:
 		return checkIOSRegion(lines)
+	case devconf.FamilyWTI:
+		return checkWTIRegion(lines)
 	}
 	return checkJunosRegion(lines)
 }
@@ -701,9 +735,15 @@ func JSON(d Delta, h Header, w Wrapper) ([]byte, error) {
 	}
 	lineNo := map[int]int{}
 	if !d.Empty() {
-		for n, rl := range RegionLines(d, h, w) {
+		rd := d
+		if d.Vendor == devconf.FamilyWTI {
+			// a value never reaches the JSON: the steps are made from the
+			// elided copy
+			rd = d.shown()
+		}
+		for n, rl := range RegionLines(rd, h, w) {
 			text := rl.Text
-			if rl.Line >= 0 && d.Lines[rl.Line].Secret {
+			if rl.Line >= 0 && d.Vendor != devconf.FamilyWTI && d.Lines[rl.Line].Secret {
 				// a value never reaches the JSON, whatever the region holds
 				text = regionLineShown(d, rl)
 				lineNo[rl.Line] = n + 1
@@ -779,6 +819,15 @@ func (d Delta) shown() Delta {
 			l.Text, l.HasValue = l.Elided, false
 		}
 		c.Backout[i] = l
+	}
+	if d.WTI != nil {
+		w := *d.WTI
+		w.Steps = make([]WTIStep, len(d.WTI.Steps))
+		for i, st := range d.WTI.Steps {
+			st.Enter = st.EnterShown
+			w.Steps[i] = st
+		}
+		c.WTI = &w
 	}
 	return c
 }

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/rett/tacctl/internal/devconf"
+	"github.com/rett/tacctl/internal/devconf/wti"
 )
 
 // buildItems turns the comparison into the report's items, linked to the
@@ -753,8 +754,12 @@ func Report(d Delta, h Header, w Wrapper) string {
 	case len(d.Items) == 0:
 		add("CONSISTENT: nothing to paste.")
 	default:
-		add(fmt.Sprintf("What is irregular on %s (%s; the paste fixes %d, leaves %d):", h.Device,
-			plural(len(d.Items), "item", "items"), fixed, len(d.Items)-fixed))
+		fixer := "the paste"
+		if d.Vendor == devconf.FamilyWTI {
+			fixer = "the plan"
+		}
+		add(fmt.Sprintf("What is irregular on %s (%s; %s fixes %d, leaves %d):", h.Device,
+			plural(len(d.Items), "item", "items"), fixer, fixed, len(d.Items)-fixed))
 		for _, it := range d.Items {
 			head := fmt.Sprintf("%2d. %-8s %-10s ", it.N, it.Section, it.Severity)
 			text := it.Kind + ": " + it.Words
@@ -784,6 +789,8 @@ func Report(d Delta, h Header, w Wrapper) string {
 				}
 			} else if r := d.Refusal(); r != "" {
 				add("CANNOT BE PLANNED: " + r + ". Nothing is pasted for this device.")
+			} else if d.Vendor == devconf.FamilyWTI {
+				add("Nothing to type or paste: everything above is left alone or cannot be fixed by this plan.")
 			} else {
 				add("Nothing to paste: everything above is left alone or cannot be fixed by this login.")
 			}
@@ -813,9 +820,12 @@ func Report(d Delta, h Header, w Wrapper) string {
 	if len(consistent) > 0 {
 		line = "Consistent: " + strings.Join(consistent, ", ") + ". "
 	}
-	if d.Vendor == devconf.FamilyIOS {
+	switch d.Vendor {
+	case devconf.FamilyWTI:
+		line += "Not planned: breakglass (walkthrough Step 10)."
+	case devconf.FamilyIOS:
 		line += "Not planned: netconf, breakglass."
-	} else {
+	default:
 		line += "Not planned: netconf, breakglass (walkthrough Steps 6 and 7)."
 	}
 	add(line)
@@ -838,7 +848,10 @@ func Report(d Delta, h Header, w Wrapper) string {
 	if len(secret) > 0 {
 		add("Secrets: " + strings.Join(secret, "; ") + " (--secrets pushes them).")
 	}
-	if d.Counts.Placeholders > 0 {
+	if d.Counts.Placeholders > 0 && d.Vendor == devconf.FamilyWTI {
+		add("Secrets are not typed by this output: a secret step names the command that shows its value (tacctl scope secret show " + h.Scope +
+			", tacctl scope snmp " + h.Scope + " show --reveal), and --secrets puts the value in the step.")
+	} else if d.Counts.Placeholders > 0 {
 		add("Secrets are shown as <SECRET> on lines marked '" + commentLeader(d.Vendor) + " " + secretLinePrefix + "': read the value with 'tacctl scope secret show " + h.Scope +
 			"' (the server secret) or 'tacctl scope snmp " + h.Scope + " show --reveal' (the SNMP community), put it in, remove the mark.")
 	}
@@ -856,6 +869,12 @@ func Report(d Delta, h Header, w Wrapper) string {
 			add("Cleanup (--converge): " + c.Deferred + ".")
 		case c.Whole != "":
 			add("Cleanup (--converge) is not offered: " + c.Whole + ".")
+		case !c.Empty() && d.Vendor == devconf.FamilyWTI:
+			add(fmt.Sprintf("Cleanup (--converge): the steps below are the whole output: they switch off or clear %s the standard does not have. Do them only after you have checked that the pull of %s is current (tacctl device config pull %s --diff reads ok for aaa) and keep a second session logged in as yourself.",
+				plural(len(c.Lines), "setting", "settings"), h.Device, h.Device))
+			if len(c.Left) > 0 {
+				add(extrasStay(len(c.Left)))
+			}
 		case !c.Empty():
 			pending := ""
 			if d.Vendor == devconf.FamilyJunos {
@@ -888,7 +907,9 @@ func Report(d Delta, h Header, w Wrapper) string {
 	}
 	// the cleanup is the whole output of a device with no first region: the
 	// same warnings and the same check line stand in front of it
-	if !d.Empty() || !d.Cleanup.Empty() {
+	if (!d.Empty() || !d.Cleanup.Empty()) && d.Vendor == devconf.FamilyWTI {
+		wtiPreamble(d, h, add, blank, &b)
+	} else if !d.Empty() || !d.Cleanup.Empty() {
 		if d.Vendor == devconf.FamilyIOS {
 			add("The change is live when the paste ends. NOTHING rolls it back by itself. Keep a second terminal logged in at privilege 15 until the end.")
 		} else {
@@ -914,6 +935,9 @@ func errorWord(vendor string) string {
 
 // promptCheck is what the prompt must look like before the paste.
 func promptCheck(vendor string) string {
+	if vendor == devconf.FamilyWTI {
+		return "The title must read \"COMMAND MENU: Version " + wti.Version + "\": tacctl's tables are those of that command menu, and another version may number its pages differently: stop."
+	}
 	if vendor == devconf.FamilyIOS {
 		return "The prompt must end in # (privileged mode), not in (config)#, before you paste: a prompt ending in > means type enable first, a prompt with (config) in it means a configuration session is open: type end first."
 	}
@@ -921,6 +945,9 @@ func promptCheck(vendor string) string {
 }
 
 func checkLine(vendor string) string {
+	if vendor == devconf.FamilyWTI {
+		return "/H"
+	}
 	if vendor == devconf.FamilyIOS {
 		return "show version | include uptime"
 	}

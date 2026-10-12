@@ -554,26 +554,6 @@ func TestPullWTIFailedKeepsTheLastGoodPull(t *testing.T) {
 	}
 }
 
-// device config plan does not cover a unit: a named one is refused with what
-// is true, a selection says it left the unit out, and --pull does not read a
-// unit it will not plan.
-func TestPlanWTIUnitIsRefusedWithoutReadingIt(t *testing.T) {
-	b := newWTIBox(t, "administrator", 0)
-	b.devices([3]string{"pdu1", "192.168.1.40", "wti"})
-	out := b.run("device", "config", "plan", "pdu1", "--pull")
-	want := "device config plan does not cover WTI units; the walkthrough is: tacctl config wti"
-	if b.sb.code != 1 || !strings.Contains(out, "CANNOT BE PLANNED: "+want) || !strings.Contains(b.sb.stderr(), "pdu1 cannot be planned: "+want) {
-		t.Errorf("plan: %d\n%s\n%s", b.sb.code, out, b.sb.stderr())
-	}
-	if b.srv.Logins() != 0 || b.pw.asked != 0 {
-		t.Errorf("--pull read a unit the plan does not cover: %d logins, %d password prompts", b.srv.Logins(), b.pw.asked)
-	}
-	out = b.run("device", "config", "plan", "--all")
-	if !strings.Contains(out, "skipped 1 (pdu1): "+want) {
-		t.Errorf("selection: %q %q", out, b.sb.stderr())
-	}
-}
-
 // A unit of a RADIUS scope is compared with the RADIUS page's rendering: the
 // Data the render builds for a RADIUS scope (the backend's listener) is the
 // same for a WTI unit as for the other vendors.

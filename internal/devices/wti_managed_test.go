@@ -754,3 +754,28 @@ func TestManagedWTIImportsNothingImpure(t *testing.T) {
 		}
 	}
 }
+
+// The facts of the list builder that a unit's plan reads: the address the
+// list must permit, and why a scope that has a permit list has no list.
+func TestWTIListFacts(t *testing.T) {
+	m, c := managedWorld(t)
+	lab := managedProfiles()[0]
+	vs := wtiVariants(t)
+	req, d := lab.input(m, c, vs[0])
+	if server, why := WTIListFacts(req, d); server != "10.0.0.42" || why != "" {
+		t.Errorf("facts %q %q", server, why)
+	}
+	// the route lookup found no address: the list is not built, and why
+	d.ServerIP = UnknownServer
+	if server, why := WTIListFacts(req, d); server != "" || !strings.Contains(why, "tacctl server address") || !strings.Contains(why, "--source") {
+		t.Errorf("no server: %q %q", server, why)
+	}
+	// no permit list: no list is asked for, so nothing to explain
+	p := lab
+	p.cidrs = nil
+	req, d = p.input(m, c, vs[0])
+	d.ServerIP = UnknownServer
+	if server, why := WTIListFacts(req, d); server != "" || why != "" {
+		t.Errorf("no permits: %q %q", server, why)
+	}
+}

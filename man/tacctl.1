@@ -7094,7 +7094,7 @@ Requires: \fBengineer\fR. An engineer gets the devices of their own scopes only.
 Options:
 .TP
 \fB\-\-all\fR
-(pull, diff, plan, forget) Every device of yours that a scope covers (a plan leaves WTI units out).
+(pull, diff, plan, forget) Every device of yours that a scope covers.
 .TP
 \fB\-\-scope\fR \fI<scope>\fR
 (pull, diff, plan, list) Only the devices of that scope.
@@ -7309,7 +7309,7 @@ Requires: \fBengineer\fR. An engineer gets the devices of their own scopes only.
 Options:
 .TP
 \fB\-\-all\fR
-(pull, diff, plan, forget) Every device of yours that a scope covers (a plan leaves WTI units out).
+(pull, diff, plan, forget) Every device of yours that a scope covers.
 .TP
 \fB\-\-scope\fR \fI<scope>\fR
 (pull, diff, plan, list) Only the devices of that scope.
@@ -7588,6 +7588,138 @@ not planned. A Junos statement that a group applies (the inheritance view
 against the plain view the pull also reads) is never changed: its section is
 refused.
 .PP
+A WTI console server has nothing to paste: its settings are the items of
+numbered menu pages, a value is live as soon as its Enter is accepted, the
+configuration is written to flash when a top\-level menu is left with ESC, and
+the unit has no commit\-confirm and no rollback. Its plan is
+.BR "a checklist of menu steps for you to type" ,
+between
+.B "DO THESE STEPS ON: <unit>"
+and
+.BR "END OF STEPS" ,
+one comment line for each setting that differs: the keys typed from the
+prompt
+.RB ( "/N 28 4" ),
+the item's label as the unit prints it, what to enter after the arrow (a
+pick's number and text, a number, or the text; an address item asks the
+protocol first:
+.BR "1 (IPv4), then 192.0.2.10" )
+and, after
+.BR "was:" ,
+the value the pull showed. The steps are ordered so that none takes away the
+way in before the one that needs it: the SNMP page first, then the page of the
+scope's protocol (the secret word, only when the pull shows it undefined, the
+host, the port, the service name, the Default User Access page, the account
+and session modules, the fallback timer, Fallback Local and Debug, and the
+protocol's Enable last), then
+.B "ESC ESC"
+(the save) and a
+.B CHECK
+step: a login as a member of the scope from a second session and
+.BR /H .
+Above the steps the report says what to have ready: the version check
+.RB ( /H
+must show
+.BR "Version 8.10" ;
+.B /J
+shows the Site ID the pull read), a serial console or a second session that
+stays open, and
+.B /SN
+to see that no other administrator is on the unit (the pull's count of other
+sessions is in the report). A secret step names the command that shows the
+value
+.RB ( "<the scope's TACACS+ secret: tacctl scope secret show lab>" ,
+.BR "tacctl scope snmp lab show \-\-reveal" ):
+a unit's plan types no secret unless
+.B \-\-secrets
+is given (and then the output says so, first line of the report and on
+standard error);
+.B \-\-no\-secrets
+is the default made explicit. A secret the unit has is compared by presence
+only and typed again only with
+.BR \-\-secrets ;
+a community, which the unit prints in clear, is compared with the rendered one
+and its value is never in a record, a diff or
+.BR \-\-json .
+.PP
+The IP tables list is the unit's firewall and can lock out the way in, so it
+is presented and never applied: between
+.B "IP TABLES (replaces every entry; see the notes)"
+and
+.B "END OF IP TABLES"
+the output has one
+.B <iptables>
+block, the whole rendered list followed by the unit's own tail exactly as the
+pull showed it (the final DROP, the OUTPUT ACCEPT and the three policies; none
+when the pull showed none, which the plan warns restricts nothing until the
+walkthrough's last step, Step 11), for the page's prompt at
+.B "/N, 5"
+to replace every entry. The lines of that block are the only lines of a unit's
+output that are not comments. A list that differs in an entry, an extra entry
+of the unit's or the order is one finding, fixed by the paste. The section is
+refused, with the reason in the report and the rest of the plan still made,
+when the list would hold more than 48 entries (the tail counted), holds an
+entry the paste does not take (not printable ASCII, not
+.B "iptables \-A"
+or
+.BR "\-P" ,
+longer than 256 characters), does not permit the tacctl server's address to
+reach the unit's ssh, or does not permit the address given with
+.BR \-\-from ;
+without
+.B \-\-from
+a list that ends with the final DROP, and the pull's other sessions, are
+warnings. A scope with no management permit list has no IP tables section
+(the standard has nothing for it), and one whose server address is not known
+is refused for it. What the standard does not render and the unit has is its
+own and is left alone (the SNMP system name and trap settings, the tail, the
+other protocol's page while it is switched off, the RADIUS items the
+walkthrough leaves alone); a second host, a read/write community, the other
+protocol's page switched on and a local account the scope does not record are
+findings, listed with the step that removes them
+.RB ( "/N 25 8" ", then " "<SPACE><CR>" ).
+.B breakglass
+is compared and reported, never planned (walkthrough Step 10). A step on the
+AAA page is warned about: a wrong secret word, host, port or service name does
+not stop a login but returns every login to the unit's Default User Access
+level.
+.PP
+For a unit
+.B \-\-backout
+prints the steps again with the values the pull showed as their targets, last
+step first, a secret or community as a line that says to re\-enter the one you
+keep, and the old IP tables list as a
+.B <iptables>
+block between
+.B "BACK\-OUT, IP TABLES"
+and
+.B "END OF IP TABLES"
+(first, because it is the change that can lock out; a list that was empty is
+cleared slot by slot with
+.BR <SPACE><CR> ),
+and the plan's back\-out is never part of the plan's own output.
+.B \-\-converge
+offers only the removal of a read/write community
+.RB ( "/N 25 8" )
+and the Enable of the protocol the scope does not use set to Off, for a unit
+with nothing else to type.
+.B \-\-plain
+and a
+.B \-\-section
+of
+.B roles
+or
+.B system
+are refused for a unit (exit 2); the files of
+.B \-\-out\-dir
+are
+.IR <name>.txt ,
+.IR <name>.backout.txt
+and
+.IR COVER.txt ,
+never a
+.IR .set .
+.PP
 A secret the device lacks is typed in its line, and the output then says so
 (first line of the report, and on standard error). One the device has, or the
 pull's login could not see, is neither printed nor changed unless
@@ -7686,10 +7818,9 @@ of several devices needs
 A device cannot be planned, with the reason on standard error and exit 1, when
 it was never pulled, was pulled more than
 .B stale\-days
-ago, whose last pull failed, a Cisco device whose syntax is unknown, a WTI
-unit (which the plan does not cover; its walkthrough is
-.BR "config wti" ),
-or one whose plan has nothing to paste because a section was refused.
+ago, whose last pull failed, a Cisco device whose syntax is unknown, or one
+whose plan has nothing to paste because a section was refused (a WTI unit
+whose IP tables list is refused and that has no step is one of these).
 Exit status 0 when the outputs were made, 1 when a device cannot be planned, 2
 for wrong arguments (and, with
 .BR \-\-exit\-code ,
@@ -7712,7 +7843,7 @@ Requires: \fBengineer\fR. An engineer gets the devices of their own scopes only.
 Options:
 .TP
 \fB\-\-all\fR
-(pull, diff, plan, forget) Every device of yours that a scope covers (a plan leaves WTI units out).
+(pull, diff, plan, forget) Every device of yours that a scope covers.
 .TP
 \fB\-\-scope\fR \fI<scope>\fR
 (pull, diff, plan, list) Only the devices of that scope.
@@ -7748,16 +7879,16 @@ Read the devices first (takes the pull options); the plan is made from that pull
 Only these sections: aaa, roles, mgmt\-acl, snmp, system (the report still names the others).
 .TP
 \fB\-\-converge\fR
-Add the cleanup of a device with nothing else to paste: the region that removes the old servers and the like (a device with a first region gets that and a line to plan again after the paste).
+Add the cleanup of a device with nothing else to paste: the region that removes the old servers and the like (a device with a first region gets that and a line to plan again after the paste; a WTI unit: the read/write community and the other protocol's switch).
 .TP
 \fB\-\-secrets\fR
-Type every secret of the planned sections, also the ones the device has.
+Type every secret of the planned sections, also the ones the device has (a WTI step names the command that shows the value unless given).
 .TP
 \fB\-\-no\-secrets\fR
-Leave each secret as a marked line to fill in (no plain form).
+Leave each secret as a marked line to fill in (no plain form; a WTI step already does).
 .TP
 \fB\-\-plain\fR
-The statements of one device alone, for 'load set' (\-\-converge: two files, with \-\-out or \-\-out\-dir).
+The statements of one device alone, for 'load set' (\-\-converge: two files, with \-\-out or \-\-out\-dir); a WTI unit has none.
 .TP
 \fB\-\-backout\fR
 Only the back\-out region (what puts the pulled lines back; the one kept from the plan once a later pull replaced them; not with \-\-pull).
@@ -7775,7 +7906,7 @@ One file per device (<name>.txt, .set with \-\-plain, .json with \-\-json; each 
 Replace files \-\-out or \-\-out\-dir would write.
 .TP
 \fB\-\-from\fR \fI<address>\fR
-The address you are logged in from: the cleanup keeps it; the management filter check uses it.
+The address you are logged in from: the cleanup keeps it; the management filter check and a WTI unit's IP tables check use it.
 .TP
 \fB\-\-exit\-code\fR
 Exit 2 when a device needs a change (and none could not be planned).

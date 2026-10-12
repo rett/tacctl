@@ -220,3 +220,21 @@ func wtiSlug(s string) string {
 	}
 	return b.String()
 }
+
+// WTIListFacts are what the plan of a unit needs of the IP tables builder
+// that the rendered statements do not say: the address the list must permit
+// for tacctl's own queries ("" when it is not known), and why the list was
+// not rendered although the scope has a permit list (the builder's unfilled
+// value), "" when it was or the scope has none.
+func WTIListFacts(req Request, d Data) (server, why string) {
+	in := d.iptablesInput(req.Scope)
+	host := cidr.Host32(in.Server)
+	server = strings.TrimSuffix(host, "/32")
+	if permits, _ := iptablesNets(in.Permits, host); len(permits) == 0 {
+		return server, ""
+	}
+	if b := WTIIPTables(in); len(b.Unfilled) > 0 {
+		return server, b.Unfilled[0].What + " is not known (" + b.Unfilled[0].Fix + ")"
+	}
+	return server, ""
+}

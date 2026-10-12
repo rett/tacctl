@@ -1,0 +1,9 @@
+# tacctl device config plan: 7 devices
+#   dev-juniper-synthetic-lab  needs change: 1 irregularity fixed by the paste, 3 left (1 ACCESS, 2 MONITORING), 3 extras
+#   unit-consistent            consistent
+#   unit-three-irregularities  needs change: 1 irregularity fixed by the paste, 2 left (1 ACCESS, 1 MONITORING), 2 extras
+#   unit-iptables-tail         needs change: 3 irregularities fixed by the paste, 2 left (1 ACCESS, 1 MONITORING), 2 extras
+#   unit-from-refused          needs change: 1 irregularity fixed by the paste, 4 left (3 ACCESS, 1 MONITORING), 3 extras
+#   unit-over-48               cannot be planned: refused: mgmt-acl: the list would hold 55 entries (50 rendered and 5 of the unit's own tail) and the unit holds 48: reduce the scope's management permit list (tacctl scope mgmt-acl lab list) or its SNMP clients (tacctl scope snmp lab clients list), or use wider networks
+#   unit-not-pulled            cannot be planned: not pulled
+# 1 consistent, 4 need a change, 0 not consistent with nothing to paste, 2 cannot be planned
