@@ -453,13 +453,48 @@ var iosRowCases = map[string]rowCase{
 	},
 	"ios.aaa.enable-list": func(t *testing.T) {
 		f := fixtureNamed(t, "cisco.reference-lab")
+		// the standard has no enable list: the one that asks the server is
+		// removed by its full statement, a list of another name is kept
 		d := planI(t, f, func(c *IOSConfig) {
-			c.typeGlobal("aaa authentication enable default enable")
+			c.typeGlobal("aaa authentication enable default group LAB-TACACS enable")
 			c.typeGlobal("aaa authentication enable OTHER enable")
 		}, Options{})
-		wantLine(t, d, "aaa", "aaa authentication enable default group LAB-TACACS enable")
-		noLine(t, d, "aaa", "no aaa authentication enable")
+		wantLine(t, d, "aaa", "no aaa authentication enable default group LAB-TACACS enable")
+		for _, l := range lines(d, "aaa") {
+			if strings.HasPrefix(l, "aaa authentication enable") {
+				t.Errorf("the plan types an enable list: %q", l)
+			}
+			if strings.Contains(l, "OTHER") {
+				t.Errorf("the named list is touched: %q", l)
+			}
+		}
 		wantKept(t, d, "aaa", "aaa authentication enable OTHER enable")
+		var undo []string
+		for _, l := range d.Lines {
+			if l.Op == OpNo && l.Text == "aaa authentication enable default group LAB-TACACS enable" {
+				for _, u := range l.Undo {
+					undo = append(undo, u.Text)
+				}
+			}
+		}
+		if !slices.Equal(undo, []string{"aaa authentication enable default group LAB-TACACS enable"}) {
+			t.Errorf("undo: %q", undo)
+		}
+		// 'default enable' is what IOS does with no list: not an extra, no line
+		d = planI(t, f, func(c *IOSConfig) {
+			c.typeGlobal("aaa authentication enable default enable")
+		}, Options{})
+		noLine(t, d, "aaa", "authentication enable")
+		for _, k := range d.Kept {
+			if strings.Contains(k.Text, "authentication enable") {
+				t.Errorf("kept: %+v", k)
+			}
+		}
+		for _, e := range d.Extras {
+			if strings.Contains(e.Text, "authentication enable") {
+				t.Errorf("extra: %+v", e)
+			}
+		}
 	},
 	"ios.aaa.session-id": func(t *testing.T) {
 		f := fixtureNamed(t, "cisco.reference-lab")

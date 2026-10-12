@@ -321,7 +321,7 @@ scope_mgmt_acl.permits="
 
 # The header names where the protocol came from; the rest must be what
 # --protocol radius prints.
-_strip_source() { sed "s/ — the scope's \(auth-method\|only protocol\)//"; }
+_strip_source() { sed "s/ \(—\|-\) the scope's \(auth-method\|only protocol\)//"; }
 
 @test "config cisco|juniper: an explicit auth-method tacacs is the output of a scope with none" {
     local v a b
@@ -341,7 +341,10 @@ _strip_source() { sed "s/ — the scope's \(auth-method\|only protocol\)//"; }
     for v in cisco juniper; do
         a=$("$TACCTL_BIN_SCRIPT" config "$v" --scope lab --protocol radius)
         b=$("$TACCTL_BIN_SCRIPT" config "$v" --scope lab)
-        [[ "$b" == *"protocol: RADIUS — the scope's auth-method)"* ]]
+        # the Cisco walkthrough is ASCII throughout (the header's dash included)
+        local dash="—"
+        [[ "$v" == cisco ]] && dash="-"
+        [[ "$b" == *"protocol: RADIUS $dash the scope's auth-method)"* ]]
         [[ "$a" != *"auth-method"* ]]
         [[ "$a" == "$(_strip_source <<< "$b")" ]]
     done
@@ -362,7 +365,8 @@ _strip_source() { sed "s/ — the scope's \(auth-method\|only protocol\)//"; }
     radius_on
     run "$TACCTL_BIN_SCRIPT" config cisco
     assert_success
-    assert_output --partial "(scope: lab, protocol: RADIUS — the scope's auth-method)"
+    # the Cisco walkthrough is ASCII throughout (the header's dash included)
+    assert_output --partial "(scope: lab, protocol: RADIUS - the scope's auth-method)"
 }
 
 @test "config cisco|juniper: --protocol always wins over the scope's auth-method" {
@@ -431,7 +435,9 @@ _strip_source() { sed "s/ — the scope's \(auth-method\|only protocol\)//"; }
     for v in cisco juniper wti; do
         a=$("$TACCTL_BIN_SCRIPT" config "$v" --scope lab --protocol radius)
         b=$("$TACCTL_BIN_SCRIPT" config "$v" --scope lab)
-        [[ "$b" == *"protocol: RADIUS — the scope's only protocol"* ]]
+        local dash="—"
+        [[ "$v" == cisco ]] && dash="-"
+        [[ "$b" == *"protocol: RADIUS $dash the scope's only protocol"* ]]
         [[ "$a" == "$(_strip_source <<< "$b")" ]]
     done
     run --separate-stderr "$TACCTL_BIN_SCRIPT" config cisco --scope lab --legacy

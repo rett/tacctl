@@ -24,7 +24,6 @@ privilege exec level 7 clear ip arp
 privilege exec all level 7 ping
 privilege exec all level 7 traceroute
 privilege exec level 7 monitor
-no aaa authentication enable default group LAB-TACACS enable
 no aaa authentication login CONSOLE local
 end
 !!!!! BACK-OUT TO HERE: dev-cisco-real-12-4-7200 !!!!!

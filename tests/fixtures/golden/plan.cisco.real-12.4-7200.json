@@ -27,40 +27,28 @@
     },
     {
       "n": 2,
-      "kind": "missing",
-      "severity": "ACCESS",
-      "section": "aaa",
-      "what": "the 'enable' list (it asks the server first, so nobody needs a shared enable password)",
-      "statement": "aaa authentication enable default group LAB-TACACS enable",
-      "action": "Fixed by region line 4.",
-      "fixed": true,
-      "region_lines": [
-        4
-      ]
-    },
-    {
-      "n": 3,
       "kind": "different",
       "severity": "ACCESS",
       "section": "aaa",
       "what": "the login method of line con 0: login authentication CONSOLE (the device has: the login method of line con 0: login authentication default)",
       "statement": "line con 0 \u003e login authentication CONSOLE",
-      "action": "Fixed by region line 17.",
+      "action": "Fixed by region line 16.",
       "fixed": true,
       "region_lines": [
-        17
+        16
       ]
     },
     {
-      "n": 4,
+      "n": 3,
       "kind": "extra",
       "severity": "COSMETIC",
       "section": "roles",
       "what": "the commands of privilege level 7: 9 statements",
       "statement": "e.g. privilege exec level 7 monitor",
-      "action": "Fixed by region lines 6-14.",
+      "action": "Fixed by region lines 5-13.",
       "fixed": true,
       "region_lines": [
+        5,
         6,
         7,
         8,
@@ -68,8 +56,7 @@
         10,
         11,
         12,
-        13,
-        14
+        13
       ]
     }
   ],
@@ -77,7 +64,6 @@
     "configure terminal",
     "! aaa: the method lists tacctl renders, each replaced by the rendered line (the console's own list is local only)",
     "aaa authentication login CONSOLE local",
-    "aaa authentication enable default group LAB-TACACS enable",
     "! roles: the privilege lines of the levels tacctl renders",
     "no privilege exec level 7 monitor",
     "no privilege exec all level 7 traceroute",
@@ -127,7 +113,6 @@
     "privilege exec all level 7 ping",
     "privilege exec all level 7 traceroute",
     "privilege exec level 7 monitor",
-    "no aaa authentication enable default group LAB-TACACS enable",
     "no aaa authentication login CONSOLE local",
     "end"
   ],

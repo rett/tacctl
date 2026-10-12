@@ -32,11 +32,8 @@ ${SOURCE_INTERFACE_BLOCK}
 aaa authentication login default ${AUTHN_METHODS}
 aaa authentication login CONSOLE local
 aaa authorization exec default ${AUTHZ_EXEC_METHODS}
-! 'enable' against a RADIUS server is NOT VERIFIED (lab item E2): IOS sends the user enab15 and
-! what your server answers is unknown. With a reachable server that does not answer enable
-! requests positively, 'enable' FAILS; the local enable secret is used only when no server
-! answers. Left commented on purpose: type it only after 'enable' is shown to work.
-! aaa authentication enable default group ${RADIUS_GROUP} enable
+! There is no enable list: 'enable' uses the local enable secret and nothing else (with an 'enable'
+! list that asks the server, anyone the server knows reaches level 15 with their own password).
 aaa accounting exec default start-stop group ${RADIUS_GROUP}
 aaa session-id common
 !

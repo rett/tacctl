@@ -559,6 +559,15 @@ func (p *planner) iosSection(name string, r devconf.SectionResult) secOut {
 			if !p.inPlain(name, x.stem) {
 				o.inherited = append(o.inherited, x.stem)
 			}
+		case len(path) == 1 && leaf[0] == "aaa" && len(leaf) >= 4 && leaf[1] == "authentication" && leaf[2] == "enable" && leaf[3] == "default":
+			// the standard has no enable list: one that asks the server lets
+			// anyone the server knows reach level 15 with their own password
+			// ('default enable', what IOS does with no list, is no extra)
+			nos = append(nos, Line{Op: OpNo, Text: path[0], Section: name, For: []string{x.stem},
+				Undo: []Line{{Op: OpLine, Text: path[0]}}})
+			if !p.inPlain(name, x.stem) {
+				o.inherited = append(o.inherited, x.stem)
+			}
 		case len(path) >= 2 && st.kinds[strings.Join(path[:len(path)-1], pathSep)] != nil &&
 			st.kinds[strings.Join(path[:len(path)-1], pathSep)][leaf[0]] && (strings.HasPrefix(path[0], "tacacs server ") ||
 			strings.HasPrefix(path[0], "radius server ") || strings.HasPrefix(path[0], "aaa group server ")):
@@ -702,9 +711,11 @@ func (p *planner) iosSection(name string, r devconf.SectionResult) secOut {
 	// ping' would take the new assignment with it); aaa and the lists add
 	// first and remove after (new before no, D106). The aaa unit is in the
 	// order of aaaRank (D118): 'aaa new-model', the server, the group, the
-	// source interface, the login lists, exec authorization, 'enable',
-	// accounting, the session id; the line leaves and the command
-	// authorization are moved to the end of the block by Plan.
+	// source interface, the login lists, exec authorization, an enable list
+	// (the standard has none; an operator's template may), accounting, the
+	// session id, then the removals (an enable list the device has); the
+	// line leaves and the command authorization are moved to the end of the
+	// block by Plan.
 	switch name {
 	case "aaa":
 		finalAdds = append(slices.Clone(preNos), finalAdds...)
@@ -1035,8 +1046,9 @@ const iosConsoleList = "CONSOLE"
 // (3) the removal of the old entry (a host line or a named block at the
 // standard's address: IOS refuses a second entry with the same address and
 // key), (4) the server block, (5) the group and its server leaf, (6) the
-// source interface, (7) the login lists, (8) exec authorization, (9)
-// 'enable', (10) accounting, (11) the session id, then what the section has
+// source interface, (7) the login lists, (8) exec authorization, (9) an
+// enable list (the standard renders none; an operator's template may), (10)
+// accounting, (11) the session id, then what the section has
 // besides. The line leaves are typed after roles, snmp and mgmt-acl (Plan
 // moves them there, the console first) and the command-authorization lines
 // last (lateAAA).

@@ -169,3 +169,13 @@ sha256sum -c --ignore-missing SHA256SUMS
 
 The fresh-install container check can then run against the published
 release: `tests/containers/fresh/run.sh --release 0.2.1`.
+
+## A hotfix
+
+A fix that cannot wait for the next release starts from `master`, not from
+`develop`: `git flow hotfix start 0.2.6` (the branch is `hotfix/0.2.6`), the
+fix and its CHANGELOG section (`## 0.2.6 (unreleased)`, numbering from 1, the
+items that differ from the release it fixes), then `git flow hotfix finish -m
+"Release 0.2.6" 0.2.6`, which tags `master` and merges back into `develop`.
+Everything else is as for a release: the date and version in `man/tacctl.1`
+and the CHANGELOG heading before the finish, and steps 2 to 5 above.

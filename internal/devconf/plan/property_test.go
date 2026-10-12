@@ -368,11 +368,15 @@ func iosPool(exp []devices.Section) []string {
 		"line con 0\n login local",
 		// the standard block (D116-D118): another console list, another
 		// enable list, a session id mode, a source interface, the old server
-		// form beside the named block
+		// form beside the named block; the enable lists are 0.2.6's: the
+		// standard has none, so the one that asks the server (or any
+		// other default list) is removed and 'default enable' is tolerated
 		"line con 0\n login authentication default",
 		"aaa authentication login CONSOLE group " + grp + " local",
 		"aaa authentication login OTHER-LIST local",
 		"aaa authentication enable default enable",
+		"aaa authentication enable default group " + grp + " enable",
+		"aaa authentication enable default none",
 		"aaa session-id unique",
 		"ip tacacs source-interface Loopback9",
 		"tacacs-server host 192.0.2.10 single-connection timeout 5 key 7 0822455D0A16",

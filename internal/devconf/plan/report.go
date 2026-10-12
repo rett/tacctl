@@ -401,8 +401,11 @@ func plainIOS(stem string) string {
 		w = "the RADIUS server " + f[2]
 	case len(path) == 2 && strings.HasPrefix(path[0], "aaa group server "):
 		w = "the server group " + strings.Fields(path[0])[len(strings.Fields(path[0]))-1] + ": " + leaf
-	case len(f) >= 4 && f[0] == "aaa" && f[1] == "authentication" && f[2] == "enable":
-		w = "the 'enable' list (it asks the server first, so nobody needs a shared enable password)"
+	case len(f) >= 4 && f[0] == "aaa" && f[1] == "authentication" && f[2] == "enable" && f[3] == "default":
+		w = "an 'enable' list the standard does not have ('enable' is the local enable secret)"
+		if slices.Contains(f[4:], "group") {
+			w = "an 'enable' list that asks the server (anyone the server knows reaches level 15 with their own password; the standard has none)"
+		}
 	case len(f) >= 4 && f[0] == "aaa" && f[1] == "authentication" && f[3] == iosConsoleList:
 		w = "the console's own login list " + iosConsoleList + " (local only, so a local user always gets in there)"
 	case len(f) >= 4 && f[0] == "aaa" && f[1] == "authentication" && f[2] == "login":

@@ -4,8 +4,8 @@ ${BREAKGLASS_BLOCK}
 !
 ! --- Step 1: TACACS+ server, group and AAA (the standard block, legacy IOS 12.x syntax) ---
 ! The order keeps the session you paste from alive: 'aaa new-model' first (nothing under 'aaa'
-! exists on IOS until it is set), then the server and its group, the login lists, exec
-! authorization and 'enable'. Command authorization is not in this step: it is Step 2, after a
+! exists on IOS until it is set), then the server and its group, the login lists and exec
+! authorization. Command authorization is not in this step: it is Step 2, after a
 ! check from a new session (below), because a server that answers 'fail' (for a name it does not
 ! know, such as the local user you paste from) is final and never falls through to 'local'. From
 ! 'aaa new-model' until the login lists are typed a NEW TACACS+ login would fail (a local user
@@ -31,9 +31,8 @@ ${SOURCE_INTERFACE_BLOCK}
 aaa authentication login default ${AUTHN_METHODS}
 aaa authentication login CONSOLE local
 aaa authorization exec default ${AUTHZ_EXEC_METHODS}
-! 'enable' asks the server first (a TACACS+ user lands at the level the server gives, and needs
-! no 'enable'); the local enable secret answers only when no server does.
-aaa authentication enable default group ${TACACS_GROUP} enable
+! There is no enable list: 'enable' uses the local enable secret and nothing else (with an 'enable'
+! list that asks the server, anyone the server knows reaches level 15 with their own password).
 aaa accounting exec default start-stop group ${TACACS_GROUP}
 ${ACCT_COMMANDS_BLOCK}
 aaa session-id common

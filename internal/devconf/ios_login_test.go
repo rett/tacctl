@@ -344,16 +344,15 @@ func TestCiscoLoginRealCapture(t *testing.T) {
 	}
 	r := resultOf(t, "ios", aaa, ex.Sections[SectionAAA], true)
 	// The capture is a device configured before the standard block: it has
-	// neither the CONSOLE list nor the enable list, and its console is on the
-	// default list without saying so (D107: the console is never implicit,
-	// the default list is not the CONSOLE list), while the vty lines on the
-	// default list are what the standard has.
+	// no CONSOLE list, and its console is on the default list without saying
+	// so (D107: the console is never implicit, the default list is not the
+	// CONSOLE list), while the vty lines on the default list are what the
+	// standard has.
 	if r.State != StateDiffers {
 		t.Errorf("%s %v", r.State, linesOf(r))
 	}
 	for _, l := range []string{
 		"- aaa authentication login CONSOLE local",
-		"- aaa authentication enable default group LAB-TACACS enable",
 		"- line con 0 > login authentication CONSOLE",
 		"+ line con 0 > login authentication default",
 		"= line vty 0 15 > login authentication default",
@@ -361,6 +360,12 @@ func TestCiscoLoginRealCapture(t *testing.T) {
 	} {
 		if !slices.Contains(linesOf(r), l) {
 			t.Errorf("no %q in %v", l, linesOf(r))
+		}
+	}
+	// the standard has no enable list: the rendering has none to miss
+	for _, l := range linesOf(r) {
+		if strings.Contains(l, "authentication enable") {
+			t.Errorf("an enable list is compared: %q", l)
 		}
 	}
 	if len(r.Notes) != 1 || !strings.Contains(r.Notes[0], "no enable secret") {

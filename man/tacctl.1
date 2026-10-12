@@ -1,6 +1,6 @@
 .\" Manual page for tacctl, the management CLI for TACACS+ (tacquito) and RADIUS (FreeRADIUS).
 .\" Render locally with: groff -man -Tascii man/tacctl.1 | less
-.TH TACCTL 1 "2026-10-11" "tacctl 0.2.5" "tacctl Manual"
+.TH TACCTL 1 "2026-10-12" "tacctl 0.2.6" "tacctl Manual"
 .SH NAME
 tacctl \- manage users, groups and scopes for TACACS+ (tacquito) and RADIUS (FreeRADIUS)
 .SH SYNOPSIS
@@ -3374,7 +3374,6 @@ when the scope sets one,
 and
 .BR "aaa authentication login CONSOLE local" ,
 .BR "aaa authorization exec default" ,
-.BR "aaa authentication enable default group " <G> " enable" ,
 accounting,
 .BR "aaa session-id common" ,
 the
@@ -3415,25 +3414,32 @@ user on the console lands at privilege 1 (the standard does not set
 and must not: it would put the console under the default lists, server first,
 and defeat
 .BR CONSOLE ).
+The standard has no
+.B "aaa authentication enable"
+line, so
 .B enable
-asks the server first, so nobody needs it in normal operation (a TACACS+ user
-lands at the level the server's
+uses the local enable secret and nothing else; nobody needs it in normal
+operation (a TACACS+ user lands at the level the server's
 .B priv-lvl
-gives, an operator who types it is refused by the server, which does not fall
-through) and the local enable secret answers only when no server does: the
-local console is a way to privilege 15 only while no server answers. The
-secret is never in the login path. With
+gives), and the walkthrough carries one comment that says so. A list that asks
+the server is not part of the standard: tacquito answers an enable request as a
+login with the user's own password (verified on IOS 15.6 and IOS\-XE 16.7), so
+an operator who typed
+.B enable
+and their own password would reach privilege 15 and could read
+.BR "show running-config" .
+The cost is the local enable secret: it is the one shared secret of the way up,
+on the vty and on the console alike, while the server is up, and who holds it
+is site policy (Step 0; tacctl keeps no value for it). Command authorization at
+level 15 still asks the server with the user's group rules, so an operator who
+knows the secret still cannot configure, debug or clear, and can read the
+running configuration. With
 .B "--protocol radius"
 the same standard is rendered where RADIUS has it (no command authorization,
 .B "ip radius source-interface"
-from the same setting, the
+from the same setting, and no enable list either:
 .B enable
-list is unverified against a RADIUS server and is left commented in the
-walkthrough, neither rendered nor compared: a reachable server that does not
-answer enable requests positively makes
-.B enable
-fail, and the local enable secret is used only when no server answers). The
-source interface is
+uses the local enable secret). The source interface is
 the one policy value the standard needs from the operator
 .RB ( "config cisco source-interface" ):
 unset, the walkthrough prints the line commented with that command and nothing
@@ -6512,14 +6518,25 @@ shows
 and
 .BR "+ line con 0 > login authentication default" .
 .BR "aaa authentication login CONSOLE local" ,
-.BR "aaa authentication enable default group " <G> " enable"
-(not rendered for a RADIUS device, whose enable list is unverified: a device
-that has it is neither missing nor extra),
 .B "aaa session-id common"
 and, where the scope sets one,
 .B "ip tacacs source-interface"
-are statements like any other; a source interface the device has where the
-scope sets none is not listed. The forms of an earlier walkthrough
+are statements like any other. The standard has no
+.B "aaa authentication enable"
+list, for TACACS+ and RADIUS alike: a device's
+.B default
+list of that kind
+.RB ( "default group " <G> " enable" ,
+.BR "default group tacacs+ ..." ,
+.BR "default enable group " <G> ,
+.BR "default line" ,
+.BR "default none" ,
+any other) is an extra
+.RB ( + ", severity ACCESS), and only"
+.B "aaa authentication enable default enable"
+(what IOS does with no list) is neither missing nor extra; a list of another
+name is an extra of that name and is kept. A source interface the device has
+where the scope sets none is not listed. The forms of an earlier walkthrough
 .RB ( "tacacs-server host" " on a modern image, " "radius-server host"
 beside a
 .BR "radius server" " block, a server group of another name)"
@@ -6959,7 +6976,16 @@ path has not been proven could end with no session able to run a command. The
 report then says that command authorization is not in this paste, to check
 .B "show privilege"
 in a new session with your own account and plan again: the first plan puts
-everything else, the second the one group of lines left. A Cisco device that
+everything else, the second the one group of lines left. A
+.B default
+list of
+.B "aaa authentication enable"
+on the device (the standard has none:
+.B enable
+is the local enable secret) is removed with its own
+.B no
+line, the full statement, after the added lines; the back\-out types it again,
+and a list of another name is left alone. A Cisco device that
 has no local user at privilege 15 and no
 .B "aaa new\-model"
 is refused for
@@ -7475,14 +7501,18 @@ Open a SOCKS proxy, as ssh \-D (repeatable).
 .SS Break-glass hold \fB(tacctl breakglass)\fR
 A device's local accounts
 .RB ( "tacctl scope breakglass" )
-are usable only while no server answers it: a server's refusal is final, so on a
-vty a local login is refused while the server is up, and on the console a local
-user lands at privilege 1 and
+reach its vty only while no server answers it: a server's refusal is
+final, so a local login there is refused while the server is up. On a Cisco
+console the
+.B CONSOLE
+list is local, so a local account logs in there with the server up, lands at
+privilege 1, and
 .B enable
-asks the server first. A
+with the local enable secret takes it to 15. A
 .I hold
 makes the server stop answering one registered device on purpose, so that
-its local accounts can be used while the server is up. It is for one device, for
+its local accounts can be used on a vty (and those of a Junos or WTI device)
+while the server is up. It is for one device, for
 an exceptional case; it has no timer and no automatic release, and no
 whole\-scope form.
 .PP
@@ -8829,6 +8859,28 @@ on Junos
 and
 .B "device config plan"
 prints the lines a pulled device needs, in the form its image stores them.
+.PP
+The Cisco rendering has no
+.B "aaa authentication enable"
+line, so a pulled Cisco device that has the list reads
+.B differs
+in
+.B "device config list"
+until
+.B "device config plan <device>"
+is pasted; the pull need not be repeated, because the rendering is what
+changed. On a device that has the list the 0.2.5 walkthrough rendered, the plan
+is one line in its
+.B aaa
+region,
+.BR "no aaa authentication enable default group " <G> " enable"
+(the back\-out types it again); a list of another name stays, and a device
+with no list has nothing to paste for it. Until the line is removed,
+.B enable
+on that device asks the server, and any user the server knows reaches
+privilege 15 with their own password. A device with no enable secret has no
+.B enable
+once the list is gone: set one first (Step 0).
 .PP
 Going back to 0.2.3 is
 .B "tacctl rollback 0.2.3"

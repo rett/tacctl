@@ -371,12 +371,14 @@ func Compare(vendor string, expected, got devices.Section, secretsVisible bool) 
 		if !slices.ContainsFunc(exp, func(x stmt) bool { return x.stem == sessionIDCommon }) {
 			dev = slices.DeleteFunc(dev, func(x stmt) bool { return x.stem == sessionIDCommon })
 		}
-		// The enable list of a RADIUS device is not rendered (lab item E2: what
-		// a RADIUS server answers to IOS's enable request is open): where the
-		// rendering has no 'aaa authentication enable' statement at all, a
-		// device's own is nobody's business, neither missing nor extra.
+		// The standard has no enable list: one that asks a server lets any
+		// user the server knows reach privilege 15 with their own password.
+		// A device's list is therefore extra, but for the one that says what
+		// IOS does with no list at all ('enable' alone, the local secret).
 		if !slices.ContainsFunc(exp, isEnableList) {
-			dev = slices.DeleteFunc(dev, isEnableList)
+			dev = slices.DeleteFunc(dev, func(x stmt) bool {
+				return isEnableList(x) && x.path[0] == enableLocalOnly
+			})
 		}
 		var keep []stmt
 		for _, x := range dev {
