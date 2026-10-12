@@ -1,0 +1,6 @@
+# A User login (the operator group, priv-lvl 5): /H lists no configuration
+# commands, so /N /F /P /AC are refused.
+screens ../..
+version 8.10
+level user
+sessions 0

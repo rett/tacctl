@@ -1,0 +1,5 @@
+# A ViewOnly login (the readonly group, priv-lvl 0).
+screens ../..
+version 8.10
+level viewonly
+sessions 0

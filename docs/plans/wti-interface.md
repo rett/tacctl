@@ -168,15 +168,18 @@ replace and overwrite all current entries." What the test showed
 
 ### `/F` system parameters
 
-1 user directory (view, add, modify, delete; the view lists the local names and, for one name, a details page: the password is only `(defined)`, then access level, port access, service access and the API token, `32-` and `33-` in the fixtures); 2 unit identification (site ID,
-location name, hostname, domain, asset tag); 3 real time clock (date, time,
-time zone, NTP enable, two NTP servers, timeout, test); 4 invalid access
-lockout (serial, SSH, telnet, web protection); 5 temperature (format,
-calibration); 6 log configuration (audit, alarm, change, temperature logs,
-syslog format and protocol); 7 callback security; 8 front panel buttons;
-9 modem phone number; 10 scripting options (hold write, reverse DNS, port 1
-mode override, USB client, hunt, timestamps, user defined prompt, command
-prompt, keep alive, status after login, NetReach); 11 SSL providers.
+1 user directory (view, add, modify, delete; the view lists the local names
+and, for one name, a details page: the password is only `(defined)`, then
+access level, port access, service access and the API token, `32-` and `33-`
+in the fixtures); 2 unit identification (site ID, location name, hostname,
+domain, asset tag); 3 real time clock (date, time, time zone, NTP enable, two
+NTP servers, timeout, test); 4 invalid access lockout (serial, SSH, telnet,
+web protection); 5 temperature (format, calibration); 6 log configuration
+(audit, alarm, change, temperature logs, syslog format and protocol); 7
+callback security; 8 front panel buttons; 9 modem phone number; 10 scripting
+options (hold write, reverse DNS, port 1 mode override, USB client, hunt,
+timestamps, user defined prompt, command prompt, keep alive, status after
+login, NetReach); 11 SSL providers.
 
 ### `/P` port parameters (one port at a time, `<` and `>` move)
 
@@ -294,7 +297,9 @@ lock out the management path).
 
 ## 10. Not known
 
-- Whether the engineer tier's SuperUser login is limited in any page (it can change settings: section 2; which pages it cannot reach, if any, was not mapped).
+- Whether the engineer tier's SuperUser login is limited in any page (it can
+  change settings: section 2; which pages it cannot reach, if any, was not
+  mapped).
 - Whether an interrupted session reaches flash (needs a reboot).
 - The add-user, modify-user and delete-user prompts of the user directory,
   and the static route and hosts file slot prompts (entered only as lists).

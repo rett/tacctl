@@ -28,17 +28,21 @@ its SSH port).
   an out-of-range pick, the accepted-value screen (no semantic check) and a
   page after a change.
 
-- `29-iptables-upload.txt` to `31-network-iptables-on.txt`: the bulk upload
-  at the IP tables prompt, captured 2026-10-12 on the same unit with the
-  maintainer's approval (the list was uploaded and read back): the `<iptables>` block pasted (22 `-A`
-  rules and the three `-P` policies, last) and the "Configuring iptables -
-  Please wait..." screen, the page after it (`30-iptables-uploaded-page.txt`:
-  entries 1-12; `-2`: 13-24; `-3`: 25 and the empty slots 26-36), and the
-  network menu showing `5. IP Tables: On` once the list is not empty.
-  Addresses are replaced (documentation ranges and 10.0.0.0/8); the commands
-  are otherwise as stored, one per entry, the `-P` lines as entries.
+- `29-iptables-upload.txt` to `31-network-iptables-on.txt`: the bulk upload at
+  the IP tables prompt, captured 2026-10-12 on the same unit with the
+  maintainer's approval (the list was uploaded and read back): the
+  `<iptables>` block pasted (22 `-A` rules and the three `-P` policies, last)
+  and the "Configuring iptables - Please wait..." screen, the page after it
+  (`30-iptables-uploaded-page.txt`: entries 1-12; `-2`: 13-24; `-3`: 25 and
+  the empty slots 26-36), and the network menu showing `5. IP Tables: On` once
+  the list is not empty. Addresses are replaced (documentation ranges and
+  10.0.0.0/8); the commands are otherwise as stored, one per entry, the `-P`
+  lines as entries.
 
-- `32-user-directory-view.txt`, `33-user-directory-details.txt`: the local user directory (`/F` 1 > 1): the names, and one user's details page (the password is only `(defined)`, the access level, port and service access, the API token).
+- `32-user-directory-view.txt`, `33-user-directory-details.txt`: the local
+  user directory (`/F` 1 > 1): the names, and one user's details page (the
+  password is only `(defined)`, the access level, port and service access, the
+  API token).
 
 - `pages/`: the navigation tree, one sanitised screen per file, captured
   read-only at Administrator level: `system-*` (`/F` and its items),
@@ -46,7 +50,7 @@ its SSH port).
   `port-*` (`/P` for port 1), `alarm-top` (`/AC`). They are the screens
   `docs/plans/wti-interface.md` describes.
 
-The headers follow the run sheet's (`# vendor`, `# os`, `# transport`,
-`# command`, `# source`, `# captured`); `# level` names the access level of the
+The headers follow the run sheet's (`# vendor`, `# os`, `# transport`, `#
+command`, `# source`, `# captured`); `# level` names the access level of the
 account. These are inputs for the WTI work after 0.2.4, which does not read
 the unit (D71).
