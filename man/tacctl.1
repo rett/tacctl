@@ -5481,7 +5481,10 @@ description, the scope that answers the address and the prefix that routes it
 the last and first sighting with the sighting count and the NAS-Identifier the
 device sends, the configuration of the last pull (when, by whom, over which
 transport and what the NETCONF probe found, its result and the state of each
-managed section; the operator tier's, a read-only user is not shown it), and
+managed section, with
+.B "ok (+N unmanaged)"
+for one that holds only statements of the device's own; the operator tier's, a
+read-only user is not shown it), and
 the open notices with a count of the acknowledged ones
 .RB ( \-\-all
 lists them too, marked). It warns when the
@@ -6620,10 +6623,16 @@ starting devices and lets the running ones finish (the rest are reported
 .BR "not started" ),
 a second cuts the running ones off; the status is 130 either way.
 .B \-\-diff
-prints the differences after the summary;
+prints the differences after the summary
+.RB ( "ok (+N unmanaged)"
+for a section that holds only statements of the device's own, as for
+.BR "device config diff" );
 .B \-\-json
 prints one JSON object per device as it ends and a last object
-.BR "{\(dqsummary\(dq: ...}" .
+.BR "{\(dqsummary\(dq: ...}" ,
+the sections of a device with their
+.B unmanaged
+count when it is not 0.
 .BR \-\-server " and " \-\-source
 are those of
 .BR "config cisco|juniper|wti" :
@@ -6702,9 +6711,13 @@ is the same account and the section reads
 .B ok
 with a note that says so, because the names are case\-sensitive on the device and
 a login by the scope's spelling is refused there). A section is what tacctl renders plus
-whatever the device holds in the same hierarchy, so a stray server or
-community is a difference. Each section is
+whatever the device holds in the same hierarchy, so a stray server is a
+difference. Each section is
 .BR ok ,
+.B "ok (+N unmanaged)"
+(the
+.B snmp
+section only; below),
 .BR differs ,
 .B missing
 (nothing of it on the device; on Cisco a router that has only
@@ -6749,6 +6762,89 @@ makes a difference exit 2 as
 .BR git (1)
 does (a device that could not be compared exits 1). A device never pulled is
 said so, with the command that reads it.
+.PP
+The name of an SNMP community is its secret and is never shown: in the compared
+form it is a label that says whose it is,
+.B <secret:N>
+for the N\-th community tacctl renders for the scope (in the order of the
+rendering) and
+.B <other:N>
+for the N\-th other string on the device (by first appearance). One string has
+one label throughout a pull, a Junos
+.B trap\-group
+name (the community its traps are sent with) and the community word of an IOS
+.B "snmp\-server host"
+included, so the diff, the plan's report,
+.B \-\-json
+and the stored sections tell tacctl's community from another one without
+holding either string. The labels are relative to the rendering the pull was
+compared with: after a scope's community is changed, pull the device again. A
+record made by an older tacctl (the bare
+.B <secret>
+for every name) is compared by presence, a note says so, and
+.B "device config plan"
+leaves every statement under a community of it alone
+.RB ( "the community's name is not visible" )
+and says to pull the device again.
+.PP
+The
+.B snmp
+section reads
+.B "ok (+N unmanaged)"
+when nothing tacctl renders is missing or different and every extra statement
+is one the plan keeps by rule: another community and its client lists and
+leaves, a client list, view or SNMPv3 object tacctl does not render, a
+location, contact or description when tacctl renders none, and the statements
+no ownership row covers
+.RB ( "snmp name" ,
+.BR engine\-id ,
+trap groups and options, and on IOS
+.BR "snmp\-server host" ,
+.B "enable traps"
+and the rest of
+.BR snmp\-server ).
+The statements are still listed, as
+.B +
+lines, with the note
+.BR "N statements of the device's own, kept on purpose" ;
+the state is
+.B ok
+for
+.BR "device config list" ,
+.B \-\-differs
+and
+.BR \-\-stale ,
+and a device that is
+.B ok
+only so does not make
+.B \-\-exit\-code
+of
+.B diff
+or
+.B plan
+exit 2 (the plan still lists the extras, as left alone). Only
+.B snmp
+reads this way: an extra server, login class, filter or user in
+.BR aaa ,
+.B roles
+or
+.B mgmt\-acl
+is a finding about who can log in and the section
+.BR differs ,
+as does a deactivated statement, a statement under a community of an older
+record, and a statement of the rendered community itself (a stray
+.B clients
+entry, which the plan deletes under the community's real name).
+.B \-\-json
+keeps the
+.B state
+strings
+.RB ( ok
+stays
+.BR ok )
+and gives each section the integer
+.B unmanaged
+(left out when 0).
 .\" BEGIN GENERATED: command device config diff
 .RS
 .PP
@@ -6883,25 +6979,22 @@ and
 never beside a first region, because whoever copies a whole output runs every
 region in it. A device with a first region gets that region and one line,
 .BR "cleanup comes after this region is pasted and verified: pull the device, then plan \-\-converge again" .
-It removes other servers of the scope's own protocol and their groups, and
-other SNMP communities (IOS: a legacy
+It removes other servers of the scope's own protocol and their groups (IOS: a legacy
 .B tacacs\-server host
 line, a
 .B tacacs server
 block, an old
 .BR "aaa group server" ,
-its entries first, then the group, then the server it names, another
-.BR "snmp\-server community" ;
-Junos: another
+its entries first, then the group, then the server it names; Junos: another
 .B "system tacplus\-server"
 (on a RADIUS scope another
 .BR "system radius\-server" :
 never the other protocol's, which may serve accounting or another login
 method, nor a server that a staying
 .B "system accounting destination <protocol> server <address>"
-names), another
-.BR "snmp community" ,
-a login class no user uses, the entries of another client list). On Junos the
+names), a login class no user uses, the entries of another client list). An
+SNMP community is never removed: another community's name is not known to
+tacctl, so it and what is under it are left alone. On Junos the
 check pull of the first region is taken before its
 .BR commit ,
 so the report and the follow-up of the cleanup also ask that
@@ -7247,7 +7340,17 @@ a pull of a device whose version line is not read or not mapped is refused and
 not recorded, so this state does not change by it),
 when it was pulled, by whom, over which transport, what the NETCONF probe
 found and, for a device that differs, the sections, or, for one that failed,
-the result.
+the result. A device that is
+.B ok
+and holds statements of its own that the plan keeps by rule has
+.B "snmp +N unmanaged"
+there (see
+.BR "device config diff" ),
+and
+.B \-\-json
+has the map
+.B unmanaged
+of section to count for the sections that are ok.
 The state is computed against today's rendering from the stored sections, so a
 change of the store or of
 .I tacctl.yaml

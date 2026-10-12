@@ -18,6 +18,74 @@ current behaviour; this file is where history lives.
    and only the break-glass section is affected (IOS `username` lines and Junos
    `system login user` statements).
 
+2. **SNMP community and trap-group names are told apart in the compared form,
+   not all elided to `<secret>`.** Every community name read from a device was
+   one mark, so another community's `authorization` looked like tacctl's own,
+   and a leaf under a community could not be attributed to one. A name is now
+   elided to a label that says whose it is and never holds the string:
+   `<secret:N>` for the N-th community of the scope's rendering (in the order
+   of the rendering) and `<other:N>` for the N-th other string on the device
+   (by first appearance). One string has one label throughout a pull, a Junos
+   `trap-group` name (the community its traps are sent with) and the community
+   word of an IOS `snmp-server host` included. `device config diff`,
+   `pull --diff`, the plan's report and its `--json`, and the stored sections
+   show the labels (`+ set snmp community <other:1> authorization read-only
+   (present, not compared)`, `- snmp-server community <secret:1> RO
+   TACCTL-SNMP`). The labels are relative to the rendering the pull was
+   compared with: after a scope's community is changed, pull the device again.
+   A record made by an older tacctl (the bare `<secret>` for every name) still
+   loads and compares: its communities are compared by presence, a note under
+   the section says so, and `device config plan` leaves every statement under
+   a community of that record alone (`the community's name is not visible`),
+   with a line that says to pull the device again to plan them.
+
+3. **The Junos plan no longer types a delete for another community's
+   statements, and another community's `authorization` no longer satisfies
+   tacctl's.** A `clients` leaf of a community that was not tacctl's was
+   answered with `delete snmp community <tacctl's community> clients <addr>`,
+   which the device refuses (`statement not found`) and which the report
+   excused in a note; an `authorization` of another community made tacctl's
+   own read as present. Both are gone: a statement under another community is
+   kept (`Left alone`), the note is gone, and a rendered community the device
+   lacks is set whole (`set snmp community <name> authorization read-only` and
+   its `client-list-name`), with a back-out that deletes the community. A stray
+   leaf of tacctl's own community (a `clients` entry) is still deleted, under
+   the community's real name, and a rendered leaf that the device holds with
+   another value is replaced in place by its set. The report and the back-out
+   show the label, `<secret:N>` (`<SECRET>` with `--no-secrets`); the line to
+   paste holds the name.
+
+4. **A section that holds only the device's own statements beside what tacctl
+   renders reads `ok (+N unmanaged)`.** The `snmp` section is a hierarchy
+   the device shares with its monitoring, and every extra made it `differs`,
+   so a device that was brought to the standard and kept its other community,
+   its trap groups or its `snmp name` could never read `ok`: it stayed in
+   `--stale` and `--differs` and made `device config diff --exit-code` exit 2.
+   A section whose rendered statements are all present and unchanged, and
+   whose every extra is one the plan keeps by rule, is now `ok`, with the
+   number of those extras: another community and its client lists and leaves,
+   a client list, view or SNMPv3 object tacctl does not render, a location,
+   contact or description when tacctl renders none, and the statements that
+   have no row at all (`snmp name`, `engine-id`, trap groups and options, on
+   IOS `snmp-server host`, `enable traps` and the rest of `snmp-server`).
+   Text shows `ok (+N unmanaged)` in `device config diff`, `pull --diff` and
+   the Configuration row of `device show`; `diff` and `pull --diff` list the
+   statements as `+` lines with the note `N statements of the device's own,
+   kept on purpose`; `device config list` keeps the state `ok` and its DETAIL
+   reads `snmp +N unmanaged`. These devices are not in `--differs` or `--stale`
+   and do not make `--exit-code` of `diff` or `plan` exit 2 (the plan still
+   lists the extras, as left alone). In `--json` the `state` strings are
+   unchanged (`ok` stays `ok`) and a section has the integer `unmanaged`
+   (omitted when 0) in `pull` and `diff`, `device config list` has the map
+   `unmanaged` (section to count, for the sections that are ok), and
+   `devices-config.json` has `sections.<name>.unmanaged`. Only `snmp` can
+   read this way: the extras of `aaa`, `roles` and `mgmt-acl` (another
+   server, a login class, a filter, a user nobody recorded) are findings about
+   who can log in and stay `differs`, as does any deactivated statement.
+   In a record made by an older tacctl, whose communities are not told apart
+   (item 2), an extra statement under a community is a difference until the
+   device is pulled again.
+
 ## 0.2.6 (2026-10-12)
 
 A hotfix for 0.2.5, started from `master`. The items below are everything that
