@@ -179,6 +179,8 @@ Every change goes one way: check that no generated file was edited by hand → s
 | `/etc/tacctl/snmp.yaml` | The SNMP community, or the v3 user and passphrases, that `device add` and `device check` read a device's sysName with (`tacctl config snmp`); 0600 root, never printed, absent means none |
 | `/etc/tacctl/snmp/devices/<name>.yaml` | One device's own SNMP community, or v3 user and passphrases (`tacctl device snmp <name>`), over its scope's and the default's; the lowercased device name, 0600 in a 0700 directory, never printed but by `show --reveal`, absent means the device has none of its own. A device's rename moves it, its removal deletes it; snapshots hold it and a restore brings it back |
 | `/etc/tacctl/snmp/<scope>.yaml` | One scope's SNMP community, or v3 user and passphrases (`tacctl scope snmp <scope>`), read in place of `snmp.yaml` for the devices of that scope; 0600 in a 0700 directory, never printed but by `show --reveal`, absent means the scope has none of its own. A scope's rename moves it, its removal deletes it |
+| `/etc/tacctl/blocks/<scope>/<vendor>/<block>` | One configuration block of a scope: vendor syntax (`<vendor>` is `juniper` or `cisco`, `<block>` is `snmp` or `system`) that tacctl owns beside the structured settings; 0600 in 0700 directories, never printed but by `--reveal` (it holds community strings). In force only while `blocks.<scope>.<vendor>` in `tacctl.yaml` names it. A scope's rename moves it, its removal deletes it; snapshots hold it and a restore brings it back |
+| `/etc/tacctl/blocks/_devices/<device>/<vendor>/<block>` | One configuration block of a device, over its scope's block of the same object; the lowercased device name. In force while `blocks_device.<device>.<vendor>` names it (the device's dots written `~`). A device's rename moves it and its removal deletes it; a new device, or a rename onto a name whose blocks are on disk, is refused |
 | `/etc/tacctl/console.yaml` | The login console's settings (`tacctl console`): per-tier switches, per-user overrides, idle timeout, system shell; 0600 root, absent means the defaults (the console on for every tier). Snapshots include it |
 | `/etc/tacctl/linux-hosts`, `/etc/tacctl/linux-uids` | Enrolled Linux hosts; the UID each user gets on every host |
 | `/var/lib/tacctl/` | tacctl's variable data; 0711 (every user may pass through, only root may list it) |
@@ -1001,6 +1003,8 @@ Keys without a shipped default, written by their commands: `backends.enabled` (`
 | `linux.uid_min`, `linux.uid_max` | 1000 to 4294967293 (80000, 89999) | `config linux uid-range` |
 | `mgmt_acl.names.cisco`, `mgmt_acl.names.juniper` | name of 1 to 63 characters (`VTY-ACL`, `MGMT-ACL`) | `config mgmt-acl cisco-name`, `juniper-name` |
 | `mgmt_acl.permits` | list of CIDRs (`[]`) | `config mgmt-acl add`, `remove` |
+| `blocks.<scope>.<vendor>` | non-empty list of block names (`snmp`, `system`) | the block verbs |
+| `blocks_device.<device>.<vendor>` | the same, the device's dots written `~` | the block verbs |
 | `password.max_age_days`, `password.min_length` | 1 or more (90); 8 to 64 (12) | `config password-age`, `password-min-length` |
 | `secret.min_length` | 16 to 128 (16) | `config secret-min-length` |
 | `scope.default` | scope name or null (`lab`) | `scope default` |

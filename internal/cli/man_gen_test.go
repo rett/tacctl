@@ -22,6 +22,7 @@ package cli
 import (
 	"flag"
 	"fmt"
+	"github.com/rett/tacctl/internal/blocks"
 	"maps"
 	"os"
 	"path/filepath"
@@ -386,6 +387,8 @@ var manKeyDocs = map[string]struct{ verb, desc string }{
 	"breakglass_hold.<device>.since":       {setWith("breakglass hold"), "When the hold was made (RFC 3339)."},
 	"breakglass_hold.<device>.by":          {setWith("breakglass hold"), "The user who held it."},
 	"breakglass_hold.<device>.reason":      {setWith("breakglass hold"), "Why, 1 to 256 characters; logged and shown, never rendered into a backend file. Removed with the hold by tacctl breakglass release."},
+	"blocks.<scope>.<vendor>":              {`a text editor on \fItacctl.yaml\fR`, "The configuration blocks in force for the scope and vendor (juniper or cisco), a list of snmp and system; a file under the blocks directory that this list does not name is ignored."},
+	"blocks_device.<device>.<vendor>":      {`a text editor on \fItacctl.yaml\fR`, "The configuration blocks in force for one device and vendor (juniper or cisco), a list of snmp and system; the device's lower case name is written with every '.' as '~' (js1~lab~example~net), and a file under the blocks directory that this list does not name is ignored."},
 	"snmp_scope.<scope>.version":           {setWith("scope snmp"), "The scope's SNMP version; unset: snmp.version."},
 	"snmp_scope.<scope>.port":              {setWith("scope snmp"), "The scope's agent port; unset: snmp.port."},
 	"snmp_scope.<scope>.timeout":           {setWith("scope snmp"), "The scope's timeout in seconds; unset: snmp.timeout."},
@@ -458,6 +461,8 @@ func manTypeText(r conf.Rule) string {
 		return "list of IPv4 CIDRs"
 	case conf.TypeSNMPText:
 		return "text of 1 to " + strconv.Itoa(conf.MaxSNMPText) + " characters"
+	case conf.TypeBlockList:
+		return "non-empty list of block names (" + strings.Join(blocks.KnownBlocks, ", ") + ")"
 	}
 	return "unknown type " + r.Type
 }
@@ -547,6 +552,10 @@ func manConfigKeyRows(t *testing.T) []manKeyRow {
 			}
 		case f.Prefix == "breakglass_scope.":
 			add(f.Prefix+"<scope>."+conf.BreakGlassUsersKey, f.Rule, def)
+		case f.Prefix == conf.BlocksPrefix:
+			add(f.Prefix+"<scope>.<vendor>", f.Rule, def)
+		case f.Prefix == conf.BlocksDevicePrefix:
+			add(f.Prefix+"<device>.<vendor>", f.Rule, def)
 		case f.Prefix == "listeners.":
 			var parts []string
 			for _, b := range conf.ListenerBackends {

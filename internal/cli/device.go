@@ -489,6 +489,9 @@ func (inv *invocation) deviceWrite(fn func(*devreg.File, *devreg.Resolver) error
 	if err := inv.snmpNewNamesFree(f, trial); err != nil {
 		return nil, err
 	}
+	if err := inv.blocksNewNamesFree(f, trial); err != nil {
+		return nil, err
+	}
 	if _, err := trial.Text(); err != nil {
 		return nil, err
 	}
@@ -1257,6 +1260,9 @@ func (inv *invocation) deviceRemove(args []string) error {
 	a := inv.app
 	a.Out.Warn(fmt.Sprintf("About to remove %d device(s) from the registry: %s.", len(targets), strings.Join(targets, ", ")))
 	a.Out.Warn("Enrolled hosts, scopes and vendor tags are not touched.")
+	if note := inv.deviceBlocksRemovalNote(targets); note != "" {
+		a.Out.Warn(note)
+	}
 	if !p.Has("-y") && !a.Prompter().ConfirmPrefix("  Confirm removal? [y/N]: ") {
 		a.Out.Info("Aborted.")
 		return nil
@@ -1272,6 +1278,7 @@ func (inv *invocation) deviceRemove(args []string) error {
 	for _, n := range targets {
 		inv.configCarry(n, "")
 		inv.snmpDeviceCarry(n, "")
+		inv.blocksDeviceCarry(n, "")
 	}
 	a.Out.Info(fmt.Sprintf("Removed %d device(s).", len(targets)))
 	inv.echo("")
@@ -1316,6 +1323,7 @@ func (inv *invocation) deviceRename(args []string) error {
 	}
 	inv.configCarry(oldName, newName)
 	inv.snmpDeviceCarry(oldName, newName)
+	inv.blocksDeviceCarry(oldName, newName)
 	inv.holdCarry(oldName, newName, old.Address)
 	inv.app.Out.Info("Device '" + oldName + "' renamed to '" + newName + "'.")
 	inv.echo("")
@@ -1718,6 +1726,9 @@ func (inv *invocation) deviceImport(args []string) error {
 	}
 	if len(plan.Removed) > 0 {
 		a.Out.Warn(fmt.Sprintf("--replace removes %d device(s) the file does not name: %s.", len(plan.Removed), strings.Join(plan.Removed, ", ")))
+		if note := inv.deviceBlocksRemovalNote(plan.Removed); note != "" {
+			a.Out.Warn(note)
+		}
 		if !p.Has("-y") && !a.Prompter().ConfirmPrefix("  Confirm import? [y/N]: ") {
 			a.Out.Info("Aborted.")
 			return nil
@@ -1740,6 +1751,7 @@ func (inv *invocation) deviceImport(args []string) error {
 	for _, n := range plan.Removed {
 		inv.configCarry(n, "")
 		inv.snmpDeviceCarry(n, "")
+		inv.blocksDeviceCarry(n, "")
 	}
 	a.Out.Info("Imported: " + summary)
 	for _, n := range plan.Added {

@@ -86,6 +86,27 @@ current behaviour; this file is where history lives.
    (item 2), an extra statement under a community is a difference until the
    device is pulled again.
 
+5. **Configuration blocks have a home: `/etc/tacctl/blocks` and the lists in
+   `tacctl.yaml` that put them in force.** A block is vendor syntax that a
+   scope or a device owns beside the structured settings, written in the
+   device's own language and never translated (the Junos `snmp` and `system`
+   blocks are the first). A scope's blocks are the files
+   `/etc/tacctl/blocks/<scope>/<vendor>/<block>` and a device's
+   `/etc/tacctl/blocks/_devices/<device>/<vendor>/<block>` (the device's name in
+   lower case; `_devices` cannot be a scope's name), 0600 in 0700 directories,
+   written atomically; `<vendor>` is `juniper` or `cisco`, `<block>` is `snmp`
+   or `system`. A block is in force only while `tacctl.yaml` names it:
+   `blocks.<scope>.<vendor>` and `blocks_device.<device>.<vendor>` are lists of
+   block names (the device's dots written `~`, as `breakglass_hold` does); a
+   file that no list names is not used. Snapshots hold the directory and
+   `backup restore` puts it back; `scope rename` and `scope remove` carry a
+   scope's blocks, `device rename` and `device remove` a device's (`device
+   remove` and `device import --replace` say so before they ask, because a block
+   holds community strings); a scope or device name that has blocks left on
+   disk or in `tacctl.yaml` is refused for a new scope, device or rename, with
+   the path. `rollback 0.2.3` removes the lists and leaves the files. A scope
+   called `devices` is an ordinary scope name.
+
 ## 0.2.6 (2026-10-12)
 
 A hotfix for 0.2.5, started from `master`. The items below are everything that

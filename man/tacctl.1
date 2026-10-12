@@ -9207,6 +9207,14 @@ The tacctl tier of the group, in place of the one its priv-lvl band gives. Set w
 list of name:role entries, role one of admin, operator, readonly, at most 16. Default: none (unset).
 The break-glass local users the scope's device configurations create. Only the names and roles are kept; no credential is stored. Set with \fBtacctl scope breakglass\fR.
 .TP
+.B blocks.<scope>.<vendor>
+non\-empty list of block names (snmp, system). Default: none (unset).
+The configuration blocks in force for the scope and vendor (juniper or cisco), a list of snmp and system; a file under the blocks directory that this list does not name is ignored. Set with a text editor on \fItacctl.yaml\fR.
+.TP
+.B blocks_device.<device>.<vendor>
+non\-empty list of block names (snmp, system). Default: none (unset).
+The configuration blocks in force for one device and vendor (juniper or cisco), a list of snmp and system; the device's lower case name is written with every '.' as '~' (js1~lab~example~net), and a file under the blocks directory that this list does not name is ignored. Set with a text editor on \fItacctl.yaml\fR.
+.TP
 .B snmp_scope.<scope>.version
 one of v2c, v3. Default: none (unset).
 The scope's SNMP version; unset: snmp.version. Set with \fBtacctl scope snmp\fR.
@@ -9589,6 +9597,53 @@ map of its entry in
 .IR devices.yaml .
 .B "rollback 0.2.3"
 removes that map and leaves the file (0.2.3 never opens the subdirectory).
+.TP
+.I /etc/tacctl/blocks
+The directory of configuration blocks, 0700 root. A scope's blocks are under
+its own name and a device's under
+.IR _devices ;
+a scope cannot be called
+.BR _devices .
+Snapshots include it and
+.B backup restore
+brings it back. A rollback to 0.2.3 removes the lists in
+.B tacctl.yaml
+that put blocks in force and leaves the files.
+.TP
+.I /etc/tacctl/blocks/\fIscope\fR/\fIvendor\fR/\fIblock\fR
+One configuration block of a scope: vendor syntax that tacctl owns beside the
+structured settings.
+.I vendor
+is
+.B juniper
+or
+.BR cisco ;
+.I block
+is
+.B snmp
+or
+.BR system .
+Mode 0600 in 0700 directories, root only, written atomically; a block holds
+community strings, so it is never printed but by
+.BR "\-\-reveal" .
+A block is in force only while
+.BR tacctl.yaml
+names it
+.RB ( blocks.\fIscope\fR.\fIvendor\fR ).
+A scope's rename moves its blocks and its removal deletes them. Snapshots
+include the directory and a restore brings it back.
+.TP
+.I /etc/tacctl/blocks/_devices/\fIdevice\fR/\fIvendor\fR/\fIblock\fR
+One configuration block of a registered device, in place of its scope's block
+of the same object. The directory is named for the device in lower case; it is
+named in
+.B tacctl.yaml
+by
+.BR blocks_device.\fIdevice\fR.\fIvendor\fR ,
+the device's dots written as
+.BR ~ .
+A device's rename moves it and its removal deletes it; a new device, or a
+rename onto a name whose blocks are already on disk, is refused.
 .TP
 .I /etc/tacctl/console.yaml
 The login console's switches per tier, per-user overrides and settings

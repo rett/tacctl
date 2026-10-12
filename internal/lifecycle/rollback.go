@@ -325,7 +325,7 @@ func (p *RollbackPlan) confStep() RollbackStep {
 	}
 	var added, other []string
 	for _, k := range p.keys {
-		if conf.Added024Key(k) || conf.Added025Key(k) {
+		if conf.Added024Key(k) || conf.Added025Key(k) || conf.Added027Key(k) {
 			added = append(added, k)
 		} else {
 			other = append(other, k)
@@ -337,7 +337,7 @@ func (p *RollbackPlan) confStep() RollbackStep {
 	for _, k := range other {
 		s.Lines = append(s.Lines, "remove "+k+"  (no release knows this key; 0.2.3 refuses a file that has it)")
 	}
-	s.Lines = append(s.Lines, "(the settings of 'device config pull' and 'plan', the Cisco source interface and the break-glass records are these; every other key is one 0.2.3 has and stays)")
+	s.Lines = append(s.Lines, "(the settings of 'device config pull' and 'plan', the Cisco source interface, the break-glass records and the list of configuration blocks in force are these; every other key is one 0.2.3 has and stays)")
 	return s
 }
 
@@ -544,6 +544,15 @@ func (p *RollbackPlan) warnings() []RollbackWarning {
 	}
 	if len(si) > 0 {
 		lines = append(lines, "The source interface of the Cisco devices of a scope ("+strings.Join(si, ", ")+") is removed from tacctl.yaml; the walkthroughs of 0.2.3 do not render it.")
+	}
+	var bl []string
+	for _, k := range p.keys {
+		if conf.Added027Key(k) {
+			bl = append(bl, k)
+		}
+	}
+	if len(bl) > 0 {
+		lines = append(lines, "The list of configuration blocks in force ("+strings.Join(bl, ", ")+") is removed from tacctl.yaml; the block files stay in "+in.Paths.BlocksDir+", unused by 0.2.3, and nothing renders them.")
 	}
 	if len(p.syntaxDev) > 0 {
 		lines = append(lines, "The configuration syntax setting of a Cisco device (device config-syntax) is removed: a release without it compares a legacy-ssh device as IOS 12.x again, and renders its walkthrough in the syntax of --legacy only:")

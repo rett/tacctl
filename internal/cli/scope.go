@@ -22,7 +22,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/rett/tacctl/internal/backend"
+	"github.com/rett/tacctl/internal/blocks"
 	"github.com/rett/tacctl/internal/cidr"
+	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/model"
 	"github.com/rett/tacctl/internal/names"
 	"github.com/rett/tacctl/internal/shellquote"
@@ -431,6 +433,10 @@ func (inv *invocation) scopeConfKeysMove(old, newName string) error {
 	if err := inv.scopeSNMPMove(old, newName); err != nil {
 		return err
 	}
+	// So do its configuration blocks (0.2.7): the list in force and the files.
+	if err := inv.scopeBlocksMove(old, newName); err != nil {
+		return err
+	}
 	data, err := os.ReadFile(inv.app.Paths.Overrides)
 	if err != nil || !bytes.Contains(data, []byte(old)) {
 		return nil
@@ -452,6 +458,51 @@ func (inv *invocation) scopeConfKeysMove(old, newName string) error {
 		}
 	}
 	return inv.scopeBreakGlassMove(old, newName)
+}
+
+// scopeBlocksMove follows a scope's rename (newName set) or removal (newName
+// empty) for its configuration blocks: the blocks.<scope>.<vendor> lists of
+// tacctl.yaml and the files under StateDir/blocks/<scope>. A scope whose
+// name the store cannot hold (blocks.ValidateScope) has none.
+func (inv *invocation) scopeBlocksMove(old, newName string) error {
+	a := inv.app
+	if blocks.ValidateScope(old) != nil {
+		return nil
+	}
+	c := a.Conf()
+	for _, v := range blocks.Vendors {
+		from := conf.BlocksPath(old, v)
+		if !c.HasOverride(from) {
+			continue
+		}
+		value, _ := c.Value(from)
+		if err := c.Unset(from); err != nil {
+			return err
+		}
+		if newName != "" {
+			if err := c.SetValue(conf.BlocksPath(newName, v), value); err != nil {
+				ui.Output{Stdout: a.Out.Stderr}.Warn(from + " holds a value tacctl.yaml does not take; it was not carried over to '" + newName + "'.")
+			}
+		}
+	}
+	store := blocks.NewStore(a.Paths.BlocksDir)
+	if newName == "" {
+		return store.RemoveScope(old)
+	}
+	if blocks.ValidateScope(newName) != nil {
+		return nil
+	}
+	return store.RenameScope(old, newName)
+}
+
+// scopeBlocksCheckNoScope is nil when no blocks directory is left under the
+// scope's name: a new scope (or a scope renamed to it) would take over the
+// blocks of an earlier one.
+func (inv *invocation) scopeBlocksCheckNoScope(name string) error {
+	if blocks.ValidateScope(name) != nil {
+		return nil
+	}
+	return blocks.NewStore(inv.app.Paths.BlocksDir).CheckNoScope(name)
 }
 
 // --- usage, list, routing ---------------------------------------------------
@@ -844,6 +895,10 @@ func (inv *invocation) scopeAdd(args []string) error {
 	if err := snmpcred.CheckNoScopeFile(a.Paths.SNMPDir, name); err != nil {
 		return inv.validated(err)
 	}
+	// And so would blocks left by one (0.2.7).
+	if err := inv.scopeBlocksCheckNoScope(name); err != nil {
+		return inv.validated(err)
+	}
 
 	var prefixes, secretArg, protocolsArg, vendorArg string
 	makeDefault := false
@@ -1080,6 +1135,12 @@ func (inv *invocation) scopeRename(args []string) error {
 	// like the new scope is not overwritten, nor taken over.
 	if _, err := os.Lstat(filepath.Join(a.Paths.SNMPDir, old+".yaml")); err == nil {
 		if err := snmpcred.CheckNoScopeFile(a.Paths.SNMPDir, newName); err != nil {
+			return inv.validated(err)
+		}
+	}
+	// And its configuration blocks, the same way.
+	if blocks.ValidateScope(old) == nil && blocks.NewStore(a.Paths.BlocksDir).HasScope(old) {
+		if err := inv.scopeBlocksCheckNoScope(newName); err != nil {
 			return inv.validated(err)
 		}
 	}

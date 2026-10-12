@@ -61,6 +61,7 @@ type Paths struct {
 	HostRecords string // StateDir/hosts: what the last enroll or sync saw of each host (hosts.Records)
 	SNMPFile    string // StateDir/snmp.yaml: the SNMP community and v3 passphrases (0600)
 	SNMPDir     string // StateDir/snmp: one <scope>.yaml of SNMP credentials per scope (0600, the directory 0700)
+	BlocksDir   string // StateDir/blocks: <scope>/<vendor>/<block> and _devices/<device>/<vendor>/<block> configuration blocks (0600, the directories 0700; 0.2.7)
 	SSHDDropIn  string // TACCTL_SSHD_DROPIN: sshd's drop-in for the console group
 	// SSHDEngineerDropIn is sshd's drop-in for the engineer tier
 	// (TACCTL_SSHD_ENGINEER_DROPIN; next to SSHDDropIn): its own file, so the
@@ -150,6 +151,7 @@ func Resolve(env Env, exe string, exists func(string) bool) Paths {
 	p.HostRecords = p.StateDir + "/hosts"
 	p.SNMPFile = p.StateDir + "/snmp.yaml"
 	p.SNMPDir = p.StateDir + "/snmp"
+	p.BlocksDir = p.StateDir + "/blocks"
 	p.SSHDDropIn = env.Or("TACCTL_SSHD_DROPIN", "/etc/ssh/sshd_config.d/tacctl-console.conf")
 	p.SSHDEngineerDropIn = env.Or("TACCTL_SSHD_ENGINEER_DROPIN", filepath.Join(filepath.Dir(p.SSHDDropIn), SSHDEngineerDropInName))
 	p.SSHDEngineerDropInOld = filepath.Join(filepath.Dir(p.SSHDDropIn), "tacctl-engineer.conf")

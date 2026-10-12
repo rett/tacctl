@@ -108,6 +108,16 @@ var Added025 = []Family{
 	{"breakglass_hold.", true},
 }
 
+// Added027 are the key families 0.2.7 added: the manifest of the
+// configuration blocks in force (blocks.<scope>.<vendor> and the devices'
+// own, blocks_device.<device>.<vendor>). A 0.2.6 or older binary does not
+// know them, so a rollback removes them; the block files under
+// StateDir/blocks stay, unused.
+var Added027 = []Family{
+	{"blocks.", true},
+	{"blocks_device.", true},
+}
+
 // Added024Key reports whether path is a key 0.2.4 added.
 func Added024Key(path string) bool { return inFamilies(Added024, path) }
 
@@ -127,6 +137,9 @@ func (f Family) Matches(path string) bool {
 func inFamilies(fs []Family, path string) bool {
 	return slices.ContainsFunc(fs, func(f Family) bool { return f.Matches(path) })
 }
+
+// Added027Key reports whether path is a key 0.2.7 added.
+func Added027Key(path string) bool { return inFamilies(Added027, path) }
 
 // Added023Key reports whether path is a key 0.2.3 added.
 func Added023Key(path string) bool { return inFamilies(Added023, path) }
