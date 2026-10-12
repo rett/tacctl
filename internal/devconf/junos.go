@@ -227,18 +227,19 @@ func elideKeys(ts []token, ok func(i int, t token) bool) ([]token, bool) {
 
 // junosStem returns the statement without a secret's value, and whether it
 // carries one. marked is the rendering side's mark; the device side is
-// found by its keywords and by the look of the value.
-func junosStem(ts []token, marked bool) ([]token, bool) {
-	if slices.ContainsFunc(ts, func(t token) bool { return t.s == secretMark && !t.quoted }) {
-		// Already elided: a stem read again.
-		return ts, true
-	}
+// found by its keywords and by the look of the value. lb labels a
+// community's name (nil: the bare mark).
+func junosStem(ts []token, marked bool, lb *labels) ([]token, bool) {
 	if len(ts) >= 3 && ts[0].s == "snmp" && (ts[1].s == "community" || ts[1].s == "trap-group") {
 		// The community's name is the secret, and a trap group's name is
 		// the community its traps are sent with.
 		out := slices.Clone(ts)
-		out[2] = token{s: secretMark}
+		out[2] = token{s: lb.of(ts[2].s)}
 		return out, true
+	}
+	if slices.ContainsFunc(ts, func(t token) bool { return t.s == secretMark && !t.quoted }) {
+		// Already elided: a stem read again.
+		return ts, true
 	}
 	isKey := func(i int, t token) bool {
 		// A quoted word is text; 'permissions secret' is a login class's
@@ -279,7 +280,7 @@ func junosStem(ts []token, marked bool) ([]token, bool) {
 }
 
 // junosCanon canonicalises 'set' (and 'deactivate') lines.
-func junosCanon(lines []string, marks []bool) []stmt {
+func junosCanon(lines []string, marks []bool, lb *labels) []stmt {
 	var out []stmt
 	for n, line := range lines {
 		head, rest, _ := strings.Cut(strings.TrimSpace(line), " ")
@@ -307,7 +308,7 @@ func junosCanon(lines []string, marks []bool) []stmt {
 					s[i].s = "privacy-key"
 				}
 			}
-			stem, secret := junosStem(s, marked)
+			stem, secret := junosStem(s, marked, lb)
 			x := stmt{text: head + " " + renderTokens(s), secret: secret}
 			x.stem = x.text
 			if secret {
@@ -467,7 +468,14 @@ func junosExtract(raw string, expected []devices.Section, visible *bool) (Extrac
 			return Extracted{}, fmt.Errorf("%w: the device refused the command", ErrParse)
 		}
 	}
-	got := junosCanon(lines, nil)
+	var rendered []string
+	for _, sec := range expected {
+		rendered = append(rendered, sec.Lines...)
+	}
+	lb := newLabels(FamilyJunos, rendered)
+	lb.fresh = true
+	got := junosCanon(lines, nil, lb)
+	lb.fresh = false
 	if !slices.ContainsFunc(got, func(x stmt) bool { return strings.HasPrefix(x.text, "set ") }) {
 		return Extracted{}, fmt.Errorf("%w: no 'set' statement in the text", ErrParse)
 	}
@@ -476,7 +484,7 @@ func junosExtract(raw string, expected []devices.Section, visible *bool) (Extrac
 		userClass: map[string]string{}, lo0Filter: map[string]bool{}}
 	haveExpected := false
 	for _, sec := range expected {
-		for _, x := range junosCanon(sec.Lines, sec.Secret) {
+		for _, x := range junosCanon(sec.Lines, sec.Secret, lb) {
 			haveExpected = true
 			c.claim[x.stem] = sec.Name
 			p := x.path

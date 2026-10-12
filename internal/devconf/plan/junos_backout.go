@@ -61,7 +61,7 @@ func (p *planner) junosBackout(d Delta) []Line {
 			switch {
 			case st.head == "deactivate":
 				note("it was deactivated, type yourself: deactivate " + joinTokens(st.path))
-			case slices.Contains(st.path, secretMark) || secret[st.text()]:
+			case slices.ContainsFunc(st.path, isMark) || secret[st.text()]:
 				note(againNote(st.path))
 			default:
 				push(Line{Op: OpSet, Text: text})
@@ -143,7 +143,7 @@ func (p *planner) backoutSet(l Line, path []string, before *JunosConfig, secret 
 	if n := singleKeyLen(path); n > 0 {
 		for _, st := range before.stmts {
 			if st.head == "set" && (len(st.path) == n+1 || len(st.path) == n && secret[st.text()]) && pathHasPrefix(st.path, path[:n]) {
-				if secret[st.text()] || slices.Contains(st.path, secretMark) {
+				if secret[st.text()] || slices.ContainsFunc(st.path, isMark) {
 					note(againNote(st.path))
 					return
 				}
@@ -195,11 +195,11 @@ func (p *planner) backoutDelete(l Line, path []string, exists func([]string) boo
 	if l.Secret && l.Elided != "" {
 		// the community's name is the secret: so it is in this line too
 		if et := splitTokens(strings.TrimPrefix(l.Elided, "set ")); len(et) >= len(del) &&
-			slices.Contains(et[:len(del)], secretMark) {
+			slices.ContainsFunc(et[:len(del)], isMark) {
 			u.Secret, u.HasValue = true, l.HasValue
 			u.Elided = "delete " + joinTokens(et[:len(del)])
 			if !l.HasValue {
-				u.Text = strings.ReplaceAll(u.Elided, secretMark, "<SECRET>")
+				u.Text = placeholderOf(u.Elided)
 			}
 		}
 	}
@@ -210,21 +210,22 @@ func (p *planner) backoutDelete(l Line, path []string, exists func([]string) boo
 // secret's original value, or a community's own name. The path is elided.
 func againNote(path []string) string {
 	text := "set " + joinTokens(path)
-	if slices.Contains(path, secretMark) {
+	if slices.ContainsFunc(path, isMark) {
 		return "type again, with the community's own name: " + text
 	}
 	return "type again with its original secret: " + text + " <secret>"
 }
 
 // pathHasPrefix reports whether a statement's path starts with the prefix; a
-// community's name on the device is elided to the secret mark, which stands
-// for any name.
+// community's name on the device is elided to its mark: the bare mark of an
+// older record and a rendered community's label ('<secret:N>') stand for a
+// name of the plan's lines, another community's ('<other:N>') for none.
 func pathHasPrefix(path, prefix []string) bool {
 	if len(path) < len(prefix) {
 		return false
 	}
 	for i, w := range prefix {
-		if path[i] != w && path[i] != secretMark {
+		if path[i] != w && (!isMark(path[i]) || devconf.IsOtherLabel(path[i])) {
 			return false
 		}
 	}

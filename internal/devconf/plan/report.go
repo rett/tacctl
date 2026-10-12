@@ -460,7 +460,9 @@ func (p *planner) buildExtras(d *Delta) {
 		case d.Vendor == devconf.FamilyJunos:
 			t := splitTokens(strings.TrimPrefix(k.Text, "set "))
 			switch {
-			case strings.Contains(k.Text, secretMark):
+			case k.Note == communityNotVisible:
+				e.Guard = communityNotVisible
+			case slices.ContainsFunc(t, isMark):
 				e.Guard = "its name is the secret and is not known to tacctl"
 			case len(t) >= 2 && t[0] == "snmp" && slices.Contains([]string{"name", "engine-id", "trap-options", "location", "contact", "description"}, t[1]),
 				len(t) >= 2 && t[0] == "snmp" && strings.HasPrefix(t[1], "trap"):
@@ -476,7 +478,9 @@ func (p *planner) buildExtras(d *Delta) {
 			path := strings.Split(k.Text, pathSep)
 			leaf := path[len(path)-1]
 			switch {
-			case strings.Contains(k.Text, secretMark):
+			case k.Note == communityNotVisible:
+				e.Guard = communityNotVisible
+			case slices.ContainsFunc(strings.Fields(k.Text), isMark):
 				e.Guard = "its name is the secret and is not known to tacctl"
 			case strings.HasPrefix(leaf, "username "), strings.HasPrefix(leaf, "enable "), strings.HasPrefix(path[0], "line "):
 				e.Guard = "a login or a line: never removed"
@@ -779,7 +783,8 @@ func Report(d Delta, h Header, w Wrapper) string {
 			"' (the server secret) or 'tacctl scope snmp " + h.Scope + " show --reveal' (the SNMP community), put it in, remove the mark.")
 	}
 	if len(d.Unattributed) > 0 {
-		add("Note: a delete under an SNMP community acts on the community tacctl renders only (the device's community names are not compared); 'statement not found' is then expected for a leaf of another community.")
+		add("Note: the pull was made by an older tacctl and does not tell the SNMP communities apart; left alone: " +
+			plural(len(d.Unattributed), "statement", "statements") + " under a community (the community's name is not visible). Pull the device again to plan them.")
 	}
 	if !d.InheritanceChecked && d.Vendor == devconf.FamilyJunos {
 		add("The pull has no plain view of the configuration: statements that come from a group could not be told apart and were not checked (pull the device again to read it).")

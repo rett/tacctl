@@ -12,7 +12,7 @@ import (
 // ciscoStems are the canonical statements of lines.
 func ciscoStems(lines ...string) []string {
 	var out []string
-	for _, x := range uniq(ciscoCanon(lines, nil)) {
+	for _, x := range uniq(ciscoCanon(lines, nil, nil)) {
 		out = append(out, x.stem)
 	}
 	return out
@@ -85,7 +85,7 @@ func TestCiscoSecretValuesNeverInStem(t *testing.T) {
 		"snmp-server user u G v3 auth sha sekrit-auth priv aes 128 sekrit-priv",
 		"snmp-server community sekrit-community RO",
 	} {
-		for _, x := range ciscoCanon([]string{l}, nil) {
+		for _, x := range ciscoCanon([]string{l}, nil, nil) {
 			if strings.Contains(x.stem, "sekrit") || strings.Contains(x.stem, "$") || strings.Contains(x.stem, "0822") {
 				t.Errorf("%q: stem %q holds a value", l, x.stem)
 			}
@@ -103,8 +103,10 @@ func TestCiscoExtractReferenceTexts(t *testing.T) {
 		dir, family string
 		wantStates  map[string]State
 	}{
+		// snmp: another community, a trap host and 'enable traps' are the
+		// device's own (unmanaged)
 		{"ios/reference-lab", "ios", map[string]State{SectionAAA: StateDiffers, SectionRoles: StateOK, SectionMgmtACL: StateOK,
-			SectionSNMP: StateDiffers, SectionNetconf: StateNA, SectionBreakGlass: StateDiffers}},
+			SectionSNMP: StateOK, SectionNetconf: StateNA, SectionBreakGlass: StateDiffers}},
 		// aaa: the capture keeps the enable list of 0.2.5 on purpose (the
 		// removal case): the standard has none, so it is an extra
 		{"ios/reference-12x", "ios", map[string]State{SectionAAA: StateDiffers, SectionRoles: StateOK, SectionMgmtACL: StateOK,
@@ -144,6 +146,10 @@ func TestCiscoExtractReferenceTexts(t *testing.T) {
 					t.Fatal(err)
 				}
 				for _, r := range results {
+					if !hinted && r.Name == SectionSNMP {
+						// without the rendering no community is tacctl's
+						continue
+					}
 					if c.wantStates[r.Name] != r.State {
 						t.Errorf("hinted=%v [%s] %s, want %s", hinted, r.Name, r.State, c.wantStates[r.Name])
 					}
@@ -202,14 +208,14 @@ func TestCiscoImplicitLines(t *testing.T) {
 			[]string{"= privilege exec all level 7 monitor capture", "= privilege exec level 7 clear counters",
 				"+ privilege exec level 7 clear mac address-table dynamic"}, StateDiffers},
 		{"queue length beside the community", SectionSNMP, []string{"snmp-server community c RO ACL"},
-			[]string{"snmp-server community zz RO ACL", "snmp-server queue-length 100"},
-			[]string{"= snmp-server community <secret> RO ACL (present, not compared)"}, StateOK},
-		{"another queue length is extra", SectionSNMP, []string{"snmp-server community c RO ACL"},
-			[]string{"snmp-server community zz RO ACL", "snmp-server queue-length 50"},
-			[]string{"= snmp-server community <secret> RO ACL (present, not compared)", "+ snmp-server queue-length 50"}, StateDiffers},
+			[]string{"snmp-server community c RO ACL", "snmp-server queue-length 100"},
+			[]string{"= snmp-server community <secret:1> RO ACL (present, not compared)"}, StateOK},
+		{"another queue length is the device's own", SectionSNMP, []string{"snmp-server community c RO ACL"},
+			[]string{"snmp-server community c RO ACL", "snmp-server queue-length 50"},
+			[]string{"= snmp-server community <secret:1> RO ACL (present, not compared)", "+ snmp-server queue-length 50"}, StateOK},
 		{"queue length without a rendered community", SectionSNMP, []string{"snmp-server location Rack 4"},
 			[]string{"snmp-server location Rack 4", "snmp-server queue-length 100"},
-			[]string{"= snmp-server location Rack 4", "+ snmp-server queue-length 100"}, StateDiffers},
+			[]string{"= snmp-server location Rack 4", "+ snmp-server queue-length 100"}, StateOK},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			secret := make([]bool, len(tc.exp))
@@ -236,13 +242,14 @@ func TestCiscoImplicitLines(t *testing.T) {
 			if !slices.Equal(got, want) || r.State != tc.state {
 				t.Errorf("%s\n got  %q\n want %q (%s)", r.State, got, want, tc.state)
 			}
-			// unhinted extraction, then the same comparison
+			// unhinted extraction, then the same comparison (without the
+			// rendering no community is tacctl's: its label is '<other:N>')
 			ex2, err := Extract("ios", raw)
 			if err != nil {
 				t.Fatal(err)
 			}
 			r2, _ := Compare("ios", exp, ex2.Sections[tc.section], true)
-			if r2.State != tc.state {
+			if r2.State != tc.state && !slices.ContainsFunc(tc.exp, func(l string) bool { return strings.HasPrefix(l, "snmp-server community ") }) {
 				t.Errorf("unhinted: %s, want %s", r2.State, tc.state)
 			}
 		})
@@ -345,7 +352,7 @@ func TestCiscoACLOwnership(t *testing.T) {
 		t.Errorf("mgmt-acl = %q", got)
 	}
 	if got := ex.Sections[SectionSNMP].Lines; !slices.Equal(got, []string{
-		"ip access-list standard OPS-SNMP > permit 192.0.2.2", "snmp-server community <secret> RO OPS-SNMP"}) {
+		"ip access-list standard OPS-SNMP > permit 192.0.2.2", "snmp-server community <other:1> RO OPS-SNMP"}) {
 		t.Errorf("snmp = %q", got)
 	}
 }

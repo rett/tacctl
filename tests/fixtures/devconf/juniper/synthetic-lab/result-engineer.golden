@@ -65,13 +65,13 @@
 = set snmp client-list TACCTL-SNMP 192.0.2.10/32
 = set snmp client-list TACCTL-SNMP 198.51.100.0/24
 = set snmp client-list TACCTL-SNMP 0.0.0.0/0 restrict
-= set snmp community <secret> authorization read-only (present, not compared)
-= set snmp community <secret> client-list-name TACCTL-SNMP (present, not compared)
+= set snmp community <secret:1> authorization read-only (present, not compared)
+= set snmp community <secret:1> client-list-name TACCTL-SNMP (present, not compared)
 = set snmp location "Rack 4, DC1"
 = set snmp contact "NOC <noc@example.net>"
 - set snmp description "Core switch"
-+ set snmp community <secret> authorization read-only (present, not compared)
-+ set snmp trap-group <secret> targets 192.0.2.50 (present, not compared)
++ set snmp community <other:1> authorization read-only (present, not compared)
++ set snmp trap-group <other:2> targets 192.0.2.50 (present, not compared)
 [netconf] n/a
 ~ set system services netconf ssh
 [breakglass] differs

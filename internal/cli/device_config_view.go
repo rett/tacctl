@@ -173,12 +173,15 @@ func (v *pullView) Update(e batch.Event) {
 // End leaves the rows as they are; the verb prints the summary.
 func (v *pullView) End(s batch.Summary) { v.Board.End(s) }
 
-// pullSectionJSON is one section of a device's pull in --json.
+// pullSectionJSON is one section of a device's pull in --json. Unmanaged
+// counts the device's own statements among the extras: a section that is ok
+// with them stays "ok".
 type pullSectionJSON struct {
-	Name  string         `json:"name"`
-	State string         `json:"state"`
-	Lines []diffLineJSON `json:"lines,omitempty"`
-	Notes []string       `json:"notes,omitempty"`
+	Name      string         `json:"name"`
+	State     string         `json:"state"`
+	Unmanaged int            `json:"unmanaged,omitempty"`
+	Lines     []diffLineJSON `json:"lines,omitempty"`
+	Notes     []string       `json:"notes,omitempty"`
 }
 
 // diffLineJSON is a statement of a comparison (never a secret's value).
@@ -244,7 +247,7 @@ func (v *pullView) deviceJSON(i int, withLines bool) pullJSON {
 		sv := o.SecretsVisible
 		j.Secrets = &sv
 		for _, s := range o.Sections {
-			sj := pullSectionJSON{Name: s.Name, State: string(s.State)}
+			sj := pullSectionJSON{Name: s.Name, State: string(s.State), Unmanaged: s.Unmanaged}
 			if withLines || s.State == devconf.StateDiffers || s.State == devconf.StateMissing {
 				sj.Lines, sj.Notes = diffLinesJSON(s.Lines), s.Notes
 			}

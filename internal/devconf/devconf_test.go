@@ -85,7 +85,7 @@ func resultText(ex Extracted, results []SectionResult) string {
 		b.WriteString("false\n")
 	}
 	for _, r := range results {
-		b.WriteString("[" + r.Name + "] " + string(r.State) + "\n")
+		b.WriteString("[" + r.Name + "] " + r.StateText() + "\n")
 		for _, l := range r.Lines {
 			b.WriteString(string(l.Op) + " " + l.Text + "\n")
 		}

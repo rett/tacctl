@@ -40,12 +40,12 @@
 ! 10. aaa      ACCESS     extra: the default dot1x method list (aaa authentication dot1x default group
 !                         ISE). Left alone. To remove it later: no aaa authentication dot1x default
 !                         group ISE
-! 11. snmp     MONITORING extra: an SNMP community (snmp-server community <secret> RO TACCTL-SNMP).
+! 11. snmp     MONITORING extra: an SNMP community (snmp-server community <other:1> RO TACCTL-SNMP).
 !                         Left alone (its name is the secret and is not known to tacctl).
 ! 12. snmp     MONITORING extra: snmp-server enable traps config. Left alone. To remove it later: no
 !                         snmp-server enable traps config
-! 13. snmp     MONITORING extra: snmp-server host 192.0.2.50 version 2c <secret>. Left alone (its name
-!                         is the secret and is not known to tacctl).
+! 13. snmp     MONITORING extra: snmp-server host 192.0.2.50 version 2c <other:2>. Left alone (its
+!                         name is the secret and is not known to tacctl).
 ! No fix to paste: the cleanup region below is the only paste (what else remains is left alone).
 ! Consistent: roles, mgmt-acl. Not planned: netconf, breakglass.
 ! Secrets: 2 present on the device, not changed (--secrets pushes them).

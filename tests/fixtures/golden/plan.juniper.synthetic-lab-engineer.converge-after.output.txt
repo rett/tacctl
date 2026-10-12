@@ -13,10 +13,10 @@
 #                         switch"). Not fixable by this login: EN-CLASS cannot change 'snmp' (ask a
 #                         superuser).
 #  4. snmp     MONITORING extra: an SNMP community: authorization read-only (set snmp community
-#                         <secret> authorization read-only). Not fixable by this login: EN-CLASS
+#                         <other:1> authorization read-only). Not fixable by this login: EN-CLASS
 #                         cannot change 'snmp' (ask a superuser).
-#  5. snmp     MONITORING extra: SNMP: trap-group <secret> targets 192.0.2.50 (set snmp trap-group
-#                         <secret> targets 192.0.2.50). Not fixable by this login: EN-CLASS cannot
+#  5. snmp     MONITORING extra: SNMP: trap-group <other:2> targets 192.0.2.50 (set snmp trap-group
+#                         <other:2> targets 192.0.2.50). Not fixable by this login: EN-CLASS cannot
 #                         change 'snmp' (ask a superuser).
 # Nothing to paste: everything above is left alone or cannot be fixed by this login.
 # Consistent: roles, mgmt-acl. Not planned: netconf, breakglass (walkthrough Steps 6 and 7).

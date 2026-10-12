@@ -88,7 +88,7 @@ func junosRaw(vendor string, exp devices.Section) rawIndex {
 	idx := rawIndex{}
 	for i, line := range exp.Lines {
 		mark := i < len(exp.Secret) && exp.Secret[i]
-		stems, err := devconf.Elide(vendor, []string{line}, []bool{mark})
+		stems, err := devconf.ElideIn(vendor, []string{line}, []bool{mark}, exp.Lines)
 		if err != nil {
 			continue
 		}
@@ -261,6 +261,13 @@ func (p *planner) junosSection(name string, r devconf.SectionResult) secOut {
 				skey = strings.Join(x.path[:len(row.pat)], " ")
 				setKeys[skey] = true
 			}
+			if row != nil && row.ID == "junos.snmp.community" && len(x.path) > len(row.pat) {
+				// a leaf of the community tacctl renders is single-valued
+				// (authorization, client-list-name): its set replaces the
+				// device's value in place
+				skey = strings.Join(x.path[:len(row.pat)+1], " ")
+				setKeys[skey] = true
+			}
 			if row != nil && row.Mode == ModeRenderedLeaves && len(x.path) > len(row.pat) {
 				// a leaf under tacctl's server is single-valued: its set
 				// replaces the device's value, which is then not deleted
@@ -323,13 +330,10 @@ func (p *planner) junosSection(name string, r devconf.SectionResult) secOut {
 		}
 	}
 
-	// Extras.
-	var oneCommunity string
-	if row := findRowByID(rows, "junos.snmp.community"); row != nil && len(row.names) == 1 {
-		for n := range row.names {
-			oneCommunity = n
-		}
-	}
+	// Extras. A community's name is the secret: the comparison shows it as
+	// its label, '<secret:N>' for the rendering's N-th community (communityOf
+	// has its name) and '<other:N>' for one of the device's own.
+	communityOf, _ := devconf.CommunityLabels(devconf.FamilyJunos, exp.Lines)
 	for _, x := range live {
 		if x.op != devconf.OpExtra {
 			continue
@@ -350,44 +354,49 @@ func (p *planner) junosSection(name string, r devconf.SectionResult) secOut {
 			keepStem(x.stem, "")
 			continue
 		}
-		known := row.names[objName] || (row.ID == "junos.snmp.community" && objName == secretMark)
+		community := ""
+		if row.ID == "junos.snmp.community" {
+			community = communityOf[objName]
+		}
+		known := row.names[objName] || community != ""
 		switch row.Mode {
 		case ModeWhole:
+			if row.ID == "junos.snmp.community" && objName == secretMark {
+				// DECISION: a record of an older tacctl has every community's
+				// name as one mark, so whose community a leaf is cannot be
+				// told: nothing is emitted for it, it is listed as unattributed
+				// and left alone until a pull labels it.
+				o.unattributed = append(o.unattributed, x.stem)
+				keepStem(x.stem, communityNotVisible)
+				continue
+			}
 			if !known {
 				keepStem(x.stem, "")
 				continue
 			}
-			if row.ID == "junos.snmp.community" && objName == secretMark {
-				// The community's name is the secret and is elided: the
-				// delete acts on the rendered community only.
-				// DECISION: a leaf under a community whose kind tacctl does
-				// not render (clients, routing-instance, ...) is deleted
-				// under the rendered community's name. If the leaf belongs
-				// to another community the device answers 'statement not
-				// found' and nothing changes; the statement is listed in
-				// Unattributed so the block says so. A leaf of a kind
-				// tacctl renders (authorization) is never deleted, only
-				// listed as kept: its set replaces it in place when it is
-				// the rendered community's. With more than one rendered
-				// community nothing under a community is deleted.
-				kind := ""
-				if len(x.path) > 3 {
-					kind = x.path[3]
-				}
-				switch {
-				case oneCommunity == "":
-					keepStem(x.stem, "the community's name is not compared")
-				case row.kinds[oneCommunity][kind]:
-					keepStem(x.stem, "the community's name is not compared; if it is the rendered community's, the set above replaces it")
-				default:
+			if community != "" {
+				// A leaf of tacctl's own community: one of a kind tacctl
+				// renders is replaced in place by its set, any other (a
+				// stray 'clients' leaf) is deleted under the community's
+				// own name, as the standard asks.
+				key := strings.Join(x.path[:min(4, len(x.path))], " ")
+				if setKeys[key] {
 					if !p.inPlain(name, x.stem) {
 						refuseInherited(x.stem)
-						continue
 					}
-					fire(row)
-					o.unattributed = append(o.unattributed, x.stem)
-					addDelete(p.communityDelete(oneCommunity, x.path[3:]), x.stem)
+					supersededBy[key] = append(supersededBy[key], x.stem)
+					continue
 				}
+				if len(x.path) > 3 && row.kinds[community][x.path[3]] {
+					keepStem(x.stem, "")
+					continue
+				}
+				if !p.inPlain(name, x.stem) {
+					refuseInherited(x.stem)
+					continue
+				}
+				fire(row)
+				addDelete(p.communityDelete(community, objName, x.path[3:]), x.stem)
 				continue
 			}
 			if !p.inPlain(name, x.stem) {
@@ -588,16 +597,20 @@ func (p *planner) renderedPrefix(exp devices.Section, path []string) bool {
 	return false
 }
 
-// communityDelete is the delete of a leaf under the rendered community: its
-// text holds the community's name, a secret.
-func (p *planner) communityDelete(community string, rest []string) Line {
+// communityNotVisible is why a leaf under a community of an older record is
+// left alone.
+const communityNotVisible = "the community's name is not visible"
+
+// communityDelete is the delete of a leaf under a rendered community: its
+// text holds the community's name, a secret; the line shows its label.
+func (p *planner) communityDelete(community, label string, rest []string) Line {
 	for len(rest) > 1 && junosFlags[rest[len(rest)-1]] {
 		rest = rest[:len(rest)-1]
 	}
-	shown := "delete " + joinTokens(append([]string{"snmp", "community", secretMark}, rest...))
+	shown := "delete " + joinTokens(append([]string{"snmp", "community", label}, rest...))
 	text := "delete " + joinTokens(append([]string{"snmp", "community", community}, rest...))
 	if p.opt.NoSecrets {
-		return Line{Op: OpDelete, Text: strings.ReplaceAll(shown, secretMark, "<SECRET>"), Secret: true, Elided: shown}
+		return Line{Op: OpDelete, Text: placeholderOf(shown), Secret: true, Elided: shown}
 	}
 	return Line{Op: OpDelete, Text: text, Secret: true, HasValue: true, Elided: shown}
 }

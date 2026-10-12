@@ -28,7 +28,7 @@
       "severity": "MONITORING",
       "section": "snmp",
       "what": "an SNMP community: authorization read-only",
-      "statement": "set snmp community \u003csecret\u003e authorization read-only",
+      "statement": "set snmp community \u003cother:1\u003e authorization read-only",
       "action": "Left alone (its name is the secret and is not known to tacctl).",
       "fixed": false
     },
@@ -37,8 +37,8 @@
       "kind": "extra",
       "severity": "MONITORING",
       "section": "snmp",
-      "what": "SNMP: trap-group \u003csecret\u003e targets 192.0.2.50",
-      "statement": "set snmp trap-group \u003csecret\u003e targets 192.0.2.50",
+      "what": "SNMP: trap-group \u003cother:2\u003e targets 192.0.2.50",
+      "statement": "set snmp trap-group \u003cother:2\u003e targets 192.0.2.50",
       "action": "Left alone (its name is the secret and is not known to tacctl).",
       "fixed": false
     }
@@ -61,12 +61,12 @@
     },
     {
       "section": "snmp",
-      "text": "set snmp community \u003csecret\u003e authorization read-only",
+      "text": "set snmp community \u003cother:1\u003e authorization read-only",
       "guard": "its name is the secret and is not known to tacctl"
     },
     {
       "section": "snmp",
-      "text": "set snmp trap-group \u003csecret\u003e targets 192.0.2.50",
+      "text": "set snmp trap-group \u003cother:2\u003e targets 192.0.2.50",
       "guard": "its name is the secret and is not known to tacctl"
     }
   ],

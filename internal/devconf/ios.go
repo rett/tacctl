@@ -125,8 +125,9 @@ func vtyRange(header string) (lo, hi int, ok bool) {
 	return lo, hi, true
 }
 
-// ciscoCanon canonicalises running-config text or rendered lines.
-func ciscoCanon(lines []string, marks []bool) []stmt {
+// ciscoCanon canonicalises running-config text or rendered lines; lb labels
+// a community's name (nil: the bare mark).
+func ciscoCanon(lines []string, marks []bool, lb *labels) []stmt {
 	entries := ciscoEntries(lines, marks)
 
 	type item struct {
@@ -196,7 +197,7 @@ func ciscoCanon(lines []string, marks []bool) []stmt {
 			return
 		}
 		leaf := strings.Fields(path[len(path)-1])
-		stem, secret := ciscoStem(path, leaf, mark)
+		stem, secret := ciscoStem(path, leaf, mark, lb)
 		x := stmt{text: strings.Join(path, pathSep), secret: secret, path: path}
 		x.stem = x.text
 		if secret {
@@ -371,10 +372,24 @@ func snmpHostSecret(f []string) int {
 }
 
 // ciscoStem returns a statement's last line without a secret's value, and
-// whether it holds one.
-func ciscoStem(path, f []string, marked bool) ([]string, bool) {
+// whether it holds one; lb labels a community's name.
+func ciscoStem(path, f []string, marked bool, lb *labels) ([]string, bool) {
 	if len(f) == 0 {
 		return f, false
+	}
+	if f[0] == "snmp-server" && len(f) >= 3 && f[1] == "community" {
+		out := slices.Clone(f)
+		out[2] = lb.of(f[2])
+		return out, true
+	}
+	if f[0] == "snmp-server" && len(f) >= 4 && f[1] == "host" {
+		// [A] the community follows the version and its options; for v1
+		// and for no version, the first word after the host.
+		if i := snmpHostSecret(f); i > 0 {
+			out := slices.Clone(f)
+			out[i] = lb.of(f[i])
+			return out, true
+		}
 	}
 	if slices.Contains(f, secretMark) {
 		// Already elided: a stem read again.
@@ -385,18 +400,6 @@ func ciscoStem(path, f []string, marked bool) ([]string, bool) {
 		return f, false
 	}
 	switch {
-	case f[0] == "snmp-server" && len(f) >= 3 && f[1] == "community":
-		out := slices.Clone(f)
-		out[2] = secretMark
-		return out, true
-	case f[0] == "snmp-server" && len(f) >= 4 && f[1] == "host":
-		// [A] the community follows the version and its options; for v1
-		// and for no version, the first word after the host.
-		if i := snmpHostSecret(f); i > 0 {
-			out := slices.Clone(f)
-			out[i] = secretMark
-			return out, true
-		}
 	case f[0] == "snmp-server" && len(f) >= 3 && f[1] == "user":
 		// snmp-server user U G v3 auth <alg> <pw> priv <alg> [bits] <pw>
 		out := slices.Clone(f)
@@ -1128,8 +1131,13 @@ func ciscoExtract(raw string, expected []devices.Section, visible *bool) (Extrac
 
 	c := &ciscoCtx{claim: map[string]string{}, acls: map[string]string{},
 		vtyRefs: map[string]bool{}, snmpRefs: map[string]bool{}, sourceInterface: map[string]bool{}}
+	var rendered []string
 	for _, sec := range expected {
-		for _, x := range ciscoCanon(sec.Lines, sec.Secret) {
+		rendered = append(rendered, sec.Lines...)
+	}
+	lb := newLabels(FamilyIOS, rendered)
+	for _, sec := range expected {
+		for _, x := range ciscoCanon(sec.Lines, sec.Secret, lb) {
 			c.claim[x.stem] = sec.Name
 			if isSourceInterface(x) {
 				c.sourceInterface[strings.Join(strings.Fields(x.path[0])[:3], " ")] = true
@@ -1139,7 +1147,8 @@ func ciscoExtract(raw string, expected []devices.Section, visible *bool) (Extrac
 			}
 		}
 	}
-	got := withImplicitLogin(privilegeParents(ciscoCanon(lines, nil), c.claim))
+	lb.fresh = true
+	got := withImplicitLogin(privilegeParents(ciscoCanon(lines, nil, lb), c.claim))
 	for _, x := range got {
 		leaf := strings.Fields(x.path[len(x.path)-1])
 		switch {

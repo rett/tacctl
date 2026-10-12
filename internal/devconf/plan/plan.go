@@ -2,6 +2,7 @@ package plan
 
 import (
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -497,9 +498,16 @@ func stemOf(l devconf.DiffLine) string {
 // secretMark is the elided value in a stem.
 const secretMark = "<secret>"
 
+// isMark reports a word that stands for a secret in a stem: the mark, or a
+// community's label ('<secret:1>', '<other:2>').
+func isMark(w string) bool { return w == secretMark || devconf.IsLabel(w) }
+
+// reMarks finds the marks of a stem's text.
+var reMarks = regexp.MustCompile(`<secret>|<(?:secret|other):[1-9][0-9]*>`)
+
 // shownSecret is a secret statement's stem with the value's place marked.
 func shownSecret(stem string) string {
-	if strings.Contains(stem, secretMark) {
+	if reMarks.MatchString(stem) {
 		return stem
 	}
 	return stem + " " + secretMark
@@ -507,7 +515,7 @@ func shownSecret(stem string) string {
 
 // placeholderOf is shownSecret with the --no-secrets placeholder.
 func placeholderOf(stem string) string {
-	return strings.ReplaceAll(shownSecret(stem), secretMark, "<SECRET>")
+	return reMarks.ReplaceAllString(shownSecret(stem), "<SECRET>")
 }
 
 // splitTokens splits a statement into words; double and single quotes group

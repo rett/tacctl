@@ -145,6 +145,9 @@ func fixtures(t testing.TB) []fixture {
 		// order of the fixtures)
 		{name: "cisco.same-address-block", vendor: "cisco", raw: "ios/same-address-block/running-config.txt", expected: "ios/same-address-block/expected.txt"},
 		{name: "cisco.same-address-block-nocmd", vendor: "cisco", raw: "ios/same-address-block-nocmd/running-config.txt", expected: "ios/same-address-block-nocmd/expected.txt"},
+		// 0.2.7: tacctl's community beside one of the device's own with its
+		// own clients, a trap group, trap options and a name
+		{name: "juniper.synthetic-communities", vendor: "juniper", raw: "juniper/synthetic-communities/display-set.txt", expected: synthExpected},
 	}
 }
 

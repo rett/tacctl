@@ -96,8 +96,8 @@ type stmt struct {
 }
 
 // canonFunc turns lines (and the expected side's secret marks, nil for the
-// device's) into canonical statements.
-type canonFunc func(lines []string, marks []bool) []stmt
+// device's) into canonical statements, a community's name labelled by lb.
+type canonFunc func(lines []string, marks []bool, lb *labels) []stmt
 
 func canonFor(family string) canonFunc {
 	if family == FamilyJunos {

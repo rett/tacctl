@@ -76,7 +76,7 @@ func (r *Record) SetSections(got Extracted, results []SectionResult) error {
 		if err != nil {
 			return err
 		}
-		m[res.Name] = SectionRecord{SHA256: sum, State: string(res.State)}
+		m[res.Name] = SectionRecord{SHA256: sum, State: string(res.State), Unmanaged: res.Unmanaged}
 	}
 	r.Sections = m
 	return nil

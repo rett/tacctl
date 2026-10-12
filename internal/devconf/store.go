@@ -64,10 +64,12 @@ const (
 )
 
 // SectionRecord is what a pull kept of one section: the SHA-256 of the
-// device's text (Fingerprint) and the state of the last comparison.
+// device's text (Fingerprint), the state of the last comparison and the
+// number of the device's own statements it found (SectionResult.Unmanaged).
 type SectionRecord struct {
-	SHA256 string `json:"sha256,omitempty"`
-	State  string `json:"state,omitempty"`
+	SHA256    string `json:"sha256,omitempty"`
+	State     string `json:"state,omitempty"`
+	Unmanaged int    `json:"unmanaged,omitempty"`
 }
 
 // Applied is reserved for 0.2.5's apply: nothing writes it in 0.2.4.
@@ -453,7 +455,7 @@ func (s Store) readSections(p, vendor string) (map[string]devices.Section, strin
 			}
 		}
 		if famErr == nil {
-			sec = toSection(k, uniq(canonFor(fam)(sec.Lines, nil)))
+			sec = toSection(k, uniq(canonFor(fam)(sec.Lines, nil, nil)))
 		}
 		out[k] = sec
 	}

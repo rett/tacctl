@@ -43,7 +43,8 @@ type diffDeviceJSON struct {
 
 // diffText is the lines of one section's comparison that are worth reading:
 // what is missing, extra, out of order or not visible, the statements a
-// secret stands behind (present, not compared) and the section's notes.
+// secret stands behind (present, not compared) and the section's notes,
+// with one for the device's own statements among the extras.
 func diffText(r devconf.SectionResult) []string {
 	var out []string
 	for _, l := range r.Lines {
@@ -54,6 +55,9 @@ func diffText(r devconf.SectionResult) []string {
 	}
 	for _, n := range r.Notes {
 		out = append(out, "note: "+cleanLine(n))
+	}
+	if r.Unmanaged > 0 {
+		out = append(out, "note: "+r.UnmanagedNote())
 	}
 	return out
 }
@@ -80,8 +84,8 @@ func (inv *invocation) printDeviceDiff(name, scope, vendor string, rs []devconf.
 		if len(only) > 0 && !slices.Contains(only, r.Name) {
 			continue
 		}
-		inv.write("  " + padRight(r.Name, 11) + " " + string(r.State) + "\n")
-		if r.State == devconf.StateOK && len(r.Notes) == 0 && !slices.ContainsFunc(r.Lines, func(l devconf.DiffLine) bool { return l.Secret }) {
+		inv.write("  " + padRight(r.Name, 11) + " " + r.StateText() + "\n")
+		if r.State == devconf.StateOK && len(r.Notes) == 0 && r.Unmanaged == 0 && !slices.ContainsFunc(r.Lines, func(l devconf.DiffLine) bool { return l.Secret }) {
 			continue
 		}
 		for _, l := range diffText(r) {
@@ -254,7 +258,7 @@ func (inv *invocation) deviceConfigDiff(args []string) error {
 				continue
 			}
 			d.Sections = append(d.Sections, pullSectionJSON{Name: r.Name, State: string(r.State),
-				Lines: diffLinesJSON(visibleLines(r)), Notes: r.Notes})
+				Lines: diffLinesJSON(visibleLines(r)), Notes: r.Notes, Unmanaged: r.Unmanaged})
 		}
 		js = append(js, d)
 		inv.app.Logger(inv.auditContext(), "auth.info", "device config diff user="+inv.sudoUser()+" device="+e.Name+

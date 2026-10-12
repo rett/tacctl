@@ -95,7 +95,8 @@ func configBlock(e devreg.Entry, rec *devconf.Record) string {
 		var parts []string
 		for _, n := range devconf.SectionNames {
 			if s, ok := rec.Sections[n]; ok {
-				parts = append(parts, n+" "+s.State)
+				r := devconf.SectionResult{State: devconf.State(s.State), Unmanaged: s.Unmanaged}
+				parts = append(parts, n+" "+r.StateText())
 			}
 		}
 		b.WriteString("; sections: " + strings.Join(parts, ", "))
@@ -116,6 +117,9 @@ type listJSON struct {
 	Netconf   string            `json:"netconf,omitempty"`
 	Sections  map[string]string `json:"sections,omitempty"`
 	DiffersIn []string          `json:"differs_in,omitempty"`
+	// Unmanaged counts, per section that is ok, the device's own
+	// statements it holds beside what tacctl renders.
+	Unmanaged map[string]int `json:"unmanaged,omitempty"`
 	// SyntaxConflict is set when the device's explicit config-syntax is not
 	// the syntax its last pull's version line derives to (the setting wins);
 	// ImageSyntax is what the line says.
@@ -176,6 +180,8 @@ func (inv *invocation) deviceConfigList(args []string) error {
 		rec    *devconf.Record
 		state  string
 		differ []string
+		// own counts the device's own statements per section that is ok.
+		own map[string]int
 		// conflict is the syntax the version line derives to when the
 		// explicit setting contradicts it ("" otherwise).
 		conflict string
@@ -185,12 +191,15 @@ func (inv *invocation) deviceConfigList(args []string) error {
 		rec, _ := recs.Of(e.Name)
 		state := inv.configStateOf(e, rec)
 		var differ []string
+		var own map[string]int
 		if e.Vendor != "wti" && e.Configured {
 			if st, err := inv.staleness(store, recs, render, e); err == nil {
 				state = string(st)
 			}
-			if state == string(devconf.StaleDiffers) {
-				differ = inv.differingNow(store, rec, render, e)
+			if state == string(devconf.StaleDiffers) || state == string(devconf.StaleOK) {
+				rs := inv.comparedNow(store, rec, render, e)
+				differ = differingSections(rs)
+				own = unmanagedSections(rs)
 			}
 		}
 		if p.Has("--transport") {
@@ -217,12 +226,12 @@ func (inv *invocation) deviceConfigList(args []string) error {
 				conflict = sr.ImageSyntax
 			}
 		}
-		rows = append(rows, row{e, rec, state, differ, conflict})
+		rows = append(rows, row{e, rec, state, differ, own, conflict})
 	}
 	if p.Has("--json") {
 		out := []listJSON{}
 		for _, r := range rows {
-			j := listJSON{Name: r.e.Name, Scope: r.e.Scope, Vendor: r.e.Vendor, State: r.state, DiffersIn: r.differ,
+			j := listJSON{Name: r.e.Name, Scope: r.e.Scope, Vendor: r.e.Vendor, State: r.state, DiffersIn: r.differ, Unmanaged: r.own,
 				SyntaxConflict: r.conflict != "", ImageSyntax: r.conflict}
 			if r.rec != nil {
 				j.Result, j.By, j.Transport = r.rec.Result, r.rec.By, r.rec.Transport
@@ -273,6 +282,15 @@ func (inv *invocation) deviceConfigList(args []string) error {
 				detail = r.rec.Result
 			case len(r.differ) > 0:
 				detail = strings.Join(r.differ, ",")
+			case len(r.own) > 0:
+				// ok beside the device's own statements
+				var parts []string
+				for _, n := range devconf.SectionNames {
+					if c := r.own[n]; c > 0 {
+						parts = append(parts, n+" +"+strconv.Itoa(c)+" unmanaged")
+					}
+				}
+				detail = strings.Join(parts, ", ")
 			}
 		}
 		if r.state == string(devconf.StalePull) {
@@ -300,9 +318,24 @@ func (inv *invocation) deviceConfigList(args []string) error {
 	return nil
 }
 
-// differingNow are the sections of a device's stored pull that differ from
-// today's rendering.
-func (inv *invocation) differingNow(store devconf.Store, rec *devconf.Record, render *managedRender, e devreg.Entry) []string {
+// unmanagedSections counts, per section that is ok, the device's own
+// statements it holds (nil when none has any).
+func unmanagedSections(rs []devconf.SectionResult) map[string]int {
+	var out map[string]int
+	for _, r := range rs {
+		if r.State == devconf.StateOK && r.Unmanaged > 0 {
+			if out == nil {
+				out = map[string]int{}
+			}
+			out[r.Name] = r.Unmanaged
+		}
+	}
+	return out
+}
+
+// comparedNow is the comparison of a device's stored pull with today's
+// rendering (nil when there is none to make).
+func (inv *invocation) comparedNow(store devconf.Store, rec *devconf.Record, render *managedRender, e devreg.Entry) []devconf.SectionResult {
 	if rec == nil {
 		return nil
 	}
@@ -318,7 +351,7 @@ func (inv *invocation) differingNow(store devconf.Store, rec *devconf.Record, re
 	if err != nil {
 		return nil
 	}
-	return differingSections(rs)
+	return rs
 }
 
 // deviceConfigForget is 'device config forget': the records (and the

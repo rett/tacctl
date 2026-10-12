@@ -35,7 +35,7 @@ func TestTokenizeRender(t *testing.T) {
 // junosStems are the canonical statements of lines.
 func junosStems(lines ...string) []string {
 	var out []string
-	for _, x := range uniq(junosCanon(lines, nil)) {
+	for _, x := range uniq(junosCanon(lines, nil, nil)) {
 		out = append(out, x.stem)
 	}
 	return out
@@ -90,7 +90,7 @@ func TestJunosSecretValuesNeverInStem(t *testing.T) {
 	for _, v := range []string{`"$9$abcdef"`, `$6$salt$hash`, `plain-secret`, `/* SECRET-DATA */`, `"has space"`, `"$1$x$y"`} {
 		for _, kw := range []string{"secret", "encrypted-password", "authentication-key", "privacy-key"} {
 			line := "set system foo bar " + kw + " " + v
-			for _, x := range junosCanon([]string{line}, nil) {
+			for _, x := range junosCanon([]string{line}, nil, nil) {
 				if !x.secret {
 					t.Errorf("%q: not taken as secret", line)
 				}

@@ -266,11 +266,17 @@ var junosRowCases = map[string]rowCase{
 	},
 	"junos.snmp.community": func(t *testing.T) {
 		f := fixtureNamed(t, "juniper.synthetic-lab")
-		d := planJ(t, f, add("set snmp community example-community clients 203.0.113.0/24"), Options{})
-		// the community's name is elided in the comparison: the delete acts
-		// on the rendered community, and says so
-		wantLine(t, d, "snmp", "delete snmp community <secret> clients 203.0.113.0/24")
-		if len(d.Unattributed) != 1 {
+		d := planJ(t, f, func(c *JunosConfig) {
+			add("set snmp community lab-ro-community clients 203.0.113.0/24")(c)
+			add("set snmp community other-example clients 192.0.2.10/32")(c)
+		}, Options{})
+		// the community's name is shown as its label: a stray leaf of the
+		// rendered community is deleted under its own name, another
+		// community's is kept
+		wantLine(t, d, "snmp", "delete snmp community <secret:1> clients 203.0.113.0/24")
+		noLine(t, d, "snmp", "delete snmp community <other:")
+		wantKept(t, d, "snmp", "snmp community <other:1> clients 192.0.2.10/32")
+		if len(d.Unattributed) != 0 {
 			t.Errorf("unattributed: %v", d.Unattributed)
 		}
 		var holds bool
@@ -595,7 +601,7 @@ var iosRowCases = map[string]rowCase{
 		d := planI(t, f, nil, Options{})
 		var note bool
 		for _, k := range d.Kept {
-			if strings.Contains(k.Text, "snmp-server community <secret>") && strings.Contains(k.Note, "not compared") {
+			if strings.Contains(k.Text, "snmp-server community <other:1>") {
 				note = true
 			}
 		}
@@ -605,10 +611,10 @@ var iosRowCases = map[string]rowCase{
 		noLine(t, d, "snmp", "no snmp-server community")
 		// the rendered community missing is pasted by value
 		d = planI(t, f, func(c *IOSConfig) {
-			c.noGlobal("snmp-server community example-community")
+			c.noGlobal("snmp-server community lab-ro-community")
 			c.noGlobal("snmp-server community other-example")
 		}, Options{})
-		wantLine(t, d, "snmp", "snmp-server community <secret> RO TACCTL-SNMP")
+		wantLine(t, d, "snmp", "snmp-server community <secret:1> RO TACCTL-SNMP")
 		found := false
 		for _, l := range d.Lines {
 			if l.Text == "snmp-server community lab-ro-community RO TACCTL-SNMP" && l.HasValue {

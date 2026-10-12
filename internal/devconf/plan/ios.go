@@ -248,6 +248,10 @@ func iosKey(path []string) (string, bool) {
 			return hostEntry(leaf), true
 		case leaf[0] == "snmp-server" && len(leaf) >= 2 && (leaf[1] == "location" || leaf[1] == "contact"):
 			return leaf[0] + " " + leaf[1], true
+		case leaf[0] == "snmp-server" && len(leaf) >= 3 && leaf[1] == "community" && leaf[2] != secretMark:
+			// one line per community: a typed one replaces it (an older
+			// record's bare mark stands for every community, so it keys none)
+			return strings.Join(leaf[:3], " "), true
 		}
 		return "", false
 	}
@@ -586,8 +590,9 @@ func (p *planner) iosSection(name string, r devconf.SectionResult) secOut {
 				continue
 			}
 			keep(x.stem, "")
-		case len(path) == 1 && leaf[0] == "snmp-server" && len(leaf) >= 2 && leaf[1] == "community":
-			keep(x.stem, "the community's name is not compared")
+		case len(path) == 1 && leaf[0] == "snmp-server" && len(leaf) >= 3 && leaf[1] == "community" && leaf[2] == secretMark:
+			// a record of an older tacctl: whose community it is cannot be told
+			keep(x.stem, communityNotVisible)
 		default:
 			keep(x.stem, "")
 		}
@@ -691,6 +696,9 @@ func (p *planner) iosSection(name string, r devconf.SectionResult) secOut {
 				// (or the placeholder), and anything that shows it elides it
 				undo.Secret, undo.HasValue = true, l.HasValue
 				undo.Elided = "snmp-server community " + secretMark
+				if f := strings.Fields(l.Elided); len(f) >= 3 && isMark(f[2]) {
+					undo.Elided = strings.Join(f[:3], " ")
+				}
 			}
 		case len(l.Context) == 0 && strings.HasPrefix(l.Text, "tacacs-server host "):
 			undo.Text = hostEntry(strings.Fields(l.Text))
