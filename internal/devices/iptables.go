@@ -11,13 +11,18 @@ package devices
 //
 // Two texts come out of it: the rules (Step 5 of the walkthrough) and the
 // final DROP (the last step), which the walkthrough never applies and which
-// is a comment when it would lock every other administrator out.
+// is a comment when it would lock every other administrator out. Each of
+// them carries its list twice: numbered, one line per entry of the unit's
+// IP Tables page, and as the one <iptables> block the unit takes at that
+// page's prompt (a lab unit, command menu 8.10: the paste replaces every
+// entry, 256 characters per command, 48 entries in all).
 
 import (
 	"strconv"
 	"strings"
 
 	"github.com/rett/tacctl/internal/cidr"
+	"github.com/rett/tacctl/internal/ui"
 )
 
 // iptablesPorts are the unit's services the list opens to the permitted
@@ -30,6 +35,25 @@ var iptablesPorts = []struct {
 
 // snmpUDPPort is the port of the unit's SNMP agent.
 const snmpUDPPort = 161
+
+// iptablesLimit is the number of entries the unit's IP Tables page holds
+// (4 pages of 12, the RESTful API's `iptables` list too).
+const iptablesLimit = 48
+
+// iptablesLen is the longest command the unit takes ("256 char max per
+// command", its own upload text).
+const iptablesLen = 256
+
+// iptablesTail is what the list of the last step adds to the rules: the
+// final DROP, the unit's own traffic out, and the three policies, LAST (the
+// order a lab unit took without cutting the pasting session off).
+var iptablesTail = []string{
+	"iptables -A INPUT -j DROP",
+	"iptables -A OUTPUT -j ACCEPT",
+	"iptables -P INPUT DROP",
+	"iptables -P OUTPUT DROP",
+	"iptables -P FORWARD DROP",
+}
 
 // IPTablesInput is everything the IP Tables list is built from.
 type IPTablesInput struct {
@@ -58,6 +82,16 @@ type IPTablesBlock struct {
 	// Lines is how many lines of the list Rules numbers (the DROP is the
 	// next one).
 	Lines int
+	// Commands are the commands of Rules, in order, as the <iptables> block
+	// of Step 5 pastes them: no numbers, no comments, no DROP.
+	Commands []string
+	// Final is the whole list of the last step (Commands, then the DROP, the
+	// OUTPUT ACCEPT and the three policies), as the block of that step pastes
+	// it. It is empty when the DROP is not rendered.
+	Final []string
+	// Warning is set when a list would not fit the unit's 48 entries: how
+	// many it holds and what to reduce. Nothing is cut from the text.
+	Warning string
 	// DropRendered says that Drop carries the DROP as a paste.
 	DropRendered bool
 	// Unfilled is the value the list could not fill (the server's address).
@@ -111,7 +145,12 @@ func WTIIPTables(in IPTablesInput) IPTablesBlock {
 		text string
 	}
 	var ls []line
-	rule := func(s string) { ls = append(ls, line{false, "iptables -A INPUT " + s + " -j ACCEPT"}) }
+	var cmds []string
+	rule := func(s string) {
+		c := "iptables -A INPUT " + s + " -j ACCEPT"
+		ls = append(ls, line{false, c})
+		cmds = append(cmds, c)
+	}
 	note := func(s string) { ls = append(ls, line{true, "# " + s}) }
 
 	note("the unit's own traffic: loopback, and the replies to its own connections")
@@ -155,13 +194,25 @@ func WTIIPTables(in IPTablesInput) IPTablesBlock {
 	for _, s := range skippedClients {
 		note("skipped, not rendered: SNMP client " + s)
 	}
-
-	count := 0
-	for _, l := range ls {
-		if !l.note {
-			count++
+	// ICMP (ping), on the unit's own interface, from the networks above: the
+	// server, the permits and the SNMP clients, each once. The unit's own
+	// 'Ping Access' item is separate.
+	var pingers []string
+	seenPing := map[string]bool{}
+	for _, n := range append(append([]string{server}, permits...), clients...) {
+		if n != "" && !seenPing[n] {
+			seenPing[n] = true
+			pingers = append(pingers, n)
 		}
 	}
+	if len(pingers) > 0 {
+		note("ICMP (ping) from the same networks, on eth0")
+	}
+	for _, n := range pingers {
+		rule("-i eth0 -s " + n + " -p icmp")
+	}
+
+	count := len(cmds)
 	w := len(strconv.Itoa(count + 1)) // room for the DROP's number
 	var b []string
 	add := func(l ...string) {
@@ -176,6 +227,12 @@ func WTIIPTables(in IPTablesInput) IPTablesBlock {
 		"in this order. The number is the line's place in the list, not part of the command; a line that",
 		"starts with # is a note for you. The final DROP is not in this list: it is the last step, below.",
 		"")
+	final := iptablesFinal(cmds)
+	warning := iptablesWarning(in.Scope, count, len(final))
+	if warning != "" {
+		add(wrapText("WARNING: "+warning, 100)...)
+		add("")
+	}
 	n := 0
 	for _, l := range ls {
 		if l.note {
@@ -187,6 +244,15 @@ func WTIIPTables(in IPTablesInput) IPTablesBlock {
 		add("  " + strings.Repeat(" ", w+1-len(num)) + num + " " + l.text)
 	}
 	add("",
+		"The same rules in one paste, for the IP Tables prompt (/N, item 5): no comments, no DROP. The paste",
+		"replaces every entry the unit holds, so read its list first ('>' and '<' page through it): what this",
+		"list lacks is gone afterwards. The unit takes the block in one go (\"Configuring iptables - Please",
+		"wait...\"), applies the rules at once and shows 'IP Tables: On' on the /N menu; any session that",
+		"leaves a top-level menu saves the configuration, this paste included. The block is at the left",
+		"margin on purpose: paste it as it is.",
+		"")
+	b = append(b, iptablesBlock(cmds)...)
+	add("",
 		"Notes on the list:",
 		"  - Line 2: older builds take '-m state --state ESTABLISHED,RELATED' in place of",
 		"    '-m conntrack --ctstate ESTABLISHED,RELATED'. It covers the replies of the unit's own TACACS+,",
@@ -195,13 +261,69 @@ func WTIIPTables(in IPTablesInput) IPTablesBlock {
 		"    line with '--dport 23' or '--dport 80' for each address above, before the DROP.",
 		"  - The udp "+strconv.Itoa(snmpUDPPort)+" lines are the SNMP client restriction of Step 6, unless the unit has an SNMP",
 		"    access menu of its own (then enter the same clients there).",
-		"  - IPv4 only: the unit's 'iptables', not 'ip6tables'. An IPv6 entry of the lists is skipped, with a note.")
+		"  - ICMP (ping): the last lines accept it from the same networks, on eth0 only. The unit's own",
+		"    'Ping Access' item (/N, item 30; Limited by default) is separate and not changed by this list.",
+		"  - IPv4 only: the unit's 'iptables', not 'ip6tables'. An IPv6 entry of the lists is skipped, with a note.",
+		"  - The unit holds "+strconv.Itoa(iptablesLimit)+" entries (12 to a page): this list has "+strconv.Itoa(count)+"; with the DROP, the",
+		"    OUTPUT ACCEPT and the three policies of the last step, "+strconv.Itoa(len(final))+". A command is "+strconv.Itoa(iptablesLen)+" characters at most.")
 
-	out := IPTablesBlock{Rules: strings.Join(b, "\n"), Lines: count}
+	out := IPTablesBlock{Rules: strings.Join(b, "\n"), Lines: count, Commands: cmds, Warning: warning}
 	if server == "" {
 		out.Unfilled = []Unfilled{{"tacctl server address", "pass --source <address>"}}
 	}
-	out.Drop, out.DropRendered = in.drop(len(permits) > 0, server != "", count+1, w)
+	out.Drop, out.DropRendered = in.drop(len(permits) > 0, server != "", count+1, w, cmds, warning)
+	if out.DropRendered {
+		out.Final = final
+	}
+	return out
+}
+
+// iptablesFinal is the list of the last step: the rules, then the tail.
+func iptablesFinal(cmds []string) []string {
+	return append(append([]string{}, cmds...), iptablesTail...)
+}
+
+// iptablesBlock is the <iptables> block the unit takes at its IP Tables
+// prompt: the commands one per line, no comments, at the left margin.
+func iptablesBlock(cmds []string) []string {
+	return append(append([]string{"<iptables>"}, cmds...), "</iptables>")
+}
+
+// iptablesWarning says that a list would not fit the unit's page: the rules
+// of Step 5 (rules entries) or the whole list of the last step (final
+// entries); "" when both fit.
+func iptablesWarning(scope string, rules, final int) string {
+	limit := strconv.Itoa(iptablesLimit)
+	fix := " Reduce the scope's management permit list (tacctl scope mgmt-acl " + scope + " list) or its SNMP clients" +
+		" (tacctl scope snmp " + scope + " clients list), or use wider networks. Nothing is cut from the list below."
+	switch {
+	case rules > iptablesLimit:
+		return "this list has " + strconv.Itoa(rules) + " entries; the unit holds " + limit + "." + fix
+	case final > iptablesLimit:
+		return "this list has " + strconv.Itoa(rules) + " entries and fits, but the list of the last step (the DROP, the OUTPUT" +
+			" ACCEPT and the three policies added) has " + strconv.Itoa(final) + "; the unit holds " + limit + "." + fix
+	}
+	return ""
+}
+
+// wrapText breaks s at spaces into lines of at most width characters.
+func wrapText(s string, width int) []string {
+	var out []string
+	line := ""
+	for _, w := range strings.Fields(s) {
+		if line != "" && len(line)+1+len(w) > width {
+			out = append(out, line)
+			line = w
+			continue
+		}
+		if line != "" {
+			line += " "
+		}
+		line += w
+	}
+	if line != "" {
+		out = append(out, line)
+	}
 	return out
 }
 
@@ -209,7 +331,7 @@ func WTIIPTables(in IPTablesInput) IPTablesBlock {
 // list has a permit list and the tacctl server's address, else the DROP as a
 // comment and why (an empty list would lock every other administrator out,
 // and a list without the server would lock tacctl out).
-func (in IPTablesInput) drop(hasPermits, hasServer bool, n, w int) (string, bool) {
+func (in IPTablesInput) drop(hasPermits, hasServer bool, n, w int, cmds []string, warning string) (string, bool) {
 	const pre = "        "
 	var b []string
 	add := func(l ...string) {
@@ -220,17 +342,32 @@ func (in IPTablesInput) drop(hasPermits, hasServer bool, n, w int) (string, bool
 	num := strconv.Itoa(n)
 	switch {
 	case hasPermits && hasServer:
+		final := iptablesFinal(cmds)
 		add("This line turns the list into a restriction, and it is the one that can lock you out. The",
 			"walkthrough does not apply it: you paste it, last, yourself, once the steps above work.",
 			"  a) Keep the serial session of Step 1 open (and a second session ready). It is the way back.",
 			"  b) Add the DROP as the LAST line of the IP Tables list (after line "+strconv.Itoa(n-1)+"):",
 			"       "+strings.Repeat(" ", w-len(num))+num+". iptables -A INPUT -j DROP",
+			"     or paste the whole list again, with the DROP in it, in one go. The block below is the rules of",
+			"     Step 5, then the DROP, the OUTPUT ACCEPT and the three policies, LAST (the order a lab unit",
+			"     took without cutting the pasting session off). The paste replaces every entry, and the unit",
+			"     applies it at once, so the test of c) runs with the DROP already in force.")
+		if warning != "" {
+			add("     WARNING: the block has "+strconv.Itoa(len(final))+" entries and the unit holds "+strconv.Itoa(iptablesLimit)+". Reduce the lists of",
+				"     Step 5 first (see its warning) or use wider networks; nothing is cut from the block.")
+		}
+		add("")
+		b = append(b, iptablesBlock(final)...)
+		add("",
 			"  c) Before saving, test a login from a permitted address (repeat Step 8, and from the tacctl",
 			"     server: tacctl scope snmp "+in.Scope+" test <unit-address>). A login from an address",
 			"     outside the list must now be refused.",
-			"  d) Save only when the test works. If it fails, delete line "+num+" on the serial session first.",
-			"Not verified on a unit: whether the unit applies a changed list on entry or on save. If on entry,",
-			"the test above runs with the DROP already in force; the serial session is the way back.")
+			"  d) Save only when the test works (any session that leaves a top-level menu saves the whole",
+			"     configuration). If it fails, delete line "+num+" on the serial session first; after the paste of",
+			"     the block, clear the three policies as well (below).",
+			"The unit has no commit-confirm and no rollback: the way back is clearing the slots (<SPACE><CR> at a",
+			"slot's prompt; after the paste of the block the DROP is entry "+num+" and the three policies are",
+			"entries "+strconv.Itoa(n+2)+" to "+strconv.Itoa(n+4)+"), or pasting the block of Step 5 again, from the serial session.")
 		return strings.Join(b, "\n"), true
 	}
 	add("# iptables -A INPUT -j DROP")
@@ -255,6 +392,20 @@ func (t Template) iptablesGaps(b IPTablesBlock) []Unfilled {
 		return nil
 	}
 	return b.Unfilled
+}
+
+// iptablesWarning ends a walkthrough whose IP Tables list would not fit the
+// unit: the same warning the step carries, so it is not missed.
+func (o *out) iptablesWarning(t Template, b IPTablesBlock) {
+	if b.Warning == "" || !strings.Contains(t.Text, "IPTABLES_BLOCK") {
+		return
+	}
+	lines := wrapText("IP Tables list too long (Step 5): "+b.Warning, 100)
+	o.heading(ui.Yellow, lines[0])
+	for _, l := range lines[1:] {
+		o.echo("  " + l)
+	}
+	o.echo("")
 }
 
 // mergeUnfilled joins gap lists, a value named by an earlier one not twice.

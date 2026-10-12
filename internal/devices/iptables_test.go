@@ -90,6 +90,11 @@ func TestIPTablesOrder(t *testing.T) {
 		"iptables -A INPUT -p udp -s 10.0.0.42/32 --dport 161 -j ACCEPT",
 		"iptables -A INPUT -p udp -s 203.0.113.0/24 --dport 161 -j ACCEPT",
 		"iptables -A INPUT -p udp -s 10.8.0.0/16 --dport 161 -j ACCEPT",
+		"iptables -A INPUT -i eth0 -s 10.0.0.42/32 -p icmp -j ACCEPT",
+		"iptables -A INPUT -i eth0 -s 192.0.2.0/24 -p icmp -j ACCEPT",
+		"iptables -A INPUT -i eth0 -s 198.51.100.0/25 -p icmp -j ACCEPT",
+		"iptables -A INPUT -i eth0 -s 203.0.113.0/24 -p icmp -j ACCEPT",
+		"iptables -A INPUT -i eth0 -s 10.8.0.0/16 -p icmp -j ACCEPT",
 	}
 	if strings.Join(cmds, "\n") != strings.Join(want, "\n") {
 		t.Errorf("rules:\n%s\nwant:\n%s", strings.Join(cmds, "\n"), strings.Join(want, "\n"))
@@ -124,10 +129,10 @@ func TestIPTablesLongList(t *testing.T) {
 	}
 	b := WTIIPTables(in)
 	nums, _ := ruleLines(t, b.Rules)
-	if len(nums) != 17 || nums[16] != 17 {
+	if len(nums) != 24 || nums[23] != 24 {
 		t.Fatalf("nums = %v", nums)
 	}
-	if dn, _ := ruleLines(t, b.Drop); len(dn) != 1 || dn[0] != 18 {
+	if dn, _ := ruleLines(t, b.Drop); len(dn) != 1 || dn[0] != 25 {
 		t.Errorf("drop number %v", dn)
 	}
 	col := func(prefix string) int {
@@ -152,7 +157,8 @@ func TestIPTablesLockoutGuard(t *testing.T) {
 	} {
 		b := WTIIPTables(in)
 		_, cmds := ruleLines(t, b.Rules)
-		if len(cmds) != 5 || !strings.Contains(cmds[2], "-s 10.0.0.42/32 --dport 22") || !strings.Contains(cmds[4], "-p udp -s 10.0.0.42/32 --dport 161") {
+		if len(cmds) != 6 || !strings.Contains(cmds[2], "-s 10.0.0.42/32 --dport 22") || !strings.Contains(cmds[4], "-p udp -s 10.0.0.42/32 --dport 161") ||
+			cmds[5] != "iptables -A INPUT -i eth0 -s 10.0.0.42/32 -p icmp -j ACCEPT" {
 			t.Errorf("rules without a list: %v", cmds)
 		}
 		if b.DropRendered {
@@ -326,17 +332,24 @@ func TestIPTablesWalkthroughs(t *testing.T) {
 				}
 				last = i
 			}
-			// The DROP as a command exists only in Step 11, at most once, and
-			// no step of the list is numbered after it.
+			// The DROP as a command exists only in Step 11: once as the
+			// numbered line and once in the block (once as the comment of the
+			// guard). Step 5 has no DROP, no OUTPUT ACCEPT and no policy.
 			step11 := out[strings.Index(out, "\nStep 11:"):]
 			before := out[:strings.Index(out, "\nStep 11:")]
 			for _, l := range strings.Split(before, "\n") {
-				if reRuleLine.MatchString(l) && strings.HasSuffix(l, "-j DROP") {
-					t.Errorf("%s/%s: the list carries a DROP: %s", v.name, c.name, l)
+				cmd := strings.TrimSpace(l)
+				if (reRuleLine.MatchString(l) && strings.HasSuffix(l, "-j DROP")) || cmd == "iptables -A INPUT -j DROP" ||
+					strings.HasPrefix(cmd, "iptables -P ") || cmd == "iptables -A OUTPUT -j ACCEPT" {
+					t.Errorf("%s/%s: Step 5 carries a command of the last step: %s", v.name, c.name, l)
 				}
 			}
-			if n := strings.Count(step11, "iptables -A INPUT -j DROP"); n != 1 {
-				t.Errorf("%s/%s: %d DROP lines in Step 11", v.name, c.name, n)
+			want := 2
+			if strings.Contains(step11, "NOT rendered as a paste") {
+				want = 1
+			}
+			if n := strings.Count(step11, "iptables -A INPUT -j DROP"); n != want {
+				t.Errorf("%s/%s: %d DROP lines in Step 11, want %d", v.name, c.name, n, want)
 			}
 			// Step 6 no longer says the restriction is unverified-dependent.
 			if strings.Contains(out, "depends on the IP Tables") {
@@ -391,5 +404,218 @@ func TestIPTablesOperatorTemplateWithout(t *testing.T) {
 	out := snmpRender(t, "wti", "lab", false, TACACS, func(d *Data) { d.ServerIP = UnknownServer; d.TemplateDir = dir })
 	if strings.Contains(out, "iptables -A INPUT -p") || strings.Contains(out, "Unfilled") {
 		t.Errorf("operator template:\n%s", out)
+	}
+}
+
+// pasteBlocks are the <iptables> blocks of a text: the commands between the
+// delimiter lines, which stand at the left margin.
+func pasteBlocks(t *testing.T, text string) [][]string {
+	t.Helper()
+	var out [][]string
+	var cur []string
+	in := false
+	for _, l := range strings.Split(text, "\n") {
+		switch {
+		case l == "<iptables>":
+			if in {
+				t.Fatalf("a block inside a block:\n%s", text)
+			}
+			in, cur = true, nil
+		case l == "</iptables>":
+			if !in {
+				t.Fatalf("a block end without a start:\n%s", text)
+			}
+			in = false
+			out = append(out, cur)
+		case in:
+			cur = append(cur, l)
+		}
+	}
+	if in {
+		t.Fatalf("an unterminated block:\n%s", text)
+	}
+	return out
+}
+
+// The bulk block of Step 5 holds the numbered list's commands in the same
+// order, and the block of the last step the same commands, the DROP, the
+// OUTPUT ACCEPT and the three policies, last. No block has a comment, a blank
+// line, a number or a command over the unit's 256 characters.
+func TestIPTablesBulkBlocks(t *testing.T) {
+	for _, c := range iptablesCases() {
+		b := WTIIPTables(c.in)
+		_, numbered := ruleLines(t, b.Rules)
+		bl := pasteBlocks(t, b.Rules)
+		if len(bl) != 1 || strings.Join(bl[0], "\n") != strings.Join(numbered, "\n") {
+			t.Errorf("%s: the block of Step 5 differs from the numbered list:\n%v\n%v", c.name, bl, numbered)
+		}
+		if strings.Join(b.Commands, "\n") != strings.Join(numbered, "\n") {
+			t.Errorf("%s: Commands differ from the numbered list", c.name)
+		}
+		fb := pasteBlocks(t, b.Drop)
+		if !b.DropRendered {
+			if len(fb) != 0 || len(b.Final) != 0 {
+				t.Errorf("%s: a block in the guard:\n%s", c.name, b.Drop)
+			}
+			continue
+		}
+		if len(fb) != 1 {
+			t.Fatalf("%s: %d blocks in the last step", c.name, len(fb))
+		}
+		want := append(append([]string{}, numbered...), iptablesTail...)
+		if strings.Join(fb[0], "\n") != strings.Join(want, "\n") || strings.Join(b.Final, "\n") != strings.Join(want, "\n") {
+			t.Errorf("%s: the final block:\n%v\nwant:\n%v", c.name, fb[0], want)
+		}
+		tail := fb[0][len(fb[0])-5:]
+		if tail[0] != "iptables -A INPUT -j DROP" || tail[1] != "iptables -A OUTPUT -j ACCEPT" ||
+			tail[2] != "iptables -P INPUT DROP" || tail[3] != "iptables -P OUTPUT DROP" || tail[4] != "iptables -P FORWARD DROP" {
+			t.Errorf("%s: the final block does not end with the policies: %v", c.name, tail)
+		}
+		for _, blk := range append(bl, fb...) {
+			for _, cmd := range blk {
+				switch {
+				case len(cmd) > iptablesLen:
+					t.Errorf("%s: %d characters: %s", c.name, len(cmd), cmd)
+				case !strings.HasPrefix(cmd, "iptables "):
+					t.Errorf("%s: not a command in a block: %q", c.name, cmd)
+				case strings.ContainsAny(cmd, "#\r\t") || cmd != strings.TrimSpace(cmd):
+					t.Errorf("%s: comment or whitespace in a block: %q", c.name, cmd)
+				}
+			}
+		}
+	}
+}
+
+// The same holds in a whole walkthrough, whichever protocol, and the block
+// of Step 5 has neither the DROP nor a policy.
+func TestIPTablesBulkBlocksInWalkthroughs(t *testing.T) {
+	for _, v := range []variant{variants[5], variants[6]} {
+		out := snmpRender(t, "wti", "lab", false, v.protocol, func(d *Data) {
+			d.SNMP = v2cAll
+			d.ACL.CIDRs = []string{"192.0.2.0/24", "198.51.100.0/25"}
+		})
+		bl := pasteBlocks(t, out)
+		if len(bl) != 2 {
+			t.Fatalf("%s: %d blocks", v.name, len(bl))
+		}
+		if i, j := strings.Index(out, "<iptables>"), strings.Index(out, "\nStep 11:"); i < 0 || i > j {
+			t.Errorf("%s: the first block is not before Step 11", v.name)
+		}
+		_, numbered := ruleLines(t, out)
+		// The numbered lines are Step 5's, then the DROP of Step 11.
+		if len(numbered) != len(bl[0])+1 || numbered[len(numbered)-1] != "iptables -A INPUT -j DROP" {
+			t.Errorf("%s: %d numbered, %d in the block", v.name, len(numbered), len(bl[0]))
+		}
+		for _, cmd := range bl[0] {
+			if strings.Contains(cmd, "-j DROP") || strings.Contains(cmd, "iptables -P") || strings.HasPrefix(cmd, "iptables -A OUTPUT") {
+				t.Errorf("%s: %q in the block of Step 5", v.name, cmd)
+			}
+		}
+		if len(bl[1]) != len(bl[0])+5 || bl[1][len(bl[1])-1] != "iptables -P FORWARD DROP" {
+			t.Errorf("%s: the block of Step 11 has %d lines", v.name, len(bl[1]))
+		}
+	}
+}
+
+// ICMP: after the SNMP lines and before any DROP, one line per network of the
+// server, the permits and the SNMP clients, each once, IPv4 only.
+func TestIPTablesICMP(t *testing.T) {
+	b := WTIIPTables(IPTablesInput{Scope: "lab", Server: "10.0.0.42",
+		Permits:    []string{"192.0.2.0/24", "10.0.0.42/32", "fd00::/64", "192.0.2.0/24"},
+		SNMPRanges: []string{"192.0.2.0/24", "203.0.113.0/24", "fd00:1::/48", "203.0.113.5", "203.0.113.5/32"}})
+	var icmp []string
+	last := -1
+	for i, c := range b.Commands {
+		if strings.Contains(c, "-p icmp") {
+			icmp = append(icmp, c)
+			if last >= 0 && i != last+1 {
+				t.Errorf("the ICMP lines are not together: %v", b.Commands)
+			}
+			last = i
+		}
+	}
+	want := []string{
+		"iptables -A INPUT -i eth0 -s 10.0.0.42/32 -p icmp -j ACCEPT",
+		"iptables -A INPUT -i eth0 -s 192.0.2.0/24 -p icmp -j ACCEPT",
+		"iptables -A INPUT -i eth0 -s 203.0.113.0/24 -p icmp -j ACCEPT",
+		"iptables -A INPUT -i eth0 -s 203.0.113.5/32 -p icmp -j ACCEPT",
+	}
+	if strings.Join(icmp, "\n") != strings.Join(want, "\n") {
+		t.Errorf("icmp:\n%s\nwant:\n%s", strings.Join(icmp, "\n"), strings.Join(want, "\n"))
+	}
+	if last != len(b.Commands)-1 || !strings.Contains(b.Commands[last-len(icmp)], "--dport 161") {
+		t.Errorf("the ICMP lines do not follow the SNMP lines:\n%v", b.Commands)
+	}
+	for _, want := range []string{"# ICMP (ping) from the same networks, on eth0", "'Ping Access' item (/N, item 30; Limited by default) is separate"} {
+		if !strings.Contains(b.Rules, want) {
+			t.Errorf("lacks %q", want)
+		}
+	}
+	// Without the server's address and without lists there is nobody to ping from.
+	b = WTIIPTables(IPTablesInput{Scope: "lab", Server: UnknownServer})
+	if strings.Contains(b.Rules, "icmp") {
+		t.Errorf("ICMP without a source:\n%s", b.Rules)
+	}
+}
+
+// The unit holds 48 entries: a list over it, or a final list over it, says so
+// in its step and in Warning, and nothing is cut.
+func TestIPTablesEntryLimit(t *testing.T) {
+	permits := func(n int) []string {
+		var p []string
+		for i := 1; i <= n; i++ {
+			p = append(p, "192.0.2."+strconv.Itoa(i)+"/32")
+		}
+		return p
+	}
+	// Rules: 2 (lo, conntrack) + 2 + 2/permit + 1 (SNMP) + (permits + 1) ICMP = 3*P + 6.
+	for _, c := range []struct {
+		permits       int
+		lines, final  int
+		warn, inFinal string
+	}{
+		{10, 36, 41, "", ""},
+		{14, 48, 53, "this list has 48 entries and fits, but the list of the last step", "the block has 53 entries"},
+		{15, 51, 56, "this list has 51 entries; the unit holds 48.", "the block has 56 entries"},
+	} {
+		b := WTIIPTables(IPTablesInput{Scope: "lab", Server: "10.0.0.42", Permits: permits(c.permits)})
+		if b.Lines != c.lines || len(b.Commands) != c.lines {
+			t.Fatalf("%d permits: %d lines", c.permits, b.Lines)
+		}
+		if c.permits == 10 {
+			if b.Warning != "" || strings.Contains(b.Rules, "WARNING") || strings.Contains(b.Drop, "WARNING") {
+				t.Errorf("a warning for %d entries:\n%s", c.lines, b.Warning)
+			}
+			continue
+		}
+		if !strings.Contains(b.Warning, c.warn) || !strings.Contains(b.Warning, "the unit holds 48") ||
+			!strings.Contains(b.Warning, "tacctl scope mgmt-acl lab list") {
+			t.Errorf("%d permits: warning %q", c.permits, b.Warning)
+		}
+		if !strings.Contains(b.Rules, "WARNING: this list has") && !strings.Contains(b.Rules, "WARNING: "+b.Warning[:20]) {
+			t.Errorf("%d permits: Step 5 lacks the warning:\n%.600s", c.permits, b.Rules)
+		}
+		if !strings.Contains(b.Drop, c.inFinal) {
+			t.Errorf("%d permits: the last step lacks %q:\n%s", c.permits, c.inFinal, b.Drop)
+		}
+		if len(b.Final) != c.final || len(pasteBlocks(t, b.Rules)[0]) != c.lines {
+			t.Errorf("%d permits: truncated (%d, %d)", c.permits, len(b.Final), len(pasteBlocks(t, b.Rules)[0]))
+		}
+	}
+}
+
+// The walkthrough ends with the warning when the list does not fit.
+func TestIPTablesEntryLimitWalkthrough(t *testing.T) {
+	var many []string
+	for i := 1; i <= 20; i++ {
+		many = append(many, "198.51.100."+strconv.Itoa(i)+"/32")
+	}
+	out := snmpRender(t, "wti", "lab", false, TACACS, func(d *Data) { d.ACL.CIDRs = many })
+	if !strings.Contains(out, "IP Tables list too long (Step 5): this list has 66 entries; the unit holds 48.") {
+		t.Errorf("no closing warning:\n%s", out[len(out)-900:])
+	}
+	ok := snmpRender(t, "wti", "lab", false, TACACS, func(d *Data) { d.ACL.CIDRs = []string{"192.0.2.0/24"} })
+	if strings.Contains(ok, "too long") {
+		t.Error("a warning for a list that fits")
 	}
 }

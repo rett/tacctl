@@ -6,7 +6,8 @@ changed and restored a few settings of services that were off or unused, and
 from WTI's published 8.10 artifacts (the RESTful v2 OpenAPI file, the
 firmware's MIB, the release notes and the DSM/CPM user guide). The sanitised
 screens are in `tests/fixtures/devconf/wti/` (one screen per file; `pages/`
-holds the navigation tree). `0.2.4-spike.md` has the dated test log.
+holds the navigation tree; `29-` to `31-` are the 2026-10-12 IP tables
+upload). `0.2.4-spike.md` has the dated test log.
 
 The goal of this document is to let the WTI work (after 0.2.4; the unit is
 not read or written by 0.2.4, D71) implement a driver without further
@@ -61,7 +62,7 @@ All pages are a title line (upper case, with the scope `[Shared]` or
 | Pick | `1. Off  2. On` (1-based numbered choices; some entries are `---`, unavailable) | `Enter: #<CR> to change,` | the choice number and CR |
 | Number | a sentence with the range (`Enter 1 - 99 ...`, `Enter number of seconds (1-60).`), the current value on the last line | `Enter: <ESC> to exit.` | the number and CR |
 | Text / address | the accepted characters and the length limit, the current value under a rule line | `Enter: <SPACE><CR> to clear, <text><CR> to change, <ESC> to return to previous menu` | the text and CR; a single space and CR clears |
-| List | numbered slots (`1.` ... `8.`; IP tables 12 slots; static routes 8; hosts file 8) | `Enter: #<CR> to select menu / to change` | a slot number opens its prompt |
+| List | numbered slots (`1.` ... `8.`; IP tables 12 slots to a screen, 48 in all, `<` and `>` page; static routes 8; hosts file 8) | `Enter: #<CR> to select menu / to change` (IP tables: `Enter #<CR> to change, '<' for previous entries, '>' for next entries,`) | a slot number opens its prompt; `<SPACE><CR>` at it clears the slot. The IP tables page also takes the whole list as one paste (section 5) |
 
 Failures print `ERROR: Invalid entry.` (or a specific line such as `ERROR:
 SNMP V3 is not configured.`) above the current value; the page stays and
@@ -85,7 +86,14 @@ An address item first asks the protocol (`1. IPv4  2. IPv6`), then the value.
   (not testable without a reboot); a driver always re-reads after a
   disconnect.
 - There is no commit-confirm, no candidate, no rollback. A revert is another
-  edit.
+  edit: for the IP tables list, clearing slots (`<SPACE><CR>` at a slot's
+  prompt) or another upload.
+- The IP tables bulk upload (section 5) is live when the paste is taken (the
+  rules took effect at once on the lab unit; ssh and TACACS+ logins, ping and
+  SNMP from the permitted range all worked afterwards), and the unit shows
+  `5. IP Tables: On` (Off while the list is empty). A top-level menu exit
+  from ANY session writes the whole configuration to flash, so a paste made
+  in one session is saved when another session leaves `/N`.
 - Several items changed on one page apply as they are entered and are all
   visible to a new login after the page is left.
 
@@ -101,7 +109,7 @@ An address item first asks the protocol (`1. IPv4  2. IPv6`), then the value.
 | 2 | subnet mask | address prompt |
 | 3 | gateway options | 1 gateway address, 2 default gateway On/Off (shown on the menu with `*`) |
 | 4 | DHCP | 1 client (enable, host name, lease, DNS, default gateway), 2 server (enable, gateway, DNS, domain, leases, pool) |
-| 5 | IP tables | 12 slots; a bulk `<iptables> ... </iptables>` upload "replaces and overwrites all current entries" |
+| 5 | IP tables | 48 entries, 12 to a screen (`<`, `>` page); a bulk `<iptables> ... </iptables>` upload, below |
 | 6 | static route | 8 slots |
 | 7 | DNS services | 1 DNS servers (4 + ping test), 2 DDNS, 3 hosts file (8) |
 | 8 | negotiation | auto, 10/100/1000 half/full |
@@ -120,6 +128,43 @@ An address item first asks the protocol (`1. IPv4  2. IPv6`), then the value.
 | 32 | email messaging | SMTP server, port, TLS, domain, authentication, user, password, from/to addresses |
 | 33 | outbound access | access Off/On, secure level |
 | 34 | raw socket access | Off / On |
+
+#### IP tables bulk upload (`/N` > 5; tested 2026-10-12, 8.10, lab unit)
+
+The IP tables prompt takes the whole list as one paste:
+
+```
+<iptables>
+iptables -A INPUT -i lo -j ACCEPT
+...
+</iptables>
+```
+
+The page's own text: "Multiple iptables commands can be uploaded here ...
+COMMANDS (1 per line, 256 char max per command) ... WARNING: Upload will
+replace and overwrite all current entries." What the test showed
+(`tests/fixtures/devconf/wti/29-` to `31-`):
+
+- A 25-line block (22 `-A` rules, then `-A INPUT -j DROP`, `-A OUTPUT -j
+  ACCEPT` and the three `-P INPUT|OUTPUT|FORWARD DROP` lines last) was
+  accepted whole: `Configuring iptables - Please wait...`, then the page.
+  Entries are stored verbatim, one command per entry; the `-P` lines are
+  entries too (23 to 25 there). The paste replaced the 12 empty slots; it
+  replaces whatever the list held.
+- With the policies last (after the conntrack and permit rules and the
+  DROP) the pasting session stayed up, and so did a second one; the order of
+  the block is the order of the entries. A block with the policies first was
+  not tried.
+- The site's own list, in practice, is in this order: `-P` policies, `lo`,
+  conntrack `ESTABLISHED,RELATED`, tcp 22 per permitted network and host, udp
+  `161:162` per NMS, ICMP (`-i eth0`) per network, `-A INPUT -j DROP`, `-A
+  OUTPUT -j ACCEPT`. tacctl's walkthrough renders its own list (lo,
+  conntrack, tcp 22 and 443 per server and permit, udp 161 per server and
+  SNMP client, ICMP on eth0 per network, then the final DROP, OUTPUT ACCEPT
+  and the policies as the last step), as numbered lines and as one block.
+- `/N` shows `5. IP Tables: On` afterwards (Off while empty). The unit's own
+  `Ping Access` item (`/N` 30, Limited by default) is separate from the
+  list's ICMP lines.
 
 ### `/F` system parameters
 
@@ -187,7 +232,7 @@ lock out the management path).
 | Serial port name, parameters | `/P` 21, 1-4, 11-16, 22, 23 | `serialports` | text 24, picks | safe |
 | Per-port direct connect (SSH 22nn) | `/P` 31 | **not in the API** | Off / No Password / Password | safe in itself; widens access |
 | Local users | `/F` 1 | `users` | name, password, level, port/plug/group access, serial/ssh/web/api/outbound access, token | guarded (never remove the last local administrator) |
-| IP tables | `/N` 5 | `iptables` (48 entries) | iptables command text per slot | **forbidden** remotely |
+| IP tables | `/N` 5 | `iptables` (48 entries) | iptables command text per slot, or the whole list as one `<iptables>` paste (256 characters per command) | **forbidden** remotely |
 | SSH enable, port, security, password auth | `/N` 22 | `ssh` | picks, number | **forbidden** remotely |
 | Network interface, gateway, DHCP, DNS | `/N` 1-4, 7 | `interface`, `dnsservices` | addresses | **forbidden** remotely |
 | Web, certificates | `/N` 23 | `web` | enable, ports, TLS, keys | outside the first release |
@@ -252,7 +297,15 @@ lock out the management path).
 - Whether the engineer tier's SuperUser login is limited in any page (it can change settings: section 2; which pages it cannot reach, if any, was not mapped).
 - Whether an interrupted session reaches flash (needs a reboot).
 - The add-user, modify-user and delete-user prompts of the user directory,
-  and the IP table and static route slot prompts (entered only as lists).
+  and the static route and hosts file slot prompts (entered only as lists).
+  For the IP table the bulk paste and the pages after it are captured, not
+  the single slot's prompt screen (only that `<SPACE><CR>` clears a slot).
+- What the IP tables page does with more than 48 entries in a paste (refuses
+  the paste, or keeps the first 48), with a malformed or over-long command in
+  a block (rejects the block or the line), and with leading blanks on a
+  pasted line (the tested block was at the left margin).
+- Whether clearing a `-P` entry's slot restores that policy to ACCEPT at
+  once, or only after the next upload.
 - The V3 user prompts (needs V3 enabled).
 - Behaviour of `/DF` and the parameter file, and whether a restore is a
   usable rollback.

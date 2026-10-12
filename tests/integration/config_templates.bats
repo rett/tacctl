@@ -581,7 +581,14 @@ iptables_setup() {
     # The only DROP to paste is in Step 11, after every other rule.
     [[ "$(grep -c '^ *[0-9]*\. iptables -A INPUT -j DROP$' <<< "$output")" == 1 ]]
     [[ "$(grep -n '^ *[0-9]*\. iptables -A INPUT -j DROP$' <<< "$output" | cut -d: -f1)" -gt "$(grep -n '^Step 11:' <<< "$output" | cut -d: -f1)" ]]
-    [[ "$(grep -n -- '-j ACCEPT$' <<< "$output" | tail -1 | cut -d: -f1)" -lt "$(grep -n '^Step 6:' <<< "$output" | cut -d: -f1)" ]]
+    # No rule of Step 5 or Step 6 follows the list (the last step's block has its own ACCEPTs).
+    [[ "$(sed '/^Step 11:/,$d' <<< "$output" | grep -n -- '-j ACCEPT$' | tail -1 | cut -d: -f1)" -lt "$(grep -n '^Step 6:' <<< "$output" | cut -d: -f1)" ]]
+    # The bulk blocks: Step 5's has no DROP, Step 11's ends with the policies.
+    assert_line "<iptables>"
+    assert_line "iptables -A INPUT -i eth0 -s 10.0.0.42/32 -p icmp -j ACCEPT"
+    [[ "$(grep -c '^<iptables>$' <<< "$output")" == 2 ]]
+    [[ "$(grep -c '^</iptables>$' <<< "$output")" == 2 ]]
+    [[ "$(grep -B1 '^</iptables>$' <<< "$output" | grep -c '^iptables -P FORWARD DROP$')" == 1 ]]
 }
 
 @test "config wti: a scope with no management permit list gets the guard, a commented DROP" {

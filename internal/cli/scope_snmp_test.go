@@ -340,11 +340,17 @@ func TestSNMPLookupUsesTheDevicesScope(t *testing.T) {
 	if out := plain(sb.cfgRun("", []string{"device", "check", "sw1"}, nil)); !strings.Contains(out, "sw1.site-a.example") {
 		t.Errorf("device check:\n%s", out)
 	}
-	// scope snmp test uses the scope's; config snmp test the default's.
+	// scope snmp test uses the scope's; config snmp test follows a registered
+	// device (here its scope's settings) and is the default's for an address
+	// that is no device.
 	sb.scopeSNMP("", "dmz", "test", "127.0.0.1")
 	sb.said(0, "127.0.0.1 calls itself 'sw1.site-a.example'")
 	sb.cfgRun("", []string{"config", "snmp", "test", "127.0.0.1"}, nil)
+	sb.said(0, "127.0.0.1 calls itself 'sw1.site-a.example' (SNMP sysName) (tried with the settings of scope 'dmz' or the default's")
+	sb.cfgRun("y\n", []string{"device", "remove", "sw1", "-y"}, nil)
+	sb.cfgRun("", []string{"config", "snmp", "test", "127.0.0.1"}, nil)
 	sb.said(1, "No answer from 127.0.0.1")
+	sb.cfgRun("", []string{"device", "add", "sw1", "127.0.0.1", "--no-host-key"}, nil)
 	// Without the scope's credentials the default's apply (and fail here).
 	sb.scopeSNMP("", "dmz", "clear")
 	sb.cfgRun("y\n", []string{"device", "remove", "sw1", "-y"}, nil)

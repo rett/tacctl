@@ -544,6 +544,10 @@ func TestSNMPLookupUsesTheDevicesOwnSettings(t *testing.T) {
 	// device location --from-device reads it the same way.
 	sb.dev("", "location", "sw1", "--from-device")
 	sb.expect(0, "location set to Rack 4 (read from the device)", "")
+	// 'config snmp test' follows the registered device: its own settings answer,
+	// and the line says whose they were.
+	sb.cfgRun("", []string{"config", "snmp", "test", "127.0.0.1"}, nil)
+	sb.said(0, "calls itself 'sw1.site-a.example' (SNMP sysName) (tried with the settings of device 'sw1' (tacctl device snmp sw1 show)).")
 	// The scope's test is the scope's own settings: it does not answer.
 	sb.scopeSNMP("", "dmz", "test", "127.0.0.1")
 	sb.said(1, "No answer from 127.0.0.1")
@@ -552,6 +556,10 @@ func TestSNMPLookupUsesTheDevicesOwnSettings(t *testing.T) {
 	if out := check(); !strings.Contains(out, "SNMP name:   no answer") {
 		t.Errorf("after clear:\n%s", out)
 	}
+	// ... and the default's test of that device says whose settings it tried.
+	sb.cfgRun("", []string{"config", "snmp", "test", "127.0.0.1"}, nil)
+	sb.said(1, "No answer from 127.0.0.1")
+	sb.said(1, "(tried with the settings of scope 'dmz' or the default's (tacctl scope snmp dmz show))")
 }
 
 // The walkthrough of a registered device (config <vendor> --name, device

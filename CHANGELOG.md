@@ -315,6 +315,33 @@ current behaviour; this file is where history lives.
     pruned to nothing writes nothing (`No statement was adopted`); the rest is
     `edit`'s: check, diff, question, snapshot, write, logged `block-adopt`.
 
+12. **`config wti`'s IP Tables step gives the list as one paste, adds ICMP
+    and warns at 48 entries.** Step 5 follows the numbered list with the same
+    rules as one `<iptables>` ... `</iptables>` block for the unit's IP Tables
+    prompt (the unit takes the whole list in one paste, replacing every entry,
+    and applies it at once), and the list gains one `-i eth0 -s <net> -p icmp
+    -j ACCEPT` line per network of the server, the management permits and the
+    SNMP clients (the unit's own Ping Access item is separate). Step 11 gives
+    the whole list, the DROP, `iptables -A OUTPUT -j ACCEPT` and the three
+    `-P INPUT|OUTPUT|FORWARD DROP` policies (last, the order a lab unit took
+    without cutting the pasting session off) as one block, with the revert
+    (clear the slots, or paste Step 5's block again). A list that would exceed
+    the unit's 48 entries says so in Step 5, in Step 11 and at the end of the
+    output, and is not cut. From a lab test on a WTI 8.10 unit; the walkthrough
+    no longer says that when the unit applies a changed list is unknown (it
+    applies a paste at once, and any session leaving a top-level menu saves
+    it).
+
+13. **`config snmp test <address|device>` follows a registered device.** The
+    test used the default's settings only, so a device with an SNMP community
+    of its own (or in a scope with its own) answered "no answer" to it. It now
+    reads a registered device with the settings the device is read with
+    everywhere else (its own, else its scope's, else the default's) and says
+    which it tried (`(tried with the settings of device 'sw1' (tacctl device
+    snmp sw1 show))`, also in the "no answer" report); an address that is no
+    device is read with the default's as before, and `scope snmp <scope> test`
+    is still the scope's.
+
 ## 0.2.6 (2026-10-12)
 
 A hotfix for 0.2.5, started from `master`. The items below are everything that

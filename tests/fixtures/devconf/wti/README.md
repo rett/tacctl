@@ -2,7 +2,8 @@
 
 Screens of a WTI console server (command menu version 8.10) captured over
 ssh on 2026-10-10 with read-only navigation only (display commands, numbered
-pages opened and left with ESC; nothing was entered or changed). Names,
+pages opened and left with ESC; nothing was entered or changed), and, for
+`29-` to `31-`, on 2026-10-12 around one approved write. Names,
 addresses, communities, the legal banner and the port names are replaced; the
 layout, the field order and the wording are as the unit printed them.
 
@@ -26,6 +27,16 @@ its SSH port).
   `ERROR: Invalid entry.` screen for a forbidden character, a non-number and
   an out-of-range pick, the accepted-value screen (no semantic check) and a
   page after a change.
+
+- `29-iptables-upload.txt` to `31-network-iptables-on.txt`: the bulk upload
+  at the IP tables prompt, captured 2026-10-12 on the same unit with the
+  maintainer's approval (the list was uploaded and read back): the `<iptables>` block pasted (22 `-A`
+  rules and the three `-P` policies, last) and the "Configuring iptables -
+  Please wait..." screen, the page after it (`30-iptables-uploaded-page.txt`:
+  entries 1-12; `-2`: 13-24; `-3`: 25 and the empty slots 26-36), and the
+  network menu showing `5. IP Tables: On` once the list is not empty.
+  Addresses are replaced (documentation ranges and 10.0.0.0/8); the commands
+  are otherwise as stored, one per entry, the `-P` lines as entries.
 
 - `pages/`: the navigation tree, one sanitised screen per file, captured
   read-only at Administrator level: `system-*` (`/F` and its items),

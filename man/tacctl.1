@@ -2775,7 +2775,9 @@ privacy passphrase, look the same: the agent drops the request), or the v3
 report the agent sent
 .RB ( unknownUserName ,
 .BR wrongDigest ,
-\&...). Exit status 1 without a name.
+\&...). A registered device is read with its own settings, else its scope's,
+else the default's, and the answer says which; any other address is read with
+the default's. Exit status 1 without a name.
 .\" BEGIN GENERATED: command config snmp test
 .RS
 .PP
@@ -3505,9 +3507,8 @@ view, and
 which is not verified on a device; the management filter of Step 4, when it is
 rendered, has permit-snmp and deny-snmp terms for udp port 161 from the same
 clients, which restrict v3 once the filter is applied to lo0); on WTI the unit's SNMP menu in the
-walkthrough's style, whose menu names and client restriction (the udp port 161
-lines of the unit's IP Tables list, Step 5) are from WTI's documents and not
-verified on a unit. The
+walkthrough's style, whose menu names are from WTI's documents, and whose client restriction (the udp port 161
+lines of the unit's IP Tables list, Step 5) was checked on a lab unit (8.10). The
 community or the v3 passphrases are printed for superusers and for engineers
 (of their own scopes). A value that is not set (the scope's contact, a
 device's location) is a commented placeholder, never text a paste would
@@ -3673,10 +3674,15 @@ traffic or tacquito's replies are dropped; the walkthrough then renders the
 unit's whole list for the scope: loopback, established, ssh and https for the
 tacctl server and each permitted range of
 .BR "scope mgmt-acl" ,
-and udp port 161 for the SNMP clients, numbered in the unit's order, with a
-note for an IPv6 entry skipped; the final
+and udp port 161 for the SNMP clients, then ICMP on eth0 for the same networks, numbered in the unit's order, with a
+note for an IPv6 entry skipped; the same rules again as one
+.B <iptables>
+block to paste at the IP Tables prompt (it replaces every entry and is applied
+at once; the unit holds 48 entries, and a longer list is warned about, not
+cut); the final
 .B iptables -A INPUT -j DROP
-is the last step, never applied by the walkthrough, and is only a comment for a
+is the last step, never applied by the walkthrough (it gives the whole list again
+as one block with the DROP, the OUTPUT ACCEPT and the three policies last), and is only a comment for a
 scope with no management permit list),
 followed by the group-to-access-level mapping, a troubleshooting step
 that turns on the unit's TACACS Debug echo, and the matching tacquito
@@ -6231,9 +6237,9 @@ and the SNMP and management\-ACL sections of
 and
 .BR "device config plan" .
 .B "scope snmp test"
-and
+tries the scope's settings, and
 .B "config snmp test"
-try the scope's and the default's settings, not a device's. An engineer's
+a registered device's own, else its scope's, else the default's. An engineer's
 import never sets or drops a device's own settings.
 .\" BEGIN GENERATED: command device snmp
 .RS
