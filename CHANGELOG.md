@@ -356,6 +356,15 @@ current behaviour; this file is where history lives.
     says `None match.`, and `--stale`, `--unconfigured`, `--scan`, `--probe`
     and `--json` combine with all of it.
 
+15. **`config wti`'s SNMP step uses the item names of a WTI 8.10 unit.** The
+    step said its menu names were from WTI's documents and sent you to "the
+    entry labelled SNMP". It now names the page (`/N`, item 25, SNMP Access)
+    and its items as the unit prints them: Enable, Version (`V1/V2 Only` for
+    v2c), Read Only, Read-Only Community, Contact and SNMP Location, with the
+    note that other firmware may number them differently. The statements a
+    pull compares for a unit (`snmp enable on`, `snmp version v1-v2-only`,
+    `snmp read-only yes`, ...) are the ones this step tells it.
+
 ## 0.2.6 (2026-10-12)
 
 A hotfix for 0.2.5, started from `master`. The items below are everything that

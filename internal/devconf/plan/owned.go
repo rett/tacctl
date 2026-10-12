@@ -9,6 +9,8 @@ import (
 	"slices"
 	"sort"
 	"strings"
+
+	"github.com/rett/tacctl/internal/devconf"
 )
 
 // Mode says how the planner treats the extras inside an object.
@@ -247,8 +249,11 @@ var iosOwned = []OwnedRow{
 
 // OwnedTable returns the ownership table of a vendor family.
 func OwnedTable(family string) []OwnedRow {
-	if family == "ios" {
+	switch family {
+	case "ios":
 		return iosOwned
+	case devconf.FamilyWTI:
+		return wtiOwned
 	}
 	return junosOwned
 }

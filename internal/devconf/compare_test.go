@@ -345,6 +345,11 @@ func TestManagedGoldensRoundTrip(t *testing.T) {
 	}
 	for _, f := range files {
 		base := filepath.Base(f)
+		if strings.HasPrefix(base, "managed.wti") {
+			// a unit has no configuration text to read back: its goldens are
+			// compared in TestWTIManagedGoldensAreTheirOwnUnit
+			continue
+		}
 		vendor := "ios"
 		if strings.HasPrefix(base, "managed.juniper") {
 			vendor = "junos"

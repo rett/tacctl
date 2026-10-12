@@ -327,6 +327,8 @@ var wtiShapes = func() []keptShape {
 	never := func(string, []string, *renderedSet) bool { return false }
 	return []keptShape{
 		{Row: "wti.snmp.system-name", Pattern: "snmp system-name", keep: notRendered},
+		{Row: "wti.snmp.contact", Pattern: "snmp contact", keep: notRendered},
+		{Row: "wti.snmp.location", Pattern: "snmp location", keep: notRendered},
 		{Row: "wti.snmp.trap-manager", Pattern: "snmp trap manager $", keep: notRendered},
 		{Row: "wti.snmp.trap-community", Pattern: "snmp trap community", keep: notRendered},
 		{Row: "wti.snmp.trap-version", Pattern: "snmp trap version", keep: notRendered},

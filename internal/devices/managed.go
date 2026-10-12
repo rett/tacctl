@@ -24,7 +24,7 @@ import (
 )
 
 // ErrUnsupported is returned by Managed for a vendor with no managed
-// sections (wti today).
+// sections (any but cisco, juniper and wti).
 var ErrUnsupported = errors.New("no managed sections for this vendor")
 
 // Section is one managed section of a device (D62): its name, and the
@@ -74,10 +74,12 @@ const (
 // opens it ('line vty 0 15', then its 'access-class').
 //
 // The walkthrough's protocol decides the AAA statements (a RADIUS request
-// needs Data.Radius, as Render does); wti and any other vendor return
-// ErrUnsupported.
+// needs Data.Radius, as Render does); any other vendor returns
+// ErrUnsupported. A WTI unit's statements are the canonical 'key value' lines
+// of its menu pages (wti_managed.go), in the sections aaa, mgmt-acl, snmp and
+// breakglass.
 func Managed(req Request, d Data) ([]Section, error) {
-	if req.Vendor != "cisco" && req.Vendor != "juniper" {
+	if req.Vendor != "cisco" && req.Vendor != "juniper" && req.Vendor != "wti" {
 		return nil, ErrUnsupported
 	}
 	if d.Model == nil || d.Conf == nil {
@@ -89,8 +91,11 @@ func Managed(req Request, d Data) ([]Section, error) {
 	if err := d.blockProblem(req); err != nil {
 		return nil, err
 	}
-	if req.Vendor == "cisco" {
+	switch req.Vendor {
+	case "cisco":
 		return managedCisco(req, d), nil
+	case "wti":
+		return managedWTI(req, d), nil
 	}
 	return managedJuniper(req, d), nil
 }

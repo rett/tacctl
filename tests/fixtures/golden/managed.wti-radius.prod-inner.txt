@@ -1,0 +1,17 @@
+[aaa]
+| radius enable on
+| radius primary 10.0.0.42
+* radius primary-secret inner-secret-0123456789abcdef
+| radius fallback-timer 3
+| radius fallback-local on-transport-failure
+| radius retries 3
+| radius port 1812
+| radius accounting-port 1813
+| radius onetime-auth off
+| radius default-access on
+| radius debug off
+[roles] not rendered
+[mgmt-acl] not rendered
+[snmp] not rendered
+[netconf] not rendered
+[breakglass] not rendered

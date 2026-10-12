@@ -189,6 +189,10 @@ var keptExamples = map[string]struct {
 	unmanaged bool
 	unrender  string
 	dropped   bool
+	// radius: the unit is read against the RADIUS rendering (a WTI unit
+	// whose scope uses RADIUS, with TACACS+ turned off) and not the lab
+	// unit's TACACS+ one
+	radius bool
 }{
 	"junos.roles.class":       {stmt: "set system login class OTHER-CLASS permissions view", unmanaged: false},
 	"junos.roles.user-class":  {stmt: "set system login user OTHER-CLASS class OTHER-CLASS", unmanaged: false},
@@ -238,21 +242,54 @@ var keptExamples = map[string]struct {
 	"ios.snmp.contact":                         {stmt: "snmp-server contact Other NOC", unmanaged: true, unrender: "snmp-server contact"},
 	"ios.snmp.acl":                             {stmt: "ip access-list standard OTHER-SNMP > permit 192.0.2.7", unmanaged: true},
 	"ios.mgmt-acl.acl":                         {stmt: "ip access-list standard OTHER-VTY > permit 192.0.2.7", unmanaged: false},
+	// 0.2.7: a WTI unit. The unit's own are the system name, the trap
+	// settings, the RADIUS items the walkthrough leaves alone, the page of a
+	// protocol that is off, and the tail of the IP tables list; a second
+	// server, a read/write community, a V3 user and a local account nobody
+	// recorded are findings.
+	"wti.aaa.tacacs":            {stmt: "tacacs secondary 192.0.2.43", unmanaged: false},
+	"wti.aaa.radius":            {stmt: "radius secondary 192.0.2.43", unmanaged: false, radius: true},
+	"wti.aaa.radius-unrendered": {stmt: "radius session-module disabled", unmanaged: true, radius: true},
+	"wti.aaa.inactive-protocol": {stmt: "radius secondary 192.0.2.99", unmanaged: true},
+	"wti.snmp.rw-community":     {stmt: "snmp rw-community <other:2>", unmanaged: false},
+	"wti.snmp.system-name":      {stmt: "snmp system-name other-name", unmanaged: true},
+	"wti.snmp.contact":          {stmt: "snmp contact someone", unmanaged: true, unrender: "snmp contact"},
+	"wti.snmp.location":         {stmt: "snmp location Anchorage", unmanaged: true, unrender: "snmp location"},
+	"wti.snmp.trap-manager":     {stmt: "snmp trap manager 2 192.0.2.35", unmanaged: true},
+	"wti.snmp.trap-community":   {stmt: "snmp trap community <other:2>", unmanaged: true},
+	"wti.snmp.trap-version":     {stmt: "snmp trap version v1", unmanaged: true},
+	"wti.snmp.trap-engine-id":   {stmt: "snmp trap engine-id 0x80001234", unmanaged: true},
+	"wti.snmp.v3":               {stmt: "snmp v3 user other-user", unmanaged: false},
+	"wti.mgmt-acl.list":         {stmt: "iptables -A INPUT -j DROP", unmanaged: true, unrender: "iptables -A INPUT -j DROP"},
+	"wti.breakglass.level":      {stmt: "user other-admin level administrator", unmanaged: false},
+	"wti.breakglass.password":   {stmt: "user localadmin keys <secret>", unmanaged: false},
 }
 
 // The comparison's shapes of the device's own statements are in step with
-// the ownership rows: every row with a Kept column has an example, an snmp
-// row's is the device's own in the comparison (and the planner keeps it),
-// and every shape names a row of its family or none.
+// the ownership rows: every row with a Kept column has an example, a row
+// that a shape names is the device's own in the comparison (and the planner
+// keeps it), the others are findings, and every shape names a row of its
+// family or none. Junos and IOS have shapes in the snmp and system rows
+// only; a unit's are in the aaa, snmp and mgmt-acl rows.
 func TestKeptShapesFollowTheOwnedRows(t *testing.T) {
-	for _, fam := range []string{devconf.FamilyJunos, devconf.FamilyIOS} {
+	for _, fam := range []string{devconf.FamilyJunos, devconf.FamilyIOS, devconf.FamilyWTI} {
 		rows := map[string]OwnedRow{}
 		for _, r := range OwnedTable(fam) {
 			rows[r.ID] = r
 		}
+		shaped := map[string]bool{}
 		for _, s := range devconf.KeptShapes(fam) {
-			if r, ok := rows[s.Row]; s.Row != "" && (!ok || r.Section != devconf.SectionSNMP && r.Section != devconf.SectionSystem) {
-				t.Errorf("%s: shape %q names %q, not an snmp or system row of the table", fam, s.Pattern, s.Row)
+			shaped[s.Row] = true
+			ok := false
+			r, named := rows[s.Row]
+			switch fam {
+			case devconf.FamilyWTI:
+				ok = named && r.Kept != "" && slices.Contains([]string{devconf.SectionAAA, devconf.SectionSNMP, devconf.SectionMgmtACL}, r.Section)
+			default:
+				ok = named && (r.Section == devconf.SectionSNMP || r.Section == devconf.SectionSystem)
+			}
+			if s.Row != "" && !ok {
+				t.Errorf("%s: shape %q names %q, not a row of the table that keeps something of the device's own", fam, s.Pattern, s.Row)
 			}
 		}
 		for _, r := range OwnedTable(fam) {
@@ -264,12 +301,34 @@ func TestKeptShapesFollowTheOwnedRows(t *testing.T) {
 				t.Errorf("%s has a Kept column and no example: is what it keeps the device's own?", r.ID)
 				continue
 			}
-			if ex.unmanaged != (r.Section == devconf.SectionSNMP || r.Section == devconf.SectionSystem) {
-				t.Errorf("%s: unmanaged %v in section %s", r.ID, ex.unmanaged, r.Section)
+			if ex.unmanaged != shaped[r.ID] {
+				t.Errorf("%s: unmanaged %v, and a shape names the row: %v", r.ID, ex.unmanaged, shaped[r.ID])
 			}
 			var exp []devices.Section
 			var dev devices.Section
-			if fam == devconf.FamilyJunos {
+			switch {
+			case fam == devconf.FamilyWTI && ex.radius:
+				// a RADIUS scope's unit: what the rendering holds, as the
+				// unit prints it, and TACACS+ turned off
+				exp = goldenSections(t, "managed.wti-radius.lab.txt")
+				want := sectionNamed(exp, r.Section)
+				for i, l := range want.Lines {
+					if f := strings.Fields(l); want.Secret[i] && len(f) > 0 {
+						f[len(f)-1] = "<secret>"
+						l = strings.Join(f, " ")
+					}
+					dev.Lines = append(dev.Lines, l)
+				}
+				dev.Lines = append(dev.Lines, "tacacs enable off")
+				dev.Name = r.Section
+			case fam == devconf.FamilyWTI:
+				e := expectedSections(t, "wti/lab-unit/expected.txt")
+				cur, err := devconf.Extract("wti", capture(t, "wti/lab-unit/document.txt"), e...)
+				if err != nil {
+					t.Fatal(err)
+				}
+				exp, dev = e, cur.Sections[r.Section]
+			case fam == devconf.FamilyJunos:
 				fixture := "juniper.synthetic-communities"
 				if r.Section == devconf.SectionSystem {
 					fixture = "juniper.synthetic-system"
@@ -277,7 +336,7 @@ func TestKeptShapesFollowTheOwnedRows(t *testing.T) {
 				f := fixtureNamed(t, fixture)
 				e, cur, _ := f.load(t)
 				exp, dev = e, cur.Sections[r.Section]
-			} else {
+			default:
 				f := fixtureNamed(t, "cisco.reference-lab")
 				e, cur, _ := f.load(t)
 				exp, dev = e, cur.Sections[r.Section]

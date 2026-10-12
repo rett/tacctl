@@ -462,13 +462,13 @@ func WTISNMP(in SNMPInput) SNMPBlock {
 			b = append(b, pre+x)
 		}
 	}
-	add("Not verified on a unit: the menu item names below are from WTI's documents.")
+	add("The item names and numbers below are those of a WTI 8.10 unit (SNMP Access under /N); other firmware may differ.")
 	if n := in.credNote(); n != "" {
 		add(n)
 	}
 	add("/N [Enter]              Network Parameters",
-		"<n> [Enter]             SNMP Parameters -- the item number varies by model/firmware;",
-		"                        pick the entry labelled \"SNMP\"",
+		"25 [Enter]              SNMP Access -- the item number varies by model/firmware;",
+		"                        pick the entry labelled \"SNMP Access\"",
 		"Set each item (type the item number, [Enter], then the value):")
 	value := func(label, v string) { add("  " + padLabel(label) + ": " + v) }
 	if missing := in.missingCreds(); missing != "" {
@@ -478,14 +478,18 @@ func WTISNMP(in SNMPInput) SNMPBlock {
 			value("SNMPv3 User", "(NOT SET: tacctl scope snmp "+in.Scope+" v3-user <user>)")
 		}
 	} else if in.Version == snmpV2c {
-		value("Version", "v2c")
+		value("Enable", "On")
+		value("Version", "V1/V2 Only")
+		value("Read Only", "Yes")
 		value("Read-only Community", in.Community)
 	} else {
 		auth := "SHA"
 		if in.V3Auth == "sha256" {
 			auth = "SHA-256"
 		}
-		value("Version", "v3 (authPriv)")
+		value("Enable", "On")
+		value("Version", "V3 (authPriv)")
+		value("Read Only", "Yes")
 		value("SNMPv3 User", in.V3User)
 		value("Authentication Protocol", auth)
 		value("Authentication Passphrase", in.V3AuthPass)
@@ -493,9 +497,9 @@ func WTISNMP(in SNMPInput) SNMPBlock {
 		value("Privacy Passphrase", in.V3PrivPass)
 	}
 	if in.Location != "" {
-		value("Location", in.Location)
+		value("SNMP Location", in.Location)
 	} else {
-		value("Location", "(NOT SET: tacctl device location "+devName(in)+" '<text>')")
+		value("SNMP Location", "(NOT SET: tacctl device location "+devName(in)+" '<text>')")
 	}
 	if in.Contact != "" {
 		value("Contact", in.Contact)

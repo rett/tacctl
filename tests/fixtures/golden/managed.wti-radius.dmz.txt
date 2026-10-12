@@ -1,0 +1,23 @@
+[aaa]
+| radius enable on
+| radius primary 203.0.113.9
+* radius primary-secret dmz-secret-0123456789abcdef
+| radius fallback-timer 3
+| radius fallback-local on-transport-failure
+| radius retries 3
+| radius port 1812
+| radius accounting-port 1813
+| radius onetime-auth off
+| radius default-access on
+| radius debug off
+[roles] not rendered
+[mgmt-acl] not rendered
+[snmp]
+| snmp enable on
+| snmp version v1-v2-only
+| snmp read-only yes
+* snmp ro-community lab-ro-community
+[netconf] not rendered
+[breakglass]
+| user dmz-ops level user
+* user dmz-ops password <PASSWORD>

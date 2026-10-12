@@ -1,0 +1,25 @@
+[aaa]
+| tacacs enable on
+| tacacs primary 203.0.113.9
+* tacacs secret dmz-secret-0123456789abcdef
+| tacacs fallback-timer 15
+| tacacs fallback-local on-transport-failure
+| tacacs port 49
+| tacacs default-access on
+| tacacs default-level viewonly
+| tacacs default-services telnet-ssh
+| tacacs account-module enabled
+| tacacs session-module enabled
+| tacacs service-name wti
+| tacacs debug off
+[roles] not rendered
+[mgmt-acl] not rendered
+[snmp]
+| snmp enable on
+| snmp version v1-v2-only
+| snmp read-only yes
+* snmp ro-community lab-ro-community
+[netconf] not rendered
+[breakglass]
+| user dmz-ops level user
+* user dmz-ops password <PASSWORD>

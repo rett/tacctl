@@ -804,6 +804,11 @@ func TestManagedGoldensAsADevicePrintsThem(t *testing.T) {
 	}
 	for _, f := range files {
 		base := filepath.Base(f)
+		if strings.HasPrefix(base, "managed.wti") {
+			// a unit prints menu pages, not configuration lines: see
+			// TestWTIManagedRenderingAgainstItsUnit
+			continue
+		}
 		data, err := os.ReadFile(f)
 		if err != nil {
 			t.Fatal(err)
