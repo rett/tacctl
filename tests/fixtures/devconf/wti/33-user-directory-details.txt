@@ -1,0 +1,24 @@
+# vendor: wti
+# os: 8.10 (command menu version)
+# transport: ssh
+# command: /F, then 1, then 1, then the user name
+# level: Administrator (superuser group, priv-lvl 15)
+# source: captured (read-only navigation)
+# captured: 2026-10-12
+# sanitised: names, addresses, communities, banner, port names
+# ---
+localadmin
+
+VIEW USER DIRECTORY DETAILS:
+
+1.  Username:              localadmin
+2.  Password:              (defined)
+3.  Authorization Keys:    (undefined)
+4.  Access Level:          Administrator
+5.  Port Access:           (defined)
+6.  Service Access         Serial Port, Telnet/SSH, Web, Outbound
+7.  Callback Phone #:      (undefined)
+8.  User API Token:        undefined
+
+
+Enter: <CR> or <ESC> to return to previous menu ... 

@@ -38,6 +38,8 @@ its SSH port).
   Addresses are replaced (documentation ranges and 10.0.0.0/8); the commands
   are otherwise as stored, one per entry, the `-P` lines as entries.
 
+- `32-user-directory-view.txt`, `33-user-directory-details.txt`: the local user directory (`/F` 1 > 1): the names, and one user's details page (the password is only `(defined)`, the access level, port and service access, the API token).
+
 - `pages/`: the navigation tree, one sanitised screen per file, captured
   read-only at Administrator level: `system-*` (`/F` and its items),
   `network-*` (`/N`, items such as `network-28-8` for `/N` > 28 > 8),

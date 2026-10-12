@@ -168,7 +168,7 @@ replace and overwrite all current entries." What the test showed
 
 ### `/F` system parameters
 
-1 user directory (view, add, modify, delete); 2 unit identification (site ID,
+1 user directory (view, add, modify, delete; the view lists the local names and, for one name, a details page: the password is only `(defined)`, then access level, port access, service access and the API token, `32-` and `33-` in the fixtures); 2 unit identification (site ID,
 location name, hostname, domain, asset tag); 3 real time clock (date, time,
 time zone, NTP enable, two NTP servers, timeout, test); 4 invalid access
 lockout (serial, SSH, telnet, web protection); 5 temperature (format,
