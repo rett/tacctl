@@ -309,6 +309,9 @@ func classHierarchy(stem, why string) string {
 
 // severityOf classifies a finding (D110).
 func severityOf(vendor, section, stem, kind string) string {
+	if vendor == devconf.FamilyWTI {
+		return devconf.WTISeverity(section, stem)
+	}
 	t := strings.Fields(strings.NewReplacer(pathSep, " ").Replace(strings.TrimPrefix(strings.TrimPrefix(stem, "set "), "deactivate ")))
 	has := func(i int, w string) bool { return len(t) > i && t[i] == w }
 	switch section {

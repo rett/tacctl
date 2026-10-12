@@ -45,7 +45,9 @@ type Options struct {
 
 // Extract returns the managed sections of a device's configuration
 // text: Junos 'show configuration | display inheritance no-comments |
-// display set' or IOS/IOS-XE 'show running-config'. A section is the
+// display set', IOS/IOS-XE 'show running-config', or a WTI unit's document
+// of captured menu pages (one screen per '# page: /N > 28' header; see
+// wti.go). A section is the
 // statements under its hierarchy (plan D62): the system's AAA keys, the
 // login classes and users, the management filter, 'snmp', 'system services
 // netconf' on Junos, and the login message, domain, time zone, name servers
@@ -78,8 +80,11 @@ func ExtractWith(vendor, raw string, opt Options) (Extracted, error) {
 	if err != nil {
 		return Extracted{}, err
 	}
-	if fam == FamilyJunos {
+	switch fam {
+	case FamilyJunos:
 		return junosExtract(raw, opt.Expected, opt.SecretsVisible)
+	case FamilyWTI:
+		return wtiExtract(raw, opt.Expected, opt.SecretsVisible)
 	}
 	return ciscoExtract(raw, opt.Expected, opt.SecretsVisible)
 }
@@ -251,6 +256,13 @@ func omitted(x stmt) bool {
 // and for the terms of a firewall filter, and for the entries of an ACL.
 func orderGroup(fam string, x stmt) (group, element string, ok bool) {
 	p := x.path
+	if fam == FamilyWTI {
+		// The entries of the unit's IP tables list, in order.
+		if len(p) == 2 && p[0] == "iptables" {
+			return "iptables", p[1], true
+		}
+		return "", "", false
+	}
 	if fam == FamilyJunos {
 		switch {
 		case len(p) >= 3 && p[0] == "system" && p[1] == "authentication-order":
@@ -386,6 +398,17 @@ func Compare(vendor string, expected, got devices.Section, secretsVisible bool) 
 		var notes []string
 		dev, notes = foldLoginNames(exp, dev)
 		res.Notes = append(res.Notes, notes...)
+	}
+	if fam == FamilyWTI {
+		var notes []string
+		dev, notes = wtiAlign(exp, dev)
+		res.Notes = append(res.Notes, notes...)
+		if res.Name == SectionSNMP && slices.ContainsFunc(exp, wtiIsV3) {
+			// A v3 scope's users are not read from the unit: nothing of the
+			// section is compared, the device's statements are listed.
+			res.Notes = append(res.Notes, NoteWTIv3)
+			exp = nil
+		}
 	}
 	expStems := map[string]bool{}
 	for _, x := range exp {
@@ -536,6 +559,9 @@ func Compare(vendor string, expected, got devices.Section, secretsVisible bool) 
 	}
 	extra := 0
 	rs := newRenderedSet(fam, expected, exp, lb)
+	if fam == FamilyWTI {
+		rs.wtiProto, rs.wtiInactive = wtiProtocols(exp, dev)
+	}
 	left := map[string]int{}
 	for s, n := range budget {
 		left[s] = n
@@ -567,6 +593,9 @@ func Compare(vendor string, expected, got devices.Section, secretsVisible bool) 
 
 	if fam == FamilyJunos && res.Name == SectionMgmtACL {
 		res.Notes = append(res.Notes, unappliedFilters(exp, dev, lo0)...)
+	}
+	if fam == FamilyWTI && res.Name == SectionMgmtACL {
+		res.Notes = append(res.Notes, wtiTailNotes(dev)...)
 	}
 
 	// present counts the statements that are the section's own: a router
@@ -653,6 +682,13 @@ func CompareAll(expected []devices.Section, got Extracted) ([]SectionResult, err
 				// tacctl) did not read the section: nothing is compared
 				// until the next pull.
 				out = append(out, SectionResult{Name: n, State: StateNA, Notes: []string{noteNoSystem}})
+				continue
+			}
+		}
+		if got.Vendor == FamilyWTI && n == SectionBreakGlass && renders(expected, n) {
+			if _, ok := got.Sections[n]; !ok {
+				// the user directory was not read in this pull
+				out = append(out, SectionResult{Name: n, State: StateNA, Notes: []string{NoteWTIUsersNotRead}})
 				continue
 			}
 		}

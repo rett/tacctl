@@ -7,8 +7,9 @@
 //
 //   - Reader says which commands read a vendor's configuration (D61);
 //   - Extract turns that text into the managed sections (D62): Junos
-//     'show configuration | display set' and IOS/IOS-XE 'show
-//     running-config';
+//     'show configuration | display set', IOS/IOS-XE 'show
+//     running-config', and for a WTI console server the document of its
+//     captured menu pages (wti.go, package wti);
 //   - Normalise and Compare put an extracted section and a rendered one
 //     (devices.Section, from devices.Managed) into one form and compare
 //     them line by line, a secret by presence only (D64): a Compare result
@@ -67,11 +68,14 @@ func renders(expected []devices.Section, name string) bool {
 const (
 	FamilyJunos = "junos"
 	FamilyIOS   = "ios"
+	// FamilyWTI is a WTI console server, read from the pages of its command
+	// menu (wti.go, package wti), not from a configuration text.
+	FamilyWTI = "wti"
 )
 
 var (
 	// ErrUnsupportedVendor is returned for a vendor with no reader or
-	// extractor (wti today).
+	// extractor.
 	ErrUnsupportedVendor = errors.New("devconf: no configuration reader for this vendor")
 	// ErrParse is returned by Extract when the text is not a configuration
 	// of the vendor: the device refused the command, or the output is
@@ -86,6 +90,8 @@ func Family(vendor string) (string, error) {
 		return FamilyJunos, nil
 	case "ios", "ios-xe", "iosxe", "cisco":
 		return FamilyIOS, nil
+	case "wti":
+		return FamilyWTI, nil
 	}
 	return "", fmt.Errorf("%w: %q", ErrUnsupportedVendor, vendor)
 }
@@ -105,8 +111,12 @@ type stmt struct {
 	stem   string
 	secret bool
 	// path is the statement's parts: Junos tokens after set, IOS the
-	// submode context then the line.
+	// submode context then the line, WTI the key and the value (a user's
+	// 'user', the name, the key and the value).
 	path []string
+	// tail marks a WTI IP tables statement of the list's tail (the final
+	// DROP, the unit's OUTPUT ACCEPT and the policies, see wti.go).
+	tail bool
 }
 
 // canonFunc turns lines (and the expected side's secret marks, nil for the
@@ -114,8 +124,11 @@ type stmt struct {
 type canonFunc func(lines []string, marks []bool, lb *labels) []stmt
 
 func canonFor(family string) canonFunc {
-	if family == FamilyJunos {
+	switch family {
+	case FamilyJunos:
 		return junosCanon
+	case FamilyWTI:
+		return wtiCanon
 	}
 	return ciscoCanon
 }

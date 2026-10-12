@@ -1,0 +1,72 @@
+# secrets visible: true
+[aaa]
+| tacacs enable on
+| tacacs primary 192.0.2.42
+* tacacs secret <secret>
+| tacacs fallback-timer 15
+| tacacs fallback-local on-transport-failure
+| tacacs port 49
+| tacacs default-access on
+| tacacs account-module enabled
+| tacacs session-module enabled
+| tacacs service-name wti
+| tacacs debug off
+| tacacs default-level viewonly
+| tacacs default-services serial,telnet-ssh,web,restful-api
+| radius enable off
+| radius fallback-timer 3
+| radius fallback-local off
+| radius retries 3
+| radius port 1812
+| radius accounting-port 1813
+| radius default-access on
+| radius onetime-auth off
+| radius onetime-timer 5
+| radius onetime-type dbm
+| radius session-module enabled
+| radius message-authenticator off
+| radius debug off
+[roles]
+[mgmt-acl]
+| iptables -A INPUT -i lo -j ACCEPT
+| iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+| iptables -A INPUT -s 10.1.100.0/23 -p tcp --dport 22 -j ACCEPT
+| iptables -A INPUT -s 10.0.20.0/24 -p tcp --dport 22 -j ACCEPT
+| iptables -A INPUT -s 10.0.28.34 -p tcp --dport 22 -j ACCEPT
+| iptables -A INPUT -s 10.0.28.34 -p udp --dport 161:162 -j ACCEPT
+| iptables -A INPUT -s 10.0.28.36 -p tcp --dport 22 -j ACCEPT
+| iptables -A INPUT -s 10.0.28.36 -p udp --dport 161:162 -j ACCEPT
+| iptables -A INPUT -s 10.0.30.0/24 -p tcp --dport 22 -j ACCEPT
+| iptables -A INPUT -s 10.0.40.0/24 -p tcp --dport 22 -j ACCEPT
+| iptables -A INPUT -s 10.0.50.0/24 -p tcp --dport 22 -j ACCEPT
+| iptables -A INPUT -s 10.0.60.0/24 -p tcp --dport 22 -j ACCEPT
+| iptables -A INPUT -s 10.0.70.0/24 -p tcp --dport 22 -j ACCEPT
+| iptables -A INPUT -s 10.0.90.0/24 -p tcp --dport 22 -j ACCEPT
+| iptables -A INPUT -s 10.0.120.0/24 -p tcp --dport 22 -j ACCEPT
+| iptables -A INPUT -s 192.0.2.14 -p udp --dport 161:162 -j ACCEPT
+| iptables -A INPUT -s 10.1.101.0/24 -p udp --dport 161 -j ACCEPT
+| iptables -A INPUT -i eth0 -s 10.1.100.0/23 -p icmp -j ACCEPT
+| iptables -A INPUT -i eth0 -s 10.0.0.0/16 -p icmp -j ACCEPT
+| iptables -A INPUT -i eth0 -s 192.0.2.14 -p icmp -j ACCEPT
+| iptables -A INPUT -j DROP
+| iptables -A OUTPUT -j ACCEPT
+| iptables -P INPUT DROP
+| iptables -P OUTPUT DROP
+| iptables -P FORWARD DROP
+[snmp]
+| snmp enable on
+| snmp version v1-v2-only
+| snmp read-only yes
+| snmp system-name wti.site.exam...
+| snmp contact "Example NOC"
+| snmp location "Example City"
+* snmp ro-community <secret:1>
+* snmp rw-community <other:1>
+| snmp trap manager 1 192.0.2.34
+* snmp trap community <secret:1>
+| snmp trap version v2
+[system] not extracted
+[netconf]
+[breakglass]
+| user localadmin level administrator
+* user localadmin password <secret>

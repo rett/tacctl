@@ -163,7 +163,9 @@ type secOut struct {
 // ordered statements, for an access list's entry order.
 func Plan(vendor string, expected []devices.Section, current, plain devconf.Extracted, opt Options) (Delta, error) {
 	fam, err := devconf.Family(vendor)
-	if err != nil {
+	if err != nil || fam == devconf.FamilyWTI {
+		// A WTI unit is planned by its own planner (the menu steps), not by
+		// this one.
 		return Delta{}, fmt.Errorf("%w: %q", ErrUnsupported, vendor)
 	}
 	if fam == devconf.FamilyIOS && opt.Syntax != "" && opt.Syntax != SyntaxIOS12 && opt.Syntax != SyntaxModern {

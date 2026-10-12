@@ -87,6 +87,9 @@ func (l *labels) of(name string) string {
 // host'. A word that is elided already is no string.
 func communityNames(fam string, lines []string) []string {
 	var out []string
+	if fam == FamilyWTI {
+		return wtiCommunityNames(lines)
+	}
 	for _, line := range lines {
 		if fam == FamilyJunos {
 			head, rest, _ := strings.Cut(strings.TrimSpace(line), " ")
@@ -135,6 +138,9 @@ func CommunityLabels(vendor string, lines []string) (map[string]string, error) {
 // a community's name elided to the bare mark.
 func legacyCommunity(fam string, x stmt) bool {
 	p := x.path
+	if fam == FamilyWTI {
+		return false
+	}
 	if fam == FamilyJunos {
 		return len(p) >= 3 && p[0] == "snmp" && (p[1] == "community" || p[1] == "trap-group") && p[2] == secretMark
 	}

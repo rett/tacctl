@@ -13,6 +13,13 @@ package devconf
 // extra of the other sections (another server, a login class, a filter, a
 // user nobody recorded) is a finding about who can log in, and stays a
 // difference.
+//
+// A WTI unit (wti.go) has its own: the system name and the trap settings of
+// the snmp section, the RADIUS items the walkthrough leaves alone, the whole
+// page of the protocol the scope does not use while the device has it off,
+// and the tail of the IP tables list. A read/write community, a second
+// server, the other protocol turned on and every local account are
+// findings.
 
 import (
 	"slices"
@@ -97,6 +104,7 @@ var keptShapes = map[string][]keptShape{
 		// no row: the rest of 'system ntp' (threshold, interval-range, ...)
 		{Pattern: "system ntp", keep: always},
 	},
+	FamilyWTI: wtiShapes,
 	FamilyIOS: {
 		{Row: "ios.snmp.community", Pattern: "snmp-server community $", keep: otherCommunity},
 		{Row: "ios.snmp.location", Pattern: "snmp-server location", keep: notRendered},
@@ -136,6 +144,12 @@ type renderedSet struct {
 	// those under 'snmp trap-group' that a configuration block sets (the
 	// structured settings have no trap group).
 	community, trapGroup map[string]bool
+	// wtiInactive are the protocols (tacacs, radius) of a WTI unit that the
+	// rendering does not use and the device has turned off: their whole
+	// page is the device's own (wti.go).
+	wtiInactive map[string]bool
+	// wtiProto is the protocol the rendering is for.
+	wtiProto string
 }
 
 // has reports whether a rendered statement starts with the words.
@@ -149,6 +163,9 @@ func newRenderedSet(fam string, section devices.Section, exp []stmt, lb *labels)
 	rs := &renderedSet{community: map[string]bool{}, trapGroup: map[string]bool{}}
 	for _, e := range exp {
 		rs.words = append(rs.words, stmtWords(fam, e))
+	}
+	if fam == FamilyWTI {
+		return rs
 	}
 	if fam != FamilyJunos {
 		for _, line := range section.Lines {
@@ -192,7 +209,14 @@ func stmtWords(fam string, x stmt) []string {
 // unmanaged reports an extra statement of a section that is the device's
 // own by rule. A deactivated statement is a finding of its own.
 func unmanaged(fam, section string, x stmt, rs *renderedSet) bool {
-	if section != SectionSNMP && section != SectionSystem || strings.HasPrefix(x.stem, "deactivate ") {
+	if fam == FamilyWTI {
+		if section != SectionAAA && section != SectionSNMP && section != SectionMgmtACL {
+			return false
+		}
+		if wtiKept(section, x, rs) {
+			return true
+		}
+	} else if section != SectionSNMP && section != SectionSystem || strings.HasPrefix(x.stem, "deactivate ") {
 		return false
 	}
 	words := stmtWords(fam, x)

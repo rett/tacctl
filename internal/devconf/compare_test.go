@@ -140,13 +140,13 @@ func TestCompareLineTexts(t *testing.T) {
 }
 
 func TestCompareUnknownVendor(t *testing.T) {
-	if _, err := Compare("wti", sec("aaa", "x"), sec("aaa", "x"), true); !errors.Is(err, ErrUnsupportedVendor) {
+	if _, err := Compare("acme", sec("aaa", "x"), sec("aaa", "x"), true); !errors.Is(err, ErrUnsupportedVendor) {
 		t.Errorf("%v", err)
 	}
-	if _, err := Normalise("wti", sec("aaa")); !errors.Is(err, ErrUnsupportedVendor) {
+	if _, err := Normalise("acme", sec("aaa")); !errors.Is(err, ErrUnsupportedVendor) {
 		t.Errorf("%v", err)
 	}
-	if _, err := Fingerprint("wti", sec("aaa")); !errors.Is(err, ErrUnsupportedVendor) {
+	if _, err := Fingerprint("acme", sec("aaa")); !errors.Is(err, ErrUnsupportedVendor) {
 		t.Errorf("%v", err)
 	}
 }

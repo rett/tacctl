@@ -33,6 +33,11 @@ func Commands(vendor string) (setup []string, read string, err error) {
 	if err != nil {
 		return nil, "", err
 	}
+	if fam == FamilyWTI {
+		// A WTI unit has no command that prints its configuration: its
+		// pages are walked by a terminal reader (package wti).
+		return nil, "", fmt.Errorf("%w: %q", ErrUnsupportedVendor, vendor)
+	}
 	if fam == FamilyJunos {
 		return nil, "show configuration | display inheritance no-comments | display set", nil
 	}

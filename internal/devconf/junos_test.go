@@ -330,8 +330,8 @@ func TestJunosExtractErrors(t *testing.T) {
 			t.Errorf("%s: %v", tc.name, err)
 		}
 	}
-	if _, err := Extract("wti", "set a b"); !errors.Is(err, ErrUnsupportedVendor) {
-		t.Errorf("wti: %v", err)
+	if _, err := Extract("acme", "set a b"); !errors.Is(err, ErrUnsupportedVendor) {
+		t.Errorf("acme: %v", err)
 	}
 }
 
