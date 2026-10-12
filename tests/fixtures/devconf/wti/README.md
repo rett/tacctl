@@ -29,8 +29,8 @@ its SSH port).
   page after a change.
 
 - `29-iptables-upload.txt` to `31-network-iptables-on.txt`: the bulk upload at
-  the IP tables prompt, captured 2026-10-12 on the same unit with the
-  maintainer's approval (the list was uploaded and read back): the
+  the IP tables prompt, captured 2026-10-12 on the same unit (the list was
+  uploaded and read back): the
   `<iptables>` block pasted (22 `-A` rules and the three `-P` policies, last)
   and the "Configuring iptables - Please wait..." screen, the page after it
   (`30-iptables-uploaded-page.txt`: entries 1-12; `-2`: 13-24; `-3`: 25 and

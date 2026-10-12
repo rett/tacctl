@@ -39,12 +39,12 @@ RADIUS `WTI-Super` value; tacctl's groups map as in `group show`:
 | Administrator | 15 | superuser | + `/DF /UL /UFW /CP /VPN /TEL /WOF` (parameter file, unlock, firmware upgrade, port copy, VPN, telemetry, wakeup-on-failure) |
 
 The documentation says SuperUser may view but not change the configuration.
-The user reports (2026-10-10) that on the lab unit both the superuser group
-(Administrator) and the engineer group (SuperUser) can change settings: the
-documented "view only" for SuperUser does not hold on this firmware, so the
-engineer tier's WTI level is a full configuration login, with the same
-lock-out reach as Administrator for the pages in section 6. Every page
-described here was opened at Administrator level.
+On the lab unit (2026-10-10) both the superuser group (Administrator) and the
+engineer group (SuperUser) can change settings: the documented "view only" for
+SuperUser does not hold on this firmware, so the engineer tier's WTI level is
+a full configuration login, with the same lock-out reach as Administrator for
+the pages in section 6. Every page described here was opened at Administrator
+level.
 
 "Default User Access" (TACACS item 8, RADIUS item 11) is a page of its own:
 what a server-authenticated user who has no local account gets (access
